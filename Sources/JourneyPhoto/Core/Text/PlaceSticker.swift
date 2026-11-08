@@ -42,7 +42,7 @@ enum PlaceSticker {
         overlays.contains { !$0.isEmpty && isSticker($0, of: location) }
     }
 
-    /// どれかの写真に付けた撮影地の札があるか（固定の札の出し分け）
+    /// どれかの写真に付けた撮影地の札があるか（札を消したあとに撮影地も外すかの判定）
     static func isOnAnyPhoto(_ shots: [[TextOverlay]], location: String) -> Bool {
         shots.contains { isOnPhoto($0, location: location) }
     }
@@ -72,5 +72,16 @@ enum PlaceSticker {
     static func shouldDetach(removedSticker: Bool, remaining: [[TextOverlay]], location: String) -> Bool {
         guard removedSticker, text(for: location) != nil else { return false }
         return !isOnAnyPhoto(remaining, location: location)
+    }
+}
+
+/// 見る画面で、撮影地の札を焼き込んだ1本にも**撮影スポットへの小さな導線**を残すか（札 #499 の直し）。
+/// 固定の札を出さない（二重に見えない）一方、スポットに結べたときのガイドを開く・行きたいの口は消さない。
+enum StoryPlaceLink {
+    /// 焼き込み済み（固定の札を出さない）で、撮影地があり、スポットに結べたときだけ導線を出す。
+    /// 固定の札が出ている1本は、札そのものが導線なので別には出さない
+    static func entry(showsCard: Bool, location: String?, spotLinked: Bool) -> String? {
+        guard !showsCard, spotLinked, let location, !location.isEmpty else { return nil }
+        return location
     }
 }

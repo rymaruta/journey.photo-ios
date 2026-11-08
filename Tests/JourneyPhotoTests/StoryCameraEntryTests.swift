@@ -76,9 +76,9 @@ final class StoryCameraEntryTests: XCTestCase {
         let center = StoryShortcutCenter()
         XCTAssertFalse(center.pending)
         center.request()
-        center.request()
+        center.request() // 冷えた起動は AppDelegate と場面の係の両方から届く
         XCTAssertTrue(center.pending)
-        XCTAssertEqual(center.requests, 2)
+        XCTAssertEqual(center.requests, 1, "同じ依頼を2回数えて、開いたあとにもう一度開く")
         XCTAssertTrue(center.take(), "持ち越した依頼を受け取れない")
         XCTAssertFalse(center.take(), "二重に開く")
         XCTAssertFalse(center.pending)
@@ -145,5 +145,61 @@ final class StoryCameraEntryTests: XCTestCase {
             .contains("StoryComposerView(startsWithCamera: composerStartsWithCamera)"))
         XCTAssertTrue(try read("Sources/JourneyPhoto/App/RootView.swift")
             .contains("StoryComposerView(openDraft: openStoryDraftId, startsWithCamera: storyStartsWithCamera)"))
+    }
+
+    // MARK: - 札 #500 の直し(カメラ)
+
+    /// 長押しの録画は、マイクの許可のダイアログの間に指が離れていたら始めない。タップの録画は始める
+    func testRecordingStartsAfterPermissionOnlyIfStillHeld() {
+        XCTAssertTrue(StoryCameraRules.startsAfterPermission(fromHold: true, stillPressing: true))
+        XCTAssertFalse(StoryCameraRules.startsAfterPermission(fromHold: true, stillPressing: false),
+                       "指が離れたのに録画が始まって止まらなくなる")
+        XCTAssertTrue(StoryCameraRules.startsAfterPermission(fromHold: false, stillPressing: false))
+    }
+
+    /// 音なしの注記: 動画モード、または写真モードの長押しで録っている最中にも出す
+    func testMicNoteShowsForHoldRecordingInPhotoMode() {
+        XCTAssertTrue(StoryCameraRules.showsMicNote(micDenied: true, mode: .video, isRecording: false))
+        XCTAssertTrue(StoryCameraRules.showsMicNote(micDenied: true, mode: .photo, isRecording: true),
+                      "写真モードの長押しで音なしなのに知らせない")
+        XCTAssertFalse(StoryCameraRules.showsMicNote(micDenied: true, mode: .photo, isRecording: false))
+        XCTAssertFalse(StoryCameraRules.showsMicNote(micDenied: false, mode: .video, isRecording: true))
+    }
+
+    func testCameraWaitsForTransitions() {
+        XCTAssertTrue(StoryComposerView.cameraMayOpen(transitioning: false))
+        XCTAssertFalse(StoryComposerView.cameraMayOpen(transitioning: true))
+    }
+
+    /// 配線: 向きは端末の向きの係(`ComposeCamera` と同じ求め方)・マイクは録画の前・孤児の録画ファイルは消す・固定の待ちを置かない
+    func testCameraWiring() throws {
+        let camera = try read("Sources/JourneyPhoto/Features/Stories/StoryCameraView.swift")
+        XCTAssertFalse(camera.contains("videoOrientation"), "向きを縦に決め打ちしている")
+        XCTAssertTrue(camera.contains("ComposeGuide.captureAngle("))
+        XCTAssertTrue(camera.contains("videoRotationAngleForHorizonLevelCapture"))
+        XCTAssertTrue(camera.contains("await camera.prepareAudio()\n                // 長押しで始めるはずが"),
+                      "録画の前にマイクの許可を済ませていない")
+        XCTAssertTrue(camera.contains("abandoned = true"), "録画の途中で閉じたファイルが残る")
+        let composer = try read("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
+        XCTAssertFalse(composer.contains("450_000_000"), "カメラを出すのに固定の待ちを置いている")
+        XCTAssertTrue(composer.contains("isTransitioning()"))
+    }
+
+    /// 場面の係は、冷えた起動(`willConnectTo`)と起動中(`performActionFor`)の両方を受ける
+    func testSceneDelegateReceivesBothPaths() throws {
+        let scene = try read("Sources/JourneyPhoto/App/StoryShortcutScene.swift")
+        XCTAssertTrue(scene.contains("scene(_ scene: UIScene, willConnectTo session: UISceneSession"))
+        XCTAssertTrue(scene.contains("connectionOptions.shortcutItem"))
+        XCTAssertTrue(scene.contains("windowScene(_ windowScene: UIWindowScene, performActionFor"))
+        let delegate = try read("Sources/JourneyPhoto/App/AppDelegate.swift")
+        XCTAssertTrue(delegate.contains("configuration.delegateClass = StorySceneDelegate.self"))
+    }
+
+    /// 使われなくなった動画用の模型を残さない
+    func testNoDeadVideoShims() throws {
+        let shim = try read("Shims/UIKit/UIKit.swift")
+        for dead in ["videoMaximumDuration", "VideoQuality", "UIImagePickerControllerMediaURL"] {
+            XCTAssertFalse(shim.contains(dead), dead)
+        }
     }
 }

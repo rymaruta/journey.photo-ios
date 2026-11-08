@@ -58,6 +58,8 @@ enum StoryVideoRules {
         case locationRemains
         /// 書き出しに失敗した
         case exportFailed
+        /// 動画の取り込みが時間内に終わらなかった(iCloud から落とせない・返ってこない)
+        case importTimedOut
         /// 取り込みに失敗した（写真アプリから読めない・iCloud から落とせない）
         case importFailed
 
@@ -76,6 +78,9 @@ enum StoryVideoRules {
                          "The video's location data couldn't be removed, so it can't be posted. Choose a different video")
             case .exportFailed:
                 return L("動画の準備に失敗しました。もう一度お試しください", "Couldn't prepare the video. Please try again")
+            case .importTimedOut:
+                return L("動画の読み込みに時間がかかっています。通信の状態を確かめて、もう一度選んでください",
+                         "Loading the video is taking too long. Check your connection and choose it again")
             case .importFailed:
                 return L("動画を読み込めませんでした。通信の状態を確かめて、もう一度選んでください",
                          "Couldn't load the video. Check your connection and choose it again")
@@ -103,15 +108,45 @@ enum StoryVideoRules {
         let preset: String
         /// 見積もりの映像の速さ（ビット毎秒）。段を選ぶ目安だけに使う
         let estimatedBitsPerSecond: Double
+        /// 出す画面の長い辺の上限(画素)。重ねを焼き込むとき、この大きさまで縮めて描き直す
+        /// (縮めないと、4K の動画は 1080p の段でも 4K のまま書き出されて 50MB に収まらない)
+        let longSide: Double
+    }
+
+    /// 重ねを焼き込むときの、段に合わせた大きさ。**長い辺が段の上限を超えるときだけ縮め**(拡大しない)、
+    /// 画素は偶数にする(H.264 は偶数を好む)。縦横比は保つ
+    static func renderSize(for size: CGSize, step: Step) -> CGSize {
+        guard size.width > 0, size.height > 0 else { return size }
+        let longSide = Double(max(size.width, size.height))
+        let scale = min(1, step.longSide / longSide)
+        func even(_ value: Double) -> CGFloat { CGFloat(max(2, (value / 2).rounded() * 2)) }
+        return CGSize(width: even(Double(size.width) * scale), height: even(Double(size.height) * scale))
+    }
+
+    /// 重ねを焼き込むときの 1 秒あたりのコマ数。**30 を上限にする**(60fps のまま焼くと大きさが倍近くなる)
+    static func overlayFrameRate(source: Float) -> Int32 {
+        source.isFinite && source > 1 ? Int32(min(30, source.rounded())) : 30
+    }
+
+    /// 送る直前の確かめ。**動画のストーリーが書き出し済みでない・書き出したあとに重ねが変わった**なら、
+    /// 静止画として黙って出さず、書き出し直す(`StoryComposerView.post`)
+    enum ExportCheck: Equatable {
+        case ok
+        case reexport
+    }
+
+    static func exportCheck(videoShots: [UUID], exported: Set<UUID>, overlaysMatch: Bool) -> ExportCheck {
+        let wanted = Set(videoShots)
+        return wanted == exported && overlaysMatch ? .ok : .reexport
     }
 
     /// 上の段から順に。**長さに対して 45MB に収まりそうな段から始める**（収まらなければ下げる）。
     /// 音声（128kbps）ぶんを引いて比べる。最後の段でも収まらなければ呼ぶ側が `tooLarge` にする
     static let allSteps: [Step] = [
-        Step(preset: "AVAssetExportPreset1920x1080", estimatedBitsPerSecond: 8_000_000),
-        Step(preset: "AVAssetExportPreset1280x720", estimatedBitsPerSecond: 4_000_000),
-        Step(preset: "AVAssetExportPreset960x540", estimatedBitsPerSecond: 2_000_000),
-        Step(preset: "AVAssetExportPreset640x480", estimatedBitsPerSecond: 1_000_000),
+        Step(preset: "AVAssetExportPreset1920x1080", estimatedBitsPerSecond: 8_000_000, longSide: 1920),
+        Step(preset: "AVAssetExportPreset1280x720", estimatedBitsPerSecond: 4_000_000, longSide: 1280),
+        Step(preset: "AVAssetExportPreset960x540", estimatedBitsPerSecond: 2_000_000, longSide: 960),
+        Step(preset: "AVAssetExportPreset640x480", estimatedBitsPerSecond: 1_000_000, longSide: 640),
     ]
 
     static let audioBitsPerSecond = 128_000.0

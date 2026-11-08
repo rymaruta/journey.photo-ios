@@ -46,6 +46,20 @@ enum StoryCameraRules {
     /// 押し続けて始めた録画は、**指を離したら止める**。タップで始めた録画（動画モード）は次のタップで止める
     static func releaseStopsRecording(startedByHold: Bool) -> Bool { startedByHold }
 
+    // MARK: - マイク
+
+    /// マイクの許可を済ませたあと、録画を始めてよいか。**長押しで始めた録画は、許可のダイアログの間に指が
+    /// 離れていたら始めない**(離してから録画が始まって止まらなくなるのを防ぐ)。タップで始める録画は常に始める
+    static func startsAfterPermission(fromHold: Bool, stillPressing: Bool) -> Bool {
+        !fromHold || stillPressing
+    }
+
+    /// 「マイクが許可されていないので、音なしで撮ります」を出すか。動画モードのとき、
+    /// **写真モードの長押しで録っている最中**にも出す(モードの切り替えが隠れている間)
+    static func showsMicNote(micDenied: Bool, mode: Mode, isRecording: Bool) -> Bool {
+        micDenied && (mode == .video || isRecording)
+    }
+
     // MARK: - 録画
 
     /// 録画の進み具合（0〜1）。上限は `StoryVideoRules.maxSeconds`

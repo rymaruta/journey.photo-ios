@@ -84,7 +84,8 @@ targets:
         # Pro の商品名の頭（`<束の名前>.pro.monthly`）。サーバーの `proProductIds(bundleId)` と同じ作り方
         JPStoreProductPrefix: $(JP_BUNDLE_ID)
         # アプリのアイコン長押しの「ストーリーを撮る」（札 #500）。拡張は足さない（`StorySceneDelegate` が受ける）。
-        # 題は InfoPlist.strings で英語にする（題の文字がそのまま鍵）
+        # 題は InfoPlist.strings で英語にする（題の文字がそのまま鍵）。
+        # UIApplicationSceneManifest は足さない(SwiftUI の App は場面で動き、場面の係は AppDelegate が指す)
         UIApplicationShortcutItems:
           - UIApplicationShortcutItemType: photo.journey.shortcut.storyCamera
             UIApplicationShortcutItemTitle: ストーリーを撮る
@@ -93,7 +94,7 @@ targets:
         NSCameraUsageDescription: 写真を撮って投稿するため、また作例を重ねて撮るためにカメラを使います。
         NSPhotoLibraryUsageDescription: 端末の写真を選んで投稿するため、また撮影日時と場所から旅を見つけて旅の記録に並べるために使います。旅を探すのは端末の中だけで、写真も位置もどこにも送りません（旅の名前を引くときだけ、おおよその位置を Apple の地図に渡します）。投稿するのは選んだ写真だけです。
         NSPhotoLibraryAddUsageDescription: 撮った写真や動画を端末に保存するために使います。
-        # ストーリーの動画を撮るとき（`CameraPicker` の動画・札 #500）。審査官が読む文面
+        # ストーリーの動画に音を入れるとき（`StoryCameraView` の動画・札 #500）。審査官が読む文面
         NSMicrophoneUsageDescription: ストーリーの動画に音声を録音するために使います。
         # 一部だけ許可（.limited）のとき、iOS が起動ごとに出す「写真を選び直す」案内を止める。
         # 選び足す口は旅の一覧の上に置く（`PhotoLibrary.presentLimitedPicker`）

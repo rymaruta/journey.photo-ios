@@ -35,7 +35,7 @@ final class StoryVideoTests: XCTestCase {
     }
 
     func testEveryProblemHasAMessage() {
-        let all: [StoryVideoRules.Problem] = [.tooLong, .unreadable, .tooLarge, .locationRemains, .exportFailed, .importFailed]
+        let all: [StoryVideoRules.Problem] = [.tooLong, .unreadable, .tooLarge, .locationRemains, .exportFailed, .importFailed, .importTimedOut]
         for problem in all {
             XCTAssertFalse(problem.message.isEmpty)
             XCTAssertEqual(problem.errorDescription, problem.message, "送れなかった知らせに出る言葉が違う")
@@ -190,5 +190,85 @@ final class StoryVideoTests: XCTestCase {
         XCTAssertEqual(seen.first?.1, Data([1, 2, 3, 4]), "動画の本体を預かっていない")
         release = true
         center.userChanged(to: nil)
+    }
+
+    // MARK: - 札 #500 の直し(書き出しの大きさ・確かめ・閉じる確認)
+
+    /// 重ねを焼くときは段の大きさまで縮める(4K を 1080p の段で 4K のまま書き出して 50MB を超えない)
+    func testRenderSizeShrinksToTheStep() {
+        let p1080 = StoryVideoRules.allSteps[0], p720 = StoryVideoRules.allSteps[1]
+        let uhd = CGSize(width: 2160, height: 3840) // 縦の 4K
+        let fitted = StoryVideoRules.renderSize(for: uhd, step: p1080)
+        XCTAssertEqual(fitted.height, 1920)
+        XCTAssertEqual(fitted.width, 1080)
+        XCTAssertEqual(StoryVideoRules.renderSize(for: uhd, step: p720).height, 1280)
+        // 小さい動画は拡大しない
+        XCTAssertEqual(StoryVideoRules.renderSize(for: CGSize(width: 540, height: 960), step: p1080),
+                       CGSize(width: 540, height: 960))
+        // 画素は偶数
+        let odd = StoryVideoRules.renderSize(for: CGSize(width: 1001, height: 1779), step: p1080)
+        XCTAssertEqual(Int(odd.width) % 2, 0)
+        XCTAssertEqual(Int(odd.height) % 2, 0)
+    }
+
+    func testOverlayFrameRateCapsAt30() {
+        XCTAssertEqual(StoryVideoRules.overlayFrameRate(source: 60), 30)
+        XCTAssertEqual(StoryVideoRules.overlayFrameRate(source: 24), 24)
+        XCTAssertEqual(StoryVideoRules.overlayFrameRate(source: 0), 30)
+        XCTAssertEqual(StoryVideoRules.overlayFrameRate(source: .nan), 30)
+    }
+
+    /// 送る直前の確かめ: 書き出し済みでない・重ねが変わったときは出さずに書き出し直す
+    func testExportCheck() {
+        let a = UUID(), b = UUID()
+        XCTAssertEqual(StoryVideoRules.exportCheck(videoShots: [a, b], exported: [a, b], overlaysMatch: true), .ok)
+        XCTAssertEqual(StoryVideoRules.exportCheck(videoShots: [a, b], exported: [a], overlaysMatch: true), .reexport,
+                       "書き出していない動画を静止画で出している")
+        XCTAssertEqual(StoryVideoRules.exportCheck(videoShots: [a], exported: [a, b], overlaysMatch: true), .reexport,
+                       "外した動画の書き出しが残っている")
+        XCTAssertEqual(StoryVideoRules.exportCheck(videoShots: [a], exported: [a], overlaysMatch: false), .reexport,
+                       "書き出したあとに変えた重ねが載っていない")
+        XCTAssertEqual(StoryVideoRules.exportCheck(videoShots: [], exported: [], overlaysMatch: true), .ok)
+    }
+
+    /// 動画が入っていて下書きに残せないときの閉じる確認(「前の下書きはそのまま残ります」を言わない)
+    func testLeaveDialogForVideo() {
+        let dialog = StoryComposerView.leaveDialog(canSaveDraft: false, loading: false, restored: false, hasVideo: true)
+        XCTAssertFalse(dialog.canSave)
+        XCTAssertTrue(dialog.message.contains("動画が入っていると下書きに残せません"))
+        XCTAssertFalse(dialog.message.contains("前の下書きはそのまま残ります"))
+        let plain = StoryComposerView.leaveDialog(canSaveDraft: false, loading: false, restored: false)
+        XCTAssertTrue(plain.message.contains("前の下書きはそのまま残ります"), "写真だけの回の言い分を変えている")
+    }
+
+    private func repo(_ path: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+    }
+
+    /// 画面の配線: 書き出し中は編集を止める・取り消せる・動画では効かない操作を出さない・一時ファイルの持ち主
+    func testComposerWiring() throws {
+        let composer = try repo("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
+        XCTAssertTrue(composer.contains(".overlay { if isExportingVideo { exportOverlay } }"), "書き出し中に編集を止めていない")
+        XCTAssertTrue(composer.contains("guard !uploads.isBusy else"), "ほかのストーリーを送っている間も書き出している")
+        XCTAssertTrue(composer.contains("StoryVideoRules.exportCheck("), "送る直前に動画の書き出しを確かめていない")
+        XCTAssertTrue(composer.contains("if currentClip == nil {\n                Menu {\n                    durationOptions"), "動画に表示秒数を出している")
+        XCTAssertTrue(composer.contains("if currentClip == nil, !framing.wrappedValue.isIdentity"), "動画に合わせ方を出している")
+        XCTAssertTrue(composer.contains("AsyncTimeout.firstWithin(\n                        seconds: StorySimpleRules.pickLoadTimeout"), "動画の読み込みに時間切れが無い")
+        XCTAssertTrue(composer.contains("hasVideo: hasVideoShot"))
+        // 閉じる・外す・投稿のどの経路でも消す
+        XCTAssertTrue(composer.contains("discardAllVideos()"))
+        XCTAssertFalse(composer.contains("StoryVideoPipeline.discard(shots[index].video)"), "外すが持ち主の控えを更新しない")
+    }
+
+    func testPipelineExportIsCancellableAndStripsMetadata() throws {
+        let pipeline = try repo("Sources/JourneyPhoto/Services/StoryVideoPipeline.swift")
+        XCTAssertTrue(pipeline.contains("withTaskCancellationHandler"))
+        XCTAssertTrue(pipeline.contains("cancelExport()"), "取り消しが書き出しを止めない")
+        XCTAssertTrue(pipeline.contains("AVMutableComposition()"), "重ねなしの書き出しが元の付帯情報を持ち込む")
+        XCTAssertTrue(pipeline.contains("CMMetadataFormatDescriptionGetIdentifiers"), "時刻つきの付帯情報を見ていない")
+        XCTAssertTrue(pipeline.contains("track.load(.metadata)"), "トラックごとの付帯情報を見ていない")
+        XCTAssertTrue(pipeline.contains("for _ in 0..<2"), "位置情報が残ったとき自動でやり直さない")
+        XCTAssertTrue(pipeline.contains("StoryVideoRules.renderSize(for: oriented, step: step)"))
     }
 }

@@ -217,4 +217,22 @@ enum ModalProbe {
         }
         return false
     }
+
+    /// 画面を出す・下ろす動きの最中か(札 #500: カメラを先頭に出すのを、動きが終わるまで待つ)。
+    /// 読むだけ。出ている画面の鎖を最後までたどり、1つでも動いていれば true
+    static func isTransitioning() -> Bool {
+        for scene in UIApplication.shared.connectedScenes {
+            guard let windowScene = scene as? UIWindowScene else { continue }
+            for window in windowScene.windows {
+                var controller = window.rootViewController
+                while let current = controller {
+                    if current.isBeingPresented || current.isBeingDismissed || current.transitionCoordinator != nil {
+                        return true
+                    }
+                    controller = current.presentedViewController
+                }
+            }
+        }
+        return false
+    }
 }

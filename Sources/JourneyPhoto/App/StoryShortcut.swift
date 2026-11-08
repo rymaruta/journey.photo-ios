@@ -11,7 +11,9 @@ final class StoryShortcutCenter: ObservableObject {
     @Published private(set) var requests = 0
     private(set) var pending = false
 
+    /// 依頼を持ち越す。**持ち越し中の2回目は数えない**(冷えた起動は `AppDelegate` と場面の係の両方から届く)
     func request() {
+        guard !pending else { return }
         pending = true
         requests += 1
     }

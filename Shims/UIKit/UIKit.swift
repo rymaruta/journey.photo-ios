@@ -7,6 +7,10 @@ open class UIViewController {
     public init() {}
     /// 本物は読み取りだけ（このコントローラが出しているもの）
     open var presentedViewController: UIViewController? { nil }
+    /// 画面を出す・下ろす動きの最中か(本物にもある)
+    open var isBeingPresented: Bool { false }
+    open var isBeingDismissed: Bool { false }
+    open var transitionCoordinator: Any? { nil }
 }
 
 /// 画面の場。本物は `UIResponder`（NSObject）の子なので Set に入る
@@ -94,14 +98,7 @@ open class UIImagePickerController: UIViewController {
         public static let editedImage = InfoKey(rawValue: "UIImagePickerControllerEditedImage")
         /// 撮った1枚の撮影情報（`{Exif}`・`{TIFF}` などの辞書。カメラのときだけ）
         public static let mediaMetadata = InfoKey(rawValue: "UIImagePickerControllerMediaMetadata")
-        /// 撮ったものの種類（`public.image` / `public.movie`）と動画のファイル
-        public static let mediaType = InfoKey(rawValue: "UIImagePickerControllerMediaType")
-        public static let mediaURL = InfoKey(rawValue: "UIImagePickerControllerMediaURL")
     }
-    public enum VideoQuality { case typeHigh, typeMedium, typeLow }
-    public var mediaTypes: [String] = ["public.image"]
-    public var videoMaximumDuration: TimeInterval = 600
-    public var videoQuality: VideoQuality = .typeMedium
     public var sourceType: SourceType = .photoLibrary
     public var cameraCaptureMode: CameraCaptureMode = .photo
     public weak var delegate: (UIImagePickerControllerDelegate & UINavigationControllerDelegate)?

@@ -106,7 +106,7 @@ struct StoryCameraContent: View {
         VStack(spacing: 0) {
             topBar
             Spacer()
-            if camera.micDenied && mode == .video {
+            if StoryCameraRules.showsMicNote(micDenied: camera.micDenied, mode: mode, isRecording: camera.isRecording) {
                 Text(L("マイクが許可されていないので、音なしで撮ります", "The microphone is off, so the video will have no sound"))
                     .font(JPFont.footnote)
                     .foregroundStyle(.white)
@@ -253,7 +253,7 @@ struct StoryCameraContent: View {
                     guard !Task.isCancelled, pressing,
                           let action = StoryCameraRules.holdAction(isRecording: camera.isRecording) else { return }
                     recordingStartedByHold = true
-                    perform(action)
+                    perform(action, fromHold: true)
                 }
             }
             .onEnded { _ in
@@ -296,7 +296,7 @@ struct StoryCameraContent: View {
 
     // MARK: - 動作
 
-    private func perform(_ action: StoryCameraRules.ShutterAction) {
+    private func perform(_ action: StoryCameraRules.ShutterAction, fromHold: Bool = false) {
         switch action {
         case .takePhoto:
             Task {
@@ -311,11 +311,18 @@ struct StoryCameraContent: View {
                 dismiss()
             }
         case .startRecording:
-            guard camera.startRecording() else {
-                failTick += 1
-                return
+            Task {
+                // 🔴 録画を始める前にマイクの許可を済ませる(まだ尋ねていなければ、ここでダイアログを出す)。
+                // 写真モードの長押しもここを通る。断られても音なしで撮る(注記を出す)
+                await camera.prepareAudio()
+                // 長押しで始めるはずが、ダイアログの間に指が離れていたら始めない(もう一度押してもらう)
+                guard StoryCameraRules.startsAfterPermission(fromHold: fromHold, stillPressing: pressing) else { return }
+                guard camera.startRecording() else {
+                    failTick += 1
+                    return
+                }
+                startTick += 1
             }
-            startTick += 1
         case .stopRecording:
             guard camera.isRecording else { return }
             camera.stopRecording()
@@ -385,8 +392,11 @@ final class StoryCameraModel: NSObject, ObservableObject {
     private var videoInput: AVCaptureDeviceInput?
     private var audioInput: AVCaptureDeviceInput?
     private var position: AVCaptureDevice.Position = .back
+    private var rotation: AVCaptureDevice.RotationCoordinator?
     private var timer: Timer?
     private var recordingStartedAt: Date?
+    /// 録画の途中で画面が閉じた。止まったファイルは誰にも渡さず消す(孤児にしない)
+    private var abandoned = false
     private var photoContinuation: CheckedContinuation<Data?, Never>?
 
     // MARK: 始める・止める
@@ -417,7 +427,11 @@ final class StoryCameraModel: NSObject, ObservableObject {
     }
 
     func stop() {
-        if movieOutput.isRecording { movieOutput.stopRecording() }
+        if movieOutput.isRecording {
+            // 録画の途中で画面が閉じた(✕・下へ払った): 撮れたファイルの渡し先が無いので、止まったあとに消す
+            abandoned = true
+            movieOutput.stopRecording()
+        }
         timer?.invalidate()
         timer = nil
         let session = session
@@ -447,6 +461,7 @@ final class StoryCameraModel: NSObject, ObservableObject {
               session.canAddInput(input) else { return false }
         session.addInput(input)
         videoInput = input
+        rotation = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
         guard session.canAddOutput(photoOutput) else { return false }
         session.addOutput(photoOutput)
         if session.canAddOutput(movieOutput) {
@@ -493,19 +508,30 @@ final class StoryCameraModel: NSObject, ObservableObject {
             session.addInput(input)
             videoInput = input
             position = next
+            rotation = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
         } else if let old = videoInput {
             session.addInput(old)
         }
         session.commitConfiguration()
     }
 
+    /// 撮る向きは端末の向きに合わせる(2026-10-10 判断・`ComposeCamera.capture` と同じ求め方)。
+    /// 向きの係(`RotationCoordinator`)の `videoRotationAngleForHorizonLevelCapture` をそのまま使い、
+    /// 係が無いとき(組み立て前)は縦(90°)——`ComposeGuide.captureAngle`。以前は縦に決め打ちで、横に持って撮ると横倒しで残った
+    private func applyRotation(to connection: AVCaptureConnection?) {
+        guard let connection else { return }
+        let angle = CGFloat(ComposeGuide.captureAngle(
+            coordinator: rotation.map { Double($0.videoRotationAngleForHorizonLevelCapture) }))
+        if connection.isVideoRotationAngleSupported(angle) {
+            connection.videoRotationAngle = angle
+        }
+    }
+
     // MARK: 写真
 
     func capturePhoto() async -> Data? {
         guard state == .ready, photoContinuation == nil else { return nil }
-        if let connection = photoOutput.connection(with: .video), connection.isVideoOrientationSupported {
-            connection.videoOrientation = .portrait
-        }
+        applyRotation(to: photoOutput.connection(with: .video))
         let settings: AVCapturePhotoSettings
         if photoOutput.availablePhotoCodecTypes.contains(.jpeg) {
             settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
@@ -525,9 +551,7 @@ final class StoryCameraModel: NSObject, ObservableObject {
     func startRecording() -> Bool {
         guard state == .ready, !isRecording, !movieOutput.isRecording,
               session.outputs.contains(movieOutput) else { return false }
-        if let connection = movieOutput.connection(with: .video), connection.isVideoOrientationSupported {
-            connection.videoOrientation = .portrait
-        }
+        applyRotation(to: movieOutput.connection(with: .video))
         let url = StoryVideoPipeline.temporaryURL(ext: "mov")
         movieOutput.startRecording(to: url, recordingDelegate: self)
         isRecording = true
@@ -554,8 +578,12 @@ final class StoryCameraModel: NSObject, ObservableObject {
         timer = nil
         isRecording = false
         recordingStartedAt = nil
+        if abandoned || !success {
+            // 渡し先が無い・失敗: ファイルはここで消す(画面側は失敗の知らせだけ受ける)
+            try? FileManager.default.removeItem(at: url)
+            if abandoned { return }
+        }
         finished = Finished(result: success ? .saved(url) : .failed, hitLimit: hitLimit)
-        if !success { try? FileManager.default.removeItem(at: url) }
     }
 
     fileprivate func photoFinished(_ data: Data?) {
