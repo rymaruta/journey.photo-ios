@@ -424,6 +424,8 @@ extension View {
     /// Linux 側のビルドだけが落ちる**（75f98e2 で main がそうなっていた）
     public func accessibilityHint(_ hint: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     public func accessibilityValue(_ value: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
+    /// 読み上げの順（大きいほど先・本物と同じ。行った県マップの県を北から読む）
+    public func accessibilitySortPriority(_ sortPriority: Double) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
 
     // 一覧の操作
     public func contextMenu<C: View>(@ViewBuilder menuItems: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }

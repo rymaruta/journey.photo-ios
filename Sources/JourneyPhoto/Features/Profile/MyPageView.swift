@@ -434,6 +434,8 @@ struct MyPageView: View {
                     // 数は見出しの中（顔の右）へ移した（`header`・2026-10-30 owner #415）
                     if model.profile != nil {
                         travelRecord
+                        // 行った県マップの入口（札 #503・2026-11-08）。旅の記録の下。記録が0でも出す
+                        VisitedMapEntryCard()
                     }
                 }
                 if let profile = model.profile {

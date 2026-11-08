@@ -163,6 +163,30 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで「行った県」の画面に見本の記録を入れる（Debug のみ）。`-JPPreviewVisitedMap YES`。
+    /// 回数の段（1〜4 回以上）が地図に並んだ絵を撮るための口。端末には書かない。
+    /// **入っている見本の利用者のときだけ**効く。Release では必ず `nil`
+    static let visitedMapKey = "JPPreviewVisitedMap"
+
+    static var visitedMapSeed: VisitedPrefectures? {
+        #if DEBUG
+        guard userId != nil, UserDefaults.standard.bool(forKey: visitedMapKey) else { return nil }
+        var book = VisitedPrefectures()
+        let day = "2026-01-01"
+        // 北から 31 県を 1 回、そのうち数県を 2・3・5 回にする
+        let extra: [String: Int] = ["東京都": 5, "京都府": 3, "大阪府": 3, "神奈川県": 2, "長野県": 2, "北海道": 2]
+        for name in RegionList.prefectures.prefix(31) {
+            for _ in 0..<(extra[name] ?? 1) { book.add(name, day: day) }
+        }
+        for (name, times) in extra where book.count(name) == 0 {
+            for _ in 0..<times { book.add(name, day: day) }
+        }
+        return book
+        #else
+        return nil
+        #endif
+    }
+
     /// UI テストでマイページを開いたら Pro の案内（`PaywallView`）を1度だけ出す（Debug のみ）。
     /// `-JPPreviewPaywall YES`。
     ///
