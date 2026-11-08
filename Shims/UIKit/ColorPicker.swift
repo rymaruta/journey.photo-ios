@@ -35,7 +35,7 @@ extension UIViewController {
     /// 本物は暗黙に開く `UIView!`。模型は毎回作る
     public var view: UIView! { UIView() }
     public var presentingViewController: UIViewController? { nil }
-    public var isBeingDismissed: Bool { false }
+    // isBeingDismissed は UIViewController 本体（UIKit.swift）に在る。ここでも定義すると二重宣言になる（2026-11-08・統合で踏んだ）
     public var modalPresentationStyle: UIModalPresentationStyle {
         get { .automatic }
         set {}
