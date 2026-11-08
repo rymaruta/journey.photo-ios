@@ -12,8 +12,8 @@ enum TrunkTagText {
     static let intro = L("トランクに吊るすタグに、どのラベルの地名を載せるか選べます。",
                          "Choose which label\u{2019}s place goes on each tag hanging from your trunk.")
     static let nowEyebrow = L("いまのタグ", "TAGS NOW")
-    static let footer = L("おまかせは、新しく貼ったラベルから地名が自動で選ばれます。選んだ枠はそのまま残ります。",
-                          "Auto picks places from the labels you stuck most recently. A tag you choose stays as it is.")
+    static let footer = L("おまかせの枠は、新しく貼ったラベルの地名が順に載ります。選んだ枠と外した枠は、そのまま残ります。",
+                          "Auto tags show the places of your newest labels in order. Tags you chose or removed stay as they are.")
     static let emptySlot = L("空き", "Empty")
 
     static let sheetNote = L("貼ったラベルの地名が、タグに載ります。", "The place name of a label you\u{2019}ve stuck goes on the tag.")
@@ -97,11 +97,21 @@ enum TrunkTagText {
     /// 吊るせる枠か（選べる）
     static func isOpen(_ result: TrunkLooks.TagSlotResult) -> Bool { result.source != .locked }
 
-    /// 枠 `slot` を `pick` に替えた、枠の順の選び全部（サーバーは全部まとめて置き換える）
-    static func picks(replacing slot: Int, with pick: TrunkTagPick, in current: [TrunkTagPick]) -> [TrunkTagPick] {
+    /// 枠 `slot` を `pick` に替えた、枠の順の選び全部（サーバーは全部まとめて置き換える）。
+    /// 選んだラベルと同じ地名を別の枠が選んでいたら、その枠はおまかせに戻して送る（サーバーは重複を 409 にする）
+    static func picks(replacing slot: Int, with pick: TrunkTagPick, in current: [TrunkTagPick],
+                      stuck: [TrunkLabel] = []) -> [TrunkTagPick] {
         var out = current
         while out.count <= slot { out.append(.auto) }
         out[slot] = pick
+        if case .label(let id) = pick, let label = stuck.first(where: { $0.id == id }) {
+            let name = placeName(label)
+            for i in out.indices where i != slot {
+                if case .label(let other) = out[i], let o = stuck.first(where: { $0.id == other }), placeName(o) == name {
+                    out[i] = .auto
+                }
+            }
+        }
         return TrunkTagPick.normalized(out)
     }
 
@@ -114,7 +124,7 @@ enum TrunkTagText {
             case available
             /// いま、この枠に載っている
             case current
-            /// 別の枠に同じ地名が載っている（押せない・番号は 0 始まり）
+            /// 別の枠に同じ地名が載っている（押せる。選ぶと元の枠はおまかせに戻る・番号は 0 始まり）
             case usedInSlot(Int)
             /// 地名が無く、タグに載せられない（押せない）
             case noPlace
@@ -123,11 +133,12 @@ enum TrunkTagText {
         let label: TrunkLabel
         let availability: Availability
         var id: String { label.id }
-        var isEnabled: Bool { availability == .available || availability == .current }
+        var isEnabled: Bool { availability != .noPlace }
     }
 
     /// 枠 `slot` に載せるラベルの一覧。**貼ったラベルの新しい順で、地名のあるものを先に、地名の無いものを最後に**。
-    /// 別の枠に載っている地名は押せない（同じ地名は1枚だけ・サーバーも 409 `tagPickDuplicate`）
+    /// 別の枠に載っている地名も選べる（選ぶと元の枠はおまかせに戻る。同じ地名は1枚だけ・サーバーも 409 `tagPickDuplicate`
+    /// なので、送る選びでは元の枠を外す・`picks(replacing:)`）
     static func candidates(stuck: [TrunkLabel], posts: Int, picks: [TrunkTagPick], slot: Int) -> [Candidate] {
         let results = TrunkLooks.tagSlotResults(stuck: stuck, posts: posts, picks: picks)
         var usedElsewhere: [String: Int] = [:]
@@ -162,7 +173,7 @@ enum TrunkTagText {
         case .noPlace:
             parts.append(noPlaceNote)
         case .usedInSlot(let other):
-            parts.append(L("\(other + 1)枚目に載せています", "On tag \(other + 1)"))
+            parts.append(L("\(other + 1)枚目の枠が、おまかせに戻ります", "Tag \(other + 1) goes back to auto"))
         case .available, .current:
             if selected { parts.append(onTag) }
         }

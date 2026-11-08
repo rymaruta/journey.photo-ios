@@ -476,11 +476,13 @@ struct TrunkTagPickerSheet: View {
     private func commit(_ pick: TrunkTagPick) {
         guard let state = model.state else { return }
         failed = nil
-        let picks = TrunkTagText.picks(replacing: slot, with: pick, in: state.tagPicks)
+        guard !model.busy else { return }
+        let picks = TrunkTagText.picks(replacing: slot, with: pick, in: state.tagPicks, stuck: state.stuck)
         Task {
             if await model.setTagPicks(picks) {
                 dismiss()
-            } else {
+            } else if model.actionError != nil {
+                // 通信・断りで失敗したときだけ「保存できませんでした」を出す（書き込み中・未対応の false は出さない）
                 failed = pick
             }
         }

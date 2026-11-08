@@ -695,7 +695,9 @@ enum TrunkLooks {
 
     /// 3つの枠それぞれの中身（吊るせない枠・おまかせ・選んだ・外した）。2026-11-08 owner 承認（札 #501）
     ///
-    /// - おまかせの枠は、貼ったラベルの**新しい順**に、違う撮影地を `TrunkAging.tagCount(posts:)` の枚数まで埋める。
+    /// - おまかせの枠 i は、貼ったラベルの**新しい順の「違う地名の列」の i 番目**（選びが無ければ今までと同じ）。
+    ///   それが選んだ枠に取られている・別の枠で使われているときだけ、列の先頭から未使用の最初を取る。
+    ///   外した枠も列の1つぶんを使ったことにする（外す・別の枠を選ぶとき、**触っていない枠は動かない**）。
     ///   **選んだ枠の地名は先に取り置く**（同じ地名をおまかせが重ねて出さない）
     /// - 選んだラベルが `stuck` に無い（はがした）・地名が無い・前の枠と同じ地名のときは、その枠はおまかせ
     /// - 使える地名が足りなければ、足りない枠は空き（偽の行き先で埋めない）
@@ -721,17 +723,22 @@ enum TrunkLooks {
                 }
             }
         }
-        // 2) おまかせの枠を、新しいラベルから順に埋める
-        var autoSeen = reserved
-        var cursor = 0
-        func nextAuto() -> (label: TrunkLabel, content: (name: String, code: String, day: String))? {
-            while cursor < newestFirst.count {
-                let label = newestFirst[cursor]
-                cursor += 1
-                guard let content = tagContent(label), autoSeen.insert(content.name).inserted else { continue }
-                return (label, content)
+        // 2) おまかせの枠: 新しい順の違う地名の列の、枠の番号の位置を基本にする
+        typealias Found = (label: TrunkLabel, content: (name: String, code: String, day: String))
+        var column: [Found] = []
+        var columnNames = Set<String>()
+        for label in newestFirst {
+            if let content = tagContent(label), columnNames.insert(content.name).inserted { column.append((label, content)) }
+        }
+        var used = reserved
+        func nextAuto(_ slot: Int) -> Found? {
+            if slot < column.count, !used.contains(column[slot].content.name) {
+                used.insert(column[slot].content.name)
+                return column[slot]
             }
-            return nil
+            guard let hit = column.first(where: { !used.contains($0.content.name) }) else { return nil }
+            used.insert(hit.content.name)
+            return hit
         }
         for slot in 0..<tagSlots.count {
             if slot >= open {
@@ -739,15 +746,16 @@ enum TrunkLooks {
                 continue
             }
             if removed.contains(slot) {
+                if slot < column.count { used.insert(column[slot].content.name) }
                 results.append(TagSlotResult(source: .removed, label: nil, tag: nil))
                 continue
             }
             let isChosen = chosen[slot] != nil
-            var found: (label: TrunkLabel, content: (name: String, code: String, day: String))?
+            var found: Found?
             if let label = chosen[slot], let content = tagContent(label) {
                 found = (label, content)
             } else {
-                found = nextAuto()
+                found = nextAuto(slot)
             }
             guard let hit = found else {
                 results.append(TagSlotResult(source: .auto, label: nil, tag: nil))

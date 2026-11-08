@@ -113,8 +113,8 @@ final class TrunkTagPicksTests: XCTestCase {
 
     /// 選んだ枠はそのラベル、残りはおまかせが埋める（選んだ地名は重ねない）
     func testChosenSlotKeepsItsLabelAndAutoFillsTheRest() {
-        // 1枠目をパリに: おまかせは京都・高屋神社を新しい順に
-        XCTAssertEqual(codes([.label("d")]), ["PARIS", "KYOTO", "高屋神社"])
+        // 1枠目をパリに: 2枠目は列の2番目（高屋神社）のまま、3枠目は列の3番目（パリ）が取られたので先頭の未使用（京都）
+        XCTAssertEqual(codes([.label("d")]), ["PARIS", "高屋神社", "KYOTO"])
         // 2枠目を高屋神社に（おまかせの並びと同じ）: 変わらない
         XCTAssertEqual(codes([.auto, .label("c")]), ["KYOTO", "高屋神社", "PARIS"])
         // 3枠目を京都のもう一方（b）に: 同じ地名なのでおまかせは京都を重ねない（1枠目 a は京都を取り置かれ、おまかせは高屋神社から）
@@ -128,7 +128,7 @@ final class TrunkTagPicksTests: XCTestCase {
     /// 「タグを外す」: その枠には吊るさない。ほかの枠は動かない
     func testRemovedSlotHangsNothing() {
         let tags = TrunkLooks.tags(stuck: stuck, posts: 120, picks: [.auto, .removed])
-        XCTAssertEqual(tags.map(\.code), ["KYOTO", "高屋神社"], "外した枠のぶん、残りの枠がずれる")
+        XCTAssertEqual(tags.map(\.code), ["KYOTO", "PARIS"], "外した枠のほかの枠が動いた")
         XCTAssertEqual(tags.map(\.x), [TrunkLooks.tagSlots[0].x, TrunkLooks.tagSlots[2].x], "外した枠の場所に別のタグが入った")
         let results = TrunkLooks.tagSlotResults(stuck: stuck, posts: 120, picks: [.auto, .removed])
         XCTAssertEqual(results.map(\.source), [.auto, .removed, .auto])
@@ -136,6 +136,21 @@ final class TrunkTagPicksTests: XCTestCase {
         XCTAssertNil(results[1].label)
         // 全部外せば1枚も出ない
         XCTAssertTrue(TrunkLooks.tags(stuck: stuck, posts: 120, picks: [.removed, .removed, .removed]).isEmpty)
+    }
+
+    /// 触っていない枠は動かない（外す・別の枠を選ぶとき）
+    func testUntouchedSlotsStay() {
+        let four = stuck + [label("e", "札幌", latin: "Sapporo", at: "2023-01-01T00:00:00Z")]
+        func codes4(_ picks: [TrunkTagPick]) -> [String] { TrunkLooks.tags(stuck: four, posts: 120, picks: picks).map(\.code) }
+        XCTAssertEqual(codes4([]), ["KYOTO", "高屋神社", "PARIS"])
+        // 1枠目を外しても、2・3枠目は同じ
+        let removedFirst = TrunkLooks.tagSlotResults(stuck: four, posts: 120, picks: [.removed])
+        XCTAssertEqual(removedFirst.compactMap(\.tag).map(\.code), ["高屋神社", "PARIS"])
+        XCTAssertEqual(removedFirst.map(\.source), [.removed, .auto, .auto])
+        // 2枠目を札幌にしても、1・3枠目は同じ
+        XCTAssertEqual(codes4([.auto, .label("e")]), ["KYOTO", "SAPPORO", "PARIS"])
+        // 3枠目を外しても、1・2枠目は同じ
+        XCTAssertEqual(codes4([.auto, .auto, .removed]), ["KYOTO", "高屋神社"])
     }
 
     /// 選んだラベルがはがされた（`stuck` に無い）・地名が無い・前の枠と同じ地名の枠は、おまかせに戻す
@@ -183,16 +198,16 @@ final class TrunkTagPicksTests: XCTestCase {
         XCTAssertEqual(list.first { $0.id == "b" }?.availability, .usedInSlot(0), "同じ地名の別のラベルが選べてしまう")
         XCTAssertEqual(list.first { $0.id == "d" }?.availability, .usedInSlot(2))
         XCTAssertEqual(list.first { $0.id == "n" }?.availability, .noPlace)
-        XCTAssertEqual(list.filter(\.isEnabled).map(\.id), ["c"])
+        XCTAssertEqual(list.filter(\.isEnabled).map(\.id), ["a", "b", "c", "d"], "別の枠の地名が選べない（地名なしだけ押せない）")
         // 外した枠では、どれも押せる（載っていない地名）
         let freed = TrunkTagText.candidates(stuck: all, posts: 120, picks: [.auto, .removed], slot: 1)
-        XCTAssertEqual(freed.first { $0.id == "c" }?.availability, .usedInSlot(2), "外した枠のぶんおまかせが詰まって3枠目に載る")
+        XCTAssertEqual(freed.first { $0.id == "c" }?.availability, .available, "外した枠の地名は他の枠に載らない")
         XCTAssertEqual(freed.first { $0.id == "b" }?.availability, .usedInSlot(0))
-        XCTAssertEqual(freed.first { $0.id == "d" }?.availability, .available)
+        XCTAssertEqual(freed.first { $0.id == "d" }?.availability, .usedInSlot(2))
         // 読み上げは印と理由を文字で言う
         let note = TrunkTagText.candidateAccessibility(list[0], selected: false)
         XCTAssertTrue(note.contains("京都"))
-        XCTAssertTrue(note.contains(L("1枚目に載せています", "On tag 1")), "押せない理由が読み上げに無い")
+        XCTAssertTrue(note.contains(L("1枚目の枠が、おまかせに戻ります", "Tag 1 goes back to auto")), "選ぶと何が起きるかが読み上げに無い")
         XCTAssertTrue(TrunkTagText.candidateAccessibility(list[2], selected: true).contains(TrunkTagText.onTag))
         XCTAssertEqual(TrunkTagText.candidateTitle(list[4]), TrunkTagText.noPlaceTitle)
     }
@@ -204,6 +219,18 @@ final class TrunkTagPicksTests: XCTestCase {
         XCTAssertEqual(TrunkTagText.picks(replacing: 2, with: .removed, in: [.label("a")]), [.label("a"), .auto, .removed])
     }
 
+    /// 別の枠に出ている地名を選ぶ: 同じ地名を選んでいた元の枠は、送る選びでおまかせに戻る
+    func testChoosingAShownPlaceResetsTheOtherSlot() {
+        // 1枠目=京都(a)を選んでいる。3枠目に同じ地名の別ラベル b を選ぶ → 1枠目は ""
+        XCTAssertEqual(TrunkTagText.picks(replacing: 2, with: .label("b"), in: [.label("a")], stuck: stuck),
+                       [.auto, .auto, .label("b")])
+        // 違う地名の枠は触らない
+        XCTAssertEqual(TrunkTagText.picks(replacing: 2, with: .label("d"), in: [.label("c")], stuck: stuck),
+                       [.label("c"), .auto, .label("d")])
+        // 外した枠は触らない
+        XCTAssertEqual(TrunkTagText.picks(replacing: 1, with: .label("a"), in: [.removed], stuck: stuck), [.removed, .label("a")])
+    }
+
     func testRowTextsAndWording() {
         XCTAssertEqual(TrunkTagText.rowValue(shown: 2, open: 3), L("2 / 3 枚", "2 / 3 tags"))
         XCTAssertTrue(TrunkTagText.rowValue(shown: 0, open: 0).contains("20"), "まだ吊るせない人にいつ吊るせるかを言わない")
@@ -211,7 +238,8 @@ final class TrunkTagPicksTests: XCTestCase {
         XCTAssertEqual(locked.source, .locked)
         XCTAssertEqual(TrunkTagText.slotNote(2, locked, posts: 68), L("あと 12 件の投稿で、3枚目が吊るせます", "12 more posts to hang tag 3"))
         // 「捨てる」を画面に出さない（owner の好み・2026-10-09）
-        let all = [TrunkTagText.title, TrunkTagText.intro, TrunkTagText.footer, TrunkTagText.sheetNote, TrunkTagText.backToAuto,
+        let all = [TrunkTagText.title, TrunkTagText.candidateNote(
+                       TrunkTagText.Candidate(label: stuck[0], availability: .usedInSlot(0)), selected: false), TrunkTagText.intro, TrunkTagText.footer, TrunkTagText.sheetNote, TrunkTagText.backToAuto,
                    TrunkTagText.removeTag, TrunkTagText.closeWithoutSaving, TrunkTagText.saveFailedTitle, TrunkTagText.saveFailedMessage,
                    TrunkTagText.offlineMessage, TrunkTagText.pickResetNotice, TrunkTagText.emptyMessage, TrunkTagText.sameNameNote]
         for text in all { XCTAssertFalse(text.contains("捨て"), text) }
@@ -357,6 +385,9 @@ final class TrunkTagPicksTests: XCTestCase {
         }
         // 失敗しても選びを捨てない: 失敗したら選びを残し、「もう一度」で同じ選びを送り直す
         XCTAssertTrue(view.contains("failed = pick"))
+        // 書き込み中・未対応の false を「通信に失敗しました」にしない
+        XCTAssertTrue(view.contains("guard !model.busy else { return }"))
+        XCTAssertTrue(view.contains("} else if model.actionError != nil {"))
         XCTAssertTrue(view.contains("commit(failedPick)"))
     }
 }
