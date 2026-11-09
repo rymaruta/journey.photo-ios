@@ -242,7 +242,7 @@ final class StoryVideoTrimTests: XCTestCase {
     func testTrimSheetAccessibilityAndTargets() throws {
         let view = try repo("Sources/JourneyPhoto/Features/Stories/StoryVideoTrimView.swift")
         XCTAssertTrue(view.contains(".accessibilityAdjustableAction"), "つまみが読み上げで動かせない")
-        XCTAssertTrue(view.contains("let hit = WebTheme.minTapTarget"), "つまみの当たりが 44 でない")
+        XCTAssertTrue(view.contains("let hit: CGFloat = WebTheme.minTapTarget"), "つまみの当たりが 44 でない")
         XCTAssertTrue(view.contains(".sensoryFeedback(.selection, trigger: grabTick)"))
         XCTAssertTrue(view.contains(".sensoryFeedback(.impact(weight: .medium), trigger: limitTick)"))
         XCTAssertTrue(view.contains("stepButton(symbol: \"minus\""))
