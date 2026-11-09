@@ -160,6 +160,10 @@ struct StoryVideoTrimSheet: View {
             let startX = StoryVideoTrim.position(of: trim.start, total: trim.total, width: barWidth)
             let endX = StoryVideoTrim.position(of: trim.end, total: trim.total, width: barWidth)
             let tileWidth = barWidth / CGFloat(Self.tileCount)
+            // `.frame(width:)` の模型は Double・`barWidth` などは CGFloat。`max` の引数を1つの型に決めておく
+            // （CI: conflicting arguments to generic parameter 'T' ('CGFloat' vs. 'Double')）
+            let rightDimWidth: CGFloat = max(barWidth - endX, 0)
+            let selectedWidth: CGFloat = max(endX - startX, 1)
             ZStack(alignment: .topLeading) {
                 // 動画全体のサムネイル
                 HStack(spacing: 0) {
@@ -178,13 +182,13 @@ struct StoryVideoTrimSheet: View {
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
                 Rectangle().fill(Color.black.opacity(0.62))
-                    .frame(width: max(barWidth - endX, 0), height: Self.stripHeight)
+                    .frame(width: rightDimWidth, height: Self.stripHeight)
                     .offset(x: inset + endX, y: 4)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
                 // 選んだ範囲の枠
                 Rectangle().strokeBorder(Color.white, lineWidth: 2)
-                    .frame(width: max(endX - startX, 1), height: Self.stripHeight + 4)
+                    .frame(width: selectedWidth, height: Self.stripHeight + 4)
                     .offset(x: inset + startX, y: 2)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
