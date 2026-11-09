@@ -32,6 +32,8 @@ enum StoryVideoPipeline {
         let movie: StoryMovieFile?
         do {
             movie = try await item.loadTransferable(type: StoryMovieFile.self)
+        } catch let problem as StoryVideoRules.Problem {
+            throw problem
         } catch {
             throw StoryVideoRules.Problem.importFailed
         }
@@ -122,6 +124,11 @@ struct StoryMovieFile: Transferable {
         FileRepresentation(contentType: .movie) { movie in
             SentTransferredFile(movie.url)
         } importing: { received in
+            // **写す前に**大きさ・長さを確かめる（10 分・2GB まで・`StoryVideoRules.importProblem`）。
+            // 超える動画を一時フォルダへ写して容量と時間を食わない
+            let bytes = (try? received.file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            let length = try? await AVURLAsset(url: received.file).load(.duration).seconds
+            if let problem = StoryVideoRules.importProblem(durationSec: length, bytes: bytes) { throw problem }
             // 受け取ったファイルは関数を出ると消えるので、自分の一時フォルダへ写す
             let ext = received.file.pathExtension.isEmpty ? "mov" : received.file.pathExtension
             let copy = StoryVideoPipeline.temporaryURL(ext: ext)
