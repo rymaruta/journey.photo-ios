@@ -224,6 +224,22 @@ final class StoryCameraPolishTests: XCTestCase {
         XCTAssertFalse(source.contains("selection =") || source.contains("select("), "#435: タブの選択に触らない")
     }
 
+    /// 長押しの待ち・モード切り替えの場所・ライトの使えるか（確かめ役の指摘3点）
+    func testReviewFixes() throws {
+        let source = try view()
+        let disappear = try XCTUnwrap(source.range(of: ".onDisappear {"))
+        let block = String(source[disappear.lowerBound...].prefix(400))
+        let hold = try XCTUnwrap(block.range(of: "holdTask?.cancel()"), "閉じたあとに長押しの待ちが録画を始める")
+        let stop = try XCTUnwrap(block.range(of: "camera.stop()"))
+        XCTAssertLessThan(hold.lowerBound, stop.lowerBound)
+        XCTAssertFalse(source.contains("{\n                modePicker.padding(.bottom, 14)"),
+                       "録画中にモード切り替えを消すと倍率の丸が下へ落ちる")
+        XCTAssertTrue(source.contains(".opacity(modeLocked ? 0 : 1)"))
+        XCTAssertTrue(source.contains(".allowsHitTesting(!modeLocked)"))
+        XCTAssertTrue(source.contains(".accessibilityHidden(modeLocked)"))
+        XCTAssertTrue(source.contains("device.isTorchAvailable, device.isTorchModeSupported(mode)"))
+    }
+
     /// 録画の後始末（✕・孤児ファイル）とマイクの許可の流れを壊していない
     func testExistingRecordingCleanupIsKept() throws {
         let source = try view()

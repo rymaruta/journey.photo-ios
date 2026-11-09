@@ -111,6 +111,9 @@ struct StoryCameraContent: View {
         }
         .task { await camera.start() }
         .onDisappear {
+            // 長押しの 0.4 秒の間に閉じると、stop() のあとに録画が始まってしまう
+            holdTask?.cancel()
+            holdTask = nil
             cancelCountdown()
             camera.stop()
         }
@@ -159,9 +162,14 @@ struct StoryCameraContent: View {
             if StoryCameraRules.showsZoomPills(presetCount: camera.zoomLevels.presets.count) {
                 zoomPills.padding(.bottom, 10)
             }
-            if StoryCameraRules.allowsModeAndFlip(isRecording: camera.isRecording, counting: countdown != nil) {
-                modePicker.padding(.bottom, 14)
-            }
+            // 録画・カウントダウン中も場所は残す（消すと倍率の丸とシャッターの間が詰まって下へ落ちる）
+            let modeLocked = !StoryCameraRules.allowsModeAndFlip(isRecording: camera.isRecording,
+                                                                 counting: countdown != nil)
+            modePicker
+                .padding(.bottom, 14)
+                .opacity(modeLocked ? 0 : 1)
+                .allowsHitTesting(!modeLocked)
+                .accessibilityHidden(modeLocked)
             shutter.padding(.bottom, 28)
         }
     }
@@ -838,7 +846,7 @@ final class StoryCameraModel: NSObject, ObservableObject {
         guard let device = videoInput?.device, device.hasTorch else { return }
         queue.async {
             guard (try? device.lockForConfiguration()) != nil else { return }
-            if device.isTorchModeSupported(mode) { device.torchMode = mode }
+            if device.isTorchAvailable, device.isTorchModeSupported(mode) { device.torchMode = mode }
             device.unlockForConfiguration()
         }
     }
