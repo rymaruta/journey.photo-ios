@@ -263,31 +263,32 @@ enum PrefectureRegions {
     }
 }
 
-/// 色と模様の段（提案書 第2版・板「黒塗りの真鍮」＋ owner 承認の #F3DCA6）。
-/// 色だけに頼らず、模様と数字でも段が分かるようにする
+/// 色の段（提案書 第2版・板「黒塗りの真鍮」）。
+/// **2026-11-09 owner 判断: 模様（点・線・格子）はやめ、色だけで分ける。** 0 回・1 回・2 回・3 回以上の4段（owner 判断 2026-11-09）。1〜3 回以上は真鍮の濃淡で、
+/// 明るさの差を大きく取る（色覚が違っても明るさで分かる）。色だけに頼らない保険は、拡大時の数字と読み上げ
+/// （「東京都、3 回」）。凡例の見本も地図の塗りも、この表（`fills`）だけを読む（写しを作らない）
 enum VisitedMapStyle {
 
-    enum Pattern: Equatable {
-        /// 0 回: 斜線
-        case hatch
-        /// 1 回: 無地
-        case solid
-        /// 2 回: 点
-        case dots
-        /// 3 回: 横縞
-        case stripes
-        /// 4 回以上: 格子
-        case grid
+    /// 段（`VisitedPrefectures.level(forCount:)`）→ 塗りの色（0xRRGGBB）。0 は塗らない。
+    /// 1 回 #7F6230・2 回 #B08C52・3 回以上 #F3DCA6（owner 承認 2026-11-08 の明るい端）。
+    /// 黒地に対する相対輝度比は 3.69 / 6.72 / 15.60、隣り合う段の比は 1.82 / 2.32
+    /// （`VisitedMapStyle.contrastOnBlack` `adjacentRatio`・テストが見張る）。板の使い道の外の色
+    nonisolated static let fills: [UInt32?] = [nil, 0x7F6230, 0xB08C52, BrandPalette.accentHighlight]
+    /// 未の県の地（板の surface-3）。無地
+    nonisolated static let baseFill: UInt32 = BrandPalette.surface3
+
+    /// 塗る段（1 以上）の色だけを段の順に。比のテストと、凡例・地図が同じ表を使う確かめに使う
+    static var paintedFills: [UInt32] { fills.compactMap { $0 } }
+
+    /// 黒地（地図の背景・県の縁）に対する比
+    static func contrastOnBlack(_ hex: UInt32) -> Double {
+        BrandPalette.contrast(hex, BrandPalette.background)
     }
 
-    /// 段（`VisitedPrefectures.level(forCount:)`）→ 塗りの色（0xRRGGBB）。0 は塗らない
-    /// 1 回 #796440（板の「地図の印」）・2 回 #C9A66B・3 回以上 #F3DCA6（owner 承認 2026-11-08・板の使い道の外）
-    nonisolated static let fills: [UInt32?] = [nil, BrandPalette.accentDeep, BrandPalette.accent, BrandPalette.accentHighlight, BrandPalette.accentHighlight]
-    /// 模様の上に載せる字・数字の色（墨）。段 1（暗い真鍮）の上は白（白を載せて 5.66:1）
-    nonisolated static let inkOnBright: UInt32 = BrandPalette.ink
-    nonisolated static let inkOnDark: UInt32 = 0xFFFFFF
-    /// 未の県の地（板の surface-3）。斜線を重ねる
-    nonisolated static let baseFill: UInt32 = BrandPalette.surface3
+    /// 隣り合う段（lower → higher）の相対輝度比。1 以上
+    static func adjacentRatio(_ lower: UInt32, _ higher: UInt32) -> Double {
+        BrandPalette.contrast(lower, higher)
+    }
 
     /// 2つの色（0xRRGGBB）を割合 t（0〜1）で混ぜる。色の切り替え（0.15 秒）と祝いの明るさに使う
     static func mix(_ a: UInt32, _ b: UInt32, _ t: Double) -> UInt32 {
@@ -303,15 +304,5 @@ enum VisitedMapStyle {
     static func fill(forLevel level: Int) -> UInt32 {
         let index = min(max(level, 0), fills.count - 1)
         return fills[index] ?? baseFill
-    }
-
-    static func pattern(forLevel level: Int) -> Pattern {
-        switch level {
-        case 1: return .solid
-        case 2: return .dots
-        case 3: return .stripes
-        case 4...: return .grid
-        default: return .hatch
-        }
     }
 }

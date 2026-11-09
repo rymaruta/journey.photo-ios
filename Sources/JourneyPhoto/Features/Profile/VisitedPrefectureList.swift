@@ -81,8 +81,8 @@ struct VisitedPrefectureList: View {
     }
 }
 
-/// 段の見本（凡例と一覧の行頭）。地図と同じ塗り・模様（`VisitedMapCanvasView.patternPath`）。
-/// 未は斜線、写真の候補は斜線＋真鍮の点線の縁
+/// 段の見本（凡例と一覧の行頭）。地図と同じ塗り（`VisitedMapStyle.fill(forLevel:)`）・模様なし。
+/// 写真の候補は暗い灰＋真鍮の点線の縁
 struct VisitedSwatch: View {
 
     let level: Int
@@ -94,14 +94,6 @@ struct VisitedSwatch: View {
             var shape = Path()
             shape.addRoundedRect(in: rect, cornerSize: CGSize(width: 4, height: 4))
             ctx.fill(shape, with: .color(VisitedMapStyle.color(VisitedMapStyle.fill(forLevel: level))))
-            if let line = VisitedMapCanvasView.patternPath(level, bounds: rect) {
-                var layer = ctx
-                layer.clip(to: shape)
-                let color: Color = level == 0
-                    ? Color.white.opacity(0.18)
-                    : VisitedMapStyle.color(level >= 2 ? VisitedMapStyle.inkOnBright : VisitedMapStyle.inkOnDark).opacity(0.5)
-                layer.stroke(line.path, with: .color(color), style: line.style)
-            }
             if level == 0 && isCandidate {
                 ctx.stroke(shape, with: .color(WebTheme.accent), style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
             } else {

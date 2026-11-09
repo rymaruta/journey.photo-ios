@@ -70,8 +70,8 @@ struct VisitedPrefectures: Equatable {
 
     // MARK: - 見た目の段
 
-    /// 色・模様の段（提案書 第2版）: 0 未／1 回＝#796440 無地／2 回＝#C9A66B 点／3 回＝#F3DCA6 横縞／4 回以上＝#F3DCA6 格子
-    nonisolated static func level(forCount count: Int) -> Int { min(max(count, 0), 4) }
+    /// 色の段（提案書 第2版・2026-11-09 模様なし）: 0 回（未）／1 回・2 回・3 回以上＝真鍮の濃淡（色だけで分ける・`VisitedMapStyle.fills`）
+    nonisolated static func level(forCount count: Int) -> Int { min(max(count, 0), 3) }
 
     /// 地図・札・マスに出す数字。1〜8、9 以上は「9+」。0 は空
     nonisolated static func countText(_ count: Int) -> String {

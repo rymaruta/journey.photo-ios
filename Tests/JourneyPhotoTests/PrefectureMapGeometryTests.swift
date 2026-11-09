@@ -131,15 +131,34 @@ final class PrefectureMapGeometryTests: XCTestCase {
         XCTAssertEqual(VisitedMapStyle.fill(forLevel: 99), 0xF3DCA6)
     }
 
-    /// 段ごとの色と模様（提案書 第2版）。板の外の色は #F3DCA6 だけ
+    /// 段ごとの色（2026-11-09 owner: 0 回・1 回・2 回・3 回以上の4段・模様なし・色だけ）
     func testStyleLevels() {
-        XCTAssertEqual(VisitedMapStyle.fills.count, 5)
+        XCTAssertEqual(VisitedMapStyle.fills.count, 4, "段は 0 回・1 回・2 回・3 回以上の4つ")
         XCTAssertNil(VisitedMapStyle.fills[0])
-        XCTAssertEqual(VisitedMapStyle.fills[1], 0x796440)
-        XCTAssertEqual(VisitedMapStyle.fills[2], 0xC9A66B)
+        XCTAssertEqual(VisitedMapStyle.fills[1], 0x7F6230)
+        XCTAssertEqual(VisitedMapStyle.fills[2], 0xB08C52)
         XCTAssertEqual(VisitedMapStyle.fills[3], 0xF3DCA6)
-        XCTAssertEqual(VisitedMapStyle.fills[4], 0xF3DCA6)
-        XCTAssertEqual((0...5).map(VisitedMapStyle.pattern(forLevel:)),
-                       [.hatch, .solid, .dots, .stripes, .grid, .grid])
+        XCTAssertEqual((0...6).map(VisitedMapStyle.fill(forLevel:)),
+                       [VisitedMapStyle.baseFill, 0x7F6230, 0xB08C52, 0xF3DCA6, 0xF3DCA6, 0xF3DCA6, 0xF3DCA6],
+                       "3 回以上は同じ色")
+    }
+
+    /// 色だけで分けるので、明るさの順と差を縛る（色覚が違っても明るさで分かる）。
+    /// 塗る段は黒地に 3:1 以上・隣り合う段どうし 1.4:1 以上・未の地より明るい
+    func testPaintedFillsAreSeparatedByLuminance() {
+        let fills = VisitedMapStyle.paintedFills
+        XCTAssertEqual(fills.count, 3)
+        for hex in fills {
+            XCTAssertGreaterThanOrEqual(VisitedMapStyle.contrastOnBlack(hex), 3.0, "黒地に 3:1 以上: \(String(hex, radix: 16))")
+        }
+        for (lower, higher) in zip(fills, fills.dropFirst()) {
+            XCTAssertGreaterThan(BrandPalette.luminance(higher), BrandPalette.luminance(lower), "段が上がるほど明るい")
+            XCTAssertGreaterThanOrEqual(VisitedMapStyle.adjacentRatio(lower, higher), 1.4, "隣り合う段の比")
+        }
+        XCTAssertGreaterThanOrEqual(VisitedMapStyle.adjacentRatio(VisitedMapStyle.baseFill, fills[0]), 1.4,
+                                    "未の地と 1 回の差")
+        XCTAssertEqual(VisitedMapStyle.contrastOnBlack(0x7F6230), 3.69, accuracy: 0.01)
+        XCTAssertEqual(VisitedMapStyle.contrastOnBlack(0xB08C52), 6.72, accuracy: 0.01)
+        XCTAssertEqual(VisitedMapStyle.contrastOnBlack(0xF3DCA6), 15.60, accuracy: 0.01)
     }
 }

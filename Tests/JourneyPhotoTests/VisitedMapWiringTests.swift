@@ -86,7 +86,6 @@ final class VisitedMapWiringTests: XCTestCase {
             "geometry.prefecture(at: unit, tolerance: tolerance)",
             "VisitedMapText.prefectureAccessibility(",
             "VisitedMapStyle.fill(forLevel:",
-            "VisitedMapStyle.pattern(forLevel:",
             "@Environment(\\.accessibilityReduceMotion)",
             "guard new != nil, !reduceMotion else { return }",
             "guard !reduceMotion, let start = liftStart else { return 0 }",
@@ -140,6 +139,40 @@ final class VisitedMapWiringTests: XCTestCase {
         }
         let screen = try source("Features/Profile/VisitedMapScreen.swift")
         XCTAssertFalse(screen.contains("containerGuess"), "＋−に推定の枠を渡している")
+    }
+
+    /// 🔴 2026-11-09 owner: 模様（点・線・格子）はやめ、色だけで分ける。模様の描画・定義が戻ったら落ちる。
+    /// 段も 0 回・1 回・2 回・3 回以上の4つ（「4 回以上」を戻したら落ちる）
+    func testNoPatternsAndNoFourPlusLevel() throws {
+        var files = try visitedSources()
+        files.append(("Core/Text/PrefectureMapGeometry.swift", try source("Core/Text/PrefectureMapGeometry.swift")))
+        files.append(("Core/Text/VisitedMapText.swift", try source("Core/Text/VisitedMapText.swift")))
+        files.append(("Core/Text/VisitedPrefectures.swift", try source("Core/Text/VisitedPrefectures.swift")))
+        for (path, text) in files {
+            for word in ["patternPath", "pattern(forLevel", "enum Pattern", ".hatch", ".stripes", "case dots", "case grid",
+                         "inkOnBright", "inkOnDark", "legendFourPlus", "4 回以上", "4+\""] {
+                XCTAssertFalse(text.contains(word), "\(path) に模様・4 回以上の名残り: \(word)")
+            }
+            XCTAssertFalse(text.contains("layer.clip(to:"), "\(path) が県の形で切って模様を重ねている")
+        }
+    }
+
+    /// 🔴 凡例の見本・一覧・地図の塗りは、同じ色の表（`VisitedMapStyle.fill(forLevel:)`）だけを読む（色の写しを作らない）
+    func testLegendAndMapShareOneColorTable() throws {
+        for path in ["Features/Profile/VisitedPrefectureList.swift", "Features/Profile/VisitedMapCanvasView.swift",
+                     "Features/Profile/VisitedMapEntryCard.swift"] {
+            let text = try source(path)
+            XCTAssertTrue(text.contains("VisitedMapStyle.fill(forLevel:"), "\(path) が色の表を読んでいない")
+            XCTAssertNil(text.range(of: "0x[0-9A-Fa-f]{6}", options: .regularExpression), "\(path) に色の写しがある")
+        }
+        let list = try source("Features/Profile/VisitedPrefectureList.swift")
+        XCTAssertTrue(list.contains("VisitedSwatch(level: level"), "一覧の見本が無い")
+        let screen = try source("Features/Profile/VisitedMapScreen.swift")
+        for needle in ["legendZero", "legendTimes(1)", "legendTimes(2)", "legendThreePlus"] {
+            XCTAssertTrue(screen.contains(needle), "凡例に無い: \(needle)")
+        }
+        XCTAssertEqual(screen.components(separatedBy: "legendItem(level:").count - 1, 6 /* 定義1 + 使う5 */,
+                       "凡例は 0 回・写真の候補・1・2・3 回以上の5つ")
     }
 
     /// 回数の色の作り方に Pro の名前を出さない（`VisitedMapStyle.color` を通す）

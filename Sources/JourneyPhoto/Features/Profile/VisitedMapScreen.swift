@@ -231,18 +231,17 @@ struct VisitedMapScreen: View {
 
     /// 凡例（段の見本＋字。色だけに頼らない）
     private var legend: some View {
-        // 6 つは 1 行に収まらない幅があるので、折り返して並べる
+        // 5 つは 1 行に収まらない幅があるので、折り返して並べる
         FlowLayout(spacing: JPSpace.m, lineSpacing: JPSpace.xs) {
-            legendItem(level: 0, candidate: false, text: VisitedMapText.legendNone)
+            legendItem(level: 0, candidate: false, text: VisitedMapText.legendZero)
             legendItem(level: 0, candidate: true, text: VisitedMapText.legendCandidate)
             legendItem(level: 1, candidate: false, text: VisitedMapText.legendTimes(1))
             legendItem(level: 2, candidate: false, text: VisitedMapText.legendTimes(2))
-            legendItem(level: 3, candidate: false, text: VisitedMapText.legendTimes(3))
-            legendItem(level: 4, candidate: false, text: VisitedMapText.legendFourPlus)
+            legendItem(level: 3, candidate: false, text: VisitedMapText.legendThreePlus)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(L("凡例: 未、写真の候補、1 回、2 回、3 回、4 回以上",
-                              "Legend: not yet, suggested, 1, 2, 3, 4 or more"))
+        .accessibilityLabel(L("凡例: 0 回、写真の候補、1 回、2 回、3 回以上",
+                              "Legend: 0, suggested, 1, 2, 3 or more"))
     }
 
     private func legendItem(level: Int, candidate: Bool, text: String) -> some View {
