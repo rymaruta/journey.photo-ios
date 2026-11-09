@@ -25,7 +25,8 @@ enum StoryVideoPipeline {
         #endif
     }
 
-    /// 写真選びの1件の動画を端末の一時フォルダに写して確かめる。**長さが 60 秒を超えたらここで断る**
+    /// 写真選びの1件の動画を端末の一時フォルダに写して確かめる。**60 秒を超えても断らない**
+    /// （2026-11-09 から・作る画面で範囲を選んで切る）。断るのは読めない動画と、長すぎる動画（`StoryVideoRules.maxSourceSeconds`）だけ
     static func importClip(from item: PhotosPickerItem) async throws -> Imported {
         #if canImport(Darwin)
         let movie: StoryMovieFile?
@@ -50,7 +51,28 @@ enum StoryVideoPipeline {
         #endif
     }
 
+    /// 切り取りの帯に敷くサムネイル（`count` 枚）。動画全体を等分した各区間の真ん中の1コマ（`StoryVideoTrim.thumbnailTimes`）。
+    /// 取れなかったコマは nil。**小さな絵（長い辺 240px）を近いキーフレームで取る**——数十分の動画でも重くしない。
+    /// 取り消されたら取れたぶんだけ返す
+    static func filmstrip(of clip: StoryVideoClip, count: Int) async -> [UIImage?] {
+        #if canImport(Darwin)
+        return await filmstripDarwin(url: clip.url, total: clip.durationSec, count: count)
+        #else
+        return []
+        #endif
+    }
+
+    /// 作る画面の絵になる表紙の1コマ（JPEG）を、`seconds` の所から取り直す（切り取りで始点を変えたとき）
+    static func poster(of clip: StoryVideoClip, at seconds: Double) async -> Data? {
+        #if canImport(Darwin)
+        return await posterDarwin(url: clip.url, at: seconds)
+        #else
+        return nil
+        #endif
+    }
+
     /// 重ね（文字・札・曲）を焼き込み、50MB に収まる mp4 に書き出す。**位置情報は残さない**。
+    /// **切り取り（`clip.trim`）の範囲だけ**を書き出す（2026-11-09）。
     /// 返すのは一時フォルダのファイル（`StoryUploadCenter` が並びの置き場へ移す）
     static func export(_ clip: StoryVideoClip, overlays: [TextOverlay],
                        song: SongStickerPainter.Art?) async throws -> URL {
@@ -113,7 +135,8 @@ extension StoryVideoPipeline {
         let asset = AVURLAsset(url: url)
         do {
             let duration = try await asset.load(.duration).seconds
-            if let problem = StoryVideoRules.problem(durationSec: duration) {
+            // 2026-11-09: 60 秒を超えても断らない（作る画面で切る）。読めない・長すぎる動画だけ断る
+            if let problem = StoryVideoRules.importProblem(durationSec: duration) {
                 try? FileManager.default.removeItem(at: url)
                 throw problem
             }
@@ -162,9 +185,10 @@ extension StoryVideoPipeline {
         // **重ねの有無に関わらず `AVMutableComposition` を通す**——元のファイルの付帯情報(撮影地など)を
         // 書き出しに持ち込まない。位置情報は書き出したあとにもう一度確かめる(下)
         var lastProblem = StoryVideoRules.Problem.exportFailed
-        for step in StoryVideoRules.ladder(durationSec: clip.durationSec) {
+        // 段は**切ったあとの長さ**で選ぶ（元が長くても、残す範囲が短ければ高い画質から試せる）
+        for step in StoryVideoRules.ladder(durationSec: clip.outputSeconds) {
             try Task.checkCancellation()
-            let built = try await composition(for: asset, overlays: visible, song: song, step: step)
+            let built = try await composition(for: asset, trim: clip.trim, overlays: visible, song: song, step: step)
             // 位置情報が残ったときは1回だけ自動でやり直す(それでも残るなら上げない)
             for _ in 0..<2 {
                 try Task.checkCancellation()
@@ -212,7 +236,7 @@ extension StoryVideoPipeline {
     }
 
     /// 書き出す元の合成。向きを直し、重ねがあれば**段の大きさまで縮めて**全コマの上に置く
-    private static func composition(for asset: AVURLAsset, overlays: [TextOverlay],
+    private static func composition(for asset: AVURLAsset, trim: StoryVideoTrim, overlays: [TextOverlay],
                                     song: SongStickerPainter.Art?, step: StoryVideoRules.Step) async throws
         -> (asset: AVAsset, video: AVVideoComposition?) {
         guard let sourceVideo = try await asset.loadTracks(withMediaType: .video).first else {
@@ -224,13 +248,25 @@ extension StoryVideoPipeline {
             throw StoryVideoRules.Problem.exportFailed
         }
         let duration = try await asset.load(.duration)
-        let range = CMTimeRange(start: .zero, duration: duration)
+        // 切り取り（2026-11-09）: 元の動画の `start` から `length` 秒だけを、合成の 0 秒へ置く。
+        // 切っていない動画は今までどおり全体（端の丸めで範囲が動画の外へ出ない）。
+        // `range` は**書き出す動画の側の時間**（0 から。重ねの指示の範囲）、`sourceRange` は元の動画の側
+        let sourceRange: CMTimeRange
+        if trim.isFull {
+            sourceRange = CMTimeRange(start: .zero, duration: duration)
+        } else {
+            let from = min(trim.start, max(duration.seconds - trim.minimumLength, 0))
+            let length = min(trim.length, max(duration.seconds - from, trim.minimumLength))
+            sourceRange = CMTimeRange(start: CMTime(seconds: from, preferredTimescale: 600),
+                                      duration: CMTime(seconds: length, preferredTimescale: 600))
+        }
+        let range = CMTimeRange(start: .zero, duration: sourceRange.duration)
         do {
-            try video.insertTimeRange(range, of: sourceVideo, at: .zero)
+            try video.insertTimeRange(sourceRange, of: sourceVideo, at: .zero)
             if let sourceAudio = try await asset.loadTracks(withMediaType: .audio).first,
                let audio = composition.addMutableTrack(withMediaType: .audio,
                                                        preferredTrackID: kCMPersistentTrackID_Invalid) {
-                try audio.insertTimeRange(range, of: sourceAudio, at: .zero)
+                try audio.insertTimeRange(sourceRange, of: sourceAudio, at: .zero)
             }
         } catch {
             throw StoryVideoRules.Problem.exportFailed
@@ -280,6 +316,36 @@ extension StoryVideoPipeline {
                 postProcessingAsVideoLayer: videoLayer, in: parent)
         }
         return (composition, videoComposition)
+    }
+
+    /// 切り取りの帯のサムネイル（`filmstrip(of:count:)` の本体）
+    fileprivate static func filmstripDarwin(url: URL, total: Double, count: Int) async -> [UIImage?] {
+        let times = StoryVideoTrim.thumbnailTimes(total: total, count: count)
+        guard !times.isEmpty else { return [] }
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        generator.appliesPreferredTrackTransform = true
+        // 帯の1コマは 44pt 前後。小さく・近いキーフレームで済ませる（数十分の動画でも1コマ数十ミリ秒）
+        generator.maximumSize = CGSize(width: 240, height: 240)
+        generator.requestedTimeToleranceBefore = .positiveInfinity
+        generator.requestedTimeToleranceAfter = .positiveInfinity
+        var images: [UIImage?] = []
+        for seconds in times {
+            if Task.isCancelled { break }
+            let time = CMTime(seconds: seconds, preferredTimescale: 600)
+            let cgImage = try? await generator.image(at: time).image
+            images.append(cgImage.map { UIImage(cgImage: $0) })
+        }
+        return images
+    }
+
+    /// 表紙の1コマ（`poster(of:at:)` の本体）
+    fileprivate static func posterDarwin(url: URL, at seconds: Double) async -> Data? {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 1920, height: 1920)
+        let time = CMTime(seconds: max(0, seconds), preferredTimescale: 600)
+        guard let cgImage = try? await generator.image(at: time).image else { return nil }
+        return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.9)
     }
 
     /// 書き出した動画に位置情報の付帯情報が残っているか。**読めないときは残っているものとして扱う**。

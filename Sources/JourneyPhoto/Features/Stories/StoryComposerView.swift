@@ -175,6 +175,8 @@ struct StoryComposerView: View {
     @State private var isWaitingForSpots = false
     /// 動画を書き出している間(札 #500)。**この間は編集を止める**(札・文字・追加・削除・並べ替えを触らせない)
     @State private var isExportingVideo = false
+    /// 切り取りの画面を開いている動画の印（`StoryShot.id`・2026-11-09）。nil なら閉じている
+    @State private var trimmingShotId: UUID?
     /// 取り込んだ動画の一時ファイルの持ち主。この画面が本当に無くなったとき(閉じた・やめた)に消す
     @StateObject private var videoTemp = StoryVideoTempHolder()
     /// その待ちの仕事。🔴 **閉じた・下書きに保存した・画面が消えたら取り消す**（`stopWaitingToPost`）。
@@ -292,6 +294,8 @@ struct StoryComposerView: View {
                 }
         case .compose:
             composer
+                // 動画の切り取り（2026-11-09）。長い修飾子の鎖（`composer`）に足さず、外に付ける
+                .sheet(isPresented: trimSheetShown) { trimSheet }
         }
     }
 
@@ -1441,6 +1445,15 @@ struct StoryComposerView: View {
                     Label(L("表示秒数（\(durationSec) 秒）", "Duration (\(durationSec)s)"), systemImage: "timer")
                 }
             }
+            // 動画の切り取り（2026-11-09）。長さの札からも開く
+            if let clip = currentClip {
+                Button {
+                    openTrim()
+                } label: {
+                    Label(L("動画を切り取る（\(clip.durationLabel)）", "Trim video (\(clip.durationLabel))"),
+                          systemImage: "scissors")
+                }
+            }
             // 写真を拡大・移動・回転したら、元へ戻す口（2026-10-29 から**ここだけ**。写真の2回押しで戻すのは
             // やめた——1回押しでひとことを打ち始めるのが、2回押しを待つ分 0.3 秒遅れた）
             if currentClip == nil, !framing.wrappedValue.isIdentity {
@@ -1991,7 +2004,8 @@ struct StoryComposerView: View {
             // 投票の欄を打っている間も移らない（移ると欄が閉じてキーボードも消えた）
             // 札とスタンプのトレイ（閉じてから置く `pendingPick` の間も）・曲を選ぶシートを開いている間も
             // 移らない（選んだ札や曲の札が、開いたときの写真でなく届いた写真に置かれた）
-            if typingId == nil && !votePanelOpen && !showStickerTray && pendingPick == nil && !showSongPicker {
+            if typingId == nil && !votePanelOpen && !showStickerTray && pendingPick == nil && !showSongPicker
+                && trimmingShotId == nil {
                 current = shots.count - 1
             }
             self.message = nil
@@ -2020,10 +2034,21 @@ struct StoryComposerView: View {
             shots.append(shot)
             startThumb(for: shot)
             // 写真の `accept` と同じ（打っている間・トレイを開いている間は移らない）
-            if typingId == nil && !votePanelOpen && !showStickerTray && pendingPick == nil && !showSongPicker {
+            if typingId == nil && !votePanelOpen && !showStickerTray && pendingPick == nil && !showSongPicker
+                && trimmingShotId == nil {
                 current = shots.count - 1
             }
             self.message = nil
+            // 60 秒を超える動画は先頭の 60 秒を選んである。**切り取りの画面をすぐ開いて**範囲を選ばせる
+            // （2026-11-09・以前は断っていた）。何本か同時に入れたときは先の1本だけ開き、残りは知らせで言う
+            if imported.clip.durationSec > StoryVideoRules.maxSeconds + 0.5 {
+                if trimmingShotId == nil, typingId == nil, !votePanelOpen, !showStickerTray, pendingPick == nil,
+                   !showSongPicker, !showCamera {
+                    trimmingShotId = shot.id
+                }
+                message = L("60秒を超える動画は、先頭の60秒を残してあります。「切り取り」で範囲を選べます",
+                            "Videos over 60 seconds keep their first 60 seconds. Use Trim to choose a different part")
+            }
         } catch {
             discard(imported.clip)
             message = StoryVideoRules.Problem.importFailed.message
@@ -2313,20 +2338,72 @@ struct StoryComposerView: View {
         shots.indices.contains(current) ? shots[current].video : nil
     }
 
-    /// 動画の長さの札（写真の上なので白・黒 45% の丸い札。撮影地の札 `photoChip` と同じ寸法）
+    /// 動画の長さの札（写真の上なので白・黒 45% の丸い札。撮影地の札 `photoChip` と同じ寸法）。
+    /// **押すと切り取りの画面が開く**（2026-11-09）。長さは切ったあとの長さ。見た目は 30 のまま、当たりは 44
     private func videoBadge(_ clip: StoryVideoClip) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "video.fill").font(JPFont.footnote)
-            Text(clip.durationLabel).font(JPFont.footnote)
+        Button { openTrim() } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "scissors").font(JPFont.footnote)
+                Text(clip.durationLabel).font(JPFont.footnote)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, JPSpace.s)
+            .frame(minHeight: Self.chipHeight)
+            .background(Color.black.opacity(Self.chipFill), in: Capsule())
+            .frame(minHeight: WebTheme.minTapTarget)
+            .contentShape(Rectangle())
         }
-        .foregroundStyle(.white)
-        .padding(.horizontal, JPSpace.s)
-        .frame(minHeight: Self.chipHeight)
-        .background(Color.black.opacity(Self.chipFill), in: Capsule())
-        .accessibilityElement(children: .ignore)
+        .buttonStyle(.plain)
         .accessibilityLabel(L("動画 \(clip.durationLabel)", "Video \(clip.durationLabel)"))
+        .accessibilityHint(L("押すと動画を切り取ります", "Opens trim"))
         .accessibilityIdentifier("story.videoBadge")
-        .allowsHitTesting(false)
+    }
+
+    // MARK: - 動画の切り取り（2026-11-09）
+
+    private var trimSheetShown: Binding<Bool> {
+        Binding(get: { trimmingShotId != nil },
+                set: { shown in if !shown { trimmingShotId = nil } })
+    }
+
+    /// 見ている動画の切り取りを開く
+    private func openTrim() {
+        guard shots.indices.contains(current), shots[current].video != nil, !isExportingVideo else { return }
+        trimmingShotId = shots[current].id
+    }
+
+    @ViewBuilder
+    private var trimSheet: some View {
+        if let id = trimmingShotId, let clip = shots.first(where: { $0.id == id })?.video {
+            NavigationStack {
+                StoryVideoTrimSheet(clip: clip) { trim in applyTrim(trim, to: id) }
+            }
+        }
+    }
+
+    /// 選んだ範囲を動画に入れる。**書き出しは送るときに、この範囲だけを切る**（`StoryVideoPipeline.export`）。
+    /// 作る画面の絵（表紙の1コマ）は新しい始点から取り直す
+    private func applyTrim(_ trim: StoryVideoTrim, to id: UUID) {
+        guard let index = shots.firstIndex(where: { $0.id == id }), var clip = shots[index].video,
+              clip.trim != trim else { return }
+        clip.trim = trim
+        shots[index].video = clip
+        let updated = clip
+        Task { await refreshPoster(for: id, clip: updated) }
+    }
+
+    private func refreshPoster(for id: UUID, clip: StoryVideoClip) async {
+        // 先頭の黒い1コマを避ける（取り込みと同じ 0.2 秒・短ければ半分）
+        let at = clip.trim.start + min(0.2, clip.trim.length / 2)
+        guard let jpeg = await StoryVideoPipeline.poster(of: clip, at: at) else { return }
+        guard let prepared = try? await Task.detached(priority: .userInitiated, operation: {
+            try ImagePreparer.prepare(data: jpeg, fileName: "story")
+        }).value else { return }
+        // 取り直している間に外した・もう一度切ったなら入れない
+        guard let index = shots.firstIndex(where: { $0.id == id }), shots[index].video?.trim == clip.trim else { return }
+        shots[index].prepared = prepared
+        shots[index].preview = UIImage(data: prepared.data).map { Image(uiImage: $0) }
+        startThumb(for: shots[index])
     }
 
     /// カメラを先頭に出す（`startsWithCamera`）。**下書き・送れなかった残りの問いが出ているときは出さない**。
@@ -2545,6 +2622,8 @@ struct StoryComposerView: View {
     private struct ExportedVideos {
         var urls: [UUID: URL]
         var overlays: [UUID: [TextOverlay]]
+        /// 書き出したときの切り取り範囲（切り直しの検出用・2026-11-09）
+        var trims: [UUID: StoryVideoTrim] = [:]
     }
 
     /// 係が片付いていないときの言い分(送っている最中か、失敗した残りを持っているか)
@@ -2611,7 +2690,9 @@ struct StoryComposerView: View {
         // **書き出している間は編集を止める**(`exportOverlay`)
         if hasVideoShot {
             let videoShots = shots.filter { $0.video != nil }
-            let matches = exported.map { done in videoShots.allSatisfy { done.overlays[$0.id] == $0.overlays } } ?? false
+            let matches = exported.map { done in
+                videoShots.allSatisfy { done.overlays[$0.id] == $0.overlays && done.trims[$0.id] == $0.video?.trim }
+            } ?? false
             let check = StoryVideoRules.exportCheck(videoShots: videoShots.map(\.id),
                                                     exported: Set(exported?.urls.keys.map { $0 } ?? []),
                                                     overlaysMatch: matches)
@@ -2632,6 +2713,7 @@ struct StoryComposerView: View {
                 isExportingVideo = true
                 message = L("動画を準備しています", "Preparing the video")
                 let targets = videoShots.map { ($0.id, $0.video!, $0.overlays) }
+                // 切り取りの範囲は clip の中（`clip.trim`）。書き出したときの範囲を控えて、送る直前に食い違いを見る
                 let art = songArt
                 spotWait?.cancel()
                 spotWait = Task {
@@ -2640,6 +2722,7 @@ struct StoryComposerView: View {
                         for (id, clip, overlays) in targets {
                             done.urls[id] = try await StoryVideoPipeline.export(clip, overlays: overlays, song: art)
                             done.overlays[id] = overlays
+                            done.trims[id] = clip.trim
                         }
                     } catch {
                         for url in done.urls.values { try? FileManager.default.removeItem(at: url) }
