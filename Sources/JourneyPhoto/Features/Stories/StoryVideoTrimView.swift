@@ -164,6 +164,15 @@ struct StoryVideoTrimSheet: View {
             // （CI: conflicting arguments to generic parameter 'T' ('CGFloat' vs. 'Double')）
             let rightDimWidth: CGFloat = max(barWidth - endX, 0)
             let selectedWidth: CGFloat = max(endX - startX, 1)
+            // 模型の `.offset`・`.frame` は Double、実 SwiftUI は CGFloat。**算術は先に CGFloat の変数に決めて渡す**
+            // （CI: ambiguous use of operator '-'）
+            let rightDimX: CGFloat = inset + endX
+            let selectedX: CGFloat = inset + startX
+            let playheadX: CGFloat = inset + StoryVideoTrim.position(of: playback.playhead, total: trim.total,
+                                                                    width: barWidth) - 1
+            let startHandleX: CGFloat = inset + startX - Self.handleWidth
+            let stripHeightPlus8: CGFloat = Self.stripHeight + 8
+            let stripHeightPlus4: CGFloat = Self.stripHeight + 4
             ZStack(alignment: .topLeading) {
                 // 動画全体のサムネイル
                 HStack(spacing: 0) {
@@ -183,26 +192,25 @@ struct StoryVideoTrimSheet: View {
                     .accessibilityHidden(true)
                 Rectangle().fill(Color.black.opacity(0.62))
                     .frame(width: rightDimWidth, height: Self.stripHeight)
-                    .offset(x: inset + endX, y: 4)
+                    .offset(x: rightDimX, y: 4)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
                 // 選んだ範囲の枠
                 Rectangle().strokeBorder(Color.white, lineWidth: 2)
-                    .frame(width: selectedWidth, height: Self.stripHeight + 4)
-                    .offset(x: inset + startX, y: 2)
+                    .frame(width: selectedWidth, height: stripHeightPlus4)
+                    .offset(x: selectedX, y: 2)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
                 // いまの再生位置（範囲の中だけ・つまみを動かしている間は出さない）
                 if dragging == nil, playback.playhead >= trim.start, playback.playhead <= trim.end {
                     Rectangle().fill(Color.white)
-                        .frame(width: 2, height: Self.stripHeight + 8)
-                        .offset(x: inset + StoryVideoTrim.position(of: playback.playhead, total: trim.total,
-                                                                   width: barWidth) - 1)
+                        .frame(width: 2, height: stripHeightPlus8)
+                        .offset(x: playheadX)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
-                handle(.start, x: inset + startX - Self.handleWidth, barWidth: barWidth)
-                handle(.end, x: inset + endX, barWidth: barWidth)
+                handle(.start, x: startHandleX, barWidth: barWidth)
+                handle(.end, x: rightDimX, barWidth: barWidth)
             }
             .coordinateSpace(.named(Self.space))
         }
@@ -226,19 +234,21 @@ struct StoryVideoTrimSheet: View {
     /// 読み上げは「開始位置・0:12」で、増やす・減らすで 1 秒ずつ動く
     private func handle(_ which: Handle, x: CGFloat, barWidth: CGFloat) -> some View {
         let time = which == .start ? trim.start : trim.end
-        let hit = WebTheme.minTapTarget
+        let hit: CGFloat = WebTheme.minTapTarget
+        let fullHeight: CGFloat = Self.stripHeight + 8
+        let handleOffset: CGFloat = x - (hit - Self.handleWidth) / 2
         return ZStack {
             Color.clear
             RoundedRectangle(cornerRadius: 4)
                 .fill(Color.white)
-                .frame(width: Self.handleWidth, height: Self.stripHeight + 8)
+                .frame(width: Self.handleWidth, height: fullHeight)
             RoundedRectangle(cornerRadius: 1)
                 .fill(WebTheme.accentText)
                 .frame(width: 2, height: 20)
         }
-        .frame(width: hit, height: Self.stripHeight + 8)
+        .frame(width: hit, height: fullHeight)
         .contentShape(Rectangle())
-        .offset(x: x - (hit - Self.handleWidth) / 2)
+        .offset(x: handleOffset)
         .gesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
                 .onChanged { value in
