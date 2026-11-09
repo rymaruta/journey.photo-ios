@@ -6,6 +6,8 @@ import Foundation
 /// - **座標の無い行は出さない**（距離が測れない・地図にも置けない）
 /// - 近さは**現在地から**。取れていなければ**地図の中心から**測る
 ///   （どちらも無ければ名前の順・距離は出さない）
+/// - **検索窓で絞っているときは、当たりの強さが先**（2026-11-09・`ranks`）: 名前の完全一致 → 前方一致 →
+///   部分一致 → 地域の順に並べ、同じ強さの中だけ近い順。語を打った人は「近い所」より「名前が合う所」を探している
 /// - 写真の数は、その撮影スポットの写真（本人が選んだ `Photo.spotId`、無ければ自動の結び・
 ///   `SpotPhotoLinks`・2026-10-31 #425）。スポットの画面（`OfficialSpotView`）が並べるものと同じ数え方
 ///
@@ -21,8 +23,10 @@ enum OfficialSpotList {
         var id: String { spot.spotId }
     }
 
+    /// - Parameter ranks: `spotId` → 当たりの強さ（`SpotSearchIndex.Hit.rank`）。**検索窓に語があるときだけ**渡す。
+    ///   無い行（渡していない `spotId`）は最後。nil なら近い順のまま
     static func rows(_ spots: [OfficialSpot], photos: [Photo], from center: Photo.Coords?,
-                     links: SpotPhotoLinks = .empty) -> [Row] {
+                     links: SpotPhotoLinks = .empty, ranks: [String: Int]? = nil) -> [Row] {
         var counts: [String: Int] = [:]
         for photo in photos {
             if let id = links.spotId(for: photo) { counts[id, default: 0] += 1 }
@@ -35,6 +39,10 @@ enum OfficialSpotList {
                     photoCount: counts[spot.spotId] ?? 0)
             }
         return rows.sorted { a, b in
+            if let ranks {
+                let ra = ranks[a.spot.spotId] ?? Int.max, rb = ranks[b.spot.spotId] ?? Int.max
+                if ra != rb { return ra < rb }
+            }
             switch (a.km, b.km) {
             case let (x?, y?) where x != y: return x < y
             default: return a.spot.name < b.spot.name

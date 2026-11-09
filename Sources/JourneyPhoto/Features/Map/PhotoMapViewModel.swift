@@ -86,6 +86,28 @@ final class PhotoMapViewModel: ObservableObject {
         }
     }
 
+    /// 「スポット」の札の検索窓が引く、折りたたみ済みの索引と、いちばん新しい語の当たり（`SpotSearchIndex`・2026-11-09）。
+    /// **描き直しのたびに全件を折りたたまない**——索引（`officialSpots`）か別名が替わったときだけ作り直し、
+    /// 同じ語の描き直しは前の当たりを返す。知らせない値（`officialSpots` と同じ理由）
+    private var spotSearchCache: (index: SpotSearchIndex, query: String?, hits: [SpotSearchIndex.Hit])?
+
+    /// 語に当たる撮影スポット（当たりの強さ順・同じ強さは索引の順）。空の語は空
+    func spotSearchHits(query: String) -> [SpotSearchIndex.Hit] {
+        guard !OfficialSpotIndex.spotName(query).isEmpty else { return [] }
+        var cache: (index: SpotSearchIndex, query: String?, hits: [SpotSearchIndex.Hit])
+        if let held = spotSearchCache {
+            cache = held
+        } else {
+            cache = (index: SpotSearchIndex(officialSpots, aliases: spotAliases), query: nil, hits: [])
+        }
+        if cache.query != query {
+            cache.hits = cache.index.hits(query: query)
+            cache.query = query
+        }
+        spotSearchCache = cache
+        return cache.hits
+    }
+
     /// 絞り直した回数。**打つたびに絞り直していないことを試験で数えるためだけ**
     private(set) var refreshCount = 0
     @Published private(set) var category: String?
@@ -126,7 +148,7 @@ final class PhotoMapViewModel: ObservableObject {
     /// ——本番は Web の変更が main に入るまで 404 で、そのあいだピンが
     /// 出ないだけ（写真の機能は止めない）。描画には `officialPins` を使うので
     /// ここは知らせない
-    private(set) var officialSpots: [OfficialSpot] = []
+    private(set) var officialSpots: [OfficialSpot] = [] { didSet { spotSearchCache = nil } }
     /// 撮影スポットの台帳を読み終えたか（「スポット」の札の「読み込み中」と「無い」を分ける）。
     /// **これは知らせる**——台帳は1回しか届かないので回り続けない。知らせないと、
     /// 台帳が届く前に「スポット」を押した回に空の一覧のまま止まる
@@ -135,7 +157,7 @@ final class PhotoMapViewModel: ObservableObject {
     /// 撮影スポットの別名（slug → 別名・`OfficialSpotService.fetchAliases`）。取れなければ空で、
     /// 名前・読み・地域だけで当てる。**「さがす」と同じ当て方にする**——別名で当たったスポットを
     /// 地図へ持ってきた回に「見つかりませんでした」にしない。届くのは1回なので知らせる
-    @Published private(set) var spotAliases: [String: [String]] = [:]
+    @Published private(set) var spotAliases: [String: [String]] = [:] { didSet { spotSearchCache = nil } }
     /// 別名を取り終えたか（取れなかった回も立つ）。語への寄せの当たり外れはこれを待って決める
     @Published private(set) var aliasesSettled = false
     /// 写真を撮影スポットに自動で結んだ表（`OfficialSpotService.fetchPhotoLinks`・2026-10-31 #425）。

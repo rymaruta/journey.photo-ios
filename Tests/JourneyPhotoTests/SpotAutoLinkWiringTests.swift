@@ -136,7 +136,7 @@ final class SpotAutoLinkWiringTests: XCTestCase {
         XCTAssertTrue(spotView.contains("SpotPhotoLinks.photos(photos, linkedTo: spot.spotId, links: photoLinks)"))
         XCTAssertTrue(spotView.contains("let links = await environment.spots.fetchPhotoLinks()"))
         let map = try source("Sources/JourneyPhoto/Features/Map/PhotoMapView.swift")
-        XCTAssertTrue(map.contains("OfficialSpotList.rows(spots, photos: model.photos, from: center, links: model.photoLinks)"))
+        XCTAssertTrue(map.contains("OfficialSpotList.rows(spots, photos: model.photos, from: center, links: model.photoLinks"))
         XCTAssertTrue(map.contains("aliases: model.spotAliases, links: model.photoLinks, from: center)"))
         let upload = try source("Sources/JourneyPhoto/Features/Upload/UploadView.swift")
         XCTAssertTrue(upload.contains("if let row = model.autoSpotRow(for: item) {\n                        autoSpotToggle(row, itemId: item.id)"))

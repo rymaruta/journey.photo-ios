@@ -356,9 +356,10 @@ struct PhotoMapView: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(WebTheme.text3)
-            TextField(L("撮影地・撮影スポット名で絞る", "Filter by place or photo spot"),
-                      text: $model.typedQuery)
+            TextField(Self.searchPrompt(for: model.mode), text: $model.typedQuery)
                 .textFieldStyle(.plain)
+                // キーボードの確定キーは「検索」（2026-11-09）。押すと間引きを待たずに絞る（下の `onSubmit`）
+                .submitLabel(.search)
                 .accessibilityIdentifier("map.search")
                 .foregroundStyle(WebTheme.foreground)
                 // 打っている間は間引いて絞る（`typedQuery`）。確定はその場で
@@ -381,6 +382,14 @@ struct PhotoMapView: View {
         .overlay(Capsule().strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
         .padding(.horizontal, JPSpace.s)
         .padding(.top, JPSpace.xs)
+    }
+
+    /// 欄の薄い字。「スポット」の札は**そこで引ける項目**（名前・県・エリア）を言う（2026-11-09・owner「撮影スポットを探す一覧に検索窓」）。
+    /// 地図・リストは写真の撮影地の文字列とスポット名で絞るので、従来の言い方のまま
+    nonisolated static func searchPrompt(for mode: PhotoMapViewModel.Mode) -> String {
+        mode == .spots
+            ? L("スポット名・県・エリア", "Spot name, prefecture or area")
+            : L("撮影地・撮影スポット名で絞る", "Filter by place or photo spot")
     }
 
     /// 検索欄の高さ（板 v2 の 44・押せるものの最小と同じ）。v1 は 52
@@ -1501,11 +1510,16 @@ struct PhotoMapView: View {
     @ViewBuilder
     private var spotsArea: some View {
         let center = here ?? model.visibleFrame.map { Photo.Coords(lat: $0.latitude, lng: $0.longitude) }
-        // 上の欄（「撮影地・スポット名で絞る」）で打った語は、地図のピンと同じく名前で当てる
-        let spots = MapSearch.fold(model.query).isEmpty
-            ? model.officialSpots
-            : OfficialSpotIndex.matches(model.officialSpots, query: model.query, aliases: model.spotAliases)
-        let rows = OfficialSpotList.rows(spots, photos: model.photos, from: center, links: model.photoLinks)
+        // 上の欄で打った語は、地図のピンと同じく名前・読み・別名・地域で当てる（`SpotSearchIndex`・手元の索引だけ・通信しない）。
+        // **語があるときは当たりの強さ順**（名前の前方一致が先・同じ強さの中だけ近い順）。
+        // 索引は替わったときだけ作り直す（`spotSearchHits`・描き直しのたびに全件をなめない）
+        let hasQuery = !MapSearch.fold(model.query).isEmpty
+        let hits = hasQuery ? model.spotSearchHits(query: model.query) : []
+        let spots = hasQuery ? hits.map(\.spot) : model.officialSpots
+        let ranks: [String: Int]? = hasQuery
+            ? Dictionary(hits.map { ($0.spot.spotId, $0.rank) }, uniquingKeysWith: { first, _ in first })
+            : nil
+        let rows = OfficialSpotList.rows(spots, photos: model.photos, from: center, links: model.photoLinks, ranks: ranks)
         // 丸写真の詳細を読む行（分けた置き場の索引だけの行のうち、頭から今の絞り込みでの深さまで）。
         // 詳細の和が小さいうちはどれも重ね済みで空——通信しない（`SpotDetailNeeds`・2026-10-08）
         let detailNeeds = SpotDetailNeeds.mapSpotList(
@@ -1559,8 +1573,12 @@ struct PhotoMapView: View {
                 if model.officialIndexState == .ready {
                 // **「運営が確かめた」とは書かない**——公開済みには AI 照合で出した行も
                 // 含まれ、人の確認（`verifiedBy`）とは別の印（photo-gallery の CLAUDE.md）
-                Text(L("公開中の撮影スポットだけ（いまは\(rows.count)件）。",
-                       "Published photo spots only (\(rows.count) now)."))
+                // 語を打っているときは当たった数（「0件」は上の空状態が言う）
+                Text(hasQuery
+                     ? L("公開中の撮影スポットのうち\(rows.count)件が当たりました。",
+                         "\(rows.count) of the published photo spots match.")
+                     : L("公開中の撮影スポットだけ（いまは\(rows.count)件）。",
+                         "Published photo spots only (\(rows.count) now)."))
                     .font(.caption)
                     .lineSpacing(3)
                     .foregroundStyle(WebTheme.text3)
