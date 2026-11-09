@@ -191,7 +191,9 @@ final class StoryCameraPolishTests: XCTestCase {
         XCTAssertTrue(source.contains(".onChange(of: camera.interruptions)"), "電話が来たときに取り消さない")
         XCTAssertTrue(source.contains("AVCaptureSession.wasInterruptedNotification"))
         let disappear = try XCTUnwrap(source.range(of: ".onDisappear {"))
-        XCTAssertTrue(String(source[disappear.lowerBound...].prefix(120)).contains("cancelCountdown()"),
+        // 閉じる処理の本体（`camera.stop()` まで）の中に取り消しがあること。固定の文字数では行が増えるたびにずれる
+        let closing = try XCTUnwrap(source.range(of: "camera.stop()", range: disappear.lowerBound..<source.endIndex))
+        XCTAssertTrue(String(source[disappear.lowerBound..<closing.upperBound]).contains("cancelCountdown()"),
                       "画面を閉じても数え続けて撮る")
         XCTAssertTrue(source.contains("if action == .startRecording { await camera.prepareAudio() }"),
                       "数えている途中でマイクのダイアログが出る")
