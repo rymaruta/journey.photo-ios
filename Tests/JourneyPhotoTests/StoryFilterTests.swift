@@ -10,7 +10,7 @@ final class StoryFilterTests: XCTestCase {
     // MARK: - 一覧
 
     /// 約10種。id は重ならず、名前は日本語中心（英語も持つ）。「なし」は一覧に含めない（列の先頭は画面が足す）
-    func testListShape() {
+    func testListShape() async {
         let all = StoryFilters.all
         XCTAssertTrue((10...12).contains(all.count), "約10種でない: \(all.count)")
         XCTAssertEqual(Set(all.map(\.id)).count, all.count, "id が重なっている")
@@ -24,7 +24,7 @@ final class StoryFilterTests: XCTestCase {
     }
 
     /// 写真の編集のプリセットを使い回すものは、実在する id を指す。写真の編集の一覧は増やさない
-    func testReusedPresetsExistAndEditListIsUntouched() {
+    func testReusedPresetsExistAndEditListIsUntouched() async {
         let reused = StoryFilters.all.compactMap { $0.recipe.preset?.id }
         XCTAssertGreaterThanOrEqual(reused.count, 6)
         for id in reused {
@@ -34,7 +34,7 @@ final class StoryFilterTests: XCTestCase {
     }
 
     /// 禁止の言い回しを名前に使わない
-    func testNamesAvoidBannedWords() {
+    func testNamesAvoidBannedWords() async {
         for filter in StoryFilters.all {
             for banned in ["撮りどき", "捨", "注目スポット", "撮影地ガイド", "ガイドを見る", "この場所"] {
                 XCTAssertFalse(filter.nameJa.contains(banned))
@@ -45,7 +45,7 @@ final class StoryFilterTests: XCTestCase {
     // MARK: - 強さ
 
     /// 強さ 0 は無編集、強さ 1 はそのまま、間は線形（つまみの値もプリセットの強さも）
-    func testStrengthScalesEveryFilter() throws {
+    func testStrengthScalesEveryFilter() async throws {
         for filter in StoryFilters.all {
             XCTAssertTrue(filter.recipe(strength: 0).isIdentity, "\(filter.id) は強さ 0 でも変わる")
             XCTAssertEqual(filter.recipe(strength: 1), filter.recipe, "\(filter.id) の強さ 1 が元と違う")
@@ -62,7 +62,7 @@ final class StoryFilterTests: XCTestCase {
 
     // MARK: - 選び
 
-    func testChoiceOffAndUnknown() {
+    func testChoiceOffAndUnknown() async {
         XCTAssertTrue(StoryFilterChoice.off.isNone)
         XCTAssertTrue(StoryFilterChoice.off.recipe.isIdentity)
         XCTAssertEqual(StoryFilterChoice(id: "no-such-filter").sanitized, .off, "知らない id が「なし」にならない")
@@ -72,7 +72,7 @@ final class StoryFilterTests: XCTestCase {
     }
 
     /// 選び直したら強さは 1 に戻る（前のフィルターの強さを引き継がない）。つまみは 0.05 刻み
-    func testSelectingAndStrengthSteps() {
+    func testSelectingAndStrengthSteps() async {
         var choice = StoryFilterChoice(id: "dusk", strength: 0.3)
         choice = choice.selecting("harbor")
         XCTAssertEqual(choice.id, "harbor")
@@ -88,14 +88,14 @@ final class StoryFilterTests: XCTestCase {
 
     // MARK: - 読み書き
 
-    func testChoiceRoundTrip() throws {
+    func testChoiceRoundTrip() async throws {
         let choice = StoryFilterChoice(id: "story-mono", strength: 0.75)
         let data = try JSONEncoder().encode(choice)
         XCTAssertEqual(try JSONDecoder().decode(StoryFilterChoice.self, from: data), choice)
     }
 
     /// 壊れた値・欠けた鍵・知らない id・幅の外で**落ちない**（古い下書きを壊さない）
-    func testChoiceDecodingNeverThrows() throws {
+    func testChoiceDecodingNeverThrows() async throws {
         func decode(_ json: String) throws -> StoryFilterChoice {
             try JSONDecoder().decode(StoryFilterChoice.self, from: Data(json.utf8))
         }
@@ -111,7 +111,7 @@ final class StoryFilterTests: XCTestCase {
     // MARK: - 下書き
 
     /// 古い下書き（フィルターの鍵が無い）はそのまま読め、フィルターは nil（なし）
-    func testOldDraftShotWithoutFilterStillDecodes() throws {
+    func testOldDraftShotWithoutFilterStillDecodes() async throws {
         let json = #"{"imageFile":"a","fileName":"a.jpg","contentType":"image/jpeg","overlays":[]}"#
         let shot = try JSONDecoder().decode(StoryDraftStore.Shot.self, from: Data(json.utf8))
         XCTAssertNil(shot.filter)
@@ -120,7 +120,7 @@ final class StoryFilterTests: XCTestCase {
     }
 
     /// 並びの写真ごとに、フィルターを残して戻す。かけていない写真は nil
-    func testDraftKeepsTheFilterPerShot() throws {
+    func testDraftKeepsTheFilterPerShot() async throws {
         let suite = UserDefaults(suiteName: "story-filter-\(UUID().uuidString)")!
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("story-filter-\(UUID().uuidString)")
         let store = StoryDraftStore(defaults: suite, directory: dir)
@@ -148,7 +148,7 @@ final class StoryFilterTests: XCTestCase {
     }
 
     /// 焼き込みは写真の画素にだけ当て、文字・札は上に重ねる。当てなかった写真は元のデータをそのまま返す
-    func testBurnAppliesTheFilterToThePhotoOnly() throws {
+    func testBurnAppliesTheFilterToThePhotoOnly() async throws {
         let renderer = try repo("Sources/JourneyPhoto/Services/TextOverlayRenderer.swift")
         XCTAssertTrue(renderer.contains("filter: StoryFilterChoice = .off,"), "焼き込みがフィルターを受けない")
         XCTAssertTrue(renderer.contains("!visible.isEmpty || !framing.isIdentity || !recipe.isIdentity"),
@@ -163,7 +163,7 @@ final class StoryFilterTests: XCTestCase {
         XCTAssertLessThan(drawImage.lowerBound, drawText.lowerBound)
     }
 
-    func testComposerWiresTheFilter() throws {
+    func testComposerWiresTheFilter() async throws {
         let composer = try repo("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
         XCTAssertTrue(composer.contains("song: songArt, filter: shot.filter),"), "投稿の焼き込みにフィルターを渡していない")
         XCTAssertTrue(composer.contains("vote: shot.vote,\n                                      filter: shot.filter)"), "下書きにフィルターを書いていない")
@@ -178,7 +178,7 @@ final class StoryFilterTests: XCTestCase {
         XCTAssertFalse(composer.contains("?? .none"))
     }
 
-    func testPanelTargetsAndAccessibility() throws {
+    func testPanelTargetsAndAccessibility() async throws {
         let panel = try repo("Sources/JourneyPhoto/Features/Stories/StoryFilterPanel.swift")
         XCTAssertTrue(panel.contains(".accessibilityValue(selected ? L(\"選択中\", \"Selected\") : \"\")"), "選びを読み上げない")
         XCTAssertTrue(panel.contains("strokeBorder(WebTheme.accent, lineWidth: 2)"), "選びを形（輪）で伝えていない")

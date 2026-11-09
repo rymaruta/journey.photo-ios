@@ -15,7 +15,7 @@ final class StoryDrawingTests: XCTestCase {
 
     // MARK: - 筆・色
 
-    func testPaletteHasTwelveDistinctColors() {
+    func testPaletteHasTwelveDistinctColors() async {
         let palette = StoryPen.palette
         XCTAssertEqual(palette.count, 12)
         XCTAssertEqual(Set(palette.map(\.hex)).count, 12, "色が重なっている")
@@ -27,7 +27,7 @@ final class StoryDrawingTests: XCTestCase {
         }
     }
 
-    func testToolsHaveSaneWidthsAndOpacity() {
+    func testToolsHaveSaneWidthsAndOpacity() async {
         for tool in StoryPenTool.allCases {
             XCTAssertTrue(tool.widthRange.contains(tool.defaultWidth), "\(tool) の既定の太さが幅の外")
             XCTAssertFalse(tool.label.isEmpty)
@@ -39,7 +39,7 @@ final class StoryDrawingTests: XCTestCase {
     }
 
     /// 太さ・色は筆の幅・24bit に収める
-    func testStrokeClampsWidthAndColor() {
+    func testStrokeClampsWidthAndColor() async {
         let thick = StoryStroke(tool: .pen, hex: 0xFFFF_FFFF, width: 9, points: [StoryStrokePoint(x: 0, y: 0)])
         XCTAssertEqual(thick.width, StoryPenTool.pen.widthRange.upperBound)
         XCTAssertEqual(thick.hex, 0xFFFFFF)
@@ -51,7 +51,7 @@ final class StoryDrawingTests: XCTestCase {
     }
 
     /// 筆ごとの太さを覚える。つまみ（0…1）と太さの変換が往復する
-    func testPenRemembersWidthPerTool() {
+    func testPenRemembersWidthPerTool() async {
         var pen = StoryPen()
         XCTAssertEqual(pen.tool, .pen)
         XCTAssertEqual(pen.colorHex, 0xFFFFFF)
@@ -78,7 +78,7 @@ final class StoryDrawingTests: XCTestCase {
         XCTAssertEqual(pen.width, before, "NaN で太さが壊れる")
     }
 
-    func testBeginStrokeUsesThePen() {
+    func testBeginStrokeUsesThePen() async {
         var pen = StoryPen()
         pen.tool = .highlighter
         pen.colorHex = 0xFFD93D
@@ -91,7 +91,7 @@ final class StoryDrawingTests: XCTestCase {
 
     // MARK: - 取り消し・やり直し・上限
 
-    func testUndoRedo() {
+    func testUndoRedo() async {
         var drawing = StoryDrawing()
         XCTAssertFalse(drawing.canUndo)
         XCTAssertFalse(drawing.canRedo)
@@ -120,7 +120,7 @@ final class StoryDrawingTests: XCTestCase {
     }
 
     /// 目に見える線: 消しゴムだけ・全部取り消した後は焼き込み・書き出しで何も描かない
-    func testHasInk() {
+    func testHasInk() async {
         var drawing = StoryDrawing()
         XCTAssertFalse(drawing.hasInk)
         drawing.add(stroke(.eraser))
@@ -132,7 +132,7 @@ final class StoryDrawingTests: XCTestCase {
     }
 
     /// 比べるのは線だけ（やり直しの控えは「変更あり」に数えない）
-    func testEqualityIgnoresTheRedoStack() {
+    func testEqualityIgnoresTheRedoStack() async {
         var a = StoryDrawing(), b = StoryDrawing()
         a.add(stroke())
         b.add(stroke())
@@ -150,7 +150,7 @@ final class StoryDrawingTests: XCTestCase {
         XCTAssertEqual(c, d, "やり直しの控えが「変更あり」になる")
     }
 
-    func testLimits() {
+    func testLimits() async {
         var drawing = StoryDrawing()
         // 1本の長さ
         let tooLong = StoryStroke(tool: .pen, hex: 0, width: 0.01,
@@ -173,7 +173,7 @@ final class StoryDrawingTests: XCTestCase {
     }
 
     /// 下書きは UserDefaults に JSON で入るので、**並び全体**の点・本数に上限を持つ。最大サイズは上限から出る
-    func testSequenceLimitKeepsTheDraftSmall() throws {
+    func testSequenceLimitKeepsTheDraftSmall() async throws {
         XCTAssertLessThanOrEqual(StoryDrawing.maxSequencePoints, StoryDrawing.maxTotalPoints)
         // ほかの写真が上限まで持っていれば、この写真はもう描けない
         let others = (strokes: 10, points: StoryDrawing.maxSequencePoints)
@@ -194,7 +194,7 @@ final class StoryDrawingTests: XCTestCase {
 
     // MARK: - 読み書き
 
-    func testRoundTripKeepsStrokesNotTheRedoStack() throws {
+    func testRoundTripKeepsStrokesNotTheRedoStack() async throws {
         var drawing = StoryDrawing()
         drawing.add(stroke(.pen, hex: 0xFF5A5F))
         drawing.add(stroke(.eraser))
@@ -207,7 +207,7 @@ final class StoryDrawingTests: XCTestCase {
     }
 
     /// 点は `[x, y]` の2つ組で書く（下書きを小さく保つ）
-    func testPointsEncodeCompactly() throws {
+    func testPointsEncodeCompactly() async throws {
         let data = try JSONEncoder().encode(StoryStroke(tool: .pen, hex: 0xFFFFFF, width: 0.01,
                                                          points: [StoryStrokePoint(x: 0.1, y: 0.2)]))
         let text = String(decoding: data, as: UTF8.self)
@@ -215,7 +215,7 @@ final class StoryDrawingTests: XCTestCase {
     }
 
     /// 壊れた値・欠けた鍵・知らない筆・幅の外で**落ちない**（古い下書きを壊さない）
-    func testDecodingNeverThrowsAndDropsBrokenStrokes() throws {
+    func testDecodingNeverThrowsAndDropsBrokenStrokes() async throws {
         func decode(_ json: String) throws -> StoryDrawing {
             try JSONDecoder().decode(StoryDrawing.self, from: Data(json.utf8))
         }
@@ -238,7 +238,7 @@ final class StoryDrawingTests: XCTestCase {
         XCTAssertTrue(drawing.strokes[1].isDot)
     }
 
-    func testDecodingFillsDefaultsAndClamps() throws {
+    func testDecodingFillsDefaultsAndClamps() async throws {
         let json = """
         {"strokes":[{"tool":"laser","points":[[0.1,0.1],[5,5],[0.2,0.2]],"width":99}]}
         """
@@ -251,7 +251,7 @@ final class StoryDrawingTests: XCTestCase {
     }
 
     /// 上限を超えた下書きは、超えたぶんを読まない
-    func testDecodingRespectsLimits() throws {
+    func testDecodingRespectsLimits() async throws {
         let one = #"{"tool":"pen","points":[[0.1,0.1],[0.2,0.2]]}"#
         let json = #"{"strokes":["# + Array(repeating: one, count: StoryDrawing.maxStrokes + 20).joined(separator: ",") + "]}"
         let drawing = try JSONDecoder().decode(StoryDrawing.self, from: Data(json.utf8))
@@ -260,7 +260,7 @@ final class StoryDrawingTests: XCTestCase {
 
     // MARK: - 下書き
 
-    func testDraftKeepsTheDrawingPerShot() throws {
+    func testDraftKeepsTheDrawingPerShot() async throws {
         let suite = UserDefaults(suiteName: "story-draw-\(UUID().uuidString)")!
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("story-draw-\(UUID().uuidString)")
         let store = StoryDraftStore(defaults: suite, directory: dir)
@@ -287,7 +287,7 @@ final class StoryDrawingTests: XCTestCase {
     }
 
     /// 複製・開き直しで描画が残る
-    func testDuplicateKeepsTheDrawing() throws {
+    func testDuplicateKeepsTheDrawing() async throws {
         let suite = UserDefaults(suiteName: "story-draw-dup-\(UUID().uuidString)")!
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("story-draw-dup-\(UUID().uuidString)")
         let id = UUID().uuidString
@@ -307,7 +307,7 @@ final class StoryDrawingTests: XCTestCase {
         XCTAssertEqual(reopened.shotImages().first?.shot.drawing?.strokes, drawn.strokes, "複製が描画を落とした")
     }
 
-    func testOldDraftShotWithoutDrawingStillDecodes() throws {
+    func testOldDraftShotWithoutDrawingStillDecodes() async throws {
         let json = #"{"imageFile":"a","fileName":"a.jpg","contentType":"image/jpeg","overlays":[]}"#
         let shot = try JSONDecoder().decode(StoryDraftStore.Shot.self, from: Data(json.utf8))
         XCTAssertNil(shot.drawing)
@@ -317,7 +317,7 @@ final class StoryDrawingTests: XCTestCase {
     // MARK: - 座標・命令
 
     /// 1点は空（丸い点を打つ）・2点は直線・3点以上はなめらかな曲線（制御点＝各点・終点＝隣との中点）で最後の点へ直線
-    func testOpsFollowThePointCount() {
+    func testOpsFollowThePointCount() async {
         func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x, y: y) }
         XCTAssertEqual(StoryDrawingGeometry.ops(for: []), [])
         XCTAssertEqual(StoryDrawingGeometry.ops(for: [p(1, 1)]), [])
@@ -331,7 +331,7 @@ final class StoryDrawingTests: XCTestCase {
         XCTAssertEqual(four[3], .line(p(30, 10)))
     }
 
-    func testNormalizingAndMappingBack() throws {
+    func testNormalizingAndMappingBack() async throws {
         let rect = CGRect(x: -20, y: 0, width: 440, height: 880)   // 画面より大きく敷いた写真
         let point = try XCTUnwrap(StoryDrawingGeometry.normalized(CGPoint(x: 200, y: 440), in: rect))
         XCTAssertEqual(point.x, 0.5, accuracy: 1e-9)
@@ -351,14 +351,14 @@ final class StoryDrawingTests: XCTestCase {
     }
 
     /// 太さは写真の短い辺に対する割合（文字の大きさと同じ決め方）
-    func testLineWidthUsesTheShortSide() {
+    func testLineWidthUsesTheShortSide() async {
         XCTAssertEqual(StoryDrawingGeometry.lineWidth(0.01, in: CGSize(width: 1080, height: 1920)), 10.8, accuracy: 1e-9)
         XCTAssertEqual(StoryDrawingGeometry.lineWidth(0.01, in: CGSize(width: 1920, height: 1080)), 10.8, accuracy: 1e-9)
         XCTAssertEqual(StoryDrawingGeometry.lineWidth(0.01, in: CGSize(width: 1080, height: 1920)),
                        CGFloat(TextOverlay.fontSize(0.01, in: CGSize(width: 1080, height: 1920))), accuracy: 1e-9)
     }
 
-    func testShouldAppendNeedsRealMovement() {
+    func testShouldAppendNeedsRealMovement() async {
         XCTAssertFalse(StoryDrawingGeometry.shouldAppend(last: .zero, new: CGPoint(x: 1, y: 0)))
         XCTAssertTrue(StoryDrawingGeometry.shouldAppend(last: .zero, new: CGPoint(x: 1.5, y: 0)))
         XCTAssertTrue(StoryDrawingGeometry.shouldAppend(last: .zero, new: CGPoint(x: 1.1, y: 1.1)))
@@ -366,7 +366,7 @@ final class StoryDrawingTests: XCTestCase {
 
     // MARK: - 描く判断（指の動き）
 
-    func testStrokeInputSteps() {
+    func testStrokeInputSteps() async {
         let photo = CGRect(x: 0, y: 0, width: 400, height: 800)
         let drawing = StoryDrawing()
         // 始める
@@ -389,7 +389,7 @@ final class StoryDrawingTests: XCTestCase {
                                              drawing: drawing), .ignore)
     }
 
-    func testStrokeInputStopsAtLimits() {
+    func testStrokeInputStopsAtLimits() async {
         let photo = CGRect(x: 0, y: 0, width: 400, height: 800)
         // 本数
         var full = StoryDrawing()
@@ -411,7 +411,7 @@ final class StoryDrawingTests: XCTestCase {
     }
 
     /// 焼き込み: 写真 → 線 → 文字・札の順。線が無ければ飛ばし、線だけの写真でも焼く
-    func testBurnDrawsLinesBetweenPhotoAndOverlays() throws {
+    func testBurnDrawsLinesBetweenPhotoAndOverlays() async throws {
         let renderer = try repo("Sources/JourneyPhoto/Services/TextOverlayRenderer.swift")
         XCTAssertTrue(renderer.contains("drawing: StoryDrawing = .empty) -> Data {"))
         XCTAssertTrue(renderer.contains("!visible.isEmpty || !framing.isIdentity || !recipe.isIdentity || drawing.hasInk"),
@@ -433,7 +433,7 @@ final class StoryDrawingTests: XCTestCase {
     }
 
     /// 動画: 重ねの1枚絵に線も入れる。文字・札が無くても線があれば重ねを焼く。線は文字・札の下
-    func testVideoOverlayIncludesTheDrawing() throws {
+    func testVideoOverlayIncludesTheDrawing() async throws {
         let pipeline = try repo("Sources/JourneyPhoto/Services/StoryVideoPipeline.swift")
         XCTAssertTrue(pipeline.contains("guard !overlays.isEmpty || drawing.hasInk else {"), "線だけの動画に重ねを焼かない")
         XCTAssertTrue(pipeline.contains("TextOverlayRenderer.overlayImage(overlays, drawing: drawing, size: renderSize,"))
@@ -447,7 +447,7 @@ final class StoryDrawingTests: XCTestCase {
     }
 
     /// 画面: 描く面が下の札を受けさせない・取り消し/やり直し・✕ を隠す・下書きと書き出しに渡す
-    func testComposerWiresDrawing() throws {
+    func testComposerWiresDrawing() async throws {
         let composer = try repo("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
         XCTAssertTrue(composer.contains("private var sidePanelOpen: Bool { filterPanelOpen || drawMode }"), "描画中に足元が隠れない")
         XCTAssertTrue(composer.contains("@State private var liveStroke = StoryLiveStroke()"))
@@ -476,7 +476,7 @@ final class StoryDrawingTests: XCTestCase {
     }
 
     /// 線の層は写真と札の間（「ひとこと」の欄の下・札の下）
-    func testCanvasPlacesTheLayerBetweenPhotoAndOverlays() throws {
+    func testCanvasPlacesTheLayerBetweenPhotoAndOverlays() async throws {
         let canvas = try repo("Sources/JourneyPhoto/Features/Stories/TextOverlayEditor.swift")
         let photo = try XCTUnwrap(canvas.range(of: ".accessibilityIdentifier(\"story.canvas\")"))
         let layer = try XCTUnwrap(canvas.range(of: "StoryDrawingLayer(strokes: drawingStrokes, live: liveStroke, imageSize: imageSize)"))
@@ -488,7 +488,7 @@ final class StoryDrawingTests: XCTestCase {
     }
 
     /// 描く面・欄: 指を取りこぼさない・読み上げ・当たり 44・固定の大きさの文字なし・色は黒地の欄の上だけ真鍮
-    func testSurfaceAndPanelAccessibility() throws {
+    func testSurfaceAndPanelAccessibility() async throws {
         let surface = try repo("Sources/JourneyPhoto/Features/Stories/StoryDrawingCanvas.swift")
         XCTAssertTrue(surface.contains("DragGesture(minimumDistance: 0)"), "点を打てない（動かさないと描けない）")
         XCTAssertTrue(surface.contains(".contentShape(Rectangle())"), "描く面が指を全部受けない")
