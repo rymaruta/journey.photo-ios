@@ -2,6 +2,24 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.76",
+      "date": "2026-11-09",
+      "items": [
+        {
+          "symbol": "map",
+          "title": {
+            "ja": "行った県の地図が見分けやすく",
+            "en": "Easier-to-read visited prefectures map"
+          },
+          "detail": {
+            "ja": "行った回数（1回・2回・3回以上）を、模様ではなく色の明るさだけで分けました。選んだ県には白い縁が付き、押している間は色が沈みます。",
+            "en": "Visit counts (once, twice, three or more) are now shown by brightness alone, without patterns. The selected prefecture gets a white outline, and a prefecture dims while you press it."
+          },
+          "destination": "mypage"
+        }
+      ]
+    },
+    {
       "version": "1.1.75",
       "date": "2026-11-09",
       "items": [
