@@ -872,6 +872,7 @@ struct StoryComposerView: View {
         .overlay {
             if drawMode && typingId == nil && !votePanelOpen && shots.indices.contains(current) {
                 StoryDrawingSurface(pen: pen, imageSize: previewSize, drawing: shots[current].drawing,
+                                    others: otherDrawingTotals,
                                     live: liveStroke,
                                     onCommit: { stroke in commitStroke(stroke) },
                                     onLimit: { drawLimitReached() })
@@ -2587,7 +2588,23 @@ struct StoryComposerView: View {
     /// 描き終えた1本を、見ている写真の描画に足す（上限なら足さず知らせる）
     private func commitStroke(_ stroke: StoryStroke) {
         guard shots.indices.contains(current) else { return }
+        let others = otherDrawingTotals
+        // 並び全体の上限（下書きの大きさ・`StoryDrawing.maxSequencePoints`）も守る
+        guard shots[current].drawing.canStartStroke(others: others),
+              shots[current].drawing.remainingPoints(forStrokeWith: stroke.points.count, others: others) >= 0,
+              others.points + shots[current].drawing.totalPoints + stroke.points.count <= StoryDrawing.maxSequencePoints
+        else { drawLimitReached(); return }
         if !shots[current].drawing.add(stroke) { drawLimitReached() }
+    }
+
+    /// 見ている写真以外の本数・点の数（並び全体の上限に数える）
+    private var otherDrawingTotals: (strokes: Int, points: Int) {
+        var strokes = 0, points = 0
+        for (index, shot) in shots.enumerated() where index != current {
+            strokes += shot.drawing.strokes.count
+            points += shot.drawing.totalPoints
+        }
+        return (strokes, points)
     }
 
     private func drawLimitReached() {

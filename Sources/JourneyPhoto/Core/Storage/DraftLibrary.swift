@@ -450,7 +450,8 @@ final class DraftLibrary: ObservableObject {
                                                  coords: shot.coords, overlays: shot.overlays,
                                                  framing: shot.framing, vote: shot.vote,
                                                  // 複製でフィルターを落とさない（2026-11-09）
-                                                 filter: shot.filter ?? StoryFilterChoice.off)
+                                                 filter: shot.filter ?? StoryFilterChoice.off,
+                                                 drawing: shot.drawing ?? StoryDrawing.empty)
             }
             guard !inputs.isEmpty else { return nil }
             ok = storyStore(.entry(newId), userId: userId).save(

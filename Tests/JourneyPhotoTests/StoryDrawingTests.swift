@@ -160,15 +160,36 @@ final class StoryDrawingTests: XCTestCase {
         // 本数
         for _ in 0..<StoryDrawing.maxStrokes { XCTAssertTrue(drawing.add(stroke(points: 2))) }
         XCTAssertFalse(drawing.add(stroke(points: 2)), "本数の上限を超えている")
-        // 点の総数
+        // 点の総数（1枚）
         var many = StoryDrawing()
         let long = { (n: Int) in StoryStroke(tool: .pen, hex: 0, width: 0.01, points: (0..<n).map { StoryStrokePoint(x: Double($0) / 2000, y: 0) }) }
-        for _ in 0..<13 { XCTAssertTrue(many.add(long(1500))) }       // 19,500 点
-        XCTAssertFalse(many.add(long(501)), "点の総数の上限を超えている")
-        XCTAssertTrue(many.add(long(500)))
+        for _ in 0..<(StoryDrawing.maxTotalPoints / 1000 - 1) { XCTAssertTrue(many.add(long(1000))) }
+        let left = StoryDrawing.maxTotalPoints - many.totalPoints
+        XCTAssertFalse(many.add(long(left + 1)), "点の総数の上限を超えている")
+        XCTAssertTrue(many.add(long(left)))
         XCTAssertEqual(many.totalPoints, StoryDrawing.maxTotalPoints)
         XCTAssertEqual(many.remainingPoints(forStrokeWith: 1), 0)
         XCTAssertEqual(StoryDrawing().remainingPoints(forStrokeWith: 100), StoryDrawing.maxPointsPerStroke - 100)
+    }
+
+    /// 下書きは UserDefaults に JSON で入るので、**並び全体**の点・本数に上限を持つ。最大サイズは上限から出る
+    func testSequenceLimitKeepsTheDraftSmall() throws {
+        XCTAssertLessThanOrEqual(StoryDrawing.maxSequencePoints, StoryDrawing.maxTotalPoints)
+        // ほかの写真が上限まで持っていれば、この写真はもう描けない
+        let others = (strokes: 10, points: StoryDrawing.maxSequencePoints)
+        XCTAssertEqual(StoryDrawing().remainingPoints(forStrokeWith: 1, others: others), 0)
+        XCTAssertEqual(StoryStrokeInput.step(live: nil, last: nil, location: CGPoint(x: 10, y: 10),
+                                             photo: CGRect(x: 0, y: 0, width: 400, height: 800),
+                                             drawing: StoryDrawing(), others: others), .limit)
+        XCTAssertFalse(StoryDrawing().canStartStroke(others: (strokes: StoryDrawing.maxSequenceStrokes, points: 0)))
+        // 最大に描いた1件のサイズ: 点 16B × 上限 + 1本 110B × 本数上限 が約 130KB に収まる（UserDefaults に入れてよい重さ）
+        var drawing = StoryDrawing()
+        for _ in 0..<(StoryDrawing.maxSequencePoints / 20) {
+            drawing.add(StoryStroke(tool: .pen, hex: 0xFFFFFF, width: 0.01,
+                                    points: (0..<20).map { StoryStrokePoint(x: 0.1234 + Double($0) / 1000, y: 0.5678) }))
+        }
+        let bytes = try JSONEncoder().encode(drawing).count
+        XCTAssertLessThan(bytes, 200_000, "並び全体の描画が重い: \(bytes)B")
     }
 
     // MARK: - 読み書き
@@ -263,6 +284,27 @@ final class StoryDrawingTests: XCTestCase {
         XCTAssertEqual(restored[0]?.strokes, drawn.strokes, "描いた線が戻らない")
         XCTAssertNil(restored[1], "描いていない写真に空の描画を書いている")
         XCTAssertNil(restored[2], "線が見えない描画（消しゴムだけ）を書いている")
+    }
+
+    /// 複製・開き直しで描画が残る
+    func testDuplicateKeepsTheDrawing() throws {
+        let suite = UserDefaults(suiteName: "story-draw-dup-\(UUID().uuidString)")!
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("story-draw-dup-\(UUID().uuidString)")
+        let id = UUID().uuidString
+        let store = StoryDraftStore(defaults: suite, directory: dir, slot: .entry(id))
+        store.bind(userId: "a")
+        var drawn = StoryDrawing()
+        drawn.add(stroke(.pen, hex: 0x4DA3FF))
+        XCTAssertTrue(store.save(
+            shots: [StoryDraftStore.ShotInput(imageData: Data([1, 2, 3]), fileName: "s.jpg", contentType: "image/jpeg",
+                                              coords: nil, overlays: [], drawing: drawn)],
+            caption: "", location: "", song: nil, durationSec: 5, savedAt: "2026-11-09T10:00:00.000Z"))
+        let lib = DraftLibrary(defaults: suite, directory: dir)
+        let copy = try XCTUnwrap(lib.duplicate(id, kind: .story, for: "a"))
+        lib.remove(id, for: "a")
+        let reopened = StoryDraftStore(defaults: suite, directory: dir, slot: .entry(copy))
+        reopened.bind(userId: "a")
+        XCTAssertEqual(reopened.shotImages().first?.shot.drawing?.strokes, drawn.strokes, "複製が描画を落とした")
     }
 
     func testOldDraftShotWithoutDrawingStillDecodes() throws {

@@ -135,7 +135,12 @@ struct StoryDrawing: Codable {
     /// 上限（下書きの大きさ・描き直しの重さを抑える）。1本の長さ・本数・全部の点の数
     static let maxStrokes = 200
     static let maxPointsPerStroke = 1500
-    static let maxTotalPoints = 20_000
+    static let maxTotalPoints = 6_000
+    /// **並び全体**（下書きの1件＝全部の写真）の上限。下書きは `UserDefaults` に JSON で入るので、重くしない。
+    /// 最大サイズの見積もり: 1点 `[0.1234,0.5678],` ≒ 16B × 6000 点 ≒ 96KB、1本の枠（id・筆・色・太さ）≒ 110B × 300 本 ≒ 33KB
+    /// ＝ **最大でおよそ 130KB**（上限を決める前は 1枚 20000 点 × 10 枚 ≒ 3.2MB になり得た）
+    static let maxSequencePoints = 6_000
+    static let maxSequenceStrokes = 300
 
     static let empty = StoryDrawing()
 
@@ -167,8 +172,15 @@ struct StoryDrawing: Codable {
     }
 
     /// 描いている線にあと何点足せるか（描き始めの手前で上限を知らせるのに使う）
-    func remainingPoints(forStrokeWith count: Int) -> Int {
-        max(0, min(Self.maxPointsPerStroke - count, Self.maxTotalPoints - totalPoints - count))
+    /// `others` は並びのほかの写真が持つ本数・点の数（並び全体の上限に数える）
+    func remainingPoints(forStrokeWith count: Int, others: (strokes: Int, points: Int) = (0, 0)) -> Int {
+        max(0, min(Self.maxPointsPerStroke - count, Self.maxTotalPoints - totalPoints - count,
+                   Self.maxSequencePoints - others.points - totalPoints - count))
+    }
+
+    /// 新しい1本を始めてよいか（この写真の本数と、並び全体の本数）
+    func canStartStroke(others: (strokes: Int, points: Int) = (0, 0)) -> Bool {
+        strokes.count < Self.maxStrokes && strokes.count + others.strokes < Self.maxSequenceStrokes
     }
 
     /// 線を足す。**上限を超えるなら足さず false**。足したら「やり直し」の分は消える
@@ -371,15 +383,15 @@ enum StoryStrokeInput {
     ///   - photo: 写真が占める場所
     ///   - drawing: すでに持っている線（上限の判断）
     static func step(live: StoryStroke?, last: CGPoint?, location: CGPoint, photo: CGRect,
-                     drawing: StoryDrawing) -> Step {
+                     drawing: StoryDrawing, others: (strokes: Int, points: Int) = (0, 0)) -> Step {
         guard let point = StoryDrawingGeometry.normalized(location, in: photo) else { return .ignore }
         guard let live else {
-            guard drawing.strokes.count < StoryDrawing.maxStrokes,
-                  drawing.remainingPoints(forStrokeWith: 1) > 0 else { return .limit }
+            guard drawing.canStartStroke(others: others),
+                  drawing.remainingPoints(forStrokeWith: 1, others: others) > 0 else { return .limit }
             return .begin(point)
         }
         guard let last, StoryDrawingGeometry.shouldAppend(last: last, new: location) else { return .ignore }
-        guard drawing.remainingPoints(forStrokeWith: live.points.count) > 0 else { return .limit }
+        guard drawing.remainingPoints(forStrokeWith: live.points.count, others: others) > 0 else { return .limit }
         return .append(point)
     }
 }

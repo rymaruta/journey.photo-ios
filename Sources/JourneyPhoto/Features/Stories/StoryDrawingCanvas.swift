@@ -85,6 +85,8 @@ struct StoryDrawingSurface: View {
     let imageSize: CGSize?
     /// 上限の判断に使う、いま持っている線
     let drawing: StoryDrawing
+    /// 並びのほかの写真が持つ本数・点の数（並び全体の上限）
+    var others: (strokes: Int, points: Int) = (0, 0)
     /// 描いている1本の置き場（持ち主が線の層と共有する）
     let live: StoryLiveStroke
     let onCommit: (StoryStroke) -> Void
@@ -125,7 +127,7 @@ struct StoryDrawingSurface: View {
     private func extend(to location: CGPoint, in size: CGSize) {
         let photo = TextOverlay.filledRect(image: imageSize ?? size, in: size)
         switch StoryStrokeInput.step(live: live.stroke, last: lastPoint, location: location, photo: photo,
-                                     drawing: drawing) {
+                                     drawing: drawing, others: others) {
         case .begin(let point):
             limitReported = false
             live.stroke = pen.beginStroke(at: point)
