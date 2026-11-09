@@ -134,8 +134,8 @@ final class StoryVideoFilterTests: XCTestCase {
     /// 画面: 動画にもフィルターを出す・書き出しに渡す・かけ直したら書き出し直す・表紙もそろえる・時間の延びを言う
     func testComposerCarriesTheFilterIntoTheVideoExport() throws {
         let composer = try repo("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
-        XCTAssertTrue(composer.contains("for (id, clip, overlays, filter) in targets {"))
-        XCTAssertTrue(composer.contains("filter: filter)"), "書き出しにフィルターを渡していない")
+        XCTAssertTrue(composer.contains("for (id, clip, overlays, filter, drawing) in targets {"))
+        XCTAssertTrue(composer.contains("filter: filter, drawing: drawing)"), "書き出しにフィルターを渡していない")
         XCTAssertTrue(composer.contains("done.filters[id] = filter"))
         XCTAssertTrue(composer.contains("&& done.filters[$0.id] == $0.filter"), "かけ直しても書き出し直さない")
         XCTAssertTrue(composer.contains("StoryFilterRenderer.coverData(shot.prepared.data, filter: shot.filter)"), "動画の表紙がフィルターと食い違う")

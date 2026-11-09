@@ -58,6 +58,8 @@ final class StoryDraftStore: ObservableObject {
         var basedOn: String? = nil
         /// 1枚目のフィルター（2026-11-09）。かけていなければ nil（前の版の下書きにも無い＝「なし」）
         var filter: StoryFilterChoice? = nil
+        /// 1枚目の描画（2026-11-09）。描いていなければ nil（前の版の下書きにも無い＝描いていない）
+        var drawing: StoryDrawing? = nil
 
         var coords: Photo.Coords? {
             guard let latitude, let longitude else { return nil }
@@ -68,7 +70,7 @@ final class StoryDraftStore: ObservableObject {
         var shots: [Shot] {
             [Shot(imageFile: imageFile, fileName: fileName, contentType: contentType,
                   latitude: latitude, longitude: longitude, overlays: overlays, framing: framing, vote: vote,
-                  filter: filter)]
+                  filter: filter, drawing: drawing)]
                 + (extraShots ?? [])
         }
     }
@@ -87,6 +89,8 @@ final class StoryDraftStore: ObservableObject {
         var vote: StoryVoteDraft?
         /// フィルター（2026-11-09）。かけていなければ nil（前の版の下書きにも無い＝「なし」）
         var filter: StoryFilterChoice? = nil
+        /// 描画（2026-11-09）。描いていなければ nil（前の版の下書きにも無い＝描いていない）。端末の中だけ
+        var drawing: StoryDrawing? = nil
 
         var coords: Photo.Coords? {
             guard let latitude, let longitude else { return nil }
@@ -105,6 +109,8 @@ final class StoryDraftStore: ObservableObject {
         var vote: StoryVoteDraft? = nil
         /// かけていなければ「なし」（nil で書く）
         var filter: StoryFilterChoice = .off
+        /// 描画。目に見える線が無ければ書かない
+        var drawing: StoryDrawing = .empty
     }
 
     @Published private(set) var draft: Draft?
@@ -465,7 +471,8 @@ final class StoryDraftStore: ObservableObject {
             Shot(imageFile: file, fileName: input.fileName, contentType: input.contentType,
                  latitude: input.coords?.lat, longitude: input.coords?.lng, overlays: input.overlays,
                  framing: input.framing, vote: input.vote,
-                 filter: input.filter.isNone ? nil : input.filter.sanitized)
+                 filter: input.filter.isNone ? nil : input.filter.sanitized,
+                 drawing: input.drawing.hasInk ? input.drawing : nil)
         }
         let first = shots[0]
         var saved = Draft(imageFile: first.imageFile, fileName: first.fileName,
@@ -479,6 +486,7 @@ final class StoryDraftStore: ObservableObject {
                           framing: first.framing, vote: first.vote)
         saved.basedOn = basedOn
         saved.filter = first.filter
+        saved.drawing = first.drawing
         guard let data = try? JSONEncoder().encode(saved) else {
             for file in written {
                 try? FileManager.default.removeItem(at: fileURL(file))

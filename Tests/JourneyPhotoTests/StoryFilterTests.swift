@@ -150,7 +150,7 @@ final class StoryFilterTests: XCTestCase {
     /// 焼き込みは写真の画素にだけ当て、文字・札は上に重ねる。当てなかった写真は元のデータをそのまま返す
     func testBurnAppliesTheFilterToThePhotoOnly() throws {
         let renderer = try repo("Sources/JourneyPhoto/Services/TextOverlayRenderer.swift")
-        XCTAssertTrue(renderer.contains("filter: StoryFilterChoice = .off) -> Data {"), "焼き込みがフィルターを受けない")
+        XCTAssertTrue(renderer.contains("filter: StoryFilterChoice = .off,"), "焼き込みがフィルターを受けない")
         XCTAssertTrue(renderer.contains("!visible.isEmpty || !framing.isIdentity || !recipe.isIdentity"),
                       "フィルターだけの写真が焼き込みを飛ばされる")
         XCTAssertTrue(renderer.contains("StoryFilterRenderer.image(data: data, recipe: recipe, maxPixelSize: ImagePreparer.maxPixelSize)"))
@@ -172,7 +172,7 @@ final class StoryFilterTests: XCTestCase {
         XCTAssertTrue(composer.contains("shots.indices.contains(current) ? shots[current].shownPreview : nil"),
                       "作る画面がフィルターをかけた絵を出さない")
         XCTAssertFalse(composer.contains("if currentClip == nil { filterButton }"), "動画（段 2b）にフィルターの口が出ない")
-        XCTAssertTrue(composer.contains("                    filterButton\n                    moreMenu"))
+        XCTAssertTrue(composer.contains("                    filterButton\n                    drawButton\n                    moreMenu"))
         XCTAssertTrue(composer.contains("if !votePanelOpen && !sidePanelOpen {"), "欄を開いても足元が隠れない")
         // `Optional.none` と取り違える書き方を持ち込まない
         XCTAssertFalse(composer.contains("?? .none"))

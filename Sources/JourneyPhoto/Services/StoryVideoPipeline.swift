@@ -77,9 +77,10 @@ enum StoryVideoPipeline {
     /// 重ねの焼き込み以降は今までと同じ道を通す（理由と注意は `StoryVideoFilterPlan`）。「なし」は今までと同じ。
     /// 返すのは一時フォルダのファイル（`StoryUploadCenter` が並びの置き場へ移す）
     static func export(_ clip: StoryVideoClip, overlays: [TextOverlay],
-                       song: SongStickerPainter.Art?, filter: StoryFilterChoice = .off) async throws -> URL {
+                       song: SongStickerPainter.Art?, filter: StoryFilterChoice = .off,
+                       drawing: StoryDrawing = .empty) async throws -> URL {
         #if canImport(Darwin)
-        return try await exportDarwin(clip, overlays: overlays, song: song, filter: filter)
+        return try await exportDarwin(clip, overlays: overlays, song: song, filter: filter, drawing: drawing)
         #else
         throw StoryVideoRules.Problem.exportFailed
         #endif
@@ -179,7 +180,8 @@ extension StoryVideoPipeline {
     }
 
     fileprivate static func exportDarwin(_ original: StoryVideoClip, overlays: [TextOverlay],
-                                         song: SongStickerPainter.Art?, filter: StoryFilterChoice) async throws -> URL {
+                                         song: SongStickerPainter.Art?, filter: StoryFilterChoice,
+                                         drawing: StoryDrawing) async throws -> URL {
         // フィルターをかけるときだけ、先に1回（切り取り・縮小・フィルター → 中間の動画）。以降はその中間の動画を元に、
         // 今までと同じ道を通す（`clip` が2回目の元）。中間の動画は書き終えたら（失敗・取り消しでも）消す
         let clip: StoryVideoClip
@@ -202,7 +204,8 @@ extension StoryVideoPipeline {
         // 段は**切ったあとの長さ**で選ぶ（元が長くても、残す範囲が短ければ高い画質から試せる）
         for step in StoryVideoRules.ladder(durationSec: clip.outputSeconds) {
             try Task.checkCancellation()
-            let built = try await composition(for: asset, trim: clip.trim, overlays: visible, song: song, step: step)
+            let built = try await composition(for: asset, trim: clip.trim, overlays: visible, drawing: drawing,
+                                              song: song, step: step)
             // 位置情報が残ったときは1回だけ自動でやり直す(それでも残るなら上げない)
             for _ in 0..<2 {
                 try Task.checkCancellation()
@@ -251,6 +254,7 @@ extension StoryVideoPipeline {
 
     /// 書き出す元の合成。向きを直し、重ねがあれば**段の大きさまで縮めて**全コマの上に置く
     private static func composition(for asset: AVURLAsset, trim: StoryVideoTrim, overlays: [TextOverlay],
+                                    drawing: StoryDrawing,
                                     song: SongStickerPainter.Art?, step: StoryVideoRules.Step) async throws
         -> (asset: AVAsset, video: AVVideoComposition?) {
         guard let sourceVideo = try await asset.loadTracks(withMediaType: .video).first else {
@@ -287,7 +291,8 @@ extension StoryVideoPipeline {
 
         let natural = try await sourceVideo.load(.naturalSize)
         let transform = try await sourceVideo.load(.preferredTransform)
-        guard !overlays.isEmpty else {
+        // 描画の線（2026-11-09）も重ねの1枚絵に入れる。**文字・札が無くても線があれば重ねを焼く**
+        guard !overlays.isEmpty || drawing.hasInk else {
             // 重ねなし: 向きだけ写す(付帯情報は写さない)。大きさは書き出しの段が決める
             video.preferredTransform = transform
             return (composition, nil)
@@ -314,7 +319,8 @@ extension StoryVideoPipeline {
         videoComposition.instructions = [instruction]
 
         // 写真と同じ描き方(`TextOverlayRenderer.draw`)で透明な画像に重ねだけを描き、全コマの上に置く
-        if let cgImage = TextOverlayRenderer.overlayImage(overlays, size: renderSize, song: song)?.cgImage {
+        if let cgImage = TextOverlayRenderer.overlayImage(overlays, drawing: drawing, size: renderSize,
+                                                          song: song)?.cgImage {
             let frame = CGRect(origin: .zero, size: renderSize)
             let parent = CALayer()
             parent.frame = frame
@@ -481,13 +487,16 @@ extension StoryVideoPipeline {
 extension TextOverlayRenderer {
     /// 重ねだけを透明な画像に描く（動画の全コマの上に置く・札 #500）。`size` は動画の向きを直した後の画素数。
     /// 大きさの基準・字・札の描き方は写真の焼き込み（`burn`）と同じ関数
-    static func overlayImage(_ overlays: [TextOverlay], size: CGSize, song: SongStickerPainter.Art?) -> UIImage? {
+    /// 描画の線（`drawing`・2026-11-09）は文字・札の下に描く（写真の焼き込みと同じ順）
+    static func overlayImage(_ overlays: [TextOverlay], drawing: StoryDrawing = .empty, size: CGSize,
+                             song: SongStickerPainter.Art?) -> UIImage? {
         let visible = overlays.filter { !$0.isEmpty }
-        guard !visible.isEmpty, size.width > 0, size.height > 0 else { return nil }
+        guard !visible.isEmpty || drawing.hasInk, size.width > 0, size.height > 0 else { return nil }
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = false
         return UIGraphicsImageRenderer(size: size, format: format).image { context in
+            StoryDrawingPainter.draw(drawing, size: size, in: context.cgContext)
             for overlay in visible {
                 draw(overlay, on: size, context: context.cgContext, song: song)
             }

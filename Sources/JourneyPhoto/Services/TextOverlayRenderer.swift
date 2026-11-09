@@ -29,10 +29,11 @@ enum TextOverlayRenderer {
     static func burn(_ overlays: [TextOverlay], framing: PhotoFraming = .identity, into data: Data,
                      quality: Double = ImagePreparer.jpegQuality,
                      song: SongStickerPainter.Art? = nil,
-                     filter: StoryFilterChoice = .off) -> Data {
+                     filter: StoryFilterChoice = .off,
+                     drawing: StoryDrawing = .empty) -> Data {
         let visible = overlays.filter { !$0.isEmpty }
         let recipe = filter.recipe
-        guard !visible.isEmpty || !framing.isIdentity || !recipe.isIdentity,
+        guard !visible.isEmpty || !framing.isIdentity || !recipe.isIdentity || drawing.hasInk,
               let original = UIImage(data: data) else { return data }
         let size = original.size
         // 2026-11-09（段 2a）: フィルターは**写真の画素だけ**に当てる（文字・札は上に重ねる）。枠（`size`）は元のまま——
@@ -65,6 +66,11 @@ enum TextOverlayRenderer {
                                       width: place.drawSize.width, height: place.drawSize.height))
                 cg.restoreGState()
             }
+            // 描画の線（2026-11-09）は写真の上・文字と札の下（`StoryDrawing` の注記）。写真の画素の上に、
+            // 線だけの透明な層としてまとめて描く（消しゴムが写真を消さない）
+            #if !os(Linux)
+            StoryDrawingPainter.draw(drawing, size: size, in: context.cgContext)
+            #endif
             for overlay in visible {
                 draw(overlay, on: size, context: context.cgContext, song: song)
             }
