@@ -10,8 +10,10 @@ enum StoryVideoRules {
     /// 動画の長さの上限（秒）。Web と同じ 60。**投稿する長さ**の上限（元の動画は長くてよい。作る画面で切る・`StoryVideoTrim`）
     static let maxSeconds: Double = 60
     /// 取り込める元の動画の長さ（秒）。2026-11-09 判断: 60 秒を超えても取り込み、作る画面で範囲を選んで切る。
-    /// 無制限にはしない（数時間の動画は読み出す帯も重い）。3 時間
-    static let maxSourceSeconds: Double = 3 * 60 * 60
+    /// 無制限にはしない（数十分・数 GB の動画は、一時フォルダへ写すだけで容量・時間を食う）。
+    /// 10 分・2GB まで。**写す前に**確かめる（`StoryMovieFile`）
+    static let maxSourceSeconds: Double = 10 * 60
+    static let maxSourceBytes = 2 * 1024 * 1024 * 1024
     /// 上げられる大きさの上限（バイト）。サーバーの `MAX_UPLOAD_BYTES`（50MB）
     static let maxBytes = 50 * 1024 * 1024
     /// 書き出しの目標。**上限ちょうどに寄せない**（書き出しの見積もりは多少ずれる）
@@ -74,8 +76,8 @@ enum StoryVideoRules {
             case .tooLong:
                 return L("動画は60秒以内にしてください", "Video must be 60 seconds or shorter")
             case .sourceTooLong:
-                return L("動画が長すぎて読み込めません。3時間以内の動画を選んでください",
-                         "The video is too long to load. Choose one under 3 hours")
+                return L("長すぎます。10分までの動画を選んでください",
+                         "That video is too long. Choose one that is 10 minutes or shorter")
             case .unreadable:
                 return L("動画を読み込めませんでした", "Couldn't read the video")
             case .tooLarge:
@@ -98,7 +100,8 @@ enum StoryVideoRules {
 
     /// 取り込み時の確かめ（2026-11-09 から）。**60 秒を超えても断らない**——作る画面で範囲を選んで切る。
     /// 読めない・長さ 0 と、取り込めない長さ（`maxSourceSeconds`）だけ断る
-    static func importProblem(durationSec: Double?) -> Problem? {
+    static func importProblem(durationSec: Double?, bytes: Int? = nil) -> Problem? {
+        if let bytes, bytes > maxSourceBytes { return .sourceTooLong }
         guard let durationSec, durationSec.isFinite, durationSec > 0 else { return .unreadable }
         return durationSec > maxSourceSeconds ? .sourceTooLong : nil
     }
