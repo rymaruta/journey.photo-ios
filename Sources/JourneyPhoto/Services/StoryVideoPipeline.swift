@@ -73,11 +73,13 @@ enum StoryVideoPipeline {
 
     /// 重ね（文字・札・曲）を焼き込み、50MB に収まる mp4 に書き出す。**位置情報は残さない**。
     /// **切り取り（`clip.trim`）の範囲だけ**を書き出す（2026-11-09）。
+    /// `filter` はフィルター（2026-11-09・段 2b）。**かけるときだけ**、先に1回フィルターをかけた中間の動画を作り、
+    /// 重ねの焼き込み以降は今までと同じ道を通す（理由と注意は `StoryVideoFilterPlan`）。「なし」は今までと同じ。
     /// 返すのは一時フォルダのファイル（`StoryUploadCenter` が並びの置き場へ移す）
     static func export(_ clip: StoryVideoClip, overlays: [TextOverlay],
-                       song: SongStickerPainter.Art?) async throws -> URL {
+                       song: SongStickerPainter.Art?, filter: StoryFilterChoice = .off) async throws -> URL {
         #if canImport(Darwin)
-        return try await exportDarwin(clip, overlays: overlays, song: song)
+        return try await exportDarwin(clip, overlays: overlays, song: song, filter: filter)
         #else
         throw StoryVideoRules.Problem.exportFailed
         #endif
@@ -176,8 +178,20 @@ extension StoryVideoPipeline {
         init(_ session: AVAssetExportSession) { self.session = session }
     }
 
-    fileprivate static func exportDarwin(_ clip: StoryVideoClip, overlays: [TextOverlay],
-                                         song: SongStickerPainter.Art?) async throws -> URL {
+    fileprivate static func exportDarwin(_ original: StoryVideoClip, overlays: [TextOverlay],
+                                         song: SongStickerPainter.Art?, filter: StoryFilterChoice) async throws -> URL {
+        // フィルターをかけるときだけ、先に1回（切り取り・縮小・フィルター → 中間の動画）。以降はその中間の動画を元に、
+        // 今までと同じ道を通す（`clip` が2回目の元）。中間の動画は書き終えたら（失敗・取り消しでも）消す
+        let clip: StoryVideoClip
+        var intermediate: URL?
+        if filter.isNone {
+            clip = original
+        } else {
+            let made = try await filteredIntermediate(original, recipe: filter.recipe)
+            intermediate = made.url
+            clip = StoryVideoFilterPlan.secondPassClip(from: original, intermediate: made.url, size: made.size)
+        }
+        defer { if let intermediate { try? FileManager.default.removeItem(at: intermediate) } }
         let asset = AVURLAsset(url: clip.url)
         let visible = overlays.filter { !$0.isEmpty }
 
@@ -255,10 +269,9 @@ extension StoryVideoPipeline {
         if trim.isFull {
             sourceRange = CMTimeRange(start: .zero, duration: duration)
         } else {
-            let from = min(trim.start, max(duration.seconds - trim.minimumLength, 0))
-            let length = min(trim.length, max(duration.seconds - from, trim.minimumLength))
-            sourceRange = CMTimeRange(start: CMTime(seconds: from, preferredTimescale: 600),
-                                      duration: CMTime(seconds: length, preferredTimescale: 600))
+            let part = trim.sourceRange(assetDuration: duration.seconds)
+            sourceRange = CMTimeRange(start: CMTime(seconds: part.start, preferredTimescale: 600),
+                                      duration: CMTime(seconds: part.length, preferredTimescale: 600))
         }
         let range = CMTimeRange(start: .zero, duration: sourceRange.duration)
         do {
@@ -316,6 +329,92 @@ extension StoryVideoPipeline {
                 postProcessingAsVideoLayer: videoLayer, in: parent)
         }
         return (composition, videoComposition)
+    }
+
+    /// 書き出しの1つを走らせて終わりを待つ（取り消されたら書き出しも止める）。呼ぶ側が結果の `status` を見る
+    private static func run(_ session: AVAssetExportSession) async {
+        let box = ExportBox(session)
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                box.session.exportAsynchronously { continuation.resume() }
+            }
+        } onCancel: {
+            box.session.cancelExport()
+        }
+    }
+
+    /// フィルターをかけた中間の動画（段 2b の1回目）。**元の動画の切り取りの範囲だけ**を、向きを直した1コマごとに
+    /// 目標の大きさ（`StoryVideoFilterPlan.passRenderSize`）へ縮め、写真と同じレシピ（`PhotoRenderer.apply`・
+    /// 同じ作業色空間の `CIContext`）をかけて書く。音声はそのまま。**重ねは載せない**（2回目で焼く）。
+    ///
+    /// ⚠️ **確かめていない前提**: `AVMutableVideoComposition(asset:applyingCIFiltersWithHandler:)` の
+    /// `sourceImage` は、向きを直した（`preferredTransform` を当てた）1コマ。違えば出力の縦横が目標と
+    /// 食い違うので、`orientationMatches` で見つけて**失敗にする**（横向きの動画を上げない）。実機で確かめること
+    private static func filteredIntermediate(_ clip: StoryVideoClip, recipe: PhotoRecipe) async throws
+        -> (url: URL, size: CGSize) {
+        let asset = AVURLAsset(url: clip.url)
+        guard let track = try await asset.loadTracks(withMediaType: .video).first else {
+            throw StoryVideoRules.Problem.unreadable
+        }
+        let natural = try await track.load(.naturalSize)
+        let transform = try await track.load(.preferredTransform)
+        let frameRate = try await track.load(.nominalFrameRate)
+        let duration = try await asset.load(.duration)
+        let rect = CGRect(origin: .zero, size: natural).applying(transform)
+        let oriented = CGSize(width: abs(rect.width), height: abs(rect.height))
+        let target = StoryVideoFilterPlan.passRenderSize(oriented: oriented)
+
+        let renderer = PhotoRenderer.shared
+        let composition = AVMutableVideoComposition(asset: asset, applyingCIFiltersWithHandler: { request in
+            let source = request.sourceImage
+            let extent = source.extent
+            let scales = StoryVideoFilterPlan.scale(from: extent.size, to: target)
+            let fitted = source.transformed(by: CGAffineTransform(translationX: -extent.origin.x, y: -extent.origin.y)
+                .concatenating(CGAffineTransform(scaleX: scales.x, y: scales.y)))
+            request.finish(with: renderer.apply(recipe, to: fitted), context: renderer.context)
+        })
+        composition.renderSize = target
+        composition.frameDuration = CMTime(value: 1, timescale: StoryVideoRules.overlayFrameRate(source: frameRate))
+
+        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
+            throw StoryVideoRules.Problem.exportFailed
+        }
+        let out = StoryVideoPipeline.temporaryURL(ext: "mov")
+        session.outputURL = out
+        session.outputFileType = .mov
+        session.videoComposition = composition
+        session.metadata = []
+        session.metadataItemFilter = AVMetadataItemFilter.forSharing()
+        if !clip.trim.isFull {
+            let part = clip.trim.sourceRange(assetDuration: duration.seconds)
+            session.timeRange = CMTimeRange(start: CMTime(seconds: part.start, preferredTimescale: 600),
+                                            duration: CMTime(seconds: part.length, preferredTimescale: 600))
+        }
+        try Task.checkCancellation()
+        await run(session)
+        if Task.isCancelled {
+            try? FileManager.default.removeItem(at: out)
+            throw CancellationError()
+        }
+        guard session.status == .completed else {
+            try? FileManager.default.removeItem(at: out)
+            throw StoryVideoRules.Problem.exportFailed
+        }
+        // 向きの確かめ（上の注記）。合っていなければ上げない
+        let made = AVURLAsset(url: out)
+        guard let madeTrack = try await made.loadTracks(withMediaType: .video).first else {
+            try? FileManager.default.removeItem(at: out)
+            throw StoryVideoRules.Problem.exportFailed
+        }
+        let madeNatural = try await madeTrack.load(.naturalSize)
+        let madeTransform = try await madeTrack.load(.preferredTransform)
+        let madeRect = CGRect(origin: .zero, size: madeNatural).applying(madeTransform)
+        let madeSize = CGSize(width: abs(madeRect.width), height: abs(madeRect.height))
+        guard StoryVideoFilterPlan.orientationMatches(expected: target, actual: madeSize) else {
+            try? FileManager.default.removeItem(at: out)
+            throw StoryVideoRules.Problem.exportFailed
+        }
+        return (out, madeSize)
     }
 
     /// 切り取りの帯のサムネイル（`filmstrip(of:count:)` の本体）

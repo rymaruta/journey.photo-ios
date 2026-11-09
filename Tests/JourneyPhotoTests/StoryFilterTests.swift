@@ -171,7 +171,8 @@ final class StoryFilterTests: XCTestCase {
         XCTAssertTrue(composer.contains("filters: shots.map(\\.filter))"), "フィルターを変えても「変更あり」にならない")
         XCTAssertTrue(composer.contains("shots.indices.contains(current) ? shots[current].shownPreview : nil"),
                       "作る画面がフィルターをかけた絵を出さない")
-        XCTAssertTrue(composer.contains("if currentClip == nil { filterButton }"), "動画にフィルターの口を出している（動画は次の段）")
+        XCTAssertFalse(composer.contains("if currentClip == nil { filterButton }"), "動画（段 2b）にフィルターの口が出ない")
+        XCTAssertTrue(composer.contains("                    filterButton\n                    moreMenu"))
         XCTAssertTrue(composer.contains("if !votePanelOpen && !sidePanelOpen {"), "欄を開いても足元が隠れない")
         // `Optional.none` と取り違える書き方を持ち込まない
         XCTAssertFalse(composer.contains("?? .none"))

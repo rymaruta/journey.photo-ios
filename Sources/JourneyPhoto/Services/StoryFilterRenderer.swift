@@ -17,6 +17,16 @@ enum StoryFilterRenderer {
         return UIImage(cgImage: cgImage)
     }
 
+    /// 動画の表紙の1コマ（JPEG）にフィルターをかけた形（段 2b・投稿の本文に付く表紙を、動画と同じ色にそろえる）。
+    /// かけない・かけられないときは元のまま
+    static func coverData(_ data: Data, filter: StoryFilterChoice) -> Data {
+        let recipe = filter.recipe
+        guard !recipe.isIdentity, let filtered = try? PhotoRenderer.shared.export(data: data, recipe: recipe) else {
+            return data
+        }
+        return filtered
+    }
+
     /// 帯の見本（全フィルターと「なし」・id → 絵）。**写真を1回だけ小さく読み**、フィルターごとに当てる。
     /// 読めなければ空
     static func swatches(data: Data, maxPixelSize: Int) -> [String: UIImage] {

@@ -1464,8 +1464,9 @@ struct StoryComposerView: View {
                 .buttonStyle(.plain)
             } else {
                 HStack(spacing: 8) {
-                    // 2026-11-09（段 2a）: 写真だけ。動画のフィルターは次の段
-                    if currentClip == nil { filterButton }
+                    // 2026-11-09: フィルター（写真は段 2a・動画は段 2b。動画は作る画面では表紙の1コマにかけて見せ、
+                    // 送るときに全コマへかける）
+                    filterButton
                     moreMenu
                 }
             }
@@ -2464,6 +2465,9 @@ struct StoryComposerView: View {
         shots[index].prepared = prepared
         shots[index].preview = UIImage(data: prepared.data).map { Image(uiImage: $0) }
         startThumb(for: shots[index])
+        // 表紙が替わったので、フィルターをかけた絵と帯の見本も作り直す（段 2b）
+        if filterSwatchesShotId == id { filterSwatchesShotId = nil }
+        if !shots[index].filter.isNone { renderFilteredPreview(shot: id) }
     }
 
     // MARK: - フィルター（2026-11-09・段 2a は写真）
@@ -2478,7 +2482,7 @@ struct StoryComposerView: View {
     }
 
     private func openFilters() {
-        guard shots.indices.contains(current), shots[current].video == nil, typingId == nil else { return }
+        guard shots.indices.contains(current), typingId == nil, !isExportingVideo else { return }
         captionFocused = false
         voteSelected = false
         filterPanelOpen = true
@@ -2564,6 +2568,14 @@ struct StoryComposerView: View {
                 Text(L("動画を準備しています", "Preparing the video"))
                     .font(JPFont.footnote)
                     .foregroundStyle(.white)
+                // フィルターをかけた動画は、全コマへかけるぶん時間が延びる（段 2b）
+                if shots.contains(where: { $0.video != nil && !$0.filter.isNone }) {
+                    Text(L("フィルターをかけています。少し時間がかかります", "Applying the filter. This takes a little longer"))
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text2)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                }
                 Button(L("やめる", "Cancel")) { stopWaitingToPost() }
                     .jpPillButton(.outline)
                     .accessibilityIdentifier("story.export.cancel")
@@ -2753,6 +2765,8 @@ struct StoryComposerView: View {
         var overlays: [UUID: [TextOverlay]]
         /// 書き出したときの切り取り範囲（切り直しの検出用・2026-11-09）
         var trims: [UUID: StoryVideoTrim] = [:]
+        /// 書き出したときのフィルター（かけ直しの検出用・段 2b）
+        var filters: [UUID: StoryFilterChoice] = [:]
     }
 
     /// 係が片付いていないときの言い分(送っている最中か、失敗した残りを持っているか)
@@ -2820,7 +2834,10 @@ struct StoryComposerView: View {
         if hasVideoShot {
             let videoShots = shots.filter { $0.video != nil }
             let matches = exported.map { done in
-                videoShots.allSatisfy { done.overlays[$0.id] == $0.overlays && done.trims[$0.id] == $0.video?.trim }
+                videoShots.allSatisfy {
+                    done.overlays[$0.id] == $0.overlays && done.trims[$0.id] == $0.video?.trim
+                        && done.filters[$0.id] == $0.filter
+                }
             } ?? false
             let check = StoryVideoRules.exportCheck(videoShots: videoShots.map(\.id),
                                                     exported: Set(exported?.urls.keys.map { $0 } ?? []),
@@ -2841,17 +2858,19 @@ struct StoryComposerView: View {
                 isWaitingForSpots = true
                 isExportingVideo = true
                 message = L("動画を準備しています", "Preparing the video")
-                let targets = videoShots.map { ($0.id, $0.video!, $0.overlays) }
+                let targets = videoShots.map { ($0.id, $0.video!, $0.overlays, $0.filter) }
                 // 切り取りの範囲は clip の中（`clip.trim`）。書き出したときの範囲を控えて、送る直前に食い違いを見る
                 let art = songArt
                 spotWait?.cancel()
                 spotWait = Task {
                     var done = ExportedVideos(urls: [:], overlays: [:])
                     do {
-                        for (id, clip, overlays) in targets {
-                            done.urls[id] = try await StoryVideoPipeline.export(clip, overlays: overlays, song: art)
+                        for (id, clip, overlays, filter) in targets {
+                            done.urls[id] = try await StoryVideoPipeline.export(clip, overlays: overlays, song: art,
+                                                                                filter: filter)
                             done.overlays[id] = overlays
                             done.trims[id] = clip.trim
+                            done.filters[id] = filter
                         }
                     } catch {
                         for url in done.urls.values { try? FileManager.default.removeItem(at: url) }
@@ -2890,7 +2909,7 @@ struct StoryComposerView: View {
                 // 曲の札は作る画面と同じ形・同じジャケットで焼く（読めていなければ ♪ の四角・画面と同じ）
                 // 動画の1本は表紙の1コマをそのまま持つ（重ねは書き出した動画に焼いてある）
                 imageData: shot.video != nil
-                    ? shot.prepared.data
+                    ? StoryFilterRenderer.coverData(shot.prepared.data, filter: shot.filter)
                     : TextOverlayRenderer.burn(shot.overlays, framing: shot.framing, into: shot.prepared.data,
                                                song: songArt, filter: shot.filter),
                 caption: caption, location: placeText, coords: shotCoords,
