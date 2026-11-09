@@ -130,6 +130,39 @@ final class NotificationTextTests: XCTestCase {
         XCTAssertFalse(NotificationFilter.follow.matches(.inspired))
     }
 
+    // MARK: ストーリーのメンション（2026-11-09・サーバー `notify.ts` の `storymention`）
+
+    /// サーバーの形（`photoId` はストーリーの id・`byId` / `byName` は投稿者）を読み、行の文言が出る
+    func testStoryMentionDecodesAndHasALine() throws {
+        let n = try row("storymention", by: "u2", name: "Mio", photo: "story1")
+        XCTAssertEqual(n.kind, .storymention, "種類を足し忘れると nil になり、行が出ない")
+        let line = try XCTUnwrap(NotificationText.line(for: single(n)))
+        XCTAssertEqual(line.who, "Mio")
+        XCTAssertEqual(line.plain, L("Mio がストーリーであなたをメンションしました", "Mio mentioned you in a story"))
+        XCTAssertEqual(NotificationText.line(for: single(try row("storymention", name: nil)))?.who, L("だれか", "Someone"))
+        XCTAssertEqual(NotificationText.line(for: single(try row("storymention", deleted: true)))?.who,
+                       Labels.Common.deletedUser)
+    }
+
+    /// 小窓は出さない（ストーリーの画像は24時間で消える）。まとめもしない。絞り込みは Web と同じく「コメント」に入る
+    func testStoryMentionHasNoThumbnailAndCountsAsComment() throws {
+        let json = #"{"type":"storymention","photoId":"s1","photoSrc":"https://x/s1.mp4","byId":"u2"}"#
+        let n = try JSONDecoder.api.decode(AppNotification.self, from: Data(json.utf8))
+        XCTAssertNil(NotificationText.thumbnailURL(n))
+        XCTAssertEqual(NotificationText.collapse([try row("storymention", by: "a"), try row("storymention", by: "b")]).map(\.others), [0, 0])
+        XCTAssertTrue(NotificationFilter.all.matches(.storymention))
+        XCTAssertFalse(NotificationFilter.like.matches(.storymention))
+        XCTAssertTrue(NotificationFilter.comment.matches(.storymention), "Web の inTab は comment に入れる")
+        XCTAssertFalse(NotificationFilter.follow.matches(.storymention))
+    }
+
+    /// 知らない種類は今までどおり nil（一覧は壊れず、行は出ない）
+    func testUnknownKindStillDecodesToNil() throws {
+        let n = try row("somethingnew")
+        XCTAssertNil(n.kind)
+        XCTAssertNil(NotificationText.line(for: single(n)))
+    }
+
     // MARK: まとめ
 
     func testLikesOnTheSamePhotoCollapse() throws {
@@ -328,6 +361,9 @@ final class NotificationPushStringsTests: XCTestCase {
         XCTAssertEqual(ja["NOTIF_FOLLOW"], "%@ があなたをフォローしました")
         XCTAssertEqual(ja["NOTIF_STORY_REPLY"], "%@ がストーリーに返信しました")
         XCTAssertEqual(ja["NOTIF_INSPIRED"], "%@ があなたの写真を見て撮影しました")
+        // サーバー（`notify.ts`）が送る鍵。DM は固定文（本文は載せない）
+        XCTAssertEqual(ja["NOTIF_DM"], "%@ からメッセージが届きました")
+        XCTAssertEqual(ja["NOTIF_STORY_MENTION"], "%@ がストーリーであなたをメンションしました")
     }
 
     func testEnglishMatchesTheList() throws {
@@ -337,6 +373,22 @@ final class NotificationPushStringsTests: XCTestCase {
         XCTAssertEqual(en["NOTIF_FOLLOW"], "%@ followed you")
         XCTAssertEqual(en["NOTIF_STORY_REPLY"], "%@ replied to your story")
         XCTAssertEqual(en["NOTIF_INSPIRED"], "%@ took a photo inspired by yours")
+        XCTAssertEqual(en["NOTIF_DM"], "%@ sent you a message")
+        XCTAssertEqual(en["NOTIF_STORY_MENTION"], "%@ mentioned you in a story")
+    }
+
+    /// サーバーが送る鍵（`LOC_KEYS`・`pushDmMessage`）が両方の言語に在り、引数（%@）が1つだけ。
+    /// 鍵が無いと iOS は鍵の文字列（`NOTIF_DM`）をそのまま通知に出す
+    func testServerKeysExistInBothLanguagesWithOneArgument() throws {
+        let ja = try strings("ja"), en = try strings("en")
+        let sent = ["NOTIF_LIKE", "NOTIF_COMMENT", "NOTIF_FOLLOW", "NOTIF_STORY_REPLY", "NOTIF_BADGE",
+                    "NOTIF_INSPIRED", "NOTIF_DM", "NOTIF_STORY_MENTION"]
+        for key in sent {
+            for (lang, table) in [("ja", ja), ("en", en)] {
+                let text = try XCTUnwrap(table[key], "\(key) が \(lang).lproj に無い")
+                XCTAssertEqual(text.components(separatedBy: "%@").count - 1, 1, "\(key)(\(lang)) の %@ は1つ")
+            }
+        }
     }
 }
 
@@ -365,6 +417,17 @@ final class NotificationRouteTests: XCTestCase {
         XCTAssertEqual(model.route(for: follow), .user("u"))
         let reply = try notification(#"{"type":"storyreply","photoId":"s","byId":"u"}"#)
         XCTAssertNil(model.route(for: reply))
+    }
+
+    /// ストーリーのメンションは投稿者（`byId`）のプロフィールへ。退会した人・投稿者が無いときは押せない
+    func testStoryMentionOpensTheAuthorProfile() async throws {
+        let model = NotificationsViewModel()
+        let n = try notification(#"{"type":"storymention","photoId":"s1","byId":"u2","byName":"Mio"}"#)
+        XCTAssertEqual(model.route(for: n), .user("u2"))
+        let gone = try notification(#"{"type":"storymention","photoId":"s1","byId":"u2","deleted":true}"#)
+        XCTAssertNil(model.route(for: gone))
+        let anon = try notification(#"{"type":"storymention","photoId":"s1"}"#)
+        XCTAssertNil(model.route(for: anon))
     }
 
     /// 「この写真を見て撮影」は**付けた人の新しい写真**（`photoId`）へ。元の写真（`sourcePhotoId`）ではない。

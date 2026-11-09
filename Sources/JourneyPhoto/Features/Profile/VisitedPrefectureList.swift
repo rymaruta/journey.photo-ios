@@ -81,8 +81,9 @@ struct VisitedPrefectureList: View {
     }
 }
 
-/// 段の見本（凡例と一覧の行頭）。地図と同じ塗り・模様（`VisitedMapCanvasView.patternPath`）。
-/// 未は斜線、写真の候補は斜線＋真鍮の点線の縁
+/// 段の見本（凡例と一覧の行頭）。地図と同じ塗り（`VisitedMapStyle.fill(forLevel:)`）・模様なし。
+/// 板 04b: 16pt の札（角 4）。0 回は白 20%・0.6pt の縁を内側に、写真の候補は 0 の地に真鍮の破線 1.5pt を内側に
+/// （地図と同じく形で切り、線幅を倍にして内側の半分を残す）。塗った段は縁なし
 struct VisitedSwatch: View {
 
     let level: Int
@@ -90,22 +91,19 @@ struct VisitedSwatch: View {
 
     var body: some View {
         Canvas { ctx, size in
-            let rect = CGRect(origin: .zero, size: size).insetBy(dx: 1, dy: 1)
             var shape = Path()
-            shape.addRoundedRect(in: rect, cornerSize: CGSize(width: 4, height: 4))
+            shape.addRoundedRect(in: CGRect(origin: .zero, size: size), cornerSize: CGSize(width: 4, height: 4))
             ctx.fill(shape, with: .color(VisitedMapStyle.color(VisitedMapStyle.fill(forLevel: level))))
-            if let line = VisitedMapCanvasView.patternPath(level, bounds: rect) {
-                var layer = ctx
-                layer.clip(to: shape)
-                let color: Color = level == 0
-                    ? Color.white.opacity(0.18)
-                    : VisitedMapStyle.color(level >= 2 ? VisitedMapStyle.inkOnBright : VisitedMapStyle.inkOnDark).opacity(0.5)
-                layer.stroke(line.path, with: .color(color), style: line.style)
-            }
-            if level == 0 && isCandidate {
-                ctx.stroke(shape, with: .color(WebTheme.accent), style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+            guard level == 0 else { return }
+            var inside = ctx
+            inside.clip(to: shape)
+            if isCandidate {
+                inside.stroke(shape, with: .color(WebTheme.accent),
+                              style: StrokeStyle(lineWidth: VisitedMapStyle.candidateInsideWidth * 2,
+                                                 dash: VisitedMapStyle.candidateDash))
             } else {
-                ctx.stroke(shape, with: .color(Color.white.opacity(level == 0 ? 0.2 : 0.0)), lineWidth: 0.6)
+                inside.stroke(shape, with: .color(Color.white.opacity(VisitedMapStyle.zeroEdgeWhite)),
+                              lineWidth: VisitedMapStyle.zeroEdgeWidth * 2)
             }
         }
     }

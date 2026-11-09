@@ -142,7 +142,7 @@ final class VisitedPrefecturesTests: XCTestCase {
     }
 
     func testLevelsAndCountText() {
-        XCTAssertEqual((0...6).map(VisitedPrefectures.level(forCount:)), [0, 1, 2, 3, 4, 4, 4])
+        XCTAssertEqual((0...6).map(VisitedPrefectures.level(forCount:)), [0, 1, 2, 3, 3, 3, 3])
         XCTAssertEqual(VisitedPrefectures.level(forCount: -3), 0)
         XCTAssertEqual([0, 1, 8, 9, 10, 99].map(VisitedPrefectures.countText), ["", "1", "8", "9+", "9+", "9+"])
     }

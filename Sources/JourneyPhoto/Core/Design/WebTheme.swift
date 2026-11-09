@@ -90,6 +90,17 @@ enum WebTheme {
     /// 輪・メダル・Pro の印の金属の光（v2 の brass-hi → 真鍮 → brass-lo）。**字には使わない**
     static let accentMetal = [rgb(BrandPalette.accentHighlight), accent, rgb(BrandPalette.accentShadow)]
 
+    // MARK: 段の色（板 04b・値と使う所は `BrandPalette.scale0`〜`scale3`）
+
+    /// 0 回・無し（#1A1A1C）
+    static let scale0 = rgb(BrandPalette.scale0)
+    /// 1 回（#705523）
+    static let scale1 = rgb(BrandPalette.scale1)
+    /// 2 回（#B08E55）
+    static let scale2 = rgb(BrandPalette.scale2)
+    /// 3 回以上（#F3DCA6）
+    static let scale3 = rgb(BrandPalette.scale3)
+
     // MARK: 意味の色
 
     /// 削除・通報・エラーの文字とアイコン（`.red` の代わり）

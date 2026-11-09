@@ -131,15 +131,57 @@ final class PrefectureMapGeometryTests: XCTestCase {
         XCTAssertEqual(VisitedMapStyle.fill(forLevel: 99), 0xF3DCA6)
     }
 
-    /// 段ごとの色と模様（提案書 第2版）。板の外の色は #F3DCA6 だけ
+    /// 段ごとの色（2026-11-09 owner: 0 回・1 回・2 回・3 回以上の4段・模様なし・色だけ）。値は板 04b の段の色
     func testStyleLevels() {
-        XCTAssertEqual(VisitedMapStyle.fills.count, 5)
+        XCTAssertEqual(VisitedMapStyle.fills.count, 4, "段は 0 回・1 回・2 回・3 回以上の4つ")
         XCTAssertNil(VisitedMapStyle.fills[0])
-        XCTAssertEqual(VisitedMapStyle.fills[1], 0x796440)
-        XCTAssertEqual(VisitedMapStyle.fills[2], 0xC9A66B)
+        XCTAssertEqual(VisitedMapStyle.baseFill, 0x1A1A1C, "0 回は scale0（surface-3 と同値）")
+        XCTAssertEqual(VisitedMapStyle.fills[1], 0x705523)
+        XCTAssertEqual(VisitedMapStyle.fills[2], 0xB08E55)
         XCTAssertEqual(VisitedMapStyle.fills[3], 0xF3DCA6)
-        XCTAssertEqual(VisitedMapStyle.fills[4], 0xF3DCA6)
-        XCTAssertEqual((0...5).map(VisitedMapStyle.pattern(forLevel:)),
-                       [.hatch, .solid, .dots, .stripes, .grid, .grid])
+        XCTAssertEqual((0...6).map(VisitedMapStyle.fill(forLevel:)),
+                       [0x1A1A1C, 0x705523, 0xB08E55, 0xF3DCA6, 0xF3DCA6, 0xF3DCA6, 0xF3DCA6],
+                       "3 回以上は同じ色")
+        XCTAssertEqual((0...3).map(VisitedMapStyle.fill(forLevel:)), BrandPalette.scaleSteps,
+                       "地図の段は板の段の色の表をそのまま使う")
+    }
+
+    /// 色だけで分けるので、明るさの順と差を縛る（色覚が違っても明るさで分かる）。
+    /// 板 04b: 1 段目は黒地に 3:1 以上・隣り合う段（0 の地を含む）どうし ×2.2 以上
+    func testPaintedFillsAreSeparatedByLuminance() {
+        let fills = VisitedMapStyle.paintedFills
+        XCTAssertEqual(fills.count, 3)
+        for hex in fills {
+            XCTAssertGreaterThanOrEqual(VisitedMapStyle.contrastOnBlack(hex), 3.0, "黒地に 3:1 以上: \(String(hex, radix: 16))")
+        }
+        let steps = [VisitedMapStyle.baseFill] + fills
+        for (lower, higher) in zip(steps, steps.dropFirst()) {
+            XCTAssertGreaterThan(BrandPalette.luminance(higher), BrandPalette.luminance(lower), "段が上がるほど明るい")
+            XCTAssertGreaterThanOrEqual(VisitedMapStyle.adjacentRatio(lower, higher), 2.2,
+                                        "隣り合う段の比: \(String(lower, radix: 16)) → \(String(higher, radix: 16))")
+        }
+        XCTAssertEqual(VisitedMapStyle.contrastOnBlack(0x1A1A1C), 1.21, accuracy: 0.01)
+        XCTAssertEqual(VisitedMapStyle.contrastOnBlack(0x705523), 3.01, accuracy: 0.01)
+        XCTAssertEqual(VisitedMapStyle.contrastOnBlack(0xB08E55), 6.85, accuracy: 0.01)
+        XCTAssertEqual(VisitedMapStyle.contrastOnBlack(0xF3DCA6), 15.60, accuracy: 0.01)
+    }
+
+    /// 板 04b「縁と状態」の値。押している間の 0 の県（白 8%）は surface-8 と同じ色になる
+    func testEdgesAndStates() {
+        XCTAssertEqual(VisitedMapStyle.paintedEdgeWidth, 1)
+        XCTAssertEqual(VisitedMapStyle.zeroEdgeWidth, 0.6)
+        XCTAssertEqual(VisitedMapStyle.zeroEdgeWhite, 0.2)
+        XCTAssertEqual(VisitedMapStyle.candidateInsideWidth, 1.5)
+        XCTAssertEqual(VisitedMapStyle.candidateDash, [3, 3])
+        XCTAssertEqual(VisitedMapStyle.selectedRingWidth, 2)
+        XCTAssertEqual(VisitedMapStyle.selectedGapWidth, 1.5)
+        XCTAssertEqual(VisitedMapStyle.pressedFill(forLevel: 0), BrandPalette.surface8, "0 の県を押す間は白 8% ＝ surface-8")
+        XCTAssertEqual(VisitedMapStyle.pressedFill(forLevel: 3), VisitedMapStyle.mix(0xF3DCA6, 0x000000, 0.2), "塗った県は黒 20%")
+        for level in 1...3 {
+            XCTAssertLessThan(BrandPalette.luminance(VisitedMapStyle.pressedFill(forLevel: level)),
+                              BrandPalette.luminance(VisitedMapStyle.fill(forLevel: level)), "押す間は暗くなる")
+        }
+        // 候補の破線は 0 の地の上（7.57）。2 段目の上だと 1.34 で溶けるので、内側だけに描く
+        XCTAssertGreaterThanOrEqual(BrandPalette.contrast(BrandPalette.accent, VisitedMapStyle.baseFill), 7.5)
     }
 }

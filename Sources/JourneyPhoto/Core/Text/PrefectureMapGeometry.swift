@@ -263,31 +263,64 @@ enum PrefectureRegions {
     }
 }
 
-/// 色と模様の段（提案書 第2版・板「黒塗りの真鍮」＋ owner 承認の #F3DCA6）。
-/// 色だけに頼らず、模様と数字でも段が分かるようにする
+/// 色の段（板「黒塗りの真鍮」04b 段の色・2026-11-09）。
+/// **2026-11-09 owner 判断: 模様（点・線・格子）はやめ、色だけで分ける。** 0 回・1 回・2 回・3 回以上の4段。
+/// 色は板 04b の `BrandPalette.scale0`〜`scale3`（真鍮 1 色の明るさ・隣の段の比 ×2.2 以上）。
+/// 色だけに頼らない保険は、凡例の字・拡大時の数字・読み上げ（「東京都、3 回」）・一覧。
+/// 凡例の見本も地図の塗りも、この表（`fills`）だけを読む（写しを作らない）
 enum VisitedMapStyle {
 
-    enum Pattern: Equatable {
-        /// 0 回: 斜線
-        case hatch
-        /// 1 回: 無地
-        case solid
-        /// 2 回: 点
-        case dots
-        /// 3 回: 横縞
-        case stripes
-        /// 4 回以上: 格子
-        case grid
+    /// 段（`VisitedPrefectures.level(forCount:)`）→ 塗りの色（0xRRGGBB）。0 は塗らない（地は `baseFill`）。
+    /// 1 回 scale1 #705523・2 回 scale2 #B08E55・3 回以上 scale3 #F3DCA6（板 04b）。
+    /// 黒地に対する比は 3.01 / 6.85 / 15.60、隣り合う段の比は ×2.49 / ×2.27 / ×2.28
+    /// （`contrastOnBlack` `adjacentRatio`・テストが見張る）。
+    /// 2026-11-09 判断: 前の #7F6230・#B08C52 は 1→2 が ×1.82 で板の下限 ×2.2 に届かないので板の値に替えた
+    nonisolated static let fills: [UInt32?] = [nil, BrandPalette.scale1, BrandPalette.scale2, BrandPalette.scale3]
+    /// 0 回の県の地（板 04b の scale0・surface-3 と同値）。無地
+    nonisolated static let baseFill: UInt32 = BrandPalette.scale0
+
+    // MARK: 縁と状態（板 04b「縁と状態」）
+
+    /// 塗った県の境界: 黒 1pt（1 段目と 3.01）
+    nonisolated static let paintedEdgeWidth: CGFloat = 1
+    /// 0 回の県の境界: 白 20%・0.6pt
+    nonisolated static let zeroEdgeWidth: CGFloat = 0.6
+    nonisolated static let zeroEdgeWhite: Double = 0.2
+    /// 写真の候補: 真鍮の破線 1.5pt を**県の内側だけ**。県の形で切り、線幅を倍（3）にして内側の 1.5 を残す。
+    /// 2026-11-09 判断（板）: 縁の中央に描くと外へはみ出し、隣の 2 段目（#B08E55）と 1.34 で溶ける。
+    /// 暗い 0 の地の上なら真鍮と 7.57
+    nonisolated static let candidateInsideWidth: CGFloat = 1.5
+    nonisolated static let candidateDash: [CGFloat] = [3, 3]
+    /// 選択中: 黒 1.5pt の隙間＋白 2pt の縁（どの段の上でも白と黒 21:1）。
+    /// 黒は白の両側に 1.5 ずつ出す（線幅 2 + 1.5×2 = 5 の黒の上に白 2）
+    nonisolated static let selectedRingWidth: CGFloat = 2
+    nonisolated static let selectedGapWidth: CGFloat = 1.5
+    /// 押している間: 塗りに黒 20%（0 の県は白 8% ＝ surface-8）。離したら選択中へ
+    nonisolated static let pressedBlack: Double = 0.2
+    nonisolated static let pressedZeroWhite: Double = 0.08
+
+    /// 白と黒（押す間・祝いの明るさで混ぜる。画面のファイルに色の値を書かない・`VisitedMapWiringTests`）
+    nonisolated static let white: UInt32 = 0xFFFFFF
+    nonisolated static let black: UInt32 = 0x000000
+
+    /// 押している間の色（不透明の値で持ち、テストで surface-8 と照らす）
+    static func pressedFill(forLevel level: Int) -> UInt32 {
+        let base = fill(forLevel: level)
+        return level <= 0 ? mix(base, white, pressedZeroWhite) : mix(base, black, pressedBlack)
     }
 
-    /// 段（`VisitedPrefectures.level(forCount:)`）→ 塗りの色（0xRRGGBB）。0 は塗らない
-    /// 1 回 #796440（板の「地図の印」）・2 回 #C9A66B・3 回以上 #F3DCA6（owner 承認 2026-11-08・板の使い道の外）
-    nonisolated static let fills: [UInt32?] = [nil, BrandPalette.accentDeep, BrandPalette.accent, BrandPalette.accentHighlight, BrandPalette.accentHighlight]
-    /// 模様の上に載せる字・数字の色（墨）。段 1（暗い真鍮）の上は白（白を載せて 5.66:1）
-    nonisolated static let inkOnBright: UInt32 = BrandPalette.ink
-    nonisolated static let inkOnDark: UInt32 = 0xFFFFFF
-    /// 未の県の地（板の surface-3）。斜線を重ねる
-    nonisolated static let baseFill: UInt32 = BrandPalette.surface3
+    /// 塗る段（1 以上）の色だけを段の順に。比のテストと、凡例・地図が同じ表を使う確かめに使う
+    static var paintedFills: [UInt32] { fills.compactMap { $0 } }
+
+    /// 黒地（地図の背景・県の縁）に対する比
+    static func contrastOnBlack(_ hex: UInt32) -> Double {
+        BrandPalette.contrast(hex, BrandPalette.background)
+    }
+
+    /// 隣り合う段（lower → higher）の相対輝度比。1 以上
+    static func adjacentRatio(_ lower: UInt32, _ higher: UInt32) -> Double {
+        BrandPalette.contrast(lower, higher)
+    }
 
     /// 2つの色（0xRRGGBB）を割合 t（0〜1）で混ぜる。色の切り替え（0.15 秒）と祝いの明るさに使う
     static func mix(_ a: UInt32, _ b: UInt32, _ t: Double) -> UInt32 {
@@ -303,15 +336,5 @@ enum VisitedMapStyle {
     static func fill(forLevel level: Int) -> UInt32 {
         let index = min(max(level, 0), fills.count - 1)
         return fills[index] ?? baseFill
-    }
-
-    static func pattern(forLevel level: Int) -> Pattern {
-        switch level {
-        case 1: return .solid
-        case 2: return .dots
-        case 3: return .stripes
-        case 4...: return .grid
-        default: return .hatch
-        }
     }
 }

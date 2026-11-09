@@ -707,7 +707,8 @@ final class NotificationsViewModel: ObservableObject {
     ///   「Pro の機能です」と言う（ここでは Pro かを見ない——見るのはサーバー）
     func destination(for notification: AppNotification) -> Destination {
         switch notification.kind {
-        case .follow:
+        case .follow, .storymention:
+            // メンションは投稿者（`byId`）のプロフィールへ（2026-11-09）
             if let id = notification.targetUserId ?? notification.byId, notification.deleted != true {
                 return .user(id)
             }

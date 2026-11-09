@@ -127,7 +127,8 @@ enum VisitedMapText {
 
     static var legendNone: String { L("未", "Not yet") }
     static var legendCandidate: String { L("写真の候補", "Suggested") }
-    static var legendFourPlus: String { L("4 回以上", "4+") }
+    static var legendZero: String { L("0 回", "0×") }
+    static var legendThreePlus: String { L("3 回以上", "3+") }
     static func legendTimes(_ n: Int) -> String { L("\(n) 回", "\(n)×") }
 
     // MARK: - 状態

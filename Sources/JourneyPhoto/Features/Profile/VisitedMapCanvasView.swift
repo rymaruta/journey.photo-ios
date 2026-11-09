@@ -3,8 +3,10 @@ import SwiftUI
 /// 行った県マップの**地図**（札 #503・提案書 第2版 案 A「実形の日本地図」）。
 ///
 /// 形は既存の `japan-prefectures.json`（`PrefectureMapGeometry`）。県ごとに回数の段で塗る:
-/// 未＝斜線／1 回＝#796440 無地／2 回＝#C9A66B 点／3 回＝#F3DCA6 横縞／4 回以上＝#F3DCA6 格子／
-/// 写真の候補＝斜線＋真鍮の点線の縁。**色だけに頼らず模様と数字（拡大時）と読み上げでも伝える。**
+/// 板 04b の段の色 0 回＝scale0 #1A1A1C／1 回＝scale1 #705523／2 回＝scale2 #B08E55／3 回以上＝scale3 #F3DCA6
+/// （すべて無地・模様なし。2026-11-09 owner）。縁は塗った県が黒 1pt・0 の県が白 20% 0.6pt。
+/// 写真の候補＝0 の地＋真鍮の破線 1.5pt を県の内側だけ。選択中（札を開いている県）＝黒 1.5pt の隙間＋白 2pt の縁。
+/// 押している間＝塗りに黒 20%（0 の県は白 8%）。**色だけに頼らず凡例の字・数字（拡大時）・読み上げ・一覧でも伝える。**
 /// 真鍮は黒い地の上だけ（この画面は黒地）。
 ///
 /// - 拡大（ピンチ・＋−）と移動（拡大中のドラッグ）。押した点は `PrefectureMapGeometry.prefecture(at:)` が
@@ -39,6 +41,9 @@ struct VisitedMapCanvasView: View {
     /// 回数が変わった県だけ 0.15 秒かけて切り替える
     @State private var fades: [String: Fade] = [:]
     @State private var liftStart: Date?
+    /// 指を置いている県（押している間の色・板 04b）。動かした・ピンチした・離したら消す。
+    /// `@GestureState` にするのは、ScrollView に指を取られて `onEnded` が来なくても、取り消しで必ず戻るため
+    @GestureState private var pressed: String?
 
     private struct Fade {
         let from: Int
@@ -114,6 +119,8 @@ struct VisitedMapCanvasView: View {
         let counts = model.record.counts
         let candidates = Set(model.candidates)
         let lift = liftAmount(now)
+        let selected = model.selected
+        let pressedName = self.pressed
 
         func mapped(_ p: CGPoint) -> CGPoint { v.screenPoint(forUnit: p, content: content, container: container) }
         func path(for piece: PrefectureMapGeometry.Piece) -> Path {
@@ -150,7 +157,8 @@ struct VisitedMapCanvasView: View {
                 progress = min(1, max(0, now.timeIntervalSince(fade.start) / Self.fadeSeconds))
                 fill = VisitedMapStyle.mix(VisitedMapStyle.fill(forLevel: fade.from), fill, progress)
             }
-            if lift > 0 { fill = VisitedMapStyle.mix(fill, 0xFFFFFF, lift) }
+            if name == pressedName { fill = VisitedMapStyle.pressedFill(forLevel: level) }
+            if lift > 0 { fill = VisitedMapStyle.mix(fill, VisitedMapStyle.white, lift) }
             items.append(Item(piece: piece, path: visible.intersects(screenBounds) ? path(for: piece) : Path(),
                               level: level, fill: fill, progress: progress, screenBounds: screenBounds))
         }
@@ -159,33 +167,33 @@ struct VisitedMapCanvasView: View {
         for item in items where visible.intersects(item.screenBounds) {
             ctx.fill(item.path, with: .color(VisitedMapStyle.color(item.fill)))
         }
-        // 2. 模様（県の形の内側だけ）
-        for item in items where visible.intersects(item.screenBounds) {
-            guard let line = Self.patternPath(item.level, bounds: item.screenBounds.intersection(visible)) else { continue }
-            var layer = ctx
-            layer.clip(to: item.path)
-            if item.level == 0 {
-                layer.stroke(line.path, with: .color(Color.white.opacity(0.12)), style: line.style)
-            } else {
-                let ink = item.level >= 2 ? VisitedMapStyle.inkOnBright : VisitedMapStyle.inkOnDark
-                layer.stroke(line.path, with: .color(VisitedMapStyle.color(ink).opacity(0.42 * item.progress)),
-                             style: line.style)
-            }
-        }
-        // 3. 縁。未の県は白の細線、塗った県は黒（隣との境）、写真の候補は真鍮の点線
+        // 2. 境界。塗った県は黒 1pt（隣との境）、0 の県は白 20%・0.6pt
         for item in items where visible.intersects(item.screenBounds) {
             if item.level == 0 {
-                if candidates.contains(item.piece.prefecture) {
-                    ctx.stroke(item.path, with: .color(WebTheme.accent),
-                               style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
-                } else {
-                    ctx.stroke(item.path, with: .color(Color.white.opacity(0.2)), lineWidth: 0.6)
-                }
+                ctx.stroke(item.path, with: .color(Color.white.opacity(VisitedMapStyle.zeroEdgeWhite)),
+                           lineWidth: VisitedMapStyle.zeroEdgeWidth)
             } else {
-                ctx.stroke(item.path, with: .color(Color.black.opacity(0.9)), lineWidth: 1)
+                ctx.stroke(item.path, with: .color(Color.black), lineWidth: VisitedMapStyle.paintedEdgeWidth)
             }
         }
-        // 4. 沖縄の挿入図の枠
+        // 3. 写真の候補: 真鍮の破線 1.5pt を県の内側だけ（県の形で切り、線幅を倍にして内側の半分を残す）
+        for item in items where item.level == 0 && candidates.contains(item.piece.prefecture)
+            && visible.intersects(item.screenBounds) {
+            var inside = ctx
+            inside.clip(to: item.path)
+            inside.stroke(item.path, with: .color(WebTheme.accent),
+                          style: StrokeStyle(lineWidth: VisitedMapStyle.candidateInsideWidth * 2,
+                                             dash: VisitedMapStyle.candidateDash))
+        }
+        // 4. 選択中（札を開いている県）: 黒 1.5pt の隙間＋白 2pt の縁。どの段の上でも見えるよう最後に重ねる
+        if let selected, let item = items.first(where: { $0.piece.prefecture == selected }),
+           visible.intersects(item.screenBounds) {
+            let ring = VisitedMapStyle.selectedRingWidth
+            ctx.stroke(item.path, with: .color(Color.black),
+                       style: StrokeStyle(lineWidth: ring + VisitedMapStyle.selectedGapWidth * 2, lineJoin: .round))
+            ctx.stroke(item.path, with: .color(Color.white), style: StrokeStyle(lineWidth: ring, lineJoin: .round))
+        }
+        // 5. 沖縄の挿入図の枠
         if let inset = geometry.inset {
             let a = mapped(inset.origin)
             let b = mapped(CGPoint(x: inset.maxX, y: inset.maxY))
@@ -202,69 +210,6 @@ struct VisitedMapCanvasView: View {
         let t = now.timeIntervalSince(start) / Self.liftSeconds
         guard t >= 0, t <= 1 else { return 0 }
         return sin(t * .pi) * Self.liftStrength
-    }
-
-    /// 段ごとの模様の線（画面の点）。間隔は拡大しても変えない。無地は nil
-    static func patternPath(_ level: Int, bounds: CGRect) -> (path: Path, style: StrokeStyle)? {
-        guard bounds.width > 0, bounds.height > 0 else { return nil }
-        switch VisitedMapStyle.pattern(forLevel: level) {
-        case .solid:
-            return nil
-        case .hatch:
-            // 斜線（右上がり・間隔 7）
-            let gap: CGFloat = 7
-            var path = Path()
-            var x = bounds.minX - bounds.height
-            while x < bounds.maxX {
-                path.move(to: CGPoint(x: x, y: bounds.maxY))
-                path.addLine(to: CGPoint(x: x + bounds.height, y: bounds.minY))
-                x += gap
-            }
-            return (path, StrokeStyle(lineWidth: 1))
-        case .dots:
-            // 点（間隔 7・直径 2）
-            let gap: CGFloat = 7
-            var path = Path()
-            var y = (bounds.minY / gap).rounded(.down) * gap
-            while y < bounds.maxY {
-                var x = (bounds.minX / gap).rounded(.down) * gap
-                while x < bounds.maxX {
-                    path.move(to: CGPoint(x: x, y: y))
-                    path.addLine(to: CGPoint(x: x + 0.01, y: y))
-                    x += gap
-                }
-                y += gap
-            }
-            return (path, StrokeStyle(lineWidth: 2.2, lineCap: .round))
-        case .stripes:
-            // 横縞（間隔 6・太さ 1.4）
-            let gap: CGFloat = 6
-            var path = Path()
-            var y = (bounds.minY / gap).rounded(.down) * gap
-            while y < bounds.maxY {
-                path.move(to: CGPoint(x: bounds.minX, y: y))
-                path.addLine(to: CGPoint(x: bounds.maxX, y: y))
-                y += gap
-            }
-            return (path, StrokeStyle(lineWidth: 1.4))
-        case .grid:
-            // 格子（間隔 6・太さ 1.2）
-            let gap: CGFloat = 6
-            var path = Path()
-            var y = (bounds.minY / gap).rounded(.down) * gap
-            while y < bounds.maxY {
-                path.move(to: CGPoint(x: bounds.minX, y: y))
-                path.addLine(to: CGPoint(x: bounds.maxX, y: y))
-                y += gap
-            }
-            var x = (bounds.minX / gap).rounded(.down) * gap
-            while x < bounds.maxX {
-                path.move(to: CGPoint(x: x, y: bounds.minY))
-                path.addLine(to: CGPoint(x: x, y: bounds.maxY))
-                x += gap
-            }
-            return (path, StrokeStyle(lineWidth: 1.2))
-        }
     }
 
     // MARK: - 字（拡大したとき）
@@ -298,8 +243,8 @@ struct VisitedMapCanvasView: View {
             let at = viewport.screenPoint(forUnit: piece.anchor, content: geometry.size, container: container)
             if CGRect(origin: .zero, size: container).insetBy(dx: -20, dy: -20).contains(at),
                count > 0 || showsName {
-                // 数字が模様に重なって読みにくいので、塗った県の字は黒い下地（黒 60%）に白で載せる。
-                // 未の県の県名は斜線の上に灰（text-2）のまま
+                // 明るい塗りの上でも読めるよう、塗った県の字は黒い下地（黒 60%）に白で載せる。
+                // 未の県の県名は暗い灰の地の上に灰（text-2）のまま
                 let onChip = count > 0
                 VStack(spacing: 0) {
                     if showsName {
@@ -368,6 +313,13 @@ struct VisitedMapCanvasView: View {
 
     private func dragGesture(container: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
+            .updating($pressed) { value, state, _ in
+                // 押している間の色: 10pt より動いた（移動・スクロール）・ピンチ中は消す
+                let distance = (value.translation.width * value.translation.width
+                                + value.translation.height * value.translation.height).squareRoot()
+                state = distance > 10 || pinchStart != nil
+                    ? nil : prefecture(at: value.startLocation, container: container)?.name
+            }
             .onChanged { value in
                 if isNewTouch(start: value.startLocation, translation: value.translation) {
                     let began = Date()
@@ -463,11 +415,17 @@ struct VisitedMapCanvasView: View {
         .accessibilityIdentifier(id)
     }
 
-    private func tap(at location: CGPoint, long: Bool, container: CGSize) {
+    /// 画面の点にある県（近い県まで拾う）。押している間の色とタップで同じ判定を使う
+    private func prefecture(at location: CGPoint, container: CGSize) -> (unit: CGPoint, name: String)? {
         let unit = viewport.unitPoint(forScreen: location, content: geometry.size, container: container)
         let tolerance = viewport.tolerance(content: geometry.size, container: container)
-        guard let name = geometry.prefecture(at: unit, tolerance: tolerance) else { return }
-        onTap(unit, name)
-        if long { model.openCard(name) } else { model.tap(name) }
+        guard let name = geometry.prefecture(at: unit, tolerance: tolerance) else { return nil }
+        return (unit, name)
+    }
+
+    private func tap(at location: CGPoint, long: Bool, container: CGSize) {
+        guard let hit = prefecture(at: location, container: container) else { return }
+        onTap(hit.unit, hit.name)
+        if long { model.openCard(hit.name) } else { model.tap(hit.name) }
     }
 }

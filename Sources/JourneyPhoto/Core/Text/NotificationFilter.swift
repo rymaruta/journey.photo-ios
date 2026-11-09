@@ -3,7 +3,7 @@ import Foundation
 /// お知らせの絞り込み（提案の絵・モック10）。
 ///
 /// **絞り込みの札はサーバーの種類から作る**（`api-user/src/notify.ts` の
-/// `type: "like" | "comment" | "follow" | "storyreply" | "badge" | "inspired"`）。ここで
+/// `type: "like" | "comment" | "follow" | "storyreply" | "badge" | "inspired" | "storymention"`）。ここで
 /// 新しい種類を作らない——受け取れない絞り込みを画面に出さない。
 ///
 /// **新しいメダル（`badge`）は「すべて」にだけ出す**（2026-10-09）。自分の出来事で
@@ -11,6 +11,8 @@ import Foundation
 ///
 /// **この写真を見て撮影（`inspired`）も「すべて」にだけ出す**（2026-10-14・Web と同じ）。
 /// 1枚につき1回しか届かず、数が少ない。
+///
+/// **ストーリーのメンション（`storymention`）も「コメント」に入れる**（2026-11-09・Web の `inTab` と同じ）。
 ///
 /// **ストーリーの返信は「コメント」に入れる。** 利用者から見れば
 /// どちらも「言葉が届いた」で、分けても探しやすくならない。
@@ -32,7 +34,7 @@ enum NotificationFilter: String, CaseIterable, Identifiable {
         switch self {
         case .all: return true
         case .like: return kind == .like
-        case .comment: return kind == .comment || kind == .storyreply
+        case .comment: return kind == .comment || kind == .storyreply || kind == .storymention
         case .follow: return kind == .follow
         }
         // `badge`・`inspired` は上のどれにも当たらない（「すべて」だけ）
