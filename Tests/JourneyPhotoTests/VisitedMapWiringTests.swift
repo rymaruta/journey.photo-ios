@@ -86,7 +86,6 @@ final class VisitedMapWiringTests: XCTestCase {
             "geometry.prefecture(at: unit, tolerance: tolerance)",
             "VisitedMapText.prefectureAccessibility(",
             "VisitedMapStyle.fill(forLevel:",
-            "VisitedMapStyle.pattern(forLevel:",
             "@Environment(\\.accessibilityReduceMotion)",
             "guard new != nil, !reduceMotion else { return }",
             "guard !reduceMotion, let start = liftStart else { return 0 }",
@@ -140,6 +139,70 @@ final class VisitedMapWiringTests: XCTestCase {
         }
         let screen = try source("Features/Profile/VisitedMapScreen.swift")
         XCTAssertFalse(screen.contains("containerGuess"), "＋−に推定の枠を渡している")
+    }
+
+    /// 🔴 2026-11-09 owner: 模様（点・線・格子）はやめ、色だけで分ける。模様の描画・定義が戻ったら落ちる。
+    /// 段も 0 回・1 回・2 回・3 回以上の4つ（「4 回以上」を戻したら落ちる）
+    func testNoPatternsAndNoFourPlusLevel() throws {
+        var files = try visitedSources()
+        files.append(("Core/Text/PrefectureMapGeometry.swift", try source("Core/Text/PrefectureMapGeometry.swift")))
+        files.append(("Core/Text/VisitedMapText.swift", try source("Core/Text/VisitedMapText.swift")))
+        files.append(("Core/Text/VisitedPrefectures.swift", try source("Core/Text/VisitedPrefectures.swift")))
+        for (path, text) in files {
+            for word in ["patternPath", "pattern(forLevel", "enum Pattern", ".hatch", ".stripes", "case dots", "case grid",
+                         "inkOnBright", "inkOnDark", "legendFourPlus", "4 回以上", "4+\""] {
+                XCTAssertFalse(text.contains(word), "\(path) に模様・4 回以上の名残り: \(word)")
+            }
+            // 形で切るのは写真の候補の破線（と見本の 0 の縁）を内側だけに描くときだけ。模様を重ねる切り方は戻さない
+            XCTAssertFalse(text.contains("layer.clip(to:"), "\(path) が県の形で切って模様を重ねている")
+            XCTAssertLessThanOrEqual(text.components(separatedBy: ".clip(to:").count - 1, 1,
+                                     "\(path) で形を切る所が増えた（模様の名残り？）")
+        }
+    }
+
+    /// 🔴 板 04b「縁と状態」: 候補の破線は県の内側だけ（形で切って線幅を倍）・選択中は黒の隙間＋白の縁・
+    /// 押している間の色。縁の中央に破線を描く形に戻ったら落ちる（2 段目の隣で 1.34 に溶ける）
+    func testEdgesAndStatesFollowBoard04b() throws {
+        let canvas = try source("Features/Profile/VisitedMapCanvasView.swift")
+        for needle in ["inside.clip(to: item.path)",
+                       "VisitedMapStyle.candidateInsideWidth * 2",
+                       "let selected = model.selected",
+                       "VisitedMapStyle.selectedGapWidth * 2",
+                       "VisitedMapStyle.pressedFill(forLevel: level)",
+                       ".updating($pressed)",
+                       "@GestureState private var pressed: String?",
+                       "? nil : prefecture(at: value.startLocation, container: container)?.name",
+                       "VisitedMapStyle.paintedEdgeWidth",
+                       "VisitedMapStyle.zeroEdgeWidth"] {
+            XCTAssertTrue(canvas.contains(needle), "地図に無い: \(needle)")
+        }
+        XCTAssertFalse(canvas.contains("StrokeStyle(lineWidth: 1.5, dash: [3, 3])"), "候補の破線が縁の中央に戻った")
+        let swatch = try source("Features/Profile/VisitedPrefectureList.swift")
+        XCTAssertTrue(swatch.contains("VisitedMapStyle.candidateInsideWidth * 2"), "凡例の候補の見本が内側の破線でない")
+    }
+
+    /// 🔴 凡例の見本・一覧・地図の塗りは、同じ色の表（`VisitedMapStyle.fill(forLevel:)`）だけを読む（色の写しを作らない）
+    func testLegendAndMapShareOneColorTable() throws {
+        for path in ["Features/Profile/VisitedPrefectureList.swift", "Features/Profile/VisitedMapCanvasView.swift",
+                     "Features/Profile/VisitedMapEntryCard.swift"] {
+            let text = try source(path)
+            XCTAssertTrue(text.contains("VisitedMapStyle.fill(forLevel:"), "\(path) が色の表を読んでいない")
+            XCTAssertNil(text.range(of: "0x[0-9A-Fa-f]{6}", options: .regularExpression), "\(path) に色の写しがある")
+        }
+        let list = try source("Features/Profile/VisitedPrefectureList.swift")
+        XCTAssertTrue(list.contains("VisitedSwatch(level: level"), "一覧の見本が無い")
+        let screen = try source("Features/Profile/VisitedMapScreen.swift")
+        for needle in ["legendZero", "legendTimes(1)", "legendTimes(2)", "legendThreePlus"] {
+            XCTAssertTrue(screen.contains(needle), "凡例に無い: \(needle)")
+        }
+        XCTAssertEqual(screen.components(separatedBy: "legendItem(level:").count - 1, 6 /* 定義1 + 使う5 */,
+                       "凡例は 0 回・1・2・3 回以上・写真の候補の5つ")
+        // 板 04b: 少ない → 多いの順、区切り線、候補
+        let order = ["legendZero", "legendTimes(1)", "legendTimes(2)", "legendThreePlus",
+                     "Color.white.opacity(0.14)).frame(width: 1, height: 16)", "legendCandidate"]
+            .compactMap { screen.range(of: $0)?.lowerBound }
+        XCTAssertEqual(order.count, 6, "凡例の部品が足りない")
+        XCTAssertEqual(order, order.sorted(), "凡例の並びが 0・1・2・3 回以上・区切り線・候補でない")
     }
 
     /// 回数の色の作り方に Pro の名前を出さない（`VisitedMapStyle.color` を通す）

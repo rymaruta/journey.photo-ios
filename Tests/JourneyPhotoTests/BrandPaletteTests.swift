@@ -70,4 +70,23 @@ final class BrandPaletteTests: XCTestCase {
         assertAtLeast(P.location, on: P.background, 3, "現在地 / 黒")
         assertAtLeast(P.chipText, on: P.surface, 4.5, "チップの字 / カード")
     }
+
+    /// 段の色（板 04b・2026-11-09）。0 を入れて 4 つ・暗い → 明るい・隣の段 ×2.2 以上・1 段目は黒に 3:1 以上。
+    /// scale0 は surface-3、scale3 は brass-hi と同じ値（新しい色は 2 つだけ）
+    func testScaleSteps() {
+        XCTAssertEqual(P.scaleSteps, [0x1A1A1C, 0x705523, 0xB08E55, 0xF3DCA6])
+        XCTAssertEqual(P.scale0, P.surface3)
+        XCTAssertEqual(P.scale3, P.accentHighlight)
+        XCTAssertLessThanOrEqual(P.scaleSteps.count, 4, "段は 0 を入れて 4 つまで")
+        for (lower, higher) in zip(P.scaleSteps, P.scaleSteps.dropFirst()) {
+            XCTAssertGreaterThan(P.luminance(higher), P.luminance(lower), "段が上がるほど明るい")
+            XCTAssertGreaterThanOrEqual(P.contrast(lower, higher), P.scaleMinimumStepRatio,
+                                        "隣の段: \(String(lower, radix: 16)) → \(String(higher, radix: 16))")
+        }
+        XCTAssertEqual(P.scaleMinimumStepRatio, 2.2)
+        assertAtLeast(P.scale1, on: P.background, 3, "段の色 1 / 黒")
+        XCTAssertEqual(P.contrast(P.scale1, P.background), 3.01, accuracy: 0.01)
+        XCTAssertEqual(P.contrast(P.scale2, P.background), 6.85, accuracy: 0.01)
+        XCTAssertEqual(P.contrast(P.scale3, P.background), 15.60, accuracy: 0.01)
+    }
 }
