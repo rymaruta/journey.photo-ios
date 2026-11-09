@@ -10,7 +10,7 @@ import UIKit
 ///  - つまみを動かしている間は**その時刻の絵**を出す（再生は止める）。離したら範囲の頭から繰り返し再生
 ///  - 数十分の動画は 1pt が数秒になるので、**「−1秒／＋1秒」**で細かく合わせられる（読み上げの増減も同じ）
 ///  - 音は既定で止めてある（作る画面で曲が鳴っていることがある）。スピーカーで入れる
-///  - 色: 黒地のシートなので、つまみ・選んだ範囲の枠は真鍮（板「黒塗りの真鍮」・黒地の上）
+///  - 色: 帯は写真（サムネイル）の上なので、つまみ・選んだ範囲の枠は白（真鍮は黒地の上だけ・墨の溝）。長さの字は黒地の上なので真鍮
 ///
 /// 書き出しは `StoryVideoPipeline.export` が `StoryVideoClip.trim` の範囲だけを切って行う。
 struct StoryVideoTrimSheet: View {
@@ -183,7 +183,7 @@ struct StoryVideoTrimSheet: View {
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
                 // 選んだ範囲の枠
-                Rectangle().strokeBorder(WebTheme.accent, lineWidth: 2)
+                Rectangle().strokeBorder(Color.white, lineWidth: 2)
                     .frame(width: max(endX - startX, 1), height: Self.stripHeight + 4)
                     .offset(x: inset + startX, y: 2)
                     .allowsHitTesting(false)
@@ -226,7 +226,7 @@ struct StoryVideoTrimSheet: View {
         return ZStack {
             Color.clear
             RoundedRectangle(cornerRadius: 4)
-                .fill(WebTheme.accent)
+                .fill(Color.white)
                 .frame(width: Self.handleWidth, height: Self.stripHeight + 8)
             RoundedRectangle(cornerRadius: 1)
                 .fill(WebTheme.accentText)

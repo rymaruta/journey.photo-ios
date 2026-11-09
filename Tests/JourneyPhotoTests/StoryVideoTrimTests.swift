@@ -134,7 +134,13 @@ final class StoryVideoTrimTests: XCTestCase {
     func testImportAcceptsLongVideos() {
         XCTAssertNil(StoryVideoRules.importProblem(durationSec: 12))
         XCTAssertNil(StoryVideoRules.importProblem(durationSec: 61), "60秒を超える動画を取り込みで断っている")
-        XCTAssertNil(StoryVideoRules.importProblem(durationSec: 40 * 60), "数十分の動画を断っている")
+        XCTAssertNotNil(StoryVideoRules.importProblem(durationSec: 40 * 60), "数十分の動画を取り込んでいる")
+        XCTAssertEqual(StoryVideoRules.maxSourceSeconds, 600)
+        XCTAssertEqual(StoryVideoRules.maxSourceBytes, 2 * 1024 * 1024 * 1024)
+        XCTAssertEqual(StoryVideoRules.importProblem(durationSec: 30, bytes: StoryVideoRules.maxSourceBytes + 1), .sourceTooLong, "2GB 超えを断らない")
+        XCTAssertNil(StoryVideoRules.importProblem(durationSec: 30, bytes: StoryVideoRules.maxSourceBytes))
+        XCTAssertEqual(StoryVideoRules.Problem.sourceTooLong.message, "長すぎます。10分までの動画を選んでください")
+        XCTAssertFalse(StoryVideoRules.Problem.sourceTooLong.message.contains("捨"))
         XCTAssertNil(StoryVideoRules.importProblem(durationSec: StoryVideoRules.maxSourceSeconds))
         XCTAssertEqual(StoryVideoRules.importProblem(durationSec: StoryVideoRules.maxSourceSeconds + 1), .sourceTooLong)
         XCTAssertEqual(StoryVideoRules.importProblem(durationSec: 0), .unreadable)
@@ -143,6 +149,17 @@ final class StoryVideoTrimTests: XCTestCase {
         XCTAssertFalse(StoryVideoRules.Problem.sourceTooLong.message.isEmpty)
         // 投稿する長さの確かめは今までどおり（切らずに 60 秒超えを書き出さない）
         XCTAssertEqual(StoryVideoRules.problem(durationSec: 61), .tooLong)
+    }
+
+    /// 写す前に確かめる（コピーのあとで断ると、容量と時間を先に食う）
+    func testImportChecksBeforeCopying() throws {
+        let pipeline = try repo("Sources/JourneyPhoto/Services/StoryVideoPipeline.swift")
+        let importing = try XCTUnwrap(pipeline.components(separatedBy: "} importing: { received in").dropFirst().first?
+            .components(separatedBy: "return StoryMovieFile(url: copy)").first)
+        let check = try XCTUnwrap(importing.range(of: "StoryVideoRules.importProblem(durationSec: length, bytes: bytes)"))
+        let copy = try XCTUnwrap(importing.range(of: "copyItem("))
+        XCTAssertLessThan(check.lowerBound, copy.lowerBound, "コピーのあとで確かめている")
+        XCTAssertTrue(pipeline.contains("} catch let problem as StoryVideoRules.Problem {\n            throw problem"), "断りの理由が「読み込めません」に潰れる")
     }
 
     func testClipCarriesTheTrim() {
@@ -232,7 +249,9 @@ final class StoryVideoTrimTests: XCTestCase {
         XCTAssertTrue(view.contains("stepButton(symbol: \"plus\""))
         XCTAssertTrue(view.contains(".frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)"))
         XCTAssertFalse(view.contains(".system(size:"), "固定の大きさの文字（Dynamic Type に付いてこない）")
-        XCTAssertTrue(view.contains("fill(WebTheme.accent)"), "つまみが真鍮でない")
+        XCTAssertTrue(view.contains(".fill(Color.white)"), "つまみが白でない（サムネイルの上に真鍮を置いている）")
+        XCTAssertTrue(view.contains("Rectangle().strokeBorder(Color.white, lineWidth: 2)"), "範囲の枠が白でない")
+        XCTAssertFalse(view.contains("strokeBorder(WebTheme.accent"))
         XCTAssertFalse(view.contains("捨"))
         // 始点を動かしている間は再生を止めてその時刻の絵を出し、離したら範囲の頭から
         XCTAssertTrue(view.contains("playback.show(at:"))
