@@ -532,3 +532,21 @@ final class PostLimitsTests: XCTestCase {
         XCTAssertEqual(SignInView.tiles(from: photos).map(\.id), ["pub"])
     }
 }
+
+/// 通報の理由が、サーバー（`api-user/src/report.ts` の `REPORT_REASONS`）と同じ値・同じ並びか。
+/// 並びの Web との突き合わせは `Tools/check-api-parity.py`（verify.sh）。ここは写しを固定して、
+/// アプリ側だけ変わったときに落とす
+final class ReportReasonListTests: XCTestCase {
+
+    func testReasonsMatchTheServerOrder() {
+        XCTAssertEqual(ModerationService.ReportReason.allCases.map(\.rawValue),
+                       ["copyright", "privacy", "sexual", "violence", "harassment", "spam", "minor", "other"])
+    }
+
+    /// 2026-11-09: DM の通報から足された理由。文言は Web の ReportDialog と同じ
+    func testMinorReasonLabel() {
+        XCTAssertEqual(ModerationService.ReportReason.minor.label,
+                       L("未成年へのいやな接触・誘い出し", "Inappropriate contact with a minor"))
+        XCTAssertEqual(ModerationService.ReportReason(rawValue: "minor"), .minor)
+    }
+}

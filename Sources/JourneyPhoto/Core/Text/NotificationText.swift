@@ -108,7 +108,7 @@ enum NotificationText {
     /// ——`photoSrc` は24時間で消えるストーリーの画像や動画で、小窓が壊れた画像になる
     static func thumbnailURL(_ row: AppNotification) -> URL? {
         // メダルは左にメダルの絵を出す（右の小窓は使わない）
-        guard row.kind != .storyreply, row.kind != .badge, let src = row.photoSrc else { return nil }
+        guard row.kind != .storyreply, row.kind != .storymention, row.kind != .badge, let src = row.photoSrc else { return nil }
         return URL(string: src)
     }
 
@@ -133,6 +133,8 @@ enum NotificationText {
         case .storyreply: rest = L(" がストーリーに返信しました", " replied to your story")
         // 文言は Web の `NotificationsBell` と同じ（プッシュの `NOTIF_INSPIRED` とも同じ）
         case .inspired: rest = L(" があなたの写真を見て撮影しました", " took a photo inspired by yours")
+        // 文言はプッシュの `NOTIF_STORY_MENTION` と同じ
+        case .storymention: rest = L(" がストーリーであなたをメンションしました", " mentioned you in a story")
         // 光と天気の知らせは一覧の行にならない（プッシュだけ）
         case .badge, .light, .none: return nil
         }
