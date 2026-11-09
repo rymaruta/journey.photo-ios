@@ -275,9 +275,11 @@ final class ScreenshotTests: XCTestCase {
             swipes += 1
         }
         guard credit.exists, credit.isHittable else { return }
-        // 出典の1行の当たりは 44pt 以上（押せるものの最小・2026-10-03）
-        XCTAssertGreaterThanOrEqual(credit.frame.height, 44, "作例の出典の当たりが 44pt 未満")
-        XCTAssertGreaterThanOrEqual(credit.frame.width, 44, "作例の出典の当たりが 44pt 未満")
+        // 出典の1行の当たりは 44pt 以上（押せるものの最小・2026-10-03）。
+        // 端数（43.99999）は 44 と見る（同じファイルの 44pt の確かめと同じ決まり。
+        // 2026-11-09 PR #509 の Mac で 43.999999999999886 が 44 未満として落ちた）
+        XCTAssertGreaterThanOrEqual(credit.frame.height, 43.9, "作例の出典の当たりが 44pt 未満（\(credit.frame.height)）")
+        XCTAssertGreaterThanOrEqual(credit.frame.width, 43.9, "作例の出典の当たりが 44pt 未満（\(credit.frame.width)）")
         // 写真が読み込まれるのを待つ（Commons の縮小版）
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "13g-撮影スポット（作例）")
