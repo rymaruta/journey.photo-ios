@@ -57,6 +57,8 @@ enum AccountLocalData {
         UploadLocationPreference(defaults: defaults).removeData(for: userId)
         OpenedTripBooks(defaults: defaults).removeData(for: userId)
         FollowingSeenStore(defaults: defaults).removeData(for: userId)
+        // 行った県マップの記録（県ごとの行った日・外した候補・祝いを見せた周・2026-11-08・札 #503）
+        VisitedPrefectureStore(defaults: defaults).removeData(for: userId)
         PushCenter.removeLocalData(for: userId, defaults: defaults)
         // 電波なしで使える旅（作例・地図の画像とメモ）
         OfflineTripStore.removeData(for: userId, root: offlineTripsRoot, defaults: defaults)
@@ -80,6 +82,8 @@ enum AccountLocalData {
         // とおまわり号の中の家具の配置（2026-10-19）
         CamperRoomStore.removeData(for: userId, defaults: defaults)
         CamperRoomSeenStore.removeData(for: userId, defaults: defaults)
+        // はじめてのいいね・コメントを祝った印（2026-11-08）
+        FirstReaction.removeData(for: userId, defaults: defaults)
         // 共有のために書いた旅の一冊の画像（表紙の写真を含む）
         TripBookCard.removeAll()
         if let username, !username.isEmpty {

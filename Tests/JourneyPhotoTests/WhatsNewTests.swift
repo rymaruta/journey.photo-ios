@@ -115,9 +115,9 @@ final class WhatsNewTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let all = WhatsNew.decode(data)
-        XCTAssertEqual(all.map(\.version), ["1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14", "1.0.82", "1.0.73", "1.0.67"])
-        // 1.1.72 の中身は `testVersion1172SummarizesChangesSince1087` で見る。以下は 1.1.18 以前の項目
-        let releases = Array(all.dropFirst())
+        XCTAssertEqual(all.map(\.version), ["1.1.74", "1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14", "1.0.82", "1.0.73", "1.0.67"])
+        // 1.1.74・1.1.72 の中身は `testVersion1172SummarizesChangesSince1087` で見る。以下は 1.1.18 以前の項目
+        let releases = Array(all.dropFirst(2))
         // 版に重複が無い（履歴の区切りと「見た版」の比べ方が版で1つに決まる前提）
         let versions = releases.map(\.version)
         XCTAssertEqual(Set(versions).count, versions.count, "WhatsNew.json の版が重複している")
@@ -267,8 +267,8 @@ final class WhatsNewTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
-        // 1.1.72 より前の分だけで見る（1.1.72 は `testVersion1172SummarizesChangesSince1087`）
-        let releases = Array(WhatsNew.decode(data).dropFirst())
+        // 1.1.72 より前の分だけで見る（1.1.74・1.1.72 は `testVersion1172SummarizesChangesSince1087`）
+        let releases = Array(WhatsNew.decode(data).dropFirst(2))
         XCTAssertEqual(releases.first?.version, "1.1.18")
         XCTAssertEqual(releases.first?.items.count, 2)
         XCTAssertEqual(releases[1].items.count, 3)
@@ -315,7 +315,9 @@ final class WhatsNewTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let releases = WhatsNew.decode(data)
-        let latest = try XCTUnwrap(releases.first)
+        XCTAssertEqual(releases.first?.version, "1.1.74")
+        XCTAssertEqual(releases.first?.date, WhatsNew.Day(year: 2026, month: 11, day: 8))
+        let latest = try XCTUnwrap(releases.dropFirst().first)
         XCTAssertEqual(latest.version, "1.1.72")
         XCTAssertEqual(latest.date, WhatsNew.Day(year: 2026, month: 11, day: 7))
         XCTAssertEqual(latest.items.count, 10)
@@ -334,16 +336,18 @@ final class WhatsNewTests: XCTestCase {
         }
         // 1.0.87 の人: 重複なく、新しい順に全部
         let from1087 = WhatsNew.pending(releases: releases, seen: "1.0.87", current: "1.1.72", usedBefore: true)
-        XCTAssertEqual(from1087.map(\.version), ["1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14"])
+        XCTAssertEqual(from1087.map(\.version), ["1.1.74", "1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14"])
         let titles = from1087.flatMap(\.items).map(\.title.ja)
         XCTAssertEqual(Set(titles).count, titles.count, "1.0.87 の人に同じ題が2回出る")
-        // 1.1.71 の人は 1.1.72 だけ。ワークフローが 1.1.73 を付けても出る
+        // 1.1.71 の人は 1.1.74・1.1.72。ワークフローが 1.1.73 を付けても出る
         for current in ["1.1.72", "1.1.73", "1.1.80"] {
             XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.71", current: current, usedBefore: true)
-                .map(\.version), ["1.1.72"], current)
+                .map(\.version), ["1.1.74", "1.1.72"], current)
         }
-        // 1.1.72 を見た人・新しいインストールには出さない
-        XCTAssertTrue(WhatsNew.pending(releases: releases, seen: "1.1.72", current: "1.1.72", usedBefore: true).isEmpty)
+        // 1.1.72 を見た人には 1.1.74 だけ。1.1.74 を見た人・新しいインストールには出さない
+        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.72", current: "1.1.74", usedBefore: true)
+            .map(\.version), ["1.1.74"])
+        XCTAssertTrue(WhatsNew.pending(releases: releases, seen: "1.1.74", current: "1.1.74", usedBefore: true).isEmpty)
         XCTAssertTrue(WhatsNew.pending(releases: releases, seen: nil, current: "1.1.72", usedBefore: false).isEmpty)
     }
 

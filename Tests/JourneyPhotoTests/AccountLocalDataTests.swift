@@ -84,6 +84,9 @@ final class AccountLocalDataTests: XCTestCase {
                                       coords: nil, caption: "", location: "", overlays: [], song: nil,
                                       durationSec: 5, savedAt: "2026-09-27T00:00:00Z"))
             OpenedTripBooks(defaults: defaults).mark("trip", for: id)
+            var visited = VisitedPrefectures()
+            visited.add("東京都", day: "2026-11-08")
+            VisitedPrefectureStore(defaults: defaults).save(visited, for: id)
             defaults.set(true, forKey: "photo-gallery-push-enabled.\(id)")
             defaults.set(true, forKey: "photo-gallery-push-unregister-pending.\(id)")
             PendingVerificationStore(defaults: defaults).remember(email: "\(id)@example.test", username: "uuid-\(id)")
@@ -112,6 +115,8 @@ final class AccountLocalDataTests: XCTestCase {
             XCTAssertEqual(drafts.draft != nil, present, "ストーリーの書きかけ: \(says)", file: file, line: line)
             XCTAssertEqual(!OpenedTripBooks(defaults: defaults).ids(for: id).isEmpty, present,
                            "札から開いた一冊: \(says)", file: file, line: line)
+            XCTAssertEqual(VisitedPrefectureStore(defaults: defaults).load(for: id).visitedCount > 0, present,
+                           "行った県の記録: \(says)", file: file, line: line)
             XCTAssertEqual(defaults.object(forKey: "photo-gallery-push-enabled.\(id)") != nil, present,
                            "通知の設定: \(says)", file: file, line: line)
             XCTAssertEqual(defaults.object(forKey: "photo-gallery-push-unregister-pending.\(id)") != nil, present,

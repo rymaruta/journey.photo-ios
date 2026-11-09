@@ -255,7 +255,7 @@ struct TrunkPrivacyPreview: View {
                 HStack(spacing: 10) {
                     // 板: 360×300 を 0.233 倍（84×70）
                     TrunkFigure(model: figure.model, posts: figure.posts, stuck: figure.stuck,
-                                ownerName: profile?.name, parts: figure.parts, width: 84)
+                                ownerName: profile?.name, parts: figure.parts, width: 84, tagPicks: figure.tagPicks)
                         .frame(width: 84, height: 70, alignment: .topLeading)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(TheirTrunkText.cardEyebrow)

@@ -25,6 +25,10 @@ import Foundation
 ///     GET    /users/{uid}/trunk                              → 人のトランク（見せないときは 404 → nil）
 ///     PUT    /user/trunk/settings { showTrunk? , ticket? }   → 状態（見せる設定・わたしの乗車券）
 ///
+/// 手荷物タグを自分で選ぶ（2026-11-08 owner 承認・札 #501）:
+///
+///     PUT    /user/trunk/settings { tagPicks: ["<ラベルの id>" | "" | "_", …] } → 状態（`tagPicks` つき）
+///
 /// はじめての硬貨（2026-10-18 owner 承認）:
 ///
 ///     POST   /user/trunk/welcome                             → { granted, added, coins }（`TrunkWelcome`）
@@ -215,6 +219,18 @@ struct TrunkService {
     func setShowTrunk(_ on: Bool) async throws -> TrunkState {
         try await refusing {
             try await api.authorized(.put, "/user/trunk/settings", body: ShowTrunkBody(showTrunk: on), as: TrunkState.self)
+        }
+    }
+
+    /// `PUT /user/trunk/settings { tagPicks }` の本文。**枠の選びを全部まとめて送る**（`[]` で全部おまかせ）
+    struct TagPicksBody: Encodable, Equatable { let tagPicks: [String] }
+
+    /// 手荷物タグの枠ごとの選びを置く（全部まとめて置き換える）。
+    /// 貼っていない・地名の無い・同じ地名のラベルは 409（`tagPickNotStuck`・`tagPickNoPlace`・`tagPickDuplicate`）
+    func setTagPicks(_ picks: [TrunkTagPick]) async throws -> TrunkState {
+        try await refusing {
+            try await api.authorized(.put, "/user/trunk/settings",
+                                     body: TagPicksBody(tagPicks: TrunkTagPick.normalized(picks).map(\.wire)), as: TrunkState.self)
         }
     }
 

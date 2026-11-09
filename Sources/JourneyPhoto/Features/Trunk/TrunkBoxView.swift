@@ -33,6 +33,8 @@ struct TrunkBoxView: View {
     /// 手荷物タグを作るラベル（新しい順）。**絵に描くラベルを減らす画面（型を選ぶ）でも、タグはトランクの全部の
     /// ラベルから作る**（画面ごとにタグの枚数・中身を割らない・`TrunkLooks.tagSource`）。nil なら `stuck`
     var tagsFrom: [TrunkLabel]?
+    /// 手荷物タグの枠ごとの選び（本人が決めたラベル・外した枠。無ければ全部おまかせ・2026-11-08）
+    var tagPicks: [TrunkTagPick] = []
 
     private var stage: Double { TrunkAging.stage(posts: posts) }
     private var look: TrunkLook { TrunkLooks.look(model, stage: stage) }
@@ -497,7 +499,7 @@ struct TrunkBoxView: View {
 
     private func tags(_ look: TrunkLook) -> some View {
         // 行き先と日付はこの人のラベルから（`TrunkLooks.tags(stuck:posts:)`）。地名が足りなければ枚数も減る
-        let list = TrunkLooks.tags(stuck: TrunkLooks.tagSource(stuck: stuck, tagsFrom: tagsFrom), posts: posts)
+        let list = TrunkLooks.tags(stuck: TrunkLooks.tagSource(stuck: stuck, tagsFrom: tagsFrom), posts: posts, picks: tagPicks)
         let st = stage
         return ZStack(alignment: .topLeading) {
             ForEach(Array(list.indices), id: \.self) { i in
@@ -880,7 +882,7 @@ struct TrunkHardwareFace: View {
 }
 
 /// 手荷物タグ1枚（50×68）
-private struct TrunkTagView: View {
+struct TrunkTagView: View {
     let tag: TrunkLooks.Tag
     let stage: Double
 
@@ -1029,18 +1031,20 @@ struct TrunkFigure: View {
     let width: Double
     /// 手荷物タグを作るラベル（`TrunkBoxView.tagsFrom`）
     var tagsFrom: [TrunkLabel]?
+    /// 手荷物タグの枠ごとの選び（`TrunkBoxView.tagPicks`）
+    var tagPicks: [TrunkTagPick] = []
 
     var body: some View {
         let k = width / TrunkLooks.canvasWidth
         TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts, wrinkles: wrinkles,
-                     tagsFrom: tagsFrom)
+                     tagsFrom: tagsFrom, tagPicks: tagPicks)
             .scaleEffect(k, anchor: .topLeading)
             .frame(width: width, height: TrunkLooks.canvasHeight * k, alignment: .topLeading)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(TrunkText.accessibilityLabel(model: model,
                                                              labels: TrunkPlacement.layout(stuck, stage: 0).count,
                                                              tags: TrunkLooks.tags(stuck: TrunkLooks.tagSource(stuck: stuck, tagsFrom: tagsFrom),
-                                                                                   posts: posts).count, equipped: parts))
+                                                                                   posts: posts, picks: tagPicks).count, equipped: parts))
             .accessibilityAddTraits(.isImage)
     }
 }
@@ -1056,11 +1060,13 @@ struct TrunkFigureFit: View {
     let maxWidth: Double
     /// 手荷物タグを作るラベル（`TrunkBoxView.tagsFrom`）
     var tagsFrom: [TrunkLabel]?
+    /// 手荷物タグの枠ごとの選び（`TrunkBoxView.tagPicks`）
+    var tagPicks: [TrunkTagPick] = []
 
     var body: some View {
         GeometryReader { geo in
             TrunkFigure(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts, wrinkles: wrinkles,
-                        width: min(maxWidth, Double(geo.size.width)), tagsFrom: tagsFrom)
+                        width: min(maxWidth, Double(geo.size.width)), tagsFrom: tagsFrom, tagPicks: tagPicks)
                 .frame(width: geo.size.width, height: geo.size.height)
         }
         .aspectRatio(TrunkLooks.canvasWidth / TrunkLooks.canvasHeight, contentMode: .fit)

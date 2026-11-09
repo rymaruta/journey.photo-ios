@@ -2366,6 +2366,63 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    // MARK: - 行った県マップ（2026-11-08・札 #503）
+
+    /// 行った県マップ。マイページの「旅の記録」の下の札から入り、地図・一覧・県の札を撮る。
+    /// `-JPPreviewVisitedMap YES`（Debug のみ・`PreviewSession.visitedMapSeed`）で、1〜5 回の段が並んだ見本の記録を入れる。
+    /// **出なければ撮らずに抜ける**（札が見つからない・地図が出ない）。サーバーには何も送らない
+    func testCapturesVisitedMap() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewVisitedMap", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let entry = app.descendants(matching: .any)["profile.visitedMap"].firstMatch
+        guard entry.waitForExistence(timeout: 20) else { return }
+        var swipes = 0
+        while !entry.isHittable, swipes < 4 {
+            app.swipeUp()
+            swipes += 1
+        }
+        guard entry.isHittable else { return }
+        shoot(app, "86a-マイページの札「行った県」")
+        entry.tap()
+
+        let map = app.descendants(matching: .any)["visitedMap.map"].firstMatch
+        guard map.waitForExistence(timeout: 15) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "86b-行った県の地図（回数の段）")
+
+        // 県の札（スイッチがオフのときは札が開く）
+        let tokyo = app.descendants(matching: .any)["visitedMap.pref.東京都"].firstMatch
+        if tokyo.waitForExistence(timeout: 5), tokyo.isHittable {
+            tokyo.tap()
+            if app.descendants(matching: .any)["visitedMap.card"].firstMatch.waitForExistence(timeout: 5) {
+                shoot(app, "86c-行った県の札（東京都）")
+                let close = app.buttons["visitedMap.card.close"].firstMatch
+                if close.exists, close.isHittable { close.tap() }
+            }
+        }
+
+        let list = app.buttons["visitedMap.mode.list"].firstMatch
+        if list.waitForExistence(timeout: 5), list.isHittable {
+            list.tap()
+            if app.descendants(matching: .any)["visitedMap.list"].firstMatch.waitForExistence(timeout: 5) {
+                shoot(app, "86d-行った県の一覧")
+            }
+        }
+    }
+
     // MARK: - 旅のトランク（2026-10-17・モック「旅のトランク」）
 
     /// 旅のトランクの見本で起動する（`-JPPreviewTrunk`・Debug のみ。サーバーには何も送らない）
@@ -3124,6 +3181,10 @@ final class ScreenshotTests: XCTestCase {
         guard stick.waitForExistence(timeout: 30) else { return }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "96-ラベルが届いた")
+        // 静かな祝い（2026-11-08・案 A）: 動きのあと、事実の一文が出ている（見本は「京都、はじめての1枚です」）
+        let fact = app.staticTexts["trunk.arrived.fact"].firstMatch
+        XCTAssertTrue(fact.exists, "ラベルが届いた画面に、事実の一文が出ていない")
+        XCTAssertTrue(fact.label.contains("はじめて") || fact.label.lowercased().contains("first"), "一文が「はじめて」を言っていない: \(fact.label)")
         let keep = app.buttons["trunk.arrived.keep"].firstMatch
         let reroll = app.buttons["trunk.arrived.reroll"].firstMatch
         let close = app.buttons["trunk.arrived.close"].firstMatch
@@ -3139,6 +3200,23 @@ final class ScreenshotTests: XCTestCase {
         // 閉じたあとに、また出てこない（見本は起動から1回だけ・`TrunkArrivals.claimPreviewOffer`・2026-10-21）
         Thread.sleep(forTimeInterval: 4)
         XCTAssertFalse(stick.exists, "「手持ちに入れておく」で閉じたあと、届いた画面がまた出た")
+    }
+
+    /// **はじめてのいいね**（お知らせ・`-JPPreviewFirstReaction`・2026-11-08・案 A）。見本の行は必ず出るが、
+    /// お知らせが開けなければ撮らずに抜ける。出たのに「はじめて」の一言が無いなら落とす
+    func testCapturesFirstReaction() {
+        let app = launchTrunk(["-JPPreviewFirstReaction", "YES"])
+        let bell = app.buttons["header.notifications"].firstMatch
+        guard bell.waitForExistence(timeout: 30), bell.isHittable else { return }
+        bell.tap()
+        let mark = app.descendants(matching: .any)["notifications.firstReaction"].firstMatch
+        guard mark.waitForExistence(timeout: 20) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "96e-はじめてのいいね（お知らせ）")
+        let note = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'はじめて'")).firstMatch
+        XCTAssertTrue(note.exists, "「はじめて」の一言が出ていない")
+        let close = app.buttons["notifications.close"].firstMatch
+        if close.exists, close.isHittable { close.tap() }
     }
 
     // MARK: - はじめての硬貨（2026-10-18 owner 承認）
@@ -3361,6 +3439,50 @@ final class ScreenshotTests: XCTestCase {
             XCTAssertTrue(save.isEnabled, "付け替えたのに保存できない")
             save.tap()
         }
+    }
+
+    /// **手荷物タグを自分で選ぶ**（2026-11-08・札 #501）: トランクの行 → 枠の一覧 → ラベルを選ぶシート → 完了 → タグを外す。
+    /// 入口が無ければ落とす
+    func testCapturesTrunkTags() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.tags.open") else { return XCTFail("「手荷物タグ」の入口が無い") }
+        // 見本の投稿は 42 件＝吊るせるタグは1枚（50 件で2枚目）。1枠目だけが押せる行で、2枠目以降は押せない行（Button ではない）
+        let slot = app.buttons["trunk.tags.slot.0"].firstMatch
+        guard slot.waitForExistence(timeout: 10) else { return XCTFail("手荷物タグの画面が開かない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "99t-手荷物タグ")
+        XCTAssertTrue(app.descendants(matching: .any)["trunk.tags.slot.1"].firstMatch.exists, "まだ吊るせない枠の行が無い")
+        XCTAssertFalse(app.buttons["trunk.tags.slot.1"].firstMatch.exists, "まだ吊るせない枠が押せる")
+        XCTAssertGreaterThanOrEqual(slot.frame.height, 44, "枠の行が 44pt 未満")
+        slot.tap()
+        let done = app.buttons["trunk.tags.done"].firstMatch
+        guard done.waitForExistence(timeout: 10) else { return XCTFail("載せるラベルを選ぶシートが開かない") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "99u-手荷物タグ（載せるラベルを選ぶ）")
+        for id in ["trunk.tags.auto", "trunk.tags.remove", "trunk.tags.done"] {
+            XCTAssertGreaterThanOrEqual(app.buttons[id].firstMatch.frame.height, 44, "\(id) が 44pt 未満")
+        }
+        // 押せる行（使用中・地名なしは押せない）の最初の1つを選ぶ
+        let picks = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'trunk.tags.pick.' AND enabled == true"))
+        if picks.count > 0 {
+            let pick = picks.element(boundBy: picks.count - 1)
+            XCTAssertGreaterThanOrEqual(pick.frame.height, 44, "ラベルの行が 44pt 未満")
+            pick.tap()
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "99v-手荷物タグ（ラベルを選んだ）")
+        }
+        done.tap()
+        guard slot.waitForExistence(timeout: 10) else { return XCTFail("完了のあとに枠の一覧へ戻らない") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "99w-手荷物タグ（選んだあと）")
+        slot.tap()
+        let remove = app.buttons["trunk.tags.remove"].firstMatch
+        guard remove.waitForExistence(timeout: 10) else { return XCTFail("シートが開き直せない") }
+        remove.tap()
+        guard slot.waitForExistence(timeout: 10) else { return XCTFail("タグを外したあとに枠の一覧へ戻らない") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "99x-手荷物タグ（タグを外した）")
     }
 
     /// **部品箱の種類ごとの絵**（#305・2026-10-18）: 角金具・内張り・タグ・ワッペン・チャーム・鍵のタブの部品1点の絵（96pt）。

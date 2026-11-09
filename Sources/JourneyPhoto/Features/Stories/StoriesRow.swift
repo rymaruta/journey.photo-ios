@@ -105,6 +105,8 @@ struct StoriesRow: View {
             guard opened == nil else { return }
             Task { await reload() }
         }
+        // 投稿が全部届いたときの触覚（札 #500・成功）。送っている間に画面を閉じてもここで鳴る
+        .sensoryFeedback(.success, trigger: uploads.finished)
         // 途中で止まったとき。**出たぶんは残し、残りを送り直すかやめるかを選ばせる**
         .confirmationDialog(L("ストーリーを送れませんでした", "Couldn't send your story"),
                             isPresented: $showUploadFailure, titleVisibility: .visible) {
@@ -147,7 +149,8 @@ struct StoriesRow: View {
         .fullScreenCover(isPresented: $showComposer, onDismiss: {
             Task { await reload() }
         }) {
-            NavigationStack { StoryComposerView() }
+            NavigationStack { // 入口は全部「＋」(ストーリーを追加)なので、カメラを先頭に開く(札 #500・A 案)。カメラが無い端末は写真選びから
+            StoryComposerView(startsWithCamera: StoryCameraView.isAvailable) }
         }
     }
 

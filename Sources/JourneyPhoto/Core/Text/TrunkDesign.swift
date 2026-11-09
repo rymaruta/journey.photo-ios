@@ -120,6 +120,9 @@ enum TrunkAging {
         posts >= 80 ? 3 : posts >= 50 ? 2 : posts >= 20 ? 1 : 0
     }
 
+    /// 枠ごとに吊るせるようになる投稿の数（`tagCount` と同じ線。選ぶ画面の「あと N 件」に使う）
+    static let tagThresholds = [20, 50, 80]
+
     /// 貼ったラベルの古び（`k` は古い順の番号・`n` は並べる枚数）。モックの
     /// `Math.max(0, st * (1 - k / Math.max(1, n)) * 1.05)` を 1 で止める
     static func labelAge(index k: Int, count n: Int, stage st: Double) -> Double {
@@ -656,25 +659,119 @@ enum TrunkLooks {
         (Array(stuck.prefix(count)), stuck)
     }
 
-    /// 吊るすタグ（貼ったラベルの**新しい順**に、違う撮影地を `TrunkAging.tagCount(posts:)` 枚まで）。
-    /// - 地名の無いラベル（人のトランクで地名を伏せた・もともと無い）は使わない
-    /// - 使える地名が足りなければ、足りない枚数ぶんタグを出さない（偽の行き先で埋めない）
-    static func tags(stuck newestFirst: [TrunkLabel], posts: Int) -> [Tag] {
-        let count = min(tagSlots.count, TrunkAging.tagCount(posts: posts))
-        guard count > 0 else { return [] }
-        var seen = Set<String>()
-        var out: [Tag] = []
-        for label in newestFirst {
-            let name = label.place.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !name.isEmpty, seen.insert(name).inserted else { continue }
-            let code = tagCode(label)
-            guard !code.isEmpty else { continue }
-            let slot = tagSlots[out.count]
-            let day = label.day.map { String(format: "%04d.%02d.%02d", $0.year, $0.month, $0.day) } ?? ""
-            out.append(Tag(code: code, printedDay: day, x: slot.x, rot: slot.rot, bg: slot.bg, fg: slot.fg))
-            if out.count == count { break }
+    /// 1つの枠の中身（`tagSlotResults`）
+    struct TagSlotResult: Equatable {
+        /// 枠がどう決まったか
+        enum Source: Equatable {
+            /// 投稿の数がまだ足りず、吊るせない
+            case locked
+            /// おまかせ（新しいラベルから自動）。ラベルが足りなければ空き
+            case auto
+            /// 本人が貼ったラベルから選んだ
+            case chosen
+            /// 本人が「タグを外す」にした
+            case removed
         }
-        return out
+
+        let source: Source
+        /// 載せているラベル（空きなら nil）
+        let label: TrunkLabel?
+        /// 吊るすタグ（空きなら nil）
+        let tag: Tag?
+    }
+
+    /// タグに載せられるラベルか（地名があり、字が空にならない）。載せる字と日付も返す
+    private static func tagContent(_ label: TrunkLabel) -> (name: String, code: String, day: String)? {
+        let name = label.place.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+        let code = tagCode(label)
+        guard !code.isEmpty else { return nil }
+        let day = label.day.map { String(format: "%04d.%02d.%02d", $0.year, $0.month, $0.day) } ?? ""
+        return (name, code, day)
+    }
+
+    /// タグに載せられるラベルか（選ぶ画面が行を押せるかを決める）
+    static func canHangTag(_ label: TrunkLabel) -> Bool { tagContent(label) != nil }
+
+    /// 3つの枠それぞれの中身（吊るせない枠・おまかせ・選んだ・外した）。2026-11-08 owner 承認（札 #501）
+    ///
+    /// - おまかせの枠 i は、貼ったラベルの**新しい順の「違う地名の列」の i 番目**（選びが無ければ今までと同じ）。
+    ///   それが選んだ枠に取られている・別の枠で使われているときだけ、列の先頭から未使用の最初を取る。
+    ///   外した枠も列の1つぶんを使ったことにする（外す・別の枠を選ぶとき、**触っていない枠は動かない**）。
+    ///   **選んだ枠の地名は先に取り置く**（同じ地名をおまかせが重ねて出さない）
+    /// - 選んだラベルが `stuck` に無い（はがした）・地名が無い・前の枠と同じ地名のときは、その枠はおまかせ
+    /// - 使える地名が足りなければ、足りない枠は空き（偽の行き先で埋めない）
+    /// - 地名の無いラベル（人のトランクで地名を伏せた・もともと無い）は使わない
+    static func tagSlotResults(stuck newestFirst: [TrunkLabel], posts: Int, picks: [TrunkTagPick] = []) -> [TagSlotResult] {
+        let open = min(tagSlots.count, TrunkAging.tagCount(posts: posts))
+        var results: [TagSlotResult] = []
+        // 1) 選んだ枠・外した枠を先に決める（地名を取り置く）
+        var chosen: [Int: TrunkLabel] = [:]
+        var removed = Set<Int>()
+        var reserved = Set<String>()
+        for slot in 0..<open {
+            let pick = slot < picks.count ? picks[slot] : TrunkTagPick.auto
+            switch pick {
+            case .auto:
+                break
+            case .removed:
+                removed.insert(slot)
+            case .label(let id):
+                if let label = newestFirst.first(where: { $0.id == id }), let content = tagContent(label),
+                   reserved.insert(content.name).inserted {
+                    chosen[slot] = label
+                }
+            }
+        }
+        // 2) おまかせの枠: 新しい順の違う地名の列の、枠の番号の位置を基本にする
+        typealias Found = (label: TrunkLabel, content: (name: String, code: String, day: String))
+        var column: [Found] = []
+        var columnNames = Set<String>()
+        for label in newestFirst {
+            if let content = tagContent(label), columnNames.insert(content.name).inserted { column.append((label, content)) }
+        }
+        var used = reserved
+        func nextAuto(_ slot: Int) -> Found? {
+            if slot < column.count, !used.contains(column[slot].content.name) {
+                used.insert(column[slot].content.name)
+                return column[slot]
+            }
+            guard let hit = column.first(where: { !used.contains($0.content.name) }) else { return nil }
+            used.insert(hit.content.name)
+            return hit
+        }
+        for slot in 0..<tagSlots.count {
+            if slot >= open {
+                results.append(TagSlotResult(source: .locked, label: nil, tag: nil))
+                continue
+            }
+            if removed.contains(slot) {
+                if slot < column.count { used.insert(column[slot].content.name) }
+                results.append(TagSlotResult(source: .removed, label: nil, tag: nil))
+                continue
+            }
+            let isChosen = chosen[slot] != nil
+            var found: Found?
+            if let label = chosen[slot], let content = tagContent(label) {
+                found = (label, content)
+            } else {
+                found = nextAuto(slot)
+            }
+            guard let hit = found else {
+                results.append(TagSlotResult(source: .auto, label: nil, tag: nil))
+                continue
+            }
+            let style = tagSlots[slot]
+            let tag = Tag(code: hit.content.code, printedDay: hit.content.day, x: style.x, rot: style.rot, bg: style.bg, fg: style.fg)
+            results.append(TagSlotResult(source: isChosen ? .chosen : .auto, label: hit.label, tag: tag))
+        }
+        return results
+    }
+
+    /// 吊るすタグ（`tagSlotResults` で吊るすことになった枠の札だけ）。選びが無ければ貼ったラベルの**新しい順**に、
+    /// 違う撮影地を `TrunkAging.tagCount(posts:)` 枚まで
+    static func tags(stuck newestFirst: [TrunkLabel], posts: Int, picks: [TrunkTagPick] = []) -> [Tag] {
+        tagSlotResults(stuck: newestFirst, posts: posts, picks: picks).compactMap(\.tag)
     }
 
     /// 手荷物タグの褪せ（モックの `saturate(1 - st * 0.4) sepia(st * 0.25)`）

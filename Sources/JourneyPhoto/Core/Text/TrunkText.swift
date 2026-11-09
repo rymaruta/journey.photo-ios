@@ -113,6 +113,11 @@ enum TrunkText {
         case "notEnoughFragments": return L("かけらが足りません。5つで1つ交換できます。", "Not enough fragments. Five make one exchange.")
         case "owned": return L("もう持っている部品です。", "You already have that part.")
         case "notOwned": return L("持っていない部品は付けられません。読み直してください。", "You can\u{2019}t use a part you don\u{2019}t have. Reload and try again.")
+        // 手荷物タグを自分で選ぶ（2026-11-08・札 #501）
+        case "tagPickNotStuck": return L("そのラベルはもう貼っていません。選び直してください。",
+                                         "That label isn\u{2019}t on your trunk anymore. Choose again.")
+        case "tagPickNoPlace": return L("地名のないラベルはタグに載せられません。", "A label without a place name can\u{2019}t go on a tag.")
+        case "tagPickDuplicate": return L("同じ地名は、タグに1枚だけ載せられます。", "Each place can be on only one tag.")
         case "badPart", "badKind": return L("その部品は付けられませんでした。読み直してください。", "That part couldn\u{2019}t be used. Reload and try again.")
         default: return fallback
         }
@@ -313,7 +318,9 @@ enum TrunkLocal {
         let rest = s.stuck.filter { $0.id != id }.map { l in
             l.pos == nil ? (slots[l.id].map { l.withSlot($0) } ?? l) : l
         }
-        return s.copy(pocket: [label.withPos(nil)] + s.pocket, stuck: rest)
+        // タグに載せていたラベルをはがしたら、その枠はおまかせに戻す（サーバーの `unstickMutation` と同じ）
+        let picks = s.tagPicks.map { $0 == .label(id) ? TrunkTagPick.auto : $0 }
+        return s.copy(pocket: [label.withPos(nil)] + s.pocket, stuck: rest, tagPicks: picks)
     }
 
     static func remove(_ s: TrunkState, id: String) -> TrunkState {
@@ -359,6 +366,19 @@ enum TrunkLocal {
 
     static func equip(_ s: TrunkState, _ equipped: TrunkEquipped) -> TrunkState {
         s.copy(equipped: equipped.sanitized(owned: s.ownedParts))
+    }
+
+    /// 手荷物タグの選び（見本）。サーバーの `settingsMutation` と同じ決まり: 貼っていない・地名の無いラベルは載せない
+    /// （その枠はおまかせ）、前の枠と同じ地名の枠もおまかせ
+    static func setTagPicks(_ s: TrunkState, _ picks: [TrunkTagPick]) -> TrunkState {
+        var names = Set<String>()
+        let cleaned: [TrunkTagPick] = TrunkTagPick.normalized(picks).map { pick in
+            guard case .label(let id) = pick else { return pick }
+            guard let label = s.stuck.first(where: { $0.id == id }), TrunkLooks.canHangTag(label),
+                  names.insert(label.place.name.trimmingCharacters(in: .whitespacesAndNewlines)).inserted else { return .auto }
+            return pick
+        }
+        return s.copy(tagPicks: TrunkTagPick.normalized(cleaned))
     }
 }
 

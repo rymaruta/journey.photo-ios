@@ -394,7 +394,7 @@ struct TrunkEquipView: View {
             ZStack(alignment: .topLeading) {
                 TrunkFigure(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck,
                             ownerName: ownerName, parts: working,
-                            wrinkles: TrunkWrinkles(userId: auth.userId).strengths, width: w)
+                            wrinkles: TrunkWrinkles(userId: auth.userId).strengths, width: w, tagPicks: state.tagPicks)
                 if let r = TrunkEquipText.outline(current) {
                     RoundedRectangle(cornerRadius: 10)
                         .strokeBorder(WebTheme.accent.opacity(0.8), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))

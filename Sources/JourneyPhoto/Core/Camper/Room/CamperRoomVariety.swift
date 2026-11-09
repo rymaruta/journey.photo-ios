@@ -255,7 +255,18 @@ private func varietyUnlock(_ n: Int) -> CamperRoomUnlock {
     case 10: return .topic(.food, step)
     case 11: return .topic(.book, step)
     case 12: return .spring(2 * step)
-    default: return .sameDay(3 * step)
+    default:
+        // 2026-11-08 判断（楽しさの案 B）: 同じ日に撮る条件は**残す**。段が偶数（6・12・18 枚）のぶんには
+        // 「秋の写真」「季節をまたぐ」を**もう一つの道として足す**（どちらかを満たせば手に入る）。
+        // 家具は番号（`out.count`）で並び、レア度・条件・名前の連番がその番号に結びついている。
+        // 家具を足すと後ろが全部ずれ、保存した部屋の家具が変わるので、数は変えず条件だけを広げる。
+        // 条件を替えるのではなく広げるので、前の条件で持っている人は持ち続ける
+        switch step {
+        case 2: return .either(.sameDay(6), .autumn(4))
+        case 4: return .either(.sameDay(12), .seasons(3))
+        case 6: return .either(.sameDay(18), .seasons(4))
+        default: return .sameDay(3 * step)
+        }
     }
 }
 

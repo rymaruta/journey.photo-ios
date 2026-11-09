@@ -22,6 +22,8 @@ struct TrunkOpenView: View {
     var ownerName: String?
     var parts: TrunkEquipped = .none
     var wrinkles: [String: Double] = [:]
+    /// 手荷物タグの枠ごとの選び（2026-11-08）。無ければ全部おまかせ
+    var tagPicks: [TrunkTagPick] = []
     /// 人のトランク（nil なら自分のトランク）
     var theirs: TheirTrunkInside?
 
@@ -183,7 +185,7 @@ struct TrunkOpenView: View {
     /// 乗車券の写真は絵にせず生きたまま描くので、合図に入れない（写真が届くたびに描き直さない）
     private var snapshotKey: LidSnapshotKey {
         LidSnapshotKey(contents: contents, hasCard: cardImage != nil, lining: lining.name, model: model, posts: posts,
-                       stuck: stuck, parts: parts, wrinkles: wrinkles, ownerName: ownerName)
+                       stuck: stuck, parts: parts, wrinkles: wrinkles, ownerName: ownerName, tagPicks: tagPicks)
     }
 
     /// 小さい画面・大きい文字でも舞台を下限（`TrunkLid.minScale`）より縮めない（メダルの押す所 44pt を保つ）。
@@ -228,10 +230,11 @@ struct TrunkOpenView: View {
     /// `animatableData`）。平らなふた（押せる）への差し替えは開き切る動きが終わってから（`lidSettled`）
     private func stage(_ contents: TrunkInsideContents) -> TrunkLidStage {
         TrunkLidStage(p: p, settled: lidSettled && dragStart == nil, model: model, posts: posts, stuck: stuck,
-                      ownerName: ownerName, parts: parts, wrinkles: wrinkles, lining: lining, contents: contents,
+                      ownerName: ownerName, parts: parts, wrinkles: wrinkles, tagPicks: tagPicks, lining: lining, contents: contents,
                       cardImage: cardImage, cardLabel: cardLabel, ticketPhotos: ticketPhotos, lifted: held,
                       closedLabel: TrunkText.accessibilityLabel(model: model, labels: TrunkPlacement.layout(stuck, stage: 0).count,
-                                                                tags: TrunkLooks.tags(stuck: stuck, posts: posts).count, equipped: parts),
+                                                                tags: TrunkLooks.tags(stuck: stuck, posts: posts, picks: tagPicks).count,
+                                                                equipped: parts),
                       images: lidImages, onPick: pick, onAdjust: { up in move(to: TrunkLid.stepped(p, up: up)) })
     }
 
@@ -667,6 +670,7 @@ struct TrunkLidStage: ViewModifier, Animatable {
     let ownerName: String?
     let parts: TrunkEquipped
     let wrinkles: [String: Double]
+    var tagPicks: [TrunkTagPick] = []
     let lining: TrunkLining
     let contents: TrunkInsideContents
     let cardImage: UIImage?
@@ -743,7 +747,8 @@ struct TrunkLidStage: ViewModifier, Animatable {
         if let image = images?.handle {
             TrunkLidImages.place(image, w: TrunkLooks.canvasWidth, h: 40, pad: 0)
         } else {
-            TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts, wrinkles: wrinkles)
+            TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts, wrinkles: wrinkles,
+                         tagPicks: tagPicks)
                 .frame(width: TrunkLooks.canvasWidth, height: 40, alignment: .top)
                 .clipped()
         }
@@ -789,7 +794,7 @@ struct TrunkLidStage: ViewModifier, Animatable {
                     TrunkLidImages.place(image, w: TrunkLooks.bodyWidth, h: TrunkLooks.bodyHeight)
                 } else {
                     TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,
-                                 parts: parts, wrinkles: wrinkles)
+                                 parts: parts, wrinkles: wrinkles, tagPicks: tagPicks)
                 }
                 if pose.claspProgress > 0 { clasp(pose) }
                 RoundedRectangle(cornerRadius: 16).fill(Color.black.opacity(pose.lidShade))
@@ -874,6 +879,7 @@ private struct LidSnapshotKey: Equatable {
     let parts: TrunkEquipped
     let wrinkles: [String: Double]
     let ownerName: String?
+    let tagPicks: [TrunkTagPick]
 }
 
 /// ふたを動かしている間に使い回す絵（2026-10-18 見直し）。動きの途中のコマごとに正面の絵（ラベル・部品）や
@@ -899,10 +905,11 @@ struct TrunkLidImages {
         guard !Task.isCancelled else { return nil }
         return TrunkLidImages(
             front: render(TrunkBoxView(model: stage.model, posts: stage.posts, stuck: stage.stuck, ownerName: stage.ownerName,
-                                       bodyOnly: true, parts: stage.parts, wrinkles: stage.wrinkles),
+                                       bodyOnly: true, parts: stage.parts, wrinkles: stage.wrinkles,
+                                       tagPicks: stage.tagPicks),
                           w: TrunkLooks.bodyWidth, h: TrunkLooks.bodyHeight),
             handle: render(TrunkBoxView(model: stage.model, posts: stage.posts, stuck: stage.stuck, ownerName: stage.ownerName,
-                                        parts: stage.parts, wrinkles: stage.wrinkles)
+                                        parts: stage.parts, wrinkles: stage.wrinkles, tagPicks: stage.tagPicks)
                             .frame(width: TrunkLooks.canvasWidth, height: 40, alignment: .top)
                             .clipped(),
                            w: TrunkLooks.canvasWidth, h: 40, pad: 0),

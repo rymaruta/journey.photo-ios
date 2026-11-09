@@ -17,6 +17,8 @@ enum NotificationText {
         let others: Int
         /// まとめた中に未読が1件でもあるか
         let unread: Bool
+        /// まとめた中に、その人にとって初めてのいいね・コメントが在るか（2026-11-08・`FirstReaction`）
+        var firstReaction: FirstReaction.Kind? = nil
 
         var id: String { lead.id }
     }
@@ -50,11 +52,13 @@ enum NotificationText {
     /// まとめるのは**いいねだけ**。コメント・返信は1件ずつ言葉が違い
     /// （本文をサーバーが載せるようになったときに畳むと読めなくなる）、
     /// フォローは写真を伴わない。写真の id が空のいいねもまとめない。
-    static func collapse(_ rows: [AppNotification], unreadIds: Set<String> = []) -> [Entry] {
+    static func collapse(_ rows: [AppNotification], unreadIds: Set<String> = [],
+                         firstReactions: [String: FirstReaction.Kind] = [:]) -> [Entry] {
         var order: [String] = []
         var leads: [String: AppNotification] = [:]
         var people: [String: [String]] = [:]
         var unread: [String: Bool] = [:]
+        var firsts: [String: FirstReaction.Kind] = [:]
         for row in rows {
             let key: String
             if row.kind == .like, let photo = row.photoId, !photo.isEmpty {
@@ -70,11 +74,12 @@ enum NotificationText {
             let person = personKey(row)
             if !(people[key]?.contains(person) ?? false) { people[key]?.append(person) }
             unread[key] = (unread[key] ?? false) || unreadIds.contains(row.id)
+            if let first = firstReactions[row.id] { firsts[key] = first }
         }
         return order.compactMap { key in
             guard let lead = leads[key] else { return nil }
             return Entry(lead: lead, others: max(0, (people[key]?.count ?? 1) - 1),
-                         unread: unread[key] ?? false)
+                         unread: unread[key] ?? false, firstReaction: firsts[key])
         }
     }
 
@@ -161,5 +166,12 @@ enum NotificationText {
                                            to: calendar.startOfDay(for: now)).day ?? 0
         if days <= 1 { return L("昨日", "Yesterday") }
         return L("\(days)日前", "\(days)d ago")
+    }
+
+    /// 行の読み上げの文。未読・初めての印を足す。（ビューの中で変数を書き換えないよう、ここに出してある）
+    static func spokenLabel(_ plain: String, unread: Bool, first: FirstReaction.Kind?) -> String {
+        let base = unread ? L("未読、", "Unread, ") + plain : plain
+        guard let first else { return base }
+        return first.eyebrow + "。" + first.note + "。" + base
     }
 }

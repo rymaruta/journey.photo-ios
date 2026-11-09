@@ -33,9 +33,14 @@ struct StoryComposerView: View {
     @State private var showSaveChoice = false
     /// 下書きの一覧から開いた下書き（`DraftLibrary.Entry.id`）。尋ねずに戻す
     private let openDraft: String?
+    /// 開いたらカメラを先頭に出す（札 #500・ホームの輪の「＋」とアイコン長押しの「ストーリーを撮る」）。
+    /// 写真選びの段を飛ばして撮れる。撮らずに閉じれば写真選びの段に戻る。下書きの続き・送れなかった残りの問いが
+    /// あるときは出さない（先に答えてもらう）
+    private let startsWithCamera: Bool
 
-    init(openDraft: String? = nil) {
+    init(openDraft: String? = nil, startsWithCamera: Bool = false) {
         self.openDraft = openDraft
+        self.startsWithCamera = startsWithCamera
     }
     /// 裏に回ったときに黙って残す書きかけ（本人の下書きとは別の枠・2026-10-16）
     @StateObject private var autoDrafts = StoryDraftStore(slot: .auto)
@@ -127,6 +132,8 @@ struct StoryComposerView: View {
     @State private var photoIgnoresKeyboard = false
     /// 打っている札が**付けた曲の札**だったか（打ち始めの時点）。空にして閉じたら曲も外す
     @State private var typingSongSticker = false
+    /// 打っている札が付けた撮影地の札か（打ち終えたら撮影地の文字も合わせる・`PlaceSticker`・札 #499）
+    @State private var typingPlaceSticker = false
     /// 打ち始める前の札（「キャンセル」で戻す先）。**nil は打つ画面を開くときに新しく足した札**
     /// （キャンセルで消す）。`StoryTextEditing.cancel`
     @State private var typingOriginal: TextOverlay?
@@ -166,6 +173,10 @@ struct StoryComposerView: View {
     @State private var spotIndex: [OfficialSpot] = []
     /// 送る前に撮影スポットの索引を待っている（`post`・押し直しを受けない）
     @State private var isWaitingForSpots = false
+    /// 動画を書き出している間(札 #500)。**この間は編集を止める**(札・文字・追加・削除・並べ替えを触らせない)
+    @State private var isExportingVideo = false
+    /// 取り込んだ動画の一時ファイルの持ち主。この画面が本当に無くなったとき(閉じた・やめた)に消す
+    @StateObject private var videoTemp = StoryVideoTempHolder()
     /// その待ちの仕事。🔴 **閉じた・下書きに保存した・画面が消えたら取り消す**（`stopWaitingToPost`）。
     /// 取り消さないと、「保存せずに閉じる」を選んだあとに待ちが明けて、閉じたはずのストーリーが出た
     @State private var spotWait: Task<Void, Never>?
@@ -210,7 +221,8 @@ struct StoryComposerView: View {
     private var framing: Binding<PhotoFraming> {
         Binding(
             get: { shots.indices.contains(current) ? shots[current].framing : .identity },
-            set: { if shots.indices.contains(current) { shots[current].framing = $0 } }
+            // 動画には合わせ方(拡大・回し)を効かせない(書き出しに載らないので、効かない操作を出さない)
+            set: { if shots.indices.contains(current), shots[current].video == nil { shots[current].framing = $0 } }
         )
     }
 
@@ -331,6 +343,12 @@ struct StoryComposerView: View {
                                         onDelete: { deleteTyping() },
                                         onCancel: { cancelTyping() }) { finishTyping() }
                 }
+                // UI テストのときだけ: 札の動きの記録を見えない要素 `story.probe` に出す（`-JPPreviewStoryProbe YES`・札 #499）
+                if StoryComposeProbe.isEnabled {
+                    StoryComposeProbeView(snapshot: storyProbeSnapshot)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .allowsHitTesting(false)
+                }
             }
         }
         // 見出しのバーは使わない（板 24 は写真の上に ✕ と「下書き保存」を重ねる）
@@ -438,9 +456,9 @@ struct StoryComposerView: View {
             TextField(L("撮影地（任意）", "Place (optional)"), text: Binding(
                 get: { placeDraft },
                 set: { placeDraft = PostLimits.limited(old: placeDraft, new: $0, limit: PostLimits.location) }))
-            Button(L("決める", "Set")) { place.location = placeDraft.trimmingCharacters(in: .whitespacesAndNewlines) }
+            Button(L("決める", "Set")) { setPlace(placeDraft.trimmingCharacters(in: .whitespacesAndNewlines)) }
             if !place.location.isEmpty {
-                Button(L("外す", "Remove"), role: .destructive) { place.location = "" }
+                Button(L("外す", "Remove"), role: .destructive) { setPlace("") }
             }
             Button(Labels.Common.cancel, role: .cancel) {}
         } message: {
@@ -517,6 +535,7 @@ struct StoryComposerView: View {
             }
             // 🔴 尋ねていない自動の書きかけには触らない（黙って上書き・削除しない）
             autoSlotOwned = StorySimpleRules.ownsAutoSlot(hasAutoDraft: hasAuto, asked: showRestoreAuto)
+            openCameraFirstIfAsked()
         }
         // 🔴 **裏に回ったら書きかけを黙って残す**（2026-10-16）。以前は「下書き保存」を押した人の分しか残らず、
         // 裏に回ったまま OS にアプリを終了されると、並べた写真と置いた文字が全部消えた
@@ -536,6 +555,8 @@ struct StoryComposerView: View {
 
     private var composer: some View {
         composerHead
+        // 動画を書き出している間は編集を止める(触れるのは「やめる」だけ・札 #500)
+        .overlay { if isExportingVideo { exportOverlay } }
         .alert(L("書きかけの続きがあります", "Pick up where you left off?"), isPresented: $showRestoreAuto) {
             Button(L("続きから", "Continue")) { restoreDraft(from: autoDrafts) }
             Button(L("削除", "Delete"), role: .destructive) { clearAutoDraft() }
@@ -566,7 +587,10 @@ struct StoryComposerView: View {
                    "Kept on this device. You can pick up where you left off."))
         }
         .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker { capture in acceptFromCamera(capture) }
+            // 自前のカメラ（写真｜動画・長押しで動画・前後の切り替え・触覚）。札 #500
+            StoryCameraView(onPhoto: { data in
+                acceptFromCamera(CameraCapture(metadata: [:], capturedAt: Date(), encode: { data }))
+            }, onVideo: { url in acceptRecordedVideo(url) })
                 .ignoresSafeArea()
         }
         // **まとめて選べる**（モック4-5）。メニューの中に `PhotosPicker` を置くと
@@ -575,7 +599,7 @@ struct StoryComposerView: View {
         // JPEG などに作り直し終えるまで選択が知らされず、その間は並びに出ない（2026-10-16）
         .photosPicker(isPresented: $showLibrary, selection: $pickerItems,
                       maxSelectionCount: max(1, StoryQueue.maxShots - shots.count),
-                      matching: .images,
+                      matching: .any(of: [.images, .videos]),
                       preferredItemEncoding: .current)
         .onChange(of: pickerItems) { _, items in
             Task { await load(items) }
@@ -613,6 +637,7 @@ struct StoryComposerView: View {
                            },
                            onDiscard: {
                                stopWaitingToPost()
+                               discardAllVideos()
                                // 保存せずに閉じると決めたので、黙って残した書きかけも消す
                                clearAutoDraft()
                                dismiss()
@@ -803,9 +828,12 @@ struct StoryComposerView: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if typingId == nil && !votePanelOpen && preview != nil && shots.count > 1 {
-                // 何枚目か（等幅）。表示秒数は右上の「…」へ移した
-                shotCounter
+            if typingId == nil && !votePanelOpen && preview != nil && (shots.count > 1 || currentClip != nil) {
+                // 何枚目か（等幅）。表示秒数は右上の「…」へ移した。動画の1本は長さの札を上に重ねる（札 #500）
+                VStack(alignment: .trailing, spacing: 6) {
+                    if let clip = currentClip { videoBadge(clip) }
+                    if shots.count > 1 { shotCounter }
+                }
                     .padding(.trailing, 16)
                     .padding(.bottom, 30)
                     // 札を動かしている間は**隠すだけ**（消すと、打っている欄が外れてキーボードが閉じ、
@@ -909,7 +937,7 @@ struct StoryComposerView: View {
             PhotosPicker(selection: $librarySelection,
                          maxSelectionCount: StoryQueue.maxShots,
                          selectionBehavior: .continuousAndOrdered,
-                         matching: .images,
+                         matching: .any(of: [.images, .videos]),
                          preferredItemEncoding: .current) {
                 Text(L("写真を選ぶ", "Choose photos"))
             }
@@ -1066,7 +1094,7 @@ struct StoryComposerView: View {
 
     /// 写真の真ん中に何か出ているか（ひとことの欄か、撮影地の札・候補）。曲の札はこれを避ける
     private var captionAreaShown: Bool {
-        captionShown || !place.location.isEmpty || place.chip != nil
+        captionShown || (!place.location.isEmpty && !placeOnPhoto) || place.chip != nil
     }
 
     /// ひとことを打ち始める（写真を押した・「…」の「ひとことを書く」・入口の案内・VoiceOver の操作）。
@@ -1203,8 +1231,10 @@ struct StoryComposerView: View {
                 .allowsHitTesting(captionShown)
                 .accessibilityHidden(!captionShown)
                 .padding(.bottom, captionShown ? 0 : -10)
+            // 撮影地は**動かせる札で見せる**（札 #499）。固定の札は、どの写真にも札が無いときだけ
+            // （札が上限で置けなかった・札を置いた写真を外した・前の動きの下書き）
             if !place.location.isEmpty {
-                photoChip(symbol: "mappin", text: place.location)
+                if !placeOnPhoto { photoChip(symbol: "mappin", text: place.location) }
             } else if let spot = place.chip {
                 spotSuggestionChip(spot)
             }
@@ -1269,7 +1299,9 @@ struct StoryComposerView: View {
     /// 写真の上なので白だけ（真鍮は置かない）
     private func spotSuggestionChip(_ spot: OfficialSpot) -> some View {
         Button {
+            let before = place.location
             place.pick()
+            reconcilePlaceSticker(from: before)
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "plus").font(JPFont.footnote.weight(.semibold))
@@ -1401,15 +1433,17 @@ struct StoryComposerView: View {
     /// 散っていたものをまとめた。中身の動きは前のまま
     private var moreMenu: some View {
         Menu {
-            // 5・10・15 秒（前の右下の「表示 5 秒」と同じ選び方）
-            Menu {
-                durationOptions
-            } label: {
-                Label(L("表示秒数（\(durationSec) 秒）", "Duration (\(durationSec)s)"), systemImage: "timer")
+            // 5・10・15 秒（前の右下の「表示 5 秒」と同じ選び方）。**動画には無い**(長さは動画の長さ・札 #500)
+            if currentClip == nil {
+                Menu {
+                    durationOptions
+                } label: {
+                    Label(L("表示秒数（\(durationSec) 秒）", "Duration (\(durationSec)s)"), systemImage: "timer")
+                }
             }
             // 写真を拡大・移動・回転したら、元へ戻す口（2026-10-29 から**ここだけ**。写真の2回押しで戻すのは
             // やめた——1回押しでひとことを打ち始めるのが、2回押しを待つ分 0.3 秒遅れた）
-            if !framing.wrappedValue.isIdentity {
+            if currentClip == nil, !framing.wrappedValue.isIdentity {
                 Button {
                     framing.wrappedValue = .identity
                 } label: {
@@ -1430,7 +1464,11 @@ struct StoryComposerView: View {
                 // 下書きから開いた回は「この下書きを更新／別の下書きとして保存」を尋ねる（#400）
                 if openedSavedDraft { showSaveChoice = true } else { saveDraft() }
             } label: {
-                Label(L("下書き保存", "Save draft"), systemImage: "square.and.arrow.down")
+                // 動画が入っていて押せないときは、理由を名前に出す(押せない理由が見えない行を置かない)
+                Label(hasVideoShot ? L("下書き保存（動画が入っていると保存できません）",
+                                      "Save draft (not available with a video)")
+                                   : L("下書き保存", "Save draft"),
+                      systemImage: "square.and.arrow.down")
             }
             .disabled(prepared == nil || !canSaveDraft || loadingPicks > 0)
         } label: {
@@ -1571,10 +1609,25 @@ struct StoryComposerView: View {
         typingCanvas = canvasSize
         typingShotId = shots[current].id
         typingSongSticker = overlays.wrappedValue.first { $0.id == id }.map { SongSticker.isSticker($0, of: song) } ?? false
+        typingPlaceSticker = overlays.wrappedValue.first { $0.id == id }.map { PlaceSticker.isSticker($0, of: place.location) } ?? false
         typingOriginal = isNew ? nil : overlays.wrappedValue.first { $0.id == id }
         showPlaceHint = false
         photoIgnoresKeyboard = true
         typingId = id
+    }
+
+    /// `story.probe` に出す、いまの状態（札 #499・UI テストのときだけ使う）。
+    /// 形: `typing=0|1 dragging=0|1 capFocus=0|1 capShown=0|1 votePanel=0|1 sheet=0|1 loc="…" chip=0|1 fr=ox,oy,s,r ov=[kind@x,y,s,r:"文字";…]`
+    private var storyProbeSnapshot: String {
+        func f(_ v: Double) -> String { String(format: "%.3f", v) }
+        let list = (shots.indices.contains(current) ? shots[current].overlays : []).map {
+            "\($0.kind.rawValue)@\(f($0.x)),\(f($0.y)),\(f($0.size)),\(f($0.rotation)):\"\($0.text)\""
+        }.joined(separator: ";")
+        let fr = shots.indices.contains(current) ? shots[current].framing : .identity
+        return "typing=\(typingId != nil ? 1 : 0) dragging=\(draggingOverlay ? 1 : 0) capFocus=\(captionFocused ? 1 : 0) "
+            + "capShown=\(captionShown ? 1 : 0) votePanel=\(votePanelOpen ? 1 : 0) sheet=\(showStickerTray || showPlaceEditor ? 1 : 0) "
+            + "loc=\"\(place.location)\" chip=\(place.location.isEmpty ? 0 : 1) "
+            + "fr=\(f(fr.offsetX)),\(f(fr.offsetY)),\(f(fr.scale)),\(f(fr.rotation)) ov=[\(list)]"
     }
 
     /// 打ち終えた。**空なら置かない**（新しく足した札も、打ち直して消した札も）。
@@ -1596,10 +1649,13 @@ struct StoryComposerView: View {
                SongSticker.shouldDetach(removedSticker: true, remaining: shots.map(\.overlays), song: song) {
                 applySong(nil)
             }
+            // 撮影地の札を打ち直した＝撮影地の文字も合わせる。空にして閉じた＝札を消した（ゴミ箱と同じ扱い）
+            if typingPlaceSticker { settlePlaceSticker(shot: i, id: id, removed: removed != nil) }
         }
         typingId = nil
         typingShotId = nil
         typingSongSticker = false
+        typingPlaceSticker = false
         typingOriginal = nil
     }
 
@@ -1646,6 +1702,59 @@ struct StoryComposerView: View {
         if SongSticker.shouldDetach(removedSticker: wasSticker, remaining: shots.map(\.overlays), song: song) {
             applySong(nil)
         }
+        let wasPlace = removed.map { PlaceSticker.isSticker($0, of: place.location) } ?? false
+        if PlaceSticker.shouldDetach(removedSticker: wasPlace, remaining: shots.map(\.overlays), location: place.location) {
+            place.location = ""
+        }
+    }
+
+    // MARK: - 撮影地の札（札 #499）
+
+    /// いま見ている1枚に付けた撮影地の札があるか（固定の札を出さない・`PlaceSticker`）
+    ///
+    /// **写真ごとに判定する**（見ている1枚）。見る画面は写真ごとに `locationOnPhoto` で固定の札を出し分けるので、
+    /// 作る画面も同じ規則にそろえる（札の無い2枚目では、見る画面と同じく固定の撮影地の札が出る）
+    private var placeOnPhoto: Bool {
+        guard shots.indices.contains(current) else { return false }
+        return PlaceSticker.isOnPhoto(shots[current].overlays, location: place.location)
+    }
+
+    /// 撮影地を決める・直す・外す。**写真の上の札も合わせる**——決めたらいま見ている1枚に動かせる札を置き、
+    /// 直したら札の文字を差し替え（位置と大きさは残す）、外したら消す。`location`・`coords` は今までどおり送る
+    private func setPlace(_ new: String) {
+        let old = place.location
+        place.location = new
+        reconcilePlaceSticker(from: old)
+    }
+
+    /// `place.location` が `old` から替わったあとの札の置き換え。前の札が無ければ（初めて決めた・自分で消していた）
+    /// いまの1枚に置く。札が上限なら置かない（固定の札が出る）
+    private func reconcilePlaceSticker(from old: String) {
+        let new = place.location
+        var found = false
+        for i in shots.indices {
+            let result = PlaceSticker.retext(shots[i].overlays, from: old, to: new)
+            shots[i].overlays = result.overlays
+            found = found || result.found
+        }
+        guard !found, shots.indices.contains(current),
+              shots[current].overlays.count < TextOverlay.maxCount,
+              let sticker = PlaceSticker.make(for: new, avoiding: shots[current].overlays) else { return }
+        shots[current].overlays.append(sticker)
+    }
+
+    /// 撮影地の札を打ち終えた。残ったなら文字を整えて撮影地の文字に写し、消えたなら（ほかの写真にも無ければ）撮影地を外す
+    private func settlePlaceSticker(shot i: Int, id: UUID, removed: Bool) {
+        if removed {
+            if PlaceSticker.shouldDetach(removedSticker: true, remaining: shots.map(\.overlays), location: place.location) {
+                place.location = ""
+            }
+            return
+        }
+        guard let o = shots[i].overlays.firstIndex(where: { $0.id == id }) else { return }
+        let text = shots[i].overlays[o].text.trimmingCharacters(in: .whitespacesAndNewlines)
+        shots[i].overlays[o].text = text
+        place.location = text
     }
 
     /// 曲の札の形を次へ（A→B→…→F→A）。選んだ形は端末に覚え、次のストーリーで最初に出す
@@ -1778,12 +1887,41 @@ struct StoryComposerView: View {
         defer { loadingPicks -= 1 }
         // **1枚ごとに上限時間**（`StorySimpleRules.pickLoadTimeout`）。返らない1枚で
         // 読み込み中が解けず、「シェアする」・「＋」が止まったままにならないように
-        let failed = await StorySimpleRules.readPicks(items, read: { item in
-            try await item.loadTransferable(type: Data.self)
-        }, accept: { data in
-            await accept(data)
-        })
-        if failed > 0 {
+        var failed = 0
+        // 動画の読み込みの断り（60秒超え・読めない）。**写真と同じ一言にせず理由を言う**（札 #500）
+        var videoProblem: StoryVideoRules.Problem?
+        // 選んだ順のまま1件ずつ足す(写真と動画が混ざってもよい)。写真は `readPicks` を通す
+        for item in items {
+            if StoryVideoPipeline.isVideo(item) {
+                // 写真と同じ上限時間(`StorySimpleRules.pickLoadTimeout`)。iCloud から落ちてこない動画で
+                // 読み込み中が解けず、「シェアする」・「＋」が止まったままにならないように
+                let result: Result<StoryVideoPipeline.Imported, Error>? = await AsyncTimeout.firstWithin(
+                    seconds: StorySimpleRules.pickLoadTimeout
+                ) { () async -> Result<StoryVideoPipeline.Imported, Error>? in
+                    do { return .success(try await StoryVideoPipeline.importClip(from: item)) }
+                    catch { return .failure(error) }
+                }
+                switch result {
+                case .success(let imported)?:
+                    await acceptVideo(imported)
+                case .failure(let error)?:
+                    failed += 1
+                    videoProblem = (error as? StoryVideoRules.Problem) ?? .importFailed
+                case nil:
+                    failed += 1
+                    videoProblem = .importTimedOut
+                }
+            } else {
+                failed += await StorySimpleRules.readPicks([item], read: { item in
+                    try await item.loadTransferable(type: Data.self)
+                }, accept: { data in
+                    await accept(data)
+                })
+            }
+        }
+        if let videoProblem {
+            message = videoProblem.message
+        } else if failed > 0 {
             message = failed == items.count
                 ? L("写真を読み込めませんでした", "Couldn't load the photos")
                 : L("\(failed)枚を読み込めませんでした", "Couldn't load \(failed) of them")
@@ -1820,6 +1958,18 @@ struct StoryComposerView: View {
     ///
     /// 文字は写真ごとに持つので、足した写真には何も付いていない状態で
     /// 始まる——前の写真の文字が別の絵に残ると、置いた場所の意味が変わる。
+    /// 取り込んだ動画の一時ファイルを消す(持ち主の控えからも外す)
+    private func discard(_ clip: StoryVideoClip?) {
+        guard let clip else { return }
+        videoTemp.forget(clip.url)
+        StoryVideoPipeline.discard(clip)
+    }
+
+    /// 並びの全部の動画の一時ファイルを消す(閉じる)
+    private func discardAllVideos() {
+        for shot in shots { discard(shot.video) }
+    }
+
     private func accept(_ data: Data) async {
         do {
             // **縮小・EXIF の書き直しは画面の処理の外で**（投稿の `prepareOffMain`・`EditPhotoView` と同じ）。
@@ -1850,6 +2000,52 @@ struct StoryComposerView: View {
         }
     }
 
+
+    /// 動画を1本受け取る（札 #500）。**表紙の1コマを写真と同じ道で整え**（縮小・EXIF の書き直し）、
+    /// 動画の本体は `StoryShot.video` に持つ。上限（枚数）を超えたら一時ファイルを片づける
+    private func acceptVideo(_ imported: StoryVideoPipeline.Imported) async {
+        do {
+            let poster = imported.posterJPEG
+            let prepared = try await Task.detached(priority: .userInitiated) {
+                try ImagePreparer.prepare(data: poster, fileName: "story")
+            }.value
+            guard shots.count < StoryQueue.maxShots else {
+                discard(imported.clip)
+                message = L("一度に出せるのは\(StoryQueue.maxShots)枚までです",
+                            "You can post up to \(StoryQueue.maxShots) at once")
+                return
+            }
+            let shot = StoryShot(prepared: prepared, image: UIImage(data: prepared.data), video: imported.clip)
+            videoTemp.add(imported.clip.url)
+            shots.append(shot)
+            startThumb(for: shot)
+            // 写真の `accept` と同じ（打っている間・トレイを開いている間は移らない）
+            if typingId == nil && !votePanelOpen && !showStickerTray && pendingPick == nil && !showSongPicker {
+                current = shots.count - 1
+            }
+            self.message = nil
+        } catch {
+            discard(imported.clip)
+            message = StoryVideoRules.Problem.importFailed.message
+        }
+    }
+
+    /// カメラで撮った動画（`CameraPicker` が写した一時ファイル）。写真と同じく読み込み中に数える
+    private func acceptRecordedVideo(_ url: URL) {
+        // 写真と同じく、写真を選ぶ段で印を付けていた写真を先に読む（`acceptFromCamera`）
+        let pending = StorySimpleRules.picksToLoadBeforeCamera(librarySelection, hasShots: !shots.isEmpty)
+        loadingPicks += 1
+        Task {
+            defer { loadingPicks -= 1 }
+            await load(pending)
+            do {
+                let imported = try await StoryVideoPipeline.importRecorded(at: url)
+                await acceptVideo(imported)
+            } catch {
+                message = ((error as? StoryVideoRules.Problem) ?? .importFailed).message
+            }
+        }
+    }
 
     /// 左下の並び（板 24。44×56・選んでいる1枚は白の輪・他は薄く、最後に「＋」）。
     /// **順番がそのまま出る順**。長押しで前後へ移す・外す
@@ -1940,7 +2136,18 @@ struct StoryComposerView: View {
         .overlay(RoundedRectangle(cornerRadius: 8)
             .strokeBorder(Color.white, lineWidth: isCurrent ? 2 : 0))
         .opacity(isCurrent ? 1 : 0.7)
-        .accessibilityLabel(L("\(index + 1)枚目", "Photo \(index + 1)"))
+        // 動画の1本は再生の印（札 #500）
+        .overlay(alignment: .bottomLeading) {
+            if shot.video != nil {
+                Image(systemName: "play.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.white)
+                    .padding(4)
+                    .accessibilityHidden(true)
+            }
+        }
+        .accessibilityLabel(shot.video != nil ? L("\(index + 1)枚目（動画）", "Item \(index + 1) (video)")
+                                              : L("\(index + 1)枚目", "Photo \(index + 1)"))
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
     }
 
@@ -1958,6 +2165,7 @@ struct StoryComposerView: View {
     private func remove(at index: Int) {
         guard shots.indices.contains(index),
               StorySimpleRules.canRemoveShot(loading: loadingPicks > 0) else { return }
+        discard(shots[index].video)
         shots.remove(at: index)
         current = StoryQueue.currentAfterRemoving(index, current: current, count: shots.count)
     }
@@ -1967,7 +2175,7 @@ struct StoryComposerView: View {
         Self.leaveDialog(canSaveDraft: canSaveDraft, loading: loadingPicks > 0,
                          restored: restoredContent != nil, openedDraft: openedSavedDraft,
                          full: DraftLibrary.isFull(count: draftCount), megabytes: draftMegabytes,
-                         draftCount: draftCount)
+                         draftCount: draftCount, hasVideo: hasVideoShot)
     }
 
     /// 閉じる確認の題・「下書きに保存」を出すか・説明
@@ -2006,7 +2214,15 @@ struct StoryComposerView: View {
     /// いっぱい**（`full`）なら保存を出さず「下書きを整理する」へ——黙って古いものを消して保存しない
     nonisolated static func leaveDialog(canSaveDraft: Bool, loading: Bool, restored: Bool,
                                         openedDraft: Bool = false, full: Bool = false, megabytes: Int = 0,
-                                        draftCount: Int? = nil) -> LeaveDialog {
+                                        draftCount: Int? = nil, hasVideo: Bool = false) -> LeaveDialog {
+        // 動画が入っていると下書きに残せない(札 #500)。「前の下書きはそのまま残ります」とは言わない
+        // (その言い分は、残せる下書きが別にあるときのもの)
+        if hasVideo {
+            return LeaveDialog(
+                title: L("閉じますか？", "Close?"), canSave: false,
+                message: L("動画が入っていると下書きに残せません。閉じると、選んだ写真・動画と置いた文字は消えます。",
+                           "A draft can't include a video. If you close now, the photos, videos and text you added will be lost."))
+        }
         guard canSaveDraft else {
             return LeaveDialog(
                 title: L("閉じますか？", "Close?"), canSave: false,
@@ -2092,6 +2308,72 @@ struct StoryComposerView: View {
         }
     }
 
+    /// いま見ている1本が動画ならその動画（札 #500）
+    private var currentClip: StoryVideoClip? {
+        shots.indices.contains(current) ? shots[current].video : nil
+    }
+
+    /// 動画の長さの札（写真の上なので白・黒 45% の丸い札。撮影地の札 `photoChip` と同じ寸法）
+    private func videoBadge(_ clip: StoryVideoClip) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "video.fill").font(JPFont.footnote)
+            Text(clip.durationLabel).font(JPFont.footnote)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, JPSpace.s)
+        .frame(minHeight: Self.chipHeight)
+        .background(Color.black.opacity(Self.chipFill), in: Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L("動画 \(clip.durationLabel)", "Video \(clip.durationLabel)"))
+        .accessibilityIdentifier("story.videoBadge")
+        .allowsHitTesting(false)
+    }
+
+    /// カメラを先頭に出す（`startsWithCamera`）。**下書き・送れなかった残りの問いが出ているときは出さない**。
+    /// 開いた直後に重ねて出すと iOS が取りこぼすことがあるので、**固定の時間ではなく条件を待つ**
+    /// (この画面を出す動きが終わった・ほかのカバーやシートが無い・問いが出ていない)。最長およそ3秒で諦める
+    /// (その場合は写真選びのまま——黙って重ねない)
+    private func openCameraFirstIfAsked() {
+        guard startsWithCamera, openDraft == nil, shots.isEmpty, StoryCameraView.isAvailable,
+              !showPendingFailure, !showRestoreAuto, !showRestore else { return }
+        Task {
+            for _ in 0..<30 {
+                guard !Task.isCancelled, shots.isEmpty, !showPendingFailure, !showRestoreAuto, !showRestore,
+                      !showLibrary, !showCamera, !showSongPicker, !showStickerTray else { return }
+                if Self.cameraMayOpen(transitioning: ModalProbe.isTransitioning()) {
+                    showCamera = true
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+        }
+    }
+
+    /// カメラを重ねてよいか。画面を出す・下ろす動きの最中は重ねない
+    nonisolated static func cameraMayOpen(transitioning: Bool) -> Bool { !transitioning }
+
+    /// 書き出し中の面。下の編集を受けず、「やめる」で書き出しを取り消せる
+    private var exportOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.5).ignoresSafeArea()
+            VStack(spacing: 14) {
+                ProgressView().tint(.white)
+                Text(L("動画を準備しています", "Preparing the video"))
+                    .font(JPFont.footnote)
+                    .foregroundStyle(.white)
+                Button(L("やめる", "Cancel")) { stopWaitingToPost() }
+                    .jpPillButton(.outline)
+                    .accessibilityIdentifier("story.export.cancel")
+            }
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+    }
+
+    /// 動画の1本が並びにあるか（札 #500。下書きに残せない）
+    private var hasVideoShot: Bool { shots.contains { $0.video != nil } }
+
     /// 並べた写真（下書きに書く形）。**焼き込む前の文字のまま**
     private var shotInputs: [StoryDraftStore.ShotInput] {
         shots.map { shot in
@@ -2125,6 +2407,9 @@ struct StoryComposerView: View {
     private func autoSaveDraft() async {
         guard autoSlotOwned else { return }
         switch StorySimpleRules.autoSave(hasShots: !shots.isEmpty, loading: loadingPicks > 0) {
+        case .write where hasVideoShot:
+            // 動画を含む回は書きかけを書かない（書くと動画が表紙の写真として戻る）。前の分は消す
+            clearAutoDraft()
         case .write:
             _ = await autoDrafts.saveInBackground(
                 shots: shotInputs, caption: caption, location: place.location, song: song,
@@ -2168,7 +2453,8 @@ struct StoryComposerView: View {
     /// 間は保存しない**——下書きは1件だけなので、保存すると黙って置き換える。
     /// 閉じる確認と上の「下書き保存」の両方がこれを見る（片方だけ守ると別の口から素通りした）
     private var canSaveDraft: Bool {
-        !Self.keepsDraft(stamp: drafts.draft?.savedAt, keptStamp: keptDraftStamp,
+        // 動画は下書きに残せない（札 #500・下書きは写真の中身だけを書く。残すと動画が表紙の写真に化ける）
+        !hasVideoShot && !Self.keepsDraft(stamp: drafts.draft?.savedAt, keptStamp: keptDraftStamp,
                          unansweredStamp: unansweredDraftStamp)
     }
 
@@ -2249,6 +2535,26 @@ struct StoryComposerView: View {
         spotWait?.cancel()
         spotWait = nil
         isWaitingForSpots = false
+        if isExportingVideo {
+            isExportingVideo = false
+            message = nil
+        }
+    }
+
+    /// 書き出した動画(写真と同じ並びの id で引く)と、書き出したときの重ね(送る直前の食い違いの検出用)
+    private struct ExportedVideos {
+        var urls: [UUID: URL]
+        var overlays: [UUID: [TextOverlay]]
+    }
+
+    /// 係が片付いていないときの言い分(送っている最中か、失敗した残りを持っているか)
+    private var uploadsBusyNote: String {
+        if case .failed = uploads.phase {
+            return L("送れなかったストーリーが残っています。ホームの自分の輪から、送り直すかやめるかを選んでください",
+                     "A story that failed to send is waiting. Retry or discard it from your ring on Home.")
+        }
+        return L("前のストーリーをまだ送っています。ホームの自分の輪で進み具合を確かめてください",
+                 "Your previous story is still sending. Check your ring on Home.")
     }
 
     /// 出す。**送るのは裏の係（`StoryUploadCenter`）**——画面はすぐ閉じ、
@@ -2259,7 +2565,7 @@ struct StoryComposerView: View {
     /// 係の側へそのまま移した。
     ///
     /// - Parameter waitedSpots: 撮影スポットの索引を待ったあとの呼び直しで渡す（下の (c) の判断）
-    private func post(waitedSpots: [OfficialSpot]? = nil) {
+    private func post(waitedSpots: [OfficialSpot]? = nil, exported: ExportedVideos? = nil) {
         // 🔴 **二度押しで二重に出さない**（2026-09-25 owner「2重投稿」）。
         // ここは同期で、1回目で画面を閉じ係に渡す。2回目は係が「片付いていない
         // 並びがある」で受けない。索引を待っている間の押し直しは `isWaitingForSpots` で受けない
@@ -2296,9 +2602,66 @@ struct StoryComposerView: View {
                 spotWait = nil
                 if spotIndex.isEmpty { spotIndex = spots }
                 // 時間切れでも、待っている間にこの画面の `.task` が索引を読めていればそれで決める
-                post(waitedSpots: spots.isEmpty ? spotIndex : spots)
+                post(waitedSpots: spots.isEmpty ? spotIndex : spots, exported: exported)
             }
             return
+        }
+        // 動画の1本があれば、**先に書き出す**（札 #500。重ねの焼き込み・50MB に収める・位置情報を消す）。
+        // 索引の待ちと同じ旗と仕事で待つ（押し直しを受けない・閉じたら取り消す）。書き出せたら同じ入口へ戻る。
+        // **書き出している間は編集を止める**(`exportOverlay`)
+        if hasVideoShot {
+            let videoShots = shots.filter { $0.video != nil }
+            let matches = exported.map { done in videoShots.allSatisfy { done.overlays[$0.id] == $0.overlays } } ?? false
+            let check = StoryVideoRules.exportCheck(videoShots: videoShots.map(\.id),
+                                                    exported: Set(exported?.urls.keys.map { $0 } ?? []),
+                                                    overlaysMatch: matches)
+            if check == .reexport {
+                // 🔴 **動画なのに書き出し済みの動画が無い・書き出したあとに重ねが変わった**回は、
+                // 静止画として黙って出さない。1回だけ書き出し直し、それでも食い違うなら中止して言う
+                if let exported {
+                    for url in exported.urls.values { try? FileManager.default.removeItem(at: url) }
+                    message = StoryVideoRules.Problem.exportFailed.message
+                    return
+                }
+                // ほかのストーリーを送っている間は書き出さない(書き出したあとで受けられず、無駄に待たせる)
+                guard !uploads.isBusy else {
+                    message = uploadsBusyNote
+                    return
+                }
+                isWaitingForSpots = true
+                isExportingVideo = true
+                message = L("動画を準備しています", "Preparing the video")
+                let targets = videoShots.map { ($0.id, $0.video!, $0.overlays) }
+                let art = songArt
+                spotWait?.cancel()
+                spotWait = Task {
+                    var done = ExportedVideos(urls: [:], overlays: [:])
+                    do {
+                        for (id, clip, overlays) in targets {
+                            done.urls[id] = try await StoryVideoPipeline.export(clip, overlays: overlays, song: art)
+                            done.overlays[id] = overlays
+                        }
+                    } catch {
+                        for url in done.urls.values { try? FileManager.default.removeItem(at: url) }
+                        // やめた・閉じた(`stopWaitingToPost`)なら、旗も知らせも向こうが戻している
+                        guard !Task.isCancelled, !(error is CancellationError) else { return }
+                        isWaitingForSpots = false
+                        isExportingVideo = false
+                        spotWait = nil
+                        message = ((error as? StoryVideoRules.Problem) ?? .exportFailed).message
+                        return
+                    }
+                    guard !Task.isCancelled else {
+                        for url in done.urls.values { try? FileManager.default.removeItem(at: url) }
+                        return
+                    }
+                    isWaitingForSpots = false
+                    isExportingVideo = false
+                    spotWait = nil
+                    post(waitedSpots: waitedSpots, exported: done)
+                }
+                return
+            }
         }
         message = nil
         let caption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2313,14 +2676,27 @@ struct StoryComposerView: View {
         let jobs = zip(shots, coords).map { shot, shotCoords in
             StoryUploadCenter.Job(
                 // 曲の札は作る画面と同じ形・同じジャケットで焼く（読めていなければ ♪ の四角・画面と同じ）
-                imageData: TextOverlayRenderer.burn(shot.overlays, framing: shot.framing, into: shot.prepared.data,
-                                                    song: songArt),
+                // 動画の1本は表紙の1コマをそのまま持つ（重ねは書き出した動画に焼いてある）
+                imageData: shot.video != nil
+                    ? shot.prepared.data
+                    : TextOverlayRenderer.burn(shot.overlays, framing: shot.framing, into: shot.prepared.data,
+                                               song: songArt),
                 caption: caption, location: placeText, coords: shotCoords,
                 song: song, durationSec: durationSec, archive: keepInArchive,
                 allowReplies: allowReplies,
                 texts: StoryPostText.list(vote: shot.vote, caption: caption),
                 // 曲の札を焼き込んだ印（送る形は変えない。見る画面は 2026-10-28 から印に関わらず ♪ の行を出す）
-                songOnPhoto: SongSticker.isOnPhoto(shot.overlays, song: song))
+                songOnPhoto: SongSticker.isOnPhoto(shot.overlays, song: song),
+                // 撮影地の札を焼き込んだ印（見る画面は固定の撮影地の札を出さない・札 #499）
+                locationOnPhoto: PlaceSticker.isOnPhoto(shot.overlays, location: placeText),
+                video: shot.video == nil ? nil : exported?.urls[shot.id]
+                    .map { StoryUploadCenter.Video(fileURL: $0, fileType: StoryVideoRules.exportFileType) })
+        }
+        // 🔴 動画のストーリーが静止画の投稿になっていないか、最後にもう一度確かめる(上の確かめをすり抜けた回の保険)
+        guard zip(shots, jobs).allSatisfy({ ($0.video != nil) == ($1.video != nil) }) else {
+            for job in jobs { if let url = job.video?.fileURL { try? FileManager.default.removeItem(at: url) } }
+            message = StoryVideoRules.Problem.exportFailed.message
+            return
         }
         let stories = environment.stories
         let drafts = drafts
@@ -2348,16 +2724,15 @@ struct StoryComposerView: View {
         })
         guard started else {
             // 係が片付いていない。**送っている最中か、失敗した残りを持っているか**で言い分けを変える
-            if case .failed = uploads.phase {
-                message = L("送れなかったストーリーが残っています。ホームの自分の輪から、送り直すかやめるかを選んでください",
-                            "A story that failed to send is waiting. Retry or discard it from your ring on Home.")
-            } else {
-                message = L("前のストーリーをまだ送っています。ホームの自分の輪で進み具合を確かめてください",
-                            "Your previous story is still sending. Check your ring on Home.")
-            }
+            message = uploadsBusyNote
+            // 書き出した動画は使わなかった（次に押したときまた書き出す）
+            for job in jobs { if let url = job.video?.fileURL { try? FileManager.default.removeItem(at: url) } }
             return
         }
-        // 出した（裏の係が送り終えるまで持つ）。黙って残した書きかけは要らない
+        // 出した（裏の係が送り終えるまで持つ）。書き出した動画は係が置き場へ移した。
+        // 取り込んだ元の動画は要らない（一時フォルダに残さない）
+        discardAllVideos()
+        // 黙って残した書きかけは要らない
         clearAutoDraft()
         dismiss()
     }
@@ -2382,9 +2757,13 @@ struct StoryShot: Identifiable {
     var framing: PhotoFraming = .identity
     /// 投票（写真1枚＝1本に1つ）。**焼き込まずにデータで送る**
     var vote: StoryVoteDraft?
+    /// 動画の1本（札 #500）。**`prepared` は表紙の1コマ**——作る画面はこの絵の上に文字・札・曲を置き、
+    /// 送るときに動画の全コマの上へ焼き込む（`StoryVideoPipeline.export`）。写真なら nil
+    var video: StoryVideoClip?
 
     init(prepared: ImagePreparer.Prepared, image: UIImage?, overlays: [TextOverlay] = [],
-         framing: PhotoFraming = .identity, vote: StoryVoteDraft? = nil) {
+         framing: PhotoFraming = .identity, vote: StoryVoteDraft? = nil, video: StoryVideoClip? = nil) {
+        self.video = video
         self.prepared = prepared
         self.preview = image.map { Image(uiImage: $0) }
         self.imageSize = image?.size

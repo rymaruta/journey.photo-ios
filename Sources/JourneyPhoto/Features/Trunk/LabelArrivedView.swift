@@ -5,11 +5,17 @@ import SwiftUI
 /// 投稿が全部上がったあと、投稿の画面と共有の画面が閉じてから `RootView` が出す（`TrunkArrivals`）。
 /// 眉ラベル → 明朝の見出し「京都のラベルが届きました」→ お礼の一行 → 大きいラベル（後ろに真鍮の淡い光）→
 /// どんな図柄かの札 → 手持ちの棒 → 「トランクに貼る」「手持ちに入れておく」「図柄を作り直す PRO」。
+///
+/// **静かな祝い（2026-11-08・楽しさの案 A・札 #502）**: 投稿した写真が先に現れ、続いてラベルが落ちて貼りつく
+/// （軽い触覚が 1 回）。最後に、言えるときだけ事実の一文（「京都、はじめての1枚です」・`ArrivalFact`）。
+/// 節目と箔押しは後ろの真鍮の光を一段強くする。動きを減らす設定では、動かさずに最初から全部を出す。
+/// 数を稼ぐ文・連続日数・順位・共有を促す文は出さない。共有は任意の副ボタン（公開の投稿だけ）
 struct LabelArrivedView: View {
     let batch: TrunkArrivals.Batch
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var toasts: ToastCenter
@@ -20,11 +26,27 @@ struct LabelArrivedView: View {
     @State private var showPaywall = false
     /// 作り直しで替わった種（届いた1枚の図柄を、選んだ候補に描き替える）
     @State private var seed: Int?
+    /// 祝いの動きの進み（写真 → ラベル → 一文）。動きを減らす設定では `shown` が最初から全部を出す
+    @State private var step: ArrivalSequence.Step = .start
+    /// ラベルが貼りついた瞬間に軽い触覚を 1 回鳴らすための数
+    @State private var landed = 0
+    /// 事実の一文。**開いたときに1回だけ**決めて持つ（描き直すたびに写真の一覧を数え直さない）。nil＝言わない
+    @State private var sentence: String?
+    /// 写真が読み込めなかった（写真の札は出さず、ラベルだけを真ん中に出す）
+    @State private var photoFailed = false
 
     private var arrival: TrunkArrivals.Arrival { batch.first }
     private var label: TrunkLabel {
         let base = model.state?.pocket.first { $0.id == arrival.label.id } ?? arrival.label
         return seed.map { base.withSeed($0) } ?? base
+    }
+
+    /// 写真があるときだけ、写真の札を出す
+    private var photoURL: URL? { photoFailed ? nil : arrival.photoURL }
+
+    /// その段まで進んだか。動きを減らす設定では最初から全部（`ArrivalSequence.isShown`）
+    private func shown(_ s: ArrivalSequence.Step) -> Bool {
+        ArrivalSequence.isShown(s, current: step, reduceMotion: reduceMotion)
     }
 
     var body: some View {
@@ -50,6 +72,7 @@ struct LabelArrivedView: View {
                     VStack(spacing: 0) {
                         heading
                         stage
+                        factLine
                         chips
                         pocket
                     }
@@ -62,6 +85,11 @@ struct LabelArrivedView: View {
             model.bind(environment.trunk, userId: auth.userId)
             await model.load(offline: false)
         }
+        // 祝いの動き（写真 → ラベルが落ちる → 一文）。動きを減らす設定では待たず、触覚だけ 1 回
+        .task { await runSequence() }
+        // 一文のための自分の写真の一覧（読めなければ nil＝言わない。見本の入り方では読まない）
+        .task { await decideSentence() }
+        .sensoryFeedback(.impact(weight: .light), trigger: landed)
         .fullScreenCover(isPresented: $showReroll, onDismiss: {
             // 作り直しで決めた図柄に描き替える（手持ちの状態は作り直しの画面が読み直している）
             if let chosen = model.state?.pocket.first(where: { $0.id == arrival.label.id }) { seed = chosen.seed }
@@ -114,17 +142,97 @@ struct LabelArrivedView: View {
         }
     }
 
-    /// 大きいラベル（260×176 の枠に形の比で収める・後ろに 340×250 の光）
+    /// 大きいラベル（260×176 の枠に形の比で収める・後ろに 340×250 の光）。
+    /// 写真があるときは、写真の札を左に置き、ラベルがその右下に貼りつく（写真 → ラベルが落ちる）。
+    /// 写真が無い・読めないときは、今までどおりラベルだけを真ん中に出す（動きはラベルが落ちるだけ）
     private var stage: some View {
-        ZStack {
-            TrunkStyle.glow(width: 340, height: 250)
-            TrunkLabelThumb(label: label, maxWidth: 260, maxHeight: 176, rot: -4)
+        let special = ArrivalFact.isSpecial(label)
+        return ZStack {
+            TrunkStyle.glow(width: 340, height: 250, strong: special)
+            if let url = photoURL {
+                photoCard(url)
+                    .offset(x: -70, y: -16)
+                    .opacity(shown(.photo) ? 1 : 0)
+                    .scaleEffect(shown(.photo) ? 1 : 0.96)
+            }
+            TrunkLabelThumb(label: label, maxWidth: photoURL == nil ? 260 : 236, maxHeight: photoURL == nil ? 176 : 160, rot: -4)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(TrunkLabelDesign.accessibilityLabel(label))
                 .accessibilityAddTraits(.isImage)
+                .offset(x: photoURL == nil ? 0 : 38, y: (photoURL == nil ? 0 : 44) + (shown(.label) ? 0 : -150))
+                .opacity(shown(.label) ? 1 : 0)
         }
         .frame(height: 270)
         .padding(.top, 16)
+    }
+
+    /// 投稿した写真の札（150×196・角は写真の札 14・細い縁）。読めなければ札ごと外す
+    private func photoCard(_ url: URL) -> some View {
+        DownsampledRemoteImage(url: url, contentMode: .fill, assumedRatioLimit: 1.6,
+                               onSettled: { ok in if !ok { photoFailed = true } })
+            .frame(width: 150, height: 196)
+            .background(WebTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
+            .overlay(RoundedRectangle(cornerRadius: JPRadius.m).strokeBorder(WebTheme.border, lineWidth: JPStroke.hairline))
+            .rotationEffect(.degrees(-3))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(arrival.photoTitle.isEmpty ? L("投稿した写真", "The photo you posted")
+                                : L("投稿した写真「\(arrival.photoTitle)」", "The photo you posted: \(arrival.photoTitle)"))
+            .accessibilityAddTraits(.isImage)
+    }
+
+    /// 事実の一文（言えるときだけ・明朝・真鍮）。最後に静かに現れる。動かさない設定では最初から
+    @ViewBuilder
+    private var factLine: some View {
+        if let sentence {
+            Text(sentence)
+                .font(JPFont.display(18, relativeTo: .title3))
+                .foregroundStyle(WebTheme.accent)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 24)
+                .padding(.top, 4)
+                .opacity(shown(.sentence) ? 1 : 0)
+                .accessibilityIdentifier("trunk.arrived.fact")
+        }
+    }
+
+    /// 一文を1回だけ決める。節目はサーバーの事実なので一覧を待たず、そのほかは自分の写真の一覧を読んでから
+    /// （読めなければ nil＝言わない）。見本の入り方（`-JPPreviewTrunkArrived`）では一覧を読まず、見本の一覧で言う
+    private func decideSentence() async {
+        guard sentence == nil else { return }
+        #if DEBUG
+        if PreviewSession.opensTrunkArrived {
+            sentence = ArrivalFact.sentence(label: label, photos: ArrivalFact.previewPhotos(for: label))
+            return
+        }
+        #endif
+        sentence = ArrivalFact.sentence(label: label, photos: nil)
+        if sentence != nil { return }
+        let mine = await ProfileImageFromPhoto.myPhotos(environment: environment)
+        sentence = ArrivalFact.sentence(label: label, photos: mine)
+    }
+
+    /// 写真 → ラベルが落ちる → 一文の順に進める。動きを減らす設定では何も動かさず、触覚を 1 回だけ
+    private func runSequence() async {
+        guard !reduceMotion else {
+            landed += 1
+            return
+        }
+        for (next, delay) in ArrivalSequence.delays(reduceMotion: false) {
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            if Task.isCancelled { return }
+            switch next {
+            case .label: withAnimation(.spring(response: 0.5, dampingFraction: 0.72)) { step = next }
+            default: withAnimation(.easeOut(duration: 0.4)) { step = next }
+            }
+            if next == .label {
+                // 貼りつく頃（落ち切る少し前）に軽い触覚
+                try? await Task.sleep(nanoseconds: UInt64(ArrivalSequence.landAfter * 1_000_000_000))
+                if Task.isCancelled { return }
+                landed += 1
+            }
+        }
     }
 
     /// どんな図柄か（真鍮の字の札）
@@ -244,6 +352,23 @@ struct LabelArrivedView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(L("図柄を作り直す（Pro）", "Redo the design (Pro)"))
             .accessibilityIdentifier("trunk.arrived.reroll")
+            // 共有は任意の副ボタン（公開の投稿だけ・押さなければ何も起きない・44pt）
+            if arrival.shareable,
+               let url = PhotoLink.url(photoId: arrival.label.photoId, isPublished: false) {
+                ShareLink(item: url) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.callout)
+                            .accessibilityHidden(true)
+                        Text(L("この写真を共有", "Share this photo"))
+                            .font(.subheadline)
+                    }
+                    .foregroundStyle(WebTheme.accent)
+                    .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
+                }
+                .accessibilityIdentifier("trunk.arrived.share")
+            }
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 28)

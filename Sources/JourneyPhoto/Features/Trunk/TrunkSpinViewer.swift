@@ -17,6 +17,8 @@ struct TrunkSpinViewer: View {
     var parts: TrunkEquipped = .none
     /// 動かしてよれたラベル（トランクの画面と同じ見た目に）
     var wrinkles: [String: Double] = [:]
+    /// 手荷物タグの枠ごとの選び（2026-11-08）。無ければ全部おまかせ
+    var tagPicks: [TrunkTagPick] = []
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -39,7 +41,8 @@ struct TrunkSpinViewer: View {
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(TrunkText.accessibilityLabel(model: model,
                                                                      labels: TrunkPlacement.layout(stuck, stage: 0).count,
-                                                                     tags: TrunkLooks.tags(stuck: stuck, posts: posts).count, equipped: parts))
+                                                                     tags: TrunkLooks.tags(stuck: stuck, posts: posts, picks: tagPicks).count,
+                                                                     equipped: parts))
                     .accessibilityAddTraits(.isImage)
                     .accessibilityAction(named: L("裏返す", "Turn over")) { flips += 1 }
                     .accessibilityValue(PreviewSession.userId != nil ? renderMarker : "")
@@ -77,13 +80,13 @@ struct TrunkSpinViewer: View {
             let clock = ContinuousClock()
             let started = clock.now
             textures = TrunkTextures.make(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts,
-                                          wrinkles: wrinkles)
+                                          wrinkles: wrinkles, tagPicks: tagPicks)
             let frontTook = started.duration(to: clock.now)
             // 1コマ待って正面を画面に出してから残りを描く（`Task.yield` では同じコマのうちに戻りうる）。
             // 待つ間に閉じられたら描かずに抜ける
             do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
             guard !Task.isCancelled else { return }
-            boxFaces = TrunkTextures.box(model: model, posts: posts, parts: parts, stuck: stuck)
+            boxFaces = TrunkTextures.box(model: model, posts: posts, parts: parts, stuck: stuck, tagPicks: tagPicks)
             renderMarker = TrunkTextures.renderMarker(front: frontTook, all: started.duration(to: clock.now))
         }
     }
@@ -156,10 +159,11 @@ enum TrunkTextures {
 
     /// 表（ラベルごとの胴）と芯の色。**背面は後から**（`box`）。表を先に出す
     static func make(model: TrunkModel, posts: Int, stuck: [TrunkLabel], ownerName: String?,
-                     parts: TrunkEquipped = .none, wrinkles: [String: Double] = [:]) -> MedalTextures.Faces {
+                     parts: TrunkEquipped = .none, wrinkles: [String: Double] = [:],
+                     tagPicks: [TrunkTagPick] = []) -> MedalTextures.Faces {
         // 吊るす物（タグ・チャーム・鍵）も正面に下げる（回しても消さない・#305）。上の面の紐は `box` が描く
         let front = render(TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,
-                                        hangsOnFront: true, parts: parts, wrinkles: wrinkles))
+                                        hangsOnFront: true, parts: parts, wrinkles: wrinkles, tagPicks: tagPicks))
         let side = TrunkLooks.sideColor(TrunkLooks.look(model, stage: TrunkAging.stage(posts: posts)))
         let edge = render(Color(trunk: side).frame(width: 8, height: 8))
         // 背面は描き終えるまで縁の色で（白い面を見せない）
@@ -167,7 +171,8 @@ enum TrunkTextures {
     }
 
     /// 左右・上・底と持ち手の絵（板 TrunkFaces・正面と同じ古び方と付けた部品）。`stuck` は吊るすタグの紐を上の面に渡すため
-    static func box(model: TrunkModel, posts: Int, parts: TrunkEquipped = .none, stuck: [TrunkLabel] = []) -> SpinBoxFaces {
+    static func box(model: TrunkModel, posts: Int, parts: TrunkEquipped = .none, stuck: [TrunkLabel] = [],
+                    tagPicks: [TrunkTagPick] = []) -> SpinBoxFaces {
         let look = TrunkLooks.look(model, stage: TrunkAging.stage(posts: posts))
         let fittings = TrunkFittings(parts)
         // 裏はラベルの無い胴に型押し（板 TrunkFaces の背面。ベルト・桟が回り込み、尾錠と錠前は正面だけ）
@@ -176,7 +181,7 @@ enum TrunkTextures {
                             left: render(TrunkFaceView(model: model, posts: posts, side: .left, parts: parts)),
                             right: render(TrunkFaceView(model: model, posts: posts, side: .right, parts: parts)),
                             top: render(TrunkFaceView(model: model, posts: posts, side: .top, parts: parts,
-                                                      hangTags: TrunkLooks.tags(stuck: stuck, posts: posts))),
+                                                      hangTags: TrunkLooks.tags(stuck: stuck, posts: posts, picks: tagPicks))),
                             bottom: render(TrunkFaceView(model: model, posts: posts, side: .bottom, parts: parts)),
                             handle: render(TrunkHandleSkin(look: look, fittings: fittings)),
                             clip: render(TrunkHardwareFace(look: look, fittings: fittings, w: 20, h: 14).frame(width: 20, height: 14)))

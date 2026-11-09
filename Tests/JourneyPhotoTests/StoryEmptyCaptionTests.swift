@@ -151,7 +151,8 @@ final class StoryEmptyCaptionTests: XCTestCase {
         // 欄が出ていないときは曲の札が欄を避けない
         let band = slice(composer, from: "private var songStickerBand: ClosedRange<Double>?", to: "/// 付けた曲とジャケット")
         XCTAssertTrue(band.contains("guard captionAreaShown else { return nil }"))
-        XCTAssertTrue(composer.contains("captionShown || !place.location.isEmpty || place.chip != nil"),
+        // 札 #499: 撮影地を動かせる札で見せている写真(placeOnPhoto)では固定の札が出ないので避けない。固定の札が出ているときは今までどおり避ける
+        XCTAssertTrue(composer.contains("captionShown || (!place.location.isEmpty && !placeOnPhoto) || place.chip != nil"),
                       "撮影地の札が出ているのに、曲の札が真ん中に重なる")
     }
 

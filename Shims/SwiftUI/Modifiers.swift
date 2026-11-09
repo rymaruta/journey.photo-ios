@@ -85,6 +85,8 @@ public struct AccessibilityTraits: OptionSet {
     public static let isButton = AccessibilityTraits(rawValue: 2)
     public static let isHeader = AccessibilityTraits(rawValue: 1 << 3)
     public static let isImage = AccessibilityTraits(rawValue: 1 << 2)
+    /// 本物は iOS 15 以降（頻繁に更新される値の読み上げ）
+    public static let updatesFrequently = AccessibilityTraits(rawValue: 1 << 9)
 }
 public struct TextInputAutocapitalization {
     public static let never = TextInputAutocapitalization()
@@ -281,6 +283,9 @@ extension View {
     /// 後ろに View を敷く版（本物にもある）。`alignment` で寄せる
     public func background<V: View>(alignment: Alignment = .center,
                                     @ViewBuilder _ content: () -> V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// 後ろに形を敷く版（本物は `background(_ content: some View, alignment:)`。
+    /// `Color` は `ShapeStyle` 版と曖昧になるので、形（`Shape`）だけに絞る）
+    public func background<T: Shape & View>(_ shape: T, alignment: Alignment = .center) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func tint(_ c: Color?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func listRowBackground<V: View>(_ view: V) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// 行の余白（本物と同じ）。`ProfileEditView` のカバーを端まで広げるのに使う
@@ -424,6 +429,8 @@ extension View {
     /// Linux 側のビルドだけが落ちる**（75f98e2 で main がそうなっていた）
     public func accessibilityHint(_ hint: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     public func accessibilityValue(_ value: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
+    /// 読み上げの順（大きいほど先・本物と同じ。行った県マップの県を北から読む）
+    public func accessibilitySortPriority(_ sortPriority: Double) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
 
     // 一覧の操作
     public func contextMenu<C: View>(@ViewBuilder menuItems: () -> C) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
@@ -511,6 +518,8 @@ public struct SensoryFeedback {
     public static func impact(weight: Weight = .medium, intensity: Double = 1) -> SensoryFeedback { SensoryFeedback() }
     public static let selection = SensoryFeedback()
     public static let success = SensoryFeedback()
+    public static let warning = SensoryFeedback()
+    public static let error = SensoryFeedback()
 }
 
 public struct TapGesture: Gesture {

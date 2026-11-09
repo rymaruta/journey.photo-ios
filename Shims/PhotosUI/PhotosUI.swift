@@ -30,6 +30,8 @@ public struct PHPhotoLibraryShim {
 public struct PHPickerFilter {
     public static let images = PHPickerFilter()
     public static let videos = PHPickerFilter()
+    /// 写真と動画の両方（本物にもある・ストーリーの写真選び）
+    public static func any(of filters: [PHPickerFilter]) -> PHPickerFilter { PHPickerFilter() }
 }
 
 public struct PhotosPicker: View {

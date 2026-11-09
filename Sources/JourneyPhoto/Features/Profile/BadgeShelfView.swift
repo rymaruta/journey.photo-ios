@@ -31,6 +31,9 @@ struct BadgeShelfView: View {
     @State private var errorMessage: String?
     @State private var viewing: EarnedBadge?
     @State private var showNameSide = false
+    /// バッジ「都道府県」の詳細から「行った県の地図を見る」を押した（札 #503・閉じたあとで地図の画面へ進む）
+    @State private var wantsVisitedMap = false
+    @State private var showVisitedMap = false
     /// 「外す」を送っている間（二度押しで2本送らない）
     @State private var removing = false
     @EnvironmentObject private var toasts: ToastCenter
@@ -77,9 +80,17 @@ struct BadgeShelfView: View {
         }
         .task(id: auth.userId) { await load() }
         .refreshable { await load() }
-        .fullScreenCover(item: $viewing) { badge in
-            MedalViewerView(badge: badge, ownerName: profile?.name ?? "")
+        .fullScreenCover(item: $viewing, onDismiss: {
+            // 詳細を閉じ終えてから進む（閉じている最中に画面を積まない）
+            if wantsVisitedMap {
+                wantsVisitedMap = false
+                showVisitedMap = true
+            }
+        }) { badge in
+            MedalViewerView(badge: badge, ownerName: profile?.name ?? "",
+                            onShowMap: isMine && badge.key == "prefectures" ? { wantsVisitedMap = true; viewing = nil } : nil)
         }
+        .navigationDestination(isPresented: $showVisitedMap) { VisitedMapScreen() }
         .sheet(isPresented: $showNameSide, onDismiss: { Task { await load() } }) {
             if let profile {
                 NameSideBadgeView(profile: profile, showsShelfLink: false)

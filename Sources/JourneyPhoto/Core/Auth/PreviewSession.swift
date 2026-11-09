@@ -126,6 +126,20 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで、ストーリー作成の札の動き（動かす操作の回数・時刻・各札の位置・打っている最中か）を取り、
+    /// 見えない要素 `story.probe` に出す（Debug のみ・2026-11-08・札 #499「場所などを入力した後、自由に動かせない」）。
+    /// `-JPPreviewStoryProbe YES`。画面の絵からの推定でなく、動かない回の実際の数で原因を決めるため。
+    /// Release では必ず false（記録も要素も出ない）
+    static let storyProbeKey = "JPPreviewStoryProbe"
+
+    static var storyProbe: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: storyProbeKey)
+        #else
+        return false
+        #endif
+    }
+
     /// UI テストでサポーターの印を持たせる（Debug のみ・2026-10-18）。`-JPPreviewSupporter 7`（番号）。
     ///
     /// 見本の利用者の公開プロフィールは `pro: true` だが `supporter` の欄が無く、トランクの内ポケットの会員証
@@ -158,6 +172,30 @@ enum PreviewSession {
               let raw = UserDefaults.standard.string(forKey: medalPosesKey), !raw.isEmpty else { return nil }
         let poses = MedalPose.parse(raw)
         return poses.isEmpty ? nil : poses
+        #else
+        return nil
+        #endif
+    }
+
+    /// UI テストで「行った県」の画面に見本の記録を入れる（Debug のみ）。`-JPPreviewVisitedMap YES`。
+    /// 回数の段（1〜4 回以上）が地図に並んだ絵を撮るための口。端末には書かない。
+    /// **入っている見本の利用者のときだけ**効く。Release では必ず `nil`
+    static let visitedMapKey = "JPPreviewVisitedMap"
+
+    static var visitedMapSeed: VisitedPrefectures? {
+        #if DEBUG
+        guard userId != nil, UserDefaults.standard.bool(forKey: visitedMapKey) else { return nil }
+        var book = VisitedPrefectures()
+        let day = "2026-01-01"
+        // 北から 31 県を 1 回、そのうち数県を 2・3・5 回にする
+        let extra: [String: Int] = ["東京都": 5, "京都府": 3, "大阪府": 3, "神奈川県": 2, "長野県": 2, "北海道": 2]
+        for name in RegionList.prefectures.prefix(31) {
+            for _ in 0..<(extra[name] ?? 1) { book.add(name, day: day) }
+        }
+        for (name, times) in extra where book.count(name) == 0 {
+            for _ in 0..<times { book.add(name, day: day) }
+        }
+        return book
         #else
         return nil
         #endif
@@ -312,6 +350,19 @@ enum PreviewSession {
         #if DEBUG
         guard userId != nil else { return false }
         return UserDefaults.standard.bool(forKey: trunkArrivedKey)
+        #else
+        return false
+        #endif
+    }
+
+    /// UI テストで、お知らせに「はじめてのいいね」の見本の行を出す（Debug のみ・2026-11-08）。`-JPPreviewFirstReaction YES`。
+    /// サーバーには何も送らず、端末の控えにも書かない。入っている見本の利用者のときだけ。Release では必ず false
+    static let firstReactionKey = "JPPreviewFirstReaction"
+
+    static var opensFirstReaction: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: firstReactionKey)
         #else
         return false
         #endif
