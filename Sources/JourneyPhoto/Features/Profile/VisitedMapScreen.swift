@@ -229,19 +229,21 @@ struct VisitedMapScreen: View {
         }
     }
 
-    /// 凡例（段の見本＋字。色だけに頼らない）
+    /// 凡例（段の見本＋字。色だけに頼らない）。板 04b: 少ない → 多いの順（0・1・2・3 回以上）に並べ、
+    /// 段ではない印（写真の候補）は区切り線（1×16・白 14%）の後ろに置く。読み上げは1つの要素で順に読む
     private var legend: some View {
-        // 5 つは 1 行に収まらない幅があるので、折り返して並べる
+        // 6 つ（区切り線を含む）は 1 行に収まらない幅があるので、折り返して並べる
         FlowLayout(spacing: JPSpace.m, lineSpacing: JPSpace.xs) {
             legendItem(level: 0, candidate: false, text: VisitedMapText.legendZero)
-            legendItem(level: 0, candidate: true, text: VisitedMapText.legendCandidate)
             legendItem(level: 1, candidate: false, text: VisitedMapText.legendTimes(1))
             legendItem(level: 2, candidate: false, text: VisitedMapText.legendTimes(2))
             legendItem(level: 3, candidate: false, text: VisitedMapText.legendThreePlus)
+            Rectangle().fill(Color.white.opacity(0.14)).frame(width: 1, height: 16)
+            legendItem(level: 0, candidate: true, text: VisitedMapText.legendCandidate)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(L("凡例: 0 回、写真の候補、1 回、2 回、3 回以上",
-                              "Legend: 0, suggested, 1, 2, 3 or more"))
+        .accessibilityLabel(L("凡例: 0 回、1 回、2 回、3 回以上、写真の候補",
+                              "Legend: 0, 1, 2, 3 or more, suggested"))
     }
 
     private func legendItem(level: Int, candidate: Bool, text: String) -> some View {

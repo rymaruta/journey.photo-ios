@@ -263,19 +263,51 @@ enum PrefectureRegions {
     }
 }
 
-/// 色の段（提案書 第2版・板「黒塗りの真鍮」）。
-/// **2026-11-09 owner 判断: 模様（点・線・格子）はやめ、色だけで分ける。** 0 回・1 回・2 回・3 回以上の4段（owner 判断 2026-11-09）。1〜3 回以上は真鍮の濃淡で、
-/// 明るさの差を大きく取る（色覚が違っても明るさで分かる）。色だけに頼らない保険は、拡大時の数字と読み上げ
-/// （「東京都、3 回」）。凡例の見本も地図の塗りも、この表（`fills`）だけを読む（写しを作らない）
+/// 色の段（板「黒塗りの真鍮」04b 段の色・2026-11-09）。
+/// **2026-11-09 owner 判断: 模様（点・線・格子）はやめ、色だけで分ける。** 0 回・1 回・2 回・3 回以上の4段。
+/// 色は板 04b の `BrandPalette.scale0`〜`scale3`（真鍮 1 色の明るさ・隣の段の比 ×2.2 以上）。
+/// 色だけに頼らない保険は、凡例の字・拡大時の数字・読み上げ（「東京都、3 回」）・一覧。
+/// 凡例の見本も地図の塗りも、この表（`fills`）だけを読む（写しを作らない）
 enum VisitedMapStyle {
 
-    /// 段（`VisitedPrefectures.level(forCount:)`）→ 塗りの色（0xRRGGBB）。0 は塗らない。
-    /// 1 回 #7F6230・2 回 #B08C52・3 回以上 #F3DCA6（owner 承認 2026-11-08 の明るい端）。
-    /// 黒地に対する相対輝度比は 3.69 / 6.72 / 15.60、隣り合う段の比は 1.82 / 2.32
-    /// （`VisitedMapStyle.contrastOnBlack` `adjacentRatio`・テストが見張る）。板の使い道の外の色
-    nonisolated static let fills: [UInt32?] = [nil, 0x7F6230, 0xB08C52, BrandPalette.accentHighlight]
-    /// 未の県の地（板の surface-3）。無地
-    nonisolated static let baseFill: UInt32 = BrandPalette.surface3
+    /// 段（`VisitedPrefectures.level(forCount:)`）→ 塗りの色（0xRRGGBB）。0 は塗らない（地は `baseFill`）。
+    /// 1 回 scale1 #705523・2 回 scale2 #B08E55・3 回以上 scale3 #F3DCA6（板 04b）。
+    /// 黒地に対する比は 3.01 / 6.85 / 15.60、隣り合う段の比は ×2.49 / ×2.27 / ×2.28
+    /// （`contrastOnBlack` `adjacentRatio`・テストが見張る）。
+    /// 2026-11-09 判断: 前の #7F6230・#B08C52 は 1→2 が ×1.82 で板の下限 ×2.2 に届かないので板の値に替えた
+    nonisolated static let fills: [UInt32?] = [nil, BrandPalette.scale1, BrandPalette.scale2, BrandPalette.scale3]
+    /// 0 回の県の地（板 04b の scale0・surface-3 と同値）。無地
+    nonisolated static let baseFill: UInt32 = BrandPalette.scale0
+
+    // MARK: 縁と状態（板 04b「縁と状態」）
+
+    /// 塗った県の境界: 黒 1pt（1 段目と 3.01）
+    nonisolated static let paintedEdgeWidth: CGFloat = 1
+    /// 0 回の県の境界: 白 20%・0.6pt
+    nonisolated static let zeroEdgeWidth: CGFloat = 0.6
+    nonisolated static let zeroEdgeWhite: Double = 0.2
+    /// 写真の候補: 真鍮の破線 1.5pt を**県の内側だけ**。県の形で切り、線幅を倍（3）にして内側の 1.5 を残す。
+    /// 2026-11-09 判断（板）: 縁の中央に描くと外へはみ出し、隣の 2 段目（#B08E55）と 1.34 で溶ける。
+    /// 暗い 0 の地の上なら真鍮と 7.57
+    nonisolated static let candidateInsideWidth: CGFloat = 1.5
+    nonisolated static let candidateDash: [CGFloat] = [3, 3]
+    /// 選択中: 黒 1.5pt の隙間＋白 2pt の縁（どの段の上でも白と黒 21:1）。
+    /// 黒は白の両側に 1.5 ずつ出す（線幅 2 + 1.5×2 = 5 の黒の上に白 2）
+    nonisolated static let selectedRingWidth: CGFloat = 2
+    nonisolated static let selectedGapWidth: CGFloat = 1.5
+    /// 押している間: 塗りに黒 20%（0 の県は白 8% ＝ surface-8）。離したら選択中へ
+    nonisolated static let pressedBlack: Double = 0.2
+    nonisolated static let pressedZeroWhite: Double = 0.08
+
+    /// 白と黒（押す間・祝いの明るさで混ぜる。画面のファイルに色の値を書かない・`VisitedMapWiringTests`）
+    nonisolated static let white: UInt32 = 0xFFFFFF
+    nonisolated static let black: UInt32 = 0x000000
+
+    /// 押している間の色（不透明の値で持ち、テストで surface-8 と照らす）
+    static func pressedFill(forLevel level: Int) -> UInt32 {
+        let base = fill(forLevel: level)
+        return level <= 0 ? mix(base, white, pressedZeroWhite) : mix(base, black, pressedBlack)
+    }
 
     /// 塗る段（1 以上）の色だけを段の順に。比のテストと、凡例・地図が同じ表を使う確かめに使う
     static var paintedFills: [UInt32] { fills.compactMap { $0 } }

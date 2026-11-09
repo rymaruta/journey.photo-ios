@@ -79,6 +79,26 @@ enum BrandPalette {
     /// 金属の光の暗い端（v2 の brass-hi → lo の lo）
     static let accentShadow: UInt32 = 0x9A7A45
 
+    // MARK: 段の色（板 04b・2026-11-09）
+    //
+    // 量・回数・段階を色で分けるときだけ（行った県マップ・今後の地図・ヒートマップ）。真鍮 1 色の明るさで、
+    // 多いほど明るく。**黒地（と surface-1・2 の札）の上の面の塗りだけ**——字・アイコン・合図・ボタンには使わない。
+    // 段は 0 を入れて 4 つまで。隣の段は明るさの比 ×2.2 以上、1 段目は黒に 3:1 以上（`BrandPaletteTests` が見張る）。
+    // 黒との比: scale0 1.21・scale1 3.01・scale2 6.85・scale3 15.60
+
+    /// 0 回・無し（surface-3 と同じ値）。形は白 20% の縁で出す
+    static let scale0: UInt32 = surface3
+    /// 1 回
+    static let scale1: UInt32 = 0x705523
+    /// 2 回
+    static let scale2: UInt32 = 0xB08E55
+    /// 3 回以上（brass-hi と同じ値）
+    static let scale3: UInt32 = accentHighlight
+    /// 段の色（暗い → 明るい）。0 を入れて 4 つまで
+    static let scaleSteps: [UInt32] = [scale0, scale1, scale2, scale3]
+    /// 隣り合う段の明るさの比の下限（板 04b）
+    static let scaleMinimumStepRatio: Double = 2.2
+
     // MARK: 意味の色
 
     /// 削除・通報・エラーの文字とアイコン
