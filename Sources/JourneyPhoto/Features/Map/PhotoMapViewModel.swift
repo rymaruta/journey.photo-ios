@@ -93,7 +93,7 @@ final class PhotoMapViewModel: ObservableObject {
 
     /// 語に当たる撮影スポット（当たりの強さ順・同じ強さは索引の順）。空の語は空
     func spotSearchHits(query: String) -> [SpotSearchIndex.Hit] {
-        guard !OfficialSpotIndex.spotName(query).isEmpty else { return [] }
+        guard !SpotSearchIndex.terms(query).isEmpty else { return [] }
         var cache: (index: SpotSearchIndex, query: String?, hits: [SpotSearchIndex.Hit])
         if let held = spotSearchCache {
             cache = held

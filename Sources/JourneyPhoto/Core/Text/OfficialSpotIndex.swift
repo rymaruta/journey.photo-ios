@@ -7,11 +7,11 @@ import Foundation
 enum OfficialSpotIndex {
 
     /// 名前・読み・英語名・別名・国・都道府県・市区町村のどれかに当たるもの。
-    /// **空の語は何も当てない**（「絞っていない」）。揃え方は Web の `normalizeSpotName`
-    /// （`spotName`）: 全角半角・大小に加えて、空白と括弧・読点も見ない
-    /// （「嵐山渡月橋」で「嵐山 渡月橋」に当たる）。
+    /// **空の語は何も当てない**（「絞っていない」）。2026-11-09 から当て方は Web の一覧の検索の正本
+    /// （`SpotSearchIndex`・`docs/spot-list-search.md`）: ひらがな・カタカナ・全角半角・大小・空白・中黒・括弧・
+    /// ピリオドを見ない、空白区切りの複数語は AND（最大 6 語）、県の読み・英語名でも県が引ける。
     ///
-    /// 並びは Web の `searchSpotRows` と同じ: 名前・英語名・読み・別名で**完全一致 → 前方一致 →
+    /// 並び: 名前・英語名・読み・別名で**完全一致 → 前方一致 →
     /// 部分一致**、地域だけで当たったものはその後ろ。別名は名前と同じ扱い。
     /// 同じ段の中は渡された順（索引の順）。`limit` が nil なら全部
     /// （地図は枠で並べ直してから切るので、ここでは切らない）。
@@ -19,48 +19,17 @@ enum OfficialSpotIndex {
     static func matches(_ spots: [OfficialSpot], query: String, limit: Int? = nil,
                         aliases: [String: [String]] = [:]) -> [OfficialSpot] {
         // 空の語は索引を作らずに返す（1回きりの呼び出しで全件を折りたたまない）
-        guard !spotName(query).isEmpty else { return [] }
+        guard !SpotSearchIndex.terms(query).isEmpty else { return [] }
         return SpotSearchIndex(spots, aliases: aliases).hits(query: query, limit: limit).map(\.spot)
     }
 
-    /// Web の `normalizeSpotName`（`lib/utils/spots.ts`）と同じ揃え方に、**ひらがな・カタカナの違いを見ない**
-    /// （2026-11-09・owner 要望）を足したもの。判定にしか使わない。
-    /// 写真の撮影地の当て方（`MapSearch.matches`）には使わない
+    /// Web の `normalizeSpotName`（`lib/utils/spots.ts`）と同じ揃え方。判定にしか使わない。
+    /// 写真の撮影地の当て方（`MapSearch.matches`）には使わない。
+    /// 🔴 **検索窓の折りたたみは別**（`SpotSearchIndex.fold`・かな・中黒・ピリオドも見ない）。これは変えない
     static func spotName(_ value: String?) -> String {
-        foldKana((value ?? "").precomposedStringWithCompatibilityMapping.lowercased())
+        (value ?? "").precomposedStringWithCompatibilityMapping
+            .lowercased()
             .filter { !$0.isWhitespace && !"()（）「」『』,、，".contains($0) }
-    }
-
-    /// カタカナ（ァ〜ヶ）をひらがなに寄せる。長音「ー」・中黒「・」はそのまま。
-    /// 半角カタカナは `spotName` が先に NFKC で全角にしている
-    static func foldKana(_ text: String) -> String {
-        var out = String.UnicodeScalarView()
-        for u in text.unicodeScalars {
-            if (0x30A1...0x30F6).contains(u.value), let h = Unicode.Scalar(u.value - 0x60) {
-                out.append(h)
-            } else {
-                out.append(u)
-            }
-        }
-        return String(out)
-    }
-
-    /// 打った語を空白・読点で区切った語（折りたたみ済み・空は除く）
-    static func queryWords(_ query: String) -> [String] {
-        query.components(separatedBy: CharacterSet(charactersIn: "、,，").union(.whitespacesAndNewlines))
-            .map(spotName).filter { !$0.isEmpty }
-    }
-
-    /// Web の `rankByNames`。完全一致 0・前方一致 1・部分一致 2・外れ -1。
-    /// `names` は `spotName` で折りたたみ済みの名前（`SpotSearchIndex` が1回だけ作る）
-    static func rank(of names: [String], needle: String) -> Int {
-        var rank = -1
-        for name in names {
-            if name == needle { return 0 }
-            if name.hasPrefix(needle) { rank = 1; continue }
-            if name.contains(needle), rank < 0 { rank = 2 }
-        }
-        return rank
     }
 
     /// 地域（国・都道府県・市区町村）で当たるか。国は日本の外の行だけに載る——
@@ -76,32 +45,8 @@ enum OfficialSpotIndex {
     /// 空白で区切った語（「神奈川 箱根」）は**どの語もどれかの欄に**当たること。
     /// 区切らずに続けた「東京都千代田区」は県＋市をつないだ字に当てる
     static func regionMatches(_ spot: OfficialSpot, query: String) -> Bool {
-        regionMatches(fields: regionFields(of: spot), query: query)
+        SpotSearchIndex.regionMatches(fields: SpotSearchIndex.regionFields(of: spot), query: query)
     }
-
-    /// 国（日本以外）・県・市区町村・県＋市・全部をつないだ字（折りたたみ済み・空は除く）。地域の無い行は空
-    static func regionFields(of spot: OfficialSpot) -> [String] {
-        guard let r = spot.region else { return [] }
-        let country = r.country == "日本" ? nil : r.country
-        let pair: String = [r.prefecture, r.city].compactMap { $0 }.joined()
-        let whole: String = [country, r.prefecture, r.city].compactMap { $0 }.joined()
-        return [country, r.prefecture, r.city, pair, whole].map(spotName).filter { !$0.isEmpty }
-    }
-
-    /// 1語（折りたたみ済み）が地域の欄のどれかに当たるか
-    static func regionHit(fields: [String], word: String) -> Bool {
-        !word.isEmpty && fields.contains { $0.hasPrefix(word) || LocationMatch.nameIn($0, word, boundaries: regionMarks) }
-    }
-
-    static func regionMatches(fields: [String], query: String) -> Bool {
-        guard !fields.isEmpty else { return false }
-        let words = queryWords(query)
-        if words.count > 1, words.allSatisfy({ regionHit(fields: fields, word: $0) }) { return true }
-        return regionHit(fields: fields, word: spotName(query))
-    }
-
-    /// 海外の地域名の切れ目（「アンダルシア州」「ブルターニュ地方」）
-    private static let regionMarks = ["州", "地方"]
 
     /// 写真の場所の候補（`PlaceSpotSuggestions`）が使う別名の当て方（`MapSearch.fold` の揃え方のまま）
     static func aliasMatches(_ aliases: [String]?, needle: String) -> Bool {
