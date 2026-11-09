@@ -23,7 +23,7 @@ struct ModerationService {
     /// （`api-user/src/report.ts` の `REPORT_REASONS`）。
     /// ここに無い値を送ると 400「理由を選んでください」で返る。
     enum ReportReason: String, CaseIterable, Identifiable {
-        case copyright, privacy, sexual, violence, harassment, spam, other
+        case copyright, privacy, sexual, violence, harassment, spam, minor, other
 
         var id: String { rawValue }
 
@@ -35,6 +35,8 @@ struct ModerationService {
             case .violence: return L("暴力的・残虐な内容", "Violent or graphic")
             case .harassment: return L("特定の人への攻撃・いやがらせ", "Harassment of a person")
             case .spam: return L("広告・勧誘・スパム", "Spam or advertising")
+            // 2026-11-09: DM の通報から足された理由（`report.ts` の `REPORT_REASONS`。Web の ReportDialog と同じ文言・同じ並び）
+            case .minor: return L("未成年へのいやな接触・誘い出し", "Inappropriate contact with a minor")
             case .other: return L("その他", "Something else")
             }
         }

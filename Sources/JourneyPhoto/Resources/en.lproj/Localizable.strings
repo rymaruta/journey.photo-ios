@@ -14,3 +14,9 @@
 
 /* Medals (2026-10-09). The argument is the medal name sent by the server. */
 "NOTIF_BADGE" = "You earned the %@ medal";
+
+/* DM (2026-11-09, `pushDmMessage` in `notify.ts`). The only argument is the sender's name; the body is never sent. */
+"NOTIF_DM" = "%@ sent you a message";
+
+/* Story mention (2026-11-09, `LOC_KEYS.storymention` in `notify.ts`). The argument is the poster's name. */
+"NOTIF_STORY_MENTION" = "%@ mentioned you in a story";
