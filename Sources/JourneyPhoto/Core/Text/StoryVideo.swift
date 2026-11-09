@@ -7,8 +7,13 @@ import Foundation
 /// 60 秒・50MB、許可は mp4 / webm / mov（`ALLOWED_VIDEO_TYPES`）。
 enum StoryVideoRules {
 
-    /// 動画の長さの上限（秒）。Web と同じ 60
+    /// 動画の長さの上限（秒）。Web と同じ 60。**投稿する長さ**の上限（元の動画は長くてよい。作る画面で切る・`StoryVideoTrim`）
     static let maxSeconds: Double = 60
+    /// 取り込める元の動画の長さ（秒）。2026-11-09 判断: 60 秒を超えても取り込み、作る画面で範囲を選んで切る。
+    /// 無制限にはしない（数十分・数 GB の動画は、一時フォルダへ写すだけで容量・時間を食う）。
+    /// 10 分・2GB まで。**写す前に**確かめる（`StoryMovieFile`）
+    static let maxSourceSeconds: Double = 10 * 60
+    static let maxSourceBytes = 2 * 1024 * 1024 * 1024
     /// 上げられる大きさの上限（バイト）。サーバーの `MAX_UPLOAD_BYTES`（50MB）
     static let maxBytes = 50 * 1024 * 1024
     /// 書き出しの目標。**上限ちょうどに寄せない**（書き出しの見積もりは多少ずれる）
@@ -48,8 +53,10 @@ enum StoryVideoRules {
     // MARK: - 取り込みの確かめ
 
     enum Problem: Equatable {
-        /// 60 秒を超える
+        /// 60 秒を超える（切らずに書き出そうとした・取り込みでは断らない）
         case tooLong
+        /// 元の動画が長すぎて取り込めない（`maxSourceSeconds`）
+        case sourceTooLong
         /// 長さが読めない（壊れている・動画でない）
         case unreadable
         /// 50MB に収まらない（書き出しても届かなかった）
@@ -68,6 +75,9 @@ enum StoryVideoRules {
             switch self {
             case .tooLong:
                 return L("動画は60秒以内にしてください", "Video must be 60 seconds or shorter")
+            case .sourceTooLong:
+                return L("長すぎます。10分までの動画を選んでください",
+                         "That video is too long. Choose one that is 10 minutes or shorter")
             case .unreadable:
                 return L("動画を読み込めませんでした", "Couldn't read the video")
             case .tooLarge:
@@ -88,7 +98,15 @@ enum StoryVideoRules {
         }
     }
 
-    /// 取り込み時の確かめ。**長さを先に**（長すぎる動画の大きさを測っても、書き出しで収まる保証がない）
+    /// 取り込み時の確かめ（2026-11-09 から）。**60 秒を超えても断らない**——作る画面で範囲を選んで切る。
+    /// 読めない・長さ 0 と、取り込めない長さ（`maxSourceSeconds`）だけ断る
+    static func importProblem(durationSec: Double?, bytes: Int? = nil) -> Problem? {
+        if let bytes, bytes > maxSourceBytes { return .sourceTooLong }
+        guard let durationSec, durationSec.isFinite, durationSec > 0 else { return .unreadable }
+        return durationSec > maxSourceSeconds ? .sourceTooLong : nil
+    }
+
+    /// **投稿する長さ**の確かめ（切ったあとの長さ・60 秒以内か）。**長さを先に**（長すぎる動画の大きさを測っても、書き出しで収まる保証がない）
     static func problem(durationSec: Double?) -> Problem? {
         guard let durationSec, durationSec.isFinite, durationSec > 0 else { return .unreadable }
         // 60.0 ちょうどは通す（撮影が 60 秒で止まった動画は 60.02 のように少し超える。0.5 秒の余裕）
@@ -184,15 +202,31 @@ enum StoryVideoRules {
 struct StoryVideoClip: Equatable {
     /// 端末の中の動画ファイル（アプリの一時フォルダの下に写したもの）
     let url: URL
-    /// 長さ（秒）
+    /// 元の動画の長さ（秒）。投稿する長さは `trim` で決まる（`outputSeconds`）
     let durationSec: Double
     /// 映像の向きを直した後の大きさ（画素）。重ねの焼き込みの基準
     let size: CGSize
     /// 元のファイルの大きさ
     let bytes: Int
+    /// 残す範囲（2026-11-09）。取り込んだ直後は全部（60 秒を超える動画は先頭の 60 秒）
+    var trim: StoryVideoTrim
 
-    /// 一覧・読み上げ用の「0:12」
-    var durationLabel: String { Self.label(durationSec) }
+    init(url: URL, durationSec: Double, size: CGSize, bytes: Int, trim: StoryVideoTrim? = nil) {
+        self.url = url
+        self.durationSec = durationSec
+        self.size = size
+        self.bytes = bytes
+        self.trim = trim ?? StoryVideoTrim(total: durationSec)
+    }
+
+    /// 投稿する長さ（秒）。書き出しの段（`StoryVideoRules.ladder`）・長さの札はこれで決める
+    var outputSeconds: Double { trim.length }
+
+    /// 切ってあるか（全部残していない）
+    var isTrimmed: Bool { !trim.isFull }
+
+    /// 一覧・読み上げ用の「0:12」（**切ったあとの長さ**）
+    var durationLabel: String { Self.label(outputSeconds) }
 
     static func label(_ seconds: Double) -> String {
         let total = max(0, Int(seconds.rounded()))

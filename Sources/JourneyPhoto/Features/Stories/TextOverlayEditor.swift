@@ -49,6 +49,10 @@ struct StoryCanvas: View {
     var songArt: SongStickerPainter.Art? = nil
     /// 上にシートなどが出ている（曲の札の動きを止める・2026-10-28 のレビュー）
     var songStickersCovered = false
+    /// 描画の線（2026-11-09）。写真と札の**間**に敷く（指を受けない。描く面は呼ぶ側が上に重ねる）
+    var drawingStrokes: [StoryStroke] = []
+    /// いま描いている1本の置き場（線の層 `StoryDrawingLayer` だけが読む）。nil なら線の層を敷かない
+    var liveStroke: StoryLiveStroke? = nil
 
     /// 「動きを減らす」がオンなら曲の札の棒・レコードを動かさない
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -216,6 +220,11 @@ struct StoryCanvas: View {
                     .accessibilityAction(named: L("ひとことを書く", "Write a caption")) { onWriteCaption() }
                     // UI テストが写真の枠の位置を見る（作る画面が窓の上の端から始まるか・2026-10-30 #406）
                     .accessibilityIdentifier("story.canvas")
+                // 描画の線（2026-11-09）。写真の上・「ひとこと」の欄と札の下（焼き込みと同じ順）
+                if let liveStroke {
+                    StoryDrawingLayer(strokes: drawingStrokes, live: liveStroke, imageSize: imageSize)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                }
                 if let underOverlays {
                     underOverlays
                         .frame(width: geometry.size.width, height: geometry.size.height, alignment: .leading)

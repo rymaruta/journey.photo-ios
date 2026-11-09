@@ -35,6 +35,11 @@ import AVFoundation
 /// **シャッターはタップで写真、長押しで動画**（離すと止まる）。動画モードのタップは「始める／止める」。
 /// 上限は 60 秒（`StoryVideoRules.maxSeconds`）で自動で止まる。
 ///
+/// **2026-11-09 仕上げ（インスタと遜色なく・第1弾）**: ピンチと倍率の丸（0.5×・1×・2× …は端末が許す段だけ）、
+/// フラッシュ（オフ→オン→自動・背面だけ。動画は録画の間のライト）、タイマー（3 秒・10 秒・数字のカウントダウン・
+/// タップで取り消し）、ハンズフリー録画（動画モードでタイマーを入れると、押さずに数えて始まり、次のタップか 60 秒で止まる）。
+/// 決まりは `StoryCameraRules`。数えている間にアプリが前面でなくなった・撮影の場が中断された・画面を閉じたときは取り消す。
+///
 /// 既存の自前カメラ `ComposeCamera` は流用しない（2026-11-08 判断・札 #500）: 作例を重ねる撮影の場で、
 /// 背面カメラ固定・写真だけ・マイクなし・ズームと露出の操作つき。ここは前後の切り替えと動画（マイク）が要り、
 /// 持ち物が違う。**映像を出す部品と保存の道（`ComposeCamera.save`）だけ同じ考えで作り直した**。
@@ -48,6 +53,7 @@ struct StoryCameraContent: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var camera = StoryCameraModel()
 
     @State private var mode: StoryCameraRules.Mode = .photo
@@ -63,7 +69,17 @@ struct StoryCameraContent: View {
     @State private var modeTick = 0
     @State private var limitTick = 0
     @State private var failTick = 0
+    @State private var countdownTickCount = 0
+    @State private var optionTick = 0
+    @State private var cancelTick = 0
 
+    // フラッシュ・タイマー・数えている最中（開くたびに「オフ」から）
+    @State private var flash: StoryCameraRules.Flash = .off
+    @State private var timerOption: StoryCameraRules.TimerOption = .off
+    @State private var countdown: Int?
+    @State private var countdownTask: Task<Void, Never>?
+    /// ピンチを始めたときのカメラの倍率
+    @State private var pinchStart: Double?
 
     var body: some View {
         ZStack {
@@ -74,7 +90,14 @@ struct StoryCameraContent: View {
             case .ready:
                 StoryCameraPreview(session: camera.session)
                     .ignoresSafeArea()
+                // ピンチで寄る（映像の部品は指を受けないので、上に透明な面を重ねる。部品は更に上）
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .gesture(zoomGesture)
+                    .accessibilityHidden(true)
                 controls
+                if let countdown { countdownNumber(countdown) }
             case .denied:
                 notice(L("カメラの許可がありません", "Camera access is off"),
                        detail: L("設定でカメラを許可すると、ここで撮れます。写真アプリから選ぶこともできます。",
@@ -87,7 +110,23 @@ struct StoryCameraContent: View {
             }
         }
         .task { await camera.start() }
-        .onDisappear { camera.stop() }
+        .onDisappear {
+            // 長押しの 0.4 秒の間に閉じると、stop() のあとに録画が始まってしまう
+            holdTask?.cancel()
+            holdTask = nil
+            cancelCountdown()
+            camera.stop()
+        }
+        // 数えている間にアプリが前面でなくなった（電話・通知センター・ホームへ戻る）・撮影の場が中断された
+        .onChange(of: scenePhase) { _, phase in
+            if !StoryCameraRules.countdownContinues(sceneActive: phase == .active, sessionInterrupted: false,
+                                                    cameraReady: camera.state == .ready) {
+                cancelCountdown(announce: true)
+            }
+        }
+        .onChange(of: camera.interruptions) { _, _ in
+            cancelCountdown(announce: true)
+        }
         .onChange(of: camera.finished) { _, finished in
             guard let finished else { return }
             handle(finished)
@@ -98,6 +137,10 @@ struct StoryCameraContent: View {
         .sensoryFeedback(.selection, trigger: modeTick)
         .sensoryFeedback(.warning, trigger: limitTick)
         .sensoryFeedback(.error, trigger: failTick)
+        // タイマーの刻みは軽く・選んだときと取り消しは切り替えと同じ
+        .sensoryFeedback(.impact(weight: .light, intensity: 0.5), trigger: countdownTickCount)
+        .sensoryFeedback(.selection, trigger: optionTick)
+        .sensoryFeedback(.selection, trigger: cancelTick)
     }
 
     // MARK: - 部品
@@ -116,7 +159,17 @@ struct StoryCameraContent: View {
                     .padding(.bottom, 8)
                     .accessibilityIdentifier("story.camera.micNote")
             }
-            if !camera.isRecording { modePicker.padding(.bottom, 14) }
+            if StoryCameraRules.showsZoomPills(presetCount: camera.zoomLevels.presets.count) {
+                zoomPills.padding(.bottom, 10)
+            }
+            // 録画・カウントダウン中も場所は残す（消すと倍率の丸とシャッターの間が詰まって下へ落ちる）
+            let modeLocked = !StoryCameraRules.allowsModeAndFlip(isRecording: camera.isRecording,
+                                                                 counting: countdown != nil)
+            modePicker
+                .padding(.bottom, 14)
+                .opacity(modeLocked ? 0 : 1)
+                .allowsHitTesting(!modeLocked)
+                .accessibilityHidden(modeLocked)
             shutter.padding(.bottom, 28)
         }
     }
@@ -136,8 +189,18 @@ struct StoryCameraContent: View {
                 .accessibilityLabel(Labels.Common.close)
                 .accessibilityIdentifier("story.camera.close")
                 Spacer()
+                // フラッシュ・タイマー（録画中・数えている間は変えさせない）
+                if !camera.isRecording && countdown == nil {
+                    if StoryCameraRules.showsFlash(hasFlash: camera.hasFlash, isRecording: camera.isRecording,
+                                                   counting: countdown != nil) {
+                        flashButton
+                    }
+                    timerButton
+                }
                 Button {
                     camera.flip()
+                    // 前後で倍率の段が変わる（背面は 0.5×・前面は 1× と 2× …）。映像は 1× から始まる
+                    pinchStart = nil
                 } label: {
                     Image(systemName: "arrow.triangle.2.circlepath.camera")
                         .font(.body.weight(.semibold))
@@ -145,8 +208,10 @@ struct StoryCameraContent: View {
                         .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                         .background(Color.black.opacity(0.35), in: Circle())
                 }
-                .disabled(camera.isRecording)
-                .opacity(camera.isRecording ? 0.4 : 1)
+                .disabled(!StoryCameraRules.allowsModeAndFlip(isRecording: camera.isRecording,
+                                                              counting: countdown != nil))
+                .opacity(StoryCameraRules.allowsModeAndFlip(isRecording: camera.isRecording,
+                                                            counting: countdown != nil) ? 1 : 0.4)
                 .accessibilityLabel(L("前後のカメラを切り替える", "Switch camera"))
                 .accessibilityIdentifier("story.camera.flip")
             }
@@ -156,6 +221,113 @@ struct StoryCameraContent: View {
         }
         .padding(.horizontal, 12)
         .padding(.top, 8)
+    }
+
+    /// フラッシュ（オフ→オン→自動）。選んでいる（オン・自動）ときは白い丸い札に黒い記号
+    /// （「写真｜動画」の選んでいる札と同じ。写真の上なので白・真鍮は置かない。形でも状態が分かる）
+    private var flashButton: some View {
+        Button {
+            flash = flash.next
+            optionTick += 1
+        } label: {
+            Image(systemName: flash.symbol)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(flash.isActive ? Color.black : Color.white)
+                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                .background(flash.isActive ? Color.white : Color.black.opacity(0.35), in: Circle())
+        }
+        .accessibilityLabel(flash.accessibilityLabel)
+        .accessibilityHint(L("押すたびにオフ・オン・自動が替わります", "Cycles through off, on and auto"))
+        .accessibilityIdentifier("story.camera.flash")
+    }
+
+    /// タイマー（オフ→3秒→10秒）。入れているときは秒数も字で出す（色・形だけで伝えない）
+    private var timerButton: some View {
+        Button {
+            timerOption = timerOption.next
+            optionTick += 1
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "timer")
+                    .font(.body.weight(.semibold))
+                if timerOption.isActive {
+                    Text("\(timerOption.seconds)")
+                        .font(JPFont.mono(12, medium: true, relativeTo: .caption))
+                }
+            }
+            .foregroundStyle(timerOption.isActive ? Color.black : Color.white)
+            .padding(.horizontal, timerOption.isActive ? 10 : 0)
+            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+            .background(timerOption.isActive ? Color.white : Color.black.opacity(0.35), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(timerOption.accessibilityLabel)
+        .accessibilityHint(L("押すたびにオフ・3秒・10秒が替わります。入れると押さずに撮れます",
+                             "Cycles through off, 3 and 10 seconds. With a timer on, you can shoot hands-free"))
+        .accessibilityIdentifier("story.camera.timerOption")
+    }
+
+    /// 倍率の丸（標準のカメラ App・`ComposeGuideView.zoomPills` と同じ形）。写真（映像）の上なので、
+    /// 選んでいる段の字は白（真鍮は黒い地の上だけ）。段が1つの端末では出さない
+    private var zoomPills: some View {
+        let levels = camera.zoomLevels
+        let display = levels.display(factor: camera.zoomFactor)
+        let active = ComposeControls.activePreset(display: display, presets: levels.presets)
+        return HStack(spacing: 0) {
+            ForEach(levels.presets, id: \.self) { preset in
+                let on = preset == active
+                Button {
+                    camera.setZoom(display: preset, animated: !reduceMotion)
+                    optionTick += 1
+                } label: {
+                    Text(ComposeControls.zoomLabel(on ? display : preset, active: on))
+                        .font(JPFont.mono(12, medium: true, relativeTo: .caption))
+                        .foregroundStyle(Color.white)
+                        .lineLimit(1)
+                        .padding(.horizontal, 4)
+                        .frame(minWidth: on ? 36 : 30, minHeight: on ? 36 : 30)
+                        .background(Color.white.opacity(on ? 0.28 : 0.1), in: Capsule())
+                        .background(Color.black.opacity(0.35), in: Capsule())
+                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(ComposeControls.zoomAccessibility(preset))
+                .accessibilityValue(on ? L("選択中", "Selected") : "")
+                .accessibilityAddTraits(on ? .isSelected : [])
+                .accessibilityIdentifier(ComposeControls.zoomIdentifier(preset).replacingOccurrences(
+                    of: "composeGuide.zoom.", with: "story.camera.zoom."))
+            }
+        }
+    }
+
+    /// つまんで寄る（始めの倍率からの割合・範囲は端末の許す内）
+    private var zoomGesture: some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                let start = pinchStart ?? camera.zoomFactor
+                if pinchStart == nil { pinchStart = start }
+                camera.setZoom(factor: ComposeControls.pinchedFactor(start: start,
+                                                                     magnification: Double(value.magnification),
+                                                                     levels: camera.zoomLevels),
+                               animated: false)
+            }
+            .onEnded { _ in pinchStart = nil }
+    }
+
+    /// カウントダウンの数字（画面の真ん中・写真の上なので白に影）。動きを減らす設定では拡大の動きを付けない。
+    /// 読み上げは数字ごとに声で知らせるので、この絵は読み上げから外す
+    private func countdownNumber(_ value: Int) -> some View {
+        Text("\(value)")
+            .jpSystemFont(96, weight: .light, relativeTo: .largeTitle)
+            .foregroundStyle(Color.white)
+            .shadow(color: Color.black.opacity(0.5), radius: 12)
+            .id(value)
+            .transition(reduceMotion ? .opacity : .scale(scale: 1.4).combined(with: .opacity))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .accessibilityIdentifier("story.camera.countdown")
     }
 
     /// 録画の時間（赤い点＋0:07）。点は動きを減らす設定のときは点滅させない
@@ -216,6 +388,12 @@ struct StoryCameraContent: View {
                     .rotationEffect(.degrees(-90))
                     .frame(width: 90, height: 90)
                 RoundedRectangle(cornerRadius: 8).fill(WebTheme.danger).frame(width: 30, height: 30)
+            } else if countdown != nil {
+                // 数えている間は「取り消し」（押すと止まる）
+                Circle().fill(Color.white).frame(width: 62, height: 62)
+                Image(systemName: "xmark")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(Color.black)
             } else {
                 Circle()
                     .fill(mode == .video ? WebTheme.danger : Color.white)
@@ -232,13 +410,26 @@ struct StoryCameraContent: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("story.camera.shutter")
         // 読み上げからは長押しができないので、操作で動画の始め／止めを出す
-        .accessibilityAction { perform(StoryCameraRules.tapAction(mode: mode, isRecording: camera.isRecording)) }
+        .accessibilityAction { press(currentPressIntent) }
     }
 
     private var shutterLabel: String {
+        if countdown != nil { return L("カウントダウンを取り消す", "Cancel countdown") }
         if camera.isRecording { return L("録画を止める", "Stop recording") }
+        let seconds = timerOption.seconds
+        if timerOption.isActive {
+            return mode == .photo ? L("\(seconds)秒後に写真を撮る", "Take a photo in \(seconds) seconds")
+                                  : L("\(seconds)秒後に録画を始める（押さずに撮れます）",
+                                      "Start recording in \(seconds) seconds (hands-free)")
+        }
         return mode == .photo ? L("写真を撮る（長押しで動画）", "Take a photo (hold for video)")
                               : L("録画を始める", "Start recording")
+    }
+
+    /// いまシャッターをタップしたときにすること（タイマー・数えている最中を含む）
+    private var currentPressIntent: StoryCameraRules.PressIntent {
+        StoryCameraRules.pressIntent(mode: mode, isRecording: camera.isRecording, timer: timerOption,
+                                     counting: countdown != nil)
     }
 
     private var shutterGesture: some Gesture {
@@ -251,7 +442,8 @@ struct StoryCameraContent: View {
                 holdTask = Task {
                     try? await Task.sleep(nanoseconds: UInt64(StoryCameraRules.holdThreshold * 1_000_000_000))
                     guard !Task.isCancelled, pressing,
-                          let action = StoryCameraRules.holdAction(isRecording: camera.isRecording) else { return }
+                          let action = StoryCameraRules.holdAction(isRecording: camera.isRecording, timer: timerOption,
+                                                                   counting: countdown != nil) else { return }
                     recordingStartedByHold = true
                     perform(action, fromHold: true)
                 }
@@ -265,7 +457,7 @@ struct StoryCameraContent: View {
                 if StoryCameraRules.releaseStopsRecording(startedByHold: held) {
                     perform(.stopRecording)
                 } else {
-                    perform(StoryCameraRules.tapAction(mode: mode, isRecording: camera.isRecording))
+                    press(currentPressIntent)
                 }
             }
     }
@@ -296,11 +488,64 @@ struct StoryCameraContent: View {
 
     // MARK: - 動作
 
+    /// シャッターのタップ（タイマーで数える・数えている最中は取り消す・そうでなければ撮る／始める／止める）
+    private func press(_ intent: StoryCameraRules.PressIntent) {
+        switch intent {
+        case .perform(let action):
+            perform(action)
+        case .startCountdown(let action):
+            startCountdown(then: action)
+        case .cancelCountdown:
+            cancelCountdown(announce: true)
+        }
+    }
+
+    /// 数えてから `action` をする。**動画（ハンズフリー）は数える前にマイクの許可を済ませる**
+    /// （数えている途中にダイアログが出て、カウントが止まる・取り消されるのを防ぐ）。
+    /// 取り消し（もう一度押す・アプリが裏へ行く・電話・画面を閉じる）は `cancelCountdown`
+    private func startCountdown(then action: StoryCameraRules.ShutterAction) {
+        guard countdownTask == nil, timerOption.isActive else { return }
+        let option = timerOption
+        countdownTask = Task {
+            if action == .startRecording { await camera.prepareAudio() }
+            guard !Task.isCancelled else { return }
+            AccessibilityNotification.Announcement(
+                StoryCameraRules.countdownAnnouncement(seconds: option.seconds, action: action)).post()
+            for number in StoryCameraRules.countdownSequence(option) {
+                if reduceMotion {
+                    countdown = number
+                } else {
+                    withAnimation(.easeOut(duration: 0.25)) { countdown = number }
+                }
+                countdownTickCount += 1
+                try? await Task.sleep(nanoseconds: UInt64(StoryCameraRules.countdownStepSeconds * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+            }
+            countdown = nil
+            countdownTask = nil
+            perform(action)
+        }
+    }
+
+    /// 数えるのをやめる（数えていなければ何もしない）。`announce` は読み上げと触覚で知らせる（自分で押した・裏へ行った）
+    private func cancelCountdown(announce: Bool = false) {
+        guard countdownTask != nil || countdown != nil else { return }
+        // 数字がまだ出ていない（マイクの許可を待っていた）ときは、知らせない
+        let visible = countdown != nil
+        countdownTask?.cancel()
+        countdownTask = nil
+        countdown = nil
+        if announce && visible {
+            cancelTick += 1
+            AccessibilityNotification.Announcement(StoryCameraRules.countdownCancelledAnnouncement).post()
+        }
+    }
+
     private func perform(_ action: StoryCameraRules.ShutterAction, fromHold: Bool = false) {
         switch action {
         case .takePhoto:
             Task {
-                guard let data = await camera.capturePhoto() else {
+                guard let data = await camera.capturePhoto(flash: flash) else {
                     failTick += 1
                     return
                 }
@@ -317,7 +562,7 @@ struct StoryCameraContent: View {
                 await camera.prepareAudio()
                 // 長押しで始めるはずが、ダイアログの間に指が離れていたら始めない(もう一度押してもらう)
                 guard StoryCameraRules.startsAfterPermission(fromHold: fromHold, stillPressing: pressing) else { return }
-                guard camera.startRecording() else {
+                guard camera.startRecording(flash: flash) else {
                     failTick += 1
                     return
                 }
@@ -384,6 +629,15 @@ final class StoryCameraModel: NSObject, ObservableObject {
     @Published private(set) var elapsed: Double = 0
     @Published private(set) var micDenied = false
     @Published private(set) var finished: Finished?
+    /// 拡大の段（端末のレンズから・`ComposeControls.zoomLevels` を使い回す）。組み立てるまでは 1× だけ
+    @Published private(set) var zoomLevels = ComposeControls.zoomLevels(hasUltraWide: false, switchOver: [],
+                                                                         minFactor: 1, maxFactor: 1)
+    /// いまのカメラの倍率（`videoZoomFactor`）
+    @Published private(set) var zoomFactor = 1.0
+    /// フラッシュ（写真）・ライト（動画）が使えるか。**背面のカメラだけ**
+    @Published private(set) var hasFlash = false
+    /// 撮影の場が中断された回数（電話・ほかのアプリがカメラを使う）。画面はカウントダウンを取り消す
+    @Published private(set) var interruptions = 0
 
     let session = AVCaptureSession()
     private let photoOutput = AVCapturePhotoOutput()
@@ -398,6 +652,7 @@ final class StoryCameraModel: NSObject, ObservableObject {
     /// 録画の途中で画面が閉じた。止まったファイルは誰にも渡さず消す(孤児にしない)
     private var abandoned = false
     private var photoContinuation: CheckedContinuation<Data?, Never>?
+    private var interruptionObserver: NSObjectProtocol?
 
     // MARK: 始める・止める
 
@@ -423,7 +678,21 @@ final class StoryCameraModel: NSObject, ObservableObject {
             return
         }
         await run(true)
+        startObservingInterruptions()
         state = .ready
+    }
+
+    /// 撮影の場が中断されたら数える（`interruptions`）。画面を閉じるとき（`stop`）と消えるとき（deinit）に外す
+    private func startObservingInterruptions() {
+        guard interruptionObserver == nil else { return }
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVCaptureSession.wasInterruptedNotification, object: session, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.interruptions += 1 }
+        }
+    }
+
+    deinit {
+        if let interruptionObserver { NotificationCenter.default.removeObserver(interruptionObserver) }
     }
 
     func stop() {
@@ -434,6 +703,9 @@ final class StoryCameraModel: NSObject, ObservableObject {
         }
         timer?.invalidate()
         timer = nil
+        setTorch(.off)
+        if let interruptionObserver { NotificationCenter.default.removeObserver(interruptionObserver) }
+        interruptionObserver = nil
         let session = session
         queue.async { if session.isRunning { session.stopRunning() } }
     }
@@ -448,8 +720,24 @@ final class StoryCameraModel: NSObject, ObservableObject {
         }
     }
 
+    /// 背面は**仮想カメラ（三眼・二眼）を先に**（`ComposeCamera.backCamera`・倍率だけで超広角・広角・望遠を OS が
+    /// 切り替える。0.5× が出せる）。前面は広角1つ
     private static func camera(_ position: AVCaptureDevice.Position) -> AVCaptureDevice? {
-        AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position)
+        if position == .back { return ComposeCamera.backCamera() }
+        return AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position)
+    }
+
+    /// 流し始める前に 1× の倍率にしておく（三眼・二眼の広角は倍率 1 が超広角＝0.5×。後から合わせると
+    /// 開いた瞬間に 0.5× の映像が見える・`ComposeCamera.run` と同じ理由）。組み立ての中（`beginConfiguration` の間）で呼ぶ
+    private func applyOneTimesZoom(to device: AVCaptureDevice) {
+        let levels = ComposeCamera.levels(for: device)
+        if (try? device.lockForConfiguration()) != nil {
+            device.videoZoomFactor = CGFloat(levels.factor(display: 1))
+            device.unlockForConfiguration()
+        }
+        zoomLevels = levels
+        zoomFactor = levels.factor(display: 1)
+        hasFlash = device.position == .back && (device.hasFlash || device.hasTorch)
     }
 
     private func configureIfNeeded() -> Bool {
@@ -461,6 +749,7 @@ final class StoryCameraModel: NSObject, ObservableObject {
               session.canAddInput(input) else { return false }
         session.addInput(input)
         videoInput = input
+        applyOneTimesZoom(to: device)
         rotation = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
         guard session.canAddOutput(photoOutput) else { return false }
         session.addOutput(photoOutput)
@@ -508,6 +797,7 @@ final class StoryCameraModel: NSObject, ObservableObject {
             session.addInput(input)
             videoInput = input
             position = next
+            applyOneTimesZoom(to: device)
             rotation = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
         } else if let old = videoInput {
             session.addInput(old)
@@ -527,9 +817,44 @@ final class StoryCameraModel: NSObject, ObservableObject {
         }
     }
 
+    // MARK: 拡大・ライト
+
+    /// 画面の倍率（0.5×・1×・2× …）へ寄る。段のボタンは滑らかに（`ramp`）
+    func setZoom(display: Double, animated: Bool) {
+        setZoom(factor: zoomLevels.factor(display: display), animated: animated)
+    }
+
+    /// カメラの倍率へ寄る（ピンチは滑らかにせずそのまま）。範囲は端末の許す内
+    func setZoom(factor: Double, animated: Bool) {
+        guard let device = videoInput?.device else { return }
+        let target = min(max(factor, zoomLevels.minFactor), zoomLevels.maxFactor)
+        zoomFactor = target
+        queue.async {
+            guard (try? device.lockForConfiguration()) != nil else { return }
+            if animated {
+                device.ramp(toVideoZoomFactor: CGFloat(target), withRate: 8)
+            } else {
+                device.cancelVideoZoomRamp()
+                device.videoZoomFactor = CGFloat(target)
+            }
+            device.unlockForConfiguration()
+        }
+    }
+
+    /// 動画のライト（`torchMode`）。録画の間だけ点ける。使えない・背面でないときは何もしない
+    private func setTorch(_ mode: AVCaptureDevice.TorchMode) {
+        guard let device = videoInput?.device, device.hasTorch else { return }
+        queue.async {
+            guard (try? device.lockForConfiguration()) != nil else { return }
+            if device.isTorchAvailable, device.isTorchModeSupported(mode) { device.torchMode = mode }
+            device.unlockForConfiguration()
+        }
+    }
+
     // MARK: 写真
 
-    func capturePhoto() async -> Data? {
+    /// 写真を撮る。`flash` は背面で、端末が許す設定のときだけ当てる（許さない設定を渡すと撮影が例外で落ちる）
+    func capturePhoto(flash: StoryCameraRules.Flash = .off) async -> Data? {
         guard state == .ready, photoContinuation == nil else { return nil }
         applyRotation(to: photoOutput.connection(with: .video))
         let settings: AVCapturePhotoSettings
@@ -537,6 +862,9 @@ final class StoryCameraModel: NSObject, ObservableObject {
             settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
         } else {
             settings = AVCapturePhotoSettings()
+        }
+        if hasFlash, photoOutput.supportedFlashModes.contains(flash.captureMode) {
+            settings.flashMode = flash.captureMode
         }
         return await withCheckedContinuation { (continuation: CheckedContinuation<Data?, Never>) in
             photoContinuation = continuation
@@ -548,12 +876,14 @@ final class StoryCameraModel: NSObject, ObservableObject {
 
     /// 録画を始める。始められなければ false
     @discardableResult
-    func startRecording() -> Bool {
+    func startRecording(flash: StoryCameraRules.Flash = .off) -> Bool {
         guard state == .ready, !isRecording, !movieOutput.isRecording,
               session.outputs.contains(movieOutput) else { return false }
         applyRotation(to: movieOutput.connection(with: .video))
         let url = StoryVideoPipeline.temporaryURL(ext: "mov")
         movieOutput.startRecording(to: url, recordingDelegate: self)
+        // 動画のフラッシュは録画の間だけ点くライト（オン＝点けっぱなし・自動＝端末まかせ）
+        if hasFlash { setTorch(flash.torchMode) }
         isRecording = true
         elapsed = 0
         recordingStartedAt = Date()
@@ -576,6 +906,7 @@ final class StoryCameraModel: NSObject, ObservableObject {
     fileprivate func recordingEnded(url: URL, success: Bool, hitLimit: Bool) {
         timer?.invalidate()
         timer = nil
+        setTorch(.off)
         isRecording = false
         recordingStartedAt = nil
         if abandoned || !success {
@@ -589,6 +920,25 @@ final class StoryCameraModel: NSObject, ObservableObject {
     fileprivate func photoFinished(_ data: Data?) {
         photoContinuation?.resume(returning: data)
         photoContinuation = nil
+    }
+}
+
+/// フラッシュの設定を、写真（`flashMode`）と動画のライト（`torchMode`）の値に直す
+extension StoryCameraRules.Flash {
+    var captureMode: AVCaptureDevice.FlashMode {
+        switch self {
+        case .off: return .off
+        case .on: return .on
+        case .auto: return .auto
+        }
+    }
+
+    var torchMode: AVCaptureDevice.TorchMode {
+        switch self {
+        case .off: return .off
+        case .on: return .on
+        case .auto: return .auto
+        }
     }
 }
 

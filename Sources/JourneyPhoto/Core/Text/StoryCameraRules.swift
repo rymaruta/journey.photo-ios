@@ -73,6 +73,151 @@ enum StoryCameraRules {
         elapsed >= StoryVideoRules.maxSeconds - 0.05
     }
 
+    // MARK: - フラッシュ（2026-11-09・ストーリーのカメラの仕上げ）
+
+    /// フラッシュの3つ。**順は オフ → オン → 自動 → オフ**（札 #500 の決め）。
+    /// 写真は `AVCapturePhotoSettings.flashMode`、動画は録画の間だけのライト（`torchMode`）に当てる。
+    /// 初めはいつも「オフ」（開くたびに戻す。暗い所で急に光らせない）
+    enum Flash: Equatable, CaseIterable {
+        case off
+        case on
+        case auto
+
+        var next: Flash {
+            switch self {
+            case .off: return .on
+            case .on: return .auto
+            case .auto: return .off
+            }
+        }
+
+        /// 記号（形でも状態が分かる・色だけで伝えない）
+        var symbol: String {
+            switch self {
+            case .off: return "bolt.slash.fill"
+            case .on: return "bolt.fill"
+            case .auto: return "bolt.badge.automatic.fill"
+            }
+        }
+
+        /// 読み上げ（「フラッシュ オフ」）
+        var accessibilityLabel: String {
+            switch self {
+            case .off: return L("フラッシュ オフ", "Flash off")
+            case .on: return L("フラッシュ オン", "Flash on")
+            case .auto: return L("フラッシュ 自動", "Flash auto")
+            }
+        }
+
+        /// 光る設定になっているか（ボタンの「選んでいる」札）
+        var isActive: Bool { self != .off }
+    }
+
+    /// フラッシュのボタンを出すか。**背面だけ**（前面は光るものが無く、画面を光らせる作りは明るさを
+    /// 書き換えて戻し忘れる恐れがあるので、出さない・2026-11-09 判断）。録画中・カウントダウン中は変えさせない
+    static func showsFlash(hasFlash: Bool, isRecording: Bool, counting: Bool) -> Bool {
+        hasFlash && !isRecording && !counting
+    }
+
+    // MARK: - タイマー（3秒・10秒）
+
+    /// タイマーの3つ。**順は オフ → 3秒 → 10秒 → オフ**。開くたびに「オフ」へ戻す
+    enum TimerOption: Equatable, CaseIterable {
+        case off
+        case three
+        case ten
+
+        var seconds: Int {
+            switch self {
+            case .off: return 0
+            case .three: return 3
+            case .ten: return 10
+            }
+        }
+
+        var next: TimerOption {
+            switch self {
+            case .off: return .three
+            case .three: return .ten
+            case .ten: return .off
+            }
+        }
+
+        var isActive: Bool { self != .off }
+
+        /// 読み上げ（「タイマー 3秒」）
+        var accessibilityLabel: String {
+            switch self {
+            case .off: return L("タイマー オフ", "Timer off")
+            case .three: return L("タイマー 3秒", "Timer 3 seconds")
+            case .ten: return L("タイマー 10秒", "Timer 10 seconds")
+            }
+        }
+    }
+
+    /// カウントダウンの数字（3, 2, 1）。0 は出さず、1 を見せ終えたら撮る
+    static func countdownSequence(_ option: TimerOption) -> [Int] {
+        guard option.seconds > 0 else { return [] }
+        return Array((1...option.seconds).reversed())
+    }
+
+    /// 1つの数字を見せる長さ（秒）
+    static let countdownStepSeconds: Double = 1
+
+    /// シャッターを押した（タップで終えた）ときにすること。
+    /// - カウントダウン中のタップは**取り消し**
+    /// - 録画中のタップは止める（タイマーは使わない）
+    /// - タイマーが入っていれば、数えてから `tapAction` の動作をする（**動画は押さずに始まる＝ハンズフリー**。
+    ///   止めるのは次のタップか 60 秒の上限）
+    enum PressIntent: Equatable {
+        case perform(ShutterAction)
+        case startCountdown(then: ShutterAction)
+        case cancelCountdown
+    }
+
+    static func pressIntent(mode: Mode, isRecording: Bool, timer: TimerOption, counting: Bool) -> PressIntent {
+        if counting { return .cancelCountdown }
+        if isRecording { return .perform(.stopRecording) }
+        let action = tapAction(mode: mode, isRecording: false)
+        return timer.isActive ? .startCountdown(then: action) : .perform(action)
+    }
+
+    /// 押し続けて動画にするか。**タイマーが入っているとき・数えている間は長押しを動画にしない**
+    /// （押して離すだけで数え始める。長押しの動画と取り違えない）
+    static func holdAction(isRecording: Bool, timer: TimerOption, counting: Bool) -> ShutterAction? {
+        guard !counting, !timer.isActive else { return nil }
+        return holdAction(isRecording: isRecording)
+    }
+
+    /// カウントダウンを続けてよいか。**アプリが前面でなくなった（電話・通知センター・ホームへ戻る）・
+    /// 撮影の場が中断された・映像が出なくなった**ら取り消す（裏で勝手に撮らない）
+    static func countdownContinues(sceneActive: Bool, sessionInterrupted: Bool, cameraReady: Bool) -> Bool {
+        sceneActive && !sessionInterrupted && cameraReady
+    }
+
+    /// カウントダウンを始めるときの読み上げ（「3秒後に写真を撮ります」）
+    static func countdownAnnouncement(seconds: Int, action: ShutterAction) -> String {
+        switch action {
+        case .takePhoto: return L("\(seconds)秒後に写真を撮ります", "Taking a photo in \(seconds) seconds")
+        case .startRecording: return L("\(seconds)秒後に録画を始めます", "Recording starts in \(seconds) seconds")
+        case .stopRecording: return ""
+        }
+    }
+
+    static var countdownCancelledAnnouncement: String {
+        L("カウントダウンを取り消しました", "Countdown cancelled")
+    }
+
+    // MARK: - ズーム（倍率の刻みは `ComposeControls.zoomLevels` を使い回す）
+
+    /// 倍率の丸（0.5・1・2 …）を出すか。段が1つだけの端末（1× のみ）では出さない
+    static func showsZoomPills(presetCount: Int) -> Bool { presetCount > 1 }
+
+    /// 録画の間・数えている間も倍率は変えられる。**モードの切り替えと前後の切り替えは変えられない**
+    static func allowsModeAndFlip(isRecording: Bool, counting: Bool) -> Bool {
+        !isRecording && !counting
+    }
+
     // MARK: - 触覚
 
     /// 触覚が鳴る出来事（札 #500 の決め）
@@ -84,6 +229,11 @@ enum StoryCameraRules {
         case limitReached
         case failed
         case posted
+        /// 2026-11-09: タイマーのカウントダウンの1秒ごとの刻み（軽く）
+        case countdownTick
+        /// カウントダウンを取り消した・フラッシュ／タイマー／倍率の段を選んだ（切り替えと同じ手ざわり）
+        case countdownCancelled
+        case optionChanged
     }
 
     enum Haptic: Equatable {
@@ -106,6 +256,8 @@ enum StoryCameraRules {
         case .limitReached: return .warning
         case .failed: return .error
         case .posted: return .success
+        case .countdownTick: return .impactLight
+        case .countdownCancelled, .optionChanged: return .selection
         }
     }
 

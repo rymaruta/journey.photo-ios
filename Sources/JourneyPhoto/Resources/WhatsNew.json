@@ -2,6 +2,48 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.75",
+      "date": "2026-11-09",
+      "items": [
+        {
+          "symbol": "camera.viewfinder",
+          "title": {
+            "ja": "ストーリーのカメラにズーム・フラッシュ・タイマー",
+            "en": "Zoom, flash and timer in the Story camera"
+          },
+          "detail": {
+            "ja": "ストーリーのカメラで、ピンチやボタンでズームでき、フラッシュとタイマー（3秒・10秒）も使えます。ひとりで撮るときや暗い場所でも、構えたまま撮れます。",
+            "en": "In the Story camera you can zoom by pinching or with the buttons, and use the flash and a timer (3 or 10 seconds). Handy for shooting alone or in dim places."
+          },
+          "destination": "home"
+        },
+        {
+          "symbol": "scissors",
+          "title": {
+            "ja": "動画の切り取りとフィルター",
+            "en": "Video trimming and filters"
+          },
+          "detail": {
+            "ja": "ストーリーの動画は、載せる前に始めと終わりを切り取れます。写真にも動画にも、フィルターで雰囲気を選べます。",
+            "en": "Trim the start and end of a video before adding it to a Story. Pick a filter for the look of both photos and videos."
+          },
+          "destination": "home"
+        },
+        {
+          "symbol": "pencil.tip",
+          "title": {
+            "ja": "ストーリーに手描き",
+            "en": "Draw on your Stories"
+          },
+          "detail": {
+            "ja": "ストーリーの写真や動画の上に、指で線を描けます。色や太さを選べて、まちがえたら1つ戻せます。",
+            "en": "Draw with your finger on top of a Story photo or video. Choose the color and thickness, and undo a stroke if you slip."
+          },
+          "destination": "home"
+        }
+      ]
+    },
+    {
       "version": "1.1.74",
       "date": "2026-11-08",
       "items": [

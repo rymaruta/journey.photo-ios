@@ -57,7 +57,17 @@ jobs:
           node-version: "20"
       - name: tree-sitter を入れる
         if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
-        run: cd Tools && npm install --silent
+        # 2026-11-09 判断: この段が、コードと関係なく不安定に落ちた（同じコミットで成功と失敗が混ざる・
+        # 1つ目は Node の取得が 504）。`--silent` が原因を隠していたので外して出力を残し、
+        # 通信まわりの一時的な失敗だけ最大3回までやり直す（3回目も落ちたら落とす）。
+        run: |
+          cd Tools
+          for i in 1 2 3; do
+            if npm install --no-audit --no-fund; then exit 0; fi
+            echo "::warning::npm install が失敗しました（${i}/3）"
+            sleep $((i * 10))
+          done
+          exit 1
       - name: Swift の構文
         if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
         run: node Tools/check-swift-syntax.js Sources Tests UITests

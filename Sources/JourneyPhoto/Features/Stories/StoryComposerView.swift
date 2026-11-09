@@ -152,6 +152,8 @@ struct StoryComposerView: View {
     /// 投票の欄を開いている（足元と右の列を隠す——残すとキーボードで写真の枠が縮み、小さい画面で
     /// 欄が上のバーに潜った・bf7bb00 のレビュー）
     private var votePanelOpen: Bool { voteSelected && typingId == nil && vote.wrappedValue != nil }
+    /// 足元と並びを隠して下に欄を出している（2026-11-09・フィルター。描画の段で足す）。投票の欄と同じ扱い
+    private var sidePanelOpen: Bool { filterPanelOpen || drawMode }
     /// ひとことを打っている（上に「完了」を出す。複数行なので Return では閉じない）
     @FocusState private var captionFocused: Bool
     /// ひとことを打ち始めようとしている（写真を押した・「…」の「ひとことを書く」）。ピントが入る前に欄を出す
@@ -175,6 +177,24 @@ struct StoryComposerView: View {
     @State private var isWaitingForSpots = false
     /// 動画を書き出している間(札 #500)。**この間は編集を止める**(札・文字・追加・削除・並べ替えを触らせない)
     @State private var isExportingVideo = false
+    /// 切り取りの画面を開いている動画の印（`StoryShot.id`・2026-11-09）。nil なら閉じている
+    @State private var trimmingShotId: UUID?
+    /// フィルターの欄を開いている（2026-11-09）。開いている間は足元と並びを隠す（投票の欄と同じ）
+    @State private var filterPanelOpen = false
+    /// 帯の見本（id → 絵）と、それを作った写真の印
+    @State private var filterSwatches: [String: Image] = [:]
+    @State private var filterSwatchesShotId: UUID?
+    /// 写真ごとの、作る画面の絵を描いている仕事（選び直したら前のを取り消す）
+    @State private var filterRenders: [UUID: Task<Void, Never>] = [:]
+    /// 描画の道具を開いている（2026-11-09）。開いている間は足元・並び・ひとことを隠し、**写真の上の指は全部描く面が受ける**
+    /// （文字・札・写真の操作は効かない＝誤って掴まない）
+    @State private var drawMode = false
+    /// いまの筆（筆・色・筆ごとの太さ）。画面の間だけ持つ
+    @State private var pen = StoryPen()
+    /// いま描いている1本の置き場。**持つだけで購読しない**（`StoryLiveStroke` の注記）
+    @State private var liveStroke = StoryLiveStroke()
+    /// 取り消し・やり直しの触覚
+    @State private var drawHistoryTick = 0
     /// 取り込んだ動画の一時ファイルの持ち主。この画面が本当に無くなったとき(閉じた・やめた)に消す
     @StateObject private var videoTemp = StoryVideoTempHolder()
     /// その待ちの仕事。🔴 **閉じた・下書きに保存した・画面が消えたら取り消す**（`stopWaitingToPost`）。
@@ -192,7 +212,7 @@ struct StoryComposerView: View {
     }
 
     private var preview: Image? {
-        shots.indices.contains(current) ? shots[current].preview : nil
+        shots.indices.contains(current) ? shots[current].shownPreview : nil
     }
 
     /// いま編集している写真の大きさ（文字を焼き込みと同じ基準で置くため）
@@ -232,7 +252,8 @@ struct StoryComposerView: View {
                         framings: shots.map(\.framing), votes: shots.map(\.vote),
                         caption: caption, location: place.location, song: song,
                         durationSec: durationSec, archive: keepInArchive,
-                        allowReplies: allowReplies)
+                        allowReplies: allowReplies, filters: shots.map(\.filter),
+                        drawings: shots.map(\.drawing))
     }
 
     /// ✕ と下へ払うのを通すか（`UnsavedLeave`）
@@ -292,6 +313,8 @@ struct StoryComposerView: View {
                 }
         case .compose:
             composer
+                // 動画の切り取り（2026-11-09）。長い修飾子の鎖（`composer`）に足さず、外に付ける
+                .sheet(isPresented: trimSheetShown) { trimSheet }
         }
     }
 
@@ -309,7 +332,7 @@ struct StoryComposerView: View {
                     photoArea
                         .dynamicTypeSize(...StoryViewerView.chromeTypeLimit)
                         .ignoresSafeArea(edges: .top)
-                    if !votePanelOpen {
+                    if !votePanelOpen && !sidePanelOpen {
                         footer
                             .dynamicTypeSize(...StoryViewerView.chromeTypeLimit)
                             // 打っている間は**隠すだけ**（枠の大きさは変えない——変えると写真の枠が伸びて、
@@ -787,7 +810,9 @@ struct StoryComposerView: View {
                             // 欄が先に取って動かせなかった）
                             underOverlays: AnyView(captionLayer),
                             songArt: songArt,
-                            songStickersCovered: songStickersCovered)
+                            songStickersCovered: songStickersCovered,
+                            drawingStrokes: shots[current].drawing.strokes,
+                            liveStroke: liveStroke)
             } else {
                 // 写真を読めなかった1枚（並びには居る）。黒のまま
                 Color.black
@@ -811,12 +836,12 @@ struct StoryComposerView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if showCaptionHint && typingId == nil && !draggingOverlay && !votePanelOpen && !captionShown {
+            if showCaptionHint && typingId == nil && !draggingOverlay && !votePanelOpen && !sidePanelOpen && !captionShown {
                 captionHint
             }
         }
         .overlay(alignment: .bottomLeading) {
-            if typingId == nil && !votePanelOpen && preview != nil {
+            if typingId == nil && !votePanelOpen && !sidePanelOpen && preview != nil {
                 mediaStrip
                     .padding(.leading, 16)
                     .padding(.bottom, 20)
@@ -828,7 +853,7 @@ struct StoryComposerView: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if typingId == nil && !votePanelOpen && preview != nil && (shots.count > 1 || currentClip != nil) {
+            if typingId == nil && !votePanelOpen && !sidePanelOpen && preview != nil && (shots.count > 1 || currentClip != nil) {
                 // 何枚目か（等幅）。表示秒数は右上の「…」へ移した。動画の1本は長さの札を上に重ねる（札 #500）
                 VStack(alignment: .trailing, spacing: 6) {
                     if let clip = currentClip { videoBadge(clip) }
@@ -841,6 +866,32 @@ struct StoryComposerView: View {
                     .opacity(draggingOverlay ? 0 : 1)
                     .allowsHitTesting(!draggingOverlay)
                 .accessibilityHidden(draggingOverlay)
+            }
+        }
+        // 描く面（2026-11-09）。写真の上に全面で重ね、指を全部受ける（下の文字・札・写真の操作は効かない）
+        .overlay {
+            if drawMode && typingId == nil && !votePanelOpen && shots.indices.contains(current) {
+                StoryDrawingSurface(pen: pen, imageSize: previewSize, drawing: shots[current].drawing,
+                                    others: otherDrawingTotals,
+                                    live: liveStroke,
+                                    onCommit: { stroke in commitStroke(stroke) },
+                                    onLimit: { drawLimitReached() })
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if drawMode && typingId == nil && !votePanelOpen && shots.indices.contains(current) {
+                StoryDrawPanel(pen: $pen)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if filterPanelOpen && typingId == nil && !votePanelOpen && shots.indices.contains(current) {
+                StoryFilterPanel(choice: filterBinding, swatches: filterSwatches)
+                    // 見本は、欄を開いたとき・写真が替わったときに作る（開いていない間は作らない）
+                    .task(id: shots[current].id) { await loadFilterSwatches() }
+                    // 札を運んでいる間は隠す（下のゴミ箱が欄の下に隠れた・投票の欄と同じ）
+                    .opacity(draggingOverlay ? 0 : 1)
+                    .allowsHitTesting(!draggingOverlay)
+                    .accessibilityHidden(draggingOverlay)
             }
         }
         .overlay(alignment: .bottom) {
@@ -1075,7 +1126,7 @@ struct StoryComposerView: View {
     /// ——札が欄より上で指を取る（描く順も同じなので、札は欄の文字の上に重なって見える）
     @ViewBuilder
     private var captionLayer: some View {
-        if typingId == nil && !votePanelOpen && preview != nil {
+        if typingId == nil && !votePanelOpen && !sidePanelOpen && preview != nil {
             captionBlock
                 .padding(.leading, 36)
                 .padding(.trailing, 70)
@@ -1377,25 +1428,46 @@ struct StoryComposerView: View {
         HStack {
             // **閉じる。** この段は写真がある間だけ出るので、前の ✕ と同じ確認（下書きに保存しますか）を通す。
             // 写真を全部外すと、ここを押さなくても写真を選ぶ段へ戻る
-            Button {
-                switch StorySimpleRules.close(leave) {
-                case .closeClearingAutoDraft: closeWithoutChanges()
-                case .confirm: showLeaveConfirm = true
-                case .stay: break
+            // 描いている間は ✕ を隠して取り消し・やり直しを置く（描いた線を誤って閉じて失わない・2026-11-09）
+            if drawMode {
+                drawHistoryButtons
+            } else {
+                Button {
+                    switch StorySimpleRules.close(leave) {
+                    case .closeClearingAutoDraft: closeWithoutChanges()
+                    case .confirm: showLeaveConfirm = true
+                    case .stay: break
+                    }
+                } label: {
+                    // 押すと画面ごと閉じる（確認つき）ので、見た目は ✕・読み上げは「閉じる」
+                    Image(systemName: "xmark")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .jpGlass(in: Circle())
                 }
-            } label: {
-                // 押すと画面ごと閉じる（確認つき）ので、見た目は ✕・読み上げは「閉じる」
-                Image(systemName: "xmark")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .jpGlass(in: Circle())
+                .buttonStyle(.plain)
+                .disabled(leave == .wait)
+                .accessibilityLabel(Labels.Common.close)
             }
-            .buttonStyle(.plain)
-            .disabled(leave == .wait)
-            .accessibilityLabel(Labels.Common.close)
             Spacer()
-            if votePanelOpen {
+            if drawMode {
+                // 描画を終える（欄の間は投稿ボタンが隠れるので、閉じる口を見える所に出す・投票の欄と同じ）。
+                // 描かずに進む道でもある（読み上げでは描けない）
+                Button { drawMode = false } label: {
+                    Text(L("完了", "Done"))
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(WebTheme.accentText)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 36)
+                        .background(WebTheme.accentBackground, in: Capsule())
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("描画を終える", "Finish drawing"))
+                .accessibilityIdentifier("story.draw.done")
+            } else if votePanelOpen {
                 // 投票の欄を閉じる（欄の間は投稿ボタンが隠れるので、閉じる口を見える所に出す）
                 Button { voteSelected = false } label: {
                     Text(L("完了", "Done"))
@@ -1409,6 +1481,21 @@ struct StoryComposerView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("投票の編集を終える", "Finish editing poll"))
+            } else if filterPanelOpen {
+                // フィルターの欄を閉じる（欄の間は投稿ボタンが隠れるので、閉じる口を見える所に出す・投票の欄と同じ）
+                Button { filterPanelOpen = false } label: {
+                    Text(L("完了", "Done"))
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(WebTheme.accentText)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 36)
+                        .background(WebTheme.accentBackground, in: Capsule())
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("フィルターを終える", "Finish choosing a filter"))
+                .accessibilityIdentifier("story.filter.done")
             } else if captionFocused {
                 // ひとことのキーボードを閉じる（複数行なので Return では閉じない）
                 Button { captionFocused = false } label: {
@@ -1424,9 +1511,36 @@ struct StoryComposerView: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                moreMenu
+                HStack(spacing: 8) {
+                    // 2026-11-09: フィルター（写真は段 2a・動画は段 2b。動画は作る画面では表紙の1コマにかけて見せ、
+                    // 送るときに全コマへかける）
+                    filterButton
+                    drawButton
+                    moreMenu
+                }
             }
         }
+    }
+
+    /// 上の「フィルター」（ガラスの丸・44）。かけているときは白い点（写真の上なので真鍮は置かない）
+    private var filterButton: some View {
+        let active = shots.indices.contains(current) && !shots[current].filter.isNone
+        return Button { openFilters() } label: {
+            Image(systemName: "camera.filters")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .jpGlass(in: Circle())
+                .overlay(alignment: .topTrailing) {
+                    if active {
+                        Circle().fill(Color.white).frame(width: 8, height: 8).offset(x: -8, y: 8)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("フィルター", "Filters"))
+        .accessibilityValue(active ? L("かけています", "On") : "")
+        .accessibilityIdentifier("story.filterButton")
     }
 
     /// 右上の「…」。前は右の列（表示秒数・合わせ方を戻す）・右下の札（表示秒数）・右上（下書き保存）に
@@ -1439,6 +1553,15 @@ struct StoryComposerView: View {
                     durationOptions
                 } label: {
                     Label(L("表示秒数（\(durationSec) 秒）", "Duration (\(durationSec)s)"), systemImage: "timer")
+                }
+            }
+            // 動画の切り取り（2026-11-09）。長さの札からも開く
+            if let clip = currentClip {
+                Button {
+                    openTrim()
+                } label: {
+                    Label(L("動画を切り取る（\(clip.durationLabel)）", "Trim video (\(clip.durationLabel))"),
+                          systemImage: "scissors")
                 }
             }
             // 写真を拡大・移動・回転したら、元へ戻す口（2026-10-29 から**ここだけ**。写真の2回押しで戻すのは
@@ -1771,7 +1894,7 @@ struct StoryComposerView: View {
     private var songStickersCovered: Bool {
         showAudience || showStickerTray || showSongPicker || showSongStart || showCamera || showLibrary
             || typingId != nil || votePanelOpen || showPlaceEditor || showRestoreAuto || showRestore
-            || showPendingFailure || showLeaveConfirm || showDrafts || showSaveChoice
+            || showPendingFailure || showLeaveConfirm || showDrafts || showSaveChoice || trimmingShotId != nil
     }
 
     /// 付けた曲を流さない覆い（シート・カメラ・写真選び）。曲の札の動きを止める `songStickersCovered` の
@@ -1779,7 +1902,7 @@ struct StoryComposerView: View {
     /// 下書きの一覧（`showDrafts`・#400）も別の画面なので数える（2026-10-29 統合の見直し）
     private var songAudioCovered: Bool {
         showAudience || showStickerTray || showSongPicker || showSongStart || showCamera || showLibrary
-            || showDrafts
+            || showDrafts || trimmingShotId != nil
     }
 
     /// 付けた曲の鳴らす中身（鳴らせない曲なら nil）
@@ -1991,7 +2114,8 @@ struct StoryComposerView: View {
             // 投票の欄を打っている間も移らない（移ると欄が閉じてキーボードも消えた）
             // 札とスタンプのトレイ（閉じてから置く `pendingPick` の間も）・曲を選ぶシートを開いている間も
             // 移らない（選んだ札や曲の札が、開いたときの写真でなく届いた写真に置かれた）
-            if typingId == nil && !votePanelOpen && !showStickerTray && pendingPick == nil && !showSongPicker {
+            if typingId == nil && !votePanelOpen && !showStickerTray && pendingPick == nil && !showSongPicker
+                && trimmingShotId == nil {
                 current = shots.count - 1
             }
             self.message = nil
@@ -2020,10 +2144,21 @@ struct StoryComposerView: View {
             shots.append(shot)
             startThumb(for: shot)
             // 写真の `accept` と同じ（打っている間・トレイを開いている間は移らない）
-            if typingId == nil && !votePanelOpen && !showStickerTray && pendingPick == nil && !showSongPicker {
+            if typingId == nil && !votePanelOpen && !showStickerTray && pendingPick == nil && !showSongPicker
+                && trimmingShotId == nil {
                 current = shots.count - 1
             }
             self.message = nil
+            // 60 秒を超える動画は先頭の 60 秒を選んである。**切り取りの画面をすぐ開いて**範囲を選ばせる
+            // （2026-11-09・以前は断っていた）。何本か同時に入れたときは先の1本だけ開き、残りは知らせで言う
+            if imported.clip.durationSec > StoryVideoRules.maxSeconds + 0.5 {
+                if trimmingShotId == nil, typingId == nil, !votePanelOpen, !showStickerTray, pendingPick == nil,
+                   !showSongPicker, !showCamera {
+                    trimmingShotId = shot.id
+                }
+                message = L("60秒を超える動画は、先頭の60秒を残してあります。「切り取り」で範囲を選べます",
+                            "Videos over 60 seconds keep their first 60 seconds. Use Trim to choose a different part")
+            }
         } catch {
             discard(imported.clip)
             message = StoryVideoRules.Problem.importFailed.message
@@ -2313,20 +2448,246 @@ struct StoryComposerView: View {
         shots.indices.contains(current) ? shots[current].video : nil
     }
 
-    /// 動画の長さの札（写真の上なので白・黒 45% の丸い札。撮影地の札 `photoChip` と同じ寸法）
+    /// 動画の長さの札（写真の上なので白・黒 45% の丸い札。撮影地の札 `photoChip` と同じ寸法）。
+    /// **押すと切り取りの画面が開く**（2026-11-09）。長さは切ったあとの長さ。見た目は 30 のまま、当たりは 44
     private func videoBadge(_ clip: StoryVideoClip) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "video.fill").font(JPFont.footnote)
-            Text(clip.durationLabel).font(JPFont.footnote)
+        Button { openTrim() } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "scissors").font(JPFont.footnote)
+                Text(clip.durationLabel).font(JPFont.footnote)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, JPSpace.s)
+            .frame(minHeight: Self.chipHeight)
+            .background(Color.black.opacity(Self.chipFill), in: Capsule())
+            .frame(minHeight: WebTheme.minTapTarget)
+            .contentShape(Rectangle())
         }
-        .foregroundStyle(.white)
-        .padding(.horizontal, JPSpace.s)
-        .frame(minHeight: Self.chipHeight)
-        .background(Color.black.opacity(Self.chipFill), in: Capsule())
-        .accessibilityElement(children: .ignore)
+        .buttonStyle(.plain)
         .accessibilityLabel(L("動画 \(clip.durationLabel)", "Video \(clip.durationLabel)"))
+        .accessibilityHint(L("押すと動画を切り取ります", "Opens trim"))
         .accessibilityIdentifier("story.videoBadge")
-        .allowsHitTesting(false)
+    }
+
+    // MARK: - 動画の切り取り（2026-11-09）
+
+    private var trimSheetShown: Binding<Bool> {
+        Binding(get: { trimmingShotId != nil },
+                set: { shown in if !shown { trimmingShotId = nil } })
+    }
+
+    /// 見ている動画の切り取りを開く
+    private func openTrim() {
+        guard shots.indices.contains(current), shots[current].video != nil, !isExportingVideo else { return }
+        trimmingShotId = shots[current].id
+    }
+
+    @ViewBuilder
+    private var trimSheet: some View {
+        if let id = trimmingShotId, let clip = shots.first(where: { $0.id == id })?.video {
+            NavigationStack {
+                StoryVideoTrimSheet(clip: clip) { trim in applyTrim(trim, to: id) }
+            }
+        }
+    }
+
+    /// 選んだ範囲を動画に入れる。**書き出しは送るときに、この範囲だけを切る**（`StoryVideoPipeline.export`）。
+    /// 作る画面の絵（表紙の1コマ）は新しい始点から取り直す
+    private func applyTrim(_ trim: StoryVideoTrim, to id: UUID) {
+        guard let index = shots.firstIndex(where: { $0.id == id }), var clip = shots[index].video,
+              clip.trim != trim else { return }
+        clip.trim = trim
+        shots[index].video = clip
+        let updated = clip
+        Task { await refreshPoster(for: id, clip: updated) }
+    }
+
+    private func refreshPoster(for id: UUID, clip: StoryVideoClip) async {
+        // 先頭の黒い1コマを避ける（取り込みと同じ 0.2 秒・短ければ半分）
+        let at = clip.trim.start + min(0.2, clip.trim.length / 2)
+        guard let jpeg = await StoryVideoPipeline.poster(of: clip, at: at) else { return }
+        guard let prepared = try? await Task.detached(priority: .userInitiated, operation: {
+            try ImagePreparer.prepare(data: jpeg, fileName: "story")
+        }).value else { return }
+        // 取り直している間に外した・もう一度切ったなら入れない
+        guard let index = shots.firstIndex(where: { $0.id == id }), shots[index].video?.trim == clip.trim else { return }
+        shots[index].prepared = prepared
+        shots[index].preview = UIImage(data: prepared.data).map { Image(uiImage: $0) }
+        startThumb(for: shots[index])
+        // 表紙が替わったので、フィルターをかけた絵と帯の見本も作り直す（段 2b）
+        if filterSwatchesShotId == id { filterSwatchesShotId = nil }
+        if !shots[index].filter.isNone { renderFilteredPreview(shot: id) }
+    }
+
+    // MARK: - 描画（2026-11-09）
+
+    /// 上の「描画」（ガラスの丸・44）。線を描いてあるときは白い点（写真の上なので真鍮は置かない）。
+    /// 読み上げでは描けないので、説明を添える（描かずに進める・「完了」で戻れる）
+    private var drawButton: some View {
+        let active = shots.indices.contains(current) && shots[current].drawing.hasInk
+        return Button { openDraw() } label: {
+            Image(systemName: "pencil.tip.crop.circle")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .jpGlass(in: Circle())
+                .overlay(alignment: .topTrailing) {
+                    if active {
+                        Circle().fill(Color.white).frame(width: 8, height: 8).offset(x: -8, y: 8)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("描画", "Draw"))
+        .accessibilityValue(active ? L("描いてあります", "Has a drawing") : "")
+        .accessibilityHint(L("写真に絵や文字を描きます。指でなぞって描くので、読み上げでは描けません。描かずに進めます",
+                             "Draw on the photo with your finger. This can't be done with VoiceOver. You can continue without drawing"))
+        .accessibilityIdentifier("story.drawButton")
+    }
+
+    /// 描いている間の上の左: 取り消し・やり直し（ガラスの丸・44）。描いた線が無い・取り消した線が無いときは押せない
+    private var drawHistoryButtons: some View {
+        let drawing = shots.indices.contains(current) ? shots[current].drawing : StoryDrawing.empty
+        return HStack(spacing: 8) {
+            Button { undoDrawing() } label: {
+                Image(systemName: "arrow.uturn.backward")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .jpGlass(in: Circle())
+                    .opacity(drawing.canUndo ? 1 : 0.4)
+            }
+            .buttonStyle(.plain)
+            .disabled(!drawing.canUndo)
+            .accessibilityLabel(L("取り消す", "Undo"))
+            .accessibilityIdentifier("story.draw.undo")
+            Button { redoDrawing() } label: {
+                Image(systemName: "arrow.uturn.forward")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .jpGlass(in: Circle())
+                    .opacity(drawing.canRedo ? 1 : 0.4)
+            }
+            .buttonStyle(.plain)
+            .disabled(!drawing.canRedo)
+            .accessibilityLabel(L("やり直す", "Redo"))
+            .accessibilityIdentifier("story.draw.redo")
+        }
+        .sensoryFeedback(.impact(weight: .light), trigger: drawHistoryTick)
+    }
+
+    private func openDraw() {
+        guard shots.indices.contains(current), typingId == nil, !isExportingVideo else { return }
+        captionFocused = false
+        voteSelected = false
+        filterPanelOpen = false
+        drawMode = true
+    }
+
+    /// 描き終えた1本を、見ている写真の描画に足す（上限なら足さず知らせる）
+    private func commitStroke(_ stroke: StoryStroke) {
+        guard shots.indices.contains(current) else { return }
+        let others = otherDrawingTotals
+        // 並び全体の上限（下書きの大きさ・`StoryDrawing.maxSequencePoints`）も守る
+        guard shots[current].drawing.canStartStroke(others: others),
+              shots[current].drawing.remainingPoints(forStrokeWith: stroke.points.count, others: others) >= 0,
+              others.points + shots[current].drawing.totalPoints + stroke.points.count <= StoryDrawing.maxSequencePoints
+        else { drawLimitReached(); return }
+        if !shots[current].drawing.add(stroke) { drawLimitReached() }
+    }
+
+    /// 見ている写真以外の本数・点の数（並び全体の上限に数える）
+    private var otherDrawingTotals: (strokes: Int, points: Int) {
+        var strokes = 0, points = 0
+        for (index, shot) in shots.enumerated() where index != current {
+            strokes += shot.drawing.strokes.count
+            points += shot.drawing.totalPoints
+        }
+        return (strokes, points)
+    }
+
+    private func drawLimitReached() {
+        message = L("これ以上は描けません。取り消すか、消しゴムで消してください",
+                    "No more room to draw. Undo, or erase part of the drawing")
+    }
+
+    private func undoDrawing() {
+        guard shots.indices.contains(current), shots[current].drawing.canUndo else { return }
+        shots[current].drawing.undo()
+        drawHistoryTick += 1
+    }
+
+    private func redoDrawing() {
+        guard shots.indices.contains(current), shots[current].drawing.canRedo else { return }
+        shots[current].drawing.redo()
+        drawHistoryTick += 1
+    }
+
+    // MARK: - フィルター（2026-11-09・段 2a は写真）
+
+    /// 作る画面の絵を描く大きさ（長い辺・画素）。画面の幅 × 3 に足りる
+    private static let filterPreviewPixels = 1440
+
+    /// 見ている写真の「フィルター」の選び（写真ごと）。**書き換えたら絵を描き直す**
+    private var filterBinding: Binding<StoryFilterChoice> {
+        Binding(get: { shots.indices.contains(current) ? shots[current].filter : .off },
+                set: { applyFilter($0) })
+    }
+
+    private func openFilters() {
+        guard shots.indices.contains(current), typingId == nil, !isExportingVideo else { return }
+        captionFocused = false
+        voteSelected = false
+        filterPanelOpen = true
+    }
+
+    private func applyFilter(_ choice: StoryFilterChoice) {
+        guard shots.indices.contains(current) else { return }
+        let clean = choice.sanitized
+        guard shots[current].filter != clean else { return }
+        shots[current].filter = clean
+        renderFilteredPreview(shot: shots[current].id)
+    }
+
+    /// 写真の絵にフィルターをかけて、作る画面の絵にする（主スレッドの外で描く）。
+    /// 選び直したら前の仕事は取り消し、描き終えたとき選びが変わっていたら入れない
+    private func renderFilteredPreview(shot id: UUID) {
+        guard let index = shots.firstIndex(where: { $0.id == id }) else { return }
+        filterRenders[id]?.cancel()
+        let choice = shots[index].filter
+        let recipe = choice.recipe
+        guard !recipe.isIdentity else {
+            shots[index].filteredPreview = nil
+            filterRenders[id] = nil
+            return
+        }
+        let data = shots[index].prepared.data
+        let pixels = Self.filterPreviewPixels
+        filterRenders[id] = Task {
+            let image = await Task.detached(priority: .userInitiated) {
+                StoryFilterRenderer.image(data: data, recipe: recipe, maxPixelSize: pixels)
+            }.value
+            guard !Task.isCancelled, let image,
+                  let position = shots.firstIndex(where: { $0.id == id }), shots[position].filter == choice else { return }
+            shots[position].filteredPreview = Image(uiImage: image)
+        }
+    }
+
+    /// 帯の見本を、いまの写真から作る（欄を開いたとき・写真が替わったとき）。同じ写真ならもう一度作らない
+    private func loadFilterSwatches() async {
+        guard shots.indices.contains(current) else { return }
+        let id = shots[current].id
+        if filterSwatchesShotId == id, !filterSwatches.isEmpty { return }
+        let data = shots[current].prepared.data
+        let made = await Task.detached(priority: .userInitiated) {
+            StoryFilterRenderer.swatches(data: data, maxPixelSize: 200)
+        }.value
+        guard !Task.isCancelled else { return }
+        var images: [String: Image] = [:]
+        for (key, value) in made { images[key] = Image(uiImage: value) }
+        filterSwatches = images
+        filterSwatchesShotId = id
     }
 
     /// カメラを先頭に出す（`startsWithCamera`）。**下書き・送れなかった残りの問いが出ているときは出さない**。
@@ -2361,6 +2722,14 @@ struct StoryComposerView: View {
                 Text(L("動画を準備しています", "Preparing the video"))
                     .font(JPFont.footnote)
                     .foregroundStyle(.white)
+                // フィルターをかけた動画は、全コマへかけるぶん時間が延びる（段 2b）
+                if shots.contains(where: { $0.video != nil && !$0.filter.isNone }) {
+                    Text(L("フィルターをかけています。少し時間がかかります", "Applying the filter. This takes a little longer"))
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text2)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                }
                 Button(L("やめる", "Cancel")) { stopWaitingToPost() }
                     .jpPillButton(.outline)
                     .accessibilityIdentifier("story.export.cancel")
@@ -2383,7 +2752,9 @@ struct StoryComposerView: View {
                                       coords: shot.prepared.coords,
                                       overlays: shot.overlays,
                                       framing: shot.framing.isIdentity ? nil : shot.framing,
-                                      vote: shot.vote)
+                                      vote: shot.vote,
+                                      filter: shot.filter,
+                                      drawing: shot.drawing)
         }
     }
 
@@ -2491,9 +2862,12 @@ struct StoryComposerView: View {
                                                   exif: nil, coords: item.shot.coords, takenOn: nil)
             return StoryShot(prepared: restored, image: UIImage(data: item.data),
                              overlays: item.shot.overlays, framing: item.shot.framing ?? .identity,
-                             vote: item.shot.vote)
+                             vote: item.shot.vote, filter: (item.shot.filter ?? StoryFilterChoice.off).sanitized,
+                             drawing: item.shot.drawing ?? StoryDrawing.empty)
         }
         shots.forEach(startThumb(for:))
+        // フィルターをかけてあった写真は、作る画面の絵も描き直す（下書きは元の画素のまま持つ）
+        for shot in shots where !shot.filter.isNone { renderFilteredPreview(shot: shot.id) }
         current = 0
         // 古い下書き（字で数えていた頃）は 200 単位を超えていることがある。欄は超えたぶんを
         // 減らす変更しか受けないので、読み込むときに一度だけ収める
@@ -2545,6 +2919,12 @@ struct StoryComposerView: View {
     private struct ExportedVideos {
         var urls: [UUID: URL]
         var overlays: [UUID: [TextOverlay]]
+        /// 書き出したときの切り取り範囲（切り直しの検出用・2026-11-09）
+        var trims: [UUID: StoryVideoTrim] = [:]
+        /// 書き出したときのフィルター（かけ直しの検出用・段 2b）
+        var filters: [UUID: StoryFilterChoice] = [:]
+        /// 書き出したときの描画（描き足し・消しの検出用）
+        var drawings: [UUID: StoryDrawing] = [:]
     }
 
     /// 係が片付いていないときの言い分(送っている最中か、失敗した残りを持っているか)
@@ -2611,7 +2991,12 @@ struct StoryComposerView: View {
         // **書き出している間は編集を止める**(`exportOverlay`)
         if hasVideoShot {
             let videoShots = shots.filter { $0.video != nil }
-            let matches = exported.map { done in videoShots.allSatisfy { done.overlays[$0.id] == $0.overlays } } ?? false
+            let matches = exported.map { done in
+                videoShots.allSatisfy {
+                    done.overlays[$0.id] == $0.overlays && done.trims[$0.id] == $0.video?.trim
+                        && done.filters[$0.id] == $0.filter && done.drawings[$0.id] == $0.drawing
+                }
+            } ?? false
             let check = StoryVideoRules.exportCheck(videoShots: videoShots.map(\.id),
                                                     exported: Set(exported?.urls.keys.map { $0 } ?? []),
                                                     overlaysMatch: matches)
@@ -2631,15 +3016,20 @@ struct StoryComposerView: View {
                 isWaitingForSpots = true
                 isExportingVideo = true
                 message = L("動画を準備しています", "Preparing the video")
-                let targets = videoShots.map { ($0.id, $0.video!, $0.overlays) }
+                let targets = videoShots.map { ($0.id, $0.video!, $0.overlays, $0.filter, $0.drawing) }
+                // 切り取りの範囲は clip の中（`clip.trim`）。書き出したときの範囲を控えて、送る直前に食い違いを見る
                 let art = songArt
                 spotWait?.cancel()
                 spotWait = Task {
                     var done = ExportedVideos(urls: [:], overlays: [:])
                     do {
-                        for (id, clip, overlays) in targets {
-                            done.urls[id] = try await StoryVideoPipeline.export(clip, overlays: overlays, song: art)
+                        for (id, clip, overlays, filter, drawing) in targets {
+                            done.urls[id] = try await StoryVideoPipeline.export(clip, overlays: overlays, song: art,
+                                                                                filter: filter, drawing: drawing)
                             done.overlays[id] = overlays
+                            done.trims[id] = clip.trim
+                            done.filters[id] = filter
+                            done.drawings[id] = drawing
                         }
                     } catch {
                         for url in done.urls.values { try? FileManager.default.removeItem(at: url) }
@@ -2678,9 +3068,9 @@ struct StoryComposerView: View {
                 // 曲の札は作る画面と同じ形・同じジャケットで焼く（読めていなければ ♪ の四角・画面と同じ）
                 // 動画の1本は表紙の1コマをそのまま持つ（重ねは書き出した動画に焼いてある）
                 imageData: shot.video != nil
-                    ? shot.prepared.data
+                    ? StoryFilterRenderer.coverData(shot.prepared.data, filter: shot.filter)
                     : TextOverlayRenderer.burn(shot.overlays, framing: shot.framing, into: shot.prepared.data,
-                                               song: songArt),
+                                               song: songArt, filter: shot.filter, drawing: shot.drawing),
                 caption: caption, location: placeText, coords: shotCoords,
                 song: song, durationSec: durationSec, archive: keepInArchive,
                 allowReplies: allowReplies,
@@ -2760,10 +3150,23 @@ struct StoryShot: Identifiable {
     /// 動画の1本（札 #500）。**`prepared` は表紙の1コマ**——作る画面はこの絵の上に文字・札・曲を置き、
     /// 送るときに動画の全コマの上へ焼き込む（`StoryVideoPipeline.export`）。写真なら nil
     var video: StoryVideoClip?
+    /// フィルター（2026-11-09・写真ごと・既定は「なし」）。**書き出しで写真の画素にだけ当てる**（`TextOverlayRenderer.burn`）
+    var filter: StoryFilterChoice = .off
+    /// フィルターをかけた作る画面の絵（長い辺 1440）。かけていなければ nil（`preview` のまま）。
+    /// 描き終えるまでは前の絵を残す（ちらつかせない）
+    var filteredPreview: Image?
+    /// 描画（ペン・蛍光ペン・消しゴムの線・2026-11-09）。写真ごと。**書き出しで写真の上・文字と札の下に焼く**
+    var drawing: StoryDrawing = .empty
+
+    /// 作る画面に出す絵（フィルターをかけていればその絵）
+    var shownPreview: Image? { filteredPreview ?? preview }
 
     init(prepared: ImagePreparer.Prepared, image: UIImage?, overlays: [TextOverlay] = [],
-         framing: PhotoFraming = .identity, vote: StoryVoteDraft? = nil, video: StoryVideoClip? = nil) {
+         framing: PhotoFraming = .identity, vote: StoryVoteDraft? = nil, video: StoryVideoClip? = nil,
+         filter: StoryFilterChoice = .off, drawing: StoryDrawing = .empty) {
         self.video = video
+        self.filter = filter
+        self.drawing = drawing
         self.prepared = prepared
         self.preview = image.map { Image(uiImage: $0) }
         self.imageSize = image?.size
@@ -2792,4 +3195,8 @@ struct StoryComposerContent: Equatable {
     var archive: Bool
     /// 前の版の呼び手・テストは持たない（既定の「許可」）
     var allowReplies: Bool = true
+    /// 写真ごとのフィルター（2026-11-09）。前の呼び手・テストは持たない（どれも「なし」）
+    var filters: [StoryFilterChoice] = []
+    /// 写真ごとの描画（2026-11-09）。線だけを比べる（やり直しの控えは数えない）。前の呼び手・テストは持たない
+    var drawings: [StoryDrawing] = []
 }
