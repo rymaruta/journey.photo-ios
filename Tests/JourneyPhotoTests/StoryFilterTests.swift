@@ -165,10 +165,10 @@ final class StoryFilterTests: XCTestCase {
 
     func testComposerWiresTheFilter() async throws {
         let composer = try repo("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
-        XCTAssertTrue(composer.contains("song: songArt, filter: shot.filter),"), "投稿の焼き込みにフィルターを渡していない")
-        XCTAssertTrue(composer.contains("vote: shot.vote,\n                                      filter: shot.filter)"), "下書きにフィルターを書いていない")
-        XCTAssertTrue(composer.contains("filter: (item.shot.filter ?? StoryFilterChoice.off).sanitized)"), "下書きからフィルターを戻していない")
-        XCTAssertTrue(composer.contains("filters: shots.map(\\.filter))"), "フィルターを変えても「変更あり」にならない")
+        XCTAssertTrue(composer.contains("song: songArt, filter: shot.filter, drawing: shot.drawing),"), "投稿の焼き込みにフィルターを渡していない")
+        XCTAssertTrue(composer.contains("vote: shot.vote,\n                                      filter: shot.filter,"), "下書きにフィルターを書いていない")
+        XCTAssertTrue(composer.contains("filter: (item.shot.filter ?? StoryFilterChoice.off).sanitized,"), "下書きからフィルターを戻していない")
+        XCTAssertTrue(composer.contains("filters: shots.map(\\.filter),"), "フィルターを変えても「変更あり」にならない")
         XCTAssertTrue(composer.contains("shots.indices.contains(current) ? shots[current].shownPreview : nil"),
                       "作る画面がフィルターをかけた絵を出さない")
         XCTAssertFalse(composer.contains("if currentClip == nil { filterButton }"), "動画（段 2b）にフィルターの口が出ない")
