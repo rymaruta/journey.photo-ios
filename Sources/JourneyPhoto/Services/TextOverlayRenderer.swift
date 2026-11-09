@@ -28,10 +28,18 @@ enum TextOverlayRenderer {
     /// 作る画面と同じ絵の止まった形）。無ければ曲の札も文字で焼く（前の版と同じ）
     static func burn(_ overlays: [TextOverlay], framing: PhotoFraming = .identity, into data: Data,
                      quality: Double = ImagePreparer.jpegQuality,
-                     song: SongStickerPainter.Art? = nil) -> Data {
+                     song: SongStickerPainter.Art? = nil,
+                     filter: StoryFilterChoice = .off) -> Data {
         let visible = overlays.filter { !$0.isEmpty }
-        guard !visible.isEmpty || !framing.isIdentity, let image = UIImage(data: data) else { return data }
-        let size = image.size
+        let recipe = filter.recipe
+        guard !visible.isEmpty || !framing.isIdentity || !recipe.isIdentity,
+              let original = UIImage(data: data) else { return data }
+        let size = original.size
+        // 2026-11-09（段 2a）: フィルターは**写真の画素だけ**に当てる（文字・札は上に重ねる）。枠（`size`）は元のまま——
+        // 当てた絵の大きさが1画素ずれても、元の枠に描くので文字の位置は変わらない。
+        // 当てられなかったとき（読めない）は元の絵のまま出す（落とさない）
+        let image = StoryFilterRenderer.image(data: data, recipe: recipe, maxPixelSize: ImagePreparer.maxPixelSize)
+            ?? original
         guard size.width > 0, size.height > 0 else { return data }
 
         // 🔴 **倍率は 1 に固定する。** 既定の書式は端末の画面の倍率（3x）を
