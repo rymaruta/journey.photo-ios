@@ -344,7 +344,7 @@ final class StoryDrawingTests: XCTestCase {
         XCTAssertEqual(burned.x, 540, accuracy: 0.2)
         XCTAssertEqual(burned.y, 960, accuracy: 0.2)
         XCTAssertNil(StoryDrawingGeometry.normalized(CGPoint(x: 1, y: 1), in: .zero))
-        XCTAssertNil(StoryDrawingGeometry.normalized(CGPoint(x: .nan, y: 1), in: rect))
+        XCTAssertNil(StoryDrawingGeometry.normalized(CGPoint(x: CGFloat.nan, y: 1), in: rect))
         // 小数4桁に丸める
         let rounded = try XCTUnwrap(StoryDrawingGeometry.normalized(CGPoint(x: 1, y: 1), in: CGRect(x: 0, y: 0, width: 3, height: 3)))
         XCTAssertEqual(rounded.x, 0.3333, accuracy: 1e-12)
