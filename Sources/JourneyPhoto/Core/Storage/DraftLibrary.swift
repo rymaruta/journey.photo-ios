@@ -448,7 +448,9 @@ final class DraftLibrary: ObservableObject {
                 guard let data = try? Data(contentsOf: source.imageURL(shot)) else { return nil }
                 return StoryDraftStore.ShotInput(imageData: data, fileName: shot.fileName, contentType: shot.contentType,
                                                  coords: shot.coords, overlays: shot.overlays,
-                                                 framing: shot.framing, vote: shot.vote)
+                                                 framing: shot.framing, vote: shot.vote,
+                                                 // 複製でフィルターを落とさない（2026-11-09）
+                                                 filter: shot.filter ?? StoryFilterChoice.off)
             }
             guard !inputs.isEmpty else { return nil }
             ok = storyStore(.entry(newId), userId: userId).save(

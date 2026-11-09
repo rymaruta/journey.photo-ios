@@ -287,6 +287,24 @@ final class MultiDraftsTests: XCTestCase {
         XCTAssertEqual(entries.first { $0.id == copy }?.photoCount, 2)
     }
 
+    /// 複製・開き直しでフィルターが残る（複製がフィルターを落とすと、開いたら色が戻っていた）
+    func testDuplicateKeepsTheStoryFilter() async throws {
+        let id = UUID().uuidString
+        let store = stories(.entry(id), user: "a")
+        XCTAssertTrue(store.save(
+            shots: [StoryDraftStore.ShotInput(imageData: Data([1, 2, 3]), fileName: "s.jpg", contentType: "image/jpeg",
+                                              coords: nil, overlays: [],
+                                              filter: StoryFilterChoice(id: "dusk", strength: 0.5))],
+            caption: "", location: "", song: nil, durationSec: 5,
+            savedAt: ISO8601DateFormatter().string(from: now)))
+        let lib = library()
+        let copy = try XCTUnwrap(lib.duplicate(id, kind: .story, for: "a"))
+        lib.remove(id, for: "a")
+        let reopened = stories(.entry(copy), user: "a")
+        XCTAssertEqual(reopened.shotImages().first?.shot.filter, StoryFilterChoice(id: "dusk", strength: 0.5),
+                       "複製がフィルターを落とした")
+    }
+
     /// 起動し直して送り終えたストーリーは、同じ印の下書きだけ片づける
     func testClearStoryByStamp() async {
         let sent = saveStory("送った", ageDays: 1)
