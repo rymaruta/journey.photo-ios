@@ -12,7 +12,8 @@ struct PassEncounter: Codable, Equatable, Identifiable {
     var showsFrom: Bool
     /// すれちがった時（**時の単位に丸めてある**）
     var metHour: Date
-    /// 届く時（夕方 18 時・`PassExchange.deliveryDate`）
+    /// 届く時（すぐ届く形ならすれちがった時の「時」の始まり・夕方にまとめるなら 18 時・`PassExchange.deliveryDate`）。
+    /// **どちらも時の単位**（分は持たない）
     var deliverAt: Date
     /// 場所（市区町村の名前。取れたときだけ）
     var placeName: String?
@@ -102,6 +103,15 @@ struct PassSettings: Codable, Equatable {
     /// 近くの人に電波で渡るだけだったので、広く見える所へ黙って出さない。オンでも、すれちがいがオンで乗車券を
     /// 選んであるときだけ入る（`TrunkTicket.wanted`）。前の版の設定には無いので省略できる形
     var ticketInTrunk: Bool? = nil
+    /// 届き方（2026-11-10・設定の「夕方にまとめて受け取る」）。**nil は「すぐ」**（`deliveryMode`）。
+    ///
+    /// **2026-11-10 判断: 前の版から上げた人も「すぐ」にする（前の形を引き継がない）。** 前の版には選ぶ所が無く、
+    /// 夕方 18 時は本人が選んだ値ではなかった（設定の JSON にこの欄が無い＝選んでいない）。owner の決めた既定に
+    /// そろえる。上げた時にまだ届いていなかった夕方の分は、その場で届いた扱いにする（`PassStore.catchUpInstant`）
+    var delivery: PassExchange.Delivery? = nil
+
+    /// いまの届き方（選んでいなければ「すぐ」）
+    var deliveryMode: PassExchange.Delivery { delivery ?? .instant }
 
     /// 「発」の選び方
     enum Origin: String, CaseIterable, Identifiable {
@@ -152,7 +162,7 @@ enum PassBook {
         var tabIdentifier: String { "passBook.order.\(rawValue)" }
         var label: String {
             switch self {
-            case .bound: return L("綴じた順", "As bound")
+            case .bound: return L("受け取った順", "Received")
             case .place: return L("場所ごと", "By place")
             case .person: return L("よく会う人", "Often met")
             }
@@ -175,7 +185,8 @@ enum PassBook {
         return rest == 0 ? 0 : pageSlots - rest
     }
 
-    /// 届いたものだけ（**届く前のカードは帳にも出さない**——夕方まで「いま近くにいる」を見せない）
+    /// 届いたものだけ（**届く前のカードは帳にも出さない**——「夕方にまとめて受け取る」の人には、夕方まで見せない。
+    /// すぐ届く形のカードは綴じた時点で届いている）
     static func delivered(_ cards: [PassEncounter], now: Date) -> [PassEncounter] {
         cards.filter { $0.deliverAt <= now }
     }
@@ -227,6 +238,50 @@ enum PassBook {
         var farthestKm: Int?
     }
 
+    /// 帳の上の数の1つ（値・単位・下の字・読み上げ）
+    struct StatItem: Equatable {
+        var value: String
+        var unit: String?
+        var label: String
+        var spoken: String
+    }
+
+    /// 分からない値の印（「いちばん遠く」と「都道府県から」で同じ）
+    static let unknownValue = "—"
+
+    /// 帳の上の3つの数の見せ方。
+    ///
+    /// **2026-11-10 判断（秘書室）: 「都道府県から」が 0 のときは「0」ではなく「—」**（「いちばん遠く」と同じ）。
+    /// カードがあるのに 0 と出ると「都道府県の人から来ていない」と誤って読める。数えるのは、相手が「発」を居住地に
+    /// した（`showsFrom`）カードで、持ち主の公開プロフィールの居住地から都道府県が読めたものだけ——0 は「来ていない」
+    /// ではなく「まだ分からない」。読み上げも「まだ分かりません」と言う。
+    ///
+    /// 「発」を自分で書いたカードは数えない（`PassSettings.setOrigin(.custom)` が `showsFrom` を偽にする）。
+    /// 書いた字は本人が居住地と決めた値ではなく（旅先の名前・好きな地名でもよい）、都道府県として数えると
+    /// 本人が出していない居住地を出すことになるため、変えない（2026-11-10）。
+    /// カードが 0 枚のときは帳がこの数を出さず、空の案内（`PassBookView` の `EmptyState`）だけになる
+    static func statItems(_ stats: Stats) -> [StatItem] {
+        let cards = PassExchange.grouped(stats.cards)
+        let cardLabel = L("枚のカード", "cards")
+        let prefectureLabel = L("都道府県から", "prefectures")
+        let farLabel = L("いちばん遠く", "farthest")
+        let prefecture = stats.prefectures > 0
+            ? StatItem(value: String(stats.prefectures), unit: nil, label: prefectureLabel,
+                       spoken: L("\(stats.prefectures) 都道府県から", "From \(Plural.count(stats.prefectures, "prefecture"))"))
+            : StatItem(value: unknownValue, unit: nil, label: prefectureLabel,
+                       spoken: L("都道府県はまだ分かりません", "Prefectures not known yet"))
+        let far = stats.farthestKm.map { km in
+            StatItem(value: PassExchange.grouped(km), unit: "km", label: farLabel,
+                     spoken: L("いちばん遠く \(PassExchange.grouped(km)) キロ", "Farthest \(PassExchange.grouped(km)) km"))
+        } ?? StatItem(value: unknownValue, unit: nil, label: farLabel,
+                      spoken: L("いちばん遠くはまだ分かりません", "Farthest not known yet"))
+        return [
+            StatItem(value: cards, unit: nil, label: cardLabel,
+                     spoken: L("\(cards) 枚のカード", Plural.count(stats.cards, "card"))),
+            prefecture, far,
+        ]
+    }
+
     /// - Parameter prefectures: 持ち主 → 居住地の都道府県（**相手が出すと決めたものだけ**渡す）
     static func stats(_ cards: [PassEncounter], prefectures: [String: String]) -> Stats {
         var seen: Set<String> = []
@@ -270,4 +325,117 @@ enum PassBook {
         let counts = Dictionary(grouping: names) { $0 }.mapValues(\.count)
         return counts.max { $0.value != $1.value ? $0.value < $1.value : $0.key > $1.key }?.key
     }
+}
+
+/// すれちがい帳の頭の1行（札 #519・提案「旅の道具の置き場」第5版の仕様 1）。
+///
+/// 題は「すれちがい乗車券はオンです／オフです」、2行目は**止まっている訳を、上から先に当たったものだけ**出す:
+/// オフ → 乗車券を選んでいない → Bluetooth がオフ → Bluetooth の使用が許可されていない →
+/// 旅のあいだで家からの距離が分からない → 旅のあいだで家の近く → ふだん（「〈いつ〉 · 〈届き方〉」）。
+///
+/// 2026-11-10 判断（確かめ役の任意 C）: iPhone の設定で Bluetooth の使用を断っている人は、仕様の 6 つの
+/// どれにも当たらず「ふだん」と出ていた（交換は止まっているのに）。7 つ目として Bluetooth がオフの次に足す。
+/// 読むのは今の許可の状態だけで、**新しく OS の許可を求めない**（`PassRadio.apply` の注記）。
+///
+/// 読み込み中は作らない——帳の設定はログインのときに端末から読み終わっている（`PassStore.use(userId:)`）
+enum PassBookStatus: Equatable {
+    case off
+    case noTicket
+    case bluetoothOff
+    case bluetoothNotAllowed
+    case distanceUnknown
+    case nearHome
+    case running(PassExchange.Mode, PassExchange.Delivery)
+
+    /// 決めるのに使う事実（画面が集めて渡す・Linux で試せるように値だけ）
+    struct Facts: Equatable {
+        var enabled: Bool
+        var ticketChosen: Bool
+        /// `PassRadio.showsPowerOffNotice`（オンで電源が切れている）
+        var bluetoothPoweredOff: Bool
+        /// iPhone の設定で Bluetooth の使用を断っている（`CBManager.authorization` が denied・restricted、
+        /// または電波の管理者が `.unauthorized` を知らせてきた）
+        var bluetoothDenied: Bool
+        var mode: PassExchange.Mode
+        /// 「旅のあいだ」で家からの距離が分からない訳がある（居住地に都道府県が無い・位置情報が許可されていない）
+        var distanceReasonExists: Bool
+        /// 今日、家から離れているか（`PassStore.awayToday`・分からなければ nil）
+        var awayToday: Bool?
+        var delivery: PassExchange.Delivery
+    }
+
+    /// 上から先に当たったものを返す（順は仕様の表のとおり）
+    static func resolve(_ facts: Facts) -> PassBookStatus {
+        guard facts.enabled else { return .off }
+        guard facts.ticketChosen else { return .noTicket }
+        if facts.bluetoothPoweredOff { return .bluetoothOff }
+        if facts.bluetoothDenied { return .bluetoothNotAllowed }
+        if facts.mode == .traveling {
+            if facts.distanceReasonExists || facts.awayToday == nil { return .distanceUnknown }
+            if facts.awayToday == false { return .nearHome }
+        }
+        return .running(facts.mode, facts.delivery)
+    }
+
+    var isOn: Bool { self != .off }
+
+    /// 題
+    var title: String {
+        isOn ? L("すれちがい乗車券はオンです", "Pass tickets are on")
+             : L("すれちがい乗車券はオフです", "Pass tickets are off")
+    }
+
+    /// 2行目
+    var detail: String {
+        switch self {
+        case .off:
+            return L("オンにすると、近くにいたアプリの人と乗車券のカードを交換します",
+                     "Turn on to swap ticket cards with app users you pass nearby")
+        case .noTicket:
+            return L("乗車券を選ぶまで、交換は止まっています", "Paused until you choose your ticket")
+        case .bluetoothOff:
+            return L("Bluetooth がオフのため、交換は止まっています", "Paused because Bluetooth is off")
+        case .bluetoothNotAllowed:
+            return L("Bluetooth の使用が許可されていないため、交換は止まっています",
+                     "Paused because Bluetooth isn\u{2019}t allowed")
+        case .distanceUnknown:
+            return L("家からの距離が分からないため、今日は交換しません",
+                     "Distance from home is unknown, so no swaps today")
+        case .nearHome:
+            return L("家の近くなので、今日は交換しません", "You\u{2019}re near home, so no swaps today")
+        case .running(let mode, let delivery):
+            return "\(mode.label)\(PhotoMetaLine.separator)\(Self.deliveryLabel(delivery))"
+        }
+    }
+
+    /// 届き方の短い名前（頭の行の「ふだん」）
+    static func deliveryLabel(_ delivery: PassExchange.Delivery) -> String {
+        switch delivery {
+        case .instant: return L("すぐ届く", "Arrives right away")
+        case .evening: return L("夕方にまとめて", "Together in the evening")
+        }
+    }
+
+    /// 読み上げのヒント。設定から積まれた帳では戻るだけ
+    static func hint(fromSettings: Bool) -> String {
+        fromSettings ? L("設定に戻ります", "Goes back to settings")
+                     : L("すれちがい乗車券の設定を開きます", "Opens Pass ticket settings")
+    }
+
+    /// 空の状態の本文
+    var emptyMessage: String {
+        isOn ? L("出かけると、近くにいたアプリの人のカードが届きます。",
+                 "Head out — cards from app users you pass arrive here.")
+             : L("オンにして出かけると、近くにいたアプリの人のカードが届きます。",
+                 "Turn it on and head out — cards from app users you pass arrive here.")
+    }
+
+    /// 空の状態の主ボタン（オフのときだけ・押すと説明を読んでからオンにする）。オンなら出さない
+    /// ——止まっている訳は頭の行が言う
+    var emptyActionTitle: String? {
+        isOn ? nil : L("説明を読んでオンにする", "Read how it works and turn on")
+    }
+
+    static let statusIdentifier = "passBook.status"
+    static let emptyActionIdentifier = "passBook.emptyTurnOn"
 }

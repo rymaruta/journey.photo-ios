@@ -68,12 +68,11 @@ final class VisitedMapWiringTests: XCTestCase {
             "model.selected == nil",
             ".sensoryFeedback(.warning, trigger: model.warningTick)",
             "model.voiceOverOn = ",
-            "Toggle(isOn: $model.addsOnTap)",
+            "VisitedMapText.quickHint",
             "environment.photos.myPhotos()",
             "PrefectureMapGeometry.bundled",
             "VisitedPrefectureList(model: model)",
             "VisitedPrefectureCard(model: model",
-            "jpPillButton(.accent)",
             "TabRouter.shared.openPost(.photo)",
         ] {
             XCTAssertTrue(screen.contains(needle), "画面のつなぎが無い: \(needle)")
@@ -123,9 +122,102 @@ final class VisitedMapWiringTests: XCTestCase {
         XCTAssertTrue(screen.contains("if let celebration = model.celebration, model.selected == nil"),
                       "祝いは札を閉じたあとに出す")
         let bar = try source("Features/Profile/VisitedBottomBar.swift")
-        for needle in ["model.confirmSameDay()", "model.cancelSameDay()", "model.undo()", "toast.offersUndo"] {
+        for needle in ["model.undo()", "toast.offersUndo", "VisitedQuickBar(model: model)"] {
             XCTAssertTrue(bar.contains(needle), "帯のつなぎが無い: \(needle)")
         }
+    }
+
+    /// 🔴 案 A（札 #510・2026-11-10 owner「Aで作って」）: スイッチ「タップで回数を足す」と同じ日の確かめが無い。
+    /// 戻したら落ちる
+    func testNoTapSwitchAndNoSameDayConfirmation() throws {
+        var files = try visitedSources()
+        files.append(("Core/Text/VisitedMapText.swift", try source("Core/Text/VisitedMapText.swift")))
+        for (path, text) in files {
+            for word in ["addsOnTap", "Toggle(", "pendingSameDay", "confirmSameDay", "cancelSameDay", "confirmingSameDay",
+                         "hasVisit(", "sameDayTitle", "switchTitle", "タップで回数を足す", "今日は記録済みです"] {
+                XCTAssertFalse(text.contains(word), "\(path) にスイッチ・同じ日の確かめの名残り: \(word)")
+            }
+        }
+    }
+
+    /// 🔴 案 A の配線: 押す＝足す（`model.tap`）・長押し＝足さずに帯（`model.peek`）。地図・一覧とも同じ。
+    /// 動かした・ピンチした指と、長押しで帯を出した指では足さない
+    func testTapAddsAndLongPressPeeksOnMapAndList() throws {
+        let canvas = try source("Features/Profile/VisitedMapCanvasView.swift")
+        for needle in ["let outcome = VisitedMapTouch.onRelease(moved: didMove, pinched: didPinch, longPressFired: firedLong,",
+                       "model.release(outcome, on: hit.name)",
+                       "guard VisitedMapTouch.firesLongPress(sameTouch: touchBegan == began, fingerDown: fingerDown,",
+                       "@GestureState private var fingerDown = false",
+                       ".updating($fingerDown) { _, state, _ in state = true }",
+                       ".onChange(of: fingerDown) { _, down in",
+                       "if touchBegan == began { resetTouch() }",
+                       "model.peek(hit.name)",
+                       "longPressFired = began",
+                       "let selected = model.selected ?? model.quickBar?.prefecture",
+                       ".accessibilityAction { model.tap(name) }",
+                       ".accessibilityAction(named: VisitedMapText.removeOne) { model.decrease(name) }",
+                       ".accessibilityAction(named: VisitedMapText.details) { model.openCard(name) }",
+                       "VisitedMapText.tapHint",
+                       "guard !reduceMotion, let name = model.addPulsePrefecture else { return }"] {
+            XCTAssertTrue(canvas.contains(needle), "地図のつなぎが無い: \(needle)")
+        }
+        XCTAssertFalse(canvas.contains("model.openCard(hit.name)"), "長押しで札を開く形に戻った")
+        XCTAssertFalse(canvas.contains("nonisolated static let longPressSeconds: Double = 0.5"), "長押しの長さを二重に持っている")
+        let list = try source("Features/Profile/VisitedPrefectureList.swift")
+        for needle in ["if VisitedMapTouch.swallowsTap(on: name, after: longPressed, now: Date()) {",
+                       "model.tap(name)",
+                       ".simultaneousGesture(LongPressGesture(minimumDuration: VisitedMapTouch.longPressSeconds).onEnded { _ in",
+                       "model.peek(name)",
+                       ".buttonStyle(VisitedRowButtonStyle { pressed in",
+                       "if !pressed { longPressed = VisitedMapTouch.released(longPressed, at: Date()) }",
+                       ".onChange(of: configuration.isPressed) { _, pressed in onPressChange(pressed) }",
+                       ".accessibilityAction(named: VisitedMapText.removeOne) { model.decrease(name) }"] {
+            XCTAssertTrue(list.contains(needle), "一覧のつなぎが無い: \(needle)")
+        }
+        // 一覧の器はまとまりにしてから名前を付ける（行の名前を上書きしない・Mac 947）
+        XCTAssertTrue(list.contains(".accessibilityElement(children: .contain)\n        .accessibilityIdentifier(\"visitedMap.list\")"),
+                      "一覧の器の名前が行の名前を上書きする形に戻った")
+        // 一覧は Button のまま（スクロールと押した見た目を保つ）。手振りを2つ並べる形に戻さない
+        XCTAssertFalse(list.contains(".onTapGesture"), "一覧の行が onTapGesture に戻った")
+        XCTAssertFalse(list.contains(".onLongPressGesture"), "一覧の行が onLongPressGesture に戻った")
+        let model = try source("Features/Profile/VisitedMapModel.swift")
+        for needle in ["if !quick { record.restoreCandidate(prefecture) }",
+                       "if quickBarHeld { setQuickBarHeld(false) }",
+                       "func release(_ outcome: VisitedMapTouch.Outcome, on prefecture: String)"] {
+            XCTAssertTrue(model.contains(needle), "モデルのつなぎが無い: \(needle)")
+        }
+    }
+
+    /// 🔴 押した県の帯: ［−］［＋］は同じ大きさ（同じ部品 `stepButton`）・0 回で［−］を止める・［詳しく］で札・
+    /// 触っている間は消さない・黒地の上の真鍮は［詳しく］の字だけ・地は surface-2
+    func testQuickBarIsWired() throws {
+        let bar = try source("Features/Profile/VisitedBottomBar.swift")
+        for needle in ["enabled: count > 0,\n                       id: \"visitedMap.quick.minus\") { model.quickRemove() }",
+                       "id: \"visitedMap.quick.plus\") { model.quickAdd() }",
+                       "enabled: count < VisitedPrefectures.maxCount",
+                       "Button { model.openCard(name) }",
+                       "VisitedMapText.details",
+                       ".frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)",
+                       ".updating($touching)",
+                       ".onChange(of: touching) { _, held in model.setQuickBarHeld(held) }",
+                       ".background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.l))",
+                       "if model.quickBar != nil, model.celebration == nil",
+                       ".onDisappear { model.setQuickBarHeld(false) }",
+                       "if typeSize.isAccessibilitySize {",
+                       "ViewThatFits(in: .horizontal) {",
+                       "if count >= VisitedPrefectures.maxCount {",
+                       "VisitedMapText.limitShort",
+                       ".lineLimit(3)",
+                       "guard !reduceMotion, old != new else { return }"] {
+            XCTAssertTrue(bar.contains(needle), "帯のつなぎが無い: \(needle)")
+        }
+        // 木に出ない名前を付けない（`children: .ignore` の中の `visitedMap.quick.limit`・再確認 2026-11-10 の 3）
+        XCTAssertFalse(bar.contains("visitedMap.quick.limit"))
+        // ［−］と［＋］は同じ部品（同じ大きさ・同じ押しやすさ）
+        XCTAssertEqual(bar.components(separatedBy: "stepButton(systemName:").count - 1, 3 /* 定義1 + 使う2 */)
+        // 減らすときに確かめのダイアログを出さない（［＋］で戻せる）
+        XCTAssertFalse(bar.contains("confirmationDialog"))
+        XCTAssertFalse(bar.contains("alert("))
     }
 
     /// 🔴 指の途中状態は、`onEnded` が来なくても次の指で作り直す。＋−は実際の枠の大きさで拡大する

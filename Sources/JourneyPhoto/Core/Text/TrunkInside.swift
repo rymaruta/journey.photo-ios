@@ -560,8 +560,8 @@ struct TrunkInsideContents: Equatable {
             return L("\(ownerName)さんの「わたしの乗車券」。押すと表と裏を回せます",
                      "\(ownerName)\u{2019}s own ticket. Open it to turn it over")
         case .tickets:
-            return L("旅先ですれちがった人から届いた \(ticketCount) 枚。帳を開くと、全部を綴じた順に見られます",
-                     "\(Plural.count(ticketCount, "ticket")) from people you passed on your travels. Open the book to see \(ticketCount == 1 ? "it" : "them all in order")")
+            return L("旅先ですれちがった人から届いた \(ticketCount) 枚。帳を開くと、全部を受け取った順に見られます",
+                     "\(Plural.count(ticketCount, "ticket")) from people you passed on your travels. Open the book to see \(ticketCount == 1 ? "it" : "them all in the order you received them")")
         }
     }
 

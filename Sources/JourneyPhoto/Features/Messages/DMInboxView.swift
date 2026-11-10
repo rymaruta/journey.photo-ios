@@ -4,13 +4,16 @@ import SwiftUI
 enum DMRoute: Hashable {
     case conversation(String)
     case requests
+    /// 会話を始める（「新しいメッセージ」で選んだ人・2026-11-10）。まだ会話が無くても開く
+    case start(DMPeerSeed)
 }
 
 /// メッセージの受信箱（画面案「受信箱」・札 #505・2026-11-10）。ホームの見出しの吹き出しから、シートで開く。
 ///
 /// - 先頭に「リクエスト」の行（件数の真鍮のバッジ。0 件の日は行ごと出さない）
 /// - 未読は「点＋太字＋明るい本文」。既読の表示は出さない
-/// - 状態: 読み込み中（顔の行の骨格）・空（ホームでストーリーを見る）・失敗（もう一度）・圏外（最後の一覧の上に帯）
+/// - 状態: 読み込み中（顔の行の骨格）・空（新しいメッセージ）・失敗（もう一度）・圏外（最後の一覧の上に帯）
+/// - 見出しの右に鉛筆（「新しいメッセージ」・2026-11-10 owner「普通にDMできる機能がいい」）。フォロー中の人から選ぶ
 struct DMInboxView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
@@ -18,12 +21,14 @@ struct DMInboxView: View {
     @EnvironmentObject private var hidden: ModerationStore
     @EnvironmentObject private var connectivity: Connectivity
     @EnvironmentObject private var store: DMInboxStore
-    @Environment(\.dismiss) private var dismiss
 
     /// 通知から開く会話（`RootView` が置く。受け取ったら空にする）
     @Binding var openConversation: String?
 
     @State private var route: DMRoute?
+    /// 「新しいメッセージ」のシート。選んだ人は閉じてから積む（シートが閉じる途中で積むと、積んだ画面が出ないことがある）
+    @State private var showNewMessage = false
+    @State private var picked: DMPeerSeed?
 
     var body: some View {
         Group {
@@ -44,6 +49,30 @@ struct DMInboxView: View {
                 DMConversationView(conversationId: id)
             case .requests:
                 DMRequestsView()
+            case .start(let peer):
+                if let id = DMStart.conversationId(me: auth.userId, peer: peer.id) {
+                    DMConversationView(conversationId: id, startingWith: peer)
+                }
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if auth.userId != nil { newMessageButton }
+            }
+        }
+        .sheet(isPresented: $showNewMessage, onDismiss: {
+            guard let peer = picked else { return }
+            picked = nil
+            route = .start(peer)
+        }) {
+            NavigationStack {
+                DMNewMessageView { peer in
+                    picked = peer
+                    showNewMessage = false
+                }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
+                }
             }
         }
         .task(id: auth.userId) { await reload() }
@@ -106,13 +135,13 @@ struct DMInboxView: View {
                     requestEntry
                 }
                 if threads.isEmpty && requestCount == 0 {
+                    // 2026-11-10 判断: 一手は「新しいメッセージ」（フォロー中の人から選ぶ）。ストーリーへの返信も残るが、
+                    // 始め方の主はこちら
                     EmptyState(title: L("まだメッセージはありません", "No messages yet"),
-                               message: L("ストーリーに返信すると、ここに会話が残ります。",
-                                          "Reply to a story and the conversation will stay here."),
-                               actionTitle: L("ホームでストーリーを見る", "See stories on Home"),
-                               actionIdentifier: "dm.empty.home") {
-                        dismiss()
-                        TabRouter.shared.openHome()
+                               message: DMText.startHint,
+                               actionTitle: DMText.newMessageTitle,
+                               actionIdentifier: "dm.empty.new") {
+                        showNewMessage = true
                     }
                     .padding(.top, JPSpace.emptyTop)
                 } else {
@@ -125,8 +154,7 @@ struct DMInboxView: View {
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("dm.thread")
                     }
-                    Text(L("メッセージは、ストーリーへの返信から始まります。",
-                           "Messages start from a reply to a story."))
+                    Text(DMText.startHint)
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.faint)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -138,6 +166,15 @@ struct DMInboxView: View {
         }
         .refreshable { await reload() }
         .accessibilityIdentifier("dm.inbox")
+    }
+
+    /// 見出しの右の鉛筆（「新しいメッセージ」）。印は上のバーの印と同じ大きさ・当たり 44（`appHeaderHitArea`）
+    private var newMessageButton: some View {
+        Button { showNewMessage = true } label: {
+            Image(systemName: "square.and.pencil").webToolbarIcon().appHeaderHitArea()
+        }
+        .accessibilityLabel(DMText.newMessageTitle)
+        .accessibilityIdentifier("dm.new.open")
     }
 
     /// 「リクエスト」の行（画面案: 人の印の丸 48・件数の真鍮のバッジ・矢印）

@@ -147,12 +147,13 @@ final class VisitedPrefecturesTests: XCTestCase {
         XCTAssertEqual([0, 1, 8, 9, 10, 99].map(VisitedPrefectures.countText), ["", "1", "8", "9+", "9+", "9+"])
     }
 
-    func testSameDayCheck() {
+    /// 2026-11-10（札 #510）: 同じ日の2回目もそのまま記録する（確かめは無い）
+    func testSameDayTwiceIsTwoVisits() {
         var book = VisitedPrefectures()
-        book.add("京都府", day: "2026-11-08")
-        XCTAssertTrue(book.hasVisit("京都府", on: "2026-11-08"))
-        XCTAssertFalse(book.hasVisit("京都府", on: "2026-11-09"))
-        XCTAssertFalse(book.hasVisit("大阪府", on: "2026-11-08"))
+        XCTAssertNotNil(book.add("京都府", day: "2026-11-08"))
+        XCTAssertNotNil(book.add("京都府", day: "2026-11-08"))
+        XCTAssertEqual(book.days("京都府"), ["2026-11-08", "2026-11-08"])
+        XCTAssertEqual(book.count("京都府"), 2)
     }
 
     func testChangeDay() {
@@ -397,8 +398,9 @@ final class VisitedPrefecturesTests: XCTestCase {
         var book = VisitedPrefectures()
         book.add("京都府", day: "2026-05-01")
         book.add("京都府", day: "2026-07-01")
-        XCTAssertNil(book.changeDay("京都府", at: 0, to: "2026-07-01"), "ほかの記録と同じ日には直せない")
-        XCTAssertEqual(book.days("京都府"), ["2026-05-01", "2026-07-01"])
+        // 2026-11-10 判断: 押せば同じ日に 2 回入るので、ほかの記録と同じ日にも直せる
+        XCTAssertNotNil(book.changeDay("京都府", at: 0, to: "2026-07-01"), "ほかの記録と同じ日に直せない")
+        XCTAssertEqual(book.days("京都府"), ["2026-07-01", "2026-07-01"])
         // 読み込みで並べ直す
         let loaded = VisitedPrefectures(visits: ["京都府": ["2026-09-01", "2026-01-01", "2026-05-01"]])
         XCTAssertEqual(loaded.days("京都府"), ["2026-01-01", "2026-05-01", "2026-09-01"])
