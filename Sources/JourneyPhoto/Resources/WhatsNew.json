@@ -6,6 +6,12 @@
       "date": "2026-11-10",
       "items": [
         {
+          "symbol": "square.and.pencil",
+          "title": { "ja": "プロフィールからメッセージを送れる", "en": "Message people from their profile" },
+          "detail": { "ja": "フォローしている人のプロフィールの「メッセージ」と、メッセージの画面の右上の鉛筆から、会話を始められます。", "en": "Start a conversation from Message on the profile of someone you follow, or from the pencil at the top right of Messages." },
+          "destination": "home"
+        },
+        {
           "symbol": "ticket",
           "title": { "ja": "すれちがい帳で、乗車券の状態が分かる", "en": "See your Pass ticket status in the Pass book" },
           "detail": { "ja": "帳のいちばん上に、オンかオフか・止まっている訳が出ます。押すと設定を開けます。", "en": "The top of the Pass book shows whether Pass tickets are on or off, and why swaps are paused. Tap it to open the settings." },

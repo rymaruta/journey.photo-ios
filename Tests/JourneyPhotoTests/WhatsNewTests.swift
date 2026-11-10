@@ -315,17 +315,18 @@ final class WhatsNewTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let all = WhatsNew.decode(data)
-        // 1.1.79（2026-11-10・札 #519）: すれちがい帳の頭の行・撮影スポットから構図一覧
+        // 1.1.79（2026-11-10・札 #507・#519）: プロフィールからメッセージ・すれちがい帳の頭の行・撮影スポットから構図一覧
         let newest = try XCTUnwrap(all.first)
         XCTAssertEqual(newest.version, "1.1.79")
         XCTAssertEqual(newest.date, WhatsNew.Day(year: 2026, month: 11, day: 10))
-        XCTAssertEqual(newest.items.map(\.title.ja), ["すれちがい帳で、乗車券の状態が分かる", "撮影スポットから構図一覧を開ける"])
+        XCTAssertEqual(newest.items.map(\.title.ja), ["プロフィールからメッセージを送れる", "すれちがい帳で、乗車券の状態が分かる", "撮影スポットから構図一覧を開ける"])
         XCTAssertEqual(newest.items.map(\.detail.ja), [
+            "フォローしている人のプロフィールの「メッセージ」と、メッセージの画面の右上の鉛筆から、会話を始められます。",
             "帳のいちばん上に、オンかオフか・止まっている訳が出ます。押すと設定を開けます。",
             "構図のヒントの下の「構図一覧を見る」から、説明と作例を見られます。",
         ])
-        // 帳の項目はすれちがい帳を積む。構図一覧の項目は説明だけ（矢印なし）
-        XCTAssertEqual(newest.items.map(\.destination), [.passBook, nil])
+        // メッセージはホーム（右上の吹き出し）へ、帳の項目はすれちがい帳を積む。構図一覧の項目は説明だけ（矢印なし）
+        XCTAssertEqual(newest.items.map(\.destination), [.home, .passBook, nil])
         for item in newest.items {
             for text in [item.title.ja, item.detail.ja] {
                 for word in ["撮りどき", "捨て", "注目スポット", "撮影地ガイド", "ガイドを見る", "この場所", "綴じ"] {
