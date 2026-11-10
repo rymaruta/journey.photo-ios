@@ -44,6 +44,8 @@ struct DMConversationView: View {
     @State private var showProfile = false
     @State private var actionError: String?
     @FocusState private var fieldFocused: Bool
+    /// UI テストのときだけ（`-JPPreviewDM`）: 送った・断られた・断りの文が消えた回数を見えない要素に出す（`dm.probe`）
+    @State private var probe = (sends: 0, refusals: 0, errorCleared: 0)
 
     /// 受信箱の行（読み込む前の見出しの名前に使う）
     private var seed: DMThread? { store.inbox.items.first { $0.id == conversationId } }
@@ -91,6 +93,15 @@ struct DMConversationView: View {
                 footer
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if PreviewSession.dm {
+                Text(".")
+                    .font(.caption2)
+                    .foregroundStyle(Color.clear)
+                    .accessibilityIdentifier("dm.probe")
+                    .accessibilityValue("sends=\(probe.sends) refusals=\(probe.refusals) errorCleared=\(probe.errorCleared)")
+            }
+        }
         .webScreen()
         .navigationTitle(peerName)
         .navigationBarTitleDisplayMode(.inline)
@@ -112,7 +123,10 @@ struct DMConversationView: View {
         .onChange(of: draft) { old, new in
             let kept = PostLimits.limited(old: old, new: new, limit: DMRules.textMax)
             if kept != new { draft = kept }
-            if fieldError != nil, !new.isEmpty, new != old { fieldError = nil }
+            if fieldError != nil, !new.isEmpty, new != old {
+                fieldError = nil
+                probe.errorCleared += 1
+            }
         }
         .alert(L("この会話を削除しますか？", "Delete this conversation?"), isPresented: $showDeleteConfirm) {
             Button(L("会話を削除", "Delete conversation"), role: .destructive) { Task { await removeConversation() } }
@@ -511,6 +525,7 @@ struct DMConversationView: View {
     }
 
     private func deliver(text: String, clientId: String) async {
+        probe.sends += 1
         do {
             let result = try await environment.dm.send(conversationId, text: text, clientId: clientId)
             log.succeed(clientId, with: result.message)
@@ -519,6 +534,7 @@ struct DMConversationView: View {
             // 残りの通数・置き場所はサーバーが正（送ったあとの姿を読み直す）
             await refreshSince()
         } catch let refused as DMService.Refused {
+            probe.refusals += 1
             if refused.status == 404 {
                 _ = log.withdraw(clientId)
                 phase = .unavailable

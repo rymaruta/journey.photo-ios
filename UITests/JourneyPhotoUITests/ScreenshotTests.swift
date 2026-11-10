@@ -6297,6 +6297,7 @@ final class ScreenshotTests: XCTestCase {
                     + " / field.value=\(String(describing: field.value))"
                     + " / send.enabled=\(send.exists ? String(send.isEnabled) : "無し")"
                     + " / retry=\(app.buttons["dm.retry"].firstMatch.exists)"
+                    + " / probe=\(String(describing: app.descendants(matching: .any)["dm.probe"].firstMatch.value))"
                     + " / staticTexts=\(app.staticTexts.allElementsBoundByIndex.suffix(8).map(\.label))") { _ in }
             }
             app.navigationBars.buttons.element(boundBy: 0).tap()
