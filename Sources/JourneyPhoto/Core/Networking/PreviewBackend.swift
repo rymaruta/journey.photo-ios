@@ -317,12 +317,14 @@ enum PreviewBackend {
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         func ago(_ minutes: Double) -> String { iso.string(from: now.addingTimeInterval(-minutes * 60)) }
         func conv(_ i: Int) -> String { DMRules.conversationId(me, dmPeers[i].id) }
-        func thread(_ i: Int, _ minutes: Double, _ excerpt: String, unread: Int, state: String) -> [String: Any] {
+        func thread(_ i: Int, _ minutes: Double, _ excerpt: String, unread: Int, state: String,
+                    lastMine: Bool = false) -> [String: Any] {
             let p = dmPeers[i]
             var row: [String: Any] = ["id": conv(i), "peerId": p.id, "name": p.name.isEmpty ? "退会したユーザー" : p.name,
                                       "t": ago(minutes), "excerpt": excerpt, "unread": unread, "state": state]
             if let u = p.username { row["username"] = u }
             if p.name.isEmpty { row["deleted"] = true }
+            row["lastMine"] = lastMine
             return row
         }
         switch (method, parts.count) {
@@ -331,7 +333,7 @@ enum PreviewBackend {
                 thread(0, 12, "夕焼けの色がすごい。どこですか？", unread: 1, state: "inbox"),
                 thread(1, 40, "この曲いいね", unread: 2, state: "inbox"),
                 thread(5, 50, "こんにちは。写真をよく見ています。", unread: 2, state: "request"),
-                thread(2, 60 * 24, "ありがとう！また撮ったら見せますね", unread: 0, state: "inbox"),
+                thread(2, 60 * 24, "ありがとう！また撮ったら見せますね", unread: 0, state: "inbox", lastMine: true),
                 thread(6, 60 * 30, "行ってみたいです", unread: 1, state: "request"),
                 thread(7, 60 * 50, "どこで撮りましたか", unread: 0, state: "pending"),
                 thread(3, 60 * 24 * 3, "来月ここに行く予定です", unread: 0, state: "inbox"),
@@ -347,7 +349,15 @@ enum PreviewBackend {
             func msg(_ n: Int, mine: Bool, _ text: String, _ minutes: Double, story: Bool = false) -> [String: Any] {
                 var m: [String: Any] = ["id": "preview-dm-\(i)-\(n)", "from": mine ? me : p.id, "mine": mine,
                                         "text": text, "t": ago(minutes)]
-                if story { m["via"] = "story" }
+                if story {
+                    // 引用札（2026-11-10 の欄）: リクエストは見られる動画、ほかは終わったストーリー
+                    m["via"] = "story"
+                    m["storyId"] = "preview-story-dm-\(i)"
+                    m["story"] = i == 5 || i == 6
+                        ? ["id": "preview-story-dm-\(i)", "state": "live", "mediaType": "video",
+                           "expiresAt": iso.string(from: now.addingTimeInterval(3600))] as [String: Any]
+                        : ["id": "preview-story-dm-\(i)", "state": "ended"]
+                }
                 return m
             }
             var answer: [String: Any] = ["id": id, "peerId": p.id, "name": p.name.isEmpty ? "退会したユーザー" : p.name,

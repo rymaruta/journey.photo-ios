@@ -282,6 +282,8 @@ extension NotificationsView {
     nonisolated static func shown(_ rows: [AppNotification], blocked: Set<String>,
                                   filter: NotificationFilter) -> [AppNotification] {
         BlockFilter.notifications(rows, blocked: blocked).filter { row in
+            // メッセージの受信箱に入ったストーリーの返信はベルに出さない（受信箱と二重にしない・2026-11-10 札 #505）
+            guard !row.isInMessages else { return false }
             guard let kind = row.kind else { return filter == .all }
             return filter.matches(kind)
         }
@@ -290,7 +292,7 @@ extension NotificationsView {
     /// 空の画面が「1件も無い」側か（「この種類が無い」側でなく）。**ブロックで落とした後で数える**
     /// ——全部ブロックした人の行だったのに「『すべて』に戻すと…」と言わない
     nonisolated static func emptyIsTotal(rows: [AppNotification], blocked: Set<String>) -> Bool {
-        BlockFilter.notifications(rows, blocked: blocked).isEmpty
+        BlockFilter.notifications(rows, blocked: blocked).filter { !$0.isInMessages }.isEmpty
     }
 
     /// 押したプッシュの行き先を開くか（2026-10-16 判断）。**送り手をブロックしていたら開かない**——

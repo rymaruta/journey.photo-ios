@@ -82,7 +82,7 @@ struct DMThreadRow: View {
                     .font(.system(size: 15, weight: unread ? .bold : .medium))
                     .foregroundStyle(thread.isDeleted ? WebTheme.text3 : WebTheme.text)
                     .lineLimit(1)
-                Text(thread.excerpt)
+                Text(DMText.excerpt(thread))
                     .font(.system(size: 14, weight: unread ? .medium : .regular))
                     .foregroundStyle(unread ? WebTheme.text : WebTheme.text3)
                     .lineLimit(1)
@@ -116,7 +116,7 @@ struct DMThreadRow: View {
     nonisolated static func spoken(_ thread: DMThread, now: Date) -> String {
         let parts = [thread.showsUnread ? L("未読", "Unread") : nil,
                      DMText.name(thread.name, deleted: thread.isDeleted),
-                     thread.excerpt,
+                     DMText.excerpt(thread),
                      DMText.listTime(thread.t, now: now)].compactMap { $0 }.filter { !$0.isEmpty }
         return parts.joined(separator: "、")
     }

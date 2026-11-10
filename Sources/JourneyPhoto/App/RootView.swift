@@ -206,7 +206,8 @@ struct RootView: View {
         let owner = auth.userId
         unreadGeneration += 1
         let generation = unreadGeneration
-        let fetched = try? await environment.notifications.fetch().unread
+        // ベルの未読（メッセージの受信箱に入ったストーリーの返信は数えない・`Page.bellUnread`）
+        let fetched = try? await environment.notifications.fetch().bellUnread
         // **返ってくる間に人が替わっていた・もっと新しい取得が始まっていたら捨てる**
         // （失敗の回も。古い1本の失敗で、新しい1本の数を 0 に倒さない）
         guard !Task.isCancelled, auth.userId == owner, generation == unreadGeneration else { return }

@@ -250,9 +250,11 @@ final class NotificationRouter: ObservableObject {
     }
 
     /// メッセージの通知の中身から会話 id を読む（`notify.ts` の `pushDmMessage`: `{type: "dm", convId, byId}`）。
+    /// **ストーリーへの文字の返信が受信箱に入った通知**（`{type: "storyreply", convId}`・2026-11-10）も会話へ。
     /// 会話 id の形でなければ nil（パスに入れない値は受け取らない・`PathID`）
     nonisolated static func dmConversationId(_ userInfo: [AnyHashable: Any]) -> String? {
-        guard userInfo["type"] as? String == "dm", let id = userInfo["convId"] as? String,
+        let type = userInfo["type"] as? String
+        guard type == "dm" || type == "storyreply", let id = userInfo["convId"] as? String,
               id.contains("_"), PathID.isSafe(id) else { return nil }
         return id
     }

@@ -210,11 +210,19 @@ final class DirectMessageWiringTests: XCTestCase {
             XCTAssertLessThan(gate, call, "URL を止める前に送っている")
         }
         XCTAssertTrue(send.contains("gate.limitReached"))
-        XCTAssertTrue(send.contains("sentConversation = DMRules.conversationId(me, peer)"))
+        // 「メッセージを見る」は応答の `dm` 欄で決める（写らなかった返信で会話へ誘わない・欄が無ければ2人から組む）
+        XCTAssertTrue(send.contains("outcome.conversationToOpen(me: viewerId, owner: story.userId)"))
         XCTAssertTrue(viewer.contains("DMConversationView(conversationId: target.id)"))
         let replies = try source("Features/Stories/StoryRepliesSheet.swift")
         XCTAssertTrue(replies.contains("返信はメッセージにも残ります。ストーリーが消えても、メッセージは残ります。"))
         XCTAssertTrue(replies.contains("DMConversationView(conversationId: conversationId)"))
+        // 矢印は受信箱に在る会話だけ（写らなかった返信へ誘わない・2026-11-10）
+        XCTAssertTrue(replies.contains("StoryReplyConversation.id(me: me, replier: uid, hasText: !item.body.isEmpty, inbox: messages.inbox)"))
+        // ベルの未読は受信箱に入った返信を数えない（アイコンの数字と同じ数え方）
+        let root = try source("App/RootView.swift")
+        XCTAssertTrue(root.contains("environment.notifications.fetch().bellUnread"))
+        let bell = try source("Features/Notifications/NotificationsView.swift")
+        XCTAssertTrue(bell.contains("guard !row.isInMessages else { return false }"))
     }
 
     /// 文言の決まり: 画面の字は日英（`L`）・「捨てる」「撮りどき」を出さない・本文は 12pt 以上

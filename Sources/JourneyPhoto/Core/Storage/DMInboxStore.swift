@@ -26,6 +26,8 @@ final class DMInboxStore: ObservableObject {
     /// いまの控えが誰のものか
     private(set) var owner: String?
     private var generation = 0
+    /// まだ一覧を読めていない間に手元で置いた変化（既読・削除・承認）。**読めた答えの上に重ねる**
+    private var pendingChanges: [(DMInbox) -> DMInbox] = []
 
     init() {}
 
@@ -42,6 +44,7 @@ final class DMInboxStore: ObservableObject {
         inbox = .empty
         phase = .loading
         isRefreshing = false
+        pendingChanges = []
     }
 
     /// 読み直す。**失敗しても読めていた一覧は残す**（圏外で戻っただけで点・行が消えない）
@@ -54,7 +57,9 @@ final class DMInboxStore: ObservableObject {
         do {
             let fetched = try await service.inbox()
             guard mine == generation, owner == self.owner else { return }
-            inbox = fetched
+            // 読み込み中に置いた変化（通知から先に開いた会話の既読など）を、読めた答えに重ねる
+            inbox = pendingChanges.reduce(fetched) { $1($0) }
+            pendingChanges = []
             phase = .loaded
             isRefreshing = false
         } catch {
@@ -67,12 +72,18 @@ final class DMInboxStore: ObservableObject {
     }
 
     /// 手元で変えた姿を置く（既読・削除・承認の直後。サーバーの答えを待たずに点・行を合わせる）。
-    /// **進んでいる読み込みの答えは捨てる**（変える前の一覧で上書きしない）
-    func apply(_ change: (DMInbox) -> DMInbox) {
+    ///
+    /// - 読めている間: **進んでいる読み込みの答えは捨てる**（変える前の一覧で上書きしない）
+    /// - **まだ読めていない間は世代を進めない**（2026-11-10 レビュー指摘3・run 939 で再現: 最初の読み込みの途中に
+    ///   既読を置くと、読めた一覧を捨てて空の一覧を「読めた」にしていた）。変化は覚えておき、読めた答えに重ねる
+    func apply(_ change: @escaping (DMInbox) -> DMInbox) {
+        inbox = change(inbox)
+        guard phase == .loaded else {
+            pendingChanges.append(change)
+            return
+        }
         generation += 1
         isRefreshing = false
-        inbox = change(inbox)
-        if phase != .loaded { phase = .loaded }
     }
 
     /// 試験・見本のため（画面を持たない試験で、控えを置いた状態から始める）

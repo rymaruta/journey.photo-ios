@@ -215,10 +215,11 @@ struct StoryRepliesSheet: View {
         }
     }
 
-    /// 返信の人との会話 id（自分・相手が分からない・文字の無い返信は nil）
+    /// 返信の人との会話 id。**受信箱（リクエストの棚も）に在る会話だけ**——写らなかった返信（承認前の4通目・URL・
+    /// 日の上限）や、自分で消した会話へ矢印を出さない（2026-11-10 レビュー）
     private func conversationId(for item: StoryReply) -> String? {
-        guard let me = hidden.owner, let uid = item.uid, !uid.isEmpty, uid != me, !item.body.isEmpty else { return nil }
-        return DMRules.conversationId(me, uid)
+        guard let me = hidden.owner, let uid = item.uid else { return nil }
+        return StoryReplyConversation.id(me: me, replier: uid, hasText: !item.body.isEmpty, inbox: messages.inbox)
     }
 
     private func isRequest(_ conversationId: String) -> Bool {

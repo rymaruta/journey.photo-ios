@@ -377,6 +377,115 @@ final class DirectMessageTests: XCTestCase {
         XCTAssertEqual(gate.note(name: "B", language: "ja"), "B さんが承認するまで、これ以上送れません（3/3）")
     }
 
+    // MARK: - 2026-11-10 に足した欄（journey.photo-web claude/dm-fields 0af2b8c71）。欄が無いときは今までどおり
+
+    /// 受信箱の `lastMine`: 欄があるときだけ「あなた: 」
+    func testLastMinePrefixesExcerptOnlyWhenPresent() throws {
+        let inbox = try decode("""
+        {"items":[
+          {"id":"a_b","peerId":"b","name":"B","t":"2026-11-09T00:00:00.000Z","excerpt":"ありがとう","unread":0,"state":"inbox","lastMine":true},
+          {"id":"a_c","peerId":"c","name":"C","t":"2026-11-09T00:00:00.000Z","excerpt":"やあ","unread":0,"state":"inbox","lastMine":false},
+          {"id":"a_d","peerId":"d","name":"D","t":"2026-11-09T00:00:00.000Z","excerpt":"古い行","unread":0,"state":"inbox"}
+        ],"unread":0,"requestCount":0}
+        """, as: DMInbox.self)
+        XCTAssertEqual(inbox.items.map { DMText.excerpt($0, language: "ja") }, ["あなた: ありがとう", "やあ", "古い行"])
+        XCTAssertNil(inbox.items[2].lastMine)
+    }
+
+    /// 会話の `storyId`・`story` と引用札の見せ方（期限を過ぎたら手元で「終了」に倒す・欄が無ければ枠だけ）
+    func testStoryQuoteStates() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let iso = ISO8601DateFormatter()
+        let later = iso.string(from: now.addingTimeInterval(3600)), earlier = iso.string(from: now.addingTimeInterval(-60))
+        let conv = try decode("""
+        {"id":"a_b","peerId":"b","name":"B","state":"inbox","canSend":true,"t":"x","items":[
+          {"id":"m1","from":"b","mine":false,"text":"見て","t":"1","via":"story","storyId":"s1",
+           "story":{"id":"s1","state":"live","mediaType":"image","src":"https://cdn.example/s1.jpg","expiresAt":"\(later)"}},
+          {"id":"m2","from":"b","mine":false,"text":"動画","t":"2","storyId":"s2","story":{"id":"s2","state":"live","mediaType":"video","expiresAt":"\(later)"}},
+          {"id":"m3","from":"b","mine":false,"text":"終わり","t":"3","storyId":"s3","story":{"id":"s3","state":"ended"}},
+          {"id":"m4","from":"b","mine":false,"text":"期限切れ","t":"4","storyId":"s4","story":{"id":"s4","state":"live","mediaType":"image","src":"https://cdn.example/s4.jpg","expiresAt":"\(earlier)"}},
+          {"id":"m5","from":"b","mine":false,"text":"古い通","t":"5","via":"story","storyId":"s5"},
+          {"id":"m6","from":"b","mine":false,"text":"ふつう","t":"6"},
+          {"id":"m7","from":"b","mine":false,"text":"壊れた札","t":"7","storyId":"s7","story":"x"}
+        ]}
+        """, as: DMConversation.self)
+        let states = conv.items.map { DMStoryCardState.of($0, now: now) }
+        XCTAssertEqual(states, [
+            .live(storyId: "s1", image: URL(string: "https://cdn.example/s1.jpg"), isVideo: false),
+            .live(storyId: "s2", image: nil, isVideo: true),
+            .ended, .ended, .unknown, .none, .unknown,
+        ])
+        XCTAssertEqual(states[0].liveStoryId, "s1")
+        XCTAssertNil(states[2].liveStoryId)
+        // 一覧に無かったストーリーは札を「終了」に倒す
+        var log = DMThreadLog(messages: conv.items)
+        log.markStoryEnded("s1")
+        XCTAssertEqual(DMStoryCardState.of(log.messages[0], now: now), .ended)
+        XCTAssertEqual(DMStoryCardState.of(log.messages[1], now: now), .live(storyId: "s2", image: nil, isVideo: true))
+    }
+
+    /// ストーリーの返信の応答の `dm` 欄: 写ったときだけ会話へ。欄が無ければ2人から組む（今までの作り）
+    func testStoryReplyOutcome() throws {
+        let mirrored = try decode(#"{"success":true,"reply":{},"dm":{"conversationId":"\#(Self.conv)"}}"#, as: StoryReplyOutcome.self)
+        XCTAssertTrue(mirrored.knowsMirror)
+        XCTAssertEqual(mirrored.conversationToOpen(me: Self.me, owner: Self.peer), Self.conv)
+        let skipped = try decode(#"{"success":true,"dm":null,"dmSkipped":"requestLimit"}"#, as: StoryReplyOutcome.self)
+        XCTAssertTrue(skipped.knowsMirror)
+        XCTAssertEqual(skipped.skipped, "requestLimit")
+        XCTAssertNil(skipped.conversationToOpen(me: Self.me, owner: Self.peer), "写らなかった返信で会話へ誘う")
+        let old = try decode(#"{"success":true,"reply":{}}"#, as: StoryReplyOutcome.self)
+        XCTAssertFalse(old.knowsMirror)
+        XCTAssertEqual(old.conversationToOpen(me: Self.me, owner: Self.peer), Self.conv)
+        XCTAssertNil(old.conversationToOpen(me: Self.me, owner: Self.me))
+        let bad = try decode(#"{"dm":{"conversationId":"../x"}}"#, as: StoryReplyOutcome.self)
+        XCTAssertNil(bad.conversationToOpen(me: Self.me, owner: Self.peer))
+    }
+
+    /// 返信の応答を読む口: 欄を返す・読めない応答でも返信は成功（今までの作り）
+    func testStoryServiceReplyReturnsOutcome() async throws {
+        let stories = StoryService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                                 tokenProvider: StubTokenProvider(token: "t"), session: session))
+        StubProtocol.respond(status: 200, body: #"{"success":true,"dm":null,"dmSkipped":"requestUrl"}"#)
+        let outcome = try await stories.reply(id: "story-1", text: "https://example.com")
+        XCTAssertEqual(outcome.skipped, "requestUrl")
+        StubProtocol.respond(status: 200, body: "")
+        let empty = try await stories.reply(id: "story-1", text: "やあ")
+        XCTAssertEqual(empty, .unknown)
+    }
+
+    /// 自分のストーリーの返信の行の矢印: 受信箱に在る会話だけ
+    func testRepliesListOpensOnlyKnownConversations() {
+        let inbox = DMInbox(rebuilding: [DMThread(id: Self.conv, peerId: Self.peer, name: "B", t: "", excerpt: "",
+                                                  unread: 0, state: .request)])
+        XCTAssertEqual(StoryReplyConversation.id(me: Self.me, replier: Self.peer, hasText: true, inbox: inbox), Self.conv)
+        XCTAssertNil(StoryReplyConversation.id(me: Self.me, replier: Self.peer, hasText: true, inbox: .empty),
+                     "写らなかった返信に矢印を出した")
+        XCTAssertNil(StoryReplyConversation.id(me: Self.me, replier: Self.peer, hasText: false, inbox: inbox))
+        XCTAssertNil(StoryReplyConversation.id(me: Self.me, replier: Self.me, hasText: true, inbox: inbox))
+    }
+
+    /// ベルの `storyreply` の `dmConvId`: ベルの未読に数えない（頭から `unread` 件のうち）・行も隠す
+    func testBellSkipsRepliesMirroredIntoMessages() throws {
+        let page = try decode("""
+        {"items":[
+          {"type":"storyreply","byId":"u1","byName":"A","t":"3","photoId":"story-1","replyKind":"text","dmConvId":"\(Self.conv)"},
+          {"type":"storyreply","byId":"u2","byName":"B","t":"2","photoId":"story-1","replyKind":"reaction"},
+          {"type":"like","byId":"u3","byName":"C","t":"1","photoId":"p1"},
+          {"type":"like","byId":"u4","byName":"D","t":"0","photoId":"p2"}
+        ],"unread":3}
+        """, as: NotificationService.Page.self)
+        XCTAssertEqual(page.bellUnread, 2, "受信箱に入った返信をベルの未読にも数えた（二重）")
+        XCTAssertEqual(page.items[0].dmConvId, Self.conv)
+        XCTAssertEqual(page.items[0].replyKind, "text")
+        XCTAssertTrue(page.items[0].isInMessages)
+        XCTAssertFalse(page.items[1].isInMessages)
+        let old = try decode(#"{"items":[{"type":"storyreply","byId":"u1","t":"1"}],"unread":1}"#, as: NotificationService.Page.self)
+        XCTAssertEqual(old.bellUnread, 1, "欄の無い古い行を数えなかった")
+        let shown = NotificationsView.shown(page.items, blocked: [], filter: .all)
+        XCTAssertEqual(shown.count, 3)
+        XCTAssertFalse(shown.contains { $0.dmConvId != nil }, "受信箱に入った返信がベルにも出ている")
+    }
+
     // MARK: - 通報の理由
 
     func testReportReasons() {
@@ -514,6 +623,9 @@ final class DirectMessageMainActorTests: XCTestCase {
         XCTAssertNil(NotificationRouter.dmConversationId(["type": "like", "convId": Self.conv]))
         XCTAssertNil(NotificationRouter.dmConversationId(["type": "dm", "convId": "../user/account"]))
         XCTAssertNil(NotificationRouter.dmConversationId(["type": "dm"]))
+        // ストーリーへの文字の返信が受信箱に入った通知（2026-11-10 から `convId` 付き）も会話へ。欄が無ければ今までどおりお知らせへ
+        XCTAssertEqual(NotificationRouter.dmConversationId(["type": "storyreply", "convId": Self.conv, "photoId": "story-1"]), Self.conv)
+        XCTAssertNil(NotificationRouter.dmConversationId(["type": "storyreply", "photoId": "story-1"]))
         let router = NotificationRouter()
         let before = router.conversationRequests
         router.openConversation(Self.conv, now: Date(timeIntervalSince1970: 0))

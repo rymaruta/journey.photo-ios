@@ -12,6 +12,13 @@ struct NotificationService {
     struct Page: Decodable {
         let items: [AppNotification]
         let unread: Int
+
+        /// ベルの未読（2026-11-10・札 #505）。**メッセージの受信箱に入ったストーリーの返信（`dmConvId`）は数えない**
+        /// ——ベルには出さず受信箱に出す行で、アイコンの数字もサーバーは DM の未読で1回だけ数える
+        /// （`notify.ts` の `visibleUnread(…, { skipDmMirrored: true })`）。未読は頭から `unread` 件
+        var bellUnread: Int {
+            items.prefix(max(0, unread)).filter { $0.dmConvId == nil }.count
+        }
     }
 
     func fetch() async throws -> Page {
@@ -65,6 +72,14 @@ struct AppNotification: Decodable, Identifiable, Equatable {
     /// 「この写真を見て撮影」（`inspired`）だけ: 元になった（自分の）写真の id。
     /// 行き先には使わない（押した先は `photoId`＝付けた人の写真）
     let sourcePhotoId: String?
+    /// `storyreply` だけ（2026-11-10 から）: 文字の返信（`text`）か、絵文字だけの反応（`reaction`）か
+    let replyKind: String?
+    /// `storyreply` だけ: 文字の返信がメッセージの**ふつうの受信箱**に入った会話。**この行はベルに出さない**
+    /// （受信箱と二重になる・`NotificationsView.shown`）。リクエストの棚に入った回は付かない（ベルが唯一の知らせ）
+    let dmConvId: String?
+
+    /// メッセージの受信箱に出すので、ベルには出さない行か
+    var isInMessages: Bool { kind == .storyreply && dmConvId != nil }
 
     /// サーバーは id を持たない。並びは安定しているので、
     /// 時刻と相手と写真の組で区別する
@@ -77,6 +92,7 @@ struct AppNotification: Decodable, Identifiable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case type, photoId, photoSrc, byName, byId, atLocation, targetUserId, t, deleted, key, tier, sourcePhotoId
+        case replyKind, dmConvId
     }
 
     init(from decoder: Decoder) throws {
@@ -97,6 +113,9 @@ struct AppNotification: Decodable, Identifiable, Equatable {
         self.key = (rawKey?.isEmpty ?? true) ? nil : rawKey
         self.tier = LenientInt.read(container, .tier)
         self.sourcePhotoId = try? container.decodeIfPresent(String.self, forKey: .sourcePhotoId)
+        self.replyKind = try? container.decodeIfPresent(String.self, forKey: .replyKind)
+        let conv = try? container.decodeIfPresent(String.self, forKey: .dmConvId)
+        self.dmConvId = conv.flatMap { PathID.isSafe($0) ? $0 : nil }
     }
 
     // 画面の文言は `NotificationText.line(for:)`（まとめ表示と一緒に決めるため）

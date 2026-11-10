@@ -226,6 +226,15 @@ struct DMThreadLog: Equatable {
     /// 送っている最中の1通があるか（同じ時に2通を走らせない）
     var isSending: Bool { outgoing.contains { $0.phase == .sending } }
 
+    /// 開こうとしたストーリーが一覧に無かった（見られなくなった・終わった）: その札を「終了」に倒す
+    mutating func markStoryEnded(_ storyId: String) {
+        messages = messages.map { m in
+            guard m.storyId == storyId || m.story?.id == storyId else { return m }
+            return DMMessage(id: m.id, from: m.from, mine: m.mine, text: m.text, t: m.t, via: m.via,
+                             storyId: m.storyId ?? storyId, story: DMStoryQuote(id: storyId, state: "ended"))
+        }
+    }
+
     /// 相手が話したことがあるか（承認前の残り数を出すかの手がかり。サーバーが `requestRemaining` で正を返す）
     var peerHasSpoken: Bool { messages.contains { !$0.mine } }
 }
@@ -417,5 +426,89 @@ enum AppBadge {
     /// 通知センターの通知のうち、その会話のメッセージの通知の id（`{type: "dm", convId}`）
     static func deliveredIds(_ items: [(id: String, userInfo: [AnyHashable: Any])], conversationId: String) -> [String] {
         items.filter { NotificationRouter.dmConversationId($0.userInfo) == conversationId }.map { $0.id }
+    }
+}
+
+// MARK: - 2026-11-10 に足した欄（journey.photo-web claude/dm-fields 0af2b8c71）
+
+/// ストーリーへの返信の引用札の見せ方（画面案「会話」の先頭の札）。**欄が無いときは今の作り（枠だけ）**
+enum DMStoryCardState: Equatable {
+    /// 返信した1通ではない
+    case none
+    /// ストーリーへの返信だが、札の中身が分からない（古い通・新しい方から20件を越えた通・口が古い）
+    case unknown
+    /// 見られる（止め絵・動画は絵なし）。押すと見る
+    case live(storyId: String, image: URL?, isVideo: Bool)
+    /// 終わった（期限・棚・見られなくなった）
+    case ended
+
+    /// 見られる札のストーリー（押して開く）
+    var liveStoryId: String? {
+        if case .live(let id, _, _) = self { return id }
+        return nil
+    }
+
+    /// `since` の読み直しでは古い通の札は届き直さないので、**期限を過ぎたら手元で「終了」に倒す**
+    static func of(_ message: DMMessage, now: Date = Date()) -> DMStoryCardState {
+        guard message.isStoryReply else { return .none }
+        guard let story = message.story else { return .unknown }
+        guard story.state == "live" else { return story.state == "ended" ? .ended : .unknown }
+        if let expires = story.expiresAt.flatMap(NotificationGroups.parse), expires <= now { return .ended }
+        let isVideo = story.mediaType == "video"
+        return .live(storyId: story.id, image: isVideo ? nil : story.src.flatMap(URL.init(string:)), isVideo: isVideo)
+    }
+}
+
+extension DMText {
+    /// 受信箱の行の抜粋。最後の1通が自分のものなら頭に「あなた: 」（**欄があるときだけ**・画面案）
+    static func excerpt(_ thread: DMThread, language: String = Locale.preferredAppLanguage) -> String {
+        thread.lastMine == true ? L("あなた: ", "You: ", language: language) + thread.excerpt : thread.excerpt
+    }
+}
+
+/// ストーリーへの返信の応答の `dm` 欄（`POST /stories/{id}/replies`）。
+///
+///     写った: {dm: {conversationId}}   写らなかった: {dm: null, dmSkipped: "requestUrl" …}   欄が無い（口が古い）: 何も無い
+struct StoryReplyOutcome: Decodable, Equatable {
+    /// 写った会話。nil は「写らなかった」か「欄が無い」（`knowsMirror` で分ける）
+    let conversationId: String?
+    /// 写らなかった訳（`sendDm` の `code`・`reaction`・`error`）
+    let skipped: String?
+    /// 応答に `dm` の欄があったか（無ければ今までの作り: 会話 id を2人から組む）
+    let knowsMirror: Bool
+
+    static let unknown = StoryReplyOutcome(conversationId: nil, skipped: nil, knowsMirror: false)
+
+    init(conversationId: String?, skipped: String?, knowsMirror: Bool) {
+        self.conversationId = conversationId
+        self.skipped = skipped
+        self.knowsMirror = knowsMirror
+    }
+
+    private enum CodingKeys: String, CodingKey { case dm, dmSkipped }
+    private struct Ref: Decodable { let conversationId: String? }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        knowsMirror = c.contains(.dm)
+        conversationId = (try? c.decodeIfPresent(Ref.self, forKey: .dm))?.conversationId
+        skipped = try? c.decodeIfPresent(String.self, forKey: .dmSkipped)
+    }
+
+    /// 「送りました ›メッセージを見る」で開く会話。**欄があれば欄だけを信じる**（写らなかった返信で
+    /// 会話へ誘わない）。欄が無ければ2人から組む（今までの作り）
+    func conversationToOpen(me: String?, owner: String?) -> String? {
+        if knowsMirror { return conversationId.flatMap { PathID.isSafe($0) ? $0 : nil } }
+        guard let me, let owner, me != owner else { return nil }
+        return DMRules.conversationId(me, owner)
+    }
+}
+
+/// 自分のストーリーの返信の行から開く会話（`StoryRepliesSheet`）。**受信箱に在る会話だけ**
+enum StoryReplyConversation {
+    static func id(me: String, replier: String, hasText: Bool, inbox: DMInbox) -> String? {
+        guard hasText, !replier.isEmpty, replier != me else { return nil }
+        let id = DMRules.conversationId(me, replier)
+        return inbox.items.contains { $0.id == id } ? id : nil
     }
 }

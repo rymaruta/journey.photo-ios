@@ -2371,14 +2371,19 @@ struct StoryViewerView: View {
         isSending = true
         defer { isSending = false }
         do {
-            try await environment.stories.reply(id: story.id, text: text)
+            let outcome = try await environment.stories.reply(id: story.id, text: text)
             if clearsDraft { reply = "" }
             replyFocused = false
             replyRefusal = nil
             // 返信は会話の1通として写る（板の案 C: 「送りました ›メッセージを見る」を4秒）
-            if let gate = replyGate(for: story) { dmGate = gate.afterSending() }
-            if let me = viewerId, let peer = story.userId, peer != me {
-                sentConversation = DMRules.conversationId(me, peer)
+            if let gate = replyGate(for: story) {
+                // サーバーが「承認前の3通を使い切った」と答えたら、残りを 0 にする（欄が無ければ1つ減らすだけ）
+                dmGate = outcome.skipped == "requestLimit" ? DMReplyGate(peerId: gate.peerId, remaining: 0) : gate.afterSending()
+            }
+            // **応答に `dm` の欄があれば、写ったときだけ**「メッセージを見る」を出す（承認前の4通目・URL・日の上限で
+            // 写らなかった返信で会話へ誘わない）。欄が無い（口が古い）ときは2人から会話を組む（今までの作り）
+            if let conversation = outcome.conversationToOpen(me: viewerId, owner: story.userId) {
+                sentConversation = conversation
             } else {
                 message = L("送りました", "Sent")
             }

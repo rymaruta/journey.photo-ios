@@ -145,6 +145,9 @@ struct DMThread: Decodable, Identifiable, Equatable {
     let excerpt: String
     let unread: Int
     let state: DMEntryState
+    /// 最後の1通が自分のものか（2026-11-10 から・journey.photo-web claude/dm-fields）。**欄の無い行（古い行・
+    /// 口がまだ古い）は nil**——そのときは抜粋の頭に「あなた: 」を付けない
+    let lastMine: Bool?
 
     var isDeleted: Bool { deleted == true }
     var isRequest: Bool { state == .request }
@@ -152,11 +155,11 @@ struct DMThread: Decodable, Identifiable, Equatable {
     var showsUnread: Bool { unread > 0 && !isRequest }
 
     private enum CodingKeys: String, CodingKey {
-        case id, peerId, name, username, deleted, t, excerpt, unread, state
+        case id, peerId, name, username, deleted, t, excerpt, unread, state, lastMine
     }
 
     init(id: String, peerId: String, name: String, username: String? = nil, deleted: Bool? = nil,
-         t: String, excerpt: String, unread: Int, state: DMEntryState) {
+         t: String, excerpt: String, unread: Int, state: DMEntryState, lastMine: Bool? = nil) {
         self.id = id
         self.peerId = peerId
         self.name = name
@@ -166,6 +169,7 @@ struct DMThread: Decodable, Identifiable, Equatable {
         self.excerpt = excerpt
         self.unread = unread
         self.state = state
+        self.lastMine = lastMine
     }
 
     init(from decoder: Decoder) throws {
@@ -179,6 +183,7 @@ struct DMThread: Decodable, Identifiable, Equatable {
         excerpt = try c.decodeIfPresent(String.self, forKey: .excerpt) ?? ""
         unread = max(0, try c.decodeIfPresent(Int.self, forKey: .unread) ?? 0)
         state = try c.decodeIfPresent(DMEntryState.self, forKey: .state) ?? .inbox
+        lastMine = try? c.decodeIfPresent(Bool.self, forKey: .lastMine)
     }
 }
 
@@ -222,16 +227,59 @@ struct DMMessage: Decodable, Identifiable, Equatable {
     let t: String
     /// `story`＝ストーリーへの返信から写された1通
     let via: String?
+    /// 返信したストーリー（2026-11-10 から・ストーリーへの返信から写した通だけ）
+    let storyId: String?
+    /// 読む人から見た引用札（`dmStoryQuote.ts`）。新しい方から20件を越えた古い通は無い（＝分からない）
+    let story: DMStoryQuote?
 
-    var isStoryReply: Bool { via == "story" }
+    var isStoryReply: Bool { via == "story" || storyId != nil }
 
-    init(id: String, from: String, mine: Bool, text: String, t: String, via: String? = nil) {
+    init(id: String, from: String, mine: Bool, text: String, t: String, via: String? = nil,
+         storyId: String? = nil, story: DMStoryQuote? = nil) {
         self.id = id
         self.from = from
         self.mine = mine
         self.text = text
         self.t = t
         self.via = via
+        self.storyId = storyId
+        self.story = story
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, from, mine, text, t, via, storyId, story }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        from = try c.decodeIfPresent(String.self, forKey: .from) ?? ""
+        mine = try c.decodeIfPresent(Bool.self, forKey: .mine) ?? false
+        text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+        t = try c.decodeIfPresent(String.self, forKey: .t) ?? ""
+        via = try c.decodeIfPresent(String.self, forKey: .via)
+        storyId = try? c.decodeIfPresent(String.self, forKey: .storyId)
+        // 引用札が壊れていても1通は落とさない（札を出さないだけ）
+        story = try? c.decodeIfPresent(DMStoryQuote.self, forKey: .story)
+    }
+}
+
+/// 会話の中の、ストーリーへの返信の引用札（`GET /dm/{id}` の `items[].story`）。
+///
+///     {id, state:"live", mediaType:"image", src, expiresAt} / {id, state:"live", mediaType:"video", expiresAt}（動画は絵なし）
+///     {id, state:"ended"}
+struct DMStoryQuote: Decodable, Equatable {
+    let id: String
+    let state: String
+    let mediaType: String?
+    /// 止め絵（原寸の CloudFront の URL）。動画には無い
+    let src: String?
+    let expiresAt: String?
+
+    init(id: String, state: String, mediaType: String? = nil, src: String? = nil, expiresAt: String? = nil) {
+        self.id = id
+        self.state = state
+        self.mediaType = mediaType
+        self.src = src
+        self.expiresAt = expiresAt
     }
 }
 

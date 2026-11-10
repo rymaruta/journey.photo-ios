@@ -50,6 +50,9 @@ struct DMConversationView: View {
     @State private var showReport = false
     @State private var showProfile = false
     @State private var actionError: String?
+    /// 「タップでストーリーを見る」で開いたストーリー（全画面）
+    @State private var openedStory: Story?
+    @State private var openingStory = false
     @FocusState private var fieldFocused: Bool
     /// UI テストのときだけ（`-JPPreviewDM`）: 送った・断られた・断りの文が消えた回数を見えない要素に出す（`dm.probe`）
     @State private var probe = (sends: 0, refusals: 0, errorCleared: 0)
@@ -157,6 +160,9 @@ struct DMConversationView: View {
             Button(Labels.Common.cancel, role: .cancel) {}
         } message: {
             Text(DMBlockText.message)
+        }
+        .fullScreenCover(item: $openedStory) { story in
+            StoryViewerView(stories: [story], startIndex: 0, viewerId: auth.userId)
         }
         .sheet(isPresented: $showReport, onDismiss: afterReport) {
             ReportSheet(photoId: "", ownerId: peerId,
@@ -315,14 +321,28 @@ struct DMConversationView: View {
 
     private static let bottomId = "dm.bottom"
 
-    /// ストーリーへの返信の引用札（画面案: 先頭にストーリーの引用札。サーバーはストーリーの id を持たないので、
-    /// 枠だけ出す——「ストーリーは終了しました」とは言い切らない）
+    /// ストーリーへの返信の引用札（画面案「会話」: 止め絵＋「[名前] さんのストーリー」＋「タップでストーリーを見る」、
+    /// 終わっていれば破線の枠＋「ストーリーは終了しました」）。札の中身が分からない通（古い通・口が古い）は
+    /// 枠だけ出し、「終了」とは言い切らない（`DMStoryCardState`）
+    @ViewBuilder
     private func storyCard(for message: DMMessage) -> some View {
+        let state = DMStoryCardState.of(message)
+        if let storyId = state.liveStoryId {
+            Button { Task { await openStory(storyId) } } label: { storyCardFace(message, state: state) }
+                .buttonStyle(.plain)
+                .disabled(openingStory)
+                .accessibilityHint(L("ストーリーを開きます", "Opens the story"))
+                .accessibilityIdentifier("dm.storyCard.live")
+        } else {
+            storyCardFace(message, state: state)
+        }
+    }
+
+    private func storyCardFace(_ message: DMMessage, state: DMStoryCardState) -> some View {
         HStack(spacing: JPSpace.s) {
-            RoundedRectangle(cornerRadius: JPRadius.xs + 2)
-                .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            storyThumb(state)
                 .frame(width: 40, height: 52)
-                .overlay(Image(systemName: "circle.dashed").font(.system(size: 14)).foregroundStyle(WebTheme.text3))
+                .clipShape(RoundedRectangle(cornerRadius: JPRadius.xs + 2))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(L("ストーリーへの返信", "STORY REPLY"))
@@ -334,16 +354,71 @@ struct DMConversationView: View {
                     .font(JPFont.footnote)
                     .foregroundStyle(WebTheme.text)
                     .lineLimit(1)
+                switch state {
+                case .live:
+                    Text(L("タップでストーリーを見る", "Tap to view the story"))
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
+                case .ended:
+                    Text(L("ストーリーは終了しました", "This story has ended"))
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
+                        .accessibilityIdentifier("dm.storyCard.ended")
+                case .none, .unknown:
+                    EmptyView()
+                }
             }
             Spacer(minLength: 0)
+            if state.liveStoryId != nil {
+                Image(systemName: "chevron.right")
+                    .font(JPFont.caption.weight(.semibold))
+                    .foregroundStyle(WebTheme.text3)
+                    .accessibilityHidden(true)
+            }
         }
         .padding(.horizontal, JPSpace.s)
         .padding(.vertical, JPSpace.xs)
         .frame(minHeight: 64)
         .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.m))
         .overlay(RoundedRectangle(cornerRadius: JPRadius.m).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+        .contentShape(Rectangle())
         .padding(.top, JPSpace.xxs)
         .accessibilityElement(children: .combine)
+    }
+
+    /// 札の左の小さな絵（見られる写真は止め絵・動画は再生の印・終わった／分からないは破線の枠）
+    @ViewBuilder
+    private func storyThumb(_ state: DMStoryCardState) -> some View {
+        switch state {
+        case .live(_, let image?, _):
+            RemoteImage(url: image)
+        case .live:
+            ZStack {
+                WebTheme.surface4
+                Image(systemName: "play.fill").font(.system(size: 14)).foregroundStyle(WebTheme.foreground)
+            }
+        case .ended, .unknown, .none:
+            RoundedRectangle(cornerRadius: JPRadius.xs + 2)
+                .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                .overlay(Image(systemName: "circle.dashed").font(.system(size: 14)).foregroundStyle(WebTheme.text3))
+        }
+    }
+
+    /// 「タップでストーリーを見る」: ストーリーの一覧（`GET /stories`）からその1本を探して開く（単体の口は無い）。
+    /// 一覧に無ければ（見られなくなった・終わった）札を「終了」に倒す
+    private func openStory(_ storyId: String) async {
+        guard !openingStory else { return }
+        openingStory = true
+        defer { openingStory = false }
+        guard let stories = try? await environment.stories.list() else {
+            actionError = L("ストーリーを開けませんでした", "Couldn't open the story")
+            return
+        }
+        if let found = stories.first(where: { $0.id == storyId }) {
+            openedStory = found
+        } else {
+            log.markStoryEnded(storyId)
+        }
     }
 
     // MARK: - 下（送信欄・退会の理由）
