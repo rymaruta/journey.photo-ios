@@ -3749,6 +3749,11 @@ final class ScreenshotTests: XCTestCase {
 
     /// 1 回の起動で、会員証・メダル・「ほか N」・乗車券を 2 巡押す（1 つの試験は 5 分の上限に収まるよう 2 回の起動まで）
     private func trunkPickRounds(_ rounds: [Int]) {
+        // 2026-11-10 判断: 既定の 300 秒では足りない。4 本とも 1 本で 2 回ずつ起動して回し、run 42765477592 で
+        // 208〜221 秒（上限の 7 割）、PR #514 の run 42787091389 では回全体が平均 1.19 倍遅く、
+        // 2 本目以降が 227〜262 秒、1 本目が 300 秒を越えて止められた（手順は同じで、どの手順も一様に遅い）。
+        // `Tools/xcode-test.sh` の決まりどおり、既定は上げずにこの 4 本だけ実測の約 2.7 倍にする
+        executionTimeAllowance = 600
         pickMisses = 0
         for round in rounds {
             let app = launchTrunk(Self.trunkInsideArgs + ["-JPPreviewPerfProbe", "YES"])
