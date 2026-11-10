@@ -382,7 +382,7 @@ final class PassStoreTests: XCTestCase {
         let late = scheduled.filter { $0.at == at(17, 0, 5) }
         XCTAssertEqual(late.count, 2, "00:05 の予約を入れ直していない")
         XCTAssertEqual(Set(late.map(\.day)).count, 1, "同じ 00:05 に識別子の違う知らせが2本（2回鳴る）")
-        XCTAssertEqual(late.map(\.count).max(), 3, "枚数が書き換わらない")
+        XCTAssertEqual(late.last?.count, 3, "最後に残った予約の枚数が古い")
     }
 
     /// 知らせの枚数は、ホームに出ないカード（通報した写真・ブロックした人・自分で消した写真）を数えない。
@@ -409,6 +409,28 @@ final class PassStoreTests: XCTestCase {
         await waitForSchedule(1)
         XCTAssertEqual(scheduled.last?.count, 1, "見せないカードまで数えた")
         XCTAssertEqual(scheduled.last?.at, at(16, 10, 2), "見せないカードの分で間を空けた")
+    }
+
+    /// 🔴 **最後に残る予約は、最後に受けた枚数**（2026-11-10）。予約（OS への add）は待つ処理なので、前の予約の
+    /// 入れ終わりが遅れると、古い枚数が後から入って残りうる。ここでは2枚目の予約だけ入れ終わりを遅らせて再現する。
+    /// 予約は受けた順に1つずつ入れる（`PassStore.announceInstant` の順番待ち）
+    func testInstantNoticeKeepsTheLatestCount() async {
+        let store = PassStore(root: root, defaults: defaults, calendar: calendar) { [weak self] day, at, count, instant in
+            if count == 2 { try? await Task.sleep(nanoseconds: 100_000_000) }
+            await MainActor.run { self?.scheduled.append((day, at, count, instant)) }
+        }
+        store.use(userId: "me")
+        store.update {
+            $0.enabled = true
+            $0.cardPhotoId = "mine"
+        }
+        store.record(payload("p1"), at: at(16, 10, 0))
+        store.record(payload("p2"), at: at(16, 10, 5))
+        store.record(payload("p3"), at: at(16, 10, 10))
+        await waitForSchedule(3)
+        XCTAssertEqual(scheduled.map(\.count), [1, 2, 3], "予約が受けた順に入らない")
+        XCTAssertEqual(scheduled.last?.at, at(16, 10, 15))
+        XCTAssertEqual(scheduled.last?.count, 3, "古い枚数の予約が後から入って残った")
     }
 
     func testNoticeDate() async {

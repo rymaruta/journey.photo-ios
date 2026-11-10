@@ -288,9 +288,19 @@ final class PassStore: ObservableObject {
             save()
         }
         let day = PassExchange.dayKey(at, calendar: calendar)
+        // 🔴 **予約は受けた順に1つずつ入れる**（2026-11-10 判断・確かめ役の指摘）。OS への予約（`add`）は待つ処理で、
+        // `Task` をばらばらに立てると前の予約の入れ終わりが遅れたときに古い枚数が後から入り、それが残った
+        // （試験で [1, 3, 2] の順を再現）。前の予約を入れ終えるのを待ってから入れる（主スレッドの上で並ぶ）
+        let previous = instantChain
         let schedule = schedule
-        Task { await schedule(day, at, count, true) }
+        instantChain = Task { @MainActor in
+            await previous?.value
+            await schedule(day, at, count, true)
+        }
     }
+
+    /// すぐ届く形の予約の順番待ち（`announceInstant`）。最後に並べた予約の `Task`
+    private var instantChain: Task<Void, Never>?
 
     /// すぐ届く形の知らせに書く枚数: 届いていて、まだ開いていないカードのうち、**端末で分かる範囲で見せないもの**
     /// （通報した写真・自分で消した／非公開にした写真・ブロックした人・自分）を除いた数。
