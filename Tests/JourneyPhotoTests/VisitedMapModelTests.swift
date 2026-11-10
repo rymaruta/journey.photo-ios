@@ -193,6 +193,67 @@ final class VisitedMapModelTests: XCTestCase {
         XCTAssertTrue(m.candidates.isEmpty)
     }
 
+    /// 🔴 レビュー 2026-11-10 の 1: 外した候補の県を地図で押して［−］で戻しても、外した印は残る（黙って候補に戻らない）。
+    /// 札の「記録する」で決めて足したときは今までどおり戻す
+    func testQuickAddKeepsADismissedCandidateDismissed() async throws {
+        let m = model()
+        m.open(userId: "u")
+        m.applyPhotos([try photo("a", location: "長野県")], spots: [])
+        m.dismissCandidate("長野県")
+        XCTAssertTrue(m.candidates.isEmpty)
+        m.tap("長野県")
+        XCTAssertEqual(m.record.count("長野県"), 1)
+        m.quickRemove()
+        XCTAssertEqual(m.record.count("長野県"), 0)
+        XCTAssertTrue(m.record.dismissed.contains("長野県"), "押して［−］で戻したら外した印が消えた")
+        XCTAssertTrue(m.candidates.isEmpty, "外した候補がまた出た")
+        // 札の「記録する」は今までどおり外した印を戻す
+        m.add("長野県")
+        XCTAssertFalse(m.record.dismissed.contains("長野県"))
+    }
+
+    /// 🔴 レビュー 2026-11-10 の 2: 帯を押さえたまま祝いの札が出ても「触っている」を残さない（帯が消えなくなる）
+    func testCelebrationReleasesAHeldQuickBar() async {
+        let m = model()
+        m.open(userId: "u")
+        for name in RegionList.prefectures.dropLast() { m.add(name) }
+        m.peek("沖縄県")
+        m.setQuickBarHeld(true)
+        XCTAssertNil(m.quickBar?.deadline)
+        m.quickAdd()
+        XCTAssertEqual(m.celebration, .allVisited)
+        XCTAssertFalse(m.quickBarHeld, "祝いのあとも触っていることになっている")
+        XCTAssertNotNil(m.quickBar?.deadline, "帯が消える時刻を数え直していない")
+    }
+
+    /// 🔴 レビュー 2026-11-10 の 4: 地図の指の判定（`VisitedMapTouch.onRelease`）をモデルに渡したとき、
+    /// 長押しでは足さず、短く押したときだけ 1 回足す。動かした・ピンチした指は何もしない
+    func testMapReleaseAddsOnlyOnAShortPress() async {
+        let m = model()
+        m.open(userId: "u")
+        // 長押しで帯を出し終えた指を離す
+        m.release(VisitedMapTouch.onRelease(moved: false, pinched: false, longPressFired: true, heldSeconds: 0.6),
+                  on: "東京都")
+        XCTAssertEqual(m.record.count("東京都"), 0)
+        // 0.5 秒押してから、合図の前に離した
+        m.release(VisitedMapTouch.onRelease(moved: false, pinched: false, longPressFired: false, heldSeconds: 0.6),
+                  on: "東京都")
+        XCTAssertEqual(m.record.count("東京都"), 0, "長押しで足した")
+        XCTAssertEqual(m.quickBar?.prefecture, "東京都", "長押しで帯が出ていない")
+        // 動かした・ピンチした
+        m.release(VisitedMapTouch.onRelease(moved: true, pinched: false, longPressFired: false, heldSeconds: 0.1),
+                  on: "東京都")
+        m.release(VisitedMapTouch.onRelease(moved: false, pinched: true, longPressFired: false, heldSeconds: 0.1),
+                  on: "東京都")
+        XCTAssertEqual(m.record.count("東京都"), 0, "動かした・ピンチした指で足した")
+        // 短く 2 回押す → 2 回
+        m.release(VisitedMapTouch.onRelease(moved: false, pinched: false, longPressFired: false, heldSeconds: 0.1),
+                  on: "東京都")
+        m.release(VisitedMapTouch.onRelease(moved: false, pinched: false, longPressFired: false, heldSeconds: nil),
+                  on: "東京都")
+        XCTAssertEqual(m.record.count("東京都"), 2)
+    }
+
     /// 上限（99）で帯の［＋］を押しても足さず、警告の触覚（帯があるので「取り消す」の帯は作らない）
     func testQuickAddAtLimitWarns() async {
         let m = model()
@@ -359,16 +420,17 @@ final class VisitedMapModelTests: XCTestCase {
         XCTAssertEqual(m.successTick, 0)
     }
 
-    func testChangeDayRejectsDuplicates() async {
+    /// 2026-11-10 判断（札 #510）: 押せば同じ日に 2 回入るので、日付もほかの記録と同じ日に直せる
+    func testChangeDayAllowsTheSameDayAsAnotherVisit() async {
         let m = model()
         m.open(userId: "u")
         m.add("京都府")
         m.add("京都府")
-        m.changeDay("京都府", at: 0, to: "2026-11-08")
-        XCTAssertEqual(m.record.days("京都府"), ["2026-11-08", "2026-11-08"], "同じ日の2回目は足すで記録済み。直して重ねない")
+        XCTAssertEqual(m.record.days("京都府"), ["2026-11-08", "2026-11-08"])
         m.changeDay("京都府", at: 0, to: "2026-10-01")
         XCTAssertEqual(m.record.days("京都府"), ["2026-10-01", "2026-11-08"])
         m.changeDay("京都府", at: 0, to: "2026-11-08")
-        XCTAssertEqual(m.record.days("京都府"), ["2026-10-01", "2026-11-08"], "ほかの記録と同じ日には直せない")
+        XCTAssertEqual(m.record.days("京都府"), ["2026-11-08", "2026-11-08"], "ほかの記録と同じ日に直せない")
+        XCTAssertTrue(m.canUndo)
     }
 }

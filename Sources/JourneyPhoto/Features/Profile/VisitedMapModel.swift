@@ -205,6 +205,16 @@ final class VisitedMapModel: ObservableObject {
         selected = prefecture
     }
 
+    /// 地図の指を離したときの結果（`VisitedMapTouch.onRelease`）を記録に結ぶ。押す＝1 回足す・長押し＝足さずに帯・
+    /// 動かした・ピンチした・長押しで帯を出し終えた指＝何もしない
+    func release(_ outcome: VisitedMapTouch.Outcome, on prefecture: String) {
+        switch outcome {
+        case .add: tap(prefecture)
+        case .peek: peek(prefecture)
+        case .none: break
+        }
+    }
+
     /// 帯を触っている間は消さない。離したら 5 秒を数え直す
     func setQuickBarHeld(_ held: Bool) {
         guard quickBarHeld != held else { return }
@@ -244,8 +254,11 @@ final class VisitedMapModel: ObservableObject {
             return
         }
         let change = record.add(prefecture, day: today)
-        // 外していた候補は、記録にしたら戻す（0 回に戻したときにまた候補に出る）
-        record.restoreCandidate(prefecture)
+        // 外していた候補は、札で「記録する」「＋」と決めて足したときだけ戻す（0 回に戻したときにまた候補に出る）。
+        // 2026-11-10 判断（札 #510・レビュー）: 地図・一覧・帯から足した回（quick）は戻さない。押すたびに足す形では
+        // うっかり押して［−］で戻すことがあり、そのたびに外した印が黙って消えると、外した候補がまた出てくる。
+        // quick の回は外した印に触らないので、戻す記録（`VisitedChange`）に印の前の状態は持たせない
+        if !quick { record.restoreCandidate(prefecture) }
         guard let change else { return }
         history.push(change)
         addPulsePrefecture = prefecture
@@ -341,6 +354,9 @@ final class VisitedMapModel: ObservableObject {
             celebration = celebrated
             // 触覚は成功の1回だけ（軽い触覚と重ねない）
             successTick += 1
+            // 祝いの札が出ると帯は隠れる（`VisitedBottomBar`）。帯を押さえたまま隠れると「触っている」が残り、
+            // 帯がいつまでも消えなくなるので、ここで離したことにして数え直す（レビュー 2026-11-10）
+            if quickBarHeld { setQuickBarHeld(false) }
         } else {
             lightTick += 1
         }

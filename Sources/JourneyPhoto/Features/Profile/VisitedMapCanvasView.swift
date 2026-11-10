@@ -53,6 +53,9 @@ struct VisitedMapCanvasView: View {
     /// 指を置いている県（押している間の色・板 04b）。動かした・ピンチした・離したら消す。
     /// `@GestureState` にするのは、ScrollView に指を取られて `onEnded` が来なくても、取り消しで必ず戻るため
     @GestureState private var pressed: String?
+    /// 指が地図に乗っているか。ScrollView に指を取られて取り消されたら false に戻る（`onEnded` は来ない）。
+    /// 0.5 秒後の長押しは、これが true のときだけ出す（2026-11-10 レビュー: スクロールした指で帯と触覚が出ない）
+    @GestureState private var fingerDown = false
 
     private struct Fade {
         let from: Int
@@ -65,8 +68,8 @@ struct VisitedMapCanvasView: View {
         var risen: Bool
     }
 
-    /// 長押しの長さ（今までの判定・触覚の合図と同じ）
-    nonisolated static let longPressSeconds: Double = 0.5
+    /// 長押しの長さ（今までの判定・触覚の合図と同じ。判定は `VisitedMapTouch`）
+    nonisolated static let longPressSeconds: Double = VisitedMapTouch.longPressSeconds
     nonisolated static let plusOneSeconds: Double = 0.9
 
     nonisolated static let fadeSeconds: Double = 0.15
@@ -102,6 +105,15 @@ struct VisitedMapCanvasView: View {
             .sensoryFeedback(.impact(weight: .light), trigger: longPressTick)
         }
         .onChange(of: levels) { old, new in startFades(from: old, to: new) }
+        // 指を取られた（取り消された）ときは `onEnded` が来ないので、ここで指の途中状態を片付ける。
+        // 普通に離したときは `onEnded` が先に片付けているので何もしない
+        .onChange(of: fingerDown) { _, down in
+            guard !down, let began = touchBegan else { return }
+            Task { @MainActor in
+                await Task.yield()
+                if touchBegan == began { resetTouch() }
+            }
+        }
         .onChange(of: model.addPulse) { _, id in showPlusOne(id) }
         .onChange(of: model.celebration) { _, new in
             guard new != nil, !reduceMotion else { return }
@@ -365,6 +377,7 @@ struct VisitedMapCanvasView: View {
 
     private func dragGesture(container: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0)
+            .updating($fingerDown) { _, state, _ in state = true }
             .updating($pressed) { value, state, _ in
                 // 押している間の色: 10pt より動いた（移動・スクロール）・ピンチ中は消す
                 let distance = (value.translation.width * value.translation.width
@@ -385,7 +398,9 @@ struct VisitedMapCanvasView: View {
                     let start = value.startLocation
                     Task {
                         try? await Task.sleep(nanoseconds: UInt64(Self.longPressSeconds * 1_000_000_000))
-                        guard touchBegan == began, !moved, !pinched, pinchStart == nil else { return }
+                        guard VisitedMapTouch.firesLongPress(sameTouch: touchBegan == began, fingerDown: fingerDown,
+                                                             moved: moved, pinched: pinched || pinchStart != nil)
+                        else { return }
                         longPressTick += 1
                         if let hit = prefecture(at: start, container: container) {
                             longPressFired = began
@@ -397,7 +412,7 @@ struct VisitedMapCanvasView: View {
                 lastTranslation = value.translation
                 let distance = (value.translation.width * value.translation.width
                                 + value.translation.height * value.translation.height).squareRoot()
-                if distance > 10 { moved = true }
+                if distance > VisitedMapTouch.moveTolerance { moved = true }
                 // 動かすのは拡大しているときだけ（1 倍では画面のスクロールに任せる）。ピンチ中は動かさない
                 if moved, pinchStart == nil, let start = panStart, start.isZoomed {
                     viewport = start.panned(by: value.translation, content: geometry.size, container: container)
@@ -410,9 +425,9 @@ struct VisitedMapCanvasView: View {
                 let firedLong = began != nil && longPressFired == began
                 resetTouch()
                 // 動かした・ピンチした指では足さない（押し間違い対策）。長押しで帯を出した指も足さない
-                guard !didMove, !didPinch, !firedLong else { return }
-                let long = began.map { Date().timeIntervalSince($0) >= Self.longPressSeconds } ?? false
-                tap(at: value.location, long: long, container: container)
+                let outcome = VisitedMapTouch.onRelease(moved: didMove, pinched: didPinch, longPressFired: firedLong,
+                                                        heldSeconds: began.map { Date().timeIntervalSince($0) })
+                release(outcome, at: value.location, container: container)
             }
     }
 
@@ -486,10 +501,10 @@ struct VisitedMapCanvasView: View {
         return (unit, name)
     }
 
-    private func tap(at location: CGPoint, long: Bool, container: CGSize) {
-        guard let hit = prefecture(at: location, container: container) else { return }
+    /// 指を離した点の県に結果を渡す。押す＝1 回足す・長押し（合図の前に離した回も 0.5 秒押していれば）＝足さずに帯
+    private func release(_ outcome: VisitedMapTouch.Outcome, at location: CGPoint, container: CGSize) {
+        guard outcome != .none, let hit = prefecture(at: location, container: container) else { return }
         onTap(hit.unit, hit.name)
-        // 長押し（合図の前に指を離した回も、0.5 秒押していれば長押し）は足さずに帯。押すたびに 1 回足す
-        if long { model.peek(hit.name) } else { model.tap(hit.name) }
+        model.release(outcome, on: hit.name)
     }
 }

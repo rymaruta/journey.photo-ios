@@ -66,11 +66,15 @@ struct VisitedBottomBar: View {
 /// - 県名は明朝 18（Title 3・明朝の下限）、数は SF の等幅数字 20 semibold＋「回」13（モック）
 /// - 指で触っている間は消さない（`setQuickBarHeld`）。数が変わったら数を小さく弾ませる（「視差効果を減らす」では動かさない）
 /// - 読み上げは帯を1つのまとまりにし、数は「東京都、3 回」と読む
+/// - 99 回（上限）では数の下に「99 回までです」を出す（［＋］を押せない理由を字でも伝える・レビュー 2026-11-10）
+/// - 大きい文字（アクセシビリティの大きさ）では、県名と数の段・ボタンの段を縦に積む（板 06「横に並べた札・ボタンを
+///   縦に積む」）。それより小さい大きさでも横に入らなければ `ViewThatFits` で縦に替える。県名は 3 行まで折り返す
 struct VisitedQuickBar: View {
 
     @ObservedObject var model: VisitedMapModel
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
     /// 指が帯に触れている間（`onEnded` が来なくても離せば戻る `@GestureState`）
     @GestureState private var touching = false
     @State private var bump: Double = 1
@@ -79,42 +83,15 @@ struct VisitedQuickBar: View {
         if let bar = model.quickBar {
             let name = bar.prefecture
             let count = model.record.count(name)
-            HStack(spacing: JPSpace.xs) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(name)
-                        .font(JPFont.rowTitle)
-                        .foregroundStyle(WebTheme.foreground)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                    HStack(alignment: .firstTextBaseline, spacing: 2) {
-                        Text("\(count)")
-                            .font(JPFont.number(JPTypeScale.figureMedium, weight: .semibold, relativeTo: .title3))
-                            .foregroundStyle(WebTheme.foreground)
-                            .scaleEffect(bump)
-                        Text(L("回", count == 1 ? "time" : "times"))
-                            .font(JPFont.footnote)
-                            .foregroundStyle(WebTheme.text2)
+            Group {
+                if typeSize.isAccessibilitySize {
+                    stacked(name: name, count: count)
+                } else {
+                    ViewThatFits(in: .horizontal) {
+                        inline(name: name, count: count)
+                        stacked(name: name, count: count)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(VisitedMapText.prefectureAccessibility(name, count: count, isCandidate: false))
-                .accessibilityIdentifier("visitedMap.quick.count")
-                stepButton(systemName: "minus", label: VisitedMapText.removeOne, enabled: count > 0,
-                           id: "visitedMap.quick.minus") { model.quickRemove() }
-                stepButton(systemName: "plus", label: VisitedMapText.addVisit,
-                           enabled: count < VisitedPrefectures.maxCount,
-                           id: "visitedMap.quick.plus") { model.quickAdd() }
-                Button { model.openCard(name) } label: {
-                    Text(VisitedMapText.details)
-                        .font(JPFont.footnote)
-                        .foregroundStyle(WebTheme.accent)
-                        .padding(.horizontal, JPSpace.xxs)
-                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("visitedMap.quick.details")
             }
             .padding(.leading, JPSpace.s)
             .padding(.trailing, JPSpace.xs)
@@ -126,6 +103,8 @@ struct VisitedQuickBar: View {
             // 触っている間は消さない（ボタンの押下を邪魔しないよう同時に受ける）
             .simultaneousGesture(DragGesture(minimumDistance: 0).updating($touching) { _, state, _ in state = true })
             .onChange(of: touching) { _, held in model.setQuickBarHeld(held) }
+            // 押さえたまま隠れた（祝いの札・札を開いた）ときに「触っている」を残さない（レビュー 2026-11-10）
+            .onDisappear { model.setQuickBarHeld(false) }
             .onChange(of: count) { old, new in
                 guard !reduceMotion, old != new else { return }
                 bump = 1.18
@@ -137,6 +116,79 @@ struct VisitedQuickBar: View {
             .padding(.bottom, JPSpace.m)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("visitedMap.quickBar")
+        }
+    }
+
+    /// 横に1列（モック A）: 県名と数 ｜ ［−］［＋］［詳しく］
+    private func inline(name: String, count: Int) -> some View {
+        HStack(spacing: JPSpace.xs) {
+            info(name: name, count: count)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            buttons(name: name, count: count)
+        }
+    }
+
+    /// 縦に積む（大きい文字）: 県名と数の段の下にボタンの段
+    private func stacked(name: String, count: Int) -> some View {
+        VStack(alignment: .leading, spacing: JPSpace.xs) {
+            info(name: name, count: count)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            buttons(name: name, count: count)
+        }
+    }
+
+    private func info(name: String, count: Int) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(name)
+                .font(JPFont.rowTitle)
+                .foregroundStyle(WebTheme.foreground)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text("\(count)")
+                    .font(JPFont.number(JPTypeScale.figureMedium, weight: .semibold, relativeTo: .title3))
+                    .foregroundStyle(WebTheme.foreground)
+                    .scaleEffect(bump)
+                Text(L("回", count == 1 ? "time" : "times"))
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.text2)
+            }
+            if count >= VisitedPrefectures.maxCount {
+                Text(VisitedMapText.limitShort)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("visitedMap.quick.limit")
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(quickLabel(name: name, count: count))
+        .accessibilityIdentifier("visitedMap.quick.count")
+    }
+
+    /// 「東京都、3 回」。上限では「東京都、99 回。99 回までです」
+    private func quickLabel(name: String, count: Int) -> String {
+        let base = VisitedMapText.prefectureAccessibility(name, count: count, isCandidate: false)
+        return count >= VisitedPrefectures.maxCount ? "\(base)。\(VisitedMapText.limitShort)" : base
+    }
+
+    private func buttons(name: String, count: Int) -> some View {
+        HStack(spacing: JPSpace.xs) {
+            stepButton(systemName: "minus", label: VisitedMapText.removeOne, enabled: count > 0,
+                       id: "visitedMap.quick.minus") { model.quickRemove() }
+            stepButton(systemName: "plus", label: VisitedMapText.addVisit,
+                       enabled: count < VisitedPrefectures.maxCount,
+                       id: "visitedMap.quick.plus") { model.quickAdd() }
+            Button { model.openCard(name) } label: {
+                Text(VisitedMapText.details)
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.accent)
+                    .padding(.horizontal, JPSpace.xxs)
+                    .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("visitedMap.quick.details")
         }
     }
 
@@ -158,6 +210,7 @@ struct VisitedQuickBar: View {
         .accessibilityHidden(true)
     }
 
+    /// ［−］［＋］の丸（同じ部品・44pt）。記号は決まった枠の中の印なので固定の大きさ（板 06 の「固定のままでよいもの」）
     private func stepButton(systemName: String, label: String, enabled: Bool, id: String,
                             action: @escaping () -> Void) -> some View {
         Button(action: action) {

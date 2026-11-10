@@ -95,3 +95,52 @@ struct VisitedMapViewport: Equatable {
     /// 回数の数字だけを出す倍率（1 回以上の県）
     nonisolated static let countsFromZoom: CGFloat = 1.6
 }
+
+/// 地図の指の判定（札 #510・案 A）。画面（`VisitedMapCanvasView`）の指の状態から「足す・帯だけ・何もしない」を
+/// 決める所だけを切り出し、Linux の `swift test` で縛る（押し間違い・長押しで足さないことを本物の動きの手前で守る）
+enum VisitedMapTouch {
+
+    enum Outcome: Equatable {
+        /// 押した: 1 回足す
+        case add
+        /// 長押し（0.5 秒）: 足さずに帯だけ
+        case peek
+        /// 何もしない（動かした・ピンチした・長押しで帯を出し終えた）
+        case none
+    }
+
+    /// 長押しの長さ（今までの判定のまま。モックは 0.45 秒・触覚の合図と同じ長さにそろえた）
+    nonisolated static let longPressSeconds: Double = 0.5
+    /// これより動いたら移動・スクロール（足さない）
+    nonisolated static let moveTolerance: Double = 10
+
+    /// 0.5 秒たったときに長押しを出すか。同じ指で、**まだ指が地図に乗っていて**（ScrollView に指を取られて
+    /// 取り消されていない）、動かしてもピンチしてもいないときだけ
+    /// （2026-11-10 レビュー: 地図の上から縦にスクロールした指で、0.5 秒後に帯と触覚が出ないように）
+    static func firesLongPress(sameTouch: Bool, fingerDown: Bool, moved: Bool, pinched: Bool) -> Bool {
+        sameTouch && fingerDown && !moved && !pinched
+    }
+
+    /// 長押しで帯を出した行（一覧）。離したときに来る押下を飲み込むのに使う
+    struct LongPress: Equatable {
+        let prefecture: String
+        let at: Date
+    }
+
+    /// 長押しのあと、この秒数のうちに同じ行の押下が来たら、それは離した指の押下として飲み込む
+    nonisolated static let swallowSeconds: Double = 10
+
+    /// 一覧の行の押下を飲み込むか（長押しで帯を出したあと、同じ指を離したときの押下）。別の行・時間切れは飲み込まない
+    static func swallowsTap(on prefecture: String, after longPress: LongPress?, now: Date) -> Bool {
+        guard let longPress, longPress.prefecture == prefecture else { return false }
+        let elapsed = now.timeIntervalSince(longPress.at)
+        return elapsed >= 0 && elapsed < swallowSeconds
+    }
+
+    /// 指を離したとき
+    /// - heldSeconds: 指を置いていた長さ（分からなければ nil＝短い）
+    static func onRelease(moved: Bool, pinched: Bool, longPressFired: Bool, heldSeconds: Double?) -> Outcome {
+        guard !moved, !pinched, !longPressFired else { return .none }
+        return (heldSeconds ?? 0) >= longPressSeconds ? .peek : .add
+    }
+}

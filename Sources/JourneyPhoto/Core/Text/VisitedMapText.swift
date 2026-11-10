@@ -64,6 +64,11 @@ enum VisitedMapText {
     static var quickHint: String { L("押す＝1 回足す · 長押し＝見るだけ", "Tap adds one · Press and hold to just look") }
 
     static var details: String { L("詳しく", "Details") }
+
+    /// 帯の中の上限の一言「99 回までです」（［＋］を押せない理由）
+    static var limitShort: String {
+        L("\(VisitedPrefectures.maxCount) 回までです", "Up to \(VisitedPrefectures.maxCount)")
+    }
     static var removeOne: String { L("1 回減らす", "Remove one visit") }
 
     /// 帯から足したあとの読み上げ「東京都、3 回、1 回足しました」

@@ -76,6 +76,7 @@ final class VisitedMapViewportTests: XCTestCase {
         XCTAssertEqual(VisitedMapText.quickRemoved("東京都", count: 2), "東京都、2 回、1 回減らしました")
         XCTAssertEqual(VisitedMapText.quickRemoved("東京都", count: 0), "東京都、未、1 回減らしました")
         XCTAssertEqual(VisitedMapText.quickHint, "押す＝1 回足す · 長押し＝見るだけ")
+        XCTAssertEqual(VisitedMapText.limitShort, "99 回までです")
         XCTAssertEqual(VisitedMapText.entryAccessibility(31), "行った県、31 / 47")
         XCTAssertEqual(VisitedMapText.ratio(31), "31/47")
     }
@@ -86,13 +87,50 @@ final class VisitedMapViewportTests: XCTestCase {
         XCTAssertEqual(VisitedMapText.roundsLine(completed: 2, inProgress: (3, 12)), "2 周そろった · 3 周目 12/47")
     }
 
+    // MARK: - 地図・一覧の指の判定（札 #510・レビュー 2026-11-10 の 3・4・7）
+
+    /// 🔴 0.5 秒後の長押しは、同じ指が地図に乗ったまま・動かさず・ピンチしていないときだけ。
+    /// ScrollView に指を取られた（`fingerDown` が false）ら出さない
+    func testLongPressFiresOnlyWhileTheFingerStaysOnTheMap() {
+        XCTAssertEqual(VisitedMapTouch.longPressSeconds, 0.5)
+        XCTAssertTrue(VisitedMapTouch.firesLongPress(sameTouch: true, fingerDown: true, moved: false, pinched: false))
+        XCTAssertFalse(VisitedMapTouch.firesLongPress(sameTouch: true, fingerDown: false, moved: false, pinched: false),
+                       "スクロールに指を取られたのに長押しになる")
+        XCTAssertFalse(VisitedMapTouch.firesLongPress(sameTouch: false, fingerDown: true, moved: false, pinched: false))
+        XCTAssertFalse(VisitedMapTouch.firesLongPress(sameTouch: true, fingerDown: true, moved: true, pinched: false))
+        XCTAssertFalse(VisitedMapTouch.firesLongPress(sameTouch: true, fingerDown: true, moved: false, pinched: true))
+    }
+
+    /// 🔴 指を離したとき: 短く押す＝足す・0.5 秒以上＝帯だけ・長押しで帯を出し終えた／動かした／ピンチした＝何もしない
+    func testReleaseOutcome() {
+        typealias T = VisitedMapTouch
+        XCTAssertEqual(T.onRelease(moved: false, pinched: false, longPressFired: false, heldSeconds: 0.1), .add)
+        XCTAssertEqual(T.onRelease(moved: false, pinched: false, longPressFired: false, heldSeconds: nil), .add)
+        XCTAssertEqual(T.onRelease(moved: false, pinched: false, longPressFired: false, heldSeconds: 0.5), .peek)
+        XCTAssertEqual(T.onRelease(moved: false, pinched: false, longPressFired: true, heldSeconds: 0.6), .none)
+        XCTAssertEqual(T.onRelease(moved: true, pinched: false, longPressFired: false, heldSeconds: 0.1), .none)
+        XCTAssertEqual(T.onRelease(moved: false, pinched: true, longPressFired: false, heldSeconds: 0.1), .none)
+    }
+
+    /// 🔴 一覧: 長押しで帯を出したあと、同じ行を離したときの押下だけを飲み込む（別の行・時間切れは足す）
+    func testListSwallowsOnlyTheReleaseAfterALongPress() {
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        let lp = VisitedMapTouch.LongPress(prefecture: "東京都", at: t0)
+        XCTAssertTrue(VisitedMapTouch.swallowsTap(on: "東京都", after: lp, now: t0.addingTimeInterval(0.3)))
+        XCTAssertFalse(VisitedMapTouch.swallowsTap(on: "千葉県", after: lp, now: t0.addingTimeInterval(0.3)))
+        XCTAssertFalse(VisitedMapTouch.swallowsTap(on: "東京都", after: nil, now: t0))
+        XCTAssertFalse(VisitedMapTouch.swallowsTap(on: "東京都", after: lp,
+                                                   now: t0.addingTimeInterval(VisitedMapTouch.swallowSeconds)))
+        XCTAssertFalse(VisitedMapTouch.swallowsTap(on: "東京都", after: lp, now: t0.addingTimeInterval(-1)))
+    }
+
     /// 禁止語を使わない（全文言を走査する）
     func testNoForbiddenWordsInCopy() throws {
         var all: [String] = [
             VisitedMapText.title, VisitedMapText.breakdownNote,
             VisitedMapText.tapHint, VisitedMapText.quickHint, VisitedMapText.details, VisitedMapText.removeOne,
             VisitedMapText.quickAdded("東京都", count: 3), VisitedMapText.quickRemoved("東京都", count: 2),
-            VisitedMapText.quickRemoved("東京都", count: 0),
+            VisitedMapText.quickRemoved("東京都", count: 0), VisitedMapText.limitShort,
             VisitedMapText.recentDates, VisitedMapText.noDates, VisitedMapText.addVisit, VisitedMapText.removeVisit,
             VisitedMapText.record, VisitedMapText.candidateNote, VisitedMapText.dismissCandidate,
             VisitedMapText.restoreCandidate, VisitedMapText.undo, VisitedMapText.undoStep,

@@ -8,6 +8,8 @@ import SwiftUI
 struct VisitedPrefectureList: View {
 
     @ObservedObject var model: VisitedMapModel
+    /// 長押しで帯を出した行と時刻。指を離したときに来る Button の押下を 1 回だけ飲み込む（足さない）
+    @State private var longPressed: VisitedMapTouch.LongPress?
 
     var body: some View {
         VStack(alignment: .leading, spacing: JPSpace.xl) {
@@ -48,7 +50,37 @@ struct VisitedPrefectureList: View {
         let count = model.record.count(name)
         let level = VisitedPrefectures.level(forCount: count)
         let candidate = model.isCandidate(name)
-        return HStack(spacing: JPSpace.s) {
+        // 2026-11-10 判断（レビュー）: 行は Button のまま（ScrollView のスクロールと押した見た目を保つ）。
+        // 長押しは同時に受ける `LongPressGesture` で帯を出し、そのあと離したときの Button の押下は飲み込む
+        // （`VisitedMapTouch.swallowsTap`）。前の `onTapGesture`＋`onLongPressGesture` はスクロールを邪魔しないか
+        // 確かめていなかった（レビューの指摘）。スクロールと長押しで足さないことは UI テストで確かめる
+        return Button {
+            if VisitedMapTouch.swallowsTap(on: name, after: longPressed, now: Date()) {
+                longPressed = nil
+                return
+            }
+            longPressed = nil
+            model.tap(name)
+        } label: {
+            rowLabel(name, count: count, level: level, candidate: candidate)
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(LongPressGesture(minimumDuration: VisitedMapTouch.longPressSeconds).onEnded { _ in
+            longPressed = VisitedMapTouch.LongPress(prefecture: name, at: Date())
+            model.peek(name)
+        })
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(VisitedMapText.prefectureAccessibility(name, count: count, isCandidate: candidate))
+        .accessibilityHint(VisitedMapText.tapHint)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { model.tap(name) }
+        .accessibilityAction(named: VisitedMapText.removeOne) { model.decrease(name) }
+        .accessibilityAction(named: VisitedMapText.details) { model.openCard(name) }
+        .accessibilityIdentifier("visitedMap.row.\(name)")
+    }
+
+    private func rowLabel(_ name: String, count: Int, level: Int, candidate: Bool) -> some View {
+        HStack(spacing: JPSpace.s) {
             VisitedSwatch(level: level, isCandidate: candidate)
                 .frame(width: 24, height: 24)
                 .accessibilityHidden(true)
@@ -69,18 +101,6 @@ struct VisitedPrefectureList: View {
         .padding(.horizontal, JPSpace.m)
         .frame(maxWidth: .infinity, minHeight: JPHeight.row, alignment: .leading)
         .contentShape(Rectangle())
-        // 押す＝1 回足す・長押し＝足さずに帯（Button だと長押しのあとも押したことになり 1 回足してしまうので、
-        // 2 つの手振りに分ける。長押しに届いた指では押したことにならない）
-        .onTapGesture { model.tap(name) }
-        .onLongPressGesture(minimumDuration: VisitedMapCanvasView.longPressSeconds) { model.peek(name) }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(VisitedMapText.prefectureAccessibility(name, count: count, isCandidate: candidate))
-        .accessibilityHint(VisitedMapText.tapHint)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction { model.tap(name) }
-        .accessibilityAction(named: VisitedMapText.removeOne) { model.decrease(name) }
-        .accessibilityAction(named: VisitedMapText.details) { model.openCard(name) }
-        .accessibilityIdentifier("visitedMap.row.\(name)")
     }
 }
 

@@ -144,11 +144,15 @@ final class VisitedMapWiringTests: XCTestCase {
     /// 動かした・ピンチした指と、長押しで帯を出した指では足さない
     func testTapAddsAndLongPressPeeksOnMapAndList() throws {
         let canvas = try source("Features/Profile/VisitedMapCanvasView.swift")
-        for needle in ["if long { model.peek(hit.name) } else { model.tap(hit.name) }",
-                       "guard !didMove, !didPinch, !firedLong else { return }",
+        for needle in ["let outcome = VisitedMapTouch.onRelease(moved: didMove, pinched: didPinch, longPressFired: firedLong,",
+                       "model.release(outcome, on: hit.name)",
+                       "guard VisitedMapTouch.firesLongPress(sameTouch: touchBegan == began, fingerDown: fingerDown,",
+                       "@GestureState private var fingerDown = false",
+                       ".updating($fingerDown) { _, state, _ in state = true }",
+                       ".onChange(of: fingerDown) { _, down in",
+                       "if touchBegan == began { resetTouch() }",
                        "model.peek(hit.name)",
                        "longPressFired = began",
-                       "nonisolated static let longPressSeconds: Double = 0.5",
                        "let selected = model.selected ?? model.quickBar?.prefecture",
                        ".accessibilityAction { model.tap(name) }",
                        ".accessibilityAction(named: VisitedMapText.removeOne) { model.decrease(name) }",
@@ -157,12 +161,25 @@ final class VisitedMapWiringTests: XCTestCase {
                        "guard !reduceMotion, let name = model.addPulsePrefecture else { return }"] {
             XCTAssertTrue(canvas.contains(needle), "地図のつなぎが無い: \(needle)")
         }
-        XCTAssertFalse(canvas.contains("if long { model.openCard"), "長押しで札を開く形に戻った")
+        XCTAssertFalse(canvas.contains("model.openCard(hit.name)"), "長押しで札を開く形に戻った")
+        XCTAssertFalse(canvas.contains("nonisolated static let longPressSeconds: Double = 0.5"), "長押しの長さを二重に持っている")
         let list = try source("Features/Profile/VisitedPrefectureList.swift")
-        for needle in [".onTapGesture { model.tap(name) }",
-                       ".onLongPressGesture(minimumDuration: VisitedMapCanvasView.longPressSeconds) { model.peek(name) }",
+        for needle in ["if VisitedMapTouch.swallowsTap(on: name, after: longPressed, now: Date()) {",
+                       "model.tap(name)",
+                       ".simultaneousGesture(LongPressGesture(minimumDuration: VisitedMapTouch.longPressSeconds).onEnded { _ in",
+                       "model.peek(name)",
+                       ".buttonStyle(.plain)",
                        ".accessibilityAction(named: VisitedMapText.removeOne) { model.decrease(name) }"] {
             XCTAssertTrue(list.contains(needle), "一覧のつなぎが無い: \(needle)")
+        }
+        // 一覧は Button のまま（スクロールと押した見た目を保つ）。手振りを2つ並べる形に戻さない
+        XCTAssertFalse(list.contains(".onTapGesture"), "一覧の行が onTapGesture に戻った")
+        XCTAssertFalse(list.contains(".onLongPressGesture"), "一覧の行が onLongPressGesture に戻った")
+        let model = try source("Features/Profile/VisitedMapModel.swift")
+        for needle in ["if !quick { record.restoreCandidate(prefecture) }",
+                       "if quickBarHeld { setQuickBarHeld(false) }",
+                       "func release(_ outcome: VisitedMapTouch.Outcome, on prefecture: String)"] {
+            XCTAssertTrue(model.contains(needle), "モデルのつなぎが無い: \(needle)")
         }
     }
 
@@ -170,7 +187,7 @@ final class VisitedMapWiringTests: XCTestCase {
     /// 触っている間は消さない・黒地の上の真鍮は［詳しく］の字だけ・地は surface-2
     func testQuickBarIsWired() throws {
         let bar = try source("Features/Profile/VisitedBottomBar.swift")
-        for needle in ["enabled: count > 0,\n                           id: \"visitedMap.quick.minus\") { model.quickRemove() }",
+        for needle in ["enabled: count > 0,\n                       id: \"visitedMap.quick.minus\") { model.quickRemove() }",
                        "id: \"visitedMap.quick.plus\") { model.quickAdd() }",
                        "enabled: count < VisitedPrefectures.maxCount",
                        "Button { model.openCard(name) }",
@@ -180,6 +197,12 @@ final class VisitedMapWiringTests: XCTestCase {
                        ".onChange(of: touching) { _, held in model.setQuickBarHeld(held) }",
                        ".background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.l))",
                        "if model.quickBar != nil, model.celebration == nil",
+                       ".onDisappear { model.setQuickBarHeld(false) }",
+                       "if typeSize.isAccessibilitySize {",
+                       "ViewThatFits(in: .horizontal) {",
+                       "if count >= VisitedPrefectures.maxCount {",
+                       "VisitedMapText.limitShort",
+                       ".lineLimit(3)",
                        "guard !reduceMotion, old != new else { return }"] {
             XCTAssertTrue(bar.contains(needle), "帯のつなぎが無い: \(needle)")
         }
