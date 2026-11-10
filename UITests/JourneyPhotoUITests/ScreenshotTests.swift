@@ -6357,7 +6357,9 @@ final class ScreenshotTests: XCTestCase {
             bubble.tap()
             let open = app.buttons["dm.new.open"].firstMatch
             if open.waitForExistence(timeout: 15) {
-                XCTAssertGreaterThanOrEqual(open.frame.height, 44, "鉛筆の当たりが 44pt 未満")
+                // 鉛筆は上のバーの系統の部品（iOS 26 は見た目 36 で報告し、当たりは系統が広げる・この試験の
+                // 「カバーの位置を調整」の「完了」「キャンセル」と同じ）。run 42814992712 で 36.0 と報告された。高さではなく、押せることを確かめる
+                XCTAssertTrue(open.isHittable, "鉛筆が押せない")
                 open.tap()
                 let person = app.buttons["dm.new.person"].firstMatch
                 if person.waitForExistence(timeout: 15) {
