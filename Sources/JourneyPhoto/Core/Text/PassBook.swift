@@ -396,7 +396,8 @@ enum PassBookStatus: Equatable {
         case .bluetoothOff:
             return L("Bluetooth がオフのため、交換は止まっています", "Paused because Bluetooth is off")
         case .bluetoothNotAllowed:
-            return L("Bluetooth の使用が許可されていません", "Bluetooth isn\u{2019}t allowed")
+            return L("Bluetooth の使用が許可されていないため、交換は止まっています",
+                     "Paused because Bluetooth isn\u{2019}t allowed")
         case .distanceUnknown:
             return L("家からの距離が分からないため、今日は交換しません",
                      "Distance from home is unknown, so no swaps today")

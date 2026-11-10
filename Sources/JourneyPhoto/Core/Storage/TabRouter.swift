@@ -1,16 +1,16 @@
 import Foundation
 import Combine
 
-/// 下の札を外から切り替える道（見出しの「探す」→ 探す、メニュー → 各札）。
-///
-/// **押した回数で伝える。** 真偽値にすると、マイページから別の札へ移って
-/// もう一度押したときに「変わっていない」と見なされて効かない
-/// （`NotificationRouter` / `MissionRouter` と同じ理由）。
 /// ホームの札に積む画面（「新しくなったこと」の行き先・札 #519）
 enum HomeScreenRequest: Equatable, Sendable {
     case passBook, visitedMap
 }
 
+/// 下の札を外から切り替える道（見出しの「探す」→ 探す、メニュー → 各札）。
+///
+/// **押した回数で伝える。** 真偽値にすると、マイページから別の札へ移って
+/// もう一度押したときに「変わっていない」と見なされて効かない
+/// （`NotificationRouter` / `MissionRouter` と同じ理由）。
 @MainActor
 final class TabRouter: ObservableObject {
 

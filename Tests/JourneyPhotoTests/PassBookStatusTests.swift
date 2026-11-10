@@ -27,7 +27,12 @@ final class PassBookStatusTests: XCTestCase {
         XCTAssertEqual(PassBookStatus.off.detail, "オンにすると、近くにいたアプリの人と乗車券のカードを交換します")
         XCTAssertEqual(PassBookStatus.noTicket.detail, "乗車券を選ぶまで、交換は止まっています")
         XCTAssertEqual(PassBookStatus.bluetoothOff.detail, "Bluetooth がオフのため、交換は止まっています")
-        XCTAssertEqual(PassBookStatus.bluetoothNotAllowed.detail, "Bluetooth の使用が許可されていません")
+        XCTAssertEqual(PassBookStatus.bluetoothNotAllowed.detail, "Bluetooth の使用が許可されていないため、交換は止まっています")
+        // 止まっている訳は、どれも「交換は止まっています」か「今日は交換しません」まで言う（7つ目だけ割らない）
+        for status in [PassBookStatus.noTicket, .bluetoothOff, .bluetoothNotAllowed, .distanceUnknown, .nearHome] {
+            XCTAssertTrue(status.detail.hasSuffix("交換は止まっています") || status.detail.hasSuffix("今日は交換しません"),
+                          status.detail)
+        }
         XCTAssertEqual(PassBookStatus.distanceUnknown.detail, "家からの距離が分からないため、今日は交換しません")
         XCTAssertEqual(PassBookStatus.nearHome.detail, "家の近くなので、今日は交換しません")
         // ふだん:「〈いつ〉 · 〈届き方〉」

@@ -532,6 +532,9 @@ final class WhatsNewTests: XCTestCase {
         XCTAssertTrue(gallery.contains(".navigationDestination(isPresented: $showPassBook) { PassBookView() }"))
         XCTAssertTrue(gallery.contains(".navigationDestination(isPresented: $showVisitedMap) { VisitedMapScreen() }"))
         XCTAssertTrue(gallery.contains(".onChange(of: tabRouter.homeScreenRequests) { _, _ in openRequestedScreen() }"))
+        // ホームがまだ出ていなかった回（頼みが先に来た）は、出たときに受け取る
+        XCTAssertTrue(gallery.contains("        .onAppear { openRequestedScreen() }\n"),
+                      "ホームが出る前に来た頼みを、出たときに受け取っていない")
         // シートが閉じきってから積む
         XCTAssertTrue(gallery.contains("ModalProbe.isPresenting() || ModalProbe.isTransitioning()"))
         XCTAssertTrue(gallery.contains("case .passBook: showPassBook = true"))
