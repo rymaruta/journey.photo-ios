@@ -2459,7 +2459,14 @@ final class ScreenshotTests: XCTestCase {
         // 一覧の行（レビュー 2026-11-10 の 3）: 長押し 0.6 秒では足さず帯だけ・そのあと押すと 1 回足す
         // （長押しのあとの押下を飲み込みすぎない）・行から上へスワイプすると一覧が動き、足さない。見本の北海道は 2 回
         let row = app.descendants(matching: .any)["visitedMap.row.北海道"].firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 5), "一覧に北海道の行が無い")
+        if !row.waitForExistence(timeout: 5) {
+            // 調べ（Mac 945 で行の識別子が見つからなかった）: 要素の木のうち北海道・visitedMap の行をログに出す
+            for line in app.debugDescription.components(separatedBy: "\n")
+            where line.contains("北海道") || line.contains("visitedMap.list") || line.contains("visitedMap.row") {
+                print("VISITED-TREE: \(line)")
+            }
+        }
+        XCTAssertTrue(row.exists, "一覧に北海道の行が無い")
         var listSwipes = 0
         while !row.isHittable, listSwipes < 3 {
             app.swipeUp()
