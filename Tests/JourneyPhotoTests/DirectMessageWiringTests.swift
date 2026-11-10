@@ -3,6 +3,8 @@ import XCTest
 
 /// メッセージ（DM・第1段・札 #505・2026-11-10）の配線。画面は Linux で描けないので、**元のファイルを読んで**見張る
 /// （`StoryV2RingsFixTests` と同じ作り）。入口・通知・二重送信の鍵・文言の決まり
+/// 2026-11-10 判断: 試験は全部 `async`。同期のままだと Linux の自動登録が `main actor-isolated` で
+/// コンパイルできない（PR #512 の単体テストの記録・bd5467af と同じ直し）
 @MainActor
 final class DirectMessageWiringTests: XCTestCase {
 
@@ -37,7 +39,7 @@ final class DirectMessageWiringTests: XCTestCase {
     }
 
     /// 入口: 見出しのベルの左に吹き出し（`bubble.left`・紙飛行機ではない・owner 指示）。点は受信箱の未読だけ
-    func testHeaderHasMessagesLeftOfTheBell() throws {
+    func testHeaderHasMessagesLeftOfTheBell() async throws {
         let header = try source("Features/Common/AppHeader.swift")
         XCTAssertTrue(header.contains(#"Image(systemName: "bubble.left")"#))
         XCTAssertFalse(header.contains("paperplane"), "入口の絵が紙飛行機")
@@ -55,7 +57,7 @@ final class DirectMessageWiringTests: XCTestCase {
     }
 
     /// 点の数え方は受信箱の未読だけ（リクエスト・ブロックした相手は数えない）で、3つのタブに同じ値を配る
-    func testRootWiresInboxAndPush() throws {
+    func testRootWiresInboxAndPush() async throws {
         let root = try source("App/RootView.swift")
         XCTAssertTrue(root.contains("messages.hasUnread(hiding: hidden.blockedUserIds)"))
         XCTAssertEqual(root.components(separatedBy: "messagesUnread: messagesUnread").count - 1, 3, "タブごとに点の値が違う")
@@ -74,7 +76,7 @@ final class DirectMessageWiringTests: XCTestCase {
     }
 
     /// `NOTIF_DM` を押したら、お知らせではなくその会話へ（お知らせの行き先より先に分ける）
-    func testDMPushOpensTheConversation() throws {
+    func testDMPushOpensTheConversation() async throws {
         let delegate = try source("App/AppDelegate.swift")
         let received = slice(delegate, from: "didReceive response: UNNotificationResponse", to: "\n    }\n}")
         if let dm = index(of: "NotificationRouter.dmConversationId(", in: received),
@@ -85,7 +87,7 @@ final class DirectMessageWiringTests: XCTestCase {
     }
 
     /// 送る1通は**1回だけ**鍵を作る。押し直しは同じ鍵で送る（二重に入らない）
-    func testSendCreatesTheKeyOnceAndRetryReusesIt() throws {
+    func testSendCreatesTheKeyOnceAndRetryReusesIt() async throws {
         let view = try source("Features/Messages/DMConversationView.swift")
         let send = slice(view, from: "private func send() async {", to: "\n    }\n")
         XCTAssertEqual(send.components(separatedBy: "DMRules.newClientId()").count - 1, 1)
@@ -101,7 +103,7 @@ final class DirectMessageWiringTests: XCTestCase {
     }
 
     /// 送信の丸は送っている最中は押せない（`sendEnabled` を名指しで見る・押し直しの guard とは別・レビュー指摘2）
-    func testSendButtonIsDisabledWhileSending() throws {
+    func testSendButtonIsDisabledWhileSending() async throws {
         let view = try source("Features/Messages/DMConversationView.swift")
         let enabled = slice(view, from: "private var sendEnabled: Bool {", to: "\n    }\n")
         XCTAssertTrue(enabled.contains("!log.isSending"), "送っている最中に送信を押せる（2通が同時に走る）")
@@ -110,7 +112,7 @@ final class DirectMessageWiringTests: XCTestCase {
     }
 
     /// 10秒の読み直しは前面にいる間だけ（`.task(id:)` が前面の出入りで止まり、`poll` も前面でなければ回さない）
-    func testPollingStopsInBackground() throws {
+    func testPollingStopsInBackground() async throws {
         let view = try source("Features/Messages/DMConversationView.swift")
         XCTAssertTrue(view.contains(#".task(id: "\(conversationId)#\(scenePhase == .active)") { await poll() }"#),
                       "裏へ回っても読み直しが止まらない")
@@ -122,7 +124,7 @@ final class DirectMessageWiringTests: XCTestCase {
 
     /// アイコンの数字（レビュー指摘1）: 会話を読んだら通知センターの通知を消し、受信箱の控えが変わったら数字を合わせ、
     /// お知らせを読んでもメッセージの未読分は残す
-    func testBadgeFollowsMessages() throws {
+    func testBadgeFollowsMessages() async throws {
         let view = try source("Features/Messages/DMConversationView.swift")
         let read = slice(view, from: "private func markRead() async {", to: "\n    }\n")
         XCTAssertTrue(read.contains("await push.removeDelivered(conversationId: conversationId)"))
@@ -144,7 +146,7 @@ final class DirectMessageWiringTests: XCTestCase {
     }
 
     /// 通知の会話に今の人が入っていなければ開かない（レビュー指摘5）
-    func testPushConversationMustBelongToTheCurrentUser() throws {
+    func testPushConversationMustBelongToTheCurrentUser() async throws {
         let root = try source("App/RootView.swift")
         let take = slice(root, from: "private func takeConversationRequest()", to: "\n    }\n\n")
         XCTAssertTrue(take.contains("guard let me = auth.userId, DMRules.peer(of: id, me: me) != nil else { return }"),
@@ -153,7 +155,7 @@ final class DirectMessageWiringTests: XCTestCase {
     }
 
     /// リクエストの札は画面に出た分だけ会話を読む（`LazyVStack`・最大50件を一度に読まない・レビュー指摘4）
-    func testRequestFactsLoadLazily() throws {
+    func testRequestFactsLoadLazily() async throws {
         let view = try source("Features/Messages/DMRequestsView.swift")
         if let lazy = index(of: "LazyVStack(alignment: .leading, spacing: 0) {", in: view),
            let cards = index(of: "ForEach(requests) { request in", in: view),
@@ -166,7 +168,7 @@ final class DirectMessageWiringTests: XCTestCase {
     }
 
     /// 断られて欄に本文を戻したとき、戻した変化で断りの文を消さない（run 937: 送った 1・断られた 1・消えた 1）
-    func testRestoredDraftKeepsTheRefusal() throws {
+    func testRestoredDraftKeepsTheRefusal() async throws {
         let view = try source("Features/Messages/DMConversationView.swift")
         let change = slice(view, from: ".onChange(of: draft) { old, new in", to: ".alert(")
         if let skip = index(of: "if new == restoredDraft { return }", in: change),
@@ -180,7 +182,7 @@ final class DirectMessageWiringTests: XCTestCase {
     }
 
     /// 会話の状態（読み込み中・失敗・見られない・ブロック中・退会・圏外）がそろっている
-    func testConversationStates() throws {
+    func testConversationStates() async throws {
         let view = try source("Features/Messages/DMConversationView.swift")
         for part in ["JPLoadingState(kind: .bubbles)", "会話を読み込めませんでした", "ブロック中です", "ブロックを解除",
                      "この会話は表示できません", "受信箱にもどる", "このユーザーは退会したため、メッセージを送れません。",
@@ -201,7 +203,7 @@ final class DirectMessageWiringTests: XCTestCase {
     }
 
     /// ストーリーの返信欄（画面案 A〜E）
-    func testStoryReplyField() throws {
+    func testStoryReplyField() async throws {
         let viewer = try source("Features/Stories/StoryViewerView.swift")
         XCTAssertTrue(viewer.contains("返信はメッセージとして残ります"))
         XCTAssertFalse(viewer.contains("さんにだけ届きます"), "返信はメッセージに残るのに「だけ届きます」のまま")
@@ -228,7 +230,7 @@ final class DirectMessageWiringTests: XCTestCase {
     }
 
     /// 文言の決まり: 画面の字は日英（`L`）・「捨てる」「撮りどき」を出さない・本文は 12pt 以上
-    func testWording() throws {
+    func testWording() async throws {
         for file in ["Features/Messages/DMInboxView.swift", "Features/Messages/DMRequestsView.swift",
                      "Features/Messages/DMConversationView.swift", "Features/Messages/DMParts.swift",
                      "Core/Text/DirectMessages.swift"] {

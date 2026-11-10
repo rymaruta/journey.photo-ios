@@ -535,6 +535,8 @@ final class DirectMessageTests: XCTestCase {
 }
 
 /// 主アクタの部品（受信箱の控え・通知の行き先）の試験
+/// 2026-11-10 判断: このクラスの試験は全部 `async` にする。同期のままだと Linux の自動登録が
+/// `main actor-isolated` でコンパイルできない（PR #512 の単体テストの記録・bd5467af と同じ直し）
 @MainActor
 final class DirectMessageMainActorTests: XCTestCase {
 
@@ -613,7 +615,7 @@ final class DirectMessageMainActorTests: XCTestCase {
     }
 
     /// 前面で届いたメッセージの通知: 開いている会話の分は帯を出さず、読み直しの合図だけ（レビュー指摘6）
-    func testForegroundDMOnOpenConversationIsSilent() {
+    func testForegroundDMOnOpenConversationIsSilent() async {
         let router = NotificationRouter()
         XCTAssertFalse(router.noteDMArrival(Self.conv), "開いていない会話の通知を黙らせた")
         router.conversationOpened(Self.conv)
@@ -629,7 +631,7 @@ final class DirectMessageMainActorTests: XCTestCase {
 
     /// アイコンの数字はサーバーと同じ「お知らせの未読＋メッセージの未読会話」（レビュー指摘1）。
     /// 消す通知はその会話のメッセージの通知だけ
-    func testBadgeCountsMessagesAndRemovesOnlyThatConversation() {
+    func testBadgeCountsMessagesAndRemovesOnlyThatConversation() async {
         XCTAssertEqual(AppBadge.count(bellUnread: 0, messagesUnread: 2), 2, "お知らせを読んだらメッセージの未読まで消えた")
         XCTAssertEqual(AppBadge.count(bellUnread: 3, messagesUnread: 1), 4)
         XCTAssertEqual(AppBadge.count(bellUnread: -1, messagesUnread: 0), 0)
@@ -642,7 +644,7 @@ final class DirectMessageMainActorTests: XCTestCase {
         XCTAssertEqual(AppBadge.deliveredIds(delivered, conversationId: Self.conv), ["n1", "n4"])
     }
 
-    func testStoreDropsAnotherPersonsInbox() {
+    func testStoreDropsAnotherPersonsInbox() async {
         let store = DMInboxStore()
         store.setForTesting(DMInbox(rebuilding: [DMThread(id: "a", peerId: "pa", name: "a", t: "2026-11-09T00:00:00.000Z", excerpt: "", unread: 1, state: .inbox)]), owner: "u1")
         XCTAssertTrue(store.hasUnread(hiding: []))
@@ -655,7 +657,7 @@ final class DirectMessageMainActorTests: XCTestCase {
 
     // MARK: - 通知
 
-    func testPushPayloadOpensConversation() {
+    func testPushPayloadOpensConversation() async {
         XCTAssertEqual(NotificationRouter.dmConversationId(["type": "dm", "convId": Self.conv, "byId": Self.peer]), Self.conv)
         XCTAssertNil(NotificationRouter.dmConversationId(["type": "like", "convId": Self.conv]))
         XCTAssertNil(NotificationRouter.dmConversationId(["type": "dm", "convId": "../user/account"]))
