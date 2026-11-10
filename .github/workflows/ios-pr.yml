@@ -260,145 +260,25 @@ jobs:
           fi
           echo "skip=${skip}" >> "$GITHUB_OUTPUT"
 
-  # 本物の Xcode でコンパイル → 単体テスト → UI テスト（起動・全タブ・画面の絵）
-  # **待つのは静的な検査だけ。** Linux の単体テストは、Linux の通信部品
-  # （swift-corelibs-foundation）の弱点で、まれに落ちる・止まるテストがある
-  # （終わった通信の取り消しで `TaskRegistry` が落ちる。iOS には無い）。それで
-  # 本物の Xcode の段まで止めると、いちばん欲しい結果が得られない
-  xcode:
-    name: Xcode のビルドとテスト（シミュレータ）
-    needs: [checks, tested, scope]
-    # `tested` は PR 以外では飛ぶ（skipped）。`!cancelled()` で、そのときも Xcode の段は回す
-    if: ${{ !cancelled() && needs.checks.result == 'success' && needs.tested.outputs.skip != 'true' && (github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false') && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
-    runs-on: macos-15
-    # 依存（Amplify → aws-sdk-swift → smithy-swift）を控えなしで組むと50分を超える
-    # （ios-testflight.yml の run #8）。控えが当たれば短い。
-    # 画面の試験だけで 75 分まで伸び、90 分だと成功の直後に切れる（2026-10-20・#321）
-    # 2026-10-22: 試験が増え、Mac が同時に3本走る日は画面の試験だけで 104 分を超え、120 分で
-    # 打ち切られた（#370 の run 39790228542・落ちた試験は無い）。公開リポジトリなので分数は無料
-    # 2026-11-06: UI テストを全件流す回（関連テストを特定できない変更）が上限に近づいた。
-    # #490 約 120 分・#491 約 123 分・#492 約 150 分、#493 は 160 分を超えて打ち切られた（UI テストの段・落ちた試験は無い）。
-    # 160 → 240（GitHub の hosted runner の上限は 360 分）。**時間稼ぎ**——全件の回は増える一方なので、
-    # 近いうちに分ける（TestFlight の全件の回の「先に流す分＋分けた組」と同じ方式）必要がある。
-    # 関連テストに絞れる変更は 1 時間前後（#493 は 14 本に絞って 51 分）
-    timeout-minutes: 240
+  # 🔴 **UI テストの範囲を決める**（Linux で数十秒・2026-11-10 判断）。前は Xcode の job の中（組んだあと）で
+  # 決めていた。全部になる回を別々の Mac に分けて流すには、Mac を起こす前に決める必要がある。
+  # 決め方は前と同じ（`pick-ui-tests.py --related`・手動の full_ui は all・差分が読めなければ all）。
+  # 出すもの: sharded（全部の回か）と list（`-only-testing` の一覧を base64 で。Xcode の job がそのまま使う）
+  ui-plan:
+    name: UI テストの範囲を決める
+    needs: scope
+    if: ${{ github.event_name != 'pull_request' || (needs.scope.outputs.app_changed != 'false' && !github.event.pull_request.draft) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      sharded: ${{ steps.pick.outputs.sharded }}
+      list: ${{ steps.pick.outputs.list }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      # TestFlight と同じ選び方（名前から版を読み、いちばん新しい Xcode）。
-      # 理由は ios-testflight.yml の「Xcode を選ぶ」
-      - name: Xcode を選ぶ
-        run: |
-          set +e
-          ver="$(ls -d /Applications/Xcode_*.app 2>/dev/null \
-                 | sed 's#.*/Xcode_##; s#\.app$##' \
-                 | grep -E '^[0-9]+(\.[0-9]+)*$' \
-                 | sort -V | tail -1)"
-          if [ -n "$ver" ] && [ -d "/Applications/Xcode_$ver.app/Contents/Developer" ]; then
-            echo "DEVELOPER_DIR=/Applications/Xcode_$ver.app/Contents/Developer" >> "$GITHUB_ENV"
-            echo "選んだ Xcode: $ver"
-            echo "### Xcode $ver" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "::warning::版の読める Xcode が見つかりません。既定のまま進みます"
-          fi
-
-      - name: Xcode の版を読む
-        run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
-
-      # 🔴 **控えの鍵はここで1回だけ決める**（2026-10-17）。main の上げる回は、あとの「ビルド番号を決める」が
-      # project.yml を書き換えるので、書く段で `hashFiles('project.yml')` を計算すると戻す段と鍵がずれる
-      - name: 控えの鍵を決める
-        run: echo "CACHE_KEY=xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}" >> "$GITHUB_ENV"
-
-      # **読むだけ**（2026-10-17 判断）。PR の回の控えは `refs/pull/<番号>/merge` に区切られ、
-      # ほかの枝からは読めない。しかも1つ約7GB で、書くと置き場（10GB）から main の控えを
-      # 追い出す。見た3回（PR #183・#185・#195 の検証）とも控え無しで、テストの段が 47〜55分。
-      # 書くのは TestFlight の main の回だけ（ios-testflight.yml の「控えを書く」）
-      - name: 依存の控えを戻す
-        id: dependency-cache
-        uses: actions/cache/restore@v6
-        with:
-          path: |
-            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
-            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
-            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.dSYM
-            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.app
-            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xctest
-            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xcresult
-            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
-            ~/Library/Caches/org.swift.swiftpm
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
-          restore-keys: |
-            ${{ env.CACHE_KEY }}
-            xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
-
-      # キャッシュの命中・復元時間を毎回記録し、次の高速化を実測で判断する。
-      # restore-keys で近いキャッシュを拾った場合は cache-hit=false となる点にも注意。
-      - name: キャッシュの診断
-        env:
-          CACHE_HIT: ${{ steps.dependency-cache.outputs.cache-hit }}
-          CACHE_MATCHED_KEY: ${{ steps.dependency-cache.outputs.cache-matched-key }}
-          CACHE_PRIMARY_KEY: ${{ steps.dependency-cache.outputs.cache-primary-key }}
-        run: |
-          {
-            echo "### Xcodeキャッシュ診断"
-            if [ -n "${CACHE_MATCHED_KEY:-}" ]; then
-              echo "復元: あり"
-              if [ "${CACHE_HIT:-}" = "true" ]; then
-                echo "一致: 完全一致"
-              else
-                echo "一致: 近いキーから復元"
-              fi
-              echo "復元キー: \`${CACHE_MATCHED_KEY}\`"
-            else
-              echo "復元: なし（依存関係を再ビルド）"
-            fi
-            echo "要求キー: \`${CACHE_PRIMARY_KEY:-不明}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Xcode プロジェクトを作る
-        run: |
-          if ! command -v xcodegen >/dev/null 2>&1; then
-            brew install xcodegen
-          else
-            echo "xcodegen はインストール済みのため再インストールしません"
-          fi
-          xcodegen generate
-
-      # **組む → 単体 → UI の3段**（2026-10-17・`Tools/xcode-test.sh`）。単体が落ちたら UI（30分前後）まで
-      # 行かずに止まる。**ここは絞らない**——main に入る前に全部が回る場所（枝の確認の `screens` は
-      # ここには無い）。書き方の理由（-sdk を渡さない・arm64 に絞る・xcodebuild を直に叩く）は
-      # ios-testflight.yml の「組む」の段の注記
-      - name: 組む
-        run: |
-          set -euo pipefail
-          echo "DEVICE=$(python3 Tools/pick-simulator.py)" >> "$GITHUB_ENV"
-          XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh build
-
-      # Share-card-only changes use their owning unit suite; all other PRs
-      # and manual runs still execute the entire JourneyPhotoTests bundle.
-      - name: 単体テストの対象を決める
-        env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          selected="JourneyPhotoTests"
-          if [ "${{ github.event_name }}" = "pull_request" ] && git cat-file -e "${PR_BASE_SHA}^{commit}" 2>/dev/null; then
-            files="$(git diff --no-ext-diff --name-only --find-renames "$PR_BASE_SHA" HEAD -- || true)"
-            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -Evq '^(Sources/JourneyPhoto/Services/(SignatureShareCardRenderer|ShareCardMap|ShareCardText)\.swift|Sources/JourneyPhoto/Resources/(country-outlines|japan-prefectures)\.json|Tools/generate-(country-outlines|japan-prefectures)\.py|Tests/JourneyPhotoTests/(SignatureShareCardRenderer|ShareCardMap)Tests\.swift)$'; then
-              selected="JourneyPhotoTests/SignatureShareCardRendererTests JourneyPhotoTests/ShareCardMapTests"
-            fi
-          fi
-          echo "UNIT_ONLY_TESTING=$selected" >> "$GITHUB_ENV"
-          echo "### Xcode単体テスト選別" >> "$GITHUB_STEP_SUMMARY"
-          echo "対象: $selected" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: 単体テスト
-        run: XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh unit build/Unit.xcresult
-      # PRでは関連UIテストと起動スモークを実行。判定不能な変更は全画面検証に倒す。
-      # 変更のあるUIテスト自体も差分選別に含める。
       - name: UIテストの対象を決める
+        id: pick
         env:
           FULL_UI: ${{ inputs.full_ui }}
         run: |
@@ -434,13 +314,228 @@ jobs:
           else
             echo "- 手動実行または差分取得不可" >> "$GITHUB_STEP_SUMMARY"
           fi
+          # 🔴 **分けて流すのは、一覧が「全部」1行だけのときだけ**（ios-testflight.yml の「どこまで流すかを決める」の full と同じ見方）
+          if [ "$(cat /tmp/pr-ui-tests.txt)" = "-only-testing:JourneyPhotoUITests" ]; then
+            echo "sharded=true" >> "$GITHUB_OUTPUT"
+            echo "流し方: 別々の Mac に分けて流す（組む → 単体＋先に流す分 → 分けた組 3 台）" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "sharded=false" >> "$GITHUB_OUTPUT"
+            echo "流し方: 1 台（Xcode のビルドとテスト）" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "list=$(base64 -w0 /tmp/pr-ui-tests.txt)" >> "$GITHUB_OUTPUT"
+
+  # UI テストが全部になる回だけ、別々の Mac に分けて流す（`mac-sharded-tests.yml`・ios-testflight.yml の
+  # 全部の回と同じもの。写しを作らない）。同時に動く Mac は多いときで3台（分けた組）。
+  # 枝の差分（先に流す UI テストを選ぶ）は PR の base...head で比べる（この回の sha はマージの試しのコミット）。
+  # 手で流した回は main...この sha。待つものと条件は `xcode` と同じ（静的な検査が通ってから・テスト済みなら飛ばす）
+  xcode-sharded:
+    name: Xcode のテスト（UI テストが全部・分けて流す）
+    needs: [checks, tested, scope, ui-plan]
+    if: ${{ !cancelled() && needs.checks.result == 'success' && needs.tested.outputs.skip != 'true' && needs.ui-plan.outputs.sharded == 'true' && (github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false') && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    uses: ./.github/workflows/mac-sharded-tests.yml
+    with:
+      compare: ${{ github.event_name == 'pull_request' && format('{0}...{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || '' }}
+
+  # 本物の Xcode でコンパイル → 単体テスト → UI テスト（起動・全タブ・画面の絵）
+  # **待つのは静的な検査だけ。** Linux の単体テストは、Linux の通信部品
+  # （swift-corelibs-foundation）の弱点で、まれに落ちる・止まるテストがある
+  # （終わった通信の取り消しで `TaskRegistry` が落ちる。iOS には無い）。それで
+  # 本物の Xcode の段まで止めると、いちばん欲しい結果が得られない
+  #
+  # 🔴 **UI テストが全部になる回は、この job では流さない**（2026-11-10 判断・owner 承認「いいよ」）。
+  # 上の `xcode-sharded` が別々の Mac に分けて流し（`mac-sharded-tests.yml`・TestFlight の全部の回と同じもの）、
+  # この job は Linux の上で**その結果を見る門**になる。job の名前（必須のチェックにしうる名前・ship-fix の
+  # 「Xcode のビルドとテストが緑か skipped」）は変えず、分けた回が落ちたらこの job も落ちる。
+  # 分けた回でこの job を skipped にすると、落ちていても「飛ばした＝通った」に見えるので、そうしない
+  xcode:
+    name: Xcode のビルドとテスト（シミュレータ）
+    needs: [checks, tested, scope, ui-plan, xcode-sharded]
+    # `tested` は PR 以外では飛ぶ（skipped）。`!cancelled()` で、そのときも Xcode の段は回す
+    # `xcode-sharded` は絞れる回では skipped・分けた回で落ちたら failure。どちらでもこの job は回す（門で読む）
+    if: ${{ !cancelled() && needs.checks.result == 'success' && needs.tested.outputs.skip != 'true' && (github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false') && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    # 分けた回は結果を読むだけなので Linux（Mac を使わない）
+    runs-on: ${{ needs.ui-plan.outputs.sharded == 'true' && 'ubuntu-latest' || 'macos-15' }}
+    # 依存（Amplify → aws-sdk-swift → smithy-swift）を控えなしで組むと50分を超える
+    # （ios-testflight.yml の run #8）。控えが当たれば短い。
+    # 画面の試験だけで 75 分まで伸び、90 分だと成功の直後に切れる（2026-10-20・#321）
+    # 2026-10-22: 試験が増え、Mac が同時に3本走る日は画面の試験だけで 104 分を超え、120 分で
+    # 打ち切られた（#370 の run 39790228542・落ちた試験は無い）。公開リポジトリなので分数は無料
+    # 2026-11-06: UI テストを全件流す回（関連テストを特定できない変更）が上限に近づいた。
+    # #490 約 120 分・#491 約 123 分・#492 約 150 分、#493 は 160 分を超えて打ち切られた（UI テストの段・落ちた試験は無い）。
+    # 160 → 240（GitHub の hosted runner の上限は 360 分）。**時間稼ぎ**だった。
+    # 2026-11-10: 全件の回は `xcode-sharded` に分けた（PR #514 の run 42787091389 は 1 台で UI テストの段だけ 2 時間 31 分）。
+    # この job の Mac で流すのは関連テストに絞れる回だけ（#493 は 14 本に絞って 51 分）。上限は、
+    # 絞れる回の実測を重ねてから下げる（まだ下げない）
+    timeout-minutes: 240
+    env:
+      SHARDED: ${{ needs.ui-plan.outputs.sharded }}
+    steps:
+      # 分けて流した回: 呼んだ組（`xcode-sharded`）の結果がそのままこの job の結果
+      - name: 分けて流した回の結果を見る
+        if: ${{ env.SHARDED == 'true' }}
+        env:
+          RESULT: ${{ needs.xcode-sharded.result }}
+        run: |
+          echo "分けて流した回（xcode-sharded）の結果: ${RESULT}"
+          if [ "$RESULT" != "success" ]; then
+            echo "::error::UI テストを分けて流した回が通っていません（${RESULT}）。「Xcode のテスト（UI テストが全部・分けて流す）」の各 job を見る"
+            exit 1
+          fi
+          echo "### Xcode のビルドとテスト: 別々の Mac に分けて流し、全部通りました" >> "$GITHUB_STEP_SUMMARY"
+
+      # 範囲を決める job が落ちた・読めないときは、Mac で何を流すか分からないので止める（全部に倒しもしない）
+      - name: UIテストの範囲が決まったかを見る
+        if: ${{ env.SHARDED != 'true' }}
+        env:
+          PLAN: ${{ needs.ui-plan.result }}
+          LIST_B64: ${{ needs.ui-plan.outputs.list }}
+        run: |
+          if [ "$PLAN" != "success" ] || [ -z "$LIST_B64" ]; then
+            echo "::error::「UI テストの範囲を決める」の job が通っていません（${PLAN}）"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+        if: ${{ env.SHARDED != 'true' }}
+        with:
+          fetch-depth: 0
+
+      # TestFlight と同じ選び方（名前から版を読み、いちばん新しい Xcode）。
+      # 理由は ios-testflight.yml の「Xcode を選ぶ」
+      - name: Xcode を選ぶ
+        if: ${{ env.SHARDED != 'true' }}
+        run: |
+          set +e
+          ver="$(ls -d /Applications/Xcode_*.app 2>/dev/null \
+                 | sed 's#.*/Xcode_##; s#\.app$##' \
+                 | grep -E '^[0-9]+(\.[0-9]+)*$' \
+                 | sort -V | tail -1)"
+          if [ -n "$ver" ] && [ -d "/Applications/Xcode_$ver.app/Contents/Developer" ]; then
+            echo "DEVELOPER_DIR=/Applications/Xcode_$ver.app/Contents/Developer" >> "$GITHUB_ENV"
+            echo "選んだ Xcode: $ver"
+            echo "### Xcode $ver" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::版の読める Xcode が見つかりません。既定のまま進みます"
+          fi
+
+      - name: Xcode の版を読む
+        if: ${{ env.SHARDED != 'true' }}
+        run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
+
+      # 🔴 **控えの鍵はここで1回だけ決める**（2026-10-17）。main の上げる回は、あとの「ビルド番号を決める」が
+      # project.yml を書き換えるので、書く段で `hashFiles('project.yml')` を計算すると戻す段と鍵がずれる
+      - name: 控えの鍵を決める
+        if: ${{ env.SHARDED != 'true' }}
+        run: echo "CACHE_KEY=xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}" >> "$GITHUB_ENV"
+
+      # **読むだけ**（2026-10-17 判断）。PR の回の控えは `refs/pull/<番号>/merge` に区切られ、
+      # ほかの枝からは読めない。しかも1つ約7GB で、書くと置き場（10GB）から main の控えを
+      # 追い出す。見た3回（PR #183・#185・#195 の検証）とも控え無しで、テストの段が 47〜55分。
+      # 書くのは TestFlight の main の回だけ（ios-testflight.yml の「控えを書く」）
+      - name: 依存の控えを戻す
+        if: ${{ env.SHARDED != 'true' }}
+        id: dependency-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.dSYM
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.app
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xctest
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xcresult
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ env.CACHE_KEY }}
+            xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
+
+      # キャッシュの命中・復元時間を毎回記録し、次の高速化を実測で判断する。
+      # restore-keys で近いキャッシュを拾った場合は cache-hit=false となる点にも注意。
+      - name: キャッシュの診断
+        if: ${{ env.SHARDED != 'true' }}
+        env:
+          CACHE_HIT: ${{ steps.dependency-cache.outputs.cache-hit }}
+          CACHE_MATCHED_KEY: ${{ steps.dependency-cache.outputs.cache-matched-key }}
+          CACHE_PRIMARY_KEY: ${{ steps.dependency-cache.outputs.cache-primary-key }}
+        run: |
+          {
+            echo "### Xcodeキャッシュ診断"
+            if [ -n "${CACHE_MATCHED_KEY:-}" ]; then
+              echo "復元: あり"
+              if [ "${CACHE_HIT:-}" = "true" ]; then
+                echo "一致: 完全一致"
+              else
+                echo "一致: 近いキーから復元"
+              fi
+              echo "復元キー: \`${CACHE_MATCHED_KEY}\`"
+            else
+              echo "復元: なし（依存関係を再ビルド）"
+            fi
+            echo "要求キー: \`${CACHE_PRIMARY_KEY:-不明}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Xcode プロジェクトを作る
+        if: ${{ env.SHARDED != 'true' }}
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          else
+            echo "xcodegen はインストール済みのため再インストールしません"
+          fi
+          xcodegen generate
+
+      # **組む → 単体 → UI の3段**（2026-10-17・`Tools/xcode-test.sh`）。単体が落ちたら UI（30分前後）まで
+      # 行かずに止まる。**ここは絞らない**——main に入る前に全部が回る場所（枝の確認の `screens` は
+      # ここには無い）。書き方の理由（-sdk を渡さない・arm64 に絞る・xcodebuild を直に叩く）は
+      # ios-testflight.yml の「組む」の段の注記
+      - name: 組む
+        if: ${{ env.SHARDED != 'true' }}
+        run: |
+          set -euo pipefail
+          echo "DEVICE=$(python3 Tools/pick-simulator.py)" >> "$GITHUB_ENV"
+          XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh build
+
+      # Share-card-only changes use their owning unit suite; all other PRs
+      # and manual runs still execute the entire JourneyPhotoTests bundle.
+      - name: 単体テストの対象を決める
+        if: ${{ env.SHARDED != 'true' }}
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          selected="JourneyPhotoTests"
+          if [ "${{ github.event_name }}" = "pull_request" ] && git cat-file -e "${PR_BASE_SHA}^{commit}" 2>/dev/null; then
+            files="$(git diff --no-ext-diff --name-only --find-renames "$PR_BASE_SHA" HEAD -- || true)"
+            if [ -n "$files" ] && ! printf '%s\n' "$files" | grep -Evq '^(Sources/JourneyPhoto/Services/(SignatureShareCardRenderer|ShareCardMap|ShareCardText)\.swift|Sources/JourneyPhoto/Resources/(country-outlines|japan-prefectures)\.json|Tools/generate-(country-outlines|japan-prefectures)\.py|Tests/JourneyPhotoTests/(SignatureShareCardRenderer|ShareCardMap)Tests\.swift)$'; then
+              selected="JourneyPhotoTests/SignatureShareCardRendererTests JourneyPhotoTests/ShareCardMapTests"
+            fi
+          fi
+          echo "UNIT_ONLY_TESTING=$selected" >> "$GITHUB_ENV"
+          echo "### Xcode単体テスト選別" >> "$GITHUB_STEP_SUMMARY"
+          echo "対象: $selected" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 単体テスト
+        if: ${{ env.SHARDED != 'true' }}
+        run: XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh unit build/Unit.xcresult
+      # 範囲は「UI テストの範囲を決める」の job が決めた一覧をそのまま使う（決め方は1か所・2026-11-10）。
+      # 一覧は base64 で受け取り、1バイトも変えずに書き戻す（空の行が1つ増えると xcode-test.sh が中身ありと読む）
+      - name: UIテストの対象を受け取る
+        if: ${{ env.SHARDED != 'true' }}
+        env:
+          LIST_B64: ${{ needs.ui-plan.outputs.list }}
+        run: |
+          set -euo pipefail
+          python3 -c 'import base64,sys; open("/tmp/pr-ui-tests.txt","wb").write(base64.b64decode(sys.argv[1]))' "$LIST_B64"
+          cat /tmp/pr-ui-tests.txt
 
       - name: UI テスト（通常は起動スモーク・手動指定で全画面）
+        if: ${{ env.SHARDED != 'true' }}
         run: XCODE_LOG=build-xcodebuild.log bash Tools/xcode-test.sh ui build/Test.xcresult /tmp/pr-ui-tests.txt
 
       # 失敗したテストの名前と理由を、まとめの頁に出す（ログを掘らずに読めるように）
       - name: 結果のまとめ
-        if: ${{ always() }}
+        if: ${{ always() && env.SHARDED != 'true' }}
         run: |
           for r in build/Unit.xcresult build/Test.xcresult; do
             [ -d "$r" ] && python3 Tools/xcresult-summary.py "$r" >> "$GITHUB_STEP_SUMMARY"

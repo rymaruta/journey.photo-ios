@@ -470,23 +470,82 @@ if testflight_yml.exists() and pr_yml.exists():
         fail(f"ios-testflight.yml に「{MARK}」の段（if つき）がありません")
     elif mark.group(1).strip() != MARK_IF:
         fail(f"ios-testflight.yml の「{MARK}」の if が変わっています（絞った回にも付きうる）: {mark.group(1).strip()}")
-    # **別々の Mac に分けて流す回の印**（2026-10-31・#429）。「まとめ」の job の同じ名前の段で、
-    # 単体・先に流す分・分けた組の**全部**が success のときだけ付く。`always()` や `|| …` を足すと、落ちた回にも付く
+    # **別々の Mac に分けて流す回の印**（2026-10-31・#429）。2026-11-10 に分けて流す組を再利用のワークフロー
+    # `mac-sharded-tests.yml` へ移した（ios-testflight.yml と ios-pr.yml の両方が呼ぶ）。その「まとめ」の job の
+    # 同じ名前の段で、単体・先に流す分・分けた組の**全部**が success のときだけ付く。`always()` や `|| …` を足すと、落ちた回にも付く
+    sharded_yml = ROOT / ".github/workflows/mac-sharded-tests.yml"
+    shard_flow = sharded_yml.read_text(encoding="utf-8") if sharded_yml.exists() else ""
+    if not shard_flow:
+        fail(".github/workflows/mac-sharded-tests.yml がありません（UI テストを分けて流す組・2026-11-10）")
+    if not re.search(r"^on:\n  workflow_call:\n", shard_flow, re.M) or re.search(r"^  (workflow_dispatch|push|pull_request):", shard_flow, re.M):
+        fail("mac-sharded-tests.yml が呼ばれるだけ（on: workflow_call のみ）になっていません")
     FINISH_MARK_IF = ("needs.test-build.result == 'success' && needs.pre.result == 'success'"
                       " && needs.ui.result == 'success'")
     marks = re.findall(r"- name: " + re.escape(MARK) + r"\n\s+if: \$\{\{(.+?)\}\}\s*\n", flow)
-    if len(marks) != 2 or marks[1].strip() != FINISH_MARK_IF:
-        fail(f"ios-testflight.yml の「まとめ」の「{MARK}」の if が変わっています（分けた組が落ちても付きうる）: {marks[1:]}")
+    if len(marks) != 1:
+        fail(f"ios-testflight.yml の「{MARK}」は `build` の job の1つだけのはず（分けた回の印は mac-sharded-tests.yml）: {len(marks)} 個")
+    shard_marks = re.findall(r"- name: " + re.escape(MARK) + r"\n\s+if: \$\{\{(.+?)\}\}\s*\n", shard_flow)
+    if [m.strip() for m in shard_marks] != [FINISH_MARK_IF]:
+        fail(f"mac-sharded-tests.yml の「まとめ」の「{MARK}」の if が変わっています（分けた組が落ちても付きうる）: {shard_marks}")
+    # まとめの job は、どれかが落ちたら自分も落ちる（呼ぶ側の ios-pr.yml の門が、呼んだ組の結果をそのまま読む）
+    result_job = re.search(r"^  result:\n(.*?)(?=^  \w[\w-]*:\n|\Z)", shard_flow, re.M | re.S)
+    if not result_job or "needs: [test-build, pre, ui]" not in result_job.group(1) \
+            or "if: ${{ !(" + FINISH_MARK_IF + ") }}" not in result_job.group(1) or "exit 1" not in result_job.group(1):
+        fail("mac-sharded-tests.yml の `result`（まとめ）が、どれかが落ちたときに落ちる段を持っていません")
     # 分けた組は、単体と先に流す分の両方を待つ（`needs: [test-build, pre]`・job の if を足さない＝どれかが落ちたら skipped）
-    ui_job = re.search(r"^  ui:\n(.*?)(?=^  \w[\w-]*:\n|\Z)", flow, re.M | re.S)
+    ui_job = re.search(r"^  ui:\n(.*?)(?=^  \w[\w-]*:\n|\Z)", shard_flow, re.M | re.S)
     if not ui_job or "needs: [test-build, pre]" not in ui_job.group(1) or re.search(r"^    if:", ui_job.group(1), re.M):
-        fail("ios-testflight.yml の `ui`（分けた組）が、単体テストと先に流す分の両方を待っていません（needs: [test-build, pre]・if なし）")
+        fail("mac-sharded-tests.yml の `ui`（分けた組）が、単体テストと先に流す分の両方を待っていません（needs: [test-build, pre]・if なし）")
     else:
         # 組の数は `--plan <数>` と matrix で揃える（ずれると、流れない組・空の組ができる）
         parts = re.search(r"part: \[([0-9, ]+)\]", ui_job.group(1))
-        plan_n = re.search(r"pick-ui-tests\.py --plan (\d+) ", flow)
+        plan_n = re.search(r"pick-ui-tests\.py --plan (\d+) ", shard_flow)
         if not parts or not plan_n or [int(x) for x in parts.group(1).split(",")] != list(range(1, int(plan_n.group(1)) + 1)):
-            fail("ios-testflight.yml の分けた組の matrix と `pick-ui-tests.py --plan <数>` の数が揃っていません")
+            fail("mac-sharded-tests.yml の分けた組の matrix と `pick-ui-tests.py --plan <数>` の数が揃っていません")
+    # **写しを作らない**（2026-11-10 owner 承認の条件）。分けて流す組（組む・先に流す分・分けた組・割り振り）は
+    # mac-sharded-tests.yml の1か所だけに書き、ios-testflight.yml と ios-pr.yml はそれを呼ぶ
+    USES_SHARDED = "uses: ./.github/workflows/mac-sharded-tests.yml"
+    for text, file in ((flow, "ios-testflight.yml"), (pr_flow, "ios-pr.yml")):
+        if text.count(USES_SHARDED) != 1:
+            fail(f"{file} が mac-sharded-tests.yml を1回だけ呼んでいません（分けて流す組を共有する）")
+        code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))  # 注記は数えない
+        for copied in ("pick-ui-tests.py --plan", "test-products.py pack", "uses: ./.github/actions/mac-test-part"):
+            if copied in code:
+                fail(f"{file} に「{copied}」があります（分けて流す組の写し。mac-sharded-tests.yml を呼ぶ）")
+        if re.search(r"^  (test-build|pre|ui):\n", text, re.M):
+            fail(f"{file} に分けて流す組の job（test-build・pre・ui）の写しがあります")
+    # 同時に動く Mac（CLAUDE.md: 全部の回は最大4台・同時5台まで）。分けた組の Mac は matrix の組の数（3）が最大で、
+    # 前後の job（組む・先に流す分）とは重ならない。TestFlight の回は `build`（Archive）の1台が並ぶので4台
+    shard_macs = max([len(re.findall(r"[^,\[\] ]+", m)) for m in re.findall(r"part: \[([^\]]+)\]", shard_flow)] or [99])
+    if shard_macs > 3 or len(re.findall(r"^    runs-on: macos", shard_flow, re.M)) != 3:
+        fail(f"mac-sharded-tests.yml の同時に動く Mac が増えています（分けた組 {shard_macs} 台・Mac の job は組む・先に流す分・分けた組の3つ）")
+    # **PR の検証の全部の回は分けて流す**（2026-11-10 owner 承認）。決めるのは「UI テストの範囲を決める」の job の1か所
+    # （一覧が「全部」1行だけなら sharded=true）。分けた組を呼ぶ job はその答えだけで走り、
+    # 「Xcode のビルドとテスト（シミュレータ）」は名前を変えず、分けた回はその結果を読む門になる（skipped にしない）
+    pr_jobs = {m.group(1): m.group(2) for m in re.finditer(r"^  ([\w-]+):\n(.*?)(?=^  [\w-]+:\n|\Z)", pr_flow, re.M | re.S)}
+    plan_job = pr_jobs.get("ui-plan", "")
+    if 'if [ "$(cat /tmp/pr-ui-tests.txt)" = "-only-testing:JourneyPhotoUITests" ]; then\n            echo "sharded=true"' not in plan_job \
+            or "python3 Tools/pick-ui-tests.py --related /tmp/pr-ui.diff" not in plan_job \
+            or "base64 -w0 /tmp/pr-ui-tests.txt" not in plan_job:
+        fail("ios-pr.yml の「UI テストの範囲を決める」（ui-plan）が、全部の回を sharded=true と出していません")
+    sharded_job = pr_jobs.get("xcode-sharded", "")
+    if USES_SHARDED not in sharded_job or "needs.ui-plan.outputs.sharded == 'true'" not in sharded_job \
+            or "needs.checks.result == 'success'" not in sharded_job or "needs.tested.outputs.skip != 'true'" not in sharded_job:
+        fail("ios-pr.yml の `xcode-sharded` が、全部の回だけ・静的な検査のあと・テスト済みでないときに分けた組を呼んでいません")
+    xcode_job = pr_jobs.get("xcode", "")
+    if "    name: Xcode のビルドとテスト（シミュレータ）\n" not in xcode_job:
+        fail("ios-pr.yml の `xcode` の名前が「Xcode のビルドとテスト（シミュレータ）」ではありません（必須のチェックの名前を変えない）")
+    if not re.search(r"^    needs: \[[^\]]*\bxcode-sharded\b[^\]]*\]", xcode_job, re.M) \
+            or "runs-on: ${{ needs.ui-plan.outputs.sharded == 'true' && 'ubuntu-latest' || 'macos-15' }}" not in xcode_job \
+            or "RESULT: ${{ needs.xcode-sharded.result }}" not in xcode_job \
+            or 'if [ "$RESULT" != "success" ]; then' not in xcode_job:
+        fail("ios-pr.yml の `xcode` が、分けた回の結果（needs.xcode-sharded.result）を読む門になっていません（落ちても通った扱いになる）")
+    # 1台で流す段は、分けた回では走らない（同じテストを2度流さない）。名前つきの段はどれも SHARDED を見る
+    for name in re.findall(r"^      - name: (.+)$", xcode_job, re.M):
+        found = re.search(r"^      - name: " + re.escape(name) + r"\n(.*?)(?=^      - |\Z)", xcode_job, re.M | re.S)
+        block = found.group(1) if found else ""
+        if name != "分けて流した回の結果を見る" and "env.SHARDED != 'true'" not in block.split("\n", 1)[0]:
+            fail(f"ios-pr.yml の `xcode` の段「{name}」が、分けた回でも走ります（if: env.SHARDED != 'true' が無い）")
     # **分けて流すかの決め方は1か所**（2026-10-31・見直しの指摘）。`build` の job と「分けて流すかを決める」の
     # job が同じ `--sharded` を呼び、「テストの品を組む」はその答えだけで走る（式を2つ書くとずれる）
     if len(re.findall(r'pick-ui-tests\.py --sharded "\$\{SUBMIT:-\}" "\$\{STORE_SHOTS:-\}" "\$\{SCREENS:-\}"', flow)) != 2 \
@@ -516,10 +575,12 @@ if testflight_yml.exists() and pr_yml.exists():
     part_action = ROOT / ".github/actions/mac-test-part/action.yml"
     if "continue-on-error" in (part_action.read_text(encoding="utf-8") if part_action.exists() else "continue-on-error"):
         fail(".github/actions/mac-test-part/action.yml が無いか、continue-on-error があります（落ちても印まで進む）")
-    for job in ("test-build", "pre", "ui"):
-        body = re.search(r"^  " + job + r":\n(.*?)(?=^  \w[\w-]*:\n|\Z)", flow, re.M | re.S)
+    for job in ("test-build", "pre", "ui", "result"):
+        body = re.search(r"^  " + job + r":\n(.*?)(?=^  \w[\w-]*:\n|\Z)", shard_flow, re.M | re.S)
         if not body or "continue-on-error" in body.group(1):
-            fail(f"ios-testflight.yml の job「{job}」が無いか、continue-on-error があります（落ちても印まで進む）")
+            fail(f"mac-sharded-tests.yml の job「{job}」が無いか、continue-on-error があります（落ちても印まで進む）")
+    if "continue-on-error" in (re.search(r"^  (?:ui-plan|xcode-sharded):\n.*?(?=^  xcode:\n)", pr_flow, re.M | re.S) or re.match("", "")).group(0):
+        fail("ios-pr.yml の ui-plan・xcode-sharded に continue-on-error があります（落ちても通った扱いになる）")
     # 印が結果を見る段の `id`
     for name, step_id in [("単体テスト", "unit"), ("UI テスト（画面の絵）", "ui")]:
         block = step_block(flow, name) or ""

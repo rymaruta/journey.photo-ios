@@ -9,7 +9,7 @@
 #
 # **Mac の使い方**: 組む（1台）→ 流す（1台）を順に。同時には1台しか使わない（Mac は同時5台まで・
 # TestFlight に上げる回が優先）。同じ回が重ならないよう `concurrency` で1本ずつ。
-# 組み立ては `ios-testflight.yml` の「テスト用ビルドを準備」と、`.github/actions/mac-test-part` の使い回し。
+# 組み立ては `mac-sharded-tests.yml` の「テスト用ビルドを準備」と、`.github/actions/mac-test-part` の使い回し。
 #
 # **まだ有効にしていない。** 定期（schedule）は、リポジトリの変数 `IOS_PERF_ENABLED` が `true` のときだけ走る。
 # 手動（workflow_dispatch）はいつでも走る。有効にするのは、手動で1回流して値が出るのを確かめてから
@@ -62,7 +62,7 @@ jobs:
       - name: Xcodeのバージョンを確認
         run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
 
-      # 控えの鍵と path は `ios-testflight.yml` の「テスト用ビルドを準備」と同じ（違うと当たらない）。読むだけ
+      # 控えの鍵と path は `mac-sharded-tests.yml` の「テスト用ビルドを準備」と同じ（違うと当たらない）。読むだけ
       - name: ビルドキャッシュのキーを生成
         run: echo "CACHE_KEY=xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}" >> "$GITHUB_ENV"
 
