@@ -14,6 +14,7 @@ CLASS_DOC = {
     "SmokeTests": "起動・基本画面の表示を確認",
     "ScreenshotTests": "各画面を操作してスクリーンショットを撮影",
     "PerformanceTests": "操作時間・メモリ使用量を計測（性能値そのものでは合否を付けない）",
+    "MapETAProbeTests": "日本の区間で Apple の地図が返す移動の見込み（車・歩き・公共交通）を記録（合否なし）",
 }
 DETAILS = {
     "PerformanceTests/testMainTabRevisitTime": ("タブ再訪問", "各タブを開き、再選択が反映されるまでの時間を計測"),
