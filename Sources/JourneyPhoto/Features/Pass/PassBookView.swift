@@ -5,7 +5,7 @@ import SwiftUI
 /// 上に3つの数（枚・都道府県・いちばん遠く）、字のタブ（綴じた順・場所ごと・よく会う人）、
 /// 節ごとに 3×3 の綴じ（足りない枠は点線の空き）。押すとその節のカードを1枚ずつめくれる。
 ///
-/// **届く前のカードは出さない**（夕方まで「いま近くにいる」を見せない・`PassBook.delivered`）。
+/// **届く前のカードは出さない**（「夕方にまとめて受け取る」の人には夕方まで見せない・`PassBook.delivered`）。
 /// 写真が公開一覧から消えた（非公開・削除）・持ち主をブロックしたカードも出さない（`PassStore.isVisible`）
 struct PassBookView: View {
 
@@ -54,8 +54,8 @@ struct PassBookView: View {
                         JPLoadingState(kind: .grid)
                     } else {
                         EmptyState(title: L("まだカードがありません", "No cards yet"),
-                                   message: L("すれちがい乗車券をオンにして出かけると、近くにいたアプリの人のカードがその日の夕方に届きます。",
-                                              "Turn on Pass tickets and head out — cards from app users you passed arrive that evening."),
+                                   message: L("すれちがい乗車券をオンにして出かけると、近くにいたアプリの人のカードが届きます。",
+                                              "Turn on Pass tickets and head out — cards from app users you pass arrive here."),
                                    actionTitle: Self.settingsTitle, actionIdentifier: "passBook.emptySettings") {
                             if fromSettings { dismiss() } else { showSettings = true }
                         }

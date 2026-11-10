@@ -7,7 +7,7 @@ final class PassStoreTests: XCTestCase {
 
     private var root: URL!
     private var defaults: UserDefaults!
-    private var scheduled: [(day: String, at: Date, count: Int)] = []
+    private var scheduled: [(day: String, at: Date, count: Int, instant: Bool)] = []
 
     private var calendar: Calendar {
         var c = Calendar(identifier: .gregorian)
@@ -29,14 +29,19 @@ final class PassStoreTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
-    private func makeStore(user: String? = "me") -> PassStore {
-        let store = PassStore(root: root, defaults: defaults, calendar: calendar) { [weak self] day, at, count in
-            await MainActor.run { self?.scheduled.append((day, at, count)) }
+    private func recorder() -> (String, Date, Int, Bool) async -> Void {
+        { [weak self] day, at, count, instant in
+            await MainActor.run { self?.scheduled.append((day, at, count, instant)) }
         }
+    }
+
+    private func makeStore(user: String? = "me", delivery: PassExchange.Delivery? = nil) -> PassStore {
+        let store = PassStore(root: root, defaults: defaults, calendar: calendar, schedule: recorder())
         store.use(userId: user)
         store.update {
             $0.enabled = true
             $0.cardPhotoId = "mine"
+            $0.delivery = delivery
         }
         return store
     }
@@ -59,7 +64,7 @@ final class PassStoreTests: XCTestCase {
 
     /// 🔴 **同じ相手（同じ写真）は1日1回まで**。次の日（次の束）ならまた受け取る
     func testSamePeerOncePerDay() async {
-        let store = makeStore()
+        let store = makeStore(delivery: .evening)
         XCTAssertNotNil(store.record(payload("p1"), at: at(16, 10)))
         XCTAssertNil(store.record(payload("p1"), at: at(16, 15)), "同じ日に同じ人を2回綴じた")
         XCTAssertNotNil(store.record(payload("p2"), at: at(16, 15)))
@@ -97,9 +102,9 @@ final class PassStoreTests: XCTestCase {
         XCTAssertNil(store.record(payload("over"), at: at(16, 11)), "上限を超えて綴じた")
     }
 
-    /// 持つのは時の単位の時刻と、0.1 度に丸めた場所だけ。届くのは夕方
+    /// 持つのは時の単位の時刻と、0.1 度に丸めた場所だけ。「夕方にまとめて受け取る」なら届くのは夕方
     func testRecordKeepsOnlyCoarseTimeAndPlace() async throws {
-        let store = makeStore()
+        let store = makeStore(delivery: .evening)
         let card = try XCTUnwrap(store.record(payload("p1", note: "こんにちは"), at: at(16, 15, 42),
                                               placeName: "京都市", place: Photo.Coords(lat: 34.99487, lng: 135.78503)))
         XCTAssertEqual(card.metHour, at(16, 15))
@@ -111,6 +116,7 @@ final class PassStoreTests: XCTestCase {
         XCTAssertEqual(scheduled.last?.day, "2026-10-16")
         XCTAssertEqual(scheduled.last?.at, at(16, 18))
         XCTAssertEqual(scheduled.last?.count, 1)
+        XCTAssertEqual(scheduled.last?.instant, false, "夕方の束をすぐ届く形で知らせた")
         store.record(payload("p2"), at: at(16, 16))
         await waitForSchedule(2)
         XCTAssertEqual(scheduled.last?.count, 2, "知らせの枚数が書き換わらない")
@@ -143,7 +149,7 @@ final class PassStoreTests: XCTestCase {
         store.record(payload("p1"), at: at(16, 10))
         store.update { $0.note = "霧の朝" }
 
-        let again = PassStore(root: root, defaults: defaults, calendar: calendar) { _, _, _ in }
+        let again = PassStore(root: root, defaults: defaults, calendar: calendar) { _, _, _, _ in }
         again.use(userId: "me")
         XCTAssertEqual(again.encounters.map(\.photoId), ["p1"])
         XCTAssertEqual(again.settings.note, "霧の朝")
@@ -164,7 +170,7 @@ final class PassStoreTests: XCTestCase {
                                 draftDirectory: root.appendingPathComponent("drafts"),
                                 offlineTripsRoot: root.appendingPathComponent("trips"), passRoot: root)
         XCTAssertNil(defaults.string(forKey: PassStore.lastUserKey))
-        let again = PassStore(root: root, defaults: defaults, calendar: calendar) { _, _, _ in }
+        let again = PassStore(root: root, defaults: defaults, calendar: calendar) { _, _, _, _ in }
         again.use(userId: "me")
         XCTAssertTrue(again.encounters.isEmpty)
         XCTAssertFalse(again.settings.enabled)
@@ -180,7 +186,7 @@ final class PassStoreTests: XCTestCase {
 
     /// 🔴 **届く前は見せない・公開一覧に無い写真（非公開・削除）は見せない・ブロックした人は見せない**
     func testVisibility() async throws {
-        let store = makeStore()
+        let store = makeStore(delivery: .evening)
         store.record(payload("p1"), at: at(16, 10))
         store.record(payload("p2"), at: at(16, 11))
         store.record(payload("p3"), at: at(16, 12))
@@ -221,7 +227,7 @@ final class PassStoreTests: XCTestCase {
         let id = try XCTUnwrap(store.encounters.first { $0.photoId == "p2" }?.id)
         store.remove(id)
         XCTAssertTrue(store.book(hiding: hiding, now: evening).isEmpty)
-        let again = PassStore(root: root, defaults: defaults, calendar: calendar) { _, _, _ in }
+        let again = PassStore(root: root, defaults: defaults, calendar: calendar) { _, _, _, _ in }
         again.use(userId: "me")
         XCTAssertEqual(again.encounters.map(\.photoId), ["p1"], "外したカードが読み直すと戻った")
     }
@@ -233,7 +239,7 @@ final class PassStoreTests: XCTestCase {
         XCTAssertEqual(card.shownNote, "こんにちは")
         store.setNoteHidden(card.id, true)
         XCTAssertEqual(store.encounters.first?.shownNote, "")
-        let again = PassStore(root: root, defaults: defaults, calendar: calendar) { _, _, _ in }
+        let again = PassStore(root: root, defaults: defaults, calendar: calendar) { _, _, _, _ in }
         again.use(userId: "me")
         XCTAssertEqual(again.encounters.first?.noteHidden, true, "伏せた印が残らない")
         again.setNoteHidden(card.id, false)
@@ -246,7 +252,7 @@ final class PassStoreTests: XCTestCase {
         let card = try XCTUnwrap(store.record(payload("p1", note: "なりすまし"), at: at(16, 10)))
         store.markNoteReported(card.id)
         XCTAssertEqual(store.encounters.first?.shownNote, "")
-        let again = PassStore(root: root, defaults: defaults, calendar: calendar) { _, _, _ in }
+        let again = PassStore(root: root, defaults: defaults, calendar: calendar) { _, _, _, _ in }
         again.use(userId: "me")
         XCTAssertEqual(again.encounters.first?.noteReported, true)
         XCTAssertEqual(again.encounters.first?.noteHidden, true)
@@ -292,7 +298,7 @@ final class PassStoreTests: XCTestCase {
 
     /// 期限切れで止めた後に入り直したら、まだ届いていない束の知らせを予約し直す
     func testNoticesAreRescheduledOnSignIn() async throws {
-        let store = makeStore()
+        let store = makeStore(delivery: .evening)
         store.record(payload("p1"), at: Date().addingTimeInterval(-60))
         await waitForSchedule(1)
         scheduled = []
@@ -301,6 +307,149 @@ final class PassStoreTests: XCTestCase {
         await waitForSchedule(1)
         XCTAssertEqual(scheduled.count, 1, "入り直しても夕方の知らせを予約し直さない")
         XCTAssertEqual(scheduled.first?.count, 1)
+    }
+
+    // MARK: - すぐ届く（2026-11-10 owner「すれちがったら即時交換されて欲しい」）
+
+    /// 🔴 **既定は「すぐ」**。綴じたその場で帳とホームの束に出る。届く時も時の単位（分は持たない）。
+    /// 18 時を待たない（`PassExchange.deliveryDate(for:delivery:)` を夕方に戻すと落ちる）
+    func testInstantIsDefaultAndVisibleRightAway() async throws {
+        let store = makeStore()
+        XCTAssertNil(store.settings.delivery)
+        XCTAssertEqual(store.settings.deliveryMode, .instant, "既定が「すぐ」ではない")
+        let before = store.arrivals
+        let card = try XCTUnwrap(store.record(payload("p1"), at: at(16, 15, 42),
+                                              placeName: "京都市", place: Photo.Coords(lat: 34.99487, lng: 135.78503)))
+        XCTAssertEqual(card.deliverAt, at(16, 15), "届く時が時の単位になっていない（または夕方のまま）")
+        XCTAssertEqual(card.metHour, at(16, 15))
+        XCTAssertEqual(try XCTUnwrap(card.placeLat), 35.0, accuracy: 1e-9, "場所の粗さが変わった")
+        XCTAssertEqual(store.arrivals, before + 1, "ホームに届いた合図を出していない")
+        let now = at(16, 15, 43)
+        store.applyResolved(all: [try photo("p1", owner: "a")], now: now)
+        XCTAssertEqual(store.book(blocked: [], now: now).map(\.photoId), ["p1"], "綴じた直後に帳に出ない")
+        XCTAssertEqual(store.unopened(blocked: [], now: now).map(\.photoId), ["p1"], "綴じた直後にホームの束に出ない")
+        XCTAssertTrue(store.hasDelivered(now: now))
+        // 18 時を過ぎても同じ日の束（次の日に回さない）・同じ相手は同じ日に1回のまま
+        XCTAssertNil(store.record(payload("p1"), at: at(16, 19)), "同じ日に同じ人を2回綴じた")
+        XCTAssertEqual(store.record(payload("p2"), at: at(16, 19, 5))?.deliverAt, at(16, 19))
+    }
+
+    /// 🔴 **知らせはすれちがうたびに鳴らさない**: 最初の1枚はすぐ、その後 15 分の間の分は間の終わりに1回
+    /// （枚数を書き換え）。数はまだ開いていない枚数
+    func testInstantNoticesAreGrouped() async {
+        let store = makeStore()
+        store.record(payload("p1"), at: at(16, 10, 0))
+        await waitForSchedule(1)
+        XCTAssertEqual(scheduled.last?.at, at(16, 10, 0), "最初の1枚をすぐ知らせない")
+        XCTAssertEqual(scheduled.last?.instant, true)
+        XCTAssertEqual(scheduled.last?.count, 1)
+        store.record(payload("p2"), at: at(16, 10, 5))
+        await waitForSchedule(2)
+        XCTAssertEqual(scheduled.last?.at, at(16, 10, 15), "15 分の間にもう一度すぐ鳴らした")
+        XCTAssertEqual(scheduled.last?.count, 2)
+        store.record(payload("p3"), at: at(16, 10, 12))
+        await waitForSchedule(3)
+        XCTAssertEqual(scheduled.last?.at, at(16, 10, 15), "まだ鳴っていない予約に足さなかった")
+        XCTAssertEqual(scheduled.last?.count, 3, "枚数が書き換わらない")
+        // 開いた分は数えない
+        store.markOpened(store.encounters.map(\.id))
+        store.record(payload("p4"), at: at(16, 10, 20))
+        await waitForSchedule(4)
+        XCTAssertEqual(scheduled.last?.at, at(16, 10, 30))
+        XCTAssertEqual(scheduled.last?.count, 1, "開いた分まで数えた")
+        // 鳴らした時を覚えている（OS に起こされた起動が終わっても、次の1枚ですぐ鳴らさない）
+        let again = PassStore(root: root, defaults: defaults, calendar: calendar, schedule: recorder())
+        again.use(userId: "me")
+        XCTAssertEqual(again.noticeAt, at(16, 10, 30), "知らせた時を帳に残していない")
+        again.record(payload("p5"), at: at(16, 10, 25))
+        await waitForSchedule(5)
+        XCTAssertEqual(scheduled.last?.at, at(16, 10, 30))
+        // 間が空けば、またすぐ
+        again.record(payload("p6"), at: at(16, 11, 0))
+        await waitForSchedule(6)
+        XCTAssertEqual(scheduled.last?.at, at(16, 11, 0))
+    }
+
+    func testNoticeDate() async {
+        let base = at(16, 10)
+        XCTAssertEqual(PassExchange.noticeInterval, 15 * 60)
+        XCTAssertEqual(PassExchange.noticeDate(now: base, last: nil), base)
+        XCTAssertEqual(PassExchange.noticeDate(now: base, last: base.addingTimeInterval(-60)),
+                       base.addingTimeInterval(14 * 60))
+        XCTAssertEqual(PassExchange.noticeDate(now: base, last: base.addingTimeInterval(-15 * 60)), base)
+        XCTAssertEqual(PassExchange.noticeDate(now: base, last: base.addingTimeInterval(300)), base.addingTimeInterval(300))
+    }
+
+    /// 「夕方にまとめて受け取る」を選べば今までどおり 18 時（それまでは帳にもホームにも出ない）
+    func testEveningSettingKeepsTheBundle() async throws {
+        let store = makeStore(delivery: .evening)
+        let before = store.arrivals
+        let card = try XCTUnwrap(store.record(payload("p1"), at: at(16, 15, 42)))
+        XCTAssertEqual(card.deliverAt, at(16, 18))
+        XCTAssertEqual(store.arrivals, before, "夕方の分でホームに届いた合図を出した")
+        store.applyResolved(all: [try photo("p1", owner: "a")], now: at(16, 19))
+        XCTAssertTrue(store.unopened(blocked: [], now: at(16, 17)).isEmpty, "夕方より前に出た")
+        XCTAssertEqual(store.unopened(blocked: [], now: at(16, 19)).count, 1)
+    }
+
+    /// 前の版の設定（届き方の欄が無い）は「すぐ」。上げた時に夕方を待っていたカードは、読んだ時点で届いた扱い
+    func testUpgradeDefaultsToInstantAndCatchesUp() async throws {
+        let old = try JSONDecoder().decode(PassSettings.self, from: Data(
+            #"{"enabled":true,"mode":"always","note":"","showsFrom":true}"#.utf8))
+        XCTAssertEqual(old.deliveryMode, .instant, "前の版の設定が「すぐ」にならない")
+
+        let store = makeStore(delivery: .evening)
+        let now = Date()
+        let card = try XCTUnwrap(store.record(payload("p1"), at: now))
+        XCTAssertGreaterThan(card.deliverAt, now)
+        // 前の版の帳を作る（設定から届き方の欄を消す）
+        let url = root.appendingPathComponent(OfflineTripStore.hex("me") + ".json")
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        var settings = try XCTUnwrap(json["settings"] as? [String: Any])
+        settings.removeValue(forKey: "delivery")
+        json["settings"] = settings
+        json.removeValue(forKey: "noticeAt")
+        try JSONSerialization.data(withJSONObject: json).write(to: url)
+        await waitForSchedule(1)
+        scheduled = []
+
+        let upgraded = PassStore(root: root, defaults: defaults, calendar: calendar, schedule: recorder())
+        upgraded.use(userId: "me")
+        XCTAssertEqual(upgraded.settings.deliveryMode, .instant)
+        let moved = try XCTUnwrap(upgraded.encounters.first)
+        XCTAssertLessThanOrEqual(moved.deliverAt, Date(), "夕方を待っていたカードが届かない")
+        XCTAssertEqual(moved.deliverAt, moved.metHour, "届いた時が時の単位でない")
+        await waitForSchedule(1)
+        XCTAssertEqual(scheduled.filter(\.instant).count, 1, "届いた扱いにしたのに知らせない")
+        XCTAssertTrue(scheduled.filter { !$0.instant }.isEmpty, "夕方の束をまだ予約している")
+    }
+
+    /// 夕方から「すぐ」に替えたら、待っていた分をその場で届ける
+    func testSwitchingToInstantDeliversWaitingCards() async throws {
+        let store = makeStore(delivery: .evening)
+        let now = Date()
+        store.record(payload("p1"), at: now)
+        XCTAssertFalse(store.hasDelivered(now: now))
+        store.update { $0.delivery = .instant }
+        XCTAssertTrue(store.hasDelivered(now: Date()), "「すぐ」に替えても待たせた")
+    }
+
+    /// 説明の文: 「夕方にまとめて届く」とだけ書かない・すぐ届くこと、相手に近くにいたと分かることを書く。
+    /// 知らせ（ロック画面）に名前・場所を書かない
+    func testTextsSayInstantAndKeepLockScreenPlain() async {
+        let point = PassPrivacyText.introPoints.map(\.text).joined()
+        XCTAssertTrue(point.contains("すれちがうとすぐ届きます"), "オンにする前の説明が「すぐ」になっていない")
+        XCTAssertTrue(point.contains("夕方 18 時に束でまとめて受け取ることもできます"))
+        XCTAssertFalse(point.contains("その日の夕方 18 時に束でまとめて届きます"), "前の「夕方に届く」が残っている")
+        XCTAssertTrue(PassPrivacyText.noteBody.contains("近くにいたことが相手に分かります"),
+                      "すぐ届くと相手に分かることを書いていない")
+        XCTAssertFalse(PassPrivacyText.noteBody.contains("その日の夕方にまとめて届きます"))
+        XCTAssertTrue(PassPrivacyText.eveningDetail.contains("15 分に1回"))
+        let body = PassBundleNotifier.instantBody(count: 3)
+        XCTAssertTrue(body.contains("3 枚"))
+        for word in ["のあたり", "時ごろ", "さん"] { XCTAssertFalse(body.contains(word), "知らせに \(word) が出る") }
+        XCTAssertNotEqual(PassBundleNotifier.instantIdentifier(day: "2026-10-16"),
+                          PassBundleNotifier.identifier(day: "2026-10-16"), "夕方の束と同じ識別子")
     }
 
     /// 自分の写真（別の端末の自分）は見せない
@@ -329,7 +478,7 @@ final class PassStoreTests: XCTestCase {
         let store = makeStore()
         store.noteHome("京都府京都市")
         XCTAssertEqual(store.homePrefecture, "京都府")
-        let again = PassStore(root: root, defaults: defaults, calendar: calendar) { _, _, _ in }
+        let again = PassStore(root: root, defaults: defaults, calendar: calendar) { _, _, _, _ in }
         again.use(userId: "me")
         XCTAssertEqual(again.homePrefecture, "京都府", "背景の起動で家が分からない")
     }

@@ -223,4 +223,20 @@ final class PassWiringTests: XCTestCase {
         let settings = try source("Features/Pass/PassSettingsView.swift")
         XCTAssertTrue(settings.contains(#"Text(L("わたしの乗車券", "My ticket"))"#), "設定の行が「わたしの乗車券」でない")
     }
+
+    /// 設定に「夕方にまとめて受け取る」がある（既定はオフ＝すぐ）。札のつなぎで「すぐ」に届いたカードが出る
+    /// （2026-11-10 owner「すれちがったら即時交換されて欲しい」）
+    func testEveningOptionAndInstantArrivalWiring() throws {
+        let settings = try source("Features/Pass/PassSettingsView.swift")
+        XCTAssertTrue(settings.contains("deliverySection"), "届き方の節を画面に置いていない")
+        XCTAssertTrue(settings.contains(#"L("夕方にまとめて受け取る", "Get cards together in the evening")"#))
+        XCTAssertTrue(settings.contains("pass.update { $0.delivery = on ? .evening : .instant }"), "入切が届き方に繋がっていない")
+        XCTAssertTrue(settings.contains(#".accessibilityIdentifier("pass.settings.evening")"#))
+        // 前面で綴じたカードは `arrivals` で「いま」を入れ直して札へ出す（ホームの側は今のつなぎのまま）
+        let gallery = try source("Features/Gallery/GalleryView.swift")
+        XCTAssertTrue(gallery.contains(".onChange(of: pass.arrivals) { _, _ in passNow = Date() }"),
+                      "届いた合図でホームの「いま」を入れ直さない")
+        let store = try source("Core/Storage/PassStore.swift")
+        XCTAssertTrue(store.contains("arrivals += 1\n            announceInstant(now: date)"), "すぐ届いた時にホームへ合図していない")
+    }
 }
