@@ -36,6 +36,8 @@ struct TripPlanDetailView: View {
     @State private var problem: TripAutosave.Problem?
     /// 手を止めてから送るまでの待ち（打ち直すたびに取り消して待ち直す）
     @State private var autosave = TripAutosaveDebouncer()
+    /// 送りを1本にまとめる（2秒の待ち・戻る・撮影スポットを開く・裏に回るが重なっても2本走らせない）
+    @State private var flusher = TripAutosaveFlusher()
     /// 「保存せずに戻る」を選んだ（消える間に送らない）
     @State private var discarding = false
     /// 運んでいる行の落とし先（その行の上に真鍮の線を出す）。日の末尾は `item == nil`
@@ -357,13 +359,13 @@ struct TripPlanDetailView: View {
         .onChange(of: draft) { _, _ in scheduleAutosave() }
         // 🔴 **裏に回るときは待たずに送る**（確かめ役の指摘・2026-11-10: 2 秒の待ちの間にアプリを閉じると直しが消えた）。
         // 裏で少しだけ続けさせてもらう（`beginBackgroundTask`）
+        // background のときだけ（inactive と background の2回で2本にしない・確かめ役の指摘 F）
         .onChange(of: scenePhase) { _, phase in
-            guard phase != .active, isDirty, !discarding, problem == nil else { return }
-            let app = UIApplication.shared
-            let id = app.beginBackgroundTask(withName: "trip-autosave", expirationHandler: nil)
+            guard TripAutosave.sendsOnScenePhase(phase), isDirty, !discarding, problem == nil else { return }
+            let window = TripBackgroundWindow(name: "trip-autosave")
             Task { @MainActor in
                 _ = await flush(force: true)
-                if id != .invalid { app.endBackgroundTask(id) }
+                window.end()
             }
         }
         // 画面の外（「旅行プランに入れる」のシート）でこのプランが書き換わった → 直しが無ければ読み直す
@@ -493,6 +495,11 @@ struct TripPlanDetailView: View {
     /// - 送っている間に打った直しは、送れたあとで続けて送る
     /// - `force`: 断られた直後でも送り直す（「もう一度試す」・「保存して戻る」）
     private func flush(force: Bool = false) async -> Bool {
+        await flusher.run { await flushNow(force: force) }
+    }
+
+    /// 送る本体（`flusher` を通して1本ずつ走る）
+    private func flushNow(force: Bool) async -> Bool {
         autosave.cancel()
         guard plan != nil, isDirty else { return true }
         if problem == .conflict { return false }
@@ -515,6 +522,12 @@ struct TripPlanDetailView: View {
         let ok = await save()
         if ok {
             problem = nil
+            // 🔴 **送れたらその場で比べる相手を新しい版に**（確かめ役の指摘 F: 古い版のまま次の読み直しと比べると、
+            // 自分の書き込みを「別の端末の変更」と誤って止めた）。送っている間の直しは残す（下で送り直す）
+            if let plan {
+                loadedFrom = plan
+                sent = nil
+            }
             if isDirty { scheduleAutosave() }
         } else {
             problem = .failed(model.errorMessage ?? L("もう一度お試しください。", "Please try again."))
@@ -1282,3 +1295,22 @@ private struct TripPlanFixtureSendsLabel: View {
     }
 }
 #endif
+
+/// 裏で少しだけ続けさせてもらう窓（`beginBackgroundTask`）。**時間切れでも終える**（確かめ役の指摘・2026-11-10）
+@MainActor
+private final class TripBackgroundWindow {
+    private var id = UIBackgroundTaskIdentifier.invalid
+
+    init(name: String) {
+        id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
+            Task { @MainActor in self?.end() }
+        }
+    }
+
+    /// 終える（2度目は何もしない）
+    func end() {
+        guard id != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(id)
+        id = .invalid
+    }
+}
