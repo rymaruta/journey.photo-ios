@@ -307,48 +307,54 @@ struct ReportSheet: View {
         let blocker = hidden.owner
         do {
             if let conversation {
-                // 会話の通報（写真の印は付けない・会話の写しはサーバーが取る）
+                // 会話の通報（2026-11-10 札 #505）。写真の印は付けない（会話の写しはサーバーが取る）
                 try await environment.dm.report(conversation.id, reason: dmReason.serverReason,
                                                  note: dmReason.note(adding: note))
-            } else {
-                let sentNote = passNote.map { ModerationService.passNoteReportNote($0, note: note) }
-                    ?? carriedPassNote.map { ModerationService.photoReportWithPassNote(note, passNote: $0) }
-                    ?? comment.map { ModerationService.commentReportNote($0, note: note) } ?? note
-                try await environment.moderation.report(photoId: photoId, reason: reason, note: sentNote)
-                // **押したあと実際に消す。** 通報が受け付けられただけで、
-                // 通報した人の画面に出続けるなら意味がない。
-                // コメントの通報では写真は消さない（通報したのはコメント。消すならブロックで）
-                if comment == nil && passNote == nil {
-                    hidden.markReported(photoId, for: blocker)
-                }
+                await finishReport(blocker: blocker)
+                return
             }
-            if alsoBlock, let blockTarget {
-                // **ブロックが落ちても通報は成立している。** ここで投げ直すと
-                // 「通報できなかった」と誤解させるので、文言を分ける
-                do {
-                    try await environment.moderation.block(userId: blockTarget)
-                    hidden.block(blockTarget, for: blocker)
-                } catch {
-                    errorMessage = L("通報は受け付けました。ブロックはうまくいきませんでした。相手のプロフィールからもう一度お試しください。", "Your report was received, but blocking failed. Try again from their profile.")
-                }
+            let sentNote = passNote.map { ModerationService.passNoteReportNote($0, note: note) }
+                ?? carriedPassNote.map { ModerationService.photoReportWithPassNote(note, passNote: $0) }
+                ?? comment.map { ModerationService.commentReportNote($0, note: note) } ?? note
+            try await environment.moderation.report(photoId: photoId, reason: reason, note: sentNote)
+            // **押したあと実際に消す。** 通報が受け付けられただけで、
+            // 通報した人の画面に出続けるなら意味がない。
+            // コメントの通報では写真は消さない（通報したのはコメント。消すならブロックで）
+            if comment == nil && passNote == nil {
+                hidden.markReported(photoId, for: blocker)
             }
-            await applyHidden()
-            onReported?()
-            // **受け付けたことを伝える。** それまでは黙って閉じるだけで、
-            // 押した人には届いたのか分からなかった
-            // **知らせは1つ。** 全部うまくいけば閉じてトーストで伝える
-            // （以前はシートの完了画面とトーストの二重だった）。ブロックだけ
-            // 落ちたときは閉じずに、その旨を読ませる。
-            // ストーリーの全画面（`StoryReelView`）にも同じ知らせを重ねてある
-            if errorMessage == nil {
-                toasts.show(L("通報を受け付けました。ありがとうございます。",
-                              "Thanks — your report was received."))
-                dismiss()
-            } else {
-                done = true
-            }
+            await finishReport(blocker: blocker)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("通報を受け付けられませんでした", "Couldn't submit the report")
+        }
+    }
+
+    /// 受け付けたあと（写真・会話の通報で同じ）: 一緒にブロック → 公開一覧へ渡し直す → 知らせる
+    private func finishReport(blocker: String?) async {
+        if alsoBlock, let blockTarget {
+            // **ブロックが落ちても通報は成立している。** ここで投げ直すと
+            // 「通報できなかった」と誤解させるので、文言を分ける
+            do {
+                try await environment.moderation.block(userId: blockTarget)
+                hidden.block(blockTarget, for: blocker)
+            } catch {
+                errorMessage = L("通報は受け付けました。ブロックはうまくいきませんでした。相手のプロフィールからもう一度お試しください。", "Your report was received, but blocking failed. Try again from their profile.")
+            }
+        }
+        await applyHidden()
+        onReported?()
+        // **受け付けたことを伝える。** それまでは黙って閉じるだけで、
+        // 押した人には届いたのか分からなかった
+        // **知らせは1つ。** 全部うまくいけば閉じてトーストで伝える
+        // （以前はシートの完了画面とトーストの二重だった）。ブロックだけ
+        // 落ちたときは閉じずに、その旨を読ませる。
+        // ストーリーの全画面（`StoryReelView`）にも同じ知らせを重ねてある
+        if errorMessage == nil {
+            toasts.show(L("通報を受け付けました。ありがとうございます。",
+                          "Thanks — your report was received."))
+            dismiss()
+        } else {
+            done = true
         }
     }
 }
