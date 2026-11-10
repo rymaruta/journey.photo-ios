@@ -370,6 +370,47 @@ final class PassStoreTests: XCTestCase {
         XCTAssertEqual(scheduled.last?.at, at(16, 11, 0))
     }
 
+    /// 🔴 **日をまたいでも、同じ時に鳴る知らせは1本**（確かめ役の指摘・2026-11-10）。23:55 の1枚で 00:05 に予約し、
+    /// 00:02 の1枚が同じ 00:05 の予約に足すとき、識別子の日が「いま」の日だと前の日の予約と別の1本になって2回鳴る。
+    /// 識別子の日は予約の時から取る（`PassStore.announceInstant`）
+    func testInstantNoticeAcrossMidnightIsOneRequest() async {
+        let store = makeStore()
+        store.record(payload("p1"), at: at(16, 23, 50))
+        store.record(payload("p2"), at: at(16, 23, 55))
+        store.record(payload("p3"), at: at(17, 0, 2))
+        await waitForSchedule(3)
+        let late = scheduled.filter { $0.at == at(17, 0, 5) }
+        XCTAssertEqual(late.count, 2, "00:05 の予約を入れ直していない")
+        XCTAssertEqual(Set(late.map(\.day)).count, 1, "同じ 00:05 に識別子の違う知らせが2本（2回鳴る）")
+        XCTAssertEqual(late.map(\.count).max(), 3, "枚数が書き換わらない")
+    }
+
+    /// 知らせの枚数は、ホームに出ないカード（通報した写真・ブロックした人・自分で消した写真）を数えない。
+    /// 全部が出ないカードなら鳴らさない（確かめ役の指摘・2026-11-10）。持ち主は前に引いた同じ写真のカードから分かる分だけ
+    func testInstantNoticeSkipsHiddenCards() async throws {
+        let moderation = ModerationStore(defaults: defaults)
+        moderation.use(userId: "me")
+        moderation.markReported("reported", for: "me")
+        moderation.block("b", for: "me")
+        let store = makeStore()
+        // 前の日に引いた「blocked」の写真の持ち主は b
+        store.record(payload("blocked"), at: at(15, 10))
+        store.applyResolved(all: [try photo("blocked", owner: "b")], now: at(15, 11))
+        store.markOpened(store.encounters.map(\.id))
+        await waitForSchedule(1)
+        scheduled = []
+
+        store.record(payload("reported"), at: at(16, 10, 0))
+        store.record(payload("blocked"), at: at(16, 10, 1))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertTrue(scheduled.isEmpty, "ホームに出ないカードだけで知らせた")
+        XCTAssertNil(store.noticeAt.flatMap { $0 >= at(16, 10) ? $0 : nil }, "鳴らしていないのに鳴らした時を進めた")
+        store.record(payload("p1"), at: at(16, 10, 2))
+        await waitForSchedule(1)
+        XCTAssertEqual(scheduled.last?.count, 1, "見せないカードまで数えた")
+        XCTAssertEqual(scheduled.last?.at, at(16, 10, 2), "見せないカードの分で間を空けた")
+    }
+
     func testNoticeDate() async {
         let base = at(16, 10)
         XCTAssertEqual(PassExchange.noticeInterval, 15 * 60)

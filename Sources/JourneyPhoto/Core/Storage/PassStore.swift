@@ -272,17 +272,48 @@ final class PassStore: ObservableObject {
     }
 
     /// すぐ届く形の知らせ。**すれちがうたびに鳴らさない**: 最初の1枚はすぐ、その後 15 分の間に届いた分は
-    /// 間の終わりに1回（`PassExchange.noticeDate`）。数はまだ開いていない枚数（束に入っている分）
+    /// 間の終わりに1回（`PassExchange.noticeDate`）。数はまだ開いていない、見せてよい枚数（`instantNoticeCount`）。
+    /// 0 枚なら鳴らさない（鳴らした時も進めない）。
+    ///
+    /// **2026-11-10 判断（確かめ役の指摘）: 識別子の日は、いまではなく予約の時（`at`）から取る。** いまの日で取ると、
+    /// 23:55 の1枚で 00:05 に予約した後、00:02 の1枚が同じ 00:05 の予約に足すときに識別子が次の日になり、
+    /// 前の日の予約と別の1本として同じ時に2回鳴った。予約の時で取れば、同じ時の知らせはいつも同じ識別子で置き換わる。
+    /// 前の日の予約を消して入れ直す形より、消し忘れ・消す範囲（`cancelAll` の今日と次の日）の食い違いが起きない
     private func announceInstant(now: Date) {
+        let count = instantNoticeCount(now: now)
+        guard count > 0 else { return }
         let at = PassExchange.noticeDate(now: now, last: noticeAt)
         if at != noticeAt {
             noticeAt = at
             save()
         }
-        let count = encounters.filter { !$0.opened && $0.deliverAt <= now }.count
-        let day = PassExchange.dayKey(now, calendar: calendar)
+        let day = PassExchange.dayKey(at, calendar: calendar)
         let schedule = schedule
         Task { await schedule(day, at, count, true) }
+    }
+
+    /// すぐ届く形の知らせに書く枚数: 届いていて、まだ開いていないカードのうち、**端末で分かる範囲で見せないもの**
+    /// （通報した写真・自分で消した／非公開にした写真・ブロックした人・自分）を除いた数。
+    ///
+    /// **2026-11-10 判断（確かめ役の指摘）: ホームの札と同じ「見せない」の控え（`ModerationStore` が人ごとに端末へ
+    /// 残したもの）を、ここで読み直して使う。** OS に起こされた背景の起動では画面（`JourneyPhotoApp` の
+    /// `ModerationStore`）が居ないことがあるので、配られた1つには頼らない。
+    /// ただし札は「公開一覧に今ある写真」だけを出す（`isVisible`）が、届いたばかりのカードは写真をまだ引いて
+    /// いない（背景では網に出ない）。ここで同じ判定をすると、届いた直後は必ず 0 枚になって鳴らない。だから
+    /// 公開一覧での判定はせず、持ち主は前に引いた同じ写真のカードから分かるときだけ使う
+    func instantNoticeCount(now: Date) -> Int {
+        guard let userId else { return 0 }
+        let moderation = ModerationStore(defaults: defaults)
+        moderation.use(userId: userId)
+        let hiding = moderation.snapshot
+        var owners: [String: String] = [:]
+        for card in encounters { if let owner = card.ownerId { owners[card.photoId] = owner } }
+        return encounters.filter { card in
+            guard !card.opened, card.deliverAt <= now,
+                  !hiding.reported.contains(card.photoId), !hiding.gone.contains(card.photoId) else { return false }
+            guard let owner = card.ownerId ?? owners[card.photoId] else { return true }
+            return owner != userId && !hiding.blocked.contains(owner)
+        }.count
     }
 
     /// 「すぐ」の人で、まだ夕方を待っているカード（前の版で受け取った・夕方から替えた）を、いま届いた扱いにする。
