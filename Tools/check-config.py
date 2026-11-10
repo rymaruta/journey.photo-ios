@@ -576,6 +576,7 @@ if testflight_yml.exists() and pr_yml.exists():
         import subprocess as _sp2
         import tempfile
         import textwrap as _tw
+        pick_mod_target = "JourneyPhotoUITests"
         with tempfile.TemporaryDirectory() as tmp:
             Path(tmp, "git").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
             os.chmod(Path(tmp, "git"), 0o755)
@@ -587,7 +588,13 @@ if testflight_yml.exists() and pr_yml.exists():
                            capture_output=True, text=True)
             got = dict(line.split("=", 1) for line in out.read_text(encoding="utf-8").splitlines() if "=" in line) \
                 if out.exists() else {}
-            if run.returncode != 0 or got.get("full") != "true" or got.get("sharded") != "true" or not got.get("list"):
+            import base64 as _b64
+            try:
+                listed = _b64.b64decode(got.get("list", ""), validate=True).decode("utf-8").split()
+            except ValueError:
+                listed = []
+            if run.returncode != 0 or got.get("full") != "true" or got.get("sharded") != "true" \
+                    or listed != [f"-only-testing:{pick_mod_target}"]:
                 fail("ios-testflight.yml の「どこまで流すかを決める」が、auto で全部に倒れた上げない回を分けて流す回にしません"
                      f"（run 42813269365 の形）: {run.returncode} {got.get('full')} {got.get('sharded')} {run.stderr[-300:]}")
     # 数える側の jq の `select(...)` は**印の名前の完全一致だけ**

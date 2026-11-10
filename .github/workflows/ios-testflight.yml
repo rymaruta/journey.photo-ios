@@ -857,8 +857,9 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
           cat /tmp/ui-only-testing.txt
-          # `build` の job へ一覧を渡す（base64 で1バイトも変えずに。空の行が1つ増えると xcode-test.sh が中身ありと読む）
-          echo "list=$(base64 -w0 /tmp/ui-only-testing.txt)" >> "$GITHUB_OUTPUT"
+          # `build` の job へ一覧を渡す（base64 で1バイトも変えずに。空の行が1つ増えると xcode-test.sh が中身ありと読む）。
+          # `base64 -w0` は GNU だけ（Mac の「ビルド設定を検証」が check-config.py でこの段を流すと落ちた・run 42918725504）
+          echo "list=$(python3 -c 'import base64,sys; print(base64.b64encode(open(sys.argv[1],"rb").read()).decode())' /tmp/ui-only-testing.txt)" >> "$GITHUB_OUTPUT"
 
   tests:
     name: テストを分けて流す
