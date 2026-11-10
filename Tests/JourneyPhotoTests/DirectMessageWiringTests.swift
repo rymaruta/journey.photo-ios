@@ -100,6 +100,69 @@ final class DirectMessageWiringTests: XCTestCase {
         XCTAssertTrue(view.contains("!log.isSending"))
     }
 
+    /// 送信の丸は送っている最中は押せない（`sendEnabled` を名指しで見る・押し直しの guard とは別・レビュー指摘2）
+    func testSendButtonIsDisabledWhileSending() throws {
+        let view = try source("Features/Messages/DMConversationView.swift")
+        let enabled = slice(view, from: "private var sendEnabled: Bool {", to: "\n    }\n")
+        XCTAssertTrue(enabled.contains("!log.isSending"), "送っている最中に送信を押せる（2通が同時に走る）")
+        XCTAssertTrue(enabled.contains("!connectivity.isOffline"), "圏外で送信を押せる")
+        XCTAssertTrue(view.contains(".disabled(!sendEnabled)"))
+    }
+
+    /// 10秒の読み直しは前面にいる間だけ（`.task(id:)` が前面の出入りで止まり、`poll` も前面でなければ回さない）
+    func testPollingStopsInBackground() throws {
+        let view = try source("Features/Messages/DMConversationView.swift")
+        XCTAssertTrue(view.contains(#".task(id: "\(conversationId)#\(scenePhase == .active)") { await poll() }"#),
+                      "裏へ回っても読み直しが止まらない")
+        let poll = slice(view, from: "private func poll() async {", to: "\n    }\n")
+        XCTAssertTrue(poll.contains("guard scenePhase == .active else { return }"))
+        XCTAssertTrue(poll.contains("try? await Task.sleep(for: DMRules.pollInterval)"))
+        XCTAssertTrue(poll.contains("!connectivity.isOffline"))
+    }
+
+    /// アイコンの数字（レビュー指摘1）: 会話を読んだら通知センターの通知を消し、受信箱の控えが変わったら数字を合わせ、
+    /// お知らせを読んでもメッセージの未読分は残す
+    func testBadgeFollowsMessages() throws {
+        let view = try source("Features/Messages/DMConversationView.swift")
+        let read = slice(view, from: "private func markRead() async {", to: "\n    }\n")
+        XCTAssertTrue(read.contains("await push.removeDelivered(conversationId: conversationId)"))
+        let root = try source("App/RootView.swift")
+        XCTAssertTrue(root.contains(".onChange(of: messages.inbox) { _, _ in syncBadgeWithMessages() }"))
+        let sync = slice(root, from: "private func syncBadgeWithMessages() {", to: "\n    }\n")
+        XCTAssertTrue(sync.contains("AppBadge.count(bellUnread: unread"))
+        XCTAssertTrue(sync.contains("messages.owner == me, messages.phase == .loaded"), "読み込み中・前の人の控えで数字を置く")
+        let bell = try source("Features/Notifications/NotificationsView.swift")
+        XCTAssertFalse(bell.contains("push.clearBadge()"), "お知らせを読んだらメッセージの未読まで 0 にしている")
+        XCTAssertEqual(bell.components(separatedBy: "push.clearBadge(keepingMessages: messagesUnread)").count - 1, 3)
+        let delegate = try source("App/AppDelegate.swift")
+        let present = slice(delegate, from: "willPresent notification: UNNotification", to: "\n    }\n")
+        XCTAssertTrue(present.contains("NotificationRouter.presentation(forDMWhileShowing: showing)"))
+        XCTAssertTrue(view.contains(".onChange(of: router.dmArrival)"))
+        XCTAssertTrue(view.contains(".onAppear { router.conversationOpened(conversationId) }"))
+    }
+
+    /// 通知の会話に今の人が入っていなければ開かない（レビュー指摘5）
+    func testPushConversationMustBelongToTheCurrentUser() throws {
+        let root = try source("App/RootView.swift")
+        let take = slice(root, from: "private func takeConversationRequest()", to: "\n    }\n\n")
+        XCTAssertTrue(take.contains("guard let me = auth.userId, DMRules.peer(of: id, me: me) != nil else { return }"),
+                      "受信箱が出ている回に、前の人の会話を積む")
+        XCTAssertTrue(take.contains("DMRules.peer(of: id, me: owner) != nil"), "待った後に、前の人の会話を開く")
+    }
+
+    /// リクエストの札は画面に出た分だけ会話を読む（`LazyVStack`・最大50件を一度に読まない・レビュー指摘4）
+    func testRequestFactsLoadLazily() throws {
+        let view = try source("Features/Messages/DMRequestsView.swift")
+        if let lazy = index(of: "LazyVStack(alignment: .leading, spacing: 0) {", in: view),
+           let cards = index(of: "ForEach(requests) { request in", in: view),
+           let facts = index(of: ".task(id: request.id) { await loadFacts(request) }", in: view) {
+            XCTAssertLessThan(lazy, cards)
+            XCTAssertLessThan(cards, facts)
+        }
+        XCTAssertFalse(view.contains("ScrollView {\n                VStack(alignment: .leading, spacing: 0) {"),
+                       "札を全部いちどに作って、全部の会話を一度に読む")
+    }
+
     /// 断られて欄に本文を戻したとき、戻した変化で断りの文を消さない（run 937: 送った 1・断られた 1・消えた 1）
     func testRestoredDraftKeepsTheRefusal() throws {
         let view = try source("Features/Messages/DMConversationView.swift")

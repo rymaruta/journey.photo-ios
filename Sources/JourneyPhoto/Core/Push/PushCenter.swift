@@ -471,8 +471,25 @@ final class PushCenter: ObservableObject {
         await SeasonReminderScheduler.shared.reschedule(nil, allowed: false)
     }
 
-    func clearBadge() async {
-        try? await UNUserNotificationCenter.current().setBadgeCount(0)
+    /// お知らせを読んだ。アイコンの数字は**メッセージの未読会話の分だけ残す**（2026-11-10 札 #505）。
+    /// サーバーのバッジは「お知らせの未読＋メッセージの未読会話数」（`notify.ts` の `sendToDevices`）なので、
+    /// 0 にするとメッセージの未読が見えなくなる
+    func clearBadge(keepingMessages messagesUnread: Int = 0) async {
+        await setBadge(AppBadge.count(bellUnread: 0, messagesUnread: messagesUnread))
+    }
+
+    /// アイコンの数字を置く（`AppBadge.count` で数えた値）
+    func setBadge(_ count: Int) async {
+        try? await UNUserNotificationCenter.current().setBadgeCount(max(0, count))
+    }
+
+    /// 読んだ会話のメッセージの通知を、通知センターから消す（`AppBadge.deliveredIds`）
+    func removeDelivered(conversationId: String) async {
+        let center = UNUserNotificationCenter.current()
+        let delivered = await center.deliveredNotifications()
+        let ids = AppBadge.deliveredIds(delivered.map { ($0.request.identifier, $0.request.content.userInfo) },
+                                        conversationId: conversationId)
+        if !ids.isEmpty { center.removeDeliveredNotifications(withIdentifiers: ids) }
     }
 
     private func setEnabled(_ value: Bool) {

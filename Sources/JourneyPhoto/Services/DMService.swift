@@ -1,7 +1,7 @@
 import Foundation
 
-/// メッセージ（DM・第1段・2026-11-09 札 #505）の口。`api-user/src/dm.ts`（`staging/dm-phase1`）に合わせる。
-/// **文字だけ・1対1**。サーバーは staging で確かめ済み・本番は未反映（2026-11-10 時点）。
+/// メッセージ（DM・第1段・2026-11-09 札 #505）の口。`api-user/src/dm.ts`（journey.photo-web main 0c51efdf）に合わせる。
+/// **文字だけ・1対1**。サーバーは本番に出ている（2026-11-10・main 0c51efdf）。
 ///
 ///     GET    /dm                    受信箱（リクエストも同じ一覧。`state` で分ける）→ `DMInbox`
 ///     GET    /dm/{id}?since=        会話（変化なしは `{unchanged:true, items:[]}`）→ `DMConversation`

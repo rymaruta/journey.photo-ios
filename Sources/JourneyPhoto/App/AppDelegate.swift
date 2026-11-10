@@ -93,6 +93,15 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         // 前面に戻るかお知らせを開くまで届いたことが数に出なかった。
         // 見頃のお知らせ（端末の中の予約）はお知らせの出来事ではないので数え直さない
         let kind = notification.request.content.userInfo["kind"] as? String
+        // メッセージ（2026-11-10 札 #505）: **その会話を開いている間は帯を出さず**、会話がすぐ読み直す。
+        // ほかの画面にいるときは帯を出す（受信箱の点・アイコンの数字は `noteArrival` の読み直しで合う）
+        if let conversationId = NotificationRouter.dmConversationId(notification.request.content.userInfo) {
+            let showing = await MainActor.run { () -> Bool in
+                NotificationRouter.shared.noteArrival()
+                return NotificationRouter.shared.noteDMArrival(conversationId)
+            }
+            return NotificationRouter.presentation(forDMWhileShowing: showing)
+        }
         // すれちがいの束が前面で届いた: ホームの札を「いま」で出し直す
         if kind == PassBundleNotifier.kind { await MainActor.run { PassStore.shared.noteArrival() } }
         if kind != SeasonReminder.kind && kind != PassBundleNotifier.kind {
@@ -194,6 +203,31 @@ final class NotificationRouter: ObservableObject {
     func noteArrival() { arrivals += 1 }
 
     // MARK: - メッセージ（2026-11-10 札 #505）
+
+    /// 前面で届いたメッセージの通知（会話が見て読み直す）。**押した回数と同じく数で伝える**
+    struct DMArrival: Equatable {
+        let conversationId: String
+        let serial: Int
+    }
+    @Published private(set) var dmArrival = DMArrival(conversationId: "", serial: 0)
+    /// いま画面に出ている会話（`DMConversationView` が出たとき・消えたときに置く）
+    private(set) var openConversationId: String?
+
+    func conversationOpened(_ id: String) { openConversationId = id }
+    func conversationClosed(_ id: String) {
+        if openConversationId == id { openConversationId = nil }
+    }
+
+    /// 前面でメッセージの通知が届いた。その会話を開いているか（開いていれば帯を出さない）を返す
+    func noteDMArrival(_ id: String) -> Bool {
+        dmArrival = DMArrival(conversationId: id, serial: dmArrival.serial + 1)
+        return openConversationId == id
+    }
+
+    /// 前面で届いたメッセージの通知の出し方。開いている会話の分は何も出さない
+    nonisolated static func presentation(forDMWhileShowing showing: Bool) -> UNNotificationPresentationOptions {
+        showing ? [] : [.banner, .list, .sound, .badge]
+    }
 
     /// メッセージの通知を押した回数（`RootView` が受信箱を出して、その会話を積む）
     @Published private(set) var conversationRequests = 0

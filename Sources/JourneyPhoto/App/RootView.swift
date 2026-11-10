@@ -827,6 +827,8 @@ struct RootView: View {
                 if phase == .active { Task { await refreshMessages() } }
                 if phase == .background { messagesWait?.cancel() }
             }
+            // アイコンの数字を受信箱の控えに合わせる（読んだ・読み直した・承認した・消した）
+            .onChange(of: messages.inbox) { _, _ in syncBadgeWithMessages() }
             .sheet(isPresented: $showMessages, onDismiss: {
                 messagesTarget = nil
                 Task { await refreshMessages() }
@@ -846,6 +848,15 @@ struct RootView: View {
     /// 見出しの吹き出しの点（受信箱に未読の会話。リクエストとブロックした相手は数えない）
     private var messagesUnread: Bool { messages.hasUnread(hiding: hidden.blockedUserIds) }
 
+    /// アイコンの数字＝お知らせの未読＋メッセージの未読会話（サーバーの `sendToDevices` と同じ・`AppBadge`）。
+    /// **今の人の読めた控えのときだけ**置く（読み込み中・人が替わった直後に 0 で上書きしない）
+    private func syncBadgeWithMessages() {
+        guard let me = auth.userId, messages.owner == me, messages.phase == .loaded else { return }
+        let count = AppBadge.count(bellUnread: unread,
+                                   messagesUnread: messages.inbox.unreadConversations(hiding: hidden.blockedUserIds))
+        Task { await push.setBadge(count) }
+    }
+
     private func refreshMessages() async {
         await messages.refresh(service: environment.dm, owner: auth.userId)
     }
@@ -854,7 +865,9 @@ struct RootView: View {
     /// （お知らせと同じ待ち方・`activityWaitLimit`。勝手に閉じない——書きかけを抱えた画面がある）
     private func takeConversationRequest() {
         guard let id = router.takePendingConversation() else { return }
+        // **今の人の会話でなければ開かない**（ログアウト・切り替えの前に届いた前の人の通知を、次の人で開かない）
         if showMessages {
+            guard let me = auth.userId, DMRules.peer(of: id, me: me) != nil else { return }
             messagesTarget = id
             return
         }
@@ -870,7 +883,8 @@ struct RootView: View {
             } while !Task.isCancelled && ModalProbe.isPresenting()
                 && Date().timeIntervalSince(started) <= Self.activityWaitLimit
             // ログインしていない・人が替わった・待ちきれなかった回は開かない（吹き出しから見られる）
-            guard !Task.isCancelled, let owner, auth.userId == owner, !ModalProbe.isPresenting() else { return }
+            guard !Task.isCancelled, let owner, auth.userId == owner, !ModalProbe.isPresenting(),
+                  DMRules.peer(of: id, me: owner) != nil else { return }
             select(.home, at: "takeConversationRequest")
             messagesTarget = id
             showMessages = true

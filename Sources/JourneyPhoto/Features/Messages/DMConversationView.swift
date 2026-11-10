@@ -20,6 +20,10 @@ struct DMConversationView: View {
     @EnvironmentObject private var hidden: ModerationStore
     @EnvironmentObject private var connectivity: Connectivity
     @EnvironmentObject private var store: DMInboxStore
+    /// 読んだ会話の通知を通知センターから消す（2026-11-10 札 #505・`PushCenter.removeDelivered`）
+    @EnvironmentObject private var push: PushCenter
+    /// 前面で届いたこの会話の通知（帯を出さずに読み直す・`NotificationRouter.noteDMArrival`）
+    @ObservedObject private var router = NotificationRouter.shared
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 
@@ -120,6 +124,14 @@ struct DMConversationView: View {
         .task(id: conversationId) { await load() }
         // 開いている間だけ読み直す（前面・電波あり）
         .task(id: "\(conversationId)#\(scenePhase == .active)") { await poll() }
+        // 開いている会話を知らせる（この会話の通知は前面で帯を出さない）
+        .onAppear { router.conversationOpened(conversationId) }
+        .onDisappear { router.conversationClosed(conversationId) }
+        // この会話の通知が前面で届いた: 10秒を待たずに読み直す
+        .onChange(of: router.dmArrival) { _, arrival in
+            guard arrival.conversationId == conversationId, phase == .loaded else { return }
+            Task { await refreshSince() }
+        }
         .onChange(of: connectivity.isOffline) { _, offline in
             if !offline, phase == .failed { Task { await load() } }
         }
@@ -508,6 +520,8 @@ struct DMConversationView: View {
 
     private func markRead() async {
         store.apply { $0.markingRead(conversationId) }
+        // 読んだ会話の通知は通知センターに残さない（アイコンの数字は `RootView` が受信箱の控えから合わせる）
+        await push.removeDelivered(conversationId: conversationId)
         try? await environment.dm.markRead(conversationId)
     }
 

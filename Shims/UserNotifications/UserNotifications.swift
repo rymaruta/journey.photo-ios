@@ -29,6 +29,9 @@ public final class UNUserNotificationCenter: @unchecked Sendable {
     /// iOS 16 以降の口（`applicationIconBadgeNumber` は iOS 17 で非推奨）
     public func setBadgeCount(_ count: Int) async throws {}
     public func removeAllDeliveredNotifications() {}
+    /// 通知センターに残っている通知（本物は iOS 15 以降の async 版）。メッセージを読んだ会話の通知を消すのに使う
+    public func deliveredNotifications() async -> [UNNotification] { [] }
+    public func removeDeliveredNotifications(withIdentifiers identifiers: [String]) {}
     public func add(_ request: UNNotificationRequest) async throws {}
     public func removePendingNotificationRequests(withIdentifiers identifiers: [String]) {}
 }

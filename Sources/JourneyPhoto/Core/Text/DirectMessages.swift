@@ -2,7 +2,7 @@ import Foundation
 
 /// メッセージ（DM・第1段・札 #505）の決まり。**画面を持たない**ので Linux の試験で見張る。
 ///
-/// 規則はサーバー（`api-user/src/dm.ts`・`staging/dm-phase1`）が正。ここはその写しではなく、
+/// 規則はサーバー（`api-user/src/dm.ts`・本番 journey.photo-web main 0c51efdf）が正。ここはその写しではなく、
 /// **画面が先に知っておくこと**（会話 id の組み方・承認前の上限・URL の見分け・断りの言葉）だけを置く。
 enum DMRules {
 
@@ -402,5 +402,20 @@ struct DMReplyGate: Equatable {
     /// URL を止めたときの文（板の案 D）
     static var urlRefusal: String {
         L("URLは送れません。文字だけで送ってください", "Links can't be sent yet. Send text only.")
+    }
+}
+
+// MARK: - アイコンの数字（2026-11-10 札 #505）
+
+/// アプリのアイコンの数字。**サーバーと同じ数え方**（`notify.ts` の `sendToDevices`: お知らせの未読＋メッセージの未読会話数。
+/// リクエストとブロックした相手は数えない）。お知らせを読んだ・会話を読んだときに、アプリの側でもこの数に合わせる
+enum AppBadge {
+    static func count(bellUnread: Int, messagesUnread: Int) -> Int {
+        max(0, bellUnread) + max(0, messagesUnread)
+    }
+
+    /// 通知センターの通知のうち、その会話のメッセージの通知の id（`{type: "dm", convId}`）
+    static func deliveredIds(_ items: [(id: String, userInfo: [AnyHashable: Any])], conversationId: String) -> [String] {
+        items.filter { NotificationRouter.dmConversationId($0.userInfo) == conversationId }.map { $0.id }
     }
 }

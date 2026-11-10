@@ -113,7 +113,8 @@ struct DMRequestsView: View {
             ScrollView { JPLoadingState(kind: .people).padding(.horizontal, JPSpace.gutter) }
         } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                // **画面に出た札だけ作る**（札ごとに会話を読む `loadFacts` が、最大50件を一度に走らせない・2026-11-10 レビュー指摘4）
+                LazyVStack(alignment: .leading, spacing: 0) {
                     if connectivity.isOffline {
                         DMOfflineStrip(text: L("圏外です。つながると新しいメッセージが届きます",
                                                "You're offline. New messages will arrive when you reconnect."))

@@ -6,7 +6,7 @@ import FoundationNetworking
 
 /// メッセージ（DM・第1段・札 #505・2026-11-10）の試験。
 ///
-/// サーバー（`api-user/src/dm.ts`・`staging/dm-phase1` 2b70b2a1e）の応答の形・断り（`code`）・規則を、
+/// サーバー（`api-user/src/dm.ts`・本番 journey.photo-web main 0c51efdf）の応答の形・断り（`code`）・規則を、
 /// 画面を持たない層（`DMService`・`DMRules`・`DMThreadLog`・`DMInbox`・`DMReplyGate`）で確かめる。
 /// 画面の配線は元のファイルを読んで見張る（Linux では SwiftUI を描けない）
 final class DirectMessageTests: XCTestCase {
@@ -395,6 +395,106 @@ final class DirectMessageMainActorTests: XCTestCase {
     private static let me = "11111111-1111-4111-8111-111111111111"
     private static let peer = "22222222-2222-4222-8222-222222222222"
     private static let conv = "\(me)_\(peer)"
+
+    /// 受信箱の口。**要求を出す手前で止められる**（`Gate`・応答を遅らせない・`TestGate.swift` の注記）
+    private func service(gate: Gate? = nil) -> DMService {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        return DMService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                        tokenProvider: StubTokenProvider(token: "t"),
+                                        session: URLSession(configuration: config),
+                                        retryPause: { _ in },
+                                        beforeRequest: gate.map { gate in { (_: URLRequest) async in await gate.wait() } }))
+    }
+
+    private static func inboxJSON(_ id: String, unread: Int) -> String {
+        #"{"items":[{"id":"\#(id)","peerId":"p-\#(id)","name":"\#(id)","t":"2026-11-09T00:00:00.000Z","excerpt":"x","unread":\#(unread),"state":"inbox"}],"unread":\#(unread),"requestCount":0}"#
+    }
+
+    /// **最初の読み込みの途中に手元で変えても、読めた一覧を捨てない**（2026-11-10 レビュー指摘3）。
+    /// プッシュから会話が先に積まれると、受信箱を読み終える前に会話が既読の印を置く。
+    /// 世代を進めて答えを捨てると、空の一覧を「読めた」にしてしまう
+    func testApplyDuringFirstLoadKeepsTheAnswer() async {
+        StubProtocol.reset()
+        defer { StubProtocol.reset() }
+        StubProtocol.respond(status: 200, body: Self.inboxJSON("a", unread: 2))
+        let gate = Gate(holds: 1)
+        let store = DMInboxStore()
+        let dm = service(gate: gate)
+        let task = Task { await store.refresh(service: dm, owner: "u1") }
+        await gate.untilWaiting()
+        store.apply { $0.markingRead("a") }
+        await gate.open()
+        await task.value
+        XCTAssertEqual(store.phase, .loaded)
+        XCTAssertEqual(store.inbox.items.map(\.id), ["a"], "読めた一覧を捨てて空にした")
+        XCTAssertEqual(store.inbox.items.first?.unread, 0, "読み込み中に置いた既読の印が消えた")
+    }
+
+    /// 古い読み込みの答えで、新しい読み込みの答えを上書きしない（世代の確かめ・`DMInboxStore.refresh`）
+    func testOlderRefreshDoesNotOverwriteNewer() async {
+        StubProtocol.reset()
+        defer { StubProtocol.reset() }
+        // 1本目は止めておき、2本目が先に答えを受け取る（順に返す: 先に着いた要求が1つ目）
+        StubProtocol.respondInOrder([(200, Self.inboxJSON("new", unread: 1)), (200, Self.inboxJSON("old", unread: 1))])
+        let gate = Gate(holds: 1)
+        let store = DMInboxStore()
+        let dm = service(gate: gate)
+        let first = Task { await store.refresh(service: dm, owner: "u1") }
+        await gate.untilWaiting()
+        await store.refresh(service: dm, owner: "u1")
+        XCTAssertEqual(store.inbox.items.map(\.id), ["new"])
+        await gate.open()
+        await first.value
+        XCTAssertEqual(store.inbox.items.map(\.id), ["new"], "古い答えが新しい答えを上書きした")
+    }
+
+    /// 読み込みの間に人が替わったら、前の人の答えを置かない（持ち主の確かめ）
+    func testRefreshForPreviousOwnerIsDropped() async {
+        StubProtocol.reset()
+        defer { StubProtocol.reset() }
+        StubProtocol.respond(status: 200, body: Self.inboxJSON("a", unread: 1))
+        let gate = Gate(holds: 1)
+        let store = DMInboxStore()
+        let dm = service(gate: gate)
+        let task = Task { await store.refresh(service: dm, owner: "u1") }
+        await gate.untilWaiting()
+        store.use(owner: "u2")
+        await gate.open()
+        await task.value
+        XCTAssertTrue(store.inbox.items.isEmpty, "前の人の会話を次の人に出した")
+        XCTAssertEqual(store.owner, "u2")
+    }
+
+    /// 前面で届いたメッセージの通知: 開いている会話の分は帯を出さず、読み直しの合図だけ（レビュー指摘6）
+    func testForegroundDMOnOpenConversationIsSilent() {
+        let router = NotificationRouter()
+        XCTAssertFalse(router.noteDMArrival(Self.conv), "開いていない会話の通知を黙らせた")
+        router.conversationOpened(Self.conv)
+        let before = router.dmArrival.serial
+        XCTAssertTrue(router.noteDMArrival(Self.conv))
+        XCTAssertEqual(router.dmArrival, NotificationRouter.DMArrival(conversationId: Self.conv, serial: before + 1))
+        XCTAssertFalse(router.noteDMArrival("a_b"), "別の会話の通知まで黙らせた")
+        XCTAssertTrue(NotificationRouter.presentation(forDMWhileShowing: true).isEmpty)
+        XCTAssertFalse(NotificationRouter.presentation(forDMWhileShowing: false).isEmpty)
+        router.conversationClosed(Self.conv)
+        XCTAssertFalse(router.noteDMArrival(Self.conv))
+    }
+
+    /// アイコンの数字はサーバーと同じ「お知らせの未読＋メッセージの未読会話」（レビュー指摘1）。
+    /// 消す通知はその会話のメッセージの通知だけ
+    func testBadgeCountsMessagesAndRemovesOnlyThatConversation() {
+        XCTAssertEqual(AppBadge.count(bellUnread: 0, messagesUnread: 2), 2, "お知らせを読んだらメッセージの未読まで消えた")
+        XCTAssertEqual(AppBadge.count(bellUnread: 3, messagesUnread: 1), 4)
+        XCTAssertEqual(AppBadge.count(bellUnread: -1, messagesUnread: 0), 0)
+        let delivered: [(id: String, userInfo: [AnyHashable: Any])] = [
+            ("n1", ["type": "dm", "convId": Self.conv]),
+            ("n2", ["type": "dm", "convId": "a_b"]),
+            ("n3", ["type": "like", "photoId": "p"]),
+            ("n4", ["type": "dm", "convId": Self.conv]),
+        ]
+        XCTAssertEqual(AppBadge.deliveredIds(delivered, conversationId: Self.conv), ["n1", "n4"])
+    }
 
     func testStoreDropsAnotherPersonsInbox() {
         let store = DMInboxStore()
