@@ -105,10 +105,15 @@ def only_when_named(test):
     return test in ONLY_WHEN_NAMED or test.split("/", 1)[0] in ONLY_WHEN_NAMED
 
 
-def sharded(submit, store_shots, screens):
-    """UI テストを別々の Mac に分けて流す回か（2026-10-31・#429）。上げない回（submit=false）で、全部を流すとき
-    （screens が空・all・全部 を含む——`wants_all` と同じ決め方——か、storeShots で screens を捨てるとき）"""
-    return not submit and (store_shots or wants_all(screens))
+def sharded(submit, only_testing):
+    """UI テストを別々の Mac に分けて流す回か（2026-10-31・#429）。上げない回（submit=false）で、**決まった一覧**が
+    「全部」1行だけのとき。
+
+    2026-11-10 判断: 前は `screens` の書き方（空・all・全部・storeShots）から決めていて、既定の `auto` が差分を読んで
+    全部に倒れた回（run 42813269365・「比較元が取得できないため UI テストを全件実行します」）を、1台で全部流していた。
+    `auto` を解いたあとの一覧で決めれば、どの書き方から全部になっても同じに分ける（ios-pr.yml の「UI テストの
+    範囲を決める」と同じ見方）"""
+    return not submit and [line.strip() for line in only_testing if line.strip()] == [f"-only-testing:{TARGET}"]
 
 
 def wants_all(screens):
@@ -477,11 +482,11 @@ def main():
         print("\n".join(ONLY_WHEN_NAMED))
         return 0
     if len(sys.argv) > 1 and sys.argv[1] == "--sharded":
-        # 全部の回を別々の Mac に分けて流すか（`ios-testflight.yml` の2か所がこれを呼ぶ・式を2つ書かない）。
-        # python3 Tools/pick-ui-tests.py --sharded <submit> <storeShots> <screens>
-        submit, store = (sys.argv[2:4] + ["", ""])[:2]
-        screens = sys.argv[4] if len(sys.argv) > 4 else ""
-        print("true" if sharded(submit == "true", store == "true", screens) else "false")
+        # 全部の回を別々の Mac に分けて流すか（`ios-testflight.yml` の「どこまで流すかを決める」の1か所だけが呼ぶ）。
+        # python3 Tools/pick-ui-tests.py --sharded <submit> <決まった -only-testing の一覧のファイル>
+        submit = sys.argv[2] if len(sys.argv) > 2 else ""
+        lines = pathlib.Path(sys.argv[3]).read_text(encoding="utf-8").splitlines() if len(sys.argv) > 3 else []
+        print("true" if sharded(submit == "true", lines) else "false")
         return 0
     if len(sys.argv) > 1 and sys.argv[1] == "--plan":
         return main_plan(sys.argv[2:])

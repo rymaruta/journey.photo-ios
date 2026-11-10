@@ -96,6 +96,8 @@ jobs:
       contents: write
     # **`macos-latest` に固定しない。** ランナーの既定 Xcode が上がると
     # 挙動が変わるので、上げるときは意図して上げる
+    # どこまで流すか（`screens` の `auto` を解いた一覧・分けて流すか）は `shard-plan`（Linux・数十秒）が決める
+    needs: shard-plan
     runs-on: macos-15
     # **初回は控えが無く、依存を丸ごと組む。** Amplify →
     # aws-sdk-swift → smithy-swift はテストの段だけで50分を超えた
@@ -127,96 +129,24 @@ jobs:
           SCREENS: ${{ inputs.screens }}
         run: python3 Tools/explain-ui-tests.py "${SCREENS:-}"
 
-      - name: どこまで流すかを決める
+      # 範囲は「UIテストの分割実行を判定」の job（`shard-plan`）の「どこまで流すかを決める」が決めた一覧を
+      # そのまま使う（2026-11-10 判断: 決め方は1か所。`build` と分けた組が別々に決めると、`auto` の回で食い違う）
+      - name: どこまで流すかを受け取る
         id: scope
         env:
-          SCREENS: ${{ inputs.screens }}
-          SUBMIT: ${{ inputs.submit }}
-          STORE_SHOTS: ${{ inputs.storeShots }}
-          TESTS: ${{ inputs.tests }}
+          FULL: ${{ needs.shard-plan.outputs.full }}
+          SHARDED: ${{ needs.shard-plan.outputs.sharded }}
+          LIST_B64: ${{ needs.shard-plan.outputs.list }}
         run: |
           set -euo pipefail
-          # 🔴 **UI テストを別々の Mac に分けて流す回か**（2026-10-31・#429）。決め方は `pick-ui-tests.py --sharded`
-          # の1か所だけ（下の「分けて流すかを決める」の job も同じものを呼ぶ。式を2つ書くとずれる）。
-          # 上げない回（submit=false）で全部を流すとき（screens が空・all・全部 を含む・storeShots）。
-          # 分けて流す回は、この job は Archive だけ。単体・UI は「テストの品を組む」から「まとめ」までの job が流す
-          sharded="$(python3 Tools/pick-ui-tests.py --sharded "${SUBMIT:-}" "${STORE_SHOTS:-}" "${SCREENS:-}")"
-          echo "sharded=$sharded" >> "$GITHUB_OUTPUT"
-          # 配信前の検証は、前回の配信成功地点から変更された機能を対象にする。
-          # 明示的な screens 指定は尊重し、対象不明時は全件に倒す。
-          if [ "${SUBMIT:-}" = "true" ] && [ "${TESTS:-}" = "true" ] && [ -z "${SCREENS:-}" ]; then
-            SCREENS="auto"
-          elif [ "${SUBMIT:-}" = "true" ] && [ "${TESTS:-}" != "true" ]; then
-            SCREENS="none"
-          elif [ "${STORE_SHOTS:-}" = "true" ]; then
-            SCREENS=""
+          if [ -z "${LIST_B64:-}" ] || [ -z "${FULL:-}" ] || [ -z "${SHARDED:-}" ]; then
+            echo "::error::「どこまで流すかを決める」（shard-plan の job）の答えが読めません"
+            exit 1
           fi
-          if [ "${SCREENS:-}" = "auto" ]; then
-            # main への直接反映・マージは直前コミットとの差分を見る。
-            # PR ブランチでは分岐点からの差分を見る。取得不能時は全件へ倒す。
-            BASE=""
-            if [ "${SUBMIT:-}" = "true" ]; then
-              # 最新の TestFlight 成功タグをコミット到達可能性で検証する。
-              # タグがない・履歴が読めない場合は全件へフォールバック。
-              # checkout は shallow clone。過去の配信タグとの比較には履歴が必要。
-              history_ok=true
-              if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
-                git fetch --unshallow --no-tags origin || history_ok=false
-              fi
-              # 一部のタグしか取得できなかった状態で差分を短く見積もらない。
-              if ! git fetch --force --no-tags origin 'refs/tags/testflight/*:refs/tags/testflight/*'; then
-                history_ok=false
-              fi
-              if [ "$history_ok" = "true" ]; then
-                # タグの日付ではなく、HEAD から最も近い祖先のコミットを選ぶ。
-                best_distance=""
-                while IFS= read -r tag; do
-                  commit="$(git rev-parse "${tag}^{commit}" 2>/dev/null || true)"
-                  [ -n "$commit" ] || continue
-                  git merge-base --is-ancestor "$commit" HEAD || continue
-                  distance="$(git rev-list --count "$commit"..HEAD 2>/dev/null || true)"
-                  if [ -n "$distance" ] && { [ -z "$best_distance" ] || [ "$distance" -lt "$best_distance" ]; }; then
-                    BASE="$commit"
-                    best_distance="$distance"
-                  fi
-                done < <(git for-each-ref --format='%(refname)' 'refs/tags/testflight/*')
-              else
-                echo "::warning::配信タグまたは履歴の取得に失敗。安全のため全件テストを選択します"
-              fi
-              echo "配信差分の基点: ${BASE:-未取得（全件実行）}" >> "$GITHUB_STEP_SUMMARY"
-            else
-              git fetch --no-tags --depth=100 origin main || true
-              if [ "${GITHUB_REF:-}" = "refs/heads/main" ]; then
-                BASE="$(git rev-parse HEAD^ 2>/dev/null || true)"
-              else
-                BASE="$(git merge-base HEAD origin/main 2>/dev/null || true)"
-              fi
-            fi
-            if [ -n "$BASE" ] && git diff --find-renames "$BASE" HEAD > /tmp/ui-changes.diff; then
-              python3 Tools/pick-ui-tests.py --related /tmp/ui-changes.diff > /tmp/ui-only-testing.txt
-              echo "### UI テスト: 差分から自動選択" >> "$GITHUB_STEP_SUMMARY"
-            else
-              echo "::warning::比較元が取得できないため UI テストを全件実行します"
-              python3 Tools/pick-ui-tests.py all > /tmp/ui-only-testing.txt
-            fi
-          else
-            python3 Tools/pick-ui-tests.py "${SCREENS:-}" > /tmp/ui-only-testing.txt
-          fi
-          if [ "$(cat /tmp/ui-only-testing.txt)" = "-only-testing:JourneyPhotoUITests" ]; then
-            echo "full=true" >> "$GITHUB_OUTPUT"
-            echo "### UI テスト: 全部" >> "$GITHUB_STEP_SUMMARY"
-            if [ "$sharded" = "true" ]; then
-              echo "単体テストと UI テストは、別々の Mac（「テストの品を組む」から「まとめ」まで）で流します。この job は Archive だけ" >> "$GITHUB_STEP_SUMMARY"
-            fi
-          else
-            echo "full=false" >> "$GITHUB_OUTPUT"
-            {
-              echo "### UI テストを絞った回（screens: ${SCREENS}）"
-              echo "この回は全件 UI テスト済みとは数えません。全件の検証は PR の検証で行います。"
-              echo
-              sed 's/^/- /' /tmp/ui-only-testing.txt
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
+          python3 -c 'import base64,sys; open("/tmp/ui-only-testing.txt","wb").write(base64.b64decode(sys.argv[1]))' "$LIST_B64"
+          echo "full=${FULL}" >> "$GITHUB_OUTPUT"
+          echo "sharded=${SHARDED}" >> "$GITHUB_OUTPUT"
+          echo "全部: ${FULL} / 分けて流す: ${SHARDED}"
           cat /tmp/ui-only-testing.txt
 
       # **依存の作り直しに毎回30分以上かかる。**
@@ -818,28 +748,117 @@ jobs:
   # - Archive（Release の組み立て）は上の `build` の job が、ここと同時に流す
   # - 同時に動く Mac は多いときで4台（`build` の Archive・分けた組3台）。公開リポジトリの Mac の同時実行は5台まで
   # ===========================================================================================
-  # **分けて流すかを決める**（Linux で数秒）。job の `if:` には式しか書けず、`screens` の「all, x」・空白だけを
-  # `pick-ui-tests.py` の `wants_all` と同じに読めない。`build` の job の「どこまで流すかを決める」と同じ
-  # `--sharded` を呼んで、決め方を1か所にする（2026-10-31・見直しの指摘）
+  # **どこまで流すか・分けて流すかを決める**（Linux で数十秒）。job の `if:` には式しか書けず、`screens` の
+  # 「all, x」・空白・`auto`（差分を読んで決める）を式では読めない。
+  # 2026-11-10 判断: 前は `build` の job とこの job が別々に決めていた（この job は `screens` の書き方だけ・
+  # `build` は `auto` を差分で解いた一覧）。既定の `auto` が全部に倒れた回（run 42813269365・submit=false）は、
+  # この job が「分けない」と答え、`build` が1台で UI テストを全部流した。**決めるのはこの job の1か所だけ**にし、
+  # `build` は答え（full・sharded・一覧）を受け取る（`needs: shard-plan`）
   shard-plan:
     name: UIテストの分割実行を判定
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     outputs:
-      sharded: ${{ steps.decide.outputs.sharded }}
+      sharded: ${{ steps.scope.outputs.sharded }}
+      full: ${{ steps.scope.outputs.full }}
+      list: ${{ steps.scope.outputs.list }}
     steps:
       - uses: actions/checkout@v7
-      - name: 分割実行の条件を確認
-        id: decide
+
+      - name: どこまで流すかを決める
+        id: scope
         env:
           SCREENS: ${{ inputs.screens }}
           SUBMIT: ${{ inputs.submit }}
           STORE_SHOTS: ${{ inputs.storeShots }}
+          TESTS: ${{ inputs.tests }}
         run: |
           set -euo pipefail
-          sharded="$(python3 Tools/pick-ui-tests.py --sharded "${SUBMIT:-}" "${STORE_SHOTS:-}" "${SCREENS:-}")"
+          # 配信前の検証は、前回の配信成功地点から変更された機能を対象にする。
+          # 明示的な screens 指定は尊重し、対象不明時は全件に倒す。
+          if [ "${SUBMIT:-}" = "true" ] && [ "${TESTS:-}" = "true" ] && [ -z "${SCREENS:-}" ]; then
+            SCREENS="auto"
+          elif [ "${SUBMIT:-}" = "true" ] && [ "${TESTS:-}" != "true" ]; then
+            SCREENS="none"
+          elif [ "${STORE_SHOTS:-}" = "true" ]; then
+            SCREENS=""
+          fi
+          if [ "${SCREENS:-}" = "auto" ]; then
+            # main への直接反映・マージは直前コミットとの差分を見る。
+            # PR ブランチでは分岐点からの差分を見る。取得不能時は全件へ倒す。
+            BASE=""
+            if [ "${SUBMIT:-}" = "true" ]; then
+              # 最新の TestFlight 成功タグをコミット到達可能性で検証する。
+              # タグがない・履歴が読めない場合は全件へフォールバック。
+              # checkout は shallow clone。過去の配信タグとの比較には履歴が必要。
+              history_ok=true
+              if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+                git fetch --unshallow --no-tags origin || history_ok=false
+              fi
+              # 一部のタグしか取得できなかった状態で差分を短く見積もらない。
+              if ! git fetch --force --no-tags origin 'refs/tags/testflight/*:refs/tags/testflight/*'; then
+                history_ok=false
+              fi
+              if [ "$history_ok" = "true" ]; then
+                # タグの日付ではなく、HEAD から最も近い祖先のコミットを選ぶ。
+                best_distance=""
+                while IFS= read -r tag; do
+                  commit="$(git rev-parse "${tag}^{commit}" 2>/dev/null || true)"
+                  [ -n "$commit" ] || continue
+                  git merge-base --is-ancestor "$commit" HEAD || continue
+                  distance="$(git rev-list --count "$commit"..HEAD 2>/dev/null || true)"
+                  if [ -n "$distance" ] && { [ -z "$best_distance" ] || [ "$distance" -lt "$best_distance" ]; }; then
+                    BASE="$commit"
+                    best_distance="$distance"
+                  fi
+                done < <(git for-each-ref --format='%(refname)' 'refs/tags/testflight/*')
+              else
+                echo "::warning::配信タグまたは履歴の取得に失敗。安全のため全件テストを選択します"
+              fi
+              echo "配信差分の基点: ${BASE:-未取得（全件実行）}" >> "$GITHUB_STEP_SUMMARY"
+            else
+              git fetch --no-tags --depth=100 origin main || true
+              if [ "${GITHUB_REF:-}" = "refs/heads/main" ]; then
+                BASE="$(git rev-parse HEAD^ 2>/dev/null || true)"
+              else
+                BASE="$(git merge-base HEAD origin/main 2>/dev/null || true)"
+              fi
+            fi
+            if [ -n "$BASE" ] && git diff --find-renames "$BASE" HEAD > /tmp/ui-changes.diff; then
+              python3 Tools/pick-ui-tests.py --related /tmp/ui-changes.diff > /tmp/ui-only-testing.txt
+              echo "### UI テスト: 差分から自動選択" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "::warning::比較元が取得できないため UI テストを全件実行します"
+              python3 Tools/pick-ui-tests.py all > /tmp/ui-only-testing.txt
+            fi
+          else
+            python3 Tools/pick-ui-tests.py "${SCREENS:-}" > /tmp/ui-only-testing.txt
+          fi
+          # 🔴 **UI テストを別々の Mac に分けて流す回か**（2026-10-31・#429）。決め方は `pick-ui-tests.py --sharded`
+          # の1か所だけで、**決まった一覧**を見る（上げない回で、一覧が「全部」1行だけ）。
+          # 2026-11-10 判断: 前は `screens` の書き方だけで決めていたので、既定の `auto` が上で全部に倒れた回
+          # （run 42813269365）を1台で全部流していた。分けて流す回は、`build` の job は Archive だけ
+          sharded="$(python3 Tools/pick-ui-tests.py --sharded "${SUBMIT:-}" /tmp/ui-only-testing.txt)"
           echo "sharded=$sharded" >> "$GITHUB_OUTPUT"
           echo "分けて流す: $sharded"
+          if [ "$(cat /tmp/ui-only-testing.txt)" = "-only-testing:JourneyPhotoUITests" ]; then
+            echo "full=true" >> "$GITHUB_OUTPUT"
+            echo "### UI テスト: 全部" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$sharded" = "true" ]; then
+              echo "単体テストと UI テストは、別々の Mac（「テストの品を組む」から「まとめ」まで）で流します。この job は Archive だけ" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "full=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### UI テストを絞った回（screens: ${SCREENS}）"
+              echo "この回は全件 UI テスト済みとは数えません。全件の検証は PR の検証で行います。"
+              echo
+              sed 's/^/- /' /tmp/ui-only-testing.txt
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          cat /tmp/ui-only-testing.txt
+          # `build` の job へ一覧を渡す（base64 で1バイトも変えずに。空の行が1つ増えると xcode-test.sh が中身ありと読む）
+          echo "list=$(base64 -w0 /tmp/ui-only-testing.txt)" >> "$GITHUB_OUTPUT"
 
   tests:
     name: テストを分けて流す

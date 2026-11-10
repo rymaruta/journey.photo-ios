@@ -536,7 +536,7 @@ if testflight_yml.exists() and pr_yml.exists():
     if "    name: Xcode のビルドとテスト（シミュレータ）\n" not in xcode_job:
         fail("ios-pr.yml の `xcode` の名前が「Xcode のビルドとテスト（シミュレータ）」ではありません（必須のチェックの名前を変えない）")
     if not re.search(r"^    needs: \[[^\]]*\bxcode-sharded\b[^\]]*\]", xcode_job, re.M) \
-            or "runs-on: ${{ needs.ui-plan.outputs.sharded == 'true' && 'ubuntu-latest' || 'macos-15' }}" not in xcode_job \
+            or "runs-on: ${{ needs.ui-plan.outputs.sharded == 'false' && 'macos-15' || 'ubuntu-latest' }}" not in xcode_job \
             or "RESULT: ${{ needs.xcode-sharded.result }}" not in xcode_job \
             or 'if [ "$RESULT" != "success" ]; then' not in xcode_job:
         fail("ios-pr.yml の `xcode` が、分けた回の結果（needs.xcode-sharded.result）を読む門になっていません（落ちても通った扱いになる）")
@@ -546,11 +546,50 @@ if testflight_yml.exists() and pr_yml.exists():
         block = found.group(1) if found else ""
         if name != "分けて流した回の結果を見る" and "env.SHARDED != 'true'" not in block.split("\n", 1)[0]:
             fail(f"ios-pr.yml の `xcode` の段「{name}」が、分けた回でも走ります（if: env.SHARDED != 'true' が無い）")
-    # **分けて流すかの決め方は1か所**（2026-10-31・見直しの指摘）。`build` の job と「分けて流すかを決める」の
-    # job が同じ `--sharded` を呼び、「テストの品を組む」はその答えだけで走る（式を2つ書くとずれる）
-    if len(re.findall(r'pick-ui-tests\.py --sharded "\$\{SUBMIT:-\}" "\$\{STORE_SHOTS:-\}" "\$\{SCREENS:-\}"', flow)) != 2 \
-            or "if: ${{ needs.shard-plan.outputs.sharded == 'true' }}" not in flow:
-        fail("ios-testflight.yml の「分けて流すか」が `pick-ui-tests.py --sharded` の1か所で決まっていません")
+    # **どこまで流すか・分けて流すかの決め方は1か所**（2026-10-31・見直しの指摘、2026-11-10 に1つの job へ寄せた）。
+    # `shard-plan` の job の「どこまで流すかを決める」だけが `auto` を解き、決まった一覧で `--sharded` を呼ぶ。
+    # `build` の job はその答えを受け取るだけ（`needs: shard-plan`）、分けた組はその答えだけで走る。
+    # 2026-11-10: `build` と `shard-plan` が別々に決めていたので、既定の `auto` が全部に倒れた回（run 42813269365）を
+    # `shard-plan` は「分けない」、`build` は「全部」と読み、1台で UI テストを全部流した
+    tf_jobs = {m.group(1): m.group(2) for m in re.finditer(r"^  ([\w-]+):\n(.*?)(?=^  [\w-]+:\n|\Z)", flow, re.M | re.S)}
+    plan_tf = tf_jobs.get("shard-plan", "")
+    build_tf = tf_jobs.get("build", "")
+    tf_code = "\n".join(line for line in flow.splitlines() if not line.lstrip().startswith("#"))  # 注記は数えない
+    if len(re.findall(r"pick-ui-tests\.py --sharded", tf_code)) != 1 \
+            or 'pick-ui-tests.py --sharded "${SUBMIT:-}" /tmp/ui-only-testing.txt' not in plan_tf \
+            or "- name: どこまで流すかを決める\n" not in plan_tf \
+            or "if: ${{ needs.shard-plan.outputs.sharded == 'true' }}" not in tf_jobs.get("tests", ""):
+        fail("ios-testflight.yml の「分けて流すか」が、`shard-plan` の job の決まった一覧からの `pick-ui-tests.py --sharded` の1か所で決まっていません")
+    if not re.search(r"^    needs: shard-plan$", build_tf, re.M) \
+            or "pick-ui-tests.py --related" in build_tf or "pick-ui-tests.py --sharded" in build_tf \
+            or "LIST_B64: ${{ needs.shard-plan.outputs.list }}" not in build_tf \
+            or "SHARDED: ${{ needs.shard-plan.outputs.sharded }}" not in build_tf:
+        fail("ios-testflight.yml の `build` が、どこまで流すかを自分で決めています（`shard-plan` の答えを受け取る）")
+    # 既定の `auto` で比べる元が読めず全部に倒れた上げない回（run 42813269365 と同じ形）が、分けて流す回になるか。
+    # 段の中身をそのまま、git が何も読めない状態（偽の git）で流して確かめる
+    plan_found = re.search(r"^      - name: どこまで流すかを決める\n(.*?)(?=^      - |\Z)", plan_tf, re.M | re.S)
+    plan_step = plan_found.group(1) if plan_found else ""
+    plan_run = re.search(r"\n        run: \|\n(.*)", plan_step, re.S)
+    if not plan_run:
+        fail("ios-testflight.yml の「どこまで流すかを決める」の run が読めません")
+    else:
+        import subprocess as _sp2
+        import tempfile
+        import textwrap as _tw
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "git").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+            os.chmod(Path(tmp, "git"), 0o755)
+            out, summary = Path(tmp, "out"), Path(tmp, "summary")
+            env = {**os.environ, "PATH": f"{tmp}:{os.environ.get('PATH', '')}", "GITHUB_OUTPUT": str(out),
+                   "GITHUB_STEP_SUMMARY": str(summary), "SCREENS": "auto", "SUBMIT": "false",
+                   "STORE_SHOTS": "false", "TESTS": "false", "GITHUB_REF": "refs/heads/some-branch"}
+            run = _sp2.run(["bash", "-e", "-c", _tw.dedent(plan_run.group(1))], cwd=ROOT, env=env,
+                           capture_output=True, text=True)
+            got = dict(line.split("=", 1) for line in out.read_text(encoding="utf-8").splitlines() if "=" in line) \
+                if out.exists() else {}
+            if run.returncode != 0 or got.get("full") != "true" or got.get("sharded") != "true" or not got.get("list"):
+                fail("ios-testflight.yml の「どこまで流すかを決める」が、auto で全部に倒れた上げない回を分けて流す回にしません"
+                     f"（run 42813269365 の形）: {run.returncode} {got.get('full')} {got.get('sharded')} {run.stderr[-300:]}")
     # 数える側の jq の `select(...)` は**印の名前の完全一致だけ**
     selects = re.findall(r"select\((\.name[^|]*?)\)\s*\|", pr_flow)
     if selects != [f'.name == "{MARK}"']:
@@ -786,12 +825,17 @@ if testflight_yml.exists() and pr_yml.exists():
             pick_mod.plan = saved_plan
         if Path(tmp, "part-1.txt").read_text(encoding="utf-8") != "":
             fail("pick-ui-tests.py --plan が、空の組に改行を書きます（xcode-test.sh が中身ありと読み、UI を全部流す）")
-    # **分けて流すかは `--sharded` の1か所で決め、`wants_all` と同じに読む**
-    for args, want in [((False, False, ""), True), ((False, False, "  "), True), ((False, False, "all, 撮影スポット"), True),
-                       ((False, False, "撮影スポット"), False), ((False, True, "撮影スポット"), True),
-                       ((True, False, ""), False), ((True, True, ""), False)]:
+    # **分けて流すかは `--sharded` の1か所で、決まった一覧（`auto` を解いたあと）から決める**（2026-11-10）
+    all_line = f"-only-testing:{pick_mod.TARGET}"
+    for args, want in [((False, [all_line]), True), ((False, [all_line, ""]), True), ((True, [all_line]), False),
+                       ((False, []), False), ((False, [f"{all_line}/SmokeTests"]), False),
+                       ((False, [f"{all_line}/SmokeTests", f"{all_line}/ScreenshotTests/testA"]), False)]:
         if pick_mod.sharded(*args) != want:
             fail(f"pick-ui-tests.py の sharded{args} が {want} になりません")
+    # 書き方が違っても全部になる一覧なら分ける（空・all・全部 を含む）
+    for screens in ("", "  ", "all, 撮影スポット", "全部"):
+        if not pick_mod.sharded(False, pick_mod.pick(screens, {})[0]):
+            fail(f"pick-ui-tests.py: screens「{screens}」の一覧が分けて流す回になりません")
     # 時間の表に無いテストは中央の値で見積もる（新しいテストで割り振りが崩れない）
     est = pick_mod.estimate(["A/a", "A/b", "A/new"], {"A/a": 10.0, "A/b": 30.0})
     if est["A/new"] != 30.0:

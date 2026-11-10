@@ -1,7 +1,8 @@
 # 単体テストと UI テストを、別々の Mac に分けて同時に流す（再利用のワークフロー・`workflow_call` だけ）。
 #
 # 呼ぶのは2か所（2026-11-10 判断・owner 承認「いいよ」）:
-#  - `ios-testflight.yml` の全部の回（submit=false・screens 空・storeShots）。2026-10-31（#429）に
+#  - `ios-testflight.yml` の全部の回（submit=false で、`screens` を解いた一覧が全部: 空・all・既定の auto が全部に
+#    倒れた回・storeShots。決めるのは ios-testflight.yml の `shard-plan` の1か所）。2026-10-31（#429）に
 #    ios-testflight.yml の中に作った組を、ここへそのまま移した（中身は変えていない）
 #  - `ios-pr.yml` の UI テストが全部になる回（`pick-ui-tests.py --related` が全部に倒す・手動の full_ui）。
 #    前は 1 台で流し、PR #514 の run 42787091389 で UI テストの段だけ 2 時間 31 分かかった
