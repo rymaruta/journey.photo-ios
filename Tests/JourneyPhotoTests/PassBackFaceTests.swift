@@ -88,13 +88,13 @@ final class PassBackFaceTests: XCTestCase {
 
     // MARK: - 「有効」の欄
 
-    /// 🔴 「有効」の値（「ずっと（帳に綴じる）」）は1行では欄に入らない。**この欄だけ2行まで**許し、どの券面の欄の幅でも
-    /// 日本語・英語とも2行に収まり、**語の途中で折れない**（日本語は「ずっと」/「（帳に綴じる）」で改行・
+    /// 🔴 「有効」の値（「ずっと（帳に残る）」・2026-11-10 owner で「綴じる」をやめた）は1行では欄に入らない。**この欄だけ2行まで**許し、どの券面の欄の幅でも
+    /// 日本語・英語とも2行に収まり、**語の途中で折れない**（日本語は「ずっと」/「（帳に残る）」で改行・
     /// 英語は語の切れ目）。字は縮めない
     func testValidityFieldWrapsToTwoLinesWithoutTruncating() throws {
         let size = Double(PassCardStyle.backValueSize)
-        XCTAssertEqual(PassTicket.validityJa.components(separatedBy: "\n"), ["ずっと", "（帳に綴じる）"],
-                       "日本語の折れ目を決めていない（任せると「帳に綴」の途中で折れる）")
+        XCTAssertEqual(PassTicket.validityJa.components(separatedBy: "\n"), ["ずっと", "（帳に残る）"],
+                       "日本語の折れ目を決めていない（任せると欄に入らない1語として見積もられる）")
         for text in [PassTicket.validityJa, PassTicket.validityEn] {
             let field = PassTicket.Field(label: "有効", value: text)
             XCTAssertEqual(PassCardStyle.backValueLines(field), 2, "「\(text)」が1行に切られる")
@@ -107,10 +107,10 @@ final class PassBackFaceTests: XCTestCase {
         }
         // 折れ目（いちばん狭い欄で）
         let narrow = PassCardStyle.backValueWidth(.leather)
-        XCTAssertEqual(PassCardStyle.wrappedLines(PassTicket.validityJa, size: size, width: narrow), ["ずっと", "（帳に綴じる）"])
+        XCTAssertEqual(PassCardStyle.wrappedLines(PassTicket.validityJa, size: size, width: narrow), ["ずっと", "（帳に残る）"])
         XCTAssertEqual(PassCardStyle.wrappedLines(PassTicket.validityEn, size: size, width: narrow), ["Forever, in", "your book"])
         // 改行を入れないと語の途中で折れる（見積もりが折れを見つけられること）
-        XCTAssertNil(PassCardStyle.wrappedLines("ずっと（帳に綴じる）", size: size, width: narrow))
+        XCTAssertNil(PassCardStyle.wrappedLines("ずっと（帳に残る）", size: size, width: narrow))
         // ほかの欄は1行のまま（格子の高さを変えない）
         for field in PassTicket.backFields(issuer: "東京の mio.k", section: "9,712 km", count: "はじめて")
             where ![PassTicket.validityJa, PassTicket.validityEn].contains(field.value) {

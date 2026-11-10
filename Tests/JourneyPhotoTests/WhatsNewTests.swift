@@ -115,9 +115,9 @@ final class WhatsNewTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let all = WhatsNew.decode(data)
-        XCTAssertEqual(all.map(\.version), ["1.1.78", "1.1.77", "1.1.76", "1.1.75", "1.1.74", "1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14", "1.0.82", "1.0.73", "1.0.67"])
-        // 1.1.78・1.1.77・1.1.76・1.1.75・1.1.74・1.1.72 の中身は `testVersion1172SummarizesChangesSince1087` で見る。以下は 1.1.18 以前の項目
-        let releases = Array(all.dropFirst(6))
+        XCTAssertEqual(all.map(\.version), ["1.1.79", "1.1.78", "1.1.77", "1.1.76", "1.1.75", "1.1.74", "1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14", "1.0.82", "1.0.73", "1.0.67"])
+        // 1.1.79・1.1.78・1.1.77・1.1.76・1.1.75・1.1.74・1.1.72 の中身は `testVersion1172SummarizesChangesSince1087` で見る。以下は 1.1.18 以前の項目
+        let releases = Array(all.dropFirst(7))
         // 版に重複が無い（履歴の区切りと「見た版」の比べ方が版で1つに決まる前提）
         let versions = releases.map(\.version)
         XCTAssertEqual(Set(versions).count, versions.count, "WhatsNew.json の版が重複している")
@@ -267,8 +267,8 @@ final class WhatsNewTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
-        // 1.1.72 より前の分だけで見る（1.1.78・1.1.77・1.1.76・1.1.75・1.1.74・1.1.72 は `testVersion1172SummarizesChangesSince1087`）
-        let releases = Array(WhatsNew.decode(data).dropFirst(6))
+        // 1.1.72 より前の分だけで見る（1.1.79・1.1.78・1.1.77・1.1.76・1.1.75・1.1.74・1.1.72 は `testVersion1172SummarizesChangesSince1087`）
+        let releases = Array(WhatsNew.decode(data).dropFirst(7))
         XCTAssertEqual(releases.first?.version, "1.1.18")
         XCTAssertEqual(releases.first?.items.count, 2)
         XCTAssertEqual(releases[1].items.count, 3)
@@ -314,12 +314,33 @@ final class WhatsNewTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
-        let releases = WhatsNew.decode(data)
+        let all = WhatsNew.decode(data)
+        // 1.1.79（2026-11-10・札 #519）: すれちがい帳の頭の行・撮影スポットから構図一覧
+        let newest = try XCTUnwrap(all.first)
+        XCTAssertEqual(newest.version, "1.1.79")
+        XCTAssertEqual(newest.date, WhatsNew.Day(year: 2026, month: 11, day: 10))
+        XCTAssertEqual(newest.items.map(\.title.ja), ["すれちがい帳で、乗車券の状態が分かる", "撮影スポットから構図一覧を開ける"])
+        XCTAssertEqual(newest.items.map(\.detail.ja), [
+            "帳のいちばん上に、オンかオフか・止まっている訳が出ます。押すと設定を開けます。",
+            "構図のヒントの下の「構図一覧を見る」から、説明と作例を見られます。",
+        ])
+        // 帳の項目はすれちがい帳を積む。構図一覧の項目は説明だけ（矢印なし）
+        XCTAssertEqual(newest.items.map(\.destination), [.passBook, nil])
+        for item in newest.items {
+            for text in [item.title.ja, item.detail.ja] {
+                for word in ["撮りどき", "捨て", "注目スポット", "撮影地ガイド", "ガイドを見る", "この場所", "綴じ"] {
+                    XCTAssertFalse(text.contains(word), "\(item.title.ja): \(word)")
+                }
+            }
+            XCTAssertFalse(item.title.en.isEmpty || item.detail.en.isEmpty, item.title.ja)
+        }
+        let releases = Array(all.dropFirst())
         // 1.1.78（2026-11-10）: 行った県を押した数だけ数える（札 #510）・すれちがい乗車券がすぐ届く（札 #513）
         XCTAssertEqual(releases.first?.version, "1.1.78")
         XCTAssertEqual(releases.first?.date, WhatsNew.Day(year: 2026, month: 11, day: 10))
         XCTAssertEqual(releases.first?.items.map(\.title.ja), ["行った県は押した数だけ数える", "すれちがい乗車券がすぐ届く"])
-        XCTAssertEqual(releases.first?.items.compactMap(\.destination), [.mypage, .home])
+        // 行った県の項目は行った県の地図を積む（札 #519・確かめ役の任意 B）
+        XCTAssertEqual(releases.first?.items.compactMap(\.destination), [.visitedMap, .home])
         for item in releases.first?.items ?? [] {
             for text in [item.title.ja, item.detail.ja] {
                 for word in ["撮りどき", "捨て", "注目スポット", "撮影地ガイド", "ガイドを見る", "この場所"] {
@@ -367,32 +388,34 @@ final class WhatsNewTests: XCTestCase {
             XCTAssertFalse(item.title.en.isEmpty || item.detail.en.isEmpty, item.title.ja)
         }
         // 1.0.87 の人: 重複なく、新しい順に全部
-        let from1087 = WhatsNew.pending(releases: releases, seen: "1.0.87", current: "1.1.72", usedBefore: true)
-        XCTAssertEqual(from1087.map(\.version), ["1.1.78", "1.1.77", "1.1.76", "1.1.75", "1.1.74", "1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14"])
+        let from1087 = WhatsNew.pending(releases: all, seen: "1.0.87", current: "1.1.72", usedBefore: true)
+        XCTAssertEqual(from1087.map(\.version), ["1.1.79", "1.1.78", "1.1.77", "1.1.76", "1.1.75", "1.1.74", "1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14"])
         let titles = from1087.flatMap(\.items).map(\.title.ja)
         XCTAssertEqual(Set(titles).count, titles.count, "1.0.87 の人に同じ題が2回出る")
         // 1.1.71 の人は 1.1.77・1.1.76・1.1.75・1.1.74・1.1.72。ワークフローが 1.1.73 を付けても出る
-        for current in ["1.1.78", "1.1.80"] {
-            XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.71", current: current, usedBefore: true)
-                .map(\.version), ["1.1.78", "1.1.77", "1.1.76", "1.1.75", "1.1.74", "1.1.72"], current)
+        for current in ["1.1.79", "1.1.78", "1.1.80"] {
+            XCTAssertEqual(WhatsNew.pending(releases: all, seen: "1.1.71", current: current, usedBefore: true)
+                .map(\.version), ["1.1.79", "1.1.78", "1.1.77", "1.1.76", "1.1.75", "1.1.74", "1.1.72"], current)
         }
-        // 1.1.77 を見た人には 1.1.78 だけ。1.1.78 を見た人には出さない
-        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.77", current: "1.1.78", usedBefore: true)
-            .map(\.version), ["1.1.78"])
-        XCTAssertTrue(WhatsNew.pending(releases: releases, seen: "1.1.78", current: "1.1.78", usedBefore: true).isEmpty)
-        // 1.1.76 を見た人には 1.1.78・1.1.77
-        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.76", current: "1.1.78", usedBefore: true)
-            .map(\.version), ["1.1.78", "1.1.77"])
+        // 1.1.77 を見た人には 1.1.79・1.1.78。1.1.78 を見た人には 1.1.79 だけ。1.1.79 を見た人には出さない
+        XCTAssertEqual(WhatsNew.pending(releases: all, seen: "1.1.77", current: "1.1.79", usedBefore: true)
+            .map(\.version), ["1.1.79", "1.1.78"])
+        XCTAssertEqual(WhatsNew.pending(releases: all, seen: "1.1.78", current: "1.1.79", usedBefore: true)
+            .map(\.version), ["1.1.79"])
+        XCTAssertTrue(WhatsNew.pending(releases: all, seen: "1.1.79", current: "1.1.79", usedBefore: true).isEmpty)
+        // 1.1.76 を見た人には 1.1.79・1.1.78・1.1.77
+        XCTAssertEqual(WhatsNew.pending(releases: all, seen: "1.1.76", current: "1.1.79", usedBefore: true)
+            .map(\.version), ["1.1.79", "1.1.78", "1.1.77"])
         // 1.1.75 を見た人には 1.1.77・1.1.76
-        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.75", current: "1.1.78", usedBefore: true)
-            .map(\.version), ["1.1.78", "1.1.77", "1.1.76"])
+        XCTAssertEqual(WhatsNew.pending(releases: all, seen: "1.1.75", current: "1.1.79", usedBefore: true)
+            .map(\.version), ["1.1.79", "1.1.78", "1.1.77", "1.1.76"])
         // 1.1.74 を見た人には 1.1.77・1.1.76・1.1.75
-        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.74", current: "1.1.78", usedBefore: true)
-            .map(\.version), ["1.1.78", "1.1.77", "1.1.76", "1.1.75"])
+        XCTAssertEqual(WhatsNew.pending(releases: all, seen: "1.1.74", current: "1.1.79", usedBefore: true)
+            .map(\.version), ["1.1.79", "1.1.78", "1.1.77", "1.1.76", "1.1.75"])
         // 1.1.72 を見た人には 1.1.77・1.1.76・1.1.75・1.1.74
-        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.72", current: "1.1.78", usedBefore: true)
-            .map(\.version), ["1.1.78", "1.1.77", "1.1.76", "1.1.75", "1.1.74"])
-        XCTAssertTrue(WhatsNew.pending(releases: releases, seen: nil, current: "1.1.72", usedBefore: false).isEmpty)
+        XCTAssertEqual(WhatsNew.pending(releases: all, seen: "1.1.72", current: "1.1.79", usedBefore: true)
+            .map(\.version), ["1.1.79", "1.1.78", "1.1.77", "1.1.76", "1.1.75", "1.1.74"])
+        XCTAssertTrue(WhatsNew.pending(releases: all, seen: nil, current: "1.1.72", usedBefore: false).isEmpty)
     }
 
     // MARK: - 配線（Linux では描けないので文で確かめる）
@@ -446,5 +469,78 @@ final class WhatsNewTests: XCTestCase {
         router.openHome()
         router.openHome()
         XCTAssertEqual(router.homeRequests, 2)
+    }
+
+    // MARK: - 行き先を画面まで（札 #519）
+
+    /// 新しい行き先（passBook・visitedMap）が読める。知らない値は今までどおり説明だけ
+    func testDecodeScreenDestinations() async {
+        let json = """
+        {"releases":[{"version":"9.9.9","items":[
+            {"symbol":"ticket","title":{"ja":"帳","en":"Book"},"detail":{"ja":"説明","en":"Detail"},"destination":"passBook"},
+            {"symbol":"map","title":{"ja":"県","en":"Pref"},"detail":{"ja":"説明","en":"Detail"},"destination":"visitedMap"},
+            {"symbol":"star","title":{"ja":"星","en":"Star"},"detail":{"ja":"説明","en":"Detail"},"destination":"pass-book"}
+        ]}]}
+        """
+        let releases = WhatsNew.decode(Data(json.utf8))
+        XCTAssertEqual(releases.first?.items.map(\.destination), [.passBook, .visitedMap, nil])
+    }
+
+    /// 読み上げのヒントは行き先を言う
+    func testHints() async {
+        XCTAssertEqual(WhatsNew.hint(.passBook), "すれちがい帳を開きます")
+        XCTAssertEqual(WhatsNew.hint(.visitedMap), "行った県の地図を開きます")
+        XCTAssertEqual(WhatsNew.hint(.home), "ホームを開きます")
+        XCTAssertEqual(WhatsNew.hint(.mypage), "マイページを開きます")
+    }
+
+    /// 押したときの動き: 札はそのまま切り替え。帳・行った県はホームに積む。ログインしていなければログインの画面
+    func testRoutes() async {
+        XCTAssertEqual(WhatsNew.route(.map, userId: nil, isResolving: false), .tab(.map))
+        XCTAssertEqual(WhatsNew.route(.mypage, userId: "u", isResolving: false), .tab(.mypage))
+        XCTAssertEqual(WhatsNew.route(.passBook, userId: "u", isResolving: false), .home(.passBook))
+        XCTAssertEqual(WhatsNew.route(.visitedMap, userId: "u", isResolving: false), .home(.visitedMap))
+        XCTAssertEqual(WhatsNew.route(.passBook, userId: nil, isResolving: false),
+                       .signIn("すれちがい帳を見るにはログインしてください"))
+        XCTAssertEqual(WhatsNew.route(.visitedMap, userId: nil, isResolving: false),
+                       .signIn("行った県の記録を見るにはログインしてください"))
+        // 起動直後の確認中は促さない（ログイン済みの人にも出る）
+        XCTAssertEqual(WhatsNew.route(.passBook, userId: nil, isResolving: true), .wait)
+    }
+
+    /// ホームに積む頼みは回数で伝え、札もホームへ替える（メニューのシートを下ろすのも同じ道）。受け取ったら消す
+    func testOpenOnHomeCountsAndClears() async {
+        let router = TabRouter()
+        router.openOnHome(.passBook)
+        XCTAssertEqual(router.homeScreenRequests, 1)
+        XCTAssertEqual(router.homeRequests, 1, "札がホームに替わらない")
+        XCTAssertEqual(router.takePendingHomeScreen(), .passBook)
+        XCTAssertNil(router.takePendingHomeScreen(), "一度積んだ画面を、戻ってきたときにもう一度積む")
+        router.openOnHome(.visitedMap)
+        XCTAssertEqual(router.homeScreenRequests, 2)
+        XCTAssertEqual(router.takePendingHomeScreen(), .visitedMap)
+    }
+
+    /// 配線: 行の見た目は今のまま（行全体が1つのボタン）。ログインの画面・ホームの積み重ね
+    func testScreenDestinationsAreWired() async throws {
+        let view = try source("Sources/JourneyPhoto/Features/Settings/WhatsNewView.swift")
+        XCTAssertTrue(view.contains(".accessibilityHint(WhatsNew.hint(destination))"))
+        XCTAssertTrue(view.contains("case .home(let screen):\n            dismiss()\n            router.openOnHome(screen)"))
+        XCTAssertTrue(view.contains("signInOpen = SignInRequest(reason: reason)"))
+        XCTAssertTrue(view.contains(".signInPrompt(ask: $signInAsk, open: $signInOpen)"))
+        let gallery = try source("Sources/JourneyPhoto/Features/Gallery/GalleryView.swift")
+        XCTAssertTrue(gallery.contains(".navigationDestination(isPresented: $showPassBook) { PassBookView() }"))
+        XCTAssertTrue(gallery.contains(".navigationDestination(isPresented: $showVisitedMap) { VisitedMapScreen() }"))
+        XCTAssertTrue(gallery.contains(".onChange(of: tabRouter.homeScreenRequests) { _, _ in openRequestedScreen() }"))
+        // ホームがまだ出ていなかった回（頼みが先に来た）は、出たときに受け取る
+        XCTAssertTrue(gallery.contains("        .onAppear { openRequestedScreen() }\n"),
+                      "ホームが出る前に来た頼みを、出たときに受け取っていない")
+        // シートが閉じきってから積む
+        XCTAssertTrue(gallery.contains("ModalProbe.isPresenting() || ModalProbe.isTransitioning()"))
+        XCTAssertTrue(gallery.contains("case .passBook: showPassBook = true"))
+        XCTAssertTrue(gallery.contains("case .visitedMap: showVisitedMap = true"))
+        // マイページのファイルは触らない（積むのはホームの側）
+        let mypage = try source("Sources/JourneyPhoto/Features/Profile/MyPageView.swift")
+        XCTAssertFalse(mypage.contains("homeScreenRequests"))
     }
 }

@@ -17,6 +17,10 @@ struct GalleryView: View {
     /// 開いている束。**出す口はここに置く**（札は `LazyVStack` の中なので）
     @State private var passDeck: PassDeck?
     @State private var showPassBook = false
+    /// 行った県の地図（「新しくなったこと」の行き先・札 #519）
+    @State private var showVisitedMap = false
+    /// 「新しくなったこと」から頼まれた画面を、シートが閉じきるまで待って積む
+    @State private var homeScreenWait: Task<Void, Never>?
     /// すれちがいの「いま」。**時計で待たない**（ロック中に 18 時を越えると古いまま残る）——前面に来た・
     /// 知らせが届いた／押された・画面に戻ったときに入れ直す（2026-10-16 の読み直し）
     @State private var passNow = Date()
@@ -215,6 +219,10 @@ struct GalleryView: View {
             }
         }
         .navigationDestination(isPresented: $showPassBook) { PassBookView() }
+        .navigationDestination(isPresented: $showVisitedMap) { VisitedMapScreen() }
+        // 「新しくなったこと」の項目 → ホームに積む（札 #519）。ホームがまだ出ていなかった回は出たときに受け取る
+        .onChange(of: tabRouter.homeScreenRequests) { _, _ in openRequestedScreen() }
+        .onAppear { openRequestedScreen() }
         .onChange(of: pass.openRequests) { _, _ in
             passNow = Date()
             openPendingPass()
@@ -270,6 +278,25 @@ struct GalleryView: View {
             front.disappear()
             isOnScreen = false
             model.leaveScreen()
+        }
+    }
+
+    /// 頼まれた画面を積む。**シート（新しくなったこと・メニュー）が閉じきってから**——閉じる動きの最中に積むと
+    /// 黙って無視されることがある（最長 3 秒待つ。過ぎたら積む）
+    private func openRequestedScreen() {
+        guard tabRouter.pendingHomeScreen != nil else { return }
+        homeScreenWait?.cancel()
+        homeScreenWait = Task { @MainActor in
+            let started = Date()
+            repeat {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            } while !Task.isCancelled && (ModalProbe.isPresenting() || ModalProbe.isTransitioning())
+                && Date().timeIntervalSince(started) < 3
+            guard !Task.isCancelled, let screen = tabRouter.takePendingHomeScreen() else { return }
+            switch screen {
+            case .passBook: showPassBook = true
+            case .visitedMap: showVisitedMap = true
+            }
         }
     }
 
