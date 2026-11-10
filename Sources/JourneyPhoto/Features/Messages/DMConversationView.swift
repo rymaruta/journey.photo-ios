@@ -37,6 +37,9 @@ struct DMConversationView: View {
     @State private var draft = ""
     /// 欄の上の断りの文（URL・上限など）。次に打ち始めたら消す
     @State private var fieldError: String?
+    /// 断られて欄に戻した本文。**戻したこと自体は「打ち始めた」に数えない**（2026-11-10 run 937 の数:
+    /// 送った 1・断られた 1・断りの文が消えた 1——欄に戻した変化で、出したばかりの断りの文を消していた）
+    @State private var restoredDraft: String?
     @State private var working = false
     @State private var showDeleteConfirm = false
     @State private var showBlockConfirm = false
@@ -123,6 +126,8 @@ struct DMConversationView: View {
         .onChange(of: draft) { old, new in
             let kept = PostLimits.limited(old: old, new: new, limit: DMRules.textMax)
             if kept != new { draft = kept }
+            if new == restoredDraft { return }
+            restoredDraft = nil
             if fieldError != nil, !new.isEmpty, new != old {
                 fieldError = nil
                 probe.errorCleared += 1
@@ -540,7 +545,10 @@ struct DMConversationView: View {
                 phase = .unavailable
             } else if DMText.returnsToField(code: refused.code) {
                 // 吹き出しにせず、入力に戻す（URL・上限・ブロック中など。押し直しても通らない）
-                if let back = log.withdraw(clientId), draft.isEmpty { draft = back }
+                if let back = log.withdraw(clientId), draft.isEmpty {
+                    restoredDraft = back
+                    draft = back
+                }
                 fieldError = refused.errorDescription
                 if refused.code == "requestLimit" { await refreshSince() }
             } else {

@@ -100,6 +100,20 @@ final class DirectMessageWiringTests: XCTestCase {
         XCTAssertTrue(view.contains("!log.isSending"))
     }
 
+    /// 断られて欄に本文を戻したとき、戻した変化で断りの文を消さない（run 937: 送った 1・断られた 1・消えた 1）
+    func testRestoredDraftKeepsTheRefusal() throws {
+        let view = try source("Features/Messages/DMConversationView.swift")
+        let change = slice(view, from: ".onChange(of: draft) { old, new in", to: ".alert(")
+        if let skip = index(of: "if new == restoredDraft { return }", in: change),
+           let clear = index(of: "fieldError = nil", in: change) {
+            XCTAssertLessThan(skip, clear, "戻した本文で断りの文を消している")
+        }
+        let deliver = slice(view, from: "private func deliver(text: String, clientId: String) async {", to: "private func accept() async")
+        if let mark = index(of: "restoredDraft = back", in: deliver), let set = index(of: "draft = back", in: deliver) {
+            XCTAssertLessThan(mark, set, "戻す印を付ける前に欄へ戻している")
+        }
+    }
+
     /// 会話の状態（読み込み中・失敗・見られない・ブロック中・退会・圏外）がそろっている
     func testConversationStates() throws {
         let view = try source("Features/Messages/DMConversationView.swift")
