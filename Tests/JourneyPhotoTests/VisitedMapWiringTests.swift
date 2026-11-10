@@ -168,7 +168,9 @@ final class VisitedMapWiringTests: XCTestCase {
                        "model.tap(name)",
                        ".simultaneousGesture(LongPressGesture(minimumDuration: VisitedMapTouch.longPressSeconds).onEnded { _ in",
                        "model.peek(name)",
-                       ".buttonStyle(.plain)",
+                       ".buttonStyle(VisitedRowButtonStyle { pressed in",
+                       "if !pressed { longPressed = VisitedMapTouch.released(longPressed, at: Date()) }",
+                       ".onChange(of: configuration.isPressed) { _, pressed in onPressChange(pressed) }",
                        ".accessibilityAction(named: VisitedMapText.removeOne) { model.decrease(name) }"] {
             XCTAssertTrue(list.contains(needle), "一覧のつなぎが無い: \(needle)")
         }
@@ -209,6 +211,8 @@ final class VisitedMapWiringTests: XCTestCase {
                        "guard !reduceMotion, old != new else { return }"] {
             XCTAssertTrue(bar.contains(needle), "帯のつなぎが無い: \(needle)")
         }
+        // 木に出ない名前を付けない（`children: .ignore` の中の `visitedMap.quick.limit`・再確認 2026-11-10 の 3）
+        XCTAssertFalse(bar.contains("visitedMap.quick.limit"))
         // ［−］と［＋］は同じ部品（同じ大きさ・同じ押しやすさ）
         XCTAssertEqual(bar.components(separatedBy: "stepButton(systemName:").count - 1, 3 /* 定義1 + 使う2 */)
         // 減らすときに確かめのダイアログを出さない（［＋］で戻せる）

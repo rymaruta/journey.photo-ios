@@ -249,6 +249,10 @@ final class VisitedMapModelTests: XCTestCase {
         // 短く 2 回押す → 2 回
         m.release(VisitedMapTouch.onRelease(moved: false, pinched: false, longPressFired: false, heldSeconds: 0.1),
                   on: "東京都")
+        m.release(VisitedMapTouch.onRelease(moved: false, pinched: false, longPressFired: false, heldSeconds: 0.05),
+                  on: "東京都")
+        XCTAssertEqual(m.record.count("東京都"), 2)
+        // 押し始めが分からないまま離した（指の途中状態が片付いたあと）では足さない（再確認 2026-11-10 の 2）
         m.release(VisitedMapTouch.onRelease(moved: false, pinched: false, longPressFired: false, heldSeconds: nil),
                   on: "東京都")
         XCTAssertEqual(m.record.count("東京都"), 2)

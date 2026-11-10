@@ -154,11 +154,11 @@ struct VisitedQuickBar: View {
                     .foregroundStyle(WebTheme.text2)
             }
             if count >= VisitedPrefectures.maxCount {
+                // 読み上げは外側の `quickLabel` が持つ（ここは `children: .ignore` の中で木に出ない）
                 Text(VisitedMapText.limitShort)
                     .font(JPFont.caption)
                     .foregroundStyle(WebTheme.text2)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("visitedMap.quick.limit")
             }
         }
         .accessibilityElement(children: .ignore)

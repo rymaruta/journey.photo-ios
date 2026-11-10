@@ -67,7 +67,10 @@ struct VisitedPrefectureList: View {
         } label: {
             rowLabel(name, count: count, level: level, candidate: candidate)
         }
-        .buttonStyle(.plain)
+        // 押している間が終わったら（離した・行の外へずらした・スクロールに取られた）長押しの印の寿命を切る
+        .buttonStyle(VisitedRowButtonStyle { pressed in
+            if !pressed { longPressed = VisitedMapTouch.released(longPressed, at: Date()) }
+        })
         .simultaneousGesture(LongPressGesture(minimumDuration: VisitedMapTouch.longPressSeconds).onEnded { _ in
             longPressed = VisitedMapTouch.LongPress(prefecture: name, at: Date())
             model.peek(name)
@@ -132,5 +135,18 @@ struct VisitedSwatch: View {
                               lineWidth: VisitedMapStyle.zeroEdgeWidth * 2)
             }
         }
+    }
+}
+
+/// 一覧の行の押し方。押している間は行の地を白 6%（札の中の行と同じ手応え・`JPRowButtonStyle`）にし、
+/// 押している間の始まりと終わりを渡す（長押しの印の寿命を切るため・2026-11-10 再確認）。
+/// 終わりは、離したときだけでなく、行の外へずらした・スクロールに取られたときにも来る
+struct VisitedRowButtonStyle: ButtonStyle {
+    let onPressChange: (Bool) -> Void
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(Color.white.opacity(configuration.isPressed ? 0.06 : 0))
+            .onChange(of: configuration.isPressed) { _, pressed in onPressChange(pressed) }
     }
 }

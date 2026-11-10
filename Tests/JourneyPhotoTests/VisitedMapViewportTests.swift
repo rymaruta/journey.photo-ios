@@ -105,32 +105,45 @@ final class VisitedMapViewportTests: XCTestCase {
     func testReleaseOutcome() {
         typealias T = VisitedMapTouch
         XCTAssertEqual(T.onRelease(moved: false, pinched: false, longPressFired: false, heldSeconds: 0.1), .add)
-        XCTAssertEqual(T.onRelease(moved: false, pinched: false, longPressFired: false, heldSeconds: nil), .add)
+        // 押し始めが分からないまま離したら何もしない（再確認 2026-11-10 の 2）
+        XCTAssertEqual(T.onRelease(moved: false, pinched: false, longPressFired: false, heldSeconds: nil), .none)
         XCTAssertEqual(T.onRelease(moved: false, pinched: false, longPressFired: false, heldSeconds: 0.5), .peek)
         XCTAssertEqual(T.onRelease(moved: false, pinched: false, longPressFired: true, heldSeconds: 0.6), .none)
         XCTAssertEqual(T.onRelease(moved: true, pinched: false, longPressFired: false, heldSeconds: 0.1), .none)
         XCTAssertEqual(T.onRelease(moved: false, pinched: true, longPressFired: false, heldSeconds: 0.1), .none)
     }
 
-    /// 🔴 一覧: 長押しで帯を出したあと、同じ行を離したときの押下だけを飲み込む（別の行・時間切れは足す）
+    /// 🔴 一覧: 長押しで帯を出したあと、同じ指を離したときの押下だけを飲み込む（別の行・離れて 0.5 秒より後は足す）
     func testListSwallowsOnlyTheReleaseAfterALongPress() {
         let t0 = Date(timeIntervalSince1970: 1_000_000)
         let lp = VisitedMapTouch.LongPress(prefecture: "東京都", at: t0)
+        // 指がまだ乗っている間に来た押下（押下が「押している間の終わり」より先に来た）
         XCTAssertTrue(VisitedMapTouch.swallowsTap(on: "東京都", after: lp, now: t0.addingTimeInterval(0.3)))
         XCTAssertFalse(VisitedMapTouch.swallowsTap(on: "千葉県", after: lp, now: t0.addingTimeInterval(0.3)))
         XCTAssertFalse(VisitedMapTouch.swallowsTap(on: "東京都", after: nil, now: t0))
-        XCTAssertFalse(VisitedMapTouch.swallowsTap(on: "東京都", after: lp,
-                                                   now: t0.addingTimeInterval(VisitedMapTouch.swallowSeconds)))
         XCTAssertFalse(VisitedMapTouch.swallowsTap(on: "東京都", after: lp, now: t0.addingTimeInterval(-1)))
+        // 離れたすぐあとに来た押下（「押している間の終わり」が先に来た）
+        let released = VisitedMapTouch.released(lp, at: t0.addingTimeInterval(2))
+        XCTAssertTrue(VisitedMapTouch.swallowsTap(on: "東京都", after: released, now: t0.addingTimeInterval(2.1)))
+        XCTAssertFalse(VisitedMapTouch.swallowsTap(
+            on: "東京都", after: released, now: t0.addingTimeInterval(2 + VisitedMapTouch.releaseSwallowSeconds)))
     }
 
-    /// 🔴 再確認 2026-11-10 の 1（再現）: 長押しで帯を出したあと、行の外へずらして離した・スクロールした
-    /// （Button の押下が来ない）なら、次の本当の押下（3 秒後）は飲み込まない（押した数だけ数える）
+    /// 🔴 再確認 2026-11-10 の 1: 長押しで帯を出したあと、行の外へずらして離した・スクロールした
+    /// （Button の押下が来ない）なら、次の本当の押下（3 秒後）は飲み込まない（押した数だけ数える）。
+    /// 前の形（長押しから 10 秒は飲み込む）では、Mac 952（sha 1651dcfd）でこの試験が落ちた
     func testListDoesNotSwallowTheNextRealTapAfterALongPressWithoutRelease() {
         let t0 = Date(timeIntervalSince1970: 1_000_000)
         let lp = VisitedMapTouch.LongPress(prefecture: "東京都", at: t0)
-        XCTAssertFalse(VisitedMapTouch.swallowsTap(on: "東京都", after: lp, now: t0.addingTimeInterval(3)),
+        // 指が離れた（押下は来ない）
+        let released = VisitedMapTouch.released(lp, at: t0.addingTimeInterval(1))
+        XCTAssertEqual(released?.releasedAt, t0.addingTimeInterval(1))
+        XCTAssertFalse(VisitedMapTouch.swallowsTap(on: "東京都", after: released, now: t0.addingTimeInterval(3)),
                        "押下が来ないまま残った長押しの印が、次の本当の押下を飲み込んだ")
+        // 2 回目の「離れた」は時刻を動かさない
+        XCTAssertEqual(VisitedMapTouch.released(released, at: t0.addingTimeInterval(2))?.releasedAt,
+                       t0.addingTimeInterval(1))
+        XCTAssertNil(VisitedMapTouch.released(nil, at: t0))
     }
 
     /// 禁止語を使わない（全文言を走査する）
