@@ -12,12 +12,26 @@ struct NotificationService {
     struct Page: Decodable {
         let items: [AppNotification]
         let unread: Int
+        /// サーバーが数えた「`unread` のうち、メッセージの受信箱に入ったストーリーの返信（`dmConvId`）を除いた数」
+        /// （2026-11-10 から）。**アプリで数え直さない**（数え方をサーバーと割らない）。欄が無い（口が古い）ときは nil
+        let unreadExcludingDm: Int?
 
-        /// ベルの未読（2026-11-10・札 #505）。**メッセージの受信箱に入ったストーリーの返信（`dmConvId`）は数えない**
-        /// ——ベルには出さず受信箱に出す行で、アイコンの数字もサーバーは DM の未読で1回だけ数える
-        /// （`notify.ts` の `visibleUnread(…, { skipDmMirrored: true })`）。未読は頭から `unread` 件
-        var bellUnread: Int {
-            items.prefix(max(0, unread)).filter { $0.dmConvId == nil }.count
+        /// ベルの未読（2026-11-10・札 #505）。受信箱に入った返信はベルに出さないので数えない。欄が無ければ `unread`
+        var bellUnread: Int { max(0, unreadExcludingDm ?? unread) }
+
+        init(items: [AppNotification], unread: Int, unreadExcludingDm: Int? = nil) {
+            self.items = items
+            self.unread = unread
+            self.unreadExcludingDm = unreadExcludingDm
+        }
+
+        private enum CodingKeys: String, CodingKey { case items, unread, unreadExcludingDm }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            items = try c.decode([AppNotification].self, forKey: .items)
+            unread = try c.decode(Int.self, forKey: .unread)
+            unreadExcludingDm = try? c.decodeIfPresent(Int.self, forKey: .unreadExcludingDm)
         }
     }
 

@@ -464,7 +464,8 @@ final class DirectMessageTests: XCTestCase {
         XCTAssertNil(StoryReplyConversation.id(me: Self.me, replier: Self.me, hasText: true, inbox: inbox))
     }
 
-    /// ベルの `storyreply` の `dmConvId`: ベルの未読に数えない（頭から `unread` 件のうち）・行も隠す
+    /// ベルの `storyreply` の `dmConvId`: 行はベルに出さない。ベルの未読はサーバーの `unreadExcludingDm`（アプリで数え直さない）、
+    /// 欄が無ければ `unread`
     func testBellSkipsRepliesMirroredIntoMessages() throws {
         let page = try decode("""
         {"items":[
@@ -472,15 +473,19 @@ final class DirectMessageTests: XCTestCase {
           {"type":"storyreply","byId":"u2","byName":"B","t":"2","photoId":"story-1","replyKind":"reaction"},
           {"type":"like","byId":"u3","byName":"C","t":"1","photoId":"p1"},
           {"type":"like","byId":"u4","byName":"D","t":"0","photoId":"p2"}
-        ],"unread":3}
+        ],"unread":3,"unreadExcludingDm":2}
         """, as: NotificationService.Page.self)
-        XCTAssertEqual(page.bellUnread, 2, "受信箱に入った返信をベルの未読にも数えた（二重）")
+        XCTAssertEqual(page.bellUnread, 2, "サーバーの unreadExcludingDm を使っていない（受信箱と二重に数える）")
         XCTAssertEqual(page.items[0].dmConvId, Self.conv)
         XCTAssertEqual(page.items[0].replyKind, "text")
         XCTAssertTrue(page.items[0].isInMessages)
         XCTAssertFalse(page.items[1].isInMessages)
         let old = try decode(#"{"items":[{"type":"storyreply","byId":"u1","t":"1"}],"unread":1}"#, as: NotificationService.Page.self)
-        XCTAssertEqual(old.bellUnread, 1, "欄の無い古い行を数えなかった")
+        XCTAssertEqual(old.bellUnread, 1, "欄が無いのに unread を使っていない")
+        // アプリで数え直さない: 欄があれば、行の dmConvId に関わらずサーバーの数
+        let server = try decode(#"{"items":[{"type":"storyreply","byId":"u1","t":"1","dmConvId":"a_b"}],"unread":1,"unreadExcludingDm":1}"#,
+                                as: NotificationService.Page.self)
+        XCTAssertEqual(server.bellUnread, 1)
         let shown = NotificationsView.shown(page.items, blocked: [], filter: .all)
         XCTAssertEqual(shown.count, 3)
         XCTAssertFalse(shown.contains { $0.dmConvId != nil }, "受信箱に入った返信がベルにも出ている")
