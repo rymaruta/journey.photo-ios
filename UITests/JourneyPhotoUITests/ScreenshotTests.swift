@@ -1607,7 +1607,10 @@ final class ScreenshotTests: XCTestCase {
         guard later.exists, later.isHittable else { return XCTFail("「あとで」を押せない") }
         later.tap()
         let gone = NSPredicate(format: "exists == false")
-        let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: allow)], timeout: 5)
+        // 2026-11-10 判断: 待ちを 5 → 15 秒。分けて流した run 42838160142（組 2）で、押したあと「説明が残っているか」を
+        // 1 回調べるだけで 4.07 秒かかり（t=24.73→28.80）、5 秒の待ちが切れた。同じ枝の run 42856953207 では 0.32 秒で閉じていた。
+        // 調べる速さは Mac によって 10 倍以上違うので、実測の遅い方の約 3.7 倍にする
+        let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: allow)], timeout: 15)
         XCTAssertEqual(closed, .completed, "「あとで」で説明が閉じない")
     }
 
