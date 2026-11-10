@@ -2,7 +2,7 @@ import Foundation
 
 /// メッセージ（DM・第1段・札 #505）の決まり。**画面を持たない**ので Linux の試験で見張る。
 ///
-/// 規則はサーバー（`api-user/src/dm.ts`・本番 journey.photo-web main 0c51efdf）が正。ここはその写しではなく、
+/// 規則はサーバー（`api-user/src/dm.ts`・本番 journey.photo-web main 2b9a4384）が正。ここはその写しではなく、
 /// **画面が先に知っておくこと**（会話 id の組み方・承認前の上限・URL の見分け・断りの言葉）だけを置く。
 enum DMRules {
 
@@ -423,13 +423,21 @@ enum AppBadge {
         max(0, bellUnread) + max(0, messagesUnread)
     }
 
+    /// アプリが数字を置いてよい値。**お知らせの未読と受信箱の両方を、今の人で読めた後だけ**（片方だけなら nil＝触らない）。
+    /// 起動直後に受信箱が先に読めた回に「0＋メッセージの未読」でお知らせの分を消していた（2026-11-10 再確認の指摘）
+    static func syncValue(me: String?, bellOwner: String?, bellUnread: Int,
+                          messagesOwner: String?, messagesLoaded: Bool, messagesUnread: Int) -> Int? {
+        guard let me, bellOwner == me, messagesOwner == me, messagesLoaded else { return nil }
+        return count(bellUnread: bellUnread, messagesUnread: messagesUnread)
+    }
+
     /// 通知センターの通知のうち、その会話のメッセージの通知の id（`{type: "dm", convId}`）
     static func deliveredIds(_ items: [(id: String, userInfo: [AnyHashable: Any])], conversationId: String) -> [String] {
         items.filter { NotificationRouter.dmConversationId($0.userInfo) == conversationId }.map { $0.id }
     }
 }
 
-// MARK: - 2026-11-10 に足した欄（journey.photo-web claude/dm-fields 0af2b8c71）
+// MARK: - 2026-11-10 に足した欄（journey.photo-web 8b03528db・本番 main 2b9a4384）
 
 /// ストーリーへの返信の引用札の見せ方（画面案「会話」の先頭の札）。**欄が無いときは今の作り（枠だけ）**
 enum DMStoryCardState: Equatable {
@@ -441,6 +449,15 @@ enum DMStoryCardState: Equatable {
     case live(storyId: String, image: URL?, isVideo: Bool)
     /// 終わった（期限・棚・見られなくなった）
     case ended
+
+    /// 開いている間に次に期限が来る見られる札の時刻（その時刻に描き直して「終了しました」に倒す）
+    static func nextExpiry(_ messages: [DMMessage], after now: Date) -> Date? {
+        messages.compactMap { m -> Date? in
+            guard let story = m.story, story.state == "live",
+                  let at = story.expiresAt.flatMap(NotificationGroups.parse), at > now else { return nil }
+            return at
+        }.min()
+    }
 
     /// 見られる札のストーリー（押して開く）
     var liveStoryId: String? {

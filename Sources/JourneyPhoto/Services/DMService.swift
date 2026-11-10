@@ -1,7 +1,7 @@
 import Foundation
 
-/// メッセージ（DM・第1段・2026-11-09 札 #505）の口。`api-user/src/dm.ts`（journey.photo-web main 0c51efdf）に合わせる。
-/// **文字だけ・1対1**。サーバーは本番に出ている（2026-11-10・main 0c51efdf）。
+/// メッセージ（DM・第1段・2026-11-09 札 #505）の口。`api-user/src/dm.ts`（journey.photo-web 本番 main 2b9a4384）に合わせる。
+/// **文字だけ・1対1**。サーバーは本番に出ている（2026-11-10・main 2b9a4384・新しい欄も含む）。
 ///
 ///     GET    /dm                    受信箱（リクエストも同じ一覧。`state` で分ける）→ `DMInbox`
 ///     GET    /dm/{id}?since=        会話（変化なしは `{unchanged:true, items:[]}`）→ `DMConversation`
@@ -145,7 +145,7 @@ struct DMThread: Decodable, Identifiable, Equatable {
     let excerpt: String
     let unread: Int
     let state: DMEntryState
-    /// 最後の1通が自分のものか（2026-11-10 から・journey.photo-web claude/dm-fields）。**欄の無い行（古い行・
+    /// 最後の1通が自分のものか（2026-11-10 から・journey.photo-web 8b03528db・本番 main 2b9a4384）。**欄の無い行（古い行・
     /// 口がまだ古い）は nil**——そのときは抜粋の頭に「あなた: 」を付けない
     let lastMine: Bool?
 

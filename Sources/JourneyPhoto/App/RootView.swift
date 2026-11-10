@@ -830,6 +830,9 @@ struct RootView: View {
             }
             // アイコンの数字を受信箱の控えに合わせる（読んだ・読み直した・承認した・消した）
             .onChange(of: messages.inbox) { _, _ in syncBadgeWithMessages() }
+            // お知らせの未読が読めた・変わったときも合わせる（受信箱が先に読めた回にお知らせの分を落とさない）
+            .onChange(of: unread) { _, _ in syncBadgeWithMessages() }
+            .onChange(of: unreadOwner) { _, _ in syncBadgeWithMessages() }
             .sheet(isPresented: $showMessages, onDismiss: {
                 messagesTarget = nil
                 Task { await refreshMessages() }
@@ -852,9 +855,10 @@ struct RootView: View {
     /// アイコンの数字＝お知らせの未読＋メッセージの未読会話（サーバーの `sendToDevices` と同じ・`AppBadge`）。
     /// **今の人の読めた控えのときだけ**置く（読み込み中・人が替わった直後に 0 で上書きしない）
     private func syncBadgeWithMessages() {
-        guard let me = auth.userId, messages.owner == me, messages.phase == .loaded else { return }
-        let count = AppBadge.count(bellUnread: unread,
-                                   messagesUnread: messages.inbox.unreadConversations(hiding: hidden.blockedUserIds))
+        guard let count = AppBadge.syncValue(
+            me: auth.userId, bellOwner: unreadOwner, bellUnread: unread,
+            messagesOwner: messages.owner, messagesLoaded: messages.phase == .loaded,
+            messagesUnread: messages.inbox.unreadConversations(hiding: hidden.blockedUserIds)) else { return }
         Task { await push.setBadge(count) }
     }
 

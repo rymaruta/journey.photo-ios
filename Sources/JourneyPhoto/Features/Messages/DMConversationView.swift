@@ -53,6 +53,8 @@ struct DMConversationView: View {
     /// 「タップでストーリーを見る」で開いたストーリー（全画面）
     @State private var openedStory: Story?
     @State private var openingStory = false
+    /// 引用札の見せ方に使う時刻。**開いている間に期限が来たら進めて描き直す**（「タップで見る」を残さない）
+    @State private var cardClock = Date()
     @FocusState private var fieldFocused: Bool
     /// UI テストのときだけ（`-JPPreviewDM`）: 送った・断られた・断りの文が消えた回数を見えない要素に出す（`dm.probe`）
     @State private var probe = (sends: 0, refusals: 0, errorCleared: 0)
@@ -127,6 +129,12 @@ struct DMConversationView: View {
         .task(id: conversationId) { await load() }
         // 開いている間だけ読み直す（前面・電波あり）
         .task(id: "\(conversationId)#\(scenePhase == .active)") { await poll() }
+        // 引用札の期限が来たら描き直す（`since` の読み直しでは古い通の札は届き直さない・2026-11-10 再確認の指摘）
+        .task(id: DMStoryCardState.nextExpiry(log.messages, after: cardClock)) {
+            guard let at = DMStoryCardState.nextExpiry(log.messages, after: cardClock) else { return }
+            try? await Task.sleep(for: .seconds(max(0, at.timeIntervalSinceNow) + 1))
+            if !Task.isCancelled { cardClock = Date() }
+        }
         // 開いている会話を知らせる（この会話の通知は前面で帯を出さない）
         .onAppear { router.conversationOpened(conversationId) }
         .onDisappear { router.conversationClosed(conversationId) }
@@ -326,7 +334,7 @@ struct DMConversationView: View {
     /// 枠だけ出し、「終了」とは言い切らない（`DMStoryCardState`）
     @ViewBuilder
     private func storyCard(for message: DMMessage) -> some View {
-        let state = DMStoryCardState.of(message)
+        let state = DMStoryCardState.of(message, now: cardClock)
         if let storyId = state.liveStoryId {
             Button { Task { await openStory(storyId) } } label: { storyCardFace(message, state: state) }
                 .buttonStyle(.plain)

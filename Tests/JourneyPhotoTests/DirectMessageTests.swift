@@ -6,7 +6,7 @@ import FoundationNetworking
 
 /// メッセージ（DM・第1段・札 #505・2026-11-10）の試験。
 ///
-/// サーバー（`api-user/src/dm.ts`・本番 journey.photo-web main 0c51efdf）の応答の形・断り（`code`）・規則を、
+/// サーバー（`api-user/src/dm.ts`・本番 journey.photo-web main 2b9a4384）の応答の形・断り（`code`）・規則を、
 /// 画面を持たない層（`DMService`・`DMRules`・`DMThreadLog`・`DMInbox`・`DMReplyGate`）で確かめる。
 /// 画面の配線は元のファイルを読んで見張る（Linux では SwiftUI を描けない）
 final class DirectMessageTests: XCTestCase {
@@ -377,7 +377,7 @@ final class DirectMessageTests: XCTestCase {
         XCTAssertEqual(gate.note(name: "B", language: "ja"), "B さんが承認するまで、これ以上送れません（3/3）")
     }
 
-    // MARK: - 2026-11-10 に足した欄（journey.photo-web claude/dm-fields 0af2b8c71）。欄が無いときは今までどおり
+    // MARK: - 2026-11-10 に足した欄（journey.photo-web 8b03528db・本番 main 2b9a4384）。欄が無いときは今までどおり
 
     /// 受信箱の `lastMine`: 欄があるときだけ「あなた: 」
     func testLastMinePrefixesExcerptOnlyWhenPresent() throws {
@@ -417,6 +417,9 @@ final class DirectMessageTests: XCTestCase {
         ])
         XCTAssertEqual(states[0].liveStoryId, "s1")
         XCTAssertNil(states[2].liveStoryId)
+        // 開いている間に次に期限が来る時刻（その時刻に描き直す）。期限の無い札・終わった札・過ぎた札は数えない
+        XCTAssertEqual(DMStoryCardState.nextExpiry(conv.items, after: now), NotificationGroups.parse(later))
+        XCTAssertNil(DMStoryCardState.nextExpiry(conv.items, after: now.addingTimeInterval(7200)))
         // 一覧に無かったストーリーは札を「終了」に倒す
         var log = DMThreadLog(messages: conv.items)
         log.markStoryEnded("s1")
@@ -489,6 +492,35 @@ final class DirectMessageTests: XCTestCase {
         let shown = NotificationsView.shown(page.items, blocked: [], filter: .all)
         XCTAssertEqual(shown.count, 3)
         XCTAssertFalse(shown.contains { $0.dmConvId != nil }, "受信箱に入った返信がベルにも出ている")
+    }
+
+    // MARK: - アイコンの数字を置く順番（2026-11-10 再確認の指摘1）
+
+    /// 起動直後の読み込みの順を作って、アプリが置く数字を確かめる。**両方を今の人で読めるまでは触らない**
+    /// （受信箱が先に読めた回に「0＋メッセージの未読」でお知らせの分を消していた）
+    func testBadgeWaitsForBothCountsInEitherOrder() {
+        struct Step { var bellOwner: String?; var bell: Int; var dmOwner: String?; var dmLoaded: Bool; var dm: Int }
+        func value(_ s: Step, me: String? = "u1") -> Int? {
+            AppBadge.syncValue(me: me, bellOwner: s.bellOwner, bellUnread: s.bell,
+                               messagesOwner: s.dmOwner, messagesLoaded: s.dmLoaded, messagesUnread: s.dm)
+        }
+        // 受信箱 → お知らせ の順
+        var s = Step(bellOwner: nil, bell: 0, dmOwner: "u1", dmLoaded: true, dm: 2)
+        XCTAssertNil(value(s), "お知らせを読む前に数字を置いた（お知らせの分が消える）")
+        s.bellOwner = "u1"; s.bell = 3
+        XCTAssertEqual(value(s), 5)
+        // お知らせ → 受信箱 の順
+        var r = Step(bellOwner: "u1", bell: 3, dmOwner: "u1", dmLoaded: false, dm: 0)
+        XCTAssertNil(value(r), "受信箱を読む前に数字を置いた（メッセージの分が消える）")
+        r.dmLoaded = true; r.dm = 2
+        XCTAssertEqual(value(r), 5)
+        // お知らせを読んだ（0）あとは、メッセージの未読だけ残る
+        r.bell = 0
+        XCTAssertEqual(value(r), 2)
+        // 前の人の数・ログアウト中は触らない
+        XCTAssertNil(value(Step(bellOwner: "u0", bell: 1, dmOwner: "u1", dmLoaded: true, dm: 1)))
+        XCTAssertNil(value(Step(bellOwner: "u1", bell: 1, dmOwner: "u0", dmLoaded: true, dm: 1)))
+        XCTAssertNil(value(s, me: nil))
     }
 
     // MARK: - 通報の理由

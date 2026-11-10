@@ -129,8 +129,10 @@ final class DirectMessageWiringTests: XCTestCase {
         let root = try source("App/RootView.swift")
         XCTAssertTrue(root.contains(".onChange(of: messages.inbox) { _, _ in syncBadgeWithMessages() }"))
         let sync = slice(root, from: "private func syncBadgeWithMessages() {", to: "\n    }\n")
-        XCTAssertTrue(sync.contains("AppBadge.count(bellUnread: unread"))
-        XCTAssertTrue(sync.contains("messages.owner == me, messages.phase == .loaded"), "読み込み中・前の人の控えで数字を置く")
+        XCTAssertTrue(sync.contains("AppBadge.syncValue("))
+        XCTAssertTrue(sync.contains("bellOwner: unreadOwner"), "お知らせの数を今の人で読めたかを見ていない")
+        XCTAssertTrue(root.contains(".onChange(of: unread) { _, _ in syncBadgeWithMessages() }"),
+                      "お知らせの未読が後から読めた回に数字を合わせ直さない")
         let bell = try source("Features/Notifications/NotificationsView.swift")
         XCTAssertFalse(bell.contains("push.clearBadge()"), "お知らせを読んだらメッセージの未読まで 0 にしている")
         XCTAssertEqual(bell.components(separatedBy: "push.clearBadge(keepingMessages: messagesUnread)").count - 1, 3)
