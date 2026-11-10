@@ -5,7 +5,7 @@ import Foundation
 /// その日の項目を**日程の順のまま**番号を振って地図に置き、1か所ずつ「前の場所からの経路」を
 /// Apple のマップで開く（iOS はアプリから複数地点の経路を一度に渡す口を持たない）。
 ///
-/// **番号は日程の順番**（座標の無い場所も数える）——地図の番号と日程の行の番号を揃える。
+/// **番号は日程の通し番号**（座標の無い場所も数える・日をまたいで続ける）——地図の番号と日程の行の番号を揃える。
 /// 座標の無い場所はピンを置かず、経路の起点にもしない（前の場所は「座標のある前の場所」）。
 /// 距離・時間は出さない（計算していない・`TripPlanText` の約束）。
 enum TripDayMap {
@@ -23,7 +23,10 @@ enum TripDayMap {
         var id: Int { number }
     }
 
-    static func stops(of day: TripDay, index: [OfficialSpot], places: [DerivedSpot.Place]) -> [Stop] {
+    /// - `startNumber`: その日の最初の番号。**日程の通し番号にそろえる**（2日目は前の日の数の続き・
+    ///   2026-11-10 札 #521。以前は日ごとに1から振り、日程の「4」が地図では「1」になっていた）
+    static func stops(of day: TripDay, index: [OfficialSpot], places: [DerivedSpot.Place],
+                      startNumber: Int = 1) -> [Stop] {
         var previous: (coords: Photo.Coords, name: String)?
         return day.items.enumerated().map { offset, item in
             let name = TripPlanText.label(for: item, index: index, places: places)
@@ -34,7 +37,7 @@ enum TripDayMap {
             case .location(let slug, _):
                 coords = places.first { $0.slug == slug }?.coords
             }
-            let stop = Stop(number: offset + 1, name: name, coords: coords,
+            let stop = Stop(number: startNumber + offset, name: name, coords: coords,
                             from: previous?.coords, fromName: previous?.name)
             if let coords { previous = (coords, name) }
             return stop

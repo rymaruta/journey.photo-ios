@@ -86,7 +86,9 @@ enum SpotScreen {
     enum OfficialAction: Hashable {
         /// 行きたい（♥）
         case wish
-        /// アプリの中の地図でこのスポットを開く（`OfficialSpotMapView`）
+        /// 旅行プランに入れる（`TripAddSheet`・2026-11-10 札 #521）
+        case trip
+        /// アプリの中の地図でこのスポットを開く（`OfficialSpotMapView`）。**札の行の下の1行**（`officialMapRow`）
         case map
         /// 経路（Apple のマップ・`SpotDirections`）
         case directions
@@ -102,9 +104,15 @@ enum SpotScreen {
     ///  - **シェアは右上の1つだけ**。板 SpotDetail は右上と札の行の両方に置いているが、同じ操作が
     ///    1画面に2つあった（owner の指摘）。右上は板の「写真の上」の型（戻る・シェア）なので残し、
     ///    札の行のシェアの枠に「経路」を入れた
+    ///
+    /// 2026-11-10（札 #521）: 「旅行プランに入れる」を足した。札が4つになると字が切れるので、
+    /// 「地図で見る」は札の行の下の1行へ寄せた（`officialMapRow`）
     static func officialActions(hasCoords: Bool) -> [OfficialAction] {
-        hasCoords ? [.wish, .map, .directions] : [.wish]
+        hasCoords ? [.wish, .trip, .directions] : [.wish, .trip]
     }
+
+    /// 札の行の下に「地図で見る」を置くか（座標があるときだけ）
+    static func officialMapRow(hasCoords: Bool) -> Bool { hasCoords }
 
     /// 小見出し（モックの "PHOTO SPOT"）。
     ///

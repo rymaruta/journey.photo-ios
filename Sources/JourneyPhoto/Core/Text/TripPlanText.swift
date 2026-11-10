@@ -8,7 +8,8 @@ import Foundation
 ///   （`TakenDay` と同じ。読めない値は出さない）
 /// - 足せるのは**保存済みの行きたい場所だけ**。自由入力にしない
 ///   （綴りの違う地名が増えて `/location/*` と噛み合わなくなる）
-/// - 移動時間・費用・距離は**出さない**（計算していない数字）
+/// - 費用・距離は**出さない**（計算していない数字）。移動時間は Apple の地図が返した見込みだけを
+///   日程の画面に出す（2026-11-10 owner の要望で緩めた・`TripTravel`）
 enum TripPlanText {
 
     // MARK: - 日付
@@ -178,6 +179,22 @@ enum TripPlanText {
             if let place = places.first(where: { $0.slug == slug }) { return LocationMatch.display(place.label) }
             return slug.removingPercentEncoding ?? slug
         }
+    }
+
+    // MARK: - 旅の一冊（板 TripPlans F30・2026-11-10 札 #521）
+
+    /// 帰着済みのプランに添える旅の一冊。**プランの期間と一冊の期間が重なるときだけ**（新しいデータは要らない）。
+    /// いくつも重なるときは重なる日がいちばん多い一冊、同じなら新しい方。日付の無いプランは nil
+    static func book(for plan: TripPlan, in trips: [TripBook.Trip]) -> TripBook.Trip? {
+        guard let s = date(fromYMD: plan.startDate ?? plan.endDate),
+              let e = date(fromYMD: plan.endDate ?? plan.startDate), e >= s else { return nil }
+        func overlap(_ t: TripBook.Trip) -> Int {
+            let lo = max(s, t.start), hi = min(e, t.end)
+            guard hi >= lo else { return 0 }
+            return (calendar.dateComponents([.day], from: lo, to: hi).day ?? 0) + 1
+        }
+        return trips.filter { overlap($0) > 0 }
+            .max { (overlap($0), $0.end) < (overlap($1), $1.end) }
     }
 
     // MARK: - 保存

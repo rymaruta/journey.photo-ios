@@ -52,6 +52,8 @@ struct OfficialSpotView: View {
     @State private var camera: MapCameraPosition = .automatic
     /// 本文（公開済みの場所だけ取りに行く）。取れなければ nil のまま
     @State private var spotBody: SpotBody?
+    /// 「旅行プランに入れる」のシート（2026-11-10 札 #521）
+    @State private var tripAdd: TripAddTarget?
     /// 詳細を重ねた行（分けた置き場の索引だけの行で開いたとき・2026-10-07）。取れなければ nil のまま
     @State private var detailed: OfficialSpot?
     /// 読み込めなかった作例（出典のページで覚える）。その1枚を出典ごと隠す
@@ -341,12 +343,18 @@ struct OfficialSpotView: View {
     /// 札の行（`SpotScreen.officialActions`）。**シェアは右上の1つだけ**（判断は `officialActions` の注記）
     private var actions: some View {
         // v2 の板 SpotDetail: 同じ幅の札を 8 のすき間で並べる（札は `SpotDetailParts.actionLabel`）
-        HStack(spacing: JPSpace.xs) {
-            ForEach(SpotScreen.officialActions(hasCoords: spot.coords != nil), id: \.self) { action in
-                actionButton(action)
+        VStack(spacing: JPSpace.xs) {
+            HStack(spacing: JPSpace.xs) {
+                ForEach(SpotScreen.officialActions(hasCoords: spot.coords != nil), id: \.self) { action in
+                    actionButton(action)
+                }
+            }
+            if SpotScreen.officialMapRow(hasCoords: spot.coords != nil) {
+                actionButton(.map)
             }
         }
         .padding(.horizontal, JPSpace.m)
+        .tripAddSheet($tripAdd)
     }
 
     @ViewBuilder
@@ -366,12 +374,22 @@ struct OfficialSpotView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("spot.official.wish")
+        case .trip:
+            // 旅行プランに入れる（出発が近いプランを先に選んで開く・入れた場所は「行きたい」にも入る）
+            Button {
+                tripAdd = TripAddTarget(place: TripDraft.place(spot: shown), wishKey: wishKey)
+            } label: {
+                SpotDetailParts.actionLabel(icon: "calendar.badge.plus", title: L("旅行プランに入れる", "Add to trip"),
+                                            filled: false)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("spot.official.trip")
         case .map:
-            // アプリの中の地図（マイページ・探すの「地図で見る」と同じくアプリの中・2026-10-11）
+            // アプリの中の地図（マイページ・探すの「地図で見る」と同じくアプリの中・2026-10-11）。札の行の下の1行
             NavigationLink {
                 OfficialSpotMapView(spot: shown)
             } label: {
-                SpotDetailParts.actionLabel(icon: "map", title: L("地図で見る", "View on map"), filled: false)
+                SpotDetailParts.mapRowLabel(title: L("地図で見る", "View on map"))
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("spot.official.map")

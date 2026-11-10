@@ -35,6 +35,29 @@ enum SpotDetailParts {
         .contentShape(RoundedRectangle(cornerRadius: JPRadius.m))
     }
 
+    /// 「地図で見る」の段（2026-11-10 札 #521: 行動の札に「旅行プランに入れる」を足して3つにしたので、
+    /// 地図は札の行の下の1行へ寄せた。撮影スポット・撮影地の頁で同じ形）
+    static func mapRowLabel(title: String) -> some View {
+        HStack(spacing: JPSpace.s) {
+            Image(systemName: "map")
+                .font(.system(size: 16))
+                .foregroundStyle(WebTheme.text2)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(JPFont.bodyEmphasis)
+                .foregroundStyle(WebTheme.foreground)
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(WebTheme.text3)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, JPSpace.m)
+        .frame(maxWidth: .infinity, minHeight: JPHeight.field)
+        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: JPRadius.m))
+        .contentShape(RoundedRectangle(cornerRadius: JPRadius.m))
+    }
+
     /// 行動の札の高さ（板 64）・印の大きさ（板 18）
     nonisolated static let actionHeight: CGFloat = JPHeight.tallRow
     nonisolated static let actionIconSize: CGFloat = 18

@@ -19,6 +19,8 @@ struct SpotDetailView: View {
     /// 突き合わせる写真。呼び出し側が持っている一覧をそのまま渡す
     let photos: [Photo]
 
+    /// 「旅行プランに入れる」のシート（2026-11-10 札 #521）
+    @State private var tripAdd: TripAddTarget?
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var toasts: ToastCenter
     @EnvironmentObject private var environment: AppEnvironment
@@ -234,7 +236,9 @@ struct SpotDetailView: View {
     }
 
     private var actions: some View {
-        // v2 の板 SpotDetail: 同じ幅の札を 8 のすき間で並べる（札は `SpotDetailParts.actionLabel`）
+        // v2 の板 SpotDetail: 同じ幅の札を 8 のすき間で並べる（札は `SpotDetailParts.actionLabel`）。
+        // 2026-11-10（札 #521）: 「旅行プランに入れる」を足し、「地図で見る」は札の行の下の1行へ（撮影スポットの頁と同じ形）
+        VStack(spacing: JPSpace.xs) {
         HStack(spacing: JPSpace.xs) {
             // 🔴 **鍵（スラッグ）が空の地点には「行きたい」を出さない。** 記号だけの
             // 撮影地（「---」など）はスラッグが空になり、押しても `WishlistStore` は
@@ -252,6 +256,16 @@ struct SpotDetailView: View {
                                                 title: L("行きたい", "Want to go"), filled: wanted)
                 }
                 .buttonStyle(.plain)
+
+                // 旅行プランに入れる（撮影地のまま入る・入れた場所は「行きたい」にも入る）
+                Button {
+                    tripAdd = TripAddTarget(place: TripDraft.place(location: spot), wishKey: spot.slug)
+                } label: {
+                    SpotDetailParts.actionLabel(icon: "calendar.badge.plus", title: L("旅行プランに入れる", "Add to trip"),
+                                                filled: false)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("spot.place.trip")
             }
 
             // **シェアは文字で配る**（モック5-6）。名前・地域・地図のリンクに加えて、
@@ -263,14 +277,16 @@ struct SpotDetailView: View {
             }
             .buttonStyle(.plain)
 
+        }
             if let url = mapURL {
                 Link(destination: url) {
-                    SpotDetailParts.actionLabel(icon: "map", title: L("地図で見る", "Open in Maps"), filled: false)
+                    SpotDetailParts.mapRowLabel(title: L("地図で見る", "Open in Maps"))
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 16)
+        .tripAddSheet($tripAdd)
     }
 
     /// 配る文（`SpotScreen`）。**この画面は実機の絵で確かめられない**
