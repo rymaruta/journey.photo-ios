@@ -61,6 +61,102 @@ enum TripPlanEdit {
         return out
     }
 
+    // MARK: - 運ぶ印で運ぶ（2026-11-10・札 #521・板 TripPlanDays）
+
+    /// 運ぶ印が持つ中身（「trip|日|位置|項目の鍵」）。**落とした時点の日程で項目を探し直す**ので、
+    /// 運んでいる間に日程が差し替わっても別の項目を動かさない（`locate` と同じ考え）
+    static func dragPayload(day: Int, item: Int, of value: TripItem) -> String {
+        "trip|\(day)|\(item)|\(SavedSpotsTrip.itemKey(value))"
+    }
+
+    /// 落とした。`toItem` はその行の上（nil はその日の末尾）。
+    ///
+    /// - 同じ日で下へ運んだときは、落とした行の**下**に入る（標準の並べ替えと同じ向き）。上へなら上に入る
+    /// - 別の日へは落とした行の上に入る。いっぱいの日へは運べない（`move` が断る）
+    /// - 中身が読めない・項目が見つからない・動かない（同じ位置）ときは nil（何も変えない）
+    static func dropped(_ days: [TripDay], payload: String, toDay: Int, toItem: Int?) -> [TripDay]? {
+        let parts = payload.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count == 4, parts[0] == "trip", let day = Int(parts[1]), let item = Int(parts[2]),
+              days.indices.contains(day), days.indices.contains(toDay) else { return nil }
+        let key = parts[3]
+        let items = days[day].items
+        let found: Int?
+        if items.indices.contains(item), SavedSpotsTrip.itemKey(items[item]) == key {
+            found = item
+        } else {
+            found = items.indices.filter { SavedSpotsTrip.itemKey(items[$0]) == key }
+                .min { abs($0 - item) < abs($1 - item) }
+        }
+        guard let from = found else { return nil }
+        let sameDay = toDay == day
+        let count = days[toDay].items.count
+        var at: Int
+        if let toItem {
+            guard toItem >= 0, toItem <= count else { return nil }
+            at = toItem
+            if sameDay && toItem > from { at = min(toItem, count - 1) }
+        } else {
+            at = sameDay ? count - 1 : count
+        }
+        if sameDay && at == from { return nil }
+        return move(days, from: (day, from), toDay: toDay, at: at)
+    }
+
+    // MARK: - どの頁からも「旅行プランに入れる」（2026-11-10・札 #521）
+
+    /// 入れる。`day` が nil なら新しい日を足してそこへ。**いっぱいの日・60日を越える日は断る**（nil）
+    static func adding(_ item: TripItem, to days: [TripDay], day: Int?) -> [TripDay]? {
+        var out = days
+        if let day {
+            guard out.indices.contains(day), out[day].items.count < TripPlanService.itemsPerDayMax else { return nil }
+            out[day].items.append(item)
+        } else {
+            guard out.count < TripPlanService.daysMax else { return nil }
+            out.append(TripDay(items: [item]))
+        }
+        return out
+    }
+
+    /// もう入っている日（いちばん前の日）。無ければ nil
+    static func dayContaining(_ item: TripItem, in days: [TripDay]) -> Int? {
+        let key = SavedSpotsTrip.itemKey(item)
+        return days.firstIndex { $0.items.contains { SavedSpotsTrip.itemKey($0) == key } }
+    }
+
+    /// 先に選んで開くプラン。**出発が近いプラン**（今日以降に出発するもののうち最も早い）→ 旅の最中 →
+    /// 日付の無いプラン → 一覧の先頭。帰着済みは最後
+    static func defaultPlan(_ plans: [TripPlan], today: String) -> TripPlan? {
+        func rank(_ p: TripPlan) -> (Int, String) {
+            let s = p.startDate ?? "", e = p.endDate ?? p.startDate ?? ""
+            if !s.isEmpty, s >= today { return (0, s) }
+            if !s.isEmpty, !e.isEmpty, s <= today, e >= today { return (1, s) }
+            if s.isEmpty && e.isEmpty { return (2, "") }
+            return (3, "")
+        }
+        return plans.enumerated().min { a, b in
+            let (ra, rb) = (rank(a.element), rank(b.element))
+            return ra != rb ? ra < rb : a.offset < b.offset
+        }?.element
+    }
+
+    /// 先に選ぶ日。**入れる場所にいちばん近い場所がある日**（直線の距離）。座標が分からなければ最後の日。
+    /// いっぱいの日は選ばない。日が無ければ nil（新しい日に入れる）
+    static func suggestedDay(_ days: [TripDay], coords: Photo.Coords?,
+                             coordsOf: (TripItem) -> Photo.Coords?) -> Int? {
+        let open = days.indices.filter { days[$0].items.count < TripPlanService.itemsPerDayMax }
+        guard !open.isEmpty else { return nil }
+        guard let coords else { return open.last }
+        var best: (day: Int, km: Double)?
+        for d in open {
+            for item in days[d].items {
+                guard let c = coordsOf(item) else { continue }
+                let km = TravelDistance.kilometers(from: coords, to: c)
+                if best == nil || km < best!.km { best = (d, km) }
+            }
+        }
+        return best?.day ?? open.last
+    }
+
     /// 移せる先の日（自分の日を除き、いっぱいでない日）。メニューに並べる
     static func movableDays(_ days: [TripDay], from day: Int) -> [Int] {
         days.indices.filter { $0 != day && days[$0].items.count < TripPlanService.itemsPerDayMax }

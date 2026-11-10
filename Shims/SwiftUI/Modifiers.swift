@@ -668,3 +668,17 @@ public struct _ViewModifier_Content<Modifier: ViewModifier>: View {
 extension View {
     public func modifier<M: ViewModifier>(_ m: M) -> ModifiedContent<Self, M> { ModifiedContent() }
 }
+
+// 運ぶ（`Transferable`・iOS 16〜）。旅行プランの日程で、運ぶ印を押さえて別の日・別の位置へ運ぶ（2026-11-10・札 #521）。
+// 本物の `Transferable` は CoreTransferable の約束で、`String` は本物でも従っている
+public protocol Transferable {}
+extension String: Transferable {}
+
+extension View {
+    public func draggable<T: Transferable>(_ payload: @autoclosure @escaping () -> T) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+    public func draggable<T: Transferable, P: View>(_ payload: @autoclosure @escaping () -> T,
+                                                    @ViewBuilder preview: () -> P) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+    public func dropDestination<T: Transferable>(for payloadType: T.Type = T.self,
+                                                 action: @escaping ([T], CGPoint) -> Bool,
+                                                 isTargeted: @escaping (Bool) -> Void = { _ in }) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+}
