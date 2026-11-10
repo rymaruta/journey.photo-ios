@@ -55,20 +55,26 @@ enum VisitedMapText {
         return L("\(name)、\(count) 回。行った県 \(visited)", "\(name), \(count). Visited \(visited)")
     }
 
-    static func tapHint(addsCount: Bool) -> String {
-        addsCount ? L("ダブルタップで 1 回足す", "Double-tap to add one visit")
-                  : L("ダブルタップで札を開く", "Double-tap to open details")
+    /// 県の読み上げの操作（案 A・2026-11-10）。既定の操作は「1 回足す」、ほかに「1 回減らす」「詳しく」
+    static var tapHint: String { L("ダブルタップで 1 回足す", "Double-tap to add one visit") }
+
+    // MARK: - 押した県の帯（案 A・2026-11-10）
+
+    /// 地図の下の一言（モック A の字のまま）
+    static var quickHint: String { L("押す＝1 回足す · 長押し＝見るだけ", "Tap adds one · Press and hold to just look") }
+
+    static var details: String { L("詳しく", "Details") }
+    static var removeOne: String { L("1 回減らす", "Remove one visit") }
+
+    /// 帯から足したあとの読み上げ「東京都、3 回、1 回足しました」
+    static func quickAdded(_ name: String, count: Int) -> String {
+        L("\(name)、\(count) 回、1 回足しました", "\(name), \(count), added one")
     }
 
-    // MARK: - スイッチ
-
-    static var switchTitle: String { L("タップで回数を足す", "Tap to add a visit") }
-
-    static func switchNote(on: Bool) -> String {
-        on ? L("県をタップするたびに 1 回ずつ増えます。まちがえたら「取り消す」で戻せます。",
-               "Each tap on a prefecture adds one visit. Undo with the button that appears.")
-           : L("オフのあいだは、県をタップすると札が開きます。回数は札の ＋ で足せます。",
-               "While off, tapping a prefecture opens its card. Add visits with + there.")
+    /// 帯から減らしたあとの読み上げ「東京都、2 回、1 回減らしました」（0 回は「未」）
+    static func quickRemoved(_ name: String, count: Int) -> String {
+        count == 0 ? L("\(name)、未、1 回減らしました", "\(name), not yet, removed one")
+                   : L("\(name)、\(count) 回、1 回減らしました", "\(name), \(count), removed one")
     }
 
     // MARK: - 札（県）
@@ -108,9 +114,6 @@ enum VisitedMapText {
         L("\(name)は \(VisitedPrefectures.maxCount) 回までです", "\(name) is limited to \(VisitedPrefectures.maxCount)")
     }
 
-    static var sameDayTitle: String { L("今日は記録済みです", "Already recorded today") }
-    static var sameDayQuestion: String { L("もう 1 回足しますか", "Add another visit?") }
-    static var sameDayAdd: String { L("足す", "Add") }
     static var cancel: String { L("やめる", "Cancel") }
 
     // MARK: - 近くの県・一覧
@@ -184,7 +187,6 @@ enum VisitedMapText {
         }
     }
 
-    static var celebrationRecordCounts: String { L("回数を記録する", "Record visits") }
     static var close: String { L("閉じる", "Close") }
 
     // MARK: - 拡大

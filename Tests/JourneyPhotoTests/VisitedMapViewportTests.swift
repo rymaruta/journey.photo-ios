@@ -71,6 +71,11 @@ final class VisitedMapViewportTests: XCTestCase {
         XCTAssertEqual(VisitedMapText.prefectureAccessibility("東京都", count: 0, isCandidate: false), "東京都、未")
         XCTAssertEqual(VisitedMapText.prefectureAccessibility("東京都", count: 0, isCandidate: true), "東京都、写真の候補")
         XCTAssertEqual(VisitedMapText.changeAnnouncement("東京都", count: 6, visited: 31), "東京都、6 回。行った県 31")
+        // 押した県の帯から足し引きしたあと（案 A・2026-11-10）
+        XCTAssertEqual(VisitedMapText.quickAdded("東京都", count: 3), "東京都、3 回、1 回足しました")
+        XCTAssertEqual(VisitedMapText.quickRemoved("東京都", count: 2), "東京都、2 回、1 回減らしました")
+        XCTAssertEqual(VisitedMapText.quickRemoved("東京都", count: 0), "東京都、未、1 回減らしました")
+        XCTAssertEqual(VisitedMapText.quickHint, "押す＝1 回足す · 長押し＝見るだけ")
         XCTAssertEqual(VisitedMapText.entryAccessibility(31), "行った県、31 / 47")
         XCTAssertEqual(VisitedMapText.ratio(31), "31/47")
     }
@@ -84,19 +89,19 @@ final class VisitedMapViewportTests: XCTestCase {
     /// 禁止語を使わない（全文言を走査する）
     func testNoForbiddenWordsInCopy() throws {
         var all: [String] = [
-            VisitedMapText.title, VisitedMapText.breakdownNote, VisitedMapText.switchTitle,
-            VisitedMapText.switchNote(on: true), VisitedMapText.switchNote(on: false),
-            VisitedMapText.tapHint(addsCount: true), VisitedMapText.tapHint(addsCount: false),
+            VisitedMapText.title, VisitedMapText.breakdownNote,
+            VisitedMapText.tapHint, VisitedMapText.quickHint, VisitedMapText.details, VisitedMapText.removeOne,
+            VisitedMapText.quickAdded("東京都", count: 3), VisitedMapText.quickRemoved("東京都", count: 2),
+            VisitedMapText.quickRemoved("東京都", count: 0),
             VisitedMapText.recentDates, VisitedMapText.noDates, VisitedMapText.addVisit, VisitedMapText.removeVisit,
             VisitedMapText.record, VisitedMapText.candidateNote, VisitedMapText.dismissCandidate,
             VisitedMapText.restoreCandidate, VisitedMapText.undo, VisitedMapText.undoStep,
-            VisitedMapText.sameDayTitle, VisitedMapText.sameDayQuestion, VisitedMapText.sameDayAdd,
             VisitedMapText.nearby, VisitedMapText.listTitle, VisitedMapText.legendNone,
             VisitedMapText.legendCandidate, VisitedMapText.loadingPhotos, VisitedMapText.emptyTitle,
             VisitedMapText.emptyBody, VisitedMapText.postPhoto, VisitedMapText.failedPhotos, VisitedMapText.retry,
             VisitedMapText.allVisited47, VisitedMapText.allVisitedConfirmTitle, VisitedMapText.allVisitedConfirmBody,
             VisitedMapText.clearAll, VisitedMapText.clearAllConfirmTitle, VisitedMapText.clearAllConfirmBody,
-            VisitedMapText.privateNote, VisitedMapText.celebrationRecordCounts, VisitedMapText.mapAccessibility,
+            VisitedMapText.privateNote, VisitedMapText.mapAccessibility,
             VisitedMapText.openFromBadge,
         ]
         for c in [VisitedPrefectures.Celebration.allVisited, .roundCompleted(2)] {

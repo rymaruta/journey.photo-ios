@@ -15,6 +15,10 @@ import UIKit
 /// - 主ボタンは写真の無い画面なので真鍮の塗り＋墨（板）。数字は SF の等幅数字、題は明朝
 /// - 拡大しているあいだは画面のスクロールを止め、地図の移動に譲る（`scrollDisabled`）
 /// - 祝いは静かに（札を1枚・触覚の成功を1回・連続や順位や紙吹雪は作らない）
+///
+/// 2026-11-10 判断（札 #510・owner「Aで作って」）: スイッチ「タップで回数を足す」をなくし、
+/// 県を押すたびに 1 回足す（`VisitedMapModel.tap`）。押した県は下の小さな帯（`VisitedQuickBar`）で
+/// ［−］［＋］［詳しく］。長押しは足さずに帯だけ。地図の下にモック A の一言「押す＝1 回足す · 長押し＝見るだけ」
 struct VisitedMapScreen: View {
 
     @EnvironmentObject private var environment: AppEnvironment
@@ -36,7 +40,6 @@ struct VisitedMapScreen: View {
             VStack(alignment: .leading, spacing: JPSpace.xl) {
                 header
                 modePicker
-                switchRow
                 if mode == .map { mapBlock } else { VisitedPrefectureList(model: model) }
                 photoStatus
                 candidatesBlock
@@ -165,7 +168,7 @@ struct VisitedMapScreen: View {
         }
     }
 
-    // MARK: - 切り替えとスイッチ
+    // MARK: - 切り替え
 
     /// 地図／一覧（つながったセグメント・板 Components の「表示の切替」）
     private var modePicker: some View {
@@ -192,23 +195,6 @@ struct VisitedMapScreen: View {
         .accessibilityIdentifier(id)
     }
 
-    private var switchRow: some View {
-        VStack(alignment: .leading, spacing: JPSpace.xxs) {
-            Toggle(isOn: $model.addsOnTap) {
-                Text(VisitedMapText.switchTitle)
-                    .font(JPFont.body)
-                    .foregroundStyle(WebTheme.foreground)
-            }
-            .tint(WebTheme.accent)
-            .frame(minHeight: WebTheme.minTapTarget)
-            .accessibilityIdentifier("visitedMap.switch")
-            Text(VisitedMapText.switchNote(on: model.addsOnTap))
-                .font(JPFont.caption)
-                .foregroundStyle(WebTheme.text3)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
     // MARK: - 地図
 
     @ViewBuilder
@@ -220,6 +206,7 @@ struct VisitedMapScreen: View {
                     .aspectRatio(geometry.size.width / geometry.size.height, contentMode: .fit)
                     .frame(maxWidth: .infinity)
                 legend
+                quickHint
             }
         } else {
             // 地図の形を読めなかった（同梱のファイルなので通常は起きない）。一覧で続けられる
@@ -244,6 +231,15 @@ struct VisitedMapScreen: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(L("凡例: 0 回、1 回、2 回、3 回以上、写真の候補",
                               "Legend: 0, 1, 2, 3 or more, suggested"))
+    }
+
+    /// 押す・長押しの一言（モック A の地図の下・caption・text-3）。読み上げは県ごとの操作の説明が受け持つ
+    private var quickHint: some View {
+        Text(VisitedMapText.quickHint)
+            .font(JPFont.caption)
+            .foregroundStyle(WebTheme.text3)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("visitedMap.quickHint")
     }
 
     private func legendItem(level: Int, candidate: Bool, text: String) -> some View {
@@ -348,7 +344,7 @@ struct VisitedMapScreen: View {
         .accessibilityIdentifier(id)
     }
 
-    // MARK: - 札・取り消し・同じ日
+    // MARK: - 札・取り消し
 
     private var cardBinding: Binding<Bool> {
         Binding(get: { model.selected != nil }, set: { if !$0 { model.selected = nil } })
@@ -383,16 +379,6 @@ struct VisitedMapScreen: View {
                     .font(JPFont.footnote)
                     .foregroundStyle(WebTheme.text2)
                     .fixedSize(horizontal: false, vertical: true)
-                if !model.addsOnTap {
-                    Button {
-                        model.addsOnTap = true
-                        model.dismissCelebration()
-                    } label: {
-                        Text(VisitedMapText.celebrationRecordCounts).jpPillButton(.accent)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("visitedMap.celebration.counts")
-                }
                 Button { model.dismissCelebration() } label: {
                     Text(VisitedMapText.close).jpPillButton(.outline)
                 }

@@ -10,10 +10,15 @@ import SwiftUI
 /// 真鍮は黒い地の上だけ（この画面は黒地）。
 ///
 /// - 拡大（ピンチ・＋−）と移動（拡大中のドラッグ）。押した点は `PrefectureMapGeometry.prefecture(at:)` が
-///   近い県まで拾う。長押し（0.5 秒）は、スイッチによらず札を開く
+///   近い県まで拾う
+/// - 案 A（札 #510・2026-11-10）: **押す＝1 回足す**（`model.tap`）・**長押し＝足さずに帯だけ**（`model.peek`）。
+///   長押しの長さは今までの判定 0.5 秒のまま（モックは 0.45 秒。触覚の合図と同じ長さにそろえるため今のを取った）。
+///   0.5 秒に届いたら指を離す前に帯を出す（モックどおり）。離しても足さない
+/// - 押し間違い対策: 10pt より動いた（移動・スクロール）・ピンチした指では足さない（今の判定のまま）
+/// - 足したら県の上に「＋1」を 0.9 秒かけて浮かべて消す（モック A）。帯の県は選択中の縁で示す
 /// - 色の切り替えは 0.15 秒。そろった周の祝いは、地図が一度だけ 1.6 秒かけて明るくなる。
-///   **「視差効果を減らす」では動かさない**（すぐ切り替わるだけ・明るくもしない）
-/// - 読み上げは県ごとの要素（「東京都、5 回」）。操作は「ダブルタップで 1 回足す／札を開く」
+///   **「視差効果を減らす」では動かさない**（すぐ切り替わるだけ・明るくもしない・「＋1」も出さない）
+/// - 読み上げは県ごとの要素（「東京都、5 回」）。既定の操作は「ダブルタップで 1 回足す」、ほかに「1 回減らす」「詳しく」
 /// - 沖縄は左上の挿入図（細い枠）。小笠原・奄美などの島は描かない（`PrefectureMapGeometry`）
 struct VisitedMapCanvasView: View {
 
@@ -38,6 +43,10 @@ struct VisitedMapCanvasView: View {
     @State private var lastMagnification: CGFloat = 1
     /// 長押し（0.5 秒）に届いた合図の触覚（「視差効果を減らす」でも鳴らす）
     @State private var longPressTick = 0
+    /// 長押しで帯を出した指（離したときに足さないため。`touchBegan` と同じ時刻で見分ける）
+    @State private var longPressFired: Date?
+    /// 足した県の「＋1」（県と、浮かび終えたか）
+    @State private var plusOne: PlusOne?
     /// 回数が変わった県だけ 0.15 秒かけて切り替える
     @State private var fades: [String: Fade] = [:]
     @State private var liftStart: Date?
@@ -49,6 +58,16 @@ struct VisitedMapCanvasView: View {
         let from: Int
         let start: Date
     }
+
+    private struct PlusOne: Equatable {
+        let prefecture: String
+        let id: Int
+        var risen: Bool
+    }
+
+    /// 長押しの長さ（今までの判定・触覚の合図と同じ）
+    nonisolated static let longPressSeconds: Double = 0.5
+    nonisolated static let plusOneSeconds: Double = 0.9
 
     nonisolated static let fadeSeconds: Double = 0.15
     nonisolated static let liftSeconds: Double = 1.6
@@ -67,6 +86,8 @@ struct VisitedMapCanvasView: View {
                 .accessibilityHidden(true)
                 labels(container: container)
                     .accessibilityHidden(true)
+                plusOneLabel(container: container)
+                    .accessibilityHidden(true)
                 accessibilityLayer(container: container)
             }
             .frame(width: container.width, height: container.height)
@@ -81,6 +102,7 @@ struct VisitedMapCanvasView: View {
             .sensoryFeedback(.impact(weight: .light), trigger: longPressTick)
         }
         .onChange(of: levels) { old, new in startFades(from: old, to: new) }
+        .onChange(of: model.addPulse) { _, id in showPlusOne(id) }
         .onChange(of: model.celebration) { _, new in
             guard new != nil, !reduceMotion else { return }
             liftStart = Date()
@@ -119,7 +141,8 @@ struct VisitedMapCanvasView: View {
         let counts = model.record.counts
         let candidates = Set(model.candidates)
         let lift = liftAmount(now)
-        let selected = model.selected
+        // 札を開いている県か、帯の県（どちらも選択中の縁）
+        let selected = model.selected ?? model.quickBar?.prefecture
         let pressedName = self.pressed
 
         func mapped(_ p: CGPoint) -> CGPoint { v.screenPoint(forUnit: p, content: content, container: container) }
@@ -267,22 +290,50 @@ struct VisitedMapCanvasView: View {
         }
     }
 
+    // MARK: - ＋1（足した合図・モック A）
+
+    private func showPlusOne(_ id: Int) {
+        guard !reduceMotion, let name = model.addPulsePrefecture else { return }
+        plusOne = PlusOne(prefecture: name, id: id, risen: false)
+        Task { @MainActor in
+            withAnimation(.easeOut(duration: Self.plusOneSeconds)) { plusOne?.risen = true }
+            try? await Task.sleep(nanoseconds: UInt64((Self.plusOneSeconds + 0.1) * 1_000_000_000))
+            if plusOne?.id == id { plusOne = nil }
+        }
+    }
+
+    /// 県の中心の少し上に「＋1」（白の字・黒 60% の下地＝拡大時の数の札と同じ地）。浮かびながら消える
+    @ViewBuilder
+    private func plusOneLabel(container: CGSize) -> some View {
+        if let plusOne, let piece = geometry.piece(plusOne.prefecture) {
+            let at = viewport.screenPoint(forUnit: piece.anchor, content: geometry.size, container: container)
+            Text(L("＋1", "+1"))
+                .font(JPFont.number(JPTypeScale.footnote, weight: .bold, relativeTo: .footnote))
+                .foregroundStyle(Color.white)
+                .padding(.horizontal, 5)
+                .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+                .fixedSize()
+                .opacity(plusOne.risen ? 0 : 1)
+                .position(x: at.x, y: at.y - (plusOne.risen ? 30 : 12))
+                .allowsHitTesting(false)
+        }
+    }
+
     // MARK: - 読み上げ
 
     private func accessibilityLayer(container: CGSize) -> some View {
         let counts = model.record.counts
         let candidates = Set(model.candidates)
-        let adds = model.addsOnTap
         return ZStack {
             ForEach(Array(RegionList.prefectures.enumerated()), id: \.offset) { item in
                 accessibilityElement(item.element, count: counts[item.offset], isCandidate: candidates.contains(item.element),
-                                     adds: adds, order: Double(RegionList.prefectures.count - item.offset), container: container)
+                                     order: Double(RegionList.prefectures.count - item.offset), container: container)
             }
         }
     }
 
     @ViewBuilder
-    private func accessibilityElement(_ name: String, count: Int, isCandidate: Bool, adds: Bool,
+    private func accessibilityElement(_ name: String, count: Int, isCandidate: Bool,
                                       order: Double, container: CGSize) -> some View {
         if let piece = geometry.piece(name) {
             let at = viewport.screenPoint(forUnit: piece.anchor, content: geometry.size, container: container)
@@ -291,11 +342,12 @@ struct VisitedMapCanvasView: View {
                 .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(VisitedMapText.prefectureAccessibility(name, count: count, isCandidate: isCandidate))
-                .accessibilityHint(VisitedMapText.tapHint(addsCount: adds))
+                .accessibilityHint(VisitedMapText.tapHint)
                 .accessibilityAddTraits(.isButton)
                 .accessibilitySortPriority(order)
                 .accessibilityAction { model.tap(name) }
-                .accessibilityAction(named: L("札を開く", "Open details")) { model.openCard(name) }
+                .accessibilityAction(named: VisitedMapText.removeOne) { model.decrease(name) }
+                .accessibilityAction(named: VisitedMapText.details) { model.openCard(name) }
                 .accessibilityIdentifier("visitedMap.pref.\(name)")
                 .position(x: at.x, y: at.y)
         }
@@ -328,10 +380,18 @@ struct VisitedMapCanvasView: View {
                     panStart = viewport
                     moved = false
                     pinched = false
-                    // 0.5 秒動かさずに押していたら、長押しになった合図を1回
+                    longPressFired = nil
+                    // 0.5 秒動かさずに押していたら、長押し: 合図を1回・足さずに帯を出す（離す前に出す・モック A）
+                    let start = value.startLocation
                     Task {
-                        try? await Task.sleep(nanoseconds: 500_000_000)
-                        if touchBegan == began, !moved, !pinched, pinchStart == nil { longPressTick += 1 }
+                        try? await Task.sleep(nanoseconds: UInt64(Self.longPressSeconds * 1_000_000_000))
+                        guard touchBegan == began, !moved, !pinched, pinchStart == nil else { return }
+                        longPressTick += 1
+                        if let hit = prefecture(at: start, container: container) {
+                            longPressFired = began
+                            onTap(hit.unit, hit.name)
+                            model.peek(hit.name)
+                        }
                     }
                 }
                 lastTranslation = value.translation
@@ -347,9 +407,11 @@ struct VisitedMapCanvasView: View {
                 let began = touchBegan
                 let didMove = moved
                 let didPinch = pinched
+                let firedLong = began != nil && longPressFired == began
                 resetTouch()
-                guard !didMove, !didPinch else { return }
-                let long = began.map { Date().timeIntervalSince($0) >= 0.5 } ?? false
+                // 動かした・ピンチした指では足さない（押し間違い対策）。長押しで帯を出した指も足さない
+                guard !didMove, !didPinch, !firedLong else { return }
+                let long = began.map { Date().timeIntervalSince($0) >= Self.longPressSeconds } ?? false
                 tap(at: value.location, long: long, container: container)
             }
     }
@@ -361,6 +423,7 @@ struct VisitedMapCanvasView: View {
         panStart = nil
         moved = false
         pinched = false
+        longPressFired = nil
     }
 
     private func pinchGesture(container: CGSize) -> some Gesture {
@@ -426,6 +489,7 @@ struct VisitedMapCanvasView: View {
     private func tap(at location: CGPoint, long: Bool, container: CGSize) {
         guard let hit = prefecture(at: location, container: container) else { return }
         onTap(hit.unit, hit.name)
-        if long { model.openCard(hit.name) } else { model.tap(hit.name) }
+        // 長押し（合図の前に指を離した回も、0.5 秒押していれば長押し）は足さずに帯。押すたびに 1 回足す
+        if long { model.peek(hit.name) } else { model.tap(hit.name) }
     }
 }

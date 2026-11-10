@@ -6,10 +6,20 @@ import Combine
 ///
 /// 2026-11-08 判断（提案書 第2版）:
 /// - 回数を増やすのは**本人のタップだけ**。写真の候補（`found`）は数にも色にも入らない
-/// - スイッチ「タップで回数を足す」は**既定オフ**で、画面を開くたびにオフに戻る（地図を動かす操作での
-///   誤記録を防ぐ）。オンのときだけ地図のタップが +1
-/// - 同じ県を**同じ日に2回目**に足すときは、止めずに確かめる一言（`pendingSameDay`）
-/// - 戻し方は3つ: 「取り消す」（5秒）・「ひとつ戻す」（20手）・札の「−」
+/// - 戻し方: 「ひとつ戻す」（20手）・帯と札の「−」・札の ＋− のあとの「取り消す」（5秒）
+///
+/// 2026-11-10 判断（札 #510・owner「Aで作って」。案の Artifact: https://claude.ai/artifact/8SCDZoffPx8xW9wZVukher）:
+/// - スイッチ「タップで回数を足す」と同じ日の確かめをなくした。**県を押すたびに必ず 1 回足す**
+///   （同じ県を同じ日に 2 回押したら 2 回。owner 2026-11-10「2回押したら2回カウントされる」）。
+///   記録の形（日付の並び）と読み方は変えていない
+/// - 押すと小さな帯（`quickBar`「東京都 3 回 ［−］［＋］［詳しく］」）を 5 秒出す。触っている間は消さない
+///   （VoiceOver の間は「取り消す」と同じ 30 秒）。別の県を押したら帯はその県に替わる
+/// - 長押し（`peek`）は足さずに帯だけ出す。帯の［−］は［＋］と同じ大きさで、確かめずに 1 回減らす（［＋］で戻せる・
+///   owner 2026-11-10「消すときも簡単にしたい」）
+/// - 帯がある間は「取り消す」の帯を出さない（同じ下に重なる。帯の［−］が取り消しを兼ねる）。
+///   地図・一覧・帯から足し引きした回は「取り消す」を作らない（札の ＋− は今までどおり作る）
+/// - 写真の候補の県も、地図で押したら同じく 1 回足す（モックどおり）。「候補から外す」は［詳しく］の札と、
+///   地図の下の候補の一覧（押すと札が開く）に残す
 /// - 祝い（`celebration`）は周が増えたときに1回だけ。画面を開いた時点ですでにそろっていれば出さない
 /// - 保存のたびに端末へ書く。サーバーには送らない
 @MainActor
@@ -35,13 +45,24 @@ final class VisitedMapModel: ObservableObject {
     /// 写真から導けた県（候補の元・JIS の順）
     @Published private(set) var found: [String] = []
     @Published private(set) var photosState: PhotosState = .idle
-    /// 「タップで回数を足す」
-    @Published var addsOnTap = false
+    /// 押した県の小さな帯。`timerID` は 5 秒の数え直しの印、`deadline` は消える時刻（触っている間は nil・残りの線が読む）
+    struct QuickBar: Equatable {
+        let prefecture: String
+        var timerID: Int
+        var deadline: Date?
+        var seconds: Double = VisitedMapModel.quickBarDefaultSeconds
+    }
+
+    /// 押した県の小さな帯（案 A）
+    @Published private(set) var quickBar: QuickBar?
+    /// 帯を指で触っている間（`VisitedQuickBar` が渡す）。触っている間は消さず、離したら 5 秒を数え直す
+    @Published private(set) var quickBarHeld = false
+    /// 足した合図の通し番号と県（地図の「＋1」）
+    @Published private(set) var addPulse = 0
+    private(set) var addPulsePrefecture: String?
     @Published private(set) var toast: Toast?
     /// 祝い。画面が閉じるまで出し続け、`dismissCelebration` で消す
     @Published private(set) var celebration: VisitedPrefectures.Celebration?
-    /// 「今日は記録済みです。もう 1 回足しますか」の確かめを待っている県
-    @Published private(set) var pendingSameDay: String?
     /// 札（県）を開いている県
     @Published var selected: String?
     /// 数が変わったあとの読み上げ（`UIAccessibility.post` は画面が行う）
@@ -59,11 +80,16 @@ final class VisitedMapModel: ObservableObject {
     private let now: () -> Date
     private let calendar: Calendar
     private var toastCounter = 0
+    private var quickBarCounter = 0
 
     /// 「取り消す」を出しておく秒数
     nonisolated static let toastSeconds: Double = 5
     /// VoiceOver のときの秒数（読み上げを聞いてから押せる長さ）
     nonisolated static let voiceOverToastSeconds: Double = 30
+    /// 押した県の帯を出しておく秒数（モック A・「取り消す」と同じ 5 秒）
+    nonisolated static let quickBarDefaultSeconds: Double = 5
+    /// 帯を消すまでの秒数（試験だけ短くする）
+    var quickBarSeconds: Double = VisitedMapModel.quickBarDefaultSeconds
 
     init(store: VisitedPrefectureStore = VisitedPrefectureStore(), now: @escaping () -> Date = Date.init,
          calendar: Calendar = .current) {
@@ -96,7 +122,8 @@ final class VisitedMapModel: ObservableObject {
             history.removeAll()
             toast = nil
             celebration = nil
-            pendingSameDay = nil
+            quickBar = nil
+            quickBarHeld = false
             selected = nil
             found = []
             photosState = .idle
@@ -126,51 +153,110 @@ final class VisitedMapModel: ObservableObject {
 
     func failPhotos() { photosState = .failed }
 
-    // MARK: - 地図のタップ
+    // MARK: - 地図・一覧を押す（案 A）
 
-    /// 県を押した。スイッチがオンなら 1 回足し、オフなら札を開く
+    /// 県を押した: **押すたびに 1 回足し**、帯を出す（同じ日でも確かめない・押した数だけ足す）
     func tap(_ prefecture: String) {
         guard RegionList.prefectures.contains(prefecture) else { return }
-        if addsOnTap { add(prefecture) } else { selected = prefecture }
+        showQuickBar(prefecture)
+        add(prefecture, quick: true)
     }
 
-    /// 長押し・「札を開く」: スイッチによらず札を開く
+    /// 長押し: 足さずに帯だけ出す（見る・帯の［−］で減らす）
+    func peek(_ prefecture: String) {
+        guard RegionList.prefectures.contains(prefecture) else { return }
+        showQuickBar(prefecture)
+        announcement = VisitedMapText.prefectureAccessibility(prefecture, count: record.count(prefecture),
+                                                              isCandidate: isCandidate(prefecture))
+    }
+
+    /// 帯の［＋］
+    func quickAdd() {
+        guard let name = quickBar?.prefecture else { return }
+        add(name, quick: true)
+        armQuickBar()
+    }
+
+    /// 帯の［−］: 確かめずに 1 回減らす（0 回で塗りが消える。［＋］で戻せる）
+    func quickRemove() {
+        guard let name = quickBar?.prefecture else { return }
+        decrease(name)
+        armQuickBar()
+    }
+
+    /// 1 回減らして帯を出す（帯の［−］・読み上げの操作「1 回減らす」）。0 回なら何もしない
+    func decrease(_ prefecture: String) {
+        guard RegionList.prefectures.contains(prefecture) else { return }
+        if quickBar?.prefecture != prefecture { showQuickBar(prefecture) }
+        guard let change = record.removeLast(prefecture) else {
+            // 0 回（［−］は押せない見た目。読み上げの操作から来たときだけここに来る）: 今の数を読む
+            announcement = VisitedMapText.prefectureAccessibility(prefecture, count: 0, isCandidate: isCandidate(prefecture))
+            return
+        }
+        history.push(change)
+        finish(message: nil, name: prefecture, keepsToast: false,
+               spoken: VisitedMapText.quickRemoved(prefecture, count: record.count(prefecture)))
+    }
+
+    /// 帯の［詳しく］・候補の一覧・読み上げの操作「詳しく」: 札（日付・候補・近くの県）を開く。帯は閉じる
     func openCard(_ prefecture: String) {
         guard RegionList.prefectures.contains(prefecture) else { return }
+        dismissQuickBar()
         selected = prefecture
+    }
+
+    /// 帯を触っている間は消さない。離したら 5 秒を数え直す
+    func setQuickBarHeld(_ held: Bool) {
+        guard quickBarHeld != held else { return }
+        quickBarHeld = held
+        if held { quickBar?.deadline = nil } else { armQuickBar() }
+    }
+
+    func dismissQuickBar() {
+        quickBar = nil
+        quickBarHeld = false
+    }
+
+    /// 時間切れ（`timerID` が今の帯のものなら消す）。触っている間は消さない
+    func expireQuickBar(_ timerID: Int) {
+        guard quickBar?.timerID == timerID, !quickBarHeld else { return }
+        quickBar = nil
     }
 
     // MARK: - 記録の変更
 
-    /// 1 回足す。同じ日に記録があれば、確かめてから（`confirmSameDay`）
-    func add(_ prefecture: String, confirmingSameDay: Bool = true) {
+    /// 1 回足す（札の ＋・「記録する」）。同じ日でも確かめずに足す（2026-11-10 owner）
+    func add(_ prefecture: String) { add(prefecture, quick: false) }
+
+    /// - quick: 地図・一覧・帯から足した回。「取り消す」の帯を作らない（帯の［−］が兼ねる）・
+    ///   読み上げは「東京都、3 回、1 回足しました」
+    private func add(_ prefecture: String, quick: Bool) {
         guard record.count(prefecture) < VisitedPrefectures.maxCount else {
-            // 黙って何も起きないままにしない: 一言と警告の触覚
+            // 黙って何も起きないままにしない: 一言と警告の触覚（帯の回は［＋］を押せない形にして見せる）
             warningTick += 1
-            toastCounter += 1
-            let notice = Toast(id: toastCounter, message: VisitedMapText.limitReached(prefecture), offersUndo: false)
-            toast = notice
-            scheduleToastEnd(notice.id)
-            announcement = notice.message
-            return
-        }
-        if confirmingSameDay, record.hasVisit(prefecture, on: today) {
-            pendingSameDay = prefecture
+            announcement = VisitedMapText.limitReached(prefecture)
+            if !quick {
+                toastCounter += 1
+                let notice = Toast(id: toastCounter, message: VisitedMapText.limitReached(prefecture), offersUndo: false)
+                toast = notice
+                scheduleToastEnd(notice.id)
+            }
             return
         }
         let change = record.add(prefecture, day: today)
         // 外していた候補は、記録にしたら戻す（0 回に戻したときにまた候補に出る）
         record.restoreCandidate(prefecture)
-        apply(change) { name, count in VisitedMapText.recorded(name, count: count) }
+        guard let change else { return }
+        history.push(change)
+        addPulsePrefecture = prefecture
+        addPulse += 1
+        if quick {
+            finish(message: nil, name: prefecture, keepsToast: false,
+                   spoken: VisitedMapText.quickAdded(prefecture, count: record.count(prefecture)))
+        } else {
+            finish(message: VisitedMapText.recorded(prefecture, count: record.count(prefecture)), name: prefecture)
+        }
     }
-
-    func confirmSameDay() {
-        guard let prefecture = pendingSameDay else { return }
-        pendingSameDay = nil
-        add(prefecture, confirmingSameDay: false)
-    }
-
-    func cancelSameDay() { pendingSameDay = nil }
 
     /// 札の「−」: 1 回減らす（0 回で記録を外す）
     func remove(_ prefecture: String) {
@@ -203,6 +289,8 @@ final class VisitedMapModel: ObservableObject {
     func undo() {
         guard let change = history.undo(on: &record) else { return }
         toast = nil
+        // 帯の県と関係のない一手を戻したら、帯は閉じる（帯の数と画面の動きを食い違わせない）
+        if let bar = quickBar, change.after[bar.prefecture] == nil { dismissQuickBar() }
         lightTick += 1
         persist()
         if change.after.count == 1, let name = change.after.keys.first {
@@ -243,7 +331,10 @@ final class VisitedMapModel: ObservableObject {
 
     /// - celebrates: false なら、そろった周は「見せた」ことにだけして祝わない（「47県ぜんぶ行った」の一括は
     ///   本人がまとめて申告したもので、祝う場面ではない）
-    private func finish(message: String?, name: String?, celebrates: Bool = true) {
+    /// - keepsToast: false なら、出ている「取り消す」の帯に手を付けない（帯から足し引きした回）
+    /// - spoken: 読み上げを替える（帯から足し引きした回「東京都、3 回、1 回足しました」）
+    private func finish(message: String?, name: String?, celebrates: Bool = true, keepsToast: Bool = true,
+                        spoken override: String? = nil) {
         let celebrated = record.takeCelebration()
         let celebrating = celebrated != nil && celebrates
         if celebrating, let celebrated {
@@ -259,10 +350,10 @@ final class VisitedMapModel: ObservableObject {
             let current = Toast(id: toastCounter, message: message)
             toast = current
             scheduleToastEnd(current.id)
-        } else {
+        } else if keepsToast {
             toast = nil
         }
-        var spoken = name.map {
+        var spoken = override ?? name.map {
             VisitedMapText.changeAnnouncement($0, count: record.count($0), visited: record.visitedCount)
         } ?? VisitedMapText.ratio(record.visitedCount)
         // 祝いは目で見る札なので、VoiceOver の人にも文で伝える
@@ -278,6 +369,36 @@ final class VisitedMapModel: ObservableObject {
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             guard let self, self.toast?.id == id else { return }
             self.toast = nil
+        }
+    }
+
+    private func showQuickBar(_ prefecture: String) {
+        // 「取り消す」の帯と同じ下に重ねない（帯の［−］が取り消しを兼ねる）
+        toast = nil
+        quickBarCounter += 1
+        quickBar = QuickBar(prefecture: prefecture, timerID: quickBarCounter)
+        if !quickBarHeld { scheduleQuickBarEnd(quickBarCounter) }
+    }
+
+    /// 5 秒を数え直す（帯の［−］［＋］・指を離したとき）
+    private func armQuickBar() {
+        guard var bar = quickBar else { return }
+        quickBarCounter += 1
+        bar.timerID = quickBarCounter
+        bar.deadline = nil
+        quickBar = bar
+        if !quickBarHeld { scheduleQuickBarEnd(bar.timerID) }
+    }
+
+    private func scheduleQuickBarEnd(_ id: Int) {
+        let seconds = voiceOverOn ? Self.voiceOverToastSeconds : quickBarSeconds
+        if quickBar?.timerID == id {
+            quickBar?.deadline = Date().addingTimeInterval(seconds)
+            quickBar?.seconds = seconds
+        }
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            self?.expireQuickBar(id)
         }
     }
 

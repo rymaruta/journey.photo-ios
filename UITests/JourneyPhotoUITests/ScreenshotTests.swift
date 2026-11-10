@@ -2405,14 +2405,38 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "86b-行った県の地図（回数の段）")
 
-        // 県の札（スイッチがオフのときは札が開く）
+        // 案 A（札 #510・2026-11-10）: 県を押すたびに 1 回足し、下に小さな帯「東京都 6 回 ［−］［＋］［詳しく］」。
+        // 見本の東京都は 5 回。押す → 6、帯の［＋］→ 7、［−］→ 6。帯の［詳しく］で札が開く
+        XCTAssertFalse(app.switches["visitedMap.switch"].exists, "スイッチ「タップで回数を足す」が残っている")
         let tokyo = app.descendants(matching: .any)["visitedMap.pref.東京都"].firstMatch
         if tokyo.waitForExistence(timeout: 5), tokyo.isHittable {
             tokyo.tap()
-            if app.descendants(matching: .any)["visitedMap.card"].firstMatch.waitForExistence(timeout: 5) {
-                shoot(app, "86c-行った県の札（東京都）")
-                let close = app.buttons["visitedMap.card.close"].firstMatch
-                if close.exists, close.isHittable { close.tap() }
+            let count = app.descendants(matching: .any)["visitedMap.quick.count"].firstMatch
+            if count.waitForExistence(timeout: 5) {
+                XCTAssertEqual(count.label, "東京都、6 回", "押して 1 回足していない")
+                XCTAssertFalse(app.descendants(matching: .any)["visitedMap.card"].firstMatch.exists, "押して札が開いた")
+                shoot(app, "86e-行った県の帯（東京都を押した）")
+                let plus = app.buttons["visitedMap.quick.plus"].firstMatch
+                let minus = app.buttons["visitedMap.quick.minus"].firstMatch
+                if plus.isHittable, minus.isHittable {
+                    // ［−］と［＋］は同じ大きさ
+                    XCTAssertEqual(plus.frame.size.width, minus.frame.size.width, accuracy: 0.5)
+                    XCTAssertEqual(plus.frame.size.height, minus.frame.size.height, accuracy: 0.5)
+                    XCTAssertGreaterThanOrEqual(minus.frame.size.height, 43.99)
+                    plus.tap()
+                    XCTAssertEqual(count.label, "東京都、7 回", "帯の［＋］で足せない")
+                    minus.tap()
+                    XCTAssertEqual(count.label, "東京都、6 回", "帯の［−］で減らせない")
+                }
+                let details = app.buttons["visitedMap.quick.details"].firstMatch
+                if details.exists, details.isHittable {
+                    details.tap()
+                    if app.descendants(matching: .any)["visitedMap.card"].firstMatch.waitForExistence(timeout: 5) {
+                        shoot(app, "86c-行った県の札（東京都）")
+                        let close = app.buttons["visitedMap.card.close"].firstMatch
+                        if close.exists, close.isHittable { close.tap() }
+                    }
+                }
             }
         }
 

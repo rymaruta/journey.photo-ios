@@ -3,8 +3,8 @@ import SwiftUI
 /// 県の一覧（行った県マップの補助・提案書 第2版 案 C）。地方ごとに「関東 5/7」の見出しと県の行。
 /// **行は 52pt（押せる 44pt 以上）**。地図が押しにくい小さな県（埼玉・神奈川・滋賀・大阪・奈良・鳥取・香川・佐賀）の
 /// 逃げ道で、VoiceOver の人は地図よりこちらが読みやすい。
-/// 行を押すと地図と同じ（スイッチがオンなら 1 回足し、オフなら札を開く）。段は小さな見本（`VisitedSwatch`）と
-/// 回数の数字（「9+」まで）で伝え、色だけに頼らない
+/// 行を押すと地図と同じ（案 A・2026-11-10: 押す＝1 回足して帯・長押し 0.5 秒＝足さずに帯。画面ごとに操作を割らない）。
+/// 段は小さな見本（`VisitedSwatch`）と回数の数字（「9+」まで）で伝え、色だけに頼らない
 struct VisitedPrefectureList: View {
 
     @ObservedObject var model: VisitedMapModel
@@ -48,35 +48,38 @@ struct VisitedPrefectureList: View {
         let count = model.record.count(name)
         let level = VisitedPrefectures.level(forCount: count)
         let candidate = model.isCandidate(name)
-        return Button { model.tap(name) } label: {
-            HStack(spacing: JPSpace.s) {
-                VisitedSwatch(level: level, isCandidate: candidate)
-                    .frame(width: 24, height: 24)
-                    .accessibilityHidden(true)
-                Text(name)
-                    .font(JPFont.body)
-                    .foregroundStyle(WebTheme.foreground)
-                Spacer(minLength: 0)
-                if count > 0 {
-                    Text(VisitedMapText.visitCount(count))
-                        .font(JPFont.mono(JPTypeScale.footnote, relativeTo: .footnote))
-                        .foregroundStyle(WebTheme.text2)
-                } else if candidate {
-                    Text(VisitedMapText.legendCandidate)
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.accent)
-                }
+        return HStack(spacing: JPSpace.s) {
+            VisitedSwatch(level: level, isCandidate: candidate)
+                .frame(width: 24, height: 24)
+                .accessibilityHidden(true)
+            Text(name)
+                .font(JPFont.body)
+                .foregroundStyle(WebTheme.foreground)
+            Spacer(minLength: 0)
+            if count > 0 {
+                Text(VisitedMapText.visitCount(count))
+                    .font(JPFont.mono(JPTypeScale.footnote, relativeTo: .footnote))
+                    .foregroundStyle(WebTheme.text2)
+            } else if candidate {
+                Text(VisitedMapText.legendCandidate)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.accent)
             }
-            .padding(.horizontal, JPSpace.m)
-            .frame(maxWidth: .infinity, minHeight: JPHeight.row, alignment: .leading)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, JPSpace.m)
+        .frame(maxWidth: .infinity, minHeight: JPHeight.row, alignment: .leading)
+        .contentShape(Rectangle())
+        // 押す＝1 回足す・長押し＝足さずに帯（Button だと長押しのあとも押したことになり 1 回足してしまうので、
+        // 2 つの手振りに分ける。長押しに届いた指では押したことにならない）
+        .onTapGesture { model.tap(name) }
+        .onLongPressGesture(minimumDuration: VisitedMapCanvasView.longPressSeconds) { model.peek(name) }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(VisitedMapText.prefectureAccessibility(name, count: count, isCandidate: candidate))
-        .accessibilityHint(VisitedMapText.tapHint(addsCount: model.addsOnTap))
+        .accessibilityHint(VisitedMapText.tapHint)
         .accessibilityAddTraits(.isButton)
-        .accessibilityAction(named: L("札を開く", "Open details")) { model.openCard(name) }
+        .accessibilityAction { model.tap(name) }
+        .accessibilityAction(named: VisitedMapText.removeOne) { model.decrease(name) }
+        .accessibilityAction(named: VisitedMapText.details) { model.openCard(name) }
         .accessibilityIdentifier("visitedMap.row.\(name)")
     }
 }
