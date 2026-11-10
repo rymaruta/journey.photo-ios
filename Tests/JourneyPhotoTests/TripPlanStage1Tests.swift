@@ -216,7 +216,8 @@ final class TripPlanStage1Tests: XCTestCase {
         XCTAssertFalse(TripAutosave.shouldSend(dirty: true, busy: false, problem: .conflict), "別の端末の変更があれば止める")
         XCTAssertTrue(TripAutosave.shouldSend(dirty: true, busy: false, problem: .offline))
         XCTAssertFalse(TripAutosave.shouldSend(dirty: true, busy: true, problem: nil))
-        XCTAssertGreaterThanOrEqual(TripAutosave.delayNanoseconds, 1_000_000_000, "打つたびに送らない")
+        XCTAssertEqual(TripAutosave.standardDelayNanoseconds, 2_000_000_000, "打つたびに送らない（止まってから 2 秒）")
+        XCTAssertEqual(TripAutosave.delayNanoseconds, TripAutosave.standardDelayNanoseconds, "見本でなければ 2 秒")
     }
 
     /// 送る前の読み直し: 版（updatedAt）が違えば止める・消されていても止める

@@ -14,7 +14,18 @@ import Foundation
 enum TripAutosave {
 
     /// 手を止めてから送るまで（2秒・提案の「止まってから 2 秒」）
-    static let delayNanoseconds: UInt64 = 2_000_000_000
+    static let standardDelayNanoseconds: UInt64 = 2_000_000_000
+
+    /// 待つ長さ。**UI テストの見本のときだけ**（Debug・`-JPTripPlanFixture` と `-JPTripPlanAutosaveDelay <秒>`）長くできる。
+    /// 2026-11-10 run 969 で、UI テストの押す間が 2.4〜4.9 秒あり（押すたびに画面の木を読む分）、2 秒の待ちでは
+    /// 「続けて直す」を作れなかった。まとめて送る仕組みは同じで、待つ長さだけを替えて数える
+    static var delayNanoseconds: UInt64 {
+        #if DEBUG
+        let seconds = UserDefaults.standard.double(forKey: "JPTripPlanAutosaveDelay")
+        if TripPlanFixture.isOn, seconds > 0 { return UInt64(seconds * 1_000_000_000) }
+        #endif
+        return standardDelayNanoseconds
+    }
 
     enum Problem: Equatable {
         /// 圏外で送れなかった

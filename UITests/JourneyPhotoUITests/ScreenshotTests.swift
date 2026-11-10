@@ -2308,7 +2308,9 @@ final class ScreenshotTests: XCTestCase {
     /// 自動保存は**手を止めてから 2 秒待ってまとめて送る**——続けて 5 回直しても送るのは 1 回（数で確かめる）。
     /// 出なければ撮らずに抜ける
     func testCapturesTripPlanDays() {
-        let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+        // 自動保存の待ちを 10 秒に（見本のときだけ効く）。UI テストは押す間が 2.4〜4.9 秒あり（run 969）、
+        // 2 秒の待ちでは「続けて直す」を作れない。まとめて送る仕組みは同じ
+        let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripPlanAutosaveDelay", "10"])
         guard openFixturePlan(app) else { return }
         // 移動の見込み（Apple のサーバー）と日の出・日の入りを待つ
         Thread.sleep(forTimeInterval: 8)
@@ -2331,7 +2333,7 @@ final class ScreenshotTests: XCTestCase {
             _ = fixtureSends(app, "dragHittable-from\(from.isHittable)-to\(to.isHittable)")
             if from.isHittable, to.isHittable {
                 from.press(forDuration: 1.2, thenDragTo: to)
-                Thread.sleep(forTimeInterval: 5)
+                Thread.sleep(forTimeInterval: 13)
                 shoot(app, "65b-旅行プランの日程（運んだ・日をまたいで2日目へ）")
                 XCTAssertEqual(fixtureSends(app, "afterDrag"), "1", "運んだあとに 1 回送っていない")
                 sentBefore = 1
@@ -2365,7 +2367,7 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
         }
         guard toggleStartDate(app, times: 5) else { return }
-        Thread.sleep(forTimeInterval: 5)
+        Thread.sleep(forTimeInterval: 13)
         XCTAssertEqual(fixtureSends(app, "after5edits"), "\(sentBefore + 1)",
                        "続けて 5 回直したのに、まとめて 1 回で送っていない")
     }

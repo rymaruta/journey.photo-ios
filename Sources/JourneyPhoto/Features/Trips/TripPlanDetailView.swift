@@ -997,7 +997,8 @@ struct TripPlanDetailView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(L("「\(name)」を外す", "Remove \(name)"))
             // 運ぶ印（当たり 44pt・押さえて運ぶ）。**行のほかの所は今どおり撮影スポットを開く**（取り違えを防ぐ）。
-            // 読み上げでは「…」の上へ・下へ・別の日へ移すを使う（運ぶ印は読み上げから外す）
+            // 読み上げでも名前で見つかる（run 969: 読み上げから外していたので UI テストが印を見つけられなかった）。
+            // 読み上げの人の並べ替えは今の「…」の上へ・下へ・別の日へ移すが主
             Image(systemName: "line.3.horizontal")
                 .font(.subheadline)
                 .foregroundStyle(WebTheme.text3)
@@ -1011,7 +1012,8 @@ struct TripPlanDetailView: View {
                         .frame(minHeight: WebTheme.minTapTarget)
                         .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))
                 }
-                .accessibilityHidden(true)
+                .accessibilityLabel(L("「\(name)」を運ぶ", "Move \(name)"))
+                .accessibilityHint(L("押さえたまま、入れたい位置へ運びます", "Touch and hold, then drag to a new position."))
                 .accessibilityIdentifier("tripPlan.dragHandle")
         }
         .overlay(alignment: .top) { dropLine(DropSpot(day: di, item: ii)) }
