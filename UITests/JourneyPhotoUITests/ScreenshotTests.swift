@@ -2460,10 +2460,10 @@ final class ScreenshotTests: XCTestCase {
         // （長押しのあとの押下を飲み込みすぎない）・行から上へスワイプすると一覧が動き、足さない。見本の北海道は 2 回
         let row = app.descendants(matching: .any)["visitedMap.row.北海道"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5), "一覧に北海道の行が無い")
-        var swipes = 0
-        while !row.isHittable, swipes < 3 {
+        var listSwipes = 0
+        while !row.isHittable, listSwipes < 3 {
             app.swipeUp()
-            swipes += 1
+            listSwipes += 1
         }
         XCTAssertTrue(row.isHittable, "北海道の行が押せない")
         XCTAssertEqual(row.label, "北海道、2 回")
