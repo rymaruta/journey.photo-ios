@@ -12,7 +12,8 @@ struct PassEncounter: Codable, Equatable, Identifiable {
     var showsFrom: Bool
     /// すれちがった時（**時の単位に丸めてある**）
     var metHour: Date
-    /// 届く時（夕方 18 時・`PassExchange.deliveryDate`）
+    /// 届く時（すぐ届く形ならすれちがった時の「時」の始まり・夕方にまとめるなら 18 時・`PassExchange.deliveryDate`）。
+    /// **どちらも時の単位**（分は持たない）
     var deliverAt: Date
     /// 場所（市区町村の名前。取れたときだけ）
     var placeName: String?
@@ -102,6 +103,15 @@ struct PassSettings: Codable, Equatable {
     /// 近くの人に電波で渡るだけだったので、広く見える所へ黙って出さない。オンでも、すれちがいがオンで乗車券を
     /// 選んであるときだけ入る（`TrunkTicket.wanted`）。前の版の設定には無いので省略できる形
     var ticketInTrunk: Bool? = nil
+    /// 届き方（2026-11-10・設定の「夕方にまとめて受け取る」）。**nil は「すぐ」**（`deliveryMode`）。
+    ///
+    /// **2026-11-10 判断: 前の版から上げた人も「すぐ」にする（前の形を引き継がない）。** 前の版には選ぶ所が無く、
+    /// 夕方 18 時は本人が選んだ値ではなかった（設定の JSON にこの欄が無い＝選んでいない）。owner の決めた既定に
+    /// そろえる。上げた時にまだ届いていなかった夕方の分は、その場で届いた扱いにする（`PassStore.catchUpInstant`）
+    var delivery: PassExchange.Delivery? = nil
+
+    /// いまの届き方（選んでいなければ「すぐ」）
+    var deliveryMode: PassExchange.Delivery { delivery ?? .instant }
 
     /// 「発」の選び方
     enum Origin: String, CaseIterable, Identifiable {
@@ -175,7 +185,8 @@ enum PassBook {
         return rest == 0 ? 0 : pageSlots - rest
     }
 
-    /// 届いたものだけ（**届く前のカードは帳にも出さない**——夕方まで「いま近くにいる」を見せない）
+    /// 届いたものだけ（**届く前のカードは帳にも出さない**——「夕方にまとめて受け取る」の人には、夕方まで見せない。
+    /// すぐ届く形のカードは綴じた時点で届いている）
     static func delivered(_ cards: [PassEncounter], now: Date) -> [PassEncounter] {
         cards.filter { $0.deliverAt <= now }
     }

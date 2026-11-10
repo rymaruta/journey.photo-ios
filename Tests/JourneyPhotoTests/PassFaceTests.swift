@@ -326,7 +326,7 @@ final class PassFaceStoreTests: XCTestCase {
     }
 
     private func makeStore() -> PassStore {
-        let store = PassStore(root: root, defaults: defaults) { _, _, _ in }
+        let store = PassStore(root: root, defaults: defaults) { _, _, _, _ in }
         store.use(userId: "me")
         store.update {
             $0.enabled = true
@@ -341,7 +341,7 @@ final class PassFaceStoreTests: XCTestCase {
         XCTAssertEqual(store.payload?.face, 0)
         store.update { $0.faceStyle = PassTicketFaceStyle.leather.rawValue }
         XCTAssertEqual(store.payload?.face, 5)
-        let again = PassStore(root: root, defaults: defaults) { _, _, _ in }
+        let again = PassStore(root: root, defaults: defaults) { _, _, _, _ in }
         again.use(userId: "me")
         XCTAssertEqual(again.settings.faceStyle, 5)
     }

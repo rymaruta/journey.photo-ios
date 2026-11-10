@@ -16,8 +16,8 @@ enum PassPrivacyText {
     /// 電波で出す中身（`PassExchange.Payload`: 写真の id・ひとこと・発・着・居住地を出すかの印・券面の種類）を**全部**書く
     /// （2026-10-16 の読み直し: 発・着と居住地が抜けていた。2026-10-17: 券面の種類を足した）
     static var noteBody: String {
-        L("カードの中身は暗号化していません。このアプリでなくても、近くで Bluetooth を調べる機器からは、電波で出している中身——乗車券の写真（公開一覧から持ち主も分かります）・ひとこと・乗車券の発と着の字・居住地を出すかの印・券面の種類——が読めます。「発」を居住地にしているときは、受け取った人にあなたのプロフィールの居住地の都道府県が出ます。乗車券を変えるまで同じ値です。ブロックした人にも、あなたのカードは届きえます。受け取ったカードはその日の夕方にまとめて届きます。",
-          "Your card isn\u{2019}t encrypted. Any Bluetooth device nearby \u{2014} not only this app \u{2014} can read what it sends: your ticket photo (and, from the public gallery, who posted it), your note, the from/to text on the ticket, whether to show where you live and your ticket design. If \u{201C}From\u{201D} is set to your home, people who receive your card see the prefecture from your profile. It stays the same until you change your ticket. People you blocked may still receive your card. Cards you receive arrive together that evening.")
+        L("カードの中身は暗号化していません。このアプリでなくても、近くで Bluetooth を調べる機器からは、電波で出している中身——乗車券の写真（公開一覧から持ち主も分かります）・ひとこと・乗車券の発と着の字・居住地を出すかの印・券面の種類——が読めます。「発」を居住地にしているときは、受け取った人にあなたのプロフィールの居住地の都道府県が出ます。乗車券を変えるまで同じ値です。ブロックした人にも、あなたのカードは届きえます。カードはすれちがってすぐ相手に届くことがあり（届き方は受け取る人の設定によります）、届いた時刻から、あなたが少し前に近くにいたことが相手に分かります。",
+          "Your card isn\u{2019}t encrypted. Any Bluetooth device nearby \u{2014} not only this app \u{2014} can read what it sends: your ticket photo (and, from the public gallery, who posted it), your note, the from/to text on the ticket, whether to show where you live and your ticket design. If \u{201C}From\u{201D} is set to your home, people who receive your card see the prefecture from your profile. It stays the same until you change your ticket. People you blocked may still receive your card. Your card may reach people right after you pass (it depends on their settings), so they can tell you were nearby a little earlier.")
     }
 
     /// オンにする前の説明の点（記号・文）
@@ -30,8 +30,8 @@ enum PassPrivacyText {
              L("オンの間は、乗車券の写真・ひとこと・乗車券の発と着の字・居住地を出すかの印・券面の種類を暗号化せずに電波で出します。近くの Bluetooth 機器なら誰でも読め、写真から持ち主も分かります。「発」を居住地にしていると、受け取った人に居住地の都道府県が出ます。乗車券を変えるまで同じ値です。",
                "While on, your ticket photo, note, the from/to text on the ticket, whether to show where you live and your ticket design are sent over the air unencrypted. Any Bluetooth device nearby can read them and find who posted the photo. If \u{201C}From\u{201D} is set to your home, people who receive your card see your prefecture. They stay the same until you change your ticket.")),
             ("clock",
-             L("受け取ったカードは、その日の夕方 18 時に束でまとめて届きます。",
-               "Cards you receive arrive together at 6 PM that day.")),
+             L("受け取ったカードは、すれちがうとすぐ届きます。知らせは \(PassPrivacyText.noticeMinutes) 分に1回までにまとめます。設定で、夕方 18 時に束でまとめて受け取ることもできます。",
+               "Cards you receive arrive as soon as you pass. Alerts are grouped, at most once every \(PassPrivacyText.noticeMinutes) minutes. You can choose to get them together at 6 PM instead in Settings.")),
             ("mappin",
              L("すれちがった場所は「〇〇のあたり」、時刻は「15 時ごろ」の粗さで、この iPhone の中にだけ残ります。",
                "Where and when you passed is kept only on this iPhone, roughly (\u{201C}around \u{2026}\u{201D}, \u{201C}around 3 PM\u{201D}).")),
@@ -39,6 +39,15 @@ enum PassPrivacyText {
              L("ブロックした人のカードはあなたには出ませんが、あなたのカードはブロックした人にも届きえます。いつでもオフにできます。",
                "Cards from people you blocked aren\u{2019}t shown to you, but your card may still reach them. Turn it off at any time.")),
         ]
+    }
+
+    /// 知らせをまとめる間（分・`PassExchange.noticeInterval` から）
+    static var noticeMinutes: Int { Int(PassExchange.noticeInterval / 60) }
+
+    /// 設定の「夕方にまとめて受け取る」の説明（2026-11-10）
+    static var eveningDetail: String {
+        L("オフのときは、すれちがったらすぐ届きます（知らせは \(noticeMinutes) 分に1回まで）。オンにすると、その日の分を夕方 18 時に束で1回だけ届けます。",
+          "When off, cards arrive as soon as you pass (alerts at most once every \(noticeMinutes) minutes). When on, the day\u{2019}s cards arrive together once at 6 PM.")
     }
 
     /// 裏のひとことの但し書き（署名が無いので、写真の持ち主が書いたとは限らない）

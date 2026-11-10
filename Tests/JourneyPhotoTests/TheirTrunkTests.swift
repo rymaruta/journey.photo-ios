@@ -644,7 +644,7 @@ final class TheirTrunkTests: XCTestCase {
     @MainActor
     func testPassStoreCallsTheSyncAfterUpdate() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("their-trunk-\(UUID().uuidString)")
-        let store = PassStore(root: root, defaults: suite(), schedule: { _, _, _ in })
+        let store = PassStore(root: root, defaults: suite(), schedule: { _, _, _, _ in })
         var calls: [(String, Bool?)] = []
         store.onSettingsChanged = { userId, settings in calls.append((userId, settings.ticketInTrunk)) }
         store.update { $0.ticketInTrunk = true }

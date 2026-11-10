@@ -1676,15 +1676,29 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "83-すれちがい帳")
     }
 
-    /// **自分のカード（乗車券の見本）を回す**（2026-10-16 owner の頼み）: マイページ → 設定 → すれちがい →
-    /// わたしの乗車券。見本は届いたカードと同じ回る部品（`PassSpinCard`）。起動の鍵（`-JPPreviewPass`）で区間を
-    /// 「東京 → フランス」・ひとことつきにしてあるので、表（字数の違う発・着がそろうか）と裏を撮る。
-    ///
-    /// 画面まで行けなければ撮らずに抜ける。**出たのに「裏を見る」が無い・44pt 未満・押しても裏にならない・
-    /// 横に回しても裏にならなければ落とす**
+    /// **すれちがいの設定の「届き方」**（2026-11-10 owner「すれちがったら即時交換されて欲しい」）: 既定はすぐ届く。
+    /// 「夕方にまとめて受け取る」の行が出て、既定でオフになっているかを撮る。画面まで行けなければ撮らずに抜ける。
+    /// **出たのに行がオンのまま・44pt 未満なら落とす**
+    func testCapturesPassSettingsDelivery() throws {
+        guard let (app, _) = openPassPick(stopAtSettings: true) else { return }
+        let toggle = app.switches["pass.settings.evening"].firstMatch
+        guard toggle.waitForExistence(timeout: 10) else { return }
+        var pushes = 0
+        while !toggle.isHittable, pushes < 4 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        XCTAssertGreaterThanOrEqual(toggle.frame.height, 44, "「夕方にまとめて受け取る」の行が 44pt 未満")
+        XCTAssertEqual(toggle.value as? String, "0", "既定が「夕方にまとめて」になっている（既定はすぐ届く）")
+        shoot(app, "85-すれちがいの設定（届き方）")
+    }
+
     /// わたしの乗車券（マイページ → 設定 → すれちがい → わたしの乗車券）まで進めて、回る見本を返す。
     /// 画面まで行けなければ nil（撮らずに抜ける）。`pro` は見本の利用者を Pro の姿にする（`-JPPreviewPro`）
-    private func openPassPick(pro: Bool = false, extra: [String] = []) -> (XCUIApplication, XCUIElement)? {
+    /// `stopAtSettings` なら、すれちがいの設定を開いたところで返す（2つ目は乗車券の行）
+    private func openPassPick(pro: Bool = false, extra: [String] = [],
+                              stopAtSettings: Bool = false) -> (XCUIApplication, XCUIElement)? {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -1716,6 +1730,7 @@ final class ScreenshotTests: XCTestCase {
         }
         guard row.isHittable else { return nil }
         row.tap()
+        if stopAtSettings { return (app, app.buttons["pass.settings.card"].firstMatch) }
         let cardRow = app.buttons["pass.settings.card"].firstMatch
         guard cardRow.waitForExistence(timeout: 10), cardRow.isHittable else { return nil }
         cardRow.tap()
@@ -1835,6 +1850,12 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **自分のカード（乗車券の見本）を回す**（2026-10-16 owner の頼み）: マイページ → 設定 → すれちがい →
+    /// わたしの乗車券。見本は届いたカードと同じ回る部品（`PassSpinCard`）。起動の鍵（`-JPPreviewPass`）で区間を
+    /// 「東京 → フランス」・ひとことつきにしてあるので、表（字数の違う発・着がそろうか）と裏を撮る。
+    ///
+    /// 画面まで行けなければ撮らずに抜ける。**出たのに「裏を見る」が無い・44pt 未満・押しても裏にならない・
+    /// 横に回しても裏にならなければ落とす**
     func testCapturesPassOwnCard() {
         guard let (app, card) = openPassPick() else { return }
         Thread.sleep(forTimeInterval: 3)

@@ -8,6 +8,7 @@ import CoreBluetooth
 ///   電波を出す（そこで初めて iPhone が Bluetooth の使用を尋ねる）
 /// - 乗車券を選ぶまでは電波を出さない（オンにして選んでいなければ、そのまま選ぶ画面へ進む）
 /// - 「いつ」: いつでも／旅のあいだ（家から 50km 以上離れた日だけ）／開いている間
+/// - 「届き方」: 既定はすぐ届く。「夕方にまとめて受け取る」をオンにした人だけ夕方 18 時に束で1回（2026-11-10）
 struct PassSettingsView: View {
 
     @EnvironmentObject private var pass: PassStore
@@ -37,6 +38,7 @@ struct PassSettingsView: View {
                     .accessibilityAddTraits(.isHeader)
                 mainCard
                 whenSection
+                deliverySection
                 contentsSection
                 privacyNote
                 linksCard
@@ -252,6 +254,27 @@ struct PassSettingsView: View {
                      "Location isn\u{2019}t allowed, so we can\u{2019}t tell if you\u{2019}re traveling. Allow it on the map, or pick another option.")
         }
         return nil
+    }
+
+    // MARK: - 届き方
+
+    /// 「夕方にまとめて受け取る」（2026-11-10 owner「すれちがったら即時交換されて欲しい」）。**既定はオフ＝すぐ届く。**
+    /// 見た目は「すれちがう」の入切と同じ行（`JPToggleRow`）を札に1つ。眉は「いつ」「カードに載るもの」と同じ真鍮
+    private var deliverySection: some View {
+        VStack(alignment: .leading, spacing: JPSpace.xs) {
+            eyebrow(L("届き方", "Delivery"))
+            JPCard {
+                JPToggleRow(title: L("夕方にまとめて受け取る", "Get cards together in the evening"),
+                            detail: PassPrivacyText.eveningDetail,
+                            isOn: eveningBinding)
+                    .accessibilityIdentifier("pass.settings.evening")
+            }
+        }
+    }
+
+    private var eveningBinding: Binding<Bool> {
+        Binding(get: { pass.settings.deliveryMode == .evening },
+                set: { on in pass.update { $0.delivery = on ? .evening : .instant } })
     }
 
     // MARK: - カードに載るもの
