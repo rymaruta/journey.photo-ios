@@ -2403,6 +2403,8 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewVisitedMap", "YES"]
+        // 帯は 5 秒で消えるが、要素を探すのに 1 回 0.5〜2 秒かかり、確かめの途中で消える（Mac 948）。UI テストだけ長くする
+        app.launchArguments += ["-JPVisitedQuickBarSeconds", "30"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -2426,24 +2428,91 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "86b-行った県の地図（回数の段）")
 
-        // 県の札（スイッチがオフのときは札が開く）
+        // 案 A（札 #510・2026-11-10）: 県を押すたびに 1 回足し、下に小さな帯「東京都 6 回 ［−］［＋］［詳しく］」。
+        // 🔴 ここから先は**本物の動きを守る**ので、出なければ落とす（レビュー 2026-11-10 の 4）。
+        // 見本の東京都は 5 回。長押し（0.6 秒）→ 5 のまま帯だけ、押す 2 回 → 7、帯の［＋］→ 8、［−］→ 7
+        XCTAssertFalse(app.switches["visitedMap.switch"].exists, "スイッチ「タップで回数を足す」が残っている")
         let tokyo = app.descendants(matching: .any)["visitedMap.pref.東京都"].firstMatch
-        if tokyo.waitForExistence(timeout: 5), tokyo.isHittable {
-            tokyo.tap()
-            if app.descendants(matching: .any)["visitedMap.card"].firstMatch.waitForExistence(timeout: 5) {
-                shoot(app, "86c-行った県の札（東京都）")
-                let close = app.buttons["visitedMap.card.close"].firstMatch
-                if close.exists, close.isHittable { close.tap() }
-            }
-        }
+        XCTAssertTrue(tokyo.waitForExistence(timeout: 5), "地図に東京都が無い")
+        XCTAssertTrue(tokyo.isHittable, "地図の東京都が押せない")
+        let count = app.descendants(matching: .any)["visitedMap.quick.count"].firstMatch
+
+        tokyo.press(forDuration: 0.6)
+        XCTAssertTrue(count.waitForExistence(timeout: 5), "長押しで帯が出ない")
+        XCTAssertTrue(waitForLabel(count, "東京都、5 回"), "長押しで回数が変わった: \(count.label)")
+        XCTAssertFalse(app.descendants(matching: .any)["visitedMap.card"].firstMatch.exists, "長押しで札が開いた")
+
+        tokyo.tap()
+        XCTAssertTrue(waitForLabel(count, "東京都、6 回"), "押して 1 回足していない: \(count.label)")
+        tokyo.tap()
+        XCTAssertTrue(waitForLabel(count, "東京都、7 回"), "2 回押して 2 回にならない: \(count.label)")
+        XCTAssertFalse(app.descendants(matching: .any)["visitedMap.card"].firstMatch.exists, "押して札が開いた")
+
+        let plus = app.buttons["visitedMap.quick.plus"].firstMatch
+        let minus = app.buttons["visitedMap.quick.minus"].firstMatch
+        XCTAssertTrue(plus.isHittable, "帯の［＋］が押せない")
+        XCTAssertTrue(minus.isHittable, "帯の［−］が押せない")
+        // ［−］と［＋］は同じ大きさ（44pt）
+        XCTAssertEqual(plus.frame.size.width, minus.frame.size.width, accuracy: 0.5)
+        XCTAssertEqual(plus.frame.size.height, minus.frame.size.height, accuracy: 0.5)
+        XCTAssertGreaterThanOrEqual(minus.frame.size.height, 43.99)
+        plus.tap()
+        XCTAssertTrue(waitForLabel(count, "東京都、8 回"), "帯の［＋］で足せない: \(count.label)")
+        minus.tap()
+        XCTAssertTrue(waitForLabel(count, "東京都、7 回"), "帯の［−］で減らせない: \(count.label)")
+        // 絵は［−］［＋］を確かめたあとに撮る
+        shoot(app, "86e-行った県の帯（東京都を押した）")
+
+        let details = app.buttons["visitedMap.quick.details"].firstMatch
+        XCTAssertTrue(details.isHittable, "帯の［詳しく］が押せない")
+        details.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["visitedMap.card"].firstMatch.waitForExistence(timeout: 5),
+                      "［詳しく］で札が開かない")
+        shoot(app, "86c-行った県の札（東京都）")
+        let close = app.buttons["visitedMap.card.close"].firstMatch
+        XCTAssertTrue(close.isHittable)
+        close.tap()
 
         let list = app.buttons["visitedMap.mode.list"].firstMatch
-        if list.waitForExistence(timeout: 5), list.isHittable {
-            list.tap()
-            if app.descendants(matching: .any)["visitedMap.list"].firstMatch.waitForExistence(timeout: 5) {
-                shoot(app, "86d-行った県の一覧")
+        XCTAssertTrue(list.waitForExistence(timeout: 5), "一覧の切り替えが無い")
+        list.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["visitedMap.list"].firstMatch.waitForExistence(timeout: 5))
+        shoot(app, "86d-行った県の一覧")
+
+        // 一覧の行（レビュー 2026-11-10 の 3）: 長押し 0.6 秒では足さず帯だけ・そのあと押すと 1 回足す
+        // （長押しのあとの押下を飲み込みすぎない）・行から上へスワイプすると一覧が動き、足さない。見本の北海道は 2 回
+        let row = app.descendants(matching: .any)["visitedMap.row.北海道"].firstMatch
+        if !row.waitForExistence(timeout: 5) {
+            // 調べ（Mac 945 で行の識別子が見つからなかった）: 要素の木のうち北海道・visitedMap の行をログに出す
+            for line in app.debugDescription.components(separatedBy: "\n")
+            where line.contains("北海道") || line.contains("visitedMap.list") || line.contains("visitedMap.row") {
+                print("VISITED-TREE: \(line)")
             }
         }
+        XCTAssertTrue(row.exists, "一覧に北海道の行が無い")
+        var listSwipes = 0
+        while !row.isHittable, listSwipes < 3 {
+            app.swipeUp()
+            listSwipes += 1
+        }
+        XCTAssertTrue(row.isHittable, "北海道の行が押せない")
+        XCTAssertEqual(row.label, "北海道、2 回")
+        row.press(forDuration: 0.6)
+        XCTAssertTrue(waitForLabel(count, "北海道、2 回"), "一覧の長押しで帯が出ない／回数が変わった: \(count.label)")
+        XCTAssertTrue(waitForLabel(row, "北海道、2 回"), "一覧の長押しで回数が変わった: \(row.label)")
+        row.tap()
+        XCTAssertTrue(waitForLabel(row, "北海道、3 回"), "長押しのあとに押して足せない: \(row.label)")
+        let before = row.frame.minY
+        row.swipeUp()
+        XCTAssertLessThan(row.frame.minY, before - 20, "行から上へスワイプしても一覧が動かない")
+        XCTAssertTrue(waitForLabel(row, "北海道、3 回"), "スワイプで回数が変わった: \(row.label)")
+    }
+
+    /// 要素の読み上げの名前が `text` になるまで待つ（帯の数は押したあとに描き直される）
+    private func waitForLabel(_ element: XCUIElement, _ text: String, timeout: TimeInterval = 3) -> Bool {
+        let matches = NSPredicate(format: "label == %@", text)
+        return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: matches, object: element)],
+                              timeout: timeout) == .completed
     }
 
     // MARK: - 旅のトランク（2026-10-17・モック「旅のトランク」）

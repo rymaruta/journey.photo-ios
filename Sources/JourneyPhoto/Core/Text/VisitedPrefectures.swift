@@ -63,11 +63,6 @@ struct VisitedPrefectures: Equatable {
 
     var recordedPrefectures: [String] { RegionList.prefectures.filter { count($0) >= 1 } }
 
-    /// 同じ日にもう記録があるか（「今日は記録済みです」の確かめに使う）
-    func hasVisit(_ prefecture: String, on day: String) -> Bool {
-        visits[prefecture]?.contains(day) ?? false
-    }
-
     // MARK: - 見た目の段
 
     /// 色の段（提案書 第2版・2026-11-09 模様なし）: 0 回（未）／1 回・2 回・3 回以上＝真鍮の濃淡（色だけで分ける・`VisitedMapStyle.fills`）
@@ -119,12 +114,14 @@ struct VisitedPrefectures: Equatable {
         return VisitedChange(before: [prefecture: before], after: [prefecture: after])
     }
 
-    /// 日付を直す（記録の一つを別の日に）。範囲外・同じ日・**ほかの記録と同じ日になる**ときは nil
-    /// （同じ日の2回目は「足す」で確かめてから記録できる。直すことで重なりを作らない）
+    /// 日付を直す（記録の一つを別の日に）。範囲外・今と同じ日のときは nil。
+    ///
+    /// 2026-11-10 判断（札 #510・案 A）: 押すたびに 1 回足すので、同じ日に 2 回の記録は普通にできる。
+    /// それに合わせて、**ほかの記録と同じ日に直すことも許す**（前は断っていた。押せば入る形を直すときだけ
+    /// 断ると食い違う）。同じ日の確かめ（`hasVisit`）は使う所が無くなったので消した
     @discardableResult
     mutating func changeDay(_ prefecture: String, at index: Int, to day: String) -> VisitedChange? {
-        guard let before = visits[prefecture], before.indices.contains(index), before[index] != day,
-              !before.contains(day) else { return nil }
+        guard let before = visits[prefecture], before.indices.contains(index), before[index] != day else { return nil }
         var after = before
         after[index] = day
         after.sort()
