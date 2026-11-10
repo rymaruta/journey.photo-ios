@@ -2318,12 +2318,12 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertEqual(fixtureSends(app, "open"), "0", "開いただけで送っている")
 
         // 運ぶ: 1 日目の最後（千里浜）を 2 日目の最初の行へ（日をまたぐ）。運んだら待って 1 回送る。
-        // run 971: 押さえて運んだのに送った回数が 0 のままだった。並び（運ぶ印の名前の順）を前後で残して、
-        // 落とせたかを数で見る。1 回目は押さえて運ぶだけ、並びが変わらなければ 2 回目は行き先で止まってから離す
+        // run 971: 押さえて運んだのに送った回数が 0 のままだった。run 974: 名前の順は日をまたいでも変わらない
+        // （1 日目の最後 → 2 日目の最初）ので測れなかった。**千里浜の「…」の位置（「1 日目・3 番目」）**を前後で残し、
+        // 落とせたかを見る。1 回目は押さえて運ぶだけ、位置が変わらなければ 2 回目は行き先で止まってから離す
         let handles = app.descendants(matching: .any).matching(identifier: "tripPlan.dragHandle")
-        func order() -> String {
-            (0..<handles.count).map { handles.element(boundBy: $0).label }.joined(separator: "|")
-        }
+        let menu = app.buttons["「千里浜なぎさドライブウェイ」の操作"].firstMatch
+        func order() -> String { (menu.value as? String) ?? "nil" }
         _ = fixtureSends(app, "dragHandles-count\(handles.count)")
         if handles.count >= 4 {
             let from = handles.element(boundBy: 2)
