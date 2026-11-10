@@ -61,10 +61,10 @@ final class ToolbarIconTests: XCTestCase {
         XCTAssertTrue(body.contains(".contentShape(Rectangle())"))
     }
 
-    /// 見出しの3つ（探す・お知らせ・メニュー）がどれも同じ作りを通る。点の位置は値から
+    /// 見出しの4つ（探す・メッセージ・お知らせ・メニュー）がどれも同じ作りを通る。点の位置は値から
     func testAppHeaderUsesTheSharedIconAndOffset() throws {
         let header = try source("Features/Common/AppHeader.swift")
-        XCTAssertEqual(header.components(separatedBy: ".webToolbarIcon()").count - 1, 3)
+        XCTAssertEqual(header.components(separatedBy: ".webToolbarIcon()").count - 1, 4)
         XCTAssertTrue(header.contains("WebTheme.toolbarBadgeOffset.x"))
         XCTAssertFalse(header.contains(".offset(x: -8, y: 10)"), "44 の枠を前提にした点の位置が残っている")
     }

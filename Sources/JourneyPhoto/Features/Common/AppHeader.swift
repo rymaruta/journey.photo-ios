@@ -27,6 +27,8 @@ struct AppHeaderItems: ToolbarContent {
 
     let unread: Int
     let onOpenNotifications: () -> Void
+    /// 受信箱に未読の会話がある（リクエストは数えない・`DMInboxStore.hasUnread`）
+    var messagesUnread = false
 
     @ToolbarContentBuilder
     var body: some ToolbarContent {
@@ -66,21 +68,27 @@ struct AppHeaderItems: ToolbarContent {
                 .buttonStyle(.plain)
                 .accessibilityLabel(Labels.Navigation.searchTab)
                 .accessibilityIdentifier("header.search")
+                // メッセージ（2026-11-10 札 #505・owner 承認「ベル（お知らせ）の左に吹き出し」）。絵は `bubble.left`
+                // （紙飛行機ではない・owner 指示）。点は受信箱の未読だけ（リクエストでは出さない・画面案 A）
+                Button {
+                    TabRouter.shared.openMessages()
+                } label: {
+                    Image(systemName: "bubble.left")
+                        .webToolbarIcon()
+                        .overlay(alignment: .topTrailing) {
+                            if messagesUnread { headerDot }
+                        }
+                        .appHeaderHitArea()
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(messagesUnread ? L("メッセージ（未読あり）", "Messages, unread") : L("メッセージ", "Messages"))
+                .accessibilityIdentifier("header.messages")
                 Button(action: onOpenNotifications) {
                     Image(systemName: "bell")
                         .webToolbarIcon()
                         .overlay(alignment: .topTrailing) {
                             // 未読があることだけ伝える（数は開けば分かる）
-                            if unread > 0 {
-                                // 真鍮＝合図。黒の縁で、どの地の上でも点が割れない
-                                Circle().fill(WebTheme.accent).frame(width: 8, height: 8)
-                                    .overlay(Circle().strokeBorder(WebTheme.background, lineWidth: 2)
-                                        .padding(-2))
-                                    // 板どおり絵の右上の角に（`toolbarBadgeOffset`）。点は絵の箱（幅 24）に付け、
-                                    // 当たりの 44 の枠には付けない（付けると絵から離れる）
-                                    .offset(x: WebTheme.toolbarBadgeOffset.x,
-                                            y: WebTheme.toolbarBadgeOffset.y)
-                            }
+                            if unread > 0 { headerDot }
                         }
                         .appHeaderHitArea()
                 }
@@ -100,6 +108,16 @@ struct AppHeaderItems: ToolbarContent {
                 .accessibilityIdentifier("header.menu")
             }
         }
+    }
+}
+
+extension AppHeaderItems {
+    /// 未読の点。真鍮＝合図。黒の縁で、どの地の上でも点が割れない（`BrassDot`）。
+    /// 板どおり絵の右上の角に（`toolbarBadgeOffset`）。点は絵の箱（幅 24）に付け、
+    /// 当たりの 44 の枠には付けない（付けると絵から離れる）
+    private var headerDot: some View {
+        BrassDot()
+            .offset(x: WebTheme.toolbarBadgeOffset.x, y: WebTheme.toolbarBadgeOffset.y)
     }
 }
 

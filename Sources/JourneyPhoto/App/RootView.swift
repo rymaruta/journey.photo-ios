@@ -11,6 +11,16 @@ struct RootView: View {
     @EnvironmentObject private var consent: LegalConsent
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var toasts: ToastCenter
+    /// ブロックした人（見出しの吹き出しの点に、ブロックした相手の未読を数えない）
+    @EnvironmentObject private var hidden: ModerationStore
+    /// メッセージの受信箱の控え（見出しの吹き出しの点・2026-11-10 札 #505）
+    @EnvironmentObject private var messages: DMInboxStore
+    /// メッセージの受信箱（見出しの吹き出し・通知から）
+    @State private var showMessages = false
+    /// 通知から開く会話（受信箱が受け取って積む）
+    @State private var messagesTarget: String?
+    /// メッセージの通知を押したあと、ほかの画面が閉じるのを待つ仕事
+    @State private var messagesWait: Task<Void, Never>?
     /// 投稿のシートの「構図を重ねて撮る」（作例なし・2026-10-17 から全員無料）を開く流れ（`ComposeGuideLauncher`）
     @StateObject private var composeLauncher = ComposeGuideLauncher()
     /// 構図を重ねて撮った1枚（撮る画面の「投稿」）。撮る画面を閉じきってから投稿画面に入れる
@@ -196,7 +206,8 @@ struct RootView: View {
         let owner = auth.userId
         unreadGeneration += 1
         let generation = unreadGeneration
-        let fetched = try? await environment.notifications.fetch().unread
+        // ベルの未読（メッセージの受信箱に入ったストーリーの返信は数えない・`Page.bellUnread`）
+        let fetched = try? await environment.notifications.fetch().bellUnread
         // **返ってくる間に人が替わっていた・もっと新しい取得が始まっていたら捨てる**
         // （失敗の回も。古い1本の失敗で、新しい1本の数を 0 に倒さない）
         guard !Task.isCancelled, auth.userId == owner, generation == unreadGeneration else { return }
@@ -792,8 +803,97 @@ struct RootView: View {
     /// 「新しくなったこと」に、評価のお願いを足したもの（2026-10-07）。
     /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
     private var tabsWithReviewPrompt: some View {
-        tabsWithWhatsNew
+        tabsWithMessages
             .onChange(of: reviewPrompt.requests) { _, _ in askForReviewWhenIdle() }
+    }
+
+    /// メッセージの受信箱（2026-11-10 札 #505）。**修飾子の列を伸ばさない**ために分けてある（run 343 と同じ理由）
+    private var tabsWithMessages: some View {
+        tabsWithWhatsNew
+            // 見出しの吹き出し → 受信箱
+            .onChange(of: tabRouter.messagesRequests) { _, _ in
+                showMenu = false
+                showMessages = true
+            }
+            // メッセージの通知を押した → 受信箱を出して、その会話を積む
+            .onChange(of: router.conversationRequests) { _, _ in takeConversationRequest() }
+            .onAppear { takeConversationRequest() }
+            // 吹き出しの点の数え直し（ログイン・前面に戻る・開いている間に通知が届いた）
+            .task(id: auth.userId) { await refreshMessages() }
+            .task(id: router.arrivals) {
+                guard router.arrivals > 0 else { return }
+                await refreshMessages()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { Task { await refreshMessages() } }
+                if phase == .background { messagesWait?.cancel() }
+            }
+            // アイコンの数字を受信箱の控えに合わせる（読んだ・読み直した・承認した・消した）
+            .onChange(of: messages.inbox) { _, _ in syncBadgeWithMessages() }
+            // お知らせの未読が読めた・変わったときも合わせる（受信箱が先に読めた回にお知らせの分を落とさない）
+            .onChange(of: unread) { _, _ in syncBadgeWithMessages() }
+            .onChange(of: unreadOwner) { _, _ in syncBadgeWithMessages() }
+            .sheet(isPresented: $showMessages, onDismiss: {
+                messagesTarget = nil
+                Task { await refreshMessages() }
+            }) {
+                NavigationStack {
+                    DMInboxView(openConversation: $messagesTarget)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button(Labels.Common.close) { showMessages = false }
+                                    .accessibilityIdentifier("messages.close")
+                            }
+                        }
+                }
+            }
+    }
+
+    /// 見出しの吹き出しの点（受信箱に未読の会話。リクエストとブロックした相手は数えない）
+    private var messagesUnread: Bool { messages.hasUnread(hiding: hidden.blockedUserIds) }
+
+    /// アイコンの数字＝お知らせの未読＋メッセージの未読会話（サーバーの `sendToDevices` と同じ・`AppBadge`）。
+    /// **今の人の読めた控えのときだけ**置く（読み込み中・人が替わった直後に 0 で上書きしない）
+    private func syncBadgeWithMessages() {
+        guard let count = AppBadge.syncValue(
+            me: auth.userId, bellOwner: unreadOwner, bellUnread: unread,
+            messagesOwner: messages.owner, messagesLoaded: messages.phase == .loaded,
+            messagesUnread: messages.inbox.unreadConversations(hiding: hidden.blockedUserIds)) else { return }
+        Task { await push.setBadge(count) }
+    }
+
+    private func refreshMessages() async {
+        await messages.refresh(service: environment.dm, owner: auth.userId)
+    }
+
+    /// メッセージの通知を受け取る。受信箱が出ていればそこへ積み、ほかの画面が出ていれば閉じられるのを待つ
+    /// （お知らせと同じ待ち方・`activityWaitLimit`。勝手に閉じない——書きかけを抱えた画面がある）
+    private func takeConversationRequest() {
+        guard let id = router.takePendingConversation() else { return }
+        // **今の人の会話でなければ開かない**（ログアウト・切り替えの前に届いた前の人の通知を、次の人で開かない）
+        if showMessages {
+            guard let me = auth.userId, DMRules.peer(of: id, me: me) != nil else { return }
+            messagesTarget = id
+            return
+        }
+        messagesWait?.cancel()
+        messagesWait = Task { @MainActor in
+            let started = Date()
+            while !Task.isCancelled && auth.isResolving {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            }
+            let owner = auth.userId
+            repeat {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            } while !Task.isCancelled && ModalProbe.isPresenting()
+                && Date().timeIntervalSince(started) <= Self.activityWaitLimit
+            // ログインしていない・人が替わった・待ちきれなかった回は開かない（吹き出しから見られる）
+            guard !Task.isCancelled, let owner, auth.userId == owner, !ModalProbe.isPresenting(),
+                  DMRules.peer(of: id, me: owner) != nil else { return }
+            select(.home, at: "takeConversationRequest")
+            messagesTarget = id
+            showMessages = true
+        }
     }
 
     /// **ほかの画面が閉じてから**評価をお願いする。投稿は全部上がると画面を閉じ、
@@ -1172,7 +1272,8 @@ struct RootView: View {
             }
         )) {
             NavigationStack {
-                GalleryView(unread: unread, onOpenNotifications: { openNotificationsFromBell() })
+                GalleryView(unread: unread, onOpenNotifications: { openNotificationsFromBell() },
+                            messagesUnread: messagesUnread)
                     .perfMark("tab.home.appear")
             }
             .tint(WebTheme.foreground)
@@ -1180,7 +1281,8 @@ struct RootView: View {
             .tag(Tab.home)
 
             NavigationStack {
-                SearchView(unread: unread, onOpenNotifications: { openNotificationsFromBell() })
+                SearchView(unread: unread, onOpenNotifications: { openNotificationsFromBell() },
+                           messagesUnread: messagesUnread)
                     .perfMark("tab.search.appear")
             }
             .tint(WebTheme.foreground)
@@ -1198,6 +1300,7 @@ struct RootView: View {
             NavigationStack {
                 PhotoMapView(unread: unread,
                              onOpenNotifications: { openNotificationsFromBell() },
+                             messagesUnread: messagesUnread,
                              onPost: { showPostChoice = true })
                     .perfMark("tab.map.appear")
             }

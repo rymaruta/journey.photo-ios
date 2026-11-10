@@ -301,9 +301,13 @@ struct StoryService {
         try await api.authorized(.get, "/stories/\(encoded(id))/replies", as: ReplyList.self).items ?? []
     }
 
-    func reply(id: String, text: String) async throws {
+    /// 文字の返信。応答の `dm` 欄（2026-11-10・会話に写ったか）を返す。**欄が無い・読めない応答でも返信は成功**
+    /// （`StoryReplyOutcome.unknown`＝今までの作り）
+    @discardableResult
+    func reply(id: String, text: String) async throws -> StoryReplyOutcome {
         struct Body: Encodable { let text: String }
-        try await api.authorizedVoid(.post, "/stories/\(encoded(id))/replies", body: Body(text: text))
+        let data = try await api.authorizedVoid(.post, "/stories/\(encoded(id))/replies", body: Body(text: text))
+        return (try? JSONDecoder.api.decode(StoryReplyOutcome.self, from: data)) ?? .unknown
     }
 
     /// 定型の反応。**サーバーが受けるのはこの6つだけ**

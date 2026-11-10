@@ -19,6 +19,8 @@ struct PhotoMapView: View {
     /// 見出しはどの画面でも同じ（`AppHeaderItems`）
     var unread: Int = 0
     var onOpenNotifications: () -> Void = {}
+    /// 見出しの吹き出しの点（受信箱に未読の会話がある・2026-11-10 札 #505）
+    var messagesUnread = false
     /// 投稿の入口（`RootView` の2択）。地点に写真が無いときの「写真を投稿する」から開く
     var onPost: () -> Void = {}
 
@@ -123,7 +125,7 @@ struct PhotoMapView: View {
         .webScreen()
         .navigationTitle(Labels.Navigation.mapTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
+        .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications, messagesUnread: messagesUnread) }
         .task {
             PerfRecorder.shared.event("map.task>")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07）
             if !autoLocateStarted {

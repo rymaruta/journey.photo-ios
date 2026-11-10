@@ -43,6 +43,8 @@ final class AppEnvironment: ObservableObject {
     let trunk: TrunkService
     /// とおまわり号の要サーバーの部品（`/user/camper`・`/users/{uid}/camper…`・2026-10-19 段2）
     let camper: CamperService
+    /// メッセージ（`/dm`・1対1・文字だけ・2026-11-10 札 #505）
+    let dm: DMService
 
     /// - Parameter gallery: 公開一覧の出どころ。**テストで差し替えるため**に
     ///   開けてある（既定のままだと本物のサイトを叩きにいくので、
@@ -87,5 +89,6 @@ final class AppEnvironment: ObservableObject {
         self.purchases = PurchaseService(api: api)
         self.trunk = TrunkService(api: api)
         self.camper = CamperService(api: api)
+        self.dm = DMService(api: api)
     }
 }

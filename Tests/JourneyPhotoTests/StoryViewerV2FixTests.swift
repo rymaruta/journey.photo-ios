@@ -110,11 +110,12 @@ final class StoryViewerV2FixTests: XCTestCase {
 
     // MARK: - 5〜8. 返信
 
-    /// 板 StoryViewerReply の並び: 一言の候補 → 入力欄 → 「返信は〇〇さんにだけ届きます」
+    /// 板 StoryViewerReply の並び: 一言の候補 → 入力欄 → だれに届くか。2026-11-10（札 #505・DM の画面案 A）から
+    /// 「返信はメッセージとして残ります」（返信は会話の1通として写る）
     func testReplyOrder() throws {
         let footer = member("private func footer(for story: Story)", in: try viewer())
         assertInOrder(["StoryPlayback.quickReplies.indices", "TextField(L(\"返信する\"",
-                       "if replyFocused {", "返信は \\(story.authorName) さんにだけ届きます"],
+                       "if replyFocused {", "返信はメッセージとして残ります"],
                       in: footer, "返信の並び")
     }
 

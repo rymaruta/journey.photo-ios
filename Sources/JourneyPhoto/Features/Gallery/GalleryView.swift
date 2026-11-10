@@ -72,6 +72,8 @@ struct GalleryView: View {
     /// ヘッダーのベル用（タブから外したので、ここから開く）
     var unread: Int = 0
     var onOpenNotifications: () -> Void = {}
+    /// 見出しの吹き出しの点（受信箱に未読の会話がある・2026-11-10 札 #505）
+    var messagesUnread = false
 
     var body: some View {
         // UI テストのときだけ: body の評価を数える（`PerfRecorder`・札 #435 / #429。無効なら何もしない）
@@ -110,7 +112,7 @@ struct GalleryView: View {
         // 見出しはどの画面も同じ（ロゴ・探す・お知らせ・メニュー・`AppHeaderItems`）。
         // **地図のアイコンは外した**——下の札に「マップ」があり、
         // 同じ場所への入口が2つあった
-        .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
+        .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications, messagesUnread: messagesUnread) }
         .task {
             // **環境の1つに繋ぎ直してから読む。** 自前のを持ったままだと
             // `setHidden` が届かず、ブロックが一生効かない

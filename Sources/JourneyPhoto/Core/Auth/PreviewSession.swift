@@ -561,6 +561,19 @@ enum PreviewSession {
         #endif
     }
 
+    /// 見本の通信（`localBackend`）で、メッセージ（`/dm`）を端末の中で答える（`PreviewBackend.dmReply`・
+    /// 2026-11-10 札 #505・受信箱・リクエスト・会話の状態を UI テストで撮る）。Release では必ず false
+    static let dmKey = "JPPreviewDM"
+
+    static var dm: Bool {
+        #if DEBUG
+        guard localBackend else { return false }
+        return UserDefaults.standard.bool(forKey: dmKey)
+        #else
+        return false
+        #endif
+    }
+
     /// UI テストでストーリー作成を**見本の写真と曲を付けた状態で**開く（Debug のみ）。`-JPPreviewStorySong YES`。
     /// 曲の札の6つの形（2026-10-28）を押して替えながら撮る。**入っている見本の利用者のときだけ**効く。
     /// Release では必ず false

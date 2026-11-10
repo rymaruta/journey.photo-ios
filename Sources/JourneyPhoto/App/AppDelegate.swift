@@ -93,6 +93,15 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         // 前面に戻るかお知らせを開くまで届いたことが数に出なかった。
         // 見頃のお知らせ（端末の中の予約）はお知らせの出来事ではないので数え直さない
         let kind = notification.request.content.userInfo["kind"] as? String
+        // メッセージ（2026-11-10 札 #505）: **その会話を開いている間は帯を出さず**、会話がすぐ読み直す。
+        // ほかの画面にいるときは帯を出す（受信箱の点・アイコンの数字は `noteArrival` の読み直しで合う）
+        if let conversationId = NotificationRouter.dmConversationId(notification.request.content.userInfo) {
+            let showing = await MainActor.run { () -> Bool in
+                NotificationRouter.shared.noteArrival()
+                return NotificationRouter.shared.noteDMArrival(conversationId)
+            }
+            return NotificationRouter.presentation(forDMWhileShowing: showing)
+        }
         // すれちがいの束が前面で届いた: ホームの札を「いま」で出し直す
         if kind == PassBundleNotifier.kind { await MainActor.run { PassStore.shared.noteArrival() } }
         if kind != SeasonReminder.kind && kind != PassBundleNotifier.kind {
@@ -121,6 +130,12 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
                 TabRouter.shared.openHome()
                 PassStore.shared.requestOpen()
             }
+            return
+        }
+        // メッセージ（`NOTIF_DM`・2026-11-10 札 #505）: お知らせではなく、その会話を開く。
+        // ベルの一覧には積まれない種類（サーバーは `notifs#` に書かない）
+        if let conversationId = NotificationRouter.dmConversationId(response.notification.request.content.userInfo) {
+            await MainActor.run { NotificationRouter.shared.openConversation(conversationId) }
             return
         }
         let target = AppNotification.fromPush(response.notification.request.content.userInfo)
@@ -186,6 +201,63 @@ final class NotificationRouter: ObservableObject {
     }
 
     func noteArrival() { arrivals += 1 }
+
+    // MARK: - メッセージ（2026-11-10 札 #505）
+
+    /// 前面で届いたメッセージの通知（会話が見て読み直す）。**押した回数と同じく数で伝える**
+    struct DMArrival: Equatable {
+        let conversationId: String
+        let serial: Int
+    }
+    @Published private(set) var dmArrival = DMArrival(conversationId: "", serial: 0)
+    /// いま画面に出ている会話（`DMConversationView` が出たとき・消えたときに置く）
+    private(set) var openConversationId: String?
+
+    func conversationOpened(_ id: String) { openConversationId = id }
+    func conversationClosed(_ id: String) {
+        if openConversationId == id { openConversationId = nil }
+    }
+
+    /// 前面でメッセージの通知が届いた。その会話を開いているか（開いていれば帯を出さない）を返す
+    func noteDMArrival(_ id: String) -> Bool {
+        dmArrival = DMArrival(conversationId: id, serial: dmArrival.serial + 1)
+        return openConversationId == id
+    }
+
+    /// 前面で届いたメッセージの通知の出し方。開いている会話の分は何も出さない
+    nonisolated static func presentation(forDMWhileShowing showing: Bool) -> UNNotificationPresentationOptions {
+        showing ? [] : [.banner, .list, .sound, .badge]
+    }
+
+    /// メッセージの通知を押した回数（`RootView` が受信箱を出して、その会話を積む）
+    @Published private(set) var conversationRequests = 0
+    /// 押した通知の会話。**最後に押したものだけ**・受け取るのは1回
+    private(set) var pendingConversation: String?
+    private var pendingConversationAt: Date?
+
+    func openConversation(_ id: String, now: Date = Date()) {
+        pendingConversation = id
+        pendingConversationAt = now
+        conversationRequests += 1
+    }
+
+    /// 押した会話を受け取る。古い（`targetLifetime` を過ぎた）ものは nil
+    func takePendingConversation(now: Date = Date()) -> String? {
+        defer { pendingConversation = nil; pendingConversationAt = nil }
+        guard let id = pendingConversation, let at = pendingConversationAt,
+              now.timeIntervalSince(at) <= Self.targetLifetime else { return nil }
+        return id
+    }
+
+    /// メッセージの通知の中身から会話 id を読む（`notify.ts` の `pushDmMessage`: `{type: "dm", convId, byId}`）。
+    /// **ストーリーへの文字の返信が受信箱に入った通知**（`{type: "storyreply", convId}`・2026-11-10）も会話へ。
+    /// 会話 id の形でなければ nil（パスに入れない値は受け取らない・`PathID`）
+    nonisolated static func dmConversationId(_ userInfo: [AnyHashable: Any]) -> String? {
+        let type = userInfo["type"] as? String
+        guard type == "dm" || type == "storyreply", let id = userInfo["convId"] as? String,
+              id.contains("_"), PathID.isSafe(id) else { return nil }
+        return id
+    }
 
     /// お知らせを既読にできた回（またはサーバーの未読がもう 0 だった回）の数（ベルを 0 にする合図）。
     /// **閉じたときの数え直しが圏外で落ちても、ベルが読む前の数のまま残らない**

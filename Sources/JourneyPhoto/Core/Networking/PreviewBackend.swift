@@ -174,6 +174,7 @@ enum PreviewBackend {
     static func reply(method: String, route parts: [String], body: Data?, userId: String?, now: Date = Date(),
                       store: Store = PreviewBackend.store,
                       stories: Bool = false,
+                      dm: Bool = false,
                       publicFeed: () async -> [[String: Any]] = { [] },
                       publicLikes: (String) async -> Int?) async -> Reply {
         let json = body.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any] ?? [:]
@@ -195,6 +196,11 @@ enum PreviewBackend {
             default:
                 return Reply(status: 404, body: Data())
             }
+        }
+
+        // メッセージ（`-JPPreviewDM` のときだけ・2026-11-10 札 #505）
+        if dm, parts.first == "dm", let answer = dmReply(method: method, parts: parts, json: json, me: uid, now: now) {
+            return answer
         }
 
         switch (method, parts) {
@@ -288,6 +294,113 @@ enum PreviewBackend {
 
         default:
             return .unsupported
+        }
+    }
+
+    // MARK: - メッセージの見本（2026-11-10 札 #505）
+
+    /// 見本の相手（uid は UUID の形・名前は見本の名前）
+    static let dmPeers: [(id: String, name: String, username: String?)] = [
+        ("0b6f1c1e-1111-4aaa-8aaa-000000000001", "夕焼けの人", "yuyake"),
+        ("0b6f1c1e-1111-4aaa-8aaa-000000000002", "港の写真家", "minato"),
+        ("0b6f1c1e-1111-4aaa-8aaa-000000000003", "山の朝", "yamaasa"),
+        ("0b6f1c1e-1111-4aaa-8aaa-000000000004", "旅の記録", "tabi_log"),
+        ("0b6f1c1e-1111-4aaa-8aaa-000000000005", "", nil),            // 退会した人
+        ("0b6f1c1e-1111-4aaa-8aaa-000000000006", "桜の便り", "sakura"),  // リクエスト
+        ("0b6f1c1e-1111-4aaa-8aaa-000000000007", "海辺の散歩", "umibe"),  // リクエスト
+        ("0b6f1c1e-1111-4aaa-8aaa-000000000008", "雪の駅", "yukieki"),    // 自分が始めて3通使い切った
+    ]
+
+    /// `/dm` の答え。知らない口は nil（ふだんの 503 へ）
+    static func dmReply(method: String, parts: [String], json: [String: Any], me: String, now: Date) -> Reply? {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        func ago(_ minutes: Double) -> String { iso.string(from: now.addingTimeInterval(-minutes * 60)) }
+        func conv(_ i: Int) -> String { DMRules.conversationId(me, dmPeers[i].id) }
+        func thread(_ i: Int, _ minutes: Double, _ excerpt: String, unread: Int, state: String,
+                    lastMine: Bool = false) -> [String: Any] {
+            let p = dmPeers[i]
+            var row: [String: Any] = ["id": conv(i), "peerId": p.id, "name": p.name.isEmpty ? "退会したユーザー" : p.name,
+                                      "t": ago(minutes), "excerpt": excerpt, "unread": unread, "state": state]
+            if let u = p.username { row["username"] = u }
+            if p.name.isEmpty { row["deleted"] = true }
+            row["lastMine"] = lastMine
+            return row
+        }
+        switch (method, parts.count) {
+        case ("GET", 1):
+            let items = [
+                thread(0, 12, "夕焼けの色がすごい。どこですか？", unread: 1, state: "inbox"),
+                thread(1, 40, "この曲いいね", unread: 2, state: "inbox"),
+                thread(5, 50, "こんにちは。写真をよく見ています。", unread: 2, state: "request"),
+                thread(2, 60 * 24, "ありがとう！また撮ったら見せますね", unread: 0, state: "inbox", lastMine: true),
+                thread(6, 60 * 30, "行ってみたいです", unread: 1, state: "request"),
+                thread(7, 60 * 50, "どこで撮りましたか", unread: 0, state: "pending"),
+                thread(3, 60 * 24 * 3, "来月ここに行く予定です", unread: 0, state: "inbox"),
+                thread(4, 60 * 24 * 28, "ありがとうございました", unread: 0, state: "inbox"),
+            ]
+            return Reply.json(["items": items, "unread": 2, "requestCount": 2])
+        case ("GET", 2):
+            let id = parts[1]
+            guard let i = dmPeers.indices.first(where: { conv($0) == id }) else {
+                return Reply.json(["error": "会話が見つかりません", "code": "notFound"], status: 404)
+            }
+            let p = dmPeers[i]
+            func msg(_ n: Int, mine: Bool, _ text: String, _ minutes: Double, story: Bool = false) -> [String: Any] {
+                var m: [String: Any] = ["id": "preview-dm-\(i)-\(n)", "from": mine ? me : p.id, "mine": mine,
+                                        "text": text, "t": ago(minutes)]
+                if story {
+                    // 引用札（2026-11-10 の欄）: リクエストは見られる動画、ほかは終わったストーリー
+                    m["via"] = "story"
+                    m["storyId"] = "preview-story-dm-\(i)"
+                    m["story"] = i == 5 || i == 6
+                        ? ["id": "preview-story-dm-\(i)", "state": "live", "mediaType": "video",
+                           "expiresAt": iso.string(from: now.addingTimeInterval(3600))] as [String: Any]
+                        : ["id": "preview-story-dm-\(i)", "state": "ended"]
+                }
+                return m
+            }
+            var answer: [String: Any] = ["id": id, "peerId": p.id, "name": p.name.isEmpty ? "退会したユーザー" : p.name,
+                                         "t": ago(1), "canSend": true]
+            if let u = p.username { answer["username"] = u }
+            switch i {
+            case 4:
+                answer["deleted"] = true
+                answer["canSend"] = false
+                answer["state"] = "inbox"
+                answer["items"] = [msg(1, mine: false, "ありがとうございました", 60 * 24 * 28)]
+            case 5, 6:
+                answer["state"] = "request"
+                answer["items"] = [msg(1, mine: false, "夕焼けの色がすごい。どこですか？", 60 * 26, story: true),
+                                   msg(2, mine: false, "こんにちは。写真をよく見ています。", 50)]
+            case 7:
+                answer["state"] = "pending"
+                answer["canSend"] = false
+                answer["requestRemaining"] = 0
+                answer["items"] = [msg(1, mine: true, "はじめまして。写真をよく見ています", 60 * 52, story: true),
+                                   msg(2, mine: true, "夕焼けの色がすごい", 60 * 51),
+                                   msg(3, mine: true, "どこですか？", 60 * 50)]
+            default:
+                answer["state"] = "inbox"
+                answer["items"] = [msg(1, mine: false, "夕焼けの色がすごい。どこですか？", 60 * 26, story: true),
+                                   msg(2, mine: true, "ありがとうございます。伊豆の海沿いです。", 60 * 25.8),
+                                   msg(3, mine: false, "行ってみたい", 60 * 25.7),
+                                   msg(4, mine: false, "日没の30分前に着くのがおすすめです", 60 * 25.6),
+                                   msg(5, mine: false, "この曲いいね", 12)]
+            }
+            return Reply.json(answer)
+        case ("POST", 3) where parts[2] == "messages":
+            let text = (json["text"] as? String) ?? ""
+            if text.contains("http") || text.contains("www.") {
+                return Reply.json(["error": "承認されるまではリンクを送れません", "code": "requestUrl"], status: 400)
+            }
+            let message: [String: Any] = ["id": (json["id"] as? String) ?? "preview-dm-sent", "from": me, "mine": true,
+                                          "text": text, "t": iso.string(from: now)]
+            return Reply.json(["success": true, "conversationId": parts[1], "state": "inbox", "message": message])
+        case ("PUT", 3), ("POST", 3), ("DELETE", 2), ("DELETE", 3):
+            return Reply.json(["ok": true, "success": true])
+        default:
+            return nil
         }
     }
 
@@ -410,6 +523,7 @@ final class PreviewBackendProtocol: URLProtocol {
                 route: PreviewBackend.route(url, basePath: AppConfig.userAPIBaseURL.path),
                 body: body, userId: PreviewSession.userId,
                 stories: PreviewSession.stories,
+                dm: PreviewSession.dm,
                 publicFeed: { await PreviewBackend.readPublicFeed() },
                 publicLikes: { await PreviewBackend.readPublicLikes($0) })
             home.perform { self?.deliver(reply, url: url) }

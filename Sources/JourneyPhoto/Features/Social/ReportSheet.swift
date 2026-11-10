@@ -9,6 +9,10 @@ struct ReportSheet: View {
     let photoId: String
     /// 通報と同時にブロックもできるようにする。相手が分からない場合は nil
     let ownerId: String?
+    /// メッセージの会話の通報（2026-11-10・札 #505 の画面案「通報」）。写真の通報と同じ型で、理由に
+    /// 「未成年へのいやな接触・誘い出し」「なりすまし」を並べ、送られる範囲（直近の抜粋）と相手に知らされないことを書く。
+    /// 送る口は `POST /dm/{id}/report`（`photoId` は使わない）。ブロックの相手は `ownerId`（会話の相手）
+    var conversation: Conversation? = nil
     /// コメントの通報（2026-10-11）。写真の通報の口に、誰のどのコメントかを補足に書いて送る
     /// （`ModerationService.commentReportNote`）。ブロックの相手はコメントを書いた人
     var comment: ModerationService.ReportedComment? = nil
@@ -22,6 +26,13 @@ struct ReportSheet: View {
     /// 通報する写真の小さな札（v2 の板 Report・2026-10-14: 「通報する写真を上に小さく出して取り違えを防ぐ」）。
     /// 写真の詳細から開いたときだけ渡す。無ければ札を出さない（ホームの格子・ストーリーからの通報）
     var subject: Subject? = nil
+
+    /// 通報する会話
+    struct Conversation: Equatable {
+        let id: String
+        /// 相手の名前（見出しに出す）
+        let name: String
+    }
 
     /// 通報する写真の札の中身
     struct Subject: Equatable {
@@ -44,6 +55,7 @@ struct ReportSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var reason: ModerationService.ReportReason = .harassment
+    @State private var dmReason: DMReportReason = .harassment
     @State private var note = ""
     @State private var alsoBlock = false
     @State private var isWorking = false
@@ -105,7 +117,10 @@ struct ReportSheet: View {
                             JPCard(fill: WebTheme.surface) {
                                 JPToggleRow(
                                     title: L("この人をブロックする", "Also block this person"),
-                                    detail: L("ブロックすると、おたがいの投稿・ストーリー・通知が見えなくなります。", "Blocking hides each other's posts, stories and notifications."),
+                                    detail: conversation != nil
+                                        ? L("ブロックすると、おたがいの投稿・ストーリー・メッセージ・通知が見えなくなります。",
+                                            "Blocking hides each other's posts, stories, messages and notifications.")
+                                        : L("ブロックすると、おたがいの投稿・ストーリー・通知が見えなくなります。", "Blocking hides each other's posts, stories and notifications."),
                                     isOn: $alsoBlock)
                             }
                         }
@@ -136,7 +151,7 @@ struct ReportSheet: View {
         HStack {
             // v2 の板は明朝 24。字の段（32/26/22/20/18）に無いので、画面の題の 26 にそろえた
             Text(passNote != nil ? L("書かれた字を通報", "Report text")
-                 : comment == nil ? L("通報", "Report") : L("コメントを通報", "Report comment"))
+                 : comment == nil || conversation != nil ? L("通報", "Report") : L("コメントを通報", "Report comment"))
                 .font(JPFont.screenTitle)
                 .foregroundStyle(WebTheme.text)
                 .accessibilityAddTraits(.isHeader)
@@ -168,10 +183,18 @@ struct ReportSheet: View {
                 .foregroundStyle(WebTheme.text2)
                 .accessibilityAddTraits(.isHeader)
             VStack(spacing: 0) {
-                let all = ModerationService.ReportReason.allCases
-                ForEach(Array(all.enumerated()), id: \.element) { index, item in
-                    ReportReasonRow(title: item.label, selected: reason == item,
-                                    isLast: index == all.count - 1) { reason = item }
+                if conversation != nil {
+                    let all = DMReportReason.allCases
+                    ForEach(Array(all.enumerated()), id: \.element) { index, item in
+                        ReportReasonRow(title: item.label, selected: dmReason == item,
+                                        isLast: index == all.count - 1) { dmReason = item }
+                    }
+                } else {
+                    let all = ModerationService.ReportReason.allCases
+                    ForEach(Array(all.enumerated()), id: \.element) { index, item in
+                        ReportReasonRow(title: item.label, selected: reason == item,
+                                        isLast: index == all.count - 1) { reason = item }
+                    }
                 }
             }
         }
@@ -249,6 +272,16 @@ struct ReportSheet: View {
             }
             .buttonStyle(.plain)
             .disabled(isWorking)
+            if conversation != nil {
+                // 送られる範囲と、相手に知らされないこと（画面案「通報」）
+                Text(L("この会話の直近のやりとりが運営に届きます。相手には知らされません。",
+                       "The latest messages in this conversation are sent to our team. They won't be told."))
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text2)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("report.dmScope")
+            }
             // 「対応しました」とは言わない——読むのは人で、すぐには終わらない
             Text(L("結果をお伝えできない場合があります。", "We may not be able to tell you the outcome."))
                 .font(JPFont.caption)
@@ -273,6 +306,13 @@ struct ReportSheet: View {
         // ブロックを控えるのは押した人の控えだけ（待っている間に人が替わったら書かない）
         let blocker = hidden.owner
         do {
+            if let conversation {
+                // 会話の通報（2026-11-10 札 #505）。写真の印は付けない（会話の写しはサーバーが取る）
+                try await environment.dm.report(conversation.id, reason: dmReason.serverReason,
+                                                 note: dmReason.note(adding: note))
+                await finishReport(blocker: blocker)
+                return
+            }
             let sentNote = passNote.map { ModerationService.passNoteReportNote($0, note: note) }
                 ?? carriedPassNote.map { ModerationService.photoReportWithPassNote(note, passNote: $0) }
                 ?? comment.map { ModerationService.commentReportNote($0, note: note) } ?? note
@@ -283,33 +323,38 @@ struct ReportSheet: View {
             if comment == nil && passNote == nil {
                 hidden.markReported(photoId, for: blocker)
             }
-            if alsoBlock, let blockTarget {
-                // **ブロックが落ちても通報は成立している。** ここで投げ直すと
-                // 「通報できなかった」と誤解させるので、文言を分ける
-                do {
-                    try await environment.moderation.block(userId: blockTarget)
-                    hidden.block(blockTarget, for: blocker)
-                } catch {
-                    errorMessage = L("通報は受け付けました。ブロックはうまくいきませんでした。相手のプロフィールからもう一度お試しください。", "Your report was received, but blocking failed. Try again from their profile.")
-                }
-            }
-            await applyHidden()
-            onReported?()
-            // **受け付けたことを伝える。** それまでは黙って閉じるだけで、
-            // 押した人には届いたのか分からなかった
-            // **知らせは1つ。** 全部うまくいけば閉じてトーストで伝える
-            // （以前はシートの完了画面とトーストの二重だった）。ブロックだけ
-            // 落ちたときは閉じずに、その旨を読ませる。
-            // ストーリーの全画面（`StoryReelView`）にも同じ知らせを重ねてある
-            if errorMessage == nil {
-                toasts.show(L("通報を受け付けました。ありがとうございます。",
-                              "Thanks — your report was received."))
-                dismiss()
-            } else {
-                done = true
-            }
+            await finishReport(blocker: blocker)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("通報を受け付けられませんでした", "Couldn't submit the report")
+        }
+    }
+
+    /// 受け付けたあと（写真・会話の通報で同じ）: 一緒にブロック → 公開一覧へ渡し直す → 知らせる
+    private func finishReport(blocker: String?) async {
+        if alsoBlock, let blockTarget {
+            // **ブロックが落ちても通報は成立している。** ここで投げ直すと
+            // 「通報できなかった」と誤解させるので、文言を分ける
+            do {
+                try await environment.moderation.block(userId: blockTarget)
+                hidden.block(blockTarget, for: blocker)
+            } catch {
+                errorMessage = L("通報は受け付けました。ブロックはうまくいきませんでした。相手のプロフィールからもう一度お試しください。", "Your report was received, but blocking failed. Try again from their profile.")
+            }
+        }
+        await applyHidden()
+        onReported?()
+        // **受け付けたことを伝える。** それまでは黙って閉じるだけで、
+        // 押した人には届いたのか分からなかった
+        // **知らせは1つ。** 全部うまくいけば閉じてトーストで伝える
+        // （以前はシートの完了画面とトーストの二重だった）。ブロックだけ
+        // 落ちたときは閉じずに、その旨を読ませる。
+        // ストーリーの全画面（`StoryReelView`）にも同じ知らせを重ねてある
+        if errorMessage == nil {
+            toasts.show(L("通報を受け付けました。ありがとうございます。",
+                          "Thanks — your report was received."))
+            dismiss()
+        } else {
+            done = true
         }
     }
 }
@@ -354,5 +399,44 @@ private struct ReportReasonRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// 会話の通報の理由（画面案「通報」の並び・2026-11-10 札 #505）。
+///
+/// サーバーが受ける理由は写真の通報と同じ許可リスト（`REPORT_REASONS`）。画面案の「なりすまし」はリストに無いので、
+/// **2026-11-10 判断: 「その他」で送り、補足の頭に「なりすまし」と書く**（サーバーを変えずに運営が読める）
+enum DMReportReason: String, CaseIterable, Identifiable {
+    case harassment, sexual, minor, spam, impersonation, other
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .harassment: return L("いやがらせ・攻撃", "Harassment or attacks")
+        case .sexual: return L("性的な内容・つきまとい", "Sexual content or stalking")
+        case .minor: return L("未成年へのいやな接触・誘い出し", "Inappropriate contact with a minor")
+        case .spam: return L("広告・勧誘・スパム", "Spam or advertising")
+        case .impersonation: return L("なりすまし", "Impersonation")
+        case .other: return L("その他", "Something else")
+        }
+    }
+
+    /// サーバーへ送る理由
+    var serverReason: ModerationService.ReportReason {
+        switch self {
+        case .harassment: return .harassment
+        case .sexual: return .sexual
+        case .minor: return .minor
+        case .spam: return .spam
+        case .impersonation, .other: return .other
+        }
+    }
+
+    /// 送る補足。なりすましは頭に印を付ける（運営が読む・日本語で固定）
+    func note(adding userNote: String) -> String {
+        let trimmed = userNote.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard self == .impersonation else { return trimmed }
+        return trimmed.isEmpty ? "なりすまし" : "なりすまし：" + trimmed
     }
 }

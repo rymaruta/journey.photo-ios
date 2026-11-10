@@ -9,6 +9,8 @@ struct NotificationsView: View {
     @EnvironmentObject private var push: PushCenter
     /// ブロックした人の行・プッシュの行き先を手元で落とすため（`shown`・`opensPushTarget`）
     @EnvironmentObject private var hidden: ModerationStore
+    /// メッセージの未読会話（アイコンの数字に残す分・2026-11-10 札 #505）
+    @EnvironmentObject private var messages: DMInboxStore
     /// **通知を押すたびに読み直すため**に見ている。
     ///
     /// お知らせタブを開いたまま通知を押した回は、`RootView` の
@@ -63,6 +65,9 @@ struct NotificationsView: View {
             }
         }
     }
+
+    /// アイコンの数字に残すメッセージの未読会話（お知らせを読んでも 0 にしない）
+    private var messagesUnread: Int { messages.inbox.unreadConversations(hiding: hidden.blockedUserIds) }
 
     /// 種類で絞る（提案の絵）。**数の多い順ではなく決まった並び**
     /// ——押すたびに位置が変わると、目で追えない
@@ -174,7 +179,7 @@ struct NotificationsView: View {
                 ErrorBanner(message: message, isBusy: model.isLoading) {
                     Task {
                         if await model.load(environment: environment, viewerId: auth.userId, refreshing: true) {
-                            await push.clearBadge()
+                            await push.clearBadge(keepingMessages: messagesUnread)
                         }
                     }
                 }
@@ -232,7 +237,7 @@ struct NotificationsView: View {
             // **読めたときだけ消す。** サーバーは未読数を載せるが、既読に
             // したことは端末のアイコンに伝わらない——誰も消さないと増える
             // 一方。ただし圏外で開いた回に消すと、タブは 3・アイコンは 0 に割れる
-            if await model.load(environment: environment, viewerId: auth.userId) { await push.clearBadge() }
+            if await model.load(environment: environment, viewerId: auth.userId) { await push.clearBadge(keepingMessages: messagesUnread) }
             // 押した通知の行き先を積む（読み終えてから——写真は読んだ一覧から引き当てる）。
             // 引けなければ一覧に留まる
             // **ブロックした人の通知は開かない**（ブロックの前に届いたプッシュを後で押した回・`opensPushTarget`）
@@ -248,7 +253,7 @@ struct NotificationsView: View {
         .task { if push.permission == .unknown { await push.refreshAuthorization() } }
         .refreshable {
             if await model.load(environment: environment, viewerId: auth.userId, refreshing: true) {
-                await push.clearBadge()
+                await push.clearBadge(keepingMessages: messagesUnread)
             }
         }
         // フォローバックの失敗（形は親しい友達の保存の失敗と同じ）
@@ -277,6 +282,8 @@ extension NotificationsView {
     nonisolated static func shown(_ rows: [AppNotification], blocked: Set<String>,
                                   filter: NotificationFilter) -> [AppNotification] {
         BlockFilter.notifications(rows, blocked: blocked).filter { row in
+            // メッセージの受信箱に入ったストーリーの返信はベルに出さない（受信箱と二重にしない・2026-11-10 札 #505）
+            guard !row.isInMessages else { return false }
             guard let kind = row.kind else { return filter == .all }
             return filter.matches(kind)
         }
@@ -285,7 +292,7 @@ extension NotificationsView {
     /// 空の画面が「1件も無い」側か（「この種類が無い」側でなく）。**ブロックで落とした後で数える**
     /// ——全部ブロックした人の行だったのに「『すべて』に戻すと…」と言わない
     nonisolated static func emptyIsTotal(rows: [AppNotification], blocked: Set<String>) -> Bool {
-        BlockFilter.notifications(rows, blocked: blocked).isEmpty
+        BlockFilter.notifications(rows, blocked: blocked).filter { !$0.isInMessages }.isEmpty
     }
 
     /// 押したプッシュの行き先を開くか（2026-10-16 判断）。**送り手をブロックしていたら開かない**——
