@@ -2317,9 +2317,13 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "65-旅行プランの日程（自動保存・移動の見込み）")
         XCTAssertEqual(fixtureSends(app, "open"), "0", "開いただけで送っている")
 
-        // 運ぶ: 1 日目の最後（千里浜）を 2 日目の最初の行へ（日をまたぐ）。運んだら 2 秒待って 1 回送る
-        var sentBefore = 0
+        // 運ぶ: 1 日目の最後（千里浜）を 2 日目の最初の行へ（日をまたぐ）。運んだら待って 1 回送る。
+        // run 971: 押さえて運んだのに送った回数が 0 のままだった。並び（運ぶ印の名前の順）を前後で残して、
+        // 落とせたかを数で見る。1 回目は押さえて運ぶだけ、並びが変わらなければ 2 回目は行き先で止まってから離す
         let handles = app.descendants(matching: .any).matching(identifier: "tripPlan.dragHandle")
+        func order() -> String {
+            (0..<handles.count).map { handles.element(boundBy: $0).label }.joined(separator: "|")
+        }
         _ = fixtureSends(app, "dragHandles-count\(handles.count)")
         if handles.count >= 4 {
             let from = handles.element(boundBy: 2)
@@ -2332,11 +2336,25 @@ final class ScreenshotTests: XCTestCase {
             }
             _ = fixtureSends(app, "dragHittable-from\(from.isHittable)-to\(to.isHittable)")
             if from.isHittable, to.isHittable {
+                let before = order()
+                _ = fixtureSends(app, "orderBefore[\(before)]")
                 from.press(forDuration: 1.2, thenDragTo: to)
-                Thread.sleep(forTimeInterval: 13)
+                Thread.sleep(forTimeInterval: 2)
+                var after = order()
+                _ = fixtureSends(app, "orderAfterPress[\(after)]")
+                if after == before {
+                    let again = handles.element(boundBy: 2)
+                    again.press(forDuration: 1.2, thenDragTo: handles.element(boundBy: 3),
+                                withVelocity: .slow, thenHoldForDuration: 1.0)
+                    Thread.sleep(forTimeInterval: 2)
+                    after = order()
+                    _ = fixtureSends(app, "orderAfterHold[\(after)]")
+                }
+                Thread.sleep(forTimeInterval: 11)
                 shoot(app, "65b-旅行プランの日程（運んだ・日をまたいで2日目へ）")
-                XCTAssertEqual(fixtureSends(app, "afterDrag"), "1", "運んだあとに 1 回送っていない")
-                sentBefore = 1
+                let sent = fixtureSends(app, "afterDrag")
+                XCTAssertNotEqual(after, before, "運ぶ印で運んでも並びが変わらない")
+                if after != before { XCTAssertEqual(sent, "1", "運んだあとに 1 回送っていない") }
             }
         }
 
@@ -2366,6 +2384,8 @@ final class ScreenshotTests: XCTestCase {
             app.swipeDown()
             Thread.sleep(forTimeInterval: 1)
         }
+        // 直す前の回数は画面から読む（前の段の結果に頼らない）
+        let sentBefore = Int(fixtureSends(app, "before5edits") ?? "") ?? -1
         guard toggleStartDate(app, times: 5) else { return }
         Thread.sleep(forTimeInterval: 13)
         XCTAssertEqual(fixtureSends(app, "after5edits"), "\(sentBefore + 1)",
