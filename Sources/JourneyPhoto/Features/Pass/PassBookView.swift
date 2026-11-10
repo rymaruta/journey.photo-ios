@@ -42,7 +42,7 @@ struct PassBookView: View {
                         .font(JPFont.display(SettingsLayout.titleSize, relativeTo: .largeTitle))
                         .foregroundStyle(WebTheme.text)
                         .accessibilityAddTraits(.isHeader)
-                    Text(L("受け取ったカードは、消えずにここに綴じられます", "Cards you receive stay bound here"))
+                    Text(L("受け取ったカードは、消えずにここに残ります", "Cards you receive stay here"))
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)
                 }

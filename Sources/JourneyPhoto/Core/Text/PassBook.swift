@@ -162,7 +162,7 @@ enum PassBook {
         var tabIdentifier: String { "passBook.order.\(rawValue)" }
         var label: String {
             switch self {
-            case .bound: return L("綴じた順", "As bound")
+            case .bound: return L("受け取った順", "Received")
             case .place: return L("場所ごと", "By place")
             case .person: return L("よく会う人", "Often met")
             }

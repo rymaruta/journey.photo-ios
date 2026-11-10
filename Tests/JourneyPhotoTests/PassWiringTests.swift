@@ -239,4 +239,41 @@ final class PassWiringTests: XCTestCase {
         let store = try source("Core/Storage/PassStore.swift")
         XCTAssertTrue(store.contains("arrivals += 1\n            announceInstant(now: date)"), "すぐ届いた時にホームへ合図していない")
     }
+
+    /// 🔴 **画面・知らせ・読み上げに「綴」を出さない**（2026-11-10 owner「すれちがい帳の表現が好きではない。
+    /// 『綴じる』は使わない。『受け取ったカード』などに」）。アプリの文字列（`"…"` の中）と、配る資料（json）を見る。
+    /// 注記（`//`）・識別子は数えない
+    func testNoBindingWordOnScreen() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto")
+        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL }
+            .filter { ["swift", "json", "strings"].contains($0.pathExtension) } ?? []
+        XCTAssertGreaterThan(files.count, 100, "ソースを読めていない")
+        var found: [String] = []
+        for file in files {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            for (index, raw) in text.components(separatedBy: "\n").enumerated() {
+                var line = raw
+                if file.pathExtension == "swift" {
+                    if line.trimmingCharacters(in: .whitespaces).hasPrefix("//") { continue }
+                    // 行の後ろの注記を落とす（文字列の中の `//` は URL くらいで、「綴」とは並ばない）
+                    if let comment = line.range(of: " // ") { line = String(line[..<comment.lowerBound]) }
+                    // 文字列の中だけを見る
+                    let parts = line.components(separatedBy: "\"")
+                    guard parts.count > 2 else { continue }
+                    let literals = parts.enumerated().filter { $0.offset % 2 == 1 }.map(\.element)
+                    guard literals.contains(where: { $0.contains("綴") }) else { continue }
+                } else if !line.contains("綴") {
+                    continue
+                }
+                found.append("\(file.lastPathComponent):\(index + 1): \(raw.trimmingCharacters(in: .whitespaces))")
+            }
+        }
+        XCTAssertTrue(found.isEmpty, "画面に「綴」が出る:\n" + found.joined(separator: "\n"))
+        // 言い替えた先（板の題「すれちがい帳」はそのまま）
+        XCTAssertEqual(PassBook.Order.bound.label, L("受け取った順", "Received"))
+        XCTAssertEqual(PassTicket.validityJa, "ずっと\n（帳に残る）")
+    }
 }
