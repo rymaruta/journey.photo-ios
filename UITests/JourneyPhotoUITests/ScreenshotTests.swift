@@ -2198,11 +2198,20 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "62-行きたい場所（撮影用に端末の控えへ3件）")
 
         // 行きたい場所の行から「旅行プランに入れる」（2026-11-10 札 #521）。見本のプランが出る。**入れるは押さない**
-        let wishTrip = app.buttons["mypage.wish.trip"].firstMatch
-        if wishTrip.waitForExistence(timeout: 5), wishTrip.isHittable {
+        // run 967・971 でこの絵が撮れていなかった。どこで抜けたかを残す
+        let wishTrip = app.descendants(matching: .any).matching(identifier: "mypage.wish.trip").firstMatch
+        let found = wishTrip.waitForExistence(timeout: 5)
+        let wishLine = "TRIPADD wishTrip exists=\(found) hittable=\(found && wishTrip.isHittable) type=\(found ? String(describing: wishTrip.elementType.rawValue) : "-")"
+        print(wishLine)
+        XCTContext.runActivity(named: wishLine) { _ in }
+        if found, wishTrip.isHittable {
             wishTrip.tap()
             let add = app.buttons["tripAdd.add"].firstMatch
-            if add.waitForExistence(timeout: 15) {
+            let opened = add.waitForExistence(timeout: 15)
+            let addLine = "TRIPADD sheet add exists=\(opened) plan=\(app.descendants(matching: .any).matching(identifier: "tripAdd.plan").count)"
+            print(addLine)
+            XCTContext.runActivity(named: addLine) { _ in }
+            if opened {
                 Thread.sleep(forTimeInterval: 1)
                 shoot(app, "62b-行きたい場所から旅行プランに入れる（出発が近いプラン・近い日を先に選ぶ）")
             }
