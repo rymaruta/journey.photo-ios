@@ -2199,8 +2199,17 @@ final class ScreenshotTests: XCTestCase {
 
         // 行きたい場所の行から「旅行プランに入れる」（2026-11-10 札 #521）。見本のプランが出る。**入れるは押さない**
         // run 967・971 でこの絵が撮れていなかった。どこで抜けたかを残す
-        let wishTrip = app.descendants(matching: .any).matching(identifier: "mypage.wish.trip").firstMatch
-        let found = wishTrip.waitForExistence(timeout: 5)
+        // run 978 の木: 行に付けた `mypage.officialWish` が中のボタンにも付き（「mypage.officialWish-…」）、
+        // 印の識別子 `mypage.wish.trip` は残らない。**読み上げの名前で探す**（「◯◯ を旅行プランに入れる」）
+        let wishTrip = app.buttons.matching(NSPredicate(format: "label ENDSWITH %@", " を旅行プランに入れる")).firstMatch
+        var found = wishTrip.waitForExistence(timeout: 5)
+        var scrolls = 0
+        while found, !wishTrip.isHittable, scrolls < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            scrolls += 1
+            found = wishTrip.exists
+        }
         let wishLine = "TRIPADD wishTrip exists=\(found) hittable=\(found && wishTrip.isHittable) type=\(found ? String(describing: wishTrip.elementType.rawValue) : "-")"
         print(wishLine)
         XCTContext.runActivity(named: wishLine) { _ in }
