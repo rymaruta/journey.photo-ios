@@ -49,6 +49,7 @@ struct TripPlanDetailView: View {
         let modes: [TripTravel.Mode]
         let sun: TripDraft.Sun?
         let destinationTimes: [String]
+        let previousTimes: [String]
         var id: String { leg.id }
     }
 
@@ -198,7 +199,7 @@ struct TripPlanDetailView: View {
         // 送れる状態なら確かめずに送ってから戻る。送れていない（圏外・断られた・別の端末の変更）ときだけ
         // 今の「保存して戻る／保存せずに戻る」の確かめを出す（`TripAutosave.leave`）
         .unsavedLeaveGuard(TripAutosave.unsaved(leaveAction), isPresented: leaveBinding,
-                           canSave: model.busy == nil && !connectivity.isOffline && problem != .conflict,
+                           canSave: model.busy == nil && !isOffline && problem != .conflict,
                            backTitle: L("旅行プラン", "Trip plans"),
                            message: L("まだ送れていない変更があります。保存せずに戻ると、変えた日程は残りません。",
                                       "Some changes aren't sent yet. If you go back without saving, they'll be lost."),
@@ -369,7 +370,8 @@ struct TripPlanDetailView: View {
         .sheet(item: $legTarget) { target in
             NavigationStack {
                 TripLegSheet(leg: target.leg, estimates: target.estimates, modes: target.modes,
-                             sun: target.sun, destinationTimes: target.destinationTimes)
+                             sun: target.sun, destinationTimes: target.destinationTimes,
+                             previousTimes: target.previousTimes)
             }
             .presentationDetents([.medium, .large])
         }
@@ -395,8 +397,8 @@ struct TripPlanDetailView: View {
                                       dayCount: days.indices.contains(target.day) ? days[target.day].items.count : 0,
                                       max: TripPlanService.itemsPerDayMax),
                                   sourcesFailed: sourcesFailed,
-                                  choices: TripPlanText.choices(wishlistKeys: wishlist.spotIds,
-                                                                places: places, index: index)) { choice in
+                                  choices: pickChoices,
+                                  seasonLines: seasonLines(for: pickChoices, day: target.day)) { choice in
                     add(choice.item, to: target.day)
                 }
             }
@@ -433,11 +435,14 @@ struct TripPlanDetailView: View {
         return TripPlanText.isDirty(plan: plan, days: days, start: start, end: end)
     }
 
+    /// 圏外か。UI テストの見本（`-JPTripPlanFixtureOffline`・Debug のときだけ）でも圏外として扱う
+    private var isOffline: Bool { connectivity.isOffline || TripPlanFixture.offline }
+
     /// 日程を送っている間（`sent` は保存の間だけ立つ。削除では立たない）
     private var sending: Bool { model.busy != nil && sent != nil }
 
     private var leaveAction: TripAutosave.Leave {
-        TripAutosave.leave(dirty: isDirty, sending: sending, problem: problem, offline: connectivity.isOffline)
+        TripAutosave.leave(dirty: isDirty, sending: sending, problem: problem, offline: isOffline)
     }
 
     /// 戻るを押した。**送れる状態なら確かめずに送ってから戻る**（送れなければ確かめを出す）
@@ -474,14 +479,14 @@ struct TripPlanDetailView: View {
         guard plan != nil, isDirty else { return true }
         if problem == .conflict { return false }
         if case .failed? = problem, !force { return false }
-        guard !connectivity.isOffline else { problem = .offline; return false }
+        guard !isOffline else { problem = .offline; return false }
         guard TripAutosave.shouldSend(dirty: isDirty, busy: model.busy != nil, problem: problem) else {
             // ほかの書き込み（削除・前の送信）の最中。終わってから送り直す
             scheduleAutosave()
             return false
         }
         guard let fresh = await model.fetchFresh(environment: environment) else {
-            problem = connectivity.isOffline ? .offline
+            problem = isOffline ? .offline
                 : .failed(L("通信を確かめて、もう一度お試しください。", "Check your connection and try again."))
             return false
         }
@@ -522,6 +527,14 @@ struct TripPlanDetailView: View {
         }
     }
 
+    /// 見本のときだけの「送った回数」（Release では何も出さない）
+    @ViewBuilder
+    private var fixtureSendsLabel: some View {
+        #if DEBUG
+        if TripPlanFixture.isOn { TripPlanFixtureSendsLabel() }
+        #endif
+    }
+
     /// 送れていない直しの札（画面の上・板 Components 06 の灰の印 → 何が起きたか → 押せる一手）
     @ViewBuilder
     private var autosaveBanner: some View {
@@ -557,12 +570,16 @@ struct TripPlanDetailView: View {
 
     // MARK: - 詳細・移動の見込み
 
-    /// 詳細（季節の文・時刻帯）を重ねる撮影スポット（日程にあって、まだ索引だけのもの）
+    /// 詳細（季節の文・時刻帯）を重ねる撮影スポット（日程にある・行きたいに入っていて、まだ索引だけのもの）
     private var planSpotsNeedingDetails: [OfficialSpot] {
         let ids = Set(days.flatMap(\.items).compactMap { item -> String? in
             if case .spot(let id, _) = item { return id } else { return nil }
         })
-        return SpotDetailNeeds.indexOnly(index.filter { ids.contains($0.spotId) })
+        // 候補のシートの季節の一文のために、「行きたい」の撮影スポットも（ふつうは数か所）
+        let wanted = wishlist.spotIds
+        return SpotDetailNeeds.indexOnly(index.filter {
+            ids.contains($0.spotId) || wanted.contains(SavedSpotKey.official($0.slug))
+        })
     }
 
     /// 日ごとの区間（日程の通し番号で）
@@ -582,7 +599,7 @@ struct TripPlanDetailView: View {
 
     /// 圏外では聞かない（Apple のサーバーに聞くため）
     private func requestTravel() {
-        guard !connectivity.isOffline, offlineManifest == nil else { return }
+        guard !isOffline, offlineManifest == nil else { return }
         travel.request(allLegs)
     }
 
@@ -612,8 +629,12 @@ struct TripPlanDetailView: View {
                     dateField(L("帰着", "To"), value: $end, fallback: start, isStart: false)
                 }
 
-                // 送れていない直し（圏外・断られた・別の端末の変更）。日付の下・日程の上に残す
-                autosaveBanner
+                // 送れていない直し（圏外・断られた・別の端末の変更）。日付の下・日程の上に残す。
+                // UI テストの見本のときだけ、その下に自動保存が送った回数（`TripPlanFixture`・Debug のみ）
+                VStack(alignment: .leading, spacing: JPSpace.xs) {
+                    autosaveBanner
+                    fixtureSendsLabel
+                }
 
                 // 電波なしで使えるようにする（板 72・日付の下）。比べるのはサーバーの姿のプラン
                 OfflineTripCard(plan: plan, index: index, places: places, sourcesReady: gotIndex && gotPhotos)
@@ -720,6 +741,22 @@ struct TripPlanDetailView: View {
 
     // MARK: - 日ごと
 
+    private var pickChoices: [TripPlanText.Choice] {
+        TripPlanText.choices(wishlistKeys: wishlist.spotIds, places: places, index: index)
+    }
+
+    /// 候補の季節の一文（その日の月の季節の案内がある撮影スポットだけ・`TripDraft.seasonLine`）
+    private func seasonLines(for choices: [TripPlanText.Choice], day di: Int) -> [String: String] {
+        guard days.indices.contains(di),
+              let ymd = TripPlanText.dayDate(index: di, day: days[di], start: start, end: end) else { return [:] }
+        var out: [String: String] = [:]
+        for choice in choices {
+            guard let spot = spotFor(choice.item), let line = TripDraft.seasonLine(spot, ymd: ymd) else { continue }
+            out[choice.id] = line
+        }
+        return out
+    }
+
     /// 候補のシートの眉に添える日付（「12月24日」）。日付の無いプランは nil
     private func pickDayDate(_ di: Int) -> String? {
         guard days.indices.contains(di),
@@ -822,7 +859,9 @@ struct TripPlanDetailView: View {
                     if ii > 0, let leg = legs.first(where: { $0.to.number == number }) {
                         let index = legs.firstIndex(where: { $0.id == leg.id }) ?? 0
                         legRow(leg, estimates: estimatesByLeg.indices.contains(index) ? estimatesByLeg[index] : [],
-                               sun: sun, toTimes: resolved.indices.contains(ii) ? resolved[ii].times : [])
+                               sun: sun, toTimes: resolved.indices.contains(ii) ? resolved[ii].times : [],
+                               fromTimes: numbers.firstIndex(of: leg.from.number)
+                                   .flatMap { resolved.indices.contains($0) ? resolved[$0].times : nil } ?? [])
                         divider
                     }
                     itemRow(di, ii, item, number: number,
@@ -867,12 +906,13 @@ struct TripPlanDetailView: View {
     }
 
     private func legRow(_ leg: TripTravel.Leg, estimates: [TripTravel.Estimate], sun: TripDraft.Sun?,
-                        toTimes: [String]) -> some View {
+                        toTimes: [String], fromTimes: [String]) -> some View {
         let modes = TripTravel.modes(for: leg, transitAvailable: TravelEstimator.transitAvailable)
         return TripLegRow(leg: leg, estimates: estimates,
                           settled: travel.isSettled(leg, modes: modes),
-                          offline: connectivity.isOffline, throttled: travel.throttled) {
-            legTarget = LegTarget(leg: leg, estimates: estimates, modes: modes, sun: sun, destinationTimes: toTimes)
+                          offline: isOffline, throttled: travel.throttled) {
+            legTarget = LegTarget(leg: leg, estimates: estimates, modes: modes, sun: sun, destinationTimes: toTimes,
+                                  previousTimes: fromTimes)
         }
     }
 
@@ -1123,6 +1163,7 @@ struct TripPlanDetailView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("tripPlan.addRow.\(di)")
         // 1日に置ける数はサーバーと対（超えると保存で断られる）
         .disabled(full)
         .opacity(full ? 0.5 : 1)
@@ -1144,6 +1185,7 @@ struct TripPlanDetailView: View {
                 .jpPillButton(.outline)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("tripPlan.addDay")
         .disabled(full)
         .opacity(full ? 0.5 : 1)
     }
@@ -1204,3 +1246,19 @@ struct TripPlanDetailView: View {
         .padding(.top, JPSpace.xs)
     }
 }
+
+
+#if DEBUG
+/// 見本のときだけ出す「送った回数 N」（UI テストが値で読む・`accessibilityValue`）
+private struct TripPlanFixtureSendsLabel: View {
+    @ObservedObject private var counter = TripPlanFixtureCounter.shared
+
+    var body: some View {
+        Text(L("送った回数 \(counter.sends)", "Sent \(counter.sends)"))
+            .font(JPFont.caption.monospacedDigit())
+            .foregroundStyle(WebTheme.text3)
+            .accessibilityIdentifier("tripPlan.fixtureSends")
+            .accessibilityValue("\(counter.sends)")
+    }
+}
+#endif

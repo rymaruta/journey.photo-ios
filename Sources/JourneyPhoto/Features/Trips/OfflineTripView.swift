@@ -193,6 +193,13 @@ struct OfflineTripContent: View {
                 }
                 .padding(.top, JPSpace.xxs)
             }
+            // 出どころ（移動の見込みを1つでも残したとき）
+            if manifest.days.contains(where: { $0.stops.contains { $0.travel != nil } }) {
+                Text(L("移動の見込みは、保存したときの Apple のマップによるもの。道の混み具合で変わります",
+                       "Travel estimates are from Apple Maps when you saved. They change with traffic."))
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+            }
         }
     }
 
@@ -221,6 +228,13 @@ struct OfflineTripContent: View {
                     .font(stop.key.hasPrefix("spot:") ? JPFont.rowTitle : JPFont.bodyEmphasis)
                     .foregroundStyle(WebTheme.text)
                     .lineLimit(2)
+                // 前の場所からの移動の見込み（保存したときの Apple のマップの数・2026-11-10 札 #521）
+                if let travel = stop.travel {
+                    Text(travel)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
+                        .lineLimit(2)
+                }
                 if let line = stop.light?.line {
                     HStack(spacing: 6) {
                         Image(systemName: "sun.horizon")
@@ -245,7 +259,7 @@ struct OfflineTripContent: View {
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel([String(stop.number), stop.name, stop.light?.line].compactMap { $0 }.joined(separator: " · "))
+        .accessibilityLabel([String(stop.number), stop.name, stop.travel, stop.light?.line].compactMap { $0 }.joined(separator: " · "))
     }
 }
 

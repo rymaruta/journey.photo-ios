@@ -325,6 +325,13 @@ final class TripPlanStage1Tests: XCTestCase {
         let tooFar = try XCTUnwrap(TripTravel.departureHint(travelSeconds: 11 * 3600, destinationTimes: [], sun: sun))
         XCTAssertNil(tooFar.clock)
         XCTAssertNil(TripTravel.departureHint(travelSeconds: 3600, destinationTimes: [], sun: nil))
+        // 前の場所の時間帯: 夕方の斜光（16:00〜）を見てから 14:30 に出るのは無理 → 一言添える。朝の場所なら添えない
+        let afterEvening = try XCTUnwrap(TripTravel.departureHint(travelSeconds: 2 * 3600, destinationTimes: [], sun: sun,
+                                                                  previous: ("金沢城公園", ["morning", "goldenHour"])))
+        XCTAssertEqual(afterEvening.caution, "金沢城公園の夕方の斜光を見てからだと、間に合わない見込みです")
+        let afterMorning = try XCTUnwrap(TripTravel.departureHint(travelSeconds: 2 * 3600, destinationTimes: [], sun: sun,
+                                                                  previous: ("ひがし茶屋街", ["dawn", "morning"])))
+        XCTAssertNil(afterMorning.caution)
     }
 
     /// 地図のアプリへ: Google は鍵の要らない Maps URLs・手段は電車などが返ればそれ
@@ -434,4 +441,77 @@ final class TripPlanStage1Tests: XCTestCase {
 /// 試験から主ボタンの字を呼ぶ（`TripAddSheet.addTitle` は `View` の中にある）
 private enum TripPlanAddSheetTitle {
     static func title(_ day: Int?) -> String { TripAddSheet.addTitle(day: day) }
+}
+
+/// 見本のプラン（UI テスト用・Debug のときだけ）と、追加の4つ（2026-11-10 札 #521 の続き）
+final class TripPlanStage1FollowUpTests: XCTestCase {
+
+    private var root: URL {
+        URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    }
+
+    private func source(_ path: String) throws -> String {
+        try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/" + path), encoding: .utf8)
+    }
+
+    /// 見本: 2 日・5 か所・出発は先（30 日後）。**Release では効かない**（`#if DEBUG` の外は false）
+    func testFixtureShapeAndReleaseGuard() throws {
+        let plans = TripPlanFixture.initialPlans(today: TripPlanText.date(fromYMD: "2026-11-10")!)
+        XCTAssertEqual(plans.first?.days.map(\.items.count), [3, 2])
+        XCTAssertEqual(plans.first?.startDate, "2026-12-10")
+        let text = try source("Services/TripPlanFixture.swift")
+        for name in ["isOn", "offline", "failing"] {
+            let body = text.components(separatedBy: "static var \(name): Bool {").dropFirst().first ?? ""
+            XCTAssertTrue(body.prefix(200).contains("#if DEBUG") && body.prefix(260).contains("#else\n        return false"),
+                          "\(name) が Release で false にならない")
+        }
+        XCTAssertTrue(try source("Services/TripPlanService.swift").contains("if TripPlanFixture.isOn { return try await TripPlanFixtureStore.shared.update"))
+    }
+
+    /// 見本の書き込みは送った回数を数える（サーバーへは送らない）
+    func testFixtureStoreCountsWrites() async throws {
+        let store = TripPlanFixtureStore()
+        let before = await store.list()
+        var patch = TripPlanService.Patch()
+        patch.startDate = ""
+        let after = try await store.update(planId: "fixture-kanazawa", patch)
+        XCTAssertNil(after.first?.startDate, "空文字で日付を消す（サーバーと同じ）")
+        XCTAssertNotEqual(after.first?.updatedAt, before.first?.updatedAt, "版が進む（送る前の読み直しが見分ける）")
+    }
+
+    /// 電波なしで使える旅に移動の見込みを残す（同じ日の座標のある前の場所から・日をまたがない）
+    func testOfflineStopsCarryTravel() {
+        func stop(_ n: Int, day: Int, lat: Double?) -> OfflineTripPlan.Stop {
+            OfflineTripPlan.Stop(number: n, dayIndex: day, date: nil, key: "spot:\(n)", item: .spot(spotId: "\(n)", note: nil),
+                                 name: "S\(n)", address: nil, coords: lat.map { Photo.Coords(lat: $0, lng: 136) },
+                                 note: nil, light: nil)
+        }
+        let stops = [stop(1, day: 0, lat: 36.5), stop(2, day: 0, lat: nil), stop(3, day: 0, lat: 36.6), stop(4, day: 1, lat: 36.7)]
+        let out = OfflineTripPlan.withTravel(stops) { leg in
+            [TripTravel.Estimate(mode: .automobile, seconds: 3000), TripTravel.Estimate(mode: .transit, seconds: 4800)]
+                .filter { _ in leg.from.number != 2 }   // どの区間にも見込みがある（日をまたぐ区間も）
+        }
+        XCTAssertEqual(out.map(\.travel), [nil, nil, "前の場所から 車 約 50 分 · 電車など 約 1 時間 20 分", nil],
+                       "座標の無い場所を飛ばし、日をまたいでは添えない")
+        XCTAssertTrue(try source("Features/Trips/OfflineTripCard.swift").contains("OfflineTripPlan.withTravel(planned.stops)"))
+        XCTAssertTrue(try source("Core/Storage/OfflineTripStore.swift").contains("samples: samples, map: map, travel: stop.travel)"))
+    }
+
+    /// 古い保存（移動の見込みの無い記録）も読める
+    func testOldManifestStopWithoutTravelDecodes() throws {
+        let json = #"{"number":1,"key":"spot:a","name":"A","samples":[]}"#
+        let stop = try JSONDecoder().decode(OfflineTripManifest.Stop.self, from: Data(json.utf8))
+        XCTAssertNil(stop.travel)
+    }
+
+    /// 入口: 行きたい場所の一覧の行・候補のシートの季節の一文
+    func testWishlistEntryAndPickSheetSeason() throws {
+        let page = try source("Features/Profile/MyPageView.swift")
+        XCTAssertTrue(page.contains("wishTripButton(TripAddTarget(place: TripDraft.place(location: spot), wishKey: spot.slug))"))
+        XCTAssertTrue(page.contains("wishTripButton(TripAddTarget(place: TripDraft.place(spot: spot), wishKey: row.key))"))
+        XCTAssertTrue(page.contains(".tripAddSheet($wishTripAdd)"))
+        let pick = try source("Features/Trips/TripPlanPickSheet.swift")
+        XCTAssertTrue(pick.contains("if let season = seasonLines[choice.id] {"))
+        XCTAssertTrue(try source("Features/Trips/TripPlanDetailView.swift").contains("seasonLines: seasonLines(for: pickChoices, day: target.day)"))
+    }
 }

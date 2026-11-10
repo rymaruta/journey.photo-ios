@@ -323,7 +323,13 @@ struct OfflineTripCard: View {
             let planned = await OfflineTripLive.plannedStops(plan: plan, environment: environment,
                                                              index: index, places: places)
             let sources = OfflineTripLive.sources(environment: environment, index: planned.index, places: places)
-            offline.save(plan: plan, stops: planned.stops, sources: sources)
+            // 移動の見込みも端末に残す（日程の画面で聞いた控えから・2026-11-10 札 #521）
+            let estimator = TravelEstimator.shared
+            let stops = OfflineTripPlan.withTravel(planned.stops) { leg in
+                TripTravel.shown(TripTravel.modes(for: leg, transitAvailable: TravelEstimator.transitAvailable),
+                                 results: estimator.results(for: leg))
+            }
+            offline.save(plan: plan, stops: stops, sources: sources)
         }
     }
 

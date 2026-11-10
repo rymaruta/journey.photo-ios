@@ -17,6 +17,8 @@ struct MyPageView: View {
     /// 引き下げ・「もう一度試す」の読み直しの最中（重ねて走らせない）
     @State private var isReloading = false
     @State private var officialSpots: [OfficialSpot] = []
+    /// 行きたい場所の行から「旅行プランに入れる」（2026-11-10 札 #521）
+    @State private var wishTripAdd: TripAddTarget?
     /// 保存した写真を引き当てる先のうち**公開一覧**。もう一方の自分の写真は
     /// `model.photos`（`myPhotos()`・`PhotoPools` と同じ口）。公開一覧が無いと
     /// **他人の写真の保存が一度も出ない**
@@ -877,6 +879,8 @@ struct MyPageView: View {
                     }
                     .padding(.horizontal, ProfileV2.gutter)
                 }
+                Color.clear.frame(height: 0)
+                    .tripAddSheet($wishTripAdd)
                 ForEach(wanted) { place in
                     NavigationLink {
                         SpotDetailView(spot: place, photos: pool)
@@ -982,6 +986,10 @@ struct MyPageView: View {
             }
             Spacer(minLength: 8)
 
+            if let spot = row.spot {
+                wishTripButton(TripAddTarget(place: TripDraft.place(spot: spot), wishKey: row.key))
+            }
+
             // **一覧からも外せる。** 索引に無い鍵はここでしか外せない
             Button {
                 // ログイン中はサーバーからも外す。失敗したら戻して知らせる（`WishlistSync`）
@@ -1035,6 +1043,10 @@ struct MyPageView: View {
             }
             Spacer(minLength: 8)
 
+            if !spot.slug.isEmpty {
+                wishTripButton(TripAddTarget(place: TripDraft.place(location: spot), wishKey: spot.slug))
+            }
+
             // **一覧からも外せる。** 外すのに詳細まで行かせない
             Button {
                 // ログイン中はサーバーからも外す。失敗したら戻して知らせる（`WishlistSync`）
@@ -1060,6 +1072,22 @@ struct MyPageView: View {
         .padding(.horizontal, ProfileV2.gutter)
         .frame(minHeight: 72)
         .overlay(alignment: .bottom) { wishlistDivider }
+    }
+
+    /// 行きたい場所の行の「旅行プランに入れる」（44pt の印・灰。外す旗の真鍮と並べても紛れない）
+    private func wishTripButton(_ target: TripAddTarget) -> some View {
+        Button {
+            wishTripAdd = target
+        } label: {
+            Image(systemName: "calendar.badge.plus")
+                .font(.subheadline)
+                .foregroundStyle(WebTheme.text2)
+                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("\(target.place.name) を旅行プランに入れる", "Add \(target.place.name) to a trip"))
+        .accessibilityIdentifier("mypage.wish.trip")
     }
 
     /// 行の間の線（板 v2 の `.sr`: 下に白 8%）。端の 16 から引く

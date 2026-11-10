@@ -126,6 +126,14 @@ enum TripTravel {
     /// 日の移動が長すぎる・夕方の場所に日の入りまでに着けないときの1行。**計算した数だけで言う**
     /// （Apple の見込みと端末で計算した日の出・日の入り）。滞在の時間は足さない（こちらで仮定しない）。
     ///
+    /// 仕様（提案の版4「間に合わないときの一言」）と照らした式（2026-11-10 判断）:
+    /// - 「その日の移動（先に出した手段の合計）が、日の出から日の入りまでの長さに対して長すぎるとき」
+    ///   → `合計 × 2 ≥ 日の出から日の入りまで`（昼の半分以上を移動に使う）。**「長すぎる」の割合は仕様に数が無いので
+    ///   半分と決めた**（数を変えるならここだけ）
+    /// - 「『夕方の斜光』『日没後』の場所に着くのが日の入りより後になりそうなとき」
+    ///   → `日の出 ＋ その場所までの移動の合計 > 日の入り`（日の出に出て、移動だけで着く最も早い時刻でも日の入りを過ぎる）。
+    ///   行き先の時間帯の案内に夕方の斜光か日没後があれば数える（`lateNames`）。返らない区間は 0 秒で数える（数を作らない）
+    ///
     /// - `travel`: 区間ごとに先に出した手段の秒数（返らない区間は nil・数えない）
     /// - `arrivals`: 各区間の行き先が「夕方の斜光」「日没後」の案内を持つか、その名前
     static func dayWarning(travel: [Int?], lateNames: [String?], sun: TripDraft.Sun?) -> String? {
@@ -158,27 +166,61 @@ enum TripTravel {
 
     // MARK: - 出る時刻の目安（区間のシート）
 
+    struct Departure: Equatable {
+        let text: String
+        /// 地図のアプリで合わせる時刻（間に合わない日は nil）
+        let clock: String?
+        /// 前の場所の時間帯の案内と合わないときの一言（「金沢城公園の夕方の斜光を見てからだと間に合わない見込み」）
+        var caution: String? = nil
+    }
+
+    /// 前の場所の時間帯が始まる時刻（夕方の斜光 → その始まり・日没後と夜 → 日の入り）。朝・日中は出る時刻を縛らない
+    static func windowStart(_ time: String, sun: TripDraft.Sun) -> Date? {
+        switch time {
+        case "goldenHour": return sun.goldenStart
+        case "dusk", "night": return sun.sunsetDate
+        default: return nil
+        }
+    }
+
     /// 「13:00 ごろに出ると、日の入り 16:47 の前に着く見込み」。行き先に夕方の斜光の案内があれば、
     /// その始まりに間に合う時刻で言う。**地図のアプリには日時を渡せない**ので、合わせる時刻を見せる。
-    /// 30分の単位で早めに丸める。日の出より前になるなら、間に合わないと言う
-    static func departureHint(travelSeconds: Int, destinationTimes: [String], sun: TripDraft.Sun?)
-        -> (text: String, clock: String?)? {
+    /// 30分の単位で早めに丸める。日の出より前になるなら、間に合わないと言う。
+    ///
+    /// **前の場所の時間帯**（提案の版4「前の場所の時間帯の案内と、行き先の日の入りと、所要時間から」）:
+    /// 前の場所に夕方の斜光・日没後・夜の案内があり、その時間帯が始まるのが出る時刻より後なら、
+    /// 「見てからだと間に合わない」と添える（出る時刻そのものは行き先の日の入りで決める）
+    static func departureHint(travelSeconds: Int, destinationTimes: [String], sun: TripDraft.Sun?,
+                              previous: (name: String, times: [String])? = nil) -> Departure? {
         guard let sun, let set = sun.sunsetDate, let sunsetClock = sun.sunset else { return nil }
         let evening = destinationTimes.contains("goldenHour")
         let target = evening ? (sun.goldenStart ?? set) : set
         let latest = target.addingTimeInterval(-Double(travelSeconds))
         let rounded = Date(timeIntervalSince1970: (latest.timeIntervalSince1970 / 1800).rounded(.down) * 1800)
         if let rise = sun.sunriseDate, rounded < rise {
-            return (L("日の出に出ても、日の入り \(sunsetClock) までに着くのは難しい見込みです",
-                      "Even leaving at sunrise, you may not arrive before sunset (\(sunsetClock))."), nil)
+            return Departure(text: L("日の出に出ても、日の入り \(sunsetClock) までに着くのは難しい見込みです",
+                                     "Even leaving at sunrise, you may not arrive before sunset (\(sunsetClock))."), clock: nil)
         }
         guard let clock = SunTimes.clock(rounded, in: sun.zone) else { return nil }
-        if evening, let goldenStart = sun.goldenStart, let g = SunTimes.clock(goldenStart, in: sun.zone) {
-            return (L("\(clock) ごろに出ると、夕方の斜光（\(g)〜）に間に合う見込み",
-                      "Leave around \(clock) to arrive for golden hour (from \(g))."), clock)
+        var caution: String?
+        if let previous {
+            // 前の場所の時間帯のうち、出る時刻より後に始まるもの（いちばん早いもの）
+            let late = SpotBodyText.timeOrder.filter(previous.times.contains)
+                .compactMap { t in windowStart(t, sun: sun).map { (t, $0) } }
+                .first { $0.1 > rounded }
+            if let (time, _) = late, let label = SpotBodyText.timeLabel(time) {
+                caution = L("\(previous.name)の\(label)を見てからだと、間に合わない見込みです",
+                            "If you stay at \(previous.name) for \(label.lowercased()), you may not make it.")
+            }
         }
-        return (L("\(clock) ごろに出ると、日の入り \(sunsetClock) の前に着く見込み",
-                  "Leave around \(clock) to arrive before sunset (\(sunsetClock))."), clock)
+        if evening, let goldenStart = sun.goldenStart, let g = SunTimes.clock(goldenStart, in: sun.zone) {
+            return Departure(text: L("\(clock) ごろに出ると、夕方の斜光（\(g)〜）に間に合う見込み",
+                                     "Leave around \(clock) to arrive for golden hour (from \(g))."),
+                             clock: clock, caution: caution)
+        }
+        return Departure(text: L("\(clock) ごろに出ると、日の入り \(sunsetClock) の前に着く見込み",
+                                 "Leave around \(clock) to arrive before sunset (\(sunsetClock))."),
+                         clock: clock, caution: caution)
     }
 
     /// 地図のアプリで時刻を合わせる一言

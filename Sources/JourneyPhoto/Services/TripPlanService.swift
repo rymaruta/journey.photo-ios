@@ -63,7 +63,9 @@ struct TripPlanService {
     }
 
     func list() async throws -> [TripPlan] {
-        try await api.authorized(.get, "/user/trips", as: TripPlanList.self).plans
+        // UI テストの見本（Debug のときだけ・サーバーへは送らない・`TripPlanFixture`）
+        if TripPlanFixture.isOn { return await TripPlanFixtureStore.shared.list() }
+        return try await api.authorized(.get, "/user/trips", as: TripPlanList.self).plans
     }
 
     /// 無い項目（nil）は送らない。サーバーは作るときも日程・日付を読む（`createTrip`）
@@ -78,6 +80,9 @@ struct TripPlanService {
     /// 空のプランが残る（行きたい場所から作る下書き・`TripPickerDraftView`）
     func create(title: String, days: [TripDay]? = nil,
                 startDate: String? = nil, endDate: String? = nil) async throws -> [TripPlan] {
+        if TripPlanFixture.isOn {
+            return await TripPlanFixtureStore.shared.create(title: title, days: days, startDate: startDate, endDate: endDate)
+        }
         let body = CreateBody(title: title, startDate: startDate, endDate: endDate, days: days)
         return try await refusing {
             try await api.authorized(.post, "/user/trips", body: body, as: TripPlanList.self).plans
@@ -94,12 +99,14 @@ struct TripPlanService {
     }
 
     func update(planId: String, _ patch: Patch) async throws -> [TripPlan] {
-        try await refusing {
+        if TripPlanFixture.isOn { return try await TripPlanFixtureStore.shared.update(planId: planId, patch) }
+        return try await refusing {
             try await api.authorized(.put, "/user/trips/\(encoded(planId))", body: patch, as: TripPlanList.self).plans
         }
     }
 
     func delete(planId: String) async throws -> [TripPlan] {
-        try await api.authorized(.delete, "/user/trips/\(encoded(planId))", as: TripPlanList.self).plans
+        if TripPlanFixture.isOn { return await TripPlanFixtureStore.shared.delete(planId: planId) }
+        return try await api.authorized(.delete, "/user/trips/\(encoded(planId))", as: TripPlanList.self).plans
     }
 }

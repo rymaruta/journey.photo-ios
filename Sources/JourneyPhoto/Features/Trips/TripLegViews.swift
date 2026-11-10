@@ -107,6 +107,8 @@ struct TripLegSheet: View {
     let sun: TripDraft.Sun?
     /// 行き先の時間帯の案内（「夕方の斜光」なら、その始まりに間に合う時刻で言う）
     let destinationTimes: [String]
+    /// 前の場所の時間帯の案内（見てから出ると間に合わないときに一言添える）
+    var previousTimes: [String] = []
 
     @Environment(\.openURL) private var openURL
     @State private var opening = false
@@ -150,12 +152,19 @@ struct TripLegSheet: View {
 
                 if let first = estimates.first(where: { $0.mode == mode }) ?? estimates.first,
                    let hint = TripTravel.departureHint(travelSeconds: first.seconds,
-                                                       destinationTimes: destinationTimes, sun: sun) {
+                                                       destinationTimes: destinationTimes, sun: sun,
+                                                       previous: (leg.from.name, previousTimes)) {
                     VStack(alignment: .leading, spacing: JPSpace.xxs) {
                         Text(hint.text)
                             .font(JPFont.bodyEmphasis)
                             .foregroundStyle(WebTheme.foreground)
                             .fixedSize(horizontal: false, vertical: true)
+                        if let caution = hint.caution {
+                            Text(caution)
+                                .font(JPFont.footnote)
+                                .foregroundStyle(WebTheme.muted2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         if let clock = hint.clock {
                             Text(TripTravel.setTimeNote(clock))
                                 .font(JPFont.caption)
