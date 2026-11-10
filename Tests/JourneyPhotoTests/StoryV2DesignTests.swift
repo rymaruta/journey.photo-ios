@@ -261,7 +261,10 @@ final class StoryV2DesignTests: XCTestCase {
                        "Color.white.opacity(Self.unpickedRing)"], in: mark, "選んだ印")
         XCTAssertTrue(view.contains("JPEyebrowLine(L(\"選んだ人 \\(chosen.count)\""), "件数が眉ラベルでない")
         XCTAssertTrue(view.contains(".frame(minHeight: JPHeight.tallRow)"))
-        XCTAssertTrue(view.contains(".background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))"))
+        // 「名前で探す」の欄は共通の部品（2026-11-10 にメッセージの「新しいメッセージ」と分け合うために出した）
+        XCTAssertTrue(view.contains("PeopleSearchField(query: $query)"))
+        let field = try source("Features/Common/PeopleSearchField.swift")
+        XCTAssertTrue(field.contains(".background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))"))
         XCTAssertTrue(view.contains(".accessibilityAddTraits(picked ? .isSelected : [])"), "読み上げの「選択中」が消えた")
     }
 

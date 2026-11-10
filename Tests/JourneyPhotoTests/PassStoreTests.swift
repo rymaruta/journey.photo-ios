@@ -619,6 +619,24 @@ final class PassStoreTests: XCTestCase {
         XCTAssertTrue((1000...1100).contains(stats.farthestKm ?? 0), "\(String(describing: stats.farthestKm))")
     }
 
+    /// 🔴 **「都道府県から」が 0 のときは「—」**（「いちばん遠く」と同じ・2026-11-10）。カードがあるのに 0 と出すと
+    /// 「都道府県の人から来ていない」と読める。読み上げは「まだ分かりません」。分かれば数のまま
+    func testUnknownPrefecturesShowDash() async {
+        let none = PassBook.statItems(PassBook.Stats(cards: 1, prefectures: 0, farthestKm: nil))
+        XCTAssertEqual(none.map(\.value), ["1", "—", "—"], "分からない都道府県を 0 と出した")
+        XCTAssertEqual(none[1].label, L("都道府県から", "prefectures"))
+        XCTAssertEqual(none[1].spoken, L("都道府県はまだ分かりません", "Prefectures not known yet"))
+        XCTAssertEqual(none[2].spoken, L("いちばん遠くはまだ分かりません", "Farthest not known yet"))
+        let known = PassBook.statItems(PassBook.Stats(cards: 1284, prefectures: 18, farthestKm: 1047))
+        XCTAssertEqual(known.map(\.value), ["1,284", "18", "1,047"])
+        XCTAssertEqual(known[2].unit, "km")
+        XCTAssertNil(known[1].unit)
+        // 「発」を自分で書いたカードは居住地を出していない（数えない・`showsFrom` が偽）
+        var settings = PassSettings()
+        settings.setOrigin(.custom, text: "東京")
+        XCTAssertFalse(settings.showsFrom, "自分で書いた発で居住地を出す形になった")
+    }
+
     func testBundleLine() async {
         let two = [card(1, day: 16, owner: "a", place: "京都市"), card(2, day: 16, owner: "b", place: "宇治市"),
                    card(3, day: 16, owner: "c", place: "大津市")]

@@ -487,11 +487,17 @@ struct OfficialSpotView: View {
                                    rows: times.map { (SpotBodyText.timeLabel($0.time) ?? "", $0.text) })
                     }
                     if !body.compositionTips.isEmpty {
-                        VStack(alignment: .leading, spacing: JPSpace.xs) {
-                            guideLabel(L("構図のヒント", "Composition"))
-                            ForEach(Array(body.compositionTips.enumerated()), id: \.offset) { _, tip in
-                                // 行頭は Web と同じ「・」（見どころは「—」）
-                                bullet(tip, mark: "・")
+                        // 箇条と「構図一覧を見る ›」の間は 4pt（札 #519）
+                        VStack(alignment: .leading, spacing: JPSpace.xxs) {
+                            VStack(alignment: .leading, spacing: JPSpace.xs) {
+                                guideLabel(L("構図のヒント", "Composition"))
+                                ForEach(Array(body.compositionTips.enumerated()), id: \.offset) { _, tip in
+                                    // 行頭は Web と同じ「・」（見どころは「—」）
+                                    bullet(tip, mark: "・")
+                                }
+                            }
+                            if SpotCompositionLink.shows(tips: body.compositionTips) {
+                                compositionCatalogLink
                             }
                         }
                     }
@@ -850,6 +856,24 @@ struct OfficialSpotView: View {
             }
         }
         .padding(.horizontal, 16)
+    }
+
+    /// 「構図のヒント」の下の「構図一覧を見る ›」（札 #519）。**「公式サイト」のリンクと同じ形**
+    /// （15 の 600・真鍮・下線・当たり 44）。外へは出ないので印は「›」。押すと構図一覧を積み、左上の矢印で戻る。
+    /// 設定の構図一覧の行は残す（ヒントの無い撮影スポットもあり、ここだけにすると探せない）
+    private var compositionCatalogLink: some View {
+        NavigationLink { CompositionCatalogView() } label: {
+            Text(SpotCompositionLink.title)
+                .font(JPFont.bodyEmphasis)
+                .underline()
+                .frame(minHeight: WebTheme.minTapTarget)
+                .foregroundStyle(WebTheme.accent)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, JPSpace.m)
+        .accessibilityLabel(SpotCompositionLink.spokenLabel)
+        .accessibilityIdentifier(SpotCompositionLink.identifier)
     }
 
     private func guideLabel(_ title: String) -> some View {
@@ -1213,4 +1237,15 @@ struct SpotImageCredit: View {
 /// 閉じるボタンで閉じた回（受け取っていない）は開かない
 enum SpotComposePost {
     static func opensUpload(_ capture: CameraCapture?) -> Bool { capture != nil }
+}
+
+/// 撮影スポットの頁の「構図一覧を見る ›」（札 #519・提案「旅の道具の置き場」第5版の仕様 4）。
+/// 出すのは構図のヒントがある撮影スポットだけ（ヒントの下に置くので、ヒントが無ければ置き場が無い）
+enum SpotCompositionLink {
+    static func shows(tips: [String]) -> Bool { !tips.isEmpty }
+    /// 字の後ろの「›」は外へ出ない印（公式サイトの「↗」と分ける）
+    static var title: String { L("構図一覧を見る ›", "See composition guide ›") }
+    /// 読み上げでは「›」を読ませない
+    static var spokenLabel: String { L("構図一覧を見る", "See composition guide") }
+    static let identifier = "spot.compositionCatalog"
 }

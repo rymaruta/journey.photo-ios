@@ -96,13 +96,34 @@ struct ProfileFollowButtonLabel: View {
                     .accessibilityHidden(true)
             }
         }
-        .foregroundStyle(isFollowing ? WebTheme.foreground : WebTheme.accentText)
-        .padding(.horizontal, isFollowing ? 18 : 22)
-        .frame(minHeight: ProfileV2.followButtonHeight)
-        .background(isFollowing ? Color.clear : WebTheme.accentBackground, in: Capsule())
-        .overlay(Capsule().strokeBorder(isFollowing ? WebTheme.line : Color.clear, lineWidth: JPStroke.hairline))
-        .padding(.vertical, ProfileV2.tapSlack(visible: ProfileV2.followButtonHeight))
-        .contentShape(Rectangle())
+        .profileHeaderButton(filled: !isFollowing)
+    }
+}
+
+/// 人のページの「メッセージ」（2026-11-10 owner「普通にDMできる機能がいい」）。**フォロー中の人にだけ**出す
+/// （サーバーはフォローしている人からの新しい会話だけを受ける）ので、隣の「フォロー中 ▾」と同じ線の形にそろえる。
+/// 塗りにしない——主ボタンは1画面に1つ（板 v2 Components 03）
+struct ProfileMessageButtonLabel: View {
+    var body: some View {
+        Text(DMText.messageButtonTitle)
+            .font(JPFont.bodyEmphasis)
+            .lineLimit(1)
+            .profileHeaderButton(filled: false)
+    }
+}
+
+extension View {
+    /// 人のページの見出しのボタンの形（「フォローする／フォロー中」と「メッセージ」で同じ・2026-11-10 に分けた）。
+    /// 塗り＝白 94% に墨の字、線＝透明の地に白 14% の線。見た目 40・**当たりは 44**
+    func profileHeaderButton(filled: Bool) -> some View {
+        self
+            .foregroundStyle(filled ? WebTheme.accentText : WebTheme.foreground)
+            .padding(.horizontal, filled ? 22 : 18)
+            .frame(minHeight: ProfileV2.followButtonHeight)
+            .background(filled ? WebTheme.accentBackground : Color.clear, in: Capsule())
+            .overlay(Capsule().strokeBorder(filled ? Color.clear : WebTheme.line, lineWidth: JPStroke.hairline))
+            .padding(.vertical, ProfileV2.tapSlack(visible: ProfileV2.followButtonHeight))
+            .contentShape(Rectangle())
     }
 }
 
