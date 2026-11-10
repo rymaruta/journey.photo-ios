@@ -2,6 +2,36 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.77",
+      "date": "2026-11-10",
+      "items": [
+        {
+          "symbol": "bubble.left",
+          "title": {
+            "ja": "メッセージが使えるように",
+            "en": "Messages are here"
+          },
+          "detail": {
+            "ja": "ホームの右上の吹き出しから、1対1で文字のメッセージをやりとりできます。まだ承認していない人からの分は「リクエスト」に届きます。",
+            "en": "Tap the speech bubble at the top right of Home to send one-to-one text messages. Messages from people you haven't accepted go to Requests."
+          },
+          "destination": "home"
+        },
+        {
+          "symbol": "text.bubble",
+          "title": {
+            "ja": "ストーリーの返信がメッセージに残る",
+            "en": "Story replies stay in Messages"
+          },
+          "detail": {
+            "ja": "ストーリーへの文字の返信は、その人とのメッセージに残ります。ストーリーが消えても、やりとりは続けられます。",
+            "en": "Text replies to a story now stay in your messages with that person, so you can keep talking after the story is gone."
+          },
+          "destination": "home"
+        }
+      ]
+    },
+    {
       "version": "1.1.76",
       "date": "2026-11-09",
       "items": [
