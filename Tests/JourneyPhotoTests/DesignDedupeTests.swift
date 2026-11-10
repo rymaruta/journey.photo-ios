@@ -78,7 +78,7 @@ final class DesignDedupeTests: XCTestCase {
             "Features/Profile/NameSideBadgeView.swift": ".jpCardFace(fill: WebTheme.background)",
             "Features/Trips/TripBookView.swift": ".jpCardFace(fill: Self.cellColor)",
             "Features/Profile/SavedSpotsMapView.swift": ".jpCardFace(fill: WebTheme.surface)",
-            "Features/Trips/TripPickerDraftView.swift": ".jpCardFace(fill: WebTheme.surface)",
+            "Features/Trips/TripCreateView.swift": ".jpCardFace()",
         ]
         for (path, call) in uses {
             XCTAssertTrue(try source(path).contains(call), "\(path) が共通の札の地（\(call)）を使っていない")

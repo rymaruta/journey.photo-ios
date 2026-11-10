@@ -187,7 +187,7 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// **撮影スポットの頁の上（行動の札・2026-10-11）**。前提: 頁が開いて「行きたい」が出ている。
-    /// 揃ったら、札の行に「地図で見る」「経路」があり、シェアは右上の1つだけ（違えば落とす）。
+    /// 揃ったら、札の行に「旅行プランに入れる」「経路」、その下に「地図で見る」があり、シェアは右上の1つだけ（違えば落とす）。
     /// 「地図で見る」を押して**アプリの中の地図**が出ることも見て撮り、頁へ戻す。
     /// 一覧の行（`map.spotRow`）から開くスポットは地図のピン＝座標があるので、2つの札は必ず出る
     private func shootSpotTop(_ app: XCUIApplication) {
@@ -197,6 +197,8 @@ final class ScreenshotTests: XCTestCase {
         let toMap = app.buttons["spot.official.map"].firstMatch
         XCTAssertTrue(toMap.exists, "スポットの頁に「地図で見る」が無い")
         XCTAssertTrue(app.buttons["spot.official.directions"].firstMatch.exists, "スポットの頁に「経路」が無い")
+        // 2026-11-10（札 #521）: 「旅行プランに入れる」が札の行にある（地図で見るは札の行の下の1行）
+        XCTAssertTrue(app.buttons["spot.official.trip"].firstMatch.exists, "スポットの頁に「旅行プランに入れる」が無い")
         let shares = app.buttons.matching(NSPredicate(format: "label == %@", "シェア"))
         XCTAssertEqual(shares.count, 1, "スポットの頁にシェアが2つある")
         guard toMap.exists, toMap.isHittable else { return }
@@ -2214,6 +2216,38 @@ final class ScreenshotTests: XCTestCase {
         guard create.waitForExistence(timeout: 5) else { return }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "64-行きたい場所の地図で選んだ（この N か所で旅行プランを作る）")
+
+        // 旅行プランを作る流れ（2026-11-10 札 #521）: 地図から押すと日付の段から始まる。
+        // **日付と下書きを撮るだけで「保存」は押さない**（押すとプランを作りに行く）。出なければ撮らずに抜ける
+        create.tap()
+        let toDraft = app.buttons["tripCreate.toDraft"].firstMatch
+        guard toDraft.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "64b-旅行プランを作る・日付（いつ行く？）")
+        // 翌月の 10 日と 11 日（今日より前は押せないので、翌月にする）
+        let next = app.buttons["tripCreate.nextMonth"].firstMatch
+        guard next.waitForExistence(timeout: 5), next.isHittable else { return }
+        next.tap()
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone.current
+        guard let month = calendar.date(byAdding: .month, value: 1, to: Date()) else { return }
+        let parts = calendar.dateComponents([.year, .month], from: month)
+        let prefix = String(format: "tripCreate.day.%04d-%02d-", parts.year ?? 0, parts.month ?? 0)
+        for day in ["10", "11"] {
+            let cell = app.buttons[prefix + day].firstMatch
+            guard cell.waitForExistence(timeout: 5), cell.isHittable else { return }
+            cell.tap()
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+        Thread.sleep(forTimeInterval: 0.5)
+        shoot(app, "64c-旅行プランを作る・日付を選んだ（1 泊 2 日）")
+        guard toDraft.isHittable else { return }
+        toDraft.tap()
+        let save = app.buttons["tripCreate.save"].firstMatch
+        guard save.waitForExistence(timeout: 10) else { return }
+        // 日の出・日の入りと写真の縮小版が描かれるのを待つ
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "64d-旅行プランを作る・下書き（時間帯の順・日の出と日の入り）")
     }
 
     /// **名前の横のバッジ**（大きいメダルの絵をそのまま縮める・案 C・2026-10-09 owner「そのままがいい」）。

@@ -150,7 +150,7 @@ struct TripPlanPickSheet: View {
                     }
                 }
                 Spacer(minLength: JPSpace.xs)
-                PickMark(isOn: isOn)
+                TripPickMark(isOn: isOn)
             }
             .padding(.vertical, JPSpace.xs)
             .frame(minHeight: TripStyle.pickRowMinHeight)
@@ -209,7 +209,7 @@ struct TripPlanPickSheet: View {
 }
 
 /// 選んだ印（板 TripPlanPick: 26 の丸。選ぶと真鍮の塗りに墨のチェック、選ばないと白 30% の線）
-private struct PickMark: View {
+struct TripPickMark: View {
     let isOn: Bool
 
     var body: some View {

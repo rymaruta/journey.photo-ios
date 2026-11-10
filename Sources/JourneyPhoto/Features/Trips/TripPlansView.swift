@@ -14,15 +14,17 @@ struct TripPlansView: View {
     /// 一覧が読めないとき（圏外）に、端末に保存した旅を出す（板 72c）
     @EnvironmentObject private var offline: OfflineTripStore
     @EnvironmentObject private var connectivity: Connectivity
+    @EnvironmentObject private var wishlist: WishlistStore
     @StateObject private var model = TripPlansModel()
-    @State private var newTitle = ""
     /// 作った直後に、そのプランを開く（Web の `onCreate` と同じ）
     @State private var openedPlanId: String?
     @State private var showOpened = false
-    /// 写真から行き先を選ぶ（全画面の板・`TripPickerView`）
-    @State private var showPicker = false
-    /// 写真から選んで保存したプラン。**板が閉じ切ってから開く**（閉じている途中に積むと捨てられる）
-    @State private var pickedPlanId: String?
+    /// 旅行プランを作る流れ（全画面の板・`TripCreateView`・2026-11-10 札 #521）
+    @State private var showCreate = false
+    /// 作る流れで保存したプラン。**板が閉じ切ってから開く**（閉じている途中に積むと捨てられる）
+    @State private var createdPlanId: String?
+    /// 自分の旅の一冊（帰着済みの札の「旅の一冊を見る」・板 TripPlans F30）。読めなければ空（札に出さないだけ）
+    @State private var myTrips: [TripBook.Trip] = []
 
     var body: some View {
         Group {
@@ -54,7 +56,8 @@ struct TripPlansView: View {
                         .font(JPFont.screenTitle)
                         .foregroundStyle(WebTheme.foreground)
                         .accessibilityAddTraits(.isHeader)
-                    Text(TripPlanText.listSubtitle(count: model.status == .loaded ? model.plans.count : nil))
+                    Text(Self.subtitle(plans: model.status == .loaded ? model.plans.count : nil,
+                                       wishlist: wishlist.spotIds.count))
                         .font(JPFont.footnote)
                         .foregroundStyle(WebTheme.text3)
                 }
@@ -69,11 +72,9 @@ struct TripPlansView: View {
                         .foregroundStyle(WebTheme.danger)
                 }
 
-                // 作る口は、一覧が取れていなくても出す——新しく作るのに一覧は要らない
-                createRow
-
-                // 写真を見て指で選ぶだけで、行きたい場所から下書きを作る（2026-09-30 owner の依頼）
-                pickerEntry
+                // 作る口は、一覧が取れていなくても出す——新しく作るのに一覧は要らない。
+                // **主ボタンは1つ**（2026-11-10 札 #521: 題から・写真から・地図からの3つの作りを1つの流れに）
+                createButton
 
                 planList
             }
@@ -82,6 +83,7 @@ struct TripPlansView: View {
             .padding(.bottom, JPSpace.screenEnd)
         }
         .task { await model.load(environment: environment) }
+        .task(id: auth.userId) { await loadMyTrips() }
         .refreshable { await model.load(environment: environment) }
         // 一覧が取れたら、プランが無くなった旅の途中のもの（保存を止めたあとにプランを消した）を片づける
         .onChange(of: model.status == .loaded ? model.plans.map(\.planId) : nil) { _, ids in
@@ -92,60 +94,54 @@ struct TripPlansView: View {
                 TripPlanDetailView(planId: planId, model: model)
             }
         }
-        .fullScreenCover(isPresented: $showPicker, onDismiss: {
+        .fullScreenCover(isPresented: $showCreate, onDismiss: {
             // 板の中の保存は一覧の失敗の文を消す（`write` が始めに消す）。保存せずに閉じた回は
             // 取り直して、一覧の本当の状態をもう一度出す。**保存してプランを開く回は取り直さない**
-            // ——一覧は保存の応答で新しく、取り直しの失敗が開いた詳細に赤い行で出る（文は共有）
-            guard let planId = pickedPlanId else {
+            guard let planId = createdPlanId else {
                 Task { await model.load(environment: environment) }
                 return
             }
-            pickedPlanId = nil
+            createdPlanId = nil
             openedPlanId = planId
             showOpened = true
         }) {
-            TripPickerView(plans: model) { planId in
-                // 念のための守り: 板が閉じていたら開かない。保存の最中は「閉じる」を止めている
-                // （`TripPickerModel.saving`）ので、ふつうはここで止まる回は無い
-                guard showPicker else { return }
-                pickedPlanId = planId
-                showPicker = false
+            TripCreateView(plans: model) { planId in
+                guard showCreate else { return }
+                createdPlanId = planId
+                showCreate = false
             }
         }
     }
 
-    /// 写真から行き先を選ぶ入口。**一覧の札と同じ面**（押すと全画面の板）。
-    /// 印の絵だけ真鍮（黒地の上の手がかり）
-    private var pickerEntry: some View {
+    /// 「旅行プランを作る」（写真の無い画面の主ボタン＝真鍮の塗り＋墨・1画面に1つ）
+    private var createButton: some View {
         Button {
-            pickedPlanId = nil
-            showPicker = true
+            createdPlanId = nil
+            showCreate = true
         } label: {
-            HStack(spacing: 14) {
-                Image(systemName: "hand.draw")
-                    .font(.title3)
-                    .foregroundStyle(WebTheme.accent)
-                    .frame(width: TripStyle.planThumb, height: TripStyle.planThumb)
-                    .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(L("写真から行き先を選ぶ", "Pick places by photo"))
-                        .font(JPFont.rowTitle)
-                        .foregroundStyle(WebTheme.foreground)
-                    Text(L("右へ払うと「行きたい」に。選んだ場所がそのまま旅行プランの下書きになります",
-                           "Swipe right on places you want to go, then turn them into a trip."))
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.text3)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: JPSpace.xs)
-                chevron
-            }
-            .tripPlanCard()
+            Label(L("旅行プランを作る", "Plan a trip"), systemImage: "plus")
+                .jpPillButton(.main(onPhoto: false))
         }
         .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("trips.pickByPhoto")
+        .accessibilityHint(L("行きたい場所をまとめて選び、日付を入れると、日ごとに並べた下書きができます",
+                             "Pick places, set dates, and get a day-by-day draft."))
+        .accessibilityIdentifier("trips.create")
+    }
+
+    /// 自分の旅の一冊（マイページの「旅の記録」と同じ棚・`TripBook.shelfTrips`）
+    private func loadMyTrips() async {
+        guard auth.userId != nil, let photos = try? await environment.photos.myPhotos() else {
+            if auth.userId == nil { myTrips = [] }
+            return
+        }
+        myTrips = TripBook.shelfTrips(from: photos)
+    }
+
+    /// 「旅行プラン 2 件 · 行きたい場所 12 か所」。行きたい場所が無ければ件数だけ
+    nonisolated static func subtitle(plans: Int?, wishlist: Int) -> String {
+        let head = TripPlanText.listSubtitle(count: plans)
+        guard plans != nil, wishlist > 0 else { return head }
+        return L("\(head) · 行きたい場所 \(wishlist) か所", "\(head) · \(Plural.count(wishlist, "saved place"))")
     }
 
     /// 読めなかった（v2 Components 06: 灰の印 → 何が起きたか → 「もう一度」）。**赤にしない**——
@@ -154,68 +150,6 @@ struct TripPlansView: View {
         ErrorBanner(message: L("旅行プランを読み込めませんでした。", "Couldn't load your trips."),
                     isBusy: model.status == .loading) {
             Task { await model.load(environment: environment) }
-        }
-    }
-
-    private var trimmedTitle: String { newTitle.trimmingCharacters(in: .whitespacesAndNewlines) }
-
-    /// 作る口（v2 の板 TripPlans: 48 の欄 ＋ 48 の真鍮の「作る」・題を入れるまで押せない理由を1行で）
-    private var createRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: JPSpace.xs) {
-                TextField(L("例: 冬のフィンランド", "e.g. Finland in winter"), text: $newTitle)
-                    .font(.body)
-                    .foregroundStyle(WebTheme.foreground)
-                    .submitLabel(.done)
-                    .onSubmit { create() }
-                    // **上限で止める**（Web の `maxLength={100}` と同じ）。黙って100字で作らない
-                    .onChange(of: newTitle) { old, new in
-                        let kept = PostLimits.limited(old: old, new: new, limit: TripPlanService.titleMax)
-                        if kept != new { newTitle = kept }
-                    }
-                    .accessibilityLabel(L("旅行プランのタイトル", "Trip title"))
-                    .padding(.horizontal, 14)
-                    .frame(minHeight: JPHeight.field)
-                    // v2 の入力欄（surface-2 の地・白 8% の縁・角 12）
-                    .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))
-                    .overlay(RoundedRectangle(cornerRadius: JPRadius.field)
-                        .strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
-                // **写真の無い画面の主ボタン1つ＝真鍮の塗り＋墨の字**（デザインシステムの決まり）
-                // 余白・大きさ・塗りは **label の中に**（外に付けると押せるのが文字の上だけになる）
-                Button { create() } label: {
-                    Text(L("作る", "New"))
-                        .font(JPFont.bodyEmphasis)
-                        .foregroundStyle(WebTheme.accentText)
-                        .padding(.horizontal, JPSpace.l)
-                        .frame(minWidth: WebTheme.minTapTarget, minHeight: JPHeight.field)
-                        .background(JPPillStyle.main(onPhoto: false).fill, in: Capsule())
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .opacity(canCreate ? 1 : TripStyle.disabledOpacity)
-                .disabled(!canCreate)
-            }
-            // 押せない理由（板）。題が空のときだけ
-            if trimmedTitle.isEmpty {
-                Text(L("題を入れると「作る」が押せます", "Enter a title to create a plan"))
-                    .font(JPFont.caption)
-                    .foregroundStyle(WebTheme.text3)
-            }
-        }
-    }
-
-    private var canCreate: Bool { !trimmedTitle.isEmpty && model.busy == nil }
-
-    private func create() {
-        guard canCreate else { return }
-        let title = TripPlanService.titleToSend(newTitle)
-        Task {
-            if let made = await model.create(title: title, environment: environment) {
-                // **送った題のままなら消す。** 待っている間に打ち直した次の題まで消していた
-                if TripPlanService.titleToSend(newTitle) == title { newTitle = "" }
-                openedPlanId = made.planId
-                showOpened = true
-            }
         }
     }
 
@@ -247,19 +181,13 @@ struct TripPlansView: View {
             if model.plans.isEmpty {
                 // 空の状態（v2 Components 06: 明朝の見出し → どうすれば埋まるか）
                 EmptyState(title: L("旅行プランはまだありません", "No trips yet"),
-                           message: L("上でタイトルを付けて作ると、行きたい場所を並べられます。",
-                                      "Name a trip above, then add places you want to go."))
+                           message: L("「旅行プランを作る」で行きたい場所をまとめて選ぶと、日ごとに並べた下書きができます。",
+                                      "Tap Plan a trip, pick places, and get a day-by-day draft."))
                     .padding(.top, JPSpace.xl)
             } else {
                 LazyVStack(spacing: 10) {
                     ForEach(model.plans) { plan in
-                        NavigationLink {
-                            TripPlanDetailView(planId: plan.planId, model: model)
-                        } label: {
-                            card(plan)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("trips.plan")
+                        planCard(plan)
                     }
                 }
             }
@@ -295,9 +223,53 @@ struct TripPlansView: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// プランの札。**帰着済みで、期間の重なる旅の一冊があれば「旅の一冊を見る」を札の下に**（板 TripPlans F30）
+    @ViewBuilder
+    private func planCard(_ plan: TripPlan) -> some View {
+        let today = TripPlanText.ymd(pickedIn: .current, Date())
+        let finished = TripStyle.isFinished(end: plan.endDate ?? plan.startDate, today: today)
+        let book = finished ? TripPlanText.book(for: plan, in: myTrips) : nil
+        let link = NavigationLink {
+            TripPlanDetailView(planId: plan.planId, model: model)
+        } label: {
+            card(plan, face: book == nil)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("trips.plan")
+        if let book {
+            VStack(spacing: 0) {
+                link
+                NavigationLink {
+                    TripBookView(trip: book, isMine: true)
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(L("旅の一冊を見る", "See the trip book"))
+                            .font(JPFont.bodyEmphasis)
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .accessibilityHidden(true)
+                    }
+                    .foregroundStyle(WebTheme.accent)
+                    .frame(minHeight: WebTheme.minTapTarget)
+                    .overlay(alignment: .top) {
+                        Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+                    }
+                    .padding(.horizontal, 14)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("trips.plan.book")
+            }
+            .jpCardFace()
+        } else {
+            link
+        }
+    }
+
     /// プランの札（v2 の板 TripPlans: 左に 64 の枠・眉「出発まで 3 日」（近いときだけ）・明朝の題・
     /// 「期間 · N か所」。帰ってきたプランは題を灰にして「帰着済み」）
-    private func card(_ plan: TripPlan) -> some View {
+    private func card(_ plan: TripPlan, face: Bool = true) -> some View {
         let today = TripPlanText.ymd(pickedIn: .current, Date())
         let finished = TripStyle.isFinished(end: plan.endDate ?? plan.startDate, today: today)
         let eyebrow = finished ? nil : TripStyle.departureEyebrow(start: plan.startDate, today: today)
@@ -327,19 +299,24 @@ struct TripPlansView: View {
             Spacer(minLength: JPSpace.xs)
             chevron
         }
-        .tripPlanCard()
+        .tripPlanCard(face: face)
         .accessibilityElement(children: .combine)
     }
 }
 
 extension View {
     /// 旅行プランの札の面（v2 の板 TripPlans の `.pl`: surface-1・白 8% の縁・角 16・内側 14）
-    func tripPlanCard() -> some View {
-        self
+    /// `face: false` は札の面を外側に任せる（「旅の一冊を見る」と同じ札に収めるとき）
+    @ViewBuilder
+    func tripPlanCard(face: Bool = true) -> some View {
+        let inner = self
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .jpCardFace()
-            .contentShape(Rectangle())
+        if face {
+            inner.jpCardFace().contentShape(Rectangle())
+        } else {
+            inner.contentShape(Rectangle())
+        }
     }
 }
 
@@ -440,6 +417,12 @@ final class TripPlansModel: ObservableObject {
         let sameTitle = fresh.filter { $0.title == title }
         let pool = sameTitle.isEmpty ? fresh : sameTitle
         return pool.max { ($0.createdAt ?? "") < ($1.createdAt ?? "") }
+    }
+
+    /// 送る前の読み直し（自動保存・`TripAutosave.conflicted`）。**一覧には映さない**——映すと、
+    /// 日程の画面が手元の下書きをサーバーの姿で合わせ直してしまう。読めなければ nil
+    func fetchFresh(environment: AppEnvironment) async -> [TripPlan]? {
+        try? await environment.trips.list()
     }
 
     func update(_ planId: String, _ patch: TripPlanService.Patch, environment: AppEnvironment) async -> Bool {
