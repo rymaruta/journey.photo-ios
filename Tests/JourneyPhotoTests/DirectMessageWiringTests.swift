@@ -191,7 +191,8 @@ final class DirectMessageWiringTests: XCTestCase {
             XCTAssertTrue(view.contains(part), part)
         }
         let inbox = try source("Features/Messages/DMInboxView.swift")
-        for part in ["JPLoadingState(kind: .people)", "まだメッセージはありません", "ホームでストーリーを見る",
+        // 空の状態の一手は「新しいメッセージ」（2026-11-10 owner「普通にDMできる機能がいい」・ホームへ送らない）
+        for part in ["JPLoadingState(kind: .people)", "まだメッセージはありません", "actionTitle: DMText.newMessageTitle",
                      "圏外です。つながると新しいメッセージが届きます", "ErrorBanner(", "if requestCount > 0"] {
             XCTAssertTrue(inbox.contains(part), part)
         }
