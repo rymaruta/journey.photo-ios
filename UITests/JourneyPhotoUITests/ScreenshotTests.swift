@@ -6292,6 +6292,12 @@ final class ScreenshotTests: XCTestCase {
                 state.name = "86m5-メッセージ（URLを送ったあとの状態）"
                 state.lifetime = .keepAlways
                 add(state)
+                // 公開リポジトリの回は絵も添付も取り出せない（`スクリーンショットを保存` が無効）。**ログに出る行**で残す
+                XCTContext.runActivity(named: "86m5 の状態: " + (state.name ?? "") + " / fieldError=\(shown)"
+                    + " / field.value=\(String(describing: field.value))"
+                    + " / send.enabled=\(send.exists ? String(send.isEnabled) : "無し")"
+                    + " / retry=\(app.buttons["dm.retry"].firstMatch.exists)"
+                    + " / staticTexts=\(app.staticTexts.allElementsBoundByIndex.suffix(8).map(\.label))") { _ in }
             }
             app.navigationBars.buttons.element(boundBy: 0).tap()
             Thread.sleep(forTimeInterval: 1)
