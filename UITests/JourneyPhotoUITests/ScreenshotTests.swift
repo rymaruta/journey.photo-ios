@@ -2204,6 +2204,14 @@ final class ScreenshotTests: XCTestCase {
         let wishLine = "TRIPADD wishTrip exists=\(found) hittable=\(found && wishTrip.isHittable) type=\(found ? String(describing: wishTrip.elementType.rawValue) : "-")"
         print(wishLine)
         XCTContext.runActivity(named: wishLine) { _ in }
+        if !found {
+            // 行の木（行きたい場所の撮影スポットの行）を残す——印が行の中でどう見えているか
+            let row = app.descendants(matching: .any).matching(identifier: "mypage.officialWish").firstMatch
+            let tree = "TRIPADD rowTree exists=\(row.exists) " + (row.exists ? row.debugDescription : "-")
+                .replacingOccurrences(of: "\n", with: " ⏎ ")
+            print(tree)
+            XCTContext.runActivity(named: String(tree.prefix(1500))) { _ in }
+        }
         if found, wishTrip.isHittable {
             wishTrip.tap()
             let add = app.buttons["tripAdd.add"].firstMatch
