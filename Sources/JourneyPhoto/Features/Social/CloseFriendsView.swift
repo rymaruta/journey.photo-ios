@@ -185,37 +185,9 @@ struct CloseFriendsView: View {
         .task { await load() }
     }
 
-    /// 「名前で探す」（板 39: 高さ44・角12・白8%の地）。表示名と @ユーザー名で絞る
+    /// 「名前で探す」（板 39）。表示名と @ユーザー名で絞る。欄は共通の部品（`PeopleSearchField`）
     private var searchField: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(WebTheme.faint)
-            TextField(L("名前で探す", "Search by name"), text: $query)
-                .textFieldStyle(.plain)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .foregroundStyle(WebTheme.foreground)
-            if !query.isEmpty {
-                Button {
-                    query = ""
-                } label: {
-                    // 押せる幅は 44pt（探す口の「×」と同じ・bd98adc）
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(WebTheme.faint)
-                        .webTappable()
-                }
-                .buttonStyle(.plain)
-                // 見た目の位置は前のまま（右端から 14）。44 の枠で印が中央に寄ったぶん
-                // （(44 − 印の幅 約18) / 2 ≈ 13）を右の余白へ張り出して戻す。押せる範囲は欄の地の中
-                .padding(.trailing, -13)
-                .accessibilityLabel(L("消す", "Clear"))
-            }
-        }
-        .padding(.horizontal, 14)
-        .frame(height: WebTheme.minTapTarget)
-        // v2: 入力欄の地は surface-2（#161617）・縁は白 8%（板 CloseFriends・Components 02）
-        .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))
-        .overlay(RoundedRectangle(cornerRadius: JPRadius.field).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+        PeopleSearchField(query: $query)
     }
 
     private func row(_ user: FollowUser) -> some View {

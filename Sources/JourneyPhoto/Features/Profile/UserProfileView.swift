@@ -54,6 +54,8 @@ struct UserProfileView: View {
     @State private var reloadOnAppear = false
     /// 名前の横のバッジを押した → この人のバッジの棚
     @State private var showShelf = false
+    /// 「メッセージ」を押した → この人との会話（まだ無ければ空の会話から1通目・2026-11-10）
+    @State private var showConversation = false
 
     /// 板 v2 UserProfile: 3列・隙間 2pt・縦長 4:5・角なし（マイページと同じ `ProfileV2`）
     private let columns = ProfileV2.gridItems
@@ -91,6 +93,14 @@ struct UserProfileView: View {
         .navigationDestination(isPresented: $showShelf) {
             BadgeShelfView(mode: userId == auth.userId ? .mine : .other(userId: userId),
                            preloaded: model.profile)
+        }
+        // 「メッセージ」→ この人との会話（同じ積み重ねに積む。ストーリーの返信の一覧から開くのと同じ画面）
+        .navigationDestination(isPresented: $showConversation) {
+            if let id = DMStart.conversationId(me: auth.userId, peer: userId) {
+                DMConversationView(conversationId: id,
+                                   startingWith: DMPeerSeed(id: userId, name: model.shownName,
+                                                            username: model.profile?.username))
+            }
         }
         .alert(StoryReplyActions.mailUnavailableTitle, isPresented: $mailUnavailable) {
             Button(StoryReplyActions.copyAddress) {
@@ -441,7 +451,10 @@ struct UserProfileView: View {
                 .coverCutout(true)
                 Spacer(minLength: 8)
                 if canAct {
-                    followButton
+                    HStack(spacing: JPSpace.xs) {
+                        followButton
+                        if showsMessageButton { messageButton }
+                    }
                 }
             }
             VStack(alignment: .leading, spacing: JPSpace.xxs) {
@@ -534,6 +547,26 @@ struct UserProfileView: View {
     /// 数の札の、見た目より外へ押せる範囲を張り出す量（上下それぞれ）。
     /// v2 の札は2段（数字 20＋名前 12 ≈ 42pt）なので、44 に足りない分だけ
     private static let countTapSlack: CGFloat = 1
+
+    /// 「メッセージ」を出すか（2026-11-10 owner「普通にDMできる機能がいい」）。**フォローしていると分かっているときだけ**
+    /// ——サーバーは、相手をフォローしている人からの新しい会話しか受けない（`dm.ts` の `sendDm`）。
+    /// フォローしていない人に出して、押してから断られる体験を作らない（`DMStart.showsMessageButton`）
+    private var showsMessageButton: Bool {
+        DMStart.showsMessageButton(viewerId: auth.userId, userId: userId, isFollowing: model.isFollowing,
+                                   blocked: hidden.blockedUserIds)
+    }
+
+    /// 「メッセージ」（フォロー中 ▾ の右・同じ線の形・`ProfileMessageButtonLabel`）。押すとこの人との会話
+    private var messageButton: some View {
+        Button {
+            showConversation = true
+        } label: {
+            ProfileMessageButtonLabel()
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(L("この人とのメッセージを開きます", "Opens your messages with this person"))
+        .accessibilityIdentifier("profile.message")
+    }
 
     /// 「フォローする」（白 94% に墨）／「フォロー中 ▾」（線）。板 v2 UserProfile の見出しのボタン
     /// （`ProfileFollowButtonLabel`・見た目 40・当たり 44）。形で分ける——色だけで状態を言わない。

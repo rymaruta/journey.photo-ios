@@ -6332,4 +6332,95 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 2)
         return true
     }
+
+    /// **メッセージを始める（2026-11-10 owner「普通にDMできる機能がいい」）**。見本の通信に `-JPPreviewDM` を足すと、
+    /// フォロー中（公開の新着の作者＋見本の会話の相手・`PreviewBackend.dmFollowing`）も端末の中で答える。
+    /// 受信箱の鉛筆 → 新しいメッセージ → まだ会話の無い人 → 1通目の前の画面、と
+    /// ホームの新着の1枚目 → 作者のページ（フォロー中なので「メッセージ」）→ 会話、の順に撮る。**出なければ撮らずに抜ける**
+    func testCapturesDirectMessageStart() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewDM", "YES"]
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        guard app.tabBars.firstMatch.waitForExistence(timeout: 20) else { return }
+
+        // 受信箱の鉛筆 → 新しいメッセージ（フォロー中の人の一覧）
+        let bubble = app.buttons["header.messages"].firstMatch
+        if bubble.waitForExistence(timeout: 20) {
+            bubble.tap()
+            let open = app.buttons["dm.new.open"].firstMatch
+            if open.waitForExistence(timeout: 15) {
+                XCTAssertGreaterThanOrEqual(open.frame.height, 44, "鉛筆の当たりが 44pt 未満")
+                open.tap()
+                let person = app.buttons["dm.new.person"].firstMatch
+                if person.waitForExistence(timeout: 15) {
+                    Thread.sleep(forTimeInterval: 2)
+                    shoot(app, "86n1-メッセージ（新しいメッセージ）")
+                    XCTAssertGreaterThanOrEqual(person.frame.height, 44, "人の行の当たりが 44pt 未満")
+                    // 1人目（公開の新着の作者＝まだ会話が無い）→ 空の会話と1通目の前の一言
+                    person.tap()
+                    let note = app.descendants(matching: .any)["dm.firstNote"].firstMatch
+                    let shown = note.waitForExistence(timeout: 15)
+                    Thread.sleep(forTimeInterval: 2)
+                    shoot(app, shown ? "86n2-メッセージ（1通目の前）" : "86n2-メッセージ（1通目の前の一言が出ない）")
+                    XCTContext.runActivity(named: "86n2 の状態: firstNote=\(shown)"
+                        + " / newIntro=\(app.descendants(matching: .any)["dm.newIntro"].firstMatch.exists)"
+                        + " / field=\(app.descendants(matching: .any)["dm.field"].firstMatch.exists)"
+                        + " / staticTexts=\(app.staticTexts.allElementsBoundByIndex.suffix(8).map(\.label))") { _ in }
+                    app.navigationBars.buttons.element(boundBy: 0).tap()
+                    Thread.sleep(forTimeInterval: 1)
+                } else {
+                    shoot(app, "86n1-メッセージ（新しいメッセージの一覧が出ない）")
+                }
+            }
+            let close = app.buttons["messages.close"].firstMatch
+            if close.waitForExistence(timeout: 5), close.isHittable { close.tap() }
+            Thread.sleep(forTimeInterval: 1)
+        }
+
+        // ホームの新着の1枚目 → 作者のページ（見本ではフォロー中）→「メッセージ」
+        let latestTab = app.buttons["home.feed.latest"].firstMatch
+        if latestTab.waitForExistence(timeout: 20), latestTab.isHittable {
+            latestTab.tap()
+            Thread.sleep(forTimeInterval: 3)
+        }
+        let photo = app.buttons["feed.photo"].firstMatch
+        let lowPoint = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+        let highPoint = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+        var photoPushes = 0
+        while photo.waitForExistence(timeout: 10), !photo.isHittable, photoPushes < Self.shelfPushLimit {
+            lowPoint.press(forDuration: 0.05, thenDragTo: highPoint)
+            Thread.sleep(forTimeInterval: 1)
+            photoPushes += 1
+        }
+        guard photo.exists, photo.isHittable else { return }
+        photo.tap()
+        let author = app.buttons["photo.author"].firstMatch
+        var pushes = 0
+        while author.waitForExistence(timeout: 5), !author.isHittable, pushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard author.exists, author.isHittable else { return }
+        author.tap()
+        let message = app.buttons["profile.message"].firstMatch
+        let hasButton = message.waitForExistence(timeout: 15)
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, hasButton ? "86n3-メッセージ（プロフィールのボタン）" : "86n3-メッセージ（プロフィールにボタンが無い）")
+        guard hasButton, message.isHittable else { return }
+        XCTAssertGreaterThanOrEqual(message.frame.height, 44, "「メッセージ」の当たりが 44pt 未満")
+        message.tap()
+        if app.descendants(matching: .any)["dm.conversation"].firstMatch.waitForExistence(timeout: 15) {
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "86n4-メッセージ（プロフィールから開いた会話）")
+        }
+    }
 }

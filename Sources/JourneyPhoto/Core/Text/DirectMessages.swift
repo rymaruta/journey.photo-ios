@@ -245,6 +245,15 @@ enum DMText {
 
     static var title: String { L("メッセージ", "Messages") }
     static var requestsTitle: String { L("リクエスト", "Requests") }
+    /// 会話を始める入口（2026-11-10）: 受信箱の見出しの鉛筆と、そこから開く一覧の題
+    static var newMessageTitle: String { L("新しいメッセージ", "New message") }
+    /// プロフィールの「メッセージ」ボタン
+    static var messageButtonTitle: String { L("メッセージ", "Message") }
+    /// 受信箱が空のとき・一覧の下の一言。**始め方を言う**（ストーリーへの返信だけではなくなった）
+    static var startHint: String {
+        L("フォローしている人には、プロフィールか右上のボタンからメッセージを送れます。",
+          "You can message people you follow from their profile or the button at the top right.")
+    }
     /// 退会した相手の名前（サーバーの `DELETED_USER_NAME` と同じ語）
     static var deletedName: String { L("退会したユーザー", "Deleted user") }
     /// 読めなかったときの説明（画面案「失敗」）
@@ -317,6 +326,17 @@ enum DMText {
             return t("\(name) さんが承認するまで、送れるのは文字\(limit)通までです",
                      "Until \(name) accepts, you can send up to \(limit) messages.")
         }
+    }
+
+    /// 1通目を送る前の案内（2026-11-10 判断・まだ会話が無い相手を、プロフィールか「新しいメッセージ」から開いたとき）。
+    /// **送る前に**決まりが分かるように、通数とリンクの決まりを1つの文で言う。言い方はサーバーの断り
+    /// （「承認されるまでは3通までです」「承認されるまではリンクを送れません」・`dm.ts`）と、
+    /// リクエスト一覧の説明（「相手が送れるのは文字3通までで、リンクは送れません」）にそろえる
+    static func firstMessageNote(name: String, language: String = Locale.preferredAppLanguage) -> String {
+        let limit = DMRules.requestLimit
+        return L("\(name) さんが承認するまで、送れるのは文字\(limit)通までで、リンクは送れません",
+                 "Until \(name) accepts, you can send up to \(limit) text messages, without links.",
+                 language: language)
     }
 
     /// 受信箱・リクエストの行の時刻（今日は「12分前」、昨日は「昨日」、6日前までは「3日前」、それより前は「10/12」）
@@ -527,5 +547,90 @@ enum StoryReplyConversation {
         guard hasText, !replier.isEmpty, replier != me else { return nil }
         let id = DMRules.conversationId(me, replier)
         return inbox.items.contains { $0.id == id } ? id : nil
+    }
+}
+
+// MARK: - 会話を始める（2026-11-10 owner「普通にDMできる機能がいい」）
+
+/// 会話を始める相手（プロフィールの「メッセージ」・受信箱の「新しいメッセージ」から）。
+/// **まだ会話が無いとき**、会話の画面が見出しの名前と顔を出すのに使う（`GET /dm/{id}` は 404 で名前を返さない）
+struct DMPeerSeed: Hashable, Identifiable {
+    /// 相手の uid
+    let id: String
+    let name: String
+    let username: String?
+
+    init(id: String, name: String?, username: String? = nil) {
+        self.id = id
+        self.name = DMText.name(name, deleted: false)
+        self.username = username
+    }
+}
+
+/// 2026-11-10 判断（owner「普通にDMできる機能がいい」・札 #505 の第1段では置かなかった入口）:
+/// 会話はストーリーへの返信のほかに、**プロフィールの「メッセージ」と受信箱の「新しいメッセージ」**から始められる。
+///
+/// サーバーの門（`api-user/src/dm.ts` の `sendDm`・本番 main 2b9a4384）: 新しい会話を始められるのは
+/// **自分が相手をフォローしているときだけ**（していなければ 404 `notFound`）。だから入口はフォロー中の人にだけ出す——
+/// 押して断られる体験を作らない。届いた側の置き場所（受信箱かリクエスト）は相手との関係で決まるが、
+/// 送る側の決まり（返信か承認までは文字3通・URL 不可）は全員に同じ
+enum DMStart {
+
+    /// プロフィールに「メッセージ」を出すか。**ログインしていて、自分以外で、ブロックの関係になく、
+    /// フォローしていると分かっている**ときだけ（分からない＝読めなかった回は出さない）
+    static func showsMessageButton(viewerId: String?, userId: String, isFollowing: Bool,
+                                   blocked: Set<String>) -> Bool {
+        guard let viewerId, !viewerId.isEmpty, !userId.isEmpty,
+              viewerId.lowercased() != userId.lowercased(), !blocked.contains(userId) else { return false }
+        return isFollowing
+    }
+
+    /// 相手との会話 id（サーバーの `convIdOf`）。自分自身・空・パスに入れられない id は nil
+    static func conversationId(me: String?, peer: String) -> String? {
+        guard let me, !me.isEmpty, !peer.isEmpty, me.lowercased() != peer.lowercased() else { return nil }
+        let id = DMRules.conversationId(me, peer)
+        return PathID.isSafe(id) ? id : nil
+    }
+
+    /// 会話を読んだ断りを「まだ会話が無い＝これから始まる」と読むか。**会話を始める入口から開いたときだけ**、
+    /// サーバーが `notFound` と答えた 404 に限る——受信箱から開いた会話の 404（消した・ブロックの関係）と、
+    /// **道そのものが無い 404**（`code` が無い・口が古い）は今までどおり「表示できません」
+    static func opensEmpty(_ refused: DMService.Refused, starting: Bool) -> Bool {
+        starting && refused.isConversationMissing
+    }
+
+    /// 新しいメッセージの一覧に並べる人（フォロー中の一覧から、自分・退会した人・ブロックした人を落とす）。
+    /// 並びはサーバーのまま（新しくフォローした順）
+    static func candidates(_ users: [FollowUser], me: String?, blocked: Set<String>) -> [FollowUser] {
+        var seen = Set<String>()
+        return users.filter { user in
+            user.deleted != true && !blocked.contains(user.id)
+                && user.id.lowercased() != me?.lowercased() && seen.insert(user.id).inserted
+        }
+    }
+
+    /// 検索語で絞る。**親しい友達・ブロック一覧と同じ絞り方**（`ListIdentity.filter`: 表示名と @ユーザー名の部分一致・
+    /// 大文字小文字と全角半角を区別しない・頭の @ は外す・空の語は全員）——写しを作らない
+    static func filter(_ users: [FollowUser], query: String) -> [FollowUser] {
+        ListIdentity.filter(users, query: query)
+    }
+
+    /// 人の検索（`/users/search`）の答えから、**フォローしている人だけ**を一覧の形にする。
+    /// フォロー中の一覧はサーバーが50人で切るので（`follow.ts` の `FOLLOWING_PAGE`）、その外の人を語で探すのに使う。
+    /// 一覧に既にいる人（`excluding`）・自分・ブロックした人は落とす
+    static func searchHits(_ profiles: [UserProfile], following: Set<String>, me: String?,
+                           blocked: Set<String>, excluding: Set<String>) -> [FollowUser] {
+        var seen = excluding
+        return profiles.compactMap { profile in
+            let id = profile.userId
+            guard following.contains(id), !blocked.contains(id), id.lowercased() != me?.lowercased(),
+                  seen.insert(id).inserted else { return nil }
+            return FollowUser(id: id, name: profile.displayName, deleted: false, username: profile.username)
+        }
+    }
+
+    /// 選んだ人から、会話の画面に渡す相手
+    static func seed(_ user: FollowUser) -> DMPeerSeed {
+        DMPeerSeed(id: user.id, name: user.name, username: user.username)
     }
 }

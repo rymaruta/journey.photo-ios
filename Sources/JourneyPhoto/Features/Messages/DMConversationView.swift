@@ -11,9 +11,15 @@ import SwiftUI
 /// - ブロック中（した側）は「ブロックを解除」、された側・消えた会話は「この会話は表示できません」
 /// - 圏外: 上に帯。送信は押せない。送れなかった1通は破線の縁＋「もう一度送る」
 /// - 開いている間は `?since=` で読み直す（`DMRules.pollInterval`・前面にいる間だけ）
+/// - **まだ会話が無い相手**（プロフィールの「メッセージ」・受信箱の「新しいメッセージ」から・2026-11-10 判断）は、
+///   `GET` の 404 `notFound` を「これから始まる」と読み、空の会話の画面から1通目を送れる（サーバーは送れば会話を作る）。
+///   欄の上には送る前に決まり（文字3通まで・リンク不可）を出す（`DMText.firstMessageNote`）
 struct DMConversationView: View {
 
     let conversationId: String
+    /// 会話を始める相手（プロフィール・新しいメッセージから）。**これがあるときだけ** 404 を空の会話として開く——
+    /// 受信箱から開いた会話の 404 は今までどおり「表示できません」（消した・ブロックの関係）
+    var startingWith: DMPeerSeed? = nil
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
@@ -56,23 +62,32 @@ struct DMConversationView: View {
     /// 引用札の見せ方に使う時刻。**開いている間に期限が来たら進めて描き直す**（「タップで見る」を残さない）
     @State private var cardClock = Date()
     @FocusState private var fieldFocused: Bool
+    /// まだ会話が無い（`startingWith` で開き、`GET` が 404 `notFound` だった）。1通目が通って会話を読めたら false
+    @State private var isNew = false
+    /// まだ会話を読めていない間に送れた通数（承認前の残りを、読めるまで手元で数える）
+    @State private var newSent = 0
     /// UI テストのときだけ（`-JPPreviewDM`）: 送った・断られた・断りの文が消えた回数を見えない要素に出す（`dm.probe`）
     @State private var probe = (sends: 0, refusals: 0, errorCleared: 0)
 
     /// 受信箱の行（読み込む前の見出しの名前に使う）
     private var seed: DMThread? { store.inbox.items.first { $0.id == conversationId } }
     private var peerId: String? {
-        meta?.peerId ?? seed?.peerId ?? auth.userId.flatMap { DMRules.peer(of: conversationId, me: $0) }
+        meta?.peerId ?? seed?.peerId ?? startingWith?.id
+            ?? auth.userId.flatMap { DMRules.peer(of: conversationId, me: $0) }
     }
     private var isDeletedPeer: Bool { meta?.deleted == true || seed?.isDeleted == true }
     private var peerName: String {
-        DMText.name(meta?.name ?? seed?.name, deleted: isDeletedPeer)
+        DMText.name(meta?.name ?? seed?.name ?? startingWith?.name, deleted: isDeletedPeer)
     }
-    private var username: String? { isDeletedPeer ? nil : (meta?.username ?? seed?.username) }
+    private var username: String? {
+        isDeletedPeer ? nil : (meta?.username ?? seed?.username ?? startingWith?.username)
+    }
     /// 相手からのリクエスト（自分が受け取った・まだ承認していない）
     private var isIncomingRequest: Bool { (meta?.state ?? seed?.state) == .request }
-    /// 承認前の残り（自分が始めて、相手がまだ話していない間だけ）
-    private var remaining: Int? { meta?.requestRemaining }
+    /// 承認前の残り（自分が始めて、相手がまだ話していない間だけ）。まだ会話が無い間は手元で数える
+    private var remaining: Int? {
+        isNew ? max(0, DMRules.requestLimit - newSent) : meta?.requestRemaining
+    }
     private var canSend: Bool {
         phase == .loaded && !isDeletedPeer && (meta?.canSend ?? true) && remaining != 0
     }
@@ -120,7 +135,8 @@ struct DMConversationView: View {
         .toolbar {
             ToolbarItem(placement: .principal) { header }
             ToolbarItem(placement: .topBarTrailing) {
-                if phase == .loaded { moreMenu }
+                // まだ会話が無い間は出さない（通報・削除する会話が無い）
+                if phase == .loaded && !isNew { moreMenu }
             }
         }
         .navigationDestination(isPresented: $showProfile) {
@@ -286,6 +302,7 @@ struct DMConversationView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 6) {
+                    if isNew && log.messages.isEmpty && log.outgoing.isEmpty { newIntro }
                     let messages = log.messages
                     ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
                         let previous = index > 0 ? messages[index - 1] : nil
@@ -328,6 +345,35 @@ struct DMConversationView: View {
     }
 
     private static let bottomId = "dm.bottom"
+
+    /// まだ会話が無い相手の、空の会話の上（2026-11-10 判断・板の人の行と同じ並び: 顔 64・名前 17・@ユーザー名 12）。
+    /// 写真の無い画面なので、字は白と text-3 だけ（真鍮の合図は置かない）
+    private var newIntro: some View {
+        VStack(spacing: JPSpace.xs) {
+            if let peerId {
+                DMAvatar(userId: peerId, size: DMLook.newIntroAvatar)
+            }
+            VStack(spacing: 2) {
+                Text(peerName)
+                    .font(JPFont.headline)
+                    .foregroundStyle(WebTheme.text)
+                    .multilineTextAlignment(.center)
+                if let username {
+                    Text("@\(username)")
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
+                }
+            }
+            Text(L("まだメッセージはありません", "No messages yet"))
+                .font(JPFont.footnote)
+                .foregroundStyle(WebTheme.text2)
+                .padding(.top, JPSpace.xxs)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, JPSpace.section)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("dm.newIntro")
+    }
 
     /// ストーリーへの返信の引用札（画面案「会話」: 止め絵＋「[名前] さんのストーリー」＋「タップでストーリーを見る」、
     /// 終わっていれば破線の枠＋「ストーリーは終了しました」）。札の中身が分からない通（古い通・口が古い）は
@@ -462,6 +508,10 @@ struct DMConversationView: View {
             if let fieldError {
                 noteRow(fieldError, error: true)
                     .accessibilityIdentifier("dm.fieldError")
+            } else if isNew && newSent == 0 {
+                // 1通目を送る前に決まりを言う（通数とリンク・2026-11-10 判断）
+                noteRow(DMText.firstMessageNote(name: peerName), error: false)
+                    .accessibilityIdentifier("dm.firstNote")
             } else if let note = DMText.requestNote(name: peerName, remaining: remaining) {
                 noteRow(note, error: false)
                     .accessibilityIdentifier("dm.requestNote")
@@ -541,6 +591,16 @@ struct DMConversationView: View {
                     Task { await unblock() }
                 }
                 .padding(.top, JPSpace.emptyTop)
+            } else if isNew {
+                // 1通目が断られた（フォローを外した・退会・ブロックの関係）。**どれかは言わない**（サーバーも同じ 404）
+                EmptyState(title: L("メッセージを送れません", "You can't message this person"),
+                           message: L("新しくメッセージを送れるのは、フォローしている人だけです。",
+                                      "You can only start a conversation with people you follow."),
+                           actionTitle: L("もどる", "Go back"),
+                           actionIdentifier: "dm.unavailable.back") {
+                    dismiss()
+                }
+                .padding(.top, JPSpace.emptyTop)
             } else {
                 // ブロックされた側にも同じ文（ブロックされたと分かる文は出さない）
                 EmptyState(title: L("この会話は表示できません", "This conversation isn't available"),
@@ -569,6 +629,11 @@ struct DMConversationView: View {
             log.replace(with: fetched.items)
             phase = .loaded
             await markRead()
+        } catch let refused as DMService.Refused where DMStart.opensEmpty(refused, starting: startingWith != nil) {
+            // まだ会話が無い＝これから始まる（会話を始める入口から開いたときだけ）。**道そのものが無い 404** は含めない
+            guard !Task.isCancelled else { return }
+            isNew = true
+            phase = .loaded
         } catch let refused as DMService.Refused where refused.status == 404 {
             phase = .unavailable
         } catch {
@@ -633,8 +698,14 @@ struct DMConversationView: View {
             log.succeed(clientId, with: result.message)
             // 受け取ったリクエストに返信した＝承認（受信箱へ移す）
             if isIncomingRequest { store.apply { $0.accepting(conversationId) } }
-            // 残りの通数・置き場所はサーバーが正（送ったあとの姿を読み直す）
-            await refreshSince()
+            if isNew {
+                // 1通目で会話ができた。会話をはじめから読み、受信箱にも出す（`since` はまだ無い）
+                newSent += 1
+                await adoptCreatedConversation()
+            } else {
+                // 残りの通数・置き場所はサーバーが正（送ったあとの姿を読み直す）
+                await refreshSince()
+            }
         } catch let refused as DMService.Refused {
             probe.refusals += 1
             if refused.status == 404 {
@@ -654,6 +725,17 @@ struct DMConversationView: View {
         } catch {
             log.fail(clientId, reason: (error as? LocalizedError)?.errorDescription ?? L("送れませんでした", "Couldn't send"))
         }
+    }
+
+    /// 1通目のあと、できた会話を読む。読めたら空の会話から抜ける（残りの通数はサーバーの値へ）。
+    /// 読めなかった回は手元の数のまま（次に送れたときにもう一度読む）
+    private func adoptCreatedConversation() async {
+        if let fetched = try? await environment.dm.conversation(conversationId), !fetched.unchanged {
+            meta = fetched
+            log.merge(fetched.items)
+            isNew = false
+        }
+        await store.refresh(service: environment.dm, owner: auth.userId)
     }
 
     // MARK: - 操作
