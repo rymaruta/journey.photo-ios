@@ -462,3 +462,21 @@ final class TripPlansModel: ObservableObject {
         }
     }
 }
+
+/// プランを**日程の画面の外**で書き換えた知らせ（「旅行プランに入れる」のシート・2026-11-10 確かめ役の指摘・札 #521）。
+///
+/// シートは自分の一覧（`TripPlansModel`）で送るので、開いている日程の画面の一覧は古いまま残り、
+/// 次の自動保存の読み直しで「別の端末で変わりました」（`.conflict`）になっていた。日程の画面はこれを見て、
+/// 送っていない直しが無ければ読み直す
+@MainActor
+final class TripPlanChanges: ObservableObject {
+    static let shared = TripPlanChanges()
+    /// 書き換えた回数と、最後に書き換えたプラン
+    @Published private(set) var revision = 0
+    private(set) var lastPlanId: String?
+
+    func changed(_ planId: String) {
+        lastPlanId = planId
+        revision += 1
+    }
+}

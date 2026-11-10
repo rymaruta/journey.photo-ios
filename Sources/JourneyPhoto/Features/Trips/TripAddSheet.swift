@@ -267,11 +267,25 @@ struct TripAddSheet: View {
         TripPlanEdit.adding(place.item, to: plan.days, day: day) != nil
     }
 
+    /// 🔴 **送る前に読み直し、いまのサーバーの日程に足す**（2026-11-10 確かめ役の指摘・札 #521）。
+    /// 開いたときの日程に足して丸ごと送ると、その後に日程の画面が自動保存した直しを上書きして消していた
     private func add(to plan: TripPlan) {
-        guard let next = TripPlanEdit.adding(place.item, to: plan.days, day: day) else { return }
-        let dayNumber = (day ?? plan.days.count) + 1
+        guard canAdd(plan) else { return }
+        let chosenDay = day
         error = nil
         Task {
+            guard let fresh = await plans.fetchFresh(environment: environment) else {
+                error = L("通信を確かめて、もう一度お試しください。", "Check your connection and try again.")
+                return
+            }
+            guard let next = Self.daysAdding(place.item, to: plan.planId, day: chosenDay, in: fresh) else {
+                // 開いている間に日程が変わり、選んだ日に入れられなくなった（日が消えた・いっぱい）
+                error = L("このプランの日程が変わりました。日を選び直してください。",
+                          "This trip changed. Please choose a day again.")
+                await plans.load(environment: environment)
+                return
+            }
+            let dayNumber = (chosenDay ?? (next.count - 1)) + 1
             var patch = TripPlanService.Patch()
             patch.days = next
             guard await plans.update(plan.planId, patch, environment: environment) else {
@@ -279,6 +293,8 @@ struct TripAddSheet: View {
                 plans.clearError()
                 return
             }
+            // 開いている日程の画面に知らせる（版をそろえる・`TripPlanChanges`）
+            TripPlanChanges.shared.changed(plan.planId)
             await wish()
             let title = plan.title.isEmpty ? L("無題のプラン", "Untitled trip") : plan.title
             toasts.show(L("「\(title)」の \(dayNumber) 日目に入れました", "Added to day \(dayNumber) of “\(title)”"))
@@ -293,6 +309,12 @@ struct TripAddSheet: View {
         if case .failed = outcome, let notice = WishlistSync.notice(for: outcome) {
             toasts.show(notice.text, kind: notice.kind)
         }
+    }
+
+    /// いまのサーバーの日程（`fresh`）に足した日程。プランが無い・入れられない日なら nil
+    nonisolated static func daysAdding(_ item: TripItem, to planId: String, day: Int?, in fresh: [TripPlan]) -> [TripDay]? {
+        guard let current = fresh.first(where: { $0.planId == planId }) else { return nil }
+        return TripPlanEdit.adding(item, to: current.days, day: day)
     }
 
     /// 「2 日目に入れる」（nil は新しい日）

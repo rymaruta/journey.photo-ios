@@ -76,6 +76,13 @@ enum TripAutosave {
         }
     }
 
+    /// 画面の外（「旅行プランに入れる」のシート）でプランが書き換わったとき、日程の画面が読み直すか。
+    /// **送っていない直しが無く、送っている最中でもないときだけ**（直しがあるときに読み直すと、その直しが消える。
+    /// そのときは送る前の読み直しが別の変更を見つけて止める）
+    static func reloadsAfterOutsideChange(dirty: Bool, sending: Bool) -> Bool {
+        !dirty && !sending
+    }
+
     /// 画面の上に残す1行。無ければ nil
     static func banner(_ problem: Problem?, dirty: Bool) -> String? {
         switch problem {
@@ -108,10 +115,16 @@ enum TripAutosave {
 final class TripAutosaveDebouncer {
 
     typealias Sleep = @MainActor (UInt64) async throws -> Void
+    typealias Action = @MainActor () async -> Void
 
     private let delay: UInt64
     private let sleep: Sleep
-    private var task: Task<Void, Never>?
+    /// 待っている仕事。**待つ間だけ**持つ（待ち終えたら外してから送る）
+    private var waiting: Task<Void, Never>?
+    /// 送っている最中
+    private var sending = false
+    /// 送っている間に直された（送り終えたら、この仕事で待ち直す）
+    private var pendingAfterSend: Action?
 
     init(delay: UInt64 = TripAutosave.delayNanoseconds,
          sleep: @escaping Sleep = { try await Task.sleep(nanoseconds: $0) }) {
@@ -119,21 +132,39 @@ final class TripAutosaveDebouncer {
         self.sleep = sleep
     }
 
-    /// 待ち直す。待ち終えたら `action`（送る）。前の待ちは取り消す
-    func schedule(_ action: @escaping @MainActor () async -> Void) {
-        task?.cancel()
+    /// 待ち直す。待ち終えたら `action`（送る）。
+    ///
+    /// 🔴 **取り消すのは待っている間だけ**（2026-11-10 確かめ役の指摘・札 #521）。以前は送っている仕事まで
+    /// 取り消していた——送る仕事の中の `flush()` が `cancel()` を呼ぶと自分を取り消し、続く読み直し
+    /// （`RequestLimiter.acquire` の取り消しの確かめ）が投げて**一度も送れなかった**。送っている間に直したときは、
+    /// 送っている仕事を止めず、送り終えてから待ち直す
+    func schedule(_ action: @escaping Action) {
+        if sending {
+            pendingAfterSend = action
+            return
+        }
+        waiting?.cancel()
         let delay = delay
         let sleep = sleep
-        task = Task { @MainActor in
+        waiting = Task { @MainActor [weak self] in
             do { try await sleep(delay) } catch { return }
-            guard !Task.isCancelled else { return }
+            guard let self, !Task.isCancelled else { return }
+            // 待ち終えた。ここからは取り消さない（`cancel()` が届かないよう外してから送る）
+            self.waiting = nil
+            self.sending = true
             await action()
+            self.sending = false
+            if let next = self.pendingAfterSend {
+                self.pendingAfterSend = nil
+                self.schedule(next)
+            }
         }
     }
 
-    /// 待ちを取り消す（すぐ送るとき・保存せずに戻るとき）
+    /// 待っている間の仕事を取り消す（すぐ送るとき・保存せずに戻るとき）。**送っている仕事は止めない**
     func cancel() {
-        task?.cancel()
-        task = nil
+        waiting?.cancel()
+        waiting = nil
+        pendingAfterSend = nil
     }
 }

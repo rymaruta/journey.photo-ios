@@ -28,6 +28,9 @@ struct TripPlanDetailView: View {
     @Environment(\.dismiss) private var dismiss
     /// 移動の見込み（アプリを開いている間の控え・`TravelEstimator`）
     @ObservedObject private var travel = TravelEstimator.shared
+    /// 画面の外でプランが書き換わった知らせ（「旅行プランに入れる」のシート）
+    @ObservedObject private var outsideChanges = TripPlanChanges.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     /// 自動保存で送れていない事情（圏外・断られた・別の端末の変更）。送れたら消す
     @State private var problem: TripAutosave.Problem?
@@ -352,6 +355,23 @@ struct TripPlanDetailView: View {
         .onChange(of: plan) { _, _ in resetIfNeeded() }
         // 変えたら、手を止めてから少し待って送る（`TripAutosave.delayNanoseconds`）
         .onChange(of: draft) { _, _ in scheduleAutosave() }
+        // 🔴 **裏に回るときは待たずに送る**（確かめ役の指摘・2026-11-10: 2 秒の待ちの間にアプリを閉じると直しが消えた）。
+        // 裏で少しだけ続けさせてもらう（`beginBackgroundTask`）
+        .onChange(of: scenePhase) { _, phase in
+            guard phase != .active, isDirty, !discarding, problem == nil else { return }
+            let app = UIApplication.shared
+            let id = app.beginBackgroundTask(withName: "trip-autosave", expirationHandler: nil)
+            Task { @MainActor in
+                _ = await flush(force: true)
+                if id != .invalid { app.endBackgroundTask(id) }
+            }
+        }
+        // 画面の外（「旅行プランに入れる」のシート）でこのプランが書き換わった → 直しが無ければ読み直す
+        .onChange(of: outsideChanges.revision) { _, _ in
+            guard outsideChanges.lastPlanId == planId,
+                  TripAutosave.reloadsAfterOutsideChange(dirty: isDirty, sending: sending) else { return }
+            Task { await model.load(environment: environment) }
+        }
         // 電波が戻ったら、送れていなかった直しを送る
         .onChange(of: connectivity.isOffline) { _, offline in
             guard !offline else { return }

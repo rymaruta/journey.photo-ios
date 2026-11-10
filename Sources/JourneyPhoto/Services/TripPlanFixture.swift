@@ -87,7 +87,11 @@ actor TripPlanFixtureStore {
         return made
     }
 
-    func list() -> [TripPlan] { current() }
+    /// 本番と同じく取り消しを見る（本番は `RequestLimiter.acquire` が `Task.checkCancellation`・確かめ役の指摘）
+    func list() throws -> [TripPlan] {
+        try Task.checkCancellation()
+        return current()
+    }
 
     func create(title: String, days: [TripDay]?, startDate: String?, endDate: String?) -> [TripPlan] {
         version += 1
@@ -98,6 +102,7 @@ actor TripPlanFixtureStore {
     }
 
     func update(planId: String, _ patch: TripPlanService.Patch) throws -> [TripPlan] {
+        try Task.checkCancellation()
         if TripPlanFixture.failing {
             throw TripPlanService.Refused(message: L("見本: 書き込みを断りました。", "Sample: the write was refused."))
         }

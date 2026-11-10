@@ -183,8 +183,10 @@ final class TripPlanStage1Tests: XCTestCase {
     func testDropMovesWithinAndAcrossDays() throws {
         let start = days([3, 2])   // [s1 s2 s3] [s4 s5]
         let s1 = TripPlanEdit.dragPayload(day: 0, item: 0, of: .spot(spotId: "s1", note: nil))
+        // 🔴 確かめ役の指摘（2026-11-10）: 落とす先の印（真鍮の線）は行の**上**に出るのに、同じ日で下へ運ぶと
+        // 行の**下**に入り、1つずれていた。どの向きでも「落とした行の上」に入れる（末尾へはその日の追加の行へ）
         XCTAssertEqual(ids(try XCTUnwrap(TripPlanEdit.dropped(start, payload: s1, toDay: 0, toItem: 2))),
-                       [["s2", "s3", "s1"], ["s4", "s5"]], "下へは落とした行の下")
+                       [["s2", "s1", "s3"], ["s4", "s5"]], "下へも落とした行の上（線と同じ位置）")
         let s3 = TripPlanEdit.dragPayload(day: 0, item: 2, of: .spot(spotId: "s3", note: nil))
         XCTAssertEqual(ids(try XCTUnwrap(TripPlanEdit.dropped(start, payload: s3, toDay: 0, toItem: 0))),
                        [["s3", "s1", "s2"], ["s4", "s5"]], "上へは落とした行の上")
@@ -472,7 +474,7 @@ final class TripPlanStage1FollowUpTests: XCTestCase {
     /// 見本の書き込みは送った回数を数える（サーバーへは送らない）
     func testFixtureStoreCountsWrites() async throws {
         let store = TripPlanFixtureStore()
-        let before = await store.list()
+        let before = try await store.list()
         var patch = TripPlanService.Patch()
         patch.startDate = ""
         let after = try await store.update(planId: "fixture-kanazawa", patch)
@@ -519,7 +521,10 @@ final class TripPlanStage1FollowUpTests: XCTestCase {
 @MainActor
 final class TripAutosaveDebouncerTests: XCTestCase {
 
-    /// 手で進める時計。`sleep` は時計が進むまで待ち、取り消されたら投げる
+    /// 手で進める時計。`sleep` は時計が進むまで待ち、取り消されたら投げる。
+    /// 🔴 **主アクタに縛る**（確かめ役の指摘・2026-11-10）: 縛らないと、取り消しの知らせ（`onCancel`）や
+    /// 待つ仕事が別のスレッドから `waiters` を書き換え、「Index out of range」「CONTINUATION MISUSE」で止まった
+    @MainActor
     private final class ManualClock {
         private(set) var now: UInt64 = 0
         private var waiters: [(id: Int, at: UInt64, done: CheckedContinuation<Void, Error>)] = []

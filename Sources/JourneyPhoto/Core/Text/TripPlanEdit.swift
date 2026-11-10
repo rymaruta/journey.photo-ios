@@ -71,8 +71,8 @@ enum TripPlanEdit {
 
     /// 落とした。`toItem` はその行の上（nil はその日の末尾）。
     ///
-    /// - 同じ日で下へ運んだときは、落とした行の**下**に入る（標準の並べ替えと同じ向き）。上へなら上に入る
-    /// - 別の日へは落とした行の上に入る。いっぱいの日へは運べない（`move` が断る）
+    /// - どの向きでも**落とした行の上**に入る（落とす先の印は行の上の線）。日の末尾へはその日の追加の行に落とす
+    /// - いっぱいの日へは運べない（`move` が断る）
     /// - 中身が読めない・項目が見つからない・動かない（同じ位置）ときは nil（何も変えない）
     static func dropped(_ days: [TripDay], payload: String, toDay: Int, toItem: Int?) -> [TripDay]? {
         let parts = payload.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
@@ -90,11 +90,12 @@ enum TripPlanEdit {
         guard let from = found else { return nil }
         let sameDay = toDay == day
         let count = days[toDay].items.count
-        var at: Int
+        let at: Int
         if let toItem {
-            guard toItem >= 0, toItem <= count else { return nil }
-            at = toItem
-            if sameDay && toItem > from { at = min(toItem, count - 1) }
+            guard toItem >= 0, toItem < count else { return nil }
+            // 落とした行の**上**に入れる（落とす先の印＝行の上の真鍮の線と同じ位置・確かめ役の指摘 2026-11-10）。
+            // 同じ日で下へ運ぶときは、取り除いたぶん位置が1つ前に詰まる
+            at = sameDay && toItem > from ? toItem - 1 : toItem
         } else {
             at = sameDay ? count - 1 : count
         }

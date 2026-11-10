@@ -64,7 +64,7 @@ struct TripPlanService {
 
     func list() async throws -> [TripPlan] {
         // UI テストの見本（Debug のときだけ・サーバーへは送らない・`TripPlanFixture`）
-        if TripPlanFixture.isOn { return await TripPlanFixtureStore.shared.list() }
+        if TripPlanFixture.isOn { return try await TripPlanFixtureStore.shared.list() }
         return try await api.authorized(.get, "/user/trips", as: TripPlanList.self).plans
     }
 
