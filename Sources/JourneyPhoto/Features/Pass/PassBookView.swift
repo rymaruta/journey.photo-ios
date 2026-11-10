@@ -121,15 +121,11 @@ struct PassBookView: View {
     }
 
     private func statsRow(_ stats: PassBook.Stats) -> some View {
+        // 見せ方（分からない値は「—」・読み上げは「まだ分かりません」）は `PassBook.statItems`（2026-11-10）
         HStack(alignment: .top, spacing: JPSpace.xs) {
-            stat(PassExchange.grouped(stats.cards), unit: nil,
-                 label: L("枚のカード", "cards"))
-            stat(String(stats.prefectures), unit: nil, label: L("都道府県から", "prefectures"))
-            if let km = stats.farthestKm {
-                stat(PassExchange.grouped(km), unit: "km",
-                     label: L("いちばん遠く", "farthest"))
-            } else {
-                stat("—", unit: nil, label: L("いちばん遠く", "farthest"))
+            ForEach(Array(PassBook.statItems(stats).enumerated()), id: \.offset) { _, item in
+                stat(item.value, unit: item.unit, label: item.label)
+                    .accessibilityLabel(item.spoken)
             }
         }
     }

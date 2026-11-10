@@ -276,4 +276,20 @@ final class PassWiringTests: XCTestCase {
         XCTAssertEqual(PassBook.Order.bound.label, L("受け取った順", "Received"))
         XCTAssertEqual(PassTicket.validityJa, "ずっと\n（帳に残る）")
     }
+
+    /// 帳の上の数は `PassBook.statItems` で出す（分からない都道府県は「—」・読み上げは「まだ分かりません」）。
+    /// カードが 0 枚のときは数を出さず空の案内だけ（2026-11-10）
+    func testBookStatsUseUnknownDash() throws {
+        let view = try source("Features/Pass/PassBookView.swift")
+        XCTAssertTrue(view.contains("PassBook.statItems(stats)"), "帳の数が statItems を通っていない")
+        XCTAssertTrue(view.contains(".accessibilityLabel(item.spoken)"), "読み上げが「まだ分かりません」にならない")
+        XCTAssertFalse(view.contains("String(stats.prefectures)"), "都道府県の数をそのまま出している（0 が出る）")
+        let empty = try XCTUnwrap(view.range(of: "if contents.isEmpty {"))
+        let stats = try XCTUnwrap(view.range(of: "statsRow(PassBook.stats("))
+        // 空の案内（`EmptyState`）の枝の後ろの else にだけ数がある
+        let emptyState = try XCTUnwrap(view.range(of: "EmptyState(", range: empty.upperBound..<view.endIndex))
+        let branch = try XCTUnwrap(view.range(of: "} else {", range: emptyState.upperBound..<view.endIndex))
+        XCTAssertLessThan(empty.lowerBound, emptyState.lowerBound)
+        XCTAssertLessThan(branch.lowerBound, stats.lowerBound, "カードが 0 枚でも数を出している")
+    }
 }

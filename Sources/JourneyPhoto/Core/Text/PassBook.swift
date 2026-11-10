@@ -238,6 +238,50 @@ enum PassBook {
         var farthestKm: Int?
     }
 
+    /// 帳の上の数の1つ（値・単位・下の字・読み上げ）
+    struct StatItem: Equatable {
+        var value: String
+        var unit: String?
+        var label: String
+        var spoken: String
+    }
+
+    /// 分からない値の印（「いちばん遠く」と「都道府県から」で同じ）
+    static let unknownValue = "—"
+
+    /// 帳の上の3つの数の見せ方。
+    ///
+    /// **2026-11-10 判断（秘書室）: 「都道府県から」が 0 のときは「0」ではなく「—」**（「いちばん遠く」と同じ）。
+    /// カードがあるのに 0 と出ると「都道府県の人から来ていない」と誤って読める。数えるのは、相手が「発」を居住地に
+    /// した（`showsFrom`）カードで、持ち主の公開プロフィールの居住地から都道府県が読めたものだけ——0 は「来ていない」
+    /// ではなく「まだ分からない」。読み上げも「まだ分かりません」と言う。
+    ///
+    /// 「発」を自分で書いたカードは数えない（`PassSettings.setOrigin(.custom)` が `showsFrom` を偽にする）。
+    /// 書いた字は本人が居住地と決めた値ではなく（旅先の名前・好きな地名でもよい）、都道府県として数えると
+    /// 本人が出していない居住地を出すことになるため、変えない（2026-11-10）。
+    /// カードが 0 枚のときは帳がこの数を出さず、空の案内（`PassBookView` の `EmptyState`）だけになる
+    static func statItems(_ stats: Stats) -> [StatItem] {
+        let cards = PassExchange.grouped(stats.cards)
+        let cardLabel = L("枚のカード", "cards")
+        let prefectureLabel = L("都道府県から", "prefectures")
+        let farLabel = L("いちばん遠く", "farthest")
+        let prefecture = stats.prefectures > 0
+            ? StatItem(value: String(stats.prefectures), unit: nil, label: prefectureLabel,
+                       spoken: L("\(stats.prefectures) 都道府県から", "From \(Plural.count(stats.prefectures, "prefecture"))"))
+            : StatItem(value: unknownValue, unit: nil, label: prefectureLabel,
+                       spoken: L("都道府県はまだ分かりません", "Prefectures not known yet"))
+        let far = stats.farthestKm.map { km in
+            StatItem(value: PassExchange.grouped(km), unit: "km", label: farLabel,
+                     spoken: L("いちばん遠く \(PassExchange.grouped(km)) キロ", "Farthest \(PassExchange.grouped(km)) km"))
+        } ?? StatItem(value: unknownValue, unit: nil, label: farLabel,
+                      spoken: L("いちばん遠くはまだ分かりません", "Farthest not known yet"))
+        return [
+            StatItem(value: cards, unit: nil, label: cardLabel,
+                     spoken: L("\(cards) 枚のカード", Plural.count(stats.cards, "card"))),
+            prefecture, far,
+        ]
+    }
+
     /// - Parameter prefectures: 持ち主 → 居住地の都道府県（**相手が出すと決めたものだけ**渡す）
     static func stats(_ cards: [PassEncounter], prefectures: [String: String]) -> Stats {
         var seen: Set<String> = []
