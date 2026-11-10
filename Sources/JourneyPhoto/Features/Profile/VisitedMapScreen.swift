@@ -102,6 +102,13 @@ struct VisitedMapScreen: View {
         .task(id: auth.userId) {
             model.open(userId: auth.userId)
             if let seed = PreviewSession.visitedMapSeed { model.seedForPreview(seed) }
+            #if DEBUG
+            // UI テストだけ帯を長く出す（`-JPVisitedQuickBarSeconds 30`）。Mac 948 で、要素を探す間（1 回 0.5〜2 秒）に
+            // 5 秒の帯が消えて［−］が見つからなかった（最後に押した 61 秒台 → ［−］を探した 66.2 秒）。
+            // 5 秒で消えることは単体テスト（`testQuickBarDisappearsAfterItsSeconds`）が守る
+            let seconds = UserDefaults.standard.double(forKey: "JPVisitedQuickBarSeconds")
+            if seconds > 0 { model.quickBarSeconds = seconds }
+            #endif
             if geometry == nil { geometry = PrefectureMapGeometry.bundled }
             await loadPhotos()
         }

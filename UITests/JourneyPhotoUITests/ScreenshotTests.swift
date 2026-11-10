@@ -2382,6 +2382,8 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewVisitedMap", "YES"]
+        // 帯は 5 秒で消えるが、要素を探すのに 1 回 0.5〜2 秒かかり、確かめの途中で消える（Mac 948）。UI テストだけ長くする
+        app.launchArguments += ["-JPVisitedQuickBarSeconds", "30"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
