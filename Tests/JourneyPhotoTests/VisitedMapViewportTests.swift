@@ -124,6 +124,15 @@ final class VisitedMapViewportTests: XCTestCase {
         XCTAssertFalse(VisitedMapTouch.swallowsTap(on: "東京都", after: lp, now: t0.addingTimeInterval(-1)))
     }
 
+    /// 🔴 再確認 2026-11-10 の 1（再現）: 長押しで帯を出したあと、行の外へずらして離した・スクロールした
+    /// （Button の押下が来ない）なら、次の本当の押下（3 秒後）は飲み込まない（押した数だけ数える）
+    func testListDoesNotSwallowTheNextRealTapAfterALongPressWithoutRelease() {
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        let lp = VisitedMapTouch.LongPress(prefecture: "東京都", at: t0)
+        XCTAssertFalse(VisitedMapTouch.swallowsTap(on: "東京都", after: lp, now: t0.addingTimeInterval(3)),
+                       "押下が来ないまま残った長押しの印が、次の本当の押下を飲み込んだ")
+    }
+
     /// 禁止語を使わない（全文言を走査する）
     func testNoForbiddenWordsInCopy() throws {
         var all: [String] = [
