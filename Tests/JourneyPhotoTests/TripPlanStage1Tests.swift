@@ -237,7 +237,7 @@ final class TripPlanStage1Tests: XCTestCase {
         let detail = try source("Features/Trips/TripPlanDetailView.swift")
         XCTAssertFalse(detail.contains("private var saveButton"), "右上の保存が残っている")
         XCTAssertTrue(detail.contains(".onChange(of: draft) { _, _ in scheduleAutosave() }"))
-        XCTAssertTrue(detail.contains("TripAutosave.delayNanoseconds"))
+        XCTAssertTrue(detail.contains("autosave.schedule { _ = await flush() }"), "手を止めてから待って送る（TripAutosaveDebouncer）")
         XCTAssertTrue(detail.contains(".draggable(TripPlanEdit.dragPayload(day: di, item: ii, of: item))"))
         XCTAssertTrue(detail.contains("TripPlanEdit.dropped(days, payload: payload, toDay: toDay, toItem: toItem)"))
         XCTAssertTrue(detail.contains("Label(L(\"この日を削除\", \"Remove this day\"), systemImage: \"trash\")"))
@@ -505,14 +505,93 @@ final class TripPlanStage1FollowUpTests: XCTestCase {
         XCTAssertNil(stop.travel)
     }
 
-    /// 入口: 行きたい場所の一覧の行・候補のシートの季節の一文
-    func testWishlistEntryAndPickSheetSeason() throws {
+    /// 候補のシートの季節の一文。**マイページは変えない**（2026-11-10 owner「マイページはかえなくていい」・札 #519）
+    func testPickSheetSeasonAndMyPageUnchanged() throws {
         let page = try source("Features/Profile/MyPageView.swift")
-        XCTAssertTrue(page.contains("wishTripButton(TripAddTarget(place: TripDraft.place(location: spot), wishKey: spot.slug))"))
-        XCTAssertTrue(page.contains("wishTripButton(TripAddTarget(place: TripDraft.place(spot: spot), wishKey: row.key))"))
-        XCTAssertTrue(page.contains(".tripAddSheet($wishTripAdd)"))
+        XCTAssertFalse(page.contains("TripAddTarget"), "マイページの行に「旅行プランに入れる」を置かない")
         let pick = try source("Features/Trips/TripPlanPickSheet.swift")
         XCTAssertTrue(pick.contains("if let season = seasonLines[choice.id] {"))
         XCTAssertTrue(try source("Features/Trips/TripPlanDetailView.swift").contains("seasonLines: seasonLines(for: pickChoices, day: target.day)"))
+    }
+}
+
+/// 自動保存の待ち直し（実際の 2 秒の待ち・時計を差し替えて数える・2026-11-10 札 #521）
+@MainActor
+final class TripAutosaveDebouncerTests: XCTestCase {
+
+    /// 手で進める時計。`sleep` は時計が進むまで待ち、取り消されたら投げる
+    private final class ManualClock {
+        private(set) var now: UInt64 = 0
+        private var waiters: [(id: Int, at: UInt64, done: CheckedContinuation<Void, Error>)] = []
+        private var nextId = 0
+
+        func sleep(_ ns: UInt64) async throws {
+            nextId += 1
+            let id = nextId
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+                    if Task.isCancelled { c.resume(throwing: CancellationError()); return }
+                    waiters.append((id, now + ns, c))
+                }
+            } onCancel: {
+                Task { @MainActor in self.drop(id) }
+            }
+        }
+
+        private func drop(_ id: Int) {
+            guard let i = waiters.firstIndex(where: { $0.id == id }) else { return }
+            waiters.remove(at: i).done.resume(throwing: CancellationError())
+        }
+
+        func advance(seconds: Double) async {
+            await settle()
+            now += UInt64(seconds * 1_000_000_000)
+            let due = waiters.filter { $0.at <= now }
+            waiters.removeAll { $0.at <= now }
+            due.forEach { $0.done.resume() }
+            await settle()
+        }
+
+        func settle() async {
+            for _ in 0..<50 { await Task.yield() }
+        }
+    }
+
+    private func run(editsEvery seconds: Double, edits: Int) async -> Int {
+        let clock = ManualClock()
+        let debouncer = TripAutosaveDebouncer(delay: TripAutosave.standardDelayNanoseconds,
+                                              sleep: { try await clock.sleep($0) })
+        var sends = 0
+        for i in 0..<edits {
+            if i > 0 { await clock.advance(seconds: seconds) }
+            debouncer.schedule { sends += 1 }
+        }
+        await clock.advance(seconds: 3)
+        return sends
+    }
+
+    /// 0.5 秒おきに 5 回直す → 2 秒の待ちの中なので、送るのは最後の 1 回
+    func testEditsWithinTwoSecondsSendOnce() async {
+        let sends = await run(editsEvery: 0.5, edits: 5)
+        XCTAssertEqual(sends, 1)
+    }
+
+    /// 2.5 秒おきに 5 回直す → 毎回待ちを越えるので 5 回送る
+    func testEditsFartherApartSendEachTime() async {
+        let sends = await run(editsEvery: 2.5, edits: 5)
+        XCTAssertEqual(sends, 5)
+    }
+
+    /// 取り消せば送らない（保存せずに戻る）
+    func testCancelStopsTheSend() async {
+        let clock = ManualClock()
+        let debouncer = TripAutosaveDebouncer(delay: TripAutosave.standardDelayNanoseconds,
+                                              sleep: { try await clock.sleep($0) })
+        var sends = 0
+        debouncer.schedule { sends += 1 }
+        await clock.settle()
+        debouncer.cancel()
+        await clock.advance(seconds: 3)
+        XCTAssertEqual(sends, 0)
     }
 }

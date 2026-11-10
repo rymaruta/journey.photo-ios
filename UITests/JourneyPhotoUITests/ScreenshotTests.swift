@@ -2197,45 +2197,7 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "62-行きたい場所（撮影用に端末の控えへ3件）")
 
-        // 行きたい場所の行から「旅行プランに入れる」（2026-11-10 札 #521）。見本のプランが出る。**入れるは押さない**
-        // run 967・971 でこの絵が撮れていなかった。どこで抜けたかを残す
-        // run 978 の木: 行に付けた `mypage.officialWish` が中のボタンにも付き（「mypage.officialWish-…」）、
-        // 印の識別子 `mypage.wish.trip` は残らない。**読み上げの名前で探す**（「◯◯ を旅行プランに入れる」）
-        let wishTrip = app.buttons.matching(NSPredicate(format: "label ENDSWITH %@", " を旅行プランに入れる")).firstMatch
-        var found = wishTrip.waitForExistence(timeout: 5)
-        var scrolls = 0
-        while found, !wishTrip.isHittable, scrolls < 3 {
-            app.swipeUp()
-            Thread.sleep(forTimeInterval: 1)
-            scrolls += 1
-            found = wishTrip.exists
-        }
-        let wishLine = "TRIPADD wishTrip exists=\(found) hittable=\(found && wishTrip.isHittable) type=\(found ? String(describing: wishTrip.elementType.rawValue) : "-")"
-        print(wishLine)
-        XCTContext.runActivity(named: wishLine) { _ in }
-        if !found {
-            // 行の木（行きたい場所の撮影スポットの行）を残す——印が行の中でどう見えているか
-            let row = app.descendants(matching: .any).matching(identifier: "mypage.officialWish").firstMatch
-            let tree = "TRIPADD rowTree exists=\(row.exists) " + (row.exists ? row.debugDescription : "-")
-                .replacingOccurrences(of: "\n", with: " ⏎ ")
-            print(tree)
-            XCTContext.runActivity(named: String(tree.prefix(1500))) { _ in }
-        }
-        if found, wishTrip.isHittable {
-            wishTrip.tap()
-            let add = app.buttons["tripAdd.add"].firstMatch
-            let opened = add.waitForExistence(timeout: 15)
-            let addLine = "TRIPADD sheet add exists=\(opened) plan=\(app.descendants(matching: .any).matching(identifier: "tripAdd.plan").count)"
-            print(addLine)
-            XCTContext.runActivity(named: addLine) { _ in }
-            if opened {
-                Thread.sleep(forTimeInterval: 1)
-                shoot(app, "62b-行きたい場所から旅行プランに入れる（出発が近いプラン・近い日を先に選ぶ）")
-            }
-            let close = app.buttons["閉じる"].firstMatch
-            if close.waitForExistence(timeout: 3) { close.tap() }
-            Thread.sleep(forTimeInterval: 1)
-        }
+        // マイページの行には「旅行プランに入れる」を置かない（2026-11-10 owner「マイページはかえなくていい」・札 #519）
         mapLink.tap()
 
         let pin = app.descendants(matching: .any).matching(identifier: "savedMap.pin").firstMatch

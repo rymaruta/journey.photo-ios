@@ -98,3 +98,42 @@ enum TripAutosave {
         return L("変更は自動で保存されます", "Changes are saved automatically")
     }
 }
+
+/// 手を止めてから待って送る（`TripAutosave.delayNanoseconds`）。**直すたびに前の待ちを取り消して待ち直す**ので、
+/// 待ちより短い間で続けて直すと送るのは最後の1回だけになる。
+///
+/// 待ち方（`sleep`）を差し替えられる形にした（2026-11-10 札 #521）: UI テストは押す間が 2.4〜4.9 秒あり、
+/// 実際の 2 秒の待ちでは「続けて直す」を作れない。単体テストで時計を差し替えて、0.5 秒おき・2.5 秒おきを数で見る
+@MainActor
+final class TripAutosaveDebouncer {
+
+    typealias Sleep = @MainActor (UInt64) async throws -> Void
+
+    private let delay: UInt64
+    private let sleep: Sleep
+    private var task: Task<Void, Never>?
+
+    init(delay: UInt64 = TripAutosave.delayNanoseconds,
+         sleep: @escaping Sleep = { try await Task.sleep(nanoseconds: $0) }) {
+        self.delay = delay
+        self.sleep = sleep
+    }
+
+    /// 待ち直す。待ち終えたら `action`（送る）。前の待ちは取り消す
+    func schedule(_ action: @escaping @MainActor () async -> Void) {
+        task?.cancel()
+        let delay = delay
+        let sleep = sleep
+        task = Task { @MainActor in
+            do { try await sleep(delay) } catch { return }
+            guard !Task.isCancelled else { return }
+            await action()
+        }
+    }
+
+    /// 待ちを取り消す（すぐ送るとき・保存せずに戻るとき）
+    func cancel() {
+        task?.cancel()
+        task = nil
+    }
+}

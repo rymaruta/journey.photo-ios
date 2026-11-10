@@ -32,7 +32,7 @@ struct TripPlanDetailView: View {
     /// 自動保存で送れていない事情（圏外・断られた・別の端末の変更）。送れたら消す
     @State private var problem: TripAutosave.Problem?
     /// 手を止めてから送るまでの待ち（打ち直すたびに取り消して待ち直す）
-    @State private var autosaveTask: Task<Void, Never>?
+    @State private var autosave = TripAutosaveDebouncer()
     /// 「保存せずに戻る」を選んだ（消える間に送らない）
     @State private var discarding = false
     /// 運んでいる行の落とし先（その行の上に真鍮の線を出す）。日の末尾は `item == nil`
@@ -222,7 +222,7 @@ struct TripPlanDetailView: View {
                            },
                            onDiscard: {
                                discarding = true
-                               autosaveTask?.cancel()
+                               autosave.cancel()
                                dismiss()
                            })
         .toolbar {
@@ -459,13 +459,11 @@ struct TripPlanDetailView: View {
 
     /// 手を止めてから少し待って送る。打ち直すたびに待ち直す（書き込みの回数を抑える）
     private func scheduleAutosave() {
-        autosaveTask?.cancel()
-        guard isDirty, !discarding else { return }
-        autosaveTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: TripAutosave.delayNanoseconds)
-            guard !Task.isCancelled else { return }
-            _ = await flush()
+        guard isDirty, !discarding else {
+            autosave.cancel()
+            return
         }
+        autosave.schedule { _ = await flush() }
     }
 
     /// 送る。**送れたか**を返す（変えていなければ true）。
@@ -475,7 +473,7 @@ struct TripPlanDetailView: View {
     /// - 送っている間に打った直しは、送れたあとで続けて送る
     /// - `force`: 断られた直後でも送り直す（「もう一度試す」・「保存して戻る」）
     private func flush(force: Bool = false) async -> Bool {
-        autosaveTask?.cancel()
+        autosave.cancel()
         guard plan != nil, isDirty else { return true }
         if problem == .conflict { return false }
         if case .failed? = problem, !force { return false }
