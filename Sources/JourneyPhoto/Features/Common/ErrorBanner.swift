@@ -170,9 +170,11 @@ struct RetryButton: View {
 /// - 光の流れ（きらめき）は付けない——「視差効果を減らす」の人に止める手間が要らない、灰色のまま
 /// - 読み上げは「読み込み中」1つ（骨格の一つずつを読ませない）
 ///
-/// `kind`——`grid`: 写真の格子（3 列・すき間 2）＋2 行の字。`rows`: 字の行だけ（一覧・札）
+/// `kind`——`grid`: 写真の格子（3 列・すき間 2）＋2 行の字。`rows`: 字の行だけ（一覧・札）。
+/// `people`: 丸い顔（48）＋2 行の字の行を6つ（メッセージの受信箱・2026-11-10 札 #505 の画面案「読み込み中」）。
+/// `bubbles`: 左右に振った吹き出しの形（会話・同じ画面案）
 struct JPLoadingState: View {
-    enum Kind { case grid, rows }
+    enum Kind { case grid, rows, people, bubbles }
 
     var kind: Kind = .grid
 
@@ -200,8 +202,53 @@ struct JPLoadingState: View {
         }
     }
 
+    /// 顔の行の字の幅（画面案の骨格の長さをそのまま・行ごとに替えて「同じ行の繰り返し」に見せない）
+    nonisolated static let peopleBars: [(name: CGFloat, line: CGFloat)] = [
+        (110, 190), (133, 227), (156, 264), (119, 211), (142, 248), (165, 195),
+    ]
+    /// 吹き出しの骨格（自分の側か・幅・高さ）
+    nonisolated static let bubbleBones: [(mine: Bool, width: CGFloat, height: CGFloat)] = [
+        (false, 200, 40), (false, 150, 40), (true, 220, 62), (false, 180, 40), (true, 120, 40),
+    ]
+
     @ViewBuilder
     private var skeleton: some View {
+        switch kind {
+        case .people:
+            VStack(spacing: 0) {
+                ForEach(Array(Self.peopleBars.enumerated()), id: \.offset) { _, bars in
+                    HStack(spacing: JPSpace.s) {
+                        Circle().fill(bone).frame(width: 48, height: 48)
+                        VStack(alignment: .leading, spacing: JPSpace.xs) {
+                            RoundedRectangle(cornerRadius: JPRadius.xs).fill(bone).frame(width: bars.name, height: 14)
+                            RoundedRectangle(cornerRadius: JPRadius.xs).fill(bone).frame(width: bars.line, height: 12)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .frame(minHeight: 72)
+                    .overlay(alignment: .bottom) {
+                        Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+                    }
+                }
+            }
+        case .bubbles:
+            VStack(spacing: JPSpace.xs) {
+                ForEach(Array(Self.bubbleBones.enumerated()), id: \.offset) { _, b in
+                    HStack {
+                        if b.mine { Spacer(minLength: 0) }
+                        RoundedRectangle(cornerRadius: 20).fill(bone).frame(width: b.width, height: b.height)
+                        if !b.mine { Spacer(minLength: 0) }
+                    }
+                }
+            }
+            .padding(.vertical, JPSpace.m)
+        case .grid, .rows:
+            gridOrRows
+        }
+    }
+
+    @ViewBuilder
+    private var gridOrRows: some View {
         VStack(alignment: .leading, spacing: JPSpace.s) {
             if kind == .grid {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 3), spacing: 2) {

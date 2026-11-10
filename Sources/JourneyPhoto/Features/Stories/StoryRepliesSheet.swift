@@ -11,7 +11,7 @@ import UIKit
 /// - 見出し: 明朝 22 の「返信」と、SF の細い数字（読めていない間は数を出さない）。右に「閉じる」
 /// - 行: 顔 36（押すとその人のページ・退会した人は顔だけ）、名前 13 の太字と時刻、吹き出し（#1A1A1C・
 ///   左上だけ角 4）に本文 15
-/// - 下: 錠の印と「返信はあなたにだけ見えています…」
+/// - 下: 錠の印と「返信はメッセージにも残ります…」（2026-11-10 札 #505）
 struct StoryRepliesSheet: View {
 
     /// 文章の返信だけ（反応は「いいね」に数える）
@@ -28,6 +28,8 @@ struct StoryRepliesSheet: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var hidden: ModerationStore
     @EnvironmentObject private var toasts: ToastCenter
+    /// メッセージの受信箱（返信の人がリクエストの棚にいるか・2026-11-10 札 #505）
+    @EnvironmentObject private var messages: DMInboxStore
     @Environment(\.openURL) private var openURL
 
     /// ブロックの確認を出している返信（押した時点の相手を持つ・`blockConfirmation(presenting:)`）
@@ -156,27 +158,26 @@ struct StoryRepliesSheet: View {
                 // **退会した人はその人のページへ行かせない**（`StoryInsightsView` の行と同じ）。顔だけ出す
                 avatar(uid)
             }
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(item.displayName)
-                        .font(JPFont.footnote.weight(.semibold))
-                        .foregroundStyle(WebTheme.text)
-                    if let ago = StoryPlayback.ago(from: item.t) {
-                        Text(ago)
-                            .font(JPFont.caption)
+            // 2026-11-10（札 #505・画面案「自分のストーリーの返信一覧」）: 文字の返信はメッセージにも残るので、
+            // 行を押すとその人との会話へ（行の右に矢印）。リクエストの棚にいる人には「リクエスト」の札
+            if let conversationId = conversationId(for: item) {
+                NavigationLink {
+                    DMConversationView(conversationId: conversationId)
+                } label: {
+                    HStack(alignment: .center, spacing: JPSpace.xs) {
+                        replyBody(item, isRequest: isRequest(conversationId))
+                        Image(systemName: "chevron.right")
+                            .font(JPFont.caption.weight(.semibold))
                             .foregroundStyle(WebTheme.text3)
+                            .accessibilityHidden(true)
                     }
+                    .contentShape(Rectangle())
                 }
-                Text(item.body)
-                    .font(JPFont.body)
-                    .foregroundStyle(WebTheme.text)
-                    .lineSpacing(4)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Self.bubbleFill,
-                                in: UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: Self.bubbleRadius,
-                                                           bottomTrailingRadius: Self.bubbleRadius,
-                                                           topTrailingRadius: Self.bubbleRadius))
+                .buttonStyle(.plain)
+                .accessibilityHint(L("メッセージを開きます", "Opens the conversation"))
+                .accessibilityIdentifier("storyReplies.openMessage")
+            } else {
+                replyBody(item, isRequest: false)
             }
             let actions = StoryReplyActions(item, me: hidden.owner)
             // 「…」の無い行（自分の返信）は前のとおり右に 32 空ける——吹き出しが右端まで伸びない
@@ -185,6 +186,43 @@ struct StoryRepliesSheet: View {
                 replyMenu(item, actions: actions)
             }
         }
+    }
+
+    /// 名前・時刻・吹き出し（板 StoryReplies）
+    private func replyBody(_ item: StoryReply, isRequest: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(item.displayName)
+                    .font(JPFont.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.text)
+                if let ago = StoryPlayback.ago(from: item.t) {
+                    Text(ago)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
+                }
+                if isRequest { DMChip(text: DMText.requestsTitle) }
+            }
+            Text(item.body)
+                .font(JPFont.body)
+                .foregroundStyle(WebTheme.text)
+                .lineSpacing(4)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Self.bubbleFill,
+                            in: UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: Self.bubbleRadius,
+                                                       bottomTrailingRadius: Self.bubbleRadius,
+                                                       topTrailingRadius: Self.bubbleRadius))
+        }
+    }
+
+    /// 返信の人との会話 id（自分・相手が分からない・文字の無い返信は nil）
+    private func conversationId(for item: StoryReply) -> String? {
+        guard let me = hidden.owner, let uid = item.uid, !uid.isEmpty, uid != me, !item.body.isEmpty else { return nil }
+        return DMRules.conversationId(me, uid)
+    }
+
+    private func isRequest(_ conversationId: String) -> Bool {
+        messages.inbox.items.contains { $0.id == conversationId && $0.isRequest }
     }
 
     /// 返信の「…」（通報・この人をブロック・審査 1.2・2026-10-16）。形はコメントの「…」と同じ
@@ -255,8 +293,9 @@ struct StoryRepliesSheet: View {
             Image(systemName: "lock")
                 .font(JPFont.caption)
                 .accessibilityHidden(true)
-            Text(L("返信はあなたにだけ見えています。ストーリーが消えると、返信も一緒に消えます。",
-                   "Only you can see replies. They disappear with the story."))
+            // 2026-11-10（札 #505・画面案）: 文字の返信はメッセージにも残る（絵文字だけの反応は今までどおり消える）
+            Text(L("返信はメッセージにも残ります。ストーリーが消えても、メッセージは残ります。",
+                   "Replies also stay in Messages, even after the story is gone."))
                 .font(JPFont.caption)
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)

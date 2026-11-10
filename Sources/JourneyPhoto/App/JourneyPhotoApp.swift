@@ -39,6 +39,8 @@ struct JourneyPhotoApp: App {
     @StateObject private var offlineTrips = OfflineTripStore()
     /// 電波があるか（`NWPathMonitor`）。圏外の旅の画面の出し分けに使う
     @StateObject private var connectivity = Connectivity()
+    /// メッセージの受信箱の控え（札 #505・2026-11-10）。ホームの吹き出しの点と受信箱が同じ1つを見る
+    @StateObject private var messages = DMInboxStore()
     /// **APNs のトークンは `UIApplicationDelegate` にしか返ってこない。**
     /// SwiftUI だけでは受け取れないので、この1本だけ UIKit を繋ぐ
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -210,6 +212,7 @@ struct JourneyPhotoApp: App {
                 .environmentObject(store)
                 .environmentObject(offlineTrips)
                 .environmentObject(connectivity)
+                .environmentObject(messages)
                 // すれちがい（2026-10-16）。電波は画面の無い起動でもカードを受け取るので、
                 // `AppDelegate` の起動から居る1つ（`PassStore.shared`）を配る
                 .environmentObject(PassStore.shared)

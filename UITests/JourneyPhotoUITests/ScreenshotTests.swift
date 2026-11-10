@@ -107,7 +107,7 @@ final class ScreenshotTests: XCTestCase {
         shot.name = "\(tab)（右上の見出しの帯・寄り）"
         shot.lifetime = .keepAlways
         add(shot)
-        let ids = ["header.search", "header.notifications", "header.menu"]
+        let ids = ["header.search", "header.messages", "header.notifications", "header.menu"]
         let lines = ids.map { id -> String in
             let button = app.buttons[id].firstMatch
             return button.exists ? "\(id): \(button.frame)" : "\(id): 無し"
@@ -6209,5 +6209,110 @@ final class ScreenshotTests: XCTestCase {
         guard app.descendants(matching: .any)["drafts.empty"].firstMatch.waitForExistence(timeout: 10) else { return }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "107f-下書きの一覧（空・元に戻す）")
+    }
+
+    /// **メッセージ（DM・第1段・札 #505・2026-11-10）**。見本の通信（`-JPPreviewLocalBackend`）に `-JPPreviewDM` を足すと、
+    /// `/dm` を端末の中で答える（`PreviewBackend.dmReply`: 受信箱・リクエスト2件・退会した相手・3通を使い切った会話）。
+    /// 見出しの吹き出し → 受信箱 → リクエスト → リクエストの会話 → 会話（URL を断られた）→ 3通の上限 → 退会、の順に撮る。
+    /// **出なければ撮らずに抜ける**
+    func testCapturesDirectMessages() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewDM", "YES"]
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        guard app.tabBars.firstMatch.waitForExistence(timeout: 20) else { return }
+
+        // 見出しの吹き出し（未読の点つき）。帯の寸法も文で残す
+        let bubble = app.buttons["header.messages"].firstMatch
+        guard bubble.waitForExistence(timeout: 20) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shootHeaderBand(app, tab: "86m-メッセージ（見出しの吹き出し）")
+        XCTAssertGreaterThanOrEqual(bubble.frame.height, 44, "吹き出しの当たりが 44pt 未満")
+        bubble.tap()
+
+        let inbox = app.descendants(matching: .any)["dm.inbox"].firstMatch
+        guard inbox.waitForExistence(timeout: 15) else {
+            shoot(app, "86m1-メッセージ（受信箱が出ない）")
+            return
+        }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "86m1-メッセージ（受信箱）")
+
+        // リクエスト
+        let entry = app.buttons["dm.requests.entry"].firstMatch
+        if entry.waitForExistence(timeout: 5), entry.isHittable {
+            entry.tap()
+            if app.descendants(matching: .any)["dm.requests"].firstMatch.waitForExistence(timeout: 10) {
+                Thread.sleep(forTimeInterval: 2)
+                shoot(app, "86m2-メッセージ（リクエスト）")
+                // 札を押す → リクエストの会話（案内の帯）
+                // 札の名前の行（顔・名前・@ユーザー名を1つのボタンにまとめてある）
+                let name = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "桜の便り")).firstMatch
+                if name.waitForExistence(timeout: 5), name.isHittable {
+                    name.tap()
+                    if app.descendants(matching: .any)["dm.requestBand"].firstMatch.waitForExistence(timeout: 10) {
+                        Thread.sleep(forTimeInterval: 2)
+                        shoot(app, "86m3-メッセージ（リクエストの会話）")
+                    }
+                    app.navigationBars.buttons.element(boundBy: 0).tap()
+                    Thread.sleep(forTimeInterval: 1)
+                }
+            }
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+
+        // 会話（ストーリーへの返信から始まった・未読あり）→ URL を送って断られる
+        if openThread(app, named: "夕焼けの人") {
+            shoot(app, "86m4-メッセージ（会話）")
+            let field = app.descendants(matching: .any)["dm.field"].firstMatch
+            if field.waitForExistence(timeout: 5), field.isHittable {
+                field.tap()
+                field.typeText("ここで撮りました https://example.com/spot")
+                let send = app.buttons["dm.send"].firstMatch
+                if send.isHittable { send.tap() }
+                if app.descendants(matching: .any)["dm.fieldError"].firstMatch.waitForExistence(timeout: 10) {
+                    Thread.sleep(forTimeInterval: 1)
+                    shoot(app, "86m5-メッセージ（URLを断られた）")
+                }
+            }
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+
+        // 承認前の3通を使い切った会話（欄は止まり、理由を欄の上に）
+        if openThread(app, named: "雪の駅") {
+            if app.descendants(matching: .any)["dm.requestNote"].firstMatch.waitForExistence(timeout: 5) {
+                shoot(app, "86m6-メッセージ（承認前の3通の上限）")
+            }
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+
+        // 相手が退会（送信欄の代わりに理由と「会話を削除」）
+        if openThread(app, named: "退会したユーザー") {
+            if app.buttons["dm.deleted.remove"].firstMatch.waitForExistence(timeout: 5) {
+                shoot(app, "86m7-メッセージ（相手が退会）")
+            }
+        }
+    }
+
+    /// 受信箱の行を名前で開き、会話が出るまで待つ（出なければ false）
+    private func openThread(_ app: XCUIApplication, named name: String) -> Bool {
+        let row = app.buttons.matching(NSPredicate(format: "identifier == 'dm.thread' AND label CONTAINS %@", name)).firstMatch
+        guard row.waitForExistence(timeout: 10) else { return false }
+        if !row.isHittable { app.swipeUp() }
+        guard row.isHittable else { return false }
+        row.tap()
+        guard app.descendants(matching: .any)["dm.conversation"].firstMatch.waitForExistence(timeout: 10) else { return false }
+        Thread.sleep(forTimeInterval: 2)
+        return true
     }
 }

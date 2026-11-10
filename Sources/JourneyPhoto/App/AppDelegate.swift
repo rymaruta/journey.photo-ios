@@ -123,6 +123,12 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
             }
             return
         }
+        // メッセージ（`NOTIF_DM`・2026-11-10 札 #505）: お知らせではなく、その会話を開く。
+        // ベルの一覧には積まれない種類（サーバーは `notifs#` に書かない）
+        if let conversationId = NotificationRouter.dmConversationId(response.notification.request.content.userInfo) {
+            await MainActor.run { NotificationRouter.shared.openConversation(conversationId) }
+            return
+        }
         let target = AppNotification.fromPush(response.notification.request.content.userInfo)
         await MainActor.run { NotificationRouter.shared.openActivity(target: target) }
     }
@@ -186,6 +192,36 @@ final class NotificationRouter: ObservableObject {
     }
 
     func noteArrival() { arrivals += 1 }
+
+    // MARK: - メッセージ（2026-11-10 札 #505）
+
+    /// メッセージの通知を押した回数（`RootView` が受信箱を出して、その会話を積む）
+    @Published private(set) var conversationRequests = 0
+    /// 押した通知の会話。**最後に押したものだけ**・受け取るのは1回
+    private(set) var pendingConversation: String?
+    private var pendingConversationAt: Date?
+
+    func openConversation(_ id: String, now: Date = Date()) {
+        pendingConversation = id
+        pendingConversationAt = now
+        conversationRequests += 1
+    }
+
+    /// 押した会話を受け取る。古い（`targetLifetime` を過ぎた）ものは nil
+    func takePendingConversation(now: Date = Date()) -> String? {
+        defer { pendingConversation = nil; pendingConversationAt = nil }
+        guard let id = pendingConversation, let at = pendingConversationAt,
+              now.timeIntervalSince(at) <= Self.targetLifetime else { return nil }
+        return id
+    }
+
+    /// メッセージの通知の中身から会話 id を読む（`notify.ts` の `pushDmMessage`: `{type: "dm", convId, byId}`）。
+    /// 会話 id の形でなければ nil（パスに入れない値は受け取らない・`PathID`）
+    nonisolated static func dmConversationId(_ userInfo: [AnyHashable: Any]) -> String? {
+        guard userInfo["type"] as? String == "dm", let id = userInfo["convId"] as? String,
+              id.contains("_"), PathID.isSafe(id) else { return nil }
+        return id
+    }
 
     /// お知らせを既読にできた回（またはサーバーの未読がもう 0 だった回）の数（ベルを 0 にする合図）。
     /// **閉じたときの数え直しが圏外で落ちても、ベルが読む前の数のまま残らない**

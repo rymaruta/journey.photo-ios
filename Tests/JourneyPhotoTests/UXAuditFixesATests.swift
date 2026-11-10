@@ -40,19 +40,20 @@ final class UXAuditFixesATests: XCTestCase {
 
     // MARK: - 1・11. 上の帯の当たりと、どのタブでも同じ中身
 
-    /// 右の3つは1つの枠に、44×44 の当たりで並ぶ（前は1つずつの枠で、当たりが 25〜27pt だった）
+    /// 右の4つ（探す・メッセージ・お知らせ・メニュー）は1つの枠に、44×44 の当たりで並ぶ（前は1つずつの枠で、当たりが 25〜27pt だった）。
+    /// メッセージの吹き出しは 2026-11-10（札 #505）に足した
     func testHeaderButtonsHave44ptHitAreasInOneItem() async throws {
         let header = try source("Features/Common/AppHeader.swift")
         let trailing = header.components(separatedBy: "ToolbarItem(placement: .topBarTrailing)").count - 1
         XCTAssertEqual(trailing, 1, "右の3つが別々の枠に戻っている（当たりを広げると帯が太る）")
-        XCTAssertEqual(header.components(separatedBy: ".appHeaderHitArea()").count - 1, 3,
-                       "探す・お知らせ・メニューのどれかの当たりが 44 になっていない")
+        XCTAssertEqual(header.components(separatedBy: ".appHeaderHitArea()").count - 1, 4,
+                       "探す・メッセージ・お知らせ・メニューのどれかの当たりが 44 になっていない")
         let hit = slice(header, from: "func appHeaderHitArea()", to: "\n}\n")
         XCTAssertTrue(hit.contains(".frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)"))
         XCTAssertTrue(hit.contains(".contentShape(Rectangle())"))
         XCTAssertGreaterThanOrEqual(WebTheme.minTapTarget, 44)
         // 見た目（絵の大きさ・箱の幅）は前のまま
-        XCTAssertEqual(header.components(separatedBy: ".webToolbarIcon()").count - 1, 3)
+        XCTAssertEqual(header.components(separatedBy: ".webToolbarIcon()").count - 1, 4)
     }
 
     /// 探すはどのタブにも出す（前はホームだけで、右の枠の幅がタブごとに違い、ロゴの位置がずれた）
@@ -63,7 +64,7 @@ final class UXAuditFixesATests: XCTestCase {
         for file in ["Features/Gallery/GalleryView.swift", "Features/Search/SearchView.swift",
                      "Features/Map/PhotoMapView.swift"] {
             let text = try source(file)
-            XCTAssertTrue(text.contains(".toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }"),
+            XCTAssertTrue(text.contains(".toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications, messagesUnread: messagesUnread) }"),
                           "\(file): 見出しの中身がほかのタブと違う")
         }
     }

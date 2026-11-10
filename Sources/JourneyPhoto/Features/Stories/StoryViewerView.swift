@@ -114,6 +114,14 @@ struct StoryViewerView: View {
     @State private var reply = ""
     @FocusState private var replyFocused: Bool
     @State private var message: String?
+    /// 返信が写る会話の門（承認前の残り・URL。札 #505・2026-11-10・`DMReplyGate`）。返信欄に入ったときに読む
+    @State private var dmGate: DMReplyGate?
+    /// 返信を断った訳（URL・3通を使い切った）。欄の上に出す（入力は消さない・板の案 D）
+    @State private var replyRefusal: String?
+    /// 送った直後の「送りました ›メッセージを見る」の会話（板の案 C・4秒）
+    @State private var sentConversation: String?
+    /// 「メッセージを見る」で開いた会話（シート）
+    @State private var openedConversation: DMSheetTarget?
     @State private var viewers: [StoryViewer] = []
     @State private var showInsights = false
     @State private var replies: [StoryReply] = []
@@ -258,7 +266,8 @@ struct StoryViewerView: View {
             paused: paused,
             menuOpen: showMenu,
             sheetOpen: showReplies || showInsights || showReport || showBlockConfirm
-                || showAuthor || showDeleteConfirm || guideSpot != nil || showReactions || isHeld,
+                || showAuthor || showDeleteConfirm || guideSpot != nil || showReactions || isHeld
+                || openedConversation != nil,
             replyFocused: replyFocused,
             isSending: isSending,
             mediaReady: mediaReady,
@@ -275,6 +284,7 @@ struct StoryViewerView: View {
     private var swipeLocked: Bool {
         replyFocused || isSending || showMenu || showReplies || showInsights || showReport
             || showBlockConfirm || showAuthor || showDeleteConfirm || guideSpot != nil || showReactions
+            || openedConversation != nil
     }
 
     /// この人の束をもう見せられない（最後の1本を消した・通報した・ブロックした）。
@@ -518,6 +528,20 @@ struct StoryViewerView: View {
         .task(id: story.id) { await runClock(for: story) }
         // 次の写真と次の動画を先に読んでおく（1本ごとにバーが 0 のまま待たないように）
         .task(id: story.id) { prefetchNext() }
+        // 返信欄に入ったら、返信が写る会話の門を読む（承認前の残り・URL・札 #505）
+        .task(id: replyFocused ? story.userId : nil) {
+            guard replyFocused else { return }
+            await loadDMGate(for: story)
+        }
+        // 「メッセージを見る」で開く会話（見ている間は止める・`frozen` の sheetOpen）
+        .sheet(item: $openedConversation) { target in
+            NavigationStack {
+                DMConversationView(conversationId: target.id)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
+                    }
+            }
+        }
         .onAppear {
             isForeground = scenePhase == .active
             onSwipeLockChange?(swipeLocked)
@@ -702,6 +726,34 @@ struct StoryViewerView: View {
                 mediaRetryButton
             }
 
+            // 送った直後（板の案 C）: 「送りました ›メッセージを見る」を4秒。押すと会話（戻るとストーリー）
+            if let sentConversation {
+                Button {
+                    openedConversation = DMSheetTarget(id: sentConversation)
+                    self.sentConversation = nil
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(L("送りました", "Sent"))
+                        Text(L("メッセージを見る", "View message")).font(.footnote.weight(.semibold))
+                        Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                    }
+                    .font(.footnote)
+                    .dynamicTypeSize(...Self.chromeTypeLimit)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: WebTheme.minTapTarget)
+                    .jpGlass(in: Capsule())
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+                .padding(.bottom, 24)
+                .accessibilityIdentifier("story.reply.openMessage")
+                .task(id: sentConversation) {
+                    try? await Task.sleep(for: DMActionToast.duration)
+                    if !Task.isCancelled { self.sentConversation = nil }
+                }
+            }
             if let message {
                 Text(message)
                     .font(.footnote)
@@ -1812,12 +1864,29 @@ struct StoryViewerView: View {
                         }
                     }
                 }
+                // URL を断った訳（板の案 D: 写真の上なので白い字＋印・黒 55% のガラスの札。赤に頼らない）
+                if let replyRefusal {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.circle").accessibilityHidden(true)
+                        Text(replyRefusal).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 16))
+                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.1), lineWidth: JPStroke.hairline))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("story.reply.refusal")
+                }
                 HStack(spacing: 6) {
                     TextField(L("返信する", "Reply"), text: $reply)
                         // サーバーの上限（200）で止める——超えたぶんは黙って切られる
                         .onChange(of: reply) { old, value in
                             let kept = PostLimits.limited(old: old, new: value, limit: PostLimits.storyReply)
                             if kept != value { reply = kept }
+                            // 打ち直したら断りの訳を消す（URL を消した・書き直した）
+                            if replyRefusal != nil, value != old { replyRefusal = nil }
                         }
                         .accessibilityLabel(L("\(story.authorName) さんに返信", "Reply to \(story.authorName)"))
                         .font(.subheadline)
@@ -1848,7 +1917,8 @@ struct StoryViewerView: View {
                                 .frame(width: StoryViewerMetrics.sendSize, height: StoryViewerMetrics.sendSize)
                                 .background(WebTheme.accentBackground, in: Circle())
                         }
-                        .disabled(isSending || !canSend)
+                        // 承認前の3通を使い切ったら送れない（板の案 E・反応の絵文字は送れる）
+                        .disabled(isSending || !canSend || replyGate(for: story)?.limitReached == true)
                         .accessibilityLabel(Labels.Common.send)
                     } else {
                         // ♡ は定型の反応の ❤️ を送る（Web の ♡ と同じ `STORY_REACTIONS[0]`）。
@@ -1898,12 +1968,22 @@ struct StoryViewerView: View {
                         }
                     }
                 }
-                // 2026-10-16: 板 StoryViewerReply の並び「一言の候補 → 欄 → だれに届くか」。**欄の下**に置く
+                // 2026-10-16: 板 StoryViewerReply の並び「一言の候補 → 欄 → だれに届くか」。**欄の下**に置く。
+                // 2026-11-10（札 #505・画面案 A・B・E）: 返信はメッセージとして残るので、その一言に替えた。
+                // 承認前の相手には2行目で上限を先に伝える
                 if replyFocused {
-                    Text(L("返信は \(story.authorName) さんにだけ届きます", "Only \(story.authorName) sees your reply"))
+                    Text(L("返信はメッセージとして残ります", "Your reply stays in Messages"))
                         .font(.caption)
                         .foregroundStyle(WebTheme.muted2)
                         .padding(.leading, 6)
+                    if let note = replyGate(for: story)?.note(name: story.authorName) {
+                        Text(note)
+                            .font(.caption)
+                            .foregroundStyle(WebTheme.muted2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.leading, 6)
+                            .accessibilityIdentifier("story.reply.dmNote")
+                    }
                 }
             }
             .padding(.horizontal, 12)
@@ -2251,16 +2331,57 @@ struct StoryViewerView: View {
         await sendReply(reply, to: story, clearsDraft: true)
     }
 
+    /// いま見ている人の会話の門（読んだ相手が違えば nil）
+    private func replyGate(for story: Story) -> DMReplyGate? {
+        guard let gate = dmGate, gate.peerId == story.userId else { return nil }
+        return gate
+    }
+
+    /// 返信が写る会話を読んで門を作る（札 #505）。404＝まだ会話が無い（3通まで）。
+    /// **読めなかったときは門を置かない**（止めすぎない。サーバーが写すときに断る）
+    private func loadDMGate(for story: Story) async {
+        guard let me = viewerId, let peer = story.userId, peer != me, !isMine(story) else { return }
+        if dmGate?.peerId == peer { return }
+        do {
+            let conversation = try await environment.dm.conversation(DMRules.conversationId(me, peer))
+            guard !Task.isCancelled else { return }
+            dmGate = DMReplyGate.from(conversation, peerId: peer)
+        } catch let refused as DMService.Refused where refused.isConversationMissing {
+            guard !Task.isCancelled else { return }
+            dmGate = DMReplyGate.from(nil, peerId: peer)
+        } catch {
+            // 読めない（圏外・サーバーがまだ古い）: 門を置かない
+        }
+    }
+
     /// 返信を送る。候補の一言は**下書きを消さない**（書きかけの文を残す）
     private func sendReply(_ text: String, to story: Story, clearsDraft: Bool = false) async {
         guard !isSending, !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        // 承認前の会話に写せない返信は送らない（3通を使い切った・URL。板の案 D・E）
+        if let gate = replyGate(for: story) {
+            if gate.limitReached {
+                replyRefusal = gate.note(name: story.authorName)
+                return
+            }
+            if gate.refusesURL(in: text) {
+                replyRefusal = DMReplyGate.urlRefusal
+                return
+            }
+        }
         isSending = true
         defer { isSending = false }
         do {
             try await environment.stories.reply(id: story.id, text: text)
             if clearsDraft { reply = "" }
             replyFocused = false
-            message = L("送りました", "Sent")
+            replyRefusal = nil
+            // 返信は会話の1通として写る（板の案 C: 「送りました ›メッセージを見る」を4秒）
+            if let gate = replyGate(for: story) { dmGate = gate.afterSending() }
+            if let me = viewerId, let peer = story.userId, peer != me {
+                sentConversation = DMRules.conversationId(me, peer)
+            } else {
+                message = L("送りました", "Sent")
+            }
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("送れませんでした", "Couldn't send")
         }

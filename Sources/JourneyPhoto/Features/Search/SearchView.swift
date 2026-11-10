@@ -10,6 +10,8 @@ struct SearchView: View {
     /// お知らせを開く口は `RootView` が持っている
     var unread: Int = 0
     var onOpenNotifications: () -> Void = {}
+    /// 見出しの吹き出しの点（受信箱に未読の会話がある・2026-11-10 札 #505）
+    var messagesUnread = false
 
     @EnvironmentObject private var environment: AppEnvironment
     /// **「見せない」が変わったら控えを捨てるため**に見ている
@@ -103,7 +105,7 @@ struct SearchView: View {
         .webScreen()
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications) }
+        .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications, messagesUnread: messagesUnread) }
         // 最初の読み込みと、**限定公開の読み出し口が替わったとき**（ログアウト・
         // 別の人のログイン）の読み直し。替わった後に届くので前の人の口を通らない
         .task {

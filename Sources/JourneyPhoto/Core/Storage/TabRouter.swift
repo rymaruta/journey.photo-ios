@@ -50,6 +50,10 @@ final class TabRouter: ObservableObject {
     }
     func openMenu() { menuRequests += 1 }
 
+    /// 見出しの吹き出し（メッセージの受信箱・2026-11-10 札 #505）。**シートは `RootView` が出す**
+    @Published private(set) var messagesRequests = 0
+    func openMessages() { messagesRequests += 1 }
+
     /// **地図の札の積み重ねを根まで戻すか**（2026-10-21・確かめ役の指摘）。
     /// 地図の札の中で詳細を積んだ所（人のページ → トランク）から「京都を地図で見る」を押すと、
     /// 語は根に戻るまで預かるだけ（`takePendingMapQuery`）で、地図の札はもう選ばれているので何も起きなかった。
