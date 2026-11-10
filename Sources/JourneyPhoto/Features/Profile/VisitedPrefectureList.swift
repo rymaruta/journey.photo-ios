@@ -17,6 +17,9 @@ struct VisitedPrefectureList: View {
                 section(region)
             }
         }
+        // 🔴 まとまりにしてから名前を付ける。器の VStack に直に付けると、中の行の名前（`visitedMap.row.<県>`）が
+        // すべて `visitedMap.list` に上書きされていた（Mac 947 の要素の木: 行の Button が identifier 'visitedMap.list'）
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("visitedMap.list")
     }
 

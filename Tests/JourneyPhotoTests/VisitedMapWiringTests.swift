@@ -172,6 +172,9 @@ final class VisitedMapWiringTests: XCTestCase {
                        ".accessibilityAction(named: VisitedMapText.removeOne) { model.decrease(name) }"] {
             XCTAssertTrue(list.contains(needle), "一覧のつなぎが無い: \(needle)")
         }
+        // 一覧の器はまとまりにしてから名前を付ける（行の名前を上書きしない・Mac 947）
+        XCTAssertTrue(list.contains(".accessibilityElement(children: .contain)\n        .accessibilityIdentifier(\"visitedMap.list\")"),
+                      "一覧の器の名前が行の名前を上書きする形に戻った")
         // 一覧は Button のまま（スクロールと押した見た目を保つ）。手振りを2つ並べる形に戻さない
         XCTAssertFalse(list.contains(".onTapGesture"), "一覧の行が onTapGesture に戻った")
         XCTAssertFalse(list.contains(".onLongPressGesture"), "一覧の行が onLongPressGesture に戻った")
