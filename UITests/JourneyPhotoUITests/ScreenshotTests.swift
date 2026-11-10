@@ -1698,7 +1698,7 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// **すれちがい帳の頭の行と空の状態**（札 #519・提案「旅の道具の置き場」第5版）。入口は「新しくなったこと」の
-    /// 1.1.79 の項目（`whatsNew.item.0`・行き先 passBook）——シートを閉じてホームに帳を積む道も同時に見る。
+    /// 1.1.79 の帳の項目（題で探す・行き先 passBook）——シートを閉じてホームに帳を積む道も同時に見る。
     ///
     /// 1. 帳（オフ・0 枚）: 頭の行が「すれちがい乗車券はオフです」、主ボタン「説明を読んでオンにする」（`passBook.emptyTurnOn`）
     /// 2. 主ボタン → 設定を積み、はじめから「オンにする」前の説明（`pass.intro.confirm`）が出る
@@ -1720,9 +1720,11 @@ final class ScreenshotTests: XCTestCase {
 
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 5) { agree.tap() }
-        let item = app.buttons["whatsNew.item.0"].firstMatch
+        // 2026-11-10 判断: 項目は位置（`whatsNew.item.0`）ではなく題で探す。1.1.79 の先頭に DM の項目を足したら、
+        // 位置で探していたこの試験が run 42872738853（3 回目）で「先頭の項目が帳の項目でない」と落ちた
+        let item = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'whatsNew.item.' AND label CONTAINS %@",
+                                                    "すれちがい帳で、乗車券の状態が分かる")).firstMatch
         guard item.waitForExistence(timeout: 20) else { return }
-        XCTAssertTrue(item.label.contains("すれちがい帳で、乗車券の状態が分かる"), "先頭の項目が 1.1.79 の帳の項目でない（\(item.label)）")
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "83a-新しくなったこと（1.1.79）")
         item.tap()
