@@ -1607,7 +1607,10 @@ final class ScreenshotTests: XCTestCase {
         guard later.exists, later.isHittable else { return XCTFail("「あとで」を押せない") }
         later.tap()
         let gone = NSPredicate(format: "exists == false")
-        let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: allow)], timeout: 5)
+        // 2026-11-10 判断: 待ちを 5 → 15 秒。分けて流した run 42838160142（組 2）で、押したあと「説明が残っているか」を
+        // 1 回調べるだけで 4.07 秒かかり（t=24.73→28.80）、5 秒の待ちが切れた。同じ枝の run 42856953207 では 0.32 秒で閉じていた。
+        // 調べる速さは Mac によって 10 倍以上違うので、実測の遅い方の約 3.7 倍にする
+        let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: allow)], timeout: 15)
         XCTAssertEqual(closed, .completed, "「あとで」で説明が閉じない")
     }
 
@@ -1676,15 +1679,29 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "83-すれちがい帳")
     }
 
-    /// **自分のカード（乗車券の見本）を回す**（2026-10-16 owner の頼み）: マイページ → 設定 → すれちがい →
-    /// わたしの乗車券。見本は届いたカードと同じ回る部品（`PassSpinCard`）。起動の鍵（`-JPPreviewPass`）で区間を
-    /// 「東京 → フランス」・ひとことつきにしてあるので、表（字数の違う発・着がそろうか）と裏を撮る。
-    ///
-    /// 画面まで行けなければ撮らずに抜ける。**出たのに「裏を見る」が無い・44pt 未満・押しても裏にならない・
-    /// 横に回しても裏にならなければ落とす**
+    /// **すれちがいの設定の「届き方」**（2026-11-10 owner「すれちがったら即時交換されて欲しい」）: 既定はすぐ届く。
+    /// 「夕方にまとめて受け取る」の行が出て、既定でオフになっているかを撮る。画面まで行けなければ撮らずに抜ける。
+    /// **出たのに行がオンのまま・44pt 未満なら落とす**
+    func testCapturesPassSettingsDelivery() throws {
+        guard let (app, _) = openPassPick(stopAtSettings: true) else { return }
+        let toggle = app.switches["pass.settings.evening"].firstMatch
+        guard toggle.waitForExistence(timeout: 10) else { return }
+        var pushes = 0
+        while !toggle.isHittable, pushes < 4 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        XCTAssertGreaterThanOrEqual(toggle.frame.height, 44, "「夕方にまとめて受け取る」の行が 44pt 未満")
+        XCTAssertEqual(toggle.value as? String, "0", "既定が「夕方にまとめて」になっている（既定はすぐ届く）")
+        shoot(app, "85-すれちがいの設定（届き方）")
+    }
+
     /// わたしの乗車券（マイページ → 設定 → すれちがい → わたしの乗車券）まで進めて、回る見本を返す。
     /// 画面まで行けなければ nil（撮らずに抜ける）。`pro` は見本の利用者を Pro の姿にする（`-JPPreviewPro`）
-    private func openPassPick(pro: Bool = false, extra: [String] = []) -> (XCUIApplication, XCUIElement)? {
+    /// `stopAtSettings` なら、すれちがいの設定を開いたところで返す（2つ目は乗車券の行）
+    private func openPassPick(pro: Bool = false, extra: [String] = [],
+                              stopAtSettings: Bool = false) -> (XCUIApplication, XCUIElement)? {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -1716,6 +1733,7 @@ final class ScreenshotTests: XCTestCase {
         }
         guard row.isHittable else { return nil }
         row.tap()
+        if stopAtSettings { return (app, app.buttons["pass.settings.card"].firstMatch) }
         let cardRow = app.buttons["pass.settings.card"].firstMatch
         guard cardRow.waitForExistence(timeout: 10), cardRow.isHittable else { return nil }
         cardRow.tap()
@@ -1835,6 +1853,12 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **自分のカード（乗車券の見本）を回す**（2026-10-16 owner の頼み）: マイページ → 設定 → すれちがい →
+    /// わたしの乗車券。見本は届いたカードと同じ回る部品（`PassSpinCard`）。起動の鍵（`-JPPreviewPass`）で区間を
+    /// 「東京 → フランス」・ひとことつきにしてあるので、表（字数の違う発・着がそろうか）と裏を撮る。
+    ///
+    /// 画面まで行けなければ撮らずに抜ける。**出たのに「裏を見る」が無い・44pt 未満・押しても裏にならない・
+    /// 横に回しても裏にならなければ落とす**
     func testCapturesPassOwnCard() {
         guard let (app, card) = openPassPick() else { return }
         Thread.sleep(forTimeInterval: 3)
@@ -2382,6 +2406,8 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewVisitedMap", "YES"]
+        // 帯は 5 秒で消えるが、要素を探すのに 1 回 0.5〜2 秒かかり、確かめの途中で消える（Mac 948）。UI テストだけ長くする
+        app.launchArguments += ["-JPVisitedQuickBarSeconds", "30"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -2405,24 +2431,91 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "86b-行った県の地図（回数の段）")
 
-        // 県の札（スイッチがオフのときは札が開く）
+        // 案 A（札 #510・2026-11-10）: 県を押すたびに 1 回足し、下に小さな帯「東京都 6 回 ［−］［＋］［詳しく］」。
+        // 🔴 ここから先は**本物の動きを守る**ので、出なければ落とす（レビュー 2026-11-10 の 4）。
+        // 見本の東京都は 5 回。長押し（0.6 秒）→ 5 のまま帯だけ、押す 2 回 → 7、帯の［＋］→ 8、［−］→ 7
+        XCTAssertFalse(app.switches["visitedMap.switch"].exists, "スイッチ「タップで回数を足す」が残っている")
         let tokyo = app.descendants(matching: .any)["visitedMap.pref.東京都"].firstMatch
-        if tokyo.waitForExistence(timeout: 5), tokyo.isHittable {
-            tokyo.tap()
-            if app.descendants(matching: .any)["visitedMap.card"].firstMatch.waitForExistence(timeout: 5) {
-                shoot(app, "86c-行った県の札（東京都）")
-                let close = app.buttons["visitedMap.card.close"].firstMatch
-                if close.exists, close.isHittable { close.tap() }
-            }
-        }
+        XCTAssertTrue(tokyo.waitForExistence(timeout: 5), "地図に東京都が無い")
+        XCTAssertTrue(tokyo.isHittable, "地図の東京都が押せない")
+        let count = app.descendants(matching: .any)["visitedMap.quick.count"].firstMatch
+
+        tokyo.press(forDuration: 0.6)
+        XCTAssertTrue(count.waitForExistence(timeout: 5), "長押しで帯が出ない")
+        XCTAssertTrue(waitForLabel(count, "東京都、5 回"), "長押しで回数が変わった: \(count.label)")
+        XCTAssertFalse(app.descendants(matching: .any)["visitedMap.card"].firstMatch.exists, "長押しで札が開いた")
+
+        tokyo.tap()
+        XCTAssertTrue(waitForLabel(count, "東京都、6 回"), "押して 1 回足していない: \(count.label)")
+        tokyo.tap()
+        XCTAssertTrue(waitForLabel(count, "東京都、7 回"), "2 回押して 2 回にならない: \(count.label)")
+        XCTAssertFalse(app.descendants(matching: .any)["visitedMap.card"].firstMatch.exists, "押して札が開いた")
+
+        let plus = app.buttons["visitedMap.quick.plus"].firstMatch
+        let minus = app.buttons["visitedMap.quick.minus"].firstMatch
+        XCTAssertTrue(plus.isHittable, "帯の［＋］が押せない")
+        XCTAssertTrue(minus.isHittable, "帯の［−］が押せない")
+        // ［−］と［＋］は同じ大きさ（44pt）
+        XCTAssertEqual(plus.frame.size.width, minus.frame.size.width, accuracy: 0.5)
+        XCTAssertEqual(plus.frame.size.height, minus.frame.size.height, accuracy: 0.5)
+        XCTAssertGreaterThanOrEqual(minus.frame.size.height, 43.99)
+        plus.tap()
+        XCTAssertTrue(waitForLabel(count, "東京都、8 回"), "帯の［＋］で足せない: \(count.label)")
+        minus.tap()
+        XCTAssertTrue(waitForLabel(count, "東京都、7 回"), "帯の［−］で減らせない: \(count.label)")
+        // 絵は［−］［＋］を確かめたあとに撮る
+        shoot(app, "86e-行った県の帯（東京都を押した）")
+
+        let details = app.buttons["visitedMap.quick.details"].firstMatch
+        XCTAssertTrue(details.isHittable, "帯の［詳しく］が押せない")
+        details.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["visitedMap.card"].firstMatch.waitForExistence(timeout: 5),
+                      "［詳しく］で札が開かない")
+        shoot(app, "86c-行った県の札（東京都）")
+        let close = app.buttons["visitedMap.card.close"].firstMatch
+        XCTAssertTrue(close.isHittable)
+        close.tap()
 
         let list = app.buttons["visitedMap.mode.list"].firstMatch
-        if list.waitForExistence(timeout: 5), list.isHittable {
-            list.tap()
-            if app.descendants(matching: .any)["visitedMap.list"].firstMatch.waitForExistence(timeout: 5) {
-                shoot(app, "86d-行った県の一覧")
+        XCTAssertTrue(list.waitForExistence(timeout: 5), "一覧の切り替えが無い")
+        list.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["visitedMap.list"].firstMatch.waitForExistence(timeout: 5))
+        shoot(app, "86d-行った県の一覧")
+
+        // 一覧の行（レビュー 2026-11-10 の 3）: 長押し 0.6 秒では足さず帯だけ・そのあと押すと 1 回足す
+        // （長押しのあとの押下を飲み込みすぎない）・行から上へスワイプすると一覧が動き、足さない。見本の北海道は 2 回
+        let row = app.descendants(matching: .any)["visitedMap.row.北海道"].firstMatch
+        if !row.waitForExistence(timeout: 5) {
+            // 調べ（Mac 945 で行の識別子が見つからなかった）: 要素の木のうち北海道・visitedMap の行をログに出す
+            for line in app.debugDescription.components(separatedBy: "\n")
+            where line.contains("北海道") || line.contains("visitedMap.list") || line.contains("visitedMap.row") {
+                print("VISITED-TREE: \(line)")
             }
         }
+        XCTAssertTrue(row.exists, "一覧に北海道の行が無い")
+        var listSwipes = 0
+        while !row.isHittable, listSwipes < 3 {
+            app.swipeUp()
+            listSwipes += 1
+        }
+        XCTAssertTrue(row.isHittable, "北海道の行が押せない")
+        XCTAssertEqual(row.label, "北海道、2 回")
+        row.press(forDuration: 0.6)
+        XCTAssertTrue(waitForLabel(count, "北海道、2 回"), "一覧の長押しで帯が出ない／回数が変わった: \(count.label)")
+        XCTAssertTrue(waitForLabel(row, "北海道、2 回"), "一覧の長押しで回数が変わった: \(row.label)")
+        row.tap()
+        XCTAssertTrue(waitForLabel(row, "北海道、3 回"), "長押しのあとに押して足せない: \(row.label)")
+        let before = row.frame.minY
+        row.swipeUp()
+        XCTAssertLessThan(row.frame.minY, before - 20, "行から上へスワイプしても一覧が動かない")
+        XCTAssertTrue(waitForLabel(row, "北海道、3 回"), "スワイプで回数が変わった: \(row.label)")
+    }
+
+    /// 要素の読み上げの名前が `text` になるまで待つ（帯の数は押したあとに描き直される）
+    private func waitForLabel(_ element: XCUIElement, _ text: String, timeout: TimeInterval = 3) -> Bool {
+        let matches = NSPredicate(format: "label == %@", text)
+        return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: matches, object: element)],
+                              timeout: timeout) == .completed
     }
 
     // MARK: - 旅のトランク（2026-10-17・モック「旅のトランク」）
@@ -3659,6 +3752,11 @@ final class ScreenshotTests: XCTestCase {
 
     /// 1 回の起動で、会員証・メダル・「ほか N」・乗車券を 2 巡押す（1 つの試験は 5 分の上限に収まるよう 2 回の起動まで）
     private func trunkPickRounds(_ rounds: [Int]) {
+        // 2026-11-10 判断: 既定の 300 秒では足りない。4 本とも 1 本で 2 回ずつ起動して回し、run 42765477592 で
+        // 208〜221 秒（上限の 7 割）、PR #514 の run 42787091389 では回全体が平均 1.19 倍遅く、
+        // 2 本目以降が 227〜262 秒、1 本目が 300 秒を越えて止められた（手順は同じで、どの手順も一様に遅い）。
+        // `Tools/xcode-test.sh` の決まりどおり、既定は上げずにこの 4 本だけ実測の約 2.7 倍にする
+        executionTimeAllowance = 600
         pickMisses = 0
         for round in rounds {
             let app = launchTrunk(Self.trunkInsideArgs + ["-JPPreviewPerfProbe", "YES"])

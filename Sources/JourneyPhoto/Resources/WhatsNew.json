@@ -2,6 +2,24 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.78",
+      "date": "2026-11-10",
+      "items": [
+        {
+          "symbol": "hand.tap",
+          "title": { "ja": "行った県は押した数だけ数える", "en": "Each tap counts a visit" },
+          "detail": { "ja": "行った県の地図や一覧で県を押すたびに、1回ずつ増えます。長押しすると［−］［＋］の帯が出て、その場で減らしたり増やしたりできます。", "en": "On the visited prefectures map or list, each tap adds one visit. Press and hold to show − and + so you can adjust the count right there." },
+          "destination": "mypage"
+        },
+        {
+          "symbol": "ticket",
+          "title": { "ja": "すれちがい乗車券がすぐ届く", "en": "Pass cards arrive right away" },
+          "detail": { "ja": "すれちがって交換したカードが、その場で届きます。夕方にまとめて受け取りたいときは、すれちがい乗車券の設定で選べます。", "en": "Cards you exchange when passing someone now arrive right away. If you prefer to receive them together in the evening, choose that in the Pass tickets settings." },
+          "destination": "home"
+        }
+      ]
+    },
+    {
       "version": "1.1.77",
       "date": "2026-11-10",
       "items": [

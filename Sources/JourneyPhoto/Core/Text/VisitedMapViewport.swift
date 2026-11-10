@@ -95,3 +95,68 @@ struct VisitedMapViewport: Equatable {
     /// 回数の数字だけを出す倍率（1 回以上の県）
     nonisolated static let countsFromZoom: CGFloat = 1.6
 }
+
+/// 地図の指の判定（札 #510・案 A）。画面（`VisitedMapCanvasView`）の指の状態から「足す・帯だけ・何もしない」を
+/// 決める所だけを切り出し、Linux の `swift test` で縛る（押し間違い・長押しで足さないことを本物の動きの手前で守る）
+enum VisitedMapTouch {
+
+    enum Outcome: Equatable {
+        /// 押した: 1 回足す
+        case add
+        /// 長押し（0.5 秒）: 足さずに帯だけ
+        case peek
+        /// 何もしない（動かした・ピンチした・長押しで帯を出し終えた）
+        case none
+    }
+
+    /// 長押しの長さ（今までの判定のまま。モックは 0.45 秒・触覚の合図と同じ長さにそろえた）
+    nonisolated static let longPressSeconds: Double = 0.5
+    /// これより動いたら移動・スクロール（足さない）
+    nonisolated static let moveTolerance: Double = 10
+
+    /// 0.5 秒たったときに長押しを出すか。同じ指で、**まだ指が地図に乗っていて**（ScrollView に指を取られて
+    /// 取り消されていない）、動かしてもピンチしてもいないときだけ
+    /// （2026-11-10 レビュー: 地図の上から縦にスクロールした指で、0.5 秒後に帯と触覚が出ないように）
+    static func firesLongPress(sameTouch: Bool, fingerDown: Bool, moved: Bool, pinched: Bool) -> Bool {
+        sameTouch && fingerDown && !moved && !pinched
+    }
+
+    /// 長押しで帯を出した行（一覧）。離したときに来る押下を飲み込むのに使う。
+    /// `releasedAt` は**その指が離れた・取り消された時刻**（行の Button の押している間が終わった時刻）
+    struct LongPress: Equatable {
+        let prefecture: String
+        let at: Date
+        var releasedAt: Date? = nil
+    }
+
+    /// 指が離れてから、この秒数のうちに来た押下だけを、その指の押下として飲み込む
+    /// （Button の押下と「押している間」の終わりは同じ指の離れで、どちらが先に来るかは決まっていない）
+    nonisolated static let releaseSwallowSeconds: Double = 0.5
+
+    /// 指が離れた・取り消された（行の外へずらして離した・スクロールに取られた）。印の寿命をここで切る
+    static func released(_ longPress: LongPress?, at now: Date) -> LongPress? {
+        guard var longPress, longPress.releasedAt == nil else { return longPress }
+        longPress.releasedAt = now
+        return longPress
+    }
+
+    /// 一覧の行の押下を飲み込むか（長押しで帯を出したあと、同じ指を離したときの押下だけ）。
+    /// 別の行・指が離れてから 0.5 秒より後の押下（次の本当の押下）は飲み込まない。
+    /// 2026-11-10 再確認: 前は長押しから 10 秒の間ずっと飲み込み、押下が来ないまま離れた指の印が残ると、
+    /// 次の本当の押下を黙って飲み込んでいた（押した数だけ数える決まりに反する）
+    static func swallowsTap(on prefecture: String, after longPress: LongPress?, now: Date) -> Bool {
+        guard let longPress, longPress.prefecture == prefecture, now >= longPress.at else { return false }
+        // 指がまだ乗っている間に来た押下は、その指の押下
+        guard let releasedAt = longPress.releasedAt else { return true }
+        let elapsed = now.timeIntervalSince(releasedAt)
+        return elapsed >= 0 && elapsed < releaseSwallowSeconds
+    }
+
+    /// 指を離したとき
+    /// - heldSeconds: 指を置いていた長さ。押し始めが分からない（指の途中状態が片付いたあと）なら nil で、
+    ///   何もしない（2026-11-10 再確認: 前は nil を短い押下と見て 1 回足していた）
+    static func onRelease(moved: Bool, pinched: Bool, longPressFired: Bool, heldSeconds: Double?) -> Outcome {
+        guard !moved, !pinched, !longPressFired, let heldSeconds else { return .none }
+        return heldSeconds >= longPressSeconds ? .peek : .add
+    }
+}
