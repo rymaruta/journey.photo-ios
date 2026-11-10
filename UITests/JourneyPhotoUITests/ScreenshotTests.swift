@@ -6278,10 +6278,20 @@ final class ScreenshotTests: XCTestCase {
                 field.typeText("ここで撮りました https://example.com/spot")
                 let send = app.buttons["dm.send"].firstMatch
                 if send.isHittable { send.tap() }
-                if app.descendants(matching: .any)["dm.fieldError"].firstMatch.waitForExistence(timeout: 10) {
-                    Thread.sleep(forTimeInterval: 1)
-                    shoot(app, "86m5-メッセージ（URLを断られた）")
-                }
+                let refusal = app.descendants(matching: .any)["dm.fieldError"].firstMatch
+                let shown = refusal.waitForExistence(timeout: 10)
+                Thread.sleep(forTimeInterval: 1)
+                // 出なかった回も撮る（どこで止まったかを絵で残す）。欄の中身と送信の丸の状態も文で残す
+                shoot(app, shown ? "86m5-メッセージ（URLを断られた）" : "86m5-メッセージ（URLの断りが出ない）")
+                let state = XCTAttachment(string: [
+                    "fieldError: \(shown)",
+                    "field.value: \(String(describing: field.value))",
+                    "send.enabled: \(send.exists ? String(send.isEnabled) : "無し")",
+                    "retry: \(app.buttons["dm.retry"].firstMatch.exists)",
+                ].joined(separator: "\n"))
+                state.name = "86m5-メッセージ（URLを送ったあとの状態）"
+                state.lifetime = .keepAlways
+                add(state)
             }
             app.navigationBars.buttons.element(boundBy: 0).tap()
             Thread.sleep(forTimeInterval: 1)
