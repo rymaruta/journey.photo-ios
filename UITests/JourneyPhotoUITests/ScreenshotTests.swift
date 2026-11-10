@@ -2289,11 +2289,17 @@ final class ScreenshotTests: XCTestCase {
 
     /// 出発の日付を消す・入れるを交互に押す（画面の上にあって動かない2つ・1回ごとに日程が変わる）
     private func toggleStartDate(_ app: XCUIApplication, times: Int) -> Bool {
+        let began = Date()
         for i in 0..<times {
             let label = i % 2 == 0 ? "出発の日付を消す" : "出発の日付を入れる"
             let button = app.buttons[label].firstMatch
-            guard button.waitForExistence(timeout: 3), button.isHittable else { return false }
+            guard button.waitForExistence(timeout: 3), button.isHittable else {
+                _ = fixtureSends(app, "tap\(i)-missing-\(label)")
+                return false
+            }
             button.tap()
+            // 押した時刻（始めからの秒）と、その時点の送った回数を残す（押す間が 2 秒を越えていないかを数で見る）
+            _ = fixtureSends(app, String(format: "tap%d-t+%.1fs", i, Date().timeIntervalSince(began)))
         }
         return true
     }
@@ -2312,6 +2318,7 @@ final class ScreenshotTests: XCTestCase {
         // 運ぶ: 1 日目の最後（千里浜）を 2 日目の最初の行へ（日をまたぐ）。運んだら 2 秒待って 1 回送る
         var sentBefore = 0
         let handles = app.descendants(matching: .any).matching(identifier: "tripPlan.dragHandle")
+        _ = fixtureSends(app, "dragHandles-count\(handles.count)")
         if handles.count >= 4 {
             let from = handles.element(boundBy: 2)
             let to = handles.element(boundBy: 3)
@@ -2321,6 +2328,7 @@ final class ScreenshotTests: XCTestCase {
                 Thread.sleep(forTimeInterval: 1)
                 pushes += 1
             }
+            _ = fixtureSends(app, "dragHittable-from\(from.isHittable)-to\(to.isHittable)")
             if from.isHittable, to.isHittable {
                 from.press(forDuration: 1.2, thenDragTo: to)
                 Thread.sleep(forTimeInterval: 5)
