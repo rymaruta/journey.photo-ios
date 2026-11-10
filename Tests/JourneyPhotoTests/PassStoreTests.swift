@@ -433,6 +433,31 @@ final class PassStoreTests: XCTestCase {
         XCTAssertEqual(scheduled.last?.count, 3, "古い枚数の予約が後から入って残った")
     }
 
+    /// 🔴 **消した後に、並んでいた古い予約が入らない**（2026-11-10・確かめ役の見直し）。綴じた直後に人を替える・
+    /// オフにする・束を開くと、知らせは消される。予約は主スレッドの後の番で入るので、消した後に並んでいた分が
+    /// 入って、前の人の枚数・オフの直後・開く前の枚数で1回鳴っていた
+    func testQueuedInstantNoticeIsDroppedAfterCancel() async {
+        // 人を替える
+        let a = makeStore()
+        a.record(payload("p1"), at: at(16, 10))
+        a.use(userId: "other")
+        // オフにする
+        let b = makeStore(user: "me2")
+        b.record(payload("p2"), at: at(16, 10))
+        b.update { $0.enabled = false }
+        // 束を開く
+        let c = makeStore(user: "me3")
+        c.record(payload("p3"), at: at(16, 10))
+        c.markOpened(c.encounters.map(\.id))
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(scheduled.filter(\.instant).isEmpty,
+                      "消した後に古い予約が入った: \(scheduled.filter(\.instant).map(\.count))")
+        // 消した後に受けた分は、また知らせる
+        c.record(payload("p4"), at: at(16, 10, 20))
+        await waitForSchedule(1)
+        XCTAssertEqual(scheduled.last?.count, 1)
+    }
+
     func testNoticeDate() async {
         let base = at(16, 10)
         XCTAssertEqual(PassExchange.noticeInterval, 15 * 60)

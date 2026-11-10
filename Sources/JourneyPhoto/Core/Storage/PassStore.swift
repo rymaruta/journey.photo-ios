@@ -109,6 +109,7 @@ final class PassStore: ObservableObject {
         if userId != nil, id != userId {
             // 前の人の夕方の知らせを次の人に鳴らさない
             PassBundleNotifier.cancelAll()
+            instantGeneration += 1
         }
         userId = id
         saveBlocked = false
@@ -159,7 +160,10 @@ final class PassStore: ObservableObject {
         guard next != settings else { return }
         let previous = settings
         settings = next
-        if !next.enabled { PassBundleNotifier.cancelAll() }
+        if !next.enabled {
+            PassBundleNotifier.cancelAll()
+            instantGeneration += 1
+        }
         save()
         // 届き方を「すぐ」に替えた: 夕方を待っていた分をいま届ける
         if next.enabled, previous.deliveryMode != .instant, next.deliveryMode == .instant { catchUpInstant() }
@@ -291,16 +295,26 @@ final class PassStore: ObservableObject {
         // 🔴 **予約は受けた順に1つずつ入れる**（2026-11-10 判断・確かめ役の指摘）。OS への予約（`add`）は待つ処理で、
         // `Task` をばらばらに立てると前の予約の入れ終わりが遅れたときに古い枚数が後から入り、それが残った
         // （試験で [1, 3, 2] の順を再現）。前の予約を入れ終えるのを待ってから入れる（主スレッドの上で並ぶ）
+        //
+        // 🔴 **消した後に、並んでいた古い予約を入れない**（2026-11-10 判断・確かめ役の見直し）。予約は主スレッドの
+        // 後の番で入るので、綴じた直後に人を替える・オフにする・束を開く（どれも知らせを消す）と、消した後に
+        // 並んでいた分が入って、前の人の枚数・オフの直後・開く前の枚数で1回鳴っていた（試験で3つとも再現）。
+        // 消すたびに世代（`instantGeneration`）を進め、入れる直前に世代・人・オンが並べた時と同じかを確かめる
         let previous = instantChain
         let schedule = schedule
-        instantChain = Task { @MainActor in
+        let generation = instantGeneration
+        let owner = userId
+        instantChain = Task { @MainActor [weak self] in
             await previous?.value
+            guard let self, self.instantGeneration == generation, self.userId == owner, self.settings.enabled else { return }
             await schedule(day, at, count, true)
         }
     }
 
     /// すぐ届く形の予約の順番待ち（`announceInstant`）。最後に並べた予約の `Task`
     private var instantChain: Task<Void, Never>?
+    /// すぐ届く形の知らせを消した回数（人を替えた・オフにした・束を開いた）。並べた予約が古いかを見分ける
+    private var instantGeneration = 0
 
     /// すぐ届く形の知らせに書く枚数: 届いていて、まだ開いていないカードのうち、**端末で分かる範囲で見せないもの**
     /// （通報した写真・自分で消した／非公開にした写真・ブロックした人・自分）を除いた数。
@@ -432,6 +446,7 @@ final class PassStore: ObservableObject {
             save()
             // 束を開いた: まだ鳴っていないすぐ届く形の知らせ（開く前の枚数）を後から鳴らさない
             PassBundleNotifier.cancelPendingInstant(calendar: calendar)
+            instantGeneration += 1
         }
     }
 
