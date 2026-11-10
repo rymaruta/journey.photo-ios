@@ -157,8 +157,12 @@ final class UXDeadEndsTests: XCTestCase {
         XCTAssertEqual(TripShelfList.startTripTitle, "旅の写真からまとめて")
 
         let book = try source("Features/Pass/PassBookView.swift")
-        XCTAssertTrue(book.contains("actionTitle: Self.settingsTitle, actionIdentifier: \"passBook.emptySettings\") {\n                            if fromSettings"))
-        XCTAssertTrue(book.contains(".navigationDestination(isPresented: $showSettings) { PassSettingsView() }"))
+        // 帳の空の状態（札 #519）: オフなら「説明を読んでオンにする」、オンならボタンを出さない（止まっている訳は頭の行）
+        XCTAssertTrue(book.contains("actionTitle: actionTitle, actionIdentifier: PassBookStatus.emptyActionIdentifier) {\n                            openSettings(intro: true)"))
+        XCTAssertEqual(PassBookStatus.off.emptyActionTitle, "説明を読んでオンにする")
+        XCTAssertNil(PassBookStatus.noTicket.emptyActionTitle)
+        XCTAssertEqual(PassBookStatus.emptyActionIdentifier, "passBook.emptyTurnOn")
+        XCTAssertTrue(book.contains(".navigationDestination(isPresented: $showSettings) { PassSettingsView(startsWithIntro: settingsIntro) }"))
 
         let root = try source("App/RootView.swift")
         XCTAssertTrue(root.contains(".onChange(of: tabRouter.postRequests)"))
@@ -184,10 +188,23 @@ final class UXDeadEndsTests: XCTestCase {
         XCTAssertFalse(root.contains("guard !showTripImport, !showPhotoUpload"), "手書きの確かめが残っている")
     }
 
-    /// 設定から来たすれちがい帳では、「すれちがいの設定」で設定を積み直さず戻る
+    /// 設定から来たすれちがい帳では、頭の行（札 #519）も空の状態の主ボタンも、設定を積み直さず戻る
     func testPassBookFromSettingsGoesBack() async throws {
         let book = try source("Features/Pass/PassBookView.swift")
-        XCTAssertTrue(book.contains("if fromSettings { dismiss() } else { showSettings = true }"))
+        XCTAssertTrue(book.contains("""
+    private func openSettings(intro: Bool) {
+        if fromSettings {
+            dismiss()
+        } else {
+            settingsIntro = intro
+            showSettings = true
+        }
+    }
+"""), "設定から来た帳で、設定を積み直している")
+        // 設定へ積む道はこの1つだけ（頭の行と主ボタンが別々に積まない）
+        XCTAssertEqual(book.components(separatedBy: "showSettings = true").count - 1, 1)
+        XCTAssertTrue(book.contains("Button { openSettings(intro: false) } label: {"))
+        XCTAssertTrue(book.contains("openSettings(intro: true)"))
         let settings = try source("Features/Pass/PassSettingsView.swift")
         XCTAssertTrue(settings.contains("PassBookView(fromSettings: true)"))
         XCTAssertFalse(settings.contains("PassBookView()"), "設定から開く帳が、設定を積み直す")

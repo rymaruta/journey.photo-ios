@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreBluetooth
 
 /// すれちがい帳（板 PassBook）。受け取ったカードは消えずにここに綴じる。
 ///
@@ -21,15 +22,41 @@ struct PassBookView: View {
     @State private var viewport: CGFloat = 0
     @State private var opened: PassBookOpen?
     @State private var isLoading = true
-    /// 空のときの「すれちがいの設定」（2026-10-16・次の一手）
+    /// すれちがい乗車券の設定を積む（頭の行・空の状態の主ボタン。2026-10-16・次の一手）
     @State private var showSettings = false
+    /// 積む設定で、はじめから「オンにする」前の説明を出すか（空の状態の「説明を読んでオンにする」・札 #519）
+    @State private var settingsIntro = false
+    /// Bluetooth の電源（頭の行の「Bluetooth がオフ」・`PassSettingsView` と同じ読み方）
+    @ObservedObject private var radio = PassRadio.shared
     /// すれちがいの設定（`PassSettingsView`）から開いたか。**そのときは設定を積み直さず、戻る**
     /// （設定 → 帳 → 設定 → 帳…と同じ画面が重なっていく）
     var fromSettings = false
     @Environment(\.dismiss) private var dismiss
 
-    /// 空のときの次の一手の題
-    nonisolated static var settingsTitle: String { L("すれちがい乗車券の設定", "Pass ticket settings") }
+    /// 頭の行の状態（`PassBookStatus`）。読むのは今の状態だけで、OS の許可は求めない
+    private var status: PassBookStatus {
+        let auth = CBManager.authorization
+        return PassBookStatus.resolve(.init(
+            enabled: pass.settings.enabled,
+            ticketChosen: pass.settings.cardPhotoId != nil,
+            bluetoothPoweredOff: PassRadio.showsPowerOffNotice(enabled: pass.settings.enabled, state: radio.powerState),
+            bluetoothDenied: auth == .denied || auth == .restricted || radio.powerState == .unauthorized,
+            mode: pass.settings.mode,
+            distanceReasonExists: PassSettingsText.travelUnknownReason(
+                homePrefecture: pass.homePrefecture, locationAuthorized: PassPlaceFinder.shared.isAuthorized) != nil,
+            awayToday: pass.awayToday(),
+            delivery: pass.settings.deliveryMode))
+    }
+
+    /// 設定へ。**設定から積まれた帳では積まずに戻る**（設定 → 帳 → 設定 → 帳…と重ねない・頭の行も主ボタンも同じ）
+    private func openSettings(intro: Bool) {
+        if fromSettings {
+            dismiss()
+        } else {
+            settingsIntro = intro
+            showSettings = true
+        }
+    }
 
     var body: some View {
         let book = pass.book(hiding: hidden.snapshot)
@@ -49,16 +76,23 @@ struct PassBookView: View {
                 .padding(.horizontal, JPSpace.l)
                 .padding(.top, 10)
 
+                let status = self.status
+                statusRow(status)
+                    .padding(.horizontal, JPSpace.l)
+                    .padding(.top, 14)
+
                 if contents.isEmpty {
                     if isLoading && pass.hasDelivered() {
                         JPLoadingState(kind: .grid)
-                    } else {
-                        EmptyState(title: L("まだカードがありません", "No cards yet"),
-                                   message: L("すれちがい乗車券をオンにして出かけると、近くにいたアプリの人のカードが届きます。",
-                                              "Turn on Pass tickets and head out — cards from app users you pass arrive here."),
-                                   actionTitle: Self.settingsTitle, actionIdentifier: "passBook.emptySettings") {
-                            if fromSettings { dismiss() } else { showSettings = true }
+                    } else if let actionTitle = status.emptyActionTitle {
+                        // オフ: 主ボタン1つ。押すと設定を積み、まず「オンにする」前の説明（札 #519）
+                        EmptyState(title: L("まだカードがありません", "No cards yet"), message: status.emptyMessage,
+                                   actionTitle: actionTitle, actionIdentifier: PassBookStatus.emptyActionIdentifier) {
+                            openSettings(intro: true)
                         }
+                    } else {
+                        // オン: ボタンは出さない（止まっている訳は頭の行が言う）
+                        EmptyState(title: L("まだカードがありません", "No cards yet"), message: status.emptyMessage)
                     }
                 } else {
                     statsRow(PassBook.stats(book.filter { byId[$0.id] != nil }, prefectures: pass.ownerPrefectures))
@@ -93,7 +127,7 @@ struct PassBookView: View {
             if height != viewport { viewport = height }
         }
         // 設定（設定の画面の「すれちがい」と同じ `PassSettingsView`）
-        .navigationDestination(isPresented: $showSettings) { PassSettingsView() }
+        .navigationDestination(isPresented: $showSettings) { PassSettingsView(startsWithIntro: settingsIntro) }
         .webScreen()
         .navigationTitle(L("すれちがい帳", "Pass book"))
         .navigationBarTitleDisplayMode(.inline)
@@ -117,6 +151,22 @@ struct PassBookView: View {
         }
         .fullScreenCover(item: $opened) { open in
             PassViewerView(cards: open.cards, mode: .book, start: open.start)
+        }
+    }
+
+    /// 頭の1行（板の行 `JPRowLabel`・札 `JPCard`・押す間は白 6%）。読み上げは名前＝題・値＝2行目
+    private func statusRow(_ status: PassBookStatus) -> some View {
+        JPCard {
+            Button { openSettings(intro: false) } label: {
+                JPRowLabel(title: status.title, systemImage: "ticket", detail: status.detail)
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(status.title)
+            .accessibilityValue(status.detail)
+            .accessibilityHint(PassBookStatus.hint(fromSettings: fromSettings))
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier(PassBookStatus.statusIdentifier)
         }
     }
 

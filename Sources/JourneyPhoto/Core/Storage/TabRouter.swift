@@ -6,6 +6,11 @@ import Combine
 /// **押した回数で伝える。** 真偽値にすると、マイページから別の札へ移って
 /// もう一度押したときに「変わっていない」と見なされて効かない
 /// （`NotificationRouter` / `MissionRouter` と同じ理由）。
+/// ホームの札に積む画面（「新しくなったこと」の行き先・札 #519）
+enum HomeScreenRequest: Equatable, Sendable {
+    case passBook, visitedMap
+}
+
 @MainActor
 final class TabRouter: ObservableObject {
 
@@ -25,6 +30,24 @@ final class TabRouter: ObservableObject {
     /// 「新しくなったこと」の項目から（2026-10-04）。押した回数で伝える（上と同じ理由）
     @Published private(set) var homeRequests = 0
     func openHome() { homeRequests += 1 }
+    /// **ホームの札に替えて、その画面を積む**（「新しくなったこと」の項目から・2026-11-10 札 #519）。
+    /// 札を替えてメニューのシートを下ろすのは `homeRequests` と同じ道（`RootView`）。積むのはホーム
+    /// （`GalleryView`）が、シートが閉じきってから受け取る（`takePendingHomeScreen`）。回数で伝えるのは上と同じ理由
+    @Published private(set) var homeScreenRequests = 0
+    /// 積む画面。ホームが受け取ったら消す
+    private(set) var pendingHomeScreen: HomeScreenRequest?
+
+    func openOnHome(_ screen: HomeScreenRequest) {
+        pendingHomeScreen = screen
+        homeScreenRequests += 1
+        openHome()
+    }
+
+    func takePendingHomeScreen() -> HomeScreenRequest? {
+        defer { pendingHomeScreen = nil }
+        return pendingHomeScreen
+    }
+
     /// 探すの0件の出口から来たときの検索語。地図が一度だけ受け取る
     /// （`takePendingMapQuery`）。渡さないと地図が空の絞りで開き、打ち直すことになる
     private(set) var pendingMapQuery: String?

@@ -13,9 +13,56 @@ import Foundation
 ///   新しくインストールした人はこの起動で同意するので、起動した時点では 0 のまま
 enum WhatsNew {
 
-    /// 押したときに行ける先。下の札（`TabRouter`）で行ける所だけ。無い項目は説明だけ
+    /// 押したときに行ける先。下の札（`TabRouter`）で行ける所と、ホームに積む画面（札 #519）。無い項目は説明だけ
     enum Destination: String, Equatable {
         case home, search, map, mypage
+        /// すれちがい帳・行った県の地図（2026-11-10・札 #519）。ホームの札に替えて、その画面を積む。
+        /// 積んだあとも下の札は「ホーム」のまま。マイページの積み重ねには触らない
+        case passBook, visitedMap
+    }
+
+    /// 押したときの動き（画面は描くだけ・Linux で試せるように値で返す）
+    enum Route: Equatable {
+        /// 下の札を切り替える
+        case tab(Destination)
+        /// ホームの札に替えて、その画面を積む
+        case home(HomeScreenRequest)
+        /// ログインしていない: ログインの画面（`SignInSheet`）を理由の字つきで出す
+        case signIn(String)
+        /// 起動直後のログインの確認中は何もしない（ログイン済みの人にもログインの画面が出る・`HomeLikeGate` と同じ）
+        case wait
+    }
+
+    /// 行き先 → 動き。すれちがい帳・行った県の地図は自分の記録なので、ログインしていなければログインの画面へ
+    static func route(_ destination: Destination, userId: String?, isResolving: Bool) -> Route {
+        let screen: HomeScreenRequest
+        let reason: String
+        switch destination {
+        case .home, .search, .map, .mypage: return .tab(destination)
+        case .passBook:
+            screen = .passBook
+            reason = L("すれちがい帳を見るにはログインしてください", "Sign in to see your Pass book")
+        case .visitedMap:
+            screen = .visitedMap
+            reason = L("行った県の記録を見るにはログインしてください", "Sign in to see your visited prefectures")
+        }
+        switch HomeLikeGate.decide(userId: userId, isResolving: isResolving) {
+        case .send: return .home(screen)
+        case .askToSignIn: return .signIn(reason)
+        case .ignore: return .wait
+        }
+    }
+
+    /// 行のボタンの読み上げのヒント（行き先を言う）
+    static func hint(_ destination: Destination) -> String {
+        switch destination {
+        case .home: return L("ホームを開きます", "Opens Home")
+        case .search: return L("探すを開きます", "Opens Search")
+        case .map: return L("マップを開きます", "Opens the map")
+        case .mypage: return L("マイページを開きます", "Opens My Page")
+        case .passBook: return L("すれちがい帳を開きます", "Opens the Pass book")
+        case .visitedMap: return L("行った県の地図を開きます", "Opens the visited prefectures map")
+        }
     }
 
     struct Localized: Decodable, Equatable {
