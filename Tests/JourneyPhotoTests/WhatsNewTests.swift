@@ -115,9 +115,9 @@ final class WhatsNewTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let all = WhatsNew.decode(data)
-        XCTAssertEqual(all.map(\.version), ["1.1.77", "1.1.76", "1.1.75", "1.1.74", "1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14", "1.0.82", "1.0.73", "1.0.67"])
-        // 1.1.77・1.1.76・1.1.75・1.1.74・1.1.72 の中身は `testVersion1172SummarizesChangesSince1087` で見る。以下は 1.1.18 以前の項目
-        let releases = Array(all.dropFirst(5))
+        XCTAssertEqual(all.map(\.version), ["1.1.78", "1.1.77", "1.1.76", "1.1.75", "1.1.74", "1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14", "1.0.82", "1.0.73", "1.0.67"])
+        // 1.1.78・1.1.77・1.1.76・1.1.75・1.1.74・1.1.72 の中身は `testVersion1172SummarizesChangesSince1087` で見る。以下は 1.1.18 以前の項目
+        let releases = Array(all.dropFirst(6))
         // 版に重複が無い（履歴の区切りと「見た版」の比べ方が版で1つに決まる前提）
         let versions = releases.map(\.version)
         XCTAssertEqual(Set(versions).count, versions.count, "WhatsNew.json の版が重複している")
@@ -267,8 +267,8 @@ final class WhatsNewTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
-        // 1.1.72 より前の分だけで見る（1.1.77・1.1.76・1.1.75・1.1.74・1.1.72 は `testVersion1172SummarizesChangesSince1087`）
-        let releases = Array(WhatsNew.decode(data).dropFirst(5))
+        // 1.1.72 より前の分だけで見る（1.1.78・1.1.77・1.1.76・1.1.75・1.1.74・1.1.72 は `testVersion1172SummarizesChangesSince1087`）
+        let releases = Array(WhatsNew.decode(data).dropFirst(6))
         XCTAssertEqual(releases.first?.version, "1.1.18")
         XCTAssertEqual(releases.first?.items.count, 2)
         XCTAssertEqual(releases[1].items.count, 3)
@@ -315,28 +315,41 @@ final class WhatsNewTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let releases = WhatsNew.decode(data)
-        // 1.1.77（2026-11-10）: メッセージ（DM・札 #505）とストーリーの返信が残ること
-        XCTAssertEqual(releases.first?.version, "1.1.77")
+        // 1.1.78（2026-11-10）: 行った県を押した数だけ数える（札 #510）・すれちがい乗車券がすぐ届く（札 #513）
+        XCTAssertEqual(releases.first?.version, "1.1.78")
         XCTAssertEqual(releases.first?.date, WhatsNew.Day(year: 2026, month: 11, day: 10))
-        XCTAssertEqual(releases.first?.items.map(\.title.ja), ["メッセージが使えるように", "ストーリーの返信がメッセージに残る"])
-        XCTAssertEqual(releases.first?.items.compactMap(\.destination), [.home, .home])
-        let banned1177 = ["撮りどき", "捨て", "注目スポット", "撮影地ガイド", "ガイドを見る", "この場所", "キャンプ場"]
+        XCTAssertEqual(releases.first?.items.map(\.title.ja), ["行った県は押した数だけ数える", "すれちがい乗車券がすぐ届く"])
+        XCTAssertEqual(releases.first?.items.compactMap(\.destination), [.mypage, .home])
         for item in releases.first?.items ?? [] {
+            for text in [item.title.ja, item.detail.ja] {
+                for word in ["撮りどき", "捨て", "注目スポット", "撮影地ガイド", "ガイドを見る", "この場所"] {
+                    XCTAssertFalse(text.contains(word), "\(item.title.ja): \(word)")
+                }
+            }
+            XCTAssertFalse(item.title.en.isEmpty || item.detail.en.isEmpty, item.title.ja)
+        }
+        // 1.1.77（2026-11-10）: メッセージ（DM・札 #505）とストーリーの返信が残ること
+        XCTAssertEqual(releases[1].version, "1.1.77")
+        XCTAssertEqual(releases[1].date, WhatsNew.Day(year: 2026, month: 11, day: 10))
+        XCTAssertEqual(releases[1].items.map(\.title.ja), ["メッセージが使えるように", "ストーリーの返信がメッセージに残る"])
+        XCTAssertEqual(releases[1].items.compactMap(\.destination), [.home, .home])
+        let banned1177 = ["撮りどき", "捨て", "注目スポット", "撮影地ガイド", "ガイドを見る", "この場所", "キャンプ場"]
+        for item in releases[1].items {
             for text in [item.title.ja, item.detail.ja] {
                 for word in banned1177 { XCTAssertFalse(text.contains(word), "\(item.title.ja): \(word)") }
             }
             XCTAssertFalse(item.title.en.isEmpty || item.detail.en.isEmpty, item.title.ja)
         }
         // 1.1.76（2026-11-09）: 行った県の地図の段の色（板 04b）
-        XCTAssertEqual(releases[1].version, "1.1.76")
-        XCTAssertEqual(releases[1].date, WhatsNew.Day(year: 2026, month: 11, day: 9))
-        XCTAssertEqual(releases[1].items.map(\.title.ja), ["行った県の地図が見分けやすく"])
-        XCTAssertEqual(releases[1].items.compactMap(\.destination), [.mypage])
-        XCTAssertEqual(releases[2].version, "1.1.75")
+        XCTAssertEqual(releases[2].version, "1.1.76")
         XCTAssertEqual(releases[2].date, WhatsNew.Day(year: 2026, month: 11, day: 9))
-        XCTAssertEqual(releases[2].items.map(\.title.ja), ["ストーリーのカメラにズーム・フラッシュ・タイマー", "動画の切り取りとフィルター", "ストーリーに手描き"])
-        XCTAssertEqual(releases[3].version, "1.1.74")
-        let latest = try XCTUnwrap(releases.dropFirst(4).first)
+        XCTAssertEqual(releases[2].items.map(\.title.ja), ["行った県の地図が見分けやすく"])
+        XCTAssertEqual(releases[2].items.compactMap(\.destination), [.mypage])
+        XCTAssertEqual(releases[3].version, "1.1.75")
+        XCTAssertEqual(releases[3].date, WhatsNew.Day(year: 2026, month: 11, day: 9))
+        XCTAssertEqual(releases[3].items.map(\.title.ja), ["ストーリーのカメラにズーム・フラッシュ・タイマー", "動画の切り取りとフィルター", "ストーリーに手描き"])
+        XCTAssertEqual(releases[4].version, "1.1.74")
+        let latest = try XCTUnwrap(releases.dropFirst(5).first)
         XCTAssertEqual(latest.version, "1.1.72")
         XCTAssertEqual(latest.date, WhatsNew.Day(year: 2026, month: 11, day: 7))
         XCTAssertEqual(latest.items.count, 10)
@@ -355,27 +368,30 @@ final class WhatsNewTests: XCTestCase {
         }
         // 1.0.87 の人: 重複なく、新しい順に全部
         let from1087 = WhatsNew.pending(releases: releases, seen: "1.0.87", current: "1.1.72", usedBefore: true)
-        XCTAssertEqual(from1087.map(\.version), ["1.1.77", "1.1.76", "1.1.75", "1.1.74", "1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14"])
+        XCTAssertEqual(from1087.map(\.version), ["1.1.78", "1.1.77", "1.1.76", "1.1.75", "1.1.74", "1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14"])
         let titles = from1087.flatMap(\.items).map(\.title.ja)
         XCTAssertEqual(Set(titles).count, titles.count, "1.0.87 の人に同じ題が2回出る")
         // 1.1.71 の人は 1.1.77・1.1.76・1.1.75・1.1.74・1.1.72。ワークフローが 1.1.73 を付けても出る
-        for current in ["1.1.77", "1.1.80"] {
+        for current in ["1.1.78", "1.1.80"] {
             XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.71", current: current, usedBefore: true)
-                .map(\.version), ["1.1.77", "1.1.76", "1.1.75", "1.1.74", "1.1.72"], current)
+                .map(\.version), ["1.1.78", "1.1.77", "1.1.76", "1.1.75", "1.1.74", "1.1.72"], current)
         }
-        // 1.1.76 を見た人には 1.1.77 だけ。1.1.77 を見た人には出さない
-        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.76", current: "1.1.77", usedBefore: true)
-            .map(\.version), ["1.1.77"])
-        XCTAssertTrue(WhatsNew.pending(releases: releases, seen: "1.1.77", current: "1.1.77", usedBefore: true).isEmpty)
+        // 1.1.77 を見た人には 1.1.78 だけ。1.1.78 を見た人には出さない
+        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.77", current: "1.1.78", usedBefore: true)
+            .map(\.version), ["1.1.78"])
+        XCTAssertTrue(WhatsNew.pending(releases: releases, seen: "1.1.78", current: "1.1.78", usedBefore: true).isEmpty)
+        // 1.1.76 を見た人には 1.1.78・1.1.77
+        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.76", current: "1.1.78", usedBefore: true)
+            .map(\.version), ["1.1.78", "1.1.77"])
         // 1.1.75 を見た人には 1.1.77・1.1.76
-        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.75", current: "1.1.77", usedBefore: true)
-            .map(\.version), ["1.1.77", "1.1.76"])
+        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.75", current: "1.1.78", usedBefore: true)
+            .map(\.version), ["1.1.78", "1.1.77", "1.1.76"])
         // 1.1.74 を見た人には 1.1.77・1.1.76・1.1.75
-        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.74", current: "1.1.77", usedBefore: true)
-            .map(\.version), ["1.1.77", "1.1.76", "1.1.75"])
+        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.74", current: "1.1.78", usedBefore: true)
+            .map(\.version), ["1.1.78", "1.1.77", "1.1.76", "1.1.75"])
         // 1.1.72 を見た人には 1.1.77・1.1.76・1.1.75・1.1.74
-        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.72", current: "1.1.77", usedBefore: true)
-            .map(\.version), ["1.1.77", "1.1.76", "1.1.75", "1.1.74"])
+        XCTAssertEqual(WhatsNew.pending(releases: releases, seen: "1.1.72", current: "1.1.78", usedBefore: true)
+            .map(\.version), ["1.1.78", "1.1.77", "1.1.76", "1.1.75", "1.1.74"])
         XCTAssertTrue(WhatsNew.pending(releases: releases, seen: nil, current: "1.1.72", usedBefore: false).isEmpty)
     }
 
