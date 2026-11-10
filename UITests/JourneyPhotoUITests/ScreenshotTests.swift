@@ -6420,9 +6420,27 @@ final class ScreenshotTests: XCTestCase {
         guard hasButton, message.isHittable else { return }
         XCTAssertGreaterThanOrEqual(message.frame.height, 44, "「メッセージ」の当たりが 44pt 未満")
         message.tap()
-        if app.descendants(matching: .any)["dm.conversation"].firstMatch.waitForExistence(timeout: 15) {
-            Thread.sleep(forTimeInterval: 2)
-            shoot(app, "86n4-メッセージ（プロフィールから開いた会話）")
-        }
+        let conversation = app.descendants(matching: .any)["dm.conversation"].firstMatch
+        guard conversation.waitForExistence(timeout: 15) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "86n4-メッセージ（プロフィールから開いた会話）")
+
+        // 会話 → 見出し → 相手のプロフィール →「メッセージ」は、同じ会話を積まずに戻る（2026-11-10・確かめ役の指摘）。
+        // 積み重ねは「写真 → プロフィール → 会話」のまま: 2回戻ると写真で、会話は残っていない
+        let header = app.buttons["dm.header"].firstMatch
+        guard header.waitForExistence(timeout: 5), header.isHittable else { return }
+        header.tap()
+        guard message.waitForExistence(timeout: 15), message.isHittable else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "86n5-メッセージ（会話から開いたプロフィール）")
+        message.tap()
+        XCTAssertTrue(conversation.waitForExistence(timeout: 10), "会話から開いたプロフィールの「メッセージ」で会話に戻らない")
+        Thread.sleep(forTimeInterval: 1)
+        goBack(app)
+        XCTAssertTrue(message.waitForExistence(timeout: 10), "会話から1つ戻ってもプロフィールでない")
+        Thread.sleep(forTimeInterval: 1)
+        goBack(app)
+        Thread.sleep(forTimeInterval: 2)
+        XCTAssertFalse(conversation.exists, "会話から開いたプロフィールの「メッセージ」で、同じ会話がもう1枚積まれた")
     }
 }

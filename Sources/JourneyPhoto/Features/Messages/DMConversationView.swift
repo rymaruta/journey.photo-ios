@@ -140,7 +140,7 @@ struct DMConversationView: View {
             }
         }
         .navigationDestination(isPresented: $showProfile) {
-            if let peerId { UserProfileView(userId: peerId) }
+            if let peerId { UserProfileView(userId: peerId, fromConversation: true) }
         }
         .task(id: conversationId) { await load() }
         // 開いている間だけ読み直す（前面・電波あり）

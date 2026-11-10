@@ -576,6 +576,26 @@ struct DMPeerSeed: Hashable, Identifiable {
 /// 送る側の決まり（返信か承認までは文字3通・URL 不可）は全員に同じ
 enum DMStart {
 
+    /// プロフィールの「メッセージ」を押したときの動き（2026-11-10・確かめ役の指摘）。
+    /// 会話 → 見出し → 相手のプロフィール →「メッセージ」で**同じ会話がもう1枚積まれ**、2枚とも10秒ごとに
+    /// 読み直していた。会話から開いたプロフィール（`fromConversation`）では積まずに戻る
+    enum MessageAction: Equatable {
+        /// この人との会話を積む
+        case openConversation
+        /// 来た会話へ戻る（`dismiss()`）
+        case backToConversation
+    }
+
+    static func messageAction(fromConversation: Bool) -> MessageAction {
+        fromConversation ? .backToConversation : .openConversation
+    }
+
+    /// 「メッセージ」の読み上げのヒント（押すと何が起きるかを言う）
+    static func messageHint(fromConversation: Bool) -> String {
+        fromConversation ? L("この人とのメッセージに戻ります", "Goes back to your messages with this person")
+                         : L("この人とのメッセージを開きます", "Opens your messages with this person")
+    }
+
     /// プロフィールに「メッセージ」を出すか。**ログインしていて、自分以外で、ブロックの関係になく、
     /// フォローしていると分かっている**ときだけ（分からない＝読めなかった回は出さない）
     static func showsMessageButton(viewerId: String?, userId: String, isFollowing: Bool,

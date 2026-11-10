@@ -193,6 +193,27 @@ final class DirectMessageStartTests: XCTestCase {
         XCTAssertTrue(label.contains("DMText.messageButtonTitle"))
     }
 
+    /// 会話 → 見出し → 相手のプロフィール →「メッセージ」で、同じ会話をもう1枚積まない（戻る）。
+    /// 2枚積むと、どちらも10秒ごとに読み直していた（2026-11-10・確かめ役の指摘）
+    func testMessageFromAProfileOpenedInTheConversationGoesBack() async throws {
+        XCTAssertEqual(DMStart.messageAction(fromConversation: true), .backToConversation)
+        XCTAssertEqual(DMStart.messageAction(fromConversation: false), .openConversation)
+        XCTAssertEqual(DMStart.messageHint(fromConversation: true), "この人とのメッセージに戻ります")
+        XCTAssertEqual(DMStart.messageHint(fromConversation: false), "この人とのメッセージを開きます")
+        let conversation = try source("Features/Messages/DMConversationView.swift")
+        XCTAssertTrue(conversation.contains("UserProfileView(userId: peerId, fromConversation: true)"),
+                      "会話から開くプロフィールに印を渡していない")
+        XCTAssertFalse(conversation.contains("UserProfileView(userId: peerId)"))
+        let view = try source("Features/Profile/UserProfileView.swift")
+        XCTAssertTrue(view.contains("var fromConversation = false"))
+        let button = slice(view, from: "private var messageButton: some View {", to: ".accessibilityIdentifier(\"profile.message\")")
+        XCTAssertTrue(button.contains("switch DMStart.messageAction(fromConversation: fromConversation) {"))
+        XCTAssertTrue(button.contains("case .backToConversation: dismiss()"), "会話から来たのに会話を積み直す")
+        XCTAssertTrue(button.contains(".accessibilityHint(DMStart.messageHint(fromConversation: fromConversation))"))
+        // ほかの入口（受信箱・写真・検索…）から開くプロフィールは今までどおり積む（既定は false）
+        XCTAssertEqual(try source("Features/Messages/DMConversationView.swift").components(separatedBy: "fromConversation: true").count - 1, 1)
+    }
+
     /// 受信箱: 見出しの鉛筆 → 新しいメッセージ（シート）→ 選んだら閉じてから、その人との会話を積む
     func testInboxNewMessageWiring() async throws {
         let inbox = try source("Features/Messages/DMInboxView.swift")

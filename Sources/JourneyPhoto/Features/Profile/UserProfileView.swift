@@ -16,6 +16,10 @@ import UIKit
 struct UserProfileView: View {
 
     let userId: String
+    /// 会話（`DMConversationView` の見出し・…）から開いたか。**そのときは「メッセージ」で会話を積み直さず、戻る**
+    /// （会話 → プロフィール → 同じ会話…と重なり、どれも10秒ごとに読み直していた・2026-11-10）
+    var fromConversation = false
+    @Environment(\.dismiss) private var dismiss
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
@@ -559,12 +563,15 @@ struct UserProfileView: View {
     /// 「メッセージ」（フォロー中 ▾ の右・同じ線の形・`ProfileMessageButtonLabel`）。押すとこの人との会話
     private var messageButton: some View {
         Button {
-            showConversation = true
+            switch DMStart.messageAction(fromConversation: fromConversation) {
+            case .openConversation: showConversation = true
+            case .backToConversation: dismiss()
+            }
         } label: {
             ProfileMessageButtonLabel()
         }
         .buttonStyle(.plain)
-        .accessibilityHint(L("この人とのメッセージを開きます", "Opens your messages with this person"))
+        .accessibilityHint(DMStart.messageHint(fromConversation: fromConversation))
         .accessibilityIdentifier("profile.message")
     }
 
