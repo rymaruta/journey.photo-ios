@@ -31,13 +31,14 @@ struct SearchSpotIndexSection: View {
     nonisolated static let chipRowHeight: CGFloat = PillChip.height + PillChip.tapSlack * 2
     /// チップの行と札の行のあいだ
     nonisolated static let rowGap: CGFloat = JPSpace.xs
-    /// 札と出典の行のあいだ
-    nonisolated static let creditGap: CGFloat = JPSpace.xxs
-    /// 出典の1行の高さ（12pt・1行固定）。**写真の無い札も同じだけ空ける**（地方で段の高さを変えない）
-    nonisolated static let creditHeight: CGFloat = 16
-    /// 札の列（札＋出典の行）の高さ
+    /// 札と出典の帯のあいだ（帯の中で字を上下の真ん中に置くので、見た目のすき間は帯がつくる）
+    nonisolated static let creditGap: CGFloat = 0
+    /// 出典の帯の高さ＝押せる所（`CreditLink.tapHeight`・44）。字は 12pt の1行で帯の上下の真ん中。
+    /// **写真の無い札も同じだけ空ける**（地方で段の高さを変えない）
+    nonisolated static let creditHeight: CGFloat = CGFloat(CreditLink.tapHeight)
+    /// 札の列（札＋出典の帯）の高さ
     nonisolated static let cardColumnHeight: CGFloat = cardHeight + creditGap + creditHeight
-    /// 段の中身（チップ＋札＋出典）の高さ。**地方を替えても変わらない**（標準の字の大きさで 188）
+    /// 段の中身（チップ＋札＋出典）の高さ。**地方を替えても変わらない**（標準の字の大きさで 212）
     nonisolated static let bodyHeight: CGFloat = chipRowHeight + rowGap + cardColumnHeight
 
     var body: some View {
@@ -165,20 +166,26 @@ struct SearchSpotIndexSection: View {
             .accessibilityAddTraits(.isButton)
     }
 
-    /// 札の写真の出典（作者 / ライセンス・押すと出典とライセンスの頁）。**写真と必ず一緒に**（CC BY・CC BY-SA の条件・
-    /// 156pt の札は `SpotImage.smallURL` の区分で大きな枠＝ホームの札・旅の候補の札と同じ扱い）。
-    /// 札のリンクの**外**に置く（押す先が2つ重ならない）。1行固定・頭で切る（作者とライセンスを残す）。
-    /// 写真の無い札も同じ高さを空ける（段の高さを地方で変えない）
+    /// 札の写真の出典。**写真と必ず一緒に**（CC BY・CC BY-SA の条件・156pt の札は `SpotImage.smallURL` の区分で
+    /// 大きな枠＝ホームの札・旅の候補の札と同じ扱い）。札のリンクの**外**に置く（押す先が2つ重ならない）。
+    ///
+    /// 2026-11-11（確かめ役の見直し）: ホームの段と同じ `CreditLinksMenu` で包む——当たりは帯ぜんぶ（44pt）、
+    /// 押すと出典の頁・ライセンス（名前つき）を選べる。幅 156 の1行には作者だけを出し（末尾で切る・長い名前の
+    /// 頭を落とさない）、ライセンスはメニューへ。開ける先が無い写真だけは、ライセンスも字で出す（どこにも出ないのを避ける）。
+    /// 読み上げは出典の全文（`SpotImage.credit`）。写真の無い札も同じ高さを空ける（段の高さを地方で変えない）
     @ViewBuilder
     private func credit(_ card: SpotPrefectureIndex.Card) -> some View {
         Group {
             if let cover = card.cover {
-                SpotImageCredit(photo: cover)
-                    .font(JPFont.caption)
-                    .foregroundStyle(WebTheme.faint)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                    .accessibilityIdentifier("search.spotIndex.credit")
+                CreditLinksMenu(links: cover.creditLinks, accessibilityLabel: cover.credit, alignment: .leading) {
+                    Text(SpotPrefectureIndex.creditText(cover))
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.faint)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(width: Self.cardWidth, alignment: .leading)
+                }
+                .accessibilityIdentifier("search.spotIndex.credit")
             } else {
                 Color.clear.accessibilityHidden(true)
             }
