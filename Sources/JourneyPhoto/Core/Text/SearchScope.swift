@@ -103,12 +103,14 @@ enum SearchScope: String, CaseIterable, Identifiable {
 enum SearchDiscovery {
 
     enum Section: String, CaseIterable, Identifiable {
-        case spots, featured, colors, seasonal, shootingTime, gear
+        /// `officialSpots`: 撮影スポット（台帳）を地方 → 県で選ぶ段（札 #524・`SearchSpotIndexSection`）
+        case spots, officialSpots, featured, colors, seasonal, shootingTime, gear
         var id: String { rawValue }
     }
 
-    /// 段の順。`CaseIterable` の並びに頼らず、ここに書いておく
-    static let order: [Section] = [.spots, .featured, .colors, .seasonal, .shootingTime, .gear]
+    /// 段の順。`CaseIterable` の並びに頼らず、ここに書いておく。
+    /// 撮影スポットの段は「人気の撮影地」の次（板 Search も写真の多い撮影地 → 撮影スポット → 都道府県の順）
+    static let order: [Section] = [.spots, .officialSpots, .featured, .colors, .seasonal, .shootingTime, .gear]
 
     static func sections(present: Set<Section>) -> [Section] {
         order.filter { present.contains($0) }

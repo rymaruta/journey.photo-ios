@@ -109,7 +109,10 @@ final class SpotThumbTests: XCTestCase {
         let map = try source("Features/Map/PhotoMapView.swift")
         XCTAssertTrue(map.contains("SpotMapMarker(photoURL: pin.photo?.smallURL, fallbackURL: pin.photo?.smallFallbackURL)"),
                       "地図のピン")
-        XCTAssertTrue(map.contains("SpotThumbImage(image: photo)"), "地図の一覧の丸（spotRow）")
+        // 地図の一覧の丸は探すの撮影スポットの一覧と同じ行の部品（`OfficialSpotRow`・札 #524）
+        XCTAssertTrue(map.contains("OfficialSpotRow(row: row"), "地図の一覧の行（spotRow）")
+        XCTAssertTrue(try source("Features/Spots/OfficialSpotRow.swift").contains("SpotThumbImage(image: photo)"),
+                      "地図の一覧・探すの撮影スポットの一覧の丸（OfficialSpotRow）")
         XCTAssertTrue(try source("Features/Trips/TripCreateView.swift")
             .contains(".overlay(SpotThumbImage(image: photo))"), "旅の下書きの行")
         XCTAssertTrue(try source("Features/Profile/MyPageView.swift")

@@ -29,6 +29,12 @@ final class PhotoMapViewModel: ObservableObject {
     @Published private(set) var loaded = false
     /// 写真の一覧を取れなかった（圏外で控えも無い）。**0枚とは分ける**
     @Published private(set) var loadFailed = false
+    /// 撮影スポットの行・画面で写真の数を言ってよいか（読み込み前・初回の失敗で手元が空なら「0枚」と言わない）。
+    /// 地図の行・リスト・札・撮影スポットの画面は**全部これを読む**（2026-11-11 確かめ役の指摘: 画面ごとに
+    /// 式を書いていて、どこかを `true` に固定しても試験が落ちなかった。`MapPhotosKnownTests` が動きで見る）
+    var photosKnown: Bool {
+        SpotScreen.photosKnown(loadFailed: loadFailed || !loaded, photos: photos)
+    }
     /// 絞りに効いている語。**入れたらその場で絞り直す**（探すから来た語・× で消す・確定）。
     /// 欄に打っている途中の字は `typedQuery` に入り、間引いてからここへ写す
     @Published var query = "" {
