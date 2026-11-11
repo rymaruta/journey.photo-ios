@@ -56,10 +56,25 @@ runs:
           ${{ steps.key.outputs.key }}
           xcode-v3-${{ runner.os }}-${{ steps.key.outputs.xb }}-
 
+    # 🔴 **戻すのが途中で止まったら、もう 1 回だけ試す**（2026-11-11 run 43039583129: 494MB の 31% で落ちる速さが
+    # 0.4〜1MB/s になり「Failed to restore: … timeout」→ 控え無しで丸ごと組んで 25 分の上限に当たった）
+    - name: 控えを戻す（v3・もう 1 回）
+      id: v3retry
+      if: ${{ steps.v2.outputs.cache-matched-key == '' }}
+      uses: actions/cache/restore@v6
+      with:
+        path: |
+          ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
+          ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+        key: ${{ steps.key.outputs.key }}-${{ github.run_id }}
+        restore-keys: |
+          ${{ steps.key.outputs.key }}
+          xcode-v3-${{ runner.os }}-${{ steps.key.outputs.xb }}-
+
     # v3 がまだ無いあいだ（main が初めて書くまで）だけ、前の形を読む（7.2GB・遅いが、依存を丸ごと組むよりは速い）
     - name: 控えを戻す（v1・前の形）
       id: v1
-      if: ${{ steps.v2.outputs.cache-matched-key == '' }}
+      if: ${{ steps.v2.outputs.cache-matched-key == '' && steps.v3retry.outputs.cache-matched-key == '' }}
       uses: actions/cache/restore@v6
       with:
         path: |
@@ -84,7 +99,7 @@ runs:
       id: result
       shell: bash
       env:
-        V2: ${{ steps.v2.outputs.cache-matched-key }}
+        V2: ${{ steps.v2.outputs.cache-matched-key || steps.v3retry.outputs.cache-matched-key }}
         V1: ${{ steps.v1.outputs.cache-matched-key }}
         STARTED: ${{ steps.key.outputs.started }}
         KEY: ${{ steps.key.outputs.key }}
