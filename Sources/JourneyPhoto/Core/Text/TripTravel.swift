@@ -129,12 +129,14 @@ enum TripTravel {
 
     // MARK: - 長い移動（国をまたぐ・海を越える・2026-11-11 owner「日本からブラジルとか無理じゃん」）
 
-    /// これより遠い区間は、国が分からなければ Apple の地図に聞かない（km・まっすぐの距離）。
+    /// これより遠い区間は、**Apple の地図が返らなければ**長い移動に倒す（km・まっすぐの距離）。
     ///
     /// 2026-11-11 判断: **500km**。日本の主な区間のまっすぐの距離は 東京–大阪 約 400km・東京–広島 約 680km・
-    /// 東京–福岡 約 880km・東京–札幌 約 830km（どれも国内）。国が両方とも日本と分かる区間は、500km を越えても
-    /// 聞く（新幹線・車の見込みが返るなら出す。返らなければ長い移動に倒す）。国が分からない場所（行きたい場所・
-    /// 撮影地）どうしで 500km を越えると、海を越える区間が混ざる（東京–ソウル 約 1,150km）ので聞かない
+    /// 東京–福岡 約 880km・東京–札幌 約 830km。どれも新幹線・車の見込みが返りうるので**聞く**。
+    /// 聞き終えて何も返らない 500km 以上の区間（海を越える・路線が無い）だけを長い移動にする。
+    /// 🔴 確かめ役の指摘（17db42df）: 国が分からない場所（撮影地）を含む 500km 以上を聞かずに長い移動にしていたので、
+    /// 東京 → 函館の撮影地のような国内の区間まで「飛行機などの長い移動」になった（main では新幹線・車の見込みが出ていた）。
+    /// **聞かないのは国が分かっていて違うときだけ**
     static let longKm = 500.0
 
     static let japan = "日本"
@@ -156,13 +158,12 @@ enum TripTravel {
         leg.from.country == japan && leg.to.country == japan
     }
 
-    /// Apple の地図に聞かない区間（国が違う・国が分からないまま 500km 以上）
+    /// Apple の地図に聞かない区間（**国が分かっていて違う**ときだけ）
     static func skipsDirections(_ leg: Leg) -> Bool {
-        if crossesBorder(leg) { return true }
-        return leg.kilometers >= longKm && !bothInJapan(leg)
+        crossesBorder(leg)
     }
 
-    /// 長い移動の形で出すか。聞かない区間はいつも。日本の中の 500km 以上は、聞き終えて何も返らなかったときだけ
+    /// 長い移動の形で出すか。国をまたぐ区間はいつも。500km 以上は、聞き終えて何も返らなかったときだけ
     static func showsAsLong(_ leg: Leg, estimates: [Estimate], settled: Bool) -> Bool {
         if skipsDirections(leg) { return true }
         return leg.kilometers >= longKm && settled && estimates.isEmpty
@@ -182,20 +183,60 @@ enum TripTravel {
     }
 
     /// Google フライトの URL（鍵の要らない検索の URL・出発と到着の都市名・日付は分かれば）
+    /// 🔴 **`+` は `%2B` に**（確かめ役の指摘: `queryItems` は `+` をそのまま残し、受け手が空白と読む）。空の都市名は使わない
     static func googleFlightsURL(_ leg: Leg, date: String?) -> URL? {
-        let from = leg.from.place ?? leg.from.name
-        let to = leg.to.place ?? leg.to.name
-        var q = "Flights from \(from) to \(to)"
+        func name(_ e: Endpoint) -> String {
+            let place = e.place?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return place.isEmpty ? e.name : place
+        }
+        var q = "Flights from \(name(leg.from)) to \(name(leg.to))"
         if let date, TripPlanText.date(fromYMD: date) != nil { q += " on \(date)" }
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "+&=")
+        guard let encoded = q.addingPercentEncoding(withAllowedCharacters: allowed) else { return nil }
         var c = URLComponents(string: "https://www.google.com/travel/flights")
-        c?.queryItems = [URLQueryItem(name: "q", value: q)]
+        c?.percentEncodedQueryItems = [URLQueryItem(name: "q", value: encoded)]
         return c?.url
+    }
+
+    /// 長い移動のシートの説明。国をまたぐ区間と、国内で経路が返らなかった区間で言い分ける
+    static func longNote(_ leg: Leg) -> String {
+        if crossesBorder(leg) {
+            return L("国をまたぐ移動は、地図のアプリでは経路が出ません。所要時間は出していません（まっすぐの距離の概数だけ）",
+                     "Maps apps can't route across borders. Travel time isn't shown (straight-line distance only).")
+        }
+        return L("地図のアプリで経路が見つかりませんでした（海を越える・遠い区間など）。飛行機・船の便は Google フライトなどで探せます。所要時間は出していません",
+                 "Maps couldn't find a route (across the sea or very far). Look for flights or ferries. Travel time isn't shown.")
+    }
+
+    /// その日の「間に合わない」の1行に数える移動（区間ごと・先に出した手段の秒）。
+    /// **前の日からの区間は数えない**（朝の移動で、昼の長さと比べない）。見込みが無ければ nil
+    static func dayTravel(_ legs: [Leg], estimates: [[Estimate]]) -> [Int?] {
+        legs.indices.map { i in
+            legs[i].crossesDay ? nil : (estimates.indices.contains(i) ? estimates[i].first?.seconds : nil)
+        }
+    }
+
+    /// 日程の1か所を区間の材料にする。国は台帳の撮影スポットだけ（日本の行は「日本」）、
+    /// 都市の名前は 市区町村 → 都道府県 → 国 の順で空でないもの（撮影地は国も都市も分からない）
+    static func stop(name: String, coords: Photo.Coords?, number: Int, spot: OfficialSpot?) -> Stop {
+        guard let spot else { return Stop(name, coords, number) }
+        let place = [spot.region?.city, spot.region?.prefecture, spot.region?.country]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+        return Stop(name, coords, number, country: country(of: spot), place: place)
     }
 
     /// 区間が1つも作れないときの1行（**場所が1か所だけ**のとき）。何も出ない理由を、押す前に分かるように。
     /// 0 か所のときは日の「まだ何も入っていません」が言うので出さない。2 か所以上なら区間が出るので出さない
-    static func singlePlaceHint(locatedPlaces: Int) -> String? {
+    /// - `allPlaces`: 地図の場所が分からない場所も含めた数。分からない場所があるときは、そう言う
+    ///   （「場所が2つある」のに出ない理由が分からない、を避ける・確かめ役の指摘）
+    static func singlePlaceHint(locatedPlaces: Int, allPlaces: Int? = nil) -> String? {
         guard locatedPlaces == 1 else { return nil }
+        if let allPlaces, allPlaces > 1 {
+            return L("地図の場所が分かる所が 2 つ以上になると、間の移動の目安（車・歩き・電車など）が出ます",
+                     "Travel times appear when two or more places have a map location.")
+        }
         return L("場所が 2 つ以上になると、間の移動の目安（車・歩き・電車など）が出ます",
                  "Add another place to see travel times (car, walking, transit) between them.")
     }

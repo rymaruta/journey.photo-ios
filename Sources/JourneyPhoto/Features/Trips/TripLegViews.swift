@@ -25,13 +25,13 @@ struct TripLegRow: View {
     nonisolated static let connectorWidth: CGFloat = TripStyle.stopNumberStroke
     nonisolated static let connectorOpacity = 0.18
 
-    enum State: Equatable {
+    enum Look: Equatable {
         case loading, offline, unavailable, long, estimates
     }
 
     /// 出す形（`TripTravel.showsAsLong` が先・2026-11-11）
     nonisolated static func state(leg: TripTravel.Leg, estimates: [TripTravel.Estimate], settled: Bool,
-                                  offline: Bool, throttled: Bool) -> State {
+                                  offline: Bool, throttled: Bool) -> Look {
         if TripTravel.showsAsLong(leg, estimates: estimates, settled: settled) { return .long }
         if !estimates.isEmpty { return .estimates }
         if offline { return .offline }
@@ -39,19 +39,20 @@ struct TripLegRow: View {
         return .loading
     }
 
-    private var state: State {
+    private var state: Look {
         Self.state(leg: leg, estimates: estimates, settled: settled, offline: offline, throttled: throttled)
     }
+
+    /// 縦の線と行の高さ（UI テストの見本のときだけ読み上げの値に出して数で確かめる・Debug）
+    @State private var connectorHeight: CGFloat = 0
+    @State private var rowHeight: CGFloat = 0
 
     var body: some View {
         Button(action: open) {
             HStack(spacing: JPSpace.s) {
-                // 番号の丸の列を通る縦の線（前後の場所をつなぐ）
-                Rectangle()
-                    .fill(Color.white.opacity(Self.connectorOpacity))
-                    .frame(width: Self.connectorWidth)
-                    .frame(width: TripStyle.stopNumberSide)
-                    .frame(maxHeight: .infinity)
+                // 番号の丸の列（縦の線は下の `background` で行の高さいっぱいに描く）
+                Color.clear
+                    .frame(width: TripStyle.stopNumberSide, height: 1)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 1) {
                     // 日をまたぐ区間は、どこからの区間かを頭に（「前の日の伏見稲荷大社から」）
@@ -71,13 +72,43 @@ struct TripLegRow: View {
                     .accessibilityHidden(true)
             }
             .frame(minHeight: WebTheme.minTapTarget)
+            // 🔴 **縦の線は行の高さに合わせて描く**（確かめ役の指摘: ScrollView の中では `maxHeight: .infinity` が
+            // 行の高さまで伸びない見込みだった）。番号の丸の列の真ん中に、上の端から下の端まで
+            .background(alignment: .leading) {
+                Rectangle()
+                    .fill(Color.white.opacity(Self.connectorOpacity))
+                    .frame(width: Self.connectorWidth)
+                    .frame(maxHeight: .infinity)
+                    .frame(width: TripStyle.stopNumberSide)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { connectorHeight = $0 }
+                    .accessibilityHidden(true)
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowHeight = $0 }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Self.spoken(leg: leg, estimates: estimates, offline: offline))
-        .accessibilityHint(L("区間の経路を地図のアプリで開く画面を出します", "Shows ways to open this route in a maps app."))
+        .accessibilityLabel(Self.spoken(leg: leg, estimates: estimates, offline: offline, state: state))
+        .accessibilityHint(Self.hint(state))
+        .accessibilityValue(measuredValue)
         .accessibilityIdentifier("trip.leg")
+    }
+
+    /// 見本のときだけ「line=44.0 row=44.0」（UI テストが線の高さを数で見る）。ふだんは空
+    private var measuredValue: String {
+        #if DEBUG
+        if TripPlanFixture.isOn {
+            return String(format: "line=%.1f row=%.1f", connectorHeight, rowHeight)
+        }
+        #endif
+        return ""
+    }
+
+    /// 押すと何が開くか（長い移動は Google フライト・ほかは地図のアプリ）
+    nonisolated static func hint(_ state: Look) -> String {
+        state == .long
+            ? L("Google フライトで便を探す画面を出します", "Shows a way to search Google Flights.")
+            : L("区間の経路を地図のアプリで開く画面を出します", "Shows ways to open this route in a maps app.")
     }
 
     /// 1行（記号 → 字）。見込みは手段ごとに記号と等幅数字の時間を並べる
@@ -119,11 +150,13 @@ struct TripLegRow: View {
         .foregroundStyle(strong ? WebTheme.muted2 : WebTheme.faint)
     }
 
-    nonisolated static func spoken(leg: TripTravel.Leg, estimates: [TripTravel.Estimate], offline: Bool) -> String {
+    nonisolated static func spoken(leg: TripTravel.Leg, estimates: [TripTravel.Estimate], offline: Bool,
+                                   state: Look? = nil) -> String {
         let route = leg.crossesDay
             ? L("前の日の\(leg.from.name)から\(leg.to.name)", "\(leg.from.name) (previous day) to \(leg.to.name)")
             : L("\(leg.from.name)から\(leg.to.name)", "\(leg.from.name) to \(leg.to.name)")
-        if TripTravel.skipsDirections(leg) { return "\(route)、\(TripTravel.longLine(leg))" }
+        // 長い移動は見えている形（`state`）で言う（国内で返らずに倒れた区間も「長い移動」と読む）
+        if state == .long || TripTravel.skipsDirections(leg) { return "\(route)、\(TripTravel.longLine(leg))" }
         if !estimates.isEmpty { return "\(route)、\(TripTravel.spoken(estimates))" }
         if offline { return "\(route)、\(TripTravel.offlineNote)" }
         return route
@@ -202,8 +235,7 @@ struct TripLegSheet: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("trip.leg.flights")
-                Text(L("海を越える・国をまたぐ移動は、地図のアプリでは経路が出ません。所要時間は出していません（まっすぐの距離の概数だけ）",
-                       "Maps apps can't route across oceans or borders. Travel time isn't shown (straight-line distance only)."))
+                Text(TripTravel.longNote(leg))
                     .font(JPFont.caption)
                     .foregroundStyle(WebTheme.text3)
                     .fixedSize(horizontal: false, vertical: true)

@@ -2713,6 +2713,19 @@ final class ScreenshotTests: XCTestCase {
         print(line)
         XCTContext.runActivity(named: line) { _ in }
         XCTAssertTrue(cross.exists, "1 日 1 か所のプランで、前の日からの区間が出ない")
+        // 縦の線は行の高さいっぱい（見本のときだけ値に「line=… row=…」が出る・確かめ役の指摘）
+        if cross.exists, let value = cross.value as? String {
+            let nums = value.split(separator: " ").compactMap { Double($0.split(separator: "=").last ?? "") }
+            let measured = "TRIPLEG connector \(value)"
+            print(measured)
+            XCTContext.runActivity(named: measured) { _ in }
+            if nums.count == 2 {
+                XCTAssertGreaterThanOrEqual(nums[0], nums[1] - 1, "縦の線が行の高さまで伸びていない: \(value)")
+                XCTAssertGreaterThanOrEqual(nums[1], 44 - 0.5, "区間の行が 44pt より低い: \(value)")
+            } else {
+                XCTFail("線の高さが読めない: \(value)")
+            }
+        }
         XCTAssertTrue(long.exists, "日本 → ブラジルの区間が長い移動の形で出ない")
         pushes = 0
         while long.exists, !long.isHittable, pushes < 4 {
