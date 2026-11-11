@@ -2471,7 +2471,9 @@ final class ScreenshotTests: XCTestCase {
         let photosHeight = block.frame.height
 
         mapTab.tap()
-        let map = app.otherElements["search.spotIndex.map"].firstMatch
+        // 型を問わずに探す（run 1032 で Other では見つからなかった。この回で足したのは読み上げの既定の操作。型はログに出す）
+        let map = app.descendants(matching: .any).matching(identifier: "search.spotIndex.map").firstMatch
+        if map.waitForExistence(timeout: 5) { print("spotMap.elementType \(map.elementType.rawValue)") }
         XCTAssertTrue(map.waitForExistence(timeout: 5), "「地図」に替えても地図が出ない")
         Thread.sleep(forTimeInterval: 1)
         let mapHeight = block.frame.height
