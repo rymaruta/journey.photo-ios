@@ -61,7 +61,9 @@ extension View {
                                           @ViewBuilder preview: () -> Preview) -> some View {
         #if os(iOS)
         self
-            .background(TripRowDragHost(events: events, preview: AnyView(preview())))
+            // 読み上げと UI テストの木から外す（run 1049: 外さないと行ごとに同じ識別子の「Other」が1つずつ増え、
+            // `tripPlan.dragHandle` が 5 行で 10 個になって、3 番目に別の行を拾っていた）
+            .background(TripRowDragHost(events: events, preview: AnyView(preview())).accessibilityHidden(true))
             .accessibilityDragPoint(.center, description: Text(label))
         #else
         self
@@ -83,6 +85,8 @@ struct TripRowDragHost: UIViewRepresentable {
         let probe = Probe()
         probe.backgroundColor = .clear
         probe.isUserInteractionEnabled = false
+        probe.isAccessibilityElement = false
+        probe.accessibilityElementsHidden = true
         probe.coordinator = context.coordinator
         context.coordinator.events = events
         context.coordinator.preview = preview
@@ -159,7 +163,7 @@ struct TripRowDragHost: UIViewRepresentable {
                              itemsForBeginning session: UIDragSession) -> [UIDragItem] {
             guard let probe, probe.window != nil, let events else { note("I:none"); return [] }
             guard probe.bounds.contains(session.location(in: probe)) else { note("I:out"); return [] }
-            note("I:in")
+            note("I:in#\(Int(probe.frame.minY))/\(interaction.view?.interactions.count ?? -1)")
             let item = UIDragItem(itemProvider: NSItemProvider(object: events.payload as NSString))
             item.localObject = events.payload
             return [item]
@@ -182,6 +186,21 @@ struct TripRowDragHost: UIViewRepresentable {
             view.frame = CGRect(origin: .zero, size: image.size)
             parameters.visiblePath = UIBezierPath(roundedRect: view.bounds, cornerRadius: JPRadius.field)
             return UITargetedDragPreview(view: view, parameters: parameters, target: target)
+        }
+
+        func dragInteraction(_ interaction: UIDragInteraction, willAnimateLiftWith animator: UIDragAnimating,
+                             session: UIDragSession) {
+            note("W")
+        }
+
+        func dragInteraction(_ interaction: UIDragInteraction, item: UIDragItem,
+                             willAnimateCancelWith animator: UIDragAnimating) {
+            note("C")
+        }
+
+        func dragInteraction(_ interaction: UIDragInteraction, session: UIDragSession,
+                             willEndWith operation: UIDropOperation) {
+            note("Y\(operation.rawValue)")
         }
 
         func dragInteraction(_ interaction: UIDragInteraction, sessionWillBegin session: UIDragSession) {

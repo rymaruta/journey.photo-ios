@@ -174,7 +174,7 @@ final class TripPlanFixtureCounter: ObservableObject {
     /// 運ぶ操作の出来事の並び（見本のときだけ・(b)「持ち上がったが落ちない」をどの部品で止まったかで分ける）。
     /// `L` 持ち上がった（今の作りは sessionWillBegin・前の作りは preview が出た）・`X` 運ぶ操作が終わった（didEndWith・今の作り）・
     /// `E` preview が消えた（前の作りだけ）・`T+日.行` 落とす先に入った・`T-日.行` 出た・
-    /// `D日.行` drop が呼ばれた・`R` 断った・`S` 落とした先の日程に入れた。`@` の後は持ち上がってからのミリ秒。最後の 24 個
+    /// `D日.行` drop が呼ばれた・`R` 断った・`S` 落とした先の日程に入れた。`@` の後は持ち上がってからのミリ秒。最後の 48 個
     @Published var trail: [String] = []
     private var liftedAt: Date?
 
@@ -183,7 +183,7 @@ final class TripPlanFixtureCounter: ObservableObject {
         if event == "L" { liftedAt = now }
         let ms = liftedAt.map { Int(now.timeIntervalSince($0) * 1000) } ?? -1
         trail.append("\(event)@\(ms)")
-        if trail.count > 24 { trail.removeFirst(trail.count - 24) }
+        if trail.count > 48 { trail.removeFirst(trail.count - 48) }
     }
 
     var trailLine: String { trail.joined(separator: " ") }
