@@ -52,7 +52,7 @@ env:
 
 jobs:
   build:
-    # **絵を置く枝（`screenshots`）へ押すのに書き込みが要る。**
+    # **上げた版の印（`testflight/<版>` のタグ）を押すのに書き込みが要る。**
     # 既定は上の `permissions` のとおり読み取りだけ。ここだけ開ける
     permissions:
       contents: write
@@ -118,7 +118,7 @@ jobs:
               echo "::error::TestFlight に上げる指定ですが、署名に要る Secrets が足りません（$missing ）。docs/GITHUB_ACTIONS.md の手順1〜3"
               exit 1
             fi
-            echo "::warning::署名に要る Secrets が足りません（$missing ）。テストまでで終わります。docs/GITHUB_ACTIONS.md を参照"
+            echo "::warning::署名に要る Secrets が足りません（$missing ）。Archive の前で終わります（署名・上げるは飛ばす）。docs/GITHUB_ACTIONS.md を参照"
           else
             echo "signing=true" >> "$GITHUB_OUTPUT"
           fi
@@ -137,8 +137,8 @@ jobs:
       # 最後に分かる**のは高いので、ここで**入っている Xcode の中から
       # いちばん新しいものを選び**、それでも足りなければ**30秒で止める**。
       #
-      # 上げない回（`submit=false`）は止めない——絵を撮る用途は古い SDK でも
-      # 成立するし、そちらまで赤くすると「本物の SwiftUI で通るか」が
+      # 上げない回（`submit=false`）は止めない——上げないなら古い SDK でも
+      # 組めるかは確かめられるし、そちらまで赤くすると「本物の SwiftUI で通るか」が
       # 読めなくなる（秘密の点検と同じ考え）。
       # 🔴 **iOS 26 SDK より古いと App Store Connect が受け取らない。**
       #
@@ -195,7 +195,7 @@ jobs:
           echo "いちばん新しい iOS SDK: ${sdk:-不明}"
           echo "### Xcode $ver / iOS SDK ${sdk:-不明}" >> "$GITHUB_STEP_SUMMARY"
 
-          # **上げない回は止めない。** 絵を撮る用途は古い SDK でも成立するし、
+          # **上げない回は止めない。** 上げないなら古い SDK でも組めるかは確かめられるし、
           # そちらまで赤くすると「本物の SwiftUI で通るか」が読めなくなる
           # （秘密の点検と同じ考え）
           if [ "$sdkmajor" -lt 26 ]; then
