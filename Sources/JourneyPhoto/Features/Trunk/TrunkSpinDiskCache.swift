@@ -30,7 +30,7 @@ enum TrunkSpinDiskCache {
 
     /// 絵に効くものを全部並べた合図（JSON・鍵の順。名札の名前が無いことと "-" を分ける）。
     /// OS の版も入れる（iOS を上げて書体の形が変わったとき、古い絵を使わない・2026-11-11 確かめ役）。
-    /// 主スレッドの時間の内訳を `SpinDiskSig…` に残す（run 1075 で読む時間が 70〜120ms・測るだけ）
+    /// 主スレッドの時間の内訳を `SpinDiskSig…` に残す（run 1075 で読む時間が 70〜120ms → run 1083 で内訳を取った）
     static func signature(_ key: TrunkSpinKey, bold: Bool? = nil) -> String {
         TrunkPerfMeter.measure("SpinDiskSig") {
             let bold = bold ?? TrunkPerfMeter.measure("SpinDiskSigBold") { boldText }
@@ -39,8 +39,9 @@ enum TrunkSpinDiskCache {
                 return ("\(info?["CFBundleShortVersionString"] ?? "-")(\(info?["CFBundleVersion"] ?? "-"))", systemVersion,
                         Locale.current.identifier)
             }
+            // 欄を 1 つずつ並べる（run 1083: `String(describing:)` が主スレッドで 54〜96ms。欄の数は試験が型と突き合わせる）
             let (stuck, parts, tags) = TrunkPerfMeter.measure("SpinDiskSigDescribe") {
-                (String(describing: key.stuck), String(describing: key.parts), String(describing: key.tagPicks))
+                (key.stuck.map(fields), fields(key.parts), key.tagPicks.map(\.wire))
             }
             let wrinkles = key.wrinkles.keys.sorted().map { [$0, String(key.wrinkles[$0]!)] }
             let object: [String: Any] = [
@@ -62,6 +63,20 @@ enum TrunkSpinDiskCache {
                 return text
             }
         }
+    }
+
+    /// ラベルの欄を全部（`TrunkLabel` の欄が増えたら `TrunkSpinCacheTests` が落ちる）
+    static func fields(_ label: TrunkLabel) -> [Any] {
+        [label.id, label.photoId, label.kind.rawValue,
+         [label.place.name, label.place.latin ?? NSNull(), label.place.country ?? NSNull()] as [Any],
+         label.season?.rawValue ?? NSNull(), label.timeslot?.rawValue ?? NSNull(), label.milestone?.rawValue ?? NSNull(),
+         label.seed, label.at, label.foil, label.pos.map { [$0.x, $0.y, $0.rot] } ?? NSNull(), label.slot ?? NSNull()]
+    }
+
+    /// 付けている部品の欄を全部（`TrunkEquipped` の欄が増えたら `TrunkSpinCacheTests` が落ちる）
+    static func fields(_ parts: TrunkEquipped) -> [Any] {
+        [parts.handle ?? NSNull(), parts.corner ?? NSNull(), parts.lock ?? NSNull(), parts.lining ?? NSNull(),
+         parts.tag ?? NSNull(), parts.charm ?? NSNull(), parts.key ?? NSNull(), parts.pins, parts.patches]
     }
 
     /// OS の版（iOS の版。合図に入れる）

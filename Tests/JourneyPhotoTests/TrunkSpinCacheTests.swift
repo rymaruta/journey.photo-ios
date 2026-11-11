@@ -58,6 +58,34 @@ final class TrunkSpinCacheTests: XCTestCase {
         XCTAssertNotNil(TrunkTextures.kept(key()), "同じ鍵なのに使い回さない")
     }
 
+    /// 合図に並べる欄の数が、型の欄の数と同じ（欄を足したのに合図に入れ忘れると、別の見た目の絵を使い回す）
+    func testSignatureFieldsCoverEveryStoredProperty() async {
+        fresh()
+        let place = TrunkLabel.Place(name: "京都", latin: "Kyoto", country: "JP")
+        let one = TrunkLabel(id: "a", photoId: "a", kind: .place, place: place, seed: 1, at: "2026-04-03T09:00:00Z", foil: false,
+                             pos: TrunkPos(x: 0.1, y: 0.2, rot: 3))
+        XCTAssertEqual(TrunkSpinDiskCache.fields(one).count, Mirror(reflecting: one).children.count, "ラベルの欄が合図に足りない")
+        XCTAssertEqual(Mirror(reflecting: place).children.count, 3, "地名の欄が増えた（合図に足す）")
+        XCTAssertEqual(Mirror(reflecting: TrunkPos(x: 0, y: 0, rot: 0)).children.count, 3, "置き場の欄が増えた（合図に足す）")
+        XCTAssertEqual(TrunkSpinDiskCache.fields(TrunkEquipped.none).count, Mirror(reflecting: TrunkEquipped.none).children.count,
+                       "部品の欄が合図に足りない")
+        // 欄ごとに違えば合図が変わる
+        let base = TrunkSpinDiskCache.signature(key(stuck: [one]))
+        let others = [
+            TrunkLabel(id: "a", photoId: "a", kind: .place, place: TrunkLabel.Place(name: "京都", latin: "Kyoto", country: "KR"), seed: 1,
+                       at: "2026-04-03T09:00:00Z", foil: false, pos: TrunkPos(x: 0.1, y: 0.2, rot: 3)),
+            TrunkLabel(id: "a", photoId: "a", kind: .place, place: place, seed: 1, at: "2026-04-04T09:00:00Z", foil: false,
+                       pos: TrunkPos(x: 0.1, y: 0.2, rot: 3)),
+            TrunkLabel(id: "a", photoId: "a", kind: .place, place: place, seed: 1, at: "2026-04-03T09:00:00Z", foil: false,
+                       pos: TrunkPos(x: 0.1, y: 0.2, rot: 4)),
+        ]
+        for other in others { XCTAssertNotEqual(TrunkSpinDiskCache.signature(key(stuck: [other])), base) }
+        for parts in [TrunkEquipped(handle: "rope"), TrunkEquipped(pins: ["a"]), TrunkEquipped(patches: ["b"])] {
+            XCTAssertNotEqual(TrunkSpinDiskCache.signature(key(parts: parts)), TrunkSpinDiskCache.signature(key()))
+        }
+        XCTAssertNotEqual(TrunkSpinDiskCache.signature(key(tagPicks: [.label("a")])), TrunkSpinDiskCache.signature(key(tagPicks: [.label("b")])))
+    }
+
     /// 端末に置く正面の絵の合図（`TrunkSpinDiskCache.signature`）: 同じトランクなら同じ文字、どの欄が違っても違う文字
     /// （別のトランクの絵を出さない）。手ざわりの辞書の並びには左右されない。アプリの版を含む（描き方が変わった版の絵を使わない）
     func testDiskSignatureCoversEveryField() async {
