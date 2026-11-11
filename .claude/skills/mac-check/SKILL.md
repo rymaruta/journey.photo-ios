@@ -30,9 +30,9 @@ gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight
 - 起動の見張り（`SmokeTests`）はいつも入る。`none` なら見張りだけ（絵の要らない直し）
 - 単体テストは絞らない（全3700件・6分）。単体が落ちたら UI まで行かずに止まる
 - 絞った回は Archive（Release の組み立て・約10分）もしない
-- **マージの前は絞った回で足りる（2026-11-11 owner「推奨で」・CLAUDE.md）。** 単体（全部）＋変えた画面の UI＋起動の見張りが
-  緑なら PR をマージしてよい。全部の UI テストは main を夜に1日1回流し、落ちたら翌朝直す
-- 枝で全部を流す（`screens=all`）のは、夜の回の失敗を直して確かめるときなど、名指しの理由があるときだけ
+- **マージの前は絞った回で足りる（2026-11-11 owner・CLAUDE.md）。** 単体（全部）＋機能の UI＋変えた画面の UI＋起動の見張りが
+  緑なら PR をマージしてよい。毎回30分以内
+- 全部を流す（`screens=all`）のは、原因の分からない不具合を調べる時だけ
 
 待つのは `bash Tools/wait-mac-run.sh <sha7>` を **Bash の run_in_background（timeout 7200000）** で。
 `sleep` を繋いで待たない（止められる）。終わると通知が来る。

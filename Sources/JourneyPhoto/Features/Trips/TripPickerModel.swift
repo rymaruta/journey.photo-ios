@@ -28,9 +28,11 @@ final class TripPickerModel: ObservableObject {
     @Published private(set) var status: Status = .loading
     @Published private(set) var deck: [OfficialSpot] = []
     /// めくった札。**並びは押した順**（「ひとつ戻す」は後ろから戻す）
-    @Published private(set) var decisions: [Decision] = []
+    @Published private(set) var decisions: [Decision] = [] { didSet { onPickedChange?() } }
     /// 下書きで「このプランから外す」を押した場所（`spotId`）。**「行きたい」からは外さない**
-    @Published private(set) var removed: Set<String> = []
+    @Published private(set) var removed: Set<String> = [] { didSet { onPickedChange?() } }
+    /// 選んだ場所（`picked`）が変わりうるとき（作る流れが下書きに映す・2026-11-10 札 #521）
+    var onPickedChange: (() -> Void)?
     /// 詳細（写真・季節の文）を一度頼み終えた場所（`spotId`・`applyDetails`）。
     /// 頼み終えても写真が無い札は読み込み中の輪を止める（`TripPicker.cardFace`）
     @Published private(set) var detailTried: Set<String> = []

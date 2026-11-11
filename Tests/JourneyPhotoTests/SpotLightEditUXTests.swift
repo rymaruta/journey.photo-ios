@@ -63,9 +63,12 @@ final class SpotLightEditUXTests: XCTestCase {
 
     /// 座標があれば「行きたい・地図で見る・経路」。**シェアは札の行に無い**（右上の1つだけ）
     func testOfficialActionsHaveDirectionsAndNoShare() async {
-        XCTAssertEqual(SpotScreen.officialActions(hasCoords: true), [.wish, .map, .directions])
+        // 2026-11-10（札 #521）: 「旅行プランに入れる」を足し、「地図で見る」は札の行の下の1行へ
+        XCTAssertEqual(SpotScreen.officialActions(hasCoords: true), [.wish, .trip, .directions])
+        XCTAssertTrue(SpotScreen.officialMapRow(hasCoords: true))
         // 座標が無い地点に「地図で見る」「経路」を置かない（押しても空になる札を作らない）
-        XCTAssertEqual(SpotScreen.officialActions(hasCoords: false), [.wish])
+        XCTAssertEqual(SpotScreen.officialActions(hasCoords: false), [.wish, .trip])
+        XCTAssertFalse(SpotScreen.officialMapRow(hasCoords: false))
     }
 
     /// 画面: 札の行は `officialActions` で並べ、「地図で見る」はアプリの中の地図へ。外へは経路だけ

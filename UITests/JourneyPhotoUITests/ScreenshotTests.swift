@@ -187,7 +187,7 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// **撮影スポットの頁の上（行動の札・2026-10-11）**。前提: 頁が開いて「行きたい」が出ている。
-    /// 揃ったら、札の行に「地図で見る」「経路」があり、シェアは右上の1つだけ（違えば落とす）。
+    /// 揃ったら、札の行に「旅行プランに入れる」「経路」、その下に「地図で見る」があり、シェアは右上の1つだけ（違えば落とす）。
     /// 「地図で見る」を押して**アプリの中の地図**が出ることも見て撮り、頁へ戻す。
     /// 一覧の行（`map.spotRow`）から開くスポットは地図のピン＝座標があるので、2つの札は必ず出る
     private func shootSpotTop(_ app: XCUIApplication) {
@@ -197,6 +197,8 @@ final class ScreenshotTests: XCTestCase {
         let toMap = app.buttons["spot.official.map"].firstMatch
         XCTAssertTrue(toMap.exists, "スポットの頁に「地図で見る」が無い")
         XCTAssertTrue(app.buttons["spot.official.directions"].firstMatch.exists, "スポットの頁に「経路」が無い")
+        // 2026-11-10（札 #521）: 「旅行プランに入れる」が札の行にある（地図で見るは札の行の下の1行）
+        XCTAssertTrue(app.buttons["spot.official.trip"].firstMatch.exists, "スポットの頁に「旅行プランに入れる」が無い")
         let shares = app.buttons.matching(NSPredicate(format: "label == %@", "シェア"))
         XCTAssertEqual(shares.count, 1, "スポットの頁にシェアが2つある")
         guard toMap.exists, toMap.isHittable else { return }
@@ -2345,6 +2347,8 @@ final class ScreenshotTests: XCTestCase {
         // 京都・鎌倉・函館（離れた3か所＝枠が全部を囲むかが絵で分かる）
         app.launchArguments += ["-journey-photo-wishlist:\(Self.previewUserId)",
                                 "(\"SPOT-fushimi-inari-taisha\",\"SPOT-kenchoji\",\"SPOT-goryokaku\")"]
+        // 旅行プランの見本（Debug のときだけ・サーバーへは送らない・`TripPlanFixture`）。「旅行プランに入れる」のシートに出る
+        app.launchArguments += ["-JPTripPlanFixture", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -2374,6 +2378,8 @@ final class ScreenshotTests: XCTestCase {
         guard mapLink.isHittable else { return }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "62-行きたい場所（撮影用に端末の控えへ3件）")
+
+        // マイページの行には「旅行プランに入れる」を置かない（2026-11-10 owner「マイページはかえなくていい」・札 #519）
         mapLink.tap()
 
         let pin = app.descendants(matching: .any).matching(identifier: "savedMap.pin").firstMatch
@@ -2396,6 +2402,182 @@ final class ScreenshotTests: XCTestCase {
         guard create.waitForExistence(timeout: 5) else { return }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "64-行きたい場所の地図で選んだ（この N か所で旅行プランを作る）")
+
+        // 旅行プランを作る流れ（2026-11-10 札 #521）: 地図から押すと日付の段から始まる。
+        // **日付と下書きを撮るだけで「保存」は押さない**（押すとプランを作りに行く）。出なければ撮らずに抜ける
+        create.tap()
+        let toDraft = app.buttons["tripCreate.toDraft"].firstMatch
+        guard toDraft.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "64b-旅行プランを作る・日付（いつ行く？）")
+        // 翌月の 10 日と 11 日（今日より前は押せないので、翌月にする）
+        let next = app.buttons["tripCreate.nextMonth"].firstMatch
+        guard next.waitForExistence(timeout: 5), next.isHittable else { return }
+        next.tap()
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone.current
+        guard let month = calendar.date(byAdding: .month, value: 1, to: Date()) else { return }
+        let parts = calendar.dateComponents([.year, .month], from: month)
+        let prefix = String(format: "tripCreate.day.%04d-%02d-", parts.year ?? 0, parts.month ?? 0)
+        for day in ["10", "11"] {
+            let cell = app.buttons[prefix + day].firstMatch
+            guard cell.waitForExistence(timeout: 5), cell.isHittable else { return }
+            cell.tap()
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+        Thread.sleep(forTimeInterval: 0.5)
+        shoot(app, "64c-旅行プランを作る・日付を選んだ（1 泊 2 日）")
+        guard toDraft.isHittable else { return }
+        toDraft.tap()
+        let save = app.buttons["tripCreate.save"].firstMatch
+        guard save.waitForExistence(timeout: 10) else { return }
+        // 日の出・日の入りと写真の縮小版が描かれるのを待つ
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "64d-旅行プランを作る・下書き（時間帯の順・日の出と日の入り）")
+    }
+
+    // MARK: - 旅行プランの日程（見本のプラン・2026-11-10 札 #521）
+
+    /// 見本のプラン（`-JPTripPlanFixture`・Debug のときだけ・サーバーへは送らない）で旅行プランの日程を開く。開けたら true
+    private func openFixturePlan(_ app: XCUIApplication) -> Bool {
+        guard openTripsRow(app, "trips.plans") else { return false }
+        let plan = app.descendants(matching: .any).matching(identifier: "trips.plan").firstMatch
+        guard plan.waitForExistence(timeout: 15), plan.isHittable else { return false }
+        plan.tap()
+        return app.descendants(matching: .any)["tripPlan.fixtureSends"].firstMatch.waitForExistence(timeout: 15)
+    }
+
+    /// 送った回数（見本のときだけ画面に出す `tripPlan.fixtureSends` の値）。ログにも残す
+    private func fixtureSends(_ app: XCUIApplication, _ when: String) -> String? {
+        let label = app.descendants(matching: .any)["tripPlan.fixtureSends"].firstMatch
+        let value = label.value as? String
+        let line = "TRIPFIXTURE when=\(when) sends=\(value ?? "nil")"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        return value
+    }
+
+    /// 出発の日付を消す・入れるを交互に押す（画面の上にあって動かない2つ・1回ごとに日程が変わる）
+    private func toggleStartDate(_ app: XCUIApplication, times: Int) -> Bool {
+        let began = Date()
+        for i in 0..<times {
+            let label = i % 2 == 0 ? "出発の日付を消す" : "出発の日付を入れる"
+            let button = app.buttons[label].firstMatch
+            guard button.waitForExistence(timeout: 3), button.isHittable else {
+                _ = fixtureSends(app, "tap\(i)-missing-\(label)")
+                return false
+            }
+            button.tap()
+            // 押した時刻（始めからの秒）と、その時点の送った回数を残す（押す間が 2 秒を越えていないかを数で見る）
+            _ = fixtureSends(app, String(format: "tap%d-t+%.1fs", i, Date().timeIntervalSince(began)))
+        }
+        return true
+    }
+
+    /// **旅行プランの日程**（自動保存・運ぶ・移動の見込み・区間のシート）。
+    /// 自動保存は**手を止めてから 2 秒待ってまとめて送る**——続けて 5 回直しても送るのは 1 回（数で確かめる）。
+    /// 出なければ撮らずに抜ける
+    func testCapturesTripPlanDays() {
+        // 自動保存の待ちを 10 秒に（見本のときだけ効く）。UI テストは押す間が 2.4〜4.9 秒あり（run 969）、
+        // 2 秒の待ちでは「続けて直す」を作れない。まとめて送る仕組みは同じ
+        let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripPlanAutosaveDelay", "10"])
+        guard openFixturePlan(app) else { return }
+        // 移動の見込み（Apple のサーバー）と日の出・日の入りを待つ
+        Thread.sleep(forTimeInterval: 8)
+        shoot(app, "65-旅行プランの日程（自動保存・移動の見込み）")
+        XCTAssertEqual(fixtureSends(app, "open"), "0", "開いただけで送っている")
+
+        // 運ぶ: 1 日目の最後（千里浜）を 2 日目の最初の行へ（日をまたぐ）。運んだら待って 1 回送る。
+        // run 971: 押さえて運んだのに送った回数が 0 のままだった。run 974: 名前の順は日をまたいでも変わらない
+        // （1 日目の最後 → 2 日目の最初）ので測れなかった。**千里浜の「…」の位置（「1 日目・3 番目」）**を前後で残し、
+        // 落とせたかを見る。1 回目は押さえて運ぶだけ、位置が変わらなければ 2 回目は行き先で止まってから離す
+        let handles = app.descendants(matching: .any).matching(identifier: "tripPlan.dragHandle")
+        let menu = app.buttons["「千里浜なぎさドライブウェイ」の操作"].firstMatch
+        func order() -> String { (menu.value as? String) ?? "nil" }
+        _ = fixtureSends(app, "dragHandles-count\(handles.count)")
+        if handles.count >= 4 {
+            let from = handles.element(boundBy: 2)
+            let to = handles.element(boundBy: 3)
+            var pushes = 0
+            while !(from.isHittable && to.isHittable), pushes < 3 {
+                app.swipeUp()
+                Thread.sleep(forTimeInterval: 1)
+                pushes += 1
+            }
+            _ = fixtureSends(app, "dragHittable-from\(from.isHittable)-to\(to.isHittable)")
+            if from.isHittable, to.isHittable {
+                let before = order()
+                _ = fixtureSends(app, "orderBefore[\(before)]")
+                from.press(forDuration: 1.2, thenDragTo: to)
+                Thread.sleep(forTimeInterval: 2)
+                var after = order()
+                _ = fixtureSends(app, "orderAfterPress[\(after)]")
+                if after == before {
+                    let again = handles.element(boundBy: 2)
+                    again.press(forDuration: 1.2, thenDragTo: handles.element(boundBy: 3),
+                                withVelocity: .slow, thenHoldForDuration: 1.0)
+                    Thread.sleep(forTimeInterval: 2)
+                    after = order()
+                    _ = fixtureSends(app, "orderAfterHold[\(after)]")
+                }
+                Thread.sleep(forTimeInterval: 11)
+                shoot(app, "65b-旅行プランの日程（運んだ・日をまたいで2日目へ）")
+                let sent = fixtureSends(app, "afterDrag")
+                XCTAssertNotEqual(after, before, "運ぶ印で運んでも並びが変わらない")
+                if after != before { XCTAssertEqual(sent, "1", "運んだあとに 1 回送っていない") }
+            }
+        }
+
+        // 区間のシート（場所と場所の間の1行を押す）
+        let leg = app.descendants(matching: .any).matching(identifier: "trip.leg").firstMatch
+        var pushes = 0
+        while leg.exists, !leg.isHittable, pushes < 4 {
+            app.swipeDown()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        if leg.exists, leg.isHittable {
+            leg.tap()
+            let apple = app.buttons["trip.leg.apple"].firstMatch
+            if apple.waitForExistence(timeout: 10) {
+                Thread.sleep(forTimeInterval: 1)
+                shoot(app, "65c-区間のシート（Apple のマップ／Google マップで乗り換えを見る）")
+                XCTAssertTrue(app.buttons["trip.leg.google"].firstMatch.exists, "区間のシートに Google マップが無い")
+                let close = app.buttons["閉じる"].firstMatch
+                if close.exists { close.tap() }
+                Thread.sleep(forTimeInterval: 1)
+            }
+        }
+
+        // 続けて 5 回直す → 手を止めて 2 秒より長く待つ → 送ったのは 1 回だけ増える
+        for _ in 0..<4 where !app.buttons["出発の日付を消す"].firstMatch.isHittable {
+            app.swipeDown()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        // 直す前の回数は画面から読む（前の段の結果に頼らない）
+        let sentBefore = Int(fixtureSends(app, "before5edits") ?? "") ?? -1
+        guard toggleStartDate(app, times: 5) else { return }
+        Thread.sleep(forTimeInterval: 13)
+        XCTAssertEqual(fixtureSends(app, "after5edits"), "\(sentBefore + 1)",
+                       "続けて 5 回直したのに、まとめて 1 回で送っていない")
+    }
+
+    /// **送れていないとき**（圏外・断られた）。直しは画面に残り、「まだ送れていません」と「もう一度試す」が出る
+    func testCapturesTripPlanDaysUnsent() {
+        for (extra, name) in [(["-JPTripPlanFixtureOffline", "YES"], "65d-旅行プランの日程（圏外・まだ送れていません）"),
+                              (["-JPTripPlanFixtureFail", "YES"], "65e-旅行プランの日程（断られた・もう一度試す）")] {
+            let app = launchTrunk(["-JPTripPlanFixture", "YES"] + extra)
+            defer { app.terminate() }
+            guard openFixturePlan(app) else { continue }
+            guard toggleStartDate(app, times: 1) else { continue }
+            Thread.sleep(forTimeInterval: 4)
+            let banner = app.descendants(matching: .any)["tripPlan.unsent"].firstMatch
+            XCTAssertTrue(banner.waitForExistence(timeout: 5), "\(name): 送れていない直しの札が出ない")
+            if extra.first == "-JPTripPlanFixtureOffline" {
+                XCTAssertEqual(fixtureSends(app, "offline"), "0", "圏外なのに送っている")
+            }
+            shoot(app, name)
+        }
     }
 
     /// **名前の横のバッジ**（大きいメダルの絵をそのまま縮める・案 C・2026-10-09 owner「そのままがいい」）。

@@ -64,7 +64,9 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    # トランクの選び直しの繰り返し（2〜4 本目・各 250〜280 秒）。1 本目（testTrunkPickRepeat）は全部の回にも残す。
                    # 札 #424 が閉じたら 4 本とも名指しだけにする
                    "ScreenshotTests/testTrunkPickRepeat2", "ScreenshotTests/testTrunkPickRepeat3",
-                   "ScreenshotTests/testTrunkPickRepeat4"]
+                   "ScreenshotTests/testTrunkPickRepeat4",
+                   # 2026-11-10（札 #521）: 移動の見込みの前に、日本の区間で MKDirections が返す秒数を取る。`screens=MapETAProbeTests`
+                   "MapETAProbeTests"]
 
 # クラスの直下（字下げ4つ）の関数だけを区切りにする。中の入れ子の関数は本体に含める
 MEMBER = re.compile(r"^    (?:@\w+\s+)*(?:(?:private|fileprivate|override|static|final)\s+)*func\s+(\w+)\s*\(", re.M)

@@ -124,21 +124,21 @@ enum TripPicker {
     /// - 地域の中は**いちばん近い未訪の場所へ**順に進む（近い順）
     /// - 座標の無い場所は、その地域の最後に選んだ順で置く。座標の無い地域は最後に選んだ順で置く
     /// - 同じ距離は slug の順（毎回同じ並びにする）
-    static func grouped(_ picked: [OfficialSpot]) -> [[OfficialSpot]] {
+    static func grouped<P: TripAllocatable>(_ picked: [P]) -> [[P]] {
         var seen = Set<String>()
-        let unique = picked.filter { seen.insert($0.spotId).inserted }
+        let unique = picked.filter { seen.insert($0.allocationID).inserted }
         guard !unique.isEmpty else { return [] }
 
         // 地域ごとに、選んだ順のまま集める
         var order: [String] = []
-        var members: [String: [OfficialSpot]] = [:]
+        var members: [String: [P]] = [:]
         for spot in unique {
-            let key = region(of: spot).key
+            let key = spot.allocationRegion.key
             if members[key] == nil { order.append(key) }
             members[key, default: []].append(spot)
         }
 
-        var result: [[OfficialSpot]] = []
+        var result: [[P]] = []
         var remaining = order
         var here: Photo.Coords?
 
@@ -146,7 +146,7 @@ enum TripPicker {
         let firstKey = remaining.removeFirst()
         let first = chain(members[firstKey] ?? [], from: nil)
         result.append(first)
-        here = first.last(where: { $0.coords != nil })?.coords
+        here = first.last(where: { $0.allocationCoords != nil })?.allocationCoords
 
         while !remaining.isEmpty {
             var next = 0
@@ -154,10 +154,10 @@ enum TripPicker {
                 var best: (index: Int, km: Double, slug: String)?
                 for (i, key) in remaining.enumerated() {
                     for spot in members[key] ?? [] {
-                        guard let coords = spot.coords else { continue }
+                        guard let coords = spot.allocationCoords else { continue }
                         let km = TravelDistance.kilometers(from: here, to: coords)
-                        if best == nil || km < best!.km || (km == best!.km && spot.slug < best!.slug) {
-                            best = (i, km, spot.slug)
+                        if best == nil || km < best!.km || (km == best!.km && spot.allocationTie < best!.slug) {
+                            best = (i, km, spot.allocationTie)
                         }
                     }
                 }
@@ -167,39 +167,39 @@ enum TripPicker {
             let key = remaining.remove(at: next)
             let group = chain(members[key] ?? [], from: here)
             result.append(group)
-            if let last = group.last(where: { $0.coords != nil })?.coords { here = last }
+            if let last = group.last(where: { $0.allocationCoords != nil })?.allocationCoords { here = last }
         }
         return result
     }
 
     /// 地域の中を近い順に辿る。`from` が nil なら最初に選んだ場所（座標のあるもの）から
-    private static func chain(_ spots: [OfficialSpot], from start: Photo.Coords?) -> [OfficialSpot] {
-        var located = spots.filter { $0.coords != nil }
-        let unlocated = spots.filter { $0.coords == nil }
+    private static func chain<P: TripAllocatable>(_ spots: [P], from start: Photo.Coords?) -> [P] {
+        var located = spots.filter { $0.allocationCoords != nil }
+        let unlocated = spots.filter { $0.allocationCoords == nil }
         guard !located.isEmpty else { return unlocated }
 
-        var result: [OfficialSpot] = []
+        var result: [P] = []
         var here: Photo.Coords
         if let start {
             here = start
         } else {
             let head = located.removeFirst()
             result.append(head)
-            here = head.coords!
+            here = head.allocationCoords!
         }
         while !located.isEmpty {
             var bestIndex = 0
             var bestKm = Double.infinity
             for (i, spot) in located.enumerated() {
-                let km = TravelDistance.kilometers(from: here, to: spot.coords!)
-                if km < bestKm || (km == bestKm && spot.slug < located[bestIndex].slug) {
+                let km = TravelDistance.kilometers(from: here, to: spot.allocationCoords!)
+                if km < bestKm || (km == bestKm && spot.allocationTie < located[bestIndex].allocationTie) {
                     bestIndex = i
                     bestKm = km
                 }
             }
             let spot = located.remove(at: bestIndex)
             result.append(spot)
-            here = spot.coords!
+            here = spot.allocationCoords!
         }
         return result + unlocated
     }
@@ -229,13 +229,13 @@ enum TripPicker {
     /// 断らずに**黙って切り捨てる**（`api-user/src/tripPlans.ts` の `sanitizeDays`）ので、
     /// 越えると選んだ場所が保存で消える。日数が無いときも60日で切り直す
     /// （収まらないのは 60×20＝1,200か所を越えたときだけ。選べるのは `pickMax` まで）
-    static func days(_ groups: [[OfficialSpot]], dayCount: Int?) -> [[OfficialSpot]] {
+    static func days<P: TripAllocatable>(_ groups: [[P]], dayCount: Int?) -> [[P]] {
         // 地域の無い場所は1か所ずつ別の地域（`region(of:)`）だが、日に割るときは
         // **続いている分を1つの並びとして**均す（1か所ずつ1日にしない）
-        var runs: [[OfficialSpot]] = []
+        var runs: [[P]] = []
         var previousUnplaced = false
         for group in groups where !group.isEmpty {
-            let unplaced = region(of: group[0]).label == nil
+            let unplaced = group[0].allocationRegion.label == nil
             if unplaced && previousUnplaced {
                 runs[runs.count - 1].append(contentsOf: group)
             } else {
@@ -243,7 +243,7 @@ enum TripPicker {
             }
             previousUnplaced = unplaced
         }
-        var days: [[OfficialSpot]] = []
+        var days: [[P]] = []
         for run in runs {
             let parts = Int((Double(run.count) / Double(placesPerDay)).rounded(.up))
             days.append(contentsOf: balanced(run, parts: parts))
@@ -301,7 +301,7 @@ enum TripPicker {
     /// 貪欲にまとめると、40か所を2日で「16・16・8」の3日に行き詰まっていた（「20・20」なら収まる）。
     /// 20か所ずつでも `target` 日に収まらなければ、収まる日数まで増やす（場所は落とさない）。
     /// **地域の無い場所は「混ぜる」に数えない**（地域が分からないだけで、別の地域とは言えない）
-    private static func packed(_ items: [OfficialSpot], into target: Int) -> [[OfficialSpot]] {
+    private static func packed<P: TripAllocatable>(_ items: [P], into target: Int) -> [[P]] {
         let n = items.count
         let cap = TripPlanService.itemsPerDayMax
         let parts = min(n, max(target, (n + cap - 1) / cap))
@@ -315,33 +315,19 @@ enum TripPicker {
         // （[1,9,9] を3日 → 1・9・9）まで混ぜる日程（5・5・9）に変わっていた（1eb0274 の回帰）。
         // **地域で束ねることが先**、同じ混ぜ方の中では小さすぎる日を作らない
         let floorSize = max(1, n / parts - placesPerDay / 2)
-        let keys: [String?] = items.map { region(of: $0).label == nil ? nil : region(of: $0).key }
+        let keys: [String?] = items.map { $0.allocationRegion.label == nil ? nil : $0.allocationRegion.key }
 
-        struct Score {
-            var mixed: Int
-            /// 下限を割る日の数
-            var thin: Int
-            var widest: Int
-            var squares: Int
-            var from: Int
-            func better(than other: Score) -> Bool {
-                if mixed != other.mixed { return mixed < other.mixed }
-                if thin != other.thin { return thin < other.thin }
-                if widest != other.widest { return widest < other.widest }
-                return squares < other.squares
-            }
-        }
         // best[d][i]: 先頭 i か所を d 日に切ったときのいちばん良い切り方
-        var best = Array(repeating: Array<Score?>(repeating: nil, count: n + 1), count: parts + 1)
-        best[0][0] = Score(mixed: 0, thin: 0, widest: 0, squares: 0, from: -1)
+        var best = Array(repeating: Array<PackScore?>(repeating: nil, count: n + 1), count: parts + 1)
+        best[0][0] = PackScore(mixed: 0, thin: 0, widest: 0, squares: 0, from: -1)
         for d in 1...parts {
             for i in d...n {
-                var chosen: Score?
+                var chosen: PackScore?
                 for size in 1...min(limit, i) {
                     let j = i - size
                     guard let prev = best[d - 1][j] else { continue }
                     let mixed = Set(keys[j..<i].compactMap { $0 }).count > 1 ? 1 : 0
-                    let score = Score(mixed: prev.mixed + mixed, thin: prev.thin + (size < floorSize ? 1 : 0),
+                    let score = PackScore(mixed: prev.mixed + mixed, thin: prev.thin + (size < floorSize ? 1 : 0),
                                       widest: max(prev.widest, size),
                                       squares: prev.squares + size * size, from: j)
                     if chosen == nil || score.better(than: chosen!) { chosen = score }
@@ -349,7 +335,7 @@ enum TripPicker {
                 best[d][i] = chosen
             }
         }
-        var result: [[OfficialSpot]] = []
+        var result: [[P]] = []
         var i = n
         for d in stride(from: parts, to: 0, by: -1) {
             guard let score = best[d][i] else { return [items] }
@@ -360,12 +346,12 @@ enum TripPicker {
     }
 
     /// 並びを保ったまま `parts` 個に均して切る（前の方を1つ多く）。空の片は作らない
-    private static func balanced(_ spots: [OfficialSpot], parts: Int) -> [[OfficialSpot]] {
+    private static func balanced<P>(_ spots: [P], parts: Int) -> [[P]] {
         let n = max(1, min(parts, spots.count))
         guard !spots.isEmpty else { return [] }
         let base = spots.count / n
         let extra = spots.count % n
-        var result: [[OfficialSpot]] = []
+        var result: [[P]] = []
         var start = 0
         for i in 0..<n {
             let size = base + (i < extra ? 1 : 0)
@@ -382,21 +368,58 @@ enum TripPicker {
     }
 
     /// その日の地域の名前（「京都府・奈良県」）。無ければ nil
-    static func regionLabel(of day: [OfficialSpot]) -> String? {
+    static func regionLabel<P: TripAllocatable>(of day: [P]) -> String? {
         var seen = Set<String>()
-        let labels = day.compactMap { region(of: $0).label }.filter { seen.insert($0).inserted }
+        let labels = day.compactMap { $0.allocationRegion.label }.filter { seen.insert($0).inserted }
         return labels.isEmpty ? nil : labels.joined(separator: "・")
     }
 
     /// 題の下書き。地域の名前を2つまで（「京都府・奈良県の旅」「京都府・奈良県ほかの旅」）。
     /// 地域の名前が1つも無ければ「行きたい場所の旅」
-    static func defaultTitle(_ groups: [[OfficialSpot]]) -> String {
+    static func defaultTitle<P: TripAllocatable>(_ groups: [[P]]) -> String {
         var seen = Set<String>()
-        let labels = groups.compactMap { $0.first.flatMap { region(of: $0).label } }
+        let labels = groups.compactMap { $0.first?.allocationRegion.label }
             .filter { seen.insert($0).inserted }
         guard !labels.isEmpty else { return L("行きたい場所の旅", "Places I want to go") }
         let head = labels.prefix(2).joined(separator: "・")
         let more = labels.count > 2
         return L("\(head)\(more ? "ほか" : "")の旅", "Trip to \(labels.prefix(2).joined(separator: ", "))\(more ? " and more" : "")")
+    }
+}
+
+/// 日へ割り振れるもの（2026-11-10 判断・札 #521）。**割り振りの作りは `TripPicker` の1つだけ**——
+/// 写真から選ぶ（撮影スポット）・行きたい場所（撮影スポットと撮影地）・行きたい場所の地図の3つの入口が
+/// 同じ規則（地域で束ねる → 近い順 → 日へ均す）で下書きを作る。以前は地図の入口だけが
+/// 近い順に並べて 20 か所ごとに次の日へ送る別の作り（`SavedSpotsTrip.draft`）で、ふつうの数なら全部1日目だった
+protocol TripAllocatable {
+    /// 同じ場所を1つにする鍵
+    var allocationID: String { get }
+    var allocationCoords: Photo.Coords? { get }
+    /// 束ねる地域。**地域の無い場所は1か所ずつ別の地域**（`TripPicker.region(of:)` の注記）
+    var allocationRegion: TripPicker.Region { get }
+    /// 同じ距離のときの並び（毎回同じ並びにする）
+    var allocationTie: String { get }
+}
+
+extension OfficialSpot: TripAllocatable {
+    var allocationID: String { spotId }
+    var allocationCoords: Photo.Coords? { coords }
+    var allocationRegion: TripPicker.Region { TripPicker.region(of: self) }
+    var allocationTie: String { slug }
+}
+
+/// `TripPicker.packed` の切り方の比べ方（入れ子の型は総称の関数の中に置けないので外に出した）
+private struct PackScore {
+    var mixed: Int
+    /// 下限を割る日の数
+    var thin: Int
+    var widest: Int
+    var squares: Int
+    var from: Int
+    func better(than other: PackScore) -> Bool {
+        if mixed != other.mixed { return mixed < other.mixed }
+        if thin != other.thin { return thin < other.thin }
+        if widest != other.widest { return widest < other.widest }
+        return squares < other.squares
     }
 }

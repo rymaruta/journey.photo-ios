@@ -377,7 +377,7 @@ final class OfflineTripStore: ObservableObject {
         }
         return OfflineTripManifest.Stop(number: stop.number, key: stop.key, name: stop.name, address: stop.address,
                                         coords: stop.coords, note: stop.note, light: stop.light,
-                                        samples: samples, map: map)
+                                        samples: samples, map: map, travel: stop.travel)
     }
 
     /// 書き終えた: 記録を作り、保存済みの置き場と入れ替える
@@ -453,7 +453,7 @@ final class OfflineTripStore: ObservableObject {
     static func sameStop(_ saved: OfflineTripManifest.Stop, _ planned: OfflineTripPlan.Stop) -> Bool {
         saved.number == planned.number && saved.key == planned.key && saved.name == planned.name
             && saved.note == planned.note && saved.light == planned.light && saved.coords == planned.coords
-            && saved.address == planned.address
+            && saved.address == planned.address && saved.travel == planned.travel
     }
 
     private func prepareRoot() throws {

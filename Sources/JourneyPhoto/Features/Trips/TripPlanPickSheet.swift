@@ -20,6 +20,8 @@ struct TripPlanPickSheet: View {
     /// 候補の材料を取れなかった（圏外など）。**「まだ保存していない」と混ぜない**
     var sourcesFailed = false
     let choices: [TripPlanText.Choice]
+    /// 候補の鍵 → 季節の一文（板 TripPlanPick F30「冬（12月）· [季節の案内の一文]」・その日の月の季節の案内がある行だけ）
+    var seasonLines: [String: String] = [:]
     let onPick: (TripPlanText.Choice) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -148,9 +150,16 @@ struct TripPlanPickSheet: View {
                             .foregroundStyle(WebTheme.text3)
                             .lineLimit(1)
                     }
+                    // 季節の一文を薄く添える（無い行には出さない・2026-11-10 札 #521）
+                    if let season = seasonLines[choice.id] {
+                        Text(season)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.faint)
+                            .lineLimit(2)
+                    }
                 }
                 Spacer(minLength: JPSpace.xs)
-                PickMark(isOn: isOn)
+                TripPickMark(isOn: isOn)
             }
             .padding(.vertical, JPSpace.xs)
             .frame(minHeight: TripStyle.pickRowMinHeight)
@@ -163,8 +172,8 @@ struct TripPlanPickSheet: View {
         .disabled(locked)
         .opacity(locked ? 0.5 : 1)
         // 名前だけにしない（札の語と県・市も読む）。選んだかは「選択中」で言う
-        .accessibilityLabel(L("\(choice.name)\(choice.isDraft ? "・下書き" : "")\(choice.regionLabel.map { "・" + $0 } ?? "")",
-                              "\(choice.name)\(choice.isDraft ? ", draft" : "")\(choice.regionLabel.map { ", " + $0 } ?? "")"))
+        .accessibilityLabel(L("\(choice.name)\(choice.isDraft ? "・下書き" : "")\(choice.regionLabel.map { "・" + $0 } ?? "")\(seasonLines[choice.id].map { "・" + $0 } ?? "")",
+                              "\(choice.name)\(choice.isDraft ? ", draft" : "")\(choice.regionLabel.map { ", " + $0 } ?? "")\(seasonLines[choice.id].map { ", " + $0 } ?? "")"))
         .accessibilityAddTraits(isOn ? .isSelected : [])
         .accessibilityHint(isOn ? L("押すと外します", "Tap to deselect") : L("押すと選びます", "Tap to select"))
     }
@@ -209,7 +218,7 @@ struct TripPlanPickSheet: View {
 }
 
 /// 選んだ印（板 TripPlanPick: 26 の丸。選ぶと真鍮の塗りに墨のチェック、選ばないと白 30% の線）
-private struct PickMark: View {
+struct TripPickMark: View {
     let isOn: Bool
 
     var body: some View {

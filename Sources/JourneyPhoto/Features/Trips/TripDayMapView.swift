@@ -36,7 +36,7 @@ struct TripDayMapView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(stops) { stop in
-                        if stop.number > 1 {
+                        if stop.id != stops.first?.id {
                             Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
                         }
                         row(stop)

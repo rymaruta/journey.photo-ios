@@ -217,3 +217,121 @@ struct OfflineProgressBar: View {
         .accessibilityValue(OfflineTripText.progressAccessibility(done: done, total: total))
     }
 }
+
+/// 日程の行の中身（板 TripPlanDays: 真鍮の番号の丸 → 撮影スポットは明朝・撮影地は SF の太字 →
+/// 季節の一文と時間帯の札（F30）→ ひとこと）。**作る流れの下書きと日程の画面で同じ部品**（2026-11-10・札 #521）
+struct TripStopLabel: View {
+    let number: Int
+    let name: String
+    let isSpot: Bool
+    /// 「冬（12月）· …」。台帳に案内の無い行・撮影地・日付の無いプランは nil
+    var season: String? = nil
+    /// 「夜明け · 朝」。案内の無い行は nil
+    var timeChip: String? = nil
+    var note: String? = nil
+
+    var body: some View {
+        HStack(alignment: .top, spacing: JPSpace.s) {
+            TripStopNumber(number: number)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: JPSpace.xxs) {
+                Text(name)
+                    .font(isSpot ? JPFont.rowTitle : JPFont.bodyEmphasis)
+                    .foregroundStyle(WebTheme.text)
+                    .lineLimit(2)
+                if season != nil || timeChip != nil {
+                    // 季節の一文（白 60%・12）と時間帯の札（白 5% の地・白 10% の縁・12 の 600）
+                    TripWrapRow {
+                        if let season {
+                            Text(season)
+                                .font(JPFont.caption)
+                                .foregroundStyle(WebTheme.faint)
+                                .lineLimit(2)
+                        }
+                        if let timeChip {
+                            TripTimeChip(text: timeChip)
+                        }
+                    }
+                }
+                // 添えたひとこと（あるときだけ）
+                if let note, !note.isEmpty {
+                    Text(note)
+                        .font(JPFont.footnote)
+                        .lineSpacing(3)
+                        .foregroundStyle(WebTheme.text2)
+                        .lineLimit(3)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, JPSpace.s)
+        .frame(minHeight: JPHeight.tallRow)
+        .contentShape(Rectangle())
+        // 読み上げは「1 · 名前 · 季節 · 時間帯 · ひとこと」（番号の丸は絵として隠している）
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel([String(number), name, season, timeChip, note].compactMap { $0 }
+            .filter { !$0.isEmpty }.joined(separator: " · "))
+    }
+}
+
+/// 時間帯の札（板 TripPlanDays F30 の `夜景 · 夜`）
+struct TripTimeChip: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(JPFont.caption.weight(.semibold))
+            .foregroundStyle(WebTheme.muted)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .background(Color.white.opacity(0.05), in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: JPStroke.hairline))
+            .fixedSize()
+    }
+}
+
+/// 季節の一文と札を並べる（字が大きいときは縦に積む・`ViewThatFits`）
+struct TripWrapRow<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: JPSpace.xs) { content() }
+            VStack(alignment: .leading, spacing: JPSpace.xxs) { content() }
+        }
+    }
+}
+
+/// 日の見出しの下の1行（日の出・日の入り / 重なり / 間に合わないとき）。字は 12・白 60%（知らせは白 72%）
+struct TripDayNote: View {
+    let text: String
+    var symbol: String? = nil
+    var strong = false
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            if let symbol {
+                Image(systemName: symbol)
+                    .font(JPFont.caption)
+                    .accessibilityHidden(true)
+            }
+            Text(text)
+                .font(JPFont.caption)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(strong ? WebTheme.muted2 : WebTheme.faint)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// 日の出・日の入りの1行の字（「日の出 7:02 · 日の入り 16:45」）
+enum TripSunText {
+    static func line(_ sun: TripDraft.Sun) -> String? {
+        var parts: [String] = []
+        if let r = sun.sunrise { parts.append(L("日の出 \(r)", "Sunrise \(r)")) }
+        if let s = sun.sunset { parts.append(L("日の入り \(s)", "Sunset \(s)")) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+}

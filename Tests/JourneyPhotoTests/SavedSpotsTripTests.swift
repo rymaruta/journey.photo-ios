@@ -84,77 +84,27 @@ final class SavedSpotsTripTests: XCTestCase {
         XCTAssertNil(SavedSpotsTrip.draft([odd]))
     }
 
-    // MARK: - 近い順
-
-    /// 最初に選んだ場所から、いちばん近い未訪の場所へ進む
-    func testNearestOrderIsGreedyFromTheFirstPick() {
-        let tokyo = place("tokyo", 35.68, 139.76)
-        let osaka = place("osaka", 34.69, 135.50)
-        let kyoto = place("kyoto", 35.01, 135.77)
-        let sapporo = place("sapporo", 43.06, 141.35)
-        // 選んだ順: 東京・大阪・札幌・京都
-        let order = SavedSpotsTrip.nearestOrder([tokyo, osaka, sapporo, kyoto]).map(\.key)
-        // 東京 → 京都（東京から最も近い）→ 大阪 → 札幌
-        XCTAssertEqual(order, ["tokyo", "kyoto", "osaka", "sapporo"])
-    }
-
-    /// **いまいる場所から**近い順（貪欲法）。「最初の場所からの距離で並べるだけ」とは答えが違う例:
-    /// 赤道上の A(0°)・B(東 1°)・C(西 1.5°)・D(東 2°)。A からの距離順なら A・B・C・D だが、
-    /// B に着いたら D（1°）が C（2.5°）より近い → A・B・D・C
-    func testNearestOrderMovesFromTheCurrentPlace() {
-        let a = place("a", 0, 0)
-        let b = place("b", 0, 1)
-        let c = place("c", 0, -1.5)
-        let d = place("d", 0, 2)
-        XCTAssertEqual(SavedSpotsTrip.nearestOrder([a, c, d, b]).map(\.key), ["a", "b", "d", "c"])
-    }
-
-    /// 1件はそのまま・0件は空
-    func testNearestOrderSingleAndEmpty() {
-        let a = place("a", 35, 135)
-        XCTAssertEqual(SavedSpotsTrip.nearestOrder([a]).map(\.key), ["a"])
-        XCTAssertTrue(SavedSpotsTrip.nearestOrder([]).isEmpty)
-    }
-
-    /// 同じ座標は選んだ順のまま（毎回同じ並び）。同じ鍵は1度だけ
-    func testNearestOrderSameCoordinatesKeepPickOrder() {
-        let a = place("a", 35, 135)
-        let b = place("b", 35, 135)
-        let c = place("c", 35, 135)
-        XCTAssertEqual(SavedSpotsTrip.nearestOrder([c, a, b]).map(\.key), ["c", "a", "b"])
-        XCTAssertEqual(SavedSpotsTrip.nearestOrder([a, b, a]).map(\.key), ["a", "b"])
-    }
-
-    /// 日付変更線の付近: 東経 179.9° の次は（経度の数では遠い）西経 179.9° が近い
-    func testNearestOrderAcrossTheDateLine() {
-        let east = place("east", -16.5, 179.9)     // フィジーの東
-        let fiji = place("fiji", -17.7, 178.0)
-        let west = place("west", -16.5, -179.9)    // 線の向こう側
-        let tonga = place("tonga", -21.1, -175.2)
-        // east から: west（約 22km）が fiji（約 230km）より近い
-        let order = SavedSpotsTrip.nearestOrder([east, fiji, tonga, west]).map(\.key)
-        XCTAssertEqual(order.first, "east")
-        XCTAssertEqual(order[1], "west", "日付変更線の向こうでも近ければ次に回る")
-        XCTAssertEqual(Set(order), ["east", "west", "fiji", "tonga"])
-    }
-
     // MARK: - プランへの受け渡し
 
-    /// 中身: 近い順の `TripItem`（スポットは spotId、撮影地は slug）・日付なし・題は地域から
-    func testDraftCarriesOrderedTripItems() throws {
+    /// 中身: 作る流れと同じ割り振り（地域で束ねる → 近い順 → 日へ）の `TripItem`・日付なし・題は地域から。
+    /// 🔴 2026-11-10（札 #521）: 以前は近い順に並べて全部1日目だった。日付を決めない下書きは
+    /// **地域を1日に混ぜない**（`TripPicker.days`）ので、京都・奈良・撮影地は3日に分かれる
+    func testDraftUsesTheSameAllocationAsTheCreateFlow() throws {
         let kyoto = try official("kiyomizu", 34.99, 135.78)
         let nara = try official("todaiji", 34.69, 135.84, prefecture: "奈良県")
         let osaka = place("osaka", 34.69, 135.50)
-        // 選んだ順: 清水寺・大阪・東大寺 → 近い順: 清水寺・東大寺（約 34km。大阪は約 42km）・大阪
+        // 選んだ順: 清水寺・大阪・東大寺 → 地域の順: 京都府（最初に選んだ）→ 奈良県（清水寺から約 34km）→ 撮影地（約 42km）
         let draft = try XCTUnwrap(SavedSpotsTrip.draft([kyoto, osaka, nara]))
-        XCTAssertEqual(draft.days.count, 1)
-        XCTAssertNil(draft.days[0].date, "日付は日程の画面で入れる（送らない）")
-        XCTAssertEqual(draft.days[0].items, [
-            .spot(spotId: "sp_kiyomizu", note: nil),
-            .spot(spotId: "sp_todaiji", note: nil),
-            .location(slug: "osaka", note: nil),
+        XCTAssertNil(draft.days[0].date, "日付は作る流れの日付の段・日程の画面で入れる（送らない）")
+        XCTAssertEqual(draft.days.map(\.items), [
+            [.spot(spotId: "sp_kiyomizu", note: nil)],
+            [.spot(spotId: "sp_todaiji", note: nil)],
+            [.location(slug: "osaka", note: nil)],
         ])
         XCTAssertEqual(draft.title, "京都府・奈良県の旅")
+        // 作る流れの割り振りと同じ答え
+        let places = SavedSpotsTrip.draftPlaces([kyoto, osaka, nara])
+        XCTAssertEqual(TripDraft.tripDays(TripDraft.plan(places, dayCount: nil)), draft.days)
     }
 
     /// 撮影地だけなら地域が無いので「行きたい場所の旅」
@@ -164,11 +114,12 @@ final class SavedSpotsTripTests: XCTestCase {
         XCTAssertEqual(draft.days[0].items, [.location(slug: "a", note: nil)])
     }
 
-    /// 1日の上限（サーバーの 20 か所）を越えたら次の日へ。場所は落とさない
-    func testDraftSplitsDaysAtTheServerLimit() throws {
+    /// 25 か所の撮影地: 1日 4 か所前後に均す（以前は 20・5）。上限を越えず、場所は落とさない
+    func testDraftSpreadsAboutFourADayWithinTheServerLimit() throws {
         let items = (0..<25).map { place("p\($0)", 35 + Double($0) * 0.01, 135) }
         let draft = try XCTUnwrap(SavedSpotsTrip.draft(items))
-        XCTAssertEqual(draft.days.map(\.items.count), [TripPlanService.itemsPerDayMax, 5])
+        XCTAssertEqual(draft.days.map(\.items.count), [4, 4, 4, 4, 3, 3, 3])
+        XCTAssertTrue(draft.days.allSatisfy { $0.items.count <= TripPlanService.itemsPerDayMax })
         XCTAssertEqual(draft.days.flatMap(\.items).count, 25)
     }
 

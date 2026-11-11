@@ -60,6 +60,9 @@ struct OfflineTripManifest: Codable, Equatable, Identifiable {
         let samples: [Sample]
         /// この場所の周りの地図の画像（ファイル名）
         let map: String?
+        /// 前の場所からの移動の見込み（保存したときに Apple のマップが返したもの・2026-11-10 札 #521）。
+        /// 古い保存・見込みが返らなかった場所は nil
+        var travel: String? = nil
 
         var id: Int { number }
     }
@@ -95,6 +98,31 @@ enum OfflineTripPlan {
         let note: String?
         /// その日・その場所の光の時刻（**保存する前に計算する**。旅の日付で）
         let light: OfflineLight?
+        /// 前の場所からの移動の見込み（「前の場所から 車 約 50 分 · 電車など 約 1 時間 20 分」）。保存する前に添える
+        var travel: String? = nil
+    }
+
+    /// 移動の見込みを添える（電波なしで使える旅・Pro・2026-11-10 札 #521）。**同じ日の、座標のある前の場所から**。
+    /// 見込みは日程の画面で聞いて控えにあるものだけ（保存のために新しく聞き直さない）
+    static func withTravel(_ stops: [Stop], estimates: (TripTravel.Leg) -> [TripTravel.Estimate]) -> [Stop] {
+        var out = stops
+        var previous: (day: Int, endpoint: TripTravel.Endpoint)?
+        for i in out.indices {
+            guard let coords = out[i].coords else { continue }
+            let here = TripTravel.Endpoint(name: out[i].name, coords: coords, number: out[i].number)
+            if let previous, previous.day == out[i].dayIndex {
+                let shown = estimates(TripTravel.Leg(from: previous.endpoint, to: here))
+                if !shown.isEmpty { out[i].travel = travelLine(shown) }
+            }
+            previous = (out[i].dayIndex, here)
+        }
+        return out
+    }
+
+    /// 「前の場所から 車 約 50 分 · 電車など 約 1 時間 20 分」
+    static func travelLine(_ estimates: [TripTravel.Estimate]) -> String {
+        let parts = estimates.map { "\($0.mode.label) \(TripTravel.duration($0.seconds))" }.joined(separator: " · ")
+        return L("前の場所から \(parts)", "From the previous stop: \(parts)")
     }
 
     /// 項目の鍵。**スポットと撮影地を混ぜない**（`SavedSpotKey` と同じ理由）
