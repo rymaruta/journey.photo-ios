@@ -20,18 +20,6 @@ on:
       betaReview:
         type: boolean
         default: false
-      storeShots:
-        type: boolean
-        default: false
-      tests:
-        type: boolean
-        default: false
-      screens:
-        type: string
-        default: ""
-      first:
-        type: string
-        default: ""
   workflow_dispatch:
     inputs:
       submit:
@@ -42,32 +30,6 @@ on:
         description: "外部テストの審査も申請する"
         type: boolean
         default: false
-      storeShots:
-        description: "画像保存（使用不可・オフのまま）"
-        type: boolean
-        default: false
-      tests:
-        description: "配信前にテストする（通常はオフ）"
-        type: boolean
-        default: false
-      # 2026-10-17 判断: 枝の確認（submit=false）の UI テストを、変えた画面だけに絞れるようにする。
-      # run 462 の実測で1回 約69分のうち UI テストが33分（画面の絵19分・メダル11分）だった。
-      # **絞った回は「全部のテストが通った」の印を付けない**ので、「PR の検証」は Mac の
-      # テストを飛ばさず全部回す（main に入る前に必ず一度は全部が回る）。
-      # 上げる回（submit=true）で tests=true なら配信差分に応じたUIテスト＋SmokeTestsを実行する。
-      # 上げる回でテストを流すかどうかは、今までどおり `tests` で決まる
-      screens:
-        description: "UIテスト範囲：auto=差分から選択、none=起動確認、all=全件"
-        type: string
-        default: "auto"
-      # 2026-10-31 判断（#429）: 全部の回（submit=false・screens 空）は、UI テストを別々の Mac 3台に分けて
-      # 同時に流す（下の「テストの品を組む」から「まとめ」まで）。その前に、枝で変えた画面の UI テストを
-      # 単体テストと同時に別の Mac で先に流し、落ちたら分けた段まで進めない。何を先に流すかは、空なら
-      # 枝の差分から `Tools/pick-ui-tests.py --plan` が選ぶ。書けば `screens` と同じ書き方でそれを先に流す
-      first:
-        description: "検証用：最初に実行するUIテスト（通常は空欄）"
-        type: string
-        default: ""
 
 # 🔴 **TestFlight に上げる回は同時に1本だけ**（2026-10-04）。2本が同時に走ると、
 # どちらも `Tools/next-marketing-version.sh` で同じ版を決め、**同じ版が2つ上がる**
@@ -96,8 +58,6 @@ jobs:
       contents: write
     # **`macos-latest` に固定しない。** ランナーの既定 Xcode が上がると
     # 挙動が変わるので、上げるときは意図して上げる
-    # どこまで流すか（`screens` の `auto` を解いた一覧・分けて流すか）は `shard-plan`（Linux・数十秒）が決める
-    needs: shard-plan
     runs-on: macos-15
     # **初回は控えが無く、依存を丸ごと組む。** Amplify →
     # aws-sdk-swift → smithy-swift はテストの段だけで50分を超えた
@@ -112,42 +72,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
-
-      # **どこまで流すかを最初に決める**（2026-10-17）。`screens` の打ち間違いで UI テストが
-      # 0件になるのを、ビルドの前の数秒で止める（`Tools/pick-ui-tests.py` が候補を出して落ちる）。
-      # full=true の回だけ、最後に「全部のテストが通った」の印の段を付ける
-      - name: 公開リポジトリへの画像保存を防止
-        if: ${{ inputs.storeShots }}
-        run: |
-          echo "::error::公開リポジトリでstoreShotsは無効です。画像は非公開環境で生成してください。"
-          exit 1
-
-      - name: UIテストの実行内容を表示
-        # auto は後続の差分解析で対象を決める。ここでテスト名として渡すとエラーになる。
-        if: ${{ inputs.tests && inputs.screens != 'auto' && !(inputs.submit && inputs.screens == '') }}
-        env:
-          SCREENS: ${{ inputs.screens }}
-        run: python3 Tools/explain-ui-tests.py "${SCREENS:-}"
-
-      # 範囲は「UIテストの分割実行を判定」の job（`shard-plan`）の「どこまで流すかを決める」が決めた一覧を
-      # そのまま使う（2026-11-10 判断: 決め方は1か所。`build` と分けた組が別々に決めると、`auto` の回で食い違う）
-      - name: どこまで流すかを受け取る
-        id: scope
-        env:
-          FULL: ${{ needs.shard-plan.outputs.full }}
-          SHARDED: ${{ needs.shard-plan.outputs.sharded }}
-          LIST_B64: ${{ needs.shard-plan.outputs.list }}
-        run: |
-          set -euo pipefail
-          if [ -z "${LIST_B64:-}" ] || [ -z "${FULL:-}" ] || [ -z "${SHARDED:-}" ]; then
-            echo "::error::「どこまで流すかを決める」（shard-plan の job）の答えが読めません"
-            exit 1
-          fi
-          python3 -c 'import base64,sys; open("/tmp/ui-only-testing.txt","wb").write(base64.b64decode(sys.argv[1]))' "$LIST_B64"
-          echo "full=${FULL}" >> "$GITHUB_OUTPUT"
-          echo "sharded=${SHARDED}" >> "$GITHUB_OUTPUT"
-          echo "全部: ${FULL} / 分けて流す: ${SHARDED}"
-          cat /tmp/ui-only-testing.txt
 
       # **依存の作り直しに毎回30分以上かかる。**
       # Amplify → aws-sdk-swift → smithy-swift は桁違いに大きく、
@@ -368,7 +292,7 @@ jobs:
       # Codemagic CLI は署名・Archive・アップロード時だけ必要。
       # UI確認だけの実行ではPythonパッケージの導入を省略する。
       - name: 配信用CLIを用意
-        if: ${{ steps.secrets.outputs.signing == 'true' && (inputs.submit || steps.scope.outputs.full == 'true') }}
+        if: ${{ steps.secrets.outputs.signing == 'true' }}
         run: |
           set -euo pipefail
           if command -v app-store-connect >/dev/null 2>&1 && command -v xcode-project >/dev/null 2>&1 && command -v keychain >/dev/null 2>&1; then
@@ -394,75 +318,11 @@ jobs:
       - name: Xcodeプロジェクトを生成
         run: xcodegen generate
 
-      # **既定ではテストを流さない**（2026-10-09 owner「テストフライトでの2重テストはしなくていい」）。
-      # main に入るのは「PR の検証」の Mac のテストを通ったものだけなので、上げる回で同じテストを
-      # もう一度流すと、Mac を30分ほど二重に使っていた。main 以外の枝を確かめるときは `tests: true`。
-      # 画面の絵（下の `screenshots` の段）はこのテストの結果から作るので、テストを流した回だけ置く
-      # 上げない回（submit=false・`/mac-check`）は絵とテストが目的なので、`tests` が無くても流す
-      #
-      # 🔴 **組む → 単体 → UI の3段**（2026-10-17・`Tools/xcode-test.sh`）。単体が落ちたら UI まで
-      # 行かずに止まる（前は1回の `test` で、単体が落ちても UI の33分を待ってから赤になった）。
-      # 🔴 **段の名前を「テスト」で始めない。** 「PR の検証」の「同じコミットが Mac でテスト済みか」は、
-      # 前は「テスト」で始まる最初の段の成否を見ていた。名前を変えれば古い数え方は何も数えず
-      # （＝飛ばさない側に倒れ）、新しい数え方は下の「全部のテストが通った」の印だけを数える
-      - name: 組む（本物の SwiftUI で型検査される最初の機会）
-        # 分けて流す回は、下の「テストの品を組む」の job が組む（この job は Archive だけ）
-        if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.sharded != 'true' }}
-        run: |
-          set -euo pipefail
-          # 3段で同じシミュレータを使う
-          echo "DEVICE=$(python3 Tools/pick-simulator.py)" >> "$GITHUB_ENV"
-          # **`-sdk iphonesimulator` は渡さない。** `-destination` と
-          # 併用すると SDK 側の arch 一覧（arm64 と x86_64）が勝ち、
-          # 行き先に `arch=arm64` を書いても x86_64 で組み立てにいく
-          # （run #7 がそれ。run #6 と同じ `Smithy` のエラーが出続けた）。
-          #
-          # **アーキテクチャを1つに絞る。** macos-15 のランナーは
-          # Apple Silicon で、シミュレータの行き先は arm64 と x86_64 の
-          # **両方に一致する**（run #4 のログが "Using the first of
-          # multiple matching destinations" と言っている）。絞らないと
-          # xcodebuild は x86_64 でも組み立てようとし、arm64 でしか
-          # 作られていない依存（Amplify → aws-sdk-swift → smithy-swift）で
-          #   could not find module 'Smithy' for target 'x86_64-apple-ios-simulator'
-          # と落ちる（run #6）。
-          #
-          # **`xcode-project run-tests` を使わない。** 出力を
-          # `/tmp/xcodebuild_logs` に伏せるので、コンパイルが通らない回に
-          # 「0件で失敗」としか残らない。run #1〜#3 をこれで空振りさせた
-          # （伏せ先から拾い直す小細工も2回外した）。**xcodebuild を直に
-          # 叩いて、出力をそのままログに出す**のが結局いちばん短い。
-          # （この3つは `Tools/xcode-test.sh` の中に書いてある）
-          DEVICE="$(python3 Tools/pick-simulator.py)" bash Tools/xcode-test.sh build
-
-      # TestFlight配信時はPRで検証済みの単体テストを繰り返さない。
-      # tests=trueの配信では、ビルド後に変更箇所に応じたUIテストを実行する。
-      - name: 単体テスト
-        id: unit
-        if: ${{ !inputs.submit && (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.sharded != 'true' }}
-        run: bash Tools/xcode-test.sh unit build/ios/test/Unit.xcresult
-
-      # 画面の絵（`ScreenshotTests`）はここで撮る。結果の置き場は前と同じ `Test.xcresult`
-      # （`Tools/export-screenshots.sh` が読む）。絞った回は `どこまで流すかを決める` の一覧だけ
-      - name: UI テスト（画面の絵）
-        id: ui
-        if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.sharded != 'true' }}
-        run: bash Tools/xcode-test.sh ui build/ios/test/Test.xcresult /tmp/ui-only-testing.txt
-
-      # 🔴 **「PR の検証」が「このコミットは Mac でテスト済み」と数える印**（2026-10-17）。
-      # 単体と UI を**絞らずに全部**流して通った回だけ success になる。絞った回（screens）は
-      # skipped になり数えられない＝PR の検証が Mac で全部を回す。名前を変えるときは
-      # `ios-pr.yml` の `tested` の job も合わせる。
-      # 分けて流す回（steps.scope.outputs.sharded）は単体・UI の段が skipped なのでここは付かず、「まとめ」の job の同じ名前の段が付く
-      - name: 全部のテストが通った（PR の検証が数える印）
-        if: ${{ !inputs.submit && (inputs.tests || inputs.storeShots) && steps.scope.outputs.full == 'true' && steps.unit.outcome == 'success' && steps.ui.outcome == 'success' }}
-        run: echo "単体テストと UI テストを絞らずに全部流し、通りました"
-
-      # **絞った回（screens）は署名・Archive をしない**（2026-10-17 判断）。Archive は毎回10分前後
-      # （run 454〜462 で 8〜14分）。絞った回は「変えた画面を早く見る」ための回で、Release の
-      # 組み立ては全部の回（screens 空）と、上げる回（submit=true・いつも全部）で見る。
-      # `steps.scope.outputs.full` は上げる回では必ず true なので、上げる回には効かない
+      # 🔴 **このワークフローは Archive と上げるだけ**（2026-11-11 owner「毎回のと ガチガチので」作り替え）。
+      # テストは `ios-quick.yml`（毎回の・PR と枝の確かめ）と `ios-full.yml`（ガチガチの・手で押したときだけ）。
+      # 上げない回（submit=false）は Release の組み立て（Archive）と署名までを確かめる
       - name: 署名証明書とプロファイルを準備
-        if: ${{ steps.secrets.outputs.signing == 'true' && (steps.scope.outputs.full == 'true' || inputs.submit) }}
+        if: ${{ steps.secrets.outputs.signing == 'true' }}
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -485,7 +345,7 @@ jobs:
           xcode-project use-profiles
 
       - name: ビルド番号を決める
-        if: ${{ steps.secrets.outputs.signing == 'true' && (inputs.submit || steps.scope.outputs.full == 'true') }}
+        if: ${{ steps.secrets.outputs.signing == 'true' }}
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
@@ -530,7 +390,7 @@ jobs:
 
       - name: 配信用アプリをビルド
         id: archive
-        if: ${{ steps.secrets.outputs.signing == 'true' && (inputs.submit || steps.scope.outputs.full == 'true') }}
+        if: ${{ steps.secrets.outputs.signing == 'true' }}
         run: |
           set -euo pipefail
           # **プラグインの関所はビルドにも立つ。** Amplify →
@@ -654,20 +514,6 @@ jobs:
             echo "::warning::版の印 testflight/$MARKETING を押せませんでした。Actions の「版の印を付け直す」（version-tag.yml）で ${MARKETING} と $(git rev-parse --short HEAD) を渡して付けてください（付けないと次の回も同じ版になります）"
           fi
 
-      # **見た目を確かめられる場所はここしか無い。** 開発は Linux で進めて
-      # いて、手元にあるのは `Shims/` の模型（修飾子は素通し＝配置も色も
-      # 再現しない）。実際に描かれた絵は、このランナーのシミュレータに
-      # しか存在しない。取り出し方と「なぜ artifact ではないのか」は
-      # `Tools/export-screenshots.sh` の頭に書いた
-      - name: スクリーンショットを保存
-        # 公開リポジトリでは常に無効
-        if: ${{ false }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          STORE_SHOTS: ${{ inputs.storeShots }}
-          # 絞った回は撮らない画面があって当たり前なので、「撮れなかった画面」を数えない
-          NARROWED: ${{ steps.scope.outputs.full != 'true' }}
-        run: bash Tools/export-screenshots.sh build/ios/test/Test.xcresult
 
       - name: 失敗時の診断ログを収集
         if: ${{ always() }}
@@ -687,8 +533,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          # 分けて流す回は「まとめ」の job が各台の分と合わせて `build-logs` にする（同じ名前は2つ作れない）
-          name: ${{ steps.scope.outputs.sharded == 'true' && 'part-build' || 'build-logs' }}
+          name: build-logs
           # テストの結果とビルドのログ。落ちた理由はここに残る
           # **`*.xml` はもう出ない。** `xcode-project run-tests` をやめた
           # 時点で JUnit の書き出しも無くなったので、ここだけ残していると
@@ -738,189 +583,3 @@ jobs:
             !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
             ~/Library/Caches/org.swift.swiftpm
           key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
-
-  # ===========================================================================================
-  # 🔴 **全部の回は、テストを別々の Mac に分けて同時に流す**（2026-10-31 判断・#429）
-  #
-  # 組む（1台）→ 単体＋UI の先に流す分（2台・同時）→ UI の分けた組 1〜4（4台・同時）→ まとめ（印）の組は、
-  # 2026-11-10 に再利用のワークフロー `.github/workflows/mac-sharded-tests.yml` へ移した（`ios-pr.yml` の
-  # 全部の回も同じものを呼ぶ。写しを作らない）。作りと数の根拠は、そのファイルの冒頭の注記
-  # - Archive（Release の組み立て）は上の `build` の job が、ここと同時に流す
-  # - 同時に動く Mac は多いときで5台（`build` の Archive・分けた組4台・2026-11-11 に3→4）。公開リポジトリの Mac の同時実行は5台まで
-  # ===========================================================================================
-  # **どこまで流すか・分けて流すかを決める**（Linux で数十秒）。job の `if:` には式しか書けず、`screens` の
-  # 「all, x」・空白・`auto`（差分を読んで決める）を式では読めない。
-  # 2026-11-10 判断: 前は `build` の job とこの job が別々に決めていた（この job は `screens` の書き方だけ・
-  # `build` は `auto` を差分で解いた一覧）。既定の `auto` が全部に倒れた回（run 42813269365・submit=false）は、
-  # この job が「分けない」と答え、`build` が1台で UI テストを全部流した。**決めるのはこの job の1か所だけ**にし、
-  # `build` は答え（full・sharded・一覧）を受け取る（`needs: shard-plan`）
-  shard-plan:
-    name: UIテストの分割実行を判定
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    outputs:
-      sharded: ${{ steps.scope.outputs.sharded }}
-      full: ${{ steps.scope.outputs.full }}
-      list: ${{ steps.scope.outputs.list }}
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: どこまで流すかを決める
-        id: scope
-        env:
-          SCREENS: ${{ inputs.screens }}
-          SUBMIT: ${{ inputs.submit }}
-          STORE_SHOTS: ${{ inputs.storeShots }}
-          TESTS: ${{ inputs.tests }}
-        run: |
-          set -euo pipefail
-          # 配信前の検証は、前回の配信成功地点から変更された機能を対象にする。
-          # 明示的な screens 指定は尊重し、対象不明時は全件に倒す。
-          if [ "${SUBMIT:-}" = "true" ] && [ "${TESTS:-}" = "true" ] && [ -z "${SCREENS:-}" ]; then
-            SCREENS="auto"
-          elif [ "${SUBMIT:-}" = "true" ] && [ "${TESTS:-}" != "true" ]; then
-            SCREENS="none"
-          elif [ "${STORE_SHOTS:-}" = "true" ]; then
-            SCREENS=""
-          fi
-          if [ "${SCREENS:-}" = "auto" ]; then
-            # main への直接反映・マージは直前コミットとの差分を見る。
-            # PR ブランチでは分岐点からの差分を見る。取得不能時は全件へ倒す。
-            BASE=""
-            if [ "${SUBMIT:-}" = "true" ]; then
-              # 最新の TestFlight 成功タグをコミット到達可能性で検証する。
-              # タグがない・履歴が読めない場合は全件へフォールバック。
-              # checkout は shallow clone。過去の配信タグとの比較には履歴が必要。
-              history_ok=true
-              if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
-                git fetch --unshallow --no-tags origin || history_ok=false
-              fi
-              # 一部のタグしか取得できなかった状態で差分を短く見積もらない。
-              if ! git fetch --force --no-tags origin 'refs/tags/testflight/*:refs/tags/testflight/*'; then
-                history_ok=false
-              fi
-              if [ "$history_ok" = "true" ]; then
-                # タグの日付ではなく、HEAD から最も近い祖先のコミットを選ぶ。
-                best_distance=""
-                while IFS= read -r tag; do
-                  commit="$(git rev-parse "${tag}^{commit}" 2>/dev/null || true)"
-                  [ -n "$commit" ] || continue
-                  git merge-base --is-ancestor "$commit" HEAD || continue
-                  distance="$(git rev-list --count "$commit"..HEAD 2>/dev/null || true)"
-                  if [ -n "$distance" ] && { [ -z "$best_distance" ] || [ "$distance" -lt "$best_distance" ]; }; then
-                    BASE="$commit"
-                    best_distance="$distance"
-                  fi
-                done < <(git for-each-ref --format='%(refname)' 'refs/tags/testflight/*')
-              else
-                echo "::warning::配信タグまたは履歴の取得に失敗。安全のため全件テストを選択します"
-              fi
-              echo "配信差分の基点: ${BASE:-未取得（全件実行）}" >> "$GITHUB_STEP_SUMMARY"
-            else
-              git fetch --no-tags --depth=100 origin main || true
-              if [ "${GITHUB_REF:-}" = "refs/heads/main" ]; then
-                BASE="$(git rev-parse HEAD^ 2>/dev/null || true)"
-              else
-                BASE="$(git merge-base HEAD origin/main 2>/dev/null || true)"
-              fi
-            fi
-            if [ -n "$BASE" ] && git diff --find-renames "$BASE" HEAD > /tmp/ui-changes.diff; then
-              python3 Tools/pick-ui-tests.py --related /tmp/ui-changes.diff > /tmp/ui-only-testing.txt
-              echo "### UI テスト: 差分から自動選択" >> "$GITHUB_STEP_SUMMARY"
-            else
-              echo "::warning::比較元が取得できないため UI テストを全件実行します"
-              python3 Tools/pick-ui-tests.py all > /tmp/ui-only-testing.txt
-            fi
-          else
-            python3 Tools/pick-ui-tests.py "${SCREENS:-}" > /tmp/ui-only-testing.txt
-          fi
-          # 🔴 **UI テストを別々の Mac に分けて流す回か**（2026-10-31・#429）。決め方は `pick-ui-tests.py --sharded`
-          # の1か所だけで、**決まった一覧**を見る（上げない回で、一覧が「全部」1行だけ）。
-          # 2026-11-10 判断: 前は `screens` の書き方だけで決めていたので、既定の `auto` が上で全部に倒れた回
-          # （run 42813269365）を1台で全部流していた。分けて流す回は、`build` の job は Archive だけ
-          sharded="$(python3 Tools/pick-ui-tests.py --sharded "${SUBMIT:-}" /tmp/ui-only-testing.txt)"
-          echo "sharded=$sharded" >> "$GITHUB_OUTPUT"
-          echo "分けて流す: $sharded"
-          if [ "$(cat /tmp/ui-only-testing.txt)" = "-only-testing:JourneyPhotoUITests" ]; then
-            echo "full=true" >> "$GITHUB_OUTPUT"
-            echo "### UI テスト: 全部" >> "$GITHUB_STEP_SUMMARY"
-            if [ "$sharded" = "true" ]; then
-              echo "単体テストと UI テストは、別々の Mac（「テストの品を組む」から「まとめ」まで）で流します。この job は Archive だけ" >> "$GITHUB_STEP_SUMMARY"
-            fi
-          else
-            echo "full=false" >> "$GITHUB_OUTPUT"
-            {
-              echo "### UI テストを絞った回（screens: ${SCREENS}）"
-              echo "この回は全件 UI テスト済みとは数えません。全件の検証は PR の検証で行います。"
-              echo
-              sed 's/^/- /' /tmp/ui-only-testing.txt
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-          cat /tmp/ui-only-testing.txt
-          # `build` の job へ一覧を渡す（base64 で1バイトも変えずに。空の行が1つ増えると xcode-test.sh が中身ありと読む）。
-          # `base64 -w0` は GNU だけ（Mac の「ビルド設定を検証」が check-config.py でこの段を流すと落ちた・run 42918725504）
-          echo "list=$(python3 -c 'import base64,sys; print(base64.b64encode(open(sys.argv[1],"rb").read()).decode())' /tmp/ui-only-testing.txt)" >> "$GITHUB_OUTPUT"
-
-  tests:
-    name: テストを分けて流す
-    needs: shard-plan
-    if: ${{ needs.shard-plan.outputs.sharded == 'true' }}
-    # 🔴 **分けて流す全部の回は、TestFlight と PR の検証を合わせて同時に1本まで**（2026-11-10・確かめ役の指摘）。
-    # 1本で Mac 4台（この回は Archive と合わせて5台）。2本重なると上限の5台を超え、上げる回（Mac 1台）が順番待ちになる
-    # （CLAUDE.md: Mac は同時5台まで・枝の全部の回は同時に1本まで）。組の名前は ios-pr.yml の `xcode-sharded` と同じ。
-    # GitHub の決まりで待てるのは1本だけ——3本目が来ると、待っていた2本目は取り消される（cancelled）
-    concurrency:
-      group: mac-sharded-tests-${{ github.repository }}
-      cancel-in-progress: false
-    uses: ./.github/workflows/mac-sharded-tests.yml
-    with:
-      first: ${{ inputs.first }}
-
-  # 分けて流した回の Archive の成果物をまとめる。「全部のテストが通った」の印は、呼んだ組の
-  # `mac-sharded-tests.yml` の「分割テストの結果を集約」の job が付ける（2026-11-10 に移した）。
-  # 結果を読む・写すだけなので Linux（前は Mac で Xcode を選んでいた。2026-11-10 判断: Mac を1台減らす）
-  finish:
-    name: 分割テストの成果物をまとめる
-    needs: [build, tests]
-    if: ${{ always() && needs.tests.result != 'skipped' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-
-      # 🔴 **`build` の job が上げた `part-build` を受け取る**（2026-11-10 確かめ役の指摘）。前はこの段が無く、
-      # 下の「統合」が空振りして、分けて流した回には `build-logs` が1つも無かった（run 42920469610 の成果物は
-      # part-build・part-1〜3 などだけ）。`pattern` で受け取るので、`build` が上げる前に落ちた回も止まらない
-      - name: Archiveの成果物を受け取る
-        if: ${{ always() }}
-        uses: actions/download-artifact@v4
-        with:
-          pattern: part-build
-          path: build/parts
-
-      # `build` の job の Archive（ipa）と集めたものも、前と同じ `build-logs` に入れる
-      - name: Archiveの成果物を統合
-        if: ${{ always() }}
-        run: |
-          set -uo pipefail
-          if [ -d build/parts/part-build ]; then
-            mkdir -p build/ios/ipa build/logs/build-job
-            find build/parts/part-build -name '*.ipa' -exec cp {} build/ios/ipa/ \;
-            # ipa のほか（`build` の job が集めたもの）は build-job/ の下へ
-            (cd build/parts/part-build && find . -type f ! -name '*.ipa' | sed 's#^\./##') | while IFS= read -r f; do
-              mkdir -p "build/logs/build-job/$(dirname "$f")"
-              cp "build/parts/part-build/$f" "build/logs/build-job/$f"
-            done
-          fi
-          ls -la build/logs build/ios/ipa 2>/dev/null || true
-
-      - name: 診断ログをアップロード
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: build-logs
-          path: |
-            build/ios/ipa/*.ipa
-            build/logs/app-size.txt
-          retention-days: 3
-          if-no-files-found: ignore

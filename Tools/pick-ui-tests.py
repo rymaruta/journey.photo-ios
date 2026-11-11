@@ -114,17 +114,6 @@ def only_when_named(test):
     return test in ONLY_WHEN_NAMED or test.split("/", 1)[0] in ONLY_WHEN_NAMED
 
 
-def sharded(submit, only_testing):
-    """UI テストを別々の Mac に分けて流す回か（2026-10-31・#429）。上げない回（submit=false）で、**決まった一覧**が
-    「全部」1行だけのとき。
-
-    2026-11-10 判断: 前は `screens` の書き方（空・all・全部・storeShots）から決めていて、既定の `auto` が差分を読んで
-    全部に倒れた回（run 42813269365・「比較元が取得できないため UI テストを全件実行します」）を、1台で全部流していた。
-    `auto` を解いたあとの一覧で決めれば、どの書き方から全部になっても同じに分ける（ios-pr.yml の「UI テストの
-    範囲を決める」と同じ見方）"""
-    return not submit and [line.strip() for line in only_testing if line.strip()] == [f"-only-testing:{TARGET}"]
-
-
 def wants_all(screens):
     """空・`all`・`全部` なら True（UI テストのファイルを読む前に決める）"""
     words = [w.strip() for w in re.split(r"[,、]", screens or "") if w.strip()]
@@ -358,6 +347,107 @@ def plan(first_words, diff_text, parts, index=None, loose=None, times=None):
             "loads": load, "notes": notes, "missing": [], "counts": [len(first_all)] + [len(b) for b in bins]}
 
 
+# ===========================================================================================
+# 🔴 **毎回の（クイック・`ios-quick.yml`）**（2026-11-11 owner「毎回のと ガチガチので」「毎回のとこ最短に 5,10分」・
+# 「ガチの原因不明のバグの時だけガチガチのテストで」）。中身は固定:
+#  - Mac でしか意味の無い単体（`Tools/quick-unit-tests.txt`・Linux の `swift test` に無いもの）
+#  - 起動の見張り（SmokeTests）
+#  - 変えた画面に関係する UI テスト（差分から `tests_for_diff`。判定できない変更でも全部に倒さない）
+#  - 手で流したときに名指ししたもの（`screens`）
+# ほかの単体は Linux（PR の検証の「単体テスト（Linux・模型）」）が流す。全部の UI は `ios-full.yml`（手で押したときだけ）
+# ===========================================================================================
+QUICK_UNIT = ROOT / "Tools" / "quick-unit-tests.txt"
+# Mac 1台あたりの UI テストの見積もりの上限（秒）。越える分は台を増やす（最大 QUICK_MAX_PARTS 台）
+QUICK_UI_BUDGET = 240
+QUICK_MAX_PARTS = 4
+
+
+def quick_unit_tests(path=None):
+    """Mac でしか流れない単体テストの名前（「Class/testName」）。`#` の行と空行は読まない"""
+    try:
+        text = (path or QUICK_UNIT).read_text(encoding="utf-8")
+    except OSError:
+        return []
+    return [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+
+
+def related_for_quick(diff_text, index, loose):
+    """差分に関係する UI テスト（Swift のファイルごとに `tests_for_diff`）。判定できない変更は足さない（全部に倒さない）"""
+    chosen = set()
+    ui_prefix = UI_DIR.relative_to(ROOT).as_posix() + "/" if UI_DIR.is_relative_to(ROOT) else "UITests/"
+    for path in changed_files(diff_text):
+        if path.endswith(".swift") and (path.startswith("Sources/") or path.startswith(ui_prefix)):
+            chosen |= set(tests_for_diff(diff_text_for_path(diff_text, path), index, loose))
+    return {t for t in chosen if not only_when_named(t)}
+
+
+def quick_plan(diff_text, screens, cap, index=None, loose=None, times=None):
+    """毎回のの割り振り。返すのは {parts: [[テスト名]], loads, dropped, related, named, missing}"""
+    if index is None:
+        index, loose = read_index()
+    times = read_times() if times is None else times
+    seconds = estimate(sorted(index), times)
+    smoke = {t for t in index if t.startswith(f"{ALWAYS}/") and not only_when_named(t)}
+    related = related_for_quick(diff_text, index, loose or {})
+    named, missing = set(), []
+    words = [w for w in re.split(r"[,、]", screens or "") if w.strip() and nfc(w.strip()) not in ("none", "なし")]
+    if words:
+        if wants_all(screens):
+            raise ValueError("全部の UI テストは ios-full.yml（ガチガチの）で流す")
+        args, missing = pick(screens, {t: f"{t}\n" + "\n".join(sorted(index[t]["literals"])) for t in index})
+        named = {a.split(f"{TARGET}/", 1)[1] for a in args if a.count("/") >= 2} & set(index)
+    extra = sorted((related | named) - smoke, key=lambda t: (seconds[t], t))
+    chosen, dropped = set(smoke), []
+    limit = QUICK_MAX_PARTS * QUICK_UI_BUDGET
+    used = sum(seconds[t] for t in chosen)
+    for test in extra:
+        # 上限で外すのは差分から選んだものだけ（手で名指ししたものは外さない）
+        if cap and test not in named and used + seconds[test] > limit:
+            dropped.append(test)
+            continue
+        chosen.add(test)
+        used += seconds[test]
+    count = max(1, min(QUICK_MAX_PARTS, -(-int(used) // QUICK_UI_BUDGET)))
+    bins, load = balance(sorted(chosen), seconds, count)
+    return {"parts": [sorted(b) for b in bins], "loads": load, "dropped": sorted(dropped),
+            "related": sorted(related - smoke), "named": sorted(named), "missing": missing}
+
+
+def main_quick_plan(argv):
+    """python3 Tools/pick-ui-tests.py --quick-plan <出す場所> <diff のファイル> [<screens>] [cap]
+    出す場所に matrix.json（GitHub Actions の matrix・組ごとの一覧を base64 で）と plan.md を書く"""
+    import base64
+    out, diff_path = pathlib.Path(argv[0]), pathlib.Path(argv[1])
+    screens = argv[2] if len(argv) > 2 else ""
+    cap = len(argv) > 3 and argv[3] == "cap"
+    diff_text = diff_path.read_text(encoding="utf-8", errors="replace") if diff_path.is_file() else ""
+    try:
+        result = quick_plan(diff_text, screens, cap)
+    except ValueError as err:
+        print(f"::error::{err}", file=sys.stderr)
+        return 2
+    if result["missing"]:
+        print("::error::名指しに当たる UI テストがありません: " + " / ".join(result["missing"]), file=sys.stderr)
+        return 2
+    out.mkdir(parents=True, exist_ok=True)
+    include = []
+    for i, tests in enumerate(result["parts"], 1):
+        text = "".join(f"-only-testing:{TARGET}/{t}\n" for t in tests)
+        include.append({"part": i, "list": base64.b64encode(text.encode("utf-8")).decode("ascii")})
+    (out / "matrix.json").write_text(json.dumps({"include": include}, ensure_ascii=False), encoding="utf-8")
+    lines = [f"- Mac {i}: UI {len(t)} 本・見積もり {sec / 60:.1f} 分" + ("＋Mac でしか流れない単体" if i == 1 else "")
+             for i, (t, sec) in enumerate(zip(result["parts"], result["loads"]), 1)]
+    lines.append("- 変えた画面に関係する UI: " + ("・".join(result["related"]) or "なし"))
+    if result["named"]:
+        lines.append("- 名指し: " + "・".join(result["named"]))
+    if result["dropped"]:
+        lines.append(f"- ⚠️ 上限（Mac {QUICK_MAX_PARTS} 台 × {QUICK_UI_BUDGET // 60} 分）で流さなかった関係するテスト"
+                     "（`screens=` で名指し・ios-full.yml で流せる）: " + "・".join(result["dropped"]))
+    (out / "plan.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print("\n".join(lines))
+    return 0
+
+
 def times_from_log(log_text):
     """xcodebuild の全文ログから、UI テスト1本ずつの秒数を読む
     （`Test Case '-[JourneyPhotoUITests.X testY]' passed (12.3 seconds).`）"""
@@ -390,13 +480,8 @@ def main_plan(argv):
     return 0
 
 
-def main_related(argv, narrow=False):
-    """PR差分から関連UIテストを選ぶ。影響を判定できないアプリ変更は全件検証。
-
-    `narrow`（`--related-narrow`・PR の検証が使う）: 判定できない変更があっても全件に倒さず、
-    起動の見張り（SmokeTests）＋当たった関連テストだけにする。2026-11-11 owner「推奨で」（CLAUDE.md
-    「マージの前は 単体（全部）＋変えた画面の UI＋起動の見張り だけ。全部の UI テストは main を夜に1日1回」）。
-    全部を流すのは、PR の検証を手で `full_ui=true` で流したときと、夜の全部の回だけ"""
+def main_related(argv):
+    """PR差分から関連UIテストを選ぶ。影響を判定できないアプリ変更は全件検証。"""
     diff_text = pathlib.Path(argv[0]).read_text(encoding="utf-8")
     index, loose = read_index()
     if not index:
@@ -404,10 +489,6 @@ def main_related(argv, narrow=False):
         return 1
     changes = changed_files(diff_text)
     if not changes and diff_text.strip():
-        if narrow:
-            print("::warning::差分を解析できません。起動の見張りだけ流します（全部は夜の回）", file=sys.stderr)
-            print(f"-only-testing:{TARGET}/{ALWAYS}")
-            return 0
         print("::warning::差分を解析できないため全件実行", file=sys.stderr)
         print(f"-only-testing:{TARGET}")
         return 0
@@ -474,10 +555,7 @@ def main_related(argv, narrow=False):
                 uncertain.append(removed)
     if unit_covered:
         print("共有カード描画は単体テスト＋起動スモークで確認: " + ", ".join(unit_covered), file=sys.stderr)
-    if uncertain and narrow:
-        print("::warning::関連テストを特定できない変更があります（全部は夜の回で流す）: " + ", ".join(sorted(set(uncertain))),
-              file=sys.stderr)
-    elif uncertain:
+    if uncertain:
         print("::warning::関連テストを特定できず全件実行: " + ", ".join(uncertain), file=sys.stderr)
         print(f"-only-testing:{TARGET}")
         return 0
@@ -499,20 +577,13 @@ def diff_text_for_path(diff_text, path):
 def main():
     if len(sys.argv) > 2 and sys.argv[1] == "--related":
         return main_related(sys.argv[2:])
-    if len(sys.argv) > 2 and sys.argv[1] == "--related-narrow":
-        return main_related(sys.argv[2:], narrow=True)
     if len(sys.argv) > 1 and sys.argv[1] == "--only-when-named":
         print("\n".join(ONLY_WHEN_NAMED))
         return 0
-    if len(sys.argv) > 1 and sys.argv[1] == "--sharded":
-        # 全部の回を別々の Mac に分けて流すか（`ios-testflight.yml` の「どこまで流すかを決める」の1か所だけが呼ぶ）。
-        # python3 Tools/pick-ui-tests.py --sharded <submit> <決まった -only-testing の一覧のファイル>
-        submit = sys.argv[2] if len(sys.argv) > 2 else ""
-        lines = pathlib.Path(sys.argv[3]).read_text(encoding="utf-8").splitlines() if len(sys.argv) > 3 else []
-        print("true" if sharded(submit == "true", lines) else "false")
-        return 0
     if len(sys.argv) > 1 and sys.argv[1] == "--plan":
         return main_plan(sys.argv[2:])
+    if len(sys.argv) > 2 and sys.argv[1] == "--quick-plan":
+        return main_quick_plan(sys.argv[2:])
     if len(sys.argv) > 2 and sys.argv[1] == "--count-log":
         # 流れた本数を数える（分けて流した回が、前の1台の回と同じ本数か）。同じテストが2つの台で流れたら名指し
         text = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8", errors="replace")
