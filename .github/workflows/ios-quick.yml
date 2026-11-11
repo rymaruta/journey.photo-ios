@@ -59,6 +59,9 @@ jobs:
   # 一時（測る間だけ・main に入る前に消す）
   warm-only:
     if: ${{ inputs.warm_only == true }}
+    permissions:
+      contents: read
+      actions: read
     uses: ./.github/workflows/xcode-cache-warm.yml
 
   plan:
