@@ -40,47 +40,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
+      - uses: ./.github/actions/static-checks
         with:
-          node-version: "20"
-      - name: tree-sitter を入れる
-        if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
-        # 2026-11-09 判断: この段が、コードと関係なく不安定に落ちた（同じコミットで成功と失敗が混ざる・
-        # 1つ目は Node の取得が 504）。`--silent` が原因を隠していたので外して出力を残し、
-        # 通信まわりの一時的な失敗だけ最大3回までやり直す（3回目も落ちたら落とす）。
-        run: |
-          cd Tools
-          for i in 1 2 3; do
-            if npm install --no-audit --no-fund; then exit 0; fi
-            echo "::warning::npm install が失敗しました（${i}/3）"
-            sleep $((i * 10))
-          done
-          exit 1
-      - name: Swift の構文
-        if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
-        run: node Tools/check-swift-syntax.js Sources Tests UITests
-      - name: 参照
-        if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
-        run: node Tools/check-swift-refs.js Sources Tests
-      - name: 2つの import が揃って初めて見える型
-        if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
-        run: python3 Tools/check-cross-imports.py Sources Tests
-      - name: Web 版との突き合わせ（読めなければ飛ばす）
-        if: ${{ github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false' }}
-        run: python3 Tools/check-api-parity.py ../photo-gallery
-      # ワークフローのみのPRでもYAML構文を検証する。
-      # Swiftの重い検査を省略する代わりに、CI設定の壊れを早期検出する。
-      - name: GitHub ActionsのYAML構文
-        run: |
-          ruby -e 'require "yaml"; Dir.glob(".github/workflows/*.{yml,yaml}").each { |file| YAML.parse_file(file); puts "OK: #{file}" }'
-
-      - name: 設定ファイル
-        run: python3 Tools/check-config.py
-      - name: 関連UIテスト選別の回帰テスト
-        run: python3 Tools/test_pr_related_ui.py
-      - name: 重さの記録の拾い方の回帰テスト
-        run: python3 Tools/test_perf_collect.py
+          swift: ${{ (github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false') && 'true' || 'false' }}
 
   # ワークフローだけの変更ではアプリのソース・テストが変わらない。
   # GitHub Actions の設定を検査する静的チェックだけで済ませ、Mac を起動しない。

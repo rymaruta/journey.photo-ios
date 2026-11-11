@@ -1,0 +1,62 @@
+# 静的な検査（構文・参照・import の組・Web 版との突き合わせ・YAML・設定）。2026-11-11 に ios-pr.yml の「静的な検査」から
+# 取り出した。ios-pr.yml と ios-quick.yml（毎回の・落ちたら Mac を止める）の両方が使う（写しを作らない）
+name: 静的な検査
+description: Linux で数十秒の静的な検査
+inputs:
+  swift:
+    description: "Swift の重い検査も流す（ワークフロー・文書だけの変更なら false）"
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7
+      if: ${{ inputs.swift == 'true' }}
+      with:
+        node-version: "20"
+    - name: tree-sitter を入れる
+      if: ${{ inputs.swift == 'true' }}
+      # 2026-11-09 判断: この段が、コードと関係なく不安定に落ちた（同じコミットで成功と失敗が混ざる・
+      # 1つ目は Node の取得が 504）。`--silent` が原因を隠していたので外して出力を残し、
+      # 通信まわりの一時的な失敗だけ最大3回までやり直す（3回目も落ちたら落とす）。
+      shell: bash
+      run: |
+        cd Tools
+        for i in 1 2 3; do
+          if npm install --no-audit --no-fund; then exit 0; fi
+          echo "::warning::npm install が失敗しました（${i}/3）"
+          sleep $((i * 10))
+        done
+        exit 1
+    - name: Swift の構文
+      if: ${{ inputs.swift == 'true' }}
+      shell: bash
+      run: node Tools/check-swift-syntax.js Sources Tests UITests
+    - name: 参照
+      if: ${{ inputs.swift == 'true' }}
+      shell: bash
+      run: node Tools/check-swift-refs.js Sources Tests
+    - name: 2つの import が揃って初めて見える型
+      if: ${{ inputs.swift == 'true' }}
+      shell: bash
+      run: python3 Tools/check-cross-imports.py Sources Tests
+    - name: Web 版との突き合わせ（読めなければ飛ばす）
+      if: ${{ inputs.swift == 'true' }}
+      shell: bash
+      run: python3 Tools/check-api-parity.py ../photo-gallery
+    # ワークフローのみのPRでもYAML構文を検証する。
+    # Swiftの重い検査を省略する代わりに、CI設定の壊れを早期検出する。
+    - name: GitHub ActionsのYAML構文
+      shell: bash
+      run: |
+        ruby -e 'require "yaml"; Dir.glob(".github/workflows/*.{yml,yaml}").each { |file| YAML.parse_file(file); puts "OK: #{file}" }'
+
+    - name: 設定ファイル
+      shell: bash
+      run: python3 Tools/check-config.py
+    - name: 関連UIテスト選別の回帰テスト
+      shell: bash
+      run: python3 Tools/test_pr_related_ui.py
+    - name: 重さの記録の拾い方の回帰テスト
+      shell: bash
+      run: python3 Tools/test_perf_collect.py

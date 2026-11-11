@@ -112,30 +112,27 @@ Key ID（`DDYJB5893J`）と Team ID（`5428GX5UM8`）は**秘密ではない**�
 | `403 InvalidProviderToken` | `APNS_PRIVATE_KEY` の中身が `.p8` の全文か（改行ごと貼る） |
 | 通知に `NOTIF_LIKE` と出る | `Localizable.strings` に鍵が無い（`check-config.py` が見張る） |
 
-## PR の検証（`ios-pr.yml`・2026-10-03）
+## PR の検証（`ios-pr.yml`）と Mac の確かめ（毎回の `ios-quick.yml`・ガチガチの `ios-full.yml`）
 
-**main へ入れる前に、本物の Xcode でコンパイルとテストを通す。** 以前は TestFlight を
-流すまで、本物の SwiftUI での型検査が1回も無かった。
+2026-11-11 owner「毎回のと ガチガチので」で作り替えた。TestFlight に上げる回（`ios-testflight.yml`）は
+**テストを流さない**（署名・Archive・上げるだけ）。
 
-| 段 | ランナー | 中身 | 目安 |
-|---|---|---|---|
-| 静的な検査 | ubuntu | 構文・参照・import の組・設定（`verify.sh` と同じ道具） | 1分 |
-| 単体テスト（Linux・模型） | ubuntu（`swift:6.0.3-noble`） | `Shims/` に向けたビルドと単体テスト | 5分 |
-| Xcode のビルドとテスト | macos-15 | 本物の Xcode でコンパイル → 単体テスト → UI テスト（起動・全タブ・画面の絵） | 控えが当たれば20〜30分 |
+| ワークフロー | いつ | ランナー | 中身 | 目安 |
+|---|---|---|---|---|
+| PR の検証（`ios-pr.yml`） | PR | ubuntu | 静的な検査（`.github/actions/static-checks`）・単体テスト（Linux・模型・全部 5,000 件あまり） | 静的 1分・単体 5〜8分 |
+| 毎回の（`ios-quick.yml`） | PR・手で | macos-15 ×1〜4 | 本物の Xcode で組む・Mac でしか流れない単体（`Tools/quick-unit-tests.txt`）・起動の見張り・変えた画面に関係する UI テスト | 目標 10 分・上限 30 分 |
+| ガチガチの（`ios-full.yml`） | 手で（原因の分からない不具合のときだけ） | macos-15 ×最大4 | 全部の単体と全部の UI を4台に分けて | 1時間あまり |
 
-- **macOS は、静的な検査が通ってから起こす。** 構文の壊れで macOS の分を使わない。Linux の単体テストは待たない——
-  Linux の通信部品（swift-corelibs-foundation）の弱点で、終わった通信を取り消すと落ちることがあり
-  （`TaskRegistry` の Fatal error。iOS には無い）、それで本物の Xcode の段まで止めないため
-- Linux の単体テストは、落ちたときの書き出しを止めている（`SWIFT_BACKTRACE=enable=no`。コンテナの中では書き出しで止まり、
-  run 1 は30分の時間切れまで待った）。テストの段は10分で切る
-- **同じ PR に押し直すと、前の回は止まる**（`concurrency`）。文書だけの変更（`docs/**`・`*.md`）では回らない。下書きの PR では macOS を起こさない
-- **結果の読み方**: 実行の「まとめ」に、件数と**落ちたテストの名前と理由**が出る（`Tools/xcresult-summary.py`）。`xcode-test-results` の成果物に `Test.xcresult`・全文ログ・画面の絵が入る（14日）
-- **macOS は1台のまま**（2026-10-09 に2台へ分けて試したが、ビルドが両方の台で掛かり、無料の macOS は同時5台までで空き待ちも出て、全体が約42分と遅くなったのでやめた。実測は PR #198 の run 37935783814）
-- **`/mac-check` で同じコミットを Mac でテスト済みなら、この Xcode の段は飛ばす**（2026-10-09 owner「同じテスト2度としないように」）。条件は、PR を作ってから main が動いていない（マージの木が PR の先頭の木と同じ）ことと、PR の先頭のコミットで TestFlight の回のテストの段が success だったこと。どちらか欠ける・読めないときは回す。回したいときはワークフローを手で流す
-- **TestFlight（`ios-testflight.yml`）ではこのテストを2度回さない**（2026-10-09 owner のルール）。回すのは `tests: true`・`submit: false`・`storeShots: true` のときだけ
+- **毎回のの静的な検査は Mac と並べて走らせ、落ちたらその回を止める**（待ってから Mac を起こすと延びるので）
+- **同じ PR に押し直すと、前の回は止まる**（`concurrency`）。文書だけの変更（`docs/**`・`*.md`）では回らない。下書きの PR では Mac を起こさない
+- **同じコミットが Mac でテスト済みなら、PR の毎回のは Mac を起こさない**（2026-10-09 owner「同じテスト2度としないように」）。
+  条件は、マージの木が PR の先頭の木と同じことと、PR の先頭のコミットで毎回のかガチガチのの「Mac のテストが通った（PR の検証が数える印）」が success だったこと
+- **結果の読み方**: 各 job の「まとめ」に、件数と**落ちたテストの名前と理由**が出る（`Tools/xcresult-summary.py`）。公開リポジトリなので xcresult・画面の絵は成果物に上げない
+- Linux の単体テストは、落ちたときの書き出しを止めている（`SWIFT_BACKTRACE=enable=no`）。テストの段は10分で切る
 - **Web 版との突き合わせは CI では飛ぶ。** `photo-gallery` が非公開で読めないため（「見ていない」と表示される）。手元の `verify.sh` で見る
-- **費用**: このリポジトリは公開なので、標準ランナー（macOS を含む）は無料。**非公開に変えたら、この段は無料枠を大きく食う**（macOS は分数10倍）——そのときは `on:` から `pull_request` を外す
-- **署名も TestFlight も無い。** 本番には何も出さない（出すのは `ios-testflight.yml`）
+- **費用**: このリポジトリは公開なので、標準ランナー（macOS を含む）は無料。**非公開に変えたら Mac の分は無料枠を大きく食う**（macOS は分数10倍）——そのときは `ios-quick.yml` の `on:` から `pull_request` を外す
+- **Mac の控え（DerivedData）**: 書くのは main の TestFlight の回の「控えを温める」だけ。読むのは毎回の・ガチガチの・TestFlight。
+  Xcode が上がったときの温め直しは `/mac-check` の手順書
 
 main を守るには、GitHub の Settings → Branches で `main` に保護の規則を作り、
 「Xcode のビルドとテスト（シミュレータ）」を必須のチェックにする（人の操作。Claude からは変えない）。

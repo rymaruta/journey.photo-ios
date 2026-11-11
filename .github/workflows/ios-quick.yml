@@ -40,8 +40,10 @@ on:
 permissions:
   contents: read
 
+# 組の名前に `github.workflow`（呼んだ側の名前）を入れる: 手で流した毎回のと、Release Center の verify-quick
+# （呼ばれたときは呼んだ側の名前になる）が同じ枝で取り消し合わない（2026-11-11）
 concurrency:
-  group: ios-quick-${{ github.event.pull_request.number || github.ref }}
+  group: ios-quick-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -122,6 +124,28 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY" || exit 1
           cat build/quick/plan.md
           echo "matrix=$(cat build/quick/matrix.json)" >> "$GITHUB_OUTPUT"
+
+  # 🔴 **静的な検査は Mac と並べて走らせ、落ちたらこの回を止める**（2026-11-11）。待ってから Mac を起こすと
+  # その分（1〜2 分）延びるので並べる。落ちたら回ごと取り消す（Mac の分を使い続けない）。中身は ios-pr.yml と同じ部品
+  static:
+    name: 静的な検査（落ちたら Mac を止める）
+    needs: plan
+    if: ${{ needs.plan.outputs.run == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/static-checks
+      - name: 落ちたら Mac を止める
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "::error::静的な検査が落ちたので、この回（Mac）を止めます"
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/cancel" > /dev/null
 
   mac:
     name: Xcode のテスト（Mac ${{ matrix.part }}）
@@ -226,7 +250,7 @@ jobs:
   # Mac を起こさなかった回（下書き・文書だけ・同じコミットがテスト済み）は通り、Mac のどれかが落ちたら落ちる
   xcode:
     name: Xcode のビルドとテスト（シミュレータ）
-    needs: [plan, mac]
+    needs: [plan, static, mac]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -236,10 +260,15 @@ jobs:
           PLAN: ${{ needs.plan.result }}
           RUN: ${{ needs.plan.outputs.run }}
           MAC: ${{ needs.mac.result }}
+          STATIC: ${{ needs.static.result }}
         run: |
-          echo "中身を決める: ${PLAN} / Mac を起こす: ${RUN} / Mac: ${MAC}"
+          echo "中身を決める: ${PLAN} / Mac を起こす: ${RUN} / 静的な検査: ${STATIC} / Mac: ${MAC}"
           if [ "$PLAN" != "success" ]; then
             echo "::error::「毎回のの中身を決める」が通っていません（${PLAN}）"
+            exit 1
+          fi
+          if [ "$RUN" = "true" ] && [ "$STATIC" != "success" ]; then
+            echo "::error::静的な検査が通っていません（${STATIC}）。Mac は止めました"
             exit 1
           fi
           if [ "$RUN" = "true" ] && [ "$MAC" != "success" ]; then
@@ -249,5 +278,5 @@ jobs:
 
       # 🔴 **「Mac でテスト済み」の印**。Mac で流して通った回だけ success（起こさなかった回は skipped）
       - name: Mac のテストが通った（PR の検証が数える印）
-        if: ${{ needs.plan.result == 'success' && needs.plan.outputs.run == 'true' && needs.mac.result == 'success' }}
+        if: ${{ needs.plan.result == 'success' && needs.plan.outputs.run == 'true' && needs.static.result == 'success' && needs.mac.result == 'success' }}
         run: echo "毎回の（Mac でしか流れない単体・起動の見張り・変えた画面）が通りました"

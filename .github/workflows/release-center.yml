@@ -1,5 +1,8 @@
 # Journey Photo Release Center v1
-# Existing TestFlight workflow remains the single source of truth for signing, builds and uploads.
+# Uploads: ios-testflight.yml (signing, Archive, upload only; it runs no tests).
+# Verification (2026-11-11 owner "毎回のと ガチガチので"): ios-quick.yml by default (Mac-only unit tests,
+# SmokeTests, UI tests related to the branch diff, plus ui_scope names), or ios-full.yml when ui_scope is
+# "all" (every unit and UI test on 4 Macs; only for bugs whose cause is unknown).
 name: Release Center
 
 on:
@@ -14,24 +17,20 @@ on:
           - testflight-external
         default: verify
       ui_scope:
-        description: "Verification UI tests: all / none / test name(s), comma separated. Release always runs all."
-        type: string
-        default: all
-      priority_tests:
-        description: "Run these UI tests first in full verification (comma separated)"
+        description: "Verification: empty = quick (diff-related UI) / test or screen names to add / all = full (unknown-cause bugs only). Uploads run no tests."
         type: string
         default: ""
-      screenshots:
-        description: "Export App Store screenshots (forces full UI test suite)"
-        type: boolean
-        default: false
+      priority_tests:
+        description: "Full verification only: run these UI tests first (comma separated)"
+        type: string
+        default: ""
       confirm_release:
         description: "Required for TestFlight upload; check only after reviewing the target commit"
         type: boolean
         default: false
 
 permissions:
-  # The called TestFlight build job creates release tags and can publish screenshots.
+  # The called TestFlight build job creates release tags (testflight/<version>).
   # Reusable workflows cannot elevate the caller token permissions.
   contents: write
 
@@ -52,7 +51,6 @@ jobs:
           MODE: ${{ inputs.mode }}
           UI_SCOPE: ${{ inputs.ui_scope }}
           FIRST: ${{ inputs.priority_tests }}
-          SCREENSHOTS: ${{ inputs.screenshots }}
           CONFIRM: ${{ inputs.confirm_release }}
           BRANCH: ${{ github.ref_name }}
           SHA: ${{ github.sha }}
@@ -60,7 +58,7 @@ jobs:
           set -euo pipefail
           release=false
           external=false
-          screens="${UI_SCOPE:-all}"
+          screens="${UI_SCOPE:-}"
           case "$MODE" in
             verify)
               if [ "$CONFIRM" = "true" ]; then
@@ -79,14 +77,13 @@ jobs:
                 exit 1
               fi
               if [ -n "$FIRST" ]; then
-                echo "::warning::priority_tests is ignored for uploads; existing TestFlight workflow does not shard release tests"
+                echo "::warning::priority_tests is ignored for uploads; uploads run no tests"
               fi
               echo "::notice::TestFlight uploads do not run Xcode tests (ios-quick.yml / ios-full.yml verify commits)."
-              screens=all
+              screens=none
               ;;
             *) echo "::error::Unknown mode: $MODE"; exit 1 ;;
           esac
-          if [ "$SCREENSHOTS" = "true" ]; then screens=all; fi
           if [ "$release" = "false" ]; then
             python3 Tools/pick-ui-tests.py "$screens" >/tmp/release-center-ui-plan.txt
           fi
@@ -104,10 +101,9 @@ jobs:
             echo "| Branch | \`$BRANCH\` |"
             echo "| Commit | \`$SHA\` |"
             echo "| UI tests | \`$screens\` |"
-            echo "| Screenshots | \`$SCREENSHOTS\` |"
             echo "| Upload authorized | \`$CONFIRM\` |"
             echo ""
-            echo "The existing TestFlight workflow performs the Xcode tests, signing and upload."
+            echo "Uploads: ios-testflight.yml (no tests). Verification: ios-quick.yml, or ios-full.yml when ui_scope is all."
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Validate Swift references and project configuration
         run: |
@@ -131,9 +127,10 @@ jobs:
     name: Xcode verification (quick)
     needs: plan
     if: ${{ needs.plan.outputs.release != 'true' && needs.plan.outputs.screens != 'all' }}
+    # actions: write は、静的な検査が落ちたときに回を止めるため（ios-quick.yml の static）
     permissions:
       contents: read
-      actions: read
+      actions: write
     uses: ./.github/workflows/ios-quick.yml
     with:
       screens: ${{ needs.plan.outputs.screens }}

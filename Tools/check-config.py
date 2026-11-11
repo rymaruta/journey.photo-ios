@@ -505,7 +505,7 @@ if all(f.exists() for f in (testflight_yml, pr_yml, quick_yml, full_yml, sharded
     if [m.strip() for m in shard_marks] != [FINISH_MARK_IF]:
         fail(f"mac-sharded-tests.yml の「{MARK}」の if が変わっています（分けた組が落ちても付きうる）: {shard_marks}")
     QUICK_MARK_IF = ("needs.plan.result == 'success' && needs.plan.outputs.run == 'true'"
-                     " && needs.mac.result == 'success'")
+                     " && needs.static.result == 'success' && needs.mac.result == 'success'")
     quick_marks = re.findall(r"- name: " + re.escape(MARK) + r"\n\s+if: \$\{\{(.+?)\}\}\s*\n", quick)
     if [m.strip() for m in quick_marks] != [QUICK_MARK_IF]:
         fail(f"ios-quick.yml の「{MARK}」の if が変わっています（Mac が落ちても・起こさなくても付きうる）: {quick_marks}")
@@ -525,10 +525,19 @@ if all(f.exists() for f in (testflight_yml, pr_yml, quick_yml, full_yml, sharded
             or re.search(r"^  (schedule|push):", quick, re.M):
         fail("ios-quick.yml が PR と手で流したときに走る形（pull_request・workflow_dispatch）になっていません")
     gate = q_jobs.get("xcode", "")
-    if "    name: Xcode のビルドとテスト（シミュレータ）\n" not in gate or "needs: [plan, mac]" not in gate \
+    if "    name: Xcode のビルドとテスト（シミュレータ）\n" not in gate or "needs: [plan, static, mac]" not in gate \
+            or 'if [ "$RUN" = "true" ] && [ "$STATIC" != "success" ]; then' not in gate \
             or "if: ${{ always() }}" not in gate or 'if [ "$RUN" = "true" ] && [ "$MAC" != "success" ]; then' not in gate:
         fail("ios-quick.yml の門（Xcode のビルドとテスト（シミュレータ））が、Mac の結果を読んで落ちる形になっていません"
              "（必須のチェックの名前を変えない）")
+    static_job = q_jobs.get("static", "")
+    if "uses: ./.github/actions/static-checks" not in static_job or "if: ${{ failure() }}" not in static_job \
+            or "actions/runs/${GITHUB_RUN_ID}/cancel" not in static_job or "needs: plan\n" not in static_job:
+        fail("ios-quick.yml の静的な検査が、Mac と並べて走り・落ちたら回を止める形になっていません")
+    if "uses: ./.github/actions/static-checks" not in pr_flow:
+        fail("ios-pr.yml の静的な検査が、共通の部品（.github/actions/static-checks）を使っていません")
+    if not re.search(r"^  group: ios-quick-\$\{\{ github.workflow \}\}-", quick, re.M):
+        fail("ios-quick.yml の concurrency の組に github.workflow がありません（手で流した回と Release Center の回が取り消し合う）")
     mac = q_jobs.get("mac", "")
     limit = re.search(r"^    timeout-minutes: (\d+)$", mac, re.M)
     if not limit or int(limit.group(1)) > 30 or "fromJSON(needs.plan.outputs.matrix)" not in mac:
