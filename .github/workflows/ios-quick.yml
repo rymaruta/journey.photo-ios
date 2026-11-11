@@ -1,0 +1,253 @@
+# 毎回の（クイック）: 本物の Xcode（Mac）で組んで、毎回見るテストだけを流す。PR と枝の確かめに毎回走る。
+#
+# 2026-11-11 owner「毎回のと ガチガチので」「毎回のとこ最短にしたいね 5,10分とかかな？」「長くても 30 分に絶対に収まるように」。
+# **目標は押してから結果まで 10 分以内・上限 30 分**（各 job の `timeout-minutes`）。全部は `ios-full.yml`（ガチガチの）。
+#
+# 中身は固定（`Tools/pick-ui-tests.py --quick-plan`）:
+#  - Mac でしか流れない単体（`Tools/quick-unit-tests.txt`・38 件・31 秒）。ほかの単体 5,352 件は PR の検証の
+#    「単体テスト（Linux・模型）」が同時に流す（Mac とほぼ同じものを2度流していた）
+#  - 起動の見張り（SmokeTests・4 本・約 2.2 分）
+#  - 変えた画面に関係する UI テスト（差分から。判定できない変更でも全部に倒さない）
+#  - 手で流したときに名指ししたもの（`screens`）
+# UI の見積もりが Mac 1 台の上限（`QUICK_UI_BUDGET`・4 分）を越えたら台を増やす（最大 4 台）。各台は自分で組む
+# （組んだ品を別の台へ渡すと、渡す・ほどくのに 1〜2 分かかる。各台が同時に組めば待ちは増えない）。
+# シミュレーターは、組むのと同時に起こしておく（run 42920469610 で温め 3.4〜4.5 分）。
+#
+# - 必須のチェックにしうる名前「Xcode のビルドとテスト（シミュレータ）」はここの門の job が出す
+# - 通ったら「Mac のテストが通った（PR の検証が数える印）」。同じコミットで通った回（手で流した毎回の・ガチガチの）が
+#   あれば、PR の毎回のは Mac を起こさない（`plan` の「同じコミットが Mac でテスト済みか」）
+name: 毎回の（クイック）
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  workflow_dispatch:
+    inputs:
+      screens:
+        description: "足して流す UI テスト（画面の名前・テスト名の一部。`,` 区切り・空なら差分から）"
+        type: string
+        default: ""
+  workflow_call:
+    inputs:
+      screens:
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-quick-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: 毎回のの中身を決める
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: 中身を決める
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          SCREENS: ${{ inputs.screens }}
+        run: |
+          set -uo pipefail
+          run=true
+          reason=""
+          if [ "$EVENT" = "pull_request" ]; then
+            if [ "${DRAFT:-false}" = "true" ]; then
+              run=false; reason="下書きの PR"
+            elif [ "$(bash Tools/app-changed.sh "$BASE_SHA")" = "false" ]; then
+              run=false; reason="ワークフロー・文書だけの変更"
+            else
+              # 🔴 **同じ中身を Mac で2度テストしない**（2026-10-09 owner）。PR の先頭のコミットで、毎回の（手で流した回）か
+              # ガチガチのが通っていて、マージの木が先頭の木と同じなら飛ばす。読めなければ回す
+              merged="$(git rev-parse 'HEAD^{tree}' 2>/dev/null || true)"
+              head_tree="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}" --jq '.commit.tree.sha' 2>/dev/null || true)"
+              if [ -n "$merged" ] && [ "$merged" = "$head_tree" ]; then
+                for wf in ios-quick.yml ios-full.yml; do
+                  for id in $(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${wf}/runs?head_sha=${HEAD_SHA}&status=completed&per_page=30" \
+                                --jq '.workflow_runs[] | select(.conclusion == "success") | .id' 2>/dev/null || true); do
+                    [ "$id" = "$GITHUB_RUN_ID" ] && continue
+                    step="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs?per_page=100" \
+                              --jq '[.jobs[].steps[] | select(.name == "Mac のテストが通った（PR の検証が数える印）") | .conclusion] | if any(. == "success") then "success" else "" end' 2>/dev/null || true)"
+                    if [ "$step" = "success" ]; then
+                      run=false; reason="同じコミットが ${wf} の run ${id} で Mac のテストを通っている"
+                      break 2
+                    fi
+                  done
+                done
+              fi
+            fi
+          fi
+          echo "run=${run}" >> "$GITHUB_OUTPUT"
+          if [ "$run" != "true" ]; then
+            echo "Mac は起こしません: ${reason}" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # 差分: PR は base と マージの試しのコミット、手で流した回は main との分かれ目から
+          if [ "$EVENT" = "pull_request" ]; then
+            base="$BASE_SHA"; cap=cap
+          else
+            base="$(git merge-base origin/main HEAD 2>/dev/null || true)"; cap=keep
+          fi
+          : > /tmp/quick.diff
+          if [ -n "$base" ]; then
+            git diff --no-ext-diff --find-renames "$base" HEAD > /tmp/quick.diff || : > /tmp/quick.diff
+          else
+            echo "::warning::差分が取れません。起動の見張り（と名指し）だけ流します"
+          fi
+          {
+            echo "### 毎回の（クイック）の中身"
+            python3 Tools/pick-ui-tests.py --quick-plan build/quick /tmp/quick.diff "${SCREENS:-}" "$cap" || exit 1
+          } >> "$GITHUB_STEP_SUMMARY" || exit 1
+          cat build/quick/plan.md
+          echo "matrix=$(cat build/quick/matrix.json)" >> "$GITHUB_OUTPUT"
+
+  mac:
+    name: Xcode のテスト（Mac ${{ matrix.part }}）
+    needs: plan
+    if: ${{ needs.plan.outputs.run == 'true' }}
+    runs-on: macos-15
+    # 🔴 **30 分の上限**（2026-11-11 owner）。目標は 10 分
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Xcodeを選択
+        id: xcode
+        run: bash Tools/select-xcode.sh
+
+      # 組むのと同時にシミュレーターを起こしておく（終わりを待つのは UI テストの前だけ）
+      - name: シミュレーターを起こす（組むのと同時に）
+        run: |
+          DEVICE="$(python3 Tools/pick-simulator.py)"
+          echo "DEVICE=$DEVICE" >> "$GITHUB_ENV"
+          nohup bash -c "date +%s > /tmp/boot-start; xcrun simctl boot '$DEVICE'; xcrun simctl bootstatus '$DEVICE' -b; date +%s > /tmp/boot-end" > /tmp/boot.log 2>&1 &
+          echo "起こし始めました: $DEVICE"
+
+      - name: Xcodeのバージョンを確認
+        run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
+
+      # 控えの鍵と path は ios-testflight.yml の「前回の作りかけを控えから戻す」「mainのビルドキャッシュを保存」と同じ
+      # （違うと当たらない）。読むだけ（書くのは main の TestFlight の回だけ）
+      - name: 配信用アプリをビルドキャッシュのキーを生成
+        run: echo "CACHE_KEY=xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}" >> "$GITHUB_ENV"
+
+      - name: 配信用アプリをビルドキャッシュを復元
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.dSYM
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.app
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xctest
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xcresult
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ env.CACHE_KEY }}
+            xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
+
+      - name: Xcodeプロジェクトを生成
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen generate
+
+      - name: 組む（本物の SwiftUI で型検査される最初の機会）
+        run: |
+          set -euo pipefail
+          mkdir -p build/logs
+          XCODE_LOG=build/logs/xcodebuild-build.log bash Tools/xcode-test.sh build
+
+      # 1 台目だけ: Linux の `swift test` に無い単体（Mac でしか流れないもの）
+      - name: Mac でしか流れない単体
+        if: ${{ matrix.part == 1 }}
+        run: |
+          set -euo pipefail
+          names="$(python3 -c 'import importlib.util as u; s=u.spec_from_file_location("p","Tools/pick-ui-tests.py"); m=u.module_from_spec(s); s.loader.exec_module(m); print(" ".join("JourneyPhotoTests/"+t for t in m.quick_unit_tests()))')"
+          UNIT_ONLY_TESTING="$names" XCODE_LOG=build/logs/xcodebuild-unit.log bash Tools/xcode-test.sh unit build/Unit.xcresult
+
+      # 起きるのを待ってから、組んだアプリを1回起動して閉じる（`Tools/warm-simulator.sh`・最初の UI テストの落ちを減らす。
+      # 理由と数はその頭の注記）。起こすのは組むのと同時に済ませてあるので、ここは入れる・起動するだけ
+      - name: シミュレーターを温める
+        run: |
+          xcrun simctl bootstatus "$DEVICE" -b > /dev/null 2>&1 || true
+          if [ -f /tmp/boot-start ] && [ -f /tmp/boot-end ]; then
+            echo "シミュレーターの起動: $(( $(cat /tmp/boot-end) - $(cat /tmp/boot-start) )) 秒（組むのと同時）" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          products="$(find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 3 -type d -path '*/JourneyPhoto-*/Build/Products' | head -1)"
+          bash Tools/warm-simulator.sh "$products/Debug-iphonesimulator"
+
+      - name: UI テスト（起動の見張り＋変えた画面）
+        env:
+          LIST_B64: ${{ matrix.list }}
+        run: |
+          set -euo pipefail
+          python3 -c 'import base64,sys; open("/tmp/quick-ui.txt","wb").write(base64.b64decode(sys.argv[1]))' "$LIST_B64"
+          cat /tmp/quick-ui.txt
+          XCODE_LOG=build/logs/xcodebuild-ui.log bash Tools/xcode-test.sh ui build/Test.xcresult /tmp/quick-ui.txt
+
+      - name: 結果のまとめ
+        if: ${{ always() }}
+        run: |
+          for r in build/Unit.xcresult build/Test.xcresult; do
+            [ -d "$r" ] && python3 Tools/xcresult-summary.py "$r" >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit 0
+
+  # 🔴 **必須のチェックにしうる名前はこの job**（前の ios-pr.yml の `xcode` と同じ名前）。Linux で結果を読むだけ。
+  # Mac を起こさなかった回（下書き・文書だけ・同じコミットがテスト済み）は通り、Mac のどれかが落ちたら落ちる
+  xcode:
+    name: Xcode のビルドとテスト（シミュレータ）
+    needs: [plan, mac]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 結果を見る
+        env:
+          PLAN: ${{ needs.plan.result }}
+          RUN: ${{ needs.plan.outputs.run }}
+          MAC: ${{ needs.mac.result }}
+        run: |
+          echo "中身を決める: ${PLAN} / Mac を起こす: ${RUN} / Mac: ${MAC}"
+          if [ "$PLAN" != "success" ]; then
+            echo "::error::「毎回のの中身を決める」が通っていません（${PLAN}）"
+            exit 1
+          fi
+          if [ "$RUN" = "true" ] && [ "$MAC" != "success" ]; then
+            echo "::error::Mac のテストが通っていません（${MAC}）。「Xcode のテスト（Mac N）」の各 job を見る"
+            exit 1
+          fi
+
+      # 🔴 **「Mac でテスト済み」の印**。Mac で流して通った回だけ success（起こさなかった回は skipped）
+      - name: Mac のテストが通った（PR の検証が数える印）
+        if: ${{ needs.plan.result == 'success' && needs.plan.outputs.run == 'true' && needs.mac.result == 'success' }}
+        run: echo "毎回の（Mac でしか流れない単体・起動の見張り・変えた画面）が通りました"

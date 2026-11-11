@@ -17,7 +17,7 @@ CLAUDE.md の「リリースのたびに版を上げる」を守る。版（MARK
    gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight.yml/dispatches \
      -f ref=main -f 'inputs[submit]=true'
    ```
-3. `bash Tools/wait-mac-run.sh <main の sha7>` を run_in_background で待つ。
+3. `bash Tools/wait-mac-run.sh <main の sha7> ios-testflight.yml` を run_in_background で待つ。
 4. 版を確かめる（推測で言わない）:
    ```bash
    git fetch -q origin --tags
@@ -27,7 +27,7 @@ CLAUDE.md の「リリースのたびに版を上げる」を守る。版（MARK
 
 ## owner への報告（日本語・短く）
 
-- 「TestFlight に 1.0.NN を出しました（main の <sha7>）。Mac のビルドとテストは通っています。」
+- 「TestFlight に 1.0.NN を出しました（main の <sha7>）。（上げる回は Archive と上げるだけ。テストは PR の毎回の（ios-quick.yml）で通っています）」
 - **実機で見てほしいところ**を、入った機能ごとに1行ずつ（どの画面で・何を押すと・何が起きるはずか）。
 - 確かめていないこと（実機の動き・メモリ等）を1行。
 - TestFlight のメールを毎回送らない（owner の希望）。

@@ -1,0 +1,38 @@
+# ガチガチの（フル）: 全部の単体＋全部の UI テストを、別々の Mac に分けて流す。**手で押したときだけ。**
+#
+# 2026-11-11 owner「毎回のと ガチガチので」「ガチの原因不明のバグの時だけガチガチのテストで確認すればいい」。
+# 毎回（PR・枝の確かめ）は `ios-quick.yml`（毎回の）。TestFlight に上げる回（`ios-testflight.yml`）はテストを流さない。
+#
+# 流れ（`mac-sharded-tests.yml`・2026-10-31 #429 の組をそのまま使う）:
+#   組む（1台）→ 単体＋UI の先に流す分（2台・同時）→ UI の分けた組 1〜4（4台・同時）→ まとめ（印）
+# - 時間の目安: run 42920469610（分けた組 3 台・86 分）。4 台にし、重い計測・絵を名指しの回だけにした（−21.8 分）
+# - 同時に1本だけ（Mac は同時5台まで。2本目は待つ・3本目が来ると待っていた2本目は取り消される）
+# - 通ったら「Mac のテストが通った（PR の検証が数える印）」が付き、同じコミットの PR の毎回のは Mac を飛ばす
+name: ガチガチの（フル）
+
+on:
+  workflow_dispatch:
+    inputs:
+      first:
+        description: "先に流す UI テスト（通常は空欄・空なら枝の差分から選ぶ）"
+        type: string
+        default: ""
+  workflow_call:
+    inputs:
+      first:
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-full-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    name: テストを分けて流す
+    uses: ./.github/workflows/mac-sharded-tests.yml
+    with:
+      first: ${{ inputs.first }}

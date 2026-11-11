@@ -452,237 +452,144 @@ for label, got, want in _bump_build_cases():
     if got != want:
         fail(f"Tools/bump-build.sh: {label}になりません（版・ビルド番号）: 得たもの {got}・期待 {want}")
 
-# ---- 枝の確認の絞り（`screens`）と「Mac でテスト済み」の数え方 -------------------
-# 🔴 **絞った回を「テスト済み」と数えると、全部の UI テストが一度も回らずに main に入る**
-# （2026-10-17）。数えるのは ios-testflight.yml の印の段だけで、その段は絞らない回にしか
-# 走らない。印の名前・条件・数える側のどれかが崩れたら、ここで止める
-MARK = "全部のテストが通った（PR の検証が数える印）"
+# ---- 毎回の（ios-quick.yml）・ガチガチの（ios-full.yml）と「Mac でテスト済み」の数え方 ------------
+# 2026-11-11 owner「毎回のと ガチガチので」作り替え。毎回の = PR と枝の確かめ（目標 10 分・上限 30 分）、
+# ガチガチの = 全部の単体と全部の UI を4台に分けて（手で押したときだけ）。TestFlight に上げる回はテストを流さない。
+# 🔴 **印（Mac でテスト済み）を付けるのは、毎回のの門とガチガチののまとめだけ**。名前・条件・数える側のどれかが崩れたら止める
+MARK = "Mac のテストが通った（PR の検証が数える印）"
 pr_yml = ROOT / ".github/workflows/ios-pr.yml"
-if testflight_yml.exists() and pr_yml.exists():
+quick_yml = ROOT / ".github/workflows/ios-quick.yml"
+full_yml = ROOT / ".github/workflows/ios-full.yml"
+sharded_yml = ROOT / ".github/workflows/mac-sharded-tests.yml"
+
+
+def _jobs(text):
+    return {m.group(1): m.group(2) for m in re.finditer(r"^  ([\w-]+):\n(.*?)(?=^  [\w-]+:\n|\Z)", text, re.M | re.S)}
+
+
+def _code(text):
+    """注記の行を除いた中身（注記に書いた名前を数えない）"""
+    return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+
+
+for _required in (testflight_yml, pr_yml, quick_yml, full_yml, sharded_yml):
+    if not _required.exists():
+        fail(f"{_required.relative_to(ROOT)} がありません")
+if all(f.exists() for f in (testflight_yml, pr_yml, quick_yml, full_yml, sharded_yml)):
     flow = testflight_yml.read_text(encoding="utf-8")
     pr_flow = pr_yml.read_text(encoding="utf-8")
-    # 印の段の `if:` は**完全一致**で見る（`|| …` を足すだけで絞った回にも付く）
-    # 単体・UI の段の結果も見る（`id` が消えると outcome は空になり、印が付かない＝安全側。下で id も見る）
-    MARK_IF = ("!inputs.submit && (inputs.tests || inputs.storeShots) && steps.scope.outputs.full == 'true'"
-               " && steps.unit.outcome == 'success' && steps.ui.outcome == 'success'")
-    mark = re.search(r"- name: " + re.escape(MARK) + r"\n\s+if: \$\{\{(.+?)\}\}\s*\n", flow)
-    if not mark:
-        fail(f"ios-testflight.yml に「{MARK}」の段（if つき）がありません")
-    elif mark.group(1).strip() != MARK_IF:
-        fail(f"ios-testflight.yml の「{MARK}」の if が変わっています（絞った回にも付きうる）: {mark.group(1).strip()}")
-    # **別々の Mac に分けて流す回の印**（2026-10-31・#429）。2026-11-10 に分けて流す組を再利用のワークフロー
-    # `mac-sharded-tests.yml` へ移した（ios-testflight.yml と ios-pr.yml の両方が呼ぶ）。その「まとめ」の job の
-    # 同じ名前の段で、単体・先に流す分・分けた組の**全部**が success のときだけ付く。`always()` や `|| …` を足すと、落ちた回にも付く
-    sharded_yml = ROOT / ".github/workflows/mac-sharded-tests.yml"
-    shard_flow = sharded_yml.read_text(encoding="utf-8") if sharded_yml.exists() else ""
-    if not shard_flow:
-        fail(".github/workflows/mac-sharded-tests.yml がありません（UI テストを分けて流す組・2026-11-10）")
-    if not re.search(r"^on:\n  workflow_call:\n", shard_flow, re.M) or re.search(r"^  (workflow_dispatch|push|pull_request):", shard_flow, re.M):
-        fail("mac-sharded-tests.yml が呼ばれるだけ（on: workflow_call のみ）になっていません")
+    quick = quick_yml.read_text(encoding="utf-8")
+    full = full_yml.read_text(encoding="utf-8")
+    shard_flow = sharded_yml.read_text(encoding="utf-8")
+    workflows = {f.name: f.read_text(encoding="utf-8") for f in (ROOT / ".github/workflows").glob("*.yml")}
+
+    # ---- TestFlight に上げる回（ios-testflight.yml）は Archive と上げるだけ -----------------
+    tf_code = _code(flow)
+    for word in ("Tools/xcode-test.sh unit", "Tools/xcode-test.sh ui", MARK, "mac-sharded-tests.yml",
+                 "inputs.tests", "inputs.screens", "inputs.storeShots", "pick-ui-tests.py"):
+        if word in tf_code:
+            fail(f"ios-testflight.yml に「{word}」があります（上げる回はテストを流さない・2026-11-11）")
+    tf_inputs = re.search(r"^  workflow_dispatch:\n    inputs:\n(.*?)(?=^\S)", flow, re.M | re.S)
+    if not tf_inputs or sorted(re.findall(r"^      (\w+):\n", tf_inputs.group(1), re.M)) != ["betaReview", "submit"]:
+        fail("ios-testflight.yml の入力が submit・betaReview だけになっていません（テストの分岐を抜いた）")
+
+    # ---- 印を付ける所は2つだけ ------------------------------------------------------------
+    for name, text in workflows.items():
+        count = len(re.findall(r"- name: " + re.escape(MARK) + r"\n", text))
+        want = 1 if name in ("ios-quick.yml", "mac-sharded-tests.yml") else 0
+        if count != want:
+            fail(f"{name} の「{MARK}」の段が {count} 個です（毎回のの門とガチガチののまとめに1つずつ）")
     FINISH_MARK_IF = ("needs.test-build.result == 'success' && needs.pre.result == 'success'"
                       " && needs.ui.result == 'success'")
-    marks = re.findall(r"- name: " + re.escape(MARK) + r"\n\s+if: \$\{\{(.+?)\}\}\s*\n", flow)
-    if len(marks) != 1:
-        fail(f"ios-testflight.yml の「{MARK}」は `build` の job の1つだけのはず（分けた回の印は mac-sharded-tests.yml）: {len(marks)} 個")
     shard_marks = re.findall(r"- name: " + re.escape(MARK) + r"\n\s+if: \$\{\{(.+?)\}\}\s*\n", shard_flow)
     if [m.strip() for m in shard_marks] != [FINISH_MARK_IF]:
-        fail(f"mac-sharded-tests.yml の「まとめ」の「{MARK}」の if が変わっています（分けた組が落ちても付きうる）: {shard_marks}")
-    # まとめの job は、どれかが落ちたら自分も落ちる（呼ぶ側の ios-pr.yml の門が、呼んだ組の結果をそのまま読む）
-    result_job = re.search(r"^  result:\n(.*?)(?=^  \w[\w-]*:\n|\Z)", shard_flow, re.M | re.S)
-    if not result_job or "needs: [test-build, pre, ui]" not in result_job.group(1) \
-            or "if: ${{ !(" + FINISH_MARK_IF + ") }}" not in result_job.group(1) or "exit 1" not in result_job.group(1):
-        fail("mac-sharded-tests.yml の `result`（まとめ）が、どれかが落ちたときに落ちる段を持っていません")
-    # 分けた組は、単体と先に流す分の両方を待つ（`needs: [test-build, pre]`・job の if を足さない＝どれかが落ちたら skipped）
-    ui_job = re.search(r"^  ui:\n(.*?)(?=^  \w[\w-]*:\n|\Z)", shard_flow, re.M | re.S)
-    if not ui_job or "needs: [test-build, pre]" not in ui_job.group(1) or re.search(r"^    if:", ui_job.group(1), re.M):
-        fail("mac-sharded-tests.yml の `ui`（分けた組）が、単体テストと先に流す分の両方を待っていません（needs: [test-build, pre]・if なし）")
-    else:
-        # 組の数は `--plan <数>` と matrix で揃える（ずれると、流れない組・空の組ができる）
-        parts = re.search(r"part: \[([0-9, ]+)\]", ui_job.group(1))
-        plan_n = re.search(r"pick-ui-tests\.py --plan (\d+) ", shard_flow)
-        if not parts or not plan_n or [int(x) for x in parts.group(1).split(",")] != list(range(1, int(plan_n.group(1)) + 1)):
-            fail("mac-sharded-tests.yml の分けた組の matrix と `pick-ui-tests.py --plan <数>` の数が揃っていません")
-    # **写しを作らない**（2026-11-10 owner 承認の条件）。分けて流す組（組む・先に流す分・分けた組・割り振り）は
-    # mac-sharded-tests.yml の1か所だけに書き、ios-testflight.yml と ios-pr.yml はそれを呼ぶ
-    USES_SHARDED = "uses: ./.github/workflows/mac-sharded-tests.yml"
-    for text, file in ((flow, "ios-testflight.yml"), (pr_flow, "ios-pr.yml")):
-        if text.count(USES_SHARDED) != 1:
-            fail(f"{file} が mac-sharded-tests.yml を1回だけ呼んでいません（分けて流す組を共有する）")
-        code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))  # 注記は数えない
-        for copied in ("pick-ui-tests.py --plan", "test-products.py pack", "uses: ./.github/actions/mac-test-part"):
-            if copied in code:
-                fail(f"{file} に「{copied}」があります（分けて流す組の写し。mac-sharded-tests.yml を呼ぶ）")
-        if re.search(r"^  (test-build|pre|ui):\n", text, re.M):
-            fail(f"{file} に分けて流す組の job（test-build・pre・ui）の写しがあります")
-    # 同時に動く Mac（CLAUDE.md: 全部の回は最大4台・同時5台まで）。分けた組の Mac は matrix の組の数（3）が最大で、
-    # 前後の job（組む・先に流す分）とは重ならない。TestFlight の回は `build`（Archive）の1台が並ぶので4台
-    shard_macs = max([len(re.findall(r"[^,\[\] ]+", m)) for m in re.findall(r"part: \[([^\]]+)\]", shard_flow)] or [99])
-    # 2026-11-11: 分けた組を 3→4。TestFlight の回は Archive と合わせて5台（上限いっぱい）なので、これ以上増やさない
-    if shard_macs > 4 or len(re.findall(r"^    runs-on: macos", shard_flow, re.M)) != 3:
-        fail(f"mac-sharded-tests.yml の同時に動く Mac が増えています（分けた組 {shard_macs} 台・Mac の job は組む・先に流す分・分けた組の3つ）")
-    # **PR の検証の全部の回は分けて流す**（2026-11-10 owner 承認）。決めるのは「UI テストの範囲を決める」の job の1か所
-    # （一覧が「全部」1行だけなら sharded=true）。分けた組を呼ぶ job はその答えだけで走り、
-    # 「Xcode のビルドとテスト（シミュレータ）」は名前を変えず、分けた回はその結果を読む門になる（skipped にしない）
-    tf_jobs_all = {m.group(1): m.group(2) for m in re.finditer(r"^  ([\w-]+):\n(.*?)(?=^  [\w-]+:\n|\Z)", flow, re.M | re.S)}
-    pr_jobs = {m.group(1): m.group(2) for m in re.finditer(r"^  ([\w-]+):\n(.*?)(?=^  [\w-]+:\n|\Z)", pr_flow, re.M | re.S)}
-    plan_job = pr_jobs.get("ui-plan", "")
-    if 'if [ "$(cat /tmp/pr-ui-tests.txt)" = "-only-testing:JourneyPhotoUITests" ]; then\n            echo "sharded=true"' not in plan_job \
-            or "python3 Tools/pick-ui-tests.py --related-narrow /tmp/pr-ui.diff" not in plan_job \
-            or re.search(r"pick-ui-tests\.py (--related |all\b)", "\n".join(l for l in plan_job.splitlines() if not l.lstrip().startswith("#")).replace('python3 Tools/pick-ui-tests.py all > /tmp/pr-ui-tests.txt\n            python3 Tools/explain-ui-tests.py all', "")) \
-            or "base64.b64encode(open(sys.argv[1],\"rb\").read()).decode())' /tmp/pr-ui-tests.txt)" not in plan_job \
-            or "base64 -w0" in plan_job:
-        fail("ios-pr.yml の「UI テストの範囲を決める」（ui-plan）が、full_ui の回だけを全部（sharded=true）にし、ほかは絞る（--related-narrow）形になっていません")
-    sharded_job = pr_jobs.get("xcode-sharded", "")
-    if USES_SHARDED not in sharded_job or "needs.ui-plan.outputs.sharded == 'true'" not in sharded_job \
-            or "needs.checks.result == 'success'" not in sharded_job or "needs.tested.outputs.skip != 'true'" not in sharded_job:
-        fail("ios-pr.yml の `xcode-sharded` が、全部の回だけ・静的な検査のあと・テスト済みでないときに分けた組を呼んでいません")
-    # 分けて流す全部の回は TestFlight と PR の検証を合わせて同時に1本まで（同じ concurrency の組・取り消さない）
-    SHARD_GROUP = "    concurrency:\n      group: mac-sharded-tests-${{ github.repository }}\n      cancel-in-progress: false\n"
-    if SHARD_GROUP not in sharded_job or SHARD_GROUP not in tf_jobs_all.get("tests", ""):
-        fail("ios-pr.yml の `xcode-sharded` と ios-testflight.yml の `tests` が、同じ concurrency の組（mac-sharded-tests・取り消さない）にいません")
-    # 分けて流した回の `finish` は `part-build` を受け取って `build-logs` を作る（受け取らないと build-logs が無い）
-    finish_tf = tf_jobs_all.get("finish", "")
-    if "pattern: part-build" not in finish_tf or "name: build-logs" not in finish_tf \
-            or finish_tf.find("pattern: part-build") > finish_tf.find("build/parts/part-build"):
-        fail("ios-testflight.yml の `finish` が `part-build` を受け取ってから `build-logs` を作っていません")
-    xcode_job = pr_jobs.get("xcode", "")
-    if "    name: Xcode のビルドとテスト（シミュレータ）\n" not in xcode_job:
-        fail("ios-pr.yml の `xcode` の名前が「Xcode のビルドとテスト（シミュレータ）」ではありません（必須のチェックの名前を変えない）")
-    if not re.search(r"^    needs: \[[^\]]*\bxcode-sharded\b[^\]]*\]", xcode_job, re.M) \
-            or "runs-on: ${{ needs.ui-plan.outputs.sharded == 'false' && 'macos-15' || 'ubuntu-latest' }}" not in xcode_job \
-            or "RESULT: ${{ needs.xcode-sharded.result }}" not in xcode_job \
-            or 'if [ "$RESULT" != "success" ]; then' not in xcode_job:
-        fail("ios-pr.yml の `xcode` が、分けた回の結果（needs.xcode-sharded.result）を読む門になっていません（落ちても通った扱いになる）")
-    # 1台で流す段は、分けた回では走らない（同じテストを2度流さない）。名前つきの段はどれも SHARDED を見る
-    for name in re.findall(r"^      - name: (.+)$", xcode_job, re.M):
-        found = re.search(r"^      - name: " + re.escape(name) + r"\n(.*?)(?=^      - |\Z)", xcode_job, re.M | re.S)
-        block = found.group(1) if found else ""
-        if name != "分けて流した回の結果を見る" and "env.SHARDED != 'true'" not in block.split("\n", 1)[0]:
-            fail(f"ios-pr.yml の `xcode` の段「{name}」が、分けた回でも走ります（if: env.SHARDED != 'true' が無い）")
-    # **どこまで流すか・分けて流すかの決め方は1か所**（2026-10-31・見直しの指摘、2026-11-10 に1つの job へ寄せた）。
-    # `shard-plan` の job の「どこまで流すかを決める」だけが `auto` を解き、決まった一覧で `--sharded` を呼ぶ。
-    # `build` の job はその答えを受け取るだけ（`needs: shard-plan`）、分けた組はその答えだけで走る。
-    # 2026-11-10: `build` と `shard-plan` が別々に決めていたので、既定の `auto` が全部に倒れた回（run 42813269365）を
-    # `shard-plan` は「分けない」、`build` は「全部」と読み、1台で UI テストを全部流した
-    tf_jobs = {m.group(1): m.group(2) for m in re.finditer(r"^  ([\w-]+):\n(.*?)(?=^  [\w-]+:\n|\Z)", flow, re.M | re.S)}
-    plan_tf = tf_jobs.get("shard-plan", "")
-    build_tf = tf_jobs.get("build", "")
-    tf_code = "\n".join(line for line in flow.splitlines() if not line.lstrip().startswith("#"))  # 注記は数えない
-    if len(re.findall(r"pick-ui-tests\.py --sharded", tf_code)) != 1 \
-            or 'pick-ui-tests.py --sharded "${SUBMIT:-}" /tmp/ui-only-testing.txt' not in plan_tf \
-            or "- name: どこまで流すかを決める\n" not in plan_tf \
-            or "if: ${{ needs.shard-plan.outputs.sharded == 'true' }}" not in tf_jobs.get("tests", ""):
-        fail("ios-testflight.yml の「分けて流すか」が、`shard-plan` の job の決まった一覧からの `pick-ui-tests.py --sharded` の1か所で決まっていません")
-    if not re.search(r"^    needs: shard-plan$", build_tf, re.M) \
-            or "pick-ui-tests.py --related" in build_tf or "pick-ui-tests.py --sharded" in build_tf \
-            or "LIST_B64: ${{ needs.shard-plan.outputs.list }}" not in build_tf \
-            or "SHARDED: ${{ needs.shard-plan.outputs.sharded }}" not in build_tf:
-        fail("ios-testflight.yml の `build` が、どこまで流すかを自分で決めています（`shard-plan` の答えを受け取る）")
-    # 既定の `auto` で比べる元が読めず全部に倒れた上げない回（run 42813269365 と同じ形）が、分けて流す回になるか。
-    # 段の中身をそのまま、git が何も読めない状態（偽の git）で流して確かめる
-    plan_found = re.search(r"^      - name: どこまで流すかを決める\n(.*?)(?=^      - |\Z)", plan_tf, re.M | re.S)
-    plan_step = plan_found.group(1) if plan_found else ""
-    plan_run = re.search(r"\n        run: \|\n(.*)", plan_step, re.S)
-    if not plan_run:
-        fail("ios-testflight.yml の「どこまで流すかを決める」の run が読めません")
-    else:
-        import subprocess as _sp2
-        import tempfile
-        import textwrap as _tw
-        pick_mod_target = "JourneyPhotoUITests"
-        with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp, "git").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
-            os.chmod(Path(tmp, "git"), 0o755)
-            out, summary = Path(tmp, "out"), Path(tmp, "summary")
-            env = {**os.environ, "PATH": f"{tmp}:{os.environ.get('PATH', '')}", "GITHUB_OUTPUT": str(out),
-                   "GITHUB_STEP_SUMMARY": str(summary), "SCREENS": "auto", "SUBMIT": "false",
-                   "STORE_SHOTS": "false", "TESTS": "false", "GITHUB_REF": "refs/heads/some-branch"}
-            # 🔴 **段の中の `/tmp/` は一時ディレクトリへ置き換えて流す**（2026-11-10 確かめ役の指摘）。`build` の job は
-            # 「どこまで流すかを受け取る」で本物の `/tmp/ui-only-testing.txt` を書いたあとに「ビルド設定を検証」でこの
-            # 検査を流す。そのまま流すと本物の一覧を「全部」に書き換え、絞った回が1台で UI テストを全部流す
-            Path(tmp, "t").mkdir()
-            script = _tw.dedent(plan_run.group(1)).replace("/tmp/", f"{tmp}/t/")
-            real_list = Path("/tmp/ui-only-testing.txt")
-            before = (real_list.read_bytes(), real_list.stat().st_mtime_ns) if real_list.exists() else None
-            run = _sp2.run(["bash", "-e", "-c", script], cwd=ROOT, env=env, capture_output=True, text=True)
-            after = (real_list.read_bytes(), real_list.stat().st_mtime_ns) if real_list.exists() else None
-            if before != after:
-                fail("check-config.py が「どこまで流すかを決める」を流したとき、本物の /tmp/ui-only-testing.txt を書き換えました"
-                     "（`build` の絞った回が UI テストを全部流す）")
-                if before is None:
-                    real_list.unlink()
-                else:
-                    real_list.write_bytes(before[0])
-            got = dict(line.split("=", 1) for line in out.read_text(encoding="utf-8").splitlines() if "=" in line) \
-                if out.exists() else {}
-            import base64 as _b64
-            try:
-                listed = _b64.b64decode(got.get("list", ""), validate=True).decode("utf-8").split()
-            except ValueError:
-                listed = []
-            if run.returncode != 0 or got.get("full") != "true" or got.get("sharded") != "true" \
-                    or listed != [f"-only-testing:{pick_mod_target}"]:
-                fail("ios-testflight.yml の「どこまで流すかを決める」が、auto で全部に倒れた上げない回を分けて流す回にしません"
-                     f"（run 42813269365 の形）: {run.returncode} {got.get('full')} {got.get('sharded')} {run.stderr[-300:]}")
-    # **夜の全部の回**（2026-11-11 owner「推奨で」・CLAUDE.md「全部は夜に1日1回」）。main を1日1回、
-    # ios-testflight.yml の上げない回（submit=false・screens=all）で流し、前の夜と同じコミットなら流さず、
-    # 落ちたら札を立てる。札を書く権限（issues: write）は札を立てる job だけ
-    nightly_yml = ROOT / ".github/workflows/ios-nightly.yml"
-    nightly = nightly_yml.read_text(encoding="utf-8") if nightly_yml.exists() else ""
-    n_jobs = {m.group(1): m.group(2) for m in re.finditer(r"^  ([\w-]+):\n(.*?)(?=^  [\w-]+:\n|\Z)", nightly, re.M | re.S)}
-    if not nightly:
-        fail(".github/workflows/ios-nightly.yml がありません（全部の UI テストは main の夜の回・2026-11-11）")
-    else:
-        cron = re.search(r'^    - cron: "(\d+) (\d+) \* \* \*"$', nightly, re.M)
-        if not cron or not (15 <= int(cron.group(2)) <= 19):
-            fail("ios-nightly.yml の schedule が日本の深夜（UTC 15〜19 時）に1日1回になっていません")
-        full_job = n_jobs.get("full", "")
-        if "uses: ./.github/workflows/ios-testflight.yml" not in full_job or "submit: false" not in full_job \
-                or "screens: all" not in full_job or "needs.decide.outputs.run == 'true'" not in full_job:
-            fail("ios-nightly.yml の `full` が、ios-testflight.yml を submit=false・screens=all で（流すと決めた夜だけ）呼んでいません")
-        if 'if [ "$sha" = "$GITHUB_SHA" ]; then\n                  run=false' not in n_jobs.get("decide", ""):
-            fail("ios-nightly.yml の `decide` が、前の夜と同じコミットなら流さない形になっていません")
-        report = n_jobs.get("report", "")
-        if "needs.full.result == 'failure'" not in report or "夜の全部の回が落ちた ${day}: ${names}" not in report:
-            fail("ios-nightly.yml の `report` が、落ちた夜に日付と落ちたテストの名前の札を立てていません")
-        if [name for name, body in n_jobs.items() if re.search(r"^      issues: write$", body, re.M)] != ["report"] \
-                or re.search(r"^permissions:\n(?:  .*\n)*?  issues:", nightly, re.M):
-            fail("ios-nightly.yml の issues: write が、札を立てる job（report）だけになっていません")
-    # 数える側の jq の `select(...)` は**印の名前の完全一致だけ**
-    selects = re.findall(r"select\((\.name[^|]*?)\)\s*\|", pr_flow)
+        fail(f"mac-sharded-tests.yml の「{MARK}」の if が変わっています（分けた組が落ちても付きうる）: {shard_marks}")
+    QUICK_MARK_IF = ("needs.plan.result == 'success' && needs.plan.outputs.run == 'true'"
+                     " && needs.mac.result == 'success'")
+    quick_marks = re.findall(r"- name: " + re.escape(MARK) + r"\n\s+if: \$\{\{(.+?)\}\}\s*\n", quick)
+    if [m.strip() for m in quick_marks] != [QUICK_MARK_IF]:
+        fail(f"ios-quick.yml の「{MARK}」の if が変わっています（Mac が落ちても・起こさなくても付きうる）: {quick_marks}")
+    # 数える側（毎回のの plan）の jq の select は印の名前の完全一致だけ・数える回は毎回のとガチガチのの success だけ
+    selects = re.findall(r"select\((\.name[^|]*?)\)\s*\|", quick)
     if selects != [f'.name == "{MARK}"']:
-        fail(f"ios-pr.yml の「同じコミットが Mac でテスト済みか」の select が印の名前の完全一致だけではありません: {selects}")
+        fail(f"ios-quick.yml の「同じコミットが Mac でテスト済みか」の select が印の名前の完全一致だけではありません: {selects}")
+    if "for wf in ios-quick.yml ios-full.yml; do" not in quick or 'select(.conclusion == "success")' not in quick:
+        fail("ios-quick.yml が、毎回のとガチガチのの通った回（success）だけを「テスト済み」と数えていません")
+    for name, text in workflows.items():
+        if re.search(r'startswith\("テスト"\)', text):
+            fail(f"{name} が「テスト」で始まる段を数えています（古い数え方）")
 
-    # **落ちても先へ進む段を作らない。** 組む・単体・UI・印のどれかに `continue-on-error` が付くと、
-    # 落ちた回でも印まで進み「テスト済み」と数えられる
-    def step_block(text, name):
-        found = re.search(r"^      - name: " + re.escape(name) + r"\n(.*?)(?=^      - |\Z)", text, re.M | re.S)
-        return found.group(1) if found else None
-    for text, file, names in [
-        (flow, "ios-testflight.yml", ["組む（本物の SwiftUI で型検査される最初の機会）", "単体テスト", "UI テスト（画面の絵）", MARK]),
-        (pr_flow, "ios-pr.yml", ["組む", "単体テスト", "UI テスト（通常は起動スモーク・手動指定で全画面）"]),
-    ]:
-        for name in names:
-            block = step_block(text, name)
-            if block is None:
-                fail(f"{file} に「{name}」の段がありません")
-            elif "continue-on-error" in block:
-                fail(f"{file} の「{name}」に continue-on-error があります（落ちても印まで進む）")
-    # 分けて流す回のテストの段（組む・組ごとに流す）にも continue-on-error を付けない
+    # ---- 毎回の（ios-quick.yml）--------------------------------------------------------
+    q_jobs = _jobs(quick)
+    if not re.search(r"^on:\n  pull_request:\n", quick, re.M) or not re.search(r"^  workflow_dispatch:\n", quick, re.M) \
+            or re.search(r"^  (schedule|push):", quick, re.M):
+        fail("ios-quick.yml が PR と手で流したときに走る形（pull_request・workflow_dispatch）になっていません")
+    gate = q_jobs.get("xcode", "")
+    if "    name: Xcode のビルドとテスト（シミュレータ）\n" not in gate or "needs: [plan, mac]" not in gate \
+            or "if: ${{ always() }}" not in gate or 'if [ "$RUN" = "true" ] && [ "$MAC" != "success" ]; then' not in gate:
+        fail("ios-quick.yml の門（Xcode のビルドとテスト（シミュレータ））が、Mac の結果を読んで落ちる形になっていません"
+             "（必須のチェックの名前を変えない）")
+    mac = q_jobs.get("mac", "")
+    limit = re.search(r"^    timeout-minutes: (\d+)$", mac, re.M)
+    if not limit or int(limit.group(1)) > 30 or "fromJSON(needs.plan.outputs.matrix)" not in mac:
+        fail("ios-quick.yml の Mac の job が、30 分の上限（timeout-minutes ≤ 30）と plan の割り振りで動いていません")
+    for name, text in (("ios-quick.yml", quick), ("ios-full.yml", full), ("mac-sharded-tests.yml", shard_flow)):
+        if "continue-on-error" in _code(text):
+            fail(f"{name} に continue-on-error があります（落ちても印まで進む）")
+    plan_job = q_jobs.get("plan", "")
+    if 'python3 Tools/pick-ui-tests.py --quick-plan build/quick /tmp/quick.diff "${SCREENS:-}" "$cap"' not in plan_job \
+            or 'base="$BASE_SHA"; cap=cap' not in plan_job or 'bash Tools/app-changed.sh "$BASE_SHA"' not in plan_job:
+        fail("ios-quick.yml の plan が、--quick-plan（PR は上限で外す）と app-changed.sh で中身を決めていません")
+    if "m.quick_unit_tests()" not in mac or "if: ${{ matrix.part == 1 }}" not in mac:
+        fail("ios-quick.yml の Mac 1 台目が、Mac でしか流れない単体（Tools/quick-unit-tests.txt）を流していません")
+    if "bash Tools/app-changed.sh" not in pr_flow or re.search(r"runs-on: .*macos", pr_flow):
+        fail("ios-pr.yml は Linux だけ（Mac は ios-quick.yml）・アプリ変更の有無は Tools/app-changed.sh で決める")
+
+    # ---- ガチガチの（ios-full.yml）と、分けて流す組（mac-sharded-tests.yml）------------------
+    if re.search(r"^  (pull_request|push|schedule):", full, re.M) or not re.search(r"^  workflow_dispatch:\n", full, re.M):
+        fail("ios-full.yml は手で押したときだけ（workflow_dispatch・workflow_call）走ります（2026-11-11 owner）")
+    if not re.search(r"^concurrency:\n  group: ios-full-\$\{\{ github.repository \}\}\n  cancel-in-progress: false$", full, re.M):
+        fail("ios-full.yml が同時に1本（取り消さない）になっていません（Mac は同時5台まで）")
+    if not re.search(r"^on:\n  workflow_call:\n", shard_flow, re.M) or re.search(r"^  (workflow_dispatch|push|pull_request|schedule):", shard_flow, re.M):
+        fail("mac-sharded-tests.yml が呼ばれるだけ（on: workflow_call のみ）になっていません")
+    USES_SHARDED = "uses: ./.github/workflows/mac-sharded-tests.yml"
+    callers = sorted(name for name, text in workflows.items() if USES_SHARDED in _code(text))
+    if callers != ["ios-full.yml"]:
+        fail(f"mac-sharded-tests.yml を呼ぶのはガチガチの（ios-full.yml）だけのはず: {callers}")
+    for name, text in workflows.items():
+        # ios-perf.yml（重さの記録）は組む・流すの部品を使い回す別の流れ（2026-11-04・札 #429）
+        if name in ("mac-sharded-tests.yml", "ios-perf.yml"):
+            continue
+        for copied in ("pick-ui-tests.py --plan ", "test-products.py pack", "uses: ./.github/actions/mac-test-part"):
+            if copied in _code(text):
+                fail(f"{name} に「{copied}」があります（分けて流す組の写し。mac-sharded-tests.yml だけに書く）")
+    s_jobs = _jobs(shard_flow)
+    result_job = s_jobs.get("result", "")
+    if "needs: [test-build, pre, ui]" not in result_job \
+            or "if: ${{ !(" + FINISH_MARK_IF + ") }}" not in result_job or "exit 1" not in result_job:
+        fail("mac-sharded-tests.yml の `result`（まとめ）が、どれかが落ちたときに落ちる段を持っていません")
+    ui_job = s_jobs.get("ui", "")
+    if "needs: [test-build, pre]" not in ui_job or re.search(r"^    if:", ui_job, re.M):
+        fail("mac-sharded-tests.yml の `ui`（分けた組）が、単体テストと先に流す分の両方を待っていません（needs: [test-build, pre]・if なし）")
+    parts = re.search(r"part: \[([0-9, ]+)\]", ui_job)
+    plan_n = re.search(r"pick-ui-tests\.py --plan (\d+) ", shard_flow)
+    if not parts or not plan_n or [int(x) for x in parts.group(1).split(",")] != list(range(1, int(plan_n.group(1)) + 1)):
+        fail("mac-sharded-tests.yml の分けた組の matrix と `pick-ui-tests.py --plan <数>` の数が揃っていません")
+    # 同時に動く Mac（Mac は同時5台まで）。分けた組は4台まで（単体と先に流す分の2台とは重ならない）
+    shard_macs = max([len(re.findall(r"[^,\[\] ]+", m)) for m in re.findall(r"part: \[([^\]]+)\]", shard_flow)] or [99])
+    if shard_macs > 4 or len(re.findall(r"^    runs-on: macos", shard_flow, re.M)) != 3:
+        fail(f"mac-sharded-tests.yml の同時に動く Mac が増えています（分けた組 {shard_macs} 台）")
     part_action = ROOT / ".github/actions/mac-test-part/action.yml"
     if "continue-on-error" in (part_action.read_text(encoding="utf-8") if part_action.exists() else "continue-on-error"):
         fail(".github/actions/mac-test-part/action.yml が無いか、continue-on-error があります（落ちても印まで進む）")
-    for job in ("test-build", "pre", "ui", "result"):
-        body = re.search(r"^  " + job + r":\n(.*?)(?=^  \w[\w-]*:\n|\Z)", shard_flow, re.M | re.S)
-        if not body or "continue-on-error" in body.group(1):
-            fail(f"mac-sharded-tests.yml の job「{job}」が無いか、continue-on-error があります（落ちても印まで進む）")
-    if "continue-on-error" in (re.search(r"^  (?:ui-plan|xcode-sharded):\n.*?(?=^  xcode:\n)", pr_flow, re.M | re.S) or re.match("", "")).group(0):
-        fail("ios-pr.yml の ui-plan・xcode-sharded に continue-on-error があります（落ちても通った扱いになる）")
-    # 印が結果を見る段の `id`
-    for name, step_id in [("単体テスト", "unit"), ("UI テスト（画面の絵）", "ui")]:
-        block = step_block(flow, name) or ""
-        if not re.search(r"^        id: " + step_id + r"\n", block, re.M):
-            fail(f"ios-testflight.yml の「{name}」に id: {step_id} がありません（印が結果を見られない）")
+    # 夜の定期の回は置かない（2026-11-11 owner「ガチの原因不明のバグの時だけ」）。定期は重さの記録（ios-perf.yml）だけ
+    scheduled = sorted(name for name, text in workflows.items() if re.search(r"^  schedule:", text, re.M))
+    if [n for n in scheduled if n not in ("ios-perf.yml", "cleanup-branches.yml", "safe-branch-cleanup.yml")]:
+        fail(f"定期（schedule）で Mac のテストを流すワークフローがあります: {scheduled}")
+
+    def step_block(text, name):
+        found = re.search(r"^      - name: " + re.escape(name) + r"\n(.*?)(?=^      - |\Z)", text, re.M | re.S)
+        return found.group(1) if found else None
     # テストを流す道具が、落ちたときに 1 で終わること（0 で終わると段が緑になる）
     runner = (ROOT / "Tools/xcode-test.sh").read_text(encoding="utf-8")
     # **pipefail が無いと** `xcodebuild … | tee | tail` の終了は tail のもの＝いつも 0 になり、
@@ -732,16 +639,6 @@ if testflight_yml.exists() and pr_yml.exists():
                 if run.returncode != 0 or not any(got[i:i + len(want)] == want for i in range(len(got))):
                     fail(f"Tools/xcode-test.sh {mode} が xcodebuild に時間の上限を渡していません: "
                          f"{run.returncode} {got} {run.stderr[-300:]}")
-    # 配信時の自動選択と、storeShots の全件指定を検査する。
-    scope = step_block(flow, "どこまで流すかを決める") or ""
-    for required in ('SCREENS="auto"', 'SCREENS="none"', 'SCREENS=""',
-                     'python3 Tools/pick-ui-tests.py --related /tmp/ui-changes.diff'):
-        if required not in scope:
-            fail(f"ios-testflight.yml のテスト範囲選択が不足しています: {required}")
-    if re.search(r'startswith\("テスト"\)', pr_flow):
-        fail("ios-pr.yml が「テスト」で始まる段を数えています（絞った回の単体だけで通った扱いになる）")
-    for name in re.findall(r"^      - name: (テスト.*)$", flow, re.M):
-        fail(f"ios-testflight.yml の段「{name}」が「テスト」で始まります（古い数え方に拾われる）")
     # main の回の「控えを温める」は、署名用に書き換えたプロジェクトを元に戻してから組む
     warm = step_block(flow, "控えを温める（main の回だけ・シミュレータ向けに組む）") or ""
     warm_order = [warm.find("git checkout -- project.yml"), warm.find("xcodegen generate"),
@@ -891,17 +788,44 @@ if testflight_yml.exists() and pr_yml.exists():
             fail(f"pick-ui-tests.py の ONLY_WHEN_NAMED に {name} がありません（全部の回・PR で流れる）")
     if pick_mod.only_when_named("ScreenshotTests/testTrunkPickRepeat"):
         fail("pick-ui-tests.py: testTrunkPickRepeat（1本目）は全部の回に残す（札 #424 が閉じるまで）")
-    # **分けて流すかは `--sharded` の1か所で、決まった一覧（`auto` を解いたあと）から決める**（2026-11-10）
-    all_line = f"-only-testing:{pick_mod.TARGET}"
-    for args, want in [((False, [all_line]), True), ((False, [all_line, ""]), True), ((True, [all_line]), False),
-                       ((False, []), False), ((False, [f"{all_line}/SmokeTests"]), False),
-                       ((False, [f"{all_line}/SmokeTests", f"{all_line}/ScreenshotTests/testA"]), False)]:
-        if pick_mod.sharded(*args) != want:
-            fail(f"pick-ui-tests.py の sharded{args} が {want} になりません")
-    # 書き方が違っても全部になる一覧なら分ける（空・all・全部 を含む）
-    for screens in ("", "  ", "all, 撮影スポット", "全部"):
-        if not pick_mod.sharded(False, pick_mod.pick(screens, {})[0]):
-            fail(f"pick-ui-tests.py: screens「{screens}」の一覧が分けて流す回になりません")
+    # **毎回のの割り振り**（2026-11-11）: 起動の見張りはいつも・差分に関係する UI・名指し。全部には倒さない。
+    # 1 台の見積もりは QUICK_UI_BUDGET 以下（1 本で越えるテストは別）、台は最大 QUICK_MAX_PARTS
+    smoke = {t for t in index if t.startswith("SmokeTests/") and not pick_mod.only_when_named(t)}
+    got = pick_mod.quick_plan("", "", True, index=index, loose=loose)
+    if {t for part in got["parts"] for t in part} != smoke or len(got["parts"]) != 1:
+        fail(f"pick-ui-tests.py --quick-plan が、差分の無い回で起動の見張りだけ（1 台）になりません: {got['parts']}")
+    for unknown in ("diff --git a/project.yml b/project.yml\n--- a/project.yml\n+++ b/project.yml\n@@ -1 +1 @@\n-a\n+b\n",
+                    "unrecognized diff"):
+        got = pick_mod.quick_plan(unknown, "", True, index=index, loose=loose)
+        if {t for part in got["parts"] for t in part} != smoke:
+            fail("pick-ui-tests.py --quick-plan が、判定できない変更で起動の見張りより多く（全部に）倒れます")
+    try:
+        pick_mod.quick_plan("", "all", False, index=index, loose=loose)
+        fail("pick-ui-tests.py --quick-plan が screens=all を受け付けます（全部は ios-full.yml）")
+    except ValueError:
+        pass
+    seconds = pick_mod.estimate(sorted(index), pick_mod.read_times())
+    shots = sorted((t for t in index if t.startswith("ScreenshotTests/") and not pick_mod.only_when_named(t)),
+                   key=lambda t: seconds[t])
+    got = pick_mod.quick_plan("", ",".join(t.split("/")[1] for t in shots[:12]), True, index=index, loose=loose)
+    if len(got["parts"]) > pick_mod.QUICK_MAX_PARTS or any(
+            load > pick_mod.QUICK_UI_BUDGET and len(part) > 1 for part, load in zip(got["parts"], got["loads"])):
+        fail(f"pick-ui-tests.py --quick-plan の 1 台が上限（{pick_mod.QUICK_UI_BUDGET} 秒）を越えます: {got['loads']}")
+    # Mac でしか流れない単体の名前が Tests/ にあるか（消えた・名前を変えたテストを黙って流さなくならないように）
+    quick_units = pick_mod.quick_unit_tests()
+    unit_text = "\n".join(f.read_text(encoding="utf-8") for f in (ROOT / "Tests/JourneyPhotoTests").glob("*.swift"))
+    missing_units = [t for t in quick_units if not re.search(r"class " + re.escape(t.split("/")[0]) + r"\b", unit_text)
+                     or not re.search(r"func " + re.escape(t.split("/")[1]) + r"\(", unit_text)]
+    if not quick_units or missing_units:
+        fail(f"Tools/quick-unit-tests.txt の単体が Tests/ にありません: {missing_units[:5] or '一覧が空'}")
+    # 全部の回から外した重い試験（2026-11-11・run 42920469610 の内訳）。トランクの選び直しの1本目は全部の回に残す
+    for name in ("PerformanceTests/testMainTabRevisitTime", "ScreenshotTests/testCapturesCamperRoomContactSheet",
+                 "ScreenshotTests/testTrunkPickRepeat2", "ScreenshotTests/testTrunkPickRepeat3",
+                 "ScreenshotTests/testTrunkPickRepeat4"):
+        if not pick_mod.only_when_named(name):
+            fail(f"pick-ui-tests.py の ONLY_WHEN_NAMED に {name} がありません（全部の回で流れる）")
+    if pick_mod.only_when_named("ScreenshotTests/testTrunkPickRepeat"):
+        fail("pick-ui-tests.py: testTrunkPickRepeat（1本目）は全部の回に残す（札 #424 が閉じるまで）")
     # 時間の表に無いテストは中央の値で見積もる（新しいテストで割り振りが崩れない）
     est = pick_mod.estimate(["A/a", "A/b", "A/new"], {"A/a": 10.0, "A/b": 30.0})
     if est["A/new"] != 30.0:

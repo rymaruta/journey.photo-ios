@@ -5,48 +5,40 @@ description: 枝を Mac の CI（本物の Xcode でビルド・テスト・画�
 
 # Mac で確かめる
 
-この環境（Linux）では本物の Xcode でコンパイルできない。最初の本物の確認は
-`ios-testflight.yml` の `submit=false`（TestFlight には出さない）。
+この環境（Linux）では本物の Xcode でコンパイルできない。Mac の確かめは2つだけ（2026-11-11 owner「毎回のと ガチガチので」）:
+
+| 名前 | ワークフロー | いつ | 中身 | 時間 |
+|---|---|---|---|---|
+| **毎回の（クイック）** | `ios-quick.yml` | PR で自動・枝を確かめるとき手で | Mac でしか流れない単体（38 件）＋起動の見張り（SmokeTests）＋変えた画面に関係する UI＋名指し | 目標 10 分・上限 30 分 |
+| **ガチガチの（フル）** | `ios-full.yml` | **原因の分からない不具合を調べるときだけ**手で | 全部の単体＋全部の UI（4 台に分けて） | 1 時間あまり |
+
+ほかの単体（5,352 件）は PR の検証の「単体テスト（Linux・模型）」が毎回流す。TestFlight に上げる回（`ios-testflight.yml`）は
+テストを流さない（Archive と上げるだけ）。
 
 ## 流す
 
 ```bash
-gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight.yml/dispatches \
-  -f ref=<枝> -f 'inputs[submit]=false'
+# 毎回の（枝の確かめ）。差分に関係する UI は自動で選ぶ。足したい画面・テストは screens に
+gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-quick.yml/dispatches \
+  -f ref=<枝> -f 'inputs[screens]=撮影スポット, すれちがい'
+
+# ガチガチの（原因の分からない不具合のときだけ・同時に1本）
+gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-full.yml/dispatches -f ref=<枝>
 ```
 
-### 変えた画面の絵だけ撮る（`screens`・2026-10-17）
-
-全部を流すと1回 約70分（run 462: 組む12分・単体6分・UI 33分・Archive 11分）。枝の確認では
-**変えた画面の名前（撮る絵の名前の一部）かテスト名の一部**を `screens` に渡して絞る:
-
-```bash
-gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight.yml/dispatches \
-  -f ref=<枝> -f 'inputs[submit]=false' -f 'inputs[screens]=撮影スポット, すれちがい'
-```
-
-- 区切りは `,` か `、`。何に当たるかは手元で `python3 Tools/pick-ui-tests.py "<screens>"` で先に見る
-  （当たらない語があると候補を出して止まる。Mac でも最初の数秒で止まる）
-- 起動の見張り（`SmokeTests`）はいつも入る。`none` なら見張りだけ（絵の要らない直し）
-- 単体テストは絞らない（全3700件・6分）。単体が落ちたら UI まで行かずに止まる
-- 絞った回は Archive（Release の組み立て・約10分）もしない
-- **マージの前は絞った回で足りる（2026-11-11 owner・CLAUDE.md）。** 単体（全部）＋機能の UI＋変えた画面の UI＋起動の見張りが
-  緑なら PR をマージしてよい。毎回30分以内
-- 全部を流す（`screens=all`）のは、原因の分からない不具合を調べる時だけ
+- `screens` の区切りは `,` か `、`。何に当たるかは手元で `python3 Tools/pick-ui-tests.py "<screens>"` で先に見る
+  （当たらない語があると候補を出して止まる）。`all` は毎回のでは受け付けない（ガチガチのを使う）
+- 毎回のの中身は `python3 Tools/pick-ui-tests.py --quick-plan <出す場所> <diff> "<screens>"` で手元でも見られる
+- 毎回のが緑なら PR をマージしてよい（2026-11-11 owner・CLAUDE.md）。同じコミットで毎回のかガチガチのが通っていれば、
+  PR の毎回のは Mac を起こさない（「Mac のテストが通った（PR の検証が数える印）」）
+- アプリの速さ・メモリは `screens=PerformanceTests` で名指しした毎回のだけ測る
 
 待つのは `bash Tools/wait-mac-run.sh <sha7>` を **Bash の run_in_background（timeout 7200000）** で。
 `sleep` を繋いで待たない（止められる）。終わると通知が来る。
 
 ## 緑なら
 
-- 画面写真は `screenshots` 枝に置かれる（700px の JPEG）。名前は `NN-画面名_…`。
-  ```bash
-  git fetch -q origin screenshots
-  git ls-tree --name-only origin/screenshots            # 一覧
-  f=$(git ls-tree --name-only -z origin/screenshots | tr '\0' '\n' | grep '^13f')
-  git show "origin/screenshots:$f" > <scratchpad>/shot.jpg   # Read で見る・SendUserFile で渡す
-  ```
-- owner に見せるときは「Mac のシミュレーターで自動撮影（モックではない）」と書く。
+- 画面写真は公開リポジトリには置かない（2026-11 から。#451）。結果は各 job の Summary を見る。
 
 ## 赤なら
 

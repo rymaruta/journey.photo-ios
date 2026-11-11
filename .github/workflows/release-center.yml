@@ -25,10 +25,6 @@ on:
         description: "Export App Store screenshots (forces full UI test suite)"
         type: boolean
         default: false
-      release_tests:
-        description: "Run Xcode unit/UI tests before upload (disable to reuse prior verified commit)"
-        type: boolean
-        default: true
       confirm_release:
         description: "Required for TestFlight upload; check only after reviewing the target commit"
         type: boolean
@@ -59,7 +55,6 @@ jobs:
           SCREENSHOTS: ${{ inputs.screenshots }}
           CONFIRM: ${{ inputs.confirm_release }}
           BRANCH: ${{ github.ref_name }}
-          RELEASE_TESTS: ${{ inputs.release_tests }}
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -86,9 +81,7 @@ jobs:
               if [ -n "$FIRST" ]; then
                 echo "::warning::priority_tests is ignored for uploads; existing TestFlight workflow does not shard release tests"
               fi
-              if [ "$RELEASE_TESTS" != "true" ]; then
-                echo "::warning::Xcode tests are disabled for this upload. Ensure this commit was verified separately."
-              fi
+              echo "::notice::TestFlight uploads do not run Xcode tests (ios-quick.yml / ios-full.yml verify commits)."
               screens=all
               ;;
             *) echo "::error::Unknown mode: $MODE"; exit 1 ;;
@@ -113,7 +106,6 @@ jobs:
             echo "| UI tests | \`$screens\` |"
             echo "| Screenshots | \`$SCREENSHOTS\` |"
             echo "| Upload authorized | \`$CONFIRM\` |"
-            echo "| Run tests before upload | \`$RELEASE_TESTS\` |"
             echo ""
             echo "The existing TestFlight workflow performs the Xcode tests, signing and upload."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -123,15 +115,33 @@ jobs:
           python3 Tools/check-cross-imports.py Sources Tests
           python3 Tools/check-config.py
 
+  # 2026-11-11 owner「毎回のと ガチガチので」作り替え: TestFlight の回（ios-testflight.yml）はテストを流さない。
+  # verify は ui_scope が all ならガチガチの（ios-full.yml）、ほかは毎回の（ios-quick.yml・ui_scope を名指しとして足す）
   pipeline:
-    name: Xcode verification / TestFlight pipeline
+    name: TestFlight pipeline
     needs: plan
+    if: ${{ needs.plan.outputs.release == 'true' }}
     uses: ./.github/workflows/ios-testflight.yml
     with:
-      submit: ${{ needs.plan.outputs.release == 'true' }}
+      submit: true
       betaReview: ${{ needs.plan.outputs.external == 'true' }}
-      storeShots: ${{ inputs.screenshots }}
-      tests: ${{ needs.plan.outputs.release != 'true' || inputs.release_tests }}
-      screens: ${{ needs.plan.outputs.screens }}
-      first: ${{ inputs.priority_tests }}
     secrets: inherit
+
+  verify-quick:
+    name: Xcode verification (quick)
+    needs: plan
+    if: ${{ needs.plan.outputs.release != 'true' && needs.plan.outputs.screens != 'all' }}
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/ios-quick.yml
+    with:
+      screens: ${{ needs.plan.outputs.screens }}
+
+  verify-full:
+    name: Xcode verification (full)
+    needs: plan
+    if: ${{ needs.plan.outputs.release != 'true' && needs.plan.outputs.screens == 'all' }}
+    uses: ./.github/workflows/ios-full.yml
+    with:
+      first: ${{ inputs.priority_tests }}

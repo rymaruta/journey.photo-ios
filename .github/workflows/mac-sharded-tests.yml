@@ -1,12 +1,8 @@
 # 単体テストと UI テストを、別々の Mac に分けて同時に流す（再利用のワークフロー・`workflow_call` だけ）。
 #
-# 呼ぶのは2か所（2026-11-10 判断・owner 承認「いいよ」）:
-#  - `ios-testflight.yml` の全部の回（submit=false で、`screens` を解いた一覧が全部: 空・all・既定の auto が全部に
-#    倒れた回・storeShots。決めるのは ios-testflight.yml の `shard-plan` の1か所）。2026-10-31（#429）に
-#    ios-testflight.yml の中に作った組を、ここへそのまま移した（中身は変えていない）
-#  - `ios-pr.yml` の UI テストが全部になる回（手で流した full_ui=true だけ。2026-11-11 から PR は全部に倒さない）。
-#    前は 1 台で流し、PR #514 の run 42787091389 で UI テストの段だけ 2 時間 31 分かかった
-#  - `ios-nightly.yml`（main の夜の全部の回）は ios-testflight.yml を通して呼ぶ
+# 呼ぶのは `ios-full.yml`（ガチガチの・手で押したときだけ）だけ（2026-11-11 owner「毎回のと ガチガチので」作り替え）。
+# 2026-10-31（#429）に ios-testflight.yml の中に作った組を、2026-11-10 にここへ移した（中身は変えていない）。
+# 毎回（PR・枝の確かめ）は `ios-quick.yml`、TestFlight に上げる回はテストを流さない
 # **写しを作らない。** 振り分け（`Tools/pick-ui-tests.py --plan`・`Tools/ui-test-times.json`）・品の受け渡し
 # （`Tools/test-products.py`・`.github/actions/mac-test-part`）・印はここだけに書く。`Tools/check-config.py` が見張る
 #
@@ -17,7 +13,7 @@
 #     ├─ 単体テスト（1台）           ┐ 同時に流す。どちらかが落ちたら、UI の分けた組は走らない
 #     └─ UI の先に流す分（1台）      ┘ （枝で変えた画面のテスト＋起動の見張り。単体より短く収める）
 #          └─ UI の分けた組 1〜4（4台・同時）
-#               └─ まとめ（Linux・「全部のテストが通った」の印）
+#               └─ まとめ（Linux・「Mac のテストが通った」の印）
 #
 # - **組んだ品は成果物で渡す**（各台で組み直さない）。各台で組み直すと控えから戻す 2 分＋組む 6 分（run 778）
 # - **振り分けは1本ずつの実際の時間から**（`Tools/ui-test-times.json`・run 778 の全文ログから作った）。
@@ -25,11 +21,9 @@
 #   最後の組は「全部から、ほかの組と先に流した分を抜いた残り」なので、読み落としたテストも必ずどこかで流れる
 # - **先に流した分は分けた組から抜く**。テストの本数は1本も変わらない（足さない・減らさない）
 # - 単体テストは今までどおり1回。単体が落ちたら UI の分けた組には進まない
-# - この中で同時に動く Mac は多いときで4台（分けた組）。TestFlight の回は Archive（`build` の job）が並ぶので5台。
-#   2026-11-11 判断: 3→4 組（run 42920469610 の UI 合計 160.4 分・分けた組は1台 約 53〜62 分だった）。5台は上限いっぱいなので、
-#   全部の回は TestFlight と PR を合わせて同時に1本（呼ぶ側の concurrency `mac-sharded-tests`）が前提。
-#   分けた組を単体の終わりを待たずに走らせる案（単体と並べる）は、TestFlight の回で 6台（Archive・単体・4組）になり上限を超えるので入れない
-#   公開リポジトリの Mac の同時実行は5台まで（CLAUDE.md「全部の回は Mac を最大4台」）
+# - この中で同時に動く Mac は多いときで4台（分けた組）。2026-11-11 判断: 3→4 組（run 42920469610 の UI 合計 160.4 分・
+#   分けた組は1台 約 53〜62 分だった）。全部の回は同時に1本（`ios-full.yml` の concurrency）。
+#   分けた組を単体の終わりを待たずに走らせる案は、単体・先に流す分・4組で6台になり上限（5台）を超えるので入れない
 # ===========================================================================================
 name: テストを分けて流す
 
@@ -184,8 +178,7 @@ jobs:
           xcode: ${{ needs.test-build.outputs.xcode }}
 
   # 結果を読むだけなので Linux（2026-11-10 判断: 前は ios-testflight.yml の「まとめ」の Mac の上で付けていた。
-  # Mac を1台減らす）。**どれかが落ちたら、この job も落とす**——呼ぶ側の job（ios-pr.yml の
-  # 「Xcode のビルドとテスト（シミュレータ）」の門）が、呼んだ回の結果をそのまま読めるように
+  # Mac を1台減らす）。**どれかが落ちたら、この job も落とす**——呼ぶ側（ios-full.yml）が、呼んだ回の結果をそのまま読めるように
   result:
     name: 分割テストの結果を集約
     needs: [test-build, pre, ui]
@@ -205,10 +198,10 @@ jobs:
             echo "各MacジョブのSummaryに成功・失敗と理由を記録しています。公開Artifactへxcresult・画面画像は転送しません。"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # 🔴 **「PR の検証」が数える印**（ios-testflight.yml の `build` の job の同じ名前の段の注記）。単体・先に流す分・
+      # 🔴 **「PR の検証」が数える印**（`ios-quick.yml` の `tested` が数える。毎回のの門も同じ名前の段を付ける）。単体・先に流す分・
       # 分けた組の全部が通った回だけ success。分けて流す回はいつも絞らない（呼ぶ側が全部の回だけ呼ぶ）。
-      # ios-pr.yml の `tested` は ios-testflight.yml の回の job（呼んだこの組の job も含む）からこの名前の段を探す
-      - name: 全部のテストが通った（PR の検証が数える印）
+      # `ios-quick.yml` の `tested` は ios-quick.yml・ios-full.yml の回の job（呼んだこの組の job も含む）からこの名前の段を探す
+      - name: Mac のテストが通った（PR の検証が数える印）
         if: ${{ needs.test-build.result == 'success' && needs.pre.result == 'success' && needs.ui.result == 'success' }}
         run: echo "単体テストと UI テスト（先に流す分と分けた組 4つ）を絞らずに全部流し、通りました"
 
