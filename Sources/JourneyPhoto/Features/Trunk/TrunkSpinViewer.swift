@@ -96,20 +96,18 @@ struct TrunkSpinViewer: View {
                 TrunkPerfMeter.shared.mark("SpinReady")
                 return
             }
-            let made = TrunkTextures.make(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts,
+            // まだ塗っていなければ、今までどおりその場で描いて渡す（塗り切るのを待つと、その間は箱の面が空になる。
+            // 2026-11-11 run 1003: 主スレッドの外で正面を塗り切るのに 2.6 秒かかり、面が出るのが遅れた）。
+            // 塗り切った絵は、トランクの画面を開いたときに先に作っておく（`TrunkTextures.prewarm`）
+            textures = TrunkTextures.make(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts,
                                           wrinkles: wrinkles, tagPicks: tagPicks)
-            // 2026-11-11 判断（run 997）: `ImageRenderer` の絵は後で塗る絵で、SceneKit に渡すと主スレッドで塗られて止まっていた
-            // （`MedalCoinCoordinator.apply` の中の `RB::ImageProvider::wait_phase`）。主スレッドの外で塗り切ってから渡す
-            textures = await TrunkTextures.settled(made)
-            guard !Task.isCancelled else { return }
             let frontTook = started.duration(to: clock.now)
             // 1コマ待って正面を画面に出してから残りを描く（`Task.yield` では同じコマのうちに戻りうる）。
             // 待つ間に閉じられたら描かずに抜ける
             do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
             guard !Task.isCancelled else { return }
-            let box = TrunkTextures.box(model: model, posts: posts, parts: parts, stuck: stuck, tagPicks: tagPicks)
-            boxFaces = await TrunkTextures.settled(box)
-            guard !Task.isCancelled else { return }
+            boxFaces = TrunkTextures.box(model: model, posts: posts, parts: parts, stuck: stuck, tagPicks: tagPicks)
+            // SceneKit が読んで塗った後の絵は、次に開いたときに使い回す
             if let textures, let boxFaces { TrunkTextures.keep(key, faces: textures, box: boxFaces) }
             renderMarker = TrunkTextures.renderMarker(front: frontTook, all: started.duration(to: clock.now))
             TrunkPerfMeter.shared.mark("SpinReady")
@@ -197,18 +195,35 @@ enum TrunkTextures {
         }
     }
 
-    /// 表と縁の絵を主スレッドの外で塗り切る（`TrunkStill.bitmap`。色・画素は同じ）
-    static func settled(_ faces: MedalTextures.Faces) async -> MedalTextures.Faces {
-        guard !PreviewSession.trunkDiag.contains("spinlazy") else { return faces }
-        let out = await TrunkStill.settle([faces.front, faces.back, faces.edge])
-        return MedalTextures.Faces(front: out[0], back: out[1], edge: out[2], edgeRepeat: faces.edgeRepeat, metal: faces.metal)
+    /// 先に作っている途中の合図（同じトランクを 2 度作らない）
+    private static var warming: TrunkSpinKey?
+
+    /// 回す画面の絵を、トランクの画面を開いたときに先に作っておく（2026-11-11 判断・run 997 / 1003）。
+    /// `ImageRenderer` の絵は後で塗る絵で、回す画面を開いて SceneKit が読んだときに主スレッドで塗られ、開く間に 2.7〜5.2 秒
+    /// 止まっていた（積み: `MedalCoinCoordinator.apply` の中の `RB::ImageProvider::wait_phase`）。ここでは主スレッドで組むのは
+    /// 1 枚ずつ（間に 1 コマ返す）、塗るのは主スレッドの外（`TrunkStill.settle`）。色・画素は同じ
+    static func prewarm(_ key: TrunkSpinKey) async {
+        guard !PreviewSession.trunkDiag.contains("spinlazy"), kept(key) == nil, warming != key else { return }
+        warming = key
+        defer { if warming == key { warming = nil } }
+        let faces = Self.make(model: key.model, posts: key.posts, stuck: key.stuck, ownerName: key.ownerName, parts: key.parts,
+                         wrinkles: key.wrinkles, tagPicks: key.tagPicks)
+        do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
+        let sides = Self.box(model: key.model, posts: key.posts, parts: key.parts, stuck: key.stuck, tagPicks: key.tagPicks)
+        let painted = await TrunkStill.settle([faces.front, faces.back, faces.edge, sides.back, sides.left, sides.right, sides.top,
+                                               sides.bottom, sides.handle, sides.clip])
+        guard !Task.isCancelled, warming == key, kept(key) == nil else { return }
+        keep(key, faces: MedalTextures.Faces(front: painted[0], back: painted[1], edge: painted[2], edgeRepeat: faces.edgeRepeat,
+                                             metal: faces.metal),
+             box: SpinBoxFaces(back: painted[3], left: painted[4], right: painted[5], top: painted[6], bottom: painted[7],
+                               handle: painted[8], clip: painted[9]))
+        TrunkPerfMeter.shared.hit("SpinPrewarmed")
     }
 
-    /// 左右・上・底・持ち手の絵を主スレッドの外で塗り切る
-    static func settled(_ faces: SpinBoxFaces) async -> SpinBoxFaces {
-        guard !PreviewSession.trunkDiag.contains("spinlazy") else { return faces }
-        let out = await TrunkStill.settle([faces.back, faces.left, faces.right, faces.top, faces.bottom, faces.handle, faces.clip])
-        return SpinBoxFaces(back: out[0], left: out[1], right: out[2], top: out[3], bottom: out[4], handle: out[5], clip: out[6])
+    /// 使い回す絵を手放す（トランクの画面から戻ったとき）
+    static func forget() {
+        cache = nil
+        warming = nil
     }
 
     /// 描き終えた印（「faces-ready front=12ms all=85ms」）

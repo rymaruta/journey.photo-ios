@@ -224,6 +224,8 @@ struct TrunkLiveCount: ViewModifier {
 /// 回す箱（`MedalCoinView` の SCNView）の 1 コマ: 描く糸で `updateAtTime` から `didRenderScene` まで（`SpinFrame`）と、
 /// コマの刻みの間隔（`Spin`）。数える起動で、箱のときだけ付ける
 final class TrunkSpinFrameMeter: NSObject, SCNSceneRendererDelegate, @unchecked Sendable {
+    /// 箱の節（描いた向きを読む）
+    weak var node: SCNNode?
     private let lock = NSLock()
     private var started: UInt64?
     private var lastTime: TimeInterval?
@@ -244,6 +246,12 @@ final class TrunkSpinFrameMeter: NSObject, SCNSceneRendererDelegate, @unchecked 
         lock.unlock()
         guard let from else { return }
         TrunkPerfMeter.shared.add("SpinFrame", nanos: DispatchTime.now().uptimeNanoseconds &- from)
+        // 描いた向き（書いた向き `SpinApplied` と同じなら、止まり際まで描いている）
+        if let node { TrunkPerfMeter.shared.note("SpinDrawn", Self.text(node.presentation.orientation)) }
+    }
+
+    static func text(_ q: SCNQuaternion) -> String {
+        String(format: "x=%.5f y=%.5f z=%.5f w=%.5f", Double(q.x), Double(q.y), Double(q.z), Double(q.w))
     }
 }
 #endif

@@ -32,6 +32,16 @@ struct TrunkView: View {
                 noteAging()
             }
             .refreshable { await model.load(offline: connectivity.isOffline) }
+            // 回す画面の絵を先に作っておく（2026-11-11 判断・`TrunkTextures.prewarm`）。開いた直後の動きが落ち着いてから
+            .task(id: spinKey) {
+                guard let spinKey else { return }
+                do { try await Task.sleep(for: .milliseconds(800)) } catch { return }
+                await TrunkTextures.prewarm(spinKey)
+            }
+            // 画面から戻ったら手放す（回す画面などを上に出している間は持っておく）
+            .onDisappear {
+                if !showSpin, !showStick, !showPaywall { TrunkTextures.forget() }
+            }
             .fullScreenCover(isPresented: $showSpin) {
                 if let state = model.state {
                     TrunkSpinViewer(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck,
@@ -51,6 +61,13 @@ struct TrunkView: View {
                 toasts.show(TrunkTagText.pickResetNotice, kind: .info)
             }
             // 知らせは `RootView` の全体の知らせで出る（押して進む画面なので重ねない・2026-10-17 の読み直し）
+    }
+
+    /// 回す画面に渡すものと同じ合図（`TrunkSpinViewer` の絵の使い回し）
+    private var spinKey: TrunkSpinKey? {
+        guard let state = model.state else { return nil }
+        return TrunkSpinKey(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck, ownerName: ownerName,
+                            parts: state.equipped, wrinkles: TrunkWrinkles(userId: auth.userId).strengths, tagPicks: state.tagPicks)
     }
 
     @ViewBuilder

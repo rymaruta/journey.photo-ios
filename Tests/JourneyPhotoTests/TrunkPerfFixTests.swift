@@ -23,11 +23,15 @@ final class TrunkPerfFixTests: XCTestCase {
         XCTAssertFalse(models.contains("TrunkFigureFit("), "特別なトランクの一覧に生の絵が戻っている")
         XCTAssertFalse(models.contains("                TrunkFigure(model:"), "型の一覧に生の絵が戻っている")
         XCTAssertTrue(models.contains("LazyVStack(spacing: 20) {\n                    ForEach(TrunkModel.pro)"), "画面の外の札まで作っている")
+        // 絵の置き場は画面ごと（戻ると手放す）
+        XCTAssertEqual(models.components(separatedBy: "@StateObject private var stills = TrunkStillCache()").count - 1, 2,
+                       "画面から戻っても絵を持ち続ける")
         let still = try source("Features/Trunk/TrunkStill.swift")
-        // 画面から外れたら手放す・画面の倍率で描く・塗るのは主スレッドの外
-        XCTAssertTrue(still.contains(".onDisappear {\n            image = nil"), "画面から外れても絵を持ち続ける")
-        XCTAssertTrue(still.contains("let scale = max(1, displayScale)"), "画面の倍率で描いていない")
+        // 画面の倍率で描く・塗るのは主スレッドの外・1 枚ずつ作って間に 1 コマ返す・メモリが足りなければ空にする
+        XCTAssertTrue(still.contains("scale: Double(max(1, displayScale))"), "画面の倍率で描いていない")
         XCTAssertTrue(still.contains("Task.detached(priority: .userInitiated)"), "絵を主スレッドで塗っている")
+        XCTAssertTrue(still.contains("try? await Task.sleep(for: .milliseconds(16))"), "続けて作って送りを止める")
+        XCTAssertTrue(still.contains("UIApplication.didReceiveMemoryWarningNotification"))
     }
 
     /// 1. 余白を付けた絵の画素が整数になる（端数だと置くときに縮んで、生の絵と画素がずれる）。幅 140（型の一覧）と 300（特別なトランク）・1〜3 倍
@@ -56,13 +60,15 @@ final class TrunkPerfFixTests: XCTestCase {
         XCTAssertFalse(medal.contains("view.rendersContinuously = true"))
     }
 
-    /// 3. 回す箱の絵は主スレッドの外で塗り切ってから渡し、2 回目は使い回す
-    func testSpinTexturesAreSettledOffMainAndKept() throws {
+    /// 3. 回す箱の絵は、トランクの画面を開いたときに先に作り（主スレッドの外で塗る）、回す画面では使い回す
+    func testSpinTexturesArePrewarmedAndKept() throws {
+        let trunk = try source("Features/Trunk/TrunkView.swift")
+        XCTAssertTrue(trunk.contains(".task(id: spinKey) {"), "トランクの画面で回す箱の絵を先に作っていない")
+        XCTAssertTrue(trunk.contains("await " + "TrunkTextures" + ".prewarm(spinKey)"))
+        XCTAssertTrue(trunk.contains("if !showSpin, !showStick, !showPaywall { " + "TrunkTextures" + ".forget() }"), "戻っても絵を手放さない")
         let spin = try source("Features/Trunk/TrunkSpinViewer.swift")
-        XCTAssertTrue(spin.contains("textures = await " + "TrunkTextures" + ".settled(made)"), "正面の絵を塗らずに SceneKit に渡している")
-        XCTAssertTrue(spin.contains("boxFaces = await " + "TrunkTextures" + ".settled(box)"), "側面などの絵を塗らずに SceneKit に渡している")
-        XCTAssertTrue(spin.contains("if let kept = " + "TrunkTextures" + ".kept(key) {"), "2 回目に開いても絵を描き直している")
-        XCTAssertTrue(spin.contains("TrunkTextures" + ".keep(key, faces: textures, box: boxFaces)"))
+        XCTAssertTrue(spin.contains("if let kept = " + "TrunkTextures" + ".kept(key) {"), "先に作った絵を使っていない")
+        XCTAssertTrue(spin.contains("let painted = await TrunkStill.settle("), "先に作る絵を主スレッドで塗っている")
         XCTAssertTrue(spin.contains("UIApplication.didReceiveMemoryWarningNotification"), "メモリが足りないときに手放さない")
     }
 

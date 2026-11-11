@@ -43,6 +43,41 @@ enum TrunkStill {
         return done.images
     }
 
+    /// 測る起動のときだけ: 絵の中で色が付いている範囲が、360×300 の枠からどれだけはみ出しているか（枠の単位）。
+    /// 余白（`TrunkStillLayout`）が足りているかを数で見る（2026-11-11）
+    static func reach(_ image: UIImage, k: Double, scale: CGFloat) -> String {
+        #if os(iOS)
+        guard let cg = image.cgImage else { return "-" }
+        let w = cg.width, h = cg.height
+        var data = [UInt8](repeating: 0, count: w * h * 4)
+        let drawn = data.withUnsafeMutableBytes { raw -> Bool in
+            guard let ctx = CGContext(data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard drawn else { return "-" }
+        var minX = w, minY = h, maxX = -1, maxY = -1
+        for y in 0..<h {
+            for x in 0..<w where data[(y * w + x) * 4 + 3] > 0 {
+                minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        guard maxX >= 0 else { return "empty" }
+        let unit = Double(scale) * k
+        // 枠の外へ出た量（正ならはみ出し）と、余白の端までの残り
+        let left = TrunkStillLayout.padSide - Double(minX) / unit
+        let right = Double(maxX + 1) / unit - TrunkStillLayout.padSide - TrunkLooks.canvasWidth
+        let top = TrunkStillLayout.padTop - Double(minY) / unit
+        let bottom = Double(maxY + 1) / unit - TrunkStillLayout.padTop - TrunkLooks.canvasHeight
+        return String(format: "left=%.1f right=%.1f top=%.1f bottom=%.1f touches_edge=%d", left, right, top, bottom,
+                      (minX == 0 || minY == 0 || maxX == w - 1 || maxY == h - 1) ? 1 : 0)
+        #else
+        return "-"
+        #endif
+    }
+
     /// 絵にする（`ImageRenderer`・主スレッド）。`scale` は画面の倍率
     @MainActor
     static func render<V: View>(_ view: V, scale: CGFloat) -> UIImage? {
@@ -67,12 +102,72 @@ private struct StillBox: @unchecked Sendable {
     init(_ images: [UIImage?]) { self.images = images }
 }
 
+/// 1 つの画面（型の一覧・特別なトランクの一覧）の、画素の絵の置き場（2026-11-11 判断）。
+///
+/// - 画面を開いたら、見えている札から順に 1 枚ずつ作る（主スレッドで組むのは 1 枚ずつ・間に 1 コマ返す。塗るのは主スレッドの外）。
+///   run 1003: 札が出るたびに作り直すと、送る間に 1 枚 34〜61ms の組み立てで止まった（100ms 超 45 回）ので、画面の間は持っておく
+/// - 画面から戻ると、この置き場ごと手放す（`@StateObject`）。メモリが足りないと知らされたら空にする
+@MainActor
+final class TrunkStillCache: ObservableObject {
+    /// 作った絵（1 画面に多くて 6 枚なので並びで持つ）
+    @Published private(set) var images: [(key: TrunkStillKey, image: UIImage)] = []
+    private var pending: [(key: TrunkStillKey, figure: TrunkFigure, scale: CGFloat)] = []
+    private var running = false
+    private var observer: NSObjectProtocol?
+
+    init() {
+        observer = NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil,
+                                                          queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.images = [] }
+        }
+    }
+
+    deinit {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+    }
+
+    func image(_ key: TrunkStillKey) -> UIImage? { images.first(where: { $0.key == key })?.image }
+
+    /// 作る順に並べる（もうある・並んでいるものは足さない）
+    func want(_ key: TrunkStillKey, _ figure: TrunkFigure, scale: CGFloat) {
+        guard image(key) == nil, !pending.contains(where: { $0.key == key }) else { return }
+        pending.append((key, figure, scale))
+        guard !running else { return }
+        running = true
+        Task { await drain() }
+    }
+
+    private func drain() async {
+        while !pending.isEmpty {
+            let job = pending.removeFirst()
+            let k = job.figure.width / TrunkLooks.canvasWidth
+            let raw = TrunkPerfMeter.measure("StillRender") {
+                TrunkStill.render(job.figure
+                                    .padding(.top, TrunkStillLayout.padTop * k)
+                                    .padding(.horizontal, TrunkStillLayout.padSide * k)
+                                    .padding(.bottom, TrunkStillLayout.padBottom * k),
+                                  scale: job.scale)
+            }
+            let made = await TrunkStill.settle([raw])[0]
+            if let made, image(job.key) == nil { images.append((job.key, made)) }
+            TrunkPerfMeter.shared.hit("StillReady")
+            if TrunkPerfMeter.shared.enabled, let made {
+                TrunkPerfMeter.shared.note("StillReach", TrunkStill.reach(made, k: k, scale: job.scale))
+            }
+            // 1 コマ返してから次へ（送り・押すのを止めない）
+            try? await Task.sleep(for: .milliseconds(16))
+        }
+        running = false
+    }
+}
+
 /// 型の一覧・特別なトランクの一覧のトランク（2026-11-11 判断）。**生の `TrunkFigure` と同じ絵**を、画面の倍率で 1 度だけ
 /// 画素の絵にして置く。描き上がるまでは生の絵を出す（空白を見せない）。影と吊るすタグが枠の外へ出る分は余白を付けて描く。
 ///
 /// メモリの手当て: 画面の倍率で描く・画面から外れたら（`onDisappear`：送って見えなくなった・ほかの画面へ進んだ・戻った）
 /// 絵を手放す。特別なトランクの一覧は `LazyVStack` で、画面の外の札は作らない
 struct TrunkFigureStill: View {
+    @ObservedObject var cache: TrunkStillCache
     let model: TrunkModel
     let posts: Int
     var stuck: [TrunkLabel] = []
@@ -82,7 +177,10 @@ struct TrunkFigureStill: View {
     var maxWidth: Double?
     var tagsFrom: [TrunkLabel]?
     var tagPicks: [TrunkTagPick] = []
+    /// 同じ画面に並ぶほかの型（見えている札の後に、続けて作っておく）
+    var siblings: [TrunkModel] = []
 
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         if let maxWidth {
@@ -97,11 +195,45 @@ struct TrunkFigureStill: View {
         }
     }
 
+    private func figure(_ model: TrunkModel, width: Double) -> TrunkFigure {
+        TrunkFigure(model: model, posts: posts, stuck: stuck, ownerName: ownerName, width: width, tagsFrom: tagsFrom, tagPicks: tagPicks)
+    }
+
+    private func key(_ model: TrunkModel, width: Double) -> TrunkStillKey {
+        TrunkStillKey(model: model, posts: posts, stuck: stuck, ownerName: ownerName, width: width, tagsFrom: tagsFrom,
+                      tagPicks: tagPicks, scale: Double(max(1, displayScale)))
+    }
+
+    @ViewBuilder
     private func still(width: Double) -> some View {
-        TrunkFigureStillBody(figure: TrunkFigure(model: model, posts: posts, stuck: stuck, ownerName: ownerName, width: width,
-                                                 tagsFrom: tagsFrom, tagPicks: tagPicks),
-                             key: TrunkStillKey(model: model, posts: posts, stuck: stuck, ownerName: ownerName, width: width,
-                                                tagsFrom: tagsFrom, tagPicks: tagPicks))
+        let live = figure(model, width: width)
+        let mine = key(model, width: width)
+        let k = width / TrunkLooks.canvasWidth
+        Group {
+            // 測定専用（`-JPPreviewTrunkDiag live`・Debug のみ）: 前の作り（生の絵）のまま。絵の見比べの「前」に使う
+            if let image = cache.image(mine), !PreviewSession.trunkDiag.contains("live") {
+                Image(uiImage: image)
+                    .resizable()
+                    .frame(width: (TrunkLooks.canvasWidth + 2 * TrunkStillLayout.padSide) * k,
+                           height: (TrunkLooks.canvasHeight + TrunkStillLayout.padTop + TrunkStillLayout.padBottom) * k)
+                    .offset(x: -TrunkStillLayout.padSide * k, y: -TrunkStillLayout.padTop * k)
+                    .frame(width: width, height: TrunkLooks.canvasHeight * k, alignment: .topLeading)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityAddTraits(.isImage)
+                    .modifier(TrunkLiveCount(name: "Still"))
+            } else {
+                // 描き上がるまでは生の絵（空白を見せない）
+                live
+            }
+        }
+        .task(id: mine) {
+            guard !PreviewSession.trunkDiag.contains("live") else { return }
+            let scale = CGFloat(mine.scale)
+            cache.want(mine, live, scale: scale)
+            for other in siblings where other != model {
+                cache.want(key(other, width: width), figure(other, width: width), scale: scale)
+            }
+        }
     }
 }
 
@@ -114,54 +246,6 @@ struct TrunkStillKey: Equatable {
     let width: Double
     let tagsFrom: [TrunkLabel]?
     let tagPicks: [TrunkTagPick]
-}
-
-private struct TrunkFigureStillBody: View {
-    let figure: TrunkFigure
-    let key: TrunkStillKey
-
-    @Environment(\.displayScale) private var displayScale
-    @State private var image: UIImage?
-    @State private var madeFor: TrunkStillKey?
-
-    var body: some View {
-        let k = figure.width / TrunkLooks.canvasWidth
-        Group {
-            // 測定専用（`-JPPreviewTrunkDiag live`・Debug のみ）: 前の作り（生の絵）のまま。絵の見比べの「前」に使う
-            if let image, madeFor == key, !PreviewSession.trunkDiag.contains("live") {
-                Image(uiImage: image)
-                    .resizable()
-                    .frame(width: (TrunkLooks.canvasWidth + 2 * TrunkStillLayout.padSide) * k,
-                           height: (TrunkLooks.canvasHeight + TrunkStillLayout.padTop + TrunkStillLayout.padBottom) * k)
-                    .offset(x: -TrunkStillLayout.padSide * k, y: -TrunkStillLayout.padTop * k)
-                    .frame(width: figure.width, height: TrunkLooks.canvasHeight * k, alignment: .topLeading)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityAddTraits(.isImage)
-            } else {
-                figure
-            }
-        }
-        .task(id: key) {
-            guard !PreviewSession.trunkDiag.contains("live"), image == nil || madeFor != key else { return }
-            let scale = max(1, displayScale)
-            let raw = TrunkPerfMeter.measure("StillRender") {
-                TrunkStill.render(figure
-                                    .padding(.top, TrunkStillLayout.padTop * k)
-                                    .padding(.horizontal, TrunkStillLayout.padSide * k)
-                                    .padding(.bottom, TrunkStillLayout.padBottom * k),
-                                  scale: scale)
-            }
-            let made = await TrunkStill.settle([raw])[0]
-            guard !Task.isCancelled else { return }
-            image = made
-            madeFor = key
-            TrunkPerfMeter.shared.hit("StillReady")
-        }
-        // 画面から外れたら手放す（送って見えなくなった・進んだ・戻った）。次に出たときに描き直す
-        .onDisappear {
-            image = nil
-            madeFor = nil
-        }
-        .modifier(TrunkLiveCount(name: "Still"))
-    }
+    /// 画面の倍率
+    let scale: Double
 }

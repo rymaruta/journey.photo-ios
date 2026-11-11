@@ -262,6 +262,7 @@ private struct MedalSceneView: UIViewRepresentable {
         // 旅のトランクの重さを測る起動（`-JPPreviewTrunkPerf YES`・Debug のみ）のときだけ、箱の 1 コマを数える（測るだけ・2026-11-11）
         if TrunkPerfMeter.shared.enabled, case .box = shape {
             let meter = TrunkSpinFrameMeter()
+            meter.node = context.coordinator.spinNode
             context.coordinator.frameMeter = meter
             view.delegate = meter
             // 測定専用の差し替え（`-JPPreviewTrunkDiag spinaa0|spinaa2`・Debug のみ・2026-11-11）。ふだんは 4x
@@ -334,6 +335,8 @@ final class MedalCoinCoordinator: NSObject {
     private(set) var hasBoxFaces = false
     /// 測る起動のときだけ持つ、SCNView の 1 コマの見張り（SCNView の delegate は弱く持たれる・`TrunkSpinFrameMeter`）
     var frameMeter: AnyObject?
+    /// 回す箱の節（測る起動のときだけ、描いた向きを読む・`TrunkSpinFrameMeter`）
+    var spinNode: SCNNode { coin }
     /// 最後に受けた向きの合図
     var lastAimId: Int?
     /// 向きのボタンで向かう角度（横・縦）
@@ -957,6 +960,8 @@ final class MedalCoinCoordinator: NSObject {
         // `eulerAngles` のままでは横に 90° を越えると傾きが裏返り、「上と背面」で底が見えていた
         let q = SpinMotion.boxOrientation(yaw: Double(yaw), pitch: Double(pitch))
         coin.orientation = SCNQuaternion(Float(q.x), Float(q.y), Float(q.z), Float(q.w))
+        // 測る起動のときだけ: 書いた向き（描いた向き `SpinDrawn` と比べ、止まり際まで描いたかを見る・2026-11-11）
+        if TrunkPerfMeter.shared.enabled { TrunkPerfMeter.shared.note("SpinApplied", TrunkSpinFrameMeter.text(coin.orientation)) }
     }
 }
 

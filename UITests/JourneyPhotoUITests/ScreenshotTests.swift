@@ -4323,6 +4323,12 @@ final class ScreenshotTests: XCTestCase {
         guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
         var lines: [String] = []
         trunkPhase(app, "トランクの画面・止まっている", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
+        if diag == nil {
+            // トランクの画面で、回す画面の絵を先に作り終える（`TrunkTextures.prewarm`）
+            trunkPhase(app, "回す画面の絵を先に作る", lines: &lines) {
+                XCTAssertTrue(waitTrunkCount(app, "SpinPrewarmed", atLeast: 1, timeout: 20), "回す画面の絵を先に作り終えない")
+            }
+        }
         let spin = app.buttons["trunk.spin"].firstMatch
         let box = app.descendants(matching: .any)["trunk.spin.box"].firstMatch
         let close = app.buttons["trunk.spin.close"].firstMatch
@@ -4342,8 +4348,8 @@ final class ScreenshotTests: XCTestCase {
                 }
             }
             lines.append(String(format: "回す画面を開く%d | %@ test_wall_to_ready_s=%.2f（XCUITest の待ちを含む）", round, marker, wall))
-            if diag == nil, round == 2 {
-                XCTAssertGreaterThanOrEqual(opened["SpinReuse.n"] ?? 0, 1, "2 回目に開いても絵を使い回していない")
+            if diag == nil {
+                XCTAssertGreaterThanOrEqual(opened["SpinReuse.n"] ?? 0, 1, "先に作った絵を使っていない（\(round) 回目）")
             }
             let still = trunkPhase(app, "回す画面・止まっている\(round)", lines: &lines) { Thread.sleep(forTimeInterval: 4) }
             if diag == nil {
@@ -4351,24 +4357,30 @@ final class ScreenshotTests: XCTestCase {
                 XCTAssertLessThanOrEqual(still["SpinFrame.n"] ?? 0, 12, "止まっている間も箱を描き続けている（\(round) 回目）")
             }
             trunkPhase(app, "回す画面・指で払う\(round)", lines: &lines) {
-                for i in 0..<6 {
-                    let left = box.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5))
-                    let right = box.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
-                    let (from, to) = i % 2 == 0 ? (right, left) : (left, right)
-                    from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .default, thenHoldForDuration: 0)
-                }
                 for i in 0..<2 {
                     let top = box.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15))
                     let bottom = box.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85))
                     let (from, to) = i % 2 == 0 ? (top, bottom) : (bottom, top)
                     from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .default, thenHoldForDuration: 0)
                 }
+                // 最後は横に払って離す（惰性で回る）
+                for i in 0..<6 {
+                    let left = box.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5))
+                    let right = box.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
+                    let (from, to) = i % 2 == 0 ? (right, left) : (left, right)
+                    from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .fast, thenHoldForDuration: 0)
+                }
             }
             // 惰性で回り終える間（止まり際まで描く）と、止まりきった後
-            trunkPhase(app, "回す画面・離した後の惰性\(round)", lines: &lines) { Thread.sleep(forTimeInterval: 6) }
+            let coasting = trunkPhase(app, "回す画面・離した後の惰性\(round)", lines: &lines) { Thread.sleep(forTimeInterval: 6) }
             let settled = trunkPhase(app, "回す画面・止まりきった後\(round)", lines: &lines) { Thread.sleep(forTimeInterval: 4) }
+            let perf = trunkPerf(app)
+            let applied = perf["SpinApplied"]?["_raw"] ?? "-", drawn = perf["SpinDrawn"]?["_raw"] ?? "-"
+            lines.append("回す画面・止まりきった後\(round) | 書いた向き \(applied) | 描いた向き \(drawn)")
             if diag == nil {
+                XCTAssertGreaterThan(coasting["SpinFrame.n"] ?? 0, 0, "離した後の惰性を描いていない（\(round) 回目）")
                 XCTAssertLessThanOrEqual(settled["SpinFrame.n"] ?? 0, 12, "止まりきった後も箱を描き続けている（\(round) 回目）")
+                XCTAssertEqual(applied, drawn, "止まり際の向きを描いていない（\(round) 回目）")
             }
             trunkPhase(app, "回す画面・向きのボタン\(round)", lines: &lines) {
                 for id in ["side", "topBack", "bottom", "front"] {
@@ -4534,7 +4546,7 @@ final class ScreenshotTests: XCTestCase {
         let app = launchTrunk(Self.trunkPerfArgs + (diag.map { ["-JPPreviewTrunkDiag", $0] } ?? []))
         defer { app.terminate() }
         guard openTrunk(app), openTrunkRow(app, "trunk.models") else { XCTFail("型の画面を開けない"); return nil }
-        let free = app.buttons["trunk.models.card"].firstMatch
+        let free = app.descendants(matching: .any)["trunk.models.card"].firstMatch
         guard free.waitForExistence(timeout: 10) else { XCTFail("型の札が無い"); return nil }
         if diag == nil { XCTAssertTrue(waitTrunkCount(app, "StillReady", atLeast: TrunkModelCount.free), "型の札の絵ができない") }
         Thread.sleep(forTimeInterval: 2)
@@ -4565,6 +4577,7 @@ final class ScreenshotTests: XCTestCase {
         let app = launchTrunk(Self.trunkPerfArgs + (diag.map { ["-JPPreviewTrunkDiag", $0] } ?? []))
         defer { app.terminate() }
         guard openTrunk(app) else { XCTFail("旅のトランクを開けない"); return [] }
+        if diag == nil { XCTAssertTrue(waitTrunkCount(app, "SpinPrewarmed", atLeast: 1, timeout: 20), "回す画面の絵を先に作り終えない") }
         app.buttons["trunk.spin"].firstMatch.tap()
         let box = app.descendants(matching: .any)["trunk.spin.box"].firstMatch
         let ready = NSPredicate(format: "value BEGINSWITH %@", "faces-ready")
@@ -4587,10 +4600,17 @@ final class ScreenshotTests: XCTestCase {
 
     /// **回す箱**: 前の作り（描き続ける・後で塗る絵）と今の作り（動く間だけ描く・塗り切った絵）で、止まった絵が同じか
     func testTrunkSpinMatchesBefore() {
-        executionTimeAllowance = 400
+        executionTimeAllowance = 500
         let before = shootSpinFaces(diag: "spincont,spinlazy")
+        // 同じ作りを 2 回起動した差（撮り方の揺れ）。今と前の差がこれと同じ程度なら、直しによる差ではない
+        let again = shootSpinFaces(diag: "spincont,spinlazy")
         let now = shootSpinFaces(diag: nil)
-        guard before.count == now.count, !now.isEmpty else { return XCTFail("撮れた数が前と今で違う") }
+        guard before.count == now.count, again.count == now.count, !now.isEmpty else { return XCTFail("撮れた数が前と今で違う") }
+        for (b, a) in zip(before, again) {
+            let line = "TRUNKPIXEL: \(perfTestName) 揺れ（前と前）・\(a.0) | \(pixelDiff(b.1, a.1).line)"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+        }
         for (b, n) in zip(before, now) {
             notePixel("回す箱・\(n.0)", pixelDiff(b.1, n.1), b.1, n.1)
         }
