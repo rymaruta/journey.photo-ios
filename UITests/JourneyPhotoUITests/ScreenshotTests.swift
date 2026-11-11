@@ -2690,54 +2690,42 @@ final class ScreenshotTests: XCTestCase {
     /// 2 つの作り（行全体・運ぶ印）× 先のスワイプ（なし・あり）で、**止めずに離す**操作を1回ずつ流し、
     /// 持ち上がった・落とす先に入った・落とした・断った の数と、千里浜の位置を残す。合否は付けない（名指しした回だけ）
     func testMeasuresTripPlanDrag() {
-        // 起動を 12 回（2 つの作り × スワイプの有無 × 3 回）。1 回 70 秒ほど（run 1016 は 4 回で 5 分の上限に当たった）
-        executionTimeAllowance = 1200
-        for handle in [false, true] {
-            for swipe in [false, true] {
-              for trial in 1...3 {
-                var args = ["-JPTripPlanFixture", "YES"]
-                if handle { args += ["-JPTripPlanDragHandle", "YES"] }
-                let app = launchTrunk(args)
-                defer { app.terminate() }
-                let name = "variant=\(handle ? "handle" : "row") swipe=\(swipe ? "yes" : "no") trial=\(trial)"
-                guard openFixturePlan(app) else { _ = fixtureSends(app, "\(name) open-failed"); continue }
-                Thread.sleep(forTimeInterval: 3)
-                let handles = app.descendants(matching: .any).matching(identifier: "tripPlan.dragHandle")
-                let source = handles.element(boundBy: 2)
-                let target = app.buttons["「越前海岸 呼鳥門」の操作"].firstMatch
-                let position = app.buttons["「千里浜なぎさドライブウェイ」の操作"].firstMatch
-                var pushes = 0
-                while !(source.isHittable && target.isHittable), pushes < 4 {
-                    app.swipeUp()
-                    Thread.sleep(forTimeInterval: 1)
-                    pushes += 1
-                }
-                if swipe {
-                    app.swipeUp(); Thread.sleep(forTimeInterval: 1)
-                    app.swipeDown(); Thread.sleep(forTimeInterval: 1)
-                    var more = 0
-                    while !(source.isHittable && target.isHittable), more < 4 {
-                        app.swipeUp()
-                        Thread.sleep(forTimeInterval: 1)
-                        more += 1
-                    }
-                }
-                let counter = app.descendants(matching: .any)["tripPlan.fixtureDrag"].firstMatch
-                let before = (counter.value as? String) ?? "nil"
-                let posBefore = (position.value as? String) ?? "nil"
+        // (a)「持ち上がらない」を分ける（札 #521）。run 1016・1020 の (a) は、2 回ともテストの最初の起動だった。
+        // 1. 起動の番号（launch=0 はテストの最初の起動・試しの 1 回）と、同じ起動の中の 1 回目・2 回目（drag=1/2）で比べる
+        // 2. 押さえる時間（hold=0.8/1.2/2.0 秒）で比べる。各時間 5 起動 × 2 回。止めて離す形は使わない
+        // 1 起動 75 秒ほど × 16 起動
+        executionTimeAllowance = 1800
+        var plan: [(launch: Int, hold: Double)] = [(0, 1.2)]
+        for _ in 0..<5 { for hold in [0.8, 1.2, 2.0] { plan.append((plan.count, hold)) } }
+        for (launch, hold) in plan {
+            let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+            defer { app.terminate() }
+            let name = "launch=\(launch) hold=\(hold)"
+            guard openFixturePlan(app) else { _ = fixtureSends(app, "\(name) open-failed"); continue }
+            Thread.sleep(forTimeInterval: 3)
+            let handles = app.descendants(matching: .any).matching(identifier: "tripPlan.dragHandle")
+            let source = handles.element(boundBy: 2)
+            let target = app.buttons["「越前海岸 呼鳥門」の操作"].firstMatch
+            var pushes = 0
+            while !(source.isHittable && target.isHittable), pushes < 4 {
+                app.swipeUp()
+                Thread.sleep(forTimeInterval: 1)
+                pushes += 1
+            }
+            let counter = app.descendants(matching: .any)["tripPlan.fixtureDrag"].firstMatch
+            for drag in 1...2 {
                 guard source.isHittable, target.isHittable else {
-                    let line = "TRIPDRAG \(name) not-hittable handles=\(handles.count) pushes=\(pushes)"
+                    let line = "TRIPDRAG \(name) drag=\(drag) not-hittable handles=\(handles.count) pushes=\(pushes)"
                     print(line); XCTContext.runActivity(named: line) { _ in }
-                    continue
+                    break
                 }
-                source.press(forDuration: 1.2, thenDragTo: target)
+                let before = (counter.value as? String) ?? "nil"
+                source.press(forDuration: hold, thenDragTo: target)
                 Thread.sleep(forTimeInterval: 2)
                 let after = (counter.value as? String) ?? "nil"
-                let posAfter = (position.value as? String) ?? "nil"
-                let line = "TRIPDRAG \(name) pushes=\(pushes) before[\(before)] after[\(after)] pos[\(posBefore) -> \(posAfter)]"
+                let line = "TRIPDRAG \(name) drag=\(drag) pushes=\(pushes) before[\(before)] after[\(after)]"
                 print(line)
                 XCTContext.runActivity(named: line) { _ in }
-              }
             }
         }
     }
