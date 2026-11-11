@@ -537,9 +537,43 @@ enum DMStoryCardState: Equatable {
 }
 
 extension DMText {
-    /// 受信箱の行の抜粋。最後の1通が自分のものなら頭に「あなた: 」（**欄があるときだけ**・画面案）
+    /// 受信箱の行の抜粋。最後の1通が自分のものなら頭に「あなた: 」（**欄があるときだけ**・画面案）。
+    /// 写真だけの通の抜粋（サーバーが古いアプリ向けに日本語で埋める「写真を送りました」）は端末の言葉に直す
     static func excerpt(_ thread: DMThread, language: String = Locale.preferredAppLanguage) -> String {
-        thread.lastMine == true ? L("あなた: ", "You: ", language: language) + thread.excerpt : thread.excerpt
+        let body = thread.excerpt == serverPhotoText ? photoOnlyText(mine: thread.lastMine == true, language: language)
+                                                     : thread.excerpt
+        return thread.lastMine == true ? L("あなた: ", "You: ", language: language) + body : body
+    }
+
+    /// サーバーが写真だけの通の本文・抜粋に入れる文（`dm.ts` の `DM_PHOTO_TEXT`・古いアプリ向け・日本語だけ）。
+    /// **受信箱の行には `photoOnly` の欄が無い**ので、抜粋がこの文と同じときだけ写真だけの通と読む（2026-11-11 判断）
+    static let serverPhotoText = "写真を送りました"
+
+    /// 写真だけの通を端末の言葉で言う（受信箱の抜粋・中身の分からない写真の札）
+    static func photoOnlyText(mine: Bool, language: String = Locale.preferredAppLanguage) -> String {
+        mine ? L("写真を送りました", "Sent a photo", language: language)
+             : L("写真が届きました", "Sent you a photo", language: language)
+    }
+}
+
+/// 送った写真の札の見せ方（2026-11-11・札 #541・`DMStoryCardState` と同じ考え）
+enum DMPhotoCardState: Equatable {
+    /// 写真の通ではない
+    case none
+    /// 写真の通だが札の中身が分からない（古い通・新しい方から20枚を越えた通・送った直後の応答）。「表示できません」と言い切らない
+    case unknown
+    /// 見られる（押すと写真の詳細）
+    case live(DMPhotoQuote)
+    /// 見られない（消した・非公開・範囲の外・持ち主にブロックされた・**見る人が持ち主をブロックした**）
+    case gone
+
+    static func of(_ message: DMMessage, blocked: Set<String>) -> DMPhotoCardState {
+        guard message.hasPhoto else { return .none }
+        guard let quote = message.photo else { return .unknown }
+        // 見る人がブロックした人の写真は出さない（サーバーは見る人の側のブロックを見ない・ほかの画面と同じく端末でふるう）
+        if let owner = quote.ownerId, blocked.contains(owner) { return .gone }
+        if quote.isLive { return .live(quote) }
+        return quote.state == "gone" || quote.state == "live" ? .gone : .unknown
     }
 }
 
@@ -720,8 +754,7 @@ enum DMLinks {
         let ns = text as NSString
         var out: [Link] = []
         var taken: [NSRange] = []
-        for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
+        for regex in regexes {
             for m in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
                 var r = m.range
                 // 末尾の句読点・閉じ括弧を外す
@@ -738,9 +771,15 @@ enum DMLinks {
                 let raw = ns.substring(with: r)
                 let lower = raw.lowercased()
                 let full = lower.hasPrefix("http://") || lower.hasPrefix("https://") ? raw : "https://" + raw
-                guard let url = URL(string: full), let scheme = url.scheme?.lowercased(),
-                      scheme == "http" || scheme == "https", url.host?.isEmpty == false,
-                      let range = Range(r, in: text) else { continue }
+                guard let url = URL(string: full) else { continue }
+                // 🔴 **名前・合言葉の付いた URL はリンクにしない**（`https://apple.com@evil.com/login` は evil.com へ行く。
+                // 見えている字と行き先が違う・2026-11-11 確かめ役の指摘）。その範囲は取ったことにして、中の
+                // `apple.com` だけを別のリンクにもしない
+                if url.user != nil || url.password != nil {
+                    taken.append(r)
+                    continue
+                }
+                guard isOpenable(url), let range = Range(r, in: text) else { continue }
                 taken.append(r)
                 out.append(Link(range: range, url: url))
             }
@@ -748,14 +787,19 @@ enum DMLinks {
         return out.sorted { $0.range.lowerBound < $1.range.lowerBound }
     }
 
-    /// 開けるリンクか（http・https・ホストあり）
+    /// 開けるリンクか（http・https・ホストあり・名前や合言葉が付いていない）
     static func isOpenable(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased() else { return false }
         return (scheme == "http" || scheme == "https") && url.host?.isEmpty == false
+            && url.user == nil && url.password == nil
     }
 
     /// URL に使える ASCII の字だけ（日本語が続いてもリンクに含めない・閉じ括弧は外す）
     private static let body = #"[A-Za-z0-9\-._~:/?#\[\]@!$&'*+,;=%]"#
+    /// 見つける式（1回だけ作る・2026-11-11 確かめ役の指摘）
+    private static let regexes: [NSRegularExpression] = patterns.compactMap {
+        try? NSRegularExpression(pattern: $0, options: [.caseInsensitive])
+    }
     private static let patterns: [String] = [
         #"https?://"# + body + "+",
         #"www\."# + body + "+",

@@ -498,61 +498,75 @@ struct DMConversationView: View {
     // MARK: - 送った写真（2026-11-11・札 #541）
 
     /// 送った写真の札。見られる写真は幅 220・4:5・角 14（縁も真鍮も載せない・写真が主役）で、下の黒地に題と撮影地。
-    /// 押すと写真の詳細。見られない（消した・非公開・範囲の外・ブロック）は破線の枠と「写真は表示できません」
+    /// 押すと写真の詳細。見られない（消した・非公開・範囲の外・ブロック）は破線の枠と「写真は表示できません」。
+    /// 中身が分からない（古い通・送った直後）は言い切らず「写真を送りました／届きました」（`DMPhotoCardState`）
     @ViewBuilder
     private func photoCard(for message: DMMessage) -> some View {
         let mine = message.mine
         VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
-            if let quote = message.photo, quote.isLive, let url = quote.imageURL {
-                Button { Task { await openPhoto(quote) } } label: {
-                    RemoteImage(url: url)
-                        .frame(width: DMLook.photoWidth, height: DMLook.photoHeight)
-                        .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
-                        .contentShape(RoundedRectangle(cornerRadius: JPRadius.m))
-                }
-                .buttonStyle(.plain)
-                .disabled(openingPhoto)
-                .accessibilityLabel(DMText.photoSpoken(title: quote.title, location: quote.location, mine: mine))
-                .accessibilityHint(L("写真を開きます", "Opens the photo"))
-                .accessibilityIdentifier("dm.photoCard.live")
-                if quote.title != nil || quote.location != nil {
-                    VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
-                        if let title = quote.title {
-                            Text(title)
-                                .font(JPFont.footnote.weight(.semibold))
-                                .foregroundStyle(WebTheme.text)
-                                .lineLimit(2)
-                        }
-                        if let location = quote.location {
-                            Text(L("撮影地 \(location)", "Taken in \(location)"))
-                                .font(JPFont.caption)
-                                .foregroundStyle(WebTheme.text3)
-                                .lineLimit(1)
-                        }
-                    }
-                    .multilineTextAlignment(mine ? .trailing : .leading)
-                    .frame(maxWidth: DMLook.photoWidth, alignment: mine ? .trailing : .leading)
-                    .accessibilityHidden(true)
-                }
-            } else {
-                RoundedRectangle(cornerRadius: JPRadius.m)
-                    .strokeBorder(WebTheme.outline, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-                    .frame(width: DMLook.photoWidth, height: 88)
-                    .overlay(
-                        Label(L("写真は表示できません", "This photo isn't available"), systemImage: "photo")
-                            .font(JPFont.caption)
-                            .foregroundStyle(WebTheme.text3)
-                    )
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("dm.photoCard.gone")
+            switch DMPhotoCardState.of(message, blocked: hidden.blockedUserIds) {
+            case .live(let quote):
+                livePhoto(quote, mine: mine)
+            case .gone:
+                photoPlaceholder(L("写真は表示できません", "This photo isn't available"), identifier: "dm.photoCard.gone")
+            case .unknown, .none:
+                photoPlaceholder(DMText.photoOnlyText(mine: mine), identifier: "dm.photoCard.unknown")
             }
         }
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
         .padding(.top, JPSpace.xxs)
     }
 
-    /// 写真の札を押した: 公開の一覧（`fetchPhotos`・控えを使う）から探し、無ければ自分の写真から（自分が送った自分の写真）。
-    /// **単体で写真を読む口は無い**ので、どちらにも無い（フォロワー限定など）は開けないと言う
+    @ViewBuilder
+    private func livePhoto(_ quote: DMPhotoQuote, mine: Bool) -> some View {
+        Button { Task { await openPhoto(quote) } } label: {
+            RemoteImage(url: quote.imageURL)
+                .frame(width: DMLook.photoWidth, height: DMLook.photoHeight)
+                .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
+                .contentShape(RoundedRectangle(cornerRadius: JPRadius.m))
+        }
+        .buttonStyle(.plain)
+        .disabled(openingPhoto)
+        .accessibilityLabel(DMText.photoSpoken(title: quote.title, location: quote.location, mine: mine))
+        .accessibilityHint(L("写真を開きます", "Opens the photo"))
+        .accessibilityIdentifier("dm.photoCard.live")
+        if quote.title != nil || quote.location != nil {
+            VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
+                if let title = quote.title {
+                    Text(title)
+                        .font(JPFont.footnote.weight(.semibold))
+                        .foregroundStyle(WebTheme.text)
+                        .lineLimit(2)
+                }
+                if let location = quote.location {
+                    Text(L("撮影地 \(location)", "Taken in \(location)"))
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
+                        .lineLimit(1)
+                }
+            }
+            .multilineTextAlignment(mine ? .trailing : .leading)
+            .frame(maxWidth: DMLook.photoWidth, alignment: mine ? .trailing : .leading)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// 写真の代わりの破線の枠（見られない・分からない）
+    private func photoPlaceholder(_ text: String, identifier: String) -> some View {
+        RoundedRectangle(cornerRadius: JPRadius.m)
+            .strokeBorder(WebTheme.outline, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+            .frame(width: DMLook.photoWidth, height: 88)
+            .overlay(
+                Label(text, systemImage: "photo")
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+            )
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier(identifier)
+    }
+
+    /// 写真の札を押した: 公開の一覧（`fetchPhotos`・控えを使う）→ 公開範囲を絞った写真のうち自分に見えるぶん（`/feed/restricted`）→
+    /// 自分の写真（自分が送った下書き以外の自分の写真）の順に探す。**単体で写真を読む口は無い**ので、どれにも無ければ開けないと言う
     private func openPhoto(_ quote: DMPhotoQuote) async {
         guard !openingPhoto else { return }
         openingPhoto = true
@@ -560,6 +574,13 @@ struct DMConversationView: View {
         let feed = (try? await environment.gallery.fetchPhotos()) ?? []
         if let found = feed.first(where: { $0.id == quote.id }) {
             openedPhotoIsPublic = true
+            openedPhoto = found
+            return
+        }
+        // 公開範囲を絞った写真（フォロワー・親しい友達）は公開の一覧に無い。自分に見えるぶんを読む（2026-11-11 確かめ役の指摘）
+        let restricted = (try? await environment.photos.restrictedFeed()) ?? []
+        if let found = restricted.first(where: { $0.id == quote.id }) {
+            openedPhotoIsPublic = false
             openedPhoto = found
             return
         }

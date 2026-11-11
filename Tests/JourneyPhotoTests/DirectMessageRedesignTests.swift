@@ -77,6 +77,25 @@ final class DirectMessageRedesignTests: XCTestCase {
         XCTAssertTrue(DMLinks.isOpenable(URL(string: "https://a.jp")!))
     }
 
+    /// 名前・合言葉の付いた URL（見えている字と行き先が違う）はリンクにしない。中の字だけ別のリンクにもしない
+    func testDoesNotLinkURLsWithUserInfo() throws {
+        XCTAssertEqual(links("ログインはここ https://apple.com@evil.com/login です"), [])
+        XCTAssertEqual(links("www.apple.com@evil.com"), [])
+        XCTAssertEqual(links("http://user:pass@example.com/x"), [])
+        XCTAssertFalse(DMLinks.isOpenable(try XCTUnwrap(URL(string: "https://apple.com@evil.com/login"))))
+        // 前後のふつうのリンクは残る
+        XCTAssertEqual(links("a.jp と https://apple.com@evil.com と https://b.jp"), ["a.jp", "https://b.jp"])
+    }
+
+    /// 見つける式は1回だけ作る（吹き出しを描くたびに作らない）
+    func testLinkPatternsAreBuiltOnce() throws {
+        let text = try source("Core/Text/DirectMessages.swift")
+        let finder = text.components(separatedBy: "enum DMLinks {").dropFirst().first ?? ""
+        let find = finder.components(separatedBy: "static func isOpenable").first ?? ""
+        XCTAssertFalse(find.contains("try? NSRegularExpression"), "find のたびに式を作っている")
+        XCTAssertTrue(finder.contains("private static let regexes: [NSRegularExpression]"))
+    }
+
     @MainActor
     func testBubbleTextKeepsCharactersAndLinksOnlyTheURL() async {
         let text = "地図はここ https://example.com/x です"
@@ -157,6 +176,35 @@ final class DirectMessageRedesignTests: XCTestCase {
             XCTAssertEqual(error as? DMPhotoSend.Failure, .invalid)
         }
         XCTAssertEqual(StubProtocol.requestCount, 0)
+    }
+
+    /// 写真の札の見せ方: 分からない（札が無い）は言い切らない・見る人がブロックした持ち主の写真は出さない
+    func testPhotoCardStates() {
+        func m(_ photo: DMPhotoQuote?, has: Bool = true) -> DMMessage {
+            DMMessage(id: "a", from: "x", mine: false, text: "写真を送りました", t: "2026-11-11T00:00:00.000Z",
+                      photoId: has ? "p1" : nil, photoOnly: has, photo: photo)
+        }
+        let live = DMPhotoQuote(id: "p1", state: "live", src: "https://cdn/p.jpg", ownerId: "owner")
+        XCTAssertEqual(DMPhotoCardState.of(m(nil, has: false), blocked: []), .none)
+        XCTAssertEqual(DMPhotoCardState.of(m(nil), blocked: []), .unknown, "札の無い写真を「表示できません」と言い切っている")
+        XCTAssertEqual(DMPhotoCardState.of(m(live), blocked: []), .live(live))
+        XCTAssertEqual(DMPhotoCardState.of(m(live), blocked: ["owner"]), .gone, "ブロックした人の写真を出している")
+        XCTAssertEqual(DMPhotoCardState.of(m(DMPhotoQuote(id: "p1", state: "gone")), blocked: []), .gone)
+        XCTAssertEqual(DMPhotoCardState.of(m(DMPhotoQuote(id: "p1", state: "live", src: "")), blocked: []), .gone)
+        XCTAssertEqual(DMPhotoCardState.of(m(DMPhotoQuote(id: "p1", state: "later")), blocked: []), .unknown)
+    }
+
+    /// 写真だけの通の抜粋（サーバーは日本語だけ）を端末の言葉で出す
+    func testPhotoOnlyExcerptFollowsTheLanguage() {
+        func row(_ excerpt: String, mine: Bool?) -> DMThread {
+            DMThread(id: "c", peerId: "p", name: "A", t: "2026-11-11T00:00:00.000Z", excerpt: excerpt, unread: 0,
+                     state: .inbox, lastMine: mine)
+        }
+        XCTAssertEqual(DMText.excerpt(row(DMText.serverPhotoText, mine: false), language: "en"), "Sent you a photo")
+        XCTAssertEqual(DMText.excerpt(row(DMText.serverPhotoText, mine: true), language: "en"), "You: Sent a photo")
+        XCTAssertEqual(DMText.excerpt(row(DMText.serverPhotoText, mine: true), language: "ja"), "あなた: 写真を送りました")
+        XCTAssertEqual(DMText.excerpt(row("こんにちは", mine: false), language: "en"), "こんにちは")
+        XCTAssertEqual(DMText.photoOnlyText(mine: false, language: "ja"), "写真が届きました")
     }
 
     func testPhotoRefusalWords() {
@@ -288,7 +336,11 @@ final class DirectMessageRedesignTests: XCTestCase {
         XCTAssertTrue(view.contains("piece.link = link.url"))
         XCTAssertTrue(view.contains("PhotoDetailView(photo: openedPhoto, fromPublicFeed: openedPhotoIsPublic)"))
         XCTAssertTrue(view.contains(#".accessibilityIdentifier("dm.photoCard.live")"#))
-        XCTAssertTrue(view.contains(#".accessibilityIdentifier("dm.photoCard.gone")"#))
+        XCTAssertTrue(view.contains("DMPhotoCardState.of(message, blocked: hidden.blockedUserIds)"), "ブロックした持ち主の写真を出す")
+        XCTAssertTrue(view.contains(#"identifier: "dm.photoCard.unknown""#))
+        // 写真を開く: 公開の一覧 → 絞った写真のうち自分に見えるぶん → 自分の写真
+        XCTAssertTrue(view.contains("environment.photos.restrictedFeed()"), "フォロワー限定の写真を開けない")
+        XCTAssertTrue(view.contains(#"identifier: "dm.photoCard.gone""#))
         // 承認前の会話では今までどおり URL を断る（サーバーの requestUrl・欄に戻す）
         XCTAssertTrue(DMText.returnsToField(code: "requestUrl"))
     }
