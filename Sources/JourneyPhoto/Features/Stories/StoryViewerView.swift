@@ -2514,11 +2514,20 @@ struct StoryViewerView: View {
                 // 404（写真はもう無い）は消せたのと同じ（`PhotoService.delete`）。そのときストーリーは
                 // 残っているので、続けてストーリーの口でも消す（一緒に消えていれば 404＝消せた）
                 try await environment.photos.delete(photoId: withPhoto, withStory: true)
+                // **写真を消せた直後に**公開一覧・控えから落とす（写真の詳細の削除と同じ・`ModerationStore.goneMarks`）。
+                // ストーリーの口があとで転んでも、消えた写真を一覧・詳細に残さない（確かめ役の指摘・2026-11-11）
+                await hidden.hideGone(withPhoto, for: owner, environment: environment, deleted: true)
                 do {
                     try await environment.stories.delete(id: story.id)
-                } catch where SocialService.isNotFound(error) {}
-                // 消した写真を公開一覧・控えからも落とす（写真の詳細の削除と同じ・`ModerationStore.goneMarks`）
-                await hidden.hideGone(withPhoto, for: owner, environment: environment, deleted: true)
+                } catch where SocialService.isNotFound(error) {
+                } catch {
+                    // 写真はもう無く、ストーリーだけ残った: 理由を知らせ、もう無い写真の詳細は閉じる
+                    toasts.show((error as? LocalizedError)?.errorDescription
+                                ?? L("写真は消しました。ストーリーは消せませんでした",
+                                     "The photo was deleted, but the story couldn't be"))
+                    onPhotoDeleted?(withPhoto)
+                    return
+                }
                 onPhotoDeleted?(withPhoto)
             } else {
                 try await environment.stories.delete(id: story.id)

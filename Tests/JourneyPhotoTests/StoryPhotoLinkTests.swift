@@ -80,11 +80,17 @@ final class StoryPhotoLinkTests: XCTestCase {
         XCTAssertTrue(detail.contains("Button(StoryPhotoLink.deleteWithStory, role: .destructive) { Task { await deletePhoto(withStory: true) } }"))
         XCTAssertTrue(detail.contains("Button(StoryPhotoLink.deletePhotoOnly) { Task { await deletePhoto(withStory: false) } }"))
         // 「写真も一緒に消す」: 写真が 404 でもストーリーの口でも消す・消した写真を一覧から落とす・詳細も閉じる
-        XCTAssertTrue(viewer.contains("try await environment.stories.delete(id: story.id)\n                } catch where SocialService.isNotFound(error) {}"),
+        XCTAssertTrue(viewer.contains("try await environment.stories.delete(id: story.id)\n                } catch where SocialService.isNotFound(error) {"),
                       "写真がもう無い（404）ときにストーリーを残す")
         XCTAssertTrue(viewer.contains("await hidden.hideGone(withPhoto, for: owner, environment: environment, deleted: true)"),
                       "消した写真が公開一覧・控えに残る")
         XCTAssertTrue(viewer.contains("onPhotoDeleted?(withPhoto)"))
+        // **写真を消せた直後に一覧から落とす**——ストーリーの口より前（ストーリーの口が転んでも写真を残さない）
+        let photoDelete = try XCTUnwrap(viewer.range(of: "try await environment.photos.delete(photoId: withPhoto, withStory: true)"))
+        let hide = try XCTUnwrap(viewer.range(of: "await hidden.hideGone(withPhoto, for: owner, environment: environment, deleted: true)"))
+        let storyDelete = try XCTUnwrap(viewer.range(of: "try await environment.stories.delete(id: story.id)\n                } catch where SocialService.isNotFound(error) {"))
+        XCTAssertLessThan(photoDelete.lowerBound, hide.lowerBound)
+        XCTAssertLessThan(hide.lowerBound, storyDelete.lowerBound, "ストーリーの口が転ぶと、消えた写真が一覧に残る")
         XCTAssertTrue(detail.contains("onPhotoDeleted: { photoId in"))
         // 元のストーリーは、元の id を持つ写真のときだけ読む（開くたびに一覧2つを読まない）
         XCTAssertTrue(detail.contains("guard isMine, auth.userId != nil, photo.sourceStoryId != nil else { sourceStory = nil; return }"),
