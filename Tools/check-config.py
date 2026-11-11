@@ -522,16 +522,28 @@ if testflight_yml.exists() and pr_yml.exists():
     # **PR の検証の全部の回は分けて流す**（2026-11-10 owner 承認）。決めるのは「UI テストの範囲を決める」の job の1か所
     # （一覧が「全部」1行だけなら sharded=true）。分けた組を呼ぶ job はその答えだけで走り、
     # 「Xcode のビルドとテスト（シミュレータ）」は名前を変えず、分けた回はその結果を読む門になる（skipped にしない）
+    tf_jobs_all = {m.group(1): m.group(2) for m in re.finditer(r"^  ([\w-]+):\n(.*?)(?=^  [\w-]+:\n|\Z)", flow, re.M | re.S)}
     pr_jobs = {m.group(1): m.group(2) for m in re.finditer(r"^  ([\w-]+):\n(.*?)(?=^  [\w-]+:\n|\Z)", pr_flow, re.M | re.S)}
     plan_job = pr_jobs.get("ui-plan", "")
     if 'if [ "$(cat /tmp/pr-ui-tests.txt)" = "-only-testing:JourneyPhotoUITests" ]; then\n            echo "sharded=true"' not in plan_job \
-            or "python3 Tools/pick-ui-tests.py --related /tmp/pr-ui.diff" not in plan_job \
-            or "base64 -w0 /tmp/pr-ui-tests.txt" not in plan_job:
-        fail("ios-pr.yml の「UI テストの範囲を決める」（ui-plan）が、全部の回を sharded=true と出していません")
+            or "python3 Tools/pick-ui-tests.py --related-narrow /tmp/pr-ui.diff" not in plan_job \
+            or re.search(r"pick-ui-tests\.py (--related |all\b)", "\n".join(l for l in plan_job.splitlines() if not l.lstrip().startswith("#")).replace('python3 Tools/pick-ui-tests.py all > /tmp/pr-ui-tests.txt\n            python3 Tools/explain-ui-tests.py all', "")) \
+            or "base64.b64encode(open(sys.argv[1],\"rb\").read()).decode())' /tmp/pr-ui-tests.txt)" not in plan_job \
+            or "base64 -w0" in plan_job:
+        fail("ios-pr.yml の「UI テストの範囲を決める」（ui-plan）が、full_ui の回だけを全部（sharded=true）にし、ほかは絞る（--related-narrow）形になっていません")
     sharded_job = pr_jobs.get("xcode-sharded", "")
     if USES_SHARDED not in sharded_job or "needs.ui-plan.outputs.sharded == 'true'" not in sharded_job \
             or "needs.checks.result == 'success'" not in sharded_job or "needs.tested.outputs.skip != 'true'" not in sharded_job:
         fail("ios-pr.yml の `xcode-sharded` が、全部の回だけ・静的な検査のあと・テスト済みでないときに分けた組を呼んでいません")
+    # 分けて流す全部の回は TestFlight と PR の検証を合わせて同時に1本まで（同じ concurrency の組・取り消さない）
+    SHARD_GROUP = "    concurrency:\n      group: mac-sharded-tests-${{ github.repository }}\n      cancel-in-progress: false\n"
+    if SHARD_GROUP not in sharded_job or SHARD_GROUP not in tf_jobs_all.get("tests", ""):
+        fail("ios-pr.yml の `xcode-sharded` と ios-testflight.yml の `tests` が、同じ concurrency の組（mac-sharded-tests・取り消さない）にいません")
+    # 分けて流した回の `finish` は `part-build` を受け取って `build-logs` を作る（受け取らないと build-logs が無い）
+    finish_tf = tf_jobs_all.get("finish", "")
+    if "pattern: part-build" not in finish_tf or "name: build-logs" not in finish_tf \
+            or finish_tf.find("pattern: part-build") > finish_tf.find("build/parts/part-build"):
+        fail("ios-testflight.yml の `finish` が `part-build` を受け取ってから `build-logs` を作っていません")
     xcode_job = pr_jobs.get("xcode", "")
     if "    name: Xcode のビルドとテスト（シミュレータ）\n" not in xcode_job:
         fail("ios-pr.yml の `xcode` の名前が「Xcode のビルドとテスト（シミュレータ）」ではありません（必須のチェックの名前を変えない）")
@@ -584,8 +596,22 @@ if testflight_yml.exists() and pr_yml.exists():
             env = {**os.environ, "PATH": f"{tmp}:{os.environ.get('PATH', '')}", "GITHUB_OUTPUT": str(out),
                    "GITHUB_STEP_SUMMARY": str(summary), "SCREENS": "auto", "SUBMIT": "false",
                    "STORE_SHOTS": "false", "TESTS": "false", "GITHUB_REF": "refs/heads/some-branch"}
-            run = _sp2.run(["bash", "-e", "-c", _tw.dedent(plan_run.group(1))], cwd=ROOT, env=env,
-                           capture_output=True, text=True)
+            # 🔴 **段の中の `/tmp/` は一時ディレクトリへ置き換えて流す**（2026-11-10 確かめ役の指摘）。`build` の job は
+            # 「どこまで流すかを受け取る」で本物の `/tmp/ui-only-testing.txt` を書いたあとに「ビルド設定を検証」でこの
+            # 検査を流す。そのまま流すと本物の一覧を「全部」に書き換え、絞った回が1台で UI テストを全部流す
+            Path(tmp, "t").mkdir()
+            script = _tw.dedent(plan_run.group(1)).replace("/tmp/", f"{tmp}/t/")
+            real_list = Path("/tmp/ui-only-testing.txt")
+            before = (real_list.read_bytes(), real_list.stat().st_mtime_ns) if real_list.exists() else None
+            run = _sp2.run(["bash", "-e", "-c", script], cwd=ROOT, env=env, capture_output=True, text=True)
+            after = (real_list.read_bytes(), real_list.stat().st_mtime_ns) if real_list.exists() else None
+            if before != after:
+                fail("check-config.py が「どこまで流すかを決める」を流したとき、本物の /tmp/ui-only-testing.txt を書き換えました"
+                     "（`build` の絞った回が UI テストを全部流す）")
+                if before is None:
+                    real_list.unlink()
+                else:
+                    real_list.write_bytes(before[0])
             got = dict(line.split("=", 1) for line in out.read_text(encoding="utf-8").splitlines() if "=" in line) \
                 if out.exists() else {}
             import base64 as _b64
@@ -597,6 +623,30 @@ if testflight_yml.exists() and pr_yml.exists():
                     or listed != [f"-only-testing:{pick_mod_target}"]:
                 fail("ios-testflight.yml の「どこまで流すかを決める」が、auto で全部に倒れた上げない回を分けて流す回にしません"
                      f"（run 42813269365 の形）: {run.returncode} {got.get('full')} {got.get('sharded')} {run.stderr[-300:]}")
+    # **夜の全部の回**（2026-11-11 owner「推奨で」・CLAUDE.md「全部は夜に1日1回」）。main を1日1回、
+    # ios-testflight.yml の上げない回（submit=false・screens=all）で流し、前の夜と同じコミットなら流さず、
+    # 落ちたら札を立てる。札を書く権限（issues: write）は札を立てる job だけ
+    nightly_yml = ROOT / ".github/workflows/ios-nightly.yml"
+    nightly = nightly_yml.read_text(encoding="utf-8") if nightly_yml.exists() else ""
+    n_jobs = {m.group(1): m.group(2) for m in re.finditer(r"^  ([\w-]+):\n(.*?)(?=^  [\w-]+:\n|\Z)", nightly, re.M | re.S)}
+    if not nightly:
+        fail(".github/workflows/ios-nightly.yml がありません（全部の UI テストは main の夜の回・2026-11-11）")
+    else:
+        cron = re.search(r'^    - cron: "(\d+) (\d+) \* \* \*"$', nightly, re.M)
+        if not cron or not (15 <= int(cron.group(2)) <= 19):
+            fail("ios-nightly.yml の schedule が日本の深夜（UTC 15〜19 時）に1日1回になっていません")
+        full_job = n_jobs.get("full", "")
+        if "uses: ./.github/workflows/ios-testflight.yml" not in full_job or "submit: false" not in full_job \
+                or "screens: all" not in full_job or "needs.decide.outputs.run == 'true'" not in full_job:
+            fail("ios-nightly.yml の `full` が、ios-testflight.yml を submit=false・screens=all で（流すと決めた夜だけ）呼んでいません")
+        if 'if [ "$sha" = "$GITHUB_SHA" ]; then\n                  run=false' not in n_jobs.get("decide", ""):
+            fail("ios-nightly.yml の `decide` が、前の夜と同じコミットなら流さない形になっていません")
+        report = n_jobs.get("report", "")
+        if "needs.full.result == 'failure'" not in report or "夜の全部の回が落ちた ${day}: ${names}" not in report:
+            fail("ios-nightly.yml の `report` が、落ちた夜に日付と落ちたテストの名前の札を立てていません")
+        if [name for name, body in n_jobs.items() if re.search(r"^      issues: write$", body, re.M)] != ["report"] \
+                or re.search(r"^permissions:\n(?:  .*\n)*?  issues:", nightly, re.M):
+            fail("ios-nightly.yml の issues: write が、札を立てる job（report）だけになっていません")
     # 数える側の jq の `select(...)` は**印の名前の完全一致だけ**
     selects = re.findall(r"select\((\.name[^|]*?)\)\s*\|", pr_flow)
     if selects != [f'.name == "{MARK}"']:

@@ -19,7 +19,7 @@ def diff(path, line='changed'):
 
 
 class RelatedTests(unittest.TestCase):
-    def run_related(self, patch_text, matches):
+    def run_related(self, patch_text, matches, narrow=False):
         with tempfile.TemporaryDirectory() as d:
             path = pathlib.Path(d) / 'changes.diff'
             path.write_text(patch_text)
@@ -27,7 +27,7 @@ class RelatedTests(unittest.TestCase):
             with patch.object(picker, 'read_index', return_value=({'SmokeTests/testLaunch': {}, 'ScreenshotTests/testHome': {}}, {})), \
                  patch.object(picker, 'tests_for_diff', side_effect=lambda text, *args: matches.get(next((p for p in matches if p in text), ''), {})), \
                  contextlib.redirect_stdout(out):
-                code = picker.main_related([str(path)])
+                code = picker.main_related([str(path)], narrow=narrow)
             self.assertEqual(code, 0)
             return out.getvalue()
 
@@ -106,6 +106,32 @@ class RelatedTests(unittest.TestCase):
         combined = diff('Sources/Home.swift') + diff('Sources/Other.swift')
         self.assertIn('Sources/Home.swift', picker.diff_text_for_path(combined, 'Sources/Home.swift'))
         self.assertNotIn('Sources/Other.swift', picker.diff_text_for_path(combined, 'Sources/Home.swift'))
+
+
+class NarrowTests(RelatedTests):
+    """PR の検証（`--related-narrow`）は全部に倒さない（2026-11-11 owner・全部の UI テストは夜の回）"""
+    ALL = '-only-testing:JourneyPhotoUITests'
+
+    def lines(self, text):
+        return [line for line in text.splitlines() if line]
+
+    def test_narrow_unknown_file_keeps_related_and_smoke(self):
+        result = self.lines(self.run_related(diff('Sources/Home.swift') + diff('Sources/Other.swift'),
+                                             {'Sources/Home.swift': {'ScreenshotTests/testHome': 'matched'}}, narrow=True))
+        self.assertEqual(result, [f'{self.ALL}/SmokeTests', f'{self.ALL}/ScreenshotTests/testHome'])
+
+    def test_narrow_never_full(self):
+        cases = [diff('project.yml'), diff('Package.swift'), diff('Tools/xcode-test.sh'),
+                 diff('UITests/JourneyPhotoUITests/ScreenshotTests.swift'), 'unrecognized diff content',
+                 'diff --git a/Resources/a.png b/Resources/a.png\nBinary files differ\n']
+        for text in cases:
+            result = self.lines(self.run_related(text, {}, narrow=True))
+            self.assertNotIn(self.ALL, result, text)
+            self.assertEqual(result[0], f'{self.ALL}/SmokeTests', text)
+
+    def test_default_still_full(self):
+        # 夜の回・上げる回の `--related` は今までどおり全部に倒す
+        self.assertEqual(self.run_related(diff('project.yml'), {}).strip(), self.ALL)
 
 
 if __name__ == '__main__':

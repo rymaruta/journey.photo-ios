@@ -262,7 +262,9 @@ jobs:
 
   # 🔴 **UI テストの範囲を決める**（Linux で数十秒・2026-11-10 判断）。前は Xcode の job の中（組んだあと）で
   # 決めていた。全部になる回を別々の Mac に分けて流すには、Mac を起こす前に決める必要がある。
-  # 決め方は前と同じ（`pick-ui-tests.py --related`・手動の full_ui は all・差分が読めなければ all）。
+  # 決め方（2026-11-11 owner「推奨で」で変えた）: PR は `pick-ui-tests.py --related-narrow`（起動の見張り＋関連テスト・
+  # 全部に倒さない）、差分が読めなければ起動の見張りだけ。全部になるのは手で流した full_ui=true の回だけ
+  # （そのときは分けて流す）。全部の UI テストは main の夜の回（`ios-nightly.yml`）が1日1回流す。
   # 出すもの: sharded（全部の回か）と list（`-only-testing` の一覧を base64 で。Xcode の job がそのまま使う）
   ui-plan:
     name: UI テストの範囲を決める
@@ -289,10 +291,12 @@ jobs:
             if [ "${{ github.event_name }}" = "pull_request" ]; then
               base="${{ github.event.pull_request.base.sha }}"
               if git cat-file -e "${base}^{commit}" && git diff --no-ext-diff --find-renames "$base" HEAD -- . > /tmp/pr-ui.diff; then
-                python3 Tools/pick-ui-tests.py --related /tmp/pr-ui.diff > /tmp/pr-ui-tests.txt
+                # 🔴 **全部に倒さない**（`--related-narrow`・2026-11-11 owner「推奨で」）。判定できない変更でも
+                # 起動の見張り＋当たった関連テストだけ。全部の UI テストは main の夜の回（`ios-nightly.yml`）
+                python3 Tools/pick-ui-tests.py --related-narrow /tmp/pr-ui.diff > /tmp/pr-ui-tests.txt
               else
-                echo "::warning::PR差分を取得できないため全UIテストを実行"
-                python3 Tools/pick-ui-tests.py all > /tmp/pr-ui-tests.txt
+                echo "::warning::PR差分を取得できません。起動の見張りだけ流します（全部は夜の回・手で流すなら full_ui）"
+                python3 Tools/pick-ui-tests.py none > /tmp/pr-ui-tests.txt
               fi
             else
               python3 Tools/pick-ui-tests.py none > /tmp/pr-ui-tests.txt
@@ -301,7 +305,7 @@ jobs:
           fi
           echo "### PR UIテスト選別結果" >> "$GITHUB_STEP_SUMMARY"
           if grep -qx -- "-only-testing:JourneyPhotoUITests" /tmp/pr-ui-tests.txt; then
-            echo "判定: 全UIテスト（安全側フォールバックまたは手動指定）" >> "$GITHUB_STEP_SUMMARY"
+            echo "判定: 全UIテスト（手で full_ui を指定）" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "判定: 起動スモーク＋関連UIテスト" >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -322,7 +326,8 @@ jobs:
             echo "sharded=false" >> "$GITHUB_OUTPUT"
             echo "流し方: 1 台（Xcode のビルドとテスト）" >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "list=$(base64 -w0 /tmp/pr-ui-tests.txt)" >> "$GITHUB_OUTPUT"
+          # base64 は python で（折り返さない指定は GNU の base64 だけ。ios-testflight.yml の「どこまで流すかを決める」と揃える）
+          echo "list=$(python3 -c 'import base64,sys; print(base64.b64encode(open(sys.argv[1],"rb").read()).decode())' /tmp/pr-ui-tests.txt)" >> "$GITHUB_OUTPUT"
 
   # UI テストが全部になる回だけ、別々の Mac に分けて流す（`mac-sharded-tests.yml`・ios-testflight.yml の
   # 全部の回と同じもの。写しを作らない）。同時に動く Mac は多いときで3台（分けた組）。
@@ -332,6 +337,12 @@ jobs:
     name: Xcode のテスト（UI テストが全部・分けて流す）
     needs: [checks, tested, scope, ui-plan]
     if: ${{ !cancelled() && needs.checks.result == 'success' && needs.tested.outputs.skip != 'true' && needs.ui-plan.outputs.sharded == 'true' && (github.event_name != 'pull_request' || needs.scope.outputs.app_changed != 'false') && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    # 🔴 **分けて流す全部の回は、TestFlight と PR の検証を合わせて同時に1本まで**（ios-testflight.yml の `tests` と同じ組）。
+    # PR が2本重なると Mac 6台になり、上げる回が順番待ちになる。待てるのは1本だけで、3本目が来ると待っていた
+    # 2本目は cancelled になり、門（「Xcode のビルドとテスト（シミュレータ）」）が落ちる——そのときは流し直す
+    concurrency:
+      group: mac-sharded-tests-${{ github.repository }}
+      cancel-in-progress: false
     uses: ./.github/workflows/mac-sharded-tests.yml
     with:
       compare: ${{ github.event_name == 'pull_request' && format('{0}...{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || '' }}

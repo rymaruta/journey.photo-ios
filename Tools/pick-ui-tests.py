@@ -381,8 +381,13 @@ def main_plan(argv):
     return 0
 
 
-def main_related(argv):
-    """PR差分から関連UIテストを選ぶ。影響を判定できないアプリ変更は全件検証。"""
+def main_related(argv, narrow=False):
+    """PR差分から関連UIテストを選ぶ。影響を判定できないアプリ変更は全件検証。
+
+    `narrow`（`--related-narrow`・PR の検証が使う）: 判定できない変更があっても全件に倒さず、
+    起動の見張り（SmokeTests）＋当たった関連テストだけにする。2026-11-11 owner「推奨で」（CLAUDE.md
+    「マージの前は 単体（全部）＋変えた画面の UI＋起動の見張り だけ。全部の UI テストは main を夜に1日1回」）。
+    全部を流すのは、PR の検証を手で `full_ui=true` で流したときと、夜の全部の回だけ"""
     diff_text = pathlib.Path(argv[0]).read_text(encoding="utf-8")
     index, loose = read_index()
     if not index:
@@ -390,6 +395,10 @@ def main_related(argv):
         return 1
     changes = changed_files(diff_text)
     if not changes and diff_text.strip():
+        if narrow:
+            print("::warning::差分を解析できません。起動の見張りだけ流します（全部は夜の回）", file=sys.stderr)
+            print(f"-only-testing:{TARGET}/{ALWAYS}")
+            return 0
         print("::warning::差分を解析できないため全件実行", file=sys.stderr)
         print(f"-only-testing:{TARGET}")
         return 0
@@ -456,7 +465,10 @@ def main_related(argv):
                 uncertain.append(removed)
     if unit_covered:
         print("共有カード描画は単体テスト＋起動スモークで確認: " + ", ".join(unit_covered), file=sys.stderr)
-    if uncertain:
+    if uncertain and narrow:
+        print("::warning::関連テストを特定できない変更があります（全部は夜の回で流す）: " + ", ".join(sorted(set(uncertain))),
+              file=sys.stderr)
+    elif uncertain:
         print("::warning::関連テストを特定できず全件実行: " + ", ".join(uncertain), file=sys.stderr)
         print(f"-only-testing:{TARGET}")
         return 0
@@ -478,6 +490,8 @@ def diff_text_for_path(diff_text, path):
 def main():
     if len(sys.argv) > 2 and sys.argv[1] == "--related":
         return main_related(sys.argv[2:])
+    if len(sys.argv) > 2 and sys.argv[1] == "--related-narrow":
+        return main_related(sys.argv[2:], narrow=True)
     if len(sys.argv) > 1 and sys.argv[1] == "--only-when-named":
         print("\n".join(ONLY_WHEN_NAMED))
         return 0
