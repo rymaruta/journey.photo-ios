@@ -31,6 +31,8 @@ enum SpotPrefectureIndex {
     struct Group: Identifiable, Equatable {
         let region: PrefectureRegions.Region
         let cards: [Card]
+        /// 地図の札に出す上位の名前（`topNames`・Web の `topSpotsByArea` と同じ並べ方）
+        var names: [String] = []
 
         var id: String { region.name }
         var title: String { L(region.name, PrefectureRegions.englishName(region)) }
@@ -47,11 +49,30 @@ enum SpotPrefectureIndex {
 
     /// 撮影スポットから地方ごとの県の札。県の決め方は地図の「リスト」と同じ（`RegionList.sections`）
     static func groups(spots: [OfficialSpot]) -> [Group] {
-        groups(RegionList.sections(photos: [], spots: spots, from: nil))
+        // 台帳の並び（索引に載っている順）。地図の札の上位の名前で、同じ段のときに使う
+        let order = Dictionary(spots.enumerated().map { ($1.spotId, $0) }, uniquingKeysWith: { first, _ in first })
+        return groups(RegionList.sections(photos: [], spots: spots, from: nil), order: order)
+    }
+
+    /// 地図の札に出す名前の数（Web の札と同じ 4 件）
+    static let nameCount = 4
+
+    /// 地方の上位の名前。**代表写真がある行 → 台帳の並び**（Web の `topSpotsByArea`: 公開済み → 代表写真 → 台帳の並び。
+    /// 一覧に出るのは公開済みだけなので、残るのは写真と台帳の並び）
+    static func topNames(_ rows: [OfficialSpotList.Row], order: [String: Int]) -> [String] {
+        rows.enumerated()
+            .sorted { a, b in
+                let (pa, pb) = (a.element.spot.hasPhoto ? 0 : 1, b.element.spot.hasPhoto ? 0 : 1)
+                if pa != pb { return pa < pb }
+                let (oa, ob) = (order[a.element.spot.spotId] ?? Int.max, order[b.element.spot.spotId] ?? Int.max)
+                return oa != ob ? oa < ob : a.offset < b.offset
+            }
+            .prefix(nameCount)
+            .map(\.element.spot.name)
     }
 
     /// 県の段（撮影スポットの行を持つもの）から地方ごとの県の札
-    static func groups(_ sections: [RegionList.Section]) -> [Group] {
+    static func groups(_ sections: [RegionList.Section], order: [String: Int] = [:]) -> [Group] {
         var byPrefecture: [String: [OfficialSpotList.Row]] = [:]
         for section in sections {
             guard case .prefecture(let name) = section.key, !section.spots.isEmpty else { continue }
@@ -64,7 +85,9 @@ enum SpotPrefectureIndex {
                 return Card(prefecture: name, count: rows.count, cover: picked,
                             pending: picked == nil ? pendingCover(rows) : nil)
             }
-            return cards.isEmpty ? nil : Group(region: region, cards: cards)
+            guard !cards.isEmpty else { return nil }
+            let rows = region.prefectures.flatMap { byPrefecture[$0] ?? [] }
+            return Group(region: region, cards: cards, names: topNames(rows, order: order))
         }
     }
 
@@ -133,6 +156,16 @@ enum SpotPrefectureIndex {
         return groups.enumerated().max { a, b in
             a.element.count != b.element.count ? a.element.count < b.element.count : a.offset > b.offset
         }?.element
+    }
+
+    /// 地方の段だけ（地図の札の「すべて見る」の先・県は北から）
+    static func regionSections(_ national: [RegionList.Section], region regionName: String) -> [RegionList.Section] {
+        guard let region = PrefectureRegions.all.first(where: { $0.name == regionName }) else { return [] }
+        let names = Set(region.prefectures)
+        return national.filter { section in
+            if case .prefecture(let name) = section.key { return names.contains(name) }
+            return false
+        }
     }
 
     /// 全国の一覧の並び。**撮影スポットの行のある段だけ**（写真だけの段は出さない）。
