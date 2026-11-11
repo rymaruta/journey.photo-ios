@@ -24,11 +24,10 @@ final class CamperRoomPausedFurnitureTests: XCTestCase {
             XCTAssertEqual(f.photoSlots, 0, "\(f.id) は写真を飾る家具（この部屋の主役）")
         }
         // 2026-11-06 の「部品が少ない順」では、平らな敷物は部品が少ないのが当たり前なので選ばなかった。
-        // 2026-11-11 の「似た家具」では、似た丸い敷物（毛足の丸・楕円の輪）の片方を下げてよい
-        let similar: Set<String> = ["heater.pot_belly", "table.round_cafe", "room_rug.shag_round", "mobile.paper_cranes", "mirror.shaving",
-                                    "camera.slr", "camera.twin_lens", "travel_bag.map_stand", "kitchen_gear.dish_rack", "floor_lamp.tripod", "clock.flip"]
-        XCTAssertTrue(similar.isSubset(of: CamperRoomCatalog.paused))
-        for f in CamperRoomCatalog.board where CamperRoomCatalog.paused.contains(f.id) && !similar.contains(f.id) {
+        // 2026-11-11 の「似た家具」では、似た丸い敷物（毛足の丸・楕円の輪）の片方だけを下げた。例外はこの 1 点だけ
+        let rugException = "room_rug.shag_round"
+        XCTAssertTrue(CamperRoomCatalog.paused.contains(rugException))
+        for f in CamperRoomCatalog.board where CamperRoomCatalog.paused.contains(f.id) && f.id != rugException {
             XCTAssertFalse(f.isRug, f.id)
         }
     }

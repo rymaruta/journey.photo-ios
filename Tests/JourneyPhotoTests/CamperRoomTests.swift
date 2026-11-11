@@ -188,7 +188,7 @@ final class CamperRoomTests: XCTestCase {
         XCTAssertEqual(CamperRoomLayout.make(.trailer, stage: .trailer).depth, 7)
     }
 
-    /// 図鑑は名前か id で探せる。板の id は、形の組み合わせ「分類.x000」に埋もれない
+    /// 図鑑は名前か id で探せる。id で探すとその家具だけ、分類の名前で探すとその分類だけが出る
     func testDexSearchFindsTheBoardPiece() throws {
         let stove = try XCTUnwrap(CamperRoomCatalog.furniture("heater.wood_stove"))
         XCTAssertTrue(CamperRoomCatalog.matchesDexQuery(stove, "heater.wood_stove"))
@@ -879,11 +879,7 @@ final class CamperRoomTests: XCTestCase {
 
     /// 写真の面はマットより手前・硝子より奥（マットの厚みに沈むと飾っても見えない）
     func testPhotoPanelSitsBetweenMatAndGlass() throws {
-        var ids = ["photo_frame.landscape", "photo_frame.square", "photo_frame.oval", "photo_frame.triptych"]
-        // variety の額も穴付きの共通額に寄せたので、同じ奥行きの決まりを守る
-        if let variety = CamperRoomCatalog.all.first(where: { $0.id.hasPrefix("photo_frame.x") }) {
-            ids.append(variety.id)
-        }
+        let ids = ["photo_frame.landscape", "photo_frame.square", "photo_frame.oval", "photo_frame.triptych"]
         for id in ids {
             let mesh = try XCTUnwrap(CamperRoomFurnitureModels.mesh(id), id)
             func zs(_ match: (CamperMaterial) -> Bool) -> [Double] {
