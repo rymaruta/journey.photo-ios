@@ -1,5 +1,4 @@
-# 測るための一時のワークフロー（2026-11-11・repositories を別の控えに分けたときの差し引き）。測り終えたら消す。
-# 測る控えは小さく短命に: 書く前に置き場の合計を見て、9GB を越えるなら書かない。測り終えたら消す
+# 一時（main に入れない）: 測る間に枝に書いてしまった大きい控え（v2・3,976MB）を消す
 name: 測る（一時）
 
 on:
@@ -10,113 +9,17 @@ permissions:
   actions: write
 
 jobs:
-  make:
-    name: 組んで、v3 と repositories を控える
-    runs-on: macos-15
-    timeout-minutes: 60
-    outputs:
-      saved: ${{ steps.check.outputs.ok }}
-    steps:
-      - uses: actions/checkout@v7
-      - run: bash Tools/select-xcode.sh
-      - run: |
-          command -v xcodegen >/dev/null || brew install xcodegen
-          xcodegen generate
-      - name: 組む（控え無し）
-        run: |
-          python3 Tools/source-mtime.py > /dev/null
-          s=$SECONDS; XCODE_LOG=/tmp/w.log bash Tools/xcode-test.sh build > /dev/null
-          echo "控え無しで組む: $((SECONDS-s)) 秒・Swift $(grep -c 'SwiftCompile normal' /tmp/w.log) 件" | tee -a "$GITHUB_STEP_SUMMARY"
-          dd="$(ls -d "$HOME"/Library/Developer/Xcode/DerivedData/JourneyPhoto-* | head -1)"
-          echo "DD=$dd" >> "$GITHUB_ENV"
-          du -sh "$dd/SourcePackages/repositories" "$dd/SourcePackages/checkouts" "$dd/Build" | tee -a "$GITHUB_STEP_SUMMARY"
-          tar -C "$dd/SourcePackages" -cf - repositories | zstd -T0 -q | wc -c | awk '{printf "repositories を zstd で %.0f MB\n", $1/1048576}' | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: 置き場の合計を見る（書いたあと 9GB を越えるなら書かない）
-        id: check
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          used="$(gh api "repos/${GITHUB_REPOSITORY}/actions/cache/usage" --jq '.active_caches_size_in_bytes')"
-          add="$(du -sk "$DD/SourcePackages" "$DD/Build" | awk '{s+=$1} END {print s}')"
-          total=$(( used / 1024 + add ))
-          echo "置き場 $((used/1048576)) MB ＋書く分（包む前）$((add/1024)) MB ＝ $((total/1024)) MB" | tee -a "$GITHUB_STEP_SUMMARY"
-          gh api "repos/${GITHUB_REPOSITORY}/actions/caches?per_page=100" --jq '.actions_caches[]|"\(.size_in_bytes/1048576|floor) MB \(.ref) \(.key[0:50])"' | tee -a "$GITHUB_STEP_SUMMARY"
-          if [ "$total" -lt $((9 * 1024 * 1024)) ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else echo "ok=false" >> "$GITHUB_OUTPUT"; echo "9GB を越えるので書かない" | tee -a "$GITHUB_STEP_SUMMARY"; fi
-      - name: repositories を控える（測る用・あとで消す）
-        if: ${{ steps.check.outputs.ok == 'true' }}
-        uses: actions/cache/save@v6
-        with:
-          path: ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages/repositories
-          key: xcode-probe-repos-${{ github.run_id }}
-      - name: v3 の形にする
-        if: ${{ steps.check.outputs.ok == 'true' }}
-        run: rm -rf "$DD/SourcePackages/repositories" "$DD/Build/Intermediates.noindex/ArchiveIntermediates"
-      - name: v3 を控える（測る用・あとで消す）
-        if: ${{ steps.check.outputs.ok == 'true' }}
-        uses: actions/cache/save@v6
-        with:
-          path: |
-            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
-            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
-          key: xcode-probe-v3-${{ github.run_id }}
-
-  measure:
-    name: 組む（${{ matrix.with_repos && 'repositories あり' || 'なし' }}）
-    needs: make
-    if: ${{ needs.make.outputs.saved == 'true' }}
-    runs-on: macos-15
-    timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        with_repos: [true, false]
-    steps:
-      - uses: actions/checkout@v7
-      - run: bash Tools/select-xcode.sh
-      - name: v3 を戻す
-        run: echo "STARTED=$(date +%s)" >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@v6
-        with:
-          path: |
-            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
-            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
-          key: xcode-probe-v3-${{ github.run_id }}
-      - run: |
-          echo "v3 を戻す: $(( $(date +%s) - STARTED )) 秒" | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: repositories を戻す（時間を測る）
-        if: ${{ matrix.with_repos }}
-        run: echo "STARTED=$(date +%s)" >> "$GITHUB_ENV"
-      - name: repositories を戻す
-        if: ${{ matrix.with_repos }}
-        id: repos
-        uses: actions/cache/restore@v6
-        with:
-          path: ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages/repositories
-          key: xcode-probe-repos-${{ github.run_id }}
-      - if: ${{ matrix.with_repos }}
-        run: |
-          echo "repositories を戻す: $(( $(date +%s) - STARTED )) 秒" | tee -a "$GITHUB_STEP_SUMMARY"
-      - run: |
-          command -v xcodegen >/dev/null || brew install xcodegen
-          xcodegen generate
-      - name: 組む（文言1行を変えて）
-        run: |
-          sed -i '' 's/"Prefectures visited"/"Prefectures Visited"/' Sources/JourneyPhoto/Core/Text/VisitedMapText.swift
-          python3 Tools/source-mtime.py > /dev/null
-          s=$SECONDS
-          XCODE_LOG=/tmp/b.log bash Tools/xcode-test.sh build > /dev/null
-          echo "組む（repositories ${{ matrix.with_repos }}）: $((SECONDS-s)) 秒・Swift $(grep -c 'SwiftCompile normal' /tmp/b.log) 件・取りに行った $(grep -cE 'Fetching|Cloning' /tmp/b.log) 行" | tee -a "$GITHUB_STEP_SUMMARY"
-
   cleanup:
-    name: 測る控えを消す
-    needs: [make, measure]
-    if: ${{ always() }}
+    name: 枝の v2 の控えを消す
     runs-on: ubuntu-latest
     steps:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for k in xcode-probe-repos xcode-probe-v3; do
-            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/caches?key=${k}-${GITHUB_RUN_ID}" > /dev/null && echo "消した: $k" || echo "消すものなし: $k"
+          echo "前: $(( $(gh api "repos/${GITHUB_REPOSITORY}/actions/cache/usage" --jq '.active_caches_size_in_bytes') / 1048576 )) MB"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/caches?per_page=100&ref=refs/heads/claude/pr-ui-sharded" \
+            --jq '.actions_caches[] | select(.key | startswith("xcode-v2-")) | .id' | while read -r id; do
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/caches/${id}" && echo "消した: ${id}"
           done
-          echo "置き場 $(( $(gh api "repos/${GITHUB_REPOSITORY}/actions/cache/usage" --jq '.active_caches_size_in_bytes') / 1048576 )) MB" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "後: $(( $(gh api "repos/${GITHUB_REPOSITORY}/actions/cache/usage" --jq '.active_caches_size_in_bytes') / 1048576 )) MB"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/caches?per_page=100" --jq '.actions_caches[]|"\(.size_in_bytes/1048576|floor) MB \(.ref) \(.key[0:50])"'
