@@ -80,6 +80,21 @@ final class CurrentLocation: NSObject, ObservableObject {
         }
     }
 
+    /// **もう許されているときだけ**1回取る。尋ねない（ダイアログを出さない）・断られている人には何もしない。
+    /// 探すの撮影スポットの一覧を近い順にするため（札 #524・2026-11-11 判断: 一覧を開いただけで
+    /// 位置の許可を尋ねない。許していない人は名前の順のまま）
+    func locateIfAllowed() {
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            guard state != .locating else { return }
+            requestedByUser = false
+            state = .locating
+            manager.requestLocation()
+        default:
+            break
+        }
+    }
+
     // MARK: - 委譲から届くもの（テストは直接呼ぶ）
 
     /// 権限が変わった。**尋ねている最中にだけ動く**——iOS は管理者を作った

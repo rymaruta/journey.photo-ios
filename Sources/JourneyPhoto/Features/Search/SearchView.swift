@@ -44,6 +44,14 @@ struct SearchView: View {
     @State private var spotAliases: [String: [String]] = [:]
     /// 撮影スポットの節を全部出しているか（語が変わったら畳む）
     @State private var spotsExpandedFor: String? = nil
+    /// 撮影スポットの索引の読み込みの段階（発見の「撮影スポット」の段の読み込み中・失敗・空・札 #524）
+    @State private var spotIndexLoad = SpotPrefectureIndex.Load.loading
+    /// 「もう一度試す」で読み直している最中
+    @State private var spotIndexRetrying = false
+    /// 発見の「撮影スポット」の段の札（索引が変わったときだけ束ね直す）
+    @State private var spotGroups: [SpotPrefectureIndex.Group] = []
+    /// 段で選んでいる地方
+    @State private var spotRegion: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -127,6 +135,10 @@ struct SearchView: View {
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }
         }
+        // 発見の「撮影スポット」の段の札は、索引が変わったとき（届いた・詳細を重ねた）だけ束ね直す
+        .onChange(of: officialSpots) { _, spots in
+            spotGroups = SpotPrefectureIndex.groups(spots: spots)
+        }
         // 見出しの「探す」: **この札が前に出ているときだけ**探す口に焦点を当てる。ほかの札（ホーム・マップ）から
         // 押した回は札を移るだけ（移った途端にキーボードを出さない・`isOnScreen` はまだ false）
         .onChange(of: tabRouter.searchRequests) { _, _ in
@@ -140,7 +152,14 @@ struct SearchView: View {
             // 発見の顔でも1度は取る（「季節・時間帯から探す」は季節の案内を持つ撮影地だけでも出す。
             // `fetchIndex` は控えを持つので叩きすぎない）
             if officialSpots.isEmpty {
-                officialSpots = (try? await environment.spots.fetchIndex()) ?? []
+                // 失敗を空と分けて覚える（発見の「撮影スポット」の段が「読み込めませんでした」を言う・札 #524）。
+                // 語の検索での使い方は前と同じ（取れなければ空で、節を出さないだけ）
+                do {
+                    officialSpots = try await environment.spots.fetchIndex()
+                    spotIndexLoad = .ready
+                } catch {
+                    if !Task.isCancelled { spotIndexLoad = .failed }
+                }
             }
             // 別名は語で当てるときだけ要る（季節・時間帯だけで絞っているときは取らない）
             guard !query.isEmpty else { return }
@@ -255,12 +274,8 @@ struct SearchView: View {
                 .accessibilityIdentifier("search.clear")
             }
         }
-        .padding(.horizontal, 14)
-        // 最小44（板）。大きな文字の設定では字に合わせて伸ばす（固定だと上下が欠ける）
-        .frame(minHeight: WebTheme.minTapTarget)
-        // v2（2026-10-14・Search の板）: 地は surface-2（#161617）・縁は白 8%・角 12
-        .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))
-        .overlay(RoundedRectangle(cornerRadius: JPRadius.field).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+        // 地・縁・高さは撮影スポットの一覧の探す欄と同じ（`jpSearchBoxFace`・札 #524 で切り出した）
+        .jpSearchBoxFace()
         .padding(.horizontal, JPSpace.gutter)
     }
 
@@ -446,11 +461,44 @@ struct SearchView: View {
     private func discoverySection(_ section: SearchDiscovery.Section) -> some View {
         switch section {
         case .spots: popularSpots
+        case .officialSpots: spotIndexSection
         case .featured: featured
         case .colors: colors
         case .seasonal: seasonal
         case .shootingTime: shootingTimeSection
         case .gear: gear
+        }
+    }
+
+    /// 撮影スポットを地方 → 県で選ぶ段（札 #524・`SearchSpotIndexSection`）
+    private var spotIndexSection: some View {
+        SearchSpotIndexSection(groups: spotGroups, load: spotIndexLoad, spots: officialSpots,
+                               photos: model.everything,
+                               photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.hasLoaded,
+                                                                   photos: model.everything),
+                               isRetrying: spotIndexRetrying, retry: retrySpotIndex, region: $spotRegion)
+            // 出ている地方の札の表紙のために、まだ索引だけの行の詳細を読む（無ければ通信しない）
+            .task(id: SpotDetailNeeds.key(SpotPrefectureIndex.coverNeeds(SpotPrefectureIndex.selected(spotRegion, in: spotGroups)))) {
+                let needs = SpotPrefectureIndex.coverNeeds(SpotPrefectureIndex.selected(spotRegion, in: spotGroups))
+                guard !needs.isEmpty else { return }
+                let merged = await environment.spots.withDetails(officialSpots, for: needs)
+                guard !Task.isCancelled, isOnScreen else { return }
+                officialSpots = SpotDetailNeeds.overlay(officialSpots, with: merged)
+            }
+    }
+
+    /// 撮影スポットの索引を読み直す（段の「もう一度試す」・圏外から戻ったとき）
+    private func retrySpotIndex() {
+        guard !spotIndexRetrying else { return }
+        spotIndexRetrying = true
+        Task {
+            defer { spotIndexRetrying = false }
+            do {
+                officialSpots = try await environment.spots.fetchIndex(force: true)
+                spotIndexLoad = .ready
+            } catch {
+                spotIndexLoad = .failed
+            }
         }
     }
 
@@ -1244,6 +1292,8 @@ final class SearchViewModel: ObservableObject {
         var present = Set<SearchDiscovery.Section>()
         if hasShootingTimes || ShootingTime.hasAnything(photos: [], spots: spots) { present.insert(.shootingTime) }
         if !popularSpots.isEmpty { present.insert(.spots) }
+        // 撮影スポットの段はいつも置く（中身の読み込み中・失敗・空は段が自分で言う・札 #524）
+        present.insert(.officialSpots)
         if featured != nil { present.insert(.featured) }
         if !colors.isEmpty { present.insert(.colors) }
         if !seasonal.isEmpty { present.insert(.seasonal) }

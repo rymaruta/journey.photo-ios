@@ -228,7 +228,9 @@ final class MapSpotsV2Tests: XCTestCase {
     /// 行は札に入れず黒地に直に・明朝 18 の名前・12 の等幅の text-3・高さ 64・下に白 8% の線
     func testSpotRowsAreFlatV2Rows() throws {
         let text = try source(map)
-        let row = segment(text, from: "private func spotRow(")
+        // 行の部品は探すの撮影スポットの一覧と同じ `OfficialSpotRow`（札 #524 で切り出した）
+        XCTAssertTrue(segment(text, from: "private func spotRow(").contains("OfficialSpotRow(row: row, photosKnown:"))
+        let row = segment(try source("Features/Spots/OfficialSpotRow.swift"), from: "var body: some View")
         assertInOrder(["SpotThumbImage(image: photo)", "Text(row.spot.name)", ".font(JPFont.rowTitle)",
                        ".font(JPFont.meta)", ".foregroundStyle(WebTheme.text3)",
                        ".frame(minHeight: JPHeight.tallRow)", ".overlay(alignment: .bottom)",
