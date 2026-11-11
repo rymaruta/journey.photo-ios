@@ -2690,13 +2690,16 @@ final class ScreenshotTests: XCTestCase {
     /// 2 つの作り（行全体・運ぶ印）× 先のスワイプ（なし・あり）で、**止めずに離す**操作を1回ずつ流し、
     /// 持ち上がった・落とす先に入った・落とした・断った の数と、千里浜の位置を残す。合否は付けない（名指しした回だけ）
     func testMeasuresTripPlanDrag() {
+        // 起動を 12 回（2 つの作り × スワイプの有無 × 3 回）。1 回 70 秒ほど（run 1016 は 4 回で 5 分の上限に当たった）
+        executionTimeAllowance = 1200
         for handle in [false, true] {
             for swipe in [false, true] {
+              for trial in 1...3 {
                 var args = ["-JPTripPlanFixture", "YES"]
                 if handle { args += ["-JPTripPlanDragHandle", "YES"] }
                 let app = launchTrunk(args)
                 defer { app.terminate() }
-                let name = "variant=\(handle ? "handle" : "row") swipe=\(swipe ? "yes" : "no")"
+                let name = "variant=\(handle ? "handle" : "row") swipe=\(swipe ? "yes" : "no") trial=\(trial)"
                 guard openFixturePlan(app) else { _ = fixtureSends(app, "\(name) open-failed"); continue }
                 Thread.sleep(forTimeInterval: 3)
                 let handles = app.descendants(matching: .any).matching(identifier: "tripPlan.dragHandle")
@@ -2734,6 +2737,7 @@ final class ScreenshotTests: XCTestCase {
                 let line = "TRIPDRAG \(name) pushes=\(pushes) before[\(before)] after[\(after)] pos[\(posBefore) -> \(posAfter)]"
                 print(line)
                 XCTContext.runActivity(named: line) { _ in }
+              }
             }
         }
     }
