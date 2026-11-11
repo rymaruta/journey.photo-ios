@@ -2429,6 +2429,48 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "11k-撮影スポットの一覧（全国・「寺」で絞った）")
     }
 
+    /// **切り分け（2026-11-11）: 地図の上から払うと画面が流れるか、地図の操作を片方ずつ外して数える**。
+    /// run 1012〜1018 で地図の上から払っても流れなかった（右の札からは流れる・要素の払いでも座標の引きでも同じ）。
+    /// 起動引数 `-JPSpotMapGestures`（none・tap・trace・both）ごとに、地図の上で座標を引いた前後の地図の y をログに出す
+    /// （`spotMap.variant`）。合否は付けない（数を取るだけ）
+    func testCapturesSearchSpotMapScrollVariants() {
+        for variant in ["none", "tap", "trace", "both"] {
+            let app = XCUIApplication()
+            app.launchArguments += ["-legal.consent.version", "0"]
+            app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+            app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+            app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+            app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+            app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+            app.launchArguments += ["-JPSpotMapGestures", variant]
+            app.launch()
+            let agree = app.buttons["legal.agree"]
+            if agree.waitForExistence(timeout: 30) { agree.tap() }
+            let tabBar = app.tabBars.firstMatch
+            guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 1 else { continue }
+            tabBar.buttons.element(boundBy: 1).tap()
+            let mapTab = app.buttons["search.spotIndex.mode.map"].firstMatch
+            guard mapTab.waitForExistence(timeout: 30) else { print("spotMap.variant \(variant) noTab"); continue }
+            var swipes = 0
+            while !mapTab.isHittable, swipes < 6 {
+                app.swipeUp(velocity: .slow)
+                Thread.sleep(forTimeInterval: 1)
+                swipes += 1
+            }
+            guard mapTab.isHittable else { print("spotMap.variant \(variant) tabNotHittable"); continue }
+            mapTab.tap()
+            let map = app.otherElements["search.spotIndex.map"].firstMatch
+            guard map.waitForExistence(timeout: 5), map.isHittable else { print("spotMap.variant \(variant) noMap"); continue }
+            Thread.sleep(forTimeInterval: 1)
+            let top = map.frame.minY
+            map.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+                .press(forDuration: 0.05, thenDragTo: map.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: -1.5)))
+            Thread.sleep(forTimeInterval: 1)
+            print("spotMap.variant \(variant) mapTop before=\(top) after=\(map.frame.minY)")
+            app.terminate()
+        }
+    }
+
     /// **探すの「撮影スポット」の段の地図**（2026-11-11 owner「iOS 側にもこの機能欲しい」）。
     ///
     /// 1. 「写真」の段ぜんたい（`search.spotIndex.block`）の高さを取り、「地図」に替えて**同じ高さか**を数で確かめる

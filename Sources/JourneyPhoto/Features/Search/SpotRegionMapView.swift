@@ -35,30 +35,7 @@ struct SpotRegionMapView: View {
     var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
-            Canvas { ctx, _ in draw(&ctx, size: size) }
-                .contentShape(Rectangle())
-                .onTapGesture(coordinateSpace: .local) { point in
-                    if let area = map.area(at: point, container: size, in: areas) { onSelect(area) }
-                }
-                // 🔴 **`simultaneousGesture` にする**（2026-11-11・run 1012 の数）: `.gesture` だと地図の上から払っても
-                // 画面が流れなかった（地図の y 680.7 → 680.7。同じ回に右の札から払うと 680.7 → 50.3 と流れた＝
-                // スクロールは止まっておらず、地図の長押し→引くの操作が指を取っていた）。同時に受ければ、長押しの前に
-                // 動いた指はスクロールへ渡る。なぞり始めたら探すの画面がスクロールを止める（`scrollDisabled`）
-                .simultaneousGesture(
-                    LongPressGesture(minimumDuration: SpotRegionMap.traceDelay)
-                        .sequenced(before: DragGesture(minimumDistance: 0))
-                        .updating($traced) { value, state, _ in
-                            guard case .second(true, let drag?) = value else { return }
-                            // 区分の外（地図の枠の外）へ出た間は、最後の区分のまま
-                            if let area = map.area(at: drag.location, container: size, in: areas) { state = area }
-                        }
-                        .onEnded { value in
-                            // 地図の外で離したら取り消し（選ばない・`area(at:)` は枠の外で nil）
-                            guard case .second(true, let drag?) = value,
-                                  let area = map.area(at: drag.location, container: size, in: areas) else { return }
-                            onSelect(area)
-                        }
-                )
+            gestures(Canvas { ctx, _ in draw(&ctx, size: size) }.contentShape(Rectangle()), size: size)
         }
         .onChange(of: traced) { _, now in tracing = now }
         .onDisappear { tracing = nil }
@@ -73,6 +50,43 @@ struct SpotRegionMapView: View {
             if let next = SpotRegionMap.step(selected, in: areas, forward: direction == .increment) { onSelect(next) }
         }
         .accessibilityIdentifier("search.spotIndex.map")
+    }
+
+    /// 押す・なぞるの操作。**切り分けのあいだだけ**、UI テストの起動引数 `-JPSpotMapGestures`（none・tap・trace）で
+    /// 片方ずつ外せる（2026-11-11・run 1012〜1018: 地図の上から払っても画面が流れない。どちらの操作が指を取るかを数で確かめる）。
+    /// 引数が無ければ両方
+    @ViewBuilder
+    private func gestures<Content: View>(_ content: Content, size: CGSize) -> some View {
+        switch UserDefaults.standard.string(forKey: "JPSpotMapGestures") ?? "both" {
+        case "none": content
+        case "tap": content.onTapGesture(coordinateSpace: .local) { point in tap(point, size: size) }
+        case "trace": content.simultaneousGesture(trace(size: size))
+        default:
+            content
+                .onTapGesture(coordinateSpace: .local) { point in tap(point, size: size) }
+                .simultaneousGesture(trace(size: size))
+        }
+    }
+
+    private func tap(_ point: CGPoint, size: CGSize) {
+        if let area = map.area(at: point, container: size, in: areas) { onSelect(area) }
+    }
+
+    /// 長押し（0.25 秒）してから引く＝なぞる
+    private func trace(size: CGSize) -> some Gesture {
+        LongPressGesture(minimumDuration: SpotRegionMap.traceDelay)
+            .sequenced(before: DragGesture(minimumDistance: 0))
+            .updating($traced) { value, state, _ in
+                guard case .second(true, let drag?) = value else { return }
+                // 区分の外（地図の枠の外）へ出た間は、最後の区分のまま
+                if let area = map.area(at: drag.location, container: size, in: areas) { state = area }
+            }
+            .onEnded { value in
+                // 地図の外で離したら取り消し（選ばない・`area(at:)` は枠の外で nil）
+                guard case .second(true, let drag?) = value,
+                      let area = map.area(at: drag.location, container: size, in: areas) else { return }
+                onSelect(area)
+            }
     }
 
     private func draw(_ ctx: inout GraphicsContext, size: CGSize) {

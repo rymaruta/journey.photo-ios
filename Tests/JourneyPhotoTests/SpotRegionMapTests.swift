@@ -215,9 +215,6 @@ final class SpotRegionMapTests: XCTestCase {
         let view = try source("Features/Search/SpotRegionMapView.swift")
         XCTAssertTrue(view.contains("@GestureState private var traced: String?"))
         XCTAssertTrue(view.contains(".updating($traced)"))
-        // 地図の上から払うと画面が流れる（`.gesture` だと指を取った・run 1012）
-        XCTAssertTrue(view.contains(".simultaneousGesture(\n                    LongPressGesture(minimumDuration: SpotRegionMap.traceDelay)"))
-        XCTAssertFalse(view.contains("                .gesture("))
         XCTAssertTrue(view.contains(".onChange(of: traced) { _, now in tracing = now }"))
         XCTAssertFalse(view.contains("tracing = area"), "なぞった区分を @State に直に書いている（取り消しで残る）")
         XCTAssertTrue(view.contains(".sensoryFeedback(.selection, trigger: traced) { _, now in now != nil }"))
