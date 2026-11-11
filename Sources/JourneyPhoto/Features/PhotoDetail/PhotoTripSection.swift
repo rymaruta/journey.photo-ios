@@ -35,6 +35,8 @@ struct PhotoTripSection: View {
 
     /// 「経路」を探している最中（連打で2つ開かない）・その仕事（離れたら取り消す）
     @State private var openingDirections = false
+    /// 「旅行プランに入れる」のシート（2026-11-10 札 #521）
+    @State private var tripAdd: TripAddTarget?
     @State private var directionsTask: Task<Void, Never>?
     /// 段が出ているか（「経路」を探している間に離れたら開かない・`SpotDirections`）
     @State private var onScreen = false
@@ -43,12 +45,26 @@ struct PhotoTripSection: View {
         VStack(alignment: .leading, spacing: 10) {
             JPEyebrowLine(L("NEXT TRIP · 次の旅へ", "NEXT TRIP"),
                           spoken: L("写真から、次の旅へ", "From this photo to your next trip"))
-            HStack(spacing: JPSpace.xs) {
-                wishButton
-                if PhotoTrip.offersDirections(destination) {
-                    directionsButton
+            // 3つが1行に収まらない幅・字の大きさでは、経路を下の行へ（字を切らない・2026-11-10 札 #521）
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: JPSpace.xs) {
+                    wishButton
+                    tripButton
+                    if PhotoTrip.offersDirections(destination) {
+                        directionsButton
+                    }
+                }
+                VStack(spacing: JPSpace.xs) {
+                    HStack(spacing: JPSpace.xs) {
+                        wishButton
+                        tripButton
+                    }
+                    if PhotoTrip.offersDirections(destination) {
+                        directionsButton
+                    }
                 }
             }
+            .tripAddSheet($tripAdd)
             if let when {
                 Label {
                     Text(when)
@@ -96,6 +112,33 @@ struct PhotoTripSection: View {
         .accessibilityHint(L("行きたい場所の一覧に入れます。写真の保存とは別です",
                              "Adds this place to your wishlist. Separate from saving the photo."))
         .accessibilityIdentifier("photo.trip.wish")
+    }
+
+    // MARK: - 旅行プランに入れる（2026-11-10 札 #521）
+
+    private var tripButton: some View {
+        Button {
+            tripAdd = TripAddTarget(place: Self.tripPlace(destination), wishKey: destination.wishKey)
+        } label: {
+            chip(icon: "calendar.badge.plus", title: L("旅行プランに入れる", "Add to trip"), selected: false)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(L("旅行プランの日程に入れます。「行きたい」にも入ります",
+                             "Adds this place to a trip. It's also added to your wishlist."))
+        .accessibilityIdentifier("photo.trip.add")
+    }
+
+    /// 行き先 → 下書きの場所（撮影スポットは台帳の鍵・撮影地は slug）
+    nonisolated static func tripPlace(_ destination: PhotoTrip.Destination) -> TripDraft.Place {
+        switch destination {
+        case .spot(let spot):
+            return TripDraft.place(spot: spot)
+        case .place(let label, let slug):
+            return TripDraft.Place(item: .location(slug: slug, note: nil), name: LocationMatch.display(label),
+                                   regionLabel: nil, coords: nil,
+                                   region: TripPicker.Region(key: "none:location:\(slug)", label: nil),
+                                   times: [], tie: slug)
+        }
     }
 
     // MARK: - 経路（台帳のスポットだけ）

@@ -233,18 +233,18 @@ final class TripsDesignTests: XCTestCase {
 
     func testPlansListFollowsTheBoard() throws {
         let plans = try source("Features/Trips/TripPlansView.swift")
-        let create = section("private var createRow: some View {", in: plans)
-        assertInOrder(["JPHeight.field", "WebTheme.sheet", "JPPillStyle.main(onPhoto: false).fill",
-                       ".opacity(canCreate ? 1 : TripStyle.disabledOpacity)", "題を入れると「作る」が押せます"],
+        // 2026-11-10（札 #521）: 作る口は「旅行プランを作る」の主ボタン1つ（写真の無い画面＝真鍮の塗り＋墨）
+        let create = section("private var createButton: some View {", in: plans)
+        assertInOrder(["showCreate = true", "L(\"旅行プランを作る\"", ".jpPillButton(.main(onPhoto: false))"],
                       in: create, "作る口")
         XCTAssertTrue(plans.contains("ErrorBanner(message: L(\"旅行プランを読み込めませんでした。\""), "読めなかったのは状態の部品")
         XCTAssertTrue(plans.contains("EmptyState(title: L(\"旅行プランはまだありません\""))
         XCTAssertTrue(plans.contains("JPLoadingState(kind: .rows)"))
-        let card = section("private func card(_ plan: TripPlan)", in: plans)
+        let card = section("private func card(_ plan: TripPlan, face: Bool = true)", in: plans)
         assertInOrder(["TripStyle.departureEyebrow(", ".jpEyebrow()", "WebTheme.accent", "JPFont.rowTitle",
                        "TripStyle.planLine("], in: card, "プランの札")
         XCTAssertFalse(plans.contains("WebTheme.surface,"), "白 7% の古い札の地が残っている")
-        for id in ["\"trips.pickByPhoto\"", "\"trips.plan\""] {
+        for id in ["\"trips.create\"", "\"trips.plan\""] {
             XCTAssertTrue(plans.contains(id), "画面写真で探す名前 \(id)")
         }
     }
@@ -255,9 +255,13 @@ final class TripsDesignTests: XCTestCase {
         assertInOrder(["JPEyebrowLine(dayHeading(di, day))", "itemRow(di, ii, item, number:", "addRow(di,"],
                       in: day, "日の見出し → 項目 → 追加")
         XCTAssertFalse(day.contains("WebTheme.surface"), "日の札で囲んでいる（v2 は区切り線の行）")
+        // 行の中身は作る流れの下書きと同じ部品（`TripStopLabel`・2026-11-10 札 #521）
         let label = section("private func itemLabel(", in: detail)
+        XCTAssertTrue(label.contains("TripStopLabel(number: number, name: name, isSpot: isSpot"))
+        let parts = try source("Features/Trips/TripParts.swift")
+        let stop = section("struct TripStopLabel: View {", in: parts)
         assertInOrder(["TripStopNumber(number: number)", "isSpot ? JPFont.rowTitle : JPFont.bodyEmphasis"],
-                      in: label, "番号の丸 → 名前")
+                      in: stop, "番号の丸 → 名前")
         let add = section("private func addRow(", in: detail)
         XCTAssertTrue(add.contains(".foregroundStyle(WebTheme.accent)"), "追加は真鍮の字")
         let date = section("private func dateField(", in: detail)
@@ -273,14 +277,14 @@ final class TripsDesignTests: XCTestCase {
     func testPickSheetIsMultiSelect() throws {
         let pick = try source("Features/Trips/TripPlanPickSheet.swift")
         let row = section("private func row(", in: pick)
-        assertInOrder(["selected = Self.toggled(selected, id: choice.id, capacity: capacity)", "PickMark(isOn: isOn)",
+        assertInOrder(["selected = Self.toggled(selected, id: choice.id, capacity: capacity)", "TripPickMark(isOn: isOn)",
                        ".disabled(locked)", ".accessibilityAddTraits(isOn ? .isSelected : [])"],
                       in: row, "選ぶ・外す")
         XCTAssertFalse(row.contains("dismiss()"), "1つ押すたびに閉じている（v2 は選んでからまとめて足す）")
         let body = section("var body: some View {", in: pick)
         assertInOrder([".safeAreaInset(edge: .bottom)", "Self.addTitle(count: selected.count)",
                        ".jpPillButton(.main(onPhoto: false))", ".jpBottomBar()"], in: body, "下の主ボタン")
-        let mark = section("private struct PickMark", in: pick)
+        let mark = section("struct TripPickMark", in: pick)
         assertInOrder(["Circle().fill(WebTheme.accent)", "WebTheme.accentText"], in: mark, "選んだ印は真鍮に墨のチェック")
     }
 

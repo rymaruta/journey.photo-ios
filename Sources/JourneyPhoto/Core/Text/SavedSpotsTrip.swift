@@ -8,10 +8,8 @@ import Foundation
 /// （押すと TripPlanDays＝日程の画面へ直に進む）に合わせた。
 ///
 /// - 項目は既存の `TripItem`（撮影スポット＝`.spot(spotId:)`・撮影地＝`.location(slug:)`）。写しを作らない
-/// - 並びは座標から**近い順の案**（最初に選んだ場所から、いちばん近い未訪の場所へ進む貪欲法）。
-///   距離は `TravelDistance.kilometers`（大圏・日付変更線をまたいでも正しい）で、**画面には出さない**
-///   （移動時間・道のりは計算しない——`TripPlan` の約束）。並べ替えは日程の画面の今の仕組みのまま
-/// - 日付は入れない（日程の画面の出発・帰着の入力のまま）
+/// - 並び・日への割り振りは作る流れと同じ（`TripDraft.plan`・2026-11-10 札 #521 で1つにまとめた）。
+///   「この N か所で旅行プランを作る」は作る流れの日付の段へ進む（`TripCreateView`）
 /// - どのプランに入っているかは、プランの一覧と突き合わせるだけ
 ///
 /// サーバー・DB には触らない（既存の作成の口だけ）。
@@ -70,69 +68,47 @@ enum SavedSpotsTrip {
         }
     }
 
-    // MARK: - 近い順
-
-    /// 近い順の案。**最初に選んだ場所から**、いちばん近い未訪の場所へ順に進む（最近傍の貪欲法）。
-    ///
-    /// - 同じ距離（同じ座標を含む）は**選んだ順**（毎回同じ並びにする・押した順を崩さない）
-    /// - 座標の無いものは最後に、選んだ順で置く（地図のピンは座標を持つので、ふつうは無い）
-    /// - 距離は大圏（`TravelDistance.kilometers`）。日付変更線の両側は近いと見る
-    static func nearestOrder(_ items: [SavedSpotsMap.Item]) -> [SavedSpotsMap.Item] {
-        var seen = Set<String>()
-        let unique = items.filter { seen.insert($0.key).inserted }
-        var located = unique.filter { $0.coords != nil }
-        let unlocated = unique.filter { $0.coords == nil }
-        guard !located.isEmpty else { return unlocated }
-
-        var result = [located.removeFirst()]
-        var here = result[0].coords!
-        while !located.isEmpty {
-            var bestIndex = 0
-            var bestKm = Double.infinity
-            // 先の方（選んだ順の早い方）を残すため、厳密に近いときだけ替える
-            for (i, item) in located.enumerated() {
-                let km = TravelDistance.kilometers(from: here, to: item.coords!)
-                if km < bestKm {
-                    bestIndex = i
-                    bestKm = km
-                }
-            }
-            let next = located.remove(at: bestIndex)
-            result.append(next)
-            here = next.coords!
-        }
-        return result + unlocated
-    }
-
     // MARK: - プランへ渡す
 
-    /// 作るときに送る中身（題・日程）。日付は送らない（日程の画面で入れる）
+    /// 下書きに置く場所（座標は地図のピンと同じ `item.coords`）。入れられない場所は nil
+    static func draftPlace(_ item: SavedSpotsMap.Item) -> TripDraft.Place? {
+        guard let tripItem = tripItem(item) else { return nil }
+        switch item.target {
+        case .official(let row):
+            guard let spot = row.spot else { return nil }
+            return TripDraft.place(spot: spot)
+        case .place(let place):
+            let p = TripDraft.place(location: place)
+            return TripDraft.Place(item: tripItem, name: item.name, regionLabel: nil, coords: item.coords,
+                                   region: p.region, times: [], tie: p.tie)
+        }
+    }
+
+    /// 選んだ順の、下書きに置ける場所（同じ鍵は1度・入れられない場所は落とす）
+    static func draftPlaces(_ selected: [SavedSpotsMap.Item]) -> [TripDraft.Place] {
+        var seen = Set<String>()
+        return selected.filter { seen.insert($0.key).inserted }.compactMap(draftPlace)
+    }
+
+    /// 作るときに送る中身（題・日程）。日付は送らない
     struct Draft: Equatable {
         let title: String
         let days: [TripDay]
     }
 
-    /// 選んだ場所から、作るときに送る中身を作る。並びは `nearestOrder`。
+    /// 選んだ場所から、作るときに送る中身。
     ///
-    /// - 1日に入れるのは**サーバーの上限まで**（`TripPlanService.itemsPerDayMax`）。越えたら次の日へ
-    ///   （サーバーは越えた分を黙って切り捨てる——`TripPicker.days` の注記）
-    /// - 題は写真から選ぶ板と同じ作り方（地域の名前を2つまで・`TripPicker.defaultTitle`）。
-    ///   撮影地は地域を持たないので、スポットの地域だけで決まる。無ければ「行きたい場所の旅」
+    /// 🔴 **2026-11-10（札 #521）: 割り振りは作る流れと同じ1つの作り**（`TripDraft.plan`・地域で束ねて
+    /// 近い順に日へ均し、日の中は時間帯の順）。以前はここだけ近い順に並べて 20 か所ごとに次の日へ送る
+    /// 別の作り（最近傍の貪欲法）で、ふつうの数なら全部1日目だった。地図の画面は作る流れの日付の段へ
+    /// 進む（`TripCreateView`）ので、これは日付を決めない形の下書き
     /// - 入れられない場所（`tripItem` が nil）は落とす。全部落ちたら nil（作らない）
     static func draft(_ selected: [SavedSpotsMap.Item]) -> Draft? {
-        let ordered = nearestOrder(selected)
-        let items = ordered.compactMap(tripItem)
-        guard !items.isEmpty else { return nil }
-        let cap = TripPlanService.itemsPerDayMax
-        let days = stride(from: 0, to: items.count, by: cap).map {
-            TripDay(items: Array(items[$0..<min($0 + cap, items.count)]))
-        }
-        let spots: [[OfficialSpot]] = ordered.compactMap {
-            if case .official(let row) = $0.target, let spot = row.spot { return [spot] }
-            return nil
-        }
-        let title = TripPlanService.titleToSend(TripPicker.defaultTitle(spots))
-        return Draft(title: title, days: days)
+        let places = draftPlaces(selected)
+        guard !places.isEmpty else { return nil }
+        let days = TripDraft.plan(places, dayCount: nil)
+        let title = TripPlanService.titleToSend(TripPicker.defaultTitle(TripPicker.grouped(places)))
+        return Draft(title: title, days: TripDraft.tripDays(days))
     }
 
     /// 主ボタンの文言（板 WishlistTab「この3か所で旅行プランを作る」）

@@ -2,6 +2,22 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.80",
+      "date": "2026-11-11",
+      "items": [
+        {
+          "symbol": "tram",
+          "title": { "ja": "旅行プランに、移動の目安が出る", "en": "Travel times in trip plans" },
+          "detail": { "ja": "場所と場所の間に、車・歩き・電車とバスでどれくらいかかるかが出ます。押すと、Apple のマップや Google マップで乗り換えを見られます。", "en": "See roughly how long it takes between places by car, on foot, or by train and bus. Tap to see transit in Apple Maps or Google Maps." }
+        },
+        {
+          "symbol": "calendar.badge.plus",
+          "title": { "ja": "撮影スポットから旅行プランに入れる", "en": "Add photo spots to a trip plan" },
+          "detail": { "ja": "撮影スポットや行きたい場所の「旅行プランに入れる」から、日付を選んでそのまま入れられます。日程は自動で保存され、押さえて運ぶと日をまたいで並べ替えられます。", "en": "Use “Add to trip plan” on a photo spot or a saved place, pick the dates, and you're done. Plans save automatically, and you can drag places across days." }
+        }
+      ]
+    },
+    {
       "version": "1.1.79",
       "date": "2026-11-10",
       "items": [

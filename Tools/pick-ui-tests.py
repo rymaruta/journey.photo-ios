@@ -55,7 +55,9 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    "ScreenshotTests/testMeasuresCamperMemoryAANone",
                    # 2026-11-07（#430）: 途中の段・user_tag 別・差し替え。`screens=testMeasuresCamperStages`
                    "ScreenshotTests/testMeasuresCamperStages", "ScreenshotTests/testMeasuresCamperStagesKeepMesh",
-                   "ScreenshotTests/testMeasuresCamperStagesAANone", "ScreenshotTests/testMeasuresCamperStagesAA4x"]
+                   "ScreenshotTests/testMeasuresCamperStagesAANone", "ScreenshotTests/testMeasuresCamperStagesAA4x",
+                   # 2026-11-10（札 #521）: 移動の見込みの前に、日本の区間で MKDirections が返す秒数を取る。`screens=MapETAProbeTests`
+                   "MapETAProbeTests"]
 
 # クラスの直下（字下げ4つ）の関数だけを区切りにする。中の入れ子の関数は本体に含める
 MEMBER = re.compile(r"^    (?:@\w+\s+)*(?:(?:private|fileprivate|override|static|final)\s+)*func\s+(\w+)\s*\(", re.M)

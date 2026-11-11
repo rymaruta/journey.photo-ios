@@ -1,40 +1,37 @@
 import SwiftUI
 
 /// 写真から行き先を選ぶ（2026-09-30 owner の依頼「どこに旅行行きたいかを直感で操作できて
-/// 旅行プラン作成する機能」）。入口は旅行プランの一覧（`TripPlansView`）。
+/// 旅行プラン作成する機能」）。
+///
+/// 🔴 **2026-11-10（札 #521）: 旅行プランを作る流れ（`TripCreateView`）の「写真から選ぶ」のタブになった。**
+/// 以前は一覧の別の入口から開く全画面の板で、選んだ場所だけで別の下書き（`TripPickerDraftView`）を作っていた。
+/// いまは払った場所が、行きたい場所のタブで選んだ場所と**同じ下書き**に入る（作る流れが拾う・`TripCreateModel`）。
 ///
 /// **写真を見て指で選ぶだけ。** 撮影スポットの写真を1枚ずつ大きく出し、
 /// 右へ払う＝行きたい・左へ払う＝見送る。下のボタンでも、読み上げの操作
 /// （`accessibilityAction`）でも同じことができる。「行きたい」にした場所は
 /// その場で「行きたい」にも入る（`WishlistSync`・Web の一覧にも並ぶ）。
-/// 選んだら「旅行プランにする」→ 地域で束ねて近い順に日へ割った下書き
-/// （`TripPickerDraftView`）→ 保存。
+/// 札の山は「行きたい」に入っていない撮影スポットだけ（今のまま）。
 ///
 /// 見た目（デザインシステム「黒塗りの真鍮」）:
 ///  - 写真が主役。**写真の上には白しか置かない**（払っている間の札も白）
 ///  - 写真を持つ画面なので、主ボタン（行きたい）は白の塗り。1画面に白の塗りは1つ
-///  - 真鍮は黒地の上の合図だけ（眉ラベル・「旅行プランにする」の文字の合図）
+///  - 真鍮は黒地の上の合図だけ（眉ラベル）
 ///  - 数は選んだ数だけ（数えた値）。順位・人数は出さない
-///
-/// 全画面の板なので、閉じるのは右上の「閉じる」（板の決まり）。
 struct TripPickerView: View {
 
-    /// 旅行プランの一覧と書き込み（一覧の画面と共有する——作ったプランがすぐ一覧に並ぶ）
-    @ObservedObject var plans: TripPlansModel
-    /// 保存できた。作ったプランの ID を渡す（一覧の画面が閉じてそのプランを開く）
-    let onSaved: (String) -> Void
+    /// 札の山と決めごと（作る流れが持つ——タブを替えても、めくった札と選んだ場所を残す）
+    @ObservedObject var model: TripPickerModel
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var toasts: ToastCenter
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @StateObject private var model = TripPickerModel()
     /// 払っている指の横の動き
     @State private var dragX: Double = 0
     /// 札が飛んでいく間（押しを重ねない）
     @State private var flying = false
-    @State private var showDraft = false
     /// 開いた時点の種（`TripPicker.deck`）。開き直すと新しい並び
     @State private var seed = UInt64.random(in: .min ... .max)
 
@@ -42,36 +39,15 @@ struct TripPickerView: View {
     private static let swipeThreshold: Double = 110
 
     var body: some View {
-        NavigationStack {
-            content
-                .webScreen()
-                .navigationTitle(L("写真から選ぶ", "Pick by photo"))
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        // 保存の最中は閉じさせない（`TripPickerModel.saving`）
-                        SheetCloseButton()
-                            .disabled(model.saving)
-                    }
-                }
-                .interactiveDismissDisabled(model.saving)
-                .navigationDestination(isPresented: $showDraft) {
-                    TripPickerDraftView(picker: model, plans: plans, onSaved: onSaved)
-                }
-        }
-        // 全画面の板の上では、アプリの下の知らせ（`RootView`）が隠れるので、ここにも置く
-        .overlay(alignment: .bottom) {
-            // 足元の「旅行プランにする」・下書きの「保存」（56pt 前後）に重ねない
-            ToastOverlay().padding(.bottom, 84)
-        }
-        .task {
-            await model.load(fetch: { try await environment.spots.fetchIndex() },
-                             excluding: wishlist.spotIds, seed: seed)
-        }
-        // めくる先の札と選んだ場所の詳細（写真・季節の文）。分けた置き場の索引だけの行のときだけ（2026-10-07）
-        .task(id: SpotDetailNeeds.key(model.detailNeeds)) {
-            await model.applyDetails { await environment.spots.withDetails($0, for: $1) }
-        }
+        content
+            .task {
+                await model.load(fetch: { try await environment.spots.fetchIndex() },
+                                 excluding: wishlist.spotIds, seed: seed)
+            }
+            // めくる先の札と選んだ場所の詳細（写真・季節の文）。分けた置き場の索引だけの行のときだけ（2026-10-07）
+            .task(id: SpotDetailNeeds.key(model.detailNeeds)) {
+                await model.applyDetails { await environment.spots.withDetails($0, for: $1) }
+            }
     }
 
     @ViewBuilder
@@ -99,7 +75,6 @@ struct TripPickerView: View {
                 } else {
                     finished
                 }
-                footer
             }
         }
     }
@@ -381,43 +356,6 @@ struct TripPickerView: View {
         }
     }
 
-    // MARK: - 足元（選んだ数と、下書きへ）
-
-    private var footer: some View {
-        let count = model.picked.count
-        return Button { showDraft = true } label: {
-            HStack(spacing: 8) {
-                Text(L("行きたい", "Picked"))
-                    .font(.footnote)
-                    .foregroundStyle(WebTheme.muted2)
-                Text(TripPlanText.placeCount(count))
-                    .font(JPFont.mono(13, medium: true))
-                    .foregroundStyle(WebTheme.foreground)
-                Spacer(minLength: 8)
-                // ヘッダーの文字の合図と同じ真鍮（黒地）
-                Text(L("旅行プランにする", "Make a trip"))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(WebTheme.accent)
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(WebTheme.accent)
-                    .accessibilityHidden(true)
-            }
-            .padding(.horizontal, 20)
-            .frame(maxWidth: .infinity, minHeight: 56)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(count == 0)
-        .opacity(count == 0 ? 0.5 : 1)
-        .overlay(alignment: .top) {
-            Rectangle().fill(WebTheme.border).frame(height: 1)
-        }
-        .accessibilityLabel(L("選んだ \(count) か所で旅行プランにする",
-                              "Make a trip with \(count) picked places"))
-        .accessibilityIdentifier("tripPicker.makeTrip")
-    }
-
     // MARK: - 札が無いとき
 
     /// めくり終えた・はじめから見せる札が無い
@@ -432,7 +370,7 @@ struct TripPickerView: View {
             Text(model.deck.isEmpty
                  ? L("「行きたい」に入れた場所は、ここには出しません。",
                      "Places already on your wishlist aren't shown.")
-                 : L("選んだ場所で旅行プランを作れます。", "Make a trip with the places you picked."))
+                 : L("選んだ場所は、下の「次へ」で旅行プランの下書きになります。", "Tap Next below to turn the places you picked into a trip."))
                 .font(.footnote)
                 .foregroundStyle(WebTheme.muted2)
                 .multilineTextAlignment(.center)

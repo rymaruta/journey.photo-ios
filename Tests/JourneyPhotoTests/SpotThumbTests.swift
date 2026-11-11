@@ -110,7 +110,7 @@ final class SpotThumbTests: XCTestCase {
         XCTAssertTrue(map.contains("SpotMapMarker(photoURL: pin.photo?.smallURL, fallbackURL: pin.photo?.smallFallbackURL)"),
                       "地図のピン")
         XCTAssertTrue(map.contains("SpotThumbImage(image: photo)"), "地図の一覧の丸（spotRow）")
-        XCTAssertTrue(try source("Features/Trips/TripPickerDraftView.swift")
+        XCTAssertTrue(try source("Features/Trips/TripCreateView.swift")
             .contains(".overlay(SpotThumbImage(image: photo))"), "旅の下書きの行")
         XCTAssertTrue(try source("Features/Profile/MyPageView.swift")
             .contains("SpotThumbImage(image: photo, assumedRatioLimit: 2)"), "マイページの「行きたい」の行")
@@ -128,7 +128,7 @@ final class SpotThumbTests: XCTestCase {
     func testSmallSiteFilesDoNotReadTheFullURLDirectly() throws {
         let files = ["Features/Map/PhotoMapView.swift": 1,  // 札の頭（高さ 150pt）
                      "Core/Text/SavedSpotsMap.swift": 0,
-                     "Features/Trips/TripPickerDraftView.swift": 0,
+                     "Features/Trips/TripCreateView.swift": 0,
                      "Features/Profile/MyPageView.swift": 0,
                      "Features/Map/SpotMapMarker.swift": 0]
         for (file, allowed) in files {

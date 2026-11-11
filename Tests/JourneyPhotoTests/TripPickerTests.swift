@@ -166,7 +166,7 @@ final class TripPickerTests: XCTestCase {
     func testGroupedDropsRepeatedPicks() throws {
         let k = try kyoto("k")
         XCTAssertEqual(slugs(TripPicker.grouped([k, k])), [["k"]])
-        XCTAssertEqual(TripPicker.grouped([]).count, 0)
+        XCTAssertEqual(TripPicker.grouped([OfficialSpot]()).count, 0)
     }
 
     // MARK: - 3. 日へ割り振る
@@ -295,8 +295,8 @@ final class TripPickerTests: XCTestCase {
         let groups = TripPicker.grouped(spots)
         XCTAssertEqual(TripPicker.days(groups, dayCount: 0).count, TripPlanService.daysMax)
         XCTAssertEqual(TripPicker.days(groups, dayCount: -3).count, TripPlanService.daysMax)
-        XCTAssertEqual(TripPicker.days([], dayCount: 0).count, 0)
-        XCTAssertEqual(TripPicker.days([], dayCount: 2), [[], []])
+        XCTAssertEqual(TripPicker.days([[OfficialSpot]](), dayCount: 0).count, 0)
+        XCTAssertEqual(TripPicker.days([[OfficialSpot]](), dayCount: 2), [[], []])
     }
 
     /// 収まる日程は必ず収める（貪欲にまとめると 40か所/2日 が「16・16・8」の3日になっていた）

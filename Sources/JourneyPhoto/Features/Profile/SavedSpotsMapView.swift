@@ -50,9 +50,14 @@ struct SavedSpotsMapView: View {
     /// 作れなかった事情（サーバーの言い分をそのまま）
     @State private var createError: String?
 
+    /// 選んだ順の場所（並べ方は作る流れが決める・`TripDraft.plan`）
     private var selectedItems: [SavedSpotsMap.Item] {
-        SavedSpotsTrip.nearestOrder(selection.items(in: split.pinned))
+        selection.items(in: split.pinned)
     }
+    /// 作る流れ（日付の段から・2026-11-10 札 #521）
+    @State private var showCreate = false
+    /// 作る流れで保存したプラン。**板が閉じ切ってから積む**
+    @State private var pendingPlanId: String?
     /// 項目の鍵 → 入っているプランの題。**一覧が取れたときだけ**（取れない回に「入っていない」と言わない）
     private var membership: [String: [String]] {
         plans.status == .loaded ? SavedSpotsTrip.membership(plans.plans) : [:]
@@ -87,6 +92,17 @@ struct SavedSpotsMapView: View {
         }
         .navigationDestination(item: $createdPlanId) { planId in
             TripPlanDetailView(planId: planId, model: plans)
+        }
+        .fullScreenCover(isPresented: $showCreate, onDismiss: {
+            guard let planId = pendingPlanId else { return }
+            pendingPlanId = nil
+            selection = SavedSpotsTrip.Selection()
+            createdPlanId = planId
+        }) {
+            TripCreateView(plans: plans, initial: SavedSpotsTrip.draftPlaces(selectedItems), startAtDates: true) { planId in
+                pendingPlanId = planId
+                showCreate = false
+            }
         }
         .safeAreaInset(edge: .bottom) {
             if !selection.isEmpty {
@@ -229,13 +245,13 @@ struct SavedSpotsMapView: View {
                     .foregroundStyle(WebTheme.muted2)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text(L("選んだ場所 · 近い順の案", "Selected · nearest-first"))
+                Text(L("選んだ場所", "Selected"))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(WebTheme.foreground)
                     .accessibilityAddTraits(.isHeader)
-                // **何をしたかを正直に書く**（移動時間・道のりは計算していない・`TripPlan` の約束）
-                Text(L("直線の距離で近い順に並べた案です。移動時間や道のりは計算していません。作ったあと、日程の画面で入れ替えられます。",
-                       "Ordered by straight-line distance. Travel time isn't calculated. You can rearrange it after creating."))
+                // **何をするかを正直に書く**（並べ方は作る流れの下書きで見せる・2026-11-10 札 #521）
+                Text(L("選んだ順です。次の画面で日付を入れると、地域と近さ・時間帯の案内で日ごとに並べた下書きができます。",
+                       "In the order you picked. Set dates next to get a draft grouped by area, distance and time of day."))
                     .font(.caption)
                     .foregroundStyle(WebTheme.muted2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -342,8 +358,8 @@ struct SavedSpotsMapView: View {
             .buttonStyle(.plain)
             .disabled(!canCreate)
             .opacity(canCreate ? 1 : 0.5)
-            .accessibilityHint(L("近い順に並べた日程で旅行プランを作り、日程の画面を開きます。日付は次の画面で入れます",
-                                 "Creates a trip in nearest-first order and opens it. Set dates on the next screen."))
+            .accessibilityHint(L("日付を入れると、日ごとに並べた下書きができます",
+                                 "Set dates and get a day-by-day draft."))
             .accessibilityIdentifier("savedMap.createTrip")
         }
         .padding(.horizontal, 16)
@@ -351,28 +367,12 @@ struct SavedSpotsMapView: View {
         .background(WebTheme.background)
     }
 
-    /// 既存の作成の口（`TripPlansModel.create`・題と日程を1回で送る）。日付は送らない（日程の画面で入れる）
+    /// 作る流れの日付の段へ（題と日程は下書きで決め、保存は作る流れが1回で送る）
     private func create() {
-        guard canCreate, let draft = SavedSpotsTrip.draft(selectedItems) else { return }
-        // **同期で立てる**（次の押下はこれを見て止まる）
-        creating = true
+        guard canCreate, !SavedSpotsTrip.draftPlaces(selectedItems).isEmpty else { return }
         createError = nil
-        Task {
-            defer { creating = false }
-            guard let made = await plans.create(title: draft.title, days: draft.days, environment: environment) else {
-                let message = plans.errorMessage
-                    ?? L("旅行プランを作れませんでした。もう一度お試しください。", "Couldn't create the trip. Please try again.")
-                createError = message
-                // 文はこの画面で出す（model に残すと、開いた日程の画面の上に赤い行が残る）
-                plans.clearError()
-                // 下の帯の赤い行は VoiceOver の焦点の外にあるので、読み上げでも伝える
-                announce(message)
-                return
-            }
-            createError = nil
-            selection = SavedSpotsTrip.Selection()
-            createdPlanId = made.planId
-        }
+        pendingPlanId = nil
+        showCreate = true
     }
 
     // MARK: - 座標の無いもの

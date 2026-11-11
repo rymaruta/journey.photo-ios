@@ -183,6 +183,50 @@ open class MKMapItem: NSObject {
 
 public let MKLaunchOptionsDirectionsModeKey = "MKLaunchOptionsDirectionsMode"
 public let MKLaunchOptionsDirectionsModeDefault = "MKLaunchOptionsDirectionsModeDefault"
+public let MKLaunchOptionsDirectionsModeDriving = "MKLaunchOptionsDirectionsModeDriving"
+public let MKLaunchOptionsDirectionsModeWalking = "MKLaunchOptionsDirectionsModeWalking"
+public let MKLaunchOptionsDirectionsModeTransit = "MKLaunchOptionsDirectionsModeTransit"
+
+/// 移動の手段（本物は `OptionSet`・`UInt`）
+public struct MKDirectionsTransportType: OptionSet {
+    public let rawValue: UInt
+    public init(rawValue: UInt) { self.rawValue = rawValue }
+    public static let automobile = MKDirectionsTransportType(rawValue: 1 << 0)
+    public static let walking = MKDirectionsTransportType(rawValue: 1 << 1)
+    public static let transit = MKDirectionsTransportType(rawValue: 1 << 2)
+    public static let any = MKDirectionsTransportType(rawValue: 0x0FFF_FFFF)
+}
+
+/// 経路・所要時間の見込みを Apple に聞く（旅行プランの移動の見込み・2026-11-10 札 #521）
+open class MKDirections: NSObject {
+    open class Request: NSObject {
+        open var source: MKMapItem?
+        open var destination: MKMapItem?
+        open var transportType: MKDirectionsTransportType = .any
+        public override init() {}
+    }
+    open class ETAResponse: NSObject {
+        open var expectedTravelTime: TimeInterval { 0 }
+        open var distance: Double { 0 }
+        open var transportType: MKDirectionsTransportType { .automobile }
+    }
+    public init(request: Request) {}
+    open func calculateETA() async throws -> ETAResponse { ETAResponse() }
+    open func cancel() {}
+}
+
+public let MKErrorDomain = "MKErrorDomain"
+
+/// 地図の失敗（本物は `MKError.Code`）
+public struct MKError: Error {
+    public enum Code: UInt {
+        case unknown = 1, serverFailure, loadingThrottled, placemarkNotFound, directionsNotFound, decodingFailed
+    }
+    public let code: Code
+    public init(_ code: Code) { self.code = code }
+    public static let loadingThrottled = Code.loadingThrottled
+    public static let directionsNotFound = Code.directionsNotFound
+}
 
 /// 地点から `MKMapItem`（名前・住所・Apple の詳細カード用）を引く（iOS 18）
 public final class MKMapItemRequest {
