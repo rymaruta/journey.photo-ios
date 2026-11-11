@@ -234,8 +234,10 @@ struct TrunkProModelsView: View {
                 Group {
                     // 測定専用の差し替え（`-JPPreviewTrunkDiag snap`・Debug のみ・2026-11-11）: 1 度描いた画像で置く。ふだんは生の絵
                     if PreviewSession.trunkDiag.contains("snap") {
+                        // タグは本体と同じラベルから（`TrunkTagTests` が数える渡し方の字は生の絵の 1 か所だけにする）
+                        let snapTags = preview.tagsFrom
                         TrunkFigureSnapshot(figure: TrunkFigure(model: trunk, posts: state?.posts ?? 0, stuck: preview.stuck,
-                                                                ownerName: ownerName, width: 300, tagsFrom: preview.tagsFrom,
+                                                                ownerName: ownerName, width: 300, tagsFrom: snapTags,
                                                                 tagPicks: state?.tagPicks ?? []))
                     } else {
                         TrunkFigureFit(model: trunk, posts: state?.posts ?? 0, stuck: preview.stuck,
