@@ -2,6 +2,59 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.82",
+      "date": "2026-11-11",
+      "items": [
+        {
+          "symbol": "bubble.left.and.bubble.right",
+          "title": { "ja": "メッセージが新しい見た目に", "en": "A new look for messages" },
+          "detail": { "ja": "吹き出しと一覧を作り直しました。写真を送れて、承認したあとの文の中のリンクは押すと開きます。", "en": "We redesigned the bubbles and the inbox. You can send photos, and links in messages open with a tap once the request is accepted." }
+        },
+        {
+          "symbol": "square.and.arrow.up",
+          "title": { "ja": "写真をストーリーで紹介", "en": "Share photos to your story" },
+          "detail": { "ja": "写真の「共有」から「ストーリーに載せる」を選ぶと、その写真を札にしてストーリーに載せられます。フォロー中の人の顔を押すと、メッセージで送れます。", "en": "Choose “Add to story” from a photo's Share menu to post it as a card in your story. Tap someone you follow to send it as a message." }
+        },
+        {
+          "symbol": "arrowshape.turn.up.left",
+          "title": { "ja": "コメントに返信", "en": "Reply to comments" },
+          "detail": { "ja": "コメントの下の「返信」から返信できます。返信はそのコメントの下に並びます。", "en": "Tap Reply under a comment to answer it. Replies appear right under that comment." }
+        },
+        {
+          "symbol": "sparkles",
+          "title": { "ja": "おすすめに新しい投稿・今週のお題", "en": "New posts in For You and a weekly theme" },
+          "detail": { "ja": "ホームのおすすめに新しく載った写真が混ざり、はじめての投稿には印が付きます。今日のテーマは「今週のお題」になり、月曜日に替わります。", "en": "For You on Home now mixes in fresh posts and marks someone's first post. Today's theme is now This week's theme, which changes every Monday." },
+          "destination": "home"
+        },
+        {
+          "symbol": "map",
+          "title": { "ja": "撮影スポットを地図から探す", "en": "Find photo spots on a map" },
+          "detail": { "ja": "探すの「撮影スポット」で「地図」に切り替えると、日本地図から地方を選べます。", "en": "In Search, switch Photo spots to Map and pick a region on the map of Japan." },
+          "destination": "search"
+        },
+        {
+          "symbol": "record.circle",
+          "title": { "ja": "ストーリーの録画は押し続けなくてよい", "en": "No need to hold to record stories" },
+          "detail": { "ja": "長押しで始めた録画は、指を離しても続きます。もう一度押すと止まります。", "en": "Recording you start with a long press keeps going after you let go. Tap again to stop." }
+        },
+        {
+          "symbol": "suitcase",
+          "title": { "ja": "旅のトランクが軽く", "en": "A lighter travel trunk" },
+          "detail": { "ja": "旅のトランクの画面と、トランクを回す画面が軽く開くようになりました。", "en": "The travel trunk and its spinning view now open more smoothly." }
+        },
+        {
+          "symbol": "arrow.triangle.turn.up.right.diamond",
+          "title": { "ja": "日をまたぐ移動の目安", "en": "Travel times across days" },
+          "detail": { "ja": "旅行プランで、前の日の最後の場所から次の日の最初の場所までの移動の目安も出ます。", "en": "Trip plans now also show how long it takes from the last place of one day to the first place of the next." }
+        },
+        {
+          "symbol": "eye.slash",
+          "title": { "ja": "検索エンジンにプロフィールを出さない", "en": "Hide your profile from search engines" },
+          "detail": { "ja": "設定の「検索エンジンにプロフィールを表示しない」をオンにすると、検索エンジンにプロフィールが出なくなります。", "en": "Turn on “Hide my profile from search engines” in Settings to keep your profile out of search engines." }
+        }
+      ]
+    },
+    {
       "version": "1.1.81",
       "date": "2026-11-11",
       "items": [
