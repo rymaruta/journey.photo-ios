@@ -15,7 +15,8 @@ final class CamperRoomTests: XCTestCase {
     // MARK: 図鑑
 
     /// 板の 16 分類・64 個に別種 10 分類・40 個を足す（1 分類 4 つ）。最初から 27 個、要サーバー 10 個。
-    /// 形の組み合わせ（`CamperRoomVariety`）を足すと、あつまれどうぶつの森の家具 2,076 を超える。色違いでは数えない
+    /// 2026-11-11 owner「最大 100 個くらいまで減らしていい・同じような家具を減らしたい」: 形の組み合わせの家具は消し、
+    /// 図鑑は板から下げた家具（`paused`）を除いた 85 点。100 点を超えない
     func testCatalogMatchesTheBoard() {
         let board = CamperRoomCatalog.board
         XCTAssertEqual(board.count, 104)
@@ -36,9 +37,13 @@ final class CamperRoomTests: XCTestCase {
         XCTAssertEqual(board.filter { $0.rarity == .rare }.count, 30)
         XCTAssertEqual(board.filter { $0.rarity == .veryRare }.count, 14)
         let all = CamperRoomCatalog.all
-        XCTAssertGreaterThan(all.count, CamperRoomVariety.animalCrossingCount)
+        XCTAssertEqual(all.count, 85)
+        XCTAssertLessThanOrEqual(all.count, 100)
+        XCTAssertEqual(all.count, board.count - CamperRoomCatalog.paused.count)
+        XCTAssertTrue(all.allSatisfy { f in board.contains { $0.id == f.id } }, "板に無い家具が図鑑にある")
+        XCTAssertEqual(CamperRoomCatalog.available.count, 74)
+        XCTAssertEqual(CamperRoomCatalog.soonCount, 11)
         XCTAssertEqual(Set(all.map(\.id)).count, all.count)
-        XCTAssertEqual(Set(CamperRoomVariety.pieces.map(\.signature)).count, CamperRoomVariety.pieces.count)
         XCTAssertEqual(all.filter { $0.unlock.isStarter }.count, 27)
         XCTAssertEqual(Set(all.map(\.nameJa)).count, all.count)
         XCTAssertEqual(Set(all.map(\.nameEn)).count, all.count)
@@ -47,10 +52,9 @@ final class CamperRoomTests: XCTestCase {
             XCTAssertFalse(f.nameEn.isEmpty, f.id)
             XCTAssertNotEqual(f.nameJa, f.nameEn, f.id)
         }
-        // 組み合わせ家具の名前は棚の升に入る短さ（軸の全部は look に残す・2026-10-21）
-        for f in all where f.key.hasPrefix("x") {
+        // 名前は棚の升に入る短さ（2026-10-21 owner「名前が長い」。組み合わせの家具で決めた上限を、残る家具にも当てる）
+        for f in all {
             XCTAssertLessThanOrEqual(f.nameJa.count, 12, "\(f.id) \(f.nameJa)")
-            XCTAssertTrue(f.lookJa.contains("・") || f.lookJa.count >= f.nameJa.count, f.id)
         }
     }
 
@@ -127,7 +131,8 @@ final class CamperRoomTests: XCTestCase {
         }
     }
 
-    /// どの段も 7 部屋。床のマスは外の箱÷10。地面の箱の高さは天井 88。箱どうしは重ならない
+    /// 部屋は車の部屋と張り出し、トレーラーつきはトレーラーも（2026-11-11 に 7 から減らした）。床のマスは外の箱÷10。
+    /// 地面の箱の高さは天井 88。箱どうしは重ならない
     func testRoomsMatchTheOutside() {
         func overlaps(_ a: CamperVolumes.Box, _ b: CamperVolumes.Box) -> Bool {
             let ax0 = min(a.x0, a.x1), ax1 = max(a.x0, a.x1)
@@ -138,12 +143,12 @@ final class CamperRoomTests: XCTestCase {
         }
         for stage in CamperStage.allCases {
             let rooms = CamperRoomKind.rooms(stage)
-            XCTAssertGreaterThanOrEqual(rooms.count, 7, "\(stage)")
+            XCTAssertEqual(rooms, stage == .trailer ? [.car, .sideRear, .trailer] : [.car, .sideRear], "\(stage)")
             XCTAssertEqual(Set(rooms).count, rooms.count, "\(stage)")
-            XCTAssertEqual(rooms.contains(.locker), stage != .trailer, "\(stage)")
             XCTAssertEqual(rooms.contains(.trailer), stage == .trailer, "\(stage)")
             let boxes = CamperVolumes.boxes(stage)
-            for kind in rooms {
+            // 隠した部屋も形は残す（保存を戻せるよう）。どの部屋も外の箱と合う
+            for kind in CamperRoomKind.allCases where kind != .trailer || stage == .trailer {
                 let layout = CamperRoomLayout.make(kind, stage: stage)
                 if let box = boxes[kind] {
                     XCTAssertEqual(Double(layout.width) * CamperVolumes.cell, box.length, accuracy: 0.01, "\(stage) \(kind)")
@@ -189,8 +194,8 @@ final class CamperRoomTests: XCTestCase {
         XCTAssertTrue(CamperRoomCatalog.matchesDexQuery(stove, "heater.wood_stove"))
         XCTAssertTrue(CamperRoomCatalog.matchesDexQuery(stove, "薪"))
         XCTAssertTrue(CamperRoomCatalog.matchesDexQuery(stove, "  "))
-        let variety = CamperRoomCatalog.all.filter { $0.id.hasPrefix("heater.x") }
-        XCTAssertFalse(variety.contains { CamperRoomCatalog.matchesDexQuery($0, "heater.wood_stove") })
+        XCTAssertEqual(CamperRoomCatalog.all.filter { CamperRoomCatalog.matchesDexQuery($0, "heater.wood_stove") }.map(\.id), ["heater.wood_stove"])
+        XCTAssertEqual(Set(CamperRoomCatalog.all.filter { CamperRoomCatalog.matchesDexQuery($0, "heater") }.map(\.category)), [.heater])
         XCTAssertEqual(CamperRoomCatalog.all.filter { CamperRoomCatalog.matchesDexQuery($0, "photo_frame.landscape") }.map(\.id), ["photo_frame.landscape"])
     }
 
@@ -525,9 +530,9 @@ final class CamperRoomTests: XCTestCase {
         }
         let broken = checked.flatMap(\.problems)
         XCTAssertEqual(broken, [], broken.prefix(30).joined(separator: "\n"))
-        // 色を変えただけが同じ輪郭に潰れていない（あつ森の家具の数より、別の形が多い）
+        // 色を変えただけが同じ輪郭に潰れていない（どの家具も別の形。2026-11-11 に組み合わせの家具を消した後は、図鑑の全部が別の形）
         let shapes = Set(checked.map(\.shape))
-        XCTAssertGreaterThan(shapes.count, CamperRoomVariety.animalCrossingCount - 500)
+        XCTAssertEqual(shapes.count, built.count, "同じ形の家具がある")
     }
 
     /// 全家具の網の健全さ（2026-10-21 owner「家具ぶっ壊れてる」）: 番号は点の数の中・点と向きと貼り絵の数がそろう・
@@ -940,7 +945,9 @@ final class CamperRoomTests: XCTestCase {
         }
         let checked = found.reduce(0) { $0 + $1.checked }
         let broken = found.flatMap(\.broken)
-        XCTAssertGreaterThan(checked, 10)
+        // 写真を入れる面を持つ家具（三連の額を除く・横長／正方形／楕円の額と縦長の写真）を全部見た。
+        // 2026-11-11: 組み合わせの額 120 点を消したので、下限は「10 を超える」から板の 4 点にした
+        XCTAssertGreaterThanOrEqual(checked, 4)
         XCTAssertEqual(broken, [], broken.joined(separator: "\n"))
     }
 
