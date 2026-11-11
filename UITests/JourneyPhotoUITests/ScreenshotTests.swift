@@ -4415,7 +4415,8 @@ final class ScreenshotTests: XCTestCase {
         executionTimeAllowance = 600
         var lines: [String] = []
         for pair in 1...3 {
-            for diag in ["spincont,spinlazy,spinlink", "now", "spinonce"] {
+            // 前の作り → 今（端末の正面の絵を消してから＝トランクが変わった後の 1 回目）→ 今（その次＝端末の絵を使う）
+            for diag in ["spincont,spinlazy,spinlink", "spindiskclear", "now"] {
                 let app = launchTrunk(Self.trunkPerfArgs + (diag == "now" ? [] : ["-JPPreviewTrunkDiag", diag]))
                 defer { app.terminate() }
                 guard openTrunk(app) else { XCTFail("旅のトランクを開けない"); continue }
@@ -4427,6 +4428,7 @@ final class ScreenshotTests: XCTestCase {
                     _ = XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: box)], timeout: 20)
                     Thread.sleep(forTimeInterval: 3)
                 }
+                noteSpinDisk(app, diag: diag == "now" ? nil : diag)
                 notePerfProbe(app, label: "初めて開く・\(diag)・\(pair)")
             }
         }
@@ -4601,6 +4603,17 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertLessThanOrEqual(diff.over2Pct, 0.1, "\(label): 前と今で絵が違う（\(diff.line)）")
     }
 
+    /// 端末の正面の絵: 消してから開いた回は書き終えるまで待ち（次の起動で読めるように）、今の作りの回は読んだかを確かめる
+    private func noteSpinDisk(_ app: XCUIApplication, diag: String?) {
+        if diag == "spindiskclear" {
+            let until = Date().addingTimeInterval(20)
+            while Date() < until, trunkPerf(app)["SpinDiskSaved"] == nil { Thread.sleep(forTimeInterval: 1) }
+            XCTAssertNotNil(trunkPerf(app)["SpinDiskSaved"], "正面の絵を端末に書き終えない")
+        } else if diag == nil {
+            XCTAssertNotNil(trunkPerf(app)["SpinDiskHit"], "端末に置いた正面の絵を使っていない")
+        }
+    }
+
     /// 回す箱を、開いた直後・向きのボタンで止めた所（側面・上と背面・底・正面）で撮る
     private func shootSpinFaces(diag: String?) -> [(String, UIImage)] {
         let app = launchTrunk(Self.trunkPerfArgs + (diag.map { ["-JPPreviewTrunkDiag", $0] } ?? []))
@@ -4614,6 +4627,7 @@ final class ScreenshotTests: XCTestCase {
             return []
         }
         Thread.sleep(forTimeInterval: 3)
+        noteSpinDisk(app, diag: diag)
         var shots = [("開いた直後", box.screenshot().image)]
         for id in ["side", "topBack", "bottom", "front"] {
             let button = app.buttons["trunk.spin.view.\(id)"].firstMatch
@@ -4632,15 +4646,22 @@ final class ScreenshotTests: XCTestCase {
         let before = shootSpinFaces(diag: "spincont,spinlazy,spinlink")
         // 同じ作りを 2 回起動した差（撮り方の揺れ）。今と前の差がこれと同じ程度なら、直しによる差ではない
         let again = shootSpinFaces(diag: "spincont,spinlazy,spinlink")
+        // 今の作り: 端末の正面の絵を消してから（その場で塗る）と、その次（端末に置いた PNG を読む）の両方
+        let cold = shootSpinFaces(diag: "spindiskclear")
         let now = shootSpinFaces(diag: nil)
-        guard before.count == now.count, again.count == now.count, !now.isEmpty else { return XCTFail("撮れた数が前と今で違う") }
+        guard before.count == now.count, again.count == now.count, cold.count == now.count, !now.isEmpty else {
+            return XCTFail("撮れた数が前と今で違う")
+        }
+        for (b, c) in zip(before, cold) {
+            notePixel("回す箱（端末の絵なし）・\(c.0)", pixelDiff(b.1, c.1), b.1, c.1)
+        }
         for (b, a) in zip(before, again) {
             let line = "TRUNKPIXEL: \(perfTestName) 揺れ（前と前）・\(a.0) | \(pixelDiff(b.1, a.1).line)"
             print(line)
             XCTContext.runActivity(named: line) { _ in }
         }
         for (b, n) in zip(before, now) {
-            notePixel("回す箱・\(n.0)", pixelDiff(b.1, n.1), b.1, n.1)
+            notePixel("回す箱（端末の絵あり）・\(n.0)", pixelDiff(b.1, n.1), b.1, n.1)
         }
     }
 

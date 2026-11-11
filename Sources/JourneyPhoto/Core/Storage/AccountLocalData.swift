@@ -66,6 +66,8 @@ enum AccountLocalData {
         PassStore.removeData(for: userId, root: passRoot, defaults: defaults)
         // 旅のトランク（2026-10-17）: 入口を出すかの覚え・古び方の区切りの知らせを出した印
         TrunkAvailability.removeData(for: userId, defaults: defaults)
+        // 回す箱の正面の絵の端末の置き場（2026-11-11・貼ったラベルの地名が描かれている）
+        TrunkSpinDiskCache.removeAll()
         TrunkTicketSyncRule.removeData(for: userId, defaults: defaults)
         // はじめての硬貨をもらった印（2026-10-18）
         TrunkWelcome.removeData(for: userId, defaults: defaults)

@@ -727,8 +727,8 @@ final class MedalCoinCoordinator: NSObject {
 
     func apply(_ textures: MedalTextures.Faces) {
         // 測る起動のときだけ: 正面の絵を貼る時間を、色（diffuse）と自ら光る分（emission）で分けて数える（2026-11-11・測るだけ）。
-        // 測定専用の `-JPPreviewTrunkDiag spinonce` では、貼る前に 1 度だけ画素に写す（同じ絵を 2 度塗っていないかの比べ）
-        let frontImage = TrunkPerfMeter.measure("SpinFrontOnce") { Self.once(textures.front, box: isBox) }
+        // run 1047: 塗るのは色を貼るときの 1 度だけ（emission は 0.1ms 以下）
+        let frontImage = textures.front
         TrunkPerfMeter.measure("SpinFrontDiffuse") { front.diffuse.contents = frontImage }
         back.diffuse.contents = textures.back
         edge.diffuse.contents = textures.edge
@@ -746,17 +746,6 @@ final class MedalCoinCoordinator: NSObject {
         }
         // 面のふくらみ・浮き彫り・面取り・縁のギザは硬貨の形に合わせた凹凸。サポーター証（カード）には貼らない
         if case .coin = shape { applyRelief(textures) }
-    }
-
-    /// 測定専用（`spinonce`）: 後で塗る絵を、貼る前に 1 度だけ画素に写す。ふだんは絵をそのまま返す
-    static func once(_ image: UIImage?, box: Bool) -> UIImage? {
-        guard box, PreviewSession.trunkDiag.contains("spinonce"), let image, let cg = image.cgImage else { return image }
-        let space = cg.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
-        guard let ctx = CGContext(data: nil, width: cg.width, height: cg.height, bitsPerComponent: cg.bitsPerComponent,
-                                  bytesPerRow: 0, space: space, bitmapInfo: cg.bitmapInfo.rawValue) else { return image }
-        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
-        guard let made = ctx.makeImage() else { return image }
-        return UIImage(cgImage: made, scale: image.scale, orientation: image.imageOrientation)
     }
 
     /// いまの浮き彫りの強さ。画面写真で止めているときはその向きの強さ、ふだんは既定
