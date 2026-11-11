@@ -4905,8 +4905,18 @@ final class ScreenshotTests: XCTestCase {
 
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
-        XCTAssertTrue(app.buttons["home.feed.recommended"].firstMatch.waitForExistence(timeout: 30),
-                      "ホームの切り替え（おすすめ）が見つからない")
+        let homeShown = app.buttons["home.feed.recommended"].firstMatch.waitForExistence(timeout: 30)
+        if !homeShown {
+            // 何が画面に出ていてホームに届かないのかを、推定でなく記録で見る（2026-11-11・run 43005025402 で 30 秒出なかった）
+            let tree = app.debugDescription
+            print("[snsLoopProbe] home missing. tree:\n" + String(tree.prefix(6000)))
+            let note = XCTAttachment(string: tree)
+            note.name = "snsLoop 画面の木（ホームが出ない）"
+            note.lifetime = .keepAlways
+            add(note)
+        }
+        XCTAssertTrue(homeShown, "ホームの切り替え（おすすめ）が見つからない")
+        guard homeShown else { return }
         _ = app.buttons["feed.photo"].firstMatch.waitForExistence(timeout: 20)
 
         // 今週のお題の札は上の札の横並びの中（季節の札の後ろ）。見えるところまで左へめくる
