@@ -1,0 +1,91 @@
+# Mac の控え（DerivedData・v2）を書く（2026-11-11・毎回のを速くする・控えが無い回を作らない）。テストは流さない。
+#
+# 毎回の（ios-quick.yml）は、main の控えから「変えたファイルだけ」組む（`.github/actions/xcode-cache-restore`）。
+# 控えが古いほど組み直すファイルが増え、控えが無い回（Xcode が上がった・project.yml の依存が変わった）は依存
+# （Amplify・aws-sdk-swift）を丸ごと組んで 30 分の上限を越える。そこで控えはここだけで書く:
+#  - **main に入るたび**（push）: アプリの組んだものを新しくする（PR の回が組み直すのは PR で変えた分だけになる）
+#  - **毎日 1 回、控えがあるかだけ見る**（schedule・Mac 1 分）: GitHub のランナーの Xcode が上がって鍵が変わったら、
+#    PR の回より先にここで作り直す。あれば何もしない（テストは流さない。2026-11-11 owner「夜の定期のテストは置かない」とは別）
+#  - **毎回のが控えに当たらなかったとき**（毎回のが workflow_dispatch で頼む）・手で（/mac-check の手順）
+# 書くのは main だけ（枝・PR の控えは main の控えを置き場 10GB から追い出す）。控えは zstd で約 500MB（run 42996168684）
+name: Mac の控えを書く
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  schedule:
+    - cron: "41 18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+# 新しい main が来たら古い回は止める（書くのは新しい方だけでよい）
+concurrency:
+  group: xcode-cache-warm-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  warm:
+    name: 控えを書く
+    # 手で枝に流したときは、その枝だけが読める控えを書く（測るとき・約 500MB）
+    if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+    runs-on: macos-15
+    # 控えが無いと依存を丸ごと組む（run #8 で 50 分あまり）
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Xcodeを選択
+        run: bash Tools/select-xcode.sh
+
+      - name: 控えを戻す
+        id: cache
+        uses: ./.github/actions/xcode-cache-restore
+
+      # 毎日の回は「今の Xcode の控えが main にあるか」だけ見て、あれば終わる
+      - name: 今の Xcode の控えがあるか（毎日の回）
+        id: need
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          KEY: ${{ steps.cache.outputs.key }}
+          HIT: ${{ steps.cache.outputs.hit }}
+        run: |
+          if [ "$EVENT" = "schedule" ] && [ "$HIT" = "v2" ]; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "今の Xcode の控え（${KEY}）があるので書かない" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Xcodeプロジェクトを生成
+        if: ${{ steps.need.outputs.build == 'true' }}
+        run: |
+          command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
+          xcodegen generate
+
+      - name: 組む（シミュレータ向け・テストの品まで）
+        if: ${{ steps.need.outputs.build == 'true' }}
+        run: |
+          s=$SECONDS
+          XCODE_LOG=/tmp/xcodebuild-warm.log bash Tools/xcode-test.sh build > /dev/null
+          echo "組む: $((SECONDS - s)) 秒・Swift を組んだ $(grep -c 'SwiftCompile normal' /tmp/xcodebuild-warm.log) 件（控え ${{ steps.cache.outputs.hit }}）" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # 🔴 path の並びは `.github/actions/xcode-cache-restore` の v2 と同じ（違うと当たらない・check-config.py が見る）
+      - name: 控えを書く
+        if: ${{ steps.need.outputs.build == 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages/repositories/**
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.dSYM/**
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xcresult/**
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates/**
+          key: ${{ steps.cache.outputs.key }}-${{ github.run_id }}

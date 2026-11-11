@@ -35,22 +35,23 @@ gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-full.yml/d
 
 ### Xcode が上がったとき（控えの温め直し）
 
-Mac の控え（組んだ依存・`DerivedData`）の鍵には Xcode の版が入っている。GitHub のランナーの Xcode が上がると
-控えが当たらなくなり、毎回のは依存（Amplify・aws-sdk-swift）を丸ごと組み直して **30 分の上限で落ちる**
-（毎回のの「まとめ」に「控えが当たらなかった」と出る・ログでは「控えを戻す」の段に `Cache not found`）。
-`Package.swift`・`project.yml` を変えたあとも同じ（鍵にその中身が入る）。
+Mac の控え（依存と組んだもの・`DerivedData`・約 500MB）の鍵には Xcode の版と `project.yml`（依存の版）が入っている。
+GitHub のランナーの Xcode が上がる・依存を変えると控えが当たらなくなり、毎回のは依存（Amplify・aws-sdk-swift）を
+丸ごと組んで **30 分の上限で落ちる**（毎回のの「まとめ」に「控えが当たらなかった」と出る）。
 
-直し方: **main で TestFlight のワークフローを上げずに流す**（Archive のあとの「控えを温める」が、新しい Xcode で組んで書く。約 40〜60 分）。
+ふだんは手を出さなくてよい: 控えを書くのは `xcode-cache-warm.yml`（Mac の控えを書く）で、
+- main に入るたび・毎日 1 回（今の Xcode の控えがあるかを見て、無ければ作る）・毎回のが控えに当たらなかったとき（自動で頼む）に走る
+- 作り直しは控え無しで 40〜60 分。終わってから落ちた毎回のを流し直す（`gh run rerun <run id>`）
+
+急ぐとき・自動で頼めなかったとき（毎回のの警告「頼めませんでした」）は手で流す:
 
 ```bash
-gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight.yml/dispatches \
-  -f ref=main -f 'inputs[submit]=false'
-bash Tools/wait-mac-run.sh <main の sha7> ios-testflight.yml   # run_in_background で待つ
+gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/xcode-cache-warm.yml/dispatches -f ref=main
+bash Tools/wait-mac-run.sh <main の sha7> xcode-cache-warm.yml   # run_in_background で待つ
 ```
 
-- 書けたかは、その回の「mainのビルドキャッシュを保存」の段が success か（`Cache saved with key: xcode-…`）で見る
-- 書けたら、落ちた毎回のを流し直す（`gh run rerun <run id>`）。上げる回ではないので版・タグは動かない
-- 書けるのは main の回だけ（枝・PR の控えは main の控えを置き場 10GB から追い出すので書かない）
+- 書けたかは、その回の「控えを書く」の段が success か（`Cache saved with key: xcode-v2-…`）で見る
+- 枝で流すと、その枝だけが読める控えを書く（測るとき以外は main で流す）
 
 待つのは `bash Tools/wait-mac-run.sh <sha7>` を **Bash の run_in_background（timeout 7200000）** で。
 `sleep` を繋いで待たない（止められる）。終わると通知が来る。

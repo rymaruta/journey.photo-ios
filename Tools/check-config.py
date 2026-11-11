@@ -594,7 +594,8 @@ if all(f.exists() for f in (testflight_yml, pr_yml, quick_yml, full_yml, sharded
         fail(".github/actions/mac-test-part/action.yml が無いか、continue-on-error があります（落ちても印まで進む）")
     # 夜の定期の回は置かない（2026-11-11 owner「ガチの原因不明のバグの時だけ」）。定期は重さの記録（ios-perf.yml）だけ
     scheduled = sorted(name for name, text in workflows.items() if re.search(r"^  schedule:", text, re.M))
-    if [n for n in scheduled if n not in ("ios-perf.yml", "cleanup-branches.yml", "safe-branch-cleanup.yml")]:
+    if [n for n in scheduled if n not in ("ios-perf.yml", "cleanup-branches.yml", "safe-branch-cleanup.yml",
+                                          "xcode-cache-warm.yml")]:
         fail(f"定期（schedule）で Mac のテストを流すワークフローがあります: {scheduled}")
 
     def step_block(text, name):
@@ -649,12 +650,30 @@ if all(f.exists() for f in (testflight_yml, pr_yml, quick_yml, full_yml, sharded
                 if run.returncode != 0 or not any(got[i:i + len(want)] == want for i in range(len(got))):
                     fail(f"Tools/xcode-test.sh {mode} が xcodebuild に時間の上限を渡していません: "
                          f"{run.returncode} {got} {run.stderr[-300:]}")
-    # main の回の「控えを温める」は、署名用に書き換えたプロジェクトを元に戻してから組む
-    warm = step_block(flow, "控えを温める（main の回だけ・シミュレータ向けに組む）") or ""
-    warm_order = [warm.find("git checkout -- project.yml"), warm.find("xcodegen generate"),
-                  warm.find("Tools/xcode-test.sh build")]
-    if -1 in warm_order or warm_order != sorted(warm_order):
-        fail("ios-testflight.yml の「控えを温める」が、project.yml を戻して xcodegen し直してから組んでいません")
+    # ---- Mac の控え（2026-11-11・(a)(b)）: 戻すのは共通の部品、書くのは xcode-cache-warm.yml だけ ------------------
+    restore_action = ROOT / ".github/actions/xcode-cache-restore/action.yml"
+    warm_yml = ROOT / ".github/workflows/xcode-cache-warm.yml"
+    restore_text = restore_action.read_text(encoding="utf-8") if restore_action.exists() else ""
+    warm_text = warm_yml.read_text(encoding="utf-8") if warm_yml.exists() else ""
+
+    def _cache_paths(text, step):
+        found = re.search(r"- name: " + re.escape(step) + r"\n(?:.*\n)*?\s+path: \|\n((?:\s+\S.*\n)+?)\s+key:", text)
+        return [line.strip() for line in found.group(1).splitlines()] if found else None
+    v2_paths = _cache_paths(restore_text, "控えを戻す（v2・依存と組んだものだけ）")
+    if not v2_paths or v2_paths != _cache_paths(warm_text, "控えを書く"):
+        fail("Mac の控え: .github/actions/xcode-cache-restore の v2 と xcode-cache-warm.yml の「控えを書く」の path が揃っていません（当たらない）")
+    elif any(p.startswith("!") and not p.endswith("/**") for p in v2_paths) or any("org.swift.swiftpm" in p for p in v2_paths):
+        fail("Mac の控え v2: 除くものは `/**` まで書く（フォルダが除かれず 1.3GB 入っていた）・SwiftPM の置き場の写しは入れない")
+    if "python3 Tools/source-mtime.py" not in restore_text:
+        fail("Mac の控えを戻す部品が、ソースの時刻を中身から揃えていません（Tools/source-mtime.py）")
+    for name, text in workflows.items():
+        if "actions/cache/save@" in _code(text) and "DerivedData" in text and name != "xcode-cache-warm.yml":
+            fail(f"{name} が Mac の控えを書いています（書くのは xcode-cache-warm.yml だけ・置き場 10GB）")
+        if name != "xcode-cache-warm.yml" and "DerivedData/JourneyPhoto-*/SourcePackages" in _code(text):
+            fail(f"{name} が Mac の控えの path を自分で書いています（.github/actions/xcode-cache-restore を使う）")
+    for name in ("ios-quick.yml", "ios-testflight.yml", "mac-sharded-tests.yml"):
+        if "uses: ./.github/actions/xcode-cache-restore" not in workflows.get(name, ""):
+            fail(f"{name} が Mac の控えを戻す部品（.github/actions/xcode-cache-restore）を使っていません")
 
     import subprocess
     import tempfile

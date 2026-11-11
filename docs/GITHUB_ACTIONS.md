@@ -131,8 +131,9 @@ Key ID（`DDYJB5893J`）と Team ID（`5428GX5UM8`）は**秘密ではない**�
 - Linux の単体テストは、落ちたときの書き出しを止めている（`SWIFT_BACKTRACE=enable=no`）。テストの段は10分で切る
 - **Web 版との突き合わせは CI では飛ぶ。** `photo-gallery` が非公開で読めないため（「見ていない」と表示される）。手元の `verify.sh` で見る
 - **費用**: このリポジトリは公開なので、標準ランナー（macOS を含む）は無料。**非公開に変えたら Mac の分は無料枠を大きく食う**（macOS は分数10倍）——そのときは `ios-quick.yml` の `on:` から `pull_request` を外す
-- **Mac の控え（DerivedData）**: 書くのは main の TestFlight の回の「控えを温める」だけ。読むのは毎回の・ガチガチの・TestFlight。
-  Xcode が上がったときの温め直しは `/mac-check` の手順書
+- **Mac の控え（DerivedData・依存と組んだものだけ・約 500MB）**: 書くのは `xcode-cache-warm.yml` だけ（main に入るたび・毎日 1 回あるかを見る・
+  毎回のが当たらなかったとき）。読むのは毎回の・ガチガチの・TestFlight（`.github/actions/xcode-cache-restore`）。ソースの時刻を中身から
+  揃える（`Tools/source-mtime.py`）ので、毎回のが組むのは変えたファイルの分だけ。Xcode が上がったときは `/mac-check` の手順書
 
 main を守るには、GitHub の Settings → Branches で `main` に保護の規則を作り、
 「Xcode のビルドとテスト（シミュレータ）」を必須のチェックにする（人の操作。Claude からは変えない）。

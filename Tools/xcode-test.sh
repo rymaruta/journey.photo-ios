@@ -122,6 +122,12 @@ if [ -n "${XCTESTRUN:-}" ]; then
 else
     source_args="-project JourneyPhoto.xcodeproj -scheme JourneyPhoto"
     source_args="$source_args ARCHS=arm64 ONLY_ACTIVE_ARCH=YES -skipPackagePluginValidation -skipMacroValidation"
+    # 控え（v2）が同じ依存の版（project.yml の中身が同じ鍵）で当たったときだけ、依存を取りに行かない
+    # （`.github/actions/xcode-cache-restore` が XCODE_SKIP_PACKAGE_UPDATES=1 にする）。控えは SwiftPM の置き場の写し
+    # （repositories）を持たないので、取りに行くと 30 行・約 6 分かかった回があった（測る回 run 42999187365 の 3 回目）
+    if [ "${XCODE_SKIP_PACKAGE_UPDATES:-}" = "1" ]; then
+        source_args="$source_args -skipPackageUpdates"
+    fi
 fi
 
 mkdir -p "$(dirname "$LOG")"

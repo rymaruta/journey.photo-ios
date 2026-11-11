@@ -220,64 +220,11 @@ jobs:
 
       # 🔴 **控えの鍵はここで1回だけ決める**（2026-10-17）。main の上げる回は、あとの「ビルド番号を決める」が
       # project.yml を書き換えるので、書く段で `hashFiles('project.yml')` を計算すると戻す段と鍵がずれる
-      - name: 配信用アプリをビルドキャッシュのキーを生成
-        run: echo "CACHE_KEY=xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}" >> "$GITHUB_ENV"
-
-      # 🔴 **控えは main の回だけが書く・枝は読むだけ**（2026-10-17 判断）。
-      # 控えは1つ約7GB（run 461 の実測 7111MB）で、GitHub の置き場は10GBまで——**2つ目を書くと
-      # 前のが追い出される**。しかも控えは枝ごとに区切られ、別の枝からは main の分しか読めない。
-      # 前は枝の回がそれぞれ書いては互いを追い出し、直近の枝の回の半分以上（run 454〜465 の
-      # 12回中9回）と PR の検証の Mac（見た3回とも）が「控え無し」で始まって、ビルドが約10分
-      # 余計にかかっていた（run 462: 控え無しでテストの段 55分 / run 461: 控え有りで 41分）。
-      # main の回が下の「控えを温める」でシミュレータ向けまで組んで書けば、どの枝・どの PR も読める
-      - name: キャッシュ復元の計測開始
-        run: echo "CACHE_RESTORE_STARTED=$(date +%s)" >> "$GITHUB_ENV"
-
-      - name: 配信用アプリをビルドキャッシュを復元
+      # 🔴 **控えは xcode-cache-warm.yml だけが書く・ここは読むだけ**（2026-11-11。前はこの回の「控えを温める」が書いていた）。
+      # Archive（Release・実機向け）が使うのは控えの中の依存のソース（SourcePackages）。組んだものは Debug・シミュレータ向けで使わない
+      - name: 控えを戻す
         id: cache
-        uses: actions/cache/restore@v6
-        with:
-          path: |
-            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
-            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
-            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.dSYM
-            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.app
-            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xctest
-            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xcresult
-            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
-            ~/Library/Caches/org.swift.swiftpm
-          # **Xcode の版を鍵に入れる。** 入れないと、ランナーの像が
-          # 上がって Xcode が変わった回に**古い中間生成物が混ざる**。
-          # しかも鍵は当たり続けるので控えは作り直されず、以後ずっと
-          # 同じ壊れた控えから始まる（原因のいちばん見えにくい壊れ方）
-          #
-          # **鍵の末尾に回の番号を付ける**（2026-10-17）。main の回は毎回新しい鍵で書き、
-          # 読む側は頭が合ういちばん新しいものを拾う。番号が無いと、鍵が当たり続けて
-          # 控えが古いまま（ソースとの差が広がって差分のビルドが年々長くなる）
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
-          restore-keys: |
-            ${{ env.CACHE_KEY }}
-            xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
-
-      # 7GB級の復元がボトルネックか、毎回のActions Summaryで確認する。
-      - name: キャッシュ復元の計測結果
-        env:
-          MATCHED_KEY: ${{ steps.cache.outputs.cache-matched-key }}
-          EXACT_HIT: ${{ steps.cache.outputs.cache-hit }}
-        run: |
-          set -euo pipefail
-          elapsed=$(( $(date +%s) - CACHE_RESTORE_STARTED ))
-          {
-            echo "### Xcodeキャッシュ復元"
-            echo "所要時間: ${elapsed}秒"
-            if [ -z "${MATCHED_KEY:-}" ]; then
-              echo "状態: 未命中"
-            elif [ "${EXACT_HIT:-}" = "true" ]; then
-              echo "状態: 完全一致"
-            else
-              echo "状態: 近いキャッシュから復元"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+        uses: ./.github/actions/xcode-cache-restore
 
       - name: 配信用アプリをビルドツールをインストール
         run: |
@@ -544,42 +491,3 @@ jobs:
             build/logs/app-size.txt
           retention-days: 3
           if-no-files-found: ignore
-
-      # 🔴 **控えを書くのは main の回だけ**（2026-10-17 判断・上の「前回の作りかけを控えから戻す」）。
-      # main の上げる回はテストを流さない（Release の Archive だけ）ので、そのままでは控えに
-      # シミュレータ向けの組み立てが入らず、枝・PR の回の役に立たない。ここで組んでから書く。
-      # main の控えから差分で組むので、2回目からは数分（run 461 は控え有りで、組むのは逆算で1〜2分。控え無しの run 462 は約12分）。
-      # **上げる・印を付けるが済んだあと**に置き、落ちても赤にしない（上げる回の邪魔をしない）
-      # Archive（「ビルド」）が通った回だけ温める・書く。落ちた回の作りかけは書かない。
-      # **path の `!…/ArchiveIntermediates`**: Archive の中間物は控えに入れない（10GB を超えないように）。
-      # 戻す・書く・PR の検証の3か所で path を揃える（違うと控えの版が合わず、当たらない）
-      - name: 控えを温める（main の回だけ・シミュレータ向けに組む）
-        id: warm
-        if: ${{ steps.archive.outcome == 'success' && github.ref == 'refs/heads/main' }}
-        continue-on-error: true
-        timeout-minutes: 30
-        # 🔴 **元のプロジェクトに戻してから組む**（2026-10-17 判断）。ここに来るまでに「ビルド番号を
-        # 決める」が project.yml の版・ビルド番号を書き換え、`xcode-project use-profiles` が署名の設定を
-        # .xcodeproj に入れている。そのまま組むと、控えに入るのは**枝や PR では作られない設定**の
-        # 中間物になり、読む側で差分が大きくなる（設定が違えば組み直し）。project.yml を checkout の
-        # 状態へ戻し、.xcodeproj（git に入っていない）を作り直してから組む
-        run: |
-          set -euo pipefail
-          git checkout -- project.yml
-          xcodegen generate
-          XCODE_LOG=/tmp/xcodebuild-warm.log bash Tools/xcode-test.sh build
-
-      - name: mainのビルドキャッシュを保存
-        if: ${{ steps.warm.outcome == 'success' && github.ref == 'refs/heads/main' }}
-        uses: actions/cache/save@v6
-        with:
-          path: |
-            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
-            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
-            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.dSYM
-            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.app
-            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xctest
-            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xcresult
-            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
-            ~/Library/Caches/org.swift.swiftpm
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
