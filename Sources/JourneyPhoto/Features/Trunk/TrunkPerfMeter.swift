@@ -122,6 +122,12 @@ final class TrunkPerfMeter: @unchecked Sendable {
         #endif
     }
 
+    /// 少し後に段のメモリを残す
+    func markLater(_ stage: String, after seconds: Double) {
+        guard enabled else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [self] in mark(stage) }
+    }
+
     /// 「名前 n= ms= max= slow=;」「Gap名前 frames= …;」「Live名前 now= peak=;」「注記;」「Process …;」
     func summary() -> String {
         lock.lock()

@@ -61,7 +61,9 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    # 2026-11-11（owner「旅のトランク重すぎる」）: 回す・特別なトランクの一覧の重さ（直しの前後）と、直しの前後の画素の差。
                    # `screens=testMeasuresTrunk, testTrunkSpinMatchesBefore`
                    "ScreenshotTests/testMeasuresTrunkSpin", "ScreenshotTests/testMeasuresTrunkSpinBefore",
-                   "ScreenshotTests/testMeasuresTrunkProModels", "ScreenshotTests/testTrunkSpinMatchesBefore"]
+                   "ScreenshotTests/testMeasuresTrunkProModels", "ScreenshotTests/testTrunkSpinMatchesBefore",
+                   "ScreenshotTests/testMeasuresTrunkMemory", "ScreenshotTests/testMeasuresTrunkMemoryNoPrewarm",
+                   "ScreenshotTests/testMeasuresTrunkMemoryBefore"]
 
 # クラスの直下（字下げ4つ）の関数だけを区切りにする。中の入れ子の関数は本体に含める
 MEMBER = re.compile(r"^    (?:@\w+\s+)*(?:(?:private|fileprivate|override|static|final)\s+)*func\s+(\w+)\s*\(", re.M)

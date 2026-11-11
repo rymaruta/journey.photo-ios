@@ -36,6 +36,7 @@ struct TrunkView: View {
             .task(id: spinKey) {
                 guard let spinKey else { return }
                 do { try await Task.sleep(for: .milliseconds(800)) } catch { return }
+                TrunkPerfMeter.shared.mark("Trunk0Loaded")
                 await TrunkTextures.prewarm(spinKey)
             }
             // 画面から戻ったら手放す（回す画面などを上に出している間は持っておく）

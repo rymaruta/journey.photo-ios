@@ -4397,6 +4397,41 @@ final class ScreenshotTests: XCTestCase {
         trunkPerfReport("回す" + (diag.map { "・\($0)" } ?? ""), app, lines)
     }
 
+    /// **メモリの内訳**（2026-11-11・先に作る絵を足した後、トランクの画面が 195→233MB に増えた中身を突き止める）。
+    /// トランクの画面（先に作り終えた後）→ 回す画面 → 閉じた後で、アプリの段ごとの印（`Trunk0Loaded`・`Warm0Start`〜`Warm4Later`・
+    /// `SpinReady`・`SpinGone`・`SpinGoneLater`）の phys_footprint と user_tag 別をログの `TRUNKMEM:` に出す。
+    /// 今の作り・先に作らない（`noprewarm`）・直しの前（`spincont,spinlazy`）を、それぞれ起動し直して比べる
+    func testMeasuresTrunkMemory() { measureTrunkMemory(diag: nil) }
+    func testMeasuresTrunkMemoryNoPrewarm() { measureTrunkMemory(diag: "noprewarm") }
+    func testMeasuresTrunkMemoryBefore() { measureTrunkMemory(diag: "spincont,spinlazy") }
+
+    private func measureTrunkMemory(diag: String?) {
+        executionTimeAllowance = 400
+        let app = launchTrunk(Self.trunkPerfArgs + (diag.map { ["-JPPreviewTrunkDiag", $0] } ?? []))
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        let tag = diag ?? "now"
+        func dump(_ label: String) {
+            let perf = trunkPerf(app)
+            print("TRUNKMEM: \(tag) \(label) | Process mem_mb=\(perf["Process"]?["mem_mb"] ?? "-") int_mb=\(perf["Process"]?["int_mb"] ?? "-") cmp_mb=\(perf["Process"]?["cmp_mb"] ?? "-")")
+            for key in perf.keys.sorted() where key.hasPrefix("Mem") || key.hasPrefix("VM") || key == "WarmPx" || key == "SpinScene" {
+                print("TRUNKMEM: \(tag) \(label) | \(key) \(perf[key]?["_raw"] ?? "")")
+            }
+        }
+        Thread.sleep(forTimeInterval: 9)
+        dump("トランクの画面（9秒後）")
+        app.buttons["trunk.spin"].firstMatch.tap()
+        let box = app.descendants(matching: .any)["trunk.spin.box"].firstMatch
+        let ready = NSPredicate(format: "value BEGINSWITH %@", "faces-ready")
+        guard XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: box)], timeout: 20) == .completed else {
+            return XCTFail("回す画面の面を描き終えない")
+        }
+        Thread.sleep(forTimeInterval: 4)
+        dump("回す画面（4秒後）")
+        app.buttons["trunk.spin.close"].firstMatch.tap()
+        Thread.sleep(forTimeInterval: 6)
+        dump("閉じた後（6秒後）")
+    }
+
     /// **Pro で使えるトランクの一覧**（owner「Pro で使えるトランクの一覧を見たとき重い」）: 型の画面 → 特別なトランク（6 型）を開く
     /// （開くまで）→ 縦に送る（measure・送りのコマ落ち）→ 戻る、を 2 回。札を作った回数・作られているトランクの絵の数・
     /// メモリの増え方と戻り方
