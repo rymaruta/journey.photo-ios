@@ -4212,12 +4212,13 @@ final class ScreenshotTests: XCTestCase {
     }
 
     // MARK: - 旅のトランクの重さを測る（2026-11-11・owner「旅のトランク重すぎるな」「重いのはトランクを回したり、Pro で使える
-    // トランクの一覧を見たとき」・測るだけ）
+    // トランクの一覧を見たとき」）
     //
     // アプリ側の `TrunkPerfMeter`（`-JPPreviewTrunkPerf YES`・見えない要素 `trunk.perf`）の数を操作の前後で読み、差をログの
     // `TRUNKPERF:` の行に出す。主スレッドが止まった時刻と、止まっている最中の積み（`perf.probe` の `stalls=`・`samples=`）は
     // 最後に `PERF-PROBE` の行で残す。普段の回では流さない（`Tools/pick-ui-tests.py` の `ONLY_WHEN_NAMED`）。
-    // 名指しは `screens=testMeasuresTrunk`。値は Mac の CI のシミュレーターのもの（実機ではない）
+    // 名指しは `screens=testMeasuresTrunk`。値は Mac の CI のシミュレーターのもの（実機ではない）。
+    // `…Before` は 2026-11-11 の直しの前の作り（`-JPPreviewTrunkDiag live` / `spincont,spinlazy`）で、同じ回の前後を比べる
 
     private static let trunkPerfArgs = ["-JPPreviewTrunk", "YES", "-JPPreviewPro", "YES", "-JPPreviewTrunkPerf", "YES",
                                         "-JPPreviewPerfProbe", "YES"]
@@ -4242,19 +4243,25 @@ final class ScreenshotTests: XCTestCase {
         return out
     }
 
-    /// 1 つの操作の前後の差を行にする（回数・時間は差、コマの間隔は差、注記とメモリはそのまま）
-    private func trunkPhase(_ app: XCUIApplication, _ label: String, lines: inout [String], _ body: () -> Void) {
+    /// 1 つの操作の前後の差を行にする（回数・時間は差、コマの間隔は差、注記とメモリはそのまま）。
+    /// 返す値は「名前.欄 → 差」（`GapMain.over100` など。試験の合否に使う）
+    @discardableResult
+    private func trunkPhase(_ app: XCUIApplication, _ label: String, lines: inout [String], _ body: () -> Void) -> [String: Double] {
         let before = trunkPerf(app)
         let start = Date()
         body()
         let secs = Date().timeIntervalSince(start)
         let after = trunkPerf(app)
-        if after.isEmpty { lines.append("\(label) | 数が読めない（trunk.perf が無い）"); return }
+        var deltas: [String: Double] = [:]
+        if after.isEmpty { lines.append("\(label) | 数が読めない（trunk.perf が無い）"); return deltas }
         func d(_ k: String, _ f: String) -> Double {
-            (Double(after[k]?[f] ?? "") ?? 0) - (Double(before[k]?[f] ?? "") ?? 0)
+            let v = (Double(after[k]?[f] ?? "") ?? 0) - (Double(before[k]?[f] ?? "") ?? 0)
+            deltas["\(k).\(f)"] = v
+            return v
         }
         if let a = after["Process"] {
             let cpu = d("Process", "cpu_ms")
+            deltas["Process.mem_mb"] = Double(a["mem_mb"] ?? "") ?? 0
             lines.append(String(format: "%@ | Process secs=%.1f cpu_ms=%.0f cpu_pct=%.1f mem_mb_before=%@ mem_mb_after=%@ dev_mb_after=%@",
                                 label, secs, cpu, cpu / max(secs, 0.001) / 10,
                                 before["Process"]?["mem_mb"] ?? "-", a["mem_mb"] ?? "-", a["dev_mb"] ?? "-"))
@@ -4279,6 +4286,7 @@ final class ScreenshotTests: XCTestCase {
                 lines.append("\(label) | \(key) \(a["_raw"] ?? "")")
             }
         }
+        return deltas
     }
 
     private func trunkPerfReport(_ title: String, _ app: XCUIApplication, _ lines: [String]) {
@@ -4291,15 +4299,25 @@ final class ScreenshotTests: XCTestCase {
         notePerfProbe(app, label: title)
     }
 
-    /// **回す**（owner「トランクを回したとき重い」）: 開く（面を描き終えるまで）→ 止まっている → 指で横・縦に払う →
-    /// 向きのボタン → 閉じる → もう一度開く。回している間の 1 コマ（`GapMain`・`GapSpin`・`SpinFrame`）・主スレッドの停止・前後のメモリ
-    func testMeasuresTrunkSpin() { measureTrunkSpin(diag: nil, rounds: 2) }
-    /// 差し替え（測るだけ・見た目は変わる）: 輪郭のなめらかさ なし／動いている間だけ描く。
-    /// AA0 は名前を `ASpin…` にして、この組でいちばん先に流す（run 992 の初回の 1 コマ 39 秒が、AA なしの初回でも出るかを見る）
-    func testMeasuresTrunkASpinDiagAA0() { measureTrunkSpin(diag: "spinaa0", rounds: 1) }
-    func testMeasuresTrunkSpinDiagIdle() { measureTrunkSpin(diag: "spinidle", rounds: 1) }
+    /// `trunk.perf` の回数（`StillReady` など）が `count` 以上になるまで待つ
+    @discardableResult
+    private func waitTrunkCount(_ app: XCUIApplication, _ name: String, atLeast count: Int, timeout: TimeInterval = 15) -> Bool {
+        let until = Date().addingTimeInterval(timeout)
+        while Date() < until {
+            if let n = Int(trunkPerf(app)[name]?["n"] ?? ""), n >= count { return true }
+        }
+        return false
+    }
 
-    private func measureTrunkSpin(diag: String?, rounds: Int) {
+    /// **回す**（owner「トランクを回したとき重い」）: 開く（面を描き終えるまで）→ 止まっている → 指で横・縦に払う →
+    /// 止まり際の後 → 向きのボタン → 閉じる → もう一度開く。回している間の 1 コマ（`GapMain`・`GapSpin`・`SpinFrame`）・
+    /// 主スレッドの停止・前後のメモリ。**直しの合否**（直しを戻すと落ちる）: 止まっている間に箱を描かない（2026-11-11 の
+    /// 「動いている間だけ描く」）・2 回目に開くと絵を使い回す
+    func testMeasuresTrunkSpin() { measureTrunkSpin(diag: nil) }
+    /// 直しの前の作り（描き続ける・絵を塗り切らず使い回さない）。同じ回で前後を比べる。合否は付けない
+    func testMeasuresTrunkSpinBefore() { measureTrunkSpin(diag: "spincont,spinlazy") }
+
+    private func measureTrunkSpin(diag: String?) {
         executionTimeAllowance = 600
         let app = launchTrunk(Self.trunkPerfArgs + (diag.map { ["-JPPreviewTrunkDiag", $0] } ?? []))
         guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
@@ -4308,11 +4326,11 @@ final class ScreenshotTests: XCTestCase {
         let spin = app.buttons["trunk.spin"].firstMatch
         let box = app.descendants(matching: .any)["trunk.spin.box"].firstMatch
         let close = app.buttons["trunk.spin.close"].firstMatch
-        for round in 1...rounds {
+        for round in 1...2 {
             guard spin.waitForExistence(timeout: 10), spin.isHittable else { return XCTFail("トランクを押せない（\(round) 回目）") }
             var marker = ""
             var wall = 0.0
-            trunkPhase(app, "回す画面を開く\(round)（面を描き終えるまで）", lines: &lines) {
+            let opened = trunkPhase(app, "回す画面を開く\(round)（面を描き終えるまで）", lines: &lines) {
                 let began = Date()
                 spin.tap()
                 let ready = NSPredicate(format: "value BEGINSWITH %@", "faces-ready")
@@ -4324,7 +4342,14 @@ final class ScreenshotTests: XCTestCase {
                 }
             }
             lines.append(String(format: "回す画面を開く%d | %@ test_wall_to_ready_s=%.2f（XCUITest の待ちを含む）", round, marker, wall))
-            trunkPhase(app, "回す画面・止まっている\(round)", lines: &lines) { Thread.sleep(forTimeInterval: 4) }
+            if diag == nil, round == 2 {
+                XCTAssertGreaterThanOrEqual(opened["SpinReuse.n"] ?? 0, 1, "2 回目に開いても絵を使い回していない")
+            }
+            let still = trunkPhase(app, "回す画面・止まっている\(round)", lines: &lines) { Thread.sleep(forTimeInterval: 4) }
+            if diag == nil {
+                // 止まっている 4 秒（前の作りは 240 コマ）に描くのは、出した直後の数コマまで
+                XCTAssertLessThanOrEqual(still["SpinFrame.n"] ?? 0, 12, "止まっている間も箱を描き続けている（\(round) 回目）")
+            }
             trunkPhase(app, "回す画面・指で払う\(round)", lines: &lines) {
                 for i in 0..<6 {
                     let left = box.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5))
@@ -4338,8 +4363,12 @@ final class ScreenshotTests: XCTestCase {
                     let (from, to) = i % 2 == 0 ? (top, bottom) : (bottom, top)
                     from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .default, thenHoldForDuration: 0)
                 }
-                // 惰性で回り終えるまで
-                Thread.sleep(forTimeInterval: 2)
+            }
+            // 惰性で回り終える間（止まり際まで描く）と、止まりきった後
+            trunkPhase(app, "回す画面・離した後の惰性\(round)", lines: &lines) { Thread.sleep(forTimeInterval: 6) }
+            let settled = trunkPhase(app, "回す画面・止まりきった後\(round)", lines: &lines) { Thread.sleep(forTimeInterval: 4) }
+            if diag == nil {
+                XCTAssertLessThanOrEqual(settled["SpinFrame.n"] ?? 0, 12, "止まりきった後も箱を描き続けている（\(round) 回目）")
             }
             trunkPhase(app, "回す画面・向きのボタン\(round)", lines: &lines) {
                 for id in ["side", "topBack", "bottom", "front"] {
@@ -4348,7 +4377,6 @@ final class ScreenshotTests: XCTestCase {
                     Thread.sleep(forTimeInterval: 1.5)
                 }
             }
-            if round == 1, diag == nil { shoot(app, "96x1-計測（回した正面）") }
             trunkPhase(app, "回す画面を閉じた後\(round)", lines: &lines) {
                 close.tap()
                 Thread.sleep(forTimeInterval: 4)
@@ -4358,16 +4386,13 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// **Pro で使えるトランクの一覧**（owner「Pro で使えるトランクの一覧を見たとき重い」）: 型の画面 → 特別なトランク（6 型）を開く
-    /// （開くまで）→ 縦に送る（measure・送りのコマ落ち）→ 戻る、を 2 回。札を作った回数・Canvas の回数と時間・
-    /// 同時に作られているトランクの絵の数（`LiveBox`）・メモリの増え方と戻り方
-    func testMeasuresTrunkProModels() { measureTrunkPro(diag: nil, rounds: 2) }
-    /// 差し替え（測るだけ・見た目は変わる）: 胴の影なし／drawingGroup なし／LazyVStack／1 度描いた画像
-    func testMeasuresTrunkProModelsDiagNoShadow() { measureTrunkPro(diag: "noshadow", rounds: 1) }
-    func testMeasuresTrunkProModelsDiagNoDG() { measureTrunkPro(diag: "nodg", rounds: 1) }
-    func testMeasuresTrunkProModelsDiagLazy() { measureTrunkPro(diag: "lazy", rounds: 1) }
-    func testMeasuresTrunkProModelsDiagSnap() { measureTrunkPro(diag: "snap", rounds: 1) }
+    /// （開くまで）→ 縦に送る（measure・送りのコマ落ち）→ 戻る、を 2 回。札を作った回数・作られているトランクの絵の数・
+    /// メモリの増え方と戻り方。**直しの合否**（直しを戻すと落ちる）: 送る間の 100ms 超のコマ ≤ 20
+    func testMeasuresTrunkProModels() { measureTrunkPro(diag: nil) }
+    /// 直しの前の作り（生の絵）。同じ回で前後を比べる。合否は付けない
+    func testMeasuresTrunkProModelsBefore() { measureTrunkPro(diag: "live") }
 
-    private func measureTrunkPro(diag: String?, rounds: Int) {
+    private func measureTrunkPro(diag: String?) {
         executionTimeAllowance = 600
         let app = launchTrunk(Self.trunkPerfArgs + (diag.map { ["-JPPreviewTrunkDiag", $0] } ?? []))
         guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
@@ -4380,7 +4405,7 @@ final class ScreenshotTests: XCTestCase {
         }
         let proRow = app.buttons["trunk.models.pro"].firstMatch
         let card = app.buttons["trunk.proModels.card"].firstMatch
-        for round in 1...rounds {
+        for round in 1...2 {
             scrollTo(proRow, in: app)
             guard proRow.isHittable else { return XCTFail("特別なトランクの行を押せない（\(round) 回目）") }
             var opened = 0.0
@@ -4393,7 +4418,7 @@ final class ScreenshotTests: XCTestCase {
             }
             lines.append(String(format: "特別なトランクを開く%d | test_wall_to_card_s=%.2f（XCUITest の待ちを含む）", round, opened))
             trunkPhase(app, "特別なトランク・止まっている\(round)", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
-            trunkPhase(app, "特別なトランク・縦に送る\(round)", lines: &lines) {
+            let scrolled = trunkPhase(app, "特別なトランク・縦に送る\(round)", lines: &lines) {
                 if round == 1 {
                     let options = XCTMeasureOptions()
                     options.iterationCount = 3
@@ -4413,13 +4438,162 @@ final class ScreenshotTests: XCTestCase {
                     }
                 }
             }
-            if round == 1 { shoot(app, "96x2-計測（特別なトランク" + (diag.map { "・\($0)" } ?? "") + "）") }
+            if diag == nil {
+                XCTAssertLessThanOrEqual(scrolled["GapMain.over100"] ?? 999, 20, "特別なトランクを送る間に 100ms を越えて止まった（\(round) 回目）")
+            }
             trunkPhase(app, "特別なトランクから戻った後\(round)", lines: &lines) {
                 goBack(app)
                 Thread.sleep(forTimeInterval: 4)
             }
         }
         trunkPerfReport("特別なトランク" + (diag.map { "・\($0)" } ?? ""), app, lines)
+    }
+
+    // MARK: - 直しの前後で絵が同じか（2026-11-11・画素の差。owner はトランクの見た目を妥協しない）
+    //
+    // 同じ見本で、前の作り（`-JPPreviewTrunkDiag`）と今の作りを起動し直して同じ所を撮り、画素の差をログの `TRUNKPIXEL:` に出す。
+    // 公開リポジトリでは絵が残らないので、数で比べる。差のある画素（どれかの色が 2 より大きく違う）が 0.1% を越えたら落とす
+
+    struct TrunkPixelDiff {
+        var width = 0
+        var height = 0
+        var meanAbs = 0.0
+        var maxAbs = 0
+        /// どれかの色が 2 より大きく違う画素の割合（%）
+        var over2Pct = 0.0
+        var over16Pct = 0.0
+        var sizeMismatch = false
+
+        var line: String {
+            sizeMismatch ? "size-mismatch"
+                : String(format: "w=%d h=%d mean_abs=%.4f max_abs=%d over2_pct=%.4f over16_pct=%.4f",
+                         width, height, meanAbs, maxAbs, over2Pct, over16Pct)
+        }
+    }
+
+    /// 2 枚の絵の画素の差（RGBA 8 ビット・sRGB に並べ直して比べる）
+    private func pixelDiff(_ a: UIImage, _ b: UIImage) -> TrunkPixelDiff {
+        func rgba(_ image: UIImage) -> (Int, Int, [UInt8])? {
+            guard let cg = image.cgImage else { return nil }
+            let w = cg.width, h = cg.height
+            var data = [UInt8](repeating: 0, count: w * h * 4)
+            let ok = data.withUnsafeMutableBytes { raw -> Bool in
+                guard let ctx = CGContext(data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                          space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+                ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+                return true
+            }
+            return ok ? (w, h, data) : nil
+        }
+        var out = TrunkPixelDiff()
+        guard let ra = rgba(a), let rb = rgba(b), ra.0 == rb.0, ra.1 == rb.1 else {
+            out.sizeMismatch = true
+            return out
+        }
+        let wa = ra.0, ha = ra.1, da = ra.2, db = rb.2
+        out.width = wa
+        out.height = ha
+        var sum = 0, maxAbs = 0, over2 = 0, over16 = 0
+        for p in 0..<(wa * ha) {
+            var pixelMax = 0
+            for c in 0..<3 {
+                let diff = abs(Int(da[p * 4 + c]) - Int(db[p * 4 + c]))
+                sum += diff
+                pixelMax = max(pixelMax, diff)
+            }
+            maxAbs = max(maxAbs, pixelMax)
+            if pixelMax > 2 { over2 += 1 }
+            if pixelMax > 16 { over16 += 1 }
+        }
+        let pixels = Double(wa * ha)
+        out.meanAbs = Double(sum) / (pixels * 3)
+        out.maxAbs = maxAbs
+        out.over2Pct = Double(over2) / pixels * 100
+        out.over16Pct = Double(over16) / pixels * 100
+        return out
+    }
+
+    private func notePixel(_ label: String, _ diff: TrunkPixelDiff, _ a: UIImage, _ b: UIImage) {
+        let line = "TRUNKPIXEL: \(perfTestName) \(label) | \(diff.line)"
+        print(line)
+        XCTContext.runActivity(named: line) { activity in
+            for (name, image) in [("前", a), ("今", b)] {
+                let shot = XCTAttachment(image: image)
+                shot.name = "\(label)（\(name)）"
+                shot.lifetime = .keepAlways
+                activity.add(shot)
+            }
+        }
+        XCTAssertFalse(diff.sizeMismatch, "\(label): 前と今で絵の大きさが違う")
+        XCTAssertLessThanOrEqual(diff.over2Pct, 0.1, "\(label): 前と今で絵が違う（\(diff.line)）")
+    }
+
+    /// 型の一覧の最初の札と、特別なトランクの最初の札を撮る（今の作りは、画素の絵ができるのを待つ）
+    private func shootModelCards(diag: String?) -> (free: UIImage, pro: UIImage)? {
+        let app = launchTrunk(Self.trunkPerfArgs + (diag.map { ["-JPPreviewTrunkDiag", $0] } ?? []))
+        defer { app.terminate() }
+        guard openTrunk(app), openTrunkRow(app, "trunk.models") else { XCTFail("型の画面を開けない"); return nil }
+        let free = app.buttons["trunk.models.card"].firstMatch
+        guard free.waitForExistence(timeout: 10) else { XCTFail("型の札が無い"); return nil }
+        if diag == nil { XCTAssertTrue(waitTrunkCount(app, "StillReady", atLeast: TrunkModelCount.free), "型の札の絵ができない") }
+        Thread.sleep(forTimeInterval: 2)
+        let freeShot = free.screenshot().image
+        let ready = Int(trunkPerf(app)["StillReady"]?["n"] ?? "") ?? 0
+        let proRow = app.buttons["trunk.models.pro"].firstMatch
+        scrollTo(proRow, in: app)
+        proRow.tap()
+        let card = app.buttons["trunk.proModels.card"].firstMatch
+        guard card.waitForExistence(timeout: 15) else { XCTFail("特別なトランクの札が無い"); return nil }
+        if diag == nil { XCTAssertTrue(waitTrunkCount(app, "StillReady", atLeast: ready + 1), "特別なトランクの絵ができない") }
+        Thread.sleep(forTimeInterval: 2)
+        return (freeShot, card.screenshot().image)
+    }
+
+    private enum TrunkModelCount { static let free = 4 }
+
+    /// **型の一覧・特別なトランクの一覧**: 生の絵（前）と、1 度描いた画素の絵（今）が同じか
+    func testTrunkStillMatchesLive() {
+        executionTimeAllowance = 400
+        guard let before = shootModelCards(diag: "live"), let now = shootModelCards(diag: nil) else { return }
+        notePixel("型の一覧の札", pixelDiff(before.free, now.free), before.free, now.free)
+        notePixel("特別なトランクの札", pixelDiff(before.pro, now.pro), before.pro, now.pro)
+    }
+
+    /// 回す箱を、開いた直後・向きのボタンで止めた所（側面・上と背面・底・正面）で撮る
+    private func shootSpinFaces(diag: String?) -> [(String, UIImage)] {
+        let app = launchTrunk(Self.trunkPerfArgs + (diag.map { ["-JPPreviewTrunkDiag", $0] } ?? []))
+        defer { app.terminate() }
+        guard openTrunk(app) else { XCTFail("旅のトランクを開けない"); return [] }
+        app.buttons["trunk.spin"].firstMatch.tap()
+        let box = app.descendants(matching: .any)["trunk.spin.box"].firstMatch
+        let ready = NSPredicate(format: "value BEGINSWITH %@", "faces-ready")
+        guard XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: box)], timeout: 20) == .completed else {
+            XCTFail("回す画面の面を描き終えない")
+            return []
+        }
+        Thread.sleep(forTimeInterval: 3)
+        var shots = [("開いた直後", box.screenshot().image)]
+        for id in ["side", "topBack", "bottom", "front"] {
+            let button = app.buttons["trunk.spin.view.\(id)"].firstMatch
+            guard button.waitForExistence(timeout: 5) else { XCTFail("向きのボタン \(id) が無い"); return shots }
+            button.tap()
+            // 寄せ終えて止まるまで（止まり際まで描かれているか）
+            Thread.sleep(forTimeInterval: 3)
+            shots.append(("向き \(id)", box.screenshot().image))
+        }
+        return shots
+    }
+
+    /// **回す箱**: 前の作り（描き続ける・後で塗る絵）と今の作り（動く間だけ描く・塗り切った絵）で、止まった絵が同じか
+    func testTrunkSpinMatchesBefore() {
+        executionTimeAllowance = 400
+        let before = shootSpinFaces(diag: "spincont,spinlazy")
+        let now = shootSpinFaces(diag: nil)
+        guard before.count == now.count, !now.isEmpty else { return XCTFail("撮れた数が前と今で違う") }
+        for (b, n) in zip(before, now) {
+            notePixel("回す箱・\(n.0)", pixelDiff(b.1, n.1), b.1, n.1)
+        }
     }
 
     // MARK: - 人のトランク（2026-10-18・板 TheirTrunk・TheirInside・ProfileTrunk）

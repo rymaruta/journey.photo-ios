@@ -58,11 +58,11 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    "ScreenshotTests/testMeasuresCamperStagesAANone", "ScreenshotTests/testMeasuresCamperStagesAA4x",
                    # 2026-11-10（札 #521）: 移動の見込みの前に、日本の区間で MKDirections が返す秒数を取る。`screens=MapETAProbeTests`
                    "MapETAProbeTests",
-                   # 2026-11-11（owner「旅のトランク重すぎる」）: 回す・特別なトランクの一覧の重さを測る（2 本・計 8 分ほど）。`screens=testMeasuresTrunk`
-                   "ScreenshotTests/testMeasuresTrunkSpin", "ScreenshotTests/testMeasuresTrunkProModels",
-                   "ScreenshotTests/testMeasuresTrunkASpinDiagAA0", "ScreenshotTests/testMeasuresTrunkSpinDiagIdle",
-                   "ScreenshotTests/testMeasuresTrunkProModelsDiagNoShadow", "ScreenshotTests/testMeasuresTrunkProModelsDiagNoDG",
-                   "ScreenshotTests/testMeasuresTrunkProModelsDiagLazy", "ScreenshotTests/testMeasuresTrunkProModelsDiagSnap"]
+                   # 2026-11-11（owner「旅のトランク重すぎる」）: 回す・特別なトランクの一覧の重さ（直しの前後）と、直しの前後の画素の差。
+                   # `screens=testMeasuresTrunk, testTrunkStillMatchesLive, testTrunkSpinMatchesBefore`
+                   "ScreenshotTests/testMeasuresTrunkSpin", "ScreenshotTests/testMeasuresTrunkSpinBefore",
+                   "ScreenshotTests/testMeasuresTrunkProModels", "ScreenshotTests/testMeasuresTrunkProModelsBefore",
+                   "ScreenshotTests/testTrunkStillMatchesLive", "ScreenshotTests/testTrunkSpinMatchesBefore"]
 
 # クラスの直下（字下げ4つ）の関数だけを区切りにする。中の入れ子の関数は本体に含める
 MEMBER = re.compile(r"^    (?:@\w+\s+)*(?:(?:private|fileprivate|override|static|final)\s+)*func\s+(\w+)\s*\(", re.M)

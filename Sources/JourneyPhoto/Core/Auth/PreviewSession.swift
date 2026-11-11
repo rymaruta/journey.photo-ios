@@ -464,10 +464,11 @@ enum PreviewSession {
     }
 
     /// 測定専用の差し替え（2026-11-11・旅のトランクの重さ・Debug の見本の利用者のときだけ。Release では必ず空）。
-    /// `-JPPreviewTrunkDiag "noshadow,nodg"` のように `,` で並べる。見た目は変わる（測るためだけ）:
-    /// `noshadow` 胴の影 2 つを外す・`nodg` 胴の `drawingGroup` を外す・`lazy` 特別なトランクの一覧を LazyVStack に・
-    /// `snap` 特別なトランクの一覧の絵を 1 度描いた画像に・`spinaa0`/`spinaa2` 回す箱の輪郭のなめらかさを なし/2x に・
-    /// `spinidle` 回す箱を動いている間だけ描く（`rendersContinuously = false`）
+    /// `-JPPreviewTrunkDiag "noshadow,nodg"` のように `,` で並べる:
+    /// `noshadow` 胴の影 2 つを外す・`nodg` 胴の `drawingGroup` を外す・`spinaa0`/`spinaa2` 回す箱の輪郭のなめらかさを なし/2x に
+    /// （この 3 つは見た目が変わる。比べるためだけ）。
+    /// 前の作りに戻す（絵の見比べの「前」・2026-11-11 の直し）: `live` 型の一覧を生の絵のまま・`spincont` 回す箱を描き続ける・
+    /// `spinlazy` 回す箱の絵を塗り切らずに渡し、使い回さない
     static let trunkDiagKey = "JPPreviewTrunkDiag"
 
     static var trunkDiag: Set<String> {

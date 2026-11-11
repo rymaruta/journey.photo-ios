@@ -85,14 +85,32 @@ struct TrunkSpinViewer: View {
             // 背面・左右・上・底・持ち手を描く。8枚を1度に描くと開いた直後の一瞬が止まる
             let clock = ContinuousClock()
             let started = clock.now
-            textures = TrunkTextures.make(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts,
+            // 2026-11-11 判断: 同じトランクを 2 回目に開いたら、前に塗った絵を使い回す（`TrunkTextures.cache`）
+            let key = TrunkSpinKey(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts,
+                                   wrinkles: wrinkles, tagPicks: tagPicks)
+            if let kept = TrunkTextures.kept(key) {
+                textures = kept.faces
+                boxFaces = kept.box
+                renderMarker = TrunkTextures.renderMarker(front: started.duration(to: clock.now), all: started.duration(to: clock.now))
+                TrunkPerfMeter.shared.hit("SpinReuse")
+                TrunkPerfMeter.shared.mark("SpinReady")
+                return
+            }
+            let made = TrunkTextures.make(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts,
                                           wrinkles: wrinkles, tagPicks: tagPicks)
+            // 2026-11-11 判断（run 997）: `ImageRenderer` の絵は後で塗る絵で、SceneKit に渡すと主スレッドで塗られて止まっていた
+            // （`MedalCoinCoordinator.apply` の中の `RB::ImageProvider::wait_phase`）。主スレッドの外で塗り切ってから渡す
+            textures = await TrunkTextures.settled(made)
+            guard !Task.isCancelled else { return }
             let frontTook = started.duration(to: clock.now)
             // 1コマ待って正面を画面に出してから残りを描く（`Task.yield` では同じコマのうちに戻りうる）。
             // 待つ間に閉じられたら描かずに抜ける
             do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
             guard !Task.isCancelled else { return }
-            boxFaces = TrunkTextures.box(model: model, posts: posts, parts: parts, stuck: stuck, tagPicks: tagPicks)
+            let box = TrunkTextures.box(model: model, posts: posts, parts: parts, stuck: stuck, tagPicks: tagPicks)
+            boxFaces = await TrunkTextures.settled(box)
+            guard !Task.isCancelled else { return }
+            if let textures, let boxFaces { TrunkTextures.keep(key, faces: textures, box: boxFaces) }
             renderMarker = TrunkTextures.renderMarker(front: frontTook, all: started.duration(to: clock.now))
             TrunkPerfMeter.shared.mark("SpinReady")
         }
@@ -154,6 +172,43 @@ enum TrunkTextures {
                     depth: 0.24, corner: 16 / TrunkLooks.bodyWidth,
                     handle: SpinRGB(r: handle.r / 255, g: handle.g / 255, b: handle.b / 255),
                     stitched: TrunkFaces.handleStitched(model))
+    }
+
+    /// 最後に開いたトランクの、塗り切った絵（1 つだけ・2026-11-11 判断）。同じトランクを 2 回目に開いたら使い回す。
+    /// 約 10.5MB（run 992 の `SpinScene tex_mb`）。メモリが足りないと知らされたら手放す
+    private static var cache: (key: TrunkSpinKey, faces: MedalTextures.Faces, box: SpinBoxFaces)?
+    private static var watchingMemory = false
+
+    static func kept(_ key: TrunkSpinKey) -> (faces: MedalTextures.Faces, box: SpinBoxFaces)? {
+        // 測定専用（`-JPPreviewTrunkDiag spinlazy`・Debug のみ）: 前の作り（使い回さない）
+        guard !PreviewSession.trunkDiag.contains("spinlazy"), let cache, cache.key == key else { return nil }
+        return (cache.faces, cache.box)
+    }
+
+    static func keep(_ key: TrunkSpinKey, faces: MedalTextures.Faces, box: SpinBoxFaces) {
+        guard !PreviewSession.trunkDiag.contains("spinlazy") else { return }
+        cache = (key, faces, box)
+        if !watchingMemory {
+            watchingMemory = true
+            NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil,
+                                                   queue: .main) { _ in
+                MainActor.assumeIsolated { cache = nil }
+            }
+        }
+    }
+
+    /// 表と縁の絵を主スレッドの外で塗り切る（`TrunkStill.bitmap`。色・画素は同じ）
+    static func settled(_ faces: MedalTextures.Faces) async -> MedalTextures.Faces {
+        guard !PreviewSession.trunkDiag.contains("spinlazy") else { return faces }
+        let out = await TrunkStill.settle([faces.front, faces.back, faces.edge])
+        return MedalTextures.Faces(front: out[0], back: out[1], edge: out[2], edgeRepeat: faces.edgeRepeat, metal: faces.metal)
+    }
+
+    /// 左右・上・底・持ち手の絵を主スレッドの外で塗り切る
+    static func settled(_ faces: SpinBoxFaces) async -> SpinBoxFaces {
+        guard !PreviewSession.trunkDiag.contains("spinlazy") else { return faces }
+        let out = await TrunkStill.settle([faces.back, faces.left, faces.right, faces.top, faces.bottom, faces.handle, faces.clip])
+        return SpinBoxFaces(back: out[0], left: out[1], right: out[2], top: out[3], bottom: out[4], handle: out[5], clip: out[6])
     }
 
     /// 描き終えた印（「faces-ready front=12ms all=85ms」）
@@ -236,4 +291,15 @@ struct TrunkHandleSkin: View {
         }
         .frame(width: 100, height: 36)
     }
+}
+
+/// 回す画面の絵を使い回してよいかの合図（絵に効くものだけ・2026-11-11）
+struct TrunkSpinKey: Equatable {
+    let model: TrunkModel
+    let posts: Int
+    let stuck: [TrunkLabel]
+    let ownerName: String?
+    let parts: TrunkEquipped
+    let wrinkles: [String: Double]
+    let tagPicks: [TrunkTagPick]
 }

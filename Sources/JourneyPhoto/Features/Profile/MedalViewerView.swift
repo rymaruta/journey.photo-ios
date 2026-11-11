@@ -239,8 +239,9 @@ private struct MedalSceneView: UIViewRepresentable {
         view.antialiasingMode = .multisampling4X
         view.scene = context.coordinator.scene
         view.pointOfView = context.coordinator.cameraNode
-        // 角度は自前の表示の刻み（CADisplayLink）で書き換える。描き直しは毎回させる
-        view.rendersContinuously = true
+        // 角度は自前の表示の刻み（CADisplayLink）で書き換える。硬貨・カードは描き直しを毎回させる。
+        // 旅のトランクの箱は、角度・絵が変わったときだけ描く（`rendersContinuously(for:)`・2026-11-11 判断）
+        view.rendersContinuously = Self.rendersContinuously(for: shape)
         let pan = UIPanGestureRecognizer(target: context.coordinator,
                                          action: #selector(MedalCoinCoordinator.handlePan(_:)))
         view.addGestureRecognizer(pan)
@@ -263,13 +264,21 @@ private struct MedalSceneView: UIViewRepresentable {
             let meter = TrunkSpinFrameMeter()
             context.coordinator.frameMeter = meter
             view.delegate = meter
-            // 測定専用の差し替え（`-JPPreviewTrunkDiag spinaa0|spinaa2|spinidle`・Debug のみ・2026-11-11）。ふだんは 4x・描き続ける
+            // 測定専用の差し替え（`-JPPreviewTrunkDiag spinaa0|spinaa2`・Debug のみ・2026-11-11）。ふだんは 4x
             let diag = PreviewSession.trunkDiag
             if diag.contains("spinaa0") { view.antialiasingMode = .none }
             if diag.contains("spinaa2") { view.antialiasingMode = .multisampling2X }
-            if diag.contains("spinidle") { view.rendersContinuously = false }
         }
         return view
+    }
+
+    /// 描き続けるか（2026-11-11 判断・run 997）: 旅のトランクの箱は、止まっている間も毎秒 60 コマ描き続け、アプリの CPU が
+    /// 16〜20% だった（動いている間だけ描くと 3.7%）。箱は角度（`applyAngles`）と絵が変わったときだけ描く——SceneKit は場面が
+    /// 変わると描き直す（run 997: 指で回す 12 秒で 547 コマ描いた）。硬貨は映り込みの光が回り続けるので今までどおり。
+    /// 測定専用の `-JPPreviewTrunkDiag spincont`（Debug のみ）で前の作り（描き続ける）に戻す
+    static func rendersContinuously(for shape: SpinShape) -> Bool {
+        guard case .box = shape else { return true }
+        return PreviewSession.trunkDiag.contains("spincont")
     }
 
     func updateUIView(_ view: SCNView, context: Context) {
@@ -363,6 +372,8 @@ final class MedalCoinCoordinator: NSObject {
 
     /// 置いたときの傾き（板: rotateX(-8deg)）
     private static let restingPitch: Float = -0.14
+    /// 箱の惰性を止める速さ（ラジアン/秒・2026-11-11）。60 コマ/秒で 1 コマ 0.00002 ラジアン＝見えない
+    static let boxStopSpeed: Float = 0.001
     /// 箱を置いたときの傾き（板 TrunkSpin: rotateX(-16deg)。SceneKit では上の面が手前へ傾く向きが正）
     private static let boxRestingPitch: Float = 0.28
     /// 箱を置いたときの横の向き（板 TrunkSpin: rotateY(-34deg)。正面から始めず、少し斜めから側面が見える）
@@ -922,11 +933,15 @@ final class MedalCoinCoordinator: NSObject {
             yaw += (target - yaw) * step
             if abs(target - yaw) < 0.002 { yaw = target; flipTarget = nil }
         } else {
+            // 止まりきった箱は角度を書き換えない（書き換えると SceneKit が毎コマ描き直す・2026-11-11 判断）
+            if isBox, velocity == 0 { return }
             yaw += velocity * dt
             // 速さは、ゆっくり回る速さ（減らす設定では 0）へ戻っていく
             let resting: Float = reduceMotion ? 0 : (velocity < 0 ? -restingSpin : restingSpin)
             let damping: Float = reduceMotion ? 6 : 1.6
             velocity += (resting - velocity) * min(1, dt * damping)
+            // 箱の惰性は、目に見えない速さ（1 秒に約 0.06°）まで落ちたら止める
+            if isBox, abs(velocity) < Self.boxStopSpeed { velocity = 0 }
         }
         // 傾きは置いたときの角度へゆっくり戻す。**箱は戻さない**（傾けて底や上を見ている途中で起き上がらない）
         if !isBox { pitch += (Self.restingPitch - pitch) * min(1, dt * 2.5) }
