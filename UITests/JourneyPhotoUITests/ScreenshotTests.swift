@@ -4351,6 +4351,9 @@ final class ScreenshotTests: XCTestCase {
             if diag == nil {
                 XCTAssertGreaterThanOrEqual(opened["SpinReuse.n"] ?? 0, 1, "先に作った絵を使っていない（\(round) 回目）")
             }
+            if diag == "noprewarm", round == 2 {
+                XCTAssertGreaterThanOrEqual(opened["SpinReuse.n"] ?? 0, 1, "2 回目に開いても絵を使い回していない")
+            }
             let still = trunkPhase(app, "回す画面・止まっている\(round)", lines: &lines) { Thread.sleep(forTimeInterval: 4) }
             if diag == nil {
                 // 止まっている 4 秒（前の作りは 240 コマ）に描くのは、出した直後の数コマまで
@@ -4404,6 +4407,10 @@ final class ScreenshotTests: XCTestCase {
     func testMeasuresTrunkMemory() { measureTrunkMemory(diag: nil) }
     func testMeasuresTrunkMemoryNoPrewarm() { measureTrunkMemory(diag: "noprewarm") }
     func testMeasuresTrunkMemoryBefore() { measureTrunkMemory(diag: "spincont,spinlazy") }
+    /// 先に作る絵を、表の 3 枚と残りの 7 枚に分けて組む・塗る（一度に組む枚数とメモリの比べ・測るだけ）
+    func testMeasuresTrunkMemoryWarmSeq() { measureTrunkMemory(diag: "warmseq") }
+    /// 先に作らない（描き続けない・2 回目は使い回す）作りの重さ。先に作るときと比べる
+    func testMeasuresTrunkSpinNoPrewarm() { measureTrunkSpin(diag: "noprewarm") }
 
     private func measureTrunkMemory(diag: String?) {
         executionTimeAllowance = 400

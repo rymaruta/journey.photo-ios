@@ -213,6 +213,27 @@ enum TrunkTextures {
         defer { if warming == key { warming = nil } }
         // 測る起動のときだけ: 段ごとのメモリ（phys_footprint と user_tag 別・2026-11-11 メモリの増えの内訳）
         TrunkPerfMeter.shared.mark("Warm0Start")
+        // 測定専用（`-JPPreviewTrunkDiag warmseq`・Debug のみ）: 表の 3 枚を塗ってから残りの 7 枚を組む（一度に組む枚数とメモリの比べ）
+        if PreviewSession.trunkDiag.contains("warmseq") {
+            let faces = Self.make(model: key.model, posts: key.posts, stuck: key.stuck, ownerName: key.ownerName, parts: key.parts,
+                                  wrinkles: key.wrinkles, tagPicks: key.tagPicks)
+            TrunkPerfMeter.shared.mark("Warm1Built")
+            let first = await TrunkStill.settle([faces.front, faces.back, faces.edge])
+            TrunkPerfMeter.shared.mark("Warm1bFacesPainted")
+            do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
+            let sides = Self.box(model: key.model, posts: key.posts, parts: key.parts, stuck: key.stuck, tagPicks: key.tagPicks)
+            TrunkPerfMeter.shared.mark("Warm1cSidesBuilt")
+            let rest = await TrunkStill.settle([sides.back, sides.left, sides.right, sides.top, sides.bottom, sides.handle, sides.clip])
+            TrunkPerfMeter.shared.mark("Warm2Painted")
+            guard !Task.isCancelled, warming == key, kept(key) == nil else { return }
+            keep(key, faces: MedalTextures.Faces(front: first[0], back: first[1], edge: first[2], edgeRepeat: faces.edgeRepeat,
+                                                 metal: faces.metal),
+                 box: SpinBoxFaces(back: rest[0], left: rest[1], right: rest[2], top: rest[3], bottom: rest[4], handle: rest[5], clip: rest[6]))
+            TrunkPerfMeter.shared.hit("SpinPrewarmed")
+            TrunkPerfMeter.shared.mark("Warm3Kept")
+            TrunkPerfMeter.shared.markLater("Warm4Later", after: 3)
+            return
+        }
         let faces = Self.make(model: key.model, posts: key.posts, stuck: key.stuck, ownerName: key.ownerName, parts: key.parts,
                          wrinkles: key.wrinkles, tagPicks: key.tagPicks)
         do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
