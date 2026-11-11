@@ -44,61 +44,61 @@ jobs:
           restore-keys: |
             ${{ env.CACHE_KEY }}
             xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
-      - name: (a) 控えの中身の大きさ
+      - name: (a) 依存と組んだものだけにする（ほかを消す）・その大きさ
         run: |
           dd="$(ls -d "$HOME"/Library/Developer/Xcode/DerivedData/JourneyPhoto-* | head -1)"
           echo "DD=$dd" >> "$GITHUB_ENV"
-          du -sh "$HOME/Library/Caches/org.swift.swiftpm" "$dd/SourcePackages"/* "$dd/Build/Products"/* "$dd/Build/Intermediates.noindex" 2>/dev/null
-          echo "== Intermediates.noindex の大きいもの"
-          du -sk "$dd/Build/Intermediates.noindex"/* 2>/dev/null | sort -rn | head -25 | awk '{printf "%7.0f MB %s\n", $1/1024, $2}'
-          echo "== Products/Debug-iphonesimulator の大きいもの"
-          du -sk "$dd/Build/Products/Debug-iphonesimulator"/* 2>/dev/null | sort -rn | head -15 | awk '{printf "%7.0f MB %s\n", $1/1024, $2}'
-          echo "== アプリ・テストの分（JourneyPhoto.build）"
-          du -sh "$dd/Build/Intermediates.noindex/JourneyPhoto.build" 2>/dev/null
+          rm -rf "$HOME/Library/Caches/org.swift.swiftpm" "$dd/SourcePackages/repositories" "$dd/Build/Intermediates.noindex/ArchiveIntermediates"
+          du -sh "$dd/SourcePackages" "$dd/Build" | tee -a "$GITHUB_STEP_SUMMARY"
+          s=$SECONDS
+          tar -C "$dd" -cf - SourcePackages Build | zstd -T0 -q | wc -c | awk '{printf "zstd に包んだ大きさ: %.0f MB\n", $1/1048576}' | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "包むのに $((SECONDS-s)) 秒" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: xcodegen
         run: |
           command -v xcodegen >/dev/null || brew install xcodegen
           xcodegen generate
-      - name: (b) 組む 1 回目（ソースの時刻を中身から決めて・今と同じ全部組み）
+      - name: 組む道具
         run: |
+          cat > /tmp/build.sh <<'SH'
+          set -uo pipefail
+          name="$1"
           python3 Tools/source-mtime.py
-          s=$SECONDS; XCODE_LOG=build/b1.log bash Tools/xcode-test.sh build > /dev/null; echo "組む1: $((SECONDS-s)) 秒・$(grep -c 'SwiftCompile normal' build/b1.log) 件" | tee -a "$GITHUB_STEP_SUMMARY"
+          s=$SECONDS
+          xcodebuild -project JourneyPhoto.xcodeproj -scheme JourneyPhoto ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            -skipPackagePluginValidation -skipMacroValidation \
+            -destination "platform=iOS Simulator,name=$DEVICE,arch=arm64" -showBuildTimingSummary \
+            build-for-testing > "build/$name.log" 2>&1
+          rc=$?
+          echo "${name}: $((SECONDS-s)) 秒・終わり ${rc}・Swift を組んだ $(grep -c 'SwiftCompile normal' "build/$name.log") 件・パッケージを取りに行った $(grep -cE 'Fetching|Cloning|Updating https' "build/$name.log") 行" | tee -a "$GITHUB_STEP_SUMMARY"
+          sed -n '/Build Timing Summary/,$p' "build/$name.log" | grep -E "seconds|Timing" | sort -t'|' -k2 -rn | head -12
+          grep -E "Fetching|Cloning|Resolve Package|resolved source packages" "build/$name.log" | head -5
+          grep -oE "SwiftCompile normal arm64 Compiling\\? [^ ]+" "build/$name.log" | head -5
+          SH
+          mkdir -p build
+      - name: (a)(b) 組む 1 回目（消したあと・全部組み）
+        run: bash /tmp/build.sh b1
       - name: (b) 控えから戻したのと同じ状態にする（DerivedData を写して戻す・ソースを書き直す）
         run: |
           s=$SECONDS
           ditto "$DD" "$DD.copy" && rm -rf "$DD" && mv "$DD.copy" "$DD"
-          git ls-files -z | while IFS= read -r -d '' f; do [ -L "$f" ] || { cp -p "$f" "$f.tmp" && mv "$f.tmp" "$f"; }; done
+          git ls-files -z | while IFS= read -r -d '' f; do [ -L "$f" ] || { cp -p "$f" "$f.tmp" && mv "$f.tmp" "$f"; touch "$f"; }; done
           rm -rf JourneyPhoto.xcodeproj && xcodegen generate > /dev/null
           echo "写して戻す: $((SECONDS-s)) 秒" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: (b) 組む 2 回目（中身は同じ）
-        run: |
-          python3 Tools/source-mtime.py
-          s=$SECONDS; XCODE_LOG=build/b2.log bash Tools/xcode-test.sh build > /dev/null; echo "組む2（変えたもの無し）: $((SECONDS-s)) 秒・$(grep -c 'SwiftCompile normal' build/b2.log) 件" | tee -a "$GITHUB_STEP_SUMMARY"
+        run: bash /tmp/build.sh b2
       - name: (b) 組む 3 回目（画面のファイルを1つ変えた）
         run: |
           echo "// probe" >> Sources/JourneyPhoto/Features/Settings/WhatsNewView.swift
-          python3 Tools/source-mtime.py
-          s=$SECONDS; XCODE_LOG=build/b3.log bash Tools/xcode-test.sh build > /dev/null; echo "組む3（画面1つ）: $((SECONDS-s)) 秒・$(grep -c 'SwiftCompile normal' build/b3.log) 件" | tee -a "$GITHUB_STEP_SUMMARY"
+          bash /tmp/build.sh b3
       - name: (b) 組む 4 回目（文言のファイルを1つ変えた）
         run: |
           sed -i '' 's/"Prefectures visited"/"Prefectures Visited"/' Sources/JourneyPhoto/Core/Text/VisitedMapText.swift
-          python3 Tools/source-mtime.py
-          s=$SECONDS; XCODE_LOG=build/b4.log bash Tools/xcode-test.sh build > /dev/null; echo "組む4（文言1行）: $((SECONDS-s)) 秒・$(grep -c 'SwiftCompile normal' build/b4.log) 件" | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: "(c) 流す 別々（単体 38 件 → UI SmokeTests）と 1 回（両方）"
+          bash /tmp/build.sh b4
+      - name: 組む 5 回目（ソースの時刻を揃えない・今の作り）
         run: |
-          xcrun simctl bootstatus "$DEVICE" -b > /dev/null 2>&1 || true
-          products="$DD/Build/Products/Debug-iphonesimulator"
-          bash Tools/warm-simulator.sh "$products" > /dev/null
-          units="$(python3 -c 'import importlib.util as u; s=u.spec_from_file_location("p","Tools/pick-ui-tests.py"); m=u.module_from_spec(s); s.loader.exec_module(m); print(" ".join("JourneyPhotoTests/"+t for t in m.quick_unit_tests()))')"
-          printf -- '-only-testing:JourneyPhotoUITests/SmokeTests\n' > /tmp/ui.txt
-          s=$SECONDS; UNIT_ONLY_TESTING="$units" XCODE_LOG=build/t1.log bash Tools/xcode-test.sh unit build/U1.xcresult > /dev/null; a=$((SECONDS-s))
-          s=$SECONDS; XCODE_LOG=build/t2.log bash Tools/xcode-test.sh ui build/T2.xcresult /tmp/ui.txt > /dev/null; b=$((SECONDS-s))
-          for t in $units; do echo "-only-testing:$t"; done > /tmp/both.txt; cat /tmp/ui.txt >> /tmp/both.txt
-          s=$SECONDS; XCODE_LOG=build/t3.log bash Tools/xcode-test.sh ui build/T3.xcresult /tmp/both.txt > /dev/null; c=$((SECONDS-s))
-          echo "別々: 単体 ${a} 秒＋UI ${b} 秒＝$((a+b)) 秒 / 1 回: ${c} 秒（$(grep -cE "Test Case .*(passed|failed)" build/t3.log) 行）" | tee -a "$GITHUB_STEP_SUMMARY"
-          grep -E "Executed [0-9]+ tests" build/t3.log | tail -2
-      - name: "(d) 組んだ品を包む・ほどく"
-        run: |
-          s=$SECONDS; python3 Tools/test-products.py "pack" "$DD/Build/Products" /tmp/p.tar; a=$((SECONDS-s))
-          s=$SECONDS; python3 Tools/test-products.py unpack /tmp/p.tar /tmp/pp > /dev/null; b=$((SECONDS-s))
-          echo "包む ${a} 秒・ほどく ${b} 秒・$(du -sh /tmp/p.tar | cut -f1)" | tee -a "$GITHUB_STEP_SUMMARY"
+          git ls-files -z | xargs -0 touch
+          s=$SECONDS
+          xcodebuild -project JourneyPhoto.xcodeproj -scheme JourneyPhoto ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            -skipPackagePluginValidation -skipMacroValidation \
+            -destination "platform=iOS Simulator,name=$DEVICE,arch=arm64" build-for-testing > build/b5.log 2>&1
+          echo "b5（時刻を揃えない）: $((SECONDS-s)) 秒・Swift を組んだ $(grep -c 'SwiftCompile normal' build/b5.log) 件" | tee -a "$GITHUB_STEP_SUMMARY"

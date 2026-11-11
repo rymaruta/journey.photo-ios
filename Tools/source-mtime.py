@@ -28,6 +28,12 @@ def main():
                           check=True).stdout.strip()
     os.chdir(root)
     files = dirs = 0
+    # 🔴 **印は作業の木の中身から取る。** `ls-files -s` の印は index（コミットした中身）のもので、手で書き換えた
+    # ファイル（まだ add していない）に古い印の時刻を付けると、Xcode が「変わっていない」と読んで組み直さない
+    # （2026-11-11 の測る回 run 42989273825 で、書き換えたファイルを 0 件しか組まなかった）。
+    # CI のチェックアウト直後は index と同じだが、違うファイルは `git hash-object` で今の中身から取り直す
+    dirty = {p for p in subprocess.run(["git", "diff", "--name-only", "-z"], capture_output=True,
+                                        check=True).stdout.split(b"\0") if p}
     listed = subprocess.run(["git", "ls-files", "-s", "-z"], capture_output=True, check=True).stdout
     for entry in listed.split(b"\0"):
         if not entry:
@@ -36,6 +42,9 @@ def main():
         mode, object_id, _ = meta.decode().split(" ")
         if mode == "120000" or mode == "160000":  # シンボリックリンク・サブモジュールは触らない
             continue
+        if path in dirty and os.path.isfile(path):
+            object_id = subprocess.run(["git", "hash-object", "--", path], capture_output=True, text=True,
+                                       check=True).stdout.strip()
         t = stamp(object_id)
         try:
             os.utime(path, ns=(t * 10**9, t * 10**9))
@@ -51,7 +60,8 @@ def main():
         if os.path.isdir(path):
             os.utime(path, ns=(t * 10**9, t * 10**9))
             dirs += 1
-    print(f"ソースの時刻を中身から決めました: ファイル {files}・フォルダ {dirs}")
+    print(f"ソースの時刻を中身から決めました: ファイル {files}（index と違う {len(dirty)}）・フォルダ {dirs}"
+          "（フォルダは HEAD の木の印。手で足した・消したファイルがあるフォルダは CI では起きない）")
     return 0
 
 
