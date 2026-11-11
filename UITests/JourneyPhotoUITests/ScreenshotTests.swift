@@ -2679,11 +2679,29 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 8)
         shoot(app, "65-旅行プランの日程（自動保存・移動の見込み）")
         XCTAssertEqual(fixtureSends(app, "open"), "0", "開いただけで送っている")
+        // 日をまたぐ区間（2026-11-11 owner の実機「バスとか出てこないよ」）: 2 日目の最初の上に「前の日の千里浜…から」
+        let crossDay = app.descendants(matching: .any).matching(identifier: "trip.leg")
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "前の日の")).firstMatch
+        var crossPushes = 0
+        while !crossDay.exists, crossPushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            crossPushes += 1
+        }
+        let crossLine = "TRIPLEG crossDay exists=\(crossDay.exists) label=\(crossDay.exists ? crossDay.label : "-")"
+        print(crossLine)
+        XCTContext.runActivity(named: crossLine) { _ in }
+        XCTAssertTrue(crossDay.exists, "日をまたぐ区間が出ていない")
+        if crossDay.exists {
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "65f-旅行プランの日程（前の日の最後の場所からの移動の目安）")
+        }
+        for _ in 0..<crossPushes { app.swipeDown(); Thread.sleep(forTimeInterval: 0.5) }
 
         // 運ぶ: 1 日目の最後（千里浜）を 2 日目の最初の行へ（日をまたぐ）。運んだら待って 1 回送る。
-        // run 971: 押さえて運んだのに送った回数が 0 のままだった。run 974: 名前の順は日をまたいでも変わらない
-        // （1 日目の最後 → 2 日目の最初）ので測れなかった。**千里浜の「…」の位置（「1 日目・3 番目」）**を前後で残し、
-        // 落とせたかを見る。1 回目は押さえて運ぶだけ、位置が変わらなければ 2 回目は行き先で止まってから離す
+        // 千里浜の「…」の位置（「1 日目・3 番目」）を前後で見る。1 回目は止めずに離す。入らなければ 2 回目は行き先で止まってから離す。
+        // **「止めずに離して 1 回目で入る」で縛らない理由**（札 #521・run 1031）: 試しの運びのあと 1.2 秒でも 7 回中 2 回入らなかった
+        // （持ち上がったが drop が呼ばれない・落とす先から出た知らせも来ない）。各回の 1 回目の数と出来事の並びはログに残す
         let handles = app.descendants(matching: .any).matching(identifier: "tripPlan.dragHandle")
         let menu = app.buttons["「千里浜なぎさドライブウェイ」の操作"].firstMatch
         func order() -> String { (menu.value as? String) ?? "nil" }
@@ -2704,19 +2722,19 @@ final class ScreenshotTests: XCTestCase {
                 from.press(forDuration: 1.2, thenDragTo: to)
                 Thread.sleep(forTimeInterval: 2)
                 var after = order()
-                _ = fixtureSends(app, "orderAfterPress[\(after)]")
+                _ = fixtureSends(app, "orderAfterPress[\(after)] drag[\(dragCounts(app))]")
                 if after == before {
                     let again = handles.element(boundBy: 2)
                     again.press(forDuration: 1.2, thenDragTo: handles.element(boundBy: 3),
                                 withVelocity: .slow, thenHoldForDuration: 1.0)
                     Thread.sleep(forTimeInterval: 2)
                     after = order()
-                    _ = fixtureSends(app, "orderAfterHold[\(after)]")
+                    _ = fixtureSends(app, "orderAfterHold[\(after)] drag[\(dragCounts(app))]")
                 }
                 Thread.sleep(forTimeInterval: 11)
                 shoot(app, "65b-旅行プランの日程（運んだ・日をまたいで2日目へ）")
                 let sent = fixtureSends(app, "afterDrag")
-                XCTAssertNotEqual(after, before, "運ぶ印で運んでも並びが変わらない")
+                XCTAssertNotEqual(after, before, "運んでも並びが変わらない")
                 if after != before { XCTAssertEqual(sent, "1", "運んだあとに 1 回送っていない") }
             }
         }
@@ -2753,6 +2771,190 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 13)
         XCTAssertEqual(fixtureSends(app, "after5edits"), "\(sentBefore + 1)",
                        "続けて 5 回直したのに、まとめて 1 回で送っていない")
+    }
+
+    /// 運ぶ操作の数（見本のときだけ画面に出す `tripPlan.fixtureDrag`）と出来事の並び（`tripPlan.fixtureDragTrail`）
+    private func dragCounts(_ app: XCUIApplication) -> String {
+        let counts = (app.descendants(matching: .any)["tripPlan.fixtureDrag"].firstMatch.value as? String) ?? "nil"
+        let trail = (app.descendants(matching: .any)["tripPlan.fixtureDragTrail"].firstMatch.value as? String) ?? "nil"
+        return "\(counts)] trail[\(trail)"
+    }
+
+    /// **数えない試しの運び**: 押さえて自分の行の上で離す（並びは変わらない）。テストの最初の起動の 1 回目は
+    /// 持ち上がらないことがある（run 1016/1020/1025/1030 で 4/4）ので、測る運びの前に 1 回入れる。
+    /// run 1031: 動かさずに離すこの形では 2 回とも持ち上がらなかった（lift=0）。試しとして効いているかは確かめていない
+    private func warmUpDrag(_ app: XCUIApplication, _ source: XCUIElement) {
+        source.press(forDuration: 1.2, thenDragTo: source)
+        Thread.sleep(forTimeInterval: 2)
+        let line = "TRIPDRAG warm-up after[\(dragCounts(app))]"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+    }
+
+    /// 見本の旅を開き、運ぶ元（1 日目の 3 番目）と行き先（2 日目の「越前海岸 呼鳥門」の「…」）が押せる所まで上げる
+    private func dragStage(_ app: XCUIApplication) -> (XCUIElement, XCUIElement, Int)? {
+        guard openFixturePlan(app) else { return nil }
+        Thread.sleep(forTimeInterval: 3)
+        let source = app.descendants(matching: .any).matching(identifier: "tripPlan.dragHandle").element(boundBy: 2)
+        let target = app.buttons["「越前海岸 呼鳥門」の操作"].firstMatch
+        var pushes = 0
+        while !(source.isHittable && target.isHittable), pushes < 4 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard source.isHittable, target.isHittable else { return nil }
+        return (source, target, pushes)
+    }
+
+    /// **(b)「持ち上がったが落ちない」をどの部品で止まったかで分ける**（札 #521・2026-11-11）。
+    /// run 1025 で押さえる時間 0.8 秒のとき 2/5 出た。0.8 秒で 6 起動 × 4 回運び、1 回ごとに出来事の並び
+    /// （持ち上がった・落とす先に入った／出た・drop が呼ばれた・断った・preview が消えた）を残す。合否は無い。
+    /// 名指しのときだけ（`screens=testMeasuresTripPlanDragTrail`）。1 起動 80 秒ほど × 6 で 20 分の上限に入れる
+    func testMeasuresTripPlanDragTrail() {
+        executionTimeAllowance = 1200
+        for launch in 0..<6 {
+            let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+            defer { app.terminate() }
+            guard let stage = dragStage(app) else {
+                let line = "TRIPDRAG trail launch=\(launch) not-ready"
+                print(line); XCTContext.runActivity(named: line) { _ in }
+                continue
+            }
+            let (source, target, pushes) = stage
+            for drag in 1...4 {
+                guard source.isHittable, target.isHittable else { break }
+                source.press(forDuration: 0.8, thenDragTo: target)
+                Thread.sleep(forTimeInterval: 2)
+                let line = "TRIPDRAG trail launch=\(launch) drag=\(drag) hold=0.8 pushes=\(pushes) after[\(dragCounts(app))]"
+                print(line)
+                XCTContext.runActivity(named: line) { _ in }
+            }
+        }
+    }
+
+    /// **試しの運びを 1 回入れたあと、押さえて 1.2 秒・止めずに離して 1 回目で入るか**を続けて数える
+    /// （`testCapturesTripPlanDays` を縛る前の裏づけ・札 #521）。7 起動。合否は無く、入ったかを位置で残す。
+    /// 名指しのときだけ（`screens=testMeasuresTripPlanDragFirstTry`）。テストの最初の起動を含める
+    func testMeasuresTripPlanDragFirstTry() {
+        executionTimeAllowance = 1200
+        for launch in 0..<7 {
+            let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+            defer { app.terminate() }
+            guard let stage = dragStage(app) else {
+                let line = "TRIPDRAG first launch=\(launch) not-ready"
+                print(line); XCTContext.runActivity(named: line) { _ in }
+                continue
+            }
+            let (source, target, pushes) = stage
+            let position = app.buttons["「千里浜なぎさドライブウェイ」の操作"].firstMatch
+            let posBefore = (position.value as? String) ?? "nil"
+            warmUpDrag(app, source)
+            let posWarm = (position.value as? String) ?? "nil"
+            source.press(forDuration: 1.2, thenDragTo: target)
+            Thread.sleep(forTimeInterval: 2)
+            let posAfter = (position.value as? String) ?? "nil"
+            let line = "TRIPDRAG first launch=\(launch) pushes=\(pushes) entered=\(posAfter != posWarm) "
+                + "pos[\(posBefore) -> \(posWarm) -> \(posAfter)] after[\(dragCounts(app))]"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+        }
+    }
+
+    /// **動かす速さで (b)「持ち上がったが落ちない」の率を比べる**（札 #521・2026-11-11）。(b) は起動の最初の運びでだけ出た
+    /// （4/27、2 回目以降 0/33）ので、1 起動 1 回だけ運ぶ。押さえて 1.2 秒・止めずに離す（`thenHoldForDuration: 0`）。
+    /// 9 起動（テストの最初の起動は (a) が出るので数えない）。離して 2 秒後と 5 秒後に、真鍮の落とす先の線
+    /// （`tripPlan.dropLine`・見本のときだけ数えられる）が残っているかも数える。合否は無い。1 本 10 分ほど
+    private func measureDragVelocity(_ velocity: XCUIGestureVelocity, _ label: String) {
+        executionTimeAllowance = 1200
+        for launch in 0..<9 {
+            let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+            defer { app.terminate() }
+            guard let stage = dragStage(app) else {
+                let line = "TRIPDRAG velocity=\(label) launch=\(launch) not-ready"
+                print(line); XCTContext.runActivity(named: line) { _ in }
+                continue
+            }
+            let (source, target, pushes) = stage
+            let lines = app.descendants(matching: .any).matching(identifier: "tripPlan.dropLine")
+            let linesBefore = lines.count
+            source.press(forDuration: 1.2, thenDragTo: target, withVelocity: velocity, thenHoldForDuration: 0)
+            Thread.sleep(forTimeInterval: 2)
+            let at2 = lines.count
+            let counts = dragCounts(app)
+            Thread.sleep(forTimeInterval: 3)
+            let at5 = lines.count
+            let where5 = at5 > 0 ? lines.firstMatch.label : "-"
+            let line = "TRIPDRAG velocity=\(label) launch=\(launch) pushes=\(pushes) "
+                + "dropLine[before=\(linesBefore) 2s=\(at2) 5s=\(at5) at=\(where5)] after[\(counts)]"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+        }
+    }
+
+    /// 名指しのときだけ（`screens=testMeasuresTripPlanDragVelocitySlow`）
+    func testMeasuresTripPlanDragVelocitySlow() { measureDragVelocity(.slow, "slow") }
+    /// 名指しのときだけ（`screens=testMeasuresTripPlanDragVelocityDefault`）
+    func testMeasuresTripPlanDragVelocityDefault() { measureDragVelocity(.default, "default") }
+    /// 名指しのときだけ（`screens=testMeasuresTripPlanDragVelocityFast`）
+    func testMeasuresTripPlanDragVelocityFast() { measureDragVelocity(.fast, "fast") }
+
+    /// **日をまたぐ区間と長い移動**（2026-11-11 owner の実機「バスとか出てこないよ」「日本からブラジルとか無理じゃん」）。
+    /// 見本の「京都とブラジルの旅」（1 日 1 か所・空の日・サンパウロ）を開き、前の日からの区間と、海を越える区間の
+    /// 「飛行機などの長い移動」・そのシート（Google フライト）を撮る。出なければ撮らずに抜ける
+    func testCapturesTripPlanLongLegs() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+        guard openTripsRow(app, "trips.plans") else { return }
+        let plan = app.descendants(matching: .any).matching(identifier: "trips.plan")
+            .matching(NSPredicate(format: "label CONTAINS %@", "京都とブラジル")).firstMatch
+        var pushes = 0
+        while plan.waitForExistence(timeout: 10), !plan.isHittable, pushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard plan.exists, plan.isHittable else { return }
+        plan.tap()
+        guard app.descendants(matching: .any)["tripPlan.fixtureSends"].firstMatch.waitForExistence(timeout: 15) else { return }
+        // 移動の見込み（Apple のサーバー）を待つ
+        Thread.sleep(forTimeInterval: 8)
+        shoot(app, "66-旅行プランの日程（1日1か所・前の日からの移動・空の日）")
+        let legs = app.descendants(matching: .any).matching(identifier: "trip.leg")
+        let cross = legs.matching(NSPredicate(format: "label BEGINSWITH %@", "前の日の伏見稲荷大社から")).firstMatch
+        let long = legs.matching(NSPredicate(format: "label CONTAINS %@", "飛行機などの長い移動")).firstMatch
+        let line = "TRIPLEG legs=\(legs.count) cross=\(cross.exists) long=\(long.exists)"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        XCTAssertTrue(cross.exists, "1 日 1 か所のプランで、前の日からの区間が出ない")
+        // 縦の線は行の高さいっぱい（見本のときだけ値に「line=… row=…」が出る・確かめ役の指摘）
+        if cross.exists, let value = cross.value as? String {
+            let nums = value.split(separator: " ").compactMap { Double($0.split(separator: "=").last ?? "") }
+            let measured = "TRIPLEG connector \(value)"
+            print(measured)
+            XCTContext.runActivity(named: measured) { _ in }
+            if nums.count == 2 {
+                XCTAssertGreaterThanOrEqual(nums[0], nums[1] - 1, "縦の線が行の高さまで伸びていない: \(value)")
+                XCTAssertGreaterThanOrEqual(nums[1], 44 - 0.5, "区間の行が 44pt より低い: \(value)")
+            } else {
+                XCTFail("線の高さが読めない: \(value)")
+            }
+        }
+        XCTAssertTrue(long.exists, "日本 → ブラジルの区間が長い移動の形で出ない")
+        pushes = 0
+        while long.exists, !long.isHittable, pushes < 4 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard long.exists, long.isHittable else { return }
+        shoot(app, "66b-旅行プランの日程（飛行機などの長い移動・空の日の追加）")
+        long.tap()
+        let flights = app.buttons["trip.leg.flights"].firstMatch
+        XCTAssertTrue(flights.waitForExistence(timeout: 10), "長い移動のシートに Google フライトが無い")
+        XCTAssertFalse(app.buttons["trip.leg.apple"].firstMatch.exists, "長い移動のシートに Apple のマップがある（経路が無い）")
+        guard flights.exists else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "66c-長い移動のシート（Google フライトで探す）")
     }
 
     /// **送れていないとき**（圏外・断られた）。直しは画面に残り、「まだ送れていません」と「もう一度試す」が出る
