@@ -19,6 +19,9 @@ struct SpotRegionMapView: View {
     /// なぞっている区分の id（札もこれに替わる・段は外側のスクロールを止める）。**この画面の `traced` を写すだけ**
     @Binding var tracing: String?
     let onSelect: (String) -> Void
+    /// 読み上げのダブルタップ（既定の操作）: いま選んでいる区分の一覧へ進む。地図の真ん中を押したことにして
+    /// 区分を勝手に選ばない（確かめ役の指摘・2026-11-11）
+    var onActivate: () -> Void = {}
 
     /// なぞる操作の状態（`SpotMapTrace`）。取り消し（スクロール・電話・タブの切り替え・画面を離れた）でも必ず空に戻る
     /// （UIKit の長押しが `.cancelled` を届け、外したときも取り消しとして終える・`SpotMapTraceCatcher`）
@@ -63,7 +66,9 @@ struct SpotRegionMapView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(L("\(map.title)の地図", "Map of \(map.title)"))
         .accessibilityValue(areas.first { $0.id == selected }?.title ?? "")
-        .accessibilityHint(L("上下に払うと区分を替えられます", "Swipe up or down to change the area"))
+        .accessibilityHint(L("上下に払うと地方を替えられます。ダブルタップでその地方の撮影スポットの一覧へ進みます",
+                             "Swipe up or down to change the region. Double-tap to see its photo spots"))
+        .accessibilityAction { onActivate() }
         .accessibilityAdjustableAction { direction in
             if let next = SpotRegionMap.step(selected, in: areas, forward: direction == .increment) { onSelect(next) }
         }

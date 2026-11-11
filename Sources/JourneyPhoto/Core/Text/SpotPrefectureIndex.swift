@@ -158,8 +158,6 @@ enum SpotPrefectureIndex {
         }?.element
     }
 
-    /// 全国の一覧の並び。**撮影スポットの行のある段だけ**（写真だけの段は出さない）。
-    /// 県は北から、国は名前の順、海外（その他）・分けられないものは最後
     /// 地方の段だけ（地図の札の「すべて見る」の先・県は北から）
     static func regionSections(_ national: [RegionList.Section], region regionName: String) -> [RegionList.Section] {
         guard let region = PrefectureRegions.all.first(where: { $0.name == regionName }) else { return [] }
@@ -170,6 +168,8 @@ enum SpotPrefectureIndex {
         }
     }
 
+    /// 全国の一覧の並び。**撮影スポットの行のある段だけ**（写真だけの段は出さない）。
+    /// 県は北から、国は名前の順、海外（その他）・分けられないものは最後
     static func nationalSections(_ sections: [RegionList.Section]) -> [RegionList.Section] {
         func rank(_ key: RegionList.Key) -> (Int, Int, String) {
             switch key {

@@ -33,6 +33,8 @@ struct SearchSpotIndexSection: View {
     @State private var mapId: String?
     /// 地方のチップと選択を分けない地図（日本以外）で選んでいる区分（地図の id → 区分の id）
     @State private var otherSelections: [String: String] = [:]
+    /// 読み上げのダブルタップで開く一覧（地図の区分の「すべて見る」と同じ行き先）
+    @State private var openArea: SpotIndexScope?
 
     /// 出せる地図（いまは日本だけ・`SpotRegionMap.available`）。無ければ「地図」の札を出さない
     private var maps: [SpotRegionMap] { SpotRegionMap.available(japan: PrefectureMapGeometry.bundled) }
@@ -99,6 +101,9 @@ struct SearchSpotIndexSection: View {
                     // UI テストが「写真」と「地図」で段ぜんたいの高さが同じかを測る目印
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("search.spotIndex.block")
+                    .navigationDestination(item: $openArea) { scope in
+                        OfficialSpotIndexView(scope: scope, spots: spots, photos: photos, photosKnown: photosKnown)
+                    }
                 } else {
                     EmptyState(message: L("公開中の撮影スポットはまだありません", "No photo spots yet"))
                 }
@@ -142,9 +147,12 @@ struct SearchSpotIndexSection: View {
             : otherSelections[map.id] ?? areas.max { $0.count < $1.count }?.id
         let shown = areas.first { $0.id == (tracing ?? chosen) }
         return HStack(alignment: .top, spacing: JPSpace.s) {
-            SpotRegionMapView(map: map, areas: areas, selected: chosen, tracing: $tracing) { id in
+            SpotRegionMapView(map: map, areas: areas, selected: chosen, tracing: $tracing, onSelect: { id in
                 if map.sharesRegionChips { region = id } else { otherSelections[map.id] = id }
-            }
+            }, onActivate: {
+                // 読み上げのダブルタップ: いまの区分の一覧へ（右の札の「すべて見る」と同じ行き先）
+                openArea = areas.first { $0.id == chosen }?.scope
+            })
             .frame(width: Self.mapWidth(for: map.shapes), height: Self.cardColumnHeight)
             // 地図が2つ以上のときだけ、地図の右上に重ねて切り替え（段の高さは変えない・`SpotRegionMap.showsSwitcher`）
             .overlay(alignment: .topTrailing) {

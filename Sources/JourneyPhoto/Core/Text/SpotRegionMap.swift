@@ -47,16 +47,20 @@ struct SpotRegionMap: Identifiable {
         if let inside = shapes.piece(at: unit, tolerance: 0) {
             return areas.first { $0.pieces.contains(inside) }?.id
         }
-        // 片の外: 区分までの距離（画面の pt）から、区分ごとの寄せ（`hitBonus`・小さな区分ほど大きい）を引いた値の小さい区分
+        // 片の外: 区分までの距離（画面の pt）
         let scale = VisitedMapViewport().scale(content: shapes.size, container: container)
-        return areas.min { a, b in
-            effectiveDistance(unit, to: a, scale: scale) < effectiveDistance(unit, to: b, scale: scale)
+        let distances = areas.map { (id: $0.id, raw: shapes.distance(from: unit, toPieces: $0.pieces) * scale) }
+        guard let nearest = distances.min(by: { $0.raw < $1.raw }) else { return nil }
+        // 🔴 **海岸のすぐ外（`coastSlack` 以内）は、いちばん近い区分が必ず勝つ**（2026-11-11 確かめ役の指摘: 寄せだけで
+        // 分けると、九州の海岸のすぐ外（長崎の西・鹿児島の南・宮崎の東）が四国になった）。寄せはそれより遠い点だけ
+        if nearest.raw <= Self.coastSlack { return nearest.id }
+        return distances.min { a, b in
+            a.raw - (hitBonus[a.id] ?? 0) < b.raw - (hitBonus[b.id] ?? 0)
         }?.id
     }
 
-    private func effectiveDistance(_ unit: CGPoint, to area: SpotMapArea, scale: CGFloat) -> CGFloat {
-        shapes.distance(from: unit, toPieces: area.pieces) * scale - (hitBonus[area.id] ?? 0)
-    }
+    /// 海岸から何 pt までは、いちばん近い区分が必ず勝つか（寄せを使わない）
+    nonisolated static let coastSlack: CGFloat = 8
 
     /// 区分を順に替える（読み上げの上下の払い・`accessibilityAdjustableAction`）。端で止まる
     static func step(_ current: String?, in areas: [SpotMapArea], forward: Bool) -> String? {
@@ -92,10 +96,11 @@ struct SpotRegionMap: Identifiable {
     }
 
     /// 日本の地方の寄せ（画面の pt）。段の中の地図（幅 143・高さ 160）で、どの地方も 44×44（1936pt²）以上
-    /// 押せるように決めた値（2026-11-11: 1pt ごとに押した広さを数え、いちばん狭い地方が広くなる値を探した。
-    /// いちばん狭いのは近畿の 2181pt²。`SpotRegionMapTests.testEveryRegionIsAtLeast44x44` が縛り、前後の広さはログに出す）
+    /// 押せるように決めた値（2026-11-11: 1pt ごとに押した広さを数え、いちばん狭い地方（沖縄の挿入図を除いた九州本土も含む）が
+    /// 広くなる値を探した。海岸から `coastSlack`（8pt）より遠い点だけに効く。いちばん狭いのは 2150pt²。
+    /// `SpotRegionMapTests.testEveryRegionIsAtLeast44x44` が縛り、前後の広さはログに出す）
     nonisolated static let japanHitBonus: [String: CGFloat] = [
-        "東北": 3, "関東": 4, "中部": 14, "近畿": 26, "中国": 19, "四国": 30, "九州・沖縄": 1,
+        "東北": 3, "関東": 3, "中部": 16, "近畿": 34, "中国": 31, "四国": 44, "九州・沖縄": 9,
     ]
 
     /// 日本の区分（地方）。束ね方は写真の札の列・地方のチップと同じ `SpotPrefectureIndex.groups`

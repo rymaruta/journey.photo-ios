@@ -186,6 +186,52 @@ final class SpotRegionMapTests: XCTestCase {
             print("spotMap.hitArea \(region.name) before=\(before[region.name] ?? 0) after=\(after[region.name] ?? 0)")
             XCTAssertGreaterThanOrEqual(after[region.name] ?? 0, 1936, "\(region.name) の押せる広さが 44×44 に届かない")
         }
+        // 🔴 **沖縄の挿入図を除いた九州本土**も 44×44 以上（九州・沖縄の広さの多くは挿入図の分だった・確かめ役の指摘）
+        let inset = try XCTUnwrap(g.inset)
+        let a = viewport.screenPoint(forUnit: inset.origin, content: g.size, container: size)
+        let b = viewport.screenPoint(forUnit: CGPoint(x: inset.maxX, y: inset.maxY), content: g.size, container: size)
+        let insetScreen = CGRect(x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y)
+        let mainland = hitAreas({ point in
+            insetScreen.contains(point) ? nil : map.area(at: point, container: size, in: areas)
+        }, size: size)["九州・沖縄"] ?? 0
+        let mainlandBefore = hitAreas({ point in
+            guard !insetScreen.contains(point) else { return nil }
+            let unit = viewport.unitPoint(forScreen: point, content: g.size, container: size)
+            return g.prefecture(at: unit, tolerance: viewport.tolerance(content: g.size, container: size))
+                .flatMap { PrefectureRegions.region(of: $0)?.name }
+        }, size: size)["九州・沖縄"] ?? 0
+        print("spotMap.hitArea 九州本土（挿入図を除く） before=\(mainlandBefore) after=\(mainland)")
+        XCTAssertGreaterThanOrEqual(mainland, 1936, "九州本土の押せる広さが 44×44 に届かない")
+    }
+
+    /// 🔴 **海岸のすぐ外（`coastSlack` 以内）は、いちばん近い地方になる**（寄せで遠くの地方に取られない）。
+    /// 確かめ役が見つけた点（長崎の西・鹿児島の南・宮崎の東が四国になった）と、地図の枠の全部の点で確かめる
+    func testCoastPointsBelongToNearestRegion() throws {
+        let g = try geometry()
+        let map = SpotRegionMap.japan(g)
+        let spots = try allRegions()
+        let areas = map.areas(SpotMapSource(spots: spots, japanGroups: SpotPrefectureIndex.groups(spots: spots)))
+        let size = CGSize(width: SearchSpotIndexSection.mapWidth(for: g), height: SearchSpotIndexSection.cardColumnHeight)
+        for point in [CGPoint(x: 6, y: 134), CGPoint(x: 17, y: 153), CGPoint(x: 28, y: 141)] {
+            XCTAssertEqual(map.area(at: point, container: size, in: areas), "九州・沖縄", "\(point) が九州にならない")
+        }
+        let viewport = VisitedMapViewport()
+        let scale = viewport.scale(content: g.size, container: size)
+        var checked = 0
+        for y in 0..<Int(size.height) {
+            for x in 0..<Int(size.width) {
+                let point = CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)
+                let unit = viewport.unitPoint(forScreen: point, content: g.size, container: size)
+                guard g.piece(at: unit, tolerance: 0) == nil else { continue }
+                let nearest = areas.map { (id: $0.id, d: g.distance(from: unit, toPieces: $0.pieces) * scale) }
+                    .min { $0.d < $1.d }!
+                guard nearest.d <= SpotRegionMap.coastSlack else { continue }
+                checked += 1
+                XCTAssertEqual(map.area(at: point, container: size, in: areas), nearest.id,
+                               "海岸のすぐ外 \(point) が近い地方 \(nearest.id) にならない")
+            }
+        }
+        XCTAssertGreaterThan(checked, 1000)
     }
 
     /// 撮影スポットの無い地方の線の内側は何もしない（隣の地方に寄せない）。読み上げの上下の払いは端で止まる
@@ -244,6 +290,15 @@ final class SpotRegionMapTests: XCTestCase {
         XCTAssertTrue(catcher.contains("case .cancelled, .failed: handlers.onCancel()"))
         XCTAssertTrue(catcher.contains("if press.state == .began || press.state == .changed { handlers?.onCancel() }"))
         XCTAssertTrue(catcher.contains("press.allowableMovement = 10"))
+        // 画面を離れたら、なぞっている地方を探すの画面からも消す（スクロールが止まったまま残らない）
+        XCTAssertTrue(view.contains(".onDisappear { tracing = nil }"))
+        // 読み上げ: 「地方」と言う・ダブルタップはいまの地方の一覧へ（地図の真ん中を押して選ばない）
+        XCTAssertTrue(view.contains("上下に払うと地方を替えられます"))
+        XCTAssertFalse(view.contains("区分を替えられます"))
+        XCTAssertTrue(view.contains(".accessibilityAction { onActivate() }"))
+        let section = try source("Features/Search/SearchSpotIndexSection.swift")
+        XCTAssertTrue(section.contains("openArea = areas.first { $0.id == chosen }?.scope"))
+        XCTAssertTrue(section.contains(".navigationDestination(item: $openArea)"))
         let search = try source("Features/Search/SearchView.swift")
         XCTAssertTrue(search.contains(".scrollDisabled(spotTracing != nil)"))
         XCTAssertTrue(search.contains("tracing: $spotTracing"))
