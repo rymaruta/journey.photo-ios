@@ -8,18 +8,23 @@ import FoundationNetworking
 /// みんなの「行きたい」（2026-11-11・`SpotWants`）。読むのは静的な JSON（`app/data/spot-wants.json`・
 /// 毎日1回の集計が書く）、送るのは未認証の口（`POST /spots/wants`）。
 ///
-/// 読んだ中身は**起動のあいだ覚える**（毎日1回しか変わらない）。読めない・無い回は nil（画面は何も出さない）
+/// 読んだ中身は**その日のあいだ覚える**（集計は毎日1回）。日をまたいだら読み直す（月が替わった数を前の月のまま出さない）。
+/// 読めない・無い（404/403）回は覚えない——次に開いたときにもう一度読む（2026-11-11 確かめ役の指摘 11）
 actor SpotWantsService {
 
     private let api: APIClient
     private let session: URLSession
     private let url: @Sendable () -> URL
-    private var memo: SpotWants.File??
+    /// 読めた中身と、読んだ日（日本時間の "YYYY-MM-DD"）
+    private var memo: (day: String, file: SpotWants.File)?
+    private let today: @Sendable () -> String
 
     init(api: APIClient, session: URLSession? = nil,
-         url: @escaping @Sendable () -> URL = { AppConfig.siteBaseURL.appendingPathComponent("app/data/spot-wants.json") }) {
+         url: @escaping @Sendable () -> URL = { AppConfig.siteBaseURL.appendingPathComponent("app/data/spot-wants.json") },
+         today: @escaping @Sendable () -> String = { DailyQuiz.today() }) {
         self.api = api
         self.url = url
+        self.today = today
         if let session {
             self.session = session
         } else {
@@ -29,18 +34,15 @@ actor SpotWantsService {
         }
     }
 
-    /// 今月の数。取れなかった回は覚えない（次に開いたときにもう一度読む）
+    /// 今月の数。読めた中身はその日のあいだ覚える。取れなかった・無かった回は覚えない
     func file() async -> SpotWants.File? {
-        if let memo { return memo }
+        let day = today()
+        if let memo, memo.day == day { return memo.file }
         guard let (data, response) = try? await session.data(from: url()),
-              let http = response as? HTTPURLResponse else { return nil }
-        guard (200..<300).contains(http.statusCode) else {
-            // 無い（まだ集計していない）は「無い」と覚える
-            if http.statusCode == 404 || http.statusCode == 403 { memo = .some(nil) }
-            return nil
-        }
-        let decoded = SpotWants.decode(data)
-        memo = .some(decoded)
+              let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode),
+              let decoded = SpotWants.decode(data) else { return nil }
+        memo = (day, decoded)
         return decoded
     }
 

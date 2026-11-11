@@ -160,6 +160,7 @@ final class ReviewPrivacyTests: XCTestCase {
             "NSPrivacyCollectedDataTypeDeviceID": "| デバイスID",
             "NSPrivacyCollectedDataTypeEmailsOrTextMessages": "| メールまたはテキストメッセージ",
             "NSPrivacyCollectedDataTypePurchaseHistory": "| 購入履歴",
+            "NSPrivacyCollectedDataTypeProductInteraction": "| 製品の操作",
         ]
         let doc = try read("docs/APP_REVIEW.md")
         let start = try XCTUnwrap(doc.range(of: "## App Store Connect の「App のプライバシー」"))

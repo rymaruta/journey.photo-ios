@@ -29,6 +29,9 @@ struct TripPickerView: View {
     var pause: TripPickerPause?
     /// めくり終えたときの説明（撮影スポットを払う画面は「次へ」が無いので差し替える）。nil なら作る流れの文
     var finishedLine: String?
+    /// 右へ払った札を、みんなの「行きたい」に数えるか（2026-11-11 確かめ役の指摘 12）。
+    /// **数えるのは撮影スポットを払う画面（`SpotSwipeView`）だけ**——旅行プランを作る流れの「写真から選ぶ」は数えない
+    var countsWants = false
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var wishlist: WishlistStore
@@ -49,7 +52,7 @@ struct TripPickerView: View {
         content
             .task { await loadDeck() }
             // 閉じた・タブを替えたら、みんなの「行きたい」の控えを送る（5件たまる前でも）
-            .onDisappear { SpotWantSender.flush(service: environment.spotWants) }
+            .onDisappear { if countsWants { SpotWantSender.flush(service: environment.spotWants) } }
             // めくる先の札と選んだ場所の詳細（写真・季節の文）。分けた置き場の索引だけの行のときだけ（2026-10-07）
             .task(id: SpotDetailNeeds.key(model.detailNeeds)) {
                 await model.applyDetails { await environment.spots.withDetails($0, for: $1) }
@@ -342,7 +345,7 @@ struct TripPickerView: View {
         guard model.decide(choice, alreadyWanted: wasWanted) != nil else { return }
         // みんなの「行きたい」に数える（2026-11-11・撮影スポットを払うの②）。右へ払った札だけ・見送るは数えない。
         // 端末のでたらめな ID と一緒にまとめて送る（`SpotWantSender`）
-        if choice == .want { SpotWantSender.want(current.slug, service: environment.spotWants) }
+        if countsWants, choice == .want { SpotWantSender.want(current.slug, service: environment.spotWants) }
         guard choice == .want, !wasWanted else { return }
         model.markAdded(current.spotId)
         let store = wishlist
@@ -360,7 +363,7 @@ struct TripPickerView: View {
         // 前から「行きたい」に入っていた場所は外さない（`Decision.wasWanted`）
         guard !flying, let last = model.undo() else { return }
         // まだ送っていなければ、みんなの「行きたい」の控えからも外す
-        if last.choice == .want { SpotWantSender.unwant(last.spot.slug) }
+        if countsWants, last.choice == .want { SpotWantSender.unwant(last.spot.slug) }
         guard last.choice == .want, !last.wasWanted else { return }
         let key = SavedSpotKey.official(last.spot.slug)
         let store = wishlist

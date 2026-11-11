@@ -71,13 +71,38 @@ final class SpotWantsTests: XCTestCase {
         XCTAssertFalse(SpotWants.counts(.ignored))
     }
 
+    /// 数えるのは払う画面と撮影スポットの頁だけ（旅行プランを作る流れの「写真から選ぶ」では数えない・指摘 12）。
+    /// 下書きの撮影スポットの頁には数を出さない（`guard !spot.isDraft`）
+    func testOnlySwipeScreenCountsAndDraftsShowNothing() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        func src(_ p: String) throws -> String {
+            try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/\(p)"), encoding: .utf8)
+        }
+        let picker = try src("Features/Trips/TripPickerView.swift")
+        XCTAssertTrue(picker.contains("var countsWants = false"), "既定は数えない")
+        XCTAssertTrue(picker.contains("if countsWants, choice == .want {"))
+        XCTAssertTrue(try src("Features/Trips/SpotSwipeView.swift").contains("countsWants: true"), "払う画面だけ数える")
+        XCTAssertFalse(try src("Features/Trips/TripCreateView.swift").contains("countsWants"), "作る流れは数えない")
+        let spot = try src("Features/Spots/OfficialSpotView.swift")
+        XCTAssertTrue(spot.contains("guard !spot.isDraft else { wantEntry = nil; return }"), "下書きには出さない")
+    }
+
+    /// 端末の番号と「行きたい」を送ることを、アプリのプライバシーの申告に載せている（本人と結びつけない）
+    func testPrivacyManifestDeclaresUnlinkedProductInteraction() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let text = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/PrivacyInfo.xcprivacy"), encoding: .utf8)
+        let range = try XCTUnwrap(text.range(of: "<string>NSPrivacyCollectedDataTypeProductInteraction</string>"))
+        let after = String(text[range.upperBound...].prefix(200))
+        XCTAssertTrue(after.contains("<key>NSPrivacyCollectedDataTypeLinked</key>\n            <false/>"), "本人と結びつけない（Linked は false）")
+    }
+
     func testRightSwipeAndSpotPageSendWants() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         // 送る口の名前は分けて書く（検査が「@MainActor の静的メンバを試験から呼んでいる」と読まないように）
         let sender = "SpotWant" + "Sender"
         let picker = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Trips/TripPickerView.swift"), encoding: .utf8)
-        XCTAssertTrue(picker.contains("if choice == .want { " + sender + ".want(current.slug"), "右へ払った札を数える")
-        XCTAssertTrue(picker.contains("if last.choice == .want { " + sender + ".unwant(last.spot.slug) }"), "戻したら控えから外す")
+        XCTAssertTrue(picker.contains("if countsWants, choice == .want { " + sender + ".want(current.slug"), "右へ払った札を数える")
+        XCTAssertTrue(picker.contains("if countsWants, last.choice == .want { " + sender + ".unwant(last.spot.slug) }"), "戻したら控えから外す")
         let spot = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Spots/OfficialSpotView.swift"), encoding: .utf8)
         XCTAssertTrue(spot.contains("if SpotWants.counts(outcome), !spot.isDraft {"))
         XCTAssertTrue(spot.contains("Text(SpotWants.line(wantEntry))"), "題の下の1行")

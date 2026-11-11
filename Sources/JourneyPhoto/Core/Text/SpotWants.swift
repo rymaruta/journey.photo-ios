@@ -15,7 +15,8 @@ enum SpotWants {
         let name: String
         let nameEn: String?
         let n: Int
-        let rank: Int
+        /// 日本の撮影スポットだけ（海外は数だけ・2026-11-11 判断）
+        let rank: Int?
     }
 
     struct File: Decodable, Equatable {
@@ -52,8 +53,12 @@ enum SpotWants {
     }
 
     /// 撮影スポットの頁の題の下の1行「今月の行きたい 1,284 · 全国1位」
+    /// 海外の撮影スポット（順位が無い）は数だけ「今月の行きたい 800」
     static func line(_ e: Entry) -> String {
-        L("今月の行きたい \(count(e.n)) · 全国\(e.rank)位", "Want to go this month \(count(e.n)) · #\(e.rank) overall")
+        guard let rank = e.rank else {
+            return L("今月の行きたい \(count(e.n))", "Want to go this month \(count(e.n))")
+        }
+        return L("今月の行きたい \(count(e.n)) · 全国\(rank)位", "Want to go this month \(count(e.n)) · #\(rank) in Japan")
     }
 
     /// 撮影スポットの頁の「行きたい」を押した結果が、数える「行きたい」か（入れた・端末に入れた）。外した・失敗は数えない
