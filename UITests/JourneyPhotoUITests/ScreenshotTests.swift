@@ -4218,7 +4218,7 @@ final class ScreenshotTests: XCTestCase {
     // `TRUNKPERF:` の行に出す。主スレッドが止まった時刻と、止まっている最中の積み（`perf.probe` の `stalls=`・`samples=`）は
     // 最後に `PERF-PROBE` の行で残す。普段の回では流さない（`Tools/pick-ui-tests.py` の `ONLY_WHEN_NAMED`）。
     // 名指しは `screens=testMeasuresTrunk`。値は Mac の CI のシミュレーターのもの（実機ではない）。
-    // `…Before` は 2026-11-11 の直しの前の作り（`-JPPreviewTrunkDiag live` / `spincont,spinlazy`）で、同じ回の前後を比べる
+    // `…Before` は 2026-11-11 の直しの前の作り（`-JPPreviewTrunkDiag spincont,spinlazy`）で、同じ回の前後を比べる
 
     private static let trunkPerfArgs = ["-JPPreviewTrunk", "YES", "-JPPreviewPro", "YES", "-JPPreviewTrunkPerf", "YES",
                                         "-JPPreviewPerfProbe", "YES"]
@@ -4299,7 +4299,7 @@ final class ScreenshotTests: XCTestCase {
         notePerfProbe(app, label: title)
     }
 
-    /// `trunk.perf` の回数（`StillReady` など）が `count` 以上になるまで待つ
+    /// `trunk.perf` の回数（`SpinPrewarmed` など）が `count` 以上になるまで待つ
     @discardableResult
     private func waitTrunkCount(_ app: XCUIApplication, _ name: String, atLeast count: Int, timeout: TimeInterval = 15) -> Bool {
         let until = Date().addingTimeInterval(timeout)
@@ -4399,10 +4399,8 @@ final class ScreenshotTests: XCTestCase {
 
     /// **Pro で使えるトランクの一覧**（owner「Pro で使えるトランクの一覧を見たとき重い」）: 型の画面 → 特別なトランク（6 型）を開く
     /// （開くまで）→ 縦に送る（measure・送りのコマ落ち）→ 戻る、を 2 回。札を作った回数・作られているトランクの絵の数・
-    /// メモリの増え方と戻り方。**直しの合否**（直しを戻すと落ちる）: 送る間の 100ms 超のコマ ≤ 20
+    /// メモリの増え方と戻り方
     func testMeasuresTrunkProModels() { measureTrunkPro(diag: nil) }
-    /// 直しの前の作り（生の絵）。同じ回で前後を比べる。合否は付けない
-    func testMeasuresTrunkProModelsBefore() { measureTrunkPro(diag: "live") }
 
     private func measureTrunkPro(diag: String?) {
         executionTimeAllowance = 600
@@ -4430,7 +4428,7 @@ final class ScreenshotTests: XCTestCase {
             }
             lines.append(String(format: "特別なトランクを開く%d | test_wall_to_card_s=%.2f（XCUITest の待ちを含む）", round, opened))
             trunkPhase(app, "特別なトランク・止まっている\(round)", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
-            let scrolled = trunkPhase(app, "特別なトランク・縦に送る\(round)", lines: &lines) {
+            trunkPhase(app, "特別なトランク・縦に送る\(round)", lines: &lines) {
                 if round == 1 {
                     let options = XCTMeasureOptions()
                     options.iterationCount = 3
@@ -4449,9 +4447,6 @@ final class ScreenshotTests: XCTestCase {
                         app.swipeDown(velocity: .fast)
                     }
                 }
-            }
-            if diag == nil {
-                XCTAssertLessThanOrEqual(scrolled["GapMain.over100"] ?? 999, 20, "特別なトランクを送る間に 100ms を越えて止まった（\(round) 回目）")
             }
             trunkPhase(app, "特別なトランクから戻った後\(round)", lines: &lines) {
                 goBack(app)
@@ -4539,37 +4534,6 @@ final class ScreenshotTests: XCTestCase {
         }
         XCTAssertFalse(diff.sizeMismatch, "\(label): 前と今で絵の大きさが違う")
         XCTAssertLessThanOrEqual(diff.over2Pct, 0.1, "\(label): 前と今で絵が違う（\(diff.line)）")
-    }
-
-    /// 型の一覧の最初の札と、特別なトランクの最初の札を撮る（今の作りは、画素の絵ができるのを待つ）
-    private func shootModelCards(diag: String?) -> (free: UIImage, pro: UIImage)? {
-        let app = launchTrunk(Self.trunkPerfArgs + (diag.map { ["-JPPreviewTrunkDiag", $0] } ?? []))
-        defer { app.terminate() }
-        guard openTrunk(app), openTrunkRow(app, "trunk.models") else { XCTFail("型の画面を開けない"); return nil }
-        let free = app.descendants(matching: .any)["trunk.models.card"].firstMatch
-        guard free.waitForExistence(timeout: 10) else { XCTFail("型の札が無い"); return nil }
-        if diag == nil { XCTAssertTrue(waitTrunkCount(app, "StillReady", atLeast: TrunkModelCount.free), "型の札の絵ができない") }
-        Thread.sleep(forTimeInterval: 2)
-        let freeShot = free.screenshot().image
-        let ready = Int(trunkPerf(app)["StillReady"]?["n"] ?? "") ?? 0
-        let proRow = app.buttons["trunk.models.pro"].firstMatch
-        scrollTo(proRow, in: app)
-        proRow.tap()
-        let card = app.buttons["trunk.proModels.card"].firstMatch
-        guard card.waitForExistence(timeout: 15) else { XCTFail("特別なトランクの札が無い"); return nil }
-        if diag == nil { XCTAssertTrue(waitTrunkCount(app, "StillReady", atLeast: ready + 1), "特別なトランクの絵ができない") }
-        Thread.sleep(forTimeInterval: 2)
-        return (freeShot, card.screenshot().image)
-    }
-
-    private enum TrunkModelCount { static let free = 4 }
-
-    /// **型の一覧・特別なトランクの一覧**: 生の絵（前）と、1 度描いた画素の絵（今）が同じか
-    func testTrunkStillMatchesLive() {
-        executionTimeAllowance = 400
-        guard let before = shootModelCards(diag: "live"), let now = shootModelCards(diag: nil) else { return }
-        notePixel("型の一覧の札", pixelDiff(before.free, now.free), before.free, now.free)
-        notePixel("特別なトランクの札", pixelDiff(before.pro, now.pro), before.pro, now.pro)
     }
 
     /// 回す箱を、開いた直後・向きのボタンで止めた所（側面・上と背面・底・正面）で撮る

@@ -7,8 +7,6 @@ import SwiftUI
 struct TrunkModelsView: View {
     @ObservedObject var model: TrunkViewModel
     var ownerName: String?
-    /// 札のトランクの画素の絵（この画面の間だけ持つ・`TrunkStillCache`）
-    @StateObject private var stills = TrunkStillCache()
 
     var body: some View {
         ScrollView {
@@ -32,7 +30,7 @@ struct TrunkModelsView: View {
                     }
                     VStack(spacing: 10) {
                         ForEach(TrunkModel.free) { m in
-                            TrunkModelCard(stills: stills, trunk: m, state: state, ownerName: ownerName,
+                            TrunkModelCard(trunk: m, state: state, ownerName: ownerName,
                                            selected: state.effectiveModel == m) {
                                 Task { await model.setModel(m) }
                             }
@@ -85,7 +83,6 @@ struct TrunkModelsView: View {
 
 /// 型の札（左に小さいトランク・右に名前・素材・古び方）
 struct TrunkModelCard: View {
-    @ObservedObject var stills: TrunkStillCache
     let trunk: TrunkModel
     let state: TrunkState
     var ownerName: String?
@@ -99,10 +96,8 @@ struct TrunkModelCard: View {
                 // モック: 360×300 を 0.389 倍（140×117）・ラベルは2枚
                 // 絵のラベルは2枚に減らしても、手荷物タグは全部のラベルから（ほかの画面とタグを割らない）
                 let preview = TrunkLooks.modelsPreview(state.stuck, count: 2)
-                // 2026-11-11 判断: 生の絵ではなく、同じ絵を 1 度だけ画素の絵にして置く（`TrunkFigureStill`・送りの重さ）
-                TrunkFigureStill(cache: stills, model: trunk, posts: state.posts ?? 0, stuck: preview.stuck,
-                                 ownerName: ownerName, width: 140, tagsFrom: preview.tagsFrom, tagPicks: state.tagPicks,
-                                 siblings: TrunkModel.free)
+                TrunkFigure(model: trunk, posts: state.posts ?? 0, stuck: preview.stuck,
+                            ownerName: ownerName, width: 140, tagsFrom: preview.tagsFrom, tagPicks: state.tagPicks)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(info.name)
@@ -157,8 +152,6 @@ struct TrunkProModelsView: View {
     var ownerName: String?
 
     @State private var showPaywall = false
-    /// 札のトランクの画素の絵（この画面の間だけ持つ・戻ると手放す・`TrunkStillCache`）
-    @StateObject private var stills = TrunkStillCache()
 
     var body: some View {
         ScrollView {
@@ -186,8 +179,7 @@ struct TrunkProModelsView: View {
                         .foregroundStyle(WebTheme.danger)
                         .padding(.top, 8)
                 }
-                // 2026-11-11 判断（run 997）: 画面の外の札は作らない（LazyVStack）。6 型を一度に作っていた
-                LazyVStack(spacing: 20) {
+                VStack(spacing: 20) {
                     ForEach(TrunkModel.pro) { m in proCard(m) }
                 }
                 .padding(.top, 20)
@@ -230,11 +222,9 @@ struct TrunkProModelsView: View {
         } label: {
             VStack(alignment: .leading, spacing: 16) {
                 let preview = TrunkLooks.modelsPreview(state?.stuck ?? [], count: 3)
-                // 2026-11-11 判断（run 997）: 生の絵（`drawingGroup`）は送る 1 コマごとに描き直され、1 コマ平均 48ms だった。
-                // 同じ絵を 1 度だけ画素の絵にして置く（`TrunkFigureStill`）
-                TrunkFigureStill(cache: stills, model: trunk, posts: state?.posts ?? 0, stuck: preview.stuck,
-                                 ownerName: ownerName, maxWidth: 300, tagsFrom: preview.tagsFrom,
-                                 tagPicks: state?.tagPicks ?? [], siblings: TrunkModel.pro)
+                TrunkFigureFit(model: trunk, posts: state?.posts ?? 0, stuck: preview.stuck,
+                               ownerName: ownerName, maxWidth: 300, tagsFrom: preview.tagsFrom,
+                               tagPicks: state?.tagPicks ?? [])
                     .frame(maxWidth: .infinity)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 0) {
@@ -300,4 +290,3 @@ struct TrunkProModelsView: View {
         }
     }
 }
-

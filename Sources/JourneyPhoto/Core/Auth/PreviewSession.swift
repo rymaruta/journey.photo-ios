@@ -467,7 +467,7 @@ enum PreviewSession {
     /// `-JPPreviewTrunkDiag "noshadow,nodg"` のように `,` で並べる:
     /// `noshadow` 胴の影 2 つを外す・`nodg` 胴の `drawingGroup` を外す・`spinaa0`/`spinaa2` 回す箱の輪郭のなめらかさを なし/2x に
     /// （この 3 つは見た目が変わる。比べるためだけ）。
-    /// 前の作りに戻す（絵の見比べの「前」・2026-11-11 の直し）: `live` 型の一覧を生の絵のまま・`spincont` 回す箱を描き続ける・
+    /// 前の作りに戻す（絵の見比べの「前」・2026-11-11 の直し）: `spincont` 回す箱を描き続ける・
     /// `spinlazy` 回す箱の絵を塗り切らずに渡し、使い回さない
     static let trunkDiagKey = "JPPreviewTrunkDiag"
 

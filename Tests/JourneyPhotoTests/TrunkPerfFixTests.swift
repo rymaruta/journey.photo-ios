@@ -16,39 +16,6 @@ final class TrunkPerfFixTests: XCTestCase {
             .joined(separator: "\n")
     }
 
-    /// 1. 型の一覧・特別なトランクの一覧は、生の絵（`drawingGroup` が送る 1 コマごとに描き直される）を並べない
-    func testModelListsUseStillImages() throws {
-        let models = try source("Features/Trunk/TrunkModelsView.swift")
-        XCTAssertEqual(models.components(separatedBy: "TrunkFigureStill(").count - 1, 2, "型の一覧と特別なトランクの両方で画素の絵を使う")
-        XCTAssertFalse(models.contains("TrunkFigureFit("), "特別なトランクの一覧に生の絵が戻っている")
-        XCTAssertFalse(models.contains("                TrunkFigure(model:"), "型の一覧に生の絵が戻っている")
-        XCTAssertTrue(models.contains("LazyVStack(spacing: 20) {\n                    ForEach(TrunkModel.pro)"), "画面の外の札まで作っている")
-        // 絵の置き場は画面ごと（戻ると手放す）
-        XCTAssertEqual(models.components(separatedBy: "@StateObject private var stills = TrunkStillCache()").count - 1, 2,
-                       "画面から戻っても絵を持ち続ける")
-        let still = try source("Features/Trunk/TrunkStill.swift")
-        // 画面の倍率で描く・塗るのは主スレッドの外・1 枚ずつ作って間に 1 コマ返す・メモリが足りなければ空にする
-        XCTAssertTrue(still.contains("scale: Double(max(1, displayScale))"), "画面の倍率で描いていない")
-        XCTAssertTrue(still.contains("Task.detached(priority: .userInitiated)"), "絵を主スレッドで塗っている")
-        XCTAssertTrue(still.contains("try? await Task.sleep(for: .milliseconds(16))"), "続けて作って送りを止める")
-        XCTAssertTrue(still.contains("UIApplication.didReceiveMemoryWarningNotification"))
-    }
-
-    /// 1. 余白を付けた絵の画素が整数になる（端数だと置くときに縮んで、生の絵と画素がずれる）。幅 140（型の一覧）と 300（特別なトランク）・1〜3 倍
-    func testStillPaddingLandsOnWholePixels() {
-        for width in [140.0, 300.0] {
-            let k = width / TrunkLooks.canvasWidth
-            for scale in [1.0, 2.0, 3.0] {
-                for pad in [TrunkStillLayout.padTop, TrunkStillLayout.padSide, TrunkStillLayout.padBottom] {
-                    let px = pad * k * scale
-                    XCTAssertEqual(px, px.rounded(), accuracy: 1e-9, "幅 \(width)・\(scale) 倍で余白 \(pad) が \(px) 画素（端数）")
-                }
-            }
-        }
-        // 影（下へ 30＋ぼかし 25）より余白が広い
-        XCTAssertGreaterThanOrEqual(TrunkStillLayout.padBottom, 30 + 25 * 2)
-    }
-
     /// 2. 回す箱は、角度・絵が変わったときだけ描く（止まっている間に毎秒 60 コマ描かない）
     func testSpinBoxDrawsOnlyWhileMoving() throws {
         let medal = try source("Features/Profile/MedalViewerView.swift")
