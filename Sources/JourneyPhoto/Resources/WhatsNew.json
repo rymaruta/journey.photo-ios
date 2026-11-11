@@ -2,6 +2,23 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.81",
+      "date": "2026-11-11",
+      "items": [
+        {
+          "symbol": "mappin.and.ellipse",
+          "title": { "ja": "探すから撮影スポットの一覧", "en": "Browse photo spots from Search" },
+          "detail": { "ja": "探すの「撮影スポット」で地方と県を選ぶと、その県の撮影スポットが並びます。一覧の上で名前でも絞れます。", "en": "In Search, pick a region and prefecture under Photo spots to see its spots. You can also filter the list by name." },
+          "destination": "search"
+        },
+        {
+          "symbol": "bus",
+          "title": { "ja": "とおまわり号の中をすっきり", "en": "A tidier Detour interior" },
+          "detail": { "ja": "家具を選び直して似たものをまとめ、85 点にしました。部屋は車の部屋と張り出しの 2 つに（トレーラーつきはトレーラーも）。秋の写真や、いくつもの季節に撮った写真で届く家具もあります。前に置いた一部の家具は、部屋に出なくなります。", "en": "We merged similar pieces into a collection of 85, and the rooms are now the main room and the slide-out (plus the trailer when you have one). Some pieces also arrive with autumn photos or photos across seasons. A few pieces you placed before will no longer appear." }
+        }
+      ]
+    },
+    {
       "version": "1.1.80",
       "date": "2026-11-11",
       "items": [
