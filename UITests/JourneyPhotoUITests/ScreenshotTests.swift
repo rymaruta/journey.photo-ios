@@ -2516,8 +2516,21 @@ final class ScreenshotTests: XCTestCase {
         app.swipeDown()
         Thread.sleep(forTimeInterval: 1)
         guard map.isHittable else { return }
+        // 切り分けの数 その2（run 1013: simultaneousGesture にしても地図から払うと流れなかった）:
+        // 要素への swipeUp が読み上げの「増やす」（accessibilityAdjustableAction）に化けていないか＝払った後の地図の値、
+        // 要素を介さない指の引き（画面の座標から座標へ）なら流れるか、を出す
+        let rawTop = map.frame.minY
+        let rawStart = map.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+        rawStart.press(forDuration: 0.05, thenDragTo: map.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: -1.5)))
+        Thread.sleep(forTimeInterval: 1)
+        print("spotMap.diag rawDrag mapTop before=\(rawTop) after=\(map.frame.minY) mapValue=\(String(describing: map.value))")
+        app.swipeDown()
+        Thread.sleep(forTimeInterval: 1)
+        guard map.isHittable else { return }
+        let valueBefore = String(describing: map.value)
         let before = map.frame.minY
         map.swipeUp()
+        print("spotMap.diag elementSwipe valueBefore=\(valueBefore) valueAfter=\(String(describing: map.value))")
         Thread.sleep(forTimeInterval: 1)
         print("spotMap.swipe mapTop before=\(before) after=\(map.frame.minY)")
         XCTAssertLessThan(map.frame.minY, before - 20, "地図の上から払っても画面が流れない")
