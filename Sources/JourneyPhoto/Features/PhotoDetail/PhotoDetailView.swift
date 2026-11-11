@@ -687,6 +687,9 @@ struct PhotoDetailView: View {
             nearbySection
             commentsBlock
                 .id(Self.commentsAnchor)
+            // 意見箱の小さな「使ってみてどう？」（2026-11-11 札 #546）。写真の詳細のいちばん下に1行だけ
+            // （写真・題・操作の流れの外。押すとシートが開いてすぐ書ける）
+            FeedbackPrompt(screen: "photo-detail")
         }
         // v2 の板: 画面の端は 16（`JPSpace.gutter`・以前は 20）
         .padding(.horizontal, JPSpace.gutter)

@@ -217,6 +217,11 @@ struct JourneyPhotoApp: App {
                 // `AppDelegate` の起動から居る1つ（`PassStore.shared`）を配る
                 .environmentObject(PassStore.shared)
                 .task { connectivity.start() }
+                // 意見箱: 電波が戻ったら、圏外で残した下書きを送る（2026-11-11 札 #546）。ログインの確認中は待つ
+                .onChange(of: connectivity.isOffline) { _, offline in
+                    guard !offline, !auth.isResolving, !auth.isSignedOutUncertain else { return }
+                    FeedbackOutboxRunner.flush(environment: environment, userId: auth.userId)
+                }
                 // すれちがいの設定が変わったら、旅のトランクに入れた乗車券を揃える（本人がオンにしたときだけ置き、
                 // 外れたら外す・断られたら一言・`TrunkTicketSync`）。設定の画面に頼らず、変えた所の後ろで必ず走る
                 .task {
@@ -278,6 +283,8 @@ struct JourneyPhotoApp: App {
                     let userId = auth.userId
                     Task { await push.use(userId: userId) }
                     discardOrphanTransfers()
+                    // 意見箱の送れていない下書きを送り直す（2026-11-11 札 #546・`FeedbackOutbox`）
+                    FeedbackOutboxRunner.flush(environment: environment, userId: userId)
                     // **渡し損ねた購入も、裏から戻るたびに送り直す**（2026-10-09 判断）。買った時に圏外・
                     // サーバーの不調だった回は、案内に「アプリを開いたときに自動でやり直します」と出すが、
                     // 送り直すのはログインした時（人が決まるたびに走る下の task）と、起動し直した時に
