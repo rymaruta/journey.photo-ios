@@ -2729,8 +2729,10 @@ final class ScreenshotTests: XCTestCase {
         let start = (lift: count("lift"), target: count("target"), drop: count("drop"), end: count("end"))
         // テストの最初の起動では 1 回目が持ち上がらないことがある（(a)・run 1016〜1059）。持ち上がるまで 2 回まで
         for attempt in 1...2 {
-            source.press(forDuration: 1.2, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.04)),
-                         withVelocity: .slow, thenHoldForDuration: 0.5)
+            // 画面の点へ運ぶので、運ぶ元も点で押さえる（`XCUIElement.press(thenDragTo:)` は部品にしか運べない）
+            source.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                .press(forDuration: 1.2, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.04)),
+                       withVelocity: .slow, thenHoldForDuration: 0.5)
             Thread.sleep(forTimeInterval: 2)
             _ = fixtureSends(app, "dragOut\(attempt) lines=\(lines.count) drag[\(dragCounts(app))]")
             if count("lift") > start.lift { break }
