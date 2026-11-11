@@ -2774,6 +2774,44 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **動かす速さで (b)「持ち上がったが落ちない」の率を比べる**（札 #521・2026-11-11）。(b) は起動の最初の運びでだけ出た
+    /// （4/27、2 回目以降 0/33）ので、1 起動 1 回だけ運ぶ。押さえて 1.2 秒・止めずに離す（`thenHoldForDuration: 0`）。
+    /// 9 起動（テストの最初の起動は (a) が出るので数えない）。離して 2 秒後と 5 秒後に、真鍮の落とす先の線
+    /// （`tripPlan.dropLine`・見本のときだけ数えられる）が残っているかも数える。合否は無い。1 本 10 分ほど
+    private func measureDragVelocity(_ velocity: XCUIGestureVelocity, _ label: String) {
+        executionTimeAllowance = 1200
+        for launch in 0..<9 {
+            let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+            defer { app.terminate() }
+            guard let stage = dragStage(app) else {
+                let line = "TRIPDRAG velocity=\(label) launch=\(launch) not-ready"
+                print(line); XCTContext.runActivity(named: line) { _ in }
+                continue
+            }
+            let (source, target, pushes) = stage
+            let lines = app.descendants(matching: .any).matching(identifier: "tripPlan.dropLine")
+            let linesBefore = lines.count
+            source.press(forDuration: 1.2, thenDragTo: target, withVelocity: velocity, thenHoldForDuration: 0)
+            Thread.sleep(forTimeInterval: 2)
+            let at2 = lines.count
+            let counts = dragCounts(app)
+            Thread.sleep(forTimeInterval: 3)
+            let at5 = lines.count
+            let where5 = at5 > 0 ? lines.firstMatch.label : "-"
+            let line = "TRIPDRAG velocity=\(label) launch=\(launch) pushes=\(pushes) "
+                + "dropLine[before=\(linesBefore) 2s=\(at2) 5s=\(at5) at=\(where5)] after[\(counts)]"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+        }
+    }
+
+    /// 名指しのときだけ（`screens=testMeasuresTripPlanDragVelocitySlow`）
+    func testMeasuresTripPlanDragVelocitySlow() { measureDragVelocity(.slow, "slow") }
+    /// 名指しのときだけ（`screens=testMeasuresTripPlanDragVelocityDefault`）
+    func testMeasuresTripPlanDragVelocityDefault() { measureDragVelocity(.default, "default") }
+    /// 名指しのときだけ（`screens=testMeasuresTripPlanDragVelocityFast`）
+    func testMeasuresTripPlanDragVelocityFast() { measureDragVelocity(.fast, "fast") }
+
     /// **日をまたぐ区間と長い移動**（2026-11-11 owner の実機「バスとか出てこないよ」「日本からブラジルとか無理じゃん」）。
     /// 見本の「京都とブラジルの旅」（1 日 1 か所・空の日・サンパウロ）を開き、前の日からの区間と、海を越える区間の
     /// 「飛行機などの長い移動」・そのシート（Google フライト）を撮る。出なければ撮らずに抜ける

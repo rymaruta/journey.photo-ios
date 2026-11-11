@@ -60,7 +60,10 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    "MapETAProbeTests",
                    # 2026-11-11（札 #521）: 運ぶ操作を数で分ける（合否なし・1 本 20 分以内）。
                    # `screens=testMeasuresTripPlanDragTrail`（(b) の出来事の並び）・`screens=testMeasuresTripPlanDragFirstTry`（試しの運びのあとの 1 回目）
-                   "ScreenshotTests/testMeasuresTripPlanDragTrail", "ScreenshotTests/testMeasuresTripPlanDragFirstTry"]
+                   "ScreenshotTests/testMeasuresTripPlanDragTrail", "ScreenshotTests/testMeasuresTripPlanDragFirstTry",
+                   # 動かす速さで (b) の率と、落とす先の線が残るかを比べる（各 10 分ほど）
+                   "ScreenshotTests/testMeasuresTripPlanDragVelocitySlow", "ScreenshotTests/testMeasuresTripPlanDragVelocityDefault",
+                   "ScreenshotTests/testMeasuresTripPlanDragVelocityFast"]
 
 # クラスの直下（字下げ4つ）の関数だけを区切りにする。中の入れ子の関数は本体に含める
 MEMBER = re.compile(r"^    (?:@\w+\s+)*(?:(?:private|fileprivate|override|static|final)\s+)*func\s+(\w+)\s*\(", re.M)

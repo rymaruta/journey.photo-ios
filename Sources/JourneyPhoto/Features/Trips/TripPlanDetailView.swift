@@ -1000,7 +1000,19 @@ struct TripPlanDetailView: View {
     @ViewBuilder
     private func dropLine(_ spot: DropSpot) -> some View {
         if dropTarget == spot {
+            #if DEBUG
+            if TripPlanFixture.isOn {
+                // 見本のときだけ、線が出ているかを UI テストが数える（札 #521・(b) のあとに線が残るか）
+                Rectangle().fill(WebTheme.accent).frame(height: 2)
+                    .accessibilityElement()
+                    .accessibilityIdentifier("tripPlan.dropLine")
+                    .accessibilityLabel("\(spot.day).\(spot.item.map(String.init) ?? "add")")
+            } else {
+                Rectangle().fill(WebTheme.accent).frame(height: 2).accessibilityHidden(true)
+            }
+            #else
             Rectangle().fill(WebTheme.accent).frame(height: 2).accessibilityHidden(true)
+            #endif
         }
     }
 
