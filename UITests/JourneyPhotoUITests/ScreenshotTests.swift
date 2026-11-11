@@ -2644,6 +2644,9 @@ final class ScreenshotTests: XCTestCase {
                     after = order()
                     _ = fixtureSends(app, "orderAfterHold[\(after)] drag[\(dragCounts(app))]")
                 }
+                // 運ぶ操作が終わったら落とす先の線は残らない（2026-11-11 判断・`TripRowDrag.swift`）
+                XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "tripPlan.dropLine").count, 0,
+                               "運んだあとに落とす先の線が残っている")
                 Thread.sleep(forTimeInterval: 11)
                 shoot(app, "65b-旅行プランの日程（運んだ・日をまたいで2日目へ）")
                 let sent = fixtureSends(app, "afterDrag")
@@ -2777,11 +2780,13 @@ final class ScreenshotTests: XCTestCase {
     /// **動かす速さで (b)「持ち上がったが落ちない」の率を比べる**（札 #521・2026-11-11）。(b) は起動の最初の運びでだけ出た
     /// （4/27、2 回目以降 0/33）ので、1 起動 1 回だけ運ぶ。押さえて 1.2 秒・止めずに離す（`thenHoldForDuration: 0`）。
     /// 9 起動（テストの最初の起動は (a) が出るので数えない）。離して 2 秒後と 5 秒後に、真鍮の落とす先の線
-    /// （`tripPlan.dropLine`・見本のときだけ数えられる）が残っているかも数える。合否は無い。1 本 10 分ほど
-    private func measureDragVelocity(_ velocity: XCUIGestureVelocity, _ label: String) {
+    /// （`tripPlan.dropLine`・見本のときだけ数えられる）が残っているかも数える。1 本 10 分ほど。
+    /// **今の作り（`UIDragInteraction`・2026-11-11 判断）では線が 0 本に戻ることを縛る**（run 1036 の `.draggable` では
+    /// 速く運んだ 8 回中 1 回、5 秒後も 1 本残った）。前の作り（`legacy`・`-JPTripPlanDragLegacy`）は数えるだけ
+    private func measureDragVelocity(_ velocity: XCUIGestureVelocity, _ label: String, legacy: Bool = false) {
         executionTimeAllowance = 1200
         for launch in 0..<9 {
-            let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+            let app = launchTrunk(["-JPTripPlanFixture", "YES"] + (legacy ? ["-JPTripPlanDragLegacy", "YES"] : []))
             defer { app.terminate() }
             guard let stage = dragStage(app) else {
                 let line = "TRIPDRAG velocity=\(label) launch=\(launch) not-ready"
@@ -2798,10 +2803,14 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 3)
             let at5 = lines.count
             let where5 = at5 > 0 ? lines.firstMatch.label : "-"
-            let line = "TRIPDRAG velocity=\(label) launch=\(launch) pushes=\(pushes) "
+            let line = "TRIPDRAG velocity=\(label) legacy=\(legacy) launch=\(launch) pushes=\(pushes) "
                 + "dropLine[before=\(linesBefore) 2s=\(at2) 5s=\(at5) at=\(where5)] after[\(counts)]"
             print(line)
             XCTContext.runActivity(named: line) { _ in }
+            if !legacy {
+                XCTAssertEqual(at2, 0, "運ぶ操作が終わったのに落とす先の線が残っている（離して 2 秒・\(line)）")
+                XCTAssertEqual(at5, 0, "運ぶ操作が終わったのに落とす先の線が残っている（離して 5 秒・\(line)）")
+            }
         }
     }
 
@@ -2811,6 +2820,8 @@ final class ScreenshotTests: XCTestCase {
     func testMeasuresTripPlanDragVelocityDefault() { measureDragVelocity(.default, "default") }
     /// 名指しのときだけ（`screens=testMeasuresTripPlanDragVelocityFast`）
     func testMeasuresTripPlanDragVelocityFast() { measureDragVelocity(.fast, "fast") }
+    /// 前の作り（`.draggable`）で速く運ぶ。名指しのときだけ（`screens=testMeasuresTripPlanDragLegacyFast`）
+    func testMeasuresTripPlanDragLegacyFast() { measureDragVelocity(.fast, "fast", legacy: true) }
 
     /// **日をまたぐ区間と長い移動**（2026-11-11 owner の実機「バスとか出てこないよ」「日本からブラジルとか無理じゃん」）。
     /// 見本の「京都とブラジルの旅」（1 日 1 か所・空の日・サンパウロ）を開き、前の日からの区間と、海を越える区間の

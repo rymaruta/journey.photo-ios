@@ -37,10 +37,11 @@ enum TripPlanFixture {
         #endif
     }
 
-    /// 運ぶ印の版で描く（`-JPTripPlanDragHandle YES`・見本のときだけ）。行全体を運ぶ版と比べる UI テスト用
-    static var dragHandleVariant: Bool {
+    /// 運ぶ元を前の作り（SwiftUI の `.draggable`）で描く（`-JPTripPlanDragLegacy YES`・見本のときだけ）。
+    /// 今の作り（`UIDragInteraction`・2026-11-11 判断）と、入る率・落とす先の線が残るかを比べる UI テスト用
+    static var dragLegacyVariant: Bool {
         #if DEBUG
-        return isOn && UserDefaults.standard.bool(forKey: "JPTripPlanDragHandle")
+        return isOn && UserDefaults.standard.bool(forKey: "JPTripPlanDragLegacy")
         #else
         return false
         #endif
@@ -171,7 +172,8 @@ final class TripPlanFixtureCounter: ObservableObject {
     var dragLine: String { "lift=\(lifted) target=\(targeted) drop=\(dropped) reject=\(rejected)" }
 
     /// 運ぶ操作の出来事の並び（見本のときだけ・(b)「持ち上がったが落ちない」をどの部品で止まったかで分ける）。
-    /// `L` 持ち上がった（preview が出た）・`E` preview が消えた・`T+日.行` 落とす先に入った・`T-日.行` 出た・
+    /// `L` 持ち上がった（今の作りは sessionWillBegin・前の作りは preview が出た）・`X` 運ぶ操作が終わった（didEndWith・今の作り）・
+    /// `E` preview が消えた（前の作りだけ）・`T+日.行` 落とす先に入った・`T-日.行` 出た・
     /// `D日.行` drop が呼ばれた・`R` 断った・`S` 落とした先の日程に入れた。`@` の後は持ち上がってからのミリ秒。最後の 24 個
     @Published var trail: [String] = []
     private var liftedAt: Date?

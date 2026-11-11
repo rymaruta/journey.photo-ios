@@ -63,7 +63,7 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    "ScreenshotTests/testMeasuresTripPlanDragTrail", "ScreenshotTests/testMeasuresTripPlanDragFirstTry",
                    # 動かす速さで (b) の率と、落とす先の線が残るかを比べる（各 10 分ほど）
                    "ScreenshotTests/testMeasuresTripPlanDragVelocitySlow", "ScreenshotTests/testMeasuresTripPlanDragVelocityDefault",
-                   "ScreenshotTests/testMeasuresTripPlanDragVelocityFast"]
+                   "ScreenshotTests/testMeasuresTripPlanDragVelocityFast", "ScreenshotTests/testMeasuresTripPlanDragLegacyFast"]
 
 # クラスの直下（字下げ4つ）の関数だけを区切りにする。中の入れ子の関数は本体に含める
 MEMBER = re.compile(r"^    (?:@\w+\s+)*(?:(?:private|fileprivate|override|static|final)\s+)*func\s+(\w+)\s*\(", re.M)

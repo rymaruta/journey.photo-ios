@@ -41,7 +41,8 @@ struct TripPlanDetailView: View {
     /// 「保存せずに戻る」を選んだ（消える間に送らない）
     @State private var discarding = false
     /// 運んでいる行の落とし先（その行の上に真鍮の線を出す）。日の末尾は `item == nil`
-    @State private var dropTarget: DropSpot?
+    /// 落とす先の印。運ぶ操作が終わったら必ず空（2026-11-11 判断・`TripRowDrag.swift`）
+    @State private var dropMark = TripDropMark<DropSpot>()
     /// 開いている区間のシート
     @State private var legTarget: LegTarget?
     /// 季節の一文・時刻帯のために詳細を重ねた（索引だけの行の文は詳細にある）
@@ -993,13 +994,13 @@ struct TripPlanDetailView: View {
             TripPlanFixtureCounter.shared.mark("T\(targeted ? "+" : "-")\(spot.day).\(spot.item.map(String.init) ?? "add")")
         }
         #endif
-        if targeted { dropTarget = spot } else if dropTarget == spot { dropTarget = nil }
+        dropMark.targeted(targeted, spot)
     }
 
     /// 落とす先の印（真鍮の 2pt の線・色だけでなく位置で伝える）
     @ViewBuilder
     private func dropLine(_ spot: DropSpot) -> some View {
-        if dropTarget == spot {
+        if dropMark.spot == spot {
             #if DEBUG
             if TripPlanFixture.isOn {
                 // 見本のときだけ、線が出ているかを UI テストが数える（札 #521・(b) のあとに線が残るか）
@@ -1018,7 +1019,7 @@ struct TripPlanDetailView: View {
 
     /// 落とした。規則は `TripPlanEdit.dropped`（落とした時点の日程で項目を探し直す）
     private func drop(_ payload: String?, toDay: Int, toItem: Int?) -> Bool {
-        dropTarget = nil
+        dropMark.dropped()
         #if DEBUG
         if TripPlanFixture.isOn {
             TripPlanFixtureCounter.shared.dropped += 1
@@ -1086,20 +1087,16 @@ struct TripPlanDetailView: View {
         // - 並べ替えは**行を押さえて運ぶ**（iOS の決まりの操作。押す回数は変わらない）。行を押すと今どおり撮影スポットが開く
         // - 読み上げの人は「…」の上へ・下へ・別の日へ移す・外す
         return HStack(spacing: 0) {
-            if TripPlanFixture.dragHandleVariant {
-                // 比べるための運ぶ印の版（見本のときだけ・`-JPTripPlanDragHandle`）
+            if TripPlanFixture.dragLegacyVariant {
+                // 比べるための前の作り（SwiftUI の `.draggable`・見本のときだけ・`-JPTripPlanDragLegacy`）
                 itemLink(item, name: name, number: number, season: season, chip: chip)
-                Image(systemName: "line.3.horizontal")
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.text3)
-                    .webTappable()
-                    .contentShape(Rectangle())
-                    .draggable(TripPlanEdit.dragPayload(day: di, item: ii, of: item)) { dragPreview(name) }
-                    .accessibilityLabel(L("「\(name)」を運ぶ", "Move \(name)"))
+                    .draggable(TripPlanEdit.dragPayload(day: di, item: ii, of: item)) { dragPreview(name, legacy: true) }
+                    .accessibilityHint(L("押すと開きます。押さえたまま運ぶと並べ替えます", "Tap to open. Touch and hold, then drag to reorder."))
                     .accessibilityIdentifier("tripPlan.dragHandle")
             } else {
                 itemLink(item, name: name, number: number, season: season, chip: chip)
-                    .draggable(TripPlanEdit.dragPayload(day: di, item: ii, of: item)) { dragPreview(name) }
+                    .tripRowDragSource(rowDragEvents(TripPlanEdit.dragPayload(day: di, item: ii, of: item)),
+                                       label: L("「\(name)」を運ぶ", "Move \(name)")) { dragPreview(name, legacy: false) }
                     .accessibilityHint(L("押すと開きます。押さえたまま運ぶと並べ替えます", "Tap to open. Touch and hold, then drag to reorder."))
                     .accessibilityIdentifier("tripPlan.dragHandle")
             }
@@ -1111,8 +1108,25 @@ struct TripPlanDetailView: View {
         } isTargeted: { setDropTarget($0, DropSpot(day: di, item: ii)) }
     }
 
-    /// 運んでいる間の絵（見本のときだけ、持ち上がった回数を数える）
-    private func dragPreview(_ name: String) -> some View {
+    /// 行を運ぶ元の知らせ（2026-11-11 判断）: 持ち上がった・**終わったら落とす先の印を必ず空に戻す**
+    private func rowDragEvents(_ payload: String) -> TripRowDragEvents {
+        TripRowDragEvents(payload: payload, onBegin: {
+            #if DEBUG
+            if TripPlanFixture.isOn {
+                TripPlanFixtureCounter.shared.lifted += 1
+                TripPlanFixtureCounter.shared.mark("L")
+            }
+            #endif
+        }, onEnd: {
+            dropMark.dragEnded()
+            #if DEBUG
+            if TripPlanFixture.isOn { TripPlanFixtureCounter.shared.mark("X") }
+            #endif
+        })
+    }
+
+    /// 運んでいる間の絵。前の作り（`legacy`）のときだけ、絵が出た・消えたで持ち上がった回数を数える
+    private func dragPreview(_ name: String, legacy: Bool) -> some View {
         Text(name)
             .font(JPFont.bodyEmphasis)
             .foregroundStyle(WebTheme.foreground)
@@ -1121,7 +1135,7 @@ struct TripPlanDetailView: View {
             .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))
             .onAppear {
                 #if DEBUG
-                if TripPlanFixture.isOn {
+                if legacy, TripPlanFixture.isOn {
                     TripPlanFixtureCounter.shared.lifted += 1
                     TripPlanFixtureCounter.shared.mark("L")
                 }
@@ -1129,7 +1143,7 @@ struct TripPlanDetailView: View {
             }
             .onDisappear {
                 #if DEBUG
-                if TripPlanFixture.isOn { TripPlanFixtureCounter.shared.mark("E") }
+                if legacy, TripPlanFixture.isOn { TripPlanFixtureCounter.shared.mark("E") }
                 #endif
             }
     }
