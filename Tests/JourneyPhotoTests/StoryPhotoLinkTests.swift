@@ -79,6 +79,16 @@ final class StoryPhotoLinkTests: XCTestCase {
         let detail = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/PhotoDetail/PhotoDetailView.swift"), encoding: .utf8)
         XCTAssertTrue(detail.contains("Button(StoryPhotoLink.deleteWithStory, role: .destructive) { Task { await deletePhoto(withStory: true) } }"))
         XCTAssertTrue(detail.contains("Button(StoryPhotoLink.deletePhotoOnly) { Task { await deletePhoto(withStory: false) } }"))
+        // 「写真も一緒に消す」: 写真が 404 でもストーリーの口でも消す・消した写真を一覧から落とす・詳細も閉じる
+        XCTAssertTrue(viewer.contains("try await environment.stories.delete(id: story.id)\n                } catch where SocialService.isNotFound(error) {}"),
+                      "写真がもう無い（404）ときにストーリーを残す")
+        XCTAssertTrue(viewer.contains("await hidden.hideGone(withPhoto, for: owner, environment: environment, deleted: true)"),
+                      "消した写真が公開一覧・控えに残る")
+        XCTAssertTrue(viewer.contains("onPhotoDeleted?(withPhoto)"))
+        XCTAssertTrue(detail.contains("onPhotoDeleted: { photoId in"))
+        // 元のストーリーは、元の id を持つ写真のときだけ読む（開くたびに一覧2つを読まない）
+        XCTAssertTrue(detail.contains("guard isMine, auth.userId != nil, photo.sourceStoryId != nil else { sourceStory = nil; return }"),
+                      "自分の写真を開くたびにストーリーの一覧を読んでいる")
         let service = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Services/PhotoService.swift"), encoding: .utf8)
         XCTAssertTrue(service.contains(#"query: withStory.map { ["withStory": $0 ? "1" : "0"] } ?? [:]"#))
     }

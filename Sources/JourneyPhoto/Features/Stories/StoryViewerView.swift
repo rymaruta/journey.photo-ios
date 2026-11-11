@@ -158,6 +158,8 @@ struct StoryViewerView: View {
     /// 消し終えた1本を知らせる。**消している間に払って閉じても**、一覧から外せるように
     /// （閉じたときの読み直しが削除より先に走ると、消した1本が輪に戻っていた）
     let onDeleted: ((String) -> Void)?
+    /// 「写真も一緒に消す」で写真まで消えた（写真の id）。写真の詳細から開いた回は、詳細も閉じる
+    let onPhotoDeleted: ((String) -> Void)?
 
     /// ハイライトとして見ている（板 38）。**期限の切れたストーリーの並び**なので、
     /// 返信欄・見た人・削除を出さない（返信はサーバーが期限切れを断り、
@@ -229,7 +231,8 @@ struct StoryViewerView: View {
          onReacted: ((String, String) -> Void)? = nil,
          onReactionFailed: ((String, String) -> Void)? = nil,
          onSeen: ((String) -> Void)? = nil,
-         onDeleted: ((String) -> Void)? = nil) {
+         onDeleted: ((String) -> Void)? = nil,
+         onPhotoDeleted: ((String) -> Void)? = nil) {
         self.onGroupEnd = onGroupEnd
         self.onGroupBack = onGroupBack
         self.swipesHandledOutside = swipesHandledOutside
@@ -245,6 +248,7 @@ struct StoryViewerView: View {
         self.providedReactions = sentReactions
         self.stories = stories
         self.onDeleted = onDeleted
+        self.onPhotoDeleted = onPhotoDeleted
         self.viewerId = viewerId
         self.highlight = highlight
         self.holds = holds
@@ -1611,6 +1615,7 @@ struct StoryViewerView: View {
                             showDeleteConfirm = true
                         }
                         .disabled(isSending)
+                        .accessibilityIdentifier("story.menu.delete")
                     }
                 }
                 .background(Self.sheetColor,
@@ -2265,6 +2270,7 @@ struct StoryViewerView: View {
         // 上の「…」と同じ名前（同じシートを開く）。残す・削除がこの奥にあることをヒントで言う
         .accessibilityLabel(L("その他の操作", "More actions"))
         .accessibilityHint(L("写真として残す・削除", "Keep as photo, delete"))
+        .accessibilityIdentifier("story.viewer.more")
     }
 
     /// 操作の丸（v2 StoryMine: 46・地は surface-2・縁は白 12%）。足元は写真の外の黒地なので、
@@ -2504,7 +2510,16 @@ struct StoryViewerView: View {
         defer { isSending = false }
         do {
             if let withPhoto {
+                let owner = hidden.owner
+                // 404（写真はもう無い）は消せたのと同じ（`PhotoService.delete`）。そのときストーリーは
+                // 残っているので、続けてストーリーの口でも消す（一緒に消えていれば 404＝消せた）
                 try await environment.photos.delete(photoId: withPhoto, withStory: true)
+                do {
+                    try await environment.stories.delete(id: story.id)
+                } catch where SocialService.isNotFound(error) {}
+                // 消した写真を公開一覧・控えからも落とす（写真の詳細の削除と同じ・`ModerationStore.goneMarks`）
+                await hidden.hideGone(withPhoto, for: owner, environment: environment, deleted: true)
+                onPhotoDeleted?(withPhoto)
             } else {
                 try await environment.stories.delete(id: story.id)
             }

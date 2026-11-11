@@ -475,9 +475,14 @@ struct PhotoDetailView: View {
                  ? StoryPhotoLink.photoDeleteMessage
                  : L("元に戻せません。画像そのものも消えます。", "This cannot be undone. The image file is deleted too."))
         }
-        .task(id: "storySource|\(shown.id)|\(isMine)") { await loadSourceStory() }
+        .task(id: "storySource|\(shown.id)|\(isMine)|\(shown.sourceStoryId ?? "")") { await loadSourceStory() }
         .fullScreenCover(item: $openedSourceStory) { story in
-            StoryViewerView(stories: [story], startIndex: 0, viewerId: auth.userId)
+            StoryViewerView(stories: [story], startIndex: 0, viewerId: auth.userId,
+                            onPhotoDeleted: { photoId in
+                                // 「写真も一緒に消す」でこの写真が消えた: ストーリーを閉じ、もう無い写真の詳細も閉じる
+                                openedSourceStory = nil
+                                if PhotoDetailRules.closesAfterDelete(photoId: photoId, currentId: current.id) { dismiss() }
+                            })
         }
         .blockConfirmation(presenting: $ownerPendingBlock) { owner in
             Task { await block(owner) }
@@ -974,10 +979,17 @@ struct PhotoDetailView: View {
         }
     }
 
-    /// 元のストーリーを探す（本人の写真だけ）。いま出ている1本と自分用に残した棚から
+    /// 元のストーリーを探す。**本人の写真で、元のストーリーの id を持つときだけ**（`keptFrom`・`fromStory`・
+    /// 本人の一覧から開いた写真）。開くたびに一覧2つを読まない（確かめ役の指摘・2026-11-11）。
+    /// 写真ごとに1回（`.task(id:)` の鍵が写真の id）
     private func loadSourceStory() async {
         let photo = shown
-        guard isMine, auth.userId != nil else { sourceStory = nil; return }
+        // 画面写真の試験だけ: どの写真も「ストーリーから作った写真」にする（Debug のみ・口を呼ばない）
+        if let sample = PreviewSession.keptStorySample(photoId: photo.id, src: photo.src) {
+            sourceStory = (photo.id, true, sample)
+            return
+        }
+        guard isMine, auth.userId != nil, photo.sourceStoryId != nil else { sourceStory = nil; return }
         async let live = try? environment.stories.list()
         async let shelf = try? environment.highlights.archive()
         let mine = ((await live) ?? []).filter { $0.userId == auth.userId } + ((await shelf) ?? [])
