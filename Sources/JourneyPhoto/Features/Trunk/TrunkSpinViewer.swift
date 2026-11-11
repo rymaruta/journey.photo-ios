@@ -190,8 +190,9 @@ enum TrunkTextures {
         cache = (key, faces, box)
         if !watchingMemory {
             watchingMemory = true
+            // 知らせは主スレッドで届く。受けたその場で手放す（`queue: nil`・試験で同じ流れを確かめる）
             NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil,
-                                                   queue: .main) { _ in
+                                                   queue: nil) { _ in
                 MainActor.assumeIsolated { cache = nil }
             }
         }

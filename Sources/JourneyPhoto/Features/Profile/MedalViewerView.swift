@@ -407,6 +407,14 @@ final class MedalCoinCoordinator: NSObject {
         aimHeld = false
         flipTarget = nil
         velocity = 0
+        wake()
+    }
+
+    /// 止めていた表示の刻みを再び動かす（指で触る・向きのボタン・裏返す）
+    private func wake() {
+        guard let link, link.isPaused else { return }
+        lastTimestamp = 0
+        link.isPaused = false
     }
 
     init(shape: SpinShape = .coin) {
@@ -875,6 +883,7 @@ final class MedalCoinCoordinator: NSObject {
         aimTarget = nil
         aimHeld = false
         velocity = 0
+        wake()
     }
 
     @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
@@ -886,6 +895,7 @@ final class MedalCoinCoordinator: NSObject {
         switch gesture.state {
         case .began:
             dragging = true
+            wake()
             flipTarget = nil
             aimTarget = nil
             aimHeld = false
@@ -912,6 +922,14 @@ final class MedalCoinCoordinator: NSObject {
         let dt = Float(lastTimestamp == 0 ? 0 : now - lastTimestamp)
         lastTimestamp = now
         guard dt > 0, dt < 0.1, !dragging, poses.isEmpty else { return }
+        // 止まっている箱（向きに着いた・惰性が止まった）は、表示の刻みも止める（毎コマ主スレッドを起こさない・2026-11-11 判断）。
+        // 指で触る・向きのボタン・裏返すで `wake()` から再び動かす
+        if isBox, aimTarget == nil, flipTarget == nil, aimHeld || velocity == 0, !PreviewSession.trunkDiag.contains("spinlink") {
+            link.isPaused = true
+            lastTimestamp = 0
+            TrunkPerfMeter.shared.hit("SpinLinkPaused")
+            return
+        }
 
         if let target = aimTarget {
             // 向きのボタン: 横と縦をなめらかに寄せる（「視差効果を減らす」では一息に）

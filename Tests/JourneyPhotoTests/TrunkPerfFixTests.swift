@@ -25,6 +25,10 @@ final class TrunkPerfFixTests: XCTestCase {
         XCTAssertTrue(medal.contains("if isBox, velocity == 0 { return }"), "止まりきった箱の角度を毎コマ書き換えている")
         XCTAssertTrue(medal.contains("if isBox, abs(velocity) < Self.boxStopSpeed { velocity = 0 }"), "箱の惰性が止まらない")
         XCTAssertFalse(medal.contains("view.rendersContinuously = true"))
+        // 止まった箱は表示の刻み（CADisplayLink）も止め、触る・向き・裏返すで再び動かす
+        XCTAssertTrue(medal.contains("link.isPaused = true"), "止まっていても毎コマ主スレッドを起こしている")
+        XCTAssertEqual(medal.components(separatedBy: "        wake()\n").count - 1, 3, "向きのボタン・裏返す・指で触るで刻みを動かさない")
+        XCTAssertTrue(medal.contains("            dragging = true\n            wake()"), "指で触っても刻みを動かさない")
     }
 
     /// 3. 回す箱の絵は、2 回目に開いたら使い回す。トランクの画面では先に作らない（2026-11-11 判断・先に作ると
@@ -39,6 +43,9 @@ final class TrunkPerfFixTests: XCTestCase {
         let trunk = try source("Features/Trunk/TrunkView.swift")
         XCTAssertFalse(trunk.contains(".prewarm("), "トランクの画面で回す画面の絵を先に作っている")
         XCTAssertTrue(trunk.contains("if !showSpin, !showStick, !showPaywall { " + "TrunkTextures" + ".forget() }"), "戻っても絵を手放さない")
+        // 人のトランクの画面も同じく、離れたら手放す（2026-11-11 確かめ役の指摘）
+        let theirs = try source("Features/Trunk/TheirTrunkView.swift")
+        XCTAssertTrue(theirs.contains("if !showSpin { " + "TrunkTextures" + ".forget() }"), "人のトランクから離れても絵を手放さない")
     }
 
     /// 測定専用の差し替えは、Release では必ず空（ふだんの描き方を変えない）
