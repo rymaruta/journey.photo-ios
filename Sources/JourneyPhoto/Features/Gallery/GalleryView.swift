@@ -475,6 +475,16 @@ struct GalleryView: View {
 
     /// UI テストのときだけ、札の行の位置の数を見えない要素（`home.feed.probe`）に出す（`PreviewSession.feedProbe`）
     @State private var feedProbeText = ""
+    /// UI テストのときだけ: 札の行より上の段と札の中身の高さ（札 #537 の Mac で札の行が 13 下がった件を数で見る・2026-11-11）
+    @State private var feedProbeHeights: [String: CGFloat] = [:]
+
+    private func probeHeight(_ key: String) -> FeedProbeHeight {
+        FeedProbeHeight(enabled: PreviewSession.feedProbe) { height in
+            guard feedProbeHeights[key] != height else { return }
+            feedProbeHeights[key] = height
+            updateFeedProbe()
+        }
+    }
 
     private func updateFeedProbe() {
         let n: (CGFloat) -> String = { String(format: "%.2f", Double($0)) }
@@ -482,6 +492,7 @@ struct GalleryView: View {
             + " overflow=\(n(ProfileTabScroll.rowOverflow(rowMinY: feedRowSpot.minY, visibleTop: 0)))"
             + " pinned=\(feedRowPinned) rowH=\(n(feedRowHeight)) viewport=\(n(feedViewport))"
             + " pages=\(model.loadedPageCount) topCardsAway=\(topCardsAway)"
+            + " h[" + feedProbeHeights.keys.sorted().map { "\($0)=\(n(feedProbeHeights[$0] ?? 0))" }.joined(separator: ",") + "]"
         if text != feedProbeText { feedProbeText = text }
     }
 
@@ -507,7 +518,9 @@ struct GalleryView: View {
                 // 届いた束をまだ開いていないときだけ出る（`PassHomeSlot`）
                 let passBundle = passCards(now: passNow)
                 PassHomeSlot(cards: passBundle, now: passNow) { passDeck = PassDeck(cards: passBundle) }
+                    .modifier(probeHeight("pass"))
                 StoriesRow(reloadToken: tabRouter.postSheetsClosed &+ storiesRefresh)
+                    .modifier(probeHeight("stories"))
                 // **#417 ⑦（2026-10-30 owner 採用）: 「NEW（みんなの新しい写真）」の段（2026-10-21・`HomeFreshStrip`）は外した。**
                 // 新着は切り替えの「新着」に一本化。最初の画面の人の写真は、写真の一覧の1段目が受け持つ
                 // （④で季節の段を一覧の中へ移し、①③で上を詰めたので、写真の大きな1枚目が1画面目に入る・Compare の板）。
@@ -529,6 +542,7 @@ struct GalleryView: View {
                                 reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed,
                                 seasonShelf: $seasonShelf,
                                 scrolledAway: topCardsAway)
+                    .modifier(probeHeight("top"))
                     // 上の札が見えている上端より上へ流れ切ったか（`HomeTopCardView.scrolledAway`・#426）。
                     // 外側を `VStack` にしたので、流れ出ても `onDisappear` が来ない。main（`LazyVStack`）では流れ出ると
                     // `onDisappear` が来て、札の差し替え（今日の一問・旅行プラン・日替わり）を戻るまで後回しにしていた。
@@ -571,8 +585,11 @@ struct GalleryView: View {
                     VStack(spacing: Self.feedSpacing) {
                         feedSection(page, rows: pageRows(page, selected: photos))
                     }
+                    .modifier(probeHeight("page.\(page.rawValue)"))
                 }
+                .modifier(probeHeight("pager"))
             }
+            .modifier(probeHeight("all"))
             .padding(.top, 8)
             // 最後のカードがタブバーに掛からないようにする
             .padding(.bottom, 24)
@@ -864,4 +881,21 @@ private struct FollowingSeenKey: Equatable {
     let feed: HomeFeed
     let newest: String?
     let viewer: String?
+}
+
+/// UI テストのときだけ高さを知らせる（`GalleryView.probeHeight`・`PreviewSession.feedProbe`）。ふだんは何も足さない
+struct FeedProbeHeight: ViewModifier {
+    let enabled: Bool
+    let report: (CGFloat) -> Void
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            content.onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height
+            } action: { report($0) }
+        } else {
+            content
+        }
+    }
 }
