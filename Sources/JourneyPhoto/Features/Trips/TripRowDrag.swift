@@ -135,6 +135,14 @@ struct TripRowDragHost: UIViewRepresentable {
             detach()
             target.addInteraction(interaction)
             host = target
+            note("A:\(String(describing: type(of: target)))")
+        }
+
+        /// 見本のときだけ、運ぶ元の出来事を並びに残す（札 #521・UIDragInteraction に替えた後に持ち上がらない理由を分ける）
+        private func note(_ event: String) {
+            #if DEBUG
+            if TripPlanFixture.isOn { TripPlanFixtureCounter.shared.mark(event) }
+            #endif
         }
 
         func detach() {
@@ -149,8 +157,9 @@ struct TripRowDragHost: UIViewRepresentable {
         /// この行の枠の中で始まった指だけ運ぶ（ほかの行の働きも同じ祖先に付いている）
         func dragInteraction(_ interaction: UIDragInteraction,
                              itemsForBeginning session: UIDragSession) -> [UIDragItem] {
-            guard let probe, probe.window != nil, let events else { return [] }
-            guard probe.bounds.contains(session.location(in: probe)) else { return [] }
+            guard let probe, probe.window != nil, let events else { note("I:none"); return [] }
+            guard probe.bounds.contains(session.location(in: probe)) else { note("I:out"); return [] }
+            note("I:in")
             let item = UIDragItem(itemProvider: NSItemProvider(object: events.payload as NSString))
             item.localObject = events.payload
             return [item]
@@ -167,7 +176,8 @@ struct TripRowDragHost: UIViewRepresentable {
             guard let preview else { return nil }
             let renderer = ImageRenderer(content: preview)
             renderer.scale = probe.window?.screen.scale ?? 3
-            guard let image = renderer.uiImage else { return nil }
+            guard let image = renderer.uiImage else { note("P:nil"); return nil }
+            note("P:ok")
             let view = UIImageView(image: image)
             view.frame = CGRect(origin: .zero, size: image.size)
             parameters.visiblePath = UIBezierPath(roundedRect: view.bounds, cornerRadius: JPRadius.field)

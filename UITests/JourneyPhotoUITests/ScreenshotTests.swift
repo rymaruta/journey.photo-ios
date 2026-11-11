@@ -2628,7 +2628,9 @@ final class ScreenshotTests: XCTestCase {
                 Thread.sleep(forTimeInterval: 1)
                 pushes += 1
             }
-            _ = fixtureSends(app, "dragHittable-from\(from.isHittable)-to\(to.isHittable)")
+            _ = fixtureSends(app, "dragHittable-from\(from.isHittable)-to\(to.isHittable) frame=\(from.frame) drag[\(dragCounts(app))]")
+            XCTAssertTrue(from.isHittable && to.isHittable, "運ぶ行が押せる所に出ない")
+            if !from.isHittable { logTree(app, "days") }
             if from.isHittable, to.isHittable {
                 let before = order()
                 _ = fixtureSends(app, "orderBefore[\(before)]")
@@ -2719,8 +2721,25 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
             pushes += 1
         }
-        guard source.isHittable, target.isHittable else { return nil }
+        guard source.isHittable, target.isHittable else {
+            let line = "TRIPDRAG stage not-hittable source=\(source.exists)/\(source.isHittable) frame=\(source.frame) "
+                + "target=\(target.exists)/\(target.isHittable) drag[\(dragCounts(app))]"
+            print(line); XCTContext.runActivity(named: line) { _ in }
+            logTree(app, "stage")
+            return nil
+        }
         return (source, target, pushes)
+    }
+
+    /// 運ぶ行のまわりの部品の木を数行だけログに残す（押せない理由を分ける・札 #521）
+    private func logTree(_ app: XCUIApplication, _ when: String) {
+        let lines = app.debugDescription.components(separatedBy: "\n")
+        var picked: [String] = []
+        for (i, line) in lines.enumerated() where line.contains("tripPlan.dragHandle") || line.contains("千里浜") {
+            picked.append(contentsOf: lines[max(0, i - 2)...min(lines.count - 1, i + 2)])
+            if picked.count > 40 { break }
+        }
+        for line in picked { print("TRIPTREE \(when) \(line)") }
     }
 
     /// **(b)「持ち上がったが落ちない」をどの部品で止まったかで分ける**（札 #521・2026-11-11）。
