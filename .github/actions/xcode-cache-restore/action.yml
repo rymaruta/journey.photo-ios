@@ -93,7 +93,7 @@ runs:
           echo "### Mac の控え"
           echo "- ${hit}（${V2:-${V1:-当たらなかった}}）・戻すのに $(( $(date +%s) - STARTED )) 秒"
           if [ "$hit" = "none" ]; then
-            echo "- ⚠️ 控えが当たらなかった（Xcode が上がった・project.yml の依存が変わった）。依存を丸ごと組むので 30 分を越えうる。"
+            echo "- ⚠️ 控えが当たらなかった（Xcode が上がった・project.yml の依存が変わった）。依存を丸ごと組む（1 回の実測で組む 15.7 分・run 43013029429。遅い台では 30 分に近づく）。"
             echo "  main で xcode-cache-warm.yml が書き直す（/mac-check の「Xcode が上がったとき」）"
           fi
         } >> "$GITHUB_STEP_SUMMARY"

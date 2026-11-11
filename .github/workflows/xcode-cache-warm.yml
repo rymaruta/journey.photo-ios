@@ -37,7 +37,7 @@ jobs:
     # 手で枝に流したときは、その枝だけが読める控えを書く（測るとき・約 500MB）
     if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
     runs-on: macos-15
-    # 控えが無いと依存を丸ごと組む（run #8 で 50 分あまり）
+    # 控えが無いと依存を丸ごと組む（2026-11-11 run 43013029429: 組む 944 秒・Swift 3,271 件・回全体 17 分。前の run #8 は 50 分あまり）
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
