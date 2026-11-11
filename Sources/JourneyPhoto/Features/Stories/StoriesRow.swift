@@ -241,8 +241,8 @@ struct StoriesRow: View {
             .accessibilityHidden(true)
     }
 
-    /// **フォロー中の輪が無いとき**（v2 StoryRings の4つ目）。自分の顔＋「＋」・「ストーリーを追加」と
-    /// 一行の説明。重複する「探す」へのリンクは置かない。
+    /// **フォロー中の輪が無いとき**（v2 StoryRings の4つ目）。自分の顔＋「＋」・「ストーリーを追加」だけ
+    /// （板の一行の説明は 2026-11-11 owner「説明長すぎてめんどい」で外した）。重複する「探す」へのリンクは置かない。
     private var emptyRow: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
@@ -257,16 +257,11 @@ struct StoriesRow: View {
                                 .scaleEffect(StoryRingMetrics.smallPlusSize / StoryRingMetrics.plusSize)
                                 .offset(x: 6, y: 6)
                         }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(L("ストーリーを追加", "Add a story"))
-                            .font(JPFont.bodyEmphasis)
-                            .foregroundStyle(WebTheme.text)
-                        Text(L("フォローした人がストーリーを上げると、ここに輪が並びます",
-                               "When people you follow post stories, their rings show up here"))
-                            .font(JPFont.caption)
-                            .foregroundStyle(WebTheme.text3)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    // 2026-11-11 owner「説明長すぎてめんどい」: 説明の一行は置かない。顔＋「＋」と「ストーリーを追加」だけで
+                    // 押せば何が起きるか分かる（CLAUDE.md「直感的で簡単に」の「見れば分かる」）
+                    Text(L("ストーリーを追加", "Add a story"))
+                        .font(JPFont.bodyEmphasis)
+                        .foregroundStyle(WebTheme.text)
                     Spacer(minLength: 0)
                 }
                 .frame(minHeight: JPHeight.row)

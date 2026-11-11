@@ -99,6 +99,9 @@ final class StoryV2DesignTests: XCTestCase {
         assertInOrder(["showComposer = true", "Text(L(\"ストーリーを追加\"", ".accessibilityIdentifier(\"stories.empty.add\")"],
                       in: empty, "輪が無いときの行")
         XCTAssertFalse(empty.contains("TabRouter.shared.openSearch()"), "削除した探すリンクが残っている")
+        // 2026-11-11 owner「説明長すぎてめんどい」: 説明の一行を置かない
+        XCTAssertFalse(empty.contains("ここに輪が並びます"), "輪が無いときの説明の一行が残っている")
+        XCTAssertEqual(empty.components(separatedBy: "Text(L(").count - 1, 1, "輪が無いときの行の字は「ストーリーを追加」だけ")
         XCTAssertLessThanOrEqual(StoryRingMetrics.emptyRowWidth, 320 - 2 * JPSpace.gutter, "いちばん狭い iPhone に収まらない")
     }
 
