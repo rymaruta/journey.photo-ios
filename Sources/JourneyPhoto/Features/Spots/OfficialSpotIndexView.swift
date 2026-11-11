@@ -16,12 +16,8 @@ import SwiftUI
 /// 行の写真（丸）の詳細は、頭から見えた所までだけ読む（`SpotDetailNeeds.ListDepth`・地図の一覧と同じ）
 struct OfficialSpotIndexView: View {
 
-    enum Scope: Hashable {
-        case prefecture(String)
-        /// 地方（`PrefectureRegions.Region.name`）。探すの段の地図の札の「すべて見る」から（2026-11-11）
-        case region(String)
-        case all
-    }
+    /// 一覧の範囲（画面を持たない層の `SpotIndexScope`・地図の区分も同じ型を持つ）
+    typealias Scope = SpotIndexScope
 
     let scope: Scope
     /// 探すが持っている撮影スポットの索引（`OfficialSpotService.fetchIndex`）

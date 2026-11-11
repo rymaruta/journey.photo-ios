@@ -60,9 +60,9 @@ final class SpotRegionMapTests: XCTestCase {
         }
         XCTAssertEqual(at(43.06, 141.35), "北海道")
         XCTAssertEqual(at(35.69, 139.70), "関東")
-        XCTAssertNil(at(33.59, 130.40), "撮影スポットの無い九州を選んだ")
-        // 海の真ん中は何も選ばない
-        XCTAssertNil(at(38.0, 133.0))
+        XCTAssertNil(at(32.88, 131.10), "撮影スポットの無い九州（阿蘇・線の内側）を選んだ")
+        // 線の外（海）は、いちばん近い地方に寄せる（陣地分け）。日本海の真ん中は撮影スポットのある地方のどれか
+        XCTAssertNotNil(at(38.0, 133.0))
     }
 
     /// 塗るのは選んだ（なぞっている）地方の県だけ。撮影スポットのある県だけを「ある」の地にする
@@ -87,6 +87,8 @@ final class SpotRegionMapTests: XCTestCase {
                        L("akan・tomita・zz-sapporo・asahidake ほか", "akan, tomita, zz-sapporo, asahidake, and more"))
         XCTAssertEqual(hokkaido.scope, .region("北海道"))
         XCTAssertEqual(hokkaido.seeAll, L("北海道の撮影スポットをすべて見る", "See all photo spots in Hokkaido"))
+        // 札の字は地方名入り（見出しの全国の「すべて見る」と分ける）
+        XCTAssertEqual(hokkaido.seeAllLabel, L("北海道をすべて見る", "See all in 北海道"))
         let kanto = try XCTUnwrap(areas.first { $0.id == "関東" })
         XCTAssertEqual(kanto.namesLine, "meiji", "全部出せたら「ほか」を付けない")
     }
@@ -104,6 +106,10 @@ final class SpotRegionMapTests: XCTestCase {
         func piece(at unit: CGPoint, tolerance: CGFloat) -> String? {
             guard unit.y >= 0, unit.y <= 100, unit.x >= 0, unit.x < 300 else { return nil }
             return ["A1", "A2", "B1"][Int(unit.x / 100)]
+        }
+        func distance(from unit: CGPoint, toPieces names: Set<String>) -> CGFloat {
+            ["A1", "A2", "B1"].enumerated().filter { names.contains($0.element) }
+                .map { abs(CGFloat($0.offset) * 100 + 50 - unit.x) }.min() ?? .infinity
         }
     }
 
@@ -137,6 +143,102 @@ final class SpotRegionMapTests: XCTestCase {
         XCTAssertEqual(areas[0].namesLine, L("a・b", "a, b"))
         XCTAssertFalse(map.sharesRegionChips)
         XCTAssertEqual(SearchSpotIndexSection.mapWidth(for: map.shapes), 480, "縦横比 3:1 の地図は札の列の高さ 160 で幅 480")
+    }
+
+    // MARK: - 押せる広さ（陣地分け・確かめ役の指摘 2026-11-11）
+
+    /// 8 地方ぜんぶに撮影スポットがある台帳（県庁所在地の辺り・各地方1件）
+    private func allRegions() throws -> [OfficialSpot] {
+        [("北海道", 43.06, 141.35), ("宮城県", 38.27, 140.87), ("東京都", 35.69, 139.69), ("愛知県", 35.18, 136.91),
+         ("大阪府", 34.69, 135.50), ("広島県", 34.40, 132.46), ("香川県", 34.34, 134.04), ("福岡県", 33.59, 130.40)]
+            .enumerated().map { i, p in try! spot("s\(i)", prefecture: p.0, lat: p.1, lng: p.2) }
+    }
+
+    /// 地図の枠を 1pt ごとに押して、区分ごとに当たった点を数える（＝押せる広さ pt²）
+    private func hitAreas(_ hit: (CGPoint) -> String?, size: CGSize) -> [String: Int] {
+        var counts: [String: Int] = [:]
+        for y in 0..<Int(size.height) {
+            for x in 0..<Int(size.width) {
+                if let area = hit(CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)) { counts[area, default: 0] += 1 }
+            }
+        }
+        return counts
+    }
+
+    /// 🔴 **どの地方も 44×44（1936pt²）以上押せる**。前（線の内側と 16pt の寄せ）は四国 648・近畿 882・中国 1135・中部 1551 で
+    /// 届かなかった。いまは線の内側か、いちばん近い地方（陣地分け）。前後の広さはログ（`spotMap.hitArea`）に出す
+    func testEveryRegionIsAtLeast44x44() throws {
+        let g = try geometry()
+        let map = SpotRegionMap.japan(g)
+        let spots = try allRegions()
+        let areas = map.areas(SpotMapSource(spots: spots, japanGroups: SpotPrefectureIndex.groups(spots: spots)))
+        XCTAssertEqual(areas.count, 8)
+        let size = CGSize(width: SearchSpotIndexSection.mapWidth(for: g), height: SearchSpotIndexSection.cardColumnHeight)
+        let after = hitAreas({ map.area(at: $0, container: size, in: areas) }, size: size)
+        // 前の当たり（線の内側と 16pt の寄せ・`PrefectureMapGeometry.prefecture(at:tolerance:)`）
+        let viewport = VisitedMapViewport()
+        let before = hitAreas({ point in
+            let unit = viewport.unitPoint(forScreen: point, content: g.size, container: size)
+            return g.prefecture(at: unit, tolerance: viewport.tolerance(content: g.size, container: size))
+                .flatMap { PrefectureRegions.region(of: $0)?.name }
+        }, size: size)
+        for region in PrefectureRegions.all {
+            print("spotMap.hitArea \(region.name) before=\(before[region.name] ?? 0) after=\(after[region.name] ?? 0)")
+            XCTAssertGreaterThanOrEqual(after[region.name] ?? 0, 1936, "\(region.name) の押せる広さが 44×44 に届かない")
+        }
+    }
+
+    /// 撮影スポットの無い地方の線の内側は何もしない（隣の地方に寄せない）。読み上げの上下の払いは端で止まる
+    func testNoSpotPieceAndStep() throws {
+        let (map, areas) = try japan()
+        let g = try geometry()
+        let size = CGSize(width: SearchSpotIndexSection.mapWidth(for: g), height: SearchSpotIndexSection.cardColumnHeight)
+        XCTAssertNil(map.area(at: screen(g, 32.88, 131.10, container: size), container: size, in: areas))
+        XCTAssertNil(map.area(at: CGPoint(x: -5, y: 10), container: size, in: areas), "地図の枠の外")
+        XCTAssertEqual(areas.map(\.id), ["北海道", "関東"])
+        XCTAssertEqual(SpotRegionMap.step("北海道", in: areas, forward: true), "関東")
+        XCTAssertEqual(SpotRegionMap.step("関東", in: areas, forward: true), "関東")
+        XCTAssertEqual(SpotRegionMap.step("関東", in: areas, forward: false), "北海道")
+        XCTAssertEqual(SpotRegionMap.step(nil, in: areas, forward: true), "北海道")
+        XCTAssertNil(SpotRegionMap.step(nil, in: [], forward: true))
+    }
+
+    // MARK: - なぞる・読み上げ・札（確かめ役の指摘 2026-11-11）
+
+    private func source(_ path: String) throws -> String {
+        try String(contentsOf: Self.resources.deletingLastPathComponent().appendingPathComponent(path), encoding: .utf8)
+    }
+
+    /// なぞっている区分は `@GestureState`（取り消しで必ず消える）。離して消えるときは鳴らさない。
+    /// なぞっている間は探すの画面のスクロールを止める。読み上げは値と上下の払い
+    func testTracingIsGestureStateAndStopsScroll() throws {
+        let view = try source("Features/Search/SpotRegionMapView.swift")
+        XCTAssertTrue(view.contains("@GestureState private var traced: String?"))
+        XCTAssertTrue(view.contains(".updating($traced)"))
+        XCTAssertTrue(view.contains(".onChange(of: traced) { _, now in tracing = now }"))
+        XCTAssertFalse(view.contains("tracing = area"), "なぞった区分を @State に直に書いている（取り消しで残る）")
+        XCTAssertTrue(view.contains(".sensoryFeedback(.selection, trigger: traced) { _, now in now != nil }"))
+        XCTAssertTrue(view.contains(".accessibilityAdjustableAction"))
+        XCTAssertTrue(view.contains(".accessibilityValue(areas.first { $0.id == selected }?.title"))
+        let search = try source("Features/Search/SearchView.swift")
+        XCTAssertTrue(search.contains(".scrollDisabled(spotTracing != nil)"))
+        XCTAssertTrue(search.contains("tracing: $spotTracing"))
+    }
+
+    /// 大きな字: 名前の行が切れる側、「北海道をすべて見る」は切れない側
+    func testSeeAllNeverTruncates() throws {
+        let text = try source("Features/Search/SearchSpotIndexSection.swift")
+        let names = try XCTUnwrap(text.range(of: "Text(area.namesLine)"))
+        XCTAssertTrue(text[names.upperBound...].prefix(200).contains(".layoutPriority(-1)"))
+        let link = try XCTUnwrap(text.range(of: "MoreLink(text: area.seeAllLabel)"))
+        let after = text[link.upperBound...].prefix(500)
+        XCTAssertTrue(after.contains(".fixedSize(horizontal: false, vertical: true)"))
+        XCTAssertTrue(after.contains(".layoutPriority(1)"))
+    }
+
+    /// 一覧の範囲は画面を持たない層の型（地図の区分が持つ）
+    func testScopeLivesInCore() {
+        XCTAssertTrue(OfficialSpotIndexView.Scope.self == SpotIndexScope.self)
     }
 
     /// 地図の切り替え（「日本｜世界」）は**地図が2つ以上のときだけ**。いまは日本だけなので出さない

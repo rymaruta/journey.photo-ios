@@ -30,15 +30,40 @@ struct SpotRegionMap: Identifiable {
     let areas: (SpotMapSource) -> [SpotMapArea]
     /// 上の地方のチップ・写真の札の列と選択を分け合うか（日本だけ）
     var sharesRegionChips = false
+    /// 片の外を押したとき、区分へ寄せる強さ（画面の pt・区分の id → 足す近さ）。**小さな区分ほど大きくする**——
+    /// 境までの距離だけで分けると、周りを囲まれた小さな区分（四国・近畿）が 44×44 に届かない
+    var hitBonus: [String: CGFloat] = [:]
 
-    /// 地図の上の点（画面の pt・地図の枠の左上が原点）にある区分の id。**撮影スポットのある区分だけ**
-    /// （無い区分を押しても何もしない）。当たりは片の線の内側・近い片（`SpotMapShapes.piece(at:tolerance:)`）
+    /// 地図の上の点（画面の pt・地図の枠の左上が原点）の区分の id。**撮影スポットのある区分だけ**。
+    ///
+    /// 2026-11-11（確かめ役の指摘・陣地分け）: 段の中の地図は小さく、線の内側だけでは四国（648pt²）・近畿（882）・
+    /// 中国（1135）・中部（1551）の当たりが 44×44（1936pt²）に届かなかった。そこで
+    ///   1. 片の**内側**を押したら、その片の区分（撮影スポットの無い区分の片なら何もしない）
+    ///   2. どの片の内側でもない点（海・境の隙間）は、**いちばん近い区分**に寄せる（地図の枠の中だけ）
+    /// とし、地図の枠ぜんたいを区分で分け合う。押せる広さは `SpotRegionMapTests` が 1pt ごとに数えて縛る
     func area(at point: CGPoint, container: CGSize, in areas: [SpotMapArea]) -> String? {
-        let viewport = VisitedMapViewport()
-        let unit = viewport.unitPoint(forScreen: point, content: shapes.size, container: container)
-        let tolerance = viewport.tolerance(content: shapes.size, container: container)
-        guard let piece = shapes.piece(at: unit, tolerance: tolerance) else { return nil }
-        return areas.first { $0.pieces.contains(piece) }?.id
+        guard CGRect(origin: .zero, size: container).contains(point) else { return nil }
+        let unit = VisitedMapViewport().unitPoint(forScreen: point, content: shapes.size, container: container)
+        if let inside = shapes.piece(at: unit, tolerance: 0) {
+            return areas.first { $0.pieces.contains(inside) }?.id
+        }
+        // 片の外: 区分までの距離（画面の pt）から、区分ごとの寄せ（`hitBonus`・小さな区分ほど大きい）を引いた値の小さい区分
+        let scale = VisitedMapViewport().scale(content: shapes.size, container: container)
+        return areas.min { a, b in
+            effectiveDistance(unit, to: a, scale: scale) < effectiveDistance(unit, to: b, scale: scale)
+        }?.id
+    }
+
+    private func effectiveDistance(_ unit: CGPoint, to area: SpotMapArea, scale: CGFloat) -> CGFloat {
+        shapes.distance(from: unit, toPieces: area.pieces) * scale - (hitBonus[area.id] ?? 0)
+    }
+
+    /// 区分を順に替える（読み上げの上下の払い・`accessibilityAdjustableAction`）。端で止まる
+    static func step(_ current: String?, in areas: [SpotMapArea], forward: Bool) -> String? {
+        guard !areas.isEmpty else { return nil }
+        guard let current, let index = areas.firstIndex(where: { $0.id == current }) else { return areas.first?.id }
+        let next = forward ? min(index + 1, areas.count - 1) : max(index - 1, 0)
+        return areas[next].id
     }
 
     /// 地図の切り替えを出すか（**地図が2つ以上のときだけ**。1つの間は出さない）
@@ -63,8 +88,15 @@ struct SpotRegionMap: Identifiable {
     /// 日本地図（地方で塗る）。形は「行った県」の地図と同じ `PrefectureMapGeometry`
     static func japan(_ geometry: PrefectureMapGeometry) -> SpotRegionMap {
         SpotRegionMap(id: "japan", title: L("日本", "Japan"), shapes: geometry,
-                      areas: { japanAreas($0.japanGroups) }, sharesRegionChips: true)
+                      areas: { japanAreas($0.japanGroups) }, sharesRegionChips: true, hitBonus: japanHitBonus)
     }
+
+    /// 日本の地方の寄せ（画面の pt）。段の中の地図（幅 143・高さ 160）で、どの地方も 44×44（1936pt²）以上
+    /// 押せるように決めた値（2026-11-11: 1pt ごとに押した広さを数え、いちばん狭い地方が広くなる値を探した。
+    /// いちばん狭いのは近畿の 2181pt²。`SpotRegionMapTests.testEveryRegionIsAtLeast44x44` が縛り、前後の広さはログに出す）
+    nonisolated static let japanHitBonus: [String: CGFloat] = [
+        "東北": 3, "関東": 4, "中部": 14, "近畿": 26, "中国": 19, "四国": 30, "九州・沖縄": 1,
+    ]
 
     /// 日本の区分（地方）。束ね方は写真の札の列・地方のチップと同じ `SpotPrefectureIndex.groups`
     static func japanAreas(_ groups: [SpotPrefectureIndex.Group]) -> [SpotMapArea] {
@@ -95,11 +127,34 @@ protocol SpotMapShapes {
     var mapPieces: [(name: String, polygons: [[CGPoint]])] { get }
     /// 押した点（単位の空間）の片
     func piece(at unit: CGPoint, tolerance: CGFloat) -> String?
+    /// `names` の片までの距離（単位の空間・内側なら 0）。陣地分け（`SpotRegionMap.area(at:)`）に使う
+    func distance(from unit: CGPoint, toPieces names: Set<String>) -> CGFloat
 }
 
 extension PrefectureMapGeometry: SpotMapShapes {
     var mapPieces: [(name: String, polygons: [[CGPoint]])] { pieces.map { ($0.prefecture, $0.polygons) } }
     func piece(at unit: CGPoint, tolerance: CGFloat) -> String? { prefecture(at: unit, tolerance: tolerance) }
+
+    /// 沖縄の挿入図の枠の中は、沖縄県の片まで 0。ほかは片の箱までの距離で順に見て、近い順に本当の距離を測る（箱が遠ければ打ち切る）
+    func distance(from unit: CGPoint, toPieces names: Set<String>) -> CGFloat {
+        if let inset, inset.contains(unit), names.contains(Self.insetPrefecture), piece(Self.insetPrefecture) != nil {
+            return 0
+        }
+        func boxDistance(_ r: CGRect) -> CGFloat {
+            let dx = max(r.minX - unit.x, 0, unit.x - r.maxX), dy = max(r.minY - unit.y, 0, unit.y - r.maxY)
+            return (dx * dx + dy * dy).squareRoot()
+        }
+        let candidates = pieces.filter { names.contains($0.prefecture) }
+            .map { (piece: $0, lower: boxDistance($0.bounds)) }
+            .sorted { $0.lower < $1.lower }
+        var best = CGFloat.infinity
+        for candidate in candidates {
+            if candidate.lower >= best { break }
+            best = min(best, distance(from: unit, to: candidate.piece))
+        }
+        return best
+    }
+
 }
 
 /// 地図の区分（日本なら地方）と、その中の撮影スポットの束ね（型に依らない・右の札と「すべて見る」が読む）
@@ -114,9 +169,12 @@ struct SpotMapArea: Identifiable, Equatable {
     /// 撮影スポットのある片（無い片は地を沈める）
     let coveredPieces: Set<String>
     /// 「すべて見る」の行き先
-    let scope: OfficialSpotIndexView.Scope
+    let scope: SpotIndexScope
     /// 「すべて見る」の読み上げ（「北海道の撮影スポットをすべて見る」）
     let seeAll: String
+
+    /// 札の「すべて見る」の字（「北海道をすべて見る」）。見出しの全国の「すべて見る」と分ける（確かめ役の指摘・2026-11-11）
+    var seeAllLabel: String { L("\(title)をすべて見る", "See all in \(title)") }
 
     /// 札の名前の行（「阿寒湖・大雪山 旭岳・ファーム富田・五稜郭 ほか」）。全部出せたら「ほか」を付けない
     var namesLine: String {

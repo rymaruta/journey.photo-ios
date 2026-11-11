@@ -2486,10 +2486,13 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(card.staticTexts["北海道"].waitForExistence(timeout: 3), "地図で北海道を押しても札が替わらない")
         shoot(app, "11m-探す（撮影スポットの段・地図で北海道）")
 
-        // 長押ししてから南西（九州の辺り）へなぞって離す
+        // 長押ししてから南西（九州の辺り）へなぞって離す。**なぞる間は画面が流れない**（地図の y が前後で同じ）
+        let mapTop = map.frame.minY
         map.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.62))
             .press(forDuration: 0.6, thenDragTo: map.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.85)))
         Thread.sleep(forTimeInterval: 1)
+        print("spotMap.trace mapTop before=\(mapTop) after=\(map.frame.minY)")
+        XCTAssertEqual(map.frame.minY, mapTop, accuracy: 0.5, "なぞっている間に画面が流れた")
         XCTAssertFalse(card.staticTexts["北海道"].exists, "なぞって離しても地方が替わらない")
         shoot(app, "11n-探す（撮影スポットの段・地図をなぞった）")
 
@@ -2499,6 +2502,15 @@ final class ScreenshotTests: XCTestCase {
         guard app.textFields["spotIndex.field"].waitForExistence(timeout: 10) else { return }
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "11o-撮影スポットの一覧（地方）")
+
+        // 戻って、地図の上から払うと段（画面）が流れる（長押しをしない指はスクロールに渡す）
+        goBack(app)
+        guard map.waitForExistence(timeout: 5), map.isHittable else { return }
+        let before = map.frame.minY
+        map.swipeUp()
+        Thread.sleep(forTimeInterval: 1)
+        print("spotMap.swipe mapTop before=\(before) after=\(map.frame.minY)")
+        XCTAssertLessThan(map.frame.minY, before - 20, "地図の上から払っても画面が流れない")
     }
 
     /// **「行きたい場所」を地図で見る**（2026-10-03・3か月の計画の7の第一歩）。マイページの

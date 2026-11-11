@@ -26,8 +26,9 @@ struct SearchSpotIndexSection: View {
     @Binding var region: String?
     /// 「写真｜地図」（2026-11-11 owner「タブ切り替えとかでもいいから縦に長くならないように」）
     @Binding var mode: SpotIndexMode
-    /// 地図をなぞっている区分（離すまで札がこれに替わる）
-    @State private var tracing: String?
+    /// 地図をなぞっている区分（離すまで札がこれに替わる）。**探すの画面が持つ**——なぞっている間は外側の
+    /// スクロールを止める（`SearchView` の `.scrollDisabled`・確かめ役の指摘 2026-11-11）
+    @Binding var tracing: String?
     /// 出している地図の id（地図が2つ以上のとき、地図の右上の切り替えで替える）
     @State private var mapId: String?
     /// 地方のチップと選択を分けない地図（日本以外）で選んでいる区分（地図の id → 区分の id）
@@ -188,21 +189,25 @@ struct SearchSpotIndexSection: View {
                 .font(JPFont.meta)
                 .foregroundStyle(WebTheme.text2)
                 .lineLimit(1)
+            // 名前の行は**切れる側**（大きな字では先に縮む・2行まで）
             Text(area.namesLine)
                 .font(JPFont.footnote)
                 .foregroundStyle(WebTheme.text2)
                 .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(-1)
             Spacer(minLength: 0)
             NavigationLink {
                 OfficialSpotIndexView(scope: area.scope, spots: spots, photos: photos, photosKnown: photosKnown)
             } label: {
-                // 幅が狭いので字は「すべて見る ›」。読み上げは「北海道の撮影スポットをすべて見る」
-                MoreLink(text: L("すべて見る", "See all"))
+                // 「北海道をすべて見る ›」（見出しの全国の「すべて見る」と分ける）。**切れない側**（大きな字でも残す）。
+                // 読み上げは「北海道の撮影スポットをすべて見る」
+                MoreLink(text: area.seeAllLabel)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .layoutPriority(1)
             .accessibilityLabel(area.seeAll)
             .accessibilityIdentifier("search.spotIndex.mapSeeAll")
         }

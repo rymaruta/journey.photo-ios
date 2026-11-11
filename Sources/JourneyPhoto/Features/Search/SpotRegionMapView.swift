@@ -16,9 +16,14 @@ struct SpotRegionMapView: View {
     let areas: [SpotMapArea]
     /// 選んでいる区分の id
     let selected: String?
-    /// なぞっている区分の id（札もこれに替わる）
+    /// なぞっている区分の id（札もこれに替わる・段は外側のスクロールを止める）。**この画面の `traced` を写すだけ**
     @Binding var tracing: String?
     let onSelect: (String) -> Void
+
+    /// 指の下の区分（なぞっている間だけ）。🔴 `@GestureState` にする（2026-11-11 確かめ役の指摘）: スクロールが指を取る・
+    /// 電話・タブの切り替えで操作が取り消されると `onEnded` は来ない。`@State` だと塗りと札がなぞった区分のまま残った。
+    /// `@GestureState` は取り消しでも必ず nil に戻る
+    @GestureState private var traced: String?
 
     /// 撮影スポットのある片の地（白の割合）
     nonisolated static let coveredWhite: Double = 0.14
@@ -38,31 +43,38 @@ struct SpotRegionMapView: View {
                 .gesture(
                     LongPressGesture(minimumDuration: SpotRegionMap.traceDelay)
                         .sequenced(before: DragGesture(minimumDistance: 0))
-                        .onChanged { value in
+                        .updating($traced) { value, state, _ in
                             guard case .second(true, let drag?) = value else { return }
-                            if let area = map.area(at: drag.location, container: size, in: areas) { tracing = area }
+                            // 区分の外（地図の枠の外）へ出た間は、最後の区分のまま
+                            if let area = map.area(at: drag.location, container: size, in: areas) { state = area }
                         }
                         .onEnded { value in
-                            defer { tracing = nil }
-                            guard case .second(true, let drag?) = value, let traced = tracing else { return }
-                            // 地図の外で離したら取り消し（選ばない）
-                            guard CGRect(origin: .zero, size: size).contains(drag.location) else { return }
-                            onSelect(traced)
+                            // 地図の外で離したら取り消し（選ばない・`area(at:)` は枠の外で nil）
+                            guard case .second(true, let drag?) = value,
+                                  let area = map.area(at: drag.location, container: size, in: areas) else { return }
+                            onSelect(area)
                         }
                 )
         }
-        .sensoryFeedback(.selection, trigger: tracing)
-        // 地図は1つの要素として名前だけ言う（片の形は読ませない）
+        .onChange(of: traced) { _, now in tracing = now }
+        .onDisappear { tracing = nil }
+        // 区分が替わったときだけ鳴らす（離して nil に戻るときは鳴らさない・確かめ役の指摘）
+        .sensoryFeedback(.selection, trigger: traced) { _, now in now != nil }
+        // 地図は1つの要素: 名前・いま選んでいる区分（値）・上下の払いで区分を替える（上のボタンでも選べる）
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(L("\(map.title)の地図。区分を押すと選べます。上のボタンでも選べます",
-                              "Map of \(map.title). Tap an area to choose it, or use the buttons above"))
+        .accessibilityLabel(L("\(map.title)の地図", "Map of \(map.title)"))
+        .accessibilityValue(areas.first { $0.id == selected }?.title ?? "")
+        .accessibilityHint(L("上下に払うと区分を替えられます", "Swipe up or down to change the area"))
+        .accessibilityAdjustableAction { direction in
+            if let next = SpotRegionMap.step(selected, in: areas, forward: direction == .increment) { onSelect(next) }
+        }
         .accessibilityIdentifier("search.spotIndex.map")
     }
 
     private func draw(_ ctx: inout GraphicsContext, size: CGSize) {
         let viewport = VisitedMapViewport()
         let content = map.shapes.size
-        let lit = SpotRegionMap.highlighted(tracing ?? selected, in: areas)
+        let lit = SpotRegionMap.highlighted(traced ?? selected, in: areas)
         let covered = SpotRegionMap.covered(areas)
         func mapped(_ p: CGPoint) -> CGPoint { viewport.screenPoint(forUnit: p, content: content, container: size) }
         for piece in map.shapes.mapPieces {
