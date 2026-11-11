@@ -104,7 +104,7 @@ struct TrunkSpinViewer: View {
             // 側面・背面・上・底・持ち手も同じく端末に置いて読む（2026-11-11 run 1050: 正面を読んでも、側面などを貼る
             // `SpinApplyBox` が 0.48〜0.74 秒残った）
             // 開いた時点の札（この後に退会で消されたら、描き終えても端末に書かない）
-            let diskTicket = TrunkSpinDiskCache.ticket()
+            let diskTicket = TrunkSpinDiskCache.open()
             let disk = TrunkPerfMeter.measure("SpinDiskLoad") { TrunkSpinDiskCache.load(for: key) }
             let diskFront = disk?["front"]
             if diskFront != nil { TrunkPerfMeter.shared.hit("SpinDiskHit") }

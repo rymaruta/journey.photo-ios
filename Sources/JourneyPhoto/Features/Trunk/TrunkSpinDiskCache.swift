@@ -164,13 +164,19 @@ enum TrunkSpinDiskCache {
         PreviewSession.trunkDiag.subtracting(neutralDiag).isEmpty
     }
 
-    /// 置いた絵を読む（全部そろっていなくても正面があれば返す。測定専用の `spindiskfront` では正面だけ）
-    static func load(for key: TrunkSpinKey) -> [String: UIImage]? {
-        let diag = PreviewSession.trunkDiag
-        if diag.contains("spindiskclear") {
+    /// 回す画面を開いたときに呼ぶ: 札（`ticket`）を返す。測定専用の `spindiskclear` では先に端末の絵を消す
+    /// （消した**後**に札を取る。先に取ると、その回の書き込みまで落ちる・run 1066 で書き終えなかった）
+    static func open() -> Int {
+        if PreviewSession.trunkDiag.contains("spindiskclear") {
             removeAll()
             flush()
         }
+        return ticket()
+    }
+
+    /// 置いた絵を読む（全部そろっていなくても正面があれば返す。測定専用の `spindiskfront` では正面だけ）
+    static func load(for key: TrunkSpinKey) -> [String: UIImage]? {
+        let diag = PreviewSession.trunkDiag
         guard usable, let dir = directory, let files = read(signature: signature(key), in: dir) else { return nil }
         #if os(iOS)
         var out: [String: UIImage] = [:]

@@ -179,6 +179,19 @@ final class TrunkSpinCacheTests: XCTestCase {
         XCTAssertNotNil(TrunkSpinDiskCache.read(signature: "A", in: dir))
     }
 
+    /// 開いたときの札は、開くときの消去（測定）の後に取る＝その回の書き込みは落ちない（run 1066）
+    func testOpenTicketIsTakenAfterClearing() async {
+        fresh()
+        let dir = tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let first = blobs
+        let opened = TrunkSpinDiskCache.open()
+        XCTAssertEqual(opened, TrunkSpinDiskCache.ticket(), "開いた直後の札が今の札と違う（その回の絵を書かない）")
+        TrunkSpinDiskCache.write(files: { first }, signature: "A", in: dir, ticket: opened)
+        TrunkSpinDiskCache.flush()
+        XCTAssertNotNil(TrunkSpinDiskCache.read(signature: "A", in: dir), "開いた回の絵を書かない")
+    }
+
     /// 退会（`AccountLocalData.remove`）で端末の絵が消える
     func testAccountRemovalForgetsTheDiskImage() async throws {
         fresh()
