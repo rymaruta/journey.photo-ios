@@ -142,20 +142,6 @@ final class ViewModelTests: XCTestCase {
         XCTAssertFalse(model.featured.isEmpty, "おすすめに戻しても段が出ない")
     }
 
-    /// 🔴 **はじめての投稿の控えは時が替わったら数え直す**（札 #537 の確かめ役・2026-11-11）。72 時間を過ぎた印が、
-    /// 開いたままのアプリに残り続けないように（控えが全件の書き換えだけを見ていると、時刻が進んでも同じ答えを返す）
-    func testFirstPostIdsExpireWithTime() async {
-        let model = GalleryViewModel(gallery: gallery("""
-        [{"id":"old","src":"https://x/o.jpg","createdAt":"2026-01-02T00:00:00.000Z","userId":"u1"},
-         {"id":"first","src":"https://x/f.jpg","createdAt":"2026-11-11T06:00:00.000Z","userId":"u2"}]
-        """))
-        await model.load()
-        let now = NotificationGroups.parse("2026-11-11T12:00:00.000Z")!
-        XCTAssertEqual(model.firstPostIds(now: now), ["first"], "前提: はじめての投稿が数えられていない")
-        XCTAssertEqual(model.firstPostIds(now: now.addingTimeInterval(73 * 3_600)), [],
-                       "72 時間を過ぎても控えの古い答えを返した")
-    }
-
     /// 新しい順。**`createdAt` が無い写真は末尾**（落とさない）。
     func testGalleryOrdersNewestFirstAndKeepsUndated() async {
         let model = GalleryViewModel(gallery: gallery(feed))

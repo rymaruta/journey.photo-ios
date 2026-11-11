@@ -475,16 +475,6 @@ struct GalleryView: View {
 
     /// UI テストのときだけ、札の行の位置の数を見えない要素（`home.feed.probe`）に出す（`PreviewSession.feedProbe`）
     @State private var feedProbeText = ""
-    /// UI テストのときだけ: 札の行より上の段と札の中身の高さ（札 #537 の Mac で札の行が 13 下がった件を数で見る・2026-11-11）
-    @State private var feedProbeHeights: [String: CGFloat] = [:]
-
-    private func probeHeight(_ key: String) -> FeedProbeHeight {
-        FeedProbeHeight(enabled: PreviewSession.feedProbe) { height in
-            guard feedProbeHeights[key] != height else { return }
-            feedProbeHeights[key] = height
-            updateFeedProbe()
-        }
-    }
 
     private func updateFeedProbe() {
         let n: (CGFloat) -> String = { String(format: "%.2f", Double($0)) }
@@ -492,7 +482,6 @@ struct GalleryView: View {
             + " overflow=\(n(ProfileTabScroll.rowOverflow(rowMinY: feedRowSpot.minY, visibleTop: 0)))"
             + " pinned=\(feedRowPinned) rowH=\(n(feedRowHeight)) viewport=\(n(feedViewport))"
             + " pages=\(model.loadedPageCount) topCardsAway=\(topCardsAway)"
-            + " h[" + feedProbeHeights.keys.sorted().map { "\($0)=\(n(feedProbeHeights[$0] ?? 0))" }.joined(separator: ",") + "]"
         if text != feedProbeText { feedProbeText = text }
     }
 
@@ -518,9 +507,7 @@ struct GalleryView: View {
                 // 届いた束をまだ開いていないときだけ出る（`PassHomeSlot`）
                 let passBundle = passCards(now: passNow)
                 PassHomeSlot(cards: passBundle, now: passNow) { passDeck = PassDeck(cards: passBundle) }
-                    .modifier(probeHeight("pass"))
                 StoriesRow(reloadToken: tabRouter.postSheetsClosed &+ storiesRefresh)
-                    .modifier(probeHeight("stories"))
                 // **#417 ⑦（2026-10-30 owner 採用）: 「NEW（みんなの新しい写真）」の段（2026-10-21・`HomeFreshStrip`）は外した。**
                 // 新着は切り替えの「新着」に一本化。最初の画面の人の写真は、写真の一覧の1段目が受け持つ
                 // （④で季節の段を一覧の中へ移し、①③で上を詰めたので、写真の大きな1枚目が1画面目に入る・Compare の板）。
@@ -542,7 +529,6 @@ struct GalleryView: View {
                                 reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed,
                                 seasonShelf: $seasonShelf,
                                 scrolledAway: topCardsAway)
-                    .modifier(probeHeight("top"))
                     // 上の札が見えている上端より上へ流れ切ったか（`HomeTopCardView.scrolledAway`・#426）。
                     // 外側を `VStack` にしたので、流れ出ても `onDisappear` が来ない。main（`LazyVStack`）では流れ出ると
                     // `onDisappear` が来て、札の差し替え（今日の一問・旅行プラン・日替わり）を戻るまで後回しにしていた。
@@ -585,11 +571,8 @@ struct GalleryView: View {
                     VStack(spacing: Self.feedSpacing) {
                         feedSection(page, rows: pageRows(page, selected: photos))
                     }
-                    .modifier(probeHeight("page.\(page.rawValue)"))
                 }
-                .modifier(probeHeight("pager"))
             }
-            .modifier(probeHeight("all"))
             .padding(.top, 8)
             // 最後のカードがタブバーに掛からないようにする
             .padding(.bottom, 24)
@@ -677,8 +660,6 @@ struct GalleryView: View {
         // **同じ投稿の写真は1枚のカードに束ねる**（モック6・8）。
         // 行は1枚ずつのままなので、個別ページもサイトマップも変わらない
         let groups = rows.groups
-        // はじめての投稿の印（札 #537 案1）。どのフィードでも同じ写真に出す
-        let firstPostIds = model.firstPostIds()
         // **続きがある間は「まだありません」と言わない**（読んだ範囲がブロックで全部落ちた・
         // 続きを読んでいる最中）。下の目印が次を読む
         if groups.isEmpty && !(page == model.feed && model.hasMorePages) {
@@ -691,7 +672,7 @@ struct GalleryView: View {
         // 「おすすめ」が空なのか分からなくなる（空の知らせの一手は地図）
         if page.showsSeasonShelf {
             let split = (lead: rows.lead, rest: rows.rest)
-            HomeMosaic(groups: split.lead, firstPostIds: firstPostIds, onReport: { reportTarget = $0 })
+            HomeMosaic(groups: split.lead, onReport: { reportTarget = $0 })
             if !groups.isEmpty, let seasonShelf {
                 HomeSpotShelfView(shelf: seasonShelf.shelf, spots: seasonShelf.spots,
                                   photos: dropped.visible(model.allPhotosForTheme),
@@ -701,13 +682,13 @@ struct GalleryView: View {
                     .padding(.bottom, Self.seasonShelfBottomTrim)
             }
             if !split.rest.isEmpty {
-                HomeMosaic(groups: split.rest, firstPostIds: firstPostIds, onReport: { reportTarget = $0 })
+                HomeMosaic(groups: split.rest, onReport: { reportTarget = $0 })
             }
         } else {
             // 「新着」の続きを読む目印は、写真の一覧の遅れて作る並び（`HomeMosaic` の `LazyVStack`）の最後の段。
             // 札の中身の普通の並びに置くと、画面の外でも `onAppear` がすぐ走り、作り直す（`id`）たびにまた読んで、
             // 送らなくても全部のページを読んでいた（#426 確かめ役）。続きを読むのは選んでいる「新着」だけ（`hasMorePages`）
-            HomeMosaic(groups: groups, firstPostIds: firstPostIds, onReport: { reportTarget = $0 },
+            HomeMosaic(groups: groups, onReport: { reportTarget = $0 },
                        footer: page == model.feed && model.hasMorePages ? AnyView(pageFooter) : nil)
         }
     }
@@ -845,31 +826,25 @@ final class HomeFeedPageMemo {
     struct Key: Equatable {
         let photos: [Photo]
         let hidden: ModerationSnapshot
-        /// 時（1時間ごと）。新しい投稿（72 時間）を混ぜる「おすすめ」は、時が替わったら混ぜ直す（`HomeFeed.mixesFresh`）
-        let hour: Int
     }
 
     private var memos: [HomeFeed: DerivedMemo<Key, Rows>] = [:]
 
     init() {}
 
-    func rows(_ page: HomeFeed, photos: [Photo], hidden: ModerationSnapshot, now: Date = Date()) -> Rows {
+    func rows(_ page: HomeFeed, photos: [Photo], hidden: ModerationSnapshot) -> Rows {
         let memo = memos[page] ?? DerivedMemo<Key, Rows>()
         memos[page] = memo
-        let hour = page.mixesFresh ? Int(now.timeIntervalSince1970 / 3600) : 0
-        return memo.value(for: Key(photos: photos, hidden: hidden, hour: hour)) {
-            Self.make(page, photos: photos, hidden: hidden, now: now)
+        return memo.value(for: Key(photos: photos, hidden: hidden)) {
+            Self.make(page, photos: photos, hidden: hidden)
         }
     }
 
     /// 計算した回数（試験用）
     func computeCount(_ page: HomeFeed) -> Int { memos[page]?.computeCount ?? 0 }
 
-    /// 🔴 **新しい投稿を混ぜるのは、絞り込み（`photos` はもう絞った一覧）とブロック・通報を落とした後**
-    /// （札 #537 の確かめ役・2026-11-11。前で混ぜると落ちた写真の分だけ枠がずれる・Web と同じ順）
-    static func make(_ page: HomeFeed, photos: [Photo], hidden: ModerationSnapshot, now: Date = Date()) -> Rows {
-        let visible = hidden.visible(photos)
-        let groups = PhotoGroups.group(page.mixesFresh ? HomeFreshMix.mix(visible, now: now) : visible)
+    static func make(_ page: HomeFeed, photos: [Photo], hidden: ModerationSnapshot) -> Rows {
+        let groups = PhotoGroups.group(hidden.visible(photos))
         guard page.showsSeasonShelf else { return Rows(groups: groups, lead: groups, rest: []) }
         let split = HomeFeed.splitForSeasonShelf(groups)
         return Rows(groups: groups, lead: split.lead, rest: split.rest)
@@ -887,21 +862,4 @@ private struct FollowingSeenKey: Equatable {
     let feed: HomeFeed
     let newest: String?
     let viewer: String?
-}
-
-/// UI テストのときだけ高さを知らせる（`GalleryView.probeHeight`・`PreviewSession.feedProbe`）。ふだんは何も足さない
-struct FeedProbeHeight: ViewModifier {
-    let enabled: Bool
-    let report: (CGFloat) -> Void
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if enabled {
-            content.onGeometryChange(for: CGFloat.self) { proxy in
-                proxy.size.height
-            } action: { report($0) }
-        } else {
-            content
-        }
-    }
 }

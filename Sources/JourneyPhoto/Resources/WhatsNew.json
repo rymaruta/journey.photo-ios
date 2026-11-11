@@ -21,12 +21,6 @@
           "detail": { "ja": "コメントの下の「返信」から返信できます。返信はそのコメントの下に並びます。", "en": "Tap Reply under a comment to answer it. Replies appear right under that comment." }
         },
         {
-          "symbol": "sparkles",
-          "title": { "ja": "おすすめに新しい投稿・今週のお題", "en": "New posts in For You and a weekly theme" },
-          "detail": { "ja": "ホームのおすすめに新しく載った写真が混ざり、はじめての投稿には印が付きます。今日のテーマは「今週のお題」になり、月曜日に替わります。", "en": "For You on Home now mixes in fresh posts and marks someone's first post. Today's theme is now This week's theme, which changes every Monday." },
-          "destination": "home"
-        },
-        {
           "symbol": "map",
           "title": { "ja": "撮影スポットを地図から探す", "en": "Find photo spots on a map" },
           "detail": { "ja": "探すの「撮影スポット」で「地図」に切り替えると、日本地図から地方を選べます。", "en": "In Search, switch Photo spots to Map and pick a region on the map of Japan." },

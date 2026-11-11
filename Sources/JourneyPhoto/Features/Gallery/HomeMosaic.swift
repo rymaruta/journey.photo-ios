@@ -14,8 +14,6 @@ import SwiftUI
 struct HomeMosaic: View {
 
     let groups: [PhotoGroups.Group]
-    /// **はじめての投稿**の写真の id（札に印を出す・`HomeFreshMix.firstPostPhotoIds`・札 #537 案1）
-    var firstPostIds: Set<String> = []
     /// 「通報する」を押したとき。**シートは一覧（`GalleryView`）が出す。**
     /// 写真に付けると、通報で一覧が読み直されて写真ごと消え、
     /// 「受け付けました」やブロック失敗の文言を見る前にシートが閉じる
@@ -63,8 +61,7 @@ struct HomeMosaic: View {
     @ViewBuilder
     private func tile(_ photo: Photo, byCover: [String: PhotoGroups.Group], large: Bool) -> some View {
         let group = byCover[photo.id]
-        HomeFeedTile(photo: photo, siblings: group?.photos ?? [photo], large: large,
-                     isFirstPost: firstPostIds.contains(photo.id), onReport: onReport)
+        HomeFeedTile(photo: photo, siblings: group?.photos ?? [photo], large: large, onReport: onReport)
     }
 }
 
@@ -76,8 +73,6 @@ struct HomeFeedTile: View {
     var siblings: [Photo] = []
     /// 大きい段（16:9・撮影地 22pt・投稿した時期も出す）か、2枚の段（1:1・18pt）か
     var large = false
-    /// その人の**はじめての投稿**か（72 時間だけ・`HomeFreshMix.firstPostPhotoIds`）。左上に印を出す
-    var isFirstPost = false
     var onReport: (Photo) -> Void = { _ in }
 
     /// **札そのものが見る store はログインだけ**（「…」を出すか・2026-10-28 判断・重さの直し）。
@@ -111,7 +106,6 @@ struct HomeFeedTile: View {
                         }
                     }
                     .overlay(alignment: .bottomLeading) { caption }
-                    .overlay(alignment: .topLeading) { firstPostMark }
                     .overlay(alignment: .topTrailing) {
                         // 「…」の丸と重ならないよう、印はその左
                         multipleMark.padding(.trailing, showsMore ? 44 : 0)
@@ -127,8 +121,7 @@ struct HomeFeedTile: View {
                 base: photo.accessibilityText,
                 place: HomeTileText.place(photo.location),
                 byline: byline,
-                multiple: siblings.count > 1 ? L("複数枚の投稿", "Multiple photos") : nil,
-                firstPost: isFirstPost ? HomeTileText.firstPost : nil))
+                multiple: siblings.count > 1 ? L("複数枚の投稿", "Multiple photos") : nil))
             // **実機の絵の道しるべ。** 「一覧の1枚目」を位置で探すと、
             // 今日のテーマの「参加する」に当たって**ログイン画面を
             // 『写真の詳細』として撮って**いた（run 49 の絵で判明）
@@ -191,25 +184,6 @@ struct HomeFeedTile: View {
                            startPoint: .top, endPoint: .bottom)
                 .frame(height: 56)
                 .allowsHitTesting(false)
-        }
-    }
-
-    /// **はじめての投稿**の印（札 #537 案1・2026-11-11 判断）。初めて載せた人の1枚に、見る人が気づいて反応を返せるように。
-    /// 押すものではない（押す回数は増えない）。写真の上なので**白だけ**（CLAUDE.md）——地は右の「…」・いいねの丸と同じ
-    /// 黒 55%、字は 12pt（本文系の最小）。読み上げは札の1つの読み上げに入れる（`HomeTileText.readout`）
-    @ViewBuilder
-    private var firstPostMark: some View {
-        if isFirstPost {
-            Text(HomeTileText.firstPost)
-                .font(JPFont.caption.weight(.semibold))
-                .foregroundStyle(Color.white)
-                .lineLimit(1)
-                .padding(.horizontal, JPSpace.xs)
-                .frame(height: 24)
-                .background(Color.black.opacity(0.55), in: Capsule())
-                .padding(JPSpace.xs)
-                // 読み上げは札の1つの読み上げに入れてある（UI テストも札の読み上げで探す）
-                .accessibilityHidden(true)
         }
     }
 
@@ -412,13 +386,8 @@ enum HomeTileText {
 
     /// 読み上げ（題 → 撮影地 → 撮った人 → 複数枚）。題が無い写真は
     /// `base` が既に撮影地を含む（「パリ, フランス の写真」）ので二度読まない
-    /// はじめての投稿の印の文（札 #537 案1）
-    static var firstPost: String { L("はじめての投稿", "First post") }
-
-    static func readout(base: String, place: String, byline: String, multiple: String?,
-                        firstPost: String? = nil) -> String {
+    static func readout(base: String, place: String, byline: String, multiple: String?) -> String {
         var parts = [base]
-        if let firstPost, !firstPost.isEmpty { parts.append(firstPost) }
         if !place.isEmpty, !base.contains(place) { parts.append(place) }
         if !byline.isEmpty { parts.append(byline) }
         if let multiple, !multiple.isEmpty { parts.append(multiple) }

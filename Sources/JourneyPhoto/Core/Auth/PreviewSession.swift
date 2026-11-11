@@ -113,20 +113,6 @@ enum PreviewSession {
         #endif
     }
 
-    /// UI テストで、おすすめの新しい投稿・はじめての投稿・今週のお題の参加を見本で出す（Debug のみ・札 #537・2026-11-11）。
-    /// `-JPPreviewSNSLoop YES`。本番の公開一覧では 72 時間以内の投稿・今週のお題のタグの写真が無い日が多く、
-    /// 絵が撮れない。公開一覧のいちばん新しい3枚の投稿日・お題のタグ・1枚の持ち主を**端末の中だけ**で書き替える
-    /// （`PreviewSNSLoopSample`）。サーバーには何も送らない。Release では必ず false
-    static let snsLoopSampleKey = "JPPreviewSNSLoop"
-
-    static var snsLoopSample: Bool {
-        #if DEBUG
-        return UserDefaults.standard.bool(forKey: snsLoopSampleKey)
-        #else
-        return false
-        #endif
-    }
-
     /// UI テストで、起動直後の動きの記録（`PerfRecorder`）を取り、見えない要素 `perf.probe` に出す（Debug のみ・2026-11-04・札 #435 / #429）。
     /// `-JPPreviewPerfProbe YES`。下のタブを書いた場所と時刻・起動後の `.task` の始めと終わり・メインスレッドの停止・
     /// 主要画面の body の評価回数を、推定でなく実際の数で見るため。Release では必ず false（記録も要素も出ない）

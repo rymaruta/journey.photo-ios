@@ -5640,63 +5640,6 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(gap >= 0 && gap < 240, "深く送ってから替えても頭から出ない（札の行と格子の1枚目の間 \(gap)）")
     }
 
-    /// **おすすめの新しい投稿・はじめての投稿・今週のお題の参加**（札 #537 案1・案2・2026-11-11）。
-    /// 本番の公開一覧には 72 時間以内の投稿・今週のお題の写真が無い日が多いので、見本（`-JPPreviewSNSLoop`・
-    /// `PreviewSNSLoopSample`）で公開一覧の新しい3枚を端末の中だけ書き替えて撮る。
-    /// 🔴 はじめての投稿の印・みんなの参加の行が出ないときは**落とす**（黙って通らない）
-    func testCapturesSNSLoopSample() {
-        let app = XCUIApplication()
-        app.launchArguments += ["-legal.consent.version", "0"]
-        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
-        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
-        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
-        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
-        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
-        app.launchArguments += ["-JPPreviewSNSLoop", "YES"]
-        app.launch()
-        defer { app.terminate() }
-
-        let agree = app.buttons["legal.agree"]
-        if agree.waitForExistence(timeout: 30) { agree.tap() }
-        let homeShown = app.buttons["home.feed.recommended"].firstMatch.waitForExistence(timeout: 30)
-        if !homeShown {
-            // 何が画面に出ていてホームに届かないのかを、推定でなく記録で見る（2026-11-11・run 43005025402 で 30 秒出なかった）
-            let tree = app.debugDescription
-            print("[snsLoopProbe] home missing. tree:\n" + String(tree.prefix(6000)))
-            let note = XCTAttachment(string: tree)
-            note.name = "snsLoop 画面の木（ホームが出ない）"
-            note.lifetime = .keepAlways
-            add(note)
-        }
-        XCTAssertTrue(homeShown, "ホームの切り替え（おすすめ）が見つからない")
-        guard homeShown else { return }
-        _ = app.buttons["feed.photo"].firstMatch.waitForExistence(timeout: 20)
-
-        // 今週のお題の札は上の札の横並びの中（季節の札の後ろ）。見えるところまで左へめくる
-        let participants = app.buttons["home.theme.participants"].firstMatch
-        XCTAssertTrue(participants.waitForExistence(timeout: 20), "今週のお題の札に「みんなの参加」の行が無い")
-        for _ in 0..<4 where participants.exists && !participants.isHittable {
-            let row = participants.frame.midY
-            let origin = app.coordinate(withNormalizedOffset: .zero)
-            origin.withOffset(CGVector(dx: app.frame.width * 0.85, dy: row))
-                .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: app.frame.width * 0.15, dy: row)))
-            Thread.sleep(forTimeInterval: 1)
-        }
-        XCTAssertTrue(participants.isHittable, "今週のお題の札までめくれない")
-        XCTAssertTrue(participants.label.contains("今週"), "みんなの参加の読み上げが無い: \(participants.label)")
-        shoot(app, "10n-ホーム（今週のお題・みんなの参加）")
-
-        // はじめての投稿の印は札の読み上げに入る。おすすめの2番目の枠（新しい投稿）にある
-        let firstPost = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "はじめての投稿")).firstMatch
-        XCTAssertTrue(firstPost.waitForExistence(timeout: 10), "はじめての投稿の札が見つからない")
-        for _ in 0..<4 where firstPost.exists && !firstPost.isHittable {
-            app.swipeUp(velocity: .slow)
-            Thread.sleep(forTimeInterval: 1)
-        }
-        XCTAssertTrue(firstPost.isHittable, "はじめての投稿の札まで送れない")
-        shoot(app, "10o-ホーム（おすすめの新しい投稿・はじめての投稿）")
-    }
-
     /// **ホームのフィードの切り替えもマイページと同じ手ざわり**（2026-10-31 #426・`ProfileTabBar`・`ProfileTabPager`）。
     /// 札の行を左へ払うと「フォロー中」、中身を左へ払うと「新着」、札を押すと「おすすめ」に戻る。どの替え方でも
     /// 札の行は跳ばない。下へ送ると札の行は見出しの下に留まり、留まったまま中身を払っても替わって、札の行は動かない。

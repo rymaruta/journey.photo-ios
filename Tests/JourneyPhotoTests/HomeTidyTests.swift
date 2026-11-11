@@ -133,11 +133,11 @@ final class HomeTidyTests: XCTestCase {
         XCTAssertNil(HomeTopCardView.spotDetail(region: nil, credit: nil))
     }
 
-    /// 今週のお題（#537 案2・前は今日のテーマ）: 「参加する」は題の右（見た目 36・当たり 44）・説明は1行・背は隣の札と同じ 116
+    /// 今日のテーマ: 「参加する」は題の右（見た目 36・当たり 44）・説明は1行・背は隣の札と同じ 116
     func testThemeJoinSitsRightOfTheTitle() throws {
-        let theme = try source("Features/Gallery/WeeklyThemeCard.swift")
+        let theme = try source("Features/Gallery/DailyThemeCard.swift")
         let body = slice(theme, from: "var body: some View", to: ".background(alignment: .trailing)")
-        assertInOrder(["JPEyebrowLine(\"THIS WEEK\"", "HStack(alignment: .center", "Text(theme.title)",
+        assertInOrder(["JPEyebrowLine(\"TODAY'S THEME\"", "HStack(alignment: .center", "Text(theme.title)",
                        ".lineLimit(1)", "joinControl", "Text(theme.prompt)", ".lineLimit(1)",
                        "minHeight: HomeTopCardView.cardHeight"], in: body, "題の右に「参加する」")
         let join = slice(theme, from: "private var joinControl: some View", to: "static let joinInset")
@@ -147,7 +147,7 @@ final class HomeTidyTests: XCTestCase {
         XCTAssertFalse(theme.contains("JPHeight.secondaryButton"), "幅いっぱいの 44 の帯に戻っている")
         XCTAssertEqual(JPOutlineSize.inline.height, 36)
         XCTAssertEqual(JPOutlineSize.inline.height + JPOutlineSize.inline.tapSlack * 2, WebTheme.minTapTarget)
-        XCTAssertEqual(WeeklyThemeCard.joinInset, 14)
+        XCTAssertEqual(DailyThemeCard.joinInset, 14)
     }
 
     // MARK: - ④ 季節の段は「おすすめ」の中・写真の大1→2→2 の後ろ
@@ -183,10 +183,7 @@ final class HomeTidyTests: XCTestCase {
         let gallery = try source("Features/Gallery/GalleryView.swift")
         // #426: 束ねと 5 枚の割りは控え（`HomeFeedPageMemo.make`）が計算する
         let make = slice(gallery, from: "static func make(_ page: HomeFeed,", to: "private struct PassResolveKey")
-        // #537: ブロックを落とした後に新しい投稿を混ぜてから束ねる（`HomeFeed.mixesFresh`）
-        assertInOrder(["let visible = hidden.visible(photos)",
-                       "PhotoGroups.group(page.mixesFresh ? HomeFreshMix.mix(visible, now: now) : visible)",
-                       "guard page.showsSeasonShelf else",
+        assertInOrder(["PhotoGroups.group(hidden.visible(photos))", "guard page.showsSeasonShelf else",
                        "HomeFeed.splitForSeasonShelf(groups)"], in: make, "季節の段の前後に割る")
         let section = slice(gallery, from: "private func feedSection(_ page: HomeFeed, rows: HomeFeedPageMemo.Rows) -> some View {",
                             to: "nonisolated static let seasonShelfTopTrim")

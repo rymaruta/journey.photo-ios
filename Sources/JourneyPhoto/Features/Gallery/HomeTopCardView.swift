@@ -16,7 +16,7 @@ import SwiftUI
 /// **ホームに戻るたびには取りに行かない**（Lambda の同時実行はアカウント全体で10）
 struct HomeTopCardView: View {
 
-    /// 今週のお題の札の背景と、みんなの参加に使う写真（`WeeklyThemeCard` に渡す）
+    /// 今日のテーマの札の背景に使う写真（`DailyThemeCard` に渡す）
     let themePhotos: [Photo]
     /// 自分の写真（一冊・1年前の判定と、今日のテーマの参加の判定に使う）
     let myPhotos: [Photo]
@@ -295,7 +295,7 @@ struct HomeTopCardView: View {
             }
             .buttonStyle(.plain)
         case .theme:
-            WeeklyThemeCard(photos: themePhotos, myPhotos: myPhotos, inCarousel: inCarousel)
+            DailyThemeCard(photos: themePhotos, myPhotos: myPhotos, inCarousel: inCarousel)
         case .quiz(let quiz):
             NavigationLink {
                 DailyQuizView(photos: themePhotos)

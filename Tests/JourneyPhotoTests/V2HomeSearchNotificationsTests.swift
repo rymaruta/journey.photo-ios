@@ -159,8 +159,8 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
         XCTAssertTrue(card.contains(".jpCardFace()"), "札の地（surface-1・白 8% の縁・角 16）が無い")
         XCTAssertFalse(card.contains(".opacity(0.35)"), "写真を薄く敷く v1 の形に戻っている")
         XCTAssertFalse(card.contains("WebTheme.surface"), "札の地が v1 の白 7% のまま")
-        let theme = try source("Features/Gallery/WeeklyThemeCard.swift")
-        XCTAssertTrue(theme.contains("JPEyebrowLine(\"THIS WEEK\""), "今週のお題の眉が v2 でない")
+        let theme = try source("Features/Gallery/DailyThemeCard.swift")
+        XCTAssertTrue(theme.contains("JPEyebrowLine(\"TODAY'S THEME\""), "今日のテーマの眉が v2 でない")
         // #417 ③: 「参加する」は題の右の小ボタン（見た目 36・当たり 44）。色は写真のある画面の主ボタン（白）のまま
         XCTAssertTrue(theme.contains("fill: JPPillStyle.main(onPhoto: true).fill"),
                       "「参加する」が写真のある画面の主ボタン（白）でない")
@@ -338,7 +338,7 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
     /// 第2段で触った画面は本文 12 未満の字を作らない（眉の 11 は `jpEyebrow` / `JPEyebrowLine` だけ）
     func testNoTextBelowTwelveInTouchedScreens() throws {
         let paths = ["Features/Gallery/GalleryView.swift", "Features/Gallery/HomeTopCardView.swift",
-                     "Features/Gallery/WeeklyThemeCard.swift", "Features/Gallery/HomeSpotShelfView.swift",
+                     "Features/Gallery/DailyThemeCard.swift", "Features/Gallery/HomeSpotShelfView.swift",
                      "Features/Gallery/CollectionPhotosScreen.swift", "Features/Common/SiteMenuView.swift",
                      "Features/Common/SectionHeading.swift", "Features/Common/PillChip.swift",
                      "Features/Search/SearchView.swift", "Features/Notifications/NotificationsView.swift"]

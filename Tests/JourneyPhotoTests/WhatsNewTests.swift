@@ -315,16 +315,16 @@ final class WhatsNewTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let all = WhatsNew.decode(data)
-        // 1.1.82（2026-11-11・札 #541・#537・#524・#526・#521）: DM の新しい見た目・写真をストーリーで紹介・コメントに返信・
-        // おすすめの新しい投稿と今週のお題・探すの撮影スポットの地図・録画は押し続けない・トランクが軽く・日をまたぐ移動の目安・検索エンジンに出さない
+        // 1.1.82（2026-11-11・札 #541・#524・#526・#521）: DM の新しい見た目・写真をストーリーで紹介・コメントに返信・
+        // 探すの撮影スポットの地図（おすすめの新しい投稿・今週のお題 #537 は #540 が分かるまで次の版へ）・録画は押し続けない・トランクが軽く・日をまたぐ移動の目安・検索エンジンに出さない
         let v1182 = try XCTUnwrap(all.first)
         XCTAssertEqual(v1182.version, "1.1.82")
         XCTAssertEqual(v1182.date, WhatsNew.Day(year: 2026, month: 11, day: 11))
         XCTAssertEqual(v1182.items.map(\.title.ja), ["メッセージが新しい見た目に", "写真をストーリーで紹介", "コメントに返信",
-                                                     "おすすめに新しい投稿・今週のお題", "撮影スポットを地図から探す",
+                                                     "撮影スポットを地図から探す",
                                                      "ストーリーの録画は押し続けなくてよい", "旅のトランクが軽く", "日をまたぐ移動の目安",
                                                      "検索エンジンにプロフィールを出さない"])
-        XCTAssertEqual(v1182.items.map(\.destination), [nil, nil, nil, .home, .search, nil, nil, nil, nil])
+        XCTAssertEqual(v1182.items.map(\.destination), [nil, nil, nil, .search, nil, nil, nil, nil])
         XCTAssertEqual(Set(v1182.items.map(\.symbol)).count, v1182.items.count, "記号が重複している")
         for item in v1182.items {
             for text in [item.title.ja, item.detail.ja] {
