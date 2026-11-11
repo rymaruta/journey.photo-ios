@@ -274,4 +274,89 @@ final class SNSShareReplyTests: XCTestCase {
         XCTAssertNil(StorySharedPhoto.find("p2", in: [photo]))
         XCTAssertNil(StorySharedPhoto.find("p1", in: nil))
     }
+
+    // MARK: - 確かめ役の直し（2026-11-11）
+
+    private struct Refused: Error {}
+
+    /// 「写真を見る」は確かめてから開く。一覧に無い・持ち主をブロック・サーバーが断った（読めなかった）なら開かない
+    func testSharedPhotoOpensOnlyAfterTheServerSaysYes() async throws {
+        let photo = try JSONDecoder.api.decode(Photo.self, from: Data(#"{"id":"p1","src":"https://x/p1.jpg","userId":"mika"}"#.utf8))
+        var checked: [String] = []
+        let ok = await StorySharedPhoto.verified("p1", in: [photo], blocked: []) { checked.append($0) }
+        XCTAssertEqual(ok?.id, "p1")
+        XCTAssertEqual(checked, ["p1"], "サーバーに確かめずに開いている")
+        let refused = await StorySharedPhoto.verified("p1", in: [photo], blocked: []) { _ in throw Refused() }
+        XCTAssertNil(refused, "サーバーが断った（非公開・削除・読めない）写真を開いている")
+        let blocked = await StorySharedPhoto.verified("p1", in: [photo], blocked: ["mika"]) { _ in }
+        XCTAssertNil(blocked, "ブロックした人の写真を開いている")
+        let missing = await StorySharedPhoto.verified("p2", in: [photo], blocked: []) { _ in XCTFail("一覧に無いのに確かめに行った") }
+        XCTAssertNil(missing)
+    }
+
+    /// 「24時間後も自分用に残す」は紹介の写真だけで出さない。混ぜたときは出して、紹介の写真は残らないと添える
+    func testKeepToggleSkipsOnlySharedPhotos() async {
+        XCTAssertEqual(StorySharedPhoto.keepToggle(sharedFlags: [true]), .hidden)
+        XCTAssertEqual(StorySharedPhoto.keepToggle(sharedFlags: [true, true]), .hidden)
+        XCTAssertEqual(StorySharedPhoto.keepToggle(sharedFlags: [true, false]),
+                       .shown(note: StorySharedPhoto.keepSkipsSharedNote), "混ぜると他の写真の切り替えまで消えている")
+        XCTAssertEqual(StorySharedPhoto.keepToggle(sharedFlags: [false]), .shown(note: nil))
+        XCTAssertEqual(StorySharedPhoto.keepToggle(sharedFlags: []), .shown(note: nil))
+    }
+
+    /// 送るシートはすぐ開き、顔を読んでいる間は段の場所を取っておく。読めて顔が無ければ段ごと出さない
+    func testSendSheetOpensBeforeFacesLoad() async {
+        let people = (0..<3).map { FollowUser(id: "u\($0)", name: "人\($0)", deleted: nil) }
+        XCTAssertEqual(SendSheetLayout.peopleRow(loaded: false, people: [], canSend: true), .placeholder)
+        XCTAssertEqual(SendSheetLayout.peopleRow(loaded: true, people: people, canSend: true), .faces(people))
+        XCTAssertEqual(SendSheetLayout.peopleRow(loaded: true, people: [], canSend: true), .none)
+        XCTAssertEqual(SendSheetLayout.peopleRow(loaded: false, people: people, canSend: false), .none,
+                       "送れない写真に段（取り置き）を出している")
+    }
+
+    /// 返信の知らせはコメントの id を読み、押すとそのコメントの位置へ。手元に無い写真も押せる（取り直して引き当てる）
+    func testCommentReplyNotificationGoesToTheComment() async throws {
+        let n = try JSONDecoder.api.decode(AppNotification.self,
+                                           from: Data(#"{"type":"commentreply","photoId":"p2","commentId":"c9"}"#.utf8))
+        XCTAssertEqual(n.commentId, "c9")
+        let bad = try JSONDecoder.api.decode(AppNotification.self,
+                                             from: Data(#"{"type":"commentreply","photoId":"p2","commentId":"../x"}"#.utf8))
+        XCTAssertNil(bad.commentId)
+        XCTAssertEqual(AppNotification.fromPush(["type": "commentreply", "photoId": "p2", "commentId": "c9"])?.commentId, "c9")
+
+        let model = NotificationsViewModel()
+        let photo = try JSONDecoder.api.decode(Photo.self, from: Data(#"{"id":"p2","src":"https://x/p2.jpg"}"#.utf8))
+        model.setFeedForTesting([photo])
+        guard case .comment(let opened, _, let commentId) = model.destination(for: n) else {
+            return XCTFail("返信の知らせがコメントの位置へ行かない")
+        }
+        XCTAssertEqual(opened.id, "p2")
+        XCTAssertEqual(commentId, "c9")
+        // ふつうのコメントの知らせは今までどおり写真へ
+        let plain = try JSONDecoder.api.decode(AppNotification.self,
+                                               from: Data(#"{"type":"comment","photoId":"p2","commentId":"c9"}"#.utf8))
+        guard case .photo = model.destination(for: plain) else { return XCTFail("コメントの知らせの行き先が変わった") }
+
+        // 手元に無い（範囲を絞った人の写真）→ 押せる。押したら取り直して引き当てる
+        model.setFeedForTesting([])
+        guard case .findPhoto(let id, let cid) = model.destination(for: n) else {
+            return XCTFail("手元に無い写真への返信の知らせが押せない")
+        }
+        XCTAssertEqual(id, "p2")
+        XCTAssertEqual(cid, "c9")
+        XCTAssertNotNil(model.route(for: n))
+    }
+
+    /// 知らせから来たコメントへは、読み終えてから1回だけ。消えたコメントには送らない。束を送った先では送らない
+    func testCommentFocusDecision() async {
+        typealias R = PhotoDetailRules
+        XCTAssertNil(R.commentToFocus(nil, done: false, showingFirstPhoto: true, loaded: ["c1"], finishedLoading: true))
+        XCTAssertNil(R.commentToFocus("c1", done: false, showingFirstPhoto: true, loaded: [], finishedLoading: false),
+                     "読み終える前に決めている")
+        XCTAssertEqual(R.commentToFocus("c1", done: false, showingFirstPhoto: true, loaded: ["c0", "c1"], finishedLoading: true), .some("c1"))
+        XCTAssertEqual(R.commentToFocus("gone", done: false, showingFirstPhoto: true, loaded: ["c1"], finishedLoading: true), .some(nil))
+        XCTAssertNil(R.commentToFocus("c1", done: true, showingFirstPhoto: true, loaded: ["c1"], finishedLoading: true), "2回送っている")
+        XCTAssertNil(R.commentToFocus("c1", done: false, showingFirstPhoto: false, loaded: ["c1"], finishedLoading: true),
+                     "束を送った先の写真で送っている")
+    }
 }

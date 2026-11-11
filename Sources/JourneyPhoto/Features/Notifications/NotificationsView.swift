@@ -9,6 +9,7 @@ struct NotificationsView: View {
     @EnvironmentObject private var push: PushCenter
     /// ブロックした人の行・プッシュの行き先を手元で落とすため（`shown`・`opensPushTarget`）
     @EnvironmentObject private var hidden: ModerationStore
+    @EnvironmentObject private var toasts: ToastCenter
     /// メッセージの未読会話（アイコンの数字に残す分・2026-11-10 札 #505）
     @EnvironmentObject private var messages: DMInboxStore
     /// **通知を押すたびに読み直すため**に見ている。
@@ -110,6 +111,17 @@ struct NotificationsView: View {
 
     /// 行き先を開く。ストーリーの返信の一覧だけシートで出す（ほかは積む）
     private func open(_ target: NotificationsViewModel.Route) {
+        if case .findPhoto(let photoId, let commentId) = target {
+            // 手元に無い写真は取り直して引き当てる。無ければ（見られない・消えた・読めない）開かずに言う
+            Task {
+                if let found = await model.findPhoto(photoId, commentId: commentId, environment: environment) {
+                    open(found)
+                } else {
+                    toasts.show(StorySharedPhoto.unavailableMessage, kind: .failure)
+                }
+            }
+            return
+        }
         if case .storyReplies(let storyId) = target {
             repliesStory = StoryRepliesTarget(storyId: storyId)
         } else {
@@ -125,6 +137,11 @@ struct NotificationsView: View {
         switch route {
         case .photo(let photo, let fromPublicFeed):
             PhotoDetailView(photo: photo, fromPublicFeed: fromPublicFeed)
+        case .comment(let photo, let fromPublicFeed, let commentId):
+            PhotoDetailView(photo: photo, fromPublicFeed: fromPublicFeed, focusCommentId: commentId)
+        case .findPhoto:
+            // **ここへは来ない**: `open` が引き当ててから `.photo` / `.comment` で積む
+            EmptyView()
         case .user(let userId):
             UserProfileView(userId: userId)
         case .shelf:
@@ -570,6 +587,11 @@ final class NotificationsViewModel: ObservableObject {
         case light
         /// 自分のストーリーの返信の一覧（ストーリーへの返信・まだ消えていない自分のストーリーだけ）
         case storyReplies(String)
+        /// 写真を開いて、そのコメントの位置へ（コメントへの返信・札 #541）
+        case comment(Photo, fromPublicFeed: Bool, commentId: String)
+        /// 手元の一覧に無い写真（範囲を絞った写真・一覧の控えが古い）。押したら取り直して引き当て、
+        /// 無ければ「今は開けません」（コメントへの返信だけ・札 #541）
+        case findPhoto(photoId: String, commentId: String?)
         case none
     }
 
@@ -584,10 +606,14 @@ final class NotificationsViewModel: ObservableObject {
         case shelf
         case light
         case storyReplies(String)
+        case comment(Photo, fromPublicFeed: Bool, commentId: String)
+        case findPhoto(photoId: String, commentId: String?)
 
         static func == (lhs: Route, rhs: Route) -> Bool {
             switch (lhs, rhs) {
             case let (.photo(a, fa), .photo(b, fb)): return a.id == b.id && fa == fb
+            case let (.comment(a, fa, ca), .comment(b, fb, cb)): return a.id == b.id && fa == fb && ca == cb
+            case let (.findPhoto(a, ca), .findPhoto(b, cb)): return a == b && ca == cb
             case let (.user(a), .user(b)): return a == b
             case (.shelf, .shelf): return true
             case (.light, .light): return true
@@ -608,6 +634,10 @@ final class NotificationsViewModel: ObservableObject {
                 hasher.combine(3)
             case .storyReplies(let id):
                 hasher.combine(4); hasher.combine(id)
+            case .comment(let photo, let fromPublicFeed, let commentId):
+                hasher.combine(5); hasher.combine(photo.id); hasher.combine(fromPublicFeed); hasher.combine(commentId)
+            case .findPhoto(let photoId, let commentId):
+                hasher.combine(6); hasher.combine(photoId); hasher.combine(commentId)
             }
         }
     }
@@ -723,11 +753,18 @@ final class NotificationsViewModel: ObservableObject {
         // 紹介（`storyshare`）は紹介された自分の写真、返信（`commentreply`）はコメントの付いた写真（札 #541）
         case .like, .comment, .inspired, .storyshare, .commentreply:
             guard let id = notification.photoId else { return .none }
+            // 返信は**そのコメントの位置へ**（`commentId`・札 #541）
+            let commentId = notification.kind == .commentreply ? notification.commentId : nil
             if let photo = feed.first(where: { $0.id == id }) {
-                return .photo(photo, fromPublicFeed: true)
+                return commentId.map { .comment(photo, fromPublicFeed: true, commentId: $0) } ?? .photo(photo, fromPublicFeed: true)
             }
             if let photo = mine.first(where: { $0.id == id }) {
-                return .photo(photo, fromPublicFeed: false)
+                return commentId.map { .comment(photo, fromPublicFeed: false, commentId: $0) } ?? .photo(photo, fromPublicFeed: false)
+            }
+            // 返信の付いた**人の写真**は、範囲を絞っていると手元の一覧に無いことがある（自分の一覧にも無い）。
+            // 押せないままにせず、押したときに取り直して引き当てる（`findPhoto`）
+            if notification.kind == .commentreply, PathID.isSafe(id) {
+                return .findPhoto(photoId: id, commentId: commentId)
             }
             return .none
         case .badge:
@@ -743,6 +780,17 @@ final class NotificationsViewModel: ObservableObject {
         }
     }
 
+    /// 手元の一覧に無い写真を、**取り直した一覧**（公開・範囲を絞った写真・自分の写真）から引き当てる（`findPhoto`）。
+    /// 手元の一覧（`feed`）は書き換えない（読み直しの順番の印を持つのは `load` の側）。無ければ nil
+    func findPhoto(_ photoId: String, commentId: String?, environment: AppEnvironment) async -> Route? {
+        let era = userEra
+        guard let fetched = try? await environment.gallery.fetchPhotos(force: true), era == userEra else { return nil }
+        guard let photo = fetched.first(where: { $0.id == photoId }) ?? mine.first(where: { $0.id == photoId }) else { return nil }
+        let fromPublicFeed = fetched.contains { $0.id == photoId }
+        return commentId.map { .comment(photo, fromPublicFeed: fromPublicFeed, commentId: $0) }
+            ?? .photo(photo, fromPublicFeed: fromPublicFeed)
+    }
+
     func route(for notification: AppNotification) -> Route? {
         switch destination(for: notification) {
         case .photo(let photo, let fromPublicFeed): return .photo(photo, fromPublicFeed: fromPublicFeed)
@@ -750,6 +798,9 @@ final class NotificationsViewModel: ObservableObject {
         case .shelf: return .shelf
         case .light: return .light
         case .storyReplies(let id): return .storyReplies(id)
+        case .comment(let photo, let fromPublicFeed, let commentId):
+            return .comment(photo, fromPublicFeed: fromPublicFeed, commentId: commentId)
+        case .findPhoto(let photoId, let commentId): return .findPhoto(photoId: photoId, commentId: commentId)
         case .none: return nil
         }
     }

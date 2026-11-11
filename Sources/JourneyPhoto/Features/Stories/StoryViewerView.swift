@@ -830,14 +830,21 @@ struct StoryViewerView: View {
         .accessibilityIdentifier("story.viewer.sharedPhoto")
     }
 
-    /// 紹介の写真を公開の一覧から引き当てて開く（「この写真を見て撮影」と同じ引き当て方・`InspiredBy.photoToOpen`）。
-    /// 一覧に無い（非公開にされた直後・一覧の控えが古い）ときは開けないと言う——空の詳細を開かない
+    /// 紹介の写真を**確かめてから**開く（`StorySharedPhoto.verified`）。一覧は控えでなく取り直したもの、
+    /// そのうえでサーバーのコメントの読み口（いまの公開・範囲・削除を見る）が通ったときだけ開く。
+    /// 外れたら（非公開にされた・消された・ブロック・読めなかった）「今は開けません」——空の詳細・見られない写真を開かない
     private func openSharedPhoto(_ id: String) async {
         guard !findingSharedPhoto else { return }
         findingSharedPhoto = true
         defer { findingSharedPhoto = false }
-        let feed = try? await environment.gallery.fetchPhotos()
-        if let photo = StorySharedPhoto.find(id, in: feed) {
+        let feed = try? await environment.gallery.fetchPhotos(force: true)
+        let social = environment.social
+        let signedIn = viewerId != nil
+        let photo = await StorySharedPhoto.verified(id, in: feed, blocked: hidden.blockedUserIds) { photoId in
+            _ = try await social.comments(photoId: photoId, signedIn: signedIn)
+        }
+        guard !Task.isCancelled else { return }
+        if let photo {
             sharedPhoto = photo
         } else {
             message = StorySharedPhoto.unavailableMessage

@@ -392,7 +392,7 @@ struct StoryComposerView: View {
                                        attachesLocation = value
                                        UploadLocationPreference().set(value, userId: auth.userId)
                                    }),
-                               canKeepInArchive: !shots.contains { $0.sharedPhotoId != nil }) {
+                               keepToggle: StorySharedPhoto.keepToggle(sharedFlags: shots.map { $0.sharedPhotoId != nil })) {
                 showAudience = false
             }
             .presentationDetents([.medium, .large])

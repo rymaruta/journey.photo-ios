@@ -125,6 +125,26 @@ struct SendSheet<People: View>: View {
     }
 }
 
+/// 送る相手の顔を読んでいる間の取り置き（顔の形の影を4つ・`DMPeopleFacesRow` と同じ寸法）。押せない
+struct SendSheetFacesPlaceholder: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: JPSpace.xs) {
+            ForEach(0..<4, id: \.self) { _ in
+                Circle()
+                    .fill(WebTheme.surface3)
+                    .frame(width: DMLook.faceAvatar, height: DMLook.faceAvatar)
+                    .frame(width: DMLook.faceColumn)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, JPSpace.gutter)
+        .frame(height: SendSheetLayout.facesRowHeight, alignment: .top)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L("送る相手を読み込み中", "Loading people"))
+        .accessibilityIdentifier("sendSheet.facesLoading")
+    }
+}
+
 /// 送るシートの行動の1つ
 enum SendSheetAction: Identifiable {
     /// ストーリーに載せる（押したらシートを閉じてから呼ぶ）
@@ -168,6 +188,24 @@ enum SendSheetLayout {
     static func faces(_ people: [FollowUser], canSend: Bool) -> [FollowUser] {
         canSend ? Array(people.prefix(12)) : []
     }
+
+    /// 送る相手の段の中身。**シートはすぐ開き、読んでいる間は段の場所を取っておく**（読めてから背が伸びない）。
+    /// 読み終えて顔が無ければ（フォローしていない・読めなかった）段ごと出さない
+    enum PeopleRow: Equatable {
+        case none
+        case placeholder
+        case faces([FollowUser])
+    }
+
+    static func peopleRow(loaded: Bool, people: [FollowUser], canSend: Bool) -> PeopleRow {
+        guard canSend else { return .none }
+        guard loaded else { return .placeholder }
+        let shown = faces(people, canSend: canSend)
+        return shown.isEmpty ? .none : .faces(shown)
+    }
+
+    /// 顔の段の高さ（`DMPeopleFacesRow`: 顔 52・間 6・名前 12pt の1行）。読んでいる間の取り置きに使う
+    static let facesRowHeight: CGFloat = 52 + 6 + 16
 
     /// 送れたときの知らせ
     static func sentLabel(_ name: String) -> String {

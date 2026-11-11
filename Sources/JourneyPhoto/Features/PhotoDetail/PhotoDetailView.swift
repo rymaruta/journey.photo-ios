@@ -9,6 +9,8 @@ struct PhotoDetailView: View {
     var fromPublicFeed: Bool = true
     /// 同じ一覧に並んでいた写真。大きく見るときに左右へ送るのに使う
     var context: [Photo] = []
+    /// 開いたら送るコメント（コメントへの返信の知らせから・札 #541）。最初の1枚でだけ、読み終えたら1回だけ
+    var focusCommentId: String?
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
@@ -59,6 +61,10 @@ struct PhotoDetailView: View {
     /// 送るシートの「送る相手」の顔（フォロー中・札 #541 の ③）。開くたびに読まない（この画面で1回だけ）
     @State private var sendFaces: [FollowUser] = []
     @State private var sendFacesLoaded = false
+    @State private var sendFacesLoading = false
+    /// 知らせから来たコメントへ送り終えたか・いま印を付けているコメント（2秒だけ地を明るく）
+    @State private var commentFocusDone = false
+    @State private var highlightedComment: String?
     /// 写真を DM で送っている相手（二度押しで2通送らない）
     @State private var sendingPhotoTo: String?
     @State private var showViewer = false
@@ -194,10 +200,11 @@ struct PhotoDetailView: View {
     /// コメント・いいねを受け付けるか（下書きは受け付けない・`PhotoDetailRules.acceptsReactions`）
     private var acceptsReactions: Bool { PhotoDetailRules.acceptsReactions(published: shown.published) }
 
-    init(photo: Photo, fromPublicFeed: Bool = true, context: [Photo] = []) {
+    init(photo: Photo, fromPublicFeed: Bool = true, context: [Photo] = [], focusCommentId: String? = nil) {
         self.photo = photo
         self.fromPublicFeed = fromPublicFeed
         self.context = context
+        self.focusCommentId = focusCommentId
         _current = State(initialValue: photo)
         // `AppEnvironment` は init で受け取れない（EnvironmentObject は body 以降）
         _model = StateObject(wrappedValue: PhotoDetailViewModel(
@@ -271,6 +278,9 @@ struct PhotoDetailView: View {
                     // **写真を画面の上端から敷く**（板 02）。戻る・「…」は上のバーに
                     // 残したまま、バーの地を消して写真の上に浮かせる
                     .ignoresSafeArea(edges: .top)
+                    // 返信の知らせから来たら、読み終えたコメントの位置へ1回だけ送る（札 #541）
+                    .onChange(of: model.comments.map(\.id)) { _, ids in focusComment(ids, proxy: proxy) }
+                    .onAppear { focusComment(model.comments.map(\.id), proxy: proxy) }
                 }
                 // **時計とバーの裏に黒のぼかし**（人のページ・マイページと同じ
                 // `TopBarScrim`。流れずに上端に留まる）。バーの地を消しているので、
@@ -1231,16 +1241,35 @@ struct PhotoDetailView: View {
             avatarURL: model.owner?.avatarURL(cacheBust: UUID().uuidString))
     }
 
+    /// 知らせから来たコメントへ送る（`PhotoDetailRules.commentToFocus`）。送ったら2秒だけ印を付ける
+    private func focusComment(_ loadedIds: [String], proxy: ScrollViewProxy) {
+        guard let decision = PhotoDetailRules.commentToFocus(focusCommentId, done: commentFocusDone,
+                                                       showingFirstPhoto: current.id == photo.id,
+                                                       loaded: dropped.comments(model.comments).map(\.id),
+                                                       finishedLoading: !loadedIds.isEmpty || model.commentsUnavailable)
+        else { return }
+        commentFocusDone = true
+        guard let id = decision else { return }
+        withAnimation { proxy.scrollTo(PhotoDetailRules.commentAnchor(id), anchor: .center) }
+        highlightedComment = id
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            if highlightedComment == id { highlightedComment = nil }
+        }
+    }
+
     /// 送るシート。**送る相手の段は DM の担当の部品をそのまま使う**（`DMPeopleFacesRow`・`DMPhotoSend`・枝
     /// `claude/dm-redesign`。シートの側で写しを作らない）。顔が無い（フォローしていない・読めない・送れない写真）なら段ごと出さない
     @ViewBuilder
     private var sendSheet: some View {
         let actions = SendSheetLayout.photoActions(url: shareURL(for: current), canShareToStory: canShareToStory,
                                                    story: { Task { await prepareStory() } })
-        let faces = SendSheetLayout.faces(sendFaces, canSend: canShareToStory)
-        if faces.isEmpty {
+        switch SendSheetLayout.peopleRow(loaded: sendFacesLoaded, people: sendFaces, canSend: canShareToStory) {
+        case .none:
             SendSheet(actions: actions)
-        } else {
+        case .placeholder:
+            SendSheet(actions: actions, people: { SendSheetFacesPlaceholder() })
+        case .faces(let faces):
             SendSheet(actions: actions, people: { sendFacesRow(faces) })
         }
     }
@@ -1253,16 +1282,19 @@ struct PhotoDetailView: View {
         .disabled(sendingPhotoTo != nil)
     }
 
-    /// 送る相手の顔を読んでから送るシートを開く（開いてから段が増えて背が伸びないように）。
-    /// 読むのはこの画面で1回だけ。読めなくてもシートは開く（段が無いだけ）
+    /// 送るシートを**すぐ開き**、送る相手の顔はそのあと読む（読んでいる間は段の場所を取っておく・
+    /// `SendSheetLayout.peopleRow`）。読むのはこの画面で1回だけ。読めなければ段を出さない
     private func openSendSheet() async {
-        if !sendFacesLoaded, canShareToStory, let me = auth.userId {
-            sendFacesLoaded = true
-            if let fetched = try? await environment.social.following(userId: me), auth.userId == me {
-                sendFaces = DMStart.candidates(fetched.users, me: me, blocked: hidden.blockedUserIds)
-            }
-        }
         showSendSheet = true
+        guard !sendFacesLoaded, !sendFacesLoading, canShareToStory, let me = auth.userId else { return }
+        sendFacesLoading = true
+        defer { sendFacesLoading = false }
+        let fetched = try? await environment.social.following(userId: me)
+        guard auth.userId == me else { return }
+        if let fetched {
+            sendFaces = DMStart.candidates(fetched.users, me: me, blocked: hidden.blockedUserIds)
+        }
+        sendFacesLoaded = true
     }
 
     /// 顔を押したら、その人へ写真を DM で1通送る（札 #541 の ③・`DMPhotoSend`）。送れたらシートを閉じて知らせる。
@@ -1996,6 +2028,10 @@ struct PhotoDetailView: View {
                 .padding(.vertical, entry.isReply ? JPSpace.xs : JPSpace.s)
                 // 返信は顔 32 と間 12 のぶん下げる（相手の本文の頭に揃える）
                 .padding(.leading, entry.isReply ? Self.commentAvatarSize + JPSpace.s : 0)
+                // 返信の知らせから来たコメントは、2秒だけ地を白 8% に（広い面なので白・Web と同じ）
+                .background(highlightedComment == comment.id ? Color.white.opacity(0.08) : Color.clear)
+                .animation(.easeOut(duration: 0.5), value: highlightedComment)
+                .id(PhotoDetailRules.commentAnchor(comment.id))
                 .overlay(alignment: .top) {
                     // 返信の上には線を引かない（相手と1つの会話に見せる）
                     if !entry.isReply {
@@ -2682,6 +2718,22 @@ struct FlowLayout: Layout {
 
 /// 詳細画面の判断のうち、画面を建てずに確かめられるもの
 enum PhotoDetailRules {
+
+    /// コメントの行の目印（知らせから来たコメントへ送る）
+    static func commentAnchor(_ id: String) -> String { "photo.comment.\(id)" }
+
+    /// 知らせから来たコメントへ送るか（札 #541）。
+    ///
+    /// - 返り値 nil: まだ決めない（読み終えていない・送り終えた・送る先が無い）
+    /// - `.some(nil)`: もう送らない（読み終えたが、そのコメントは消えた・ブロックで隠した）
+    /// - `.some(id)`: そのコメントへ送る
+    ///
+    /// 送るのは**最初に開いた1枚を見ている間だけ**（束を送った先の写真では送らない）
+    static func commentToFocus(_ target: String?, done: Bool, showingFirstPhoto: Bool,
+                               loaded: [String], finishedLoading: Bool) -> String?? {
+        guard let target, !done, showingFirstPhoto, finishedLoading else { return nil }
+        return .some(loaded.contains(target) ? target : nil)
+    }
 
     /// コメント・いいねを受け付ける写真か。**下書き（`published == false`）は受け付けない**
     /// ——サーバーが断る（`comments.ts` の getComments・postComment、`likes.ts` の条件
