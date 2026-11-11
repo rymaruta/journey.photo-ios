@@ -72,6 +72,10 @@ struct TrunkSpinViewer: View {
             .overlay(alignment: .topTrailing) { closeButton }
         }
         .background { TrunkStyle.stageBackground(centerY: 0.42) }
+        // 測る起動（`-JPPreviewTrunkPerf YES`・Debug のみ）のときだけ: 数の見えない要素（全画面の上でも読めるようここにも置く）
+        .overlay(alignment: .bottomLeading) {
+            if TrunkPerfMeter.shared.enabled { TrunkPerfProbe() }
+        }
         .statusBarHidden(true)
         .task {
             guard textures == nil else { return }
@@ -88,7 +92,9 @@ struct TrunkSpinViewer: View {
             guard !Task.isCancelled else { return }
             boxFaces = TrunkTextures.box(model: model, posts: posts, parts: parts, stuck: stuck, tagPicks: tagPicks)
             renderMarker = TrunkTextures.renderMarker(front: frontTook, all: started.duration(to: clock.now))
+            TrunkPerfMeter.shared.mark("SpinReady")
         }
+        .onDisappear { TrunkPerfMeter.shared.mark("SpinGone") }
     }
 
     /// 向きのボタン（板 TrunkSpin: 4つ並び・高さ 44・#1A1A1A・13pt）
@@ -162,10 +168,10 @@ enum TrunkTextures {
                      parts: TrunkEquipped = .none, wrinkles: [String: Double] = [:],
                      tagPicks: [TrunkTagPick] = []) -> MedalTextures.Faces {
         // 吊るす物（タグ・チャーム・鍵）も正面に下げる（回しても消さない・#305）。上の面の紐は `box` が描く
-        let front = render(TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,
+        let front = render("TexFront", TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,
                                         hangsOnFront: true, parts: parts, wrinkles: wrinkles, tagPicks: tagPicks))
         let side = TrunkLooks.sideColor(TrunkLooks.look(model, stage: TrunkAging.stage(posts: posts)))
-        let edge = render(Color(trunk: side).frame(width: 8, height: 8))
+        let edge = render("TexEdge", Color(trunk: side).frame(width: 8, height: 8))
         // 背面は描き終えるまで縁の色で（白い面を見せない）
         return MedalTextures.Faces(front: front, back: edge, edge: edge, edgeRepeat: 1)
     }
@@ -176,21 +182,28 @@ enum TrunkTextures {
         let look = TrunkLooks.look(model, stage: TrunkAging.stage(posts: posts))
         let fittings = TrunkFittings(parts)
         // 裏はラベルの無い胴に型押し（板 TrunkFaces の背面。ベルト・桟が回り込み、尾錠と錠前は正面だけ）
-        let back = render(TrunkFaceView(model: model, posts: posts, side: .back, parts: parts))
+        let back = render("TexBack", TrunkFaceView(model: model, posts: posts, side: .back, parts: parts))
         return SpinBoxFaces(back: back,
-                            left: render(TrunkFaceView(model: model, posts: posts, side: .left, parts: parts)),
-                            right: render(TrunkFaceView(model: model, posts: posts, side: .right, parts: parts)),
-                            top: render(TrunkFaceView(model: model, posts: posts, side: .top, parts: parts,
+                            left: render("TexLeft", TrunkFaceView(model: model, posts: posts, side: .left, parts: parts)),
+                            right: render("TexRight", TrunkFaceView(model: model, posts: posts, side: .right, parts: parts)),
+                            top: render("TexTop", TrunkFaceView(model: model, posts: posts, side: .top, parts: parts,
                                                       hangTags: TrunkLooks.tags(stuck: stuck, posts: posts, picks: tagPicks))),
-                            bottom: render(TrunkFaceView(model: model, posts: posts, side: .bottom, parts: parts)),
-                            handle: render(TrunkHandleSkin(look: look, fittings: fittings)),
-                            clip: render(TrunkHardwareFace(look: look, fittings: fittings, w: 20, h: 14).frame(width: 20, height: 14)))
+                            bottom: render("TexBottom", TrunkFaceView(model: model, posts: posts, side: .bottom, parts: parts)),
+                            handle: render("TexHandle", TrunkHandleSkin(look: look, fittings: fittings)),
+                            clip: render("TexClip", TrunkHardwareFace(look: look, fittings: fittings, w: 20, h: 14).frame(width: 20, height: 14)))
     }
 
-    private static func render<V: View>(_ view: V) -> UIImage? {
-        let renderer = ImageRenderer(content: view)
-        renderer.scale = 3
-        return renderer.uiImage
+    private static func render<V: View>(_ name: String, _ view: V) -> UIImage? {
+        // 測る起動のときだけ、1 枚ずつ描いた時間と画素を数える（`TrunkPerfMeter`・2026-11-11・測るだけ）
+        TrunkPerfMeter.measure(name) { () -> UIImage? in
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 3
+            let image = renderer.uiImage
+            if TrunkPerfMeter.shared.enabled, let cg = image?.cgImage {
+                TrunkPerfMeter.shared.note("Px" + name, "\(cg.width)x\(cg.height) mb=\(String(format: "%.2f", Double(cg.width * cg.height * 4) / 1_048_576))")
+            }
+            return image
+        }
     }
 }
 

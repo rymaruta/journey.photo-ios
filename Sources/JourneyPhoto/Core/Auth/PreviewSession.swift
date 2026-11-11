@@ -449,6 +449,20 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで、旅のトランクの重さ（1 コマの間隔・主スレッドの停止・Canvas を描いた回数と時間・回す箱の 1 コマ・
+    /// 貼り絵の大きさ・メモリ）を数えて読み上げの値に出す（Debug のみ・2026-11-11「旅のトランク重すぎる」・測るだけ）。
+    /// `-JPPreviewTrunkPerf YES`。`TrunkPerfMeter`。入っている見本の利用者のときだけ。Release では必ず false
+    static let trunkPerfKey = "JPPreviewTrunkPerf"
+
+    static var trunkPerf: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: trunkPerfKey)
+        #else
+        return false
+        #endif
+    }
+
     static var camperPerf: Bool {
         #if DEBUG
         guard userId != nil else { return false }

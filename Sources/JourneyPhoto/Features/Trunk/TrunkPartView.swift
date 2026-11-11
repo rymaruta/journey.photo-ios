@@ -18,8 +18,10 @@ struct TrunkPartView: View {
         ZStack(alignment: .topLeading) {
             // 大きく置いてもぼけないよう、Canvas は置く大きさで描いて中で縮める
             Canvas { ctx, _ in
-                ctx.scaleBy(x: k, y: k)
-                TrunkPartRenderer.draw(ops, in: &ctx)
+                TrunkPerfMeter.measure("CvPart") {
+                    ctx.scaleBy(x: k, y: k)
+                    TrunkPartRenderer.draw(ops, in: &ctx)
+                }
             }
             .frame(width: size, height: size)
             ZStack(alignment: .topLeading) {
@@ -43,7 +45,9 @@ struct TrunkPartPaintView: View {
 
     var body: some View {
         Canvas { ctx, size in
-            TrunkPartRenderer.paint(paint, TrunkRect(x: 0, y: 0, w: Double(size.width), h: Double(size.height)), in: &ctx)
+            TrunkPerfMeter.measure("CvPaint") {
+                TrunkPartRenderer.paint(paint, TrunkRect(x: 0, y: 0, w: Double(size.width), h: Double(size.height)), in: &ctx)
+            }
         }
         .allowsHitTesting(false)
     }

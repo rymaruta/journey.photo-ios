@@ -44,6 +44,8 @@ struct TrunkBoxView: View {
     private static let H = TrunkLooks.bodyHeight
 
     var body: some View {
+        // 測る起動のときだけ、body を評価した回数を数える（`TrunkPerfMeter`・2026-11-11・測るだけ）
+        let _ = TrunkPerfMeter.shared.hit("BoxBody")
         let look = look
         let fittings = fittings
         ZStack(alignment: .topLeading) {
@@ -70,6 +72,8 @@ struct TrunkBoxView: View {
             }
         }
         .frame(width: TrunkLooks.canvasWidth, height: bodyOnly ? Self.H : TrunkLooks.canvasHeight, alignment: .topLeading)
+        // 測る起動のときだけ、いま画面に作られているトランクの絵の数を数える
+        .modifier(TrunkLiveCount(name: "Box"))
     }
 
     // MARK: 持ち手
@@ -856,7 +860,7 @@ struct TrunkMountedCorner: View {
     var body: some View {
         let ops = TrunkPartDrawing.corner(corner, box: TrunkRect(x: 0, y: 0, w: size, h: size))
         Canvas { ctx, _ in
-            TrunkPartRenderer.draw(ops, in: &ctx)
+            TrunkPerfMeter.measure("CvCorner") { TrunkPartRenderer.draw(ops, in: &ctx) }
         }
         .frame(width: size, height: size)
         .scaleEffect(x: pos.isLeading ? 1 : -1, y: pos.isTop ? 1 : -1)
