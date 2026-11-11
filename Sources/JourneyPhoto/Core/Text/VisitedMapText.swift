@@ -10,7 +10,7 @@ enum VisitedMapText {
 
     // MARK: - 見出し・数
 
-    static var title: String { L("行った県", "Prefectures visited") }
+    static var title: String { L("行った県", "Prefectures Visited") }
 
     /// 「31/47」
     static func ratio(_ visited: Int) -> String { "\(visited)/\(VisitedPrefectures.total)" }
