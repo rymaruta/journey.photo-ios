@@ -44,7 +44,8 @@ struct SpotSwipeView: View {
 
     var body: some View {
         NavigationStack {
-            TripPickerView(model: model, alsoExclude: baseSeen, pause: pause)
+            TripPickerView(model: model, alsoExclude: baseSeen, pause: pause,
+                           finishedLine: L("また開くと、続きから払えます。", "Open again later to keep swiping."))
                 .webScreen()
                 .navigationTitle(L("行きたい場所を探す", "Find places to go"))
                 .navigationBarTitleDisplayMode(.inline)

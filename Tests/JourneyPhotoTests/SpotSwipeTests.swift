@@ -162,7 +162,7 @@ final class SpotSwipeTests: XCTestCase {
         let view = try source("Features/Trips/SpotSwipeView.swift")
         XCTAssertFalse(view.contains("SignInView("), "払う画面はログインの画面で止めない（未ログインでも払える）")
         XCTAssertTrue(view.contains("SignInSheet(reason:"), "ログインはシートで出し、閉じたら払う画面に戻る")
-        XCTAssertTrue(view.contains("TripPickerView(model: model, alsoExclude: baseSeen, pause: pause)"),
+        XCTAssertTrue(view.contains("TripPickerView(model: model, alsoExclude: baseSeen, pause: pause,"),
                       "中身は旅行プランの作る流れと同じ札の山")
         XCTAssertTrue(view.contains("TripCreateView(plans: plans, initial: initial"),
                       "ログイン中は今の旅行プランにする流れ")

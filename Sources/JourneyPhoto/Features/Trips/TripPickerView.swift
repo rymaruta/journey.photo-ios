@@ -27,6 +27,8 @@ struct TripPickerView: View {
     var alsoExclude: Set<String> = []
     /// 山の中に挟む札（撮影スポットを払う画面だけ・`SpotSwipe.showsPause`）。nil なら挟まない
     var pause: TripPickerPause?
+    /// めくり終えたときの説明（撮影スポットを払う画面は「次へ」が無いので差し替える）。nil なら作る流れの文
+    var finishedLine: String?
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var wishlist: WishlistStore
@@ -479,7 +481,7 @@ struct TripPickerView: View {
             Text(model.deck.isEmpty
                  ? L("「行きたい」に入れた場所は、ここには出しません。",
                      "Places already on your wishlist aren't shown.")
-                 : L("選んだ場所は、下の「次へ」で旅行プランの下書きになります。", "Tap Next below to turn the places you picked into a trip."))
+                 : (finishedLine ?? L("選んだ場所は、下の「次へ」で旅行プランの下書きになります。", "Tap Next below to turn the places you picked into a trip.")))
                 .font(.footnote)
                 .foregroundStyle(WebTheme.muted2)
                 .multilineTextAlignment(.center)
