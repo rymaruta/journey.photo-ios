@@ -660,6 +660,8 @@ struct GalleryView: View {
         // **同じ投稿の写真は1枚のカードに束ねる**（モック6・8）。
         // 行は1枚ずつのままなので、個別ページもサイトマップも変わらない
         let groups = rows.groups
+        // はじめての投稿の印（札 #537 案1）。どのフィードでも同じ写真に出す
+        let firstPostIds = model.firstPostIds()
         // **続きがある間は「まだありません」と言わない**（読んだ範囲がブロックで全部落ちた・
         // 続きを読んでいる最中）。下の目印が次を読む
         if groups.isEmpty && !(page == model.feed && model.hasMorePages) {
@@ -672,7 +674,7 @@ struct GalleryView: View {
         // 「おすすめ」が空なのか分からなくなる（空の知らせの一手は地図）
         if page.showsSeasonShelf {
             let split = (lead: rows.lead, rest: rows.rest)
-            HomeMosaic(groups: split.lead, onReport: { reportTarget = $0 })
+            HomeMosaic(groups: split.lead, firstPostIds: firstPostIds, onReport: { reportTarget = $0 })
             if !groups.isEmpty, let seasonShelf {
                 HomeSpotShelfView(shelf: seasonShelf.shelf, spots: seasonShelf.spots,
                                   photos: dropped.visible(model.allPhotosForTheme),
@@ -682,13 +684,13 @@ struct GalleryView: View {
                     .padding(.bottom, Self.seasonShelfBottomTrim)
             }
             if !split.rest.isEmpty {
-                HomeMosaic(groups: split.rest, onReport: { reportTarget = $0 })
+                HomeMosaic(groups: split.rest, firstPostIds: firstPostIds, onReport: { reportTarget = $0 })
             }
         } else {
             // 「新着」の続きを読む目印は、写真の一覧の遅れて作る並び（`HomeMosaic` の `LazyVStack`）の最後の段。
             // 札の中身の普通の並びに置くと、画面の外でも `onAppear` がすぐ走り、作り直す（`id`）たびにまた読んで、
             // 送らなくても全部のページを読んでいた（#426 確かめ役）。続きを読むのは選んでいる「新着」だけ（`hasMorePages`）
-            HomeMosaic(groups: groups, onReport: { reportTarget = $0 },
+            HomeMosaic(groups: groups, firstPostIds: firstPostIds, onReport: { reportTarget = $0 },
                        footer: page == model.feed && model.hasMorePages ? AnyView(pageFooter) : nil)
         }
     }

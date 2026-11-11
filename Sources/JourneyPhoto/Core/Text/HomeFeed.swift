@@ -6,7 +6,7 @@ import Foundation
 /// 実装済みであるかのように表示しない」。いまの API にできることで作る。
 ///
 ///     おすすめ … **推薦の口は無い。** owner が選んだ `featured` を先に、
-///                残りをいいねの多い順。**規則は画面にも出す**
+///                残りをいいねの多い順。先頭10枠に新しい投稿を混ぜる（`HomeFreshMix`）。**規則は画面にも出す**
 ///                （「何で並んでいるか分からない」を作らない）
 ///     フォロー中 … `/user/following` の人の写真だけ。**要ログイン**
 ///     新着     … `createdAt` の新しい順
@@ -30,8 +30,8 @@ enum HomeFeed: String, CaseIterable, Identifiable {
     var note: String? {
         switch self {
         case .recommended:
-            return L("選ばれた写真と、よく見られている写真から",
-                     "Featured photos and the most liked ones")
+            return L("選ばれた写真と、よく見られている写真、新しい投稿から",
+                     "Featured photos, the most liked ones and new posts")
         case .following, .latest:
             return nil
         }
@@ -80,12 +80,14 @@ enum HomeFeed: String, CaseIterable, Identifiable {
 
     /// おすすめの並び。**owner が選んだ写真（`featured`）を先に**、
     /// 残りはいいねの多い順（`sort` が受け持つ）。
-    func arrange(_ photos: [Photo]) -> [Photo] {
+    /// **2026-11-11 判断（札 #537 案1）: 先頭 10 枠のうち 2・5・8 番目に、72 時間以内の新しい投稿を混ぜる**
+    /// （`HomeFreshMix`）。いいね順だけだと、投稿したばかりの写真は14番目より後ろに沈んでいた
+    func arrange(_ photos: [Photo], now: Date = Date()) -> [Photo] {
         let sorted = sort.apply(photos)
         guard self == .recommended else { return sorted }
         let picked = sorted.filter { $0.featured == true }
         let rest = sorted.filter { $0.featured != true }
-        return picked + rest
+        return HomeFreshMix.mix(picked + rest, now: now)
     }
 }
 

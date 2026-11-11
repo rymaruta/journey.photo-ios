@@ -70,7 +70,7 @@ final class DesignDedupeTests: XCTestCase {
         let uses: [String: String] = [
             "Features/Trips/TripPlansView.swift": ".jpCardFace()",
             "Features/Trips/OfflineTripCard.swift": ".jpCardFace()",
-            "Features/Gallery/DailyThemeCard.swift": ".jpCardFace()",
+            "Features/Gallery/WeeklyThemeCard.swift": ".jpCardFace()",
             "Features/Gallery/HomeTopCardView.swift": ".jpCardFace()",
             "Features/Profile/BadgeShelfView.swift": ".jpCardFace()",
             "Features/Trips/TripPlanDetailView.swift": ".jpCardFace()",
