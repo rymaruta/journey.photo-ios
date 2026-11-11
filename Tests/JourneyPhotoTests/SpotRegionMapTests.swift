@@ -209,17 +209,41 @@ final class SpotRegionMapTests: XCTestCase {
         try String(contentsOf: Self.resources.deletingLastPathComponent().appendingPathComponent(path), encoding: .utf8)
     }
 
-    /// なぞっている区分は `@GestureState`（取り消しで必ず消える）。離して消えるときは鳴らさない。
+    /// 🔴 なぞる状態は**取り消しで必ず空に戻る**（スクロール・電話・タブ替えで塗りと札が残らない）。
+    /// 離した点が地図の外なら選ばない。区分の外へ出た間は前の区分のまま
+    func testTraceStateClearsOnCancel() {
+        var trace = SpotMapTrace()
+        XCTAssertNil(trace.handle(.began("北海道")))
+        XCTAssertEqual(trace.area, "北海道")
+        XCTAssertNil(trace.handle(.changed(nil)))
+        XCTAssertEqual(trace.area, "北海道", "区分の外へ出た間は前の区分のまま")
+        XCTAssertNil(trace.handle(.changed("東北")))
+        XCTAssertNil(trace.handle(.cancelled))
+        XCTAssertNil(trace.area, "取り消しで空に戻らない")
+        _ = trace.handle(.began("関東"))
+        XCTAssertEqual(trace.handle(.ended("近畿")), "近畿", "離した点の区分を選ぶ")
+        XCTAssertNil(trace.area)
+        _ = trace.handle(.began("関東"))
+        XCTAssertNil(trace.handle(.ended(nil)), "地図の外で離したら選ばない")
+        XCTAssertNil(trace.area)
+    }
+
+    /// なぞるのは UIKit の長押し（`SpotMapTraceCatcher`・取り消しを必ず届ける）。SwiftUI の「長押し → 引く」は使わない
+    /// （run 1022: それがあると地図の上から払っても画面が流れなかった）。離して空に戻るときは鳴らさない。
     /// なぞっている間は探すの画面のスクロールを止める。読み上げは値と上下の払い
-    func testTracingIsGestureStateAndStopsScroll() throws {
+    func testTracingUsesUIKitPressAndStopsScroll() throws {
         let view = try source("Features/Search/SpotRegionMapView.swift")
-        XCTAssertTrue(view.contains("@GestureState private var traced: String?"))
-        XCTAssertTrue(view.contains(".updating($traced)"))
+        XCTAssertTrue(view.contains("SpotMapTraceCatcher(delay: SpotRegionMap.traceDelay)"))
+        XCTAssertFalse(view.contains("LongPressGesture("), "SwiftUI の長押し → 引くが残っている（払っても画面が流れない）")
+        XCTAssertTrue(view.contains("_ = trace.handle(.cancelled)"))
         XCTAssertTrue(view.contains(".onChange(of: traced) { _, now in tracing = now }"))
-        XCTAssertFalse(view.contains("tracing = area"), "なぞった区分を @State に直に書いている（取り消しで残る）")
         XCTAssertTrue(view.contains(".sensoryFeedback(.selection, trigger: traced) { _, now in now != nil }"))
         XCTAssertTrue(view.contains(".accessibilityAdjustableAction"))
         XCTAssertTrue(view.contains(".accessibilityValue(areas.first { $0.id == selected }?.title"))
+        let catcher = try source("Features/Search/SpotMapTraceCatcher.swift")
+        XCTAssertTrue(catcher.contains("case .cancelled, .failed: handlers.onCancel()"))
+        XCTAssertTrue(catcher.contains("if press.state == .began || press.state == .changed { handlers?.onCancel() }"))
+        XCTAssertTrue(catcher.contains("press.allowableMovement = 10"))
         let search = try source("Features/Search/SearchView.swift")
         XCTAssertTrue(search.contains(".scrollDisabled(spotTracing != nil)"))
         XCTAssertTrue(search.contains("tracing: $spotTracing"))

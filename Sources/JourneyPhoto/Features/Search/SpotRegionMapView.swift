@@ -20,10 +20,10 @@ struct SpotRegionMapView: View {
     @Binding var tracing: String?
     let onSelect: (String) -> Void
 
-    /// 指の下の区分（なぞっている間だけ）。🔴 `@GestureState` にする（2026-11-11 確かめ役の指摘）: スクロールが指を取る・
-    /// 電話・タブの切り替えで操作が取り消されると `onEnded` は来ない。`@State` だと塗りと札がなぞった区分のまま残った。
-    /// `@GestureState` は取り消しでも必ず nil に戻る
-    @GestureState private var traced: String?
+    /// なぞる操作の状態（`SpotMapTrace`）。取り消し（スクロール・電話・タブの切り替え・画面を離れた）でも必ず空に戻る
+    /// （UIKit の長押しが `.cancelled` を届け、外したときも取り消しとして終える・`SpotMapTraceCatcher`）
+    @State private var trace = SpotMapTrace()
+    private var traced: String? { trace.area }
 
     /// 撮影スポットのある片の地（白の割合）
     nonisolated static let coveredWhite: Double = 0.14
@@ -35,7 +35,25 @@ struct SpotRegionMapView: View {
     var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
-            gestures(Canvas { ctx, _ in draw(&ctx, size: size) }.contentShape(Rectangle()), size: size)
+            Canvas { ctx, _ in draw(&ctx, size: size) }
+                .contentShape(Rectangle())
+                // ひと押し（SwiftUI の押す操作は画面のスクロールを止めない・run 1022 の「tap」の回で 680.7 → 325.3）
+                .onTapGesture(coordinateSpace: .local) { point in
+                    if let area = map.area(at: point, container: size, in: areas) { onSelect(area) }
+                }
+                // なぞる（長押し 0.25 秒 → 引く）。UIKit の長押しを縦の送りに付ける（`SpotMapTraceCatcher` の注記）
+                .background {
+                    SpotMapTraceCatcher(delay: SpotRegionMap.traceDelay) { point, began in
+                        let area = map.area(at: point, container: size, in: areas)
+                        _ = trace.handle(began ? .began(area) : .changed(area))
+                    } onEnd: { point in
+                        if let picked = trace.handle(.ended(map.area(at: point, container: size, in: areas))) {
+                            onSelect(picked)
+                        }
+                    } onCancel: {
+                        _ = trace.handle(.cancelled)
+                    }
+                }
         }
         .onChange(of: traced) { _, now in tracing = now }
         .onDisappear { tracing = nil }
@@ -50,43 +68,6 @@ struct SpotRegionMapView: View {
             if let next = SpotRegionMap.step(selected, in: areas, forward: direction == .increment) { onSelect(next) }
         }
         .accessibilityIdentifier("search.spotIndex.map")
-    }
-
-    /// 押す・なぞるの操作。**切り分けのあいだだけ**、UI テストの起動引数 `-JPSpotMapGestures`（none・tap・trace）で
-    /// 片方ずつ外せる（2026-11-11・run 1012〜1018: 地図の上から払っても画面が流れない。どちらの操作が指を取るかを数で確かめる）。
-    /// 引数が無ければ両方
-    @ViewBuilder
-    private func gestures<Content: View>(_ content: Content, size: CGSize) -> some View {
-        switch UserDefaults.standard.string(forKey: "JPSpotMapGestures") ?? "both" {
-        case "none": content
-        case "tap": content.onTapGesture(coordinateSpace: .local) { point in tap(point, size: size) }
-        case "trace": content.simultaneousGesture(trace(size: size))
-        default:
-            content
-                .onTapGesture(coordinateSpace: .local) { point in tap(point, size: size) }
-                .simultaneousGesture(trace(size: size))
-        }
-    }
-
-    private func tap(_ point: CGPoint, size: CGSize) {
-        if let area = map.area(at: point, container: size, in: areas) { onSelect(area) }
-    }
-
-    /// 長押し（0.25 秒）してから引く＝なぞる
-    private func trace(size: CGSize) -> some Gesture {
-        LongPressGesture(minimumDuration: SpotRegionMap.traceDelay)
-            .sequenced(before: DragGesture(minimumDistance: 0))
-            .updating($traced) { value, state, _ in
-                guard case .second(true, let drag?) = value else { return }
-                // 区分の外（地図の枠の外）へ出た間は、最後の区分のまま
-                if let area = map.area(at: drag.location, container: size, in: areas) { state = area }
-            }
-            .onEnded { value in
-                // 地図の外で離したら取り消し（選ばない・`area(at:)` は枠の外で nil）
-                guard case .second(true, let drag?) = value,
-                      let area = map.area(at: drag.location, container: size, in: areas) else { return }
-                onSelect(area)
-            }
     }
 
     private func draw(_ ctx: inout GraphicsContext, size: CGSize) {
