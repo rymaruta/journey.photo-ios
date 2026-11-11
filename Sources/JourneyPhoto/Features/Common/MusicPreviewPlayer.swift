@@ -138,7 +138,7 @@ final class MusicPreviewPlayer: ObservableObject {
                                     duration: player.currentItem?.duration.seconds)
     }
 
-    /// 試聴のいまの位置（秒）。その曲が鳴っていなければ nil。`previewProgress` と同じく `@Published` にしない
+    /// 試聴のいまの位置（秒）。その曲が鳴っていなければ nil。進みと同じく知らせ（publish）にはしない
     /// （曲の流し始めの帯が `TimelineView` の中で読みに来る・2026-11-12）
     func previewTime(for url: URL?) -> Double? {
         guard isPlaying(url), let player else { return nil }
