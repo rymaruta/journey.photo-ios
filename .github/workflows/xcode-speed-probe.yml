@@ -84,7 +84,7 @@ jobs:
           sed -i '' 's/"Prefectures visited"/"Prefectures Visited"/' Sources/JourneyPhoto/Core/Text/VisitedMapText.swift
           python3 Tools/source-mtime.py
           s=$SECONDS; XCODE_LOG=build/b4.log bash Tools/xcode-test.sh build > /dev/null; echo "組む4（文言1行）: $((SECONDS-s)) 秒・$(grep -c 'SwiftCompile normal' build/b4.log) 件" | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: (c) 流す: 別々（単体 38 件 → UI SmokeTests）と 1 回（両方）
+      - name: "(c) 流す 別々（単体 38 件 → UI SmokeTests）と 1 回（両方）"
         run: |
           xcrun simctl bootstatus "$DEVICE" -b > /dev/null 2>&1 || true
           products="$DD/Build/Products/Debug-iphonesimulator"
@@ -97,7 +97,7 @@ jobs:
           s=$SECONDS; XCODE_LOG=build/t3.log bash Tools/xcode-test.sh ui build/T3.xcresult /tmp/both.txt > /dev/null; c=$((SECONDS-s))
           echo "別々: 単体 ${a} 秒＋UI ${b} 秒＝$((a+b)) 秒 / 1 回: ${c} 秒（$(grep -cE "Test Case .*(passed|failed)" build/t3.log) 行）" | tee -a "$GITHUB_STEP_SUMMARY"
           grep -E "Executed [0-9]+ tests" build/t3.log | tail -2
-      - name: (d) 組んだ品を包む・ほどく
+      - name: "(d) 組んだ品を包む・ほどく"
         run: |
           s=$SECONDS; python3 Tools/test-products.py "pack" "$DD/Build/Products" /tmp/p.tar; a=$((SECONDS-s))
           s=$SECONDS; python3 Tools/test-products.py unpack /tmp/p.tar /tmp/pp > /dev/null; b=$((SECONDS-s))
