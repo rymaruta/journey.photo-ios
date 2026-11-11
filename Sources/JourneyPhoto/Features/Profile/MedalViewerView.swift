@@ -231,7 +231,7 @@ private struct MedalSceneView: UIViewRepresentable {
     let box: SpinBoxFaces?
     let aim: SpinAim?
 
-    func makeCoordinator() -> MedalCoinCoordinator { MedalCoinCoordinator(shape: shape) }
+    func makeCoordinator() -> MedalCoinCoordinator { TrunkPerfMeter.measure("SpinCoordinator") { MedalCoinCoordinator(shape: shape) } }
 
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView(frame: .zero)
@@ -239,8 +239,9 @@ private struct MedalSceneView: UIViewRepresentable {
         view.antialiasingMode = .multisampling4X
         view.scene = context.coordinator.scene
         view.pointOfView = context.coordinator.cameraNode
-        // 角度は自前の表示の刻み（CADisplayLink）で書き換える。描き直しは毎回させる
-        view.rendersContinuously = true
+        // 角度は自前の表示の刻み（CADisplayLink）で書き換える。硬貨・カードは描き直しを毎回させる。
+        // 旅のトランクの箱は、角度・絵が変わったときだけ描く（`rendersContinuously(for:)`・2026-11-11 判断）
+        view.rendersContinuously = Self.rendersContinuously(for: shape)
         let pan = UIPanGestureRecognizer(target: context.coordinator,
                                          action: #selector(MedalCoinCoordinator.handlePan(_:)))
         view.addGestureRecognizer(pan)
@@ -254,18 +255,49 @@ private struct MedalSceneView: UIViewRepresentable {
         }
         context.coordinator.reduceMotion = reduceMotion
         context.coordinator.lastFlips = flips
-        if let textures { context.coordinator.apply(textures) }
-        if let box { context.coordinator.applyBox(box) }
+        // 測る起動のときだけ時間を数える（`TrunkPerfMeter`・1 回目に開く間の止まりの内訳・2026-11-11）
+        if let textures { TrunkPerfMeter.measure("SpinApply") { context.coordinator.apply(textures) } }
+        if let box { TrunkPerfMeter.measure("SpinApplyBox") { context.coordinator.applyBox(box) } }
         context.coordinator.lastAimId = aim?.id
         context.coordinator.start()
+        // 旅のトランクの重さを測る起動（`-JPPreviewTrunkPerf YES`・Debug のみ）のときだけ、箱の 1 コマを数える（測るだけ・2026-11-11）
+        if TrunkPerfMeter.shared.enabled, case .box = shape {
+            let meter = TrunkSpinFrameMeter()
+            meter.node = context.coordinator.spinNode
+            context.coordinator.frameMeter = meter
+            view.delegate = meter
+            // 測定専用の差し替え（`-JPPreviewTrunkDiag spinaa0|spinaa2`・Debug のみ・2026-11-11）。ふだんは 4x
+            let diag = PreviewSession.trunkDiag
+            if diag.contains("spinaa0") { view.antialiasingMode = .none }
+            if diag.contains("spinaa2") { view.antialiasingMode = .multisampling2X }
+        }
         return view
+    }
+
+    /// 描き続けるか（2026-11-11 判断・run 997）: 旅のトランクの箱は、止まっている間も毎秒 60 コマ描き続け、アプリの CPU が
+    /// 16〜20% だった（動いている間だけ描くと 3.7%）。箱は角度（`applyAngles`）と絵が変わったときだけ描く——SceneKit は場面が
+    /// 変わると描き直す（run 997: 指で回す 12 秒で 547 コマ描いた）。硬貨は映り込みの光が回り続けるので今までどおり。
+    /// 測定専用の `-JPPreviewTrunkDiag spincont`（Debug のみ）で前の作り（描き続ける）に戻す
+    static func rendersContinuously(for shape: SpinShape) -> Bool {
+        guard case .box = shape else { return true }
+        return PreviewSession.trunkDiag.contains("spincont")
     }
 
     func updateUIView(_ view: SCNView, context: Context) {
         let coordinator = context.coordinator
         coordinator.reduceMotion = reduceMotion
-        if let textures, !coordinator.hasTextures { coordinator.apply(textures) }
-        if let box, !coordinator.hasBoxFaces { coordinator.applyBox(box) }
+        if let textures, !coordinator.hasTextures { TrunkPerfMeter.measure("SpinApply") { coordinator.apply(textures) } }
+        if let box, !coordinator.hasBoxFaces {
+            TrunkPerfMeter.measure("SpinApplyBox") { coordinator.applyBox(box) }
+            // 測る起動のときだけ: 箱の場面の中身（三角・貼り絵）と描く枠の画素（2026-11-11・測るだけ）
+            if TrunkPerfMeter.shared.enabled {
+                TrunkPerfMeter.shared.note("SpinScene", CamperSceneStats.measure(coordinator.scene.rootNode).fields)
+                TrunkPerfMeter.shared.note("SpinView", String(format: "w=%.0f h=%.0f scale=%.0f aa=%d continuous=%d",
+                                                              Double(view.bounds.width), Double(view.bounds.height),
+                                                              Double(view.contentScaleFactor), Int(view.antialiasingMode.rawValue),
+                                                              view.rendersContinuously ? 1 : 0))
+            }
+        }
         if let aim, aim.id != coordinator.lastAimId {
             coordinator.lastAimId = aim.id
             coordinator.aim(yaw: aim.yaw, pitch: aim.pitch)
@@ -302,6 +334,10 @@ final class MedalCoinCoordinator: NSObject {
     private let stitchMaterial = SCNMaterial()
     private let clipMaterial = SCNMaterial()
     private(set) var hasBoxFaces = false
+    /// 測る起動のときだけ持つ、SCNView の 1 コマの見張り（SCNView の delegate は弱く持たれる・`TrunkSpinFrameMeter`）
+    var frameMeter: AnyObject?
+    /// 回す箱の節（測る起動のときだけ、描いた向きを読む・`TrunkSpinFrameMeter`）
+    var spinNode: SCNNode { coin }
     /// 最後に受けた向きの合図
     var lastAimId: Int?
     /// 向きのボタンで向かう角度（横・縦）
@@ -340,6 +376,8 @@ final class MedalCoinCoordinator: NSObject {
 
     /// 置いたときの傾き（板: rotateX(-8deg)）
     private static let restingPitch: Float = -0.14
+    /// 箱の惰性を止める速さ（ラジアン/秒・2026-11-11）。60 コマ/秒で 1 コマ 0.00002 ラジアン＝見えない
+    static let boxStopSpeed: Float = 0.001
     /// 箱を置いたときの傾き（板 TrunkSpin: rotateX(-16deg)。SceneKit では上の面が手前へ傾く向きが正）
     private static let boxRestingPitch: Float = 0.28
     /// 箱を置いたときの横の向き（板 TrunkSpin: rotateY(-34deg)。正面から始めず、少し斜めから側面が見える）
@@ -370,6 +408,14 @@ final class MedalCoinCoordinator: NSObject {
         aimHeld = false
         flipTarget = nil
         velocity = 0
+        wake()
+    }
+
+    /// 止めていた表示の刻みを再び動かす（指で触る・向きのボタン・裏返す）
+    private func wake() {
+        guard let link, link.isPaused else { return }
+        lastTimestamp = 0
+        link.isPaused = false
     }
 
     init(shape: SpinShape = .coin) {
@@ -680,7 +726,10 @@ final class MedalCoinCoordinator: NSObject {
     }
 
     func apply(_ textures: MedalTextures.Faces) {
-        front.diffuse.contents = textures.front
+        // 測る起動のときだけ: 正面の絵を貼る時間を、色（diffuse）と自ら光る分（emission）で分けて数える（2026-11-11・測るだけ）。
+        // run 1047: 塗るのは色を貼るときの 1 度だけ（emission は 0.1ms 以下）
+        let frontImage = textures.front
+        TrunkPerfMeter.measure("SpinFrontDiffuse") { front.diffuse.contents = frontImage }
         back.diffuse.contents = textures.back
         edge.diffuse.contents = textures.edge
         if case .coin = shape {
@@ -690,7 +739,7 @@ final class MedalCoinCoordinator: NSObject {
         faces = textures
         if case .box = shape {
             // 箱の表と裏は絵を少し自ら光らせる（光の当たらない向きでも絵が沈まない・`brightenForBox`）
-            front.emission.contents = textures.front
+            TrunkPerfMeter.measure("SpinFrontEmission") { front.emission.contents = frontImage }
             front.emission.intensity = 0.45
             back.emission.contents = textures.back
             back.emission.intensity = 0.45
@@ -838,6 +887,7 @@ final class MedalCoinCoordinator: NSObject {
         aimTarget = nil
         aimHeld = false
         velocity = 0
+        wake()
     }
 
     @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
@@ -849,6 +899,7 @@ final class MedalCoinCoordinator: NSObject {
         switch gesture.state {
         case .began:
             dragging = true
+            wake()
             flipTarget = nil
             aimTarget = nil
             aimHeld = false
@@ -875,6 +926,14 @@ final class MedalCoinCoordinator: NSObject {
         let dt = Float(lastTimestamp == 0 ? 0 : now - lastTimestamp)
         lastTimestamp = now
         guard dt > 0, dt < 0.1, !dragging, poses.isEmpty else { return }
+        // 止まっている箱（向きに着いた・惰性が止まった）は、表示の刻みも止める（毎コマ主スレッドを起こさない・2026-11-11 判断）。
+        // 指で触る・向きのボタン・裏返すで `wake()` から再び動かす
+        if isBox, aimTarget == nil, flipTarget == nil, aimHeld || velocity == 0, !PreviewSession.trunkDiag.contains("spinlink") {
+            link.isPaused = true
+            lastTimestamp = 0
+            TrunkPerfMeter.shared.hit("SpinLinkPaused")
+            return
+        }
 
         if let target = aimTarget {
             // 向きのボタン: 横と縦をなめらかに寄せる（「視差効果を減らす」では一息に）
@@ -899,11 +958,15 @@ final class MedalCoinCoordinator: NSObject {
             yaw += (target - yaw) * step
             if abs(target - yaw) < 0.002 { yaw = target; flipTarget = nil }
         } else {
+            // 止まりきった箱は角度を書き換えない（書き換えると SceneKit が毎コマ描き直す・2026-11-11 判断）
+            if isBox, velocity == 0 { return }
             yaw += velocity * dt
             // 速さは、ゆっくり回る速さ（減らす設定では 0）へ戻っていく
             let resting: Float = reduceMotion ? 0 : (velocity < 0 ? -restingSpin : restingSpin)
             let damping: Float = reduceMotion ? 6 : 1.6
             velocity += (resting - velocity) * min(1, dt * damping)
+            // 箱の惰性は、目に見えない速さ（1 秒に約 0.06°）まで落ちたら止める
+            if isBox, abs(velocity) < Self.boxStopSpeed { velocity = 0 }
         }
         // 傾きは置いたときの角度へゆっくり戻す。**箱は戻さない**（傾けて底や上を見ている途中で起き上がらない）
         if !isBox { pitch += (Self.restingPitch - pitch) * min(1, dt * 2.5) }
@@ -919,6 +982,8 @@ final class MedalCoinCoordinator: NSObject {
         // `eulerAngles` のままでは横に 90° を越えると傾きが裏返り、「上と背面」で底が見えていた
         let q = SpinMotion.boxOrientation(yaw: Double(yaw), pitch: Double(pitch))
         coin.orientation = SCNQuaternion(Float(q.x), Float(q.y), Float(q.z), Float(q.w))
+        // 測る起動のときだけ: 書いた向き（描いた向き `SpinDrawn` と比べ、止まり際まで描いたかを見る・2026-11-11）
+        if TrunkPerfMeter.shared.enabled { TrunkPerfMeter.shared.note("SpinApplied", TrunkSpinFrameMeter.text(coin.orientation)) }
     }
 }
 

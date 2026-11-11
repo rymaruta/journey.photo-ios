@@ -93,15 +93,23 @@ struct TrunkStripes: View {
     let bands: [(Double, Double, TrunkRGBA)]
 
     var body: some View {
+        // 測定専用: 塗る時間の内訳を測る間だけ外す（`TrunkRasterProbe`・ふだんは空）
+        if TrunkRasterProbe.skip.contains("stripes") { Color.clear } else { drawn }
+    }
+
+    private var drawn: some View {
         Canvas { ctx, size in
-            let w = Double(size.width), h = Double(size.height)
-            // 回した縞は対角線ぶん広く描いて回す（中心で回す）
-            let reach = (w * w + h * h).squareRoot()
-            ctx.translateBy(x: w / 2, y: h / 2)
-            // CSS の 0deg は「下から上」へ進む＝縞は横。SwiftUI の回転で縞の向きを合わせる
-            ctx.rotate(by: .degrees(angle))
-            for band in bands {
-                ctx.fill(stripePath(reach: reach, band: band), with: .color(Color(trunk: band.2)))
+            // 測る起動のときだけ、描いた回数と時間を数える（`TrunkPerfMeter`・2026-11-11・測るだけ）
+            TrunkPerfMeter.measure("CvStripes") {
+                let w = Double(size.width), h = Double(size.height)
+                // 回した縞は対角線ぶん広く描いて回す（中心で回す）
+                let reach = (w * w + h * h).squareRoot()
+                ctx.translateBy(x: w / 2, y: h / 2)
+                // CSS の 0deg は「下から上」へ進む＝縞は横。SwiftUI の回転で縞の向きを合わせる
+                ctx.rotate(by: .degrees(angle))
+                for band in bands {
+                    ctx.fill(stripePath(reach: reach, band: band), with: .color(Color(trunk: band.2)))
+                }
             }
         }
         .allowsHitTesting(false)
@@ -129,7 +137,14 @@ struct TrunkGrain: View {
     let dots: [(color: TrunkRGBA, tile: Double, radius: Double, offset: Double)]
 
     var body: some View {
+        // 測定専用: 塗る時間の内訳を測る間だけ外す（`TrunkRasterProbe`・ふだんは空）
+        if TrunkRasterProbe.skip.contains("grain") { Color.clear } else { drawn }
+    }
+
+    private var drawn: some View {
         Canvas { ctx, size in
+          // 測る起動のときだけ、描いた回数と時間を数える（`TrunkPerfMeter`・2026-11-11・測るだけ）
+          TrunkPerfMeter.measure("CvGrain") {
             let w = Double(size.width), h = Double(size.height)
             for dot in dots {
                 var p = Path()
@@ -144,6 +159,7 @@ struct TrunkGrain: View {
                 }
                 ctx.fill(p, with: .color(Color(trunk: dot.color)))
             }
+          }
         }
         .allowsHitTesting(false)
     }
@@ -168,6 +184,11 @@ struct TrunkSpot: View {
     var fadeEnd: Double = 1
 
     var body: some View {
+        // 測定専用: 塗る時間の内訳を測る間だけ外す（`TrunkRasterProbe`・ふだんは空）
+        if TrunkRasterProbe.skip.contains("spots") { Color.clear } else { drawn }
+    }
+
+    private var drawn: some View {
         EllipticalGradient(stops: [Gradient.Stop(color: Color(trunk: color), location: 0),
                                    Gradient.Stop(color: Color(trunk: color.alpha(0)), location: fadeEnd)],
                            center: .center, startRadiusFraction: 0, endRadiusFraction: 0.5)
@@ -188,7 +209,14 @@ struct TrunkArtCanvas: View {
     var fit = true
 
     var body: some View {
+        // 測定専用: 塗る時間の内訳を測る間だけ外す（`TrunkRasterProbe`・ふだんは空）
+        if TrunkRasterProbe.skip.contains("art") { Color.clear } else { drawn }
+    }
+
+    private var drawn: some View {
         Canvas { ctx, size in
+          // 測る起動のときだけ、描いた回数と時間を数える（`TrunkPerfMeter`・2026-11-11・測るだけ）
+          TrunkPerfMeter.measure("CvArt") {
             let w = Double(size.width), h = Double(size.height)
             let k = fit ? min(w / viewBox.w, h / viewBox.h) : w / viewBox.w
             ctx.translateBy(x: (w - viewBox.w * k) / 2, y: (h - viewBox.h * k) / 2)
@@ -211,6 +239,7 @@ struct TrunkArtCanvas: View {
                                style: StrokeStyle(lineWidth: width, lineCap: round ? .round : .butt, dash: dashed ? [4, 4] : []))
                 }
             }
+          }
         }
         .allowsHitTesting(false)
     }
