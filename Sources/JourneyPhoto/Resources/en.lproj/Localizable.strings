@@ -4,7 +4,7 @@
    ⚠️ Add every new key to ja.lproj too — otherwise iOS shows the raw key
    (`NOTIF_LIKE`) in the notification. `Tools/check-config.py` checks this. */
 
-"NOTIF_LIKE" = "%@ liked your photo";
+"NOTIF_LIKE" = "%@ liked your photo ZZPROBE";
 "NOTIF_COMMENT" = "%@ commented on your photo";
 "NOTIF_FOLLOW" = "%@ followed you";
 "NOTIF_STORY_REPLY" = "%@ replied to your story";

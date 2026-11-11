@@ -219,6 +219,14 @@ jobs:
           mkdir -p build/logs
           XCODE_LOG=build/logs/xcodebuild-build.log bash Tools/xcode-test.sh build
 
+      # 一時（測る・あとで消す）: 変えた Resources が組んだアプリに入ったか
+      - name: 一時 Resources が入ったか
+        run: |
+          app="$(ls -d "$HOME"/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/Debug-iphonesimulator/JourneyPhoto.app)"
+          echo "WhatsNew.json: $(grep -c ZZPROBE "$app/WhatsNew.json") 行" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "en Localizable: $(plutil -p "$app/en.lproj/Localizable.strings" | grep -c ZZPROBE) 行" | tee -a "$GITHUB_STEP_SUMMARY"
+          grep -cE "CpResource .*WhatsNew.json|CopyStringsFile .*Localizable.strings" build/logs/xcodebuild-build.log | sed 's/^/組む段で写した: /' | tee -a "$GITHUB_STEP_SUMMARY"
+
       # 起きるのを待ってから、組んだアプリを1回起動して閉じる（`Tools/warm-simulator.sh`・最初の UI テストの落ちを減らす。
       # 理由と数はその頭の注記）。起こすのは組むのと同時に済ませてあるので、ここは入れる・起動するだけ
       - name: シミュレーターを温める
