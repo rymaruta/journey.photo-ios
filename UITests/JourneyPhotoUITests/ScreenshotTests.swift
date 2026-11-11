@@ -4299,16 +4299,6 @@ final class ScreenshotTests: XCTestCase {
         notePerfProbe(app, label: title)
     }
 
-    /// `trunk.perf` の回数（`SpinPrewarmed` など）が `count` 以上になるまで待つ
-    @discardableResult
-    private func waitTrunkCount(_ app: XCUIApplication, _ name: String, atLeast count: Int, timeout: TimeInterval = 15) -> Bool {
-        let until = Date().addingTimeInterval(timeout)
-        while Date() < until {
-            if let n = Int(trunkPerf(app)[name]?["n"] ?? ""), n >= count { return true }
-        }
-        return false
-    }
-
     /// **回す**（owner「トランクを回したとき重い」）: 開く（面を描き終えるまで）→ 止まっている → 指で横・縦に払う →
     /// 止まり際の後 → 向きのボタン → 閉じる → もう一度開く。回している間の 1 コマ（`GapMain`・`GapSpin`・`SpinFrame`）・
     /// 主スレッドの停止・前後のメモリ。**直しの合否**（直しを戻すと落ちる）: 止まっている間に箱を描かない（2026-11-11 の
@@ -4323,12 +4313,6 @@ final class ScreenshotTests: XCTestCase {
         guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
         var lines: [String] = []
         trunkPhase(app, "トランクの画面・止まっている", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
-        if diag == nil {
-            // トランクの画面で、回す画面の絵を先に作り終える（`TrunkTextures.prewarm`）
-            trunkPhase(app, "回す画面の絵を先に作る", lines: &lines) {
-                XCTAssertTrue(waitTrunkCount(app, "SpinPrewarmed", atLeast: 1, timeout: 20), "回す画面の絵を先に作り終えない")
-            }
-        }
         let spin = app.buttons["trunk.spin"].firstMatch
         let box = app.descendants(matching: .any)["trunk.spin.box"].firstMatch
         let close = app.buttons["trunk.spin.close"].firstMatch
@@ -4348,10 +4332,7 @@ final class ScreenshotTests: XCTestCase {
                 }
             }
             lines.append(String(format: "回す画面を開く%d | %@ test_wall_to_ready_s=%.2f（XCUITest の待ちを含む）", round, marker, wall))
-            if diag == nil {
-                XCTAssertGreaterThanOrEqual(opened["SpinReuse.n"] ?? 0, 1, "先に作った絵を使っていない（\(round) 回目）")
-            }
-            if diag == "noprewarm", round == 2 {
+            if diag == nil, round == 2 {
                 XCTAssertGreaterThanOrEqual(opened["SpinReuse.n"] ?? 0, 1, "2 回目に開いても絵を使い回していない")
             }
             let still = trunkPhase(app, "回す画面・止まっている\(round)", lines: &lines) { Thread.sleep(forTimeInterval: 4) }
@@ -4400,17 +4381,37 @@ final class ScreenshotTests: XCTestCase {
         trunkPerfReport("回す" + (diag.map { "・\($0)" } ?? ""), app, lines)
     }
 
-    /// **メモリの内訳**（2026-11-11・先に作る絵を足した後、トランクの画面が 195→233MB に増えた中身を突き止める）。
-    /// トランクの画面（先に作り終えた後）→ 回す画面 → 閉じた後で、アプリの段ごとの印（`Trunk0Loaded`・`Warm0Start`〜`Warm4Later`・
-    /// `SpinReady`・`SpinGone`・`SpinGoneLater`）の phys_footprint と user_tag 別をログの `TRUNKMEM:` に出す。
-    /// 今の作り・先に作らない（`noprewarm`）・直しの前（`spincont,spinlazy`）を、それぞれ起動し直して比べる
+    /// **メモリの内訳**（2026-11-11・run 1014 / 1019 で、回す画面の絵をトランクの画面で先に作るとメモリが戻らないと分かった）。
+    /// トランクの画面 → 回す画面 → 閉じた後で、アプリの段ごとの印（`SpinReady`・`SpinGone`・`SpinGoneLater`）の
+    /// phys_footprint と user_tag 別をログの `TRUNKMEM:` に出す。
+    /// 今の作りと直しの前（`spincont,spinlazy`）を、それぞれ起動し直して比べる
     func testMeasuresTrunkMemory() { measureTrunkMemory(diag: nil) }
-    func testMeasuresTrunkMemoryNoPrewarm() { measureTrunkMemory(diag: "noprewarm") }
     func testMeasuresTrunkMemoryBefore() { measureTrunkMemory(diag: "spincont,spinlazy") }
-    /// 先に作る絵を、表の 3 枚と残りの 7 枚に分けて組む・塗る（一度に組む枚数とメモリの比べ・測るだけ）
-    func testMeasuresTrunkMemoryWarmSeq() { measureTrunkMemory(diag: "warmseq") }
-    /// 先に作らない（描き続けない・2 回目は使い回す）作りの重さ。先に作るときと比べる
-    func testMeasuresTrunkSpinNoPrewarm() { measureTrunkSpin(diag: "noprewarm") }
+    /// **1 回目に開く間の止まり**（2026-11-11）: 前の作りと今の作りを交互に 3 回ずつ起動し、回す画面を初めて開く間の
+    /// 主スレッドの止まりを同じ回で比べる（run 1019: 今 5.25 秒・前 3.41 秒が揺れか悪化かを見る）。止まっている最中の積みも残す
+    func testMeasuresTrunkSpinFirstOpen() {
+        executionTimeAllowance = 600
+        var lines: [String] = []
+        for pair in 1...3 {
+            for diag in ["spincont,spinlazy", "now"] {
+                let app = launchTrunk(Self.trunkPerfArgs + (diag == "now" ? [] : ["-JPPreviewTrunkDiag", diag]))
+                defer { app.terminate() }
+                guard openTrunk(app) else { XCTFail("旅のトランクを開けない"); continue }
+                Thread.sleep(forTimeInterval: 3)
+                let box = app.descendants(matching: .any)["trunk.spin.box"].firstMatch
+                trunkPhase(app, "\(diag) \(pair) 回目・回す画面を初めて開く（面を描き終えて 3 秒）", lines: &lines) {
+                    app.buttons["trunk.spin"].firstMatch.tap()
+                    let ready = NSPredicate(format: "value BEGINSWITH %@", "faces-ready")
+                    _ = XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: box)], timeout: 20)
+                    Thread.sleep(forTimeInterval: 3)
+                }
+                notePerfProbe(app, label: "初めて開く・\(diag)・\(pair)")
+            }
+        }
+        for line in lines where line.contains("GapMain") || line.contains("SpinFrame") || line.contains("| Process") {
+            print("TRUNKPERF: \(perfTestName) \(line)")
+        }
+    }
 
     private func measureTrunkMemory(diag: String?) {
         executionTimeAllowance = 400
@@ -4583,7 +4584,6 @@ final class ScreenshotTests: XCTestCase {
         let app = launchTrunk(Self.trunkPerfArgs + (diag.map { ["-JPPreviewTrunkDiag", $0] } ?? []))
         defer { app.terminate() }
         guard openTrunk(app) else { XCTFail("旅のトランクを開けない"); return [] }
-        if diag == nil { XCTAssertTrue(waitTrunkCount(app, "SpinPrewarmed", atLeast: 1, timeout: 20), "回す画面の絵を先に作り終えない") }
         app.buttons["trunk.spin"].firstMatch.tap()
         let box = app.descendants(matching: .any)["trunk.spin.box"].firstMatch
         let ready = NSPredicate(format: "value BEGINSWITH %@", "faces-ready")

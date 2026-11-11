@@ -96,9 +96,8 @@ struct TrunkSpinViewer: View {
                 TrunkPerfMeter.shared.mark("SpinReady")
                 return
             }
-            // まだ塗っていなければ、今までどおりその場で描いて渡す（塗り切るのを待つと、その間は箱の面が空になる。
-            // 2026-11-11 run 1003: 主スレッドの外で正面を塗り切るのに 2.6 秒かかり、面が出るのが遅れた）。
-            // 塗り切った絵は、トランクの画面を開いたときに先に作っておく（`TrunkTextures.prewarm`）
+            // 1 回目は今までどおりその場で描いて渡す（2026-11-11 判断: 主スレッドの外で塗り切るのを待つと、その間は箱の面が
+            // 空になる〔run 1003・2.6 秒〕。トランクの画面で先に作るとメモリが戻らない〔run 1014 / 1019・+80MB〕）
             textures = TrunkTextures.make(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts,
                                           wrinkles: wrinkles, tagPicks: tagPicks)
             let frontTook = started.duration(to: clock.now)
@@ -198,73 +197,9 @@ enum TrunkTextures {
         }
     }
 
-    /// 先に作っている途中の合図（同じトランクを 2 度作らない）
-    private static var warming: TrunkSpinKey?
-
-    /// 回す画面の絵を、トランクの画面を開いたときに先に作っておく（2026-11-11 判断・run 997 / 1003）。
-    /// `ImageRenderer` の絵は後で塗る絵で、回す画面を開いて SceneKit が読んだときに主スレッドで塗られ、開く間に 2.7〜5.2 秒
-    /// 止まっていた（積み: `MedalCoinCoordinator.apply` の中の `RB::ImageProvider::wait_phase`）。ここでは主スレッドで組むのは
-    /// 1 枚ずつ（間に 1 コマ返す）、塗るのは主スレッドの外（`TrunkStill.settle`）。色・画素は同じ
-    static func prewarm(_ key: TrunkSpinKey) async {
-        // 測定専用（`-JPPreviewTrunkDiag noprewarm`・Debug のみ・2026-11-11）: 先に作らない（メモリの比べ）
-        guard !PreviewSession.trunkDiag.contains("spinlazy"), !PreviewSession.trunkDiag.contains("noprewarm"),
-              kept(key) == nil, warming != key else { return }
-        warming = key
-        defer { if warming == key { warming = nil } }
-        // 測る起動のときだけ: 段ごとのメモリ（phys_footprint と user_tag 別・2026-11-11 メモリの増えの内訳）
-        TrunkPerfMeter.shared.mark("Warm0Start")
-        // 測定専用（`-JPPreviewTrunkDiag warmseq`・Debug のみ）: 表の 3 枚を塗ってから残りの 7 枚を組む（一度に組む枚数とメモリの比べ）
-        if PreviewSession.trunkDiag.contains("warmseq") {
-            let faces = Self.make(model: key.model, posts: key.posts, stuck: key.stuck, ownerName: key.ownerName, parts: key.parts,
-                                  wrinkles: key.wrinkles, tagPicks: key.tagPicks)
-            TrunkPerfMeter.shared.mark("Warm1Built")
-            let first = await TrunkStill.settle([faces.front, faces.back, faces.edge])
-            TrunkPerfMeter.shared.mark("Warm1bFacesPainted")
-            do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
-            let sides = Self.box(model: key.model, posts: key.posts, parts: key.parts, stuck: key.stuck, tagPicks: key.tagPicks)
-            TrunkPerfMeter.shared.mark("Warm1cSidesBuilt")
-            let rest = await TrunkStill.settle([sides.back, sides.left, sides.right, sides.top, sides.bottom, sides.handle, sides.clip])
-            TrunkPerfMeter.shared.mark("Warm2Painted")
-            guard !Task.isCancelled, warming == key, kept(key) == nil else { return }
-            keep(key, faces: MedalTextures.Faces(front: first[0], back: first[1], edge: first[2], edgeRepeat: faces.edgeRepeat,
-                                                 metal: faces.metal),
-                 box: SpinBoxFaces(back: rest[0], left: rest[1], right: rest[2], top: rest[3], bottom: rest[4], handle: rest[5], clip: rest[6]))
-            TrunkPerfMeter.shared.hit("SpinPrewarmed")
-            TrunkPerfMeter.shared.mark("Warm3Kept")
-            TrunkPerfMeter.shared.markLater("Warm4Later", after: 3)
-            return
-        }
-        let faces = Self.make(model: key.model, posts: key.posts, stuck: key.stuck, ownerName: key.ownerName, parts: key.parts,
-                         wrinkles: key.wrinkles, tagPicks: key.tagPicks)
-        do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
-        let sides = Self.box(model: key.model, posts: key.posts, parts: key.parts, stuck: key.stuck, tagPicks: key.tagPicks)
-        TrunkPerfMeter.shared.mark("Warm1Built")
-        let painted = await TrunkStill.settle([faces.front, faces.back, faces.edge, sides.back, sides.left, sides.right, sides.top,
-                                               sides.bottom, sides.handle, sides.clip])
-        TrunkPerfMeter.shared.mark("Warm2Painted")
-        #if os(iOS)
-        if TrunkPerfMeter.shared.enabled {
-            // 塗った絵の 1 画素の大きさと合計（貼り絵の大きさの見込み 10.5MB は 4 バイト/画素で数えたもの）
-            let images: [CGImage] = painted.compactMap { image -> CGImage? in image?.cgImage }
-            let rows = images.map { "\($0.width)x\($0.height)/\($0.bitsPerPixel)bpp" }
-            let bytes = images.reduce(0) { total, cg in total + cg.bytesPerRow * cg.height }
-            TrunkPerfMeter.shared.note("WarmPx", String(format: "total_mb=%.2f ", Double(bytes) / 1_048_576) + rows.joined(separator: ","))
-        }
-        #endif
-        guard !Task.isCancelled, warming == key, kept(key) == nil else { return }
-        keep(key, faces: MedalTextures.Faces(front: painted[0], back: painted[1], edge: painted[2], edgeRepeat: faces.edgeRepeat,
-                                             metal: faces.metal),
-             box: SpinBoxFaces(back: painted[3], left: painted[4], right: painted[5], top: painted[6], bottom: painted[7],
-                               handle: painted[8], clip: painted[9]))
-        TrunkPerfMeter.shared.hit("SpinPrewarmed")
-        TrunkPerfMeter.shared.mark("Warm3Kept")
-        TrunkPerfMeter.shared.markLater("Warm4Later", after: 3)
-    }
-
     /// 使い回す絵を手放す（トランクの画面から戻ったとき）
     static func forget() {
         cache = nil
-        warming = nil
     }
 
     /// 描き終えた印（「faces-ready front=12ms all=85ms」）

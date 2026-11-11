@@ -62,9 +62,8 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    # `screens=testMeasuresTrunk, testTrunkSpinMatchesBefore`
                    "ScreenshotTests/testMeasuresTrunkSpin", "ScreenshotTests/testMeasuresTrunkSpinBefore",
                    "ScreenshotTests/testMeasuresTrunkProModels", "ScreenshotTests/testTrunkSpinMatchesBefore",
-                   "ScreenshotTests/testMeasuresTrunkMemory", "ScreenshotTests/testMeasuresTrunkMemoryNoPrewarm",
-                   "ScreenshotTests/testMeasuresTrunkMemoryBefore", "ScreenshotTests/testMeasuresTrunkMemoryWarmSeq",
-                   "ScreenshotTests/testMeasuresTrunkSpinNoPrewarm"]
+                   "ScreenshotTests/testMeasuresTrunkMemory", "ScreenshotTests/testMeasuresTrunkMemoryBefore",
+                   "ScreenshotTests/testMeasuresTrunkSpinFirstOpen"]
 
 # クラスの直下（字下げ4つ）の関数だけを区切りにする。中の入れ子の関数は本体に含める
 MEMBER = re.compile(r"^    (?:@\w+\s+)*(?:(?:private|fileprivate|override|static|final)\s+)*func\s+(\w+)\s*\(", re.M)

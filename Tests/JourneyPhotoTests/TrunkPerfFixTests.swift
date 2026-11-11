@@ -27,16 +27,18 @@ final class TrunkPerfFixTests: XCTestCase {
         XCTAssertFalse(medal.contains("view.rendersContinuously = true"))
     }
 
-    /// 3. 回す箱の絵は、トランクの画面を開いたときに先に作り（主スレッドの外で塗る）、回す画面では使い回す
-    func testSpinTexturesArePrewarmedAndKept() throws {
-        let trunk = try source("Features/Trunk/TrunkView.swift")
-        XCTAssertTrue(trunk.contains(".task(id: spinKey) {"), "トランクの画面で回す箱の絵を先に作っていない")
-        XCTAssertTrue(trunk.contains("await " + "TrunkTextures" + ".prewarm(spinKey)"))
-        XCTAssertTrue(trunk.contains("if !showSpin, !showStick, !showPaywall { " + "TrunkTextures" + ".forget() }"), "戻っても絵を手放さない")
+    /// 3. 回す箱の絵は、2 回目に開いたら使い回す。トランクの画面では先に作らない（2026-11-11 判断・先に作ると
+    /// トランクの画面のメモリが +80MB だった）。トランクの画面から戻ったら手放す
+    func testSpinTexturesAreKeptButNotPrewarmed() throws {
         let spin = try source("Features/Trunk/TrunkSpinViewer.swift")
-        XCTAssertTrue(spin.contains("if let kept = " + "TrunkTextures" + ".kept(key) {"), "先に作った絵を使っていない")
-        XCTAssertTrue(spin.contains("let painted = await TrunkStill.settle("), "先に作る絵を主スレッドで塗っている")
+        XCTAssertTrue(spin.contains("if let kept = " + "TrunkTextures" + ".kept(key) {"), "2 回目に開いても絵を描き直している")
+        XCTAssertTrue(spin.contains("if let textures, let boxFaces { " + "TrunkTextures" + ".keep(key, faces: textures, box: boxFaces) }"),
+                      "描いた絵を取っておかない")
         XCTAssertTrue(spin.contains("UIApplication.didReceiveMemoryWarningNotification"), "メモリが足りないときに手放さない")
+        XCTAssertFalse(spin.contains("func prewarm("), "回す画面の絵を先に作っている（メモリが戻らない）")
+        let trunk = try source("Features/Trunk/TrunkView.swift")
+        XCTAssertFalse(trunk.contains(".prewarm("), "トランクの画面で回す画面の絵を先に作っている")
+        XCTAssertTrue(trunk.contains("if !showSpin, !showStick, !showPaywall { " + "TrunkTextures" + ".forget() }"), "戻っても絵を手放さない")
     }
 
     /// 測定専用の差し替えは、Release では必ず空（ふだんの描き方を変えない）
