@@ -49,7 +49,8 @@ struct StoryAudienceSheet: View {
                                       "If off, viewers won't see the reply field or ♡"),
                             isOn: $allowReplies)
                 JPCardDivider()
-                // **ハイライトに入れられるのは残したものだけ**（`api-user/src/highlights.ts`）。既定は残さない
+                // **ハイライトに入れられるのは残したものだけ**（`api-user/src/highlights.ts`）。
+                // 既定は残す・最後に選んだ値を人ごとに覚える（2026-11-11 判断・`StoryArchivePreference`）
                 JPToggleRow(title: L("24時間後も自分用に残す", "Keep for me after 24 hours"),
                             detail: L("ハイライトに入れられます", "You can add it to highlights"),
                             isOn: $keepInArchive)
