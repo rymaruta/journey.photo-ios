@@ -1,0 +1,104 @@
+# 測るための一時のワークフロー（2026-11-11・毎回のを速くする (a)〜(d) を1回で測る）。測り終えたら消す。
+# 控えは読むだけ（書かない: 置き場 10GB から main の控えを追い出さないように）。「控えから戻した」状態は、
+# DerivedData を別の場所へ写して戻す（ファイルの番号 inode が変わる）・ソースを書き直す、で同じにする
+name: 測る（一時）
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: 測る
+    runs-on: macos-15
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v7
+      - name: Xcodeを選択
+        run: bash Tools/select-xcode.sh
+      - name: シミュレーターを起こす
+        run: |
+          DEVICE="$(python3 Tools/pick-simulator.py)"
+          echo "DEVICE=$DEVICE" >> "$GITHUB_ENV"
+          nohup bash -c "xcrun simctl boot '$DEVICE'; xcrun simctl bootstatus '$DEVICE' -b" > /tmp/boot.log 2>&1 &
+      - name: 鍵
+        run: |
+          echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
+      - name: 鍵2
+        run: echo "CACHE_KEY=xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}" >> "$GITHUB_ENV"
+      - name: 控えを戻す（main の今の形）
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.dSYM
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.app
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xctest
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xcresult
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ env.CACHE_KEY }}
+            xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
+      - name: (a) 控えの中身の大きさ
+        run: |
+          dd="$(ls -d "$HOME"/Library/Developer/Xcode/DerivedData/JourneyPhoto-* | head -1)"
+          echo "DD=$dd" >> "$GITHUB_ENV"
+          du -sh "$HOME/Library/Caches/org.swift.swiftpm" "$dd/SourcePackages"/* "$dd/Build/Products"/* "$dd/Build/Intermediates.noindex" 2>/dev/null
+          echo "== Intermediates.noindex の大きいもの"
+          du -sk "$dd/Build/Intermediates.noindex"/* 2>/dev/null | sort -rn | head -25 | awk '{printf "%7.0f MB %s\n", $1/1024, $2}'
+          echo "== Products/Debug-iphonesimulator の大きいもの"
+          du -sk "$dd/Build/Products/Debug-iphonesimulator"/* 2>/dev/null | sort -rn | head -15 | awk '{printf "%7.0f MB %s\n", $1/1024, $2}'
+          echo "== アプリ・テストの分（JourneyPhoto.build）"
+          du -sh "$dd/Build/Intermediates.noindex/JourneyPhoto.build" 2>/dev/null
+      - name: xcodegen
+        run: |
+          command -v xcodegen >/dev/null || brew install xcodegen
+          xcodegen generate
+      - name: (b) 組む 1 回目（ソースの時刻を中身から決めて・今と同じ全部組み）
+        run: |
+          python3 Tools/source-mtime.py
+          s=$SECONDS; XCODE_LOG=build/b1.log bash Tools/xcode-test.sh build > /dev/null; echo "組む1: $((SECONDS-s)) 秒・$(grep -c 'SwiftCompile normal' build/b1.log) 件" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: (b) 控えから戻したのと同じ状態にする（DerivedData を写して戻す・ソースを書き直す）
+        run: |
+          s=$SECONDS
+          ditto "$DD" "$DD.copy" && rm -rf "$DD" && mv "$DD.copy" "$DD"
+          git ls-files -z | while IFS= read -r -d '' f; do [ -L "$f" ] || { cp -p "$f" "$f.tmp" && mv "$f.tmp" "$f"; }; done
+          rm -rf JourneyPhoto.xcodeproj && xcodegen generate > /dev/null
+          echo "写して戻す: $((SECONDS-s)) 秒" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: (b) 組む 2 回目（中身は同じ）
+        run: |
+          python3 Tools/source-mtime.py
+          s=$SECONDS; XCODE_LOG=build/b2.log bash Tools/xcode-test.sh build > /dev/null; echo "組む2（変えたもの無し）: $((SECONDS-s)) 秒・$(grep -c 'SwiftCompile normal' build/b2.log) 件" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: (b) 組む 3 回目（画面のファイルを1つ変えた）
+        run: |
+          echo "// probe" >> Sources/JourneyPhoto/Features/Settings/WhatsNewView.swift
+          python3 Tools/source-mtime.py
+          s=$SECONDS; XCODE_LOG=build/b3.log bash Tools/xcode-test.sh build > /dev/null; echo "組む3（画面1つ）: $((SECONDS-s)) 秒・$(grep -c 'SwiftCompile normal' build/b3.log) 件" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: (b) 組む 4 回目（文言のファイルを1つ変えた）
+        run: |
+          sed -i '' 's/"Prefectures visited"/"Prefectures Visited"/' Sources/JourneyPhoto/Core/Text/VisitedMapText.swift
+          python3 Tools/source-mtime.py
+          s=$SECONDS; XCODE_LOG=build/b4.log bash Tools/xcode-test.sh build > /dev/null; echo "組む4（文言1行）: $((SECONDS-s)) 秒・$(grep -c 'SwiftCompile normal' build/b4.log) 件" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: (c) 流す: 別々（単体 38 件 → UI SmokeTests）と 1 回（両方）
+        run: |
+          xcrun simctl bootstatus "$DEVICE" -b > /dev/null 2>&1 || true
+          products="$DD/Build/Products/Debug-iphonesimulator"
+          bash Tools/warm-simulator.sh "$products" > /dev/null
+          units="$(python3 -c 'import importlib.util as u; s=u.spec_from_file_location("p","Tools/pick-ui-tests.py"); m=u.module_from_spec(s); s.loader.exec_module(m); print(" ".join("JourneyPhotoTests/"+t for t in m.quick_unit_tests()))')"
+          printf -- '-only-testing:JourneyPhotoUITests/SmokeTests\n' > /tmp/ui.txt
+          s=$SECONDS; UNIT_ONLY_TESTING="$units" XCODE_LOG=build/t1.log bash Tools/xcode-test.sh unit build/U1.xcresult > /dev/null; a=$((SECONDS-s))
+          s=$SECONDS; XCODE_LOG=build/t2.log bash Tools/xcode-test.sh ui build/T2.xcresult /tmp/ui.txt > /dev/null; b=$((SECONDS-s))
+          for t in $units; do echo "-only-testing:$t"; done > /tmp/both.txt; cat /tmp/ui.txt >> /tmp/both.txt
+          s=$SECONDS; XCODE_LOG=build/t3.log bash Tools/xcode-test.sh ui build/T3.xcresult /tmp/both.txt > /dev/null; c=$((SECONDS-s))
+          echo "別々: 単体 ${a} 秒＋UI ${b} 秒＝$((a+b)) 秒 / 1 回: ${c} 秒（$(grep -cE "Test Case .*(passed|failed)" build/t3.log) 行）" | tee -a "$GITHUB_STEP_SUMMARY"
+          grep -E "Executed [0-9]+ tests" build/t3.log | tail -2
+      - name: (d) 組んだ品を包む・ほどく
+        run: |
+          s=$SECONDS; python3 Tools/test-products.py pack "$DD/Build/Products" /tmp/p.tar; a=$((SECONDS-s))
+          s=$SECONDS; python3 Tools/test-products.py unpack /tmp/p.tar /tmp/pp > /dev/null; b=$((SECONDS-s))
+          echo "包む ${a} 秒・ほどく ${b} 秒・$(du -sh /tmp/p.tar | cut -f1)" | tee -a "$GITHUB_STEP_SUMMARY"
