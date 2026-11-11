@@ -29,7 +29,8 @@ struct AlbumsView: View {
     var body: some View {
         Group {
             if auth.isResolving {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                // 2026-11-12 判断（第2章）: 回る輪ではなくアルバムの札の形の灰
+                ScrollView { JPLoadingState(kind: .albums).padding(.horizontal, JPSpace.gutter) }
             } else if auth.userId == nil {
                 SignInView(reason: L("アルバムを使うにはログインしてください", "Sign in to use albums"))
             } else {
@@ -152,7 +153,8 @@ struct AlbumsView: View {
                 .opacity(model.isCreating ? 0.5 : 1)
                 .profileListRow()
         } else if model.albums.isEmpty && model.isLoading {
-            JPLoadingState(kind: .rows)
+            // 2026-11-12 判断（第2章）: 2本の線ではなくアルバムの札の形（写真 64・2 行の字）
+            JPLoadingState(kind: .albums)
                 .profileListRow()
         }
     }

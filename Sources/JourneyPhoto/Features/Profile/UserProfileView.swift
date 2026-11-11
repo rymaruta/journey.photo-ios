@@ -189,7 +189,13 @@ struct UserProfileView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ProfileCover(url: model.profile?.coverURL(cacheBust: model.cacheBust),
                                      reserve: hasCover) { hasCover = $0 }
-                        header
+                        if model.profile == nil && model.isLoading && model.errorMessage == nil {
+                            // 2026-11-12 判断（第2章「画面の状態とそろえ」）: 開き始めは**頭の形の灰**（顔 88・名前・数）。
+                            // 空の丸と名前の無い頭を出さない。下の札の行と格子の骨格はそのまま続く
+                            JPLoadingState(kind: .profile)
+                        } else {
+                            header
+                        }
                     }
                     if model.profile != nil {
                         counts
@@ -381,13 +387,19 @@ struct UserProfileView: View {
                 Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
             }
         } else if shownPhotos.isEmpty && !isBlocked && model.photoCount == .pending {
-            // ブロックを解いて読み直すまでの間。「まだありません」と言わない（v2: 格子の骨格）
-            JPLoadingState(kind: .grid)
+            // ブロックを解いて読み直すまでの間。「まだありません」と言わない（v2: 格子の骨格）。
+            // 2026-11-12 判断（第2章）: 字の線は付けず格子だけ（格子と同じ形）
+            JPLoadingState(kind: .photoGrid(count: 9))
         } else if shownPhotos.isEmpty && !model.isLoading {
-            // 全部通報・持ち主をブロックして戻った回も、白紙にせず案内を出す
-            EmptyState(message: L("公開された写真はまだありません", "No public photos yet"))
-            // 板 v2 UserProfile（写真0）: 押せる一手は真鍮の下線のリンク（黒地の上のリンクは真鍮）
-            findOthersLink
+            // 全部通報・持ち主をブロックして戻った回も、白紙にせず案内を出す。
+            // 2026-11-12 判断（第2章「画面の状態とそろえ」）: 空の一手も**ほかの画面と同じボタン1つ**
+            // （写真の無い画面の主ボタン＝真鍮の塗り＋墨）。以前は真鍮の下線の字で、空の形が画面ごとに割れていた
+            EmptyState(title: L("まだ写真がありません", "No photos yet"),
+                       message: L("この人が写真を投稿すると、ここに並びます", "Photos this person posts will appear here"),
+                       actionTitle: L("ほかの人の写真を探す", "Find other people's photos"),
+                       actionIdentifier: "userProfile.emptyFindOthers") {
+                TabRouter.shared.openSearch()
+            }
         } else if tab == .map && shownPhotos.isEmpty {
             // 🔴 **読み込み中の空の地図に「撮影地の分かる写真がありません」と言わない。**
             // 「読み終えて0枚」は上の枝で済んでいるので、ここに来るのは読み込み中だけ
@@ -409,24 +421,6 @@ struct UserProfileView: View {
                 }
             }
         }
-    }
-
-    /// 写真が0枚の人のページの一手（板 v2 UserProfile の「ほかの人の写真を探す」）。
-    /// 探すのタブを開く。黒地の上のリンクなので真鍮・下線（色だけで言わない）・押せる高さ 44
-    private var findOthersLink: some View {
-        Button {
-            TabRouter.shared.openSearch()
-        } label: {
-            Text(L("ほかの人の写真を探す", "Find other people's photos"))
-                .font(JPFont.body)
-                .underline()
-                .foregroundStyle(WebTheme.accent)
-                .frame(minHeight: WebTheme.minTapTarget)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity)
-        .accessibilityHint(L("探すのタブを開きます", "Opens the Search tab"))
     }
 
     /// 見出し（板 v2 UserProfile）: 88pt のアイコン（黒い 4pt の縁）と右に「フォローする」、

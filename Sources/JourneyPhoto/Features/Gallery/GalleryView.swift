@@ -11,6 +11,8 @@ struct GalleryView: View {
     /// この画面はタブの根なので一度出たら生き続け、`.task` は二度と走らない
     /// ——ブロックしても、戻ってくるとその人の写真がまだ並んでいた
     @EnvironmentObject private var hidden: ModerationStore
+    /// 電波があるか（電波が無いときは前に見た写真の上に帯・2026-11-12 第2章）
+    @EnvironmentObject private var connectivity: Connectivity
     @StateObject private var model = GalleryViewModel()
     /// すれちがいの届いた束（板 PassHome・2026-10-16）
     @EnvironmentObject private var pass: PassStore
@@ -92,11 +94,22 @@ struct GalleryView: View {
                 // v2（Components 06）: 中身と同じ形の灰の骨格（0.3 秒より早ければ出さない）
                 ScrollView { JPLoadingState(kind: .grid) }
             case .failed(let message):
-                ErrorBanner(message: message) {
-                    Task { await model.load() }
+                if connectivity.isOffline {
+                    // 2026-11-12 判断（第2章「画面の状態とそろえ」）: **控えが1枚も無いときだけ**中央の状態。
+                    // 電波が無いことを先に言う（「読み込めませんでした」だと何が起きたか分からない）
+                    ScrollView { HomeOfflineState(isBusy: isRefreshing) { retryHome() } }
+                } else {
+                    ErrorBanner(message: message, isBusy: isRefreshing) {
+                        retryHome()
+                    }
                 }
             case .loaded(let photos):
                 let _ = PerfRecorder.shared.mark("home.loaded.body")
+                // 2026-11-12 判断（第2章・板 v2 Main の「電波なし」）: **電波が無くても一覧は消さない。**
+                // 前に見た写真（端末の控え）をそのまま出し、上に帯で知らせる。写真を見るまで 0 回、読み直しは 1 回
+                if connectivity.isOffline {
+                    HomeOfflineBand(isBusy: isRefreshing) { retryHome() }
+                }
                 // 🔴 **0枚でもフィードごと描く**（切り替えのタブを残す）。
                 // 空の知らせで画面ごと置き換えると、「フォロー中」を押して
                 // 0枚だった人が「おすすめ」へ戻れなかった——以前は上の段の
@@ -161,6 +174,12 @@ struct GalleryView: View {
             await model.loadMyPhotos(environment.photos, viewerId: userId)
         }
         .refreshable { await refreshAll() }
+        // 電波が戻ったら、押さなくても読み直す（帯の「もう一度」を待たない・2026-11-12 第2章）。
+        // 上に詳細を積んでいる間は読み直さない（戻ってきたときの読み直しが拾う）
+        .onChange(of: connectivity.isOffline) { _, offline in
+            guard !offline, isOnScreen else { return }
+            retryHome()
+        }
         // **下の「投稿」を閉じたら自分の写真を読み直す。** 今日のテーマの札から投稿しても、
         // シートは `RootView` にあるので `.task(id:)` は走らず、札が「参加する」のまま残った
         //
@@ -784,6 +803,11 @@ struct GalleryView: View {
 
     /// 引き下げ・「もう一度試す」の読み直し。**重ねて走らせない**——続けて押すと、
     /// 遅れて返った古い回が新しい回の答えを上書きした（2026-10-02 のレビュー）
+    /// 帯・中央の状態の「もう一度」（引き下げと同じ読み直し。重ねて走らせない）
+    private func retryHome() {
+        Task { await refreshAll() }
+    }
+
     private func refreshAll() async {
         guard !isRefreshing else { return }
         isRefreshing = true

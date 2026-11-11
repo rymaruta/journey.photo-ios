@@ -300,7 +300,8 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
         XCTAssertTrue(list.contains("ErrorBanner(message: message, isBusy: model.isLoading)"),
                       "読めなかった回が共通の失敗の形でない")
         XCTAssertFalse(list.contains("WebTheme.danger"), "読めなかった回を危険の赤で出している")
-        XCTAssertTrue(list.contains("JPLoadingState(kind: .rows)"), "読み込み中が骨格でない")
+        // 2026-11-12（第2章）: お知らせの行と同じ形の骨格
+        XCTAssertTrue(list.contains("JPLoadingState(kind: .personRows(trailing: .thumb))"), "読み込み中が骨格でない")
         XCTAssertTrue(list.contains(".listStyle(.plain)"))
         let empty = slice(notes, from: "private var emptyState: some View", to: "private var list: some View")
         XCTAssertTrue(empty.contains("EmptyState(title:"), "空の状態が共通の部品でない")

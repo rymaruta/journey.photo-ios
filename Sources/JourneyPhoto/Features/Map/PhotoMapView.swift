@@ -31,6 +31,8 @@ struct PhotoMapView: View {
     @ObservedObject private var linkRevision = SpotLinkRevision.shared
     /// ブロック／通報したぶんをピンから落とすため（`needsDrop`）
     @EnvironmentObject private var hidden: ModerationStore
+    /// 電波があるか（無いときは地図の上にガラスの帯・2026-11-12 第2章）
+    @EnvironmentObject private var connectivity: Connectivity
     /// ブロック／通報があったが、まだピンから落としていない。
     /// **見ている最中には絞らない**（`FavoritesView` の `photos` の注記）——
     /// 押した元の `NavigationLink` が消えると、開いている詳細がその場で閉じ、
@@ -475,6 +477,10 @@ struct PhotoMapView: View {
         mapCanvas
         // 方位磁針・現在地・拡大縮小を**1本の列にまとめる**（`mapControls`）
         .mapScope(mapScope)
+        // 2026-11-12 判断（第2章）: 読み込み中は**ピンの形の灰**（今は何も出ず、ピンが無いだけの地図だった）
+        .overlay {
+            if !model.loaded { MapPinSkeleton() }
+        }
         .overlay(alignment: .top) { statusLine }
         .overlay(alignment: .topTrailing) {
             mapControls
@@ -708,10 +714,43 @@ struct PhotoMapView: View {
     /// 地図の上に1行。**空の状態を隠さない**——ピンが消えただけの画面にしない
     @ViewBuilder
     private var statusLine: some View {
-        if let message = emptyMessage {
-            statusCapsule(message, retry: message == Self.loadFailedText)
-        } else if let note = locationNote ?? loadFailedNote {
-            statusCapsule(note, retry: note == Self.loadFailedText)
+        // 2026-11-12 判断（デザインの案 第2章「画面の状態とそろえ」）: 地図の上の失敗・空・電波なしは
+        // **ガラスの帯**（`JPStateBand`・黒地の帯と同じ並び——印・見出しと説明・右に一手）。
+        // 字と「もう一度試す」だけの丸い札は、何が起きたかが印で分からなかった。現在地の様子は今までどおりの札
+        if connectivity.isOffline, model.loaded {
+            // 電波が無くても前に読めたピンはそのまま（画面は閉じない）
+            mapBand(JPStateBand(kind: .offline, title: JPStateBand.offlineTitle,
+                                message: L("前に見たピンだけを出しています", "Showing pins you've already seen"),
+                                skin: .glass, isBusy: model.isLoading, actionIdentifier: "map.offline.retry") {
+                retryLoad()
+            })
+        } else if let message = emptyMessage {
+            if message == Self.loadFailedText {
+                mapBand(JPStateBand(kind: .partial, title: message,
+                                    message: L("通信が途切れたようです", "The connection seems to have dropped"),
+                                    skin: .glass, isBusy: model.isLoading, actionIdentifier: "map.retry") {
+                    retryLoad()
+                })
+            } else if model.areaFrame != nil {
+                // 範囲で絞って空だった回は、1回で出られる出口（範囲を外して写真全体へ寄せる）
+                mapBand(JPStateBand(kind: .empty(symbol: "mappin"),
+                                    title: L("この範囲にはまだ写真がありません", "No photos in this area yet"),
+                                    skin: .glass, actionTitle: L("写真全体を見る", "Show all photos"),
+                                    actionIdentifier: "map.empty.showAll") {
+                    model.clearArea()
+                    frame(model.frame)
+                })
+            } else {
+                mapBand(JPStateBand(kind: .empty(symbol: "mappin"), title: message, skin: .glass))
+            }
+        } else if let note = locationNote {
+            // 現在地の様子が先（押した回の答えを隠さない・`loadFailedNote` の注記）
+            statusCapsule(note, retry: false)
+        } else if let note = loadFailedNote {
+            mapBand(JPStateBand(kind: .partial, title: note, skin: .glass, isBusy: model.isLoading,
+                                actionIdentifier: "map.retry") {
+                retryLoad()
+            })
         } else if !noneNearbyBanner.dismissed, model.areaFrame == nil, !model.isFiltering,
                   model.frame != nil, let here,
                   NearbyPhotos.noneNearby(model.photos, here: here) {
@@ -821,6 +860,16 @@ struct PhotoMapView: View {
         // 読んでいる最中は重ねない（ボタンも止めている。古い回の答えは模型が捨てる）
         guard !model.isLoading else { return }
         Task { await model.load(environment: environment) }
+    }
+
+    /// 地図の上のガラスの帯（第2章）。左 12・上 12。**右は操作列（右 16・幅 44・上から 56）の分を空ける**
+    /// ——帯は 56 より下まで伸びるので、横いっぱいにすると現在地・拡大の操作に重なる
+    private func mapBand(_ band: JPStateBand) -> some View {
+        band
+            .padding(.leading, JPSpace.s)
+            .padding(.trailing, JPSpace.m + WebTheme.minTapTarget + JPSpace.xs)
+            .padding(.top, JPSpace.s)
+            .accessibilityIdentifier("map.stateBand")
     }
 
     /// 地図の上の帯1本。`retry` なら右に「もう一度試す」
@@ -1525,8 +1574,9 @@ struct PhotoMapView: View {
                 }
                 // 読み込み中・失敗・空は v2 の共通の部品（Components 06「4つの状態」・同じ並び）
                 if model.officialIndexState == .loading {
-                    // **読み込み中に「無い」と言わない**。0.3 秒より早く届けば骨格も出さない
-                    JPLoadingState(kind: .rows)
+                    // **読み込み中に「無い」と言わない**。0.3 秒より早く届けば骨格も出さない。
+                    // 2026-11-12 判断（第2章）: 2本の線ではなく場所の行の形（写真 56・2 行の字）
+                    JPLoadingState(kind: .places)
                 } else if model.officialIndexState == .failed {
                     ErrorBanner(message: L("撮影スポットを読み込めませんでした", "Couldn't load photo spots"),
                                 isBusy: model.isLoading) { retryLoad() }
@@ -1625,8 +1675,10 @@ struct PhotoMapView: View {
         // 座標だけの写真が「県・国に分けられない」段に入る。そこから詳細を開いた後に台帳が届くと、
         // 写真が県へ移って元の行が消え、詳細がその場で閉じる（台帳は控えがあればすぐ届く）
         if model.officialIndexState == .loading || (sections.isEmpty && !model.loaded) {
-            // **読み込み中に「無い」と言わない**。v2 の読み込みの骨格（0.3 秒より早ければ出さない）
-            JPLoadingState(kind: .grid)
+            // **読み込み中に「無い」と言わない**。v2 の読み込みの骨格（0.3 秒より早ければ出さない）。
+            // 2026-11-12 判断（第2章）: 格子ではなく場所の行の形（リストの中身と同じ形）
+            JPLoadingState(kind: .places)
+                .padding(.horizontal, JPSpace.gutter)
             Spacer()
         } else if sections.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
@@ -1946,5 +1998,44 @@ struct MapCardStyle: ViewModifier {
         content
             .padding(JPSpace.m)
             .jpGlass(in: RoundedRectangle(cornerRadius: JPRadius.xl), border: 0.12)
+    }
+}
+
+/// 地図の読み込み中の骨格（2026-11-12 判断・デザインの案 第2章「画面の状態とそろえ」）。
+///
+/// 写真のピンと同じ 44・角 12 の灰の札を、地図の上に散らして置く（位置は板の模型の 390×844 の座標の比）。
+/// **0.3 秒より早く読めたら出さない**（`JPLoadingState.revealDelay`）。押せない・読み上げは「読み込み中」1つ
+struct MapPinSkeleton: View {
+
+    /// 札の中心の位置（画面の幅・高さに対する比）
+    nonisolated static let spots: [(x: CGFloat, y: CGFloat)] = [
+        (270.0 / 390, 322.0 / 844), (294.0 / 390, 228.0 / 844), (142.0 / 390, 542.0 / 844),
+        (322.0 / 390, 622.0 / 844), (92.0 / 390, 442.0 / 844), (222.0 / 390, 492.0 / 844),
+    ]
+    /// 札の大きさ・角（写真のピンと同じ）
+    nonisolated static let size: CGFloat = 44
+    nonisolated static let corner: CGFloat = 12
+
+    @State private var revealed = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            if revealed {
+                ForEach(Array(Self.spots.enumerated()), id: \.offset) { _, spot in
+                    RoundedRectangle(cornerRadius: Self.corner)
+                        .fill(WebTheme.surface7)
+                        .frame(width: Self.size, height: Self.size)
+                        .position(x: proxy.size.width * spot.x, y: proxy.size.height * spot.y)
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L("読み込み中", "Loading"))
+        .accessibilityIdentifier("map.loadingPins")
+        .task {
+            try? await Task.sleep(for: JPLoadingState.revealDelay)
+            revealed = true
+        }
     }
 }

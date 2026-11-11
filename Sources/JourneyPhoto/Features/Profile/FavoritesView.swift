@@ -48,19 +48,28 @@ struct FavoritesView: View {
         ScrollView {
             header
             if screen.shown.partial {
-                ErrorBanner(message: L("いいねを読み込めませんでした。この端末に覚えているぶんだけ出しています",
-                                       "Couldn't load your likes — showing what's on this device")) {
+                // 2026-11-12 判断（第2章「画面の状態とそろえ」）: 一部だけ読めた回は**帯**（写真を押し下げない）。
+                // 三角の大きな失敗が写真の上に居座っていた
+                JPStateBand(kind: .partial, title: L("一部だけ読めませんでした", "Some likes couldn't load"),
+                            message: L("この端末に覚えている分を出しています", "Showing what's saved on this device"),
+                            actionIdentifier: "favorites.partial.retry") {
                     Task { await load(force: true) }
                 }
+                .padding(.horizontal, JPSpace.gutter)
+                .padding(.bottom, JPSpace.s)
             }
             if photos.isEmpty {
                 switch LikedPhotos.emptyState(idCount: idCount, loaded: screen.shown.loaded, failed: screen.shown.poolsFailed) {
                 case .loading:
-                    // 取得中に空の格子を出さない（v2: 格子の骨格・0.3 秒より早ければ出さない）
-                    JPLoadingState(kind: .grid)
+                    // 取得中に空の格子を出さない（v2: 格子の骨格・0.3 秒より早ければ出さない）。
+                    // 2026-11-12 判断（第2章）: 字の線を付けず、格子だけを 12 枚（中身と同じ形）
+                    JPLoadingState(kind: .photoGrid(count: 12))
                 case .none:
                     // 2026-10-17: いいねは写真から。写真に出会う所（ホーム）へ1手（マイページの保存0枚と同じ道）
-                    EmptyState(message: L("まだいいねした写真がありません", "No liked photos yet"),
+                    // 2026-11-12 判断（第2章）: 印（ハートの線画）→ 見出し → どうすれば埋まるか → 一手
+                    EmptyState(icon: "heart", title: L("まだいいねした写真がありません", "No liked photos yet"),
+                               message: L("気に入った写真のハートを押すと、ここに集まります",
+                                          "Tap the heart on photos you like and they'll gather here"),
                                actionTitle: MyPageEmpty.browseTitle, actionIdentifier: "favorites.emptyBrowse") {
                         TabRouter.shared.openHome()
                     }

@@ -113,7 +113,8 @@ struct FollowListView: View {
         // v2: 読み込みは行と同じ形の骨格（0.3 秒より早ければ出さない）
         .overlay(alignment: .top) {
             if isLoading && lists.isEmpty {
-                JPLoadingState(kind: .rows)
+                // 2026-11-12 判断（第2章）: 2本の線ではなく人の行の形（顔 44・2 行の字・右にフォローの札）
+                JPLoadingState(kind: .personRows(trailing: .pill))
                     .padding(.horizontal, ProfileV2.gutter)
                     .padding(.top, ProfileTabStyle.height + JPSpace.xs)
             }

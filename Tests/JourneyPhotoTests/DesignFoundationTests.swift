@@ -268,12 +268,15 @@ final class DesignFoundationTests: XCTestCase {
     /// 空・失敗は同じ並び（明朝 20 の見出し → 15 の灰 → 一手）。空の一手は写真の無い画面の主ボタン
     func testStatesShareTheV2Layout() throws {
         let states = try source("Features/Common/ErrorBanner.swift")
-        assertInOrder(["StateLayout {", "if let title { StateTitle(text: title) }", "StateMessage(text: message)",
-                       "RetryButton(isBusy: isBusy, action: retry)"],
+        // 2026-11-12（第2章）: 失敗は丸に「!」の印 → 見出し（必ず）→ 説明 → もう一度。空は印 → 見出し → 説明 → 一手
+        assertInOrder(["StateLayout {", "JPStateIcon(symbol: JPStateIcon.failed)", "StateTitle(text: text.title)",
+                       "StateMessage(text: text.message)", "RetryButton(isBusy: isBusy, action: retry)"],
                       in: declaration("ErrorBanner", in: states), "失敗の表示")
-        assertInOrder(["StateLayout {", "if let title { StateTitle(text: title) }", "StateMessage(text: message)",
+        assertInOrder(["StateLayout {", "if let icon { JPStateIcon(symbol: icon) }",
+                       "if let title { StateTitle(text: title) }", "StateMessage(text: message)",
                        ".jpPillButton(.main(onPhoto: false))"],
                       in: declaration("EmptyState", in: states), "空の表示")
+        XCTAssertFalse(states.contains("exclamationmark.triangle"), "失敗の印が三角に戻っている")
         XCTAssertTrue(declaration("StateTitle", in: states).contains(".font(JPFont.stateTitle)"))
         let message = declaration("StateMessage", in: states)
         XCTAssertTrue(message.contains(".font(JPFont.body)"))
@@ -296,11 +299,12 @@ final class DesignFoundationTests: XCTestCase {
     /// 呼び出しを消したり、手書きの `Text` に戻したりすると落ちる
     func testMainScreensUseStateParts() throws {
         let expected: [(path: String, calls: [String])] = [
-            ("Features/Gallery/GalleryView.swift", ["ErrorBanner(message: message)"]),
+            ("Features/Gallery/GalleryView.swift", ["ErrorBanner(message: message, isBusy: isRefreshing)"]),
             ("Features/Profile/MyPageView.swift", ["EmptyState(message: L(\"まだ写真がありません\"",
                                                    "ErrorBanner(message: error)",
                                                    "ErrorBanner(message: reloadError)"]),
-            ("Features/Profile/UserProfileView.swift", ["EmptyState(message: L(\"公開された写真はまだありません\""]),
+            // 2026-11-12（第2章）: 見出し・説明・一手のボタンの空（下線の字の一手をやめた）
+            ("Features/Profile/UserProfileView.swift", ["EmptyState(title: L(\"まだ写真がありません\""]),
             ("Features/Map/PhotoMapView.swift", ["ErrorBanner(message: Self.loadFailedText, isBusy: model.isLoading)",
                                                  "EmptyState(message: L(\"見つかりませんでした\""]),
         ]

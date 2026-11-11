@@ -20,6 +20,11 @@ final class Connectivity: ObservableObject {
     func start() {
         guard !started else { return }
         started = true
+        // UI テストの絵だけ（Debug のみ・`PreviewSession.forcesOffline`）。電波なしの帯を描くため
+        if PreviewSession.forcesOffline {
+            isOffline = true
+            return
+        }
         monitor.pathUpdateHandler = { [weak self] path in
             let offline = path.status != .satisfied
             Task { @MainActor [weak self] in
