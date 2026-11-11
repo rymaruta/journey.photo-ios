@@ -123,9 +123,7 @@ struct TrunkBoxView: View {
         }
         .frame(width: Self.W, height: Self.H, alignment: .topLeading)
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .drawingGroup()
-        .shadow(color: Color.black.opacity(0.6), radius: 0, x: 0, y: 3)
-        .shadow(color: Color.black.opacity(0.75), radius: 25, x: 0, y: 30)
+        .modifier(TrunkBodyFinish())
     }
 
     /// 地・目・しみ・古び・絵・ラベル（z 0）
@@ -1075,5 +1073,30 @@ struct TrunkFigureFit: View {
         }
         .aspectRatio(TrunkLooks.canvasWidth / TrunkLooks.canvasHeight, contentMode: .fit)
         .frame(maxWidth: maxWidth)
+    }
+}
+
+/// 胴の仕上げ（1 枚の絵にしてから、縁の陰と床へ落ちる大きな影）。
+/// 測定専用の差し替え（`-JPPreviewTrunkDiag nodg|noshadow`・Debug のみ・2026-11-11）のときだけ外す。ふだんは必ず両方
+struct TrunkBodyFinish: ViewModifier {
+    func body(content: Content) -> some View {
+        let diag = PreviewSession.trunkDiag
+        if diag.isEmpty {
+            content
+                .drawingGroup()
+                .shadow(color: Color.black.opacity(0.6), radius: 0, x: 0, y: 3)
+                .shadow(color: Color.black.opacity(0.75), radius: 25, x: 0, y: 30)
+        } else {
+            let grouped = Group {
+                if diag.contains("nodg") { content } else { content.drawingGroup() }
+            }
+            if diag.contains("noshadow") {
+                grouped
+            } else {
+                grouped
+                    .shadow(color: Color.black.opacity(0.6), radius: 0, x: 0, y: 3)
+                    .shadow(color: Color.black.opacity(0.75), radius: 25, x: 0, y: 30)
+            }
+        }
     }
 }

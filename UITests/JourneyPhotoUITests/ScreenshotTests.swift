@@ -4111,16 +4111,22 @@ final class ScreenshotTests: XCTestCase {
 
     /// **回す**（owner「トランクを回したとき重い」）: 開く（面を描き終えるまで）→ 止まっている → 指で横・縦に払う →
     /// 向きのボタン → 閉じる → もう一度開く。回している間の 1 コマ（`GapMain`・`GapSpin`・`SpinFrame`）・主スレッドの停止・前後のメモリ
-    func testMeasuresTrunkSpin() {
+    func testMeasuresTrunkSpin() { measureTrunkSpin(diag: nil, rounds: 2) }
+    /// 差し替え（測るだけ・見た目は変わる）: 輪郭のなめらかさ なし／動いている間だけ描く。
+    /// AA0 は名前を `ASpin…` にして、この組でいちばん先に流す（run 992 の初回の 1 コマ 39 秒が、AA なしの初回でも出るかを見る）
+    func testMeasuresTrunkASpinDiagAA0() { measureTrunkSpin(diag: "spinaa0", rounds: 1) }
+    func testMeasuresTrunkSpinDiagIdle() { measureTrunkSpin(diag: "spinidle", rounds: 1) }
+
+    private func measureTrunkSpin(diag: String?, rounds: Int) {
         executionTimeAllowance = 600
-        let app = launchTrunk(Self.trunkPerfArgs)
+        let app = launchTrunk(Self.trunkPerfArgs + (diag.map { ["-JPPreviewTrunkDiag", $0] } ?? []))
         guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
         var lines: [String] = []
         trunkPhase(app, "トランクの画面・止まっている", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
         let spin = app.buttons["trunk.spin"].firstMatch
         let box = app.descendants(matching: .any)["trunk.spin.box"].firstMatch
         let close = app.buttons["trunk.spin.close"].firstMatch
-        for round in 1...2 {
+        for round in 1...rounds {
             guard spin.waitForExistence(timeout: 10), spin.isHittable else { return XCTFail("トランクを押せない（\(round) 回目）") }
             var marker = ""
             var wall = 0.0
@@ -4160,21 +4166,28 @@ final class ScreenshotTests: XCTestCase {
                     Thread.sleep(forTimeInterval: 1.5)
                 }
             }
-            if round == 1 { shoot(app, "96x1-計測（回した正面）") }
+            if round == 1, diag == nil { shoot(app, "96x1-計測（回した正面）") }
             trunkPhase(app, "回す画面を閉じた後\(round)", lines: &lines) {
                 close.tap()
                 Thread.sleep(forTimeInterval: 4)
             }
         }
-        trunkPerfReport("回す", app, lines)
+        trunkPerfReport("回す" + (diag.map { "・\($0)" } ?? ""), app, lines)
     }
 
     /// **Pro で使えるトランクの一覧**（owner「Pro で使えるトランクの一覧を見たとき重い」）: 型の画面 → 特別なトランク（6 型）を開く
     /// （開くまで）→ 縦に送る（measure・送りのコマ落ち）→ 戻る、を 2 回。札を作った回数・Canvas の回数と時間・
     /// 同時に作られているトランクの絵の数（`LiveBox`）・メモリの増え方と戻り方
-    func testMeasuresTrunkProModels() {
+    func testMeasuresTrunkProModels() { measureTrunkPro(diag: nil, rounds: 2) }
+    /// 差し替え（測るだけ・見た目は変わる）: 胴の影なし／drawingGroup なし／LazyVStack／1 度描いた画像
+    func testMeasuresTrunkProModelsDiagNoShadow() { measureTrunkPro(diag: "noshadow", rounds: 1) }
+    func testMeasuresTrunkProModelsDiagNoDG() { measureTrunkPro(diag: "nodg", rounds: 1) }
+    func testMeasuresTrunkProModelsDiagLazy() { measureTrunkPro(diag: "lazy", rounds: 1) }
+    func testMeasuresTrunkProModelsDiagSnap() { measureTrunkPro(diag: "snap", rounds: 1) }
+
+    private func measureTrunkPro(diag: String?, rounds: Int) {
         executionTimeAllowance = 600
-        let app = launchTrunk(Self.trunkPerfArgs)
+        let app = launchTrunk(Self.trunkPerfArgs + (diag.map { ["-JPPreviewTrunkDiag", $0] } ?? []))
         guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
         var lines: [String] = []
         trunkPhase(app, "トランクの画面・止まっている", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
@@ -4185,7 +4198,7 @@ final class ScreenshotTests: XCTestCase {
         }
         let proRow = app.buttons["trunk.models.pro"].firstMatch
         let card = app.buttons["trunk.proModels.card"].firstMatch
-        for round in 1...2 {
+        for round in 1...rounds {
             scrollTo(proRow, in: app)
             guard proRow.isHittable else { return XCTFail("特別なトランクの行を押せない（\(round) 回目）") }
             var opened = 0.0
@@ -4218,13 +4231,13 @@ final class ScreenshotTests: XCTestCase {
                     }
                 }
             }
-            if round == 1 { shoot(app, "96x2-計測（特別なトランク）") }
+            if round == 1 { shoot(app, "96x2-計測（特別なトランク" + (diag.map { "・\($0)" } ?? "") + "）") }
             trunkPhase(app, "特別なトランクから戻った後\(round)", lines: &lines) {
                 goBack(app)
                 Thread.sleep(forTimeInterval: 4)
             }
         }
-        trunkPerfReport("特別なトランク", app, lines)
+        trunkPerfReport("特別なトランク" + (diag.map { "・\($0)" } ?? ""), app, lines)
     }
 
     // MARK: - 人のトランク（2026-10-18・板 TheirTrunk・TheirInside・ProfileTrunk）

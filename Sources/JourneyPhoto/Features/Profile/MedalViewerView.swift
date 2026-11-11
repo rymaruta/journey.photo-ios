@@ -263,6 +263,11 @@ private struct MedalSceneView: UIViewRepresentable {
             let meter = TrunkSpinFrameMeter()
             context.coordinator.frameMeter = meter
             view.delegate = meter
+            // 測定専用の差し替え（`-JPPreviewTrunkDiag spinaa0|spinaa2|spinidle`・Debug のみ・2026-11-11）。ふだんは 4x・描き続ける
+            let diag = PreviewSession.trunkDiag
+            if diag.contains("spinaa0") { view.antialiasingMode = .none }
+            if diag.contains("spinaa2") { view.antialiasingMode = .multisampling2X }
+            if diag.contains("spinidle") { view.rendersContinuously = false }
         }
         return view
     }
@@ -276,9 +281,10 @@ private struct MedalSceneView: UIViewRepresentable {
             // 測る起動のときだけ: 箱の場面の中身（三角・貼り絵）と描く枠の画素（2026-11-11・測るだけ）
             if TrunkPerfMeter.shared.enabled {
                 TrunkPerfMeter.shared.note("SpinScene", CamperSceneStats.measure(coordinator.scene.rootNode).fields)
-                TrunkPerfMeter.shared.note("SpinView", String(format: "w=%.0f h=%.0f scale=%.0f aa=4x continuous=%d",
+                TrunkPerfMeter.shared.note("SpinView", String(format: "w=%.0f h=%.0f scale=%.0f aa=%d continuous=%d",
                                                               Double(view.bounds.width), Double(view.bounds.height),
-                                                              Double(view.contentScaleFactor), view.rendersContinuously ? 1 : 0))
+                                                              Double(view.contentScaleFactor), Int(view.antialiasingMode.rawValue),
+                                                              view.rendersContinuously ? 1 : 0))
             }
         }
         if let aim, aim.id != coordinator.lastAimId {

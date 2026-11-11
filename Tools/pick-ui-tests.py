@@ -57,7 +57,10 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    "ScreenshotTests/testMeasuresCamperStages", "ScreenshotTests/testMeasuresCamperStagesKeepMesh",
                    "ScreenshotTests/testMeasuresCamperStagesAANone", "ScreenshotTests/testMeasuresCamperStagesAA4x",
                    # 2026-11-11（owner「旅のトランク重すぎる」）: 回す・特別なトランクの一覧の重さを測る（2 本・計 8 分ほど）。`screens=testMeasuresTrunk`
-                   "ScreenshotTests/testMeasuresTrunkSpin", "ScreenshotTests/testMeasuresTrunkProModels"]
+                   "ScreenshotTests/testMeasuresTrunkSpin", "ScreenshotTests/testMeasuresTrunkProModels",
+                   "ScreenshotTests/testMeasuresTrunkASpinDiagAA0", "ScreenshotTests/testMeasuresTrunkSpinDiagIdle",
+                   "ScreenshotTests/testMeasuresTrunkProModelsDiagNoShadow", "ScreenshotTests/testMeasuresTrunkProModelsDiagNoDG",
+                   "ScreenshotTests/testMeasuresTrunkProModelsDiagLazy", "ScreenshotTests/testMeasuresTrunkProModelsDiagSnap"]
 
 # クラスの直下（字下げ4つ）の関数だけを区切りにする。中の入れ子の関数は本体に含める
 MEMBER = re.compile(r"^    (?:@\w+\s+)*(?:(?:private|fileprivate|override|static|final)\s+)*func\s+(\w+)\s*\(", re.M)

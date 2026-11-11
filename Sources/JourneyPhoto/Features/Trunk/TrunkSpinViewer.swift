@@ -79,6 +79,8 @@ struct TrunkSpinViewer: View {
         .statusBarHidden(true)
         .task {
             guard textures == nil else { return }
+            // 測る起動のときだけ: 回す画面を開いた後の停止の積みを撮れるよう、溜まった見本を空にする（2026-11-11）
+            if TrunkPerfMeter.shared.enabled { PerfRecorder.shared.clearSamples() }
             // 描く順を分ける（2026-10-18 見直し）: 正面（ラベルごと）を先に描いて出し、画面の処理を一度返してから
             // 背面・左右・上・底・持ち手を描く。8枚を1度に描くと開いた直後の一瞬が止まる
             let clock = ContinuousClock()
