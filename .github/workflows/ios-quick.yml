@@ -36,10 +36,6 @@ on:
         description: "足して流す UI テスト（画面の名前・テスト名の一部。`,` 区切り・空なら差分から）"
         type: string
         default: ""
-      warm_only:
-        description: "一時（測る間だけ）: テストをせず、この枝の控えを書く"
-        type: boolean
-        default: false
   workflow_call:
     inputs:
       screens:
@@ -56,14 +52,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 一時（測る間だけ・main に入る前に消す）
-  warm-only:
-    if: ${{ inputs.warm_only == true }}
-    permissions:
-      contents: read
-      actions: read
-    uses: ./.github/workflows/xcode-cache-warm.yml
-
   plan:
     name: 毎回のの中身を決める
     runs-on: ubuntu-latest
@@ -87,11 +75,9 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           SCREENS: ${{ inputs.screens }}
-          WARM_ONLY: ${{ inputs.warm_only }}
         run: |
           set -uo pipefail
           run=true
-          [ "${WARM_ONLY:-false}" = "true" ] && run=false
           reason=""
           if [ "$EVENT" = "pull_request" ]; then
             if [ "${DRAFT:-false}" = "true" ]; then

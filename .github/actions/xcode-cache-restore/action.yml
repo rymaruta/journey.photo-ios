@@ -9,8 +9,10 @@
 #     `!~/…` の行は効かなかった（`~` が広げられていないと見ている・理由は確かめていない）: v1 は除いたはずの .app（296MB）と
 #     Archive の中間物（1.3GB）を持っていて、`/**` まで書いた v2 も SwiftPM の置き場の写しを持ったまま 3,976MB になった
 #     （run 43009013358 が書き、43010473945 が戻すのに 5.5 分）。v3 は「消してから書く」
-#     SwiftPM の Package.swift を読んだ結果（`~/Library/Caches/org.swift.swiftpm/manifests`・約 2MB）だけは入れる:
-#     無いと「依存の図を解く」が毎回読み直して 64〜146 秒、あると 10〜40 秒（測る回 run 43021712122・43016625359）
+#     🔴 **残っている遅さ: 組む前の「依存の図を解く」（Resolve Package Graph）が 64〜250 秒**（取りに行く行は 0）。
+#     SwiftPM の置き場の写し（repositories 3.2GB）があると 19 秒・そのあと組むのは 124 秒（run 43034233884）。
+#     写しを控えに入れると戻すのが 3GB 増える。manifests（2MB）を入れても縮まなかった（run 43031668253: 250 秒）。
+#     Package.resolved に固定（-disableAutomaticPackageResolution）しても縮まない（同 272 秒・取りに行った 30 行）
 # (b) **ソースの時刻を中身から決める**（`Tools/source-mtime.py`）。控えを書いた回と中身が同じファイルは同じ時刻になり、
 #     Xcode が組み直さない。控えを書く回（xcode-cache-warm.yml）も同じ道具を組む前に流す
 #
@@ -46,7 +48,6 @@ runs:
         path: |
           ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
           ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
-          ~/Library/Caches/org.swift.swiftpm/manifests
         key: ${{ steps.key.outputs.key }}-${{ github.run_id }}
         restore-keys: |
           ${{ steps.key.outputs.key }}

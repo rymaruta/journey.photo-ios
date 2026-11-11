@@ -662,8 +662,8 @@ if all(f.exists() for f in (testflight_yml, pr_yml, quick_yml, full_yml, sharded
     v2_paths = _cache_paths(restore_text, "控えを戻す（v3・依存と組んだものだけ）")
     if not v2_paths or v2_paths != _cache_paths(warm_text, "控えを書く"):
         fail("Mac の控え: .github/actions/xcode-cache-restore の v3 と xcode-cache-warm.yml の「控えを書く」の path が揃っていません（当たらない）")
-    elif any(p.startswith("!") for p in v2_paths) or [p for p in v2_paths if "org.swift.swiftpm" in p] != ["~/Library/Caches/org.swift.swiftpm/manifests"]:
-        fail("Mac の控え v3: path に `!` の行を書かない（効かず 4GB になった・書く前に消す）・SwiftPM の置き場からは manifests だけ")
+    elif any(p.startswith("!") for p in v2_paths) or any("org.swift.swiftpm" in p for p in v2_paths):
+        fail("Mac の控え v3: path に `!` の行を書かない（効かず 4GB になった・書く前に消す）・SwiftPM の置き場の写しは入れない")
     if 'rm -rf "$dd/SourcePackages/repositories" "$dd/Build/Intermediates.noindex/ArchiveIntermediates"' not in warm_text:
         fail("xcode-cache-warm.yml が、控えを書く前に SwiftPM の置き場の写しと Archive の中間物を消していません（7GB に戻る）")
     if "python3 Tools/source-mtime.py" not in restore_text:
