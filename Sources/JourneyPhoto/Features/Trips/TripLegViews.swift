@@ -80,10 +80,10 @@ struct TripLegRow: View {
                     .frame(width: Self.connectorWidth)
                     .frame(maxHeight: .infinity)
                     .frame(width: TripStyle.stopNumberSide)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { connectorHeight = $0 }
+                    .measuringHeight(Self.measures) { connectorHeight = $0 }
                     .accessibilityHidden(true)
             }
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowHeight = $0 }
+            .measuringHeight(Self.measures) { rowHeight = $0 }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -92,6 +92,15 @@ struct TripLegRow: View {
         .accessibilityHint(Self.hint(state))
         .accessibilityValue(measuredValue)
         .accessibilityIdentifier("trip.leg")
+    }
+
+    /// 高さを測るのは見本のときだけ（Debug・ふだんは描き直しのたびに状態を書かない）
+    nonisolated static var measures: Bool {
+        #if DEBUG
+        return TripPlanFixture.isOn
+        #else
+        return false
+        #endif
     }
 
     /// 見本のときだけ「line=44.0 row=44.0」（UI テストが線の高さを数で見る）。ふだんは空
@@ -387,6 +396,18 @@ struct TripLegSheet: View {
             let from = Photo.Coords(lat: origin.placemark.coordinate.latitude, lng: origin.placemark.coordinate.longitude)
             let to = Photo.Coords(lat: target.placemark.coordinate.latitude, lng: target.placemark.coordinate.longitude)
             if let url = TripTravel.googleURL(from: from, to: to, mode: mode) { openURL(url) }
+        }
+    }
+}
+
+extension View {
+    /// 高さを測る（`enabled` のときだけ見張りを付ける・見本の UI テスト用）
+    @ViewBuilder
+    fileprivate func measuringHeight(_ enabled: Bool, _ action: @escaping (CGFloat) -> Void) -> some View {
+        if enabled {
+            onGeometryChange(for: CGFloat.self) { $0.size.height } action: { action($0) }
+        } else {
+            self
         }
     }
 }

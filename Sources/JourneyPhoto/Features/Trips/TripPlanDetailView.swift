@@ -987,6 +987,9 @@ struct TripPlanDetailView: View {
     // MARK: - 運ぶ
 
     private func setDropTarget(_ targeted: Bool, _ spot: DropSpot) {
+        #if DEBUG
+        if targeted, TripPlanFixture.isOn { TripPlanFixtureCounter.shared.targeted += 1 }
+        #endif
         if targeted { dropTarget = spot } else if dropTarget == spot { dropTarget = nil }
     }
 
@@ -1001,7 +1004,13 @@ struct TripPlanDetailView: View {
     /// 落とした。規則は `TripPlanEdit.dropped`（落とした時点の日程で項目を探し直す）
     private func drop(_ payload: String?, toDay: Int, toItem: Int?) -> Bool {
         dropTarget = nil
+        #if DEBUG
+        if TripPlanFixture.isOn { TripPlanFixtureCounter.shared.dropped += 1 }
+        #endif
         guard let payload, let next = TripPlanEdit.dropped(days, payload: payload, toDay: toDay, toItem: toItem) else {
+            #if DEBUG
+            if TripPlanFixture.isOn { TripPlanFixtureCounter.shared.rejected += 1 }
+            #endif
             return false
         }
         days = next
@@ -1053,23 +1062,44 @@ struct TripPlanDetailView: View {
         // - 並べ替えは**行を押さえて運ぶ**（iOS の決まりの操作。押す回数は変わらない）。行を押すと今どおり撮影スポットが開く
         // - 読み上げの人は「…」の上へ・下へ・別の日へ移す・外す
         return HStack(spacing: 0) {
-            itemLink(item, name: name, number: number, season: season, chip: chip)
-                .draggable(TripPlanEdit.dragPayload(day: di, item: ii, of: item)) {
-                    Text(name)
-                        .font(JPFont.bodyEmphasis)
-                        .foregroundStyle(WebTheme.foreground)
-                        .padding(.horizontal, JPSpace.s)
-                        .frame(minHeight: WebTheme.minTapTarget)
-                        .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))
-                }
-                .accessibilityHint(L("押すと開きます。押さえたまま運ぶと並べ替えます", "Tap to open. Touch and hold, then drag to reorder."))
-                .accessibilityIdentifier("tripPlan.dragHandle")
+            if TripPlanFixture.dragHandleVariant {
+                // 比べるための運ぶ印の版（見本のときだけ・`-JPTripPlanDragHandle`）
+                itemLink(item, name: name, number: number, season: season, chip: chip)
+                Image(systemName: "line.3.horizontal")
+                    .font(.subheadline)
+                    .foregroundStyle(WebTheme.text3)
+                    .webTappable()
+                    .contentShape(Rectangle())
+                    .draggable(TripPlanEdit.dragPayload(day: di, item: ii, of: item)) { dragPreview(name) }
+                    .accessibilityLabel(L("「\(name)」を運ぶ", "Move \(name)"))
+                    .accessibilityIdentifier("tripPlan.dragHandle")
+            } else {
+                itemLink(item, name: name, number: number, season: season, chip: chip)
+                    .draggable(TripPlanEdit.dragPayload(day: di, item: ii, of: item)) { dragPreview(name) }
+                    .accessibilityHint(L("押すと開きます。押さえたまま運ぶと並べ替えます", "Tap to open. Touch and hold, then drag to reorder."))
+                    .accessibilityIdentifier("tripPlan.dragHandle")
+            }
             itemMenu(di, ii, item, name: name)
         }
         .overlay(alignment: .top) { dropLine(DropSpot(day: di, item: ii)) }
         .dropDestination(for: String.self) { items, _ in
             drop(items.first, toDay: di, toItem: ii)
         } isTargeted: { setDropTarget($0, DropSpot(day: di, item: ii)) }
+    }
+
+    /// 運んでいる間の絵（見本のときだけ、持ち上がった回数を数える）
+    private func dragPreview(_ name: String) -> some View {
+        Text(name)
+            .font(JPFont.bodyEmphasis)
+            .foregroundStyle(WebTheme.foreground)
+            .padding(.horizontal, JPSpace.s)
+            .frame(minHeight: WebTheme.minTapTarget)
+            .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))
+            .onAppear {
+                #if DEBUG
+                if TripPlanFixture.isOn { TripPlanFixtureCounter.shared.lifted += 1 }
+                #endif
+            }
     }
 
     /// 項目の操作（2026-09-30）: 上へ・下へ・別の日へ・ひとこと。**規則は `TripPlanEdit`**
@@ -1323,6 +1353,12 @@ private struct TripPlanFixtureSendsLabel: View {
             .foregroundStyle(WebTheme.text3)
             .accessibilityIdentifier("tripPlan.fixtureSends")
             .accessibilityValue("\(counter.sends)")
+        // 運ぶ操作の数（UI テストが値で読む）
+        Text(counter.dragLine)
+            .font(JPFont.caption.monospacedDigit())
+            .foregroundStyle(WebTheme.text3)
+            .accessibilityIdentifier("tripPlan.fixtureDrag")
+            .accessibilityValue(counter.dragLine)
     }
 }
 #endif

@@ -2686,6 +2686,58 @@ final class ScreenshotTests: XCTestCase {
                        "続けて 5 回直したのに、まとめて 1 回で送っていない")
     }
 
+    /// **運ぶ操作を数で分ける**（2026-11-11 見直し: 行全体の版では止めずに離すと入らず、止めてから離すと入った）。
+    /// 2 つの作り（行全体・運ぶ印）× 先のスワイプ（なし・あり）で、**止めずに離す**操作を1回ずつ流し、
+    /// 持ち上がった・落とす先に入った・落とした・断った の数と、千里浜の位置を残す。合否は付けない（名指しした回だけ）
+    func testMeasuresTripPlanDrag() {
+        for handle in [false, true] {
+            for swipe in [false, true] {
+                var args = ["-JPTripPlanFixture", "YES"]
+                if handle { args += ["-JPTripPlanDragHandle", "YES"] }
+                let app = launchTrunk(args)
+                defer { app.terminate() }
+                let name = "variant=\(handle ? "handle" : "row") swipe=\(swipe ? "yes" : "no")"
+                guard openFixturePlan(app) else { _ = fixtureSends(app, "\(name) open-failed"); continue }
+                Thread.sleep(forTimeInterval: 3)
+                let handles = app.descendants(matching: .any).matching(identifier: "tripPlan.dragHandle")
+                let source = handles.element(boundBy: 2)
+                let target = app.buttons["「越前海岸 呼鳥門」の操作"].firstMatch
+                let position = app.buttons["「千里浜なぎさドライブウェイ」の操作"].firstMatch
+                var pushes = 0
+                while !(source.isHittable && target.isHittable), pushes < 4 {
+                    app.swipeUp()
+                    Thread.sleep(forTimeInterval: 1)
+                    pushes += 1
+                }
+                if swipe {
+                    app.swipeUp(); Thread.sleep(forTimeInterval: 1)
+                    app.swipeDown(); Thread.sleep(forTimeInterval: 1)
+                    var more = 0
+                    while !(source.isHittable && target.isHittable), more < 4 {
+                        app.swipeUp()
+                        Thread.sleep(forTimeInterval: 1)
+                        more += 1
+                    }
+                }
+                let counter = app.descendants(matching: .any)["tripPlan.fixtureDrag"].firstMatch
+                let before = (counter.value as? String) ?? "nil"
+                let posBefore = (position.value as? String) ?? "nil"
+                guard source.isHittable, target.isHittable else {
+                    let line = "TRIPDRAG \(name) not-hittable handles=\(handles.count) pushes=\(pushes)"
+                    print(line); XCTContext.runActivity(named: line) { _ in }
+                    continue
+                }
+                source.press(forDuration: 1.2, thenDragTo: target)
+                Thread.sleep(forTimeInterval: 2)
+                let after = (counter.value as? String) ?? "nil"
+                let posAfter = (position.value as? String) ?? "nil"
+                let line = "TRIPDRAG \(name) pushes=\(pushes) before[\(before)] after[\(after)] pos[\(posBefore) -> \(posAfter)]"
+                print(line)
+                XCTContext.runActivity(named: line) { _ in }
+            }
+        }
+    }
+
     /// **日をまたぐ区間と長い移動**（2026-11-11 owner の実機「バスとか出てこないよ」「日本からブラジルとか無理じゃん」）。
     /// 見本の「京都とブラジルの旅」（1 日 1 か所・空の日・サンパウロ）を開き、前の日からの区間と、海を越える区間の
     /// 「飛行機などの長い移動」・そのシート（Google フライト）を撮る。出なければ撮らずに抜ける

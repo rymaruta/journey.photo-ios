@@ -37,6 +37,15 @@ enum TripPlanFixture {
         #endif
     }
 
+    /// 運ぶ印の版で描く（`-JPTripPlanDragHandle YES`・見本のときだけ）。行全体を運ぶ版と比べる UI テスト用
+    static var dragHandleVariant: Bool {
+        #if DEBUG
+        return isOn && UserDefaults.standard.bool(forKey: "JPTripPlanDragHandle")
+        #else
+        return false
+        #endif
+    }
+
     static var failing: Bool {
         #if DEBUG
         return isOn && UserDefaults.standard.bool(forKey: failKey)
@@ -152,4 +161,12 @@ actor TripPlanFixtureStore {
 final class TripPlanFixtureCounter: ObservableObject {
     static let shared = TripPlanFixtureCounter()
     @Published var sends = 0
+    /// 運ぶ操作の数（見本のときだけ・2026-11-11 運ぶの回帰を数で分ける）:
+    /// 持ち上がった（preview が出た）・落とす先に入った（isTargeted が真）・落とした（drop が呼ばれた）・断った
+    @Published var lifted = 0
+    @Published var targeted = 0
+    @Published var dropped = 0
+    @Published var rejected = 0
+
+    var dragLine: String { "lift=\(lifted) target=\(targeted) drop=\(dropped) reject=\(rejected)" }
 }
