@@ -125,6 +125,13 @@ struct UserProfile: Decodable, Equatable, Identifiable {
     /// 前の晩の知らせを受け取るか。**無い（古いサーバー）ときは受け取る**（サーバーの既定と同じ）
     var wantsLightAlert: Bool { lightAlert?.value ?? true }
 
+    /// 検索エンジンにプロフィールを表示しない（2026-11-11 owner 承認・#526）。**本人の応答だけに載る**
+    /// （公開プロフィールには無い）。サーバーは行に無ければ偽（＝表示する）を返す
+    private let searchHidden: LenientFlag?
+
+    /// 検索エンジンにプロフィールを表示しないか。**無い（古いサーバー）ときは表示する**（サーバーの既定と同じ）
+    var hidesFromSearch: Bool { searchHidden?.value ?? false }
+
     /// Pro マークの形。知らない値・無い値は既定の絞り羽根（外しているときも、付け直したときの形として絞り羽根）
     var markStyle: ProMarkStyle {
         proMarkStyle?.value.flatMap(ProMarkStyle.init(rawValue:)) ?? .iris
