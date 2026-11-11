@@ -31,8 +31,14 @@ struct SearchSpotIndexSection: View {
     nonisolated static let chipRowHeight: CGFloat = PillChip.height + PillChip.tapSlack * 2
     /// チップの行と札の行のあいだ
     nonisolated static let rowGap: CGFloat = JPSpace.xs
-    /// 段の中身（チップ＋札）の高さ。**地方を替えても変わらない**（標準の字の大きさで 168）
-    nonisolated static let bodyHeight: CGFloat = chipRowHeight + rowGap + cardHeight
+    /// 札と出典の行のあいだ
+    nonisolated static let creditGap: CGFloat = JPSpace.xxs
+    /// 出典の1行の高さ（12pt・1行固定）。**写真の無い札も同じだけ空ける**（地方で段の高さを変えない）
+    nonisolated static let creditHeight: CGFloat = 16
+    /// 札の列（札＋出典の行）の高さ
+    nonisolated static let cardColumnHeight: CGFloat = cardHeight + creditGap + creditHeight
+    /// 段の中身（チップ＋札＋出典）の高さ。**地方を替えても変わらない**（標準の字の大きさで 188）
+    nonisolated static let bodyHeight: CGFloat = chipRowHeight + rowGap + cardColumnHeight
 
     var body: some View {
         let selected = SpotPrefectureIndex.selected(region, in: groups)
@@ -85,21 +91,24 @@ struct SearchSpotIndexSection: View {
                 .padding(.horizontal, JPSpace.gutter)
             }
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(alignment: .top, spacing: 8) {
                     ForEach(selected.cards) { card in
-                        NavigationLink {
-                            OfficialSpotIndexView(scope: .prefecture(card.prefecture), spots: spots,
-                                                  photos: photos, photosKnown: photosKnown)
-                        } label: {
-                            prefectureCard(card)
+                        VStack(alignment: .leading, spacing: Self.creditGap) {
+                            NavigationLink {
+                                OfficialSpotIndexView(scope: .prefecture(card.prefecture), spots: spots,
+                                                      photos: photos, photosKnown: photosKnown)
+                            } label: {
+                                prefectureCard(card)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("search.spotIndex.prefecture")
+                            credit(card)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("search.spotIndex.prefecture")
                     }
                 }
                 .padding(.horizontal, JPSpace.gutter)
             }
-            .frame(height: Self.cardHeight)
+            .frame(height: Self.cardColumnHeight)
             // 地方を替えたら札の列は頭から（前の地方の送った位置を持ち越さない）
             .id(selected.id)
         }
@@ -152,7 +161,28 @@ struct SearchSpotIndexSection: View {
             .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
             .contentShape(RoundedRectangle(cornerRadius: JPRadius.m))
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(card.prefecture)、\(SpotPrefectureIndex.countLabel(card.count))")
+            .accessibilityLabel(SpotPrefectureIndex.spokenCard(card))
             .accessibilityAddTraits(.isButton)
+    }
+
+    /// 札の写真の出典（作者 / ライセンス・押すと出典とライセンスの頁）。**写真と必ず一緒に**（CC BY・CC BY-SA の条件・
+    /// 156pt の札は `SpotImage.smallURL` の区分で大きな枠＝ホームの札・旅の候補の札と同じ扱い）。
+    /// 札のリンクの**外**に置く（押す先が2つ重ならない）。1行固定・頭で切る（作者とライセンスを残す）。
+    /// 写真の無い札も同じ高さを空ける（段の高さを地方で変えない）
+    @ViewBuilder
+    private func credit(_ card: SpotPrefectureIndex.Card) -> some View {
+        Group {
+            if let cover = card.cover {
+                SpotImageCredit(photo: cover)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.faint)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                    .accessibilityIdentifier("search.spotIndex.credit")
+            } else {
+                Color.clear.accessibilityHidden(true)
+            }
+        }
+        .frame(width: Self.cardWidth, height: Self.creditHeight, alignment: .leading)
     }
 }

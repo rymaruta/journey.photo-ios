@@ -47,6 +47,11 @@ final class CurrentLocationTests: XCTestCase {
         XCTAssertEqual(fake.locationRequests, 1)
         XCTAssertEqual(fake.authorizationRequests, 0)
         XCTAssertFalse(location.requestedByUser)
+        // 取れたあと（一覧に戻ってきた）・失敗したあとも取り直さない（並びが目の前で動かない）
+        location.handle(latitude: 35, longitude: 139)
+        location.locateIfAllowed()
+        XCTAssertEqual(fake.locationRequests, 1)
+        XCTAssertEqual(location.state, .located(latitude: 35, longitude: 139))
     }
 
     /// 既に断られているなら、尋ね直さずに「拒否」を返す

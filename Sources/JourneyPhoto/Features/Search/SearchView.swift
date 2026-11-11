@@ -152,14 +152,7 @@ struct SearchView: View {
             // 発見の顔でも1度は取る（「季節・時間帯から探す」は季節の案内を持つ撮影地だけでも出す。
             // `fetchIndex` は控えを持つので叩きすぎない）
             if officialSpots.isEmpty {
-                // 失敗を空と分けて覚える（発見の「撮影スポット」の段が「読み込めませんでした」を言う・札 #524）。
-                // 語の検索での使い方は前と同じ（取れなければ空で、節を出さないだけ）
-                do {
-                    officialSpots = try await environment.spots.fetchIndex()
-                    spotIndexLoad = .ready
-                } catch {
-                    if !Task.isCancelled { spotIndexLoad = .failed }
-                }
+                await loadSpotIndex(force: false)
             }
             // 別名は語で当てるときだけ要る（季節・時間帯だけで絞っているときは取らない）
             guard !query.isEmpty else { return }
@@ -477,28 +470,36 @@ struct SearchView: View {
                                photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.hasLoaded,
                                                                    photos: model.everything),
                                isRetrying: spotIndexRetrying, retry: retrySpotIndex, region: $spotRegion)
-            // 出ている地方の札の表紙のために、まだ索引だけの行の詳細を読む（無ければ通信しない）
-            .task(id: SpotDetailNeeds.key(SpotPrefectureIndex.coverNeeds(SpotPrefectureIndex.selected(spotRegion, in: spotGroups)))) {
+            // 出ている地方の札の表紙のために、まだ索引だけの行の詳細を読む（無ければ通信しない）。
+            // 鍵は画面に出ている間だけ（出ていない間に届いて捨てた回は、戻ったときに読み直す・`coverTaskKey`）
+            .task(id: SpotPrefectureIndex.coverTaskKey(
+                SpotPrefectureIndex.coverNeeds(SpotPrefectureIndex.selected(spotRegion, in: spotGroups)), onScreen: isOnScreen)) {
                 let needs = SpotPrefectureIndex.coverNeeds(SpotPrefectureIndex.selected(spotRegion, in: spotGroups))
-                guard !needs.isEmpty else { return }
+                guard isOnScreen, !needs.isEmpty else { return }
                 let merged = await environment.spots.withDetails(officialSpots, for: needs)
                 guard !Task.isCancelled, isOnScreen else { return }
                 officialSpots = SpotDetailNeeds.overlay(officialSpots, with: merged)
             }
     }
 
-    /// 撮影スポットの索引を読み直す（段の「もう一度試す」・圏外から戻ったとき）
+    /// 撮影スポットの索引を読む**ただ1つの口**（最初の `.task`・段の「もう一度試す」・引き下げの `reloadAll`）。
+    /// 失敗を空と分けて覚える（発見の「撮影スポット」の段が「読み込めませんでした」を言う・札 #524）。
+    /// 語の検索での使い方は前と同じ（取れなければ空で、節を出さないだけ）。
+    /// 2026-11-11（確かめ役の指摘）: 以前は引き下げが索引を別に読んでいて、取れても段が「読み込めませんでした」のままだった
+    private func loadSpotIndex(force: Bool) async {
+        let service = environment.spots
+        guard let result = await SpotPrefectureIndex.loaded({ try await service.fetchIndex(force: force) }) else { return }
+        if let spots = result.spots { officialSpots = spots }
+        spotIndexLoad = result.load
+    }
+
+    /// 段の「もう一度試す」（圏外から戻ったときなど）。404 の「無い」を覚えていても読み直す（`force`）
     private func retrySpotIndex() {
         guard !spotIndexRetrying else { return }
         spotIndexRetrying = true
         Task {
             defer { spotIndexRetrying = false }
-            do {
-                officialSpots = try await environment.spots.fetchIndex(force: true)
-                spotIndexLoad = .ready
-            } catch {
-                spotIndexLoad = .failed
-            }
+            await loadSpotIndex(force: true)
         }
     }
 
@@ -846,7 +847,7 @@ struct SearchView: View {
         // 発見の顔の「季節・時間帯から探す」も索引を使うので、語が無くても取る。force は付けない——取り損ねた回
         // （圏外）は控えが無いので取り直し、404 の「無い」は60秒覚えたまま叩かない
         if officialSpots.isEmpty {
-            officialSpots = (try? await environment.spots.fetchIndex()) ?? []
+            await loadSpotIndex(force: false)
         }
         // 別名も同じ（詳細を開いている間に届いた回は捨てているので、ここで取り直す）
         // 引き下げの途中で詳細を開いたら入れ替えない（`.task(id: query)` の 🔴）

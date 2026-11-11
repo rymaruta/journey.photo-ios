@@ -62,7 +62,7 @@ enum SpotPrefectureIndex {
                 guard let rows = byPrefecture[name], !rows.isEmpty else { return nil }
                 let picked = cover(rows)
                 return Card(prefecture: name, count: rows.count, cover: picked,
-                            pending: picked == nil ? rows.first(where: { $0.spot.isIndexOnly })?.spot : nil)
+                            pending: picked == nil ? pendingCover(rows) : nil)
             }
             return cards.isEmpty ? nil : Group(region: region, cards: cards)
         }
@@ -77,6 +77,47 @@ enum SpotPrefectureIndex {
                 a.photoCount != b.photoCount ? a.photoCount > b.photoCount : a.spot.name < b.spot.name
             }?
             .spot.photo
+    }
+
+    /// 表紙のために詳細を読む行: **まだ索引だけで、索引が「写真あり」と言っている行**（`hasPhoto`）。
+    /// 写真の無い行の詳細を読んでも表紙は増えない（確かめ役の指摘・2026-11-11）。並べ方は `cover` と同じ
+    static func pendingCover(_ rows: [OfficialSpotList.Row]) -> OfficialSpot? {
+        rows.filter { $0.spot.isIndexOnly && $0.spot.hasPhoto }
+            .min { a, b in
+                a.photoCount != b.photoCount ? a.photoCount > b.photoCount : a.spot.name < b.spot.name
+            }?
+            .spot
+    }
+
+    /// 表紙の詳細を読む `.task(id:)` の鍵。**画面に出ていない間は空**——出ていない間に届いた答えは捨てるので、
+    /// 戻ったときに鍵が変わって読み直す（確かめ役の指摘・2026-11-11。以前は同じ鍵のまま読み直さなかった）
+    static func coverTaskKey(_ needs: [OfficialSpot], onScreen: Bool) -> String {
+        onScreen ? SpotDetailNeeds.key(needs) : ""
+    }
+
+    /// 索引を読んだ結果。**取り消された回は nil**（段階を変えない）。失敗は spots が nil で `.failed`。
+    /// 探すは最初の読み込み・「もう一度試す」・引き下げの3か所からこれを通す（`SearchView.loadSpotIndex`）
+    static func loaded(_ fetch: () async throws -> [OfficialSpot]) async -> (spots: [OfficialSpot]?, load: Load)? {
+        do {
+            let spots = try await fetch()
+            return (spots, .ready)
+        } catch {
+            if Task.isCancelled || error is CancellationError { return nil }
+            return (nil, .failed)
+        }
+    }
+
+    /// 一覧の段（全国の並び・撮影スポットの行だけ）。**写真は県に振り分けない**——行の枚数は数えておいた
+    /// `counts`（`OfficialSpotList.photoCounts`）を当てる。県の決め方・絞り方は `RegionList.sections` のまま
+    static func listSections(spots: [OfficialSpot], query: String, aliases: [String: [String]],
+                             counts: [String: Int], from center: Photo.Coords?) -> [RegionList.Section] {
+        nationalSections(RegionList.sections(photos: [], spots: spots, query: query, aliases: aliases, from: center))
+            .map { section in
+                RegionList.Section(key: section.key, isCurrent: section.isCurrent, photos: [],
+                                   spots: section.spots.map {
+                                       OfficialSpotList.Row(spot: $0.spot, km: $0.km, photoCount: counts[$0.spot.spotId] ?? 0)
+                                   })
+            }
     }
 
     /// 段に出ている地方の札で、表紙のために詳細を読む行（無ければ空・通信しない）
@@ -116,6 +157,8 @@ enum SpotPrefectureIndex {
         let id: String
         let title: String
         let target: String
+        /// 跳ぶ先の見出しの字（読み上げの値・UI テストが着いたかを見る）
+        let targetTitle: String
     }
 
     static func jumps(_ national: [RegionList.Section]) -> [Jump] {
@@ -127,7 +170,7 @@ enum SpotPrefectureIndex {
                 return false
             }) {
                 out.append(Jump(id: region.name, title: L(region.name, PrefectureRegions.englishName(region)),
-                                target: first.id))
+                                target: first.id, targetTitle: first.title))
             }
         }
         if let abroad = national.first(where: { section in
@@ -136,9 +179,16 @@ enum SpotPrefectureIndex {
             default: return false
             }
         }) {
-            out.append(Jump(id: "abroad", title: L("海外", "Outside Japan"), target: abroad.id))
+            out.append(Jump(id: "abroad", title: L("海外", "Outside Japan"), target: abroad.id, targetTitle: abroad.title))
         }
         return out
+    }
+
+    /// 県の札の読み上げ（「京都府、15件、写真: 作者」）。区切りは英語では「, 」
+    static func spokenCard(_ card: Card) -> String {
+        var parts = [card.prefecture, countLabel(card.count)]
+        if let cover = card.cover { parts.append(cover.creditAuthor) }
+        return parts.joined(separator: L("、", ", "))
     }
 
     /// 段の見出しの右の件数（「15件」）

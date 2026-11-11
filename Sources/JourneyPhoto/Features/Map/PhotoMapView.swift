@@ -1251,7 +1251,7 @@ struct PhotoMapView: View {
                 if let spot = model.officialSpot(for: pin) {
                     NavigationLink {
                         OfficialSpotView(spot: spot, spots: model.officialSpots, photos: model.photos,
-                                         photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.loaded, photos: model.photos))
+                                         photosKnown: model.photosKnown)
                     } label: {
                         // 2026-10-11 判断: 呼び名を「撮影スポットを見る」に延ばしたので、幅 375pt で「経路」と
                         // 並ぶとはみ出しうる。隣の「経路」と形をそろえてアイコンは残し、1行に収めて縮める。
@@ -1543,7 +1543,7 @@ struct PhotoMapView: View {
                         ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                             NavigationLink {
                                 OfficialSpotView(spot: row.spot, spots: model.officialSpots, photos: model.photos,
-                                                 photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.loaded, photos: model.photos))
+                                                 photosKnown: model.photosKnown)
                             } label: {
                                 spotRow(row)
                             }
@@ -1590,8 +1590,7 @@ struct PhotoMapView: View {
 
     /// 1行（`OfficialSpotRow`・探すの撮影スポットの一覧と同じ部品・札 #524 で切り出した）
     private func spotRow(_ row: OfficialSpotList.Row) -> some View {
-        OfficialSpotRow(row: row, photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.loaded,
-                                                                       photos: model.photos))
+        OfficialSpotRow(row: row, photosKnown: model.photosKnown)
     }
 
     /// 「約0.8km · 写真 3枚」（`OfficialSpotRow.subline`）
@@ -1768,7 +1767,7 @@ struct PhotoMapView: View {
                 ForEach(section.spots) { row in
                     NavigationLink {
                         OfficialSpotView(spot: row.spot, spots: model.officialSpots, photos: model.photos,
-                                         photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.loaded, photos: model.photos))
+                                         photosKnown: model.photosKnown)
                     } label: {
                         spotRow(row)
                     }

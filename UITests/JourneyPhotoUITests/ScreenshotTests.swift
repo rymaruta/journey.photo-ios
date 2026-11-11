@@ -2400,13 +2400,24 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "11i-撮影スポットの一覧（全国）")
 
-        // 地方へ跳ぶ（3つ目のチップ・無ければ最後）
+        // 地方へ跳ぶ。**まだ描いていない県**へ届くかを見るため、押せるチップのうちいちばん後ろ（南）を押す。
+        // チップの値は跳ぶ先の見出しの字（`SpotPrefectureIndex.Jump.targetTitle`）。着いたら見出しが画面に出ている
         let jumps = app.buttons.matching(identifier: "spotIndex.jump")
-        if jumps.count > 0 {
-            let jump = jumps.element(boundBy: min(2, jumps.count - 1))
-            if jump.isHittable {
+        if jumps.count > 1 {
+            jumps.element(boundBy: 0).swipeLeft()
+            Thread.sleep(forTimeInterval: 1)
+            var jump: XCUIElement?
+            for i in stride(from: jumps.count - 1, through: 1, by: -1) where jumps.element(boundBy: i).isHittable {
+                jump = jumps.element(boundBy: i)
+                break
+            }
+            if let jump, let target = jump.value as? String, !target.isEmpty {
+                let heading = app.scrollViews["spotIndex.list"].staticTexts[target].firstMatch
+                print("spotIndex.jump target=\(target) visibleBefore=\(heading.exists && heading.isHittable)")
                 jump.tap()
                 Thread.sleep(forTimeInterval: 2)
+                XCTAssertTrue(heading.waitForExistence(timeout: 5) && heading.isHittable,
+                              "地方のチップで「\(target)」の見出しへ跳べていない")
                 shoot(app, "11j-撮影スポットの一覧（全国・地方へ跳んだ）")
             }
         }

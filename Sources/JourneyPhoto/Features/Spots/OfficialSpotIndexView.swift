@@ -37,8 +37,28 @@ struct OfficialSpotIndexView: View {
     /// 詳細を重ねた索引（最初は受け取ったまま）
     @State private var detailed: [OfficialSpot]?
     @State private var depth = SpotDetailNeeds.ListDepth()
-    /// 最後に跳んだ地方（チップの選んだ印）
-    @State private var jumped: String?
+    /// 写真の枚数（撮影スポット id → 枚数）。写真か結びが変わったときだけ数える（`OfficialSpotList.photoCounts`）
+    @State private var counts: [String: Int] = [:]
+    /// 出す段（入力が変わったときだけ作る・`Inputs`）。作る前は nil（「見つかりませんでした」と言わない）
+    @State private var built: [RegionList.Section]?
+
+    /// 段を作り直す材料。**body のたびに全件を束ね直さない**（確かめ役の指摘・2026-11-11）
+    private struct Inputs: Equatable {
+        let query: String
+        let here: Photo.Coords?
+        let detailed: [OfficialSpot]?
+        let aliases: [String: [String]]
+        let counts: [String: Int]
+    }
+
+    private var inputs: Inputs {
+        Inputs(query: query, here: here, detailed: detailed, aliases: aliases, counts: counts)
+    }
+
+    private func rebuild() {
+        built = Self.shown(SpotPrefectureIndex.listSections(spots: detailed ?? spots, query: query, aliases: aliases,
+                                                            counts: counts, from: here), scope: scope)
+    }
 
     private var here: Photo.Coords? {
         if case .located(let latitude, let longitude) = location.state {
@@ -56,9 +76,7 @@ struct OfficialSpotIndexView: View {
 
     var body: some View {
         let source = detailed ?? spots
-        let all = RegionList.sections(photos: photos, spots: source, query: query,
-                                      aliases: aliases, links: links, from: here)
-        let sections = Self.shown(all, scope: scope)
+        let sections = built ?? []
         let rows = sections.flatMap(\.spots)
         let needs = SpotDetailNeeds.mapSpotList(rows, through: depth.depth(query: query, category: nil))
         ScrollViewReader { proxy in
@@ -77,7 +95,9 @@ struct OfficialSpotIndexView: View {
 
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        if spots.isEmpty {
+                        if built == nil {
+                            JPLoadingState(kind: .rows)
+                        } else if spots.isEmpty {
                             EmptyState(message: L("公開中の撮影スポットはまだありません", "No photo spots yet"))
                         } else if sections.isEmpty {
                             EmptyState(message: L("見つかりませんでした", "No results"))
@@ -119,12 +139,17 @@ struct OfficialSpotIndexView: View {
                     .padding(.bottom, JPSpace.xl)
                 }
                 .scrollDismissesKeyboard(.immediately)
+                .accessibilityIdentifier("spotIndex.list")
             }
         }
         .webScreen()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        // 許可済みのときだけ・まだ一度も取っていないときだけ（戻るたびに取り直して並びを動かさない）
         .onAppear { location.locateIfAllowed() }
+        .onAppear { if built == nil { counts = OfficialSpotList.photoCounts(photos, links: links); rebuild() } }
+        .onChange(of: inputs) { _, _ in rebuild() }
+        .onChange(of: links) { _, next in counts = OfficialSpotList.photoCounts(photos, links: next) }
         .task {
             // 別名と写真の結びは控えから返る（無ければ1度だけ取る）。取れなければ名前と spotId だけで当てる
             links = await environment.spots.fetchPhotoLinks()
@@ -148,15 +173,19 @@ struct OfficialSpotIndexView: View {
         }
     }
 
-    /// 地方へ跳ぶチップ（探すの種類のチップと同じ `PillChip`・横に送る）
+    /// 地方へ跳ぶチップ（探すの種類のチップと同じ `PillChip`・横に送る）。
+    ///
+    /// 2026-11-11 判断（確かめ役の指摘）: **選んだ印を付けない。** 押すと見出しへ移るだけの「行き先」で、
+    /// 絞り込みではない。印を残すと、指で送ったあとも別の地方を指したまま残る
     private func jumpChips(_ jumps: [SpotPrefectureIndex.Jump], proxy: ScrollViewProxy) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(jumps) { jump in
-                    PillChip(title: jump.title, selected: jumped == jump.id) {
-                        jumped = jump.id
+                    PillChip(title: jump.title, selected: false) {
                         withAnimation { proxy.scrollTo(jump.target, anchor: .top) }
                     }
+                    // 跳ぶ先の見出しの字（読み上げ・UI テストが着いたかを見る）
+                    .accessibilityValue(jump.targetTitle)
                     .accessibilityIdentifier("spotIndex.jump")
                 }
             }
