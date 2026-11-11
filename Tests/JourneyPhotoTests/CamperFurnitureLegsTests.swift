@@ -48,12 +48,12 @@ final class CamperFurnitureLegsTests: XCTestCase {
     /// 床の家具の組み立て（2026-10-22 owner「椅子とかは家具によって足が壊れてたりする」）: 床から浮いた部品が無く、
     /// 脚（床に着いた細長い部品）は上端が座・天板・框に届き、座・天板の外へはみ出さず、同じ物を支える脚の長さがそろい、細すぎない
     func testFloorFurnitureStandsTogether() throws {
-        let variety = Set(CamperRoomVariety.pieces.map(\.furniture.id))
         let targets = CamperRoomCatalog.all.filter { f in
             guard f.placement == .floor, f.category != .roomRug, !Self.wallHung.contains(f.id) else { return false }
-            return Self.pending[variety.contains(f.id) ? "\(f.category.rawValue).x" : f.id] == nil
+            return Self.pending[f.id] == nil
         }
-        // 1000 点を超えるので手分けして見る（Mac run 676: 1 本ずつでは試験の 1 分の枠を超えて止められた）
+        XCTAssertGreaterThanOrEqual(targets.count, 40, "床の家具を見ていない")
+        // 手分けして見る（Mac run 676: 組み合わせの家具があった頃、1 本ずつでは試験の 1 分の枠を超えて止められた）
         var results = [String?](repeating: nil, count: targets.count)
         let gate = NSLock()
         DispatchQueue.concurrentPerform(iterations: targets.count) { k in
@@ -67,30 +67,24 @@ final class CamperFurnitureLegsTests: XCTestCase {
         XCTAssertEqual(broken, [], broken.prefix(30).joined(separator: "\n"))
     }
 
-    /// 椅子・机・寝台・棚・暖炉・床の灯りは全部、脚の形ごとに作り直した（組み合わせの椅子 220・机 180・寝台 160・棚 200・
-    /// 暖炉 80・床の灯り 160 が数に入っている）
+    /// 脚のある床の家具は全部、見張り（`testFloorFurnitureStandsTogether`）に入っている。作り直しの待ちは空。
+    /// 2026-11-11: 組み合わせの家具（椅子 220・机 180…）を消したので、数ではなく「板の脚のある家具が全部見られる」ことを確かめる
     func testRebuiltCategoriesAreAllChecked() {
         XCTAssertTrue(Self.pending.isEmpty, "作り直しの待ちが残っている: \(Self.pending)")
-        for (cat, count) in [(CamperRoomCategory.seating, 220), (.table, 180), (.bed, 160), (.storage, 200), (.heater, 80), (.floorLamp, 160)] {
-            XCTAssertNil(Self.pending["\(cat.rawValue).x"], "\(cat) がまだ作り直しの待ちにある")
-            XCTAssertTrue(CamperRoomVariety.craftedLegs.contains(cat))
-            XCTAssertEqual(CamperRoomVariety.pieces.filter { $0.furniture.category == cat }.count, count)
+        let legged = CamperRoomCatalog.all.filter { $0.placement == .floor && $0.category != .roomRug && CamperRoomLegs.hasLegs($0) }
+        // 床の灯りで脚のある（`hasLegs`）のは三脚の灯りだけで、2026-11-11 に似た家具として下げた
+        for cat in [CamperRoomCategory.seating, .table, .bed, .storage, .heater] {
+            XCTAssertFalse(legged.filter { $0.category == cat }.isEmpty, "\(cat) の脚のある家具が見張りから外れた")
         }
     }
 
-    /// 脚の接写の一覧は、脚のある板の家具全部と、組み合わせの「分類 × 脚の形」を 1 つずつ、重ならずに並べる
+    /// 脚の接写の一覧は、脚のある板の家具を全部、重ならずに並べる（2026-11-11: 組み合わせの家具の「分類 × 脚の形」は消した）
     func testLegSheetCoversEveryLegShape() {
         let ids = CamperRoomLegs.sheet.map(\.id)
         XCTAssertEqual(Set(ids).count, ids.count)
-        for f in CamperRoomCatalog.board where f.placement == .floor && f.category != .roomRug && CamperRoomLegs.hasLegs(f) {
-            XCTAssertTrue(ids.contains(f.id), f.id)
-        }
-        var shapes = Set<String>()
-        for p in CamperRoomVariety.pieces { if let a = CamperRoomLegs.legAxis(p) { shapes.insert("\(p.furniture.category.rawValue)|\(a)") } }
-        let shown = Set(CamperRoomVariety.pieces.filter { ids.contains($0.furniture.id) }.compactMap { p in
-            CamperRoomLegs.legAxis(p).map { "\(p.furniture.category.rawValue)|\($0)" }
-        })
-        XCTAssertEqual(shown, shapes)
+        let legged = CamperRoomCatalog.board.filter { $0.placement == .floor && $0.category != .roomRug && CamperRoomLegs.hasLegs($0) }
+        XCTAssertEqual(ids, legged.map(\.id))
+        XCTAssertFalse(ids.isEmpty)
         XCTAssertEqual(CamperRoomLegs.views.map(\.name), ["正面", "斜め", "横", "下から"])
         XCTAssertEqual(CamperRoomContactPages.marker(mood: .day, page: 0, .legs), "legs-ready 1/\(ids.count)")
         XCTAssertEqual(CamperRoomContactPages.count(.legs), ids.count)

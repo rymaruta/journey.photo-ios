@@ -25,9 +25,9 @@ enum CamperRoomFurnitureModels {
     }
 
     /// 家具ごとの仕事を手分けして（コアの数だけ同時に）こなし、渡した順で返す。
-    /// 2026-10-28 判断: 2,000 点を超える家具の網を 1 つずつ作ると Linux で 31 秒かかり、全部の網をなめる試験（形の健全さ・
-    /// 額の一覧）が Mac の試験の 1 分の枠を超えた（PR #397・run 751）。形を作る関数は互いに触らず、組み合わせの家具の
-    /// 控えは `CamperRoomVariety.gate` で守るので、同時に作ってよい（`testFloorFurnitureStandsTogether` が先に同じ形で手分けしている）
+    /// 2026-10-28 判断: 家具の網を 1 つずつ作ると遅く、全部の網をなめる試験（形の健全さ・額の一覧）が Mac の試験の
+    /// 1 分の枠を超えた（PR #397・run 751。当時は組み合わせの家具を入れて 2,000 点を超えていた）。形を作る関数は互いに
+    /// 触らないので、同時に作ってよい（`testFloorFurnitureStandsTogether` が先に同じ形で手分けしている）
     static func concurrentMap<T>(_ items: [CamperRoomFurniture], _ work: (CamperRoomFurniture) -> T) -> [T] {
         var out = [T?](repeating: nil, count: items.count)
         let gate = NSLock()
@@ -72,7 +72,7 @@ enum CamperRoomFurnitureModels {
         case "mobile.wooden_birds": m = woodenBirds()
         case "plant_hanger.macrame": m = macrame()
         case "roof_hatch.square_vent": m = squareVent()
-        default: m = moreMesh(id) ?? moreMesh3(id) ?? CamperRoomVariety.mesh(id)
+        default: m = moreMesh(id) ?? moreMesh3(id)
         }
         return m
     }
@@ -90,7 +90,7 @@ enum CamperRoomFurnitureModels {
         case "floor_lamp.tripod": return (CV3(0, 48, 0), 0.7, 85)
         case "wall_lamp.glass_sconce": return (CV3(0, 13, 7), 0.45, 70)
         case "string_ceiling.globe_string": return (CV3(0, -9, 0), 0.45, 75)
-        default: return moreLamp(id) ?? moreLamp3(id) ?? CamperRoomVariety.lamp(id)
+        default: return moreLamp(id) ?? moreLamp3(id)
         }
     }
 

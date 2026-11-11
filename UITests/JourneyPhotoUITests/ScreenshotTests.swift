@@ -5233,7 +5233,7 @@ final class ScreenshotTests: XCTestCase {
     /// **とおまわり号の中**（`-JPPreviewCamperRoomReset`・Debug のみ。毎回最初の並び・保存しない）: 室内の昼・夜・家具の図鑑・
     /// 家具の寄り 8 点（昼と夜）を**必ず撮る**（入れない・組み終えないなら落とす）。押せる所は 44pt 以上
     func testCapturesCamperRoom() {
-        // 寄り 8 点は部屋を組み直す。図鑑が 2,000 点を超えても、既定の 300 秒で切らない
+        // 寄り 8 点は部屋を組み直す。既定の 300 秒で切らない（図鑑が 2,000 点を超えていた頃に決めた枠。2026-11-11 に 85 点へ減らした後もそのまま）
         executionTimeAllowance = 1200
         let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES"])
         XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")

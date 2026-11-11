@@ -284,7 +284,8 @@ final class FirstMomentsTests: XCTestCase {
         XCTAssertFalse(CamperRoomUnlock.seasons(4).condition.isEmpty)
     }
 
-    /// 家具の図鑑に、秋と季節をまたぐ条件が「もう一つの道」として入っている。同じ日に撮る条件は、どれも残っている
+    /// 家具の図鑑に、秋と季節をまたぐ条件が「もう一つの道」として入っている。同じ日に撮る条件は、どれも残っている。
+    /// 2026-11-11: 組み合わせの家具を消したので、板の三枚続きの額・盆栽・ケーキ台に付け直した
     func testVarietyUsesTheNewSeasonalUnlocks() async {
         let unlocks = CamperRoomCatalog.all.map(\.unlock)
         func either(_ u: CamperRoomUnlock, _ f: (CamperRoomUnlock) -> Bool) -> Bool {
@@ -293,7 +294,12 @@ final class FirstMomentsTests: XCTestCase {
         }
         XCTAssertTrue(unlocks.contains { either($0) { if case .autumn = $0 { return true } else { return false } } }, "秋の条件の家具が無い")
         XCTAssertTrue(unlocks.contains { either($0) { if case .seasons = $0 { return true } else { return false } } }, "季節をまたぐ条件の家具が無い")
-        XCTAssertTrue(unlocks.contains { if case .sameDay = $0 { return true } else { return false } }, "同じ日の条件が全部消えた")
+        func sameDay(_ u: CamperRoomUnlock) -> Bool {
+            if case .sameDay = u { return true }
+            if case let .either(a, _) = u, case .sameDay = a { return true }
+            return false
+        }
+        XCTAssertTrue(unlocks.contains(where: sameDay), "同じ日の条件が全部消えた")
         XCTAssertTrue(CamperRoomUnlock.autumn(4).isAvailable)
         XCTAssertTrue(CamperRoomUnlock.seasons(3).isAvailable)
     }
@@ -307,19 +313,33 @@ final class FirstMomentsTests: XCTestCase {
         newOnly.autumnShots = 100
         newOnly.seasonsShot = 4
         var checked = 0
+        // 前の条件（2026-11-11 に道を足す前の、板の条件）。`.either` の先に、そのまま残っていること
+        let before: [String: CamperRoomUnlock] = [
+            "photo_frame.triptych": .sameDay(30),
+            "plant_pot.bonsai": .topic(.temple, 4),
+            "tea.cake_stand": .spring(15),
+        ]
+        // 前の条件だけを満たす人（同じ日 100 枚・寺 100 枚・春 100 枚。秋と季節は 0）
+        oldOnly.springShots = 100
+        oldOnly.topics[.temple] = 100
         for f in CamperRoomCatalog.all {
             guard case let .either(old, new) = f.unlock else { continue }
             checked += 1
-            guard case .sameDay = old else { XCTFail("\(f.id): 前の条件が先に残っていない"); continue }
+            guard let was = before[f.id] else { XCTFail("\(f.id): 前の条件が分からない道が足されている"); continue }
+            XCTAssertEqual(old, was, "\(f.id): 前の条件が先に残っていない")
             XCTAssertTrue(f.unlock.isMet(s, oldOnly), "\(f.id): 前の条件だけ満たす人が持てなくなる")
             XCTAssertTrue(f.unlock.isMet(s, newOnly), "\(f.id): 新しい道で持てない（\(new)）")
             XCTAssertFalse(f.unlock.isMet(s, CamperRoomStats()), "\(f.id): 何も満たさないのに持てる")
             XCTAssertEqual(f.unlock.fraction(s, oldOnly), 1)
         }
-        XCTAssertGreaterThan(checked, 0, "新しい道を足した家具が1つも無い")
-        // 前のカタログで同じ日の条件だった家具（段が偶数）は、満たし方が増えただけで、数は変わっていない
-        let sameDayOnly = CamperRoomCatalog.all.filter { if case .sameDay = $0.unlock { return true } else { return false } }.count
-        XCTAssertGreaterThan(sameDayOnly, 0)
+        XCTAssertEqual(checked, before.count, "新しい道を足した家具が足りない")
+        // 同じ日の条件は、満たし方が増えただけで残っている（三枚続きの額）
+        let sameDayStill = CamperRoomCatalog.all.filter { f in
+            if case .sameDay = f.unlock { return true }
+            if case let .either(a, _) = f.unlock, case .sameDay = a { return true }
+            return false
+        }.count
+        XCTAssertGreaterThan(sameDayStill, 0)
         // 満たしていない間は、進みの大きい方を見せる
         var part = CamperRoomStats()
         part.sameDayMax = 3
