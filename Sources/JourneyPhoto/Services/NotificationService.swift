@@ -53,7 +53,10 @@ struct NotificationService {
 struct AppNotification: Decodable, Identifiable, Equatable {
 
     enum Kind: String, Decodable {
-        case like, comment, follow, storyreply, badge, inspired, storymention
+        case like, comment, follow, storyreply, badge, inspired, storymention, storyshare, commentreply
+        // `storyshare`＝自分の写真をストーリーで紹介された（2026-11-11・札 #541 の ①・`stories.ts`）。`photoId`・`photoSrc` は
+        // **紹介された自分の写真**（押すとそこへ）、`byId` / `byName` は紹介した人。
+        // `commentreply`＝自分のコメントに返信が付いた（同 ②・`comments.ts`）。`photoId` はコメントの付いた写真（押すとそこへ）。
         // `storymention`＝ストーリーでメンションされた（2026-11-09・`notify.ts`・札 #505）。`photoId` はそのストーリーの id、
         // `byId` / `byName` は投稿者。押したら投稿者のプロフィール（ストーリーは24時間で消えるので、写真としては開かない）
         // `inspired`＝「この写真を見て撮影」（2026-10-14・`api-user/src/inspired.ts`）。だれかが**自分の写真を元に**

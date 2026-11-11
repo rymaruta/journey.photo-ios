@@ -6594,6 +6594,156 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    // MARK: - SNS の輪（札 #541・2026-11-11）
+
+    /// 見本の通信で起動する（ストーリー・紹介の見本つき）。開けなければ nil
+    private func launchSNSPreview(sharedStory: Bool) -> XCUIApplication? {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewStories", "YES"]
+        if sharedStory { app.launchArguments += ["-JPPreviewSharedStory", "YES"] }
+        // 入口の案内「写真を押してひとこと」（端末に1回だけ）は撮らない（札の絵に被る）
+        app.launchArguments += ["-story.captionHintShown", "YES"]
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        guard app.tabBars.firstMatch.waitForExistence(timeout: 20) else { return nil }
+        return app
+    }
+
+    /// 切り替えの「新着」の1枚目の写真の詳細を開く（見本のストーリーは新着の作者に付けてある）。開けなければ false
+    private func openFirstLatestPhoto(_ app: XCUIApplication) -> Bool {
+        let latestTab = app.buttons["home.feed.latest"].firstMatch
+        if latestTab.waitForExistence(timeout: 20), latestTab.isHittable {
+            latestTab.tap()
+            Thread.sleep(forTimeInterval: 3)
+        }
+        let photo = app.buttons["feed.photo"].firstMatch
+        let lowPoint = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+        let highPoint = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+        var pushes = 0
+        while photo.waitForExistence(timeout: 10), !photo.isHittable, pushes < Self.shelfPushLimit {
+            lowPoint.press(forDuration: 0.05, thenDragTo: highPoint)
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard photo.exists, photo.isHittable else { return false }
+        photo.tap()
+        return true
+    }
+
+    /// 要素が押せるまで短い引きで送る（上限あり）
+    private func scrollUntilHittable(_ app: XCUIApplication, _ element: XCUIElement, limit: Int = 8) {
+        var pushes = 0
+        while element.waitForExistence(timeout: 3), !element.isHittable, pushes < limit {
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+    }
+
+    /// **写真の「共有」→ 送るシート → ストーリーに載せる**（札 #541 の ①・案の模型 1-C / 1-D）。
+    /// 送るシート（63a）と、写真の札が置かれた作る画面（63b）を撮る。投稿はしない。**出なければ撮らずに抜ける**
+    func testCapturesSendSheetToStory() {
+        guard let app = launchSNSPreview(sharedStory: false), openFirstLatestPhoto(app) else { return }
+        let share = app.buttons["photo.share"].firstMatch
+        scrollUntilHittable(app, share)
+        guard share.exists, share.isHittable else {
+            shoot(app, "63a-送るシート（共有の印が出ない）")
+            return
+        }
+        share.tap()
+        let story = app.buttons["sendSheet.story"].firstMatch
+        let shown = story.waitForExistence(timeout: 10)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, shown ? "63a-送るシート" : "63a-送るシート（ストーリーに載せるが無い）")
+        guard shown else { return }
+        XCTAssertGreaterThanOrEqual(story.frame.height, 44, "「ストーリーに載せる」の的が 44pt 未満")
+        XCTAssertTrue(app.buttons["sendSheet.otherApps"].firstMatch.exists, "「ほかのアプリ」が無い（外への共有の口が消えた）")
+        story.tap()
+        let canvas = app.descendants(matching: .any)["story.canvas"].firstMatch
+        let opened = canvas.waitForExistence(timeout: 30)
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, opened ? "63b-ストーリーに載せる（写真の札）" : "63b-ストーリーに載せる（作る画面が開かない）")
+        XCTAssertTrue(opened, "「ストーリーに載せる」で作る画面が開かない")
+    }
+
+    /// **コメントに返信**（札 #541 の ②・案の模型 2-B）。見本の通信でコメントを1件書き、「返信」→
+    /// 「〇〇さんに返信中」（63c）→ 送ると相手の下に1段下げて並ぶ（63d）。**出なければ撮らずに抜ける**
+    func testCapturesCommentReply() {
+        guard let app = launchSNSPreview(sharedStory: false), openFirstLatestPhoto(app) else { return }
+        let field = app.textFields["photo.commentField"].firstMatch
+        let fieldAny = field.exists ? field : app.descendants(matching: .any)["photo.commentField"].firstMatch
+        guard fieldAny.waitForExistence(timeout: 15), fieldAny.isHittable else {
+            shoot(app, "63c-コメントに返信（欄が無い）")
+            return
+        }
+        fieldAny.tap()
+        fieldAny.typeText("どこから撮りましたか？")
+        let send = app.buttons["photo.commentSend"].firstMatch
+        guard send.waitForExistence(timeout: 5) else { return }
+        send.tap()
+        let reply = app.buttons["photo.commentReply"].firstMatch
+        scrollUntilHittable(app, reply)
+        guard reply.exists, reply.isHittable else {
+            shoot(app, "63c-コメントに返信（返信の印が無い）")
+            return
+        }
+        XCTAssertGreaterThanOrEqual(reply.frame.height, 44, "「返信」の的が 44pt 未満")
+        reply.tap()
+        let replying = app.descendants(matching: .any)["photo.commentReplying"].firstMatch
+        let replyingShown = replying.waitForExistence(timeout: 5)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, replyingShown ? "63c-コメントに返信中" : "63c-コメントに返信中（返信中の行が出ない）")
+        guard replyingShown else { return XCTFail("「返信」を押しても「〇〇さんに返信中」が出ない") }
+        fieldAny.typeText("坂の上からです")
+        send.tap()
+        Thread.sleep(forTimeInterval: 3)
+        // キーボードを閉じて並びを見る
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "63d-コメントの返信（1段下げて並ぶ）")
+        XCTAssertFalse(replying.exists, "送ったのに「返信中」が残っている")
+    }
+
+    /// **ストーリーで紹介された写真を見る**（札 #541 の ①・案の模型 1-E）。見本の通信の `-JPPreviewSharedStory` で、
+    /// 新着の1人目の2本目のストーリーに紹介の写真を付ける（`PreviewBackend.previewStories`）。作者の顔の輪から開き、
+    /// 2本目へ送って「写真を見る」（63e）→ 写真の詳細（63f）を撮る。**出なければ撮らずに抜ける**
+    func testCapturesSharedPhotoStory() {
+        guard let app = launchSNSPreview(sharedStory: true), openFirstLatestPhoto(app) else { return }
+        let ring = app.buttons["story.avatar.ring"].firstMatch
+        scrollUntilHittable(app, ring, limit: 3)
+        guard ring.exists, ring.isHittable else {
+            shoot(app, "63e-ストーリー（作者の顔に輪が無い）")
+            return
+        }
+        ring.tap()
+        Thread.sleep(forTimeInterval: 3)
+        let viewPhoto = app.buttons["story.viewer.sharedPhoto"].firstMatch
+        // 1本目には付いていない。右を叩いて2本目へ
+        if !viewPhoto.waitForExistence(timeout: 3) {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.45)).tap()
+        }
+        let shown = viewPhoto.waitForExistence(timeout: 10)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, shown ? "63e-ストーリー（写真を見る）" : "63e-ストーリー（写真を見るが出ない）")
+        guard shown else { return XCTFail("紹介のストーリーに「写真を見る」が出ない") }
+        XCTAssertGreaterThanOrEqual(viewPhoto.frame.height, 44, "「写真を見る」の的が 44pt 未満")
+        viewPhoto.tap()
+        let detail = app.buttons["photo.like"].firstMatch
+        let opened = detail.waitForExistence(timeout: 20)
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, opened ? "63f-写真を見る（写真の詳細）" : "63f-写真を見る（詳細が開かない）")
+        XCTAssertTrue(opened, "「写真を見る」で写真の詳細が開かない")
+    }
+
     /// **ストーリーの曲の札の6つの形**（2026-10-28・owner「押して替える めっちゃいいね！」）。
     ///
     /// `-JPPreviewStorySong YES` で、見本の写真と見本の曲（同梱の画像をジャケットに使う・通信しない）を付けて

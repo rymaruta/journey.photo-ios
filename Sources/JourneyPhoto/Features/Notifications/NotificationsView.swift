@@ -720,7 +720,8 @@ final class NotificationsViewModel: ObservableObject {
                 return .user(id)
             }
             return .none
-        case .like, .comment, .inspired:
+        // 紹介（`storyshare`）は紹介された自分の写真、返信（`commentreply`）はコメントの付いた写真（札 #541）
+        case .like, .comment, .inspired, .storyshare, .commentreply:
             guard let id = notification.photoId else { return .none }
             if let photo = feed.first(where: { $0.id == id }) {
                 return .photo(photo, fromPublicFeed: true)

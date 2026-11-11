@@ -561,6 +561,19 @@ enum PreviewSession {
         #endif
     }
 
+    /// 見本のストーリー（`stories`）の1本に**紹介した写真**を付ける（札 #541 の ①・`PreviewBackend.previewStories`）。
+    /// 見る画面の「写真を見る」を UI テストで撮る。Release では必ず false
+    static let sharedStoryKey = "JPPreviewSharedStory"
+
+    static var sharedStory: Bool {
+        #if DEBUG
+        guard stories else { return false }
+        return UserDefaults.standard.bool(forKey: sharedStoryKey)
+        #else
+        return false
+        #endif
+    }
+
     /// 見本の通信（`localBackend`）で、メッセージ（`/dm`）を端末の中で答える（`PreviewBackend.dmReply`・
     /// 2026-11-10 札 #505・受信箱・リクエスト・会話の状態を UI テストで撮る）。Release では必ず false
     static let dmKey = "JPPreviewDM"
