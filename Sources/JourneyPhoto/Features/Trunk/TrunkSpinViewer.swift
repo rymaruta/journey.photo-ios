@@ -217,10 +217,8 @@ enum TrunkTextures {
                      parts: TrunkEquipped = .none, wrinkles: [String: Double] = [:],
                      tagPicks: [TrunkTagPick] = []) -> MedalTextures.Faces {
         // 吊るす物（タグ・チャーム・鍵）も正面に下げる（回しても消さない・#305）。上の面の紐は `box` が描く
-        // 胴の影は描かない（4 隅にしか入らず、面の角の丸みで描かれない・`trunkBodyShadow`・2026-11-11 判断）
         let front = render(TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,
-                                        hangsOnFront: true, parts: parts, wrinkles: wrinkles, tagPicks: tagPicks)
-                            .environment(\.trunkBodyShadow, PreviewSession.trunkDiag.contains("spinshadow")))
+                                        hangsOnFront: true, parts: parts, wrinkles: wrinkles, tagPicks: tagPicks))
         let side = TrunkLooks.sideColor(TrunkLooks.look(model, stage: TrunkAging.stage(posts: posts)))
         let edge = render(Color(trunk: side).frame(width: 8, height: 8))
         // 背面は描き終えるまで縁の色で（白い面を見せない）

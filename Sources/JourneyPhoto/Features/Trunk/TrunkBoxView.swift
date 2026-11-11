@@ -1079,13 +1079,9 @@ struct TrunkFigureFit: View {
 /// 胴の仕上げ（1 枚の絵にしてから、縁の陰と床へ落ちる大きな影）。
 /// 測定専用の差し替え（`-JPPreviewTrunkDiag nodg|noshadow`・Debug のみ・2026-11-11）のときだけ外す。ふだんは必ず両方
 struct TrunkBodyFinish: ViewModifier {
-    /// 胴の影を描くか（回す箱の正面の貼り絵だけ描かない・`trunkBodyShadow`）
-    @Environment(\.trunkBodyShadow) private var castsShadow
-
     func body(content: Content) -> some View {
         // 測定専用: 起動の差し替え（`-JPPreviewTrunkDiag`）と、塗る時間の内訳を測る間だけの外し（`TrunkRasterProbe.skip`）
-        let measured = PreviewSession.trunkDiag.union(TrunkRasterProbe.skip)
-        let diag: Set<String> = castsShadow ? measured : measured.union(["noshadow"])
+        let diag = PreviewSession.trunkDiag.union(TrunkRasterProbe.skip)
         if diag.isEmpty {
             content
                 .drawingGroup()
@@ -1103,19 +1099,5 @@ struct TrunkBodyFinish: ViewModifier {
                     .shadow(color: Color.black.opacity(0.75), radius: 25, x: 0, y: 30)
             }
         }
-    }
-}
-
-private struct TrunkBodyShadowKey: EnvironmentKey {
-    static let defaultValue = true
-}
-
-extension EnvironmentValues {
-    /// 胴の影（縁の陰と床へ落ちる大きな影）を描くか。**回す箱の正面の貼り絵だけ false**（2026-11-11 判断・run 1029）:
-    /// 貼り絵は胴の枠（360×268）で切られ、影は角の丸みの外の 4 隅にしか入らない。その 4 隅は SceneKit の面の角の丸み
-    /// （`SCNPlane.cornerRadius`）で描かれない。影を描くと塗る時間が約 0.9 秒→0.28 秒（`TrunkRasterProbe` の noshadow）
-    var trunkBodyShadow: Bool {
-        get { self[TrunkBodyShadowKey.self] }
-        set { self[TrunkBodyShadowKey.self] = newValue }
     }
 }

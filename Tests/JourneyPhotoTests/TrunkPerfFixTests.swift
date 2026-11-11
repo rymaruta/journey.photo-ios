@@ -48,19 +48,6 @@ final class TrunkPerfFixTests: XCTestCase {
         XCTAssertTrue(theirs.contains("if !showSpin { " + "TrunkTextures" + ".forget() }"), "人のトランクから離れても絵を手放さない")
     }
 
-    /// 4. 回す箱の正面の貼り絵には胴の影を描かない（4 隅にしか入らず面の角の丸みで描かれない。塗る時間 約 0.9→0.28 秒・run 1029）。
-    /// 型の一覧・ふた・入口の札などほかの絵は影を描く（既定 true）
-    func testSpinFrontSkipsOnlyTheBodyShadow() throws {
-        let spin = try source("Features/Trunk/TrunkSpinViewer.swift")
-        XCTAssertTrue(spin.contains(".environment(\\.trunkBodyShadow, PreviewSession.trunkDiag.contains(\"spinshadow\"))"),
-                      "回す箱の正面に胴の影を塗っている（1 回目に開く間が長い）")
-        XCTAssertEqual(spin.components(separatedBy: "trunkBodyShadow").count - 1, 1, "正面のほかの面にも影の切り替えを入れている")
-        let box = try source("Features/Trunk/TrunkBoxView.swift")
-        XCTAssertTrue(box.contains("let diag: Set<String> = castsShadow ? measured : measured.union([\"noshadow\"])"),
-                      "影の切り替えが胴の仕上げに届いていない")
-        XCTAssertTrue(box.contains("static let defaultValue = true"), "ほかの絵の影まで消えている")
-    }
-
     /// 測定専用の差し替えは、Release では必ず空（ふだんの描き方を変えない）
     func testDiagIsEmptyWithoutTheFlag() {
         UserDefaults.standard.removeObject(forKey: PreviewSession.trunkDiagKey)

@@ -468,7 +468,7 @@ enum PreviewSession {
     /// `noshadow` 胴の影 2 つを外す・`nodg` 胴の `drawingGroup` を外す・`spinaa0`/`spinaa2` 回す箱の輪郭のなめらかさを なし/2x に
     /// （この 3 つは見た目が変わる。比べるためだけ）。
     /// 前の作りに戻す（絵の見比べの「前」・2026-11-11 の直し）: `spincont` 回す箱を描き続ける・
-    /// `spinlazy` 回す箱の絵を使い回さない・`spinlink` 止まっている箱の表示の刻みを止めない・`spinshadow` 回す箱の正面の貼り絵に胴の影を描く・`rastercost` 回す箱の絵を塗る時間の内訳を測る
+    /// `spinlazy` 回す箱の絵を使い回さない・`spinlink` 止まっている箱の表示の刻みを止めない・`rastercost` 回す箱の絵を塗る時間の内訳を測る
     static let trunkDiagKey = "JPPreviewTrunkDiag"
 
     static var trunkDiag: Set<String> {

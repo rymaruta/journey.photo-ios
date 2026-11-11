@@ -4218,7 +4218,7 @@ final class ScreenshotTests: XCTestCase {
     // `TRUNKPERF:` の行に出す。主スレッドが止まった時刻と、止まっている最中の積み（`perf.probe` の `stalls=`・`samples=`）は
     // 最後に `PERF-PROBE` の行で残す。普段の回では流さない（`Tools/pick-ui-tests.py` の `ONLY_WHEN_NAMED`）。
     // 名指しは `screens=testMeasuresTrunk`。値は Mac の CI のシミュレーターのもの（実機ではない）。
-    // `…Before` は 2026-11-11 の直しの前の作り（`-JPPreviewTrunkDiag spincont,spinlazy,spinlink,spinshadow`）で、同じ回の前後を比べる
+    // `…Before` は 2026-11-11 の直しの前の作り（`-JPPreviewTrunkDiag spincont,spinlazy,spinlink`）で、同じ回の前後を比べる
 
     private static let trunkPerfArgs = ["-JPPreviewTrunk", "YES", "-JPPreviewPro", "YES", "-JPPreviewTrunkPerf", "YES",
                                         "-JPPreviewPerfProbe", "YES"]
@@ -4305,7 +4305,7 @@ final class ScreenshotTests: XCTestCase {
     /// 「動いている間だけ描く」）・2 回目に開くと絵を使い回す
     func testMeasuresTrunkSpin() { measureTrunkSpin(diag: nil) }
     /// 直しの前の作り（描き続ける・絵を塗り切らず使い回さない）。同じ回で前後を比べる。合否は付けない
-    func testMeasuresTrunkSpinBefore() { measureTrunkSpin(diag: "spincont,spinlazy,spinlink,spinshadow") }
+    func testMeasuresTrunkSpinBefore() { measureTrunkSpin(diag: "spincont,spinlazy,spinlink") }
     /// 止まっている間も表示の刻みを止めない作り（2026-11-11 の `isPaused` の前）。止まっている間の CPU を比べる。合否は付けない
     func testMeasuresTrunkSpinLinkRunning() { measureTrunkSpin(diag: "spinlink") }
 
@@ -4387,9 +4387,9 @@ final class ScreenshotTests: XCTestCase {
     /// **メモリの内訳**（2026-11-11・run 1014 / 1019 で、回す画面の絵をトランクの画面で先に作るとメモリが戻らないと分かった）。
     /// トランクの画面 → 回す画面 → 閉じた後で、アプリの段ごとの印（`SpinReady`・`SpinGone`・`SpinGoneLater`）の
     /// phys_footprint と user_tag 別をログの `TRUNKMEM:` に出す。
-    /// 今の作りと直しの前（`spincont,spinlazy,spinlink,spinshadow`）を、それぞれ起動し直して比べる
+    /// 今の作りと直しの前（`spincont,spinlazy,spinlink`）を、それぞれ起動し直して比べる
     func testMeasuresTrunkMemory() { measureTrunkMemory(diag: nil) }
-    func testMeasuresTrunkMemoryBefore() { measureTrunkMemory(diag: "spincont,spinlazy,spinlink,spinshadow") }
+    func testMeasuresTrunkMemoryBefore() { measureTrunkMemory(diag: "spincont,spinlazy,spinlink") }
     /// **回す箱の絵を塗る時間の内訳**（2026-11-11・測るだけ）: `-JPPreviewTrunkDiag rastercost` でトランクの画面を開くと、アプリが
     /// 回す箱の正面・背面と同じ絵を部品を 1 つずつ外して描き、組む時間と塗る時間を `RasterCost…` に残す。ログの `TRUNKRASTER:` に出す
     func testMeasuresTrunkRasterCost() {
@@ -4415,7 +4415,7 @@ final class ScreenshotTests: XCTestCase {
         executionTimeAllowance = 600
         var lines: [String] = []
         for pair in 1...3 {
-            for diag in ["spincont,spinlazy,spinlink,spinshadow", "now"] {
+            for diag in ["spincont,spinlazy,spinlink", "now"] {
                 let app = launchTrunk(Self.trunkPerfArgs + (diag == "now" ? [] : ["-JPPreviewTrunkDiag", diag]))
                 defer { app.terminate() }
                 guard openTrunk(app) else { XCTFail("旅のトランクを開けない"); continue }
@@ -4629,9 +4629,9 @@ final class ScreenshotTests: XCTestCase {
     /// **回す箱**: 前の作り（描き続ける・後で塗る絵）と今の作り（動く間だけ描く・塗り切った絵）で、止まった絵が同じか
     func testTrunkSpinMatchesBefore() {
         executionTimeAllowance = 500
-        let before = shootSpinFaces(diag: "spincont,spinlazy,spinlink,spinshadow")
+        let before = shootSpinFaces(diag: "spincont,spinlazy,spinlink")
         // 同じ作りを 2 回起動した差（撮り方の揺れ）。今と前の差がこれと同じ程度なら、直しによる差ではない
-        let again = shootSpinFaces(diag: "spincont,spinlazy,spinlink,spinshadow")
+        let again = shootSpinFaces(diag: "spincont,spinlazy,spinlink")
         let now = shootSpinFaces(diag: nil)
         guard before.count == now.count, again.count == now.count, !now.isEmpty else { return XCTFail("撮れた数が前と今で違う") }
         for (b, a) in zip(before, again) {
