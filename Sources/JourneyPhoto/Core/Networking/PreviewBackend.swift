@@ -199,7 +199,9 @@ enum PreviewBackend {
         }
 
         // メッセージ（`-JPPreviewDM` のときだけ・2026-11-10 札 #505）
-        if dm, parts.first == "dm", let answer = dmReply(method: method, parts: parts, json: json, me: uid, now: now) {
+        if dm, parts.first == "dm",
+           let answer = dmReply(method: method, parts: parts, json: json, me: uid, now: now,
+                                samplePhoto: method == "GET" && parts.count == 2 ? dmSamplePhoto(await publicFeed()) : nil) {
             return answer
         }
 
@@ -339,8 +341,21 @@ enum PreviewBackend {
         return out
     }
 
+    /// 会話の見本に載せる写真（公開の新着の1枚目・2026-11-11 札 #541）。無ければ nil（写真の通を出さない）
+    static func dmSamplePhoto(_ feed: [[String: Any]]) -> [String: Any]? {
+        guard let first = feed.first(where: { ($0["id"] as? String) != nil && ($0["src"] as? String) != nil }),
+              let id = first["id"] as? String else { return nil }
+        let src = (first["thumbSrc"] as? String) ?? (first["src"] as? String) ?? ""
+        var quote: [String: Any] = ["id": id, "state": "live", "src": src]
+        if let title = first["title"] as? String, !title.isEmpty { quote["title"] = title }
+        if let location = first["location"] as? String, !location.isEmpty { quote["location"] = location }
+        if let owner = (first["userId"] as? String) ?? (first["uploadedBy"] as? String) { quote["ownerId"] = owner }
+        return quote
+    }
+
     /// `/dm` の答え。知らない口は nil（ふだんの 503 へ）
-    static func dmReply(method: String, parts: [String], json: [String: Any], me: String, now: Date) -> Reply? {
+    static func dmReply(method: String, parts: [String], json: [String: Any], me: String, now: Date,
+                        samplePhoto: [String: Any]? = nil) -> Reply? {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         func ago(_ minutes: Double) -> String { iso.string(from: now.addingTimeInterval(-minutes * 60)) }
@@ -410,11 +425,25 @@ enum PreviewBackend {
                                    msg(3, mine: true, "どこですか？", 60 * 50)]
             default:
                 answer["state"] = "inbox"
-                answer["items"] = [msg(1, mine: false, "夕焼けの色がすごい。どこですか？", 60 * 26, story: true),
-                                   msg(2, mine: true, "ありがとうございます。伊豆の海沿いです。", 60 * 25.8),
-                                   msg(3, mine: false, "行ってみたい", 60 * 25.7),
-                                   msg(4, mine: false, "日没の30分前に着くのがおすすめです", 60 * 25.6),
-                                   msg(5, mine: false, "この曲いいね", 12)]
+                var items = [msg(1, mine: false, "夕焼けの色がすごい。どこですか？", 60 * 26, story: true),
+                             msg(2, mine: true, "ありがとうございます。伊豆の海沿いです。", 60 * 25.8),
+                             msg(3, mine: true, "地図はここに載っています journey-photo.com/spots", 60 * 25.75),
+                             msg(4, mine: false, "行ってみたい", 60 * 25.7),
+                             msg(5, mine: false, "日没の30分前に着くのがおすすめです", 60 * 25.6)]
+                // 写真の通（2026-11-11 札 #541）: 写真だけの1通（`photoOnly`）と、見られなくなった写真の1通
+                if let samplePhoto, let pid = samplePhoto["id"] as? String {
+                    var photo = msg(6, mine: true, "写真を送りました", 30)
+                    photo["photoId"] = pid
+                    photo["photoOnly"] = true
+                    photo["photo"] = samplePhoto
+                    items.append(photo)
+                    var gone = msg(7, mine: false, "この写真もよかった", 20)
+                    gone["photoId"] = "preview-gone-photo"
+                    gone["photo"] = ["id": "preview-gone-photo", "state": "gone"] as [String: Any]
+                    items.append(gone)
+                }
+                items.append(msg(8, mine: false, "この曲いいね", 12))
+                answer["items"] = items
             }
             return Reply.json(answer)
         case ("POST", 3) where parts[2] == "messages":
