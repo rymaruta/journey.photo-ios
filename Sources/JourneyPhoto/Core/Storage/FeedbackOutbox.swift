@@ -12,15 +12,18 @@ struct FeedbackDraft: Codable, Equatable, Identifiable {
     /// 書いた人（ログインしていなければ nil）。送るときにいまの人と比べる（`FeedbackOutbox.flush`）
     let userId: String?
     let createdAt: Date
+    /// この時刻までは送らない（その日の上限に当たった下書き・次の JST の0時）。無ければいつでも送る
+    var notBefore: Date?
 
     init(id: String = UUID().uuidString.lowercased(), text: String, screen: String,
-         wantsReply: Bool, userId: String?, createdAt: Date = Date()) {
+         wantsReply: Bool, userId: String?, createdAt: Date = Date(), notBefore: Date? = nil) {
         self.id = id
         self.text = text
         self.screen = screen
         self.wantsReply = wantsReply
         self.userId = userId
         self.createdAt = createdAt
+        self.notBefore = notBefore
     }
 }
 
@@ -30,7 +33,7 @@ struct FeedbackDraft: Codable, Equatable, Identifiable {
 /// `<id>.jpg`）。UserDefaults に写真を入れない。送る前に**必ず先に書いてから**送る——送っている間に
 /// アプリが閉じても書いたものが消えない。
 ///
-/// 送り直すのは「前面に戻ったとき」と「電波が戻ったとき」（`JourneyPhotoApp`）。
+/// 送り直すのは「起動してログインの確かめが済んだとき」「前面に戻ったとき」「電波が戻ったとき」（`JourneyPhotoApp`）。
 /// 古すぎる・多すぎる下書きは送らずに捨てる（`maxAge`・`maxCount`）。
 struct FeedbackOutbox {
 
@@ -67,9 +70,12 @@ struct FeedbackOutbox {
         if let photo {
             try photo.write(to: photoURL(draft.id), options: .atomic)
         }
-        let encoder = JSONEncoder()
-        try encoder.encode(draft).write(to: jsonURL(draft.id), options: .atomic)
+        try writeJSON(draft)
         trim()
+    }
+
+    private func writeJSON(_ draft: FeedbackDraft) throws {
+        try JSONEncoder().encode(draft).write(to: jsonURL(draft.id), options: .atomic)
     }
 
     /// 残っている下書き（古い順）
@@ -124,42 +130,73 @@ struct FeedbackOutbox {
     enum Outcome: Equatable {
         /// 届いた（下書きを消した）
         case sent
-        /// 圏外などで送れなかった（下書きに残した。あとで送る）
-        case kept
+        /// 届かなかった（圏外・時間切れ）。下書きに残した。電波が戻ったら送る
+        case unreachable
+        /// サーバーの一時的な不調。下書きに残した。次の機会に送る
+        case serverBusy
+        /// その日の上限。下書きに残し、次の JST の0時まで送らない
+        case tomorrow
         /// 送り直しても届かない理由で断られた（下書きを消した）
         case dropped(String)
+
+        /// 下書きに残したか
+        var isKept: Bool { self == .unreachable || self == .serverBusy || self == .tomorrow }
     }
 
-    /// 1件送る。送れたら・送り直しても届かないなら消し、圏外なら残す
-    func deliver(_ draft: FeedbackDraft, currentUserId: String?,
+    /// 1件送る。送れたら・送り直しても届かないなら消し、圏外・混雑・その日の上限なら残す。
+    ///
+    /// **ログインが切れていたら（トークンが無い・401）、その場でログインしていない人の口で送り直す**——
+    /// 下書きの先頭に残したままにすると、ログインし直すまで後ろの分も全部詰まる
+    func deliver(_ draft: FeedbackDraft, currentUserId: String?, now: Date = Date(),
                  send: (FeedbackDraft, Data?, Bool) async throws -> Void) async -> Outcome {
+        let photo = photo(for: draft.id)
+        let signedIn = Self.signedIn(draft, currentUserId: currentUserId)
         do {
-            try await send(draft, photo(for: draft.id), Self.signedIn(draft, currentUserId: currentUserId))
+            do {
+                try await send(draft, photo, signedIn)
+            } catch where signedIn && FeedbackService.failure(error) == .signedOut {
+                try await send(draft, photo, false)
+            }
             remove(draft.id)
             return .sent
         } catch {
-            if error is CancellationError { return .kept }
-            if FeedbackService.isRetryable(error) { return .kept }
-            remove(draft.id)
-            return .dropped((error as? LocalizedError)?.errorDescription ?? L("送れませんでした", "Couldn't send"))
+            if error is CancellationError { return .unreachable }
+            switch FeedbackService.failure(error) {
+            case .unreachable, .signedOut:
+                return .unreachable
+            case .serverBusy:
+                return .serverBusy
+            case .dailyLimit:
+                var later = draft
+                later.notBefore = FeedbackService.nextJSTMidnight(after: now)
+                try? writeJSON(later)
+                return .tomorrow
+            case .rejected:
+                remove(draft.id)
+                return .dropped((error as? LocalizedError)?.errorDescription ?? L("送れませんでした", "Couldn't send"))
+            }
         }
     }
 
-    /// 残っている下書きを古い順に送る。**送り直しが要る失敗が出たらそこで止める**（圏外で全部を順に叩かない）
+    /// 残っている下書きを古い順に送る。
+    /// - 圏外・混雑ならそこで止める（全部を順に叩かない）
+    /// - その日の上限の下書きは、待つ時刻（`notBefore`）まで飛ばす。上限に当たったら、その日はもう送らない
     @discardableResult
-    func flush(currentUserId: String?, send: (FeedbackDraft, Data?, Bool) async throws -> Void) async -> Int {
-        trim()
+    func flush(currentUserId: String?, now: Date = Date(),
+               send: (FeedbackDraft, Data?, Bool) async throws -> Void) async -> Int {
+        trim(now: now)
         var sent = 0
         for draft in all() {
-            let outcome = await deliver(draft, currentUserId: currentUserId, send: send)
-            if outcome == .kept { break }
+            if let notBefore = draft.notBefore, notBefore > now { continue }
+            let outcome = await deliver(draft, currentUserId: currentUserId, now: now, send: send)
+            if outcome.isKept { break }
             if outcome == .sent { sent += 1 }
         }
         return sent
     }
 }
 
-/// 送り直しを重ねて走らせない見張り（前面に戻る・電波が戻るが同時に来る）
+/// 送り直しを重ねて走らせない見張り（起動・前面に戻る・電波が戻るが同時に来る）
 @MainActor
 enum FeedbackOutboxRunner {
     private static var running = false

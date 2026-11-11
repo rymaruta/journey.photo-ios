@@ -52,11 +52,56 @@ final class FeedbackTests: XCTestCase {
         XCTAssertFalse(FeedbackOutbox.signedIn(draft(userId: nil), currentUserId: "u1"))
     }
 
-    func testRetryableErrors() {
-        XCTAssertTrue(FeedbackService.isRetryable(APIError.unreachable))
-        XCTAssertTrue(FeedbackService.isRetryable(APIError.server(status: 503, message: "")))
-        XCTAssertFalse(FeedbackService.isRetryable(APIError.server(status: 429, message: "今日はこれ以上送れません")))
-        XCTAssertFalse(FeedbackService.isRetryable(APIError.server(status: 400, message: "")))
+    func testFailureKinds() {
+        XCTAssertEqual(FeedbackService.failure(APIError.unreachable), .unreachable)
+        XCTAssertEqual(FeedbackService.failure(APIError.server(status: 503, message: "")), .serverBusy)
+        XCTAssertEqual(FeedbackService.failure(APIError.server(status: 429, message: "今日はこれ以上送れません")), .dailyLimit)
+        XCTAssertEqual(FeedbackService.failure(APIError.server(status: 401, message: "")), .signedOut)
+        XCTAssertEqual(FeedbackService.failure(APIError.notAuthenticated), .signedOut)
+        XCTAssertEqual(FeedbackService.failure(APIError.server(status: 400, message: "")), .rejected)
+    }
+
+    /// 次の日の区切りはサーバーと同じ JST の0時（UTC 15:00）
+    func testNextJSTMidnight() {
+        let utc1459 = Date(timeIntervalSince1970: 1_762_873_140)   // 2025-11-11T14:59:00Z = JST 23:59
+        XCTAssertEqual(FeedbackService.nextJSTMidnight(after: utc1459), Date(timeIntervalSince1970: 1_762_873_200))
+        let utc1500 = Date(timeIntervalSince1970: 1_762_873_200)   // ちょうど JST 0:00 → 次の日の 0:00
+        XCTAssertEqual(FeedbackService.nextJSTMidnight(after: utc1500), Date(timeIntervalSince1970: 1_762_873_200 + 86_400))
+    }
+
+    /// その日の上限（429）は**消さない**。次の JST の0時まで送らず、その後に送る
+    func testDailyLimitKeepsDraftUntilTomorrow() async throws {
+        let outbox = FeedbackOutbox(root: root)
+        let now = Date(timeIntervalSince1970: 1_762_873_140)
+        let d = draft(createdAt: now)
+        try outbox.save(d, photo: nil)
+        let outcome = await outbox.deliver(d, currentUserId: "u1", now: now) { _, _, _ in
+            throw APIError.server(status: 429, message: "今日はこれ以上送れません。明日また送ってください")
+        }
+        XCTAssertEqual(outcome, .tomorrow)
+        XCTAssertEqual(outbox.all().first?.notBefore, Date(timeIntervalSince1970: 1_762_873_200))
+        var tried = 0
+        await outbox.flush(currentUserId: "u1", now: now.addingTimeInterval(30)) { _, _, _ in tried += 1 }
+        XCTAssertEqual(tried, 0, "上限の日のうちは送り直さない")
+        XCTAssertEqual(outbox.all().count, 1)
+        let sent = await outbox.flush(currentUserId: "u1", now: now.addingTimeInterval(120)) { _, _, _ in tried += 1 }
+        XCTAssertEqual(sent, 1)
+        XCTAssertEqual(outbox.all(), [])
+    }
+
+    /// ログインが切れていたら、その場でログインしていない人の口で送る（先頭で詰まらない）
+    func testSignedOutFallsBackToAnonymousImmediately() async throws {
+        let outbox = FeedbackOutbox(root: root)
+        let d = draft(userId: "u1")
+        try outbox.save(d, photo: nil)
+        var calls: [Bool] = []
+        let outcome = await outbox.deliver(d, currentUserId: "u1") { _, _, signedIn in
+            calls.append(signedIn)
+            if signedIn { throw APIError.server(status: 401, message: "") }
+        }
+        XCTAssertEqual(outcome, .sent)
+        XCTAssertEqual(calls, [true, false])
+        XCTAssertEqual(outbox.all(), [])
     }
 
     // MARK: - 圏外の下書き
@@ -117,7 +162,7 @@ final class FeedbackTests: XCTestCase {
         let d = draft()
         try outbox.save(d, photo: nil)
         let outcome = await outbox.deliver(d, currentUserId: "u1") { _, _, _ in
-            throw APIError.server(status: 429, message: "今日はこれ以上送れません。明日また送ってください")
+            throw APIError.server(status: 400, message: "ひとことを書いてください")
         }
         guard case .dropped = outcome else { return XCTFail("\(outcome)") }
         XCTAssertEqual(outbox.all(), [])

@@ -332,6 +332,9 @@ struct JourneyPhotoApp: App {
                     if auth.userId == nil, auth.signedOutByExpiry { return }
                     StoryUploadCenter.shared.userChanged(to: auth.userId)
                     discardOrphanTransfers()
+                    // 意見箱: 起動し直した直後（ログインの確かめが済んだ時）にも、送れていない下書きを1回送る
+                    // （2026-11-11 確かめ役の指摘。前面に戻る・電波が戻るだけだと、閉じて開き直した回に送らない）
+                    FeedbackOutboxRunner.flush(environment: environment, userId: auth.userId)
                 }
                 // 電波なしで使える旅の置き場を人に合わせる。**圏外で起動して本人の ID が取れなかった回は、
                 // 前に使っていた人の置き場を出す**（圏外で使うための機能なので、圏外の起動で消えては困る）。

@@ -20,6 +20,7 @@ struct FeedbackSheet: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var toasts: ToastCenter
+    @EnvironmentObject private var connectivity: Connectivity
     @Environment(\.dismiss) private var dismiss
 
     @State private var text = ""
@@ -224,8 +225,18 @@ struct FeedbackSheet: View {
         case .sent:
             toasts.show(L("届きました。ありがとうございます", "Received — thank you!"))
             dismiss()
-        case .kept:
+        case .unreachable where connectivity.isOffline:
             toasts.show(L("つながったら送ります", "We'll send it when you're back online"))
+            dismiss()
+        case .unreachable, .serverBusy:
+            // 電波はあるのに届かなかった（サーバーが遠い・混んでいる）。「つながったら」とは言わない
+            toasts.show(L("いまは送れませんでした。あとで自動でもう一度送ります",
+                          "Couldn't send right now. We'll try again automatically."))
+            dismiss()
+        case .tomorrow:
+            // その日の上限。消さずに残し、次の日に自動で送る
+            toasts.show(L("今日はこれ以上送れません。明日、自動で送ります",
+                          "You've reached today's limit. We'll send it tomorrow."))
             dismiss()
         case .dropped(let message):
             errorMessage = message

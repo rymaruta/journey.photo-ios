@@ -122,19 +122,41 @@ struct FeedbackService {
         return "iOS \(v.majorVersion).\(v.minorVersion)" + (v.patchVersion > 0 ? ".\(v.patchVersion)" : "")
     }
 
-    /// 送れなかった理由が「あとで送り直せば届く」ものか（圏外・混雑・サーバーの一時的な不調）。
-    /// **違うもの（本文が空・形が違う・その日の上限）は送り直さない**——下書きに残すと、開くたびに同じ失敗を繰り返す
-    static func isRetryable(_ error: Error) -> Bool {
+    /// 送れなかった理由の分け方（`FeedbackOutbox.deliver` が下書きを残すか・いつ送り直すかを決める）
+    enum Failure: Equatable {
+        /// 届かなかった（圏外・時間切れ）。電波が戻ったら送る
+        case unreachable
+        /// サーバーの一時的な不調（5xx・408）。次の機会に送る
+        case serverBusy
+        /// その日の上限（429）。**消さずに次の日（JST の0時）まで待って送る**（2026-11-11 確かめ役の指摘）
+        case dailyLimit
+        /// ログインが切れた（トークンが無い・401）。**その場でログインしていない人の口で送り直す**
+        case signedOut
+        /// 送り直しても届かない（本文が空・形が違う・ほかの 4xx）。下書きを消す
+        case rejected
+    }
+
+    static func failure(_ error: Error) -> Failure {
         switch error {
         case APIError.unreachable:
-            return true
-        case APIError.server(let status, _):
-            return status >= 500 || status == 408
+            return .unreachable
         case APIError.notAuthenticated:
-            // ログインが切れた回は、次に送るときにログインしていない人の口で送る（`FeedbackOutbox.flush`）
-            return true
+            return .signedOut
+        case APIError.server(let status, _):
+            if status == 401 { return .signedOut }
+            if status == 429 { return .dailyLimit }
+            if status >= 500 || status == 408 { return .serverBusy }
+            return .rejected
         default:
-            return false
+            return .rejected
         }
+    }
+
+    /// 次に送ってよい時刻（その日の上限のとき）: 次の JST の0時（サーバーの日の区切り `feedbackDayOf` と同じ）
+    static func nextJSTMidnight(after now: Date) -> Date {
+        let jst = TimeInterval(9 * 3600)
+        let day: TimeInterval = 24 * 3600
+        let shifted = now.timeIntervalSince1970 + jst
+        return Date(timeIntervalSince1970: (shifted / day).rounded(.down) * day + day - jst)
     }
 }
