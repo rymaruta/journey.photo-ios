@@ -56,6 +56,8 @@ enum TripTravel {
     struct Leg: Identifiable, Equatable {
         let from: Endpoint
         let to: Endpoint
+        /// 前の日の最後の場所から、この日の最初の場所へ（日をまたぐ区間・2026-11-11 札 #521 の続き）
+        var crossesDay = false
         /// まっすぐの距離（km）。手段の順を決めるだけで、画面には出さない
         var kilometers: Double { TravelDistance.kilometers(from: from.coords, to: to.coords) }
         /// 控えの鍵（同じ区間・同じ座標なら1回だけ聞く）
@@ -65,19 +67,56 @@ enum TripTravel {
         var id: String { "\(from.number)>\(to.number):\(key)" }
     }
 
-    /// 同じ日の区間（座標のある前の場所 → 次の場所）。座標の無い場所は飛ばす
-    static func legs(_ stops: [(name: String, coords: Photo.Coords?, number: Int)]) -> [Leg] {
+    typealias Stop = (name: String, coords: Photo.Coords?, number: Int)
+
+    /// 同じ日の区間（座標のある前の場所 → 次の場所）。座標の無い場所は飛ばす。
+    /// **同じ座標の2か所の間は出さない**（見込みは 0 分で、出しても読み違えるだけ・2026-11-11）
+    static func legs(_ stops: [Stop]) -> [Leg] {
         var previous: Endpoint?
         var out: [Leg] = []
         for stop in stops {
             guard let coords = stop.coords else { continue }
             let here = Endpoint(name: stop.name, coords: coords, number: stop.number)
-            if let previous, previous.coords != coords || previous.name != here.name {
+            if let previous, previous.coords != coords {
                 out.append(Leg(from: previous, to: here))
             }
             previous = here
         }
         return out
+    }
+
+    /// プラン全体の区間を日ごとに。**2 日目以降は「前の日の最後の場所 → この日の最初の場所」も出す**
+    /// （2026-11-11 owner の実機「バスとか出てこないよ」: 1 日 1 か所のプランでは同じ日の区間が 0 で、
+    /// 移動の目安が1つも出なかった）。空の日・座標の無い日は飛ばし、その前の場所から。返すのは日の数と同じ長さ
+    static func planLegs(_ days: [[Stop]]) -> [[Leg]] {
+        var lastOfEarlierDays: Endpoint?
+        return days.map { stops in
+            var out: [Leg] = []
+            if let previous = lastOfEarlierDays,
+               let first = stops.first(where: { $0.coords != nil }), let coords = first.coords,
+               previous.coords != coords {
+                out.append(Leg(from: previous, to: Endpoint(name: first.name, coords: coords, number: first.number),
+                               crossesDay: true))
+            }
+            out += legs(stops)
+            if let last = stops.last(where: { $0.coords != nil }), let coords = last.coords {
+                lastOfEarlierDays = Endpoint(name: last.name, coords: coords, number: last.number)
+            }
+            return out
+        }
+    }
+
+    /// 区間が1つも作れないときの1行（**場所が1か所だけ**のとき）。何も出ない理由を、押す前に分かるように。
+    /// 0 か所のときは日の「まだ何も入っていません」が言うので出さない。2 か所以上なら区間が出るので出さない
+    static func singlePlaceHint(locatedPlaces: Int) -> String? {
+        guard locatedPlaces == 1 else { return nil }
+        return L("場所が 2 つ以上になると、間の移動の目安（車・歩き・電車など）が出ます",
+                 "Add another place to see travel times (car, walking, transit) between them.")
+    }
+
+    /// 日をまたぐ区間の行の頭（「前の日の伏見稲荷大社から」）
+    static func crossDayLabel(_ leg: Leg) -> String {
+        L("前の日の\(leg.from.name)から", "From \(leg.from.name) (previous day)")
     }
 
     /// 歩きを先に出す距離（km）

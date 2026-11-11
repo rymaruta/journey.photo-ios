@@ -27,7 +27,16 @@ struct TripLegRow: View {
                     .frame(width: JPStroke.hairline, height: 20)
                     .frame(width: TripStyle.stopNumberSide)
                     .accessibilityHidden(true)
-                content
+                VStack(alignment: .leading, spacing: 2) {
+                    // 日をまたぐ区間は、どこからの区間かを頭に（「前の日の伏見稲荷大社から」・2026-11-11）
+                    if leg.crossesDay {
+                        Text(TripTravel.crossDayLabel(leg))
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.faint)
+                            .lineLimit(1)
+                    }
+                    content
+                }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
@@ -82,7 +91,9 @@ struct TripLegRow: View {
     }
 
     nonisolated static func spoken(leg: TripTravel.Leg, estimates: [TripTravel.Estimate], offline: Bool) -> String {
-        let route = L("\(leg.from.name)から\(leg.to.name)", "\(leg.from.name) to \(leg.to.name)")
+        let route = leg.crossesDay
+            ? L("前の日の\(leg.from.name)から\(leg.to.name)", "\(leg.from.name) (previous day) to \(leg.to.name)")
+            : L("\(leg.from.name)から\(leg.to.name)", "\(leg.from.name) to \(leg.to.name)")
         if !estimates.isEmpty { return "\(route)、\(TripTravel.spoken(estimates))" }
         if offline { return "\(route)、\(TripTravel.offlineNote)" }
         return route

@@ -613,17 +613,30 @@ struct TripPlanDetailView: View {
         })
     }
 
-    /// 日ごとの区間（日程の通し番号で）
-    private func dayLegs(_ di: Int, numbers: [Int]) -> [TripTravel.Leg] {
-        guard days.indices.contains(di) else { return [] }
-        let stops = TripDayMap.stops(of: days[di], index: index, places: places,
-                                     startNumber: numbers.first ?? 1)
-        return TripTravel.legs(stops.map { ($0.name, $0.coords, $0.number) })
+    /// 日ごとの場所（日程の通し番号・座標は地図と同じ引き方）
+    private var planStops: [[TripTravel.Stop]] {
+        let numbers = TripStyle.stopNumbers(days.map(\.items.count))
+        return days.indices.map { di in
+            TripDayMap.stops(of: days[di], index: index, places: places,
+                             startNumber: numbers.indices.contains(di) ? (numbers[di].first ?? 1) : 1)
+                .map { ($0.name, $0.coords, $0.number) }
+        }
     }
 
-    private var allLegs: [TripTravel.Leg] {
-        let numbers = TripStyle.stopNumbers(days.map(\.items.count))
-        return days.indices.flatMap { dayLegs($0, numbers: numbers.indices.contains($0) ? numbers[$0] : []) }
+    /// 日ごとの区間。**2 日目以降は前の日の最後の場所からの区間も入る**（`TripTravel.planLegs`・2026-11-11）
+    private var planLegsByDay: [[TripTravel.Leg]] { TripTravel.planLegs(planStops) }
+
+    private func dayLegs(_ di: Int, numbers: [Int]) -> [TripTravel.Leg] {
+        let all = planLegsByDay
+        return all.indices.contains(di) ? all[di] : []
+    }
+
+    private var allLegs: [TripTravel.Leg] { planLegsByDay.flatMap { $0 } }
+
+    /// 座標のある場所が1か所だけのとき、その場所の番号（区間が出ない理由の1行を、その行の下に出す）
+    private var singlePlaceNumber: Int? {
+        let located = planStops.flatMap { $0 }.filter { $0.coords != nil }
+        return TripTravel.singlePlaceHint(locatedPlaces: located.count) == nil ? nil : located.first?.number
     }
 
     private var legsKey: String { allLegs.map(\.key).joined(separator: ";") }
@@ -858,8 +871,9 @@ struct TripPlanDetailView: View {
                     TripDayNote(text: overlap, symbol: "exclamationmark.circle", strong: true)
                 }
                 if let warning = TripTravel.dayWarning(
-                    travel: estimatesByLeg.map { $0.first?.seconds },
-                    lateNames: legs.map { leg in Self.lateName(leg, resolved: resolved, numbers: numbers) },
+                    // その日の移動だけを数える（前の日からの区間は朝の移動で、昼の長さと比べない）
+                    travel: legs.indices.map { legs[$0].crossesDay ? nil : estimatesByLeg[$0].first?.seconds },
+                    lateNames: legs.map { leg in leg.crossesDay ? nil : Self.lateName(leg, resolved: resolved, numbers: numbers) },
                     sun: sun) {
                     TripDayNote(text: warning, symbol: "clock.badge.exclamationmark", strong: true)
                         .accessibilityIdentifier("tripPlan.dayWarning")
@@ -887,7 +901,8 @@ struct TripPlanDetailView: View {
                 }
                 ForEach(Array(day.items.enumerated()), id: \.offset) { ii, item in
                     let number = numbers.indices.contains(ii) ? numbers[ii] : ii + 1
-                    if ii > 0, let leg = legs.first(where: { $0.to.number == number }) {
+                    // 場所の上に、前の場所からの区間（1 日目の最初の場所の上には無い。2 日目以降の最初は前の日から）
+                    if let leg = legs.first(where: { $0.to.number == number }), ii > 0 || leg.crossesDay {
                         let index = legs.firstIndex(where: { $0.id == leg.id }) ?? 0
                         legRow(leg, estimates: estimatesByLeg.indices.contains(index) ? estimatesByLeg[index] : [],
                                sun: sun, toTimes: resolved.indices.contains(ii) ? resolved[ii].times : [],
@@ -899,6 +914,13 @@ struct TripPlanDetailView: View {
                             season: spotFor(item).flatMap { TripDraft.seasonLine($0, ymd: ymd) },
                             chip: resolved.indices.contains(ii) ? TripDraft.timeChip(resolved[ii].times) : nil)
                     divider
+                    // 場所が1か所だけ: 移動の目安が出ない理由を、その場所の下に1行で（2026-11-11）
+                    if singlePlaceNumber == number, let hint = TripTravel.singlePlaceHint(locatedPlaces: 1) {
+                        TripDayNote(text: hint, symbol: "arrow.triangle.swap")
+                            .padding(.vertical, JPSpace.xs)
+                            .accessibilityIdentifier("trip.leg.singleHint")
+                        divider
+                    }
                 }
                 addRow(di, full: day.items.count >= TripPlanService.itemsPerDayMax)
                     .overlay(alignment: .top) { dropLine(DropSpot(day: di, item: nil)) }

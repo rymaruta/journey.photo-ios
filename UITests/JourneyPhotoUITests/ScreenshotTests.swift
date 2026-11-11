@@ -2592,6 +2592,24 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 8)
         shoot(app, "65-旅行プランの日程（自動保存・移動の見込み）")
         XCTAssertEqual(fixtureSends(app, "open"), "0", "開いただけで送っている")
+        // 日をまたぐ区間（2026-11-11 owner の実機「バスとか出てこないよ」）: 2 日目の最初の上に「前の日の千里浜…から」
+        let crossDay = app.descendants(matching: .any).matching(identifier: "trip.leg")
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "前の日の")).firstMatch
+        var crossPushes = 0
+        while !crossDay.exists, crossPushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            crossPushes += 1
+        }
+        let crossLine = "TRIPLEG crossDay exists=\(crossDay.exists) label=\(crossDay.exists ? crossDay.label : "-")"
+        print(crossLine)
+        XCTContext.runActivity(named: crossLine) { _ in }
+        XCTAssertTrue(crossDay.exists, "日をまたぐ区間が出ていない")
+        if crossDay.exists {
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "65f-旅行プランの日程（前の日の最後の場所からの移動の目安）")
+        }
+        for _ in 0..<crossPushes { app.swipeDown(); Thread.sleep(forTimeInterval: 0.5) }
 
         // 運ぶ: 1 日目の最後（千里浜）を 2 日目の最初の行へ（日をまたぐ）。運んだら待って 1 回送る。
         // run 971: 押さえて運んだのに送った回数が 0 のままだった。run 974: 名前の順は日をまたいでも変わらない
