@@ -72,9 +72,9 @@ extension View {
 }
 
 #if os(iOS)
-/// 行の後ろに置く見えない部品。いちばん近い祖先の `UIScrollView` に `UIDragInteraction` を付け、
-/// **この行の枠の中で始まった指だけ**持ち上げる（行の上の SwiftUI の押す・送るはそのまま届く。
-/// `.draggable` も祖先の部品に付けて同じことをしている）
+/// 行の後ろに置く見えない部品。いちばん近い祖先の `UIScrollView` に付いた**1つの** `UIDragInteraction`
+/// （`TripRowDragHub`）に自分の行を登録し、**この行の枠の中で始まった指だけ**持ち上げる
+/// （行の上の SwiftUI の押す・送るはそのまま届く。`.draggable` も祖先の部品に付けて同じことをしている）
 struct TripRowDragHost: UIViewRepresentable {
     let events: TripRowDragEvents
     let preview: AnyView
@@ -103,7 +103,7 @@ struct TripRowDragHost: UIViewRepresentable {
         coordinator.detach()
     }
 
-    /// 窓に載った・外れたときに、運ぶ働きを付け替える
+    /// 窓に載った・外れたときに、登録し直す
     final class Probe: UIView {
         weak var coordinator: Coordinator?
 
@@ -113,107 +113,164 @@ struct TripRowDragHost: UIViewRepresentable {
         }
     }
 
+    /// 1 行分の受け手（中身・絵・始まりと終わりの知らせ）。運ぶ働きそのものは `TripRowDragHub` が持つ
     @MainActor
-    final class Coordinator: NSObject, UIDragInteractionDelegate {
+    final class Coordinator {
         var events: TripRowDragEvents?
         var preview: AnyView?
-        private weak var probe: UIView?
-        private weak var host: UIView?
-        /// 運んでいる途中か（途中で部品が外れたら、終わったとして知らせる）
-        private var active = false
-        private lazy var interaction: UIDragInteraction = {
-            let interaction = UIDragInteraction(delegate: self)
-            // iPhone の既定は「切」（`isEnabledByDefault` が false）。`.draggable` と同じく入れる
-            interaction.isEnabled = true
-            return interaction
-        }()
+        private(set) weak var probe: UIView?
+        private weak var hub: TripRowDragHub?
 
-        /// いちばん近い祖先の `UIScrollView`（無ければ窓）に付ける
+        /// いちばん近い祖先の `UIScrollView`（無ければ窓）の運ぶ働きに登録する
         func attach(to probe: UIView) {
             self.probe = probe
             guard let window = probe.window else { detach(); return }
             var view = probe.superview
             while let current = view, !(current is UIScrollView) { view = current.superview }
-            let target: UIView = view ?? window
-            guard target !== host || interaction.view !== target else { return }
+            let next = TripRowDragHub.hub(for: view ?? window)
+            guard next !== hub else { return }
             detach()
-            target.addInteraction(interaction)
-            host = target
-            note("A:\(String(describing: type(of: target)))")
-        }
-
-        /// 見本のときだけ、運ぶ元の出来事を並びに残す（札 #521・UIDragInteraction に替えた後に持ち上がらない理由を分ける）
-        private func note(_ event: String) {
-            #if DEBUG
-            if TripPlanFixture.isOn { TripPlanFixtureCounter.shared.mark(event) }
-            #endif
+            next.add(self)
+            hub = next
         }
 
         func detach() {
-            if active {
-                active = false
-                events?.ended()
-            }
-            interaction.view?.removeInteraction(interaction)
-            host = nil
+            hub?.remove(self)
+            hub = nil
         }
 
-        /// この行の枠の中で始まった指だけ運ぶ（ほかの行の働きも同じ祖先に付いている）
-        func dragInteraction(_ interaction: UIDragInteraction,
-                             itemsForBeginning session: UIDragSession) -> [UIDragItem] {
-            guard let probe, probe.window != nil, let events else { note("I:none"); return [] }
-            guard probe.bounds.contains(session.location(in: probe)) else { note("I:out"); return [] }
-            note("I:in#\(Int(probe.frame.minY))/\(interaction.view?.interactions.count ?? -1)")
+        /// 指がこの行の枠の中か
+        func contains(_ session: UIDragSession) -> Bool {
+            guard let probe, probe.window != nil else { return false }
+            return probe.bounds.contains(session.location(in: probe))
+        }
+
+        func items() -> [UIDragItem] {
+            guard let events else { return [] }
             let item = UIDragItem(itemProvider: NSItemProvider(object: events.payload as NSString))
             item.localObject = events.payload
             return [item]
         }
 
         /// 持ち上げ・運ぶ間の絵は、`.draggable` の preview と同じ SwiftUI の絵（名前の札）
-        func dragInteraction(_ interaction: UIDragInteraction, previewForLifting item: UIDragItem,
-                             session: UIDragSession) -> UITargetedDragPreview? {
-            guard let probe, probe.window != nil else { return nil }
-            let center = CGPoint(x: probe.bounds.midX, y: probe.bounds.midY)
-            let target = UIDragPreviewTarget(container: probe, center: center)
-            let parameters = UIDragPreviewParameters()
-            parameters.backgroundColor = .clear
-            guard let preview else { return nil }
+        func liftPreview() -> UITargetedDragPreview? {
+            guard let probe, probe.window != nil, let preview else { return nil }
             let renderer = ImageRenderer(content: preview)
             renderer.scale = probe.window?.screen.scale ?? 3
-            guard let image = renderer.uiImage else { note("P:nil"); return nil }
-            note("P:ok")
+            guard let image = renderer.uiImage else { TripRowDragHub.note("P:nil"); return nil }
+            TripRowDragHub.note("P:ok")
             let view = UIImageView(image: image)
             view.frame = CGRect(origin: .zero, size: image.size)
+            let parameters = UIDragPreviewParameters()
+            parameters.backgroundColor = .clear
             parameters.visiblePath = UIBezierPath(roundedRect: view.bounds, cornerRadius: JPRadius.field)
+            let target = UIDragPreviewTarget(container: probe, center: CGPoint(x: probe.bounds.midX, y: probe.bounds.midY))
             return UITargetedDragPreview(view: view, parameters: parameters, target: target)
         }
+    }
+}
 
-        func dragInteraction(_ interaction: UIDragInteraction, willAnimateLiftWith animator: UIDragAnimating,
-                             session: UIDragSession) {
-            note("W")
-        }
+/// 1 つの `UIScrollView` に**1 つだけ**付ける運ぶ働き。行（`TripRowDragHost.Coordinator`）はここに登録する。
+///
+/// 2026-11-11 判断（run 1053 の数）: 行ごとに `UIDragInteraction` を同じ `UIScrollView` に付けると、自分の行の
+/// `itemsForBeginning`（I:in）・絵（P:ok）・持ち上げの始まり（W）までは来るが、そのあとほかの行の働きにも
+/// `itemsForBeginning` が呼ばれ（空を返す）、`sessionWillBegin` も取り消し（C）も終わり（X）も来ないまま、
+/// 9 起動 + Days の 2 回すべてで運べなかった。働きを 1 つにして、指の下の行を自分で選ぶ
+@MainActor
+final class TripRowDragHub: NSObject, UIDragInteractionDelegate {
+    private static let key = UnsafeMutableRawPointer.allocate(byteCount: 1, alignment: 1)
 
-        func dragInteraction(_ interaction: UIDragInteraction, item: UIDragItem,
-                             willAnimateCancelWith animator: UIDragAnimating) {
-            note("C")
-        }
+    /// その部品の働き（無ければ作って付ける）
+    static func hub(for view: UIView) -> TripRowDragHub {
+        if let hub = objc_getAssociatedObject(view, key) as? TripRowDragHub { return hub }
+        let hub = TripRowDragHub(view: view)
+        objc_setAssociatedObject(view, key, hub, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        return hub
+    }
 
-        func dragInteraction(_ interaction: UIDragInteraction, session: UIDragSession,
-                             willEndWith operation: UIDropOperation) {
-            note("Y\(operation.rawValue)")
-        }
+    private weak var view: UIView?
+    private var rows: [ObjectIdentifier: Row] = [:]
+    /// いま運んでいる行
+    private weak var active: TripRowDragHost.Coordinator?
+    private var running = false
+    private lazy var interaction: UIDragInteraction = {
+        let interaction = UIDragInteraction(delegate: self)
+        // iPhone の既定は「切」（`isEnabledByDefault` が false）。`.draggable` と同じく入れる
+        interaction.isEnabled = true
+        return interaction
+    }()
 
-        func dragInteraction(_ interaction: UIDragInteraction, sessionWillBegin session: UIDragSession) {
-            active = true
-            events?.began()
-        }
+    private struct Row { weak var coordinator: TripRowDragHost.Coordinator? }
 
-        /// **運ぶ操作が終わった。落とした・落とさなかったに関わらず必ず来る**（2026-11-11 判断・落とす先の印を空に戻す）
-        func dragInteraction(_ interaction: UIDragInteraction, session: UIDragSession,
-                             didEndWith operation: UIDropOperation) {
-            active = false
-            events?.ended()
+    private init(view: UIView) {
+        self.view = view
+        super.init()
+        view.addInteraction(interaction)
+        Self.note("A:\(String(describing: type(of: view)))")
+    }
+
+    func add(_ row: TripRowDragHost.Coordinator) {
+        rows[ObjectIdentifier(row)] = Row(coordinator: row)
+    }
+
+    /// 外す。**運んでいる途中の行なら、終わったとして知らせる**（落とす先の印を残さない）
+    func remove(_ row: TripRowDragHost.Coordinator) {
+        rows[ObjectIdentifier(row)] = nil
+        if active === row {
+            if running { row.events?.ended() }
+            active = nil
+            running = false
         }
+    }
+
+    /// 見本のときだけ、運ぶ元の出来事を並びに残す（札 #521）
+    static func note(_ event: String) {
+        #if DEBUG
+        if TripPlanFixture.isOn { TripPlanFixtureCounter.shared.mark(event) }
+        #endif
+    }
+
+    /// 指の下の行だけ運ぶ
+    func dragInteraction(_ interaction: UIDragInteraction,
+                         itemsForBeginning session: UIDragSession) -> [UIDragItem] {
+        let row = rows.values.compactMap(\.coordinator).first { $0.contains(session) }
+        guard let row else { Self.note("I:out"); return [] }
+        Self.note("I:in")
+        active = row
+        return row.items()
+    }
+
+    func dragInteraction(_ interaction: UIDragInteraction, previewForLifting item: UIDragItem,
+                         session: UIDragSession) -> UITargetedDragPreview? {
+        active?.liftPreview()
+    }
+
+    func dragInteraction(_ interaction: UIDragInteraction, willAnimateLiftWith animator: UIDragAnimating,
+                         session: UIDragSession) {
+        Self.note("W")
+    }
+
+    func dragInteraction(_ interaction: UIDragInteraction, item: UIDragItem,
+                         willAnimateCancelWith animator: UIDragAnimating) {
+        Self.note("C")
+    }
+
+    func dragInteraction(_ interaction: UIDragInteraction, sessionWillBegin session: UIDragSession) {
+        running = true
+        active?.events?.began()
+    }
+
+    func dragInteraction(_ interaction: UIDragInteraction, session: UIDragSession,
+                         willEndWith operation: UIDropOperation) {
+        Self.note("Y\(operation.rawValue)")
+    }
+
+    /// **運ぶ操作が終わった。落とした・落とさなかったに関わらず必ず来る**（2026-11-11 判断・落とす先の印を空に戻す）
+    func dragInteraction(_ interaction: UIDragInteraction, session: UIDragSession,
+                         didEndWith operation: UIDropOperation) {
+        running = false
+        active?.events?.ended()
+        active = nil
     }
 }
 #endif
