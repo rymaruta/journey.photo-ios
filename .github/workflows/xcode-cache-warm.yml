@@ -19,6 +19,8 @@ on:
   schedule:
     - cron: "41 18 * * *"
   workflow_dispatch:
+  # 一時（測る間だけ）: main に入るまで手で流せない（新しいワークフローは main に無いと dispatch できない）ので、毎回のから呼ぶ
+  workflow_call:
 
 permissions:
   contents: read
