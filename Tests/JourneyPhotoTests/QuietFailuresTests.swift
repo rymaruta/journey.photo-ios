@@ -151,8 +151,8 @@ final class QuietFailuresTests: XCTestCase {
 
     func testPhotoDeleteGoesThroughTheGuard() throws {
         let view = try source("Features/PhotoDetail/PhotoDetailView.swift")
-        let delete = slice(view, from: "private func deletePhoto() async {", to: "case .failed(let error):")
-        XCTAssertTrue(delete.contains("model.deletePhoto(photoId, photos: environment.photos)"),
+        let delete = slice(view, from: "private func deletePhoto(withStory: Bool? = nil) async {", to: "case .failed(let error):")
+        XCTAssertTrue(delete.contains("model.deletePhoto(photoId, photos: environment.photos, withStory: withStory)"),
                       "守りを通さずに送っている")
         XCTAssertFalse(delete.contains("environment.photos.delete("))
         XCTAssertTrue(view.contains(".disabled(model.deletingPhotoIds.contains(current.id))"))

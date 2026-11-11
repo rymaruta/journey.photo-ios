@@ -339,12 +339,13 @@ final class PhotoDetailViewModel: ObservableObject {
     }
 
     /// 自分の写真を消す（送るのは `photos.delete`）。**同じ写真を送っている間は送らずに断る**
-    func deletePhoto(_ id: String, photos: PhotoService) async -> DeleteOutcome {
+    /// `withStory`: ストーリーから作った写真の「一緒に消す（true）・写真だけ（false）」（2026-11-11）
+    func deletePhoto(_ id: String, photos: PhotoService, withStory: Bool? = nil) async -> DeleteOutcome {
         guard !deletingPhotoIds.contains(id) else { return .refused }
         deletingPhotoIds.insert(id)
         defer { deletingPhotoIds.remove(id) }
         do {
-            try await photos.delete(photoId: id)
+            try await photos.delete(photoId: id, withStory: withStory)
             return .deleted
         } catch {
             return .failed(error)

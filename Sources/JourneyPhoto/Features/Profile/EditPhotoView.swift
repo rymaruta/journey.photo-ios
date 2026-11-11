@@ -93,6 +93,18 @@ struct EditPhotoView: View {
             }
             .listRowBackground(Color.clear)
 
+            // 「ストーリーから作った写真」（2026-11-11 判断・`StoryPhotoLink`）。黒地なので真鍮。
+            // 編集の画面は詳細かストーリーの札から来るので、ここは文字だけ（開く口は詳細の行）
+            if photo.sourceStoryId != nil {
+                Section {
+                    Text(StoryPhotoLink.madeFromStory)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(WebTheme.accent)
+                        .accessibilityIdentifier("editPhoto.storySource")
+                }
+                .listRowBackground(Color.clear)
+            }
+
             // 差し替え・色の編集の知らせは**写真のすぐ下**（押した操作の隣）。2026-10-11 判断:
             // フォームのいちばん下だと、上で押した結果が画面の外に出て見えなかった
             if let message {
