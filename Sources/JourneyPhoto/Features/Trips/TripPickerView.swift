@@ -22,6 +22,11 @@ struct TripPickerView: View {
 
     /// 札の山と決めごと（作る流れが持つ——タブを替えても、めくった札と選んだ場所を残す）
     @ObservedObject var model: TripPickerModel
+    /// 山から除く鍵を足す（撮影スポットを払う画面: 前に払った札・`SpotSwipeProgress.seen`）。
+    /// 足した鍵で山が空になったら、「行きたい」だけを除いて作り直す（`TripPickerModel.load` の `fallbackExcluding`）
+    var alsoExclude: Set<String> = []
+    /// 山の中に挟む札（撮影スポットを払う画面だけ・`SpotSwipe.showsPause`）。nil なら挟まない
+    var pause: TripPickerPause?
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var wishlist: WishlistStore
@@ -40,14 +45,18 @@ struct TripPickerView: View {
 
     var body: some View {
         content
-            .task {
-                await model.load(fetch: { try await environment.spots.fetchIndex() },
-                                 excluding: wishlist.spotIds, seed: seed)
-            }
+            .task { await loadDeck() }
             // めくる先の札と選んだ場所の詳細（写真・季節の文）。分けた置き場の索引だけの行のときだけ（2026-10-07）
             .task(id: SpotDetailNeeds.key(model.detailNeeds)) {
                 await model.applyDetails { await environment.spots.withDetails($0, for: $1) }
             }
+    }
+
+    private func loadDeck() async {
+        let wished = wishlist.spotIds
+        await model.load(fetch: { try await environment.spots.fetchIndex() },
+                         excluding: wished.union(alsoExclude), seed: seed,
+                         fallbackExcluding: alsoExclude.isEmpty ? nil : wished)
     }
 
     @ViewBuilder
@@ -59,7 +68,9 @@ struct TripPickerView: View {
             failed
         case .loaded:
             VStack(spacing: 0) {
-                if let spot = model.current {
+                if model.current != nil, let pause {
+                    pauseArea(pause)
+                } else if let spot = model.current {
                     // **スクロールの中に置かない。** 縦のスクロールが札を払う指を奪う
                     // （札の上から始めた縦の動きで、払えない・流れない）。札は残りの高さに収める
                     VStack(alignment: .leading, spacing: 12) {
@@ -356,6 +367,104 @@ struct TripPickerView: View {
         }
     }
 
+    // MARK: - 挟む札（撮影スポットを払う画面・2026-11-11）
+
+    /// 山の中に1枚だけ挟む札。**窓で止めない**——左右どちらへ払っても、「続けて払う」でも次の写真へ。
+    /// 写真の無い札なので、主ボタンは真鍮の塗りに墨（写真の無い画面の主ボタン）、眉ラベルは黒地の真鍮
+    private func pauseArea(_ pause: TripPickerPause) -> some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 12) {
+                intro
+                pauseCard(pause)
+                    .frame(maxWidth: .infinity, minHeight: 120, maxHeight: .infinity)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            VStack(spacing: 8) {
+                Button(action: pause.action) {
+                    Text(pause.actionTitle)
+                        .jpPillButton(.main(onPhoto: false))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("tripPicker.pause.action")
+                Button { continueFromPause(pause) } label: {
+                    Text(L("続けて払う", "Keep swiping"))
+                        .jpPillButton(.outline)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("tripPicker.pause.continue")
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+        }
+    }
+
+    private func pauseCard(_ pause: TripPickerPause) -> some View {
+        VStack(alignment: .leading, spacing: JPSpace.s) {
+            Spacer(minLength: 0)
+            Image(systemName: "map")
+                .font(.title2)
+                .foregroundStyle(WebTheme.accent)
+                .accessibilityHidden(true)
+            Text(pause.title)
+                .font(JPFont.cardTitle)
+                .foregroundStyle(WebTheme.foreground)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(pause.line)
+                .font(JPFont.footnote)
+                .foregroundStyle(WebTheme.text2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(JPSpace.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .jpCardFace()
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .contentShape(RoundedRectangle(cornerRadius: 16))
+        .rotationEffect(.degrees(dragX / 24))
+        .offset(x: dragX)
+        .gesture(pauseSwipe(pause))
+        .accessibilityElement(children: .combine)
+        .accessibilityAction(named: L("続けて払う", "Keep swiping")) { continueFromPause(pause) }
+        .accessibilityIdentifier("tripPicker.pause")
+    }
+
+    /// 挟む札はどちらへ払っても続ける（「行きたい」「見送る」は写真の札だけ）
+    private func pauseSwipe(_ pause: TripPickerPause) -> some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { value in
+                guard !flying else { return }
+                dragX = value.translation.width
+            }
+            .onEnded { value in
+                guard !flying else { return }
+                let x = value.translation.width
+                let predicted = value.predictedEndTranslation.width
+                if abs(x) > Self.swipeThreshold || abs(predicted) > Self.swipeThreshold * 2 {
+                    continueFromPause(pause, toward: x < 0 ? -1 : 1)
+                } else {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { dragX = 0 }
+                }
+            }
+    }
+
+    private func continueFromPause(_ pause: TripPickerPause, toward direction: Double = -1) {
+        guard !flying else { return }
+        guard reduceMotion == false else {
+            dragX = 0
+            pause.onContinue()
+            return
+        }
+        flying = true
+        withAnimation(.easeOut(duration: 0.2)) { dragX = 600 * direction }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            dragX = 0
+            pause.onContinue()
+            flying = false
+        }
+    }
+
     // MARK: - 札が無いとき
 
     /// めくり終えた・はじめから見せる札が無い
@@ -399,10 +508,7 @@ struct TripPickerView: View {
                 .foregroundStyle(WebTheme.muted2)
             // 大きさと当たりの形は **label の中に**（外に付けると押せるのが文字の上だけになる）
             Button {
-                Task {
-                    await model.load(fetch: { try await environment.spots.fetchIndex() },
-                                     excluding: wishlist.spotIds, seed: seed)
-                }
+                Task { await loadDeck() }
             } label: {
                 Text(L("再試行", "Retry"))
                     .font(.subheadline.weight(.semibold))
@@ -412,4 +518,15 @@ struct TripPickerView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
+
+/// 払う山の中に挟む札（`TripPickerView.pause`・撮影スポットを払う画面だけ）
+struct TripPickerPause {
+    let title: String
+    let line: String
+    /// 主な操作の名前（「ログインして見る」「旅行プランにする」）
+    let actionTitle: String
+    let action: () -> Void
+    /// 払った・「続けて払う」を押した（呼び手が次に挟むまでの数を数え直す）
+    let onContinue: () -> Void
 }

@@ -93,6 +93,10 @@ struct HomeTopCardView: View {
     /// 🔴 **一問の読み直しだけに頼らない**——一問は日本時間で替わるので、日本の外では前面に戻っても
     /// 一問が「もう今日の分」で早抜けし、札が昨日のまま残った（96e499b7 のレビュー）
     @State private var cardsNow = Date()
+    /// 撮影スポットを払う全画面（入口は札の1枚目・`SpotSwipeView`・2026-11-11）
+    @State private var showSwipe = false
+    /// 一度でも払う画面を開いたか（入口の一行を「行きたい n か所 · 続きから」にする）。閉じたときに読み直す
+    @State private var swipeStarted = SpotSwipeProgress().started
     @Environment(\.scenePhase) private var scenePhase
 
     private let opened = OpenedTripBooks()
@@ -103,6 +107,9 @@ struct HomeTopCardView: View {
         // 中身はここで決めて `seasonShelf` で渡す（札の並びは**1回だけ計算して**、札と段の両方に使う）
         let choices = self.choices
         content(choices)
+            .fullScreenCover(isPresented: $showSwipe, onDismiss: { swipeStarted = SpotSwipeProgress().started }) {
+                SpotSwipeView()
+            }
             .onChange(of: shelfKey(choices), initial: true) { _, _ in
                 seasonShelf = visibleShelf(choices).map { HomeSeasonShelfSlot(shelf: $0, spots: spots) }
                 PerfRecorder.shared.mark("home.seasonShelf.set")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07）
@@ -149,10 +156,13 @@ struct HomeTopCardView: View {
     private static let peek: CGFloat = JPSpace.xl
 
     /// 今日の札の並び（`HomeTopCard.cards`）。段（`spotShelf`）も同じ並びを見て、札に出ている場所を除く
+    /// **1枚目はいつも撮影スポットを払う入口**（`HomeTopCard.withSwipe`・2026-11-11）
     private var choices: [HomeTopCard.Choice] {
-        HomeTopCard.cards(now: cardsNow, plans: plansOwner == auth.userId ? plans : [],
-                          myPhotos: myPhotos, openedBookDays: openedBooks, spots: spots,
-                          wishlist: wishedKeys, quiz: quiz)
+        HomeTopCard.withSwipe(
+            HomeTopCard.cards(now: cardsNow, plans: plansOwner == auth.userId ? plans : [],
+                              myPhotos: myPhotos, openedBookDays: openedBooks, spots: spots,
+                              wishlist: wishedKeys, quiz: quiz),
+            spots: spots, today: HomeTopCard.today(cardsNow, in: .current))
     }
 
     /// 「いまの季節のスポット」の段の中身。**索引が取れていない・候補が無い日・今日の一問が決着する前は nil**
@@ -294,6 +304,22 @@ struct HomeTopCardView: View {
                      backdrop: nil, backdropURL: spot.photo?.url, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
+        case .swipe(let cover):
+            // 押すと全画面の払う画面。**札の上で払う操作は置かない**（札の並びは横にめくるので、指を取り合う）。
+            // 未ログインでも開ける（払った「行きたい」は端末に入り、ログインで引き継ぐ）
+            Button {
+                showSwipe = true
+            } label: {
+                card(eyebrow: "WHERE TO NEXT", eyebrowLabel: L("行きたい場所を探す", "Find places to go"),
+                     title: SpotSwipe.cardTitle,
+                     line: SpotSwipe.cardLine(started: swipeStarted, wishCount: wishlist.spotIds.count,
+                                              signedIn: auth.userId != nil),
+                     // 写真を出すなら作者とライセンスも出す（季節の札と同じ）
+                     detail: cover.flatMap { $0.photo == nil ? nil : Self.spotDetail($0) },
+                     backdrop: nil, backdropURL: cover?.photo?.url, inCarousel: inCarousel)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("home.spotSwipe")
         case .theme:
             DailyThemeCard(photos: themePhotos, myPhotos: myPhotos, inCarousel: inCarousel)
         case .quiz(let quiz):

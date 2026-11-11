@@ -46,7 +46,7 @@ enum SpotDetailNeeds {
         var plans: [TripPlan] = []
         for choice in choices {
             switch choice {
-            case .inSeason(let spot, _, _), .wishlistSeason(let spot, _, _):
+            case .inSeason(let spot, _, _), .wishlistSeason(let spot, _, _), .swipe(let spot?):
                 picked.append(spot)
             case .departure(let plan, _), .onTrip(let plan, _):
                 plans.append(plan)
