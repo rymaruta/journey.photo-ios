@@ -223,4 +223,73 @@ final class PassWiringTests: XCTestCase {
         let settings = try source("Features/Pass/PassSettingsView.swift")
         XCTAssertTrue(settings.contains(#"Text(L("わたしの乗車券", "My ticket"))"#), "設定の行が「わたしの乗車券」でない")
     }
+
+    /// 設定に「夕方にまとめて受け取る」がある（既定はオフ＝すぐ）。札のつなぎで「すぐ」に届いたカードが出る
+    /// （2026-11-10 owner「すれちがったら即時交換されて欲しい」）
+    func testEveningOptionAndInstantArrivalWiring() throws {
+        let settings = try source("Features/Pass/PassSettingsView.swift")
+        XCTAssertTrue(settings.contains("deliverySection"), "届き方の節を画面に置いていない")
+        XCTAssertTrue(settings.contains(#"L("夕方にまとめて受け取る", "Get cards together in the evening")"#))
+        XCTAssertTrue(settings.contains("pass.update { $0.delivery = on ? .evening : .instant }"), "入切が届き方に繋がっていない")
+        XCTAssertTrue(settings.contains(#".accessibilityIdentifier("pass.settings.evening")"#))
+        // 前面で綴じたカードは `arrivals` で「いま」を入れ直して札へ出す（ホームの側は今のつなぎのまま）
+        let gallery = try source("Features/Gallery/GalleryView.swift")
+        XCTAssertTrue(gallery.contains(".onChange(of: pass.arrivals) { _, _ in passNow = Date() }"),
+                      "届いた合図でホームの「いま」を入れ直さない")
+        let store = try source("Core/Storage/PassStore.swift")
+        XCTAssertTrue(store.contains("arrivals += 1\n            announceInstant(now: date)"), "すぐ届いた時にホームへ合図していない")
+    }
+
+    /// 🔴 **画面・知らせ・読み上げに「綴」を出さない**（2026-11-10 owner「すれちがい帳の表現が好きではない。
+    /// 『綴じる』は使わない。『受け取ったカード』などに」）。アプリの文字列（`"…"` の中）と、配る資料（json）を見る。
+    /// 注記（`//`）・識別子は数えない
+    func testNoBindingWordOnScreen() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto")
+        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL }
+            .filter { ["swift", "json", "strings"].contains($0.pathExtension) } ?? []
+        XCTAssertGreaterThan(files.count, 100, "ソースを読めていない")
+        var found: [String] = []
+        for file in files {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            for (index, raw) in text.components(separatedBy: "\n").enumerated() {
+                var line = raw
+                if file.pathExtension == "swift" {
+                    if line.trimmingCharacters(in: .whitespaces).hasPrefix("//") { continue }
+                    // 行の後ろの注記を落とす（文字列の中の `//` は URL くらいで、「綴」とは並ばない）
+                    if let comment = line.range(of: " // ") { line = String(line[..<comment.lowerBound]) }
+                    // 文字列の中だけを見る
+                    let parts = line.components(separatedBy: "\"")
+                    guard parts.count > 2 else { continue }
+                    let literals = parts.enumerated().filter { $0.offset % 2 == 1 }.map(\.element)
+                    guard literals.contains(where: { $0.contains("綴") }) else { continue }
+                } else if !line.contains("綴") {
+                    continue
+                }
+                found.append("\(file.lastPathComponent):\(index + 1): \(raw.trimmingCharacters(in: .whitespaces))")
+            }
+        }
+        XCTAssertTrue(found.isEmpty, "画面に「綴」が出る:\n" + found.joined(separator: "\n"))
+        // 言い替えた先（板の題「すれちがい帳」はそのまま）
+        XCTAssertEqual(PassBook.Order.bound.label, L("受け取った順", "Received"))
+        XCTAssertEqual(PassTicket.validityJa, "ずっと\n（帳に残る）")
+    }
+
+    /// 帳の上の数は `PassBook.statItems` で出す（分からない都道府県は「—」・読み上げは「まだ分かりません」）。
+    /// カードが 0 枚のときは数を出さず空の案内だけ（2026-11-10）
+    func testBookStatsUseUnknownDash() throws {
+        let view = try source("Features/Pass/PassBookView.swift")
+        XCTAssertTrue(view.contains("PassBook.statItems(stats)"), "帳の数が statItems を通っていない")
+        XCTAssertTrue(view.contains(".accessibilityLabel(item.spoken)"), "読み上げが「まだ分かりません」にならない")
+        XCTAssertFalse(view.contains("String(stats.prefectures)"), "都道府県の数をそのまま出している（0 が出る）")
+        let empty = try XCTUnwrap(view.range(of: "if contents.isEmpty {"))
+        let stats = try XCTUnwrap(view.range(of: "statsRow(PassBook.stats("))
+        // 空の案内（`EmptyState`）の枝の後ろの else にだけ数がある
+        let emptyState = try XCTUnwrap(view.range(of: "EmptyState(", range: empty.upperBound..<view.endIndex))
+        let branch = try XCTUnwrap(view.range(of: "} else {", range: emptyState.upperBound..<view.endIndex))
+        XCTAssertLessThan(empty.lowerBound, emptyState.lowerBound)
+        XCTAssertLessThan(branch.lowerBound, stats.lowerBound, "カードが 0 枚でも数を出している")
+    }
 }

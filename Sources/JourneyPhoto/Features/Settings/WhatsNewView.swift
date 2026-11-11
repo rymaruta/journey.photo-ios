@@ -22,6 +22,10 @@ struct WhatsNewView: View {
     var primaryTitle: String = L("はじめる", "Get started")
 
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var auth: AuthStore
+    /// ログインしていない人が、自分の記録の行き先（すれちがい帳・行った県の地図）を押した（札 #519）
+    @State private var signInAsk: SignInRequest?
+    @State private var signInOpen: SignInRequest?
 
     private var sections: [WhatsNew.Section] { WhatsNew.sections(releases, mode: mode) }
 
@@ -79,6 +83,7 @@ struct WhatsNewView: View {
         }
         .webScreen()
         .presentationDragIndicator(.visible)
+        .signInPrompt(ask: $signInAsk, open: $signInOpen)
         // 画面全体に目印を付けない——付けると中の部品（主ボタンの `whatsNew.close`）の目印まで
         // 上書きされ、UI テストが主ボタンを見つけられなかった（run 344）
     }
@@ -122,7 +127,7 @@ struct WhatsNewView: View {
                 rowLabel(item, chevron: true)
             }
             .buttonStyle(.plain)
-            .accessibilityHint(hint(destination))
+            .accessibilityHint(WhatsNew.hint(destination))
             .accessibilityIdentifier("whatsNew.item.\(index)")
         } else {
             rowLabel(item, chevron: false)
@@ -161,24 +166,29 @@ struct WhatsNewView: View {
         .contentShape(Rectangle())
     }
 
-    private func hint(_ destination: WhatsNew.Destination) -> String {
-        switch destination {
-        case .home: return L("ホームを開きます", "Opens Home")
-        case .search: return L("探すを開きます", "Opens Search")
-        case .map: return L("マップを開きます", "Opens the map")
-        case .mypage: return L("マイページを開きます", "Opens My Page")
-        }
-    }
-
-    /// シートを閉じてから札を切り替える（`RootView` が受けて、メニューのシートも下ろす）
+    /// シートを閉じてから札を切り替える（`RootView` が受けて、メニューのシートも下ろす）。
+    /// すれちがい帳・行った県の地図は、ホームの札に替えてその画面を積む（`TabRouter.openOnHome`・札 #519）。
+    /// 起動時も設定から開いた履歴（`.history`）も同じ動き。ログインしていなければログインの画面を出す
     private func open(_ destination: WhatsNew.Destination) {
-        dismiss()
         let router = TabRouter.shared
-        switch destination {
-        case .home: router.openHome()
-        case .search: router.openSearch()
-        case .map: router.openMap()
-        case .mypage: router.openMyPage()
+        switch WhatsNew.route(destination, userId: auth.userId, isResolving: auth.isResolving) {
+        case .tab(let tab):
+            dismiss()
+            switch tab {
+            case .home: router.openHome()
+            case .search: router.openSearch()
+            case .map: router.openMap()
+            case .mypage: router.openMyPage()
+            case .passBook: router.openOnHome(.passBook)
+            case .visitedMap: router.openOnHome(.visitedMap)
+            }
+        case .home(let screen):
+            dismiss()
+            router.openOnHome(screen)
+        case .signIn(let reason):
+            signInOpen = SignInRequest(reason: reason)
+        case .wait:
+            break
         }
     }
 }

@@ -8,6 +8,7 @@ import CoreBluetooth
 ///   電波を出す（そこで初めて iPhone が Bluetooth の使用を尋ねる）
 /// - 乗車券を選ぶまでは電波を出さない（オンにして選んでいなければ、そのまま選ぶ画面へ進む）
 /// - 「いつ」: いつでも／旅のあいだ（家から 50km 以上離れた日だけ）／開いている間
+/// - 「届き方」: 既定はすぐ届く。「夕方にまとめて受け取る」をオンにした人だけ夕方 18 時に束で1回（2026-11-10）
 struct PassSettingsView: View {
 
     @EnvironmentObject private var pass: PassStore
@@ -26,6 +27,10 @@ struct PassSettingsView: View {
     /// 乗車券の写真を読めなかった（2026-10-21）。写真は前の値を保ち、行で読めなかったと言う
     @State private var cardLoadFailed = false
     @State private var isTurningOnPush = false
+    /// はじめから「オンにする」前の説明を出すか（すれちがい帳の空の状態の「説明を読んでオンにする」・札 #519）。
+    /// 出すのは1回だけ・オフのときだけ（説明から戻って閉じた人に、画面に戻るたび出し直さない）
+    var startsWithIntro = false
+    @State private var introOffered = false
 
     var body: some View {
         ScrollView {
@@ -37,6 +42,7 @@ struct PassSettingsView: View {
                     .accessibilityAddTraits(.isHeader)
                 mainCard
                 whenSection
+                deliverySection
                 contentsSection
                 privacyNote
                 linksCard
@@ -64,6 +70,14 @@ struct PassSettingsView: View {
         }
         .navigationDestination(isPresented: $showPick) { PassCardPickView() }
         .task(id: pass.settings.cardPhotoId) { await loadCard() }
+        // 積む動きの最中にシートを出すと黙って無視されることがあるので、積み終わるのを少し待つ
+        .task {
+            guard startsWithIntro, !introOffered else { return }
+            introOffered = true
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            guard !Task.isCancelled, !pass.settings.enabled else { return }
+            showIntro = true
+        }
         // 読めなかった回は、選ぶ画面などから戻ったときに読み直す（2026-10-21）
         .onAppear { if cardLoadFailed { Task { await loadCard() } } }
         .task {
@@ -242,16 +256,31 @@ struct PassSettingsView: View {
     }
 
     /// 「旅のあいだ」で、家からの距離が分からない訳（分からない日は交換しない）
+    /// （すれちがい帳の頭の行も同じ訳で「家からの距離が分からない」と言う・`PassSettingsText.travelUnknownReason`）
     private var travelUnknownReason: String? {
-        if pass.homePrefecture == nil {
-            return L("プロフィールの居住地に都道府県が無いため、家からの距離が分かりません。居住地を入れるか、ほかの「いつ」を選んでください。",
-                     "Your profile has no prefecture under \u{201C}Where you\u{2019}re based\u{201D}, so distance from home is unknown. Add it, or pick another option.")
+        PassSettingsText.travelUnknownReason(homePrefecture: pass.homePrefecture,
+                                             locationAuthorized: PassPlaceFinder.shared.isAuthorized)
+    }
+
+    // MARK: - 届き方
+
+    /// 「夕方にまとめて受け取る」（2026-11-10 owner「すれちがったら即時交換されて欲しい」）。**既定はオフ＝すぐ届く。**
+    /// 見た目は「すれちがう」の入切と同じ行（`JPToggleRow`）を札に1つ。眉は「いつ」「カードに載るもの」と同じ真鍮
+    private var deliverySection: some View {
+        VStack(alignment: .leading, spacing: JPSpace.xs) {
+            eyebrow(L("届き方", "Delivery"))
+            JPCard {
+                JPToggleRow(title: L("夕方にまとめて受け取る", "Get cards together in the evening"),
+                            detail: PassPrivacyText.eveningDetail,
+                            isOn: eveningBinding)
+                    .accessibilityIdentifier("pass.settings.evening")
+            }
         }
-        if !PassPlaceFinder.shared.isAuthorized {
-            return L("位置情報が許可されていないため、旅のあいだか分かりません。撮影地マップで現在地を許可するか、ほかの「いつ」を選んでください。",
-                     "Location isn\u{2019}t allowed, so we can\u{2019}t tell if you\u{2019}re traveling. Allow it on the map, or pick another option.")
-        }
-        return nil
+    }
+
+    private var eveningBinding: Binding<Bool> {
+        Binding(get: { pass.settings.deliveryMode == .evening },
+                set: { on in pass.update { $0.delivery = on ? .evening : .instant } })
     }
 
     // MARK: - カードに載るもの
@@ -435,6 +464,20 @@ struct PassIntroSheet: View {
 
 /// 設定の文（テストで見張る）
 enum PassSettingsText {
+    /// 「旅のあいだ」で、家からの距離が分からない訳（分からない日は交換しない）。設定の「いつ」の下と、
+    /// すれちがい帳の頭の行（`PassBookStatus.distanceUnknown`）が同じ決まりで読む
+    static func travelUnknownReason(homePrefecture: String?, locationAuthorized: Bool) -> String? {
+        if homePrefecture == nil {
+            return L("プロフィールの居住地に都道府県が無いため、家からの距離が分かりません。居住地を入れるか、ほかの「いつ」を選んでください。",
+                     "Your profile has no prefecture under \u{201C}Where you\u{2019}re based\u{201D}, so distance from home is unknown. Add it, or pick another option.")
+        }
+        if !locationAuthorized {
+            return L("位置情報が許可されていないため、旅のあいだか分かりません。撮影地マップで現在地を許可するか、ほかの「いつ」を選んでください。",
+                     "Location isn\u{2019}t allowed, so we can\u{2019}t tell if you\u{2019}re traveling. Allow it on the map, or pick another option.")
+        }
+        return nil
+    }
+
     /// 「乗車券の区間」の行の2行目（いまの発・着）
     static func route(_ settings: PassSettings) -> String {
         let from: String

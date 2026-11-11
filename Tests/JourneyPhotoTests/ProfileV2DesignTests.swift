@@ -151,8 +151,11 @@ final class ProfileV2DesignTests: XCTestCase {
     func testUserProfileFollowButtonShapes() throws {
         let parts = try source("Features/Profile/ProfileV2Parts.swift")
         let label = try slice(parts, from: "struct ProfileFollowButtonLabel", to: "\n}\n")
-        XCTAssertTrue(label.contains("isFollowing ? Color.clear : WebTheme.accentBackground"))
-        XCTAssertTrue(label.contains("isFollowing ? WebTheme.line : Color.clear"), "フォロー中の線が無い")
+        // 形は「メッセージ」と同じ修飾子（2026-11-10 に分けた）。フォローしていなければ塗り、フォロー中は線
+        XCTAssertTrue(label.contains(".profileHeaderButton(filled: !isFollowing)"))
+        let shape = try slice(parts, from: "func profileHeaderButton(filled: Bool)", to: "\n    }\n")
+        XCTAssertTrue(shape.contains("filled ? WebTheme.accentBackground : Color.clear"))
+        XCTAssertTrue(shape.contains("filled ? Color.clear : WebTheme.line"), "フォロー中の線が無い")
         XCTAssertTrue(label.contains("chevron.down"), "フォロー中の ▾ が無い（色だけで状態を言う）")
         let user = try source("Features/Profile/UserProfileView.swift")
         XCTAssertTrue(user.contains("ProfileFollowButtonLabel(isFollowing: model.isFollowing)"))

@@ -3,9 +3,15 @@ import Foundation
 /// **すれちがい**（板「10 すれちがい」・2026-10-16）の、画面と電波を持たない決まり。
 ///
 /// 旅先で同じ場所に居合わせたアプリの人と、自分が選んだ「乗車券」（自分の公開写真1枚）が
-/// カードで交換される。届くのはその日の夕方 18 時に束で1回。受け取ったカードは消えず、
-/// すれちがい帳に綴じる。相手の今いる場所は分からない形にする（場所は「〇〇のあたり」・時刻は時の単位・
-/// 届くのは夕方）。
+/// カードで交換される。**受け取ったカードは、交換できた時点ですぐ届く**（2026-11-10 owner「すれちがったら
+/// 即時交換されて欲しい」・`Delivery.instant`）。設定で「夕方にまとめて受け取る」を選んだ人だけ、
+/// 今までどおりその日の夕方 18 時に束で1回（`Delivery.evening`）。受け取ったカードは消えず、
+/// すれちがい帳に綴じる。場所は「〇〇のあたり」・時刻は時の単位の粗さのまま（番地・分は持たない）。
+///
+/// **2026-11-10 判断（すぐ届く形にしたときの守り）**: すぐ届くと、受け取った側には「少し前に近くにいた」
+/// ことが分かる（夕方まで待たせていた理由）。owner の指示で、それを受け入れて即時にした。残す守りは
+/// 場所と時刻の粗さ・ロック画面に名前と場所を出さない・知らせをまとめる（`noticeInterval`）。
+/// 説明の文（`PassPrivacyText`）もこの事実に合わせた。
 ///
 /// **2026-10-16 判断: サーバーは変えない。** 近くの人は Bluetooth で見つけ（`PassRadio`）、
 /// 相手の写真と持ち主は既にある公開写真の一覧（`PublicGalleryService`）と公開プロフィールで引く。
@@ -285,19 +291,58 @@ enum PassExchange {
 
     // MARK: - 届く時刻
 
+    /// 届き方（設定の「夕方にまとめて受け取る」・2026-11-10）
+    enum Delivery: String, Codable, CaseIterable {
+        /// すぐ（既定）。交換できた時点で帳とホームの札に出す
+        case instant
+        /// 夕方にまとめて（その日の 18 時に束で1回・2026-10-16 からの形）
+        case evening
+    }
+
     /// 束を届ける時（夕方 18 時・板 PassHome「夕方 18 時に、その日すれちがった分をまとめて1回だけ」）
     static let deliveryHour = 18
 
-    /// すれちがった時から、届く時を決める。**18 時より前ならその日の 18 時、18 時を過ぎたら次の日の 18 時。**
+    /// すれちがった時から、届く時を決める（届き方ごと）。
+    ///
+    /// - すぐ: **すれちがった時の「時」の始まり**（`hourStart`）。いま以前なので、綴じたその場で見える。
+    ///   分の単位の時刻を持たない決まり（`PassEncounter` の注記）を守るため、届いた時刻も時の単位で持つ
+    /// - 夕方にまとめて: `deliveryDate(for:calendar:)`
+    static func deliveryDate(for metAt: Date, delivery: Delivery, calendar: Calendar) -> Date {
+        switch delivery {
+        case .instant: return hourStart(metAt, calendar: calendar)
+        case .evening: return deliveryDate(for: metAt, calendar: calendar)
+        }
+    }
+
+    /// 夕方にまとめるときの届く時。**18 時より前ならその日の 18 時、18 時を過ぎたら次の日の 18 時。**
     ///
     /// 2026-10-16 判断: 18 時を過ぎた分をすぐ（または 21 時などに）届けると、「いま近くにいる」が
-    /// 分かってしまう。次の日の夕方に回す
+    /// 分かってしまう。次の日の夕方に回す（「夕方にまとめて受け取る」を選んだ人の形）
     static func deliveryDate(for metAt: Date, calendar: Calendar) -> Date {
         let cal = calendar.gregorianKeepingZone
         let start = cal.startOfDay(for: metAt)
         let today = cal.date(bySettingHour: deliveryHour, minute: 0, second: 0, of: start) ?? start
         if metAt < today { return today }
         return cal.date(byAdding: .day, value: 1, to: today) ?? today
+    }
+
+    /// すぐ届く形の知らせの間（**15 分**・2026-11-10 判断）。最初の1枚はすぐ知らせ、その後この間に届いた分は
+    /// 間の終わりに1回だけ（枚数を書き換えて）知らせる。すれちがうたびに鳴らさない。
+    ///
+    /// 15 分にした訳: 同じ端末を読み直す間（`PassRadio.retryInterval` 10 分）より長く、人の多い所で
+    /// 1日の上限（`dailyLimit` 30 枚）まで受けても、知らせは1時間に4回まで。歩いて通り過ぎる一続きの
+    /// すれちがいが1回の知らせにまとまる
+    static let noticeInterval: TimeInterval = 15 * 60
+
+    /// すぐ届く形で、次の知らせを鳴らす時。
+    /// - 前に鳴らした（予約した）時が無い、または `noticeInterval` 以上前: **いま**
+    /// - まだ鳴っていない予約がある（`last` がいまより後）: **その予約に足す**（同じ時・枚数だけ書き換え）
+    /// - 鳴らしてから `noticeInterval` たっていない: **鳴らした時 + `noticeInterval`**
+    static func noticeDate(now: Date, last: Date?) -> Date {
+        guard let last else { return now }
+        if last > now { return last }
+        if now.timeIntervalSince(last) >= noticeInterval { return now }
+        return last.addingTimeInterval(noticeInterval)
     }
 
     /// 日の鍵（`2026-10-16`）。束・「同じ相手は1日1回」の区切り

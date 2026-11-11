@@ -24,7 +24,8 @@ final class PassStore: ObservableObject {
     @Published private(set) var owners: [String: UserProfile] = [:]
     /// 通知を押した（束を開く）合図。**数で持つ**（続けて2回押しても2回目が効く）
     @Published private(set) var openRequests = 0
-    /// 夕方の知らせが前面で届いた合図（ホームが「いま」を入れ直す）
+    /// カードが届いた合図（ホームが「いま」を入れ直す）。夕方の知らせが前面で届いた・**すぐ届く形で綴じた**
+    /// （2026-11-10: 前面で受け取ったカードを、次に前面へ戻るのを待たずに札へ出す）
     @Published private(set) var arrivals = 0
     private(set) var hasPendingOpen = false
 
@@ -44,19 +45,29 @@ final class PassStore: ObservableObject {
     private let defaults: UserDefaults
     private let calendar: Calendar
     private let fileManager: FileManager
-    /// 束の知らせを予約する（試験で差し替える）
-    private let schedule: (_ day: String, _ at: Date, _ count: Int) async -> Void
+    /// 知らせを予約する（試験で差し替える）。`instant` はすぐ届く形の知らせ（`PassBundleNotifier.scheduleInstant`）、
+    /// そうでなければ夕方の束（`PassBundleNotifier.schedule`）
+    private let schedule: (_ day: String, _ at: Date, _ count: Int, _ instant: Bool) async -> Void
+    /// すぐ届く形で、最後に知らせを鳴らした（予約した）時（`PassExchange.noticeDate`）。**帳と同じ置き場に持つ**——
+    /// OS に起こされた起動は終わると落とされるので、覚えていないと次の1枚でまた鳴る
+    private(set) var noticeAt: Date?
 
     static let lastUserKey = "journey-photo-pass-last-user"
 
     init(root: URL? = nil, defaults: UserDefaults = .standard, calendar: Calendar = .current,
          fileManager: FileManager = .default,
-         schedule: ((_ day: String, _ at: Date, _ count: Int) async -> Void)? = nil) {
+         schedule: ((_ day: String, _ at: Date, _ count: Int, _ instant: Bool) async -> Void)? = nil) {
         self.root = root ?? Self.defaultRoot(fileManager)
         self.defaults = defaults
         self.calendar = calendar
         self.fileManager = fileManager
-        self.schedule = schedule ?? { day, at, count in await PassBundleNotifier.schedule(day: day, at: at, count: count) }
+        self.schedule = schedule ?? { day, at, count, instant in
+            if instant {
+                await PassBundleNotifier.scheduleInstant(day: day, at: at, count: count)
+            } else {
+                await PassBundleNotifier.schedule(day: day, at: at, count: count)
+            }
+        }
     }
 
     static func defaultRoot(_ fileManager: FileManager = .default) -> URL {
@@ -98,6 +109,7 @@ final class PassStore: ObservableObject {
         if userId != nil, id != userId {
             // 前の人の夕方の知らせを次の人に鳴らさない
             PassBundleNotifier.cancelAll()
+            instantGeneration += 1
         }
         userId = id
         saveBlocked = false
@@ -105,6 +117,7 @@ final class PassStore: ObservableObject {
         owners = [:]
         away = nil
         homeLocation = nil
+        noticeAt = nil
         guard let id, let file = load(id) else {
             settings = PassSettings()
             encounters = []
@@ -113,9 +126,12 @@ final class PassStore: ObservableObject {
         settings = file.settings
         encounters = file.encounters
         homeLocation = file.homeLocation
+        noticeAt = file.noticeAt
+        if let day = file.awayDay, let value = file.awayValue { away = (day, value) }
+        // 前の版で受け取って、まだ夕方を待っていたカード（「すぐ」の人）は、ここで届いた扱いにする
+        catchUpInstant()
         // 人を替える・期限切れで止めるときに夕方の知らせを消したので、まだ届いていない束の分を予約し直す
         rescheduleNotices()
-        if let day = file.awayDay, let value = file.awayValue { away = (day, value) }
     }
 
     // MARK: - 設定
@@ -142,9 +158,15 @@ final class PassStore: ObservableObject {
         next.originLabel = next.originLabel.flatMap(Self.keptLabel)
         next.destinationLabel = next.destinationLabel.flatMap(Self.keptLabel)
         guard next != settings else { return }
+        let previous = settings
         settings = next
-        if !next.enabled { PassBundleNotifier.cancelAll() }
+        if !next.enabled {
+            PassBundleNotifier.cancelAll()
+            instantGeneration += 1
+        }
         save()
+        // 届き方を「すぐ」に替えた: 夕方を待っていた分をいま届ける
+        if next.enabled, previous.deliveryMode != .instant, next.deliveryMode == .instant { catchUpInstant() }
         if let userId { onSettingsChanged?(userId, next) }
     }
 
@@ -201,7 +223,8 @@ final class PassStore: ObservableObject {
     func accepts(_ payload: PassExchange.Payload, at date: Date = Date()) -> Bool {
         guard userId != nil, settings.enabled else { return false }
         if payload.photoId == settings.cardPhotoId { return false }
-        let day = PassExchange.dayKey(PassExchange.deliveryDate(for: date, calendar: calendar), calendar: calendar)
+        let deliverAt = PassExchange.deliveryDate(for: date, delivery: settings.deliveryMode, calendar: calendar)
+        let day = PassExchange.dayKey(deliverAt, calendar: calendar)
         let sameDay = encounters.filter {
             PassExchange.dayKey($0.deliverAt, calendar: calendar) == day
         }
@@ -209,12 +232,17 @@ final class PassStore: ObservableObject {
         return !sameDay.contains { $0.photoId == payload.photoId }
     }
 
-    /// 受け取ったカードを綴じる。**時刻は時の単位・場所は 0.1 度に丸めて**持つ
+    /// 受け取ったカードを綴じる。**時刻は時の単位・場所は 0.1 度に丸めて**持つ。
+    ///
+    /// 届き方（`PassSettings.deliveryMode`・2026-11-10）:
+    /// - すぐ: 届く時は `metHour`（いま以前）なので、綴じたその場で帳とホームの札に出る。知らせはまとめる（`announceInstant`）
+    /// - 夕方にまとめて: その日（18 時を過ぎたら次の日）の 18 時。束の知らせを予約し直す
     @discardableResult
     func record(_ payload: PassExchange.Payload, at date: Date = Date(),
                 placeName: String? = nil, place: Photo.Coords? = nil) -> PassEncounter? {
         guard accepts(payload, at: date) else { return nil }
-        let deliverAt = PassExchange.deliveryDate(for: date, calendar: calendar)
+        let delivery = settings.deliveryMode
+        let deliverAt = PassExchange.deliveryDate(for: date, delivery: delivery, calendar: calendar)
         let coarse = place.map(PassExchange.coarse)
         let card = PassEncounter(id: UUID().uuidString, photoId: payload.photoId, note: payload.note,
                                  showsFrom: payload.showsFrom,
@@ -233,11 +261,99 @@ final class PassStore: ObservableObject {
                                  destinationContact: PassExchange.containsContact(payload.destination))
         encounters.append(card)
         save()
-        let day = PassExchange.dayKey(deliverAt, calendar: calendar)
-        let count = encounters.filter { PassExchange.dayKey($0.deliverAt, calendar: calendar) == day }.count
-        let schedule = schedule
-        Task { await schedule(day, deliverAt, count) }
+        switch delivery {
+        case .instant:
+            // 前面ならホームの札をすぐ出し直す（`GalleryView` が「いま」を入れ直して写真を引く）
+            arrivals += 1
+            announceInstant(now: date)
+        case .evening:
+            let day = PassExchange.dayKey(deliverAt, calendar: calendar)
+            let count = encounters.filter { PassExchange.dayKey($0.deliverAt, calendar: calendar) == day }.count
+            let schedule = schedule
+            Task { await schedule(day, deliverAt, count, false) }
+        }
         return card
+    }
+
+    /// すぐ届く形の知らせ。**すれちがうたびに鳴らさない**: 最初の1枚はすぐ、その後 15 分の間に届いた分は
+    /// 間の終わりに1回（`PassExchange.noticeDate`）。数はまだ開いていない、見せてよい枚数（`instantNoticeCount`）。
+    /// 0 枚なら鳴らさない（鳴らした時も進めない）。
+    ///
+    /// **2026-11-10 判断（確かめ役の指摘）: 識別子の日は、いまではなく予約の時（`at`）から取る。** いまの日で取ると、
+    /// 23:55 の1枚で 00:05 に予約した後、00:02 の1枚が同じ 00:05 の予約に足すときに識別子が次の日になり、
+    /// 前の日の予約と別の1本として同じ時に2回鳴った。予約の時で取れば、同じ時の知らせはいつも同じ識別子で置き換わる。
+    /// 前の日の予約を消して入れ直す形より、消し忘れ・消す範囲（`cancelAll` の今日と次の日）の食い違いが起きない
+    private func announceInstant(now: Date) {
+        let count = instantNoticeCount(now: now)
+        guard count > 0 else { return }
+        let at = PassExchange.noticeDate(now: now, last: noticeAt)
+        if at != noticeAt {
+            noticeAt = at
+            save()
+        }
+        let day = PassExchange.dayKey(at, calendar: calendar)
+        // 🔴 **予約は受けた順に1つずつ入れる**（2026-11-10 判断・確かめ役の指摘）。OS への予約（`add`）は待つ処理で、
+        // `Task` をばらばらに立てると前の予約の入れ終わりが遅れたときに古い枚数が後から入り、それが残った
+        // （試験で [1, 3, 2] の順を再現）。前の予約を入れ終えるのを待ってから入れる（主スレッドの上で並ぶ）
+        //
+        // 🔴 **消した後に、並んでいた古い予約を入れない**（2026-11-10 判断・確かめ役の見直し）。予約は主スレッドの
+        // 後の番で入るので、綴じた直後に人を替える・オフにする・束を開く（どれも知らせを消す）と、消した後に
+        // 並んでいた分が入って、前の人の枚数・オフの直後・開く前の枚数で1回鳴っていた（試験で3つとも再現）。
+        // 消すたびに世代（`instantGeneration`）を進め、入れる直前に世代・人・オンが並べた時と同じかを確かめる
+        let previous = instantChain
+        let schedule = schedule
+        let generation = instantGeneration
+        let owner = userId
+        instantChain = Task { @MainActor [weak self] in
+            await previous?.value
+            guard let self, self.instantGeneration == generation, self.userId == owner, self.settings.enabled else { return }
+            await schedule(day, at, count, true)
+        }
+    }
+
+    /// すぐ届く形の予約の順番待ち（`announceInstant`）。最後に並べた予約の `Task`
+    private var instantChain: Task<Void, Never>?
+    /// すぐ届く形の知らせを消した回数（人を替えた・オフにした・束を開いた）。並べた予約が古いかを見分ける
+    private var instantGeneration = 0
+
+    /// すぐ届く形の知らせに書く枚数: 届いていて、まだ開いていないカードのうち、**端末で分かる範囲で見せないもの**
+    /// （通報した写真・自分で消した／非公開にした写真・ブロックした人・自分）を除いた数。
+    ///
+    /// **2026-11-10 判断（確かめ役の指摘）: ホームの札と同じ「見せない」の控え（`ModerationStore` が人ごとに端末へ
+    /// 残したもの）を、ここで読み直して使う。** OS に起こされた背景の起動では画面（`JourneyPhotoApp` の
+    /// `ModerationStore`）が居ないことがあるので、配られた1つには頼らない。
+    /// ただし札は「公開一覧に今ある写真」だけを出す（`isVisible`）が、届いたばかりのカードは写真をまだ引いて
+    /// いない（背景では網に出ない）。ここで同じ判定をすると、届いた直後は必ず 0 枚になって鳴らない。だから
+    /// 公開一覧での判定はせず、持ち主は前に引いた同じ写真のカードから分かるときだけ使う
+    func instantNoticeCount(now: Date) -> Int {
+        guard let userId else { return 0 }
+        let moderation = ModerationStore(defaults: defaults)
+        moderation.use(userId: userId)
+        let hiding = moderation.snapshot
+        var owners: [String: String] = [:]
+        for card in encounters { if let owner = card.ownerId { owners[card.photoId] = owner } }
+        return encounters.filter { card in
+            guard !card.opened, card.deliverAt <= now,
+                  !hiding.reported.contains(card.photoId), !hiding.gone.contains(card.photoId) else { return false }
+            guard let owner = card.ownerId ?? owners[card.photoId] else { return true }
+            return owner != userId && !hiding.blocked.contains(owner)
+        }.count
+    }
+
+    /// 「すぐ」の人で、まだ夕方を待っているカード（前の版で受け取った・夕方から替えた）を、いま届いた扱いにする。
+    /// 夕方の束の予約は消し、すぐ届く形で1回知らせる
+    func catchUpInstant(now: Date = Date()) {
+        guard settings.enabled, settings.deliveryMode == .instant else { return }
+        var moved = false
+        for i in encounters.indices where encounters[i].deliverAt > now {
+            encounters[i].deliverAt = min(encounters[i].metHour, now)
+            moved = true
+        }
+        guard moved else { return }
+        save()
+        PassBundleNotifier.cancelEvening(calendar: calendar, now: now)
+        arrivals += 1
+        announceInstant(now: now)
     }
 
     /// まだ届いていない束の知らせを予約し直す（オンのときだけ・日ごとに1つ・枚数つき）
@@ -249,7 +365,7 @@ final class PassStore: ObservableObject {
         let schedule = schedule
         for (day, cards) in pending {
             guard let at = cards.map(\.deliverAt).min() else { continue }
-            Task { await schedule(day, at, cards.count) }
+            Task { await schedule(day, at, cards.count, false) }
         }
     }
 
@@ -326,7 +442,12 @@ final class PassStore: ObservableObject {
             encounters[i].opened = true
             changed = true
         }
-        if changed { save() }
+        if changed {
+            save()
+            // 束を開いた: まだ鳴っていないすぐ届く形の知らせ（開く前の枚数）を後から鳴らさない
+            PassBundleNotifier.cancelPendingInstant(calendar: calendar)
+            instantGeneration += 1
+        }
     }
 
     /// 届いたカードの写真と持ち主を引く。**写真は公開一覧から**（ブロックした人・通報した写真・
@@ -442,6 +563,8 @@ final class PassStore: ObservableObject {
         var awayDay: String?
         var awayValue: Bool?
         var homeLocation: String?
+        /// すぐ届く形で最後に知らせた時（2026-11-10・前の版の帳には無い）
+        var noticeAt: Date?
     }
 
     /// 🔴 読めなかった帳を、次の保存で空のまま上書きしない(2026-11-07)。
@@ -472,7 +595,7 @@ final class PassStore: ObservableObject {
     private func save() {
         guard let id = userId, !saveBlocked else { return }
         let file = File(settings: settings, encounters: encounters, awayDay: away?.day, awayValue: away?.value,
-                        homeLocation: homeLocation)
+                        homeLocation: homeLocation, noticeAt: noticeAt)
         guard let data = try? Self.encoder.encode(file) else { return }
         do {
             try fileManager.createDirectory(at: root, withIntermediateDirectories: true)

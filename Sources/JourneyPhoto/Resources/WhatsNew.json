@@ -1,6 +1,47 @@
 {
-  "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
+  "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
+    {
+      "version": "1.1.79",
+      "date": "2026-11-10",
+      "items": [
+        {
+          "symbol": "square.and.pencil",
+          "title": { "ja": "プロフィールからメッセージを送れる", "en": "Message people from their profile" },
+          "detail": { "ja": "フォローしている人のプロフィールの「メッセージ」と、メッセージの画面の右上の鉛筆から、会話を始められます。", "en": "Start a conversation from Message on the profile of someone you follow, or from the pencil at the top right of Messages." },
+          "destination": "home"
+        },
+        {
+          "symbol": "ticket",
+          "title": { "ja": "すれちがい帳で、乗車券の状態が分かる", "en": "See your Pass ticket status in the Pass book" },
+          "detail": { "ja": "帳のいちばん上に、オンかオフか・止まっている訳が出ます。押すと設定を開けます。", "en": "The top of the Pass book shows whether Pass tickets are on or off, and why swaps are paused. Tap it to open the settings." },
+          "destination": "passBook"
+        },
+        {
+          "symbol": "square.grid.3x3",
+          "title": { "ja": "撮影スポットから構図一覧を開ける", "en": "Open the composition guide from photo spots" },
+          "detail": { "ja": "構図のヒントの下の「構図一覧を見る」から、説明と作例を見られます。", "en": "Tap \u201cSee composition guide\u201d under the composition tips to see explanations and examples." }
+        }
+      ]
+    },
+    {
+      "version": "1.1.78",
+      "date": "2026-11-10",
+      "items": [
+        {
+          "symbol": "hand.tap",
+          "title": { "ja": "行った県は押した数だけ数える", "en": "Each tap counts a visit" },
+          "detail": { "ja": "行った県の地図や一覧で県を押すたびに、1回ずつ増えます。長押しすると［−］［＋］の帯が出て、その場で減らしたり増やしたりできます。", "en": "On the visited prefectures map or list, each tap adds one visit. Press and hold to show − and + so you can adjust the count right there." },
+          "destination": "visitedMap"
+        },
+        {
+          "symbol": "ticket",
+          "title": { "ja": "すれちがい乗車券がすぐ届く", "en": "Pass cards arrive right away" },
+          "detail": { "ja": "すれちがって交換したカードが、その場で届きます。夕方にまとめて受け取りたいときは、すれちがい乗車券の設定で選べます。", "en": "Cards you exchange when passing someone now arrive right away. If you prefer to receive them together in the evening, choose that in the Pass tickets settings." },
+          "destination": "home"
+        }
+      ]
+    },
     {
       "version": "1.1.77",
       "date": "2026-11-10",

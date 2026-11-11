@@ -292,6 +292,14 @@ enum PreviewBackend {
         case ("GET", let p) where stories && p.count == 3 && p[0] == "stories" && p[2] == "replies":
             return .json(["items": [Any]()])
 
+        // フォロー中（`-JPPreviewDM` のときだけ・2026-11-10「新しいメッセージ」とプロフィールの「メッセージ」を撮る）。
+        // 公開の新着の作者と、見本の会話の相手の一部をフォローしていることにする（`dmFollowing`）
+        case ("GET", let p) where dm && p == ["user", "following"]:
+            return .json(["userIds": dmFollowing(feed: await publicFeed(), me: uid).map { $0["id"] as? String ?? "" }])
+        case ("GET", let p) where dm && p.count == 3 && p[0] == "users" && p[1] == uid && p[2] == "following":
+            let users = dmFollowing(feed: await publicFeed(), me: uid)
+            return .json(["users": users, "total": users.count])
+
         default:
             return .unsupported
         }
@@ -310,6 +318,26 @@ enum PreviewBackend {
         ("0b6f1c1e-1111-4aaa-8aaa-000000000007", "海辺の散歩", "umibe"),  // リクエスト
         ("0b6f1c1e-1111-4aaa-8aaa-000000000008", "雪の駅", "yukieki"),    // 自分が始めて3通使い切った
     ]
+
+    /// 見本のフォロー中（`GET /users/{me}/following` の `users` の形）。**公開の新着の作者**（まだ会話が無い人・
+    /// 顔の写真が出る）を先に、見本の会話の相手（夕焼けの人・港の写真家・山の朝＝既にある会話）を後ろに
+    static func dmFollowing(feed: [[String: Any]], me: String) -> [[String: Any]] {
+        var seen = Set<String>()
+        var out: [[String: Any]] = []
+        for photo in feed {
+            guard let user = (photo["userId"] as? String) ?? (photo["uploadedBy"] as? String),
+                  user != me, seen.insert(user).inserted, seen.count <= 6 else { continue }
+            var row: [String: Any] = ["id": user]
+            if let name = photo["displayName"] as? String, !name.isEmpty { row["name"] = name }
+            out.append(row)
+        }
+        for p in dmPeers.prefix(3) where seen.insert(p.id).inserted {
+            var row: [String: Any] = ["id": p.id, "name": p.name]
+            if let u = p.username { row["username"] = u }
+            out.append(row)
+        }
+        return out
+    }
 
     /// `/dm` の答え。知らない口は nil（ふだんの 503 へ）
     static func dmReply(method: String, parts: [String], json: [String: Any], me: String, now: Date) -> Reply? {
@@ -396,7 +424,10 @@ enum PreviewBackend {
             }
             let message: [String: Any] = ["id": (json["id"] as? String) ?? "preview-dm-sent", "from": me, "mine": true,
                                           "text": text, "t": iso.string(from: now)]
-            return Reply.json(["success": true, "conversationId": parts[1], "state": "inbox", "message": message])
+            // まだ会話の無い相手（新しいメッセージ・プロフィールから）への1通目は、承認待ち（`pending`）
+            let known = dmPeers.indices.contains { conv($0) == parts[1] }
+            return Reply.json(["success": true, "conversationId": parts[1], "state": known ? "inbox" : "pending",
+                               "message": message])
         case ("PUT", 3), ("POST", 3), ("DELETE", 2), ("DELETE", 3):
             return Reply.json(["ok": true, "success": true])
         default:

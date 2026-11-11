@@ -14,6 +14,10 @@ enum DMLook {
     nonisolated static let rowAvatar: CGFloat = 48
     nonisolated static let requestAvatar: CGFloat = 44
     nonisolated static let headerAvatar: CGFloat = 28
+    /// まだ会話が無い相手の、空の会話の上の顔（64・板の人の行の顔 44 より大きく、プロフィールの 88 より小さく・2026-11-10 判断）
+    nonisolated static let newIntroAvatar: CGFloat = 64
+    /// 新しいメッセージの一覧の顔（44・板 FollowList の人の行と同じ）
+    nonisolated static let pickerAvatar: CGFloat = 44
     /// 受信箱の行の高さ（72）・リクエストの入口の行（76）
     nonisolated static let rowHeight: CGFloat = 72
     nonisolated static let requestEntryHeight: CGFloat = 76
