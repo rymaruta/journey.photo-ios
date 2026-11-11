@@ -2706,7 +2706,10 @@ final class ScreenshotTests: XCTestCase {
             row.tap()
             let spotPage = app.descendants(matching: .any)["spot.official"].firstMatch
             let opened = spotPage.waitForExistence(timeout: 10)
-            _ = fixtureSends(app, "tapRow-opened\(opened)")
+            // 頁が替わると送った回数の札は無い（run 1077: fixtureSends がここで「見つからない」と落ちた）。ログだけ残す
+            let line = "TRIPFIXTURE when=tapRow-opened\(opened)"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
             XCTAssertTrue(opened, "行を押しても撮影スポットの頁が開かない")
             if opened { shoot(app, "65g-旅行プランの日程（行を押して撮影スポットを開いた）") }
         }
