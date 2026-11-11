@@ -169,4 +169,20 @@ final class TripPlanFixtureCounter: ObservableObject {
     @Published var rejected = 0
 
     var dragLine: String { "lift=\(lifted) target=\(targeted) drop=\(dropped) reject=\(rejected)" }
+
+    /// 運ぶ操作の出来事の並び（見本のときだけ・(b)「持ち上がったが落ちない」をどの部品で止まったかで分ける）。
+    /// `L` 持ち上がった（preview が出た）・`E` preview が消えた・`T+日.行` 落とす先に入った・`T-日.行` 出た・
+    /// `D日.行` drop が呼ばれた・`R` 断った・`S` 落とした先の日程に入れた。`@` の後は持ち上がってからのミリ秒。最後の 24 個
+    @Published var trail: [String] = []
+    private var liftedAt: Date?
+
+    func mark(_ event: String) {
+        let now = Date()
+        if event == "L" { liftedAt = now }
+        let ms = liftedAt.map { Int(now.timeIntervalSince($0) * 1000) } ?? -1
+        trail.append("\(event)@\(ms)")
+        if trail.count > 24 { trail.removeFirst(trail.count - 24) }
+    }
+
+    var trailLine: String { trail.joined(separator: " ") }
 }

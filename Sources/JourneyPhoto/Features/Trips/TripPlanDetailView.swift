@@ -988,7 +988,10 @@ struct TripPlanDetailView: View {
 
     private func setDropTarget(_ targeted: Bool, _ spot: DropSpot) {
         #if DEBUG
-        if targeted, TripPlanFixture.isOn { TripPlanFixtureCounter.shared.targeted += 1 }
+        if TripPlanFixture.isOn {
+            if targeted { TripPlanFixtureCounter.shared.targeted += 1 }
+            TripPlanFixtureCounter.shared.mark("T\(targeted ? "+" : "-")\(spot.day).\(spot.item.map(String.init) ?? "add")")
+        }
         #endif
         if targeted { dropTarget = spot } else if dropTarget == spot { dropTarget = nil }
     }
@@ -1005,15 +1008,24 @@ struct TripPlanDetailView: View {
     private func drop(_ payload: String?, toDay: Int, toItem: Int?) -> Bool {
         dropTarget = nil
         #if DEBUG
-        if TripPlanFixture.isOn { TripPlanFixtureCounter.shared.dropped += 1 }
+        if TripPlanFixture.isOn {
+            TripPlanFixtureCounter.shared.dropped += 1
+            TripPlanFixtureCounter.shared.mark("D\(toDay).\(toItem.map(String.init) ?? "add")")
+        }
         #endif
         guard let payload, let next = TripPlanEdit.dropped(days, payload: payload, toDay: toDay, toItem: toItem) else {
             #if DEBUG
-            if TripPlanFixture.isOn { TripPlanFixtureCounter.shared.rejected += 1 }
+            if TripPlanFixture.isOn {
+                TripPlanFixtureCounter.shared.rejected += 1
+                TripPlanFixtureCounter.shared.mark("R")
+            }
             #endif
             return false
         }
         days = next
+        #if DEBUG
+        if TripPlanFixture.isOn { TripPlanFixtureCounter.shared.mark("S") }
+        #endif
         return true
     }
 
@@ -1097,7 +1109,15 @@ struct TripPlanDetailView: View {
             .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))
             .onAppear {
                 #if DEBUG
-                if TripPlanFixture.isOn { TripPlanFixtureCounter.shared.lifted += 1 }
+                if TripPlanFixture.isOn {
+                    TripPlanFixtureCounter.shared.lifted += 1
+                    TripPlanFixtureCounter.shared.mark("L")
+                }
+                #endif
+            }
+            .onDisappear {
+                #if DEBUG
+                if TripPlanFixture.isOn { TripPlanFixtureCounter.shared.mark("E") }
                 #endif
             }
     }
@@ -1359,6 +1379,13 @@ private struct TripPlanFixtureSendsLabel: View {
             .foregroundStyle(WebTheme.text3)
             .accessibilityIdentifier("tripPlan.fixtureDrag")
             .accessibilityValue(counter.dragLine)
+        // 運ぶ操作の出来事の並び（UI テストが値で読む。見本のときだけ 1 行で出す）
+        Text(counter.trail.last ?? "-")
+            .font(JPFont.caption.monospacedDigit())
+            .foregroundStyle(WebTheme.text3)
+            .lineLimit(1)
+            .accessibilityIdentifier("tripPlan.fixtureDragTrail")
+            .accessibilityValue(counter.trailLine)
     }
 }
 #endif

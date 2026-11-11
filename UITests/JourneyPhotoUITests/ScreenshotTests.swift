@@ -2612,13 +2612,15 @@ final class ScreenshotTests: XCTestCase {
         for _ in 0..<crossPushes { app.swipeDown(); Thread.sleep(forTimeInterval: 0.5) }
 
         // 運ぶ: 1 日目の最後（千里浜）を 2 日目の最初の行へ（日をまたぐ）。運んだら待って 1 回送る。
-        // run 971: 押さえて運んだのに送った回数が 0 のままだった。run 974: 名前の順は日をまたいでも変わらない
-        // （1 日目の最後 → 2 日目の最初）ので測れなかった。**千里浜の「…」の位置（「1 日目・3 番目」）**を前後で残し、
-        // 落とせたかを見る。1 回目は押さえて運ぶだけ、位置が変わらなければ 2 回目は行き先で止まってから離す
+        // **止めずに離して 1 回目で入る**ことを縛る（2026-11-11・run 1016/1020/1025）: 持ち上がらない (a) は
+        // テストの最初の起動の 1 回目にだけ出た（3/3、ほかは 1/29）。同じ起動の 2 回目は持ち上がる。
+        // そこで頭に**数えない試しの運び**（自分の行の上で離す・並びは変わらない）を 1 回入れ、押さえるのは 1.2 秒
+        // （0.8 秒では持ち上がっても落ちない (b) が 2/5 出た）。千里浜の「…」の位置（「1 日目・3 番目」）を前後で見る
         let handles = app.descendants(matching: .any).matching(identifier: "tripPlan.dragHandle")
         let menu = app.buttons["「千里浜なぎさドライブウェイ」の操作"].firstMatch
         func order() -> String { (menu.value as? String) ?? "nil" }
         _ = fixtureSends(app, "dragHandles-count\(handles.count)")
+        XCTAssertGreaterThanOrEqual(handles.count, 4, "運ぶ行が足りない")
         if handles.count >= 4 {
             let from = handles.element(boundBy: 2)
             let to = handles.element(boundBy: 3)
@@ -2629,25 +2631,20 @@ final class ScreenshotTests: XCTestCase {
                 pushes += 1
             }
             _ = fixtureSends(app, "dragHittable-from\(from.isHittable)-to\(to.isHittable)")
+            XCTAssertTrue(from.isHittable && to.isHittable, "運ぶ行が画面に出ない")
             if from.isHittable, to.isHittable {
                 let before = order()
+                warmUpDrag(app, from)
+                XCTAssertEqual(order(), before, "試しの運びで並びが変わった")
                 _ = fixtureSends(app, "orderBefore[\(before)]")
                 from.press(forDuration: 1.2, thenDragTo: to)
                 Thread.sleep(forTimeInterval: 2)
-                var after = order()
-                _ = fixtureSends(app, "orderAfterPress[\(after)]")
-                if after == before {
-                    let again = handles.element(boundBy: 2)
-                    again.press(forDuration: 1.2, thenDragTo: handles.element(boundBy: 3),
-                                withVelocity: .slow, thenHoldForDuration: 1.0)
-                    Thread.sleep(forTimeInterval: 2)
-                    after = order()
-                    _ = fixtureSends(app, "orderAfterHold[\(after)]")
-                }
+                let after = order()
+                _ = fixtureSends(app, "orderAfterPress[\(after)] drag[\(dragCounts(app))]")
                 Thread.sleep(forTimeInterval: 11)
                 shoot(app, "65b-旅行プランの日程（運んだ・日をまたいで2日目へ）")
                 let sent = fixtureSends(app, "afterDrag")
-                XCTAssertNotEqual(after, before, "運ぶ印で運んでも並びが変わらない")
+                XCTAssertNotEqual(after, before, "止めずに離した 1 回目で入らない")
                 if after != before { XCTAssertEqual(sent, "1", "運んだあとに 1 回送っていない") }
             }
         }
@@ -2686,47 +2683,90 @@ final class ScreenshotTests: XCTestCase {
                        "続けて 5 回直したのに、まとめて 1 回で送っていない")
     }
 
-    /// **運ぶ操作を数で分ける**（2026-11-11 見直し: 行全体の版では止めずに離すと入らず、止めてから離すと入った）。
-    /// 2 つの作り（行全体・運ぶ印）× 先のスワイプ（なし・あり）で、**止めずに離す**操作を1回ずつ流し、
-    /// 持ち上がった・落とす先に入った・落とした・断った の数と、千里浜の位置を残す。合否は付けない（名指しした回だけ）
-    func testMeasuresTripPlanDrag() {
-        // (a)「持ち上がらない」を分ける（札 #521）。run 1016・1020 の (a) は、2 回ともテストの最初の起動だった。
-        // 1. 起動の番号（launch=0 はテストの最初の起動・試しの 1 回）と、同じ起動の中の 1 回目・2 回目（drag=1/2）で比べる
-        // 2. 押さえる時間（hold=0.8/1.2/2.0 秒）で比べる。各時間 5 起動 × 2 回。止めて離す形は使わない
-        // 1 起動 75 秒ほど × 16 起動
-        executionTimeAllowance = 1800
-        var plan: [(launch: Int, hold: Double)] = [(0, 1.2)]
-        for _ in 0..<5 { for hold in [0.8, 1.2, 2.0] { plan.append((plan.count, hold)) } }
-        for (launch, hold) in plan {
+    /// 運ぶ操作の数（見本のときだけ画面に出す `tripPlan.fixtureDrag`）と出来事の並び（`tripPlan.fixtureDragTrail`）
+    private func dragCounts(_ app: XCUIApplication) -> String {
+        let counts = (app.descendants(matching: .any)["tripPlan.fixtureDrag"].firstMatch.value as? String) ?? "nil"
+        let trail = (app.descendants(matching: .any)["tripPlan.fixtureDragTrail"].firstMatch.value as? String) ?? "nil"
+        return "\(counts)] trail[\(trail)"
+    }
+
+    /// **数えない試しの運び**: 押さえて自分の行の上で離す（並びは変わらない）。テストの最初の起動の 1 回目は
+    /// 持ち上がらないことがある（run 1016/1020/1025 で 3/3）ので、測る・縛る運びの前に 1 回入れる
+    private func warmUpDrag(_ app: XCUIApplication, _ source: XCUIElement) {
+        source.press(forDuration: 1.2, thenDragTo: source)
+        Thread.sleep(forTimeInterval: 2)
+        let line = "TRIPDRAG warm-up after[\(dragCounts(app))]"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+    }
+
+    /// 見本の旅を開き、運ぶ元（1 日目の 3 番目）と行き先（2 日目の「越前海岸 呼鳥門」の「…」）が押せる所まで上げる
+    private func dragStage(_ app: XCUIApplication) -> (XCUIElement, XCUIElement, Int)? {
+        guard openFixturePlan(app) else { return nil }
+        Thread.sleep(forTimeInterval: 3)
+        let source = app.descendants(matching: .any).matching(identifier: "tripPlan.dragHandle").element(boundBy: 2)
+        let target = app.buttons["「越前海岸 呼鳥門」の操作"].firstMatch
+        var pushes = 0
+        while !(source.isHittable && target.isHittable), pushes < 4 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard source.isHittable, target.isHittable else { return nil }
+        return (source, target, pushes)
+    }
+
+    /// **(b)「持ち上がったが落ちない」をどの部品で止まったかで分ける**（札 #521・2026-11-11）。
+    /// run 1025 で押さえる時間 0.8 秒のとき 2/5 出た。0.8 秒で 6 起動 × 4 回運び、1 回ごとに出来事の並び
+    /// （持ち上がった・落とす先に入った／出た・drop が呼ばれた・断った・preview が消えた）を残す。合否は無い。
+    /// 名指しのときだけ（`screens=testMeasuresTripPlanDragTrail`）。1 起動 80 秒ほど × 6 で 20 分の上限に入れる
+    func testMeasuresTripPlanDragTrail() {
+        executionTimeAllowance = 1200
+        for launch in 0..<6 {
             let app = launchTrunk(["-JPTripPlanFixture", "YES"])
             defer { app.terminate() }
-            let name = "launch=\(launch) hold=\(hold)"
-            guard openFixturePlan(app) else { _ = fixtureSends(app, "\(name) open-failed"); continue }
-            Thread.sleep(forTimeInterval: 3)
-            let handles = app.descendants(matching: .any).matching(identifier: "tripPlan.dragHandle")
-            let source = handles.element(boundBy: 2)
-            let target = app.buttons["「越前海岸 呼鳥門」の操作"].firstMatch
-            var pushes = 0
-            while !(source.isHittable && target.isHittable), pushes < 4 {
-                app.swipeUp()
-                Thread.sleep(forTimeInterval: 1)
-                pushes += 1
+            guard let stage = dragStage(app) else {
+                let line = "TRIPDRAG trail launch=\(launch) not-ready"
+                print(line); XCTContext.runActivity(named: line) { _ in }
+                continue
             }
-            let counter = app.descendants(matching: .any)["tripPlan.fixtureDrag"].firstMatch
-            for drag in 1...2 {
-                guard source.isHittable, target.isHittable else {
-                    let line = "TRIPDRAG \(name) drag=\(drag) not-hittable handles=\(handles.count) pushes=\(pushes)"
-                    print(line); XCTContext.runActivity(named: line) { _ in }
-                    break
-                }
-                let before = (counter.value as? String) ?? "nil"
-                source.press(forDuration: hold, thenDragTo: target)
+            let (source, target, pushes) = stage
+            for drag in 1...4 {
+                guard source.isHittable, target.isHittable else { break }
+                source.press(forDuration: 0.8, thenDragTo: target)
                 Thread.sleep(forTimeInterval: 2)
-                let after = (counter.value as? String) ?? "nil"
-                let line = "TRIPDRAG \(name) drag=\(drag) pushes=\(pushes) before[\(before)] after[\(after)]"
+                let line = "TRIPDRAG trail launch=\(launch) drag=\(drag) hold=0.8 pushes=\(pushes) after[\(dragCounts(app))]"
                 print(line)
                 XCTContext.runActivity(named: line) { _ in }
             }
+        }
+    }
+
+    /// **試しの運びを 1 回入れたあと、押さえて 1.2 秒・止めずに離して 1 回目で入るか**を続けて数える
+    /// （`testCapturesTripPlanDays` を縛る前の裏づけ・札 #521）。7 起動。合否は無く、入ったかを位置で残す。
+    /// 名指しのときだけ（`screens=testMeasuresTripPlanDragFirstTry`）。テストの最初の起動を含める
+    func testMeasuresTripPlanDragFirstTry() {
+        executionTimeAllowance = 1200
+        for launch in 0..<7 {
+            let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+            defer { app.terminate() }
+            guard let stage = dragStage(app) else {
+                let line = "TRIPDRAG first launch=\(launch) not-ready"
+                print(line); XCTContext.runActivity(named: line) { _ in }
+                continue
+            }
+            let (source, target, pushes) = stage
+            let position = app.buttons["「千里浜なぎさドライブウェイ」の操作"].firstMatch
+            let posBefore = (position.value as? String) ?? "nil"
+            warmUpDrag(app, source)
+            let posWarm = (position.value as? String) ?? "nil"
+            source.press(forDuration: 1.2, thenDragTo: target)
+            Thread.sleep(forTimeInterval: 2)
+            let posAfter = (position.value as? String) ?? "nil"
+            let line = "TRIPDRAG first launch=\(launch) pushes=\(pushes) entered=\(posAfter != posWarm) "
+                + "pos[\(posBefore) -> \(posWarm) -> \(posAfter)] after[\(dragCounts(app))]"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
         }
     }
 
