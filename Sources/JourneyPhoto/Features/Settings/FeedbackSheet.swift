@@ -225,6 +225,16 @@ struct FeedbackSheet: View {
         case .sent:
             toasts.show(L("届きました。ありがとうございます", "Received — thank you!"))
             dismiss()
+        case .sentWithoutReply:
+            // ログインが切れていて、ログインしていない人の口で送った（宛先が無いので返事は約束できない）
+            toasts.show(L("届きました。ログインが切れていたため、返事はお約束できません",
+                          "Received. You were signed out, so we can't promise a reply."))
+            dismiss()
+        case .sentWithoutPhoto:
+            // 本文は届いている。閉じる（残すと、押し直したときに本文が二重に届く）
+            toasts.show(L("ひとことは届きました。写真は送れませんでした",
+                          "Your note arrived, but the photo couldn't be sent."))
+            dismiss()
         case .unreachable where connectivity.isOffline:
             toasts.show(L("つながったら送ります", "We'll send it when you're back online"))
             dismiss()

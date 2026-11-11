@@ -82,16 +82,22 @@ struct FeedbackService {
     func send(_ draft: FeedbackDraft, photo: Data?, signedIn: Bool) async throws {
         let body = Self.body(for: draft, photoSize: photo?.count, signedIn: signedIn)
         let response: Response
-        // 口は文字のまま書く（`Tools/verify.sh` の Web 版との突き合わせが、アプリが叩く口を字面で拾う）
-        if signedIn {
-            response = try await api.authorized(.post, "/user/feedback", body: body, as: Response.self)
-        } else {
-            response = try await api.anonymous(.post, "/feedback", body: body, as: Response.self)
+        // 断りの本文の `code` を読む（その日の上限 `feedback_limit` と、ほかの 429 を見分ける・`DMService.refusing` と同じ作り）
+        let errorBody = APIErrorBody()
+        do {
+            response = try await APIClient.$errorBodySink.withValue(errorBody) {
+                // 口は文字のまま書く（`Tools/verify.sh` の Web 版との突き合わせが、アプリが叩く口を字面で拾う）
+                if signedIn {
+                    return try await api.authorized(.post, "/user/feedback", body: body, as: Response.self)
+                }
+                return try await api.anonymous(.post, "/feedback", body: body, as: Response.self)
+            }
+        } catch APIError.server(429, let message) where APIClient.errorCode(from: errorBody.data) == Self.dailyLimitCode {
+            throw DailyLimit(message: message)
         }
         guard let photo, let upload = response.upload else { return }
-        guard let url = URL(string: upload.url) else {
-            throw APIError.decoding("署名付き URL を読めませんでした")
-        }
+        // ここから先の失敗は**本文はもう届いている**（`PhotoFailed`）。送り直すと本文が二重になる
+        guard let url = URL(string: upload.url) else { throw PhotoFailed() }
         var request = URLRequest(url: url)
         request.httpMethod = "PUT"
         // 署名に入っている種別と完全に同じ文字列で送る（違うと 403。`UploadService.put` と同じ）
@@ -103,10 +109,27 @@ struct FeedbackService {
             if error is CancellationError || Task.isCancelled { throw CancellationError() }
             throw APIError.unreachable
         }
-        guard let http = result as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw APIError.server(status: (result as? HTTPURLResponse)?.statusCode ?? 500,
-                                  message: L("写真を送れませんでした", "Couldn't send the photo"))
+        guard let http = result as? HTTPURLResponse else { throw PhotoFailed() }
+        // S3 の一時的な不調（5xx）だけは送り直す（ログインした人には同じ id で署名を出し直す。
+        // ログインしていない人は署名が出ないので、本文だけ届いた扱いで終わる）
+        if http.statusCode >= 500 {
+            throw APIError.server(status: http.statusCode, message: L("写真を送れませんでした", "Couldn't send the photo"))
         }
+        guard (200..<300).contains(http.statusCode) else { throw PhotoFailed() }
+    }
+
+    /// サーバーの「その日の上限」の印（`feedback.ts` の `feedback_limit`）。印の無い 429（API Gateway の混雑など）とは分ける
+    static let dailyLimitCode = "feedback_limit"
+
+    /// その日の上限で断られた（`feedback_limit`）
+    struct DailyLimit: LocalizedError, Equatable {
+        let message: String
+        var errorDescription: String? { message }
+    }
+
+    /// 本文は届いたが、写真だけ送れなかった（署名つき PUT が 4xx・署名が読めない）。**送り直さない**
+    struct PhotoFailed: LocalizedError, Equatable {
+        var errorDescription: String? { L("ひとことは届きました。写真は送れませんでした", "Your note arrived, but the photo couldn't be sent.") }
     }
 
     /// アプリの版（設定の最下部と同じ「1.1.20 (3)」の形）
@@ -134,17 +157,24 @@ struct FeedbackService {
         case signedOut
         /// 送り直しても届かない（本文が空・形が違う・ほかの 4xx）。下書きを消す
         case rejected
+        /// 本文は届いた・写真だけ送れなかった。下書きを消す（送り直すと本文が二重に届く）
+        case photoFailed
     }
 
     static func failure(_ error: Error) -> Failure {
         switch error {
+        case is DailyLimit:
+            return .dailyLimit
+        case is PhotoFailed:
+            return .photoFailed
         case APIError.unreachable:
             return .unreachable
         case APIError.notAuthenticated:
             return .signedOut
         case APIError.server(let status, _):
             if status == 401 { return .signedOut }
-            if status == 429 { return .dailyLimit }
+            // 印（`feedback_limit`）の無い 429 は混雑として送り直す（明日まで待たない）
+            if status == 429 { return .serverBusy }
             if status >= 500 || status == 408 { return .serverBusy }
             return .rejected
         default:

@@ -130,6 +130,11 @@ struct FeedbackOutbox {
     enum Outcome: Equatable {
         /// 届いた（下書きを消した）
         case sent
+        /// 届いた。ただし**ログインが切れていたので、ログインしていない人の口で送った**＝返事は約束できない
+        /// （返事が欲しいを選んでいた下書きだけ。シートでそう添える）
+        case sentWithoutReply
+        /// 本文は届いた。写真だけ送れなかった（下書きを消した。送り直すと本文が二重になる）
+        case sentWithoutPhoto
         /// 届かなかった（圏外・時間切れ）。下書きに残した。電波が戻ったら送る
         case unreachable
         /// サーバーの一時的な不調。下書きに残した。次の機会に送る
@@ -141,6 +146,8 @@ struct FeedbackOutbox {
 
         /// 下書きに残したか
         var isKept: Bool { self == .unreachable || self == .serverBusy || self == .tomorrow }
+        /// 本文が届いたか
+        var isDelivered: Bool { self == .sent || self == .sentWithoutReply || self == .sentWithoutPhoto }
     }
 
     /// 1件送る。送れたら・送り直しても届かないなら消し、圏外・混雑・その日の上限なら残す。
@@ -151,17 +158,22 @@ struct FeedbackOutbox {
                  send: (FeedbackDraft, Data?, Bool) async throws -> Void) async -> Outcome {
         let photo = photo(for: draft.id)
         let signedIn = Self.signedIn(draft, currentUserId: currentUserId)
+        var fellBack = false
         do {
             do {
                 try await send(draft, photo, signedIn)
             } catch where signedIn && FeedbackService.failure(error) == .signedOut {
+                fellBack = true
                 try await send(draft, photo, false)
             }
             remove(draft.id)
-            return .sent
+            return fellBack && draft.wantsReply ? .sentWithoutReply : .sent
         } catch {
             if error is CancellationError { return .unreachable }
             switch FeedbackService.failure(error) {
+            case .photoFailed:
+                remove(draft.id)
+                return .sentWithoutPhoto
             case .unreachable, .signedOut:
                 return .unreachable
             case .serverBusy:
@@ -190,7 +202,7 @@ struct FeedbackOutbox {
             if let notBefore = draft.notBefore, notBefore > now { continue }
             let outcome = await deliver(draft, currentUserId: currentUserId, now: now, send: send)
             if outcome.isKept { break }
-            if outcome == .sent { sent += 1 }
+            if outcome.isDelivered { sent += 1 }
         }
         return sent
     }
