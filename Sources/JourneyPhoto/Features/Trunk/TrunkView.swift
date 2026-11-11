@@ -34,7 +34,13 @@ struct TrunkView: View {
             .refreshable { await model.load(offline: connectivity.isOffline) }
             // 測る起動（`-JPPreviewTrunkDiag rastercost`・Debug のみ）のときだけ: 回す箱の絵を塗る時間の内訳（2026-11-11・測るだけ）
             .task(id: model.state != nil) {
-                guard PreviewSession.trunkDiag.contains("rastercost"), let state = model.state else { return }
+                guard let state = model.state else { return }
+                if PreviewSession.trunkDiag.contains("boldcheck") {
+                    TrunkBoldProbe.run(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck, ownerName: ownerName,
+                                       parts: state.equipped, wrinkles: TrunkWrinkles(userId: auth.userId).strengths,
+                                       tagPicks: state.tagPicks)
+                }
+                guard PreviewSession.trunkDiag.contains("rastercost") else { return }
                 try? await Task.sleep(for: .seconds(1))
                 await TrunkRasterProbe.run(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck, ownerName: ownerName,
                                            parts: state.equipped, wrinkles: TrunkWrinkles(userId: auth.userId).strengths,

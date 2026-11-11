@@ -334,3 +334,64 @@ enum TrunkRasterProbe {
         #endif
     }
 }
+
+/// 文字を太くする設定（アクセシビリティの「文字を太くする」）が、回す箱の正面の絵に効くかを測る（2026-11-11・**測るだけ**）。
+/// `-JPPreviewTrunkDiag boldcheck` でトランクの画面を開いたときだけ、正面と同じ絵を `legibilityWeight` なし・regular・bold で
+/// 描いて画素を比べ、`BoldCheck` に残す（違いのある画素の割合）
+enum TrunkBoldProbe {
+    @MainActor
+    static func run(model: TrunkModel, posts: Int, stuck: [TrunkLabel], ownerName: String?, parts: TrunkEquipped,
+                    wrinkles: [String: Double], tagPicks: [TrunkTagPick]) {
+        guard TrunkPerfMeter.shared.enabled else { return }
+        #if os(iOS)
+        func front(_ weight: LegibilityWeight?) -> [UInt8]? {
+            let view = TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,
+                                    hangsOnFront: true, parts: parts, wrinkles: wrinkles, tagPicks: tagPicks)
+            let renderer: ImageRenderer<AnyView>
+            if let weight {
+                renderer = ImageRenderer(content: AnyView(view.environment(\.legibilityWeight, weight)))
+            } else {
+                renderer = ImageRenderer(content: AnyView(view))
+            }
+            renderer.scale = 3
+            return pixels(renderer.uiImage)
+        }
+        let plain = front(nil), regular = front(.regular), bold = front(.bold)
+        TrunkPerfMeter.shared.note("BoldCheck", String(format: "system_bold=%d plain_vs_regular_pct=%.4f regular_vs_bold_pct=%.4f plain_vs_bold_pct=%.4f",
+                                                       TrunkSpinDiskCache.boldText ? 1 : 0, differ(plain, regular),
+                                                       differ(regular, bold), differ(plain, bold)))
+        #endif
+        TrunkPerfMeter.shared.hit("BoldCheckDone")
+    }
+
+    private static func pixels(_ image: UIImage?) -> [UInt8]? {
+        #if os(iOS)
+        guard let cg = image?.cgImage else { return nil }
+        var data = [UInt8](repeating: 0, count: cg.width * cg.height * 4)
+        let ok = data.withUnsafeMutableBytes { raw -> Bool in
+            guard let ctx = CGContext(data: raw.baseAddress, width: cg.width, height: cg.height, bitsPerComponent: 8,
+                                      bytesPerRow: cg.width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+            return true
+        }
+        return ok ? data : nil
+        #else
+        return nil
+        #endif
+    }
+
+    /// 違いのある画素の割合（%・どれかの色が 2 より大きく違う）。比べられなければ -1
+    private static func differ(_ a: [UInt8]?, _ b: [UInt8]?) -> Double {
+        guard let a, let b, a.count == b.count, !a.isEmpty else { return -1 }
+        var count = 0
+        var i = 0
+        while i < a.count {
+            if abs(Int(a[i]) - Int(b[i])) > 2 || abs(Int(a[i + 1]) - Int(b[i + 1])) > 2 || abs(Int(a[i + 2]) - Int(b[i + 2])) > 2 {
+                count += 1
+            }
+            i += 4
+        }
+        return Double(count) / Double(a.count / 4) * 100
+    }
+}

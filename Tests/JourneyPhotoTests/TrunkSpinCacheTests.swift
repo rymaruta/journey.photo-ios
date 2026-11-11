@@ -66,7 +66,10 @@ final class TrunkSpinCacheTests: XCTestCase {
         XCTAssertEqual(base, TrunkSpinDiskCache.signature(key()), "同じトランクで合図が変わる")
         XCTAssertEqual(TrunkSpinDiskCache.signature(key(wrinkles: ["a": 0.2, "b": 0.4])),
                        TrunkSpinDiskCache.signature(key(wrinkles: ["b": 0.4, "a": 0.2])), "手ざわりの並びで合図が変わる")
-        XCTAssertTrue(base.contains("v="), "アプリの版が合図に無い")
+        let json = try? JSONSerialization.jsonObject(with: Data(base.utf8)) as? [String: Any]
+        XCTAssertNotNil(json?["version"], "アプリの版が合図に無い")
+        XCTAssertNotNil(json?["lang"], "言語が合図に無い")
+        XCTAssertNotNil(json?["bold"], "文字を太くする設定が合図に無い")
         let changed: [(String, TrunkSpinKey)] = [
             ("model", key(model: .canvas)),
             ("posts", key(posts: 13)),
@@ -95,12 +98,100 @@ final class TrunkSpinCacheTests: XCTestCase {
         XCTAssertEqual(TrunkSpinDiskCache.names.count, 8, "置く絵の数が変わった")
     }
 
-    /// 退会したら端末の正面の絵も消す（貼ったラベルの地名が描かれている）
+    /// 同じ id のラベルでも、図柄の種・置き場・箔押しが違えば使い回さない（作り直し・動かした後に前の絵を出さない）
+    func testSameLabelIdWithOtherLooksIsNotReused() async {
+        fresh()
+        let place = TrunkLabel.Place(name: "京都", latin: "Kyoto", country: nil)
+        func one(seed: Int = 1, foil: Bool = false, pos: TrunkPos? = nil) -> [TrunkLabel] {
+            [TrunkLabel(id: "a", photoId: "a", kind: .place, place: place, seed: seed, at: "2026-04-03T09:00:00Z", foil: foil, pos: pos)]
+        }
+        TrunkTextures.keep(key(stuck: one()), faces: faces, box: box)
+        XCTAssertNotNil(TrunkTextures.kept(key(stuck: one())))
+        XCTAssertNil(TrunkTextures.kept(key(stuck: one(seed: 2))), "図柄を作り直したのに前の絵を使い回した")
+        XCTAssertNil(TrunkTextures.kept(key(stuck: one(foil: true))), "箔押しが違うのに前の絵を使い回した")
+        XCTAssertNil(TrunkTextures.kept(key(stuck: one(pos: TrunkPos(x: 0.3, y: 0.4, rot: 8)))), "動かしたのに前の絵を使い回した")
+        // 端末の合図も同じく変わる
+        let base = TrunkSpinDiskCache.signature(key(stuck: one()))
+        for other in [one(seed: 2), one(foil: true), one(pos: TrunkPos(x: 0.3, y: 0.4, rot: 8))] {
+            XCTAssertNotEqual(TrunkSpinDiskCache.signature(key(stuck: other)), base)
+        }
+    }
+
+    /// 合図は JSON で区切る: 名札の名前が無いことと "-" を分ける。文字を太くする設定も合図に入る
+    func testSignatureSeparatesNilAndBold() async {
+        fresh()
+        XCTAssertNotEqual(TrunkSpinDiskCache.signature(key(ownerName: nil)), TrunkSpinDiskCache.signature(key(ownerName: "-")))
+        XCTAssertNotEqual(TrunkSpinDiskCache.signature(key(), bold: false), TrunkSpinDiskCache.signature(key(), bold: true))
+    }
+
+    private func tempDir() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("trunk-spin-test-" + UUID().uuidString, isDirectory: true)
+    }
+
+    private let blobs: [(String, Data)] = TrunkSpinDiskCache.names.enumerated().map { ($0.element, Data(repeating: UInt8($0.offset), count: 10 + $0.offset)) }
+
+    /// 1 つのファイルの中身（合図＋絵）: 開くと同じ絵が戻る。合図が 1 字でも違えば開かない
+    func testArchiveRoundTripAndSignatureMismatch() async throws {
+        fresh()
+        let data = try XCTUnwrap(TrunkSpinDiskCache.archive(signature: "A", files: blobs))
+        let back = try XCTUnwrap(TrunkSpinDiskCache.unarchive(data, signature: "A"))
+        XCTAssertEqual(back.count, blobs.count)
+        for (name, blob) in blobs { XCTAssertEqual(back[name], blob, name) }
+        XCTAssertNil(TrunkSpinDiskCache.unarchive(data, signature: "B"), "合図が違うのに絵を返した")
+        XCTAssertNil(TrunkSpinDiskCache.unarchive(data.prefix(data.count - 1), signature: "A"), "欠けたファイルの絵を返した")
+    }
+
+    /// 書く→読む（列に並べて書き終えた後）。別の合図では読めない。書くと前のトランクのファイルは消える
+    func testWriteThenReadOnTheDisk() async {
+        fresh()
+        let dir = tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let first = blobs
+        TrunkSpinDiskCache.write(files: { first }, signature: "A", in: dir)
+        TrunkSpinDiskCache.flush()
+        XCTAssertEqual(TrunkSpinDiskCache.read(signature: "A", in: dir)?["front"], blobs[0].1, "書いた絵を読めない")
+        XCTAssertNil(TrunkSpinDiskCache.read(signature: "B", in: dir), "別の合図で読めた")
+        TrunkSpinDiskCache.write(files: { first }, signature: "B", in: dir)
+        TrunkSpinDiskCache.flush()
+        XCTAssertNil(TrunkSpinDiskCache.read(signature: "A", in: dir), "前のトランクのファイルが残っている")
+        XCTAssertNotNil(TrunkSpinDiskCache.read(signature: "B", in: dir))
+    }
+
+    /// 消した後に、その前に頼まれた書き込み・その前に開いた画面の書き込みは書かない（退会の後に書き戻さない）
+    func testRemoveAllDropsPendingWrites() async {
+        fresh()
+        let dir = tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let first = blobs
+        TrunkSpinDiskCache.write(files: { Thread.sleep(forTimeInterval: 0.05); return first }, signature: "A", in: dir)
+        TrunkSpinDiskCache.removeAll(in: dir)
+        TrunkSpinDiskCache.flush()
+        XCTAssertNil(TrunkSpinDiskCache.read(signature: "A", in: dir), "消した後に、前に頼まれた絵を書いた")
+        // 回す画面を開いた（札を取った）後に退会し、その後に描き終えて書こうとしても書かない
+        let opened = TrunkSpinDiskCache.ticket()
+        TrunkSpinDiskCache.removeAll(in: dir)
+        TrunkSpinDiskCache.write(files: { first }, signature: "A", in: dir, ticket: opened)
+        TrunkSpinDiskCache.flush()
+        XCTAssertNil(TrunkSpinDiskCache.read(signature: "A", in: dir), "退会の後に、その前に開いた画面の絵を書き戻した")
+        // 札を取り直せば書ける
+        TrunkSpinDiskCache.write(files: { first }, signature: "A", in: dir, ticket: TrunkSpinDiskCache.ticket())
+        TrunkSpinDiskCache.flush()
+        XCTAssertNotNil(TrunkSpinDiskCache.read(signature: "A", in: dir))
+    }
+
+    /// 退会（`AccountLocalData.remove`）で端末の絵が消える
     func testAccountRemovalForgetsTheDiskImage() async throws {
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let source = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Core/Storage/AccountLocalData.swift"),
-                                encoding: .utf8)
-        XCTAssertTrue(source.contains("TrunkSpinDiskCache.removeAll()"), "退会しても回す箱の正面の絵が端末に残る")
+        fresh()
+        let dir = try XCTUnwrap(TrunkSpinDiskCache.directory)
+        let first = blobs
+        TrunkSpinDiskCache.write(files: { first }, signature: "A", in: dir)
+        TrunkSpinDiskCache.flush()
+        XCTAssertNotNil(TrunkSpinDiskCache.read(signature: "A", in: dir))
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "trunk-spin-removal-" + UUID().uuidString))
+        let temp = tempDir()
+        AccountLocalData.remove(userId: "A", username: nil, defaults: defaults, draftDirectory: temp, offlineTripsRoot: temp, passRoot: temp)
+        TrunkSpinDiskCache.flush()
+        XCTAssertNil(TrunkSpinDiskCache.read(signature: "A", in: dir), "退会しても回す箱の絵が端末に残る")
     }
 
     /// メモリが足りないと知らされたら手放す

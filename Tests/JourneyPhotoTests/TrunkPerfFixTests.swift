@@ -27,8 +27,20 @@ final class TrunkPerfFixTests: XCTestCase {
         XCTAssertFalse(medal.contains("view.rendersContinuously = true"))
         // 止まった箱は表示の刻み（CADisplayLink）も止め、触る・向き・裏返すで再び動かす
         XCTAssertTrue(medal.contains("link.isPaused = true"), "止まっていても毎コマ主スレッドを起こしている")
-        XCTAssertEqual(medal.components(separatedBy: "        wake()\n").count - 1, 3, "向きのボタン・裏返す・指で触るで刻みを動かさない")
-        XCTAssertTrue(medal.contains("            dragging = true\n            wake()"), "指で触っても刻みを動かさない")
+        // 字下げに頼らず、それぞれの手続きの中に `wake()` があるかを見る
+        func body(after start: String) throws -> Substring {
+            let from = try XCTUnwrap(medal.range(of: start), start)
+            let rest = medal[from.upperBound...]
+            let end = rest.range(of: "\n    }\n")?.lowerBound ?? rest.endIndex
+            return rest[..<end]
+        }
+        XCTAssertTrue(try body(after: "func aim(yaw target: Double, pitch targetPitch: Double) {").contains("wake()"), "向きのボタンで刻みを動かさない")
+        XCTAssertTrue(try body(after: "    func flip() {").contains("wake()"), "裏返すで刻みを動かさない")
+        let began = try XCTUnwrap(medal.range(of: "case .began:"))
+        // 次の `case` までを .began の中身とみなす
+        let afterBegan = medal[began.upperBound...]
+        let beganBody = afterBegan[..<(afterBegan.range(of: "case .")?.lowerBound ?? afterBegan.endIndex)]
+        XCTAssertTrue(beganBody.contains("wake()"), "指で触っても刻みを動かさない")
     }
 
     /// 3. 回す箱の絵は、2 回目に開いたら使い回す。トランクの画面では先に作らない（2026-11-11 判断・先に作ると
