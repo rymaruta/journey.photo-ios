@@ -4415,7 +4415,7 @@ final class ScreenshotTests: XCTestCase {
         executionTimeAllowance = 600
         var lines: [String] = []
         for pair in 1...3 {
-            for diag in ["spincont,spinlazy,spinlink", "now"] {
+            for diag in ["spincont,spinlazy,spinlink", "now", "spinonce"] {
                 let app = launchTrunk(Self.trunkPerfArgs + (diag == "now" ? [] : ["-JPPreviewTrunkDiag", diag]))
                 defer { app.terminate() }
                 guard openTrunk(app) else { XCTFail("旅のトランクを開けない"); continue }
