@@ -22,24 +22,31 @@ jobs:
         run: |
           command -v xcodegen >/dev/null || brew install xcodegen
           xcodegen generate
-      - name: 依存の図を解く（3 回・何に時間がかかるか）
+      - name: 依存の図を解く（ふつう → Package.resolved に固定 → ふつう）
         run: |
           r() {
+            n="$1"; shift
             s=$SECONDS
             xcodebuild -resolvePackageDependencies -project JourneyPhoto.xcodeproj -scheme JourneyPhoto -skipPackageUpdates \
-              -skipPackagePluginValidation -skipMacroValidation > "/tmp/$1.log" 2>&1
-            echo "$1: $((SECONDS-s)) 秒・終わり $?・取りに行った $(grep -cE 'Fetching|Cloning|Updating' "/tmp/$1.log") 行・SwiftPM の置き場 $(du -sh "$HOME/Library/Caches/org.swift.swiftpm" 2>/dev/null | cut -f1)" | tee -a "$GITHUB_STEP_SUMMARY"
+              -skipPackagePluginValidation -skipMacroValidation "$@" > "/tmp/$n.log" 2>&1
+            rc=$?
+            echo "$n: $((SECONDS-s)) 秒・終わり ${rc}・取りに行った $(grep -cE 'Fetching|Cloning|Updating' "/tmp/$n.log") 行" | tee -a "$GITHUB_STEP_SUMMARY"
           }
-          ls "$HOME/Library/Caches/org.swift.swiftpm" 2>&1 | head
-          r first
-          ls -la "$HOME/Library/Caches/org.swift.swiftpm" 2>&1 | head
-          du -sh "$HOME/Library/Caches/org.swift.swiftpm"/* 2>/dev/null
-          dd="$(ls -d "$HOME"/Library/Developer/Xcode/DerivedData/JourneyPhoto-* | head -1)"
-          ls -la "$dd/SourcePackages"
-          r second
-          rm -rf "$HOME/Library/Caches/org.swift.swiftpm/manifests"
-          r third_without_manifests
-          rm -rf "$dd/SourcePackages/repositories"
-          r fourth_without_repositories
-          grep -E "Fetching|Cloning|Updating|Computing|Creating working copy|Working copy" /tmp/first.log | head -20
-          tail -5 /tmp/first.log
+          resolved=JourneyPhoto.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          r A_plain
+          ls -la "$resolved" || true
+          cp "$resolved" /tmp/Package.resolved
+          rm -rf JourneyPhoto.xcodeproj && xcodegen generate > /dev/null
+          mkdir -p "$(dirname "$resolved")" && cp /tmp/Package.resolved "$resolved"
+          r B_pinned -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile
+          tail -3 /tmp/B_pinned.log
+          rm -rf JourneyPhoto.xcodeproj && xcodegen generate > /dev/null
+          r C_plain_again
+          s=$SECONDS
+          mkdir -p "$(dirname "$resolved")" && cp /tmp/Package.resolved "$resolved"
+          xcodebuild -project JourneyPhoto.xcodeproj -scheme JourneyPhoto ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            -skipPackagePluginValidation -skipMacroValidation -skipPackageUpdates \
+            -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \
+            -destination "platform=iOS Simulator,name=iPhone 17 Pro Max,arch=arm64" build-for-testing > /tmp/D.log 2>&1
+          echo "D_build_pinned: $((SECONDS-s)) 秒・終わり $?・Swift $(grep -c 'SwiftCompile normal' /tmp/D.log) 件" | tee -a "$GITHUB_STEP_SUMMARY"
+          grep -n "Resolve Package Graph\|Resolved source packages\|SwiftDriver JourneyPhoto \|TEST BUILD SUCCEEDED" /tmp/D.log | head
