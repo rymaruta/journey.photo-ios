@@ -241,10 +241,12 @@ final class TrunkSpinCacheTests: XCTestCase {
         let first = blobs
         TrunkSpinDiskCache.write(files: { first }, signature: "mine", in: dir)
         TrunkSpinDiskCache.flush()
-        XCTAssertNil(TrunkSpinDiskCache.session(for: key(), keepsOnDisk: false, in: dir), "人のトランクで札と合図を作った")
+        let theirSession = await TrunkSpinDiskCache.session(for: key(), keepsOnDisk: false, in: dir)
+        XCTAssertNil(theirSession, "人のトランクで札と合図を作った")
         TrunkSpinDiskCache.flush()
         XCTAssertNotNil(TrunkSpinDiskCache.read(signature: "mine", in: dir), "人のトランクを開いて自分の絵を消した")
-        XCTAssertNotNil(TrunkSpinDiskCache.session(for: key(), keepsOnDisk: true, in: dir))
+        let mySession = await TrunkSpinDiskCache.session(for: key(), keepsOnDisk: true, in: dir)
+        XCTAssertNotNil(mySession)
         // 画面の配線: 人のトランクだけ端末を使わない
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let theirs = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Trunk/TheirTrunkView.swift"), encoding: .utf8)

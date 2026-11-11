@@ -30,7 +30,7 @@ enum TrunkSpinDiskCache {
 
     /// 絵に効くものを全部並べた合図（JSON・鍵の順。名札の名前が無いことと "-" を分ける）。
     /// OS の版も入れる（iOS を上げて書体の形が変わったとき、古い絵を使わない・2026-11-11 確かめ役）。
-    /// 主スレッドの時間の内訳を `SpinDiskSig…` に残す（run 1075 で読む時間が 70〜120ms・測るだけ）
+    /// 時間の内訳を `SpinDiskSig…` に残す（run 1083: `String(describing:)` が 54〜96ms。それで裏で作る＝`session`）
     static func signature(_ key: TrunkSpinKey, bold: Bool? = nil) -> String {
         TrunkPerfMeter.measure("SpinDiskSig") {
             let bold = bold ?? TrunkPerfMeter.measure("SpinDiskSigBold") { boldText }
@@ -198,11 +198,27 @@ enum TrunkSpinDiskCache {
         return ticket()
     }
 
-    /// 回す画面を開いたときの札と合図。端末を使わない（人のトランク）なら nil＝読まない・書かない
-    static func session(for key: TrunkSpinKey, keepsOnDisk: Bool, in dir: URL? = directory) -> (ticket: Int, signature: String)? {
+    /// 回す画面を開いたときに読んだもの（札・合図・絵）
+    struct Opened: @unchecked Sendable {
+        let ticket: Int
+        let signature: String
+        let images: [String: UIImage]?
+    }
+
+    /// 回す画面を開いたときに呼ぶ。端末を使わない（人のトランク）なら nil＝読まない・書かない・消さない。
+    /// 札（と測定の消去）・文字を太くする設定はここ（主スレッド）で取り、合図を作る・読む・絵に戻すのは裏で行う
+    /// （run 1083: 合図を作る時間 58〜103ms のうち 54〜96ms が `String(describing:)`。読む・開く・絵に戻すは合わせて 2〜13ms）
+    @MainActor
+    static func session(for key: TrunkSpinKey, keepsOnDisk: Bool, in dir: URL? = directory) async -> Opened? {
         guard keepsOnDisk else { return nil }
         let ticket = open(in: dir)
-        return (ticket, signature(key))
+        let bold = boldText
+        return await Task.detached(priority: .userInitiated) {
+            TrunkPerfMeter.measure("SpinDiskLoad") {
+                let signature = signature(key, bold: bold)
+                return Opened(ticket: ticket, signature: signature, images: load(signature: signature, in: dir))
+            }
+        }.value
     }
 
     /// 置いた絵の中身を読む（絵を変える測定用の差し替えが付いていれば読まない）
@@ -212,8 +228,8 @@ enum TrunkSpinDiskCache {
     }
 
     /// 置いた絵を読む（全部そろっていなくても正面があれば返す。測定専用の `spindiskfront` では正面だけ）
-    static func load(signature: String) -> [String: UIImage]? {
-        guard let files = loadFiles(signature: signature) else { return nil }
+    static func load(signature: String, in dir: URL? = directory) -> [String: UIImage]? {
+        guard let files = loadFiles(signature: signature, in: dir) else { return nil }
         #if os(iOS)
         let diag = PreviewSession.trunkDiag
         var out: [String: UIImage] = [:]
