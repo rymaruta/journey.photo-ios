@@ -53,7 +53,10 @@ struct NotificationService {
 struct AppNotification: Decodable, Identifiable, Equatable {
 
     enum Kind: String, Decodable {
-        case like, comment, follow, storyreply, badge, inspired, storymention
+        case like, comment, follow, storyreply, badge, inspired, storymention, storyshare, commentreply
+        // `storyshare`＝自分の写真をストーリーで紹介された（2026-11-11・札 #541 の ①・`stories.ts`）。`photoId`・`photoSrc` は
+        // **紹介された自分の写真**（押すとそこへ）、`byId` / `byName` は紹介した人。
+        // `commentreply`＝自分のコメントに返信が付いた（同 ②・`comments.ts`）。`photoId` はコメントの付いた写真（押すとそこへ）。
         // `storymention`＝ストーリーでメンションされた（2026-11-09・`notify.ts`・札 #505）。`photoId` はそのストーリーの id、
         // `byId` / `byName` は投稿者。押したら投稿者のプロフィール（ストーリーは24時間で消えるので、写真としては開かない）
         // `inspired`＝「この写真を見て撮影」（2026-10-14・`api-user/src/inspired.ts`）。だれかが**自分の写真を元に**
@@ -91,6 +94,8 @@ struct AppNotification: Decodable, Identifiable, Equatable {
     /// `storyreply` だけ: 文字の返信がメッセージの**ふつうの受信箱**に入った会話。**この行はベルに出さない**
     /// （受信箱と二重になる・`NotificationsView.shown`）。リクエストの棚に入った回は付かない（ベルが唯一の知らせ）
     let dmConvId: String?
+    /// `commentreply` だけ: 返信のコメントの id（押すとそのコメントの位置へ・札 #541）。形の崩れた値は捨てる
+    let commentId: String?
 
     /// メッセージの受信箱に出すので、ベルには出さない行か
     var isInMessages: Bool { kind == .storyreply && dmConvId != nil }
@@ -106,7 +111,7 @@ struct AppNotification: Decodable, Identifiable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case type, photoId, photoSrc, byName, byId, atLocation, targetUserId, t, deleted, key, tier, sourcePhotoId
-        case replyKind, dmConvId
+        case replyKind, dmConvId, commentId
     }
 
     init(from decoder: Decoder) throws {
@@ -130,6 +135,8 @@ struct AppNotification: Decodable, Identifiable, Equatable {
         self.replyKind = try? container.decodeIfPresent(String.self, forKey: .replyKind)
         let conv = try? container.decodeIfPresent(String.self, forKey: .dmConvId)
         self.dmConvId = conv.flatMap { PathID.isSafe($0) ? $0 : nil }
+        let comment = try? container.decodeIfPresent(String.self, forKey: .commentId)
+        self.commentId = comment.flatMap { PathID.isSafe($0) ? $0 : nil }
     }
 
     // 画面の文言は `NotificationText.line(for:)`（まとめ表示と一緒に決めるため）
@@ -143,7 +150,7 @@ struct AppNotification: Decodable, Identifiable, Equatable {
     /// 文字列でない値・`aps` は読まない。種類が無ければ nil（押しても一覧を開くだけ）
     static func fromPush(_ userInfo: [AnyHashable: Any]) -> AppNotification? {
         var fields: [String: String] = [:]
-        for key in ["type", "photoId", "byId", "targetUserId", "key", "sourcePhotoId"] {
+        for key in ["type", "photoId", "byId", "targetUserId", "key", "sourcePhotoId", "commentId"] {
             if let value = userInfo[key] as? String, !value.isEmpty { fields[key] = value }
         }
         // 段は数で届くことがある（APNs の中身の JSON）。文字にして同じ復号に通す
