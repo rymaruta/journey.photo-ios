@@ -13,9 +13,10 @@ protocol LocationRequesting: AnyObject {
 
 extension CLLocationManager: LocationRequesting {}
 
-/// 現在地を**1回だけ**取る。取りにいくのは2つの時だけ:
+/// 現在地を**1回だけ**取る。取りにいくのは3つの時だけ:
 /// **地図を開いた最初の1回**（既定の場所を自分の今の場所にする・owner 2026-09-26）と、
-/// **現在地ボタン**（モック3）。
+/// **現在地ボタン**（モック3）と、**探すの撮影スポットの一覧を開いたとき**（`locateIfAllowed`・
+/// 許可済みのときだけ・尋ねない・近い順に並べるだけ・2026-11-11 札 #524）。
 ///
 /// 使い道は「地図をそこへ寄せる」と「近くの写真」の中心。**このクラスは
 /// 追跡しない・保存しない・送らない**——取った座標はカメラに渡して終わり。
@@ -77,6 +78,23 @@ final class CurrentLocation: NSObject, ObservableObject {
         case .authorizedAlways, .authorizedWhenInUse:
             state = .locating
             manager.requestLocation()
+        }
+    }
+
+    /// **もう許されているときだけ**1回取る。尋ねない（ダイアログを出さない）・断られている人には何もしない。
+    /// 探すの撮影スポットの一覧を近い順にするため（札 #524・2026-11-11 判断: 一覧を開いただけで
+    /// 位置の許可を尋ねない。許していない人は名前の順のまま）
+    func locateIfAllowed() {
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse:
+            // **まだ一度も取っていないときだけ**（取り終えた・取っている・失敗したあとは取り直さない）。
+            // 一覧から詳細を開いて戻るたびに取り直すと、並びが目の前で動く（確かめ役の指摘・2026-11-11）
+            guard state == .idle else { return }
+            requestedByUser = false
+            state = .locating
+            manager.requestLocation()
+        default:
+            break
         }
     }
 

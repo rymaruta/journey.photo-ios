@@ -189,8 +189,9 @@ final class CamperRoomUsabilityTests: XCTestCase {
     /// 額の頁: 写真を入れられる全部の額を、横長と縦長の写真で 1 回ずつ（2026-10-22 楕円の額で写真が筋に崩れた）
     func testFrameSheetCoversEveryPhotoFrameTwice() {
         let frames = CamperRoomContactPages.photoFrames
-        XCTAssertGreaterThan(frames.count, 10)
-        XCTAssertTrue(frames.contains { $0.id == "photo_frame.oval" })
+        // 2026-11-11: 組み合わせの額 120 点を消したので、板の額 4 点と縦長の写真（ポスター）の 5 点
+        XCTAssertEqual(Set(frames.map(\.id)), ["photo_frame.landscape", "photo_frame.square", "photo_frame.oval", "photo_frame.triptych",
+                                              "poster.tall_print"])
         let entries = (0..<CamperRoomContactPages.count(frames: true)).flatMap { CamperRoomContactPages.page($0, frames: true) }
         XCTAssertEqual(entries.map(\.id), frames.flatMap { [$0.id + ".wide", $0.id + ".tall"] })
     }

@@ -232,8 +232,11 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
                                     "発見の段の見出しが眉＋明朝になっていない")
         XCTAssertTrue(view.contains("JPSectionHeading(eyebrow: eyebrow, spoken: spoken, title: title, trailing: trailing)"))
         let field = slice(view, from: "private var searchField: some View", to: "private var scopeChips")
-        XCTAssertTrue(field.contains(".background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))"))
-        XCTAssertTrue(field.contains("strokeBorder(WebTheme.hairline"))
+        // 地と縁は撮影スポットの一覧の欄と同じ部品（`jpSearchBoxFace`・札 #524 で切り出した）
+        XCTAssertTrue(field.contains(".jpSearchBoxFace()"))
+        let face = try source("Features/Common/SearchBox.swift")
+        XCTAssertTrue(face.contains(".background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))"))
+        XCTAssertTrue(face.contains("strokeBorder(WebTheme.hairline"))
         for id in ["search.field", "search.clear", "search.emptyMap", "search.season.", "search.dayPart.",
                    "search.spot", "search.spots", "search.clearTimeFilters", "search.time.note"] {
             XCTAssertTrue(view.contains("\"\(id)"), "\(id) の道しるべを落とした")

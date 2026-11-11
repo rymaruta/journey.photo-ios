@@ -106,7 +106,9 @@ struct CamperRoomView: View {
         var camera: CamperRoomCamera
     }
 
-    private var layout: CamperRoomLayout { CamperRoomLayout.make(room, stage: stage) }
+    /// 開いている部屋（いまの段で入れない部屋なら車の部屋・`CamperRoomKind.opening`）
+    private var openKind: CamperRoomKind { CamperRoomKind.opening(room, stage: stage) }
+    private var layout: CamperRoomLayout { CamperRoomLayout.make(openKind, stage: stage) }
     private var store: CamperRoomStore { CamperRoomStore(userId: userId) }
     private var seenStore: CamperRoomSeenStore { CamperRoomSeenStore(userId: userId) }
     /// 数えた値と持っている家具（写真の言葉を読むので重い。描き直しのたびに数えず、写真が替わった時だけ）
@@ -375,7 +377,7 @@ struct CamperRoomView: View {
         }
     }
 
-    /// 7 部屋。名前が横に並びきらないので、横に送れる
+    /// 部屋のタブ（2〜3 部屋・2026-11-11 に 7 から減らした）。大きい文字でも並ぶよう、横に送れるまま
     private var roomTabs: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 2) {
@@ -383,14 +385,14 @@ struct CamperRoomView: View {
                     Button { room = k } label: {
                         Text(k.name)
                             .jpSystemFont(14, weight: .semibold)
-                            .foregroundStyle(k == room ? WebTheme.accent : WebTheme.muted2)
+                            .foregroundStyle(k == openKind ? WebTheme.accent : WebTheme.muted2)
                             .padding(.horizontal, 12)
                             .frame(minHeight: WebTheme.minTapTarget)
-                            .overlay(alignment: .bottom) { Rectangle().fill(k == room ? WebTheme.accent : Color.clear).frame(height: 2) }
+                            .overlay(alignment: .bottom) { Rectangle().fill(k == openKind ? WebTheme.accent : Color.clear).frame(height: 2) }
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityAddTraits(k == room ? .isSelected : [])
+                    .accessibilityAddTraits(k == openKind ? .isSelected : [])
                     .accessibilityIdentifier("camper.room.room.\(k.rawValue)")
                 }
             }
