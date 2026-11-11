@@ -40,7 +40,11 @@ struct SpotRegionMapView: View {
                 .onTapGesture(coordinateSpace: .local) { point in
                     if let area = map.area(at: point, container: size, in: areas) { onSelect(area) }
                 }
-                .gesture(
+                // 🔴 **`simultaneousGesture` にする**（2026-11-11・run 1012 の数）: `.gesture` だと地図の上から払っても
+                // 画面が流れなかった（地図の y 680.7 → 680.7。同じ回に右の札から払うと 680.7 → 50.3 と流れた＝
+                // スクロールは止まっておらず、地図の長押し→引くの操作が指を取っていた）。同時に受ければ、長押しの前に
+                // 動いた指はスクロールへ渡る。なぞり始めたら探すの画面がスクロールを止める（`scrollDisabled`）
+                .simultaneousGesture(
                     LongPressGesture(minimumDuration: SpotRegionMap.traceDelay)
                         .sequenced(before: DragGesture(minimumDistance: 0))
                         .updating($traced) { value, state, _ in
