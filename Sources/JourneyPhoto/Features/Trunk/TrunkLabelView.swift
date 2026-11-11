@@ -43,6 +43,8 @@ struct TrunkLabelView: View {
     private var layout: TrunkLabelLayout { TrunkLabelLayout(w: w, h: h, spec: spec, age: age) }
 
     var body: some View {
+        // 測る起動のときだけ、body を評価した回数を数える（`TrunkPerfMeter`・2026-11-11・測るだけ）
+        let _ = TrunkPerfMeter.shared.hit("LabelBody")
         let l = layout
         let fg = l.faded(spec.fg)
         ZStack {

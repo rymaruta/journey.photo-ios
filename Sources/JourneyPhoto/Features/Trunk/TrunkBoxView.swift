@@ -44,6 +44,8 @@ struct TrunkBoxView: View {
     private static let H = TrunkLooks.bodyHeight
 
     var body: some View {
+        // 測る起動のときだけ、body を評価した回数を数える（`TrunkPerfMeter`・2026-11-11・測るだけ）
+        let _ = TrunkPerfMeter.shared.hit("BoxBody")
         let look = look
         let fittings = fittings
         ZStack(alignment: .topLeading) {
@@ -70,6 +72,8 @@ struct TrunkBoxView: View {
             }
         }
         .frame(width: TrunkLooks.canvasWidth, height: bodyOnly ? Self.H : TrunkLooks.canvasHeight, alignment: .topLeading)
+        // 測る起動のときだけ、いま画面に作られているトランクの絵の数を数える
+        .modifier(TrunkLiveCount(name: "Box"))
     }
 
     // MARK: 持ち手
@@ -119,9 +123,7 @@ struct TrunkBoxView: View {
         }
         .frame(width: Self.W, height: Self.H, alignment: .topLeading)
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .drawingGroup()
-        .shadow(color: Color.black.opacity(0.6), radius: 0, x: 0, y: 3)
-        .shadow(color: Color.black.opacity(0.75), radius: 25, x: 0, y: 30)
+        .modifier(TrunkBodyFinish())
     }
 
     /// 地・目・しみ・古び・絵・ラベル（z 0）
@@ -856,7 +858,7 @@ struct TrunkMountedCorner: View {
     var body: some View {
         let ops = TrunkPartDrawing.corner(corner, box: TrunkRect(x: 0, y: 0, w: size, h: size))
         Canvas { ctx, _ in
-            TrunkPartRenderer.draw(ops, in: &ctx)
+            TrunkPerfMeter.measure("CvCorner") { TrunkPartRenderer.draw(ops, in: &ctx) }
         }
         .frame(width: size, height: size)
         .scaleEffect(x: pos.isLeading ? 1 : -1, y: pos.isTop ? 1 : -1)
@@ -1071,5 +1073,30 @@ struct TrunkFigureFit: View {
         }
         .aspectRatio(TrunkLooks.canvasWidth / TrunkLooks.canvasHeight, contentMode: .fit)
         .frame(maxWidth: maxWidth)
+    }
+}
+
+/// 胴の仕上げ（1 枚の絵にしてから、縁の陰と床へ落ちる大きな影）。
+/// 測定専用の差し替え（`-JPPreviewTrunkDiag nodg|noshadow`・Debug のみ・2026-11-11）のときだけ外す。ふだんは必ず両方
+struct TrunkBodyFinish: ViewModifier {
+    func body(content: Content) -> some View {
+        let diag = PreviewSession.trunkDiag
+        if diag.isEmpty {
+            content
+                .drawingGroup()
+                .shadow(color: Color.black.opacity(0.6), radius: 0, x: 0, y: 3)
+                .shadow(color: Color.black.opacity(0.75), radius: 25, x: 0, y: 30)
+        } else {
+            let grouped = Group {
+                if diag.contains("nodg") { content } else { content.drawingGroup() }
+            }
+            if diag.contains("noshadow") {
+                grouped
+            } else {
+                grouped
+                    .shadow(color: Color.black.opacity(0.6), radius: 0, x: 0, y: 3)
+                    .shadow(color: Color.black.opacity(0.75), radius: 25, x: 0, y: 30)
+            }
+        }
     }
 }

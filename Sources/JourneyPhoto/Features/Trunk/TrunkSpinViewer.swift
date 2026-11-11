@@ -72,9 +72,15 @@ struct TrunkSpinViewer: View {
             .overlay(alignment: .topTrailing) { closeButton }
         }
         .background { TrunkStyle.stageBackground(centerY: 0.42) }
+        // 測る起動（`-JPPreviewTrunkPerf YES`・Debug のみ）のときだけ: 数の見えない要素（全画面の上でも読めるようここにも置く）
+        .overlay(alignment: .bottomLeading) {
+            if TrunkPerfMeter.shared.enabled { TrunkPerfProbe() }
+        }
         .statusBarHidden(true)
         .task {
             guard textures == nil else { return }
+            // 測る起動のときだけ: 回す画面を開いた後の停止の積みを撮れるよう、溜まった見本を空にする（2026-11-11）
+            if TrunkPerfMeter.shared.enabled { PerfRecorder.shared.clearSamples() }
             // 描く順を分ける（2026-10-18 見直し）: 正面（ラベルごと）を先に描いて出し、画面の処理を一度返してから
             // 背面・左右・上・底・持ち手を描く。8枚を1度に描くと開いた直後の一瞬が止まる
             let clock = ContinuousClock()
@@ -88,7 +94,9 @@ struct TrunkSpinViewer: View {
             guard !Task.isCancelled else { return }
             boxFaces = TrunkTextures.box(model: model, posts: posts, parts: parts, stuck: stuck, tagPicks: tagPicks)
             renderMarker = TrunkTextures.renderMarker(front: frontTook, all: started.duration(to: clock.now))
+            TrunkPerfMeter.shared.mark("SpinReady")
         }
+        .onDisappear { TrunkPerfMeter.shared.mark("SpinGone") }
     }
 
     /// 向きのボタン（板 TrunkSpin: 4つ並び・高さ 44・#1A1A1A・13pt）
@@ -187,10 +195,18 @@ enum TrunkTextures {
                             clip: render(TrunkHardwareFace(look: look, fittings: fittings, w: 20, h: 14).frame(width: 20, height: 14)))
     }
 
-    private static func render<V: View>(_ view: V) -> UIImage? {
-        let renderer = ImageRenderer(content: view)
-        renderer.scale = 3
-        return renderer.uiImage
+    private static func render<V: View>(_ view: V, line: Int = #line) -> UIImage? {
+        // 測る起動のときだけ、1 枚ずつ描いた時間と画素を数える（`TrunkPerfMeter`・名前は呼んだ行 `TexL<行>`・2026-11-11・測るだけ）
+        let name = "TexL\(line)"
+        return TrunkPerfMeter.measure(name) { () -> UIImage? in
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 3
+            let image = renderer.uiImage
+            if TrunkPerfMeter.shared.enabled, let cg = image?.cgImage {
+                TrunkPerfMeter.shared.note("Px" + name, "\(cg.width)x\(cg.height) mb=\(String(format: "%.2f", Double(cg.width * cg.height * 4) / 1_048_576))")
+            }
+            return image
+        }
     }
 }
 

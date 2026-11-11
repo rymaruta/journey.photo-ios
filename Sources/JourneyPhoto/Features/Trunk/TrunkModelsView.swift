@@ -179,8 +179,17 @@ struct TrunkProModelsView: View {
                         .foregroundStyle(WebTheme.danger)
                         .padding(.top, 8)
                 }
-                VStack(spacing: 20) {
-                    ForEach(TrunkModel.pro) { m in proCard(m) }
+                Group {
+                    // 測定専用の差し替え（`-JPPreviewTrunkDiag lazy`・Debug のみ・2026-11-11）。ふだんは VStack
+                    if PreviewSession.trunkDiag.contains("lazy") {
+                        LazyVStack(spacing: 20) {
+                            ForEach(TrunkModel.pro) { m in proCard(m) }
+                        }
+                    } else {
+                        VStack(spacing: 20) {
+                            ForEach(TrunkModel.pro) { m in proCard(m) }
+                        }
+                    }
                 }
                 .padding(.top, 20)
             }
@@ -191,6 +200,16 @@ struct TrunkProModelsView: View {
         .webScreen()
         .navigationTitle(L("特別なトランク", "Special trunks"))
         .navigationBarTitleDisplayMode(.inline)
+        // 測る起動（`-JPPreviewTrunkPerf YES`・Debug のみ）のときだけ: 開いて落ち着いた後と、離れた後のメモリ（2026-11-11・測るだけ）
+        .task {
+            guard TrunkPerfMeter.shared.enabled else { return }
+            TrunkPerfMeter.shared.hit("ProListOpen")
+            try? await Task.sleep(for: .seconds(2))
+            TrunkPerfMeter.shared.mark("ProList")
+            // この後の送りの最中の停止の積みを撮れるよう、起動の間に溜まった見本を空にする
+            PerfRecorder.shared.clearSamples()
+        }
+        .onDisappear { TrunkPerfMeter.shared.mark("ProListGone") }
         .fullScreenCover(isPresented: $showPaywall, onDismiss: {
             // 買えたかもしれない: Pro の型を選べるか読み直す
             Task { await model.refreshAfterPaywall() }
@@ -201,6 +220,8 @@ struct TrunkProModelsView: View {
     }
 
     private func proCard(_ trunk: TrunkModel) -> some View {
+        // 測る起動のときだけ、札を作った回数を数える（2026-11-11・測るだけ）
+        let _ = TrunkPerfMeter.shared.hit("ProCardBuild")
         let info = TrunkText.info(trunk)
         let state = model.state
         let isPro = state?.isPro ?? false
@@ -210,9 +231,20 @@ struct TrunkProModelsView: View {
         } label: {
             VStack(alignment: .leading, spacing: 16) {
                 let preview = TrunkLooks.modelsPreview(state?.stuck ?? [], count: 3)
-                TrunkFigureFit(model: trunk, posts: state?.posts ?? 0, stuck: preview.stuck,
-                               ownerName: ownerName, maxWidth: 300, tagsFrom: preview.tagsFrom,
-                               tagPicks: state?.tagPicks ?? [])
+                Group {
+                    // 測定専用の差し替え（`-JPPreviewTrunkDiag snap`・Debug のみ・2026-11-11）: 1 度描いた画像で置く。ふだんは生の絵
+                    if PreviewSession.trunkDiag.contains("snap") {
+                        // タグは本体と同じラベルから（`TrunkTagTests` が数える渡し方の字は生の絵の 1 か所だけにする）
+                        let snapTags = preview.tagsFrom
+                        TrunkFigureSnapshot(figure: TrunkFigure(model: trunk, posts: state?.posts ?? 0, stuck: preview.stuck,
+                                                                ownerName: ownerName, width: 300, tagsFrom: snapTags,
+                                                                tagPicks: state?.tagPicks ?? []))
+                    } else {
+                        TrunkFigureFit(model: trunk, posts: state?.posts ?? 0, stuck: preview.stuck,
+                                       ownerName: ownerName, maxWidth: 300, tagsFrom: preview.tagsFrom,
+                                       tagPicks: state?.tagPicks ?? [])
+                    }
+                }
                     .frame(maxWidth: .infinity)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 0) {
@@ -275,6 +307,33 @@ struct TrunkProModelsView: View {
                 .foregroundStyle(accent ? WebTheme.accent : TrunkStyle.muted)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// 測定専用（`-JPPreviewTrunkDiag snap`・Debug のみ・2026-11-11）: トランクの絵を 1 度だけ画像に描いて置く（描いた時間は `SnapRender`）
+struct TrunkFigureSnapshot: View {
+    let figure: TrunkFigure
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image).resizable().aspectRatio(contentMode: .fit)
+            } else {
+                Color.clear
+            }
+        }
+        .aspectRatio(TrunkLooks.canvasWidth / TrunkLooks.canvasHeight, contentMode: .fit)
+        .frame(maxWidth: 300)
+        .task {
+            guard image == nil else { return }
+            image = TrunkPerfMeter.measure("SnapRender") { () -> UIImage? in
+                // 影が切れないよう余白を付けて描き、同じ枠に収める
+                let renderer = ImageRenderer(content: figure)
+                renderer.scale = 3
+                return renderer.uiImage
+            }
         }
     }
 }

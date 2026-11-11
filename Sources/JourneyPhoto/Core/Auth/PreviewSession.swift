@@ -449,6 +449,36 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで、旅のトランクの重さ（1 コマの間隔・主スレッドの停止・Canvas を描いた回数と時間・回す箱の 1 コマ・
+    /// 貼り絵の大きさ・メモリ）を数えて読み上げの値に出す（Debug のみ・2026-11-11「旅のトランク重すぎる」・測るだけ）。
+    /// `-JPPreviewTrunkPerf YES`。`TrunkPerfMeter`。入っている見本の利用者のときだけ。Release では必ず false
+    static let trunkPerfKey = "JPPreviewTrunkPerf"
+
+    static var trunkPerf: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: trunkPerfKey)
+        #else
+        return false
+        #endif
+    }
+
+    /// 測定専用の差し替え（2026-11-11・旅のトランクの重さ・Debug の見本の利用者のときだけ。Release では必ず空）。
+    /// `-JPPreviewTrunkDiag "noshadow,nodg"` のように `,` で並べる。見た目は変わる（測るためだけ）:
+    /// `noshadow` 胴の影 2 つを外す・`nodg` 胴の `drawingGroup` を外す・`lazy` 特別なトランクの一覧を LazyVStack に・
+    /// `snap` 特別なトランクの一覧の絵を 1 度描いた画像に・`spinaa0`/`spinaa2` 回す箱の輪郭のなめらかさを なし/2x に・
+    /// `spinidle` 回す箱を動いている間だけ描く（`rendersContinuously = false`）
+    static let trunkDiagKey = "JPPreviewTrunkDiag"
+
+    static var trunkDiag: Set<String> {
+        #if DEBUG
+        guard userId != nil, let raw = UserDefaults.standard.string(forKey: trunkDiagKey) else { return [] }
+        return Set(raw.lowercased().split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+        #else
+        return []
+        #endif
+    }
+
     static var camperPerf: Bool {
         #if DEBUG
         guard userId != nil else { return false }

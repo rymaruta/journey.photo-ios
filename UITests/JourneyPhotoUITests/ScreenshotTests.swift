@@ -4211,6 +4211,217 @@ final class ScreenshotTests: XCTestCase {
         close.tap()
     }
 
+    // MARK: - 旅のトランクの重さを測る（2026-11-11・owner「旅のトランク重すぎるな」「重いのはトランクを回したり、Pro で使える
+    // トランクの一覧を見たとき」・測るだけ）
+    //
+    // アプリ側の `TrunkPerfMeter`（`-JPPreviewTrunkPerf YES`・見えない要素 `trunk.perf`）の数を操作の前後で読み、差をログの
+    // `TRUNKPERF:` の行に出す。主スレッドが止まった時刻と、止まっている最中の積み（`perf.probe` の `stalls=`・`samples=`）は
+    // 最後に `PERF-PROBE` の行で残す。普段の回では流さない（`Tools/pick-ui-tests.py` の `ONLY_WHEN_NAMED`）。
+    // 名指しは `screens=testMeasuresTrunk`。値は Mac の CI のシミュレーターのもの（実機ではない）
+
+    private static let trunkPerfArgs = ["-JPPreviewTrunk", "YES", "-JPPreviewPro", "YES", "-JPPreviewTrunkPerf", "YES",
+                                        "-JPPreviewPerfProbe", "YES"]
+
+    /// `trunk.perf` の値を「名前 → 欄=値」に分ける（`Process` の欄も同じ形）
+    private func trunkPerf(_ app: XCUIApplication) -> [String: [String: String]] {
+        let probe = app.descendants(matching: .any)["trunk.perf"].firstMatch
+        guard probe.waitForExistence(timeout: 5) else { return [:] }
+        // 読み上げの値は 0.5 秒ごとに読み直される。いちばん新しい値を読む
+        Thread.sleep(forTimeInterval: 0.6)
+        var out: [String: [String: String]] = [:]
+        for entry in ((probe.value as? String) ?? "").split(separator: ";") {
+            let words = entry.split(separator: " ")
+            guard let name = words.first else { continue }
+            var fields: [String: String] = ["_raw": words.dropFirst().joined(separator: " ")]
+            for w in words.dropFirst() {
+                let kv = w.split(separator: "=", maxSplits: 1)
+                if kv.count == 2 { fields[String(kv[0])] = String(kv[1]) }
+            }
+            out[String(name)] = fields
+        }
+        return out
+    }
+
+    /// 1 つの操作の前後の差を行にする（回数・時間は差、コマの間隔は差、注記とメモリはそのまま）
+    private func trunkPhase(_ app: XCUIApplication, _ label: String, lines: inout [String], _ body: () -> Void) {
+        let before = trunkPerf(app)
+        let start = Date()
+        body()
+        let secs = Date().timeIntervalSince(start)
+        let after = trunkPerf(app)
+        if after.isEmpty { lines.append("\(label) | 数が読めない（trunk.perf が無い）"); return }
+        func d(_ k: String, _ f: String) -> Double {
+            (Double(after[k]?[f] ?? "") ?? 0) - (Double(before[k]?[f] ?? "") ?? 0)
+        }
+        if let a = after["Process"] {
+            let cpu = d("Process", "cpu_ms")
+            lines.append(String(format: "%@ | Process secs=%.1f cpu_ms=%.0f cpu_pct=%.1f mem_mb_before=%@ mem_mb_after=%@ dev_mb_after=%@",
+                                label, secs, cpu, cpu / max(secs, 0.001) / 10,
+                                before["Process"]?["mem_mb"] ?? "-", a["mem_mb"] ?? "-", a["dev_mb"] ?? "-"))
+        }
+        for key in after.keys.sorted() where key != "Process" {
+            let a = after[key]!
+            if key.hasPrefix("Gap") {
+                let frames = d(key, "frames")
+                guard frames > 0 else { continue }
+                // max は全体の最長（差は取れない）
+                lines.append(String(format: "%@ | %@ frames=%.0f over25=%.0f over50=%.0f over100=%.0f dropped=%.0f excess_ms=%.1f avg_ms=%.2f max_all_ms=%@",
+                                    label, key, frames, d(key, "over25"), d(key, "over50"), d(key, "over100"), d(key, "dropped"),
+                                    d(key, "excess"), d(key, "sum") / max(frames, 1), a["max"] ?? "-"))
+            } else if a["n"] != nil {
+                let n = d(key, "n")
+                guard n > 0 else { continue }
+                let ms = d(key, "ms")
+                lines.append(String(format: "%@ | %@ n=%.0f total_ms=%.1f avg_ms=%.2f slow=%.0f max_all_ms=%@",
+                                    label, key, n, ms, ms / max(n, 1), d(key, "slow"), a["max"] ?? "-"))
+            } else if before[key]?["_raw"] != a["_raw"] {
+                // 生きている数・注記・途中のメモリは、変わったものだけ原文で
+                lines.append("\(label) | \(key) \(a["_raw"] ?? "")")
+            }
+        }
+    }
+
+    private func trunkPerfReport(_ title: String, _ app: XCUIApplication, _ lines: [String]) {
+        for line in lines { print("TRUNKPERF: \(perfTestName) \(line)") }
+        let text = XCTAttachment(string: lines.joined(separator: "\n"))
+        text.name = "計測（旅のトランク・\(title)）"
+        text.lifetime = .keepAlways
+        add(text)
+        // 主スレッドの停止の起点と、止まっている最中の積み（`perf.probe`）
+        notePerfProbe(app, label: title)
+    }
+
+    /// **回す**（owner「トランクを回したとき重い」）: 開く（面を描き終えるまで）→ 止まっている → 指で横・縦に払う →
+    /// 向きのボタン → 閉じる → もう一度開く。回している間の 1 コマ（`GapMain`・`GapSpin`・`SpinFrame`）・主スレッドの停止・前後のメモリ
+    func testMeasuresTrunkSpin() { measureTrunkSpin(diag: nil, rounds: 2) }
+    /// 差し替え（測るだけ・見た目は変わる）: 輪郭のなめらかさ なし／動いている間だけ描く。
+    /// AA0 は名前を `ASpin…` にして、この組でいちばん先に流す（run 992 の初回の 1 コマ 39 秒が、AA なしの初回でも出るかを見る）
+    func testMeasuresTrunkASpinDiagAA0() { measureTrunkSpin(diag: "spinaa0", rounds: 1) }
+    func testMeasuresTrunkSpinDiagIdle() { measureTrunkSpin(diag: "spinidle", rounds: 1) }
+
+    private func measureTrunkSpin(diag: String?, rounds: Int) {
+        executionTimeAllowance = 600
+        let app = launchTrunk(Self.trunkPerfArgs + (diag.map { ["-JPPreviewTrunkDiag", $0] } ?? []))
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        var lines: [String] = []
+        trunkPhase(app, "トランクの画面・止まっている", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
+        let spin = app.buttons["trunk.spin"].firstMatch
+        let box = app.descendants(matching: .any)["trunk.spin.box"].firstMatch
+        let close = app.buttons["trunk.spin.close"].firstMatch
+        for round in 1...rounds {
+            guard spin.waitForExistence(timeout: 10), spin.isHittable else { return XCTFail("トランクを押せない（\(round) 回目）") }
+            var marker = ""
+            var wall = 0.0
+            trunkPhase(app, "回す画面を開く\(round)（面を描き終えるまで）", lines: &lines) {
+                let began = Date()
+                spin.tap()
+                let ready = NSPredicate(format: "value BEGINSWITH %@", "faces-ready")
+                if XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: box)], timeout: 20) == .completed {
+                    marker = (box.value as? String) ?? ""
+                    wall = Date().timeIntervalSince(began)
+                } else {
+                    XCTFail("回す画面の面を描き終えない（\(round) 回目）")
+                }
+            }
+            lines.append(String(format: "回す画面を開く%d | %@ test_wall_to_ready_s=%.2f（XCUITest の待ちを含む）", round, marker, wall))
+            trunkPhase(app, "回す画面・止まっている\(round)", lines: &lines) { Thread.sleep(forTimeInterval: 4) }
+            trunkPhase(app, "回す画面・指で払う\(round)", lines: &lines) {
+                for i in 0..<6 {
+                    let left = box.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5))
+                    let right = box.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
+                    let (from, to) = i % 2 == 0 ? (right, left) : (left, right)
+                    from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .default, thenHoldForDuration: 0)
+                }
+                for i in 0..<2 {
+                    let top = box.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15))
+                    let bottom = box.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85))
+                    let (from, to) = i % 2 == 0 ? (top, bottom) : (bottom, top)
+                    from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .default, thenHoldForDuration: 0)
+                }
+                // 惰性で回り終えるまで
+                Thread.sleep(forTimeInterval: 2)
+            }
+            trunkPhase(app, "回す画面・向きのボタン\(round)", lines: &lines) {
+                for id in ["side", "topBack", "bottom", "front"] {
+                    let button = app.buttons["trunk.spin.view.\(id)"].firstMatch
+                    if button.waitForExistence(timeout: 5) { button.tap() }
+                    Thread.sleep(forTimeInterval: 1.5)
+                }
+            }
+            if round == 1, diag == nil { shoot(app, "96x1-計測（回した正面）") }
+            trunkPhase(app, "回す画面を閉じた後\(round)", lines: &lines) {
+                close.tap()
+                Thread.sleep(forTimeInterval: 4)
+            }
+        }
+        trunkPerfReport("回す" + (diag.map { "・\($0)" } ?? ""), app, lines)
+    }
+
+    /// **Pro で使えるトランクの一覧**（owner「Pro で使えるトランクの一覧を見たとき重い」）: 型の画面 → 特別なトランク（6 型）を開く
+    /// （開くまで）→ 縦に送る（measure・送りのコマ落ち）→ 戻る、を 2 回。札を作った回数・Canvas の回数と時間・
+    /// 同時に作られているトランクの絵の数（`LiveBox`）・メモリの増え方と戻り方
+    func testMeasuresTrunkProModels() { measureTrunkPro(diag: nil, rounds: 2) }
+    /// 差し替え（測るだけ・見た目は変わる）: 胴の影なし／drawingGroup なし／LazyVStack／1 度描いた画像
+    func testMeasuresTrunkProModelsDiagNoShadow() { measureTrunkPro(diag: "noshadow", rounds: 1) }
+    func testMeasuresTrunkProModelsDiagNoDG() { measureTrunkPro(diag: "nodg", rounds: 1) }
+    func testMeasuresTrunkProModelsDiagLazy() { measureTrunkPro(diag: "lazy", rounds: 1) }
+    func testMeasuresTrunkProModelsDiagSnap() { measureTrunkPro(diag: "snap", rounds: 1) }
+
+    private func measureTrunkPro(diag: String?, rounds: Int) {
+        executionTimeAllowance = 600
+        let app = launchTrunk(Self.trunkPerfArgs + (diag.map { ["-JPPreviewTrunkDiag", $0] } ?? []))
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        var lines: [String] = []
+        trunkPhase(app, "トランクの画面・止まっている", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
+        trunkPhase(app, "型の画面を開く", lines: &lines) {
+            guard openTrunkRow(app, "trunk.models") else { return XCTFail("型の行が無い") }
+            _ = app.buttons["trunk.models.pro"].firstMatch.waitForExistence(timeout: 10)
+            Thread.sleep(forTimeInterval: 2)
+        }
+        let proRow = app.buttons["trunk.models.pro"].firstMatch
+        let card = app.buttons["trunk.proModels.card"].firstMatch
+        for round in 1...rounds {
+            scrollTo(proRow, in: app)
+            guard proRow.isHittable else { return XCTFail("特別なトランクの行を押せない（\(round) 回目）") }
+            var opened = 0.0
+            trunkPhase(app, "特別なトランクを開く\(round)（札が出るまで＋2秒）", lines: &lines) {
+                let began = Date()
+                proRow.tap()
+                _ = card.waitForExistence(timeout: 15)
+                opened = Date().timeIntervalSince(began)
+                Thread.sleep(forTimeInterval: 2)
+            }
+            lines.append(String(format: "特別なトランクを開く%d | test_wall_to_card_s=%.2f（XCUITest の待ちを含む）", round, opened))
+            trunkPhase(app, "特別なトランク・止まっている\(round)", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
+            trunkPhase(app, "特別なトランク・縦に送る\(round)", lines: &lines) {
+                if round == 1 {
+                    let options = XCTMeasureOptions()
+                    options.iterationCount = 3
+                    measure(metrics: [XCTOSSignpostMetric.scrollingAndDecelerationMetric, XCTCPUMetric(application: app),
+                                      XCTMemoryMetric(application: app)], options: options) {
+                        app.swipeUp(velocity: .fast)
+                        app.swipeUp(velocity: .fast)
+                        app.swipeDown(velocity: .fast)
+                        app.swipeDown(velocity: .fast)
+                    }
+                } else {
+                    for _ in 0..<3 {
+                        app.swipeUp(velocity: .fast)
+                        app.swipeUp(velocity: .fast)
+                        app.swipeDown(velocity: .fast)
+                        app.swipeDown(velocity: .fast)
+                    }
+                }
+            }
+            if round == 1 { shoot(app, "96x2-計測（特別なトランク" + (diag.map { "・\($0)" } ?? "") + "）") }
+            trunkPhase(app, "特別なトランクから戻った後\(round)", lines: &lines) {
+                goBack(app)
+                Thread.sleep(forTimeInterval: 4)
+            }
+        }
+        trunkPerfReport("特別なトランク" + (diag.map { "・\($0)" } ?? ""), app, lines)
+    }
+
     // MARK: - 人のトランク（2026-10-18・板 TheirTrunk・TheirInside・ProfileTrunk）
 
     /// **人のトランク**（`-JPPreviewTheirTrunk`・Debug のみ。サーバーには何も送らない見本）: ホームの写真 → 作者の
