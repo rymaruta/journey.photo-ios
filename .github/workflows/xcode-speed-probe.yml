@@ -16,10 +16,4 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          echo "前: $(( $(gh api "repos/${GITHUB_REPOSITORY}/actions/cache/usage" --jq '.active_caches_size_in_bytes') / 1048576 )) MB"
-          gh api "repos/${GITHUB_REPOSITORY}/actions/caches?per_page=100&ref=refs/heads/claude/pr-ui-sharded" \
-            --jq '.actions_caches[] | select(.key | startswith("xcode-v2-")) | .id' | while read -r id; do
-            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/caches/${id}" && echo "消した: ${id}"
-          done
-          echo "後: $(( $(gh api "repos/${GITHUB_REPOSITORY}/actions/cache/usage" --jq '.active_caches_size_in_bytes') / 1048576 )) MB"
-          gh api "repos/${GITHUB_REPOSITORY}/actions/caches?per_page=100" --jq '.actions_caches[]|"\(.size_in_bytes/1048576|floor) MB \(.ref) \(.key[0:50])"'
+          gh api "repos/${GITHUB_REPOSITORY}/actions/caches?per_page=100" --jq '.actions_caches[]|"\(.ref) \(.key) version=\(.version) \(.created_at) \(.last_accessed_at) \(.size_in_bytes/1048576|floor)MB"'
