@@ -261,3 +261,76 @@ final class TrunkSpinFrameMeter: NSObject, SCNSceneRendererDelegate, @unchecked 
     }
 }
 #endif
+
+/// 回す箱の絵を塗る時間の内訳を測る（2026-11-11・1 回目に開く間の止まり 3〜4 秒の中身・**測るだけ**）。
+///
+/// 見本の起動の `-JPPreviewTrunkDiag rastercost`（Debug のみ）でトランクの画面を開いたときだけ、回す箱の正面・背面と同じ絵を
+/// 部品を 1 つずつ外して描き、組む時間（`ImageRenderer`）と塗る時間（画素に写す）を `RasterCost…` に残す。
+/// `skip` はふだんは空（外さない）
+enum TrunkRasterProbe {
+    /// いま外している部品（`grain` 粒・`stripes` 縞・`spots` しみと光・`art` 絵・`nodg` 胴の drawingGroup・`noshadow` 胴の影）
+    static var skip: Set<String> = []
+
+    @MainActor
+    static func run(model: TrunkModel, posts: Int, stuck: [TrunkLabel], ownerName: String?, parts: TrunkEquipped,
+                    wrinkles: [String: Double], tagPicks: [TrunkTagPick]) async {
+        guard TrunkPerfMeter.shared.enabled else { return }
+        struct Variant { let name: String; let skip: Set<String>; let labels: Bool; let parts: Bool; let scale: CGFloat; let back: Bool }
+        let variants: [Variant] = [
+            Variant(name: "full", skip: [], labels: true, parts: true, scale: 3, back: false),
+            Variant(name: "full2", skip: [], labels: true, parts: true, scale: 3, back: false),
+            Variant(name: "nograin", skip: ["grain"], labels: true, parts: true, scale: 3, back: false),
+            Variant(name: "nostripes", skip: ["stripes"], labels: true, parts: true, scale: 3, back: false),
+            Variant(name: "nospots", skip: ["spots"], labels: true, parts: true, scale: 3, back: false),
+            Variant(name: "noart", skip: ["art"], labels: true, parts: true, scale: 3, back: false),
+            Variant(name: "nodg", skip: ["nodg"], labels: true, parts: true, scale: 3, back: false),
+            Variant(name: "noshadow", skip: ["noshadow"], labels: true, parts: true, scale: 3, back: false),
+            Variant(name: "nolabels", skip: [], labels: false, parts: true, scale: 3, back: false),
+            Variant(name: "noparts", skip: [], labels: true, parts: false, scale: 3, back: false),
+            Variant(name: "scale2", skip: [], labels: true, parts: true, scale: 2, back: false),
+            Variant(name: "back", skip: [], labels: true, parts: true, scale: 3, back: true),
+            Variant(name: "backnograin", skip: ["grain"], labels: true, parts: true, scale: 3, back: true),
+            Variant(name: "full3", skip: [], labels: true, parts: true, scale: 3, back: false),
+        ]
+        for (index, v) in variants.enumerated() {
+            skip = v.skip
+            let start = DispatchTime.now().uptimeNanoseconds
+            let image: UIImage?
+            if v.back {
+                let r = ImageRenderer(content: TrunkFaceView(model: model, posts: posts, side: .back, parts: v.parts ? parts : .none))
+                r.scale = v.scale
+                image = r.uiImage
+            } else {
+                let r = ImageRenderer(content: TrunkBoxView(model: model, posts: posts, stuck: v.labels ? stuck : [], ownerName: ownerName,
+                                                           bodyOnly: true, hangsOnFront: true, parts: v.parts ? parts : .none,
+                                                           wrinkles: wrinkles, tagPicks: tagPicks))
+                r.scale = v.scale
+                image = r.uiImage
+            }
+            let built = DispatchTime.now().uptimeNanoseconds
+            let px = paint(image)
+            let painted = DispatchTime.now().uptimeNanoseconds
+            skip = []
+            TrunkPerfMeter.shared.note(String(format: "RasterCost%02d", index),
+                                       String(format: "variant=%@ build_ms=%.1f paint_ms=%.1f px=%@", v.name,
+                                              Double(built - start) / 1e6, Double(painted - built) / 1e6, px))
+            // 画面の糸を続けて止めない
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        TrunkPerfMeter.shared.hit("RasterCostDone")
+    }
+
+    /// 後で塗る絵を、その場で画素に写す（測るだけ・主スレッドで待つ）
+    private static func paint(_ image: UIImage?) -> String {
+        #if os(iOS)
+        guard let cg = image?.cgImage else { return "none" }
+        guard let ctx = CGContext(data: nil, width: cg.width, height: cg.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return "noctx" }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+        return "\(cg.width)x\(cg.height)"
+        #else
+        return "-"
+        #endif
+    }
+}

@@ -4387,6 +4387,25 @@ final class ScreenshotTests: XCTestCase {
     /// 今の作りと直しの前（`spincont,spinlazy`）を、それぞれ起動し直して比べる
     func testMeasuresTrunkMemory() { measureTrunkMemory(diag: nil) }
     func testMeasuresTrunkMemoryBefore() { measureTrunkMemory(diag: "spincont,spinlazy") }
+    /// **回す箱の絵を塗る時間の内訳**（2026-11-11・測るだけ）: `-JPPreviewTrunkDiag rastercost` でトランクの画面を開くと、アプリが
+    /// 回す箱の正面・背面と同じ絵を部品を 1 つずつ外して描き、組む時間と塗る時間を `RasterCost…` に残す。ログの `TRUNKRASTER:` に出す
+    func testMeasuresTrunkRasterCost() {
+        executionTimeAllowance = 300
+        let app = launchTrunk(Self.trunkPerfArgs + ["-JPPreviewTrunkDiag", "rastercost"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        let until = Date().addingTimeInterval(150)
+        var perf: [String: [String: String]] = [:]
+        while Date() < until {
+            perf = trunkPerf(app)
+            if perf["RasterCostDone"] != nil { break }
+            Thread.sleep(forTimeInterval: 2)
+        }
+        XCTAssertNotNil(perf["RasterCostDone"], "塗る時間の内訳を測り終えない")
+        for key in perf.keys.sorted() where key.hasPrefix("RasterCost") && key != "RasterCostDone" {
+            print("TRUNKRASTER: \(perf[key]?["_raw"] ?? "")")
+        }
+    }
+
     /// **1 回目に開く間の止まり**（2026-11-11）: 前の作りと今の作りを交互に 3 回ずつ起動し、回す画面を初めて開く間の
     /// 主スレッドの止まりを同じ回で比べる（run 1019: 今 5.25 秒・前 3.41 秒が揺れか悪化かを見る）。止まっている最中の積みも残す
     func testMeasuresTrunkSpinFirstOpen() {

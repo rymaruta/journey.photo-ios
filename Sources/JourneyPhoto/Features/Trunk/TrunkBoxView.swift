@@ -1080,7 +1080,8 @@ struct TrunkFigureFit: View {
 /// 測定専用の差し替え（`-JPPreviewTrunkDiag nodg|noshadow`・Debug のみ・2026-11-11）のときだけ外す。ふだんは必ず両方
 struct TrunkBodyFinish: ViewModifier {
     func body(content: Content) -> some View {
-        let diag = PreviewSession.trunkDiag
+        // 測定専用: 起動の差し替え（`-JPPreviewTrunkDiag`）と、塗る時間の内訳を測る間だけの外し（`TrunkRasterProbe.skip`）
+        let diag = PreviewSession.trunkDiag.union(TrunkRasterProbe.skip)
         if diag.isEmpty {
             content
                 .drawingGroup()

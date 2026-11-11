@@ -32,6 +32,14 @@ struct TrunkView: View {
                 noteAging()
             }
             .refreshable { await model.load(offline: connectivity.isOffline) }
+            // 測る起動（`-JPPreviewTrunkDiag rastercost`・Debug のみ）のときだけ: 回す箱の絵を塗る時間の内訳（2026-11-11・測るだけ）
+            .task(id: model.state != nil) {
+                guard PreviewSession.trunkDiag.contains("rastercost"), let state = model.state else { return }
+                try? await Task.sleep(for: .seconds(1))
+                await TrunkRasterProbe.run(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck, ownerName: ownerName,
+                                           parts: state.equipped, wrinkles: TrunkWrinkles(userId: auth.userId).strengths,
+                                           tagPicks: state.tagPicks)
+            }
             // 2026-11-11 判断: 回す画面の絵はトランクの画面では先に作らない。先に作ると開くのは速いが、塗るときの作業用の
             // メモリが戻らず、トランクの画面にいる間が +80MB・閉じた後も +30MB だった（run 1014 / 1019・owner の「重い」と逆向き）。
             // 回す画面を開いたときに描き、2 回目は使い回す（`TrunkTextures.kept`）。画面から戻ったら手放す
