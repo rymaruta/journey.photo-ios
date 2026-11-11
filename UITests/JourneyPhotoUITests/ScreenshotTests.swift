@@ -2325,6 +2325,112 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "11e-探す（機材の札・色の丸）")
     }
 
+    /// **探すの「撮影スポット」の段と、そこから開く一覧**（札 #524・2026-11-11）。
+    ///
+    /// 1. 段（地方のチップ＋県の札の横1列）を撮り、**段の高さを数で取る**（`search.spotIndex` の枠）
+    /// 2. 別の地方のチップを押して撮り、**高さが変わらないこと**を確かめる（owner「縦長になる」への答え）
+    /// 3. 県の札を押した先（県の一覧・上に探す欄）を撮る
+    /// 4. 戻って「すべて見る」の先（全国の一覧・探す欄と地方へ跳ぶチップ）を撮り、欄に字を入れて絞った絵も撮る
+    ///
+    /// 高さはログに `spotIndex.height before=… after=…` で出す。**別の試験にしてある**（一巡の「11-探す」は上のまま）。
+    /// 段が出なければ撮らない（この試験の決まり）——ただし段が出て高さが違えば落とす
+    func testCapturesSearchSpotIndex() {
+        let app = XCUIApplication()
+        // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 1 else { return }
+        tabBar.buttons.element(boundBy: 1).tap()
+
+        // 段（地方のチップと県の札の入れ物）。索引が届くまで待つ
+        let strip = app.otherElements["search.spotIndex"].firstMatch
+        guard strip.waitForExistence(timeout: 30) else { return }
+        let firstCard = app.buttons.matching(identifier: "search.spotIndex.prefecture").firstMatch
+        var swipes = 0
+        while !firstCard.isHittable, swipes < 6 {
+            app.swipeUp(velocity: .slow)
+            Thread.sleep(forTimeInterval: 1)
+            swipes += 1
+        }
+        guard firstCard.isHittable else { return }
+        // 札の写真が描かれるのを待つ（枠だけの絵を「壊れている」と読み違えない）
+        Thread.sleep(forTimeInterval: 3)
+        let before = strip.frame.height
+        shoot(app, "11f-探す（撮影スポットの段）")
+
+        // 選んでいない地方のチップで、いま押せるもの
+        let chips = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'search.spotIndex.region.'"))
+        var other: XCUIElement?
+        for i in 0..<chips.count {
+            let chip = chips.element(boundBy: i)
+            if chip.isHittable, !chip.isSelected { other = chip; break }
+        }
+        guard let other else { return }
+        other.tap()
+        Thread.sleep(forTimeInterval: 3)
+        let after = strip.frame.height
+        print("spotIndex.height before=\(before) after=\(after)")
+        XCTAssertEqual(before, after, accuracy: 0.5, "地方を替えたら段の高さが変わった（\(before) → \(after)）")
+        shoot(app, "11g-探す（撮影スポットの段・地方を替えた）")
+
+        // 県の札 → 県の一覧（上に探す欄）
+        let card = app.buttons.matching(identifier: "search.spotIndex.prefecture").firstMatch
+        guard card.waitForExistence(timeout: 5), card.isHittable else { return }
+        card.tap()
+        guard app.textFields["spotIndex.field"].waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "11h-撮影スポットの一覧（県）")
+        goBack(app)
+
+        // 「すべて見る」→ 全国の一覧（探す欄・地方へ跳ぶチップ）
+        let all = app.buttons["search.spotIndex.all"].firstMatch
+        guard all.waitForExistence(timeout: 10) else { return }
+        if !all.isHittable { app.swipeDown(velocity: .slow); Thread.sleep(forTimeInterval: 1) }
+        guard all.isHittable else { return }
+        all.tap()
+        let field = app.textFields["spotIndex.field"].firstMatch
+        guard field.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "11i-撮影スポットの一覧（全国）")
+
+        // 地方へ跳ぶ。**まだ描いていない県**へ届くかを見るため、押せるチップのうちいちばん後ろ（南）を押す。
+        // チップの値は跳ぶ先の見出しの字（`SpotPrefectureIndex.Jump.targetTitle`）。着いたら見出しが画面に出ている
+        let jumps = app.buttons.matching(identifier: "spotIndex.jump")
+        if jumps.count > 1 {
+            jumps.element(boundBy: 0).swipeLeft()
+            Thread.sleep(forTimeInterval: 1)
+            var jump: XCUIElement?
+            for i in stride(from: jumps.count - 1, through: 1, by: -1) where jumps.element(boundBy: i).isHittable {
+                jump = jumps.element(boundBy: i)
+                break
+            }
+            if let jump, let target = jump.value as? String, !target.isEmpty {
+                let heading = app.scrollViews["spotIndex.list"].staticTexts[target].firstMatch
+                print("spotIndex.jump target=\(target) visibleBefore=\(heading.exists && heading.isHittable)")
+                jump.tap()
+                Thread.sleep(forTimeInterval: 2)
+                XCTAssertTrue(heading.waitForExistence(timeout: 5) && heading.isHittable,
+                              "地方のチップで「\(target)」の見出しへ跳べていない")
+                shoot(app, "11j-撮影スポットの一覧（全国・地方へ跳んだ）")
+            }
+        }
+
+        // 探す欄で絞る（名前・別名に当てる）
+        field.tap()
+        field.typeText("寺")
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "11k-撮影スポットの一覧（全国・「寺」で絞った）")
+    }
+
     /// **「行きたい場所」を地図で見る**（2026-10-03・3か月の計画の7の第一歩）。マイページの
     /// 「行きたい場所」のタブ（「地図で見る」が見える1枚）と、押した先の地図の1枚。
     ///
@@ -5233,7 +5339,7 @@ final class ScreenshotTests: XCTestCase {
     /// **とおまわり号の中**（`-JPPreviewCamperRoomReset`・Debug のみ。毎回最初の並び・保存しない）: 室内の昼・夜・家具の図鑑・
     /// 家具の寄り 8 点（昼と夜）を**必ず撮る**（入れない・組み終えないなら落とす）。押せる所は 44pt 以上
     func testCapturesCamperRoom() {
-        // 寄り 8 点は部屋を組み直す。図鑑が 2,000 点を超えても、既定の 300 秒で切らない
+        // 寄り 8 点は部屋を組み直す。既定の 300 秒で切らない（図鑑が 2,000 点を超えていた頃に決めた枠。2026-11-11 に 85 点へ減らした後もそのまま）
         executionTimeAllowance = 1200
         let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES"])
         XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")

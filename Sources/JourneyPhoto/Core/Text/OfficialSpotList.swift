@@ -21,12 +21,23 @@ enum OfficialSpotList {
         var id: String { spot.spotId }
     }
 
-    static func rows(_ spots: [OfficialSpot], photos: [Photo], from center: Photo.Coords?,
-                     links: SpotPhotoLinks = .empty) -> [Row] {
+    /// 撮影スポット id → 写真の枚数（本人が選んだ `spotId`、無ければ自動の結び）。
+    /// 探すの撮影スポットの一覧は、これを写真か結びが変わったときだけ数えて持つ（札 #524）
+    static func photoCounts(_ photos: [Photo], links: SpotPhotoLinks = .empty) -> [String: Int] {
         var counts: [String: Int] = [:]
         for photo in photos {
             if let id = links.spotId(for: photo) { counts[id, default: 0] += 1 }
         }
+        return counts
+    }
+
+    static func rows(_ spots: [OfficialSpot], photos: [Photo], from center: Photo.Coords?,
+                     links: SpotPhotoLinks = .empty) -> [Row] {
+        rows(spots, counts: photoCounts(photos, links: links), from: center)
+    }
+
+    /// 数えておいた枚数で行を作る（`photoCounts`）
+    static func rows(_ spots: [OfficialSpot], counts: [String: Int], from center: Photo.Coords?) -> [Row] {
         let rows = spots
             .filter { !$0.isDraft && $0.coords != nil }
             .map { spot in

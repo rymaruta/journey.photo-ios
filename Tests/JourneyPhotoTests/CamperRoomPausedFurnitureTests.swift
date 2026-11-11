@@ -6,7 +6,8 @@ final class CamperRoomPausedFurnitureTests: XCTestCase {
 
     func testPausedFurnitureAreOnTheBoardButLeaveEveryList() {
         let paused = CamperRoomCatalog.paused
-        XCTAssertEqual(paused.count, 8)
+        // 2026-11-06 の 8 点 ＋ 2026-11-11 の似た家具 11 点
+        XCTAssertEqual(paused.count, 19)
         for id in paused {
             // 板の行は残る（戻すときは paused から id を消すだけ）
             XCTAssertTrue(CamperRoomCatalog.board.contains { $0.id == id }, id)
@@ -21,6 +22,12 @@ final class CamperRoomPausedFurnitureTests: XCTestCase {
             XCTAssertFalse(f.unlock.isStarter, "\(f.id) は最初から持つ家具（新しい利用者の最初の部屋が寂しくなる）")
             XCTAssertTrue(f.unlock.isAvailable, "\(f.id) はもともと近日の家具（下げる意味が無い）")
             XCTAssertEqual(f.photoSlots, 0, "\(f.id) は写真を飾る家具（この部屋の主役）")
+        }
+        // 2026-11-06 の「部品が少ない順」では、平らな敷物は部品が少ないのが当たり前なので選ばなかった。
+        // 2026-11-11 の「似た家具」では、似た丸い敷物（毛足の丸・楕円の輪）の片方だけを下げた。例外はこの 1 点だけ
+        let rugException = "room_rug.shag_round"
+        XCTAssertTrue(CamperRoomCatalog.paused.contains(rugException))
+        for f in CamperRoomCatalog.board where CamperRoomCatalog.paused.contains(f.id) && f.id != rugException {
             XCTAssertFalse(f.isRug, f.id)
         }
     }
