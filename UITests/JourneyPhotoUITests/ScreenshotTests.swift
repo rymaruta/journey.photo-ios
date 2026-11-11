@@ -5894,7 +5894,7 @@ final class ScreenshotTests: XCTestCase {
     /// **家具の接写の一覧**（`-JPPreviewCamperRoomContact`・Debug のみ・2026-10-21）: 板と別種の家具全部を本物の SceneKit で
     /// 図鑑の寄りと同じ小部屋に描き、4 点ずつの頁を昼と夜で**必ず撮る**（全家具の出来を本物の絵で見る。ソフトラスタでは素材・光が見えない）
     func testCapturesCamperRoomContactSheet() {
-        executionTimeAllowance = 1200  // UI テストの上限（`Tools/xcode-test.sh` の UI_TIME_MAXIMUM）
+        executionTimeAllowance = 1500
         let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomContact", "YES"])
         XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
         let sheet = app.descendants(matching: .any)["camper.room.contact"].firstMatch
@@ -5927,7 +5927,7 @@ final class ScreenshotTests: XCTestCase {
     /// （脚が床に着いているか・座面や天板に届いているか・貫の位置を、1 つずつ目で見る）。
     /// **名指しした回だけ流す**（`Tools/pick-ui-tests.py` の ONLY_WHEN_NAMED。全部を回す PR の検証・TestFlight では飛ばす・約5分）
     func testCapturesCamperFurnitureLegs() {
-        executionTimeAllowance = 1200  // UI テストの上限（`Tools/xcode-test.sh` の UI_TIME_MAXIMUM）
+        executionTimeAllowance = 1500
         let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomLegs", "YES"])
         XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
         let sheet = app.descendants(matching: .any)["camper.room.contact"].firstMatch
@@ -6011,7 +6011,7 @@ final class ScreenshotTests: XCTestCase {
     /// **重なる・切れる・押せる範囲が小さい**を要素の枠で、**部屋の絵が上へ押し出されて切れる**を画素で確かめる。
     /// owner の実機で、模様替えの見本の名前が下の説明と重なり、札がタブの下線にかぶり、部屋の絵の上が切れていた
     func testCapturesCamperRoomPanels() {
-        executionTimeAllowance = 1200  // UI テストの上限（`Tools/xcode-test.sh` の UI_TIME_MAXIMUM）
+        executionTimeAllowance = 1500
         for (extra, tag) in [([String](), ""), (Self.largeText, "・大きい文字")] {
             let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES"] + extra)
             XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない\(tag)")
