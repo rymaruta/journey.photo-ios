@@ -99,6 +99,6 @@ jobs:
           grep -E "Executed [0-9]+ tests" build/t3.log | tail -2
       - name: (d) 組んだ品を包む・ほどく
         run: |
-          s=$SECONDS; python3 Tools/test-products.py pack "$DD/Build/Products" /tmp/p.tar; a=$((SECONDS-s))
+          s=$SECONDS; python3 Tools/test-products.py "pack" "$DD/Build/Products" /tmp/p.tar; a=$((SECONDS-s))
           s=$SECONDS; python3 Tools/test-products.py unpack /tmp/p.tar /tmp/pp > /dev/null; b=$((SECONDS-s))
           echo "包む ${a} 秒・ほどく ${b} 秒・$(du -sh /tmp/p.tar | cut -f1)" | tee -a "$GITHUB_STEP_SUMMARY"
