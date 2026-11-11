@@ -27,24 +27,36 @@ struct SearchHiddenSettingRow: View {
     }
 
     var body: some View {
-        if profile != nil {
-            JPCardDivider()
-            JPToggleRow(title: SearchHiddenSettingText.title, detail: SearchHiddenSettingText.detail, isOn: binding)
-                .disabled(isSaving)
-                .accessibilityIdentifier("settings.searchHidden")
-                // 読み直したプロフィールに合わせる（Web で切り替えた分。送っている最中は送った値のまま）
-                .onChange(of: profile?.hidesFromSearch) { _, now in
-                    if !isSaving, let now { hidden = now }
+        // 🔴 onChange は**いつも在る外側の Group** に付ける（確かめ役 2026-11-11）。
+        // 行の側に付けると、プロフィールが後から届いた（nil → 値）ときに、付けた行そのものが今やっと現れるので
+        // 変化を受けられず、`@State` は init の時の nil 由来の false のまま——オンの人の行が「オフ」に見えていた。
+        // `initial: true` で、現れた時点の値にも合わせる（`LightAlertSettingsRows` と同じ置き方）
+        Group {
+            if profile != nil {
+                JPCardDivider()
+                JPToggleRow(title: SearchHiddenSettingText.title, detail: SearchHiddenSettingText.detail, isOn: binding)
+                    .disabled(isSaving)
+                    .accessibilityIdentifier("settings.searchHidden")
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(WebTheme.danger)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 12)
                 }
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.danger)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 12)
             }
         }
+        // 読み直したプロフィールに合わせる（後から届いた分・Web で切り替えた分。送っている最中は送った値のまま）
+        .onChange(of: profile?.hidesFromSearch, initial: true) { _, now in
+            hidden = Self.synced(current: hidden, profileValue: now, isSaving: isSaving)
+        }
+    }
+
+    /// 画面の入切を、届いたプロフィールの値に合わせる。読めていない（nil）・送っている最中は今の値のまま
+    nonisolated static func synced(current: Bool, profileValue: Bool?, isSaving: Bool) -> Bool {
+        guard !isSaving, let profileValue else { return current }
+        return profileValue
     }
 
     /// 押された瞬間だけ受ける（`SettingsView.pushBinding` と同じ理由——画面から戻したときに送り直さない）

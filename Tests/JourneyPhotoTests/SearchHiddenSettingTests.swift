@@ -36,4 +36,34 @@ final class SearchHiddenSettingTests: XCTestCase {
     func testRowIsInPrivacyPart() {
         XCTAssertEqual(SettingsOutline.Part.privacy.items.last, "settings.searchHidden")
     }
+
+    /// 🔴 プロフィールが後から届いても、オンの人はオンに出る（nil → true。確かめ役 2026-11-11）
+    func testLateProfileTurnsToggleOn() {
+        // init の時はプロフィールが無い＝ false で始まる（`profile?.hidesFromSearch ?? false`）
+        var shown = false
+        // 届いたら値に合わせる
+        shown = SearchHiddenSettingRow.synced(current: shown, profileValue: true, isSaving: false)
+        XCTAssertTrue(shown)
+        // Web で切り替えた分（true → false）も
+        XCTAssertFalse(SearchHiddenSettingRow.synced(current: true, profileValue: false, isSaving: false))
+        // 読めなくなった（nil）・送っている最中は今の値のまま
+        XCTAssertTrue(SearchHiddenSettingRow.synced(current: true, profileValue: nil, isSaving: false))
+        XCTAssertTrue(SearchHiddenSettingRow.synced(current: true, profileValue: false, isSaving: true))
+    }
+
+    /// 合わせる onChange は、いつも在る外側に付き、現れた時点でも走る（行の側に付けると nil → 値を受けられない）
+    func testSyncIsAttachedOutsideTheConditionalRow() throws {
+        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: repo.appendingPathComponent("Sources/JourneyPhoto/Features/Settings/SearchHiddenSettingRow.swift"),
+                                encoding: .utf8)
+        let body = try XCTUnwrap(source.range(of: "var body: some View {"))
+        let rest = String(source[body.upperBound...])
+        let group = try XCTUnwrap(rest.range(of: "Group {"))
+        let conditional = try XCTUnwrap(rest.range(of: "if profile != nil {"))
+        let sync = try XCTUnwrap(rest.range(of: ".onChange(of: profile?.hidesFromSearch, initial: true)"))
+        XCTAssertLessThan(group.lowerBound, conditional.lowerBound)
+        // Group を閉じた後（インデント8の `}`）に付いている
+        let groupClose = try XCTUnwrap(rest.range(of: "\n        }\n        // 読み直した"))
+        XCTAssertLessThan(groupClose.lowerBound, sync.lowerBound)
+    }
 }
