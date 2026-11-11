@@ -111,6 +111,31 @@ struct HighlightService {
         return picked.first
     }
 
+    /// 名前の欄の右の「2/30」（サーバーと同じ UTF-16 の単位で数える・2026-11-12）
+    static func titleCount(_ title: String) -> String {
+        "\(min(title.utf16.count, titleMax))/\(titleMax)"
+    }
+
+    /// 格子の左上の日付（「9/12」・端末の暦）。読めなければ nil
+    static func dayLabel(_ iso: String?, calendar: Calendar = .current) -> String? {
+        guard let iso, !iso.isEmpty else { return nil }
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        guard let date = withFraction.date(from: iso) ?? plain.date(from: iso) else { return nil }
+        let parts = calendar.dateComponents([.month, .day], from: date)
+        guard let month = parts.month, let day = parts.day else { return nil }
+        return "\(month)/\(day)"
+    }
+
+    /// 格子の1枚の読み上げ（「9/12・2件目・表紙」・選んでいなければ日付だけ）
+    static func cellLabel(day: String?, order: Int?, isCover: Bool) -> String {
+        var parts: [String] = [day ?? L("ストーリー", "Story")]
+        if let order { parts.append(L("\(order)件目", "#\(order)")) }
+        if isCover { parts.append(L("表紙", "Cover")) }
+        return parts.joined(separator: L("・", ", "))
+    }
+
     /// 選んだ数と表紙の一文。**表紙は何件目かで言う**（直すときはサーバーが持つ
     /// 表紙を引き継ぐので、「最初の1件」とは限らない）
     static func pickedNote(picked: [String], coverId: String?) -> String {

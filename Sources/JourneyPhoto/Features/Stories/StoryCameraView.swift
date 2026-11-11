@@ -8,6 +8,9 @@ struct StoryCameraView: View {
     let onPhoto: (Data) -> Void
     /// 撮れた動画（呼ぶ側のものになる一時ファイル）
     let onVideo: (URL) -> Void
+    /// 「写真から選ぶ」（左下の最近の1枚・許可の無い画面のボタン）。カメラは自分で閉じ、呼ぶ側が写真選びへ戻す。
+    /// `nil` ならその口を出さない（2026-11-12 判断・設計の案「ストーリーのデザイン 残り」01）
+    var onPickFromLibrary: (() -> Void)?
 
     static var isAvailable: Bool {
         #if canImport(Darwin)
@@ -19,7 +22,7 @@ struct StoryCameraView: View {
 
     var body: some View {
         #if canImport(Darwin)
-        StoryCameraContent(onPhoto: onPhoto, onVideo: onVideo)
+        StoryCameraContent(onPhoto: onPhoto, onVideo: onVideo, onPickFromLibrary: onPickFromLibrary)
         #else
         Color.black
         #endif
@@ -28,6 +31,7 @@ struct StoryCameraView: View {
 
 #if canImport(Darwin)
 import AVFoundation
+import Photos
 
 /// ストーリーのカメラ（札 #500・デザイナーのモック A 案「iPhone 型」）。
 ///
@@ -52,6 +56,7 @@ struct StoryCameraContent: View {
 
     let onPhoto: (Data) -> Void
     let onVideo: (URL) -> Void
+    var onPickFromLibrary: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -86,13 +91,21 @@ struct StoryCameraContent: View {
     @State private var countdownTask: Task<Void, Never>?
     /// ピンチを始めたときのカメラの倍率
     @State private var pinchStart: Double?
+    /// 撮れなかったときの上の知らせ（3 秒で消す）
+    @State private var failureNote: String?
+    @State private var failureTask: Task<Void, Never>?
+    /// 左下の最近の1枚（写真の許可がすでにあるときだけ。許可は求めない）
+    @State private var recentThumbnail: UIImage?
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             switch camera.state {
             case .preparing:
+                // 2026-11-12 判断（設計の案 01「準備中」）: 部品を先に置いて 40% に沈め、映像が出たら明るくする
+                // （黒い面に回る印だけだと、映像が出た瞬間に部品が跳ねて現れる）。✕ だけは沈めず押せる
                 ProgressView().tint(.white)
+                controls(ready: false)
             case .ready:
                 StoryCameraPreview(session: camera.session)
                     .ignoresSafeArea()
@@ -102,19 +115,28 @@ struct StoryCameraContent: View {
                     .ignoresSafeArea()
                     .gesture(zoomGesture)
                     .accessibilityHidden(true)
-                controls
+                scrims
+                controls(ready: true)
                 if let countdown { countdownNumber(countdown) }
             case .denied:
-                notice(L("カメラの許可がありません", "Camera access is off"),
-                       detail: L("設定でカメラを許可すると、ここで撮れます。写真アプリから選ぶこともできます。",
-                                 "Allow the camera in Settings to shoot here. You can also choose from your library."),
+                notice(L("カメラを使う許可がありません", "Camera access is off"),
+                       detail: L("設定でカメラを許可すると、ここで撮れます。",
+                                 "Allow the camera in Settings to shoot here."),
                        showsSettings: true)
             case .unavailable:
                 notice(L("この端末ではカメラを使えません", "The camera isn't available on this device"),
-                       detail: L("写真アプリから選んでください。", "Choose from your library instead."),
+                       detail: L("写真から選んでください。", "Choose from your photos instead."),
                        showsSettings: false)
             }
+            // 撮れなかった（写真・録画を始められない・録画が壊れた）。上にガラスの知らせを 3 秒
+            if let failureNote {
+                failureToast(failureNote)
+            }
         }
+        .task(id: camera.state) {
+            if camera.state == .ready { await loadRecentThumbnail() }
+        }
+        .onChange(of: failTick) { _, _ in showFailure() }
         .task { await camera.start() }
         .onDisappear {
             // 長押しの 0.4 秒の間に閉じると、stop() のあとに録画が始まってしまう
@@ -160,90 +182,241 @@ struct StoryCameraContent: View {
     }
 
     // MARK: - 部品
+    //
+    // 2026-11-12 判断（設計の案「ストーリーのデザイン 残り」01・作る画面 v2 のガラスの柱に合わせる）:
+    // ✕ だけ左上。フラッシュとタイマーは右上のガラスの柱。下の段は「左に最近の1枚・真ん中にシャッター・右に前後の切り替え」、
+    // その下に「写真｜動画」。録画中・数えている間はまわりの印を消す（`StoryCameraRules.showsChrome`）。
+    // 印は細い線（regular・作る画面の線の太さ）。写真の上なので白とガラスだけ（真鍮は置かない）
 
-    private var controls: some View {
+    /// 印の太さ（作る画面の 1.6 の線に合わせて regular。以前は semibold で、作る画面と太さが割れた）
+    private static let iconFont: Font = .body.weight(.regular)
+
+    /// 上下の暗がり（写真の上の白い印を読めるように。案の scrim: 上 50%・140 / 下 55%・260）
+    private var scrims: some View {
         VStack(spacing: 0) {
-            topBar
+            LinearGradient(colors: [Color.black.opacity(0.5), Color.black.opacity(0)], startPoint: .top, endPoint: .bottom)
+                .frame(height: 140)
+            Spacer(minLength: 0)
+            LinearGradient(colors: [Color.black.opacity(0), Color.black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
+                .frame(height: 260)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    /// 撮る前の部品（✕ を除く）を出すか
+    private var chromeShown: Bool {
+        StoryCameraRules.showsChrome(isRecording: camera.isRecording, counting: countdown != nil)
+    }
+
+    /// - Parameter ready: 映像が出ているか。準備中は ✕ 以外を 40% に沈めて押させない
+    private func controls(ready: Bool) -> some View {
+        VStack(spacing: 0) {
+            topBar(ready: ready)
             Spacer()
-            if StoryCameraRules.showsMicNote(micDenied: camera.micDenied, mode: mode, isRecording: camera.isRecording) {
-                Text(L("マイクが許可されていないので、音なしで撮ります", "The microphone is off, so the video will have no sound"))
-                    .font(JPFont.footnote)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Color.black.opacity(0.6), in: Capsule())
-                    .padding(.bottom, 8)
-                    .accessibilityIdentifier("story.camera.micNote")
-            }
-            if StoryCameraRules.showsZoomPills(presetCount: camera.zoomLevels.presets.count) {
-                zoomPills.padding(.bottom, 10)
-            }
-            // 録画・カウントダウン中も場所は残す（消すと倍率の丸とシャッターの間が詰まって下へ落ちる）
-            let modeLocked = !StoryCameraRules.allowsModeAndFlip(isRecording: camera.isRecording,
-                                                                 counting: countdown != nil)
-            modePicker
-                .opacity(modeLocked ? 0 : 1)
-                .allowsHitTesting(!modeLocked)
-                .accessibilityHidden(modeLocked)
-                // 録画中は、隠した切り替えの場所に「押すと止まります」（2026-11-11 判断・離しても止まらないので）
-                .overlay {
-                    if camera.isRecording { stopHint }
+            VStack(spacing: 0) {
+                if StoryCameraRules.showsMicNote(micDenied: camera.micDenied, mode: mode, isRecording: camera.isRecording) {
+                    pillNote(L("マイクが許可されていないので、音なしで撮ります", "The microphone is off, so the video will have no sound"))
+                        .padding(.bottom, 12)
+                        .accessibilityIdentifier("story.camera.micNote")
                 }
-                .padding(.bottom, 14)
-            shutter.padding(.bottom, 28)
+                if StoryCameraRules.showsZoom(presetCount: camera.zoomLevels.presets.count, counting: countdown != nil) {
+                    zoomPills.padding(.bottom, 10)
+                }
+                shutterRow
+                    .padding(.bottom, 12)
+                // 録画・カウントダウン中も場所は残す（消すと上の段が下へ落ちる）。空いた所に止め方・数えている案内
+                modePicker
+                    .opacity(chromeShown ? 1 : 0)
+                    .allowsHitTesting(chromeShown)
+                    .accessibilityHidden(!chromeShown)
+                    // 録画中は、隠した切り替えの場所に「押すと止まります」（2026-11-11 判断・離しても止まらないので）
+                    .overlay {
+                        if camera.isRecording { stopHint }
+                    }
+                    .overlay {
+                        if countdown != nil { countdownNote }
+                    }
+                    .padding(.bottom, 14)
+            }
+            .opacity(ready ? 1 : StoryCameraRules.preparingOpacity)
+            .allowsHitTesting(ready)
+            .accessibilityHidden(!ready)
         }
     }
 
-    private var topBar: some View {
-        ZStack {
-            HStack {
+    /// 上の段: 左上の ✕・右上のガラスの柱（フラッシュ・タイマー）・録画中は真ん中に時間
+    private func topBar(ready: Bool) -> some View {
+        let closeShown = StoryCameraRules.showsClose(isRecording: camera.isRecording)
+        return ZStack(alignment: .top) {
+            HStack(alignment: .top) {
                 Button {
                     dismiss()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.body.weight(.semibold))
+                        .font(Self.iconFont)
                         .foregroundStyle(.white)
                         .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                        .background(Color.black.opacity(0.35), in: Circle())
+                        .jpGlass(in: Circle())
                 }
+                .buttonStyle(.plain)
                 .accessibilityLabel(Labels.Common.close)
                 .accessibilityIdentifier("story.camera.close")
+                // 録画中は消す（まわりの印は消す・止めるのはシャッター）
+                .opacity(closeShown ? 1 : 0)
+                .allowsHitTesting(closeShown)
+                .accessibilityHidden(!closeShown)
                 Spacer()
                 // フラッシュ・タイマー（録画中・数えている間は変えさせない）
-                if !camera.isRecording && countdown == nil {
-                    if StoryCameraRules.showsFlash(hasFlash: camera.hasFlash, isRecording: camera.isRecording,
-                                                   counting: countdown != nil) {
-                        flashButton
-                    }
-                    timerButton
+                if chromeShown {
+                    optionColumn
+                        .opacity(ready ? 1 : StoryCameraRules.preparingOpacity)
+                        .allowsHitTesting(ready)
+                        .accessibilityHidden(!ready)
                 }
-                Button {
-                    camera.flip()
-                    // 前後で倍率の段が変わる（背面は 0.5×・前面は 1× と 2× …）。映像は 1× から始まる
-                    pinchStart = nil
-                } label: {
-                    Image(systemName: "arrow.triangle.2.circlepath.camera")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                        .background(Color.black.opacity(0.35), in: Circle())
-                }
-                .disabled(!StoryCameraRules.allowsModeAndFlip(isRecording: camera.isRecording,
-                                                              counting: countdown != nil))
-                .opacity(StoryCameraRules.allowsModeAndFlip(isRecording: camera.isRecording,
-                                                            counting: countdown != nil) ? 1 : 0.4)
-                .accessibilityLabel(L("前後のカメラを切り替える", "Switch camera"))
-                .accessibilityIdentifier("story.camera.flip")
             }
             if camera.isRecording {
                 recordingBadge
+                    .padding(.top, 7)
             }
         }
         .padding(.horizontal, 12)
         .padding(.top, 8)
     }
 
-    /// フラッシュ（オフ→オン→自動）。選んでいる（オン・自動）ときは白い丸い札に黒い記号
+    /// 右上のガラスの柱（作る画面 v2 と同じ形・幅 44・角 22）。前面のカメラはフラッシュが無いのでタイマーだけ
+    private var optionColumn: some View {
+        VStack(spacing: 0) {
+            if StoryCameraRules.showsFlash(hasFlash: camera.hasFlash, isRecording: camera.isRecording,
+                                           counting: countdown != nil) {
+                flashButton
+            }
+            timerButton
+        }
+        .padding(.vertical, 2)
+        .jpGlass(in: RoundedRectangle(cornerRadius: WebTheme.minTapTarget / 2))
+    }
+
+    /// 下の段: 左に最近の1枚（写真から選ぶ）・真ん中にシャッター・右に前後の切り替え（左右 40 の内側）
+    private var shutterRow: some View {
+        HStack(spacing: 0) {
+            Group {
+                if onPickFromLibrary != nil {
+                    recentButton
+                } else {
+                    Color.clear
+                }
+            }
+            .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+            .opacity(chromeShown ? 1 : 0)
+            .allowsHitTesting(chromeShown)
+            .accessibilityHidden(!chromeShown)
+            Spacer(minLength: 0)
+            shutter
+            Spacer(minLength: 0)
+            flipButton
+                .opacity(chromeShown ? 1 : 0)
+                .allowsHitTesting(chromeShown)
+                .accessibilityHidden(!chromeShown)
+        }
+        .padding(.horizontal, 40)
+    }
+
+    /// 左下の最近の1枚（角 10・白 2 の縁）。**写真の許可を求めない**——すでに許されていれば最近の1枚、
+    /// そうでなければ写真の印の丸（`StoryCameraRules.showsRecentThumbnail`）。押すとカメラを閉じて写真選びへ
+    private var recentButton: some View {
+        Button {
+            pickFromLibrary()
+        } label: {
+            Group {
+                if let recentThumbnail {
+                    Image(uiImage: recentThumbnail)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                        .clipShape(RoundedRectangle(cornerRadius: JPRadius.s))
+                        .overlay(RoundedRectangle(cornerRadius: JPRadius.s).strokeBorder(Color.white, lineWidth: 2))
+                } else {
+                    Image(systemName: "photo.on.rectangle")
+                        .font(Self.iconFont)
+                        .foregroundStyle(.white)
+                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                        .jpGlass(in: Circle())
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("写真から選ぶ", "Choose from photos"))
+        .accessibilityIdentifier("story.camera.library")
+    }
+
+    /// 右下の前後の切り替え（ガラスの丸）
+    private var flipButton: some View {
+        Button {
+            camera.flip()
+            // 前後で倍率の段が変わる（背面は 0.5×・前面は 1× と 2× …）。映像は 1× から始まる
+            pinchStart = nil
+        } label: {
+            Image(systemName: "arrow.triangle.2.circlepath.camera")
+                .font(Self.iconFont)
+                .foregroundStyle(.white)
+                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                .jpGlass(in: Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!StoryCameraRules.allowsModeAndFlip(isRecording: camera.isRecording,
+                                                      counting: countdown != nil))
+        .accessibilityLabel(L("前後のカメラを切り替える", "Switch camera"))
+        .accessibilityIdentifier("story.camera.flip")
+    }
+
+    /// 写真の上の一行の札（高さ 30・黒 45%・13pt）。マイクの注記・止め方・数えている案内に使う
+    private func pillNote(_ text: String) -> some View {
+        Text(text)
+            .font(JPFont.footnote)
+            .foregroundStyle(.white)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, JPSpace.s)
+            .padding(.vertical, 6)
+            .frame(minHeight: 30)
+            .background(Color.black.opacity(0.45), in: Capsule())
+    }
+
+    /// 数えている間の案内（「3秒後に撮ります · 押すと取り消し」）。読み上げは数え始めに声で知らせるので外す
+    private var countdownNote: some View {
+        pillNote(StoryCameraRules.countdownNote(seconds: timerOption.seconds,
+                                                action: StoryCameraRules.tapAction(mode: mode, isRecording: false)))
+            .fixedSize()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .accessibilityIdentifier("story.camera.countdownNote")
+    }
+
+    /// 撮れなかった知らせ（上のガラス・赤い点＋白い字。写真の上なので字は白）
+    private func failureToast(_ text: String) -> some View {
+        VStack {
+            HStack(spacing: JPSpace.xs) {
+                Circle().fill(WebTheme.danger).frame(width: 8, height: 8)
+                    .accessibilityHidden(true)
+                Text(text)
+                    .font(JPFont.footnote)
+                    .foregroundStyle(.white)
+            }
+            .padding(.horizontal, JPSpace.m)
+            .frame(minHeight: 40)
+            .jpGlass(in: Capsule())
+            .padding(.top, 66)
+            .padding(.horizontal, JPSpace.m)
+            Spacer()
+        }
+        .allowsHitTesting(false)
+        .transition(.opacity)
+        .accessibilityIdentifier("story.camera.failure")
+    }
+
+    /// フラッシュ（オフ→オン→自動）。柱の中の 44 の升。選んでいる（オン・自動）ときは白い丸（40）に黒い記号
     /// （「写真｜動画」の選んでいる札と同じ。写真の上なので白・真鍮は置かない。形でも状態が分かる）
     private var flashButton: some View {
         Button {
@@ -251,35 +424,39 @@ struct StoryCameraContent: View {
             optionTick += 1
         } label: {
             Image(systemName: flash.symbol)
-                .font(.body.weight(.semibold))
+                .font(Self.iconFont)
                 .foregroundStyle(flash.isActive ? Color.black : Color.white)
+                .frame(width: 40, height: 40)
+                .background(flash.isActive ? Color.white : Color.clear, in: Circle())
                 .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                .background(flash.isActive ? Color.white : Color.black.opacity(0.35), in: Circle())
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .accessibilityLabel(flash.accessibilityLabel)
         .accessibilityHint(L("押すたびにオフ・オン・自動が替わります", "Cycles through off, on and auto"))
         .accessibilityIdentifier("story.camera.flash")
     }
 
-    /// タイマー（オフ→3秒→10秒）。入れているときは秒数も字で出す（色・形だけで伝えない）
+    /// タイマー（オフ→3秒→10秒）。入れているときは白い丸に秒数も字で出す（色・形だけで伝えない）
     private var timerButton: some View {
         Button {
             timerOption = timerOption.next
             optionTick += 1
         } label: {
-            HStack(spacing: 3) {
+            HStack(spacing: 1) {
                 Image(systemName: "timer")
-                    .font(.body.weight(.semibold))
+                    .font(timerOption.isActive ? JPFont.footnote : Self.iconFont)
                 if timerOption.isActive {
                     Text("\(timerOption.seconds)")
                         .font(JPFont.mono(12, medium: true, relativeTo: .caption))
+                        .lineLimit(1)
                 }
             }
             .foregroundStyle(timerOption.isActive ? Color.black : Color.white)
-            .padding(.horizontal, timerOption.isActive ? 10 : 0)
-            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
-            .background(timerOption.isActive ? Color.white : Color.black.opacity(0.35), in: Capsule())
-            .contentShape(Capsule())
+            .frame(width: 40, height: 40)
+            .background(timerOption.isActive ? Color.white : Color.clear, in: Circle())
+            .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(timerOption.accessibilityLabel)
@@ -350,7 +527,7 @@ struct StoryCameraContent: View {
             .accessibilityIdentifier("story.camera.countdown")
     }
 
-    /// 録画の時間（赤い点＋0:07）。点は動きを減らす設定のときは点滅させない
+    /// 録画の時間（ガラスの札に「● 0:07 / 1:00」・上限は 72% の白）。点は動きを減らす設定のときは点滅させない
     private var recordingBadge: some View {
         HStack(spacing: 6) {
             Circle()
@@ -358,12 +535,15 @@ struct StoryCameraContent: View {
                 .frame(width: 8, height: 8)
                 .opacity(reduceMotion ? 1 : (Int(camera.elapsed * 2) % 2 == 0 ? 1 : 0.3))
             Text(StoryVideoClip.label(camera.elapsed))
-                .font(JPFont.footnote)
+                .font(JPFont.mono(13, medium: true, relativeTo: .footnote))
                 .foregroundStyle(.white)
+            Text(StoryCameraRules.limitLabel)
+                .font(JPFont.mono(13, medium: true, relativeTo: .footnote))
+                .foregroundStyle(WebTheme.muted2)
         }
         .padding(.horizontal, JPSpace.s)
         .frame(minHeight: 30)
-        .background(Color.black.opacity(0.45), in: Capsule())
+        .jpGlass(in: Capsule())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(L("録画中 \(StoryVideoClip.label(camera.elapsed))", "Recording \(StoryVideoClip.label(camera.elapsed))"))
         .accessibilityIdentifier("story.camera.timer")
@@ -372,22 +552,19 @@ struct StoryCameraContent: View {
     /// 録画中の案内（マイクの注記と同じ黒い札に白い字。写真の上なので白・真鍮は置かない）。
     /// 読み上げはシャッターの名前とヒントで伝えるので、ここは読み上げから外す
     private var stopHint: some View {
-        Text(StoryCameraRules.stopHint)
-            .font(JPFont.footnote)
-            .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(Color.black.opacity(0.6), in: Capsule())
+        pillNote(StoryCameraRules.stopHint)
             .fixedSize()
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             .accessibilityIdentifier("story.camera.stopHint")
     }
 
-    /// 「写真｜動画」の切り替え。選んでいるほうが白い丸い札（写真の上なので白・真鍮は置かない）
+    /// 「写真｜動画」の切り替え（シャッターの下・字だけの札）。選んでいるほうは白 94% の札に墨の字、
+    /// ほかは白 72% の字に影（写真の上なので白・真鍮は置かない）。見た目 36・当たり 44
     private var modePicker: some View {
         HStack(spacing: 4) {
             ForEach([StoryCameraRules.Mode.photo, .video], id: \.label) { item in
+                let on = mode == item
                 Button {
                     guard mode != item else { return }
                     mode = item
@@ -396,20 +573,20 @@ struct StoryCameraContent: View {
                 } label: {
                     Text(item.label)
                         .font(JPFont.footnote.weight(.semibold))
-                        .foregroundStyle(mode == item ? Color.black : Color.white)
-                        .padding(.horizontal, 16)
+                        .foregroundStyle(on ? WebTheme.accentText : WebTheme.muted2)
+                        .shadow(color: Color.black.opacity(on ? 0 : 0.5), radius: 3, y: 1)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 36)
+                        .background(on ? WebTheme.accentBackground : Color.clear, in: Capsule())
                         .frame(minHeight: WebTheme.minTapTarget)
-                        .background(mode == item ? Color.white : Color.clear, in: Capsule())
-                        .contentShape(Capsule())
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(item.label)
-                .accessibilityAddTraits(mode == item ? .isSelected : [])
+                .accessibilityAddTraits(on ? .isSelected : [])
                 .accessibilityIdentifier(item == .photo ? "story.camera.mode.photo" : "story.camera.mode.video")
             }
         }
-        .padding(3)
-        .background(Color.black.opacity(0.45), in: Capsule())
     }
 
     /// シャッター。外の輪は録画の進み具合（60 秒で一周）、内側は写真が白・動画が赤
@@ -516,28 +693,94 @@ struct StoryCameraContent: View {
         recordingStartedByHold = false
     }
 
+    /// 許可が無い・カメラが無いとき（2026-11-12 判断・設計の案 01「カメラの許可が無い」）。
+    /// 板の空の状態の型（`EmptyState`: 明朝の見出し・本文 15・写真の無い画面の主ボタン＝真鍮に墨）。
+    /// 以前は「写真アプリから選ぶこともできます」と書くのに選ぶボタンが無かった——「写真から選ぶ」を置く。
+    /// 閉じるのは左上の ✕（撮る画面と同じ所）
     private func notice(_ title: String, detail: String, showsSettings: Bool) -> some View {
-        VStack(spacing: 14) {
-            Text(title)
-                .font(JPFont.headline)
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-            Text(detail)
-                .font(JPFont.footnote)
-                .foregroundStyle(WebTheme.text2)
-                .multilineTextAlignment(.center)
-            if showsSettings {
-                Button(L("設定を開く", "Open Settings")) {
-                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+        ZStack(alignment: .topLeading) {
+            VStack(spacing: 0) {
+                if showsSettings {
+                    EmptyState(title: title, message: detail,
+                               actionTitle: L("設定を開く", "Open Settings"),
+                               actionIdentifier: "story.camera.openSettings") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                    }
+                    if onPickFromLibrary != nil {
+                        Button { pickFromLibrary() } label: {
+                            Text(L("写真から選ぶ", "Choose from photos")).jpPillButton(.outline)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, JPSpace.xl)
+                        .accessibilityIdentifier("story.camera.noticeLibrary")
+                    }
+                } else if onPickFromLibrary != nil {
+                    EmptyState(title: title, message: detail,
+                               actionTitle: L("写真から選ぶ", "Choose from photos"),
+                               actionIdentifier: "story.camera.noticeLibrary") { pickFromLibrary() }
+                } else {
+                    EmptyState(title: title, message: detail)
                 }
-                .jpPillButton(.main(onPhoto: true))
-                .accessibilityIdentifier("story.camera.openSettings")
             }
-            Button(L("閉じる", "Close")) { dismiss() }
-                .jpPillButton(.outline)
-                .accessibilityIdentifier("story.camera.close")
+            .padding(.horizontal, JPSpace.m)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(Self.iconFont)
+                    .foregroundStyle(.white)
+                    .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                    .jpGlass(in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Labels.Common.close)
+            .accessibilityIdentifier("story.camera.close")
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
         }
-        .padding(.horizontal, 32)
+    }
+
+    /// 「写真から選ぶ」: カメラを閉じて、呼ぶ側に写真選びへ戻してもらう
+    private func pickFromLibrary() {
+        guard let onPickFromLibrary else { return }
+        onPickFromLibrary()
+        dismiss()
+    }
+
+    /// 撮れなかった知らせを 3 秒出す（読み上げにも知らせる）。続けて失敗したら出し直す
+    private func showFailure() {
+        let text = StoryCameraRules.failureNote
+        failureTask?.cancel()
+        if reduceMotion { failureNote = text } else { withAnimation(.easeOut(duration: 0.2)) { failureNote = text } }
+        AccessibilityNotification.Announcement(text).post()
+        failureTask = Task {
+            try? await Task.sleep(nanoseconds: UInt64(StoryCameraRules.failureNoteSeconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            if reduceMotion { failureNote = nil } else { withAnimation(.easeOut(duration: 0.2)) { failureNote = nil } }
+        }
+    }
+
+    /// 左下の最近の1枚。**写真の許可は求めない**——すでに許されている（全部・一部）ときだけ、いちばん新しい1枚を小さく取る
+    private func loadRecentThumbnail() async {
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard StoryCameraRules.showsRecentThumbnail(StoryCameraRules.libraryAccess(status)) else { return }
+        let options = PHFetchOptions()
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        options.fetchLimit = 1
+        guard let asset = PHAsset.fetchAssets(with: options).firstObject else { return }
+        let request = PHImageRequestOptions()
+        // 一度だけ呼ばれる形（`highQualityFormat`・小さい絵なので待たない）
+        request.deliveryMode = .highQualityFormat
+        request.resizeMode = .fast
+        request.isNetworkAccessAllowed = false
+        let side = WebTheme.minTapTarget * 3
+        recentThumbnail = await withCheckedContinuation { (continuation: CheckedContinuation<UIImage?, Never>) in
+            PHImageManager.default().requestImage(for: asset, targetSize: CGSize(width: side, height: side),
+                                                  contentMode: .aspectFill, options: request) { image, _ in
+                continuation.resume(returning: image)
+            }
+        }
     }
 
     // MARK: - 動作
@@ -1003,6 +1246,20 @@ extension StoryCameraRules.Flash {
         case .off: return .off
         case .on: return .on
         case .auto: return .auto
+        }
+    }
+}
+
+/// 写真ライブラリの許可を、画面の外の決まり（`StoryCameraRules.LibraryAccess`）の形に直す
+extension StoryCameraRules {
+    static func libraryAccess(_ status: PHAuthorizationStatus) -> LibraryAccess {
+        switch status {
+        case .authorized: return .authorized
+        case .limited: return .limited
+        case .denied: return .denied
+        case .restricted: return .restricted
+        case .notDetermined: return .notDetermined
+        @unknown default: return .denied
         }
     }
 }

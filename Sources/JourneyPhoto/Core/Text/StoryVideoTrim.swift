@@ -67,6 +67,62 @@ struct StoryVideoTrim: Equatable {
     mutating func nudgeStart(by delta: Double) { setStart(start + delta) }
     mutating func nudgeEnd(by delta: Double) { setEnd(end + delta) }
 
+    /// 範囲ごと動かす（選んだ枠を掴んで左右へ・2026-11-12 判断・設計の案 02）。**長さは変えず**、動画の頭と終わりで止める
+    mutating func shift(toStart seconds: Double) {
+        guard total > 0, seconds.isFinite else { return }
+        let keep = length
+        let from = max(0, min(seconds, total - keep))
+        start = from
+        end = from + keep
+    }
+
+    /// 60 秒の枠いっぱいか（反対のつまみがついてくる所・「60秒まで」の札と光の縁を出す）
+    var atLimit: Bool { length >= Self.maxLength - 0.001 }
+
+    /// 長さの下の注記（2026-11-12 判断・設計の案 02）。以前は毎回2行の説明を出していた。
+    /// **60 秒を超える動画のときだけ**「60秒まで」を短く添える（「全体 2:24 · 60秒まで」）。短い動画は「全体 0:45」
+    var totalNote: String {
+        let whole = Self.label(total)
+        return total > Self.maxLength + 0.001
+            ? L("全体 \(whole) · 60秒まで", "Total \(whole) · up to 60s")
+            : L("全体 \(whole)", "Total \(whole)")
+    }
+
+    /// 範囲の札（「0:12–1:12」）
+    var rangeLabel: String { "\(Self.label(start))–\(Self.label(end))" }
+
+    /// つまみの上の吹き出し（「0:12.4」・小数1桁まで。分は桁を揃えない）
+    static func preciseLabel(_ seconds: Double) -> String {
+        let safe = seconds.isFinite ? max(0, seconds) : 0
+        let tenths = Int((safe * 10).rounded(.down))
+        let minutes = tenths / 600
+        let rest = tenths % 600
+        let whole = rest / 10
+        return "\(minutes):" + (whole < 10 ? "0" : "") + "\(whole).\(rest % 10)"
+    }
+
+    /// 動画を開けないか（2026-11-12 判断・設計の案 02「動画を開けない」）。以前は窓が黒いまま何も言わなかった。
+    /// **長さが読めない**、または**帯を取り終えて1コマも絵が取れなかった**とき（iCloud から読み込めない・形式に対応していない）。
+    /// 帯を取り終えるまでは決めない（骨組みのまま）
+    static func cannotOpen(total: Double, framesRead: Int, framesAsked: Int, stripLoaded: Bool) -> Bool {
+        if !(total.isFinite && total > 0) { return true }
+        return stripLoaded && framesAsked > 0 && framesRead == 0
+    }
+
+    /// 帯の読み込み中の光の位置（-1〜1・1.6 秒で左から右へ一回り）。時刻から決める（`TimelineView` が描くたびに読む）
+    static func shimmerPhase(at date: Date, period: Double = 1.6) -> Double {
+        let t = date.timeIntervalSinceReferenceDate
+        guard t.isFinite, period > 0 else { return -1 }
+        let cycle = t.truncatingRemainder(dividingBy: period) / period
+        return cycle * 2 - 1
+    }
+
+    /// 開けないときの説明（何が起きたか・空の状態の本文）
+    static var cannotOpenMessage: String {
+        L("iCloud から読み込めなかったか、形式に対応していません。",
+          "It couldn't be loaded from iCloud, or the format isn't supported.")
+    }
+
     // MARK: - 帯（サムネイルの列）の座標
 
     /// 時刻 → 帯の横位置（0...width）。範囲の外は端に寄せる

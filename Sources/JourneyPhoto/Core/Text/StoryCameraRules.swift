@@ -258,7 +258,63 @@ enum StoryCameraRules {
         !isRecording && !counting
     }
 
+    // MARK: - 画面の部品の出し方（2026-11-12 判断・設計の案「ストーリーのデザイン 残り」01）
+
+    /// 撮る前の部品（右上のガラスの柱・左下の最近の1枚・右下の前後の切り替え・下の「写真｜動画」）を出すか。
+    /// **録画中・数えている間は消す**（まわりの印を消して、映像とシャッターだけにする）
+    static func showsChrome(isRecording: Bool, counting: Bool) -> Bool {
+        !isRecording && !counting
+    }
+
+    /// 左上の ✕ を出すか。**録画中だけ消す**（止めるのはシャッター。数えている間は閉じられる）
+    static func showsClose(isRecording: Bool) -> Bool { !isRecording }
+
+    /// 倍率の丸を出すか。段が1つの端末と、**数えている間は出さない**（録画中は寄れる）
+    static func showsZoom(presetCount: Int, counting: Bool) -> Bool {
+        showsZoomPills(presetCount: presetCount) && !counting
+    }
+
+    /// 準備中（映像が出る前）の部品の濃さ。部品を先に置いて沈め、映像が出たら明るくする（位置が跳ねない）
+    static let preparingOpacity = 0.4
+
+    /// 数えている間の、シャッターの下の案内（「3秒後に撮ります · 押すと取り消し」）
+    static func countdownNote(seconds: Int, action: ShutterAction) -> String {
+        switch action {
+        case .startRecording:
+            return L("\(seconds)秒後に録画を始めます · 押すと取り消し", "Recording in \(seconds)s · Tap to cancel")
+        case .takePhoto, .stopRecording:
+            return L("\(seconds)秒後に撮ります · 押すと取り消し", "Taking a photo in \(seconds)s · Tap to cancel")
+        }
+    }
+
+    /// 撮れなかった（写真・録画を始められない・録画が壊れた）ときの上の知らせ。以前は震えるだけで、目に見える知らせが無かった
+    static var failureNote: String {
+        L("撮れませんでした。もう一度押してください", "Couldn't capture. Please tap again")
+    }
+
+    /// 撮れなかった知らせを出しておく秒数
+    static let failureNoteSeconds: Double = 3
+
+    /// 録画の時間の札の上限（「/ 1:00」）
+    static var limitLabel: String { "/ " + StoryVideoClip.label(StoryVideoRules.maxSeconds) }
+
+    /// 写真ライブラリの許可（`PHAuthorizationStatus` を画面の外で扱える形に）
+    enum LibraryAccess: Equatable {
+        case authorized, limited, denied, restricted, notDetermined
+    }
+
+    /// 左下に最近の1枚を出すか。**許可を求めない**——すでに許されている（全部・一部）ときだけ。
+    /// それ以外は写真の印の丸（押すと写真選びへ。埋め込みの写真選びは許可が要らない）
+    static func showsRecentThumbnail(_ access: LibraryAccess) -> Bool {
+        access == .authorized || access == .limited
+    }
+
+    /// 「写真から選ぶ」でカメラを閉じたあと、作る画面が写真選びを開くか。**まだ1枚も無ければ開かない**
+    /// ——作る画面の下にもう最近の写真の格子（埋め込みの写真選び）が出ているので、閉じるだけで格子に戻る
+    static func opensLibraryAfterCamera(shotCount: Int) -> Bool { shotCount > 0 }
+
     // MARK: - 触覚
+
 
     /// 触覚が鳴る出来事（札 #500 の決め）
     enum Event: Equatable {

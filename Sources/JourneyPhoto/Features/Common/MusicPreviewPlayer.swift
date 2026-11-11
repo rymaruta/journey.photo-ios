@@ -138,6 +138,26 @@ final class MusicPreviewPlayer: ObservableObject {
                                     duration: player.currentItem?.duration.seconds)
     }
 
+    /// 試聴のいまの位置（秒）。その曲が鳴っていなければ nil。`previewProgress` と同じく `@Published` にしない
+    /// （曲の流し始めの帯が `TimelineView` の中で読みに来る・2026-11-12）
+    func previewTime(for url: URL?) -> Double? {
+        guard isPlaying(url), let player else { return nil }
+        let seconds = player.currentTime().seconds
+        return seconds.isFinite ? max(0, seconds) : nil
+    }
+
+    /// その曲の項目の読み込みに失敗したか（`status == .failed`。この知らせは鳴り終わり・失敗の通知では来ない）
+    func previewItemFailed(for url: URL?) -> Bool {
+        guard let url, playingURL == url, let player else { return false }
+        return player.currentItem?.status == .failed
+    }
+
+    /// その曲を鳴らそうとしているが、まだ音が出ていない（読み込み中）
+    func previewWaiting(for url: URL?) -> Bool {
+        guard isPlaying(url), let player else { return false }
+        return player.timeControlStatus == .waitingToPlayAtSpecifiedRate
+    }
+
     /// 進みの計算（画面を持たない・単体テスト用）。いつも 0〜1 に収める。
     /// 長さが読めない（nil・NaN・無限・0 以下）なら 30 秒で割る。今の位置が NaN なら 0
     static func previewProgress(current: Double, duration: Double?) -> Double {

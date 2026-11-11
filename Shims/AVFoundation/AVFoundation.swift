@@ -14,6 +14,8 @@ open class AVPlayerItem: NSObject {
     open var preferredForwardBufferDuration: TimeInterval = 0
     /// 本物と同じ形（ここで鳴り終わる。既定は「無し」＝項目の終わりまで）
     open var forwardPlaybackEndTime: CMTime = .invalid
+    /// 本物と同じ形（URL から項目を作る）
+    public convenience init(url: URL) { self.init() }
 }
 
 open class AVPlayer {
@@ -28,6 +30,8 @@ open class AVPlayer {
     public init(url: URL) {}
     public func play() {}
     public func pause() {}
+    /// 本物と同じ形（項目を差し替える・読み直し）
+    public func replaceCurrentItem(with item: AVPlayerItem?) { currentItem = item }
     /// 頭出し（本物は CoreMedia の CMTime。AVFoundation が再輸出する）
     public func seek(to time: CMTime) {}
     /// 本物と同じ形（いまの位置・定期の見張り）
