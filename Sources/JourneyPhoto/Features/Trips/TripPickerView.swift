@@ -48,6 +48,8 @@ struct TripPickerView: View {
     var body: some View {
         content
             .task { await loadDeck() }
+            // 閉じた・タブを替えたら、みんなの「行きたい」の控えを送る（5件たまる前でも）
+            .onDisappear { SpotWantSender.flush(service: environment.spotWants) }
             // めくる先の札と選んだ場所の詳細（写真・季節の文）。分けた置き場の索引だけの行のときだけ（2026-10-07）
             .task(id: SpotDetailNeeds.key(model.detailNeeds)) {
                 await model.applyDetails { await environment.spots.withDetails($0, for: $1) }
@@ -337,7 +339,11 @@ struct TripPickerView: View {
         guard let current = model.current else { return }
         let key = SavedSpotKey.official(current.slug)
         let wasWanted = model.wasWantedBefore(current.spotId, inWishlist: wishlist.contains(key))
-        guard model.decide(choice, alreadyWanted: wasWanted) != nil, choice == .want, !wasWanted else { return }
+        guard model.decide(choice, alreadyWanted: wasWanted) != nil else { return }
+        // みんなの「行きたい」に数える（2026-11-11・撮影スポットを払うの②）。右へ払った札だけ・見送るは数えない。
+        // 端末のでたらめな ID と一緒にまとめて送る（`SpotWantSender`）
+        if choice == .want { SpotWantSender.want(current.slug, service: environment.spotWants) }
+        guard choice == .want, !wasWanted else { return }
         model.markAdded(current.spotId)
         let store = wishlist
         let service = environment.savedSpots
@@ -352,7 +358,10 @@ struct TripPickerView: View {
 
     private func undo() {
         // 前から「行きたい」に入っていた場所は外さない（`Decision.wasWanted`）
-        guard !flying, let last = model.undo(), last.choice == .want, !last.wasWanted else { return }
+        guard !flying, let last = model.undo() else { return }
+        // まだ送っていなければ、みんなの「行きたい」の控えからも外す
+        if last.choice == .want { SpotWantSender.unwant(last.spot.slug) }
+        guard last.choice == .want, !last.wasWanted else { return }
         let key = SavedSpotKey.official(last.spot.slug)
         let store = wishlist
         let service = environment.savedSpots
