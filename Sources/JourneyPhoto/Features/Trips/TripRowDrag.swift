@@ -53,6 +53,17 @@ final class TripRowDragEvents {
     func ended() { onEnd() }
 }
 
+/// 指の下の行を選ぶ（純粋な関数・Linux の単体テストで縛る。確かめ役の指摘 2026-11-11）。
+/// `frames` は行の枠（同じ座標の上）、`point` は指の点。**枠の中に指がある行**を返し、どれにも入らなければ nil。
+/// 枠が重なるとき（行の境目の 1pt など）は、縦の真ん中がいちばん近い行
+enum TripRowPick {
+    static func row(at point: CGPoint, in frames: [CGRect]) -> Int? {
+        frames.indices
+            .filter { frames[$0].contains(point) }
+            .min { abs(frames[$0].midY - point.y) < abs(frames[$1].midY - point.y) }
+    }
+}
+
 extension View {
     /// 行を押さえて運ぶ元にする（2026-11-11 判断・上の注記）。押すと開く・押さえて運ぶは今までどおり。
     /// 読み上げの人には、運ぶ始まりの点（`accessibilityDragPoint`）を行の真ん中に置く
@@ -121,13 +132,15 @@ struct TripRowDragHost: UIViewRepresentable {
         private(set) weak var probe: UIView?
         private weak var hub: TripRowDragHub?
 
-        /// いちばん近い祖先の `UIScrollView`（無ければ窓）の運ぶ働きに登録する
+        /// いちばん近い祖先の `UIScrollView` の運ぶ働きに登録する。**見つからなければ付けない**
+        /// （窓に付けると、窓じゅうの指に運ぶ働きが乗る・確かめ役の指摘 2026-11-11）
         func attach(to probe: UIView) {
             self.probe = probe
-            guard let window = probe.window else { detach(); return }
+            guard probe.window != nil else { detach(); return }
             var view = probe.superview
             while let current = view, !(current is UIScrollView) { view = current.superview }
-            let next = TripRowDragHub.hub(for: view ?? window)
+            guard let scroll = view else { detach(); TripRowDragHub.note("A:none"); return }
+            let next = TripRowDragHub.hub(for: scroll)
             guard next !== hub else { return }
             detach()
             next.add(self)
@@ -139,10 +152,10 @@ struct TripRowDragHost: UIViewRepresentable {
             hub = nil
         }
 
-        /// 指がこの行の枠の中か
-        func contains(_ session: UIDragSession) -> Bool {
-            guard let probe, probe.window != nil else { return false }
-            return probe.bounds.contains(session.location(in: probe))
+        /// この行の枠（`space` の座標）。窓に載っていなければ nil
+        func frame(in space: UIView) -> CGRect? {
+            guard let probe, probe.window != nil else { return nil }
+            return probe.convert(probe.bounds, to: space)
         }
 
         func items() -> [UIDragItem] {
@@ -155,7 +168,11 @@ struct TripRowDragHost: UIViewRepresentable {
         /// 持ち上げ・運ぶ間の絵は、`.draggable` の preview と同じ SwiftUI の絵（名前の札）
         func liftPreview() -> UITargetedDragPreview? {
             guard let probe, probe.window != nil, let preview else { return nil }
-            let renderer = ImageRenderer(content: preview)
+            // 文字の大きさは端末の設定に合わせ、幅は行の幅まで（確かめ役の指摘 2026-11-11: ImageRenderer は
+            // 画面の環境を受け継がないので、大きな文字の人にも小さな札が出ていた。長い名前が行より広がらないように）
+            let size = DynamicTypeSize(probe.traitCollection.preferredContentSizeCategory) ?? .large
+            let renderer = ImageRenderer(content: preview.environment(\.dynamicTypeSize, size))
+            renderer.proposedSize = ProposedViewSize(width: probe.bounds.width, height: nil)
             renderer.scale = probe.window?.screen.scale ?? 3
             guard let image = renderer.uiImage else { TripRowDragHub.note("P:nil"); return nil }
             TripRowDragHub.note("P:ok")
@@ -230,14 +247,23 @@ final class TripRowDragHub: NSObject, UIDragInteractionDelegate {
         #endif
     }
 
-    /// 指の下の行だけ運ぶ
+    /// 指の下の行だけ運ぶ（選び方は `TripRowPick`）
     func dragInteraction(_ interaction: UIDragInteraction,
                          itemsForBeginning session: UIDragSession) -> [UIDragItem] {
-        let row = rows.values.compactMap(\.coordinator).first { $0.contains(session) }
-        guard let row else { Self.note("I:out"); return [] }
+        guard let view else { return [] }
+        let placed = rows.values.compactMap(\.coordinator).compactMap { row in row.frame(in: view).map { (row, $0) } }
+        let picked = TripRowPick.row(at: session.location(in: view), in: placed.map(\.1))
+        guard let picked else { Self.note("I:out"); return [] }
+        let row = placed[picked].0
         Self.note("I:in")
         active = row
         return row.items()
+    }
+
+    /// この app の中だけで運ぶ（ほかの app や入力欄に、運ぶ中身の字を落とさない・確かめ役の指摘 2026-11-11）
+    func dragInteraction(_ interaction: UIDragInteraction,
+                         sessionIsRestrictedToDraggingApplication session: UIDragSession) -> Bool {
+        true
     }
 
     func dragInteraction(_ interaction: UIDragInteraction, previewForLifting item: UIDragItem,

@@ -48,6 +48,43 @@ final class TripRowDragTests: XCTestCase {
         XCTAssertEqual(events.payload, "p")
     }
 
+    // MARK: 指の下の行を選ぶ（`TripRowPick`・確かめ役の指摘 2026-11-11）
+
+    private let rows = [CGRect(x: 16, y: 0, width: 364, height: 100),
+                        CGRect(x: 16, y: 100, width: 364, height: 100),
+                        CGRect(x: 16, y: 200, width: 364, height: 100)]
+
+    func testPicksTheRowUnderTheFinger() {
+        XCTAssertEqual(TripRowPick.row(at: CGPoint(x: 100, y: 150), in: rows), 1)
+        XCTAssertEqual(TripRowPick.row(at: CGPoint(x: 100, y: 250), in: rows), 2)
+        XCTAssertEqual(TripRowPick.row(at: CGPoint(x: 100, y: 10), in: rows), 0)
+    }
+
+    func testNoRowOutsideEveryFrame() {
+        XCTAssertNil(TripRowPick.row(at: CGPoint(x: 100, y: 320), in: rows), "行の下")
+        XCTAssertNil(TripRowPick.row(at: CGPoint(x: 400, y: 150), in: rows), "行の右（「…」の所）")
+        XCTAssertNil(TripRowPick.row(at: CGPoint(x: 100, y: 50), in: []))
+    }
+
+    /// 枠が重なる所では、縦の真ん中が近い行（最初に見つかった行ではない）
+    func testOverlapPicksTheNearerMiddle() {
+        let overlapping = [CGRect(x: 0, y: 0, width: 300, height: 100), CGRect(x: 0, y: 90, width: 300, height: 100)]
+        XCTAssertEqual(TripRowPick.row(at: CGPoint(x: 10, y: 97), in: overlapping), 1)
+        XCTAssertEqual(TripRowPick.row(at: CGPoint(x: 10, y: 92), in: overlapping), 0)
+    }
+
+    /// 運ぶ働きの決まり（UIKit の部分は Linux で動かせないので字で縛る）: この app の中だけで運ぶ・
+    /// 持ち上げの絵に文字の大きさと行の幅を渡す・スクロールの部品が無ければ窓に付けない・行は `TripRowPick` で選ぶ
+    func testDragHubRules() throws {
+        let drag = try source("Features/Trips/TripRowDrag.swift")
+        let restricted = try XCTUnwrap(drag.range(of: "sessionIsRestrictedToDraggingApplication session: UIDragSession) -> Bool {"))
+        XCTAssertTrue(drag[restricted.upperBound...].prefix(40).contains("true"), "ほかの app に落とせてしまう")
+        XCTAssertTrue(drag.contains(".environment(\\.dynamicTypeSize, size)"), "持ち上げの絵に文字の大きさを渡していない")
+        XCTAssertTrue(drag.contains("renderer.proposedSize = ProposedViewSize(width: probe.bounds.width"), "持ち上げの絵の幅を行の幅までにしていない")
+        XCTAssertFalse(drag.contains("?? window"), "スクロールの部品が無いとき窓に付けている")
+        XCTAssertTrue(drag.contains("TripRowPick.row(at: session.location(in: view)"), "指の下の行を TripRowPick で選んでいない")
+    }
+
     private func source(_ path: String) throws -> String {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         return try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/" + path), encoding: .utf8)

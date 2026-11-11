@@ -2586,7 +2586,9 @@ final class ScreenshotTests: XCTestCase {
     func testCapturesTripPlanDays() {
         // 自動保存の待ちを 10 秒に（見本のときだけ効く）。UI テストは押す間が 2.4〜4.9 秒あり（run 969）、
         // 2 秒の待ちでは「続けて直す」を作れない。まとめて送る仕組みは同じ
-        let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripPlanAutosaveDelay", "10"])
+        // `-JPTripPlanIgnoreDropExit`: 落とす先から出た知らせを聞かない（落とさずに終わる (b) を毎回作り、
+        // 運ぶ操作の終わりで線が消えるかを見分ける・下の「外で離す」）。落とせば drop で消えるので、ほかの段は変わらない
+        let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripPlanAutosaveDelay", "10", "-JPTripPlanIgnoreDropExit", "YES"])
         guard openFixturePlan(app) else { return }
         // 移動の見込み（Apple のサーバー）と日の出・日の入りを待つ
         Thread.sleep(forTimeInterval: 8)
@@ -2654,6 +2656,7 @@ final class ScreenshotTests: XCTestCase {
                 let sent = fixtureSends(app, "afterDrag")
                 XCTAssertNotEqual(after, before, "運んでも並びが変わらない")
                 if after != before { XCTAssertEqual(sent, "1", "運んだあとに 1 回送っていない") }
+                dragOutAndRelease(app, handles: handles, menu: menu)
             }
         }
 
@@ -2689,6 +2692,55 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 13)
         XCTAssertEqual(fixtureSends(app, "after5edits"), "\(sentBefore + 1)",
                        "続けて 5 回直したのに、まとめて 1 回で送っていない")
+
+        // 押すと開く（運ぶ働きはスクロールの部品全体に付いている・確かめ役の指摘 2026-11-11）: 行を 1 回押すと撮影スポットの頁
+        let row = app.descendants(matching: .any).matching(identifier: "tripPlan.dragHandle").firstMatch
+        var rowPushes = 0
+        while row.exists, !row.isHittable, rowPushes < 4 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            rowPushes += 1
+        }
+        XCTAssertTrue(row.isHittable, "押す行が画面に出ない")
+        if row.isHittable {
+            row.tap()
+            let spotPage = app.descendants(matching: .any)["spot.official"].firstMatch
+            let opened = spotPage.waitForExistence(timeout: 10)
+            _ = fixtureSends(app, "tapRow-opened\(opened)")
+            XCTAssertTrue(opened, "行を押しても撮影スポットの頁が開かない")
+            if opened { shoot(app, "65g-旅行プランの日程（行を押して撮影スポットを開いた）") }
+        }
+    }
+
+    /// **運ぶ操作が落とさずに終わったら、落とす先の線を消す**（2026-11-11 判断・`TripRowDrag.swift`）をふだんの組で見分ける。
+    /// 見本は出た知らせを聞かない（`-JPTripPlanIgnoreDropExit`）ので、行の上を通って画面の上の端（落とす先の無い所）で
+    /// 離すと、drop も出た知らせも来ない。線を消せるのは運ぶ操作の終わりの知らせ（X）だけ。並びは変わらない
+    private func dragOutAndRelease(_ app: XCUIApplication, handles: XCUIElementQuery, menu: XCUIElement) {
+        let source = (0..<handles.count).map { handles.element(boundBy: $0) }.last { $0.isHittable }
+        guard let source else { XCTFail("外で離す運ぶ元が画面に無い"); return }
+        let lines = app.descendants(matching: .any).matching(identifier: "tripPlan.dropLine")
+        let before = (menu.value as? String) ?? "nil"
+        /// 数の欄（`lift=… target=… drop=… reject=… end=…`）から 1 つ読む
+        func count(_ key: String) -> Int {
+            let line = (app.descendants(matching: .any)["tripPlan.fixtureDrag"].firstMatch.value as? String) ?? ""
+            let part = line.split(separator: " ").first { $0.hasPrefix(key + "=") }
+            return part.flatMap { Int($0.dropFirst(key.count + 1)) } ?? -1
+        }
+        let start = (lift: count("lift"), target: count("target"), drop: count("drop"), end: count("end"))
+        // テストの最初の起動では 1 回目が持ち上がらないことがある（(a)・run 1016〜1059）。持ち上がるまで 2 回まで
+        for attempt in 1...2 {
+            source.press(forDuration: 1.2, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.04)),
+                         withVelocity: .slow, thenHoldForDuration: 0.5)
+            Thread.sleep(forTimeInterval: 2)
+            _ = fixtureSends(app, "dragOut\(attempt) lines=\(lines.count) drag[\(dragCounts(app))]")
+            if count("lift") > start.lift { break }
+        }
+        XCTAssertGreaterThan(count("lift"), start.lift, "外で離す運ぶ操作が持ち上がらない")
+        XCTAssertGreaterThan(count("target"), start.target, "外で離す運ぶ操作が落とす先の上を通っていない")
+        XCTAssertEqual(count("drop"), start.drop, "外で離したのに drop が呼ばれた（線を消したのが終わりの知らせか見分けられない）")
+        XCTAssertGreaterThan(count("end"), start.end, "運ぶ操作の終わりの知らせが来ていない")
+        XCTAssertEqual(lines.count, 0, "落とさずに終わったのに落とす先の線が残っている")
+        XCTAssertEqual((menu.value as? String) ?? "nil", before, "外で離したのに並びが変わった")
     }
 
     /// 運ぶ操作の数（見本のときだけ画面に出す `tripPlan.fixtureDrag`）と出来事の並び（`tripPlan.fixtureDragTrail`）

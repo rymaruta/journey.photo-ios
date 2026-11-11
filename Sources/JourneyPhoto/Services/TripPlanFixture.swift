@@ -47,6 +47,16 @@ enum TripPlanFixture {
         #endif
     }
 
+    /// 落とす先から「出た」知らせ（isTargeted が偽）を聞かない（`-JPTripPlanIgnoreDropExit YES`・見本のときだけ）。
+    /// 落とさずに終わって出た知らせが来ない (b) を、ふだん流れる UI テストで毎回作るため（運ぶ操作の終わりで線が消えるかを見分ける）
+    static var ignoresDropExit: Bool {
+        #if DEBUG
+        return isOn && UserDefaults.standard.bool(forKey: "JPTripPlanIgnoreDropExit")
+        #else
+        return false
+        #endif
+    }
+
     static var failing: Bool {
         #if DEBUG
         return isOn && UserDefaults.standard.bool(forKey: failKey)
@@ -169,7 +179,10 @@ final class TripPlanFixtureCounter: ObservableObject {
     @Published var dropped = 0
     @Published var rejected = 0
 
-    var dragLine: String { "lift=\(lifted) target=\(targeted) drop=\(dropped) reject=\(rejected)" }
+    /// 運ぶ操作が終わった回数（今の作りの didEndWith）
+    @Published var ended = 0
+
+    var dragLine: String { "lift=\(lifted) target=\(targeted) drop=\(dropped) reject=\(rejected) end=\(ended)" }
 
     /// 運ぶ操作の出来事の並び（見本のときだけ・(b)「持ち上がったが落ちない」をどの部品で止まったかで分ける）。
     /// `L` 持ち上がった（今の作りは sessionWillBegin・前の作りは preview が出た）・`X` 運ぶ操作が終わった（didEndWith・今の作り）・

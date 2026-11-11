@@ -994,6 +994,12 @@ struct TripPlanDetailView: View {
             TripPlanFixtureCounter.shared.mark("T\(targeted ? "+" : "-")\(spot.day).\(spot.item.map(String.init) ?? "add")")
         }
         #endif
+        #if DEBUG
+        if !targeted, TripPlanFixture.ignoresDropExit {
+            TripPlanFixtureCounter.shared.mark("T-ignored")
+            return
+        }
+        #endif
         dropMark.targeted(targeted, spot)
     }
 
@@ -1120,7 +1126,10 @@ struct TripPlanDetailView: View {
         }, onEnd: {
             dropMark.dragEnded()
             #if DEBUG
-            if TripPlanFixture.isOn { TripPlanFixtureCounter.shared.mark("X") }
+            if TripPlanFixture.isOn {
+                TripPlanFixtureCounter.shared.ended += 1
+                TripPlanFixtureCounter.shared.mark("X")
+            }
             #endif
         })
     }
