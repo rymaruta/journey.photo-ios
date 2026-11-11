@@ -79,8 +79,12 @@ enum StoryCameraRules {
     /// 離れていたら始めない**。タップで始める録画は常に始める。
     /// 2026-11-11 判断: 録画は離しても続くようになったが、ここは変えない——ダイアログに答えている間は映像を見て
     /// いないので、答えたあとに押していない録画が勝手に始まると驚く（もう一度押せばすぐ始まる）
-    static func startsAfterPermission(fromHold: Bool, stillPressing: Bool) -> Bool {
-        !fromHold || stillPressing
+    ///
+    /// 2026-11-11 判断: **画面を閉じた（✕・下へ払った）あとは、どちらの録画も始めない**。始めている一瞬
+    /// （マイクの用意の間）に閉じると、`camera.stop()` のあとに録画が始まり得た（前からの件・確かめ役の指摘）
+    static func startsAfterPermission(fromHold: Bool, stillPressing: Bool, screenClosed: Bool) -> Bool {
+        guard !screenClosed else { return false }
+        return !fromHold || stillPressing
     }
 
     /// 「マイクが許可されていないので、音なしで撮ります」を出すか。動画モードのとき、
@@ -269,6 +273,9 @@ enum StoryCameraRules {
         case countdownTick
         /// カウントダウンを取り消した・フラッシュ／タイマー／倍率の段を選んだ（切り替えと同じ手ざわり）
         case countdownCancelled
+        /// 2026-11-11: 録画を始めた直後（`stopGuardSeconds` より前）・始めている途中のタップを受けなかった。
+        /// 押したのに何も起きないと感じさせないよう、軽く返す
+        case tapIgnored
         case optionChanged
     }
 
@@ -294,6 +301,7 @@ enum StoryCameraRules {
         case .posted: return .success
         case .countdownTick: return .impactLight
         case .countdownCancelled, .optionChanged: return .selection
+        case .tapIgnored: return .impactLight
         }
     }
 

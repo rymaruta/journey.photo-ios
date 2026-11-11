@@ -76,6 +76,8 @@ struct StoryCameraContent: View {
     @State private var countdownTickCount = 0
     @State private var optionTick = 0
     @State private var cancelTick = 0
+    /// 受けなかったタップ（録画を始めた直後・始めている途中）の軽い触覚
+    @State private var ignoredTick = 0
 
     // フラッシュ・タイマー・数えている最中（開くたびに「オフ」から）
     @State private var flash: StoryCameraRules.Flash = .off
@@ -153,6 +155,8 @@ struct StoryCameraContent: View {
         .sensoryFeedback(.impact(weight: .light, intensity: 0.5), trigger: countdownTickCount)
         .sensoryFeedback(.selection, trigger: optionTick)
         .sensoryFeedback(.selection, trigger: cancelTick)
+        // 受けなかったタップは、刻みよりさらに軽く（押したのに何も起きない、と感じさせない）
+        .sensoryFeedback(.impact(weight: .light, intensity: 0.4), trigger: ignoredTick)
     }
 
     // MARK: - 部品
@@ -461,7 +465,9 @@ struct StoryCameraContent: View {
     /// 読み上げのヒント。録画中は「押すと止まります」、写真モードは長押しの録画の止め方も添える
     private var shutterHint: String {
         if countdown != nil { return "" }
-        if camera.isRecording || recordingStarting { return StoryCameraRules.stopHint }
+        // 始めている途中は名前がまだ「写真を撮る」なので、ヒントも出さない（名前と食い違わせない）
+        if recordingStarting && !camera.isRecording { return "" }
+        if camera.isRecording { return StoryCameraRules.stopHint }
         if timerOption.isActive { return "" }
         return mode == .photo ? L("長押しで録画が始まります。もう一度押すと止まります",
                                   "Hold to start recording. Tap again to stop")
@@ -546,7 +552,7 @@ struct StoryCameraContent: View {
         case .cancelCountdown:
             cancelCountdown(announce: true)
         case .ignore:
-            break
+            ignoredTick += 1
         }
     }
 
@@ -615,7 +621,8 @@ struct StoryCameraContent: View {
                 // 写真モードの長押しもここを通る。断られても音なしで撮る(注記を出す)
                 await camera.prepareAudio()
                 // 長押しで始めるはずが、ダイアログの間に指が離れていたら始めない(もう一度押してもらう)
-                guard StoryCameraRules.startsAfterPermission(fromHold: fromHold, stillPressing: pressing) else { return }
+                guard StoryCameraRules.startsAfterPermission(fromHold: fromHold, stillPressing: pressing,
+                                                             screenClosed: camera.isClosed) else { return }
                 guard camera.startRecording(flash: flash) else {
                     failTick += 1
                     return
@@ -705,12 +712,15 @@ final class StoryCameraModel: NSObject, ObservableObject {
     private var recordingStartedAt: Date?
     /// 録画の途中で画面が閉じた。止まったファイルは誰にも渡さず消す(孤児にしない)
     private var abandoned = false
+    /// 画面が閉じた（`stop` を呼んだ）。始めている途中の録画を、閉じたあとに始めない（`startsAfterPermission`）
+    private(set) var isClosed = false
     private var photoContinuation: CheckedContinuation<Data?, Never>?
     private var interruptionObserver: NSObjectProtocol?
 
     // MARK: 始める・止める
 
     func start() async {
+        isClosed = false
         guard AVCaptureDevice.default(for: .video) != nil else {
             state = .unavailable
             return
@@ -750,6 +760,7 @@ final class StoryCameraModel: NSObject, ObservableObject {
     }
 
     func stop() {
+        isClosed = true
         if movieOutput.isRecording {
             // 録画の途中で画面が閉じた(✕・下へ払った): 撮れたファイルの渡し先が無いので、止まったあとに消す
             abandoned = true
@@ -931,7 +942,7 @@ final class StoryCameraModel: NSObject, ObservableObject {
     /// 録画を始める。始められなければ false
     @discardableResult
     func startRecording(flash: StoryCameraRules.Flash = .off) -> Bool {
-        guard state == .ready, !isRecording, !movieOutput.isRecording,
+        guard state == .ready, !isClosed, !isRecording, !movieOutput.isRecording,
               session.outputs.contains(movieOutput) else { return false }
         applyRotation(to: movieOutput.connection(with: .video))
         let url = StoryVideoPipeline.temporaryURL(ext: "mov")
