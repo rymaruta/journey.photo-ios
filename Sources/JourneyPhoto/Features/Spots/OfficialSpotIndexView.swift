@@ -37,8 +37,9 @@ struct OfficialSpotIndexView: View {
     /// 詳細を重ねた索引（最初は受け取ったまま）
     @State private var detailed: [OfficialSpot]?
     @State private var depth = SpotDetailNeeds.ListDepth()
-    /// 写真の枚数（撮影スポット id → 枚数）。写真か結びが変わったときだけ数える（`OfficialSpotList.photoCounts`）
-    @State private var counts: [String: Int] = [:]
+    /// 写真の枚数（撮影スポット id → 枚数）。**写真か結びが変わったときだけ**数え直す（`SpotPrefectureIndex.PhotoCounter`）
+    @State private var counter = SpotPrefectureIndex.PhotoCounter()
+    private var counts: [String: Int] { counter.counts }
     /// 出す段（入力が変わったときだけ作る・`Inputs`）。作る前は nil（「見つかりませんでした」と言わない）
     @State private var built: [RegionList.Section]?
 
@@ -147,9 +148,12 @@ struct OfficialSpotIndexView: View {
         .navigationBarTitleDisplayMode(.inline)
         // 許可済みのときだけ・まだ一度も取っていないときだけ（戻るたびに取り直して並びを動かさない）
         .onAppear { location.locateIfAllowed() }
-        .onAppear { if built == nil { counts = OfficialSpotList.photoCounts(photos, links: links); rebuild() } }
+        .onAppear { if built == nil { counter.refresh(photos, links: links); rebuild() } }
         .onChange(of: inputs) { _, _ in rebuild() }
-        .onChange(of: links) { _, next in counts = OfficialSpotList.photoCounts(photos, links: next) }
+        // 写真が後から届いた（探すの読み込みが一覧を開いた後に終わった）・結びが変わったら数え直す
+        .onChange(of: SpotPrefectureIndex.PhotoCounter.key(photos, links: links)) { _, _ in
+            counter.refresh(photos, links: links)
+        }
         .task {
             // 別名と写真の結びは控えから返る（無ければ1度だけ取る）。取れなければ名前と spotId だけで当てる
             links = await environment.spots.fetchPhotoLinks()

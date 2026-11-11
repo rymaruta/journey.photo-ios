@@ -191,6 +191,39 @@ enum SpotPrefectureIndex {
         return parts.joined(separator: L("、", ", "))
     }
 
+    /// 札の下の出典の字。開ける先があれば作者だけ（ライセンスは押した先のメニュー）、無ければ作者とライセンス
+    static func creditText(_ photo: SpotImage) -> String {
+        photo.creditLinks.isEmpty ? photo.credit : photo.creditAuthor
+    }
+
+    /// 一覧の行の枚数（撮影スポット id → 枚数）。**写真か結びが変わったときだけ数え直す**。
+    /// 2026-11-11（確かめ役の見直し）: 以前は一覧を開いたときと結びが変わったときだけ数え、写真が後から届いても
+    /// 全行が 0 枚（＝最初の1枚への誘い）のままだった
+    struct PhotoCounter: Equatable {
+        private(set) var counts: [String: Int] = [:]
+        /// 数え直した回数（試験で「同じ材料なら数えない」を見る）
+        private(set) var builds = 0
+        private var key: Key?
+
+        /// 数える材料（写真の id と本人が選んだ撮影スポット・結びの表）
+        struct Key: Equatable {
+            let photos: [String]
+            let links: SpotPhotoLinks
+        }
+
+        static func key(_ photos: [Photo], links: SpotPhotoLinks) -> Key {
+            Key(photos: photos.map { "\($0.id)|\($0.spotId ?? "")" }, links: links)
+        }
+
+        mutating func refresh(_ photos: [Photo], links: SpotPhotoLinks) {
+            let next = Self.key(photos, links: links)
+            guard next != key else { return }
+            key = next
+            counts = OfficialSpotList.photoCounts(photos, links: links)
+            builds += 1
+        }
+    }
+
     /// 段の見出しの右の件数（「15件」）
     static func countLabel(_ count: Int) -> String {
         L("\(count)件", count == 1 ? "1 spot" : "\(count) spots")

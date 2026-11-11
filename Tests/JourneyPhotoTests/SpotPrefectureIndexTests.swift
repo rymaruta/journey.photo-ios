@@ -163,10 +163,11 @@ final class SpotPrefectureIndexTests: XCTestCase {
         XCTAssertEqual(SearchSpotIndexSection.chipRowHeight, WebTheme.minTapTarget)
         XCTAssertEqual(SearchSpotIndexSection.cardHeight, 116)
         XCTAssertEqual(SearchSpotIndexSection.cardWidth, 156)
-        // 出典の1行（12pt・1行固定 16）を札の下に含める。写真の無い札も同じだけ空ける
-        XCTAssertEqual(SearchSpotIndexSection.creditHeight, 16)
-        XCTAssertEqual(SearchSpotIndexSection.cardColumnHeight, 116 + 4 + 16)
-        XCTAssertEqual(SearchSpotIndexSection.bodyHeight, 44 + 8 + 116 + 4 + 16)
+        // 出典の帯（当たり 44・字は 12pt の1行）を札の下に含める。写真の無い札も同じだけ空ける
+        XCTAssertEqual(SearchSpotIndexSection.creditHeight, CGFloat(CreditLink.tapHeight))
+        XCTAssertEqual(SearchSpotIndexSection.creditHeight, 44)
+        XCTAssertEqual(SearchSpotIndexSection.cardColumnHeight, 116 + 44)
+        XCTAssertEqual(SearchSpotIndexSection.bodyHeight, 44 + 8 + 116 + 44)
     }
 
     private func source(_ path: String) throws -> String {
@@ -188,11 +189,42 @@ final class SpotPrefectureIndexTests: XCTestCase {
                       "出典は札のリンクの外・後ろ")
         let body = try XCTUnwrap(text.range(of: "private func credit(")).upperBound
         let creditBody = String(text[body...])
-        for part in ["SpotImageCredit(photo: cover)", ".font(JPFont.caption)", ".lineLimit(1)",
-                     "Color.clear", ".frame(width: Self.cardWidth, height: Self.creditHeight"] {
+        for part in ["CreditLinksMenu(links: cover.creditLinks, accessibilityLabel: cover.credit",
+                     "SpotPrefectureIndex.creditText(cover)", ".font(JPFont.caption)", ".lineLimit(1)",
+                     ".truncationMode(.tail)", "Color.clear", ".frame(width: Self.cardWidth, height: Self.creditHeight"] {
             XCTAssertTrue(creditBody.contains(part), "\(part) が無い")
         }
         XCTAssertTrue(text.contains(".frame(height: Self.cardColumnHeight)"), "札の列の高さに出典の行を含めていない")
+    }
+
+    /// 出典の字: 開ける先があれば作者だけ（ライセンスは押した先のメニューに名前つきで出る）、無ければライセンスも
+    func testCreditTextShowsAuthorAndLeavesLicenseToMenu() throws {
+        let linked = try XCTUnwrap(try JSONDecoder.api.decode(LenientSpotImage.self, from: Data(
+            "{\"url\":\"https://journey-photo.com/a.jpg\",\"author\":\"とても長い名前の撮影者\",\"license\":\"CC BY-SA 4.0\",\"pageUrl\":\"https://commons.wikimedia.org/wiki/File:A.jpg\",\"licenseUrl\":\"https://creativecommons.org/licenses/by-sa/4.0/\"}".utf8)).value)
+        XCTAssertEqual(SpotPrefectureIndex.creditText(linked), linked.creditAuthor)
+        XCTAssertTrue(linked.creditLinks.contains { $0.label.contains("CC BY-SA 4.0") }, "ライセンスがメニューに無い")
+        let bare = try XCTUnwrap(try JSONDecoder.api.decode(LenientSpotImage.self, from: Data(
+            "{\"url\":\"https://journey-photo.com/b.jpg\",\"author\":\"B\",\"license\":\"Public domain\"}".utf8)).value)
+        XCTAssertTrue(bare.creditLinks.isEmpty)
+        XCTAssertEqual(SpotPrefectureIndex.creditText(bare), bare.credit)
+    }
+
+    /// 🔴 写真が一覧を開いた後に届いたら数え直す（以前は全行 0 枚のまま）。同じ材料なら数えない
+    func testPhotoCounterRecountsWhenPhotosArrive() throws {
+        var counter = SpotPrefectureIndex.PhotoCounter()
+        counter.refresh([], links: .empty)
+        XCTAssertTrue(counter.counts.isEmpty)
+        let photo = try JSONDecoder.api.decode(Photo.self, from: Data(
+            "{\"id\":\"p\",\"src\":\"/uploads/p.jpg\",\"spotId\":\"sp_meiji\"}".utf8))
+        counter.refresh([photo], links: .empty)
+        XCTAssertEqual(counter.counts, ["sp_meiji": 1])
+        XCTAssertEqual(counter.builds, 2)
+        counter.refresh([photo], links: .empty)
+        XCTAssertEqual(counter.builds, 2, "同じ写真・結びで数え直した")
+        // 一覧の画面は写真の鍵の変化で数え直す
+        let text = try source("Features/Spots/OfficialSpotIndexView.swift")
+        XCTAssertTrue(text.contains(".onChange(of: SpotPrefectureIndex.PhotoCounter.key(photos, links: links))"),
+                      "写真が届いても数え直していない")
     }
 
     /// 読み上げに撮影者も入れる。区切りは英語では「, 」（`L`）
