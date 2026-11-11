@@ -96,4 +96,5 @@ jobs:
           path: |
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            ~/Library/Caches/org.swift.swiftpm/manifests
           key: ${{ steps.cache.outputs.key }}-${{ github.run_id }}
