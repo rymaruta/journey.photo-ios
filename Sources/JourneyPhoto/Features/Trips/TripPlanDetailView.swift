@@ -55,6 +55,10 @@ struct TripPlanDetailView: View {
         let sun: TripDraft.Sun?
         let destinationTimes: [String]
         let previousTimes: [String]
+        /// 長い移動（Google フライトだけ）
+        let long: Bool
+        /// 行き先の日の日付
+        let date: String?
         var id: String { leg.id }
     }
 
@@ -393,7 +397,7 @@ struct TripPlanDetailView: View {
             NavigationStack {
                 TripLegSheet(leg: target.leg, estimates: target.estimates, modes: target.modes,
                              sun: target.sun, destinationTimes: target.destinationTimes,
-                             previousTimes: target.previousTimes)
+                             previousTimes: target.previousTimes, long: target.long, date: target.date)
             }
             .presentationDetents([.medium, .large])
         }
@@ -619,7 +623,13 @@ struct TripPlanDetailView: View {
         return days.indices.map { di in
             TripDayMap.stops(of: days[di], index: index, places: places,
                              startNumber: numbers.indices.contains(di) ? (numbers[di].first ?? 1) : 1)
-                .map { ($0.name, $0.coords, $0.number) }
+                .enumerated().map { offset, stop in
+                    // 国は台帳の撮影スポットだけ分かる（日本の行は国を持たない＝日本）。撮影地は分からない（距離だけで決める）
+                    let spot = days[di].items.indices.contains(offset) ? spotFor(days[di].items[offset]) : nil
+                    let country = spot.map { TripTravel.country(of: $0) }
+                    let place = spot.flatMap { s in s.region?.city ?? s.region?.prefecture ?? s.region?.country }
+                    return TripTravel.Stop(stop.name, stop.coords, stop.number, country: country, place: place)
+                }
         }
     }
 
@@ -901,19 +911,22 @@ struct TripPlanDetailView: View {
                 }
                 ForEach(Array(day.items.enumerated()), id: \.offset) { ii, item in
                     let number = numbers.indices.contains(ii) ? numbers[ii] : ii + 1
-                    // 場所の上に、前の場所からの区間（1 日目の最初の場所の上には無い。2 日目以降の最初は前の日から）
+                    // 場所の上に、前の場所からの区間（1 日目の最初の場所の上には無い。2 日目以降の最初は前の日から）。
+                    // 区間の行は**区切り線で挟まない**（縦の線で前後の場所をつなぐ・2026-11-11）
                     if let leg = legs.first(where: { $0.to.number == number }), ii > 0 || leg.crossesDay {
                         let index = legs.firstIndex(where: { $0.id == leg.id }) ?? 0
                         legRow(leg, estimates: estimatesByLeg.indices.contains(index) ? estimatesByLeg[index] : [],
                                sun: sun, toTimes: resolved.indices.contains(ii) ? resolved[ii].times : [],
                                fromTimes: numbers.firstIndex(of: leg.from.number)
-                                   .flatMap { resolved.indices.contains($0) ? resolved[$0].times : nil } ?? [])
+                                   .flatMap { resolved.indices.contains($0) ? resolved[$0].times : nil } ?? [],
+                               date: ymd)
+                    } else if ii > 0 {
                         divider
                     }
                     itemRow(di, ii, item, number: number,
                             season: spotFor(item).flatMap { TripDraft.seasonLine($0, ymd: ymd) },
                             chip: resolved.indices.contains(ii) ? TripDraft.timeChip(resolved[ii].times) : nil)
-                    divider
+                    if ii == day.items.count - 1 { divider }
                     // 場所が1か所だけ: 移動の目安が出ない理由を、その場所の下に1行で（2026-11-11）
                     if singlePlaceNumber == number, let hint = TripTravel.singlePlaceHint(locatedPlaces: 1) {
                         TripDayNote(text: hint, symbol: "arrow.triangle.swap")
@@ -922,7 +935,7 @@ struct TripPlanDetailView: View {
                         divider
                     }
                 }
-                addRow(di, full: day.items.count >= TripPlanService.itemsPerDayMax)
+                addRow(di, full: day.items.count >= TripPlanService.itemsPerDayMax, compact: !day.items.isEmpty)
                     .overlay(alignment: .top) { dropLine(DropSpot(day: di, item: nil)) }
                     .dropDestination(for: String.self) { items, _ in
                         drop(items.first, toDay: di, toItem: nil)
@@ -959,13 +972,15 @@ struct TripPlanDetailView: View {
     }
 
     private func legRow(_ leg: TripTravel.Leg, estimates: [TripTravel.Estimate], sun: TripDraft.Sun?,
-                        toTimes: [String], fromTimes: [String]) -> some View {
+                        toTimes: [String], fromTimes: [String], date: String?) -> some View {
         let modes = TripTravel.modes(for: leg, transitAvailable: TravelEstimator.transitAvailable)
-        return TripLegRow(leg: leg, estimates: estimates,
-                          settled: travel.isSettled(leg, modes: modes),
+        let settled = travel.isSettled(leg, modes: modes)
+        return TripLegRow(leg: leg, estimates: estimates, settled: settled,
                           offline: isOffline, throttled: travel.throttled) {
             legTarget = LegTarget(leg: leg, estimates: estimates, modes: modes, sun: sun, destinationTimes: toTimes,
-                                  previousTimes: fromTimes)
+                                  previousTimes: fromTimes,
+                                  long: TripTravel.showsAsLong(leg, estimates: estimates, settled: settled),
+                                  date: date)
         }
     }
 
@@ -1033,30 +1048,12 @@ struct TripPlanDetailView: View {
     private func itemRow(_ di: Int, _ ii: Int, _ item: TripItem, number: Int,
                          season: String?, chip: String?) -> some View {
         let name = TripPlanText.label(for: item, index: index, places: places)
+        // 🔴 **右の印は「…」1つに**（2026-11-11 owner「UI もブラッシュアップして」: 「…」「×」「≡」の3つが並んで重かった）。
+        // - 外すは「…」の中（押す回数 1 → 2。日程から外すのは取り消せるが、誤って押しやすい × を行に置かない）
+        // - 並べ替えは**行を押さえて運ぶ**（iOS の決まりの操作。押す回数は変わらない）。行を押すと今どおり撮影スポットが開く
+        // - 読み上げの人は「…」の上へ・下へ・別の日へ移す・外す
         return HStack(spacing: 0) {
             itemLink(item, name: name, number: number, season: season, chip: chip)
-            itemMenu(di, ii, item, name: name)
-            // **外す。** 日の削除（「…」の中）と見分けるため × にする
-            Button {
-                // 添字を確かめる（`add` と同じ）。描き直す前の古い添字で消さない
-                guard days.indices.contains(di), days[di].items.indices.contains(ii) else { return }
-                days[di].items.remove(at: ii)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.text3)
-                    .webTappable()
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L("「\(name)」を外す", "Remove \(name)"))
-            // 運ぶ印（当たり 44pt・押さえて運ぶ）。**行のほかの所は今どおり撮影スポットを開く**（取り違えを防ぐ）。
-            // 読み上げでも名前で見つかる（run 969: 読み上げから外していたので UI テストが印を見つけられなかった）。
-            // 読み上げの人の並べ替えは今の「…」の上へ・下へ・別の日へ移すが主
-            Image(systemName: "line.3.horizontal")
-                .font(.subheadline)
-                .foregroundStyle(WebTheme.text3)
-                .webTappable()
-                .contentShape(Rectangle())
                 .draggable(TripPlanEdit.dragPayload(day: di, item: ii, of: item)) {
                     Text(name)
                         .font(JPFont.bodyEmphasis)
@@ -1065,9 +1062,9 @@ struct TripPlanDetailView: View {
                         .frame(minHeight: WebTheme.minTapTarget)
                         .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))
                 }
-                .accessibilityLabel(L("「\(name)」を運ぶ", "Move \(name)"))
-                .accessibilityHint(L("押さえたまま、入れたい位置へ運びます", "Touch and hold, then drag to a new position."))
+                .accessibilityHint(L("押すと開きます。押さえたまま運ぶと並べ替えます", "Tap to open. Touch and hold, then drag to reorder."))
                 .accessibilityIdentifier("tripPlan.dragHandle")
+            itemMenu(di, ii, item, name: name)
         }
         .overlay(alignment: .top) { dropLine(DropSpot(day: di, item: ii)) }
         .dropDestination(for: String.self) { items, _ in
@@ -1116,6 +1113,15 @@ struct TripPlanDetailView: View {
             } label: {
                 Label(item.note == nil ? L("ひとことを書く", "Add a note") : L("ひとことを直す", "Edit note"),
                       systemImage: "text.bubble")
+            }
+            // 外す（2026-11-11: 行の × をここへ畳んだ）。押した時点の日程で同じ項目を探し直す
+            Button(role: .destructive) {
+                guard let at = TripPlanEdit.locate(days, day: di, item: ii, original: item),
+                      days.indices.contains(di) else { return notMoved(name) }
+                days[di].items.remove(at: at)
+                announce(L("「\(name)」を外しました", "Removed \(name)"))
+            } label: {
+                Label(L("この日程から外す", "Remove from this trip"), systemImage: "minus.circle")
             }
         } label: {
             Image(systemName: "ellipsis")
@@ -1201,7 +1207,9 @@ struct TripPlanDetailView: View {
     }
 
     /// 「行きたい場所から追加…」（v2 の板 TripPlanDays の `.add`: 真鍮の ＋ と字・48）
-    private func addRow(_ di: Int, full: Bool) -> some View {
+    /// - `compact`: 場所の入った日は小さく（「＋ 追加」・白 72%・当たり 44pt）。**空の日だけ**真鍮の大きな行で目立たせる
+    ///   （2026-11-11 owner「UI もブラッシュアップして」: 日ごとに大きな行が並んで縦に長かった。押す回数は変わらない）
+    private func addRow(_ di: Int, full: Bool, compact: Bool = false) -> some View {
         Button {
             picking = PickTarget(day: di)
         } label: {
@@ -1209,14 +1217,15 @@ struct TripPlanDetailView: View {
                 Image(systemName: "plus")
                     .font(.footnote.weight(.semibold))
                     .accessibilityHidden(true)
-                Text(L("行きたい場所から追加…", "Add a saved place…"))
-                    .font(JPFont.bodyEmphasis)
+                Text(compact ? L("追加", "Add") : L("行きたい場所から追加…", "Add a saved place…"))
+                    .font(compact ? JPFont.footnote.weight(.semibold) : JPFont.bodyEmphasis)
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(WebTheme.accent)
-            .frame(minHeight: JPHeight.field)
+            .foregroundStyle(compact ? WebTheme.muted2 : WebTheme.accent)
+            .frame(minHeight: compact ? WebTheme.minTapTarget : JPHeight.field)
             .contentShape(Rectangle())
         }
+        .accessibilityLabel(L("\(di + 1) 日目に行きたい場所から追加", "Add a saved place to day \(di + 1)"))
         .buttonStyle(.plain)
         .accessibilityIdentifier("tripPlan.addRow.\(di)")
         // 1日に置ける数はサーバーと対（超えると保存で断られる）

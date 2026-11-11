@@ -3,12 +3,15 @@ import MapKit
 
 /// 場所と場所の間の1行（移動の見込み・2026-11-10 owner の要望・札 #521）。
 ///
-/// 「歩き 約 15 分 · 車 約 6 分」。**押すと区間のシート**（`TripLegSheet`）——第2段で「どの電車・バスか」を
-/// 出すときは、シートの中身だけを差し替える（この行と区間の型 `TripTravel.Leg` はそのまま）。
+/// 🔴 **場所の行とつなぐ形**（2026-11-11 owner「UI もブラッシュアップして」・実機の写真で区間の行が場所の行と
+/// 見分けにくかった）: 番号の丸の列に縦の線を通して前後の場所をつなぎ、右に**手段の記号と時間を1行**で出す。
+/// 時間は SF の等幅数字。行の高さは押せる 44pt。区切り線で挟まない（つなぎに見えるように）。
 ///
-/// - 返った手段だけ並べる（最大2つ）。どれも返らなければ「経路を地図で開く」
-/// - 圏外では聞かない（「電波が戻ると移動の見込みが出ます」）
-/// - 聞いている間は細い線だけ（数を作らない）
+/// 状態はどれも同じ並び（記号 → 1行の字）: 聞いている（時計）・圏外（電波なし）・返らない（地図）・
+/// 長い移動（飛行機・まっすぐの距離の概数・所要時間は出さない）・見込み（手段ごとの記号と時間）。
+/// 日をまたぐ区間は字の頭に「前の日の〇〇から」。
+///
+/// **押すと区間のシート**（`TripLegSheet`）。第2段で「どの電車・バスか」を出すときは、シートの中身だけを差し替える
 struct TripLegRow: View {
     let leg: TripTravel.Leg
     let estimates: [TripTravel.Estimate]
@@ -18,28 +21,52 @@ struct TripLegRow: View {
     let throttled: Bool
     let open: () -> Void
 
+    /// 縦の線の太さ（番号の丸の線と同じ 1.5）・濃さ（白 18%）
+    nonisolated static let connectorWidth: CGFloat = TripStyle.stopNumberStroke
+    nonisolated static let connectorOpacity = 0.18
+
+    enum State: Equatable {
+        case loading, offline, unavailable, long, estimates
+    }
+
+    /// 出す形（`TripTravel.showsAsLong` が先・2026-11-11）
+    nonisolated static func state(leg: TripTravel.Leg, estimates: [TripTravel.Estimate], settled: Bool,
+                                  offline: Bool, throttled: Bool) -> State {
+        if TripTravel.showsAsLong(leg, estimates: estimates, settled: settled) { return .long }
+        if !estimates.isEmpty { return .estimates }
+        if offline { return .offline }
+        if settled || throttled { return .unavailable }
+        return .loading
+    }
+
+    private var state: State {
+        Self.state(leg: leg, estimates: estimates, settled: settled, offline: offline, throttled: throttled)
+    }
+
     var body: some View {
         Button(action: open) {
             HStack(spacing: JPSpace.s) {
-                // 番号の丸の中心の下に、縦の線（行と行のつながり）
+                // 番号の丸の列を通る縦の線（前後の場所をつなぐ）
                 Rectangle()
-                    .fill(WebTheme.hairline)
-                    .frame(width: JPStroke.hairline, height: 20)
+                    .fill(Color.white.opacity(Self.connectorOpacity))
+                    .frame(width: Self.connectorWidth)
                     .frame(width: TripStyle.stopNumberSide)
+                    .frame(maxHeight: .infinity)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    // 日をまたぐ区間は、どこからの区間かを頭に（「前の日の伏見稲荷大社から」・2026-11-11）
+                VStack(alignment: .leading, spacing: 1) {
+                    // 日をまたぐ区間は、どこからの区間かを頭に（「前の日の伏見稲荷大社から」）
                     if leg.crossesDay {
                         Text(TripTravel.crossDayLabel(leg))
                             .font(JPFont.caption)
                             .foregroundStyle(WebTheme.faint)
                             .lineLimit(1)
                     }
-                    content
+                    line
                 }
+                .padding(.vertical, 6)
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(WebTheme.text3)
                     .accessibilityHidden(true)
             }
@@ -53,47 +80,50 @@ struct TripLegRow: View {
         .accessibilityIdentifier("trip.leg")
     }
 
+    /// 1行（記号 → 字）。見込みは手段ごとに記号と等幅数字の時間を並べる
     @ViewBuilder
-    private var content: some View {
-        if offline && estimates.isEmpty {
-            note(TripTravel.offlineNote, symbol: "wifi.slash")
-        } else if !estimates.isEmpty {
+    private var line: some View {
+        switch state {
+        case .estimates:
             HStack(spacing: JPSpace.s) {
                 ForEach(estimates, id: \.mode) { estimate in
                     HStack(spacing: 4) {
                         Image(systemName: estimate.mode.symbol)
                             .font(JPFont.caption)
                             .accessibilityHidden(true)
-                        Text("\(estimate.mode.label) \(TripTravel.duration(estimate.seconds))")
-                            .font(JPFont.caption.monospacedDigit())
+                        Text(estimate.mode.label)
+                            .font(JPFont.caption)
+                        Text(TripTravel.duration(estimate.seconds))
+                            .font(JPFont.mono(12, medium: true))
                     }
                     .foregroundStyle(WebTheme.muted2)
                     .lineLimit(1)
                 }
             }
-        } else if settled || throttled {
+        case .long:
+            note(TripTravel.longLine(leg), symbol: "airplane", strong: true)
+        case .offline:
+            note(TripTravel.offlineNote, symbol: "wifi.slash")
+        case .unavailable:
             note(TripTravel.openInMaps, symbol: "map")
-        } else {
-            // 聞いている間（数を作らない）
-            Capsule()
-                .fill(Color.white.opacity(0.08))
-                .frame(width: 96, height: 8)
-                .accessibilityHidden(true)
+        case .loading:
+            note(L("移動の目安を調べています", "Checking travel time…"), symbol: "clock")
         }
     }
 
-    private func note(_ text: String, symbol: String) -> some View {
+    private func note(_ text: String, symbol: String, strong: Bool = false) -> some View {
         HStack(spacing: 4) {
             Image(systemName: symbol).font(JPFont.caption).accessibilityHidden(true)
-            Text(text).font(JPFont.caption)
+            Text(text).font(JPFont.caption).lineLimit(1)
         }
-        .foregroundStyle(WebTheme.faint)
+        .foregroundStyle(strong ? WebTheme.muted2 : WebTheme.faint)
     }
 
     nonisolated static func spoken(leg: TripTravel.Leg, estimates: [TripTravel.Estimate], offline: Bool) -> String {
         let route = leg.crossesDay
             ? L("前の日の\(leg.from.name)から\(leg.to.name)", "\(leg.from.name) (previous day) to \(leg.to.name)")
             : L("\(leg.from.name)から\(leg.to.name)", "\(leg.from.name) to \(leg.to.name)")
+        if TripTravel.skipsDirections(leg) { return "\(route)、\(TripTravel.longLine(leg))" }
         if !estimates.isEmpty { return "\(route)、\(TripTravel.spoken(estimates))" }
         if offline { return "\(route)、\(TripTravel.offlineNote)" }
         return route
@@ -120,6 +150,10 @@ struct TripLegSheet: View {
     let destinationTimes: [String]
     /// 前の場所の時間帯の案内（見てから出ると間に合わないときに一言添える）
     var previousTimes: [String] = []
+    /// 長い移動（国をまたぐ・海を越える・2026-11-11）。Apple のマップには経路が無いので、Google フライトだけを出す
+    var long = false
+    /// 行き先の日の日付（Google フライトに渡す）
+    var date: String? = nil
 
     @Environment(\.openURL) private var openURL
     @State private var opening = false
@@ -129,6 +163,62 @@ struct TripLegSheet: View {
     private var isTransit: Bool { mode == .transit }
 
     var body: some View {
+        if long {
+            longBody
+        } else {
+            regularBody
+        }
+    }
+
+    /// 長い移動（2026-11-11 owner「日本からブラジルとか無理じゃん」）: 所要時間は出さない（推定の数を作らない）。
+    /// 押せるのは「Google フライトで探す」1つ（鍵の要らない検索の URL・出発と到着の都市名・日程の日付）。
+    /// Apple のマップは経路を出せないので出さない
+    private var longBody: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: JPSpace.m) {
+                VStack(alignment: .leading, spacing: JPSpace.xxs) {
+                    Text(L("\(leg.from.number) → \(leg.to.number)", "\(leg.from.number) → \(leg.to.number)"))
+                        .jpEyebrow()
+                        .foregroundStyle(WebTheme.accent)
+                    Text(L("\(leg.from.name) → \(leg.to.name)", "\(leg.from.name) → \(leg.to.name)"))
+                        .font(JPFont.cardTitle)
+                        .foregroundStyle(WebTheme.foreground)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
+                }
+                HStack(spacing: JPSpace.xs) {
+                    Image(systemName: "airplane").accessibilityHidden(true)
+                    Text(TripTravel.longLine(leg)).font(JPFont.body)
+                }
+                .foregroundStyle(WebTheme.text)
+                .padding(JPSpace.m)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .jpCardFace()
+                Button {
+                    if let url = TripTravel.googleFlightsURL(leg, date: date) { openURL(url) }
+                } label: {
+                    Text(L("Google フライトで探す", "Search Google Flights"))
+                        .jpPillButton(.main(onPhoto: false))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("trip.leg.flights")
+                Text(L("海を越える・国をまたぐ移動は、地図のアプリでは経路が出ません。所要時間は出していません（まっすぐの距離の概数だけ）",
+                       "Maps apps can't route across oceans or borders. Travel time isn't shown (straight-line distance only)."))
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, JPSpace.l)
+            .padding(.top, JPSpace.xs)
+            .padding(.bottom, JPSpace.xl)
+        }
+        .webScreen()
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { SheetCloseButton() }
+        }
+    }
+
+    private var regularBody: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: JPSpace.m) {
                 VStack(alignment: .leading, spacing: JPSpace.xxs) {

@@ -50,6 +50,10 @@ enum TripTravel {
         let coords: Photo.Coords
         /// 日程の通し番号（1から）
         let number: Int
+        /// 国（台帳の撮影スポットだけ分かる。日本の行は「日本」）。行きたい場所・撮影地は nil（座標の距離だけで決める）
+        var country: String? = nil
+        /// 都市の名前（台帳の市区町村・都道府県・国。Google フライトに渡す）。無ければ場所の名前
+        var place: String? = nil
     }
 
     /// 場所と場所の間（同じ日の中・前の場所 → 次の場所）
@@ -67,7 +71,26 @@ enum TripTravel {
         var id: String { "\(from.number)>\(to.number):\(key)" }
     }
 
-    typealias Stop = (name: String, coords: Photo.Coords?, number: Int)
+    /// 日程の1か所（区間を作る材料）
+    struct Stop: Equatable {
+        let name: String
+        let coords: Photo.Coords?
+        let number: Int
+        var country: String? = nil
+        var place: String? = nil
+
+        init(_ name: String, _ coords: Photo.Coords?, _ number: Int, country: String? = nil, place: String? = nil) {
+            self.name = name
+            self.coords = coords
+            self.number = number
+            self.country = country
+            self.place = place
+        }
+
+        var endpoint: Endpoint? {
+            coords.map { Endpoint(name: name, coords: $0, number: number, country: country, place: place) }
+        }
+    }
 
     /// 同じ日の区間（座標のある前の場所 → 次の場所）。座標の無い場所は飛ばす。
     /// **同じ座標の2か所の間は出さない**（見込みは 0 分で、出しても読み違えるだけ・2026-11-11）
@@ -75,9 +98,8 @@ enum TripTravel {
         var previous: Endpoint?
         var out: [Leg] = []
         for stop in stops {
-            guard let coords = stop.coords else { continue }
-            let here = Endpoint(name: stop.name, coords: coords, number: stop.number)
-            if let previous, previous.coords != coords {
+            guard let here = stop.endpoint else { continue }
+            if let previous, previous.coords != here.coords {
                 out.append(Leg(from: previous, to: here))
             }
             previous = here
@@ -93,17 +115,81 @@ enum TripTravel {
         return days.map { stops in
             var out: [Leg] = []
             if let previous = lastOfEarlierDays,
-               let first = stops.first(where: { $0.coords != nil }), let coords = first.coords,
-               previous.coords != coords {
-                out.append(Leg(from: previous, to: Endpoint(name: first.name, coords: coords, number: first.number),
-                               crossesDay: true))
+               let first = stops.first(where: { $0.coords != nil })?.endpoint,
+               previous.coords != first.coords {
+                out.append(Leg(from: previous, to: first, crossesDay: true))
             }
             out += legs(stops)
-            if let last = stops.last(where: { $0.coords != nil }), let coords = last.coords {
-                lastOfEarlierDays = Endpoint(name: last.name, coords: coords, number: last.number)
+            if let last = stops.last(where: { $0.coords != nil })?.endpoint {
+                lastOfEarlierDays = last
             }
             return out
         }
+    }
+
+    // MARK: - 長い移動（国をまたぐ・海を越える・2026-11-11 owner「日本からブラジルとか無理じゃん」）
+
+    /// これより遠い区間は、国が分からなければ Apple の地図に聞かない（km・まっすぐの距離）。
+    ///
+    /// 2026-11-11 判断: **500km**。日本の主な区間のまっすぐの距離は 東京–大阪 約 400km・東京–広島 約 680km・
+    /// 東京–福岡 約 880km・東京–札幌 約 830km（どれも国内）。国が両方とも日本と分かる区間は、500km を越えても
+    /// 聞く（新幹線・車の見込みが返るなら出す。返らなければ長い移動に倒す）。国が分からない場所（行きたい場所・
+    /// 撮影地）どうしで 500km を越えると、海を越える区間が混ざる（東京–ソウル 約 1,150km）ので聞かない
+    static let longKm = 500.0
+
+    static let japan = "日本"
+
+    /// 撮影スポットの国（索引は日本の外の行だけ `country` を持つ。持たなければ日本）
+    static func country(of spot: OfficialSpot) -> String {
+        let c = spot.region?.country?.trimmingCharacters(in: .whitespaces) ?? ""
+        return c.isEmpty ? japan : c
+    }
+
+    /// 区間の両端の国が分かっていて、違う
+    static func crossesBorder(_ leg: Leg) -> Bool {
+        guard let a = leg.from.country, let b = leg.to.country else { return false }
+        return a != b
+    }
+
+    /// 両端とも日本と分かる
+    static func bothInJapan(_ leg: Leg) -> Bool {
+        leg.from.country == japan && leg.to.country == japan
+    }
+
+    /// Apple の地図に聞かない区間（国が違う・国が分からないまま 500km 以上）
+    static func skipsDirections(_ leg: Leg) -> Bool {
+        if crossesBorder(leg) { return true }
+        return leg.kilometers >= longKm && !bothInJapan(leg)
+    }
+
+    /// 長い移動の形で出すか。聞かない区間はいつも。日本の中の 500km 以上は、聞き終えて何も返らなかったときだけ
+    static func showsAsLong(_ leg: Leg, estimates: [Estimate], settled: Bool) -> Bool {
+        if skipsDirections(leg) { return true }
+        return leg.kilometers >= longKm && settled && estimates.isEmpty
+    }
+
+    /// 「約 18,600km」。1,000km 以上は 100km、それより短いと 10km の単位に丸める（概数）
+    static func roughDistance(_ km: Double) -> String {
+        let unit = km >= 1000 ? 100.0 : 10.0
+        let rounded = max(unit, (km / unit).rounded() * unit)
+        return L("約 \(TravelDistance.formatted(rounded))km", "about \(TravelDistance.formatted(rounded)) km")
+    }
+
+    /// 行の字（「飛行機などの長い移動・約 18,600km」）。**所要時間は出さない**（推定の数を作らない）
+    static func longLine(_ leg: Leg) -> String {
+        L("飛行機などの長い移動・\(roughDistance(leg.kilometers))",
+          "Long trip (flight etc.) · \(roughDistance(leg.kilometers))")
+    }
+
+    /// Google フライトの URL（鍵の要らない検索の URL・出発と到着の都市名・日付は分かれば）
+    static func googleFlightsURL(_ leg: Leg, date: String?) -> URL? {
+        let from = leg.from.place ?? leg.from.name
+        let to = leg.to.place ?? leg.to.name
+        var q = "Flights from \(from) to \(to)"
+        if let date, TripPlanText.date(fromYMD: date) != nil { q += " on \(date)" }
+        var c = URLComponents(string: "https://www.google.com/travel/flights")
+        c?.queryItems = [URLQueryItem(name: "q", value: q)]
+        return c?.url
     }
 
     /// 区間が1つも作れないときの1行（**場所が1か所だけ**のとき）。何も出ない理由を、押す前に分かるように。

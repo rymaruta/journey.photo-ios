@@ -2686,6 +2686,51 @@ final class ScreenshotTests: XCTestCase {
                        "続けて 5 回直したのに、まとめて 1 回で送っていない")
     }
 
+    /// **日をまたぐ区間と長い移動**（2026-11-11 owner の実機「バスとか出てこないよ」「日本からブラジルとか無理じゃん」）。
+    /// 見本の「京都とブラジルの旅」（1 日 1 か所・空の日・サンパウロ）を開き、前の日からの区間と、海を越える区間の
+    /// 「飛行機などの長い移動」・そのシート（Google フライト）を撮る。出なければ撮らずに抜ける
+    func testCapturesTripPlanLongLegs() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+        guard openTripsRow(app, "trips.plans") else { return }
+        let plan = app.descendants(matching: .any).matching(identifier: "trips.plan")
+            .matching(NSPredicate(format: "label CONTAINS %@", "京都とブラジル")).firstMatch
+        var pushes = 0
+        while plan.waitForExistence(timeout: 10), !plan.isHittable, pushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard plan.exists, plan.isHittable else { return }
+        plan.tap()
+        guard app.descendants(matching: .any)["tripPlan.fixtureSends"].firstMatch.waitForExistence(timeout: 15) else { return }
+        // 移動の見込み（Apple のサーバー）を待つ
+        Thread.sleep(forTimeInterval: 8)
+        shoot(app, "66-旅行プランの日程（1日1か所・前の日からの移動・空の日）")
+        let legs = app.descendants(matching: .any).matching(identifier: "trip.leg")
+        let cross = legs.matching(NSPredicate(format: "label BEGINSWITH %@", "前の日の伏見稲荷大社から")).firstMatch
+        let long = legs.matching(NSPredicate(format: "label CONTAINS %@", "飛行機などの長い移動")).firstMatch
+        let line = "TRIPLEG legs=\(legs.count) cross=\(cross.exists) long=\(long.exists)"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        XCTAssertTrue(cross.exists, "1 日 1 か所のプランで、前の日からの区間が出ない")
+        XCTAssertTrue(long.exists, "日本 → ブラジルの区間が長い移動の形で出ない")
+        pushes = 0
+        while long.exists, !long.isHittable, pushes < 4 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard long.exists, long.isHittable else { return }
+        shoot(app, "66b-旅行プランの日程（飛行機などの長い移動・空の日の追加）")
+        long.tap()
+        let flights = app.buttons["trip.leg.flights"].firstMatch
+        XCTAssertTrue(flights.waitForExistence(timeout: 10), "長い移動のシートに Google フライトが無い")
+        XCTAssertFalse(app.buttons["trip.leg.apple"].firstMatch.exists, "長い移動のシートに Apple のマップがある（経路が無い）")
+        guard flights.exists else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "66c-長い移動のシート（Google フライトで探す）")
+    }
+
     /// **送れていないとき**（圏外・断られた）。直しは画面に残り、「まだ送れていません」と「もう一度試す」が出る
     func testCapturesTripPlanDaysUnsent() {
         for (extra, name) in [(["-JPTripPlanFixtureOffline", "YES"], "65d-旅行プランの日程（圏外・まだ送れていません）"),

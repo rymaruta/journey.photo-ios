@@ -67,7 +67,20 @@ enum TripPlanFixture {
         let hakodate = TripPlan(planId: "fixture-hakodate", title: "函館の旅",
                                 days: [TripDay(items: [.location(slug: "函館", note: nil)])],
                                 createdAt: "2026-11-01T00:00:00Z", updatedAt: "2026-11-01T00:00:00Z")
-        return [kanazawa, hakodate]
+        // 2026-11-11 owner の実機の形（1 日 1 か所・空の日）に、海を越える日を足したもの。
+        // 日をまたぐ区間・長い移動（日本 → ブラジル）・空の日の追加の行を撮る（`testCapturesTripPlanLongLegs`）
+        let longEnd = TripPlanText.calendar.date(byAdding: .day, value: 3, to: start) ?? start
+        let brazil = TripPlan(
+            planId: "fixture-kyoto-brazil", title: "京都とブラジルの旅",
+            startDate: TripPlanText.ymd(start), endDate: TripPlanText.ymd(longEnd),
+            days: [
+                TripDay(items: [.spot(spotId: "sp_d41c6b8e7025", note: nil)]),   // 伏見稲荷大社
+                TripDay(items: [.spot(spotId: "sp_4e08cfbfd65d", note: nil)]),   // 一乗寺 圓光寺
+                TripDay(),                                                        // 空の日
+                TripDay(items: [.spot(spotId: "sp_2f29aa9f9a28", note: nil)]),   // サンパウロ美術館
+            ],
+            createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z")
+        return [kanazawa, hakodate, brazil]
     }
 }
 
