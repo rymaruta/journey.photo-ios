@@ -167,7 +167,8 @@ final class GalleryViewModel: ObservableObject {
         defer { PerfSignpost.end(processInterval) }
         switch result {
         case .success(let photos):
-            all = sorted(photos)
+            // UI テストだけ: 新しい投稿・はじめての投稿・今週のお題の参加の見本（札 #537・Release では何もしない）
+            all = sorted(PreviewSession.snsLoopSample ? PreviewSNSLoopSample.stamp(photos) : photos)
             state = .loaded(filtered())
         case .failure(let error):
             // 全件が読めなくても、ページで出している「新着」は出し続ける
@@ -616,6 +617,19 @@ final class GalleryViewModel: ObservableObject {
     }
 
     private var followingNewsCache: (key: FollowingNewsKey, newest: String?)?
+
+    /// **はじめての投稿**の写真の id（ホームの札の印・`HomeFreshMix.firstPostPhotoIds`・札 #537 案1）。
+    /// 元は今日のテーマと同じ全件（公開の一覧）。**描くたびに作らない**——全件を書き換えたとき・時が替わったときだけ数え直す
+    /// （72 時間を過ぎた印が、開いたままのアプリに残り続けないように）
+    func firstPostIds(now: Date = Date()) -> Set<String> {
+        let hour = Int(now.timeIntervalSince1970 / 3600)
+        if let cached = firstPostCache, cached.revision == allRevision, cached.hour == hour { return cached.ids }
+        let ids = HomeFreshMix.firstPostPhotoIds(all, now: now)
+        firstPostCache = (allRevision, hour, ids)
+        return ids
+    }
+
+    private var firstPostCache: (revision: Int, hour: Int, ids: Set<String>)?
 
     /// 自分の写真。**今日のテーマに参加したかの判定に使う。**
     ///
