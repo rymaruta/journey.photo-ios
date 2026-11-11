@@ -56,6 +56,11 @@ struct PhotoDetailView: View {
     @State private var storySeed: StoryShareSeed?
     /// 札を描いている最中（二度押しで2回開かない）
     @State private var preparingStory = false
+    /// 送るシートの「送る相手」の顔（フォロー中・札 #541 の ③）。開くたびに読まない（この画面で1回だけ）
+    @State private var sendFaces: [FollowUser] = []
+    @State private var sendFacesLoaded = false
+    /// 写真を DM で送っている相手（二度押しで2通送らない）
+    @State private var sendingPhotoTo: String?
     @State private var showViewer = false
     @State private var actionError: String?
     /// 編集して保存したあとの姿。**`photo` は `let` で書き換えられない**
@@ -430,9 +435,7 @@ struct PhotoDetailView: View {
         }
         // 「送る」シート（札 #541・案の模型 1-C）。③ の担当が送る相手（顔の列）の段を足す（`SendSheet` の注記）
         .sheet(isPresented: $showSendSheet) {
-            SendSheet(actions: SendSheetLayout.photoActions(url: shareURL(for: current),
-                                                            canShareToStory: canShareToStory,
-                                                            story: { Task { await prepareStory() } }))
+            sendSheet
         }
         // 写真を紹介するストーリーを作る画面。**端末の画面いっぱい**（シートだと上に下の画面が透ける・#406）
         .fullScreenCover(item: $storySeed) { seed in
@@ -1228,6 +1231,57 @@ struct PhotoDetailView: View {
             avatarURL: model.owner?.avatarURL(cacheBust: UUID().uuidString))
     }
 
+    /// 送るシート。**送る相手の段は DM の担当の部品をそのまま使う**（`DMPeopleFacesRow`・`DMPhotoSend`・枝
+    /// `claude/dm-redesign`。シートの側で写しを作らない）。顔が無い（フォローしていない・読めない・送れない写真）なら段ごと出さない
+    @ViewBuilder
+    private var sendSheet: some View {
+        let actions = SendSheetLayout.photoActions(url: shareURL(for: current), canShareToStory: canShareToStory,
+                                                   story: { Task { await prepareStory() } })
+        let faces = SendSheetLayout.faces(sendFaces, canSend: canShareToStory)
+        if faces.isEmpty {
+            SendSheet(actions: actions)
+        } else {
+            SendSheet(actions: actions, people: { sendFacesRow(faces) })
+        }
+    }
+
+    /// 送る相手の段（DM の担当の顔の列そのもの）
+    private func sendFacesRow(_ faces: [FollowUser]) -> some View {
+        DMPeopleFacesRow(people: faces) { user in
+            Task { await sendPhoto(to: user) }
+        }
+        .disabled(sendingPhotoTo != nil)
+    }
+
+    /// 送る相手の顔を読んでから送るシートを開く（開いてから段が増えて背が伸びないように）。
+    /// 読むのはこの画面で1回だけ。読めなくてもシートは開く（段が無いだけ）
+    private func openSendSheet() async {
+        if !sendFacesLoaded, canShareToStory, let me = auth.userId {
+            sendFacesLoaded = true
+            if let fetched = try? await environment.social.following(userId: me), auth.userId == me {
+                sendFaces = DMStart.candidates(fetched.users, me: me, blocked: hidden.blockedUserIds)
+            }
+        }
+        showSendSheet = true
+    }
+
+    /// 顔を押したら、その人へ写真を DM で1通送る（札 #541 の ③・`DMPhotoSend`）。送れたらシートを閉じて知らせる。
+    /// 承認前の相手などで断られたらサーバーの言葉（`DMText.refusal`）を出す
+    private func sendPhoto(to user: FollowUser) async {
+        guard sendingPhotoTo == nil else { return }
+        let photoId = current.id
+        sendingPhotoTo = user.id
+        defer { sendingPhotoTo = nil }
+        do {
+            try await DMPhotoSend.send(service: environment.dm, me: auth.userId, peerId: user.id, photoId: photoId)
+            showSendSheet = false
+            toasts.show(SendSheetLayout.sentLabel(user.displayName))
+        } catch {
+            toasts.show((error as? LocalizedError)?.errorDescription
+                        ?? L("送れませんでした", "Couldn't send"), kind: .failure)
+        }
+    }
+
     /// 「ストーリーに載せる」を出すか（札 #541 の ①）。**ログイン中で、全体に公開した写真だけ**
     /// （サーバーも同じ決まりで断る・`storyPhotoShare.ts`。自分の写真も人の写真も）
     private var canShareToStory: Bool {
@@ -1292,7 +1346,7 @@ struct PhotoDetailView: View {
             // 共有シートなら入っているアプリだけが並ぶ
             // 2026-11-11（札 #541）: メニューの「共有」も同じ「送る」シートへ（行き先を割らない）
             if shareURL(for: current) != nil {
-                Button { showSendSheet = true } label: { Label(L("共有", "Share"), systemImage: "square.and.arrow.up") }
+                Button { Task { await openSendSheet() } } label: { Label(L("共有", "Share"), systemImage: "square.and.arrow.up") }
             }
             if isMine {
                 // **Menu の中に NavigationLink を置かない。** メニューの中身は
@@ -1566,7 +1620,7 @@ struct PhotoDetailView: View {
                 // ほかのアプリ）。印の場所と形は今のまま。外のアプリへは中の「ほかのアプリ」から
                 if shareURL(for: current) != nil {
                     Button {
-                        showSendSheet = true
+                        Task { await openSendSheet() }
                     } label: {
                         actionLabel(systemImage: "square.and.arrow.up")
                     }

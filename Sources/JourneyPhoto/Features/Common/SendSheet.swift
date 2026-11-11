@@ -6,37 +6,28 @@ import UIKit
 /// 上から: 題「送る」 → **送る相手の段（顔の列・`people`）** → 線 → 行動の段（丸い印 52 と 12 の名前）。
 /// 行動は「ストーリーに載せる」「リンクをコピー」「ほかのアプリ」（iPhone の共有シート）の順。
 ///
-/// 🔴 **送る相手の段（`people`）は札 #541 の ③「写真を DM で送る」の担当（枝 `claude/dm-redesign`）が足す。**
-/// ここでは段の置き場だけを持ち、今は何も置かない（`EmptyView` のとき段も線も出さない）。
-/// 足すときは `SendSheet(title:actions:) { 顔の列 }` の形で渡す——シートの寸法・題・行動の段は触らなくてよい
-/// （高さは段があるかで決める・`SendSheetLayout.height(hasPeople:)`）。
+/// 🔴 **送る相手の段（`people`）は札 #541 の ③「写真を DM で送る」の部品をそのまま渡す**（`DMPeopleFacesRow`・
+/// 枝 `claude/dm-redesign`。シートの側で写しを作らない）。顔が無いときは `EmptyView` の形で開き、段も線も出さない
+/// （高さは段があるかで決める・`SendSheetLayout.height(hasPeople:)`）。顔を押すとその人へ1通（`DMPhotoSend`）。
 ///
 /// 色と字（板「黒塗りの真鍮」）: 地は surface-2（`WebTheme.sheet`・シートの地）、題は Headline 17 の 600、
 /// 丸は surface-3 に白 8% の縁・印は白、名前は 12 の chip-text（白 82%）。写真の無いシートなので真鍮は置かない
 /// （合図ではない）。押せるのは丸と名前を合わせた 80×80（44 以上）
 struct SendSheet<People: View>: View {
 
-    /// 行動の1つ
-    enum Action: Identifiable {
-        /// ストーリーに載せる（押したらシートを閉じてから呼ぶ）
-        case story(() -> Void)
-        /// リンクをコピー
-        case copyLink(URL)
-        /// ほかのアプリ（iPhone の共有シート）
-        case otherApps(URL)
-
-        var id: String {
-            switch self {
-            case .story: return "story"
-            case .copyLink: return "copy"
-            case .otherApps: return "other"
-            }
-        }
-    }
+    /// 行動の1つ（段の型に縛られないよう外に置く）
+    typealias Action = SendSheetAction
 
     var title: String = L("送る", "Send")
     let actions: [Action]
-    @ViewBuilder var people: () -> People
+    let people: () -> People
+
+    /// 送る相手の段のあるシート（段は `DMPeopleFacesRow` を渡す）
+    init(title: String = L("送る", "Send"), actions: [Action], @ViewBuilder people: @escaping () -> People) {
+        self.title = title
+        self.actions = actions
+        self.people = people
+    }
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var toasts: ToastCenter
@@ -134,6 +125,25 @@ struct SendSheet<People: View>: View {
     }
 }
 
+/// 送るシートの行動の1つ
+enum SendSheetAction: Identifiable {
+    /// ストーリーに載せる（押したらシートを閉じてから呼ぶ）
+    case story(() -> Void)
+    /// リンクをコピー
+    case copyLink(URL)
+    /// ほかのアプリ（iPhone の共有シート）
+    case otherApps(URL)
+
+    var id: String {
+        switch self {
+        case .story: return "story"
+        case .copyLink: return "copy"
+        case .otherApps: return "other"
+        }
+    }
+}
+
+
 extension SendSheet where People == EmptyView {
     /// 送る相手の段の無いシート（札 #541 の ①。③ の担当が顔の列を足すまで）
     init(title: String = L("送る", "Send"), actions: [Action]) {
@@ -154,10 +164,20 @@ enum SendSheetLayout {
         hasPeople ? 440 : 240
     }
 
+    /// 送る相手の顔。**送れる写真（ログイン中・全体に公開）のときだけ**、多くても 12 人（DM の空の受信箱と同じ数）
+    static func faces(_ people: [FollowUser], canSend: Bool) -> [FollowUser] {
+        canSend ? Array(people.prefix(12)) : []
+    }
+
+    /// 送れたときの知らせ
+    static func sentLabel(_ name: String) -> String {
+        L("\(name)さんに送りました", "Sent to \(name)")
+    }
+
     /// 写真の詳細から出す行動の並び。**ストーリーはログイン中で、全体に公開した写真だけ**
     /// （サーバーも同じ決まりで断る・`storyPhotoShare.ts`）。リンクは個別のページがある写真だけ（`shareURL`）
-    static func photoActions(url: URL?, canShareToStory: Bool, story: @escaping () -> Void) -> [SendSheet<EmptyView>.Action] {
-        var actions: [SendSheet<EmptyView>.Action] = []
+    static func photoActions(url: URL?, canShareToStory: Bool, story: @escaping () -> Void) -> [SendSheetAction] {
+        var actions: [SendSheetAction] = []
         if canShareToStory { actions.append(.story(story)) }
         if let url {
             actions.append(.copyLink(url))

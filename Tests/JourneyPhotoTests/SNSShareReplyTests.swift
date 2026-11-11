@@ -234,6 +234,14 @@ final class SNSShareReplyTests: XCTestCase {
         XCTAssertGreaterThan(SendSheetLayout.height(hasPeople: true), SendSheetLayout.height(hasPeople: false))
     }
 
+    /// 送る相手の顔（③）は送れる写真のときだけ・12 人まで
+    func testSendSheetFaces() async {
+        let people = (0..<20).map { FollowUser(id: "u\($0)", name: "人\($0)", deleted: nil) }
+        XCTAssertEqual(SendSheetLayout.faces(people, canSend: true).count, 12)
+        XCTAssertTrue(SendSheetLayout.faces(people, canSend: false).isEmpty, "送れない写真に顔の段を出している")
+        XCTAssertEqual(SendSheetLayout.sentLabel("けんじ"), L("けんじさんに送りました", "Sent to けんじ"))
+    }
+
     /// 札は地の中に収まり、横は真ん中。細長い写真でも札の縦は決まった幅に収まる。
     /// 「写真を見る」はいちばん縦長の札の下より下（札に重ならない）
     func testCardLayoutStaysInsideAndAboveTheButton() async {
