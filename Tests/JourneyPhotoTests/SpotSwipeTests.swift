@@ -101,10 +101,11 @@ final class SpotSwipeTests: XCTestCase {
 
     func testCardLineSaysContinueFromSecondTime() {
         XCTAssertEqual(SpotSwipe.cardLine(started: true, wishCount: 3, signedIn: false), "行きたい 3 か所 · 続きから")
-        XCTAssertEqual(SpotSwipe.cardLine(started: false, wishCount: 0, signedIn: false),
-                       "右へ払うと行きたい · ログインなしではじめる")
-        XCTAssertEqual(SpotSwipe.cardLine(started: false, wishCount: 0, signedIn: true),
-                       "右へ払うと行きたい、左へ払うと見送る")
+        XCTAssertEqual(SpotSwipe.cardLine(started: false, wishCount: 0, signedIn: false), "ログインなしではじめる")
+        XCTAssertEqual(SpotSwipe.cardLine(started: false, wishCount: 0, signedIn: true), "右へ払うと行きたい")
+        // 札の題・一行は1行（#417 ③）。札の字の幅に収まる長さに抑える
+        XCTAssertLessThanOrEqual(SpotSwipe.cardTitle.count, 10)
+        XCTAssertLessThanOrEqual(SpotSwipe.cardLine(started: true, wishCount: 40, signedIn: false).count, 17)
     }
 
     func testPauseWordsSayWhatYouSee() {

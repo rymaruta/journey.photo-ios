@@ -310,7 +310,7 @@ struct HomeTopCardView: View {
             Button {
                 showSwipe = true
             } label: {
-                card(eyebrow: "WHERE TO NEXT", eyebrowLabel: L("行きたい場所を探す", "Find places to go"),
+                card(eyebrow: "WHERE TO NEXT", eyebrowLabel: SpotSwipe.eyebrowLabel,
                      title: SpotSwipe.cardTitle,
                      line: SpotSwipe.cardLine(started: swipeStarted, wishCount: wishlist.spotIds.count,
                                               signedIn: auth.userId != nil),

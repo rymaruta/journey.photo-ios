@@ -33,8 +33,11 @@ enum SpotSwipe {
 
     // MARK: - 入口の札（ホーム）
 
-    /// 入口の札の題
-    static var cardTitle: String { L("写真を払って、行きたい場所を探す", "Swipe photos to find where to go") }
+    /// 入口の札の題。**札の幅で1行に収まる長さ**（札の題は1行・#417 ③。2026-11-11 Web の 390 幅で
+    /// 「写真を払って、…」と切れたのを見て短くした）。払うことは眉（`eyebrowLabel`）で言う
+    static var cardTitle: String { L("行きたい場所を探す", "Find where to go") }
+    /// 入口の札の眉の読み上げ（字は英字の眉「WHERE TO NEXT」）
+    static var eyebrowLabel: String { L("写真を払う", "Swipe photos") }
 
     /// 入口の札の一行。**2回目からは「行きたい n か所 · 続きから」**（1回目は払い方と、ログインが要らないこと）
     ///
@@ -48,8 +51,8 @@ enum SpotSwipe {
                      wishCount == 1 ? "1 place saved · Continue" : "\(wishCount) places saved · Continue")
         }
         return signedIn
-            ? L("右へ払うと行きたい、左へ払うと見送る", "Swipe right to save, left to pass")
-            : L("右へ払うと行きたい · ログインなしではじめる", "Swipe right to save · No sign-in needed")
+            ? L("右へ払うと行きたい", "Swipe right to save")
+            : L("ログインなしではじめる", "No sign-in needed")
     }
 
     /// 入口の札の左の写真に使う撮影スポット。**写真を出せる公開済み**（`TripPicker.isEligible`）で、
