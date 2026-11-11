@@ -360,8 +360,17 @@ struct SettingsView: View {
     /// 公開範囲とプライバシー（2026-10-18 判断: 人に見せるもの・見せない人だけを集める）。
     /// 共同アルバムは「旅の道具」へ、いいねした写真は「写真と撮影」へ移した。
     /// 「トランクを見せる」は入切と長い見本を下の画面（`SettingsTrunkPrivacyPage`）へ。行の値はいまの入切
+    ///
+    /// **2026-11-11 判断（札 #545）**: いちばん上に「プロフィールの QR」（自分の頁を人に見せる＝公開・英語の札の名も
+    /// Sharing）。マイページの見た目は変えない決まりなので、入口はここ1つ。出す・読むは同じ画面（`ProfileQRView`）
     private var privacySection: some View {
         section(SettingsOutline.Part.privacy.title) {
+            NavigationLink { ProfileQRView(profile: myProfile) } label: {
+                JPRowLabel(title: ProfileQRText.title, detail: ProfileQRText.rowDetail)
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("settings.profileQR")
+            JPCardDivider()
             NavigationLink { BlockedUsersView() } label: {
                 JPRowLabel(title: L("ブロックした人", "Blocked people"))
             }
@@ -531,7 +540,9 @@ enum SettingsOutline {
                 return ["settings.trunk", "settings.camper", "settings.pass", "settings.passBook",
                         "settings.albums", "settings.plans"]
             case .notifications: return ["settings.push"]
-            case .privacy: return ["settings.blocked", "settings.closeFriends", "settings.trunkPrivacy"]
+            // プロフィールの QR（札 #545・2026-11-11）を先頭に
+            case .privacy: return ["settings.profileQR", "settings.blocked", "settings.closeFriends",
+                                   "settings.trunkPrivacy"]
             case .photos: return ["settings.favorites", "settings.compositionCatalog", "settings.storage"]
             case .help: return ["settings.whatsNew", "settings.legal", "settings.contact"]
             case .account: return ["settings.password"]

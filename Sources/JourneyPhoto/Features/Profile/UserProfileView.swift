@@ -72,6 +72,12 @@ struct UserProfileView: View {
     }
     private var isBlocked: Bool { hidden.blockedUserIds.contains(userId) }
 
+    /// 右上の「…」を出すか（札 #545・2026-11-11）。**自分以外でブロックしていなければ**出す——共有は
+    /// 未ログインでもできる。中の通報・ブロックは `canAct` のときだけ（`UserProfileMenu.showsMenu`）
+    private var showsMenu: Bool {
+        UserProfileMenu.showsMenu(viewerId: auth.userId, userId: userId, blocked: isBlocked)
+    }
+
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .top) {
@@ -272,16 +278,26 @@ struct UserProfileView: View {
             Color.clear.frame(width: 1, height: 1)
                 .accessibilityHidden(true)
         }
-        if canAct {
+        if showsMenu {
             ToolbarItem(placement: .topBarTrailing) {
                 // 通報(2026-11-07・審査 1.2): サーバーに人を通報する口は無いので、ストーリーの返信と同じく
                 // 問い合わせの宛先へのメールで送る(`ModerationService.profileReportURL`)
                 Menu {
-                    Button { reportProfile() } label: {
-                        Label(L("通報する", "Report"), systemImage: "flag")
+                    // 共有（札 #545・2026-11-11）: この人の Web の頁を共有シートで渡す（QR と同じ URL）。
+                    // 未ログインでも渡せる。通報・ブロックはログインして操作できるときだけ
+                    if let link = ProfileQR.url(userId: userId, base: AppConfig.siteBaseURL) {
+                        ShareLink(item: link, preview: SharePreview(ProfileQRText.sharePreview(model.shownName))) {
+                            Label(L("プロフィールを共有", "Share profile"), systemImage: "square.and.arrow.up")
+                        }
+                        .accessibilityIdentifier("profile.share")
                     }
-                    Button(role: .destructive) { showBlockConfirm = true } label: {
-                        Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
+                    if canAct {
+                        Button { reportProfile() } label: {
+                            Label(L("通報する", "Report"), systemImage: "flag")
+                        }
+                        Button(role: .destructive) { showBlockConfirm = true } label: {
+                            Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
+                        }
                     }
                 } label: {
                     Image(systemName: "ellipsis")

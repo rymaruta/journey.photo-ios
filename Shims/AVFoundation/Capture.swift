@@ -171,3 +171,43 @@ open class AVCaptureVideoPreviewLayer: CALayer {
 extension AVCaptureDevice {
     public static let subjectAreaDidChangeNotification = Notification.Name("AVCaptureDeviceSubjectAreaDidChangeNotification")
 }
+
+// MARK: - QR を読む（2026-11-11・プロフィールの QR `ProfileQRScanner`）
+
+extension AVCaptureSession.Preset {
+    /// 映像の画質（QR を読むだけなので写真の画質は要らない）
+    public static let high = AVCaptureSession.Preset(rawValue: "AVCaptureSessionPresetHigh")
+}
+
+/// 映像の中で見つかったもの（本物は `NSObject` の子）
+open class AVMetadataObject: NSObject {
+    /// 見つかったものの種類（本物は文字列の値の型）
+    public struct ObjectType: Hashable, Sendable {
+        public let rawValue: String
+        public init(rawValue: String) { self.rawValue = rawValue }
+        public static let qr = ObjectType(rawValue: "org.iso.QRCode")
+    }
+    open var type: ObjectType { .qr }
+}
+
+/// 読めたコード（QR）。中身の文字は `stringValue`
+open class AVMetadataMachineReadableCodeObject: AVMetadataObject {
+    open var stringValue: String? { nil }
+}
+
+/// 読めた知らせの受け手。**本物では任意の口だが、模型では必ず書く**（`AVCapturePhotoCaptureDelegate` と同じ理由）
+public protocol AVCaptureMetadataOutputObjectsDelegate: AnyObject {
+    func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject],
+                        from connection: AVCaptureConnection)
+}
+
+/// 映像からコードを読む出力（本物と同じ形）
+open class AVCaptureMetadataOutput: AVCaptureOutput {
+    public override init() {}
+    /// 読める種類（セッションに足したあとに決まる）
+    open var availableMetadataObjectTypes: [AVMetadataObject.ObjectType] { [] }
+    /// 読む種類（読める種類の中から選ぶ）
+    open var metadataObjectTypes: [AVMetadataObject.ObjectType]! = []
+    open func setMetadataObjectsDelegate(_ objectsDelegate: AVCaptureMetadataOutputObjectsDelegate?,
+                                         queue objectsCallbackQueue: DispatchQueue?) {}
+}

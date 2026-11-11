@@ -42,6 +42,8 @@ public struct CIContextOption: Hashable {
 public final class CIContext {
     public init() {}
     public init(options: [CIContextOption: Any]?) {}
+    /// 元の色のまま描く版（QR の白黒・本物と同じ）
+    public func createCGImage(_ image: CIImage, from fromRect: CGRect) -> CGImage? { nil }
     public func createCGImage(_ image: CIImage, from fromRect: CGRect,
                               format: CIFormat, colorSpace: CGColorSpace?) -> CGImage? { nil }
 }

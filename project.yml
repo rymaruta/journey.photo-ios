@@ -91,7 +91,7 @@ targets:
             UIApplicationShortcutItemTitle: ストーリーを撮る
             UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeCapturePhoto
         # 5.1.1 / 4.2 で審査官が読む利用目的。日本語と英語の両方を出す
-        NSCameraUsageDescription: 写真を撮って投稿するため、また作例を重ねて撮るためにカメラを使います。
+        NSCameraUsageDescription: 写真を撮って投稿するため、作例を重ねて撮るため、相手のプロフィールの QR コードを読むためにカメラを使います。
         NSPhotoLibraryUsageDescription: 端末の写真を選んで投稿するため、また撮影日時と場所から旅を見つけて旅の記録に並べるために使います。旅を探すのは端末の中だけで、写真も位置もどこにも送りません（旅の名前を引くときだけ、おおよその位置を Apple の地図に渡します）。投稿するのは選んだ写真だけです。
         NSPhotoLibraryAddUsageDescription: 撮った写真や動画を端末に保存するために使います。
         # ストーリーの動画に音を入れるとき（`StoryCameraView` の動画・札 #500）。審査官が読む文面

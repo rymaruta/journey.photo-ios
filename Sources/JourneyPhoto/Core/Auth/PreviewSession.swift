@@ -612,4 +612,19 @@ enum PreviewSession {
         return false
         #endif
     }
+
+    /// プロフィールの QR の小窓が「読んだ」ことにする中身（札 #545・2026-11-11）。
+    /// `-JPPreviewQRScan https://journey-photo.com/users/<id>`。小窓を押すと、カメラで読んだのと同じ道で渡す
+    /// （シミュレータにはカメラが無い）。Release では必ず nil
+    static let qrScanKey = "JPPreviewQRScan"
+
+    static var qrScanFixture: String? {
+        #if DEBUG
+        guard userId != nil,
+              let raw = UserDefaults.standard.string(forKey: qrScanKey), !raw.isEmpty else { return nil }
+        return raw
+        #else
+        return nil
+        #endif
+    }
 }

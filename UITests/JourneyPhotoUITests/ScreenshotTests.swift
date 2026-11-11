@@ -3576,6 +3576,64 @@ final class ScreenshotTests: XCTestCase {
         goBack(app)
     }
 
+    /// 読む見本の相手（本番の公開の写真を持つ人・見本の利用者とは別の人）
+    private static let qrTargetUserId = "d7e4da78-30f1-7003-a761-6b1238e64ab3"
+
+    /// **プロフィールの QR**（札 #545・2026-11-11）: 設定 → 公開範囲とプライバシーの「プロフィールの QR」。
+    ///
+    /// owner（2026-11-11）「QR を読む所と出す所を分けると『どこだっけ？』となる」——**出す（自分の QR）と
+    /// 読む（カメラの小窓）が同じ画面にある**ことを要素で確かめる（QR が上・小窓が下）。シミュレータには
+    /// カメラが無いので小窓は「使えません」の姿。読んだあとの道は見本（`-JPPreviewQRScan`）で、小窓を押すと
+    /// 相手のプロフィールが開き、その「…」に「プロフィールを共有」があるまで見る。設定に入れたのに無ければ落とす
+    func testProfileQRShowAndScanOnOneScreen() {
+        let app = launchTrunk(["-JPPreviewQRScan", "https://journey-photo.com/users/\(Self.qrTargetUserId)"])
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return XCTFail("下の札が出ない") }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return }
+        let gear = app.buttons["設定"].firstMatch
+        guard gear.waitForExistence(timeout: 5) else { return XCTFail("設定の丸が無い") }
+        scrollTo(gear, in: app)
+        gear.tap()
+
+        let row = app.buttons["settings.profileQR"].firstMatch
+        guard row.waitForExistence(timeout: 10) else { return XCTFail("設定に「プロフィールの QR」の行が無い") }
+        scrollTo(row, in: app)
+        XCTAssertGreaterThanOrEqual(row.frame.height, 44, "「プロフィールの QR」の行が 44pt 未満")
+        guard row.isHittable else { return XCTFail("「プロフィールの QR」の行に届かない") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "102e-設定（プロフィールの QR の行）")
+        row.tap()
+
+        // 出す・読むが同じ画面
+        let code = app.descendants(matching: .any)["profileQR.code"].firstMatch
+        let scanner = app.descendants(matching: .any)["profileQR.scanner"].firstMatch
+        guard code.waitForExistence(timeout: 10) else { return XCTFail("プロフィールの QR が出ない") }
+        XCTAssertTrue(scanner.waitForExistence(timeout: 5), "QR と同じ画面に読む小窓が無い")
+        XCTAssertTrue(app.buttons["profileQR.share"].firstMatch.exists, "共有が無い")
+        XCTAssertTrue(app.buttons["profileQR.save"].firstMatch.exists, "保存が無い")
+        if scanner.exists {
+            XCTAssertLessThan(code.frame.midY, scanner.frame.midY, "自分の QR が上・読む小窓が下になっていない")
+        }
+        // カメラの無いシミュレータでは、開いただけで許可を聞かない（許可の画面が出ない）・ボタンも出さない
+        XCTAssertFalse(app.alerts.firstMatch.exists, "開いただけでカメラの許可を聞いている")
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "102f-プロフィールの QR（出す・読む）")
+
+        // 読んだ → 相手のプロフィールが開く（見本の中身を小窓を押して渡す）
+        scrollTo(scanner, in: app)
+        guard scanner.isHittable else { return XCTFail("読む小窓に届かない") }
+        scanner.tap()
+        let more = app.buttons["この人の操作"].firstMatch
+        guard more.waitForExistence(timeout: 15) else { return XCTFail("読んだ QR の人のプロフィールが開かない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "102g-QR で開いた人のプロフィール")
+        more.tap()
+        XCTAssertTrue(app.buttons["プロフィールを共有"].firstMatch.waitForExistence(timeout: 5),
+                      "人のプロフィールの「…」に「プロフィールを共有」が無い")
+        shoot(app, "102h-人のプロフィールの「…」（共有）")
+    }
+
     /// **旅のトランク**（Pro の見本）: トランク → 手に取って回す → 手持ち（選んだ）→ 作り直し →
     /// 型 → 特別なトランク。出なければ撮らずに抜ける。**出たのに押せる所が 44pt 未満なら落とす**
     func testCapturesTrunk() {

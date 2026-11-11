@@ -20,6 +20,13 @@ open class UIScene: Hashable {
 }
 open class UIWindowScene: UIScene {
     public var windows: [UIWindow] { [] }
+    /// この場の画面（明るさを変える・本物と同じ）
+    public var screen: UIScreen { UIScreen() }
+}
+/// 画面（明るさだけ・プロフィールの QR を見せている間に上げる）。本物は 0〜1 の `CGFloat`
+open class UIScreen {
+    public init() {}
+    open var brightness: CGFloat = 0.5
 }
 open class UIWindow {
     public var isKeyWindow: Bool { false }
@@ -211,7 +218,12 @@ public final class CGContext {
     public func rotate(by angle: Double) {}
     /// 影（曲の札の焼き込み・本物と同じ）
     public func setShadow(offset: CGSize, blur: Double, color: CGColor?) {}
+    /// 縮める・広げるときの画素の補い方（QR を角の立ったまま広げる・本物と同じ）
+    public var interpolationQuality: CGInterpolationQuality = .default
 }
+
+/// 画素の補い方（本物は CoreGraphics の値の型）
+public enum CGInterpolationQuality: Int32 { case `default` = 0, none = 1, low = 2, high = 3, medium = 4 }
 
 /// 色（影の色に渡す）。本物は CoreGraphics が持つ
 public final class CGColor {
@@ -250,6 +262,11 @@ public final class UIGraphicsImageRenderer {
     public init(size: CGSize, format: UIGraphicsImageRendererFormat) {}
     public func jpegData(withCompressionQuality quality: Double,
                          actions: (UIGraphicsImageRendererContext) -> Void) -> Data {
+        actions(UIGraphicsImageRendererContext())
+        return Data()
+    }
+    /// PNG で描く（QR の角をにじませない・本物と同じ）
+    public func pngData(actions: (UIGraphicsImageRendererContext) -> Void) -> Data {
         actions(UIGraphicsImageRendererContext())
         return Data()
     }
