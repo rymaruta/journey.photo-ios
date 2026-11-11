@@ -74,17 +74,18 @@ jobs:
       - uses: actions/checkout@v7
       - run: bash Tools/select-xcode.sh
       - name: v3 を戻す
-        run: echo "STARTED=$SECONDS" >> "$GITHUB_ENV"
+        run: echo "STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/cache/restore@v6
         with:
           path: |
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
             ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
           key: xcode-probe-v3-${{ github.run_id }}
-      - run: echo "v3 を戻す: $((SECONDS-STARTED)) 秒" | tee -a "$GITHUB_STEP_SUMMARY"
+      - run: |
+          echo "v3 を戻す: $(( $(date +%s) - STARTED )) 秒" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: repositories を戻す（時間を測る）
         if: ${{ matrix.with_repos }}
-        run: echo "STARTED=$SECONDS" >> "$GITHUB_ENV"
+        run: echo "STARTED=$(date +%s)" >> "$GITHUB_ENV"
       - name: repositories を戻す
         if: ${{ matrix.with_repos }}
         id: repos
@@ -93,7 +94,8 @@ jobs:
           path: ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages/repositories
           key: xcode-probe-repos-${{ github.run_id }}
       - if: ${{ matrix.with_repos }}
-        run: echo "repositories を戻す: $((SECONDS-STARTED)) 秒" | tee -a "$GITHUB_STEP_SUMMARY"
+        run: |
+          echo "repositories を戻す: $(( $(date +%s) - STARTED )) 秒" | tee -a "$GITHUB_STEP_SUMMARY"
       - run: |
           command -v xcodegen >/dev/null || brew install xcodegen
           xcodegen generate
