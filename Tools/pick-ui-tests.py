@@ -55,7 +55,16 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    "ScreenshotTests/testMeasuresCamperMemoryAANone",
                    # 2026-11-07（#430）: 途中の段・user_tag 別・差し替え。`screens=testMeasuresCamperStages`
                    "ScreenshotTests/testMeasuresCamperStages", "ScreenshotTests/testMeasuresCamperStagesKeepMesh",
-                   "ScreenshotTests/testMeasuresCamperStagesAANone", "ScreenshotTests/testMeasuresCamperStagesAA4x"]
+                   "ScreenshotTests/testMeasuresCamperStagesAANone", "ScreenshotTests/testMeasuresCamperStagesAA4x",
+                   # 2026-11-11（全部の回の時間の内訳・run 42920469610 の UI 合計 160.4 分から。見込み −21.8 分）:
+                   # タブを行き来する速さ（105.6 秒）は計測なので、CLAUDE.md「速さは名指しの回だけ」に合わせる
+                   "PerformanceTests/testMainTabRevisitTime",
+                   # とおまわり号の部屋の一覧の絵（407.6 秒）。直している間だけ `screens=testCapturesCamperRoomContactSheet`
+                   "ScreenshotTests/testCapturesCamperRoomContactSheet",
+                   # トランクの選び直しの繰り返し（2〜4 本目・各 250〜280 秒）。1 本目（testTrunkPickRepeat）は全部の回にも残す。
+                   # 札 #424 が閉じたら 4 本とも名指しだけにする
+                   "ScreenshotTests/testTrunkPickRepeat2", "ScreenshotTests/testTrunkPickRepeat3",
+                   "ScreenshotTests/testTrunkPickRepeat4"]
 
 # クラスの直下（字下げ4つ）の関数だけを区切りにする。中の入れ子の関数は本体に含める
 MEMBER = re.compile(r"^    (?:@\w+\s+)*(?:(?:private|fileprivate|override|static|final)\s+)*func\s+(\w+)\s*\(", re.M)

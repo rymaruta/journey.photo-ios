@@ -517,7 +517,8 @@ if testflight_yml.exists() and pr_yml.exists():
     # 同時に動く Mac（CLAUDE.md: 全部の回は最大4台・同時5台まで）。分けた組の Mac は matrix の組の数（3）が最大で、
     # 前後の job（組む・先に流す分）とは重ならない。TestFlight の回は `build`（Archive）の1台が並ぶので4台
     shard_macs = max([len(re.findall(r"[^,\[\] ]+", m)) for m in re.findall(r"part: \[([^\]]+)\]", shard_flow)] or [99])
-    if shard_macs > 3 or len(re.findall(r"^    runs-on: macos", shard_flow, re.M)) != 3:
+    # 2026-11-11: 分けた組を 3→4。TestFlight の回は Archive と合わせて5台（上限いっぱい）なので、これ以上増やさない
+    if shard_macs > 4 or len(re.findall(r"^    runs-on: macos", shard_flow, re.M)) != 3:
         fail(f"mac-sharded-tests.yml の同時に動く Mac が増えています（分けた組 {shard_macs} 台・Mac の job は組む・先に流す分・分けた組の3つ）")
     # **PR の検証の全部の回は分けて流す**（2026-11-10 owner 承認）。決めるのは「UI テストの範囲を決める」の job の1か所
     # （一覧が「全部」1行だけなら sharded=true）。分けた組を呼ぶ job はその答えだけで走り、
@@ -882,6 +883,14 @@ if testflight_yml.exists() and pr_yml.exists():
             pick_mod.plan = saved_plan
         if Path(tmp, "part-1.txt").read_text(encoding="utf-8") != "":
             fail("pick-ui-tests.py --plan が、空の組に改行を書きます（xcode-test.sh が中身ありと読み、UI を全部流す）")
+    # 全部の回から外した重い試験（2026-11-11・run 42920469610 の内訳）。トランクの選び直しの1本目は全部の回に残す
+    for name in ("PerformanceTests/testMainTabRevisitTime", "ScreenshotTests/testCapturesCamperRoomContactSheet",
+                 "ScreenshotTests/testTrunkPickRepeat2", "ScreenshotTests/testTrunkPickRepeat3",
+                 "ScreenshotTests/testTrunkPickRepeat4"):
+        if not pick_mod.only_when_named(name):
+            fail(f"pick-ui-tests.py の ONLY_WHEN_NAMED に {name} がありません（全部の回・PR で流れる）")
+    if pick_mod.only_when_named("ScreenshotTests/testTrunkPickRepeat"):
+        fail("pick-ui-tests.py: testTrunkPickRepeat（1本目）は全部の回に残す（札 #424 が閉じるまで）")
     # **分けて流すかは `--sharded` の1か所で、決まった一覧（`auto` を解いたあと）から決める**（2026-11-10）
     all_line = f"-only-testing:{pick_mod.TARGET}"
     for args, want in [((False, [all_line]), True), ((False, [all_line, ""]), True), ((True, [all_line]), False),

@@ -321,7 +321,7 @@ jobs:
           # 🔴 **分けて流すのは、一覧が「全部」1行だけのときだけ**（ios-testflight.yml の「どこまで流すかを決める」の full と同じ見方）
           if [ "$(cat /tmp/pr-ui-tests.txt)" = "-only-testing:JourneyPhotoUITests" ]; then
             echo "sharded=true" >> "$GITHUB_OUTPUT"
-            echo "流し方: 別々の Mac に分けて流す（組む → 単体＋先に流す分 → 分けた組 3 台）" >> "$GITHUB_STEP_SUMMARY"
+            echo "流し方: 別々の Mac に分けて流す（組む → 単体＋先に流す分 → 分けた組 4 台）" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "sharded=false" >> "$GITHUB_OUTPUT"
             echo "流し方: 1 台（Xcode のビルドとテスト）" >> "$GITHUB_STEP_SUMMARY"
@@ -330,7 +330,7 @@ jobs:
           echo "list=$(python3 -c 'import base64,sys; print(base64.b64encode(open(sys.argv[1],"rb").read()).decode())' /tmp/pr-ui-tests.txt)" >> "$GITHUB_OUTPUT"
 
   # UI テストが全部になる回だけ、別々の Mac に分けて流す（`mac-sharded-tests.yml`・ios-testflight.yml の
-  # 全部の回と同じもの。写しを作らない）。同時に動く Mac は多いときで3台（分けた組）。
+  # 全部の回と同じもの。写しを作らない）。同時に動く Mac は多いときで4台（分けた組）。
   # 枝の差分（先に流す UI テストを選ぶ）は PR の base...head で比べる（この回の sha はマージの試しのコミット）。
   # 手で流した回は main...この sha。待つものと条件は `xcode` と同じ（静的な検査が通ってから・テスト済みなら飛ばす）
   xcode-sharded:
