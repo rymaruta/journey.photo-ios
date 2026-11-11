@@ -2506,6 +2506,16 @@ final class ScreenshotTests: XCTestCase {
         // 戻って、地図の上から払うと段（画面）が流れる（長押しをしない指はスクロールに渡す）
         goBack(app)
         guard map.waitForExistence(timeout: 5), map.isHittable else { return }
+        // 切り分けの数（2026-11-11・run 1009 で地図の上から払っても流れなかった）: 地図の外（右の札）から払うと流れるか、
+        // 地図から払うと流れるか、それぞれの前後の y と、払う前の地図の値（選んでいる地方）をログに出す
+        print("spotMap.diag mapValue=\(String(describing: map.value)) mapFrame=\(map.frame) window=\(app.windows.firstMatch.frame)")
+        let cardTop = map.frame.minY
+        card.swipeUp()
+        Thread.sleep(forTimeInterval: 1)
+        print("spotMap.diag cardSwipe mapTop before=\(cardTop) after=\(map.frame.minY)")
+        app.swipeDown()
+        Thread.sleep(forTimeInterval: 1)
+        guard map.isHittable else { return }
         let before = map.frame.minY
         map.swipeUp()
         Thread.sleep(forTimeInterval: 1)
