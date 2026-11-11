@@ -84,8 +84,16 @@ jobs:
               ;;
             *) echo "::error::Unknown mode: $MODE"; exit 1 ;;
           esac
-          if [ "$release" = "false" ]; then
+          # 何を流すか（まとめに出す）。名指しは当たらない語があればここで止める
+          if [ "$release" = "true" ]; then
+            scope_label="none (uploads run no tests)"
+          elif [ "$screens" = "all" ]; then
+            scope_label="full: every unit and UI test on 4 Macs (ios-full.yml)"
+          elif [ -z "$screens" ]; then
+            scope_label="quick: all unit tests + SmokeTests + UI tests related to the branch diff (ios-quick.yml)"
+          else
             python3 Tools/pick-ui-tests.py "$screens" >/tmp/release-center-ui-plan.txt
+            scope_label="quick + named: $screens (ios-quick.yml)"
           fi
           {
             echo "release=$release"
@@ -100,7 +108,7 @@ jobs:
             echo "| Mode | \`$MODE\` |"
             echo "| Branch | \`$BRANCH\` |"
             echo "| Commit | \`$SHA\` |"
-            echo "| UI tests | \`$screens\` |"
+            echo "| Tests | $scope_label |"
             echo "| Upload authorized | \`$CONFIRM\` |"
             echo ""
             echo "Uploads: ios-testflight.yml (no tests). Verification: ios-quick.yml, or ios-full.yml when ui_scope is all."

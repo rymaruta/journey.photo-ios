@@ -74,13 +74,16 @@
 
 owner「テスト長すぎていやだ」「長くても30分に絶対に収まるようにしたい」「ガチの原因不明のバグの時だけガチガチのテストで確認すればいい」（2026-11-11）。
 
-- **毎回（PR・統合の枝・直している途中）:** 単体テスト（全部・UI と同時）＋機能を確かめる UI テスト＋変えた画面に関係する UI テスト＋起動の見張り。
-  **押してから結果まで30分以内**（job の上限で守る）。`inputs[screens]=<変えた画面・落ちたテスト>` で絞る。これが緑ならマージして TestFlight へ
-- **全部の UI テスト（`screens=all`）は、原因の分からない不具合を調べる時だけ**手で名指しして流す。夜の定期の回は置かない
+- **毎回の（`ios-quick.yml`・PR で自動・枝の確かめは手で）:** Mac 1 台目で単体テスト（全部）＋起動の見張り、
+  Mac 2〜3 台目で変えた画面に関係する UI テスト（差分から自動・足したいものは `inputs[screens]=<画面・テスト名>`）。
+  Linux の単体テスト（PR の検証）も同時に走る。**押してから結果まで30分以内**（Mac の job は 25 分で切る）・目標 10 分。
+  これが緑ならマージして TestFlight へ。1 回で使う Mac は最大 3 台
+- **ガチガチの（`ios-full.yml`・全部の単体と全部の UI を 4 台に分けて）は、原因の分からない不具合を調べる時だけ**手で流す。夜の定期の回は置かない
+- Mac の控え（依存と組んだもの）は `xcode-cache-warm.yml` だけが main で書く。Xcode が上がった日は `/mac-check` の手順
 - 画面の絵だけを撮るテストは毎回は流さない（変えた画面の分だけ）
 - 分かっている失敗が残っている間に全部を流さない（2026-10-31、同じ失敗を全部の回で2度見て276分を使った）
 - 新しいコミットを流したら、古い回はすぐ止める
-- アプリの起動時間・メモリは `inputs[screens]=PerformanceTests` で名指しした回だけ測る（UI テスト・全部の回では流さない）。撮影スポットの索引の解析は単体テスト `SpotIndexPerfTests` が毎回測る。数はどちらも成果物 `build-logs` の `xcodebuild-full.log` の `measured [...]`（札 #429）
+- アプリの起動時間・メモリは `inputs[screens]=PerformanceTests` で名指しした回だけ測る（UI テスト・全部の回では流さない）。撮影スポットの索引の解析は単体テスト `SpotIndexPerfTests` が毎回測る。数はどちらも、毎回のの成果物 `build-logs-mac<台>` の `xcodebuild-full.log` の `measured [...]`（札 #429）
 - 全部の回は Mac を最大4台同時に使う（#429）。全部の回は同時に1本まで（Mac は同時5台まで。溢れると上げる回が順番待ちになる）
 - 調べた数字と案は Artifact「テストとアプリの速さ」（https://claude.ai/artifact/K3y6eMQqVR1Av64DmYxdgW）
 
@@ -134,7 +137,7 @@ iOS と photo-gallery（develop・本番の main）の PR のマージ（`gh api
 
 - 流れ: Linux の検査（`/verify`）→ PR → マージ → `/release`（`ios-testflight.yml` を `submit=true`）→
   版（`testflight/<版>` のタグ）を確かめて owner に日本語で報告
-- テストは一度だけ（owner の決まり）: PR の Xcode は止め、リリースの Mac の段で確かめる
+- テストは一度だけ（owner の決まり）: PR の毎回の（`ios-quick.yml`）で確かめ、TestFlight に上げる回はテストを流さない
 - 出さない例外は、owner が「まだ出さないで」と言ったときだけ
 - **2026-10-16 に踏んだ**: 帯の角の直し（#248）を PR のまま「次の TestFlight で確かめる」と置いていた
 
@@ -155,10 +158,9 @@ iOS と photo-gallery（develop・本番の main）の PR のマージ（`gh api
     Apple の決まりは「同じ版の中で重ならず上がっていく」こと。版は毎回上がるので
     1 から数え直せる（App Store Connect が求めるのは「版とビルド番号の組み合わせ」が
     重ならないこと。iOS は新しい版で小さい番号に戻してよい——Apple「Setting the next build number for Xcode Cloud builds」 で確認）
-- **上げる回ではテストを流さない（既定・2026-10-09 owner「テストフライトでの2重テストはしなくていい」）。**
-  main に入るのは「PR の検証」の Mac のテストを通ったものだけ。main 以外の枝を Mac で確かめたいときだけ
-  `tests: true` で流す。上げない回（`submit: false`・`/mac-check`）と App Store 用の原寸の絵（`storeShots: true`）は
-  テストの結果から絵を作るので、そのときはテストも流れる
+- **上げる回ではテストを流さない（2026-10-09 owner「テストフライトでの2重テストはしなくていい」）。**
+  `ios-testflight.yml` は署名・Archive・上げるだけ（2026-11-11 からテストの入力も無い）。main に入るのは PR の毎回の
+  （`ios-quick.yml`）を通ったものだけ。枝を Mac で確かめるのは毎回の、原因不明の不具合はガチガチの（`ios-full.yml`）
 - **真ん中・先頭の数字（1.1.0・2.0.0）は人が決める。** 見た目や機能が大きく
   変わる版のときに `bash Tools/bump-build.sh 1.1.0` でコミットしてから流す。
   自動で上げない

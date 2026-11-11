@@ -4,12 +4,11 @@
 # **目標は押してから結果まで 10 分以内・上限 30 分**（各 job の `timeout-minutes`）。全部は `ios-full.yml`（ガチガチの）。
 #
 # 中身は固定（`Tools/pick-ui-tests.py --quick-plan`）:
-#  - Mac でしか流れない単体（`Tools/quick-unit-tests.txt`・38 件・31 秒）。ほかの単体 5,352 件は PR の検証の
-#    「単体テスト（Linux・模型）」が同時に流す（Mac とほぼ同じものを2度流していた）
-#  - 起動の見張り（SmokeTests・4 本・約 2.2 分）
-#  - 変えた画面に関係する UI テスト（差分から。判定できない変更でも全部に倒さない）
-#  - 手で流したときに名指ししたもの（`screens`）
-# UI の見積もりが Mac 1 台の上限（`QUICK_UI_BUDGET`・4 分）を越えたら台を増やす（最大 4 台）。
+#  - Mac 1 台目: **単体テストを全部**（JourneyPhotoTests・CLAUDE.md「単体テスト（全部）」・本物の iOS で全部を通してから
+#    TestFlight へ）＋起動の見張り（SmokeTests）
+#  - Mac 2〜3 台目（要るときだけ）: 変えた画面に関係する UI テスト（差分から。判定できない変更でも全部に倒さない）と名指し（`screens`）。
+#    1 台の見積もりが `QUICK_UI_BUDGET`（4 分）を越えたら台を増やす。1 回で使う Mac は最大 3 台（Mac は同時 5 台まで・
+#    TestFlight に上げる回ともう 1 本の毎回のが順番待ちにならない数）。上限で外した関係するテストは、門の結果に警告で出す
 # 速くする工夫（2026-11-11・数は測る回 run 42989273825・42996168684・42999187365）:
 #  (a) 控えは依存と組んだものだけ（7.2GB → 500MB・`.github/actions/xcode-cache-restore`。書くのは xcode-cache-warm.yml）
 #  (b) ソースの時刻を中身から揃え、main の控えから変えたファイルだけ組む（`Tools/source-mtime.py`）
@@ -62,6 +61,7 @@ jobs:
     outputs:
       run: ${{ steps.plan.outputs.run }}
       matrix: ${{ steps.plan.outputs.matrix }}
+      dropped: ${{ steps.plan.outputs.dropped }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -90,7 +90,7 @@ jobs:
               merged="$(git rev-parse 'HEAD^{tree}' 2>/dev/null || true)"
               head_tree="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}" --jq '.commit.tree.sha' 2>/dev/null || true)"
               if [ -n "$merged" ] && [ "$merged" = "$head_tree" ]; then
-                for wf in ios-quick.yml ios-full.yml; do
+                for wf in ios-quick.yml ios-full.yml release-center.yml; do
                   for id in $(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${wf}/runs?head_sha=${HEAD_SHA}&status=completed&per_page=30" \
                                 --jq '.workflow_runs[] | select(.conclusion == "success") | .id' 2>/dev/null || true); do
                     [ "$id" = "$GITHUB_RUN_ID" ] && continue
@@ -129,6 +129,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY" || exit 1
           cat build/quick/plan.md
           echo "matrix=$(cat build/quick/matrix.json)" >> "$GITHUB_OUTPUT"
+          echo "dropped=$(paste -sd ',' build/quick/dropped.txt)" >> "$GITHUB_OUTPUT"
 
   # 🔴 **静的な検査は Mac と並べて走らせ、落ちたらこの回を止める**（2026-11-11）。待ってから Mac を起こすと
   # その分（1〜2 分）延びるので並べる。落ちたら回ごと取り消す（Mac の分を使い続けない）。中身は ios-pr.yml と同じ部品
@@ -160,8 +161,9 @@ jobs:
     permissions:
       contents: read
       actions: write
-    # 🔴 **30 分の上限**（2026-11-11 owner）。目標は 10 分
-    timeout-minutes: 30
+    # 🔴 **押してから結果まで 30 分の上限**（2026-11-11 owner）。中身を決める・静的な検査・門と台の立ち上げで数分使うので、
+    # Mac の job は 25 分で切る。目標は 10 分
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -185,12 +187,24 @@ jobs:
         id: cache
         uses: ./.github/actions/xcode-cache-restore
 
-      # 控えが無い（Xcode が上がった・依存が変わった）ときは、main の控えを書く回を頼む（次の回から当たる）
+      # 控えが無い（Xcode が上がった・依存が変わった）ときは、main の控えを書く回を頼む（次の回から当たる）。
+      # 🔴 頼むのは 1 台目だけ・書く回が待ち／走っているなら頼まない（台ごとに頼むと取り消し合い、控えが書かれ続けない）。
+      # この台の Xcode の版を渡す（台ごとに版が違うことがある。書く回はその版を選んで組む）
       - name: 控えが無ければ main の控えを書く回を頼む
-        if: ${{ steps.cache.outputs.hit == 'none' }}
+        if: ${{ steps.cache.outputs.hit != 'v3' && matrix.part == 1 }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run xcode-cache-warm.yml --repo "$GITHUB_REPOSITORY" --ref main || echo "::warning::頼めませんでした（/mac-check の手順で流す）"
+          XCODE_VERSION: ${{ steps.xcode.outputs.version }}
+        run: |
+          busy="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/xcode-cache-warm.yml/runs?branch=main&per_page=20" \
+                    --jq '[.workflow_runs[] | select(.status == "queued" or .status == "in_progress" or .status == "waiting" or .status == "pending")] | length' 2>/dev/null || echo 0)"
+          if [ "${busy:-0}" -gt 0 ]; then
+            echo "main の控えを書く回が ${busy} 本、待ち／走っているので頼まない" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            gh workflow run xcode-cache-warm.yml --repo "$GITHUB_REPOSITORY" --ref main -f "xcode=${XCODE_VERSION}" \
+              && echo "main の控えを書く回を頼んだ（Xcode ${XCODE_VERSION}）" | tee -a "$GITHUB_STEP_SUMMARY" \
+              || echo "::warning::頼めませんでした（/mac-check の手順で流す）"
+          fi
 
       - name: Xcodeプロジェクトを生成
         run: |
@@ -216,33 +230,52 @@ jobs:
           products="$(find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 3 -type d -path '*/JourneyPhoto-*/Build/Products' | head -1)"
           bash Tools/warm-simulator.sh "$products/Debug-iphonesimulator"
 
-      # 🔴 **単体と UI を xcodebuild 1 回で流す**（(c)・2026-11-11 測る回 run 42989273825: 別々に 2 回 491 秒 →
-      # 1 回 384 秒。xcodebuild の立ち上げ・アプリを入れる・テストの実行役の起動が 1 回で済む）。
-      # 1 台目だけ、Linux の `swift test` に無い単体（`Tools/quick-unit-tests.txt`）を一覧の頭に足す
-      - name: テストを流す（Mac でしか流れない単体＋起動の見張り＋変えた画面）
-        env:
-          LIST_B64: ${{ matrix.list }}
-          PART: ${{ matrix.part }}
+      # 1 台目: 単体テストを全部（`Tools/xcode-test.sh unit`・1 本 60 秒の上限のまま）。組んだ品の xctestrun で流す
+      # （プロジェクトと依存の図をもう一度読まない）。UI と別の xcodebuild にするのは、単体の時間の上限を保つため
+      # （測る回 run 42989273825 で、1 回にまとめると 107 秒縮むが、上限は UI の 300 秒になる）
+      - name: 単体テスト（全部・1 台目）
+        if: ${{ matrix.part == 1 }}
         run: |
           set -euo pipefail
-          : > /tmp/quick-list.txt
-          if [ "$PART" = "1" ]; then
-            python3 -c 'import importlib.util as u; s=u.spec_from_file_location("p","Tools/pick-ui-tests.py"); m=u.module_from_spec(s); s.loader.exec_module(m); print("\n".join("-only-testing:JourneyPhotoTests/"+t for t in m.quick_unit_tests()))' >> /tmp/quick-list.txt
-          fi
-          python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.argv[1]))' "$LIST_B64" >> /tmp/quick-list.txt
-          cat /tmp/quick-list.txt
-          # 組んだ品の xctestrun で流す（プロジェクトと依存の図をもう一度読まない）
           XCTESTRUN="$(ls "$HOME"/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/*.xctestrun | head -1)"
           export XCTESTRUN
-          XCODE_LOG=build/logs/xcodebuild-test.log bash Tools/xcode-test.sh ui build/Test.xcresult /tmp/quick-list.txt
+          s=$SECONDS
+          XCODE_LOG=build/logs/xcodebuild-unit.log bash Tools/xcode-test.sh unit build/Unit.xcresult
+          echo "単体テスト（全部）: $((SECONDS - s)) 秒" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: UI テスト（起動の見張り・変えた画面）
+        env:
+          LIST_B64: ${{ matrix.list }}
+        run: |
+          set -euo pipefail
+          python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.argv[1]))' "$LIST_B64" > /tmp/quick-list.txt
+          cat /tmp/quick-list.txt
+          XCTESTRUN="$(ls "$HOME"/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/*.xctestrun | head -1)"
+          export XCTESTRUN
+          s=$SECONDS
+          XCODE_LOG=build/logs/xcodebuild-ui.log bash Tools/xcode-test.sh ui build/Test.xcresult /tmp/quick-list.txt
+          echo "UI テスト: $((SECONDS - s)) 秒" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: 結果のまとめ
         if: ${{ always() }}
         run: |
-          for r in build/Test.xcresult; do
+          for r in build/Unit.xcresult build/Test.xcresult; do
             [ -d "$r" ] && python3 Tools/xcresult-summary.py "$r" >> "$GITHUB_STEP_SUMMARY"
           done
+          # 速さの数（`measured [...]`）は CLAUDE.md のとおり `build-logs` の `xcodebuild-full.log` で読めるように、全文をまとめる
+          cat build/logs/xcodebuild-build.log build/logs/xcodebuild-unit.log build/logs/xcodebuild-ui.log \
+            > build/logs/xcodebuild-full.log 2>/dev/null || true
           exit 0
+
+      # 全文ログだけを短い間残す（公開リポジトリなので xcresult・画面の絵は上げない）
+      - name: ログを残す
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-logs-mac${{ matrix.part }}
+          path: build/logs/*.log
+          retention-days: 3
+          if-no-files-found: ignore
 
   # 🔴 **必須のチェックにしうる名前はこの job**（前の ios-pr.yml の `xcode` と同じ名前）。Linux で結果を読むだけ。
   # Mac を起こさなかった回（下書き・文書だけ・同じコミットがテスト済み）は通り、Mac のどれかが落ちたら落ちる
@@ -259,6 +292,7 @@ jobs:
           RUN: ${{ needs.plan.outputs.run }}
           MAC: ${{ needs.mac.result }}
           STATIC: ${{ needs.static.result }}
+          DROPPED: ${{ needs.plan.outputs.dropped }}
         run: |
           echo "中身を決める: ${PLAN} / Mac を起こす: ${RUN} / 静的な検査: ${STATIC} / Mac: ${MAC}"
           if [ "$PLAN" != "success" ]; then
@@ -273,8 +307,13 @@ jobs:
             echo "::error::Mac のテストが通っていません（${MAC}）。「Xcode のテスト（Mac N）」の各 job を見る"
             exit 1
           fi
+          # 上限（Mac 3 台）で外した関係する UI テストは、門の結果にも警告で出す（緑でも見落とさないように）
+          if [ -n "${DROPPED:-}" ]; then
+            echo "::warning title=流さなかった関係する UI テスト::${DROPPED}（screens= で名指しするか ios-full.yml で流す）"
+            echo "⚠️ 上限で流さなかった関係する UI テスト: ${DROPPED}" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       # 🔴 **「Mac でテスト済み」の印**。Mac で流して通った回だけ success（起こさなかった回は skipped）
       - name: Mac のテストが通った（PR の検証が数える印）
         if: ${{ needs.plan.result == 'success' && needs.plan.outputs.run == 'true' && needs.static.result == 'success' && needs.mac.result == 'success' }}
-        run: echo "毎回の（Mac でしか流れない単体・起動の見張り・変えた画面）が通りました"
+        run: echo "毎回の（単体テストの全部・起動の見張り・変えた画面）が通りました"

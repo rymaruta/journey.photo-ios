@@ -513,7 +513,7 @@ if all(f.exists() for f in (testflight_yml, pr_yml, quick_yml, full_yml, sharded
     selects = re.findall(r"select\((\.name[^|]*?)\)\s*\|", quick)
     if selects != [f'.name == "{MARK}"']:
         fail(f"ios-quick.yml の「同じコミットが Mac でテスト済みか」の select が印の名前の完全一致だけではありません: {selects}")
-    if "for wf in ios-quick.yml ios-full.yml; do" not in quick or 'select(.conclusion == "success")' not in quick:
+    if "for wf in ios-quick.yml ios-full.yml release-center.yml; do" not in quick or 'select(.conclusion == "success")' not in quick:
         fail("ios-quick.yml が、毎回のとガチガチのの通った回（success）だけを「テスト済み」と数えていません")
     for name, text in workflows.items():
         if re.search(r'startswith\("テスト"\)', text):
@@ -540,8 +540,8 @@ if all(f.exists() for f in (testflight_yml, pr_yml, quick_yml, full_yml, sharded
         fail("ios-quick.yml の concurrency の組に github.workflow がありません（手で流した回と Release Center の回が取り消し合う）")
     mac = q_jobs.get("mac", "")
     limit = re.search(r"^    timeout-minutes: (\d+)$", mac, re.M)
-    if not limit or int(limit.group(1)) > 30 or "fromJSON(needs.plan.outputs.matrix)" not in mac:
-        fail("ios-quick.yml の Mac の job が、30 分の上限（timeout-minutes ≤ 30）と plan の割り振りで動いていません")
+    if not limit or int(limit.group(1)) > 25 or "fromJSON(needs.plan.outputs.matrix)" not in mac:
+        fail("ios-quick.yml の Mac の job が、上限（timeout-minutes ≤ 25・回全体で 30 分）と plan の割り振りで動いていません")
     for name, text in (("ios-quick.yml", quick), ("ios-full.yml", full), ("mac-sharded-tests.yml", shard_flow)):
         if "continue-on-error" in _code(text):
             fail(f"{name} に continue-on-error があります（落ちても印まで進む）")
@@ -549,9 +549,20 @@ if all(f.exists() for f in (testflight_yml, pr_yml, quick_yml, full_yml, sharded
     if 'python3 Tools/pick-ui-tests.py --quick-plan build/quick /tmp/quick.diff "${SCREENS:-}" "$cap"' not in plan_job \
             or 'base="$BASE_SHA"; cap=cap' not in plan_job or 'bash Tools/app-changed.sh "$BASE_SHA"' not in plan_job:
         fail("ios-quick.yml の plan が、--quick-plan（PR は上限で外す）と app-changed.sh で中身を決めていません")
-    if "m.quick_unit_tests()" not in mac or 'if [ "$PART" = "1" ]; then' not in mac \
+    unit_step = re.search(r"- name: 単体テスト（全部・1 台目）\n(.*?)(?=\n      - |\Z)", mac, re.S)
+    if not unit_step or "if: ${{ matrix.part == 1 }}" not in unit_step.group(1) \
+            or "bash Tools/xcode-test.sh unit build/Unit.xcresult" not in unit_step.group(1) or "UNIT_ONLY_TESTING" in unit_step.group(1) \
             or "bash Tools/xcode-test.sh ui build/Test.xcresult /tmp/quick-list.txt" not in mac:
-        fail("ios-quick.yml の Mac 1 台目が、Mac でしか流れない単体（Tools/quick-unit-tests.txt）を流していません")
+        fail("ios-quick.yml の Mac 1 台目が、単体テストを全部（JourneyPhotoTests・絞らない）流していません（CLAUDE.md「単体テスト（全部）」）")
+    warm_req = re.search(r"- name: 控えが無ければ main の控えを書く回を頼む\n(.*?)(?=\n      - |\Z)", mac, re.S)
+    if not warm_req or "matrix.part == 1" not in warm_req.group(1) or 'status == "in_progress"' not in warm_req.group(1) \
+            or '-f "xcode=${XCODE_VERSION}"' not in warm_req.group(1):
+        fail("ios-quick.yml: 控えを書く回を頼むのは 1 台目だけ・待ち／走っている回があれば頼まない・台の Xcode の版を渡す")
+    if "::warning title=流さなかった関係する UI テスト::" not in gate \
+            or "dropped=$(paste -sd ',' build/quick/dropped.txt)" not in q_jobs.get("plan", ""):
+        fail("ios-quick.yml: 上限で外した関係する UI テストを、門の結果に警告で出していません")
+    if "name: build-logs-mac${{ matrix.part }}" not in mac or "retention-days: 3" not in mac:
+        fail("ios-quick.yml: 全文ログ（build-logs-macN・xcodebuild-full.log）を短い保存日数で残していません")
     if "bash Tools/app-changed.sh" not in pr_flow or re.search(r"runs-on: .*macos", pr_flow):
         fail("ios-pr.yml は Linux だけ（Mac は ios-quick.yml）・アプリ変更の有無は Tools/app-changed.sh で決める")
 
@@ -819,16 +830,18 @@ if all(f.exists() for f in (testflight_yml, pr_yml, quick_yml, full_yml, sharded
             fail(f"pick-ui-tests.py の ONLY_WHEN_NAMED に {name} がありません（全部の回・PR で流れる）")
     if pick_mod.only_when_named("ScreenshotTests/testTrunkPickRepeat"):
         fail("pick-ui-tests.py: testTrunkPickRepeat（1本目）は全部の回に残す（札 #424 が閉じるまで）")
-    # **毎回のの割り振り**（2026-11-11）: 起動の見張りはいつも・差分に関係する UI・名指し。全部には倒さない。
-    # 1 台の見積もりは QUICK_UI_BUDGET 以下（1 本で越えるテストは別）、台は最大 QUICK_MAX_PARTS
-    smoke = {t for t in index if t.startswith("SmokeTests/") and not pick_mod.only_when_named(t)}
+    # **毎回のの割り振り**（2026-11-11）: 1 台目は起動の見張り（＋単体の全部）。関係する UI と名指しは 2 台目から。
+    # 全部には倒さない。2 台目からの 1 台の見積もりは QUICK_UI_BUDGET 以下（1 本で越えるテストは別）、台は最大 3
+    smoke = sorted(t for t in index if t.startswith("SmokeTests/") and not pick_mod.only_when_named(t))
+    if pick_mod.QUICK_MAX_PARTS > 3:
+        fail("pick-ui-tests.py: 毎回のの Mac は最大 3 台（同時 5 台・TestFlight ともう 1 本の毎回のが待たない数）")
     got = pick_mod.quick_plan("", "", True, index=index, loose=loose)
-    if {t for part in got["parts"] for t in part} != smoke or len(got["parts"]) != 1:
+    if got["parts"] != [smoke]:
         fail(f"pick-ui-tests.py --quick-plan が、差分の無い回で起動の見張りだけ（1 台）になりません: {got['parts']}")
     for unknown in ("diff --git a/project.yml b/project.yml\n--- a/project.yml\n+++ b/project.yml\n@@ -1 +1 @@\n-a\n+b\n",
                     "unrecognized diff"):
         got = pick_mod.quick_plan(unknown, "", True, index=index, loose=loose)
-        if {t for part in got["parts"] for t in part} != smoke:
+        if got["parts"] != [smoke]:
             fail("pick-ui-tests.py --quick-plan が、判定できない変更で起動の見張りより多く（全部に）倒れます")
     try:
         pick_mod.quick_plan("", "all", False, index=index, loose=loose)
@@ -839,16 +852,17 @@ if all(f.exists() for f in (testflight_yml, pr_yml, quick_yml, full_yml, sharded
     shots = sorted((t for t in index if t.startswith("ScreenshotTests/") and not pick_mod.only_when_named(t)),
                    key=lambda t: seconds[t])
     got = pick_mod.quick_plan("", ",".join(t.split("/")[1] for t in shots[:12]), True, index=index, loose=loose)
-    if len(got["parts"]) > pick_mod.QUICK_MAX_PARTS or any(
-            load > pick_mod.QUICK_UI_BUDGET and len(part) > 1 for part, load in zip(got["parts"], got["loads"])):
-        fail(f"pick-ui-tests.py --quick-plan の 1 台が上限（{pick_mod.QUICK_UI_BUDGET} 秒）を越えます: {got['loads']}")
-    # Mac でしか流れない単体の名前が Tests/ にあるか（消えた・名前を変えたテストを黙って流さなくならないように）
-    quick_units = pick_mod.quick_unit_tests()
-    unit_text = "\n".join(f.read_text(encoding="utf-8") for f in (ROOT / "Tests/JourneyPhotoTests").glob("*.swift"))
-    missing_units = [t for t in quick_units if not re.search(r"class " + re.escape(t.split("/")[0]) + r"\b", unit_text)
-                     or not re.search(r"func " + re.escape(t.split("/")[1]) + r"\(", unit_text)]
-    if not quick_units or missing_units:
-        fail(f"Tools/quick-unit-tests.txt の単体が Tests/ にありません: {missing_units[:5] or '一覧が空'}")
+    if got["parts"][0] != smoke or len(got["parts"]) > pick_mod.QUICK_MAX_PARTS or any(
+            load > pick_mod.QUICK_UI_BUDGET and len(part) > 1 for part, load in zip(got["parts"][1:], got["loads"][1:])):
+        fail(f"pick-ui-tests.py --quick-plan の 2 台目からが上限を越えるか、1 台目が見張りだけでありません: {got['loads']}")
+    # 上限で外すのは差分から選んだものだけ（PR）。外したものは返す（門に出す）
+    shot_file = "UITests/JourneyPhotoUITests/ScreenshotTests.swift"
+    many = (f"diff --git a/{shot_file} b/{shot_file}\n--- a/{shot_file}\n+++ b/{shot_file}\n"
+            + "".join(f"@@ -{min(index[t]['lines'])[0] + 1},1 +{min(index[t]['lines'])[0] + 1},1 @@\n+x\n"
+                      for t in shots if index[t].get("lines")))
+    got = pick_mod.quick_plan(many, "", True, index=index, loose=loose)
+    if not got["dropped"] or len(got["parts"]) > pick_mod.QUICK_MAX_PARTS:
+        fail(f"pick-ui-tests.py --quick-plan が、上限を越える関係する UI を外して dropped に返していません（{len(got['dropped'])}・{len(got['parts'])} 台）")
     # 全部の回から外した重い試験（2026-11-11・run 42920469610 の内訳）。トランクの選び直しの1本目は全部の回に残す
     for name in ("PerformanceTests/testMainTabRevisitTime", "ScreenshotTests/testCapturesCamperRoomContactSheet",
                  "ScreenshotTests/testTrunkPickRepeat2", "ScreenshotTests/testTrunkPickRepeat3",

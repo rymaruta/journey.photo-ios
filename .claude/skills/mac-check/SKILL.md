@@ -9,10 +9,10 @@ description: 枝を Mac の CI（本物の Xcode でビルド・テスト・画�
 
 | 名前 | ワークフロー | いつ | 中身 | 時間 |
 |---|---|---|---|---|
-| **毎回の（クイック）** | `ios-quick.yml` | PR で自動・枝を確かめるとき手で | Mac でしか流れない単体（38 件）＋起動の見張り（SmokeTests）＋変えた画面に関係する UI＋名指し | 目標 10 分・上限 30 分 |
+| **毎回の（クイック）** | `ios-quick.yml` | PR で自動・枝を確かめるとき手で | Mac 1 台目: 単体テストの全部＋起動の見張り（SmokeTests）／2〜3 台目: 変えた画面に関係する UI＋名指し | 目標 10 分・上限 30 分 |
 | **ガチガチの（フル）** | `ios-full.yml` | **原因の分からない不具合を調べるときだけ**手で | 全部の単体＋全部の UI（4 台に分けて） | 1 時間あまり |
 
-ほかの単体（5,352 件）は PR の検証の「単体テスト（Linux・模型）」が毎回流す。TestFlight に上げる回（`ios-testflight.yml`）は
+Linux の単体（模型）は PR の検証の「単体テスト（Linux・模型）」が同時に流す。TestFlight に上げる回（`ios-testflight.yml`）は
 テストを流さない（Archive と上げるだけ）。
 
 ## 流す
@@ -51,7 +51,7 @@ bash Tools/wait-mac-run.sh <main の sha7> xcode-cache-warm.yml   # run_in_backg
 ```
 
 - 書けたかは、その回の「控えを書く」の段が success か（`Cache saved with key: xcode-v2-…`）で見る
-- 枝で流すと、その枝だけが読める控えを書く（測るとき以外は main で流す）
+- 書くのは main だけ（枝で流しても書かない。枝の控えは main の控えを置き場 10GB から追い出す）
 
 待つのは `bash Tools/wait-mac-run.sh <sha7>` を **Bash の run_in_background（timeout 7200000）** で。
 `sleep` を繋いで待たない（止められる）。終わると通知が来る。

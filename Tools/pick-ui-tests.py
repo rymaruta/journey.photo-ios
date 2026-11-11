@@ -352,25 +352,16 @@ def plan(first_words, diff_text, parts, index=None, loose=None, times=None):
 # ===========================================================================================
 # 🔴 **毎回の（クイック・`ios-quick.yml`）**（2026-11-11 owner「毎回のと ガチガチので」「毎回のとこ最短に 5,10分」・
 # 「ガチの原因不明のバグの時だけガチガチのテストで」）。中身は固定:
-#  - Mac でしか意味の無い単体（`Tools/quick-unit-tests.txt`・Linux の `swift test` に無いもの）
-#  - 起動の見張り（SmokeTests）
-#  - 変えた画面に関係する UI テスト（差分から `tests_for_diff`。判定できない変更でも全部に倒さない）
-#  - 手で流したときに名指ししたもの（`screens`）
-# ほかの単体は Linux（PR の検証の「単体テスト（Linux・模型）」）が流す。全部の UI は `ios-full.yml`（手で押したときだけ）
+#  - Mac 1 台目: **単体テストを全部**（JourneyPhotoTests・CLAUDE.md「単体テスト（全部）」）＋起動の見張り（SmokeTests）
+#  - Mac 2 台目から: 変えた画面に関係する UI テスト（差分から `tests_for_diff`。判定できない変更でも全部に倒さない）と、
+#    手で流したときに名指ししたもの（`screens`）
+# 全部の UI は `ios-full.yml`（手で押したときだけ）
 # ===========================================================================================
-QUICK_UNIT = ROOT / "Tools" / "quick-unit-tests.txt"
-# Mac 1台あたりの UI テストの見積もりの上限（秒）。越える分は台を増やす（最大 QUICK_MAX_PARTS 台）
+# 2 台目からの 1 台あたりの UI テストの見積もりの上限（秒）。越える分は台を増やす
 QUICK_UI_BUDGET = 240
-QUICK_MAX_PARTS = 4
-
-
-def quick_unit_tests(path=None):
-    """Mac でしか流れない単体テストの名前（「Class/testName」）。`#` の行と空行は読まない"""
-    try:
-        text = (path or QUICK_UNIT).read_text(encoding="utf-8")
-    except OSError:
-        return []
-    return [line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+# 🔴 **1 回の毎回のが使う Mac は最大 3 台**（1 台目＋関係する UI の 2 台）。Mac は同時 5 台までで、TestFlight に上げる回
+# （1 台）と、もう 1 本の毎回の（ふつうは 1 台）が順番待ちにならない数（2026-11-11 確かめ役の指摘 9）
+QUICK_MAX_PARTS = 3
 
 
 def related_for_quick(diff_text, index, loose):
@@ -384,7 +375,8 @@ def related_for_quick(diff_text, index, loose):
 
 
 def quick_plan(diff_text, screens, cap, index=None, loose=None, times=None):
-    """毎回のの割り振り。返すのは {parts: [[テスト名]], loads, dropped, related, named, missing}"""
+    """毎回のの割り振り。parts[0] は 1 台目（単体の全部と一緒に流す起動の見張り）、parts[1:] は関係する UI。
+    返すのは {parts: [[テスト名]], loads, dropped, related, named, missing}"""
     if index is None:
         index, loose = read_index()
     times = read_times() if times is None else times
@@ -399,9 +391,9 @@ def quick_plan(diff_text, screens, cap, index=None, loose=None, times=None):
         args, missing = pick(screens, {t: f"{t}\n" + "\n".join(sorted(index[t]["literals"])) for t in index})
         named = {a.split(f"{TARGET}/", 1)[1] for a in args if a.count("/") >= 2} & set(index)
     extra = sorted((related | named) - smoke, key=lambda t: (seconds[t], t))
-    chosen, dropped = set(smoke), []
-    limit = QUICK_MAX_PARTS * QUICK_UI_BUDGET
-    used = sum(seconds[t] for t in chosen)
+    chosen, dropped = set(), []
+    limit = (QUICK_MAX_PARTS - 1) * QUICK_UI_BUDGET
+    used = 0.0
     for test in extra:
         # 上限で外すのは差分から選んだものだけ（手で名指ししたものは外さない）
         if cap and test not in named and used + seconds[test] > limit:
@@ -409,9 +401,10 @@ def quick_plan(diff_text, screens, cap, index=None, loose=None, times=None):
             continue
         chosen.add(test)
         used += seconds[test]
-    count = max(1, min(QUICK_MAX_PARTS, -(-int(used) // QUICK_UI_BUDGET)))
-    bins, load = balance(sorted(chosen), seconds, count)
-    return {"parts": [sorted(b) for b in bins], "loads": load, "dropped": sorted(dropped),
+    count = min(QUICK_MAX_PARTS - 1, -(-int(used) // QUICK_UI_BUDGET)) if chosen else 0
+    bins, load = balance(sorted(chosen), seconds, count) if count else ([], [])
+    return {"parts": [sorted(smoke)] + [sorted(b) for b in bins],
+            "loads": [sum(seconds[t] for t in smoke)] + list(load), "dropped": sorted(dropped),
             "related": sorted(related - smoke), "named": sorted(named), "missing": missing}
 
 
@@ -437,7 +430,7 @@ def main_quick_plan(argv):
         text = "".join(f"-only-testing:{TARGET}/{t}\n" for t in tests)
         include.append({"part": i, "list": base64.b64encode(text.encode("utf-8")).decode("ascii")})
     (out / "matrix.json").write_text(json.dumps({"include": include}, ensure_ascii=False), encoding="utf-8")
-    lines = [f"- Mac {i}: UI {len(t)} 本・見積もり {sec / 60:.1f} 分" + ("＋Mac でしか流れない単体" if i == 1 else "")
+    lines = [f"- Mac {i}: UI {len(t)} 本・見積もり {sec / 60:.1f} 分" + ("＋単体テストの全部（先に流す）" if i == 1 else "")
              for i, (t, sec) in enumerate(zip(result["parts"], result["loads"]), 1)]
     lines.append("- 変えた画面に関係する UI: " + ("・".join(result["related"]) or "なし"))
     if result["named"]:
@@ -446,6 +439,8 @@ def main_quick_plan(argv):
         lines.append(f"- ⚠️ 上限（Mac {QUICK_MAX_PARTS} 台 × {QUICK_UI_BUDGET // 60} 分）で流さなかった関係するテスト"
                      "（`screens=` で名指し・ios-full.yml で流せる）: " + "・".join(result["dropped"]))
     (out / "plan.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    # 上限で外した関係するテスト（門の結果にも出す・ios-quick.yml の `xcode`）
+    (out / "dropped.txt").write_text("".join(f"{t}\n" for t in result["dropped"]), encoding="utf-8")
     print("\n".join(lines))
     return 0
 

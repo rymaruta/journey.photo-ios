@@ -19,21 +19,27 @@ on:
   schedule:
     - cron: "41 18 * * *"
   workflow_dispatch:
+    inputs:
+      xcode:
+        description: "組む Xcode の版（空ならいちばん新しいもの。毎回のが頼むときは、その台の版を渡す）"
+        type: string
+        default: ""
 
 permissions:
   contents: read
   actions: read
 
-# 新しい main が来たら古い回は止める（書くのは新しい方だけでよい）
+# 🔴 **取り消さない・待ちは 1 本**（2026-11-11 確かめ役の指摘 1）。取り消すと、続けて頼まれた回が前の回を止め合って
+# 控えが書かれ続けない。3 本目が来たら待っていた 2 本目が外れる（GitHub の決まり）ので、待ちは 1 本で足りる
 concurrency:
   group: xcode-cache-warm-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   warm:
     name: 控えを書く
-    # 手で枝に流したときは、その枝だけが読める控えを書く（測るとき・約 500MB）
-    if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+    # 🔴 **書くのは main だけ**（枝の控えは main の控えを置き場 10GB から追い出す。2026-11-11 に実際に追い出した）
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: macos-15
     # 控えが無いと依存を丸ごと組む（2026-11-11 run 43013029429: 組む 944 秒・Swift 3,271 件・回全体 17 分。前の run #8 は 50 分あまり）
     timeout-minutes: 90
@@ -41,22 +47,24 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Xcodeを選択
-        run: bash Tools/select-xcode.sh
+        env:
+          XCODE_VERSION: ${{ inputs.xcode }}
+        run: bash Tools/select-xcode.sh "${XCODE_VERSION:-}"
 
       - name: 控えを戻す
         id: cache
         uses: ./.github/actions/xcode-cache-restore
 
-      # 毎日の回は「今の Xcode の控えが main にあるか」だけ見て、あれば終わる
-      - name: 今の Xcode の控えがあるか（毎日の回）
+      # 毎日の回・頼まれた回は「この Xcode と依存の版の控え（鍵の頭が同じ v3）があるか」だけ見て、あれば終わる。
+      # main に入った回（push）は、アプリの組んだものを新しくするためにいつも組む
+      - name: この Xcode の控えがあるか（毎日の回・頼まれた回）
         id: need
         env:
-          GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
           KEY: ${{ steps.cache.outputs.key }}
-          HIT: ${{ steps.cache.outputs.hit }}
+          EXACT: ${{ steps.cache.outputs.exact }}
         run: |
-          if [ "$EVENT" = "schedule" ] && [ "$HIT" = "v3" ]; then
+          if [ "$EVENT" != "push" ] && [ "$EXACT" = "true" ]; then
             echo "build=false" >> "$GITHUB_OUTPUT"
             echo "今の Xcode の控え（${KEY}）があるので書かない" | tee -a "$GITHUB_STEP_SUMMARY"
           else
@@ -74,7 +82,7 @@ jobs:
         run: |
           s=$SECONDS
           XCODE_LOG=/tmp/xcodebuild-warm.log bash Tools/xcode-test.sh build > /dev/null
-          echo "組む: $((SECONDS - s)) 秒・Swift を組んだ $(grep -c 'SwiftCompile normal' /tmp/xcodebuild-warm.log) 件（控え ${{ steps.cache.outputs.hit }}）" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "組む（${XCODE_BUILD:-?}）: $((SECONDS - s)) 秒・Swift を組んだ $(grep -c 'SwiftCompile normal' /tmp/xcodebuild-warm.log) 件（控え ${{ steps.cache.outputs.hit }}）" | tee -a "$GITHUB_STEP_SUMMARY"
 
       # 🔴 **書く前に、控えに入れないものを消す**（path の `!` の行は効かなかった・`.github/actions/xcode-cache-restore` の注記）。
       # SwiftPM の置き場の写し（repositories 3.2GB）と Archive の中間物（1.3GB）。消しても依存を取りに行かずに組めた（run 42996168684）
@@ -88,7 +96,7 @@ jobs:
 
       # 🔴 path の並びは `.github/actions/xcode-cache-restore` の v3 と同じ（違うと当たらない・check-config.py が見る）
       - name: 控えを書く
-        if: ${{ steps.need.outputs.build == 'true' }}
+        if: ${{ steps.need.outputs.build == 'true' && github.ref == 'refs/heads/main' }}
         uses: actions/cache/save@v6
         with:
           path: |

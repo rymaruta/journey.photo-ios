@@ -93,11 +93,9 @@ Organizer → **Distribute App → App Store Connect → Upload**。
 Archive・配布まで書いてある。ビルド番号は `bash Tools/bump-build.sh` で上げる
 （同じ版の中で同じ番号は受け付けられない。版を変えたら 1 から）。
 
-**Actions（`ios-testflight.yml`）では、シミュレータのテストを既定で回さない**（2026-10-09 owner のルール）。
-同じテストは PR の検証の「Xcode のビルドとテスト（シミュレータ）」で回っていて、それで足りる。
-TestFlight で回すのは `tests: true`・`submit: false`（`/mac-check` の絵が目的）・`storeShots: true`
-（原寸の絵はテストが撮る）のときだけ。飛ばしてもコンパイルは「ビルド」の段（Archive）で通る。
-飛ばした回は絵を撮らないので、`screenshots` の枝は前の絵のまま。
+**Actions（`ios-testflight.yml`）では、シミュレータのテストを回さない**（2026-10-09 owner のルール・2026-11-11 からテストの入力も無い）。
+テストは PR の毎回の（`ios-quick.yml`・「Xcode のビルドとテスト（シミュレータ）」）が回し、原因の分からない不具合は
+ガチガチの（`ios-full.yml`）を手で流す。コンパイルは「ビルド」の段（Archive）で通る。
 
 ### 以前の記述
 

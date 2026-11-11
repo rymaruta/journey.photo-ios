@@ -24,6 +24,9 @@ outputs:
   hit:
     description: "v3（今の形の控え）・v1（前の形の控え）・none（無い: 依存を丸ごと組む）"
     value: ${{ steps.result.outputs.hit }}
+  exact:
+    description: "true: この Xcode と依存の版（鍵の頭が同じ）の v3 が当たった"
+    value: ${{ steps.result.outputs.exact }}
   key:
     description: 控えを書くときの鍵の頭（xcode-cache-warm.yml が回の番号を足して書く）
     value: ${{ steps.key.outputs.key }}
@@ -88,7 +91,9 @@ runs:
       run: |
         if [ -n "$V2" ]; then hit=v3; elif [ -n "$V1" ]; then hit=v1; else hit=none; fi
         # 同じ依存の版（鍵の頭が同じ）の v3 が当たったときだけ、依存を取りに行かない（Tools/xcode-test.sh）
-        case "$V2" in "$KEY"-*|"$KEY") echo "XCODE_SKIP_PACKAGE_UPDATES=1" >> "$GITHUB_ENV" ;; esac
+        exact=false
+        case "$V2" in "$KEY"-*|"$KEY") exact=true; echo "XCODE_SKIP_PACKAGE_UPDATES=1" >> "$GITHUB_ENV" ;; esac
+        echo "exact=$exact" >> "$GITHUB_OUTPUT"
         echo "hit=$hit" >> "$GITHUB_OUTPUT"
         {
           echo "### Mac の控え"
