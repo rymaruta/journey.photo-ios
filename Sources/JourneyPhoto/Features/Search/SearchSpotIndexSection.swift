@@ -26,16 +26,20 @@ struct SearchSpotIndexSection: View {
     @Binding var region: String?
     /// 「写真｜地図」（2026-11-11 owner「タブ切り替えとかでもいいから縦に長くならないように」）
     @Binding var mode: SpotIndexMode
-    /// 地図をなぞっている地方（離すまで札がこれに替わる）
+    /// 地図をなぞっている区分（離すまで札がこれに替わる）
     @State private var tracing: String?
+    /// 出している地図の id（地図が2つ以上のとき、地図の右上の切り替えで替える）
+    @State private var mapId: String?
+    /// 地方のチップと選択を分けない地図（日本以外）で選んでいる区分（地図の id → 区分の id）
+    @State private var otherSelections: [String: String] = [:]
 
-    /// 地図の形（「行った県」の地図と同じ・同梱の形から1度だけ作る）。読めなければ「地図」の札を出さない
-    private var mapGeometry: PrefectureMapGeometry? { PrefectureMapGeometry.bundled }
+    /// 出せる地図（いまは日本だけ・`SpotRegionMap.available`）。無ければ「地図」の札を出さない
+    private var maps: [SpotRegionMap] { SpotRegionMap.available(japan: PrefectureMapGeometry.bundled) }
 
     /// 地図の幅（段の中の高さ `cardColumnHeight` に地図の縦横比を合わせる）
-    nonisolated static func mapWidth(for geometry: PrefectureMapGeometry) -> CGFloat {
-        guard geometry.size.height > 0 else { return cardColumnHeight }
-        return (cardColumnHeight * geometry.size.width / geometry.size.height).rounded(.up)
+    nonisolated static func mapWidth(for shapes: SpotMapShapes) -> CGFloat {
+        guard shapes.size.height > 0 else { return cardColumnHeight }
+        return (cardColumnHeight * shapes.size.width / shapes.size.height).rounded(.up)
     }
 
     /// 札の大きさ（「人気の撮影地」の札と同じ・板 11 の 156×116）
@@ -85,7 +89,7 @@ struct SearchSpotIndexSection: View {
                 if let selected {
                     VStack(alignment: .leading, spacing: 0) {
                         // 「写真｜地図」。地図の形が読めなければ札を出さない（写真だけ）
-                        if mapGeometry != nil {
+                        if !maps.isEmpty {
                             ProfileTabBar(tabs: SpotIndexMode.allCases, selection: $mode, movesContent: false)
                                 .padding(.bottom, JPSpace.xs)
                         }
@@ -115,8 +119,8 @@ struct SearchSpotIndexSection: View {
                 }
                 .padding(.horizontal, JPSpace.gutter)
             }
-            if mode == .map, let geometry = mapGeometry {
-                mapRow(selected, geometry: geometry)
+            if mode == .map, let map = maps.first(where: { $0.id == mapId }) ?? maps.first {
+                mapRow(selected, map: map)
                     .frame(height: Self.cardColumnHeight)
             } else {
                 cardsRow(selected)
@@ -129,39 +133,69 @@ struct SearchSpotIndexSection: View {
         .accessibilityIdentifier("search.spotIndex")
     }
 
-    /// 地図と、選んでいる（なぞっている）地方の札（Web のホームの地図の下の札と同じ中身）
-    private func mapRow(_ selected: SpotPrefectureIndex.Group, geometry: PrefectureMapGeometry) -> some View {
-        let shown = tracing.flatMap { name in groups.first { $0.region.name == name } } ?? selected
+    /// 地図と、選んでいる（なぞっている）区分の札（Web のホームの地図の下の札と同じ中身）。**地図の型に依らない**
+    private func mapRow(_ selected: SpotPrefectureIndex.Group, map: SpotRegionMap) -> some View {
+        let areas = map.areas(SpotMapSource(spots: spots, japanGroups: groups))
+        // 日本の地方は上のチップ・写真の札の列と同じ選択。ほかの地図は地図ごとに覚える（無ければ件数のいちばん多い区分）
+        let chosen = map.sharesRegionChips ? selected.region.name
+            : otherSelections[map.id] ?? areas.max { $0.count < $1.count }?.id
+        let shown = areas.first { $0.id == (tracing ?? chosen) }
         return HStack(alignment: .top, spacing: JPSpace.s) {
-            SpotRegionMapView(geometry: geometry, groups: groups, selected: selected.region.name,
-                              tracing: $tracing) { name in region = name }
-                .frame(width: Self.mapWidth(for: geometry), height: Self.cardColumnHeight)
-            regionCard(shown)
+            SpotRegionMapView(map: map, areas: areas, selected: chosen, tracing: $tracing) { id in
+                if map.sharesRegionChips { region = id } else { otherSelections[map.id] = id }
+            }
+            .frame(width: Self.mapWidth(for: map.shapes), height: Self.cardColumnHeight)
+            // 地図が2つ以上のときだけ、地図の右上に重ねて切り替え（段の高さは変えない・`SpotRegionMap.showsSwitcher`）
+            .overlay(alignment: .topTrailing) {
+                if SpotRegionMap.showsSwitcher(maps) { mapSwitcher(current: map) }
+            }
+            if let shown { areaCard(shown) }
         }
         .padding(.horizontal, JPSpace.gutter)
     }
 
-    /// 地図の右の札: 地方の名前・件数・上位の名前・「すべて見る」（その地方の撮影スポットの一覧へ）
-    private func regionCard(_ group: SpotPrefectureIndex.Group) -> some View {
+    /// 地図の切り替え（「日本｜世界」）。地図の枠の中に重ねる小さな札。**地図が1つの間は出さない**
+    private func mapSwitcher(current: SpotRegionMap) -> some View {
+        HStack(spacing: 0) {
+            ForEach(maps) { map in
+                Button {
+                    tracing = nil
+                    mapId = map.id
+                } label: {
+                    Text(map.title)
+                        .font(JPFont.caption.weight(map.id == current.id ? .semibold : .regular))
+                        .foregroundStyle(map.id == current.id ? WebTheme.accent : WebTheme.text2)
+                        .padding(.horizontal, JPSpace.xs)
+                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(map.id == current.id ? .isSelected : [])
+                .accessibilityIdentifier("search.spotIndex.mapKind.\(map.id)")
+            }
+        }
+    }
+
+    /// 地図の右の札: 区分の名前・件数・上位の名前・「すべて見る」（その区分の撮影スポットの一覧へ）
+    private func areaCard(_ area: SpotMapArea) -> some View {
         VStack(alignment: .leading, spacing: JPSpace.xxs) {
-            Text(group.title)
+            Text(area.title)
                 .font(JPFont.rowTitle)
                 .foregroundStyle(WebTheme.text)
                 .lineLimit(1)
                 .accessibilityAddTraits(.isHeader)
-            Text(L("撮影スポット \(group.count)件", group.count == 1 ? "1 photo spot" : "\(group.count) photo spots"))
+            Text(L("撮影スポット \(area.count)件", area.count == 1 ? "1 photo spot" : "\(area.count) photo spots"))
                 .font(JPFont.meta)
                 .foregroundStyle(WebTheme.text2)
                 .lineLimit(1)
-            Text(SpotPrefectureIndex.namesLine(group))
+            Text(area.namesLine)
                 .font(JPFont.footnote)
                 .foregroundStyle(WebTheme.text2)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             NavigationLink {
-                OfficialSpotIndexView(scope: .region(group.region.name), spots: spots, photos: photos,
-                                      photosKnown: photosKnown)
+                OfficialSpotIndexView(scope: area.scope, spots: spots, photos: photos, photosKnown: photosKnown)
             } label: {
                 // 幅が狭いので字は「すべて見る ›」。読み上げは「北海道の撮影スポットをすべて見る」
                 MoreLink(text: L("すべて見る", "See all"))
@@ -169,7 +203,7 @@ struct SearchSpotIndexSection: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(SpotRegionMap.seeAll(group))
+            .accessibilityLabel(area.seeAll)
             .accessibilityIdentifier("search.spotIndex.mapSeeAll")
         }
         .padding(.horizontal, JPSpace.s)

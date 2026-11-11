@@ -44,42 +44,113 @@ final class SpotRegionMapTests: XCTestCase {
 
     // MARK: - 当たり
 
+    private func japan() throws -> (SpotRegionMap, [SpotMapArea]) {
+        let map = SpotRegionMap.japan(try geometry())
+        let areas = map.areas(SpotMapSource(spots: try spots(), japanGroups: SpotPrefectureIndex.groups(spots: try spots())))
+        return (map, areas)
+    }
+
     /// 押した点の県の地方。**撮影スポットの無い地方は選ばない**（押しても何もしない）
     func testRegionAtPointPicksRegionWithSpots() throws {
         let g = try geometry()
-        let groups = SpotPrefectureIndex.groups(spots: try spots())
+        let (map, areas) = try japan()
         let size = CGSize(width: SearchSpotIndexSection.mapWidth(for: g), height: SearchSpotIndexSection.cardColumnHeight)
-        XCTAssertEqual(SpotRegionMap.region(at: screen(g, 43.06, 141.35, container: size), container: size,
-                                            geometry: g, groups: groups), "北海道")
-        XCTAssertEqual(SpotRegionMap.region(at: screen(g, 35.69, 139.70, container: size), container: size,
-                                            geometry: g, groups: groups), "関東")
-        XCTAssertNil(SpotRegionMap.region(at: screen(g, 33.59, 130.40, container: size), container: size,
-                                          geometry: g, groups: groups), "撮影スポットの無い九州を選んだ")
+        func at(_ lat: Double, _ lng: Double) -> String? {
+            map.area(at: screen(g, lat, lng, container: size), container: size, in: areas)
+        }
+        XCTAssertEqual(at(43.06, 141.35), "北海道")
+        XCTAssertEqual(at(35.69, 139.70), "関東")
+        XCTAssertNil(at(33.59, 130.40), "撮影スポットの無い九州を選んだ")
         // 海の真ん中は何も選ばない
-        XCTAssertNil(SpotRegionMap.region(at: screen(g, 38.0, 133.0, container: size), container: size,
-                                          geometry: g, groups: groups))
+        XCTAssertNil(at(38.0, 133.0))
     }
 
-    /// 塗るのは選んだ（なぞっている）地方の県だけ
-    func testHighlightedIsRegionPrefectures() {
-        XCTAssertEqual(SpotRegionMap.highlighted("四国"), ["徳島県", "香川県", "愛媛県", "高知県"])
-        XCTAssertTrue(SpotRegionMap.highlighted(nil).isEmpty)
-        XCTAssertTrue(SpotRegionMap.highlighted("存在しない").isEmpty)
+    /// 塗るのは選んだ（なぞっている）地方の県だけ。撮影スポットのある県だけを「ある」の地にする
+    func testHighlightedAndCovered() throws {
+        let (_, areas) = try japan()
+        XCTAssertEqual(SpotRegionMap.highlighted("北海道", in: areas), ["北海道"])
+        XCTAssertEqual(SpotRegionMap.highlighted("関東", in: areas).count, 7)
+        XCTAssertTrue(SpotRegionMap.highlighted(nil, in: areas).isEmpty)
+        XCTAssertTrue(SpotRegionMap.highlighted("四国", in: areas).isEmpty, "撮影スポットの無い地方は区分に無い")
+        XCTAssertEqual(SpotRegionMap.covered(areas), ["北海道", "東京都"])
     }
 
     // MARK: - 札
 
-    /// 上位の名前は「代表写真がある → 台帳の並び」で 4 件。全部出せないときは「ほか」
+    /// 上位の名前は「代表写真がある → 台帳の並び」で 4 件。全部出せないときは「ほか」。行き先はその地方の一覧
     func testRegionCardNames() throws {
-        let groups = SpotPrefectureIndex.groups(spots: try spots())
-        let hokkaido = try XCTUnwrap(groups.first { $0.region.name == "北海道" })
+        let (_, areas) = try japan()
+        let hokkaido = try XCTUnwrap(areas.first { $0.id == "北海道" })
         XCTAssertEqual(hokkaido.names, ["akan", "tomita", "zz-sapporo", "asahidake"])
-        XCTAssertEqual(SpotPrefectureIndex.namesLine(hokkaido),
+        XCTAssertEqual(hokkaido.count, 5)
+        XCTAssertEqual(hokkaido.namesLine,
                        L("akan・tomita・zz-sapporo・asahidake ほか", "akan, tomita, zz-sapporo, asahidake, and more"))
-        let kanto = try XCTUnwrap(groups.first { $0.region.name == "関東" })
-        XCTAssertEqual(SpotPrefectureIndex.namesLine(kanto), "meiji", "全部出せたら「ほか」を付けない")
-        XCTAssertEqual(SpotRegionMap.seeAll(hokkaido),
-                       L("北海道の撮影スポットをすべて見る", "See all photo spots in Hokkaido"))
+        XCTAssertEqual(hokkaido.scope, .region("北海道"))
+        XCTAssertEqual(hokkaido.seeAll, L("北海道の撮影スポットをすべて見る", "See all photo spots in Hokkaido"))
+        let kanto = try XCTUnwrap(areas.first { $0.id == "関東" })
+        XCTAssertEqual(kanto.namesLine, "meiji", "全部出せたら「ほか」を付けない")
+    }
+
+    // MARK: - 地図を足せる作り（2026-11-11 owner「いずれは日本地図以外も選べるようにしたい」）
+
+    /// 試験用の仮の地図の形: 正方形の片が3つ（A1・A2 は区分 A、B1 は区分 B）。横に並ぶ 300×100 の空間
+    private struct SquareShapes: SpotMapShapes {
+        let size = CGSize(width: 300, height: 100)
+        let inset: CGRect? = nil
+        let mapPieces: [(name: String, polygons: [[CGPoint]])] = ["A1", "A2", "B1"].enumerated().map { i, name in
+            let x = CGFloat(i) * 100
+            return (name, [[CGPoint(x: x, y: 0), CGPoint(x: x + 100, y: 0), CGPoint(x: x + 100, y: 100), CGPoint(x: x, y: 100)]])
+        }
+        func piece(at unit: CGPoint, tolerance: CGFloat) -> String? {
+            guard unit.y >= 0, unit.y <= 100, unit.x >= 0, unit.x < 300 else { return nil }
+            return ["A1", "A2", "B1"][Int(unit.x / 100)]
+        }
+    }
+
+    /// 仮の地図: 台帳の国で区分を作る（世界の地図を足すときの形）
+    private func squareMap() -> SpotRegionMap {
+        SpotRegionMap(id: "squares", title: "仮", shapes: SquareShapes()) { source in
+            let byCountry = Dictionary(grouping: source.spots) { $0.region?.country ?? "" }
+            return [("A", ["A1", "A2"]), ("B", ["B1"])].compactMap { id, pieces in
+                guard let rows = byCountry[id], !rows.isEmpty else { return nil }
+                return SpotMapArea(id: id, title: id, count: rows.count, names: rows.map(\.name),
+                                   pieces: Set(pieces), coveredPieces: [pieces[0]], scope: .all, seeAll: "\(id) をすべて見る")
+            }
+        }
+    }
+
+    /// 🔴 **型を足すだけで増やせる**: 仮の地図でも、押した点の区分・塗る片・札の中身が同じ口で取れる。
+    /// 日本以外の地図は、地方のチップと選択を分ける
+    func testAnotherMapWorksThroughTheSameType() throws {
+        func spot(_ slug: String, country: String) throws -> OfficialSpot {
+            try JSONDecoder.api.decode(OfficialSpot.self, from: Data(
+                "{\"spotId\":\"sp_\(slug)\",\"slug\":\"\(slug)\",\"name\":\"\(slug)\",\"stage\":\"published\",\"region\":{\"country\":\"\(country)\"},\"coords\":{\"lat\":0,\"lng\":0}}".utf8))
+        }
+        let map = squareMap()
+        let areas = map.areas(SpotMapSource(spots: [try spot("a", country: "A"), try spot("b", country: "A")], japanGroups: []))
+        XCTAssertEqual(areas.map(\.id), ["A"], "撮影スポットの無い区分 B は作らない")
+        let size = CGSize(width: 150, height: 50)
+        XCTAssertEqual(map.area(at: CGPoint(x: 70, y: 25), container: size, in: areas), "A", "A2 を押したら区分 A")
+        XCTAssertNil(map.area(at: CGPoint(x: 130, y: 25), container: size, in: areas), "撮影スポットの無い区分を選んだ")
+        XCTAssertEqual(SpotRegionMap.highlighted("A", in: areas), ["A1", "A2"])
+        XCTAssertEqual(SpotRegionMap.covered(areas), ["A1"])
+        XCTAssertEqual(areas[0].namesLine, L("a・b", "a, b"))
+        XCTAssertFalse(map.sharesRegionChips)
+        XCTAssertEqual(SearchSpotIndexSection.mapWidth(for: map.shapes), 480, "縦横比 3:1 の地図は札の列の高さ 160 で幅 480")
+    }
+
+    /// 地図の切り替え（「日本｜世界」）は**地図が2つ以上のときだけ**。いまは日本だけなので出さない
+    func testSwitcherOnlyWithTwoOrMoreMaps() throws {
+        let japan = SpotRegionMap.japan(try geometry())
+        XCTAssertFalse(SpotRegionMap.showsSwitcher([japan]))
+        XCTAssertTrue(SpotRegionMap.showsSwitcher([japan, squareMap()]))
+        XCTAssertEqual(SpotRegionMap.available(japan: try geometry()).map(\.id), ["japan"])
+        XCTAssertTrue(SpotRegionMap.available(japan: nil).isEmpty, "形が読めなければ地図を出さない")
+        // 切り替えは地図の枠の中に重ねる（段の高さを変えない）
+        let text = try String(contentsOf: Self.resources.deletingLastPathComponent()
+            .appendingPathComponent("Features/Search/SearchSpotIndexSection.swift"), encoding: .utf8)
+        XCTAssertTrue(text.contains(".overlay(alignment: .topTrailing) {\n                if SpotRegionMap.showsSwitcher(maps) { mapSwitcher(current: map) }"),
+                      "切り替えが地図の枠の中に重なっていない")
     }
 
     /// 札の「すべて見る」の先は、その地方の県だけ（北から・県の見出しつき）
@@ -108,7 +179,7 @@ final class SpotRegionMapTests: XCTestCase {
             .appendingPathComponent("Features/Search/SearchSpotIndexSection.swift"), encoding: .utf8)
         XCTAssertTrue(text.contains("`bodyHeight`）\n        .frame(height: Self.bodyHeight, alignment: .top)"),
                       "段（チップ＋札の列か地図）の高さを枠で固定していない")
-        XCTAssertTrue(text.contains("mapRow(selected, geometry: geometry)\n                    .frame(height: Self.cardColumnHeight)"),
+        XCTAssertTrue(text.contains("mapRow(selected, map: map)\n                    .frame(height: Self.cardColumnHeight)"),
                       "地図の行の高さが札の列と同じでない")
     }
 

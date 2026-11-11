@@ -71,12 +71,6 @@ enum SpotPrefectureIndex {
             .map(\.element.spot.name)
     }
 
-    /// 地図の札の名前の行（「阿寒湖・大雪山 旭岳・ファーム富田・五稜郭 ほか」）。全部出せたら「ほか」を付けない
-    static func namesLine(_ group: Group) -> String {
-        let joined = group.names.joined(separator: L("・", ", "))
-        return group.count > group.names.count ? L("\(joined) ほか", "\(joined), and more") : joined
-    }
-
     /// 県の段（撮影スポットの行を持つもの）から地方ごとの県の札
     static func groups(_ sections: [RegionList.Section], order: [String: Int] = [:]) -> [Group] {
         var byPrefecture: [String: [OfficialSpotList.Row]] = [:]
