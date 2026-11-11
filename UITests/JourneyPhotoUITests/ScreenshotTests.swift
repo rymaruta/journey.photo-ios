@@ -2429,6 +2429,78 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "11k-撮影スポットの一覧（全国・「寺」で絞った）")
     }
 
+    /// **探すの「撮影スポット」の段の地図**（2026-11-11 owner「iOS 側にもこの機能欲しい」）。
+    ///
+    /// 1. 「写真」の段ぜんたい（`search.spotIndex.block`）の高さを取り、「地図」に替えて**同じ高さか**を数で確かめる
+    /// 2. 地図の右上（北海道）をひと押しして、右の札が北海道になったことを確かめて撮る
+    /// 3. 長押し（0.6 秒）してから南西へなぞって離し、別の地方に替わったことを撮る
+    /// 4. 札の「すべて見る」→ その地方の撮影スポットの一覧を撮る
+    ///
+    /// 高さはログに `spotMap.height photos=… map=…`。段が出なければ撮らない（この試験の決まり）
+    func testCapturesSearchSpotMap() {
+        let app = XCUIApplication()
+        // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 1 else { return }
+        tabBar.buttons.element(boundBy: 1).tap()
+
+        let block = app.otherElements["search.spotIndex.block"].firstMatch
+        guard block.waitForExistence(timeout: 30) else { return }
+        let mapTab = app.buttons["search.spotIndex.mode.map"].firstMatch
+        guard mapTab.waitForExistence(timeout: 5) else { return }
+        // 段の下の端まで見えるように送る（札の行が押せるまで）
+        let firstCard = app.buttons.matching(identifier: "search.spotIndex.prefecture").firstMatch
+        var swipes = 0
+        while !(mapTab.isHittable && firstCard.isHittable), swipes < 6 {
+            app.swipeUp(velocity: .slow)
+            Thread.sleep(forTimeInterval: 1)
+            swipes += 1
+        }
+        guard mapTab.isHittable, firstCard.isHittable else { return }
+        Thread.sleep(forTimeInterval: 2)
+        let photosHeight = block.frame.height
+
+        mapTab.tap()
+        let map = app.otherElements["search.spotIndex.map"].firstMatch
+        XCTAssertTrue(map.waitForExistence(timeout: 5), "「地図」に替えても地図が出ない")
+        Thread.sleep(forTimeInterval: 1)
+        let mapHeight = block.frame.height
+        print("spotMap.height photos=\(photosHeight) map=\(mapHeight)")
+        XCTAssertEqual(photosHeight, mapHeight, accuracy: 0.5, "「写真｜地図」で段の高さが変わった（\(photosHeight) → \(mapHeight)）")
+        shoot(app, "11l-探す（撮影スポットの段・地図）")
+
+        // 右上（北海道）をひと押し
+        let card = app.otherElements["search.spotIndex.regionCard"].firstMatch
+        map.coordinate(withNormalizedOffset: CGVector(dx: 0.82, dy: 0.14)).tap()
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertTrue(card.staticTexts["北海道"].waitForExistence(timeout: 3), "地図で北海道を押しても札が替わらない")
+        shoot(app, "11m-探す（撮影スポットの段・地図で北海道）")
+
+        // 長押ししてから南西（九州の辺り）へなぞって離す
+        map.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.62))
+            .press(forDuration: 0.6, thenDragTo: map.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.85)))
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertFalse(card.staticTexts["北海道"].exists, "なぞって離しても地方が替わらない")
+        shoot(app, "11n-探す（撮影スポットの段・地図をなぞった）")
+
+        let seeAll = app.buttons["search.spotIndex.mapSeeAll"].firstMatch
+        guard seeAll.waitForExistence(timeout: 5), seeAll.isHittable else { return }
+        seeAll.tap()
+        guard app.textFields["spotIndex.field"].waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "11o-撮影スポットの一覧（地方）")
+    }
+
     /// **「行きたい場所」を地図で見る**（2026-10-03・3か月の計画の7の第一歩）。マイページの
     /// 「行きたい場所」のタブ（「地図で見る」が見える1枚）と、押した先の地図の1枚。
     ///

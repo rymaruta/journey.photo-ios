@@ -18,6 +18,8 @@ struct OfficialSpotIndexView: View {
 
     enum Scope: Hashable {
         case prefecture(String)
+        /// 地方（`PrefectureRegions.Region.name`）。探すの段の地図の札の「すべて見る」から（2026-11-11）
+        case region(String)
         case all
     }
 
@@ -71,6 +73,9 @@ struct OfficialSpotIndexView: View {
     private var title: String {
         switch scope {
         case .prefecture(let name): return name
+        case .region(let name):
+            let english = PrefectureRegions.all.first { $0.name == name }.map(PrefectureRegions.englishName) ?? name
+            return L(name, english)
         case .all: return L("撮影スポット", "Photo spots")
         }
     }
@@ -110,7 +115,8 @@ struct OfficialSpotIndexView: View {
                                     .padding(.bottom, JPSpace.xs)
                             }
                             ForEach(sections) { section in
-                                if scope == .all {
+                                // 県の見出しは全国と地方の一覧（県の一覧は見出しが題と同じなので置かない）
+                                if !Self.isPrefecture(scope) {
                                     // 県の見出し（真鍮の眉と消える線・黒地の上）。跳ぶ先の目印
                                     JPEyebrowLine(section.title, trailing: SpotPrefectureIndex.countLabel(section.spots.count))
                                         .padding(.top, JPSpace.l)
@@ -168,11 +174,17 @@ struct OfficialSpotIndexView: View {
         }
     }
 
+    nonisolated static func isPrefecture(_ scope: Scope) -> Bool {
+        if case .prefecture = scope { return true }
+        return false
+    }
+
     /// この画面に出す段（県の一覧はその県だけ、全国は撮影スポットのある段を北から）
     nonisolated static func shown(_ sections: [RegionList.Section], scope: Scope) -> [RegionList.Section] {
         let national = SpotPrefectureIndex.nationalSections(sections)
         switch scope {
         case .all: return national
+        case .region(let name): return SpotPrefectureIndex.regionSections(national, region: name)
         case .prefecture(let name): return national.filter { $0.key == .prefecture(name) }
         }
     }

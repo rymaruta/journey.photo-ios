@@ -510,6 +510,8 @@ public struct NamedCoordinateSpace {
     public static func named(_ name: String) -> NamedCoordinateSpace { NamedCoordinateSpace() }
     /// いちばん近い ScrollView の座標（本物と同じ・iOS 17）
     public static var scrollView: NamedCoordinateSpace { NamedCoordinateSpace() }
+    /// その部品自身の座標（本物と同じ）
+    public static var local: NamedCoordinateSpace { NamedCoordinateSpace() }
 }
 
 /// 端末の振動（iOS 17 の `sensoryFeedback`）
@@ -581,6 +583,9 @@ extension View {
     public func matchedGeometryEffect<ID: Hashable>(id: ID, in namespace: Namespace.ID,
                                                     isSource: Bool = true) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func onTapGesture(count: Int = 1, perform action: @escaping () -> Void) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+    /// 押した点を受け取る（本物と同じ・iOS 17。座標の既定は `.local`）
+    public func onTapGesture(count: Int = 1, coordinateSpace: NamedCoordinateSpace = .local,
+                             perform action: @escaping (CGPoint) -> Void) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     /// 長押し。`onPressingChanged` は指の着地で true・離れで false を返す
     /// （本物の SwiftUI と同じ形。押している間だけ止める、に使う）
     public func onLongPressGesture(minimumDuration: Double = 0.5, maximumDistance: CGFloat = 10,
