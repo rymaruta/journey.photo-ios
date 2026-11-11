@@ -4430,7 +4430,7 @@ final class ScreenshotTests: XCTestCase {
                 notePerfProbe(app, label: "初めて開く・\(diag)・\(pair)")
             }
         }
-        for line in lines where line.contains("GapMain") || line.contains("SpinFrame") || line.contains("| Process") {
+        for line in lines where line.contains("GapMain") || line.contains("| Spin") || line.contains("| TexL") || line.contains("| Process") {
             print("TRUNKPERF: \(perfTestName) \(line)")
         }
     }

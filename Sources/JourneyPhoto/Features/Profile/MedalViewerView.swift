@@ -231,7 +231,7 @@ private struct MedalSceneView: UIViewRepresentable {
     let box: SpinBoxFaces?
     let aim: SpinAim?
 
-    func makeCoordinator() -> MedalCoinCoordinator { MedalCoinCoordinator(shape: shape) }
+    func makeCoordinator() -> MedalCoinCoordinator { TrunkPerfMeter.measure("SpinCoordinator") { MedalCoinCoordinator(shape: shape) } }
 
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView(frame: .zero)
@@ -255,8 +255,9 @@ private struct MedalSceneView: UIViewRepresentable {
         }
         context.coordinator.reduceMotion = reduceMotion
         context.coordinator.lastFlips = flips
-        if let textures { context.coordinator.apply(textures) }
-        if let box { context.coordinator.applyBox(box) }
+        // 測る起動のときだけ時間を数える（`TrunkPerfMeter`・1 回目に開く間の止まりの内訳・2026-11-11）
+        if let textures { TrunkPerfMeter.measure("SpinApply") { context.coordinator.apply(textures) } }
+        if let box { TrunkPerfMeter.measure("SpinApplyBox") { context.coordinator.applyBox(box) } }
         context.coordinator.lastAimId = aim?.id
         context.coordinator.start()
         // 旅のトランクの重さを測る起動（`-JPPreviewTrunkPerf YES`・Debug のみ）のときだけ、箱の 1 コマを数える（測るだけ・2026-11-11）
@@ -285,9 +286,9 @@ private struct MedalSceneView: UIViewRepresentable {
     func updateUIView(_ view: SCNView, context: Context) {
         let coordinator = context.coordinator
         coordinator.reduceMotion = reduceMotion
-        if let textures, !coordinator.hasTextures { coordinator.apply(textures) }
+        if let textures, !coordinator.hasTextures { TrunkPerfMeter.measure("SpinApply") { coordinator.apply(textures) } }
         if let box, !coordinator.hasBoxFaces {
-            coordinator.applyBox(box)
+            TrunkPerfMeter.measure("SpinApplyBox") { coordinator.applyBox(box) }
             // 測る起動のときだけ: 箱の場面の中身（三角・貼り絵）と描く枠の画素（2026-11-11・測るだけ）
             if TrunkPerfMeter.shared.enabled {
                 TrunkPerfMeter.shared.note("SpinScene", CamperSceneStats.measure(coordinator.scene.rootNode).fields)
