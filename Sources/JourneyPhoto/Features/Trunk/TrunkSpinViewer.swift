@@ -107,11 +107,9 @@ struct TrunkSpinViewer: View {
             // `SpinApplyBox` が 0.48〜0.74 秒残った）
             // 開いた時点の札（この後に退会で消されたら、描き終えても端末に書かない）
             // 合図は 1 度だけ作り、読む・書くの両方に使う。人のトランクでは端末を使わない
-            // 合図を作る・読むは裏で（主スレッドを止めない・run 1083）。待つ間に閉じられたら抜ける
-            let diskSession = await TrunkSpinDiskCache.session(for: key, keepsOnDisk: keepsOnDisk)
-            guard !Task.isCancelled else { return }
+            let diskSession = TrunkSpinDiskCache.session(for: key, keepsOnDisk: keepsOnDisk)
             let diskTicket = diskSession?.ticket, diskSignature = diskSession?.signature
-            let disk = diskSession?.images
+            let disk = TrunkPerfMeter.measure("SpinDiskLoad") { diskSignature.flatMap { TrunkSpinDiskCache.load(signature: $0) } }
             let diskFront = disk?["front"]
             if diskFront != nil { TrunkPerfMeter.shared.hit("SpinDiskHit") }
             textures = TrunkTextures.make(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts,
