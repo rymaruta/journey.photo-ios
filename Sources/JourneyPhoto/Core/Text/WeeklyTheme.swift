@@ -89,22 +89,28 @@ enum WeeklyTheme: Equatable {
     /// 週の区切りの月曜（1970-01-05）の通し日数。**週は月曜から**
     static let mondayOrdinal = 719_167
 
-    /// 端末の暦の今日の通し日数（西暦・土地の年月日）。
-    ///
-    /// **西暦で数える。** 端末の暦のまま紀元から数えると、和暦（令和の初日から）や
-    /// タイ仏暦の端末が別のお題になり「全員が同じ週に同じお題」が崩れる。
-    /// **土地の年月日を取り出してから数える**（Linux の Foundation の `ordinality` はタイムゾーンを見ない）
-    static func dayOrdinal(_ now: Date, calendar: Calendar) -> Int {
-        let local = calendar.gregorianKeepingZone.dateComponents([.year, .month, .day], from: now)
+    /// 🔴 **週の区切りは日本の時刻（Asia/Tokyo）に固定**（札 #537 の確かめ役・2026-11-11。今日の一問の
+    /// `QUIZ_TIME_ZONE` と同じ考え）。端末の時刻帯で区切ると、海外にいる人だけ月曜の朝9時まで先週のお題になり、
+    /// 「全員が同じ週に同じお題」と「今週の参加」の範囲が人によってずれる。暦も西暦に固定（和暦・タイ仏暦の端末でも同じ）
+    static let calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+        return calendar
+    }()
+
+    /// 日本の暦の今日の通し日数（西暦）。
+    /// **年月日を取り出してから数える**（Linux の Foundation の `ordinality` はタイムゾーンを見ない）
+    static func dayOrdinal(_ now: Date) -> Int {
+        let local = calendar.dateComponents([.year, .month, .day], from: now)
         var utc = Calendar(identifier: .gregorian)
         utc.timeZone = TimeZone(identifier: "UTC")!
         let noon = utc.date(from: DateComponents(year: local.year, month: local.month, day: local.day, hour: 12))
         return noon.flatMap { utc.ordinality(of: .day, in: .era, for: $0) } ?? epochOrdinal
     }
 
-    /// 週の通し番号（1970-01-05 の週が 0）。月曜の0時（土地）で替わる
-    static func weekIndex(_ now: Date, calendar: Calendar) -> Int {
-        let offset = dayOrdinal(now, calendar: calendar) - mondayOrdinal
+    /// 週の通し番号（1970-01-05 の週が 0）。月曜の0時（日本の時刻）で替わる
+    static func weekIndex(_ now: Date) -> Int {
+        let offset = dayOrdinal(now) - mondayOrdinal
         return offset >= 0 ? offset / 7 : -((-offset + 6) / 7)
     }
 
@@ -126,16 +132,15 @@ enum WeeklyTheme: Equatable {
     }
 
     /// 今週のお題
-    static func current(_ now: Date = Date(), calendar: Calendar = .current) -> Theme {
-        theme(ofWeek: weekIndex(now, calendar: calendar))
+    static func current(_ now: Date = Date()) -> Theme {
+        theme(ofWeek: weekIndex(now))
     }
 
-    /// 今週（土地の月曜0時〜次の月曜0時）
-    static func weekRange(_ now: Date, calendar: Calendar) -> Range<Date>? {
-        let gregorian = calendar.gregorianKeepingZone
-        let parts = monday(ofWeek: weekIndex(now, calendar: calendar))
-        guard let start = gregorian.date(from: DateComponents(year: parts.year, month: parts.month, day: parts.day)),
-              let end = gregorian.date(byAdding: .day, value: 7, to: start) else { return nil }
+    /// 今週（日本の時刻の月曜0時〜次の月曜0時）
+    static func weekRange(_ now: Date) -> Range<Date>? {
+        let parts = monday(ofWeek: weekIndex(now))
+        guard let start = calendar.date(from: DateComponents(year: parts.year, month: parts.month, day: parts.day)),
+              let end = calendar.date(byAdding: .day, value: 7, to: start) else { return nil }
         return start..<end
     }
 
@@ -149,9 +154,8 @@ enum WeeklyTheme: Equatable {
 
     /// **みんなの参加**: 今週お題のタグを付けて載せた公開の投稿（新しい順・1つの投稿は1枚＝いちばん新しい写真）。
     /// 札に横に並べる（`WeeklyThemeCard`）。同じ投稿の写真は1つに数える（`PhotoGroups.groupKey`）
-    static func participants(_ theme: Theme, photos: [Photo], now: Date = Date(),
-                             calendar: Calendar = .current) -> [Photo] {
-        guard let range = weekRange(now, calendar: calendar) else { return [] }
+    static func participants(_ theme: Theme, photos: [Photo], now: Date = Date()) -> [Photo] {
+        guard let range = weekRange(now) else { return [] }
         let matched = GallerySort.new.apply(photos.filter { joins($0, theme: theme, range: range) })
         var seen = Set<String>()
         return matched.filter { seen.insert(PhotoGroups.groupKey(of: $0)).inserted }
@@ -161,9 +165,8 @@ enum WeeklyTheme: Equatable {
     ///
     /// 下書きも数える——上げようとした事実はあるので、「参加していない」と言い張らない。
     /// 参加済みの週は「参加する」を押せない「参加済み」にする（同じ週に何度も促さない）
-    static func hasJoined(_ theme: Theme, myPhotos: [Photo],
-                          now: Date = Date(), calendar: Calendar = .current) -> Bool {
-        guard let range = weekRange(now, calendar: calendar) else { return false }
+    static func hasJoined(_ theme: Theme, myPhotos: [Photo], now: Date = Date()) -> Bool {
+        guard let range = weekRange(now) else { return false }
         return myPhotos.contains { joins($0, theme: theme, range: range) }
     }
 }

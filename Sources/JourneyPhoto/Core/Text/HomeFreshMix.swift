@@ -77,18 +77,26 @@ enum HomeFreshMix {
     /// **はじめての投稿**の写真の id（札 #537 案1）。持ち主ごとに、公開の写真でいちばん古い投稿が
     /// 72 時間以内なら、その投稿の写真全部。ホームの札に「はじめての投稿」と出し、最初の1枚に反応が返りやすくする。
     ///
-    /// 見るのは公開の一覧（`photos.json`）だけ。前に非公開で上げていた人は、公開の1枚目を「はじめて」と数える
+    /// 見るのは公開の一覧（`photos.json`）だけ。前に非公開で上げていた人は、公開の1枚目を「はじめて」と数える。
+    ///
+    /// 🔴 **持ち主の写真に `createdAt` の読めない1枚があれば、その人には印を付けない**（安全側・札 #537 の確かめ役・2026-11-11）。
+    /// 読めない写真のほうが古いかもしれず、前から載せている人に「はじめて」と付けてしまう（Web と同じ）
     static func firstPostPhotoIds(_ photos: [Photo], now: Date) -> Set<String> {
         // 持ち主ごとの、いちばん古い投稿の写真（`createdAt` が読めるものだけ）
         var oldest: [String: (date: Date, photo: Photo)] = [:]
+        var unreadable = Set<String>()
         for photo in photos {
-            guard let owner = photo.userId ?? photo.uploadedBy, !owner.isEmpty,
-                  let created = photo.createdAt, let date = NotificationGroups.parse(created) else { continue }
+            guard let owner = photo.userId ?? photo.uploadedBy, !owner.isEmpty else { continue }
+            guard let created = photo.createdAt, let date = NotificationGroups.parse(created) else {
+                unreadable.insert(owner)
+                continue
+            }
             if let current = oldest[owner],
                current.date < date || (current.date == date && current.photo.id <= photo.id) { continue }
             oldest[owner] = (date, photo)
         }
-        let firstKeys = Set(oldest.values.filter { isFresh($0.photo, now: now) }.map { PhotoGroups.groupKey(of: $0.photo) })
+        let firstKeys = Set(oldest.filter { !unreadable.contains($0.key) && isFresh($0.value.photo, now: now) }
+            .map { PhotoGroups.groupKey(of: $0.value.photo) })
         guard !firstKeys.isEmpty else { return [] }
         return Set(photos.filter { firstKeys.contains(PhotoGroups.groupKey(of: $0)) }.map(\.id))
     }

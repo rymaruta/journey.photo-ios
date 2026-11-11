@@ -80,15 +80,21 @@ enum HomeFeed: String, CaseIterable, Identifiable {
 
     /// おすすめの並び。**owner が選んだ写真（`featured`）を先に**、
     /// 残りはいいねの多い順（`sort` が受け持つ）。
-    /// **2026-11-11 判断（札 #537 案1）: 先頭 10 枠のうち 2・5・8 番目に、72 時間以内の新しい投稿を混ぜる**
-    /// （`HomeFreshMix`）。いいね順だけだと、投稿したばかりの写真は14番目より後ろに沈んでいた
-    func arrange(_ photos: [Photo], now: Date = Date()) -> [Photo] {
+    ///
+    /// 新しい投稿を混ぜるのは**ここではない**（`mixesFresh`・札 #537 の確かめ役・2026-11-11）。混ぜるのは
+    /// 絞り込み（カテゴリ・タグ・打った文字）とブロック・通報を落とした**後**の一覧（`HomeFeedPageMemo.make`）。
+    /// 前で混ぜると、絞って落ちた写真の分だけ枠がずれ、新しい投稿が 2・5・8 番目に来ない（Web の `useGallery` は後で混ぜる）
+    func arrange(_ photos: [Photo]) -> [Photo] {
         let sorted = sort.apply(photos)
         guard self == .recommended else { return sorted }
         let picked = sorted.filter { $0.featured == true }
         let rest = sorted.filter { $0.featured != true }
-        return HomeFreshMix.mix(picked + rest, now: now)
+        return picked + rest
     }
+
+    /// **先頭 10 枠のうち 2・5・8 番目に、72 時間以内の新しい投稿を混ぜるか**（`HomeFreshMix`・札 #537 案1・2026-11-11 判断）。
+    /// 「おすすめ」だけ。いいね順だけだと、投稿したばかりの写真は14番目より後ろに沈んでいた
+    var mixesFresh: Bool { self == .recommended }
 }
 
 /// ホームのフィードの切り替えも、マイページと同じ下線の札（`ProfileTabBar`・`ProfileTabPager`・2026-10-31 #426）。

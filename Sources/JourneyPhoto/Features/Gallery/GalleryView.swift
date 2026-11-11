@@ -845,25 +845,31 @@ final class HomeFeedPageMemo {
     struct Key: Equatable {
         let photos: [Photo]
         let hidden: ModerationSnapshot
+        /// 時（1時間ごと）。新しい投稿（72 時間）を混ぜる「おすすめ」は、時が替わったら混ぜ直す（`HomeFeed.mixesFresh`）
+        let hour: Int
     }
 
     private var memos: [HomeFeed: DerivedMemo<Key, Rows>] = [:]
 
     init() {}
 
-    func rows(_ page: HomeFeed, photos: [Photo], hidden: ModerationSnapshot) -> Rows {
+    func rows(_ page: HomeFeed, photos: [Photo], hidden: ModerationSnapshot, now: Date = Date()) -> Rows {
         let memo = memos[page] ?? DerivedMemo<Key, Rows>()
         memos[page] = memo
-        return memo.value(for: Key(photos: photos, hidden: hidden)) {
-            Self.make(page, photos: photos, hidden: hidden)
+        let hour = page.mixesFresh ? Int(now.timeIntervalSince1970 / 3600) : 0
+        return memo.value(for: Key(photos: photos, hidden: hidden, hour: hour)) {
+            Self.make(page, photos: photos, hidden: hidden, now: now)
         }
     }
 
     /// 計算した回数（試験用）
     func computeCount(_ page: HomeFeed) -> Int { memos[page]?.computeCount ?? 0 }
 
-    static func make(_ page: HomeFeed, photos: [Photo], hidden: ModerationSnapshot) -> Rows {
-        let groups = PhotoGroups.group(hidden.visible(photos))
+    /// 🔴 **新しい投稿を混ぜるのは、絞り込み（`photos` はもう絞った一覧）とブロック・通報を落とした後**
+    /// （札 #537 の確かめ役・2026-11-11。前で混ぜると落ちた写真の分だけ枠がずれる・Web と同じ順）
+    static func make(_ page: HomeFeed, photos: [Photo], hidden: ModerationSnapshot, now: Date = Date()) -> Rows {
+        let visible = hidden.visible(photos)
+        let groups = PhotoGroups.group(page.mixesFresh ? HomeFreshMix.mix(visible, now: now) : visible)
         guard page.showsSeasonShelf else { return Rows(groups: groups, lead: groups, rest: []) }
         let split = HomeFeed.splitForSeasonShelf(groups)
         return Rows(groups: groups, lead: split.lead, rest: split.rest)

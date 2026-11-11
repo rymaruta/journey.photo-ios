@@ -13,12 +13,12 @@ enum PreviewSNSLoopSample {
     /// 見本の持ち主（はじめての投稿の人）
     static let firstPosterId = "preview-first-poster"
 
-    static func stamp(_ photos: [Photo], now: Date = Date(), calendar: Calendar = .current) -> [Photo] {
+    static func stamp(_ photos: [Photo], now: Date = Date()) -> [Photo] {
         #if DEBUG
         let newest = Array(GallerySort.new.apply(photos).prefix(3))
         guard !newest.isEmpty else { return photos }
-        let theme = WeeklyTheme.current(now, calendar: calendar)
-        let weekStart = WeeklyTheme.weekRange(now, calendar: calendar)?.lowerBound ?? now
+        let theme = WeeklyTheme.current(now)
+        let weekStart = WeeklyTheme.weekRange(now)?.lowerBound ?? now
         let plans: [(hours: Double, joins: Bool, owner: String?)] = [(6, true, firstPosterId), (30, true, nil), (50, false, nil)]
         var replaced: [String: Photo] = [:]
         for (photo, plan) in zip(newest, plans) {

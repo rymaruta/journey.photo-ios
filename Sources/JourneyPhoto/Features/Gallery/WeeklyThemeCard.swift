@@ -22,8 +22,11 @@ struct WeeklyThemeCard: View {
     nonisolated static let participantThumbs = 4
     /// 参加の写真の大きさ（板の 1 行 12pt の字より一段大きく、札の背 116 に収まる）
     nonisolated static let participantSize: CGFloat = 24
-    /// 参加の行の当たりを上下に広げる量（24 ＋ 10 × 2 ＝ 44）
-    nonisolated static let participantTapSlack: CGFloat = 10
+    /// 参加の行の当たりを広げる量。**上は 4 だけ**——上の行の「参加する」の当たり（見た目 36＋上下 4）と、
+    /// 行の間 4 で接するだけにして重ねない（札 #537 の確かめ役・2026-11-11。上下 10 ずつでは 6 重なっていた）。
+    /// 下は 16 で、合わせて 24 ＋ 4 ＋ 16 ＝ 44
+    nonisolated static let participantTapTop: CGFloat = 4
+    nonisolated static let participantTapBottom: CGFloat = 16
 
     /// 背景に使う写真。**今週の参加があればその1枚目**、無ければそのタグの公開写真でいいねの多い1枚
     /// （無ければ背景なしで出す——別のお題の写真を当てない）
@@ -94,7 +97,7 @@ struct WeeklyThemeCard: View {
     }
 
     /// **みんなの参加**の行（#537 案2）。押すとお題のタグの写真の一覧（`TagPhotosView`）へ。
-    /// 見た目は 24 の行だが、当たりは上下に広げて 44（`contentShape`）。読み上げは1つにまとめる
+    /// 見た目は 24 の行だが、当たりは上 4・下 16 に広げて 44（`contentShape`・上の「参加する」と重ねない）。読み上げは1つにまとめる
     private func participantsRow(_ participants: [Photo]) -> some View {
         NavigationLink {
             TagPhotosView(kind: .tag(theme.tag))
@@ -115,10 +118,12 @@ struct WeeklyThemeCard: View {
                     .foregroundStyle(WebTheme.text2)
             }
             .frame(height: Self.participantSize)
-            // 当たりを上下 10 ずつ広げて 44 に（並びの高さは 24 のまま）
-            .padding(.vertical, Self.participantTapSlack)
+            // 当たりを上 4・下 16 広げて 44 に（並びの高さは 24 のまま・上の「参加する」と重ねない）
+            .padding(.top, Self.participantTapTop)
+            .padding(.bottom, Self.participantTapBottom)
             .contentShape(Rectangle())
-            .padding(.vertical, -Self.participantTapSlack)
+            .padding(.top, -Self.participantTapTop)
+            .padding(.bottom, -Self.participantTapBottom)
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)

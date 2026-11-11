@@ -183,7 +183,10 @@ final class HomeTidyTests: XCTestCase {
         let gallery = try source("Features/Gallery/GalleryView.swift")
         // #426: 束ねと 5 枚の割りは控え（`HomeFeedPageMemo.make`）が計算する
         let make = slice(gallery, from: "static func make(_ page: HomeFeed,", to: "private struct PassResolveKey")
-        assertInOrder(["PhotoGroups.group(hidden.visible(photos))", "guard page.showsSeasonShelf else",
+        // #537: ブロックを落とした後に新しい投稿を混ぜてから束ねる（`HomeFeed.mixesFresh`）
+        assertInOrder(["let visible = hidden.visible(photos)",
+                       "PhotoGroups.group(page.mixesFresh ? HomeFreshMix.mix(visible, now: now) : visible)",
+                       "guard page.showsSeasonShelf else",
                        "HomeFeed.splitForSeasonShelf(groups)"], in: make, "季節の段の前後に割る")
         let section = slice(gallery, from: "private func feedSection(_ page: HomeFeed, rows: HomeFeedPageMemo.Rows) -> some View {",
                             to: "nonisolated static let seasonShelfTopTrim")
