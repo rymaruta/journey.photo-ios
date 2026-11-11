@@ -38,12 +38,17 @@ enum SpotWants {
         try? JSONDecoder().decode(File.self, from: data)
     }
 
-    /// 「1,284」
+    /// 「1,284」（3桁ごとにカンマ）。
+    /// 🔴 `NumberFormatter` に en_US_POSIX を渡すと、Apple の端末では区切りが付かない（Mac の単体テストの実測
+    /// 「1284」・run 43063948534。Linux の Foundation では付くので手元の試験は通っていた）。端末の言語で変えないよう自分で区切る
     static func count(_ n: Int) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        f.locale = Locale(identifier: "en_US_POSIX")
-        return f.string(from: NSNumber(value: n)) ?? "\(n)"
+        let plain = String(abs(n))
+        var out = ""
+        for (i, ch) in plain.enumerated() {
+            if i > 0, (plain.count - i) % 3 == 0 { out.append(",") }
+            out.append(ch)
+        }
+        return n < 0 ? "-" + out : out
     }
 
     /// 撮影スポットの頁の題の下の1行「今月の行きたい 1,284 · 全国1位」
