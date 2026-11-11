@@ -1,0 +1,45 @@
+# 測るための一時のワークフロー（2026-11-11）。測り終えたら消す。控えは読むだけ
+name: 測る（一時）
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: 測る
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - name: Xcodeを選択
+        run: bash Tools/select-xcode.sh
+      - name: 控えを戻す
+        uses: ./.github/actions/xcode-cache-restore
+      - name: xcodegen
+        run: |
+          command -v xcodegen >/dev/null || brew install xcodegen
+          xcodegen generate
+      - name: 依存の図を解く（3 回・何に時間がかかるか）
+        run: |
+          r() {
+            s=$SECONDS
+            xcodebuild -resolvePackageDependencies -project JourneyPhoto.xcodeproj -scheme JourneyPhoto -skipPackageUpdates \
+              -skipPackagePluginValidation -skipMacroValidation > "/tmp/$1.log" 2>&1
+            echo "$1: $((SECONDS-s)) 秒・終わり $?・取りに行った $(grep -cE 'Fetching|Cloning|Updating' "/tmp/$1.log") 行・SwiftPM の置き場 $(du -sh "$HOME/Library/Caches/org.swift.swiftpm" 2>/dev/null | cut -f1)" | tee -a "$GITHUB_STEP_SUMMARY"
+          }
+          ls "$HOME/Library/Caches/org.swift.swiftpm" 2>&1 | head
+          r first
+          ls -la "$HOME/Library/Caches/org.swift.swiftpm" 2>&1 | head
+          du -sh "$HOME/Library/Caches/org.swift.swiftpm"/* 2>/dev/null
+          dd="$(ls -d "$HOME"/Library/Developer/Xcode/DerivedData/JourneyPhoto-* | head -1)"
+          ls -la "$dd/SourcePackages"
+          r second
+          rm -rf "$HOME/Library/Caches/org.swift.swiftpm/manifests"
+          r third_without_manifests
+          rm -rf "$dd/SourcePackages/repositories"
+          r fourth_without_repositories
+          grep -E "Fetching|Cloning|Updating|Computing|Creating working copy|Working copy" /tmp/first.log | head -20
+          tail -5 /tmp/first.log
