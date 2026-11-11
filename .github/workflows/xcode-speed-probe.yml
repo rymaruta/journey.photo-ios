@@ -70,9 +70,11 @@ jobs:
             build-for-testing > "build/$name.log" 2>&1
           rc=$?
           echo "${name}: $((SECONDS-s)) 秒・終わり ${rc}・Swift を組んだ $(grep -c 'SwiftCompile normal' "build/$name.log") 件・パッケージを取りに行った $(grep -cE 'Fetching|Cloning|Updating https' "build/$name.log") 行" | tee -a "$GITHUB_STEP_SUMMARY"
-          sed -n '/Build Timing Summary/,$p' "build/$name.log" | grep -E "seconds|Timing" | sort -t'|' -k2 -rn | head -12
+          sed -n '/Build Timing Summary/,$p' "build/$name.log" | grep -E "seconds|Timing" | sort -t'|' -k2 -rn | head -12 || true
           grep -E "Fetching|Cloning|Resolve Package|resolved source packages" "build/$name.log" | head -5
           grep -oE "SwiftCompile normal arm64 Compiling\\? [^ ]+" "build/$name.log" | head -5
+          grep -E "^(CompileAssetCatalog|ExtractAppIntentsMetadata|Ld|SwiftEmitModule|SwiftDriver) " "build/$name.log" | cut -c1-160 | head -12
+          exit 0
           SH
           mkdir -p build
       - name: (a)(b) 組む 1 回目（消したあと・全部組み）

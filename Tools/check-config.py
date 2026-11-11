@@ -549,7 +549,8 @@ if all(f.exists() for f in (testflight_yml, pr_yml, quick_yml, full_yml, sharded
     if 'python3 Tools/pick-ui-tests.py --quick-plan build/quick /tmp/quick.diff "${SCREENS:-}" "$cap"' not in plan_job \
             or 'base="$BASE_SHA"; cap=cap' not in plan_job or 'bash Tools/app-changed.sh "$BASE_SHA"' not in plan_job:
         fail("ios-quick.yml の plan が、--quick-plan（PR は上限で外す）と app-changed.sh で中身を決めていません")
-    if "m.quick_unit_tests()" not in mac or "if: ${{ matrix.part == 1 }}" not in mac:
+    if "m.quick_unit_tests()" not in mac or 'if [ "$PART" = "1" ]; then' not in mac \
+            or "bash Tools/xcode-test.sh ui build/Test.xcresult /tmp/quick-list.txt" not in mac:
         fail("ios-quick.yml の Mac 1 台目が、Mac でしか流れない単体（Tools/quick-unit-tests.txt）を流していません")
     if "bash Tools/app-changed.sh" not in pr_flow or re.search(r"runs-on: .*macos", pr_flow):
         fail("ios-pr.yml は Linux だけ（Mac は ios-quick.yml）・アプリ変更の有無は Tools/app-changed.sh で決める")

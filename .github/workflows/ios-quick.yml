@@ -210,14 +210,6 @@ jobs:
           mkdir -p build/logs
           XCODE_LOG=build/logs/xcodebuild-build.log bash Tools/xcode-test.sh build
 
-      # 1 台目だけ: Linux の `swift test` に無い単体（Mac でしか流れないもの）
-      - name: Mac でしか流れない単体
-        if: ${{ matrix.part == 1 }}
-        run: |
-          set -euo pipefail
-          names="$(python3 -c 'import importlib.util as u; s=u.spec_from_file_location("p","Tools/pick-ui-tests.py"); m=u.module_from_spec(s); s.loader.exec_module(m); print(" ".join("JourneyPhotoTests/"+t for t in m.quick_unit_tests()))')"
-          UNIT_ONLY_TESTING="$names" XCODE_LOG=build/logs/xcodebuild-unit.log bash Tools/xcode-test.sh unit build/Unit.xcresult
-
       # 起きるのを待ってから、組んだアプリを1回起動して閉じる（`Tools/warm-simulator.sh`・最初の UI テストの落ちを減らす。
       # 理由と数はその頭の注記）。起こすのは組むのと同時に済ませてあるので、ここは入れる・起動するだけ
       - name: シミュレーターを温める
@@ -229,19 +221,27 @@ jobs:
           products="$(find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 3 -type d -path '*/JourneyPhoto-*/Build/Products' | head -1)"
           bash Tools/warm-simulator.sh "$products/Debug-iphonesimulator"
 
-      - name: UI テスト（起動の見張り＋変えた画面）
+      # 🔴 **単体と UI を xcodebuild 1 回で流す**（(c)・2026-11-11 測る回 run 42989273825: 別々に 2 回 491 秒 →
+      # 1 回 384 秒。xcodebuild の立ち上げ・アプリを入れる・テストの実行役の起動が 1 回で済む）。
+      # 1 台目だけ、Linux の `swift test` に無い単体（`Tools/quick-unit-tests.txt`）を一覧の頭に足す
+      - name: テストを流す（Mac でしか流れない単体＋起動の見張り＋変えた画面）
         env:
           LIST_B64: ${{ matrix.list }}
+          PART: ${{ matrix.part }}
         run: |
           set -euo pipefail
-          python3 -c 'import base64,sys; open("/tmp/quick-ui.txt","wb").write(base64.b64decode(sys.argv[1]))' "$LIST_B64"
-          cat /tmp/quick-ui.txt
-          XCODE_LOG=build/logs/xcodebuild-ui.log bash Tools/xcode-test.sh ui build/Test.xcresult /tmp/quick-ui.txt
+          : > /tmp/quick-list.txt
+          if [ "$PART" = "1" ]; then
+            python3 -c 'import importlib.util as u; s=u.spec_from_file_location("p","Tools/pick-ui-tests.py"); m=u.module_from_spec(s); s.loader.exec_module(m); print("\n".join("-only-testing:JourneyPhotoTests/"+t for t in m.quick_unit_tests()))' >> /tmp/quick-list.txt
+          fi
+          python3 -c 'import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.argv[1]))' "$LIST_B64" >> /tmp/quick-list.txt
+          cat /tmp/quick-list.txt
+          XCODE_LOG=build/logs/xcodebuild-test.log bash Tools/xcode-test.sh ui build/Test.xcresult /tmp/quick-list.txt
 
       - name: 結果のまとめ
         if: ${{ always() }}
         run: |
-          for r in build/Unit.xcresult build/Test.xcresult; do
+          for r in build/Test.xcresult; do
             [ -d "$r" ] && python3 Tools/xcresult-summary.py "$r" >> "$GITHUB_STEP_SUMMARY"
           done
           exit 0
