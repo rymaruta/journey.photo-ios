@@ -81,6 +81,20 @@ final class TrunkSpinCacheTests: XCTestCase {
         }
     }
 
+    /// 端末から読んだ絵は、側面・背面・上・底・持ち手・金具が全部そろったときだけ使う（欠けていたらその場で描く）
+    func testDiskSidesNeedEveryImage() async {
+        fresh()
+        var images: [String: UIImage] = [:]
+        for name in TrunkSpinDiskCache.names { images[name] = UIImage() }
+        XCTAssertNotNil(TrunkSpinDiskCache.sides(images), "全部そろっているのに使わない")
+        for name in TrunkSpinDiskCache.names where name != "front" {
+            var missing = images
+            missing[name] = nil
+            XCTAssertNil(TrunkSpinDiskCache.sides(missing), "\(name) が欠けているのに使った")
+        }
+        XCTAssertEqual(TrunkSpinDiskCache.names.count, 8, "置く絵の数が変わった")
+    }
+
     /// 退会したら端末の正面の絵も消す（貼ったラベルの地名が描かれている）
     func testAccountRemovalForgetsTheDiskImage() async throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

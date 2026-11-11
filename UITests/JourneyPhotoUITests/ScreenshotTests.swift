@@ -4416,7 +4416,7 @@ final class ScreenshotTests: XCTestCase {
         var lines: [String] = []
         for pair in 1...3 {
             // 前の作り → 今（端末の正面の絵を消してから＝トランクが変わった後の 1 回目）→ 今（その次＝端末の絵を使う）
-            for diag in ["spincont,spinlazy,spinlink", "spindiskclear", "now"] {
+            for diag in ["spincont,spinlazy,spinlink", "spindiskclear", "spindiskfront", "now"] {
                 let app = launchTrunk(Self.trunkPerfArgs + (diag == "now" ? [] : ["-JPPreviewTrunkDiag", diag]))
                 defer { app.terminate() }
                 guard openTrunk(app) else { XCTFail("旅のトランクを開けない"); continue }
@@ -4609,7 +4609,12 @@ final class ScreenshotTests: XCTestCase {
             let until = Date().addingTimeInterval(20)
             while Date() < until, trunkPerf(app)["SpinDiskSaved"] == nil { Thread.sleep(forTimeInterval: 1) }
             XCTAssertNotNil(trunkPerf(app)["SpinDiskSaved"], "正面の絵を端末に書き終えない")
+            print("TRUNKPERF: \(perfTestName) 端末に置いた絵 | SpinDiskBytes \(trunkPerf(app)["SpinDiskBytes"]?["_raw"] ?? "-")")
         } else if diag == nil {
+            let perf = trunkPerf(app)
+            XCTAssertNotNil(perf["SpinDiskHit"], "端末に置いた正面の絵を使っていない")
+            XCTAssertNotNil(perf["SpinDiskSidesHit"], "端末に置いた側面などの絵を使っていない")
+        } else if diag == "spindiskfront" {
             XCTAssertNotNil(trunkPerf(app)["SpinDiskHit"], "端末に置いた正面の絵を使っていない")
         }
     }

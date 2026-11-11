@@ -451,7 +451,10 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(medal.contains("private static let boxRestingYaw: Float = -34 * .pi / 180"))
         XCTAssertTrue(medal.contains("for x in TrunkFaces.handleClipCenters.map("), "立体の付け根が絵とずれる")
         // 描く順: 表を先に、残りは処理を一度返してから
-        XCTAssertTrue(spin.contains("do { try await Task.sleep(for: .milliseconds(16)) } catch { return }\n            guard !Task.isCancelled else { return }\n            boxFaces = " + "TrunkTextures" + ".box("))
+        // （2026-11-11: 側面などは端末に置いた絵があればそれを使う。無ければ 1 コマ待ってから描く）
+        let waited = try XCTUnwrap(spin.range(of: "do { try await Task.sleep(for: .milliseconds(16)) } catch { return }\n            guard !Task.isCancelled else { return }"))
+        let sidesDrawn = try XCTUnwrap(spin.range(of: "boxFaces = diskSides ?? " + "TrunkTextures" + ".box("))
+        XCTAssertLessThan(waited.upperBound, sidesDrawn.lowerBound, "正面を出す前に側面などを描いている")
         XCTAssertFalse(medal.contains("buildCard(aspect: aspect, cornerRatio: corner, thicknessRatio: depth, glossyEdge: false)"),
                        "箱が押し出しの形（側面が1つの材質）に戻っている")
         // 正面と同じ描き方を使う（2度書かない）
