@@ -83,6 +83,100 @@ enum HomeTopCard {
         }
     }
 
+    // MARK: - ホームに出す並び（最大3枚・人ごと）
+
+    /// 誰の画面か（2026-11-12 判断・デザインの案 第10章「どこに何を置くか」）。
+    /// 札の1枚目を人で替える: 未ログイン＝撮影スポットを払う・新しい人＝今週のお題で最初の1枚・常連＝旅の札
+    enum Audience: Equatable {
+        /// ログインしていない
+        case guest
+        /// ログインして、公開した投稿が `newcomerMaxPosts` 枚まで
+        case newcomer
+        /// それ以外（自分の写真をまだ読めていない間もここ——読めるまで札の並びを割らない）
+        case regular
+
+        /// - Parameter myPhotos: 自分の写真。**読めていないときは nil**（常連として扱う）
+        static func of(signedIn: Bool, myPhotos: [Photo]?) -> Audience {
+            guard signedIn else { return .guest }
+            guard let myPhotos else { return .regular }
+            let posted = myPhotos.filter { $0.published != false }.count
+            return posted <= newcomerMaxPosts ? .newcomer : .regular
+        }
+    }
+
+    /// 「新しい人」の投稿の数の上限（案の仮の数「投稿 0〜2」。2026-11-12 判断: 登録からの日数はアプリが持たないので枚数で数える）
+    static let newcomerMaxPosts = 2
+
+    /// ホームの上の札は**最大3枚**（2026-11-12・案 第10章）。当たる日は6枚並び、今日のテーマが4枚目（3回払う）になっていた
+    static let maxCards = 3
+
+    /// 札の種類（`Choice.slot`）の、人ごとの**選ぶ順**と**並べる順**。
+    ///
+    /// 🔴 **ほかの章の担当が札の種類を足すときは、`Choice` に case を足し、この2つの表に `slot` を書く。**
+    /// 表に無い種類は選ぶ順の最後（空きがある日だけ出る）。`spotSwipe` は「撮影スポットを払う」の札の場所（第7章）
+    ///
+    /// - 旅の札（出発が近い・旅の最中・一冊ができた）は**どれか1枚**（`tripSlots`）
+    /// - 季節の札（行きたい場所の季節・今日の撮影スポット）は**どれか1枚**（`seasonSlots`・案「見頃の2枚並びを1枚に」）。
+    ///   行きたい場所の方が先（自分で選んだ場所）
+    /// - 今日の一問はホームに出さない（探すへ移した）。1年前は常連の3枚目だけ（届いた日だけ割り込む）
+    static func priority(for audience: Audience) -> [String] {
+        switch audience {
+        case .guest:
+            return ["spotSwipe", "theme", "wishlistSeason", "inSeason"]
+        case .newcomer:
+            return ["theme", "spotSwipe", "wishlistSeason", "inSeason", "departure", "onTrip", "bookReady"]
+        case .regular:
+            return ["departure", "onTrip", "bookReady", "theme", "oneYearAgo", "wishlistSeason", "inSeason", "spotSwipe"]
+        }
+    }
+
+    /// 選んだ札を並べる順（左から）。振り返り（1年前）はいちばん右
+    static func order(for audience: Audience) -> [String] {
+        switch audience {
+        case .guest:
+            return ["spotSwipe", "theme", "wishlistSeason", "inSeason"]
+        case .newcomer:
+            return ["theme", "spotSwipe", "departure", "onTrip", "bookReady", "wishlistSeason", "inSeason"]
+        case .regular:
+            return ["departure", "onTrip", "bookReady", "theme", "wishlistSeason", "inSeason", "spotSwipe", "oneYearAgo"]
+        }
+    }
+
+    /// ホームに出さない種類（今日の一問は探すの段へ・2026-11-12）
+    static let hiddenOnHome: Set<String> = ["quiz"]
+    static let tripSlots: Set<String> = ["departure", "onTrip", "bookReady"]
+    static let seasonSlots: Set<String> = ["wishlistSeason", "inSeason"]
+
+    /// 当たる札（`cards`）から、その人のホームに出す**最大3枚**を選んで並べる。
+    /// 空にしない——今日のテーマはどの人の表にもあり、`cards` は必ずテーマを含む
+    static func arrange(_ all: [Choice], audience: Audience) -> [Choice] {
+        let candidates = all.filter { !hiddenOnHome.contains($0.slot) }
+        let wanted = priority(for: audience)
+        let rank: (Choice) -> Int = { wanted.firstIndex(of: $0.slot) ?? wanted.count }
+        var picked: [Choice] = []
+        var usedTrip = false
+        var usedSeason = false
+        // 同じ順位（表に無い種類どうし）は元の並びのまま
+        let ranked = candidates.enumerated()
+            .sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }
+            .map(\.element)
+        for choice in ranked {
+            guard picked.count < maxCards else { break }
+            if tripSlots.contains(choice.slot) {
+                if usedTrip { continue }
+                usedTrip = true
+            }
+            if seasonSlots.contains(choice.slot) {
+                if usedSeason { continue }
+                usedSeason = true
+            }
+            picked.append(choice)
+        }
+        let layout = order(for: audience)
+        let place: (Choice) -> Int = { layout.firstIndex(of: $0.slot) ?? layout.count }
+        return picked.enumerated().sorted { (place($0.element), $0.offset) < (place($1.element), $1.offset) }.map(\.element)
+    }
+
     /// 出発の何日前から出すか
     static let departureWindowDays = 7
     /// 旅が閉じてから何日間「一冊ができた」を出すか

@@ -7,7 +7,9 @@ import XCTest
 /// 画面は Linux では描けないので、並びは `SettingsOutline`（値）と元のファイル（作り）の両方で見張る。
 /// - 前にあった行が1つも消えていない（場所を移しただけ）
 /// - 節の順・節の中の行の順が `SettingsOutline` のとおり
-/// - 旅の道具にトランク（口があるときだけ）とキャンピングカーの入口。キャンピングカーは設定から開くと自分で写真を読む
+/// - 2026-11-12（案 第10章）: 旅の道具（トランク・キャンピングカー・すれちがい帳・アルバム・旅行プラン）は ≡ メニューへ移した。
+///   トランクは口があるときだけ・キャンピングカーはメニューから開くと自分で写真を読む（`SiteMenuView`）。
+///   すれちがい乗車券の入り切りは「公開範囲とプライバシー」
 /// - 危ない操作（ログアウト・アカウントの削除）は最後に、別々の札で、危険の色
 final class SettingsOutlineTests: XCTestCase {
 
@@ -57,17 +59,29 @@ final class SettingsOutlineTests: XCTestCase {
              "Features/Trips/OfflineSavedView.swift"].map(source).joined(separator: "\n")
     }
 
+    /// 設定と、設定から移した道具の置き場（≡ メニュー・2026-11-12）
+    private func settingsAndMenuSources() throws -> String {
+        try settingsSources() + "\n" + source("Features/Common/SiteMenuView.swift")
+    }
+
     // MARK: - 並び（値）
 
     /// いちばん上の節の順（2026-10-18 判断）。危ない操作がいちばん下
     func testOutlineOrder() {
+        // 2026-11-12: 「旅の道具」の節は ≡ メニューへ（設定はオン・オフと決まりだけ）
         XCTAssertEqual(SettingsOutline.Part.allCases,
-                       [.pro, .tripTools, .notifications, .privacy, .photos, .help, .account, .danger])
+                       [.pro, .notifications, .privacy, .photos, .help, .account, .danger])
         XCTAssertEqual(SettingsOutline.Part.allCases.last, .danger)
         XCTAssertNil(SettingsOutline.Part.danger.title, "危ない操作の札に眉ラベルを付けている")
-        XCTAssertEqual(SettingsOutline.Part.tripTools.items,
-                       ["settings.trunk", "settings.camper", "settings.pass", "settings.passBook",
-                        "settings.albums", "settings.plans"])
+        XCTAssertEqual(SettingsOutline.Part.privacy.items,
+                       ["settings.blocked", "settings.closeFriends", "settings.pass", "settings.trunkPrivacy"])
+        XCTAssertEqual(SettingsOutline.Part.photos.items, ["settings.compositionCatalog", "settings.storage"])
+        // 道具の行は設定に無い（≡ にある）
+        let all = SettingsOutline.Part.allCases.flatMap(\.items)
+        for moved in ["settings.trunk", "settings.camper", "settings.passBook", "settings.albums", "settings.plans",
+                      "settings.favorites"] {
+            XCTAssertFalse(all.contains(moved), "\(moved) が設定に残っている（≡ へ移した）")
+        }
         XCTAssertEqual(SettingsOutline.Part.danger.items, ["settings.logout", "settings.deleteAccount"])
         // 目印は重ならない
         let all = SettingsOutline.Part.allCases.flatMap(\.items) + SettingsOutline.subpages.values.flatMap { $0 }
@@ -118,21 +132,24 @@ final class SettingsOutlineTests: XCTestCase {
         XCTAssertTrue(photos.contains("detail: L(\"写真の控え\", \"Cached photos\"), value: cacheSize)"))
     }
 
-    /// いいねした写真はログインしているときだけ（未ログインには出さない）。構図一覧・データとストレージはいつも
-    func testFavoritesOnlyWhenSignedIn() throws {
+    /// いいねした写真は ≡ メニューだけ（2026-11-12・ログインしているときだけ）。構図一覧・データとストレージは設定にいつも
+    func testFavoritesOnlyInTheMenu() throws {
         let view = try source("Features/Settings/SettingsView.swift")
         let photos = slice(view, from: "private var photosSection: some View {", to: "private var helpSection")
-        assertInOrder(["if auth.userId != nil {", "FavoritesView()", id("settings.favorites"), "JPCardDivider()",
-                       "}\n            NavigationLink { CompositionCatalogView() }"], in: photos, "いいねした写真の出し分け")
-        let gated = slice(photos, from: "if auth.userId != nil {", to: "NavigationLink { CompositionCatalogView() }")
-        XCTAssertFalse(gated.contains("SettingsStoragePage"), "データとストレージを未ログインで隠している")
+        XCTAssertFalse(photos.contains("FavoritesView()"), "いいねした写真が設定にも残っている（≡ と重なる）")
+        XCTAssertFalse(photos.contains("if auth.userId != nil {"), "データとストレージ・構図一覧を未ログインで隠している")
+        assertInOrder(["CompositionCatalogView()", id("settings.compositionCatalog"), "SettingsStoragePage()",
+                       id("settings.storage")], in: photos, "写真と撮影")
+        let menu = try source("Features/Common/SiteMenuView.swift")
+        assertInOrder(["if auth.userId != nil {", "FavoritesView()", "\"menu.favorites\""], in: menu, "≡ のいいねした写真")
     }
 
     // MARK: - 消えていない（作り）
 
     /// 並べ直す前（origin/main 9672987f）の設定にあった行が、全部どこかに残っている
     func testNoRowWasRemoved() throws {
-        let settings = try settingsSources()
+        // 2026-11-12: 道具の行は ≡ メニューへ移した（消していない）ので、設定と ≡ を合わせて見る
+        let settings = try settingsAndMenuSources()
         let before = [
             "L(\"プッシュ通知を受け取る\"", "PassTicket.featureName", "TrunkEntryText.title",
             "L(\"ブロックした人\"", "L(\"親しい友達\"", "L(\"トランクを見せる\"", "L(\"わたしの乗車券もトランクに入れる\"",
@@ -144,8 +161,8 @@ final class SettingsOutlineTests: XCTestCase {
         for row in before {
             XCTAssertTrue(settings.contains(row), "設定から「\(row)」の行が消えた")
         }
-        // 行き先の画面も全部つながっている
-        let view = try source("Features/Settings/SettingsView.swift")
+        // 行き先の画面も全部つながっている（設定か ≡ のどちらか）
+        let view = try settingsAndMenuSources()
         for destination in ["PassSettingsView()", "TrunkView(ownerName:", "BlockedUsersView()", "CloseFriendsView()",
                             "FavoritesView()", "AlbumsView()", "CompositionCatalogView()", "ChangePasswordView()",
                             "LegalLinksView()", "DeleteAccountView(profile: myProfile)", "SettingsTrunkPrivacyPage(",
@@ -170,18 +187,16 @@ final class SettingsOutlineTests: XCTestCase {
     func testScreenFollowsTheOutline() throws {
         let view = try source("Features/Settings/SettingsView.swift")
         let list = slice(view, from: "private var list: some View {", to: "Text(versionLine)")
-        assertInOrder(["ProSettingsSection(profile: myProfile)", "tripToolsSection", "notificationsSection",
+        assertInOrder(["ProSettingsSection(profile: myProfile)", "notificationsSection",
                        "privacySection", "photosSection", "helpSection", "accountSection", "logoutSection",
                        "deleteSection"], in: list, "設定の節の順")
+        XCTAssertFalse(list.contains("tripToolsSection"), "「旅の道具」の節が設定に戻った（≡ へ移した）")
         // 節の中の行の順
-        let tools = slice(view, from: "private var tripToolsSection: some View {", to: "private var passRow")
-        assertInOrder(["SettingsOutline.Part.tripTools.title", "trunkRow", "camperRow", "passRow",
-                       id("settings.passBook"), id("settings.albums"), id("settings.plans")], in: tools, "旅の道具の順")
         let privacy = slice(view, from: "private var privacySection: some View {", to: "private var photosSection")
         assertInOrder(["SettingsOutline.Part.privacy.title", id("settings.blocked"), id("settings.closeFriends"),
-                       "if showsTrunkPrivacy {", id("settings.trunkPrivacy")], in: privacy, "プライバシーの順")
+                       "passRow", "if showsTrunkPrivacy {", id("settings.trunkPrivacy")], in: privacy, "プライバシーの順")
         let photos = slice(view, from: "private var photosSection: some View {", to: "private var helpSection")
-        assertInOrder(["SettingsOutline.Part.photos.title", id("settings.favorites"), id("settings.compositionCatalog"),
+        assertInOrder(["SettingsOutline.Part.photos.title", id("settings.compositionCatalog"),
                        id("settings.storage")], in: photos, "写真と撮影の順")
         let help = slice(view, from: "private var helpSection: some View {", to: "private var accountSection")
         assertInOrder(["SettingsOutline.Part.help.title", id("settings.whatsNew"), id("settings.legal"),
@@ -198,10 +213,12 @@ final class SettingsOutlineTests: XCTestCase {
 
     /// トランクは口があるときだけ（今の決まりのまま）。出さないときは区切り線も出さない
     func testTrunkRowOnlyWhenAvailable() throws {
-        let view = try source("Features/Settings/SettingsView.swift")
-        let row = slice(view, from: "private var trunkRow: some View {", to: "private func note(")
+        // 2026-11-12: 行は ≡ メニュー（`SiteMenuView.trunkRow`）
+        let view = try source("Features/Common/SiteMenuView.swift")
+        let row = slice(view, from: "private var trunkRow: some View {", to: "private var camperRow")
         assertInOrder(["if TrunkEntryRule.shows(signedIn: auth.userId != nil, available: trunkAvailability.isAvailable) {",
-                       "TrunkView(ownerName: myProfile?.name)", id("settings.trunk"), "JPCardDivider()"],
+                       "TrunkView(ownerName: name)", ".onDisappear { trunkEntry.markStale() }",
+                       "value: trunkEntry.summary.map { TrunkEntryText.coins($0.coins) }", "\"menu.trunk\""],
                       in: row, "旅のトランクの行")
         XCTAssertTrue(TrunkEntryRule.shows(signedIn: true, available: true))
         XCTAssertFalse(TrunkEntryRule.shows(signedIn: true, available: false))
@@ -210,11 +227,12 @@ final class SettingsOutlineTests: XCTestCase {
     /// キャンピングカー: 設定からは自分で写真を読む入れ物を通す。マイページの行は残し、読んだ写真を渡す（二重に読まない）
     func testCamperEntryWiring() throws {
         let view = try source("Features/Settings/SettingsView.swift")
-        let row = slice(view, from: "private var camperRow: some View {", to: "private var trunkRow")
-        assertInOrder(["CamperGarageLoader(ownerName: myProfile?.name, userId: auth.userId)",
-                       "L(\"写真で作るキャンピングカー\"", "CamperText.carName", id("settings.camper")],
+        // 2026-11-12: 行は ≡ メニュー（`SiteMenuView.camperRow`）。メニューの行は印の札を持つ形（`SiteMenuRow`）
+        let menu = try source("Features/Common/SiteMenuView.swift")
+        let row = slice(menu, from: "private var camperRow: some View {", to: "private var footer")
+        assertInOrder(["CamperGarageLoader(ownerName: name, userId: auth.userId)",
+                       "CamperText.carName", "L(\"写真で作るキャンピングカー", "\"menu.camper\""],
                       in: row, "キャンピングカーの行")
-        XCTAssertFalse(row.contains("systemImage:"), "設定の行に絵を出している")
         let loader = try source("Features/Camper/CamperGarageLoader.swift")
         // 車の画面は読めたときだけ。読み込み中・失敗は数の行を出さない
         let body = slice(loader, from: "switch loader.phase {", to: "private func load()")

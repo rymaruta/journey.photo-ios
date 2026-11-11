@@ -449,15 +449,17 @@ final class TrunkEntryTests: XCTestCase {
         XCTAssertTrue(page.contains("if trunkForeground.shouldRecheck(isBackground: phase == .background, isActive: phase == .active) {"))
         XCTAssertFalse(page.contains("simultaneousGesture(TapGesture().onEnded { TrunkEntryStore"))
         XCTAssertTrue(chip.contains("Text(TrunkEntryText.coins(summary.coins))\n                        .font(JPFont.mono(15, relativeTo: .subheadline))\n                        .foregroundStyle(WebTheme.text)"))
-        let settings = try source("Features/Settings/SettingsView.swift")
-        // 2026-10-18: 「旅の道具」の札の先頭の1行（並びは `SettingsOutlineTests`）
-        XCTAssertTrue(settings.contains("                trunkRow\n                camperRow\n            }"))
+        // 2026-11-12: 入口は ≡ メニューの「旅の楽しみ」（設定の「旅の道具」から移した・並びは `SettingsOutlineTests`）
+        let settings = try source("Features/Common/SiteMenuView.swift")
+        XCTAssertTrue(settings.contains("                        trunkRow\n                        camperRow\n"))
         XCTAssertTrue(settings.contains("TrunkEntryRule.shows(signedIn: auth.userId != nil, available: trunkAvailability.isAvailable)"))
-        XCTAssertTrue(settings.contains(#".accessibilityIdentifier("settings.trunk")"#))
+        XCTAssertTrue(settings.contains(#".accessibilityIdentifier("menu.trunk")"#))
         XCTAssertFalse(settings.contains(".accessibilityElement(children: .ignore)\n                .accessibilityLabel(TrunkEntryText.title)"))
         // 設定からトランクへ行って戻ったら、行の数を読み直す（`markStale` のときだけ読む）
         XCTAssertTrue(settings.contains(".onDisappear { trunkEntry.markStale() }"))
         XCTAssertTrue(settings.contains("            .onAppear {\n                Task {\n                    await trunkEntry.refresh("))
+        XCTAssertFalse(try source("Features/Settings/SettingsView.swift").contains(#""settings.trunk""#),
+                       "旅のトランクの行が設定にも残っている（≡ と重なる）")
         // 口の確かめは札の数と1本の読み込み（`TrunkEntryStore.read`）を通る
         let availability = try source("Core/Storage/TrunkAvailability.swift")
         XCTAssertTrue(availability.contains("_ = try await entry.read(userId: userId, service: service, now: now)"))

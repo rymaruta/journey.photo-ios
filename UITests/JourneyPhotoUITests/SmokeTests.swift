@@ -141,9 +141,9 @@ final class SmokeTests: XCTestCase {
                       "絵の外（44pt の高さの中）を押してもお知らせが開かない")
     }
 
-    /// 見出しの「メニュー（≡）」でメニューが出て、「撮影地マップ」でシートが閉じて
-    /// マップの札へ移る（板 01d・2026-09-26）
-    func testHeaderMenuOpensAndRoutesToMap() {
+    /// 見出しの「メニュー（≡）」でメニューが出て、「設定」へ進める（板 01d・2026-09-26）。
+    /// 2026-11-12（案 第10章）: 「撮影地マップ」の行はタブと重なるので外した——メニューに残っていないことも見る
+    func testHeaderMenuOpensAndRoutesToSettings() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
         // 起動直後の動きの記録（失敗したら終わりにログと添付へ残す・札 #435・`PerfProbeSupport`）
@@ -159,12 +159,12 @@ final class SmokeTests: XCTestCase {
         XCTAssertTrue(menu.waitForExistence(timeout: 20), "見出しにメニューが無い")
         menu.tap()
 
-        let map = app.buttons["menu.map"]
-        XCTAssertTrue(map.waitForExistence(timeout: 15), "メニューが開かない")
-        map.tap()
+        let settings = app.buttons["menu.settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 15), "メニューが開かない")
+        XCTAssertFalse(app.buttons["menu.map"].exists, "タブと重なる「撮影地マップ」の行が残っている")
+        settings.tap()
 
-        XCTAssertTrue(map.waitForNonExistence(timeout: 10), "撮影地マップを押してもメニューが閉じない")
-        // マップの札が選ばれている（下の札の4つ目）
-        XCTAssertTrue(app.tabBars.buttons.element(boundBy: 3).isSelected, "マップの札へ移っていない")
+        XCTAssertTrue(app.buttons["settings.legal"].firstMatch.waitForExistence(timeout: 10),
+                      "メニューの「設定」を押しても設定が開かない")
     }
 }

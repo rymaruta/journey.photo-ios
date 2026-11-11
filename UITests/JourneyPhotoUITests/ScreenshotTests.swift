@@ -107,7 +107,7 @@ final class ScreenshotTests: XCTestCase {
         shot.name = "\(tab)（右上の見出しの帯・寄り）"
         shot.lifetime = .keepAlways
         add(shot)
-        let ids = ["header.search", "header.messages", "header.notifications", "header.menu"]
+        let ids = ["header.messages", "header.notifications", "header.menu"]
         let lines = ids.map { id -> String in
             let button = app.buttons[id].firstMatch
             return button.exists ? "\(id): \(button.frame)" : "\(id): 無し"
@@ -1415,6 +1415,45 @@ final class ScreenshotTests: XCTestCase {
     ///
     /// 入口は設定の「新しくなったこと」の行（`settings.whatsNew`）。設定は全部の版を `mode: .history` で渡すので、
     /// 2枚目（「これまでのお知らせ」と版の区切りの見出し）まで撮れる。シートが開いたのに履歴が無ければ落とす
+    /// プロフィールの QR（札 #545・2026-11-12）: マイページの名前の横の印 → 1枚の画面で「自分の QR」と「読み取る」。
+    /// シミュレータにはカメラが無いので、読み取るは「この端末ではカメラを使えません」の状態を撮る
+    func testCapturesProfileQR() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return XCTFail("下の札が出ない") }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return }
+        let entry = app.buttons["mypage.qr"].firstMatch
+        guard entry.waitForExistence(timeout: 5) else { return XCTFail("マイページの名前の横に QR の印が無い") }
+        XCTAssertGreaterThanOrEqual(entry.frame.height, 44, "QR の印の当たりが 44pt 未満")
+        XCTAssertGreaterThanOrEqual(entry.frame.width, 44, "QR の印の当たりが 44pt 未満")
+        shoot(app, "120-マイページ（名前の横の QR）")
+        entry.tap()
+        let code = app.descendants(matching: .any)["profileQR.code"].firstMatch
+        guard code.waitForExistence(timeout: 10) else { return XCTFail("QR の画面に自分の QR が出ない") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "120a-プロフィールの QR（自分の QR）")
+        let scan = app.buttons["profileQR.mode.scan"].firstMatch
+        guard scan.waitForExistence(timeout: 5) else { return XCTFail("読み取るへの切り替えが無い") }
+        XCTAssertGreaterThanOrEqual(scan.frame.height, 44, "切り替えが 44pt 未満")
+        scan.tap()
+        guard app.descendants(matching: .any)["profileQR.camera"].firstMatch.waitForExistence(timeout: 10) else {
+            return XCTFail("読み取るに切り替えてもカメラの枠が出ない")
+        }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "120b-プロフィールの QR（読み取る）")
+    }
+
     func testCapturesWhatsNewHistory() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -3453,8 +3492,8 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
-    /// 旅のトランクの入口は現在、マイページの札ではなく設定に配置されている。
-    /// 古い UI の期待値（mypage.trunk）を復活させず、現行の設定入口が操作可能なことを確認する。
+    /// 旅のトランクの入口は ≡ メニューの「旅の楽しみ」（2026-11-12・案 第10章。前は設定の「旅の道具」）。
+    /// 古い UI の期待値（mypage.trunk・settings.trunk）を復活させず、現行の入口が操作可能なことを確認する。
     func testCapturesTrunkEntry() {
         let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewTrunkCoins", "3"])
         let tabBar = app.tabBars.firstMatch
@@ -3464,28 +3503,57 @@ final class ScreenshotTests: XCTestCase {
         let obsoleteCard = app.buttons["mypage.trunk"].firstMatch
         XCTAssertFalse(obsoleteCard.waitForExistence(timeout: 3), "マイページに削除済みの旅のトランク札が残っている")
 
-        let gear = app.buttons["設定"].firstMatch
-        guard gear.waitForExistence(timeout: 5) else { return XCTFail("設定の丸が無い") }
-        scrollTo(gear, in: app)
-        guard gear.isHittable else { return XCTFail("設定の丸に届かない") }
-        gear.tap()
-
-        let row = app.buttons["settings.trunk"].firstMatch
-        guard row.waitForExistence(timeout: 10) else { return XCTFail("設定に旅のトランクの行が無い") }
+        let menu = app.buttons["header.menu"].firstMatch
+        guard menu.waitForExistence(timeout: 10) else { return XCTFail("見出しにメニューが無い") }
+        menu.tap()
+        let row = app.buttons["menu.trunk"].firstMatch
+        guard row.waitForExistence(timeout: 10) else { return XCTFail("メニューに旅のトランクの行が無い") }
         scrollTo(row, in: app)
-        guard row.isHittable else { return XCTFail("設定の旅のトランクの行に届かない") }
-        XCTAssertGreaterThanOrEqual(row.frame.height, 44, "設定の旅のトランクの行が 44pt 未満")
+        guard row.isHittable else { return XCTFail("メニューの旅のトランクの行に届かない") }
+        XCTAssertGreaterThanOrEqual(row.frame.height, 44, "メニューの旅のトランクの行が 44pt 未満")
         Thread.sleep(forTimeInterval: 1)
-        shoot(app, "90a-設定（旅のトランク入口）")
+        shoot(app, "90a-メニュー（旅のトランク入口）")
         row.tap()
         guard app.descendants(matching: .any)["trunk.spin"].firstMatch.waitForExistence(timeout: 15) else {
-            return XCTFail("設定の旅のトランクの行を押してもトランクが開かない")
+            return XCTFail("メニューの旅のトランクの行を押してもトランクが開かない")
+        }
+    }
+
+    /// **≡ メニューの置き場**（2026-11-12・デザインの案 第10章「どこに何を置くか」）: 旅の準備・旅の楽しみ・ほか。
+    /// タブと重なる行（撮影地マップ・マイページ・保存）は無い。見本（`-JPPreviewTrunk`）ではトランクの行が必ず出るので、
+    /// 出なければ落とす。とおまわり号の行を押すと車の画面が開く
+    func testCapturesSiteMenuTools() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewTrunkCoins", "3", "-JPPreviewPass", "YES"])
+        let menu = app.buttons["header.menu"].firstMatch
+        guard menu.waitForExistence(timeout: 20) else { return XCTFail("見出しにメニューが無い") }
+        menu.tap()
+        let plans = app.buttons["menu.tripPlans"].firstMatch
+        guard plans.waitForExistence(timeout: 10) else { return XCTFail("メニューに旅行プランの行が無い") }
+        for id in ["menu.map", "menu.saved"] {
+            XCTAssertFalse(app.buttons[id].firstMatch.exists, "タブと重なる \(id) が残っている")
+        }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "102m-メニュー（旅の準備）")
+        let camper = app.buttons["menu.camper"].firstMatch
+        guard camper.waitForExistence(timeout: 10) else { return XCTFail("メニューにとおまわり号の行が無い") }
+        scrollTo(camper, in: app)
+        for id in ["menu.tripPlans", "menu.albums", "menu.lightForecast", "menu.pass", "menu.trunk", "menu.camper"] {
+            let row = app.buttons[id].firstMatch
+            XCTAssertTrue(row.exists, "メニューに \(id) が無い")
+            if row.exists { XCTAssertGreaterThanOrEqual(row.frame.height, 44, "\(id) が 44pt 未満") }
+        }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "102n-メニュー（旅の楽しみ）")
+        if camper.isHittable {
+            camper.tap()
+            XCTAssertTrue(app.descendants(matching: .any)["camper.scene"].firstMatch.waitForExistence(timeout: 15),
+                          "メニューのとおまわり号の行を押しても車の画面が開かない")
         }
     }
 
     /// **設定の並び**（2026-10-18 owner「設定の項目多くなってるのでわかりやすいように整理して」）: いちばん上・
-    /// 旅の道具（トランク・写真で作るキャンピングカー）・最後の危ない操作・下の画面（データとストレージ・トランクを見せる）。
-    /// 見本（`-JPPreviewTrunk`）ではトランクの行が必ず出るので、出なければ落とす。押せる行が 44pt 未満でも落とす
+    /// 公開範囲とプライバシー（すれちがい乗車券）・最後の危ない操作・下の画面（データとストレージ・トランクを見せる）。
+    /// 2026-11-12: 旅の道具は ≡ メニューへ（`testCapturesSiteMenuTools`）。押せる行が 44pt 未満なら落とす
     func testCapturesSettingsOutline() {
         let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewTrunkCoins", "3"])
         let tabBar = app.tabBars.firstMatch
@@ -3496,31 +3564,22 @@ final class ScreenshotTests: XCTestCase {
         guard gear.waitForExistence(timeout: 5) else { return XCTFail("設定の丸が無い") }
         scrollTo(gear, in: app)
         gear.tap()
-        let trunk = app.buttons["settings.trunk"].firstMatch
-        guard trunk.waitForExistence(timeout: 10) else { return XCTFail("設定の旅の道具に旅のトランクの行が無い") }
+        let push = app.descendants(matching: .any)["settings.push"].firstMatch
+        guard push.waitForExistence(timeout: 10) else { return XCTFail("設定が開かない") }
+        // 2026-11-12（案 第10章）: 「旅の道具」の節は ≡ メニューへ移した。設定に残っていないこと
+        for id in ["settings.trunk", "settings.camper", "settings.passBook", "settings.albums", "settings.plans"] {
+            XCTAssertFalse(app.buttons[id].firstMatch.exists, "設定に \(id) が残っている（≡ へ移した）")
+        }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "102-設定（いちばん上）")
 
-        // 旅の道具: キャンピングカーの行まで送って撮り、押すと車の画面が開く
-        let camper = app.buttons["settings.camper"].firstMatch
-        guard camper.waitForExistence(timeout: 5) else { return XCTFail("設定にキャンピングカーの行が無い") }
-        scrollTo(camper, in: app)
-        XCTAssertTrue(camper.isHittable, "設定のキャンピングカーの行に届かない")
-        for id in ["settings.trunk", "settings.camper", "settings.pass", "settings.passBook", "settings.albums",
-                   "settings.plans"] {
-            let row = app.buttons[id].firstMatch
-            XCTAssertTrue(row.exists, "旅の道具に \(id) が無い")
-            if row.exists { XCTAssertGreaterThanOrEqual(row.frame.height, 44, "\(id) が 44pt 未満") }
-        }
+        // すれちがい乗車券の入り切りは「公開範囲とプライバシー」
+        let pass = app.buttons["settings.pass"].firstMatch
+        guard pass.waitForExistence(timeout: 5) else { return XCTFail("設定にすれちがい乗車券の行が無い") }
+        scrollTo(pass, in: app)
+        XCTAssertGreaterThanOrEqual(pass.frame.height, 44, "settings.pass が 44pt 未満")
         Thread.sleep(forTimeInterval: 1)
-        shoot(app, "102a-設定（旅の道具）")
-        if camper.isHittable {
-            camper.tap()
-            XCTAssertTrue(app.descendants(matching: .any)["camper.scene"].firstMatch.waitForExistence(timeout: 15),
-                          "設定のキャンピングカーの行を押しても車の画面が開かない")
-            goBack(app)
-            Thread.sleep(forTimeInterval: 1)
-        }
+        shoot(app, "102a-設定（公開範囲とプライバシー）")
 
         // 最後の危ない操作（ログアウト・アカウントの削除は別々の札）
         let delete = app.buttons["settings.deleteAccount"].firstMatch
