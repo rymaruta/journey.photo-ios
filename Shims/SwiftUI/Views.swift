@@ -328,6 +328,9 @@ public struct Path: View, Shape {
 public struct UnevenRoundedRectangle: View, Shape {
     nonisolated public init(topLeadingRadius: Double = 0, bottomLeadingRadius: Double = 0,
                 bottomTrailingRadius: Double = 0, topTrailingRadius: Double = 0) {}
+    /// 縁を描く（本物は `Shape.stroke`）
+    @MainActor public func stroke<S: ShapeStyle>(_ style: S, lineWidth: Double) -> UnevenRoundedRectangle { self }
+    @MainActor public func stroke<S: ShapeStyle>(_ style: S, style strokeStyle: StrokeStyle) -> UnevenRoundedRectangle { self }
     public var body: Never { fatalError("模型") }
 }
 

@@ -165,7 +165,7 @@ struct DMRequestsView: View {
                         DMAvatar(userId: request.peerId, deleted: request.isDeleted, size: DMLook.requestAvatar)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(name)
-                                .font(.system(size: 15, weight: .medium))
+                                .font(JPFont.body.weight(.medium))
                                 .foregroundStyle(WebTheme.text)
                                 .lineLimit(1)
                             Text([request.username.map { "@\($0)" }, DMText.listTime(request.t)]
@@ -195,7 +195,7 @@ struct DMRequestsView: View {
             }
             Button { route = request.id } label: {
                 Text(request.excerpt)
-                    .font(.system(size: 14))
+                    .jpSystemFont(14)
                     .foregroundStyle(WebTheme.text)
                     .lineSpacing(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -211,24 +211,26 @@ struct DMRequestsView: View {
             }
             HStack(spacing: JPSpace.xs) {
                 Button { Task { await accept(request) } } label: {
+                    // 写真の無い画面の主ボタン＝真鍮の塗りに墨（7.11:1・2026-11-11 案C。今までは白）
                     Text(L("承認", "Accept"))
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(JPFont.footnote.weight(.semibold))
                         .foregroundStyle(WebTheme.accentText)
                         .padding(.horizontal, 18)
                         .frame(height: JPHeight.inlineButton)
-                        .background(WebTheme.accentBackground, in: Capsule())
+                        .background(WebTheme.accentFill, in: Capsule())
                         .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("dm.request.accept")
                 Button { Task { await decline(request) } } label: {
+                    // 縁は outline（部品の縁 3:1 以上。白 28% は届かなかった・2026-11-11）
                     Text(Labels.Common.delete)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(JPFont.footnote.weight(.semibold))
                         .foregroundStyle(WebTheme.foreground)
                         .padding(.horizontal, 18)
                         .frame(height: JPHeight.inlineButton)
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.28), lineWidth: JPStroke.hairline))
+                        .overlay(Capsule().strokeBorder(WebTheme.outline, lineWidth: JPStroke.hairline))
                         .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
                         .contentShape(Rectangle())
                 }

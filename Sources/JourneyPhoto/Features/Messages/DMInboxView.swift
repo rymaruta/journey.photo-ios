@@ -14,6 +14,11 @@ enum DMRoute: Hashable {
 /// - 未読は「点＋太字＋明るい本文」。既読の表示は出さない
 /// - 状態: 読み込み中（顔の行の骨格）・空（新しいメッセージ）・失敗（もう一度）・圏外（最後の一覧の上に帯）
 /// - 見出しの右に鉛筆（「新しいメッセージ」・2026-11-10 owner「普通にDMできる機能がいい」）。フォロー中の人から選ぶ
+///
+/// **2026-11-11 作り直し（札 #541・案C）**: 顔は 52 で、未見のストーリーがある人は真鍮の輪（押すとストーリー・
+/// `DMStoryFace`）。時刻は名前の横・未読の点は行の右の真ん中・行の間の線をやめて 72 の余白で区切る（リクエストの下だけ線）。
+/// 一覧の下の説明文はやめた（右上の鉛筆で分かる・説明は空の受信箱だけ・「見れば分かる」）。
+/// 空の受信箱には「フォロー中」の顔の列（押すとその人との会話・最初の1通が 4 → 3 押し）
 struct DMInboxView: View {
 
     @EnvironmentObject private var environment: AppEnvironment
@@ -29,6 +34,8 @@ struct DMInboxView: View {
     /// 「新しいメッセージ」のシート。選んだ人は閉じてから積む（シートが閉じる途中で積むと、積んだ画面が出ないことがある）
     @State private var showNewMessage = false
     @State private var picked: DMPeerSeed?
+    /// 空の受信箱の顔の列（フォロー中の人・読めなければ列を出さない）
+    @State private var faces: [FollowUser] = []
 
     var body: some View {
         Group {
@@ -96,6 +103,15 @@ struct DMInboxView: View {
         await store.refresh(service: environment.dm, owner: auth.userId)
     }
 
+    /// 空の受信箱の顔の列（フォロー中の名前つき一覧・`DMNewMessageView` と同じ口と同じふるい）。
+    /// 受信箱に会話がある間は読まない。読めなければ列を出さない（空の状態の一手は残る）
+    private func loadFaces() async {
+        guard let me = auth.userId, threads.isEmpty, requestCount == 0, store.phase == .loaded else { return }
+        guard let fetched = try? await environment.social.following(userId: me), !Task.isCancelled,
+              auth.userId == me else { return }
+        faces = Array(DMStart.candidates(fetched.users, me: me, blocked: hidden.blockedUserIds).prefix(12))
+    }
+
     private var threads: [DMThread] {
         store.inbox.conversations.filter { !hidden.blockedUserIds.contains($0.peerId) }
     }
@@ -144,25 +160,42 @@ struct DMInboxView: View {
                         showNewMessage = true
                     }
                     .padding(.top, JPSpace.emptyTop)
+                    if !faces.isEmpty {
+                        VStack(alignment: .leading, spacing: JPSpace.xs) {
+                            JPEyebrowLine(L("フォロー中", "Following"))
+                                .padding(.horizontal, JPSpace.gutter)
+                            DMPeopleFacesRow(people: faces) { user in
+                                route = .start(DMStart.seed(user))
+                            }
+                        }
+                        // 顔の列は端まで流す（左右の余白は列の中で取る）
+                        .padding(.horizontal, -JPSpace.gutter)
+                        .padding(.top, JPSpace.xl)
+                    }
                 } else {
                     ForEach(threads) { thread in
-                        Button {
-                            route = .conversation(thread.id)
-                        } label: {
-                            DMThreadRow(thread: thread)
+                        HStack(spacing: JPSpace.s) {
+                            DMStoryFace(userId: thread.peerId, deleted: thread.isDeleted,
+                                        name: DMText.name(thread.name, deleted: thread.isDeleted),
+                                        size: DMLook.rowAvatar) {
+                                route = .conversation(thread.id)
+                            }
+                            Button {
+                                route = .conversation(thread.id)
+                            } label: {
+                                DMThreadRow(thread: thread)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("dm.thread")
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("dm.thread")
                     }
-                    Text(DMText.startHint)
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.faint)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, JPSpace.xl)
-                        .padding(.horizontal, JPSpace.xxs)
                 }
             }
             .padding(.horizontal, JPSpace.gutter)
+            .padding(.bottom, JPSpace.screenEnd)
+        }
+        .task(id: "\(auth.userId ?? "-")#\(store.phase == .loaded && threads.isEmpty && requestCount == 0)") {
+            await loadFaces()
         }
         .refreshable { await reload() }
         .accessibilityIdentifier("dm.inbox")
@@ -191,17 +224,17 @@ struct DMInboxView: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(DMText.requestsTitle)
-                        .font(.system(size: 15, weight: .medium))
+                        .font(JPFont.body.weight(.semibold))
                         .foregroundStyle(WebTheme.text)
                     Text(L("承認すると受信箱に移ります", "Accept to move them to your inbox"))
-                        .font(.system(size: 14))
+                        .jpSystemFont(14)
                         .foregroundStyle(WebTheme.text3)
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 CountBadge(count: requestCount, maximum: 99)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(JPFont.footnote.weight(.semibold))
                     .foregroundStyle(WebTheme.text3)
                     .accessibilityHidden(true)
             }
