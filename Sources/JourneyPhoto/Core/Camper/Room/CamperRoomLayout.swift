@@ -3,7 +3,8 @@ import Foundation
 // とおまわり号の中の部屋の広さ・動かせない物・置く決まり（2026-10-19・板「CamperRoom」と付箋「マス目と寸法」「置く決まり」）。
 //
 // 1 マス = 10 ≈ 25 cm。天井は 88。床のマスは、その部屋の外の箱を 10 で割った数（`CamperVolumes`）。
-// 車の部屋は殻と同じ（バン 12×8、キャンピングカー 18×9）。あつ森の家は 6 部屋なので、どの段も 7 部屋。
+// 車の部屋は殻と同じ（バン 12×8、キャンピングカー 18×9）。
+// 2026-11-11 owner「遠回り号の中も減らしていいよ」: 入れる部屋は車の部屋と張り出しの 2 つ（トレーラーつきはトレーラーを足して 3 つ）。
 // 部屋の座標は左奥が原点: x は後ろ（0）から運転席の仕切りへ、z は奥の壁（0）から扉の壁へ、y は床から上。
 // 素の Swift なので Linux でも試験できる。
 
@@ -21,7 +22,7 @@ enum CamperRoomKind: String, CaseIterable, Codable, Sendable {
     var name: String {
         switch self {
         case .car: return L("車の部屋", "Camper room")
-        case .sideRear: return L("後ろの張り出し", "Rear slide-out")
+        case .sideRear: return L("張り出し", "Slide-out")
         case .sideFront: return L("前の張り出し", "Front slide-out")
         case .porch: return L("軒先", "Porch")
         case .locker: return L("荷物室", "Locker")
@@ -31,16 +32,19 @@ enum CamperRoomKind: String, CaseIterable, Codable, Sendable {
         }
     }
 
-    /// その段で入れる部屋。どの段も 7（あつ森の家の 6 より多い）。
-    /// 荷物室はトレーラーの胴と重なるので、トレーラーつきではトレーラーの部屋に入れ替える
+    /// その段で入れる部屋。車の部屋と張り出し、トレーラーつきはトレーラーの部屋も。
+    ///
+    /// 2026-11-11 判断（owner「遠回り号の中も減らしていいよ」）: 7 部屋のうち、前の張り出し・軒先・荷物室は張り出しと
+    /// 作りが同じ（台所なし・扉は端・窓 1 つ）で、前の張り出しは寸法まで同じだった。ロフトと運転席の上は天井が 46 と低く、
+    /// 背の高い家具が「天井より高いです」で置けない。中身の違う部屋（台所のある車の部屋・広い張り出し・トレーラー）だけを残した。
+    /// 種類（case）と保存（`CamperRoomStore` の部屋ごとの鍵）は消さない。隠した部屋に置いた家具は保存に残り、戻せばそのまま現れる
     static func rooms(_ stage: CamperStage) -> [CamperRoomKind] {
-        var list: [CamperRoomKind] = [.car, .sideRear, .sideFront, .porch]
-        if stage == .trailer {
-            list += [.loft, .bunk, .trailer]
-        } else {
-            list += [.locker, .loft, .bunk]
-        }
-        return list
+        stage == .trailer ? [.car, .sideRear, .trailer] : [.car, .sideRear]
+    }
+
+    /// 開く部屋。いまの段で入れない部屋（減らして隠した部屋・トレーラーの無い段のトレーラー）を頼まれたら、車の部屋を開く（2026-11-11）
+    static func opening(_ requested: CamperRoomKind, stage: CamperStage) -> CamperRoomKind {
+        rooms(stage).contains(requested) ? requested : .car
     }
 }
 

@@ -122,7 +122,7 @@ final class SearchScopeTests: XCTestCase {
     /// 「季節・時間帯から探す」（板に無い段・2026-10-03）は季節の次
     func testDiscoveryOrderFollowsBoard() {
         XCTAssertEqual(SearchDiscovery.sections(present: Set(SearchDiscovery.Section.allCases)),
-                       [.spots, .featured, .colors, .seasonal, .shootingTime, .gear])
+                       [.spots, .officialSpots, .featured, .colors, .seasonal, .shootingTime, .gear])
         XCTAssertEqual(SearchDiscovery.sections(present: [.gear, .seasonal, .colors]),
                        [.colors, .seasonal, .gear])
     }

@@ -26,30 +26,10 @@ enum CamperRoomLegs {
         ("正面", 0, 6, 8, false), ("斜め", 34, 26, 26, false), ("横", 90, 6, 8, false), ("下から", 28, -24, 12, true),
     ]
 
-    /// 脚の接写の一覧に並べる家具（Mac の `testCapturesCamperFurnitureLegs`）。板と別種の脚のある床の家具全部と、
-    /// 組み合わせの家具は「分類 × 脚の形」ごとに 1 つ（同じ脚の形は同じ作りなので、1 つ見れば残りも同じ）
+    /// 脚の接写の一覧に並べる家具（Mac の `testCapturesCamperFurnitureLegs`）。板と別種の脚のある床の家具全部。
+    /// 2026-11-11 判断: 組み合わせの家具（`CamperRoomVariety`）を消したので、板の家具だけを 1 つずつ並べる
     static var sheet: [CamperRoomFurniture] {
-        let board = CamperRoomCatalog.board.filter { $0.placement == .floor && $0.category != .roomRug && hasLegs($0) }
-        var groups: [String: [CamperRoomFurniture]] = [:]
-        var order: [String] = []
-        for p in CamperRoomVariety.pieces {
-            guard let axis = legAxis(p) else { continue }
-            let key = "\(p.furniture.category.rawValue)|\(axis)"
-            if groups[key] == nil { order.append(key) }
-            groups[key, default: []].append(p.furniture)
-        }
-        // 同じ脚の形の真ん中の 1 つ（天板・背の違いも頁ごとに散らす）
-        return board + order.compactMap { k in groups[k].map { $0[$0.count / 2] } }
-    }
-
-    /// 組み合わせの家具の「脚の形」の軸（脚の無い分類は nil）
-    static func legAxis(_ p: CamperRoomVariety.Piece) -> Int? {
-        switch p.furniture.category {
-        case .seating, .bed: return p.axes.0
-        case .table: return p.axes.1
-        case .storage, .heater, .floorLamp: return p.axes.2
-        default: return nil
-        }
+        CamperRoomCatalog.board.filter { $0.placement == .floor && $0.category != .roomRug && hasLegs($0) }
     }
 
     /// 部品（同じ位置の点でつながった三角形の塊）の外枠

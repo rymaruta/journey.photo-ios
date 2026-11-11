@@ -127,7 +127,7 @@ struct CamperRoomDexView: View {
         .padding(.horizontal, 16)
     }
 
-    /// 2,000 点を超えると、代表の家具が画面の外に出て押せない。名前か id で絞る
+    /// 名前か id で絞る（2,000 点を超えていた頃に足した。2026-11-11 に 85 点へ減らした後も、探す手段として残す）
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass").foregroundStyle(WebTheme.text3)

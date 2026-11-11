@@ -4,7 +4,9 @@ import Foundation
 //
 // 板の 16 分類・64 個に、旅の車らしい別種の分類を足す（各 4・専用メッシュ）。
 // 2026-10-20 owner「色んなの作りたい」・「カメラ棚あるならカメラも」・「もっと色々家具など増やしたい／専用メッシュも」。
-// 形の組み合わせ（`CamperRoomVariety`。あつ森の 2,076 を超える）は板の 16 分類にだけ足す。id は「分類.部品」。
+// id は「分類.部品」。
+// 2026-11-11 owner「家具も減らしていい・最大 100 個くらい・同じような家具を減らしたい」: 形の組み合わせで増やした家具
+// （`CamperRoomVariety`・2,090 点。あつ森の 2,076 に合わせて作った）はコードごと消し、板の中の似た家具は `paused` で外した。
 //
 // 第1段（端末だけ）で届くのは、入手の条件が端末で決まり、**形を作り込んだもの**だけ（`isAvailable`）。
 // - 板の 64 個と新しい分類は全部形を作り込んだ（`CamperRoomFurnitureModels`〜`Models5`）。
@@ -310,7 +312,9 @@ enum CamperRoomCatalog {
     private static func server(_ ja: String, _ en: String) -> CamperRoomUnlock { .base(.server(ja, en)) }
 
     /// 板の 64 個 ＋ 別種 40 個（音・台所道具・便利・鏡・趣味・カメラ・鉢植え・旅の荷物・お茶・洗う物。各 4）。
-    /// 大きさ・高さは板の付箋と実物の寸法から。組み合わせで増やした家具は `all` にだけ足す（板の id は変えない）
+    /// 大きさ・高さは板の付箋と実物の寸法から（板の id は変えない）
+    /// 2026-11-11 判断: 秋の写真・季節をまたぐ条件（2026-11-08）は組み合わせの家具にだけ付いていたので、消した後も残るよう
+    /// 三枚続きの額・盆栽・ケーキ台に「もう一つの道」（`.either`）として付け直した。前の条件は先に残し、持っている人から減らさない
     static let board: [CamperRoomFurniture] = [
         // 寝台（bed）
         f(.bed, "platform", "木の寝台", "Wooden platform bed", "低い木枠に布団と枕 2", "A low timber frame, a futon and two pillows",
@@ -392,7 +396,7 @@ enum CamperRoomCatalog {
         f(.photoFrame, "oval", "楕円の額", "Oval frame", "真鍮の楕円", "A brass oval",
           .rare, .base(.samePlace(3)), 1, 1, 1.4, photos: 1, built: true),
         f(.photoFrame, "triptych", "三枚続きの額", "Triptych", "3 枚を並べて一つの景色", "Three panels make one view",
-          .veryRare, .sameDay(30), 4, 1, 1.4, photos: 1, built: true),
+          .veryRare, .either(.sameDay(30), .seasons(4)), 4, 1, 1.4, photos: 1, built: true),
         // 壁に貼る物（poster）
         f(.poster, "tall_print", "縦長の写真", "Tall print", "白い余白とマスキングテープ", "A white border and masking tape",
           .common, starter, 2, 2, 0.3, photos: 1, built: true),
@@ -518,7 +522,7 @@ enum CamperRoomCatalog {
         f(.plantPot, "cactus", "サボテン", "Cactus", "縦の畝と小さな棘", "Ribbed columns with tiny spines",
           .occasional, .base(.sky(12)), 2, 2, 36, built: true),
         f(.plantPot, "bonsai", "盆栽", "Bonsai", "曲がった幹と浅い鉢", "A bent trunk in a shallow pot",
-          .rare, .topic(.temple, 4), 2, 2, 28, built: true),
+          .rare, .either(.topic(.temple, 4), .autumn(6)), 2, 2, 28, built: true),
         f(.plantPot, "herb_box", "ハーブ箱", "Herb box", "木箱に葉 3 株", "Three herbs in a timber box",
           .veryRare, .topic(.food, 12), 3, 2, 24, built: true),
         // 旅の荷物（travel_bag）
@@ -536,7 +540,7 @@ enum CamperRoomCatalog {
         f(.tea, "thermos", "魔法瓶", "Thermos", "細長い筒とねじ蓋", "A tall flask with a screw cap",
           .occasional, .base(.night(6)), 1, 1, 28, built: true),
         f(.tea, "cake_stand", "ケーキ台", "Cake stand", "3 段の皿と支柱", "Three tiers on a stem",
-          .rare, .spring(15), 2, 2, 32, built: true),
+          .rare, .either(.spring(15), .seasons(3)), 2, 2, 32, built: true),
         f(.tea, "fruit_bowl", "果物鉢", "Fruit bowl", "深い鉢に実 5", "Five fruits in a deep bowl",
           .veryRare, .topic(.market, 6), 2, 2, 16, built: true),
         // 洗う物（wash）
@@ -550,7 +554,6 @@ enum CamperRoomCatalog {
           .veryRare, .sameDay(20), 2, 1, 8, built: true),
     ]
 
-    /// 板と別種の家具、形の組み合わせで増やした家具
     /// 一時的に下げた家具（2026-11-06 owner「キャンピングカーの家具は、質の低いものを一旦減らしたい」→「あなたの案で」）。
     ///
     /// 選び方（数で決めた。実機の見た目では見ていない）: 形を作る関数の部品の数と行数が少ない順に、次を除いて選んだ。
@@ -561,12 +564,22 @@ enum CamperRoomCatalog {
     /// 効き方: `all` から外す。図鑑・持ち物・数・家具の選び場・部屋の表示が同じ入口で揃う。形のコード（`CamperRoomFurnitureModels`）と
     /// `board` の行は消さない。**戻すときは、ここから id を消すだけ。**
     /// 保存済みの部屋は書き換えない（`CamperRoomDocument.shown(owned:)` は写しから外すだけ）。すでに置いた家具は、戻すとそのまま現れる。
+    ///
+    /// 2026-11-11 判断（owner「同じような家具とか減らしたい」）: 同じ分類で形と役割が近い組のうち、最初から持たない方を下げた
+    /// （最初から持つ家具・初期の部屋の家具・要サーバーと「近日」・額とポスター・試験が id で呼ぶ家具は残す）。
+    /// だるまストーブ（薪ストーブと同じ鉄の胴と煙突）・丸いカフェ机（ちゃぶ台と同じ丸い 3×3）・毛足の丸（楕円の輪）・
+    /// 折り鶴（木の鳥と同じ 3 羽の鳥）・ひげ剃り鏡（丸い真鍮鏡）・一眼レフと二眼レフ（小さなカメラが 4 つ）・
+    /// 地図立て（旅の地図と同じ地図で、条件も同じ都道府県 10）・食器の棚（ワインラックと同じ斜めの桟に 6 つ）・
+    /// 三脚の灯り（真鍮の一本足と同じ柱と笠）・めくる時計（時計が 4 つ）
     static let paused: Set<String> = [
         "wash.soap_niche", "wall_shelf.spice_rack", "roof_hatch.round_hatch", "storage.wicker_baskets",
-        "roof_hatch.star_window", "string_ceiling.paper_garland", "plant_pot.herb_box", "wash.cup_rail"
+        "roof_hatch.star_window", "string_ceiling.paper_garland", "plant_pot.herb_box", "wash.cup_rail",
+        // 2026-11-11（似た家具）
+        "heater.pot_belly", "table.round_cafe", "room_rug.shag_round", "mobile.paper_cranes", "mirror.shaving",
+        "camera.slr", "camera.twin_lens", "travel_bag.map_stand", "kitchen_gear.dish_rack", "floor_lamp.tripod", "clock.flip"
     ]
 
-    static let all: [CamperRoomFurniture] = (board + CamperRoomVariety.furniture).filter { !paused.contains($0.id) }
+    static let all: [CamperRoomFurniture] = board.filter { !paused.contains($0.id) }
 
     private static let byId: [String: CamperRoomFurniture] = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
 
@@ -574,7 +587,7 @@ enum CamperRoomCatalog {
 
     static func items(_ c: CamperRoomCategory) -> [CamperRoomFurniture] { all.filter { $0.category == c } }
 
-    /// 図鑑の探し欄。空なら全部。名前か id にその文字が入るもの（色違いの軸は id が「分類.x000」なので、板の id とは混ざらない）
+    /// 図鑑の探し欄。空なら全部。名前か id にその文字が入るもの
     static func matchesDexQuery(_ f: CamperRoomFurniture, _ query: String) -> Bool {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if q.isEmpty { return true }

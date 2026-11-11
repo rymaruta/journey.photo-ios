@@ -1034,7 +1034,7 @@ enum CamperText {
     ///
     /// 🔴 前は「45 / 98 · 図鑑 132 · 近日 34」と3つの数を1行に並べていて、どれが自分の数か読めなかった。
     /// **一目で見る数は1つ**（集めた / 集められる）。図鑑の総数と「近日」の数は、図鑑の終わりの注記
-    /// （`dexFootnote`・`roomDexFootnote`）へ移した。桁は「,」で区切る（家具は 2,000 を超える）
+    /// （`dexFootnote`・`roomDexFootnote`）へ移した。桁は「,」で区切る（家具が 2,000 を超えていた頃の決まり）
     static func collectedLine(have: Int, total: Int) -> String {
         let h = PassExchange.grouped(have), t = PassExchange.grouped(total)
         return L("集めた \(h) / \(t)", "Collected \(h) / \(t)")

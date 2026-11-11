@@ -29,6 +29,31 @@ final class CurrentLocationTests: XCTestCase {
         XCTAssertEqual(fake.locationRequests, 0)
     }
 
+    /// `locateIfAllowed` は**尋ねない**: 未決・拒否では何もしない。許されていれば1回だけ取る（札 #524）
+    func testLocateIfAllowedNeverAsks() async {
+        for status in [CLAuthorizationStatus.notDetermined, .denied, .restricted] {
+            let fake = FakeRequester(status: status)
+            let location = CurrentLocation(manager: fake)
+            location.locateIfAllowed()
+            XCTAssertEqual(location.state, .idle)
+            XCTAssertEqual(fake.authorizationRequests, 0)
+            XCTAssertEqual(fake.locationRequests, 0)
+        }
+        let fake = FakeRequester(status: .authorizedWhenInUse)
+        let location = CurrentLocation(manager: fake)
+        location.locateIfAllowed()
+        location.locateIfAllowed()
+        XCTAssertEqual(location.state, .locating)
+        XCTAssertEqual(fake.locationRequests, 1)
+        XCTAssertEqual(fake.authorizationRequests, 0)
+        XCTAssertFalse(location.requestedByUser)
+        // 取れたあと（一覧に戻ってきた）・失敗したあとも取り直さない（並びが目の前で動かない）
+        location.handle(latitude: 35, longitude: 139)
+        location.locateIfAllowed()
+        XCTAssertEqual(fake.locationRequests, 1)
+        XCTAssertEqual(location.state, .located(latitude: 35, longitude: 139))
+    }
+
     /// 既に断られているなら、尋ね直さずに「拒否」を返す
     func testAlreadyDeniedReportsWithoutAsking() async {
         let fake = FakeRequester(status: .denied)
