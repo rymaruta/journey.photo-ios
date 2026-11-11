@@ -3234,6 +3234,16 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
         }
 
+        // 公開範囲とプライバシー: 「検索エンジンにプロフィールを表示しない」（2026-11-11 owner 承認・#526）。
+        // 自分のプロフィールが読めているときだけ出る行なので、出なければ撮らずに先へ（撮れないのを失敗にしない）
+        let searchHidden = app.descendants(matching: .any)["settings.searchHidden"].firstMatch
+        if searchHidden.waitForExistence(timeout: 5) {
+            scrollTo(searchHidden, in: app)
+            XCTAssertGreaterThanOrEqual(searchHidden.frame.height, 44, "検索エンジンの入切が 44pt 未満")
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "102g-設定（公開範囲とプライバシー）")
+        }
+
         // 最後の危ない操作（ログアウト・アカウントの削除は別々の札）
         let delete = app.buttons["settings.deleteAccount"].firstMatch
         guard delete.waitForExistence(timeout: 5) else { return XCTFail("設定にアカウントの削除が無い") }
