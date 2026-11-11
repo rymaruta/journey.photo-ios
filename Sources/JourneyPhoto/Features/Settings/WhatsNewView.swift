@@ -192,4 +192,3 @@ struct WhatsNewView: View {
         }
     }
 }
-// 確かめ用（測る・あとで戻す）
