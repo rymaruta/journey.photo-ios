@@ -5,8 +5,8 @@
 #    倒れた回・storeShots。決めるのは ios-testflight.yml の `shard-plan` の1か所）。2026-10-31（#429）に
 #    ios-testflight.yml の中に作った組を、ここへそのまま移した（中身は変えていない）
 #  - `ios-pr.yml` の UI テストが全部になる回（手で流した full_ui=true だけ。2026-11-11 から PR は全部に倒さない）。
-#  - `ios-nightly.yml`（main の夜の全部の回）は ios-testflight.yml を通して呼ぶ
 #    前は 1 台で流し、PR #514 の run 42787091389 で UI テストの段だけ 2 時間 31 分かかった
+#  - `ios-nightly.yml`（main の夜の全部の回）は ios-testflight.yml を通して呼ぶ
 # **写しを作らない。** 振り分け（`Tools/pick-ui-tests.py --plan`・`Tools/ui-test-times.json`）・品の受け渡し
 # （`Tools/test-products.py`・`.github/actions/mac-test-part`）・印はここだけに書く。`Tools/check-config.py` が見張る
 #
