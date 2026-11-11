@@ -177,7 +177,7 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(medal.contains("addHandle(aspect: aspect, depth: depth, color: handle, stitched: stitched)"))
         let spin = try source("Features/Trunk/TrunkSpinViewer.swift")
         XCTAssertTrue(spin.contains("MedalCoinView(textures: textures"))
-        XCTAssertTrue(spin.contains("TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,\n                                        hangsOnFront: true, parts: parts, wrinkles: wrinkles, tagPicks: tagPicks))"),
+        XCTAssertTrue(spin.contains("TrunkBoxView(model: model, posts: posts, stuck: stuck, ownerName: ownerName, bodyOnly: true,\n                                        hangsOnFront: true, parts: parts, wrinkles: wrinkles, tagPicks: tagPicks)"),
                       "回す画面の表に付けた部品とよれ・吊るす物が出ない（2026-10-17 次の版・#305）")
         // 箱は横に回してから画面の軸で傾ける（`eulerAngles` では「上と背面」で底が見えた・#305）
         XCTAssertTrue(medal.contains("let q = SpinMotion.boxOrientation(yaw: Double(yaw), pitch: Double(pitch))"))
