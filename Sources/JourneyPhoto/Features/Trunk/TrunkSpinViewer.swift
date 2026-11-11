@@ -19,6 +19,8 @@ struct TrunkSpinViewer: View {
     var wrinkles: [String: Double] = [:]
     /// 手荷物タグの枠ごとの選び（2026-11-08）。無ければ全部おまかせ
     var tagPicks: [TrunkTagPick] = []
+    /// 端末に絵を置く・読むか。人のトランクでは置かない（自分のトランクの絵を置き換えない・2026-11-11 判断）
+    var keepsOnDisk = true
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -104,8 +106,10 @@ struct TrunkSpinViewer: View {
             // 側面・背面・上・底・持ち手も同じく端末に置いて読む（2026-11-11 run 1050: 正面を読んでも、側面などを貼る
             // `SpinApplyBox` が 0.48〜0.74 秒残った）
             // 開いた時点の札（この後に退会で消されたら、描き終えても端末に書かない）
-            let diskTicket = TrunkSpinDiskCache.open()
-            let disk = TrunkPerfMeter.measure("SpinDiskLoad") { TrunkSpinDiskCache.load(for: key) }
+            // 合図は 1 度だけ作り、読む・書くの両方に使う。人のトランクでは端末を使わない
+            let diskSession = TrunkSpinDiskCache.session(for: key, keepsOnDisk: keepsOnDisk)
+            let diskTicket = diskSession?.ticket, diskSignature = diskSession?.signature
+            let disk = TrunkPerfMeter.measure("SpinDiskLoad") { diskSignature.flatMap { TrunkSpinDiskCache.load(signature: $0) } }
             let diskFront = disk?["front"]
             if diskFront != nil { TrunkPerfMeter.shared.hit("SpinDiskHit") }
             textures = TrunkTextures.make(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts,
@@ -121,8 +125,8 @@ struct TrunkSpinViewer: View {
             // SceneKit が読んで塗った後の絵は、次に開いたときに使い回す
             if let textures, let boxFaces { TrunkTextures.keep(key, faces: textures, box: boxFaces) }
             // 塗った絵を、次に開くとき（アプリを開き直した後も）のために端末に置く（主スレッドの外で書く）
-            if diskFront == nil || diskSides == nil, let textures, let boxFaces {
-                TrunkSpinDiskCache.save(front: textures.front, sides: boxFaces, for: key, ticket: diskTicket)
+            if diskFront == nil || diskSides == nil, let textures, let boxFaces, let diskTicket, let diskSignature {
+                TrunkSpinDiskCache.save(front: textures.front, sides: boxFaces, signature: diskSignature, ticket: diskTicket)
             }
             renderMarker = TrunkTextures.renderMarker(front: frontTook, all: started.duration(to: clock.now))
             TrunkPerfMeter.shared.mark("SpinReady")

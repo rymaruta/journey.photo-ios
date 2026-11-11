@@ -210,7 +210,7 @@ struct TheirTrunkView: View {
             .fullScreenCover(isPresented: $showSpin) {
                 if let trunk = model.trunk {
                     TrunkSpinViewer(model: trunk.model, posts: trunk.agingPosts, stuck: trunk.stuck, ownerName: ownerName,
-                                    parts: trunk.equipped, tagPicks: trunk.tagPicks)
+                                    parts: trunk.equipped, tagPicks: trunk.tagPicks, keepsOnDisk: false)
                 }
             }
             // 回す画面で取っておいた絵（`TrunkTextures.keep`）を、この画面から離れたら手放す（回す画面を出している間は持っておく・

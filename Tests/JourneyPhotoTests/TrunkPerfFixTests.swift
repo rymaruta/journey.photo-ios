@@ -52,8 +52,9 @@ final class TrunkPerfFixTests: XCTestCase {
                       "描いた絵を取っておかない")
         XCTAssertTrue(spin.contains("UIApplication.didReceiveMemoryWarningNotification"), "メモリが足りないときに手放さない")
         // 札は開くときの消去の後（`open()`）で取り、そのあとで読む（run 1066: 先に札を取って、消去でその回の書き込みが落ちた）
-        let opened = try XCTUnwrap(spin.range(of: "let diskTicket = " + "TrunkSpinDiskCache" + ".open()"), "開いたときの札を取らない")
-        let loaded = try XCTUnwrap(spin.range(of: "TrunkSpinDiskCache" + ".load(for: key)"))
+        let opened = try XCTUnwrap(spin.range(of: "let diskSession = " + "TrunkSpinDiskCache" + ".session(for: key, keepsOnDisk: keepsOnDisk)"),
+                                   "開いたときの札を取らない")
+        let loaded = try XCTUnwrap(spin.range(of: "TrunkSpinDiskCache" + ".load(signature: $0)"))
         XCTAssertLessThan(opened.lowerBound, loaded.lowerBound, "札を取る前に端末の絵を読んでいる")
         XCTAssertFalse(spin.contains("func prewarm("), "回す画面の絵を先に作っている（メモリが戻らない）")
         let trunk = try source("Features/Trunk/TrunkView.swift")
