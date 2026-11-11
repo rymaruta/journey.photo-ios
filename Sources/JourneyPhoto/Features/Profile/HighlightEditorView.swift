@@ -154,7 +154,7 @@ struct HighlightEditorView: View {
     /// マイページで出る輪と名前を、仕上がりのまま上に置く（2026-11-12 判断・設計の案 04）。
     /// 輪か「表紙を変える」を押すと、選んだものだけが並ぶシートで表紙を選ぶ
     private var head: some View {
-        VStack(spacing: JPSpace.xs) {
+        VStack(spacing: 0) {
             Button {
                 if !picked.isEmpty { showCoverPicker = true }
             } label: {
@@ -172,7 +172,6 @@ struct HighlightEditorView: View {
                 .buttonStyle(.plain)
                 .frame(minHeight: WebTheme.minTapTarget)
                 .contentShape(Rectangle())
-                .padding(.vertical, -8)
                 .opacity(picked.isEmpty ? 0 : 1)
                 .disabled(picked.isEmpty)
                 .accessibilityHidden(picked.isEmpty)
