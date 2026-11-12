@@ -75,7 +75,8 @@ final class SettingsOutlineTests: XCTestCase {
         XCTAssertEqual(SettingsOutline.Part.allCases.last, .danger)
         XCTAssertNil(SettingsOutline.Part.danger.title, "危ない操作の札に眉ラベルを付けている")
         XCTAssertEqual(SettingsOutline.Part.privacy.items,
-                       ["settings.blocked", "settings.closeFriends", "settings.pass", "settings.trunkPrivacy"])
+                       ["settings.blocked", "settings.closeFriends", "settings.pass", "settings.trunkPrivacy",
+                        "settings.searchHidden"])
         XCTAssertEqual(SettingsOutline.Part.photos.items, ["settings.compositionCatalog", "settings.storage"])
         // 道具の行は設定に無い（≡ にある）
         let topLevel = SettingsOutline.Part.allCases.flatMap(\.items)
