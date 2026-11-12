@@ -355,6 +355,16 @@ enum PreviewSession {
         #endif
     }
 
+    /// 見本の届いた画面の枚数（`-JPPreviewTrunkArrived 3` で3枚・「まとめて貼る」の画面写真・2026-11-12）。`YES` は 1 枚
+    static var trunkArrivedCount: Int {
+        #if DEBUG
+        guard opensTrunkArrived else { return 0 }
+        return max(1, min(3, UserDefaults.standard.integer(forKey: trunkArrivedKey)))
+        #else
+        return 0
+        #endif
+    }
+
     /// UI テストで、お知らせに「はじめてのいいね」の見本の行を出す（Debug のみ・2026-11-08）。`-JPPreviewFirstReaction YES`。
     /// サーバーには何も送らず、端末の控えにも書かない。入っている見本の利用者のときだけ。Release では必ず false
     static let firstReactionKey = "JPPreviewFirstReaction"

@@ -102,6 +102,8 @@ enum VisitedMapText {
 
     static var undo: String { L("取り消す", "Undo") }
     static var undoStep: String { L("ひとつ戻す", "Step back") }
+    /// 写真の候補のチップ（押すとその場で記録・2026-11-12 判断）
+    static func recordCandidateChip(_ prefecture: String) -> String { L("\(prefecture) · 記録する", "\(prefecture) · Record") }
 
     static func recorded(_ name: String, count: Int) -> String {
         L("\(name)を記録しました（\(count) 回）", "Recorded \(name) (\(count))")

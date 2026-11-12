@@ -363,7 +363,7 @@ struct TheirTrunkView: View {
     private func buttons(_ trunk: TheirTrunk) -> some View {
         HStack(spacing: 8) {
             Button { showSpin = true } label: {
-                TrunkButtonFace(title: L("手に取って回す", "Pick up and turn"), kind: .secondary, height: 44, size: 15)
+                TrunkButtonFace(title: L("手に取って回す", "Pick up and turn"), kind: .secondary)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("trunk.their.spin")
@@ -374,7 +374,7 @@ struct TheirTrunkView: View {
                                                        homeLocation: homeLocation, trunk: trunk, profile: profile,
                                                        photos: photos, preview: model.isPreview))
             } label: {
-                TrunkButtonFace(title: L("ふたを開ける", "Open the lid"), kind: .secondary, height: 44, size: 15)
+                TrunkButtonFace(title: L("ふたを開ける", "Open the lid"), kind: .secondary)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("trunk.their.open")

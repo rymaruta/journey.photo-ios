@@ -23,28 +23,54 @@ final class ToastCenter: ObservableObject {
 
     /// 出している時間。Web と同じ 3 秒
     static let duration: TimeInterval = 3
+    /// 「取り消す」を添えた知らせの時間（下書きの「元に戻す」と同じ約6秒・`DraftLibrary.undoSeconds`）
+    static let undoDuration: TimeInterval = 6
+
+    /// 知らせに添える「取り消す」（2026-11-12 判断・トランクの案: 押せばすぐ決まり、取り消しで戻す）
+    struct Undo {
+        let title: String
+        let run: @MainActor () async -> Void
+    }
 
     @Published private(set) var current: Message?
+    /// いまの知らせに添えた「取り消す」（無ければ nil）。知らせが替わる・消えると一緒に消える
+    @Published private(set) var undo: Undo?
 
     private var hideTask: Task<Void, Never>?
 
     func show(_ text: String, kind: Message.Kind = .success) {
+        show(text, kind: kind, undo: nil)
+    }
+
+    /// 「取り消す」を添えて出す（約6秒）。押すと `run` を1回だけ流して知らせを消す
+    func show(_ text: String, kind: Message.Kind = .success, undo: Undo?) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // 空の知らせは出さない（何も伝えない帯が画面を覆う）
         guard !trimmed.isEmpty else { return }
         current = Message(id: UUID(), text: trimmed, kind: kind)
+        self.undo = undo
+        let seconds = undo == nil ? Self.duration : Self.undoDuration
         // **前の消し時計を止める。** 止めないと、2つ目を出した直後に
         // 1つ目の時計が来て**すぐ消える**
         hideTask?.cancel()
         hideTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(Self.duration * 1_000_000_000))
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             guard !Task.isCancelled else { return }
             self?.current = nil
+            self?.undo = nil
         }
     }
 
     func dismiss() {
         hideTask?.cancel()
         current = nil
+        undo = nil
+    }
+
+    /// 「取り消す」を押した。知らせを消してから戻す（続けて押しても1回だけ）
+    func performUndo() async {
+        guard let undo else { return }
+        dismiss()
+        await undo.run()
     }
 }

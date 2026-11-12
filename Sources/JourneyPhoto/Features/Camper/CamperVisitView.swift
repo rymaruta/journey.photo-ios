@@ -99,18 +99,13 @@ struct CamperVisitView: View {
     private var content: some View {
         switch model.phase {
         case .idle, .loading:
-            VStack(spacing: JPSpace.s) {
-                ProgressView()
-                Text(L("友達の車を読み込んでいます…", "Loading your friend\u{2019}s camper…"))
-                    .font(JPFont.caption)
-                    .foregroundStyle(WebTheme.text2)
-            }
-            .frame(maxWidth: .infinity, minHeight: 320)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("camper.visit.loading")
+            // 夜の景色の骨格（地は板の紺・2026-11-12 判断。前は回る輪と字だけ）。読み上げは「読み込み中」1つ
+            CamperVisitSkeleton()
+                .accessibilityIdentifier("camper.visit.loading")
         case .failed(let message, let retry):
             if retry {
-                ErrorBanner(message: message) { Task { await model.reload(userId: userId, signedIn: auth.userId != nil, calls: service,
+                ErrorBanner(title: L("友達の車を読み込めませんでした", "Couldn\u{2019}t load your friend\u{2019}s camper"),
+                            message: message) { Task { await model.reload(userId: userId, signedIn: auth.userId != nil, calls: service,
                                                                           store: CamperStore(userId: auth.userId)) } }
                     .padding(.horizontal, 16)
                     .frame(maxWidth: .infinity, minHeight: 320)
@@ -213,6 +208,8 @@ struct CamperVisitView: View {
 
     // MARK: 贈る・薪
 
+    /// 贈る・薪は2枚の札（2026-11-12 判断・案「とおまわり号を訪ねる」）。前は角の丸いボタン2つと長い説明文だった。
+    /// 決まり（一人に一度・1日1回）は札の下の行に畳み、済んだら真鍮の ✓ と「贈りました」（形でも示す）
     private var actions: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let message = model.message {
@@ -223,50 +220,34 @@ struct CamperVisitView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("camper.visit.message")
             }
-            // アクセシビリティの大きさでは2つのボタンを縦に積む（横 2 つでは「焚き火に薪をくべる」が切れる・2026-10-21）
+            // アクセシビリティの大きさでは2枚の札を縦に積む（横 2 つでは「焚き火に薪をくべる」が切れる・2026-10-21）
             if typeSize.isAccessibilitySize {
                 VStack(spacing: 8) { actionButtons }
             } else {
                 HStack(spacing: 8) { actionButtons }
             }
-            Text(L("贈れるのは一人に一度・1日1回。薪は同じ友達に1日1回くべられます。",
-                   "One gift per friend, one a day. You can add wood to the same friend\u{2019}s fire once a day."))
-                .font(JPFont.caption)
-                .foregroundStyle(WebTheme.faint)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 16)
     }
 
     @ViewBuilder
     private var actionButtons: some View {
-        // 写真の無い画面の主ボタン: 真鍮の塗りに墨の字（CLAUDE.md の owner の好み）
         Button { Task { await model.gift(calls: service, ownerName: ownerName) } } label: {
-            if model.gifted {
-                // 済んだ形（2026-10-19 Mac run 561: 真鍮を薄くした地に墨の字では読めなかった）: 縁だけ・白の字・チェックの印
-                Label(L("贈りました", "Given"), systemImage: "checkmark")
-                    .jpOutlineButton(.regular, fullWidth: true)
-                    .frame(minHeight: 50)
-            } else {
-                Label(CamperText.giveLabel, systemImage: "gift")
-                    .font(.callout.weight(.semibold))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 12)
-                    .foregroundStyle(WebTheme.accentText)
-                    .frame(maxWidth: .infinity, minHeight: 50)
-                    .background(WebTheme.accentFill, in: Capsule())
-                    .opacity(model.canAct ? 1 : 0.5)
-            }
+            CamperVisitActionCard(icon: model.gifted ? "checkmark" : "gift",
+                                  title: model.gifted ? L("贈りました", "Given") : CamperText.giveLabel,
+                                  note: model.gifted ? nil : L("一人に一度", "Once per friend"),
+                                  done: model.gifted)
+                .opacity(model.canAct || model.gifted ? 1 : 0.5)
         }
         .buttonStyle(.plain)
         .disabled(model.gifted || !model.canAct)
         .accessibilityValue(model.gifted ? L("済み。この友達にはもう贈れません", "Done. You can\u{2019}t give this friend another gift") : "")
         .accessibilityIdentifier("camper.visit.gift")
         Button { Task { await model.firewood(calls: service, store: CamperStore(userId: auth.userId)) } } label: {
-            // 線のボタン（板 Components の `.bo`・`jpOutlineButton` を通す）
-            Label(CamperText.firewoodLabel, systemImage: "flame")
-                .jpOutlineButton(.regular, fullWidth: true)
-                .frame(minHeight: 50)
+            CamperVisitActionCard(icon: "flame", title: CamperText.firewoodLabel,
+                                  note: model.woodCount.map { L("1日1回 · あなたは \($0) 回", "Once a day · You: \($0)") }
+                                      ?? L("同じ友達に1日1回", "Once a day per friend"),
+                                  done: false)
                 .opacity(model.canAct ? 1 : 0.5)
         }
         .buttonStyle(.plain)
@@ -282,6 +263,75 @@ struct CamperVisitView: View {
 }
 
 /// 友達の車の読み込みと、贈る・薪の操作（`SwiftUI` を読まない部分・テストで見る）
+/// 訪ねる画面の行動の札（印・題・決まりの一行・高さ 64・surface-1 に白 8% の縁）。済んだら真鍮の ✓ と真鍮の縁
+/// （黒い地の上の札なので真鍮を置ける・形でも示す）。字は縮めず折り返す（12pt を守る）
+struct CamperVisitActionCard: View {
+    let icon: String
+    let title: String
+    let note: String?
+    let done: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(WebTheme.accent)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(JPFont.bodyEmphasis)
+                    .foregroundStyle(done ? WebTheme.accent : WebTheme.foreground)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let note {
+                    Text(note)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, minHeight: JPHeight.tallRow, alignment: .leading)
+        .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.m))
+        .overlay(RoundedRectangle(cornerRadius: JPRadius.m)
+            .strokeBorder(done ? WebTheme.accent.opacity(0.6) : WebTheme.hairline, lineWidth: JPStroke.hairline))
+        .contentShape(RoundedRectangle(cornerRadius: JPRadius.m))
+    }
+}
+
+/// 訪ねる画面の読み込み中（夜の景色の骨格・地は板の紺。0.3 秒より早く読めたら出さない・光は流さない）
+struct CamperVisitSkeleton: View {
+    @State private var revealed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if revealed {
+                RoundedRectangle(cornerRadius: JPRadius.l)
+                    .fill(CamperStyle.color(0x111C30))
+                    .frame(height: 240)
+                HStack(spacing: 8) {
+                    ForEach(0..<2, id: \.self) { _ in
+                        RoundedRectangle(cornerRadius: JPRadius.m).fill(WebTheme.surface4).frame(height: JPHeight.tallRow)
+                    }
+                }
+            } else {
+                Color.clear.frame(height: 1)
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, minHeight: 320, alignment: .top)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L("読み込み中", "Loading"))
+        .task {
+            try? await Task.sleep(for: JPLoadingState.revealDelay)
+            revealed = true
+        }
+    }
+}
+
 @MainActor
 final class CamperVisitModel: ObservableObject {
 

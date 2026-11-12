@@ -4,12 +4,17 @@ import SwiftUI
 ///
 /// 投稿が全部上がったあと、投稿の画面と共有の画面が閉じてから `RootView` が出す（`TrunkArrivals`）。
 /// 眉ラベル → 明朝の見出し「京都のラベルが届きました」→ お礼の一行 → 大きいラベル（後ろに真鍮の淡い光）→
-/// どんな図柄かの札 → 手持ちの棒 → 「トランクに貼る」「手持ちに入れておく」「図柄を作り直す PRO」。
+/// どんな図柄かの札 → 手持ちの棒 → 「トランクに貼る」「あとで貼る（手持ちへ）」「図柄を作り直す PRO」。
 ///
 /// **静かな祝い（2026-11-08・楽しさの案 A・札 #502）**: 投稿した写真が先に現れ、続いてラベルが落ちて貼りつく
 /// （軽い触覚が 1 回）。最後に、言えるときだけ事実の一文（「京都、はじめての1枚です」・`ArrivalFact`）。
 /// 節目と箔押しは後ろの真鍮の光を一段強くする。動きを減らす設定では、動かさずに最初から全部を出す。
 /// 数を稼ぐ文・連続日数・順位・共有を促す文は出さない。共有は任意の副ボタン（公開の投稿だけ）
+///
+/// **1.1.83 の案（2026-11-12 判断）**: 何枚も届いたら主ボタンは「3 枚まとめて貼る」1回（今は 1 枚だけ貼れて、残りは
+/// 手持ちで1枚2回ずつ＝3 枚で 5 回）。置き場は今のおまかせ（`stickPlan`）で、閉じたあとの知らせの「取り消す」で戻す。
+/// 写真のある画面なので主ボタンは白、副は線 44。どんな図柄かの札は accent-soft。電波が無くて貼れなかったら、
+/// ボタンのすぐ上に「ラベルは手持ちに入っています」と言う
 struct LabelArrivedView: View {
     let batch: TrunkArrivals.Batch
 
@@ -34,6 +39,12 @@ struct LabelArrivedView: View {
     @State private var sentence: String?
     /// 写真が読み込めなかった（写真の札は出さず、ラベルだけを真ん中に出す）
     @State private var photoFailed = false
+    /// 電波が無くて貼れなかった（ボタンの上の一言を、手持ちに入っていることを言う文にする）
+    @State private var offlineFailed = false
+    @EnvironmentObject private var connectivity: Connectivity
+
+    /// 届いた枚数（何枚もなら「まとめて貼る」）
+    private var count: Int { batch.arrivals.count }
 
     private var arrival: TrunkArrivals.Arrival { batch.first }
     private var label: TrunkLabel {
@@ -115,9 +126,7 @@ struct LabelArrivedView: View {
                 .tracking(11 * 0.12)
                 .foregroundStyle(WebTheme.accent)
                 .padding(.top, 18)
-            Text(arrival.label.place.name.isEmpty
-                 ? L("ラベルが届きました", "A label arrived")
-                 : L("\(arrival.label.place.name)のラベルが届きました", "A label from \(arrival.label.place.name)"))
+            Text(TrunkArrivalCopy.title(count: count, place: arrival.label.place.name))
                 .font(JPFont.display(22, relativeTo: .title2))
                 .foregroundStyle(WebTheme.text)
                 .multilineTextAlignment(.center)
@@ -125,20 +134,12 @@ struct LabelArrivedView: View {
                 .padding(.horizontal, 24)
                 .padding(.top, 10)
                 .accessibilityAddTraits(.isHeader)
-            Text(arrival.photoTitle.isEmpty
-                 ? L("写真を投稿したお礼です", "Thank you for posting a photo")
-                 : L("「\(arrival.photoTitle)」を投稿したお礼です", "Thank you for posting \u{201C}\(arrival.photoTitle)\u{201D}"))
+            Text(TrunkArrivalCopy.thanks(count: count, photoTitle: arrival.photoTitle))
                 .font(.subheadline)
                 .foregroundStyle(TrunkStyle.muted)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
                 .padding(.top, 6)
-            if batch.othersCount > 0 {
-                Text(L("ほかに \(batch.othersCount) 枚、手持ちに届いています", "\(batch.othersCount) more arrived in your pocket"))
-                    .font(JPFont.footnote)
-                    .foregroundStyle(TrunkStyle.muted)
-                    .padding(.top, 4)
-            }
         }
     }
 
@@ -154,6 +155,13 @@ struct LabelArrivedView: View {
                     .offset(x: -70, y: -16)
                     .opacity(shown(.photo) ? 1 : 0)
                     .scaleEffect(shown(.photo) ? 1 : 0.96)
+            }
+            // 何枚も届いたら、残りのラベルを後ろに重ねて見せる（2 枚まで・2026-11-12 判断・案の「3 枚届きました」）
+            ForEach(Array(batch.arrivals.dropFirst().prefix(2).enumerated()), id: \.offset) { i, other in
+                TrunkLabelThumb(label: other.label, maxWidth: 200, maxHeight: 136, rot: i == 0 ? 8 : -12)
+                    .offset(x: (photoURL == nil ? 0 : 38) + (i == 0 ? 56 : -56), y: (photoURL == nil ? -14 : 30))
+                    .opacity(shown(.label) ? 0.9 : 0)
+                    .accessibilityHidden(true)
             }
             TrunkLabelThumb(label: label, maxWidth: photoURL == nil ? 260 : 236, maxHeight: photoURL == nil ? 176 : 160, rot: -4)
                 .accessibilityElement(children: .ignore)
@@ -307,71 +315,91 @@ struct LabelArrivedView: View {
 
     private var actions: some View {
         VStack(spacing: 8) {
-            if let error = model.actionError {
+            if offlineFailed {
+                Text(TrunkArrivalCopy.offlineNote)
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.danger)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("trunk.arrived.offline")
+            } else if let error = model.actionError {
                 Text(error)
                     .font(JPFont.footnote)
                     .foregroundStyle(WebTheme.danger)
                     .multilineTextAlignment(.center)
             }
-            Button {
-                Task {
-                    // まだ読めていなければ読んでから貼る。それでも読めなければ一言を出す（`stickEnsuringLoaded`）
-                    if await model.stickEnsuringLoaded(arrival.label.id) {
-                        // 知らせは閉じ切ってから全体で1つだけ（ここで出すと、閉じる間に届いた画面と全体で2つ見える）
-                        TrunkArrivals.shared.noteStuckFromArrival()
-                        dismiss()
-                    }
-                }
-            } label: {
-                TrunkButtonFace(title: L("トランクに貼る", "Stick on my trunk"))
+            Button { Task { await stickAll() } } label: {
+                // 写真のある画面の主ボタンは白（板 05・2026-11-12 判断）
+                TrunkButtonFace(title: TrunkArrivalCopy.stickTitle(count: count), kind: .mainOnPhoto)
             }
             .buttonStyle(.plain)
             .disabled(model.busy)
             .accessibilityIdentifier("trunk.arrived.stick")
             Button { dismiss() } label: {
-                TrunkButtonFace(title: L("手持ちに入れておく", "Keep it in my pocket"), kind: .secondary, height: 48, size: 15)
+                TrunkButtonFace(title: TrunkArrivalCopy.laterTitle, kind: .secondary)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("trunk.arrived.keep")
-            Button {
-                if model.state?.isPro == true { showReroll = true } else { showPaywall = true }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "dice")
-                        .font(.callout)
-                        .accessibilityHidden(true)
-                    Text(L("図柄を作り直す", "Redo the design"))
-                        .font(.subheadline)
-                        .underline()
-                    TrunkProTag()
-                }
-                .foregroundStyle(WebTheme.accent)
-                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L("図柄を作り直す（Pro）", "Redo the design (Pro)"))
-            .accessibilityIdentifier("trunk.arrived.reroll")
-            // 共有は任意の副ボタン（公開の投稿だけ・押さなければ何も起きない・44pt）
-            if arrival.shareable,
-               let url = PhotoLink.url(photoId: arrival.label.photoId, isPublished: false) {
-                ShareLink(item: url) {
+            // 作り直す（Pro）と共有は1行に（文字のボタン・当たり 44）
+            HStack(spacing: 8) {
+                Button {
+                    if model.state?.isPro == true { showReroll = true } else { showPaywall = true }
+                } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: "square.and.arrow.up")
+                        Image(systemName: "dice")
                             .font(.callout)
                             .accessibilityHidden(true)
-                        Text(L("この写真を共有", "Share this photo"))
+                        Text(L("図柄を作り直す", "Redo the design"))
                             .font(.subheadline)
+                            .underline()
+                        TrunkProTag()
                     }
                     .foregroundStyle(WebTheme.accent)
                     .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
                     .contentShape(Rectangle())
                 }
-                .accessibilityIdentifier("trunk.arrived.share")
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("図柄を作り直す（Pro）", "Redo the design (Pro)"))
+                .accessibilityIdentifier("trunk.arrived.reroll")
+                // 共有は任意の副ボタン（公開の投稿だけ・押さなければ何も起きない・44pt）
+                if arrival.shareable,
+                   let url = PhotoLink.url(photoId: arrival.label.photoId, isPublished: false) {
+                    ShareLink(item: url) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.callout)
+                                .accessibilityHidden(true)
+                            Text(L("共有", "Share"))
+                                .font(.subheadline)
+                        }
+                        .foregroundStyle(WebTheme.accent)
+                        .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel(L("この写真を共有", "Share this photo"))
+                    .accessibilityIdentifier("trunk.arrived.share")
+                }
             }
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 28)
+    }
+
+    /// 届いたラベルを全部貼る（1 枚なら今までどおり1枚）。貼れたら閉じ、閉じたあとの知らせに「取り消す」を添える。
+    /// まだ読めていなければ読んでから貼る（`stickEnsuringLoaded`）。電波が無くて貼れなければ手持ちにあると言う
+    private func stickAll() async {
+        offlineFailed = false
+        let ids = batch.arrivals.map(\.label.id)
+        guard await model.stickEnsuringLoaded(ids[0], offline: connectivity.isOffline) else {
+            offlineFailed = connectivity.isOffline || model.phase == .offline
+            return
+        }
+        let rest = await model.stickAll(Array(ids.dropFirst()))
+        let stuck = [ids[0]] + rest
+        // 知らせは閉じ切ってから全体で1つだけ（ここで出すと、閉じる間に届いた画面と全体で2つ見える）
+        TrunkArrivals.shared.noteStuckFromArrival(count: stuck.count) { [model] in
+            _ = await model.unstickAll(stuck)
+        }
+        dismiss()
     }
 }
 

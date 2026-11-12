@@ -712,7 +712,12 @@ struct RootView: View {
             .task { await offerPreviewTrunkArrival() }
             .fullScreenCover(item: $trunkBatch, onDismiss: {
                 // 届いた画面で貼った: 閉じ切ってから全体の知らせを1つだけ（届いた画面の上には出さない）
-                if trunkArrivals.consumeStuckFromArrival() { toasts.show(L("トランクに貼りました", "Stuck on your trunk")) }
+                // 「取り消す」を添える（2026-11-12 判断: 押せばすぐ貼り、取り消しで手持ちへ戻す）
+                let notice = trunkArrivals.stuckNotice
+                let undo = trunkArrivals.consumeArrivalUndo()
+                if trunkArrivals.consumeStuckFromArrival() {
+                    toasts.show(notice, undo: undo.map { ToastCenter.Undo(title: TrunkText.undoTitle, run: $0) })
+                }
                 // 閉じている間に次の束が入っていれば出す
                 if trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
             }) { batch in LabelArrivedView(batch: batch) }
@@ -769,7 +774,10 @@ struct RootView: View {
             if !ModalProbe.isPresenting() { break }
         }
         guard !ModalProbe.isPresenting(), trunkArrivals.claimPreviewOffer() else { return }
-        trunkBatch = TrunkArrivals.Batch(arrivals: [.init(label: TrunkSample.arrived, photoTitle: "哲学の道の朝")], coins: 1)
+        // `-JPPreviewTrunkArrived 3` なら手持ちの見本を足して3枚（「まとめて貼る」の画面写真・2026-11-12）
+        let more = TrunkSample.pocket.prefix(max(0, PreviewSession.trunkArrivedCount - 1))
+            .map { TrunkArrivals.Arrival(label: $0, photoTitle: "") }
+        trunkBatch = TrunkArrivals.Batch(arrivals: [.init(label: TrunkSample.arrived, photoTitle: "哲学の道の朝")] + more, coins: 1)
     }
 
     /// **ほかの画面が閉じてから**通知の説明を出す（初めての投稿が上がった・`PushPrimerStore.notePosted`）。

@@ -182,7 +182,7 @@ struct TrunkWelcomeView: View {
             TrunkStyle.line.frame(height: 1).padding(.leading, 46)
             row(symbol: "shippingbox", text: TrunkWelcomeText.whatItDoes)
         }
-        .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
+        .trunkCard(radius: 14)
         .padding(.horizontal, 20)
         .padding(.top, 20)
         .padding(.bottom, 12)
@@ -214,7 +214,7 @@ struct TrunkWelcomeView: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("\(copy.id).turn")
             Button { dismiss() } label: {
-                TrunkButtonFace(title: TrunkWelcomeText.later, kind: .secondary, height: 48, size: 15)
+                TrunkButtonFace(title: TrunkWelcomeText.later, kind: .secondary)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("\(copy.id).later")

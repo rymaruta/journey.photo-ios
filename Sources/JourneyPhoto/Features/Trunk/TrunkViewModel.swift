@@ -203,6 +203,30 @@ final class TrunkViewModel: ObservableObject {
         await write({ TrunkLocal.stick($0, id: id, slot: slot, take: take) }, { try await $0.stick(id, slot: slot, take: take) })
     }
 
+    /// 届いたラベルを**まとめて貼る**（2026-11-12 判断・案「ラベルが届いた」: 3 枚を貼るのに 5 回 → 1 回）。
+    /// 1 枚ずつ今の口（`stick(_:)`＝おまかせの置き場 `stickPlan`）を続けて呼ぶ。サーバーの変更は無い。
+    /// 途中で失敗したらそこで止め、貼れた id を返す（一言は `actionError`）。手持ちに無い id は飛ばす
+    func stickAll(_ ids: [String]) async -> [String] {
+        var done: [String] = []
+        for id in ids {
+            guard state?.pocket.contains(where: { $0.id == id }) == true else { continue }
+            guard await stick(id) else { break }
+            done.append(id)
+        }
+        return done
+    }
+
+    /// まとめて貼ったのを取り消す（貼った逆の順にはがして手持ちへ戻す）。戻せた数を返す
+    @discardableResult
+    func unstickAll(_ ids: [String]) async -> Int {
+        var undone = 0
+        for id in ids.reversed() where state?.stuck.contains(where: { $0.id == id }) == true {
+            guard await unstick(id) else { break }
+            undone += 1
+        }
+        return undone
+    }
+
     @discardableResult
     func remove(_ id: String) async -> Bool {
         await write({ TrunkLocal.remove($0, id: id) }, { try await $0.remove(id) })
@@ -225,6 +249,15 @@ final class TrunkViewModel: ObservableObject {
     func setModel(_ model: TrunkModel) async -> Bool {
         guard state?.model != model || state?.effectiveModel != model else { return true }
         return await write({ TrunkLocal.setModel($0, model) }, { try await $0.setModel(model) })
+    }
+
+    /// 型を押したらすぐ替え、知らせに「取り消す」を添える（2026-11-12 判断・案「型は押すとすぐ替わる」）。
+    /// 取り消すと前の型へ戻す。同じ型なら何もしない
+    func setModelUndoable(_ next: TrunkModel, toasts: ToastCenter) async {
+        guard let before = state?.effectiveModel, before != next else { return }
+        guard await setModel(next) else { return }
+        toasts.show(TrunkText.modelChangedNotice(TrunkText.info(next).name),
+                    undo: ToastCenter.Undo(title: TrunkText.undoTitle) { [weak self] in _ = await self?.setModel(before) })
     }
 
     @discardableResult
@@ -381,7 +414,8 @@ final class TrunkViewModel: ObservableObject {
         } catch is CancellationError {
             return nil
         } catch {
-            actionError = Self.message(error)
+            // 電波が無くて送れなかった: 回っていない（硬貨は減っていない）と言う（2026-11-12 判断・案の圏外）
+            actionError = Self.isUnreachable(error) ? TrunkGachaText.unreachable : Self.message(error)
             // 回ったかどうか分からない（知らない部品・時間切れ）。硬貨と部品を読み直す
             if !(error is TrunkService.Refused) { await load(offline: false) }
             return nil

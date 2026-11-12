@@ -26,6 +26,7 @@ struct VisitedPrefectureCard: View {
             VStack(alignment: .leading, spacing: JPSpace.xl) {
                 header
                 counter
+                photosBlock
                 if count == 0 { recordBlock }
                 dates
                 if !nearby.isEmpty { nearbyBlock }
@@ -64,6 +65,33 @@ struct VisitedPrefectureCard: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("visitedMap.card.close")
+        }
+    }
+
+    // MARK: - その県で撮った自分の写真（2026-11-12 判断・案「県の札に写真」）
+
+    /// 画面が読んだ自分の写真から県で分けたもの（新しい口なし）。無ければ何も出さない
+    @ViewBuilder
+    private var photosBlock: some View {
+        let photos = model.photosByPrefecture[prefecture] ?? []
+        if !photos.isEmpty {
+            VStack(alignment: .leading, spacing: JPSpace.xs) {
+                Text(L("\(prefecture)で撮った写真 · \(photos.count) 枚", "Your photos in \(prefecture) · \(photos.count)"))
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.text2)
+                HStack(spacing: 2) {
+                    ForEach(photos.prefix(4)) { photo in
+                        PhotoFrame(photo: photo, aspect: 1, corner: 0)
+                    }
+                    ForEach(0..<max(0, 4 - photos.count), id: \.self) { _ in
+                        Color.clear.aspectRatio(1, contentMode: .fit)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: JPRadius.s))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(L("\(prefecture)で撮った写真 \(photos.count) 枚", "\(photos.count) of your photos in \(prefecture)"))
+                .accessibilityIdentifier("visitedMap.card.photos")
+            }
         }
     }
 

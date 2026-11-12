@@ -103,8 +103,24 @@ final class TrunkArrivals: ObservableObject {
 
     /// 届いた画面で「トランクに貼る」が済んだ（閉じ切ってから全体の知らせを1つだけ出す・`RootView`）
     private var stuckFromArrival = false
+    /// 届いた画面で貼った枚数と、取り消しの手（閉じたあとの知らせの「取り消す」・2026-11-12 判断）
+    private var stuckCount = 0
+    private var stuckUndo: (@MainActor () async -> Void)?
 
-    func noteStuckFromArrival() { stuckFromArrival = true }
+    func noteStuckFromArrival(count: Int = 1, undo: (@MainActor () async -> Void)? = nil) {
+        stuckFromArrival = true
+        stuckCount = count
+        stuckUndo = undo
+    }
+
+    /// 閉じたあとの知らせの文（1 枚は今までどおり「トランクに貼りました」・何枚もはおまかせの所へ貼ったこと）
+    var stuckNotice: String { TrunkText.arrivalStuckNotice(count: stuckCount) }
+
+    /// 閉じたあとの知らせに添える「取り消す」（受け取ったら下ろす）
+    func consumeArrivalUndo() -> (@MainActor () async -> Void)? {
+        defer { stuckUndo = nil }
+        return stuckUndo
+    }
 
     /// 閉じたあとに「トランクに貼りました」を出すか（受け取ったら下ろす）
     func consumeStuckFromArrival() -> Bool {
@@ -130,6 +146,8 @@ final class TrunkArrivals: ObservableObject {
         pendingNotice = nil
         deliveredAt = nil
         stuckFromArrival = false
+        stuckCount = 0
+        stuckUndo = nil
     }
 
     /// 投稿が全部上がった。届いたラベル（無ければ空）と、届かなかった理由の一言（無ければ nil）と、届いた硬貨の数。

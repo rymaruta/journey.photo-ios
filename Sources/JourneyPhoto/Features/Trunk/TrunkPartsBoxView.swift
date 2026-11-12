@@ -5,6 +5,11 @@ import SwiftUI
 /// 集めた数・硬貨・かけら → 種類のタブ（集めた数つき）→ 12 点の格子（持っていない部品は影と「？」・
 /// 付けている部品は真鍮の縁と「付けている」）→ かけら5つで1つ交換。持っている部品を押すと、その種類の
 /// 付け替えの画面へ。かけらが5つあれば、影の部品を押して交換する部品を選べる
+///
+/// **1.1.83 の案（2026-11-12 判断）**: 種類は「選んでいるタブ」（真鍮の字と下線・板 05）——前は絞り込みのチップと
+/// 同じ白塗りで、選ぶ物と絞り込みの区別が付かなかった。持っている部品を押すとシートで見て「トランクに付ける」
+/// （付け替えの画面へ行って保存を確かめられる 3 回 → 2 回）。押せばすぐ保存し、知らせの「取り消す」で戻す。
+/// 硬貨は数え札の右上のチップから機械へ1回で
 struct TrunkPartsBoxView: View {
     @ObservedObject var model: TrunkViewModel
     var ownerName: String?
@@ -14,6 +19,9 @@ struct TrunkPartsBoxView: View {
     @State private var exchangeTarget: TrunkPart?
     @State private var confirmExchange = false
     @State private var equipKind: TrunkPartKind?
+    /// シートで見ている持っている部品
+    @State private var viewing: TrunkPart?
+    @EnvironmentObject private var connectivity: Connectivity
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
 
@@ -45,6 +53,11 @@ struct TrunkPartsBoxView: View {
         .navigationDestination(item: $equipKind) { k in
             TrunkEquipView(model: model, ownerName: ownerName, startKind: k)
         }
+        .sheet(item: $viewing) { part in
+            TrunkPartSheet(model: model, part: part)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
         .task { if model.state == nil { await model.load(offline: false) } }
         .confirmationDialog(L("かけら5つで交換しますか", "Exchange five fragments?"), isPresented: $confirmExchange,
                             titleVisibility: .visible) {
@@ -70,6 +83,13 @@ struct TrunkPartsBoxView: View {
         return VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 0) {
+                    // 圏外は上の帯（前に見た部品箱を出したまま・2026-11-12 判断。回る輪や字だけにしない）
+                    if connectivity.isOffline {
+                        OfflineBanner(title: TrunkPartsOfflineCopy.title, detail: TrunkPartsOfflineCopy.detail)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 8)
+                            .accessibilityIdentifier("trunk.parts.offline")
+                    }
                     if let error = model.actionError {
                         Text(error)
                             .font(JPFont.footnote)
@@ -113,36 +133,54 @@ struct TrunkPartsBoxView: View {
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("trunk.parts.collected")
             Spacer(minLength: 0)
-            HStack(spacing: 6) {
-                TrunkCoinMark(size: 14)
-                Text(L("硬貨 \(state.coins)", Plural.count(state.coins, "coin")))
-                    .font(JPFont.number(13, weight: .regular, relativeTo: .footnote))
-                    .foregroundStyle(TrunkStyle.muted)
+            // 硬貨のチップから機械へ1回で（2026-11-12 判断・前は数を見せるだけ）
+            NavigationLink {
+                TrunkGachaView(model: model)
+            } label: {
+                HStack(spacing: 6) {
+                    TrunkCoinMark(size: 14)
+                    Text("\(state.coins)")
+                        .font(JPFont.number(13, weight: .medium, relativeTo: .footnote))
+                        .foregroundStyle(WebTheme.foreground)
+                    Text("· " + L("カプセルを回す", "Turn the machine"))
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.accent)
+                }
+                // 線のチップ（丸いボタンの面 `jpCapsuleFace` を通す・見た目 34＋上下 5 で当たり 44）
+                .jpCapsuleFace(font: JPFont.footnote, text: WebTheme.foreground, fill: Color.clear, border: WebTheme.line,
+                               fullWidth: false, minHeight: PillChip.height, textInset: 12)
+                .padding(.vertical, PillChip.tapSlack)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
+            .accessibilityLabel(L("硬貨 \(state.coins) 枚 · カプセルを回す", "\(Plural.count(state.coins, "coin")) · Turn the machine"))
+            .accessibilityIdentifier("trunk.parts.coins")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
+        .trunkCard(radius: 14)
         .padding(.horizontal, 20)
     }
 
     // MARK: 種類のタブ
 
+    /// 選んでいるタブ（真鍮の字と下線・板 05・2026-11-12 判断）。集めた数は字の横に小さく
     private func tabs(_ owned: Set<String>) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: JPSpace.l) {
                 ForEach(TrunkPartKind.allCases) { k in
-                    PillChip(title: k.tabName,
-                             countText: "\(TrunkPartsBoxText.collected(owned, kind: k))/\(TrunkPartKind.perKind)",
-                             selected: k == kind) { kind = k }
+                    TrunkKindTab(title: k.tabName, count: "\(TrunkPartsBoxText.collected(owned, kind: k))",
+                                 selected: k == kind) { kind = k }
                         .accessibilityIdentifier("trunk.parts.tab.\(k.rawValue)")
                 }
             }
             .padding(.horizontal, 20)
         }
-        .padding(.vertical, -PillChip.tapSlack)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+        }
     }
 
     // MARK: 格子
@@ -157,7 +195,7 @@ struct TrunkPartsBoxView: View {
                 let picked = exchangeTarget?.id == part.id
                 Button {
                     if has {
-                        equipKind = part.kind
+                        viewing = part
                     } else if canExchange {
                         exchangeTarget = picked ? nil : part
                     }
@@ -168,7 +206,7 @@ struct TrunkPartsBoxView: View {
                 .disabled(!has && !canExchange)
                 .accessibilityLabel(has ? "\(part.name)\(equipped ? L("（付けている）", " (on)") : "")"
                                         : L("まだ持っていない\(part.kind.tabName)", "A \(part.kind.tabName.lowercased()) you don\u{2019}t have"))
-                .accessibilityHint(has ? L("付け替えの画面を開きます", "Opens Change parts")
+                .accessibilityHint(has ? L("見て、トランクに付けられます", "View it and put it on your trunk")
                                        : (canExchange ? L("交換する部品に選びます", "Choose to exchange") : ""))
                 .accessibilityAddTraits(picked || equipped ? .isSelected : [])
                 .accessibilityIdentifier(has ? "trunk.parts.owned" : "trunk.parts.missing")
@@ -201,7 +239,7 @@ struct TrunkPartsBoxView: View {
         .padding(.top, 4)
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity, minHeight: 112)
-        .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
+        .trunkCard(radius: 14)
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(WebTheme.accent, lineWidth: equipped ? 2 : 0))
         .overlay(RoundedRectangle(cornerRadius: 14)
             .strokeBorder(WebTheme.accent.opacity(picked ? 0.8 : 0), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
@@ -261,7 +299,7 @@ struct TrunkPartsBoxView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
+        .trunkCard(radius: 14)
         .padding(.horizontal, 20)
         .padding(.top, 12)
         .padding(.bottom, 26)
@@ -288,7 +326,11 @@ struct TrunkFragmentMark: View {
 
 // MARK: - 付け替える
 
-/// 部品を付け替える（モック Equip.dc.html）。場所のタブ → 持っている部品の並び → トランクに即座に映る → 保存
+/// 部品を付け替える（モック Equip.dc.html）。場所のタブ → 持っている部品の並び → トランクに即座に映る。
+///
+/// **押すたびに保存する（2026-11-12 判断・1.1.83 の案）**: 前は下書きを持って右上の「保存」で決め、戻るときに
+/// 「付け替えを保存していません」と聞いていた。いまは押せばすぐ保存し、右上の「ひとつ戻す」で直前の付け方へ戻す
+/// （聞く・選ばせるのは最小に）。続けて押しても書き込みは1つずつ（書いている間は押せない）
 struct TrunkEquipView: View {
     @ObservedObject var model: TrunkViewModel
     var ownerName: String?
@@ -298,14 +340,12 @@ struct TrunkEquipView: View {
     @EnvironmentObject private var toasts: ToastCenter
     @EnvironmentObject private var auth: AuthStore
     @State private var kind: TrunkPartKind?
-    @State private var draft: TrunkEquipped?
-    @State private var confirmLeave = false
+    /// 「ひとつ戻す」で戻る前の付け方（新しい順に積む）
+    @State private var history: [TrunkEquipped] = []
     @State private var picks = 0
 
     private var current: TrunkPartKind { kind ?? startKind }
-    private var saved: TrunkEquipped { model.state?.equipped ?? .none }
-    private var working: TrunkEquipped { draft ?? saved }
-    private var dirty: Bool { draft != nil && draft != saved }
+    private var working: TrunkEquipped { model.state?.equipped ?? .none }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -335,38 +375,18 @@ struct TrunkEquipView: View {
         .background { TrunkStyle.stageBackground(centerY: 0.28) }
         .navigationTitle(L("部品を付け替える", "Change parts"))
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(true)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    if dirty { confirmLeave = true } else { dismiss() }
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(WebTheme.text)
-                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                }
-                .accessibilityLabel(L("戻る", "Back"))
-                .accessibilityIdentifier("trunk.equip.back")
-            }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { Task { await save() } } label: {
-                    Text(Labels.Common.save)
-                        .font(.headline)
-                        .foregroundStyle(dirty ? WebTheme.accent : WebTheme.outline)
+                Button { Task { await undoLast() } } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: WebTheme.toolbarIconSize, weight: .regular))
+                        .foregroundStyle(history.isEmpty ? WebTheme.outline : WebTheme.accent)
                         .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
                 }
-                .disabled(!dirty || model.busy)
-                .accessibilityIdentifier("trunk.equip.save")
+                .disabled(history.isEmpty || model.busy)
+                .accessibilityLabel(L("ひとつ戻す", "Undo"))
+                .accessibilityIdentifier("trunk.equip.undo")
             }
-        }
-        .confirmationDialog(L("付け替えを保存していません", "Your changes aren\u{2019}t saved"), isPresented: $confirmLeave,
-                            titleVisibility: .visible) {
-            Button(L("保存して戻る", "Save and go back")) {
-                Task { if await save() { dismiss() } }
-            }
-            Button(L("保存せずに戻る", "Go back without saving"), role: .destructive) { dismiss() }
-            Button(Labels.Common.cancel, role: .cancel) {}
         }
         .sensoryFeedback(.selection, trigger: picks)
         .task { if model.state == nil { await model.load(offline: false) } }
@@ -375,15 +395,21 @@ struct TrunkEquipView: View {
         .accessibilityIdentifier("trunk.equip")
     }
 
-    @discardableResult
-    private func save() async -> Bool {
-        guard let draft else { return true }
-        let ok = await model.equip(draft)
-        if ok {
-            self.draft = nil
-            toasts.show(L("付け替えました", "Parts changed"))
+    /// 付け方を替えてすぐ保存する。保存できたら前の付け方を「ひとつ戻す」に積む
+    private func apply(_ next: TrunkEquipped) async {
+        let before = working
+        guard next != before else { return }
+        picks += 1
+        if await model.equip(next) { history.append(before) }
+    }
+
+    /// 「ひとつ戻す」: 直前の付け方へ戻して保存する
+    private func undoLast() async {
+        guard let previous = history.last else { return }
+        if await model.equip(previous) {
+            history.removeLast()
+            picks += 1
         }
-        return ok
     }
 
     /// トランク（下書きの部品で・いま選んでいる場所に真鍮の破線）
@@ -446,8 +472,7 @@ struct TrunkEquipView: View {
                             model.actionError = TrunkEquipText.fullNote(part.kind)
                         } else {
                             model.actionError = nil
-                            draft = next.equipped
-                            picks += 1
+                            Task { await apply(next.equipped) }
                         }
                     } label: {
                         VStack(spacing: 0) {
@@ -460,11 +485,12 @@ struct TrunkEquipView: View {
                         }
                         .padding(.bottom, 8)
                         .frame(width: 96, height: 124)
-                        .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
+                        .trunkCard(radius: 14)
                         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(WebTheme.accent, lineWidth: on ? 2 : 0))
                         .contentShape(RoundedRectangle(cornerRadius: 14))
                     }
                     .buttonStyle(.plain)
+                    .disabled(model.busy)
                     .accessibilityLabel("\(part.kind.title) · \(part.name)\(on ? L("（付けている）", " (on)") : "")")
                     .accessibilityAddTraits(on ? .isSelected : [])
                     .accessibilityIdentifier("trunk.equip.part")
@@ -477,23 +503,140 @@ struct TrunkEquipView: View {
     private var bottom: some View {
         HStack(spacing: 8) {
             Button {
-                draft = TrunkEquipText.clearing(current, on: working)
-                picks += 1
+                Task { await apply(TrunkEquipText.clearing(current, on: working)) }
             } label: {
-                TrunkButtonFace(title: L("外す", "Take off"), kind: .secondary, height: 48, size: 15)
+                TrunkButtonFace(title: L("外す", "Take off"), kind: .secondary)
             }
             .buttonStyle(.plain)
-            .disabled(working.ids(current).isEmpty)
+            .disabled(working.ids(current).isEmpty || model.busy)
             .accessibilityIdentifier("trunk.equip.clear")
             NavigationLink {
                 TrunkGachaView(model: model)
             } label: {
-                TrunkButtonFace(title: L("カプセルを回す", "Turn the capsule machine"), kind: .secondary, height: 48, size: 15)
+                TrunkButtonFace(title: L("カプセルを回す", "Turn the capsule machine"), kind: .secondary)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("trunk.equip.gacha")
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 26)
+    }
+}
+
+/// 部品箱の種類のタブ（選んでいるタブ＝真鍮の字と下線 2・板 05。`TripCreateTabs` と同じ形）。当たり 44
+struct TrunkKindTab: View {
+    let title: String
+    let count: String
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(selected ? JPFont.bodyEmphasis : JPFont.body)
+                Text(count)
+                    .font(JPFont.number(12, weight: .regular, relativeTo: .caption))
+                    .foregroundStyle(selected ? WebTheme.accent : WebTheme.text3)
+            }
+            .foregroundStyle(selected ? WebTheme.accent : WebTheme.text2)
+            .lineLimit(1)
+            .frame(minHeight: WebTheme.minTapTarget)
+            .overlay(alignment: .bottom) {
+                if selected { Rectangle().fill(WebTheme.accent).frame(height: 2) }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// 持っている部品を押したシート（2026-11-12 判断・案「部品を押す → シート → 付ける」）。
+/// 大きい絵・名前・段 → 主ボタン「トランクに付ける」（付けていれば副の「外す」）。**押せばすぐ保存**し、
+/// 閉じたあとの知らせの「取り消す」で前の付け方に戻す（前は付け替えの画面で保存を確かめていた）
+struct TrunkPartSheet: View {
+    @ObservedObject var model: TrunkViewModel
+    let part: TrunkPart
+
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var toasts: ToastCenter
+
+    private var equipped: Bool { model.state?.equipped.ids(part.kind).contains(part.id) ?? false }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                HStack(spacing: 6) {
+                    TrunkRarityMark(rarity: part.rarity, size: 9)
+                    Text(TrunkGachaText.eyebrow(part))
+                        .jpEyebrow()
+                        .foregroundStyle(WebTheme.accent)
+                }
+                Spacer()
+                Button { dismiss() } label: {
+                    Text(Labels.Common.close)
+                        .font(.body)
+                        .foregroundStyle(WebTheme.text)
+                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("trunk.partSheet.close")
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            TrunkPartView(part: part, size: 140)
+                .frame(height: 150)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(TrunkPartDrawing.accessibilityLabel(part))
+                .accessibilityAddTraits(.isImage)
+            Text(part.name)
+                .font(JPFont.display(22, relativeTo: .title2))
+                .foregroundStyle(WebTheme.text)
+                .accessibilityAddTraits(.isHeader)
+            Text(equipped ? L("トランクに付けています", "On your trunk") : L("どの型のトランクにも付けられます", "Fits every trunk style"))
+                .font(JPFont.footnote)
+                .foregroundStyle(TrunkStyle.muted)
+                .padding(.top, 4)
+            Spacer(minLength: 12)
+            if let error = model.actionError {
+                Text(error)
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.danger)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
+            }
+            Button { Task { await toggle() } } label: {
+                TrunkButtonFace(title: equipped ? L("外す", "Take off") : L("トランクに付ける", "Put it on my trunk"),
+                                kind: equipped ? .secondary : .main)
+            }
+            .buttonStyle(.plain)
+            .disabled(model.busy)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
+            .accessibilityIdentifier("trunk.partSheet.equip")
+        }
+        .webScreen()
+        .onAppear { model.actionError = nil }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("trunk.partSheet")
+    }
+
+    /// 付ける・外す。すぐ保存して閉じ、知らせに「取り消す」を添える。いっぱいなら黙って外さず一言
+    private func toggle() async {
+        guard let state = model.state else { return }
+        let before = state.equipped
+        let next = TrunkEquipText.toggling(part, on: before)
+        guard !next.full else {
+            model.actionError = TrunkEquipText.fullNote(part.kind)
+            return
+        }
+        let wasOn = equipped
+        guard await model.equip(next.equipped) else { return }
+        dismiss()
+        toasts.show(wasOn ? L("外しました", "Taken off") : L("トランクに付けました", "Put on your trunk"),
+                    undo: ToastCenter.Undo(title: TrunkText.undoTitle) { [model] in _ = await model.equip(before) })
     }
 }

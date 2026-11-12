@@ -329,7 +329,7 @@ struct TrunkView: View {
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("trunk.gacha.open")
         }
-        .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
+        .trunkCard(radius: 14)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .padding(.horizontal, 20)
     }
@@ -376,7 +376,7 @@ struct TrunkView: View {
             TrunkStyle.line.frame(height: 1)
             receiveRow(state)
         }
-        .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
+        .trunkCard(radius: 14)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .padding(.horizontal, 20)
     }
@@ -448,7 +448,7 @@ struct TrunkStuckLabelsView: View {
                             TrunkLabelThumb(label: label, maxWidth: 92, maxHeight: 76)
                                 .frame(height: 104)
                                 .frame(maxWidth: .infinity)
-                                .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
+                                .trunkCard(radius: 14)
                             Text(TrunkLabelDesign.caption(label))
                                 .font(.caption)
                                 .foregroundStyle(TrunkStyle.muted)

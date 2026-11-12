@@ -141,7 +141,7 @@ struct TrunkPocketView: View {
             }
         }
         .padding(16)
-        .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 16))
+        .trunkCard(radius: 16)
     }
 
     private func cell(_ label: TrunkLabel) -> some View {
@@ -152,7 +152,7 @@ struct TrunkPocketView: View {
             TrunkLabelThumb(label: label, maxWidth: 92, maxHeight: 76)
                 .frame(maxWidth: .infinity)
                 .frame(height: 104)
-                .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
+                .trunkCard(radius: 14)
                 .overlay {
                     if selected {
                         RoundedRectangle(cornerRadius: 14).strokeBorder(WebTheme.accent, lineWidth: 2)
@@ -190,7 +190,7 @@ struct TrunkPocketView: View {
                 }
             }
         } label: {
-            TrunkButtonFace(title: L("貼る", "Stick"), size: 15)
+            TrunkButtonFace(title: L("貼る", "Stick"))
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("trunk.pocket.stick")
@@ -217,7 +217,7 @@ struct TrunkPocketView: View {
             guard selected != nil else { return }
             confirmDelete = true
         } label: {
-            TrunkButtonFace(title: Labels.Common.delete, kind: .danger, size: 15)
+            TrunkButtonFace(title: Labels.Common.delete, kind: .danger)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("trunk.pocket.delete")

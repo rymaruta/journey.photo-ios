@@ -78,9 +78,11 @@ struct SpotDetailView: View {
                 header
                 summary
                 actions
+                // 板 SpotDetail の「行動の札の直下に写真の格子」（2026-11-12 判断・前は近くの撮影スポットの行の下の横の帯で、
+                // 一度に見える写真は約3枚 → 9枚）
+                spotPhotos
                 stats
                 nearbySpotRow
-                spotPhotos
                 nearbySpots
                 map
             }
@@ -381,32 +383,37 @@ struct SpotDetailView: View {
 
     // MARK: - 写真と近くのスポット
 
+    /// この撮影地の写真（3 列・すき間 2・角なしの格子で 9 枚まで・2026-11-12 判断）。10 枚以上は「すべて見る」で
+    /// 全部の格子へ（多い撮影地で一度に読む枚数を抑える）。0 枚は札で言い、1画面目を空にしない
     @ViewBuilder
     private var spotPhotos: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SpotDetailParts.sectionHeader(L("この撮影地の写真（\(linked.count)）", "Photos here (\(linked.count))"))
+            JPSectionHeading(eyebrow: nil, title: L("この撮影地の写真 \(linked.count) 枚", "Photos here: \(linked.count)"),
+                             titleLineLimit: nil) {
+                if linked.count > SpotPhotoGrid.previewCount {
+                    NavigationLink {
+                        ScrollView { SpotPhotoGrid(photos: linked) }
+                            .webScreen()
+                            .navigationTitle(LocationMatch.display(spot.label))
+                            .navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        Text(L("すべて見る ›", "See all ›"))
+                            .font(JPFont.footnote)
+                            .foregroundStyle(WebTheme.accent)
+                            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                    }
+                    .accessibilityIdentifier("spot.place.allPhotos")
+                }
+            }
+            .padding(.horizontal, JPSpace.m)
             if linked.isEmpty {
                 // **空を隠さない。** 「まだ紐づいていない」と「読み込み中」は別
-                Text(L("この撮影地に紐づいた公開写真はまだありません。投稿するときに場所を選ぶと、ここに並びます。",
-                       "No public photos are linked to this place yet."))
-                    .font(JPFont.body)
-                    .foregroundStyle(WebTheme.text2)
-                    .padding(.horizontal, 16)
+                EmptyState(title: L("まだ写真がありません", "No photos yet"),
+                           message: L("投稿するときに場所を選ぶと、ここに並びます", "Pick this place when you post and photos will show here."))
+                    .jpCardFace()
+                    .padding(.horizontal, JPSpace.m)
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(linked) { photo in
-                            NavigationLink {
-                                PhotoDetailView(photo: photo, context: linked)
-                            } label: {
-                                PhotoFrame(photo: photo, aspect: 3.0 / 4.0, corner: 12)
-                                    .frame(width: 118)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                }
+                SpotPhotoGrid(photos: Array(linked.prefix(SpotPhotoGrid.previewCount)), context: linked)
             }
         }
     }
@@ -459,5 +466,30 @@ struct SpotDetailView: View {
                 .accessibilityLabel(L("\(LocationMatch.display(spot.label)) の地図", "Map of \(LocationMatch.display(spot.label))"))
             }
         }
+    }
+}
+
+/// 撮影地の写真の格子（3 列・すき間 2・角なし・正方形）。押すと写真の詳細（前後は `context`）
+struct SpotPhotoGrid: View {
+    /// 撮影地の頁に並べる枚数（3 列 × 3 行）
+    nonisolated static let previewCount = 9
+
+    let photos: [Photo]
+    var context: [Photo]?
+
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 3)
+
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: 2) {
+            ForEach(photos) { photo in
+                NavigationLink {
+                    PhotoDetailView(photo: photo, context: context ?? photos)
+                } label: {
+                    PhotoFrame(photo: photo, aspect: 1, corner: 0)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .accessibilityIdentifier("spot.place.photos")
     }
 }

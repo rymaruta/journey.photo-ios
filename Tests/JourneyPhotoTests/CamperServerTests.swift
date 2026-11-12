@@ -424,9 +424,10 @@ final class CamperServerTests: XCTestCase {
         XCTAssertFalse(visit.contains("CamperStyle.brassLight"))
         // 描き終わるまで黒で覆う・贈った後は縁だけの済んだ形（2026-10-19 Mac run 561）
         XCTAssertTrue(visit.contains(#"if !readyMarker.hasPrefix("camper-ready") {"#))
-        XCTAssertTrue(visit.contains(#"Label(L("贈りました", "Given"), systemImage: "checkmark")"#))
-        // 2026-10-21: ボタンは `actionButtons` に移した（大きい文字で縦に積むため）ので字下げが 20
-        XCTAssertTrue(visit.contains(".jpOutlineButton(.regular, fullWidth: true)\n                    .frame(minHeight: 50)"))
+        // 2026-11-12: 贈る・薪は2枚の札（`CamperVisitActionCard`）。済んだら真鍮の ✓ と「贈りました」（形でも示す）
+        XCTAssertTrue(visit.contains(#"CamperVisitActionCard(icon: model.gifted ? "checkmark" : "gift","#))
+        XCTAssertTrue(visit.contains(#"title: model.gifted ? L("贈りました", "Given") : CamperText.giveLabel"#))
+        XCTAssertTrue(visit.contains("minHeight: JPHeight.tallRow"), "札が 64 でない（押せる所は 44 以上）")
         // 届いた画面の「あとで」は 44pt の帯全体が当たり、ボタンは押しつぶされない
         XCTAssertTrue(garage.contains(".frame(minHeight: WebTheme.minTapTarget)\n            .fixedSize(horizontal: false, vertical: true)\n            .accessibilityIdentifier(\"camper.arrival.close\")"))
         XCTAssertFalse(visit.contains("minimumScaleFactor"), "字を縮めて 12pt を割る")

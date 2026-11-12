@@ -407,13 +407,13 @@ struct TrunkTagPickerSheet: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("trunk.tags.sheet.error")
                     Button { commit(failedPick) } label: {
-                        TrunkButtonFace(title: TrunkTagText.retry, kind: .main, height: Self.buttonHeight, size: 15)
+                        TrunkButtonFace(title: TrunkTagText.retry, kind: .main, height: Self.buttonHeight)
                     }
                     .buttonStyle(.plain)
                     .disabled(model.busy)
                     .accessibilityIdentifier("trunk.tags.retry")
                     Button { dismiss() } label: {
-                        TrunkButtonFace(title: TrunkTagText.closeWithoutSaving, kind: .secondary, height: Self.buttonHeight, size: 15)
+                        TrunkButtonFace(title: TrunkTagText.closeWithoutSaving, kind: .secondary, height: Self.buttonHeight)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("trunk.tags.discard")
@@ -424,7 +424,7 @@ struct TrunkTagPickerSheet: View {
                     VStack(spacing: 10) { quickButtons(state) }
                 }
                 Button { finish(state) } label: {
-                    TrunkButtonFace(title: TrunkTagText.done, kind: .main, height: Self.buttonHeight, size: 15)
+                    TrunkButtonFace(title: TrunkTagText.done, kind: .main, height: Self.buttonHeight)
                 }
                 .buttonStyle(.plain)
                 .disabled(model.busy)
@@ -441,13 +441,13 @@ struct TrunkTagPickerSheet: View {
     @ViewBuilder
     private func quickButtons(_ state: TrunkState) -> some View {
         Button { commit(.auto) } label: {
-            TrunkButtonFace(title: TrunkTagText.backToAuto, kind: .secondary, height: Self.buttonHeight, size: 14)
+            TrunkButtonFace(title: TrunkTagText.backToAuto, kind: .secondary, height: Self.buttonHeight)
         }
         .buttonStyle(.plain)
         .disabled(model.busy)
         .accessibilityIdentifier("trunk.tags.auto")
         Button { commit(.removed) } label: {
-            TrunkButtonFace(title: TrunkTagText.removeTag, kind: .secondary, height: Self.buttonHeight, size: 14)
+            TrunkButtonFace(title: TrunkTagText.removeTag, kind: .secondary, height: Self.buttonHeight)
         }
         .buttonStyle(.plain)
         .disabled(model.busy)
@@ -459,12 +459,12 @@ struct TrunkTagPickerSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             EmptyState(title: TrunkTagText.emptyTitle, message: TrunkTagText.emptyMessage)
             Button { onStick() } label: {
-                TrunkButtonFace(title: TrunkTagText.stickAction, kind: .main, height: Self.buttonHeight, size: 15)
+                TrunkButtonFace(title: TrunkTagText.stickAction, kind: .main, height: Self.buttonHeight)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("trunk.tags.stick")
             Button { dismiss() } label: {
-                TrunkButtonFace(title: TrunkTagText.close, kind: .secondary, height: Self.buttonHeight, size: 15)
+                TrunkButtonFace(title: TrunkTagText.close, kind: .secondary, height: Self.buttonHeight)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("trunk.tags.close")

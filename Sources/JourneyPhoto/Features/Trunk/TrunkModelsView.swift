@@ -7,6 +7,7 @@ import SwiftUI
 struct TrunkModelsView: View {
     @ObservedObject var model: TrunkViewModel
     var ownerName: String?
+    @EnvironmentObject private var toasts: ToastCenter
 
     var body: some View {
         ScrollView {
@@ -15,8 +16,8 @@ struct TrunkModelsView: View {
                     Text(L("だれでも使える \(TrunkModel.free.count) 型", "\(TrunkModel.free.count) styles for everyone"))
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
-                    Text(L("型を替えても、貼ったラベルと古び方はそのまま引き継がれます。",
-                           "Your labels and the wear carry over when you change style."))
+                    Text(L("押すとすぐ替わります。貼ったラベルと古び方はそのまま引き継がれます。",
+                           "Tap to switch right away. Your labels and the wear carry over."))
                         .font(JPFont.footnote)
                         .lineSpacing(4)
                         .foregroundStyle(TrunkStyle.muted)
@@ -32,7 +33,7 @@ struct TrunkModelsView: View {
                         ForEach(TrunkModel.free) { m in
                             TrunkModelCard(trunk: m, state: state, ownerName: ownerName,
                                            selected: state.effectiveModel == m) {
-                                Task { await model.setModel(m) }
+                                Task { await model.setModelUndoable(m, toasts: toasts) }
                             }
                         }
                     }
@@ -58,7 +59,7 @@ struct TrunkModelsView: View {
                         }
                         .padding(.horizontal, 16)
                         .frame(minHeight: 52)
-                        .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
+                        .trunkCard(radius: 14)
                         .contentShape(RoundedRectangle(cornerRadius: 14))
                     }
                     .buttonStyle(.plain)
@@ -130,7 +131,7 @@ struct TrunkModelCard: View {
             .padding(.vertical, 10)
             .padding(.leading, 10)
             .padding(.trailing, 14)
-            .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 16))
+            .trunkCard(radius: 16)
             .overlay {
                 if selected { RoundedRectangle(cornerRadius: 16).strokeBorder(WebTheme.accent, lineWidth: 2) }
             }
@@ -151,6 +152,7 @@ struct TrunkProModelsView: View {
     @ObservedObject var model: TrunkViewModel
     var ownerName: String?
 
+    @EnvironmentObject private var toasts: ToastCenter
     @State private var showPaywall = false
 
     var body: some View {
@@ -218,7 +220,7 @@ struct TrunkProModelsView: View {
         let isPro = state?.isPro ?? false
         let selected = state?.effectiveModel == trunk
         return Button {
-            if isPro { Task { await model.setModel(trunk) } } else { showPaywall = true }
+            if isPro { Task { await model.setModelUndoable(trunk, toasts: toasts) } } else { showPaywall = true }
         } label: {
             VStack(alignment: .leading, spacing: 16) {
                 let preview = TrunkLooks.modelsPreview(state?.stuck ?? [], count: 3)
@@ -255,7 +257,8 @@ struct TrunkProModelsView: View {
                             Image(systemName: "checkmark").font(JPFont.footnote.weight(.bold)).accessibilityHidden(true)
                             Text(L("使っている型", "In use"))
                         } else {
-                            Text(isPro ? L("この型にする", "Use this style") : L("Pro で使う", "Use with Pro"))
+                            // 押すとすぐ替わる（2026-11-12 判断）ので「この型にする」の約束の字はやめ、押せる合図だけ
+                            Text(isPro ? L("押すとすぐ替わります", "Tap to switch") : L("Pro で使う", "Use with Pro"))
                         }
                     }
                     .font(JPFont.footnote.weight(.semibold))

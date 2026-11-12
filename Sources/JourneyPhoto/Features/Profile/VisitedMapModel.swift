@@ -45,6 +45,9 @@ final class VisitedMapModel: ObservableObject {
     /// 写真から導けた県（候補の元・JIS の順）
     @Published private(set) var found: [String] = []
     @Published private(set) var photosState: PhotosState = .idle
+    /// 県ごとの自分の写真（新しい順・県の札の写真の帯・2026-11-12 判断）。画面が読んだ自分の写真から県で分けるだけ
+    /// （新しい口なし・候補と同じ当て方 `PrefectureResolver`）
+    @Published private(set) var photosByPrefecture: [String: [Photo]] = [:]
     /// 押した県の小さな帯。`timerID` は 5 秒の数え直しの印、`deadline` は消える時刻（触っている間は nil・残りの線が読む）
     struct QuickBar: Equatable {
         let prefecture: String
@@ -147,8 +150,27 @@ final class VisitedMapModel: ObservableObject {
     }
 
     func applyPhotos(_ photos: [Photo], spots: [OfficialSpot]) {
-        found = PrefectureResolver(spots: spots).found(in: photos)
+        let resolver = PrefectureResolver(spots: spots)
+        found = resolver.found(in: photos)
+        photosByPrefecture = Self.group(photos, by: resolver)
         photosState = .loaded
+    }
+
+    /// 写真を県で分ける（県の分からない写真は入れない・並びは渡された順のまま）
+    static func group(_ photos: [Photo], by resolver: PrefectureResolver) -> [String: [Photo]] {
+        var out: [String: [Photo]] = [:]
+        for photo in photos {
+            guard let name = resolver.prefecture(of: photo) else { continue }
+            out[name, default: []].append(photo)
+        }
+        return out
+    }
+
+    /// 候補のチップを押した: **その場で 1 回記録する**（2026-11-12 判断・案「行った県」: 札を開いて「記録する」の
+    /// 2 回 → 1 回）。札の「記録する」と同じ足し方（外していた候補の印も戻す）で、帯の「取り消す」で戻せる
+    func recordCandidate(_ prefecture: String) {
+        guard isCandidate(prefecture) else { return }
+        add(prefecture)
     }
 
     func failPhotos() { photosState = .failed }
