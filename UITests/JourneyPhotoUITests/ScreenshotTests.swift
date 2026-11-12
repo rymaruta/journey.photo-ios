@@ -8324,6 +8324,10 @@ final class ScreenshotTests: XCTestCase {
     /// **出なければ撮らずに抜ける**
     func testCapturesDirectMessages() {
         let app = XCUIApplication()
+        // 2026-11-12（run 1164）: 会話を下へ払った直後から主スレッドが戻らず、画面の木も取れずに 5 分で落ちた。
+        // 止まっている所を取るため、主スレッドの積みを 0.3 秒ごとにファイルへ書かせる（`PerfMainSampler`・Debug のみ）
+        let samplePath = Self.mainSamplePath("dm")
+        app.launchArguments += ["-JPPreviewPerfProbe", "YES", "-JPMainSampleFile", samplePath]
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -8420,10 +8424,13 @@ final class ScreenshotTests: XCTestCase {
             // （run 1121: 吹き出しは在るが押せない位置で、長押しまで行かなかった）
             let thread = app.descendants(matching: .any)["dm.conversation"].firstMatch
             var swipes = 0
+            Self.logMainSamples(samplePath, label: "86m5a の払う前")
             while bubble.waitForExistence(timeout: 5), !bubble.isHittable, swipes < 4 {
                 thread.swipeDown()
                 swipes += 1
                 Thread.sleep(forTimeInterval: 0.5)
+                // 払ったあとは画面の木を読む前にファイルを読む（主スレッドが忙しいと木の読み取りで止まる）
+                Self.logMainSamples(samplePath, label: "86m5a の払い \(swipes) 回目のあと")
             }
             XCTContext.runActivity(named: "86m5a の手前: exists=\(bubble.exists) / hittable=\(bubble.exists && bubble.isHittable) / swipes=\(swipes)") { _ in }
             if bubble.exists, bubble.isHittable {
@@ -8674,6 +8681,41 @@ final class ScreenshotTests: XCTestCase {
         }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "86p4-メッセージ（旅行プランの日付・休みの組）")
+    }
+
+    /// 主スレッドの積みを書かせるファイルの道（同じシミュレーターのアプリと試験の両方から見える所）
+    static func mainSamplePath(_ name: String) -> String {
+        let base = ProcessInfo.processInfo.environment["SIMULATOR_SHARED_RESOURCES_DIRECTORY"] ?? NSTemporaryDirectory()
+        let path = (base as NSString).appendingPathComponent("jp-main-samples-\(name).txt")
+        try? FileManager.default.removeItem(atPath: path)
+        return path
+    }
+
+    /// ファイルの積みをログに出す（画面の木は読まない）。主スレッドの返事が遅い行（pending・200ms 以上）の数と、
+    /// その行に多く出るこのアプリの段の上位、最後の 4 行
+    static func logMainSamples(_ path: String, label: String) {
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
+            XCTContext.runActivity(named: "主スレッドの積み（\(label)）: ファイルが読めない \(path)") { _ in }
+            return
+        }
+        let lines = text.split(separator: "\n").map(String.init)
+        let slow = lines.filter { line in
+            guard let ping = line.components(separatedBy: "ping=").dropFirst().first?.split(separator: " ").first else { return false }
+            return ping == "pending" || (Int(ping) ?? 0) >= 200
+        }
+        var counts: [String: Int] = [:]
+        for line in slow {
+            let frames = (line.components(separatedBy: " | ").dropFirst().first ?? "").components(separatedBy: " ; ")
+            for frame in Set(frames) where frame.hasPrefix("JourneyPhoto") { counts[frame, default: 0] += 1 }
+        }
+        let top = counts.sorted { $0.value > $1.value }.prefix(12).map { "\($0.value)x \($0.key)" }
+        XCTContext.runActivity(named: "主スレッドの積み（\(label)）: 行 \(lines.count) / 遅い行 \(slow.count)") { _ in }
+        for (i, frame) in top.enumerated() {
+            XCTContext.runActivity(named: "主スレッドの積み（\(label)）上位 \(i + 1): \(frame)") { _ in }
+        }
+        for line in lines.suffix(4) {
+            XCTContext.runActivity(named: "主スレッドの積み（\(label)）最後: \(String(line.prefix(900)))") { _ in }
+        }
     }
 
     /// 受信箱の行を名前で開き、会話が出るまで待つ（出なければ false）
