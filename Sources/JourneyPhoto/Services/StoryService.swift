@@ -229,8 +229,10 @@ struct StoryService {
             /// 撮影地の札を写真に焼き込んだ（見る画面は固定の撮影地の札を出さない・札 #499）。
             /// **撮影地の文字があって、札を置いたときだけ `true` を送る**（`songOnPhoto` と同じ形）
             let locationOnPhoto: Bool?
-            /// 紹介した写真の id（札 #541 の ①）。**紹介のときだけ送る**。サーバーは公開・ブロック・退会を
-            /// 確かめ、だめなら 404（`storyPhotoShare.ts`）。持ち主には知らせが届く
+            /// 紹介した写真の id（札 #541 の ①）。**紹介のときだけ送る**。紹介できるのは自分の、全体に公開した
+            /// 写真だけ（2026-11-12・#577）。サーバーは人の写真を 403「この写真はストーリーで紹介できません」、
+            /// 無い・公開でない写真を 404 で断る（`storyPhotoShare.ts`）。断りの文は送る係がそのまま出す
+            /// （`APIError.description`・`StoryQueue.partialFailure`）
             let sharedPhotoId: String?
             struct Coords: Encodable { let lat: Double; let lng: Double }
         }

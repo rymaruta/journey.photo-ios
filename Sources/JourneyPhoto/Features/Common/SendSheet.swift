@@ -5,6 +5,7 @@ import UIKit
 ///
 /// 上から: 題「送る」 → **送る相手の段（顔の列・`people`）** → 線 → 行動の段（丸い印 52 と 12 の名前）。
 /// 行動は「ストーリーに載せる」「リンクをコピー」「ほかのアプリ」（iPhone の共有シート）の順。
+/// 「ストーリーに載せる」は自分の写真だけ（2026-11-12・#577・`SendSheetLayout.canShareToStory`）。
 ///
 /// 🔴 **送る相手の段（`people`）は札 #541 の ③「写真を DM で送る」の部品をそのまま渡す**（`DMPeopleFacesRow`・
 /// 枝 `claude/dm-redesign`。シートの側で写しを作らない）。顔が無いときは `EmptyView` の形で開き、段も線も出さない
@@ -227,8 +228,21 @@ enum SendSheetLayout {
         [.copyLink(pageURL), .otherAppsText(shareText)]
     }
 
-    /// 写真の詳細から出す行動の並び。**ストーリーはログイン中で、全体に公開した写真だけ**
-    /// （サーバーも同じ決まりで断る・`storyPhotoShare.ts`）。リンクは個別のページがある写真だけ（`shareURL`）
+    /// 「ストーリーに載せる」を出すか（札 #541 の ①・#577）。**ログイン中で、自分の、全体に公開した写真だけ**。
+    ///
+    /// 2026-11-12 判断（owner の原則「基本的にその人のものなので、他人が自由に操作するのは絶対ダメ」）:
+    /// 人の写真を自分のストーリーに載せ直す道は作らない。サーバーも人の写真は 403
+    /// 「この写真はストーリーで紹介できません」で断る（`storyPhotoShare.ts`）。
+    /// `canSendPhoto` は DM で送れる写真か（ログイン中・下書きでない・全体に公開）——人の写真でも送れる
+    /// （持ち主の写真へ人を連れて行くだけ）ので、送る相手の段はこちらで決めない
+    static func canShareToStory(ownerId: String?, me: String?, canSendPhoto: Bool) -> Bool {
+        guard canSendPhoto, let ownerId, !ownerId.isEmpty, let me, !me.isEmpty else { return false }
+        return ownerId == me
+    }
+
+    /// 写真の詳細から出す行動の並び。**ストーリーは自分の、全体に公開した写真だけ**（`canShareToStory`）。
+    /// リンクは個別のページがある写真だけ（`shareURL`）。リンクのコピーと「ほかのアプリ」が渡すのは**ページの
+    /// URL だけ**（画像のファイルは渡さない）なので、人の写真でも出す
     static func photoActions(url: URL?, canShareToStory: Bool, story: @escaping () -> Void) -> [SendSheetAction] {
         var actions: [SendSheetAction] = []
         if canShareToStory { actions.append(.story(story)) }
