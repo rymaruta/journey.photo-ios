@@ -119,13 +119,12 @@ final class ComposeGuideLauncherTests: XCTestCase {
         XCTAssertTrue(overlay.contains("@ObservedObject var level: LevelMotion"), "線の子の View が傾きを見ていない")
     }
 
-    /// 投稿のシートの「カメラで撮る」（2026-11-12 から構図の線を中で切り替えるアプリのカメラ）は、Pro の確かめを通らずに
-    /// 作例なしで開く（2026-10-17 判断: 全員無料）
+    /// 投稿のシートの4つ目「構図を重ねて撮る」は、Pro の確かめを通らずに作例なしで開く（2026-10-17 判断: 全員無料）
     func testPostSheetEntryOpensWithoutTheProCheck() throws {
         let sheet = try source("Sources/JourneyPhoto/Features/Upload/PostSheet.swift")
-        XCTAssertTrue(sheet.contains("kind: .camera"))
+        XCTAssertTrue(sheet.contains("kind: .composition"))
         let root = try source("Sources/JourneyPhoto/App/RootView.swift")
-        XCTAssertTrue(root.contains("case .camera:"))
+        XCTAssertTrue(root.contains("case .composition:"))
         XCTAssertTrue(root.contains("composeLauncher.open(make: { ComposeGuide.Launch(sample: nil, samples: []) })"),
                       "作例なしで、そのまま開いていない")
         XCTAssertTrue(root.contains(".composeGuidePresenter(composeLauncher, spotName: nil,"))
