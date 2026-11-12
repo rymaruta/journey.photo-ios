@@ -25,6 +25,8 @@ final class CriticalFlowTests: XCTestCase {
     /// 見本の認証で通るメールアドレスとパスワード（`PreviewBackend.email`・`password`。端末の中だけ）
     private static let previewEmail = "preview@journey-photo.test"
     private static let previewPassword = "Preview-1234"
+    /// 投稿のあとのカードを閉じた回数の鍵（`PostedCardHabit.defaultsKey` と同じ・UI テストはアプリの型を読めない）
+    static let postedCardHabitKey = "postedCard.closedWithoutSharing"
 
     override func setUp() {
         continueAfterFailure = false
@@ -41,6 +43,9 @@ final class CriticalFlowTests: XCTestCase {
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewLocalBackend", "YES"]
+        // 投稿のあとの共有カードを、閉じた回数に関係なく毎回出す（`PostedCardHabit`）。引数の値は起動の間ずっと
+        // 端末に覚えた回数より先に読まれる——同じ模擬機で投稿を3回するとカードが出ず知らせだけになる道をふさぐ
+        app.launchArguments += ["-\(Self.postedCardHabitKey)", "0"]
         app.launchArguments += extra
         // 起動直後の動きの記録（失敗したら終わりにログと添付へ残す・札 #435・`PerfProbeSupport`）
         enablePerfProbe(app)

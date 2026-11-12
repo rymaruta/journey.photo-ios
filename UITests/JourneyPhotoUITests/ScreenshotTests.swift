@@ -1457,9 +1457,12 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// **自分の写真の ⋯ のピン留め**（資料「説明なしで分かるアプリ」項目9・1.1.85 束H・2026-11-12）。
-    /// マイページの長押しだけだったピン留めを ⋯ にも置いた。行は写真の主のプロフィールを読んでから出るので、
-    /// 鍵なしログインで自分の写真が出ない回・プロフィールが読めない回は**撮らずに抜ける**（この試験の決まり）。
-    /// 押さない（押すと見本の利用者のピンが変わる）
+    /// マイページの長押しだけだったピン留めを ⋯ にも置いた。行は写真の主のプロフィールを読んでから出る。
+    /// 押さない（押すと見本の利用者のピンが変わる）。
+    ///
+    /// 2026-11-12（確かめ役の指摘）: 前は途中の確かめが `guard … else { return }` で、自分の写真が出ない・⋯ に行が無い
+    /// 回も緑のまま抜けていた（何も守っていない）。**途中で欠けたら XCTFail で落とす**。プロフィールを読み終えるのを
+    /// 固定の3秒で待っていたのもやめ、⋯ を開いて行が出るのを待つ（出なければ閉じて開き直す・合わせて 30 秒まで）
     func testCapturesPhotoMenuPin() {
         let app = XCUIApplication()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
@@ -1474,25 +1477,42 @@ final class ScreenshotTests: XCTestCase {
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         let tabBar = app.tabBars.firstMatch
-        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else {
+            return XCTFail("下のタブが出ない（\(tabBar.exists ? tabBar.buttons.count : 0) 個）")
+        }
         tabBar.buttons.element(boundBy: 4).tap()
 
         let myPhoto = app.buttons["mypage.photo"].firstMatch
-        guard myPhoto.waitForExistence(timeout: 15) else { return }
+        guard myPhoto.waitForExistence(timeout: 15) else { return XCTFail("マイページに自分の写真が出ない") }
         if !myPhoto.isHittable {
             app.swipeUp()
-            Thread.sleep(forTimeInterval: 1)
+            _ = XCTWaiter().wait(for: [expectation(for: NSPredicate(format: "hittable == true"), evaluatedWith: myPhoto)],
+                                 timeout: 3)
         }
-        guard myPhoto.isHittable else { return }
+        guard myPhoto.isHittable else { return XCTFail("自分の写真が押せる所に無い") }
         myPhoto.tap()
 
         let menu = app.buttons["photo.menu"].firstMatch
-        guard menu.waitForExistence(timeout: 10), menu.isHittable else { return }
-        // 写真の主のプロフィールを読み終えるのを待ってから開く（読む前は行を出さない作り）
-        Thread.sleep(forTimeInterval: 3)
-        menu.tap()
+        guard menu.waitForExistence(timeout: 10) else { return XCTFail("写真の詳細に ⋯ が無い") }
+        // ⋯ を開き、ピン留めの行が出るのを待つ。行は写真の主のプロフィールを読み終えてから出る作りなので、
+        // 開いた時にまだ無ければ閉じて開き直す（固定の秒数は待たない）
         let pin = app.buttons["photo.pin"].firstMatch
-        guard pin.waitForExistence(timeout: 5) else { return }
+        let edit = app.buttons["photo.edit"].firstMatch
+        let deadline = Date().addingTimeInterval(30)
+        var opens = 0
+        while Date() < deadline {
+            guard menu.isHittable else { return XCTFail("⋯ が押せない") }
+            menu.tap()
+            opens += 1
+            XCTAssertTrue(edit.waitForExistence(timeout: 5), "⋯ を開いても「編集」が無い（自分の写真の ⋯ でない）")
+            if pin.waitForExistence(timeout: 5) { break }
+            // 行が無いまま開いている ⋯ を閉じる（押さずに外を押す）
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+            _ = edit.waitForNonExistence(timeout: 5)
+        }
+        guard pin.exists else {
+            return XCTFail("⋯ を \(opens) 回開いても、30 秒のうちにピン留めの行が出ない（写真の主のプロフィールが読めていない）")
+        }
         XCTAssertTrue(pin.label.contains("ピン留め"), "⋯ のピン留めの行の字が違う: \(pin.label)")
         shoot(app, "22d-自分の写真の ⋯（プロフィールの先頭にピン留め）")
     }
@@ -8928,6 +8948,8 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewUploadSample", "YES"]
+        // 閉じた回数に関係なくカードを出す（`CriticalFlowTests.postedCardHabitKey`・同じ模擬機で3回目の投稿から出なくなる道）
+        app.launchArguments += ["-\(CriticalFlowTests.postedCardHabitKey)", "0"]
         app.launch()
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }

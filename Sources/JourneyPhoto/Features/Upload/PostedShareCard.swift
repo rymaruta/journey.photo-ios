@@ -128,6 +128,9 @@ enum PostedShareCardCredit {
 /// ストーリーに載せる・リンクをコピー）、また毎回カードに戻す。端末の中だけで覚え、設定の行は足さない
 /// （CLAUDE.md「直感的で簡単に」: 既定で動く・設定を入口にしない）
 enum PostedCardHabit {
+    /// UI テストは起動の引数 `-postedCard.closedWithoutSharing 0` で毎回カードを出す（引数の値は `UserDefaults.standard` の
+    /// 読みで端末に覚えた値より先に来る・`CriticalFlowTests.postedCardHabitKey`）。同じ模擬機で投稿を3回すると
+    /// カードが出なくなる道をふさぐ（2026-11-12 確かめ役の指摘・`PostedCardHabitTests`）
     static let defaultsKey = "postedCard.closedWithoutSharing"
     /// 続けて閉じた回数がこれに届いたら、知らせだけにする
     static let quietAfter = 2

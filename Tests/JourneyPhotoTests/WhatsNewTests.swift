@@ -318,12 +318,34 @@ final class WhatsNewTests: XCTestCase {
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let v1185 = try XCTUnwrap(WhatsNew.decode(data).first)
         XCTAssertEqual(v1185.version, "1.1.85")
+        // 出す日（日本時間・2026-11-12 秘書室）
+        XCTAssertEqual(v1185.date, WhatsNew.Day(year: 2026, month: 11, day: 13))
         XCTAssertEqual(v1185.items.map(\.title.ja), [
             "地図は地方の名前を押して選ぶ", "旅行プランに場所を探して足す", "旅行プランの順番は ≡ で運ぶ",
             "投稿したらすぐ共有", "おすすめの人", "観光スポットをメッセージで送る", "写真だけを大きく見る",
             "プロフィールの先頭にピン留め", "編集中に元の写真と比べる", "参加したアルバムを一覧から消す", "言葉をわかりやすく",
         ])
         XCTAssertEqual(Set(v1185.items.map(\.symbol)).count, v1185.items.count, "記号が重複している")
+        // 中身に合う文か（2026-11-12 確かめ役の指摘）
+        func detail(_ title: String) throws -> WhatsNew.Item {
+            try XCTUnwrap(v1185.items.first { $0.title.ja == title }, title)
+        }
+        // 地図: 開いたときは選ばず、県の札を件数の多い順（`SpotPrefectureIndex.nationalCards`）
+        let map = try detail("地図は地方の名前を押して選ぶ")
+        XCTAssertTrue(map.detail.ja.contains("県の札を観光スポットの多い順"), map.detail.ja)
+        // ≡: 外した場所を戻せるのは、その画面を開いている間だけ。英語はボタンの名前（`TripPlanDetailView` の "Restore"）
+        let reorder = try detail("旅行プランの順番は ≡ で運ぶ")
+        XCTAssertTrue(reorder.detail.ja.contains("開いている間"), reorder.detail.ja)
+        XCTAssertTrue(reorder.detail.en.contains("Restore") && reorder.detail.en.contains("While the trip plan is open"),
+                      reorder.detail.en)
+        XCTAssertFalse(reorder.detail.en.contains("Undo"), "ボタンの名前は Restore")
+        // 共有カード: 出るのは全体に公開の投稿だけ（`ThreadsShare.isEligible`）
+        let card = try detail("投稿したらすぐ共有")
+        XCTAssertTrue(card.detail.ja.contains("全体に公開"), card.detail.ja)
+        // 観光スポットを送れるのは、会話がある相手だけ（`DMSpotShare.unreachablePeers`）
+        let spot = try detail("観光スポットをメッセージで送る")
+        XCTAssertTrue(spot.detail.ja.contains("やりとりしている相手"), spot.detail.ja)
+        XCTAssertFalse(spot.detail.ja.contains("友達に"), "誰にでも送れるように読める")
         for item in v1185.items {
             for text in [item.title.ja, item.detail.ja] {
                 for word in ["撮りどき", "捨て", "注目スポット", "撮影地ガイド", "ガイドを見る", "この場所", "綴じ", "・", "·",

@@ -3,11 +3,12 @@
   "releases": [
     {
       "version": "1.1.85",
+      "date": "2026-11-13",
       "items": [
         {
           "symbol": "map",
           "title": { "ja": "地図は地方の名前を押して選ぶ", "en": "Tap a region on the map" },
-          "detail": { "ja": "探すの地図は、開いたときは何も選ばず、全国の観光スポットを多い順に並べます。地図の上の地方の名前を押すと、その地方の観光スポットが出ます。", "en": "The map in Search now opens with nothing selected and lists sightseeing spots across Japan. Tap a region's name on the map to see its spots." },
+          "detail": { "ja": "探すの観光スポットは、開いたときは地方を選ばず、全国の県の札を観光スポットの多い順に並べます。地図では、地方の名前を押すと、その地方の観光スポットが出ます。", "en": "Sightseeing spots in Search now open with no region selected, with prefecture cards from all of Japan in order of how many spots they have. On the map, tap a region's name to see its spots." },
           "destination": "search"
         },
         {
@@ -18,12 +19,12 @@
         {
           "symbol": "line.3.horizontal",
           "title": { "ja": "旅行プランの順番は ≡ で運ぶ", "en": "Reorder a trip plan with ≡" },
-          "detail": { "ja": "日程の行の右にある ≡ を持って運ぶと、順番や日を替えられます。外した場所は「戻す」で元に戻せます。", "en": "Drag the ≡ on the right of a row to change its order or day. Places you remove can be put back with Undo." }
+          "detail": { "ja": "日程の行の右にある ≡ を持って運ぶと、順番や日を替えられます。外した場所は、旅行プランを開いている間なら「戻す」で元に戻せます。", "en": "Drag the ≡ on the right of a row to change its order or day. While the trip plan is open, places you remove can be put back with Restore." }
         },
         {
           "symbol": "paperplane",
           "title": { "ja": "投稿したらすぐ共有", "en": "Share right after posting" },
-          "detail": { "ja": "公開の投稿が終わると、その写真のカードが出ます。そのまま、ほかのアプリで共有できます。", "en": "When a public post is done, a card of the photo appears so you can share it to other apps right away." }
+          "detail": { "ja": "全体に公開で投稿すると、終わったときにその写真のカードが出ます。そのまま、ほかのアプリで共有できます。", "en": "When you post to everyone, a card of the photo appears once it's done so you can share it to other apps right away." }
         },
         {
           "symbol": "person.badge.plus",
@@ -34,7 +35,7 @@
         {
           "symbol": "bubble.left.and.bubble.right",
           "title": { "ja": "観光スポットをメッセージで送る", "en": "Send sightseeing spots in messages" },
-          "detail": { "ja": "観光スポットの頁から、友達にメッセージで送れます。受け取った人は行きたい場所にすぐ入れられます。", "en": "Send a sightseeing spot to a friend in messages from its page. They can save it to their wishlist right away." }
+          "detail": { "ja": "観光スポットの頁から、メッセージをやりとりしている相手に送れます。受け取った人は行きたい場所にすぐ入れられます。", "en": "From a sightseeing spot's page, send it to someone you already have a conversation with. They can add it to Want to go right away." }
         },
         {
           "symbol": "eye.slash",

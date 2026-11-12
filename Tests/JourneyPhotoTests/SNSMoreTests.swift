@@ -227,6 +227,28 @@ final class SNSMoreTests: XCTestCase {
         defaults.removePersistentDomain(forName: "SNSMoreTests.habit")
     }
 
+    /// UI テストで投稿する所は、閉じた回数の鍵を起動の引数で 0 にしている（2026-11-12 確かめ役の指摘）。
+    /// 無いと、同じ模擬機で投稿を3回目からカードが出ず知らせだけになり、カードを待つ試験が落ちる。
+    /// UI テストの鍵の名前がアプリの鍵（`PostedCardHabit.defaultsKey`）と同じかも見る
+    func testUITestsResetPostedCardHabitWhereTheyPost() throws {
+        let critical = try source("UITests/JourneyPhotoUITests/CriticalFlowTests.swift")
+        XCTAssertTrue(critical.contains("static let postedCardHabitKey = \"\(PostedCardHabit.defaultsKey)\""),
+                      "UI テストの鍵の名前がアプリの鍵と違う")
+        for file in ["CriticalFlowTests.swift", "ScreenshotTests.swift"] {
+            let text = try source("UITests/JourneyPhotoUITests/\(file)")
+            // 投稿の「投稿する」を押す試験ごとに、その試験の中で鍵を 0 にしているか
+            for chunk in text.components(separatedBy: "    func test").dropFirst()
+            where chunk.contains("\"upload.submit\"") {
+                let name = chunk.prefix { $0 != "(" }
+                let launchesWithReset = chunk.contains("postedCardHabitKey)\", \"0\"]")
+                // CriticalFlowTests は共通の `launch` で入れる
+                let sharedLaunch = file == "CriticalFlowTests.swift" && chunk.contains("launch(")
+                    && critical.contains("app.launchArguments += [\"-\\(Self.postedCardHabitKey)\", \"0\"]")
+                XCTAssertTrue(launchesWithReset || sharedLaunch, "\(file) の test\(name) が閉じた回数を 0 にせず投稿している")
+            }
+        }
+    }
+
     /// 知らせの「カードにする」: 押せる一手を持った知らせ。押せばいちばん外の画面がカードを開く
     @MainActor
     func testQuietCardToastCarriesTheAction() async throws {
