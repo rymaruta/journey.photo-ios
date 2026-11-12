@@ -110,7 +110,7 @@ struct SpotRegionMap: Identifiable {
                         pieces: Set(group.region.prefectures),
                         coveredPieces: Set(group.cards.map(\.prefecture)),
                         scope: .region(group.region.name),
-                        seeAll: L("\(group.region.name)の撮影スポットをすべて見る",
+                        seeAll: L("\(group.region.name)の観光スポットをすべて見る",
                                   "See all photo spots in \(PrefectureRegions.englishName(group.region))"))
         }
     }

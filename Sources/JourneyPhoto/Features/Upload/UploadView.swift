@@ -476,7 +476,7 @@ struct UploadView: View {
             Image(systemName: "mappin.and.ellipse")
                 .foregroundStyle(WebTheme.accent)
             VStack(alignment: .leading, spacing: 2) {
-                Text(L("撮影スポットの写真として投稿", "Posting to a photo spot"))
+                Text(L("観光スポットの写真として投稿", "Posting to a photo spot"))
                     .font(.caption)
                     .foregroundStyle(WebTheme.text2)
                 Text(spot.name)
@@ -497,7 +497,7 @@ struct UploadView: View {
             .buttonStyle(.plain)
             // 送っている間は外せない——送信は1枚ごとに `spot` を読むので、束の途中で紐付けが割れる
             .disabled(model.isWorking)
-            .accessibilityLabel(L("撮影スポットの紐付けを外す", "Don't link to this spot"))
+            .accessibilityLabel(L("観光スポットの紐付けを外す", "Don't link to this spot"))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 6)

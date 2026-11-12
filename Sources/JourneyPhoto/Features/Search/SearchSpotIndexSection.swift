@@ -68,14 +68,14 @@ struct SearchSpotIndexSection: View {
     }
 
     /// 節が読めなかったときの帯の字（第2章）
-    static var failedTitle: String { L("撮影スポットを読み込めませんでした", "Couldn't load photo spots") }
+    static var failedTitle: String { L("観光スポットを読み込めませんでした", "Couldn't load photo spots") }
     static var failedMessage: String { L("写真と撮影地はそのまま探せます", "You can still search photos and places") }
 
     var body: some View {
         let selected = SpotPrefectureIndex.selected(region, in: groups)
         VStack(alignment: .leading, spacing: JPSpace.s) {
-            JPSectionHeading(eyebrow: "PHOTO SPOTS", spoken: L("撮影スポット", "Photo spots"),
-                             title: L("撮影スポット", "Photo spots")) {
+            JPSectionHeading(eyebrow: "PHOTO SPOTS", spoken: L("観光スポット", "Photo spots"),
+                             title: L("観光スポット", "Photo spots")) {
                 if load == .ready, !groups.isEmpty {
                     NavigationLink {
                         OfficialSpotIndexView(scope: .all, spots: spots, photos: photos, photosKnown: photosKnown)
@@ -119,7 +119,7 @@ struct SearchSpotIndexSection: View {
                         OfficialSpotIndexView(scope: scope, spots: spots, photos: photos, photosKnown: photosKnown)
                     }
                 } else {
-                    EmptyState(icon: "mappin", message: L("公開中の撮影スポットはまだありません", "No photo spots yet"))
+                    EmptyState(icon: "mappin", message: L("公開中の観光スポットはまだありません", "No photo spots yet"))
                 }
             }
         }
@@ -207,7 +207,7 @@ struct SearchSpotIndexSection: View {
                 .foregroundStyle(WebTheme.text)
                 .lineLimit(1)
                 .accessibilityAddTraits(.isHeader)
-            Text(L("撮影スポット \(area.count)件", area.count == 1 ? "1 photo spot" : "\(area.count) photo spots"))
+            Text(L("観光スポット \(area.count)件", area.count == 1 ? "1 photo spot" : "\(area.count) photo spots"))
                 .font(JPFont.meta)
                 .foregroundStyle(WebTheme.text2)
                 .lineLimit(1)

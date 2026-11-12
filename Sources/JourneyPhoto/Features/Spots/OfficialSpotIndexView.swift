@@ -113,7 +113,7 @@ struct OfficialSpotIndexView: View {
         case .region(let name):
             let english = PrefectureRegions.all.first { $0.name == name }.map(PrefectureRegions.englishName) ?? name
             return L(name, english)
-        case .all: return L("撮影スポット", "Photo spots")
+        case .all: return L("観光スポット", "Photo spots")
         }
     }
 
@@ -125,7 +125,7 @@ struct OfficialSpotIndexView: View {
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: JPSpace.s) {
-                    SearchBox(prompt: L("撮影スポットの名前で絞る", "Filter photo spots by name"),
+                    SearchBox(prompt: L("観光スポットの名前で絞る", "Filter photo spots by name"),
                               text: $query, identifier: "spotIndex.field")
                         .padding(.horizontal, JPSpace.gutter)
                     if scope == .all {
@@ -141,14 +141,14 @@ struct OfficialSpotIndexView: View {
                         if built == nil {
                             JPLoadingState(kind: .rows)
                         } else if spots.isEmpty {
-                            EmptyState(icon: "mappin", message: L("公開中の撮影スポットはまだありません", "No photo spots yet"))
+                            EmptyState(icon: "mappin", message: L("公開中の観光スポットはまだありません", "No photo spots yet"))
                         } else if sections.isEmpty {
                             EmptyState(icon: "mappin", message: L("見つかりませんでした", "No results"))
                         } else {
                             if case .prefecture = scope {
                                 wantsTop(rows: rows, source: source)
-                                JPEyebrowLine(here != nil ? L("撮影スポット\u{2002}近い順", "Photo spots\u{2002}nearest first")
-                                                          : L("撮影スポット", "Photo spots"),
+                                JPEyebrowLine(here != nil ? L("観光スポット\u{2002}近い順", "Photo spots\u{2002}nearest first")
+                                                          : L("観光スポット", "Photo spots"),
                                               trailing: SpotPrefectureIndex.countLabel(rows.count))
                                     .padding(.bottom, JPSpace.xs)
                             }

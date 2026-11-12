@@ -62,7 +62,7 @@ struct TripPlanPickSheet: View {
                     Text(Self.hint(capacity: capacity))
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)
-                    group(L("撮影スポット", "Photo spots"), spots)
+                    group(L("観光スポット", "Photo spots"), spots)
                     group(L("撮影地", "Places"), locations)
                 }
             }

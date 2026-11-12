@@ -244,7 +244,7 @@ struct DailyQuizView: View {
                     } label: {
                         // 写真のある画面の主ボタンは白（板 05・2026-11-12 判断。前は真鍮の塗り）。
                         // 「共有」と横に並ぶので1行に収めて縮める（0.8 まで＝12pt。板の本文の最小）
-                        Text(L("撮影スポットを見る", "See the photo spot"))
+                        Text(L("観光スポットを見る", "See the photo spot"))
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
                             .jpPillButton(.main(onPhoto: true))

@@ -150,7 +150,7 @@ enum HomeSpotShelf {
         var accessibilityLabel: String {
             switch self {
             case .sample(let sample): return sample.accessibilityLabel
-            case .cover(let image): return L("撮影スポットの写真（撮影: \(image.author)）", "Spot photo by \(image.author)")
+            case .cover(let image): return L("観光スポットの写真（撮影: \(image.author)）", "Spot photo by \(image.author)")
             }
         }
     }
@@ -191,7 +191,7 @@ enum HomeSpotShelf {
         return L("いまの季節\u{2002}\(label)", "This season\u{2002}\(label)")
     }
 
-    static var heading: String { L("いまの季節の撮影スポット", "Photo spots for this season") }
+    static var heading: String { L("いまの季節の観光スポット", "Photo spots for this season") }
 
     /// 札の「行きたい」の読み上げ名。札が横に並ぶので、**どの場所の「行きたい」か**を名前で添える
     static func wishSpokenLabel(_ spotName: String) -> String {
@@ -210,7 +210,7 @@ enum HomeSpotShelf {
     /// 「アプリの外の撮影者の作品」と、同じ事実を角の立たない言い方にした。出典の行はそのまま。
     /// 英語は "borrowed" を使わない（撮影者に直接許しをもらったように読めるため・確かめ役の見直し）
     static var note: String {
-        L("写真は各撮影スポットの作例です。アプリの外の撮影者の作品をお借りしていて、出典は写真の下にあります。",
+        L("写真は各観光スポットの作例です。アプリの外の撮影者の作品をお借りしていて、出典は写真の下にあります。",
           "Example photos for each spot by photographers outside the app. Credits below each photo.")
     }
 }

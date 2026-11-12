@@ -236,7 +236,7 @@ final class LightForecastTests: XCTestCase {
         XCTAssertEqual(LightForecastText.empty(wishlist: []), .noWishes)
         XCTAssertEqual(LightForecastText.empty(wishlist: ["kyoto"]), .noSpots)
         XCTAssertEqual(LightForecastText.emptyTitle(.noWishes), "行きたい場所がまだありません")
-        XCTAssertEqual(LightForecastText.emptyTitle(.noSpots), "光を出せる撮影スポットがありません")
+        XCTAssertEqual(LightForecastText.emptyTitle(.noSpots), "光を出せる観光スポットがありません")
     }
 
     func testFailureKinds() async {

@@ -272,18 +272,18 @@ struct DMTripCandidatesSheet: View {
                         .font(JPFont.footnote)
                         .foregroundStyle(WebTheme.text2)
                         .lineLimit(3)
-                    Text(L("文の中の撮影スポットが分かりませんでした。候補から選ぶか、名前で探してください",
+                    Text(L("文の中の観光スポットが分かりませんでした。候補から選ぶか、名前で探してください",
                            "We couldn't find a photo spot in this message. Pick one below or search by name."))
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)
                         .fixedSize(horizontal: false, vertical: true)
-                    TextField(L("撮影スポットの名前", "Photo spot name"), text: $query)
+                    TextField(L("観光スポットの名前", "Photo spot name"), text: $query)
                         .font(JPFont.body)
                         .submitLabel(.search)
                         .jpFieldBox()
                         .accessibilityIdentifier("dmTrip.search")
                     if trip.failed {
-                        ErrorBanner(message: L("撮影スポットの一覧を読み込めませんでした。通信を確かめて、開き直してください",
+                        ErrorBanner(message: L("観光スポットの一覧を読み込めませんでした。通信を確かめて、開き直してください",
                                                "Couldn't load photo spots. Check your connection and try again."))
                     } else if !trip.loaded {
                         JPLoadingState(kind: .rows)

@@ -872,7 +872,7 @@ struct PhotoDetailView: View {
                         .accessibilityHidden(true)
                     // 呼び名は「撮影スポット」（2026-10-11 owner。板の「撮影スポットのガイド」は旧い呼び名）。
                     // 撮影地の行と見分けられるよう、台帳の名前を添える
-                    Text(L("撮影スポット", "Photo spot") + PhotoMetaLine.separator + spot.name)
+                    Text(L("観光スポット", "Photo spot") + PhotoMetaLine.separator + spot.name)
                         .underline(true, color: Color.white.opacity(0.6))
                         .lineLimit(1)
                     Text("›").accessibilityHidden(true)
@@ -885,7 +885,7 @@ struct PhotoDetailView: View {
                 .padding(.vertical, -8)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(L("撮影スポット: \(spot.name)", "Photo spot: \(spot.name)"))
+            .accessibilityLabel(L("観光スポット: \(spot.name)", "Photo spot: \(spot.name)"))
             .accessibilityIdentifier("photo.spotGuide")
         }
     }

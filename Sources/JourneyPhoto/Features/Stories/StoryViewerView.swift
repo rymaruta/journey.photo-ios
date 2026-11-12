@@ -934,7 +934,7 @@ struct StoryViewerView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "mappin").font(JPFont.footnote)
-                            Text(L("撮影スポットを見る", "See the photo spot")).font(JPFont.footnote)
+                            Text(L("観光スポットを見る", "See the photo spot")).font(JPFont.footnote)
                             Image(systemName: "chevron.right").font(.caption.weight(.semibold))
                         }
                         .foregroundStyle(Color.white.opacity(StoryViewerMetrics.metaOpacity))
@@ -945,7 +945,7 @@ struct StoryViewerView: View {
                         .padding(.vertical, -15)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(L("撮影スポットの画面を開く", "Open the photo spot"))
+                    .accessibilityLabel(L("観光スポットの画面を開く", "Open the photo spot"))
                     .accessibilityIdentifier("story.viewer.spotEntry")
                 }
                 if let place {
@@ -970,7 +970,7 @@ struct StoryViewerView: View {
                             .padding(.vertical, -15)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(L("撮影地 \(place)。撮影スポットの画面を開く",
+                        .accessibilityLabel(L("撮影地 \(place)。観光スポットの画面を開く",
                                               "Location \(place). Open the photo spot"))
                     } else {
                         // 結べた行と同じく詰める（索引が届いた瞬間に文字が変わらないように）

@@ -1836,7 +1836,7 @@ enum MyPageEmpty {
     static var browseTitle: String { L("写真を見に行く", "Browse photos") }
     /// 行きたい場所0件の本文。見出しが「まだありません」と言うので、ここは埋め方だけ
     static var wishlistMessage: String {
-        L("撮影スポットの画面で「行きたい」を押すと、ここに並びます",
+        L("観光スポットの画面で「行きたい」を押すと、ここに並びます",
           "Tap “Want to go” on a place to add it here.")
     }
 }

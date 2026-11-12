@@ -68,7 +68,7 @@ final class PerfBatch2Tests: XCTestCase {
 
     /// 撮影スポットの印・みんなの写真のピンに影を付けない
     func testMapPinsHaveNoShadow() throws {
-        XCTAssertFalse(try code("Features/Map/SpotMapMarker.swift").contains(".shadow("), "撮影スポットのピンに影が残っている")
+        XCTAssertFalse(try code("Features/Map/SpotMapMarker.swift").contains(".shadow("), "観光スポットのピンに影が残っている")
         let map = try code("Features/Map/PhotoMapView.swift")
         let frame = try between(map, "private static func photoPinFrame<", "private func cameraChanged(")
         XCTAssertFalse(frame.contains(".shadow("), "みんなの写真のピンに影が残っている")

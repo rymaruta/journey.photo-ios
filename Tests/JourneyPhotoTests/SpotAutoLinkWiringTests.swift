@@ -101,7 +101,7 @@ final class SpotAutoLinkWiringTests: XCTestCase {
     /// 言葉は Web の `SpotAutoNotice.tsx` と同じ（「結ぶ」にそろえ、「まとめ」は使わない）
     func testNoticeWordingMatchesWeb() {
         XCTAssertEqual(SpotAutoNoticeText.title(spotName: "蔵王キツネ村", off: false),
-                       L("撮影スポット「蔵王キツネ村」に結びました", "Linked to the photo spot “蔵王キツネ村”"))
+                       L("観光スポット「蔵王キツネ村」に結びました", "Linked to the photo spot “蔵王キツネ村”"))
         XCTAssertEqual(SpotAutoNoticeText.title(spotName: "蔵王キツネ村", off: true),
                        L("「蔵王キツネ村」への自動の結びつけを外しています", "Automatic link to “蔵王キツネ村” removed"))
         XCTAssertEqual(SpotAutoNoticeText.button(off: false), L("違う場所なので外す", "Different place — remove"))

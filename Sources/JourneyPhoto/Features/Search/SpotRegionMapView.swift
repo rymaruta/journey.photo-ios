@@ -66,7 +66,7 @@ struct SpotRegionMapView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(L("\(map.title)の地図", "Map of \(map.title)"))
         .accessibilityValue(areas.first { $0.id == selected }?.title ?? "")
-        .accessibilityHint(L("上下に払うと地方を替えられます。ダブルタップでその地方の撮影スポットの一覧へ進みます",
+        .accessibilityHint(L("上下に払うと地方を替えられます。ダブルタップでその地方の観光スポットの一覧へ進みます",
                              "Swipe up or down to change the region. Double-tap to see its photo spots"))
         .accessibilityAction { onActivate() }
         .accessibilityAdjustableAction { direction in

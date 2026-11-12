@@ -157,7 +157,7 @@ enum SavedSpotsMap {
     static func openHint(_ item: Item) -> String {
         switch item.target {
         case .place: return L("撮影地の画面を開きます", "Opens the place")
-        case .official: return L("撮影スポットの画面を開きます", "Opens the spot")
+        case .official: return L("観光スポットの画面を開きます", "Opens the spot")
         }
     }
 

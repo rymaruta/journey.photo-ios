@@ -60,7 +60,7 @@ final class SpotRegionMapTests: XCTestCase {
         }
         XCTAssertEqual(at(43.06, 141.35), "北海道")
         XCTAssertEqual(at(35.69, 139.70), "関東")
-        XCTAssertNil(at(32.88, 131.10), "撮影スポットの無い九州（阿蘇・線の内側）を選んだ")
+        XCTAssertNil(at(32.88, 131.10), "観光スポットの無い九州（阿蘇・線の内側）を選んだ")
         // 線の外（海）は、いちばん近い地方に寄せる（陣地分け）。日本海の真ん中は撮影スポットのある地方のどれか
         XCTAssertNotNil(at(38.0, 133.0))
     }
@@ -71,7 +71,7 @@ final class SpotRegionMapTests: XCTestCase {
         XCTAssertEqual(SpotRegionMap.highlighted("北海道", in: areas), ["北海道"])
         XCTAssertEqual(SpotRegionMap.highlighted("関東", in: areas).count, 7)
         XCTAssertTrue(SpotRegionMap.highlighted(nil, in: areas).isEmpty)
-        XCTAssertTrue(SpotRegionMap.highlighted("四国", in: areas).isEmpty, "撮影スポットの無い地方は区分に無い")
+        XCTAssertTrue(SpotRegionMap.highlighted("四国", in: areas).isEmpty, "観光スポットの無い地方は区分に無い")
         XCTAssertEqual(SpotRegionMap.covered(areas), ["北海道", "東京都"])
     }
 
@@ -86,7 +86,7 @@ final class SpotRegionMapTests: XCTestCase {
         XCTAssertEqual(hokkaido.namesLine,
                        L("akan、tomita、zz-sapporo、asahidake ほか", "akan, tomita, zz-sapporo, asahidake, and more"))
         XCTAssertEqual(hokkaido.scope, .region("北海道"))
-        XCTAssertEqual(hokkaido.seeAll, L("北海道の撮影スポットをすべて見る", "See all photo spots in Hokkaido"))
+        XCTAssertEqual(hokkaido.seeAll, L("北海道の観光スポットをすべて見る", "See all photo spots in Hokkaido"))
         // 札の字は地方名入り（見出しの全国の「すべて見る」と分ける）
         XCTAssertEqual(hokkaido.seeAllLabel, L("北海道をすべて見る", "See all in 北海道"))
         let kanto = try XCTUnwrap(areas.first { $0.id == "関東" })
@@ -134,10 +134,10 @@ final class SpotRegionMapTests: XCTestCase {
         }
         let map = squareMap()
         let areas = map.areas(SpotMapSource(spots: [try spot("a", country: "A"), try spot("b", country: "A")], japanGroups: []))
-        XCTAssertEqual(areas.map(\.id), ["A"], "撮影スポットの無い区分 B は作らない")
+        XCTAssertEqual(areas.map(\.id), ["A"], "観光スポットの無い区分 B は作らない")
         let size = CGSize(width: 150, height: 50)
         XCTAssertEqual(map.area(at: CGPoint(x: 70, y: 25), container: size, in: areas), "A", "A2 を押したら区分 A")
-        XCTAssertNil(map.area(at: CGPoint(x: 130, y: 25), container: size, in: areas), "撮影スポットの無い区分を選んだ")
+        XCTAssertNil(map.area(at: CGPoint(x: 130, y: 25), container: size, in: areas), "観光スポットの無い区分を選んだ")
         XCTAssertEqual(SpotRegionMap.highlighted("A", in: areas), ["A1", "A2"])
         XCTAssertEqual(SpotRegionMap.covered(areas), ["A1"])
         XCTAssertEqual(areas[0].namesLine, L("a、b", "a, b"))

@@ -141,7 +141,7 @@ final class MapSpotsV2Tests: XCTestCase {
         assertInOrder(["if selectedOfficial?.id != pin.id { spotSelectTicks += 1 }",
                        "withAnimation(reduceMotion ? nil : Self.pinSelectAnimation)",
                        "officialMarker(pin, selected: selectedOfficial?.id == pin.id)"],
-                      in: text, "撮影スポットのピンを選ぶ")
+                      in: text, "観光スポットのピンを選ぶ")
         XCTAssertTrue(text.contains(".sensoryFeedback(.selection, trigger: spotSelectTicks)"), "触覚の合図が無い")
         // スポットの地図の画面は開いているスポットなので選んだ形
         XCTAssertTrue(try source("Features/Spots/OfficialSpotMapView.swift").contains(".selected(true)"))
@@ -190,8 +190,8 @@ final class MapSpotsV2Tests: XCTestCase {
                        ".background(Color.white.opacity(0.08), in: Circle())", ".webTappable()",
                        ".accessibilityLabel(Labels.Common.close)"], in: close, "札の閉じる")
         // 「撮影スポットを見る」は1行に収めて 0.8 まで縮める（`PlaceTermWordingTests` と同じ決まり）
-        assertInOrder(["L(\"撮影スポットを見る\"", ".lineLimit(1)", ".minimumScaleFactor(0.8)",
-                       ".jpPillButton(.outline"], in: text, "撮影スポットを見る")
+        assertInOrder(["L(\"観光スポットを見る\"", ".lineLimit(1)", ".minimumScaleFactor(0.8)",
+                       ".jpPillButton(.outline"], in: text, "観光スポットを見る")
     }
 
     /// **札はガラス（地図が透ける）なので真鍮を置かない**（CLAUDE.md の owner の決まり）。
@@ -205,7 +205,7 @@ final class MapSpotsV2Tests: XCTestCase {
         let officialCard = segment(text, from: "private func officialCard(")
         assertInOrder(["Text(SpotScreen.eyebrow(review: pin.isDraft))", ".jpEyebrow()",
                        ".foregroundStyle(WebTheme.muted)", "Text(pin.name)", ".font(JPFont.cardTitle)"],
-                      in: officialCard, "撮影スポットの札の眉と題")
+                      in: officialCard, "観光スポットの札の眉と題")
         let info = segment(text, from: "private func placeInfo(")
         assertInOrder(["Link(destination: tel)", "Link(destination: site)", ".foregroundStyle(WebTheme.foreground)"],
                       in: info, "電話・Webサイトのリンクは白")
@@ -244,7 +244,7 @@ final class MapSpotsV2Tests: XCTestCase {
     func testSpotsAreaUsesSharedStates() throws {
         let area = segment(try source(map), from: "private var spotsArea: some View {")
         assertInOrder(["JPEyebrowLine(spotsHeading(", "if model.officialIndexState == .loading {",
-                       "JPLoadingState(kind: .places)", "ErrorBanner(title: L(\"撮影スポットを読み込めませんでした\"",
+                       "JPLoadingState(kind: .places)", "ErrorBanner(title: L(\"観光スポットを読み込めませんでした\"",
                        "EmptyState(icon: \"mappin\", message: MapSearch.fold(model.query).isEmpty"], in: area, "「スポット」の札の状態")
         XCTAssertFalse(area.contains("ProgressView()"), "手書きの輪が残っている")
         let list = segment(try source(map), from: "private var listArea: some View {")
@@ -342,7 +342,7 @@ final class MapSpotsV2Tests: XCTestCase {
         let header = segment(parts, from: "static func sectionHeader(")
         // 形は共通の節の見出し（2026-10-14: 撮影スポットだけ眉と題の間が 12 だった）
         XCTAssertTrue(header.contains("JPSectionHeading(eyebrow: eyebrow, spoken: spoken, title: title, titleLineLimit: nil)"),
-                      "撮影スポットの節の見出しが共通の JPSectionHeading を通っていない")
+                      "観光スポットの節の見出しが共通の JPSectionHeading を通っていない")
         let text = try source(official)
         for eyebrow in ["\"ABOUT\"", "\"GUIDE\"", "\"LIGHT\"", "\"EXAMPLES\""] {
             XCTAssertTrue(text.contains("eyebrow: \(eyebrow)"), "\(eyebrow) の眉が無い")
@@ -375,7 +375,7 @@ final class MapSpotsV2Tests: XCTestCase {
         let photos = segment(text, from: "private var spotPhotos: some View {")
         assertInOrder(["if showsEmptyPhotosCard {", ".font(JPFont.rowTitle)", ".foregroundStyle(WebTheme.text2)",
                        "postButton", "StrokeStyle(lineWidth: JPStroke.hairline, dash: [4, 4])",
-                       "} else {", "PhotoGrid(photos: linked)", "postButton"], in: photos, "この撮影スポットの写真")
+                       "} else {", "PhotoGrid(photos: linked)", "postButton"], in: photos, "この観光スポットの写真")
         XCTAssertEqual(count(".accessibilityIdentifier(\"spot.official.post\")", in: text), 1)
         // 主ボタンの色は共通の決まりのまま（写真があれば白・無ければ真鍮）
         XCTAssertTrue(segment(text, from: "private var postButton: some View {")

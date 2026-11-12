@@ -31,7 +31,7 @@ enum DMTripPlaces {
 
         /// 「撮影スポット · 送られた写真から」「撮影地 · 送った写真から」
         var detail: String {
-            let kind = place.isSpot ? L("撮影スポット", "Photo spot") : L("撮影地", "Photo location")
+            let kind = place.isSpot ? L("観光スポット", "Photo spot") : L("撮影地", "Photo location")
             let from: String
             switch source {
             case .receivedPhoto: from = L("送られた写真から", "from a photo you received")

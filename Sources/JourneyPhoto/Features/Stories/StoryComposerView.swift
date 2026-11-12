@@ -1454,7 +1454,7 @@ struct StoryComposerView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(L("撮影地の候補 \(spot.name)。付ける", "Suggested place \(spot.name). Add"))
-        .accessibilityHint(L("撮影スポットの名前と位置を見る人に見せます", "Shows the photo spot's name and location to viewers"))
+        .accessibilityHint(L("観光スポットの名前と位置を見る人に見せます", "Shows the photo spot's name and location to viewers"))
     }
 
     /// 撮影地の候補を解き直す鍵（写真の座標の並びと索引の数）

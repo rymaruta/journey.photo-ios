@@ -72,7 +72,7 @@ struct SearchView: View {
                 // 写真はそのまま探せる（画面は閉じない）。「もう一度」は引き下げと同じ読み直し
                 if connectivity.isOffline {
                     JPStateBand(kind: .offline, title: JPStateBand.offlineTitle,
-                                message: L("前に見た撮影スポットと写真だけを出しています",
+                                message: L("前に見た観光スポットと写真だけを出しています",
                                            "Showing photo spots and photos you've already seen"),
                                 isBusy: isReloading, actionIdentifier: "search.offline.retry") {
                         Task { await reloadAll() }
@@ -1120,7 +1120,7 @@ struct SearchView: View {
     nonisolated static func spotSubtitle(_ spot: OfficialSpot) -> String {
         let r = spot.region
         let place = [r?.country, r?.prefecture, r?.city].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
-        let head = L("撮影スポット", "Photo spot")
+        let head = L("観光スポット", "Photo spot")
         return place.isEmpty ? head : "\(head)\u{2002}\(place)"
     }
 

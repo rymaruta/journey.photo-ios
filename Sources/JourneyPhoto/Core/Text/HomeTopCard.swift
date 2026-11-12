@@ -460,9 +460,9 @@ enum HomeTopCard {
     /// 週替わりの間は「今週の」）。知らない季節は季節を付けない
     static func seasonEyebrow(_ season: String) -> String {
         guard let label = SpotBodyText.seasonLabel(season) else {
-            return L("今日の撮影スポット", "Today's photo spot")
+            return L("今日の観光スポット", "Today's photo spot")
         }
-        return L("今日の撮影スポット\u{2002}\(label)", "Today's photo spot\u{2002}\(label)")
+        return L("今日の観光スポット\u{2002}\(label)", "Today's photo spot\u{2002}\(label)")
     }
 
     // MARK: - 5. 行きたい場所のこの季節

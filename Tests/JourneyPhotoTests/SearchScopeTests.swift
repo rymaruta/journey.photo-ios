@@ -125,7 +125,7 @@ final class SearchScopeTests: XCTestCase {
                        [.officialSpots, .quiz, .spots, .featured, .seasonal, .shootingTime, .colors, .gear])
         XCTAssertEqual(SearchDiscovery.sections(present: [.gear, .seasonal, .colors]),
                        [.seasonal, .colors, .gear])
-        XCTAssertEqual(SearchDiscovery.order.first, .officialSpots, "撮影スポットを県から探す段が先頭でない")
+        XCTAssertEqual(SearchDiscovery.order.first, .officialSpots, "観光スポットを県から探す段が先頭でない")
     }
 
     /// おすすめは**ホームと同じ塊の先頭**（owner が選んだ公開写真が多いカテゴリ）

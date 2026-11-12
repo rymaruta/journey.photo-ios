@@ -170,7 +170,7 @@ final class StoryPlaceLinkTests: XCTestCase {
     /// 禁止語（PlaceTermWordingTests）を使わない
     func testEntryWordingAvoidsBannedTerms() throws {
         let viewer = try repo("Sources/JourneyPhoto/Features/Stories/StoryViewerView.swift")
-        XCTAssertTrue(viewer.contains("撮影スポットを見る"))
+        XCTAssertTrue(viewer.contains("観光スポットを見る"))
         for banned in ["注目スポット", "撮影地ガイド", "ガイドを見る"] {
             XCTAssertFalse(viewer.contains("L(\"\(banned)"), banned)
         }

@@ -224,7 +224,7 @@ final class HomeTidyTests: XCTestCase {
         assertInOrder(["header", "ForEach(shelf.entries)", "Text(HomeSpotShelf.note)",
                        ".accessibilityLabel(HomeSpotShelf.heading)"], in: body, "注記は札の下")
         // 文は変えない
-        XCTAssertTrue(HomeSpotShelf.note.contains(L("各撮影スポットの作例", "examples for each spot")))
+        XCTAssertTrue(HomeSpotShelf.note.contains(L("各観光スポットの作例", "examples for each spot")))
     }
 
     // MARK: - ⑥ 「行きたい」は行の中の小ボタン

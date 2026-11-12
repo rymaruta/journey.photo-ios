@@ -540,7 +540,7 @@ struct OfficialSpotView: View {
     /// （地・縁・真鍮・矢印の記号なし。真鍮は黒地の上の合図・押せるもの）。板 SpotDetail にこの帯は無い
     private var journeyCue: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(L("この撮影スポットから、次の一枚へ", "From this spot to your next photo"))
+            Text(L("この観光スポットから、次の一枚へ", "From this spot to your next photo"))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(WebTheme.muted2)
             // 本文の最小は 12pt（CLAUDE.md）
@@ -578,7 +578,7 @@ struct OfficialSpotView: View {
         if let body = spotBody, body.hasContent {
             if body.description != nil || !body.highlights.isEmpty {
                 VStack(alignment: .leading, spacing: JPSpace.s) {
-                    SpotDetailParts.sectionHeader(L("この撮影スポットの魅力", "What makes it special"),
+                    SpotDetailParts.sectionHeader(L("この観光スポットの魅力", "What makes it special"),
                                                   eyebrow: "ABOUT", spoken: L("概要", "About"))
                     if let text = body.description {
                         Text(text)
@@ -1146,7 +1146,7 @@ struct OfficialSpotView: View {
         VStack(alignment: .leading, spacing: JPSpace.s) {
             // 写真が0枚の回は下の破線の札が見出しを持つ（同じことを二度言わない）
             if (photosKnown || !linked.isEmpty) && !showsEmptyPhotosCard {
-                SpotDetailParts.sectionHeader(L("この撮影スポットの写真（\(linked.count)）", "Photos here (\(linked.count))"))
+                SpotDetailParts.sectionHeader(L("この観光スポットの写真（\(linked.count)）", "Photos here (\(linked.count))"))
             }
             if linkedHasAuto {
                 // 自動で結んだ写真を含むときだけ（案の板 SpotIOS・Web の `spot-auto-note`）。黒地の注記は text-3
@@ -1171,7 +1171,7 @@ struct OfficialSpotView: View {
                 // v2 の板 SpotDetail の「写真0枚」: 破線の札に明朝 18 の見出し・13 の text-2・投稿のボタン
                 VStack(spacing: JPSpace.xs) {
                     // 0 は数として出さない（2026-10-21・「（0）」と出ていた）。下の文とボタンが最初の1枚へ誘う
-                    Text(L("この撮影スポットの写真", "Photos here"))
+                    Text(L("この観光スポットの写真", "Photos here"))
                         .font(JPFont.rowTitle)
                         .foregroundStyle(WebTheme.foreground)
                         .multilineTextAlignment(.center)
@@ -1227,7 +1227,7 @@ struct OfficialSpotView: View {
 
     /// 「投稿」のボタンの字。**0枚のときは「最初の1枚を投稿」**（`SpotScreen.firstPhotoInvite` と同じ向き・2026-10-21）
     nonisolated static func postLabel(hasLinked: Bool) -> String {
-        hasLinked ? L("この撮影スポットの写真を投稿", "Post a photo of this spot")
+        hasLinked ? L("この観光スポットの写真を投稿", "Post a photo of this spot")
                   : L("最初の1枚を投稿", "Post the first photo")
     }
 
@@ -1254,7 +1254,7 @@ struct OfficialSpotView: View {
         let near = nearby
         if !near.isEmpty {
             VStack(alignment: .leading, spacing: JPSpace.s) {
-                SpotDetailParts.sectionHeader(L("近くの撮影スポット", "Nearby spots"))
+                SpotDetailParts.sectionHeader(L("近くの観光スポット", "Nearby spots"))
                 // v2 の板 SpotDetail: 札に入れず、行の上に白 8% の線（最後の行は下にも）
                 VStack(spacing: 0) {
                     ForEach(Array(near.enumerated()), id: \.element.spot.id) { index, item in

@@ -486,7 +486,7 @@ struct TripPickerView: View {
         VStack(spacing: 12) {
             Spacer(minLength: 0)
             Text(model.deck.isEmpty
-                 ? L("選べる撮影スポットがありません", "No places left to pick")
+                 ? L("選べる観光スポットがありません", "No places left to pick")
                  : L("ここまでで全部です", "That's all for now"))
                 .font(JPFont.rowTitle)
                 .foregroundStyle(WebTheme.foreground)
@@ -517,7 +517,7 @@ struct TripPickerView: View {
 
     private var failed: some View {
         VStack(spacing: 12) {
-            Text(L("撮影スポットを読み込めませんでした。", "Couldn't load photo spots."))
+            Text(L("観光スポットを読み込めませんでした。", "Couldn't load photo spots."))
                 .font(.callout)
                 .foregroundStyle(WebTheme.muted2)
             // 大きさと当たりの形は **label の中に**（外に付けると押せるのが文字の上だけになる）

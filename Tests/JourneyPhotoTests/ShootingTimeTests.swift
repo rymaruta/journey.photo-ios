@@ -159,11 +159,11 @@ final class ShootingTimeTests: XCTestCase {
     /// 2026-10-07: 「冬の撮影スポット」に冬は通行止め・休業のスポットが並び、冬に撮れる所と
     /// 読めた。絞っているのは案内の有無なので、見出しは「冬の案内がある撮影スポット」
     func testSpotsHeadingSaysTheGuideExists() {
-        XCTAssertEqual(ShootingTime.Filter().spotsHeading(count: 3), L("撮影スポット（3か所）", "Shooting spots (3)"))
+        XCTAssertEqual(ShootingTime.Filter().spotsHeading(count: 3), L("観光スポット（3か所）", "Shooting spots (3)"))
         XCTAssertEqual(ShootingTime.Filter(season: .winter).spotsHeading(count: 5),
-                       L("冬の案内がある撮影スポット（5か所）", "Shooting spots with winter notes (5)"))
+                       L("冬の案内がある観光スポット（5か所）", "Shooting spots with winter notes (5)"))
         XCTAssertEqual(ShootingTime.Filter(season: .autumn, dayPart: .evening).spotsHeading(count: 2),
-                       L("秋、夕方の案内がある撮影スポット（2か所）", "Shooting spots with autumn evening notes (2)"))
+                       L("秋、夕方の案内がある観光スポット（2か所）", "Shooting spots with autumn evening notes (2)"))
     }
 
     /// 0件の時間帯の札を薄くするための集計（写真は撮影時刻、撮影地は時間帯の案内・下書きは数えない）

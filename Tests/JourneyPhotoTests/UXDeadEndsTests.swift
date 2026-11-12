@@ -93,7 +93,7 @@ final class UXDeadEndsTests: XCTestCase {
     /// 鍵は `spotId` の無い写真で、座標のあるときだけ。写真と座標で変わる
     func testNearbySpotKeyOnlyForPhotosWithoutSpotId() async throws {
         XCTAssertNil(PhotoTrip.nearbySpotKey(photo: try photo("p1", spotId: "SPOT-1", lat: 35, lng: 135)),
-                     "spotId のある写真は「撮影スポット」の行が受け持つ")
+                     "spotId のある写真は「観光スポット」の行が受け持つ")
         XCTAssertNil(PhotoTrip.nearbySpotKey(photo: try photo("p2")))
         let a = try XCTUnwrap(PhotoTrip.nearbySpotKey(photo: try photo("p3", lat: 35, lng: 135)))
         XCTAssertNotEqual(a, PhotoTrip.nearbySpotKey(photo: try photo("p4", lat: 35, lng: 135)))
@@ -123,7 +123,7 @@ final class UXDeadEndsTests: XCTestCase {
         XCTAssertTrue(place.contains("PhotoTrip.nearbySpot(to: coords, in: rows)"))
         XCTAssertTrue(place.contains("OfficialSpotView(spot: official"))
         XCTAssertTrue(place.contains("WebTheme.minTapTarget"))
-        XCTAssertEqual(PhotoTrip.nearbySpotTitle, "この近くの撮影スポット")
+        XCTAssertEqual(PhotoTrip.nearbySpotTitle, "この近くの観光スポット")
     }
 
     // MARK: - 3. 空の画面の次の一手

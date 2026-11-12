@@ -362,7 +362,7 @@ struct PhotoMapView: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(WebTheme.text3)
-            TextField(L("撮影地、撮影スポット名で絞る", "Filter by place or photo spot"),
+            TextField(L("撮影地、観光スポット名で絞る", "Filter by place or photo spot"),
                       text: $model.typedQuery)
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier("map.search")
@@ -1442,7 +1442,7 @@ struct PhotoMapView: View {
                         // 並ぶとはみ出しうる。隣の「経路」と形をそろえてアイコンは残し、1行に収めて縮める。
                         // 縮めるのは 0.8 まで（15pt × 0.8 = 12pt。板の本文の最小）
                         // 線のボタン（v2 の副ボタン・白 14% の縁）。枠の中ぜんぶが当たり（`jpPillButton` の contentShape）
-                        Label(L("撮影スポットを見る", "See photo spot"), systemImage: "mappin.and.ellipse")
+                        Label(L("観光スポットを見る", "See photo spot"), systemImage: "mappin.and.ellipse")
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
                             .jpPillButton(.outline, height: Self.cardButtonHeight)
@@ -1714,11 +1714,11 @@ struct PhotoMapView: View {
                     // 2026-11-12 判断（第2章）: 2本の線ではなく場所の行の形（写真 56・2 行の字）
                     JPLoadingState(kind: .places)
                 } else if model.officialIndexState == .failed {
-                    ErrorBanner(title: L("撮影スポットを読み込めませんでした", "Couldn't load photo spots"),
+                    ErrorBanner(title: L("観光スポットを読み込めませんでした", "Couldn't load photo spots"),
                                 message: ErrorBanner.defaultMessage, isBusy: model.isLoading) { retryLoad() }
                 } else if rows.isEmpty {
                     EmptyState(icon: "mappin", message: MapSearch.fold(model.query).isEmpty
-                               ? L("公開中の撮影スポットはまだありません", "No photo spots yet")
+                               ? L("公開中の観光スポットはまだありません", "No photo spots yet")
                                : L("見つかりませんでした", "No results"))
                 } else {
                     // **Lazy にする。** 一覧は全件（公開済み364件・写真つき315件）で、
@@ -1747,7 +1747,7 @@ struct PhotoMapView: View {
                 if model.officialIndexState == .ready {
                 // **「運営が確かめた」とは書かない**——公開済みには AI 照合で出した行も
                 // 含まれ、人の確認（`verifiedBy`）とは別の印（photo-gallery の CLAUDE.md）
-                Text(L("公開中の撮影スポットだけ（いまは\(rows.count)件）。",
+                Text(L("公開中の観光スポットだけ（いまは\(rows.count)件）。",
                        "Published photo spots only (\(rows.count) now)."))
                     .font(.caption)
                     .lineSpacing(3)
@@ -1769,9 +1769,9 @@ struct PhotoMapView: View {
     }
 
     private func spotsHeading(hasHere: Bool, hasCenter: Bool) -> String {
-        if hasHere { return L("撮影スポット\u{2002}近い順", "Photo spots\u{2002}nearest first") }
-        if hasCenter { return L("撮影スポット\u{2002}地図の中心から近い順", "Photo spots\u{2002}nearest to the map") }
-        return L("撮影スポット", "Photo spots")
+        if hasHere { return L("観光スポット\u{2002}近い順", "Photo spots\u{2002}nearest first") }
+        if hasCenter { return L("観光スポット\u{2002}地図の中心から近い順", "Photo spots\u{2002}nearest to the map") }
+        return L("観光スポット", "Photo spots")
     }
 
     /// 1行（`OfficialSpotRow`・探すの撮影スポットの一覧と同じ部品・札 #524 で切り出した）
@@ -1885,7 +1885,7 @@ struct PhotoMapView: View {
     private var indexNote: some View {
         if model.officialIndexState == .failed {
             HStack(spacing: 8) {
-                listNote(L("撮影スポットを読み込めませんでした", "Couldn't load photo spots"))
+                listNote(L("観光スポットを読み込めませんでした", "Couldn't load photo spots"))
                 // 写真も読めていない回は上の行の「もう一度試す」が両方を読み直す（2つ並べない）
                 if !model.loadFailed {
                     RetryButton(isBusy: model.isLoading, compact: true) { retryLoad() }

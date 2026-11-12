@@ -82,7 +82,7 @@ final class ScreenStatesTests: XCTestCase {
             ("Features/Gallery/GalleryView.swift", "ErrorBanner(title: L(\"フォロー中の人を読み込めませんでした\""),
             ("Features/Pass/PassCardPickView.swift", "ErrorBanner(title: L(\"写真を読み込めませんでした\""),
             ("Features/Profile/FavoritesView.swift", "ErrorBanner(title: L(\"いいねした写真を読み込めませんでした\""),
-            ("Features/Map/PhotoMapView.swift", "ErrorBanner(title: L(\"撮影スポットを読み込めませんでした\""),
+            ("Features/Map/PhotoMapView.swift", "ErrorBanner(title: L(\"観光スポットを読み込めませんでした\""),
             ("Features/Map/PhotoMapView.swift", "ErrorBanner(title: Self.loadFailedText, message: ErrorBanner.defaultMessage"),
             ("Features/Trips/TripPlansView.swift", "ErrorBanner(title: L(\"旅行プランを読み込めませんでした\""),
             ("Features/Trips/TripAddSheet.swift", "ErrorBanner(title: L(\"旅行プランを読み込めませんでした\""),
@@ -123,7 +123,7 @@ final class ScreenStatesTests: XCTestCase {
     /// 空の印: 失敗・開けない・狭い所は印なし、合う所は合う印
     func testEmptyIconsFitTheirPlace() throws {
         let none: [(String, String)] = [
-            ("Features/Profile/SavedSpotsMapView.swift", "EmptyState(icon: nil, message: L(\"この撮影スポットは開けません\""),
+            ("Features/Profile/SavedSpotsMapView.swift", "EmptyState(icon: nil, message: L(\"この観光スポットは開けません\""),
             ("Features/Profile/SavedSpotsMapView.swift", "EmptyState(icon: nil, message: L(\"この撮影地は開けません\""),
             ("Features/Profile/SavedSpotsMapView.swift", "EmptyState(icon: nil, message: L(\"行きたい場所はまだありません。"),
             ("Features/Messages/DMConversationView.swift", "EmptyState(icon: nil, title: L(\"ブロック中です\""),

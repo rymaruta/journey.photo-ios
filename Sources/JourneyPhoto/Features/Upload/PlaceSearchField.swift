@@ -90,7 +90,7 @@ struct PlaceSearchField: View {
                         .padding(.vertical, -3)
                 }
                 .buttonStyle(.borderless)
-                .accessibilityLabel(L("撮影スポット \(spot.name)\(spot.regionLabel.map { "、" + $0 } ?? "")",
+                .accessibilityLabel(L("観光スポット \(spot.name)\(spot.regionLabel.map { "、" + $0 } ?? "")",
                                       "Photo spot \(spot.name)\(spot.regionLabel.map { ", " + $0 } ?? "")"))
             }
 

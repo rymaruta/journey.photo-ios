@@ -233,7 +233,7 @@ final class UXAuditFixesATests: XCTestCase {
         XCTAssertTrue(SpotScreen.subtitle(region: "熊本県", photoCount: 0).contains(SpotScreen.firstPhotoInvite))
         XCTAssertEqual(OfficialSpotView.postLabel(hasLinked: false), L("最初の1枚を投稿", "Post the first photo"))
         XCTAssertEqual(OfficialSpotView.postLabel(hasLinked: true),
-                       L("この撮影スポットの写真を投稿", "Post a photo of this spot"))
+                       L("この観光スポットの写真を投稿", "Post a photo of this spot"))
     }
 
     func testEmptySpotCardDoesNotSayZero() async throws {
@@ -255,7 +255,7 @@ final class UXAuditFixesATests: XCTestCase {
     // MARK: - 8. 空の画面の次の一手
 
     func testLightForecastEmptyHasAFindSpotsButton() async throws {
-        XCTAssertEqual(LightForecastText.findSpotsAction, L("撮影スポットを探す", "Find photo spots"))
+        XCTAssertEqual(LightForecastText.findSpotsAction, L("観光スポットを探す", "Find photo spots"))
         let view = try source("Features/Pro/LightForecastView.swift")
         let empty = slice(view, from: "private func emptyView(", to: "private func failureView(")
         XCTAssertTrue(empty.contains("actionTitle: LightForecastText.findSpotsAction"))

@@ -143,7 +143,7 @@ final class SavedSpotsMapTests: XCTestCase {
     func testOpenHintDependsOnTarget() throws {
         let rows = OfficialWishlist.rows(keys: ["SPOT-a"], index: [try spot("a", name: "A寺", coords: (35, 135))])
         let official = try XCTUnwrap(SavedSpotsMap.split(places: [], officialRows: rows).pinned.first)
-        XCTAssertEqual(SavedSpotsMap.openHint(official), "撮影スポットの画面を開きます")
+        XCTAssertEqual(SavedSpotsMap.openHint(official), "観光スポットの画面を開きます")
         let placeItem = SavedSpotsMap.item(place("kyoto", coords: Photo.Coords(lat: 35, lng: 135)))
         XCTAssertEqual(SavedSpotsMap.openHint(placeItem), "撮影地の画面を開きます")
     }

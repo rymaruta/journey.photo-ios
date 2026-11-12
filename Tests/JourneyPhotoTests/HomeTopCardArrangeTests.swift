@@ -140,7 +140,7 @@ final class HomeTopCardArrangeTests: XCTestCase {
     func testSwipeEntryUsesTheTableSlot() throws {
         let all = HomeTopCard.withSwipe(try everything(), spots: [try spot("x")], today: nil)
         XCTAssertEqual(HomeTopCard.arrange(all, audience: .guest).first.map(\.slot), "spotSwipe",
-                       "未ログインの1枚目が撮影スポットを払う入口でない")
+                       "未ログインの1枚目が観光スポットを払う入口でない")
         XCTAssertEqual(slots(HomeTopCard.arrange(all, audience: .newcomer)).prefix(2), ["theme", "spotSwipe"])
     }
 

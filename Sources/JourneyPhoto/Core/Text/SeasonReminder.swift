@@ -87,7 +87,7 @@ enum SeasonReminder {
         fireAt.day = 1
         fireAt.hour = hour
         return Plan(fireAt: fireAt, season: season,
-                    title: L("\(label)の撮影スポット", "\(label) photo spots"), body: body)
+                    title: L("\(label)の観光スポット", "\(label) photo spots"), body: body)
     }
 }
 

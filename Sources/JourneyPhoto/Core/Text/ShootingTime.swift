@@ -171,9 +171,9 @@ enum ShootingTime {
         /// 見出しもそう言う（いちばん小さい直し。案内の中身は読み分けない）
         func spotsHeading(count: Int) -> String {
             let parts = [season?.label, dayPart?.phrase].compactMap { $0 }
-            guard !parts.isEmpty else { return L("撮影スポット（\(count)か所）", "Shooting spots (\(count))") }
+            guard !parts.isEmpty else { return L("観光スポット（\(count)か所）", "Shooting spots (\(count))") }
             let english = parts.map { $0.lowercased() }.joined(separator: " ")
-            return L("\(prefix)案内がある撮影スポット（\(count)か所）",
+            return L("\(prefix)案内がある観光スポット（\(count)か所）",
                      "Shooting spots with \(english) notes (\(count))")
         }
 

@@ -313,7 +313,7 @@ final class PhotoTripTests: XCTestCase {
                       "索引が読めなかった回を読み終わりとして覚えている")
         XCTAssertTrue(view.contains("tripLoaded = loaded.withPhotos(photos)"))
         XCTAssertTrue(view.contains("if let loaded = tripStage.loaded, let spot = loaded.spot {\n            NavigationLink {\n                // 写真は"),
-                      "撮影スポットの行が OfficialSpotView へ行かない")
+                      "観光スポットの行が OfficialSpotView へ行かない")
         XCTAssertTrue(view.contains("OfficialSpotView(spot: spot, spots: loaded.index, photos: hidden.visible(loaded.photos ?? []),"),
                       "撮影地に1枚しか無い写真でスポットの頁に写真を渡していない")
         XCTAssertTrue(view.contains(".accessibilityIdentifier(\"photo.spotGuide\")"))

@@ -54,11 +54,11 @@ final class DMTripPlanTests: XCTestCase {
         let found = DMTripPlaces.photoPlaces(messages, index: [kenroku], photos: photos, blocked: ["bad"])
         XCTAssertEqual(found.map(\.place.name), ["兼六園", "ひがし茶屋街, 金沢市", "非公開の滝"])
         XCTAssertEqual(found.map(\.source), [.receivedPhoto, .sentPhoto, .receivedPhoto])
-        XCTAssertTrue(found[0].place.isSpot, "頭の語が撮影スポットの名前と同じなら撮影スポット")
+        XCTAssertTrue(found[0].place.isSpot, "頭の語が観光スポットの名前と同じなら観光スポット")
         XCTAssertFalse(found[1].place.isSpot)
         XCTAssertEqual(found[1].place.coords, Photo.Coords(lat: 36.57, lng: 136.67), "公開の写真の行から座標を引く")
         XCTAssertNil(found[2].place.coords, "非公開は文字だけ")
-        XCTAssertEqual(found[0].detail, "撮影スポット\u{2002}送られた写真から")
+        XCTAssertEqual(found[0].detail, "観光スポット\u{2002}送られた写真から")
         XCTAssertEqual(found[1].detail, "撮影地\u{2002}送った写真から")
     }
 
@@ -190,7 +190,7 @@ final class DMTripPlanTests: XCTestCase {
         trip.apply(index: [kenroku], aliases: [:],
                    photos: [try photo("p1", location: "兼六園, 金沢市", coords: "{\"lat\":36.56,\"lng\":136.66}")])
         XCTAssertTrue(trip.loaded)
-        XCTAssertTrue(trip.places(messages, blocked: []).first?.place.isSpot ?? false, "読めたら撮影スポット")
+        XCTAssertTrue(trip.places(messages, blocked: []).first?.place.isSpot ?? false, "読めたら観光スポット")
         trip.apply(index: nil, aliases: [:], photos: nil)
         XCTAssertTrue(trip.places(messages, blocked: []).first?.place.isSpot ?? false, "読めなかった回に表を空にしない")
         XCTAssertNotNil(trip.places(messages, blocked: []).first?.place.coords, "写真の表も残す")

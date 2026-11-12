@@ -470,8 +470,8 @@ final class HomeTopCardTests: XCTestCase {
     /// 見出しは季節の名前（「見頃」とは言わない）
     func testSeasonEyebrowNamesTheSeason() {
         // 日替わりなので「今日の」と名乗る（owner・2026-10-18。週替わりの間は「今週の」）
-        XCTAssertEqual(HomeTopCard.seasonEyebrow("autumn"), L("今日の撮影スポット\u{2002}秋", "Today's photo spot · Autumn"))
-        XCTAssertEqual(HomeTopCard.seasonEyebrow("monsoon"), L("今日の撮影スポット", "Today's photo spot"))
+        XCTAssertEqual(HomeTopCard.seasonEyebrow("autumn"), L("今日の観光スポット\u{2002}秋", "Today's photo spot · Autumn"))
+        XCTAssertEqual(HomeTopCard.seasonEyebrow("monsoon"), L("今日の観光スポット", "Today's photo spot"))
     }
 
     /// 索引の季節の案内は**行ごとは落とさない**。壊れた項目・知らない季節・空の文だけ落とす

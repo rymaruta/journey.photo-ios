@@ -112,7 +112,7 @@ final class SpotThumbTests: XCTestCase {
         // 地図の一覧の丸は探すの撮影スポットの一覧と同じ行の部品（`OfficialSpotRow`・札 #524）
         XCTAssertTrue(map.contains("OfficialSpotRow(row: row"), "地図の一覧の行（spotRow）")
         XCTAssertTrue(try source("Features/Spots/OfficialSpotRow.swift").contains("SpotThumbImage(image: photo)"),
-                      "地図の一覧・探すの撮影スポットの一覧の丸（OfficialSpotRow）")
+                      "地図の一覧・探すの観光スポットの一覧の丸（OfficialSpotRow）")
         XCTAssertTrue(try source("Features/Trips/TripCreateView.swift")
             .contains(".overlay(SpotThumbImage(image: photo))"), "旅の下書きの行")
         XCTAssertTrue(try source("Features/Profile/MyPageView.swift")

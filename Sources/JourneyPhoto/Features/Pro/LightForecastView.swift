@@ -221,7 +221,7 @@ struct LightForecastView: View {
                 // 写真の一覧はこの画面に無い。「この場所の写真（0）まだありません」を言わせない
                 OfficialSpotView(spot: spot, spots: index, photos: [], photosKnown: false)
             } label: {
-                linkPill(title: L("撮影スポットを見る", "See photo spot"), outward: false)
+                linkPill(title: L("観光スポットを見る", "See photo spot"), outward: false)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("lightForecast.openSpot")

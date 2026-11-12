@@ -415,11 +415,11 @@ enum SpotAutoNoticeText {
 
     static func title(spotName: String, off: Bool) -> String {
         off ? L("「\(spotName)」への自動の結びつけを外しています", "Automatic link to “\(spotName)” removed")
-            : L("撮影スポット「\(spotName)」に結びました", "Linked to the photo spot “\(spotName)”")
+            : L("観光スポット「\(spotName)」に結びました", "Linked to the photo spot “\(spotName)”")
     }
 
     static func body(off: Bool) -> String {
-        off ? L("撮影スポットの頁には並びません。同じ場所なら元に戻せます。",
+        off ? L("観光スポットの頁には並びません。同じ場所なら元に戻せます。",
                 "It won’t appear on the spot page. Restore it if this is the same place.")
             : L("撮影地の名前と写真の位置から、自動で結んでいます。違う場所なら外してください。",
                 "Linked automatically by place name and location. Remove it if this is a different place.")
@@ -431,9 +431,9 @@ enum SpotAutoNoticeText {
 
     /// 保存できたときの知らせ（`nowOff` は保存したあとの状態）
     static func saved(nowOff: Bool) -> String {
-        nowOff ? L("外しました。撮影スポットの頁から外れるのは、サイトの更新が終わってからです",
+        nowOff ? L("外しました。観光スポットの頁から外れるのは、サイトの更新が終わってからです",
                    "Removed. The spot page updates after the site is rebuilt.")
-               : L("元に戻しました。サイトの更新が終わると、撮影スポットの頁に並びます",
+               : L("元に戻しました。サイトの更新が終わると、観光スポットの頁に並びます",
                    "Restored. It will appear on the spot page after the site is rebuilt.")
     }
 
@@ -485,13 +485,13 @@ enum SpotAutoNotice {
 enum SpotUploadAuto {
 
     static func title(spotName: String) -> String {
-        L("撮影スポット「\(spotName)」に結ぶ", "Link to “\(spotName)”")
+        L("観光スポット「\(spotName)」に結ぶ", "Link to “\(spotName)”")
     }
 
     static func note(on: Bool) -> String {
-        on ? L("撮影地の名前と写真の位置から、自動で選んであります。投稿のあと、撮影スポットの頁に並びます。ここで撮っていなければ外してください。",
+        on ? L("撮影地の名前と写真の位置から、自動で選んであります。投稿のあと、観光スポットの頁に並びます。ここで撮っていなければ外してください。",
                "Chosen automatically from the place name and photo location. It will appear on the spot page. Turn off if you didn’t take it here.")
-           : L("撮影スポットには結ばずに投稿します。", "This photo won’t be linked to the spot.")
+           : L("観光スポットには結ばずに投稿します。", "This photo won’t be linked to the spot.")
     }
 
     /// 投稿する写真の候補（撮影地・題・説明・写真の位置。Web の `autoUploadSpot` と同じく、位置は撮影時のもの）

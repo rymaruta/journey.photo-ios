@@ -176,7 +176,7 @@ enum RegionList {
     /// カテゴリで絞っている間、撮影スポットの行が無い理由（リストの上に淡い1行で出す）。
     /// 字は Web の `MapSpotList` と同じ。iOS のチップも「すべて」/ "All"（`Labels.Category.all`）
     static var categoryHidesSpotsNote: String {
-        L("カテゴリは写真の分類なので、絞っている間は撮影スポットを出していません。「すべて」に戻すと出ます。",
+        L("カテゴリは写真の分類なので、絞っている間は観光スポットを出していません。「すべて」に戻すと出ます。",
           "Categories filter photos only, so spots are hidden. Choose “All” to see spots.")
     }
 

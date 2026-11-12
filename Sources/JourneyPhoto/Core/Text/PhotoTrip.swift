@@ -107,7 +107,7 @@ enum PhotoTrip {
     }
 
     /// 行の呼び名（写真の詳細・撮影地の頁で同じ語）
-    static var nearbySpotTitle: String { L("この近くの撮影スポット", "Photo spot nearby") }
+    static var nearbySpotTitle: String { L("この近くの観光スポット", "Photo spot nearby") }
 
     /// 写真の詳細で「この近くの撮影スポット」を探しに行く鍵。**`spotId` の無い写真で、座標のあるときだけ**
     /// （`spotId` のある写真は「撮影スポット」の行がもう台帳の頁へ行く）。写真と座標で変わる
