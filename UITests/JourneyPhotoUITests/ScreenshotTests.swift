@@ -3417,7 +3417,8 @@ final class ScreenshotTests: XCTestCase {
 
     /// **持ち手 ≡・「2日目へ移す」・外して戻す・場所を探して足す**（2026-11-12・1.1.85・札 #570・資料「みんなで埋める旅行プラン」
     /// の場面5〜7）。見本の「金沢・福井の旅」で:
-    /// 1. 読み上げの形: 持ち手を上へ（`increment`）→ 1 番目へ、下へ（`decrement`）→ 2 番目へ戻る
+    /// 1. 持ち手 ≡ が出ている。「…」の上へ → 1 番目へ、下へ → 2 番目へ戻る（持ち手の読み上げの上下と同じ `perform`。
+    ///    iOS の XCUIElement には `increment()` が無く、読み上げの調整の操作は UI テストから押せない）
     /// 2. 「…」に日を選ぶ段を挟まず「2日目へ移す」（日が2つ）→ 2 日目の末尾へ
     /// 3. 「…」の「この日程から外す」→ 日の下に「戻す」→ 押すと戻る
     /// 4. 1 日目の「追加」→ 探す欄に「東尋坊」→ 観光スポットの結果を押す → 「入れました」→ 閉じると日程にある
@@ -3435,12 +3436,18 @@ final class ScreenshotTests: XCTestCase {
         }
         XCTAssertTrue(castleHandle().waitForExistence(timeout: 10), "持ち手 ≡ が出ていない")
         XCTAssertEqual(castleMenu.value as? String, "1 日目、2 番目")
-        castleHandle().increment()
-        Thread.sleep(forTimeInterval: 1)
-        XCTAssertEqual(castleMenu.value as? String, "1 日目、1 番目", "持ち手の「上へ」で動かない")
-        castleHandle().decrement()
-        Thread.sleep(forTimeInterval: 1)
-        XCTAssertEqual(castleMenu.value as? String, "1 日目、2 番目", "持ち手の「下へ」で動かない")
+        XCTAssertEqual(castleHandle().value as? String, "1 日目、2 番目", "持ち手の読み上げの位置")
+        func menuPick(_ title: String) {
+            castleMenu.tap()
+            let item = app.buttons[title].firstMatch
+            XCTAssertTrue(item.waitForExistence(timeout: 5), "「…」に「\(title)」が無い")
+            item.tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        menuPick("上へ")
+        XCTAssertEqual(castleMenu.value as? String, "1 日目、1 番目", "「上へ」で動かない")
+        menuPick("下へ")
+        XCTAssertEqual(castleMenu.value as? String, "1 日目、2 番目", "「下へ」で動かない")
 
         // 2. 「2日目へ移す」（日を選ぶ段を挟まない）
         castleMenu.tap()
