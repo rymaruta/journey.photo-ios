@@ -329,8 +329,7 @@ final class DirectMessageRedesignTests: XCTestCase {
     func testConversationWiring() throws {
         let view = try source("Features/Messages/DMConversationView.swift")
         XCTAssertTrue(view.contains("if message.hasPhoto { photoCard(for: message) }"))
-        // 1.1.83（資料⑤）: 撮影スポットの頁のリンクの通は札にし、吹き出しには残りの文だけ（`DMSpotShare.remainder`）
-        XCTAssertTrue(view.contains("if let text = spotSlug == nil ? message.bubbleText"), "写真だけの通に吹き出しを出している")
+        XCTAssertTrue(view.contains("if let text = message.bubbleText {"), "写真だけの通に吹き出しを出している")
         XCTAssertTrue(view.contains("DMDayDivider(text: DMText.dayLabel(date))"))
         XCTAssertTrue(view.contains(".frame(width: DMLook.storyThumbWidth,"))
         XCTAssertTrue(view.contains("Text(Self.linked(text))"), "本文のリンクを押せない")

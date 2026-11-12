@@ -406,18 +406,8 @@ struct DMConversationView: View {
                         }
                         if message.isStoryReply { unsendMenu(storyCard(for: message), for: message) }
                         if message.hasPhoto { photoCard(for: message) }
-                        // 撮影スポットの頁のリンクは札にする（1.1.83・資料⑤・`DMSpotShare`）。吹き出しには残りの文だけ
-                        let spotSlug = message.hasPhoto ? nil
-                            : DMSpotShare.slug(in: message.text, siteBase: AppConfig.siteBaseURL)
-                        if let spotSlug {
-                            // 札が作れなかったときは拾ったリンクだけを出す（文全体は下の吹き出しに残る）
-                            DMSpotCard(slug: spotSlug, mine: message.mine,
-                                       fallback: DMSpotShare.link(in: message.text, siteBase: AppConfig.siteBaseURL)
-                                           ?? message.text)
-                        }
                         let time = DMText.timeLabel(current: message, next: next)
-                        if let text = spotSlug == nil ? message.bubbleText
-                            : DMSpotShare.remainder(message.text, siteBase: AppConfig.siteBaseURL) {
+                        if let text = message.bubbleText {
                             DMBubble(text: text, mine: message.mine, time: time,
                                      joinsPrevious: DMText.joinsPrevious(current: message, previous: previous),
                                      maxWidth: DMLook.bubbleMaxWidth(container: threadWidth))

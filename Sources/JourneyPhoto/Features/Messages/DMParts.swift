@@ -26,8 +26,6 @@ enum DMLook {
     /// 空の受信箱の「フォロー中」の顔の列（52・名前は 12pt で1行・列の幅 64）
     nonisolated static let faceAvatar: CGFloat = 52
     nonisolated static let faceColumn: CGFloat = 64
-    /// 送れない相手の顔の濃さ（1.1.83 観光スポット・`DMPeopleFacesRow.dimmed`）
-    nonisolated static let unreachableFaceOpacity: Double = 0.4
     /// 受信箱の行の高さ（72）・リクエストの入口の行（76）
     nonisolated static let rowHeight: CGFloat = 72
     nonisolated static let requestEntryHeight: CGFloat = 76
@@ -208,16 +206,7 @@ struct DMThreadRow: View {
 /// （札 #541・別の担当の枝 `claude/sns-share-reply`）
 struct DMPeopleFacesRow: View {
     let people: [FollowUser]
-    /// 送る前に送れないと分かる相手（1.1.83 観光スポット・`DMSpotShare.unreachablePeers`）。顔を薄くする。
-    /// 押せば呼ぶ側が理由を知らせる（送らない）
-    var dimmed: Set<String> = []
     let onPick: (FollowUser) -> Void
-
-    init(people: [FollowUser], dimmed: Set<String> = [], onPick: @escaping (FollowUser) -> Void) {
-        self.people = people
-        self.dimmed = dimmed
-        self.onPick = onPick
-    }
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -235,7 +224,6 @@ struct DMPeopleFacesRow: View {
                         .frame(width: DMLook.faceColumn)
                         .frame(minHeight: WebTheme.minTapTarget)
                         .contentShape(Rectangle())
-                        .opacity(dimmed.contains(user.id) ? DMLook.unreachableFaceOpacity : 1)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(L("\(user.displayName) さんにメッセージ", "Message \(user.displayName)"))

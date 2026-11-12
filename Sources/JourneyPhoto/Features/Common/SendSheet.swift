@@ -222,12 +222,6 @@ enum SendSheetLayout {
         L("\(name)さんに送りました", "Sent to \(name)")
     }
 
-    /// 撮影スポットの頁から出す行動の並び（1.1.83・2026-11-12）。リンクをコピー（頁）とほかのアプリ（今の ↑ と同じ文）。
-    /// ストーリーは置かない（撮影スポットのストーリーの絵は無い）
-    static func spotActions(pageURL: URL, shareText: String) -> [SendSheetAction] {
-        [.copyLink(pageURL), .otherAppsText(shareText)]
-    }
-
     /// 「ストーリーに載せる」を出すか（札 #541 の ①・#577）。**ログイン中で、自分の、全体に公開した写真だけ**。
     ///
     /// 2026-11-12 判断（owner の原則「基本的にその人のものなので、他人が自由に操作するのは絶対ダメ」）:

@@ -10,17 +10,17 @@ final class UploadDetailsTests: XCTestCase {
     /// **公開範囲は既定でも出す。** 畳んだまま、誰に見えるか分からずに投稿させない
     func testSummaryAlwaysStartsWithTheAudience() {
         let everyone = UploadDetails.summary(published: true, audience: .everyone, songTitle: nil,
-                                             albumTitle: nil, category: "")
+                                             albumTitle: nil, sharesToSocial: false, category: "")
         XCTAssertEqual(everyone, Audience.everyone.label)
         let close = UploadDetails.summary(published: true, audience: .closeFriends, songTitle: nil,
-                                          albumTitle: nil, category: "")
+                                          albumTitle: nil, sharesToSocial: false, category: "")
         XCTAssertEqual(close, Audience.closeFriends.label)
     }
 
     /// 旅の写真から来た回は非公開で始まる。畳んでいても「非公開」と読める
     func testSummarySaysPrivateWhenUnpublished() {
         let s = UploadDetails.summary(published: false, audience: .everyone, songTitle: nil,
-                                      albumTitle: nil, category: "")
+                                      albumTitle: nil, sharesToSocial: false, category: "")
         XCTAssertEqual(s, L("非公開", "Private"))
         XCTAssertFalse(s.contains(Audience.everyone.label), "非公開なのに全体に公開と読めた")
     }
@@ -28,19 +28,23 @@ final class UploadDetailsTests: XCTestCase {
     /// 付けたものだけ足す（既定の「無し」は並べない）
     func testSummaryListsOnlyWhatWasAdded() {
         let s = UploadDetails.summary(published: true, audience: .everyone, songTitle: "海の声",
-                                      albumTitle: "夏の旅", category: "風景")
+                                      albumTitle: "夏の旅", sharesToSocial: true, category: "風景")
         XCTAssertTrue(s.hasPrefix(Audience.everyone.label))
         XCTAssertTrue(s.contains(L("曲", "Song")))
         XCTAssertTrue(s.contains(L("アルバム", "Album")))
+        XCTAssertTrue(s.contains(L("SNS にも載せる", "Share to social")))
         XCTAssertTrue(s.contains("風景"))
     }
 
-    /// 1.1.83（資料「SNS をもっと SNS に」①）: 「SNS にも載せる」の行は無くした。まとめにも出さない
-    /// （投稿のあとに毎回共有カードが出る・`PostedShareCard`）
-    func testSummaryNoLongerMentionsSocial() {
-        let s = UploadDetails.summary(published: true, audience: .everyone, songTitle: "海の声",
-                                      albumTitle: "夏の旅", category: "風景")
-        XCTAssertFalse(s.contains(L("SNS にも載せる", "Share to social")))
+    /// 🔴 **SNS は載せられるときだけ書く。** 入切は端末に覚えるので、フォロワーのみに変えた回も
+    /// 入のまま——そこで「SNS」と書くと、絞った写真が外に載ると思わせる
+    func testSummaryOmitsSocialWhenItWouldNotShare() {
+        let followers = UploadDetails.summary(published: true, audience: .followers, songTitle: nil,
+                                              albumTitle: nil, sharesToSocial: true, category: "")
+        XCTAssertFalse(followers.contains(L("SNS にも載せる", "Share to social")))
+        let hidden = UploadDetails.summary(published: false, audience: .everyone, songTitle: nil,
+                                           albumTitle: nil, sharesToSocial: true, category: "")
+        XCTAssertFalse(hidden.contains(L("SNS にも載せる", "Share to social")))
     }
 
     // MARK: - 作例の一言
@@ -95,10 +99,10 @@ final class UploadDetailsTests: XCTestCase {
         XCTAssertTrue(body.contains("if showsDetails {\n                    JPCardDivider()\n                    detailRows"),
                       "設定の行が畳まれていない")
         XCTAssertTrue(source.contains("@State private var showsDetails = false"), "畳んで始める")
-        // 公開範囲・親しい友達・曲・カテゴリは中身に残る（機能は消さない）。SNS の行は 1.1.83 で無くした（投稿のあとにカード）
+        // 公開範囲・親しい友達・SNS・曲・カテゴリは中身に残る（機能は消さない）
         let rowsStart = try XCTUnwrap(source.range(of: "private var detailRows: some View {"))
         let rows = String(source[rowsStart.upperBound...].prefix(3000))
-        for part in ["songRow", "albumRow", "audienceRow", "CloseFriendsView()", "CategoryField("] {
+        for part in ["songRow", "albumRow", "audienceRow", "threadsRow", "CloseFriendsView()", "CategoryField("] {
             XCTAssertTrue(rows.contains(part), "\(part) が詳しい設定から消えた")
         }
     }

@@ -12,27 +12,8 @@ struct SignatureShareCardSheet: View {
     let avatarURL: URL?
     /// 上に置く部品（「投稿 | ストーリー」の切り替え・`SocialShareSheet`・2026-11-12）
     var header: AnyView? = nil
-    /// 投稿の完了で出すとき（1.1.83・資料「SNS をもっと SNS に」①・`PostedShareCard`）。nil なら写真の詳細の ⋯ から
-    var posted: Posted? = nil
-
-    /// 投稿の完了で出すときの足し。頭に「投稿しました」、下に「ストーリーに載せる」「リンクをコピー」「閉じる」
-    struct Posted {
-        let photoId: String
-        /// 写真の短縮リンク（「リンクをコピー」）
-        let link: URL?
-        /// ストーリーの札に描く題（`SharedPhotoStoryCard.titleLine`）
-        let storyTitle: String
-        /// 閉じたとき（そこで共有したか・`PostedCardHabit`）
-        var onFinish: ((Bool) -> Void)? = nil
-    }
 
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var toasts: ToastCenter
-    /// 「ストーリーに載せる」で開く作る画面（写真の詳細の「送る」と同じ `StoryComposerView(sharing:)`）
-    @State private var storySeed: StoryShareSeed?
-    @State private var preparingStory = false
-    /// この画面で共有したか（カードを共有・ストーリーに載せる・リンクをコピー）。閉じたときに `Posted.onFinish` へ
-    @State private var didShare = false
     @State private var ratio: SignatureShareCardRenderer.Ratio = .portrait
     /// カードの型（帯／フェード）。前に選んだものを次も使う（2026-11-05 owner「ユーザが選べるように」）
     /// 2026-11-05: `@AppStorage` は使わない（Linux の SwiftUI 模型に無く、他の画面も UserDefaults を直に読む）
@@ -62,7 +43,6 @@ struct SignatureShareCardSheet: View {
         NavigationStack {
             VStack(spacing: 16) {
                 if let header { header }
-                if posted != nil { postedHeader }
                 Picker(L("共有画像の型", "Share image style"), selection: $styleRaw) {
                     // 型の名前は短く（4つを1行の切り替えに並べる）。順は「いつもの帯」→ 写真を活かす順
                     Text(L("帯", "Band")).tag(SignatureShareCardRenderer.Style.band.rawValue)
@@ -112,35 +92,25 @@ struct SignatureShareCardSheet: View {
 
                 Button {
                     showShare = true
-                    didShare = true
                 } label: {
-                    Text(posted == nil ? L("この画像を共有", "Share this image") : L("カードを共有", "Share card"))
+                    Text(L("この画像を共有", "Share this image"))
                         .frame(maxWidth: .infinity)
                 }
                 .webPrimaryButton()
                 .disabled(output == nil || preparing)
                 .accessibilityIdentifier("signatureShare.share")
                 .padding(.horizontal)
-                .padding(.bottom, posted == nil ? 16 : 0)
-                if let posted { postedActions(posted) }
+                .padding(.bottom, 16)
             }
             .background(Color.black)
             .foregroundStyle(.white)
-            .navigationTitle(posted == nil ? L("SNSに共有", "Share to social media") : "")
+            .navigationTitle(L("SNSに共有", "Share to social media"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // 投稿の完了では「閉じる」は下に置く（資料の模型・頭は「投稿しました」の見出し）
-                if posted == nil {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button(L("閉じる", "Close")) { dismiss() }
-                    }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(L("閉じる", "Close")) { dismiss() }
                 }
             }
-            .toolbar(posted == nil ? .visible : .hidden, for: .navigationBar)
-            .fullScreenCover(item: $storySeed) { seed in
-                NavigationStack { StoryComposerView(sharing: seed) }
-            }
-            .onDisappear { posted?.onFinish?(didShare) }
             .onChange(of: styleRaw) { _, newValue in
                 UserDefaults.standard.set(newValue, forKey: Self.styleDefaultsKey)
             }
@@ -182,92 +152,4 @@ struct SignatureShareCardSheet: View {
             }
         }
     }
-}
-
-// MARK: - 投稿の完了（1.1.83・資料「SNS をもっと SNS に」①・2026-11-12）
-
-extension SignatureShareCardSheet {
-
-    /// 頭: 真鍮の眉「投稿しました」（黒地の上の合図）と明朝の一行「カードにして、ほかの SNS にも」
-    var postedHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(PostedShareCardText.eyebrow)
-                .jpEyebrow()
-                .foregroundStyle(WebTheme.accent)
-            Text(PostedShareCardText.title)
-                .font(JPFont.rowTitle)
-                .foregroundStyle(WebTheme.text)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityAddTraits(.isHeader)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal)
-        .padding(.top, 20)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("postedCard.header")
-    }
-
-    /// 下: 「ストーリーに載せる」「リンクをコピー」（線の副ボタン 44 を2つ並べる）と「閉じる」（文字のボタン）。
-    /// 確かめは出さない（閉じれば何も起きない・CLAUDE.md「聞くのは最小に」）
-    func postedActions(_ posted: Posted) -> some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 8) {
-                Button { Task { await prepareStory(posted) } } label: {
-                    Text(SendSheetLayout.storyLabel)
-                        .jpOutlineButton(fullWidth: true)
-                }
-                .buttonStyle(.plain)
-                .disabled(preparingStory)
-                .accessibilityIdentifier("postedCard.story")
-                if let link = posted.link {
-                    Button {
-                        UIPasteboard.general.string = link.absoluteString
-                        didShare = true
-                        toasts.show(L("リンクをコピーしました", "Link copied"))
-                    } label: {
-                        Text(L("リンクをコピー", "Copy link"))
-                            .jpOutlineButton(fullWidth: true)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("postedCard.copyLink")
-                }
-            }
-            Button(L("閉じる", "Close")) { dismiss() }
-                .font(JPFont.bodyEmphasis)
-                .foregroundStyle(WebTheme.text2)
-                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                .contentShape(Rectangle())
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("postedCard.close")
-        }
-        .padding(.horizontal)
-        .padding(.bottom, 8)
-    }
-
-    /// 写真を札にしたストーリーの絵を作り、作る画面を開く（写真の詳細の `prepareStory` と同じ絵・`SharedPhotoStoryCard`）。
-    /// 写真は投稿に使った絵（手元にある）なので読み直さない。顔はカードのために読んだものを使う
-    func prepareStory(_ posted: Posted) async {
-        guard !preparingStory else { return }
-        preparingStory = true
-        defer { preparingStory = false }
-        let raw = photoData
-        let face = avatarData
-        let handle = SharedPhotoStoryCard.handleLine(username: credit.username, displayName: credit.name)
-        let title = posted.storyTitle
-        let card = await Task.detached(priority: .userInitiated) {
-            SharedPhotoStoryCard.render(photo: raw, avatar: face, handle: handle, title: title)
-        }.value
-        guard let card else {
-            toasts.show(L("ストーリーの絵を作れませんでした", "Couldn't make the story image"), kind: .failure)
-            return
-        }
-        didShare = true
-        storySeed = StoryShareSeed(photoId: posted.photoId, cardData: card)
-    }
-}
-
-/// 投稿の完了のカードの言葉（試験で見る）
-enum PostedShareCardText {
-    static var eyebrow: String { L("投稿しました", "Posted") }
-    static var title: String { L("カードにして、ほかの SNS にも", "Turn it into a card for other social apps") }
 }

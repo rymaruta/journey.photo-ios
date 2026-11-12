@@ -30,15 +30,10 @@ struct ProfileService {
         // 鍵を持たない入り方（`PreviewSession`・UI テスト）では、鍵の要る口の代わりに公開プロフィール。
         // プロフィールの編集・バッジの棚を UI テストで開けるようにする（Release には無い）
         if let previewId = PreviewSession.userId {
-            let profile = try await publicProfile(userId: previewId)
-            MyProfileCache.shared.remember(profile)
-            return profile
+            return try await publicProfile(userId: previewId)
         }
         #endif
-        let profile = try await api.authorized(.get, "/user/profile", as: UserProfile.self)
-        // 投稿のあとのカード（`PostedShareCardSheet`）が通信で待たないよう、手元に控える
-        MyProfileCache.shared.remember(profile)
-        return profile
+        return try await api.authorized(.get, "/user/profile", as: UserProfile.self)
     }
 
     /// アカウントがもう消されている（退会済みの 410・`APIError.isAccountGone`）

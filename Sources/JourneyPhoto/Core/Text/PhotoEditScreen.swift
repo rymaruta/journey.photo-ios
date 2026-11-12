@@ -456,9 +456,10 @@ enum UploadEditRules {
     /// 共有から外した写真があれば、そのことを知らせに足す（編集前の絵を黙って SNS に渡さない）
     static func withShareSkipped(_ summary: String?, skipped: Int) -> String? {
         guard skipped > 0 else { return summary }
-        // 1.1.83（資料①）: 外すのはカードに使う先頭の1枚だけ（`UploadViewModel.cardLeadId`）。作れなければカードは出さない
-        let note = L("編集した写真を共有カード用に用意できなかったため、カードは出していません（投稿は済んでいます）",
-                     "The edited photo couldn't be prepared for the share card, so no card was made (the post itself went through).")
+        // 外した写真があると共有の画面そのものを開かない（`UploadViewModel` の `shareSkipped == 0`）ので、
+        // 「その枚数だけ外した」ではなく「共有を開かなかった」と言う（残りが共有されたと読ませない）
+        let note = L("編集した写真 \(skipped) 枚を共有用に用意できなかったため、SNS への共有は開いていません（投稿は済んでいます）",
+                     "\(skipped) edited photo(s) couldn't be prepared for sharing, so sharing to social media was not opened (the post itself went through).")
         guard let summary else { return note }
         return summary + L("　", " ") + note
     }

@@ -28,21 +28,6 @@ struct ToastOverlay: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("toast.undo")
-                } else if let title = message.actionTitle, let action = message.action {
-                    // 押せる一手（1.1.83「カードにする」）。当たりは 44
-                    // 1.1.84 のまとめ: 「取り消す」と同じ所に置く（1つの知らせにはどちらか1つ・`ToastCenter.show`）
-                    Button {
-                        toasts.dismiss()
-                        action()
-                    } label: {
-                        Text(title)
-                            .font(.subheadline.weight(.semibold))
-                            .underline()
-                            .frame(minHeight: WebTheme.minTapTarget)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("toast.action")
                 }
             }
             .foregroundStyle(WebTheme.foreground)

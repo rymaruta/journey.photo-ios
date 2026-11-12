@@ -617,20 +617,6 @@ final class GalleryViewModel: ObservableObject {
 
     private var followingNewsCache: (key: FollowingNewsKey, newest: String?)?
 
-    /// 「フォロー中」が空のときの「おすすめの人」（1.1.83・資料④・`SuggestedPeople`）。`followingNewest` と同じく
-    /// **描くたびに全件をなめない**（全件・人・フォロー一覧・写しのどれかが変わったときだけ作り直す）。
-    /// ブロック・通報は `hidden`（画面の写し）で先に落とす。フォロー一覧は今の人のものだけ
-    func suggestedPeople(viewerId: String?, hiding hidden: ModerationSnapshot) -> [SuggestedPeople.Person] {
-        let following = viewerId != nil && followingOwner == viewerId ? followingIds : []
-        let key = FollowingNewsKey(allRevision: allRevision, viewerId: viewerId, following: following, hidden: hidden)
-        if let cached = suggestedPeopleCache, cached.key == key { return cached.people }
-        let people = SuggestedPeople.pick(hidden.visible(all), viewerId: viewerId, following: following)
-        suggestedPeopleCache = (key, people)
-        return people
-    }
-
-    private var suggestedPeopleCache: (key: FollowingNewsKey, people: [SuggestedPeople.Person])?
-
     /// 自分の写真。**今日のテーマに参加したかの判定に使う。**
     ///
     /// 公開一覧（静的 JSON）ではなく**API から読む**——投稿したばかりの

@@ -39,15 +39,6 @@ struct OfficialSpotView: View {
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var toasts: ToastCenter
     @EnvironmentObject private var environment: AppEnvironment
-    @EnvironmentObject private var auth: AuthStore
-    /// 受信箱（送る前に送れない相手を見分ける・`DMSpotShare.unreachablePeers`）
-    @EnvironmentObject private var messages: DMInboxStore
-    /// 「送る」シート（1.1.83・資料「SNS をもっと SNS に」⑤）。送る相手の顔はシートを開いてから読む
-    @State private var showSendSheet = false
-    @State private var sendFaces: [FollowUser] = []
-    @State private var sendFacesLoaded = false
-    @State private var sendFacesLoading = false
-    @State private var sendingTo: String?
     /// 渡された写真は開いた時点の写しなので、ブロック／通報をここで反映する。
     /// **見ている最中には絞らない**（`FavoritesView` の `photos` の注記）——
     /// 押した元の `NavigationLink` が消えると、開いている詳細がその場で閉じ、
@@ -214,18 +205,8 @@ struct OfficialSpotView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                // 1.1.83（資料⑤・2026-11-12）: 頁のある撮影スポットは、写真と同じ「送る」シートへ（DM の顔＋リンク＋ほかのアプリ）。
-                // 頁の無い下書きは今までどおり iPhone の共有シートだけ（開けないリンクを DM に送らない）
-                Group {
-                    if spotPageURL != nil {
-                        Button { Task { await openSendSheet() } } label: {
-                            Image(systemName: "square.and.arrow.up")
-                        }
-                    } else {
-                        ShareLink(item: shareText) {
-                            Image(systemName: "square.and.arrow.up")
-                        }
-                    }
+                ShareLink(item: shareText) {
+                    Image(systemName: "square.and.arrow.up")
                 }
                 .webToolbarIcon()
                 // 絵だけのボタン。名前を明示する（OS 任せにすると版によって読まれ方が揺れる）
@@ -235,76 +216,6 @@ struct OfficialSpotView: View {
             }
         }
         .accessibilityIdentifier("spot.official")
-        .sheet(isPresented: $showSendSheet) { sendSheet }
-    }
-
-    // MARK: - 送る（1.1.83・資料「SNS をもっと SNS に」⑤「一緒に行こう」）
-
-    /// 撮影スポットのサイトの頁（公開済みだけ）。DM で送るのはこのリンク（`DMSpotShare`）
-    private var spotPageURL: URL? {
-        SpotScreen.pageURL(slug: spot.slug, isDraft: spot.isDraft, siteBase: AppConfig.siteBaseURL)
-    }
-
-    /// 送るシート。顔の列は写真の詳細と同じ部品（`DMPeopleFacesRow`）。ログインしていなければ顔の段は出さない
-    @ViewBuilder
-    private var sendSheet: some View {
-        if let pageURL = spotPageURL {
-            let actions = SendSheetLayout.spotActions(pageURL: pageURL, shareText: shareText)
-            switch SendSheetLayout.peopleRow(loaded: sendFacesLoaded, people: sendFaces, canSend: auth.userId != nil) {
-            case .none:
-                SendSheet(actions: actions)
-            case .placeholder:
-                SendSheet(actions: actions, people: { SendSheetFacesPlaceholder() })
-            case .faces(let faces):
-                SendSheet(actions: actions, people: {
-                    DMPeopleFacesRow(people: faces,
-                                     dimmed: DMSpotShare.unreachablePeers(faces, inbox: messages.inbox,
-                                                                          inboxLoaded: messages.phase == .loaded)) { user in
-                        Task { await sendSpot(to: user, pageURL: pageURL) }
-                    }
-                    .disabled(sendingTo != nil)
-                })
-            }
-        }
-    }
-
-    /// シートをすぐ開き、送る相手（フォローしている人）はそのあと読む（写真の詳細の `openSendSheet` と同じ）
-    private func openSendSheet() async {
-        showSendSheet = true
-        guard !sendFacesLoaded, !sendFacesLoading, let me = auth.userId else { return }
-        // 受信箱をまだ読んでいなければ一緒に読む（送れない相手を薄くするため。読めなければ薄くしない）
-        if messages.phase != .loaded {
-            Task { await messages.refresh(service: environment.dm, owner: me) }
-        }
-        sendFacesLoading = true
-        defer { sendFacesLoading = false }
-        let fetched = try? await environment.social.following(userId: me)
-        guard auth.userId == me else { return }
-        if let fetched {
-            sendFaces = DMStart.candidates(fetched.users, me: me, blocked: hidden.blockedUserIds)
-        }
-        sendFacesLoaded = true
-    }
-
-    /// 顔を押したら、その人へ撮影スポットを1通（`DMSpotShare`）。送れたらシートを閉じて知らせる。
-    /// 承認前の相手などで断られたらサーバーの言葉を出す
-    private func sendSpot(to user: FollowUser, pageURL: URL) async {
-        guard sendingTo == nil else { return }
-        // 送る前に送れないと分かる相手（会話が無い・承認待ち）には送らず、理由を言う
-        if DMSpotShare.unreachablePeers([user], inbox: messages.inbox, inboxLoaded: messages.phase == .loaded)
-            .contains(user.id) {
-            toasts.show(DMSpotShare.refusedBeforeAccept, kind: .info)
-            return
-        }
-        sendingTo = user.id
-        defer { sendingTo = nil }
-        do {
-            try await DMSpotShare.send(service: environment.dm, me: auth.userId, peerId: user.id, pageURL: pageURL)
-            showSendSheet = false
-            toasts.show(SendSheetLayout.sentLabel(user.displayName))
-        } catch {
-            toasts.show(DMSpotShare.failureText(error), kind: .failure)
-        }
     }
 
     /// 前面が確定したときだけ、写真の格子の写しを取る

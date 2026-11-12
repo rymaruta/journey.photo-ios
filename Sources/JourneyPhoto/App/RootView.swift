@@ -82,8 +82,6 @@ struct RootView: View {
     @State private var launchNoticesDeciding = true
     // #304（2026-10-18）: 「この1枚をカバーに」とアイコン・カバーのお礼
     @ObservedObject private var coverOffers = CoverOfferStore.shared
-    /// 投稿のあとの知らせの「カードにする」で開くカード（1.1.83・`PostedCardHabit`）
-    @ObservedObject private var postedCardOffer = PostedCardOffer.shared
     @ObservedObject private var profileReward = ProfileReward.shared
     /// 出している差し出し（板 51・51b）
     @State private var coverOffer: CoverOfferStore.Offer?
@@ -477,9 +475,6 @@ struct RootView: View {
                 if closed, coverOffers.hasPending { offerCoverWhenIdle() }
             }
             .task(id: auth.userId) { await claimProfileExtras() }
-            .sheet(item: $postedCardOffer.presented) { card in
-                PostedShareCardSheet(card: card)
-            }
             .sheet(item: $coverOffer, onDismiss: {
                 // 閉じたら、待っていたお礼・届いた画面を出し直す
                 if profileReward.hasPending { offerRewardWhenIdle() }
