@@ -680,4 +680,35 @@ enum PreviewSession {
         return false
         #endif
     }
+
+    /// ①現像の札と画面・②「1年前」の輪と閲覧を撮る（2026-11-12 札 #543）。端末の写真の代わりに
+    /// 同梱の見本の絵で旅を作る（`DevelopPreview`）。`-JPPreviewDevelop YES`。Release では必ず false
+    static let developKey = "JPPreviewDevelop"
+
+    static var develop: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: developKey)
+        #else
+        return false
+        #endif
+    }
+
+    /// ①②の状態の絵を撮る（2026-11-12 札 #543）。`-JPPreviewDevelopState offline`（圏外）か `limited`（一部の写真だけ許可）。
+    /// `develop` のときだけ効く。Release では必ず nil
+    static let developStateKey = "JPPreviewDevelopState"
+
+    static var developState: String? {
+        #if DEBUG
+        guard develop else { return nil }
+        return UserDefaults.standard.string(forKey: developStateKey)
+        #else
+        return nil
+        #endif
+    }
+
+    /// 圏外として撮る（`developState == "offline"`）
+    static var developOffline: Bool { developState == "offline" }
+    /// 一部の写真だけ許可として撮る（`developState == "limited"`）
+    static var developLimited: Bool { developState == "limited" }
 }

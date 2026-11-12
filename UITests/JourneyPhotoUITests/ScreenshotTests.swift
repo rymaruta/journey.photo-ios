@@ -8127,4 +8127,166 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 2)
         XCTAssertFalse(conversation.exists, "会話から開いたプロフィールの「メッセージ」で、同じ会話がもう1枚積まれた")
     }
+
+    /// 第6章の絵の試験の歯止め: 出るはずのものが出なければ**落とす**（黙って抜けない・2026-11-12 確かめ役）
+    private func expect(_ ok: Bool, _ what: String, _ app: XCUIApplication) -> Bool {
+        if !ok {
+            XCTFail("\(what) が出ない")
+            print("UINOTE \(what) が出ない（画面の木）:\n\(app.debugDescription)")
+        }
+        return ok
+    }
+
+    /// **①現像・②「1年前」**（2026-11-12 札 #543）。見本の旅（`-JPPreviewDevelop`・同梱の絵）で、
+    /// ホームの「現像前の旅」の札 → 払う画面（はじめ・右へ払った後）→ 払い終えた表紙、
+    /// ストーリーの列の「1年前」の輪 → 閲覧、の順に撮る。見本で必ず出るので、**出なければ落とす**
+    func testCapturesDevelopAndYearAgo() {
+        let app = launchTrunk(["-JPPreviewDevelop", "YES"] + Self.freshDevelop)
+        let card = app.buttons["home.develop"].firstMatch
+        guard expect(card.waitForExistence(timeout: 25), "ホームの現像前の旅の札", app) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "120a-ホーム（現像前の旅の札・1年前の輪）")
+        guard expect(card.isHittable, "押せる現像前の旅の札", app) else { return }
+        card.tap()
+        let keep = app.buttons["develop.keep"].firstMatch
+        guard expect(keep.waitForExistence(timeout: 10), "現像の払う画面", app) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "120b-現像（はじめのコマ）")
+        // 右へ払う（載せる）。払いの判定は 110pt 以上
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.4))
+        start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.42)))
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "120c-現像（右へ払った後・2コマ目）")
+        // 残りはボタンで（載せる・外すを交互に）
+        for k in 0..<12 {
+            guard keep.exists, keep.isHittable else { break }
+            if k % 3 == 2 { app.buttons["develop.skip"].firstMatch.tap() } else { keep.tap() }
+            Thread.sleep(forTimeInterval: 0.6)
+        }
+        let post = app.buttons["develop.post"].firstMatch
+        guard expect(post.waitForExistence(timeout: 5), "現像の表紙の「投稿する」", app) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "120d-現像（表紙・投稿する）")
+        XCTAssertGreaterThanOrEqual(post.frame.height, 44, "「投稿する」が 44pt 未満")
+        // 公開範囲は非公開で始まり、1回押すと公開に替わる（2026-11-12 確かめ役）
+        let audience = app.buttons["develop.audience"].firstMatch
+        if expect(audience.exists, "公開範囲の行", app) {
+            XCTAssertEqual(audience.value as? String, "自分だけ（非公開）", "現像の投稿が非公開で始まらない")
+            audience.tap()
+            XCTAssertEqual(audience.value as? String, "みんなに公開", "公開範囲が1回で替わらない")
+        }
+        let close = app.buttons["develop.close"].firstMatch
+        guard expect(close.waitForExistence(timeout: 5), "現像の閉じる", app) else { return }
+        close.tap()
+        let ring = app.buttons["stories.yearAgo"].firstMatch
+        guard expect(ring.waitForExistence(timeout: 10) && ring.isHittable, "「1年前」の輪", app) else { return }
+        ring.tap()
+        guard expect(app.buttons["yearAgo.share"].firstMatch.waitForExistence(timeout: 10), "1年前の閲覧", app) else { return }
+        Thread.sleep(forTimeInterval: 1.5)
+        shoot(app, "120e-1年前（閲覧）")
+        // **途中で閉じた続き**（章「途中で閉じた」）: 控えを空にしない起動で札を押すと、払った続き（ここでは払い終えた表紙）から
+        app.terminate()
+        let again = launchTrunk(["-JPPreviewDevelop", "YES"])
+        let againCard = again.buttons["home.develop"].firstMatch
+        guard expect(againCard.waitForExistence(timeout: 25) && againCard.isHittable, "現像の途中の札", again) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(again, "120j-ホーム（現像の途中の札）")
+        againCard.tap()
+        guard expect(again.buttons["develop.post"].firstMatch.waitForExistence(timeout: 10),
+                     "途中で閉じた続き（表紙から）", again) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(again, "120k-現像（途中で閉じた続き・表紙から）")
+    }
+
+    /// ①現像の払った控え（`DevelopProgressStore`・端末の中）を、その起動の間だけ空として読ませる引数。
+    /// **前の試験で払い終えた控えが残ると、札を押しても払う画面ではなく表紙から始まる**（Mac run 1129: 前の試験の後の
+    /// 起動で「develop.keep」「develop.addMore」が出なかった）。引数の値は文字なので `data(forKey:)` は nil＝控え無し
+    private static var freshDevelop: [String] { ["-develop.progress.v1.\(previewUserId)", ""] }
+
+    /// **①②の状態**（2026-11-12 札 #543・章「状態」）。一部の写真だけ許可（札の一言・払う画面の追加の口）と、
+    /// 圏外（表紙の一言と押せない「投稿する」・1年前の閲覧の一言）。見本で必ず出るので、**出なければ落とす**
+    func testCapturesDevelopStates() {
+        let limited = launchTrunk(["-JPPreviewDevelop", "YES", "-JPPreviewDevelopState", "limited"] + Self.freshDevelop)
+        let card = limited.buttons["home.develop"].firstMatch
+        guard expect(card.waitForExistence(timeout: 25), "一部の写真だけ許可の札", limited) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(limited, "120f-ホーム（現像前の旅・一部の写真だけ許可）")
+        guard expect(card.isHittable, "押せる札", limited) else { return }
+        card.tap()
+        let addMore = limited.buttons["develop.addMore"].firstMatch
+        guard expect(addMore.waitForExistence(timeout: 10), "「ほかの写真も選べるようにする」", limited) else { return }
+        Thread.sleep(forTimeInterval: 1.5)
+        shoot(limited, "120g-現像（一部の写真だけ許可・ほかの写真も選べるようにする）")
+        XCTAssertGreaterThanOrEqual(addMore.frame.height, 44, "「ほかの写真も選べるようにする」が 44pt 未満")
+        limited.terminate()
+
+        let offline = launchTrunk(["-JPPreviewDevelop", "YES", "-JPPreviewDevelopState", "offline"] + Self.freshDevelop)
+        let offlineCard = offline.buttons["home.develop"].firstMatch
+        guard expect(offlineCard.waitForExistence(timeout: 25) && offlineCard.isHittable, "圏外の札", offline) else { return }
+        offlineCard.tap()
+        let keep = offline.buttons["develop.keep"].firstMatch
+        guard expect(keep.waitForExistence(timeout: 10), "圏外の払う画面", offline) else { return }
+        for _ in 0..<12 {
+            guard keep.exists, keep.isHittable else { break }
+            keep.tap()
+            Thread.sleep(forTimeInterval: 0.6)
+        }
+        let post = offline.buttons["develop.post"].firstMatch
+        guard expect(post.waitForExistence(timeout: 5) && offline.staticTexts["develop.offline"].firstMatch.exists,
+                     "圏外の表紙の一言", offline) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(offline, "120h-現像（圏外の表紙・投稿は通信できる所で）")
+        XCTAssertFalse(post.isEnabled, "圏外で「投稿する」を押せる")
+        let close = offline.buttons["develop.close"].firstMatch
+        guard expect(close.waitForExistence(timeout: 5), "現像の閉じる", offline) else { return }
+        close.tap()
+        let ring = offline.buttons["stories.yearAgo"].firstMatch
+        guard expect(ring.waitForExistence(timeout: 10) && ring.isHittable, "「1年前」の輪", offline) else { return }
+        ring.tap()
+        guard expect(offline.staticTexts["通信できないので、送るのはあとで"].firstMatch.waitForExistence(timeout: 10),
+                     "1年前の圏外の一言", offline) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(offline, "120i-1年前（圏外・送るのはあとで）")
+    }
+
+    /// **手に取って運ぶ・つまむと地図**（2026-11-12 札 #543・章 段1）。ホームの写真を 0.8秒押さえて右の縁の
+    /// 半円（とっておく）へ運び、3秒の「取り消す」を撮る（撮ったら取り消す＝しおりに残さない）。
+    /// 次に写真の詳細の写真をつまんで縮め、地図（「この近くで撮られた写真」）を撮る。**出なければ落とす**
+    func testCapturesLiftAndPinch() {
+        let app = launchTrunk([])
+        let recommended = app.buttons["おすすめ"].firstMatch
+        if recommended.waitForExistence(timeout: 15), recommended.isHittable { recommended.tap() }
+        let photo = app.buttons["feed.photo"].firstMatch
+        var pushes = 0
+        while !(photo.waitForExistence(timeout: 2) && photo.isHittable), pushes < 8 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)))
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard expect(photo.exists && photo.isHittable, "ホームの写真", app) else { return }
+        // はじめての案内（出ていたら5秒で消える）を待つ
+        Thread.sleep(forTimeInterval: 1)
+        // 手に取って（0.35秒より長く押さえる）右の縁の真ん中（半円・半径 105pt）へ運ぶ
+        photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.8,
+                   thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 430.0 / 844.0)))
+        let undo = app.buttons["lift.undo"].firstMatch
+        guard expect(undo.waitForExistence(timeout: 3), "運んだ後の「取り消す」", app) else { return }
+        shoot(app, "121a-ホーム（手に取って運んだ・取り消す）")
+        XCTAssertGreaterThanOrEqual(undo.frame.height, 44, "「取り消す」が 44pt 未満")
+        undo.tap()
+        Thread.sleep(forTimeInterval: 1)
+        // 運び終えたら幕は残らない（ホームの写真がまた押せる）
+        guard expect(photo.exists && photo.isHittable, "運んだ後に押せるホームの写真", app) else { return }
+        photo.tap()
+        let hero = app.buttons["detail.hero"].firstMatch
+        guard expect(hero.waitForExistence(timeout: 10) && hero.isHittable, "写真の詳細の写真", app) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        hero.pinch(withScale: 0.4, velocity: -1)
+        let map = app.navigationBars["この近くで撮られた写真"].firstMatch
+        guard expect(map.waitForExistence(timeout: 8), "つまんだ後の地図", app) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "121b-写真の詳細（つまんで地図）")
+    }
 }

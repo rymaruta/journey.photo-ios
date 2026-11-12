@@ -57,6 +57,9 @@ enum HomeTopCard {
         /// `dayNumber` は1から（出発日が1日目）
         case onTrip(plan: TripPlan, dayNumber: Int)
         case bookReady(trip: TripBook.Trip)
+        /// 旅から帰ってきた・まだ投稿していない端末の旅（①現像・2026-11-12 札 #543・`DevelopTrips.candidate`）。
+        /// `name` は端末の一冊の地名（引けていなければ nil）
+        case develop(trip: LibraryTrip, name: String?)
         /// `byUploadDate` は撮影日が無く、投稿日で当てたとき（「1年前に投稿」と言う）
         case oneYearAgo(photo: Photo, byUploadDate: Bool)
         /// 「行きたい」に入れたスポットの、いまの季節の案内
@@ -74,6 +77,7 @@ enum HomeTopCard {
             case .departure: return "departure"
             case .onTrip: return "onTrip"
             case .bookReady: return "bookReady"
+            case .develop: return "develop"
             case .oneYearAgo: return "oneYearAgo"
             case .wishlistSeason: return "wishlistSeason"
             case .inSeason: return "inSeason"
@@ -99,10 +103,12 @@ enum HomeTopCard {
     ///   - openedBookDays: 札から一度開いた一冊の日（`bookKey`・`OpenedTripBooks`）
     ///   - spots: 撮影スポットの索引（取れなかった回は空＝季節の札が出ないだけ）
     ///   - wishlist: 「行きたい」の鍵（`WishlistStore.spotIds`・`SavedSpotKey`）
+    ///   - develop: 現像前の旅（①・`DevelopTrips.candidate` が選んだもの）。旅の札（一冊ができた）の後ろに置く
     static func cards(now: Date, plans: [TripPlan], myPhotos: [Photo],
                       openedBookDays: Set<String>, spots: [OfficialSpot] = [],
                       wishlist: Set<String> = [],
                       quiz: DailyQuiz? = nil,
+                      develop: Choice? = nil,
                       timeZone: TimeZone = .current) -> [Choice] {
         // 今日の一問は**今日のテーマの直後**（毎日替わる札どうしを並べる。1年前の振り返りより前）。
         // 取れなかった日は出さない（空き地を作らない）
@@ -112,6 +118,9 @@ enum HomeTopCard {
             departure(today: today, plans: plans),
             onTrip(today: today, plans: plans),
             bookReady(today: today, myPhotos: myPhotos, openedBookDays: openedBookDays, timeZone: timeZone),
+            // 2026-11-12 判断（札 #543 ①）: 現像前の旅は**旅の札の並び**（帰ってきた旅の話）。種類を足すだけで、
+            // 並べ方は「置き場」の担当が持つ
+            develop.flatMap { if case .develop = $0 { return $0 } else { return nil } },
         ]
         // **今日の一問の選択肢（4つ）と同じスポットは、その日は季節の札の候補から外す**——名前つきの札と
         // 同じ写真の問題の札が横に並び、答えが見える（週に1%前後・f3bcf5a のレビュー）。

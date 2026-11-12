@@ -10,6 +10,9 @@ struct StoriesRow: View {
     /// 気づけず、投稿したのに自分のストーリーが並ばなかった。
     /// 真偽値にしないのは `NotificationRouter` と同じ理由（2回目が効かない）。
     var reloadToken: Int = 0
+    /// 自分の投稿（②「1年前」で**投稿済みの旅を出さない**・2026-11-12 確かめ役。ホームの札と同じ
+    /// `LibraryTrips.postedShots(of:)` で、投稿済みの日と重なる旅を落とす）
+    var myPhotos: [Photo] = []
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
@@ -28,6 +31,28 @@ struct StoriesRow: View {
     @State private var showUploadFailure = false
     /// 輪の列の幅（見えている輪の数を出す・`StoryPlayback.visibleRingCount`）
     @State private var rowWidth: CGFloat = 0
+
+    // ②「1年前」の輪（2026-11-12 札 #543・`YearAgoTrips`）
+    /// 端末の写真の一冊（去年の旅を探す）。読むのは店（起動・ログインで後ろで読む）
+    @ObservedObject private var deviceTrips = DeviceTripShelfStore.shared
+    @State private var showYearAgo = false
+    /// 閲覧で押したもの（閉じきってから次の画面を開く）
+    @State private var yearAgoNext: YearAgoNext?
+    /// 作る画面に最初から入れる写真と文字（「ストーリーに出す」から）
+    @State private var composerSeed: StoryComposerSeed?
+    /// 「投稿にする」で開く①現像の旅
+    @State private var developTrip: LibraryTrip?
+    /// 現像の「題・公開範囲を変える」で選んだ写真
+    @State private var developEdit: (ids: [String], published: Bool)?
+    /// 見た・出したの印を読み直す合図
+    @State private var yearAgoRevision = 0
+    private let yearAgoStore = YearAgoRingStore()
+
+    /// 閲覧のあとに開くもの
+    enum YearAgoNext {
+        case share(Data)
+        case post
+    }
 
     var body: some View {
         // 🔴 **入れ物は中身が空にならない形にする**（2026-10-16 判断）。前は `Group` の中を `if` だけにして
@@ -56,6 +81,8 @@ struct StoriesRow: View {
                         } else {
                             mineRing(ordered.mine)
                         }
+                        // ②「1年前」の輪: 自分の輪の右、人の輪より前（章）
+                        yearAgoRing
                         ForEach(ordered.others) { story in
                             // **見たものは輪を落とす。** 全部同じ輪だと
                             // 「どれがまだか」が分からず、行が意味を失う
@@ -152,6 +179,96 @@ struct StoriesRow: View {
             NavigationStack { // 入口は全部「＋」(ストーリーを追加)なので、カメラを先頭に開く(札 #500・A 案)。カメラが無い端末は写真選びから
             StoryComposerView(startsWithCamera: StoryCameraView.isAvailable) }
         }
+        // ②「1年前」の「ストーリーに出す」: その写真と文字を入れて作る画面を開く（カメラは出さない）。送り始めたら輪は消える
+        .fullScreenCover(item: $composerSeed, onDismiss: {
+            Task { await reload() }
+        }) { seed in
+            NavigationStack { StoryComposerView(seed: seed, onStarted: { markYearAgoPosted() }) }
+        }
+        // ②「1年前」の閲覧（2026-11-12 札 #543）。閉じきってから作る画面・現像の画面を開く
+        .fullScreenCover(isPresented: $showYearAgo, onDismiss: {
+            yearAgoRevision += 1
+            switch yearAgoNext {
+            case .share(let data)?:
+                composerSeed = StoryComposerSeed(
+                    photo: data, text: YearAgoTrips.storyText(years: yearAgoPick?.yearsAgo ?? 1,
+                                                              name: yearAgoPick.flatMap { yearAgoName($0.trip) }))
+            case .post?:
+                developTrip = yearAgoPick?.trip
+            case nil:
+                break
+            }
+            yearAgoNext = nil
+        }) {
+            if let pick = yearAgoPick {
+                YearAgoStoryView(pick: pick, name: yearAgoName(pick.trip),
+                                 onShare: { yearAgoNext = .share($0) },
+                                 onPost: { yearAgoNext = .post })
+            }
+        }
+        // 「投稿にする」は①の現像の画面を、その旅で開く
+        .fullScreenCover(item: $developTrip, onDismiss: {
+            guard let ids = developEdit, let trip = yearAgoPick?.trip else { return }
+            developEdit = nil
+            DevelopPhotos.openUploadScreen(ids: ids.ids, trip: trip, published: ids.published)
+        }) { trip in
+            DevelopView(trip: trip, name: yearAgoName(trip)) { developEdit = (ids: $0, published: $1) }
+        }
+    }
+
+    // MARK: - ②「1年前」の輪
+
+    /// 去年（無ければ2年前・3年前）の今日の旅。**許可が無ければ出さない**（`books` が空）
+    private var yearAgoPick: YearAgoTrips.Pick? {
+        guard auth.userId != nil else { return nil }
+        let preview = DevelopPreview.trips()
+        let trips = preview.isEmpty
+            ? deviceTrips.books(posted: LibraryTrips.postedShots(of: myPhotos), isMine: true) : preview
+        return YearAgoTrips.find(trips: trips, now: Date())
+    }
+
+    private func yearAgoName(_ trip: LibraryTrip) -> String? {
+        DevelopPreview.names()[trip.id] ?? deviceTrips.names[trip.id]
+    }
+
+    private var yearAgoState: YearAgoTrips.RingState {
+        _ = yearAgoRevision
+        let today = YearAgoTrips.todayKey(Date())
+        return YearAgoTrips.ringState(pick: yearAgoPick, todayKey: today,
+                                      seenDay: yearAgoStore.seenDay(for: auth.userId),
+                                      postedDay: yearAgoStore.postedDay(for: auth.userId))
+    }
+
+    /// 輪（未見の輪と同じ真鍮・見たら灰の細い輪）。写真はその日の1枚目
+    @ViewBuilder
+    private var yearAgoRing: some View {
+        let state = yearAgoState
+        if state != .hidden, let pick = yearAgoPick, let first = pick.photoIds.first {
+            Button {
+                yearAgoStore.markSeen(YearAgoTrips.todayKey(Date()), for: auth.userId)
+                showYearAgo = true
+            } label: {
+                VStack(spacing: StoryRingMetrics.nameSpacing) {
+                    StoryRing(count: 1, unseen: state == .unseen) {
+                        LibraryShotImage(id: first, side: StoryRingMetrics.photo)
+                            .frame(width: StoryRingMetrics.photo, height: StoryRingMetrics.photo)
+                            .clipShape(Circle())
+                    }
+                    ringName(YearAgoTrips.ringName(pick.yearsAgo), color: Self.nameColor(unseen: state == .unseen))
+                }
+                .frame(width: StoryRingMetrics.size)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("\(YearAgoTrips.headline(pick.yearsAgo))の旅（\(state == .unseen ? "まだ見ていない" : "見た")）",
+                                  "Your trip \(YearAgoTrips.headline(pick.yearsAgo)) (\(state == .unseen ? "not seen yet" : "seen"))"))
+            .accessibilityIdentifier("stories.yearAgo")
+        }
+    }
+
+    /// 出したら輪は消える（同じ日に二重に出さない）。自分のストーリーの輪になる
+    private func markYearAgoPosted() {
+        yearAgoStore.markPosted(YearAgoTrips.todayKey(Date()), for: auth.userId)
+        yearAgoRevision += 1
     }
 
     // MARK: - 輪

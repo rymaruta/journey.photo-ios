@@ -68,6 +68,8 @@ struct PhotoDetailView: View {
     /// 写真を DM で送っている相手（二度押しで2通送らない）
     @State private var sendingPhotoTo: String?
     @State private var showViewer = false
+    /// つまんで地図へ（離した所が `PinchToMap.openScale` 以下）。行き先は「地図で見る ›」と同じ地図
+    @State private var pinchOpensMap = false
     @State private var actionError: String?
     /// 編集して保存したあとの姿。**`photo` は `let` で書き換えられない**
     /// ——編集シートを閉じても題も説明も古いままだった（保存はできていた
@@ -462,6 +464,10 @@ struct PhotoDetailView: View {
         .sheet(isPresented: $showEdit, onDismiss: { Task { await reloadPhoto() } }) {
             NavigationStack { EditPhotoView(photo: shown) }
         }
+        // つまむと地図（2026-11-12 札 #543）。行き先は「地図で見る ›」と同じ（この写真と近くの写真の地図）
+        .navigationDestination(isPresented: $pinchOpensMap) {
+            NearbyMapScreen(opened: shown, nearby: nearby, openedFromPublicFeed: fromPublicFeed)
+        }
         .fullScreenCover(isPresented: $showViewer) {
             // **ブロック・通報した写真を落とした並びで開く**（`PhotoDetailRules.viewerLineup`）。
             // 編集して保存した写真は新しい姿で（題・撮影地が古いまま出ていた）
@@ -617,30 +623,17 @@ struct PhotoDetailView: View {
     nonisolated static let inactiveDotOpacity = 0.4
 
     private func heroImage(_ item: Photo) -> some View {
-        Button {
-            showViewer = true
-        } label: {
-            // 🔴 **写真は重ね（overlay）に置く。** 引き伸ばした写真（fill）を直に
-            // `.frame(maxWidth: .infinity)` で包むと、横長の写真では包みの幅が
-            // 写真の幅（画面より広い）になり、`.clipped()` は見た目を切るだけなので
-            // 下の本文まで画面より広く組まれていた（説明・撮影情報・操作の列が
-            // 右端で切れる。実機の絵で見つかった）。重ねは親の幅を変えない
-            Color.clear
-                .frame(maxWidth: .infinity)
-                .frame(height: Self.heroHeight)
-                .overlay {
-                    // **縮めて読む部品（`DownsampledRemoteImage`）には替えない**（2026-10-31 判断・札 #429 アプリ 2）。
-                    // 枠（画面の幅 × 520pt・3倍の画面）を覆うには長い辺 1,792〜2,048px が要り、元の画像（1,920px）と
-                    // ほぼ同じで縮まない。替えた回（Mac run 793）は開いた時のメモリの山が 156.9→159.0MB と減らず、
-                    // 閉じた後のメモリが 132.4→154.9MB に増えた（縮めた絵の控えに残る）ので、元に戻した
-                    RemoteImage(url: item.detailImageURL, alignment: item.gridAlignment)
-                }
-                .clipped()
-                .contentShape(Rectangle())
-                .accessibilityLabel(item.accessibilityText)
+        // つまむと地図（2026-11-12 札 #543）。つまむ値は**この部品の中だけ**で持つ（2026-11-12 確かめ役:
+        // 画面の `@GestureState` に置くと、指が動くたびに写真の詳細の全体が描き直されていた）
+        PinchToMapHero(item: item, height: Self.heroHeight,
+                       onOpen: { showViewer = true },
+                       onOpenMap: { pinchOpensMap = true }) {
+            // **縮めて読む部品（`DownsampledRemoteImage`）には替えない**（2026-10-31 判断・札 #429 アプリ 2）。
+            // 枠（画面の幅 × 520pt・3倍の画面）を覆うには長い辺 1,792〜2,048px が要り、元の画像（1,920px）と
+            // ほぼ同じで縮まない。替えた回（Mac run 793）は開いた時のメモリの山が 156.9→159.0MB と減らず、
+            // 閉じた後のメモリが 132.4→154.9MB に増えた（縮めた絵の控えに残る）ので、元に戻した
+            RemoteImage(url: item.detailImageURL, alignment: item.gridAlignment)
         }
-        .buttonStyle(.plain)
-        .accessibilityHint(L("拡大して見る", "Opens the photo full screen"))
     }
 
     /// 上の束と、いま見ている位置（`PhotoDetailRules.heroGroup` の返り値）
@@ -1747,6 +1740,23 @@ struct PhotoDetailView: View {
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: JPRadius.field))
+            }
+        } else if PinchToMap.showsMapLink(hasPlace: shown.coords != nil, nearbyCount: nearby.count) {
+            // 近くの写真が無くても、撮影地があれば「地図で見る ›」は出す（つまむと地図の、指を使わない道・
+            // 見つけ口。2026-11-12 確かめ役）。見出しの「この近くで撮られた写真」は0枚なので置かない
+            HStack {
+                Spacer()
+                NavigationLink {
+                    NearbyMapScreen(opened: shown, nearby: nearby, openedFromPublicFeed: fromPublicFeed)
+                } label: {
+                    Text(L("地図で見る ›", "View on map ›"))
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text2)
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("photo.mapLink")
             }
         }
     }

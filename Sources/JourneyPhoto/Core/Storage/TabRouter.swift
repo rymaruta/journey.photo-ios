@@ -182,6 +182,22 @@ final class TabRouter: ObservableObject {
         return pendingImportTrip
     }
 
+    /// ①現像の「題・公開範囲を変える」（2026-11-12 札 #543）。**整えた写真を今の投稿の画面に並べて開く**
+    /// （`RootView` の投稿のシート・旅の写真から来たときと同じ道）。回数で伝えるのは上と同じ理由
+    @Published private(set) var developUploadRequests = 0
+    /// 並べる写真と、公開で始めるか。投稿の画面が受け取ったら消す（`takePendingDevelopUpload`）
+    private(set) var pendingDevelopUpload: (photos: [ImagePreparer.Prepared], published: Bool)?
+
+    func openDevelopUpload(_ photos: [ImagePreparer.Prepared], published: Bool) {
+        pendingDevelopUpload = (photos, published)
+        developUploadRequests += 1
+    }
+
+    func takePendingDevelopUpload() -> (photos: [ImagePreparer.Prepared], published: Bool)? {
+        defer { pendingDevelopUpload = nil }
+        return pendingDevelopUpload
+    }
+
     /// **メニュー（≡）のシートを閉じた回数。** メニューから旅行プランを開いて
     /// 変えても、シートの下のホームは画面から消えた扱いにならないので、
     /// ホームの上段の札が古いプランのまま残った。回数で伝えるのは上と同じ理由

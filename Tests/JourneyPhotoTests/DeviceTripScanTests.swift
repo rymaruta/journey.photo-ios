@@ -593,3 +593,25 @@ private struct FakeTripAssets: DeviceTripAssets {
         return item.shot.date >= since ? item : nil
     }
 }
+
+extension DeviceTripScanTests {
+    /// 一冊は**覚えて返す**（ホームの札とストーリーの列が描くたびに切り直さない・2026-11-12 確かめ役）。
+    /// 旅が変わる・投稿済みが変わると切り直す
+    @MainActor
+    func testBooksAreRememberedUntilInputsChange() async throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let store = try makeStore(FakeTripSource(library()), box: Box(), url: url)
+        store.startIfAllowed()
+        await store.waitUntilIdle()
+        let first = store.books(posted: [], isMine: true)
+        let count = store.booksComputeCount
+        XCTAssertEqual(store.books(posted: [], isMine: true), first)
+        XCTAssertEqual(store.booksComputeCount, count, "同じ入力で切り直した")
+        _ = store.books(posted: [LibraryTrips.PostedShot(key: "2026-01-01", coords: nil)], isMine: true)
+        XCTAssertEqual(store.booksComputeCount, count + 1, "投稿済みが変わったのに覚えたままを返した")
+        store.forget()
+        await store.waitForRemoval()
+        XCTAssertTrue(store.books(posted: [], isMine: true).isEmpty, "旅が消えたのに覚えたままを返した")
+    }
+}

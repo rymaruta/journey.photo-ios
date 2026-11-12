@@ -55,6 +55,10 @@ struct HomeMosaic: View {
             }
             if let footer { footer }
         }
+        // 長押しで運べることの、はじめての1回だけの案内（1枚目の写真の上に重ねる・並びの高さは変えない）
+        .overlay(alignment: .top) {
+            if !groups.isEmpty { PhotoLiftIntro().padding(.top, JPSpace.s) }
+        }
         .padding(.horizontal, Self.edge)
     }
 
@@ -80,6 +84,18 @@ struct HomeFeedTile: View {
     /// （`HomeTileLikeButton`・`HomeTileMoreMenu`）だけが見る。以前は札が全部を見ていたので、どこかで
     /// ♥を1つ押すたびに、ホームに並ぶ札が全部描き直されていた
     @EnvironmentObject private var auth: AuthStore
+    /// この札の写真を手に取っている（2026-11-12 札 #543・`PhotoLift`）。**手に取っている間は開く押しを止める**
+    /// （離したときに詳細が開かない）。指の位置は店（`PhotoLiftCenter`）へ書く——札は店を見張らない
+    /// （指が動くたびにホームの札が全部描き直されないように）
+    ///
+    /// **身振りが続いている間だけ真になる（`@GestureState`）。** 着信・通知センター・裏に回る・一覧の読み直しで
+    /// 身振りが取り消されると `onEnded` は来ないが、これは必ず戻る（2026-11-12 確かめ役: `@State` だと手に取ったまま
+    /// 幕が残り、全体が押せなくなっていた）。戻ったときに店へ知らせる（`PhotoLiftCenter.gestureReset`）
+    @GestureState private var lifted = false
+    /// 押さえている最中（手に取る前）。この間だけ札の画面の座標を読む（ふだんは読まない・送るたびに走らせない）
+    @GestureState private var pressing = false
+    /// 札の画面の座標（指を動かさずに手に取ったときの位置）
+    @State private var globalFrame: CGRect = .zero
 
     var body: some View {
         let _ = PerfRecorder.shared.hit("home.tile.body")
@@ -126,11 +142,85 @@ struct HomeFeedTile: View {
             // 今日のテーマの「参加する」に当たって**ログイン画面を
             // 『写真の詳細』として撮って**いた（run 49 の絵で判明）
             .accessibilityIdentifier("feed.photo")
+            // 手に取って運ぶ（読み上げの道）: 写真の操作の一覧に「とっておく・送る・ストーリーで紹介」
+            .accessibilityAction(named: L("とっておく", "Save")) { liftByAction(.save) }
+            .accessibilityAction(named: L("送る", "Send")) { liftByAction(nil) }
+            // ストーリーで紹介は自分の写真だけ（2026-11-12 判断・`PhotoLift.allowsStory`）
+            .modifier(HomeTileStoryAction(enabled: PhotoLift.allowsStory(ownerId: ownerId, me: auth.userId)) {
+                liftByAction(.story)
+            })
+            .disabled(lifted)
 
             HomeTileLikeButton(photo: photo)
         }
         .overlay(alignment: .topTrailing) {
             if showsMore { HomeTileMoreMenu(photo: photo, ownerId: ownerId, onReport: onReport) }
+        }
+        .scaleEffect(lifted ? 0.96 : 1)
+        .opacity(lifted ? 0.4 : 1)
+        // 札の画面の座標は**押さえている間だけ**読む（2026-11-12 確かめ役: 全部の札で送るたびに読んでいた）
+        .background {
+            if pressing || lifted {
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { globalFrame = proxy.frame(in: .global) }
+                        .onChange(of: proxy.frame(in: .global)) { _, frame in globalFrame = frame }
+                }
+                .accessibilityHidden(true)
+            }
+        }
+        // 身振りが終わった（離した・取り消された）。離したときは `onEnded` が先に店を進めているので何も起きない。
+        // 取り消されたときだけ、手に取ったままの写真を戻す。札が一覧から消えたときも同じ
+        .onChange(of: lifted) { _, now in
+            guard !now else { return }
+            // 次の回しで見る（離したときの `onEnded` が先に済んでいるように）
+            let id = photo.id
+            Task { @MainActor in PhotoLiftCenter.shared.gestureReset(photoId: id) }
+        }
+        .onDisappear { PhotoLiftCenter.shared.gestureReset(photoId: photo.id) }
+        // 0.35秒押さえて手に取る（10pt 以上動いたらスクロール）。短く押せば今どおり開く。
+        // ログインしていなければ手に取らない（保存・送る・ストーリーはログインが要る）
+        .simultaneousGesture(liftGesture, including: auth.userId == nil ? .subviews : .all)
+        .sensoryFeedback(.impact(weight: .medium), trigger: lifted) { _, new in new }
+    }
+
+    private var liftGesture: some Gesture {
+        LongPressGesture(minimumDuration: PhotoLift.pressSeconds, maximumDistance: PhotoLift.moveTolerance)
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
+            .updating($pressing) { value, state, _ in
+                if case .first(true) = value { state = true }
+            }
+            .updating($lifted) { value, state, _ in
+                if case .second(true, _) = value { state = true }
+            }
+            .onChanged { value in
+                guard case .second(true, let drag) = value else { return }
+                let center = PhotoLiftCenter.shared
+                if center.photo?.id != photo.id {
+                    if let drag {
+                        center.lift(photo, at: drag.location)
+                    } else {
+                        center.lift(photo, at: CGPoint(x: globalFrame.midX, y: globalFrame.midY), fingerKnown: false)
+                    }
+                }
+                if let drag { center.move(to: drag.location) }
+            }
+            .onEnded { _ in
+                let center = PhotoLiftCenter.shared
+                guard center.photo?.id == photo.id else { return }
+                center.end()
+            }
+    }
+
+    /// 読み上げの操作から（指を使わない道）。行き先を直に選ぶ（送るは顔の段を開く）
+    private func liftByAction(_ target: PhotoLift.Target?) {
+        guard auth.userId != nil else { return }
+        let center = PhotoLiftCenter.shared
+        switch target {
+        case nil:
+            center.openFaces(for: photo)
+        case let target?:
+            center.choose(photo, target: target)
         }
     }
 
@@ -448,5 +538,71 @@ enum HomeLikeGate {
             favorites.set(photoId, favorite: wasLiked, for: owner)
             toasts.show(ViewerLike.failureNotice(error), kind: .failure)
         }
+    }
+}
+
+/// 読み上げの操作「ストーリーで紹介」。**自分の写真のときだけ**付ける（2026-11-12 判断・他人の写真を作者名なしで
+/// 自分のストーリーに出さない。owner の判断待ち）
+private struct HomeTileStoryAction: ViewModifier {
+    let enabled: Bool
+    let action: () -> Void
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            content.accessibilityAction(named: L("ストーリーで紹介", "Share to story"), action)
+        } else {
+            content
+        }
+    }
+}
+
+/// 長押しで運べることの案内（2026-11-12 確かめ役「気づけるように」）。**はじめての1回だけ**・5秒で消える・押しても消える。
+/// 写真の上なのでガラスに白（真鍮は黒地の上だけ・CLAUDE.md）。形はストーリーの作る画面の一度だけの案内と同じ丸い帯
+private struct PhotoLiftIntro: View {
+    @EnvironmentObject private var auth: AuthStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var visible = false
+
+    var body: some View {
+        Group {
+            if visible {
+                Button { hide() } label: {
+                    HStack(spacing: JPSpace.xs) {
+                        Image(systemName: "hand.point.up.left")
+                            .font(.footnote.weight(.semibold))
+                            .accessibilityHidden(true)
+                        Text(PhotoLift.introText)
+                            .font(.footnote.weight(.medium))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .foregroundStyle(WebTheme.foreground)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: WebTheme.minTapTarget)
+                    .jpGlass(in: Capsule())
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(L("押すとこの案内を閉じます", "Dismisses this tip"))
+                .accessibilityIdentifier("home.liftIntro")
+                .transition(.opacity)
+            }
+        }
+        .onAppear {
+            let defaults = UserDefaults.standard
+            guard PhotoLift.showsIntro(signedIn: auth.userId != nil,
+                                       alreadyShown: defaults.bool(forKey: PhotoLift.introKey)) else { return }
+            defaults.set(true, forKey: PhotoLift.introKey)
+            visible = true
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(PhotoLift.introSeconds * 1_000_000_000))
+                hide()
+            }
+        }
+    }
+
+    private func hide() {
+        guard visible else { return }
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { visible = false }
     }
 }

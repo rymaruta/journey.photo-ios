@@ -44,13 +44,20 @@ struct StoryComposerView: View {
     /// 「24時間後も自分用に残す」を入れて始める（ハイライトの空の状態の「ストーリーを作る」から・2026-11-12）。
     /// その入口は「残したストーリー」を作りに行く所なので、既定や人ごとの覚えに関わらず**明示で入れる**
     private let keepsInArchive: Bool
+    /// ②「1年前」の「ストーリーに出す」から開いたときの写真と文字（2026-11-12 札 #543）。
+    /// 写真は端末の1枚、文字は「1年前の今日、竹富町」（最初から置いてある・動かせる・消せる）
+    private let seed: StoryComposerSeed?
+    /// 送り始めた（裏の係に渡して画面を閉じる直前）。②の輪を「出した」にする
+    private let onStarted: (() -> Void)?
 
     init(openDraft: String? = nil, startsWithCamera: Bool = false, sharing: StoryShareSeed? = nil,
-         keepsInArchive: Bool = false) {
+         keepsInArchive: Bool = false, seed: StoryComposerSeed? = nil, onStarted: (() -> Void)? = nil) {
         self.openDraft = openDraft
         self.startsWithCamera = startsWithCamera
         self.sharing = sharing
         self.keepsInArchive = keepsInArchive
+        self.seed = seed
+        self.onStarted = onStarted
     }
     /// 裏に回ったときに黙って残す書きかけ（本人の下書きとは別の枠・2026-10-16）
     @StateObject private var autoDrafts = StoryDraftStore(slot: .auto)
@@ -565,6 +572,19 @@ struct StoryComposerView: View {
                 return
             }
             let hasAuto = autoDrafts.draft != nil
+            // ②「1年前」から（2026-11-12 札 #543）: その写真と文字を入れて開く。**書きかけ・下書きは尋ねない**
+            // （出しに来た1枚がある）。尋ねていない自動の書きかけには触らない（`ownsAutoSlot` と同じ）
+            if let seed, shots.isEmpty, openDraft == nil {
+                autoSlotOwned = !hasAuto
+                Task {
+                    await accept(seed.photo)
+                    if !seed.text.isEmpty, shots.indices.contains(current),
+                       shots[current].overlays.count < TextOverlay.maxCount {
+                        shots[current].overlays.append(StoryComposerSeed.overlay(seed.text))
+                    }
+                }
+                return
+            }
             // 下書きの一覧から開いた（尋ねずに戻す・#400）。自動の書きかけを開いた回はその枠を使ってよい
             if let openDraft {
                 if openDraft == DraftLibrary.autoStoryId {
@@ -3186,7 +3206,22 @@ struct StoryComposerView: View {
         discardAllVideos()
         // 黙って残した書きかけは要らない
         clearAutoDraft()
+        onStarted?()
         dismiss()
+    }
+}
+
+/// ②「1年前」から作る画面を開くときの写真と文字（2026-11-12 札 #543）
+struct StoryComposerSeed: Identifiable {
+    let id = UUID()
+    /// 端末の写真の本体（作る画面が整える・`accept`）
+    let photo: Data
+    /// 最初から置く文字（「1年前の今日、竹富町」）。空なら置かない（ホームで手に取った写真の「ストーリーで紹介」）
+    let text: String
+
+    /// 置く札。明朝・下の方（ひとことの欄より上）。**ふつうの文字の札**なので動かせる・消せる
+    static func overlay(_ text: String) -> TextOverlay {
+        TextOverlay(text: text, x: 0.5, y: 0.78, kind: .text, face: .mincho)
     }
 }
 

@@ -183,7 +183,8 @@ final class UXDeadEndsTests: XCTestCase {
         // 空の画面の一手と、端末の旅の一冊の「この旅の写真を投稿する」が、同じ並びを見る（別々に書くと抜ける）
         // 下書きの一覧から下書きを開く道（`openDraftWhenFree`・2026-10-29・#400）も同じ並びを見る
         // アイコン長押しの「ストーリーを撮る」(`StoryShortcutOpener`・札 #500)も同じ並びを見る(4つ目の入口)
-        XCTAssertEqual(root.components(separatedBy: "PostRequestGate.opens(busy: postScreensShown)").count - 1, 4,
+        // ①現像の「題・公開範囲を変える」（`developUploadRequests`・2026-11-12 札 #543）も同じ並びを見る(5つ目の入口)
+        XCTAssertEqual(root.components(separatedBy: "PostRequestGate.opens(busy: postScreensShown)").count - 1, 5,
                        "投稿の画面を開く入口が、まとめた並びとは別の確かめをしている")
         XCTAssertFalse(root.contains("guard !showTripImport, !showPhotoUpload"), "手書きの確かめが残っている")
     }

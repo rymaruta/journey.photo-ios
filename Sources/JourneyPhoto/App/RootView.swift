@@ -111,6 +111,9 @@ struct RootView: View {
     @State private var showTripImport = false
     /// 旅の写真から選んだ本体。**流れが閉じきってから**投稿画面を開き、そこへ渡す
     @State private var pendingTripPhotos: [ImagePreparer.Prepared] = []
+    /// ①現像の表紙で公開を選んでから「題を変える」で来た（2026-11-12 札 #543）。**既定は非公開**のまま
+    /// （`DevelopTrips.uploadStartsPrivate`）。投稿の画面を閉じたら下ろす
+    @State private var pendingTripPublic = false
     /// 端末の写真の一冊から「この旅の写真を投稿する」で来たときに開く旅（`TabRouter.openTripImport`）。
     /// 流れを閉じたら忘れる
     @State private var importTrip: LibraryTrip?
@@ -182,6 +185,8 @@ struct RootView: View {
         .overlay(alignment: .bottomTrailing) {
             if TrunkPerfMeter.shared.enabled { TrunkPerfProbe() }
         }
+        // ホームの写真を手に取って運ぶ（2026-11-12 札 #543）。見出しと下の札の上に重ね、画面の座標で描く
+        .overlay { PhotoLiftOverlay(center: PhotoLiftCenter.shared).ignoresSafeArea() }
         .overlay(alignment: .top) {
             if let configurationError {
                 Text(L("認証の初期化に失敗しました: \(configurationError)", "Sign-in setup failed: \(configurationError)"))
@@ -1070,6 +1075,15 @@ struct RootView: View {
                 pendingTripPhotos = []
                 showTripImport = true
             }
+            // ①現像の「題・公開範囲を変える」（2026-11-12 札 #543）。現像の画面が閉じきってから届く。
+            // ほかの投稿の画面が出ていたら開かない（端末の一冊の「この旅の写真を投稿する」と同じ）
+            .onChange(of: tabRouter.developUploadRequests) { _, _ in
+                guard let request = tabRouter.takePendingDevelopUpload(),
+                      PostRequestGate.opens(busy: postScreensShown) else { return }
+                pendingTripPhotos = request.photos
+                pendingTripPublic = request.published
+                showPhotoUpload = true
+            }
             // 端末の写真の一冊を後ろで読む（許されていれば・起動とログインのたび）。読むのは前回より新しい写真だけ
             .task(id: auth.userId) {
                 // ログインの有無を店に知らせる（ログインしていない間は前面に戻っても読まない）
@@ -1130,7 +1144,8 @@ struct RootView: View {
     private var uploadSheet: some View {
         NavigationStack {
             UploadView(initialTag: pendingThemeTag, initialPhotos: pendingTripPhotos,
-                       startPrivate: !pendingTripPhotos.isEmpty,
+                       startPrivate: DevelopTrips.uploadStartsPrivate(hasTripPhotos: !pendingTripPhotos.isEmpty,
+                                                                   chosePublic: pendingTripPublic),
                        initialCapture: pendingCapture,
                        resumeJournal: resumeJournalId,
                        openDraft: openPostDraftId,
@@ -1149,6 +1164,7 @@ struct RootView: View {
                     pendingThemeTag = nil
                     // 旅の写真も同じ（次の投稿に同じ写真が並ばない）
                     pendingTripPhotos = []
+                    pendingTripPublic = false
                     // 構図を重ねて撮った1枚も同じ
                     pendingCapture = nil
                     // 送れなかった投稿の「続きから」も1回だけ
