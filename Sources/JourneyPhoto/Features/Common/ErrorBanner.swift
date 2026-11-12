@@ -318,10 +318,8 @@ struct JPStateBand: View {
     private var skinBackground: some View {
         switch skin {
         case .card:
-            RoundedRectangle(cornerRadius: Self.cardCorner)
-                .fill(WebTheme.card)
-                .overlay(RoundedRectangle(cornerRadius: Self.cardCorner)
-                    .strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+            // 札の地（surface-1・角 16・白 8% の縁）は土台の `.jpCardFace()` を通す（画面に直に書かない）
+            Color.clear.jpCardFace()
         case .glass:
             Color.clear.jpGlass(in: RoundedRectangle(cornerRadius: Self.glassCorner))
         }
@@ -571,9 +569,7 @@ struct JPLoadingState: View {
                     Spacer(minLength: 0)
                 }
                 .padding(10)
-                .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))
-                .overlay(RoundedRectangle(cornerRadius: JPRadius.l)
-                    .strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+                .jpCardFace()
             }
         }
         .padding(.vertical, JPSpace.s)

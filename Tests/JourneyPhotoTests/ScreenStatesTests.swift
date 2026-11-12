@@ -90,7 +90,8 @@ final class ScreenStatesTests: XCTestCase {
                        "if let message {", ".font(JPFont.caption)",
                        "if let action {", ".frame(minHeight: JPHeight.inlineButton)",
                        ".frame(minHeight: WebTheme.minTapTarget)", ".disabled(isBusy)"], in: band, "状態の帯の並び")
-        assertInOrder(["case .card:", ".fill(WebTheme.card)", "WebTheme.hairline",
+        XCTAssertEqual(JPStateBand.cardCorner, JPRadius.l, "札の角が土台の札（jpCardFace）と違う")
+        assertInOrder(["case .card:", "Color.clear.jpCardFace()",
                        "case .glass:", ".jpGlass(in: RoundedRectangle(cornerRadius: Self.glassCorner))"], in: band, "帯の皮")
         // 帯の印も赤にしない
         XCTAssertFalse(band.contains("WebTheme.danger"))
