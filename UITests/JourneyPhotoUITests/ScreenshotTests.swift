@@ -1445,9 +1445,13 @@ final class ScreenshotTests: XCTestCase {
             // 事実を取る（2026-11-12）: 読み込み中のままか、作れなかったか（作れなかった理由は読み上げの値）
             let failed = app.descendants(matching: .any)["profileQR.failed"].firstMatch
             let loading = app.descendants(matching: .any)["profileQR.loading"].firstMatch
-            let reason = app.descendants(matching: .any)["profileQR.failureReason"].firstMatch
+            // 入れ物に付けた識別子は中の要素に移る（run 1138 で理由の要素が見つからなかった）ので、同じ識別子の全部の字を読む
+            let labels = app.descendants(matching: .any).matching(identifier: "profileQR.failed")
+                .allElementsBoundByIndex.map(\.label)
+            let reasons = app.descendants(matching: .any).matching(identifier: "profileQR.failureReason")
+                .allElementsBoundByIndex.map(\.label)
             return XCTFail("QR の画面に自分の QR が出ない（読み込み中: \(loading.exists)・失敗: \(failed.exists)"
-                           + "・理由: \(reason.exists ? reason.label : "")）")
+                           + "・字: \(labels)・理由: \(reasons)）")
         }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "120a-プロフィールの QR（自分の QR）")
