@@ -91,7 +91,7 @@ struct SiteMenuView: View {
                         // すれちがい乗車券（帳の頭に入り切りの行がある・`PassBookView`）。右の値はいまの入り切り
                         NavigationLink { PassBookView() } label: {
                             SiteMenuRow(title: PassTicket.featureName, systemImage: "ticket",
-                                        note: L("すれちがい帳と入り切り", "Your pass book and on/off"),
+                                        note: PassTicket.menuNote(enabled: pass.settings.enabled),
                                         value: pass.settings.enabled ? pass.settings.mode.label : L("オフ", "Off"))
                         }
                         .buttonStyle(.plain)
