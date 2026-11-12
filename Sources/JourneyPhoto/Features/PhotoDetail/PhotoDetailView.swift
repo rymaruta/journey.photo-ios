@@ -1917,17 +1917,15 @@ struct PhotoDetailView: View {
             // **空の理由を分ける。** 引けなかった回に「まだありません」と
             // 出すと、書いてあるコメントが消えたように見える
             if model.commentsUnavailable {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(L("コメントを読み込めませんでした", "Couldn't load comments"))
-                        .font(JPFont.footnote)
-                        .foregroundStyle(WebTheme.text3)
-                    // 詳細には引き下げが無いので、読み直す手段をここに置く
-                    Button(Labels.Common.retry) { Task { await model.reloadComments() } }
-                        .buttonStyle(.bordered)
-                        // 投稿している間も押せない（`reloadComments` は黙って断る）
-                        .disabled(model.isReloadingComments || model.isPosting)
+                // 2026-11-12 判断（第2章「画面の状態とそろえ」）: 節の失敗は**状態の帯**（印・見出し・右に「もう一度」）。
+                // 字と系統の枠のボタンだけで、ほかの画面の失敗と形が違った。
+                // 詳細には引き下げが無いので、読み直す手段をここに置く。
+                // 投稿している間も押せない（`reloadComments` は黙って断る）
+                JPStateBand(kind: .partial, title: L("コメントを読み込めませんでした", "Couldn't load comments"),
+                            isBusy: model.isReloadingComments || model.isPosting,
+                            actionIdentifier: "photoDetail.comments.retry") {
+                    Task { await model.reloadComments() }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 12)
             } else if visibleCommentCount == 0 {
                 // v2 の板: 12 の text-3 の1行
@@ -1937,9 +1935,9 @@ struct PhotoDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, JPSpace.xs)
             } else {
-                ProgressView()
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                // 2026-11-12 判断（第2章）: 回る輪ではなく**コメントの形の灰**（顔 32・2 行の字。0.3 秒より早ければ出さない）
+                JPLoadingState(kind: .comments)
+                    .padding(.vertical, JPSpace.xs)
             }
         }
         VStack(alignment: .leading, spacing: 0) {

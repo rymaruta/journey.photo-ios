@@ -77,7 +77,8 @@ struct PhotoGrid<Destination: View>: View {
 /// **いいねが 0 のときは出さない**（`SearchGrid` と同じ——「まだ誰も押して
 /// いない」は探している人に要らず、写真の邪魔になる）。
 /// **何も書くものが無い写真には帯を出さない。**
-private struct LeadCaption: View {
+/// 2026-11-12: `TagPhotoGrid`（別のファイル）も先頭の1枚に重ねるので private を外した
+struct LeadCaption: View {
 
     let photo: Photo
     @EnvironmentObject private var likeCounts: LikeCountStore

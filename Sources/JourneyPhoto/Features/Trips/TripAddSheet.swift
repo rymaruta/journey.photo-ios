@@ -92,7 +92,8 @@ struct TripAddSheet: View {
                 case .loading:
                     JPLoadingState(kind: .rows)
                 case .failed:
-                    ErrorBanner(message: L("旅行プランを読み込めませんでした。", "Couldn't load your trips."),
+                    ErrorBanner(title: L("旅行プランを読み込めませんでした", "Couldn't load your trips"),
+                                message: ErrorBanner.defaultMessage,
                                 isBusy: plans.status == .loading) {
                         Task { await plans.load(environment: environment); chooseDefault() }
                     }

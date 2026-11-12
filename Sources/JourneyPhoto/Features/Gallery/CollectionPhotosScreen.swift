@@ -104,9 +104,13 @@ struct CollectionPhotosScreen: View {
                     ErrorBanner(message: Labels.Common.loadFailed, retry: retry)
                 } else if shown.isEmpty && !isLoading {
                     EmptyState(message: Labels.Gallery.empty)
+                } else if shown.isEmpty {
+                    // 2026-11-12 判断（第2章）: 読み込み中は格子と同じ形の灰（先頭 300 は格子に含めず 3 列だけ）
+                    JPLoadingState(kind: .photoGrid(count: 9))
                 } else {
                     let list = sorted
-                    PhotoGrid(photos: list, captionsLead: true) { photo in
+                    // 2026-11-12 判断（第2章）: TagPhotos v2 の格子（3 列・すき間 2・正方形・先頭 300 を端まで）
+                    TagPhotoGrid(photos: list) { photo in
                         PhotoDetailView(photo: photo, context: list)
                     }
                 }

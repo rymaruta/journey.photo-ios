@@ -47,7 +47,7 @@ struct MyPhotosMap: View {
         Group {
             if pins.isEmpty {
                 // **「地図が空」と「撮影地を書いていない」を分ける**
-                EmptyState(message: Self.emptyMessage(isMine: isMine))
+                EmptyState(icon: nil, message: Self.emptyMessage(isMine: isMine))
             } else {
                 Map(position: $camera) {
                     ForEach(pins) { pin in

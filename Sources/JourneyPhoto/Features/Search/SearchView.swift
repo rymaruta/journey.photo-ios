@@ -14,6 +14,8 @@ struct SearchView: View {
     var messagesUnread = false
 
     @EnvironmentObject private var environment: AppEnvironment
+    /// 電波があるか（無いときは上に帯・2026-11-12 第2章）
+    @EnvironmentObject private var connectivity: Connectivity
     /// **「見せない」が変わったら控えを捨てるため**に見ている
     @EnvironmentObject private var hidden: ModerationStore
     /// タブの切り替え（「地図で見る」）。**`TabRouter.shared` を直に見る**（ほかの画面と同じ）
@@ -62,6 +64,17 @@ struct SearchView: View {
             // 検索中も探す口と種類の切り替えを画面上部に残す。
             // 結果を下まで見た後に、上へ戻らず語と種類を変えられる。
             VStack(alignment: .leading, spacing: JPSpace.s) {
+                // 2026-11-12 判断（第2章「画面の状態とそろえ」）: 電波が無いときは上に帯。前に読めた撮影スポットと
+                // 写真はそのまま探せる（画面は閉じない）。「もう一度」は引き下げと同じ読み直し
+                if connectivity.isOffline {
+                    JPStateBand(kind: .offline, title: JPStateBand.offlineTitle,
+                                message: L("前に見た撮影スポットと写真だけを出しています",
+                                           "Showing photo spots and photos you've already seen"),
+                                isBusy: isReloading, actionIdentifier: "search.offline.retry") {
+                        Task { await reloadAll() }
+                    }
+                    .padding(.horizontal, JPSpace.gutter)
+                }
                 // v2（2026-10-14・Search の板）: 大見出し「探す」を明朝で置く。板は 30 だが字の段に無いので
                 // いちばん近い Display の 32（`JPFont.photoTitle`・タグの写真の題と同じ段）
                 Text(Labels.Navigation.searchTab)
@@ -469,8 +482,17 @@ struct SearchView: View {
         }
     }
 
-    /// 撮影スポットを地方 → 県で選ぶ段（札 #524・`SearchSpotIndexSection`）
+    /// 撮影スポットを地方 → 県で選ぶ段（札 #524・`SearchSpotIndexSection`）。
+    /// 2026-11-12（第2章・確かめ役の指摘）: 圏外で索引が読めなかった回は段ごと出さない——上の「電波が届いていません」の
+    /// 帯と、節の「撮影スポットを読み込めませんでした」の帯が2本重なっていた（`SearchSpotIndexSection.shows`）
+    @ViewBuilder
     private var spotIndexSection: some View {
+        if SearchSpotIndexSection.shows(load: spotIndexLoad, offline: connectivity.isOffline) {
+            spotIndexSectionBody
+        }
+    }
+
+    private var spotIndexSectionBody: some View {
         SearchSpotIndexSection(groups: spotGroups, load: spotIndexLoad, spots: officialSpots,
                                photos: model.everything,
                                photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.hasLoaded,

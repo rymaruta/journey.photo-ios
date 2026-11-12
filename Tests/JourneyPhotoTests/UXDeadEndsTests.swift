@@ -143,7 +143,7 @@ final class UXDeadEndsTests: XCTestCase {
     func testEmptyStatesOfferOneNextStep() async throws {
         let mypage = try source("Features/Profile/MyPageView.swift")
         XCTAssertTrue(mypage.contains("""
-            EmptyState(message: L("まだ写真がありません", "No photos yet"),
+            EmptyState(icon: nil, message: L("まだ写真がありません", "No photos yet"),
                        actionTitle: MyPageEmpty.postTitle, actionIdentifier: "mypage.emptyPost") {
                 tabRouter.openPost(.photo)
             }

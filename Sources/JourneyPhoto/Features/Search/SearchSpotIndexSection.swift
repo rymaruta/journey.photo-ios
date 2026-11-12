@@ -62,6 +62,15 @@ struct SearchSpotIndexSection: View {
     /// 段の中身（チップ＋札＋出典）の高さ。**地方を替えても変わらない**（標準の字の大きさで 212）
     nonisolated static let bodyHeight: CGFloat = chipRowHeight + rowGap + cardColumnHeight
 
+    /// 段を出すか。**圏外で読めなかった回は出さない**——上の電波なしの帯が言っている（帯を2本重ねない・2026-11-12）
+    nonisolated static func shows(load: SpotPrefectureIndex.Load, offline: Bool) -> Bool {
+        !(offline && load == .failed)
+    }
+
+    /// 節が読めなかったときの帯の字（第2章）
+    static var failedTitle: String { L("撮影スポットを読み込めませんでした", "Couldn't load photo spots") }
+    static var failedMessage: String { L("写真と撮影地はそのまま探せます", "You can still search photos and places") }
+
     var body: some View {
         let selected = SpotPrefectureIndex.selected(region, in: groups)
         VStack(alignment: .leading, spacing: JPSpace.s) {
@@ -81,13 +90,18 @@ struct SearchSpotIndexSection: View {
             switch load {
             case .loading:
                 // **読み込み中に「無い」と言わない**。骨格は段と同じ高さ（届いたときに下の段を押し下げない）
-                JPLoadingState(kind: .rows)
+                // 2026-11-12 判断（第2章）: 2本の線をやめ、**札の形**の灰（チップの行の下に県の札と同じ 156×116）
+                JPLoadingState(kind: .cards(width: Self.cardWidth, height: Self.cardHeight))
+                    .padding(.top, Self.chipRowHeight + Self.rowGap)
                     .frame(height: Self.bodyHeight, alignment: .top)
                     .clipped()
                     .padding(.horizontal, JPSpace.gutter)
             case .failed:
-                ErrorBanner(message: L("撮影スポットを読み込めませんでした", "Couldn't load photo spots"),
-                            isBusy: isRetrying, retry: retry)
+                // 2026-11-12 判断（第2章）: 節が読めないときは**帯**（画面は閉じない）。三角の大きな失敗が
+                // 節いっぱいに出ていた。下の写真・撮影地はそのまま探せることを言う
+                JPStateBand(kind: .partial, title: Self.failedTitle, message: Self.failedMessage,
+                            isBusy: isRetrying, actionIdentifier: "search.spotIndex.retry", action: retry)
+                    .padding(.horizontal, JPSpace.gutter)
             case .ready:
                 if let selected {
                     VStack(alignment: .leading, spacing: 0) {
@@ -105,7 +119,7 @@ struct SearchSpotIndexSection: View {
                         OfficialSpotIndexView(scope: scope, spots: spots, photos: photos, photosKnown: photosKnown)
                     }
                 } else {
-                    EmptyState(message: L("公開中の撮影スポットはまだありません", "No photo spots yet"))
+                    EmptyState(icon: "mappin", message: L("公開中の撮影スポットはまだありません", "No photo spots yet"))
                 }
             }
         }

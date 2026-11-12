@@ -38,8 +38,9 @@ struct NotificationsView: View {
     var body: some View {
         Group {
             if auth.isResolving {
-                // v2（Components 06）: 回る印ではなく行の形の灰の骨格
-                ScrollView { JPLoadingState(kind: .rows).padding(.horizontal, JPSpace.gutter) }
+                // v2（Components 06）: 回る印ではなく行の形の灰の骨格。
+                // 2026-11-12 判断（第2章）: お知らせの行と同じ形（顔 44・2 行の字・右に小さな写真）
+                ScrollView { JPLoadingState(kind: .personRows(trailing: .thumb)).padding(.horizontal, JPSpace.gutter) }
             } else if auth.userId == nil {
                 SignInView(reason: L("お知らせを見るにはログインしてください", "Sign in to see your activity"))
             } else {
@@ -165,7 +166,7 @@ struct NotificationsView: View {
     /// ——お知らせはシートで開き、投稿は下の札の「投稿」が持ち場（同じ入口を2つ作らない）
     private var emptyState: some View {
         let total = Self.emptyIsTotal(rows: model.rows, blocked: hidden.blockedUserIds)
-        return EmptyState(title: total
+        return EmptyState(icon: "bell", title: total
                        ? L("まだお知らせはありません", "Nothing yet")
                        : L("この種類のお知らせはありません", "Nothing of this kind"),
                    message: total
@@ -203,8 +204,9 @@ struct NotificationsView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
             } else if model.rows.isEmpty && model.isLoading {
-                // 中身と同じ形の灰の骨格（0.3 秒より早ければ出さない）
-                JPLoadingState(kind: .rows)
+                // 中身と同じ形の灰の骨格（0.3 秒より早ければ出さない）。
+                // 2026-11-12 判断（第2章）: 2本の線ではなくお知らせの行の形（顔 44・2 行の字・右に小さな写真）
+                JPLoadingState(kind: .personRows(trailing: .thumb))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             } else if shownRows.isEmpty && !model.isLoading {

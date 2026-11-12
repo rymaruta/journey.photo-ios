@@ -189,7 +189,13 @@ struct UserProfileView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ProfileCover(url: model.profile?.coverURL(cacheBust: model.cacheBust),
                                      reserve: hasCover) { hasCover = $0 }
-                        header
+                        if model.profile == nil && model.isLoading && model.errorMessage == nil {
+                            // 2026-11-12 判断（第2章「画面の状態とそろえ」）: 開き始めは**頭の形の灰**（顔 88・名前・数）。
+                            // 空の丸と名前の無い頭を出さない。下の札の行と格子の骨格はそのまま続く
+                            JPLoadingState(kind: .profile)
+                        } else {
+                            header
+                        }
                     }
                     if model.profile != nil {
                         counts
@@ -381,13 +387,19 @@ struct UserProfileView: View {
                 Task { await model.load(userId: userId, environment: environment, viewerId: auth.userId) }
             }
         } else if shownPhotos.isEmpty && !isBlocked && model.photoCount == .pending {
-            // ブロックを解いて読み直すまでの間。「まだありません」と言わない（v2: 格子の骨格）
-            JPLoadingState(kind: .grid)
+            // ブロックを解いて読み直すまでの間。「まだありません」と言わない（v2: 格子の骨格）。
+            // 2026-11-12 判断（第2章）: 字の線は付けず格子だけ（格子と同じ形）
+            JPLoadingState(kind: .photoGrid(count: 9))
         } else if shownPhotos.isEmpty && !model.isLoading {
-            // 全部通報・持ち主をブロックして戻った回も、白紙にせず案内を出す
-            EmptyState(message: L("公開された写真はまだありません", "No public photos yet"))
-            // 板 v2 UserProfile（写真0）: 押せる一手は真鍮の下線のリンク（黒地の上のリンクは真鍮）
-            findOthersLink
+            // 全部通報・持ち主をブロックして戻った回も、白紙にせず案内を出す。
+            // 2026-11-12 判断（第2章「画面の状態とそろえ」）: 空の一手も**ほかの画面と同じボタン1つ**
+            // （写真の無い画面の主ボタン＝真鍮の塗り＋墨）。以前は真鍮の下線の字で、空の形が画面ごとに割れていた
+            // 見出しは「公開された写真」のまま（見ている人に見えるのは公開の写真だけ）。自分のページなら自分向けの文と一手
+            let empty = UserProfileEmpty(isSelf: userId == auth.userId)
+            EmptyState(title: UserProfileEmpty.title, message: empty.message,
+                       actionTitle: empty.actionTitle, actionIdentifier: empty.actionIdentifier) {
+                if empty.isSelf { TabRouter.shared.openPost(.photo) } else { TabRouter.shared.openSearch() }
+            }
         } else if tab == .map && shownPhotos.isEmpty {
             // 🔴 **読み込み中の空の地図に「撮影地の分かる写真がありません」と言わない。**
             // 「読み終えて0枚」は上の枝で済んでいるので、ここに来るのは読み込み中だけ
@@ -409,24 +421,6 @@ struct UserProfileView: View {
                 }
             }
         }
-    }
-
-    /// 写真が0枚の人のページの一手（板 v2 UserProfile の「ほかの人の写真を探す」）。
-    /// 探すのタブを開く。黒地の上のリンクなので真鍮・下線（色だけで言わない）・押せる高さ 44
-    private var findOthersLink: some View {
-        Button {
-            TabRouter.shared.openSearch()
-        } label: {
-            Text(L("ほかの人の写真を探す", "Find other people's photos"))
-                .font(JPFont.body)
-                .underline()
-                .foregroundStyle(WebTheme.accent)
-                .frame(minHeight: WebTheme.minTapTarget)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity)
-        .accessibilityHint(L("探すのタブを開きます", "Opens the Search tab"))
     }
 
     /// 見出し（板 v2 UserProfile）: 88pt のアイコン（黒い 4pt の縁）と右に「フォローする」、
@@ -883,4 +877,28 @@ final class UserProfileViewModel: ObservableObject {
             actionMessage = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }
     }
+}
+
+/// 人のページの写真が0枚のときの字（2026-11-12 第2章・確かめ役の指摘）。
+///
+/// 見出しは今までの「公開された写真はまだありません」の意味を保つ（見ている人に見えるのは公開の写真だけ。
+/// 非公開の写真がある人にも「まだ写真がありません」と言い切らない）。**自分のページなら自分向けの文と一手**
+/// （「この人が」と言わず、写真を投稿へ）
+struct UserProfileEmpty: Equatable {
+    let isSelf: Bool
+
+    static var title: String { L("公開された写真はまだありません", "No public photos yet") }
+
+    var message: String {
+        isSelf
+            ? L("写真を公開にすると、ほかの人にはここに並んで見えます",
+                "Photos you make public appear here for others")
+            : L("この人が写真を公開すると、ここに並びます", "Photos this person makes public will appear here")
+    }
+
+    var actionTitle: String {
+        isSelf ? L("写真を投稿", "Post a photo") : L("ほかの人の写真を探す", "Find other people's photos")
+    }
+
+    var actionIdentifier: String { isSelf ? "userProfile.emptyPost" : "userProfile.emptyFindOthers" }
 }

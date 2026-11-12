@@ -228,7 +228,7 @@ struct BadgeShelfView: View {
                 if loading {
                     JPLoadingState(kind: .rows)
                 } else if errorMessage == nil {
-                    EmptyState(message: L("まだメダルはありません。", "No medals yet."))
+                    EmptyState(icon: nil, message: L("まだメダルはありません。", "No medals yet."))
                 }
             } else {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: JPSpace.xs), count: 3),

@@ -253,7 +253,7 @@ final class ProfileV2DesignTests: XCTestCase {
             XCTAssertTrue(row.contains("を「行きたい」から外す"), "外すボタンの読み上げを落とした")
         }
         XCTAssertTrue(mine.contains("JPEyebrowLine(L(\"すべての行きたい場所"), "節の見出しが眉でない")
-        XCTAssertTrue(mine.contains("EmptyState(title: L(\"行きたい場所はまだありません\""))
+        XCTAssertTrue(mine.contains("EmptyState(icon: nil, title: L(\"行きたい場所はまだありません\""))
     }
 
     // MARK: - プロフィールの編集

@@ -121,7 +121,7 @@ struct DMRequestsView: View {
                             .padding(.horizontal, -JPSpace.gutter)
                     }
                     if requests.isEmpty {
-                        EmptyState(title: L("リクエストはありません", "No requests"),
+                        EmptyState(icon: "person.2", title: L("リクエストはありません", "No requests"),
                                    message: L("承認前のメッセージは、ここに並びます。",
                                               "Messages from people you haven't accepted will show up here."))
                             .padding(.top, JPSpace.emptyTop)
