@@ -231,7 +231,7 @@ CloudFormation は1スタック 500 部品までで、user API は 488 まで来
 - 読むのは `project/DesignSystem.dc.html`（デザインシステム「黒塗りの真鍮」）と、
   変える画面の板（例: 自分のストーリーは `project/StoryMine.dc.html`）。目次は `project/Index.dc.html`
 - **2026-11-12 に板「journey.photo iOS v2」（寸法・状態・動きを決めた v2 の板）をこの板に統合した。** v2 の決まりはこの板にある。
-  同じ画面は v2 が正で `project/<名前>.dc.html`、前の版は「旧版」の頁に `project/<名前>.v1.dc.html` で残す。部品・状態・動きは `project/Components.dc.html`
+  正はいつも `project/<名前>.dc.html`（v2 の版か、v2 より後に決めたことを持つ版）。旧版は「旧版」の頁に `<名前>.v1.dc.html`（前の版）か `<名前>.v2-1014.dc.html`（v2 の元）で残す。部品・状態・動きは `project/Components.dc.html`
 - **要点（2026-09-29 に読んだもの。板の決まりが変わっていたら板が正。ただし下の owner の好みが優先）**
   - 写真が主役。UI は黒と白。真鍮 `#C9A66B` は**黒い地の上だけ**（写真の上では読めない）
   - **owner の好み（2026-09-29）: デザインの箇所は白より真鍮。** 板は「白＝選択・いいねは白」
