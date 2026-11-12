@@ -145,7 +145,7 @@ final class SNSMoreTests: XCTestCase {
                                "\(file): 新しい文は「観光スポット」: \(line)")
             }
         }
-        XCTAssertTrue(try source("Sources/JourneyPhoto/Features/Messages/DMSpotCard.swift").contains("HStack(spacing: 6) {\n                            Text(DMSpotShare.kindLabel)"))
+        XCTAssertTrue(try source("Sources/JourneyPhoto/Features/Messages/DMSpotCard.swift").contains("HStack(spacing: 6) {\n                Text(DMSpotShare.kindLabel)"))
         XCTAssertTrue(try source("Sources/JourneyPhoto/Features/Gallery/HomeSuggestedPeopleView.swift").contains("HStack(spacing: 8) {\n                                Text(SuggestedPeople.countLine(person))"))
     }
 
