@@ -23,6 +23,8 @@ Config/Local.xcconfig
 Sources/JourneyPhoto/Info.plist
 
 # 構文検査の依存（Tools/ で npm install して作る）
-Tools/node_modules/
+# 末尾に / を付けない: / 付きはフォルダにしか当たらず、作業ツリーに置いた symlink（ln -s）を拾ってしまう
+# （2026-11-12 確かめ役の指摘: 枝 claude/183-trip-share に symlink がコミットされていた）
+Tools/node_modules
 Tools/package-lock.json
 __pycache__/

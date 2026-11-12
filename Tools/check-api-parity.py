@@ -69,8 +69,13 @@ def normalize(path: str) -> str:
 
 
 def server_endpoints(root: Path):
-    """`api-user/serverless.yml` から (メソッド, パス, 認証が要るか) を拾う。"""
-    text = (root / "api-user" / "serverless.yml").read_text(encoding="utf-8")
+    """`api-user/serverless.yml` から (メソッド, パス, 認証が要るか) を拾う。
+
+    **別のスタックの設定（`serverless.<名前>.yml`）も読む**（2026-11-12）。user API のスタックの部品が上限に近く、
+    新しい口は同じ HTTP API に経路だけ足す別のスタックに置いている（`serverless.trip-share.yml` など）。
+    口の URL は user API と同じなので、アプリから見れば同じ口の一覧
+    """
+    text = "\n".join(p.read_text(encoding="utf-8") for p in sorted((root / "api-user").glob("serverless*.yml")))
     endpoints = {}
     # httpApi の各項目は path → method → （あれば）authorizer の順で並ぶ
     pattern = re.compile(

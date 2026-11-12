@@ -2957,6 +2957,33 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "66c-長い移動のシート（Google フライトで探す）")
     }
 
+    /// 旅行プランを仲間と共有（2026-11-12・札 #553・資料「SNS をもっと SNS に」2b）。見本は金沢のプランを「あお」と共有した形
+    /// （`-JPTripShareFixture`）: 題・日付の下に「2人」と顔の段・「仲間を誘う」・「日程 | 会話」、あおが足した場所に
+    /// 「あお が足しました」。会話に切り替えると吹き出しと「日程に足しました」の札・入力欄。誘うとリンクのシート
+    func testCapturesTripShare() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripShareFixture", "YES"])
+        guard openTripsRow(app, "trips.plans") else { return }
+        let plan = app.descendants(matching: .any).matching(identifier: "trips.plan")
+            .matching(NSPredicate(format: "label CONTAINS %@", "金沢")).firstMatch
+        guard plan.waitForExistence(timeout: 10) else { return }
+        plan.tap()
+        let strip = app.descendants(matching: .any)["tripShare.strip"].firstMatch
+        guard strip.waitForExistence(timeout: 15) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "66c-旅行プラン（仲間と共有・日程）")
+        XCTAssertTrue(app.descendants(matching: .any)["tripPlan.addedBy"].firstMatch.exists, "仲間が足した場所に「足しました」が出ない")
+        let chatTab = app.buttons["tripShare.tab.chat"].firstMatch
+        guard chatTab.waitForExistence(timeout: 5) else { return }
+        chatTab.tap()
+        guard app.descendants(matching: .any)["tripShare.event"].firstMatch.waitForExistence(timeout: 10) else { return }
+        shoot(app, "66d-旅行プラン（仲間と共有・会話）")
+        let invite = app.buttons["tripShare.invite"].firstMatch
+        guard invite.waitForExistence(timeout: 5) else { return }
+        invite.tap()
+        guard app.descendants(matching: .any)["tripShare.line"].firstMatch.waitForExistence(timeout: 10) else { return }
+        shoot(app, "66e-旅行プラン（仲間を誘う）")
+    }
+
     /// **送れていないとき**（圏外・断られた）。直しは画面に残り、「まだ送れていません」と「もう一度試す」が出る
     func testCapturesTripPlanDaysUnsent() {
         for (extra, name) in [(["-JPTripPlanFixtureOffline", "YES"], "65d-旅行プランの日程（圏外・まだ送れていません）"),
