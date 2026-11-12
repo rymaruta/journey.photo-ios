@@ -1195,7 +1195,10 @@ struct PhotoDetailView: View {
         // **押した時点の写真を掴んでおく。** 読み込み（最大15秒）の間に束を送ると `shown` が
         // 替わり、1枚目の画像に2枚目の題とリンクが付いた（87525da9 のレビュー）
         let target = shown
-        guard !preparingThreads, let url = target.detailImageURL else { return }
+        // 人の写真の画像（共有カード）は書き出さない（2026-11-12・#577・`PhotoDetailRules.showsSocialCard`）
+        guard !preparingThreads, let url = target.detailImageURL,
+              PhotoDetailRules.showsSocialCard(ownerId: target.userId ?? target.uploadedBy, me: auth.userId,
+                                               shareable: CollectionScreen.isShareable(target)) else { return }
         let link = PhotoLink.shortURL(photoId: target.id) ?? shareURL(for: current)
         preparingThreads = true
         // 読んでいる間を見せる（メニューが閉じて数秒何も起きないと、押し直しを誘う）
@@ -1264,7 +1267,7 @@ struct PhotoDetailView: View {
     private var sendSheet: some View {
         let actions = SendSheetLayout.photoActions(url: shareURL(for: current), canShareToStory: canShareToStory,
                                                    story: { Task { await prepareStory() } })
-        switch SendSheetLayout.peopleRow(loaded: sendFacesLoaded, people: sendFaces, canSend: canShareToStory) {
+        switch SendSheetLayout.peopleRow(loaded: sendFacesLoaded, people: sendFaces, canSend: canSendPhoto) {
         case .none:
             SendSheet(actions: actions)
         case .placeholder:
@@ -1286,7 +1289,7 @@ struct PhotoDetailView: View {
     /// `SendSheetLayout.peopleRow`）。読むのはこの画面で1回だけ。読めなければ段を出さない
     private func openSendSheet() async {
         showSendSheet = true
-        guard !sendFacesLoaded, !sendFacesLoading, canShareToStory, let me = auth.userId else { return }
+        guard !sendFacesLoaded, !sendFacesLoading, canSendPhoto, let me = auth.userId else { return }
         sendFacesLoading = true
         defer { sendFacesLoading = false }
         let fetched = try? await environment.social.following(userId: me)
@@ -1314,10 +1317,17 @@ struct PhotoDetailView: View {
         }
     }
 
-    /// 「ストーリーに載せる」を出すか（札 #541 の ①）。**ログイン中で、全体に公開した写真だけ**
-    /// （サーバーも同じ決まりで断る・`storyPhotoShare.ts`。自分の写真も人の写真も）
-    private var canShareToStory: Bool {
+    /// DM で写真を送れるか（札 #541 の ③）。**ログイン中で、全体に公開した写真**。人の写真でも送れる
+    /// （DM の札は持ち主の写真へ人を連れて行くだけ・画像のファイルは渡さない）
+    private var canSendPhoto: Bool {
         auth.userId != nil && acceptsReactions && CollectionScreen.isShareable(shown)
+    }
+
+    /// 「ストーリーに載せる」を出すか（札 #541 の ①）。**自分の、全体に公開した写真だけ**
+    /// （2026-11-12 判断・#577・`SendSheetLayout.canShareToStory`。サーバーも人の写真は 403 で断る）
+    private var canShareToStory: Bool {
+        SendSheetLayout.canShareToStory(ownerId: shown.userId ?? shown.uploadedBy, me: auth.userId,
+                                        canSendPhoto: canSendPhoto)
     }
 
     /// 写真を札にしたストーリーの絵を作り、作る画面を開く（札 #541 の ①）。
@@ -1325,7 +1335,10 @@ struct PhotoDetailView: View {
     private func prepareStory() async {
         // **押した時点の写真を掴む**（読み込みの間に束を送っても、押した1枚を紹介する・`prepareThreads` と同じ）
         let target = shown
-        guard !preparingStory, let url = target.detailImageURL else { return }
+        // 人の写真の絵は作らない（2026-11-12・#577。ボタンは出さないが、押した後に束を送った回も断る）
+        guard !preparingStory, let url = target.detailImageURL,
+              SendSheetLayout.canShareToStory(ownerId: target.userId ?? target.uploadedBy, me: auth.userId,
+                                              canSendPhoto: canSendPhoto) else { return }
         // 送るシートが閉じきる前に作る画面を重ねない（iOS が取りこぼす）。読み込みと並べて待つ
         let started = Date()
         preparingStory = true
@@ -1389,8 +1402,9 @@ struct PhotoDetailView: View {
                 // 撮影の試験が「写真を編集」へ入る目印（`ScreenshotTests`）
                 .accessibilityIdentifier("photo.edit")
                 // **自分の、全体に公開した写真だけ**（`ThreadsShare`・絞った写真を外の SNS に流さない。
-                // 人の写真の画像を自分の SNS に載せる口も作らない）
-                if CollectionScreen.isShareable(shown) {
+                // 人の写真の画像を自分の SNS に載せる口も作らない・`PhotoDetailRules.showsSocialCard`）
+                if PhotoDetailRules.showsSocialCard(ownerId: ownerId, me: auth.userId,
+                                                    shareable: CollectionScreen.isShareable(shown)) {
                     Button { Task { await prepareThreads() } } label: {
                         Label(L("SNS に載せる", "Share to social apps"), systemImage: "square.and.arrow.up.on.square")
                     }
@@ -2834,6 +2848,14 @@ enum PhotoDetailRules {
     /// 🔴 **ブロックした相手には出さない。** 通報シートから「ブロックもする」を選んだ回は
     /// `block()` を通らないので、前に取ったフォローの状態が残り、ブロックした相手に
     /// フォロー・フォロー解除を送れていた
+    /// ⋯ の「SNS に載せる」（共有カードの画像を書き出して、ほかのアプリへ画像のファイルを渡す）を出すか。
+    /// **自分の、全体に公開した写真だけ**（2026-11-12 判断・#577・owner の原則「基本的にその人のもの」）。
+    /// 人の写真の画像を手にできる道は作らない。持ち主へ連れて行くリンクの共有は送るシートに残す
+    static func showsSocialCard(ownerId: String?, me: String?, shareable: Bool) -> Bool {
+        guard shareable, let ownerId, !ownerId.isEmpty, let me, !me.isEmpty else { return false }
+        return ownerId == me
+    }
+
     static func showsFollow(isMine: Bool, signedIn: Bool, isFollowing: Bool?,
                             lookupFailed: Bool, ownerBlocked: Bool) -> Bool {
         guard !isMine, signedIn, !ownerBlocked else { return false }

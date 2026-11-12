@@ -7402,10 +7402,24 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// マイページの自分の写真の詳細を開く（「ストーリーに載せる」は自分の写真だけ・#577）。開けなければ false
+    private func openFirstMyPhoto(_ app: XCUIApplication) -> Bool {
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return false }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let myPhoto = app.buttons["mypage.photo"].firstMatch
+        guard myPhoto.waitForExistence(timeout: 20) else { return false }
+        scrollUntilHittable(app, myPhoto, limit: 3)
+        guard myPhoto.isHittable else { return false }
+        myPhoto.tap()
+        return true
+    }
+
     /// **写真の「共有」→ 送るシート → ストーリーに載せる**（札 #541 の ①・案の模型 1-C / 1-D）。
-    /// 送るシート（63a）と、写真の札が置かれた作る画面（63b）を撮る。投稿はしない。**出なければ撮らずに抜ける**
+    /// 送るシート（63a）と、写真の札が置かれた作る画面（63b）を撮る。投稿はしない。**出なければ撮らずに抜ける**。
+    /// 2026-11-12（#577）: ストーリーに載せられるのは自分の写真だけなので、マイページの自分の写真から開く
     func testCapturesSendSheetToStory() {
-        guard let app = launchSNSPreview(sharedStory: false), openFirstLatestPhoto(app) else { return }
+        guard let app = launchSNSPreview(sharedStory: false), openFirstMyPhoto(app) else { return }
         let share = app.buttons["photo.share"].firstMatch
         scrollUntilHittable(app, share)
         guard share.exists, share.isHittable else {
@@ -7426,6 +7440,33 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 3)
         shoot(app, opened ? "63b-ストーリーに載せる（写真の札）" : "63b-ストーリーに載せる（作る画面が開かない）")
         XCTAssertTrue(opened, "「ストーリーに載せる」で作る画面が開かない")
+    }
+
+    /// 🔴 **人の写真の送るシートに「ストーリーに載せる」が無い**（2026-11-12 owner の原則・#577）。
+    /// 新着の1枚目（人の写真）の「共有」を開き、リンクのコピーと「ほかのアプリ」だけが並ぶのを撮る（63a2）。
+    /// 1枚目が自分の写真だった回（⋯ に「編集」がある）は確かめずに抜ける
+    func testCapturesSendSheetOthersPhotoHasNoStory() {
+        guard let app = launchSNSPreview(sharedStory: false), openFirstLatestPhoto(app) else { return }
+        let menu = app.buttons["photo.menu"].firstMatch
+        guard menu.waitForExistence(timeout: 15), menu.isHittable else { return }
+        menu.tap()
+        let mine = app.buttons["photo.edit"].firstMatch.waitForExistence(timeout: 3)
+        // メニューを閉じる（上の空いた所を叩く）
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+        Thread.sleep(forTimeInterval: 1)
+        guard !mine else { return }
+        let share = app.buttons["photo.share"].firstMatch
+        scrollUntilHittable(app, share)
+        guard share.exists, share.isHittable else { return }
+        share.tap()
+        let copy = app.buttons["sendSheet.copyLink"].firstMatch
+        let shown = copy.waitForExistence(timeout: 10)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, shown ? "63a2-送るシート（人の写真）" : "63a2-送るシート（人の写真・開かない）")
+        guard shown else { return XCTFail("人の写真の「共有」で送るシートが開かない") }
+        XCTAssertFalse(app.buttons["sendSheet.story"].firstMatch.exists,
+                       "人の写真の送るシートに「ストーリーに載せる」が出ている（#577）")
+        XCTAssertTrue(app.buttons["sendSheet.otherApps"].firstMatch.exists, "「ほかのアプリ」（リンクの共有）が消えた")
     }
 
     /// **コメントに返信**（札 #541 の ②・案の模型 2-B）。見本の通信でコメントを1件書き、「返信」→
