@@ -276,7 +276,10 @@ final class DesignFoundationTests: XCTestCase {
                        "if let title { StateTitle(text: title) }", "StateMessage(text: message)",
                        ".jpPillButton(.main(onPhoto: false))"],
                       in: declaration("EmptyState", in: states), "空の表示")
-        XCTAssertFalse(states.contains("exclamationmark.triangle"), "失敗の印が三角に戻っている")
+        // 三角はマイページの「見た目を変えない」形（`.classic`）だけ。第2章の形に三角を戻さない
+        let standard = declaration("ErrorBanner", in: states)
+        let standardBranch = standard.components(separatedBy: "case .classic:").first ?? ""
+        XCTAssertFalse(standardBranch.contains("exclamationmark.triangle"), "失敗の印が三角に戻っている")
         XCTAssertTrue(declaration("StateTitle", in: states).contains(".font(JPFont.stateTitle)"))
         let message = declaration("StateMessage", in: states)
         XCTAssertTrue(message.contains(".font(JPFont.body)"))
@@ -300,13 +303,13 @@ final class DesignFoundationTests: XCTestCase {
     func testMainScreensUseStateParts() throws {
         let expected: [(path: String, calls: [String])] = [
             ("Features/Gallery/GalleryView.swift", ["ErrorBanner(message: message, isBusy: isRefreshing)"]),
-            ("Features/Profile/MyPageView.swift", ["EmptyState(message: L(\"まだ写真がありません\"",
-                                                   "ErrorBanner(message: error)",
-                                                   "ErrorBanner(message: reloadError)"]),
+            ("Features/Profile/MyPageView.swift", ["EmptyState(icon: nil, message: L(\"まだ写真がありません\"",
+                                                   "ErrorBanner(message: error, look: .classic)",
+                                                   "ErrorBanner(message: reloadError, look: .classic)"]),
             // 2026-11-12（第2章）: 見出し・説明・一手のボタンの空（下線の字の一手をやめた）
-            ("Features/Profile/UserProfileView.swift", ["EmptyState(title: L(\"まだ写真がありません\""]),
-            ("Features/Map/PhotoMapView.swift", ["ErrorBanner(message: Self.loadFailedText, isBusy: model.isLoading)",
-                                                 "EmptyState(message: L(\"見つかりませんでした\""]),
+            ("Features/Profile/UserProfileView.swift", ["EmptyState(title: UserProfileEmpty.title, message: empty.message,"]),
+            ("Features/Map/PhotoMapView.swift", ["ErrorBanner(title: Self.loadFailedText, message: ErrorBanner.defaultMessage",
+                                                 "EmptyState(icon: \"mappin\", message: L(\"見つかりませんでした\""]),
         ]
         for (path, calls) in expected {
             let text = try source(path)

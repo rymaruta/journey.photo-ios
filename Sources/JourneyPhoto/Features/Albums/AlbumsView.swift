@@ -144,7 +144,7 @@ struct AlbumsView: View {
             .profileListRow()
         } else if model.albums.isEmpty && joinedOthers.isEmpty && !model.isLoading {
             // 板 v2 Albums（空）: 何が無いか → どうすれば埋まるか → 作る（写真の無い画面の主ボタン＝真鍮）
-            EmptyState(title: L("まだアルバムがありません", "No albums yet"),
+            EmptyState(icon: "rectangle.stack", title: L("まだアルバムがありません", "No albums yet"),
                        message: L("アルバムを作って招待リンクを送ると、仲間の写真がここに集まります",
                                   "Create an album and send the invite link — your companions' photos gather here."),
                        actionTitle: L("アルバムを作る", "New album")) { showCreate = true }

@@ -717,36 +717,46 @@ struct PhotoMapView: View {
         // 2026-11-12 判断（デザインの案 第2章「画面の状態とそろえ」）: 地図の上の失敗・空・電波なしは
         // **ガラスの帯**（`JPStateBand`・黒地の帯と同じ並び——印・見出しと説明・右に一手）。
         // 字と「もう一度試す」だけの丸い札は、何が起きたかが印で分からなかった。現在地の様子は今までどおりの札
-        if connectivity.isOffline, model.loaded {
-            // 電波が無くても前に読めたピンはそのまま（画面は閉じない）
+        let choice = Self.stateBand(offline: connectivity.isOffline, loaded: model.loaded, empty: emptyKind,
+                                    areaOnly: model.areaFrame != nil && MapSearch.fold(model.query).isEmpty
+                                        && model.category == nil,
+                                    hasLocationNote: locationNote != nil, photosFailed: loadFailedNote != nil)
+        if choice == .offlineNothing {
+            // 電波が無く、前に見たピンも無い（「前に見たピンだけ」と言わない・確かめ役の指摘）
+            mapBand(JPStateBand(kind: .offline, title: JPStateBand.offlineTitle,
+                                message: L("電波の届く所で開くと、写真のピンが並びます",
+                                           "Open the map where you have a signal to see photo pins"),
+                                skin: .glass, isBusy: model.isLoading, actionIdentifier: "map.offline.retry") {
+                retryLoad()
+            })
+        } else if choice == .failed {
+            mapBand(JPStateBand(kind: .partial, title: Self.loadFailedText,
+                                message: L("通信が途切れたようです", "The connection seems to have dropped"),
+                                skin: .glass, isBusy: model.isLoading, actionIdentifier: "map.retry") {
+                retryLoad()
+            })
+        } else if choice == .areaEmpty {
+            // 範囲だけで絞って空だった回は、1回で出られる出口（範囲を外して写真全体へ寄せる）
+            mapBand(JPStateBand(kind: .empty(symbol: "mappin"),
+                                title: L("この範囲にはまだ写真がありません", "No photos in this area yet"),
+                                skin: .glass, actionTitle: L("写真全体を見る", "Show all photos"),
+                                actionIdentifier: "map.empty.showAll") {
+                model.clearArea()
+                frame(model.frame)
+            })
+        } else if choice == .empty, let message = emptyMessage {
+            mapBand(JPStateBand(kind: .empty(symbol: "mappin"), title: message, skin: .glass))
+        } else if choice == .location, let note = locationNote {
+            // 現在地の様子が先（押した回の答えを隠さない・`loadFailedNote` の注記）
+            statusCapsule(note, retry: false)
+        } else if choice == .offlinePins {
+            // 電波が無くても前に読めたピンはそのまま（画面は閉じない）。ピンがあるときだけここに来る
             mapBand(JPStateBand(kind: .offline, title: JPStateBand.offlineTitle,
                                 message: L("前に見たピンだけを出しています", "Showing pins you've already seen"),
                                 skin: .glass, isBusy: model.isLoading, actionIdentifier: "map.offline.retry") {
                 retryLoad()
             })
-        } else if let message = emptyMessage {
-            if message == Self.loadFailedText {
-                mapBand(JPStateBand(kind: .partial, title: message,
-                                    message: L("通信が途切れたようです", "The connection seems to have dropped"),
-                                    skin: .glass, isBusy: model.isLoading, actionIdentifier: "map.retry") {
-                    retryLoad()
-                })
-            } else if model.areaFrame != nil {
-                // 範囲で絞って空だった回は、1回で出られる出口（範囲を外して写真全体へ寄せる）
-                mapBand(JPStateBand(kind: .empty(symbol: "mappin"),
-                                    title: L("この範囲にはまだ写真がありません", "No photos in this area yet"),
-                                    skin: .glass, actionTitle: L("写真全体を見る", "Show all photos"),
-                                    actionIdentifier: "map.empty.showAll") {
-                    model.clearArea()
-                    frame(model.frame)
-                })
-            } else {
-                mapBand(JPStateBand(kind: .empty(symbol: "mappin"), title: message, skin: .glass))
-            }
-        } else if let note = locationNote {
-            // 現在地の様子が先（押した回の答えを隠さない・`loadFailedNote` の注記）
-            statusCapsule(note, retry: false)
-        } else if let note = loadFailedNote {
+        } else if choice == .photosFailed, let note = loadFailedNote {
             mapBand(JPStateBand(kind: .partial, title: note, skin: .glass, isBusy: model.isLoading,
                                 actionIdentifier: "map.retry") {
                 retryLoad()
@@ -799,6 +809,51 @@ struct PhotoMapView: View {
         case .noResults: return L("見つかりませんでした", "No results")
         case .noPlaces: return L("撮影地の分かる写真がありません", "No photos with a place yet")
         }
+    }
+
+    /// いまの「何も出ていない」の種類（`emptyMessage` と同じ決め方）
+    private var emptyKind: EmptyBanner? {
+        guard model.hasNothingToShow else { return nil }
+        return Self.emptyBanner(loadFailed: model.loadFailed, photosEmpty: model.photos.isEmpty,
+                                filtering: model.isFiltering,
+                                categoryHidesSpots: model.categoryHidesMatchingSpots)
+    }
+
+    /// 地図の上に出す帯（2026-11-12・第2章と確かめ役の指摘）
+    enum StateBandChoice: Equatable {
+        /// 電波が無く、前に見たピンも無い
+        case offlineNothing
+        /// 写真を読めなかった（電波はある）
+        case failed
+        /// 範囲だけで絞って空だった（「写真全体を見る」）
+        case areaEmpty
+        /// 見つからない・撮影地の分かる写真が無い・カテゴリがスポットを隠している（字は `emptyMessage`）
+        case empty
+        /// 現在地の様子（今までどおりの丸い札）
+        case location
+        /// 電波が無いが、前に読めたピンがある
+        case offlinePins
+        /// スポットのピンは出ているが写真を読めなかった
+        case photosFailed
+        case none
+    }
+
+    /// どの帯を出すか。**空・見つからない・現在地の様子を電波なしの帯で隠さない**。
+    /// 「前に見たピンだけ」はピンがあるときだけ（`empty == nil` はピンか写真が1つ以上ある）。
+    /// 範囲の出口は、絞り込みが範囲だけの回に限る（語・カテゴリでも絞っていると範囲を外しても空のまま）
+    nonisolated static func stateBand(offline: Bool, loaded: Bool, empty: EmptyBanner?, areaOnly: Bool,
+                                      hasLocationNote: Bool, photosFailed: Bool) -> StateBandChoice {
+        if let empty {
+            switch empty {
+            case .failed: return offline ? .offlineNothing : .failed
+            case .noResults: return areaOnly ? .areaEmpty : .empty
+            case .categoryHidesSpots, .noPlaces: return .empty
+            }
+        }
+        if hasLocationNote { return .location }
+        if offline && loaded { return .offlinePins }
+        if photosFailed { return .photosFailed }
+        return .none
     }
 
     /// 地図の上の帯（何も出ていないとき）に何と言うか
@@ -1578,10 +1633,10 @@ struct PhotoMapView: View {
                     // 2026-11-12 判断（第2章）: 2本の線ではなく場所の行の形（写真 56・2 行の字）
                     JPLoadingState(kind: .places)
                 } else if model.officialIndexState == .failed {
-                    ErrorBanner(message: L("撮影スポットを読み込めませんでした", "Couldn't load photo spots"),
-                                isBusy: model.isLoading) { retryLoad() }
+                    ErrorBanner(title: L("撮影スポットを読み込めませんでした", "Couldn't load photo spots"),
+                                message: ErrorBanner.defaultMessage, isBusy: model.isLoading) { retryLoad() }
                 } else if rows.isEmpty {
-                    EmptyState(message: MapSearch.fold(model.query).isEmpty
+                    EmptyState(icon: "mappin", message: MapSearch.fold(model.query).isEmpty
                                ? L("公開中の撮影スポットはまだありません", "No photo spots yet")
                                : L("見つかりませんでした", "No results"))
                 } else {
@@ -1689,11 +1744,12 @@ struct PhotoMapView: View {
                 switch Self.listEmpty(loadFailed: model.loadFailed, photosEmpty: model.photos.isEmpty,
                                       filtering: filtering) {
                 case .failed:
-                    ErrorBanner(message: Self.loadFailedText, isBusy: model.isLoading) { retryLoad() }
+                    ErrorBanner(title: Self.loadFailedText, message: ErrorBanner.defaultMessage,
+                                isBusy: model.isLoading) { retryLoad() }
                 case .noResults:
-                    EmptyState(message: L("見つかりませんでした", "No results"))
+                    EmptyState(icon: "mappin", message: L("見つかりませんでした", "No results"))
                 case .noPlaces:
-                    EmptyState(message: L("撮影地の分かる写真がありません", "No photos with a place yet"))
+                    EmptyState(icon: "mappin", message: L("撮影地の分かる写真がありません", "No photos with a place yet"))
                 }
             }
             .padding(.top, 8)

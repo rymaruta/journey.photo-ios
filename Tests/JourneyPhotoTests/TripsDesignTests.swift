@@ -185,7 +185,7 @@ final class TripsDesignTests: XCTestCase {
         assertInOrder(["if index == 0 {", "TripShelf(trip: trip)", "} else {", "TripShelfRow(trip: trip)"],
                       in: list, "最新の一冊だけ表紙の札、残りは行")
         XCTAssertTrue(list.contains(".accessibilityIdentifier(\"trips.book\")"), "画面写真で探す名前")
-        XCTAssertTrue(list.contains("EmptyState(title:"), "0 冊は空の状態の部品")
+        XCTAssertTrue(list.contains("EmptyState(icon: nil, title:"), "0 冊は空の状態の部品（マイページは印なし・2026-11-12）")
         let card = section("struct TripShelf:", in: shelf)
         XCTAssertTrue(card.contains("TripStyle.coverCardHeight"))
         XCTAssertTrue(card.contains("JPRadius.l"))
@@ -237,7 +237,7 @@ final class TripsDesignTests: XCTestCase {
         let create = section("private var createButton: some View {", in: plans)
         assertInOrder(["showCreate = true", "L(\"旅行プランを作る\"", ".jpPillButton(.main(onPhoto: false))"],
                       in: create, "作る口")
-        XCTAssertTrue(plans.contains("ErrorBanner(message: L(\"旅行プランを読み込めませんでした。\""), "読めなかったのは状態の部品")
+        XCTAssertTrue(plans.contains("ErrorBanner(title: L(\"旅行プランを読み込めませんでした\""), "読めなかったのは状態の部品")
         XCTAssertTrue(plans.contains("EmptyState(title: L(\"旅行プランはまだありません\""))
         XCTAssertTrue(plans.contains("JPLoadingState(kind: .rows)"))
         let card = section("private func card(_ plan: TripPlan, face: Bool = true)", in: plans)

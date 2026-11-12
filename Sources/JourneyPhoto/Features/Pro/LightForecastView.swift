@@ -340,7 +340,7 @@ struct LightForecastView: View {
         case .notPro:
             VStack(spacing: 0) {
                 stateIcon("sparkles")
-                EmptyState(title: LightForecastText.failureTitle(failure),
+                EmptyState(icon: nil, title: LightForecastText.failureTitle(failure),
                            message: LightForecastText.failureBody(failure),
                            actionTitle: L("Pro について見る", "About Pro"),
                            actionIdentifier: "lightForecast.paywall") {
@@ -352,7 +352,7 @@ struct LightForecastView: View {
         case .signedOut:
             VStack(spacing: 0) {
                 stateIcon("cloud.sun")
-                EmptyState(title: LightForecastText.failureTitle(failure), message: LightForecastText.failureBody(failure))
+                EmptyState(icon: nil, title: LightForecastText.failureTitle(failure), message: LightForecastText.failureBody(failure))
             }
             .padding(.top, JPSpace.section)
         case .unavailable, .unreachable, .other:

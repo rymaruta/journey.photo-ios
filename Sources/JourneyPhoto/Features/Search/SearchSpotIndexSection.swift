@@ -41,6 +41,11 @@ struct SearchSpotIndexSection: View {
     /// 段の中身（チップ＋札＋出典）の高さ。**地方を替えても変わらない**（標準の字の大きさで 212）
     nonisolated static let bodyHeight: CGFloat = chipRowHeight + rowGap + cardColumnHeight
 
+    /// 段を出すか。**圏外で読めなかった回は出さない**——上の電波なしの帯が言っている（帯を2本重ねない・2026-11-12）
+    nonisolated static func shows(load: SpotPrefectureIndex.Load, offline: Bool) -> Bool {
+        !(offline && load == .failed)
+    }
+
     /// 節が読めなかったときの帯の字（第2章）
     static var failedTitle: String { L("撮影スポットを読み込めませんでした", "Couldn't load photo spots") }
     static var failedMessage: String { L("写真と撮影地はそのまま探せます", "You can still search photos and places") }

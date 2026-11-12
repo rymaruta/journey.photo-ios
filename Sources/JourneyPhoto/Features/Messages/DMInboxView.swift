@@ -137,7 +137,7 @@ struct DMInboxView: View {
                 if threads.isEmpty && requestCount == 0 {
                     // 2026-11-10 判断: 一手は「新しいメッセージ」（フォロー中の人から選ぶ）。ストーリーへの返信も残るが、
                     // 始め方の主はこちら
-                    EmptyState(title: L("まだメッセージはありません", "No messages yet"),
+                    EmptyState(icon: "bubble.left.and.bubble.right", title: L("まだメッセージはありません", "No messages yet"),
                                message: DMText.startHint,
                                actionTitle: DMText.newMessageTitle,
                                actionIdentifier: "dm.empty.new") {

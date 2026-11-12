@@ -45,24 +45,110 @@ final class ScreenStatesTests: XCTestCase {
 
     // MARK: - 01 共通の部品
 
-    /// 失敗は見出しを必ず出す。渡さない呼び手は「読み込めませんでした」、説明が見出しと同じなら決まった一文
-    func testErrorBannerAlwaysHasATitle() {
-        let fallbackTitle = "読み込めませんでした"
-        let fallbackMessage = "通信が途切れたようです"
-        let plain = ErrorBanner.resolvedText(title: nil, message: "撮影スポットを読み込めませんでした",
-                                             fallbackTitle: fallbackTitle, fallbackMessage: fallbackMessage)
-        XCTAssertEqual(plain.title, fallbackTitle)
-        XCTAssertEqual(plain.message, "撮影スポットを読み込めませんでした")
-        // 見出しと同じ字を2度並べない
-        let same = ErrorBanner.resolvedText(title: nil, message: fallbackTitle,
-                                            fallbackTitle: fallbackTitle, fallbackMessage: fallbackMessage)
-        XCTAssertEqual(same.title, fallbackTitle)
-        XCTAssertEqual(same.message, fallbackMessage)
-        // 渡された見出しはそのまま
+    /// 失敗は見出しを必ず出す。渡されなければ説明の最初の一文が見出し、残りが説明（一律の「読み込めませんでした」にしない）
+    func testErrorBannerTitleComesFromTheMessage() {
+        let fallback = "通信が途切れたようです"
+        // 二文: 最初の一文が見出し
+        let two = ErrorBanner.resolvedText(title: nil, message: "写真を読み込めませんでした。つながる所で、もう一度お試しください。",
+                                           fallbackMessage: fallback)
+        XCTAssertEqual(two.title, "写真を読み込めませんでした")
+        XCTAssertEqual(two.message, "つながる所で、もう一度お試しください。")
+        // 一文だけ: その一文が見出し（句点を落とす）、説明は決まった一文。同じ言葉を2度並べない
+        let one = ErrorBanner.resolvedText(title: nil, message: "旅行プランを読み込めませんでした。", fallbackMessage: fallback)
+        XCTAssertEqual(one.title, "旅行プランを読み込めませんでした")
+        XCTAssertEqual(one.message, fallback)
+        let plain = ErrorBanner.resolvedText(title: nil, message: "プランが見つかりません", fallbackMessage: fallback)
+        XCTAssertEqual(plain.title, "プランが見つかりません", "意味の違う見出し（読み込めませんでした）を被せている")
+        // 英語も同じ
+        let english = ErrorBanner.resolvedText(title: nil, message: "Couldn't load your trips.", fallbackMessage: fallback)
+        XCTAssertEqual(english.title, "Couldn't load your trips")
+        let dash = ErrorBanner.resolvedText(title: nil, message: "Couldn't load your likes — showing what's on this device",
+                                            fallbackMessage: fallback)
+        XCTAssertEqual(dash.title, "Couldn't load your likes")
+        XCTAssertEqual(dash.message, "showing what's on this device")
+        // 渡された見出しはそのまま。説明が見出しと同じなら決まった一文
         let given = ErrorBanner.resolvedText(title: "会話を読み込めませんでした", message: "電波を確かめてください",
-                                             fallbackTitle: fallbackTitle, fallbackMessage: fallbackMessage)
+                                             fallbackMessage: fallback)
         XCTAssertEqual(given.title, "会話を読み込めませんでした")
         XCTAssertEqual(given.message, "電波を確かめてください")
+        XCTAssertEqual(ErrorBanner.resolvedText(title: "A", message: "A", fallbackMessage: fallback).message, fallback)
+    }
+
+    /// 意味の違う所・同じ言葉が重なっていた所は、見出し（何が起きたか）と説明（どうなっているか）を分けて渡す
+    func testListedErrorSitesPassTheirOwnTitle() throws {
+        let expected: [(String, String)] = [
+            ("Features/Trips/TripPlanDetailView.swift", "ErrorBanner(title: L(\"プランが見つかりません\""),
+            ("Features/Albums/InviteView.swift", ": L(\"この招待リンクは使えません\""),
+            ("Features/Gallery/GalleryView.swift", "ErrorBanner(title: L(\"フォロー中の人を読み込めませんでした\""),
+            ("Features/Pass/PassCardPickView.swift", "ErrorBanner(title: L(\"写真を読み込めませんでした\""),
+            ("Features/Profile/FavoritesView.swift", "ErrorBanner(title: L(\"いいねした写真を読み込めませんでした\""),
+            ("Features/Map/PhotoMapView.swift", "ErrorBanner(title: L(\"撮影スポットを読み込めませんでした\""),
+            ("Features/Map/PhotoMapView.swift", "ErrorBanner(title: Self.loadFailedText, message: ErrorBanner.defaultMessage"),
+            ("Features/Trips/TripPlansView.swift", "ErrorBanner(title: L(\"旅行プランを読み込めませんでした\""),
+            ("Features/Trips/TripAddSheet.swift", "ErrorBanner(title: L(\"旅行プランを読み込めませんでした\""),
+            ("Features/Trips/TripCreateView.swift", "ErrorBanner(title: L(\"行きたい場所を読み込めませんでした\""),
+            ("Features/Trips/TripPlanPickSheet.swift", "ErrorBanner(title: L(\"行きたい場所を読み込めませんでした\""),
+            ("Features/Camper/CamperGarageLoader.swift", "ErrorBanner(title: L(\"写真を読み込めませんでした\""),
+        ]
+        for (path, call) in expected {
+            XCTAssertTrue(try source(path).contains(call), "\(path) の見出しが「\(call)」でない")
+        }
+        XCTAssertFalse(try source("Features/Trips/TripPlanDetailView.swift")
+            .contains("ErrorBanner(message: L(\"プランが見つかりません\""))
+    }
+
+    /// マイページは見た目を変えない（owner）。空は印なし、失敗は前の形（三角・見出しは渡したときだけ）
+    func testMyPageKeepsItsLook() throws {
+        let mine = try source("Features/Profile/MyPageView.swift")
+        let empties = mine.components(separatedBy: "EmptyState(").dropFirst()
+        XCTAssertEqual(empties.count, 4)
+        for call in empties {
+            XCTAssertTrue(call.hasPrefix("icon: nil,"), "マイページの空に印が付いている: \(call.prefix(60))")
+        }
+        let errors = mine.components(separatedBy: "ErrorBanner(").dropFirst()
+        XCTAssertEqual(errors.count, 4)
+        for call in errors {
+            let args = call.components(separatedBy: ") {").first ?? ""
+            XCTAssertTrue(args.contains("look: .classic"), "マイページの失敗が前の形でない: \(call.prefix(60))")
+            XCTAssertFalse(args.hasPrefix("title:"), "マイページの失敗に見出しを足している")
+        }
+        XCTAssertTrue(try source("Features/Trips/TripShelf.swift").contains("EmptyState(icon: nil, title: L(\"まだ旅はありません\""))
+        // 前の形は三角・見出しは渡したときだけ
+        let states = try source("Features/Common/ErrorBanner.swift")
+        let classic = slice(states, from: "case .classic:", to: "private var retryButton")
+        assertInOrder(["Image(systemName: \"exclamationmark.triangle\")", ".font(.title2)", ".foregroundStyle(WebTheme.faint)",
+                       "if let title { StateTitle(text: title) }", "StateMessage(text: message)"], in: classic, "前の形")
+    }
+
+    /// 空の印: 失敗・開けない・狭い所は印なし、合う所は合う印
+    func testEmptyIconsFitTheirPlace() throws {
+        let none: [(String, String)] = [
+            ("Features/Profile/SavedSpotsMapView.swift", "EmptyState(icon: nil, message: L(\"この撮影スポットは開けません\""),
+            ("Features/Profile/SavedSpotsMapView.swift", "EmptyState(icon: nil, message: L(\"この撮影地は開けません\""),
+            ("Features/Profile/SavedSpotsMapView.swift", "EmptyState(icon: nil, message: L(\"行きたい場所はまだありません。"),
+            ("Features/Messages/DMConversationView.swift", "EmptyState(icon: nil, title: L(\"ブロック中です\""),
+            ("Features/Messages/DMConversationView.swift", "EmptyState(icon: nil, title: L(\"メッセージを送れません\""),
+            ("Features/Messages/DMConversationView.swift", "EmptyState(icon: nil, title: L(\"この会話は表示できません\""),
+            ("Features/Trunk/TrunkRerollView.swift", "EmptyState(icon: nil, message: L(\"ラベルが見つかりませんでした。"),
+            ("Features/Map/NearbyPhotosSheet.swift", "EmptyState(icon: nil, message: L(\"この範囲には、まだ写真がありません。"),
+            ("Features/Trips/TripPlanPickSheet.swift", "EmptyState(icon: nil, title: L(\"行きたい場所はまだありません\""),
+            ("Features/Profile/BadgeShelfView.swift", "EmptyState(icon: nil, message: L(\"まだメダルはありません。"),
+            ("Features/Profile/MyPhotosMap.swift", "EmptyState(icon: nil, message: Self.emptyMessage(isMine: isMine))"),
+            ("Features/Notifications/NotificationsView.swift", "EmptyState(icon: \"bell\""),
+            ("Features/Profile/FollowListView.swift", "EmptyState(icon: \"person.2\""),
+            ("Features/Messages/DMInboxView.swift", "EmptyState(icon: \"bubble.left.and.bubble.right\""),
+            ("Features/Messages/DMRequestsView.swift", "EmptyState(icon: \"person.2\""),
+            ("Features/Messages/DMNewMessageView.swift", "EmptyState(icon: \"person.2\""),
+            ("Features/Albums/AlbumsView.swift", "EmptyState(icon: \"rectangle.stack\""),
+            ("Features/Spots/OfficialSpotIndexView.swift", "EmptyState(icon: \"mappin\", message: L(\"見つかりませんでした\""),
+        ]
+        for (path, call) in none {
+            XCTAssertTrue(try source(path).contains(call), "\(path) の空の印が「\(call)」でない")
+        }
+        let light = try source("Features/Pro/LightForecastView.swift")
+        XCTAssertEqual(light.components(separatedBy: "EmptyState(icon: nil, title: LightForecastText.failureTitle(failure)").count - 1, 2,
+                       "光の予報の失敗に印が付いている")
+        XCTAssertEqual(try source("Features/Map/PhotoMapView.swift").components(separatedBy: "EmptyState(icon: \"mappin\"").count - 1, 3)
     }
 
     /// 印は線画 44・#6E6E6E。失敗は丸に「!」、空は写真、電波なしは消えた電波
@@ -126,6 +212,37 @@ final class ScreenStatesTests: XCTestCase {
         XCTAssertTrue(parts.contains("JPStateIcon(symbol: JPStateIcon.offline)"))
     }
 
+    /// 別の画面にいる間に電波が戻ったら、印を立てて戻ったときに読み直す
+    func testHomeReloadsAfterReconnectWhenBack() throws {
+        XCTAssertEqual(HomeReconnect.onConnectivityChange(offline: false, isOnScreen: true), .reloadNow)
+        XCTAssertEqual(HomeReconnect.onConnectivityChange(offline: false, isOnScreen: false), .reloadWhenBack)
+        XCTAssertEqual(HomeReconnect.onConnectivityChange(offline: true, isOnScreen: true), .nothing)
+        XCTAssertEqual(HomeReconnect.onConnectivityChange(offline: true, isOnScreen: false), .nothing)
+        XCTAssertTrue(HomeReconnect.reloadOnLanding(pending: true, offline: false))
+        XCTAssertFalse(HomeReconnect.reloadOnLanding(pending: true, offline: true))
+        XCTAssertFalse(HomeReconnect.reloadOnLanding(pending: false, offline: false))
+        let home = try source("Features/Gallery/GalleryView.swift")
+        let change = slice(home, from: ".onChange(of: connectivity.isOffline)", to: ".onChange(of: tabRouter.postSheetsClosed)")
+        assertInOrder(["HomeReconnect.onConnectivityChange(offline: offline, isOnScreen: isOnScreen)",
+                       "case .reloadNow:", "retryHome()", "case .reloadWhenBack: reloadAfterReconnect = true"],
+                      in: change, "電波が戻ったとき")
+        let land = slice(home, from: "private func landOnScreen(", to: "private func reloadMyPhotos()")
+        assertInOrder(["HomeReconnect.reloadOnLanding(pending: reloadAfterReconnect, offline: connectivity.isOffline)",
+                       "reloadAfterReconnect = false", "retryHome()"], in: land, "戻ったときの読み直し")
+    }
+
+    /// 電波なしの絵の口は Debug だけ。Release では必ず false、強制した回は見張りを始めない
+    func testPreviewOfflineIsDebugOnly() throws {
+        let preview = try source("Core/Auth/PreviewSession.swift")
+        let forced = slice(preview, from: "static var forcesOffline: Bool {", to: "static var userId")
+        assertInOrder(["#if DEBUG", "UserDefaults.standard.bool(forKey: offlineKey)", "#else", "return false", "#endif"],
+                      in: forced, "電波なしの絵の口")
+        let connectivity = try source("Core/Networking/Connectivity.swift")
+        let start = slice(connectivity, from: "func start() {", to: "deinit")
+        assertInOrder(["started = true", "if PreviewSession.forcesOffline {", "isOffline = true", "return", "}",
+                       "monitor.pathUpdateHandler"], in: start, "強制した回の戻り")
+    }
+
     // MARK: - 04 タグ・色・機材の格子
 
     /// TagPhotos v2: 3 列・すき間 2・正方形・先頭 300 を端まで
@@ -164,13 +281,52 @@ final class ScreenStatesTests: XCTestCase {
         let map = try source("Features/Map/PhotoMapView.swift")
         XCTAssertTrue(map.contains("if !model.loaded { MapPinSkeleton() }"), "地図の読み込み中の骨格が無い")
         let line = slice(map, from: "private var statusLine: some View", to: "/// 「無い」と「見つからない」を分ける")
-        assertInOrder(["if connectivity.isOffline, model.loaded {", "JPStateBand(kind: .offline",
-                       "skin: .glass", "} else if let message = emptyMessage {",
-                       "JPStateBand(kind: .partial, title: message", "skin: .glass",
-                       "} else if model.areaFrame != nil {", "actionTitle: L(\"写真全体を見る\"",
-                       "model.clearArea()"], in: line, "地図の上の帯")
+        assertInOrder(["let choice = Self.stateBand(offline: connectivity.isOffline",
+                       "areaOnly: model.areaFrame != nil && MapSearch.fold(model.query).isEmpty",
+                       "&& model.category == nil",
+                       "if choice == .offlineNothing {", "skin: .glass",
+                       "} else if choice == .failed {", "skin: .glass",
+                       "} else if choice == .areaEmpty {", "actionTitle: L(\"写真全体を見る\"", "model.clearArea()",
+                       "} else if choice == .empty", "} else if choice == .location",
+                       "} else if choice == .offlinePins {", "前に見たピンだけを出しています"], in: line, "地図の上の帯")
         // 右の操作列に重ねない
         XCTAssertTrue(map.contains(".padding(.trailing, JPSpace.m + WebTheme.minTapTarget + JPSpace.xs)"))
+    }
+
+    /// 地図の帯の選び方: 空・見つからない・現在地を電波なしで隠さない。「前に見たピンだけ」はピンがあるときだけ。
+    /// 範囲の出口は範囲だけで絞った回に限る
+    func testMapStateBandChoice() {
+        typealias V = PhotoMapView
+        XCTAssertEqual(V.stateBand(offline: true, loaded: true, empty: .failed, areaOnly: false,
+                                   hasLocationNote: false, photosFailed: false), .offlineNothing)
+        XCTAssertEqual(V.stateBand(offline: false, loaded: true, empty: .failed, areaOnly: false,
+                                   hasLocationNote: false, photosFailed: false), .failed)
+        XCTAssertEqual(V.stateBand(offline: true, loaded: true, empty: .noResults, areaOnly: false,
+                                   hasLocationNote: false, photosFailed: false), .empty, "見つからないを電波なしで隠した")
+        XCTAssertEqual(V.stateBand(offline: false, loaded: true, empty: .noResults, areaOnly: true,
+                                   hasLocationNote: false, photosFailed: false), .areaEmpty)
+        XCTAssertEqual(V.stateBand(offline: false, loaded: true, empty: .noResults, areaOnly: false,
+                                   hasLocationNote: false, photosFailed: false), .empty, "語・カテゴリでも絞っているのに範囲の出口")
+        XCTAssertEqual(V.stateBand(offline: false, loaded: true, empty: .noPlaces, areaOnly: true,
+                                   hasLocationNote: false, photosFailed: false), .empty)
+        XCTAssertEqual(V.stateBand(offline: true, loaded: true, empty: nil, areaOnly: false,
+                                   hasLocationNote: true, photosFailed: false), .location, "現在地の様子を電波なしで隠した")
+        XCTAssertEqual(V.stateBand(offline: true, loaded: true, empty: nil, areaOnly: false,
+                                   hasLocationNote: false, photosFailed: true), .offlinePins)
+        XCTAssertEqual(V.stateBand(offline: false, loaded: true, empty: nil, areaOnly: false,
+                                   hasLocationNote: false, photosFailed: true), .photosFailed)
+        XCTAssertEqual(V.stateBand(offline: false, loaded: true, empty: nil, areaOnly: false,
+                                   hasLocationNote: false, photosFailed: false), .none)
+    }
+
+    /// 探す: 圏外で索引が読めなかった回は節ごと出さない（上の電波なしの帯と2本重ねない）
+    func testSearchDoesNotStackTwoBands() throws {
+        XCTAssertFalse(SearchSpotIndexSection.shows(load: .failed, offline: true))
+        XCTAssertTrue(SearchSpotIndexSection.shows(load: .failed, offline: false))
+        XCTAssertTrue(SearchSpotIndexSection.shows(load: .ready, offline: true))
+        XCTAssertTrue(SearchSpotIndexSection.shows(load: .loading, offline: true))
+        let search = try source("Features/Search/SearchView.swift")
+        XCTAssertTrue(search.contains("if SearchSpotIndexSection.shows(load: spotIndexLoad, offline: connectivity.isOffline) {"))
     }
 
     /// 一覧の読み込み中は中身と同じ形（お知らせ・フォロー一覧・地図のリスト・コメント・アルバム）。回る輪を外す
@@ -195,15 +351,27 @@ final class ScreenStatesTests: XCTestCase {
         XCTAssertFalse(comments.contains(".buttonStyle(.bordered)"), "系統の枠のボタンが残っている")
     }
 
-    /// 人のページ: 開き始めは頭の骨格、空は見出し＋説明＋ボタン1つ（下線の字の一手をやめた）
+    /// 人のページ: 開き始めは頭の骨格、空は見出し＋説明＋ボタン1つ。見出しは「公開された写真」、自分のページなら自分向け
     func testUserProfileStates() throws {
         let user = try source("Features/Profile/UserProfileView.swift")
         assertInOrder(["if model.profile == nil && model.isLoading && model.errorMessage == nil {",
                        "JPLoadingState(kind: .profile)", "} else {", "header"], in: user, "頭の骨格")
-        assertInOrder(["EmptyState(title: L(\"まだ写真がありません\"", "actionTitle: L(\"ほかの人の写真を探す\"",
-                       "TabRouter.shared.openSearch()"], in: user, "空の一手")
+        assertInOrder(["let empty = UserProfileEmpty(isSelf: userId == auth.userId)",
+                       "EmptyState(title: UserProfileEmpty.title, message: empty.message,",
+                       "if empty.isSelf { TabRouter.shared.openPost(.photo) } else { TabRouter.shared.openSearch() }"],
+                      in: user, "空の一手")
         XCTAssertFalse(user.contains("findOthersLink"), "下線の字の一手が残っている")
         XCTAssertTrue(user.contains("JPLoadingState(kind: .photoGrid(count: 9))"))
+    }
+
+    func testUserProfileEmptyTexts() {
+        XCTAssertTrue(UserProfileEmpty.title.contains("公開") || UserProfileEmpty.title.lowercased().contains("public"))
+        let mine = UserProfileEmpty(isSelf: true)
+        let theirs = UserProfileEmpty(isSelf: false)
+        XCTAssertNotEqual(mine.message, theirs.message)
+        XCTAssertNotEqual(mine.actionTitle, theirs.actionTitle)
+        XCTAssertEqual(mine.actionIdentifier, "userProfile.emptyPost")
+        XCTAssertEqual(theirs.actionIdentifier, "userProfile.emptyFindOthers")
     }
 
     /// いいねした写真: 一部だけは帯（写真を押し下げない）、読み込み中は格子 12、空はハートの印＋見出し＋一手

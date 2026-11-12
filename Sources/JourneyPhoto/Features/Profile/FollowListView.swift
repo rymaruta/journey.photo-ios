@@ -219,7 +219,7 @@ struct FollowListView: View {
             ErrorBanner(message: errorMessage, isBusy: isLoading) { Task { await load() } }
                 .padding(.vertical, JPSpace.xs)
         } else if shown.isEmpty && !isLoading && count == 0 {
-            EmptyState(message: L("まだいません", "No one yet"))
+            EmptyState(icon: "person.2", message: L("まだいません", "No one yet"))
         }
 
         ForEach(shown) { user in

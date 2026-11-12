@@ -7,48 +7,95 @@ import SwiftUI
 ///
 /// **2026-11-12 判断（デザインの案 第2章「画面の状態とそろえ」・1.1.83）**: 印は三角をやめ、
 /// **丸に「!」の線画 44・#6E6E6E**（`JPStateIcon.failed`）。見出しは**必ず出す**——呼ぶ所40のうち10しか
-/// 見出しを渡しておらず、画面ごとに形が違った。渡さない呼び手は「読み込めませんでした」を見出しにし、
-/// 説明が見出しと同じ言葉なら、どうなっているかの決まった一文に替える（`resolvedText`）。
-/// 印は赤（`danger`）にしない。読めないのは人の誤りではない
+/// 見出しを渡しておらず、画面ごとに形が違った。見出しを渡さない呼び手は、説明の**最初の一文を見出し**にし、
+/// 残りを説明にする（`resolvedText`）。一文だけなら、その一文が見出しで、説明は決まった一文。
+/// 一律の「読み込めませんでした」は使わない（「プランが見つかりません」の上に「読み込めませんでした」と
+/// 出て意味が合わず、「◯◯を読み込めませんでした」の上では同じ言葉が2度並んだ・確かめ役の指摘）。
+/// 印は赤（`danger`）にしない。読めないのは人の誤りではない。
+///
+/// **マイページは見た目を変えない（owner の決まり）**: `look: .classic` で 2026-11-12 より前の形
+/// （三角の印・見出しは渡したときだけ）のまま出す
 struct ErrorBanner: View {
+    /// 見た目の版
+    enum Look: Equatable {
+        /// 第2章の形（丸に「!」・見出しを必ず出す）
+        case standard
+        /// 2026-11-12 より前の形（三角・見出しは任意）。マイページだけ
+        case classic
+    }
+
     var title: String?
     let message: String
     var retry: (() -> Void)?
     /// 読み直している最中（「もう一度試す」を止める。続けて押すと古い答えが新しい答えを上書きする）
     var isBusy = false
+    var look: Look = .standard
 
-    init(title: String? = nil, message: String, isBusy: Bool = false, retry: (() -> Void)? = nil) {
+    init(title: String? = nil, message: String, isBusy: Bool = false, look: Look = .standard,
+         retry: (() -> Void)? = nil) {
         self.title = title
         self.message = message
         self.isBusy = isBusy
+        self.look = look
         self.retry = retry
     }
 
-    /// 見出しを渡さない回の説明（見出しと同じ言葉を2度並べない）
+    /// 説明が一文だけのときの、どうなっているかの決まった一文
     static var defaultMessage: String {
         L("通信が途切れたようです。電波の届く所でもう一度お試しください",
           "The connection seems to have dropped. Try again where you have a signal.")
     }
 
-    /// 出す見出しと説明。**見出しは必ずある**（2026-11-12 判断）
+    /// 文の切れ目（日本語の「。」・英語の「. 」・ダッシュ）
+    nonisolated static let sentenceBreaks = ["。", ". ", " — ", "—"]
+
+    /// 出す見出しと説明。**見出しは必ずある**（2026-11-12 判断）。
+    /// 見出しを渡されたらそのまま。渡されなければ説明の最初の一文を見出しにして、残りを説明にする
     nonisolated static func resolvedText(title: String?, message: String,
-                                         fallbackTitle: String, fallbackMessage: String) -> (title: String, message: String) {
-        let shownTitle = title ?? fallbackTitle
-        let shownMessage = message == shownTitle ? fallbackMessage : message
-        return (shownTitle, shownMessage)
+                                         fallbackMessage: String) -> (title: String, message: String) {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let title { return (title, trimmed == title ? fallbackMessage : trimmed) }
+        let cut = sentenceBreaks.compactMap { trimmed.range(of: $0) }.min { $0.lowerBound < $1.lowerBound }
+        if let cut {
+            let head = String(trimmed[..<cut.lowerBound]).trimmingCharacters(in: .whitespaces)
+            let rest = String(trimmed[cut.upperBound...]).trimmingCharacters(in: .whitespaces)
+            if !head.isEmpty && !rest.isEmpty { return (head, rest) }
+            if !head.isEmpty { return (head, fallbackMessage) }
+        }
+        // 一文だけ: 終わりの句点は見出しに付けない
+        var head = trimmed
+        while let last = head.last, last == "。" || last == "." { head.removeLast() }
+        return (head.isEmpty ? trimmed : head, fallbackMessage)
     }
 
     var body: some View {
-        let text = Self.resolvedText(title: title, message: message,
-                                     fallbackTitle: Labels.Common.loadFailed, fallbackMessage: Self.defaultMessage)
-        StateLayout {
-            JPStateIcon(symbol: JPStateIcon.failed)
-            StateTitle(text: text.title)
-            StateMessage(text: text.message)
-            if let retry {
-                RetryButton(isBusy: isBusy, action: retry)
-                    .padding(.top, JPSpace.xs)
+        switch look {
+        case .standard:
+            let text = Self.resolvedText(title: title, message: message, fallbackMessage: Self.defaultMessage)
+            StateLayout {
+                JPStateIcon(symbol: JPStateIcon.failed)
+                StateTitle(text: text.title)
+                StateMessage(text: text.message)
+                retryButton
             }
+        case .classic:
+            StateLayout {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.title2)
+                    .foregroundStyle(WebTheme.faint)
+                    .accessibilityHidden(true)
+                if let title { StateTitle(text: title) }
+                StateMessage(text: message)
+                retryButton
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var retryButton: some View {
+        if let retry {
+            RetryButton(isBusy: isBusy, action: retry)
+                .padding(.top, JPSpace.xs)
         }
     }
 }

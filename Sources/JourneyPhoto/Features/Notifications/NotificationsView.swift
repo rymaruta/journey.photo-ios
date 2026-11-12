@@ -149,7 +149,7 @@ struct NotificationsView: View {
     /// ——お知らせはシートで開き、投稿は下の札の「投稿」が持ち場（同じ入口を2つ作らない）
     private var emptyState: some View {
         let total = Self.emptyIsTotal(rows: model.rows, blocked: hidden.blockedUserIds)
-        return EmptyState(title: total
+        return EmptyState(icon: "bell", title: total
                        ? L("まだお知らせはありません", "Nothing yet")
                        : L("この種類のお知らせはありません", "Nothing of this kind"),
                    message: total

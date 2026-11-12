@@ -137,7 +137,7 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
         XCTAssertFalse(loading.contains("ProgressView"))
         let empty = slice(gallery, from: "private func feedEmptyState(_ page: HomeFeed) -> some View",
                           to: "private func emptyTitle(_ page: HomeFeed)")
-        XCTAssertTrue(empty.contains("ErrorBanner(message: emptyMessage(page), isBusy: isRefreshing)"),
+        XCTAssertTrue(empty.contains("ErrorBanner(title: L(\"フォロー中の人を読み込めませんでした\""),
                       "フォロー中を読めなかった回が失敗の形でない")
         XCTAssertTrue(empty.contains("EmptyState(title: emptyTitle(page), message: emptyMessage(page),"))
         XCTAssertTrue(empty.contains("actionIdentifier: \"home.emptyAction\""), "UI テスト（10c）の道しるべが無い")
@@ -304,7 +304,7 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
         XCTAssertTrue(list.contains("JPLoadingState(kind: .personRows(trailing: .thumb))"), "読み込み中が骨格でない")
         XCTAssertTrue(list.contains(".listStyle(.plain)"))
         let empty = slice(notes, from: "private var emptyState: some View", to: "private var list: some View")
-        XCTAssertTrue(empty.contains("EmptyState(title:"), "空の状態が共通の部品でない")
+        XCTAssertTrue(empty.contains("EmptyState(icon: \"bell\", title:"), "空の状態が共通の部品でない")
         XCTAssertTrue(notes.contains(".accessibilityIdentifier(\"notifications.settings\")"))
         XCTAssertTrue(notes.contains(".accessibilityIdentifier(\"notifications.pushBanner\")"))
     }

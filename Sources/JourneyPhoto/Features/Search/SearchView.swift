@@ -476,8 +476,17 @@ struct SearchView: View {
         }
     }
 
-    /// 撮影スポットを地方 → 県で選ぶ段（札 #524・`SearchSpotIndexSection`）
+    /// 撮影スポットを地方 → 県で選ぶ段（札 #524・`SearchSpotIndexSection`）。
+    /// 2026-11-12（第2章・確かめ役の指摘）: 圏外で索引が読めなかった回は段ごと出さない——上の「電波が届いていません」の
+    /// 帯と、節の「撮影スポットを読み込めませんでした」の帯が2本重なっていた（`SearchSpotIndexSection.shows`）
+    @ViewBuilder
     private var spotIndexSection: some View {
+        if SearchSpotIndexSection.shows(load: spotIndexLoad, offline: connectivity.isOffline) {
+            spotIndexSectionBody
+        }
+    }
+
+    private var spotIndexSectionBody: some View {
         SearchSpotIndexSection(groups: spotGroups, load: spotIndexLoad, spots: officialSpots,
                                photos: model.everything,
                                photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.hasLoaded,

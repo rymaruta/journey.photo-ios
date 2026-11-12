@@ -171,8 +171,9 @@ struct PassCardPickView: View {
         } else if loadFailed {
             // 🔴 **読めなかったのを「公開している写真がありません」と言わない**（2026-10-21）。
             // 前に選んだ写真はそのまま（保存しても乗車券は変わらない）。読めた分があれば下に並べる
-            ErrorBanner(message: L("写真を読み込めませんでした。つながる所で、もう一度お試しください。",
-                                   "Couldn\u{2019}t load your photos. Try again when you\u{2019}re online."),
+            ErrorBanner(title: L("写真を読み込めませんでした", "Couldn\u{2019}t load your photos"),
+                        message: L("つながる所で、もう一度お試しください。前に選んだ写真はそのままです",
+                                   "Try again when you\u{2019}re online. Your chosen photo stays as it is."),
                         isBusy: isRetrying) { Task { await retryPhotos() } }
                 .accessibilityIdentifier("pass.pick.loadFailed")
             if !photos.isEmpty { photoGrid }

@@ -76,8 +76,9 @@ struct FavoritesView: View {
                 case .nothingShown:
                     EmptyState(message: LikedPhotos.nothingShownMessage)
                 case .unresolved:
-                    ErrorBanner(message: L("いいねした写真を読み込めませんでした。通信の状態を確かめるか、消された写真かもしれません",
-                                           "Couldn't load your liked photos. Check your connection — some may have been removed.")) {
+                    ErrorBanner(title: L("いいねした写真を読み込めませんでした", "Couldn't load your liked photos"),
+                                message: L("通信の状態を確かめてください。消された写真かもしれません",
+                                           "Check your connection. Some may have been removed.")) {
                         Task { await load(force: true) }
                     }
                 }

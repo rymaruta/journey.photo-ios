@@ -99,9 +99,9 @@ struct OfficialSpotIndexView: View {
                         if built == nil {
                             JPLoadingState(kind: .rows)
                         } else if spots.isEmpty {
-                            EmptyState(message: L("公開中の撮影スポットはまだありません", "No photo spots yet"))
+                            EmptyState(icon: "mappin", message: L("公開中の撮影スポットはまだありません", "No photo spots yet"))
                         } else if sections.isEmpty {
-                            EmptyState(message: L("見つかりませんでした", "No results"))
+                            EmptyState(icon: "mappin", message: L("見つかりませんでした", "No results"))
                         } else {
                             if case .prefecture = scope {
                                 JPEyebrowLine(here != nil ? L("撮影スポット · 近い順", "Photo spots · nearest first")

@@ -54,3 +54,22 @@ struct HomeOfflineState: View {
         .accessibilityIdentifier("home.offline.state")
     }
 }
+
+/// 電波が戻ったときにホームを読み直すかの決まり（2026-11-12・確かめ役の指摘）。
+///
+/// 画面に出ている間に戻ればすぐ読み直す。**別のタブ・上に詳細を積んでいる間に戻ったら印だけ立て**、
+/// 戻ってきたとき（`GalleryView.landOnScreen`）に読み直す——以前は出ていない間に戻った回を捨て、
+/// 戻ってもホームに「電波が届いていません」の帯が残った（前に見た写真のまま）
+enum HomeReconnect {
+    enum Action: Equatable { case reloadNow, reloadWhenBack, nothing }
+
+    nonisolated static func onConnectivityChange(offline: Bool, isOnScreen: Bool) -> Action {
+        guard !offline else { return .nothing }
+        return isOnScreen ? .reloadNow : .reloadWhenBack
+    }
+
+    /// 戻ってきたときに読み直すか（印があり、いま電波がある）
+    nonisolated static func reloadOnLanding(pending: Bool, offline: Bool) -> Bool {
+        pending && !offline
+    }
+}

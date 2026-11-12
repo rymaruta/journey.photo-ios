@@ -43,6 +43,8 @@ struct GalleryView: View {
     @State private var isOnScreen = false
     /// 出ていない間にブロック／通報があった。戻ってきたときに読み直す
     @State private var needsReload = false
+    /// 出ていない間に電波が戻った。戻ってきたときに読み直す（`HomeReconnect`・2026-11-12）
+    @State private var reloadAfterReconnect = false
     /// 一度でもこの画面が出たか。**戻ってきた回だけ自分の写真を読み直す**ための印
     /// （初回は `.task(id:)` が読む・`MyPageView` と同じ形）
     @State private var didAppear = false
@@ -175,10 +177,14 @@ struct GalleryView: View {
         }
         .refreshable { await refreshAll() }
         // 電波が戻ったら、押さなくても読み直す（帯の「もう一度」を待たない・2026-11-12 第2章）。
-        // 上に詳細を積んでいる間は読み直さない（戻ってきたときの読み直しが拾う）
+        // 上に詳細を積んでいる・別のタブにいる間は読み直さず**印だけ立て**、戻ってきたとき
+        // （`landOnScreen`）に読み直す（`HomeReconnect`）
         .onChange(of: connectivity.isOffline) { _, offline in
-            guard !offline, isOnScreen else { return }
-            retryHome()
+            switch HomeReconnect.onConnectivityChange(offline: offline, isOnScreen: isOnScreen) {
+            case .reloadNow: reloadAfterReconnect = false; retryHome()
+            case .reloadWhenBack: reloadAfterReconnect = true
+            case .nothing: break
+            }
         }
         // **下の「投稿」を閉じたら自分の写真を読み直す。** 今日のテーマの札から投稿しても、
         // シートは `RootView` にあるので `.task(id:)` は走らず、札が「参加する」のまま残った
@@ -354,6 +360,11 @@ struct GalleryView: View {
             reloadHidden()
         } else if reloadMy {
             reloadMyPhotos()
+        }
+        // 出ていない間に電波が戻った（2026-11-12 第2章・`HomeReconnect`）。前に見た写真の帯を残さない
+        if HomeReconnect.reloadOnLanding(pending: reloadAfterReconnect, offline: connectivity.isOffline) {
+            reloadAfterReconnect = false
+            retryHome()
         }
     }
 
@@ -768,7 +779,10 @@ struct GalleryView: View {
     private func feedEmptyState(_ page: HomeFeed) -> some View {
         if model.followingFailed && page == .following {
             // 引き下げを知らない人にも出口を（2026-10-02 の調査）
-            ErrorBanner(message: emptyMessage(page), isBusy: isRefreshing) { Task { await refreshAll() } }
+            // 2026-11-12（第2章）: 見出しは何が読めなかったか、説明はどうすれば読み直せるか
+            ErrorBanner(title: L("フォロー中の人を読み込めませんでした", "Couldn't load the people you follow"),
+                        message: L("引き下げるか、もう一度試すと読み直します", "Pull down or try again to reload"),
+                        isBusy: isRefreshing) { Task { await refreshAll() } }
         } else if model.followingFailed {
             EmptyState(title: emptyTitle(page), message: emptyMessage(page))
         } else {

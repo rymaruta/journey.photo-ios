@@ -147,7 +147,8 @@ struct TripPlansView: View {
     /// 読めなかった（v2 Components 06: 灰の印 → 何が起きたか → 「もう一度」）。**赤にしない**——
     /// 読めないのは人の誤りではない
     private var failedNotice: some View {
-        ErrorBanner(message: L("旅行プランを読み込めませんでした。", "Couldn't load your trips."),
+        ErrorBanner(title: L("旅行プランを読み込めませんでした", "Couldn't load your trips"),
+                    message: ErrorBanner.defaultMessage,
                     isBusy: model.status == .loading) {
             Task { await model.load(environment: environment) }
         }

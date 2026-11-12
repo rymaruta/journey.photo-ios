@@ -165,7 +165,7 @@ final class QuietFailuresTests: XCTestCase {
         let view = try source("Features/Albums/AlbumsView.swift")
         let button = slice(view, from: "private var createButton: some View {", to: "private var joinCard: some View {")
         XCTAssertTrue(button.contains(".disabled(model.isCreating)"), "主ボタンが送信中も押せる")
-        let empty = slice(view, from: "EmptyState(title: L(\"まだアルバムがありません\"", to: ".profileListRow()")
+        let empty = slice(view, from: "EmptyState(icon: \"rectangle.stack\", title: L(\"まだアルバムがありません\"", to: ".profileListRow()")
         XCTAssertTrue(empty.contains(".disabled(model.isCreating)"), "空の状態のボタンが送信中も押せる")
         let menu = slice(view, from: "Button(L(\"アルバムを作る\", \"New album\")) { showCreate = true }",
                          to: "Button(L(\"招待リンクから参加\"")

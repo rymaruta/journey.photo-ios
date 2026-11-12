@@ -394,11 +394,11 @@ struct UserProfileView: View {
             // 全部通報・持ち主をブロックして戻った回も、白紙にせず案内を出す。
             // 2026-11-12 判断（第2章「画面の状態とそろえ」）: 空の一手も**ほかの画面と同じボタン1つ**
             // （写真の無い画面の主ボタン＝真鍮の塗り＋墨）。以前は真鍮の下線の字で、空の形が画面ごとに割れていた
-            EmptyState(title: L("まだ写真がありません", "No photos yet"),
-                       message: L("この人が写真を投稿すると、ここに並びます", "Photos this person posts will appear here"),
-                       actionTitle: L("ほかの人の写真を探す", "Find other people's photos"),
-                       actionIdentifier: "userProfile.emptyFindOthers") {
-                TabRouter.shared.openSearch()
+            // 見出しは「公開された写真」のまま（見ている人に見えるのは公開の写真だけ）。自分のページなら自分向けの文と一手
+            let empty = UserProfileEmpty(isSelf: userId == auth.userId)
+            EmptyState(title: UserProfileEmpty.title, message: empty.message,
+                       actionTitle: empty.actionTitle, actionIdentifier: empty.actionIdentifier) {
+                if empty.isSelf { TabRouter.shared.openPost(.photo) } else { TabRouter.shared.openSearch() }
             }
         } else if tab == .map && shownPhotos.isEmpty {
             // 🔴 **読み込み中の空の地図に「撮影地の分かる写真がありません」と言わない。**
@@ -877,4 +877,28 @@ final class UserProfileViewModel: ObservableObject {
             actionMessage = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
         }
     }
+}
+
+/// 人のページの写真が0枚のときの字（2026-11-12 第2章・確かめ役の指摘）。
+///
+/// 見出しは今までの「公開された写真はまだありません」の意味を保つ（見ている人に見えるのは公開の写真だけ。
+/// 非公開の写真がある人にも「まだ写真がありません」と言い切らない）。**自分のページなら自分向けの文と一手**
+/// （「この人が」と言わず、写真を投稿へ）
+struct UserProfileEmpty: Equatable {
+    let isSelf: Bool
+
+    static var title: String { L("公開された写真はまだありません", "No public photos yet") }
+
+    var message: String {
+        isSelf
+            ? L("写真を公開にすると、ほかの人にはここに並んで見えます",
+                "Photos you make public appear here for others")
+            : L("この人が写真を公開すると、ここに並びます", "Photos this person makes public will appear here")
+    }
+
+    var actionTitle: String {
+        isSelf ? L("写真を投稿", "Post a photo") : L("ほかの人の写真を探す", "Find other people's photos")
+    }
+
+    var actionIdentifier: String { isSelf ? "userProfile.emptyPost" : "userProfile.emptyFindOthers" }
 }
