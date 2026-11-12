@@ -39,7 +39,7 @@ struct DMSpotCard: View {
                 RoundedRectangle(cornerRadius: JPRadius.l)
                     .fill(WebTheme.surface3)
                     .frame(width: Self.width, height: Self.photoHeight + 120)
-                    .accessibilityLabel(L("撮影スポットを読み込み中", "Loading the spot"))
+                    .accessibilityLabel(L("観光スポットを読み込み中", "Loading the spot"))
             case .found(let spot, let index):
                 card(spot, index: index)
             case .missing:
@@ -85,10 +85,18 @@ struct DMSpotCard: View {
                             .foregroundStyle(WebTheme.text)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
-                        Text(DMSpotShare.detailLine(region: spot.regionLabel))
-                            .font(JPFont.caption)
-                            .foregroundStyle(WebTheme.text2)
-                            .lineLimit(1)
+                        // 種類と地域は中黒で区切らず、字の太さ・色と 6pt の間で分ける（2026-11-12 の決まり）
+                        HStack(spacing: 6) {
+                            Text(DMSpotShare.kindLabel)
+                                .font(JPFont.caption.weight(.semibold))
+                                .foregroundStyle(WebTheme.text2)
+                            if let region = spot.regionLabel, !region.isEmpty {
+                                Text(region)
+                                    .font(JPFont.caption)
+                                    .foregroundStyle(WebTheme.text3)
+                            }
+                        }
+                        .lineLimit(1)
                     }
                     .padding(.horizontal, JPSpace.s)
                     .padding(.top, 10)
@@ -102,7 +110,7 @@ struct DMSpotCard: View {
             // 子を畳む（`.ignore`）とボタンの印が落ちる（Mac run 1096 で `dm.spotCard.open` が Button として見つからなかった）。
             // 送るシートの丸（`SendSheet.actionLabel`）と同じく、印を付け直す
             .accessibilityAddTraits(.isButton)
-            .accessibilityHint(L("撮影スポットの頁を開きます", "Opens the spot page"))
+            .accessibilityHint(L("観光スポットの頁を開きます", "Opens the spot page"))
             .accessibilityIdentifier("dm.spotCard.open")
             Button {
                 guard !wanted else { return }

@@ -86,11 +86,19 @@ enum SuggestedPeople {
         return audience.isEmpty || audience == "everyone"
     }
 
-    /// 行の2行目（「41 枚 · 最近 金沢」）
-    static func detailLine(_ person: Person) -> String {
-        let count = L("\(person.count) 枚", "\(person.count) photo\(person.count == 1 ? "" : "s")")
-        guard let place = person.latestLocation else { return count }
-        return count + " · " + L("最近 \(place)", "Recently \(place)")
+    /// 行の2行目の数（「41 枚」）。撮影地は別の字（`recentLine`）で、中黒で区切らない（2026-11-12 の決まり）
+    static func countLine(_ person: Person) -> String {
+        L("\(person.count) 枚", "\(person.count) photo\(person.count == 1 ? "" : "s")")
+    }
+
+    /// 行の2行目の撮影地（「最近 金沢」）。無ければ nil
+    static func recentLine(_ person: Person) -> String? {
+        person.latestLocation.map { L("最近 \($0)", "Recently \($0)") }
+    }
+
+    /// 行の読み上げ（区切りは「、」）
+    static func spoken(_ person: Person) -> String {
+        ([person.name, countLine(person)] + [recentLine(person)].compactMap { $0 }).joined(separator: "、")
     }
 
     // MARK: 言葉（資料の模型どおり）

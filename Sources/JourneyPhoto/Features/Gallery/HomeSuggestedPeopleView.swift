@@ -73,10 +73,18 @@ struct HomeSuggestedPeopleView: View {
                                 .font(JPFont.bodyEmphasis)
                                 .foregroundStyle(WebTheme.text)
                                 .lineLimit(1)
-                            Text(SuggestedPeople.detailLine(person))
-                                .font(JPFont.caption)
-                                .foregroundStyle(WebTheme.text2)
-                                .lineLimit(1)
+                            // 数と撮影地は中黒で区切らず、字の太さ・色と 8pt の間で分ける（2026-11-12 の決まり）
+                            HStack(spacing: 8) {
+                                Text(SuggestedPeople.countLine(person))
+                                    .font(JPFont.caption.weight(.semibold))
+                                    .foregroundStyle(WebTheme.text2)
+                                if let recent = SuggestedPeople.recentLine(person) {
+                                    Text(recent)
+                                        .font(JPFont.caption)
+                                        .foregroundStyle(WebTheme.text3)
+                                }
+                            }
+                            .lineLimit(1)
                         }
                         Spacer(minLength: 0)
                     }
@@ -84,7 +92,9 @@ struct HomeSuggestedPeopleView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityElement(children: .combine)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(SuggestedPeople.spoken(person))
+                .accessibilityAddTraits(.isButton)
                 .accessibilityIdentifier("home.suggested.person")
                 followButton(person)
             }

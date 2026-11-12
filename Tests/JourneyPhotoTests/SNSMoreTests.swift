@@ -40,7 +40,9 @@ final class SNSMoreTests: XCTestCase {
         XCTAssertEqual(a.photos.map(\.id), ["a2", "a1", "a3"], "新しい順に3枚")
         XCTAssertEqual(a.latestLocation, "金沢")
         XCTAssertEqual(a.name, "あや")
-        XCTAssertEqual(SuggestedPeople.detailLine(a), L("4 枚 · 最近 金沢", "4 photos · Recently 金沢"))
+        XCTAssertEqual(SuggestedPeople.countLine(a), L("4 枚", "4 photos"))
+        XCTAssertEqual(SuggestedPeople.recentLine(a), L("最近 金沢", "Recently 金沢"))
+        XCTAssertEqual(SuggestedPeople.spoken(a), L("あや、4 枚、最近 金沢", "あや、4 photos、Recently 金沢"), "読み上げの区切りは「、」")
     }
 
     /// 自分・フォロー中の人・公開範囲を絞った写真は並べない。上限で切る
@@ -55,8 +57,8 @@ final class SNSMoreTests: XCTestCase {
         XCTAssertEqual(SuggestedPeople.pick(photos, viewerId: "me", following: ["F"]).map(\.userId), ["O"])
         let many = try (0..<10).map { try photo(id: "x\($0)", user: "U\($0)", createdAt: "2026-11-0\($0 % 9 + 1)T00:00:00Z") }
         XCTAssertEqual(SuggestedPeople.pick(many, viewerId: nil, following: []).count, SuggestedPeople.limit)
-        XCTAssertEqual(SuggestedPeople.detailLine(SuggestedPeople.pick(photos, viewerId: "me", following: ["F"])[0]),
-                       L("1 枚", "1 photo"), "撮影地の無い人は数だけ")
+        XCTAssertNil(SuggestedPeople.recentLine(SuggestedPeople.pick(photos, viewerId: "me", following: ["F"])[0]),
+                     "撮影地の無い人は数だけ")
     }
 
     /// 「フォロー中の写真を見る」は、この場で1人でもフォローしたら出す
@@ -116,12 +118,35 @@ final class SNSMoreTests: XCTestCase {
         XCTAssertEqual(DMSpotShare.remainder("ふつうの文", siteBase: site), "ふつうの文")
     }
 
-    /// 「見頃」は言わない（台帳の季節は見頃の約束ではない）
-    func testSpotCardDetailLineDoesNotPromiseThePeak() {
-        XCTAssertEqual(DMSpotShare.detailLine(region: "石川県 金沢市"),
-                       L("撮影スポット · 石川県 金沢市", "Photo spot · 石川県 金沢市"))
-        XCTAssertEqual(DMSpotShare.detailLine(region: nil), L("撮影スポット", "Photo spot"))
-        XCTAssertFalse(DMSpotShare.detailLine(region: "石川").contains("見頃"))
+    /// 種類は「観光スポット」（2026-11-12 owner 承認）。「見頃」は言わない。読み上げの区切りは「、」
+    func testSpotCardWordsUseSightseeingSpotAndNoPeak() {
+        XCTAssertEqual(DMSpotShare.kindLabel, L("観光スポット", "Sightseeing spot"))
+        XCTAssertEqual(DMSpotShare.spoken(name: "兼六園", region: "石川県 金沢市", mine: false),
+                       L("届いた観光スポット、兼六園、石川県 金沢市", "Spot received、兼六園、石川県 金沢市"))
+        XCTAssertEqual(DMSpotShare.spoken(name: "兼六園", region: nil, mine: true), L("送った観光スポット、兼六園", "Spot you sent、兼六園"))
+    }
+
+    /// 🔴 この枝で足した画面の文に中黒の区切り（「・」「·」）を使わない（2026-11-12 の決まり）。
+    /// 新しく足した文に「撮影スポット」を使わない（呼び名は「観光スポット」）
+    func testNewWordsHaveNoMiddleDotsAndUseTheNewSpotName() throws {
+        let files = ["Sources/JourneyPhoto/Core/Text/SuggestedPeople.swift",
+                     "Sources/JourneyPhoto/Core/Text/DMSpotShare.swift",
+                     "Sources/JourneyPhoto/Features/Gallery/HomeSuggestedPeopleView.swift",
+                     "Sources/JourneyPhoto/Features/Messages/DMSpotCard.swift",
+                     "Sources/JourneyPhoto/Features/Upload/PostedShareCard.swift"]
+        for file in files {
+            let text = try source(file)
+            for line in text.components(separatedBy: "\n") where !line.trimmingCharacters(in: .whitespaces).hasPrefix("//") {
+                // 画面の文（L("…") と、文をつなぐ "…" の字）だけを見る
+                let code = line.components(separatedBy: "//").first ?? line
+                guard code.contains("\"") else { continue }
+                XCTAssertFalse(code.contains("·") || code.contains("・"), "\(file): 中黒の区切り: \(line)")
+                XCTAssertFalse(code.contains("L(\"撮影スポット") || code.contains("撮影スポットを") || code.contains("撮影スポットの頁"),
+                               "\(file): 新しい文は「観光スポット」: \(line)")
+            }
+        }
+        XCTAssertTrue(try source("Sources/JourneyPhoto/Features/Messages/DMSpotCard.swift").contains("HStack(spacing: 6) {\n                            Text(DMSpotShare.kindLabel)"))
+        XCTAssertTrue(try source("Sources/JourneyPhoto/Features/Gallery/HomeSuggestedPeopleView.swift").contains("HStack(spacing: 8) {\n                                Text(SuggestedPeople.countLine(person))"))
     }
 
     /// 撮影スポットの「送る」シートの行動: リンクをコピー（頁）とほかのアプリ（今までの ↑ と同じ文）。ストーリーは無し
@@ -146,7 +171,7 @@ final class SNSMoreTests: XCTestCase {
         XCTAssertTrue(dm.contains("DMSpotCard(slug: spotSlug, mine: message.mine, fallback: message.text)"),
                       "届いた頁のリンクは札にする")
         let card = try source("Sources/JourneyPhoto/Features/Messages/DMSpotCard.swift")
-        XCTAssertTrue(card.contains(".accessibilityAddTraits(.isButton)\n            .accessibilityHint(L(\"撮影スポットの頁を開きます\""),
+        XCTAssertTrue(card.contains(".accessibilityAddTraits(.isButton)\n            .accessibilityHint(L(\"観光スポットの頁を開きます\""),
                       "札を畳んだあとにボタンの印が無い（読み上げ・UI テストで押せる物と分からない）")
     }
 

@@ -75,18 +75,16 @@ enum DMSpotShare {
 
     /// 札の眉ラベル（黒地の上なので真鍮）
     static var eyebrow: String { L("一緒に行こう", "Let\u{2019}s go together") }
-    /// 札の2行目（「撮影スポット · 石川県 金沢市」）。**「見頃」は言わない**（台帳の季節は見頃の約束ではない・
+    /// 札の2行目の種類（「観光スポット」・2026-11-12 owner 承認の呼び名）。地域は別の字（`DMSpotCard`）で、
+    /// 中黒で区切らない（2026-11-12 の決まり）。**「見頃」は言わない**（台帳の季節は見頃の約束ではない・
     /// `HomeTopCard` の注記。資料の模型の「見頃 11月下旬 〜」は付けない）
-    static func detailLine(region: String?) -> String {
-        let kind = L("撮影スポット", "Photo spot")
-        guard let region, !region.isEmpty else { return kind }
-        return kind + " · " + region
-    }
+    static var kindLabel: String { L("観光スポット", "Sightseeing spot") }
     static var addToWishlist: String { L("行きたい場所に入れる", "Add to Want to go") }
     static var addedToWishlist: String { L("行きたい場所に入れました", "In Want to go") }
     /// 札を読めなかったとき（索引に無い・読めない）は札を出さず、リンクの文のまま出す
     static func spoken(name: String, region: String?, mine: Bool) -> String {
-        let head = mine ? L("送った撮影スポット", "Spot you sent") : L("届いた撮影スポット", "Spot received")
-        return "\(head)、\(name)、\(detailLine(region: region))"
+        let head = mine ? L("送った観光スポット", "Spot you sent") : L("届いた観光スポット", "Spot received")
+        guard let region, !region.isEmpty else { return "\(head)、\(name)" }
+        return "\(head)、\(name)、\(region)"
     }
 }
