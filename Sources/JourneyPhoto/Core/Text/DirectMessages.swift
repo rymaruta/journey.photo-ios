@@ -223,6 +223,18 @@ struct DMThreadLog: Equatable {
         return outgoing.remove(at: i).text
     }
 
+    /// 送信を取り消す: 自分の1通を一覧から外す（押したらすぐ消える・2026-11-12）。外した1通を返す（失敗したら `restore` で戻す）。
+    /// **自分の通だけ**（相手の通・無い id は nil で何もしない）
+    mutating func unsend(_ id: String) -> DMMessage? {
+        guard let i = messages.firstIndex(where: { $0.id == id }), messages[i].mine else { return nil }
+        return messages.remove(at: i)
+    }
+
+    /// 取り消しに失敗した1通を元の位置へ戻す（時刻の順に並ぶ・`merge` と同じ）
+    mutating func restore(_ message: DMMessage) {
+        merge([message])
+    }
+
     /// 送っている最中の1通があるか（同じ時に2通を走らせない）
     var isSending: Bool { outgoing.contains { $0.phase == .sending } }
 
@@ -830,5 +842,30 @@ enum DMPhotoSend {
         guard let id = DMStart.conversationId(me: me, peer: peerId), !photoId.isEmpty else { throw Failure.invalid }
         return try await service.send(id, text: text.trimmingCharacters(in: .whitespacesAndNewlines),
                                       clientId: clientId, photoId: photoId)
+    }
+}
+
+/// 送信の取り消し（2026-11-12・owner「DM 送信取り消し必要だわ」「取り消しました。みたいなメッセージはいらない」）。
+///
+/// **確かめのダイアログは出さない**（直感的で簡単に・押す回数は長押し→1回）。代わりに、取り消した文は入力欄に戻す
+/// ——直して送り直せるし、間違えて押しても文を失わない。写真・ストーリーへの返信の通は、入力欄に戻すと
+/// 別の通（ただの文字）になってしまうので、取り消すだけ（2026-11-12 判断・秘書室）。
+enum DMUnsend {
+    /// 入力欄に戻す文。文字だけの自分の通だけ（写真・ストーリーへの返信は nil）
+    static func returnedText(_ message: DMMessage) -> String? {
+        guard message.mine, !message.hasPhoto, !message.isStoryReply, let text = message.bubbleText else { return nil }
+        return text
+    }
+
+    /// 戻したあとの入力欄。**打ちかけの文は消さない**（空ならそのまま、あれば改行して後ろに足す）。上限で切る
+    static func draft(current: String, returning text: String, limit: Int = DMRules.textMax) -> String {
+        let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        let joined = trimmed.isEmpty ? text : current + "\n" + text
+        return String(joined.prefix(limit))
+    }
+
+    /// 失敗して戻すときの入力欄。**戻したままの文なら元に戻す**（そのあと打ち直していれば触らない）
+    static func draftAfterFailure(current: String, returned: String, before: String) -> String {
+        current == returned ? before : current
     }
 }

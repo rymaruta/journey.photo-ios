@@ -5,7 +5,7 @@ import Foundation
 ///
 ///     GET    /dm                    受信箱（リクエストも同じ一覧。`state` で分ける）→ `DMInbox`
 ///     GET    /dm/{id}?since=        会話（変化なしは `{unchanged:true, items:[]}`）→ `DMConversation`
-///     POST   /dm/{id}/messages      続きを送る `{text, id}` → `DMSendResult`
+///     POST   /dm/{id}/messages      続きを送る `{text, id}` → `DMSendResult`。`{unsend: <id>}` なら自分の1通を取り消す（2026-11-12）
 ///     PUT    /dm/{id}/read          既読
 ///     DELETE /dm/{id}               自分の側だけ消す
 ///     POST   /dm/{id}/accept        リクエストを承認
@@ -82,6 +82,19 @@ struct DMService {
             try await api.authorized(.post, "/dm/\(encoded(id))/messages",
                                      body: Body(text: text, id: clientId, photoId: photoId),
                                      as: DMSendResult.self)
+        }
+    }
+
+    /// 自分が送った1通を取り消す（2026-11-12・owner「DM 送信取り消し必要だわ」・期限なし）。
+    /// サーバーは会話の本体から**跡を残さず**消し（「取り消しました」の行は出さない）、受信箱の抜粋と未読を直す。
+    /// 相手の画面は次の読み直し（`full: true`）で消える。他人の通・無い会話は 404 `notFound`（`dm.ts` の `unsendMessage`）。
+    ///
+    /// 口は送る口の本文 `{unsend}`（経路を足さない）。**古いサーバーは空の本文として 400 で断る**ので、
+    /// 口の無いサーバーで会話ごと消えることはない
+    func unsend(_ id: String, messageId: String) async throws {
+        struct Body: Encodable { let unsend: String }
+        try await refusing {
+            _ = try await api.authorizedVoid(.post, "/dm/\(encoded(id))/messages", body: Body(unsend: messageId))
         }
     }
 
@@ -353,15 +366,17 @@ struct DMConversation: Decodable, Equatable {
     let requestRemaining: Int?
     /// 会話の最後の更新時刻（次の `since`）
     let t: String?
+    /// `since` より後に送信の取り消しがあった: `items` は差分ではなく**全部**（画面は置き換える・2026-11-12）
+    let full: Bool
     let items: [DMMessage]
 
     private enum CodingKeys: String, CodingKey {
-        case id, unchanged, peerId, name, username, deleted, state, canSend, requestRemaining, t, items
+        case id, unchanged, peerId, name, username, deleted, state, canSend, requestRemaining, t, full, items
     }
 
     init(id: String, unchanged: Bool = false, peerId: String?, name: String?, username: String? = nil,
          deleted: Bool? = nil, state: DMEntryState?, canSend: Bool?, requestRemaining: Int? = nil,
-         t: String?, items: [DMMessage]) {
+         t: String?, full: Bool = false, items: [DMMessage]) {
         self.id = id
         self.unchanged = unchanged
         self.peerId = peerId
@@ -372,6 +387,7 @@ struct DMConversation: Decodable, Equatable {
         self.canSend = canSend
         self.requestRemaining = requestRemaining
         self.t = t
+        self.full = full
         self.items = items
     }
 
@@ -387,6 +403,7 @@ struct DMConversation: Decodable, Equatable {
         canSend = try c.decodeIfPresent(Bool.self, forKey: .canSend)
         requestRemaining = try c.decodeIfPresent(Int.self, forKey: .requestRemaining).map { max(0, $0) }
         t = try c.decodeIfPresent(String.self, forKey: .t)
+        full = try c.decodeIfPresent(Bool.self, forKey: .full) ?? false
         items = try c.decodeIfPresent([DMMessage].self, forKey: .items) ?? []
     }
 }
