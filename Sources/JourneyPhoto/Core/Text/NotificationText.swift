@@ -156,21 +156,30 @@ enum NotificationText {
 
     // MARK: - 経過時間
 
-    /// 行の下の「2時間前」「昨日」「3日前」。
+    /// 行の下の時刻（今日は「12分前」、昨日は「昨日」、6日前までは「3日前」、それより前は「10/9」）。
     ///
-    /// 今日のうちは分・時間で（`StoryPlayback.ago` と同じ書き方）、
-    /// 昨日は「昨日」、それより前は**暦の日数**で数える——見出し
-    /// （`NotificationGroups` の今日／昨日／今週）と食い違わないように。
-    /// 読めない・未来の時刻は何も出さない。
+    /// 2026-11-12 判断: お知らせと DM の受信箱・リクエストの行（`DMText.listTime`）で**同じ決まり**を
+    /// 使う（ここが1か所の元）。Web のお知らせ（`NotificationsBell`）も7日前から「10/9」の形。
+    /// 前は上限が無く「34日前」と出ていた。7日前からは月/日で、年は付けない（受信箱の作りと同じ。
+    /// 年をまたいでも「12/20」）。
+    ///
+    /// 今日のうちは分・時間で（`StoryPlayback.ago` と同じ書き方）、それより前は**暦の日数**で
+    /// 数える——見出し（`NotificationGroups` の今日／昨日／今週＝7日未満）と食い違わないように。
+    /// 端末の時計より先の時刻（サーバーの時計が少し進んでいる）は「たった今」——見出しはその行を
+    /// 「今日」に入れるので、何も出さないと時刻の無い行になっていた（2026-11-12 判断）。
+    /// 読めない時刻は何も出さない。
     static func ago(_ iso: String?, now: Date = Date(), calendar: Calendar = .current) -> String? {
-        guard let iso, let date = NotificationGroups.parse(iso), date <= now else { return nil }
+        guard let iso, let date = NotificationGroups.parse(iso) else { return nil }
+        if date > now { return L("たった今", "just now") }
         if calendar.isDate(date, inSameDayAs: now) {
             return StoryPlayback.ago(from: iso, now: now)
         }
         let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date),
                                            to: calendar.startOfDay(for: now)).day ?? 0
         if days <= 1 { return L("昨日", "Yesterday") }
-        return L("\(days)日前", "\(days)d ago")
+        if days <= 6 { return L("\(days)日前", "\(days)d ago") }
+        let parts = calendar.dateComponents([.month, .day], from: date)
+        return "\(parts.month ?? 0)/\(parts.day ?? 0)"
     }
 
     /// 行の読み上げの文。未読・初めての印を足す。（ビューの中で変数を書き換えないよう、ここに出してある）

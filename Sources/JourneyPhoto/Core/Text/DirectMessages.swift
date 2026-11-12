@@ -358,14 +358,10 @@ enum DMText {
                  language: language)
     }
 
-    /// 受信箱・リクエストの行の時刻（今日は「12分前」、昨日は「昨日」、6日前までは「3日前」、それより前は「10/12」）
+    /// 受信箱・リクエストの行の時刻（今日は「12分前」、昨日は「昨日」、6日前までは「3日前」、それより前は「10/12」）。
+    /// 2026-11-12 判断: 決まりはお知らせの行と共通（`NotificationText.ago` が元）。未来の時刻は「たった今」
     static func listTime(_ iso: String, now: Date = Date(), calendar: Calendar = .current) -> String? {
-        guard let date = NotificationGroups.parse(iso), date <= now else { return nil }
-        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date),
-                                           to: calendar.startOfDay(for: now)).day ?? 0
-        if days <= 6 { return NotificationText.ago(iso, now: now, calendar: calendar) }
-        let parts = calendar.dateComponents([.month, .day], from: date)
-        return "\(parts.month ?? 0)/\(parts.day ?? 0)"
+        NotificationText.ago(iso, now: now, calendar: calendar)
     }
 
     /// 会話の日付の区切り（「今日」「昨日」「11月3日」）
