@@ -53,9 +53,19 @@ struct TripPlanService {
         var errorDescription: String? { message }
     }
 
+    /// 共有したプランを、ほかの仲間が先に変えていた（サーバーの 409・`rev` が古い）。
+    /// 画面は読み直して自分の直しを重ね直す（`TripShareMerge.rebase`）。**書き込みは通っていない**
+    struct Conflict: LocalizedError, Equatable {
+        var errorDescription: String? {
+            L("ほかの仲間がこのプランを変えました。", "Someone else in this trip changed it.")
+        }
+    }
+
     private func refusing<T>(_ call: () async throws -> T) async throws -> T {
         do {
             return try await call()
+        } catch APIError.server(let status, _) where status == 409 {
+            throw Conflict()
         } catch let APIError.server(status, message) where status == 403 && !message.isEmpty {
             // 英語の画面では日本語の本文を出さない（`APIError.description`・2026-10-21 判断）
             throw Refused(message: APIError.server(status: status, message: message).errorDescription ?? message)
@@ -79,13 +89,13 @@ struct TripPlanService {
     /// 作る。**日程・日付も同じ1回で送る**——作ってから別に送ると、2回目で落ちた回に
     /// 空のプランが残る（行きたい場所から作る下書き・`TripPickerDraftView`）
     func create(title: String, days: [TripDay]? = nil,
-                startDate: String? = nil, endDate: String? = nil) async throws -> [TripPlan] {
+                startDate: String? = nil, endDate: String? = nil) async throws -> TripPlanList {
         if TripPlanFixture.isOn {
-            return await TripPlanFixtureStore.shared.create(title: title, days: days, startDate: startDate, endDate: endDate)
+            return TripPlanList(plans: await TripPlanFixtureStore.shared.create(title: title, days: days, startDate: startDate, endDate: endDate))
         }
         let body = CreateBody(title: title, startDate: startDate, endDate: endDate, days: days)
         return try await refusing {
-            try await api.authorized(.post, "/user/trips", body: body, as: TripPlanList.self).plans
+            try await api.authorized(.post, "/user/trips", body: body, as: TripPlanList.self)
         }
     }
 
@@ -96,17 +106,20 @@ struct TripPlanService {
         var startDate: String?
         var endDate: String?
         var days: [TripDay]?
+        /// 共有したプランだけ: 直す前の版（2026-11-12）。ほかの仲間が先に変えていたら 409（`Conflict`）
+        var rev: Int?
     }
 
-    func update(planId: String, _ patch: Patch) async throws -> [TripPlan] {
-        if TripPlanFixture.isOn { return try await TripPlanFixtureStore.shared.update(planId: planId, patch) }
+    func update(planId: String, _ patch: Patch) async throws -> TripPlanList {
+        if TripPlanFixture.isOn { return TripPlanList(plans: try await TripPlanFixtureStore.shared.update(planId: planId, patch)) }
         return try await refusing {
-            try await api.authorized(.put, "/user/trips/\(encoded(planId))", body: patch, as: TripPlanList.self).plans
+            try await api.authorized(.put, "/user/trips/\(encoded(planId))", body: patch, as: TripPlanList.self)
         }
     }
 
-    func delete(planId: String) async throws -> [TripPlan] {
-        if TripPlanFixture.isOn { return await TripPlanFixtureStore.shared.delete(planId: planId) }
-        return try await api.authorized(.delete, "/user/trips/\(encoded(planId))", as: TripPlanList.self).plans
+    /// 消す。**共有したプランは、作った人なら仲間全員から消え、仲間なら抜ける**（サーバーが分ける）
+    func delete(planId: String) async throws -> TripPlanList {
+        if TripPlanFixture.isOn { return TripPlanList(plans: await TripPlanFixtureStore.shared.delete(planId: planId)) }
+        return try await api.authorized(.delete, "/user/trips/\(encoded(planId))", as: TripPlanList.self)
     }
 }

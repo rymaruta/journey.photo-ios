@@ -109,6 +109,13 @@ struct DMConversationView: View {
     private var username: String? {
         isDeletedPeer ? nil : (meta?.username ?? seed?.username ?? startingWith?.username)
     }
+    /// 作ったプランを「[名前] と共有する」相手（2026-11-12・札 #553）。**承認済みの会話だけ**——承認前の
+    /// リクエスト（受け取った側も送った側も）では出さない（サーバーも承認済みの会話の相手にしか共有させない）
+    private var tripSharePeer: TripSharePeer? {
+        guard let peerId, !isNew, !isDeletedPeer, meta?.state == .inbox, remaining == nil else { return nil }
+        return TripSharePeer(id: peerId, name: peerName)
+    }
+
     /// 相手からのリクエスト（自分が受け取った・まだ承認していない）
     private var isIncomingRequest: Bool { (meta?.state ?? seed?.state) == .request }
     /// 承認前の残り（自分が始めて、相手がまだ話していない間だけ）。まだ会話が無い間は手元で数える
@@ -183,7 +190,7 @@ struct DMConversationView: View {
             if let openedPhoto { PhotoDetailView(photo: openedPhoto, fromPublicFeed: openedPhotoIsPublic) }
         }
         .navigationDestination(item: $createdTripId) { planId in
-            TripPlanDetailView(planId: planId, model: tripPlans)
+            TripPlanDetailView(planId: planId, model: tripPlans, sharePeer: tripSharePeer)
         }
         .fullScreenCover(isPresented: $showTrip, onDismiss: {
             guard let planId = pendingTripId else { return }

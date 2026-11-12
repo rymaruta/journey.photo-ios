@@ -55,6 +55,15 @@ enum TripPlanFixture {
     }
 
     /// 見本のプラン。台帳に在る撮影スポットの鍵（`content/spots.json` の石川県・福井県）
+    /// 金沢のプランを仲間と共有している見本（`-JPTripShareFixture YES`・2026-11-12・`TripShareFixtureStore`）
+    static var shared: Bool {
+        #if DEBUG
+        return isOn && UserDefaults.standard.bool(forKey: "JPTripShareFixture")
+        #else
+        return false
+        #endif
+    }
+
     static func initialPlans(today: Date) -> [TripPlan] {
         let start = TripPlanText.calendar.date(byAdding: .day, value: 30, to: today) ?? today
         let end = TripPlanText.calendar.date(byAdding: .day, value: 1, to: start) ?? start
@@ -72,7 +81,10 @@ enum TripPlanFixture {
                     .spot(spotId: "sp_6cfe84e90826", note: nil),   // 越前岬（夕方の斜光・重なり）
                 ]),
             ],
-            createdAt: "2026-11-10T00:00:00Z", updatedAt: "2026-11-10T00:00:00Z")
+            createdAt: "2026-11-10T00:00:00Z", updatedAt: "2026-11-10T00:00:00Z",
+            share: shared ? TripShare(ownerId: TripShareFixtureStore.me,
+                                      memberIds: [TripShareFixtureStore.me, TripShareFixtureStore.friend], rev: 3) : nil,
+            addedBy: shared ? ["s:sp_64ff5284da9e": TripShareFixtureStore.friend] : [:])
         let hakodate = TripPlan(planId: "fixture-hakodate", title: "函館の旅",
                                 days: [TripDay(items: [.location(slug: "函館", note: nil)])],
                                 createdAt: "2026-11-01T00:00:00Z", updatedAt: "2026-11-01T00:00:00Z")
@@ -138,7 +150,9 @@ actor TripPlanFixtureStore {
         }
         list[i] = TripPlan(planId: old.planId, title: patch.title ?? old.title,
                            startDate: date(patch.startDate, old.startDate), endDate: date(patch.endDate, old.endDate),
-                           days: patch.days ?? old.days, createdAt: old.createdAt, updatedAt: Self.stamp(version))
+                           days: patch.days ?? old.days, createdAt: old.createdAt, updatedAt: Self.stamp(version),
+                           share: old.share.map { TripShare(ownerId: $0.ownerId, memberIds: $0.memberIds, rev: $0.rev + 1) },
+                           addedBy: old.addedBy)
         plans = list
         sends += 1
         let count = sends

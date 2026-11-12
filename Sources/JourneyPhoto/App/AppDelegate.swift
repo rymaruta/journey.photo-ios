@@ -254,6 +254,8 @@ final class NotificationRouter: ObservableObject {
     /// 会話 id の形でなければ nil（パスに入れない値は受け取らない・`PathID`）
     nonisolated static func dmConversationId(_ userInfo: [AnyHashable: Any]) -> String? {
         let type = userInfo["type"] as? String
+        // 旅行プランの会話・共有の知らせ（`{type: "tripchat"|"tripshare", planId}`・2026-11-12）は `trip_<planId>`
+        if let trip = TripShareText.conversationId(push: userInfo) { return trip }
         guard type == "dm" || type == "storyreply", let id = userInfo["convId"] as? String,
               id.contains("_"), PathID.isSafe(id) else { return nil }
         return id
