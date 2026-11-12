@@ -24,9 +24,33 @@ enum TripHolidays {
 
     /// 休み（土曜・日曜・祝日）か
     static func isOff(_ ymd: String) -> Bool {
-        guard let date = TripPlanText.date(fromYMD: ymd) else { return false }
-        let w = TripPlanText.calendar.component(.weekday, from: date)
-        return w == 1 || w == 7 || isHoliday(ymd)
+        var years = Years()
+        return years.isOff(ymd)
+    }
+
+    /// 年ごとの祝日の控え（休みの組を探す1回の中だけで使う）。
+    /// 2026-11-12（確かめ役の指摘）: 日ごとに年の祝日を計算し直していて、日付の段の描き直しのたびに約13ms かかった
+    struct Years {
+        private var sets: [Int: Set<Int>] = [:]
+
+        mutating func isHoliday(_ ymd: String) -> Bool {
+            guard let (y, m, d) = TakenDay.ymd(ymd) else { return false }
+            if sets[y] == nil { sets[y] = TripHolidays.holidays(year: y) }
+            return sets[y]?.contains(m * 100 + d) ?? false
+        }
+
+        mutating func isOff(_ ymd: String) -> Bool {
+            guard let date = TripPlanText.date(fromYMD: ymd) else { return false }
+            let w = TripPlanText.calendar.component(.weekday, from: date)
+            return w == 1 || w == 7 || isHoliday(ymd)
+        }
+
+        /// 平日の祝日か
+        mutating func isWeekdayHoliday(_ ymd: String) -> Bool {
+            guard let date = TripPlanText.date(fromYMD: ymd) else { return false }
+            let w = TripPlanText.calendar.component(.weekday, from: date)
+            return w != 1 && w != 7 && isHoliday(ymd)
+        }
     }
 
     /// その年の祝日（`月*100+日`）
@@ -105,10 +129,11 @@ enum TripHolidays {
         let days: [String] = (0..<horizonDays).compactMap { i in
             TripPlanText.calendar.date(byAdding: .day, value: i, to: start).map(TripPlanText.ymd)
         }
+        var years = Years()
         var runs: [[String]] = []
         var current: [String] = []
         for day in days {
-            if isOff(day) {
+            if years.isOff(day) {
                 current.append(day)
             } else {
                 if current.count >= 2 { runs.append(current) }
@@ -116,28 +141,34 @@ enum TripHolidays {
             }
         }
         if current.count >= 2 { runs.append(current) }
-        return runs.map(pair(of:))
+        return runs.map { pair(of: $0, years: &years) }
     }
 
     /// 続く休みから2日を選ぶ（平日の祝日があれば、その祝日と隣の休み）
     static func pair(of run: [String]) -> Pair {
-        let weekdayHoliday = run.firstIndex { day in
-            guard let date = TripPlanText.date(fromYMD: day) else { return false }
-            let w = TripPlanText.calendar.component(.weekday, from: date)
-            return w != 1 && w != 7 && isHoliday(day)
-        }
+        var years = Years()
+        return pair(of: run, years: &years)
+    }
+
+    static func pair(of run: [String], years: inout Years) -> Pair {
+        let weekdayHoliday = run.firstIndex { years.isWeekdayHoliday($0) }
         let i: Int
         if let h = weekdayHoliday { i = h == 0 ? 0 : h - 1 } else { i = 0 }
         let two = Array(run[i...].prefix(2))
-        return Pair(start: two[0], end: two[1], label: label(two[0], two[1]),
-                    hasHoliday: two.contains(where: isHoliday))
+        return Pair(start: two[0], end: two[1], label: label(two[0], two[1], years: &years),
+                    hasHoliday: two.contains { years.isHoliday($0) })
     }
 
     /// 「11/22 · 23（日・祝）」「11/28 · 29（土日）」「12/31 · 1/1（木・祝）」
     static func label(_ start: String, _ end: String) -> String {
+        var years = Years()
+        return label(start, end, years: &years)
+    }
+
+    static func label(_ start: String, _ end: String, years: inout Years) -> String {
         guard let (_, m1, d1) = TakenDay.ymd(start), let (_, m2, d2) = TakenDay.ymd(end) else { return start }
         let second = m1 == m2 ? "\(d2)" : "\(m2)/\(d2)"
-        let marks = [start, end].map(mark)
+        let marks = [mark(start, years: &years), mark(end, years: &years)]
         let weekendOnly = marks == [L("土", "Sat"), L("日", "Sun")]
         let tail = weekendOnly ? L("土日", "weekend") : marks.joined(separator: L("・", ", "))
         return L("\(m1)/\(d1) · \(second)（\(tail)）", "\(m1)/\(d1) – \(second) (\(tail))")
@@ -150,10 +181,9 @@ enum TripHolidays {
     }
 
     /// 曜日の1字。平日の祝日は「祝」
-    private static func mark(_ day: String) -> String {
+    private static func mark(_ day: String, years: inout Years) -> String {
         guard let date = TripPlanText.date(fromYMD: day) else { return "" }
-        let w = TripPlanText.calendar.component(.weekday, from: date)
-        if w != 1 && w != 7 && isHoliday(day) { return L("祝", "holiday") }
+        if years.isWeekdayHoliday(day) { return L("祝", "holiday") }
         return TripDraft.weekday(date)
     }
 

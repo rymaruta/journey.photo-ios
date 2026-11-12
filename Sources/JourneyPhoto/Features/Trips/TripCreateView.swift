@@ -398,6 +398,8 @@ struct TripCreateDatesStep: View {
     var finishTitle: String? = nil
 
     @State private var month: (year: Int, month: Int) = TripCreateDatesStep.initialMonth(nil)
+    /// 休みの組。**開いたときに1回だけ探す**（描き直しのたびに 120 日を見直さない・2026-11-12）
+    @State private var pairs: [TripHolidays.Pair] = []
 
     var body: some View {
         ScrollView {
@@ -441,7 +443,10 @@ struct TripCreateDatesStep: View {
         .webScreen()
         .navigationTitle(L("旅行プランを作る", "New trip"))
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { month = Self.initialMonth(model.start) }
+        .onAppear {
+            month = Self.initialMonth(model.start)
+            if pairs.isEmpty { pairs = TripHolidays.pairs(from: TripPlanText.ymd(pickedIn: .current, Date())) }
+        }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: JPSpace.xxs) {
                 if let error = model.error, finishTitle != nil {
@@ -471,16 +476,19 @@ struct TripCreateDatesStep: View {
 
     private var canGo: Bool { model.datesReady && !model.saving }
 
+    nonisolated static var holidayHeading: String { L("近くの休み", "Upcoming days off") }
+
     /// 休みの組（2026-11-12 資料 2a）。押すと出発と帰着の2日がまとめて入る。
-    /// 選んでいる組は真鍮の字と縁（owner の好み「選んでいるもの＝真鍮」）、ほかは outline の縁に白の字
+    /// 選んでいる組は真鍮の字と縁（owner の好み「選んでいるもの＝真鍮」）、ほかは outline の縁に白の字。
+    /// 見出しは「近くの休み」だけ（説明文に頼らない・2026-11-12 確かめ役の指摘。祝日を含む組もあるので「週末」と言わない）
     @ViewBuilder
     private var holidayPairs: some View {
-        let pairs = TripHolidays.pairs(from: TripPlanText.ymd(pickedIn: .current, Date()))
         if !pairs.isEmpty {
             VStack(alignment: .leading, spacing: JPSpace.xxs) {
-                Text(L("休みの組を押すと2日がまとめて入ります", "Tap a weekend to fill in both days"))
-                    .font(JPFont.caption)
-                    .foregroundStyle(WebTheme.text3)
+                Text(Self.holidayHeading)
+                    .jpEyebrow()
+                    .foregroundStyle(WebTheme.accent)
+                    .accessibilityAddTraits(.isHeader)
                 HStack(spacing: JPSpace.xs) {
                     ForEach(pairs) { pair in
                         let on = model.start == pair.start && model.end == pair.end

@@ -118,6 +118,9 @@ struct DMConversationView: View {
 
     /// 相手からのリクエスト（自分が受け取った・まだ承認していない）
     private var isIncomingRequest: Bool { (meta?.state ?? seed?.state) == .request }
+    /// 旅行プランの入口（帯・長押しの「旅行プランに入れる」・索引の読み込み）を出すか。
+    /// **承認前のリクエストには出さない**（2026-11-12 確かめ役の指摘・まだ話していない相手の写真や文を集めない）
+    private var tripOffered: Bool { !isIncomingRequest }
     /// 承認前の残り（自分が始めて、相手がまだ話していない間だけ）。まだ会話が無い間は手元で数える
     private var remaining: Int? {
         isNew ? max(0, DMRules.requestLimit - newSent) : meta?.requestRemaining
@@ -158,7 +161,7 @@ struct DMConversationView: View {
                 if isIncomingRequest { requestBand }
                 thread
                 // 場所が1つでも出た会話にだけ（リクエストの帯と重ねない・送れない会話にも出す——読めた写真から作れる）
-                if !isIncomingRequest, !tripFound.isEmpty {
+                if tripOffered, !tripFound.isEmpty {
                     DMTripBand(count: tripFound.count) { showTrip = true }
                 }
                 footer
@@ -215,8 +218,9 @@ struct DMConversationView: View {
             }
         }
         // 写真の撮影地を撮影スポットに当てる索引と、座標を引く公開の写真（写真のある会話だけ・控えを使う口）
-        .task(id: log.messages.contains(where: \.hasPhoto)) {
-            if log.messages.contains(where: \.hasPhoto) { await trip.load(environment: environment) }
+        // 読めなかった回は、電波が戻ったら読み直す（id に圏外かどうかを入れる）
+        .task(id: "\(tripOffered && log.messages.contains(where: \.hasPhoto))#\(connectivity.isOffline)") {
+            if tripOffered, log.messages.contains(where: \.hasPhoto) { await trip.load(environment: environment) }
         }
         .task(id: conversationId) { await load() }
         // 開いている間だけ読み直す（前面・電波あり）
@@ -452,8 +456,10 @@ struct DMConversationView: View {
     /// 吹き出しの長押し（段②）: 「旅行プランに入れる」と「コピー」
     @ViewBuilder
     private func bubbleMenu(_ text: String) -> some View {
-        Button { Task { await addToTrip(text) } } label: {
-            Label(L("旅行プランに入れる", "Add to a trip"), systemImage: "plus")
+        if tripOffered {
+            Button { Task { await addToTrip(text) } } label: {
+                Label(L("旅行プランに入れる", "Add to a trip"), systemImage: "plus")
+            }
         }
         Button { UIPasteboard.general.string = text } label: {
             Label(L("コピー", "Copy"), systemImage: "doc.on.doc")
@@ -462,6 +468,7 @@ struct DMConversationView: View {
 
     /// 文の中の撮影スポットを索引で拾って下書きに入れ、下書きを開く。拾えなければ候補のシート
     private func addToTrip(_ text: String) async {
+        guard tripOffered else { return }
         await trip.load(environment: environment)
         let spots = trip.spots(in: text)
         if spots.isEmpty {

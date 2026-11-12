@@ -54,14 +54,18 @@ enum DMTripPlaces {
     /// - ブロックした相手の写真は数えない（札も出していない・`DMPhotoCardState`）
     static func photoPlaces(_ messages: [DMMessage], index: [OfficialSpot], aliases: [String: [String]] = [:],
                             photos: [Photo], blocked: Set<String> = []) -> [Found] {
-        photoPlaces(messages, names: NameTable(index, aliases: aliases), photos: photos, blocked: blocked)
+        photoPlaces(messages, names: NameTable(index, aliases: aliases), photosById: byId(photos), blocked: blocked)
     }
 
-    /// 揃えた名前の表を先に作っておく形（会話の画面は打つたびに描き直すので、表は索引を読んだときに1回だけ作る）
-    static func photoPlaces(_ messages: [DMMessage], names: NameTable, photos: [Photo],
+    /// 写真の ID → 写真（公開の一覧は数千枚あるので、読んだときに1回だけ作る）
+    static func byId(_ photos: [Photo]) -> [String: Photo] {
+        Dictionary(photos.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// 名前の表と写真の表を先に作っておく形（会話の画面は打つたびに描き直すので、どちらも読んだときに1回だけ作る）
+    static func photoPlaces(_ messages: [DMMessage], names: NameTable, photosById byId: [String: Photo],
                             blocked: Set<String> = []) -> [Found] {
         guard messages.contains(where: { $0.photo?.isLive == true }) else { return [] }
-        let byId = Dictionary(photos.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var seen = Set<String>()
         var out: [Found] = []
         for message in messages {
@@ -162,6 +166,10 @@ enum DMTripPlaces {
     /// 文と名前で**いちばん長く続けて同じ字**（「21世紀美術館も行きたい」と「金沢21世紀美術館」の「21世紀美術館」）が
     /// `minNameLength` 字以上で、名前の 6 割以上を占めるものを、続いた字の長い順に。
     /// 候補は**選ぶまで入れない**（推し量った当たりを黙って下書きに入れない）。
+    ///
+    /// 🔴 2026-11-12（確かめ役の指摘）: 読み（ひらがな）を比べ先に入れていたので、「行きたいね」の「たいね」で
+    /// 大寧寺（たいねいじ）が候補に出た。**かなだけの名前（読み・かなの別名）は比べない**。
+    /// 続けて同じ字も**ひらがなで切る**（「の」「に」のような助詞・語尾の並びで名前に当てない）
     /// 文は頭の `scanLimit` 字だけ見る（長い文で端末を待たせない）
     static func candidates(for text: String, index: [OfficialSpot], aliases: [String: [String]] = [:]) -> [OfficialSpot] {
         let haystack = Array(OfficialSpotIndex.spotName(text).unicodeScalars.prefix(scanLimit))
@@ -171,9 +179,9 @@ enum DMTripPlaces {
         var seen = Set<String>()
         for spot in index where !spot.isDraft && spot.coords != nil && seen.insert(spot.spotId).inserted {
             var best: (run: Int, ratio: Double)?
-            for raw in [spot.name, spot.reading] + (aliases[spot.slug] ?? []) {
+            for raw in [spot.name] + (aliases[spot.slug] ?? []) {
                 let name = Array(OfficialSpotIndex.spotName(raw).unicodeScalars)
-                guard name.count >= minNameLength else { continue }
+                guard name.count >= minNameLength, !name.allSatisfy(isKana) else { continue }
                 let run = longestCommonRun(haystack, name)
                 let ratio = Double(run) / Double(name.count)
                 guard run >= minNameLength, ratio >= minRatio else { continue }
@@ -196,7 +204,14 @@ enum DMTripPlaces {
     /// 候補にする、名前のうち続けて同じ字の割合の下限
     static let minRatio = 0.6
 
-    /// 2つの並びで、いちばん長く続けて同じ所の長さ
+    /// ひらがな・カタカナ（長音の「ー」を含む）
+    static func isKana(_ c: Unicode.Scalar) -> Bool {
+        (0x3041...0x309F).contains(c.value) || (0x30A0...0x30FF).contains(c.value)
+    }
+
+    static func isHiragana(_ c: Unicode.Scalar) -> Bool { (0x3041...0x309F).contains(c.value) }
+
+    /// 2つの並びで、いちばん長く続けて同じ所の長さ。**ひらがなは同じでも続きに数えない**（助詞・語尾で当てない）
     static func longestCommonRun(_ a: [Unicode.Scalar], _ b: [Unicode.Scalar]) -> Int {
         guard !a.isEmpty, !b.isEmpty else { return 0 }
         var previous = [Int](repeating: 0, count: b.count + 1)
@@ -204,7 +219,7 @@ enum DMTripPlaces {
         var best = 0
         for i in 1...a.count {
             for j in 1...b.count {
-                if a[i - 1] == b[j - 1] {
+                if a[i - 1] == b[j - 1], !isHiragana(a[i - 1]) {
                     current[j] = previous[j - 1] + 1
                     if current[j] > best { best = current[j] }
                 } else {
