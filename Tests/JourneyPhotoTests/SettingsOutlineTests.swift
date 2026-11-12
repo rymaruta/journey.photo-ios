@@ -187,7 +187,7 @@ final class SettingsOutlineTests: XCTestCase {
         assertInOrder(["SettingsOutline.Part.photos.title", id("settings.favorites"), id("settings.compositionCatalog"),
                        id("settings.storage")], in: photos, "写真と撮影の順")
         let help = slice(view, from: "private var helpSection: some View {", to: "private var accountSection")
-        assertInOrder(["SettingsOutline.Part.help.title", id("settings.whatsNew"), id("settings.legal"),
+        assertInOrder(["SettingsOutline.Part.help.title", id("settings.help"), id("settings.whatsNew"), id("settings.legal"),
                        id("settings.contact")], in: help, "ヘルプと規約の順")
         // ヘルプと規約・構図一覧は未ログインでも出す（審査 1.2 の連絡先）
         let signedOut = slice(list, from: "privacySection\n                }", to: "if auth.userId != nil {")

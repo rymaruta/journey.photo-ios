@@ -27,6 +27,8 @@ struct SettingsView: View {
     private var isSigningOut: Bool { auth.isSigningOut }
     /// 「新しくなったこと」を開き直す（起動で出たものと同じ画面・2026-10-04）
     @State private var showWhatsNew = false
+    /// 使い方（Web の /help）をアプリの中の Safari で開く（2026-11-12 札 #517・`HelpLink`）
+    @State private var showHelp = false
     /// トランクを見せる（板 TrunkPrivacy・2026-10-18）。トランクの口がある人にだけ出す（`TrunkAvailability`）
     @StateObject private var trunkPrivacy = TrunkPrivacyModel()
 
@@ -212,6 +214,10 @@ struct SettingsView: View {
         // 設定から開いたときは履歴（新しい版が上・版ごとに区切りの見出し・2026-10-18 owner「過去の履歴を見れるようにしたい」）
         .sheet(isPresented: $showWhatsNew) {
             WhatsNewView(releases: WhatsNew.bundled(), mode: .history, primaryTitle: Labels.Common.close)
+        }
+        .fullScreenCover(isPresented: $showHelp) {
+            InAppSafariView(url: HelpLink.url)
+                .ignoresSafeArea()
         }
         .navigationBarBackButtonHidden(isSigningOut)
         .interactiveDismissDisabled(isSigningOut)
@@ -426,6 +432,13 @@ struct SettingsView: View {
     // **規約・問い合わせは未ログインでも出す**（審査 1.2 の連絡先）
     private var helpSection: some View {
         section(SettingsOutline.Part.help.title) {
+            // 使い方（2026-11-12 札 #517）。**節のいちばん上**・アプリの入口はここだけ（`HelpLink`）。未ログインでも出す
+            Button { showHelp = true } label: {
+                JPRowLabel(title: HelpLink.title, detail: HelpLink.detail)
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("settings.help")
+            JPCardDivider()
             // 「新しくなったこと」はいつでも開き直せる（未ログインでも出す）
             Button { showWhatsNew = true } label: {
                 JPRowLabel(title: L("新しくなったこと", "What's new"))
@@ -535,7 +548,7 @@ enum SettingsOutline {
             case .notifications: return ["settings.push"]
             case .privacy: return ["settings.blocked", "settings.closeFriends", "settings.trunkPrivacy", "settings.searchHidden"]
             case .photos: return ["settings.favorites", "settings.compositionCatalog", "settings.storage"]
-            case .help: return ["settings.whatsNew", "settings.legal", "settings.contact"]
+            case .help: return ["settings.help", "settings.whatsNew", "settings.legal", "settings.contact"]
             case .account: return ["settings.password"]
             case .danger: return ["settings.logout", "settings.deleteAccount"]
             }
