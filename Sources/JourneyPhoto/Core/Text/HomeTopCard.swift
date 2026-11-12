@@ -124,7 +124,8 @@ enum HomeTopCard {
     /// 🔴 **ほかの章の担当が札の種類を足すときは、`Choice` に case を足し、この2つの表に `slot` を書く。**
     /// 表に無い種類は選ぶ順の最後（空きがある日だけ出る）。`spotSwipe` は「撮影スポットを払う」の札の場所（第7章）
     ///
-    /// - 旅の札（出発が近い・旅の最中・一冊ができた）は**どれか1枚**（`tripSlots`）
+    /// - 旅の札（出発が近い・旅の最中・一冊ができた・現像前の旅）は**どれか1枚**（`tripSlots`）。
+    ///   現像前の旅（`develop`・札 #543 ①）は 1.1.84 のまとめで表に足した（表に無いと常連の3枚に入らず、札が出なかった）
     /// - 季節の札（行きたい場所の季節・今日の撮影スポット）は**どれか1枚**（`seasonSlots`・案「見頃の2枚並びを1枚に」）。
     ///   行きたい場所の方が先（自分で選んだ場所）
     /// - 今日の一問はホームに出さない（探すへ移した）。1年前は常連の3枚目だけ（届いた日だけ割り込む）
@@ -133,9 +134,9 @@ enum HomeTopCard {
         case .guest:
             return ["spotSwipe", "theme", "wishlistSeason", "inSeason"]
         case .newcomer:
-            return ["theme", "spotSwipe", "wishlistSeason", "inSeason", "departure", "onTrip", "bookReady"]
+            return ["theme", "spotSwipe", "wishlistSeason", "inSeason", "departure", "onTrip", "bookReady", "develop"]
         case .regular:
-            return ["departure", "onTrip", "bookReady", "theme", "oneYearAgo", "wishlistSeason", "inSeason", "spotSwipe"]
+            return ["departure", "onTrip", "bookReady", "develop", "theme", "oneYearAgo", "wishlistSeason", "inSeason", "spotSwipe"]
         }
     }
 
@@ -145,15 +146,15 @@ enum HomeTopCard {
         case .guest:
             return ["spotSwipe", "theme", "wishlistSeason", "inSeason"]
         case .newcomer:
-            return ["theme", "spotSwipe", "departure", "onTrip", "bookReady", "wishlistSeason", "inSeason"]
+            return ["theme", "spotSwipe", "departure", "onTrip", "bookReady", "develop", "wishlistSeason", "inSeason"]
         case .regular:
-            return ["departure", "onTrip", "bookReady", "theme", "wishlistSeason", "inSeason", "spotSwipe", "oneYearAgo"]
+            return ["departure", "onTrip", "bookReady", "develop", "theme", "wishlistSeason", "inSeason", "spotSwipe", "oneYearAgo"]
         }
     }
 
     /// ホームに出さない種類（今日の一問は探すの段へ・2026-11-12）
     static let hiddenOnHome: Set<String> = ["quiz"]
-    static let tripSlots: Set<String> = ["departure", "onTrip", "bookReady"]
+    static let tripSlots: Set<String> = ["departure", "onTrip", "bookReady", "develop"]
     static let seasonSlots: Set<String> = ["wishlistSeason", "inSeason"]
 
     /// 当たる札（`cards`）から、その人のホームに出す**最大3枚**を選んで並べる。

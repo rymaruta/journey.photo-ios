@@ -110,14 +110,15 @@ struct NearbyPhotosSheet: View {
                     .padding(.top, JPSpace.s)
             }
         } else if found.isEmpty {
-            // ここまで来たら、測った結果として本当に無い。一手で広げる（広げられなければ一手なし）
+            // ここまで来たら、測った結果として本当に無い。一手で広げる（広げられなければ一手なし）。
+            // 印は置かない（第2章の決まり・`ScreenStatesTests.testEmptyIconsFitTheirPlace`。1.1.84 のまとめで新しい形にも合わせた）
             if let wider = NearbyPhotos.widerRadius(than: radius) {
-                EmptyState(title: L("この範囲には、まだ写真がありません", "No photos in this range yet"),
+                EmptyState(icon: nil, title: L("この範囲には、まだ写真がありません", "No photos in this range yet"),
                            message: L("範囲を広げると見つかることがあります", "Try a wider range."),
                            actionTitle: L("約\(Int(wider))kmに広げる", "Widen to about \(Int(wider)) km"),
                            actionIdentifier: "nearby.widen") { radius = wider }
             } else {
-                EmptyState(title: L("この範囲には、まだ写真がありません", "No photos in this range yet"),
+                EmptyState(icon: nil, title: L("この範囲には、まだ写真がありません", "No photos in this range yet"),
                            message: L("ほかの場所で開くと見つかることがあります", "Try again somewhere else."))
             }
         } else {

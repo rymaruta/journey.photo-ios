@@ -133,6 +133,41 @@ final class HomeTopCardArrangeTests: XCTestCase {
         XCTAssertEqual(HomeTopCard.arrange([.theme], audience: .guest), [.theme])
     }
 
+    // MARK: - 1.1.84 のまとめ（置き場・撮影スポットを払う・現像前の旅）
+
+    /// 払う入口（`withSwipe` の `.swipe`）の目印は表の `spotSwipe` と同じ。違うと表に無い種類として最後に回り、
+    /// 未ログインの1枚目に入口が出なかった
+    func testSwipeEntryUsesTheTableSlot() throws {
+        let all = HomeTopCard.withSwipe(try everything(), spots: [try spot("x")], today: nil)
+        XCTAssertEqual(HomeTopCard.arrange(all, audience: .guest).first.map(\.slot), "spotSwipe",
+                       "未ログインの1枚目が撮影スポットを払う入口でない")
+        XCTAssertEqual(slots(HomeTopCard.arrange(all, audience: .newcomer)).prefix(2), ["theme", "spotSwipe"])
+    }
+
+    private func developTrip() -> LibraryTrip {
+        let base = Date(timeIntervalSince1970: 1_789_138_800)
+        let shots = (0..<8).map { k in
+            LibraryShot(id: "d\(k)", date: base.addingTimeInterval(Double(k) * 3 * 3600), lat: 36.56, lng: 136.65)
+        }
+        return LibraryTrips.find(shots, home: (lat: 35.68, lng: 139.76), timeZone: TimeZone(identifier: "Asia/Tokyo")!)[0]
+    }
+
+    /// 現像前の旅（札 #543 ①）は旅の札の1枚として表にある。表に無いと常連の3枚に入らず出なかった
+    func testDevelopIsATripCard() {
+        let develop = HomeTopCard.Choice.develop(trip: developTrip(), name: nil)
+        for audience in [HomeTopCard.Audience.newcomer, .regular] {
+            XCTAssertTrue(HomeTopCard.priority(for: audience).contains("develop"), "\(audience)")
+        }
+        let regular = HomeTopCard.arrange([develop, .theme, .oneYearAgo(photo: try! photo("y"), byUploadDate: false),
+                                           .inSeason(spot: try! spot("s"), season: "autumn", guide: "")],
+                                          audience: .regular)
+        XCTAssertEqual(slots(regular).first, "develop", "常連の並びに現像前の旅が出ない")
+        // 旅の札はどれか1枚（一冊ができた日はそちらが先）
+        let both = HomeTopCard.arrange([.bookReady(trip: TripBook.Trip(id: "t", place: "", start: Date(), end: Date(), photos: [])),
+                                        develop, .theme], audience: .regular)
+        XCTAssertEqual(slots(both), ["bookReady", "theme"])
+    }
+
     // MARK: - 画面がこの並びを使う
 
     func testHomeViewUsesTheArrangement() throws {

@@ -256,7 +256,9 @@ final class StoryDesignRestTests: XCTestCase {
         let cover = try XCTUnwrap(editor.components(separatedBy: ".fullScreenCover(isPresented: $showComposer").dropFirst().first)
         XCTAssertTrue(String(cover.prefix(400)).contains("TabRouter.shared.postSheetClosed()"))
         let composer = try repo("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
-        XCTAssertTrue(composer.contains("init(openDraft: String? = nil, startsWithCamera: Bool = false, keepsInArchive: Bool = false)"))
+        // 1.1.84 のまとめで、紹介の札（`sharing`）・1年前（`seed`）の入口と同じ init に並んだ
+        let initLine = try XCTUnwrap(composer.components(separatedBy: "init(openDraft: String? = nil, startsWithCamera: Bool = false,").dropFirst().first)
+        XCTAssertTrue(String(initLine.prefix(200)).contains("keepsInArchive: Bool = false"))
         let forced = try XCTUnwrap(composer.range(of: "if keepsInArchive { keepInArchive = true }"), "残すを入れて始めていない")
         // 開いた回だけ（カメラから戻った onAppear で入れ直さない）
         let asked = try XCTUnwrap(composer.range(of: "askedOnOpen = true"))
