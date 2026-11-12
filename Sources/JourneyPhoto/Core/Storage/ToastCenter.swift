@@ -26,10 +26,13 @@ final class ToastCenter: ObservableObject {
     /// 「取り消す」を添えた知らせの時間（下書きの「元に戻す」と同じ約6秒・`DraftLibrary.undoSeconds`）
     static let undoDuration: TimeInterval = 6
 
-    /// 知らせに添える「取り消す」（2026-11-12 判断・トランクの案: 押せばすぐ決まり、取り消しで戻す）
+    /// 知らせに添える「取り消す」（2026-11-12 判断・トランクの案: 押せばすぐ決まり、取り消しで戻す）。
+    /// `run` は戻せたかを返す。戻せなければ `failure` の一言を失敗の知らせで出す（黙って消さない）
     struct Undo {
         let title: String
-        let run: @MainActor () async -> Void
+        var failure: String = L("取り消せませんでした。電波のあるところでもう一度お試しください",
+                                "Couldn\u{2019}t undo. Try again where you have a signal.")
+        let run: @MainActor () async -> Bool
     }
 
     @Published private(set) var current: Message?
@@ -67,10 +70,11 @@ final class ToastCenter: ObservableObject {
         undo = nil
     }
 
-    /// 「取り消す」を押した。知らせを消してから戻す（続けて押しても1回だけ）
+    /// 「取り消す」を押した。知らせを消してから戻す（続けて押しても1回だけ）。
+    /// 戻せなかったら失敗の知らせで一言（2026-11-12 判断・確かめ役の指摘: 失敗が伝わらなかった）
     func performUndo() async {
         guard let undo else { return }
         dismiss()
-        await undo.run()
+        if !(await undo.run()) { show(undo.failure, kind: .failure) }
     }
 }

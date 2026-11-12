@@ -8,8 +8,13 @@ extension TrunkText {
     static var undoTitle: String { L("取り消す", "Undo") }
 
     /// 届いた画面で貼って閉じたあとの知らせ（1 枚は今までどおり・何枚もはおまかせの所へ貼ったこと）
-    static func arrivalStuckNotice(count: Int) -> String {
-        count > 1 ? L("空いている所へおまかせで貼りました", "Stuck them in free spots for you")
+    /// まとめて貼る途中で貼れなかった分（`left`）があれば、貼れた枚数と手持ちに残った枚数を言う
+    static func arrivalStuckNotice(count: Int, left: Int = 0) -> String {
+        if left > 0 {
+            return L("\(count) 枚貼りました。\(left) 枚は手持ちにあります",
+                     "Stuck \(count). \(left) still in your pocket")
+        }
+        return count > 1 ? L("空いている所へおまかせで貼りました", "Stuck them in free spots for you")
             : L("トランクに貼りました", "Stuck on your trunk")
     }
 
@@ -77,7 +82,21 @@ extension TrunkGachaText {
         }
     }
 
-    /// 電波が無くて回せなかった（サーバーが答えていないので硬貨は減っていない）
+    /// 送ったあとに切れた・時間切れのとき（回ったかどうか分からない）の一言。読み直した硬貨の数を前と比べて言い分ける
+    /// （2026-11-12 判断）。減っていれば回っていた（出た部品は部品箱にある）、減っていなければ回っていない、
+    /// 読み直せなければ分からないと言う（分からないことを「減っていません」と言わない）
+    static func afterUnsure(coinsBefore: Int, coinsAfter: Int?) -> String {
+        guard let after = coinsAfter else {
+            return L("回ったか確かめられませんでした。電波のあるところで部品箱を開くと分かります",
+                     "Couldn\u{2019}t check whether it turned. Open your parts box where you have a signal to see.")
+        }
+        if after < coinsBefore {
+            return L("回っていました。出た部品は部品箱に入っています", "It did turn. The part is in your parts box.")
+        }
+        return L("回せませんでした。硬貨は減っていません", "It didn\u{2019}t turn. No coin was used.")
+    }
+
+    /// 送る前から圏外と分かっていて、送らなかった（サーバーに何も届いていないので硬貨は減っていない）
     static var unreachable: String {
         L("電波が無いので回せませんでした。硬貨は減っていません", "No signal, so it didn\u{2019}t turn. No coin was used.")
     }
@@ -107,6 +126,9 @@ enum TrunkGachaFlow {
         case springBack
     }
 
+    /// 自分で回している途中で、次の1歩を進めるか（画面を離れたら止めて元へ戻し、サーバーには送らない）
+    static func keepsAutoTurning(visible: Bool) -> Bool { visible }
+
     static func release(_ crank: TrunkCrank) -> Release {
         if crank.isDone { return .draw }
         if crank.moved <= TrunkCrank.tapSlop { return .autoTurn }
@@ -128,7 +150,8 @@ extension TrunkCrank {
 enum TrunkLidCopy {
     static func hint(_ p: Double) -> String {
         if p <= 0.02 { return L("トランクを押すと、ふたが開きます", "Tap the trunk to open the lid") }
-        if p >= 0.98 { return L("押すと手に取れます · ふたを上へ払うと閉じます", "Tap to pick up · Swipe the lid up to close it") }
+        // 2つの手は改行で分ける（区切りの記号を使わない）
+        if p >= 0.98 { return L("押すと手に取れます\nふたを上へ払うと閉じます", "Tap to pick up\nSwipe the lid up to close it") }
         return TrunkLid.hint(p)
     }
 

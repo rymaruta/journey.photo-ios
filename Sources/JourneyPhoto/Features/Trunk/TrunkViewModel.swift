@@ -257,7 +257,7 @@ final class TrunkViewModel: ObservableObject {
         guard let before = state?.effectiveModel, before != next else { return }
         guard await setModel(next) else { return }
         toasts.show(TrunkText.modelChangedNotice(TrunkText.info(next).name),
-                    undo: ToastCenter.Undo(title: TrunkText.undoTitle) { [weak self] in _ = await self?.setModel(before) })
+                    undo: ToastCenter.Undo(title: TrunkText.undoTitle) { [weak self] in await self?.setModel(before) ?? false })
     }
 
     @discardableResult
@@ -392,7 +392,8 @@ final class TrunkViewModel: ObservableObject {
 
     /// 回す（硬貨1枚）。出た部品を返す（断られた・読めなければ nil で、一言は `actionError`）。
     /// 応答は状態を丸ごと返さないので、硬貨・かけら・部品だけを手元の状態に足す
-    func gacha() async -> TrunkGachaResult? {
+    /// `offline`: 送る前から圏外と分かっている（そのときは送らず、硬貨は減っていないと言い切る）
+    func gacha(offline: Bool = false) async -> TrunkGachaResult? {
         guard !busy, let current = state else { return nil }
         busy = true
         defer { busy = false }
@@ -407,17 +408,32 @@ final class TrunkViewModel: ObservableObject {
             return result
         }
         guard let service else { return nil }
+        // 送る前から圏外: 送らない。サーバーに何も届いていないので「硬貨は減っていません」と言い切れる（2026-11-12 判断）
+        if offline {
+            actionError = TrunkGachaText.unreachable
+            return nil
+        }
         do {
             let result = try await service.gacha()
             state = result.applied(to: current)
             return result
         } catch is CancellationError {
             return nil
+        } catch let refused as TrunkService.Refused {
+            // サーバーの断り（硬貨が無い など）: 回っていない。読み直さない（今までどおり）
+            actionError = Self.message(refused)
+            return nil
         } catch {
-            // 電波が無くて送れなかった: 回っていない（硬貨は減っていない）と言う（2026-11-12 判断・案の圏外）
-            actionError = Self.isUnreachable(error) ? TrunkGachaText.unreachable : Self.message(error)
-            // 回ったかどうか分からない（知らない部品・時間切れ）。硬貨と部品を読み直す
-            if !(error is TrunkService.Refused) { await load(offline: false) }
+            // 送ったあとに切れた・時間切れ（`APIError.unreachable` もここ）: 回ったかどうか分からない。
+            // 硬貨と部品を読み直し、硬貨の数を前と比べて言い分ける（2026-11-12 判断・確かめ役の指摘:
+            // 時間切れでも「硬貨は減っていません」と言っていた）
+            var coinsAfter: Int?
+            let fresh = try? await service.state()
+            if let fresh {
+                state = fresh.keepingPosts(from: state)
+                coinsAfter = fresh.coins
+            }
+            actionError = TrunkGachaText.afterUnsure(coinsBefore: current.coins, coinsAfter: coinsAfter)
             return nil
         }
     }

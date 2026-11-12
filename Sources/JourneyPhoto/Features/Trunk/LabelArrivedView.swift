@@ -396,8 +396,9 @@ struct LabelArrivedView: View {
         let rest = await model.stickAll(Array(ids.dropFirst()))
         let stuck = [ids[0]] + rest
         // 知らせは閉じ切ってから全体で1つだけ（ここで出すと、閉じる間に届いた画面と全体で2つ見える）
-        TrunkArrivals.shared.noteStuckFromArrival(count: stuck.count) { [model] in
-            _ = await model.unstickAll(stuck)
+        // 途中で貼れなかった分は手持ちに残る（閉じたあとの知らせで枚数を言う）。取り消しは戻せたかを返す
+        TrunkArrivals.shared.noteStuckFromArrival(count: stuck.count, left: ids.count - stuck.count) { [model] in
+            await model.unstickAll(stuck) == stuck.count
         }
         dismiss()
     }

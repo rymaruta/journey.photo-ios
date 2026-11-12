@@ -17,6 +17,7 @@ struct TrunkGachaView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var toasts: ToastCenter
+    @EnvironmentObject private var connectivity: Connectivity
     @State private var phase: TrunkGachaPhase = .idle
     /// 画面に出ているか（1周したあと返事を待つ間に戻った人へ、一言で知らせる）
     @State private var visible = false
@@ -321,6 +322,12 @@ struct TrunkGachaView: View {
                 try? await Task.sleep(nanoseconds: UInt64(TrunkGachaFlow.autoStepSeconds * 1_000_000_000))
                 if Task.isCancelled { return }
             }
+            // 回っている途中で画面を離れた: 元へ戻して送らない（硬貨は減らない・2026-11-12 判断・確かめ役の指摘）
+            guard TrunkGachaFlow.keepsAutoTurning(visible: visible) else {
+                crank = TrunkCrank()
+                phase = .idle
+                return
+            }
             notice(crank.autoAdvance())
         }
     }
@@ -447,7 +454,7 @@ struct TrunkGachaView: View {
 
     /// 1周した: サーバーに回してもらう
     private func draw() async {
-        guard let got = await model.gacha() else {
+        guard let got = await model.gacha(offline: connectivity.isOffline) else {
             phase = .idle
             crank = TrunkCrank()
             return
@@ -749,7 +756,7 @@ struct TrunkGachaOpenView: View {
                         dismiss()
                         // 「取り消す」で付ける前に戻す（2026-11-12 判断）
                         toasts.show(L("トランクに付けました", "Put on your trunk"),
-                                    undo: ToastCenter.Undo(title: TrunkText.undoTitle) { [model] in _ = await model.equip(before) })
+                                    undo: ToastCenter.Undo(title: TrunkText.undoTitle) { [model] in await model.equip(before) })
                     }
                 }
             } label: {

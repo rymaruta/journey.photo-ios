@@ -76,9 +76,15 @@ struct VisitedPrefectureCard: View {
         let photos = model.photosByPrefecture[prefecture] ?? []
         if !photos.isEmpty {
             VStack(alignment: .leading, spacing: JPSpace.xs) {
-                Text(L("\(prefecture)で撮った写真 · \(photos.count) 枚", "Your photos in \(prefecture) · \(photos.count)"))
-                    .font(JPFont.footnote)
-                    .foregroundStyle(WebTheme.text2)
+                // 題と枚数は区切りの記号を使わず、余白と字（枚数は等幅の数字）で分ける
+                HStack(alignment: .firstTextBaseline, spacing: JPSpace.xs) {
+                    Text(L("\(prefecture)で撮った写真", "Your photos in \(prefecture)"))
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text2)
+                    Text(L("\(photos.count) 枚", Plural.count(photos.count, "photo")))
+                        .font(JPFont.number(JPTypeScale.footnote, weight: .regular, relativeTo: .footnote))
+                        .foregroundStyle(WebTheme.text3)
+                }
                 HStack(spacing: 2) {
                     ForEach(photos.prefix(4)) { photo in
                         PhotoFrame(photo: photo, aspect: 1, corner: 0)

@@ -333,9 +333,15 @@ struct VisitedMapScreen: View {
                     ForEach(names, id: \.self) { name in
                         // 押すとその場で記録（2026-11-12 判断・間違えたら帯の「取り消す」）
                         Button { model.recordCandidate(name) } label: {
-                            Text(VisitedMapText.recordCandidateChip(name))
-                                .font(JPFont.footnote)
-                                .foregroundStyle(WebTheme.foreground)
+                            // 県の名前（太字・白）と動き（真鍮）を字の太さと色で分ける（区切りの記号を使わない）
+                            HStack(spacing: JPSpace.xs) {
+                                Text(name)
+                                    .font(JPFont.footnote.weight(.semibold))
+                                    .foregroundStyle(WebTheme.foreground)
+                                Text(VisitedMapText.recordCandidateAction)
+                                    .font(JPFont.footnote)
+                                    .foregroundStyle(WebTheme.accent)
+                            }
                                 .padding(.horizontal, JPSpace.s)
                                 .frame(minHeight: WebTheme.minTapTarget)
                                 .overlay(Capsule().strokeBorder(WebTheme.accent.opacity(0.7),

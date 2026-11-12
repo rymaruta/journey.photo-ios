@@ -105,19 +105,22 @@ final class TrunkArrivals: ObservableObject {
     private var stuckFromArrival = false
     /// 届いた画面で貼った枚数と、取り消しの手（閉じたあとの知らせの「取り消す」・2026-11-12 判断）
     private var stuckCount = 0
-    private var stuckUndo: (@MainActor () async -> Void)?
+    /// まとめて貼る途中で貼れずに手持ちに残った枚数（2026-11-12 判断・確かめ役の指摘: 黙って閉じない）
+    private var stuckLeft = 0
+    private var stuckUndo: (@MainActor () async -> Bool)?
 
-    func noteStuckFromArrival(count: Int = 1, undo: (@MainActor () async -> Void)? = nil) {
+    func noteStuckFromArrival(count: Int = 1, left: Int = 0, undo: (@MainActor () async -> Bool)? = nil) {
         stuckFromArrival = true
         stuckCount = count
+        stuckLeft = left
         stuckUndo = undo
     }
 
     /// 閉じたあとの知らせの文（1 枚は今までどおり「トランクに貼りました」・何枚もはおまかせの所へ貼ったこと）
-    var stuckNotice: String { TrunkText.arrivalStuckNotice(count: stuckCount) }
+    var stuckNotice: String { TrunkText.arrivalStuckNotice(count: stuckCount, left: stuckLeft) }
 
     /// 閉じたあとの知らせに添える「取り消す」（受け取ったら下ろす）
-    func consumeArrivalUndo() -> (@MainActor () async -> Void)? {
+    func consumeArrivalUndo() -> (@MainActor () async -> Bool)? {
         defer { stuckUndo = nil }
         return stuckUndo
     }
@@ -147,6 +150,7 @@ final class TrunkArrivals: ObservableObject {
         deliveredAt = nil
         stuckFromArrival = false
         stuckCount = 0
+        stuckLeft = 0
         stuckUndo = nil
     }
 

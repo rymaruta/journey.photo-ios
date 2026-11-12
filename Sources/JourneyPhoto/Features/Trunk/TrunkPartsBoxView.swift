@@ -142,7 +142,9 @@ struct TrunkPartsBoxView: View {
                     Text("\(state.coins)")
                         .font(JPFont.number(13, weight: .medium, relativeTo: .footnote))
                         .foregroundStyle(WebTheme.foreground)
-                    Text("· " + L("カプセルを回す", "Turn the machine"))
+                    // 数と動きは区切りの記号を使わず、余白と色（真鍮）で分ける
+                    Text(L("カプセルを回す", "Turn the machine"))
+                        .padding(.leading, 4)
                         .font(JPFont.footnote)
                         .foregroundStyle(WebTheme.accent)
                 }
@@ -154,7 +156,7 @@ struct TrunkPartsBoxView: View {
             }
             .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(L("硬貨 \(state.coins) 枚 · カプセルを回す", "\(Plural.count(state.coins, "coin")) · Turn the machine"))
+            .accessibilityLabel(L("硬貨 \(state.coins) 枚、カプセルを回す", "\(Plural.count(state.coins, "coin")), turn the machine"))
             .accessibilityIdentifier("trunk.parts.coins")
         }
         .padding(.horizontal, 16)
@@ -637,6 +639,6 @@ struct TrunkPartSheet: View {
         guard await model.equip(next.equipped) else { return }
         dismiss()
         toasts.show(wasOn ? L("外しました", "Taken off") : L("トランクに付けました", "Put on your trunk"),
-                    undo: ToastCenter.Undo(title: TrunkText.undoTitle) { [model] in _ = await model.equip(before) })
+                    undo: ToastCenter.Undo(title: TrunkText.undoTitle) { [model] in await model.equip(before) })
     }
 }

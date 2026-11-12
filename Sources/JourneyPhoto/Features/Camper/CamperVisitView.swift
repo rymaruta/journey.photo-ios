@@ -245,7 +245,7 @@ struct CamperVisitView: View {
         .accessibilityIdentifier("camper.visit.gift")
         Button { Task { await model.firewood(calls: service, store: CamperStore(userId: auth.userId)) } } label: {
             CamperVisitActionCard(icon: "flame", title: CamperText.firewoodLabel,
-                                  note: model.woodCount.map { L("1日1回 · あなたは \($0) 回", "Once a day · You: \($0)") }
+                                  note: model.woodCount.map { L("1日1回、あなたは \($0) 回", "Once a day, you: \($0)") }
                                       ?? L("同じ友達に1日1回", "Once a day per friend"),
                                   done: false)
                 .opacity(model.canAct ? 1 : 0.5)

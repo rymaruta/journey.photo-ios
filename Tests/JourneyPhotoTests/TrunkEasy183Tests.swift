@@ -1,4 +1,7 @@
 import XCTest
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 @testable import JourneyPhoto
 
 /// 1.1.83 の案「トランクと旅の画面のデザイン」（2026-11-12 判断）: 主ボタン1つで最後まで・押せばすぐ決まり、
@@ -55,17 +58,35 @@ final class TrunkEasy183Tests: XCTestCase {
     func testToastUndoRunsOnceAndClears() async {
         let toasts = ToastCenter()
         var runs = 0
-        toasts.show("付けました", undo: ToastCenter.Undo(title: "取り消す") { runs += 1 })
+        toasts.show("付けました", undo: ToastCenter.Undo(title: "取り消す") { runs += 1; return true })
         XCTAssertNotNil(toasts.undo)
         await toasts.performUndo()
         await toasts.performUndo()
         XCTAssertEqual(runs, 1, "取り消しが2回流れた")
         XCTAssertNil(toasts.current, "取り消したのに知らせが残る")
         // 取り消しの無い知らせに替わったら、前の取り消しは消える（別の知らせで前の操作を戻さない）
-        toasts.show("付けました", undo: ToastCenter.Undo(title: "取り消す") { runs += 1 })
+        toasts.show("付けました", undo: ToastCenter.Undo(title: "取り消す") { runs += 1; return true })
         toasts.show("ほかの知らせ")
         XCTAssertNil(toasts.undo)
         XCTAssertEqual(ToastCenter.undoDuration, 6)
+    }
+
+    /// 🔴 取り消しに失敗したら、失敗の知らせで一言（黙って消さない・2026-11-12 確かめ役の指摘）
+    @MainActor
+    func testToastUndoFailureIsTold() async throws {
+        let toasts = ToastCenter()
+        toasts.show("付けました", undo: ToastCenter.Undo(title: "取り消す") { false })
+        await toasts.performUndo()
+        let shown = try XCTUnwrap(toasts.current, "取り消せなかったのに何も言わない")
+        XCTAssertEqual(shown.kind, .failure)
+        XCTAssertEqual(shown.text, "取り消せませんでした。電波のあるところでもう一度お試しください")
+        XCTAssertNil(toasts.undo, "失敗の知らせにまた取り消しが付いている")
+        // 部品・型・届いた画面の取り消しは、戻せたかを返す（成否を捨てない）
+        for path in ["Features/Trunk/TrunkGachaView.swift", "Features/Trunk/TrunkPartsBoxView.swift"] {
+            XCTAssertTrue(try source(path).contains("{ [model] in await model.equip(before) })"), "\(path) の取り消しが成否を返さない")
+        }
+        XCTAssertTrue(try source("Features/Trunk/TrunkViewModel.swift").contains("{ [weak self] in await self?.setModel(before) ?? false })"))
+        XCTAssertTrue(try source("Features/Trunk/LabelArrivedView.swift").contains("await model.unstickAll(stuck) == stuck.count"))
     }
 
     // MARK: ラベルが届いた（何枚もは「まとめて貼る」1回）
@@ -105,19 +126,29 @@ final class TrunkEasy183Tests: XCTestCase {
     func testArrivalUndoIsHandedToTheNotice() async {
         let arrivals = TrunkArrivals()
         var undone = false
-        arrivals.noteStuckFromArrival(count: 3) { undone = true }
+        arrivals.noteStuckFromArrival(count: 3) { undone = true; return true }
         XCTAssertEqual(arrivals.stuckNotice, "空いている所へおまかせで貼りました")
         let undo = arrivals.consumeArrivalUndo()
         XCTAssertNotNil(undo)
         XCTAssertNil(arrivals.consumeArrivalUndo(), "取り消しを2回渡した")
         XCTAssertTrue(arrivals.consumeStuckFromArrival())
-        await undo?()
+        _ = await undo?()
         XCTAssertTrue(undone)
         let view = try? source("Features/Trunk/LabelArrivedView.swift")
         XCTAssertTrue(view?.contains("kind: .mainOnPhoto") ?? false, "写真のある画面の主ボタンが白でない")
         XCTAssertTrue(view?.contains("await model.stickAll(") ?? false, "まとめて貼っていない")
         let root = try? source("App/RootView.swift")
         XCTAssertTrue(root?.contains("trunkArrivals.consumeArrivalUndo()") ?? false, "閉じたあとの知らせに取り消しが無い")
+    }
+
+    /// まとめて貼る途中で貼れなかった分は「N 枚は手持ちにあります」と言う（黙って閉じない）
+    @MainActor
+    func testArrivalPartialStickSaysWhatIsLeft() async throws {
+        XCTAssertEqual(TrunkText.arrivalStuckNotice(count: 1, left: 2), "1 枚貼りました。2 枚は手持ちにあります")
+        let arrivals = TrunkArrivals()
+        arrivals.noteStuckFromArrival(count: 2, left: 1)
+        XCTAssertEqual(arrivals.stuckNotice, "2 枚貼りました。1 枚は手持ちにあります")
+        XCTAssertTrue(try source("Features/Trunk/LabelArrivedView.swift").contains("left: ids.count - stuck.count"))
     }
 
     // MARK: カプセルの機械（ボタン1つ＋ハンドル）
@@ -165,6 +196,25 @@ final class TrunkEasy183Tests: XCTestCase {
         XCTAssertTrue(view.contains("undo: ToastCenter.Undo(title: TrunkText.undoTitle)"), "付けたあとに取り消しが無い")
     }
 
+    /// 🔴 送ったあとに切れた・時間切れは、読み直した硬貨の数で言い分ける（「硬貨は減っていません」と決めつけない）
+    func testGachaUnsureMessages() {
+        XCTAssertEqual(TrunkGachaText.afterUnsure(coinsBefore: 3, coinsAfter: 3), "回せませんでした。硬貨は減っていません")
+        XCTAssertEqual(TrunkGachaText.afterUnsure(coinsBefore: 3, coinsAfter: 2), "回っていました。出た部品は部品箱に入っています")
+        XCTAssertEqual(TrunkGachaText.afterUnsure(coinsBefore: 3, coinsAfter: nil),
+                       "回ったか確かめられませんでした。電波のあるところで部品箱を開くと分かります")
+        XCTAssertFalse(TrunkGachaText.afterUnsure(coinsBefore: 3, coinsAfter: nil).contains("減っていません"))
+    }
+
+    /// 自分で回している途中に画面を離れたら、止めて元へ戻し送らない
+    func testAutoTurnStopsWhenLeaving() throws {
+        XCTAssertTrue(TrunkGachaFlow.keepsAutoTurning(visible: true))
+        XCTAssertFalse(TrunkGachaFlow.keepsAutoTurning(visible: false))
+        let view = try source("Features/Trunk/TrunkGachaView.swift")
+        XCTAssertTrue(view.contains("guard TrunkGachaFlow.keepsAutoTurning(visible: visible) else {\n                crank = TrunkCrank()\n                phase = .idle\n                return"),
+                      "画面を離れても回り続ける")
+        XCTAssertTrue(view.contains("await model.gacha(offline: connectivity.isOffline)"), "送る前の圏外を渡していない")
+    }
+
     // MARK: 部品箱・付け替え（押すとすぐ保存・ひとつ戻す）
 
     func testPartsBoxAndEquipWiring() throws {
@@ -201,7 +251,7 @@ final class TrunkEasy183Tests: XCTestCase {
         XCTAssertTrue(TrunkLidCopy.opensOnAppear(p: 0, dragging: false, holding: false))
         XCTAssertFalse(TrunkLidCopy.opensOnAppear(p: 1, dragging: false, holding: false))
         XCTAssertFalse(TrunkLidCopy.opensOnAppear(p: 0, dragging: true, holding: false))
-        XCTAssertEqual(TrunkLidCopy.hint(1), "押すと手に取れます · ふたを上へ払うと閉じます")
+        XCTAssertEqual(TrunkLidCopy.hint(1), "押すと手に取れます\nふたを上へ払うと閉じます")
         let open = try source("Features/Trunk/TrunkOpenView.swift")
         XCTAssertTrue(open.contains("if TrunkLidCopy.opensOnAppear(p: p, dragging: dragStart != nil, holding: held != nil) { settle(to: 1) }"))
         XCTAssertFalse(open.contains("\"trunk.open.toggle\""), "「ふたを開ける」のボタンが残っている")
@@ -341,5 +391,104 @@ final class TravelScreens183Tests: XCTestCase {
         XCTAssertTrue(visit.contains("CamperVisitSkeleton()"), "読み込み中が回る輪のまま")
         XCTAssertFalse(visit.contains("友達の車を読み込んでいます…"))
         XCTAssertEqual(visit.components(separatedBy: "CamperVisitActionCard(icon:").count - 1, 2, "贈る・薪が2枚の札でない")
+    }
+}
+
+/// カプセルの機械の失敗の言い分け（本物の口を台本で返す・2026-11-12 確かめ役の指摘）
+final class TrunkGachaFailure183Tests: XCTestCase {
+
+    private var session: URLSession!
+
+    override func setUp() {
+        super.setUp()
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [ScriptedProtocol.self]
+        session = URLSession(configuration: config)
+        ScriptedProtocol.reset()
+    }
+
+    override func tearDown() {
+        ScriptedProtocol.reset()
+        super.tearDown()
+    }
+
+    @MainActor
+    private func loadedModel(coins: Int) async -> TrunkViewModel {
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: StubTokenProvider(token: "t"), session: session)
+        let model = TrunkViewModel(preview: nil)
+        model.bind(TrunkService(api: api))
+        ScriptedProtocol.script = [.init(match: "/user/trunk", status: 200,
+                                         body: #"{"pocket":[],"stuck":[],"coins":\#(coins)}"#, once: true)]
+        await model.load(offline: false)
+        return model
+    }
+
+    /// 送る前から圏外: 送らない。このときだけ「硬貨は減っていません」
+    @MainActor
+    func testOfflineDoesNotSend() async {
+        let model = await loadedModel(coins: 3)
+        ScriptedProtocol.calls = []
+        let got = await model.gacha(offline: true)
+        XCTAssertNil(got)
+        XCTAssertFalse(ScriptedProtocol.calls.contains { $0.path.contains("/gacha") }, "圏外なのに送った")
+        XCTAssertEqual(model.actionError, TrunkGachaText.unreachable)
+    }
+
+    /// 送ったあとに失敗（サーバーが 502）: 読み直した硬貨が同じなら「減っていません」、減っていたら「部品箱に」
+    @MainActor
+    func testUnsureFailureComparesCoins() async {
+        let model = await loadedModel(coins: 3)
+        ScriptedProtocol.script = [.init(match: "/user/trunk/gacha", status: 502, body: ""),
+                                   .init(match: "/user/trunk", status: 200, body: #"{"pocket":[],"stuck":[],"coins":3}"#)]
+        _ = await model.gacha()
+        XCTAssertEqual(model.actionError, "回せませんでした。硬貨は減っていません")
+
+        ScriptedProtocol.script = [.init(match: "/user/trunk/gacha", status: 502, body: ""),
+                                   .init(match: "/user/trunk", status: 200, body: #"{"pocket":[],"stuck":[],"coins":2}"#)]
+        _ = await model.gacha()
+        XCTAssertEqual(model.actionError, "回っていました。出た部品は部品箱に入っています")
+        XCTAssertEqual(model.state?.coins, 2)
+
+        // 読み直しも失敗: 分からないと言う（「減っていません」と言わない）
+        ScriptedProtocol.script = [.init(match: "/user/trunk/gacha", status: 502, body: ""),
+                                   .init(match: "/user/trunk", status: 502, body: "")]
+        _ = await model.gacha()
+        XCTAssertEqual(model.actionError, TrunkGachaText.afterUnsure(coinsBefore: 2, coinsAfter: nil))
+    }
+}
+
+/// 2026-11-12 の決まり: 新しく足した画面の文を「·」「・」で区切らない（改行・字の色や太さ・余白・「、」で分ける）
+final class NoDotSeparator183Tests: XCTestCase {
+
+    private var root: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    }
+
+    func testNewTextsHaveNoDotSeparators() throws {
+        // 1.1.83 の章で足した言葉の置き場（TrunkEasy.swift は丸ごと新しい）
+        let easy = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Core/Text/TrunkEasy.swift"), encoding: .utf8)
+        for line in easy.components(separatedBy: "\n") where line.contains("L(") {
+            XCTAssertFalse(line.contains(" · ") || line.contains("・"), "区切りの記号がある: \(line)")
+        }
+        // 実際の文
+        for text in [TrunkLidCopy.hint(0), TrunkLidCopy.hint(1), TrunkPartsOfflineCopy.detail,
+                     TrunkText.arrivalStuckNotice(count: 2, left: 1), VisitedMapText.recordCandidateAction,
+                     TrunkGachaText.afterUnsure(coinsBefore: 1, coinsAfter: nil)] {
+            XCTAssertFalse(text.contains(" · "), "「·」で区切っている: \(text)")
+        }
+        // 前に「·」で区切っていた所（確かめ役が挙げた 6 か所）
+        let checks: [(String, String)] = [
+            ("Features/Profile/VisitedPrefectureCard.swift", "で撮った写真 · "),
+            ("Features/Camper/CamperVisitView.swift", "1日1回 · "),
+            ("Features/Trunk/TrunkPartsBoxView.swift", "\"· \" + L(\"カプセルを回す\""),
+            ("Features/Trunk/TrunkPartsBoxView.swift", "枚 · カプセルを回す"),
+            ("Core/Text/VisitedMapText.swift", "· 記録する"),
+        ]
+        for (path, old) in checks {
+            let text = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/" + path), encoding: .utf8)
+            XCTAssertFalse(text.contains(old), "\(path) に「·」の区切りが残っている")
+        }
     }
 }
