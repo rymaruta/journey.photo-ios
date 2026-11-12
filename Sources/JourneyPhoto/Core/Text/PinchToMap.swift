@@ -33,6 +33,16 @@ enum PinchToMap {
         return max(lower, min(1, scale))
     }
 
+    /// 地図の札を出す濃さ（地図が半分まで引いてきたら）
+    static let placeLabelProgress = 0.5
+
+    /// 地図が引いてきたときの下の札（撮影地の名前と「広げると写真へ」）。撮影地が無い・まだ浅いときは nil
+    static func placeLabel(location: String?, scale: Double, hasPlace: Bool) -> (place: String, back: String)? {
+        guard hasPlace, progress(scale: scale) >= placeLabelProgress else { return nil }
+        let place = (location ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return (place, L("広げると写真へ", "Spread to go back to the photo"))
+    }
+
     /// 離したときに地図へ行くか
     static func opensMap(endScale: Double, hasPlace: Bool) -> Bool {
         hasPlace && endScale <= openScale

@@ -25,6 +25,7 @@ struct YearAgoStoryView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var toasts: ToastCenter
+    @EnvironmentObject private var connectivity: Connectivity
 
     @State private var index = 0
     /// 今の1枚の進み（0〜1）
@@ -39,6 +40,11 @@ struct YearAgoStoryView: View {
     @State private var dust: Double = 1
     /// 「ストーリーに出す」で本体を読んでいる
     @State private var loadingShare = false
+    /// 読めた写真（iCloud の本体を落としている間は進まない・`YearAgoTrips.canAdvance`）
+    @State private var loaded: Set<String> = []
+
+    /// 圏外（見るのは端末の中だけでできる。送るのはあとで）
+    private var offline: Bool { connectivity.isOffline || PreviewSession.developOffline }
 
     private var ids: [String] { pick.photoIds.filter { !skipped.contains($0) } }
 
@@ -64,10 +70,12 @@ struct YearAgoStoryView: View {
         ZStack(alignment: .bottomLeading) {
             if ids.indices.contains(index) {
                 let id = ids[index]
-                LibraryShotImage(id: id, side: 440, onFailed: { skip(id) })
+                LibraryShotImage(id: id, side: 440, onFailed: { skip(id) }, onLoaded: { loaded.insert(id) },
+                                 loadingText: YearAgoTrips.loadingText)
                     .id(id)
                     .accessibilityHidden(true)
-                dustLayer
+                // ほこりは読めてからかぶせる（読み込み中の字を隠さない）
+                if loaded.contains(id) { dustLayer }
             }
             VStack(alignment: .leading, spacing: JPSpace.xxs) {
                 Text(YearAgoTrips.title(name: name, day: pick.day, year: YearAgoTrips.year(of: pick.day)))
@@ -86,6 +94,7 @@ struct YearAgoStoryView: View {
         .contentShape(Rectangle())
         .gesture(press(width: width))
         .overlay(alignment: .top) { head }
+        .overlay { offlineNotice }
         .ignoresSafeArea(edges: .top)
         .accessibilityAction(named: L("次の写真", "Next photo")) { advance() }
         .accessibilityAction(named: L("前の写真", "Previous photo")) { goBack() }
@@ -138,6 +147,27 @@ struct YearAgoStoryView: View {
         .padding(.horizontal, JPSpace.xs)
         .safeAreaPadding(.top)
         .padding(.top, JPSpace.xs)
+    }
+
+    /// 圏外の一言（章「圏外」・写真の上なのでガラスに白）。題の上に置く
+    @ViewBuilder
+    private var offlineNotice: some View {
+        if let notice = YearAgoTrips.offlineNotice(offline: offline) {
+            VStack {
+                Spacer()
+                Text(notice)
+                    .font(JPFont.body)
+                    .foregroundStyle(WebTheme.foreground)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, JPSpace.s)
+                    .jpGlass(in: RoundedRectangle(cornerRadius: 14))
+                    .padding(.horizontal, JPSpace.l)
+                    .padding(.bottom, 120)
+            }
+            .allowsHitTesting(false)
+            .accessibilityIdentifier("yearAgo.offline")
+        }
     }
 
     /// ほこり（飾り）。色をかぶせた地と、点の散らし。0.6秒で晴れる
@@ -230,18 +260,23 @@ struct YearAgoStoryView: View {
             }
     }
 
-    /// 1枚を流す（4秒・止めている間は進めない）。ほこりは出してから晴らす
+    /// 1枚を流す（4秒・止めている間と読み込み中は進めない）。ほこりは**読めてから**出して晴らす
+    /// （iCloud から落としている間に晴れてしまうと、ほこりが見えない）
     private func play() async {
         progress = 0
         dust = reduceMotion ? 0 : 1
-        if !reduceMotion {
-            withAnimation(.easeOut(duration: YearAgoTrips.dustSeconds)) { dust = 0 }
-        }
+        var dustCleared = reduceMotion
         let step = 1.0 / 30
         while !Task.isCancelled {
+            let current = ids.indices.contains(index) ? ids[index] : ""
+            if !dustCleared, loaded.contains(current) {
+                dustCleared = true
+                withAnimation(.easeOut(duration: YearAgoTrips.dustSeconds)) { dust = 0 }
+            }
             try? await Task.sleep(nanoseconds: UInt64(step * 1_000_000_000))
             if Task.isCancelled { return }
-            guard !held, !loadingShare else { continue }
+            guard YearAgoTrips.canAdvance(held: held, sharing: loadingShare,
+                                          loaded: loaded.contains(current)) else { continue }
             progress += step / YearAgoTrips.secondsPerPhoto
             if progress >= 1 {
                 advance()

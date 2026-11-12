@@ -112,6 +112,19 @@ enum YearAgoTrips {
         return "\(head) · \(name)"
     }
 
+    /// 圏外の一言（写真の上のガラス）。**見るのは端末の中だけでできる**ので閲覧は止めない。送るのはあとで
+    static func offlineNotice(offline: Bool) -> String? {
+        offline ? L("通信できないので、送るのはあとで", "You're offline. You can share it later.") : nil
+    }
+
+    /// 本体が端末に無い写真（iCloud）を落としている間の字。**読めるまで進みを止める**
+    static let loadingText = L("写真を読み込んでいます", "Loading photo")
+
+    /// 進めてよいか（押さえていない・本体を読んでいない・今の1枚が読めた）
+    static func canAdvance(held: Bool, sharing: Bool, loaded: Bool) -> Bool {
+        !held && !sharing && loaded
+    }
+
     // MARK: - 見方
 
     /// 叩いた位置で次へ進むか（右 2/3＝次、左 1/3＝前）

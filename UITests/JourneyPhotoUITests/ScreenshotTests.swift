@@ -7030,4 +7030,92 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 1.5)
         shoot(app, "120e-1年前（閲覧）")
     }
+
+    /// **①②の状態**（2026-11-12 札 #543・章「状態」）。一部の写真だけ許可（札の一言・払う画面の追加の口）と、
+    /// 圏外（表紙の一言と押せない「投稿する」・1年前の閲覧の一言）。**出なければ撮らずに抜ける**
+    func testCapturesDevelopStates() {
+        let limited = launchTrunk(["-JPPreviewDevelop", "YES", "-JPPreviewDevelopState", "limited"])
+        let card = limited.buttons["home.develop"].firstMatch
+        if card.waitForExistence(timeout: 25) {
+            Thread.sleep(forTimeInterval: 2)
+            shoot(limited, "120f-ホーム（現像前の旅・一部の写真だけ許可）")
+            if card.isHittable {
+                card.tap()
+                let addMore = limited.buttons["develop.addMore"].firstMatch
+                if addMore.waitForExistence(timeout: 10) {
+                    Thread.sleep(forTimeInterval: 1.5)
+                    shoot(limited, "120g-現像（一部の写真だけ許可・ほかの写真も選べるようにする）")
+                    XCTAssertGreaterThanOrEqual(addMore.frame.height, 44, "「ほかの写真も選べるようにする」が 44pt 未満")
+                }
+            }
+        }
+        limited.terminate()
+
+        let offline = launchTrunk(["-JPPreviewDevelop", "YES", "-JPPreviewDevelopState", "offline"])
+        let offlineCard = offline.buttons["home.develop"].firstMatch
+        guard offlineCard.waitForExistence(timeout: 25), offlineCard.isHittable else { return }
+        offlineCard.tap()
+        let keep = offline.buttons["develop.keep"].firstMatch
+        guard keep.waitForExistence(timeout: 10) else { return }
+        for _ in 0..<12 {
+            guard keep.exists, keep.isHittable else { break }
+            keep.tap()
+            Thread.sleep(forTimeInterval: 0.6)
+        }
+        let post = offline.buttons["develop.post"].firstMatch
+        if post.waitForExistence(timeout: 5), offline.staticTexts["develop.offline"].firstMatch.exists {
+            Thread.sleep(forTimeInterval: 1)
+            shoot(offline, "120h-現像（圏外の表紙・投稿は通信できる所で）")
+            XCTAssertFalse(post.isEnabled, "圏外で「投稿する」を押せる")
+        }
+        let close = offline.buttons["develop.close"].firstMatch
+        guard close.waitForExistence(timeout: 5) else { return }
+        close.tap()
+        let ring = offline.buttons["stories.yearAgo"].firstMatch
+        guard ring.waitForExistence(timeout: 10), ring.isHittable else { return }
+        ring.tap()
+        guard offline.otherElements["yearAgo.offline"].firstMatch.waitForExistence(timeout: 10)
+            || offline.staticTexts["通信できないので、送るのはあとで"].firstMatch.waitForExistence(timeout: 2) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(offline, "120i-1年前（圏外・送るのはあとで）")
+    }
+
+    /// **手に取って運ぶ・つまむと地図**（2026-11-12 札 #543・章 段1）。ホームの写真を 0.6秒押さえて右の縁の
+    /// 半円（とっておく）へ運び、3秒の「取り消す」を撮る（撮ったら取り消す＝しおりに残さない）。
+    /// 次に写真の詳細の写真をつまんで縮め、地図（「この近くで撮られた写真」）を撮る。**出なければ撮らずに抜ける**
+    func testCapturesLiftAndPinch() {
+        let app = launchTrunk([])
+        let recommended = app.buttons["おすすめ"].firstMatch
+        if recommended.waitForExistence(timeout: 15), recommended.isHittable { recommended.tap() }
+        let photo = app.buttons["feed.photo"].firstMatch
+        var pushes = 0
+        while !(photo.waitForExistence(timeout: 2) && photo.isHittable), pushes < 8 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)))
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard photo.exists, photo.isHittable else { return }
+        // 手に取って（0.35秒より長く押さえる）右の縁の真ん中（半円・半径 105pt）へ運ぶ
+        photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.8,
+                   thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 430.0 / 844.0)))
+        let undo = app.buttons["lift.undo"].firstMatch
+        if undo.waitForExistence(timeout: 3) {
+            shoot(app, "121a-ホーム（手に取って運んだ・取り消す）")
+            XCTAssertGreaterThanOrEqual(undo.frame.height, 44, "「取り消す」が 44pt 未満")
+            undo.tap()
+        }
+        Thread.sleep(forTimeInterval: 1)
+        guard photo.exists, photo.isHittable else { return }
+        photo.tap()
+        let hero = app.buttons["detail.hero"].firstMatch
+        guard hero.waitForExistence(timeout: 10), hero.isHittable else { return }
+        Thread.sleep(forTimeInterval: 2)
+        hero.pinch(withScale: 0.4, velocity: -1)
+        let map = app.navigationBars["この近くで撮られた写真"].firstMatch
+        guard map.waitForExistence(timeout: 8) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "121b-写真の詳細（つまんで地図）")
+    }
 }

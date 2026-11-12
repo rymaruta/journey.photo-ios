@@ -617,12 +617,15 @@ struct PhotoDetailView: View {
                 // 縮めるほど撮影地の地図が引いてくる（後ろ）
                 .background { pinchMap(item) }
                 .overlay { pinchHint(item) }
+                .overlay(alignment: .bottomLeading) { pinchPlace(item) }
                 .clipped()
                 .contentShape(Rectangle())
                 .accessibilityLabel(item.accessibilityText)
         }
         .buttonStyle(.plain)
         .accessibilityHint(L("拡大して見る", "Opens the photo full screen"))
+        // UI テストがつまむ所（2026-11-12 札 #543・つまむと地図の絵）
+        .accessibilityIdentifier("detail.hero")
         // 2本指でつまんで縮めると地図（写真の詳細の大きな写真だけ。広げる向きは今までどおり押して大きく見る）
         .simultaneousGesture(
             MagnifyGesture()
@@ -655,6 +658,27 @@ struct PhotoDetailView: View {
             .opacity(PinchToMap.progress(scale: heroPinch))
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+        }
+    }
+
+    /// 地図が引いてきたら、撮影地の名前と「広げると写真へ」（章の模型の下の札・戻り方が見て分かる）
+    @ViewBuilder
+    private func pinchPlace(_ item: Photo) -> some View {
+        if let label = PinchToMap.placeLabel(location: item.location, scale: heroPinch, hasPlace: item.coords != nil) {
+            VStack(alignment: .leading, spacing: 2) {
+                if !label.place.isEmpty {
+                    Text(label.place)
+                        .font(JPFont.bodyEmphasis)
+                        .foregroundStyle(WebTheme.foreground)
+                }
+                Text(label.back)
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.muted2)
+            }
+            .jpPhotoTextShadow()
+            .padding(JPSpace.m)
+            .allowsHitTesting(false)
+            .accessibilityIdentifier("detail.pinchPlace")
         }
     }
 

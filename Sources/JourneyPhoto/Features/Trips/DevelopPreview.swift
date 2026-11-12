@@ -72,26 +72,44 @@ struct LibraryShotImage: View {
     /// 読む縮小の一辺（pt）
     let side: CGFloat
     var onFailed: () -> Void = {}
+    /// 読めた（②の閲覧は読めるまで進みを止める・2026-11-12 札 #543）
+    var onLoaded: () -> Void = {}
+    /// 読み込み中に地の上に出す字（②の閲覧の「写真を読み込んでいます」。iCloud の本体を落としている間）。nil なら地だけ
+    var loadingText: String?
 
     @State private var image: UIImage?
+    @State private var failed = false
 
     var body: some View {
         WebTheme.surface4
             .overlay {
                 if let image {
                     Image(uiImage: image).resizable().aspectRatio(contentMode: .fill)
+                } else if let loadingText, !failed {
+                    Text(loadingText)
+                        .font(JPFont.body)
+                        .foregroundStyle(WebTheme.muted2)
+                        .accessibilityIdentifier("libraryShot.loading")
                 }
             }
             .clipped()
             .task(id: id) {
                 image = nil
+                failed = false
                 if let sample = DevelopPreview.image(for: id) {
                     image = sample
+                    onLoaded()
                     return
                 }
                 let loaded = await LibraryThumbnails.shared.image(for: id, pixels: side * 3)
                 if Task.isCancelled { return }
-                if let loaded { image = loaded } else { onFailed() }
+                if let loaded {
+                    image = loaded
+                    onLoaded()
+                } else {
+                    failed = true
+                    onFailed()
+                }
             }
     }
 }

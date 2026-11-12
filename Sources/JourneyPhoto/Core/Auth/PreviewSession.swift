@@ -625,4 +625,22 @@ enum PreviewSession {
         return false
         #endif
     }
+
+    /// ①②の状態の絵を撮る（2026-11-12 札 #543）。`-JPPreviewDevelopState offline`（圏外）か `limited`（一部の写真だけ許可）。
+    /// `develop` のときだけ効く。Release では必ず nil
+    static let developStateKey = "JPPreviewDevelopState"
+
+    static var developState: String? {
+        #if DEBUG
+        guard develop else { return nil }
+        return UserDefaults.standard.string(forKey: developStateKey)
+        #else
+        return nil
+        #endif
+    }
+
+    /// 圏外として撮る（`developState == "offline"`）
+    static var developOffline: Bool { developState == "offline" }
+    /// 一部の写真だけ許可として撮る（`developState == "limited"`）
+    static var developLimited: Bool { developState == "limited" }
 }

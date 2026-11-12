@@ -25,7 +25,10 @@ struct DevelopView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var toasts: ToastCenter
+    @EnvironmentObject private var connectivity: Connectivity
     @StateObject private var undo = CountdownUndo()
+    /// 一部の写真だけ許可か（追加の口を出す）・選び足している最中か
+    @ObservedObject private var deviceTrips = DeviceTripShelfStore.shared
 
     @State private var decisions: [String: DevelopTrips.Decision] = [:]
     @State private var cover: String?
@@ -39,6 +42,8 @@ struct DevelopView: View {
     @State private var unreadable: Set<String> = []
     /// 決めた順（↶ で1枚ずつ戻す）
     @State private var history: [String] = []
+    /// 読めないコマを飛ばした直後の札（写真の上のガラス・`DevelopTrips.unreadableNoticeSeconds` で消える）
+    @State private var unreadableNotice = false
 
     private let store = DevelopProgressStore()
     private let frames: [String]
@@ -53,6 +58,10 @@ struct DevelopView: View {
     private var index: Int { DevelopTrips.nextIndex(frames, decisions: decisions) }
     private var kept: [String] { DevelopTrips.kept(frames, decisions: decisions) }
     private var title: String { DeviceTrips.title(of: trip, name: name) }
+    /// 圏外（払うのは端末の中だけで最後までできる。投稿だけ通信できる所で）
+    private var offline: Bool { connectivity.isOffline || PreviewSession.developOffline }
+    /// 一部の写真だけ許可（見つかった分で払う。追加の許可は今の「写真を選び直す」と同じ口）
+    private var limited: Bool { deviceTrips.status == .limited || PreviewSession.developLimited }
 
     var body: some View {
         ZStack {
@@ -98,6 +107,7 @@ struct DevelopView: View {
                     .id(frames[index])
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay { if unreadableNotice { unreadableCard } }
             .overlay(alignment: .top) { topBar }
             .ignoresSafeArea(edges: .top)
             strip
@@ -113,6 +123,9 @@ struct DevelopView: View {
                     .foregroundStyle(WebTheme.text3)
                     .padding(.top, JPSpace.xs)
                     .accessibilityIdentifier("develop.unreadable")
+            }
+            if limited {
+                addMoreButton
             }
             controls
                 .padding(.top, JPSpace.m)
@@ -247,6 +260,41 @@ struct DevelopView: View {
             }
     }
 
+    /// 読めないコマを飛ばした札（章「読めない写真があった」）。写真の上なのでガラスに白
+    private var unreadableCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(DevelopTrips.unreadableTitle)
+                .font(JPFont.bodyEmphasis)
+                .foregroundStyle(WebTheme.foreground)
+            Text(DevelopTrips.unreadableDetail)
+                .font(JPFont.footnote)
+                .foregroundStyle(WebTheme.muted2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(JPSpace.m)
+        .jpGlass(in: RoundedRectangle(cornerRadius: JPRadius.l))
+        .padding(.horizontal, JPSpace.l)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("develop.unreadableCard")
+        .transition(.opacity)
+    }
+
+    /// 一部の写真だけ許可した人の追加の口（黒地の上の文字ボタンなので真鍮・44pt）
+    private var addMoreButton: some View {
+        Button {
+            Task { await deviceTrips.addMorePhotos() }
+        } label: {
+            Text(DevelopTrips.addMoreLabel)
+                .font(JPFont.body)
+                .foregroundStyle(WebTheme.accent)
+                .frame(minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(deviceTrips.isPickingMore)
+        .accessibilityIdentifier("develop.addMore")
+    }
+
     // MARK: - フィルムの帯
 
     private var strip: some View {
@@ -354,16 +402,29 @@ struct DevelopView: View {
                 }
                 .padding(JPSpace.xxs)
             }
-            Text(L("みんなに公開 · 撮影地と日付は写真の情報から入れます", "Public · Place and date come from the photos"))
-                .font(JPFont.caption)
-                .foregroundStyle(WebTheme.text3)
-                .accessibilityIdentifier("develop.audience")
+            if let notice = DevelopTrips.coverNotice(offline: offline) {
+                // 圏外（章「圏外」）: 地名が引けないと期間の題。投稿は通信できる所で
+                Text(notice)
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.text2)
+                    .frame(maxWidth: .infinity)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("develop.offline")
+            } else {
+                Text(L("みんなに公開 · 撮影地と日付は写真の情報から入れます", "Public · Place and date come from the photos"))
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+                    .accessibilityIdentifier("develop.audience")
+            }
             VStack(spacing: JPSpace.xxs) {
                 Button { post(order) } label: {
                     Text(L("投稿する", "Post")).jpPillButton(.main(onPhoto: true))
                 }
                 .buttonStyle(.plain)
-                .disabled(undo.message != nil || DevelopPostCenter.shared.isPosting)
+                .disabled(!DevelopTrips.canPost(offline: offline, undoShown: undo.message != nil,
+                                                posting: DevelopPostCenter.shared.isPosting))
+                // 押せないときは薄く（章の圏外の絵: 50%）
+                .opacity(offline ? 0.5 : 1)
                 .accessibilityIdentifier("develop.post")
                 Button {
                     undo.undo()
@@ -512,6 +573,11 @@ struct DevelopView: View {
         unreadable.insert(id)
         decisions[id] = .skip
         persist()
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { unreadableNotice = true }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(DevelopTrips.unreadableNoticeSeconds * 1_000_000_000))
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { unreadableNotice = false }
+        }
     }
 
     private func restore() {

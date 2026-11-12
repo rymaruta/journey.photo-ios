@@ -310,7 +310,9 @@ struct HomeTopCardView: View {
                 card(eyebrow: "DEVELOP", eyebrowLabel: L("現像前の旅", "Trip to develop"),
                      title: L("おかえりなさい · 現像前", "Welcome back · Ready to develop"),
                      line: developLine(trip, name: name),
-                     detail: nil,
+                     // 一部の写真だけ許可: 「選んで許可した写真の中から見つけました」（章「状態」）
+                     detail: DevelopTrips.cardDetail(limited: deviceTrips.status == .limited
+                                                     || PreviewSession.developLimited),
                      backdrop: nil, film: Array(DevelopTrips.frames(of: trip).prefix(3)), inCarousel: inCarousel)
             }
             .buttonStyle(.plain)

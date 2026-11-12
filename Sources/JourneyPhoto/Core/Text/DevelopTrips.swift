@@ -134,6 +134,34 @@ enum DevelopTrips {
         return head == tail ? "TRIP · \(head)" : "TRIP · \(head) – \(tail)"
     }
 
+    // MARK: - 状態の字（章「状態」・2026-11-12 札 #543）
+
+    /// 札の3行目。**一部の写真だけ許可**のときだけ「選んで許可した写真の中から見つけました」（それ以外は出さない）
+    static func cardDetail(limited: Bool) -> String? {
+        limited ? L("選んで許可した写真の中から見つけました", "Found among the photos you allowed") : nil
+    }
+
+    /// 一部だけ許可した人の追加の口（今の「写真を選び直す」と同じ `DeviceTripShelfStore.addMorePhotos`）
+    static let addMoreLabel = L("ほかの写真も選べるようにする", "Allow more photos")
+
+    /// 表紙の画面の圏外の一言。**圏外のときだけ**。払うのは端末の中だけで最後までできるが、投稿は通信できる所で
+    static func coverNotice(offline: Bool) -> String? {
+        offline ? L("通信できないので、地名はあとで入ります。投稿は通信できる所で",
+                    "You're offline. Place names will be added later. Post when you're connected.") : nil
+    }
+
+    /// 「投稿する」を押せるか（圏外では押せない・送る途中・取り消しの間も押せない）
+    static func canPost(offline: Bool, undoShown: Bool, posting: Bool) -> Bool {
+        !offline && !undoShown && !posting
+    }
+
+    /// 読めないコマを飛ばしたときの札（写真の上のガラス）。題と説明
+    static let unreadableTitle = L("この写真は読み込めませんでした", "This photo couldn't be loaded")
+    static let unreadableDetail = L("iCloud から落とせなかった写真は飛ばします",
+                                    "Photos that couldn't be downloaded from iCloud are skipped")
+    /// 読めないコマの札を出しておく秒数（そのあとは下の一行だけ残す）
+    static let unreadableNoticeSeconds: Double = 2.5
+
     /// 取り消しの札の字「8枚の旅を投稿します」
     static func postingNotice(count: Int) -> String {
         L("\(count)枚の旅を投稿します", count == 1 ? "Posting 1 photo" : "Posting \(count) photos")

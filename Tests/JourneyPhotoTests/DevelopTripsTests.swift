@@ -210,3 +210,57 @@ final class CountdownUndoTests: XCTestCase {
         XCTAssertEqual(log, ["a"])
     }
 }
+
+/// ①②の状態（章「状態」・2026-11-12 札 #543）: 一部の写真だけ許可・圏外・読めない写真・iCloud の読み込み
+final class DevelopStateTests: XCTestCase {
+
+    /// 一部の写真だけ許可のときだけ、札に「選んで許可した写真の中から見つけました」
+    func testLimitedCardDetail() {
+        XCTAssertEqual(DevelopTrips.cardDetail(limited: true), "選んで許可した写真の中から見つけました")
+        XCTAssertNil(DevelopTrips.cardDetail(limited: false), "全部許可した人にも許可の一言を出した")
+        XCTAssertEqual(DevelopTrips.addMoreLabel, "ほかの写真も選べるようにする")
+    }
+
+    /// 圏外: 表紙に一言を出し、「投稿する」は押せない（払うのは最後までできる）
+    func testOfflineCover() {
+        XCTAssertEqual(DevelopTrips.coverNotice(offline: true), "通信できないので、地名はあとで入ります。投稿は通信できる所で")
+        XCTAssertNil(DevelopTrips.coverNotice(offline: false))
+        XCTAssertFalse(DevelopTrips.canPost(offline: true, undoShown: false, posting: false), "圏外で投稿を押せた")
+        XCTAssertTrue(DevelopTrips.canPost(offline: false, undoShown: false, posting: false))
+        XCTAssertFalse(DevelopTrips.canPost(offline: false, undoShown: true, posting: false), "取り消しの間にもう一度押せた")
+        XCTAssertFalse(DevelopTrips.canPost(offline: false, undoShown: false, posting: true), "送っている途中にもう一度押せた")
+    }
+
+    /// 読めない写真の札は章の字。出しておくのは短い間だけ
+    func testUnreadableNotice() {
+        XCTAssertEqual(DevelopTrips.unreadableTitle, "この写真は読み込めませんでした")
+        XCTAssertEqual(DevelopTrips.unreadableDetail, "iCloud から落とせなかった写真は飛ばします")
+        XCTAssertGreaterThan(DevelopTrips.unreadableNoticeSeconds, 1)
+        XCTAssertLessThanOrEqual(DevelopTrips.unreadableNoticeSeconds, 3)
+    }
+
+    /// ②圏外: 一言を出す（見るのは止めない）
+    func testYearAgoOffline() {
+        XCTAssertEqual(YearAgoTrips.offlineNotice(offline: true), "通信できないので、送るのはあとで")
+        XCTAssertNil(YearAgoTrips.offlineNotice(offline: false))
+    }
+
+    /// ② iCloud の写真: 読めるまで進まない。押さえている間・本体を読んでいる間も進まない
+    func testYearAgoWaitsForLoad() {
+        XCTAssertEqual(YearAgoTrips.loadingText, "写真を読み込んでいます")
+        XCTAssertFalse(YearAgoTrips.canAdvance(held: false, sharing: false, loaded: false), "読み込み中に次へ進んだ")
+        XCTAssertTrue(YearAgoTrips.canAdvance(held: false, sharing: false, loaded: true))
+        XCTAssertFalse(YearAgoTrips.canAdvance(held: true, sharing: false, loaded: true))
+        XCTAssertFalse(YearAgoTrips.canAdvance(held: false, sharing: true, loaded: true))
+    }
+
+    /// つまむと地図: 地図が半分まで引いたら撮影地の名前と「広げると写真へ」。撮影地が無ければ出さない
+    func testPinchPlaceLabel() {
+        XCTAssertNil(PinchToMap.placeLabel(location: "沖縄県 竹富町", scale: 0.95, hasPlace: true), "浅いうちに札を出した")
+        let label = PinchToMap.placeLabel(location: " 沖縄県 竹富町 ", scale: 0.7, hasPlace: true)
+        XCTAssertEqual(label?.place, "沖縄県 竹富町")
+        XCTAssertEqual(label?.back, "広げると写真へ")
+        XCTAssertEqual(PinchToMap.placeLabel(location: nil, scale: 0.6, hasPlace: true)?.place, "")
+        XCTAssertNil(PinchToMap.placeLabel(location: "沖縄県 竹富町", scale: 0.6, hasPlace: false), "撮影地の無い写真で地図の札を出した")
+    }
+}
