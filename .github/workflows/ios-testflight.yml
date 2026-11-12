@@ -61,7 +61,7 @@ on:
         type: string
         default: "auto"
       # 2026-10-31 判断（#429）: 全部の回（submit=false・screens 空）は、テストを別々の Mac に分けて
-      # 同時に流す（下の「テストの品を組む」から「まとめ」まで。2026-11-12 から4台）。枝で変えた画面の UI テストは
+      # 同時に流す（下の「テストの品を組む」から「まとめ」まで・3台）。枝で変えた画面の UI テストは
       # 組 2 の台でその組の前に先に流す（2026-11-12 から、落ちても分けた組は止めない）。何を先に流すかは、空なら
       # 枝の差分から `Tools/pick-ui-tests.py --plan` が選ぶ。書けば `screens` と同じ書き方でそれを先に流す
       first:
@@ -815,10 +815,10 @@ jobs:
   # run 778（41187923424）の実測: 全部の回 128 分 = 控え 2 分・組む 6 分・単体 8 分・UI 109 分（1台で1本ずつ）。
   #
   #   テストの品を組む（1台・組むのは1回だけ）
-  #     └─ 分けた組 1〜4（4台・組み上がりの直後から同時）
+  #     └─ 分けた組 1〜3（3台・組み上がりの直後から同時）
   #          組 1 の台: 単体テスト → その組の UI テスト
   #          組 2 の台: UI の先に流す分（枝で変えた画面のテスト＋起動の見張り） → その組の UI テスト
-  #          組 3・4 の台: その組の UI テスト
+  #          組 3 の台: その組の UI テスト
   #          └─ まとめ（Linux・「全部のテストが通った」の印）
   #
   # 🔴 **2026-11-12 判断: 単体と先に流す分を待たずに、分けた組を組み上がりの直後から流す。**
@@ -826,7 +826,8 @@ jobs:
   #   run 976（待ち無し）96 分 = 組む 12・先に流す分 19（ここを分けた組が待つ）・分けた組 58〜64
   #   run 987（Mac の順番待ちあり）176 分・run 1164 も先に流す分の 23 分を待ってから分けた組が始まった
   #   各台の準備（品をほどく 1 分・シミュレーターの温め 4〜7 分）は台ごとに毎回かかる
-  # 待つ段をやめ、単体と先に流す分を組の台に載せて（`Tools/pick-ui-tests.py` の UNIT_SECONDS）4 台に釣り合わせる。
+  # 待つ段をやめ、単体と先に流す分を組の台に載せて（`Tools/pick-ui-tests.py` の UNIT_SECONDS）3 台に釣り合わせる。
+  # 台は増やさない（Mac は今までどおり同時 4 台まで: Archive＋組 3 台。絞った回が Mac の順番待ちで延びないように）
   # 単体・先に流す分が落ちても組は最後まで流れる（全部の回は絞った回が緑になってから流す決まり・CLAUDE.md）
   # 「まとめ」は結果を読まないので Linux で流す（Mac の順番待ちで 12〜19 分止まっていた: run 1091・987）
   #
@@ -837,7 +838,7 @@ jobs:
   # - **先に流した分は分けた組から抜く**。テストの本数は1本も変わらない（足さない・減らさない）
   # - 単体テストは今までどおり1回（組 1 の台）
   # - Archive（Release の組み立て）は上の `build` の job が、ここと同時に流す
-  # - 同時に動く Mac は多いときで5台（`build` の Archive＋分けた組 4 台・Archive が終わるまでの約 20 分）。
+  # - 同時に動く Mac は多いときで4台（`build` の Archive＋分けた組 3 台）。前と同じ。
   #   公開リポジトリの Mac の同時実行は5台まで。費用は公開リポジトリなので 0（Mac の合計の分数も前より減る）
   # ===========================================================================================
   # **分けて流すかを決める**（Linux で数秒）。job の `if:` には式しか書けず、`screens` の「all, x」・空白だけを
@@ -877,7 +878,7 @@ jobs:
 
       # **何を先に流し、どう分けるかを最初に決める**（`Tools/pick-ui-tests.py --plan`）。
       # 枝の差分は GitHub の比べる口（main...この sha）から読む。読めなければ起動の見張りだけを先に流す。
-      # 組の数（4）は下の `ui` の matrix と揃える（`Tools/check-config.py` が見る）
+      # 組の数（3）は下の `ui` の matrix と揃える（`Tools/check-config.py` が見る）
       - name: 優先UIテストと分割対象を決定
         env:
           GH_TOKEN: ${{ github.token }}
@@ -891,8 +892,8 @@ jobs:
           fi
           echo "枝の差分: $(grep -c '^diff --git' /tmp/branch.diff || true) ファイル"
           {
-            echo "### テストの割り振り（4台に分けて同時に流す）"
-            python3 Tools/pick-ui-tests.py --plan 4 build/ui-plan "${FIRST:-}" /tmp/branch.diff
+            echo "### テストの割り振り（3台に分けて同時に流す）"
+            python3 Tools/pick-ui-tests.py --plan 3 build/ui-plan "${FIRST:-}" /tmp/branch.diff
           } >> "$GITHUB_STEP_SUMMARY"
           cat build/ui-plan/plan.md
           for f in build/ui-plan/*.txt; do echo "== $f"; cat "$f"; done
@@ -970,17 +971,17 @@ jobs:
 
   ui:
     # 組 1 は単体テスト、組 2 は UI の先に流す分も、その組の前に同じ台で流す（`part-<組>.before`）
-    name: 分割テスト（${{ matrix.part }}/4）
+    name: 分割テスト（${{ matrix.part }}/3）
     # 組み上がりの直後から同時に流す（2026-11-12 判断・上の注記）
     needs: test-build
     runs-on: macos-15
-    # 1台あたりの見込みは約 50 分（準備を含む）。1本ごとの上限（Tools/xcode-test.sh）に当たる詰まりが続いても抜けられる長さ
+    # 1台あたりの見込みは約 65 分（準備を含む）。1本ごとの上限（Tools/xcode-test.sh）に当たる詰まりが続いても抜けられる長さ
     timeout-minutes: 100
     strategy:
       # 1つの組が落ちても、ほかの組は最後まで流す（前の1台の回も、1本落ちても残りを全部流していた）
       fail-fast: false
       matrix:
-        part: [1, 2, 3, 4]
+        part: [1, 2, 3]
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/mac-test-part
@@ -1010,7 +1011,7 @@ jobs:
       # 通った回だけ success。分けて流す回はいつも絞らない（`screens` 空・storeShots）
       - name: 全部のテストが通った（PR の検証が数える印）
         if: ${{ needs.test-build.result == 'success' && needs.ui.result == 'success' }}
-        run: echo "単体テストと UI テスト（先に流す分と分けた組 4つ）を絞らずに全部流し、通りました"
+        run: echo "単体テストと UI テスト（先に流す分と分けた組 3つ）を絞らずに全部流し、通りました"
 
       # `build` の job の Archive（ipa）と集めたものも、前と同じ `build-logs` に入れる
       - name: Archiveの成果物を統合
