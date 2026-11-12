@@ -7427,13 +7427,18 @@ final class ScreenshotTests: XCTestCase {
             return
         }
         share.tap()
-        let story = app.buttons["sendSheet.story"].firstMatch
+        // 🔴 顔の段があるシートでは、行動の丸の道しるべが入れ物の「sendSheet」になる（Mac run 1127 の画面の木・
+        // 120d と同じ）。自分の写真はフォロー中の顔が出るので、**名前**で探す（run 1156 で道しるべでは見つからなかった）
+        let story = app.buttons.matching(NSPredicate(format: "label == %@", "ストーリーに載せる")).firstMatch
         let shown = story.waitForExistence(timeout: 10)
         Thread.sleep(forTimeInterval: 1)
+        XCTContext.runActivity(named: "63a の状態: story=\(shown) storyId=\(app.buttons["sendSheet.story"].firstMatch.exists)"
+            + " buttons=\(app.buttons.allElementsBoundByIndex.suffix(10).map { $0.identifier + ":" + $0.label })") { _ in }
         shoot(app, shown ? "63a-送るシート" : "63a-送るシート（ストーリーに載せるが無い）")
-        guard shown else { return }
+        guard shown else { return XCTFail("自分の写真の送るシートに「ストーリーに載せる」が無い") }
         XCTAssertGreaterThanOrEqual(story.frame.height, 44, "「ストーリーに載せる」の的が 44pt 未満")
-        XCTAssertTrue(app.buttons["sendSheet.otherApps"].firstMatch.exists, "「ほかのアプリ」が無い（外への共有の口が消えた）")
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label == %@", "ほかのアプリ")).firstMatch.exists,
+                      "「ほかのアプリ」が無い（外への共有の口が消えた）")
         story.tap()
         let canvas = app.descendants(matching: .any)["story.canvas"].firstMatch
         let opened = canvas.waitForExistence(timeout: 30)
@@ -7448,25 +7453,37 @@ final class ScreenshotTests: XCTestCase {
     func testCapturesSendSheetOthersPhotoHasNoStory() {
         guard let app = launchSNSPreview(sharedStory: false), openFirstLatestPhoto(app) else { return }
         let menu = app.buttons["photo.menu"].firstMatch
-        guard menu.waitForExistence(timeout: 15), menu.isHittable else { return }
+        guard menu.waitForExistence(timeout: 15), menu.isHittable else {
+            shoot(app, "63a2-送るシート（人の写真・⋯ が無い）")
+            return
+        }
         menu.tap()
         let mine = app.buttons["photo.edit"].firstMatch.waitForExistence(timeout: 3)
         // メニューを閉じる（上の空いた所を叩く）
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
         Thread.sleep(forTimeInterval: 1)
-        guard !mine else { return }
+        guard !mine else {
+            shoot(app, "63a2-送るシート（新着の1枚目が自分の写真）")
+            return
+        }
         let share = app.buttons["photo.share"].firstMatch
         scrollUntilHittable(app, share)
-        guard share.exists, share.isHittable else { return }
+        guard share.exists, share.isHittable else {
+            shoot(app, "63a2-送るシート（人の写真・共有の印が出ない）")
+            return
+        }
         share.tap()
-        let copy = app.buttons["sendSheet.copyLink"].firstMatch
-        let shown = copy.waitForExistence(timeout: 10)
+        // 顔の段があると丸の道しるべが入れ物の「sendSheet」になる（run 1127）ので、名前で探す
+        func labeled(_ label: String) -> XCUIElement {
+            app.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
+        }
+        let shown = labeled("リンクをコピー").waitForExistence(timeout: 10)
         Thread.sleep(forTimeInterval: 1)
         shoot(app, shown ? "63a2-送るシート（人の写真）" : "63a2-送るシート（人の写真・開かない）")
         guard shown else { return XCTFail("人の写真の「共有」で送るシートが開かない") }
-        XCTAssertFalse(app.buttons["sendSheet.story"].firstMatch.exists,
+        XCTAssertFalse(labeled("ストーリーに載せる").exists || app.buttons["sendSheet.story"].firstMatch.exists,
                        "人の写真の送るシートに「ストーリーに載せる」が出ている（#577）")
-        XCTAssertTrue(app.buttons["sendSheet.otherApps"].firstMatch.exists, "「ほかのアプリ」（リンクの共有）が消えた")
+        XCTAssertTrue(labeled("ほかのアプリ").exists, "「ほかのアプリ」（リンクの共有）が消えた")
     }
 
     /// **コメントに返信**（札 #541 の ②・案の模型 2-B）。見本の通信でコメントを1件書き、「返信」→
