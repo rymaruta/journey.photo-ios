@@ -180,6 +180,17 @@ struct PhotoViewerView: View {
             ToastOverlay()
                 .padding(.top, 56)
         }
+        // UI テストのときだけ: 上下の情報を出しているかを見えない要素に出す（`PreviewSession.viewerProbe`・2026-11-12 run 1193）
+        .overlay(alignment: .topLeading) {
+            if PreviewSession.viewerProbe {
+                Text(" ")
+                    .font(.system(size: 1))
+                    .frame(width: 1, height: 1)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("viewer.chrome.probe")
+                    .accessibilityValue(showsChrome ? "shown" : "hidden")
+            }
+        }
         .statusBarHidden()
         // VoiceOver の「戻る」（2本指で Z）で閉じる。✕ に届かなくても出られる（2026-11-12 判断）
         .accessibilityAction(.escape) { dismiss() }
