@@ -34,6 +34,8 @@ final class DMTripModel: ObservableObject {
     func load(environment: AppEnvironment) async {
         // 一度読めたら読み直さない。読めなかった回は、呼ばれるたびに読み直す（電波が戻ったとき・長押ししたとき）
         guard !(loaded && photosLoaded), !loading else { return }
+        // `-JPDMNoTripBand`（UI テストの事実取りだけ・`DMHangProbe`）では読まない
+        guard !DMHangProbe.noTripBand else { return }
         loading = true
         defer { loading = false }
         var fetchedIndex: [OfficialSpot]?

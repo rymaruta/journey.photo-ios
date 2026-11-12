@@ -27,7 +27,7 @@ struct DMSpotCard: View {
             }
         }
     }
-    @State private var phase: Phase = .loading
+    @State private var phase: Phase = DMHangProbe.spotCardStatic ? .missing : .loading
 
     static let width: CGFloat = 240
     static let photoHeight: CGFloat = 130
@@ -56,9 +56,18 @@ struct DMSpotCard: View {
                 .accessibilityIdentifier("dm.spotCard.link")
             }
         }
+        // `-JPDMSpotCardFixed`（UI テストの事実取りだけ・`DMHangProbe`）: どの状態でも同じ高さ
+        .frame(height: DMHangProbe.spotCardFixed ? DMHangProbe.spotCardFixedHeight : nil, alignment: .top)
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
         .padding(.top, JPSpace.xxs)
-        .task(id: slug) { await load() }
+        .task(id: slug) {
+            // `-JPDMSpotCardStatic`（UI テストの事実取りだけ）: 読み込まず、いつもリンクの文（状態が替わらない）
+            if DMHangProbe.spotCardStatic {
+                phase = .missing
+                return
+            }
+            await load()
+        }
     }
 
     private func card(_ spot: OfficialSpot, index: [OfficialSpot]) -> some View {

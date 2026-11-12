@@ -175,7 +175,8 @@ struct DMConversationView: View {
                     .font(.caption2)
                     .foregroundStyle(Color.clear)
                     .accessibilityIdentifier("dm.probe")
-                    .accessibilityValue("sends=\(probe.sends) refusals=\(probe.refusals) errorCleared=\(probe.errorCleared)")
+                    .accessibilityValue("sends=\(probe.sends) refusals=\(probe.refusals) errorCleared=\(probe.errorCleared)"
+                                        + " hangProbe=\(DMHangProbe.active)")
             }
         }
         .webScreen()
@@ -394,7 +395,38 @@ struct DMConversationView: View {
     private var thread: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 6) {
+                // `-JPDMEagerStack`（UI テストの事実取りだけ・`DMHangProbe`）では遅延しない並びで比べる
+                if DMHangProbe.eagerStack {
+                    VStack(alignment: .leading, spacing: 6) { threadRows }
+                        .padding(.horizontal, JPSpace.gutter)
+                        .padding(.top, JPSpace.xxs)
+                        .padding(.bottom, JPSpace.s)
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 6) { threadRows }
+                        .padding(.horizontal, JPSpace.gutter)
+                        .padding(.top, JPSpace.xxs)
+                        .padding(.bottom, JPSpace.s)
+                }
+            }
+            .scrollDismissesKeyboard(.interactively)
+            // 吹き出しの最大幅（会話の幅の 78%）のために幅を読む
+            .onGeometryChange(for: CGFloat.self) { proxy in proxy.size.width } action: { width in
+                // `-JPDMNoWidthRead`（UI テストの事実取りだけ）では読まない（390pt の値のまま）
+                if !DMHangProbe.noWidthRead { threadWidth = width }
+            }
+            .onAppear { if !DMHangProbe.noAutoScroll { proxy.scrollTo(Self.bottomId, anchor: .bottom) } }
+            .onChange(of: log.messages.count + log.outgoing.count) { _, _ in
+                guard !DMHangProbe.noAutoScroll else { return }
+                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
+            }
+        }
+        .frame(maxHeight: .infinity)
+        .accessibilityIdentifier("dm.conversation")
+    }
+
+    /// 会話の行（日付の区切り・引用札・写真の札・観光スポットの札・吹き出し・送っている通）
+    @ViewBuilder
+    private var threadRows: some View {
                     if isNew && log.messages.isEmpty && log.outgoing.isEmpty { newIntro }
                     let messages = log.messages
                     ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
@@ -407,7 +439,8 @@ struct DMConversationView: View {
                         if message.isStoryReply { unsendMenu(storyCard(for: message), for: message) }
                         if message.hasPhoto { photoCard(for: message) }
                         // 撮影スポットの頁のリンクは札にする（1.1.83・資料⑤・`DMSpotShare`）。吹き出しには残りの文だけ
-                        let spotSlug = message.hasPhoto ? nil
+                        // `-JPDMNoSpotCard`（UI テストの事実取りだけ・`DMHangProbe`）: 札を出さず、リンクの通は文の吹き出しのまま
+                        let spotSlug = message.hasPhoto || DMHangProbe.noSpotCard ? nil
                             : DMSpotShare.slug(in: message.text, siteBase: AppConfig.siteBaseURL)
                         if let spotSlug {
                             // 札が作れなかったときは拾ったリンクだけを出す（文全体は下の吹き出しに残る）
@@ -422,12 +455,12 @@ struct DMConversationView: View {
                                      joinsPrevious: DMText.joinsPrevious(current: message, previous: previous),
                                      maxWidth: DMLook.bubbleMaxWidth(container: threadWidth))
                                 .contextMenu { bubbleMenu(message, text: text) }
-                                .id(message.id)
+                                .modifier(DMProbeId(id: message.id))
                         } else if let time {
                             // 写真だけの通は吹き出しを出さず、時刻だけ写真の下に
-                            DMTimeLabel(text: time, mine: message.mine).id(message.id)
+                            DMTimeLabel(text: time, mine: message.mine).modifier(DMProbeId(id: message.id))
                         } else {
-                            Color.clear.frame(height: 0).id(message.id)
+                            Color.clear.frame(height: 0).modifier(DMProbeId(id: message.id))
                         }
                     }
                     ForEach(log.outgoing) { item in
@@ -437,23 +470,6 @@ struct DMConversationView: View {
                             .id(item.clientId)
                     }
                     Color.clear.frame(height: 1).id(Self.bottomId)
-                }
-                .padding(.horizontal, JPSpace.gutter)
-                .padding(.top, JPSpace.xxs)
-                .padding(.bottom, JPSpace.s)
-            }
-            .scrollDismissesKeyboard(.interactively)
-            // 吹き出しの最大幅（会話の幅の 78%）のために幅を読む
-            .onGeometryChange(for: CGFloat.self) { proxy in proxy.size.width } action: { width in
-                threadWidth = width
-            }
-            .onAppear { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
-            .onChange(of: log.messages.count + log.outgoing.count) { _, _ in
-                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
-            }
-        }
-        .frame(maxHeight: .infinity)
-        .accessibilityIdentifier("dm.conversation")
     }
 
     private static let bottomId = "dm.bottom"
@@ -462,7 +478,9 @@ struct DMConversationView: View {
 
     /// 下書きに出す場所（写真が先・吹き出しから入れた場所が後）
     private var tripFound: [DMTripPlaces.Found] {
-        trip.places(log.messages, blocked: hidden.blockedUserIds)
+        // `-JPDMNoTripBand`（UI テストの事実取りだけ・`DMHangProbe`）では帯を出さない（索引も読まない・`DMTripModel.load`）
+        if DMHangProbe.noTripBand { return [] }
+        return trip.places(log.messages, blocked: hidden.blockedUserIds)
     }
 
     /// 吹き出しの長押し（段②）: 「旅行プランに入れる」と「コピー」。自分の通には「送信を取り消す」（2026-11-12）
@@ -1220,6 +1238,8 @@ struct DMBubble: View {
 
     /// 本文にリンクを付けた形（見つけた URL だけ・http と https だけ）。字の並びはそのまま、リンクの所だけ印を付けてつなぐ
     static func linked(_ text: String) -> AttributedString {
+        // `-JPDMPlainText`（UI テストの事実取りだけ・`DMHangProbe`）ではリンクの印を付けない
+        if DMHangProbe.plainText { return AttributedString(text) }
         var out = AttributedString()
         var cursor = text.startIndex
         for link in DMLinks.find(in: text) {
@@ -1310,6 +1330,19 @@ private struct DMUnsendMenu<Menu: View>: ViewModifier {
             content.contextMenu { menu() }
         } else {
             content
+        }
+    }
+}
+
+/// 行の中の `.id(message.id)`。`-JPDMNoInnerIds`（UI テストの事実取りだけ・`DMHangProbe`）では付けない
+private struct DMProbeId: ViewModifier {
+    let id: String
+
+    func body(content: Content) -> some View {
+        if DMHangProbe.noInnerIds {
+            content
+        } else {
+            content.id(id)
         }
     }
 }
