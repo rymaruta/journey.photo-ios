@@ -153,13 +153,22 @@ def pick(screens, tests):
 
 # ---- 全部の回を「先に流す段」と「分けた段」に割る（2026-10-31 判断・#429） -----------------
 # run 778（41187923424）の実測: 全部の回 128 分のうち UI テストが 109 分（1台で1本ずつ順に流していた）。
-# Mac を3台にして同時に流し、その前に「枝で変えた画面のテスト」だけを別の Mac で先に流す。
-# 先に流した分が落ちたら、分けた段は走らない（全部の段まで進めずに止まる）。
+# Mac を数台にして同時に流し、「枝で変えた画面のテスト」は組 2 の台でその組の前に先に流す
+# （2026-11-12 まで別の Mac で先に流し、落ちたら分けた段へ進めなかった。待ちをやめた理由は下の UNIT_SECONDS）。
 # 先に流した分は分けた段から抜くので、テストの本数は変わらない（1本も足さない・減らさない）
 TIMES = ROOT / "Tools" / "ui-test-times.json"
 # 先に流す段の上限（秒・時間の表での見積もり）。先に流す段は単体テスト（run 778 で 8 分）と別の Mac で
 # 同時に走るので、単体より短ければ通る回は延びない。起動の見張り（SmokeTests・90 秒）を含めて 7 分
 FIRST_BUDGET = 420
+# 🔴 **単体テストと先に流す分は、分けた組と同じ台で、その組の前に流す**（2026-11-12 判断・札 #429 の続き）。
+# 前は「単体」「先に流す分」をそれぞれ別の Mac で流し、分けた組 3 台はその2つが終わるのを待っていた。
+# run 976・987・1164 の実測で、その待ちが毎回 19〜23 分（先に流す分の job: 温め 4〜7 分＋UI 11〜13 分）、
+# 分けた組は 1 台 53〜63 分。全部の回は 96 分（待ち無しの run 976）〜 176 分（Mac の順番待ちが重なった run 987）。
+# 待ちをやめ、単体と先に流す分を組 1・組 2 の台に載せて、3 台を組み上がりの直後から同時に流す。
+# Mac は Archive（`build` の job）と合わせて同時に 4 台まで（前と同じ・絞った回を順番待ちさせない）。
+# 単体テストの1台ぶんの時間（秒）。xcodebuild の始めから終わりまで: run 1164 は 663 秒（13:39:05〜13:50:08）、
+# run 976 は job ごとで 9.2 分。テストの合計（5.7 分）ではなく、起動を含めた実際の長さで見積もる
+UNIT_SECONDS = 600
 # 識別子らしい文字列（`camper.room.contact` の形）。画面のコードとテストの両方に同じ文字列で現れる
 IDENT = re.compile(r"^[a-z][A-Za-z0-9]*(?:\.[A-Za-z0-9_-]+)+$")
 TYPE_DECL = re.compile(r"^(?:\w+\s+)*(?:enum|struct|class|extension)\s+(\w+)", re.M)
@@ -292,10 +301,11 @@ def estimate(tests, times):
     return {t: times.get(t, middle) for t in tests}
 
 
-def balance(tests, seconds, parts):
-    """長いものから順に、いまいちばん軽い組に入れる（LPT）。同じ長さは名前の順（毎回同じ割り振り）"""
+def balance(tests, seconds, parts, start=None):
+    """長いものから順に、いまいちばん軽い組に入れる（LPT）。同じ長さは名前の順（毎回同じ割り振り）。
+    `start` は組ごとに先に載っている秒数（単体テスト・先に流す分を同じ台で流す分）"""
     bins = [[] for _ in range(parts)]
-    load = [0.0] * parts
+    load = list(start) if start else [0.0] * parts
     for test in sorted(tests, key=lambda t: (-seconds[t], t)):
         i = min(range(parts), key=lambda k: (load[k], k))
         bins[i].append(test)
@@ -346,7 +356,15 @@ def plan(first_words, diff_text, parts, index=None, loose=None, times=None):
             notes.append("枝で変えた画面の UI テストは見つからなかった（先に流すのは起動の見張りだけ）")
     first_all = first | smoke
     rest = sorted(t for t in runnable if t not in first_all)
-    bins, load = balance(rest, seconds, parts)
+    first_seconds = sum(seconds[t] for t in first_all)
+    # 組 1 の台は単体テストを、組 2 の台は先に流す分を、その組の UI テストの前に流す（組が1つなら両方とも組 1）
+    before = [[] for _ in range(parts)]
+    before[0].append("unit")
+    before[min(1, parts - 1)].append("first")
+    start = [0.0] * parts
+    start[0] += UNIT_SECONDS
+    start[min(1, parts - 1)] += first_seconds
+    bins, load = balance(rest, seconds, parts, start)
     groups = [[f"-only-testing:{TARGET}/{t}" for t in sorted(group)] for group in bins[:-1]]
     # 🔴 **最後の組は「全部から、ほかで流すものを抜いた残り」**。この台本が読み落としたテスト
     # （書き方が変わって関数の区切りに当たらないもの）も、ここで必ず流れる（黙って減らない）
@@ -354,7 +372,7 @@ def plan(first_words, diff_text, parts, index=None, loose=None, times=None):
     groups.append([f"-only-testing:{TARGET}"] + [f"-skip-testing:{TARGET}/{t}" for t in sorted(others)])
     first_args = [f"-only-testing:{TARGET}/{ALWAYS}"] + [f"-only-testing:{TARGET}/{t}" for t in sorted(first)
                                                           if t not in smoke]
-    return {"first": first_args, "parts": groups, "first_seconds": sum(seconds[t] for t in first_all),
+    return {"first": first_args, "parts": groups, "first_seconds": first_seconds, "before": before,
             "loads": load, "notes": notes, "missing": [], "counts": [len(first_all)] + [len(b) for b in bins]}
 
 
@@ -381,9 +399,13 @@ def main_plan(argv):
     for i, group in enumerate(result["parts"], 1):
         # 空の組は空のファイルにする（`Tools/xcode-test.sh` は、渡された一覧が空なら何も流さない）
         (out / f"part-{i}.txt").write_text("".join(f"{a}\n" for a in group), encoding="utf-8")
+        # その台で組の前に流すもの（unit・first）。`.github/actions/mac-test-part` が読む
+        (out / f"part-{i}.before").write_text("".join(f"{b}\n" for b in result["before"][i - 1]), encoding="utf-8")
     counts = result["counts"]
-    lines = [f"- 先に流す段: {counts[0]} 本・見積もり {result['first_seconds'] / 60:.1f} 分"]
-    lines += [f"- 分けた段 {i}: {counts[i]} 本・見積もり {sec / 60:.1f} 分" for i, sec in enumerate(result["loads"], 1)]
+    label = {"unit": "単体テスト", "first": "先に流す分"}
+    lines = [f"- 先に流す分: {counts[0]} 本・見積もり {result['first_seconds'] / 60:.1f} 分"]
+    lines += [f"- 組 {i}: " + "".join(f"{label[b]}＋" for b in result["before"][i - 1])
+              + f"UI {counts[i]} 本・見積もり {sec / 60:.1f} 分" for i, sec in enumerate(result["loads"], 1)]
     lines += [f"- {note}" for note in result["notes"]]
     (out / "plan.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))

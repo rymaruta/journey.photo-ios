@@ -471,16 +471,19 @@ if testflight_yml.exists() and pr_yml.exists():
     elif mark.group(1).strip() != MARK_IF:
         fail(f"ios-testflight.yml の「{MARK}」の if が変わっています（絞った回にも付きうる）: {mark.group(1).strip()}")
     # **別々の Mac に分けて流す回の印**（2026-10-31・#429）。「まとめ」の job の同じ名前の段で、
-    # 単体・先に流す分・分けた組の**全部**が success のときだけ付く。`always()` や `|| …` を足すと、落ちた回にも付く
-    FINISH_MARK_IF = ("needs.test-build.result == 'success' && needs.pre.result == 'success'"
-                      " && needs.ui.result == 'success'")
+    # 組む・分けた組（単体・先に流す分を同じ台で流す・2026-11-12）の**全部**が success のときだけ付く。
+    # `always()` や `|| …` を足すと、落ちた回にも付く
+    FINISH_MARK_IF = "needs.test-build.result == 'success' && needs.ui.result == 'success'"
     marks = re.findall(r"- name: " + re.escape(MARK) + r"\n\s+if: \$\{\{(.+?)\}\}\s*\n", flow)
     if len(marks) != 2 or marks[1].strip() != FINISH_MARK_IF:
         fail(f"ios-testflight.yml の「まとめ」の「{MARK}」の if が変わっています（分けた組が落ちても付きうる）: {marks[1:]}")
-    # 分けた組は、単体と先に流す分の両方を待つ（`needs: [test-build, pre]`・job の if を足さない＝どれかが落ちたら skipped）
+    # 分けた組は、組み上がりの直後から流す（`needs: test-build`・job の if を足さない＝組むのが落ちたら skipped）。
+    # 単体・先に流す分は組の台で流すので、それを待つ job（`pre`）は置かない（2026-11-12 判断・待ちが毎回 19〜23 分）
     ui_job = re.search(r"^  ui:\n(.*?)(?=^  \w[\w-]*:\n|\Z)", flow, re.M | re.S)
-    if not ui_job or "needs: [test-build, pre]" not in ui_job.group(1) or re.search(r"^    if:", ui_job.group(1), re.M):
-        fail("ios-testflight.yml の `ui`（分けた組）が、単体テストと先に流す分の両方を待っていません（needs: [test-build, pre]・if なし）")
+    if re.search(r"^  pre:\n", flow, re.M):
+        fail("ios-testflight.yml に、分けた組を待たせる `pre` の job が戻っています（単体・先に流す分は組の台で流す）")
+    if not ui_job or not re.search(r"^    needs: test-build\n", ui_job.group(1), re.M) or re.search(r"^    if:", ui_job.group(1), re.M):
+        fail("ios-testflight.yml の `ui`（分けた組）が、組み上がり（needs: test-build・if なし）だけを待っていません")
     else:
         # 組の数は `--plan <数>` と matrix で揃える（ずれると、流れない組・空の組ができる）
         parts = re.search(r"part: \[([0-9, ]+)\]", ui_job.group(1))
@@ -516,7 +519,9 @@ if testflight_yml.exists() and pr_yml.exists():
     part_action = ROOT / ".github/actions/mac-test-part/action.yml"
     if "continue-on-error" in (part_action.read_text(encoding="utf-8") if part_action.exists() else "continue-on-error"):
         fail(".github/actions/mac-test-part/action.yml が無いか、continue-on-error があります（落ちても印まで進む）")
-    for job in ("test-build", "pre", "ui"):
+    elif 'part-$PART.before' not in part_action.read_text(encoding="utf-8"):
+        fail(".github/actions/mac-test-part/action.yml が組の前に流すもの（part-<組>.before の単体・先に流す分）を読みません")
+    for job in ("test-build", "ui"):
         body = re.search(r"^  " + job + r":\n(.*?)(?=^  \w[\w-]*:\n|\Z)", flow, re.M | re.S)
         if not body or "continue-on-error" in body.group(1):
             fail(f"ios-testflight.yml の job「{job}」が無いか、continue-on-error があります（落ちても印まで進む）")
@@ -682,6 +687,10 @@ if testflight_yml.exists() and pr_yml.exists():
         if (last[0] != f"-only-testing:{pick_mod.TARGET}" or not all(a.startswith("-skip-testing:") for a in last[1:])
                 or overlap or skipped != set().union(*listed) or not set().union(*listed) <= runnable):
             fail(f"pick-ui-tests.py --plan の割り振りで、同じテストが2回流れるか、流れないテストがあります（{words!r}）")
+        # 単体テストと先に流す分は、どれかの組の台でちょうど1回ずつ流す（2026-11-12・載せ忘れると黙って流れない）
+        befores = [b for part in got.get("before", []) for b in part]
+        if len(got.get("before", [])) != len(got["parts"]) or sorted(befores) != ["first", "unit"]:
+            fail(f"pick-ui-tests.py --plan が、単体テストと先に流す分を組の台にちょうど1回ずつ載せていません: {got.get('before')}")
     # **名指しした回だけ流すテストも、`first` で名指しすれば先に流す**（2026-10-31・黙って0本にしない）。
     # クラスの名前で名指しする形（`PerformanceTests`）も見る。全部の回の分けた組には、名前でも入れない
     saved = list(pick_mod.ONLY_WHEN_NAMED)
