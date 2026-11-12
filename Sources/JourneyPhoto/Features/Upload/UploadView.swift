@@ -266,15 +266,12 @@ struct UploadView: View {
             // 打った文字ごと消える
             if posted {
                 onPosted?(model.postedToSpot)
-                // SNS にも載せる回は、共有の画面を閉じてから閉じる（`threadsBundle`）
-                if model.threadsBundle == nil { dismiss() }
+                // 共有カードを出す回は、カードの画面を閉じてから閉じる（`postedCard`・1.1.83 資料①）
+                if model.postedCard == nil { dismiss() }
             }
         }
-        .sheet(item: $model.threadsBundle, onDismiss: { dismiss() }) { bundle in
-            ShareSheet(images: bundle.images, text: bundle.text)
-                .ignoresSafeArea()
-                // 共有の画面は半分の高さから（全高に広がると、後ろの投稿画面が見えず何が起きたか分からない）
-                .presentationDetents([.medium, .large])
+        .sheet(item: $model.postedCard, onDismiss: { dismiss() }) { card in
+            PostedShareCardSheet(card: card)
         }
     }
 
@@ -1196,7 +1193,7 @@ struct UploadView: View {
             published: model.published, audience: model.audience,
             songTitle: model.song?.title,
             albumTitle: model.albums.first { $0.id == model.selectedAlbumId }.map(albumTitle),
-            sharesToSocial: model.shareToThreads, category: model.category)
+            category: model.category)
     }
 
     /// 「詳しい設定」の開け閉めの行。**畳んでいても今の値を出す**（公開範囲はいつも先頭）
@@ -1295,12 +1292,8 @@ struct UploadView: View {
         // 鍵を控えている写真がある間も変えさせない（`visibilityLocked` の注記）
         audienceRow
             .disabled(model.isWorking || model.visibilityLocked)
-        // 公開・全体に公開のときだけ（外の SNS に絞った写真を流さない・`ThreadsShare`）
-        if ThreadsShare.isEligible(published: model.published, audience: model.audience) {
-            JPCardDivider()
-            threadsRow
-                .disabled(model.isWorking)
-        }
+        // 1.1.83（資料「SNS をもっと SNS に」①・2026-11-12）: 「SNS にも載せる」の行は無くした。
+        // 公開・全体に公開の投稿は、投稿のあとに毎回共有カードが出る（`PostedShareCard`）
         // **選ぶ先が空なら誰にも見えない。** 選びに行く口をここに置く
         if model.published && model.audience == .closeFriends {
             JPCardDivider()
@@ -1454,27 +1447,6 @@ struct UploadView: View {
             .frame(minHeight: WebTheme.minTapTarget)
             .accessibilityIdentifier("upload.attachLocation")
         }
-    }
-
-    /// 投稿したら SNS にも載せる（共有の画面が開き、写真と文が入る）。入切は端末に覚える
-    private var threadsRow: some View {
-        Toggle(isOn: $model.shareToThreads) {
-            VStack(alignment: .leading, spacing: 2) {
-                // owner 2026-10-02「Threads だけでなく他の SNS でも同じようにできるようにしたい」。
-                // 共有の画面なので、もとから X・Instagram・LINE なども選べる。名前と説明だけを広げた
-                Text(L("SNS にも載せる", "Also share to social apps"))
-                    .font(.callout)
-                    .foregroundStyle(.white)
-                Text(L("投稿のあと共有の画面が開きます。Threads・X・Instagram など載せたいアプリを選んでください。文はコピーされるので、入らないアプリでは貼り付けてください",
-                       "After posting, the share sheet opens. Pick Threads, X, Instagram or any app. The caption is copied, so paste it if the app leaves it out."))
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.text3)
-            }
-        }
-        // **軌道は暗い真鍮**（ストーリーの入切と同じ。既定の白だと白い軌道に白いつまみが乗る）
-        .tint(WebTheme.accentDeep)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
     }
 
     /// 公開範囲（板: 1行。全体・フォロワー・親しい友達・非公開の4択）

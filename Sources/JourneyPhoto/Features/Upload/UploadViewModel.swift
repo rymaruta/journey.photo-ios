@@ -552,10 +552,13 @@ final class UploadViewModel: ObservableObject {
     /// 一度でも投稿できたか。**閉じる合図に使う**（待ち行列が空になった
     /// だけでは閉じない——選び直しの読み込み中も空になる）
     @Published private(set) var didPostAll = false
-    /// 投稿したら SNS にも載せるか（`ThreadsShare`）。**端末に覚える**——毎回入れ直させない
-    @Published var shareToThreads = UserDefaults.standard.bool(forKey: ThreadsShare.defaultsKey) {
-        didSet { UserDefaults.standard.set(shareToThreads, forKey: ThreadsShare.defaultsKey) }
-    }
+    /// 投稿のあとに共有カード（`postedCard`）を出すために、載せてよい写真（公開・全体に公開）の絵を控えるか。
+    ///
+    /// 1.1.83（資料「SNS をもっと SNS に」①・2026-11-12）: **投稿画面の「SNS にも載せる」の行は無くした。**
+    /// 投稿のあとに毎回カードが出る（既定で動く・切り替えを入れなくてよい＝CLAUDE.md「直感的で簡単に」）ので、
+    /// 画面からは変えない。端末にも覚えない（前に覚えた切りの値で、カードが出ない人を作らない）。
+    /// 試験だけが切って、カードのための書き出しを数から外す
+    @Published var shareToThreads = true
     /// 「撮影地の位置を付ける」（2026-10-18 判断・`UploadLocationPreference`）。投稿の全部の写真に効く（Web と同じ1つ）。
     ///
     /// - **オン**（既定・今までと同じ）: 写真の位置から撮影地を引いて入れ、写真の座標（約1kmに丸めた値）を送る
@@ -632,12 +635,13 @@ final class UploadViewModel: ObservableObject {
         }
     }
 
-    /// 共有の画面に渡すもの。**全部上がった回だけ**、`didPostAll` より先に立てる
-    /// （画面は立っていれば閉じる代わりに共有の画面を出し、それを閉じてから閉じる）
-    @Published var threadsBundle: ThreadsShare.Bundle?
+    /// 投稿のあとに出す共有カード（`PostedShareCard`）。**全部上がった回だけ**、`didPostAll` より先に立てる
+    /// （画面は立っていれば閉じる代わりにカードの画面を出し、それを閉じてから閉じる）
+    @Published var postedCard: PostedShareCard?
     /// 上がった写真のうち外へ渡してよいもの（公開・全体に公開）。やり直しをまたいで貯め、
-    /// 全部上がったときに `threadsBundle` にする
-    private var sharable: [(data: Data, photoId: String, title: String, description: String, location: String)] = []
+    /// 全部上がったときに先頭の1枚を `postedCard` にする
+    private var sharable: [(data: Data, photoId: String, title: String, description: String, location: String,
+                            photo: Photo)] = []
 
     /// スポットのページに並ぶ形で上がった枚数（`spotId` 付き・公開・全体に公開）。
     /// スポットの画面が「投稿しました」を出すかを決める（並ばない投稿で言い切らない）
@@ -707,10 +711,6 @@ final class UploadViewModel: ObservableObject {
         source, recipe, base in
         try PhotoRenderer.shared.exportPrepared(source: source, recipe: recipe, base: base)
     }
-
-    /// SNS に渡す絵に透かしを入れる口（`WatermarkRenderer.apply`）。**画面の処理の外から呼ばれる。**
-    /// 試験でだけ差し替える（模型では描けない）
-    var watermark: @Sendable (Data) -> Data? = { WatermarkRenderer.apply($0) }
 
     /// 帯のサムネの編集後を描く口。**画面の処理の外から呼ばれる。** 試験でだけ差し替える
     var renderStripPreview: @Sendable (Data, PhotoRecipe) -> UIImage? = { data, recipe in
@@ -1850,24 +1850,12 @@ final class UploadViewModel: ObservableObject {
                 // 曲が付かなかった回は出さない（警告を共有の画面で覆い隠す）
                 if shareToThreads, ThreadsShare.isEligible(published: published, audience: audience),
                    let lead = sharable.first {
-                    // 透かしを入れる（`WatermarkRenderer`・重いので画面の処理の外で）。
-                    // 束は `didPostAll` より先に立てる（画面は立っていれば閉じずに共有の画面を出す）
-                    let raw = Array(sharable.prefix(ThreadsShare.maxImages).map(\.data))
-                    let mark = watermark
-                    let marked = await Task.detached(priority: .userInitiated) {
-                        raw.compactMap { mark($0) }
-                    }.value
-                    // 1枚も用意できなければ共有の画面は出さず、投稿画面はそのまま閉じる（投稿自体は済んでいる）。
-                    // 渡すのは `ImagePreparer` が作った JPEG なので、ここで全部失敗することは実際にはまず無い
-                    if !marked.isEmpty { threadsBundle = ThreadsShare.Bundle(
-                        images: marked,
-                        // 最後に「Journey Photo」とその下に1枚目の写真の**短縮リンク**（owner 2026-10-02）。
-                        // `/?p=<先頭8文字>` はトップが `/?photo=<id>` に置き換える。`/photo/<id>` は
-                        // 再ビルドのあと（数分）まで無く、すぐ載せると Threads が 404 を読む（`PhotoLink`）
-                        text: ThreadsShare.text(title: lead.title, description: lead.description,
-                                                location: lead.location,
-                                                url: PhotoLink.shortURL(photoId: lead.photoId)
-                                                    ?? PhotoLink.url(photoId: lead.photoId, isPublished: false))) }
+                    // 1.1.83（資料①・2026-11-12）: 投稿したら**先頭の1枚の共有カード**を出す（透かしを入れた素の写真を
+                    // 共有の画面に渡すのはやめた。カードの絵は端末で作る・`SignatureShareCardRenderer`）。
+                    // カードは `didPostAll` より先に立てる（画面は立っていれば閉じずにカードの画面を出す）
+                    // リンクと添える文はカードの画面が開くときに作る（`PostedShareCard.link`・`text`）
+                    postedCard = PostedShareCard(photoData: lead.data, photo: lead.photo, title: lead.title,
+                                                 description: lead.description, location: lead.location)
                 }
                 didPostAll = done.count > 0
                 // 全部上がった回は「うれしい瞬間」（評価をお願いする頃合いを数える・`ReviewPromptStore`）
@@ -2056,20 +2044,21 @@ final class UploadViewModel: ObservableObject {
             inspiredSaved(item.id)
             outcome.inspiredDropped = InspiredBy.wasDropped(sent: draft.inspiredBy, saved: photo)
         }
-        if let id = photo?.id, ThreadsShare.isEligible(published: draft.published, audience: draft.audience) {
+        if let savedPhoto = photo, ThreadsShare.isEligible(published: draft.published, audience: draft.audience) {
+            let id = savedPhoto.id
             // 共有に渡すのも**置いた絵**（編集後）。やり直しで書き出していなければ、載せる設定のときだけ
             // ここで作る。🔴 **作れなければ共有に回さず知らせる**——編集前の絵を黙って渡さない
             // （投稿したのは編集後なので、SNS と見た目が割れる）
             if !UploadEditRules.needsExport(item.recipe) {
-                sharable.append((item.prepared.data, id, draft.title, draft.description, draft.location))
+                sharable.append((item.prepared.data, id, draft.title, draft.description, draft.location, savedPhoto))
             } else if let data = body?.data {
-                sharable.append((data, id, draft.title, draft.description, draft.location))
+                sharable.append((data, id, draft.title, draft.description, draft.location, savedPhoto))
             } else if shareToThreads {
                 // やり直し（前の鍵を使う）でも、共有の絵は送り始める前に書き出してある（`exportAllEdited`）
                 // （`if let … = try? await` を1行に書くと構文の検査の tree-sitter が読めない）
                 let rebuilt = try? await bodyToSend(item, exported: exported)
                 if let data = rebuilt?.data {
-                    sharable.append((data, id, draft.title, draft.description, draft.location))
+                    sharable.append((data, id, draft.title, draft.description, draft.location, savedPhoto))
                 } else {
                     outcome.shareSkipped = true
                 }

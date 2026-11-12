@@ -410,7 +410,6 @@ final class UploadPhotoEditTests: XCTestCase {
         let model = model()
         defer { model.shareToThreads = false }
         model.shareToThreads = true
-        model.watermark = { $0 }
         model.exportEdited = fakeExport(log)
         ScriptedProtocol.script = twoPresigns + [
             .init(match: "/put", status: 200, body: ""),
@@ -419,7 +418,45 @@ final class UploadPhotoEditTests: XCTestCase {
         model.items = [PendingPhoto(prepared: original())]
         model.applyEdit(model.items[0].id, recipe: PhotoRecipe(exposure: 0.4))
         await model.submit()
-        XCTAssertEqual(model.threadsBundle?.images, [Data(repeating: 0xEE, count: 33)], "共有は編集後の絵")
+        XCTAssertEqual(model.postedCard?.photoData, Data(repeating: 0xEE, count: 33), "共有カードは編集後の絵")
+    }
+
+    /// 1.1.83（資料「SNS をもっと SNS に」①）: **切り替えを入れなくても**、全体に公開の投稿のあとに共有カードが出る
+    /// （先頭の1枚・投稿に使った絵・保存できた写真・写真の短縮リンク）
+    @MainActor
+    func testPostedCardComesByDefaultForAPublicPost() async throws {
+        let savedOverrides = AppConfig.testOverrides
+        defer { AppConfig.testOverrides = savedOverrides }
+        AppConfig.testOverrides = (savedOverrides ?? [:]).merging(["JPSiteBaseURL": "https://site.example.test"]) { $1 }
+        let model = model()
+        XCTAssertTrue(model.shareToThreads, "既定で出す（画面の切り替えは無くした）")
+        ScriptedProtocol.script = twoPresigns + [
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: saved),
+        ]
+        model.items = [PendingPhoto(prepared: original())]
+        await model.submit()
+        let card = try XCTUnwrap(model.postedCard, "全体に公開の投稿のあとにカードが出る")
+        XCTAssertEqual(card.photo.id, "p1")
+        XCTAssertEqual(card.photoData, Data(repeating: 0x11, count: 16), "投稿に使った絵")
+        XCTAssertTrue(card.link?.absoluteString.hasPrefix("https://site.example.test") ?? false,
+                      card.link?.absoluteString ?? "nil")
+        XCTAssertTrue(model.didPostAll)
+    }
+
+    /// 公開範囲を絞った投稿にはカードを出さない（外の SNS に流さない・`ThreadsShare.isEligible`）
+    @MainActor
+    func testNoPostedCardForAFollowersOnlyPost() async throws {
+        let model = model()
+        model.chooseVisibility(published: true, audience: .followers)
+        ScriptedProtocol.script = twoPresigns + [
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: saved),
+        ]
+        model.items = [PendingPhoto(prepared: original())]
+        await model.submit()
+        XCTAssertTrue(model.didPostAll)
+        XCTAssertNil(model.postedCard)
     }
 
     @MainActor
@@ -431,7 +468,6 @@ final class UploadPhotoEditTests: XCTestCase {
         let model = model()
         defer { model.shareToThreads = false }
         model.shareToThreads = true
-        model.watermark = { $0 }
         model.exportEdited = fakeExport(log)
         ScriptedProtocol.script = twoPresigns + [
             .init(match: "/put", status: 200, body: ""),
@@ -445,7 +481,7 @@ final class UploadPhotoEditTests: XCTestCase {
         ScriptedProtocol.script = [.init(match: "/upload/save", status: 200, body: saved)]
         await model.submit()
         XCTAssertTrue(model.items.isEmpty, "投稿自体は済んでいる")
-        XCTAssertNil(model.threadsBundle, "編集前の絵を渡さない")
+        XCTAssertNil(model.postedCard, "編集前の絵を渡さない")
         XCTAssertFalse(model.didPostAll, "知らせを見せるため閉じない")
         XCTAssertTrue(model.errorMessage?.contains("SNS への共有は開いていません") ?? false, model.errorMessage ?? "nil")
     }

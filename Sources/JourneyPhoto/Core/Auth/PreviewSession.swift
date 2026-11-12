@@ -605,6 +605,20 @@ enum PreviewSession {
         #endif
     }
 
+    /// 見本の通信（`localBackend`）で、**誰もフォローしていない**ことにする（`GET /user/following` は空・フォローする／
+    /// 外すは受けたことにする）。ホームの「フォロー中」が空のときの「おすすめの人」（1.1.83・資料「SNS をもっと SNS に」④）を
+    /// UI テストで撮る。Release では必ず false
+    static let followNoneKey = "JPPreviewFollowNone"
+
+    static var followNone: Bool {
+        #if DEBUG
+        guard localBackend else { return false }
+        return UserDefaults.standard.bool(forKey: followNoneKey)
+        #else
+        return false
+        #endif
+    }
+
     /// 見本の通信（`localBackend`）で、メッセージ（`/dm`）を端末の中で答える（`PreviewBackend.dmReply`・
     /// 2026-11-10 札 #505・受信箱・リクエスト・会話の状態を UI テストで撮る）。Release では必ず false
     static let dmKey = "JPPreviewDM"

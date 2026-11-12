@@ -221,8 +221,13 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(submit.waitForExistence(timeout: 5), "「投稿する」が無い")
         XCTAssertTrue(wait(submit, "enabled == true", timeout: 15), "題と撮影地を入れても「投稿する」が押せない")
         submit.tap()
-        // 上がると投稿画面が閉じる（`didPostAll`）
-        XCTAssertTrue(thumb.waitForNonExistence(timeout: 60), "投稿しても画面が閉じない（上がっていない）")
+        // 1.1.83（資料「SNS をもっと SNS に」①）: 全体に公開の投稿は、上がると共有カードの画面が出る（`PostedShareCard`）。
+        // 「閉じる」で投稿画面ごと閉じる
+        let close = app.buttons["postedCard.close"].firstMatch
+        XCTAssertTrue(close.waitForExistence(timeout: 60), "投稿しても共有カードが出ない（上がっていない）")
+        close.tap()
+        // カードを閉じると投稿画面も閉じる（`didPostAll`）
+        XCTAssertTrue(thumb.waitForNonExistence(timeout: 30), "カードを閉じても投稿画面が閉じない")
 
         // 本体が空なら見本の答え手が 400 で断り、投稿画面は閉じない（`PreviewBackend.PreviewTransfer`）——上で落ちる
         let posted = app.descendants(matching: .any)
