@@ -54,6 +54,21 @@ final class NoGuideNeededTests: XCTestCase {
         XCTAssertTrue(view.contains("screen.press(.tick(now: Date()))"), "写真の長押しの近道が無くなった")
     }
 
+    // MARK: - 項目22 参加したアルバムを一覧から消す
+
+    /// 払うだけだった「一覧から消す」を、右の「…」にも置く（自分のアルバムと同じ形）。払いも近道で残す
+    func testJoinedAlbumHasVisibleMenu() throws {
+        let view = try source("Features/Albums/AlbumsView.swift")
+        XCTAssertTrue(view.contains("joinedMenu(entry)"), "参加しているアルバムの行に「…」が無い")
+        guard let start = view.range(of: "private func joinedMenu(") else { return XCTFail("joinedMenu が無い") }
+        let menu = String(view[start.lowerBound...].prefix(900))
+        XCTAssertTrue(menu.contains("joined.forget(id: entry.id)"), "「…」から一覧から消せない")
+        XCTAssertTrue(menu.contains(#"L("一覧から消す", "Remove")"#))
+        XCTAssertTrue(menu.contains(".frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)"), "「…」の当たりが 44 でない")
+        XCTAssertEqual(view.components(separatedBy: "joined.forget(id: entry.id)").count - 1, 2,
+                       "払いの近道か「…」のどちらかが無い")
+    }
+
     // MARK: - 項目16 ≡ の乗車券の行の一言
 
     /// 「入り切り」をやめ、押すと何ができるかで言う。オンの人には「オフにする」
