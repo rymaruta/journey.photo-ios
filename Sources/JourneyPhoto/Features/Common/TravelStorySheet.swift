@@ -50,7 +50,7 @@ struct TravelStorySheet: View {
         let data: Data
     }
 
-    /// 上に置く部品（「SNS に載せる」の「投稿 4:5 | ストーリー 9:16」の切り替え・`SocialShareSheet`）
+    /// 上に置く部品（「SNS に載せる」の「投稿 | ストーリー」の切り替え・`SocialShareSheet`）
     private let header: AnyView?
 
     /// `leadData` は呼び手がもう読んだ先頭の写真（写真の詳細の「SNS に載せる」）。あれば読み直さない

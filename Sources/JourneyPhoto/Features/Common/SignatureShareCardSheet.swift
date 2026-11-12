@@ -10,7 +10,7 @@ struct SignatureShareCardSheet: View {
     let credit: SignatureShareCardRenderer.Credit
     let shareText: String
     let avatarURL: URL?
-    /// 上に置く部品（「投稿 4:5 | ストーリー 9:16」の切り替え・`SocialShareSheet`・2026-11-12）
+    /// 上に置く部品（「投稿 | ストーリー」の切り替え・`SocialShareSheet`・2026-11-12）
     var header: AnyView? = nil
 
     @Environment(\.dismiss) private var dismiss

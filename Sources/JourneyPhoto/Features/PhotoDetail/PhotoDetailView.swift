@@ -420,7 +420,7 @@ struct PhotoDetailView: View {
             // 通報する写真を上に小さく出す（v2 の板 Report・取り違えを防ぐ）
             ReportSheet(photoId: current.id, ownerId: ownerId, subject: reportSubject)
         }
-        // 「SNS に載せる」の画面。上で「投稿 4:5 | ストーリー 9:16」を切り替える（2026-11-12 秘書室の判断・`SocialShareSheet`）
+        // 「SNS に載せる」の画面。上で「投稿 | ストーリー」を切り替える（2026-11-12 秘書室の判断・`SocialShareSheet`）
         .sheet(item: $signatureBundle) { bundle in
             SocialShareSheet(photoData: bundle.photoData,
                              credit: bundle.credit,
@@ -1245,7 +1245,7 @@ struct PhotoDetailView: View {
                         Label(L("SNS に載せる", "Share to social apps"), systemImage: "square.and.arrow.up.on.square")
                     }
                     .disabled(preparingThreads)
-                    // 旅をストーリーに（第9章）は**この1行の中**（開いた画面の「投稿 4:5 | ストーリー 9:16」・
+                    // 旅をストーリーに（第9章）は**この1行の中**（開いた画面の「投稿 | ストーリー」・
                     // 2026-11-12 秘書室の判断。⋯ の行を増やさない）
                     .accessibilityIdentifier("photo.socialShare")
                 }

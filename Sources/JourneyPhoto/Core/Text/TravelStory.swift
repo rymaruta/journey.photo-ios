@@ -315,17 +315,29 @@ enum TravelStory {
         return primary == last
     }
 
-    /// 市までの文字。海外で欠片が3つ以上（「エッフェル塔, …, パリ, フランス」）なら、最初の欠片（施設・番地のことが多い）を
-    /// 使わず、国の1つ手前（郵便番号の数字は外す）にする。細かすぎるより粗い側に倒す（2026-11-12 判断）
+    /// 市までの文字。日本は市区町村（`LocationMatch.shareCardPlace` の2行目）。
+    ///
+    /// **海外は、市と見なせるときだけ出し、見なせなければ国にとどめる**（安全な側・2026-11-12 確かめ役）。
+    /// 文字だけでは「都市か施設か」を見分けられない（`LocationMatch.shareCardPlace` の注記）:
+    /// 「Eiffel Tower, France」の1つ目は施設、Nominatim の長い形
+    /// 「ヴェルサイユ, …, フランス・メトロポリテーヌ, 78000, フランス」の国の手前は地方。
+    /// 市と見なすのは、座標からの自動入力の形「市, 州, 国」の3つで、真ん中が州・地域の名前
+    /// （州・地域圏・省・Province・State・Region などで終わる）のときの1つ目だけ
     private static func cityText(_ place: LocationMatch.ShareCardPlace, location: String?, region: Bool) -> String? {
         let parts = pieces(location)
-        if region, let last = parts.last, !LocationMatch.isJapan(last), place.primary == last, parts.count >= 3 {
-            let near = parts[parts.count - 2].split(separator: " ")
-                .filter { !LocationMatch.isPostalOrNumber(String($0)) }
-                .joined(separator: " ")
-            return near.isEmpty ? nil : near
+        guard let last = parts.last, !LocationMatch.isJapan(last), place.primary == last else {
+            return place.secondary
         }
-        return place.secondary
+        guard region, parts.count == 3, isStateName(parts[1]) else { return nil }
+        return parts[0]
+    }
+
+    /// 州・地域の名前か（国の1つ下の区分）
+    private static func isStateName(_ part: String) -> Bool {
+        if ["州", "地域圏", "省", "自治区", "特別市", "道"].contains(where: part.hasSuffix) { return true }
+        let lower = part.lowercased()
+        return [" state", " province", " region", " prefecture", " county", " oblast", " territory"]
+            .contains(where: lower.hasSuffix)
     }
 
     /// 大きな字のラテン文字。日本は都道府県の英名（`ShareCardMap.englishPrefectures`）、
@@ -430,9 +442,10 @@ enum TravelStory {
         texts.place.map { L("\($0)より", "From \($0)") } ?? L("旅先より", "From the road")
     }
 
-    /// フィルムの帯の下の2行（題・日付と何日目）
-    static func filmCaption(_ texts: Texts) -> (title: String, sub: String) {
-        let sub = [texts.date, dayLabel(texts.tripDay)].compactMap { $0 }.joined(separator: " · ")
+    /// フィルムの帯の下の2行（題・日付と何日目）。2行目は**欠片のまま返す**——「今日 · 2日目」のように中黒で
+    /// つながない（2026-11-12 owner の好み「・」「·」で区切らない）。描く側が字の太さ・色と余白で分ける
+    static func filmCaption(_ texts: Texts) -> (title: String, sub: [String]) {
+        let sub = [texts.date, dayLabel(texts.tripDay)].compactMap { $0 }
         return (texts.place ?? L("旅の三枚", "Three from the trip"), sub)
     }
 

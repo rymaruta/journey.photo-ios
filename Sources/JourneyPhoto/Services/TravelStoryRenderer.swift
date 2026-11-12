@@ -607,10 +607,23 @@ extension TravelStoryRenderer {
             let titleFont = mincho(u(7))
             text(caption.title, font: titleFont, color: .white, at: CGPoint(x: box.minX, y: box.minY),
                  maxWidth: box.width, align: .center)
+            // 2行目: 日付（細め・白 80%）と何日目（太め・白）を、中黒でなく余白（3cqw）で分けて並べる（2026-11-12）
             if !caption.sub.isEmpty {
-                text(caption.sub, font: sans(u(3.4), .regular, digits: true), color: UIColor.white.withAlphaComponent(0.8),
-                     kern: 0.08, at: CGPoint(x: box.minX, y: box.minY + titleFont.lineHeight + u(1.4)),
-                     maxWidth: box.width, align: .center)
+                let y = box.minY + titleFont.lineHeight + u(1.4)
+                let gap = u(3)
+                let styled: [(String, UIFont, UIColor)] = caption.sub.enumerated().map { index, value in
+                    let last = index == caption.sub.count - 1 && caption.sub.count > 1
+                    return (value, sans(u(3.4), last ? .semibold : .regular, digits: true),
+                            last ? .white : UIColor.white.withAlphaComponent(0.8))
+                }
+                let widths = styled.map { value, font, _ in
+                    (value as NSString).size(withAttributes: [.font: font, .kern: 0.08 * font.pointSize]).width
+                }
+                var x = box.midX - (widths.reduce(0, +) + gap * CGFloat(styled.count - 1)) / 2
+                for (index, (value, font, color)) in styled.enumerated() {
+                    text(value, font: font, color: color, kern: 0.08, at: CGPoint(x: x, y: y))
+                    x += widths[index] + gap
+                }
             }
         }
     }

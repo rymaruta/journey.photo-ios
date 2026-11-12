@@ -92,7 +92,7 @@ final class TravelStoryTests: XCTestCase {
 
     func testAbroadIsCountryByDefault() {
         XCTAssertEqual(TravelStory.placeText("パリ, フランス", level: .prefecture), "フランス")
-        XCTAssertEqual(TravelStory.placeText("パリ, フランス", level: .city), "パリ")
+        XCTAssertEqual(TravelStory.placeText("パリ, フランス", level: .city), "フランス", "市と見なせないので国（2026-11-12）")
         XCTAssertEqual(TravelStory.placeLatin("Paris, France"), "FRANCE")
         XCTAssertNil(TravelStory.placeLatin("パリ, フランス"), "ラテン文字でない国名は大きな字にしない")
     }
@@ -116,14 +116,23 @@ final class TravelStoryTests: XCTestCase {
         XCTAssertEqual(TravelStory.placeLatin("Higashiyama Ward, Kyoto, Kyoto Prefecture, Japan"), "KYOTO")
     }
 
-    /// 海外の市まで: 欠片が3つ以上なら最初の欠片（施設・番地）を使わず、国の1つ手前（2026-11-12）
-    func testAbroadCityDoesNotShowTheLandmark() {
-        let raw = "エッフェル塔, シャン・ド・マルス, パリ, フランス"
-        XCTAssertEqual(TravelStory.placeText(raw, level: .city), "パリ")
-        XCTAssertEqual(TravelStory.placeText(raw, level: .prefecture), "フランス")
-        XCTAssertEqual(TravelStory.placeText("Eiffel Tower, Champ de Mars, 75007 Paris, France", level: .city), "Paris",
-                       "郵便番号の数字は外す")
-        XCTAssertEqual(TravelStory.placeText("パリ, フランス", level: .city), "パリ", "2つなら最初が市")
+    /// 海外の市まで: 市と見なせるとき（「市, 州, 国」の自動入力の形）だけ。見なせなければ国にとどめる（2026-11-12 確かめ役）
+    func testAbroadCityOnlyWhenItIsSurelyACity() {
+        // 市と見なせる: 座標からの自動入力の形
+        XCTAssertEqual(TravelStory.placeText("ニューヨーク, ニューヨーク州, アメリカ合衆国", level: .city), "ニューヨーク")
+        XCTAssertEqual(TravelStory.placeText("ローマ, ラツィオ州, イタリア", level: .city), "ローマ")
+        XCTAssertEqual(TravelStory.placeText("Lyon, Auvergne-Rhône-Alpes Region, France", level: .city), "Lyon")
+        // 見なせない: 施設・地方が出るので国
+        XCTAssertEqual(TravelStory.placeText("Eiffel Tower, France", level: .city), "France", "欠片2つの1つ目は施設かもしれない")
+        XCTAssertEqual(TravelStory.placeText("パリ, フランス", level: .city), "フランス")
+        XCTAssertEqual(TravelStory.placeText(
+            "ヴェルサイユ, Versailles, Yvelines, イル＝ド＝フランス地域圏, フランス・メトロポリテーヌ, 78000, フランス",
+            level: .city), "フランス", "Nominatim の長い形で国の手前（地方）を出した")
+        XCTAssertEqual(TravelStory.placeText("エッフェル塔, シャン・ド・マルス, パリ, フランス", level: .city), "フランス")
+        XCTAssertEqual(TravelStory.placeText("Eiffel Tower, Champ de Mars, 75007 Paris, France", level: .city), "France")
+        XCTAssertEqual(TravelStory.placeText("エッフェル塔, パリ, フランス", level: .city), "フランス", "真ん中が州でない")
+        // 日本は今までどおり市区町村
+        XCTAssertEqual(TravelStory.placeText("輪島市, 石川県, 日本", level: .city), "輪島市")
     }
 
     func testHiddenPlaceLeavesNoLatinEither() {
@@ -284,7 +293,7 @@ final class TravelStoryTests: XCTestCase {
         XCTAssertEqual(SocialShareSheet.Mode.load(defaults), .post)
         SocialShareSheet.Mode.save(.story, defaults)
         XCTAssertEqual(SocialShareSheet.Mode.load(defaults), .story)
-        XCTAssertEqual(SocialShareSheet.Mode.allCases.map(\.label), [L("投稿 4:5", "Post 4:5"), L("ストーリー 9:16", "Story 9:16")])
+        XCTAssertEqual(SocialShareSheet.Mode.allCases.map(\.label), [L("投稿", "Post"), L("ストーリー", "Story")])
     }
 
     /// 共有シートに空の文を渡さない（2026-11-12 確かめ役・`ShareSheet`）
@@ -318,10 +327,38 @@ final class TravelStoryTests: XCTestCase {
         let texts = TravelStory.Texts(place: "石川県", placeLatin: "ISHIKAWA", date: "今日", postmark: "26.11.11", tripDay: 2)
         let caption = TravelStory.filmCaption(texts)
         XCTAssertEqual(caption.title, "石川県")
-        XCTAssertEqual(caption.sub, "今日 · \(L("2日目", "Day 2"))")
+        // 中黒でつながない（2026-11-12 owner の好み「・」「·」で区切らない）。欠片のまま描く側へ
+        XCTAssertEqual(caption.sub, ["今日", L("2日目", "Day 2")])
         let bare = TravelStory.filmCaption(.init(place: nil, placeLatin: nil, date: nil, postmark: nil, tripDay: nil))
         XCTAssertEqual(bare.title, L("旅の三枚", "Three from the trip"))
-        XCTAssertEqual(bare.sub, "")
+        XCTAssertEqual(bare.sub, [])
+    }
+
+    /// 絵に載せる文字に「・」「·」の区切りを作らない（2026-11-12 owner の好み）。
+    /// 文字を作る所（`TravelStory`）と描く所（`TravelStoryRenderer`）のコードに、中黒でつなぐ書き方が無いこと
+    func testNoMiddleDotSeparatorsInTheImage() throws {
+        let texts = TravelStory.Texts(place: "石川県", placeLatin: "ISHIKAWA", date: "2026.11.11",
+                                      postmark: "26.11.11", tripDay: 3)
+        let facts = TravelStory.Facts(location: "輪島市, 石川県, 日本", takenDay: nil, name: "mika")
+        var choice = TravelStory.Choice()
+        choice.kind = .pass
+        var all = [TravelStory.filmCaption(texts).title] + TravelStory.filmCaption(texts).sub
+        all += [TravelStory.from(texts), TravelStory.stampCaption(texts) ?? ""]
+        for phase in TravelStory.Phase.allCases {
+            choice.phase = phase
+            let pass = TravelStory.pass(facts, choice: choice, texts: texts)
+            all += [pass.phaseLabel, pass.head, pass.big, pass.local] + pass.foot.flatMap { [$0.key, $0.value] }
+        }
+        for value in all {
+            XCTAssertFalse(value.contains("·") || value.contains("・"), "絵の文字に中黒がある: \(value)")
+        }
+        for path in ["Sources/JourneyPhoto/Core/Text/TravelStory.swift", "Sources/JourneyPhoto/Services/TravelStoryRenderer.swift"] {
+            let code = try source(path).components(separatedBy: "\n")
+                .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+                .joined(separator: "\n")
+            XCTAssertFalse(code.contains("separator: \" · \"") || code.contains("separator: \"・\""),
+                           "\(path) が中黒でつないでいる")
+        }
     }
 
     // MARK: - 寸法（インスタの上の帯・下の送る欄に隠れない）

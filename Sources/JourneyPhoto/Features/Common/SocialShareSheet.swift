@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 写真の詳細の ⋯ →「SNS に載せる」の画面（2026-11-12 秘書室の判断・1.1.83 第9章）。
 ///
-/// **⋯ の行は「SNS に載せる」1つのまま**（行を増やさない）。開いた画面の上で「投稿 4:5 | ストーリー 9:16」を切り替える:
+/// **⋯ の行は「SNS に載せる」1つのまま**（行を増やさない）。開いた画面の上で「投稿 | ストーリー」を切り替える:
 /// - 投稿 → 今までの写真1枚のカード（`SignatureShareCardSheet`・型と比率を選ぶ画面をそのまま出す）
 /// - ストーリー → 旅をストーリーに（`TravelStorySheet`・型を払って選ぶ1枚）
 ///
@@ -17,8 +17,9 @@ struct SocialShareSheet: View {
 
         var label: String {
             switch self {
-            case .post: return L("投稿 4:5", "Post 4:5")
-            case .story: return L("ストーリー 9:16", "Story 9:16")
+            // 比率の字は付けない（投稿の側に 4:5／9:16／1:1 の切り替えがあり、重なる・2026-11-12 確かめ役）
+            case .post: return L("投稿", "Post")
+            case .story: return L("ストーリー", "Story")
             }
         }
 
