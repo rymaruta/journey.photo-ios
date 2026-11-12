@@ -13,13 +13,13 @@ final class PhotoMetaLineTests: XCTestCase {
     /// 板の形「2026.09.12 · 17:42」。時刻は EXIF から
     func testStampJoinsDayAndExifTime() {
         XCTAssertEqual(PhotoMetaLine.stamp(date: "2026-09-12", exifDateTime: "2026-09-12T17:42:05"),
-                       "2026.09.12 · 17:42")
+                       "2026.09.12\u{2002}17:42")
     }
 
     /// アプリは EXIF の生の書式（`2026:09:12 17:42:05`）で送っている
     func testStampReadsRawExifFormat() {
         XCTAssertEqual(PhotoMetaLine.stamp(date: nil, exifDateTime: "2026:09:12 07:05:00"),
-                       "2026.09.12 · 07:05")
+                       "2026.09.12\u{2002}07:05")
     }
 
     /// 🔴 **`date` に付いている時刻は出さない**（撮った時刻とは限らない・`TakenDay`）
@@ -54,7 +54,7 @@ final class PhotoMetaLineTests: XCTestCase {
                        L("1/4枚", "1 of 4"))
         XCTAssertEqual(PhotoMetaLine.headline(date: "2026-09-12", exifDateTime: "2026-09-12T17:42",
                                               position: 1, of: 3),
-                       "2026.09.12 · 17:42 · " + L("1/3枚", "1 of 3"))
+                       "2026.09.12\u{2002}17:42\u{2002}" + L("1/3枚", "1 of 3"))
         XCTAssertNil(PhotoMetaLine.headline(date: nil, exifDateTime: nil, position: 1, of: 1))
     }
 
@@ -70,8 +70,8 @@ final class PhotoMetaLineTests: XCTestCase {
     /// v2: 機材の1行と撮影設定の1行に分ける（ビューアの下の2行・詳細の撮影情報の要約）
     func testGearAndSettingsLines() throws {
         let e = try exif(#"{"camera":"Hasselblad Hasselblad X2D II 100C","lens":"XCD 35-100E@75","aperture":"4","exposure":"1/100","iso":50,"focalLength":"75mm"}"#)
-        XCTAssertEqual(PhotoMetaLine.gearLine(e), "Hasselblad X2D II 100C · XCD 35-100E@75")
-        XCTAssertEqual(PhotoMetaLine.settingsLine(e), "75mm · f/4 · 1/100s · ISO 50")
+        XCTAssertEqual(PhotoMetaLine.gearLine(e), "Hasselblad X2D II 100C\u{2002}XCD 35-100E@75")
+        XCTAssertEqual(PhotoMetaLine.settingsLine(e), "75mm\u{2002}f/4\u{2002}1/100s\u{2002}ISO 50")
         XCTAssertEqual(PhotoMetaLine.settingsCells(e).map(\.value), ["75mm", "f/4", "1/100s", "50"])
         // 無いものは詰める（空の升・区切りだけの行を作らない）
         let partial = try exif(#"{"aperture":"f/1.8","iso":0}"#)
@@ -88,13 +88,13 @@ final class PhotoMetaLineTests: XCTestCase {
     func testExifLineOrderAndCameraDedup() throws {
         let e = try exif(#"{"camera":"Hasselblad Hasselblad X2D II 100C","lens":"XCD 35-100E@75","aperture":"f/4","exposure":"1/100s","iso":50,"focalLength":"75mm"}"#)
         XCTAssertEqual(PhotoMetaLine.exifLine(e),
-                       "Hasselblad X2D II 100C · XCD 35-100E@75 · f/4 · 1/100s · ISO 50")
+                       "Hasselblad X2D II 100C\u{2002}XCD 35-100E@75\u{2002}f/4\u{2002}1/100s\u{2002}ISO 50")
     }
 
     /// アプリが保存したシャッター（`1/400`）にも「s」を付けて揃える
     func testExifLineNormalisesShutter() throws {
         let e = try exif(#"{"aperture":"1.8","exposure":"1/400"}"#)
-        XCTAssertEqual(PhotoMetaLine.exifLine(e), "f/1.8 · 1/400s")
+        XCTAssertEqual(PhotoMetaLine.exifLine(e), "f/1.8\u{2002}1/400s")
     }
 
     /// 何も無ければ行ごと出さない

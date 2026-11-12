@@ -22,8 +22,11 @@ struct ShareSheet: UIViewControllerRepresentable {
                                           options: [.localOnly: true,
                                                     .expirationDate: Date().addingTimeInterval(600)])
         }
-        let controller = UIActivityViewController(
-            activityItems: images.compactMap { UIImage(data: $0) } + [text], applicationActivities: nil)
+        // **空の文は渡さない**（2026-11-12・確かめ役）。空の文字列も1つの項目として数えられ、
+        // 受け取る側（メモ・メールなど）に空の本文が付く。絵だけを渡す画面（`TravelStorySheet`）がある
+        var items: [Any] = images.compactMap { UIImage(data: $0) }
+        if !text.isEmpty { items.append(text) }
+        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
         controller.completionWithItemsHandler = { _, _, _, _ in dismiss() }
         return controller
     }

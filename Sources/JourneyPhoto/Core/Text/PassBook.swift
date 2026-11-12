@@ -225,7 +225,7 @@ enum PassBook {
             }.map { owner in
                 let list = groups[owner]!.sorted { $0.number > $1.number }
                 let name = names[owner] ?? L("名前の無い人", "Unnamed")
-                return Section(id: "person-\(owner)", title: L("\(name) · \(list.count) 回", "\(name) · \(list.count)×"),
+                return Section(id: "person-\(owner)", title: L("\(name)\u{2002}\(list.count) 回", "\(name)\u{2002}\(list.count)×"),
                                cards: list)
             }
         }
@@ -312,7 +312,7 @@ enum PassBook {
         guard !names.isEmpty else {
             return L("\(cards.count) 人とすれちがいました", "You passed \(Plural.count(cards.count, "person", "people"))")
         }
-        let joined = names.joined(separator: L("・", " / "))
+        let joined = names.joined(separator: L("、", " / "))
         return L("\(joined)のあたりで すれちがい", "Passed around \(joined)")
     }
 

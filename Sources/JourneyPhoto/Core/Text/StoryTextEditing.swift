@@ -55,7 +55,7 @@ enum StoryTextEditing {
     // MARK: - 置いた直後の案内（板 v2「指で動かす · 2本指で回す」）
 
     /// 案内の文言（本文 12pt 以上で出す）
-    static var placeHint: String { L("指で動かす · 2本指で回す", "Drag to move · Twist with two fingers to rotate") }
+    static var placeHint: String { L("指で動かす、2本指で回す", "Drag to move, twist with two fingers to rotate") }
 
     /// 端末に1回だけの印（UserDefaults）
     static let placeHintShownKey = "story.placeHintShown"

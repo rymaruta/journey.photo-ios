@@ -18,8 +18,13 @@ struct TripPlanDetailView: View {
 
     let planId: String
     @ObservedObject var model: TripPlansModel
+    /// DM の会話から作ったプランの相手（2a の流れの最後・「[名前] と共有する」を出す）。承認前の会話では渡さない
+    var sharePeer: TripSharePeer? = nil
+    /// 開いたときの「日程 | 会話」（受信箱・プッシュから開いたときは会話）
+    var startTab: TripShareText.Tab = .days
 
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var hidden: ModerationStore
     /// 電波なしで使える旅（板 72・2026-10-09）
@@ -80,6 +85,18 @@ struct TripPlanDetailView: View {
     /// （37b96ec のレビュー）
     @State private var removingDay: RemoveDayTarget?
     @State private var confirmingDelete = false
+    // MARK: 仲間（2026-11-12・札 #553）
+    /// 選んでいる「日程 | 会話」（nil の間は `startTab`）
+    @State private var chosenTab: TripShareText.Tab?
+    @State private var members: [TripMember] = []
+    @State private var shareWorking = false
+    @State private var shareError: String?
+    @State private var inviting = false
+    @State private var inviteLink: TripInviteLink?
+    @State private var inviteError: String?
+    @State private var chatUnread = false
+    /// ほかの仲間の変更に重ね直して送り直した回数（続けてぶつかるなら止めて知らせる）
+    @State private var rebases = 0
     /// 「保存して戻る／変更を捨てる」の確認
     @State private var confirmLeave = false
     /// 「保存して戻る」が断られた（アラートで出す——下までスクロールしていると
@@ -196,10 +213,17 @@ struct TripPlanDetailView: View {
                         .padding(.bottom, 32)
                 }
             } else if let plan {
-                editor(plan)
+                if tab.wrappedValue == .chat, plan.share != nil {
+                    chatScreen(plan)
+                } else {
+                    editor(plan)
+                }
             } else {
                 // 消した直後・別の端末で消されたとき
-                ErrorBanner(message: L("プランが見つかりません", "Trip not found"))
+                // 2026-11-12（第2章）: 見出しは「見つかりません」（読み込みの失敗ではない）
+                ErrorBanner(title: L("プランが見つかりません", "Trip not found"),
+                            message: L("このプランは消されたようです。旅行プランの一覧から開き直してください",
+                                       "This trip seems to have been deleted. Open it again from your trip list."))
             }
         }
         .webScreen()
@@ -219,7 +243,7 @@ struct TripPlanDetailView: View {
                                        dismiss()
                                    } else {
                                        let mine = saveAttempt
-                                       let message = Self.problemText(problem)
+                                       let message = Self.problemText(problem, shared: plan?.share != nil)
                                        // 確認の板が閉じ切ってから出す（閉じている途中に出すと
                                        // SwiftUI が黙って捨てることがある）
                                        try? await Task.sleep(nanoseconds: 350_000_000)
@@ -312,6 +336,16 @@ struct TripPlanDetailView: View {
                 leaveSaveError = message
             }
         }
+        .sheet(isPresented: $inviting) {
+            TripInviteSheet(title: plan?.title ?? "", link: inviteLink, failed: inviteError)
+        }
+        .alert(L("共有できませんでした", "Couldn't share"),
+               isPresented: Binding(get: { shareError != nil }, set: { if !$0 { shareError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(shareError ?? "")
+        }
+        .task(id: plan?.share?.memberIds ?? []) { await loadShare() }
         .alert(L("削除できませんでした", "Couldn't delete"),
                isPresented: Binding(get: { deleteError != nil },
                                     set: { if !$0 { deleteError = nil } })) {
@@ -519,11 +553,27 @@ struct TripPlanDetailView: View {
             return false
         }
         if TripAutosave.conflicted(base: loadedFrom, server: fresh.first { $0.planId == planId }) {
-            problem = .conflict
-            return false
+            // 共有したプラン: ほかの仲間の変更の上に、自分が変えた分だけを重ね直して送る（`TripShareText.rebase`）。
+            // 本人だけのプラン（別の端末）は今までどおり止めて知らせる
+            guard let server = fresh.first(where: { $0.planId == planId }), server.share != nil,
+                  let base = loadedFrom, rebases < TripAutosave.maxRebases else {
+                problem = .conflict
+                return false
+            }
+            rebases += 1
+            let mineDays = days, mineStart = start, mineEnd = end
+            loadedFrom = server
+            sent = nil
+            model.adopt(server)
+            days = TripShareText.rebase(base: base.days, mine: mineDays, server: server.days)
+            start = TripShareText.rebaseDate(base: base.startDate, mine: mineStart, server: server.startDate)
+            end = TripShareText.rebaseDate(base: base.endDate, mine: mineEnd, server: server.endDate)
+            guard isDirty else { problem = nil; return true }
         }
         let ok = await save()
+        let next = TripAutosave.afterSave(ok: ok, conflict: model.lastConflict, rebases: rebases)
         if ok {
+            rebases = 0
             problem = nil
             // 🔴 **送れたらその場で比べる相手を新しい版に**（確かめ役の指摘 F: 古い版のまま次の読み直しと比べると、
             // 自分の書き込みを「別の端末の変更」と誤って止めた）。送っている間の直しは残す（下で送り直す）
@@ -532,6 +582,13 @@ struct TripPlanDetailView: View {
                 sent = nil
             }
             if isDirty { scheduleAutosave() }
+        } else if case .retry(let counted) = next {
+            // 読み直してから送るまでの間に、ほかの仲間が先に書いた（409）。もう一度読み直して重ね直す。
+            // 🔴 **この道でも回数を数える**（2026-11-12 確かめ役の指摘: 数えておらず、読み直しが古い姿を返し続けると
+            // 上限なしに送り直した）。手元が共有と知らないプランでも、409 は共有したプランにしか返らないので送り直す
+            rebases = counted
+            model.clearError()
+            return await flushNow(force: force)
         } else {
             problem = .failed(model.errorMessage ?? L("もう一度お試しください。", "Please try again."))
             // 文は上の「まだ送れていません」の札で出す（赤い行と二重にしない）
@@ -542,6 +599,9 @@ struct TripPlanDetailView: View {
 
     /// 別の端末の変更を読み直す（この画面で変えた分は残らない）
     private func reloadFromServer() async {
+        // 送り直しの数を0に戻す（2026-11-12 確かめ役の見直し2: 戻さないと、上限で止まって読み直したあとの
+        // 最初のぶつかりで重ね直さずにまた止まった）
+        rebases = 0
         await model.load(environment: environment)
         guard let plan else { return }
         loadedFrom = plan
@@ -552,11 +612,11 @@ struct TripPlanDetailView: View {
         problem = nil
     }
 
-    nonisolated static func problemText(_ problem: TripAutosave.Problem?) -> String {
+    nonisolated static func problemText(_ problem: TripAutosave.Problem?, shared: Bool = false) -> String {
         switch problem {
         case .failed(let message)?: return message
         case .offline?: return L("圏外のため送れませんでした。", "You're offline.")
-        case .conflict?: return L("別の端末でこのプランが変わりました。", "This trip changed on another device.")
+        case .conflict?: return TripAutosave.conflictLead(shared: shared)
         case nil: return L("もう一度お試しください", "Please try again.")
         }
     }
@@ -572,7 +632,7 @@ struct TripPlanDetailView: View {
     /// 送れていない直しの札（画面の上・板 Components 06 の灰の印 → 何が起きたか → 押せる一手）
     @ViewBuilder
     private var autosaveBanner: some View {
-        if let text = TripAutosave.banner(problem, dirty: isDirty) {
+        if let text = TripAutosave.banner(problem, dirty: isDirty, shared: plan?.share != nil) {
             VStack(alignment: .leading, spacing: JPSpace.xs) {
                 HStack(alignment: .firstTextBaseline, spacing: JPSpace.xs) {
                     Image(systemName: problem == .offline ? "wifi.slash" : "exclamationmark.triangle")
@@ -659,7 +719,9 @@ struct TripPlanDetailView: View {
     /// 送る。**通ったか**を返す（「保存して戻る」は通ったときだけ閉じる）
     private func save() async -> Bool {
         guard let plan else { return false }
-        let patch = TripPlanText.patch(plan: plan, days: days, start: start, end: end)
+        var patch = TripPlanText.patch(plan: plan, days: days, start: start, end: end)
+        // 共有したプランは版を添える（ほかの仲間が先に変えていたら 409 で断られ、読み直して重ね直す）
+        patch.rev = plan.share?.rev
         saveAttempt &+= 1
         sent = draft
         let saved = await model.update(planId, patch, environment: environment)
@@ -673,16 +735,7 @@ struct TripPlanDetailView: View {
         let layout = travelLayout()
         return ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                // 題（v2 の板 TripPlanDays: 明朝の大見出し・Title 1）
-                Text(plan.title.isEmpty ? L("無題のプラン", "Untitled trip") : plan.title)
-                    .font(JPFont.screenTitle)
-                    .foregroundStyle(WebTheme.foreground)
-                    .accessibilityAddTraits(.isHeader)
-
-                HStack(spacing: JPSpace.xs) {
-                    dateField(L("出発", "From"), value: $start, fallback: end, isStart: true)
-                    dateField(L("帰着", "To"), value: $end, fallback: start, isStart: false)
-                }
+                header(plan)
 
                 // 送れていない直し（圏外・断られた・別の端末の変更）。日付の下・日程の上に残す。
                 // UI テストの見本のときだけ、その下に自動保存が送った回数（`TripPlanFixture`・Debug のみ）
@@ -826,7 +879,7 @@ struct TripPlanDetailView: View {
         var head = L("\(di + 1) 日目", "Day \(di + 1)")
         if let date = TripPlanText.dayDate(index: di, day: day, start: start, end: end),
            let label = TakenDay.label(date) {
-            head += L(" · \(label)", " · \(label)")
+            head += L("\u{2002}\(label)", "\u{2002}\(label)")
         }
         return head
     }
@@ -1195,7 +1248,7 @@ struct TripPlanDetailView: View {
         .accessibilityLabel(L("「\(name)」の操作", "Actions for \(name)"))
         // 行の身元は位置なので、並べ替えのあと読み上げの焦点は同じ位置に残る。
         // 位置を値として読ませ、動かした結果は `apply` が読み上げる
-        .accessibilityValue(L("\(di + 1) 日目・\(ii + 1) 番目", "Day \(di + 1), item \(ii + 1)"))
+        .accessibilityValue(L("\(di + 1) 日目、\(ii + 1) 番目", "Day \(di + 1), item \(ii + 1)"))
     }
 
     /// 並べ替え・移動を映し、結果を読み上げる（目で追えない人に、項目がどこへ行ったかを伝える）
@@ -1241,30 +1294,151 @@ struct TripPlanDetailView: View {
                 NavigationLink {
                     OfficialSpotView(spot: spot, spots: index, photos: photos, photosKnown: gotPhotos)
                 } label: {
-                    itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chip: chip)
+                    itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chip: chip, by: addedByText(item))
                 }
                 .buttonStyle(.plain)
             } else {
-                itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chip: chip)
+                itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chip: chip, by: addedByText(item))
             }
         case .location(let slug, _):
             if let place = places.first(where: { $0.slug == slug }) {
                 NavigationLink {
                     SpotDetailView(spot: place, photos: photos)
                 } label: {
-                    itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chip: nil)
+                    itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chip: nil, by: addedByText(item))
                 }
                 .buttonStyle(.plain)
             } else {
-                itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chip: nil)
+                itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chip: nil, by: addedByText(item))
             }
         }
     }
 
     /// 行の中身（v2 の板 TripPlanDays・F30: 番号の丸 → 名前 → 季節の一文と時間帯の札 → ひとこと・`TripStopLabel`）
     private func itemLabel(_ name: String, number: Int, isSpot: Bool, note: String?,
-                           season: String?, chip: String?) -> some View {
-        TripStopLabel(number: number, name: name, isSpot: isSpot, season: season, timeChip: chip, note: note)
+                           season: String?, chip: String?, by: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            TripStopLabel(number: number, name: name, isSpot: isSpot, season: season, timeChip: chip, note: note)
+            // 共有したプランで、ほかの仲間が足した場所（「あお が足しました」）
+            if let by {
+                Text(by)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+                    .padding(.leading, 36)
+                    .accessibilityIdentifier("tripPlan.addedBy")
+            }
+        }
+    }
+
+    private func addedByText(_ item: TripItem) -> String? {
+        guard let plan else { return nil }
+        return TripShareText.addedBy(plan, item, members: members, me: auth.userId)
+    }
+
+    // MARK: - 仲間（2026-11-12・札 #553）
+
+    private var tab: Binding<TripShareText.Tab> {
+        Binding(get: { chosenTab ?? startTab }, set: { chosenTab = $0 })
+    }
+
+    /// 題・出発と帰着・仲間の段（日程の画面の頭。式を分けて型の推論を軽くする）
+    private func header(_ plan: TripPlan) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            // 題（v2 の板 TripPlanDays: 明朝の大見出し・Title 1）
+            Text(plan.title.isEmpty ? L("無題のプラン", "Untitled trip") : plan.title)
+                .font(JPFont.screenTitle)
+                .foregroundStyle(WebTheme.foreground)
+                .accessibilityAddTraits(.isHeader)
+
+            HStack(spacing: JPSpace.xs) {
+                dateField(L("出発", "From"), value: $start, fallback: end, isStart: true)
+                dateField(L("帰着", "To"), value: $end, fallback: start, isStart: false)
+            }
+
+            // 仲間（共有する・誘う・「日程 | 会話」・2026-11-12）。圏外の間は出さない（送れない）
+            shareSection(plan)
+        }
+    }
+
+    @ViewBuilder
+    private func shareSection(_ plan: TripPlan) -> some View {
+        if !isOffline { shareStrip(plan) }
+    }
+
+    private func shareStrip(_ plan: TripPlan) -> TripShareStrip {
+        TripShareStrip(plan: plan, members: members, peer: sharePeer, working: shareWorking,
+                       tab: tab, chatUnread: chatUnread,
+                       onShareWithPeer: { Task { await share(with: sharePeer) } },
+                       onInvite: { Task { await invite(plan) } })
+    }
+
+    /// 会話の画面（題・仲間の段・切り替えは日程と同じ所に置き、下に会話と入力欄）
+    private func chatScreen(_ plan: TripPlan) -> some View {
+        VStack(alignment: .leading, spacing: JPSpace.s) {
+            Text(plan.title.isEmpty ? L("無題のプラン", "Untitled trip") : plan.title)
+                .font(JPFont.screenTitle)
+                .foregroundStyle(WebTheme.foreground)
+                .accessibilityAddTraits(.isHeader)
+                .padding(.horizontal, JPSpace.gutter)
+            shareStrip(plan).padding(.horizontal, JPSpace.gutter)
+            TripChatPane(planId: planId, plan: plan, members: members,
+                         resolveName: { TripPlanText.label(for: $0, index: index, places: places) })
+        }
+        .padding(.top, JPSpace.xs)
+        .onAppear { chatUnread = false }
+    }
+
+    /// 仲間の名前と会話の未読（共有したプランだけ）
+    private func loadShare() async {
+        guard let plan, plan.share != nil, !isOffline else { return }
+        do {
+            let detail = try await environment.tripShare.detail(planId: planId)
+            members = detail.members
+            if let link = detail.invite { inviteLink = link }
+        } catch {
+            // 名前が引けなくても日程は使える（顔の段は印だけ・「足しました」は出さない）
+        }
+        let current = chosenTab ?? startTab
+        if current == .chat { return }
+        do {
+            let items = try await environment.tripShare.inbox()
+            let mine = items.first(where: { $0.planId == planId })
+            chatUnread = (mine?.unread ?? 0) > 0
+        } catch {
+            chatUnread = false
+        }
+    }
+
+    /// 共有する（作った人）。相手を渡せば、その人をすぐ仲間に（DM から作ったプラン）
+    private func share(with peer: TripSharePeer?) async {
+        guard !shareWorking else { return }
+        // 送っていない直しを先に送る（共有すると行が移るので、送り先を1つにしておく）
+        guard await flush(force: true) else { return }
+        shareWorking = true
+        defer { shareWorking = false }
+        do {
+            let detail = try await environment.tripShare.share(planId: planId, with: peer?.id)
+            members = detail.members
+            await model.load(environment: environment)
+        } catch {
+            shareError = (error as? LocalizedError)?.errorDescription ?? L("もう一度お試しください。", "Please try again.")
+        }
+    }
+
+    /// 仲間を誘う（共有していなければ先に共有する）→ リンクのシート
+    private func invite(_ plan: TripPlan) async {
+        inviteError = nil
+        if plan.share == nil {
+            await share(with: nil)
+            guard self.plan?.share != nil else { return }
+        }
+        inviting = true
+        if inviteLink != nil { return }
+        do {
+            inviteLink = try await environment.tripShare.invite(planId: planId)
+        } catch {
+            inviteError = (error as? LocalizedError)?.errorDescription ?? L("リンクを作れませんでした。", "Couldn't make a link.")
+        }
     }
 
     /// 「行きたい場所から追加…」（v2 の板 TripPlanDays の `.add`: 真鍮の ＋ と字・48）
@@ -1324,13 +1498,15 @@ struct TripPlanDetailView: View {
     /// 確かめは**画面の中に開く**（板は系統の確認の札だが、保存のアラートと重ならないよう前のまま）
     private func deleteCard(_ plan: TripPlan) -> some View {
         let title = plan.title.isEmpty ? L("無題のプラン", "Untitled trip") : plan.title
+        // 共有したプランの仲間（作った人でない）は「抜ける」。作った人の削除は仲間全員から消える（サーバーが分ける）
+        let leaving = plan.share != nil && !(plan.share?.isOwner(auth.userId) ?? false)
         return VStack(spacing: JPSpace.xs) {
             Button {
                 confirmingDelete.toggle()
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "trash").accessibilityHidden(true)
-                    Text(L("「\(title)」を削除", "Delete \(title)"))
+                    Image(systemName: leaving ? "rectangle.portrait.and.arrow.right" : "trash").accessibilityHidden(true)
+                    Text(leaving ? TripShareText.leave : L("「\(title)」を削除", "Delete \(title)"))
                 }
                 .font(JPFont.body)
                 .foregroundStyle(WebTheme.danger)
@@ -1341,11 +1517,13 @@ struct TripPlanDetailView: View {
 
             if confirmingDelete {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(L("この旅行プランを削除しますか？", "Delete this trip?"))
+                    Text(leaving ? TripShareText.leaveConfirm
+                         : plan.share != nil ? L("仲間全員から、この旅行プランと会話を削除しますか？", "Delete this trip and its chat for everyone?")
+                         : L("この旅行プランを削除しますか？", "Delete this trip?"))
                         .font(JPFont.footnote)
                         .foregroundStyle(WebTheme.text2)
                     HStack(spacing: JPSpace.xs) {
-                        TripOutlineButton(title: L("削除する", "Delete"), strong: true, fill: true) {
+                        TripOutlineButton(title: leaving ? L("抜ける", "Leave") : L("削除する", "Delete"), strong: true, fill: true) {
                             confirmingDelete = false
                             Task {
                                 if await model.remove(planId, environment: environment) {

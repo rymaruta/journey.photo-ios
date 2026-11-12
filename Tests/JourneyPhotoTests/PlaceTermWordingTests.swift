@@ -1,11 +1,12 @@
 import XCTest
 @testable import JourneyPhoto
 
-/// 場所の呼び名をそろえる（2026-10-11 owner 承認・CLAUDE.md「呼び名の決まり」）。
+/// 場所の呼び名をそろえる（2026-10-11 owner 承認、2026-11-12 に「観光スポット」へ変更・CLAUDE.md「呼び名の決まり」）。
 ///
 /// 同じものが「撮影地・撮影スポット・スポット・注目スポット・撮影地ガイド・この場所」と
 /// 最大7通りで呼ばれていた。決まりは:
-/// - 公式の撮影スポットの頁・一覧 → 「撮影スポット」（チップ・タブ・切り替えだけ「スポット」）
+/// - 公式の頁・一覧（`OfficialSpot`） → 「観光スポット」（チップ・タブ・切り替えだけ「スポット」）。
+///   2026-11-12 まで「撮影スポット」だった（1.1.84 で表の言葉を一度に替えた。識別子・URL・サーバーの欄はそのまま）
 /// - 写真が撮られた所（写真から導く撮影地の頁も） → 「撮影地」
 /// - 保存の機能 → 「行きたい場所」
 ///
@@ -38,6 +39,22 @@ final class PlaceTermWordingTests: XCTestCase {
         return try files.flatMap { try japaneseStrings(in: $0) }
     }
 
+    /// 公式の頁・一覧の古い呼び名「撮影スポット」が、画面の文（コードの文字列）に戻ってこない（1.1.84 で替えた）
+    func testOldOfficialSpotNameIsGone() throws {
+        let files = FileManager.default.enumerator(at: sourcesRoot, includingPropertiesForKeys: nil)!
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }
+        var left: [String] = []
+        for file in files {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            for literal in NoMiddleDotSweepTests.literals(text) where literal.contains("撮影スポット") {
+                left.append("\(file.lastPathComponent): \(literal)")
+            }
+        }
+        XCTAssertEqual(left, [], "「撮影スポット」は「観光スポット」に替えた")
+        let strings = try allJapaneseStrings()
+        XCTAssertGreaterThan(strings.filter { $0.text.contains("観光スポット") }.count, 50)
+    }
+
     /// 消した呼び名が戻ってこない
     func testRemovedVariantsDoNotComeBack() throws {
         let strings = try allJapaneseStrings()
@@ -60,11 +77,11 @@ final class PlaceTermWordingTests: XCTestCase {
     /// 公式の撮影スポットの頁（`OfficialSpotView`）は「撮影スポット」と呼ぶ
     func testOfficialSpotPageSaysSatsueiSpot() throws {
         let official = try japaneseStrings(in: sourcesRoot.appendingPathComponent("Features/Spots/OfficialSpotView.swift"))
-        for text in ["この撮影スポットの魅力", "この撮影スポットの写真を投稿", "近くの撮影スポット",
-                     "この撮影スポットから、次の一枚へ"] {
+        for text in ["この観光スポットの魅力", "この観光スポットの写真を投稿", "近くの観光スポット",
+                     "この観光スポットから、次の一枚へ"] {
             XCTAssertTrue(official.contains { $0.text == text }, "公式の頁に「\(text)」が無い")
         }
-        XCTAssertTrue(official.contains { $0.text.hasPrefix("この撮影スポットの写真（") })
+        XCTAssertTrue(official.contains { $0.text.hasPrefix("この観光スポットの写真（") })
         XCTAssertEqual(official.filter { $0.text.contains("このスポット") }.map(\.at), [],
                        "公式の頁が「このスポット」と短く呼んでいる")
     }
@@ -73,7 +90,7 @@ final class PlaceTermWordingTests: XCTestCase {
     /// 写真の撮影地の頁へ行くボタンは「撮影地を見る」
     func testOpenButtonsNameTheirDestination() throws {
         let map = try japaneseStrings(in: sourcesRoot.appendingPathComponent("Features/Map/PhotoMapView.swift"))
-        XCTAssertTrue(map.contains { $0.text == "撮影スポットを見る" })
+        XCTAssertTrue(map.contains { $0.text == "観光スポットを見る" })
         XCTAssertTrue(map.contains { $0.text == "撮影地を見る" })
         let bare = try allJapaneseStrings().filter { $0.text == "スポットを見る" }.map(\.at)
         XCTAssertEqual(bare, [], "行き先が分からない「スポットを見る」が残っている")
@@ -84,19 +101,19 @@ final class PlaceTermWordingTests: XCTestCase {
     func testLongSpotButtonsFitOnOneLine() throws {
         for path in ["Features/Map/PhotoMapView.swift", "Features/Gallery/DailyQuizView.swift"] {
             let text = try String(contentsOf: sourcesRoot.appendingPathComponent(path), encoding: .utf8)
-            guard let start = text.range(of: #"L("撮影スポットを見る""#) else {
-                XCTFail("\(path) に「撮影スポットを見る」が無い"); continue
+            guard let start = text.range(of: #"L("観光スポットを見る""#) else {
+                XCTFail("\(path) に「観光スポットを見る」が無い"); continue
             }
             let after = String(text[start.upperBound...].prefix(400))
-            XCTAssertTrue(after.contains(".lineLimit(1)"), "\(path) の「撮影スポットを見る」が折り返す")
+            XCTAssertTrue(after.contains(".lineLimit(1)"), "\(path) の「観光スポットを見る」が折り返す")
             XCTAssertTrue(after.contains(".minimumScaleFactor(0.8)"),
-                          "\(path) の「撮影スポットを見る」が縮まない、または 12pt より小さく縮む")
+                          "\(path) の「観光スポットを見る」が縮まない、または 12pt より小さく縮む")
         }
     }
 
     /// 文で書く所は「撮影スポット」。「スポット」だけで呼んでよいのはチップ・タブ・切り替え
     func testShelfAndWishlistTextsSayTheFullName() {
-        XCTAssertEqual(HomeSpotShelf.heading, L("いまの季節の撮影スポット", "Photo spots for this season"))
-        XCTAssertTrue(HomeSpotShelf.note.contains(L("各撮影スポットの作例", "examples for each spot")))
+        XCTAssertEqual(HomeSpotShelf.heading, L("いまの季節の観光スポット", "Photo spots for this season"))
+        XCTAssertTrue(HomeSpotShelf.note.contains(L("各観光スポットの作例", "examples for each spot")))
     }
 }

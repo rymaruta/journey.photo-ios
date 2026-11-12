@@ -53,16 +53,16 @@ struct TripPlanPickSheet: View {
                 }
 
                 if choices.isEmpty && sourcesFailed {
-                    ErrorBanner(message: L("行きたい場所を読み込めませんでした。通信を確かめて、開き直してください",
-                                           "Couldn't load your saved places. Check your connection and try again."))
+                    ErrorBanner(title: L("行きたい場所を読み込めませんでした", "Couldn't load your saved places"),
+                                message: L("通信を確かめて、開き直してください", "Check your connection and try again."))
                 } else if choices.isEmpty {
-                    EmptyState(title: L("行きたい場所はまだありません", "No saved places yet"),
+                    EmptyState(icon: nil, title: L("行きたい場所はまだありません", "No saved places yet"),
                                message: L("先に「行きたい場所」に保存してください", "Save places first"))
                 } else {
                     Text(Self.hint(capacity: capacity))
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)
-                    group(L("撮影スポット", "Photo spots"), spots)
+                    group(L("観光スポット", "Photo spots"), spots)
                     group(L("撮影地", "Places"), locations)
                 }
             }
@@ -172,7 +172,7 @@ struct TripPlanPickSheet: View {
         .disabled(locked)
         .opacity(locked ? 0.5 : 1)
         // 名前だけにしない（札の語と県・市も読む）。選んだかは「選択中」で言う
-        .accessibilityLabel(L("\(choice.name)\(choice.isDraft ? "・下書き" : "")\(choice.regionLabel.map { "・" + $0 } ?? "")\(seasonLines[choice.id].map { "・" + $0 } ?? "")",
+        .accessibilityLabel(L("\(choice.name)\(choice.isDraft ? "、下書き" : "")\(choice.regionLabel.map { "、" + $0 } ?? "")\(seasonLines[choice.id].map { "、" + $0 } ?? "")",
                               "\(choice.name)\(choice.isDraft ? ", draft" : "")\(choice.regionLabel.map { ", " + $0 } ?? "")\(seasonLines[choice.id].map { ", " + $0 } ?? "")"))
         .accessibilityAddTraits(isOn ? .isSelected : [])
         .accessibilityHint(isOn ? L("押すと外します", "Tap to deselect") : L("押すと選びます", "Tap to select"))
@@ -195,7 +195,7 @@ struct TripPlanPickSheet: View {
     nonisolated static func eyebrow(dayIndex: Int, date: String?) -> String {
         let day = L("\(dayIndex + 1)日目", "Day \(dayIndex + 1)")
         guard let date, !date.isEmpty else { return day }
-        return "\(day) · \(date)"
+        return "\(day)\u{2002}\(date)"
     }
 
     /// 主ボタンの字（「3か所を追加」・0 のときは「追加」）

@@ -11,6 +11,8 @@ struct GalleryView: View {
     /// この画面はタブの根なので一度出たら生き続け、`.task` は二度と走らない
     /// ——ブロックしても、戻ってくるとその人の写真がまだ並んでいた
     @EnvironmentObject private var hidden: ModerationStore
+    /// 電波があるか（電波が無いときは前に見た写真の上に帯・2026-11-12 第2章）
+    @EnvironmentObject private var connectivity: Connectivity
     @StateObject private var model = GalleryViewModel()
     /// すれちがいの届いた束（板 PassHome・2026-10-16）
     @EnvironmentObject private var pass: PassStore
@@ -41,6 +43,8 @@ struct GalleryView: View {
     @State private var isOnScreen = false
     /// 出ていない間にブロック／通報があった。戻ってきたときに読み直す
     @State private var needsReload = false
+    /// 出ていない間に電波が戻った。戻ってきたときに読み直す（`HomeReconnect`・2026-11-12）
+    @State private var reloadAfterReconnect = false
     /// 一度でもこの画面が出たか。**戻ってきた回だけ自分の写真を読み直す**ための印
     /// （初回は `.task(id:)` が読む・`MyPageView` と同じ形）
     @State private var didAppear = false
@@ -92,11 +96,22 @@ struct GalleryView: View {
                 // v2（Components 06）: 中身と同じ形の灰の骨格（0.3 秒より早ければ出さない）
                 ScrollView { JPLoadingState(kind: .grid) }
             case .failed(let message):
-                ErrorBanner(message: message) {
-                    Task { await model.load() }
+                if connectivity.isOffline {
+                    // 2026-11-12 判断（第2章「画面の状態とそろえ」）: **控えが1枚も無いときだけ**中央の状態。
+                    // 電波が無いことを先に言う（「読み込めませんでした」だと何が起きたか分からない）
+                    ScrollView { HomeOfflineState(isBusy: isRefreshing) { retryHome() } }
+                } else {
+                    ErrorBanner(message: message, isBusy: isRefreshing) {
+                        retryHome()
+                    }
                 }
             case .loaded(let photos):
                 let _ = PerfRecorder.shared.mark("home.loaded.body")
+                // 2026-11-12 判断（第2章・板 v2 Main の「電波なし」）: **電波が無くても一覧は消さない。**
+                // 前に見た写真（端末の控え）をそのまま出し、上に帯で知らせる。写真を見るまで 0 回、読み直しは 1 回
+                if connectivity.isOffline {
+                    HomeOfflineBand(isBusy: isRefreshing) { retryHome() }
+                }
                 // 🔴 **0枚でもフィードごと描く**（切り替えのタブを残す）。
                 // 空の知らせで画面ごと置き換えると、「フォロー中」を押して
                 // 0枚だった人が「おすすめ」へ戻れなかった——以前は上の段の
@@ -117,6 +132,8 @@ struct GalleryView: View {
         // **地図のアイコンは外した**——下の札に「マップ」があり、
         // 同じ場所への入口が2つあった
         .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications, messagesUnread: messagesUnread) }
+        // 上の札の「⋯」で旅行プランを消した・ホームに出さないにした知らせと「元に戻す」（2026-11-12・`TripPlanRemovalQueue`）
+        .overlay(alignment: .bottom) { TripRemovalBar(queue: TripPlanRemovalQueue.shared) }
         .task {
             // **環境の1つに繋ぎ直してから読む。** 自前のを持ったままだと
             // `setHidden` が届かず、ブロックが一生効かない
@@ -161,6 +178,16 @@ struct GalleryView: View {
             await model.loadMyPhotos(environment.photos, viewerId: userId)
         }
         .refreshable { await refreshAll() }
+        // 電波が戻ったら、押さなくても読み直す（帯の「もう一度」を待たない・2026-11-12 第2章）。
+        // 上に詳細を積んでいる・別のタブにいる間は読み直さず**印だけ立て**、戻ってきたとき
+        // （`landOnScreen`）に読み直す（`HomeReconnect`）
+        .onChange(of: connectivity.isOffline) { _, offline in
+            switch HomeReconnect.onConnectivityChange(offline: offline, isOnScreen: isOnScreen) {
+            case .reloadNow: reloadAfterReconnect = false; retryHome()
+            case .reloadWhenBack: reloadAfterReconnect = true
+            case .nothing: break
+            }
+        }
         // **下の「投稿」を閉じたら自分の写真を読み直す。** 今日のテーマの札から投稿しても、
         // シートは `RootView` にあるので `.task(id:)` は走らず、札が「参加する」のまま残った
         //
@@ -336,6 +363,11 @@ struct GalleryView: View {
         } else if reloadMy {
             reloadMyPhotos()
         }
+        // 出ていない間に電波が戻った（2026-11-12 第2章・`HomeReconnect`）。前に見た写真の帯を残さない
+        if HomeReconnect.reloadOnLanding(pending: reloadAfterReconnect, offline: connectivity.isOffline) {
+            reloadAfterReconnect = false
+            retryHome()
+        }
     }
 
     private func reloadMyPhotos() {
@@ -507,7 +539,8 @@ struct GalleryView: View {
                 // 届いた束をまだ開いていないときだけ出る（`PassHomeSlot`）
                 let passBundle = passCards(now: passNow)
                 PassHomeSlot(cards: passBundle, now: passNow) { passDeck = PassDeck(cards: passBundle) }
-                StoriesRow(reloadToken: tabRouter.postSheetsClosed &+ storiesRefresh)
+                StoriesRow(reloadToken: tabRouter.postSheetsClosed &+ storiesRefresh,
+                           myPhotos: model.myPhotos.filter { !dropped.deleted.contains($0.id) })
                 // **#417 ⑦（2026-10-30 owner 採用）: 「NEW（みんなの新しい写真）」の段（2026-10-21・`HomeFreshStrip`）は外した。**
                 // 新着は切り替えの「新着」に一本化。最初の画面の人の写真は、写真の一覧の1段目が受け持つ
                 // （④で季節の段を一覧の中へ移し、①③で上を詰めたので、写真の大きな1枚目が1画面目に入る・Compare の板）。
@@ -526,6 +559,8 @@ struct GalleryView: View {
                 // 非公開にしただけ・サーバー索引が古い回は、読み直しが返るまで札に残りうる（従来どおり）
                 HomeTopCardView(themePhotos: dropped.visible(model.allPhotosForTheme),
                                 myPhotos: model.myPhotos.filter { !dropped.deleted.contains($0.id) },
+                                // 札の1枚目を人で替える（2026-11-12・`HomeTopCard.Audience`）。読めるまでは常連の並び
+                                myPhotosKnown: auth.userId != nil && model.myPhotosOwner == auth.userId,
                                 reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed,
                                 seasonShelf: $seasonShelf,
                                 scrolledAway: topCardsAway)
@@ -577,6 +612,8 @@ struct GalleryView: View {
             // 最後のカードがタブバーに掛からないようにする
             .padding(.bottom, 24)
         }
+        // 写真を手に取っている間は縦の送りを止める（2026-11-12 札 #543・`PhotoLift`）
+        .modifier(PhotoLiftScrollLock(center: PhotoLiftCenter.shared))
         // UI テストのときだけ: 札の行の位置の数を見えない要素に出す（`PreviewSession.feedProbe`）
         .overlay(alignment: .bottomTrailing) {
             if PreviewSession.feedProbe {
@@ -749,7 +786,10 @@ struct GalleryView: View {
     private func feedEmptyState(_ page: HomeFeed) -> some View {
         if model.followingFailed && page == .following {
             // 引き下げを知らない人にも出口を（2026-10-02 の調査）
-            ErrorBanner(message: emptyMessage(page), isBusy: isRefreshing) { Task { await refreshAll() } }
+            // 2026-11-12（第2章）: 見出しは何が読めなかったか、説明はどうすれば読み直せるか
+            ErrorBanner(title: L("フォロー中の人を読み込めませんでした", "Couldn't load the people you follow"),
+                        message: L("引き下げるか、もう一度試すと読み直します", "Pull down or try again to reload"),
+                        isBusy: isRefreshing) { Task { await refreshAll() } }
         } else if model.followingFailed {
             EmptyState(title: emptyTitle(page), message: emptyMessage(page))
         } else {
@@ -784,6 +824,11 @@ struct GalleryView: View {
 
     /// 引き下げ・「もう一度試す」の読み直し。**重ねて走らせない**——続けて押すと、
     /// 遅れて返った古い回が新しい回の答えを上書きした（2026-10-02 のレビュー）
+    /// 帯・中央の状態の「もう一度」（引き下げと同じ読み直し。重ねて走らせない）
+    private func retryHome() {
+        Task { await refreshAll() }
+    }
+
     private func refreshAll() async {
         guard !isRefreshing else { return }
         isRefreshing = true

@@ -92,7 +92,7 @@ jobs:
         run: python3 Tools/test_pr_related_ui.py
       - name: 重さの記録の拾い方の回帰テスト
         run: python3 Tools/test_perf_collect.py
-      - name: API の突き合わせの読み方の回帰テスト
+      - name: Web 版との突き合わせがサーバーの口を読む形の回帰テスト
         run: python3 Tools/test_api_parity.py
 
   # ワークフローだけの変更ではアプリのソース・テストが変わらない。

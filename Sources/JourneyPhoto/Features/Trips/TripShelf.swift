@@ -176,7 +176,8 @@ struct TripShelfList: View {
                 // 2026-10-16: 自分の棚だけ、次の一手「旅の写真からまとめて」（下の「投稿」と同じ道 `TabRouter.openPost`）。
                 // 人の棚で出すと、その人の旅を作るように読める。呼び手（マイページ）は変えずにここで持つ
                 // （端末の旅の一冊の枝がマイページの同じ行を変えているので、ぶつけない）
-                EmptyState(title: L("まだ旅はありません", "No trips yet"), message: Self.explanation(isMine: isMine),
+                // マイページは見た目を変えない（owner・2026-11-12 第2章）: 印なし
+                EmptyState(icon: nil, title: L("まだ旅はありません", "No trips yet"), message: Self.explanation(isMine: isMine),
                            actionTitle: isMine ? Self.startTripTitle : nil,
                            actionIdentifier: "trips.emptyStart",
                            action: isMine ? { TabRouter.shared.openPost(.trip) } : nil)

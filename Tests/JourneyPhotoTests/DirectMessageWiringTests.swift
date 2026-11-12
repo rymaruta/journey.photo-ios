@@ -45,12 +45,11 @@ final class DirectMessageWiringTests: XCTestCase {
         XCTAssertFalse(header.contains("paperplane"), "入口の絵が紙飛行機")
         XCTAssertTrue(header.contains("TabRouter.shared.openMessages()"))
         XCTAssertTrue(header.contains("if messagesUnread { headerDot }"))
-        if let bubble = index(of: #""header.messages""#, in: header),
-           let bell = index(of: #"Image(systemName: "bell")"#, in: header),
-           let search = index(of: #""header.search""#, in: header) {
-            XCTAssertLessThan(search, bubble)
-            XCTAssertLessThan(bubble, bell, "吹き出しがベルの左に無い")
-        }
+        // 見出しの「探す」は 2026-11-12 に外した（下のタブと同じ所・案 第10章）。吹き出しが右の並びの先頭
+        XCTAssertFalse(header.contains(#""header.search""#), "見出しの探すが戻った")
+        let bubble = try XCTUnwrap(index(of: #""header.messages""#, in: header))
+        let bell = try XCTUnwrap(index(of: #"Image(systemName: "bell")"#, in: header))
+        XCTAssertLessThan(bubble, bell, "吹き出しがベルの左に無い")
         // 点は真鍮の共通の部品（黒地の上の合図）
         let dot = slice(header, from: "private var headerDot", to: "\n    }\n")
         XCTAssertTrue(dot.contains("BrassDot()"))

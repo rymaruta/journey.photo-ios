@@ -98,6 +98,13 @@ struct SendSheet<People: View>: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("sendSheet.otherApps")
+        case .otherAppsText(let text):
+            // 撮影スポット（1.1.83・2026-11-12）: 名前・地域・頁・地図のリンクを並べた文を渡す（今の ↑ と同じ中身）
+            ShareLink(item: text) {
+                actionLabel(symbol: "square.and.arrow.up", text: L("ほかのアプリ", "Other apps"))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("sendSheet.otherApps")
         }
     }
 
@@ -154,12 +161,14 @@ enum SendSheetAction: Identifiable {
     case copyLink(URL)
     /// ほかのアプリ（iPhone の共有シート）
     case otherApps(URL)
+    /// ほかのアプリに文を渡す（撮影スポット・1.1.83）
+    case otherAppsText(String)
 
     var id: String {
         switch self {
         case .story: return "story"
         case .copyLink: return "copy"
-        case .otherApps: return "other"
+        case .otherApps, .otherAppsText: return "other"
         }
     }
 }

@@ -25,7 +25,7 @@ final class StoriesHighlightsJudgeTests: XCTestCase {
         XCTAssertFalse(StoryComposerView.keepsDraft(stamp: "t2", keptStamp: "t1", unansweredStamp: nil))
     }
 
-    // MARK: D13 自分用（アーカイブ）のストーリーには「写真として残す」を出さない
+    // MARK: D13 自分用（アーカイブ）のストーリーも「写真として残す」を出す（2026-11-11 から。前は出さなかった）
 
     private func story(_ extra: String) throws -> Story {
         try JSONDecoder.api.decode(Story.self, from: Data("""
@@ -33,8 +33,11 @@ final class StoriesHighlightsJudgeTests: XCTestCase {
         """.utf8))
     }
 
-    func testArchiveStoryCannotBeKept() throws {
-        XCTAssertFalse(StoryViewerView.canKeepAsPhoto(try story(#","archive":true"#)))
+    func testArchiveStoryCanBeKept() throws {
+        XCTAssertTrue(StoryViewerView.canKeepAsPhoto(try story(#","archive":true"#)),
+                      "自分用に残すストーリーを写真にできない（サーバーが写して切り離す）")
+        // もう写真にしていれば出さない（「写真にしました ›」の札が代わりに出る）
+        XCTAssertFalse(StoryViewerView.canKeepAsPhoto(try story(#","keptAs":"p1""#)))
     }
 
     func testPlainPhotoStoryCanBeKept() throws {

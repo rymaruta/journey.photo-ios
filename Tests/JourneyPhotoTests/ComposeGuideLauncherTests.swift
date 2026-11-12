@@ -162,8 +162,8 @@ final class ComposeGuideLauncherTests: XCTestCase {
         // 撮影スポットの入口から PRO の札と「Pro の機能です」の読み上げを外した
         let entry = try XCTUnwrap(spot.components(separatedBy: "private var composeEntry: some View {").dropFirst().first)
         let card = try XCTUnwrap(entry.components(separatedBy: "private func sampleCreditLink").first)
-        XCTAssertFalse(card.contains("Text(\"PRO\")"), "撮影スポットの入口に PRO の札が残っている")
-        XCTAssertFalse(card.contains("Pro の機能"), "撮影スポットの入口に Pro の読み上げが残っている")
+        XCTAssertFalse(card.contains("Text(\"PRO\")"), "観光スポットの入口に PRO の札が残っている")
+        XCTAssertFalse(card.contains("Pro の機能"), "観光スポットの入口に Pro の読み上げが残っている")
     }
 
     /// Pro の案内の利点から「作例を重ねて撮る」を外した（2026-10-17）。残りは3つで空にならない

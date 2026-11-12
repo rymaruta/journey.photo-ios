@@ -121,7 +121,7 @@ enum TripDraft {
     /// 時間帯の札（「夜明け · 朝」）。夜明け → 夜の順で2つまで。無ければ nil
     static func timeChip(_ times: [String]) -> String? {
         let labels = SpotBodyText.timeOrder.filter(times.contains).compactMap(SpotBodyText.timeLabel)
-        return labels.isEmpty ? nil : labels.prefix(2).joined(separator: " · ")
+        return labels.isEmpty ? nil : labels.prefix(2).joined(separator: "\u{2002}")
     }
 
     /// 季節の一文（「冬（12月）· 雪吊りの…」）。**その日の月の季節の案内があるときだけ**（撮影地・案内の無い行は nil）
@@ -131,7 +131,7 @@ enum TripDraft {
         guard let label = SpotBodyText.seasonLabel(season),
               let text = spot.seasons.first(where: { $0.season == season })?.text
                 .trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
-        return L("\(label)（\(month)月）· \(text)", "\(label) (\(monthName(month))) · \(text)")
+        return L("\(label)（\(month)月）\u{2002}\(text)", "\(label) (\(monthName(month)))\u{2002}\(text)")
     }
 
     private static func monthName(_ month: Int) -> String {
@@ -195,11 +195,11 @@ enum TripDraft {
         let c1 = TripPlanText.calendar.dateComponents([.year, .month, .day], from: sd)
         let c2 = TripPlanText.calendar.dateComponents([.year, .month, .day], from: ed)
         let first = monthDay(c1.month ?? 0, c1.day ?? 0, weekday(sd))
-        guard days > 1 else { return "\(first) · \(stay)" }
+        guard days > 1 else { return "\(first)\u{2002}\(stay)" }
         let second = c1.month == c2.month && c1.year == c2.year
             ? L("\(c2.day ?? 0)日（\(weekday(ed))）", "\(c2.day ?? 0) (\(weekday(ed)))")
             : monthDay(c2.month ?? 0, c2.day ?? 0, weekday(ed))
-        return "\(first)〜 \(second) · \(stay)"
+        return "\(first)〜 \(second)\u{2002}\(stay)"
     }
 
     private static func monthDay(_ m: Int, _ d: Int, _ w: String) -> String {

@@ -17,6 +17,11 @@ struct TripPlan: Decodable, Identifiable, Equatable {
     let days: [TripDay]
     let createdAt: String?
     let updatedAt: String?
+    /// 仲間と共有したプラン（2026-11-12・サーバーの `trip#<planId>`）。**共有していなければ nil**
+    let share: TripShare?
+    /// 場所を足した人（`TripShareText.itemKey` → 利用者 ID）。共有したプランで、ほかの仲間が足した項目だけ持つ。
+    /// `TripItem` には持たせない（日程の直しは今までどおり項目だけを送り、足した人はサーバーが前の日程から決める）
+    let addedBy: [String: String]
 
     var id: String { planId }
 
@@ -24,7 +29,8 @@ struct TripPlan: Decodable, Identifiable, Equatable {
     var itemCount: Int { days.reduce(0) { $0 + $1.items.count } }
 
     init(planId: String, title: String, startDate: String? = nil, endDate: String? = nil,
-         days: [TripDay] = [], createdAt: String? = nil, updatedAt: String? = nil) {
+         days: [TripDay] = [], createdAt: String? = nil, updatedAt: String? = nil,
+         share: TripShare? = nil, addedBy: [String: String] = [:]) {
         self.planId = planId
         self.title = title
         self.startDate = startDate
@@ -32,11 +38,17 @@ struct TripPlan: Decodable, Identifiable, Equatable {
         self.days = days
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.share = share
+        self.addedBy = addedBy
     }
 
     private enum CodingKeys: String, CodingKey {
-        case planId, title, startDate, endDate, days, createdAt, updatedAt
+        case planId, title, startDate, endDate, days, createdAt, updatedAt, shared, ownerId, memberIds, rev
     }
+
+    /// 足した人だけを読む軽い形（項目の `by`）
+    private struct ByDay: Decodable { let items: [Lenient<ByItem>]? }
+    private struct ByItem: Decodable { let kind: String; let spotId: String?; let slug: String?; let by: String? }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -54,7 +66,35 @@ struct TripPlan: Decodable, Identifiable, Equatable {
         self.days = (try? c.decode([Lenient<TripDay>].self, forKey: .days))?.map { $0.value ?? TripDay() } ?? []
         self.createdAt = try? c.decode(String.self, forKey: .createdAt)
         self.updatedAt = try? c.decode(String.self, forKey: .updatedAt)
+        // 共有したプラン。**形が揃わなければ本人だけのプランとして読む**（古いサーバー・壊れた行で開けなくしない）
+        if (try? c.decode(Bool.self, forKey: .shared)) == true,
+           let owner = try? c.decode(String.self, forKey: .ownerId),
+           let rev = try? c.decode(Int.self, forKey: .rev) {
+            let members = (try? c.decode([String].self, forKey: .memberIds)) ?? [owner]
+            self.share = TripShare(ownerId: owner, memberIds: members, rev: rev)
+        } else {
+            self.share = nil
+        }
+        var by: [String: String] = [:]
+        for day in (try? c.decode([Lenient<ByDay>].self, forKey: .days)) ?? [] {
+            for raw in day.value?.items ?? [] {
+                guard let it = raw.value, let who = it.by, !who.isEmpty else { continue }
+                if it.kind == "spot", let id = it.spotId { by["s:\(id)"] = who }
+                if it.kind == "location", let slug = it.slug { by["l:\(slug)"] = who }
+            }
+        }
+        self.addedBy = by
     }
+}
+
+/// 仲間と共有したプランの欄（`GET /user/trips` の `shared: true` の行）
+struct TripShare: Equatable {
+    let ownerId: String
+    let memberIds: [String]
+    /// 版（`rev`）。日程を送るときに添え、ほかの仲間が先に変えていたらサーバーが 409 で断る
+    let rev: Int
+
+    func isOwner(_ uid: String?) -> Bool { uid != nil && uid == ownerId }
 }
 
 /// 1日ぶん。`date` は**置いた人が持たせたときだけ**ある（Web の画面は付けない）
@@ -135,12 +175,21 @@ extension Lenient: Equatable where T: Equatable {}
 /// `{ "plans": [...] }`。**書き込みの応答も同じ形**（書いたあとの一覧）
 struct TripPlanList: Decodable {
     let plans: [TripPlan]
+    /// 書き込みは通ったが、共有したプランを読めなかった（サーバーの `sharedFailed`）。
+    /// このときの一覧には共有したプランが入っていないので、画面は前に見えていた分を残す（`TripPlansModel.merged`）
+    let sharedFailed: Bool
 
-    private enum CodingKeys: String, CodingKey { case plans }
+    private enum CodingKeys: String, CodingKey { case plans, sharedFailed }
+
+    init(plans: [TripPlan], sharedFailed: Bool = false) {
+        self.plans = plans
+        self.sharedFailed = sharedFailed
+    }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         // **`plans` が無ければ投げる**（形が違う応答を「0件」と混ぜない）
         plans = try c.decode([Lenient<TripPlan>].self, forKey: .plans).compactMap(\.value)
+        sharedFailed = (try? c.decode(Bool.self, forKey: .sharedFailed)) ?? false
     }
 }

@@ -203,6 +203,30 @@ final class TrunkViewModel: ObservableObject {
         await write({ TrunkLocal.stick($0, id: id, slot: slot, take: take) }, { try await $0.stick(id, slot: slot, take: take) })
     }
 
+    /// 届いたラベルを**まとめて貼る**（2026-11-12 判断・案「ラベルが届いた」: 3 枚を貼るのに 5 回 → 1 回）。
+    /// 1 枚ずつ今の口（`stick(_:)`＝おまかせの置き場 `stickPlan`）を続けて呼ぶ。サーバーの変更は無い。
+    /// 途中で失敗したらそこで止め、貼れた id を返す（一言は `actionError`）。手持ちに無い id は飛ばす
+    func stickAll(_ ids: [String]) async -> [String] {
+        var done: [String] = []
+        for id in ids {
+            guard state?.pocket.contains(where: { $0.id == id }) == true else { continue }
+            guard await stick(id) else { break }
+            done.append(id)
+        }
+        return done
+    }
+
+    /// まとめて貼ったのを取り消す（貼った逆の順にはがして手持ちへ戻す）。戻せた数を返す
+    @discardableResult
+    func unstickAll(_ ids: [String]) async -> Int {
+        var undone = 0
+        for id in ids.reversed() where state?.stuck.contains(where: { $0.id == id }) == true {
+            guard await unstick(id) else { break }
+            undone += 1
+        }
+        return undone
+    }
+
     @discardableResult
     func remove(_ id: String) async -> Bool {
         await write({ TrunkLocal.remove($0, id: id) }, { try await $0.remove(id) })
@@ -225,6 +249,15 @@ final class TrunkViewModel: ObservableObject {
     func setModel(_ model: TrunkModel) async -> Bool {
         guard state?.model != model || state?.effectiveModel != model else { return true }
         return await write({ TrunkLocal.setModel($0, model) }, { try await $0.setModel(model) })
+    }
+
+    /// 型を押したらすぐ替え、知らせに「取り消す」を添える（2026-11-12 判断・案「型は押すとすぐ替わる」）。
+    /// 取り消すと前の型へ戻す。同じ型なら何もしない
+    func setModelUndoable(_ next: TrunkModel, toasts: ToastCenter) async {
+        guard let before = state?.effectiveModel, before != next else { return }
+        guard await setModel(next) else { return }
+        toasts.show(TrunkText.modelChangedNotice(TrunkText.info(next).name),
+                    undo: ToastCenter.Undo(title: TrunkText.undoTitle) { [weak self] in await self?.setModel(before) ?? false })
     }
 
     @discardableResult
@@ -359,7 +392,8 @@ final class TrunkViewModel: ObservableObject {
 
     /// 回す（硬貨1枚）。出た部品を返す（断られた・読めなければ nil で、一言は `actionError`）。
     /// 応答は状態を丸ごと返さないので、硬貨・かけら・部品だけを手元の状態に足す
-    func gacha() async -> TrunkGachaResult? {
+    /// `offline`: 送る前から圏外と分かっている（そのときは送らず、硬貨は減っていないと言い切る）
+    func gacha(offline: Bool = false) async -> TrunkGachaResult? {
         guard !busy, let current = state else { return nil }
         busy = true
         defer { busy = false }
@@ -374,16 +408,32 @@ final class TrunkViewModel: ObservableObject {
             return result
         }
         guard let service else { return nil }
+        // 送る前から圏外: 送らない。サーバーに何も届いていないので「硬貨は減っていません」と言い切れる（2026-11-12 判断）
+        if offline {
+            actionError = TrunkGachaText.unreachable
+            return nil
+        }
         do {
             let result = try await service.gacha()
             state = result.applied(to: current)
             return result
         } catch is CancellationError {
             return nil
+        } catch let refused as TrunkService.Refused {
+            // サーバーの断り（硬貨が無い など）: 回っていない。読み直さない（今までどおり）
+            actionError = Self.message(refused)
+            return nil
         } catch {
-            actionError = Self.message(error)
-            // 回ったかどうか分からない（知らない部品・時間切れ）。硬貨と部品を読み直す
-            if !(error is TrunkService.Refused) { await load(offline: false) }
+            // 送ったあとに切れた・時間切れ（`APIError.unreachable` もここ）: 回ったかどうか分からない。
+            // 硬貨と部品を読み直し、硬貨の数を前と比べて言い分ける（2026-11-12 判断・確かめ役の指摘:
+            // 時間切れでも「硬貨は減っていません」と言っていた）
+            var coinsAfter: Int?
+            let fresh = try? await service.state()
+            if let fresh {
+                state = fresh.keepingPosts(from: state)
+                coinsAfter = fresh.coins
+            }
+            actionError = TrunkGachaText.afterUnsure(coinsBefore: current.coins, coinsAfter: coinsAfter)
             return nil
         }
     }

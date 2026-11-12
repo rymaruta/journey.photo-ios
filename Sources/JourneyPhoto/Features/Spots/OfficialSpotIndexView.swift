@@ -40,6 +40,8 @@ struct OfficialSpotIndexView: View {
     private var counts: [String: Int] { counter.counts }
     /// 出す段（入力が変わったときだけ作る・`Inputs`）。作る前は nil（「見つかりませんでした」と言わない）
     @State private var built: [RegionList.Section]?
+    /// みんなの「行きたい」（県の一覧の頭の3つ・2026-11-11 撮影スポットを払うの②）
+    @State private var wants: SpotWants.File?
 
     /// 段を作り直す材料。**body のたびに全件を束ね直さない**（確かめ役の指摘・2026-11-11）
     private struct Inputs: Equatable {
@@ -66,13 +68,52 @@ struct OfficialSpotIndexView: View {
         return nil
     }
 
+    /// 県の一覧の頭の「今月いちばん行きたい」3つ（並びの既定は変えない・数が無ければ置かない）
+    @ViewBuilder
+    private func wantsTop(rows: [OfficialSpotList.Row], source: [OfficialSpot]) -> some View {
+        let top = SpotWants.areaTop(wants, slugs: rows.map(\.spot.slug))
+        if !top.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                JPEyebrowLine(L("今月いちばん行きたい", "Most wanted this month"))
+                    .padding(.bottom, JPSpace.xs)
+                ForEach(Array(top.enumerated()), id: \.element.slug) { index, entry in
+                    if let row = rows.first(where: { $0.spot.slug == entry.slug }) {
+                        NavigationLink {
+                            OfficialSpotView(spot: row.spot, spots: source, photos: photos, photosKnown: photosKnown)
+                        } label: {
+                            HStack(spacing: JPSpace.s) {
+                                Text("\(index + 1)")
+                                    .font(JPFont.rowTitle)
+                                    .foregroundStyle(WebTheme.accent)
+                                    .frame(width: 24)
+                                Text(row.spot.name)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(WebTheme.foreground)
+                                    .lineLimit(1)
+                                Spacer(minLength: 0)
+                                Text(SpotWants.count(entry.n))
+                                    .font(JPFont.mono(JPTypeScale.footnote, relativeTo: .footnote))
+                                    .foregroundStyle(WebTheme.text2)
+                            }
+                            .frame(minHeight: JPHeight.row)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("spotIndex.wantsTop")
+                    }
+                }
+            }
+            .padding(.bottom, JPSpace.l)
+        }
+    }
+
     private var title: String {
         switch scope {
         case .prefecture(let name): return name
         case .region(let name):
             let english = PrefectureRegions.all.first { $0.name == name }.map(PrefectureRegions.englishName) ?? name
             return L(name, english)
-        case .all: return L("撮影スポット", "Photo spots")
+        case .all: return L("観光スポット", "Photo spots")
         }
     }
 
@@ -84,7 +125,7 @@ struct OfficialSpotIndexView: View {
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: JPSpace.s) {
-                    SearchBox(prompt: L("撮影スポットの名前で絞る", "Filter photo spots by name"),
+                    SearchBox(prompt: L("観光スポットの名前で絞る", "Filter photo spots by name"),
                               text: $query, identifier: "spotIndex.field")
                         .padding(.horizontal, JPSpace.gutter)
                     if scope == .all {
@@ -100,13 +141,14 @@ struct OfficialSpotIndexView: View {
                         if built == nil {
                             JPLoadingState(kind: .rows)
                         } else if spots.isEmpty {
-                            EmptyState(message: L("公開中の撮影スポットはまだありません", "No photo spots yet"))
+                            EmptyState(icon: "mappin", message: L("公開中の観光スポットはまだありません", "No photo spots yet"))
                         } else if sections.isEmpty {
-                            EmptyState(message: L("見つかりませんでした", "No results"))
+                            EmptyState(icon: "mappin", message: L("見つかりませんでした", "No results"))
                         } else {
                             if case .prefecture = scope {
-                                JPEyebrowLine(here != nil ? L("撮影スポット · 近い順", "Photo spots · nearest first")
-                                                          : L("撮影スポット", "Photo spots"),
+                                wantsTop(rows: rows, source: source)
+                                JPEyebrowLine(here != nil ? L("観光スポット\u{2002}近い順", "Photo spots\u{2002}nearest first")
+                                                          : L("観光スポット", "Photo spots"),
                                               trailing: SpotPrefectureIndex.countLabel(rows.count))
                                     .padding(.bottom, JPSpace.xs)
                             }
@@ -156,6 +198,7 @@ struct OfficialSpotIndexView: View {
         .onChange(of: SpotPrefectureIndex.PhotoCounter.key(photos, links: links)) { _, _ in
             counter.refresh(photos, links: links)
         }
+        .task { wants = await environment.spotWants.file() }
         .task {
             // 別名と写真の結びは控えから返る（無ければ1度だけ取る）。取れなければ名前と spotId だけで当てる
             links = await environment.spots.fetchPhotoLinks()

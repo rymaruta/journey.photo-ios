@@ -36,7 +36,7 @@ struct BlockedUsersView: View {
                 .plainRow(top: JPSpace.xs, bottom: 0)
             // 板の説明。**同じ言い方をアプリの他の入口（通報・プロフィール）でも使っている**
             // 板 v2: 13・text-2
-            Text(L("ブロックすると、おたがいの投稿・ストーリー・通知が見えなくなります。",
+            Text(L("ブロックすると、おたがいの投稿、ストーリー、通知が見えなくなります。",
                    "Blocking hides each other's posts, stories and notifications."))
                 .font(JPFont.footnote)
                 .foregroundStyle(WebTheme.text2)

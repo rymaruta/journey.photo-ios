@@ -106,7 +106,7 @@ final class TripsDesignTests: XCTestCase {
     func testPageMetaJoinsOnlyWhatItHas() throws {
         let full = try photo(["id": "a", "date": "2026-09-12",
                               "exif": ["dateTimeOriginal": "2026:09:12 07:12:00", "focalLength": "24", "aperture": "8"]])
-        XCTAssertEqual(TripStyle.pageMeta(full), "07:12 · 24mm · f/8")
+        XCTAssertEqual(TripStyle.pageMeta(full), "07:12\u{2002}24mm\u{2002}f/8")
         // 撮影日と食い違う時刻は出さない
         let other = try photo(["id": "b", "date": "2026-09-13",
                                "exif": ["dateTimeOriginal": "2026:09:12 07:12:00", "aperture": "f/2.8"]])
@@ -133,7 +133,7 @@ final class TripsDesignTests: XCTestCase {
         XCTAssertFalse(TripStyle.isFinished(end: "2026-10-14", today: "2026-10-14"), "帰着の日の当日はまだ旅の中")
         XCTAssertFalse(TripStyle.isFinished(end: nil, today: "2026-10-14"))
         let line = TripStyle.planLine(start: nil, end: nil, places: 3, finished: false)
-        XCTAssertEqual(line, "\(L("日付未定", "No dates yet")) · \(TripPlanText.placeCount(3))")
+        XCTAssertEqual(line, "\(L("日付未定", "No dates yet"))\u{2002}\(TripPlanText.placeCount(3))")
         XCTAssertTrue(TripStyle.planLine(start: "2026-09-12", end: "2026-09-14", places: 6, finished: true)
             .hasSuffix(L("帰着済み", "Back home")))
     }
@@ -154,7 +154,7 @@ final class TripsDesignTests: XCTestCase {
         XCTAssertEqual(TripPlanPickSheet.toggled(picked, id: "a", capacity: 2), ["b"], "外すのはいつでも")
         XCTAssertEqual(TripPlanPickSheet.toggled([], id: "a", capacity: 0), [])
         XCTAssertEqual(TripPlanPickSheet.addTitle(count: 3), L("3か所を追加", "Add 3 places"))
-        XCTAssertEqual(TripPlanPickSheet.eyebrow(dayIndex: 0, date: "12月24日"), L("1日目 · 12月24日", "Day 1 · 12月24日"))
+        XCTAssertEqual(TripPlanPickSheet.eyebrow(dayIndex: 0, date: "12月24日"), L("1日目\u{2002}12月24日", "Day 1 · 12月24日"))
         XCTAssertEqual(TripPlanPickSheet.eyebrow(dayIndex: 1, date: nil), L("2日目", "Day 2"))
         XCTAssertEqual(TripPlanPickSheet.hint(capacity: 0), L("この日はいっぱいです", "This day is full"))
     }
@@ -171,7 +171,7 @@ final class TripsDesignTests: XCTestCase {
 
     /// 日の見出しの読み上げは「1日目 · 09.12」（眉の英字「DAY」を読ませない）
     func testSpokenDayHeader() {
-        XCTAssertEqual(TripBookView.spokenDayHeader(1, monthDay: "09.12"), "\(TripBookView.spokenDay(1)) · 09.12")
+        XCTAssertEqual(TripBookView.spokenDayHeader(1, monthDay: "09.12"), "\(TripBookView.spokenDay(1))\(L("、", ", "))09.12")
         XCTAssertFalse(TripBookView.spokenDayHeader(2, monthDay: "09.13").contains("DAY"))
         let day = OfflineTripManifest.Day(number: 2, date: nil, stops: [])
         XCTAssertEqual(OfflineTripContent.dayHeading(day), L("2 日目", "Day 2"))
@@ -185,7 +185,7 @@ final class TripsDesignTests: XCTestCase {
         assertInOrder(["if index == 0 {", "TripShelf(trip: trip)", "} else {", "TripShelfRow(trip: trip)"],
                       in: list, "最新の一冊だけ表紙の札、残りは行")
         XCTAssertTrue(list.contains(".accessibilityIdentifier(\"trips.book\")"), "画面写真で探す名前")
-        XCTAssertTrue(list.contains("EmptyState(title:"), "0 冊は空の状態の部品")
+        XCTAssertTrue(list.contains("EmptyState(icon: nil, title:"), "0 冊は空の状態の部品（マイページは印なし・2026-11-12）")
         let card = section("struct TripShelf:", in: shelf)
         XCTAssertTrue(card.contains("TripStyle.coverCardHeight"))
         XCTAssertTrue(card.contains("JPRadius.l"))
@@ -202,7 +202,9 @@ final class TripsDesignTests: XCTestCase {
         let book = try source("Features/Trips/TripBookView.swift")
         let body = section("var body: some View {", in: book)
         XCTAssertFalse(body.contains(".toolbar"), "共有が右上の印に戻っている（下端に一本化）")
-        assertInOrder([".safeAreaInset(edge: .bottom)", "TripBook.canShare(book, isMine: isMine)", "shareButton.jpBottomBar()"],
+        // 2026-11-12（1.1.83 第9章）: 下端の帯に「ストーリーに」を並べた。主の白い「この一冊を送る」が先（左・広い側）
+        assertInOrder([".safeAreaInset(edge: .bottom)", "TripBook.canShare(book, isMine: isMine)",
+                       "shareButton", "storyButton", ".jpBottomBar()"],
                       in: body, "下端の共有")
         let label = section("private var shareLabel", in: book)
         XCTAssertTrue(label.contains(".jpPillButton(.main(onPhoto: true))"), "写真のある画面の主ボタンは白")
@@ -237,7 +239,7 @@ final class TripsDesignTests: XCTestCase {
         let create = section("private var createButton: some View {", in: plans)
         assertInOrder(["showCreate = true", "L(\"旅行プランを作る\"", ".jpPillButton(.main(onPhoto: false))"],
                       in: create, "作る口")
-        XCTAssertTrue(plans.contains("ErrorBanner(message: L(\"旅行プランを読み込めませんでした。\""), "読めなかったのは状態の部品")
+        XCTAssertTrue(plans.contains("ErrorBanner(title: L(\"旅行プランを読み込めませんでした\""), "読めなかったのは状態の部品")
         XCTAssertTrue(plans.contains("EmptyState(title: L(\"旅行プランはまだありません\""))
         XCTAssertTrue(plans.contains("JPLoadingState(kind: .rows)"))
         let card = section("private func card(_ plan: TripPlan, face: Bool = true)", in: plans)
@@ -268,8 +270,8 @@ final class TripsDesignTests: XCTestCase {
         let date = section("private func dateField(", in: detail)
         XCTAssertTrue(date.contains("TripStyle.dateFieldHeight"))
         let delete = section("private func deleteCard(", in: detail)
-        assertInOrder([".foregroundStyle(WebTheme.danger)", "TripOutlineButton(title: L(\"削除する\", \"Delete\"), strong: true"],
-                      in: delete, "削除は危険の色の行 → 確かめ")
+        assertInOrder([".foregroundStyle(WebTheme.danger)", "TripOutlineButton(title: leaving ? L(\"抜ける\", \"Leave\") : L(\"削除する\", \"Delete\"), strong: true"],
+                      in: delete, "削除は危険の色の行 → 確かめ（共有したプランの仲間は「抜ける」・2026-11-12）")
         XCTAssertTrue(detail.contains("TripOutlineButton(title: L(\"削除する\", \"Remove\"), strong: true"), "日の削除の確かめ")
         XCTAssertFalse(detail.contains("Color.white.opacity(0.18)"), "v1 の白 18% の線が残っている")
         XCTAssertTrue(detail.contains("capacity: TripStyle.remaining("), "候補のシートに残りの数を渡す")

@@ -77,9 +77,9 @@ final class TripPlanStage1Tests: XCTestCase {
     }
 
     func testRangeLineSaysNightsAndDays() {
-        XCTAssertEqual(TripDraft.rangeLine(start: "2026-12-24", end: "2026-12-25"), "12月24日（木）〜 25日（金） · 1 泊 2 日")
-        XCTAssertEqual(TripDraft.rangeLine(start: "2026-12-24", end: nil), "12月24日（木） · 日帰り")
-        XCTAssertEqual(TripDraft.rangeLine(start: "2026-12-31", end: "2027-01-02"), "12月31日（木）〜 1月2日（土） · 2 泊 3 日")
+        XCTAssertEqual(TripDraft.rangeLine(start: "2026-12-24", end: "2026-12-25"), "12月24日（木）〜 25日（金）\u{2002}1 泊 2 日")
+        XCTAssertEqual(TripDraft.rangeLine(start: "2026-12-24", end: nil), "12月24日（木）\u{2002}日帰り")
+        XCTAssertEqual(TripDraft.rangeLine(start: "2026-12-31", end: "2027-01-02"), "12月31日（木）〜 1月2日（土）\u{2002}2 泊 3 日")
         XCTAssertNil(TripDraft.rangeLine(start: nil, end: nil))
         XCTAssertEqual(TripDraft.allocationNote(places: 5, days: 2), "5 か所を 2 日に割り振ります。日付は後から変えられます。")
     }
@@ -152,7 +152,7 @@ final class TripPlanStage1Tests: XCTestCase {
         XCTAssertNil(TripDraft.overlapNote([["morning"], ["morning"]]))
         XCTAssertNil(TripDraft.overlapNote([["morning", "goldenHour"], ["goldenHour"]]),
                      "並べるときの時間帯（いちばん早いもの）で数える")
-        XCTAssertEqual(TripDraft.timeChip(["morning", "dawn", "night"]), "夜明け · 朝")
+        XCTAssertEqual(TripDraft.timeChip(["morning", "dawn", "night"]), "夜明け\u{2002}朝")
         XCTAssertNil(TripDraft.timeChip([]))
     }
 
@@ -249,8 +249,8 @@ final class TripPlanStage1Tests: XCTestCase {
     /// 季節の一文: その日の月の季節の案内があるときだけ
     func testSeasonLineFromTheDayMonth() throws {
         let s = try spot("k", seasons: [("winter", "雪吊りの庭"), ("spring", "桜")])
-        XCTAssertEqual(TripDraft.seasonLine(s, ymd: "2026-12-24"), "冬（12月）· 雪吊りの庭")
-        XCTAssertEqual(TripDraft.seasonLine(s, ymd: "2027-04-02"), "春（4月）· 桜")
+        XCTAssertEqual(TripDraft.seasonLine(s, ymd: "2026-12-24"), "冬（12月）\u{2002}雪吊りの庭")
+        XCTAssertEqual(TripDraft.seasonLine(s, ymd: "2027-04-02"), "春（4月）\u{2002}桜")
         XCTAssertNil(TripDraft.seasonLine(s, ymd: "2026-08-01"), "夏の案内は無い")
         XCTAssertNil(TripDraft.seasonLine(s, ymd: nil), "日付の無いプランには出さない")
     }
@@ -469,7 +469,7 @@ final class TripPlanStage1FollowUpTests: XCTestCase {
             XCTAssertTrue(body.prefix(200).contains("#if DEBUG") && body.prefix(260).contains("#else\n        return false"),
                           "\(name) が Release で false にならない")
         }
-        XCTAssertTrue(try source("Services/TripPlanService.swift").contains("if TripPlanFixture.isOn { return try await TripPlanFixtureStore.shared.update"))
+        XCTAssertTrue(try source("Services/TripPlanService.swift").contains("if TripPlanFixture.isOn { return TripPlanList(plans: try await TripPlanFixtureStore.shared.update"))
     }
 
     /// 見本の書き込みは送った回数を数える（サーバーへは送らない）
@@ -495,7 +495,7 @@ final class TripPlanStage1FollowUpTests: XCTestCase {
             [TripTravel.Estimate(mode: .automobile, seconds: 3000), TripTravel.Estimate(mode: .transit, seconds: 4800)]
                 .filter { _ in leg.from.number != 2 }   // どの区間にも見込みがある（日をまたぐ区間も）
         }
-        XCTAssertEqual(out.map(\.travel), [nil, nil, "前の場所から 車 約 50 分 · 電車など 約 1 時間 20 分", nil],
+        XCTAssertEqual(out.map(\.travel), [nil, nil, "前の場所から 車 約 50 分\u{2002}電車など 約 1 時間 20 分", nil],
                        "座標の無い場所を飛ばし、日をまたいでは添えない")
         XCTAssertTrue(try source("Features/Trips/OfflineTripCard.swift").contains("OfflineTripPlan.withTravel(planned.stops)"))
         XCTAssertTrue(try source("Core/Storage/OfflineTripStore.swift").contains("samples: samples, map: map, travel: stop.travel)"))

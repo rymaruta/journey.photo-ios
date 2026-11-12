@@ -290,7 +290,7 @@ struct CamperRoomCloseUpView: View {
                 }
                 .overlay(alignment: .top) {
                     if !have {
-                        Text(L("まだ持っていない家具 · 見本", "Not yet collected · preview"))
+                        Text(L("まだ持っていない家具\u{2002}見本", "Not yet collected\u{2002}preview"))
                             .jpSystemFont(12, weight: .semibold)
                             .foregroundStyle(WebTheme.accent)
                             .padding(.horizontal, 12)

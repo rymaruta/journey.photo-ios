@@ -94,6 +94,14 @@ struct Photo: Identifiable, Decodable, Equatable {
     /// **ID だけ・今も見られるかは分からない。** 中身（題・画像・作者）は写真の詳細を開いたときに
     /// `GET /user/inspired/{id}` で確かめてから出す（`InspiredBy`）。ID だけで行を作らない
     let inspiredBy: String?
+    /// この写真を作った元のストーリー（2026-11-11）。`keptFrom`＝画像を共有して残した／
+    /// `fromStory`＝自分用に残すストーリーから写して残した。**本人の一覧（`/user/photos`）にだけ入る**
+    let keptFrom: String?
+    let fromStory: String?
+    /// 元のストーリーの id（どちらの残し方でも）
+    var sourceStoryId: String? {
+        [keptFrom, fromStory].compactMap { $0 }.first { !$0.isEmpty }
+    }
     /// 正方形に切り抜くときの中心（0〜1）。未設定なら中央
     let focalPoint: FocalPoint?
     let exif: Exif?

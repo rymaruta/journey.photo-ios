@@ -2,6 +2,82 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.84",
+      "date": "2026-11-12",
+      "items": [
+        {
+          "symbol": "wifi.slash",
+          "title": { "ja": "電波が無いときも見やすく", "en": "Clearer when you're offline" },
+          "detail": { "ja": "電波が届かないときも、ホームは読み込めた写真をそのまま出します。読み込み中、まだ無いとき、読めなかったときの見た目を、どの画面でもそろえました。", "en": "When you lose signal, Home keeps showing the photos it already loaded. Loading, empty and failed states now look the same on every screen." }
+        },
+        {
+          "symbol": "camera",
+          "title": { "ja": "ストーリーを作る画面を整えました", "en": "Story tools, refined" },
+          "detail": { "ja": "カメラ、動画の切り取り、曲の流し始め、ハイライトを作る画面を見やすくしました。", "en": "The camera, video trimming, song start and highlight screens are easier to use." }
+        },
+        {
+          "symbol": "square.and.pencil",
+          "title": { "ja": "投稿の画面を整えました", "en": "Posting, refined" },
+          "detail": { "ja": "新しい投稿、下書き、旅の写真から選ぶ画面を見やすくしました。", "en": "New posts, drafts and picking from your trip photos are easier to use." }
+        },
+        {
+          "symbol": "suitcase",
+          "title": { "ja": "旅のトランクは押せばすぐ決まる", "en": "Trunk changes apply right away" },
+          "detail": { "ja": "旅のトランクの部品やラベルは押すとすぐ決まり、知らせの「取り消す」で戻せます。", "en": "Parts and labels in your travel trunk apply as soon as you tap them, and you can undo from the notice." }
+        },
+        {
+          "symbol": "film",
+          "title": { "ja": "旅から帰ったら写真を現像", "en": "Develop your trip photos" },
+          "detail": { "ja": "ホームの「現像前の旅」から、旅の写真を1枚ずつ払って選べます。1年前の旅はストーリーに出せます。", "en": "From “Trip to develop” on Home, swipe through your trip photos one by one. You can also post last year's trip to your story." }
+        },
+        {
+          "symbol": "ticket",
+          "title": { "ja": "旅をストーリーに", "en": "Turn a trip into a story" },
+          "detail": { "ja": "自分の写真の「SNS に載せる」で、搭乗券や切手の形にした旅の1枚をストーリー用に作れます。", "en": "From “Post to social” on your own photo, make a story image styled like a boarding pass or a stamp." }
+        },
+        {
+          "symbol": "rectangle.stack",
+          "title": { "ja": "ホームの札をすっきり", "en": "A tidier Home" },
+          "detail": { "ja": "ホームの上の札は3枚までにしました。今日の一問は探すに移り、地図の下から行きたい場所を開けます。", "en": "Home now shows up to three cards. Today's question moved to Search, and you can open your wishlist from the bottom of the map." }
+        },
+        {
+          "symbol": "map",
+          "title": { "ja": "メッセージから旅行プラン", "en": "Trip plans from messages" },
+          "detail": { "ja": "会話で送り合った写真や観光スポットから、旅行プランの下書きを作れます。", "en": "Start a trip plan draft from the photos and spots you shared in a conversation." }
+        },
+        {
+          "symbol": "person.2",
+          "title": { "ja": "旅行プランを仲間と", "en": "Plan trips together" },
+          "detail": { "ja": "旅行プランを仲間と共有して、日程を一緒に見ながら話せます。", "en": "Share a trip plan with friends to look at the schedule together and chat about it." }
+        },
+        {
+          "symbol": "qrcode",
+          "title": { "ja": "プロフィールの QR コード", "en": "Your profile QR code" },
+          "detail": { "ja": "マイページの名前の横から、自分のプロフィールの QR コードを出せます。", "en": "Show your profile QR code from next to your name on My page." }
+        },
+        {
+          "symbol": "arrow.uturn.backward",
+          "title": { "ja": "メッセージの送信を取り消す", "en": "Unsend messages" },
+          "detail": { "ja": "自分の吹き出しを長押しして「送信を取り消す」を選ぶと、送ったメッセージを取り消せます。", "en": "Press and hold your own message and choose Unsend to take it back." }
+        },
+        {
+          "symbol": "archivebox",
+          "title": { "ja": "ストーリーは最初から残す", "en": "Stories are kept by default" },
+          "detail": { "ja": "「24時間後も自分用に残す」は最初からオンです。最後に選んだ形を次も使います。", "en": "“Keep for me after 24 hours” is now on by default, and your last choice is remembered." }
+        },
+        {
+          "symbol": "hand.draw",
+          "title": { "ja": "観光スポットを払って探す", "en": "Swipe through sightseeing spots" },
+          "detail": { "ja": "ホームの札から観光スポットを1枚ずつ払い、行きたい場所に入れられます。観光スポットの頁には今月の「行きたい」の数が出ます。", "en": "Swipe through sightseeing spots from a Home card and save the ones you like. Spot pages show how many people want to go this month." }
+        },
+        {
+          "symbol": "envelope",
+          "title": { "ja": "意見を送る", "en": "Send feedback" },
+          "detail": { "ja": "設定の「意見を送る」から、使ってみて思ったことを送れます。", "en": "Tell us what you think from Send feedback in Settings." }
+        }
+      ]
+    },
+    {
       "version": "1.1.83",
       "date": "2026-11-12",
       "items": [

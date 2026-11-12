@@ -37,7 +37,7 @@ enum TripPlanText {
         let number = L("\(index + 1) 日目", "Day \(index + 1)")
         guard let date = dayDate(index: index, day: day, start: start, end: end),
               let label = TakenDay.label(date) else { return number }
-        return "\(number)・\(label)"
+        return "\(number)\u{2002}\(label)"
     }
 
     /// 出発と帰着の前後を揃える。**動かした方に、もう片方を合わせる**
@@ -111,7 +111,7 @@ enum TripPlanText {
     /// 一覧の副文。**聞けたときだけ数を出す**（失敗した回に「0件」と言い切らない）
     static func listSubtitle(count: Int?) -> String {
         guard let count else {
-            return L("行きたい場所を、いつ・どの順で回るかに並べる。", "Plan where to go, and when.")
+            return L("行きたい場所を、いつ、どの順で回るかに並べる。", "Plan where to go, and when.")
         }
         return L("旅行プラン \(count) 件", count == 1 ? "1 trip" : "\(count) trips")
     }

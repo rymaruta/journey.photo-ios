@@ -118,9 +118,9 @@ struct ReportSheet: View {
                                 JPToggleRow(
                                     title: L("この人をブロックする", "Also block this person"),
                                     detail: conversation != nil
-                                        ? L("ブロックすると、おたがいの投稿・ストーリー・メッセージ・通知が見えなくなります。",
+                                        ? L("ブロックすると、おたがいの投稿、ストーリー、メッセージ、通知が見えなくなります。",
                                             "Blocking hides each other's posts, stories, messages and notifications.")
-                                        : L("ブロックすると、おたがいの投稿・ストーリー・通知が見えなくなります。", "Blocking hides each other's posts, stories and notifications."),
+                                        : L("ブロックすると、おたがいの投稿、ストーリー、通知が見えなくなります。", "Blocking hides each other's posts, stories and notifications."),
                                     isOn: $alsoBlock)
                             }
                         }
@@ -413,10 +413,10 @@ enum DMReportReason: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .harassment: return L("いやがらせ・攻撃", "Harassment or attacks")
-        case .sexual: return L("性的な内容・つきまとい", "Sexual content or stalking")
-        case .minor: return L("未成年へのいやな接触・誘い出し", "Inappropriate contact with a minor")
-        case .spam: return L("広告・勧誘・スパム", "Spam or advertising")
+        case .harassment: return L("いやがらせ、攻撃", "Harassment or attacks")
+        case .sexual: return L("性的な内容、つきまとい", "Sexual content or stalking")
+        case .minor: return L("未成年へのいやな接触、誘い出し", "Inappropriate contact with a minor")
+        case .spam: return L("広告、勧誘、スパム", "Spam or advertising")
         case .impersonation: return L("なりすまし", "Impersonation")
         case .other: return L("その他", "Something else")
         }

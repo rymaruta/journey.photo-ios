@@ -49,15 +49,15 @@ enum TrunkPartKind: String, CaseIterable, Identifiable {
     /// 中身と確率の行の例（モック GachaOdds の `ex`）
     var examples: String {
         switch self {
-        case .handle: return L("革の持ち手・籐の持ち手・真鍮の輪", "Leather, rattan, brass ring")
-        case .corner: return L("打ち出しの角・鋲の角・彫りの角", "Hammered, riveted, engraved")
-        case .lock: return L("菊・羅針盤・船の舵・寝台列車", "Chrysanthemum, compass, helm, sleeper")
-        case .lining: return L("縞の綿・絹の更紗・紺の天鵞絨", "Striped cotton, silk chintz, navy velvet")
-        case .tag: return L("空の便・船旅・夜行列車の札", "Flights, voyages, night trains")
-        case .pin: return L("鳥居・富士・汽船・羅針盤", "Torii, Fuji, steamer, compass")
-        case .patch: return L("京都・北海道・登山・世界一周", "Kyoto, Hokkaido, summit, world")
-        case .charm: return L("灯台・ゴンドラ・紅葉・金の星", "Lighthouse, gondola, maple, gold star")
-        case .key: return L("真鍮の涙・寝台車・船室・金の鍵", "Brass teardrop, sleeper, cabin, gold")
+        case .handle: return L("革の持ち手、籐の持ち手、真鍮の輪", "Leather, rattan, brass ring")
+        case .corner: return L("打ち出しの角、鋲の角、彫りの角", "Hammered, riveted, engraved")
+        case .lock: return L("菊、羅針盤、船の舵、寝台列車", "Chrysanthemum, compass, helm, sleeper")
+        case .lining: return L("縞の綿、絹の更紗、紺の天鵞絨", "Striped cotton, silk chintz, navy velvet")
+        case .tag: return L("空の便、船旅、夜行列車の札", "Flights, voyages, night trains")
+        case .pin: return L("鳥居、富士、汽船、羅針盤", "Torii, Fuji, steamer, compass")
+        case .patch: return L("京都、北海道、登山、世界一周", "Kyoto, Hokkaido, summit, world")
+        case .charm: return L("灯台、ゴンドラ、紅葉、金の星", "Lighthouse, gondola, maple, gold star")
+        case .key: return L("真鍮の涙、寝台車、船室、金の鍵", "Brass teardrop, sleeper, cabin, gold")
         }
     }
 

@@ -41,10 +41,23 @@ struct StoryComposerView: View {
     /// その1枚を置く（写真選び・下書きの問いを飛ばす）。札は端末で描いた絵（`SharedPhotoStoryCard`）
     private let sharing: StoryShareSeed?
 
-    init(openDraft: String? = nil, startsWithCamera: Bool = false, sharing: StoryShareSeed? = nil) {
+    /// 「24時間後も自分用に残す」を入れて始める（ハイライトの空の状態の「ストーリーを作る」から・2026-11-12）。
+    /// その入口は「残したストーリー」を作りに行く所なので、既定や人ごとの覚えに関わらず**明示で入れる**
+    private let keepsInArchive: Bool
+    /// ②「1年前」の「ストーリーに出す」から開いたときの写真と文字（2026-11-12 札 #543）。
+    /// 写真は端末の1枚、文字は「1年前の今日、竹富町」（最初から置いてある・動かせる・消せる）
+    private let seed: StoryComposerSeed?
+    /// 送り始めた（裏の係に渡して画面を閉じる直前）。②の輪を「出した」にする
+    private let onStarted: (() -> Void)?
+
+    init(openDraft: String? = nil, startsWithCamera: Bool = false, sharing: StoryShareSeed? = nil,
+         keepsInArchive: Bool = false, seed: StoryComposerSeed? = nil, onStarted: (() -> Void)? = nil) {
         self.openDraft = openDraft
         self.startsWithCamera = startsWithCamera
         self.sharing = sharing
+        self.keepsInArchive = keepsInArchive
+        self.seed = seed
+        self.onStarted = onStarted
     }
     /// 裏に回ったときに黙って残す書きかけ（本人の下書きとは別の枠・2026-10-16）
     @StateObject private var autoDrafts = StoryDraftStore(slot: .auto)
@@ -79,8 +92,14 @@ struct StoryComposerView: View {
     @State private var caption = ""
     /// 撮影地と、その候補（`StorySpotSuggestion.Place`）。撮影地が変わるのは本人が決めたときだけ
     @State private var place = StorySpotSuggestion.Place()
-    /// 24時間のあとも残すか（ハイライトの材料になる）
-    @State private var keepInArchive = false
+    /// 24時間のあとも残すか（ハイライトの材料になる）。
+    /// **2026-11-11 判断（owner「最初からオンでいい」）: 既定はオン、最後に選んだ値を人ごとに覚える**
+    /// （`StoryArchivePreference`）。開いたときにその人の値を読み（`loadKeepInArchive`）、「誰に見せる？」で
+    /// 切り替えたときだけ書く。下書きを開いた回は下書きの値（`restoreDraft`）
+    @State private var keepInArchive = StoryArchivePreference.defaultValue
+    /// 「自分用に残す」をどの人の覚えから読んだか。**同じ人では読み直さない**——カメラから戻る・
+    /// 期限切れで一度 nil になって戻るたびに読むと、開いた下書きの値を覚えの値で上書きする
+    @State private var keepInArchiveOwner: String?
     /// 返信を受けるか（Web の「返信を許可」。既定は入）
     @State private var allowReplies = true
     /// 「撮影地の位置を付ける」（2026-10-18 判断）。**投稿と同じ人ごとの覚え**（`UploadLocationPreference`）を
@@ -89,6 +108,12 @@ struct StoryComposerView: View {
     /// ログアウト・期限切れ（`auth.userId` が nil）では替えない（投稿の画面と同じ）
     @State private var attachesLocation = UploadLocationPreference.defaultValue
     @State private var showCamera = false
+    /// カメラで「写真から選ぶ」を押した（閉じたあとに写真選びへ・2026-11-12）
+    @State private var libraryAfterCamera = false
+    /// 切り取りで「別の動画を選ぶ」を押した（閉じたあとに写真選びへ・2026-11-12）
+    @State private var libraryAfterTrim = false
+    /// 「別の動画を選ぶ」で外す、開けなかった1本（閉じたあとに外してから写真選びを開く）
+    @State private var unopenableShotId: UUID?
     /// 開いたときの「書きかけの下書き」で「キャンセル（残す）」を選んだか
     /// 「続きから」で**残すと決めた下書きの印**（`savedAt`）。真偽では持たない——
     /// 裏の送信や人の替わりでその下書きが消えた後まで「守る下書きがある」ことにしていた
@@ -318,7 +343,16 @@ struct StoryComposerView: View {
         case .compose:
             composer
                 // 動画の切り取り（2026-11-09）。長い修飾子の鎖（`composer`）に足さず、外に付ける
-                .sheet(isPresented: trimSheetShown) { trimSheet }
+                .sheet(isPresented: trimSheetShown, onDismiss: {
+                    guard libraryAfterTrim else { return }
+                    libraryAfterTrim = false
+                    // 開けなかった1本は外してから写真選びへ（並びに送れない1本を残さない・選び直した分の枠も空く）
+                    if let id = unopenableShotId, let index = shots.firstIndex(where: { $0.id == id }) {
+                        remove(at: index)
+                    }
+                    unopenableShotId = nil
+                    showLibrary = true
+                }) { trimSheet }
         }
     }
 
@@ -385,7 +419,14 @@ struct StoryComposerView: View {
         .onChange(of: shots.isEmpty) { _, empty in if !empty { librarySelection = [] } }
         // 誰に見せる（前は足元にあった「フォロワーが見られます」と2つのスイッチ）
         .sheet(isPresented: $showAudience) {
-            StoryAudienceSheet(allowReplies: $allowReplies, keepInArchive: $keepInArchive,
+            StoryAudienceSheet(allowReplies: $allowReplies,
+                               // 切り替えたら人ごとに覚える（2026-11-11 判断・`StoryArchivePreference`）
+                               keepInArchive: Binding(
+                                   get: { keepInArchive },
+                                   set: { value in
+                                       keepInArchive = value
+                                       StoryArchivePreference().set(value, userId: auth.userId)
+                                   }),
                                attachesLocation: Binding(
                                    get: { attachesLocation },
                                    set: { value in
@@ -439,8 +480,8 @@ struct StoryComposerView: View {
                     // **曲の札は変えない**（題と歌い手は同じ）。流し始めだけを入れ替える
                     SongStartSheet(song: song, durationSec: durationSec) { picked in self.song = picked }
                 }
-                // 中身は短い（画面いっぱいにしない）。大きな文字の人は引き上げられる
-                .presentationDetents([.medium, .large])
+                // 2026-11-12（設計の案 03）: 曲の絵・帯・下の「この位置にする」まで一度に見えるよう、画面いっぱいで出す
+                .presentationDetents([.large])
             }
         }
         // **表示秒数を延ばしたら、流し始めを収まる所まで引き戻す**（Web と同じ）。
@@ -478,7 +519,10 @@ struct StoryComposerView: View {
             place.resolve(coords: suggestionCoords, spots: spotIndex)
         }
         // 人が替わったら、その人の「撮影地の位置を付ける」を読む（nil では替えない・2026-10-18）
-        .onChange(of: auth.userId) { _, id in loadAttachesLocation(for: id) }
+        .onChange(of: auth.userId) { _, id in
+            loadAttachesLocation(for: id)
+            loadKeepInArchive(for: id)
+        }
         .alert(L("撮影地", "Place"), isPresented: $showPlaceEditor) {
             // サーバーが 200 で切る（`sanitizeText(location, 200)`）。画面で止める
             TextField(L("撮影地（任意）", "Place (optional)"), text: Binding(
@@ -516,6 +560,8 @@ struct StoryComposerView: View {
             autoDrafts.use(userId: auth.userId)
             refreshDraftCount()
             loadAttachesLocation(for: auth.userId)
+            // 下書きを戻すより先に読む（下書きを開いた回は、このあと下書きの値で上書きする）
+            loadKeepInArchive(for: auth.userId)
             // 2026-10-29 判断: ほかで鳴っている曲は止める（`StoryComposerSong.Owner.stopOthers`）
             songOwner.stopOthers()
             // 下書きから開いた・カメラから戻ったときも、曲が付いていれば流す
@@ -524,6 +570,10 @@ struct StoryComposerView: View {
             // もう一度走り、開いたときの問いがまた出ていた
             guard !askedOnOpen else { return }
             askedOnOpen = true
+            // 開いた回だけ入れる（カメラから戻った onAppear では入れ直さない＝本人が切ったら切ったまま）。
+            // ⚠️ 人ごとの覚えを読む所（`loadKeepInArchive`）があれば、この行はその後ろに置く（覚えで上書きさせない）
+            // 1.1.84 のまとめ: 写真を紹介する札の早い return より前に置く（どちらの入口でも効くように）
+            if keepsInArchive { keepInArchive = true }
             // 写真を紹介する札（札 #541）。**下書き・書きかけの問いは出さない**——紹介しに来た人に前の写真を
             // 尋ねると、置いたはずの札が見えないまま問いに答えることになる（書きかけは次に開いたときに尋ねる）
             if let sharing, shots.isEmpty {
@@ -540,6 +590,19 @@ struct StoryComposerView: View {
                 return
             }
             let hasAuto = autoDrafts.draft != nil
+            // ②「1年前」から（2026-11-12 札 #543）: その写真と文字を入れて開く。**書きかけ・下書きは尋ねない**
+            // （出しに来た1枚がある）。尋ねていない自動の書きかけには触らない（`ownsAutoSlot` と同じ）
+            if let seed, shots.isEmpty, openDraft == nil {
+                autoSlotOwned = !hasAuto
+                Task {
+                    await accept(seed.photo)
+                    if !seed.text.isEmpty, shots.indices.contains(current),
+                       shots[current].overlays.count < TextOverlay.maxCount {
+                        shots[current].overlays.append(StoryComposerSeed.overlay(seed.text))
+                    }
+                }
+                return
+            }
             // 下書きの一覧から開いた（尋ねずに戻す・#400）。自動の書きかけを開いた回はその枠を使ってよい
             if let openDraft {
                 if openDraft == DraftLibrary.autoStoryId {
@@ -621,11 +684,18 @@ struct StoryComposerView: View {
             Text(L("この端末に残しておいたものです。続きから編集できます。",
                    "Kept on this device. You can pick up where you left off."))
         }
-        .fullScreenCover(isPresented: $showCamera) {
+        // 2026-11-12 判断（設計の案「ストーリーのデザイン 残り」01）: カメラの左下の最近の1枚・許可の無い画面の
+        // 「写真から選ぶ」は、カメラを閉じてから写真選びへ。まだ1枚も無ければ下の格子がそのまま見える（開かない）
+        .fullScreenCover(isPresented: $showCamera, onDismiss: {
+            guard libraryAfterCamera else { return }
+            libraryAfterCamera = false
+            if StoryCameraRules.opensLibraryAfterCamera(shotCount: shots.count) { showLibrary = true }
+        }) {
             // 自前のカメラ（写真｜動画・長押しで動画・前後の切り替え・触覚）。札 #500
             StoryCameraView(onPhoto: { data in
                 acceptFromCamera(CameraCapture(metadata: [:], capturedAt: Date(), encode: { data }))
-            }, onVideo: { url in acceptRecordedVideo(url) })
+            }, onVideo: { url in acceptRecordedVideo(url) },
+            onPickFromLibrary: { libraryAfterCamera = true })
                 .ignoresSafeArea()
         }
         // **まとめて選べる**（モック4-5）。メニューの中に `PhotosPicker` を置くと
@@ -1384,7 +1454,7 @@ struct StoryComposerView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(L("撮影地の候補 \(spot.name)。付ける", "Suggested place \(spot.name). Add"))
-        .accessibilityHint(L("撮影スポットの名前と位置を見る人に見せます", "Shows the photo spot's name and location to viewers"))
+        .accessibilityHint(L("観光スポットの名前と位置を見る人に見せます", "Shows the photo spot's name and location to viewers"))
     }
 
     /// 撮影地の候補を解き直す鍵（写真の座標の並びと索引の数）
@@ -1397,6 +1467,14 @@ struct StoryComposerView: View {
     private func loadAttachesLocation(for userId: String?) {
         guard let userId, !userId.isEmpty else { return }
         attachesLocation = UploadLocationPreference().attachesLocation(userId: userId)
+    }
+
+    /// その人の「24時間後も自分用に残す」を読む（2026-11-11 判断）。**nil（ログアウト・期限切れ）と、
+    /// もう読んだ人では替えない**（開いた下書きの値・この回に切り替えた値を残す）
+    private func loadKeepInArchive(for userId: String?) {
+        guard let userId, !userId.isEmpty, userId != keepInArchiveOwner else { return }
+        keepInArchiveOwner = userId
+        keepInArchive = StoryArchivePreference().keepsInArchive(userId: userId)
     }
 
     private struct SuggestionKey: Equatable {
@@ -2367,7 +2445,7 @@ struct StoryComposerView: View {
         if hasVideo {
             return LeaveDialog(
                 title: L("閉じますか？", "Close?"), canSave: false,
-                message: L("動画が入っていると下書きに残せません。閉じると、選んだ写真・動画と置いた文字は消えます。",
+                message: L("動画が入っていると下書きに残せません。閉じると、選んだ写真、動画と置いた文字は消えます。",
                            "A draft can't include a video. If you close now, the photos, videos and text you added will be lost."))
         }
         guard canSaveDraft else {
@@ -2497,8 +2575,18 @@ struct StoryComposerView: View {
     @ViewBuilder
     private var trimSheet: some View {
         if let id = trimmingShotId, let clip = shots.first(where: { $0.id == id })?.video {
+            // 2026-11-12（設計の案 02）: 何枚目か（「1 / 2」）と、開けなかったときの「別の動画を選ぶ」
+            // （閉じたら開けなかった1本を外し、写真選びを開く）
+            let index = shots.firstIndex(where: { $0.id == id }) ?? 0
             NavigationStack {
-                StoryVideoTrimSheet(clip: clip) { trim in applyTrim(trim, to: id) }
+                StoryVideoTrimSheet(clip: clip,
+                                    positionLabel: StoryVideoTrimSheet.positionLabel(index: index, count: shots.count),
+                                    onPickAnother: {
+                                        unopenableShotId = id
+                                        libraryAfterTrim = true
+                                    }) { trim in
+                    applyTrim(trim, to: id)
+                }
             }
         }
     }
@@ -3144,7 +3232,22 @@ struct StoryComposerView: View {
         discardAllVideos()
         // 黙って残した書きかけは要らない
         clearAutoDraft()
+        onStarted?()
         dismiss()
+    }
+}
+
+/// ②「1年前」から作る画面を開くときの写真と文字（2026-11-12 札 #543）
+struct StoryComposerSeed: Identifiable {
+    let id = UUID()
+    /// 端末の写真の本体（作る画面が整える・`accept`）
+    let photo: Data
+    /// 最初から置く文字（「1年前の今日、竹富町」）。空なら置かない（ホームで手に取った写真の「ストーリーで紹介」）
+    let text: String
+
+    /// 置く札。明朝・下の方（ひとことの欄より上）。**ふつうの文字の札**なので動かせる・消せる
+    static func overlay(_ text: String) -> TextOverlay {
+        TextOverlay(text: text, x: 0.5, y: 0.78, kind: .text, face: .mincho)
     }
 }
 

@@ -95,6 +95,8 @@ struct MyPageView: View {
     private var deviceTrips: DeviceTripShelfStore { .shared }
     /// 名前の横の画面（名前の行を押すと開く・板 BadgePicker）
     @State private var showNameSide = false
+    /// プロフィールの QR（名前の横の印・札 #545・2026-11-12）
+    @State private var showQR = false
     /// 画面写真の試験だけの Pro の案内（`PreviewSession.opensPaywall`）。出したか・出ているか
     @State private var previewPaywallShown = false
     @State private var showPreviewPaywall = false
@@ -255,6 +257,12 @@ struct MyPageView: View {
         .sheet(isPresented: $showNameSide) {
             if let profile = model.profile {
                 NameSideBadgeView(profile: profile)
+            }
+        }
+        // プロフィールの QR（見せる／読み取るを1枚で切り替える・`ProfileQRView`）
+        .sheet(isPresented: $showQR) {
+            if let profile = model.profile {
+                NavigationStack { ProfileQRView(profile: profile) }
             }
         }
         // 画面写真の試験だけの Pro の案内（`PreviewSession.opensPaywall`・Debug のみ・1度だけ）
@@ -555,6 +563,13 @@ struct MyPageView: View {
                 HStack(alignment: .center, spacing: MyPageHeaderLayout.nameEditGap) {
                     nameLine(profile)
                         .layoutPriority(1)
+                    // 2026-11-12 owner 案 A（「メダル案 A だな」）: メダルを持っていて飾っていない人だけ、
+                    // 名前の横に点線の丸。1.1.84 の「マイページは QR だけ変える」の例外（同じ行なので一度に決める）
+                    if MyPageNameSlot.shows(profile) {
+                        nameSlot()
+                    }
+                    // 2026-11-12（owner の決定・札 #545）: **名前の横に QR の印**
+                    qrLink()
                     Spacer(minLength: 0)
                     editLink()
                 }
@@ -621,6 +636,57 @@ struct MyPageView: View {
         .accessibilityLabel(L("プロフィールを編集", "Edit profile"))
         // 実機の絵の道しるべ（見出しが描けた＝読み込みが済んだ目印）
         .accessibilityIdentifier("mypage.edit")
+    }
+
+    /// 名前の横の QR の印（2026-11-12・owner の決定・札 #545）。押すとプロフィールの QR（見せる／読み取る）。
+    /// 黒地の上の手がかりなので真鍮（CLAUDE.md の owner の好み）。見た目は 17pt の印、当たりは 44。
+    /// 段の高さは名前の行のまま（上下へ張り出す・`editLink` と同じ）
+    private func qrLink() -> some View {
+        Button { showQR = true } label: {
+            Image(systemName: "qrcode")
+                .font(.system(size: WebTheme.toolbarIconSize, weight: .regular))
+                .foregroundStyle(WebTheme.accent)
+                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, -nameTapSlack)
+        // 名前のすぐ右に寄せる（当たりの 44 の左の余白で、名前から離れすぎない）
+        .padding(.leading, -JPSpace.s)
+        .fixedSize()
+        .accessibilityLabel(ProfileQRText.entryLabel)
+        .accessibilityIdentifier("mypage.qr")
+    }
+
+    /// 名前の横にバッジを飾る入口（2026-11-12 owner 案 A・資料「名前の横のバッジの入口」）。
+    /// **メダルを持っていて、名前の横に何も飾っていない人だけ**（`MyPageNameSlot.shows`）。押すと名前の行と同じ
+    /// 選ぶ画面（`NameSideBadgeView`）。形はハイライトの「新規」・選ぶ画面の「なし」と同じ「ここに足せる」の点線の丸。
+    /// 2026-11-12 判断: **真鍮にしない**（白 35% の点線と白 85% の＋）——隣に真鍮の QR の印があり、真鍮が2つ並ぶと
+    /// 合図が割れる。見た目 22pt、当たり 44pt。段の高さは名前の行のまま（上下へ張り出す・`qrLink` と同じ）
+    private func nameSlot() -> some View {
+        Button { showNameSide = true } label: {
+            ZStack {
+                Circle()
+                    .strokeBorder(Color.white.opacity(MyPageNameSlot.ringOpacity),
+                                  style: StrokeStyle(lineWidth: MyPageNameSlot.ringLineWidth, dash: MyPageNameSlot.dash))
+                Image(systemName: "plus")
+                    .font(.system(size: MyPageNameSlot.plusSize, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(MyPageNameSlot.plusOpacity))
+            }
+            .frame(width: MyPageNameSlot.side, height: MyPageNameSlot.side)
+            // 丸は当たりの右端に置き、当たりの余りは左（名前の行の上）へ張り出す。名前の行も同じ画面を開くので
+            // 重なっても押し違いにならない。右は QR の当たり（44）と重ねない
+            .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget, alignment: .trailing)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, -nameTapSlack)
+        // 印と丸の間は資料の模型どおり 6pt（段の間 12 を打ち消し、当たりの余りの分だけ左へ）
+        .padding(.leading, -(JPSpace.s + MyPageNameSlot.leadingPull))
+        .fixedSize()
+        .accessibilityLabel(MyPageNameSlot.label)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("mypage.nameSlot")
     }
 
     /// 名前の行（板 05c・BadgePicker）: 明朝 26 の名前 → 公式の封印 → Pro マーク → 選んだバッジ。
@@ -762,14 +828,16 @@ struct MyPageView: View {
                 JPLoadingState(kind: .grid)
             case .none:
                 // 2026-10-16: 保存は写真の詳細のしおりから。写真に出会う所（ホーム）へ1手
-                EmptyState(message: SavedPhotosView.emptyMessage,
+                // マイページは見た目を変えない（owner・2026-11-12 第2章）: 空は印なし
+                EmptyState(icon: nil, message: SavedPhotosView.emptyMessage,
                            actionTitle: MyPageEmpty.browseTitle, actionIdentifier: "mypage.emptySaved") {
                     tabRouter.openHome()
                 }
             case .nothingShown:
-                EmptyState(message: LikedPhotos.nothingShownMessage)
+                EmptyState(icon: nil, message: LikedPhotos.nothingShownMessage)
             case .unresolved:
-                ErrorBanner(message: SavedPhotosView.unresolvedMessage) {
+                // マイページは見た目を変えない（owner・2026-11-12 第2章）: 失敗は前の形（三角・見出しは渡したときだけ）
+                ErrorBanner(message: SavedPhotosView.unresolvedMessage, look: .classic) {
                     Task {
                         await loadFeed()
                         await model.load(for: auth.userId)
@@ -846,13 +914,13 @@ struct MyPageView: View {
             case .couldNotLoad:
                 ErrorBanner(message: L("写真の一覧を取れませんでした。通信を確かめて、引き下げて読み直してください",
                                        "Couldn't load the photos. Pull to refresh."),
-                            isBusy: isReloading) {
+                            isBusy: isReloading, look: .classic) {
                     Task { await reloadAll() }
                 }
             case .empty:
                 // v2 WishlistTab B1: 何が無いか（明朝の見出し）→ どうすれば埋まるか → 一手
                 // 2026-10-16: 見出しと本文で「まだありません」を重ねない（本文は「どうすれば埋まるか」だけ）
-                EmptyState(title: L("行きたい場所はまだありません", "No places yet"),
+                EmptyState(icon: nil, title: L("行きたい場所はまだありません", "No places yet"),
                            message: MyPageEmpty.wishlistMessage)
                 // 板 WishlistTab の B1（空）の「撮影スポットを探す」
                 FindSpotsButton()
@@ -911,7 +979,7 @@ struct MyPageView: View {
     private func wishlistMapLink(_ split: SavedSpotsMap.Split, pool: [Photo], photosKnown: Bool) -> some View {
         HStack(spacing: JPSpace.s) {
             // v2 WishlistTab: 節の見出しは眉（真鍮＋消える線）。見出しの読み上げは部品が付ける
-            JPEyebrowLine(L("すべての行きたい場所 · \(split.count)", "All places · \(split.count)"))
+            JPEyebrowLine(L("すべての行きたい場所\u{2002}\(split.count)", "All places\u{2002}\(split.count)"))
             NavigationLink {
                 SavedSpotsMapView(split: split, officialSpots: officialSpots, photos: pool,
                                   photosKnown: photosKnown)
@@ -1025,7 +1093,7 @@ struct MyPageView: View {
                     .font(JPFont.rowTitle)
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
-                let place = spot.broader.map { LocationMatch.display($0) }.joined(separator: " ・ ")
+                let place = spot.broader.map { LocationMatch.display($0) }.joined(separator: "、")
                 if !place.isEmpty {
                     Text(place)
                         .font(JPFont.caption)
@@ -1223,7 +1291,7 @@ struct MyPageView: View {
     private var photoBanners: some View {
         // **読み直しの失敗は、格子の上に再試行つきで出す**（格子は残す）
         if let reloadError = model.reloadError {
-            ErrorBanner(message: reloadError) { Task { await model.load(for: auth.userId) } }
+            ErrorBanner(message: reloadError, look: .classic) { Task { await model.load(for: auth.userId) } }
         }
         if let action = model.actionMessage {
             // **一覧の代わりではなく、一覧に添える。**
@@ -1259,7 +1327,7 @@ struct MyPageView: View {
             // **写真の有無とは無関係。** 保存は他人の写真にもする
             favoritesArea
         } else if let error = model.errorMessage {
-            ErrorBanner(message: error) { Task { await model.load(for: auth.userId) } }
+            ErrorBanner(message: error, look: .classic) { Task { await model.load(for: auth.userId) } }
             // **旅の記録のタブでは、共同アルバム・旅行プランの札を残す**（2026-10-07 判断）。
             // どちらも自分の写真の読み込みと無関係なのに、最初の読み込みの失敗で入口ごと消えていた
             if tab == .trips {
@@ -1281,7 +1349,8 @@ struct MyPageView: View {
             if draftCount > 0 {
                 LazyVGrid(columns: columns, spacing: ProfileV2.gridSpacing) { draftsTile }
             }
-            EmptyState(message: L("まだ写真がありません", "No photos yet"),
+            // マイページは見た目を変えない（owner・2026-11-12 第2章）: 空は印なし
+            EmptyState(icon: nil, message: L("まだ写真がありません", "No photos yet"),
                        actionTitle: MyPageEmpty.postTitle, actionIdentifier: "mypage.emptyPost") {
                 tabRouter.openPost(.photo)
             }
@@ -1803,9 +1872,38 @@ enum MyPageEmpty {
     static var browseTitle: String { L("写真を見に行く", "Browse photos") }
     /// 行きたい場所0件の本文。見出しが「まだありません」と言うので、ここは埋め方だけ
     static var wishlistMessage: String {
-        L("撮影スポットの画面で「行きたい」を押すと、ここに並びます",
+        L("観光スポットの画面で「行きたい」を押すと、ここに並びます",
           "Tap “Want to go” on a place to add it here.")
     }
+}
+
+/// マイページの名前の横の点線の丸（2026-11-12 owner 案 A）。出す条件と寸法（画面に依らない・試験で見張る）
+enum MyPageNameSlot {
+    /// 出すのは**メダル（名前の横に置ける絵のあるバッジ）を1つ以上持っていて、名前の横に何も飾っていない**とき。
+    /// 飾っている人は今の見た目のまま（バッジも名前も押せば選ぶ画面）。1つも持っていない人には出さない
+    /// ——押しても選べる物が無い。「飾っている」は名前の横に実際に出ているか（`NameMarks` と同じく、
+    /// 持っていない鍵・絵の無い鍵を選んでいても出ていなければ飾っていない）
+    static func shows(_ profile: UserProfile) -> Bool {
+        guard !BadgeCatalog.owned(profile.earnedBadges).isEmpty else { return false }
+        if let badge = profile.shownBadge, BadgeCatalog.isKnown(badge.key) { return false }
+        return true
+    }
+
+    /// 読み上げ（ボタンとして）
+    static var label: String { L("名前の横にバッジを飾る", "Add a badge beside your name") }
+    /// 見た目の丸の大きさ（当たりは 44）
+    static let side: CGFloat = 22
+    /// 点線は白 35%（真鍮にしない・隣の QR の印が真鍮）
+    static let ringOpacity: Double = 0.35
+    static let ringLineWidth: CGFloat = 1.4
+    static let dash: [CGFloat] = [2.6, 2.4]
+    /// ＋は白 85%（資料の模型の値）
+    static let plusOpacity: Double = 0.85
+    static let plusSize: CGFloat = 11
+    /// 名前の横の印（無ければ名前）と丸の間（資料の模型: 6pt）
+    static let gapAfterMarks: CGFloat = 6
+    /// 当たり（44）の余りを左へ張り出す量。丸の左が印から `gapAfterMarks` 離れる
+    static var leadingPull: CGFloat { WebTheme.minTapTarget - side - gapAfterMarks }
 }
 
 /// マイページの見出しの並びの値（2026-10-30 owner #415・案 ①②。板 MyPage・MyPageNoCover・MyPageCoverFrame）。

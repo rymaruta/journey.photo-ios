@@ -68,7 +68,7 @@ final class PassExchangeTests: XCTestCase {
     func testTimeIsKeptAndShownOnlyByTheHour() {
         XCTAssertEqual(PassExchange.hourStart(at(16, 15, 42), calendar: calendar), at(16, 15))
         let label = PassExchange.timeLabel(at(16, 15, 42), calendar: calendar)
-        XCTAssertTrue(label.hasPrefix("2026.10.16 · "), label)
+        XCTAssertTrue(label.hasPrefix("2026.10.16\u{2002}"), label)
         XCTAssertFalse(label.contains("42"), "分が出た: \(label)")
         XCTAssertFalse(label.contains(":"), "時刻の書き方で分が出た: \(label)")
     }
@@ -254,7 +254,7 @@ final class PassExchangeTests: XCTestCase {
         if ja.contains("暗号化") {
             XCTAssertTrue(ja.contains("暗号化していません"))
             XCTAssertTrue(ja.contains("ブロックした人にも"))
-            XCTAssertTrue(ja.contains("乗車券の写真・ひとこと・発と着の字が読めます"))
+            XCTAssertTrue(ja.contains("乗車券の写真、ひとこと、発と着の字が読めます"))
         } else {
             XCTAssertTrue(ja.contains("isn\u{2019}t encrypted"))
             XCTAssertTrue(ja.contains("blocked may still receive"))

@@ -419,7 +419,7 @@ final class PostLimitsTests: XCTestCase {
         XCTAssertNil(PostLimits.overLimitNote("", limit: 60))
         let note = PostLimits.overLimitNote(String(repeating: "あ", count: 72), limit: 60)
         // 触っていない欄は送らないので切れない。**直して保存すると**切れる、と言う
-        XCTAssertEqual(note, L("72/60・60字まで。この欄を直して保存すると 60字に切れます",
+        XCTAssertEqual(note, L("72/60、60字まで。この欄を直して保存すると 60字に切れます",
                                "72/60 · Up to 60 characters. If you edit this field and save, it will be cut to 60"))
         // 数え方はサーバーと同じ（UTF-16）。絵文字 31 個は 62
         XCTAssertNotNil(PostLimits.overLimitNote(String(repeating: "😀", count: 31), limit: 60))
@@ -546,7 +546,7 @@ final class ReportReasonListTests: XCTestCase {
     /// 2026-11-09: DM の通報から足された理由。文言は Web の ReportDialog と同じ
     func testMinorReasonLabel() {
         XCTAssertEqual(ModerationService.ReportReason.minor.label,
-                       L("未成年へのいやな接触・誘い出し", "Inappropriate contact with a minor"))
+                       L("未成年へのいやな接触、誘い出し", "Inappropriate contact with a minor"))
         XCTAssertEqual(ModerationService.ReportReason(rawValue: "minor"), .minor)
     }
 }

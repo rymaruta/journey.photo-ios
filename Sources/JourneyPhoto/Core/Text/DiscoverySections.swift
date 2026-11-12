@@ -175,7 +175,7 @@ enum DiscoverySections {
     static func seasonalNote(now: Date = Date(), calendar: Calendar = .current) -> String {
         let list = words(for: currentSeason(now: now, calendar: calendar))
         return L(list.map { "#\($0.ja)" }.joined(separator: " ")
-                 + "（ほかの季節に撮った写真・料理・分類の無い写真は入れない）",
+                 + "（ほかの季節に撮った写真、料理、分類の無い写真は入れない）",
                  "Tagged " + list.map(\.en).joined(separator: " or ")
                  + " (excluding photos taken in another season, food and uncategorized photos)")
     }

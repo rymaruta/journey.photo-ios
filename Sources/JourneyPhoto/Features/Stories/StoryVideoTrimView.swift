@@ -10,145 +10,277 @@ import UIKit
 ///  - つまみを動かしている間は**その時刻の絵**を出す（再生は止める）。離したら範囲の頭から繰り返し再生
 ///  - 数十分の動画は 1pt が数秒になるので、**「−1秒／＋1秒」**で細かく合わせられる（読み上げの増減も同じ）
 ///  - 音は既定で止めてある（作る画面で曲が鳴っていることがある）。スピーカーで入れる
-///  - 色: 帯は写真（サムネイル）の上なので、つまみ・選んだ範囲の枠は白（真鍮は黒地の上だけ・墨の溝）。長さの字は黒地の上なので真鍮
+///
+/// **2026-11-12 判断（設計の案「ストーリーのデザイン 残り」02・作る画面 v2 の文字の上の段に合わせる）**:
+///  - 動画は作る画面と同じく**上の面いっぱい**（下の角 24）に敷き、上の段（キャンセル 17・題 17/600・完了 17/700）を
+///    動画の上に重ねる。以前は小さな角丸の窓に収まり、黒い余白が多かった
+///  - 下の黒地に「長さ（白の 20pt）・範囲と全体（12pt の注記）」→ 帯 → 「−1秒／＋1秒」のチップ（見た目 32・当たり 44）
+///  - 長い説明の文は出さない。**60 秒を超える動画のときだけ**「全体 2:24」の横に余白を空けて「60秒まで」（`limitNote`）
+///  - 長さの数は白（数は合図ではない・板 v2）。以前は真鍮だった
+///  - つまみを動かしている間はつまみの上に「0:12.4」の吹き出し。60 秒の枠に当たったら枠の外に白い光の縁と「60秒まで」
+///  - 選んだ枠を掴むと、長さを変えずに範囲ごと動かせる（`StoryVideoTrim.shift`）
+///  - 帯の読み込み中は光が流れる骨組み（動きを減らす設定では止めた灰色）。動画を開けないときは空の状態の型で理由と次の一手
+///  - 色: 帯は写真（サムネイル）の上なので、つまみ・選んだ範囲の枠は白（真鍮は黒地の上だけ・墨の溝）
 ///
 /// 書き出しは `StoryVideoPipeline.export` が `StoryVideoClip.trim` の範囲だけを切って行う。
 struct StoryVideoTrimSheet: View {
 
     let clip: StoryVideoClip
+    /// 作る画面の何枚目か（「1 / 2」・写真の右下）。1枚だけのときは nil
+    var positionLabel: String?
+    /// 「別の動画を選ぶ」（開けなかったとき）。シートを閉じてから、呼ぶ側が開けなかった1本を外して写真選びを開く。nil なら出さない
+    var onPickAnother: (() -> Void)?
     /// 「完了」で、選んだ範囲を渡す
     let onDone: (StoryVideoTrim) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var trim: StoryVideoTrim
     @StateObject private var playback: StoryTrimPlayback
     /// 帯のサムネイル（取れるまで空・取れなかったコマは nil）
     @State private var thumbs: [UIImage?] = []
+    /// 帯を取り終えたか（骨組みを出すのは取り終えるまで）
+    @State private var stripLoaded = false
+    /// 読み込みの回（「もう一度」で取り直す）
+    @State private var loadRound = 0
     /// いま動かしているつまみと、動かし始めの時刻
     @State private var dragging: Handle?
     @State private var dragOrigin: Double = 0
     /// 指を離したら再生に戻すか（動かし始めに再生中だったか）
     @State private var resumeAfterDrag = true
+    /// 60 秒の枠に当たった印（光の縁と「60秒まで」）を出しているか
+    @State private var limitShown = false
+    @State private var limitTask: Task<Void, Never>?
     /// 触覚の合図（つまみを掴んだ・60 秒の枠に当たった）
     @State private var grabTick = 0
     @State private var limitTick = 0
 
-    private enum Handle { case start, end }
+    private enum Handle { case start, end, range }
 
-    /// 帯のサムネイルの数・高さ・つまみの幅
+    /// 帯のサムネイルの数・高さ・つまみの幅・帯の角
     static let tileCount = 10
     static let stripHeight: CGFloat = 56
     static let handleWidth: CGFloat = 16
+    static let stripRadius: CGFloat = 10
+    /// 「−1秒／＋1秒」のチップの見た目の高さ（当たりは 44）
+    nonisolated static let chipHeight: CGFloat = 32
     private static let space = "storyTrimStrip"
 
-    init(clip: StoryVideoClip, onDone: @escaping (StoryVideoTrim) -> Void) {
+    init(clip: StoryVideoClip, positionLabel: String? = nil, onPickAnother: (() -> Void)? = nil,
+         onDone: @escaping (StoryVideoTrim) -> Void) {
         self.clip = clip
+        self.positionLabel = positionLabel
+        self.onPickAnother = onPickAnother
         self.onDone = onDone
         _trim = State(initialValue: clip.trim)
         _playback = StateObject(wrappedValue: StoryTrimPlayback(url: clip.url, start: clip.trim.start, end: clip.trim.end))
     }
 
+    /// 何枚目かの札（「1 / 2」）。1枚だけなら出さない
+    nonisolated static func positionLabel(index: Int, count: Int) -> String? {
+        guard count > 1, index >= 0, index < count else { return nil }
+        return "\(index + 1) / \(count)"
+    }
+
+    /// 動画を開けない（長さが読めない・帯の絵が1コマも取れない）。`StoryVideoTrim.cannotOpen`
+    private var openFailed: Bool {
+        StoryVideoTrim.cannotOpen(total: trim.total, framesRead: thumbs.compactMap { $0 }.count,
+                                  framesAsked: thumbs.count, stripLoaded: stripLoaded)
+    }
+
     var body: some View {
-        VStack(spacing: 14) {
-            preview
-            summary
-            strip
-                .frame(height: Self.stripHeight + 8)
-            fineAdjust
-            Text(note)
-                .font(JPFont.caption)
-                .foregroundStyle(WebTheme.text2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(WebTheme.background)
-        .foregroundStyle(.white)
-        .webScreen()
-        .navigationTitle(L("動画を切り取る", "Trim video"))
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button(Labels.Common.cancel) { dismiss() }
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                Button(L("完了", "Done")) {
-                    onDone(trim)
-                    dismiss()
+        ZStack(alignment: .top) {
+            WebTheme.background.ignoresSafeArea()
+            if openFailed {
+                failedState
+            } else {
+                VStack(spacing: 0) {
+                    preview
+                    summary
+                        .padding(.horizontal, JPSpace.m)
+                        .padding(.top, JPSpace.m)
+                    strip
+                        .frame(height: Self.stripHeight + 8)
+                        .padding(.horizontal, JPSpace.m)
+                        .padding(.top, JPSpace.s)
+                    fineAdjust
+                        .padding(.horizontal, JPSpace.m)
+                        .padding(.top, JPSpace.s)
+                        .padding(.bottom, JPSpace.s)
                 }
-                .accessibilityIdentifier("story.trim.done")
             }
+            topBar
         }
+        .foregroundStyle(.white)
+        .toolbar(.hidden, for: .navigationBar)
         .sensoryFeedback(.selection, trigger: grabTick)
         .sensoryFeedback(.impact(weight: .medium), trigger: limitTick)
         .onAppear { playback.begin() }
         .onDisappear { playback.stop() }
         // 帯のサムネイル。**動画全体を `tileCount` 等分**した各区間の真ん中を、小さく・近いキーフレームで取る
-        .task {
+        .task(id: loadRound) {
+            stripLoaded = false
             let images = await StoryVideoPipeline.filmstrip(of: clip, count: Self.tileCount)
-            if !Task.isCancelled { thumbs = images }
+            guard !Task.isCancelled else { return }
+            thumbs = images
+            stripLoaded = true
         }
+    }
+
+    // MARK: - 上の段
+
+    /// 作る画面の文字の上の段と同じ（キャンセル 17・題 17/600・完了 17/700）。動画の上なので白と影
+    private var topBar: some View {
+        ZStack {
+            Text(L("動画を切り取る", "Trim video"))
+                .font(JPFont.headline)
+                .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
+            HStack {
+                Button(Labels.Common.cancel) { dismiss() }
+                    .font(Font.body)
+                    .frame(minHeight: WebTheme.minTapTarget)
+                    .padding(.horizontal, JPSpace.xs)
+                    .contentShape(Rectangle())
+                    .accessibilityIdentifier("story.trim.cancel")
+                Spacer()
+                Button(L("完了", "Done")) {
+                    onDone(trim)
+                    dismiss()
+                }
+                .font(Font.body.weight(.bold))
+                .frame(minHeight: WebTheme.minTapTarget)
+                .padding(.horizontal, JPSpace.xs)
+                .contentShape(Rectangle())
+                .disabled(openFailed)
+                .opacity(openFailed ? 0.3 : 1)
+                .accessibilityIdentifier("story.trim.done")
+            }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .jpPhotoTextShadow()
+        .padding(.horizontal, JPSpace.xs)
+        .padding(.top, JPSpace.xs)
     }
 
     // MARK: - 再生
 
-    /// 動画の再生（枠いっぱいに敷く面を、動画の縦横比で収める）。**押すと止める・再生する**
+    /// 動画（上の面いっぱい・下の角 24）。**押すと止める・再生する**。左下に音、右下に何枚目か
     private var preview: some View {
-        let aspect: Double = clip.size.width > 0 && clip.size.height > 0 ? Double(clip.size.width / clip.size.height) : 9.0 / 16.0
-        return StoryVideoSurface(player: playback.player)
-            .aspectRatio(aspect, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
-            .overlay(alignment: .bottomLeading) {
-                Button { playback.isMuted.toggle() } label: {
-                    Image(systemName: playback.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                        .jpGlass(in: Circle())
-                }
-                .buttonStyle(.plain)
-                .padding(8)
-                .accessibilityLabel(playback.isMuted ? L("音を入れる", "Turn sound on") : L("音を止める", "Turn sound off"))
+        ZStack {
+            StoryVideoSurface(player: playback.player)
+            // 上の段の字を読めるように（作る画面と同じ 50% → 0 の暗がり）
+            VStack(spacing: 0) {
+                LinearGradient(colors: [Color.black.opacity(0.5), Color.black.opacity(0)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 150)
+                Spacer(minLength: 0)
             }
-            .overlay(alignment: .bottomTrailing) {
-                Button { playback.toggle() } label: {
-                    Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                        .jpGlass(in: Circle())
-                }
-                .buttonStyle(.plain)
-                .padding(8)
-                .accessibilityLabel(playback.isPlaying ? L("止める", "Pause") : L("再生", "Play"))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            // 止めているとき（つまみを動かしている間は除く）は真ん中に再生の丸
+            if !playback.isPlaying && dragging == nil {
+                Image(systemName: "play.fill")
+                    .font(Font.title3)
+                    .foregroundStyle(.white)
+                    .frame(width: 56, height: 56)
+                    .jpGlass(in: Circle())
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { playback.toggle() }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(playback.isPlaying ? L("止める", "Pause") : L("再生", "Play"))
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { playback.toggle() }
+        .accessibilityIdentifier("story.trim.preview")
+        .overlay(alignment: .bottomLeading) {
+            Button { playback.isMuted.toggle() } label: {
+                Image(systemName: playback.isMuted ? "speaker.slash" : "speaker.wave.2")
+                    .font(Font.body)
+                    .foregroundStyle(.white)
+                    .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                    .jpGlass(in: Circle())
+            }
+            .buttonStyle(.plain)
+            .padding(12)
+            .accessibilityLabel(playback.isMuted ? L("音を入れる", "Turn sound on") : L("音を止める", "Turn sound off"))
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if let positionLabel {
+                Text(positionLabel)
+                    .font(JPFont.mono(12, medium: true, relativeTo: .caption))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: 30)
+                    .jpGlass(in: Capsule())
+                    .padding(12)
+                    .padding(.bottom, 7)
+                    .accessibilityLabel(L("\(positionLabel) 枚目", "Item \(positionLabel)"))
+            }
+        }
+        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: JPRadius.xl, bottomTrailingRadius: JPRadius.xl))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea(edges: .top)
     }
 
-    /// 「0:12 – 1:12 · 1:00」（等幅の数字）
+    /// 「1:00　0:12–1:12　全体 2:24 · 60秒まで」。長さは白の 20pt（数は合図ではないので白）、範囲と全体は 12pt の注記
     private var summary: some View {
-        HStack(spacing: 8) {
-            Text("\(StoryVideoTrim.label(trim.start)) – \(StoryVideoTrim.label(trim.end))")
-                .font(JPFont.mono(15))
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(StoryVideoTrim.label(trim.length))
+                .font(JPFont.mono(20, relativeTo: .title3))
                 .foregroundStyle(.white)
-            Text(L("長さ \(StoryVideoTrim.label(trim.length))", "Length \(StoryVideoTrim.label(trim.length))"))
-                .font(JPFont.mono(15))
-                .foregroundStyle(WebTheme.accent)
+            Text(trim.rangeLabel)
+                .font(JPFont.mono(12, relativeTo: .caption))
+                .foregroundStyle(WebTheme.text3)
             Spacer(minLength: 0)
+            // 2026-11-12 owner「・」「·」で区切らない: 「全体 2:24」と「60秒まで」は余白 8 で分ける
+            HStack(spacing: JPSpace.xs) {
+                Text(trim.totalNote)
+                if let limit = trim.limitNote { Text(limit) }
+            }
+            .font(JPFont.caption)
+            .foregroundStyle(WebTheme.text3)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(trim.spokenSummary)
         .accessibilityIdentifier("story.trim.summary")
     }
 
-    private var note: String {
-        trim.total > StoryVideoTrim.maxLength
-            ? L("この動画は\(StoryVideoTrim.label(trim.total))あります。残せるのは最大60秒です。両端のつまみで範囲を選びます",
-                "This video is \(StoryVideoTrim.label(trim.total)) long. You can keep up to 60 seconds. Drag the handles to choose")
-            : L("両端のつまみを動かして、残す所を選びます。最短1秒",
-                "Drag the handles to choose the part to keep. At least 1 second")
+    // MARK: - 開けないとき
+
+    /// 動画を開けない（iCloud から読み込めなかった・形式に対応していない）。以前は窓が黒いまま何も言わなかった。
+    /// 空の状態の型で理由と次の一手（写真の無い画面の主ボタン＝真鍮に墨・「もう一度」は線のボタン）
+    private var failedState: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            if let onPickAnother {
+                EmptyState(title: L("この動画を開けません", "Can't open this video"),
+                           message: StoryVideoTrim.cannotOpenMessage,
+                           actionTitle: L("別の動画を選ぶ", "Choose another video"),
+                           actionIdentifier: "story.trim.pickAnother") {
+                    onPickAnother()
+                    dismiss()
+                }
+            } else {
+                EmptyState(title: L("この動画を開けません", "Can't open this video"),
+                           message: StoryVideoTrim.cannotOpenMessage)
+            }
+            RetryButton { reload() }
+                .accessibilityIdentifier("story.trim.retry")
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, JPSpace.m)
+        .accessibilityIdentifier("story.trim.failed")
+    }
+
+    /// 「もう一度」: 再生器を作り直し、帯を取り直す
+    private func reload() {
+        thumbs = []
+        playback.reload()
+        loadRound += 1
     }
 
     // MARK: - 帯とつまみ
@@ -173,46 +305,84 @@ struct StoryVideoTrimSheet: View {
             let startHandleX: CGFloat = inset + startX - Self.handleWidth
             let stripHeightPlus8: CGFloat = Self.stripHeight + 8
             let stripHeightPlus4: CGFloat = Self.stripHeight + 4
+            let loading = !stripLoaded
             ZStack(alignment: .topLeading) {
-                // 動画全体のサムネイル
+                // 動画全体のサムネイル（読み込み中は光が流れる骨組み）
                 HStack(spacing: 0) {
                     ForEach(0..<Self.tileCount, id: \.self) { index in
                         tile(index, width: tileWidth)
                     }
                 }
                 .frame(width: barWidth, height: Self.stripHeight)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay { if loading { StoryTrimShimmer(animated: !reduceMotion) } }
+                .clipShape(RoundedRectangle(cornerRadius: Self.stripRadius))
                 .offset(x: inset, y: 4)
                 .accessibilityHidden(true)
-                // 選んだ範囲の外を暗くする
-                Rectangle().fill(Color.black.opacity(0.62))
-                    .frame(width: startX, height: Self.stripHeight)
-                    .offset(x: inset, y: 4)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                Rectangle().fill(Color.black.opacity(0.62))
-                    .frame(width: rightDimWidth, height: Self.stripHeight)
-                    .offset(x: rightDimX, y: 4)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                // 選んだ範囲の枠
-                Rectangle().strokeBorder(Color.white, lineWidth: 2)
-                    .frame(width: selectedWidth, height: stripHeightPlus4)
-                    .offset(x: selectedX, y: 2)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                // いまの再生位置（範囲の中だけ・つまみを動かしている間は出さない）
-                if dragging == nil, playback.playhead >= trim.start, playback.playhead <= trim.end {
-                    Rectangle().fill(Color.white)
-                        .frame(width: 2, height: stripHeightPlus8)
-                        .offset(x: playheadX)
+                if !loading {
+                    // 選んだ範囲の外を暗くする
+                    Rectangle().fill(Color.black.opacity(0.62))
+                        .frame(width: startX, height: Self.stripHeight)
+                        .offset(x: inset, y: 4)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
+                    Rectangle().fill(Color.black.opacity(0.62))
+                        .frame(width: rightDimWidth, height: Self.stripHeight)
+                        .offset(x: rightDimX, y: 4)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                    // 選んだ範囲の枠。**掴むと範囲ごと動かせる**。60 秒の枠に当たったら外に白い光の縁
+                    Rectangle().strokeBorder(Color.white, lineWidth: 2)
+                        .frame(width: selectedWidth, height: stripHeightPlus4)
+                        .background(Color.clear)
+                        .overlay {
+                            if limitShown {
+                                Rectangle().stroke(Color.white.opacity(0.3), lineWidth: 6)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .offset(x: selectedX, y: 2)
+                        .gesture(rangeDrag(barWidth: barWidth))
+                        .accessibilityHidden(true)
+                    // いまの再生位置（範囲の中だけ・つまみを動かしている間は出さない）
+                    if dragging == nil, playback.playhead >= trim.start, playback.playhead <= trim.end {
+                        Rectangle().fill(Color.white)
+                            .frame(width: 2, height: stripHeightPlus8)
+                            .shadow(color: Color.black.opacity(0.6), radius: 2)
+                            .offset(x: playheadX)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+                    handle(.start, x: startHandleX, barWidth: barWidth)
+                    handle(.end, x: rightDimX, barWidth: barWidth)
+                    // つまみの上の吹き出し（動かしている間は時刻・60 秒の枠に当たったら「60秒まで」）
+                    if let bubble = bubbleText {
+                        let anchor: CGFloat = dragging == .end || (dragging == nil && limitShown) ? rightDimX : selectedX
+                        let bubbleX: CGFloat = min(max(anchor - 40, 0), max(geometry.size.width - 80, 0))
+                        Text(bubble)
+                            .font(JPFont.mono(13, medium: true, relativeTo: .footnote))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .frame(width: 80, height: 30)
+                            .jpGlass(in: Capsule())
+                            .offset(x: bubbleX, y: -40)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                            .accessibilityIdentifier("story.trim.bubble")
+                    }
                 }
-                handle(.start, x: startHandleX, barWidth: barWidth)
-                handle(.end, x: rightDimX, barWidth: barWidth)
             }
             .coordinateSpace(.named(Self.space))
+        }
+    }
+
+    /// 吹き出しの字。動かしている間は時刻（「0:12.4」）、60 秒の枠に当たったら「60秒まで」
+    private var bubbleText: String? {
+        if limitShown { return L("60秒まで", "Up to 60s") }
+        switch dragging {
+        case .start?, .range?: return StoryVideoTrim.preciseLabel(trim.start)
+        case .end?: return StoryVideoTrim.preciseLabel(trim.end)
+        case nil: return nil
         }
     }
 
@@ -225,12 +395,12 @@ struct StoryVideoTrimSheet: View {
                 .frame(width: width, height: Self.stripHeight)
                 .clipped()
         } else {
-            Rectangle().fill(WebTheme.surface3)
+            Rectangle().fill(WebTheme.sheet)
                 .frame(width: width, height: Self.stripHeight)
         }
     }
 
-    /// つまみ 1 つ。見た目は幅 16 の真鍮の板（中に墨の溝）、**当たりは幅 44**（見た目の外へ 14 ずつ）。
+    /// つまみ 1 つ。見た目は幅 16 の白い板（中に墨の溝）、**当たりは幅 44**（見た目の外へ 14 ずつ）。
     /// 読み上げは「開始位置・0:12」で、増やす・減らすで 1 秒ずつ動く
     private func handle(_ which: Handle, x: CGFloat, barWidth: CGFloat) -> some View {
         let time = which == .start ? trim.start : trim.end
@@ -253,92 +423,164 @@ struct StoryVideoTrimSheet: View {
             DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
                 .onChanged { value in
                     if dragging != which {
-                        dragging = which
-                        dragOrigin = time
-                        resumeAfterDrag = playback.isPlaying
-                        playback.pause()
-                        grabTick += 1
+                        beginDrag(which, origin: time)
                     }
                     let delta = Double(value.translation.width / barWidth) * trim.total
                     let before = trim.length
                     if which == .start { trim.setStart(dragOrigin + delta) } else { trim.setEnd(dragOrigin + delta) }
-                    // 60 秒の枠に当たった（反対側が引かれた）瞬間に触覚
-                    if trim.length >= StoryVideoTrim.maxLength - 0.001, before < StoryVideoTrim.maxLength - 0.001 {
-                        limitTick += 1
-                    }
+                    noteLimit(before: before)
                     playback.show(at: which == .start ? trim.start : trim.end)
                 }
-                .onEnded { _ in
-                    dragging = nil
-                    playback.setRange(start: trim.start, end: trim.end, playing: resumeAfterDrag)
-                }
+                .onEnded { _ in endDrag() }
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(which == .start ? L("開始位置", "Start") : L("終了位置", "End"))
         .accessibilityValue(StoryVideoTrim.label(time))
-        .accessibilityHint(L("増やす・減らすで1秒ずつ動かします", "Adjust to move by one second"))
+        .accessibilityHint(L("増やす、減らすで1秒ずつ動かします", "Adjust to move by one second"))
         .accessibilityAdjustableAction { direction in
             nudge(which, by: direction == .increment ? StoryVideoTrim.nudgeStep : -StoryVideoTrim.nudgeStep)
         }
         .accessibilityIdentifier(which == .start ? "story.trim.start" : "story.trim.end")
     }
 
+    /// 選んだ枠を掴んで、長さを変えずに範囲ごと動かす
+    private func rangeDrag(barWidth: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.space))
+            .onChanged { value in
+                if dragging != .range { beginDrag(.range, origin: trim.start) }
+                let delta = Double(value.translation.width / barWidth) * trim.total
+                trim.shift(toStart: dragOrigin + delta)
+                playback.show(at: trim.start)
+            }
+            .onEnded { _ in endDrag() }
+    }
+
+    private func beginDrag(_ which: Handle, origin: Double) {
+        dragging = which
+        dragOrigin = origin
+        resumeAfterDrag = playback.isPlaying
+        playback.pause()
+        grabTick += 1
+    }
+
+    private func endDrag() {
+        dragging = nil
+        playback.setRange(start: trim.start, end: trim.end, playing: resumeAfterDrag)
+    }
+
+    /// 60 秒の枠に当たった（反対側が引かれた）瞬間に触覚1回と、光の縁・「60秒まで」を少しの間
+    private func noteLimit(before: Double) {
+        guard trim.atLimit, before < StoryVideoTrim.maxLength - 0.001 else { return }
+        limitTick += 1
+        limitTask?.cancel()
+        limitShown = true
+        limitTask = Task {
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            guard !Task.isCancelled else { return }
+            limitShown = false
+        }
+    }
+
     // MARK: - 細かい合わせ
 
-    /// 「開始 −0:12＋」「終了 −1:12＋」。**長い動画は帯の 1pt が数秒**なので、1 秒ずつの合わせを置く
+    /// 「− 1秒 ＋ 1秒 開始 ……… 終了 − 1秒 ＋ 1秒」。**長い動画は帯の 1pt が数秒**なので、1 秒ずつの合わせを置く。
+    /// 見た目 32 のチップ・当たりは 44。大きい文字で並びきらなければ2段に
     private var fineAdjust: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) {
-                stepper(.start)
-                Spacer(minLength: 0)
-                stepper(.end)
+            HStack(spacing: 6) {
+                stepButton(symbol: "minus", which: .start)
+                stepButton(symbol: "plus", which: .start)
+                stepLabel(.start)
+                Spacer(minLength: JPSpace.xs)
+                stepLabel(.end)
+                stepButton(symbol: "minus", which: .end)
+                stepButton(symbol: "plus", which: .end)
             }
-            VStack(alignment: .leading, spacing: 8) {
-                stepper(.start)
-                stepper(.end)
+            VStack(alignment: .leading, spacing: JPSpace.xs) {
+                HStack(spacing: 6) {
+                    stepLabel(.start)
+                    stepButton(symbol: "minus", which: .start)
+                    stepButton(symbol: "plus", which: .start)
+                }
+                HStack(spacing: 6) {
+                    stepLabel(.end)
+                    stepButton(symbol: "minus", which: .end)
+                    stepButton(symbol: "plus", which: .end)
+                }
             }
         }
     }
 
-    private func stepper(_ which: Handle) -> some View {
-        let time = which == .start ? trim.start : trim.end
+    private func stepLabel(_ which: Handle) -> some View {
+        Text(which == .start ? L("開始", "Start") : L("終了", "End"))
+            .font(JPFont.caption)
+            .foregroundStyle(WebTheme.text3)
+            .padding(.horizontal, 2)
+            .accessibilityHidden(true)
+    }
+
+    /// 「− 1秒」「＋ 1秒」のチップ（白 12% の地・13pt の等幅数字）。読み上げは「開始を1秒戻す」
+    private func stepButton(symbol: String, which: Handle) -> some View {
         let name = which == .start ? L("開始", "Start") : L("終了", "End")
-        return HStack(spacing: 4) {
-            stepButton(symbol: "minus", label: L("\(name)を1秒戻す", "Move \(name.lowercased()) 1 second earlier")) {
-                nudge(which, by: -StoryVideoTrim.nudgeStep)
-            }
-            VStack(spacing: 0) {
-                Text(name).font(JPFont.caption).foregroundStyle(WebTheme.text2)
-                Text(StoryVideoTrim.label(time)).font(JPFont.mono(15)).foregroundStyle(.white)
-            }
-            .frame(minWidth: 52)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(name)
-            .accessibilityValue(StoryVideoTrim.label(time))
-            stepButton(symbol: "plus", label: L("\(name)を1秒進める", "Move \(name.lowercased()) 1 second later")) {
-                nudge(which, by: StoryVideoTrim.nudgeStep)
-            }
-        }
-    }
-
-    private func stepButton(symbol: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.body.weight(.semibold))
+        let back = symbol == "minus"
+        let label = back ? L("\(name)を1秒戻す", "Move \(name.lowercased()) 1 second earlier")
+                         : L("\(name)を1秒進める", "Move \(name.lowercased()) 1 second later")
+        return Button {
+            nudge(which, by: back ? -StoryVideoTrim.nudgeStep : StoryVideoTrim.nudgeStep)
+        } label: {
+            Text(back ? L("− 1秒", "− 1s") : L("＋ 1秒", "+ 1s"))
+                .font(JPFont.mono(13, relativeTo: .footnote))
                 .foregroundStyle(.white)
-                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                .background(WebTheme.surface, in: Circle())
+                .lineLimit(1)
+                .padding(.horizontal, JPSpace.s)
+                .frame(minHeight: Self.chipHeight)
+                .background(Color.white.opacity(0.12), in: Capsule())
+                .frame(minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
+        .accessibilityValue(StoryVideoTrim.label(which == .start ? trim.start : trim.end))
     }
 
     /// 1 秒ずつ動かして、その時刻の絵を出し、範囲の頭から再生し直す
     private func nudge(_ which: Handle, by delta: Double) {
         let before = trim.length
         if which == .start { trim.nudgeStart(by: delta) } else { trim.nudgeEnd(by: delta) }
-        if trim.length >= StoryVideoTrim.maxLength - 0.001, before < StoryVideoTrim.maxLength - 0.001 { limitTick += 1 }
+        noteLimit(before: before)
         playback.setRange(start: trim.start, end: trim.end, playing: playback.isPlaying)
+    }
+}
+
+/// 帯の読み込み中の骨組み（光が左から右へ 1.6 秒で流れる・設計の案 02）。**動きを減らす設定では止めた灰色**。
+/// 2026-11-12 判断: 共通の `JPLoadingState` は光を流さない決まりだが、この帯は案が「光が流れる骨組み」を指定している
+/// （灰色の四角が並ぶだけだと、帯が壊れているように見えた）。動きを減らす設定の人には流さない
+private struct StoryTrimShimmer: View {
+    let animated: Bool
+
+    var body: some View {
+        Group {
+            if animated {
+                TimelineView(.animation) { context in
+                    GeometryReader { geometry in
+                        let width = geometry.size.width
+                        let lightX: CGFloat = width * CGFloat(StoryVideoTrim.shimmerPhase(at: context.date))
+                        ZStack(alignment: .leading) {
+                            WebTheme.sheet
+                            LinearGradient(colors: [WebTheme.sheet, Color.white.opacity(0.08), WebTheme.sheet],
+                                           startPoint: .leading, endPoint: .trailing)
+                                .frame(width: width)
+                                .offset(x: lightX)
+                        }
+                        .clipped()
+                    }
+                }
+            } else {
+                WebTheme.sheet
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
@@ -360,7 +602,10 @@ final class StoryTrimPlayback: ObservableObject {
     private var rangeEnd: Double
     private var observer: Any?
 
+    private let url: URL
+
     init(url: URL, start: Double, end: Double) {
+        self.url = url
         self.player = AVPlayer(url: url)
         self.rangeStart = start
         self.rangeEnd = end
@@ -393,6 +638,13 @@ final class StoryTrimPlayback: ObservableObject {
             player.removeTimeObserver(observer)
             self.observer = nil
         }
+    }
+
+    /// 「もう一度」（開けなかったとき）: 項目を作り直して範囲の頭から
+    func reload() {
+        player.replaceCurrentItem(with: AVPlayerItem(url: url))
+        seek(to: rangeStart)
+        play()
     }
 
     func play() {

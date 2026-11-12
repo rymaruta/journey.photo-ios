@@ -142,6 +142,38 @@ final class TripCreateModel: ObservableObject {
     var sendDates: (start: String?, end: String?) {
         undated ? (nil, nil) : (start, end ?? start)
     }
+
+    /// 保存する（題・日程・日付を1回で）。作れたらプランの ID、作れなければ nil（`error` に理由）。
+    /// 下書きの段と、DM から作る流れの日付の段（2026-11-12）が同じここを通る
+    func save(plans: TripPlansModel, environment: AppEnvironment) async -> String? {
+        guard !picked.isEmpty, !saving, plans.busy == nil else { return nil }
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sendTitle = TripPlanService.titleToSend(trimmed.isEmpty ? suggestedTitle : trimmed)
+        // **押した時点の日程を送る**
+        let sendDays = TripDraft.tripDays(days)
+        let dates = sendDates
+        saving = true
+        error = nil
+        defer { saving = false }
+        // **題・日程・日付を1回で作る**（作ってから日程を別に送ると、2回目で落ちた回に空のプランが残る）
+        guard let made = await plans.create(title: sendTitle, days: sendDays,
+                                            startDate: dates.start, endDate: dates.end,
+                                            environment: environment) else {
+            error = plans.errorMessage
+                ?? L("旅行プランを作れませんでした。もう一度お試しください。", "Couldn't create the trip. Please try again.")
+            // 文はこの画面で出す（一覧の model に残すと、板を閉じたあと一覧の上に赤い行が残る）
+            plans.clearError()
+            return nil
+        }
+        return made.planId
+    }
+
+    /// 休みの組を押した（出発と帰着の2日をまとめて入れる・2026-11-12 資料 2a）
+    func choose(_ pair: TripHolidays.Pair) {
+        undated = false
+        start = pair.start
+        end = pair.end
+    }
 }
 
 // MARK: - ① 行き先を選ぶ
@@ -222,8 +254,8 @@ struct TripCreatePickStep: View {
         if !loaded {
             JPLoadingState(kind: .rows)
         } else if rows.isEmpty && failed {
-            ErrorBanner(message: L("行きたい場所を読み込めませんでした。通信を確かめて、開き直してください",
-                                   "Couldn't load your saved places. Check your connection and try again."))
+            ErrorBanner(title: L("行きたい場所を読み込めませんでした", "Couldn't load your saved places"),
+                        message: L("通信を確かめて、開き直してください", "Check your connection and try again."))
         } else if rows.isEmpty {
             EmptyState(title: L("行きたい場所はまだありません", "No saved places yet"),
                        message: L("写真を見て選ぶと、そのまま旅行プランの下書きになります",
@@ -301,6 +333,8 @@ struct TripChoiceRow: View {
     let place: TripDraft.Place
     let isOn: Bool
     let locked: Bool
+    /// 2行目を差し替える（DM の会話から作る下書きの「撮影スポット · 送られた写真から」・2026-11-12）。nil は県と市
+    var detail: String? = nil
     let action: () -> Void
 
     var body: some View {
@@ -317,7 +351,12 @@ struct TripChoiceRow: View {
                         .font(place.isSpot ? JPFont.rowTitle : JPFont.bodyEmphasis)
                         .foregroundStyle(WebTheme.foreground)
                         .lineLimit(1)
-                    if let region = place.regionLabel {
+                    if let detail {
+                        Text(detail)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text3)
+                            .lineLimit(1)
+                    } else if let region = place.regionLabel {
                         Text(region)
                             .font(JPFont.caption)
                             .foregroundStyle(WebTheme.text3)
@@ -341,7 +380,7 @@ struct TripChoiceRow: View {
         .buttonStyle(.plain)
         .disabled(locked)
         .opacity(locked ? 0.5 : 1)
-        .accessibilityLabel([place.name, place.regionLabel].compactMap { $0 }.joined(separator: L("・", ", ")))
+        .accessibilityLabel([place.name, detail ?? place.regionLabel].compactMap { $0 }.joined(separator: L("、", ", ")))
         .accessibilityAddTraits(isOn ? .isSelected : [])
         .accessibilityHint(isOn ? L("押すと外します", "Tap to deselect") : L("押すと選びます", "Tap to select"))
         .accessibilityIdentifier("tripCreate.choice")
@@ -354,8 +393,13 @@ struct TripCreateDatesStep: View {
 
     @ObservedObject var model: TripCreateModel
     let next: () -> Void
+    /// 下の主ボタンの字。nil は「下書きを見る」。DM の会話から作る流れは「旅行プランを作る」で、
+    /// この段で保存まで進む（2026-11-12 判断・資料 2a の押す回数 4 回: 帯 → 日付を選ぶ → 休みの組 → 作る）
+    var finishTitle: String? = nil
 
     @State private var month: (year: Int, month: Int) = TripCreateDatesStep.initialMonth(nil)
+    /// 休みの組。**開いたときに1回だけ探す**（描き直しのたびに 120 日を見直さない・2026-11-12）
+    @State private var pairs: [TripHolidays.Pair] = []
 
     var body: some View {
         ScrollView {
@@ -374,6 +418,7 @@ struct TripCreateDatesStep: View {
                         model.start = next.start
                         model.end = next.end
                     }
+                    holidayPairs
                     summary
                 }
 
@@ -398,17 +443,77 @@ struct TripCreateDatesStep: View {
         .webScreen()
         .navigationTitle(L("旅行プランを作る", "New trip"))
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { month = Self.initialMonth(model.start) }
+        .onAppear {
+            month = Self.initialMonth(model.start)
+            if pairs.isEmpty { pairs = TripHolidays.pairs(from: TripPlanText.ymd(pickedIn: .current, Date())) }
+        }
         .safeAreaInset(edge: .bottom) {
-            Button(action: next) {
-                Text(L("下書きを見る", "See the draft"))
+            VStack(spacing: JPSpace.xxs) {
+                if let error = model.error, finishTitle != nil {
+                    Text(error)
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("tripCreate.error")
+                }
+                Button(action: next) {
+                    HStack(spacing: JPSpace.xs) {
+                        if model.saving { ProgressView().tint(WebTheme.accentText) }
+                        Text(finishTitle ?? L("下書きを見る", "See the draft"))
+                    }
                     .jpPillButton(.main(onPhoto: false))
+                }
+                .buttonStyle(.plain)
+                .disabled(!canGo)
+                .opacity(canGo ? 1 : TripStyle.disabledOpacity)
+                .accessibilityIdentifier(finishTitle == nil ? "tripCreate.toDraft" : "tripCreate.finish")
             }
-            .buttonStyle(.plain)
-            .disabled(!model.datesReady)
-            .opacity(model.datesReady ? 1 : TripStyle.disabledOpacity)
-            .accessibilityIdentifier("tripCreate.toDraft")
             .jpBottomBar()
+        }
+        // 保存の最中は戻らせない（DM から作る流れはこの段で保存する）
+        .navigationBarBackButtonHidden(model.saving)
+    }
+
+    private var canGo: Bool { model.datesReady && !model.saving }
+
+    nonisolated static var holidayHeading: String { L("近くの休み", "Upcoming days off") }
+
+    /// 休みの組（2026-11-12 資料 2a）。押すと出発と帰着の2日がまとめて入る。
+    /// 選んでいる組は真鍮の字と縁（owner の好み「選んでいるもの＝真鍮」）、ほかは outline の縁に白の字。
+    /// 見出しは「近くの休み」だけ（説明文に頼らない・2026-11-12 確かめ役の指摘。祝日を含む組もあるので「週末」と言わない）
+    @ViewBuilder
+    private var holidayPairs: some View {
+        if !pairs.isEmpty {
+            VStack(alignment: .leading, spacing: JPSpace.xxs) {
+                Text(Self.holidayHeading)
+                    .jpEyebrow()
+                    .foregroundStyle(WebTheme.accent)
+                    .accessibilityAddTraits(.isHeader)
+                HStack(spacing: JPSpace.xs) {
+                    ForEach(pairs) { pair in
+                        let on = model.start == pair.start && model.end == pair.end
+                        Button {
+                            model.choose(pair)
+                            month = Self.initialMonth(pair.start)
+                        } label: {
+                            Text(pair.label)
+                                .font(JPFont.footnote.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(on ? WebTheme.accent : WebTheme.foreground)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                                .padding(.horizontal, JPSpace.s)
+                                .frame(minHeight: WebTheme.minTapTarget)
+                                .overlay(Capsule().strokeBorder(on ? WebTheme.accent : WebTheme.outline,
+                                                                lineWidth: JPStroke.hairline))
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(TripHolidays.spoken(pair))
+                        .accessibilityAddTraits(on ? .isSelected : [])
+                        .accessibilityIdentifier("tripCreate.holiday.\(pair.start)")
+                    }
+                }
+            }
         }
     }
 
@@ -651,10 +756,9 @@ struct TripCreateDraftStep: View {
         }
         let sun = TripDraft.sun(ymd: ymd, spots: spots)
         return VStack(alignment: .leading, spacing: JPSpace.xs) {
-            JPEyebrowLine(TripPlanText.dayHeading(index: di, day: TripDay(), start: start, end: end)
-                .replacingOccurrences(of: "・", with: " · "))
+            JPEyebrowLine(TripPlanText.dayHeading(index: di, day: TripDay(), start: start, end: end))
             if let sun, let line = TripSunText.line(sun) {
-                TripDayNote(text: [line, TripPicker.regionLabel(of: day)].compactMap { $0 }.joined(separator: " · "),
+                TripDayNote(text: [line, TripPicker.regionLabel(of: day)].compactMap { $0 }.joined(separator: "\u{2002}"),
                             symbol: "sun.max")
             }
             if let overlap = TripDraft.overlapNote(day.map(\.times)) {
@@ -715,26 +819,8 @@ struct TripCreateDraftStep: View {
 
     private func save() {
         guard canSave else { return }
-        let trimmed = model.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let sendTitle = TripPlanService.titleToSend(trimmed.isEmpty ? model.suggestedTitle : trimmed)
-        // **押した時点の日程を送る**
-        let sendDays = TripDraft.tripDays(model.days)
-        let dates = model.sendDates
-        model.saving = true
-        model.error = nil
         Task {
-            defer { model.saving = false }
-            // **題・日程・日付を1回で作る**（作ってから日程を別に送ると、2回目で落ちた回に空のプランが残る）
-            guard let made = await plans.create(title: sendTitle, days: sendDays,
-                                                startDate: dates.start, endDate: dates.end,
-                                                environment: environment) else {
-                model.error = plans.errorMessage
-                    ?? L("旅行プランを作れませんでした。もう一度お試しください。", "Couldn't create the trip. Please try again.")
-                // 文はこの画面で出す（一覧の model に残すと、板を閉じたあと一覧の上に赤い行が残る）
-                plans.clearError()
-                return
-            }
-            onSaved(made.planId)
+            if let made = await model.save(plans: plans, environment: environment) { onSaved(made) }
         }
     }
 }

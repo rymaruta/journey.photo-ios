@@ -745,7 +745,7 @@ enum TrunkPartDrawing {
 
     /// 読み上げの名前（「錠前 · 菊」）
     static func accessibilityLabel(_ part: TrunkPart) -> String {
-        "\(part.kind.title) · \(part.name)"
+        "\(part.kind.title)\u{2002}\(part.name)"
     }
 }
 

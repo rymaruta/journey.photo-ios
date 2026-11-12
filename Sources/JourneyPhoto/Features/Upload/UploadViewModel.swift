@@ -406,6 +406,11 @@ final class UploadViewModel: ObservableObject {
             // （外した・選び直した・投稿した・`reset()`。どの道でもここを通る）
             let inUse = Set(items.compactMap(\.editSource))
             if inUse != editSources.urls { editSources.keep(only: inUse) }
+            // 写真の並びが変わったら「n枚目からもう一度」は下ろす（番号が今の並びと合わなくなる・2026-11-12）
+            if resendFrom != nil,
+               !UploadSummary.keepsResend(old: oldValue.map(\.id), new: items.map(\.id)) {
+                resendFrom = nil
+            }
         }
     }
     /// 編集の元の一時ファイル。画面を閉じたら（`deinit`）全部消す
@@ -647,6 +652,9 @@ final class UploadViewModel: ObservableObject {
     /// 何枚目を上げているか（`0` は上げていない）。画面の「3 / 5 枚目」に使う
     @Published private(set) var uploadingIndex = 0
     @Published var errorMessage: String?
+    /// 送れなかった写真があったとき、最初の1枚の番号（1 から・`UploadSummary.resendStart`）。
+    /// 画面の「n枚目からもう一度」に使う（2026-11-12）。送り直し始めたら下ろす
+    @Published private(set) var resendFrom: Int?
 
     private let uploads: UploadService
     private let albumService: AlbumService
@@ -1718,6 +1726,7 @@ final class UploadViewModel: ObservableObject {
         guard canSubmit else { return }
         isWorking = true
         errorMessage = nil
+        resendFrom = nil
         cancelled = false
         songFailuresShown = 0
         // 🔴 **送っている途中でアプリを離れても、少しのあいだ続けさせてもらう。**
@@ -1737,6 +1746,8 @@ final class UploadViewModel: ObservableObject {
                                         make: { UploadGrouping.newGroupId(fromTrip: fromTripImport) })
 
         var done: [UUID] = []
+        /// 送れなかった写真（「n枚目からもう一度」の番号に使う）
+        var failedIds: [UUID] = []
         savedPhotoIds = []
         savedPhotoOwner = nil
         var failures: [String] = []
@@ -1807,6 +1818,7 @@ final class UploadViewModel: ObservableObject {
                 // 消すと会員の印も消える。残すと残りも同じ理由で全部落ち、押し直しても直らない
                 // **外すのは送った宛先**（`AlbumGone` が持つ）。送信中も行き先は選び直せるので、
                 // 今の `selectedAlbumId` を読むと、選び直した生きているアルバムを外していた
+                failedIds.append(item.id)
                 if let gone = error as? AlbumGone {
                     albumGone(gone.albumId)
                     failures.append(L("選んだアルバムが見つかりませんでした。消された可能性があります。行き先を選び直してください",
@@ -1903,6 +1915,8 @@ final class UploadViewModel: ObservableObject {
                                       cancelled: cancelled, songFailures: songFailures),
                 savedEarlier: savedEarlier), skipped: shareSkipped), dropped: inspiredDropped)
             songFailuresShown = songFailures
+            // 送れなかった写真が残っていれば、そこからの送り直しを出す（やめた回・送れなかった写真が無い回は出さない）
+            resendFrom = UploadSummary.resendAfterSubmit(queue: queue, failed: failedIds, cancelled: cancelled)
         }
     }
 

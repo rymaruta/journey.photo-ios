@@ -46,14 +46,15 @@ final class UXAuditFixesATests: XCTestCase {
         let header = try source("Features/Common/AppHeader.swift")
         let trailing = header.components(separatedBy: "ToolbarItem(placement: .topBarTrailing)").count - 1
         XCTAssertEqual(trailing, 1, "右の3つが別々の枠に戻っている（当たりを広げると帯が太る）")
-        XCTAssertEqual(header.components(separatedBy: ".appHeaderHitArea()").count - 1, 4,
-                       "探す・メッセージ・お知らせ・メニューのどれかの当たりが 44 になっていない")
+        // 2026-11-12: 見出しの「探す」を外した（下のタブと同じ所・案 第10章）ので3つ
+        XCTAssertEqual(header.components(separatedBy: ".appHeaderHitArea()").count - 1, 3,
+                       "メッセージ・お知らせ・メニューのどれかの当たりが 44 になっていない")
         let hit = slice(header, from: "func appHeaderHitArea()", to: "\n}\n")
         XCTAssertTrue(hit.contains(".frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)"))
         XCTAssertTrue(hit.contains(".contentShape(Rectangle())"))
         XCTAssertGreaterThanOrEqual(WebTheme.minTapTarget, 44)
         // 見た目（絵の大きさ・箱の幅）は前のまま
-        XCTAssertEqual(header.components(separatedBy: ".webToolbarIcon()").count - 1, 4)
+        XCTAssertEqual(header.components(separatedBy: ".webToolbarIcon()").count - 1, 3)
     }
 
     /// 探すはどのタブにも出す（前はホームだけで、右の枠の幅がタブごとに違い、ロゴの位置がずれた）
@@ -232,7 +233,7 @@ final class UXAuditFixesATests: XCTestCase {
         XCTAssertTrue(SpotScreen.subtitle(region: "熊本県", photoCount: 0).contains(SpotScreen.firstPhotoInvite))
         XCTAssertEqual(OfficialSpotView.postLabel(hasLinked: false), L("最初の1枚を投稿", "Post the first photo"))
         XCTAssertEqual(OfficialSpotView.postLabel(hasLinked: true),
-                       L("この撮影スポットの写真を投稿", "Post a photo of this spot"))
+                       L("この観光スポットの写真を投稿", "Post a photo of this spot"))
     }
 
     func testEmptySpotCardDoesNotSayZero() async throws {
@@ -254,7 +255,7 @@ final class UXAuditFixesATests: XCTestCase {
     // MARK: - 8. 空の画面の次の一手
 
     func testLightForecastEmptyHasAFindSpotsButton() async throws {
-        XCTAssertEqual(LightForecastText.findSpotsAction, L("撮影スポットを探す", "Find photo spots"))
+        XCTAssertEqual(LightForecastText.findSpotsAction, L("観光スポットを探す", "Find photo spots"))
         let view = try source("Features/Pro/LightForecastView.swift")
         let empty = slice(view, from: "private func emptyView(", to: "private func failureView(")
         XCTAssertTrue(empty.contains("actionTitle: LightForecastText.findSpotsAction"))
@@ -353,8 +354,8 @@ final class UXAuditFixesATests: XCTestCase {
 
     func testTheirTrunkEyebrowIsNotMine() async throws {
         let model = TrunkModel.allCases[0]
-        XCTAssertTrue(TrunkText.eyebrow(model).hasPrefix("MY TRUNK · "))
-        XCTAssertTrue(TrunkText.eyebrow(model, theirs: true).hasPrefix("TRUNK · "))
+        XCTAssertTrue(TrunkText.eyebrow(model).hasPrefix("MY TRUNK\u{2002}"))
+        XCTAssertTrue(TrunkText.eyebrow(model, theirs: true).hasPrefix("TRUNK\u{2002}"))
         XCTAssertFalse(TrunkText.eyebrow(model, theirs: true).contains("MY"))
         let open = try source("Features/Trunk/TrunkOpenView.swift")
         XCTAssertEqual(open.components(separatedBy: "TrunkText.eyebrow(model, theirs: theirs != nil)").count - 1, 2)

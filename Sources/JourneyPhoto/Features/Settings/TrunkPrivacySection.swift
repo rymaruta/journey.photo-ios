@@ -200,7 +200,7 @@ struct TrunkPrivacyPreview: View {
                             .foregroundStyle(WebTheme.text)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    Text(L("ブロックした人・ブロックされた人には、オンでもトランクを出しません。",
+                    Text(L("ブロックした人、ブロックされた人には、オンでもトランクを出しません。",
                            "People you\u{2019}ve blocked, or who blocked you, never see your trunk."))
                         .font(.caption)
                         .foregroundStyle(WebTheme.text3)
@@ -224,7 +224,7 @@ struct TrunkPrivacyPreview: View {
     static var neverShown: [String] {
         [L("サポーター証の番号と、始めた年月", "Your supporter number and start date"),
          L("受け取った乗車券（すれちがった相手の写真と名前）", "Tickets you received (other people\u{2019}s photos and names)"),
-         L("硬貨・手持ちのラベル・部品箱・新しいラベルの印", "Coins, labels in your pocket, the parts box, new-label marks"),
+         L("硬貨、手持ちのラベル、部品箱、新しいラベルの印", "Coins, labels in your pocket, the parts box, new-label marks"),
          L("公開していない写真（ラベルを押しても出ません）", "Photos that aren\u{2019}t public (labels won\u{2019}t open them)")]
     }
 

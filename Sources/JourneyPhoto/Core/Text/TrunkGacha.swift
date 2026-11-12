@@ -68,6 +68,16 @@ struct TrunkCrank: Equatable {
         return advance(Self.tapStep)
     }
 
+    /// 指を離した（押しただけでも4分の1は回さない・行き先は `TrunkGachaFlow.release` で決める・2026-11-12）
+    mutating func letGo() {
+        last = nil
+    }
+
+    /// 決まった角度だけ回す（自分で回るとき・`autoAdvance`）。越えた目盛りの数を返す
+    mutating func turn(by delta: Double) -> Int {
+        advance(delta)
+    }
+
     private mutating func advance(_ delta: Double) -> Int {
         let before = turned
         turned = min(Self.goal, max(0, turned + delta))
@@ -138,7 +148,7 @@ enum TrunkGachaText {
     }
 
     /// 眉ラベル（「めずらしい · 錠前」）
-    static func eyebrow(_ part: TrunkPart) -> String { "\(part.rarity.name) · \(part.kind.tabName)" }
+    static func eyebrow(_ part: TrunkPart) -> String { "\(part.rarity.name)\u{2002}\(part.kind.tabName)" }
 
     /// 硬貨の入れ口の下の一行（モックの `hint`）
     static func hint(coins: Int, phase: TrunkGachaPhase) -> String {
@@ -173,8 +183,8 @@ enum TrunkGachaText {
     static func exchangeNote(fragments: Int, selected: TrunkPart?) -> String {
         let need = TrunkPartsBoxText.fragmentsPerExchange
         if fragments < need {
-            return L("まだ持っていない部品から選べます · あと \(need - fragments) つ",
-                     "Choose from parts you don\u{2019}t have yet · \(need - fragments) more")
+            return L("まだ持っていない部品から選べます\u{2002}あと \(need - fragments) つ",
+                     "Choose from parts you don\u{2019}t have yet\u{2002}\(need - fragments) more")
         }
         if let selected {
             return L("「\(selected.name)」と交換します", "Exchange for \u{201C}\(selected.name)\u{201D}")
@@ -233,8 +243,8 @@ enum TrunkPartsBoxText {
     /// 付け替えの画面の、その場所の数の行（モック Equip「ベルトに3つまで留められます · 2 / 3」）
     static func slotNote(_ kind: TrunkPartKind, count: Int) -> String {
         switch kind {
-        case .pin: return L("ベルトに3つまで留められます · \(count) / 3", "Up to 3 on the strap · \(count) / 3")
-        case .patch: return L("胴に2つまで縫い付けられます · \(count) / 2", "Up to 2 on the body · \(count) / 2")
+        case .pin: return L("ベルトに3つまで留められます\u{2002}\(count) / 3", "Up to 3 on the strap\u{2002}\(count) / 3")
+        case .patch: return L("胴に2つまで縫い付けられます\u{2002}\(count) / 2", "Up to 2 on the body\u{2002}\(count) / 2")
         case .lining: return L("内張りは、ふたを開けたときに見えます（次の版）", "Linings show when the lid opens (coming later)")
         default: return L("1つ付けられます", "One at a time")
         }

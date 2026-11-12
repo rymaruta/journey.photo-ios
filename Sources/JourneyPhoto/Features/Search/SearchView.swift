@@ -14,6 +14,8 @@ struct SearchView: View {
     var messagesUnread = false
 
     @EnvironmentObject private var environment: AppEnvironment
+    /// 電波があるか（無いときは上に帯・2026-11-12 第2章）
+    @EnvironmentObject private var connectivity: Connectivity
     /// **「見せない」が変わったら控えを捨てるため**に見ている
     @EnvironmentObject private var hidden: ModerationStore
     /// タブの切り替え（「地図で見る」）。**`TabRouter.shared` を直に見る**（ほかの画面と同じ）
@@ -56,12 +58,27 @@ struct SearchView: View {
     @State private var spotIndexMode = SpotIndexMode.photos
     /// 段の地図をなぞっている区分。**なぞっている間は画面のスクロールを止める**（指が地図から外れて画面が流れない）
     @State private var spotTracing: String?
+    /// 今日の一問（2026-11-12 にホームの上の札から移した）。**取れた日だけ段を出す**（空き地を作らない）
+    @State private var quiz: DailyQuiz?
+    /// 今日の一問に答えたか（札の2行目を変える）
+    @State private var quizAnswered = false
 
     var body: some View {
         VStack(spacing: 0) {
             // 検索中も探す口と種類の切り替えを画面上部に残す。
             // 結果を下まで見た後に、上へ戻らず語と種類を変えられる。
             VStack(alignment: .leading, spacing: JPSpace.s) {
+                // 2026-11-12 判断（第2章「画面の状態とそろえ」）: 電波が無いときは上に帯。前に読めた撮影スポットと
+                // 写真はそのまま探せる（画面は閉じない）。「もう一度」は引き下げと同じ読み直し
+                if connectivity.isOffline {
+                    JPStateBand(kind: .offline, title: JPStateBand.offlineTitle,
+                                message: L("前に見た観光スポットと写真だけを出しています",
+                                           "Showing photo spots and photos you've already seen"),
+                                isBusy: isReloading, actionIdentifier: "search.offline.retry") {
+                        Task { await reloadAll() }
+                    }
+                    .padding(.horizontal, JPSpace.gutter)
+                }
                 // v2（2026-10-14・Search の板）: 大見出し「探す」を明朝で置く。板は 30 だが字の段に無いので
                 // いちばん近い Display の 32（`JPFont.photoTitle`・タグの写真の題と同じ段）
                 Text(Labels.Navigation.searchTab)
@@ -81,7 +98,7 @@ struct SearchView: View {
                     if isDiscovering {
                         // **何も打っていないときは「発見」の顔**（板 11）。段の並びは
                         // `SearchDiscovery`、段の間は v2 で 32（`JPSpace.section`・板は 36）
-                        ForEach(model.discovery(spots: officialSpots)) { section in
+                        ForEach(model.discovery(spots: officialSpots, hasQuiz: quiz != nil)) { section in
                             discoverySection(section)
                         }
                     } else {
@@ -138,6 +155,8 @@ struct SearchView: View {
                 await model.reloadPhotos(environment: environment)
             }
         }
+        // 今日の一問（取れなかった日は段を出さない）は `applyFrontModeration` が読む——初めて出たとき（`front.appear()` の
+        // `.first`）も、前面に戻ったときも同じ所。2026-11-12 確かめ役: ここにも `.task` で読んでいて、初めての表示で2回読んでいた
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }
         }
@@ -225,6 +244,24 @@ struct SearchView: View {
         // 手元の一覧を写しで絞る（読み直し完了を待たない——ブロックのフラッシュ止め）
         model.applyHidden(dropped)
         if reloadIfNeeded, needsReload { reloadHidden() }
+        Task { await loadQuiz() }
+    }
+
+    /// 今日の一問を読む（静的な JSON・サービスが日ごとに覚える）。答えたかも読み直す。
+    /// 🔴 **段から一問を開いている間は差し替えない**——押した元の段が消えると開いている画面が閉じる
+    /// （ホームの札と同じ形）。差し替えるのは、まだ出していないとき・この画面が前に出ているときだけ
+    private func loadQuiz() async {
+        let date = DailyQuiz.today()
+        if quiz?.date != date {
+            let result = try? await environment.quiz.fetch(date: date)
+            guard !Task.isCancelled, quiz == nil || isOnScreen else { return }
+            if case .ready(let fetched)? = result {
+                quiz = fetched
+            } else {
+                quiz = nil
+            }
+        }
+        quizAnswered = quiz.map { QuizAnswers().chosen(for: $0) != nil } ?? false
     }
 
     private func reloadHidden() {
@@ -430,7 +467,7 @@ struct SearchView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(L("季節・時間帯の絞り込みをすべて解除", "Clear all season and time filters"))
+                .accessibilityLabel(L("季節、時間帯の絞り込みをすべて解除", "Clear all season and time filters"))
                 .accessibilityIdentifier("search.clearTimeFilters")
                 .fixedSize()
                 .padding(.trailing, 8)
@@ -448,8 +485,8 @@ struct SearchView: View {
     /// （語・種類・カテゴリと重ねられる——「秋」を押してから「京都」と打てば秋の京都）
     private var shootingTimeSection: some View {
         VStack(alignment: .leading, spacing: JPSpace.s) {
-            sectionHeader(eyebrow: "SEASON · TIME", spoken: L("季節と時間帯", "Season and time"),
-                          title: L("季節・時間帯から探す", "Browse by season & time of day"))
+            sectionHeader(eyebrow: "SEASON\u{2002}TIME", spoken: L("季節と時間帯", "Season and time"),
+                          title: L("季節、時間帯から探す", "Browse by season & time of day"))
             shootingTimeChips
         }
     }
@@ -461,6 +498,7 @@ struct SearchView: View {
         switch section {
         case .spots: popularSpots
         case .officialSpots: spotIndexSection
+        case .quiz: quizSection
         case .featured: featured
         case .colors: colors
         case .seasonal: seasonal
@@ -469,8 +507,38 @@ struct SearchView: View {
         }
     }
 
-    /// 撮影スポットを地方 → 県で選ぶ段（札 #524・`SearchSpotIndexSection`）
+    /// 今日の一問の段（2026-11-12 にホームの上の札から移した・案 第10章）。札の面はホームの上の札と同じ（`TopCardFace`）
+    @ViewBuilder
+    private var quizSection: some View {
+        if let quiz {
+            NavigationLink {
+                DailyQuizView(photos: model.everything)
+            } label: {
+                TopCardFace(eyebrow: "DAILY QUIZ", eyebrowLabel: L("今日の一問", "Today's question"),
+                            title: L("この写真はどこ？", "Where is this?"),
+                            line: quizAnswered
+                                ? L("答えました、明日また新しい写真", "Answered, a new photo tomorrow")
+                                : L("4つの中から撮影地を当てる", "Guess the spot from four choices"),
+                            // 写真を出すなら作者とライセンスも出す（ホームの札と同じ）
+                            detail: quiz.photo.credit,
+                            backdrop: nil, backdropURL: quiz.photo.url)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("search.quiz")
+        }
+    }
+
+    /// 撮影スポットを地方 → 県で選ぶ段（札 #524・`SearchSpotIndexSection`）。
+    /// 2026-11-12（第2章・確かめ役の指摘）: 圏外で索引が読めなかった回は段ごと出さない——上の「電波が届いていません」の
+    /// 帯と、節の「撮影スポットを読み込めませんでした」の帯が2本重なっていた（`SearchSpotIndexSection.shows`）
+    @ViewBuilder
     private var spotIndexSection: some View {
+        if SearchSpotIndexSection.shows(load: spotIndexLoad, offline: connectivity.isOffline) {
+            spotIndexSectionBody
+        }
+    }
+
+    private var spotIndexSectionBody: some View {
         SearchSpotIndexSection(groups: spotGroups, load: spotIndexLoad, spots: officialSpots,
                                photos: model.everything,
                                photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.hasLoaded,
@@ -620,7 +688,7 @@ struct SearchView: View {
     private var featured: some View {
         if let group = model.featured {
             VStack(alignment: .leading, spacing: JPSpace.s) {
-                sectionHeader(eyebrow: "PICKS · \(group.label)", spoken: L("おすすめ · \(group.label)", "Picks · \(group.label)"),
+                sectionHeader(eyebrow: "PICKS\u{2002}\(group.label)", spoken: L("おすすめ\u{2002}\(group.label)", "Picks\u{2002}\(group.label)"),
                               title: L("おすすめ", "Picks")) {
                     NavigationLink {
                         TagPhotosView(kind: .category(group.id))
@@ -1052,8 +1120,8 @@ struct SearchView: View {
     nonisolated static func spotSubtitle(_ spot: OfficialSpot) -> String {
         let r = spot.region
         let place = [r?.country, r?.prefecture, r?.city].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
-        let head = L("撮影スポット", "Photo spot")
-        return place.isEmpty ? head : "\(head)・\(place)"
+        let head = L("観光スポット", "Photo spot")
+        return place.isEmpty ? head : "\(head)\u{2002}\(place)"
     }
 
     /// 0件の文を絞り込みの上（チップのすぐ下）に出すか（`zeroHitOnTop(...)`）
@@ -1296,8 +1364,10 @@ final class SearchViewModel: ObservableObject {
 
     /// 発見の段（板 11 の並び）。中身の無い段は出さない。
     /// - Parameter spots: 撮影スポットの索引（「季節・時間帯から探す」は撮影地だけでも出す）
-    func discovery(spots: [OfficialSpot] = []) -> [SearchDiscovery.Section] {
+    /// - Parameter hasQuiz: 今日の一問が取れた（取れた日だけ段を置く・2026-11-12）
+    func discovery(spots: [OfficialSpot] = [], hasQuiz: Bool = false) -> [SearchDiscovery.Section] {
         var present = Set<SearchDiscovery.Section>()
+        if hasQuiz { present.insert(.quiz) }
         if hasShootingTimes || ShootingTime.hasAnything(photos: [], spots: spots) { present.insert(.shootingTime) }
         if !popularSpots.isEmpty { present.insert(.spots) }
         // 撮影スポットの段はいつも置く（中身の読み込み中・失敗・空は段が自分で言う・札 #524）

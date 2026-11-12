@@ -126,6 +126,11 @@ jobs:
   pipeline:
     name: Xcode verification / TestFlight pipeline
     needs: plan
+    # The called Mac jobs put XCTest screenshots to a private S3 bucket via GitHub OIDC
+    # (Tools/upload-shots.sh). A called workflow cannot ask for more than this job grants.
+    permissions:
+      contents: write
+      id-token: write
     uses: ./.github/workflows/ios-testflight.yml
     with:
       submit: ${{ needs.plan.outputs.release == 'true' }}

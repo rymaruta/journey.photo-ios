@@ -260,7 +260,7 @@ struct CamperGarageView: View {
         }
         .overlay(alignment: .top) {
             if previewStage != nil && previewStage != actualStage || previewPart != nil {
-                Text(previewPart != nil ? L("まだ持っていない部品 · 見本", "Not yet collected · preview") : L("まだ先 · 見本", "Not yet · preview"))
+                Text(previewPart != nil ? L("まだ持っていない部品\u{2002}見本", "Not yet collected\u{2002}preview") : L("まだ先\u{2002}見本", "Not yet\u{2002}preview"))
                     .font(JPFont.caption.weight(.semibold))
                     .foregroundStyle(WebTheme.accent)
                     .padding(.horizontal, 12)
@@ -772,7 +772,7 @@ struct CamperArrivalView: View {
                             .multilineTextAlignment(.center)
                             .accessibilityIdentifier("camper.arrival.because")
                         Text(part.look).font(.footnote).foregroundStyle(WebTheme.muted2).multilineTextAlignment(.center)
-                        Text(L("\(part.category.name) · 部品 \(collected) / \(total)", "\(part.category.name) · \(collected) of \(total) parts"))
+                        Text(L("\(part.category.name)\u{2002}部品 \(collected) / \(total)", "\(part.category.name)\u{2002}\(collected) of \(total) parts"))
                             .font(JPFont.number(12, weight: .regular, relativeTo: .caption))
                             .foregroundStyle(WebTheme.faint)
                     }

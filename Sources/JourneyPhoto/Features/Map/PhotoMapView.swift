@@ -31,6 +31,10 @@ struct PhotoMapView: View {
     @ObservedObject private var linkRevision = SpotLinkRevision.shared
     /// ブロック／通報したぶんをピンから落とすため（`needsDrop`）
     @EnvironmentObject private var hidden: ModerationStore
+    /// 電波があるか（無いときは地図の上にガラスの帯・2026-11-12 第2章）
+    @EnvironmentObject private var connectivity: Connectivity
+    /// 「行きたい」の鍵（地図の下の「行きたい場所 · 旅行プランを作る」・2026-11-12）
+    @EnvironmentObject private var wishlist: WishlistStore
     /// ブロック／通報があったが、まだピンから落としていない。
     /// **見ている最中には絞らない**（`FavoritesView` の `photos` の注記）——
     /// 押した元の `NavigationLink` が消えると、開いている詳細がその場で閉じ、
@@ -358,7 +362,7 @@ struct PhotoMapView: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(WebTheme.text3)
-            TextField(L("撮影地・撮影スポット名で絞る", "Filter by place or photo spot"),
+            TextField(L("撮影地、観光スポット名で絞る", "Filter by place or photo spot"),
                       text: $model.typedQuery)
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier("map.search")
@@ -475,7 +479,24 @@ struct PhotoMapView: View {
         mapCanvas
         // 方位磁針・現在地・拡大縮小を**1本の列にまとめる**（`mapControls`）
         .mapScope(mapScope)
+        // 2026-11-12 判断（第2章）: 読み込み中は**ピンの形の灰**（今は何も出ず、ピンが無いだけの地図だった）
+        .overlay {
+            if !model.loaded { MapPinSkeleton() }
+        }
         .overlay(alignment: .top) { statusLine }
+        // UI テストのときだけ（電波なしの絵・`PreviewSession.forcesOffline`・Debug のみ）: いま出している帯・札の種類を
+        // 見えない要素 `map.stateProbe` に出す（2026-11-12・run 1117 で帯が出なかった訳を記録で調べる）
+        .overlay(alignment: .bottomLeading) {
+            if PreviewSession.forcesOffline {
+                Text(" ")
+                    .font(.caption2)
+                    .foregroundStyle(Color.clear)
+                    .frame(width: 1, height: 1)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("map.stateProbe")
+                    .accessibilityValue(stateProbeValue)
+            }
+        }
         .overlay(alignment: .topTrailing) {
             mapControls
                 .padding(.trailing, 16)
@@ -486,6 +507,13 @@ struct PhotoMapView: View {
         // その上に乗る
         .overlay(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 10) {
+                // 2026-11-12 判断（デザインの案 第10章「どこに何を置くか」・マップ＝計画する）: 行きたい場所があれば、
+                // 地図の下に「行きたい場所 N · 旅行プランを作る」。押すと行きたい場所の地図（選んで旅行プランを作る・
+                // `SavedSpotsMapView`）。旅行プランを作るまで 3 → 2回。札（ピン・スポット・地点）が出ている間は出さない
+                if showsWishlistLink {
+                    wishlistLink
+                        .padding(.horizontal, 16)
+                }
                 HStack(alignment: .bottom) {
                     areaControl
                     Spacer(minLength: 8)
@@ -708,10 +736,64 @@ struct PhotoMapView: View {
     /// 地図の上に1行。**空の状態を隠さない**——ピンが消えただけの画面にしない
     @ViewBuilder
     private var statusLine: some View {
-        if let message = emptyMessage {
-            statusCapsule(message, retry: message == Self.loadFailedText)
-        } else if let note = locationNote ?? loadFailedNote {
-            statusCapsule(note, retry: note == Self.loadFailedText)
+        // 2026-11-12 判断（デザインの案 第2章「画面の状態とそろえ」）: 地図の上の失敗・空・電波なしは
+        // **ガラスの帯**（`JPStateBand`・黒地の帯と同じ並び——印・見出しと説明・右に一手）。
+        // 字と「もう一度試す」だけの丸い札は、何が起きたかが印で分からなかった。現在地の様子は今までどおりの札
+        let choice = Self.stateBand(offline: connectivity.isOffline, loaded: model.loaded, empty: emptyKind,
+                                    areaOnly: model.areaFrame != nil && MapSearch.fold(model.query).isEmpty
+                                        && model.category == nil,
+                                    hasLocationNote: locationNote != nil, photosFailed: loadFailedNote != nil)
+        if choice == .offlineNothing {
+            // 電波が無く、前に見たピンも無い（「前に見たピンだけ」と言わない・確かめ役の指摘）
+            mapBand(JPStateBand(kind: .offline, title: JPStateBand.offlineTitle,
+                                message: L("電波の届く所で開くと、写真のピンが並びます",
+                                           "Open the map where you have a signal to see photo pins"),
+                                skin: .glass, isBusy: model.isLoading, actionIdentifier: "map.offline.retry") {
+                retryLoad()
+            })
+        } else if choice == .failed {
+            mapBand(JPStateBand(kind: .partial, title: Self.loadFailedText,
+                                message: L("通信が途切れたようです", "The connection seems to have dropped"),
+                                skin: .glass, isBusy: model.isLoading, actionIdentifier: "map.retry") {
+                retryLoad()
+            })
+        } else if choice == .areaEmpty {
+            // 範囲だけで絞って空だった回は、1回で出られる出口（範囲を外して写真全体へ寄せる）
+            mapBand(JPStateBand(kind: .empty(symbol: "mappin"),
+                                title: L("この範囲にはまだ写真がありません", "No photos in this area yet"),
+                                skin: .glass, actionTitle: L("写真全体を見る", "Show all photos"),
+                                actionIdentifier: "map.empty.showAll") {
+                model.clearArea()
+                frame(model.frame)
+            })
+        } else if choice == .empty, let message = emptyMessage {
+            mapBand(JPStateBand(kind: .empty(symbol: "mappin"), title: message, skin: .glass))
+        } else if choice == .location, let note = locationNote {
+            // 現在地の様子が先（押した回の答えを隠さない・`loadFailedNote` の注記）
+            statusCapsule(note, retry: false)
+        } else if choice == .offlinePinsAndLocation, let note = locationNote {
+            // 2026-11-12（run 1132 の記録）: 電波が無いのに現在地の札だけが出て、許可を待つ間ずっと電波なしを
+            // 知らせていなかった（choice=location offline=true location=asking・ピン 16 本）。両方を重ねて出す
+            VStack(spacing: 0) {
+                mapBand(JPStateBand(kind: .offline, title: JPStateBand.offlineTitle,
+                                    message: L("前に見たピンだけを出しています", "Showing pins you've already seen"),
+                                    skin: .glass, isBusy: model.isLoading, actionIdentifier: "map.offline.retry") {
+                    retryLoad()
+                })
+                statusCapsule(note, retry: false)
+            }
+        } else if choice == .offlinePins {
+            // 電波が無くても前に読めたピンはそのまま（画面は閉じない）。ピンがあるときだけここに来る
+            mapBand(JPStateBand(kind: .offline, title: JPStateBand.offlineTitle,
+                                message: L("前に見たピンだけを出しています", "Showing pins you've already seen"),
+                                skin: .glass, isBusy: model.isLoading, actionIdentifier: "map.offline.retry") {
+                retryLoad()
+            })
+        } else if choice == .photosFailed, let note = loadFailedNote {
+            mapBand(JPStateBand(kind: .partial, title: note, skin: .glass, isBusy: model.isLoading,
+                                actionIdentifier: "map.retry") {
+                retryLoad()
+            })
         } else if !noneNearbyBanner.dismissed, model.areaFrame == nil, !model.isFiltering,
                   model.frame != nil, let here,
                   NearbyPhotos.noneNearby(model.photos, here: here) {
@@ -726,7 +808,6 @@ struct PhotoMapView: View {
             } label: {
                 HStack(spacing: 6) {
                     Text(L("近くに写真はありません", "No photos nearby"))
-                    Text("·").accessibilityHidden(true)
                     Text(L("全体を見る", "Show all")).font(.subheadline.weight(.semibold))
                 }
                 .font(.subheadline)
@@ -760,6 +841,53 @@ struct PhotoMapView: View {
         case .noResults: return L("見つかりませんでした", "No results")
         case .noPlaces: return L("撮影地の分かる写真がありません", "No photos with a place yet")
         }
+    }
+
+    /// いまの「何も出ていない」の種類（`emptyMessage` と同じ決め方）
+    private var emptyKind: EmptyBanner? {
+        guard model.hasNothingToShow else { return nil }
+        return Self.emptyBanner(loadFailed: model.loadFailed, photosEmpty: model.photos.isEmpty,
+                                filtering: model.isFiltering,
+                                categoryHidesSpots: model.categoryHidesMatchingSpots)
+    }
+
+    /// 地図の上に出す帯（2026-11-12・第2章と確かめ役の指摘）
+    enum StateBandChoice: Equatable {
+        /// 電波が無く、前に見たピンも無い
+        case offlineNothing
+        /// 写真を読めなかった（電波はある）
+        case failed
+        /// 範囲だけで絞って空だった（「写真全体を見る」）
+        case areaEmpty
+        /// 見つからない・撮影地の分かる写真が無い・カテゴリがスポットを隠している（字は `emptyMessage`）
+        case empty
+        /// 現在地の様子（今までどおりの丸い札）
+        case location
+        /// 電波が無いが、前に読めたピンがある
+        case offlinePins
+        /// 電波が無く前に読めたピンがあり、現在地の様子もある（帯の下に現在地の札を重ねる・どちらも隠さない）
+        case offlinePinsAndLocation
+        /// スポットのピンは出ているが写真を読めなかった
+        case photosFailed
+        case none
+    }
+
+    /// どの帯を出すか。**空・見つからない・現在地の様子を電波なしの帯で隠さない**。
+    /// 「前に見たピンだけ」はピンがあるときだけ（`empty == nil` はピンか写真が1つ以上ある）。
+    /// 範囲の出口は、絞り込みが範囲だけの回に限る（語・カテゴリでも絞っていると範囲を外しても空のまま）
+    nonisolated static func stateBand(offline: Bool, loaded: Bool, empty: EmptyBanner?, areaOnly: Bool,
+                                      hasLocationNote: Bool, photosFailed: Bool) -> StateBandChoice {
+        if let empty {
+            switch empty {
+            case .failed: return offline ? .offlineNothing : .failed
+            case .noResults: return areaOnly ? .areaEmpty : .empty
+            case .categoryHidesSpots, .noPlaces: return .empty
+            }
+        }
+        if offline && loaded { return hasLocationNote ? .offlinePinsAndLocation : .offlinePins }
+        if hasLocationNote { return .location }
+        if photosFailed { return .photosFailed }
+        return .none
     }
 
     /// 地図の上の帯（何も出ていないとき）に何と言うか
@@ -821,6 +949,28 @@ struct PhotoMapView: View {
         // 読んでいる最中は重ねない（ボタンも止めている。古い回の答えは模型が捨てる）
         guard !model.isLoading else { return }
         Task { await model.load(environment: environment) }
+    }
+
+    /// `map.stateProbe` の値（UI テストのときだけ読む）
+    private var stateProbeValue: String {
+        let choice = Self.stateBand(offline: connectivity.isOffline, loaded: model.loaded, empty: emptyKind,
+                                    areaOnly: model.areaFrame != nil && MapSearch.fold(model.query).isEmpty
+                                        && model.category == nil,
+                                    hasLocationNote: locationNote != nil, photosFailed: loadFailedNote != nil)
+        return "choice=\(choice) offline=\(connectivity.isOffline) loaded=\(model.loaded) "
+            + "empty=\(emptyKind.map { "\($0)" } ?? "nil") location=\(location.state) "
+            + "locationNote=\(locationNote ?? "nil") photoCount=\(model.photos.count) shownCount=\(model.shown.count) "
+            + "pinCount=\(model.pins.count) spotPinCount=\(model.officialPins.count) loadFailed=\(model.loadFailed)"
+    }
+
+    /// 地図の上のガラスの帯（第2章）。左 12・上 12。**右は操作列（右 16・幅 44・上から 56）の分を空ける**
+    /// ——帯は 56 より下まで伸びるので、横いっぱいにすると現在地・拡大の操作に重なる
+    private func mapBand(_ band: JPStateBand) -> some View {
+        band
+            .padding(.leading, JPSpace.s)
+            .padding(.trailing, JPSpace.m + WebTheme.minTapTarget + JPSpace.xs)
+            .padding(.top, JPSpace.s)
+            .accessibilityIdentifier("map.stateBand")
     }
 
     /// 地図の上の帯1本。`retry` なら右に「もう一度試す」
@@ -992,6 +1142,39 @@ struct PhotoMapView: View {
         .accessibilityLabel(label)
     }
 
+    /// 地図の下の「行きたい場所」の口を出すか: 地図を見ていて、行きたい場所があり、札が出ていないとき
+    private var showsWishlistLink: Bool {
+        MapWishlistLink.shows(wishCount: wishlist.spotIds.count, mode: model.mode,
+                              cardShown: selected != nil || selectedOfficial != nil || chosenPlace != nil)
+    }
+
+    /// 「行きたい場所 N · 旅行プランを作る」（地図の上なのでガラスの地に白の字・CLAUDE.md「写真・地図の上は白」）
+    private var wishlistLink: some View {
+        NavigationLink {
+            MapWishlistDestination(keys: wishlist.spotIds, photos: model.photos, officialSpots: model.officialSpots,
+                                   photosKnown: model.photosKnown)
+        } label: {
+            HStack(spacing: JPSpace.xs) {
+                Image(systemName: "heart.fill")
+                    .font(.footnote)
+                    .accessibilityHidden(true)
+                Text(MapWishlistLink.title(count: wishlist.spotIds.count))
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .accessibilityHidden(true)
+            }
+            .foregroundStyle(WebTheme.foreground)
+            .padding(.horizontal, 14)
+            .frame(minHeight: WebTheme.minTapTarget)
+            .jpGlass(in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("map.wishlist")
+    }
+
     /// 近くの写真へ。**現在地は端末の中だけ**（送らない・残さない）
     private var nearbyButton: some View {
         Button {
@@ -1007,6 +1190,8 @@ struct PhotoMapView: View {
                 .foregroundStyle(WebTheme.accentText)
         }
         .buttonStyle(.plain)
+        // 近くの写真の画面写真（2026-11-12・`testCapturesNearbyPhotos`）
+        .accessibilityIdentifier("map.nearby")
     }
 
     /// 現在地。押すたびに**普通の地図アプリと同じ3段**で切り替わる:
@@ -1257,7 +1442,7 @@ struct PhotoMapView: View {
                         // 並ぶとはみ出しうる。隣の「経路」と形をそろえてアイコンは残し、1行に収めて縮める。
                         // 縮めるのは 0.8 まで（15pt × 0.8 = 12pt。板の本文の最小）
                         // 線のボタン（v2 の副ボタン・白 14% の縁）。枠の中ぜんぶが当たり（`jpPillButton` の contentShape）
-                        Label(L("撮影スポットを見る", "See photo spot"), systemImage: "mappin.and.ellipse")
+                        Label(L("観光スポットを見る", "See photo spot"), systemImage: "mappin.and.ellipse")
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
                             .jpPillButton(.outline, height: Self.cardButtonHeight)
@@ -1525,14 +1710,15 @@ struct PhotoMapView: View {
                 }
                 // 読み込み中・失敗・空は v2 の共通の部品（Components 06「4つの状態」・同じ並び）
                 if model.officialIndexState == .loading {
-                    // **読み込み中に「無い」と言わない**。0.3 秒より早く届けば骨格も出さない
-                    JPLoadingState(kind: .rows)
+                    // **読み込み中に「無い」と言わない**。0.3 秒より早く届けば骨格も出さない。
+                    // 2026-11-12 判断（第2章）: 2本の線ではなく場所の行の形（写真 56・2 行の字）
+                    JPLoadingState(kind: .places)
                 } else if model.officialIndexState == .failed {
-                    ErrorBanner(message: L("撮影スポットを読み込めませんでした", "Couldn't load photo spots"),
-                                isBusy: model.isLoading) { retryLoad() }
+                    ErrorBanner(title: L("観光スポットを読み込めませんでした", "Couldn't load photo spots"),
+                                message: ErrorBanner.defaultMessage, isBusy: model.isLoading) { retryLoad() }
                 } else if rows.isEmpty {
-                    EmptyState(message: MapSearch.fold(model.query).isEmpty
-                               ? L("公開中の撮影スポットはまだありません", "No photo spots yet")
+                    EmptyState(icon: "mappin", message: MapSearch.fold(model.query).isEmpty
+                               ? L("公開中の観光スポットはまだありません", "No photo spots yet")
                                : L("見つかりませんでした", "No results"))
                 } else {
                     // **Lazy にする。** 一覧は全件（公開済み364件・写真つき315件）で、
@@ -1561,7 +1747,7 @@ struct PhotoMapView: View {
                 if model.officialIndexState == .ready {
                 // **「運営が確かめた」とは書かない**——公開済みには AI 照合で出した行も
                 // 含まれ、人の確認（`verifiedBy`）とは別の印（photo-gallery の CLAUDE.md）
-                Text(L("公開中の撮影スポットだけ（いまは\(rows.count)件）。",
+                Text(L("公開中の観光スポットだけ（いまは\(rows.count)件）。",
                        "Published photo spots only (\(rows.count) now)."))
                     .font(.caption)
                     .lineSpacing(3)
@@ -1583,9 +1769,9 @@ struct PhotoMapView: View {
     }
 
     private func spotsHeading(hasHere: Bool, hasCenter: Bool) -> String {
-        if hasHere { return L("撮影スポット · 近い順", "Photo spots · nearest first") }
-        if hasCenter { return L("撮影スポット · 地図の中心から近い順", "Photo spots · nearest to the map") }
-        return L("撮影スポット", "Photo spots")
+        if hasHere { return L("観光スポット\u{2002}近い順", "Photo spots\u{2002}nearest first") }
+        if hasCenter { return L("観光スポット\u{2002}地図の中心から近い順", "Photo spots\u{2002}nearest to the map") }
+        return L("観光スポット", "Photo spots")
     }
 
     /// 1行（`OfficialSpotRow`・探すの撮影スポットの一覧と同じ部品・札 #524 で切り出した）
@@ -1625,8 +1811,10 @@ struct PhotoMapView: View {
         // 座標だけの写真が「県・国に分けられない」段に入る。そこから詳細を開いた後に台帳が届くと、
         // 写真が県へ移って元の行が消え、詳細がその場で閉じる（台帳は控えがあればすぐ届く）
         if model.officialIndexState == .loading || (sections.isEmpty && !model.loaded) {
-            // **読み込み中に「無い」と言わない**。v2 の読み込みの骨格（0.3 秒より早ければ出さない）
-            JPLoadingState(kind: .grid)
+            // **読み込み中に「無い」と言わない**。v2 の読み込みの骨格（0.3 秒より早ければ出さない）。
+            // 2026-11-12 判断（第2章）: 格子ではなく場所の行の形（リストの中身と同じ形）
+            JPLoadingState(kind: .places)
+                .padding(.horizontal, JPSpace.gutter)
             Spacer()
         } else if sections.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
@@ -1637,11 +1825,12 @@ struct PhotoMapView: View {
                 switch Self.listEmpty(loadFailed: model.loadFailed, photosEmpty: model.photos.isEmpty,
                                       filtering: filtering) {
                 case .failed:
-                    ErrorBanner(message: Self.loadFailedText, isBusy: model.isLoading) { retryLoad() }
+                    ErrorBanner(title: Self.loadFailedText, message: ErrorBanner.defaultMessage,
+                                isBusy: model.isLoading) { retryLoad() }
                 case .noResults:
-                    EmptyState(message: L("見つかりませんでした", "No results"))
+                    EmptyState(icon: "mappin", message: L("見つかりませんでした", "No results"))
                 case .noPlaces:
-                    EmptyState(message: L("撮影地の分かる写真がありません", "No photos with a place yet"))
+                    EmptyState(icon: "mappin", message: L("撮影地の分かる写真がありません", "No photos with a place yet"))
                 }
             }
             .padding(.top, 8)
@@ -1696,7 +1885,7 @@ struct PhotoMapView: View {
     private var indexNote: some View {
         if model.officialIndexState == .failed {
             HStack(spacing: 8) {
-                listNote(L("撮影スポットを読み込めませんでした", "Couldn't load photo spots"))
+                listNote(L("観光スポットを読み込めませんでした", "Couldn't load photo spots"))
                 // 写真も読めていない回は上の行の「もう一度試す」が両方を読み直す（2つ並べない）
                 if !model.loadFailed {
                     RetryButton(isBusy: model.isLoading, compact: true) { retryLoad() }
@@ -1946,5 +2135,72 @@ struct MapCardStyle: ViewModifier {
         content
             .padding(JPSpace.m)
             .jpGlass(in: RoundedRectangle(cornerRadius: JPRadius.xl), border: 0.12)
+    }
+}
+
+/// 地図の読み込み中の骨格（2026-11-12 判断・デザインの案 第2章「画面の状態とそろえ」）。
+///
+/// 写真のピンと同じ 44・角 12 の灰の札を、地図の上に散らして置く（位置は板の模型の 390×844 の座標の比）。
+/// **0.3 秒より早く読めたら出さない**（`JPLoadingState.revealDelay`）。押せない・読み上げは「読み込み中」1つ
+struct MapPinSkeleton: View {
+
+    /// 札の中心の位置（画面の幅・高さに対する比）
+    nonisolated static let spots: [(x: CGFloat, y: CGFloat)] = [
+        (270.0 / 390, 322.0 / 844), (294.0 / 390, 228.0 / 844), (142.0 / 390, 542.0 / 844),
+        (322.0 / 390, 622.0 / 844), (92.0 / 390, 442.0 / 844), (222.0 / 390, 492.0 / 844),
+    ]
+    /// 札の大きさ・角（写真のピンと同じ）
+    nonisolated static let size: CGFloat = 44
+    nonisolated static let corner: CGFloat = 12
+
+    @State private var revealed = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            if revealed {
+                ForEach(Array(Self.spots.enumerated()), id: \.offset) { _, spot in
+                    RoundedRectangle(cornerRadius: Self.corner)
+                        .fill(WebTheme.surface7)
+                        .frame(width: Self.size, height: Self.size)
+                        .position(x: proxy.size.width * spot.x, y: proxy.size.height * spot.y)
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L("読み込み中", "Loading"))
+        .accessibilityIdentifier("map.loadingPins")
+        .task {
+            try? await Task.sleep(for: JPLoadingState.revealDelay)
+            revealed = true
+        }
+    }
+}
+
+/// 地図の下の「行きたい場所」の口（2026-11-12・案 第10章）。出す決まりと文（試験で見る）
+enum MapWishlistLink {
+    static func shows(wishCount: Int, mode: PhotoMapViewModel.Mode, cardShown: Bool) -> Bool {
+        wishCount > 0 && mode == .map && !cardShown
+    }
+
+    static func title(count: Int) -> String {
+        L("行きたい場所 \(count)\u{2002}旅行プランを作る", "Wishlist \(count)\u{2002}Plan a trip")
+    }
+}
+
+/// 行きたい場所の地図の行き先。**押されて開くときだけ並べる**（`NavigationLink` の行き先は先に作られるので、
+/// 撮影地を写真から束ねる計算を地図を描くたびにしない）。並べ方はマイページの「地図で見る」と同じ
+/// （`ProfileSections.wantedPlaces`・`OfficialWishlist.rows`・`SavedSpotsMap.split`）。引き当て先は地図の写真（公開の一覧）
+struct MapWishlistDestination: View {
+    let keys: Set<String>
+    let photos: [Photo]
+    let officialSpots: [OfficialSpot]
+    let photosKnown: Bool
+
+    var body: some View {
+        let places = ProfileSections.wantedPlaces(keys: keys, pool: photos)
+        let rows = OfficialWishlist.rows(keys: keys, index: officialSpots)
+        SavedSpotsMapView(split: SavedSpotsMap.split(places: places, officialRows: rows),
+                          officialSpots: officialSpots, photos: photos, photosKnown: photosKnown)
     }
 }

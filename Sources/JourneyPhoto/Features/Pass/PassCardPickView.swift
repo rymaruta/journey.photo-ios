@@ -171,8 +171,9 @@ struct PassCardPickView: View {
         } else if loadFailed {
             // 🔴 **読めなかったのを「公開している写真がありません」と言わない**（2026-10-21）。
             // 前に選んだ写真はそのまま（保存しても乗車券は変わらない）。読めた分があれば下に並べる
-            ErrorBanner(message: L("写真を読み込めませんでした。つながる所で、もう一度お試しください。",
-                                   "Couldn\u{2019}t load your photos. Try again when you\u{2019}re online."),
+            ErrorBanner(title: L("写真を読み込めませんでした", "Couldn\u{2019}t load your photos"),
+                        message: L("つながる所で、もう一度お試しください。前に選んだ写真はそのままです",
+                                   "Try again when you\u{2019}re online. Your chosen photo stays as it is."),
                         isBusy: isRetrying) { Task { await retryPhotos() } }
                 .accessibilityIdentifier("pass.pick.loadFailed")
             if !photos.isEmpty { photoGrid }
@@ -221,7 +222,7 @@ struct PassCardPickView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(L("写真 \(index + 1) · \(photo.displayTitle)", "Photo \(index + 1) · \(photo.displayTitle)"))
+                .accessibilityLabel(L("写真 \(index + 1)\u{2002}\(photo.displayTitle)", "Photo \(index + 1)\u{2002}\(photo.displayTitle)"))
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
@@ -306,9 +307,9 @@ struct PassCardPickView: View {
     /// 「居住地から（自動）」の行の名前（居住地が無ければそう言う）
     private var homeTitle: String {
         guard let pref = pass.homePrefecture else {
-            return L("居住地から（自動・居住地が未設定）", "From where I live (automatic \u{00B7} not set)")
+            return L("居住地から（自動、居住地が未設定）", "From where I live (automatic \u{00B7} not set)")
         }
-        return L("居住地から（自動・\(PassTicket.shortPlace(pref))）", "From where I live (automatic \u{00B7} \(pref))")
+        return L("居住地から（自動、\(PassTicket.shortPlace(pref))）", "From where I live (automatic \u{00B7} \(pref))")
     }
 
     private func labelField(_ title: String, placeholder: String, text: Binding<String>, id: String) -> some View {

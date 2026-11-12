@@ -146,7 +146,7 @@ final class PhotoScreensV2Tests: XCTestCase {
     /// 行き先の段: 眉ラベル（真鍮・黒地）と、幅を分け合う 48 の札。印は真鍮、字は白
     func testTripSectionBrassOnBlackAndTall() throws {
         let section = try source("Features/PhotoDetail/PhotoTripSection.swift")
-        XCTAssertTrue(section.contains("JPEyebrowLine(L(\"NEXT TRIP · 次の旅へ\""))
+        XCTAssertTrue(section.contains("JPEyebrowLine(L(\"NEXT TRIP\\u{2002}次の旅へ\""))
         XCTAssertTrue(section.contains(".foregroundStyle(WebTheme.accent)"))
         XCTAssertTrue(section.contains("selected ? WebTheme.accent : WebTheme.line"), "選んだ状態を縁で伝えていない")
         XCTAssertTrue(section.contains(".frame(maxWidth: .infinity, minHeight: Self.goHeight)"))

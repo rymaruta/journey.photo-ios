@@ -68,36 +68,37 @@ def normalize(path: str) -> str:
     return path.rstrip("/") or "/"
 
 
-def server_config_files(root: Path):
-    """口を書いてある設定ファイル。`api-user/serverless.yml` と `serverless.*.yml`。
-
-    **分けたファイルも読む（札 #569・2026-11-12 判断）。** Web 版は user API の部品が
-    上限 500 に近く、機能ごとの口を `serverless.<機能>.yml` の別のスタックに移した
-    （経路は同じ HTTP API に足すので、URL は変わらない）。`serverless.yml` だけを読むと、
-    移した口を「サーバーに無い」と 59 件 NG にしていた。
-    本番（main）のようにまだ分けていない形でも、`serverless.yml` だけがあれば同じに読める。
-    """
-    api = root / "api-user"
-    main = api / "serverless.yml"
-    split = sorted(p for p in api.glob("serverless.*.yml") if p != main)
-    return [main] + split
-
-
 def server_endpoints(root: Path):
-    """`api-user/serverless.yml`（と分けたファイル）から (メソッド, パス, 認証が要るか) を拾う。"""
+    """`api-user/serverless.yml` から (メソッド, パス, 認証が要るか) を拾う。
+
+    user API の HTTP API に経路を足す別のスタック（`serverless.<名前>.yml`・部品の上限 500 のために分けた）も
+    同じ口として読む。**読むのは user API の HttpApiId を取り込む設定だけ**（ほかの API に経路を足す設定を混ぜない）、
+    正規表現は**ファイルごと**にかける（つなげると、ある設定の最後の口が次の設定の頭まで読み進む・2026-11-12 確かめ役）。
+    """
+    api_user = root / "api-user"
+    files = [api_user / "serverless.yml"]
+    for f in sorted(api_user.glob("serverless.*.yml")):
+        if USER_API_IMPORT in f.read_text(encoding="utf-8"):
+            files.append(f)
     endpoints = {}
     # httpApi の各項目は path → method → （あれば）authorizer の順で並ぶ
     pattern = re.compile(
         r"path:\s*(?P<path>\S+)\s*\n\s*method:\s*(?P<method>\w+)(?P<rest>(?:\s*\n(?!\s*- httpApi)[^\n]*)*)"
     )
-    for file in server_config_files(root):
-        text = file.read_text(encoding="utf-8")
-        for m in pattern.finditer(text):
+    for f in files:
+        text = f.read_text(encoding="utf-8")
+        # 関数の並び（`functions:`）の中だけを見る。`resources:` の中の字（認可の部品の名前など）を口の続きと読まない
+        body = text.split("\nfunctions:\n", 1)[-1].split("\nresources:\n", 1)[0]
+        for m in pattern.finditer(body):
             path = normalize(m.group("path"))
             method = m.group("method").upper()
             needs_auth = "authorizer" in m.group("rest")
             endpoints[(method, path)] = needs_auth
     return endpoints
+
+
+# 別のスタックが user API の HTTP API に経路を足すときに取り込む書き出しの名前
+USER_API_IMPORT = "sls-photo-gallery-user-api-${sls:stage}-HttpApiId"
 
 
 CALL = re.compile(

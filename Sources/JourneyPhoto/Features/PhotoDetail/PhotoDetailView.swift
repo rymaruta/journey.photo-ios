@@ -50,6 +50,8 @@ struct PhotoDetailView: View {
         let credit: SignatureShareCardRenderer.Credit
         let text: String
         let avatarURL: URL?
+        /// ストーリーの側（旅をストーリーに・第9章・1.1.83）。押した時点の写真で作る
+        let story: TravelStory.Source
     }
     @State private var preparingThreads = false
     /// **アプリ内の「送る」シート**（札 #541）。「共有」の行き先（iPhone の共有シートは中の「ほかのアプリ」）
@@ -68,6 +70,8 @@ struct PhotoDetailView: View {
     /// 写真を DM で送っている相手（二度押しで2通送らない）
     @State private var sendingPhotoTo: String?
     @State private var showViewer = false
+    /// つまんで地図へ（離した所が `PinchToMap.openScale` 以下）。行き先は「地図で見る ›」と同じ地図
+    @State private var pinchOpensMap = false
     @State private var actionError: String?
     /// 編集して保存したあとの姿。**`photo` は `let` で書き換えられない**
     /// ——編集シートを閉じても題も説明も古いままだった（保存はできていた
@@ -132,6 +136,10 @@ struct PhotoDetailView: View {
     /// 「この写真を見て撮影」の元の写真（`GET /user/inspired/{id}`・2026-10-14）。**どの写真の、どの元の写真で
     /// 読んだかを持つ**（`InspiredBy.Loaded`）——写真を送った直後に前の写真の行を出さない（`tripLoaded` と同じ考え）
     @State private var inspiredLoaded: InspiredBy.Loaded?
+    /// この写真を作った元のストーリー（2026-11-11 判断・`StoryPhotoLink`）。本人の写真だけ探す。
+    /// `known` は元があると分かっている（`keptFrom`・`fromStory`・見つかった）。`story` はまだ在れば
+    @State private var sourceStory: (photoId: String, known: Bool, story: Story?)?
+    @State private var openedSourceStory: Story?
     /// 元の写真を開くときに引き当てる公開一覧（読んだときのもの・`InspiredBy.photoToOpen`）
     @State private var inspiredFeed: [Photo]?
     /// 元の写真の ID。画面写真の試験だけ、どの写真にも見本の元の写真が付いているものとする
@@ -451,16 +459,24 @@ struct PhotoDetailView: View {
         .fullScreenCover(item: $storySeed) { seed in
             NavigationStack { StoryComposerView(sharing: seed) }
         }
+        // 「SNS に載せる」の画面。上で「投稿 | ストーリー」を切り替える（2026-11-12 秘書室の判断・`SocialShareSheet`）
         .sheet(item: $signatureBundle) { bundle in
-            SignatureShareCardSheet(photoData: bundle.photoData,
-                                    credit: bundle.credit,
-                                    shareText: bundle.text,
-                                    avatarURL: bundle.avatarURL)
+            SocialShareSheet(photoData: bundle.photoData,
+                             credit: bundle.credit,
+                             shareText: bundle.text,
+                             avatarURL: bundle.avatarURL,
+                             leadURL: bundle.story.lead,
+                             filmURLs: bundle.story.film,
+                             facts: bundle.story.facts)
         }
         // **閉じたら引き直す。** 保存はできているのに画面が古いままだと、
         // 保存できていないように見える
         .sheet(isPresented: $showEdit, onDismiss: { Task { await reloadPhoto() } }) {
             NavigationStack { EditPhotoView(photo: shown) }
+        }
+        // つまむと地図（2026-11-12 札 #543）。行き先は「地図で見る ›」と同じ（この写真と近くの写真の地図）
+        .navigationDestination(isPresented: $pinchOpensMap) {
+            NearbyMapScreen(opened: shown, nearby: nearby, openedFromPublicFeed: fromPublicFeed)
         }
         .fullScreenCover(isPresented: $showViewer) {
             // **ブロック・通報した写真を落とした並びで開く**（`PhotoDetailRules.viewerLineup`）。
@@ -487,10 +503,31 @@ struct PhotoDetailView: View {
             )
         }
         .alert(L("この写真を削除しますか？", "Delete this photo?"), isPresented: $showDeleteConfirm) {
-            Button(Labels.Common.delete, role: .destructive) { Task { await deletePhoto() } }
+            if sourceStory?.photoId == shown.id, sourceStory?.story != nil {
+                // 2026-11-11 判断: 元のストーリーがあれば2つの選び方（既定の選び方は無し）。
+                // 危険の色はストーリーも消える側だけ（確認の部品は系統のまま）
+                Button(StoryPhotoLink.deleteWithStory, role: .destructive) { Task { await deletePhoto(withStory: true) } }
+                Button(StoryPhotoLink.deletePhotoOnly) { Task { await deletePhoto(withStory: false) } }
+            } else {
+                // 元があると分かっていてもう無い回は「写真だけ」（古い動きで残りを巻き込まない）
+                Button(Labels.Common.delete, role: .destructive) {
+                    Task { await deletePhoto(withStory: sourceStory?.known == true ? false : nil) }
+                }
+            }
             Button(Labels.Common.cancel, role: .cancel) {}
         } message: {
-            Text(L("元に戻せません。画像そのものも消えます。", "This cannot be undone. The image file is deleted too."))
+            Text(sourceStory?.photoId == shown.id && sourceStory?.story != nil
+                 ? StoryPhotoLink.photoDeleteMessage
+                 : L("元に戻せません。画像そのものも消えます。", "This cannot be undone. The image file is deleted too."))
+        }
+        .task(id: "storySource|\(shown.id)|\(isMine)|\(shown.sourceStoryId ?? "")") { await loadSourceStory() }
+        .fullScreenCover(item: $openedSourceStory) { story in
+            StoryViewerView(stories: [story], startIndex: 0, viewerId: auth.userId,
+                            onPhotoDeleted: { photoId in
+                                // 「写真も一緒に消す」でこの写真が消えた: ストーリーを閉じ、もう無い写真の詳細も閉じる
+                                openedSourceStory = nil
+                                if PhotoDetailRules.closesAfterDelete(photoId: photoId, currentId: current.id) { dismiss() }
+                            })
         }
         .blockConfirmation(presenting: $ownerPendingBlock) { owner in
             Task { await block(owner) }
@@ -617,30 +654,17 @@ struct PhotoDetailView: View {
     nonisolated static let inactiveDotOpacity = 0.4
 
     private func heroImage(_ item: Photo) -> some View {
-        Button {
-            showViewer = true
-        } label: {
-            // 🔴 **写真は重ね（overlay）に置く。** 引き伸ばした写真（fill）を直に
-            // `.frame(maxWidth: .infinity)` で包むと、横長の写真では包みの幅が
-            // 写真の幅（画面より広い）になり、`.clipped()` は見た目を切るだけなので
-            // 下の本文まで画面より広く組まれていた（説明・撮影情報・操作の列が
-            // 右端で切れる。実機の絵で見つかった）。重ねは親の幅を変えない
-            Color.clear
-                .frame(maxWidth: .infinity)
-                .frame(height: Self.heroHeight)
-                .overlay {
-                    // **縮めて読む部品（`DownsampledRemoteImage`）には替えない**（2026-10-31 判断・札 #429 アプリ 2）。
-                    // 枠（画面の幅 × 520pt・3倍の画面）を覆うには長い辺 1,792〜2,048px が要り、元の画像（1,920px）と
-                    // ほぼ同じで縮まない。替えた回（Mac run 793）は開いた時のメモリの山が 156.9→159.0MB と減らず、
-                    // 閉じた後のメモリが 132.4→154.9MB に増えた（縮めた絵の控えに残る）ので、元に戻した
-                    RemoteImage(url: item.detailImageURL, alignment: item.gridAlignment)
-                }
-                .clipped()
-                .contentShape(Rectangle())
-                .accessibilityLabel(item.accessibilityText)
+        // つまむと地図（2026-11-12 札 #543）。つまむ値は**この部品の中だけ**で持つ（2026-11-12 確かめ役:
+        // 画面の `@GestureState` に置くと、指が動くたびに写真の詳細の全体が描き直されていた）
+        PinchToMapHero(item: item, height: Self.heroHeight,
+                       onOpen: { showViewer = true },
+                       onOpenMap: { pinchOpensMap = true }) {
+            // **縮めて読む部品（`DownsampledRemoteImage`）には替えない**（2026-10-31 判断・札 #429 アプリ 2）。
+            // 枠（画面の幅 × 520pt・3倍の画面）を覆うには長い辺 1,792〜2,048px が要り、元の画像（1,920px）と
+            // ほぼ同じで縮まない。替えた回（Mac run 793）は開いた時のメモリの山が 156.9→159.0MB と減らず、
+            // 閉じた後のメモリが 132.4→154.9MB に増えた（縮めた絵の控えに残る）ので、元に戻した
+            RemoteImage(url: item.detailImageURL, alignment: item.gridAlignment)
         }
-        .buttonStyle(.plain)
-        .accessibilityHint(L("拡大して見る", "Opens the photo full screen"))
     }
 
     /// 上の束と、いま見ている位置（`PhotoDetailRules.heroGroup` の返り値）
@@ -703,6 +727,7 @@ struct PhotoDetailView: View {
                 paragraphs
                 authorRow
                 inspiredRow
+                storySourceRow
             }
             socialBar(proxy)
             tripSection
@@ -720,6 +745,9 @@ struct PhotoDetailView: View {
             nearbySection
             commentsBlock
                 .id(Self.commentsAnchor)
+            // 意見箱の小さな「使ってみてどう？」（2026-11-11 札 #546）。写真の詳細のいちばん下に1行だけ
+            // （写真・題・操作の流れの外。押すとシートが開いてすぐ書ける）
+            FeedbackPrompt(screen: "photo-detail")
         }
         // v2 の板: 画面の端は 16（`JPSpace.gutter`・以前は 20）
         .padding(.horizontal, JPSpace.gutter)
@@ -844,7 +872,7 @@ struct PhotoDetailView: View {
                         .accessibilityHidden(true)
                     // 呼び名は「撮影スポット」（2026-10-11 owner。板の「撮影スポットのガイド」は旧い呼び名）。
                     // 撮影地の行と見分けられるよう、台帳の名前を添える
-                    Text(L("撮影スポット", "Photo spot") + PhotoMetaLine.separator + spot.name)
+                    Text(L("観光スポット", "Photo spot") + PhotoMetaLine.separator + spot.name)
                         .underline(true, color: Color.white.opacity(0.6))
                         .lineLimit(1)
                     Text("›").accessibilityHidden(true)
@@ -857,7 +885,7 @@ struct PhotoDetailView: View {
                 .padding(.vertical, -8)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(L("撮影スポット: \(spot.name)", "Photo spot: \(spot.name)"))
+            .accessibilityLabel(L("観光スポット: \(spot.name)", "Photo spot: \(spot.name)"))
             .accessibilityIdentifier("photo.spotGuide")
         }
     }
@@ -955,6 +983,54 @@ struct PhotoDetailView: View {
             .accessibilityHint(L("元の写真を開きます", "Opens the original photo"))
             .accessibilityIdentifier("photo.inspiredBy")
         }
+    }
+
+    /// 「ストーリーから作った写真 ›」（2026-11-11 判断・`StoryPhotoLink`）。黒地なので真鍮。
+    /// 元のストーリーがまだあれば押すと開く・無ければ文字だけ。当たりは 44pt
+    @ViewBuilder
+    private var storySourceRow: some View {
+        if let link = sourceStory, link.photoId == shown.id, link.known {
+            if let story = link.story {
+                Button { openedSourceStory = story } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "circle.dashed").font(.footnote).accessibilityHidden(true)
+                        Text(StoryPhotoLink.madeFromStory).font(.footnote.weight(.semibold))
+                        Text("›").font(.footnote).accessibilityHidden(true)
+                    }
+                    .foregroundStyle(WebTheme.accent)
+                    .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(L("元のストーリーを開きます", "Opens the original story"))
+                .accessibilityIdentifier("photo.storySource")
+            } else {
+                Text(StoryPhotoLink.madeFromStory)
+                    .font(.footnote)
+                    .foregroundStyle(WebTheme.accent)
+                    .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
+                    .accessibilityIdentifier("photo.storySource")
+            }
+        }
+    }
+
+    /// 元のストーリーを探す。**本人の写真で、元のストーリーの id を持つときだけ**（`keptFrom`・`fromStory`・
+    /// 本人の一覧から開いた写真）。開くたびに一覧2つを読まない（確かめ役の指摘・2026-11-11）。
+    /// 写真ごとに1回（`.task(id:)` の鍵が写真の id）
+    private func loadSourceStory() async {
+        let photo = shown
+        // 画面写真の試験だけ: どの写真も「ストーリーから作った写真」にする（Debug のみ・口を呼ばない）
+        if let sample = PreviewSession.keptStorySample(photoId: photo.id, src: photo.src) {
+            sourceStory = (photo.id, true, sample)
+            return
+        }
+        guard isMine, auth.userId != nil, photo.sourceStoryId != nil else { sourceStory = nil; return }
+        async let live = try? environment.stories.list()
+        async let shelf = try? environment.highlights.archive()
+        let mine = ((await live) ?? []).filter { $0.userId == auth.userId } + ((await shelf) ?? [])
+        let story = StoryPhotoLink.source(of: photo.id, sourceStoryId: photo.sourceStoryId, in: mine)
+        guard photo.id == shown.id else { return }
+        sourceStory = (photo.id, story != nil || photo.sourceStoryId != nil, story)
     }
 
     /// 「行き先」の段（行きたい・経路・いつ・`PhotoTripSection`）。行き先の分からない写真では出さない
@@ -1241,7 +1317,12 @@ struct PhotoDetailView: View {
                                     description: target.paragraphs.joined(separator: "\n"),
                                     location: LocationMatch.shareCardDisplay(target.location),
                                     url: link),
-            avatarURL: model.owner?.avatarURL(cacheBust: UUID().uuidString))
+            avatarURL: model.owner?.avatarURL(cacheBust: UUID().uuidString),
+            story: TravelStory.Source(lead: url,
+                                     film: TravelStory.filmPicks(target: target, group: heroLineup.photos)
+                                        .compactMap(\.detailImageURL),
+                                     facts: TravelStory.facts(of: target, name: AuthorName.shown(
+                                        profile: model.owner, photoDisplayName: target.displayName))))
     }
 
     /// 知らせから来たコメントへ送る（`PhotoDetailRules.commentToFocus`）。送ったら2秒だけ印を付ける
@@ -1409,6 +1490,9 @@ struct PhotoDetailView: View {
                         Label(L("SNS に載せる", "Share to social apps"), systemImage: "square.and.arrow.up.on.square")
                     }
                     .disabled(preparingThreads)
+                    // 旅をストーリーに（第9章）は**この1行の中**（開いた画面の「投稿 | ストーリー」・
+                    // 2026-11-12 秘書室の判断。⋯ の行を増やさない）
+                    .accessibilityIdentifier("photo.socialShare")
                 }
                 Button(role: .destructive) { showDeleteConfirm = true } label: {
                     Label(Labels.Common.delete, systemImage: "trash")
@@ -1762,6 +1846,23 @@ struct PhotoDetailView: View {
                 }
                 .clipShape(RoundedRectangle(cornerRadius: JPRadius.field))
             }
+        } else if PinchToMap.showsMapLink(hasPlace: shown.coords != nil, nearbyCount: nearby.count) {
+            // 近くの写真が無くても、撮影地があれば「地図で見る ›」は出す（つまむと地図の、指を使わない道・
+            // 見つけ口。2026-11-12 確かめ役）。見出しの「この近くで撮られた写真」は0枚なので置かない
+            HStack {
+                Spacer()
+                NavigationLink {
+                    NearbyMapScreen(opened: shown, nearby: nearby, openedFromPublicFeed: fromPublicFeed)
+                } label: {
+                    Text(L("地図で見る ›", "View on map ›"))
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text2)
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("photo.mapLink")
+            }
         }
     }
 
@@ -1917,17 +2018,15 @@ struct PhotoDetailView: View {
             // **空の理由を分ける。** 引けなかった回に「まだありません」と
             // 出すと、書いてあるコメントが消えたように見える
             if model.commentsUnavailable {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(L("コメントを読み込めませんでした", "Couldn't load comments"))
-                        .font(JPFont.footnote)
-                        .foregroundStyle(WebTheme.text3)
-                    // 詳細には引き下げが無いので、読み直す手段をここに置く
-                    Button(Labels.Common.retry) { Task { await model.reloadComments() } }
-                        .buttonStyle(.bordered)
-                        // 投稿している間も押せない（`reloadComments` は黙って断る）
-                        .disabled(model.isReloadingComments || model.isPosting)
+                // 2026-11-12 判断（第2章「画面の状態とそろえ」）: 節の失敗は**状態の帯**（印・見出し・右に「もう一度」）。
+                // 字と系統の枠のボタンだけで、ほかの画面の失敗と形が違った。
+                // 詳細には引き下げが無いので、読み直す手段をここに置く。
+                // 投稿している間も押せない（`reloadComments` は黙って断る）
+                JPStateBand(kind: .partial, title: L("コメントを読み込めませんでした", "Couldn't load comments"),
+                            isBusy: model.isReloadingComments || model.isPosting,
+                            actionIdentifier: "photoDetail.comments.retry") {
+                    Task { await model.reloadComments() }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 12)
             } else if visibleCommentCount == 0 {
                 // v2 の板: 12 の text-3 の1行
@@ -1937,9 +2036,9 @@ struct PhotoDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, JPSpace.xs)
             } else {
-                ProgressView()
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                // 2026-11-12 判断（第2章）: 回る輪ではなく**コメントの形の灰**（顔 32・2 行の字。0.3 秒より早ければ出さない）
+                JPLoadingState(kind: .comments)
+                    .padding(.vertical, JPSpace.xs)
             }
         }
         VStack(alignment: .leading, spacing: 0) {
@@ -2455,7 +2554,7 @@ struct PhotoDetailView: View {
         environment.gallery.edits.record(fresh, since: mark)
     }
 
-    private func deletePhoto() async {
+    private func deletePhoto(withStory: Bool? = nil) async {
         let photoId = current.id
         // 二度押しは先頭で断る——下で知らせを消す前に（`postComment` と同じ順・`PhotoDetailViewModel.deletePhoto`）
         guard !model.deletingPhotoIds.contains(photoId) else { return }
@@ -2463,7 +2562,7 @@ struct PhotoDetailView: View {
         // 送る**前に**取る（待っている間に人が替わっていたら印を付けない）
         let owner = hidden.owner
         let sender = auth.userId
-        switch await model.deletePhoto(photoId, photos: environment.photos) {
+        switch await model.deletePhoto(photoId, photos: environment.photos, withStory: withStory) {
         case .refused:
             return
         case .deleted:

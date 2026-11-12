@@ -103,7 +103,7 @@ final class SearchScopeTests: XCTestCase {
         XCTAssertEqual(SearchScope.allCases.filter(\.showsPhotos), [.all, .photos, .tags, .places])
         XCTAssertNotEqual(SearchScope.people.prompt, SearchScope.photos.prompt)
         XCTAssertEqual(SearchScope.people.prompt, L("人を検索（名前）", "Search people"))
-        XCTAssertEqual(SearchScope.all.prompt, L("写真を検索（題・説明・タグなど）", "Search photos"))
+        XCTAssertEqual(SearchScope.all.prompt, L("写真を検索（題、説明、タグなど）", "Search photos"))
     }
 
     /// **撮影地ではタグのチップを出さない。** 押すとタグの語が撮影地に当たり、
@@ -118,13 +118,14 @@ final class SearchScopeTests: XCTestCase {
 
     // MARK: - 段
 
-    /// 板 11 の並び: 注目 → おすすめ → 色 → 季節 → 機材。無い段は飛ばす。
-    /// 「季節・時間帯から探す」（板に無い段・2026-10-03）は季節の次
+    /// 2026-11-12（案 第10章）: 撮影スポットを県から → 今日の一問 → 人気の撮影地 → おすすめ → いまの季節 →
+    /// 季節・時間帯 → 色 → 機材。無い段は飛ばす
     func testDiscoveryOrderFollowsBoard() {
         XCTAssertEqual(SearchDiscovery.sections(present: Set(SearchDiscovery.Section.allCases)),
-                       [.spots, .officialSpots, .featured, .colors, .seasonal, .shootingTime, .gear])
+                       [.officialSpots, .quiz, .spots, .featured, .seasonal, .shootingTime, .colors, .gear])
         XCTAssertEqual(SearchDiscovery.sections(present: [.gear, .seasonal, .colors]),
-                       [.colors, .seasonal, .gear])
+                       [.seasonal, .colors, .gear])
+        XCTAssertEqual(SearchDiscovery.order.first, .officialSpots, "観光スポットを県から探す段が先頭でない")
     }
 
     /// おすすめは**ホームと同じ塊の先頭**（owner が選んだ公開写真が多いカテゴリ）

@@ -149,7 +149,7 @@ struct TravelRecordView: View {
                     .foregroundStyle(Color.white)
                     // 距離の数字（28pt）と下の線をそろえる
                     .padding(.top, 8)
-                Text(L("か国・地域", countries.count == 1 ? "country or region" : "countries & regions"))
+                Text(L("の国と地域", countries.count == 1 ? "country or region" : "countries & regions"))
                     .font(JPFont.caption)
                     .foregroundStyle(WebTheme.text3)
                 Text(TravelRoute.countriesLine(countries))
@@ -165,7 +165,7 @@ struct TravelRecordView: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(L("訪れた国・地域 \(countries.count)、\(countries.joined(separator: "、"))",
+        .accessibilityLabel(L("訪れた国と地域 \(countries.count)、\(countries.joined(separator: "、"))",
                               "Countries and regions visited, \(countries.count): \(countries.joined(separator: ", "))"))
         .accessibilityHint(L("数え方を表示", "Shows how this is counted"))
         .accessibilityIdentifier("profile.travelRecord.countries")

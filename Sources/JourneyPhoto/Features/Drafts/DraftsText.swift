@@ -64,7 +64,7 @@ enum DraftsText {
 
     /// 種類 · 枚数
     static func kindAndPhotos(_ entry: DraftLibrary.Entry) -> String {
-        "\(kind(entry.kind)) · \(photos(entry.photoCount))"
+        "\(kind(entry.kind))\u{2002}\(photos(entry.photoCount))"
     }
 
     /// 読み上げ（格子のマスは字を出さないので、題・撮影地・種類・枚数・日時・期限・読めない写真を全部読む）
@@ -76,27 +76,25 @@ enum DraftsText {
         let days = DraftLibrary.daysLeft(kind: entry.kind, savedAt: entry.lifetimeStart, now: now)
         if DraftLibrary.showsDaysLeft(days), let days { parts.append(daysLeftLong(days)) }
         if entry.missingCount > 0 { parts.append(missing(entry.missingCount)) }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: "\u{2002}")
     }
 
     /// 上の帯（「12 / 20件 · 31 MB · この端末にだけ保存」）
     static func storageLine(count: Int, megabytes: Int) -> String {
-        L("\(count) / \(DraftLibrary.limit)件 · \(megabytes) MB · この端末にだけ保存",
-          "\(count) / \(DraftLibrary.limit) · \(megabytes) MB · Saved on this device only")
+        L("\(count) / \(DraftLibrary.limit)件\u{2002}\(megabytes) MB\u{2002}この端末にだけ保存",
+          "\(count) / \(DraftLibrary.limit)\u{2002}\(megabytes) MB\u{2002}Saved on this device only")
     }
 
     /// 明日までに消えるストーリーの帯
+    /// 2026-11-12 判断（案 03）: 帯は1文だけ。「作ってから7日で消えます」は説明のシート（`facts` の時計の行）に任せる
     static func expiringBand(_ count: Int) -> String {
-        L("ストーリーの下書き\(count)件が、あした消えます。作ってから\(Int(DraftLibrary.storyLifetime / 86_400))日で消えます。",
-          "\(count) story draft\(count == 1 ? "" : "s") will be deleted tomorrow. Story drafts last \(Int(DraftLibrary.storyLifetime / 86_400)) days.")
+        L("ストーリーの下書き\(count)件が、あした消えます。",
+          "\(count) story draft\(count == 1 ? "" : "s") will be deleted tomorrow.")
     }
 
     static var limitBand: String {
         L("1件以上削除すると、いまの書きかけを保存できます。", "Delete at least one draft to save what you\u{2019}re writing.")
     }
-
-    static var gridHint: String { L("長押しで題・撮影地・日時と操作", "Touch and hold for details and actions") }
-    static var rowsHint: String { L("「…」で操作", "Tap \u{2022}\u{2022}\u{2022} for actions") }
 
     // MARK: 選ぶ・削除
 
@@ -108,7 +106,7 @@ enum DraftsText {
     }
 
     static func selectionCaption(drafts: Int, photos: Int) -> String {
-        L("\(drafts)件 · 写真\(photos)枚", "\(drafts) draft\(drafts == 1 ? "" : "s") · \(photos) photo\(photos == 1 ? "" : "s")")
+        L("\(drafts)件\u{2002}写真\(photos)枚", "\(drafts) draft\(drafts == 1 ? "" : "s")\u{2002}\(photos) photo\(photos == 1 ? "" : "s")")
     }
 
     static func deleteButton(_ count: Int) -> String {
@@ -120,7 +118,7 @@ enum DraftsText {
     }
 
     static var deleteConfirmMessage: String {
-        L("写真と書いた題・説明は、この端末から消えます。すぐ後なら「元に戻す」で戻せます。",
+        L("写真と書いた題、説明は、この端末から消えます。すぐ後なら「元に戻す」で戻せます。",
           "The photos and text will be removed from this device. You can undo right after.")
     }
 
@@ -207,8 +205,8 @@ enum DraftsText {
                  detail: L("消える\(DraftLibrary.warnDays)日前から、一覧でお知らせします。",
                            "We\u{2019}ll let you know in this list \(DraftLibrary.warnDays) days before.")),
             Fact(symbol: "shippingbox",
-                 headline: L("\(DraftLibrary.limit)件まで · いま \(count)件・\(megabytes) MB",
-                             "Up to \(DraftLibrary.limit) · now \(count), \(megabytes) MB"),
+                 headline: L("\(DraftLibrary.limit)件まで\u{2002}いま \(count)件\u{2002}\(megabytes) MB",
+                             "Up to \(DraftLibrary.limit)\u{2002}now \(count), \(megabytes) MB"),
                  detail: L("写真は下書きの中に写しを持つので、写真アプリで元の写真を消しても開けます。アプリを削除すると消えます。",
                            "Drafts keep their own copy of each photo, so deleting the original from Photos is fine. Deleting the app removes them.")),
         ]
@@ -248,11 +246,11 @@ enum DraftsText {
     static var recentSection: String { L("最近の下書き", "Recent drafts") }
     /// 「最近の下書き」の1件の副題（「投稿 · 3枚 · 今日 06:12」）
     static func menuSubtitle(_ entry: DraftLibrary.Entry, now: Date) -> String {
-        "\(kindAndPhotos(entry)) · \(saved(entry.savedAt, now: now))"
+        "\(kindAndPhotos(entry))\u{2002}\(saved(entry.savedAt, now: now))"
     }
     /// 枠の読み上げの説明（押すと一覧・長押しで操作）
     static var tileHint: String {
-        L("開くと下書きの一覧。長押しで続きから編集・削除", "Opens all drafts. Touch and hold to continue editing or delete.")
+        L("開くと下書きの一覧。長押しで続きから編集、削除", "Opens all drafts. Touch and hold to continue editing or delete.")
     }
 
     /// 作る画面の上の入口（「下書き n ›」）の読み上げ

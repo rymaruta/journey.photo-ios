@@ -126,8 +126,8 @@ final class ComposeGuideTests: XCTestCase {
 
     func testCounterMatchesBoard() {
         // 板: 「[撮影地の名前] · 作例 [2] / [6]」（番号は 1 から）
-        XCTAssertEqual(ComposeGuide.counter(spotName: "鍋ヶ滝", index: 1, count: 6), "鍋ヶ滝 · 作例 2 / 6")
-        XCTAssertEqual(ComposeGuide.counter(spotName: "鍋ヶ滝", index: 9, count: 6), "鍋ヶ滝 · 作例 6 / 6")
+        XCTAssertEqual(ComposeGuide.counter(spotName: "鍋ヶ滝", index: 1, count: 6), "鍋ヶ滝\u{2002}作例 2 / 6")
+        XCTAssertEqual(ComposeGuide.counter(spotName: "鍋ヶ滝", index: 9, count: 6), "鍋ヶ滝\u{2002}作例 6 / 6")
         XCTAssertEqual(ComposeGuide.counterAccessibility(spotName: "鍋ヶ滝", index: 0, count: 6),
                        "鍋ヶ滝、作例 1 枚目、全 6 枚")
     }
@@ -264,9 +264,9 @@ final class ComposeGuideTests: XCTestCase {
         XCTAssertTrue(launcher.contains("ComposeGuideView(spotName: spotName, samples: launch.samples, startIndex: launch.start"),
                       "撮る画面に Launch の並びと始める番号を渡していない")
         XCTAssertEqual(launcher.components(separatedBy: "ComposeGuideView(").count - 1, 1, "撮る画面を開く口が増えた")
-        XCTAssertEqual(spot.components(separatedBy: "ComposeGuideView(").count - 1, 0, "撮影スポットの頁が直に開いている")
+        XCTAssertEqual(spot.components(separatedBy: "ComposeGuideView(").count - 1, 0, "観光スポットの頁が直に開いている")
         XCTAssertTrue(spot.contains(".composeGuidePresenter(composeLauncher, spotName: spot.name,"),
-                      "撮影スポットの頁が共通の部品で開いていない")
+                      "観光スポットの頁が共通の部品で開いていない")
         // 頼みは開く時点の帯の並びで作る
         XCTAssertTrue(spot.contains("ComposeGuide.Launch(sample: sample, samples: shownSamples)"), "帯の並びで開いていない")
         // 帯の写真は押した1枚の出典で開く。入口のボタンは1枚目

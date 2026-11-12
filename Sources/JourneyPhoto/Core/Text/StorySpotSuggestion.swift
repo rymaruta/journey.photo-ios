@@ -121,7 +121,7 @@ enum StoryLocationText {
         attaches
             ? L("撮影地を入れると、写真の位置も一緒に送ることがあります",
                 "Adding a place may also send the photo's location.")
-            : L("写真の位置は送りません。撮影地が撮影スポットの名前なら、スポットの位置を付けます",
+            : L("写真の位置は送りません。撮影地が観光スポットの名前なら、スポットの位置を付けます",
                 "The photo's location isn't sent. If the place is a photo spot, the spot's location is added.")
     }
 
@@ -130,7 +130,7 @@ enum StoryLocationText {
         attaches
             ? L("撮影地を入れると、写真に残っていた位置（約1kmに丸めたもの）も一緒に送ることがあります。",
                 "Adding a place may also send the photo's rounded coordinates (about 1 km).")
-            : L("「撮影地の位置を付ける」がオフなので、写真の位置は送りません（「誰に見せる？」で変えられます）。撮影スポットの名前なら、スポットの位置を付けます。",
+            : L("「撮影地の位置を付ける」がオフなので、写真の位置は送りません（「誰に見せる？」で変えられます）。観光スポットの名前なら、スポットの位置を付けます。",
                 "\"Attach the place's location\" is off, so the photo's location isn't sent (change it in \"Who can see it?\"). If the place is a photo spot, the spot's location is added.")
     }
 }

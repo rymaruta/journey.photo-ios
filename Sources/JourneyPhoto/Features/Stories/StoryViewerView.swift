@@ -113,6 +113,12 @@ struct StoryViewerView: View {
     /// 自分のストーリーを消す前の確認（板「25f 削除の確認」）。
     /// **以前は確認なしで即座に消えていた**
     @State private var showDeleteConfirm = false
+    /// この画面で写真にした1本（ストーリーの id → 写真の id）。一覧の `keptAs` より新しい
+    @State private var keptIds: [String: String] = [:]
+    /// 「写真にしました ›」で開いた写真（下書きなので編集の画面で開く・2026-11-11）
+    @State private var openedKeptPhoto: Photo?
+    /// 写真にした1本を消す確認に出す、写真のいいね・コメントの数（読めなければ nil）
+    @State private var keptCounts: (likes: Int?, comments: Int?)?
 
     // 返信と反応
     @State private var reply = ""
@@ -156,6 +162,8 @@ struct StoryViewerView: View {
     /// 消し終えた1本を知らせる。**消している間に払って閉じても**、一覧から外せるように
     /// （閉じたときの読み直しが削除より先に走ると、消した1本が輪に戻っていた）
     let onDeleted: ((String) -> Void)?
+    /// 「写真も一緒に消す」で写真まで消えた（写真の id）。写真の詳細から開いた回は、詳細も閉じる
+    let onPhotoDeleted: ((String) -> Void)?
 
     /// ハイライトとして見ている（板 38）。**期限の切れたストーリーの並び**なので、
     /// 返信欄・見た人・削除を出さない（返信はサーバーが期限切れを断り、
@@ -227,7 +235,8 @@ struct StoryViewerView: View {
          onReacted: ((String, String) -> Void)? = nil,
          onReactionFailed: ((String, String) -> Void)? = nil,
          onSeen: ((String) -> Void)? = nil,
-         onDeleted: ((String) -> Void)? = nil) {
+         onDeleted: ((String) -> Void)? = nil,
+         onPhotoDeleted: ((String) -> Void)? = nil) {
         self.onGroupEnd = onGroupEnd
         self.onGroupBack = onGroupBack
         self.swipesHandledOutside = swipesHandledOutside
@@ -243,6 +252,7 @@ struct StoryViewerView: View {
         self.providedReactions = sentReactions
         self.stories = stories
         self.onDeleted = onDeleted
+        self.onPhotoDeleted = onPhotoDeleted
         self.viewerId = viewerId
         self.highlight = highlight
         self.holds = holds
@@ -603,6 +613,10 @@ struct StoryViewerView: View {
             .environment(\.insideStoryViewer, true)
         }
         // 撮影地から開いた撮影スポットのガイド。**見ている間は止める**（`frozen` の sheetOpen）
+        // 「写真にしました ›」（2026-11-11 判断）。写真は下書きで作るので、編集の画面で開く（Web と同じ）
+        .sheet(item: $openedKeptPhoto) { photo in
+            NavigationStack { EditPhotoView(photo: photo) }
+        }
         .sheet(item: $guideSpot) { spot in
             NavigationStack {
                 // 写真の一覧はこの画面に無い。**「この場所の写真（0）まだありません」を言わせない**
@@ -869,7 +883,9 @@ struct StoryViewerView: View {
         // 曲は 2026-10-28 から**名前の下の1行**（`header`・`SongMarqueeLine`）。ここには出さない
         // ハイライトの日付「2026.09.12 · 残したストーリー」（板 HighlightPlayer: ひとことの下・13 の等幅・白 82%）
         let keptDate = highlight == nil ? nil : StoryPlayback.dotDate(story.createdAt)
-        if caption != nil || place != nil || keptDate != nil || spotEntry != nil {
+        // 写真にした1本の関係の札（2026-11-11 判断）。写真の上なので白
+        let keptPhoto = keptPhotoId(story)
+        if caption != nil || place != nil || keptDate != nil || spotEntry != nil || keptPhoto != nil {
             VStack(alignment: .leading, spacing: 8) {
                 if let caption {
                     Text(caption)
@@ -886,11 +902,31 @@ struct StoryViewerView: View {
                         .allowsHitTesting(false)
                 }
                 if let keptDate {
-                    Text(L("\(keptDate) · 残したストーリー", "\(keptDate) · Kept story"))
+                    Text(L("\(keptDate)\u{2002}残したストーリー", "\(keptDate)\u{2002}Kept story"))
                         .font(JPFont.mono(13, relativeTo: .footnote))
                         .foregroundStyle(Color.white.opacity(StoryViewerMetrics.highlightDateOpacity))
                         .jpPhotoTextShadow()
                         .allowsHitTesting(false)
+                }
+                if let keptPhoto {
+                    Button {
+                        Task { await openKeptPhoto(keptPhoto) }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "photo").font(JPFont.footnote)
+                            Text(StoryPhotoLink.madeIntoPhoto).font(JPFont.footnote)
+                            Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                        }
+                        .foregroundStyle(.white)
+                        .jpPhotoTextShadow()
+                        // 押せる所だけ上下に広げて 44pt に（並びは変えない・下の撮影スポットの行と同じ作り）
+                        .padding(.vertical, 15)
+                        .contentShape(Rectangle())
+                        .padding(.vertical, -15)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L("写真にしました。写真を開く", "Made into a photo. Open the photo"))
+                    .accessibilityIdentifier("story.viewer.keptPhoto")
                 }
                 if place == nil, spotEntry != nil, let spot = spotLink?.spot {
                     Button {
@@ -898,7 +934,7 @@ struct StoryViewerView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "mappin").font(JPFont.footnote)
-                            Text(L("撮影スポットを見る", "See the photo spot")).font(JPFont.footnote)
+                            Text(L("観光スポットを見る", "See the photo spot")).font(JPFont.footnote)
                             Image(systemName: "chevron.right").font(.caption.weight(.semibold))
                         }
                         .foregroundStyle(Color.white.opacity(StoryViewerMetrics.metaOpacity))
@@ -909,7 +945,7 @@ struct StoryViewerView: View {
                         .padding(.vertical, -15)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(L("撮影スポットの画面を開く", "Open the photo spot"))
+                    .accessibilityLabel(L("観光スポットの画面を開く", "Open the photo spot"))
                     .accessibilityIdentifier("story.viewer.spotEntry")
                 }
                 if let place {
@@ -934,7 +970,7 @@ struct StoryViewerView: View {
                             .padding(.vertical, -15)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(L("撮影地 \(place)。撮影スポットの画面を開く",
+                        .accessibilityLabel(L("撮影地 \(place)。観光スポットの画面を開く",
                                               "Location \(place). Open the photo spot"))
                     } else {
                         // 結べた行と同じく詰める（索引が届いた瞬間に文字が変わらないように）
@@ -1098,7 +1134,7 @@ struct StoryViewerView: View {
                     .font(JPFont.bodyEmphasis)
                     .foregroundStyle(.white)
                     .lineLimit(1)
-                Text(L("ストーリーハイライト · \(highlight.count)件", "Story highlight · \(highlight.count)"))
+                Text(L("ストーリーハイライト\u{2002}\(highlight.count)件", "Story highlight\u{2002}\(highlight.count)"))
                     .font(JPFont.meta)
                     .foregroundStyle(WebTheme.muted)
                 songRow(for: story)
@@ -1249,7 +1285,7 @@ struct StoryViewerView: View {
         // 画面いっぱいの1つの要素にして、上下に払う操作で選ぶ
         .accessibilityElement()
         .accessibilityLabel(storyAccessibilityLabel)
-        .accessibilityHint(L("上下に払って、次へ・前へ・一時停止を選べます",
+        .accessibilityHint(L("上下に払って、次へ、前へ、一時停止を選べます",
                              "Swipe up or down to choose next, previous or pause"))
         // 「次へ」は右を押したときと同じ判定（返信を打っている間は閉じるだけ）
         .accessibilityAction(named: L("次へ", "Next")) { forward() }
@@ -1587,7 +1623,7 @@ struct StoryViewerView: View {
             hasSong: StoryPlayback.songURL(for: story) != nil,
             hasCaption: story.caption?.isEmpty == false || !story.texts.isEmpty,
             hasOwner: story.userId != nil,
-            canKeep: Self.canKeepAsPhoto(story),
+            canKeep: StoryPhotoLink.canKeep(isVideo: story.isVideo, keptPhotoId: keptPhotoId(story)),
             inHighlight: highlight != nil
         )
         return ZStack(alignment: .bottom) {
@@ -1650,6 +1686,7 @@ struct StoryViewerView: View {
                             showDeleteConfirm = true
                         }
                         .disabled(isSending)
+                        .accessibilityIdentifier("story.menu.delete")
                     }
                 }
                 .background(Self.sheetColor,
@@ -1769,8 +1806,10 @@ struct StoryViewerView: View {
                         .accessibilityHidden(true)
                     Text(L("このストーリーを削除しますか？", "Delete this story?"))
                         .font(JPFont.headline)
-                    Text(L("見た人の記録と返信も消えます。元に戻せません。",
-                           "Viewers and replies are deleted too. This can't be undone."))
+                    Text(keptPhotoId(story) == nil
+                         ? L("見た人の記録と返信も消えます。元に戻せません。",
+                             "Viewers and replies are deleted too. This can't be undone.")
+                         : StoryPhotoLink.storyDeleteMessage(likes: keptCounts?.likes, comments: keptCounts?.comments))
                         .font(JPFont.footnote)
                         .foregroundStyle(WebTheme.muted2)
                         .lineSpacing(4)
@@ -1780,6 +1819,31 @@ struct StoryViewerView: View {
                 .padding(.horizontal, JPSpace.l)
                 .padding(.top, 22)
                 .padding(.bottom, 18)
+                if let keptPhoto = keptPhotoId(story) {
+                    // 2026-11-11 判断: 写真にした1本は「写真も一緒に消す」「ストーリーだけ消す」を縦に並べる
+                    // （既定の選び方は無し・危険の色は写真も消える側だけ）。キャンセルは一番下
+                    VStack(spacing: 0) {
+                        confirmButton(StoryPhotoLink.deleteWithPhoto, color: Self.storyDanger, weight: .semibold) {
+                            showDeleteConfirm = false
+                            Task { await deleteStory(story, withPhoto: keptPhoto) }
+                        }
+                        .accessibilityIdentifier("story.delete.withPhoto")
+                        Rectangle().fill(Color.white.opacity(0.12)).frame(height: JPStroke.hairline)
+                        confirmButton(StoryPhotoLink.deleteStoryOnly, color: .white, weight: .semibold) {
+                            showDeleteConfirm = false
+                            Task { await deleteStory(story) }
+                        }
+                        .accessibilityIdentifier("story.delete.storyOnly")
+                        Rectangle().fill(Color.white.opacity(0.12)).frame(height: JPStroke.hairline)
+                        confirmButton(Labels.Common.cancel, color: .white, weight: .regular) {
+                            showDeleteConfirm = false
+                        }
+                    }
+                    .overlay(alignment: .top) {
+                        Rectangle().fill(Color.white.opacity(0.12)).frame(height: JPStroke.hairline)
+                    }
+                    .task(id: keptPhoto) { await loadKeptCounts(keptPhoto) }
+                } else {
                 // v2: **キャンセル｜削除 の2つ並び**（系統の確認の形・削除は右で #F0565A）
                 HStack(spacing: 0) {
                     confirmButton(Labels.Common.cancel, color: .white, weight: .regular) {
@@ -1794,6 +1858,7 @@ struct StoryViewerView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .overlay(alignment: .top) {
                     Rectangle().fill(Color.white.opacity(0.12)).frame(height: JPStroke.hairline)
+                }
                 }
             }
             .frame(width: StoryViewerMetrics.confirmWidth)
@@ -2099,9 +2164,38 @@ struct StoryViewerView: View {
         return repliesFailed ? story.replyCount : nil
     }
 
-    /// 「写真として残す」を出すか。動画とアーカイブの投稿は断られる
+    /// 「写真として残す」を出すか。動画は残せない・もう写真にしていれば出さない（札が出る）。
+    /// **自分用に残すストーリーも残せる**（2026-11-11 から・`StoryPhotoLink.canKeep`）
     nonisolated static func canKeepAsPhoto(_ story: Story) -> Bool {
-        !story.isVideo && story.archive != true
+        StoryPhotoLink.canKeep(isVideo: story.isVideo, keptPhotoId: story.keptAs)
+    }
+
+    /// このストーリーから作った写真の id（本人の1本だけ。この画面で作ったぶんが先）
+    private func keptPhotoId(_ story: Story) -> String? {
+        guard isMine(story) else { return nil }
+        return keptIds[story.id] ?? story.keptAs
+    }
+
+    /// 「写真にしました ›」: 写真（下書き）を本人の一覧から引いて、編集の画面で開く
+    private func openKeptPhoto(_ photoId: String) async {
+        do {
+            let photo = try await environment.photos.myPhoto(id: photoId)
+            if let photo {
+                openedKeptPhoto = photo
+            } else {
+                message = L("写真が見つかりませんでした", "Couldn't find the photo")
+            }
+        } catch {
+            message = (error as? LocalizedError)?.errorDescription ?? L("写真を開けませんでした", "Couldn't open the photo")
+        }
+    }
+
+    /// 写真にした1本を消す確認に出す数（写真のいいね・コメント）。読めなければ数を出さない
+    private func loadKeptCounts(_ photoId: String) async {
+        keptCounts = nil
+        let likes = try? await environment.social.likeCount(photoId: photoId)
+        let page = try? await environment.social.comments(photoId: photoId, signedIn: viewerId != nil)
+        keptCounts = (likes, page?.count)
     }
 
     /// 「返信 3」。数が分からないうちは「返信」だけ
@@ -2120,7 +2214,7 @@ struct StoryViewerView: View {
     private func ownTimeLine(for story: Story) -> String? {
         let parts = [StoryPlayback.ago(from: story.createdAt),
                      StoryPlayback.remaining(until: story.expiresAt)].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return parts.isEmpty ? nil : parts.joined(separator: "\u{2002}")
     }
 
     /// 見た人の顔を3つ重ねる（26pt・黒の縁・8pt ずつ重ねる）
@@ -2246,7 +2340,8 @@ struct StoryViewerView: View {
         .buttonStyle(.plain)
         // 上の「…」と同じ名前（同じシートを開く）。残す・削除がこの奥にあることをヒントで言う
         .accessibilityLabel(L("その他の操作", "More actions"))
-        .accessibilityHint(L("写真として残す・削除", "Keep as photo, delete"))
+        .accessibilityHint(L("写真として残す、削除", "Keep as photo, delete"))
+        .accessibilityIdentifier("story.viewer.more")
     }
 
     /// 操作の丸（v2 StoryMine: 46・地は surface-2・縁は白 12%）。足元は写真の外の黒地なので、
@@ -2470,19 +2565,44 @@ struct StoryViewerView: View {
         isSending = true
         defer { isSending = false }
         do {
-            try await environment.stories.keep(id: story.id)
+            let photoId = try await environment.stories.keep(id: story.id)
+            if let photoId { keptIds[story.id] = photoId }
             message = L("自分の写真として残しました", "Kept as a photo")
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("残せませんでした", "Couldn't keep it")
         }
     }
 
-    private func deleteStory(_ story: Story) async {
+    /// `withPhoto` があれば「写真も一緒に消す」——写真の口に `withStory=1` で頼む（2026-11-11・
+    /// 写真を消すには再ビルドの依頼まで要り、その鍵は写真の口にしか無い・`storyKeptDelete.ts`）
+    private func deleteStory(_ story: Story, withPhoto: String? = nil) async {
         guard !isSending else { return }
         isSending = true
         defer { isSending = false }
         do {
-            try await environment.stories.delete(id: story.id)
+            if let withPhoto {
+                let owner = hidden.owner
+                // 404（写真はもう無い）は消せたのと同じ（`PhotoService.delete`）。そのときストーリーは
+                // 残っているので、続けてストーリーの口でも消す（一緒に消えていれば 404＝消せた）
+                try await environment.photos.delete(photoId: withPhoto, withStory: true)
+                // **写真を消せた直後に**公開一覧・控えから落とす（写真の詳細の削除と同じ・`ModerationStore.goneMarks`）。
+                // ストーリーの口があとで転んでも、消えた写真を一覧・詳細に残さない（確かめ役の指摘・2026-11-11）
+                await hidden.hideGone(withPhoto, for: owner, environment: environment, deleted: true)
+                do {
+                    try await environment.stories.delete(id: story.id)
+                } catch where SocialService.isNotFound(error) {
+                } catch {
+                    // 写真はもう無く、ストーリーだけ残った: 理由を知らせ、もう無い写真の詳細は閉じる
+                    toasts.show((error as? LocalizedError)?.errorDescription
+                                ?? L("写真は消しました。ストーリーは消せませんでした",
+                                     "The photo was deleted, but the story couldn't be"))
+                    onPhotoDeleted?(withPhoto)
+                    return
+                }
+                onPhotoDeleted?(withPhoto)
+            } else {
+                try await environment.stories.delete(id: story.id)
+            }
             onDeleted?(story.id)
             // 🔴 **残りがあれば閉じない。** 以前は1本消すと画面ごと閉じ、3本のうち
             // 1本を消しただけで残りの2本が見られなくなった。通報で落としたときと

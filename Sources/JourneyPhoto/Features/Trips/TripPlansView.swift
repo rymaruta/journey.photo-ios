@@ -16,6 +16,8 @@ struct TripPlansView: View {
     @EnvironmentObject private var connectivity: Connectivity
     @EnvironmentObject private var wishlist: WishlistStore
     @StateObject private var model = TripPlansModel()
+    /// ホームの札から消した（元に戻すを待っている・圏外で送るのを待っている）プランは一覧にも出さない（2026-11-12）
+    @ObservedObject private var removal = TripPlanRemovalQueue.shared
     /// 作った直後に、そのプランを開く（Web の `onCreate` と同じ）
     @State private var openedPlanId: String?
     @State private var showOpened = false
@@ -141,13 +143,14 @@ struct TripPlansView: View {
     nonisolated static func subtitle(plans: Int?, wishlist: Int) -> String {
         let head = TripPlanText.listSubtitle(count: plans)
         guard plans != nil, wishlist > 0 else { return head }
-        return L("\(head) · 行きたい場所 \(wishlist) か所", "\(head) · \(Plural.count(wishlist, "saved place"))")
+        return L("\(head)\u{2002}行きたい場所 \(wishlist) か所", "\(head)\u{2002}\(Plural.count(wishlist, "saved place"))")
     }
 
     /// 読めなかった（v2 Components 06: 灰の印 → 何が起きたか → 「もう一度」）。**赤にしない**——
     /// 読めないのは人の誤りではない
     private var failedNotice: some View {
-        ErrorBanner(message: L("旅行プランを読み込めませんでした。", "Couldn't load your trips."),
+        ErrorBanner(title: L("旅行プランを読み込めませんでした", "Couldn't load your trips"),
+                    message: ErrorBanner.defaultMessage,
                     isBusy: model.status == .loading) {
             Task { await model.load(environment: environment) }
         }
@@ -163,8 +166,8 @@ struct TripPlansView: View {
             // （圏外で一覧が読めなくても、保存した旅は開ける・板 72c）
             if !offline.saved.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
-                    JPEyebrowLine(L("電波なしで使える旅 · \(offline.saved.count) 件",
-                                    "Offline trips · \(offline.saved.count)"))
+                    JPEyebrowLine(L("電波なしで使える旅\u{2002}\(offline.saved.count) 件",
+                                    "Offline trips\u{2002}\(offline.saved.count)"))
                     LazyVStack(spacing: 10) {
                         ForEach(offline.saved) { manifest in
                             NavigationLink {
@@ -186,7 +189,7 @@ struct TripPlansView: View {
                     .padding(.top, JPSpace.xl)
             } else {
                 LazyVStack(spacing: 10) {
-                    ForEach(model.plans) { plan in
+                    ForEach(model.plans.filter { !removal.removedIds.contains($0.planId) }) { plan in
                         planCard(plan)
                     }
                 }
@@ -419,6 +422,13 @@ final class TripPlansModel: ObservableObject {
         return pool.max { ($0.createdAt ?? "") < ($1.createdAt ?? "") }
     }
 
+    /// 読み直したプラン1つを映す（共有したプランで、ほかの仲間の変更に重ね直すとき・`TripPlanDetailView`）。
+    /// 一覧の並びは変えない
+    func adopt(_ plan: TripPlan) {
+        guard let i = plans.firstIndex(where: { $0.planId == plan.planId }) else { return }
+        plans[i] = plan
+    }
+
     /// 送る前の読み直し（自動保存・`TripAutosave.conflicted`）。**一覧には映さない**——映すと、
     /// 日程の画面が手元の下書きをサーバーの姿で合わせ直してしまう。読めなければ nil
     func fetchFresh(environment: AppEnvironment) async -> [TripPlan]? {
@@ -437,16 +447,29 @@ final class TripPlansModel: ObservableObject {
         }) != nil
     }
 
+    /// 直近の書き込みが、ほかの仲間の変更とぶつかった（409・`TripPlanService.Conflict`）。日程の画面が読み直して重ね直す
+    @Published private(set) var lastConflict = false
+
+    /// 書き込みの応答を映す一覧。**共有したプランを読めなかった応答（`sharedFailed`）では、前に見えていた
+    /// 共有したプランを残す**——残さないと、自分のプランを直しただけで仲間のプランが一覧から消えて見える
+    nonisolated static func merged(previous: [TripPlan], response: TripPlanList) -> [TripPlan] {
+        guard response.sharedFailed else { return response.plans }
+        let ids = Set(response.plans.map(\.planId))
+        return response.plans + previous.filter { $0.share != nil && !ids.contains($0.planId) }
+    }
+
     private func write(_ key: String, _ fallback: String,
-                       _ call: () async throws -> [TripPlan]) async -> [TripPlan]? {
+                       _ call: () async throws -> TripPlanList) async -> [TripPlan]? {
         guard busy == nil else { return nil }
         let myEra = era
         busy = key
         errorMessage = nil
         // 人が替わった後に返った前の人の書き込みは、次の人の「送っている最中」を外さない
         defer { if myEra == era { busy = nil } }
+        lastConflict = false
         do {
-            let list = try await call()
+            let response = try await call()
+            let list = Self.merged(previous: plans, response: response)
             // **人が替わっていたら何も書かない**（前の人のプランを次の人の画面に出さず、
             // `writes` を進めて次の人の読み込みを捨てさせもしない）
             guard myEra == era else { return nil }
@@ -457,6 +480,7 @@ final class TripPlansModel: ObservableObject {
             return list
         } catch {
             guard myEra == era else { return nil }
+            lastConflict = error is TripPlanService.Conflict
             errorMessage = (error as? LocalizedError)?.errorDescription ?? fallback
             return nil
         }

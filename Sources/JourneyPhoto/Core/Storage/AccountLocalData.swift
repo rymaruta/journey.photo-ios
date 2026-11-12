@@ -21,11 +21,13 @@ enum AccountLocalData {
     ///   - draftDirectory: ストーリー・写真の投稿の書きかけの画像の置き場（試験で差し替える）
     ///   - offlineTripsRoot: 電波なしで使える旅の置き場（試験で差し替える）
     ///   - passRoot: すれちがいの帳の置き場（試験で差し替える）
+    ///   - feedbackRoot: 意見箱の送れていない下書きの置き場（試験で差し替える）
     static func remove(userId: String, username: String?,
                        defaults: UserDefaults = .standard,
                        draftDirectory: URL? = nil,
                        offlineTripsRoot: URL? = nil,
-                       passRoot: URL? = nil) {
+                       passRoot: URL? = nil,
+                       feedbackRoot: URL? = nil) {
         guard !userId.isEmpty else { return }
         // 🔴 **すれちがいの電波を先に止める**（2026-10-16）。止めないと、消した後も前の乗車券を出し続け、
         // 手元に持っている帳が次の保存で書き戻される
@@ -55,7 +57,12 @@ enum AccountLocalData {
         UploadDraftStore(defaults: defaults, directory: draftDirectory).removeAllJournals(for: userId)
         // 投稿の「撮影地の位置を付ける」の選んだ値（2026-10-18）
         UploadLocationPreference(defaults: defaults).removeData(for: userId)
+        // ストーリーの「24時間後も自分用に残す」の選んだ値（2026-11-11）
+        StoryArchivePreference(defaults: defaults).removeData(for: userId)
         OpenedTripBooks(defaults: defaults).removeData(for: userId)
+        // ホームの上の札に出さない旅・消すのを待っている旅行プラン（2026-11-12）
+        HomeHiddenTrips(defaults: defaults).removeData(for: userId)
+        TripPlanRemovalQueue.removeData(for: userId, defaults: defaults)
         FollowingSeenStore(defaults: defaults).removeData(for: userId)
         // 行った県マップの記録（県ごとの行った日・外した候補・祝いを見せた周・2026-11-08・札 #503）
         VisitedPrefectureStore(defaults: defaults).removeData(for: userId)
@@ -64,6 +71,8 @@ enum AccountLocalData {
         OfflineTripStore.removeData(for: userId, root: offlineTripsRoot, defaults: defaults)
         // すれちがいの帳と設定（受け取ったカード・乗車券・ひとこと）
         PassStore.removeData(for: userId, root: passRoot, defaults: defaults)
+        // 意見箱の送れていない下書き（2026-11-11 札 #546）
+        FeedbackOutbox(root: feedbackRoot).removeData(for: userId)
         // 旅のトランク（2026-10-17）: 入口を出すかの覚え・古び方の区切りの知らせを出した印
         TrunkAvailability.removeData(for: userId, defaults: defaults)
         // 回す箱の正面の絵の端末の置き場（2026-11-11・貼ったラベルの地名が描かれている）

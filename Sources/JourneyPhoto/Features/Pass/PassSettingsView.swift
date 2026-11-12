@@ -227,7 +227,7 @@ struct PassSettingsView: View {
         guard pass.settings.cardPhotoId != nil else { return L("まだ選んでいません", "Not chosen yet") }
         let title = cardPhoto?.displayTitle ?? L("選んだ写真", "Chosen photo")
         let note = pass.settings.note
-        return note.isEmpty ? title : L("\(title) · 「\(note)」", "\(title) · \u{201C}\(note)\u{201D}")
+        return note.isEmpty ? title : L("\(title)\u{2002}「\(note)」", "\(title)\u{2002}\u{201C}\(note)\u{201D}")
     }
 
     // MARK: - いつ
@@ -289,19 +289,19 @@ struct PassSettingsView: View {
         VStack(alignment: .leading, spacing: JPSpace.xs) {
             eyebrow(L("カードに載るもの", "On your card"))
             JPCard {
-                JPRowLabel(title: L("乗車券の写真・名前・ひとこと", "Ticket photo, name and note"),
+                JPRowLabel(title: L("乗車券の写真、名前、ひとこと", "Ticket photo, name and note"),
                            detail: L("いつも載ります", "Always included"), chevron: false)
                 JPCardDivider()
                 // 乗車券の「発」（2026-10-16）。自分で書く字はわたしの乗車券の画面で選ぶ。ここでは居住地を出す／出さない
                 NavigationLink { PassCardPickView() } label: {
-                    JPRowLabel(title: L("乗車券の区間（発・着）", "Ticket route (from / to)"),
+                    JPRowLabel(title: L("乗車券の区間（発、着）", "Ticket route (from / to)"),
                                detail: PassSettingsText.route(pass.settings))
                 }
                 .buttonStyle(JPRowButtonStyle())
                 JPCardDivider()
                 JPRowLabel(title: L("すれちがった場所と時刻", "Where and when you passed"),
-                           detail: L("「京都市のあたり · 15 時ごろ」の粒度。番地や分は載せません",
-                                     "As rough as \u{201C}around Kyoto · around 3 PM\u{201D}. Never street addresses or minutes."),
+                           detail: L("「京都市のあたり\u{2002}15 時ごろ」の粒度。番地や分は載せません",
+                                     "As rough as \u{201C}around Kyoto\u{2002}around 3 PM\u{201D}. Never street addresses or minutes."),
                            chevron: false)
             }
         }
@@ -488,6 +488,6 @@ enum PassSettingsText {
         }
         let to = settings.destinationLabel.map { L("着: 「\($0)」", "To: \u{201C}\($0)\u{201D}") }
             ?? L("着: すれちがった所", "To: where you pass")
-        return "\(from) · \(to)"
+        return "\(from)\u{2002}\(to)"
     }
 }

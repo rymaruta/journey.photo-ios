@@ -800,7 +800,7 @@ struct PassGreatCircleFace: View {
         VStack(alignment: .leading, spacing: 6) {
             route
             HStack(alignment: .firstTextBaseline) {
-                Text("\(fieldValue(0)) · \(fieldValue(2))")
+                Text("\(fieldValue(0))\u{2002}\(fieldValue(2))")
                     .font(.system(size: PassCardStyle.metaSize).monospacedDigit())
                     .foregroundStyle(text2)
                     .lineLimit(1)
@@ -985,7 +985,7 @@ struct PassFoilHardFace: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer(minLength: JPSpace.xs)
-                    Text("\(fieldValue(0)) · \(fieldValue(1))")
+                    Text("\(fieldValue(0))\u{2002}\(fieldValue(1))")
                         .font(.system(size: PassCardStyle.metaSize).monospacedDigit())
                         .foregroundStyle(text2)
                         .lineLimit(1)

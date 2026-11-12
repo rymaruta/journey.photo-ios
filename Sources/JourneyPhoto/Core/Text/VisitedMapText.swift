@@ -27,12 +27,12 @@ enum VisitedMapText {
         let done = L("\(completed) 周そろった", completed == 1 ? "1 round complete" : "\(completed) rounds complete")
         guard inProgress.done > 0 else { return done }
         let next = L("\(inProgress.round) 周目 \(inProgress.done)/47", "Round \(inProgress.round): \(inProgress.done)/47")
-        return "\(done) · \(next)"
+        return "\(done)\u{2002}\(next)"
     }
 
     /// 内訳（バッジ「都道府県」の数とは別）。「写真から 28 県 · 手で 3 県」
     static func breakdown(fromPhotos: Int, byHand: Int) -> String {
-        L("写真から \(fromPhotos) 県 · 手で \(byHand) 県", "From photos \(fromPhotos) · by hand \(byHand)")
+        L("写真から \(fromPhotos) 県\u{2002}手で \(byHand) 県", "From photos \(fromPhotos)\u{2002}by hand \(byHand)")
     }
 
     static var breakdownNote: String {
@@ -61,7 +61,7 @@ enum VisitedMapText {
     // MARK: - 押した県の帯（案 A・2026-11-10）
 
     /// 地図の下の一言（モック A の字のまま）
-    static var quickHint: String { L("押す＝1 回足す · 長押し＝見るだけ", "Tap adds one · Press and hold to just look") }
+    static var quickHint: String { L("押す＝1 回足す、長押し＝見るだけ", "Tap adds one, press and hold to just look") }
 
     static var details: String { L("詳しく", "Details") }
 
@@ -102,6 +102,9 @@ enum VisitedMapText {
 
     static var undo: String { L("取り消す", "Undo") }
     static var undoStep: String { L("ひとつ戻す", "Step back") }
+    /// 写真の候補のチップの動きの字（押すとその場で記録・2026-11-12 判断）。県の名前とは「·」で区切らず、
+    /// 字の太さと色で分ける（`VisitedMapScreen` の候補のチップ）
+    static var recordCandidateAction: String { L("記録する", "Record") }
 
     static func recorded(_ name: String, count: Int) -> String {
         L("\(name)を記録しました（\(count) 回）", "Recorded \(name) (\(count))")
@@ -164,7 +167,7 @@ enum VisitedMapText {
     // MARK: - 設定の表示（変えられない）
 
     static var privateNote: String {
-        L("あなただけの記録です。ほかの人には見えません。硬貨・バッジ・Pro には関係しません。",
+        L("あなただけの記録です。ほかの人には見えません。硬貨、バッジ、Pro には関係しません。",
           "Only you can see this. It has nothing to do with coins, badges, or Pro.")
     }
 

@@ -106,6 +106,9 @@ owner「テスト長すぎていやだ」「長くても30分に絶対に収ま�
 - 新しいコミットを流したら、古い回はすぐ止める
 - アプリの起動時間・メモリは `inputs[screens]=PerformanceTests` で名指しした回だけ測る（UI テスト・全部の回では流さない）。撮影スポットの索引の解析は単体テスト `SpotIndexPerfTests` が毎回測る。数はどちらも成果物 `build-logs` の `xcodebuild-full.log` の `measured [...]`（札 #429）
 - 全部の回は Mac を最大4台同時に使う（#429）。全部の回は同時に1本まで（Mac は同時5台まで。溢れると上げる回が順番待ちになる）
+- **画面写真は非公開の S3（2026-11-12 owner）。** 公開の枝・成果物には置かない（#451 のまま）。
+  `bash Tools/fetch-shots.sh <run>` で scratchpad に落として見て、見終わったら `--delete`（手元と S3 から消す。手元だけは `--clean`）。
+  置き場は3日で自動で消える。リポジトリの中には落とさない
 - 調べた数字と案は Artifact「テストとアプリの速さ」（https://claude.ai/artifact/K3y6eMQqVR1Av64DmYxdgW）
 
 ## 決めることも推奨で進める・労力より質（2026-10-18 owner のルール）

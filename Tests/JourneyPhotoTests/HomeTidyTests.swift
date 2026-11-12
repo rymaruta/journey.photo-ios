@@ -116,18 +116,18 @@ final class HomeTidyTests: XCTestCase {
     func testTopCardsAreOneLineEach() throws {
         XCTAssertEqual(HomeTopCardView.cardHeight, 116)
         XCTAssertEqual(HomeTopCardView.lineLimit, 1, "札の字が2行に戻ると並びの背が 156 に伸びる")
-        let view = try source("Features/Gallery/HomeTopCardView.swift")
-        let card = slice(view, from: "private func card(eyebrow: String", to: "nonisolated static let cardHeight")
-        XCTAssertEqual(card.components(separatedBy: ".lineLimit(Self.lineLimit)").count - 1, 3, "題・一行・出典の3つが1行でない")
+        // 札の面は 2026-11-12 に `TopCardFace` へ切り出した（探すの今日の一問も同じ面）
+        let card = try source("Features/Gallery/TopCardFace.swift")
+        XCTAssertEqual(card.components(separatedBy: ".lineLimit(HomeTopCardView.lineLimit)").count - 1, 3, "題・一行・出典の3つが1行でない")
         XCTAssertFalse(card.contains(".lineLimit(2)"))
-        assertInOrder([".lineLimit(Self.lineLimit)", ".truncationMode(detailTruncation)"], in: card,
+        assertInOrder([".lineLimit(HomeTopCardView.lineLimit)", ".truncationMode(detailTruncation)"], in: card,
                       "出典を真ん中で切っていない（末尾のライセンス名が消える）")
     }
 
     /// 出典は1行（地域 · 作者とライセンス）。改行で2行にしない
     func testSpotDetailIsOneLine() {
         let line = HomeTopCardView.spotDetail(region: "岡山", credit: "写真: A / CC BY-SA 4.0")
-        XCTAssertEqual(line, "岡山 · 写真: A / CC BY-SA 4.0")
+        XCTAssertEqual(line, "岡山\u{2002}写真: A / CC BY-SA 4.0")
         XCTAssertFalse(line?.contains("\n") ?? true)
         XCTAssertEqual(HomeTopCardView.spotDetail(region: nil, credit: "c"), "c")
         XCTAssertNil(HomeTopCardView.spotDetail(region: nil, credit: nil))
@@ -224,7 +224,7 @@ final class HomeTidyTests: XCTestCase {
         assertInOrder(["header", "ForEach(shelf.entries)", "Text(HomeSpotShelf.note)",
                        ".accessibilityLabel(HomeSpotShelf.heading)"], in: body, "注記は札の下")
         // 文は変えない
-        XCTAssertTrue(HomeSpotShelf.note.contains(L("各撮影スポットの作例", "examples for each spot")))
+        XCTAssertTrue(HomeSpotShelf.note.contains(L("各観光スポットの作例", "examples for each spot")))
     }
 
     // MARK: - ⑥ 「行きたい」は行の中の小ボタン
@@ -321,7 +321,7 @@ final class HomeTidyTests: XCTestCase {
                       in: dot, "真鍮の点と黒 2 の縁")
         assertInOrder([".overlay(alignment: .topTrailing) {", "if dot(option) { ProfileTabDot() }",
                        ".accessibilityLabel(spoken(option))"], in: bar, "札の部品の点と読み上げ")
-        XCTAssertEqual(HomeFollowingNews.spokenLabel("フォロー中", hasNew: true), L("フォロー中・新しい写真あり", "フォロー中, new photos"))
+        XCTAssertEqual(HomeFollowingNews.spokenLabel("フォロー中", hasNew: true), L("フォロー中、新しい写真あり", "フォロー中, new photos"))
         XCTAssertEqual(HomeFollowingNews.spokenLabel("フォロー中", hasNew: false), "フォロー中")
     }
 

@@ -210,11 +210,15 @@ struct PhotoService {
     /// 写真を消す。**404（もう無い）は消せたのと同じ**（別の端末で先に消した回。
     /// `photoUpdate.ts` の `deleteMyPhoto` は行が無ければ 404）。失敗と読むと、
     /// もう無い写真の画面に留まり、削除を押すたびにエラーになる
-    func delete(photoId: String) async throws {
+    ///
+    /// `withStory`（2026-11-11 判断・`api-user/src/storyKeptDelete.ts`）: ストーリーから作った写真は、
+    /// 元のストーリーも一緒に消す（true）／写真だけ消す（false）を選んで送る。nil は今までの動き
+    func delete(photoId: String, withStory: Bool? = nil) async throws {
         do {
             try await api.authorizedVoid(
                 .delete,
-                "/photos/\(encoded(photoId))"
+                "/photos/\(encoded(photoId))",
+                query: withStory.map { ["withStory": $0 ? "1" : "0"] } ?? [:]
             )
         } catch where SocialService.isNotFound(error) {
             return

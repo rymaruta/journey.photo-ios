@@ -18,7 +18,7 @@ final class StoryComposeProbe {
     private let startedAt = Date()
     /// 数（名前 → 回数）。`ov.changed` は札の動かす操作の途中の呼び出し、`ov.ended` は指を離した回
     private var counts: [String: Int] = [:]
-    /// 出来事の並び（古い順・最大 14 件）。形は `+経過ms 名前 詳細`
+    /// 出来事の並び（古い順・最大 40 件。2026-11-12 に指の届き先 `touch.*` を足したので 14 → 40）。形は `+経過ms 名前 詳細`
     private var events: [String] = []
 
     func note(_ name: String, _ detail: String = "", countOnly: Bool = false) {
@@ -27,7 +27,7 @@ final class StoryComposeProbe {
         guard !countOnly else { return }
         let ms = Int(Date().timeIntervalSince(startedAt) * 1000)
         events.append("+\(ms)ms \(name)\(detail.isEmpty ? "" : " " + detail)")
-        if events.count > 14 { events.removeFirst(events.count - 14) }
+        if events.count > 40 { events.removeFirst(events.count - 40) }
     }
 
     /// 値の文字列。`snapshot` は作る画面が足す、いまの状態（札の位置・打っているか・動かしているか）。
@@ -43,12 +43,16 @@ struct StoryComposeProbeView: View {
     let snapshot: String
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 0.3)) { _ in
-            Text(" ")
-                .font(.system(size: 1))
-                .accessibilityLabel("story probe")
-                .accessibilityValue(StoryComposeProbe.shared.summary(snapshot: snapshot))
-                .accessibilityIdentifier(StoryComposeProbe.identifier)
+        ZStack {
+            TimelineView(.animation(minimumInterval: 0.3)) { _ in
+                Text(" ")
+                    .font(.system(size: 1))
+                    .accessibilityLabel("story probe")
+                    .accessibilityValue(StoryComposeProbe.shared.summary(snapshot: snapshot))
+                    .accessibilityIdentifier(StoryComposeProbe.identifier)
+            }
+            // 指の届き先（窓・部品）も記録に足す（`StoryTouchProbe`・2026-11-12）
+            StoryTouchProbe()
         }
         .frame(width: 1, height: 1)
         .allowsHitTesting(false)

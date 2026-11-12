@@ -92,7 +92,7 @@ enum PassExchange {
 
     /// 連絡先の形を書いたときの訳
     static var contactProblem: String {
-        L("URL・メール・電話番号は書けません", "URLs, email addresses and phone numbers aren\u{2019}t allowed")
+        L("URL、メール、電話番号は書けません", "URLs, email addresses and phone numbers aren\u{2019}t allowed")
     }
 
     /// 入力中のひとことが載せられない訳（載せられるなら nil）。乗車券選びの欄の下に出す
@@ -364,7 +364,7 @@ enum PassExchange {
         let y = c.year ?? 0, m = c.month ?? 0, d = c.day ?? 0, h = c.hour ?? 0
         let day = String(format: "%04d.%02d.%02d", y, m, d)
         let hour12 = h % 12 == 0 ? 12 : h % 12
-        return L("\(day) · \(h) 時ごろ", "\(day) · around \(hour12) \(h < 12 ? "AM" : "PM")")
+        return L("\(day)\u{2002}\(h) 時ごろ", "\(day)\u{2002}around \(hour12) \(h < 12 ? "AM" : "PM")")
     }
 
     /// 帳の日の見出し（板「2026.10.16 · 京都」）
@@ -372,7 +372,7 @@ enum PassExchange {
         let c = calendar.gregorianKeepingZone.dateComponents([.year, .month, .day], from: date)
         let day = String(format: "%04d.%02d.%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
         guard let place, !place.isEmpty else { return day }
-        return "\(day) · \(place)"
+        return "\(day)\u{2002}\(place)"
     }
 
     // MARK: - 場所

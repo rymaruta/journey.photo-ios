@@ -31,8 +31,8 @@ struct CamperGarageLoader: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("camper.loading")
             case .failed:
-                ErrorBanner(message: L("写真を読めませんでした。つながる所で、もう一度お試しください。",
-                                       "Couldn\u{2019}t load your photos. Try again when you\u{2019}re online.")) {
+                ErrorBanner(title: L("写真を読み込めませんでした", "Couldn\u{2019}t load your photos"),
+                            message: L("つながる所で、もう一度お試しください。", "Try again when you\u{2019}re online.")) {
                     Task { await load() }
                 }
                 .padding(.horizontal, JPSpace.gutter)

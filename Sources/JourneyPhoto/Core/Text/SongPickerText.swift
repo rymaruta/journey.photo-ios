@@ -79,7 +79,7 @@ enum SongPickerText {
 
     /// シートの中の再生バーの1行目（板 23「[曲名] · 試し聴き中」）
     static func nowPreviewing(_ title: String) -> String {
-        L("\(title) · 試し聴き中", "\(title) · Previewing")
+        L("\(title)、試し聴き中", "\(title), previewing")
     }
 
     /// 検索の回の番号。**くるくるを戻すのは最新の回だけ**（`isCurrent` と同じ考え方）。

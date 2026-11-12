@@ -209,7 +209,7 @@ final class V2SettingsProTests: XCTestCase {
         let cards = LightForecastText.cards(LightForecastText.sample(now: now), now: now)
         XCTAssertFalse(cards.isEmpty)
         for card in cards {
-            XCTAssertEqual(LightForecastStyle.whenLine(card), card.when + " · " + card.weather)
+            XCTAssertEqual(LightForecastStyle.whenLine(card), card.when + "\u{2002}" + card.weather)
         }
         XCTAssertEqual(LightForecastStyle.bestBorder, 1.5)
         XCTAssertGreaterThanOrEqual(LightForecastStyle.directionsMinWidth, WebTheme.minTapTarget)

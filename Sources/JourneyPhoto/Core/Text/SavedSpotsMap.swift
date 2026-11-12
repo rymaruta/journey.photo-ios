@@ -69,7 +69,7 @@ enum SavedSpotsMap {
     }
 
     static func item(_ place: DerivedSpot.Place) -> Item {
-        let broader = place.broader.joined(separator: " · ")
+        let broader = place.broader.joined(separator: L("、", ", "))
         return Item(target: .place(place),
                     key: place.slug.isEmpty ? place.label : place.slug,
                     name: place.label,
@@ -157,7 +157,7 @@ enum SavedSpotsMap {
     static func openHint(_ item: Item) -> String {
         switch item.target {
         case .place: return L("撮影地の画面を開きます", "Opens the place")
-        case .official: return L("撮影スポットの画面を開きます", "Opens the spot")
+        case .official: return L("観光スポットの画面を開きます", "Opens the spot")
         }
     }
 
@@ -167,7 +167,7 @@ enum SavedSpotsMap {
         if let subtitle = item.subtitle { parts.append(subtitle) }
         if item.isDraft { parts.append(L("下書き", "Draft")) }
         parts.append(L("行きたい場所", "Want to go"))
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: "\u{2002}")
     }
 
     /// 見出しの下の一行。「地図に 5 か所 · 場所の分からないもの 2 か所」
@@ -175,7 +175,7 @@ enum SavedSpotsMap {
         if split.unplaced.isEmpty {
             return L("地図に \(split.pinned.count) か所", "\(split.pinned.count) on the map")
         }
-        return L("地図に \(split.pinned.count) か所 · 場所の分からないもの \(split.unplaced.count) か所",
-                 "\(split.pinned.count) on the map · \(split.unplaced.count) without a location")
+        return L("地図に \(split.pinned.count) か所、場所の分からないもの \(split.unplaced.count) か所",
+                 "\(split.pinned.count) on the map, \(split.unplaced.count) without a location")
     }
 }

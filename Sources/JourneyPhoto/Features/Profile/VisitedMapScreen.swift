@@ -19,9 +19,14 @@ import UIKit
 /// 2026-11-10 判断（札 #510・owner「Aで作って」）: スイッチ「タップで回数を足す」をなくし、
 /// 県を押すたびに 1 回足す（`VisitedMapModel.tap`）。押した県は下の小さな帯（`VisitedQuickBar`）で
 /// ［−］［＋］［詳しく］。長押しは足さずに帯だけ。地図の下にモック A の一言「押す＝1 回足す · 長押し＝見るだけ」
+///
+/// 2026-11-12 判断（1.1.83 の案「行った県」）: 写真の候補のチップを押すとその場で記録する（札を開いて「＋」の 2 回 →
+/// 1 回・間違えたら帯の「取り消す」）。「47県ぜんぶ行った」「記録をすべて外す」は右上の「…」へ畳み（足元の行を 2 つ減らす）、
+/// 「ひとつ戻す」は印に。県の札にその県で撮った自分の写真を出す
 struct VisitedMapScreen: View {
 
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var connectivity: Connectivity
     @EnvironmentObject private var auth: AuthStore
     @StateObject private var model = VisitedMapModel()
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverOn
@@ -60,13 +65,34 @@ struct VisitedMapScreen: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { model.undo() } label: {
-                    Text(VisitedMapText.undoStep)
-                        .font(JPFont.body)
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: WebTheme.toolbarIconSize, weight: .regular))
                         .foregroundStyle(model.canUndo ? WebTheme.accent : WebTheme.text3)
                         .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
                 }
                 .disabled(!model.canUndo)
+                .accessibilityLabel(VisitedMapText.undoStep)
                 .accessibilityIdentifier("visitedMap.undoStep")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                // まれに使う2つは「…」に畳む（確かめは今のまま・取り消せない一括の操作）
+                Menu {
+                    if model.record.visitedCount < VisitedPrefectures.total {
+                        Button(VisitedMapText.allVisited47) { confirmAll = true }
+                            .accessibilityIdentifier("visitedMap.all47")
+                    }
+                    if model.record.visitedCount > 0 {
+                        Button(VisitedMapText.clearAll, role: .destructive) { confirmClear = true }
+                            .accessibilityIdentifier("visitedMap.clearAll")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: WebTheme.toolbarIconSize, weight: .regular))
+                        .foregroundStyle(WebTheme.foreground)
+                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                }
+                .accessibilityLabel(L("その他", "More"))
+                .accessibilityIdentifier("visitedMap.more")
             }
         }
         // 札（シート）が開いている間は、帯は札の中に出る（`VisitedPrefectureCard`・親の帯は札の下に隠れる）
@@ -262,16 +288,29 @@ struct VisitedMapScreen: View {
     private var photoStatus: some View {
         switch model.photosState {
         case .loading:
-            HStack(spacing: JPSpace.xs) {
-                ProgressView()
+            // 地図はすぐ使える。候補だけ待つ（回る輪をやめ、候補のチップの形の骨格・2026-11-12 判断）
+            VStack(alignment: .leading, spacing: JPSpace.xs) {
                 Text(VisitedMapText.loadingPhotos)
                     .font(JPFont.footnote)
                     .foregroundStyle(WebTheme.text2)
+                HStack(spacing: JPSpace.xs) {
+                    ForEach([88.0, 72.0], id: \.self) { w in
+                        Capsule().fill(WebTheme.surface4).frame(width: w, height: 34)
+                    }
+                }
             }
-            .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
-            .accessibilityElement(children: .combine)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(VisitedMapText.loadingPhotos)
+            .accessibilityIdentifier("visitedMap.loadingPhotos")
         case .failed:
-            ErrorBanner(message: VisitedMapText.failedPhotos) { Task { await loadPhotos() } }
+            // 記録は端末の中なのでそのまま使える。電波が無いときはそう言う（帯・2026-11-12 判断）
+            ErrorBanner(title: connectivity.isOffline ? L("電波が届いていません", "No signal")
+                                                      : L("写真から県を調べられませんでした", "Couldn\u{2019}t check your photos"),
+                        message: connectivity.isOffline
+                            ? L("記録はできます。写真の候補は電波が戻ってから", "You can still record. Suggestions come back with a signal.")
+                            : L("記録はこの端末に残っています", "Your record is safe on this device.")) {
+                Task { await loadPhotos() }
+            }
         case .idle, .loaded:
             EmptyView()
         }
@@ -292,10 +331,17 @@ struct VisitedMapScreen: View {
                     .fixedSize(horizontal: false, vertical: true)
                 FlowLayout(spacing: JPSpace.xs) {
                     ForEach(names, id: \.self) { name in
-                        Button { model.openCard(name) } label: {
-                            Text(name)
-                                .font(JPFont.footnote)
-                                .foregroundStyle(WebTheme.foreground)
+                        // 押すとその場で記録（2026-11-12 判断・間違えたら帯の「取り消す」）
+                        Button { model.recordCandidate(name) } label: {
+                            // 県の名前（太字・白）と動き（真鍮）を字の太さと色で分ける（区切りの記号を使わない）
+                            HStack(spacing: JPSpace.xs) {
+                                Text(name)
+                                    .font(JPFont.footnote.weight(.semibold))
+                                    .foregroundStyle(WebTheme.foreground)
+                                Text(VisitedMapText.recordCandidateAction)
+                                    .font(JPFont.footnote)
+                                    .foregroundStyle(WebTheme.accent)
+                            }
                                 .padding(.horizontal, JPSpace.s)
                                 .frame(minHeight: WebTheme.minTapTarget)
                                 .overlay(Capsule().strokeBorder(WebTheme.accent.opacity(0.7),
@@ -304,6 +350,12 @@ struct VisitedMapScreen: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(VisitedMapText.prefectureAccessibility(name, count: 0, isCandidate: true))
+                        .accessibilityHint(L("押すと 1 回記録します", "Records one visit"))
+                        // 長押しで札（日付・候補から外す）を開く
+                        .contextMenu {
+                            Button(VisitedMapText.dismissCandidate) { model.dismissCandidate(name) }
+                            Button(L("詳しく見る", "Details")) { model.openCard(name) }
+                        }
                         .accessibilityIdentifier("visitedMap.candidate.\(name)")
                     }
                 }
@@ -312,7 +364,7 @@ struct VisitedMapScreen: View {
     }
 
     /// 空（記録も候補も無い）。何が無いか → どうすれば埋まるか → 一手（写真を投稿・写真の無い画面の主ボタン）。
-    /// 「47県ぜんぶ行った」は下の足元にある
+    /// 「47県ぜんぶ行った」は右上の「…」にある（2026-11-12 判断）
     private var emptyBlock: some View {
         EmptyState(title: VisitedMapText.emptyTitle, message: VisitedMapText.emptyBody,
                    actionTitle: VisitedMapText.postPhoto, actionIdentifier: "visitedMap.empty.post") {
@@ -330,12 +382,6 @@ struct VisitedMapScreen: View {
                 .foregroundStyle(WebTheme.text3)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("visitedMap.private")
-            if model.record.visitedCount < VisitedPrefectures.total {
-                textButton(VisitedMapText.allVisited47, id: "visitedMap.all47") { confirmAll = true }
-            }
-            if model.record.visitedCount > 0 {
-                textButton(VisitedMapText.clearAll, id: "visitedMap.clearAll") { confirmClear = true }
-            }
         }
     }
 

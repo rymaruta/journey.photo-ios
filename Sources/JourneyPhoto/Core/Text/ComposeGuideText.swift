@@ -69,7 +69,7 @@ enum ComposeGuide {
     /// 板: 「[撮影地の名前] · 作例 [2] / [6]」。番号は 1 から
     static func counter(spotName: String, index: Int, count: Int) -> String {
         let shown = count > 0 ? normalized(index, count: count) + 1 : 0
-        return L("\(spotName) · 作例 \(shown) / \(count)", "\(spotName) · Example \(shown) / \(count)")
+        return L("\(spotName)\u{2002}作例 \(shown) / \(count)", "\(spotName)\u{2002}Example \(shown) / \(count)")
     }
 
     /// 上の札の読み上げ（「鍋ヶ滝、作例 2 枚目、全 6 枚」）

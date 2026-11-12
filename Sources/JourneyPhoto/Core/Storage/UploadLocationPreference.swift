@@ -20,33 +20,30 @@ struct UploadLocationPreference {
 
     private static let baseKey = "journey-photo-upload-attach-location"
 
-    private let defaults: UserDefaults
+    /// 人ごとに覚える決まりは `PerUserFlag`（ストーリーの「自分用に残す」と同じ・2026-11-11 に1つにした）
+    private let flag: PerUserFlag
 
     init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
+        flag = PerUserFlag(baseKey: Self.baseKey, defaultValue: Self.defaultValue, defaults: defaults)
     }
 
     /// 人ごとの鍵。持ち主が分からなければ nil（覚えない・読まない）
     static func key(for userId: String?) -> String? {
-        guard let userId, !userId.isEmpty else { return nil }
-        return "\(baseKey):\(userId)"
+        PerUserFlag.key(base: baseKey, userId: userId)
     }
 
     /// その人が選んだ値。覚えが無い・持ち主が分からなければ既定（オン）
     func attachesLocation(userId: String?) -> Bool {
-        guard let key = Self.key(for: userId), defaults.object(forKey: key) != nil else { return Self.defaultValue }
-        return defaults.bool(forKey: key)
+        flag.value(userId: userId)
     }
 
     /// 選んだ値を覚える。持ち主が分からなければ書かない
     func set(_ attaches: Bool, userId: String?) {
-        guard let key = Self.key(for: userId) else { return }
-        defaults.set(attaches, forKey: key)
+        flag.set(attaches, userId: userId)
     }
 
     /// 退会した人の控えを消す（`AccountLocalData`）
     func removeData(for userId: String) {
-        guard let key = Self.key(for: userId) else { return }
-        defaults.removeObject(forKey: key)
+        flag.removeData(for: userId)
     }
 }

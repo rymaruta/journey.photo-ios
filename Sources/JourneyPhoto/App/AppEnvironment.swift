@@ -45,6 +45,12 @@ final class AppEnvironment: ObservableObject {
     let camper: CamperService
     /// メッセージ（`/dm`・1対1・文字だけ・2026-11-10 札 #505）
     let dm: DMService
+    /// 旅行プランを仲間と使う口（`/trip-share`・2026-11-12 札 #553）
+    let tripShare: TripShareService
+    /// みんなの「行きたい」（2026-11-11・撮影スポットを払うの②）
+    let spotWants: SpotWantsService
+    /// 意見箱（`/user/feedback`・`/feedback`・2026-11-11 札 #546）
+    let feedback: FeedbackService
 
     /// - Parameter gallery: 公開一覧の出どころ。**テストで差し替えるため**に
     ///   開けてある（既定のままだと本物のサイトを叩きにいくので、
@@ -76,6 +82,7 @@ final class AppEnvironment: ObservableObject {
         self.social = SocialService(api: api)
         self.saves = SaveService(api: api)
         self.savedSpots = SavedSpotService(api: api)
+        self.spotWants = SpotWantsService(api: api)
         self.notifications = NotificationService(api: api)
         self.moderation = ModerationService(api: api)
         self.account = AccountService(api: api)
@@ -90,5 +97,7 @@ final class AppEnvironment: ObservableObject {
         self.trunk = TrunkService(api: api)
         self.camper = CamperService(api: api)
         self.dm = DMService(api: api)
+        self.tripShare = TripShareService(api: api)
+        self.feedback = FeedbackService(api: api)
     }
 }

@@ -50,7 +50,7 @@ struct SongPickerView: View {
         .webScreen()
         .navigationTitle(L("曲を選ぶ", "Choose a song"))
         .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $query, prompt: L("曲名・アーティスト", "Title or artist"))
+        .searchable(text: $query, prompt: L("曲名、アーティスト", "Title or artist"))
         .onSubmit(of: .search) { Task { await search() } }
         .onChange(of: query) { _, value in
             // 空に戻したら最近選んだ曲に戻す。前の「見つかりませんでした」も消す

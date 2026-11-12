@@ -44,7 +44,7 @@ enum StoryTool: CaseIterable, Identifiable {
 
     /// 読み上げ（「文字・入れてあります」）。状態も読ませる
     func accessibilityLabel(used: Bool) -> String {
-        used ? L("\(label)・入れてあります", "\(label), added") : label
+        used ? L("\(label)、入れてあります", "\(label), added") : label
     }
 
     /// この道具を使ったか。**表示中の1枚の札**と、全体で1つの曲・撮影地で決める。

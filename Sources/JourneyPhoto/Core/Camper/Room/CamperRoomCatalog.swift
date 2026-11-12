@@ -535,7 +535,7 @@ enum CamperRoomCatalog {
         f(.travelBag, "map_stand", "地図立て", "Map stand", "立てた地図と木の脚", "A standing map on timber legs",
           .veryRare, .base(.prefectures(10)), 2, 1, 40, built: true),
         // お茶（tea）
-        f(.tea, "teapot_tray", "急須の盆", "Teapot tray", "急須と湯呑 2・盆", "A pot, two cups and a tray",
+        f(.tea, "teapot_tray", "急須の盆", "Teapot tray", "急須と湯呑 2、盆", "A pot, two cups and a tray",
           .common, starter, 2, 2, 14, built: true),
         f(.tea, "thermos", "魔法瓶", "Thermos", "細長い筒とねじ蓋", "A tall flask with a screw cap",
           .occasional, .base(.night(6)), 1, 1, 28, built: true),

@@ -8,7 +8,7 @@ enum TrunkWelcomeText {
     /// 持てる硬貨の上限（サーバーの決まり）
     static let coinCap = 99
 
-    static var eyebrow: String { "FIRST COINS · " + L("旅のトランク", "TRAVEL TRUNK") }
+    static var eyebrow: String { "FIRST COINS\u{2002}" + L("旅のトランク", "TRAVEL TRUNK") }
     static var title: String { L("はじめての硬貨", "Your first coins") }
     static var thanks: String {
         L("硬貨が始まる前から、写真を投稿してくれたお礼です", "A thank-you for posting before coins began")

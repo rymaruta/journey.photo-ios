@@ -44,8 +44,8 @@ enum TripBookCard {
         }
         return Lines(eyebrow: "TRIP BOOK",
                      title: TripBook.title(of: trip),
-                     period: "\(TripBook.dateRange(from: trip.start, to: trip.end)) · \(TripBook.daysLabel(trip.days))",
-                     stats: stats.joined(separator: " · "),
+                     period: "\(TripBook.dateRange(from: trip.start, to: trip.end))\u{2002}\(TripBook.daysLabel(trip.days))",
+                     stats: stats.joined(separator: "\u{2002}"),
                      footer: "Journey Photo")
     }
 

@@ -151,8 +151,8 @@ final class QuietFailuresTests: XCTestCase {
 
     func testPhotoDeleteGoesThroughTheGuard() throws {
         let view = try source("Features/PhotoDetail/PhotoDetailView.swift")
-        let delete = slice(view, from: "private func deletePhoto() async {", to: "case .failed(let error):")
-        XCTAssertTrue(delete.contains("model.deletePhoto(photoId, photos: environment.photos)"),
+        let delete = slice(view, from: "private func deletePhoto(withStory: Bool? = nil) async {", to: "case .failed(let error):")
+        XCTAssertTrue(delete.contains("model.deletePhoto(photoId, photos: environment.photos, withStory: withStory)"),
                       "守りを通さずに送っている")
         XCTAssertFalse(delete.contains("environment.photos.delete("))
         XCTAssertTrue(view.contains(".disabled(model.deletingPhotoIds.contains(current.id))"))
@@ -165,7 +165,7 @@ final class QuietFailuresTests: XCTestCase {
         let view = try source("Features/Albums/AlbumsView.swift")
         let button = slice(view, from: "private var createButton: some View {", to: "private var joinCard: some View {")
         XCTAssertTrue(button.contains(".disabled(model.isCreating)"), "主ボタンが送信中も押せる")
-        let empty = slice(view, from: "EmptyState(title: L(\"まだアルバムがありません\"", to: ".profileListRow()")
+        let empty = slice(view, from: "EmptyState(icon: \"rectangle.stack\", title: L(\"まだアルバムがありません\"", to: ".profileListRow()")
         XCTAssertTrue(empty.contains(".disabled(model.isCreating)"), "空の状態のボタンが送信中も押せる")
         let menu = slice(view, from: "Button(L(\"アルバムを作る\", \"New album\")) { showCreate = true }",
                          to: "Button(L(\"招待リンクから参加\"")

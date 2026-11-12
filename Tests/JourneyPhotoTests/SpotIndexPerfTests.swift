@@ -63,7 +63,7 @@ final class SpotIndexPerfTests: XCTestCase {
                 let hex = String(n, radix: 16)
                 let id = String(repeating: "0", count: max(0, 12 - hex.count)) + hex
                 rows.append("""
-                {"spotId":"sp_\(id)","slug":"spot-\(n)","name":"撮影スポット\(n)","nameEn":"Spot \(n)",\
+                {"spotId":"sp_\(id)","slug":"spot-\(n)","name":"観光スポット\(n)","nameEn":"Spot \(n)",\
                 "reading":"さつえいすぽっと\(n)","aliases":["別名\(n)","Alias \(n)"],\
                 "region":{"country":"日本","prefecture":"東京都","city":"千代田区"},\
                 "coords":{"lat":\(35.0 + Double(r) * 0.01),"lng":\(139.0 + Double(s) * 0.01)},"category":"建築",\

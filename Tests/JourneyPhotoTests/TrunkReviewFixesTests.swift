@@ -149,7 +149,7 @@ final class TrunkReviewFixesTests: XCTestCase {
         let spent = TrunkState(model: .leather, pocket: pro.pocket, stuck: [], limit: 150, isPro: true,
                                rerollsLeft: 0, posts: 0, receiveLabels: true)
         XCTAssertEqual(TrunkText.rerollStep(spent, labelId: id), .noneLeft)
-        XCTAssertEqual(TrunkText.rerollStartTitle(left: 2), L("作り直す · 今月あと 2 回", "Redo · 2 left this month"))
+        XCTAssertEqual(TrunkText.rerollStartTitle(left: 2), L("作り直す\u{2002}今月あと 2 回", "Redo · 2 left this month"))
         XCTAssertTrue(TrunkText.rerollStartNote.contains(L("開いただけでは", "Just opening")), "押す前の注記が無い")
     }
 

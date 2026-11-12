@@ -243,9 +243,10 @@ final class StoryCameraPolishTests: XCTestCase {
         XCTAssertLessThan(hold.lowerBound, stop.lowerBound)
         XCTAssertFalse(source.contains("{\n                modePicker.padding(.bottom, 14)"),
                        "録画中にモード切り替えを消すと倍率の丸が下へ落ちる")
-        XCTAssertTrue(source.contains(".opacity(modeLocked ? 0 : 1)"))
-        XCTAssertTrue(source.contains(".allowsHitTesting(!modeLocked)"))
-        XCTAssertTrue(source.contains(".accessibilityHidden(modeLocked)"))
+        // 2026-11-12: 隠す条件は撮る前の部品と同じ（`StoryCameraRules.showsChrome`・録画中と数えている間）
+        XCTAssertTrue(source.contains(".opacity(chromeShown ? 1 : 0)"))
+        XCTAssertTrue(source.contains(".allowsHitTesting(chromeShown)"))
+        XCTAssertTrue(source.contains(".accessibilityHidden(!chromeShown)"))
         XCTAssertTrue(source.contains("device.isTorchAvailable, device.isTorchModeSupported(mode)"))
     }
 

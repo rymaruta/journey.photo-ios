@@ -216,6 +216,8 @@ extension View {
                       maxHeight: Double? = nil, alignment: Alignment = .center) -> Self { self }
     public func padding(_ length: Double? = nil) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func padding(_ edges: Edge.Set, _ length: Double? = nil) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 安全な領域の分だけ内側へ（本物は iOS 17〜・①現像と②「1年前」の上の丸・2026-11-12）
+    public func safeAreaPadding(_ edges: Edge.Set, _ length: Double? = nil) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func aspectRatio(_ ratio: Double? = nil, contentMode: ContentMode) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func offset(x: Double = 0, y: Double = 0) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func position(x: Double, y: Double) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
@@ -306,6 +308,10 @@ extension View {
     public func rotationEffect(_ a: Angle) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// 色を抜く（バッジの棚のまだ持っていないメダル・本物と同じ）
     public func grayscale(_ amount: Double) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// 彩度・明るさ・色を掛ける（①現像の色を抜いたコマ・本物と同じ・2026-11-12）
+    public func saturation(_ amount: Double) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func brightness(_ amount: Double) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    public func colorMultiply(_ color: Color) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     /// 重ねた層を一枚の絵にまとめて描く（乗車券の券面の動かない地紋・本物と同じ）
     public func drawingGroup() -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func presentationBackground<S: ShapeStyle>(_ s: S) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
@@ -512,6 +518,8 @@ public struct NamedCoordinateSpace {
     public static var scrollView: NamedCoordinateSpace { NamedCoordinateSpace() }
     /// その部品自身の座標（本物と同じ）
     public static var local: NamedCoordinateSpace { NamedCoordinateSpace() }
+    /// 画面の座標（本物と同じ・iOS 17。手に取って運ぶ・2026-11-12）
+    public static var global: NamedCoordinateSpace { NamedCoordinateSpace() }
 }
 
 /// 端末の振動（iOS 17 の `sensoryFeedback`）

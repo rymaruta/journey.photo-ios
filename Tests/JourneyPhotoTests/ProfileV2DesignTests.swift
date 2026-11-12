@@ -253,7 +253,7 @@ final class ProfileV2DesignTests: XCTestCase {
             XCTAssertTrue(row.contains("を「行きたい」から外す"), "外すボタンの読み上げを落とした")
         }
         XCTAssertTrue(mine.contains("JPEyebrowLine(L(\"すべての行きたい場所"), "節の見出しが眉でない")
-        XCTAssertTrue(mine.contains("EmptyState(title: L(\"行きたい場所はまだありません\""))
+        XCTAssertTrue(mine.contains("EmptyState(icon: nil, title: L(\"行きたい場所はまだありません\""))
     }
 
     // MARK: - プロフィールの編集
@@ -269,7 +269,8 @@ final class ProfileV2DesignTests: XCTestCase {
         XCTAssertFalse(labeled.contains("strokeBorder(WebTheme.outline"), "板 v2 は欄の縁を消した")
         XCTAssertTrue(labeled.contains(".accessibilityLabel(title)"), "欄の読み上げの名前を落とした")
         XCTAssertTrue(labeled.contains("WebTheme.danger"), "上限を超えた知らせを落とした")
-        let link = try slice(edit, from: "private func linkRow", to: "/// 名前の横のバッジ")
+        // 2026-11-12 owner 案 A で「名前の横のバッジ」の節を外したので、行の部品の次は BGM の節
+        let link = try slice(edit, from: "private func linkRow", to: "/// BGM（モック2-9 の「BGM」の行）")
         XCTAssertTrue(link.contains(".foregroundStyle(WebTheme.accent)"), "BGM の行の印は真鍮（黒地の上）")
     }
 

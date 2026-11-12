@@ -81,7 +81,7 @@ final class UploadSpotAutoTests: XCTestCase {
         m.items = [fox, item(2, location: "東京")]
         XCTAssertEqual(m.autoSpotRow(for: m.items[0]), .init(spotId: "sp_fox", name: "蔵王キツネ村", on: true))
         XCTAssertNil(m.autoSpotRow(for: m.items[1]), "候補の無い写真に切り替えを出した")
-        XCTAssertEqual(SpotUploadAuto.title(spotName: "蔵王キツネ村"), L("撮影スポット「蔵王キツネ村」に結ぶ", "Link to “蔵王キツネ村”"))
+        XCTAssertEqual(SpotUploadAuto.title(spotName: "蔵王キツネ村"), L("観光スポット「蔵王キツネ村」に結ぶ", "Link to “蔵王キツネ村”"))
     }
 
     /// 撮影スポットの画面から来て、その `spotId` を送る写真には出さない（帯が受け持つ）
@@ -194,7 +194,7 @@ final class UploadSpotAutoTests: XCTestCase {
         m.spot = UploadSpotTarget(spotId: "sp_takaya", name: "高屋神社", coords: nil)
         m.items = [item(1, location: "高屋神社, 観音寺市"), item(2, location: "観音寺市", title: "高屋神社本宮へ")]
         m.removeSpot()
-        XCTAssertEqual(m.autoSpotRow(for: m.items[0])?.on, false, "外した帯の撮影スポットを入りで出した")
+        XCTAssertEqual(m.autoSpotRow(for: m.items[0])?.on, false, "外した帯の観光スポットを入りで出した")
         XCTAssertEqual(m.autoSpotRow(for: m.items[1])?.on, true, "帯の付いていなかった写真まで切った")
         await m.submit()
         let bodies = saveBodies()
@@ -212,9 +212,9 @@ final class UploadSpotAutoTests: XCTestCase {
         m.setAutoSpot(false, for: m.items[0].id, spotId: "sp_fox")
         m.items[0].location = "高屋神社, 観音寺市"
         XCTAssertEqual(m.autoSpotRow(for: m.items[0]), .init(spotId: "sp_takaya", name: "高屋神社 本宮", on: true),
-                       "見ていない撮影スポットを切りで出した")
+                       "見ていない観光スポットを切りで出した")
         await m.submit()
-        XCTAssertNil(saveBodies().first?["spotAuto"], "本人が見ていない撮影スポットに外した印を書いた")
+        XCTAssertNil(saveBodies().first?["spotAuto"], "本人が見ていない観光スポットに外した印を書いた")
     }
 
     /// 送るときに求め直した候補が画面と違えば、何も書かない。画面の時点では撮影スポットの索引が無く、
@@ -303,7 +303,7 @@ final class UploadSpotAutoTests: XCTestCase {
     func testOffForRules() async {
         XCTAssertEqual(SpotUploadAuto.offFor(.init(off: true, spotId: "a"), candidate: "a"), true)
         XCTAssertEqual(SpotUploadAuto.offFor(.init(off: false, spotId: "a"), candidate: "a"), false)
-        XCTAssertNil(SpotUploadAuto.offFor(.init(off: true, spotId: "a"), candidate: "b"), "別の撮影スポットの候補に外した印を書いた")
+        XCTAssertNil(SpotUploadAuto.offFor(.init(off: true, spotId: "a"), candidate: "b"), "別の観光スポットの候補に外した印を書いた")
         XCTAssertNil(SpotUploadAuto.offFor(nil, candidate: "a"))
         XCTAssertEqual(SpotUploadAuto.offFor(.init(off: true, spotId: nil), candidate: "a"), true)
         XCTAssertNil(SpotUploadAuto.spotAutoToSend(explicitSpotId: "sp_x", candidate: "a", off: true))

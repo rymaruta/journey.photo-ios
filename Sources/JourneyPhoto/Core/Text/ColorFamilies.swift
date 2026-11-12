@@ -29,11 +29,11 @@ enum ColorFamilies {
         /// 括弧の中（モックの「（空・海）」）
         var note: String {
             switch self {
-            case .blue: return L("空・海", "Sky & sea")
-            case .green: return L("森・自然", "Forest & nature")
+            case .blue: return L("空と海", "Sky & sea")
+            case .green: return L("森と自然", "Forest & nature")
             case .orange: return L("夕日", "Sunset")
-            case .pink: return L("桜・花", "Blossom")
-            case .white: return L("雪・冬景色", "Snow & winter")
+            case .pink: return L("桜と花", "Blossom")
+            case .white: return L("雪と冬景色", "Snow & winter")
             }
         }
     }
@@ -42,7 +42,7 @@ enum ColorFamilies {
     /// 括弧の中（「空・海」）だけなので、目で見ている人には写真の色で
     /// 分かっても、読み上げでは何色か分からない
     static func accessibilityLabel(_ family: Family, count: Int) -> String {
-        L("\(family.label)（\(family.note)）・\(count)枚",
+        L("\(family.label)（\(family.note)）\u{2002}\(count)枚",
           "\(family.label) (\(family.note)), " + (count == 1 ? "1 photo" : "\(count) photos"))
     }
 

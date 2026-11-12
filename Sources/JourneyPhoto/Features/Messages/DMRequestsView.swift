@@ -121,7 +121,7 @@ struct DMRequestsView: View {
                             .padding(.horizontal, -JPSpace.gutter)
                     }
                     if requests.isEmpty {
-                        EmptyState(title: L("リクエストはありません", "No requests"),
+                        EmptyState(icon: "person.2", title: L("リクエストはありません", "No requests"),
                                    message: L("承認前のメッセージは、ここに並びます。",
                                               "Messages from people you haven't accepted will show up here."))
                             .padding(.top, JPSpace.emptyTop)
@@ -169,7 +169,7 @@ struct DMRequestsView: View {
                                 .foregroundStyle(WebTheme.text)
                                 .lineLimit(1)
                             Text([request.username.map { "@\($0)" }, DMText.listTime(request.t)]
-                                    .compactMap { $0 }.joined(separator: " · "))
+                                    .compactMap { $0 }.joined(separator: "\u{2002}"))
                                 .font(JPFont.caption)
                                 .foregroundStyle(WebTheme.text3)
                                 .lineLimit(1)
@@ -190,7 +190,7 @@ struct DMRequestsView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(L("その他の操作（ブロック・通報）", "More (block, report)"))
+                .accessibilityLabel(L("その他の操作（ブロック、通報）", "More (block, report)"))
                 .accessibilityIdentifier("dm.request.more")
             }
             Button { route = request.id } label: {

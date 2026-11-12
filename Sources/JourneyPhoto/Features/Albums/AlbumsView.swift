@@ -29,7 +29,8 @@ struct AlbumsView: View {
     var body: some View {
         Group {
             if auth.isResolving {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                // 2026-11-12 判断（第2章）: 回る輪ではなくアルバムの札の形の灰
+                ScrollView { JPLoadingState(kind: .albums).padding(.horizontal, JPSpace.gutter) }
             } else if auth.userId == nil {
                 SignInView(reason: L("アルバムを使うにはログインしてください", "Sign in to use albums"))
             } else {
@@ -143,7 +144,7 @@ struct AlbumsView: View {
             .profileListRow()
         } else if model.albums.isEmpty && joinedOthers.isEmpty && !model.isLoading {
             // 板 v2 Albums（空）: 何が無いか → どうすれば埋まるか → 作る（写真の無い画面の主ボタン＝真鍮）
-            EmptyState(title: L("まだアルバムがありません", "No albums yet"),
+            EmptyState(icon: "rectangle.stack", title: L("まだアルバムがありません", "No albums yet"),
                        message: L("アルバムを作って招待リンクを送ると、仲間の写真がここに集まります",
                                   "Create an album and send the invite link — your companions' photos gather here."),
                        actionTitle: L("アルバムを作る", "New album")) { showCreate = true }
@@ -152,7 +153,8 @@ struct AlbumsView: View {
                 .opacity(model.isCreating ? 0.5 : 1)
                 .profileListRow()
         } else if model.albums.isEmpty && model.isLoading {
-            JPLoadingState(kind: .rows)
+            // 2026-11-12 判断（第2章）: 2本の線ではなくアルバムの札の形（写真 64・2 行の字）
+            JPLoadingState(kind: .albums)
                 .profileListRow()
         }
     }

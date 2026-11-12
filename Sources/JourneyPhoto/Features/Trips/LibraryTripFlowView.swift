@@ -18,12 +18,17 @@ struct LibraryTripFlowView: View {
     let opening: LibraryTrip?
     /// 選んだ写真を整えたもの（読めたぶん・旅の並び）。渡してから閉じる
     let onDone: ([ImagePreparer.Prepared]) -> Void
+    /// 旅が見つからなかったときの「1枚ずつ投稿する」。呼び手に知らせてから閉じる（投稿の画面は閉じきってから
+    /// 呼び手が開く・2026-11-12）。無ければその一手を出さない
+    let onPostSingly: (() -> Void)?
 
     /// - Parameter preloaded: 棚が読んだ写真の要約（`DeviceTripShelfStore.shots`）。渡せばライブラリを読み直さない
     init(opening: LibraryTrip? = nil, preloaded: [LibraryShot]? = nil,
+         onPostSingly: (() -> Void)? = nil,
          onDone: @escaping ([ImagePreparer.Prepared]) -> Void) {
         self.opening = opening
         self.onDone = onDone
+        self.onPostSingly = onPostSingly
         _model = StateObject(wrappedValue: LibraryTripModel(preloaded: preloaded))
     }
 
@@ -31,12 +36,17 @@ struct LibraryTripFlowView: View {
         NavigationStack {
             Group {
                 if PhotoLibrary.canRead(model.status) {
-                    LibraryTripListView(model: model, opening: opening) { photos in
+                    LibraryTripListView(model: model, opening: opening, onDone: { photos in
                         // **渡してから閉じる。** 呼び手は「流れが開いている間だけ受ける」
                         // （`TripImportHandoff.received`）。投稿画面は閉じきってから呼び手が開く
                         onDone(photos)
                         dismiss()
-                    }
+                    }, onPostSingly: onPostSingly.map { post in
+                        {
+                            post()
+                            dismiss()
+                        }
+                    })
                 } else {
                     LibraryTripIntroView(status: model.status,
                                          onAllow: { Task { await model.requestAccess() } },
@@ -208,7 +218,10 @@ final class LibraryTripModel: ObservableObject {
 }
 
 /// 写真へのアクセスの説明（許可がまだ決まっていない・断られたとき）。
-/// **写真の無い画面**なので主ボタンは真鍮の塗りに墨
+/// **写真の無い画面**なので主ボタンは真鍮の塗りに墨。
+///
+/// 2026-11-12 判断（案「投稿まわりのデザイン」04）: 上に真鍮の眉「端末の写真から」、説明の3点は 15 の text-2。
+/// 断られたときは、何が起きているかを危険の色の一言（13・丸に！）で言う（灰の注記にしない）
 struct LibraryTripIntroView: View {
 
     @Environment(\.openURL) private var openURL
@@ -221,7 +234,10 @@ struct LibraryTripIntroView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 18) {
+                Text(L("端末の写真から", "From your photos"))
+                    .jpEyebrow()
+                    .foregroundStyle(WebTheme.accent)
                 Text(L("撮りためた旅を、まとめて残す", "Keep the trips you've shot, all at once"))
                     .font(JPFont.screenTitle)
                     .foregroundStyle(WebTheme.text)
@@ -239,11 +255,17 @@ struct LibraryTripIntroView: View {
                             "It works even if you allow only some photos."))
                 }
                 if refused {
-                    Text(L("写真へのアクセスが許可されていません。設定アプリで「写真」を許可してください。",
-                           "Photo access is off. Allow Photos in the Settings app."))
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.muted2)
-                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(alignment: .firstTextBaseline, spacing: JPSpace.xs) {
+                        Image(systemName: "exclamationmark.circle")
+                            .accessibilityHidden(true)
+                        Text(L("写真へのアクセスが許可されていません。設定アプリの「写真」で許可できます。",
+                               "Photo access is off. You can allow it under Photos in the Settings app."))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.danger)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("libraryTrips.refused")
                 }
             }
             .padding(.horizontal, 20)
@@ -265,8 +287,8 @@ struct LibraryTripIntroView: View {
                 .buttonStyle(.plain)
                 Button(action: onLater) {
                     Text(L("あとで", "Not now"))
-                        .font(.callout)
-                        .foregroundStyle(WebTheme.muted2)
+                        .font(JPFont.body)
+                        .foregroundStyle(WebTheme.text2)
                         .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
                         .contentShape(Rectangle())
                 }
@@ -288,8 +310,8 @@ struct LibraryTripIntroView: View {
                 .frame(width: 24)
                 .accessibilityHidden(true)
             Text(text)
-                .font(.callout)
-                .foregroundStyle(WebTheme.muted)
+                .font(JPFont.body)
+                .foregroundStyle(WebTheme.text2)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

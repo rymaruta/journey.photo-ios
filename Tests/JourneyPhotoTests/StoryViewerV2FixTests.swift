@@ -204,7 +204,7 @@ final class StoryViewerV2FixTests: XCTestCase {
         XCTAssertEqual(StoryPlayback.progressLabel(count: 4, index: 1, paused: false, inHighlight: false),
                        L("4本中2本目", "2 of 4"))
         XCTAssertEqual(StoryPlayback.progressLabel(count: 4, index: 1, paused: true, inHighlight: false),
-                       L("4本中2本目・止まっています", "2 of 4, paused"))
+                       L("4本中2本目、止まっています", "2 of 4, paused"))
         XCTAssertEqual(StoryPlayback.progressLabel(count: 5, index: 0, paused: false, inHighlight: true),
                        L("5件中1件目", "1 of 5"))
         let bar = member("private func progressBar(for story: Story)", in: try viewer())

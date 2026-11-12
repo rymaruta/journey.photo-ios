@@ -137,7 +137,7 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
         XCTAssertFalse(loading.contains("ProgressView"))
         let empty = slice(gallery, from: "private func feedEmptyState(_ page: HomeFeed) -> some View",
                           to: "private func emptyTitle(_ page: HomeFeed)")
-        XCTAssertTrue(empty.contains("ErrorBanner(message: emptyMessage(page), isBusy: isRefreshing)"),
+        XCTAssertTrue(empty.contains("ErrorBanner(title: L(\"フォロー中の人を読み込めませんでした\""),
                       "フォロー中を読めなかった回が失敗の形でない")
         XCTAssertTrue(empty.contains("EmptyState(title: emptyTitle(page), message: emptyMessage(page),"))
         XCTAssertTrue(empty.contains("actionIdentifier: \"home.emptyAction\""), "UI テスト（10c）の道しるべが無い")
@@ -150,8 +150,8 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
 
     /// 上の札: 写真つきの横長カード（左に写真・薄めない）・眉は真鍮＋線・題は明朝 18・札の面と縁
     func testHomeTopCardIsPhotoCard() throws {
-        let view = try source("Features/Gallery/HomeTopCardView.swift")
-        let card = slice(view, from: "private func card(eyebrow: String", to: "private static func spotDetail")
+        // 札の面は 2026-11-12 に `TopCardFace` へ切り出した（探すの今日の一問も同じ面）
+        let card = try source("Features/Gallery/TopCardFace.swift")
         assertInOrder(["cardPhoto(backdrop: backdrop, backdropURL: backdropURL)",
                        "JPEyebrowLine(eyebrow, spoken: eyebrowLabel)",
                        ".font(JPFont.rowTitle)",
@@ -199,11 +199,17 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
     func testSiteMenuIsV2() throws {
         let menu = try source("Features/Common/SiteMenuView.swift")
         let view = slice(menu, from: "struct SiteMenuView", to: "struct SiteMenuRow")
-        XCTAssertEqual(view.components(separatedBy: "JPEyebrowLine(").count - 1, 2, "節の眉が2つでない")
+        // 2026-11-12（案 第10章）: 旅の準備・旅の楽しみ・ほか の3つ
+        XCTAssertEqual(view.components(separatedBy: "JPEyebrowLine(").count - 1, 3, "節の眉が3つでない")
         XCTAssertFalse(view.contains("JPSectionTitle"), "v1 の灰の小さい見出しが残っている")
         XCTAssertFalse(view.contains("JPCard"), "行を札で囲む v1 の形が残っている")
-        for id in ["menu.map", "menu.saved", "menu.tripPlans", "menu.logout"] {
+        for id in ["menu.tripPlans", "menu.albums", "menu.pass", "menu.trunk", "menu.camper", "menu.favorites",
+                   "menu.settings", "menu.logout"] {
             XCTAssertTrue(view.contains("\"\(id)\""), "\(id) の道しるべを落とした")
+        }
+        // タブと重なる行（撮影地マップ・マイページ・保存）は 2026-11-12 に外した
+        for id in ["menu.map", "menu.saved"] {
+            XCTAssertFalse(view.contains("\"\(id)\""), "\(id) がタブと重なったまま")
         }
         let footer = slice(view, from: "private var footer: some View", to: "private static var version")
         assertInOrder(["LegalConsent.termsURL", "LegalConsent.privacyURL", ".foregroundStyle(WebTheme.accent)"],
@@ -213,9 +219,9 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
                        ".font(JPFont.rowTitle)", ".font(JPFont.caption)", ".foregroundStyle(WebTheme.text3)"],
                       in: row, "「見る」の行（印の札 → 明朝の題 → 説明）")
         XCTAssertTrue(row.contains(".frame(minHeight: Self.height)"))
-        // 「いいね＝作者に届く／保存＝自分だけ」の違いを説明の一行で読ませる（板の付箋）
+        // 「いいね＝作者に届く」を説明の一行で読ませる（板の付箋）。保存（自分だけ）の行は 2026-11-12 に ≡ から外した
+        // （マイページの保存のタブと同じ所）
         XCTAssertTrue(view.contains("作者に届きます"))
-        XCTAssertTrue(view.contains("自分だけ"))
     }
 
     // MARK: - 探す
@@ -300,10 +306,11 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
         XCTAssertTrue(list.contains("ErrorBanner(message: message, isBusy: model.isLoading)"),
                       "読めなかった回が共通の失敗の形でない")
         XCTAssertFalse(list.contains("WebTheme.danger"), "読めなかった回を危険の赤で出している")
-        XCTAssertTrue(list.contains("JPLoadingState(kind: .rows)"), "読み込み中が骨格でない")
+        // 2026-11-12（第2章）: お知らせの行と同じ形の骨格
+        XCTAssertTrue(list.contains("JPLoadingState(kind: .personRows(trailing: .thumb))"), "読み込み中が骨格でない")
         XCTAssertTrue(list.contains(".listStyle(.plain)"))
         let empty = slice(notes, from: "private var emptyState: some View", to: "private var list: some View")
-        XCTAssertTrue(empty.contains("EmptyState(title:"), "空の状態が共通の部品でない")
+        XCTAssertTrue(empty.contains("EmptyState(icon: \"bell\", title:"), "空の状態が共通の部品でない")
         XCTAssertTrue(notes.contains(".accessibilityIdentifier(\"notifications.settings\")"))
         XCTAssertTrue(notes.contains(".accessibilityIdentifier(\"notifications.pushBanner\")"))
     }

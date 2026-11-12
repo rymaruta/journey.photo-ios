@@ -350,7 +350,7 @@ final class ProfileCoverPickTests: XCTestCase {
 
     func testRewardTexts() async {
         let both = ProfileReward.Grant(kinds: [.avatar, .cover], added: 6, coins: 8, existing: true)
-        XCTAssertEqual(ProfileRewardText.breakdown(both), L("アイコン +3 · カバー +3", "Avatar +3 · Cover +3"))
+        XCTAssertEqual(ProfileRewardText.breakdown(both), L("アイコン +3\u{2002}カバー +3", "Avatar +3 · Cover +3"))
         XCTAssertNil(ProfileRewardText.breakdown(.init(kinds: [.avatar], added: 3, coins: 3)))
         XCTAssertNil(ProfileRewardText.cappedNote(.init(kinds: [.cover], added: 3, coins: 99)))
         XCTAssertNotNil(ProfileRewardText.cappedNote(.init(kinds: [.cover], added: 1, coins: 99)), "上限に当たった回の一言が無い")

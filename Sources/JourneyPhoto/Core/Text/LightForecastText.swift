@@ -91,7 +91,7 @@ enum LightForecastText {
 
     /// 札の右下: 「朝焼け 見込み高」。**低いときは「見込み低」だけ**（板の4枚目）
     static func kindLine(_ moment: Moment, _ chance: LightForecast.Chance) -> String {
-        chance == .low ? chanceWord(.low) : L("\(moment.word) \(chanceWord(chance))", "\(moment.word) · \(chanceWord(chance))")
+        chance == .low ? chanceWord(.low) : L("\(moment.word) \(chanceWord(chance))", "\(moment.word)\u{2002}\(chanceWord(chance))")
     }
 
     /// "05:42" → "5:42"（板の書き方・サーバーの知らせの文面と同じ）
@@ -271,7 +271,7 @@ enum LightForecastText {
     static func whenLine(_ pick: Pick, today: String) -> String {
         var event = pick.moment.eventWord
         if let clock = pick.moment.clock(in: pick.day)?.clock { event += " " + shortClock(clock) }
-        return "\(dayWord(pick.day.date, today: today)) · \(event)"
+        return "\(dayWord(pick.day.date, today: today))\u{2002}\(event)"
     }
 
     /// 一覧の札（並べ方と真鍮の縁は上の注記）
@@ -316,7 +316,7 @@ enum LightForecastText {
                 guard clock != nil || outlook != nil else { return nil }
                 var event = moment.eventWord
                 if let clock { event += " " + shortClock(clock.clock) }
-                let text = outlook.map { "\(moment.word) \(chanceWord($0.chance)) · \(weatherWord($0.weather))" }
+                let text = outlook.map { "\(moment.word) \(chanceWord($0.chance))\u{2002}\(weatherWord($0.weather))" }
                     ?? "\(moment.word) " + L("予報なし", "no forecast")
                 return DayLine.Item(event: event, outlook: text, chance: outlook?.chance)
             }
@@ -364,22 +364,22 @@ enum LightForecastText {
     }
 
     /// 空のときの一手（地図の撮影スポットへ。そこで「行きたい」を押すと、ここに光が並ぶ）
-    static var findSpotsAction: String { L("撮影スポットを探す", "Find photo spots") }
+    static var findSpotsAction: String { L("観光スポットを探す", "Find photo spots") }
 
     static func emptyTitle(_ empty: Empty) -> String {
         switch empty {
         case .noWishes: return L("行きたい場所がまだありません", "No places on your wishlist yet")
-        case .noSpots: return L("光を出せる撮影スポットがありません", "No photo spots to forecast")
+        case .noSpots: return L("光を出せる観光スポットがありません", "No photo spots to forecast")
         }
     }
 
     static func emptyBody(_ empty: Empty) -> String {
         switch empty {
         case .noWishes:
-            return L("撮影スポットの画面で「行きたい」を押すと、ここに今週の光と天気が並びます。",
+            return L("観光スポットの画面で「行きたい」を押すと、ここに今週の光と天気が並びます。",
                      "Tap \u{201C}Want to go\u{201D} on a photo spot, and this week\u{2019}s light and weather will appear here.")
         case .noSpots:
-            return L("地名で入れた「行きたい」は決まった位置が無いので、光の時刻を出せません。撮影スポットの画面で「行きたい」を押してください。",
+            return L("地名で入れた「行きたい」は決まった位置が無いので、光の時刻を出せません。観光スポットの画面で「行きたい」を押してください。",
                      "Places saved by name have no fixed location, so sun times can\u{2019}t be worked out. Tap \u{201C}Want to go\u{201D} on a photo spot.")
         }
     }
@@ -488,7 +488,7 @@ enum LightForecastText {
                 return .init(key: SavedSpotKey.official(spot.slug), slug: spot.slug, name: spot.name,
                              nameEn: spot.nameEn, timeZone: "Asia/Tokyo", forecast: true, days: days)
             }
-            return .init(key: "SPOT-sample-\(n)", slug: "sample-\(n)", name: L("撮影スポット \(n)", "Photo spot \(n)"),
+            return .init(key: "SPOT-sample-\(n)", slug: "sample-\(n)", name: L("観光スポット \(n)", "Photo spot \(n)"),
                          timeZone: "Asia/Tokyo", forecast: true, days: days)
         }
         return LightForecast(places: [

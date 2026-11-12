@@ -139,9 +139,9 @@ final class RegionListTests: XCTestCase {
         let odd = try spot("odd", prefecture: "不明", lat: 27.09, lng: 142.19)
         let withSpot = RegionList.sections(photos: [], spots: [odd], from: nil)
         XCTAssertEqual(withSpot.map(\.key), [.unknown])
-        XCTAssertEqual(withSpot[0].title, L("県・国に分けられないもの", "Not sorted by prefecture or country"))
+        XCTAssertEqual(withSpot[0].title, L("県や国に分けられないもの", "Not sorted by prefecture or country"))
         let photoOnly = RegionList.sections(photos: [try photo("p")], spots: [], from: nil)
-        XCTAssertEqual(photoOnly[0].title, L("県・国に分けられない写真", "Photos not sorted by prefecture or country"))
+        XCTAssertEqual(photoOnly[0].title, L("県や国に分けられない写真", "Photos not sorted by prefecture or country"))
     }
 
     /// 2026-10-07: 撮影地に「福岡」「土谷棚田」と書いてある写真（県の正式名も座標も無い）が
@@ -154,7 +154,7 @@ final class RegionListTests: XCTestCase {
         XCTAssertEqual(sections[0].photos.map(\.id), ["f", "t"])
         XCTAssertFalse(sections[0].title.contains("場所が分からない"), sections[0].title)
         XCTAssertFalse(sections[0].title.contains("without a place"), sections[0].title)
-        XCTAssertEqual(sections[0].title, L("県・国に分けられない写真", "Photos not sorted by prefecture or country"))
+        XCTAssertEqual(sections[0].title, L("県や国に分けられない写真", "Photos not sorted by prefecture or country"))
     }
 
     // MARK: - 並び
@@ -217,7 +217,7 @@ final class RegionListTests: XCTestCase {
         let byCategory = RegionList.filter(photos: photos, spots: try spots(), query: "", category: "city")
         XCTAssertEqual(byCategory.photos.map(\.id), ["b", "c"])
         // 2026-10-08: カテゴリで絞っている間は撮影スポットを出さない（地図のピン・Web の `filterMapSpots` と同じ）
-        XCTAssertEqual(byCategory.spots, [], "カテゴリで絞っている間に撮影スポットが残っている")
+        XCTAssertEqual(byCategory.spots, [], "カテゴリで絞っている間に観光スポットが残っている")
         let both = RegionList.filter(photos: photos, spots: try spots(), query: "京都", category: "city")
         XCTAssertEqual(both.photos.map(\.id), ["b"])
         XCTAssertEqual(both.spots, [], "語がスポットに当たっても、カテゴリの間は出さない")
@@ -232,7 +232,7 @@ final class RegionListTests: XCTestCase {
         ]
         let sections = RegionList.sections(photos: photos, spots: try spots(), category: "city", from: tokyo)
         XCTAssertEqual(sections.map(\.key), [.prefecture("京都府")])
-        XCTAssertTrue(sections.allSatisfy { $0.spots.isEmpty }, "カテゴリで絞っている間に撮影スポットの行がある")
+        XCTAssertTrue(sections.allSatisfy { $0.spots.isEmpty }, "カテゴリで絞っている間に観光スポットの行がある")
         XCTAssertEqual(RegionList.countLabel(sections[0]), L("写真 1枚", "1 photo"))
         // カテゴリを外せば戻る
         let all = RegionList.sections(photos: photos, spots: try spots(), from: tokyo)
@@ -268,7 +268,7 @@ final class RegionListTests: XCTestCase {
 
     func testCountLabel() throws {
         let s = RegionList.sections(photos: [try photo("p", location: "東京都")], spots: try spots(), from: tokyo)
-        XCTAssertEqual(RegionList.countLabel(s[0]), L("2件 · 写真 1枚", "2 spots · 1 photo"))
+        XCTAssertEqual(RegionList.countLabel(s[0]), L("2件\u{2002}写真 1枚", "2 spots · 1 photo"))
         XCTAssertEqual(RegionList.countLabel(s[1]), L("1件", "1 spot"))
     }
 

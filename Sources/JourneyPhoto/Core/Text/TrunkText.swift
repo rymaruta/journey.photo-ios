@@ -56,7 +56,7 @@ enum TrunkText {
     }
 
     static var rerollLead: String {
-        L("土地と季節はそのまま、図柄だけを作り直します。形・色・絵が変わります。",
+        L("土地と季節はそのまま、図柄だけを作り直します。形、色、絵が変わります。",
           "The place and season stay; only the design is redone. The shape, colors and picture change.")
     }
 
@@ -81,13 +81,13 @@ enum TrunkText {
 
     /// 押す前の注記（モック RerollStart）
     static var rerollStartNote: String {
-        L("押すと1回使い、候補が3つ出ます。開いただけでは回数は減りません。毎月3回・繰り越しなし。",
+        L("押すと1回使い、候補が3つ出ます。開いただけでは回数は減りません。毎月3回、繰り越しなし。",
           "Tapping uses one redo and shows three designs. Just opening this doesn\u{2019}t use one. 3 a month, no carry-over.")
     }
 
     /// 「作り直す · 今月あと 2 回」
     static func rerollStartTitle(left: Int) -> String {
-        L("作り直す · 今月あと \(max(0, left)) 回", "Redo · \(max(0, left)) left this month")
+        L("作り直す\u{2002}今月あと \(max(0, left)) 回", "Redo\u{2002}\(max(0, left)) left this month")
     }
 
     /// 作り直しの断り（サーバーの `code`）を画面の言葉に
@@ -159,56 +159,56 @@ enum TrunkText {
         switch model {
         case .leather:
             return ModelInfo(name: L("革の旅行鞄", "Leather case"),
-                             material: L("牛革 · 縫い目の縁 · 真鍮の金具", "Cowhide · stitched edges · brass fittings"),
+                             material: L("牛革、縫い目の縁、真鍮の金具", "Cowhide, stitched edges, brass fittings"),
                              aging: L("革に艶が出て飴色へ", "The leather gains a shine and turns amber"),
                              concept: nil, hardware: nil, only: nil)
         case .canvas:
             return ModelInfo(name: L("帆布の鞄", "Canvas bag"),
-                             material: L("縞の帆布 · 厚革の縁と角", "Striped canvas · thick leather edges and corners"),
+                             material: L("縞の帆布、厚革の縁と角", "Striped canvas, thick leather edges and corners"),
                              aging: L("布が日に焼け、しみが増える", "The cloth sun-fades and gathers stains"),
                              concept: nil, hardware: nil, only: nil)
         case .aluminum:
             return ModelInfo(name: L("アルミのケース", "Aluminum case"),
-                             material: L("波板のアルミ · 打ち出しの角", "Ribbed aluminum · pressed corners"),
+                             material: L("波板のアルミ、打ち出しの角", "Ribbed aluminum, pressed corners"),
                              aging: L("細かな擦り傷が光る", "Fine scratches catch the light"),
                              concept: nil, hardware: nil, only: nil)
         case .steamer:
             return ModelInfo(name: L("船旅の衣装箱", "Steamer trunk"),
-                             material: L("緑の帆布張り · 木の桟 · 真鍮の鋲", "Green canvas · wooden slats · brass studs"),
+                             material: L("緑の帆布張り、木の桟、真鍮の鋲", "Green canvas, wooden slats, brass studs"),
                              aging: L("木の桟が明るく褪せる", "The wooden slats fade lighter"),
                              concept: nil, hardware: nil, only: nil)
         case .urushi:
             return ModelInfo(name: L("漆の旅箱", "Lacquer travel box"),
-                             material: L("木地 · 黒漆に朱の下塗り", "Wood · black lacquer over a vermilion base"),
+                             material: L("木地、黒漆に朱の下塗り", "Wood, black lacquer over a vermilion base"),
                              aging: L("使うほど黒が透けて、下の朱がほんのり出てくる",
                                       "With use the black thins and the vermilion beneath shows through"),
                              concept: L("木地に漆を何度も塗り重ね、金で波を描いた旅の箱。紐は正絹の組紐。",
                                         "A travel box of many lacquer coats with golden waves. Tied with braided silk."),
-                             hardware: L("金の角金具（彫り）· 組紐の留め", "Engraved gold corners · braided-cord ties"),
+                             hardware: L("金の角金具（彫り）、組紐の留め", "Engraved gold corners, braided-cord ties"),
                              only: L("金蒔絵の波と家紋のような丸紋", "Maki-e waves and a crest-like roundel"))
         case .kori:
             return ModelInfo(name: L("柳行李", "Willow kori"),
-                             material: L("柳の編み · 籐の縁", "Woven willow · rattan rim"),
+                             material: L("柳の編み、籐の縁", "Woven willow, rattan rim"),
                              aging: L("編み目が飴色に焼けて、縄がほつれる", "The weave tans to amber and the rope frays"),
                              concept: L("柳の枝を編んだ、昔の旅の行李。軽くて、編み目に旅の日が染みていく。",
                                         "An old woven-willow travel basket. Light, and every trip soaks into the weave."),
-                             hardware: L("革の角当て · 麻の縄", "Leather corner guards · hemp rope"),
+                             hardware: L("革の角当て、麻の縄", "Leather corner guards, hemp rope"),
                              only: L("縄の結び目が旅の数だけ増える", "A knot in the rope for every trip"))
         case .sleeper:
             return ModelInfo(name: L("寝台列車の鞄", "Sleeper-train case"),
-                             material: L("牛革（ボルドー）· 縫い目の縁", "Bordeaux cowhide · stitched edges"),
+                             material: L("牛革（ボルドー）、縫い目の縁", "Bordeaux cowhide, stitched edges"),
                              aging: L("赤が深まり、名札の文字が擦れて光る", "The red deepens and the name plate wears to a shine"),
                              concept: L("長い夜行列車の旅のための、深い赤の革鞄。真鍮の名札に持ち主の名前を刻む。",
                                         "A deep-red leather case for long night trains, with your name on a brass plate."),
-                             hardware: L("真鍮の上下の帯 · 名札 · 錠前", "Brass bands · name plate · lock"),
+                             hardware: L("真鍮の上下の帯、名札、錠前", "Brass bands, name plate, lock"),
                              only: L("持ち主の名前を刻んだ真鍮の名札", "A brass plate engraved with your name"))
         case .clipper:
             return ModelInfo(name: L("飛行艇のアルミ", "Flying-boat aluminum"),
-                             material: L("磨いたアルミ · 鋲留めの継ぎ目", "Polished aluminum · riveted seams"),
+                             material: L("磨いたアルミ、鋲留めの継ぎ目", "Polished aluminum, riveted seams"),
                              aging: L("擦り傷が増えて、光り方が柔らかくなる", "Scratches gather and the shine softens"),
                              concept: L("海を渡った飛行艇の時代の、磨いたアルミの鞄。鋲の列と継ぎ目まで機体と同じ作り。",
                                         "A polished aluminum case from the flying-boat era, riveted like the airframe."),
-                             hardware: L("クロームの角 · 名札 · 革の持ち手", "Chrome corners · name plate · leather handle"),
+                             hardware: L("クロームの角、名札、革の持ち手", "Chrome corners, name plate, leather handle"),
                              only: L("飛んだ区間を刻める機体の名札", "An airframe plate for the routes you flew"))
         case .captain:
             return ModelInfo(name: L("船長の箱", "Captain\u{2019}s chest"),
@@ -216,15 +216,15 @@ enum TrunkText {
                              aging: L("板が明るく褪せ、真鍮が青くくすむ", "The planks bleach and the brass turns verdigris"),
                              concept: L("チークの板を真鍮の帯で締めた、船乗りの道具箱。ふたに羅針盤を嵌めてある。",
                                         "A sailor\u{2019}s chest of teak bound in brass, with a compass set in the lid."),
-                             hardware: L("真鍮の帯と大きな角 · 鋲", "Brass bands, large corners · studs"),
+                             hardware: L("真鍮の帯と大きな角、鋲", "Brass bands, large corners, studs"),
                              only: L("ふたの羅針盤（行きたい場所の方角を指す）", "A compass in the lid (points to your saved places)"))
         case .starchart:
             return ModelInfo(name: L("星図の鞄", "Star-chart case"),
-                             material: L("牛革（紺）· 金の押し線", "Navy cowhide · gold tooling"),
+                             material: L("牛革（紺）、金の押し線", "Navy cowhide, gold tooling"),
                              aging: L("旅の場所が増えるたびに、星と線が増える", "More stars and lines with every new place"),
                              concept: L("紺の革に金の押し線で星座を描いた鞄。星は、自分が写真を撮った場所の並び。",
                                         "Navy leather tooled in gold with a constellation made of the places you photographed."),
-                             hardware: L("真鍮の角 · 金の尾錠", "Brass corners · gold buckles"),
+                             hardware: L("真鍮の角、金の尾錠", "Brass corners, gold buckles"),
                              only: L("自分の撮影地から描かれる星座", "A constellation drawn from your photo spots"))
         }
     }
@@ -248,7 +248,7 @@ enum TrunkText {
     /// 眉ラベル（モック Main の「MY TRUNK · 革の旅行鞄」）。
     /// **人のトランクでは「TRUNK · 型」**（2026-10-21・run 609 の 101c: 人のトランクの中なのに「MY TRUNK」と出ていた）
     static func eyebrow(_ model: TrunkModel, theirs: Bool = false) -> String {
-        "\(theirs ? "TRUNK" : "MY TRUNK") · \(info(model).name)"
+        "\(theirs ? "TRUNK" : "MY TRUNK")\u{2002}\(info(model).name)"
     }
 
     /// トランクの読み上げ（モック Trunk の `ariaLabel`）。付けている部品があれば名前を添える
@@ -274,7 +274,7 @@ enum TrunkText {
 
     /// 硬貨だけが届いた一言（ラベルは受け取らない設定・2026-10-17 次の版）
     static func coinNotice(_ n: Int) -> String {
-        L("硬貨 +\(n) · カプセルの機械で部品と換えられます", "+\(n) coin · Use it at the capsule machine for a trunk part")
+        L("硬貨 +\(n)、カプセルの機械で部品と換えられます", "+\(n) coin, use it at the capsule machine for a trunk part")
     }
 
     /// ラベルが届かなかった一言に添える硬貨（手持ちがいっぱいでも硬貨は届く）

@@ -10,6 +10,10 @@ import SwiftUI
 /// 並びは板どおり**先頭を大きく1枚、その下は2列**（`PhotoGrid`）。
 /// 板の注記「この端末に覚えています」は**書かない**——保存はサーバーが本体で、
 /// ほかの端末にも出る（`SaveService`）。事実と違う文を置かない。
+///
+/// ⚠️ **2026-11-12 から、この画面を開く入口は無い**（デザインの案 第10章: ≡ の「保存した写真」は、マイページの保存のタブと
+/// 同じ所なので外した）。保存した写真はマイページの保存のタブ（`MyPageView`）で見る。そのタブが使う文
+/// （`emptyMessage`・`unresolvedMessage`）はここに残る。画面ごと消すのは、文の置き場を移すときに一緒に行う
 struct SavedPhotosView: View {
 
     @EnvironmentObject private var environment: AppEnvironment

@@ -36,7 +36,7 @@ final class HomeTileTextTests: XCTestCase {
     }
 
     func testBylineAddsAgoOnlyWhenGiven() {
-        XCTAssertEqual(HomeTileText.byline(author: "旅人", ago: "2日前"), "旅人 · 2日前")
+        XCTAssertEqual(HomeTileText.byline(author: "旅人", ago: "2日前"), "旅人\u{2002}2日前")
         XCTAssertEqual(HomeTileText.byline(author: "旅人", ago: nil), "旅人")
         XCTAssertEqual(HomeTileText.byline(author: "旅人", ago: ""), "旅人")
     }

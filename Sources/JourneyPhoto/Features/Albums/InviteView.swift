@@ -58,7 +58,12 @@ struct InviteView: View {
                 // v2 Components 06: 失敗は共通の並び（何が起きたか → どうなっているか → もう一度）。
                 // 「もう一度」は押し直せば直りうるときだけ（失効した招待には出さない）
                 VStack(spacing: JPSpace.xs) {
-                    ErrorBanner(message: message ?? L("この招待リンクは使えません", "This invite link isn't valid"),
+                    // 2026-11-12（第2章）: 押し直せば直りうる回は「読み込めませんでした」、そうでなければ「使えません」
+                    ErrorBanner(title: canRetry ? L("招待を読み込めませんでした", "Couldn't load the invite")
+                                                : L("この招待リンクは使えません", "This invite link isn't valid"),
+                                message: message ?? (canRetry ? ErrorBanner.defaultMessage
+                                                     : L("期限が切れたか、取り消された招待です",
+                                                         "The invite has expired or was withdrawn.")),
                                 retry: canRetry ? { Task { await load() } } : nil)
                     if joined.entries.contains(where: { $0.token == token }) {
                         // **言い切らない。** 招待の取り消しと、アルバムそのものの削除は同じ 410 で
@@ -120,7 +125,7 @@ struct InviteView: View {
             VStack(alignment: .leading, spacing: 0) {
                 mosaic(photos)
                 VStack(alignment: .leading, spacing: JPSpace.xs) {
-                    Text(L("SHARED ALBUM · 招待されています", "SHARED ALBUM · YOU'RE INVITED"))
+                    Text(L("SHARED ALBUM\u{2002}招待されています", "SHARED ALBUM\u{2002}YOU'RE INVITED"))
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                         .accessibilityHidden(true)
@@ -131,7 +136,7 @@ struct InviteView: View {
                         .accessibilityAddTraits(.isHeader)
                     // 英語は1人なら単数（「1 members」にしない）
                     Text(L("\(preview.album.members) 人", preview.album.members == 1 ? "1 member" : "\(preview.album.members) members")
-                         + " · " + L("\(photos.count)枚", photos.count == 1 ? "1 photo" : "\(photos.count) photos"))
+                         + "\u{2002}" + L("\(photos.count)枚", photos.count == 1 ? "1 photo" : "\(photos.count) photos"))
                         .font(JPFont.number(JPTypeScale.footnote, weight: .regular, relativeTo: .footnote))
                         .foregroundStyle(WebTheme.text2)
                 }

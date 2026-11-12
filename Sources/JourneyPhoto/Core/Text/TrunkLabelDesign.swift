@@ -333,7 +333,7 @@ enum TrunkLabelDesign {
         let t1 = latin ?? moment?.en ?? "JOURNEY"
         let t3: String
         if let moment {
-            t3 = "\(moment.en) · \(moment.ja)"
+            t3 = "\(moment.en)\u{2002}\(moment.ja)"
         } else if let country = label.place.country, country != name {
             t3 = country
         } else {
@@ -359,7 +359,7 @@ enum TrunkLabelDesign {
         if label.kind == .milestone, let m = label.milestone { theme = milestoneWords(m).ja }
         else { theme = moment(label)?.ja }
         switch (name.isEmpty, theme) {
-        case (false, let theme?): return "\(name) · \(theme)"
+        case (false, let theme?): return "\(name)\u{2002}\(theme)"
         case (false, nil): return name
         case (true, let theme?): return theme
         case (true, nil): return L("旅の記録", "Travel log")

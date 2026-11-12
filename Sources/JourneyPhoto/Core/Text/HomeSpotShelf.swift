@@ -100,7 +100,7 @@ enum HomeSpotShelf {
         var ids = Set<String>()
         for choice in choices {
             switch choice {
-            case .inSeason(let spot, _, _), .wishlistSeason(let spot, _, _): ids.insert(spot.spotId)
+            case .inSeason(let spot, _, _), .wishlistSeason(let spot, _, _), .swipe(let spot?): ids.insert(spot.spotId)
             default: break
             }
         }
@@ -150,7 +150,7 @@ enum HomeSpotShelf {
         var accessibilityLabel: String {
             switch self {
             case .sample(let sample): return sample.accessibilityLabel
-            case .cover(let image): return L("撮影スポットの写真（撮影: \(image.author)）", "Spot photo by \(image.author)")
+            case .cover(let image): return L("観光スポットの写真（撮影: \(image.author)）", "Spot photo by \(image.author)")
             }
         }
     }
@@ -182,16 +182,16 @@ enum HomeSpotShelf {
     /// 眉ラベル（「THIS SEASON · 秋」）。知らない季節は季節を付けない
     static func eyebrow(_ season: String) -> String {
         guard let label = SpotBodyText.seasonLabel(season) else { return "THIS SEASON" }
-        return "THIS SEASON · \(label)"
+        return "THIS SEASON\u{2002}\(label)"
     }
 
     /// 眉ラベルの読み上げ（英字の眉は日本語で読ませる）
     static func eyebrowSpoken(_ season: String) -> String {
         guard let label = SpotBodyText.seasonLabel(season) else { return L("いまの季節", "This season") }
-        return L("いまの季節・\(label)", "This season · \(label)")
+        return L("いまの季節\u{2002}\(label)", "This season\u{2002}\(label)")
     }
 
-    static var heading: String { L("いまの季節の撮影スポット", "Photo spots for this season") }
+    static var heading: String { L("いまの季節の観光スポット", "Photo spots for this season") }
 
     /// 札の「行きたい」の読み上げ名。札が横に並ぶので、**どの場所の「行きたい」か**を名前で添える
     static func wishSpokenLabel(_ spotName: String) -> String {
@@ -210,7 +210,7 @@ enum HomeSpotShelf {
     /// 「アプリの外の撮影者の作品」と、同じ事実を角の立たない言い方にした。出典の行はそのまま。
     /// 英語は "borrowed" を使わない（撮影者に直接許しをもらったように読めるため・確かめ役の見直し）
     static var note: String {
-        L("写真は各撮影スポットの作例です。アプリの外の撮影者の作品をお借りしていて、出典は写真の下にあります。",
+        L("写真は各観光スポットの作例です。アプリの外の撮影者の作品をお借りしていて、出典は写真の下にあります。",
           "Example photos for each spot by photographers outside the app. Credits below each photo.")
     }
 }

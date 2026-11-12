@@ -31,7 +31,7 @@ final class TripLightTests: XCTestCase {
         XCTAssertEqual(e.sunset, "17:09")
         XCTAssertEqual(e.season, "autumn")
         // 札はほかの札と同じ2行まで（季節の案内は札に出さない＝並びの背を揃えても写真を押し下げない）
-        XCTAssertEqual(TripLight.line(e), "明日 · 銀山温泉 · ゴールデンアワー 16:34–17:26 · 日の入り 17:09")
+        XCTAssertEqual(TripLight.line(e), "明日\u{2002}銀山温泉\u{2002}ゴールデンアワー 16:34–17:26\u{2002}日の入り 17:09")
         XCTAssertTrue(e.seasonGuide!.hasSuffix("…"), "長い案内は切る")
     }
 

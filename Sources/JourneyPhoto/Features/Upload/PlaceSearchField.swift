@@ -81,7 +81,7 @@ struct PlaceSearchField: View {
                     suggestions = []
                 } label: {
                     // 当たりは地名の候補（下）と同じ形: 行の幅いっぱい・縦は外へ 3pt
-                    Label(spot.regionLabel.map { "\(spot.name) · \($0)" } ?? spot.name,
+                    Label(spot.regionLabel.map { "\(spot.name)\u{2002}\($0)" } ?? spot.name,
                           systemImage: "mappin.and.ellipse")
                         .font(.caption)
                         .padding(.vertical, 3)
@@ -90,7 +90,7 @@ struct PlaceSearchField: View {
                         .padding(.vertical, -3)
                 }
                 .buttonStyle(.borderless)
-                .accessibilityLabel(L("撮影スポット \(spot.name)\(spot.regionLabel.map { "、" + $0 } ?? "")",
+                .accessibilityLabel(L("観光スポット \(spot.name)\(spot.regionLabel.map { "、" + $0 } ?? "")",
                                       "Photo spot \(spot.name)\(spot.regionLabel.map { ", " + $0 } ?? "")"))
             }
 

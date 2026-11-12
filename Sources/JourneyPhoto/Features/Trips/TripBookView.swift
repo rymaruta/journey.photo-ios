@@ -35,6 +35,8 @@ struct TripBookView: View {
     /// その画像を作った人。**人が替わったときだけ**共有を文に戻す（表紙が替わっただけなら前の画像のまま・
     /// 同じファイルを上書きするので、作り直しの間に共有のボタンが文に切り替わらない）
     @State private var cardOwner: String?
+    /// 旅をストーリーに（`TravelStorySheet`）
+    @State private var showStory = false
 
     var body: some View {
         ScrollView {
@@ -56,7 +58,17 @@ struct TripBookView: View {
         // （`JPPillStyle.main(onPhoto: true)`）。自分だけの一冊は出さない（`TripBook.canShare`）
         .safeAreaInset(edge: .bottom) {
             if TripBook.canShare(book, isMine: isMine) {
-                shareButton.jpBottomBar()
+                HStack(spacing: JPSpace.xs) {
+                    shareButton
+                    storyButton
+                }
+                .jpBottomBar()
+            }
+        }
+        // 旅をストーリーに（第9章・2026-11-12 判断）。一冊はもう帰ってきた旅なので、搭乗券は「ただいま」から
+        .sheet(isPresented: $showStory) {
+            if let story = storySource {
+                TravelStorySheet(leadURL: story.lead, filmURLs: story.film, facts: story.facts, phase: .home)
             }
         }
         .onAppear {
@@ -107,6 +119,29 @@ struct TripBookView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("trips.share")
         }
+    }
+
+    /// 旅をストーリーに（第9章「旅の一冊 →『ストーリーに』→ 払う → 共有」）。「この一冊を送る」の横に置く
+    /// （章は「この一冊を送る」の中に足す案。押す回数を増やさないよう、同じ帯に並べた・2026-11-12 判断）。
+    /// 載せるのは**全体に公開した写真だけ**（`CollectionScreen.isShareable`）。1枚も無ければ出さない
+    @ViewBuilder
+    private var storyButton: some View {
+        if storySource != nil {
+            Button { showStory = true } label: {
+                Text(L("ストーリーに", "To your story"))
+                    .jpPillButton(.outline, height: JPHeight.primaryButton)
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: 150)
+            .accessibilityIdentifier("trips.story")
+        }
+    }
+
+    /// 先頭は旅の最後の1枚（ただいまの場所）、フィルムの帯は始め・中ほど・終わり（全体に公開した写真だけ・`TravelStory.source`）
+    private var storySource: TravelStory.Source? {
+        let last = book.photos.last(where: CollectionScreen.isShareable)
+        let name = last?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return TravelStory.source(of: book, name: name, distance: distance)
     }
 
     private var shareLabel: some View {
@@ -171,17 +206,17 @@ struct TripBookView: View {
             VStack(alignment: .leading, spacing: 6) {
                 // 眉ラベル。**写真の上なので白**（板は真鍮だが、真鍮は夕日の
                 // 写真の上で読めなくなる・`BrandPalette` の規則）
-                Text(L("TRIP BOOK · 自動でまとまった旅", "TRIP BOOK · Put together for you"))
+                Text(L("TRIP BOOK\u{2002}自動でまとまった旅", "TRIP BOOK\u{2002}Put together for you"))
                     .jpEyebrow()
                     .foregroundStyle(Color.white.opacity(0.88))
                     // 読み上げは「旅の一冊」（「トリップブック」と英語で読ませない）
-                    .accessibilityLabel(L("旅の一冊 · 自動でまとまった旅", "Trip book · Put together for you"))
+                    .accessibilityLabel(L("旅の一冊\u{2002}自動でまとまった旅", "Trip book\u{2002}Put together for you"))
                 // v2: 字の段の Display（32・`JPTypeScale.display` が「旅の一冊の表紙」）。板の絵は 36
                 Text(TripBook.title(of: book))
                     .font(JPFont.photoTitle)
                     .foregroundStyle(WebTheme.foreground)
                     .shadow(color: Color.black.opacity(0.5), radius: 7, y: 2)
-                Text("\(TripBook.dateRange(from: book.start, to: book.end)) · \(TripBook.daysLabel(book.days))")
+                Text("\(TripBook.dateRange(from: book.start, to: book.end))\u{2002}\(TripBook.daysLabel(book.days))")
                     .font(JPFont.mono(13, relativeTo: .footnote))
                     .foregroundStyle(WebTheme.muted)
                 // 撮影日の無い写真だけの旅（投稿した日でまとめた）。写真の上なので白の札
@@ -257,7 +292,7 @@ struct TripBookView: View {
                 // 「ROUTE」の行は図の上に別の行として置く（図の中に重ねると、
                 // 大きな字で上の札とぶつかる）
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("ROUTE · \(TripBook.distanceText(distance))\(distance == nil ? "" : " km")")
+                    Text("ROUTE\u{2002}\(TripBook.distanceText(distance))\(distance == nil ? "" : " km")")
                         .font(JPFont.meta)
                         .tracking(1.5)
                         .foregroundStyle(WebTheme.text3)
@@ -359,7 +394,7 @@ struct TripBookView: View {
     /// 日の見出し（v2 の板 TripBook: 真鍮の眉「DAY 1 · 09.12」と右へ消える線 → 明朝 22 の地名）。
     /// 形は共通の節の見出し（`JPSectionHeading`・2026-10-14 判断）。地名が無い日は眉だけ
     private func dayHeader(_ day: TripBook.Day) -> some View {
-        JPSectionHeading(eyebrow: "DAY \(day.number) · \(TripBook.monthDay(day.date))",
+        JPSectionHeading(eyebrow: "DAY \(day.number)\u{2002}\(TripBook.monthDay(day.date))",
                          spoken: Self.spokenDayHeader(day.number, monthDay: TripBook.monthDay(day.date)),
                          title: day.place.isEmpty ? nil : LocationMatch.display(day.place))
             .padding(.bottom, JPSpace.s)
@@ -469,7 +504,7 @@ struct TripBookView: View {
 
     /// 日の見出しの読み上げ（「1日目 · 09.12」）。眉の英字「DAY」を読ませない
     nonisolated static func spokenDayHeader(_ number: Int, monthDay: String) -> String {
-        "\(spokenDay(number)) · \(monthDay)"
+        "\(spokenDay(number))" + L("、", ", ") + "\(monthDay)"
     }
 
     /// ルート図の読み上げ（「1日目 金沢、2日目 富山」）

@@ -69,7 +69,7 @@ final class CompositionLessonTests: XCTestCase {
         XCTAssertTrue(CompositionLessons.lesson(for: .frameWithin, english: false).what.contains("12%"))
         XCTAssertTrue(CompositionLessons.lesson(for: .tunnel, english: false).what.contains("12%"))
         // 縦持ちの 6×4 は 4 列×6 段（`rawMarks` の grid(columns: 4, rows: 6)）
-        XCTAssertTrue(CompositionLessons.lesson(for: .grid6x4, english: false).what.contains("縦4列・横6段"))
+        XCTAssertTrue(CompositionLessons.lesson(for: .grid6x4, english: false).what.contains("縦4列、横6段"))
     }
 
     /// 2026-10-16（確かめ役の指摘）: 対角線の向きの名前が逆だった。一般的な呼び名は

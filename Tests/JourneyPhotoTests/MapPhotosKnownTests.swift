@@ -87,16 +87,19 @@ final class MapPhotosKnownTests: XCTestCase {
         XCTAssertFalse(model.photosKnown)
     }
 
-    /// 地図の4か所（「スポット」の行・リストの行・札の撮影スポット・リストの撮影スポット）は全部この値を渡す。
+    /// 地図の5か所（「スポット」の行・リストの行・札の撮影スポット・リストの撮影スポット・
+    /// 2026-11-12 の地図の下の「行きたい場所」の行き先）は全部この値を渡す。
     /// 画面ごとに式を書き直したり `true` に固定したりしない
     func testMapPassesModelValueEverywhere() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let text = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Map/PhotoMapView.swift"),
                               encoding: .utf8)
-        let passed = text.components(separatedBy: "photosKnown:").count - 1
-        XCTAssertEqual(passed, 4)
-        XCTAssertEqual(text.components(separatedBy: "photosKnown: model.photosKnown").count - 1, passed,
+        // 地図の本体だけを数える（下の `MapWishlistDestination` は受け取った値を渡すだけ）
+        let mapBody = text.components(separatedBy: "enum MapWishlistLink {").first ?? text
+        let passed = mapBody.components(separatedBy: "photosKnown:").count - 1
+        XCTAssertEqual(passed, 5)
+        XCTAssertEqual(mapBody.components(separatedBy: "photosKnown: model.photosKnown").count - 1, passed,
                        "地図に模型の値でない photosKnown がある")
     }
 }

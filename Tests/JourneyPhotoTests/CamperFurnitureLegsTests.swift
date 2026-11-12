@@ -22,9 +22,9 @@ final class CamperFurnitureLegsTests: XCTestCase {
         XCTAssertEqual(CamperRoomLegs.problems(stool()), [], "まともな椅子を壊れと言う")
         XCTAssertTrue(CamperRoomLegs.problems(stool(gap: 2)).contains { $0.hasPrefix("脚の上にすき間") }, "脚の上が座に届かない（前の机）")
         XCTAssertTrue(CamperRoomLegs.problems(stool(gap: 2)).contains { $0.hasPrefix("浮いた部品") }, "座が浮く")
-        XCTAssertTrue(CamperRoomLegs.problems(stool(spread: 4)).contains { $0.hasPrefix("脚の上に何も無い") || $0.hasPrefix("脚が座・天板の外へ") },
+        XCTAssertTrue(CamperRoomLegs.problems(stool(spread: 4)).contains { $0.hasPrefix("脚の上に何も無い") || $0.hasPrefix("脚が座、天板の外へ") },
                       "脚が座の外（前の丸座の椅子）")
-        XCTAssertTrue(CamperRoomLegs.problems(stool(spread: 1.6)).contains { $0.hasPrefix("脚が座・天板の外へ") }, "脚が座の縁から外へ出る")
+        XCTAssertTrue(CamperRoomLegs.problems(stool(spread: 1.6)).contains { $0.hasPrefix("脚が座、天板の外へ") }, "脚が座の縁から外へ出る")
         XCTAssertTrue(CamperRoomLegs.problems(stool(thin: 0.3)).contains { $0.hasPrefix("細すぎる脚") }, "細すぎて消える脚")
         XCTAssertTrue(CamperRoomLegs.problems(stool(short: 1)).contains { $0.hasPrefix("脚の上にすき間") }, "1 本だけ短い脚")
         // 1 本だけ長くて座を突き抜ける

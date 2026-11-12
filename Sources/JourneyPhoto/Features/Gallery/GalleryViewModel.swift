@@ -672,8 +672,9 @@ final class GalleryViewModel: ObservableObject {
         myPhotos = PostedPhotos.merge(loaded: myPhotos, posted: posted, owner: viewerId)
     }
 
-    /// `myPhotos` が誰のものか（`followingOwner` と同じ考え方）
-    private var myPhotosOwner: String?
+    /// `myPhotos` が誰のものか（`followingOwner` と同じ考え方）。ホームの上の札が「新しい人か」を
+    /// 読めたかで見る（読めるまでは常連の並び・`HomeTopCard.Audience`・2026-11-12）
+    private(set) var myPhotosOwner: String?
     /// 最後に自分の写真を読みに行った人（人の切り替えでも替える）。
     /// これと違う人の答えは遅れて着いたものなので捨てる
     private var myPhotosWanted: String?

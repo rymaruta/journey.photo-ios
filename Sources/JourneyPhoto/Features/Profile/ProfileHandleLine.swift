@@ -17,10 +17,8 @@ struct ProfileHandleLine: View {
                 Text(handle)
                     .lineLimit(1)
                     .layoutPriority(1)
-            }
-            if line.handle != nil && line.home != nil {
-                Text("·")
-                    .layoutPriority(1)
+                    // 名前と居住地は区切りの記号を置かず余白で分ける（2026-11-12 owner・間 8）
+                    .padding(.trailing, line.home != nil ? 4 : 0)
             }
             if let home = line.home {
                 if showsPin {

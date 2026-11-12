@@ -95,9 +95,9 @@ enum SpotLight {
             ? L("\(m)月\(d)日（\(ja)）", "\(en), \(months[m - 1]) \(d)")
             : L("\(y)年\(m)月\(d)日（\(ja)）", "\(en), \(months[m - 1]) \(d), \(y)")
         switch offset {
-        case 0: label += L(" · 今日", " · Today")
-        case 1: label += L(" · 明日", " · Tomorrow")
-        case -1: label += L(" · 昨日", " · Yesterday")
+        case 0: label += L("\u{2002}今日", "\u{2002}Today")
+        case 1: label += L("\u{2002}明日", "\u{2002}Tomorrow")
+        case -1: label += L("\u{2002}昨日", "\u{2002}Yesterday")
         default: break
         }
         return label
@@ -182,7 +182,7 @@ enum SpotLight {
         }
         if let joined = goldenJoined {
             if let s = spanText(joined, in: zone) {
-                morning.append(Row(label: golden, value: s + L("（一日中・太陽が 6° より上がらない）", " (all day · sun stays below 6°)")))
+                morning.append(Row(label: golden, value: s + L("（一日中、太陽が 6° より上がらない）", " (all day, sun stays below 6°)")))
             }
         } else if !polarNight, let s = spanText(times.morningGolden, in: zone) {
             morning.append(Row(label: golden, value: s))
@@ -243,7 +243,7 @@ enum SpotLight {
             ? L("時刻は日本時間。", "Times in Japan Standard Time.")
             : L("時刻は現地時間（\(id)）。", "Times in local time (\(id)).")
         return clock + L(
-            "端末で計算した値です。ゴールデンアワーは太陽の高さが 6° から −4°、ブルーアワーは −4° から −6° の間。方角は北から時計回り。天気や山・建物の影は含みません。",
+            "端末で計算した値です。ゴールデンアワーは太陽の高さが 6° から −4°、ブルーアワーは −4° から −6° の間。方角は北から時計回り。天気や山、建物の影は含みません。",
             " Calculated on this device. Golden hour is when the sun is between 6° and −4°, blue hour between −4° and −6°. Directions are measured clockwise from north. Weather and shadows from terrain or buildings are not included.")
     }
 }

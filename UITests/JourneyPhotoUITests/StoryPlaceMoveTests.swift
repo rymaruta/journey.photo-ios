@@ -119,13 +119,19 @@ final class StoryPlaceMoveTests: XCTestCase {
             let dy: CGFloat = (i % 2 == 0) ? -90 : 90
             let start = target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             let offset = horizontal ? CGVector(dx: dy, dy: 0) : CGVector(dx: 0, dy: dy)
-            start.press(forDuration: 0.1, thenDragTo: start.withOffset(offset))
+            let end = start.withOffset(offset)
+            // 2026-11-12: 空振りの回（run 1124）を数で見るため、運ぶ直前の前面（キーボード・アラート・シート）と
+            // 指の始点・終点の画面座標、札の枠を残す。届き先はアプリの `touch.*`（`StoryTouchProbe`）で見る
+            let front = "kb=\(app.keyboards.count) alerts=\(app.alerts.count) sheets=\(app.sheets.count)"
+            let from = start.screenPoint, to = end.screenPoint
+            let frame = "frame=\(Int(before.minX)),\(Int(before.minY)),\(Int(before.width))x\(Int(before.height))"
+            start.press(forDuration: 0.1, thenDragTo: end)
             Thread.sleep(forTimeInterval: 0.7)
             let after = find().frame
             let delta = abs(after.midY - before.midY) + abs(after.midX - before.midX)
             let didMove = delta > Self.movedThreshold
             if didMove { moved += 1 }
-            log("\(name) #\(i) dragDy=\(Int(dy)) before=\(Int(before.midX)),\(Int(before.midY)) after=\(Int(after.midX)),\(Int(after.midY)) moved=\(didMove) probe=\(probe(app))")
+            log("\(name) #\(i) dragDy=\(Int(dy)) before=\(Int(before.midX)),\(Int(before.midY)) after=\(Int(after.midX)),\(Int(after.midY)) moved=\(didMove) from=\(Int(from.x)),\(Int(from.y)) to=\(Int(to.x)),\(Int(to.y)) \(frame) \(front) probe=\(probe(app))")
         }
         log("\(name) 動いた回=\(moved)/\(Self.trials)")
         if moved < Self.trials { misses.append("\(name) \(moved)/\(Self.trials)") }

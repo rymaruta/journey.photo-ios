@@ -89,18 +89,18 @@ final class TripPlanTests: XCTestCase {
     func testDayHeading() {
         let empty = TripDay()
         XCTAssertEqual(TripPlanText.dayHeading(index: 0, day: empty, start: "2026-12-24", end: "2026-12-25"),
-                       "1 日目・2026年12月24日")
+                       "1 日目\u{2002}2026年12月24日")
         XCTAssertEqual(TripPlanText.dayHeading(index: 1, day: empty, start: "2026-12-31", end: nil),
-                       "2 日目・2027年1月1日", "年をまたいで数えられていない")
+                       "2 日目\u{2002}2027年1月1日", "年をまたいで数えられていない")
         XCTAssertEqual(TripPlanText.dayHeading(index: 2, day: empty, start: "2026-12-24", end: "2026-12-25"),
                        "3 日目", "帰着日を越えた日に日付を付けている")
         XCTAssertEqual(TripPlanText.dayHeading(index: 1, day: empty, start: "2026-12-24", end: "2026-12-25"),
-                       "2 日目・2026年12月25日", "帰着日そのものに日付を付けていない")
+                       "2 日目\u{2002}2026年12月25日", "帰着日そのものに日付を付けていない")
         XCTAssertEqual(TripPlanText.dayHeading(index: 0, day: empty, start: nil, end: nil), "1 日目")
         XCTAssertEqual(TripPlanText.dayHeading(index: 0, day: TripDay(date: "2026-02-31"), start: nil, end: nil),
                        "1 日目", "実在しない日を出している")
         XCTAssertEqual(TripPlanText.dayHeading(index: 0, day: TripDay(date: "2026-11-03"), start: "2026-12-24", end: nil),
-                       "1 日目・2026年11月3日", "その日が持っている日付より数えた日付を優先している")
+                       "1 日目\u{2002}2026年11月3日", "その日が持っている日付より数えた日付を優先している")
     }
 
     /// 実在しない日は日付にしない（2月30日を3月2日に繰り上げない）
@@ -128,7 +128,7 @@ final class TripPlanTests: XCTestCase {
     /// 副文は**聞けたときだけ数**。聞けていなければ説明文
     func testListSubtitle() {
         XCTAssertEqual(TripPlanText.listSubtitle(count: 4), "旅行プラン 4 件")
-        XCTAssertEqual(TripPlanText.listSubtitle(count: nil), "行きたい場所を、いつ・どの順で回るかに並べる。")
+        XCTAssertEqual(TripPlanText.listSubtitle(count: nil), "行きたい場所を、いつ、どの順で回るかに並べる。")
     }
 
     // MARK: - 行きたい場所から選ぶ
@@ -284,7 +284,7 @@ final class TripPlanTests: XCTestCase {
         let created = try await service().create(title: "冬")
         XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "POST")
         XCTAssertEqual(StubProtocol.lastRequest?.url?.path, "/user/trips")
-        XCTAssertEqual(created.map(\.planId), ["4f0c2b1e-8a3d-4c5e-9f10-2b3c4d5e6f70"])
+        XCTAssertEqual(created.plans.map(\.planId), ["4f0c2b1e-8a3d-4c5e-9f10-2b3c4d5e6f70"])
 
         // プランの ID はサーバーが `randomUUID()` で作る（記号を含まない）
         _ = try await service().update(planId: "4f0c2b1e-8a3d-4c5e-9f10-2b3c4d5e6f70", TripPlanService.Patch(endDate: ""))

@@ -637,7 +637,7 @@ enum AuthFailure: Equatable {
 enum AuthMessage {
 
     static let passwordRule =
-        L("パスワードは8文字以上で、英大文字・小文字・数字・記号（!@#$%など）をそれぞれ1文字以上含める必要があります",
+        L("パスワードは8文字以上で、英大文字、小文字、数字、記号（!@#$%など）をそれぞれ1文字以上含める必要があります",
           "Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number and a symbol (!@#$% etc.)")
 
     static func text(for failure: AuthFailure) -> String {

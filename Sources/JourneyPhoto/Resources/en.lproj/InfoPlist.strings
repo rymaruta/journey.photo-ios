@@ -1,6 +1,6 @@
 /* System permission prompts. Shown in the device's language. */
 
-"NSCameraUsageDescription" = "Used to take photos you post, and to shoot with an example photo overlaid.";
+"NSCameraUsageDescription" = "Used to take photos you post, to shoot with an example photo overlaid, and to scan profile QR codes.";
 "NSPhotoLibraryUsageDescription" = "Used to pick photos to post, and to find trips from when and where your photos were taken and line them up in your trip records. Trips are found on this iPhone only; neither photos nor locations are uploaded (only a rough location is sent to Apple Maps to name a trip). Only the photos you choose are posted.";
 "NSPhotoLibraryAddUsageDescription" = "Used to save photos and videos you take back to your library.";
 

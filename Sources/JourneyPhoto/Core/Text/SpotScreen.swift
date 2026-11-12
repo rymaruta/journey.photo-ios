@@ -120,7 +120,7 @@ enum SpotScreen {
     /// （機械が1日で書いた・2026-09-25）なので、`published` になるまで
     /// 小見出しの段階でそう言う（`isDraft`）
     static func eyebrow(review: Bool) -> String {
-        review ? L("下書き・未確認", "DRAFT · UNREVIEWED") : L("撮影スポット", "PHOTO SPOT")
+        review ? L("下書き\u{2002}未確認", "DRAFT\u{2002}UNREVIEWED") : L("観光スポット", "PHOTO SPOT")
     }
 
     /// 下書きの注意文。**下書きでなければ nil**（帯ごと出さない）。
@@ -152,7 +152,7 @@ enum SpotScreen {
                          ? firstPhotoInvite
                          : L("\(photoCount)枚の写真", photoCount == 1 ? "1 photo" : "\(photoCount) photos"))
         }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: "\u{2002}")
     }
 
     /// 写真がまだ0枚の撮影スポットに添える誘い（数の代わり）。地図の一覧の行・スポットの見出しで同じ言葉

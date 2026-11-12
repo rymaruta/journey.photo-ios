@@ -59,7 +59,7 @@ final class SeasonReminderTests: XCTestCase {
         let fire = try XCTUnwrap(plan.fireAt.date)
         XCTAssertEqual(fireCalendar.dateComponents([.year, .month, .day, .hour], from: fire),
                        DateComponents(year: 2026, month: 12, day: 1, hour: 9))
-        XCTAssertEqual(plan.title, "冬の撮影スポット")
+        XCTAssertEqual(plan.title, "冬の観光スポット")
         XCTAssertEqual(plan.body, "行きたい場所の「銀山温泉」ほか1か所に冬の撮影ガイドがあります。")
         XCTAssertFalse(plan.body.contains("見頃"), "見頃とは言わない")
     }

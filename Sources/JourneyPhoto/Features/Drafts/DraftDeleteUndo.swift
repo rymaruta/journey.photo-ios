@@ -70,17 +70,38 @@ struct DraftUndoBar: View {
 
     var body: some View {
         if let ids = deleter.pending {
-            HStack(spacing: 10) {
-                Image(systemName: "checkmark")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(WebTheme.success)
-                    .accessibilityHidden(true)
-                Text(DraftsText.deleted(ids.count))
-                    .font(JPFont.body)
-                    .foregroundStyle(WebTheme.text)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Button { deleter.undo() } label: {
-                    Text(DraftsText.undo)
+            JPUndoBar(text: DraftsText.deleted(ids.count), undoTitle: DraftsText.undo, identifier: identifier) {
+                deleter.undo()
+            }
+        }
+    }
+}
+
+/// 「元に戻す」の札の見た目（下書きの削除・ホームの旅行プランの札の削除で同じもの・2026-11-12 判断で
+/// `DraftUndoBar` の中から外に出した）。成功の印は緑、ボタンは真鍮（黒い札の上）。
+/// `failed` は消せなかった知らせ（危険の色の字と印・ボタンなし）
+struct JPUndoBar: View {
+    let text: String
+    var undoTitle: String?
+    var failed = false
+    var identifier = "drafts.undo"
+    var onUndo: (() -> Void)?
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: failed ? "exclamationmark.circle" : "checkmark")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(failed ? WebTheme.danger : WebTheme.success)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(JPFont.body)
+                .foregroundStyle(failed ? WebTheme.danger : WebTheme.text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: WebTheme.minTapTarget)
+                .accessibilityIdentifier(failed ? identifier : "\(identifier).text")
+            if let undoTitle, let onUndo {
+                Button(action: onUndo) {
+                    Text(undoTitle)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(WebTheme.accent)
                         .padding(.horizontal, 10)
@@ -90,16 +111,16 @@ struct DraftUndoBar: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier(identifier)
             }
-            .padding(.leading, 14)
-            .padding(.trailing, 6)
-            .padding(.vertical, 4)
-            .background(WebTheme.surface6, in: RoundedRectangle(cornerRadius: JPRadius.m))
-            .overlay(RoundedRectangle(cornerRadius: JPRadius.m).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
-            .shadow(color: .black.opacity(0.5), radius: 15, y: 10)
-            .padding(.horizontal, JPSpace.s)
-            .padding(.bottom, JPSpace.l)
-            .accessibilityElement(children: .contain)
         }
+        .padding(.leading, 14)
+        .padding(.trailing, 6)
+        .padding(.vertical, 4)
+        .background(WebTheme.surface6, in: RoundedRectangle(cornerRadius: JPRadius.m))
+        .overlay(RoundedRectangle(cornerRadius: JPRadius.m).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+        .shadow(color: .black.opacity(0.5), radius: 15, y: 10)
+        .padding(.horizontal, JPSpace.s)
+        .padding(.bottom, JPSpace.l)
+        .accessibilityElement(children: .contain)
     }
 }
 

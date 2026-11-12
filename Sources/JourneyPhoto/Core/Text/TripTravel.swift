@@ -178,8 +178,8 @@ enum TripTravel {
 
     /// 行の字（「飛行機などの長い移動・約 18,600km」）。**所要時間は出さない**（推定の数を作らない）
     static func longLine(_ leg: Leg) -> String {
-        L("飛行機などの長い移動・\(roughDistance(leg.kilometers))",
-          "Long trip (flight etc.) · \(roughDistance(leg.kilometers))")
+        L("飛行機などの長い移動\u{2002}\(roughDistance(leg.kilometers))",
+          "Long trip (flight etc.)\u{2002}\(roughDistance(leg.kilometers))")
     }
 
     /// Google フライトの URL（鍵の要らない検索の URL・出発と到着の都市名・日付は分かれば）
@@ -205,7 +205,7 @@ enum TripTravel {
             return L("国をまたぐ移動は、地図のアプリでは経路が出ません。所要時間は出していません（まっすぐの距離の概数だけ）",
                      "Maps apps can't route across borders. Travel time isn't shown (straight-line distance only).")
         }
-        return L("地図のアプリで経路が見つかりませんでした（海を越える・遠い区間など）。飛行機・船の便は Google フライトなどで探せます。所要時間は出していません",
+        return L("地図のアプリで経路が見つかりませんでした（海を越える、遠い区間など）。飛行機、船の便は Google フライトなどで探せます。所要時間は出していません",
                  "Maps couldn't find a route (across the sea or very far). Look for flights or ferries. Travel time isn't shown.")
     }
 
@@ -234,10 +234,10 @@ enum TripTravel {
     static func singlePlaceHint(locatedPlaces: Int, allPlaces: Int? = nil) -> String? {
         guard locatedPlaces == 1 else { return nil }
         if let allPlaces, allPlaces > 1 {
-            return L("地図の場所が分かる所が 2 つ以上になると、間の移動の目安（車・歩き・電車など）が出ます",
+            return L("地図の場所が分かる所が 2 つ以上になると、間の移動の目安（車、歩き、電車など）が出ます",
                      "Travel times appear when two or more places have a map location.")
         }
-        return L("場所が 2 つ以上になると、間の移動の目安（車・歩き・電車など）が出ます",
+        return L("場所が 2 つ以上になると、間の移動の目安（車、歩き、電車など）が出ます",
                  "Add another place to see travel times (car, walking, transit) between them.")
     }
 

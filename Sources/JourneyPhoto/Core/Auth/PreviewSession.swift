@@ -17,6 +17,20 @@ enum PreviewSession {
     /// `-JPPreviewUserId <id>` で渡す。
     static let defaultsKey = "JPPreviewUserId"
 
+    /// 電波が無いことにして画面を描く（Debug のみ・UI テストの絵だけ）。`-JPPreviewOffline YES`。
+    ///
+    /// 2026-11-12 判断（デザインの案 第2章「画面の状態とそろえ」）: 帯（電波なし）の絵を CI で撮るため。
+    /// **通信は止めない**——読めた写真を「前に見た写真」として出し、上に帯が出た形を撮る。Release では必ず false
+    static let offlineKey = "JPPreviewOffline"
+
+    static var forcesOffline: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: offlineKey)
+        #else
+        return false
+        #endif
+    }
+
     /// 鍵を持たずに入っている利用者 ID。入っていなければ `nil`。
     static var userId: String? {
         #if DEBUG
@@ -70,6 +84,24 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで本人の名前を差し替える（Debug のみ）。`-JPPreviewDisplayName <名前>`。
+    ///
+    /// マイページの名前の行（名前・印・点線の丸・QR・編集・2026-11-12 owner 案 A）が、長い名前でも
+    /// 1行に収まるか（名前を「…」で切り、ほかは縮めない）を撮るために、**入っている本人のプロフィールにだけ**
+    /// 重ねる。サーバーには送らない。Release では必ず `nil`
+    static let displayNameKey = "JPPreviewDisplayName"
+
+    static var displayName: String? {
+        #if DEBUG
+        guard userId != nil,
+              let raw = UserDefaults.standard.string(forKey: displayNameKey)?
+                .trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        return raw
+        #else
+        return nil
+        #endif
+    }
+
     /// UI テストで Pro の人の姿にする（Debug のみ）。`-JPPreviewPro YES`。
     ///
     /// 見本の利用者は Pro を買っていないので、名前の横の画面の「PRO 限定」の段が Pro でない人の姿
@@ -116,6 +148,16 @@ enum PreviewSession {
     /// UI テストで、起動直後の動きの記録（`PerfRecorder`）を取り、見えない要素 `perf.probe` に出す（Debug のみ・2026-11-04・札 #435 / #429）。
     /// `-JPPreviewPerfProbe YES`。下のタブを書いた場所と時刻・起動後の `.task` の始めと終わり・メインスレッドの停止・
     /// 主要画面の body の評価回数を、推定でなく実際の数で見るため。Release では必ず false（記録も要素も出ない）
+    /// UI テストの事実取りだけ: ホームの写真の札の「手に取って運ぶ」の身振りを付けない（`-JPPreviewNoLift YES`・Debug のみ・
+    /// 2026-11-12 run 1171 で、ホームを払っても一覧が動かなかった件を、身振りの有り無しで比べるため）
+    static var noLift: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "JPPreviewNoLift")
+        #else
+        return false
+        #endif
+    }
+
     static let perfProbeKey = "JPPreviewPerfProbe"
 
     static var perfProbe: Bool {
@@ -305,6 +347,30 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで「ストーリーから作った写真」の見本を出す（Debug のみ・2026-11-11）。`-JPPreviewKeptStory YES`。
+    ///
+    /// 写真にしたストーリーは見本の利用者に無いので、関係の札（写真の詳細の「ストーリーから作った写真 ›」・
+    /// ストーリーの「写真にしました ›」）と、2つから選ぶ消す確認が撮れない。この鍵のときだけ、写真の詳細は
+    /// どの写真も「本人のストーリーから作った」ものとし、口を呼ばずにその写真の絵のストーリーを1本こしらえる。
+    /// **画面の状態だけ**で、サーバー・端末の控えには何も書かない。Release では必ず nil
+    static let keptStorySampleKey = "JPPreviewKeptStory"
+
+    static func keptStorySample(photoId: String, src: String) -> Story? {
+        #if DEBUG
+        guard let userId, UserDefaults.standard.bool(forKey: keptStorySampleKey) else { return nil }
+        let row: [String: Any] = [
+            "id": "preview-kept-\(photoId)", "src": src, "userId": userId, "displayName": "あなた",
+            "keptAs": photoId, "archive": true,
+            "createdAt": ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3600)),
+            "expiresAt": ISO8601DateFormatter().string(from: Date().addingTimeInterval(20 * 3600)),
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: row) else { return nil }
+        return try? JSONDecoder.api.decode(Story.self, from: data)
+        #else
+        return nil
+        #endif
+    }
+
     /// UI テストで旅のトランクを見本の中身で出す（Debug のみ・2026-10-17）。`-JPPreviewTrunk YES`（見本）・
     /// `-JPPreviewTrunk empty`（届いたラベルが1枚も無い人）。
     ///
@@ -352,6 +418,16 @@ enum PreviewSession {
         return UserDefaults.standard.bool(forKey: trunkArrivedKey)
         #else
         return false
+        #endif
+    }
+
+    /// 見本の届いた画面の枚数（`-JPPreviewTrunkArrived 3` で3枚・「まとめて貼る」の画面写真・2026-11-12）。`YES` は 1 枚
+    static var trunkArrivedCount: Int {
+        #if DEBUG
+        guard opensTrunkArrived else { return 0 }
+        return max(1, min(3, UserDefaults.standard.integer(forKey: trunkArrivedKey)))
+        #else
+        return 0
         #endif
     }
 
@@ -468,7 +544,7 @@ enum PreviewSession {
     /// `noshadow` 胴の影 2 つを外す・`nodg` 胴の `drawingGroup` を外す・`spinaa0`/`spinaa2` 回す箱の輪郭のなめらかさを なし/2x に
     /// （この 3 つは見た目が変わる。比べるためだけ）。
     /// 前の作りに戻す（絵の見比べの「前」・2026-11-11 の直し）: `spincont` 回す箱を描き続ける・
-    /// `spinlazy` 回す箱の絵を使い回さない・`spinlink` 止まっている箱の表示の刻みを止めない・`rastercost` 回す箱の絵を塗る時間の内訳を測る
+    /// `spinlazy` 回す箱の絵を使い回さない・`spinlink` 止まっている箱の表示の刻みを止めない・`rastercost` 回す箱の絵を塗る時間の内訳を測る・`boldcheck` 文字を太くする設定が回す箱の正面に効くかを測る
     static let trunkDiagKey = "JPPreviewTrunkDiag"
 
     static var trunkDiag: Set<String> {
@@ -656,4 +732,35 @@ enum PreviewSession {
         return false
         #endif
     }
+
+    /// ①現像の札と画面・②「1年前」の輪と閲覧を撮る（2026-11-12 札 #543）。端末の写真の代わりに
+    /// 同梱の見本の絵で旅を作る（`DevelopPreview`）。`-JPPreviewDevelop YES`。Release では必ず false
+    static let developKey = "JPPreviewDevelop"
+
+    static var develop: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: developKey)
+        #else
+        return false
+        #endif
+    }
+
+    /// ①②の状態の絵を撮る（2026-11-12 札 #543）。`-JPPreviewDevelopState offline`（圏外）か `limited`（一部の写真だけ許可）。
+    /// `develop` のときだけ効く。Release では必ず nil
+    static let developStateKey = "JPPreviewDevelopState"
+
+    static var developState: String? {
+        #if DEBUG
+        guard develop else { return nil }
+        return UserDefaults.standard.string(forKey: developStateKey)
+        #else
+        return nil
+        #endif
+    }
+
+    /// 圏外として撮る（`developState == "offline"`）
+    static var developOffline: Bool { developState == "offline" }
+    /// 一部の写真だけ許可として撮る（`developState == "limited"`）
+    static var developLimited: Bool { developState == "limited" }
 }

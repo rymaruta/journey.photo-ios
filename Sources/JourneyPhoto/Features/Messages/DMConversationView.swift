@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 1対1の会話（画面案「会話」「状態（会話）」・札 #505・2026-11-10）。
 ///
@@ -83,6 +84,17 @@ struct DMConversationView: View {
     @State private var newSent = 0
     /// UI テストのときだけ（`-JPPreviewDM`）: 送った・断られた・断りの文が消えた回数を見えない要素に出す（`dm.probe`）
     @State private var probe = (sends: 0, refusals: 0, errorCleared: 0)
+    /// この会話から旅行プランを作る（2026-11-12・資料 2a の段①と段②・`DMTripViews.swift`）
+    @StateObject private var trip = DMTripModel()
+    @StateObject private var tripPlans = TripPlansModel()
+    @State private var showTrip = false
+    /// 文から撮影スポットを拾えなかった吹き出し（候補のシートを開く）
+    @State private var tripCandidates: DMTripCandidateTarget?
+    /// 候補を選んだ: シートが閉じ切ってから下書きを開く
+    @State private var openTripAfterSheet = false
+    /// 作る流れで保存したプラン。**板が閉じ切ってから積む**（`SavedSpotsMapView` と同じ）
+    @State private var pendingTripId: String?
+    @State private var createdTripId: String?
 
     /// 受信箱の行（読み込む前の見出しの名前に使う）
     private var seed: DMThread? { store.inbox.items.first { $0.id == conversationId } }
@@ -97,8 +109,20 @@ struct DMConversationView: View {
     private var username: String? {
         isDeletedPeer ? nil : (meta?.username ?? seed?.username ?? startingWith?.username)
     }
+    /// 作ったプランを「[名前] と共有する」相手（2026-11-12・札 #553）。**承認済みの会話だけ**——承認前の
+    /// リクエスト（受け取った側も送った側も）では出さない（サーバーも承認済みの会話の相手にしか共有させない）
+    private var tripSharePeer: TripSharePeer? {
+        // 旅行プランの入口（`tripOffered`）と同じく、受け取った承認前のリクエストでは出さない。加えて、自分が送って
+        // まだ承認されていない会話でも出さない（サーバーが断る・`tripShare.ts` の `canShareDirectly`）
+        guard tripOffered, let peerId, !isNew, !isDeletedPeer, meta?.state == .inbox, remaining == nil else { return nil }
+        return TripSharePeer(id: peerId, name: peerName)
+    }
+
     /// 相手からのリクエスト（自分が受け取った・まだ承認していない）
     private var isIncomingRequest: Bool { (meta?.state ?? seed?.state) == .request }
+    /// 旅行プランの入口（帯・長押しの「旅行プランに入れる」・索引の読み込み）を出すか。
+    /// **承認前のリクエストには出さない**（2026-11-12 確かめ役の指摘・まだ話していない相手の写真や文を集めない）
+    private var tripOffered: Bool { !isIncomingRequest }
     /// 承認前の残り（自分が始めて、相手がまだ話していない間だけ）。まだ会話が無い間は手元で数える
     private var remaining: Int? {
         isNew ? max(0, DMRules.requestLimit - newSent) : meta?.requestRemaining
@@ -138,6 +162,10 @@ struct DMConversationView: View {
             case .loaded:
                 if isIncomingRequest { requestBand }
                 thread
+                // 場所が1つでも出た会話にだけ（リクエストの帯と重ねない・送れない会話にも出す——読めた写真から作れる）
+                if tripOffered, !tripFound.isEmpty {
+                    DMTripBand(count: tripFound.count) { showTrip = true }
+                }
                 footer
             }
         }
@@ -165,6 +193,36 @@ struct DMConversationView: View {
         }
         .navigationDestination(isPresented: photoIsOpen) {
             if let openedPhoto { PhotoDetailView(photo: openedPhoto, fromPublicFeed: openedPhotoIsPublic) }
+        }
+        .navigationDestination(item: $createdTripId) { planId in
+            TripPlanDetailView(planId: planId, model: tripPlans, sharePeer: tripSharePeer)
+        }
+        .fullScreenCover(isPresented: $showTrip, onDismiss: {
+            guard let planId = pendingTripId else { return }
+            pendingTripId = nil
+            createdTripId = planId
+        }) {
+            DMTripCreateView(peerName: peerName, found: tripFound, plans: tripPlans) { planId in
+                pendingTripId = planId
+                showTrip = false
+            }
+        }
+        .sheet(item: $tripCandidates, onDismiss: {
+            if openTripAfterSheet {
+                openTripAfterSheet = false
+                showTrip = true
+            }
+        }) { target in
+            DMTripCandidatesSheet(text: target.text, trip: trip, near: tripFound.compactMap(\.place.coords).first) { spot in
+                trip.add([spot], source: .picked)
+                openTripAfterSheet = true
+                tripCandidates = nil
+            }
+        }
+        // 写真の撮影地を撮影スポットに当てる索引と、座標を引く公開の写真（写真のある会話だけ・控えを使う口）
+        // 読めなかった回は、電波が戻ったら読み直す（id に圏外かどうかを入れる）
+        .task(id: "\(tripOffered && log.messages.contains(where: \.hasPhoto))#\(connectivity.isOffline)") {
+            if tripOffered, log.messages.contains(where: \.hasPhoto) { await trip.load(environment: environment) }
         }
         .task(id: conversationId) { await load() }
         // 開いている間だけ読み直す（前面・電波あり）
@@ -346,13 +404,14 @@ struct DMConversationView: View {
                            let date = NotificationGroups.parse(message.t) {
                             DMDayDivider(text: DMText.dayLabel(date))
                         }
-                        if message.isStoryReply { storyCard(for: message) }
+                        if message.isStoryReply { unsendMenu(storyCard(for: message), for: message) }
                         if message.hasPhoto { photoCard(for: message) }
                         let time = DMText.timeLabel(current: message, next: next)
                         if let text = message.bubbleText {
                             DMBubble(text: text, mine: message.mine, time: time,
                                      joinsPrevious: DMText.joinsPrevious(current: message, previous: previous),
                                      maxWidth: DMLook.bubbleMaxWidth(container: threadWidth))
+                                .contextMenu { bubbleMenu(message, text: text) }
                                 .id(message.id)
                         } else if let time {
                             // 写真だけの通は吹き出しを出さず、時刻だけ写真の下に
@@ -388,6 +447,59 @@ struct DMConversationView: View {
     }
 
     private static let bottomId = "dm.bottom"
+
+    // MARK: - 旅行プラン（2026-11-12・資料 2a）
+
+    /// 下書きに出す場所（写真が先・吹き出しから入れた場所が後）
+    private var tripFound: [DMTripPlaces.Found] {
+        trip.places(log.messages, blocked: hidden.blockedUserIds)
+    }
+
+    /// 吹き出しの長押し（段②）: 「旅行プランに入れる」と「コピー」。自分の通には「送信を取り消す」（2026-11-12）
+    @ViewBuilder
+    private func bubbleMenu(_ message: DMMessage, text: String) -> some View {
+        if tripOffered {
+            Button { Task { await addToTrip(text) } } label: {
+                Label(L("旅行プランに入れる", "Add to a trip"), systemImage: "plus")
+            }
+        }
+        Button { UIPasteboard.general.string = text } label: {
+            Label(L("コピー", "Copy"), systemImage: "doc.on.doc")
+        }
+        if message.mine { unsendButton(message) }
+    }
+
+    /// 「送信を取り消す」（2026-11-12・owner の要望）。**確かめのダイアログは出さない**——押したらすぐ消え、
+    /// 文字だけの通は文を入力欄に戻す（`DMUnsend`）。メニューの末尾に置く（よく使うコピーを先に）
+    private func unsendButton(_ message: DMMessage) -> some View {
+        Button { Task { await unsend(message) } } label: {
+            Label(L("送信を取り消す", "Unsend"), systemImage: "arrow.uturn.backward")
+        }
+        .accessibilityIdentifier("dm.unsend")
+    }
+
+    /// 写真・ストーリーへの返信の札の長押し。**自分の通にだけ**メニューを付ける（相手の札は今までどおり押すだけ）
+    @ViewBuilder
+    private func unsendMenu<Content: View>(_ content: Content, for message: DMMessage) -> some View {
+        if message.mine {
+            content.contextMenu { unsendButton(message) }
+        } else {
+            content
+        }
+    }
+
+    /// 文の中の撮影スポットを索引で拾って下書きに入れ、下書きを開く。拾えなければ候補のシート
+    private func addToTrip(_ text: String) async {
+        guard tripOffered else { return }
+        await trip.load(environment: environment)
+        let spots = trip.spots(in: text)
+        if spots.isEmpty {
+            tripCandidates = DMTripCandidateTarget(text: text)
+        } else {
+            trip.add(spots, source: .text)
+            showTrip = true
+        }
+    }
 
     /// まだ会話が無い相手の、空の会話の上（2026-11-10 判断・板の人の行と同じ並び: 顔 64・名前 17・@ユーザー名 12）。
     /// 写真の無い画面なので、字は白と text-3 だけ（真鍮の合図は置かない）
@@ -513,6 +625,7 @@ struct DMConversationView: View {
                 photoPlaceholder(DMText.photoOnlyText(mine: mine), identifier: "dm.photoCard.unknown")
             }
         }
+        .modifier(DMUnsendMenu(enabled: mine) { unsendButton(message) })
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
         .padding(.top, JPSpace.xxs)
     }
@@ -721,7 +834,7 @@ struct DMConversationView: View {
     private var unavailableState: some View {
         ScrollView {
             if iBlockedPeer {
-                EmptyState(title: L("ブロック中です", "You've blocked this person"),
+                EmptyState(icon: nil, title: L("ブロック中です", "You've blocked this person"),
                            message: L("\(peerName) さんをブロックしているため、会話は表示されません。解除すると、また見られるようになります。",
                                       "You blocked \(peerName), so this conversation is hidden. Unblock to see it again."),
                            actionTitle: L("ブロックを解除", "Unblock"),
@@ -731,7 +844,7 @@ struct DMConversationView: View {
                 .padding(.top, JPSpace.emptyTop)
             } else if isNew {
                 // 1通目が断られた（フォローを外した・退会・ブロックの関係）。**どれかは言わない**（サーバーも同じ 404）
-                EmptyState(title: L("メッセージを送れません", "You can't message this person"),
+                EmptyState(icon: nil, title: L("メッセージを送れません", "You can't message this person"),
                            message: L("新しくメッセージを送れるのは、フォローしている人だけです。",
                                       "You can only start a conversation with people you follow."),
                            actionTitle: L("もどる", "Go back"),
@@ -741,7 +854,7 @@ struct DMConversationView: View {
                 .padding(.top, JPSpace.emptyTop)
             } else {
                 // ブロックされた側にも同じ文（ブロックされたと分かる文は出さない）
-                EmptyState(title: L("この会話は表示できません", "This conversation isn't available"),
+                EmptyState(icon: nil, title: L("この会話は表示できません", "This conversation isn't available"),
                            message: L("会話が削除されたか、見られない状態になっています。",
                                       "It was deleted or can't be viewed right now."),
                            actionTitle: L("受信箱にもどる", "Back to inbox"),
@@ -794,11 +907,26 @@ struct DMConversationView: View {
     /// 前に読んだ時刻より後の分だけ読む。相手の新しい1通があれば既読にする
     private func refreshSince() async {
         guard let since = meta?.t else { return }
-        guard let fetched = try? await environment.dm.conversation(conversationId, since: since),
-              !fetched.unchanged else { return }
+        let fetched: DMConversation
+        do {
+            fetched = try await environment.dm.conversation(conversationId, since: since)
+        } catch let refused as DMService.Refused where refused.isConversationMissing && !isNew {
+            // 相手が送った通が全部取り消され、自分の受信箱から会話が外れた（2026-11-12）。跡を残さない:
+            // 開いている画面からも消す（「表示できません」に切り替えない。ブロックの関係でも同じ 404 で、言い分けない）
+            log.replace(with: [])
+            return
+        } catch {
+            return
+        }
+        guard !fetched.unchanged else { return }
         let hadPeer = Set(log.messages.filter { !$0.mine }.map(\.id))
         meta = fetched
-        log.merge(fetched.items)
+        // 前に読んだ後に送信の取り消しがあった: 差分ではなく全部が来るので置き換える（消えた1通を画面から外す）
+        if fetched.full {
+            log.replace(with: fetched.items)
+        } else {
+            log.merge(fetched.items)
+        }
         if fetched.items.contains(where: { !$0.mine && !hadPeer.contains($0.id) }) {
             await markRead()
         }
@@ -874,6 +1002,46 @@ struct DMConversationView: View {
             isNew = false
         }
         await store.refresh(service: environment.dm, owner: auth.userId)
+    }
+
+    // MARK: - 送信の取り消し（2026-11-12）
+
+    /// 押したらすぐ消し、文字だけの通は文を入力欄へ（送れる会話だけ）。答えで3つに分ける（`DMUnsend.Outcome`）:
+    /// 消えた → そのまま。断られた（ブロックの関係など）→ 1通と欄を戻して赤の一言。分からない（時間切れ）→ 1通は戻すが
+    /// 戻した文は欄に残す（サーバーで消えていたら次の読み直しで消え、文は失わない）
+    private func unsend(_ message: DMMessage) async {
+        guard let removed = log.unsend(message.id) else { return }
+        actionError = nil
+        let before = draft
+        let returned = DMUnsend.returnedText(removed, canSend: canSend).map { DMUnsend.draft(current: draft, returning: $0) }
+        if let returned {
+            restoredDraft = returned
+            draft = returned
+            fieldFocused = true
+        }
+        var failure: Error?
+        do {
+            try await environment.dm.unsend(conversationId, messageId: removed.id)
+        } catch {
+            failure = error
+        }
+        switch DMUnsend.outcome(of: failure) {
+        case .gone:
+            // 受信箱の抜粋（最後の一言）はサーバーが直した。控えも読み直す
+            await store.refresh(service: environment.dm, owner: auth.userId)
+        case .refused:
+            log.restore(removed)
+            if let returned {
+                let back = DMUnsend.draftAfterFailure(current: draft, returned: returned, before: before)
+                restoredDraft = back
+                draft = back
+            }
+            actionError = L("送信を取り消せませんでした。", "Couldn't unsend.")
+        case .unknown:
+            log.restore(removed)
+            actionError = L("送信を取り消せたか確かめられませんでした。もう一度お試しください。",
+                            "Couldn't confirm the unsend. Please try again.")
+        }
     }
 
     // MARK: - 操作
@@ -1119,5 +1287,19 @@ struct DMTimeLabel: View {
             .padding(.horizontal, JPSpace.xxs)
             .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
             .accessibilityHidden(true)
+    }
+}
+
+/// 自分の通の札（写真）にだけ「送信を取り消す」の長押しを付ける（相手の札にはメニューを出さない・2026-11-12）
+private struct DMUnsendMenu<Menu: View>: ViewModifier {
+    let enabled: Bool
+    @ViewBuilder let menu: () -> Menu
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.contextMenu { menu() }
+        } else {
+            content
+        }
     }
 }

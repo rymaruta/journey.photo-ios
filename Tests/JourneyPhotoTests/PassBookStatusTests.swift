@@ -36,9 +36,9 @@ final class PassBookStatusTests: XCTestCase {
         XCTAssertEqual(PassBookStatus.distanceUnknown.detail, "家からの距離が分からないため、今日は交換しません")
         XCTAssertEqual(PassBookStatus.nearHome.detail, "家の近くなので、今日は交換しません")
         // ふだん:「〈いつ〉 · 〈届き方〉」
-        XCTAssertEqual(PassBookStatus.running(.traveling, .instant).detail, "旅のあいだ · すぐ届く")
-        XCTAssertEqual(PassBookStatus.running(.always, .evening).detail, "いつでも · 夕方にまとめて")
-        XCTAssertEqual(PassBookStatus.running(.foreground, .instant).detail, "開いている間 · すぐ届く")
+        XCTAssertEqual(PassBookStatus.running(.traveling, .instant).detail, "旅のあいだ\u{2002}すぐ届く")
+        XCTAssertEqual(PassBookStatus.running(.always, .evening).detail, "いつでも\u{2002}夕方にまとめて")
+        XCTAssertEqual(PassBookStatus.running(.foreground, .instant).detail, "開いている間\u{2002}すぐ届く")
     }
 
     /// 上から先に当たったものだけを出す

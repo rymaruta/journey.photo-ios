@@ -115,6 +115,25 @@
         </dict>
 
         <!--
+          みんなの「行きたい」（2026-11-11・撮影スポットを払うの②・`SpotWantsService` → `POST /spots/wants`）。
+          右へ払った・頁で「行きたい」を押した撮影スポットと、端末ごとのでたらめな番号を送り、撮影スポットごとの月の数を数える。
+          **本人と結びつけない**（ログイン中も利用者の ID を送らない）ので Linked は false。数えて公開するのは撮影スポットの人気
+          （アプリの機能）で、広告にも解析にも使わない。端末の番号は上の DeviceID（Linked）の申告に含まれる種類
+        -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeProductInteraction</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+
+        <!--
           ストーリーへの返信（2026-10-16 判断: 相手1人にだけ届く文なので「その他のユーザーコンテンツ」ではなく
           メッセージとしても申告する。`StoryService.reply` → `POST /stories/{id}/replies`）
         -->

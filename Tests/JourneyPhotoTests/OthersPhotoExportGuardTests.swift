@@ -28,6 +28,9 @@ final class OthersPhotoExportGuardTests: XCTestCase {
         "Features/Upload/CameraPicker.swift": "自分で撮った写真を端末に残す",
         "Features/Spots/ComposeCamera.swift": "自分で撮った写真を端末に残す",
         "Features/Trips/TripBookView.swift": "自分の旅の一冊だけ（`TripBook.canShare(isMine:)`）",
+        // 1.1.84 のまとめ（旅をストーリーに・第9章）: 開くのは写真の詳細の「SNS に載せる」（`SocialShareSheet`・
+        // `PhotoDetailRules.showsSocialCard` で自分の公開写真だけ）と、自分の旅の一冊（`TripBook.canShare(isMine:)`）だけ
+        "Features/Common/TravelStorySheet.swift": "旅をストーリーにの絵。自分の写真と自分の旅だけから開く",
         "Features/Trips/TripPlanDetailView.swift": "旅行プランの行の並べ替え（画像ではない）",
     ]
 

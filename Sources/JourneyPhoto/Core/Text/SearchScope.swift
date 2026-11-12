@@ -45,7 +45,7 @@ enum SearchScope: String, CaseIterable, Identifiable {
     var prompt: String {
         switch self {
         case .people: return L("人を検索（名前）", "Search people")
-        default: return L("写真を検索（題・説明・タグなど）", "Search photos")
+        default: return L("写真を検索（題、説明、タグなど）", "Search photos")
         }
     }
 
@@ -103,14 +103,18 @@ enum SearchScope: String, CaseIterable, Identifiable {
 enum SearchDiscovery {
 
     enum Section: String, CaseIterable, Identifiable {
-        /// `officialSpots`: 撮影スポット（台帳）を地方 → 県で選ぶ段（札 #524・`SearchSpotIndexSection`）
-        case spots, officialSpots, featured, colors, seasonal, shootingTime, gear
+        /// `officialSpots`: 撮影スポット（台帳）を地方 → 県で選ぶ段（札 #524・`SearchSpotIndexSection`）。
+        /// `quiz`: 今日の一問（2026-11-12 にホームの上の札から移した・その日の問題が取れた日だけ）
+        case spots, officialSpots, quiz, featured, colors, seasonal, shootingTime, gear
         var id: String { rawValue }
     }
 
     /// 段の順。`CaseIterable` の並びに頼らず、ここに書いておく。
-    /// 撮影スポットの段は「人気の撮影地」の次（板 Search も写真の多い撮影地 → 撮影スポット → 都道府県の順）
-    static let order: [Section] = [.spots, .officialSpots, .featured, .colors, .seasonal, .shootingTime, .gear]
+    ///
+    /// 2026-11-12 判断（デザインの案 第10章「どこに何を置くか」・探すは「見つける」）: **撮影スポットを県から探す段を先頭**に、
+    /// 次に今日の一問（ホームの札から移した）。色・機材は下へ（いまの季節 → 季節・時間帯の後ろ）。
+    /// 以前は 人気の撮影地 → 撮影スポット → おすすめ → 色 → いまの季節 → 季節・時間帯 → 機材
+    static let order: [Section] = [.officialSpots, .quiz, .spots, .featured, .seasonal, .shootingTime, .colors, .gear]
 
     static func sections(present: Set<Section>) -> [Section] {
         order.filter { present.contains($0) }

@@ -2,16 +2,19 @@ import SwiftUI
 
 /// 旅のトランクの画面の値（モック Main・Pocket・Reroll・Models・LabelArrived の CSS の値・2026-10-17）。
 ///
-/// 札と格子の地はモックの `#121212`（白 7%・`WebTheme.surface`）、区切り線と副ボタンは `#1A1A1A`。
+/// **v2 にそろえた（2026-11-12 判断・1.1.83 の案「トランクと旅の画面のデザイン」00 共通の直し）**: トランクの頁だけ
+/// v1 の値（札 #121212・線と副ボタン #1A1A1A・届いた画面の札 #201B11）が残り、ほかの頁と並べると札が浮いて見えた。
+/// 札は surface-1（`WebTheme.card`・#0E0E0F）に白 8% の縁（`trunkCard`）、区切り線と棒の溝は hairline（白 8%）、
+/// 届いた画面の札は accent-soft（#1C170E・真鍮の字 7.77）。
 /// 真鍮は**黒い地の上だけ**（眉ラベル・選んでいる縁・チェック・PRO の札・リンク）。写真の上には置かない。
 @MainActor
 enum TrunkStyle {
-    /// 札・格子の地（#121212）
-    static let cell = Color(trunk: TrunkRGBA(0x121212))
-    /// 区切り線・副ボタンの地・棒の溝（#1A1A1A）
-    static let line = Color(trunk: TrunkRGBA(0x1A1A1A))
-    /// 届いた画面の札の地（#201B11・真鍮の字）
-    static let chip = Color(trunk: TrunkRGBA(0x201B11))
+    /// 札・格子の地（v2 の surface-1 #0E0E0F）。縁は `trunkCard` で白 8% を足す
+    static let cell = WebTheme.card
+    /// 区切り線・棒の溝（v2 の hairline 白 8%）。副ボタンの地には使わない（副ボタンは白 14% の線・`TrunkButtonFace`）
+    static let line = WebTheme.hairline
+    /// 届いた画面の札の地（v2 の accent-soft #1C170E・真鍮の字）
+    static let chip = WebTheme.accentSoft
     /// モックの #999（`text-3`）
     static let faint = WebTheme.text3
     /// モックの #B8B8B8（`text-2`）
@@ -118,31 +121,63 @@ struct TrunkMenuRow: View {
     }
 }
 
-/// 写真の無い画面の主ボタン（真鍮の塗り #B8955A＋墨の字・角 14・高さ 52）と、副ボタン（#1A1A1A・白の字）
+/// トランクの頁のボタン。**v2 の板の2つの高さだけ**（2026-11-12 判断・案の 00 共通の直し）:
+/// 主ボタンは 50 の丸（写真の無い画面は真鍮の塗り＋墨、写真のある画面は白 94%＋墨・`JPPillStyle.main(onPhoto:)`）、
+/// 副ボタンは 44 の丸で白 14% の線。前は自前の形（高さ 52・角 14・副は #1A1A1A の塗り・48）だった。
+/// 面は `jpCapsuleFace`（丸いボタンの値はそこ1つを通る）
 struct TrunkButtonFace: View {
-    enum Kind { case main, secondary, danger }
-
     let title: String
     var kind: Kind = .main
-    var height: Double = 52
-    /// 字の大きさ（既定の文字サイズのとき）。いちばん近い文字の種類（15 → subheadline・17 → body）で出し、
-    /// 文字の大きさの設定に付いてくる（2026-10-21 判断: `JPFont.numberStyle` の選び方を使い回す）
-    var size: Double = 17
+    /// 高さを上げたいときだけ（手荷物タグのシートは Mac の実測で 44 が 42.4 に出たので 48・`TrunkTagSheet`）。
+    /// 板の高さより低くはしない
+    var height: Double?
 
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        let main = kind == .main || kind == .mainOnPhoto
         Text(title)
-            .font(Font.system(JPFont.numberStyle(size: size, relativeTo: .body), weight: .semibold))
-            .foregroundStyle(kind == .main ? WebTheme.accentText : (kind == .danger ? WebTheme.danger : WebTheme.text))
             // アクセシビリティの大きさでは折り返す（1行のままでは「はがして手持ちに戻す」が切れる）
             .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
             .multilineTextAlignment(.center)
             .minimumScaleFactor(0.8)
             .padding(.horizontal, typeSize.isAccessibilitySize ? 8 : 0)
-            .frame(maxWidth: .infinity, minHeight: height)
-            .background(kind == .main ? WebTheme.accentFill : TrunkStyle.line, in: RoundedRectangle(cornerRadius: 14))
-            .contentShape(RoundedRectangle(cornerRadius: 14))
+            .jpCapsuleFace(font: main ? .callout.weight(.semibold) : JPOutlineSize.regular.font,
+                           text: main ? WebTheme.accentText : (kind == .danger ? WebTheme.danger : WebTheme.foreground),
+                           fill: kind == .main ? JPPillStyle.accent.fill : (kind == .mainOnPhoto ? JPPillStyle.primary.fill : Color.clear),
+                           border: kind == .danger ? JPOutlineTone.danger.border : (main ? Color.clear : WebTheme.line),
+                           fullWidth: true, minHeight: max(Self.height(kind), height ?? 0), textInset: nil)
+            .contentShape(Capsule())
+    }
+}
+
+extension TrunkButtonFace {
+    enum Kind {
+        /// 写真の無い画面の主ボタン（真鍮の塗り＋墨）
+        case main
+        /// 写真のある画面の主ボタン（白 94%＋墨・ラベルが届いた画面など）
+        case mainOnPhoto
+        /// 副ボタン（白 14% の線・白の字）
+        case secondary
+        /// 危険の副ボタン（`WebTheme.danger` の字と線）
+        case danger
+    }
+
+    /// 高さ（主 50・副 44）
+    nonisolated static func height(_ kind: Kind) -> Double {
+        switch kind {
+        case .main, .mainOnPhoto: return Double(JPHeight.primaryButton)
+        case .secondary, .danger: return Double(JPHeight.secondaryButton)
+        }
+    }
+}
+
+extension View {
+    /// トランクの札（v2 の surface-1 に白 8% の縁・2026-11-12 判断）。前は #121212 の塗りだけで縁が無かった
+    func trunkCard(radius: CGFloat = 14) -> some View {
+        self
+            .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: radius))
+            .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
     }
 }
 

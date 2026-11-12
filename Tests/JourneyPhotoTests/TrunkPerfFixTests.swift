@@ -27,8 +27,20 @@ final class TrunkPerfFixTests: XCTestCase {
         XCTAssertFalse(medal.contains("view.rendersContinuously = true"))
         // 止まった箱は表示の刻み（CADisplayLink）も止め、触る・向き・裏返すで再び動かす
         XCTAssertTrue(medal.contains("link.isPaused = true"), "止まっていても毎コマ主スレッドを起こしている")
-        XCTAssertEqual(medal.components(separatedBy: "        wake()\n").count - 1, 3, "向きのボタン・裏返す・指で触るで刻みを動かさない")
-        XCTAssertTrue(medal.contains("            dragging = true\n            wake()"), "指で触っても刻みを動かさない")
+        // 字下げに頼らず、それぞれの手続きの中に `wake()` があるかを見る
+        func body(after start: String) throws -> Substring {
+            let from = try XCTUnwrap(medal.range(of: start), start)
+            let rest = medal[from.upperBound...]
+            let end = rest.range(of: "\n    }\n")?.lowerBound ?? rest.endIndex
+            return rest[..<end]
+        }
+        XCTAssertTrue(try body(after: "func aim(yaw target: Double, pitch targetPitch: Double) {").contains("wake()"), "向きのボタンで刻みを動かさない")
+        XCTAssertTrue(try body(after: "    func flip() {").contains("wake()"), "裏返すで刻みを動かさない")
+        let began = try XCTUnwrap(medal.range(of: "case .began:"))
+        // 次の `case` までを .began の中身とみなす
+        let afterBegan = medal[began.upperBound...]
+        let beganBody = afterBegan[..<(afterBegan.range(of: "case .")?.lowerBound ?? afterBegan.endIndex)]
+        XCTAssertTrue(beganBody.contains("wake()"), "指で触っても刻みを動かさない")
     }
 
     /// 3. 回す箱の絵は、2 回目に開いたら使い回す。トランクの画面では先に作らない（2026-11-11 判断・先に作ると
@@ -39,6 +51,11 @@ final class TrunkPerfFixTests: XCTestCase {
         XCTAssertTrue(spin.contains("if let textures, let boxFaces { " + "TrunkTextures" + ".keep(key, faces: textures, box: boxFaces) }"),
                       "描いた絵を取っておかない")
         XCTAssertTrue(spin.contains("UIApplication.didReceiveMemoryWarningNotification"), "メモリが足りないときに手放さない")
+        // 札は開くときの消去の後（`open()`）で取り、そのあとで読む（run 1066: 先に札を取って、消去でその回の書き込みが落ちた）
+        let opened = try XCTUnwrap(spin.range(of: "let diskSession = " + "TrunkSpinDiskCache" + ".session(for: key, keepsOnDisk: keepsOnDisk)"),
+                                   "開いたときの札を取らない")
+        let loaded = try XCTUnwrap(spin.range(of: "TrunkSpinDiskCache" + ".load(signature: $0)"))
+        XCTAssertLessThan(opened.lowerBound, loaded.lowerBound, "札を取る前に端末の絵を読んでいる")
         XCTAssertFalse(spin.contains("func prewarm("), "回す画面の絵を先に作っている（メモリが戻らない）")
         let trunk = try source("Features/Trunk/TrunkView.swift")
         XCTAssertFalse(trunk.contains(".prewarm("), "トランクの画面で回す画面の絵を先に作っている")

@@ -426,7 +426,7 @@ enum SpotSampleText {
         for sample in samples where !origins.contains(sample.origin) { origins.append(sample.origin) }
         origins = origins.filter { $0 == .commons } + origins.filter { $0 != .commons }
         let names = (origins.isEmpty ? [.commons] : origins).map(\.name)
-        return names.joined(separator: L("・", " and "))
+        return names.joined(separator: L("、", " and "))
     }
 
     /// 節の見出し（docs/spot-samples-commons.md の決まり）。Commons だけなら「作例（Wikimedia Commons より）」
@@ -445,7 +445,7 @@ enum SpotSampleText {
         }
         let freePart = free.isEmpty && !hosted.isEmpty ? "" : {
             let from = sourceNames(free)
-            return L("この撮影スポットの近くで撮られ、\(from) で自由なライセンスのもと公開されている写真です。",
+            return L("この観光スポットの近くで撮られ、\(from) で自由なライセンスのもと公開されている写真です。",
                      "Photos taken near this spot and published under free licenses on \(from). ")
         }()
         let hostedPart = hosted.isEmpty ? "" : {

@@ -32,7 +32,7 @@ struct LegalGateView: View {
                         // 板 v2: ロゴは写真の左上、眉と見出しは写真の下の方（溶けの黒の上）に下げる
                         AppLogo().padding(.top, geo.safeAreaInsets.top + 6).padding(.bottom, LegalGateLayout.logoToHeading)
                         heading
-                        experience(L("撮りたい場所を見つける", "Find your next place to shoot"), detail: L("写真と地図から、次に行きたい撮影スポットを探せます。", "Discover your next photo spot through photos and the map."), systemImage: "map")
+                        experience(L("撮りたい場所を見つける", "Find your next place to shoot"), detail: L("写真と地図から、次に行きたい観光スポットを探せます。", "Discover your next photo spot through photos and the map."), systemImage: "map")
                         experience(L("写真と撮影情報を残す", "Keep the photo and how you shot it"), detail: L("作品だけでなく、カメラやレンズ、撮影地まで一緒に残せます。", "Keep the camera, lens and shooting location together with your work."), systemImage: "camera")
                         experience(L("旅を、一冊にする", "Turn a journey into a book"), detail: L("旅の前から撮影後まで。写真を旅の記録としてまとめられます。", "From planning to the photos you bring home, keep the whole journey together."), systemImage: "book.closed")
                         safetyNote
@@ -92,7 +92,7 @@ struct LegalGateView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label(L("安心して写真を楽しむために", "For a safe photo community"), systemImage: "shield")
                 .font(.footnote.weight(.semibold)).foregroundStyle(WebTheme.accent)
-            Text(L("いやがらせ・わいせつ・権利を侵す投稿は認めません。写真から通報・ブロックできます。撮影情報（EXIF）は端末で取り除き、撮影地は約1kmに丸めて保存します。", "Harassment, obscene content and rights violations are not allowed. Photos can be reported and posters blocked. Metadata is removed on device and locations are rounded to about 1 km."))
+            Text(L("いやがらせ、わいせつ、権利を侵す投稿は認めません。写真から通報、ブロックできます。撮影情報（EXIF）は端末で取り除き、撮影地は約1kmに丸めて保存します。", "Harassment, obscene content and rights violations are not allowed. Photos can be reported and posters blocked. Metadata is removed on device and locations are rounded to about 1 km."))
                 .font(JPFont.footnote).lineSpacing(4).foregroundStyle(WebTheme.text2).fixedSize(horizontal: false, vertical: true)
         }.padding(14)
         // 板 v2 の札（surface-1・白 8% の縁・角 14）

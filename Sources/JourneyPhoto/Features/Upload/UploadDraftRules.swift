@@ -57,7 +57,7 @@ enum UploadDraftRules {
         let keeps = restored
             ? unsureNote + L("投稿をやめても、前に保存した下書きの残りは残ります。",
                              "If you stop, the rest of the draft you saved earlier stays.")
-            : L("投稿をやめると、選んだ写真と書いた題・説明は残りません。",
+            : L("投稿をやめると、選んだ写真と書いた題、説明は残りません。",
                 "If you stop, the photos you picked and what you wrote won't be kept.")
         guard let block else {
             // 2026-10-29（#400）: 下書きは何件でも持てる（上限 20 件）ので「1件だけです」とは言わない。
@@ -215,7 +215,7 @@ enum UploadDraftRules {
         let cleanup = journalsToClean(journals.filter { resumable.contains($0.id) }
                                         .map { (id: $0.id, savedAt: $0.draft.savedAt) }, now: now)
         let cleanupNote = cleanup.isEmpty ? ""
-            : L("うち古い \(cleanup.count) 件（3件を超えた分・7日を過ぎた分）は端末の容量を使い続けるので、削除するのがおすすめです。削除すると、まだ送っていない写真は戻せません。",
+            : L("うち古い \(cleanup.count) 件（3件を超えた分、7日を過ぎた分）は端末の容量を使い続けるので、削除するのがおすすめです。削除すると、まだ送っていない写真は戻せません。",
                 "\(cleanup.count) older one(s) (beyond 3, or over 7 days old) keep using storage on this device, so consider deleting them. Deleted unsent photos can\u{2019}t be recovered.")
         let head = resumable.isEmpty
             ? L("投稿を送り終える前にアプリが終了しました。", "The app closed before your post finished sending. ")

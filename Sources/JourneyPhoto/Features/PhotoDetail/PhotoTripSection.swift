@@ -43,7 +43,7 @@ struct PhotoTripSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            JPEyebrowLine(L("NEXT TRIP · 次の旅へ", "NEXT TRIP"),
+            JPEyebrowLine(L("NEXT TRIP\u{2002}次の旅へ", "NEXT TRIP"),
                           spoken: L("写真から、次の旅へ", "From this photo to your next trip"))
             // 3つが1行に収まらない幅・字の大きさでは、経路を下の行へ（字を切らない・2026-11-10 札 #521）
             ViewThatFits(in: .horizontal) {

@@ -107,7 +107,7 @@ enum PhotoTrip {
     }
 
     /// 行の呼び名（写真の詳細・撮影地の頁で同じ語）
-    static var nearbySpotTitle: String { L("この近くの撮影スポット", "Photo spot nearby") }
+    static var nearbySpotTitle: String { L("この近くの観光スポット", "Photo spot nearby") }
 
     /// 写真の詳細で「この近くの撮影スポット」を探しに行く鍵。**`spotId` の無い写真で、座標のあるときだけ**
     /// （`spotId` のある写真は「撮影スポット」の行がもう台帳の頁へ行く）。写真と座標で変わる
@@ -238,7 +238,7 @@ enum PhotoTrip {
         let kinds = Set(spot.seasonKinds?.value ?? spot.seasonalGuide?.value.map(\.season) ?? [])
         let labels = SpotBodyText.seasonOrder.filter(kinds.contains).compactMap(SpotBodyText.seasonLabel)
         guard !labels.isEmpty else { return nil }
-        return L("おすすめの季節 \(labels.joined(separator: "・"))", "Best in \(labels.joined(separator: ", "))")
+        return L("おすすめの季節 \(labels.joined(separator: "、"))", "Best in \(labels.joined(separator: ", "))")
     }
 
     /// 「経路」を出すか（座標のある台帳のスポットだけ。撮影地の文字列は場所が確かでない）

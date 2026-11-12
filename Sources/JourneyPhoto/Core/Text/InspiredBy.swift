@@ -285,6 +285,13 @@ enum InspiredBy {
 
     /// 選ぶ先の棚
     /// 2026-10-31（#426）: マイページと同じ下線の札（`PagedTab`）。目印は今までの `inspiredPicker.shelf.<名前>`
+    /// 元の写真を選ぶ画面の棚が「読めなかった」か（2026-11-12 判断・案「投稿まわりのデザイン」06）。
+    /// 公開一覧が読めず、棚に出せる写真も無いとき。**「まだ無い」と分ける**——読めなかったのに「保存した写真は
+    /// まだありません」と言うと、保存した人が消えたと思う（DesignSystem 06）。自分の写真から出せる棚は出す
+    static func loadFailed(feedLoaded: Bool, candidates: Int) -> Bool {
+        !feedLoaded && candidates == 0
+    }
+
     enum Shelf: String, CaseIterable, Identifiable, PagedTab {
         /// 保存（しおり）した写真
         case saved

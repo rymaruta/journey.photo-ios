@@ -41,7 +41,7 @@ enum BadgeCatalog {
         Kind(key: "earlyUser", ja: "初期ユーザー", en: "Early user", maxTier: 1, unitJa: "", unitEn: "", closed: true),
         Kind(key: "first", ja: "最初の一枚", en: "First photo", maxTier: 1, unitJa: "枚", unitEn: "photo", closed: false),
         Kind(key: "prefectures", ja: "都道府県", en: "Prefectures", maxTier: 3, unitJa: "", unitEn: "", closed: false),
-        Kind(key: "countries", ja: "国・地域", en: "Countries", maxTier: 3, unitJa: "", unitEn: "", closed: false),
+        Kind(key: "countries", ja: "国と地域", en: "Countries", maxTier: 3, unitJa: "", unitEn: "", closed: false),
         Kind(key: "seasons", ja: "四季", en: "Four seasons", maxTier: 3, unitJa: "年", unitEn: "year", closed: false),
         Kind(key: "morning", ja: "朝の光", en: "Morning light", maxTier: 3, unitJa: "枚", unitEn: "photo", closed: false),
         Kind(key: "night", ja: "夜の光", en: "Night light", maxTier: 3, unitJa: "枚", unitEn: "photo", closed: false),
@@ -100,7 +100,7 @@ enum BadgeCatalog {
     /// 読み上げ・お知らせに使う名前（「都道府県 · 銀」「続けた年 · 1年目」「秋の章 2026」）。段の無いものは名前だけ
     static func fullName(_ key: String, tier: Int) -> String {
         if let chapter = ProChapters.parse(key) { return chapter.fullName }
-        return hasTiers(key) ? "\(name(key)) · \(tierWord(key, tier))" : name(key)
+        return hasTiers(key) ? "\(name(key))\u{2002}\(tierWord(key, tier))" : name(key)
     }
 
     /// 名前の横のバッジの読み上げ（「名前の横のバッジ: 都道府県 · 銀」）

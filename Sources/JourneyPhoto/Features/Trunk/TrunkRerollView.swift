@@ -34,7 +34,7 @@ struct TrunkRerollView: View {
                     content(label)
                 } else {
                     Spacer()
-                    EmptyState(message: L("ラベルが見つかりませんでした。", "That label wasn\u{2019}t found."))
+                    EmptyState(icon: nil, message: L("ラベルが見つかりませんでした。", "That label wasn\u{2019}t found."))
                     Spacer()
                 }
             }
@@ -143,7 +143,7 @@ struct TrunkRerollView: View {
             // 下限だけにすると中の Spacer が伸びて、既定の大きさでも札が縦に伸びた・Mac run 639）
             .frame(minHeight: 96, maxHeight: typeSize.isAccessibilitySize ? nil : 96)
             .fixedSize(horizontal: false, vertical: typeSize.isAccessibilitySize)
-            .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 12))
+            .trunkCard(radius: 12)
             .overlay {
                 if checked { RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.accent, lineWidth: 2) }
             }
@@ -212,7 +212,7 @@ struct TrunkRerollView: View {
             Text(TrunkText.rerollsLeft(model.state?.rerollsLeft ?? 0))
                 .font(JPFont.mono(13, relativeTo: .footnote))
                 .foregroundStyle(WebTheme.text)
-            Text(L("（毎月 3 回 · 繰り越しなし）", " (3 a month · no carry-over)"))
+            Text(L("（毎月 3 回、繰り越しなし）", " (3 a month, no carry-over)"))
         }
         .font(JPFont.footnote)
         .foregroundStyle(TrunkStyle.muted)

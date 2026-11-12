@@ -313,10 +313,10 @@ final class SpotPrefectureIndexTests: XCTestCase {
         XCTAssertFalse(text.contains("photos: photos, spots:"), "写真を県に振り分けている")
     }
 
-    /// 段は「人気の撮影地」の次（板 Search の並び）
-    func testDiscoveryPlacesSpotIndexAfterPopularPlaces() {
+    /// 段は探すの先頭（2026-11-12・案 第10章。前は「人気の撮影地」の次）
+    func testDiscoveryPlacesSpotIndexFirst() {
         XCTAssertEqual(SearchDiscovery.sections(present: [.gear, .officialSpots, .spots]),
-                       [.spots, .officialSpots, .gear])
+                       [.officialSpots, .spots, .gear])
     }
 
     /// 段の件数の字（英語も）

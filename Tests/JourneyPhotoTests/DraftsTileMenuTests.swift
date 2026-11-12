@@ -149,9 +149,9 @@ final class DraftsTileMenuTests: XCTestCase {
         XCTAssertEqual(DraftsText.deleteThisDraft, "この下書きを削除")
         XCTAssertEqual(DraftsText.continueEditing, "続きから編集")
         XCTAssertEqual(DraftsText.title(entry("x")), "題なし")
-        XCTAssertTrue(DraftsText.menuSubtitle(entry("x"), now: now).hasPrefix("投稿 · 2枚 · 今日"),
+        XCTAssertTrue(DraftsText.menuSubtitle(entry("x"), now: now).hasPrefix("投稿\u{2002}2枚\u{2002}今日"),
                       DraftsText.menuSubtitle(entry("x"), now: now))
-        XCTAssertTrue(DraftsText.tileHint.contains("長押しで続きから編集・削除"))
+        XCTAssertTrue(DraftsText.tileHint.contains("長押しで続きから編集、削除"))
         for text in [DraftsText.openList, DraftsText.recentSection, DraftsText.tileHint, DraftsText.deleteThisDraft] {
             XCTAssertFalse(text.contains("捨て"), text)
         }

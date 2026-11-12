@@ -22,6 +22,16 @@ struct TripPickerView: View {
 
     /// 札の山と決めごと（作る流れが持つ——タブを替えても、めくった札と選んだ場所を残す）
     @ObservedObject var model: TripPickerModel
+    /// 山から除く鍵を足す（撮影スポットを払う画面: 前に払った札・`SpotSwipeProgress.seen`）。
+    /// 足した鍵で山が空になったら、「行きたい」だけを除いて作り直す（`TripPickerModel.load` の `fallbackExcluding`）
+    var alsoExclude: Set<String> = []
+    /// 山の中に挟む札（撮影スポットを払う画面だけ・`SpotSwipe.showsPause`）。nil なら挟まない
+    var pause: TripPickerPause?
+    /// めくり終えたときの説明（撮影スポットを払う画面は「次へ」が無いので差し替える）。nil なら作る流れの文
+    var finishedLine: String?
+    /// 右へ払った札を、みんなの「行きたい」に数えるか（2026-11-11 確かめ役の指摘 12）。
+    /// **数えるのは撮影スポットを払う画面（`SpotSwipeView`）だけ**——旅行プランを作る流れの「写真から選ぶ」は数えない
+    var countsWants = false
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var wishlist: WishlistStore
@@ -40,14 +50,20 @@ struct TripPickerView: View {
 
     var body: some View {
         content
-            .task {
-                await model.load(fetch: { try await environment.spots.fetchIndex() },
-                                 excluding: wishlist.spotIds, seed: seed)
-            }
+            .task { await loadDeck() }
+            // 閉じた・タブを替えたら、みんなの「行きたい」の控えを送る（5件たまる前でも）
+            .onDisappear { if countsWants { SpotWantSender.flush(service: environment.spotWants) } }
             // めくる先の札と選んだ場所の詳細（写真・季節の文）。分けた置き場の索引だけの行のときだけ（2026-10-07）
             .task(id: SpotDetailNeeds.key(model.detailNeeds)) {
                 await model.applyDetails { await environment.spots.withDetails($0, for: $1) }
             }
+    }
+
+    private func loadDeck() async {
+        let wished = wishlist.spotIds
+        await model.load(fetch: { try await environment.spots.fetchIndex() },
+                         excluding: wished.union(alsoExclude), seed: seed,
+                         fallbackExcluding: alsoExclude.isEmpty ? nil : wished)
     }
 
     @ViewBuilder
@@ -59,7 +75,9 @@ struct TripPickerView: View {
             failed
         case .loaded:
             VStack(spacing: 0) {
-                if let spot = model.current {
+                if model.current != nil, let pause {
+                    pauseArea(pause)
+                } else if let spot = model.current {
                     // **スクロールの中に置かない。** 縦のスクロールが札を払う指を奪う
                     // （札の上から始めた縦の動きで、払えない・流れない）。札は残りの高さに収める
                     VStack(alignment: .leading, spacing: 12) {
@@ -222,7 +240,7 @@ struct TripPickerView: View {
             }
             // いまの季節の案内があるときだけ（無ければ作らない）
             if let hint = TripPicker.seasonHint(spot, now: Date()) {
-                Text("\(hint.label) · \(hint.text)")
+                Text("\(hint.label)\u{2002}\(hint.text)")
                     .font(.footnote)
                     .foregroundStyle(WebTheme.muted2)
                     .lineLimit(1)
@@ -246,7 +264,7 @@ struct TripPickerView: View {
         let parts = [spot.region?.country, spot.region?.prefecture, spot.region?.city]
             .compactMap { $0?.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return parts.isEmpty ? nil : parts.joined(separator: "\u{2002}")
     }
 
     // MARK: - 押す（払うのと同じ）
@@ -324,7 +342,11 @@ struct TripPickerView: View {
         guard let current = model.current else { return }
         let key = SavedSpotKey.official(current.slug)
         let wasWanted = model.wasWantedBefore(current.spotId, inWishlist: wishlist.contains(key))
-        guard model.decide(choice, alreadyWanted: wasWanted) != nil, choice == .want, !wasWanted else { return }
+        guard model.decide(choice, alreadyWanted: wasWanted) != nil else { return }
+        // みんなの「行きたい」に数える（2026-11-11・撮影スポットを払うの②）。右へ払った札だけ・見送るは数えない。
+        // 端末のでたらめな ID と一緒にまとめて送る（`SpotWantSender`）
+        if countsWants, choice == .want { SpotWantSender.want(current.slug, service: environment.spotWants) }
+        guard choice == .want, !wasWanted else { return }
         model.markAdded(current.spotId)
         let store = wishlist
         let service = environment.savedSpots
@@ -339,7 +361,10 @@ struct TripPickerView: View {
 
     private func undo() {
         // 前から「行きたい」に入っていた場所は外さない（`Decision.wasWanted`）
-        guard !flying, let last = model.undo(), last.choice == .want, !last.wasWanted else { return }
+        guard !flying, let last = model.undo() else { return }
+        // まだ送っていなければ、みんなの「行きたい」の控えからも外す
+        if countsWants, last.choice == .want { SpotWantSender.unwant(last.spot.slug) }
+        guard last.choice == .want, !last.wasWanted else { return }
         let key = SavedSpotKey.official(last.spot.slug)
         let store = wishlist
         let service = environment.savedSpots
@@ -356,6 +381,104 @@ struct TripPickerView: View {
         }
     }
 
+    // MARK: - 挟む札（撮影スポットを払う画面・2026-11-11）
+
+    /// 山の中に1枚だけ挟む札。**窓で止めない**——左右どちらへ払っても、「続けて払う」でも次の写真へ。
+    /// 写真の無い札なので、主ボタンは真鍮の塗りに墨（写真の無い画面の主ボタン）、眉ラベルは黒地の真鍮
+    private func pauseArea(_ pause: TripPickerPause) -> some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 12) {
+                intro
+                pauseCard(pause)
+                    .frame(maxWidth: .infinity, minHeight: 120, maxHeight: .infinity)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            VStack(spacing: 8) {
+                Button(action: pause.action) {
+                    Text(pause.actionTitle)
+                        .jpPillButton(.main(onPhoto: false))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("tripPicker.pause.action")
+                Button { continueFromPause(pause) } label: {
+                    Text(L("続けて払う", "Keep swiping"))
+                        .jpPillButton(.outline)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("tripPicker.pause.continue")
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+        }
+    }
+
+    private func pauseCard(_ pause: TripPickerPause) -> some View {
+        VStack(alignment: .leading, spacing: JPSpace.s) {
+            Spacer(minLength: 0)
+            Image(systemName: "map")
+                .font(.title2)
+                .foregroundStyle(WebTheme.accent)
+                .accessibilityHidden(true)
+            Text(pause.title)
+                .font(JPFont.cardTitle)
+                .foregroundStyle(WebTheme.foreground)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(pause.line)
+                .font(JPFont.footnote)
+                .foregroundStyle(WebTheme.text2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(JPSpace.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .jpCardFace()
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .contentShape(RoundedRectangle(cornerRadius: 16))
+        .rotationEffect(.degrees(dragX / 24))
+        .offset(x: dragX)
+        .gesture(pauseSwipe(pause))
+        .accessibilityElement(children: .combine)
+        .accessibilityAction(named: L("続けて払う", "Keep swiping")) { continueFromPause(pause) }
+        .accessibilityIdentifier("tripPicker.pause")
+    }
+
+    /// 挟む札はどちらへ払っても続ける（「行きたい」「見送る」は写真の札だけ）
+    private func pauseSwipe(_ pause: TripPickerPause) -> some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { value in
+                guard !flying else { return }
+                dragX = value.translation.width
+            }
+            .onEnded { value in
+                guard !flying else { return }
+                let x = value.translation.width
+                let predicted = value.predictedEndTranslation.width
+                if abs(x) > Self.swipeThreshold || abs(predicted) > Self.swipeThreshold * 2 {
+                    continueFromPause(pause, toward: x < 0 ? -1 : 1)
+                } else {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { dragX = 0 }
+                }
+            }
+    }
+
+    private func continueFromPause(_ pause: TripPickerPause, toward direction: Double = -1) {
+        guard !flying else { return }
+        guard reduceMotion == false else {
+            dragX = 0
+            pause.onContinue()
+            return
+        }
+        flying = true
+        withAnimation(.easeOut(duration: 0.2)) { dragX = 600 * direction }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            dragX = 0
+            pause.onContinue()
+            flying = false
+        }
+    }
+
     // MARK: - 札が無いとき
 
     /// めくり終えた・はじめから見せる札が無い
@@ -363,14 +486,14 @@ struct TripPickerView: View {
         VStack(spacing: 12) {
             Spacer(minLength: 0)
             Text(model.deck.isEmpty
-                 ? L("選べる撮影スポットがありません", "No places left to pick")
+                 ? L("選べる観光スポットがありません", "No places left to pick")
                  : L("ここまでで全部です", "That's all for now"))
                 .font(JPFont.rowTitle)
                 .foregroundStyle(WebTheme.foreground)
             Text(model.deck.isEmpty
                  ? L("「行きたい」に入れた場所は、ここには出しません。",
                      "Places already on your wishlist aren't shown.")
-                 : L("選んだ場所は、下の「次へ」で旅行プランの下書きになります。", "Tap Next below to turn the places you picked into a trip."))
+                 : (finishedLine ?? L("選んだ場所は、下の「次へ」で旅行プランの下書きになります。", "Tap Next below to turn the places you picked into a trip.")))
                 .font(.footnote)
                 .foregroundStyle(WebTheme.muted2)
                 .multilineTextAlignment(.center)
@@ -394,15 +517,12 @@ struct TripPickerView: View {
 
     private var failed: some View {
         VStack(spacing: 12) {
-            Text(L("撮影スポットを読み込めませんでした。", "Couldn't load photo spots."))
+            Text(L("観光スポットを読み込めませんでした。", "Couldn't load photo spots."))
                 .font(.callout)
                 .foregroundStyle(WebTheme.muted2)
             // 大きさと当たりの形は **label の中に**（外に付けると押せるのが文字の上だけになる）
             Button {
-                Task {
-                    await model.load(fetch: { try await environment.spots.fetchIndex() },
-                                     excluding: wishlist.spotIds, seed: seed)
-                }
+                Task { await loadDeck() }
             } label: {
                 Text(L("再試行", "Retry"))
                     .font(.subheadline.weight(.semibold))
@@ -412,4 +532,15 @@ struct TripPickerView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
+
+/// 払う山の中に挟む札（`TripPickerView.pause`・撮影スポットを払う画面だけ）
+struct TripPickerPause {
+    let title: String
+    let line: String
+    /// 主な操作の名前（「ログインして見る」「旅行プランにする」）
+    let actionTitle: String
+    let action: () -> Void
+    /// 払った・「続けて払う」を押した（呼び手が次に挟むまでの数を数え直す）
+    let onContinue: () -> Void
 }

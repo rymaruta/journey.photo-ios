@@ -17,7 +17,7 @@ final class MapSpotSublineTests: XCTestCase {
     func testAfterLoadSaysCount() throws {
         let photos = L("写真 3枚", "3 photos")
         XCTAssertEqual(PhotoMapView.spotSubline(try row(km: 0.8, count: 3), loaded: true),
-                       "\(NearbyPhotos.label(km: 0.8)) · \(photos)")
+                       "\(NearbyPhotos.label(km: 0.8))\u{2002}\(photos)")
         XCTAssertEqual(PhotoMapView.spotSubline(try row(km: nil, count: 3), loaded: true), photos)
     }
 
@@ -25,7 +25,7 @@ final class MapSpotSublineTests: XCTestCase {
     func testZeroSaysInviteInsteadOfCount() throws {
         let invite = SpotScreen.firstPhotoInvite
         XCTAssertEqual(PhotoMapView.spotSubline(try row(km: 0.8, count: 0), loaded: true),
-                       "\(NearbyPhotos.label(km: 0.8)) · \(invite)")
+                       "\(NearbyPhotos.label(km: 0.8))\u{2002}\(invite)")
         XCTAssertEqual(PhotoMapView.spotSubline(try row(km: nil, count: 0), loaded: true), invite)
         XCTAssertFalse(PhotoMapView.spotSubline(try row(km: nil, count: 0), loaded: true).contains("0枚"))
     }

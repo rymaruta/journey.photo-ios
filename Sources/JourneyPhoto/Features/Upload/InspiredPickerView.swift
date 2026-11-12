@@ -17,7 +17,11 @@ struct InspiredPickerView: View {
     let currentLocation: String?
     /// いま選んでいる元の写真の id（印を付ける）
     let selectedId: String?
+    /// いま選んでいる元の写真の名前（題 · 作者）。下の段に出す。無ければ下の段を出さない
+    var selectedLabel: String? = nil
     let onPick: (InspiredBy.Pick) -> Void
+    /// 下の段の「外す」（2026-11-12 判断・案「投稿まわりのデザイン」06）。外したら閉じる
+    var onRemove: (() -> Void)? = nil
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
@@ -33,15 +37,19 @@ struct InspiredPickerView: View {
     @State private var spotIndex: [OfficialSpot]?
     /// 開いたときに保存した写真が無く、行きたい場所がある人は、行きたい場所の棚から始める（一度だけ）
     @State private var choseStartShelf = false
+    /// 読み込み中（骨格を出す）。もう一度試すときにも立てる
+    @State private var loading = true
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 3)
+    /// 格子は隙間 4・角なし・端から端まで（DesignSystem 02b・2026-11-12 判断で角 6 をやめた）
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: WebTheme.gridSpacing), count: 3)
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text(L("その場所へ行くきっかけになった写真を付けると、写真のページに「この写真を見て撮影」と出て、元の写真の作者にも知らせが届きます。",
-                       "Attach the photo that made you go. Your photo page shows “Inspired by”, and the original photographer is notified."))
-                    .font(.footnote)
+                // 2026-11-12 判断（案 06）: 説明は1文に詰めた（3行 → 1〜2行）
+                Text(L("付けると写真のページに「この写真を見て撮影」と出て、作者に知らせが届きます。",
+                       "Your photo page will show “Inspired by”, and the photographer is notified."))
+                    .font(JPFont.footnote)
                     .foregroundStyle(WebTheme.text2)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 16)
@@ -50,7 +58,6 @@ struct InspiredPickerView: View {
                 ProfileTabSection(tabs: InspiredBy.Shelf.allCases, selection: $selectedShelf, viewport: viewport,
                                   spacing: 14) { shelf in
                     content(shelf)
-                        .padding(.horizontal, 16)
                 }
             }
             .padding(.vertical, 16)
@@ -63,13 +70,18 @@ struct InspiredPickerView: View {
         .webScreen()
         .navigationTitle(L("元の写真を選ぶ", "Choose the original"))
         .navigationBarTitleDisplayMode(.inline)
-        // 板: シートは右上の「閉じる」
+        // 板: シートは右上の「閉じる」。黒地の上の文字ボタンなので真鍮（2026-11-12 判断・前は系統の色のまま）
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button(L("閉じる", "Close")) { dismiss() }
-                    .accessibilityIdentifier("inspiredPicker.close")
+                Button { dismiss() } label: {
+                    Text(L("閉じる", "Close"))
+                        .foregroundStyle(WebTheme.accent)
+                }
+                .accessibilityIdentifier("inspiredPicker.close")
             }
         }
+        // 選んでいる1枚を、選ぶ画面の下でも外せる（前は投稿の画面の行 → 外す だけ）
+        .safeAreaInset(edge: .bottom) { selectedBar }
         .task { await load() }
     }
 
@@ -93,14 +105,13 @@ struct InspiredPickerView: View {
     /// 棚ごとの中身。**`selectedShelf` ではなく渡された棚で分ける**——選んでいない棚も持ち続ける（`ProfileTabPager`）
     @ViewBuilder
     private func content(_ shelf: InspiredBy.Shelf) -> some View {
-        if pools == nil {
-            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
+        if loading || pools == nil {
+            skeleton
+        } else if InspiredBy.loadFailed(feedLoaded: pools?.feed != nil, candidates: candidates(shelf).count) {
+            failedState
         } else if candidates(shelf).isEmpty {
             VStack(spacing: JPSpace.s) {
-                Text(pools?.feed == nil
-                     ? L("写真を読み込めませんでした。通信の状態を確かめてください",
-                         "Couldn't load photos. Check your connection.")
-                     : shelf.emptyMessage)
+                Text(shelf.emptyMessage)
                     .font(.footnote)
                     .foregroundStyle(WebTheme.text3)
                     .multilineTextAlignment(.center)
@@ -116,13 +127,76 @@ struct InspiredPickerView: View {
                 }
             }
             .padding(.vertical, 24)
+            .padding(.horizontal, JPSpace.m)
             .frame(maxWidth: .infinity)
         } else {
-            LazyVGrid(columns: columns, spacing: 4) {
+            LazyVGrid(columns: columns, spacing: WebTheme.gridSpacing) {
                 ForEach(candidates(shelf)) { photo in
                     tile(photo)
                 }
             }
+        }
+    }
+
+    /// 読み込み中の骨格（surface-4 の角なしのマス・2026-11-12 判断。回る印から替えた）
+    private var skeleton: some View {
+        LazyVGrid(columns: columns, spacing: WebTheme.gridSpacing) {
+            ForEach(0..<9, id: \.self) { _ in
+                WebTheme.surface4.aspectRatio(1, contentMode: .fit)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L("読み込み中", "Loading"))
+        .accessibilityIdentifier("inspiredPicker.loading")
+    }
+
+    /// 読めなかった（「まだ無い」と分ける・DesignSystem 06）。危険の色の一言と「もう一度試す」
+    private var failedState: some View {
+        VStack(spacing: JPSpace.s) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "exclamationmark.circle").accessibilityHidden(true)
+                Text(L("写真を読み込めませんでした。通信の状態を確かめてください。",
+                       "Couldn't load photos. Check your connection."))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .font(JPFont.footnote)
+            .foregroundStyle(WebTheme.danger)
+            Button { Task { await load() } } label: {
+                Text(L("もう一度試す", "Try again")).jpPillButton(.outline)
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: 200)
+            .accessibilityIdentifier("inspiredPicker.retry")
+        }
+        .padding(.vertical, 40)
+        .padding(.horizontal, JPSpace.section)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// 下の段「選んでいる: 題 · 作者」と「外す」（線のボタン）。選んでいないときは出さない
+    @ViewBuilder
+    private var selectedBar: some View {
+        if selectedId != nil, let selectedLabel, let onRemove {
+            HStack(spacing: JPSpace.s) {
+                Text(L("選んでいる: \(selectedLabel)", "Selected: \(selectedLabel)"))
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.text2)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button {
+                    onRemove()
+                    dismiss()
+                } label: {
+                    Text(L("外す", "Remove")).jpPillButton(.outline)
+                }
+                .buttonStyle(.plain)
+                .frame(width: 96)
+                .accessibilityIdentifier("inspiredPicker.remove")
+            }
+            .padding(.horizontal, JPSpace.m)
+            .padding(.vertical, JPSpace.s)
+            .background(WebTheme.background.opacity(0.92))
+            .overlay(alignment: .top) { Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline) }
         }
     }
 
@@ -135,18 +209,23 @@ struct InspiredPickerView: View {
             Color.clear
                 .aspectRatio(1, contentMode: .fit)
                 .overlay { RemoteImage(url: photo.pinImageURL) }
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                // 選んでいる1枚: 写真の上なので白（板: 写真の上は白だけ）。印の形（丸のチェック＋白い縁）で言う
+                .clipped()
+                // 選んでいる1枚: 写真の上なので白（板: 写真の上は白だけ）。印の形（白い丸に墨のチェック＋白 2pt の縁）で言う
                 .overlay {
                     if selected {
-                        RoundedRectangle(cornerRadius: 6).strokeBorder(Color.white, lineWidth: 2)
+                        Rectangle().strokeBorder(Color.white, lineWidth: JPStroke.emphasis)
                     }
                 }
                 .overlay(alignment: .topTrailing) {
                     if selected {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 20))
-                            .foregroundStyle(Color.white, Color.black.opacity(0.55))
+                        Circle()
+                            .fill(Color.white)
+                            .frame(width: 20, height: 20)
+                            .overlay {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(WebTheme.accentText)
+                            }
                             .padding(6)
                             .accessibilityHidden(true)
                     }
@@ -169,10 +248,12 @@ struct InspiredPickerView: View {
     // MARK: - 読み込み
 
     private func load() async {
+        loading = true
         // 手元の束（公開一覧は 60秒の記憶・控えがあればすぐ返る）。自分の写真はログイン中だけ
         let loaded = await PhotoPools.load(environment, signedIn: auth.userId != nil)
         guard !Task.isCancelled else { return }
         pools = loaded
+        loading = false
         if !choseStartShelf {
             choseStartShelf = true
             if InspiredBy.savedCandidates(ids: savedPhotos.ids, feed: loaded.feed, mine: loaded.mine).isEmpty,

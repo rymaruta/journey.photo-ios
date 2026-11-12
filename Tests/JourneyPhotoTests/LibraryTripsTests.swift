@@ -249,8 +249,8 @@ final class LibraryTripsTests: XCTestCase {
         let trip = try XCTUnwrap(LibraryTrips.find(shots, home: home, timeZone: tokyo).first)
         XCTAssertEqual(LibraryTrips.periodText(trip, timeZone: tokyo), "2026.09.12 — 09.14")
         let first = try XCTUnwrap(trip.days.first)
-        XCTAssertEqual(LibraryTrips.dayLabel(first, place: "京都市"), "DAY 1 · 9.12 · 京都市")
-        XCTAssertEqual(LibraryTrips.dayLabel(first, place: nil), "DAY 1 · 9.12", "地名が無いときは日付だけ")
+        XCTAssertEqual(LibraryTrips.dayLabel(first, place: "京都市"), "DAY 1\u{2002}9.12\u{2002}京都市")
+        XCTAssertEqual(LibraryTrips.dayLabel(first, place: nil), "DAY 1\u{2002}9.12", "地名が無いときは日付だけ")
         let oneDay = try XCTUnwrap(LibraryTrips.find(Array(shots.prefix(3)) + [shot("x", hours: 13, kyoto), shot("y", hours: 14, kyoto)],
                                                      home: home, timeZone: tokyo).first)
         XCTAssertEqual(LibraryTrips.periodText(oneDay, timeZone: tokyo), "2026.09.12")
@@ -268,7 +268,7 @@ final class LibraryTripsTests: XCTestCase {
         XCTAssertEqual(trip.days.count, 3, "撮った日は3日")
         XCTAssertEqual(LibraryTrips.calendarDays(trip), 4, "9/12〜9/15 は暦では4日間")
         XCTAssertEqual(LibraryTrips.countText(trip),
-                       L("\(TripBook.daysLabel(4))・5枚", "\(TripBook.daysLabel(4)) · 5 photos"))
+                       L("\(TripBook.daysLabel(4))\u{2002}5枚", "\(TripBook.daysLabel(4))\u{2002}5 photos"))
         XCTAssertEqual(TripBook.daysLabel(4), L("4日間", "4 days"))
         let oneDay = try XCTUnwrap(LibraryTrips.find(Array(repeating: 0, count: 5).enumerated().map {
             shot("o\($0.offset)", hours: 10 + Double($0.offset), kyoto)

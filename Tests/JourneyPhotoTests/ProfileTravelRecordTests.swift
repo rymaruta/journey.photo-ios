@@ -121,10 +121,10 @@ final class ProfileTravelRecordTests: XCTestCase {
     /// マイページの説明の文は今までのまま（人のページの文とは分ける）
     func testMyPageNotesAreUnchanged() {
         XCTAssertEqual(ProfileTravelRecord.countriesNote(isMine: true),
-                       L("撮影地に国・地域の名前が書かれている写真だけを数えています。地名から国を推測はしません。撮影地に国名を足すと、この数もサイトの地名ページも増えます。",
+                       L("撮影地に国や地域の名前が書かれている写真だけを数えています。地名から国を推測はしません。撮影地に国名を足すと、この数もサイトの地名ページも増えます。",
                          "Counts only photos whose location text names a country or region. We don't guess a country from a place name. Adding the country to your location text raises this number."))
         XCTAssertEqual(ProfileTravelRecord.distanceNote(isMine: true),
-                       L("撮影地の分かる写真を、古い順に直線で結んだ合計です。実際に歩いた・乗った距離ではありません（道のりではなく直線で、撮っていない区間は飛び、座標は約1kmに丸めてあります）。",
+                       L("撮影地の分かる写真を、古い順に直線で結んだ合計です。実際に歩いた、乗った距離ではありません（道のりではなく直線で、撮っていない区間は飛び、座標は約1kmに丸めてあります）。",
                          "The straight-line total between photos that have coordinates, oldest first. Not the distance you actually travelled."))
         XCTAssertNotEqual(ProfileTravelRecord.countriesNote(isMine: false), ProfileTravelRecord.countriesNote(isMine: true))
         XCTAssertTrue(ProfileTravelRecord.countriesNote(isMine: false).contains(L("公開", "public")))
@@ -250,6 +250,6 @@ final class ProfileTravelRecordTests: XCTestCase {
         XCTAssertTrue(factsMods.contains(".layoutPriority(1)"))
         XCTAssertEqual(ProfileTripsLine.cardFillOpacity, 0.05)
         XCTAssertEqual(ProfileTripsLine.cardStrokeOpacity, 0.10)
-        XCTAssertEqual(ProfileTripsLine.facts(try publicTrip()), L("2日間 · 2枚", "2 days · 2 photos"))
+        XCTAssertEqual(ProfileTripsLine.facts(try publicTrip()), L("2日間\u{2002}2枚", "2 days · 2 photos"))
     }
 }

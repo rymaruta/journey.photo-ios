@@ -197,7 +197,7 @@ struct UploadService {
             throw APIError.server(status: 400, message: L("ファイルサイズが大きすぎます（最大50MB）", "File is too large (50 MB max)"))
         }
         guard allowedImageTypes.contains(type) else {
-            throw APIError.server(status: 400, message: L("対応していない形式です（JPEG・PNG・WebP・AVIF・HEIC）", "Unsupported format (JPEG, PNG, WebP, AVIF, HEIC)"))
+            throw APIError.server(status: 400, message: L("対応していない形式です（JPEG、PNG、WebP、AVIF、HEIC）", "Unsupported format (JPEG, PNG, WebP, AVIF, HEIC)"))
         }
     }
 

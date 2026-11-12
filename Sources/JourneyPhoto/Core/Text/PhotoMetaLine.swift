@@ -11,7 +11,7 @@ import Foundation
 enum PhotoMetaLine {
 
     /// 区切り（板の ` · `）
-    static let separator = " · "
+    static let separator = "\u{2002}"
 
     // MARK: - 撮影日時
 

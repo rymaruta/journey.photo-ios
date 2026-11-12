@@ -82,7 +82,7 @@ enum TrunkLid {
     /// 下の一言（板 TrunkOpen の `hint`）
     static func hint(_ p: Double) -> String {
         if p <= 0.02 { return L("ふたを手前へ引き下ろすと開きます", "Pull the lid down towards you to open it") }
-        if p >= 0.98 { return L("メダル・会員証・乗車券を押すと、手に取れます", "Tap a medal, card or ticket to pick it up") }
+        if p >= 0.98 { return L("メダル、会員証、乗車券を押すと、手に取れます", "Tap a medal, card or ticket to pick it up") }
         return L("指を離すと、近い方へ開くか閉じます", "Let go and it opens or closes, whichever is nearer")
     }
 
@@ -305,9 +305,9 @@ enum TrunkInsideLooks {
                 defaultLining: lining("朱の漆", "Vermilion lacquer",
                                       radial(0xB03822, 0x6A1A10, stop: 0.80, cx: 0.30, cy: 0.20, rx: 1.2, ry: 0.9)),
                 panel: .layers([linear(160, [(white, 0), (white.alpha(0), 0.40)]), .solid(TrunkRGBA(0x121010))]),
-                panelName: L("黒の正絹の台・金の縁", "Black silk tray, gold edge"),
+                panelName: L("黒の正絹の台、金の縁", "Black silk tray, gold edge"),
                 divider: hex(90, [(0x0A0202, 0), (0x2A0A06, 0.5), (0x0A0202, 1)]),
-                dividerName: L("黒漆の板・金の縁", "Black lacquer board, gold edge"),
+                dividerName: L("黒漆の板、金の縁", "Black lacquer board, gold edge"),
                 stitch: nil, metal: gilt, gildEdge: true, brassBand: false)
         case .kori:
             let sashiko = TrunkPartBand(from: 0, to: 1, color: rgba(255, 255, 255, 0.10))
@@ -332,7 +332,7 @@ enum TrunkInsideLooks {
                     radial(0x7E2428, 0x4E1216, stop: 0.80, cx: 0.30, cy: 0.20, rx: 1.2, ry: 0.9)])),
                 panel: grained(hex(180, [(0x2E0A08, 0), (0x1E0605, 1)])), panelName: L("黒革の台", "Black leather tray"),
                 divider: grained(hex(90, [(0x2A0807, 0), (0x5A1612, 0.5), (0x2A0807, 1)])),
-                dividerName: L("革の仕切り・真鍮の帯", "Leather divider, brass band"),
+                dividerName: L("革の仕切り、真鍮の帯", "Leather divider, brass band"),
                 stitch: rgba(230, 200, 150, 0.5), metal: brass, gildEdge: false, brassBand: true)
         case .clipper:
             let quilt = TrunkPartBand(from: 0, to: 1, color: rgba(0, 0, 0, 0.20))
@@ -354,7 +354,7 @@ enum TrunkInsideLooks {
                               hex(180, [(0x8C5A30, 0), (0x643C1E, 1)])]),
                 defaultLining: lining("生成りの帆布", "Natural canvas", .layers(weave + [.solid(TrunkRGBA(0xDCCDA8))])),
                 panel: woodH(0x7A4A26, 0x946038), panelName: L("チークの盆", "Teak tray"),
-                divider: wood(0x6E4222, 0x946038), dividerName: L("チークの仕切り・真鍮の帯", "Teak divider, brass band"),
+                divider: wood(0x6E4222, 0x946038), dividerName: L("チークの仕切り、真鍮の帯", "Teak divider, brass band"),
                 stitch: nil, metal: brass, gildEdge: false, brassBand: true)
         case .starchart:
             return TrunkInsideLook(
@@ -364,9 +364,9 @@ enum TrunkInsideLooks {
                     linear(160, [(rgba(255, 255, 255, 0.08), 0), (rgba(255, 255, 255, 0), 0.35)]),
                     hex(180, [(0x22305A, 0), (0x121A36, 1)])])),
                 panel: grained(hex(180, [(0x0C1530, 0), (0x08101F, 1)])),
-                panelName: L("紺の革の台・金の押し線", "Navy leather tray, gold tooling"),
+                panelName: L("紺の革の台、金の押し線", "Navy leather tray, gold tooling"),
                 divider: grained(hex(90, [(0x0A1226, 0), (0x1C2C50, 0.5), (0x0A1226, 1)])),
-                dividerName: L("紺の革の仕切り・金の縁", "Navy leather divider, gold edge"),
+                dividerName: L("紺の革の仕切り、金の縁", "Navy leather divider, gold edge"),
                 stitch: rgba(201, 166, 107, 0.6), metal: brass, gildEdge: true, brassBand: false)
         }
     }
@@ -547,7 +547,7 @@ struct TrunkInsideContents: Equatable {
             return L("押すと、表と裏を指で回して見られます", "Open it to turn it over in your fingers")
         case .more:
             let shown = hiddenMedals.prefix(3).map { BadgeCatalog.name($0.key) }
-            let names = shown.joined(separator: L("・", ", ")) + (hiddenMedals.count > 3 ? L(" ほか", " and more") : "")
+            let names = shown.joined(separator: L("、", ", ")) + (hiddenMedals.count > 3 ? L(" ほか", " and more") : "")
             return L("\(names)。ふたの裏に留められるのは \(Self.medalSlots) 枚までです",
                      "\(names). The lid holds up to \(Self.medalSlots) medals")
         case .card:
@@ -594,11 +594,11 @@ enum TrunkInsideEmpty {
 
     /// 手に入れ方の3行
     static var rows: [Row] {
-        [Row(shape: .medal, title: L("メダル · ふたの裏", "Medals · inside the lid"),
+        [Row(shape: .medal, title: L("メダル\u{2002}ふたの裏", "Medals\u{2002}inside the lid"),
              detail: L("写真を1枚投稿すると「最初の一枚」が届きます", "Post one photo and \u{201C}First photo\u{201D} arrives")),
-         Row(shape: .card, title: L("会員証 · 内ポケット", "Member card · inner pocket"),
+         Row(shape: .card, title: L("会員証\u{2002}内ポケット", "Member card\u{2002}inner pocket"),
              detail: L("Pro になると、サポーター証がここに入ります", "With Pro, your supporter card goes here")),
-         Row(shape: .ticket, title: L("乗車券 · 仕切り", "Tickets · divider"),
+         Row(shape: .ticket, title: L("乗車券\u{2002}仕切り", "Tickets\u{2002}divider"),
              detail: L("旅先ですれちがった人の乗車券が、ここに入ります", "Tickets from people you pass on your travels go here"))]
     }
 

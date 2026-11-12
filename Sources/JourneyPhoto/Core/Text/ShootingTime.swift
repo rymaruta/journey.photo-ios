@@ -160,7 +160,7 @@ enum ShootingTime {
             let parts = [season?.label, dayPart?.phrase].compactMap { $0 }
             guard !parts.isEmpty else { return "" }
             let english = parts.map { $0.lowercased() }.joined(separator: " ")
-            return L(parts.joined(separator: "・") + "の", english.prefix(1).uppercased() + english.dropFirst() + " ")
+            return L(parts.joined(separator: "、") + "の", english.prefix(1).uppercased() + english.dropFirst() + " ")
         }
 
         /// 撮影スポットの節の見出し（「冬の案内がある撮影スポット（3か所）」）。
@@ -171,9 +171,9 @@ enum ShootingTime {
         /// 見出しもそう言う（いちばん小さい直し。案内の中身は読み分けない）
         func spotsHeading(count: Int) -> String {
             let parts = [season?.label, dayPart?.phrase].compactMap { $0 }
-            guard !parts.isEmpty else { return L("撮影スポット（\(count)か所）", "Shooting spots (\(count))") }
+            guard !parts.isEmpty else { return L("観光スポット（\(count)か所）", "Shooting spots (\(count))") }
             let english = parts.map { $0.lowercased() }.joined(separator: " ")
-            return L("\(prefix)案内がある撮影スポット（\(count)か所）",
+            return L("\(prefix)案内がある観光スポット（\(count)か所）",
                      "Shooting spots with \(english) notes (\(count))")
         }
 
@@ -181,7 +181,7 @@ enum ShootingTime {
         var note: String? {
             var lines: [String] = []
             if season != nil {
-                lines.append(L("季節は撮影日（春3〜5月・夏6〜8月・秋9〜11月・冬12〜2月。南半球で撮った写真は半年ずらす）",
+                lines.append(L("季節は撮影日（春3〜5月、夏6〜8月、秋9〜11月、冬12〜2月。南半球で撮った写真は半年ずらす）",
                                "Season by date taken (spring Mar–May, summer Jun–Aug, autumn Sep–Nov, winter Dec–Feb; shifted by six months for photos taken in the Southern Hemisphere)"))
             }
             if let dayPart {

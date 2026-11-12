@@ -110,7 +110,7 @@ struct SpotRegionMap: Identifiable {
                         pieces: Set(group.region.prefectures),
                         coveredPieces: Set(group.cards.map(\.prefecture)),
                         scope: .region(group.region.name),
-                        seeAll: L("\(group.region.name)の撮影スポットをすべて見る",
+                        seeAll: L("\(group.region.name)の観光スポットをすべて見る",
                                   "See all photo spots in \(PrefectureRegions.englishName(group.region))"))
         }
     }
@@ -183,7 +183,7 @@ struct SpotMapArea: Identifiable, Equatable {
 
     /// 札の名前の行（「阿寒湖・大雪山 旭岳・ファーム富田・五稜郭 ほか」）。全部出せたら「ほか」を付けない
     var namesLine: String {
-        let joined = names.joined(separator: L("・", ", "))
+        let joined = names.joined(separator: L("、", ", "))
         return count > names.count ? L("\(joined) ほか", "\(joined), and more") : joined
     }
 }

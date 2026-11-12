@@ -120,6 +120,49 @@ final class PerfMainSampler: @unchecked Sendable {
         thread.name = "perf.sampler"
         thread.qualityOfService = .userInteractive
         thread.start()
+        // 止まっている所を、画面の木を読まずに取り出す（`-JPMainSampleFile <path>`・2026-11-12 run 1164 の DM の会話）。
+        // 主スレッドが忙しいと UI テストは画面の木を取れない（"Failed to get matching snapshots"）ので、決まった間隔で
+        // 主スレッドの積みと、主スレッドに投げた合図が戻るまでの時間をファイルに書き、試験の側がファイルを読む
+        if let path = UserDefaults.standard.string(forKey: Self.fileKey), !path.isEmpty {
+            let fileThread = Thread { [self] in fileLoop(path: path) }
+            fileThread.name = "perf.sampler.file"
+            fileThread.qualityOfService = .userInteractive
+            fileThread.start()
+        }
+    }
+
+    /// 決まった間隔で積みを書くファイルの道（UI テストが渡す）
+    static let fileKey = "JPMainSampleFile"
+    /// 積みを撮る所が2つ（停止の見張り・ファイル）あるので、信号の置き場を1つずつ使う
+    private let captureLock = NSLock()
+
+    /// 0.3 秒ごとに 1 行: 起動からの ms・主スレッドの返事の遅れ（ms。0.3 秒で戻らなければ pending）・主スレッドの積み。
+    /// 書くのは 1500 行まで
+    private func fileLoop(path: String) {
+        FileManager.default.createFile(atPath: path, contents: nil)
+        guard let handle = FileHandle(forWritingAtPath: path) else { return }
+        let origin = ProcessInfo.processInfo.systemUptime
+        var lines = 0
+        while lines < 1500 {
+            let sent = ProcessInfo.processInfo.systemUptime
+            let reply = DispatchSemaphore(value: 0)
+            let box = PerfPingBox()
+            DispatchQueue.main.async {
+                box.set(ProcessInfo.processInfo.systemUptime)
+                reply.signal()
+            }
+            let answered = reply.wait(timeout: .now() + 0.3) == .success
+            let ping = answered ? String(Int(((box.value ?? sent) - sent) * 1000)) : "pending"
+            let frames = captureFrames() ?? []
+            let top = Array(frames.prefix(8))
+            let app = frames.dropFirst(8).filter { $0.hasPrefix("JourneyPhoto") }.prefix(10)
+            let ms = Int((sent - origin) * 1000)
+            let line = "ms=\(ms) ping=\(ping) | " + (top + (app.isEmpty ? [] : ["…"]) + Array(app)).joined(separator: " ; ") + "\n"
+            handle.write(Data(line.utf8))
+            lines += 1
+            if answered { Thread.sleep(forTimeInterval: 0.3) }
+        }
+        try? handle.close()
     }
 
     private func watch() {
@@ -149,16 +192,28 @@ final class PerfMainSampler: @unchecked Sendable {
     }
 
     private func capture() {
-        guard let thread = mainThread else { return }
+        guard let frames = captureFrames() else { return }
+        // 浅い方の 7 段（いま実行中の処理）と、その先にある**このアプリの段**（`JourneyPhoto` の画像）を 6 段まで。
+        // 浅い方が SwiftUI の中ばかりでも、どの画面の何が呼んだかが残る（2026-11-07）
+        let top = Array(frames.prefix(7))
+        let app = frames.dropFirst(7).filter { $0.hasPrefix("JourneyPhoto") }.prefix(6)
+        PerfRecorder.shared.recordSample(frames: top + (app.isEmpty ? [] : ["…"]) + Array(app))
+    }
+
+    /// 主スレッドの今の積み（読めなければ nil）
+    private func captureFrames() -> [String]? {
+        captureLock.lock()
+        defer { captureLock.unlock() }
+        guard let thread = mainThread else { return nil }
         perfSampleDepth = 0
-        guard pthread_kill(thread, SIGUSR1) == 0 else { return }
+        guard pthread_kill(thread, SIGUSR1) == 0 else { return nil }
         var waited = 0
         while perfSampleDepth == 0, waited < 100 {
             Thread.sleep(forTimeInterval: 0.001)
             waited += 1
         }
         let depth = Int(perfSampleDepth)
-        guard depth > 0 else { return }
+        guard depth > 0 else { return nil }
         var frames: [String] = []
         for index in 0..<min(depth, perfSampleCapacity) {
             guard let address = perfSampleBuffer[index] else { continue }
@@ -167,11 +222,7 @@ final class PerfMainSampler: @unchecked Sendable {
             if text.contains("perfSampleHandler") || text.contains("_sigtramp") { continue }
             frames.append(text)
         }
-        // 浅い方の 7 段（いま実行中の処理）と、その先にある**このアプリの段**（`JourneyPhoto` の画像）を 6 段まで。
-        // 浅い方が SwiftUI の中ばかりでも、どの画面の何が呼んだかが残る（2026-11-07）
-        let top = Array(frames.prefix(7))
-        let app = frames.dropFirst(7).filter { $0.hasPrefix("JourneyPhoto") }.prefix(6)
-        PerfRecorder.shared.recordSample(frames: top + (app.isEmpty ? [] : ["…"]) + Array(app))
+        return frames
     }
 
     /// 「画像`名前」。名前は Swift の綴りに戻す。長いものは切る。名前が無ければ画像と番地
@@ -198,5 +249,12 @@ final class PerfMainSampler: @unchecked Sendable {
             .replacingOccurrences(of: "^", with: "~")
         return "\(image)`\(cut)"
     }
+}
+/// 主スレッドが合図を受けた時刻（ファイルの見張りが読む・鍵つき）
+private final class PerfPingBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: TimeInterval?
+    func set(_ value: TimeInterval) { lock.lock(); stored = value; lock.unlock() }
+    var value: TimeInterval? { lock.lock(); defer { lock.unlock() }; return stored }
 }
 #endif

@@ -19,6 +19,8 @@ struct TrunkSpinViewer: View {
     var wrinkles: [String: Double] = [:]
     /// 手荷物タグの枠ごとの選び（2026-11-08）。無ければ全部おまかせ
     var tagPicks: [TrunkTagPick] = []
+    /// 端末に絵を置く・読むか。人のトランクでは置かない（自分のトランクの絵を置き換えない・2026-11-11 判断）
+    var keepsOnDisk = true
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -54,10 +56,10 @@ struct TrunkSpinViewer: View {
                     Text(TrunkText.info(model).name)
                         .font(JPFont.cardTitle)
                         .foregroundStyle(WebTheme.foreground)
-                    Text(L("ラベル \(stuck.count) 枚 · 投稿 \(posts)", "\(Plural.count(stuck.count, "label")) · \(Plural.count(posts, "post"))"))
+                    Text(L("ラベル \(stuck.count) 枚\u{2002}投稿 \(posts)", "\(Plural.count(stuck.count, "label"))\u{2002}\(Plural.count(posts, "post"))"))
                         .font(JPFont.mono(12))
                         .foregroundStyle(WebTheme.muted2)
-                    Text(L("指で回すと、側面・上・底・背面が見えます",
+                    Text(L("指で回すと、側面、上、底、背面が見えます",
                            "Turn it with your finger to see the sides, top, bottom and back"))
                         .font(.caption)
                         .foregroundStyle(WebTheme.faint)
@@ -101,7 +103,14 @@ struct TrunkSpinViewer: View {
             // 2026-11-11 判断（run 1041 / 1047）: 1 回目に開く間の止まり 2〜4 秒のほとんどは、SceneKit が正面の絵（1080×804）を
             // 読むときに主スレッドで塗る時間（`SpinFrontDiffuse` 1.4〜4.9 秒）。前に塗った正面を端末に PNG（色を変えない形）で
             // 置いておき、同じトランクなら読み込んで渡す（塗らない）。トランクが変わったら 1 度だけ今までどおり塗る
-            let diskFront = TrunkPerfMeter.measure("SpinDiskLoad") { TrunkSpinDiskCache.front(for: key) }
+            // 側面・背面・上・底・持ち手も同じく端末に置いて読む（2026-11-11 run 1050: 正面を読んでも、側面などを貼る
+            // `SpinApplyBox` が 0.48〜0.74 秒残った）
+            // 開いた時点の札（この後に退会で消されたら、描き終えても端末に書かない）
+            // 合図は 1 度だけ作り、読む・書くの両方に使う。人のトランクでは端末を使わない
+            let diskSession = TrunkSpinDiskCache.session(for: key, keepsOnDisk: keepsOnDisk)
+            let diskTicket = diskSession?.ticket, diskSignature = diskSession?.signature
+            let disk = TrunkPerfMeter.measure("SpinDiskLoad") { diskSignature.flatMap { TrunkSpinDiskCache.load(signature: $0) } }
+            let diskFront = disk?["front"]
             if diskFront != nil { TrunkPerfMeter.shared.hit("SpinDiskHit") }
             textures = TrunkTextures.make(model: model, posts: posts, stuck: stuck, ownerName: ownerName, parts: parts,
                                           wrinkles: wrinkles, tagPicks: tagPicks, cachedFront: diskFront)
@@ -110,11 +119,15 @@ struct TrunkSpinViewer: View {
             // 待つ間に閉じられたら描かずに抜ける
             do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
             guard !Task.isCancelled else { return }
-            boxFaces = TrunkTextures.box(model: model, posts: posts, parts: parts, stuck: stuck, tagPicks: tagPicks)
+            let diskSides = disk.flatMap(TrunkSpinDiskCache.sides)
+            if diskSides != nil { TrunkPerfMeter.shared.hit("SpinDiskSidesHit") }
+            boxFaces = diskSides ?? TrunkTextures.box(model: model, posts: posts, parts: parts, stuck: stuck, tagPicks: tagPicks)
             // SceneKit が読んで塗った後の絵は、次に開いたときに使い回す
             if let textures, let boxFaces { TrunkTextures.keep(key, faces: textures, box: boxFaces) }
-            // 塗った正面を、次に開くとき（アプリを開き直した後も）のために端末に置く（主スレッドの外で書く）
-            if diskFront == nil, let front = textures?.front { TrunkSpinDiskCache.save(front, for: key) }
+            // 塗った絵を、次に開くとき（アプリを開き直した後も）のために端末に置く（主スレッドの外で書く）
+            if diskFront == nil || diskSides == nil, let textures, let boxFaces, let diskTicket, let diskSignature {
+                TrunkSpinDiskCache.save(front: textures.front, sides: boxFaces, signature: diskSignature, ticket: diskTicket)
+            }
             renderMarker = TrunkTextures.renderMarker(front: frontTook, all: started.duration(to: clock.now))
             TrunkPerfMeter.shared.mark("SpinReady")
         }
@@ -302,70 +315,4 @@ struct TrunkSpinKey: Equatable {
     let parts: TrunkEquipped
     let wrinkles: [String: Double]
     let tagPicks: [TrunkTagPick]
-}
-
-/// 回す箱の正面の絵の、端末の置き場（2026-11-11 判断・1 回目に開く間の止まりを縮める）。
-///
-/// - 置くのは最後に開いたトランクの正面 1 枚だけ（PNG・約 1〜2MB）。合図（`TrunkSpinKey` の全部の欄・アプリの版・言語）を
-///   文字で一緒に置き、**文字が全部同じときだけ**使う（別のトランク・描き方が変わった版の絵を出さない）
-/// - 書くのは主スレッドの外。読むのは回す画面を開いたとき（PNG は色を変えずに戻る・前後の画素の差は UI テストで見る）
-/// - 退会したら消す（`AccountLocalData`）。測定専用の `-JPPreviewTrunkDiag spinlazy`（前の作り）・`spindiskclear`（開く前に消す）
-enum TrunkSpinDiskCache {
-    private static var directory: URL? {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.appendingPathComponent("trunk-spin", isDirectory: true)
-    }
-
-    /// 絵に効くものを全部並べた合図の文字（並びと書き方を決めておく。辞書は鍵の順）
-    static func signature(_ key: TrunkSpinKey) -> String {
-        let info = Bundle.main.infoDictionary
-        let version = "\(info?["CFBundleShortVersionString"] ?? "-")(\(info?["CFBundleVersion"] ?? "-"))"
-        let wrinkles = key.wrinkles.keys.sorted().map { "\($0)=\(key.wrinkles[$0]!)" }.joined(separator: ",")
-        return ["v=\(version)", "lang=\(Locale.current.identifier)", "model=\(key.model.rawValue)", "posts=\(key.posts)",
-                "owner=\(key.ownerName ?? "-")", "stuck=\(String(describing: key.stuck))", "parts=\(String(describing: key.parts))",
-                "wrinkles=\(wrinkles)", "tags=\(String(describing: key.tagPicks))"].joined(separator: "\n")
-    }
-
-    static func front(for key: TrunkSpinKey) -> UIImage? {
-        let diag = PreviewSession.trunkDiag
-        if diag.contains("spindiskclear") { removeAll() }
-        guard !diag.contains("spinlazy"), let dir = directory,
-              let saved = try? String(contentsOf: dir.appendingPathComponent("front.key"), encoding: .utf8),
-              saved == signature(key) else { return nil }
-        #if os(iOS)
-        return UIImage(contentsOfFile: dir.appendingPathComponent("front.png").path)
-        #else
-        return nil
-        #endif
-    }
-
-    /// 主スレッドの外で PNG にして書く（前のものは置き換える）
-    static func save(_ image: UIImage, for key: TrunkSpinKey) {
-        guard !PreviewSession.trunkDiag.contains("spinlazy"), let dir = directory else { return }
-        let text = signature(key)
-        let box = DiskImageBox(image: image)
-        #if os(iOS)
-        Task.detached(priority: .utility) {
-            guard let data = TrunkPerfMeter.measure("SpinDiskSave", { box.image.pngData() }) else { return }
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            // 合図を先に消してから絵を書き、最後に合図を書く（途中で止まっても、合わない絵を使わない）
-            try? FileManager.default.removeItem(at: dir.appendingPathComponent("front.key"))
-            try? data.write(to: dir.appendingPathComponent("front.png"), options: .atomic)
-            try? text.write(to: dir.appendingPathComponent("front.key"), atomically: true, encoding: .utf8)
-            TrunkPerfMeter.shared.hit("SpinDiskSaved")
-        }
-        #else
-        _ = (box, text)
-        #endif
-    }
-
-    /// 全部消す（退会・測定）
-    static func removeAll() {
-        guard let dir = directory else { return }
-        try? FileManager.default.removeItem(at: dir)
-    }
-}
-
-/// 糸をまたいで絵を渡す入れ物（作った後は読むだけ）
-private struct DiskImageBox: @unchecked Sendable {
-    let image: UIImage
 }
