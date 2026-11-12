@@ -2954,15 +2954,9 @@ final class ScreenshotTests: XCTestCase {
         let before = row.frame.minY
         row.swipeUp()
         XCTAssertLessThan(row.frame.minY, before - 20, "行から上へスワイプしても一覧が動かない")
-        // 調べ（Mac 1101 で、待つ 3 秒の間は「3 回」にならず、あとで読んだ名前は「3 回」だった）:
-        // スワイプのあと 0.25 秒ごとに行と帯の名前・位置をログに出す（原因を数で取る・推定で直さない）
-        for step in 0..<12 {
-            print("VISITED-SWIPE: t=\(Double(step) * 0.25) exists=\(row.exists) label=\(row.exists ? row.label : "-") "
-                  + "frame=\(row.exists ? row.frame : .zero) hittable=\(row.exists && row.isHittable) "
-                  + "count=\(count.exists ? count.label : "-")")
-            Thread.sleep(forTimeInterval: 0.25)
-        }
-        XCTAssertTrue(waitForLabel(row, "北海道、3 回"), "スワイプで回数が変わった: \(row.label)")
+        // 待ちは 10 秒（Mac 1113 で調べた: スワイプのあと名前は 0〜3 秒ずっと「3 回」のままだが、行が画面の外
+        // （minY -136）に出たあとは要素を1回読むのに 3〜5 秒かかった。1101 は 3 秒の待ちの中で1回も読み終わらずに落ちた）
+        XCTAssertTrue(waitForLabel(row, "北海道、3 回", timeout: 10), "スワイプで回数が変わった: \(row.label)")
     }
 
     /// 要素の読み上げの名前が `text` になるまで待つ（帯の数は押したあとに描き直される）
