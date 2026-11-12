@@ -318,6 +318,10 @@ struct PhotoViewerView: View {
             }
             .padding(.leading, JPSpace.m)
             .padding(.trailing, JPSpace.xs)
+            // UI テストが「1回押すと消え、もう1回で戻る」を見る下の情報（2026-11-12 判断）。サムネイルの帯は2枚以上の投稿だけ
+            // なので（`thumbnailStrip`）、1枚の写真でも必ずある題・撮影情報の段で見る（run 1182: 1枚の写真で帯を待って落ちた）
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("viewer.caption")
         }
     }
 

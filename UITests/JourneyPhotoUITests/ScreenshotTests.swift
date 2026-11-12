@@ -9360,6 +9360,7 @@ final class ScreenshotTests: XCTestCase {
     /// 2回押し（拡大中なので倍率を戻す側・いいねは送らない）では消えないことも見る。**出なければ落とす**
     func testViewerTapHidesChrome() {
         let app = launchTrunk([])
+        defer { app.terminate() }
         let recommended = app.buttons["おすすめ"].firstMatch
         if recommended.waitForExistence(timeout: 15), recommended.isHittable { recommended.tap() }
         let photo = app.buttons["feed.photo"].firstMatch
@@ -9376,29 +9377,36 @@ final class ScreenshotTests: XCTestCase {
         guard expect(hero.waitForExistence(timeout: 10) && hero.isHittable, "写真の詳細の写真", app) else { return }
         hero.tap()
         let close = app.buttons["viewer.close"].firstMatch
+        // 下の情報は題・撮影情報の段で見る（`viewer.caption`・どの写真にもある）。**サムネイルの帯は2枚以上の投稿だけ**
+        // （`PhotoViewerView.thumbnailStrip`）——run 1182 は1枚の写真（「夢の中」・送りの頁 1）を開き、帯を待って落ちた
+        let caption = app.descendants(matching: .any)["viewer.caption"].firstMatch
         let strip = app.scrollViews["viewer.strip"].firstMatch
         guard expect(close.waitForExistence(timeout: 10), "大きく見る画面の ✕", app) else { return }
-        guard expect(strip.waitForExistence(timeout: 5), "大きく見る画面のサムネイルの帯", app) else { return }
+        guard expect(caption.waitForExistence(timeout: 5), "大きく見る画面の下の情報（題・撮影情報）", app) else { return }
+        let hasStrip = strip.exists
+        XCTContext.runActivity(named: "大きく見る画面: サムネイルの帯=\(hasStrip)（2枚以上の投稿だけ）") { _ in }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "122a-写真を大きく見る（情報あり）")
         let center = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
         // 1回押す → 消える
         center.tap()
-        XCTAssertTrue(strip.waitForNonExistence(timeout: 3), "1回押してもサムネイルの帯が消えない")
+        XCTAssertTrue(caption.waitForNonExistence(timeout: 3), "1回押しても下の情報が消えない")
         XCTAssertFalse(close.exists, "1回押しても ✕ が消えない")
+        if hasStrip { XCTAssertFalse(strip.exists, "1回押してもサムネイルの帯が消えない") }
         Thread.sleep(forTimeInterval: 0.5)
         shoot(app, "122b-写真を大きく見る（1回押して写真だけ）")
         // もう1回 → 戻る
         center.tap()
-        XCTAssertTrue(strip.waitForExistence(timeout: 3), "もう1回押してもサムネイルの帯が戻らない")
+        XCTAssertTrue(caption.waitForExistence(timeout: 3), "もう1回押しても下の情報が戻らない")
         XCTAssertTrue(close.exists, "もう1回押しても ✕ が戻らない")
+        if hasStrip { XCTAssertTrue(strip.exists, "もう1回押してもサムネイルの帯が戻らない") }
         // 拡大してから2回押す（倍率を戻す側）→ 消えも出もしない
         // （広げられなかった回も、2回押しは見本の利用者のいいね＝鍵が無く届かないだけで、消える・出るは同じく見られる）
         app.windows.firstMatch.pinch(withScale: 2.5, velocity: 2)
         Thread.sleep(forTimeInterval: 0.5)
         center.doubleTap()
         Thread.sleep(forTimeInterval: 1)
-        XCTAssertTrue(strip.exists, "2回押しでサムネイルの帯が消えた（1回押しとぶつかっている）")
+        XCTAssertTrue(caption.exists, "2回押しで下の情報が消えた（1回押しとぶつかっている）")
         XCTAssertTrue(close.exists, "2回押しで ✕ が消えた（1回押しとぶつかっている）")
     }
 }

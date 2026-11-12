@@ -72,6 +72,24 @@ final class ViewerChromeTests: XCTestCase {
         XCTAssertTrue(viewer.contains(".accessibilityAction(.escape) { dismiss() }"))
     }
 
+    /// 🔴 UI テストは下の情報を**題・撮影情報の段（`viewer.caption`）**で見る。サムネイルの帯は2枚以上の投稿だけなので、
+    /// 帯を必ず待つと1枚の写真で落ちる（run 1182: 開いた「夢の中」は送りの頁 1 で、帯が無く「サムネイルの帯 が出ない」で赤）
+    func testUITestWatchesCaptionNotOnlyStrip() throws {
+        let viewer = try source("Features/PhotoDetail/PhotoViewerView.swift")
+        XCTAssertTrue(member("private var thumbnailStrip", in: viewer).contains("if photos.count > 1 {"),
+                      "サムネイルの帯が1枚の写真でも出る作りに変わった（この試験の前提を見直す）")
+        XCTAssertTrue(member("private var caption", in: viewer).contains(".accessibilityIdentifier(\"viewer.caption\")"),
+                      "下の情報に UI テストの目印が無い")
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let ui = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"),
+                            encoding: .utf8)
+        let test = member("func testViewerTapHidesChrome()", in: ui)
+        XCTAssertFalse(test.contains("expect(strip.waitForExistence"), "1枚の写真でもサムネイルの帯を待っている")
+        XCTAssertTrue(test.contains("caption.waitForExistence"), "下の情報を題・撮影情報の段で見ていない")
+        XCTAssertTrue(test.contains("caption.waitForNonExistence"), "1回押して下の情報が消えるのを見ていない")
+    }
+
     // MARK: - 下ごしらえ
 
     private func source(_ path: String) throws -> String {
