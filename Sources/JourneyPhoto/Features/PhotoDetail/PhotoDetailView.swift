@@ -50,6 +50,8 @@ struct PhotoDetailView: View {
         let credit: SignatureShareCardRenderer.Credit
         let text: String
         let avatarURL: URL?
+        /// ストーリーの側（旅をストーリーに・第9章・1.1.83）。押した時点の写真で作る
+        let story: TravelStory.Source
     }
     @State private var preparingThreads = false
     /// **アプリ内の「送る」シート**（札 #541）。「共有」の行き先（iPhone の共有シートは中の「ほかのアプリ」）
@@ -453,11 +455,15 @@ struct PhotoDetailView: View {
         .fullScreenCover(item: $storySeed) { seed in
             NavigationStack { StoryComposerView(sharing: seed) }
         }
+        // 「SNS に載せる」の画面。上で「投稿 | ストーリー」を切り替える（2026-11-12 秘書室の判断・`SocialShareSheet`）
         .sheet(item: $signatureBundle) { bundle in
-            SignatureShareCardSheet(photoData: bundle.photoData,
-                                    credit: bundle.credit,
-                                    shareText: bundle.text,
-                                    avatarURL: bundle.avatarURL)
+            SocialShareSheet(photoData: bundle.photoData,
+                             credit: bundle.credit,
+                             shareText: bundle.text,
+                             avatarURL: bundle.avatarURL,
+                             leadURL: bundle.story.lead,
+                             filmURLs: bundle.story.film,
+                             facts: bundle.story.facts)
         }
         // **閉じたら引き直す。** 保存はできているのに画面が古いままだと、
         // 保存できていないように見える
@@ -1231,7 +1237,12 @@ struct PhotoDetailView: View {
                                     description: target.paragraphs.joined(separator: "\n"),
                                     location: LocationMatch.shareCardDisplay(target.location),
                                     url: link),
-            avatarURL: model.owner?.avatarURL(cacheBust: UUID().uuidString))
+            avatarURL: model.owner?.avatarURL(cacheBust: UUID().uuidString),
+            story: TravelStory.Source(lead: url,
+                                     film: TravelStory.filmPicks(target: target, group: heroLineup.photos)
+                                        .compactMap(\.detailImageURL),
+                                     facts: TravelStory.facts(of: target, name: AuthorName.shown(
+                                        profile: model.owner, photoDisplayName: target.displayName))))
     }
 
     /// 知らせから来たコメントへ送る（`PhotoDetailRules.commentToFocus`）。送ったら2秒だけ印を付ける
@@ -1388,6 +1399,9 @@ struct PhotoDetailView: View {
                         Label(L("SNS に載せる", "Share to social apps"), systemImage: "square.and.arrow.up.on.square")
                     }
                     .disabled(preparingThreads)
+                    // 旅をストーリーに（第9章）は**この1行の中**（開いた画面の「投稿 | ストーリー」・
+                    // 2026-11-12 秘書室の判断。⋯ の行を増やさない）
+                    .accessibilityIdentifier("photo.socialShare")
                 }
                 Button(role: .destructive) { showDeleteConfirm = true } label: {
                     Label(Labels.Common.delete, systemImage: "trash")

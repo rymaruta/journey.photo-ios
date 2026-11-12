@@ -202,7 +202,9 @@ final class TripsDesignTests: XCTestCase {
         let book = try source("Features/Trips/TripBookView.swift")
         let body = section("var body: some View {", in: book)
         XCTAssertFalse(body.contains(".toolbar"), "共有が右上の印に戻っている（下端に一本化）")
-        assertInOrder([".safeAreaInset(edge: .bottom)", "TripBook.canShare(book, isMine: isMine)", "shareButton.jpBottomBar()"],
+        // 2026-11-12（1.1.83 第9章）: 下端の帯に「ストーリーに」を並べた。主の白い「この一冊を送る」が先（左・広い側）
+        assertInOrder([".safeAreaInset(edge: .bottom)", "TripBook.canShare(book, isMine: isMine)",
+                       "shareButton", "storyButton", ".jpBottomBar()"],
                       in: body, "下端の共有")
         let label = section("private var shareLabel", in: book)
         XCTAssertTrue(label.contains(".jpPillButton(.main(onPhoto: true))"), "写真のある画面の主ボタンは白")

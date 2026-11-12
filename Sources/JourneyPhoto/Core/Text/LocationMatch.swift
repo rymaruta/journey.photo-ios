@@ -374,16 +374,16 @@ extension LocationMatch {
         return "都道府県市区町村郡".contains(tail)
     }
 
-    private static func isJapan(_ part: String) -> Bool {
+    static func isJapan(_ part: String) -> Bool {
         part == "日本" || part.caseInsensitiveCompare("Japan") == .orderedSame
     }
 
     /// 英文の都道府県（"Miyagi Prefecture"・"Tokyo"・"Hokkaido"・"Osaka"・"Kyoto"）
-    private static func isEnglishPrefecture(_ part: String) -> Bool {
+    static func isEnglishPrefecture(_ part: String) -> Bool {
         part.hasSuffix(" Prefecture") || ["Tokyo", "Hokkaido", "Osaka", "Kyoto"].contains(part)
     }
 
-    private static func shortEnglishPrefecture(_ part: String) -> String {
+    static func shortEnglishPrefecture(_ part: String) -> String {
         part.hasSuffix(" Prefecture") ? String(part.dropLast(" Prefecture".count)) : part
     }
 
