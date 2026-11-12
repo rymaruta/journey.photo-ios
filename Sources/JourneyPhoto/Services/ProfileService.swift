@@ -174,4 +174,7 @@ struct ProfilePatch: Encodable {
     /// 光と天気の知らせを受け取るか（Pro・2026-10-09）。**真偽だけ**（サーバーは文字の "false" を 400 で断る）。
     /// `nil` は「触らない」
     var lightAlert: Bool?
+    /// 検索エンジンにプロフィールを表示しないか（2026-11-11 owner 承認・#526）。**真偽だけ**
+    /// （サーバーは文字の "true" を 400 で断る）。`nil` は「触らない」
+    var searchHidden: Bool?
 }

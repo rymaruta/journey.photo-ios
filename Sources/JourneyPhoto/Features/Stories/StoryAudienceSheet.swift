@@ -20,6 +20,10 @@ struct StoryAudienceSheet: View {
     @Binding var keepInArchive: Bool
     /// 「撮影地の位置を付ける」（2026-10-18・投稿と同じ人ごとの覚え。書くのは作る画面）
     @Binding var attachesLocation: Bool
+    /// 「24時間後も自分用に残す」の出し方（札 #541・2026-11-11 判断）。**紹介した写真だけ残さない**——
+    /// 全部が紹介の1枚なら出さず、混ぜたときは出して「紹介した写真は残りません」と添える
+    /// （人の写真の写しを棚に残さない。サーバーも紹介の1枚には `archive` を書かない・`storyPhotoShare.ts`）
+    var keepToggle: StorySharedPhoto.KeepToggle = .shown(note: nil)
     var onDone: () -> Void
 
     var body: some View {
@@ -50,10 +54,13 @@ struct StoryAudienceSheet: View {
                             isOn: $allowReplies)
                 JPCardDivider()
                 // **ハイライトに入れられるのは残したものだけ**（`api-user/src/highlights.ts`）。既定は残さない
-                JPToggleRow(title: L("24時間後も自分用に残す", "Keep for me after 24 hours"),
-                            detail: L("ハイライトに入れられます", "You can add it to highlights"),
-                            isOn: $keepInArchive)
-                JPCardDivider()
+                if case .shown(let note) = keepToggle {
+                    JPToggleRow(title: L("24時間後も自分用に残す", "Keep for me after 24 hours"),
+                                detail: [L("ハイライトに入れられます", "You can add it to highlights"), note]
+                                    .compactMap { $0 }.joined(separator: L("。", ". ")),
+                                isOn: $keepInArchive)
+                    JPCardDivider()
+                }
                 // 投稿の画面と同じ切り替え・同じ言葉（`UploadDetails`）。値も投稿と共有する
                 JPToggleRow(title: UploadDetails.locationToggleTitle,
                             detail: StoryLocationText.toggleNote(attaches: attachesLocation),

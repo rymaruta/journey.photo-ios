@@ -291,7 +291,7 @@ final class TripPlanStage1Tests: XCTestCase {
 
     /// 区間: 座標の無い場所は飛ばす・番号は通し番号のまま
     func testLegsSkipUnlocatedStops() {
-        let legs = TripTravel.legs([("a", Photo.Coords(lat: 1, lng: 1), 4), ("b", nil, 5), ("c", Photo.Coords(lat: 1.1, lng: 1), 6)])
+        let legs = TripTravel.legs([.init("a", Photo.Coords(lat: 1, lng: 1), 4), .init("b", nil, 5), .init("c", Photo.Coords(lat: 1.1, lng: 1), 6)])
         XCTAssertEqual(legs.count, 1)
         XCTAssertEqual(legs[0].from.number, 4)
         XCTAssertEqual(legs[0].to.number, 6)
@@ -461,6 +461,7 @@ final class TripPlanStage1FollowUpTests: XCTestCase {
     func testFixtureShapeAndReleaseGuard() throws {
         let plans = TripPlanFixture.initialPlans(today: TripPlanText.date(fromYMD: "2026-11-10")!)
         XCTAssertEqual(plans.first?.days.map(\.items.count), [3, 2])
+        XCTAssertEqual(plans.last?.days.map(\.items.count), [1, 1, 0, 1], "1 日 1 か所・空の日・ブラジル（2026-11-11）")
         XCTAssertEqual(plans.first?.startDate, "2026-12-10")
         let text = try source("Services/TripPlanFixture.swift")
         for name in ["isOn", "offline", "failing"] {

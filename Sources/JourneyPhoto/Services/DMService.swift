@@ -71,11 +71,16 @@ struct DMService {
         }
     }
 
-    /// 続きを送る。`clientId` は**再送で二重に入れないための鍵**（同じ1通の再送は同じ鍵・`DMOutbox`）
-    func send(_ id: String, text: String, clientId: String) async throws -> DMSendResult {
-        struct Body: Encodable { let text: String; let id: String }
+    /// 続きを送る。`clientId` は**再送で二重に入れないための鍵**（同じ1通の再送は同じ鍵・`DMOutbox`）。
+    ///
+    /// `photoId` を渡すと写真を送る（2026-11-11・札 #541・`dm.ts` の `photoId`）。写真があれば `text` は空でよい。
+    /// **承認前は送れない**（400 `requestPhoto`）・送る人に見せられない写真は 404 `photoNotFound`。
+    /// `photoId` が nil なら欄ごと送らない（今までと同じ本文）
+    func send(_ id: String, text: String, clientId: String, photoId: String? = nil) async throws -> DMSendResult {
+        struct Body: Encodable { let text: String; let id: String; let photoId: String? }
         return try await refusing {
-            try await api.authorized(.post, "/dm/\(encoded(id))/messages", body: Body(text: text, id: clientId),
+            try await api.authorized(.post, "/dm/\(encoded(id))/messages",
+                                     body: Body(text: text, id: clientId, photoId: photoId),
                                      as: DMSendResult.self)
         }
     }
@@ -233,11 +238,25 @@ struct DMMessage: Decodable, Identifiable, Equatable {
     let storyId: String?
     /// 読む人から見た引用札（`dmStoryQuote.ts`）。新しい方から20件を越えた古い通は無い（＝分からない）
     let story: DMStoryQuote?
+    /// 送った写真（2026-11-11 から・札 #541）
+    let photoId: String?
+    /// 写真だけの通（サーバーが古いアプリのために `text` を「写真を送りました」で埋めた）。**吹き出しの文は出さない**
+    let photoOnly: Bool
+    /// 読む人から見た写真の札（`dmPhotoQuote.ts`）。新しい方から20枚を越えた古い通は無い（＝分からない）
+    let photo: DMPhotoQuote?
 
     var isStoryReply: Bool { via == "story" || storyId != nil }
+    /// 写真を送った通
+    var hasPhoto: Bool { photoId != nil }
+    /// 吹き出しに出す文（写真だけの通は無い）
+    var bubbleText: String? {
+        if photoOnly { return nil }
+        return text.isEmpty ? nil : text
+    }
 
     init(id: String, from: String, mine: Bool, text: String, t: String, via: String? = nil,
-         storyId: String? = nil, story: DMStoryQuote? = nil) {
+         storyId: String? = nil, story: DMStoryQuote? = nil,
+         photoId: String? = nil, photoOnly: Bool = false, photo: DMPhotoQuote? = nil) {
         self.id = id
         self.from = from
         self.mine = mine
@@ -246,9 +265,12 @@ struct DMMessage: Decodable, Identifiable, Equatable {
         self.via = via
         self.storyId = storyId
         self.story = story
+        self.photoId = photoId
+        self.photoOnly = photoOnly
+        self.photo = photo
     }
 
-    private enum CodingKeys: String, CodingKey { case id, from, mine, text, t, via, storyId, story }
+    private enum CodingKeys: String, CodingKey { case id, from, mine, text, t, via, storyId, story, photoId, photoOnly, photo }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -261,7 +283,37 @@ struct DMMessage: Decodable, Identifiable, Equatable {
         storyId = try? c.decodeIfPresent(String.self, forKey: .storyId)
         // 引用札が壊れていても1通は落とさない（札を出さないだけ）
         story = try? c.decodeIfPresent(DMStoryQuote.self, forKey: .story)
+        photoId = (try? c.decodeIfPresent(String.self, forKey: .photoId)).flatMap { $0.isEmpty ? nil : $0 }
+        // 写真の無い通で `photoOnly` だけ来ても、文を消さない（何も出ない吹き出しを作らない）
+        photoOnly = photoId != nil && (try? c.decodeIfPresent(Bool.self, forKey: .photoOnly)) == true
+        photo = try? c.decodeIfPresent(DMPhotoQuote.self, forKey: .photo)
     }
+}
+
+/// 会話の中の、送った写真の札（`GET /dm/{id}` の `items[].photo`・2026-11-11・札 #541）。
+///
+///     {id, state:"live", src, title?, location?, ownerId?}   見られる（`src` は縮小版 512px）
+///     {id, state:"gone"}                                     見られない（消した・非公開・範囲の外・ブロック。理由は区別しない）
+struct DMPhotoQuote: Decodable, Equatable {
+    let id: String
+    let state: String
+    let src: String?
+    let title: String?
+    let location: String?
+    let ownerId: String?
+
+    init(id: String, state: String, src: String? = nil, title: String? = nil, location: String? = nil, ownerId: String? = nil) {
+        self.id = id
+        self.state = state
+        self.src = src
+        self.title = title
+        self.location = location
+        self.ownerId = ownerId
+    }
+
+    /// 見られるか（`live` で絵がある）
+    var isLive: Bool { state == "live" && imageURL != nil }
+    var imageURL: URL? { src.flatMap { $0.isEmpty ? nil : URL(string: $0) } }
 }
 
 /// 会話の中の、ストーリーへの返信の引用札（`GET /dm/{id}` の `items[].story`）。

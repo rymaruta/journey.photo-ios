@@ -135,6 +135,9 @@ enum NotificationText {
         case .inspired: rest = L(" があなたの写真を見て撮影しました", " took a photo inspired by yours")
         // 文言はプッシュの `NOTIF_STORY_MENTION` と同じ
         case .storymention: rest = L(" がストーリーであなたをメンションしました", " mentioned you in a story")
+        // 文言はプッシュの `NOTIF_STORY_SHARE`・`NOTIF_COMMENT_REPLY` と同じ（札 #541）
+        case .storyshare: rest = L(" があなたの写真をストーリーで紹介しました", " shared your photo in a story")
+        case .commentreply: rest = L(" があなたのコメントに返信しました", " replied to your comment")
         // 光と天気の知らせは一覧の行にならない（プッシュだけ）
         case .badge, .light, .none: return nil
         }

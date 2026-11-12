@@ -56,7 +56,8 @@ final class SettingsOutlineTests: XCTestCase {
     private func settingsSources() throws -> String {
         try ["Features/Settings/SettingsView.swift", "Features/Settings/TrunkPrivacySection.swift",
              "Features/Pro/ProSettingsSection.swift", "Features/Pro/LightAlertSettingsRows.swift",
-             "Features/Trips/OfflineSavedView.swift"].map(source).joined(separator: "\n")
+             "Features/Trips/OfflineSavedView.swift",
+             "Features/Settings/SearchHiddenSettingRow.swift"].map(source).joined(separator: "\n")
     }
 
     /// 設定と、設定から移した道具の置き場（≡ メニュー・2026-11-12）
@@ -194,7 +195,9 @@ final class SettingsOutlineTests: XCTestCase {
         // 節の中の行の順
         let privacy = slice(view, from: "private var privacySection: some View {", to: "private var photosSection")
         assertInOrder(["SettingsOutline.Part.privacy.title", id("settings.blocked"), id("settings.closeFriends"),
-                       "passRow", "if showsTrunkPrivacy {", id("settings.trunkPrivacy")], in: privacy, "プライバシーの順")
+                       "passRow", "if showsTrunkPrivacy {", id("settings.trunkPrivacy"),
+                       // 2026-11-11 owner 承認（#526）: トランクを見せるの下
+                       "SearchHiddenSettingRow(profile: myProfile)"], in: privacy, "プライバシーの順")
         let photos = slice(view, from: "private var photosSection: some View {", to: "private var helpSection")
         assertInOrder(["SettingsOutline.Part.photos.title", id("settings.compositionCatalog"),
                        id("settings.storage")], in: photos, "写真と撮影の順")

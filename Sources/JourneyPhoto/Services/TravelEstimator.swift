@@ -64,7 +64,8 @@ final class TravelEstimator: ObservableObject {
             throttledAt = nil
         }
         guard !throttled else { return }
-        for leg in legs {
+        // 長い移動（国をまたぐ・国が分からないまま 500km 以上）は聞かない（返らない・意味の無い距離・2026-11-11）
+        for leg in legs where !TripTravel.skipsDirections(leg) {
             for mode in TripTravel.modes(for: leg, transitAvailable: Self.transitAvailable) {
                 guard answers[leg.key]?[mode] == nil,
                       !queue.contains(where: { $0.leg.key == leg.key && $0.mode == mode }) else { continue }

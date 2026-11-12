@@ -37,6 +37,8 @@ enum WebTheme {
     static let text2 = rgb(BrandPalette.text2)
     /// **v2 の text-3（#9A9A9A・黒の上 7.46:1）。黒地・札の上だけ**——写真の上は `faint`（透過）
     static let text3 = rgb(BrandPalette.text3)
+    /// 未選択のチップの字（chip-text #D4D4D4・白 82%）。送るシートの行動の名前（札 #541）
+    static let chipText = rgb(BrandPalette.chipText)
     /// 入力欄のプレースホルダ。**35% → 50%**（35% は入力欄の上で 3.0 しか無く、
     /// 文字の線 4.5 に届かなかった）
     static let placeholder = Color.white.opacity(0.5)

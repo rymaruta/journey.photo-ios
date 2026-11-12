@@ -14,6 +14,15 @@ import SwiftUI
 /// - **まだ会話が無い相手**（プロフィールの「メッセージ」・受信箱の「新しいメッセージ」から・2026-11-10 判断）は、
 ///   `GET` の 404 `notFound` を「これから始まる」と読み、空の会話の画面から1通目を送れる（サーバーは送れば会話を作る）。
 ///   欄の上には送る前に決まり（文字3通まで・リンク不可）を出す（`DMText.firstMessageNote`）
+///
+/// **2026-11-11 作り直し（札 #541・owner 承認の案C「黒塗りに真鍮の縁」）**:
+/// - 自分の吹き出しは accent-soft の塗り＋真鍮 1pt の縁＋白の字（`DMBubbleColors`）。続けて送った吹き出しは付け根の側の角を
+///   6 に詰めて1かたまりに（`DMText.joinsPrevious`）。最大幅は会話の幅の 78%（固定の 304 をやめた）
+/// - 本文の URL は押せるリンク（真鍮の下線・`DMLinks`・開く先は Safari）。承認前は今までどおりサーバーが URL を断る
+/// - 送った写真の札（`DMPhotoQuote`・幅 220 の 4:5・押すと写真の詳細）。ストーリーへの返信の写真は 104×138
+/// - 送るボタンは真鍮の塗りに墨（板「写真の無い画面の主ボタン＝送信」・今までは白）。入力欄の縁は outline #666666
+///   （白 20% は黒地 1.66:1 で部品の縁の 3:1 に届かなかった）。リクエストの帯の「承認」も真鍮の塗り・「削除」の縁は outline
+/// - 日付の区切りは両側に細い線（白 8%）・見出しの顔 32（未見のストーリーは真鍮の輪）・名前 17
 struct DMConversationView: View {
 
     let conversationId: String
@@ -59,6 +68,12 @@ struct DMConversationView: View {
     /// 「タップでストーリーを見る」で開いたストーリー（全画面）
     @State private var openedStory: Story?
     @State private var openingStory = false
+    /// 写真の札を押して開いた写真（写真の詳細を積む）。一覧に無ければ開けない（単体の口は無い）
+    @State private var openedPhoto: Photo?
+    @State private var openedPhotoIsPublic = true
+    @State private var openingPhoto = false
+    /// 会話の幅（吹き出しの最大幅＝この 78%）
+    @State private var threadWidth: CGFloat = 0
     /// 引用札の見せ方に使う時刻。**開いている間に期限が来たら進めて描き直す**（「タップで見る」を残さない）
     @State private var cardClock = Date()
     @FocusState private var fieldFocused: Bool
@@ -90,6 +105,12 @@ struct DMConversationView: View {
     }
     private var canSend: Bool {
         phase == .loaded && !isDeletedPeer && (meta?.canSend ?? true) && remaining != 0
+    }
+    /// 写真の札から写真の詳細を積んでいるか（戻ったら開いた写真を外す）
+    private var photoIsOpen: Binding<Bool> {
+        Binding(get: { openedPhoto != nil }, set: { open in
+            if !open { openedPhoto = nil }
+        })
     }
     private var iBlockedPeer: Bool { peerId.map { hidden.blockedUserIds.contains($0) } ?? false }
 
@@ -141,6 +162,9 @@ struct DMConversationView: View {
         }
         .navigationDestination(isPresented: $showProfile) {
             if let peerId { UserProfileView(userId: peerId, fromConversation: true) }
+        }
+        .navigationDestination(isPresented: photoIsOpen) {
+            if let openedPhoto { PhotoDetailView(photo: openedPhoto, fromPublicFeed: openedPhotoIsPublic) }
         }
         .task(id: conversationId) { await load() }
         // 開いている間だけ読み直す（前面・電波あり）
@@ -196,18 +220,27 @@ struct DMConversationView: View {
 
     // MARK: - 見出し
 
-    /// 顔 28・名前 16・@ユーザー名 12（画面案）。押すと相手のプロフィール（退会した人は行かない）
+    /// 顔 32（未見のストーリーは真鍮の輪・押すとストーリー）・名前 17・@ユーザー名 12（2026-11-11 案C）。
+    /// 名前を押すと相手のプロフィール（退会した人は行かない）。顔と名前は別のボタン（ボタンの中にボタンを入れない）
     private var header: some View {
+        HStack(spacing: 6) {
+            if let peerId {
+                DMStoryFace(userId: peerId, deleted: isDeletedPeer, name: peerName, size: DMLook.headerAvatar) {
+                    if !isDeletedPeer { showProfile = true }
+                }
+            }
+            headerName
+        }
+    }
+
+    private var headerName: some View {
         Button {
             if !isDeletedPeer, peerId != nil { showProfile = true }
         } label: {
             HStack(spacing: 10) {
-                if let peerId {
-                    DMAvatar(userId: peerId, deleted: isDeletedPeer, size: DMLook.headerAvatar)
-                }
                 VStack(alignment: .leading, spacing: 0) {
                     Text(peerName)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(JPFont.headline)
                         .foregroundStyle(isDeletedPeer ? WebTheme.text3 : WebTheme.text)
                         .lineLimit(1)
                     if let username {
@@ -261,24 +294,26 @@ struct DMConversationView: View {
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: JPSpace.xs) {
                 Button { Task { await accept() } } label: {
+                    // 写真の無い画面の主ボタン＝真鍮の塗りに墨（7.11:1・2026-11-11 案C。今までは白）
                     Text(L("承認", "Accept"))
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(JPFont.footnote.weight(.semibold))
                         .foregroundStyle(WebTheme.accentText)
                         .padding(.horizontal, 18)
                         .frame(height: JPHeight.inlineButton)
-                        .background(WebTheme.accentBackground, in: Capsule())
+                        .background(WebTheme.accentFill, in: Capsule())
                         .frame(minHeight: WebTheme.minTapTarget)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("dm.band.accept")
                 Button { Task { await declineRequest() } } label: {
+                    // 縁は outline（帯の地に 3:1 以上。白 28% は 2.45:1 で部品の縁に届かなかった）
                     Text(Labels.Common.delete)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(JPFont.footnote.weight(.semibold))
                         .foregroundStyle(WebTheme.foreground)
                         .padding(.horizontal, 18)
                         .frame(height: JPHeight.inlineButton)
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.28), lineWidth: JPStroke.hairline))
+                        .overlay(Capsule().strokeBorder(WebTheme.outline, lineWidth: JPStroke.hairline))
                         .frame(minHeight: WebTheme.minTapTarget)
                         .contentShape(Rectangle())
                 }
@@ -309,22 +344,26 @@ struct DMConversationView: View {
                         let next = index + 1 < messages.count ? messages[index + 1] : nil
                         if DMText.startsDay(current: message, previous: previous),
                            let date = NotificationGroups.parse(message.t) {
-                            Text(DMText.dayLabel(date))
-                                .font(JPFont.caption)
-                                .foregroundStyle(WebTheme.text3)
-                                .frame(maxWidth: .infinity)
-                                .padding(.top, 10)
-                                .padding(.bottom, 2)
-                                .accessibilityAddTraits(.isHeader)
+                            DMDayDivider(text: DMText.dayLabel(date))
                         }
                         if message.isStoryReply { storyCard(for: message) }
-                        DMBubble(text: message.text, mine: message.mine,
-                                 time: DMText.showsTime(current: message, next: next)
-                                    ? NotificationGroups.parse(message.t).map { DMText.clock($0) } : nil)
-                            .id(message.id)
+                        if message.hasPhoto { photoCard(for: message) }
+                        let time = DMText.timeLabel(current: message, next: next)
+                        if let text = message.bubbleText {
+                            DMBubble(text: text, mine: message.mine, time: time,
+                                     joinsPrevious: DMText.joinsPrevious(current: message, previous: previous),
+                                     maxWidth: DMLook.bubbleMaxWidth(container: threadWidth))
+                                .id(message.id)
+                        } else if let time {
+                            // 写真だけの通は吹き出しを出さず、時刻だけ写真の下に
+                            DMTimeLabel(text: time, mine: message.mine).id(message.id)
+                        } else {
+                            Color.clear.frame(height: 0).id(message.id)
+                        }
                     }
                     ForEach(log.outgoing) { item in
-                        DMBubble(text: item.text, mine: true, time: nil, outgoing: item.phase,
+                        DMBubble(text: item.text, mine: true, time: nil,
+                                 maxWidth: DMLook.bubbleMaxWidth(container: threadWidth), outgoing: item.phase,
                                  onRetry: { Task { await retry(item.clientId) } })
                             .id(item.clientId)
                     }
@@ -335,6 +374,10 @@ struct DMConversationView: View {
                 .padding(.bottom, JPSpace.s)
             }
             .scrollDismissesKeyboard(.interactively)
+            // 吹き出しの最大幅（会話の幅の 78%）のために幅を読む
+            .onGeometryChange(for: CGFloat.self) { proxy in proxy.size.width } action: { width in
+                threadWidth = width
+            }
             .onAppear { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
             .onChange(of: log.messages.count + log.outgoing.count) { _, _ in
                 withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
@@ -392,70 +435,163 @@ struct DMConversationView: View {
         }
     }
 
+    /// 2026-11-11 案C: 眉ラベル（黒地の上なので真鍮）の下に、写真を 104×138（角 14）で大きく。写真の上の名前は白。
+    /// 終わった・分からないは破線の枠（終わったときだけ「ストーリーは終了しました」）
     private func storyCardFace(_ message: DMMessage, state: DMStoryCardState) -> some View {
-        HStack(spacing: JPSpace.s) {
-            storyThumb(state)
-                .frame(width: 40, height: 52)
-                .clipShape(RoundedRectangle(cornerRadius: JPRadius.xs + 2))
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(L("ストーリーへの返信", "STORY REPLY"))
-                    .font(JPFont.eyebrow)
-                    .tracking(JPTypeScale.eyebrowTracking)
-                    .foregroundStyle(WebTheme.accent)
-                Text(message.mine ? L("\(peerName) さんのストーリー", "\(peerName)'s story")
-                                  : L("あなたのストーリー", "Your story"))
-                    .font(JPFont.footnote)
-                    .foregroundStyle(WebTheme.text)
+        let owner = message.mine ? peerName : L("あなた", "You")
+        return VStack(alignment: message.mine ? .trailing : .leading, spacing: 6) {
+            Text(L("ストーリーへの返信", "STORY REPLY"))
+                .jpEyebrow()
+                .foregroundStyle(WebTheme.accent)
+            storyThumb(state, owner: owner)
+                .frame(width: DMLook.storyThumbWidth,
+                       height: state.liveStoryId != nil ? DMLook.storyThumbHeight : 72)
+                .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
+                .contentShape(RoundedRectangle(cornerRadius: JPRadius.m))
+        }
+        .frame(maxWidth: .infinity, alignment: message.mine ? .trailing : .leading)
+        .padding(.top, JPSpace.xxs)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(DMText.storyCardSpoken(owner: owner, mine: message.mine, state: state))
+    }
+
+    /// 札の絵（見られる写真は止め絵＋下に持ち主の名前（白）・動画は再生の印・終わった／分からないは破線の枠）
+    @ViewBuilder
+    private func storyThumb(_ state: DMStoryCardState, owner: String) -> some View {
+        switch state {
+        case .live(_, let image, _):
+            ZStack(alignment: .bottomLeading) {
+                if let image {
+                    RemoteImage(url: image)
+                } else {
+                    WebTheme.surface4
+                    Image(systemName: "play.fill")
+                        .font(JPFont.headline)
+                        .foregroundStyle(WebTheme.foreground)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                LinearGradient(colors: [Color.black.opacity(0), Color.black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
+                Text(owner)
+                    .font(JPFont.caption.weight(.semibold))
+                    .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
-                switch state {
-                case .live:
-                    Text(L("タップでストーリーを見る", "Tap to view the story"))
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.text3)
-                case .ended:
+                    .padding(JPSpace.xs)
+            }
+        case .ended:
+            RoundedRectangle(cornerRadius: JPRadius.m)
+                .strokeBorder(WebTheme.outline, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                .overlay(
                     Text(L("ストーリーは終了しました", "This story has ended"))
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)
+                        .multilineTextAlignment(.center)
+                        .padding(6)
                         .accessibilityIdentifier("dm.storyCard.ended")
-                case .none, .unknown:
-                    EmptyView()
-                }
-            }
-            Spacer(minLength: 0)
-            if state.liveStoryId != nil {
-                Image(systemName: "chevron.right")
-                    .font(JPFont.caption.weight(.semibold))
-                    .foregroundStyle(WebTheme.text3)
-                    .accessibilityHidden(true)
-            }
+                )
+        case .unknown, .none:
+            RoundedRectangle(cornerRadius: JPRadius.m)
+                .strokeBorder(WebTheme.outline, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                .overlay(Image(systemName: "circle.dashed").font(JPFont.footnote).foregroundStyle(WebTheme.text3))
         }
-        .padding(.horizontal, JPSpace.s)
-        .padding(.vertical, JPSpace.xs)
-        .frame(minHeight: 64)
-        .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.m))
-        .overlay(RoundedRectangle(cornerRadius: JPRadius.m).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
-        .contentShape(Rectangle())
-        .padding(.top, JPSpace.xxs)
-        .accessibilityElement(children: .combine)
     }
 
-    /// 札の左の小さな絵（見られる写真は止め絵・動画は再生の印・終わった／分からないは破線の枠）
+    // MARK: - 送った写真（2026-11-11・札 #541）
+
+    /// 送った写真の札。見られる写真は幅 220・4:5・角 14（縁も真鍮も載せない・写真が主役）で、下の黒地に題と撮影地。
+    /// 押すと写真の詳細。見られない（消した・非公開・範囲の外・ブロック）は破線の枠と「写真は表示できません」。
+    /// 中身が分からない（古い通・送った直後）は言い切らず「写真を送りました／届きました」（`DMPhotoCardState`）
     @ViewBuilder
-    private func storyThumb(_ state: DMStoryCardState) -> some View {
-        switch state {
-        case .live(_, let image?, _):
-            RemoteImage(url: image)
-        case .live:
-            ZStack {
-                WebTheme.surface4
-                Image(systemName: "play.fill").font(.system(size: 14)).foregroundStyle(WebTheme.foreground)
+    private func photoCard(for message: DMMessage) -> some View {
+        let mine = message.mine
+        VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
+            switch DMPhotoCardState.of(message, blocked: hidden.blockedUserIds) {
+            case .live(let quote):
+                livePhoto(quote, mine: mine)
+            case .gone:
+                photoPlaceholder(L("写真は表示できません", "This photo isn't available"), identifier: "dm.photoCard.gone")
+            case .unknown, .none:
+                photoPlaceholder(DMText.photoOnlyText(mine: mine), identifier: "dm.photoCard.unknown")
             }
-        case .ended, .unknown, .none:
-            RoundedRectangle(cornerRadius: JPRadius.xs + 2)
-                .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                .overlay(Image(systemName: "circle.dashed").font(.system(size: 14)).foregroundStyle(WebTheme.text3))
         }
+        .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
+        .padding(.top, JPSpace.xxs)
+    }
+
+    @ViewBuilder
+    private func livePhoto(_ quote: DMPhotoQuote, mine: Bool) -> some View {
+        Button { Task { await openPhoto(quote) } } label: {
+            RemoteImage(url: quote.imageURL)
+                .frame(width: DMLook.photoWidth, height: DMLook.photoHeight)
+                .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
+                .contentShape(RoundedRectangle(cornerRadius: JPRadius.m))
+        }
+        .buttonStyle(.plain)
+        .disabled(openingPhoto)
+        .accessibilityLabel(DMText.photoSpoken(title: quote.title, location: quote.location, mine: mine))
+        .accessibilityHint(L("写真を開きます", "Opens the photo"))
+        .accessibilityIdentifier("dm.photoCard.live")
+        if quote.title != nil || quote.location != nil {
+            VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
+                if let title = quote.title {
+                    Text(title)
+                        .font(JPFont.footnote.weight(.semibold))
+                        .foregroundStyle(WebTheme.text)
+                        .lineLimit(2)
+                }
+                if let location = quote.location {
+                    Text(L("撮影地 \(location)", "Taken in \(location)"))
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
+                        .lineLimit(1)
+                }
+            }
+            .multilineTextAlignment(mine ? .trailing : .leading)
+            .frame(maxWidth: DMLook.photoWidth, alignment: mine ? .trailing : .leading)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// 写真の代わりの破線の枠（見られない・分からない）
+    private func photoPlaceholder(_ text: String, identifier: String) -> some View {
+        RoundedRectangle(cornerRadius: JPRadius.m)
+            .strokeBorder(WebTheme.outline, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+            .frame(width: DMLook.photoWidth, height: 88)
+            .overlay(
+                Label(text, systemImage: "photo")
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+            )
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier(identifier)
+    }
+
+    /// 写真の札を押した: 公開の一覧（`fetchPhotos`・控えを使う）→ 公開範囲を絞った写真のうち自分に見えるぶん（`/feed/restricted`）→
+    /// 自分の写真（自分が送った下書き以外の自分の写真）の順に探す。**単体で写真を読む口は無い**ので、どれにも無ければ開けないと言う
+    private func openPhoto(_ quote: DMPhotoQuote) async {
+        guard !openingPhoto else { return }
+        openingPhoto = true
+        defer { openingPhoto = false }
+        let feed = (try? await environment.gallery.fetchPhotos()) ?? []
+        if let found = feed.first(where: { $0.id == quote.id }) {
+            openedPhotoIsPublic = true
+            openedPhoto = found
+            return
+        }
+        // 公開範囲を絞った写真（フォロワー・親しい友達）は公開の一覧に無い。自分に見えるぶんを読む（2026-11-11 確かめ役の指摘）
+        let restricted = (try? await environment.photos.restrictedFeed()) ?? []
+        if let found = restricted.first(where: { $0.id == quote.id }) {
+            openedPhotoIsPublic = false
+            openedPhoto = found
+            return
+        }
+        let mine = auth.userId != nil && quote.ownerId == auth.userId
+        let own: Photo? = mine ? (try? await environment.photos.myPhoto(id: quote.id)) ?? nil : nil
+        if let own {
+            openedPhotoIsPublic = false
+            openedPhoto = own
+            return
+        }
+        actionError = L("この写真はここから開けません", "This photo can't be opened from here")
     }
 
     /// 「タップでストーリーを見る」: ストーリーの一覧（`GET /stories`）からその1本を探して開く（単体の口は無い）。
@@ -519,27 +655,29 @@ struct DMConversationView: View {
                 noteRow(L("返信すると承認されます", "Replying accepts the request"), error: false)
             }
             HStack(alignment: .bottom, spacing: 6) {
+                // 欄は surface-2 に outline の縁（黒地 3.66:1・部品の縁 3:1 以上）。断られたら縁も赤（色だけにしない: 上に印と文）
                 TextField(L("メッセージ", "Message"), text: $draft, axis: .vertical)
                     .lineLimit(1...5)
-                    .font(.system(size: 15))
+                    .font(JPFont.body)
                     .foregroundStyle(WebTheme.text)
                     .focused($fieldFocused)
                     .padding(.horizontal, JPSpace.m)
                     .padding(.vertical, 11)
                     .frame(minHeight: DMLook.fieldHeight)
-                    .background(WebTheme.surface4.opacity(0.9), in: RoundedRectangle(cornerRadius: DMLook.fieldHeight / 2))
+                    .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: DMLook.fieldHeight / 2))
                     .overlay(RoundedRectangle(cornerRadius: DMLook.fieldHeight / 2)
-                        .strokeBorder(fieldError != nil ? WebTheme.danger : Color.white.opacity(0.2), lineWidth: JPStroke.hairline))
+                        .strokeBorder(fieldError != nil ? WebTheme.danger : WebTheme.outline, lineWidth: JPStroke.hairline))
                     .disabled(!canSend)
                     .accessibilityLabel(remaining == 0 ? L("承認されるまで送れません", "You can't send until they accept")
                                                        : L("\(peerName) さんへのメッセージ", "Message to \(peerName)"))
                     .accessibilityIdentifier("dm.field")
                 Button { Task { await send() } } label: {
+                    // 送れるときだけ真鍮の塗りに墨の矢印（7.11:1・板「写真の無い画面の主ボタン＝送信」・2026-11-11 案C）
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(JPFont.headline)
                         .foregroundStyle(sendEnabled ? WebTheme.accentText : Color.white.opacity(0.5))
                         .frame(width: DMLook.sendSize, height: DMLook.sendSize)
-                        .background(sendEnabled ? WebTheme.accentBackground : Color.white.opacity(0.16), in: Circle())
+                        .background(sendEnabled ? WebTheme.accentFill : Color.white.opacity(0.16), in: Circle())
                 }
                 .buttonStyle(.plain)
                 .disabled(!sendEnabled)
@@ -565,7 +703,7 @@ struct DMConversationView: View {
     private func noteRow(_ text: String, error: Bool) -> some View {
         HStack(alignment: .top, spacing: JPSpace.xs) {
             Image(systemName: error ? "exclamationmark.circle" : "info.circle")
-                .font(.system(size: 13))
+                .font(JPFont.footnote)
                 .padding(.top, 1)
                 .accessibilityHidden(true)
             Text(text)
@@ -825,33 +963,49 @@ struct DMConversationView: View {
     }
 }
 
-/// 吹き出し1つ（画面案: 自分は白・墨の字・右下の角 6、相手は surface-8・白の字・左下の角 6。最大幅 78%）。
-/// 送っている最中は薄く、送れなかったら破線の縁＋「送れませんでした ・ もう一度送る」（真鍮の下線・当たり 44）
+/// 吹き出し1つ（2026-11-11 案C「黒塗りに真鍮の縁」・`DMBubbleColors`）。
+///
+/// - 自分は accent-soft の塗り＋真鍮 1pt の縁＋白の字・右下の角 6。相手は surface-8・白の字・左下の角 6
+/// - 続けて送った吹き出し（`joinsPrevious`）は、上の付け根の側の角も 6 に詰めて1かたまりに見せる
+/// - 最大幅は会話の幅の 78%（`maxWidth`）
+/// - 本文の URL は押せるリンク（真鍮・下線・`DMLinks`）。開く先は Safari（SwiftUI のリンクの既定の動き）
+/// - 送っている最中は薄く、送れなかったら破線の縁＋「送れませんでした ・ もう一度送る」（真鍮の下線・当たり 44）
 struct DMBubble: View {
     let text: String
     let mine: Bool
     let time: String?
+    var joinsPrevious = false
+    var maxWidth: CGFloat = DMLook.bubbleMaxWidth(container: 0)
     var outgoing: DMOutgoing.Phase? = nil
     var onRetry: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
-            Text(text)
-                .font(.system(size: 15))
+            Text(Self.linked(text))
+                .font(JPFont.body)
                 .lineSpacing(3)
-                .foregroundStyle(mine ? WebTheme.accentText : WebTheme.foreground)
+                .foregroundStyle(DMBubbleColors.text(mine: mine))
+                .tint(DMBubbleColors.link)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(mine ? WebTheme.accentBackground : WebTheme.surface8, in: shape)
+                .background(DMBubbleColors.fill(mine: mine), in: shape)
                 .overlay {
                     if failedReason != nil {
-                        RoundedRectangle(cornerRadius: DMLook.bubbleRadius)
-                            .strokeBorder(WebTheme.danger, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                        shape.stroke(WebTheme.danger, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                    } else if mine {
+                        shape.stroke(DMBubbleColors.border(mine: true), lineWidth: DMLook.bubbleBorder)
                     }
                 }
                 .opacity(outgoing == .sending ? 0.6 : 1)
-                .frame(maxWidth: Self.maxWidth, alignment: mine ? .trailing : .leading)
+                .frame(maxWidth: maxWidth, alignment: mine ? .trailing : .leading)
                 .accessibilityLabel(spokenText)
+            if outgoing == .sending {
+                Text(L("送信中…", "Sending…"))
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+                    .padding(.horizontal, JPSpace.xxs)
+                    .accessibilityHidden(true)
+            }
             if let time {
                 Text(time)
                     .font(JPFont.caption.monospacedDigit())
@@ -861,7 +1015,9 @@ struct DMBubble: View {
             }
             if let reason = failedReason {
                 HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.circle").accessibilityHidden(true)
+                    Image(systemName: "exclamationmark.circle")
+                        .foregroundStyle(WebTheme.danger)
+                        .accessibilityHidden(true)
                     Text(reason)
                     if let onRetry {
                         Button(action: onRetry) {
@@ -884,20 +1040,40 @@ struct DMBubble: View {
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
     }
 
+    /// 本文にリンクを付けた形（見つけた URL だけ・http と https だけ）。字の並びはそのまま、リンクの所だけ印を付けてつなぐ
+    static func linked(_ text: String) -> AttributedString {
+        var out = AttributedString()
+        var cursor = text.startIndex
+        for link in DMLinks.find(in: text) {
+            if cursor < link.range.lowerBound { out += AttributedString(String(text[cursor..<link.range.lowerBound])) }
+            var piece = AttributedString(String(text[link.range]))
+            piece.link = link.url
+            #if os(iOS)
+            // 真鍮の字と下線（色だけにしない）。どちらの吹き出しの地も黒地の仲間（#1C170E 7.77:1・#2C2C2E 6.07:1）
+            piece[AttributeScopes.SwiftUIAttributes.UnderlineStyleAttribute.self] = .single
+            piece[AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.self] = DMBubbleColors.link
+            #endif
+            out += piece
+            cursor = link.range.upperBound
+        }
+        if cursor < text.endIndex { out += AttributedString(String(text[cursor...])) }
+        return out
+    }
+
     /// 送れなかった理由（送れなかった1通だけ）
     private var failedReason: String? {
         if case .failed(let reason)? = outgoing { return reason }
         return nil
     }
 
-    /// 吹き出しの最大幅（画面の 78%・幅 390 の画面で約 304）
-    nonisolated static let maxWidth: CGFloat = 304
-
     private var shape: UnevenRoundedRectangle {
         let r = DMLook.bubbleRadius, tail = DMLook.bubbleTailRadius
+        let top = joinsPrevious ? tail : r
+        // 付け根の下は、続きがあってもなくても 6（かたまりの最後が付け根）
+        let bottom = tail
         return mine
-            ? UnevenRoundedRectangle(topLeadingRadius: r, bottomLeadingRadius: r, bottomTrailingRadius: tail, topTrailingRadius: r)
-            : UnevenRoundedRectangle(topLeadingRadius: r, bottomLeadingRadius: tail, bottomTrailingRadius: r, topTrailingRadius: r)
+            ? UnevenRoundedRectangle(topLeadingRadius: r, bottomLeadingRadius: r, bottomTrailingRadius: bottom, topTrailingRadius: top)
+            : UnevenRoundedRectangle(topLeadingRadius: top, bottomLeadingRadius: bottom, bottomTrailingRadius: r, topTrailingRadius: r)
     }
 
     private var spokenText: String {
@@ -907,5 +1083,41 @@ struct DMBubble: View {
         case .failed?: return "\(who): \(text)、" + L("送れませんでした", "not sent")
         case nil: return "\(who): \(text)" + (time.map { "、\($0)" } ?? "")
         }
+    }
+}
+
+/// 日付の区切り（「今日」「昨日」「11月3日」）。両側に白 8% の細い線（2026-11-11 案C）
+struct DMDayDivider: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: JPSpace.s) {
+            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+            Text(text)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
+                .fixedSize()
+            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+        }
+        .padding(.top, JPSpace.s)
+        .padding(.bottom, JPSpace.xxs)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// 写真だけの通の時刻（吹き出しの無い通・写真の下に）
+struct DMTimeLabel: View {
+    let text: String
+    let mine: Bool
+
+    var body: some View {
+        Text(text)
+            .font(JPFont.caption.monospacedDigit())
+            .foregroundStyle(WebTheme.text3)
+            .padding(.horizontal, JPSpace.xxs)
+            .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
+            .accessibilityHidden(true)
     }
 }

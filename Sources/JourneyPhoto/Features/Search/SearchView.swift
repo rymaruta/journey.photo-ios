@@ -56,6 +56,10 @@ struct SearchView: View {
     @State private var quiz: DailyQuiz?
     /// 今日の一問に答えたか（札の2行目を変える）
     @State private var quizAnswered = false
+    /// 段の「写真｜地図」
+    @State private var spotIndexMode = SpotIndexMode.photos
+    /// 段の地図をなぞっている区分。**なぞっている間は画面のスクロールを止める**（指が地図から外れて画面が流れない）
+    @State private var spotTracing: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -113,6 +117,8 @@ struct SearchView: View {
             }
             // 結果だけを引き下げて読み直す。検索欄は固定したまま。
             .refreshable { await reloadAll() }
+            // 撮影スポットの段の地図をなぞっている間は流さない（札 #524・確かめ役の指摘 2026-11-11）
+            .scrollDisabled(spotTracing != nil)
         }
         .webScreen()
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
@@ -515,7 +521,8 @@ struct SearchView: View {
                                photos: model.everything,
                                photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.hasLoaded,
                                                                    photos: model.everything),
-                               isRetrying: spotIndexRetrying, retry: retrySpotIndex, region: $spotRegion)
+                               isRetrying: spotIndexRetrying, retry: retrySpotIndex, region: $spotRegion,
+                               mode: $spotIndexMode, tracing: $spotTracing)
             // 出ている地方の札の表紙のために、まだ索引だけの行の詳細を読む（無ければ通信しない）。
             // 鍵は画面に出ている間だけ（出ていない間に届いて捨てた回は、戻ったときに読み直す・`coverTaskKey`）
             .task(id: SpotPrefectureIndex.coverTaskKey(
