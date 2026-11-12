@@ -1196,7 +1196,9 @@ struct PhotoDetailView: View {
             early: model.owner?.showsEarlyMark ?? false,
             badge: model.owner?.shownBadge,
             // 撮影地は「大きい単位／（小さい単位）」の2行（2026-11-04 owner）
-            place: LocationMatch.shareCardPlace(target.location))
+            place: LocationMatch.shareCardPlace(target.location),
+            // 撮った日（縦書き・インスタントの型の字。2026-11-12 第8章）
+            taken: ShareCardMap.TakenDate.components(exif: target.exif?.dateTimeOriginal, date: target.date))
         actionNotice = nil
         signatureBundle = SignatureBundle(
             photoData: raw,
@@ -1234,6 +1236,8 @@ struct PhotoDetailView: View {
                         Label(L("SNS に載せる", "Share to social apps"), systemImage: "square.and.arrow.up.on.square")
                     }
                     .disabled(preparingThreads)
+                    // 撮影の試験が共有カードの画面へ入る目印（`ScreenshotTests`・2026-11-12 第8章）
+                    .accessibilityIdentifier("photo.shareCard")
                 }
                 Button(role: .destructive) { showDeleteConfirm = true } label: {
                     Label(Labels.Common.delete, systemImage: "trash")

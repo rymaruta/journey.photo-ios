@@ -21,6 +21,19 @@ enum SignatureShareCardRenderer {
         case label
         /// 地名を大きな明朝で、写真と黒のあいだにまたがらせる（見本 F5）
         case cover
+        /// 写真を全面に敷き、地名を縦の明朝で右の端に・落款つき（2026-11-12・第8章）
+        case tate
+        /// 生成りの紙に写真を貼り、地名を墨で（2026-11-12・第8章）
+        case instant
+
+        /// 選ぶ画面の見本の列の並び（2026-11-12 第8章: 表紙・縦書き・インスタント・フェード・帯・展示札）。
+        /// `allCases` の順（保存の値）とは別に持つ
+        static let pickerOrder: [Style] = [.cover, .tate, .instant, .fade, .band, .label]
+        /// 初めての人の型。前に使った型があればそちら。
+        /// 2026-11-12 秘書室の判断: **縦書き（落款つき）**。第8章は「初めては表紙。新しい型を出した後は縦書きに替えてよい」で、
+        /// 縦書きはこの版で出す新しい型の第一の推奨（写真を削らず、格子でも形で分かる・owner「映えるかどうかはめっちゃ大事」）。
+        /// Web には表紙が無いので、iOS と Web の初めてを縦書きでそろえる（`SHARE_CARD_FIRST_STYLE`）
+        static let firstChoice: Style = .tate
     }
 
     struct Credit {
@@ -40,6 +53,9 @@ enum SignatureShareCardRenderer {
         /// 撮影地の2行（大きい単位／（小さい単位））。無ければ `location` から分ける
         /// （`LocationMatch.shareCardPlace`・2026-11-04 owner）
         var place: LocationMatch.ShareCardPlace? = nil
+        /// 撮った日（縦書きの「二〇二六年十月」・インスタントの「2026.10.25」）。無ければ字を出さない
+        /// （`ShareCardMap.TakenDate`・2026-11-12 第8章）
+        var taken: (year: Int, month: Int, day: Int)? = nil
 
         var placeLines: [String] {
             (place ?? LocationMatch.shareCardPlace(location))?.lines ?? []
@@ -61,11 +77,25 @@ enum SignatureShareCardRenderer {
     static let brass = UIColor(red: 201/255, green: 166/255, blue: 107/255, alpha: 1)
     static let secondary = UIColor(red: 184/255, green: 184/255, blue: 184/255, alpha: 1)
 
+    /// 書き出す画素の倍率（1080 幅に対して）。選ぶ画面の見本の列の小さな絵だけ 1 未満にする
+    /// （`render(outputWidth:)`・2026-11-12 第8章「見本の列の絵は小さく描く」）。寸法は 1080 の座標のまま
+    @TaskLocal static var cardScale: CGFloat = 1
+
     #if os(Linux)
     // LinuxのSDK模型にはCoreGraphics/MapKit描画APIがない。実描画はiOSのXcodeで検証する。
-    static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait, style: Style = .band, avatarData: Data? = nil) async -> Data? { nil }
+    static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait, style: Style = .band, avatarData: Data? = nil,
+                       outputWidth: CGFloat = 1080) async -> Data? { nil }
     #else
-    static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait, style: Style = .band, avatarData: Data? = nil) async -> Data? {
+    /// `outputWidth` は書き出す絵の幅（既定は 1080）。小さくしても描く寸法は同じで、画素だけ縮む
+    static func render(_ data: Data, credit: Credit, ratio: Ratio = .portrait, style: Style = .band, avatarData: Data? = nil,
+                       outputWidth: CGFloat = 1080) async -> Data? {
+        let scale = max(0.05, min(1, outputWidth / 1080))
+        return await $cardScale.withValue(scale) {
+            await renderAtScale(data, credit: credit, ratio: ratio, style: style, avatarData: avatarData)
+        }
+    }
+
+    private static func renderAtScale(_ data: Data, credit: Credit, ratio: Ratio, style: Style, avatarData: Data?) async -> Data? {
         // 1080px幅のSNSカードに原本の全画素を展開しない。
         // 画質の余裕を持たせて最大3072pxへ縮小デコードし、失敗時は従来方式へ戻す。
         let photo: UIImage?
@@ -73,7 +103,7 @@ enum SignatureShareCardRenderer {
             let options: [CFString: Any] = [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: 3072,
+                kCGImageSourceThumbnailMaxPixelSize: max(480, Int(3072 * cardScale)),
                 kCGImageSourceShouldCacheImmediately: true
             ]
             if let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
@@ -89,6 +119,8 @@ enum SignatureShareCardRenderer {
         case .fade: return renderFade(photo: photo, credit: credit, ratio: ratio, avatarData: avatarData)
         case .label: return renderLabel(photo: photo, credit: credit, ratio: ratio, avatarData: avatarData)
         case .cover: return renderCover(photo: photo, credit: credit, ratio: ratio, avatarData: avatarData)
+        case .tate: return renderTate(photo: photo, credit: credit, ratio: ratio)
+        case .instant: return renderInstant(photo: photo, credit: credit, ratio: ratio)
         case .band: break   // 帯の型
         }
         typealias L = ShareCardMap.Layout
@@ -97,7 +129,7 @@ enum SignatureShareCardRenderer {
         let canvas = CGSize(width: width, height: height)
         // SNS地図は概略位置の周辺を描画する。道路・施設名は描画しない。
         let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
+        format.scale = cardScale
         format.opaque = true
         format.preferredRange = .standard
         let renderer = UIGraphicsImageRenderer(size: canvas, format: format)
@@ -602,7 +634,7 @@ enum SignatureShareCardRenderer {
         let layout = F(ratio: ratio)
         let canvas = CGSize(width: F.width, height: layout.height)
         let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
+        format.scale = cardScale
         format.opaque = true
         format.preferredRange = .standard
         return UIGraphicsImageRenderer(size: canvas, format: format).jpegData(withCompressionQuality: 0.93) { context in

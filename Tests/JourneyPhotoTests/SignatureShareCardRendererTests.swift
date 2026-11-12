@@ -353,6 +353,87 @@ final class SignatureShareCardRendererTests: XCTestCase {
         }
     }
 
+    /// 第8章の縦書き・インスタント（2026-11-12）。3つの比率で寸法どおりに描け、型の形（右の縦の帯の影・生成りの紙）が出る
+    func testTateAndInstantRenderAllRatios() async throws {
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 1200))
+            .jpegData(withCompressionQuality: 0.95) { context in
+                UIColor.white.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 1200, height: 1200))
+            }
+        let pin = try XCTUnwrap(SignatureShareCardRenderer.approximateShareCoordinate(
+            Photo.Coords(lat: 35.41, lng: 138.86)))
+        let credit = SignatureShareCardRenderer.Credit(
+            name: "旅する人", username: "tabi_photo", location: "山梨県（山中湖村）", coords: pin,
+            camera: "Hasselblad X2D II 100C", lens: "XCD 35-100E", exposure: "1/100s",
+            aperture: "f/4", iso: 50, verified: false, proStyle: nil, early: false, badge: nil,
+            taken: (2026, 10, 25))
+        func rgb(_ image: CGImage, _ x: Int, _ y: Int) throws -> [Int] {
+            var rgba = [UInt8](repeating: 0, count: 4)
+            let context = try XCTUnwrap(CGContext(
+                data: &rgba, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            let cropped = try XCTUnwrap(image.cropping(to: CGRect(x: x, y: y, width: 1, height: 1)))
+            context.draw(cropped, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return rgba.prefix(3).map(Int.init)
+        }
+        for style in [SignatureShareCardRenderer.Style.tate, .instant] {
+            for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
+                let rendered = await SignatureShareCardRenderer.render(
+                    source, credit: credit, ratio: ratio, style: style)
+                let image = try XCTUnwrap(UIImage(data: try XCTUnwrap(rendered)))
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "\(style.rawValue)_\(ratio)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                let name = "\(style.rawValue) \(ratio)"
+                XCTAssertEqual(image.size, CGSize(width: 1080, height: 1080 / CGFloat(ratio.rawValue)), name)
+                let bitmap = try XCTUnwrap(image.cgImage)
+                switch style {
+                case .tate:
+                    // 白い写真でも右の端は影で暗く（白い字が立つ）、左の上は写真のまま
+                    let layout = ShareCardMap.TateLayout(ratio: ratio)
+                    let y = Int(layout.top) + 20
+                    XCTAssertLessThan(try rgb(bitmap, 1076, y)[0], 150, "\(name) 右の縦の帯が暗くない")
+                    XCTAssertGreaterThan(try rgb(bitmap, 100, y)[0], 230, "\(name) 左の上の写真が暗い")
+                case .instant:
+                    // 紙の下の余白（字の無い所）は生成り。紙の外は暗く敷いた写真（白い写真の 40%）
+                    let layout = ShareCardMap.InstantLayout(ratio: ratio)
+                    let paper = try rgb(bitmap, 540, Int(layout.paperRect.maxY) - 16)
+                    XCTAssertGreaterThan(paper[0], 200, "\(name) 紙が生成りでない \(paper)")
+                    XCTAssertGreaterThan(paper[0], paper[2] + 4, "\(name) 紙が黄みの生成りでない \(paper)")
+                    let outside = try rgb(bitmap, 8, Int(layout.paperRect.midY))
+                    XCTAssertLessThan(outside[0], 140, "\(name) 紙の外が暗くない \(outside)")
+                    XCTAssertGreaterThan(outside[0], 60, "\(name) 紙の外が黒一色（写真が敷けていない） \(outside)")
+                default: break
+                }
+            }
+        }
+    }
+
+    /// 選ぶ画面の見本の列の小さな絵（`outputWidth`）。寸法はそのまま、画素だけ縮む
+    func testThumbnailOutputWidthShrinksPixelsOnly() async throws {
+        let source = UIGraphicsImageRenderer(size: CGSize(width: 800, height: 800))
+            .jpegData(withCompressionQuality: 0.9) { context in
+                UIColor.gray.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 800, height: 800))
+            }
+        let credit = SignatureShareCardRenderer.Credit(
+            name: "Creator", username: nil, location: "京都府（京都市）", coords: nil,
+            camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil, verified: false, proStyle: nil,
+            early: false, badge: nil)
+        for style in SignatureShareCardRenderer.Style.pickerOrder {
+            let data = try XCTUnwrap(await SignatureShareCardRenderer.render(
+                source, credit: credit, ratio: .portrait, style: style, outputWidth: 156), "\(style)")
+            let image = try XCTUnwrap(UIImage(data: data))
+            XCTAssertEqual(image.size.width * image.scale, 156, accuracy: 1, "\(style)")
+            XCTAssertEqual(image.size.height * image.scale, 195, accuracy: 1, "\(style)")
+        }
+        // 既定は 1080 のまま
+        let full = try XCTUnwrap(await SignatureShareCardRenderer.render(source, credit: credit, style: .tate))
+        XCTAssertEqual(UIImage(data: full)?.size, CGSize(width: 1080, height: 1350))
+    }
+
     /// 日本の写真は、撮影地の文字の県を真鍮 75% で塗る（案A-3）。海外の写真・県名の無い文字は塗らない
     func testJapanCardFillsPrefectureNamedInPlace() async throws {
         let source = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 800))

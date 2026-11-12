@@ -234,7 +234,124 @@ final class ShareCardMapTests: XCTestCase {
     func testAllStylesAreOfferedInOrder() {
         // 共有画面の切り替え（帯・フェード・表紙・展示札）の元になる型。保存済みの値が消えない（rawValue を変えない）
         XCTAssertEqual(SignatureShareCardRenderer.Style.allCases.map(\.rawValue),
-                       ["band", "fade", "label", "cover"])
+                       ["band", "fade", "label", "cover", "tate", "instant"])
+    }
+
+    // MARK: - 縦書き・インスタント・選ぶ画面（2026-11-12 第8章）
+
+    func testPickerShowsSixStylesWithCoverFirst() {
+        typealias S = SignatureShareCardRenderer.Style
+        // 見本の列の並び（表紙・縦書き・インスタント・フェード・帯・展示札）。6つ全部・重なりなし
+        XCTAssertEqual(S.pickerOrder, [.cover, .tate, .instant, .fade, .band, .label])
+        XCTAssertEqual(Set(S.pickerOrder), Set(S.allCases))
+        // 初めての人は縦書き（Web と同じ・2026-11-12 秘書室の判断）。前に使った型があればそれ。読めない値は初めてと同じ
+        XCTAssertEqual(S.firstChoice, .tate)
+        XCTAssertEqual(SignatureShareCardSheet.initialStyle(stored: nil), .tate)
+        XCTAssertEqual(SignatureShareCardSheet.initialStyle(stored: "band"), .band)
+        XCTAssertEqual(SignatureShareCardSheet.initialStyle(stored: "cover"), .cover)
+        XCTAssertEqual(SignatureShareCardSheet.initialStyle(stored: "postcard"), .tate)
+        // 払うと隣へ。端では反対の端へ回る（行き止まりにしない）
+        XCTAssertEqual(SignatureShareCardSheet.neighbor(of: .cover, step: 1), .tate)
+        XCTAssertEqual(SignatureShareCardSheet.neighbor(of: .cover, step: -1), .label)
+        XCTAssertEqual(SignatureShareCardSheet.neighbor(of: .label, step: 1), .cover)
+        // 名前は短く1行（12pt で見本の幅 60 前後に収まる字数）・比率はどこに貼るかの言葉つき
+        for style in S.allCases {
+            XCTAssertLessThanOrEqual(SignatureShareCardSheet.name(style).count, 6, "\(style)")
+        }
+        XCTAssertEqual(SignatureShareCardSheet.ratioLabel(.portrait).value, "4:5")
+        XCTAssertEqual(SignatureShareCardSheet.ratioLabel(.story).value, "9:16")
+        XCTAssertEqual(SignatureShareCardSheet.ratioLabel(.square).value, "1:1")
+        XCTAssertEqual(SignatureShareCardSheet.thumbnailWidth * 3, 156)
+    }
+
+    func testTateLayoutKeepsTheColumnInsideAndClearOfStoryBars() {
+        typealias T = ShareCardMap.TateLayout
+        for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
+            let l = T(ratio: ratio)
+            // 9:16 は上 140・下 170 を空ける（ストーリーの名前と返信の欄）。ほかは空けない
+            XCTAssertEqual(l.top, ratio == .story ? 140 : 0, "\(ratio)")
+            XCTAssertEqual(l.height - l.base, ratio == .story ? 170 : 0, "\(ratio)")
+            // 4字の県名は縮めずに入る。地名の列・落款は下の余白の上で終わる
+            let size = l.fittedPlaceSize(count: 4)
+            XCTAssertEqual(size, l.placeFontSize, "\(ratio)")
+            XCTAssertLessThanOrEqual(l.placeTop + 4 * size * T.placeStep + T.sealGap + l.sealSize, l.columnBottom,
+                                     "\(ratio)")
+            // 長い地名（10字）は縮めて入る（下限 72 より上）。もっと長いときは描くときに末尾を「…」で切る
+            let long = l.fittedPlaceSize(count: 10)
+            XCTAssertLessThan(long, l.placeFontSize, "\(ratio)")
+            XCTAssertGreaterThanOrEqual(long, T.placeMinimumFontSize, "\(ratio)")
+            XCTAssertLessThanOrEqual(l.placeTop + 10 * long * T.placeStep + T.sealGap + l.sealSize, l.columnBottom,
+                                     "\(ratio)")
+            // 地名の列の右端は 1010（右の余白 70）。左の列（市区町村）は左下の @名・ロゴの幅と重ならない
+            XCTAssertEqual(l.placeCenterX(size: size) + size / 2, T.rightEdge, "\(ratio)")
+            XCTAssertGreaterThan(l.subCenterX(placeSize: size) - T.subFontSize / 2, T.margin + T.leftColumnWidth,
+                                 "\(ratio)")
+            // 左下: @名の上に影が掛かり始め、ロゴは基準線の 60 の上に収まる
+            XCTAssertLessThan(l.bottomShadeTop, l.usernameTop, "\(ratio)")
+            XCTAssertLessThan(l.usernameTop + T.usernameFontSize * 1.3, l.brandCenterY - T.brandMarkSize / 2,
+                              "\(ratio)")
+            XCTAssertLessThanOrEqual(l.brandCenterY + T.brandMarkSize / 2, l.base - 40, "\(ratio)")
+            // 390pt の画面に置いたときの @名の大きさは 10.8pt（第8章の表の一番小さい字）
+            XCTAssertEqual(T.usernameFontSize * 390 / 1080, 10.8, accuracy: 0.05)
+        }
+        XCTAssertEqual(T(ratio: .portrait).placeFontSize, 156)
+        XCTAssertEqual(T(ratio: .story).placeFontSize, 184)
+        XCTAssertEqual(T(ratio: .square).placeFontSize, 128)
+    }
+
+    func testInstantLayoutKeepsThePaperAndLogoInside() {
+        typealias I = ShareCardMap.InstantLayout
+        for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
+            let l = I(ratio: ratio)
+            let paper = l.paperRect
+            // 紙は真ん中・傾けても（2.2°）カードの中。写真は紙の縁 44 の内側
+            XCTAssertEqual(paper.midX, 540, "\(ratio)")
+            let tilt = abs(I.paperTiltDegrees) * .pi / 180
+            let swing = paper.height / 2 * sin(tilt) + paper.width / 2 * (1 - cos(tilt))
+            XCTAssertGreaterThan(paper.minX - swing, 0, "\(ratio)")
+            XCTAssertGreaterThanOrEqual(paper.minY - I.tapeSize.height / 2 - swing, l.top - 1, "\(ratio) テープが上の空きに掛かる")
+            XCTAssertEqual(l.photoRect.minX - paper.minX, I.paperMargin, "\(ratio)")
+            XCTAssertEqual(paper.maxY - l.photoRect.maxY, l.paperBottom, "\(ratio)")
+            // 下の余白の字（地名・日付と @名）は紙の中・地図は右の 120
+            XCTAssertLessThan(l.metaTop + I.metaFontSize * 1.35, paper.maxY, "\(ratio)")
+            XCTAssertLessThanOrEqual(l.photoRect.minX + l.textWidth, l.mapRect.minX, "\(ratio)")
+            XCTAssertLessThanOrEqual(l.mapRect.maxY, paper.maxY, "\(ratio)")
+            // ロゴと住所は紙の下・9:16 の返信の欄（下 170）より上・ほかは下の端の内側
+            XCTAssertGreaterThan(l.brandCenterY - I.brandMarkSize / 2, paper.maxY + swing, "\(ratio)")
+            XCTAssertLessThanOrEqual(l.addressTop + I.addressFontSize * 1.35, l.base, "\(ratio)")
+        }
+        XCTAssertEqual(I(ratio: .story).photoHeight, 800 * 4 / 3)
+        XCTAssertEqual(I(ratio: .square).photoWidth, 640)
+    }
+
+    func testTakenDateFromExifOrDate() {
+        typealias D = ShareCardMap.TakenDate
+        let exif = D.components(exif: "2026:10:25 14:03:00", date: nil)
+        XCTAssertEqual(exif?.year, 2026); XCTAssertEqual(exif?.month, 10); XCTAssertEqual(exif?.day, 25)
+        // EXIF が無い・読めないときは撮影日（YYYY-MM-DD）
+        let date = D.components(exif: "0000:00:00 00:00:00", date: "2026-01-18")
+        XCTAssertEqual(date?.month, 1); XCTAssertEqual(date?.day, 18)
+        XCTAssertNil(D.components(exif: nil, date: nil))
+        XCTAssertNil(D.components(exif: "", date: "2026-13-01"))
+        XCTAssertEqual(D.dotted((2026, 10, 25)), "2026.10.25")
+        XCTAssertEqual(D.dotted((2026, 1, 8)), "2026.01.08")
+        XCTAssertEqual(D.kanjiYearMonth((2026, 10, 25)), "二〇二六年十月")
+        XCTAssertEqual(D.kanjiYearMonth((2026, 11, 7)), "二〇二六年十一月")
+        XCTAssertEqual(D.kanjiYearMonth((2026, 1, 18)), "二〇二六年一月")
+        XCTAssertEqual(D.englishMonthYear((2026, 5, 17)), "MAY 2026")
+    }
+
+    func testVerticalTextStandsJapaneseAndTurnsLatin() {
+        // 仮名・漢字が1字でもあれば立てて並べる。欧文だけなら行ごと倒す
+        XCTAssertTrue(ShareCardMap.isUprightVertical("滋賀県"))
+        XCTAssertTrue(ShareCardMap.isUprightVertical("アメリカ合衆国"))
+        XCTAssertTrue(ShareCardMap.isUprightVertical("かすみがうら市"))
+        XCTAssertFalse(ShareCardMap.isUprightVertical("Shiga"))
+        XCTAssertFalse(ShareCardMap.isUprightVertical("OCT 2026"))
+        // 立てた字の中の長音は倒す（縦組みの習い）。漢字・仮名は倒さない
+        XCTAssertTrue(ShareCardMap.rotatesInVertical("ー"))
+        XCTAssertFalse(ShareCardMap.rotatesInVertical("県"))
+        XCTAssertFalse(ShareCardMap.rotatesInVertical("ス"))
     }
 
     // MARK: - 残す島

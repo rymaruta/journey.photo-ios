@@ -314,6 +314,210 @@ enum ShareCardMap {
         var exifTop: CGFloat { photoBottom + 78 }
     }
 
+    // MARK: - 縦書き型の寸法（2026-11-12・第8章）
+
+    /// 「縦書き」型。写真を全面に敷き、地名を大きな縦の明朝で右の端に置く。地名の下に白い落款（撮影者の頭文字）。
+    /// 左下は撮影者の @名とロゴだけ（機材の行と URL は置かない）。見本は Artifact「画面デザインの案」第8章。
+    ///
+    /// 2026-11-12 判断: 9:16 は上 140・下 170 を空ける（インスタのストーリーの上の名前と下の返信の欄。今の型の 75 では
+    /// 模型の欄の高さ 8.5%＝163 に字が掛かる）。真鍮は使わない（字はすべて写真の上＝白だけ）。
+    struct TateLayout {
+        static let width: CGFloat = 1080
+        static let margin: CGFloat = 60
+        let height: CGFloat
+        let isSquare: Bool
+        let isStory: Bool
+
+        init(ratio: SignatureShareCardRenderer.Ratio) {
+            height = Self.width / CGFloat(ratio.rawValue)
+            isSquare = ratio == .square
+            isStory = ratio == .story
+        }
+
+        /// 上の空き（9:16 だけ 140）と、下の情報の基準線（9:16 は下の 170 を空ける）
+        var top: CGFloat { isStory ? 140 : 0 }
+        var base: CGFloat { height - (isStory ? 170 : 0) }
+
+        /// 右の縦の帯を暗くする影（右端 0.62 → 真ん中で 0）と、下の影（基準線の 420 上から）
+        static let sideShadeFrom: CGFloat = 1080
+        static let sideShadeTo: CGFloat = 540
+        static let sideShadeStops: [(location: CGFloat, alpha: CGFloat)] = [(0, 0.62), (0.5, 0.28), (1, 0)]
+        var bottomShadeTop: CGFloat { base - 420 }
+        static let bottomShadeStops: [(location: CGFloat, alpha: CGFloat)] = [(0, 0), (0.5, 0.3), (1, 0.6)]
+
+        /// 地名（大きい単位）の縦の字の大きさ。字数が多くて下の余白に届くときは縮める（下限 72）
+        var placeFontSize: CGFloat { isSquare ? 128 : isStory ? 184 : 156 }
+        static let placeMinimumFontSize: CGFloat = 72
+        /// 縦の字の送り（字の大きさの 1.04 倍）
+        static let placeStep: CGFloat = 1.04
+        /// 地名の1字目の上端
+        var placeTop: CGFloat { top + (isSquare ? 56 : 72) }
+        /// 右の端（地名の列の右端）
+        static let rightEdge: CGFloat = 1010
+        /// 落款の大きさ（角の丸い四角）と地名からの間
+        var sealSize: CGFloat { isSquare ? 76 : 88 }
+        static let sealGap: CGFloat = 28
+        /// 縦の列が届いてよい下端（左下の @名とロゴの段より上・下の余白 60）
+        var columnBottom: CGFloat { base - Self.margin }
+
+        /// 字数 `count` の地名を、落款まで含めて `columnBottom` に収める字の大きさ
+        func fittedPlaceSize(count: Int) -> CGFloat {
+            guard count > 0 else { return placeFontSize }
+            let available = columnBottom - placeTop - Self.sealGap - sealSize
+            let fits = available / (CGFloat(count) * Self.placeStep)
+            return max(Self.placeMinimumFontSize, min(placeFontSize, fits.rounded(.down)))
+        }
+        /// 地名の列の縦の中心の x（右端から字の半分）
+        func placeCenterX(size: CGFloat) -> CGFloat { Self.rightEdge - size / 2 }
+
+        /// 小さい単位（市区町村）と撮った年月の列（地名の列の左・30 空ける）
+        static let subFontSize: CGFloat = 48
+        static let subStep: CGFloat = 1.1
+        static let dateFontSize: CGFloat = 38
+        static let dateStep: CGFloat = 1.08
+        static let columnGap: CGFloat = 30
+        func subCenterX(placeSize: CGFloat) -> CGFloat {
+            placeCenterX(size: placeSize) - placeSize / 2 - Self.columnGap - Self.subFontSize / 2
+        }
+        /// 市区町村の1字目の上端（地名の1字目より字の 0.2 下げる）
+        func subTop(placeSize: CGFloat) -> CGFloat { placeTop + placeSize * 0.2 }
+
+        /// 左下: @名（30）とロゴ（マーク 38・字 32）。390pt の画面で @名は約 11pt
+        var usernameTop: CGFloat { base - 150 }
+        static let usernameFontSize: CGFloat = 30
+        var brandCenterY: CGFloat { base - 78 }
+        static let brandMarkSize: CGFloat = 38
+        static let brandWordSize: CGFloat = 32
+        /// 左下の字の幅（右の縦の列と重ならない）
+        static let leftColumnWidth: CGFloat = 560
+    }
+
+    // MARK: - インスタント型の寸法（2026-11-12・第8章）
+
+    /// 「インスタント」型。生成りの紙（インスタントの写真）に写真を貼り、下の余白に地名を墨で書く。
+    /// 周りは黒一色ではなく、同じ写真をぼかして暗く敷く（格子の中で色が出る）。紙は 2.2° 傾け、上にテープ。
+    ///
+    /// 2026-11-12 判断: 紙の色 `#F3EEE3` は共有の絵の中だけで使い、アプリの画面には使わない（第9章の切手・搭乗券と同じ紙）。
+    /// 紙の上の字は墨 `#07090A`（写真の色に左右されない）。真鍮は使わない（紙の上・写真の上には置かない決まり）。
+    struct InstantLayout {
+        static let width: CGFloat = 1080
+        let height: CGFloat
+        let isSquare: Bool
+        let isStory: Bool
+
+        init(ratio: SignatureShareCardRenderer.Ratio) {
+            height = Self.width / CGFloat(ratio.rawValue)
+            isSquare = ratio == .square
+            isStory = ratio == .story
+        }
+
+        var top: CGFloat { isStory ? 140 : 0 }
+        var base: CGFloat { height - (isStory ? 170 : 0) }
+
+        /// 紙に貼る写真の大きさ（1:1 は小さめの正方形・9:16 は縦長 3:4・4:5 は正方形）
+        var photoWidth: CGFloat { isSquare ? 640 : 800 }
+        var photoHeight: CGFloat { isStory ? photoWidth * 4 / 3 : photoWidth }
+        /// 紙の縁（上・左右）と、字を書く下の余白
+        static let paperMargin: CGFloat = 44
+        var paperBottom: CGFloat { isSquare ? 180 : 216 }
+        var paperRect: CGRect {
+            let w = photoWidth + Self.paperMargin * 2
+            let h = photoHeight + Self.paperMargin + paperBottom
+            return CGRect(x: Self.width / 2 - w / 2, y: top + (isSquare ? 50 : isStory ? 80 : 70), width: w, height: h)
+        }
+        var photoRect: CGRect {
+            CGRect(x: paperRect.minX + Self.paperMargin, y: paperRect.minY + Self.paperMargin,
+                   width: photoWidth, height: photoHeight)
+        }
+        /// 紙の傾き（反時計回り 2.2°）とテープの傾き（時計回り 4°・紙の上端の真ん中）
+        static let paperTiltDegrees: CGFloat = -2.2
+        static let tapeTiltDegrees: CGFloat = 4
+        static let tapeSize = CGSize(width: 300, height: 64)
+
+        /// 紙の下の余白の字: 地名（明朝 56・1:1 は 50）と、撮った日と @名（28）。右の 150 は小さな地図
+        var placeTop: CGFloat { photoRect.maxY + (isSquare ? 34 : 44) }
+        var placeFontSize: CGFloat { isSquare ? 50 : 56 }
+        static let placeMinimumFontSize: CGFloat = 34
+        var metaTop: CGFloat { photoRect.maxY + (isSquare ? 108 : 128) }
+        static let metaFontSize: CGFloat = 28
+        var textWidth: CGFloat { photoWidth - 150 }
+        var mapRect: CGRect {
+            CGRect(x: photoRect.maxX - 120, y: photoRect.maxY + 26, width: 120, height: paperBottom - 52)
+        }
+
+        /// 紙の下のロゴ（真ん中）と Web の住所
+        var brandCenterY: CGFloat { paperRect.maxY + (isSquare ? 60 : 82) }
+        static let brandMarkSize: CGFloat = 38
+        static let brandWordSize: CGFloat = 32
+        var addressTop: CGFloat { brandCenterY + 36 }
+        static let addressFontSize: CGFloat = 24
+
+        /// 後ろにぼかして敷く写真の暗さ（明るさ 40%）
+        static let backdropBrightness: CGFloat = 0.4
+    }
+
+    // MARK: - 撮った日（縦書き・インスタントの字）
+
+    /// 写真の撮った日（`exif.dateTimeOriginal` か `date`）を、カードの字にする。
+    /// 2026-11-12 判断: 時刻は出さない（日まで）。読めない値は出さない（字を作らない）
+    enum TakenDate {
+        /// 「2026:10:25 14:03:00」（EXIF）・「2026-10-25」・「2026/10/25」から年・月・日を取る
+        static func components(exif: String?, date: String?) -> (year: Int, month: Int, day: Int)? {
+            for raw in [exif, date] {
+                guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), raw.count >= 10 else { continue }
+                let head = raw.prefix(10)
+                let parts = head.split(whereSeparator: { ":-/.".contains($0) }).compactMap { Int($0) }
+                guard parts.count == 3, (1900...2200).contains(parts[0]), (1...12).contains(parts[1]),
+                      (1...31).contains(parts[2]) else { continue }
+                return (parts[0], parts[1], parts[2])
+            }
+            return nil
+        }
+
+        /// 「2026.10.25」（インスタントの紙の字）
+        static func dotted(_ c: (year: Int, month: Int, day: Int)) -> String {
+            String(format: "%04d.%02d.%02d", c.year, c.month, c.day)
+        }
+
+        private static let kanjiDigits: [Character] = ["〇", "一", "二", "三", "四", "五", "六", "七", "八", "九"]
+
+        /// 「二〇二六年十月」（縦書きの字）。年は1字ずつ、月は「十」「十一」「十二」
+        static func kanjiYearMonth(_ c: (year: Int, month: Int, day: Int)) -> String {
+            let year = String(String(c.year).compactMap { $0.wholeNumberValue.map { kanjiDigits[$0] } })
+            let month: String
+            switch c.month {
+            case 10: month = "十"
+            case 11, 12: month = "十" + String(kanjiDigits[c.month - 10])
+            default: month = String(kanjiDigits[c.month])
+            }
+            return year + "年" + month + "月"
+        }
+
+        /// 英語の画面の縦書きは「OCT 2026」（横に倒して書く）
+        static func englishMonthYear(_ c: (year: Int, month: Int, day: Int)) -> String {
+            let months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+            return months[c.month - 1] + " " + String(c.year)
+        }
+    }
+
+    /// 縦書きで、字を立てて1字ずつ並べるか（和文）、行ごと右へ倒すか（欧文だけの字）。
+    /// 2026-11-12 判断: 和文の縦組みの習いどおり、仮名・漢字が1字でもあれば立てて並べる。欧文だけなら倒す
+    static func isUprightVertical(_ text: String) -> Bool {
+        text.unicodeScalars.contains { scalar in
+            switch scalar.value {
+            case 0x3040...0x30FF, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF, 0xFF66...0xFF9F, 0x3005...0x3007:
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    /// 縦に立てた字で、横に倒して書く字（長音・波ダッシュ・括弧）
+    static func rotatesInVertical(_ character: Character) -> Bool {
+        "ー－〜～―…（）()「」-".contains(character)
+    }
+
     // MARK: - 残す島
 
     /// 2つの島がこれより近ければ「つながっている」とみなす（owner 了承の 60km）

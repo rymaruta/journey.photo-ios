@@ -1387,6 +1387,86 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "22b-写真を編集（欄の名前・撮影日）")
     }
 
+    /// **SNS に貼るカードの型を選ぶ画面**（2026-11-12 第8章）。自分の写真の「…」→「SNS に載せる」で開く。
+    /// 見本を横に払う／下の見本の列（6つ）で型を選ぶ。縦書き・インスタントを選んだ絵も撮る。
+    /// 入口が無い（公開の自分の写真が無い・写真を読めない）ときは撮らずに抜ける（この試験の決まり）。
+    /// 開けたら、見本の列の6つと比率の3つが 44pt 以上で、押すと選ばれることを確かめる
+    func testCapturesShareCardStyles() {
+        let app = XCUIApplication()
+        // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）。型は表紙を前に使った人として開く（初めての人は縦書き・絵の名前を表紙で固定するため）
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-signatureShare.style", "cover"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+
+        let myPhoto = app.buttons["mypage.photo"].firstMatch
+        guard myPhoto.waitForExistence(timeout: 15) else { return }
+        if !myPhoto.isHittable {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard myPhoto.isHittable else { return }
+        myPhoto.tap()
+
+        let menu = app.buttons["photo.menu"].firstMatch
+        guard menu.waitForExistence(timeout: 10), menu.isHittable else { return }
+        menu.tap()
+        let share = app.buttons["photo.shareCard"].firstMatch
+        guard share.waitForExistence(timeout: 5), share.isHittable else { return }
+        share.tap()
+
+        // 写真を読んでカードを描くまで待つ（「この画像を共有」が押せるようになる）
+        let shareButton = app.buttons["signatureShare.share"].firstMatch
+        guard shareButton.waitForExistence(timeout: 30) else { return }
+        let enabled = NSPredicate(format: "isEnabled == true")
+        _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: enabled, object: shareButton)], timeout: 20)
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "23-SNS に貼るカード（型を選ぶ・表紙）")
+
+        for style in ["cover", "tate", "instant", "fade", "band", "label"] {
+            let item = app.buttons["signatureShare.style.\(style)"].firstMatch
+            XCTAssertTrue(item.waitForExistence(timeout: 5), "見本の列に \(style) が無い")
+            XCTAssertGreaterThanOrEqual(item.frame.height, 44, "見本の \(style) が 44pt 未満")
+        }
+        for ratio in ["4:5", "9:16", "1:1"] {
+            let item = app.buttons["signatureShare.ratio.\(ratio)"].firstMatch
+            XCTAssertTrue(item.exists, "比率 \(ratio) が無い")
+            XCTAssertGreaterThanOrEqual(item.frame.height, 44, "比率 \(ratio) が 44pt 未満")
+        }
+
+        // 見本を左へ払うと次の型（縦書き）へ
+        let preview = app.descendants(matching: .any).matching(identifier: "signatureShare.preview").firstMatch
+        if preview.exists {
+            preview.swipeLeft()
+            Thread.sleep(forTimeInterval: 3)
+            XCTAssertTrue(app.buttons["signatureShare.style.tate"].firstMatch.isSelected, "払っても縦書きに替わらない")
+            shoot(app, "23b-SNS に貼るカード（縦書き）")
+        }
+        let instant = app.buttons["signatureShare.style.instant"].firstMatch
+        if instant.isHittable {
+            instant.tap()
+            Thread.sleep(forTimeInterval: 3)
+            XCTAssertTrue(instant.isSelected, "見本の列を押してもインスタントが選ばれない")
+            shoot(app, "23c-SNS に貼るカード（インスタント）")
+        }
+        let story = app.buttons["signatureShare.ratio.9:16"].firstMatch
+        if story.isHittable {
+            story.tap()
+            Thread.sleep(forTimeInterval: 3)
+            shoot(app, "23d-SNS に貼るカード（インスタント・ストーリー）")
+        }
+    }
+
     /// **「新しくなったこと」**（2026-10-04・`WhatsNewView`）。更新して初めて開いた人に出るシート。
     ///
     /// 更新した人を起動の引数で作る: 規約に同意済み（`-legal.consent.version 1`）・前に見た版が古い
