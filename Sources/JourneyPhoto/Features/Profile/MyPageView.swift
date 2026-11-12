@@ -1874,8 +1874,6 @@ enum MyPageEmpty {
     }
 }
 
-/// マイページの見出しの並びの値（2026-10-30 owner #415・案 ①②。板 MyPage・MyPageNoCover・MyPageCoverFrame）。
-/// 顔の段（顔の右に数）と名前の段（右端に「編集」）は、カバーの有無で同じ並び
 /// マイページの名前の横の点線の丸（2026-11-12 owner 案 A）。出す条件と寸法（画面に依らない・試験で見張る）
 enum MyPageNameSlot {
     /// 出すのは**メダル（名前の横に置ける絵のあるバッジ）を1つ以上持っていて、名前の横に何も飾っていない**とき。
@@ -1905,6 +1903,8 @@ enum MyPageNameSlot {
     static var leadingPull: CGFloat { WebTheme.minTapTarget - side - gapAfterMarks }
 }
 
+/// マイページの見出しの並びの値（2026-10-30 owner #415・案 ①②。板 MyPage・MyPageNoCover・MyPageCoverFrame）。
+/// 顔の段（顔の右に数）と名前の段（右端に「編集」）は、カバーの有無で同じ並び
 enum MyPageHeaderLayout {
     /// 顔と数の間（見本: gap 16）
     static let avatarStatsGap: CGFloat = JPSpace.m
