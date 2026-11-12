@@ -49,6 +49,29 @@ enum TripAutosave {
         return (base.updatedAt ?? "") != (server.updatedAt ?? "")
     }
 
+    /// 共有したプランで、ほかの仲間の変更に重ね直して送り直す回数の上限（読み直しで見つけた回と 409 の回を合わせて数える）
+    static let maxRebases = 3
+
+    /// 送ったあとにすること
+    enum AfterSave: Equatable {
+        /// 送れた
+        case done
+        /// 読み直して重ね直し、もう一度送る（数えた後の回数）
+        case retry(rebases: Int)
+        /// 止めて「まだ送れていません」を出す
+        case fail
+    }
+
+    /// 送ったあとの決め方。**409（ほかの仲間が先に書いた）は読み直して送り直すが、回数を必ず数える**
+    /// （2026-11-12 確かめ役の指摘: 409 の道で数えておらず、読み直しが古い姿を返し続けると上限なしに送り直した）。
+    /// 409 はサーバーが共有したプランにだけ返す（本人だけのプランでは返らない）ので、手元のプランが共有と
+    /// 知らない古い姿でも送り直す（読み直すと共有した姿と版が届き、版を添えて送れる）
+    static func afterSave(ok: Bool, conflict: Bool, rebases: Int) -> AfterSave {
+        if ok { return .done }
+        if conflict, rebases < maxRebases { return .retry(rebases: rebases + 1) }
+        return .fail
+    }
+
     enum Leave: Equatable {
         /// そのまま戻る（変えていない）
         case now

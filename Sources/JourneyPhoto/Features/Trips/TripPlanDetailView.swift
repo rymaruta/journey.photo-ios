@@ -553,7 +553,7 @@ struct TripPlanDetailView: View {
             // 共有したプラン: ほかの仲間の変更の上に、自分が変えた分だけを重ね直して送る（`TripShareText.rebase`）。
             // 本人だけのプラン（別の端末）は今までどおり止めて知らせる
             guard let server = fresh.first(where: { $0.planId == planId }), server.share != nil,
-                  let base = loadedFrom, rebases < 3 else {
+                  let base = loadedFrom, rebases < TripAutosave.maxRebases else {
                 problem = .conflict
                 return false
             }
@@ -568,6 +568,7 @@ struct TripPlanDetailView: View {
             guard isDirty else { problem = nil; return true }
         }
         let ok = await save()
+        let next = TripAutosave.afterSave(ok: ok, conflict: model.lastConflict, rebases: rebases)
         if ok {
             rebases = 0
             problem = nil
@@ -578,8 +579,11 @@ struct TripPlanDetailView: View {
                 sent = nil
             }
             if isDirty { scheduleAutosave() }
-        } else if model.lastConflict, plan?.share != nil, rebases < 3 {
-            // 読み直してから送るまでの間に、ほかの仲間が先に書いた（409）。もう一度読み直して重ね直す
+        } else if case .retry(let counted) = next {
+            // 読み直してから送るまでの間に、ほかの仲間が先に書いた（409）。もう一度読み直して重ね直す。
+            // 🔴 **この道でも回数を数える**（2026-11-12 確かめ役の指摘: 数えておらず、読み直しが古い姿を返し続けると
+            // 上限なしに送り直した）。手元が共有と知らないプランでも、409 は共有したプランにしか返らないので送り直す
+            rebases = counted
             model.clearError()
             return await flushNow(force: force)
         } else {

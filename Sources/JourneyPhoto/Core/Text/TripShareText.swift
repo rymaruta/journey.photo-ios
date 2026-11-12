@@ -67,9 +67,20 @@ enum TripShareText {
         return L("\(name) が足しました", "Added by \(name)")
     }
 
-    /// 会話の「日程に足しました · 1日目」
-    static func eventLine(day: Int) -> String {
-        L("日程に足しました · \(day + 1)日目", "Added to the plan · Day \(day + 1)")
+    /// 会話の札の「日程に足しました」。何日目かは `eventDay` で別の文字にし、余白で分けて並べる
+    /// （中黒で区切らない・2026-11-12 の決まり）
+    static var eventAdded: String { L("日程に足しました", "Added to the plan") }
+
+    /// 会話の札の「1日目」
+    static func eventDay(_ day: Int) -> String { L("\(day + 1)日目", "Day \(day + 1)") }
+
+    /// 会話の1通の上限（サーバーの `TRIP_CHAT_TEXT_MAX`・UTF-16 で数える・`PostLimits` と同じ数え方）。
+    /// 越えたぶんは打てない（2026-11-12 確かめ役の指摘10。サーバーは越えたぶんを黙って切る）
+    static let chatTextMax = 500
+
+    /// 入力欄の直しを上限に収める（DM の入力欄と同じ `PostLimits.limited`）
+    static func limitedDraft(old: String, new: String) -> String {
+        PostLimits.limited(old: old, new: new, limit: chatTextMax)
     }
 
     /// 受信箱の行の抜粋（「あお: …」・自分は「あなた: …」・場所を足した通は決まった文）

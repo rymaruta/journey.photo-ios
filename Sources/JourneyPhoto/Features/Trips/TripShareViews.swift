@@ -262,6 +262,11 @@ struct TripChatPane: View {
             inputBar
         }
         .accessibilityIdentifier("tripShare.chat")
+        // 1通の上限（500 字）を越えて打てない（DM の入力欄と同じ・2026-11-12 確かめ役の指摘10）
+        .onChange(of: draft) { old, new in
+            let kept = TripShareText.limitedDraft(old: old, new: new)
+            if kept != new { draft = kept }
+        }
         // 開いている間は 15 秒ごとに読み直す（プッシュが届かない端末でも会話が進む）
         .task(id: planId) {
             await reload()
@@ -286,7 +291,8 @@ struct TripChatPane: View {
     @ViewBuilder
     private func row(_ message: TripChatMessage) -> some View {
         if let event = message.event {
-            // 「ひがし茶屋街 日程に足しました · 1日目」の札（真ん中寄せ・足した人の名前つき）
+            // 「ひがし茶屋街」「日程に足しました」「1日目」の札（真ん中寄せ・足した人の名前つき）。
+            // 「日程に足しました」と「1日目」は余白で分ける（中黒で区切らない・2026-11-12）
             VStack(spacing: 2) {
                 Text(name(message.from))
                     .font(JPFont.caption)
@@ -294,9 +300,13 @@ struct TripChatPane: View {
                 Text(resolveName(event.item))
                     .font(JPFont.bodyEmphasis)
                     .foregroundStyle(WebTheme.foreground)
-                Text(TripShareText.eventLine(day: event.day))
-                    .font(JPFont.caption)
-                    .foregroundStyle(WebTheme.accent)
+                HStack(spacing: 6) {
+                    Text(TripShareText.eventAdded)
+                        .font(JPFont.caption)
+                    Text(TripShareText.eventDay(event.day))
+                        .font(JPFont.caption.monospacedDigit())
+                }
+                .foregroundStyle(WebTheme.accent)
             }
             .padding(.horizontal, JPSpace.m)
             .padding(.vertical, JPSpace.xs)
@@ -404,7 +414,8 @@ struct TripInboxRow: View {
                         .font(JPFont.body.weight(unread ? .bold : .medium))
                         .foregroundStyle(WebTheme.text)
                         .lineLimit(1)
-                    Text("· " + TripShareText.memberCount(item.members.count))
+                    // 題と人数は余白と色で分ける（中黒で区切らない・2026-11-12）
+                    Text(TripShareText.memberCount(item.members.count))
                         .font(JPFont.caption.monospacedDigit())
                         .foregroundStyle(WebTheme.text3)
                         .fixedSize()
