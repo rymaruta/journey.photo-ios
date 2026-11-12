@@ -8192,6 +8192,43 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
         }
 
+        // 送信の取り消し（2026-11-12・owner の要望）: 自分の吹き出しを長押し → 「送信を取り消す」→ 跡を残さず消え、文が欄に戻る。
+        // 確かめのダイアログは出さない。**出なければ撮らずに抜ける**
+        if openThread(app, named: "夕焼けの人") {
+            let mineText = "ありがとうございます。伊豆の海沿いです。"
+            let bubble = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", mineText)).firstMatch
+            // 見本の会話は下（新しい方）まで送られて開く。自分の文の吹き出しは上にあるので、届くまで戻す
+            // （run 1121: 吹き出しは在るが押せない位置で、長押しまで行かなかった）
+            let thread = app.descendants(matching: .any)["dm.conversation"].firstMatch
+            var swipes = 0
+            while bubble.waitForExistence(timeout: 5), !bubble.isHittable, swipes < 4 {
+                thread.swipeDown()
+                swipes += 1
+                Thread.sleep(forTimeInterval: 0.5)
+            }
+            XCTContext.runActivity(named: "86m5a の手前: exists=\(bubble.exists) / hittable=\(bubble.exists && bubble.isHittable) / swipes=\(swipes)") { _ in }
+            if bubble.exists, bubble.isHittable {
+                bubble.press(forDuration: 1.0)
+                let unsend = app.buttons["dm.unsend"].exists ? app.buttons["dm.unsend"].firstMatch
+                    : app.buttons.matching(NSPredicate(format: "label == %@", "送信を取り消す")).firstMatch
+                if unsend.waitForExistence(timeout: 5) {
+                    Thread.sleep(forTimeInterval: 1)
+                    shoot(app, "86m5a-メッセージ（長押しの送信を取り消す）")
+                    unsend.tap()
+                    Thread.sleep(forTimeInterval: 1.5)
+                    let field = app.descendants(matching: .any)["dm.field"].firstMatch
+                    let gone = !app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", mineText))
+                        .allElementsBoundByIndex.contains { $0.frame.minY < field.frame.minY }
+                    shoot(app, gone ? "86m5b-メッセージ（取り消した文が欄に戻る）" : "86m5b-メッセージ（取り消した吹き出しが残る）")
+                    XCTContext.runActivity(named: "86m5b の状態: gone=\(gone) / field.value=\(String(describing: field.value))") { _ in }
+                    XCTAssertTrue(gone, "取り消した吹き出しが会話に残っている")
+                    XCTAssertTrue(String(describing: field.value).contains(mineText), "取り消した文が入力欄に戻らない")
+                }
+            }
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+
         // 承認前の3通を使い切った会話（欄は止まり、理由を欄の上に）
         if openThread(app, named: "雪の駅") {
             if app.descendants(matching: .any)["dm.requestNote"].firstMatch.waitForExistence(timeout: 5) {

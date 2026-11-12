@@ -234,11 +234,11 @@ final class DMTripPlanTests: XCTestCase {
         XCTAssertTrue(conversation.contains("if tripOffered, !tripFound.isEmpty {"), "帯")
         XCTAssertTrue(conversation.contains("if tripOffered, log.messages.contains(where: \\.hasPhoto) { await trip.load"), "読み込み")
         let menu = try XCTUnwrap(body(of: "private func bubbleMenu", in: conversation))
-        XCTAssertTrue(menu.hasPrefix("private func bubbleMenu(_ text: String) -> some View {\n        if tripOffered {\n"),
+        XCTAssertTrue(menu.hasPrefix("private func bubbleMenu(_ message: DMMessage, text: String) -> some View {\n        if tripOffered {\n"),
                       "長押しのメニューの「旅行プランに入れる」は tripOffered の中")
         let add = try XCTUnwrap(body(of: "private func addToTrip", in: conversation))
         XCTAssertTrue(add.contains("{\n        guard tripOffered else { return }\n"), "長押しから呼ばれても入れない")
-        XCTAssertTrue(conversation.contains(".contextMenu { bubbleMenu(text) }"), "吹き出しの長押し")
+        XCTAssertTrue(conversation.contains(".contextMenu { bubbleMenu(message, text: text) }"), "吹き出しの長押し")
         XCTAssertTrue(conversation.contains("L(\"旅行プランに入れる\", \"Add to a trip\")"))
         XCTAssertTrue(conversation.contains("TripPlanDetailView(planId: planId, model: tripPlans, sharePeer: tripSharePeer)"), "作ったら日程の画面")
         // 「[名前] と共有する」（2b・2026-11-12）は承認済みの会話だけ。承認前のリクエスト（受け取った・送った）では出さない

@@ -223,6 +223,18 @@ struct DMThreadLog: Equatable {
         return outgoing.remove(at: i).text
     }
 
+    /// 送信を取り消す: 自分の1通を一覧から外す（押したらすぐ消える・2026-11-12）。外した1通を返す（失敗したら `restore` で戻す）。
+    /// **自分の通だけ**（相手の通・無い id は nil で何もしない）
+    mutating func unsend(_ id: String) -> DMMessage? {
+        guard let i = messages.firstIndex(where: { $0.id == id }), messages[i].mine else { return nil }
+        return messages.remove(at: i)
+    }
+
+    /// 取り消しに失敗した1通を元の位置へ戻す（時刻の順に並ぶ・`merge` と同じ）
+    mutating func restore(_ message: DMMessage) {
+        merge([message])
+    }
+
     /// 送っている最中の1通があるか（同じ時に2通を走らせない）
     var isSending: Bool { outgoing.contains { $0.phase == .sending } }
 
@@ -542,7 +554,9 @@ extension DMText {
     static func excerpt(_ thread: DMThread, language: String = Locale.preferredAppLanguage) -> String {
         let body = thread.excerpt == serverPhotoText ? photoOnlyText(mine: thread.lastMine == true, language: language)
                                                      : thread.excerpt
-        return thread.lastMine == true ? L("あなた: ", "You: ", language: language) + body : body
+        // 抜粋が空（全部の通を取り消した・2026-11-12）なら「あなた: 」だけを出さない
+        guard thread.lastMine == true, !body.isEmpty else { return body }
+        return L("あなた: ", "You: ", language: language) + body
     }
 
     /// サーバーが写真だけの通の本文・抜粋に入れる文（`dm.ts` の `DM_PHOTO_TEXT`・古いアプリ向け・日本語だけ）。
@@ -830,5 +844,52 @@ enum DMPhotoSend {
         guard let id = DMStart.conversationId(me: me, peer: peerId), !photoId.isEmpty else { throw Failure.invalid }
         return try await service.send(id, text: text.trimmingCharacters(in: .whitespacesAndNewlines),
                                       clientId: clientId, photoId: photoId)
+    }
+}
+
+/// 送信の取り消し（2026-11-12・owner「DM 送信取り消し必要だわ」「取り消しました。みたいなメッセージはいらない」）。
+///
+/// **確かめのダイアログは出さない**（直感的で簡単に・押す回数は長押し→1回）。代わりに、取り消した文は入力欄に戻す
+/// ——直して送り直せるし、間違えて押しても文を失わない。写真・ストーリーへの返信の通は、入力欄に戻すと
+/// 別の通（ただの文字）になってしまうので、取り消すだけ（2026-11-12 判断・秘書室）。
+enum DMUnsend {
+    /// 入力欄に戻す文。文字だけの自分の通だけ（写真・ストーリーへの返信は nil）。
+    /// **送れない会話（`canSend` が偽: 承認前の3通を使い切った・相手が退会）では戻さない**——欄は止まっていて、
+    /// 戻しても送り直せない（2026-11-12・確かめ役の指摘）
+    static func returnedText(_ message: DMMessage, canSend: Bool = true) -> String? {
+        guard canSend, message.mine, !message.hasPhoto, !message.isStoryReply, let text = message.bubbleText else { return nil }
+        return text
+    }
+
+    /// 取り消しの答えを受けて、画面をどうするか（2026-11-12・確かめ役の指摘: 404 を一律「消えたまま」にしていた）
+    enum Outcome: Equatable {
+        /// サーバーで消えた（成功・`messageNotFound`＝もう消えている・自分の通ではない）。吹き出しは消えたまま
+        case gone
+        /// サーバーが断った（会話が見られない `notFound`＝ブロックの関係など・上限・形の誤り）。**消えていないのが確か**:
+        /// 吹き出しを戻し、欄も戻す
+        case refused
+        /// 答えが分からない（時間切れ・圏外・5xx）。サーバーでは消えたかもしれない: 吹き出しは戻すが、**戻した文は欄に残す**
+        /// （消えていたら次の読み直しで吹き出しが消え、文は欄に残る＝失わない）
+        case unknown
+    }
+
+    static func outcome(of error: Error?) -> Outcome {
+        guard let error else { return .gone }
+        if let refused = error as? DMService.Refused {
+            return refused.status == 404 && refused.code == "messageNotFound" ? .gone : .refused
+        }
+        return .unknown
+    }
+
+    /// 戻したあとの入力欄。**打ちかけの文は消さない**（空ならそのまま、あれば改行して後ろに足す）。上限で切る
+    static func draft(current: String, returning text: String, limit: Int = DMRules.textMax) -> String {
+        let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        let joined = trimmed.isEmpty ? text : current + "\n" + text
+        return String(joined.prefix(limit))
+    }
+
+    /// 失敗して戻すときの入力欄。**戻したままの文なら元に戻す**（そのあと打ち直していれば触らない）
+    static func draftAfterFailure(current: String, returned: String, before: String) -> String {
+        current == returned ? before : current
     }
 }

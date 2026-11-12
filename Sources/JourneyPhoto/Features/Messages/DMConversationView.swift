@@ -404,7 +404,7 @@ struct DMConversationView: View {
                            let date = NotificationGroups.parse(message.t) {
                             DMDayDivider(text: DMText.dayLabel(date))
                         }
-                        if message.isStoryReply { storyCard(for: message) }
+                        if message.isStoryReply { unsendMenu(storyCard(for: message), for: message) }
                         if message.hasPhoto { photoCard(for: message) }
                         // 撮影スポットの頁のリンクは札にする（1.1.83・資料⑤・`DMSpotShare`）。吹き出しには残りの文だけ
                         let spotSlug = message.hasPhoto ? nil
@@ -421,7 +421,7 @@ struct DMConversationView: View {
                             DMBubble(text: text, mine: message.mine, time: time,
                                      joinsPrevious: DMText.joinsPrevious(current: message, previous: previous),
                                      maxWidth: DMLook.bubbleMaxWidth(container: threadWidth))
-                                .contextMenu { bubbleMenu(text) }
+                                .contextMenu { bubbleMenu(message, text: text) }
                                 .id(message.id)
                         } else if let time {
                             // 写真だけの通は吹き出しを出さず、時刻だけ写真の下に
@@ -465,9 +465,9 @@ struct DMConversationView: View {
         trip.places(log.messages, blocked: hidden.blockedUserIds)
     }
 
-    /// 吹き出しの長押し（段②）: 「旅行プランに入れる」と「コピー」
+    /// 吹き出しの長押し（段②）: 「旅行プランに入れる」と「コピー」。自分の通には「送信を取り消す」（2026-11-12）
     @ViewBuilder
-    private func bubbleMenu(_ text: String) -> some View {
+    private func bubbleMenu(_ message: DMMessage, text: String) -> some View {
         if tripOffered {
             Button { Task { await addToTrip(text) } } label: {
                 Label(L("旅行プランに入れる", "Add to a trip"), systemImage: "plus")
@@ -475,6 +475,26 @@ struct DMConversationView: View {
         }
         Button { UIPasteboard.general.string = text } label: {
             Label(L("コピー", "Copy"), systemImage: "doc.on.doc")
+        }
+        if message.mine { unsendButton(message) }
+    }
+
+    /// 「送信を取り消す」（2026-11-12・owner の要望）。**確かめのダイアログは出さない**——押したらすぐ消え、
+    /// 文字だけの通は文を入力欄に戻す（`DMUnsend`）。メニューの末尾に置く（よく使うコピーを先に）
+    private func unsendButton(_ message: DMMessage) -> some View {
+        Button { Task { await unsend(message) } } label: {
+            Label(L("送信を取り消す", "Unsend"), systemImage: "arrow.uturn.backward")
+        }
+        .accessibilityIdentifier("dm.unsend")
+    }
+
+    /// 写真・ストーリーへの返信の札の長押し。**自分の通にだけ**メニューを付ける（相手の札は今までどおり押すだけ）
+    @ViewBuilder
+    private func unsendMenu<Content: View>(_ content: Content, for message: DMMessage) -> some View {
+        if message.mine {
+            content.contextMenu { unsendButton(message) }
+        } else {
+            content
         }
     }
 
@@ -615,6 +635,7 @@ struct DMConversationView: View {
                 photoPlaceholder(DMText.photoOnlyText(mine: mine), identifier: "dm.photoCard.unknown")
             }
         }
+        .modifier(DMUnsendMenu(enabled: mine) { unsendButton(message) })
         .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
         .padding(.top, JPSpace.xxs)
     }
@@ -896,11 +917,26 @@ struct DMConversationView: View {
     /// 前に読んだ時刻より後の分だけ読む。相手の新しい1通があれば既読にする
     private func refreshSince() async {
         guard let since = meta?.t else { return }
-        guard let fetched = try? await environment.dm.conversation(conversationId, since: since),
-              !fetched.unchanged else { return }
+        let fetched: DMConversation
+        do {
+            fetched = try await environment.dm.conversation(conversationId, since: since)
+        } catch let refused as DMService.Refused where refused.isConversationMissing && !isNew {
+            // 相手が送った通が全部取り消され、自分の受信箱から会話が外れた（2026-11-12）。跡を残さない:
+            // 開いている画面からも消す（「表示できません」に切り替えない。ブロックの関係でも同じ 404 で、言い分けない）
+            log.replace(with: [])
+            return
+        } catch {
+            return
+        }
+        guard !fetched.unchanged else { return }
         let hadPeer = Set(log.messages.filter { !$0.mine }.map(\.id))
         meta = fetched
-        log.merge(fetched.items)
+        // 前に読んだ後に送信の取り消しがあった: 差分ではなく全部が来るので置き換える（消えた1通を画面から外す）
+        if fetched.full {
+            log.replace(with: fetched.items)
+        } else {
+            log.merge(fetched.items)
+        }
         if fetched.items.contains(where: { !$0.mine && !hadPeer.contains($0.id) }) {
             await markRead()
         }
@@ -976,6 +1012,46 @@ struct DMConversationView: View {
             isNew = false
         }
         await store.refresh(service: environment.dm, owner: auth.userId)
+    }
+
+    // MARK: - 送信の取り消し（2026-11-12）
+
+    /// 押したらすぐ消し、文字だけの通は文を入力欄へ（送れる会話だけ）。答えで3つに分ける（`DMUnsend.Outcome`）:
+    /// 消えた → そのまま。断られた（ブロックの関係など）→ 1通と欄を戻して赤の一言。分からない（時間切れ）→ 1通は戻すが
+    /// 戻した文は欄に残す（サーバーで消えていたら次の読み直しで消え、文は失わない）
+    private func unsend(_ message: DMMessage) async {
+        guard let removed = log.unsend(message.id) else { return }
+        actionError = nil
+        let before = draft
+        let returned = DMUnsend.returnedText(removed, canSend: canSend).map { DMUnsend.draft(current: draft, returning: $0) }
+        if let returned {
+            restoredDraft = returned
+            draft = returned
+            fieldFocused = true
+        }
+        var failure: Error?
+        do {
+            try await environment.dm.unsend(conversationId, messageId: removed.id)
+        } catch {
+            failure = error
+        }
+        switch DMUnsend.outcome(of: failure) {
+        case .gone:
+            // 受信箱の抜粋（最後の一言）はサーバーが直した。控えも読み直す
+            await store.refresh(service: environment.dm, owner: auth.userId)
+        case .refused:
+            log.restore(removed)
+            if let returned {
+                let back = DMUnsend.draftAfterFailure(current: draft, returned: returned, before: before)
+                restoredDraft = back
+                draft = back
+            }
+            actionError = L("送信を取り消せませんでした。", "Couldn't unsend.")
+        case .unknown:
+            log.restore(removed)
+            actionError = L("送信を取り消せたか確かめられませんでした。もう一度お試しください。",
+                            "Couldn't confirm the unsend. Please try again.")
+        }
     }
 
     // MARK: - 操作
@@ -1221,5 +1297,19 @@ struct DMTimeLabel: View {
             .padding(.horizontal, JPSpace.xxs)
             .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
             .accessibilityHidden(true)
+    }
+}
+
+/// 自分の通の札（写真）にだけ「送信を取り消す」の長押しを付ける（相手の札にはメニューを出さない・2026-11-12）
+private struct DMUnsendMenu<Menu: View>: ViewModifier {
+    let enabled: Bool
+    @ViewBuilder let menu: () -> Menu
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.contextMenu { menu() }
+        } else {
+            content
+        }
     }
 }
