@@ -238,6 +238,9 @@ final class StoryDesignRestTests: XCTestCase {
                       "空から作りに行く口が無い")
         XCTAssertTrue(view.contains(".fullScreenCover(isPresented: $showComposer"))
         XCTAssertTrue(view.contains("if saving {"))
+        // 名前の欄は 44pt の行のどこを押しても入れる（欄そのものは字の高さ・Mac run 1093）
+        XCTAssertTrue(view.contains(".onTapGesture { nameFocused = true }"))
+        XCTAssertTrue(view.contains(".focused($nameFocused)"))
         // 空と失敗を分ける（今の決まりのまま）・読み込み中は格子の骨組み
         XCTAssertTrue(view.contains("ErrorBanner(title: L(\"ストーリーを読み込めませんでした\""))
         XCTAssertTrue(view.contains("JPLoadingState(kind: .grid)"))

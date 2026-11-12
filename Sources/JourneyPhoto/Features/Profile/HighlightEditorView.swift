@@ -41,6 +41,8 @@ struct HighlightEditorView: View {
     @State private var showCoverPicker = false
     @State private var showComposer = false
     @State private var coverTick = 0
+    /// 名前の欄に焦点があるか（44pt の行のどこを押しても欄に入る）
+    @FocusState private var nameFocused: Bool
 
     /// 上の輪の大きさ（設計の案 04: 88）
     static let ringSide: CGFloat = 88
@@ -221,6 +223,7 @@ struct HighlightEditorView: View {
     private var nameField: some View {
         ZStack(alignment: .trailing) {
             TextField(L("名前", "Name"), text: $title)
+                .focused($nameFocused)
                 .font(JPFont.rowTitle)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(WebTheme.text)
@@ -241,7 +244,11 @@ struct HighlightEditorView: View {
                 .foregroundStyle(WebTheme.text3)
                 .accessibilityHidden(true)
         }
-        .frame(maxWidth: 260)
+        .frame(maxWidth: 260, minHeight: WebTheme.minTapTarget)
+        // 2026-11-12（Mac run 1093 で測った値）: 入力欄そのものの高さは字の高さ（27pt）で、外の `frame` では広がらない。
+        // 44pt の行のどこを押しても欄に入れるよう、行で受けて焦点を渡す（字の上は欄が先に受ける）
+        .contentShape(Rectangle())
+        .onTapGesture { nameFocused = true }
         .overlay(alignment: .bottom) {
             Rectangle().fill(WebTheme.line).frame(height: JPStroke.hairline)
         }

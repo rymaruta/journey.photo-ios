@@ -6693,9 +6693,15 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 3)
         let empty = app.buttons["highlightEditor.makeStory"].firstMatch.exists
         shoot(app, empty ? "63a-ハイライトを作る（空・ストーリーを作る）" : "63a-ハイライトを作る")
+        // 名前の欄の当たり: 欄そのものは字の高さ（run 1093 で 27pt）。44pt の行の、欄より上の所を押しても入れること
         let name = app.textFields["highlightEditor.name"].firstMatch
-        if name.exists {
-            XCTAssertGreaterThanOrEqual(name.frame.height, 44, "名前の欄の当たりが 44pt 未満")
+        if name.exists, name.isHittable {
+            let gap = max(0, (44 - name.frame.height) / 2)
+            if gap >= 4 {
+                name.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0)).withOffset(CGVector(dx: 0, dy: -(gap - 2))).tap()
+                XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5),
+                              "名前の欄の上（44pt の行の中）を押しても欄に入れない")
+            }
         }
     }
 
