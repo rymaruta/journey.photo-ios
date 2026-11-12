@@ -23,100 +23,10 @@ final class StoryCameraEntryTests: XCTestCase {
         XCTAssertLessThan(StoryCameraRules.holdThreshold, 0.8, "長すぎると長押しに気づかない")
     }
 
-    /// 2026-11-11（owner「ずっと押さないといけないのは嫌」）: 長押しで始めた録画は、指を離しても止めない。
-    /// 長押しにならなかった押しは、離したときにタップとして扱う
-    func testReleaseNeverStopsAHoldRecording() {
-        XCTAssertEqual(StoryCameraRules.releaseOutcome(startedByHold: true), .keepRecording,
-                       "長押しの録画が指を離すと止まる（撮っている間ずっと押していなければならない）")
-        XCTAssertEqual(StoryCameraRules.releaseOutcome(startedByHold: false), .tap)
-    }
-
-    /// 長押しで始めた録画は、もう一度押す（タップ）と止まる。どちらのモードでも同じ
-    func testTapStopsAHoldRecording() {
-        for mode in [StoryCameraRules.Mode.photo, .video] {
-            XCTAssertEqual(StoryCameraRules.pressIntent(mode: mode, isRecording: true, recordedSeconds: 3,
-                                                        starting: false, timer: .off, counting: false),
-                           .perform(.stopRecording), "\(mode)")
-        }
-    }
-
-    /// 始めた直後の二度押し（長押しを離した直後のもう一押し・動画モードの続けての2回タップ）では止めない。
-    /// 始めている途中（マイクの用意の間）のタップも受けない——写真モードで写真を撮って閉じてしまう
-    func testDoublePressDoesNotStopRightAway() {
-        XCTAssertEqual(StoryCameraRules.pressIntent(mode: .photo, isRecording: true, recordedSeconds: 0.1,
-                                                    starting: false, timer: .off, counting: false),
-                       .ignore, "始めてすぐの二度押しで 0 秒の動画になって閉じる")
-        XCTAssertEqual(StoryCameraRules.pressIntent(mode: .video, isRecording: true, recordedSeconds: 0.2,
-                                                    starting: false, timer: .off, counting: false), .ignore)
-        XCTAssertEqual(StoryCameraRules.pressIntent(mode: .photo, isRecording: false, recordedSeconds: 0,
-                                                    starting: true, timer: .off, counting: false),
-                       .ignore, "録画を始めている途中のタップで写真を撮って閉じる")
-        XCTAssertTrue(StoryCameraRules.acceptsStopTap(recordedSeconds: StoryCameraRules.stopGuardSeconds))
-        XCTAssertFalse(StoryCameraRules.acceptsStopTap(recordedSeconds: 0))
-        XCTAssertLessThanOrEqual(StoryCameraRules.stopGuardSeconds, 1, "長すぎると止めたいのに止まらない")
-        XCTAssertTrue(StoryCameraRules.acceptsStopTap(recordedSeconds: .nan), "時間が分からないときは止められること")
-        // 数えている間のタップは、始めている途中でも取り消し
-        XCTAssertEqual(StoryCameraRules.pressIntent(mode: .video, isRecording: false, recordedSeconds: 0,
-                                                    starting: true, timer: .three, counting: true), .cancelCountdown)
-    }
-
-    /// 案内は「押すと止まります」。「指を離すと」の言い方を残さない
-    func testStopHintWording() throws {
-        XCTAssertEqual(StoryCameraRules.stopHint, L("押すと止まります", "Tap to stop"))
-        for path in ["Sources/JourneyPhoto/Features/Stories/StoryCameraView.swift",
-                     "Sources/JourneyPhoto/Core/Text/StoryCameraRules.swift"] {
-            let source = try read(path)
-            // 表の言葉（`L(` の行）に「離すと」を出さない（注記の中の owner の声は残す）
-            for line in source.split(separator: "\n") where line.contains("L(\"") {
-                XCTAssertFalse(line.contains("離すと"), "\(path): \(line)")
-            }
-            XCTAssertFalse(source.contains("releaseStopsRecording"), path)
-        }
-    }
-
-    /// 画面の配線: 離したときは `releaseOutcome` を通す（止めない）・録画中の案内・読み上げのヒント・
-    /// アプリが前面でなくなった／撮影の場が中断されたら録画を止める・始めている途中を数える
-    func testHoldRecordingWiring() throws {
-        let source = try read("Sources/JourneyPhoto/Features/Stories/StoryCameraView.swift")
-        let ended = try XCTUnwrap(source.range(of: ".onEnded { _ in\n                let held"))
-        let endBody = String(source[ended.lowerBound...].prefix(500))
-        XCTAssertTrue(endBody.contains("StoryCameraRules.releaseOutcome(startedByHold: held)"))
-        XCTAssertFalse(endBody.contains("perform(.stopRecording)"), "指を離すと録画が止まる")
-        XCTAssertTrue(source.contains("if camera.isRecording { stopHint }"), "録画中に止め方の案内が無い")
-        XCTAssertTrue(source.contains(".accessibilityHint(shutterHint)"))
-        let scene = try XCTUnwrap(source.range(of: ".onChange(of: scenePhase)"))
-        let interrupted = try XCTUnwrap(source.range(of: ".onChange(of: camera.interruptions)"))
-        XCTAssertTrue(String(source[scene.lowerBound..<interrupted.lowerBound]).contains("perform(.stopRecording)"),
-                      "裏へ行っても録画が続く")
-        XCTAssertTrue(String(source[interrupted.lowerBound...].prefix(300)).contains("perform(.stopRecording)"),
-                      "電話が来ても録画が続く")
-        XCTAssertTrue(source.contains("guard !recordingStarting, !camera.isRecording else { return }"),
-                      "二度押しで録画を二度始める")
-        XCTAssertTrue(source.contains("starting: recordingStarting"))
-        // 長押しでも、ダイアログの間に指が離れていたら始めない（今までどおり）
-        XCTAssertTrue(source.contains("""
-            StoryCameraRules.startsAfterPermission(fromHold: fromHold, stillPressing: pressing,
-                                                                         screenClosed: camera.isClosed)
-            """), "閉じたあとに録画が始まる")
-        // 閉じたら始めない（model 側でも）。開き直したら戻す
-        XCTAssertTrue(source.contains("func stop() {\n        isClosed = true"))
-        XCTAssertTrue(source.contains("func start() async {\n        isClosed = false"))
-        XCTAssertTrue(source.contains("guard state == .ready, !isClosed, !isRecording"))
-        // 🔴 始めている途中の印は、必ず下ろす（下ろさないと、以後のタップを全部受けず止められない）
-        XCTAssertTrue(source.contains(
-            "recordingStarting = true\n            Task {\n                defer { recordingStarting = false }"),
-                      "始めている途中の印が下りず、シャッターが効かなくなる")
-        // 始めている途中に長押しで二度目を始めない
-        XCTAssertTrue(source.contains("holdAction(isRecording: camera.isRecording || recordingStarting,"))
-        // 裏へ行ったら、押している途中の状態も消す（指を受け取れなくなった押しを次に持ち越さない）
-        let sceneBlock = String(source[scene.lowerBound..<interrupted.lowerBound])
-        XCTAssertTrue(sceneBlock.contains("if phase != .active {\n                releasePress()\n                perform(.stopRecording)"),
-                      "裏へ行ったときに押している途中の状態が残る")
-        // 受けなかったタップに軽い触覚。始めている途中は読み上げのヒントを出さない
-        XCTAssertTrue(source.contains("case .ignore:\n            ignoredTick += 1"), "押したのに何も返らない")
-        XCTAssertTrue(source.contains(".sensoryFeedback(.impact(weight: .light, intensity: 0.4), trigger: ignoredTick)"))
-        XCTAssertTrue(source.contains("if recordingStarting && !camera.isRecording { return \"\" }"),
-                      "始めている途中、名前は「写真を撮る」なのにヒントが「押すと止まります」")
+    /// 長押しで始めた録画は指を離すと止まる。タップで始めた録画（動画モード）は離しても止まらない
+    func testReleaseStopsOnlyHoldRecordings() {
+        XCTAssertTrue(StoryCameraRules.releaseStopsRecording(startedByHold: true))
+        XCTAssertFalse(StoryCameraRules.releaseStopsRecording(startedByHold: false))
     }
 
     func testProgressStopsAtTheLimit() {
@@ -241,15 +151,10 @@ final class StoryCameraEntryTests: XCTestCase {
 
     /// 長押しの録画は、マイクの許可のダイアログの間に指が離れていたら始めない。タップの録画は始める
     func testRecordingStartsAfterPermissionOnlyIfStillHeld() {
-        XCTAssertTrue(StoryCameraRules.startsAfterPermission(fromHold: true, stillPressing: true, screenClosed: false))
-        XCTAssertFalse(StoryCameraRules.startsAfterPermission(fromHold: true, stillPressing: false, screenClosed: false),
+        XCTAssertTrue(StoryCameraRules.startsAfterPermission(fromHold: true, stillPressing: true))
+        XCTAssertFalse(StoryCameraRules.startsAfterPermission(fromHold: true, stillPressing: false),
                        "指が離れたのに録画が始まって止まらなくなる")
-        XCTAssertTrue(StoryCameraRules.startsAfterPermission(fromHold: false, stillPressing: false, screenClosed: false))
-        // 2026-11-11: 始めている一瞬に閉じたら、どちらの録画も始めない
-        XCTAssertFalse(StoryCameraRules.startsAfterPermission(fromHold: false, stillPressing: false, screenClosed: true),
-                       "閉じたあとに録画が始まる")
-        XCTAssertFalse(StoryCameraRules.startsAfterPermission(fromHold: true, stillPressing: true, screenClosed: true))
-        XCTAssertEqual(StoryCameraRules.haptic(for: .tapIgnored), .impactLight)
+        XCTAssertTrue(StoryCameraRules.startsAfterPermission(fromHold: false, stillPressing: false))
     }
 
     /// 音なしの注記: 動画モード、または写真モードの長押しで録っている最中にも出す

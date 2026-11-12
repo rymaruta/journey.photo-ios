@@ -53,27 +53,21 @@ final class StoryCameraPolishTests: XCTestCase {
 
     /// タイマーなし: 今までどおり。写真はタップで撮る・動画のタップは始める・録画中のタップは止める
     func testPressWithoutTimerKeepsExistingBehavior() {
-        XCTAssertEqual(StoryCameraRules.pressIntent(mode: .photo, isRecording: false, recordedSeconds: 0,
-                                                    starting: false, timer: .off, counting: false),
+        XCTAssertEqual(StoryCameraRules.pressIntent(mode: .photo, isRecording: false, timer: .off, counting: false),
                        .perform(.takePhoto))
-        XCTAssertEqual(StoryCameraRules.pressIntent(mode: .video, isRecording: false, recordedSeconds: 0,
-                                                    starting: false, timer: .off, counting: false),
+        XCTAssertEqual(StoryCameraRules.pressIntent(mode: .video, isRecording: false, timer: .off, counting: false),
                        .perform(.startRecording))
-        XCTAssertEqual(StoryCameraRules.pressIntent(mode: .video, isRecording: true, recordedSeconds: 10,
-                                                    starting: false, timer: .off, counting: false),
+        XCTAssertEqual(StoryCameraRules.pressIntent(mode: .video, isRecording: true, timer: .off, counting: false),
                        .perform(.stopRecording))
     }
 
     /// タイマーあり: 数えてから撮る。**動画は押さずに始まる（ハンズフリー）**。録画中のタップは数えずに止める
     func testPressWithTimerCountsThenActs() {
-        XCTAssertEqual(StoryCameraRules.pressIntent(mode: .photo, isRecording: false, recordedSeconds: 0,
-                                                    starting: false, timer: .three, counting: false),
+        XCTAssertEqual(StoryCameraRules.pressIntent(mode: .photo, isRecording: false, timer: .three, counting: false),
                        .startCountdown(then: .takePhoto))
-        XCTAssertEqual(StoryCameraRules.pressIntent(mode: .video, isRecording: false, recordedSeconds: 0,
-                                                    starting: false, timer: .ten, counting: false),
+        XCTAssertEqual(StoryCameraRules.pressIntent(mode: .video, isRecording: false, timer: .ten, counting: false),
                        .startCountdown(then: .startRecording))
-        XCTAssertEqual(StoryCameraRules.pressIntent(mode: .video, isRecording: true, recordedSeconds: 10,
-                                                    starting: false, timer: .ten, counting: false),
+        XCTAssertEqual(StoryCameraRules.pressIntent(mode: .video, isRecording: true, timer: .ten, counting: false),
                        .perform(.stopRecording), "ハンズフリーで始めた録画を止められない")
     }
 
@@ -82,8 +76,7 @@ final class StoryCameraPolishTests: XCTestCase {
         for mode in [StoryCameraRules.Mode.photo, .video] {
             for timer in [StoryCameraRules.TimerOption.three, .ten] {
                 XCTAssertEqual(
-                    StoryCameraRules.pressIntent(mode: mode, isRecording: false, recordedSeconds: 0,
-                                                 starting: false, timer: timer, counting: true),
+                    StoryCameraRules.pressIntent(mode: mode, isRecording: false, timer: timer, counting: true),
                     .cancelCountdown)
             }
         }
