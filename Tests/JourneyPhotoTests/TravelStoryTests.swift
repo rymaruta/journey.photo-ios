@@ -267,7 +267,8 @@ final class TravelStoryTests: XCTestCase {
     /// ⋯ に「ストーリーに」の行を足さない（2026-11-12 秘書室の判断）
     func testPhotoDetailMenuShowsSocialShareOnlyForShareablePhotos() throws {
         let detail = try source("Sources/JourneyPhoto/Features/PhotoDetail/PhotoDetailView.swift")
-        let gate = try XCTUnwrap(detail.range(of: "if CollectionScreen.isShareable(shown) {"))
+        // 1.1.83（#577）で条件が「自分の、全体に公開した写真」（`PhotoDetailRules.showsSocialCard`）になった
+        let gate = try XCTUnwrap(detail.range(of: "shareable: CollectionScreen.isShareable(shown)) {"))
         let row = try XCTUnwrap(detail.range(of: "L(\"SNS に載せる\", \"Share to social apps\")"))
         XCTAssertLessThan(gate.lowerBound, row.lowerBound)
         // 条件の `{` に対応する `}` を数えて探し、行がその中にあることを確かめる
