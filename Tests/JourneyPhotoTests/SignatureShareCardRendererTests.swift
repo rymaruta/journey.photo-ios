@@ -633,6 +633,14 @@ final class SignatureShareCardRendererTests: XCTestCase {
         return stride(from: 0, to: rgba.count, by: 4).map { Int(rgba[$0]) }.max() ?? 0
     }
 
+    /// 描いたカード（XCTUnwrap の autoclosure に await を入れられないので、いったん受けてから）
+    private func renderCard(_ data: Data, credit: SignatureShareCardRenderer.Credit,
+                            ratio: SignatureShareCardRenderer.Ratio,
+                            style: SignatureShareCardRenderer.Style) async throws -> Data {
+        let rendered = await SignatureShareCardRenderer.render(data, credit: credit, ratio: ratio, style: style)
+        return try XCTUnwrap(rendered)
+    }
+
     private func grayPhoto() -> Data {
         UIGraphicsImageRenderer(size: CGSize(width: 800, height: 1000)).jpegData(withCompressionQuality: 0.95) { context in
             UIColor.darkGray.setFill()
@@ -658,24 +666,24 @@ final class SignatureShareCardRendererTests: XCTestCase {
         }
         let threshold = 55
 
-        let empty = try XCTUnwrap(await SignatureShareCardRenderer.render(
-            grayPhoto(), credit: credit(camera: nil, lens: " ", exposure: nil), ratio: .portrait, style: .band))
+        let empty = try await renderCard(
+            grayPhoto(), credit: credit(camera: nil, lens: " ", exposure: nil), ratio: .portrait, style: .band)
         XCTAssertLessThan(try maxRed(empty, in: separator), threshold, "撮影情報が無いのに区切り線を描いた")
         for (index, rect) in dividers.enumerated() {
             XCTAssertLessThan(try maxRed(empty, in: rect), threshold, "撮影情報が無いのに縦罫 \(index) を描いた")
         }
 
-        let full = try XCTUnwrap(await SignatureShareCardRenderer.render(
+        let full = try await renderCard(
             grayPhoto(), credit: credit(camera: "Camera", lens: "35mm", exposure: "1/125s"),
-            ratio: .portrait, style: .band))
+            ratio: .portrait, style: .band)
         XCTAssertGreaterThan(try maxRed(full, in: separator), threshold, "撮影情報があるのに区切り線が無い")
         for (index, rect) in dividers.enumerated() {
             XCTAssertGreaterThan(try maxRed(full, in: rect), threshold, "撮影情報があるのに縦罫 \(index) が無い")
         }
 
         // カメラだけ: 区切り線は描き、縦罫は描かない
-        let cameraOnly = try XCTUnwrap(await SignatureShareCardRenderer.render(
-            grayPhoto(), credit: credit(camera: "Camera", lens: nil, exposure: nil), ratio: .portrait, style: .band))
+        let cameraOnly = try await renderCard(
+            grayPhoto(), credit: credit(camera: "Camera", lens: nil, exposure: nil), ratio: .portrait, style: .band)
         XCTAssertGreaterThan(try maxRed(cameraOnly, in: separator), threshold)
         for (index, rect) in dividers.enumerated() {
             XCTAssertLessThan(try maxRed(cameraOnly, in: rect), threshold, "空の欄に縦罫 \(index) を描いた")
@@ -689,14 +697,14 @@ final class SignatureShareCardRendererTests: XCTestCase {
             CGRect(x: $0 - 3, y: layout.tableTop + 30, width: 6, height: 30)
         }
         let threshold = 35
-        let empty = try XCTUnwrap(await SignatureShareCardRenderer.render(
-            grayPhoto(), credit: credit(camera: nil, lens: nil, exposure: nil), ratio: .portrait, style: .label))
+        let empty = try await renderCard(
+            grayPhoto(), credit: credit(camera: nil, lens: nil, exposure: nil), ratio: .portrait, style: .label)
         for (index, rect) in dividers.enumerated() {
             XCTAssertLessThan(try maxRed(empty, in: rect), threshold, "撮影情報が無いのに縦罫 \(index) を描いた")
         }
-        let full = try XCTUnwrap(await SignatureShareCardRenderer.render(
+        let full = try await renderCard(
             grayPhoto(), credit: credit(camera: "Camera", lens: "35mm", exposure: "1/125s"),
-            ratio: .portrait, style: .label))
+            ratio: .portrait, style: .label)
         for (index, rect) in dividers.enumerated() {
             XCTAssertGreaterThan(try maxRed(full, in: rect), threshold, "撮影情報があるのに縦罫 \(index) が無い")
         }
