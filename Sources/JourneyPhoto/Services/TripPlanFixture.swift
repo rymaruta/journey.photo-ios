@@ -48,15 +48,6 @@ enum TripPlanFixture {
         #endif
     }
 
-    /// 運ぶ印の版で描く（`-JPTripPlanDragHandle YES`・見本のときだけ）。行全体を運ぶ版と比べる UI テスト用
-    static var dragHandleVariant: Bool {
-        #if DEBUG
-        return isOn && UserDefaults.standard.bool(forKey: "JPTripPlanDragHandle")
-        #else
-        return false
-        #endif
-    }
-
     static var failing: Bool {
         #if DEBUG
         return isOn && UserDefaults.standard.bool(forKey: failKey)
