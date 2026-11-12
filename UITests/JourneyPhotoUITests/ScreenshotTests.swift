@@ -1522,8 +1522,10 @@ final class ScreenshotTests: XCTestCase {
             }
             guard slot.exists else { return XCTFail("\(c.tag): 名前の横に点線の丸が無い") }
             XCTAssertEqual(slot.label, "名前の横にバッジを飾る", "\(c.tag): 読み上げが違う")
-            XCTAssertGreaterThanOrEqual(slot.frame.width, 44, "\(c.tag): 丸の当たりが 44pt 未満")
-            XCTAssertGreaterThanOrEqual(slot.frame.height, 44, "\(c.tag): 丸の当たりが 44pt 未満")
+            // 位置が端数の所に来ると、44 が 43.99999999999997 と返る（Mac run 1166 の「長い名前・Pro」で事実を取った）。
+            // 小数の誤差だけ許す
+            XCTAssertGreaterThanOrEqual(slot.frame.width, 44 - 0.01, "\(c.tag): 丸の当たりが 44pt 未満")
+            XCTAssertGreaterThanOrEqual(slot.frame.height, 44 - 0.01, "\(c.tag): 丸の当たりが 44pt 未満")
             // 1行に収まる: 名前の行 → 丸 → QR → 編集が横に並び、重ならず、右端（16）から出ない
             let nameLine = app.descendants(matching: .any)["mypage.nameLine"].firstMatch
             let qr = app.buttons["mypage.qr"].firstMatch
