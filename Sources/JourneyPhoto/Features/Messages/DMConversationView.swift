@@ -112,7 +112,9 @@ struct DMConversationView: View {
     /// 作ったプランを「[名前] と共有する」相手（2026-11-12・札 #553）。**承認済みの会話だけ**——承認前の
     /// リクエスト（受け取った側も送った側も）では出さない（サーバーも承認済みの会話の相手にしか共有させない）
     private var tripSharePeer: TripSharePeer? {
-        guard let peerId, !isNew, !isDeletedPeer, meta?.state == .inbox, remaining == nil else { return nil }
+        // 旅行プランの入口（`tripOffered`）と同じく、受け取った承認前のリクエストでは出さない。加えて、自分が送って
+        // まだ承認されていない会話でも出さない（サーバーが断る・`tripShare.ts` の `canShareDirectly`）
+        guard tripOffered, let peerId, !isNew, !isDeletedPeer, meta?.state == .inbox, remaining == nil else { return nil }
         return TripSharePeer(id: peerId, name: peerName)
     }
 
