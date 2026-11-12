@@ -99,6 +99,9 @@ struct DMSpotCard: View {
             .buttonStyle(.plain)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(DMSpotShare.spoken(name: spot.name, region: spot.regionLabel, mine: mine))
+            // 子を畳む（`.ignore`）とボタンの印が落ちる（Mac run 1096 で `dm.spotCard.open` が Button として見つからなかった）。
+            // 送るシートの丸（`SendSheet.actionLabel`）と同じく、印を付け直す
+            .accessibilityAddTraits(.isButton)
             .accessibilityHint(L("撮影スポットの頁を開きます", "Opens the spot page"))
             .accessibilityIdentifier("dm.spotCard.open")
             Button {

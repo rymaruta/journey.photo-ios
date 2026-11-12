@@ -145,6 +145,9 @@ final class SNSMoreTests: XCTestCase {
         let dm = try source("Sources/JourneyPhoto/Features/Messages/DMConversationView.swift")
         XCTAssertTrue(dm.contains("DMSpotCard(slug: spotSlug, mine: message.mine, fallback: message.text)"),
                       "届いた頁のリンクは札にする")
+        let card = try source("Sources/JourneyPhoto/Features/Messages/DMSpotCard.swift")
+        XCTAssertTrue(card.contains(".accessibilityAddTraits(.isButton)\n            .accessibilityHint(L(\"撮影スポットの頁を開きます\""),
+                      "札を畳んだあとにボタンの印が無い（読み上げ・UI テストで押せる物と分からない）")
     }
 
     // MARK: - ① 投稿したら共有カード

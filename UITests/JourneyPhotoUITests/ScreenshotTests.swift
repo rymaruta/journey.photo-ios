@@ -7839,7 +7839,10 @@ final class ScreenshotTests: XCTestCase {
         let wish = app.buttons["dm.spotCard.wish"].firstMatch
         if wish.exists { XCTAssertGreaterThanOrEqual(wish.frame.height, 44, "「行きたい場所に入れる」の的が 44pt 未満") }
         let open = app.buttons["dm.spotCard.open"].firstMatch
-        guard open.exists, open.isHittable else { return }
+        guard open.exists, open.isHittable else {
+            XCTContext.runActivity(named: "120d: 札の「撮影スポットの頁を開く」が押せない exists=\(open.exists)") { _ in }
+            return
+        }
         open.tap()
         let share = app.buttons["spot.official.share"].firstMatch
         guard share.waitForExistence(timeout: 15), share.isHittable else { return }
