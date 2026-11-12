@@ -7756,7 +7756,17 @@ final class ScreenshotTests: XCTestCase {
         if openThread(app, named: "夕焼けの人") {
             let mineText = "ありがとうございます。伊豆の海沿いです。"
             let bubble = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", mineText)).firstMatch
-            if bubble.waitForExistence(timeout: 5), bubble.isHittable {
+            // 見本の会話は下（新しい方）まで送られて開く。自分の文の吹き出しは上にあるので、届くまで戻す
+            // （run 1121: 吹き出しは在るが押せない位置で、長押しまで行かなかった）
+            let thread = app.descendants(matching: .any)["dm.conversation"].firstMatch
+            var swipes = 0
+            while bubble.waitForExistence(timeout: 5), !bubble.isHittable, swipes < 4 {
+                thread.swipeDown()
+                swipes += 1
+                Thread.sleep(forTimeInterval: 0.5)
+            }
+            XCTContext.runActivity(named: "86m5a の手前: exists=\(bubble.exists) / hittable=\(bubble.exists && bubble.isHittable) / swipes=\(swipes)") { _ in }
+            if bubble.exists, bubble.isHittable {
                 bubble.press(forDuration: 1.0)
                 let unsend = app.buttons["dm.unsend"].exists ? app.buttons["dm.unsend"].firstMatch
                     : app.buttons.matching(NSPredicate(format: "label == %@", "送信を取り消す")).firstMatch
