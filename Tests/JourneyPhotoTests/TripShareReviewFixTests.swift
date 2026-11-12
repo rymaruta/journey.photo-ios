@@ -98,3 +98,32 @@ final class TripShareReviewFixTests: XCTestCase {
         XCTAssertEqual(TripShareText.limitedDraft(old: "", new: "こんにちは"), "こんにちは")
     }
 }
+
+/// 確かめ役の見直し（2026-11-12・2回目）: 止まったときの文と、読み直したあとの送り直しの数
+final class TripShareReviewFix2Tests: XCTestCase {
+
+    /// 共有したプランで止まったときは「別の端末」ではなく「ほかの仲間」と言う（本人だけのプランは今までどおり）
+    func testConflictTextSaysFriendsForSharedPlan() {
+        XCTAssertEqual(TripPlanDetailView.problemText(.conflict, shared: true),
+                       L("ほかの仲間がこのプランを変えました。", "Someone else in this trip changed it."))
+        XCTAssertEqual(TripPlanDetailView.problemText(.conflict, shared: false),
+                       L("別の端末でこのプランが変わりました。", "This trip changed on another device."))
+        XCTAssertTrue(TripAutosave.banner(.conflict, dirty: true, shared: true)?.hasPrefix(
+            L("ほかの仲間がこのプランを変えました。", "Someone else in this trip changed it.")) == true)
+        XCTAssertTrue(TripAutosave.banner(.conflict, dirty: true, shared: false)?.hasPrefix(
+            L("別の端末でこのプランが変わりました。", "This trip changed on another device.")) == true)
+    }
+
+    /// 「読み直す」で送り直しの数を0に戻す（戻さないと、読み直したあとの最初のぶつかりで重ね直さずに止まる）。
+    /// 画面は Linux で動かせないので、読み直しの関数の中身を書いてあるもので見る
+    func testReloadFromServerResetsRebases() throws {
+        let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources/JourneyPhoto/Features/Trips/TripPlanDetailView.swift")
+        let src = try String(contentsOf: file, encoding: .utf8)
+        guard let start = src.range(of: "private func reloadFromServer() async {") else {
+            return XCTFail("reloadFromServer が見つからない")
+        }
+        let body = src[start.upperBound...].prefix { $0 != "}" }
+        XCTAssertTrue(body.contains("rebases = 0"), "読み直しで rebases を0に戻していない")
+    }
+}

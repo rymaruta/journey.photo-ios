@@ -240,7 +240,7 @@ struct TripPlanDetailView: View {
                                        dismiss()
                                    } else {
                                        let mine = saveAttempt
-                                       let message = Self.problemText(problem)
+                                       let message = Self.problemText(problem, shared: plan?.share != nil)
                                        // 確認の板が閉じ切ってから出す（閉じている途中に出すと
                                        // SwiftUI が黙って捨てることがある）
                                        try? await Task.sleep(nanoseconds: 350_000_000)
@@ -596,6 +596,9 @@ struct TripPlanDetailView: View {
 
     /// 別の端末の変更を読み直す（この画面で変えた分は残らない）
     private func reloadFromServer() async {
+        // 送り直しの数を0に戻す（2026-11-12 確かめ役の見直し2: 戻さないと、上限で止まって読み直したあとの
+        // 最初のぶつかりで重ね直さずにまた止まった）
+        rebases = 0
         await model.load(environment: environment)
         guard let plan else { return }
         loadedFrom = plan
@@ -606,11 +609,11 @@ struct TripPlanDetailView: View {
         problem = nil
     }
 
-    nonisolated static func problemText(_ problem: TripAutosave.Problem?) -> String {
+    nonisolated static func problemText(_ problem: TripAutosave.Problem?, shared: Bool = false) -> String {
         switch problem {
         case .failed(let message)?: return message
         case .offline?: return L("圏外のため送れませんでした。", "You're offline.")
-        case .conflict?: return L("別の端末でこのプランが変わりました。", "This trip changed on another device.")
+        case .conflict?: return TripAutosave.conflictLead(shared: shared)
         case nil: return L("もう一度お試しください", "Please try again.")
         }
     }
@@ -626,7 +629,7 @@ struct TripPlanDetailView: View {
     /// 送れていない直しの札（画面の上・板 Components 06 の灰の印 → 何が起きたか → 押せる一手）
     @ViewBuilder
     private var autosaveBanner: some View {
-        if let text = TripAutosave.banner(problem, dirty: isDirty) {
+        if let text = TripAutosave.banner(problem, dirty: isDirty, shared: plan?.share != nil) {
             VStack(alignment: .leading, spacing: JPSpace.xs) {
                 HStack(alignment: .firstTextBaseline, spacing: JPSpace.xs) {
                     Image(systemName: problem == .offline ? "wifi.slash" : "exclamationmark.triangle")

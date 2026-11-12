@@ -106,8 +106,15 @@ enum TripAutosave {
         !dirty && !sending
     }
 
-    /// 画面の上に残す1行。無ければ nil
-    static func banner(_ problem: Problem?, dirty: Bool) -> String? {
+    /// 止まったとき（`.conflict`）の頭の一文。**共有したプランは「ほかの仲間」**（2026-11-12 確かめ役の見直し2:
+    /// 仲間が変えたのに「別の端末で」と出ていた）。本人だけのプランは今までどおり
+    static func conflictLead(shared: Bool) -> String {
+        shared ? L("ほかの仲間がこのプランを変えました。", "Someone else in this trip changed it.")
+            : L("別の端末でこのプランが変わりました。", "This trip changed on another device.")
+    }
+
+    /// 画面の上に残す1行。無ければ nil。`shared`: 共有したプラン（止まったときの言い方を変える）
+    static func banner(_ problem: Problem?, dirty: Bool, shared: Bool = false) -> String? {
         switch problem {
         case .none: return nil
         case .offline?:
@@ -116,8 +123,8 @@ enum TripAutosave {
         case .failed(let message)?:
             return dirty ? L("まだ送れていません。\(message)", "Not sent yet. \(message)") : nil
         case .conflict?:
-            return L("別の端末でこのプランが変わりました。読み直すと、この画面で変えた分は残りません",
-                     "This trip changed on another device. Reloading drops the changes made here.")
+            return conflictLead(shared: shared) + L("読み直すと、この画面で変えた分は残りません",
+                                                    " Reloading drops the changes made here.")
         }
     }
 
