@@ -49,6 +49,8 @@ final class AppEnvironment: ObservableObject {
     let tripShare: TripShareService
     /// みんなの「行きたい」（2026-11-11・撮影スポットを払うの②）
     let spotWants: SpotWantsService
+    /// 意見箱（`/user/feedback`・`/feedback`・2026-11-11 札 #546）
+    let feedback: FeedbackService
 
     /// - Parameter gallery: 公開一覧の出どころ。**テストで差し替えるため**に
     ///   開けてある（既定のままだと本物のサイトを叩きにいくので、
@@ -96,5 +98,6 @@ final class AppEnvironment: ObservableObject {
         self.camper = CamperService(api: api)
         self.dm = DMService(api: api)
         self.tripShare = TripShareService(api: api)
+        self.feedback = FeedbackService(api: api)
     }
 }

@@ -1565,6 +1565,51 @@ final class ScreenshotTests: XCTestCase {
         _ = app.tabBars.firstMatch.waitForExistence(timeout: 5)
     }
 
+    /// **意見を送る**（2026-11-11 札 #546・`FeedbackSheet`）。設定の「意見を送る」の行から開き、
+    /// 開いた姿（欄にすぐ書ける・任意の2つは控えめ）と、書いたあと（「送る」が押せる）を撮る。**送りはしない**
+    func testCapturesFeedbackSheet() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return }
+        let gear = app.buttons["設定"].firstMatch
+        guard gear.waitForExistence(timeout: 5), gear.isHittable else { return }
+        gear.tap()
+        let row = app.buttons["settings.feedback"].firstMatch
+        guard row.waitForExistence(timeout: 10) else { return }
+        var pushes = 0
+        while !row.isHittable, pushes < 8 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard row.isHittable else { return }
+        row.tap()
+        let send = app.buttons["feedback.send"].firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 10), "設定の「意見を送る」から、意見のシートが開かない")
+        guard send.exists else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "02g-意見を送る")
+        let field = app.textViews["feedback.text"].firstMatch.exists
+            ? app.textViews["feedback.text"].firstMatch : app.textFields["feedback.text"].firstMatch
+        if field.exists {
+            field.typeText("地図の画面がとても使いやすいです。")
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "02h-意見を送る（書いたあと）")
+        }
+    }
+
     /// **設定から開いた「新しくなったこと」の履歴**（2026-10-18・`WhatsNewView(mode: .history)`）。
     ///
     /// 入口は設定の「新しくなったこと」の行（`settings.whatsNew`）。設定は全部の版を `mode: .history` で渡すので、

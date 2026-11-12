@@ -27,6 +27,8 @@ struct SettingsView: View {
     private var isSigningOut: Bool { auth.isSigningOut }
     /// 「新しくなったこと」を開き直す（起動で出たものと同じ画面・2026-10-04）
     @State private var showWhatsNew = false
+    /// 意見を送るシート（2026-11-11 札 #546）
+    @State private var showFeedback = false
     /// トランクを見せる（板 TrunkPrivacy・2026-10-18）。トランクの口がある人にだけ出す（`TrunkAvailability`）
     @StateObject private var trunkPrivacy = TrunkPrivacyModel()
 
@@ -214,6 +216,7 @@ struct SettingsView: View {
         .sheet(isPresented: $showWhatsNew) {
             WhatsNewView(releases: WhatsNew.bundled(), mode: .history, primaryTitle: Labels.Common.close)
         }
+        .sheet(isPresented: $showFeedback) { FeedbackSheet(screen: "settings") }
         .navigationBarBackButtonHidden(isSigningOut)
         .interactiveDismissDisabled(isSigningOut)
         .navigationBarTitleDisplayMode(.inline)
@@ -350,6 +353,14 @@ struct SettingsView: View {
             }
             .buttonStyle(JPRowButtonStyle())
             .accessibilityIdentifier("settings.legal")
+            // 意見を送る（2026-11-11 札 #546）。未ログインでも出す（ログインしていない人の口 `POST /feedback`）。
+            // 押すとシートが開いてすぐ書ける（開く → 書く → 送る）
+            JPCardDivider()
+            Button { showFeedback = true } label: {
+                JPRowLabel(title: L("意見を送る", "Send feedback"))
+            }
+            .buttonStyle(JPRowButtonStyle())
+            .accessibilityIdentifier("settings.feedback")
             if let contact = LegalConsent.contactURL {
                 JPCardDivider()
                 Link(destination: contact) {
@@ -444,7 +455,7 @@ enum SettingsOutline {
             case .privacy: return ["settings.blocked", "settings.closeFriends", "settings.pass", "settings.trunkPrivacy",
                                    "settings.searchHidden"]
             case .photos: return ["settings.compositionCatalog", "settings.storage"]
-            case .help: return ["settings.whatsNew", "settings.legal", "settings.contact"]
+            case .help: return ["settings.whatsNew", "settings.legal", "settings.feedback", "settings.contact"]
             case .account: return ["settings.password"]
             case .danger: return ["settings.logout", "settings.deleteAccount"]
             }
