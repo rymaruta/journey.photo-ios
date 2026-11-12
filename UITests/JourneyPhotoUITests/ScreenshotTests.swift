@@ -6319,10 +6319,31 @@ final class ScreenshotTests: XCTestCase {
         swipesHomeFeedTabs(noLift: true)
     }
 
-    private func swipesHomeFeedTabs(noLift: Bool) {
+    /// 事実取り（2026-11-12・run 1182 の件）: 身振りの組み方を1つずつ替えて同じ手順を流す（`-JPLiftVariant`・`PhotoLift.GestureStyle`）。
+    /// どの組み方で縦の送りが止まるかで、身振りのどの部分が払いを奪っているかを見る。指の操作の状態は `gesture.spy` に残す
+    func testSwipesHomeFeedTabsLiftSequenced() {
+        swipesHomeFeedTabs(noLift: false, variant: "sequenced")
+    }
+
+    func testSwipesHomeFeedTabsLiftLongOnly() {
+        swipesHomeFeedTabs(noLift: false, variant: "longOnly")
+    }
+
+    func testSwipesHomeFeedTabsLiftNoFrame() {
+        swipesHomeFeedTabs(noLift: false, variant: "noFrame")
+    }
+
+    func testSwipesHomeFeedTabsLiftPressCatcher() {
+        swipesHomeFeedTabs(noLift: false, variant: "pressCatcher")
+    }
+
+    private func swipesHomeFeedTabs(noLift: Bool, variant: String? = nil) {
         let app = XCUIApplication()
         if noLift { app.launchArguments += ["-JPPreviewNoLift", "YES"] }
-        XCTContext.runActivity(named: "ホームの切り替えを送る: noLift=\(noLift)") { _ in }
+        if let variant { app.launchArguments += ["-JPLiftVariant", variant] }
+        // 指の操作の状態を見えない要素に出す（`GestureSpy`・何も認めない・指の配り方は変えない）
+        app.launchArguments += ["-JPPreviewGestureSpy", "YES"]
+        XCTContext.runActivity(named: "ホームの切り替えを送る: noLift=\(noLift) variant=\(variant ?? "default")") { _ in }
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -6362,6 +6383,22 @@ final class ScreenshotTests: XCTestCase {
             + " / after=\(recommended.frame) / hittable=\(recommended.isHittable) / liftOverlay=\(liftOverlay.exists)"
             + " / topCards=\(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'home.'")).count)"
             + " / ids=\(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'home.'")).allElementsBoundByIndex.prefix(30).map { "\($0.identifier)@\(Int($0.frame.minY))" })") { _ in }
+        let spy = app.descendants(matching: .any)["gesture.spy"].firstMatch
+        /// 指の操作の状態の記録（`GestureSpy`）をログと添付に残す
+        func logSpy(_ step: String) {
+            let value = spy.exists ? ((spy.value as? String) ?? "-") : "spy missing"
+            let line = "[gestureSpy] \(step) variant=\(variant ?? "default") noLift=\(noLift): \(value)"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+            let note = XCTAttachment(string: line)
+            note.name = "gestureSpy \(step)"
+            note.lifetime = .keepAlways
+            add(note)
+        }
+        logSpy("0-first-push")
+        if lift > 0 {
+            XCTAssertLessThan(recommended.frame.minY, before.minY, "写真の上から縦に送っても一覧が動かない（身振りが送りを奪っている）")
+        }
         XCTAssertTrue(recommended.isHittable, "切り替えが見えるところまで送れない")
         guard recommended.isHittable else { return }
         XCTAssertTrue(recommended.isSelected, "開いたときに「おすすめ」を選んでいない")
@@ -6424,6 +6461,7 @@ final class ScreenshotTests: XCTestCase {
             low.press(forDuration: 0.05, thenDragTo: high)
             Thread.sleep(forTimeInterval: 1)
         }
+        logSpy("4-pushes")
         XCTAssertTrue(latest.exists && latest.isHittable, "下へ送ったら切り替えが流れて消えた（見出しの下に留まらない）")
         XCTAssertLessThan(recommended.frame.minY, rowY, "送っても札の行が上へ動かない（送れていない）")
         guard latest.isHittable, recommended.frame.minY < rowY else { return }
@@ -9123,7 +9161,18 @@ final class ScreenshotTests: XCTestCase {
     /// 半円（とっておく）へ運び、3秒の「取り消す」を撮る（撮ったら取り消す＝しおりに残さない）。
     /// 次に写真の詳細の写真をつまんで縮め、地図（「この近くで撮られた写真」）を撮る。**出なければ落とす**
     func testCapturesLiftAndPinch() {
-        let app = launchTrunk([])
+        capturesLiftAndPinch(variant: nil)
+    }
+
+    /// 同じ手順を UIKit の長押し（`-JPLiftVariant pressCatcher`・`PhotoLiftPressCatcher`）で。手に取って運べることを見る
+    func testCapturesLiftAndPinchPressCatcher() {
+        capturesLiftAndPinch(variant: "pressCatcher")
+    }
+
+    private func capturesLiftAndPinch(variant: String?) {
+        let app = launchTrunk((variant.map { ["-JPLiftVariant", $0] } ?? []) + ["-JPPreviewGestureSpy", "YES"])
+        defer { app.terminate() }
+        XCTContext.runActivity(named: "手に取って運ぶ: variant=\(variant ?? "default")") { _ in }
         let recommended = app.buttons["おすすめ"].firstMatch
         if recommended.waitForExistence(timeout: 15), recommended.isHittable { recommended.tap() }
         let photo = app.buttons["feed.photo"].firstMatch
@@ -9142,8 +9191,12 @@ final class ScreenshotTests: XCTestCase {
             .press(forDuration: 0.8,
                    thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 430.0 / 844.0)))
         let undo = app.buttons["lift.undo"].firstMatch
-        guard expect(undo.waitForExistence(timeout: 3), "運んだ後の「取り消す」", app) else { return }
-        shoot(app, "121a-ホーム（手に取って運んだ・取り消す）")
+        let found = undo.waitForExistence(timeout: 3)
+        let spy = app.descendants(matching: .any)["gesture.spy"].firstMatch
+        XCTContext.runActivity(named: "[gestureSpy] lift variant=\(variant ?? "default"): "
+            + (spy.exists ? ((spy.value as? String) ?? "-") : "spy missing")) { _ in }
+        guard expect(found, "運んだ後の「取り消す」", app) else { return }
+        shoot(app, "121a-ホーム（手に取って運んだ・取り消す）" + (variant.map { "（\($0)）" } ?? ""))
         XCTAssertGreaterThanOrEqual(undo.frame.height, 44, "「取り消す」が 44pt 未満")
         undo.tap()
         Thread.sleep(forTimeInterval: 1)
@@ -9157,13 +9210,14 @@ final class ScreenshotTests: XCTestCase {
         let map = app.navigationBars["この近くで撮られた写真"].firstMatch
         guard expect(map.waitForExistence(timeout: 8), "つまんだ後の地図", app) else { return }
         Thread.sleep(forTimeInterval: 2)
-        shoot(app, "121b-写真の詳細（つまんで地図）")
+        shoot(app, "121b-写真の詳細（つまんで地図）" + (variant.map { "（\($0)）" } ?? ""))
     }
 
     /// **写真を大きく見る画面で、1回押すと上下の情報が消え、もう1回で戻る**（2026-11-12 owner の要望・`ViewerChrome`）。
     /// 2回押し（拡大中なので倍率を戻す側・いいねは送らない）では消えないことも見る。**出なければ落とす**
     func testViewerTapHidesChrome() {
         let app = launchTrunk([])
+        defer { app.terminate() }
         let recommended = app.buttons["おすすめ"].firstMatch
         if recommended.waitForExistence(timeout: 15), recommended.isHittable { recommended.tap() }
         let photo = app.buttons["feed.photo"].firstMatch
@@ -9180,29 +9234,36 @@ final class ScreenshotTests: XCTestCase {
         guard expect(hero.waitForExistence(timeout: 10) && hero.isHittable, "写真の詳細の写真", app) else { return }
         hero.tap()
         let close = app.buttons["viewer.close"].firstMatch
+        // 下の情報は題・撮影情報の段で見る（`viewer.caption`・どの写真にもある）。**サムネイルの帯は2枚以上の投稿だけ**
+        // （`PhotoViewerView.thumbnailStrip`）——run 1182 は1枚の写真（「夢の中」・送りの頁 1）を開き、帯を待って落ちた
+        let caption = app.descendants(matching: .any)["viewer.caption"].firstMatch
         let strip = app.scrollViews["viewer.strip"].firstMatch
         guard expect(close.waitForExistence(timeout: 10), "大きく見る画面の ✕", app) else { return }
-        guard expect(strip.waitForExistence(timeout: 5), "大きく見る画面のサムネイルの帯", app) else { return }
+        guard expect(caption.waitForExistence(timeout: 5), "大きく見る画面の下の情報（題・撮影情報）", app) else { return }
+        let hasStrip = strip.exists
+        XCTContext.runActivity(named: "大きく見る画面: サムネイルの帯=\(hasStrip)（2枚以上の投稿だけ）") { _ in }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "122a-写真を大きく見る（情報あり）")
         let center = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
         // 1回押す → 消える
         center.tap()
-        XCTAssertTrue(strip.waitForNonExistence(timeout: 3), "1回押してもサムネイルの帯が消えない")
+        XCTAssertTrue(caption.waitForNonExistence(timeout: 3), "1回押しても下の情報が消えない")
         XCTAssertFalse(close.exists, "1回押しても ✕ が消えない")
+        if hasStrip { XCTAssertFalse(strip.exists, "1回押してもサムネイルの帯が消えない") }
         Thread.sleep(forTimeInterval: 0.5)
         shoot(app, "122b-写真を大きく見る（1回押して写真だけ）")
         // もう1回 → 戻る
         center.tap()
-        XCTAssertTrue(strip.waitForExistence(timeout: 3), "もう1回押してもサムネイルの帯が戻らない")
+        XCTAssertTrue(caption.waitForExistence(timeout: 3), "もう1回押しても下の情報が戻らない")
         XCTAssertTrue(close.exists, "もう1回押しても ✕ が戻らない")
+        if hasStrip { XCTAssertTrue(strip.exists, "もう1回押してもサムネイルの帯が戻らない") }
         // 拡大してから2回押す（倍率を戻す側）→ 消えも出もしない
         // （広げられなかった回も、2回押しは見本の利用者のいいね＝鍵が無く届かないだけで、消える・出るは同じく見られる）
         app.windows.firstMatch.pinch(withScale: 2.5, velocity: 2)
         Thread.sleep(forTimeInterval: 0.5)
         center.doubleTap()
         Thread.sleep(forTimeInterval: 1)
-        XCTAssertTrue(strip.exists, "2回押しでサムネイルの帯が消えた（1回押しとぶつかっている）")
+        XCTAssertTrue(caption.exists, "2回押しで下の情報が消えた（1回押しとぶつかっている）")
         XCTAssertTrue(close.exists, "2回押しで ✕ が消えた（1回押しとぶつかっている）")
     }
 }

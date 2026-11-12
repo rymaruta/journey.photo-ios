@@ -158,6 +158,27 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストの事実取りだけ: ホームの写真の札の「手に取って運ぶ」の身振りの組み方を替える（`-JPLiftVariant <名前>`・Debug のみ・
+    /// 2026-11-12 run 1182 の件。身振りのどの部分が縦の送りを奪うかを、組み方を1つずつ替えて同じ回に並べて見る・`PhotoLift.GestureStyle`）。
+    /// Release では必ず nil（いつも既定の組み方）
+    static var liftVariant: String? {
+        #if DEBUG
+        return UserDefaults.standard.string(forKey: "JPLiftVariant")
+        #else
+        return nil
+        #endif
+    }
+
+    /// UI テストの事実取りだけ: 指が触れている間の UIKit の指の操作（スクロールのパン・SwiftUI の身振りなど）の状態を、
+    /// 見えない要素 `gesture.spy` に出す（`-JPPreviewGestureSpy YES`・Debug のみ・`GestureSpy`）。Release では必ず false
+    static var gestureSpy: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "JPPreviewGestureSpy")
+        #else
+        return false
+        #endif
+    }
+
     static let perfProbeKey = "JPPreviewPerfProbe"
 
     static var perfProbe: Bool {

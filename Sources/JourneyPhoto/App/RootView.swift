@@ -187,6 +187,10 @@ struct RootView: View {
         .overlay(alignment: .bottomTrailing) {
             if TrunkPerfMeter.shared.enabled { TrunkPerfProbe() }
         }
+        // UI テストのときだけ: 指の操作の状態を見えない要素 `gesture.spy` に出す（`-JPPreviewGestureSpy YES`・2026-11-12）
+        .overlay(alignment: .topLeading) {
+            if PreviewSession.gestureSpy { GestureSpyOverlay() }
+        }
         // ホームの写真を手に取って運ぶ（2026-11-12 札 #543）。見出しと下の札の上に重ね、画面の座標で描く
         .overlay { PhotoLiftOverlay(center: PhotoLiftCenter.shared).ignoresSafeArea() }
         .overlay(alignment: .top) {

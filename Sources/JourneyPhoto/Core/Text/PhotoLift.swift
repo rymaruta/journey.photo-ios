@@ -12,6 +12,27 @@ import Foundation
 /// 0.5pt/ms 以上・20pt 以上動いた）
 enum PhotoLift {
 
+    /// ホームの写真の札で「手に取って運ぶ」を使うか。1.1.84 では false にして外した（run 1182・main の `fb5c8d3c3`）。
+    /// 1.1.85 で戻す（2026-11-12 判断・払いを奪わない組み方 `GestureStyle.pressCatcher` に直した）
+    static let homeGestureEnabled = true
+
+    /// 札に付ける身振りの組み方（2026-11-12・run 1182 の件の事実取り）。
+    /// - `sequenced`: 1.1.84 の前の形。SwiftUI の `simultaneousGesture` に 長押し(0.35 秒) → `DragGesture(minimumDistance: 0)`
+    /// - `longOnly`: 同じ付け方で、長押しだけ（後ろの Drag を外す）
+    /// - `noFrame`: `sequenced` のまま、押さえている間に札の座標を読む `GeometryReader` を出さない
+    /// - `pressCatcher`: UIKit の長押し（`UILongPressGestureRecognizer`）を縦の送りの `UIScrollView` に足す
+    ///   （`PhotoLiftPressCatcher`・横の払い `ProfileSwipeCatcher` と同じ付け方）
+    enum GestureStyle: String, CaseIterable {
+        case sequenced, longOnly, noFrame, pressCatcher
+    }
+
+    /// 既定の組み方。UI テストの事実取りだけ `-JPLiftVariant <名前>` で替える（Debug のみ・`PreviewSession.liftVariant`）
+    static let defaultGestureStyle: GestureStyle = .sequenced
+
+    static var homeGestureStyle: GestureStyle {
+        PreviewSession.liftVariant.flatMap(GestureStyle.init(rawValue:)) ?? defaultGestureStyle
+    }
+
     /// 押さえる長さ（秒）。ストーリーで止まるのと同じ長さ
     static let pressSeconds = 0.35
     /// 押さえている間にこれ以上動いたらスクロール（手に取らない）

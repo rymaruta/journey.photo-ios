@@ -96,6 +96,21 @@ struct HomeFeedTile: View {
     @GestureState private var pressing = false
     /// 札の画面の座標（指を動かさずに手に取ったときの位置）
     @State private var globalFrame: CGRect = .zero
+    /// UIKit の長押しで手に取っている（`PhotoLift.GestureStyle.pressCatcher`）。UIKit の長押しは取り消しも必ず
+    /// 知らせてくる（`.cancelled`）ので、そこで戻す（`PhotoLiftPressCatcher`）
+    @State private var held = false
+
+    /// 手に取っている（どちらの組み方でも）
+    private var isLifted: Bool { lifted || held }
+
+    /// 札に付ける身振りの組み方（`PhotoLift.homeGestureStyle`）
+    private var style: PhotoLift.GestureStyle { PhotoLift.homeGestureStyle }
+
+    /// 手に取れるか。ログインしていなければ手に取らない（保存・送る・ストーリーはログインが要る）。
+    /// `-JPPreviewNoLift`（UI テストの事実取りだけ・Debug のみ）では身振りを付けない
+    private var liftEnabled: Bool {
+        PhotoLift.homeGestureEnabled && auth.userId != nil && !PreviewSession.noLift
+    }
 
     var body: some View {
         let _ = PerfRecorder.shared.hit("home.tile.body")
@@ -149,18 +164,18 @@ struct HomeFeedTile: View {
             .modifier(HomeTileStoryAction(enabled: PhotoLift.allowsStory(ownerId: ownerId, me: auth.userId)) {
                 liftByAction(.story)
             })
-            .disabled(lifted)
+            .disabled(isLifted)
 
             HomeTileLikeButton(photo: photo)
         }
         .overlay(alignment: .topTrailing) {
             if showsMore { HomeTileMoreMenu(photo: photo, ownerId: ownerId, onReport: onReport) }
         }
-        .scaleEffect(lifted ? 0.96 : 1)
-        .opacity(lifted ? 0.4 : 1)
+        .scaleEffect(isLifted ? 0.96 : 1)
+        .opacity(isLifted ? 0.4 : 1)
         // 札の画面の座標は**押さえている間だけ**読む（2026-11-12 確かめ役: 全部の札で送るたびに読んでいた）
         .background {
-            if pressing || lifted {
+            if (pressing || lifted) && style != .noFrame {
                 GeometryReader { proxy in
                     Color.clear
                         .onAppear { globalFrame = proxy.frame(in: .global) }
@@ -178,11 +193,36 @@ struct HomeFeedTile: View {
             Task { @MainActor in PhotoLiftCenter.shared.gestureReset(photoId: id) }
         }
         .onDisappear { PhotoLiftCenter.shared.gestureReset(photoId: photo.id) }
-        // 0.35秒押さえて手に取る（10pt 以上動いたらスクロール）。短く押せば今どおり開く。
-        // ログインしていなければ手に取らない（保存・送る・ストーリーはログインが要る）
-        // `-JPPreviewNoLift`（UI テストの事実取りだけ・Debug のみ）では身振りを付けない
-        .simultaneousGesture(liftGesture, including: auth.userId == nil || PreviewSession.noLift ? .subviews : .all)
-        .sensoryFeedback(.impact(weight: .medium), trigger: lifted) { _, new in new }
+        // 0.35秒押さえて手に取る（10pt 以上動いたらスクロール）。短く押せば今どおり開く（`liftEnabled`）。
+        // 組み方は `PhotoLift.GestureStyle`（run 1182 の事実取り）。使わない組み方は `.subviews` で外す
+        .simultaneousGesture(liftGesture,
+                             including: liftEnabled && (style == .sequenced || style == .noFrame) ? .all : .subviews)
+        .simultaneousGesture(longPressOnly, including: liftEnabled && style == .longOnly ? .all : .subviews)
+        .background {
+            if liftEnabled && style == .pressCatcher {
+                PhotoLiftPressCatcher(
+                    onBegan: { point in
+                        held = true
+                        PhotoLiftCenter.shared.lift(photo, at: point)
+                    },
+                    onChanged: { point in PhotoLiftCenter.shared.move(to: point) },
+                    onEnded: {
+                        held = false
+                        let center = PhotoLiftCenter.shared
+                        if center.photo?.id == photo.id { center.end() }
+                    },
+                    onCancelled: {
+                        held = false
+                        PhotoLiftCenter.shared.gestureReset(photoId: photo.id)
+                    })
+            }
+        }
+        .sensoryFeedback(.impact(weight: .medium), trigger: isLifted) { _, new in new }
+    }
+
+    /// 事実取りの組み方 `longOnly`: 長押しだけ（手に取りはしない・縦の送りを奪うかだけを見る）
+    private var longPressOnly: some Gesture {
+        LongPressGesture(minimumDuration: PhotoLift.pressSeconds, maximumDistance: PhotoLift.moveTolerance)
     }
 
     private var liftGesture: some Gesture {
@@ -591,7 +631,7 @@ private struct PhotoLiftIntro: View {
         }
         .onAppear {
             let defaults = UserDefaults.standard
-            guard PhotoLift.showsIntro(signedIn: auth.userId != nil,
+            guard PhotoLift.homeGestureEnabled, PhotoLift.showsIntro(signedIn: auth.userId != nil,
                                        alreadyShown: defaults.bool(forKey: PhotoLift.introKey)) else { return }
             defaults.set(true, forKey: PhotoLift.introKey)
             visible = true
