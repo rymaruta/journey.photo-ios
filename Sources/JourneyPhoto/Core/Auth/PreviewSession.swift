@@ -70,6 +70,24 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで本人の名前を差し替える（Debug のみ）。`-JPPreviewDisplayName <名前>`。
+    ///
+    /// マイページの名前の行（名前・印・点線の丸・QR・編集・2026-11-12 owner 案 A）が、長い名前でも
+    /// 1行に収まるか（名前を「…」で切り、ほかは縮めない）を撮るために、**入っている本人のプロフィールにだけ**
+    /// 重ねる。サーバーには送らない。Release では必ず `nil`
+    static let displayNameKey = "JPPreviewDisplayName"
+
+    static var displayName: String? {
+        #if DEBUG
+        guard userId != nil,
+              let raw = UserDefaults.standard.string(forKey: displayNameKey)?
+                .trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        return raw
+        #else
+        return nil
+        #endif
+    }
+
     /// UI テストで Pro の人の姿にする（Debug のみ）。`-JPPreviewPro YES`。
     ///
     /// 見本の利用者は Pro を買っていないので、名前の横の画面の「PRO 限定」の段が Pro でない人の姿

@@ -1484,6 +1484,72 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "120b-プロフィールの QR（読み取る）")
     }
 
+    /// **名前の横のバッジの入口**（2026-11-12 owner 案 A「メダル案 A だな」）: メダルを持っていて名前の横に何も
+    /// 飾っていない人だけ、名前の横に点線の丸（見た目 22・当たり 44）。押すと名前の横の画面（選ぶ画面）。
+    /// 並びは 名前 → 印 → 丸 → QR → 編集。**長い名前・大きい文字でも1行に収める**（名前を「…」で切り、ほかは縮めない）。
+    ///
+    /// 見本の利用者の持ち物は `-JPPreviewBadges`、飾っていないことは `-JPPreviewDisplayBadge none`（持っていない鍵＝出ない）、
+    /// メダルが無いことは `-JPPreviewBadges none:1`（絵の無い鍵だけ）、長い名前は `-JPPreviewDisplayName` で渡す
+    func testCapturesMyPageNameSlot() {
+        let medals = ["-JPPreviewBadges", "prefectures:2,earlyUser:1"]
+        let notShown = ["-JPPreviewDisplayBadge", "none"]
+        let longName = ["-JPPreviewDisplayName", "とても長い名前の旅人さんのアカウント名です"]
+        struct Case { let extra: [String]; let tag: String; let slot: Bool; let shot: String? }
+        let cases = [
+            Case(extra: medals + notShown, tag: "飾っていない人", slot: true,
+                 shot: "121-マイページ（名前の横の点線の丸）"),
+            Case(extra: medals + notShown + longName + ["-JPPreviewPro", "YES"], tag: "長い名前・Pro", slot: true,
+                 shot: "121a-マイページ（名前の横の点線の丸・長い名前と Pro）"),
+            Case(extra: medals + notShown + longName + Self.largeText, tag: "長い名前・大きい文字", slot: true,
+                 shot: "121b-マイページ（名前の横の点線の丸・長い名前と大きい文字）"),
+            Case(extra: medals + ["-JPPreviewDisplayBadge", "prefectures"], tag: "飾っている人", slot: false, shot: nil),
+            Case(extra: ["-JPPreviewBadges", "none:1"] + notShown, tag: "メダルの無い人", slot: false, shot: nil),
+        ]
+        for c in cases {
+            let app = launchProfileLooks(c.extra)
+            defer { app.terminate() }
+            let tabBar = app.tabBars.firstMatch
+            guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return XCTFail("\(c.tag): 下の札が出ない") }
+            tabBar.buttons.element(boundBy: 4).tap()
+            let edit = app.buttons["mypage.edit"].firstMatch
+            guard edit.waitForExistence(timeout: 20) else { return XCTFail("\(c.tag): マイページの見出しが出ない") }
+            // 名前の横の印の絵は画面の処理の外で縮めて作る
+            Thread.sleep(forTimeInterval: 3)
+            let slot = app.buttons["mypage.nameSlot"].firstMatch
+            guard c.slot else {
+                XCTAssertFalse(slot.exists, "\(c.tag): 点線の丸を出さないはずが出ている")
+                continue
+            }
+            guard slot.exists else { return XCTFail("\(c.tag): 名前の横に点線の丸が無い") }
+            XCTAssertEqual(slot.label, "名前の横にバッジを飾る", "\(c.tag): 読み上げが違う")
+            XCTAssertGreaterThanOrEqual(slot.frame.width, 44, "\(c.tag): 丸の当たりが 44pt 未満")
+            XCTAssertGreaterThanOrEqual(slot.frame.height, 44, "\(c.tag): 丸の当たりが 44pt 未満")
+            // 1行に収まる: 名前の行 → 丸 → QR → 編集が横に並び、重ならず、右端（16）から出ない
+            let nameLine = app.descendants(matching: .any)["mypage.nameLine"].firstMatch
+            let qr = app.buttons["mypage.qr"].firstMatch
+            let width = app.windows.firstMatch.frame.width
+            let rows = "name=\(nameLine.frame) slot=\(slot.frame) qr=\(qr.frame) edit=\(edit.frame) width=\(width)"
+            let note = XCTAttachment(string: rows)
+            note.name = "121-名前の段の並び（\(c.tag)）"
+            note.lifetime = .keepAlways
+            add(note)
+            XCTAssertTrue(qr.exists, "\(c.tag): QR の印が無い")
+            XCTAssertGreaterThan(nameLine.frame.width, 0, "\(c.tag): 名前の行が潰れた（\(rows)）")
+            XCTAssertLessThan(abs(slot.frame.midY - nameLine.frame.midY), 12, "\(c.tag): 丸が名前の段にない（\(rows)）")
+            XCTAssertLessThan(abs(qr.frame.midY - nameLine.frame.midY), 12, "\(c.tag): QR が名前の段にない（\(rows)）")
+            XCTAssertGreaterThan(slot.frame.minX, nameLine.frame.minX, "\(c.tag): 丸が名前の右でない（\(rows)）")
+            XCTAssertLessThanOrEqual(slot.frame.maxX, qr.frame.minX + 1, "\(c.tag): 丸と QR の当たりが重なる（\(rows)）")
+            XCTAssertLessThanOrEqual(qr.frame.maxX, edit.frame.minX + 1, "\(c.tag): QR と編集が重なる（\(rows)）")
+            XCTAssertLessThanOrEqual(edit.frame.maxX, width - 16 + 1, "\(c.tag): 編集が右端から出た（\(rows)）")
+            if let shot = c.shot { shoot(app, shot) }
+            // 押すと名前の行と同じ選ぶ画面（決めずに閉じる）
+            guard slot.isHittable else { return XCTFail("\(c.tag): 丸が押せない（\(rows)）") }
+            slot.tap()
+            XCTAssertTrue(app.descendants(matching: .any)["nameSide.save"].firstMatch.waitForExistence(timeout: 10),
+                          "\(c.tag): 丸を押しても選ぶ画面が出ない")
+        }
+    }
+
     func testCapturesWhatsNewHistory() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]

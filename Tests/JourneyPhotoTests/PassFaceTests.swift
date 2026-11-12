@@ -548,7 +548,8 @@ final class PassFaceWiringTests: XCTestCase {
         XCTAssertTrue(test.contains("XCTAssertTrue(closed, \"\\(tag): × を押してもメダルの全画面が閉じない\")"),
                       "閉じない不具合を見逃す")
         XCTAssertFalse(test.contains("for _ in 0..<12 where"), "見つけた後も問い合わせ続ける")
-        XCTAssertTrue(test.contains("if row.exists && row.isHittable && row.isEnabled { break }"))
+        // 送って行を探す経路（プロフィールの編集の名前の横のバッジの行）は 2026-11-12 owner 案 A で行ごと外した
+        XCTAssertFalse(test.contains("profileEdit.nameSide"), "外した編集の行を探している")
     }
 
     /// 傾きの読み取りは表示中・前面・光が動く券面・「視差効果を減らす」でないときだけ

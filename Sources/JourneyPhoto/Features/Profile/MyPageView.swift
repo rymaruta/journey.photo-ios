@@ -563,7 +563,12 @@ struct MyPageView: View {
                 HStack(alignment: .center, spacing: MyPageHeaderLayout.nameEditGap) {
                     nameLine(profile)
                         .layoutPriority(1)
-                    // 2026-11-12（owner の決定・札 #545）: **名前の横に QR の印**。マイページで変えるのはこの1点だけ
+                    // 2026-11-12 owner 案 A（「メダル案 A だな」）: メダルを持っていて飾っていない人だけ、
+                    // 名前の横に点線の丸。1.1.84 の「マイページは QR だけ変える」の例外（同じ行なので一度に決める）
+                    if MyPageNameSlot.shows(profile) {
+                        nameSlot()
+                    }
+                    // 2026-11-12（owner の決定・札 #545）: **名前の横に QR の印**
                     qrLink()
                     Spacer(minLength: 0)
                     editLink()
@@ -651,6 +656,37 @@ struct MyPageView: View {
         .fixedSize()
         .accessibilityLabel(ProfileQRText.entryLabel)
         .accessibilityIdentifier("mypage.qr")
+    }
+
+    /// 名前の横にバッジを飾る入口（2026-11-12 owner 案 A・資料「名前の横のバッジの入口」）。
+    /// **メダルを持っていて、名前の横に何も飾っていない人だけ**（`MyPageNameSlot.shows`）。押すと名前の行と同じ
+    /// 選ぶ画面（`NameSideBadgeView`）。形はハイライトの「新規」・選ぶ画面の「なし」と同じ「ここに足せる」の点線の丸。
+    /// 2026-11-12 判断: **真鍮にしない**（白 35% の点線と白 85% の＋）——隣に真鍮の QR の印があり、真鍮が2つ並ぶと
+    /// 合図が割れる。見た目 22pt、当たり 44pt。段の高さは名前の行のまま（上下へ張り出す・`qrLink` と同じ）
+    private func nameSlot() -> some View {
+        Button { showNameSide = true } label: {
+            ZStack {
+                Circle()
+                    .strokeBorder(Color.white.opacity(MyPageNameSlot.ringOpacity),
+                                  style: StrokeStyle(lineWidth: MyPageNameSlot.ringLineWidth, dash: MyPageNameSlot.dash))
+                Image(systemName: "plus")
+                    .font(.system(size: MyPageNameSlot.plusSize, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(MyPageNameSlot.plusOpacity))
+            }
+            .frame(width: MyPageNameSlot.side, height: MyPageNameSlot.side)
+            // 丸は当たりの右端に置き、当たりの余りは左（名前の行の上）へ張り出す。名前の行も同じ画面を開くので
+            // 重なっても押し違いにならない。右は QR の当たり（44）と重ねない
+            .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget, alignment: .trailing)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, -nameTapSlack)
+        // 印と丸の間は資料の模型どおり 6pt（段の間 12 を打ち消し、当たりの余りの分だけ左へ）
+        .padding(.leading, -(JPSpace.s + MyPageNameSlot.leadingPull))
+        .fixedSize()
+        .accessibilityLabel(MyPageNameSlot.label)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("mypage.nameSlot")
     }
 
     /// 名前の行（板 05c・BadgePicker）: 明朝 26 の名前 → 公式の封印 → Pro マーク → 選んだバッジ。
@@ -1840,6 +1876,35 @@ enum MyPageEmpty {
 
 /// マイページの見出しの並びの値（2026-10-30 owner #415・案 ①②。板 MyPage・MyPageNoCover・MyPageCoverFrame）。
 /// 顔の段（顔の右に数）と名前の段（右端に「編集」）は、カバーの有無で同じ並び
+/// マイページの名前の横の点線の丸（2026-11-12 owner 案 A）。出す条件と寸法（画面に依らない・試験で見張る）
+enum MyPageNameSlot {
+    /// 出すのは**メダル（名前の横に置ける絵のあるバッジ）を1つ以上持っていて、名前の横に何も飾っていない**とき。
+    /// 飾っている人は今の見た目のまま（バッジも名前も押せば選ぶ画面）。1つも持っていない人には出さない
+    /// ——押しても選べる物が無い。「飾っている」は名前の横に実際に出ているか（`NameMarks` と同じく、
+    /// 持っていない鍵・絵の無い鍵を選んでいても出ていなければ飾っていない）
+    static func shows(_ profile: UserProfile) -> Bool {
+        guard !BadgeCatalog.owned(profile.earnedBadges).isEmpty else { return false }
+        if let badge = profile.shownBadge, BadgeCatalog.isKnown(badge.key) { return false }
+        return true
+    }
+
+    /// 読み上げ（ボタンとして）
+    static var label: String { L("名前の横にバッジを飾る", "Add a badge beside your name") }
+    /// 見た目の丸の大きさ（当たりは 44）
+    static let side: CGFloat = 22
+    /// 点線は白 35%（真鍮にしない・隣の QR の印が真鍮）
+    static let ringOpacity: Double = 0.35
+    static let ringLineWidth: CGFloat = 1.4
+    static let dash: [CGFloat] = [2.6, 2.4]
+    /// ＋は白 85%（資料の模型の値）
+    static let plusOpacity: Double = 0.85
+    static let plusSize: CGFloat = 11
+    /// 名前の横の印（無ければ名前）と丸の間（資料の模型: 6pt）
+    static let gapAfterMarks: CGFloat = 6
+    /// 当たり（44）の余りを左へ張り出す量。丸の左が印から `gapAfterMarks` 離れる
+    static var leadingPull: CGFloat { WebTheme.minTapTarget - side - gapAfterMarks }
+}
+
 enum MyPageHeaderLayout {
     /// 顔と数の間（見本: gap 16）
     static let avatarStatsGap: CGFloat = JPSpace.m
