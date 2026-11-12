@@ -132,6 +132,8 @@ struct GalleryView: View {
         // **地図のアイコンは外した**——下の札に「マップ」があり、
         // 同じ場所への入口が2つあった
         .toolbar { AppHeaderItems(unread: unread, onOpenNotifications: onOpenNotifications, messagesUnread: messagesUnread) }
+        // 上の札の「⋯」で旅行プランを消した・ホームに出さないにした知らせと「元に戻す」（2026-11-12・`TripPlanRemovalQueue`）
+        .overlay(alignment: .bottom) { TripRemovalBar(queue: TripPlanRemovalQueue.shared) }
         .task {
             // **環境の1つに繋ぎ直してから読む。** 自前のを持ったままだと
             // `setHidden` が届かず、ブロックが一生効かない

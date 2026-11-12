@@ -40,6 +40,7 @@ struct HomeTopCardView: View {
     @EnvironmentObject private var wishlist: WishlistStore
     /// 見頃のお知らせを予約してよいか（受け取る設定・端末の許可）
     @EnvironmentObject private var push: PushCenter
+    @EnvironmentObject private var connectivity: Connectivity
 
     @State private var plans: [TripPlan] = []
     /// `plans` が誰のものか。**人が替わったら、取れるまで前の人のプランを出さない**
@@ -110,6 +111,10 @@ struct HomeTopCardView: View {
     @State private var developEdit: (trip: LibraryTrip, ids: [String], published: Bool)?
     /// 現像の控え（払った途中・閉じた旅）を読み直す合図（画面を閉じたら上げる）
     @State private var developRevision = 0
+    /// 札から消した・抜けた旅行プランと、ホームに出さない印（2026-11-12・`TripPlanRemovalQueue`）
+    @ObservedObject private var removal = TripPlanRemovalQueue.shared
+    /// 「仲間全員から削除」の確かめ（他人に影響する操作だけ聞く・`HomeTripCardMenu`）
+    @State private var confirmingEveryone: TripPlan?
 
     private let opened = OpenedTripBooks()
     private let developStore = DevelopProgressStore()
@@ -139,6 +144,25 @@ struct HomeTopCardView: View {
             // 前面に戻ったら、一問の読み直しを待たずに日を確かめる（ホームが見えているときだけ）
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active, isShown { advanceDay() }
+                // 札から消した旅行プラン: 裏に回ったら6秒を待たずに送る・前面に戻ったら送れなかった分を送り直す
+                if phase == .background { removal.commitNow() }
+                if phase == .active { resumeRemovals() }
+            }
+            // 電波が戻ったら、圏外で送れなかった削除を送り直す
+            .onChange(of: connectivity.isOffline) { _, offline in
+                if !offline { resumeRemovals() }
+            }
+            .confirmationDialog(HomeTripCardMenu.confirmTitle(confirmingEveryone.map(planTitle) ?? ""),
+                                isPresented: Binding(get: { confirmingEveryone != nil },
+                                                     set: { if !$0 { confirmingEveryone = nil } }),
+                                titleVisibility: .visible) {
+                Button(HomeTripCardMenu.confirmButton, role: .destructive) {
+                    if let plan = confirmingEveryone { remove(plan, .deleteForEveryone) }
+                    confirmingEveryone = nil
+                }
+                Button(Labels.Common.cancel, role: .cancel) { confirmingEveryone = nil }
+            } message: {
+                Text(HomeTripCardMenu.confirmMessage)
             }
             // ホームに戻ってきたら、開いた一冊の印を読み直す（札を下げる）。
             // 札から旅行プランを開いていたら、プランも読み直す（`.task` の鍵を変えて）
@@ -158,6 +182,8 @@ struct HomeTopCardView: View {
             .onChange(of: auth.userId) { _, userId in
                 openedBooks = opened.ids(for: userId)
                 wishedKeys = wishlist.spotIds
+                removal.userChanged()
+                removal.loadHidden(userId: userId, today: cardsDay)
             }
             // ①現像の画面（2026-11-12 札 #543）。閉じたら札を読み直し、「題・公開範囲を変える」なら今の投稿の画面へ
             .fullScreenCover(item: $developing, onDismiss: {
@@ -218,7 +244,10 @@ struct HomeTopCardView: View {
     /// （`HomeTopCard.priority`・`order` の `spotSwipe`・第10章）で決める（1.1.84 のまとめ）
     private var choices: [HomeTopCard.Choice] {
         let all = HomeTopCard.withSwipe(
-            HomeTopCard.cards(now: cardsNow, plans: plansOwner == auth.userId ? plans : [],
+            HomeTopCard.cards(now: cardsNow,
+                              // ホームに出さない旅・札から消した旅行プランは渡さない（2026-11-12・`HomeHiddenTrips`）
+                              plans: HomeHiddenTrips.visible(plansOwner == auth.userId ? plans : [],
+                                                             hidden: removal.hiddenTrips, excluding: removal.removedIds),
                               myPhotos: myPhotos, openedBookDays: openedBooks, spots: spots,
                               wishlist: wishedKeys, quiz: quiz, develop: developChoice),
             spots: spots, today: HomeTopCard.today(cardsNow, in: .current))
@@ -290,9 +319,12 @@ struct HomeTopCardView: View {
                         : L("出発まで \(daysUntil) 日", daysUntil == 1 ? "1 day to go" : "\(daysUntil) days to go"),
                      // 前日と当日は、予定した撮影スポットの光の時刻（当日モード・`TripLight`）
                      detail: tripLight(plan) ?? (plan.itemCount > 0 ? TripPlanText.placeCount(plan.itemCount) : nil),
-                     backdrop: nil, detailTruncation: .tail, inCarousel: inCarousel)
+                     backdrop: nil, detailTruncation: .tail, reservesMenu: true, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
+            .tripCardMenu(menuItems(for: plan), label: HomeTripCardMenu.menuLabel, inCarousel: inCarousel) { item in
+                choose(item, plan)
+            }
         case .onTrip(let plan, let dayNumber):
             Button {
                 MissionRouter.shared.post()
@@ -303,9 +335,12 @@ struct HomeTopCardView: View {
                      detail: tripLight(plan),
                      backdrop: nil,
                      // 押すと投稿画面が開く（別の画面へ進む「›」ではない）
-                     trailingSymbol: "plus", detailTruncation: .tail, inCarousel: inCarousel)
+                     trailingSymbol: "plus", detailTruncation: .tail, reservesMenu: true, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
+            .tripCardMenu(menuItems(for: plan), label: HomeTripCardMenu.menuLabel, inCarousel: inCarousel) { item in
+                choose(item, plan)
+            }
         case .bookReady(let trip):
             NavigationLink {
                 TripBookView(trip: trip, isPublic: LikedPhotos.fromPublicFeed(themePhotos))
@@ -421,13 +456,18 @@ struct HomeTopCardView: View {
     private func card(eyebrow: String, eyebrowLabel: String, title: String, line: String,
                       detail: String?, backdrop: Photo?, backdropURL: URL? = nil, film: [String] = [],
                       trailingSymbol: String = "chevron.right", detailTruncation: Text.TruncationMode = .middle,
-                      inCarousel: Bool) -> some View {
+                      reservesMenu: Bool = false, inCarousel: Bool) -> some View {
         // 札の面は探すの「今日の一問」の段と同じ部品（`TopCardFace`・2026-11-12 に切り出した）。
-        // ①現像前の旅の札は左の写真の代わりにフィルムの3コマ（`film`・札 #543。1.1.84 のまとめで面に移した）
+        // ①現像前の旅の札は左の写真の代わりにフィルムの3コマ（`film`・札 #543。1.1.84 のまとめで面に移した）。
+        // 旅行プランの札は右上の「⋯」の分を空ける（`reservesMenu`・1.1.84 のまとめで面に移した）
         TopCardFace(eyebrow: eyebrow, eyebrowLabel: eyebrowLabel, title: title, line: line, detail: detail,
                     backdrop: backdrop, backdropURL: backdropURL, film: film, trailingSymbol: trailingSymbol,
-                    detailTruncation: detailTruncation, inCarousel: inCarousel)
+                    detailTruncation: detailTruncation, reservesMenu: reservesMenu, inCarousel: inCarousel)
     }
+
+    /// 旅行プランの札で、右上の「⋯」の当たり（44）に眉と題が潜らないよう空ける幅
+    /// （当たり 44 から、札の右の余白 12・「›」の列・その間 8 で既に空いている分を除いた分）
+    nonisolated static let menuReserve: CGFloat = 20
 
     /// 札の背（板の 116）。字を大きくする設定ではそれより伸びる
     nonisolated static let cardHeight: CGFloat = 116
@@ -453,6 +493,42 @@ struct HomeTopCardView: View {
         guard let today = HomeTopCard.today(cardsNow, in: .current),
               let entry = TripLight.entry(plan: plan, today: today, spots: spots) else { return nil }
         return TripLight.line(entry)
+    }
+
+    // MARK: - 旅行プランの札の「⋯」（2026-11-12）
+
+    private func menuItems(for plan: TripPlan) -> [HomeTripCardMenu.Item] {
+        HomeTripCardMenu.items(for: HomeTripCardMenu.role(of: plan, me: auth.userId))
+    }
+
+    /// メニューで選んだ。出さない・削除・抜けるは聞かずにすぐ（元に戻すを6秒）。仲間全員から削除だけ確かめる
+    private func choose(_ item: HomeTripCardMenu.Item, _ plan: TripPlan) {
+        guard let userId = auth.userId else { return }
+        switch item {
+        case .hideFromHome:
+            removal.hide(plan, title: planTitle(plan), userId: userId)
+        case .delete, .deleteForEveryone, .leave:
+            if item.needsConfirm { confirmingEveryone = plan } else { remove(plan, item) }
+        }
+    }
+
+    private func remove(_ plan: TripPlan, _ item: HomeTripCardMenu.Item) {
+        guard let userId = auth.userId else { return }
+        removal.remove(planId: plan.planId, title: planTitle(plan), item: item, userId: userId, send: sendRemoval)
+    }
+
+    /// 送る口。**押した人と今の人が違えば送らない**（書き残しのまま・その人が戻ったら送る）
+    private var sendRemoval: TripPlanRemovalQueue.Send {
+        let trips = environment.trips
+        let auth = self.auth
+        return { job in
+            guard auth.userId == job.userId else { throw TripPlanRemovalQueue.NotNow() }
+            _ = try await trips.delete(planId: job.planId)
+        }
+    }
+
+    private func resumeRemovals() {
+        removal.resume(userId: auth.userId, send: sendRemoval)
     }
 
     private func planTitle(_ plan: TripPlan) -> String {
@@ -529,6 +605,8 @@ struct HomeTopCardView: View {
     private func landHomeCards() {
         openedBooks = opened.ids(for: auth.userId)
         wishedKeys = wishlist.spotIds
+        removal.loadHidden(userId: auth.userId, today: cardsDay)
+        resumeRemovals()
         isShown = true
         applyPendingQuiz()
         applyPendingPlans()
@@ -648,6 +726,52 @@ struct HomeTopCardView: View {
         if let pendingPlans {
             plans = pendingPlans
             self.pendingPlans = nil
+        }
+    }
+}
+
+// MARK: - 旅行プランの札の「⋯」と長押し（2026-11-12）
+
+extension View {
+    /// 旅行プランの札に、右上の「⋯」（当たり 44・黒い札の上なので「›」と同じ text-2 の字）と、同じ中身の長押しのメニュー
+    /// （系統のコンテキストメニュー）を付ける。「⋯」は札のリンクの**外**に重ねる（リンクの中にボタンを入れると、押した所で
+    /// どちらが動くかが決まらない）。1枚の日の札は左右に 16 の余白を持つので、その分だけ内へ寄せる
+    func tripCardMenu(_ items: [HomeTripCardMenu.Item], label: String, inCarousel: Bool,
+                      choose: @escaping (HomeTripCardMenu.Item) -> Void) -> some View {
+        self
+            .contextMenu { TripCardMenuItems(items: items, choose: choose) }
+            .overlay(alignment: .topTrailing) {
+                Menu {
+                    TripCardMenuItems(items: items, choose: choose)
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(WebTheme.text2)
+                        // 字の右端を下の「›」の右端（札の右の余白 12）にそろえ、当たりは札の右上の 44 角
+                        .padding(.trailing, JPSpace.s)
+                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget, alignment: .trailing)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel(label)
+                .accessibilityIdentifier("home.tripMenu")
+                .padding(.trailing, inCarousel ? 0 : JPSpace.gutter)
+            }
+    }
+}
+
+/// 「⋯」と長押しで同じ中身（`HomeTripCardMenu.items`）
+private struct TripCardMenuItems: View {
+    let items: [HomeTripCardMenu.Item]
+    let choose: (HomeTripCardMenu.Item) -> Void
+
+    var body: some View {
+        ForEach(items, id: \.self) { item in
+            Button(role: item.isDestructive ? .destructive : nil) {
+                choose(item)
+            } label: {
+                Label(item.title, systemImage: item.systemImage)
+            }
+            .accessibilityIdentifier(item.identifier)
         }
     }
 }

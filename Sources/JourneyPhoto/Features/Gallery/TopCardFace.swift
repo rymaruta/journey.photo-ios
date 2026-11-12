@@ -16,6 +16,8 @@ struct TopCardFace: View {
     var film: [String] = []
     var trailingSymbol: String = "chevron.right"
     var detailTruncation: Text.TruncationMode = .middle
+    /// 旅行プランの札（右上に「⋯」を重ねる・`tripCardMenu`）。眉と題をその下に潜らせない（`HomeTopCardView.menuReserve`）
+    var reservesMenu: Bool = false
     /// 横にめくる並びの中か（外の余白を持たず、並びの高さいっぱいに伸びる）
     var inCarousel: Bool = false
 
@@ -35,6 +37,7 @@ struct TopCardFace: View {
                 VStack(alignment: .leading, spacing: JPSpace.xxs) {
                     // 英字の眉は読み上げでは日本語で（今日のテーマの札と同じ）
                     JPEyebrowLine(eyebrow, spoken: eyebrowLabel)
+                        .padding(.trailing, reservesMenu ? HomeTopCardView.menuReserve : 0)
                     // **#417 ③（2026-10-30 owner 採用）: 題・一行・出典は1行ずつ**（背を板の 116 に）。
                     // 2行まで許していた間は、並びの背が一番高い札（出典の2行）に揃って 156 になり、
                     // 下の写真の一覧が押し下がっていた。切れた全文は読み上げで読める（札は1つの要素）
@@ -42,6 +45,7 @@ struct TopCardFace: View {
                         .font(JPFont.rowTitle)
                         .foregroundStyle(WebTheme.text)
                         .lineLimit(HomeTopCardView.lineLimit)
+                        .padding(.trailing, reservesMenu ? HomeTopCardView.menuReserve : 0)
                     Text(line)
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text2)
