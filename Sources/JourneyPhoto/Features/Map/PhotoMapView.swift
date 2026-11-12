@@ -938,8 +938,8 @@ struct PhotoMapView: View {
                                     hasLocationNote: locationNote != nil, photosFailed: loadFailedNote != nil)
         return "choice=\(choice) offline=\(connectivity.isOffline) loaded=\(model.loaded) "
             + "empty=\(emptyKind.map { "\($0)" } ?? "nil") location=\(location.state) "
-            + "locationNote=\(locationNote ?? "nil") photos=\(model.photos.count) shown=\(model.shown.count) "
-            + "pins=\(model.pins.count) spotPins=\(model.officialPins.count) loadFailed=\(model.loadFailed)"
+            + "locationNote=\(locationNote ?? "nil") photoCount=\(model.photos.count) shownCount=\(model.shown.count) "
+            + "pinCount=\(model.pins.count) spotPinCount=\(model.officialPins.count) loadFailed=\(model.loadFailed)"
     }
 
     /// 地図の上のガラスの帯（第2章）。左 12・上 12。**右は操作列（右 16・幅 44・上から 56）の分を空ける**
