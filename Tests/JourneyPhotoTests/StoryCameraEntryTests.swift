@@ -110,8 +110,13 @@ final class StoryCameraEntryTests: XCTestCase {
         XCTAssertTrue(source.contains("holdAction(isRecording: camera.isRecording || recordingStarting,"))
         // 裏へ行ったら、押している途中の状態も消す（指を受け取れなくなった押しを次に持ち越さない）
         let sceneBlock = String(source[scene.lowerBound..<interrupted.lowerBound])
-        XCTAssertTrue(sceneBlock.contains("if phase != .active {\n                releasePress()\n                perform(.stopRecording)"),
+        XCTAssertTrue(sceneBlock.contains("if phase != .active { releasePress() }"),
                       "裏へ行ったときに押している途中の状態が残る")
+        // 2026-11-12: 録画を止めるのは裏へ行ったとき（.background）だけ。.inactive では止めない
+        XCTAssertTrue(sceneBlock.contains("if StoryCameraRules.stopsRecording(onBackground: phase == .background) {\n                perform(.stopRecording)"),
+                      ".inactive（コントロールセンターを少し下げた）で録画が止まる")
+        XCTAssertTrue(StoryCameraRules.stopsRecording(onBackground: true))
+        XCTAssertFalse(StoryCameraRules.stopsRecording(onBackground: false))
         // 受けなかったタップに軽い触覚。始めている途中は読み上げのヒントを出さない
         XCTAssertTrue(source.contains("case .ignore:\n            ignoredTick += 1"), "押したのに何も返らない")
         XCTAssertTrue(source.contains(".sensoryFeedback(.impact(weight: .light, intensity: 0.4), trigger: ignoredTick)"))

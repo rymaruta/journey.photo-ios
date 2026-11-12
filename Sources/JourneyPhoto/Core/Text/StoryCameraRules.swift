@@ -274,6 +274,11 @@ enum StoryCameraRules {
         showsZoomPills(presetCount: presetCount) && !counting
     }
 
+    /// アプリの場面が変わったとき録画を止めるか。**裏へ行った（`.background`）ときだけ**（2026-11-12 判断）。
+    /// `.inactive`（コントロールセンター・通知センターを少し下げた・着信の表示）では止めない。電話で撮影の場が
+    /// 中断されたときは `camera.interruptions` の側で止める
+    static func stopsRecording(onBackground: Bool) -> Bool { onBackground }
+
     /// 準備中（映像が出る前）の部品の濃さ。部品を先に置いて沈め、映像が出たら明るくする（位置が跳ねない）
     static let preparingOpacity = 0.4
 

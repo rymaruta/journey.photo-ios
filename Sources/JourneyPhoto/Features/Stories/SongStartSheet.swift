@@ -50,9 +50,9 @@ struct SongStartSheet: View {
 
     /// 試聴の状態（`SongStartStrip.playback`）
     private var playback: SongStartStrip.Playback {
-        SongStartStrip.playback(mine: mine, playing: player.isPlaying(song.previewURL), stoppedByMe: stoppedByMe,
-                                itemFailed: mine && player.previewItemFailed(for: song.previewURL),
-                                waiting: mine && player.previewWaiting(for: song.previewURL))
+        SongStartStrip.playback(mine: mine, playing: player.isPlaying(song.previewURL),
+                                paused: player.isPaused && player.playingURL == song.previewURL,
+                                stoppedByMe: stoppedByMe, load: player.previewLoad)
     }
 
     var body: some View {
@@ -278,7 +278,8 @@ struct SongStartSheet: View {
     }
 
     private func barColor(_ tone: SongStartStrip.BarTone) -> Color {
-        if playback == .loading { return WebTheme.surface4 }
+        // 読み込み中は白 12% の骨組み（surface-4 は帯の地 surface-2 とほぼ同じで見えなかった・2026-11-12）
+        if playback == .loading { return Color.white.opacity(0.12) }
         switch tone {
         case .outside: return WebTheme.outline.opacity(0.9)
         case .played: return Color.white

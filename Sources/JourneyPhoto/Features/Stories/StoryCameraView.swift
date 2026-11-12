@@ -151,10 +151,12 @@ struct StoryCameraContent: View {
                                                     cameraReady: camera.state == .ready) {
                 cancelCountdown(announce: true)
             }
-            // 2026-11-11 判断: 録画は離しても続くので、前面でなくなったら**必ず止める**（撮れた分は渡す）。
-            // 押している途中の状態も消す（指を受け取れなくなった押しを、次の押しに持ち越さない）
-            if phase != .active {
-                releasePress()
+            // 押している途中の状態は、前面でなくなったら消す（指を受け取れなくなった押しを、次の押しに持ち越さない）
+            if phase != .active { releasePress() }
+            // 2026-11-11 判断: 録画は離しても続くので、アプリが裏へ行ったら**必ず止める**（撮れた分は渡す）。
+            // 2026-11-12 判断: 止めるのは裏へ行った（.background）ときと撮影の場の中断だけ。.inactive
+            // （コントロールセンター・通知センターを少し下げた）では止めない——それだけで録画が終わっていた
+            if StoryCameraRules.stopsRecording(onBackground: phase == .background) {
                 perform(.stopRecording)
             }
         }
@@ -445,7 +447,7 @@ struct StoryCameraContent: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(flash.accessibilityLabel)
-        .accessibilityHint(L("押すたびにオフ・オン・自動が替わります", "Cycles through off, on and auto"))
+        .accessibilityHint(L("押すたびにオフ、オン、自動が替わります", "Cycles through off, on and auto"))
         .accessibilityIdentifier("story.camera.flash")
     }
 
@@ -472,7 +474,7 @@ struct StoryCameraContent: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(timerOption.accessibilityLabel)
-        .accessibilityHint(L("押すたびにオフ・3秒・10秒が替わります。入れると押さずに撮れます",
+        .accessibilityHint(L("押すたびにオフ、3秒、10秒が替わります。入れると押さずに撮れます",
                              "Cycles through off, 3 and 10 seconds. With a timer on, you can shoot hands-free"))
         .accessibilityIdentifier("story.camera.timerOption")
     }

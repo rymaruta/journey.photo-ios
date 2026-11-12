@@ -96,14 +96,19 @@ enum SongStartStrip {
     enum Playback: Equatable { case idle, loading, playing, failed }
 
     /// 試聴の状態を決める。**この画面が鳴らした回（`mine`）だけを見る**。
+    /// - 項目の読み込みに失敗（`load == .failed`・圏外）→ 流せない
+    /// - 一時停止（`paused`・電話・Siri・イヤホンを外した `markInterrupted`）→ 止まっている。「通信を確かめて」と言わない
+    ///   （2026-11-12・確かめ役の指摘）
     /// - 鳴らしたのに、自分で止めていない（`stoppedByMe` でない）のに鳴っていない → 流せない
-    ///   （試聴の再生器は失敗すると自分で止まる・`MusicPreviewPlayer` の `FailedToPlayToEnd`。繰り返し鳴らすので鳴り終わりでは止まらない）
-    /// - 項目の読み込みに失敗（`itemFailed`）→ 流せない
-    /// - 鳴っているが、まだ音が出ていない（`waiting`）→ 読み込み中
-    static func playback(mine: Bool, playing: Bool, stoppedByMe: Bool, itemFailed: Bool, waiting: Bool) -> Playback {
+    ///   （試聴の再生器は途中で失敗すると自分で止まる・`MusicPreviewPlayer` の `FailedToPlayToEnd`。繰り返し鳴らすので鳴り終わりでは止まらない）
+    /// - 鳴っているが、まだ音が出ていない（`load == .loading`）→ 読み込み中
+    /// `load` は再生器が項目を見張って知らせる値（`MusicPreviewPlayer.previewLoad`）——変わると画面が描き直される
+    static func playback(mine: Bool, playing: Bool, paused: Bool, stoppedByMe: Bool,
+                         load: MusicPreviewPlayer.PreviewLoad) -> Playback {
         guard mine else { return .idle }
-        if itemFailed { return .failed }
+        if load == .failed { return .failed }
+        if paused { return .idle }
         if !playing { return stoppedByMe ? .idle : .failed }
-        return waiting ? .loading : .playing
+        return load == .loading ? .loading : .playing
     }
 }

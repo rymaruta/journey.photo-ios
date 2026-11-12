@@ -28,7 +28,7 @@ struct StoryVideoTrimSheet: View {
     let clip: StoryVideoClip
     /// 作る画面の何枚目か（「1 / 2」・写真の右下）。1枚だけのときは nil
     var positionLabel: String?
-    /// 「別の動画を選ぶ」（開けなかったとき）。シートを閉じてから呼ぶ側が写真選びを開く。nil なら出さない
+    /// 「別の動画を選ぶ」（開けなかったとき）。シートを閉じてから、呼ぶ側が開けなかった1本を外して写真選びを開く。nil なら出さない
     var onPickAnother: (() -> Void)?
     /// 「完了」で、選んだ範囲を渡す
     let onDone: (StoryVideoTrim) -> Void
@@ -436,7 +436,7 @@ struct StoryVideoTrimSheet: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(which == .start ? L("開始位置", "Start") : L("終了位置", "End"))
         .accessibilityValue(StoryVideoTrim.label(time))
-        .accessibilityHint(L("増やす・減らすで1秒ずつ動かします", "Adjust to move by one second"))
+        .accessibilityHint(L("増やす、減らすで1秒ずつ動かします", "Adjust to move by one second"))
         .accessibilityAdjustableAction { direction in
             nudge(which, by: direction == .increment ? StoryVideoTrim.nudgeStep : -StoryVideoTrim.nudgeStep)
         }

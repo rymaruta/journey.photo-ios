@@ -1,4 +1,5 @@
 import XCTest
+import AVFoundation
 @testable import JourneyPhoto
 
 /// 設計の案「ストーリーのデザイン 残り」（1.1.83・2026-11-12）の4画面——カメラ・動画を切り取る・曲の流し始め・
@@ -192,12 +193,89 @@ final class StoryDesignRestTests: XCTestCase {
 
     /// 試聴の状態: 自分で止めていないのに鳴っていなければ「流せない」
     func testSongPlaybackStates() {
-        XCTAssertEqual(SongStartStrip.playback(mine: false, playing: false, stoppedByMe: false, itemFailed: false, waiting: false), .idle)
-        XCTAssertEqual(SongStartStrip.playback(mine: true, playing: true, stoppedByMe: false, itemFailed: false, waiting: true), .loading)
-        XCTAssertEqual(SongStartStrip.playback(mine: true, playing: true, stoppedByMe: false, itemFailed: false, waiting: false), .playing)
-        XCTAssertEqual(SongStartStrip.playback(mine: true, playing: false, stoppedByMe: false, itemFailed: false, waiting: false), .failed)
-        XCTAssertEqual(SongStartStrip.playback(mine: true, playing: false, stoppedByMe: true, itemFailed: false, waiting: false), .idle)
-        XCTAssertEqual(SongStartStrip.playback(mine: true, playing: true, stoppedByMe: false, itemFailed: true, waiting: false), .failed)
+        typealias Load = MusicPreviewPlayer.PreviewLoad
+        func state(mine: Bool = true, playing: Bool = true, paused: Bool = false, stoppedByMe: Bool = false,
+                   load: Load = .ready) -> SongStartStrip.Playback {
+            SongStartStrip.playback(mine: mine, playing: playing, paused: paused, stoppedByMe: stoppedByMe, load: load)
+        }
+        XCTAssertEqual(state(mine: false, playing: false), .idle)
+        XCTAssertEqual(state(load: .loading), .loading)
+        XCTAssertEqual(state(), .playing)
+        // 鳴らしたのに自分で止めていないのに鳴っていない（途中の失敗で再生器が自分で止まった）→ 流せない
+        XCTAssertEqual(state(playing: false), .failed)
+        XCTAssertEqual(state(playing: false, stoppedByMe: true), .idle)
+        // 項目の読み込みに失敗（圏外）→ 流せない（鳴っている扱いのままでも）
+        XCTAssertEqual(state(load: .failed), .failed)
+        // 電話・Siri・イヤホン（一時停止）は「止まっている」——「通信を確かめて」と言わない
+        XCTAssertEqual(state(playing: false, paused: true), .idle)
+    }
+
+    /// 圏外で開いたとき: 項目の失敗を再生器が知らせ（`@Published` の `previewLoad`）、画面が「流せない」へ移る。
+    /// 以前は `status` を見張っておらず、知らせが出ないので「読み込み中」のまま描き直されなかった（確かめ役の指摘・2026-11-12）
+    func testPreviewFailureIsPublishedAndShownAsFailed() throws {
+        XCTAssertEqual(MusicPreviewPlayer.previewLoad(itemFailed: false, waiting: true, playing: true), .loading)
+        XCTAssertEqual(MusicPreviewPlayer.previewLoad(itemFailed: false, waiting: false, playing: true), .ready)
+        XCTAssertEqual(MusicPreviewPlayer.previewLoad(itemFailed: true, waiting: true, playing: true), .failed)
+        XCTAssertEqual(MusicPreviewPlayer.previewLoad(itemFailed: false, waiting: false, playing: false), .idle)
+        let player = MusicPreviewPlayer.shared
+        player.stop()
+        defer { player.stop() }
+        player.noteLoad(itemFailed: false, waiting: true, from: nil)
+        XCTAssertEqual(player.previewLoad, .idle, "鳴らしていないのに読み込み中にした")
+        player.noteLoad(itemFailed: true, waiting: false, from: nil)
+        XCTAssertEqual(player.previewLoad, .failed)
+        // 前の再生器の遅れた知らせは受けない（いまの再生器が無いので nil 以外は捨てる）
+        player.stop()
+        player.noteLoad(itemFailed: true, waiting: false, from: AVPlayer(url: URL(fileURLWithPath: "/x.m4a")))
+        XCTAssertEqual(player.previewLoad, .idle)
+        player.noteLoad(itemFailed: true, waiting: false, from: nil)
+        // 画面の状態は「流せない」→ 理由と「もう一度」
+        XCTAssertEqual(SongStartStrip.playback(mine: true, playing: true, paused: false, stoppedByMe: false,
+                                               load: player.previewLoad), .failed)
+        let view = try repo("Sources/JourneyPhoto/Features/Stories/SongStartSheet.swift")
+        XCTAssertTrue(view.contains("stoppedByMe: stoppedByMe, load: player.previewLoad)"))
+        XCTAssertTrue(view.contains("if playback == .failed {"))
+        XCTAssertTrue(view.contains("Button(Labels.Common.retry) { playFromStart() }"))
+        XCTAssertFalse(view.contains("WebTheme.surface4"), "読み込み中の棒が帯の地と同じ灰で見えない")
+        let source = try repo("Sources/JourneyPhoto/Features/Common/MusicPreviewPlayer.swift")
+        // 知らせ（描き直し）は @Published で出す
+        XCTAssertTrue(source.contains("@Published private(set) var previewLoad: PreviewLoad = .idle"),
+                      "項目の失敗が知らされず、画面が描き直されない")
+        XCTAssertTrue(source.contains("player.observe(\\.currentItem?.status, options: [.initial, .new])"),
+                      "項目の status を見張っていない")
+        XCTAssertTrue(source.contains("player.observe(\\.timeControlStatus, options: [.initial, .new])"))
+    }
+
+    // MARK: - 確かめ役の指摘（2026-11-12）
+
+    /// 空のハイライトの「ストーリーを作る」は「24時間後も自分用に残す」を入れて開く（切ったままだと投稿しても格子が空）。
+    /// 作る画面を閉じたら、ほかの入口と同じく `postSheetClosed`（ホームの輪の読み直し）
+    func testHighlightMakeStoryKeepsInArchive() throws {
+        let editor = try repo("Sources/JourneyPhoto/Features/Profile/HighlightEditorView.swift")
+        XCTAssertTrue(editor.contains("StoryComposerView(startsWithCamera: StoryCameraView.isAvailable, keepsInArchive: true)"))
+        let cover = try XCTUnwrap(editor.components(separatedBy: ".fullScreenCover(isPresented: $showComposer").dropFirst().first)
+        XCTAssertTrue(String(cover.prefix(400)).contains("TabRouter.shared.postSheetClosed()"))
+        let composer = try repo("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
+        XCTAssertTrue(composer.contains("init(openDraft: String? = nil, startsWithCamera: Bool = false, keepsInArchive: Bool = false)"))
+        let forced = try XCTUnwrap(composer.range(of: "if keepsInArchive { keepInArchive = true }"), "残すを入れて始めていない")
+        // 開いた回だけ（カメラから戻った onAppear で入れ直さない）
+        let asked = try XCTUnwrap(composer.range(of: "askedOnOpen = true"))
+        XCTAssertLessThan(asked.lowerBound, forced.lowerBound)
+        // 人ごとの覚えを読む所（既定を変える枝）があれば、その後ろで入れる（覚えで上書きさせない）
+        if let remembered = composer.range(of: "loadKeepInArchive(for: auth.userId)") {
+            XCTAssertLessThan(remembered.lowerBound, forced.lowerBound, "覚えの値で「残す」が上書きされる")
+        }
+    }
+
+    /// 「別の動画を選ぶ」: 開けなかった1本を外してから写真選び
+    func testPickAnotherRemovesTheUnopenableVideo() throws {
+        let composer = try repo("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
+        XCTAssertTrue(composer.contains("unopenableShotId = id"))
+        let dismiss = try XCTUnwrap(composer.components(separatedBy: ".sheet(isPresented: trimSheetShown, onDismiss: {").dropFirst().first)
+        let body = String(dismiss.prefix(600))
+        let removed = try XCTUnwrap(body.range(of: "remove(at: index)"))
+        let opened = try XCTUnwrap(body.range(of: "showLibrary = true"))
+        XCTAssertLessThan(removed.lowerBound, opened.lowerBound)
     }
 
     /// 画面の配線: 決めるのは下の主ボタン（写真の無い画面なので真鍮）・上の「決める」をやめた・画面いっぱいで出す
@@ -269,6 +347,11 @@ final class StoryDesignRestTests: XCTestCase {
             HighlightService.cellLabel(day: "9/12", order: 2, isCover: true),
             HighlightService.titleCount("金沢"),
         ]
+        // 前からあったカメラの読み上げのヒント・切り取りのつまみのヒントも「、」に
+        let camera = try repo("Sources/JourneyPhoto/Features/Stories/StoryCameraView.swift")
+        XCTAssertFalse(camera.contains("オフ・オン・自動") || camera.contains("オフ・3秒・10秒"))
+        let trimView = try repo("Sources/JourneyPhoto/Features/Stories/StoryVideoTrimView.swift")
+        XCTAssertFalse(trimView.contains("L(\"増やす・減らす"))
         for text in built {
             XCTAssertFalse(text.contains("·") || text.contains("・"), text)
         }
@@ -282,7 +365,6 @@ final class StoryDesignRestTests: XCTestCase {
             }
         }
         // 数えている案内・全体の注記は、字の大きさ・色と余白で分けている
-        let camera = try repo("Sources/JourneyPhoto/Features/Stories/StoryCameraView.swift")
         XCTAssertTrue(camera.contains("Text(StoryCameraRules.countdownCancelHint)"))
         let trim = try repo("Sources/JourneyPhoto/Features/Stories/StoryVideoTrimView.swift")
         XCTAssertTrue(trim.contains("if let limit = trim.limitNote { Text(limit) }"))

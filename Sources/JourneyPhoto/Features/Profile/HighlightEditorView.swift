@@ -129,9 +129,13 @@ struct HighlightEditorView: View {
             .sheet(isPresented: $showCoverPicker) { coverPicker }
             // 空のとき「ストーリーを作る」。作る画面は画面いっぱい（#406・`StoryComposerPresentationTests`）。
             // 閉じたら残したストーリーを読み直す（「24時間後も自分用に残す」で残した1本が並ぶ）
-            .fullScreenCover(isPresented: $showComposer, onDismiss: { Task { await load() } }) {
+            .fullScreenCover(isPresented: $showComposer, onDismiss: {
+                // ほかの入口（`RootView`）と同じ後始末: ホームの輪（`StoriesRow` の reloadToken）・マイページが読み直す
+                TabRouter.shared.postSheetClosed()
+                Task { await load() }
+            }) {
                 NavigationStack {
-                    StoryComposerView(startsWithCamera: StoryCameraView.isAvailable)
+                    StoryComposerView(startsWithCamera: StoryCameraView.isAvailable, keepsInArchive: true)
                 }
             }
             .task { await load() }
