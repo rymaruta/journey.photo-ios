@@ -4442,6 +4442,27 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "102d-設定（トランクを見せる）")
         goBack(app)
+        Thread.sleep(forTimeInterval: 1)
+
+        // ヘルプと規約のいちばん上の「使い方」（2026-11-12 札 #517）。行は必ずある——無ければ落とす。
+        // 押すとアプリの中の Safari で /help が開く。開いた窓は撮るだけ（試験の機械から本番のサイトが読めるとは限らない）
+        let help = app.buttons["settings.help"].firstMatch
+        guard help.waitForExistence(timeout: 5) else { return XCTFail("設定に「使い方」の行が無い") }
+        var toHelp = 0
+        while !help.isHittable || help.frame.maxY > app.windows.firstMatch.frame.maxY - 60, toHelp < 10 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            toHelp += 1
+        }
+        guard help.isHittable else { return XCTFail("「使い方」の行に届かない") }
+        XCTAssertGreaterThanOrEqual(help.frame.height, 44, "「使い方」の行が 44pt 未満")
+        let whatsNew = app.buttons["settings.whatsNew"].firstMatch
+        if whatsNew.exists { XCTAssertLessThan(help.frame.minY, whatsNew.frame.minY, "「使い方」がヘルプと規約のいちばん上に無い") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "102h-設定（使い方）")
+        help.tap()
+        Thread.sleep(forTimeInterval: 4)
+        shoot(app, "102i-使い方（アプリの中の Safari）")
     }
 
     /// **旅のトランク**（Pro の見本）: トランク → 手に取って回す → 手持ち（選んだ）→ 作り直し →
