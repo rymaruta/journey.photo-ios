@@ -7000,7 +7000,13 @@ final class ScreenshotTests: XCTestCase {
         guard card.isHittable else { return }
         card.tap()
         let keep = app.buttons["develop.keep"].firstMatch
-        guard keep.waitForExistence(timeout: 10) else { return }
+        guard keep.waitForExistence(timeout: 10) else {
+            // Mac run 1100: 押しても現像の画面が出なかった。押した回数・出そうとした旅・画面の木を残す
+            let probe = app.staticTexts["home.develop.probe"].firstMatch
+            note(app, "現像の画面が出ない", "probe=\(probe.exists ? probe.label : "（無い）") hittable=\(card.isHittable)")
+            print("UINOTE 現像の画面が出ない（画面の木）:\n\(app.debugDescription)")
+            return
+        }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "120b-現像（はじめのコマ）")
         // 右へ払う（載せる）。払いの判定は 110pt 以上
