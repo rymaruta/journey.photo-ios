@@ -116,6 +116,23 @@ final class DMTripPlanTests: XCTestCase {
         XCTAssertEqual(DMTripPlaces.longestCommonRun(Array("abcde".unicodeScalars), Array("xbcdy".unicodeScalars)), 3)
     }
 
+    /// 日常の語尾・助詞に候補を出さない（2026-11-12 確かめ役: 「行きたいね」で喜多院（きたいん）・大寧寺（たいねいじ）が出た）
+    func testCandidatesIgnoreEverydayEndings() throws {
+        let kitain = try spot("kitain", name: "喜多院", reading: "きたいん")
+        let tainei = try spot("taineiji", name: "大寧寺", reading: "たいねいじ")
+        let kana = try spot("kana", name: "ひがしやま", reading: "ひがしやま")
+        let museum = try spot("21seiki", name: "金沢21世紀美術館")
+        let aliases = ["kitain": ["きたいんさん"], "kana": ["ヒガシヤマ"]]
+        let index = [kitain, tainei, kana, museum]
+        for text in ["行きたいね", "楽しみだね", "ありがとう、またね", "いいね、たいへんだったね", "きたいしてる", "ひがしやまにいこう"] {
+            XCTAssertTrue(DMTripPlaces.candidates(for: text, index: index, aliases: aliases).isEmpty, text)
+        }
+        XCTAssertEqual(DMTripPlaces.candidates(for: "21世紀美術館も行きたいね", index: index, aliases: aliases).map(\.slug),
+                       ["21seiki"], "漢字の続きでは今までどおり当たる")
+        XCTAssertEqual(DMTripPlaces.longestCommonRun(Array("のの山".unicodeScalars), Array("のの山".unicodeScalars)), 1,
+                       "ひらがなは続きに数えない")
+    }
+
     func testLabels() {
         XCTAssertEqual(DMTripPlaces.countLabel(2), "2 か所")
         XCTAssertEqual(DMTripPlaces.nextTitle(count: 2), "2 か所で 日付を選ぶ")
@@ -144,9 +161,40 @@ final class DMTripPlanTests: XCTestCase {
         XCTAssertEqual(pairs.map(\.start), ["2026-11-14", "2026-11-22"], "いちばん近い組と、祝日を含むいちばん近い組")
         XCTAssertEqual(pairs.map(\.end), ["2026-11-15", "2026-11-23"])
         XCTAssertEqual(pairs.map(\.label), ["11/14 · 15（土日）", "11/22 · 23（日・祝）"])
+        XCTAssertEqual(TripHolidays.allPairs(from: "2026-11-11").count, TripHolidays.allPairs(from: "2026-11-11").count)
         XCTAssertEqual(TripHolidays.pair(of: ["2026-05-02", "2026-05-03", "2026-05-04", "2026-05-05", "2026-05-06"]).start,
                        "2026-05-03", "平日の祝日とその隣の休み")
         XCTAssertEqual(TripHolidays.label("2026-12-31", "2027-01-01"), "12/31 · 1/1（木・祝）")
+    }
+
+    /// 見出しだけ（説明文に頼らない）。祝日を含む組もあるので英語も「週末」と言わない
+    func testHolidayHeadingIsShort() throws {
+        XCTAssertEqual(TripCreateDatesStep.holidayHeading, "近くの休み")
+        let create = try source("Features/Trips/TripCreateView.swift")
+        XCTAssertFalse(create.contains("休みの組を押すと"), "説明文を出さない")
+        XCTAssertFalse(create.contains("Tap a weekend"))
+        XCTAssertTrue(create.contains("@State private var pairs: [TripHolidays.Pair]"), "休みの組は開いたときに1回だけ探す")
+        XCTAssertFalse(create.contains("let pairs = TripHolidays.pairs("), "描き直しのたびに探さない")
+    }
+
+    /// 索引を読めなかった回は前の表を残し、次に読めたら撮影スポットに当てる（空の表で上書きしない）
+    @MainActor
+    func testTripModelKeepsTablesWhenALoadFails() async throws {
+        let kenroku = try spot("kenrokuen", name: "兼六園")
+        let messages = [message("1", mine: false, quote: live("p1", location: "兼六園, 金沢市"))]
+        let trip = DMTripModel()
+        trip.apply(index: nil, aliases: [:], photos: nil)
+        XCTAssertFalse(trip.loaded)
+        XCTAssertTrue(trip.failed)
+        XCTAssertFalse(trip.places(messages, blocked: []).first?.place.isSpot ?? true, "索引が無い間は撮影地")
+        trip.apply(index: [kenroku], aliases: [:],
+                   photos: [try photo("p1", location: "兼六園, 金沢市", coords: "{\"lat\":36.56,\"lng\":136.66}")])
+        XCTAssertTrue(trip.loaded)
+        XCTAssertTrue(trip.places(messages, blocked: []).first?.place.isSpot ?? false, "読めたら撮影スポット")
+        trip.apply(index: nil, aliases: [:], photos: nil)
+        XCTAssertTrue(trip.places(messages, blocked: []).first?.place.isSpot ?? false, "読めなかった回に表を空にしない")
+        XCTAssertNotNil(trip.places(messages, blocked: []).first?.place.coords, "写真の表も残す")
+        XCTAssertFalse(trip.failed)
     }
 
     @MainActor
@@ -170,9 +218,26 @@ final class DMTripPlanTests: XCTestCase {
         try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/" + path), encoding: .utf8)
     }
 
+    /// `start` から次の空行までの字（関数1つぶん）
+    private func body(of start: String, in text: String) -> String? {
+        guard let from = text.range(of: start) else { return nil }
+        let rest = text[from.lowerBound...]
+        let end = rest.range(of: "\n\n")?.lowerBound ?? rest.endIndex
+        return String(rest[..<end])
+    }
+
     func testConversationWiresBandMenuAndCreateFlow() throws {
         let conversation = try source("Features/Messages/DMConversationView.swift")
         XCTAssertTrue(conversation.contains("DMTripBand(count: tripFound.count)"), "場所の出た会話に帯")
+        // 承認前のリクエストには、帯・長押しの「旅行プランに入れる」・索引の読み込みのどれも出さない（2026-11-12 確かめ役）
+        XCTAssertTrue(conversation.contains("private var tripOffered: Bool { !isIncomingRequest }"))
+        XCTAssertTrue(conversation.contains("if tripOffered, !tripFound.isEmpty {"), "帯")
+        XCTAssertTrue(conversation.contains("if tripOffered, log.messages.contains(where: \\.hasPhoto) { await trip.load"), "読み込み")
+        let menu = try XCTUnwrap(body(of: "private func bubbleMenu", in: conversation))
+        XCTAssertTrue(menu.hasPrefix("private func bubbleMenu(_ text: String) -> some View {\n        if tripOffered {\n"),
+                      "長押しのメニューの「旅行プランに入れる」は tripOffered の中")
+        let add = try XCTUnwrap(body(of: "private func addToTrip", in: conversation))
+        XCTAssertTrue(add.contains("{\n        guard tripOffered else { return }\n"), "長押しから呼ばれても入れない")
         XCTAssertTrue(conversation.contains(".contextMenu { bubbleMenu(text) }"), "吹き出しの長押し")
         XCTAssertTrue(conversation.contains("L(\"旅行プランに入れる\", \"Add to a trip\")"))
         XCTAssertTrue(conversation.contains("TripPlanDetailView(planId: planId, model: tripPlans)"), "作ったら日程の画面")

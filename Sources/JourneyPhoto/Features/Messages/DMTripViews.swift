@@ -17,7 +17,8 @@ final class DMTripModel: ObservableObject {
 
     @Published private(set) var index: [OfficialSpot] = []
     @Published private(set) var aliases: [String: [String]] = [:]
-    @Published private(set) var photos: [Photo] = []
+    /// 公開の写真（ID → 写真・読んだときに1回だけ作る）
+    @Published private(set) var photosById: [String: Photo] = [:]
     /// 吹き出しから入れた場所（入れた順）。会話を閉じれば消える
     @Published private(set) var added: [DMTripPlaces.Found] = []
     @Published private(set) var loaded = false
@@ -26,26 +27,44 @@ final class DMTripModel: ObservableObject {
     /// 索引を読めなかった（文から拾えない・候補を出せない）
     @Published private(set) var failed = false
     private var loading = false
+    /// 公開の写真を読めた（座標を引く表）。読めなかった回は次に呼ばれたとき読み直す
+    private var photosLoaded = false
 
     /// 索引・別名・公開の写真を読む（どれも控えを使う口）。一度読めたら読み直さない
     func load(environment: AppEnvironment) async {
-        guard !loaded, !loading else { return }
+        // 一度読めたら読み直さない。読めなかった回は、呼ばれるたびに読み直す（電波が戻ったとき・長押ししたとき）
+        guard !(loaded && photosLoaded), !loading else { return }
         loading = true
         defer { loading = false }
-        let fetchedIndex = try? await environment.spots.fetchIndex()
-        let fetchedAliases = await environment.spots.fetchAliases()
-        let fetchedPhotos = try? await environment.gallery.fetchPhotos()
-        if let fetchedIndex { index = fetchedIndex }
-        aliases = fetchedAliases
-        names = DMTripPlaces.NameTable(index, aliases: aliases)
-        if let fetchedPhotos { photos = fetchedPhotos }
-        failed = fetchedIndex == nil
-        loaded = fetchedIndex != nil
+        var fetchedIndex: [OfficialSpot]?
+        var fetchedAliases = aliases
+        if !loaded {
+            fetchedIndex = try? await environment.spots.fetchIndex()
+            fetchedAliases = await environment.spots.fetchAliases()
+        }
+        var fetchedPhotos: [Photo]?
+        if !photosLoaded { fetchedPhotos = try? await environment.gallery.fetchPhotos() }
+        apply(index: fetchedIndex, aliases: fetchedAliases, photos: fetchedPhotos)
+    }
+
+    /// 読んだ結果を映す。**読めなかった分は前の表を残す**（空の表で上書きしない・2026-11-12 確かめ役の指摘）
+    func apply(index fetchedIndex: [OfficialSpot]?, aliases fetchedAliases: [String: [String]], photos fetchedPhotos: [Photo]?) {
+        if let fetchedIndex {
+            index = fetchedIndex
+            aliases = fetchedAliases
+            names = DMTripPlaces.NameTable(fetchedIndex, aliases: fetchedAliases)
+            loaded = true
+        }
+        if let fetchedPhotos {
+            photosById = DMTripPlaces.byId(fetchedPhotos)
+            photosLoaded = true
+        }
+        failed = !loaded
     }
 
     /// 下書きに出す場所（写真が先・吹き出しから入れた場所が後）
     func places(_ messages: [DMMessage], blocked: Set<String>) -> [DMTripPlaces.Found] {
-        DMTripPlaces.merged(photos: DMTripPlaces.photoPlaces(messages, names: names, photos: photos, blocked: blocked),
+        DMTripPlaces.merged(photos: DMTripPlaces.photoPlaces(messages, names: names, photosById: photosById, blocked: blocked),
                             added: added)
     }
 
@@ -235,15 +254,18 @@ struct DMTripCandidatesSheet: View {
     let onPick: (OfficialSpot) -> Void
 
     @State private var query = ""
+    /// 文からの候補。**開いたとき（索引が読めたとき）に1回だけ作る**（索引の全部と文を比べるので重い・2026-11-12）
+    @State private var suggested: [OfficialSpot] = []
 
-    private var rows: [OfficialSpot] {
-        let typed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        if typed.isEmpty { return trip.candidates(for: text) }
+    private func rows(_ typed: String) -> [OfficialSpot] {
+        if typed.isEmpty { return suggested }
         return PlaceSpotSuggestions.suggestions(query: typed, near: near, index: trip.index, aliases: trip.aliases)
     }
 
     var body: some View {
-        NavigationStack {
+        // 描き直し1回で1度だけ並べる
+        let shown = rows(typedQuery)
+        return NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: JPSpace.m) {
                     Text("「\(text)」")
@@ -265,14 +287,14 @@ struct DMTripCandidatesSheet: View {
                                                "Couldn't load photo spots. Check your connection and try again."))
                     } else if !trip.loaded {
                         JPLoadingState(kind: .rows)
-                    } else if rows.isEmpty {
+                    } else if shown.isEmpty {
                         Text(L("候補はありません。名前で探してください", "No suggestions. Try searching by name."))
                             .font(JPFont.footnote)
                             .foregroundStyle(WebTheme.text3)
                             .accessibilityIdentifier("dmTrip.noCandidates")
                     } else {
                         VStack(spacing: 0) {
-                            ForEach(rows) { spot in
+                            ForEach(shown) { spot in
                                 TripChoiceRow(place: TripDraft.place(spot: spot), isOn: false, locked: false) {
                                     onPick(spot)
                                 }
@@ -291,6 +313,11 @@ struct DMTripCandidatesSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { SheetCloseButton() }
             }
+            .task(id: trip.loaded) {
+                if trip.loaded { suggested = trip.candidates(for: text) }
+            }
         }
     }
+
+    private var typedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 }
