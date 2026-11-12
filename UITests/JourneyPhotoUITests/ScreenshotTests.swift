@@ -6992,7 +6992,7 @@ final class ScreenshotTests: XCTestCase {
     /// ホームの「現像前の旅」の札 → 払う画面（はじめ・右へ払った後）→ 払い終えた表紙、
     /// ストーリーの列の「1年前」の輪 → 閲覧、の順に撮る。**出なければ撮らずに抜ける**
     func testCapturesDevelopAndYearAgo() {
-        let app = launchTrunk(["-JPPreviewDevelop", "YES"])
+        let app = launchTrunk(["-JPPreviewDevelop", "YES"] + Self.freshDevelop)
         let card = app.buttons["home.develop"].firstMatch
         guard card.waitForExistence(timeout: 25) else { return }
         Thread.sleep(forTimeInterval: 2)
@@ -7029,12 +7029,31 @@ final class ScreenshotTests: XCTestCase {
         guard app.buttons["yearAgo.share"].firstMatch.waitForExistence(timeout: 10) else { return }
         Thread.sleep(forTimeInterval: 1.5)
         shoot(app, "120e-1年前（閲覧）")
+        // **途中で閉じた続き**（章「途中で閉じた」）: 控えを空にしない起動で札を押すと、払った続き（ここでは払い終えた表紙）から
+        app.terminate()
+        let again = launchTrunk(["-JPPreviewDevelop", "YES"])
+        let againCard = again.buttons["home.develop"].firstMatch
+        guard againCard.waitForExistence(timeout: 25), againCard.isHittable else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(again, "120j-ホーム（現像の途中の札）")
+        againCard.tap()
+        let resumed = again.buttons["develop.post"].firstMatch.waitForExistence(timeout: 10)
+        print("UINOTE 途中で閉じた続き: 表紙から始まった=\(resumed) 払う画面=\(again.buttons["develop.keep"].firstMatch.exists)")
+        if resumed {
+            Thread.sleep(forTimeInterval: 1)
+            shoot(again, "120k-現像（途中で閉じた続き・表紙から）")
+        }
     }
+
+    /// ①現像の払った控え（`DevelopProgressStore`・端末の中）を、その起動の間だけ空として読ませる引数。
+    /// **前の試験で払い終えた控えが残ると、札を押しても払う画面ではなく表紙から始まる**（Mac run 1129: 前の試験の後の
+    /// 起動で「develop.keep」「develop.addMore」が出なかった）。引数の値は文字なので `data(forKey:)` は nil＝控え無し
+    private static var freshDevelop: [String] { ["-develop.progress.v1.\(previewUserId)", ""] }
 
     /// **①②の状態**（2026-11-12 札 #543・章「状態」）。一部の写真だけ許可（札の一言・払う画面の追加の口）と、
     /// 圏外（表紙の一言と押せない「投稿する」・1年前の閲覧の一言）。**出なければ撮らずに抜ける**
     func testCapturesDevelopStates() {
-        let limited = launchTrunk(["-JPPreviewDevelop", "YES", "-JPPreviewDevelopState", "limited"])
+        let limited = launchTrunk(["-JPPreviewDevelop", "YES", "-JPPreviewDevelopState", "limited"] + Self.freshDevelop)
         let card = limited.buttons["home.develop"].firstMatch
         if card.waitForExistence(timeout: 25) {
             Thread.sleep(forTimeInterval: 2)
@@ -7042,7 +7061,12 @@ final class ScreenshotTests: XCTestCase {
             if card.isHittable {
                 card.tap()
                 let addMore = limited.buttons["develop.addMore"].firstMatch
-                if addMore.waitForExistence(timeout: 10) {
+                let shown = addMore.waitForExistence(timeout: 10)
+                if !shown {
+                    print("UINOTE 一部の写真だけ許可: addMore が無い keep=\(limited.buttons["develop.keep"].firstMatch.exists)"
+                          + " post=\(limited.buttons["develop.post"].firstMatch.exists)")
+                }
+                if shown {
                     Thread.sleep(forTimeInterval: 1.5)
                     shoot(limited, "120g-現像（一部の写真だけ許可・ほかの写真も選べるようにする）")
                     XCTAssertGreaterThanOrEqual(addMore.frame.height, 44, "「ほかの写真も選べるようにする」が 44pt 未満")
@@ -7051,12 +7075,15 @@ final class ScreenshotTests: XCTestCase {
         }
         limited.terminate()
 
-        let offline = launchTrunk(["-JPPreviewDevelop", "YES", "-JPPreviewDevelopState", "offline"])
+        let offline = launchTrunk(["-JPPreviewDevelop", "YES", "-JPPreviewDevelopState", "offline"] + Self.freshDevelop)
         let offlineCard = offline.buttons["home.develop"].firstMatch
         guard offlineCard.waitForExistence(timeout: 25), offlineCard.isHittable else { return }
         offlineCard.tap()
         let keep = offline.buttons["develop.keep"].firstMatch
-        guard keep.waitForExistence(timeout: 10) else { return }
+        guard keep.waitForExistence(timeout: 10) else {
+            print("UINOTE 圏外: keep が無い post=\(offline.buttons["develop.post"].firstMatch.exists)")
+            return
+        }
         for _ in 0..<12 {
             guard keep.exists, keep.isHittable else { break }
             keep.tap()
