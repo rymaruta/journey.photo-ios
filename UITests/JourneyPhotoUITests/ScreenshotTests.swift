@@ -2093,8 +2093,7 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "87-自分のカード（指で回した後）")
     }
 
-    /// **構図を重ねて撮る**（2026-10-10・2026-10-17 から全員無料）: 投稿のシートの「カメラで撮る」（2026-11-12 から
-    /// 構図の線はカメラの中・行 5 → 4）→ 作例なしの撮る画面 →
+    /// **構図を重ねて撮る**（2026-10-10・2026-10-17 から全員無料）: 投稿のシートの4つ目の入口 → 作例なしの撮る画面 →
     /// 構図のシート → 黄金螺旋を選んで重ねた撮る画面。シミュレータにカメラは無いので映像の枠は「カメラを使えません」で、
     /// 線は起動の鍵（`-JPComposeGuidePreview`・Debug のみ）があるときだけ重なる。
     ///
@@ -2116,14 +2115,12 @@ final class ScreenshotTests: XCTestCase {
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
         tabBar.buttons.element(boundBy: 2).tap()
-        let entry = app.buttons["post.choice.camera"].firstMatch
+        let entry = app.buttons["post.choice.composition"].firstMatch
         guard entry.waitForExistence(timeout: 5) else { return }
         Thread.sleep(forTimeInterval: 2)
-        shoot(app, "40b-投稿の選択（カメラで撮る・構図はカメラの中）")
-        // 「構図を重ねて撮る」の行はもう無い（2026-11-12・第10章）
-        XCTAssertFalse(app.buttons["post.choice.composition"].firstMatch.exists, "「構図を重ねて撮る」の行が残っている")
+        shoot(app, "40b-投稿の選択（構図を重ねて撮るの入口）")
         guard entry.isHittable else { return }
-        XCTAssertGreaterThanOrEqual(entry.frame.height, 44, "カメラで撮るの入口が 44pt 未満")
+        XCTAssertGreaterThanOrEqual(entry.frame.height, 44, "構図を重ねて撮るの入口が 44pt 未満")
         entry.tap()
 
         // 前提はそろった（入口が出て押せた・Pro の確かめは起動の鍵で飛ばす）。アプリは投稿のシートが
@@ -2131,7 +2128,7 @@ final class ScreenshotTests: XCTestCase {
         let close = app.buttons["composeGuide.close"].firstMatch
         guard close.waitForExistence(timeout: 15) else {
             shoot(app, "13i-構図を重ねて撮る（出なかった）")
-            XCTFail("投稿のシートの「カメラで撮る」を押したのに撮る画面が出ない")
+            XCTFail("投稿のシートの「構図を重ねて撮る」を押したのに撮る画面が出ない")
             return
         }
         // 作例なし: 構図の行はある・上の札（作例の番号）と作例の切り替えは無い

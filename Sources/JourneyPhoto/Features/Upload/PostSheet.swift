@@ -1,10 +1,6 @@
 import SwiftUI
 
-/// 「写真を投稿／カメラで撮る／ストーリーを投稿／旅の写真からまとめて」の4行。
-///
-/// 2026-11-12 判断（デザインの案 第10章「どこに何を置くか」・行 5 → 4）: 「構図を重ねて撮る」の行を外し、
-/// **構図の線はカメラの中で切り替える**。「カメラで撮る」はアプリのカメラ（`ComposeGuideView`・作例なし）を開き、
-/// 下の「構図」の行で線を選ぶ・「なし」にする（選んだものは端末に覚える・`CompositionPreferences`）。
+/// 「写真を投稿／ストーリーを投稿／旅の写真からまとめて／構図を重ねて撮る」の4択（＋カメラで撮る）。
 ///
 /// Web 側の `app/components/PostSheet.tsx` と対。owner:「写真を追加のとこで
 /// 投稿かストーリーを選べるようにしたい」。
@@ -30,17 +26,19 @@ struct PostSheet: View {
     enum Kind {
         case photo
         case story
-        /// カメラで撮って、その1枚で投稿へ（2026-10-16）。2026-11-12 から**アプリのカメラ**（構図の線を中で切り替える・
-        /// `ComposeGuideLauncher`・作例なし）。撮った1枚は左下の「投稿」で投稿画面へ（`UploadView.initialCapture`）。
-        /// 2026-10-17 判断（owner）: 全員無料。Pro の案内は出さない
+        /// カメラで撮って、その1枚で投稿へ（2026-10-16）。カメラは投稿画面の帯の「追加」→「写真を撮る」と
+        /// 同じ `CameraPicker`、撮った1枚は構図を重ねて撮ったあとと同じ道（`UploadView.initialCapture`）で入れる
         case camera
         /// 端末の写真ライブラリから旅を見つけて、まとめて投稿（`LibraryTripFlowView`）
         case trip
+        /// 構図を重ねて撮る（作例なし・2026-10-10 owner）。撮ってから投稿へ進める（`ComposeGuideLauncher`・呼び手が開く）。
+        /// 2026-10-17 判断（owner）: 全員無料。Pro の案内は出さない
+        case composition
     }
 
     var body: some View {
         // v2 PostSheet: 下から出る短いシート。左に明朝 26 の見出し、右に × の丸、
-        // 行き先を「52 の角丸の札＋明朝の題＋一行の説明」の行で（行の間は白 8% の線）
+        // 4つの行き先を「52 の角丸の札＋明朝の題＋一行の説明」の行で（行の間は白 8% の線）
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text(L("投稿する", "Create"))
@@ -70,16 +68,13 @@ struct PostSheet: View {
             )
             // 2026-10-16 判断: 「カメラで撮る」は写真の投稿の次（同じ「写真を投稿」の入口の別の手）。
             // 札に自分の写真は敷かない（敷く写真は4枚まで・`PostSheetThumbs`）。カメラの無い端末では出さない
-            // 2026-11-12: 画面写真の試験（カメラの無いシミュレータ）だけは、起動の鍵でカメラの行を出す（Release は常に false）
-            if CameraPicker.isAvailable || ComposeGuideAccess.previewUnlocked {
+            if CameraPicker.isAvailable {
                 choice(
                     thumb: nil,
                     title: Self.cameraTitle,
-                    detail: Self.cameraDetail,
+                    detail: L("撮った1枚から、そのまま投稿します。", "Take a photo and post it right away."),
                     systemImage: "camera",
-                    kind: .camera,
-                    // 構図の線を持つ行の印は真鍮（以前の「構図を重ねて撮る」の印・写真の無い黒い札の上だけ）
-                    accentIcon: true
+                    kind: .camera
                 )
             }
             choice(
@@ -95,7 +90,18 @@ struct PostSheet: View {
                 title: L("旅の写真からまとめて", "From a trip in your photos"),
                 detail: L("撮影日と場所から旅を見つけます。", "Finds trips by when and where you shot."),
                 systemImage: "suitcase",
-                kind: .trip,
+                kind: .trip
+            )
+            // 2026-10-10: 4つ目。印は真鍮の線（v2）。
+            // 2026-10-17 判断（owner）: 全員無料にしたので、板にある題の横の「PRO」の合図は外した
+            choice(
+                thumb: thumbs.dropFirst(3).first,
+                title: L("構図を重ねて撮る", "Shoot with a composition guide"),
+                detail: L("三分割や黄金比の線をカメラに重ねて撮り、そのまま投稿できます。",
+                          "Overlay thirds, golden ratio and more on the camera, then post."),
+                systemImage: "camera.viewfinder",
+                kind: .composition,
+                accentIcon: true,
                 last: true
             )
             Spacer(minLength: 0)
@@ -134,20 +140,16 @@ struct PostSheet: View {
         case .story: return "story"
         case .camera: return "camera"
         case .trip: return "trip"
+        case .composition: return "composition"
         }
     }
 
     /// 「カメラで撮る」の題
     static var cameraTitle: String { L("カメラで撮る", "Take a photo") }
-    /// 「カメラで撮る」の説明。構図の線がカメラの中にあると、押す前に分かるように（2026-11-12・行を1つ減らした代わり）
-    static var cameraDetail: String {
-        L("構図の線を重ねて撮り、そのまま投稿します。", "Shoot with composition lines, then post right away.")
-    }
 
-    /// シートの高さ（見出し 68 ＋ 行 4 本 × 約 92 ＋ 下の余白）。札から行にして詰まった。
-    /// 2026-10-16: 「カメラで撮る」の1行ぶん伸ばした（カメラの無い端末では1行ぶん下が空く）。
-    /// 2026-11-12: 「構図を重ねて撮る」の1行ぶん縮めた（構図はカメラの中へ・572 → 480）
-    static let sheetHeight: CGFloat = 480
+    /// シートの高さ（見出し 68 ＋ 行 5 本 × 約 92 ＋ 下の余白）。札から行にして詰まった。
+    /// 2026-10-16: 「カメラで撮る」の1行ぶん伸ばした（カメラの無い端末では1行ぶん下が空く）
+    static let sheetHeight: CGFloat = 572
     /// シートの上の角（v2 PostSheet の 28）
     static let sheetRadius: CGFloat = 28
     /// 行の印の札（板 52・角 16）
