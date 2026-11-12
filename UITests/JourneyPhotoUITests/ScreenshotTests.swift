@@ -6987,4 +6987,47 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 2)
         XCTAssertFalse(conversation.exists, "会話から開いたプロフィールの「メッセージ」で、同じ会話がもう1枚積まれた")
     }
+
+    /// **①現像・②「1年前」**（2026-11-12 札 #543）。見本の旅（`-JPPreviewDevelop`・同梱の絵）で、
+    /// ホームの「現像前の旅」の札 → 払う画面（はじめ・右へ払った後）→ 払い終えた表紙、
+    /// ストーリーの列の「1年前」の輪 → 閲覧、の順に撮る。**出なければ撮らずに抜ける**
+    func testCapturesDevelopAndYearAgo() {
+        let app = launchTrunk(["-JPPreviewDevelop", "YES"])
+        let card = app.buttons["home.develop"].firstMatch
+        guard card.waitForExistence(timeout: 25) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "120a-ホーム（現像前の旅の札・1年前の輪）")
+        guard card.isHittable else { return }
+        card.tap()
+        let keep = app.buttons["develop.keep"].firstMatch
+        guard keep.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "120b-現像（はじめのコマ）")
+        // 右へ払う（載せる）。払いの判定は 110pt 以上
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.4))
+        start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.42)))
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "120c-現像（右へ払った後・2コマ目）")
+        // 残りはボタンで（載せる・外すを交互に）
+        for k in 0..<12 {
+            guard keep.exists, keep.isHittable else { break }
+            if k % 3 == 2 { app.buttons["develop.skip"].firstMatch.tap() } else { keep.tap() }
+            Thread.sleep(forTimeInterval: 0.6)
+        }
+        let post = app.buttons["develop.post"].firstMatch
+        if post.waitForExistence(timeout: 5) {
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "120d-現像（表紙・投稿する）")
+            XCTAssertGreaterThanOrEqual(post.frame.height, 44, "「投稿する」が 44pt 未満")
+        }
+        let close = app.buttons["develop.close"].firstMatch
+        guard close.waitForExistence(timeout: 5) else { return }
+        close.tap()
+        let ring = app.buttons["stories.yearAgo"].firstMatch
+        guard ring.waitForExistence(timeout: 10), ring.isHittable else { return }
+        ring.tap()
+        guard app.buttons["yearAgo.share"].firstMatch.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 1.5)
+        shoot(app, "120e-1年前（閲覧）")
+    }
 }

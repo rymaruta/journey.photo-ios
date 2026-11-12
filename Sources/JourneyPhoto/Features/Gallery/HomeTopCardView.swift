@@ -94,8 +94,17 @@ struct HomeTopCardView: View {
     /// 一問が「もう今日の分」で早抜けし、札が昨日のまま残った（96e499b7 のレビュー）
     @State private var cardsNow = Date()
     @Environment(\.scenePhase) private var scenePhase
+    /// 端末の写真の一冊（①現像の「現像前の旅」を探す・2026-11-12 札 #543）。読むのは店（起動・ログインで後ろで読む）
+    @ObservedObject private var deviceTrips = DeviceTripShelfStore.shared
+    /// 現像の画面を開いている旅
+    @State private var developing: LibraryTrip?
+    /// 現像の「題・公開範囲を変える」で選んだ写真（画面が閉じきってから投稿の画面へ渡す）
+    @State private var developEdit: (trip: LibraryTrip, ids: [String])?
+    /// 現像の控え（払った途中・閉じた旅）を読み直す合図（画面を閉じたら上げる）
+    @State private var developRevision = 0
 
     private let opened = OpenedTripBooks()
+    private let developStore = DevelopProgressStore()
 
     var body: some View {
         // 「いまの季節のスポット」の段は、2026-10-03 から札の並びの下に置いていたが、**#417 ④（2026-10-30 owner 採用）で
@@ -139,6 +148,48 @@ struct HomeTopCardView: View {
                 openedBooks = opened.ids(for: userId)
                 wishedKeys = wishlist.spotIds
             }
+            // ①現像の画面（2026-11-12 札 #543）。閉じたら札を読み直し、「題・公開範囲を変える」なら今の投稿の画面へ
+            .fullScreenCover(item: $developing, onDismiss: {
+                developRevision += 1
+                guard let edit = developEdit else { return }
+                developEdit = nil
+                DevelopPhotos.openUploadScreen(ids: edit.ids, trip: edit.trip)
+            }) { trip in
+                DevelopView(trip: trip, name: developName(trip)) { ids in developEdit = (trip, ids) }
+            }
+    }
+
+    // MARK: - ①現像前の旅（2026-11-12 札 #543）
+
+    /// 端末の写真の一冊（見本の通信では同梱の見本・`DevelopPreview`）
+    private var deviceBooks: [LibraryTrip] {
+        let preview = DevelopPreview.trips(now: cardsNow)
+        if !preview.isEmpty { return preview }
+        return deviceTrips.books(posted: LibraryTrips.postedShots(of: myPhotos), isMine: auth.userId != nil)
+    }
+
+    private func developName(_ trip: LibraryTrip) -> String? {
+        DevelopPreview.names(now: cardsNow)[trip.id] ?? deviceTrips.names[trip.id]
+    }
+
+    /// ホームに出す「現像前の旅」の札（`DevelopTrips.candidate`）。`developRevision` で閉じた旅を読み直す
+    private var developChoice: HomeTopCard.Choice? {
+        _ = developRevision
+        guard auth.userId != nil else { return nil }
+        guard let trip = DevelopTrips.candidate(books: deviceBooks, now: cardsNow,
+                                                closed: developStore.closed(for: auth.userId)) else { return nil }
+        return .develop(trip: trip, name: developName(trip))
+    }
+
+    /// 札の2行目。途中で閉じた旅は「現像の途中 · 4 / 10」
+    private func developLine(_ trip: LibraryTrip, name: String?) -> String {
+        let frames = DevelopTrips.frames(of: trip)
+        if let saved = developStore.progress(trip.id, for: auth.userId), !saved.decisions.isEmpty {
+            let done = min(frames.count, DevelopTrips.nextIndex(frames, decisions: saved.decisions))
+            return L("現像の途中 · \(done) / \(frames.count) · ", "In progress · \(done) / \(frames.count) · ")
+                + DeviceTrips.title(of: trip, name: name)
+        }
+        return DevelopTrips.cardLine(trip, name: name)
     }
 
     /// 札のあいだ
@@ -152,7 +203,7 @@ struct HomeTopCardView: View {
     private var choices: [HomeTopCard.Choice] {
         HomeTopCard.cards(now: cardsNow, plans: plansOwner == auth.userId ? plans : [],
                           myPhotos: myPhotos, openedBookDays: openedBooks, spots: spots,
-                          wishlist: wishedKeys, quiz: quiz)
+                          wishlist: wishedKeys, quiz: quiz, develop: developChoice)
     }
 
     /// 「いまの季節のスポット」の段の中身。**索引が取れていない・候補が無い日・今日の一問が決着する前は nil**
@@ -251,6 +302,19 @@ struct HomeTopCardView: View {
                      backdrop: trip.cover, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
+        case .develop(let trip, let name):
+            // ①現像前の旅（2026-11-12 札 #543）。左の写真の代わりに、色を抜いたフィルムの3コマ
+            Button {
+                developing = trip
+            } label: {
+                card(eyebrow: "DEVELOP", eyebrowLabel: L("現像前の旅", "Trip to develop"),
+                     title: L("おかえりなさい · 現像前", "Welcome back · Ready to develop"),
+                     line: developLine(trip, name: name),
+                     detail: nil,
+                     backdrop: nil, film: Array(DevelopTrips.frames(of: trip).prefix(3)), inCarousel: inCarousel)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("home.develop")
         case .oneYearAgo(let photo, let byUploadDate):
             NavigationLink {
                 // 1年前の札は自分の写真（`HomeTopCard.oneYearAgo(myPhotos:)`）。個別ページが
@@ -316,7 +380,7 @@ struct HomeTopCardView: View {
     // MARK: - 札1枚（今日のテーマの札と同じ地・角・余白）
 
     private func card(eyebrow: String, eyebrowLabel: String, title: String, line: String,
-                      detail: String?, backdrop: Photo?, backdropURL: URL? = nil,
+                      detail: String?, backdrop: Photo?, backdropURL: URL? = nil, film: [String] = [],
                       trailingSymbol: String = "chevron.right", detailTruncation: Text.TruncationMode = .middle,
                       inCarousel: Bool) -> some View {
         // **v2（2026-10-14・Main の板「上の札を写真つきの横長カードに」）**:
@@ -325,7 +389,11 @@ struct HomeTopCardView: View {
         // 以前は写真を右に 35% の薄さで敷き、題は明朝 26 だった。写真を薄めずに置けるので、
         // 字を写真の上に重ねない（真鍮の眉を黒地の上に置ける・CLAUDE.md）
         HStack(alignment: .center, spacing: 0) {
-            cardPhoto(backdrop: backdrop, backdropURL: backdropURL)
+            if film.isEmpty {
+                cardPhoto(backdrop: backdrop, backdropURL: backdropURL)
+            } else {
+                cardFilm(film)
+            }
             HStack(alignment: .center, spacing: JPSpace.xs) {
                 VStack(alignment: .leading, spacing: JPSpace.xxs) {
                     // 英字の眉は読み上げでは日本語で（今日のテーマの札と同じ）
@@ -401,6 +469,25 @@ struct HomeTopCardView: View {
                 .clipped()
                 .accessibilityHidden(true)
         }
+    }
+
+    /// ①現像前の旅の札の左: 色を抜いた3コマ（章「帯の3コマは色を抜いた表紙」）。幅は写真と同じ 112
+    private func cardFilm(_ ids: [String]) -> some View {
+        VStack(spacing: 2) {
+            ForEach(ids, id: \.self) { id in
+                LibraryShotImage(id: id, side: 112)
+                    .saturation(0.35)
+                    .brightness(-0.22)
+                    .colorMultiply(Color(red: 1, green: 0.9, blue: 0.74))
+            }
+        }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 6)
+        .frame(width: Self.photoWidth)
+        .frame(maxHeight: .infinity)
+        .background(Color.black)
+        .clipped()
+        .accessibilityHidden(true)
     }
 
     /// スポットの札の小さい行: 地域と、写真の作者・ライセンス。**どちらも無ければ出さない**

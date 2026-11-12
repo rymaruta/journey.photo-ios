@@ -80,6 +80,12 @@ struct HomeFeedTile: View {
     /// （`HomeTileLikeButton`・`HomeTileMoreMenu`）だけが見る。以前は札が全部を見ていたので、どこかで
     /// ♥を1つ押すたびに、ホームに並ぶ札が全部描き直されていた
     @EnvironmentObject private var auth: AuthStore
+    /// この札の写真を手に取っている（2026-11-12 札 #543・`PhotoLift`）。**手に取っている間は開く押しを止める**
+    /// （離したときに詳細が開かない）。指の位置は店（`PhotoLiftCenter`）へ書く——札は店を見張らない
+    /// （指が動くたびにホームの札が全部描き直されないように）
+    @State private var lifted = false
+    /// 札の画面の座標（指を動かさずに手に取ったときの位置）
+    @State private var globalFrame: CGRect = .zero
 
     var body: some View {
         let _ = PerfRecorder.shared.hit("home.tile.body")
@@ -126,11 +132,54 @@ struct HomeFeedTile: View {
             // 今日のテーマの「参加する」に当たって**ログイン画面を
             // 『写真の詳細』として撮って**いた（run 49 の絵で判明）
             .accessibilityIdentifier("feed.photo")
+            // 手に取って運ぶ（読み上げの道）: 写真の操作の一覧に「とっておく・送る・ストーリーで紹介」
+            .accessibilityAction(named: L("とっておく", "Save")) { liftByAction(.save) }
+            .accessibilityAction(named: L("送る", "Send")) { liftByAction(nil) }
+            .accessibilityAction(named: L("ストーリーで紹介", "Share to story")) { liftByAction(.story) }
+            .disabled(lifted)
 
             HomeTileLikeButton(photo: photo)
         }
         .overlay(alignment: .topTrailing) {
             if showsMore { HomeTileMoreMenu(photo: photo, ownerId: ownerId, onReport: onReport) }
+        }
+        .scaleEffect(lifted ? 0.96 : 1)
+        .opacity(lifted ? 0.4 : 1)
+        .onGeometryChange(for: CGRect.self) { proxy in proxy.frame(in: .global) } action: { globalFrame = $0 }
+        // 0.35秒押さえて手に取る（10pt 以上動いたらスクロール）。短く押せば今どおり開く。
+        // ログインしていなければ手に取らない（保存・送る・ストーリーはログインが要る）
+        .simultaneousGesture(liftGesture, including: auth.userId == nil ? .subviews : .all)
+        .sensoryFeedback(.impact(weight: .medium), trigger: lifted) { _, new in new }
+    }
+
+    private var liftGesture: some Gesture {
+        LongPressGesture(minimumDuration: PhotoLift.pressSeconds, maximumDistance: PhotoLift.moveTolerance)
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
+            .onChanged { value in
+                guard case .second(true, let drag) = value else { return }
+                let center = PhotoLiftCenter.shared
+                if !lifted {
+                    lifted = true
+                    center.lift(photo, at: drag?.location ?? CGPoint(x: globalFrame.midX, y: globalFrame.midY))
+                }
+                if let drag { center.move(to: drag.location) }
+            }
+            .onEnded { _ in
+                guard lifted else { return }
+                lifted = false
+                PhotoLiftCenter.shared.end()
+            }
+    }
+
+    /// 読み上げの操作から（指を使わない道）。行き先を直に選ぶ（送るは顔の段を開く）
+    private func liftByAction(_ target: PhotoLift.Target?) {
+        guard auth.userId != nil else { return }
+        let center = PhotoLiftCenter.shared
+        switch target {
+        case nil:
+            center.openFaces(for: photo)
+        case let target?:
+            center.choose(photo, target: target)
         }
     }
 

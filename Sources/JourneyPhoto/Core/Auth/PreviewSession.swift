@@ -612,4 +612,17 @@ enum PreviewSession {
         return false
         #endif
     }
+
+    /// ①現像の札と画面・②「1年前」の輪と閲覧を撮る（2026-11-12 札 #543）。端末の写真の代わりに
+    /// 同梱の見本の絵で旅を作る（`DevelopPreview`）。`-JPPreviewDevelop YES`。Release では必ず false
+    static let developKey = "JPPreviewDevelop"
+
+    static var develop: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: developKey)
+        #else
+        return false
+        #endif
+    }
 }

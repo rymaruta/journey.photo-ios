@@ -577,6 +577,8 @@ struct GalleryView: View {
             // 最後のカードがタブバーに掛からないようにする
             .padding(.bottom, 24)
         }
+        // 写真を手に取っている間は縦の送りを止める（2026-11-12 札 #543・`PhotoLift`）
+        .modifier(PhotoLiftScrollLock(center: PhotoLiftCenter.shared))
         // UI テストのときだけ: 札の行の位置の数を見えない要素に出す（`PreviewSession.feedProbe`）
         .overlay(alignment: .bottomTrailing) {
             if PreviewSession.feedProbe {

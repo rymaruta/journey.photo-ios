@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreLocation
+import MapKit
 
 struct PhotoDetailView: View {
 
@@ -49,6 +50,10 @@ struct PhotoDetailView: View {
     }
     @State private var preparingThreads = false
     @State private var showViewer = false
+    /// 写真をつまんで縮めている量（1 = 等倍・`PinchToMap`・2026-11-12 札 #543）。取り消されたら自動で戻る
+    @GestureState private var heroPinch: Double = 1
+    /// つまんで地図へ（離した所が `PinchToMap.openScale` 以下）。行き先は「地図で見る ›」と同じ地図
+    @State private var pinchOpensMap = false
     @State private var actionError: String?
     /// 編集して保存したあとの姿。**`photo` は `let` で書き換えられない**
     /// ——編集シートを閉じても題も説明も古いままだった（保存はできていた
@@ -429,6 +434,10 @@ struct PhotoDetailView: View {
         .sheet(isPresented: $showEdit, onDismiss: { Task { await reloadPhoto() } }) {
             NavigationStack { EditPhotoView(photo: shown) }
         }
+        // つまむと地図（2026-11-12 札 #543）。行き先は「地図で見る ›」と同じ（この写真と近くの写真の地図）
+        .navigationDestination(isPresented: $pinchOpensMap) {
+            NearbyMapScreen(opened: shown, nearby: nearby, openedFromPublicFeed: fromPublicFeed)
+        }
         .fullScreenCover(isPresented: $showViewer) {
             // **ブロック・通報した写真を落とした並びで開く**（`PhotoDetailRules.viewerLineup`）。
             // 編集して保存した写真は新しい姿で（題・撮影地が古いまま出ていた）
@@ -601,13 +610,69 @@ struct PhotoDetailView: View {
                     // ほぼ同じで縮まない。替えた回（Mac run 793）は開いた時のメモリの山が 156.9→159.0MB と減らず、
                     // 閉じた後のメモリが 132.4→154.9MB に増えた（縮めた絵の控えに残る）ので、元に戻した
                     RemoteImage(url: item.detailImageURL, alignment: item.gridAlignment)
+                        // つまんで縮めると小さくなる（撮影地が無ければ段で止まる・`PinchToMap`）
+                        .scaleEffect(PinchToMap.displayScale(scale: heroPinch, hasPlace: item.coords != nil))
+                        .clipShape(RoundedRectangle(cornerRadius: heroPinch < 1 ? JPRadius.l : 0))
                 }
+                // 縮めるほど撮影地の地図が引いてくる（後ろ）
+                .background { pinchMap(item) }
+                .overlay { pinchHint(item) }
                 .clipped()
                 .contentShape(Rectangle())
                 .accessibilityLabel(item.accessibilityText)
         }
         .buttonStyle(.plain)
         .accessibilityHint(L("拡大して見る", "Opens the photo full screen"))
+        // 2本指でつまんで縮めると地図（写真の詳細の大きな写真だけ。広げる向きは今までどおり押して大きく見る）
+        .simultaneousGesture(
+            MagnifyGesture()
+                .updating($heroPinch) { value, state, _ in state = value.magnification }
+                .onEnded { value in
+                    if PinchToMap.opensMap(endScale: value.magnification, hasPlace: item.coords != nil) {
+                        pinchOpensMap = true
+                    }
+                }
+        )
+        // 段を越えたら軽く振動（ここで離すと戻る）
+        .sensoryFeedback(.impact(weight: .light), trigger: PinchToMap.passedStep(scale: heroPinch))
+        .accessibilityAction(named: L("地図で見る", "View on map")) {
+            if item.coords != nil { pinchOpensMap = true }
+        }
+    }
+
+    /// つまんでいる間の後ろの地図（撮影地の無い写真・つまんでいないときは描かない）
+    @ViewBuilder
+    private func pinchMap(_ item: Photo) -> some View {
+        if heroPinch < 1, let coords = item.coords {
+            let point = CLLocationCoordinate2D(latitude: coords.lat, longitude: coords.lng)
+            Map(position: .constant(.region(MKCoordinateRegion(
+                center: point, span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05))))) {
+                Annotation("", coordinate: point) {
+                    Circle().fill(WebTheme.accent).frame(width: 14, height: 14)
+                        .overlay(Circle().strokeBorder(Color.black, lineWidth: JPStroke.emphasis))
+                }
+            }
+            .opacity(PinchToMap.progress(scale: heroPinch))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// 段を越えたら「さらに縮めると地図」（撮影地が無ければ「撮影地がありません」）。写真の上なので白・ガラス
+    @ViewBuilder
+    private func pinchHint(_ item: Photo) -> some View {
+        if PinchToMap.passedStep(scale: heroPinch) {
+            Text(item.coords == nil ? L("撮影地がありません", "No place for this photo")
+                 : heroPinch <= PinchToMap.openScale ? L("離すと地図", "Release for the map")
+                 : L("さらに縮めると地図", "Pinch more for the map"))
+                .font(JPFont.bodyEmphasis)
+                .foregroundStyle(WebTheme.foreground)
+                .padding(.horizontal, JPSpace.s)
+                .padding(.vertical, JPSpace.xs)
+                .jpGlass(in: Capsule())
+                .allowsHitTesting(false)
+                .accessibilityIdentifier("detail.pinchHint")
+        }
     }
 
     /// 上の束と、いま見ている位置（`PhotoDetailRules.heroGroup` の返り値）
