@@ -721,7 +721,7 @@ struct DMConversationView: View {
     private var unavailableState: some View {
         ScrollView {
             if iBlockedPeer {
-                EmptyState(title: L("ブロック中です", "You've blocked this person"),
+                EmptyState(icon: nil, title: L("ブロック中です", "You've blocked this person"),
                            message: L("\(peerName) さんをブロックしているため、会話は表示されません。解除すると、また見られるようになります。",
                                       "You blocked \(peerName), so this conversation is hidden. Unblock to see it again."),
                            actionTitle: L("ブロックを解除", "Unblock"),
@@ -731,7 +731,7 @@ struct DMConversationView: View {
                 .padding(.top, JPSpace.emptyTop)
             } else if isNew {
                 // 1通目が断られた（フォローを外した・退会・ブロックの関係）。**どれかは言わない**（サーバーも同じ 404）
-                EmptyState(title: L("メッセージを送れません", "You can't message this person"),
+                EmptyState(icon: nil, title: L("メッセージを送れません", "You can't message this person"),
                            message: L("新しくメッセージを送れるのは、フォローしている人だけです。",
                                       "You can only start a conversation with people you follow."),
                            actionTitle: L("もどる", "Go back"),
@@ -741,7 +741,7 @@ struct DMConversationView: View {
                 .padding(.top, JPSpace.emptyTop)
             } else {
                 // ブロックされた側にも同じ文（ブロックされたと分かる文は出さない）
-                EmptyState(title: L("この会話は表示できません", "This conversation isn't available"),
+                EmptyState(icon: nil, title: L("この会話は表示できません", "This conversation isn't available"),
                            message: L("会話が削除されたか、見られない状態になっています。",
                                       "It was deleted or can't be viewed right now."),
                            actionTitle: L("受信箱にもどる", "Back to inbox"),

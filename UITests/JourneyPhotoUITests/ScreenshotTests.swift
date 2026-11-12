@@ -2325,6 +2325,88 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "11e-探す（機材の札・色の丸）")
     }
 
+    /// **画面の状態とそろえ**（デザインの案 第2章・1.1.83・2026-11-12）。
+    ///
+    /// 1. 電波なし（`-JPPreviewOffline YES`・Debug のみ。**通信は止めない**ので、読めた写真を「前に見た写真」として
+    ///    出した形）: ホームの上の帯・探すの上の帯・地図の上のガラスの帯
+    /// 2. タグ・色・機材の写真の格子（TagPhotos v2: 3 列・すき間 2・正方形・先頭 300）——探すの機材の札から開く
+    ///
+    /// 帯の有無は道しるべ（`home.offline.band`・`search.offline.retry`・`map.stateBand`）で数え、ログに出す。
+    /// **別の試験にしてある**（一巡の絵に電波なしを混ぜない）。出なければ撮らない（この試験の決まり）
+    func testCapturesStatesOfflineBandsAndTagGrid() {
+        let app = XCUIApplication()
+        // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewOffline", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 3 else { return }
+
+        // 1a. ホーム: 前に見た写真の上に帯
+        let homeBand = app.descendants(matching: .any)["home.offline.band"].firstMatch
+        let homeFound = homeBand.waitForExistence(timeout: 30)
+        print("states.offline home.band=\(homeFound)")
+        if homeFound {
+            Thread.sleep(forTimeInterval: 3)
+            shoot(app, "11s-ホーム（電波なし・前に見た写真の上に帯）")
+        }
+
+        // 1b. 探す: 上に帯
+        tabBar.buttons.element(boundBy: 1).tap()
+        let searchRetry = app.buttons["search.offline.retry"].firstMatch
+        let searchFound = searchRetry.waitForExistence(timeout: 20)
+        print("states.offline search.band=\(searchFound)")
+        if searchFound {
+            Thread.sleep(forTimeInterval: 3)
+            shoot(app, "11t-探す（電波なし・上に帯）")
+        }
+
+        // 2. 機材の札 → タグ・色・機材の写真の格子（v2）
+        let gear = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'search.gear.'")).firstMatch
+        if gear.waitForExistence(timeout: 20) {
+            var swipes = 0
+            while !gear.isHittable, swipes < 10 {
+                app.swipeUp(velocity: .slow)
+                Thread.sleep(forTimeInterval: 1)
+                swipes += 1
+            }
+            if gear.isHittable {
+                gear.tap()
+                // 写真が描かれるのを待つ（枠だけの絵を「壊れている」と読み違えない）
+                Thread.sleep(forTimeInterval: 4)
+                shoot(app, "11u-機材の写真（TagPhotos v2 の格子）")
+                goBack(app)
+            }
+        }
+
+        // 1c. 地図: ガラスの帯。いま出している帯・札の種類を `map.stateProbe` の値で記録する
+        // （2026-11-12: run 1117 で帯が出なかった訳を数で取る）。時間を追って5回読む
+        tabBar.buttons.element(boundBy: 3).tap()
+        let probe = app.descendants(matching: .any)["map.stateProbe"].firstMatch
+        let mapBand = app.descendants(matching: .any)["map.stateBand"].firstMatch
+        _ = probe.waitForExistence(timeout: 15)
+        for i in 0..<5 {
+            Thread.sleep(forTimeInterval: i == 0 ? 1 : 4)
+            print("states.offline map.probe[\(i)] band=\(mapBand.exists) \((probe.value as? String) ?? "-")")
+        }
+        let mapFound = mapBand.waitForExistence(timeout: 10)
+        print("states.offline map.band=\(mapFound)")
+        let probeNote = XCTAttachment(string: (probe.value as? String) ?? "-")
+        probeNote.name = "13h-地図の帯の記録"
+        probeNote.lifetime = .keepAlways
+        add(probeNote)
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, mapFound ? "13h-マップ（電波なし・ガラスの帯）" : "13h-マップ（電波なし・帯の無い回）")
+    }
+
     /// **探すの「撮影スポット」の段と、そこから開く一覧**（札 #524・2026-11-11）。
     ///
     /// 1. 段（地方のチップ＋県の札の横1列）を撮り、**段の高さを数で取る**（`search.spotIndex` の枠）

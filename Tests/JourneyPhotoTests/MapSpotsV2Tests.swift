@@ -244,11 +244,12 @@ final class MapSpotsV2Tests: XCTestCase {
     func testSpotsAreaUsesSharedStates() throws {
         let area = segment(try source(map), from: "private var spotsArea: some View {")
         assertInOrder(["JPEyebrowLine(spotsHeading(", "if model.officialIndexState == .loading {",
-                       "JPLoadingState(kind: .rows)", "ErrorBanner(message: L(\"撮影スポットを読み込めませんでした\"",
-                       "EmptyState(message: MapSearch.fold(model.query).isEmpty"], in: area, "「スポット」の札の状態")
+                       "JPLoadingState(kind: .places)", "ErrorBanner(title: L(\"撮影スポットを読み込めませんでした\"",
+                       "EmptyState(icon: \"mappin\", message: MapSearch.fold(model.query).isEmpty"], in: area, "「スポット」の札の状態")
         XCTAssertFalse(area.contains("ProgressView()"), "手書きの輪が残っている")
         let list = segment(try source(map), from: "private var listArea: some View {")
-        XCTAssertTrue(list.contains("JPLoadingState(kind: .grid)"))
+        // 2026-11-12（第2章）: リストの読み込み中は場所の行の形
+        XCTAssertTrue(list.contains("JPLoadingState(kind: .places)"))
         XCTAssertFalse(list.contains("ProgressView()"))
     }
 

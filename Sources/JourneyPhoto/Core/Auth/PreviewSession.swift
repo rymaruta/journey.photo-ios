@@ -17,6 +17,20 @@ enum PreviewSession {
     /// `-JPPreviewUserId <id>` で渡す。
     static let defaultsKey = "JPPreviewUserId"
 
+    /// 電波が無いことにして画面を描く（Debug のみ・UI テストの絵だけ）。`-JPPreviewOffline YES`。
+    ///
+    /// 2026-11-12 判断（デザインの案 第2章「画面の状態とそろえ」）: 帯（電波なし）の絵を CI で撮るため。
+    /// **通信は止めない**——読めた写真を「前に見た写真」として出し、上に帯が出た形を撮る。Release では必ず false
+    static let offlineKey = "JPPreviewOffline"
+
+    static var forcesOffline: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: offlineKey)
+        #else
+        return false
+        #endif
+    }
+
     /// 鍵を持たずに入っている利用者 ID。入っていなければ `nil`。
     static var userId: String? {
         #if DEBUG

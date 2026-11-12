@@ -34,7 +34,7 @@ struct TrunkRerollView: View {
                     content(label)
                 } else {
                     Spacer()
-                    EmptyState(message: L("ラベルが見つかりませんでした。", "That label wasn\u{2019}t found."))
+                    EmptyState(icon: nil, message: L("ラベルが見つかりませんでした。", "That label wasn\u{2019}t found."))
                     Spacer()
                 }
             }

@@ -199,7 +199,10 @@ struct TripPlanDetailView: View {
                 editor(plan)
             } else {
                 // 消した直後・別の端末で消されたとき
-                ErrorBanner(message: L("プランが見つかりません", "Trip not found"))
+                // 2026-11-12（第2章）: 見出しは「見つかりません」（読み込みの失敗ではない）
+                ErrorBanner(title: L("プランが見つかりません", "Trip not found"),
+                            message: L("このプランは消されたようです。旅行プランの一覧から開き直してください",
+                                       "This trip seems to have been deleted. Open it again from your trip list."))
             }
         }
         .webScreen()

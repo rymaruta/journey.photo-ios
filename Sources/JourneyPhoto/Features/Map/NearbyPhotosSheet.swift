@@ -65,7 +65,7 @@ struct NearbyPhotosSheet: View {
                     } else if found.isEmpty {
                         // ここまで来たら、測った結果として本当に無い
                         // 空の状態は共通の部品（v2 Components 06・三角を出さない）
-                        EmptyState(message: L("この範囲には、まだ写真がありません。", "No photos in this range yet."))
+                        EmptyState(icon: nil, message: L("この範囲には、まだ写真がありません。", "No photos in this range yet."))
                     } else {
                         ForEach(found, id: \.photo.id) { item in
                             NavigationLink {

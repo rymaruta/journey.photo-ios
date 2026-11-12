@@ -222,8 +222,8 @@ struct TripCreatePickStep: View {
         if !loaded {
             JPLoadingState(kind: .rows)
         } else if rows.isEmpty && failed {
-            ErrorBanner(message: L("行きたい場所を読み込めませんでした。通信を確かめて、開き直してください",
-                                   "Couldn't load your saved places. Check your connection and try again."))
+            ErrorBanner(title: L("行きたい場所を読み込めませんでした", "Couldn't load your saved places"),
+                        message: L("通信を確かめて、開き直してください", "Check your connection and try again."))
         } else if rows.isEmpty {
             EmptyState(title: L("行きたい場所はまだありません", "No saved places yet"),
                        message: L("写真を見て選ぶと、そのまま旅行プランの下書きになります",

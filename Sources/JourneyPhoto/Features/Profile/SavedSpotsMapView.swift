@@ -438,7 +438,7 @@ struct SavedSpotsMapView: View {
     /// （空の写しで積まれたときの守り）
     private var emptyArea: some View {
         VStack(spacing: 4) {
-            EmptyState(message: L("行きたい場所はまだありません。撮影スポットで「行きたい」を押すと、ここの地図に並びます。",
+            EmptyState(icon: nil, message: L("行きたい場所はまだありません。撮影スポットで「行きたい」を押すと、ここの地図に並びます。",
                                   "No places yet. Tap “Want to go” on a photo spot to see it on this map."))
             FindSpotsButton()
         }
@@ -463,10 +463,10 @@ struct SavedSpotsMapView: View {
             if let spot = row.spot {
                 OfficialSpotView(spot: spot, spots: officialSpots, photos: photos, photosKnown: photosKnown)
             } else {
-                EmptyState(message: L("この撮影スポットは開けません", "This spot can't be opened"))
+                EmptyState(icon: nil, message: L("この撮影スポットは開けません", "This spot can't be opened"))
             }
         case nil:
-            EmptyState(message: L("この撮影地は開けません", "This place can't be opened"))
+            EmptyState(icon: nil, message: L("この撮影地は開けません", "This place can't be opened"))
         }
     }
 }

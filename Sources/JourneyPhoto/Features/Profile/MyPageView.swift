@@ -762,14 +762,16 @@ struct MyPageView: View {
                 JPLoadingState(kind: .grid)
             case .none:
                 // 2026-10-16: 保存は写真の詳細のしおりから。写真に出会う所（ホーム）へ1手
-                EmptyState(message: SavedPhotosView.emptyMessage,
+                // マイページは見た目を変えない（owner・2026-11-12 第2章）: 空は印なし
+                EmptyState(icon: nil, message: SavedPhotosView.emptyMessage,
                            actionTitle: MyPageEmpty.browseTitle, actionIdentifier: "mypage.emptySaved") {
                     tabRouter.openHome()
                 }
             case .nothingShown:
-                EmptyState(message: LikedPhotos.nothingShownMessage)
+                EmptyState(icon: nil, message: LikedPhotos.nothingShownMessage)
             case .unresolved:
-                ErrorBanner(message: SavedPhotosView.unresolvedMessage) {
+                // マイページは見た目を変えない（owner・2026-11-12 第2章）: 失敗は前の形（三角・見出しは渡したときだけ）
+                ErrorBanner(message: SavedPhotosView.unresolvedMessage, look: .classic) {
                     Task {
                         await loadFeed()
                         await model.load(for: auth.userId)
@@ -846,13 +848,13 @@ struct MyPageView: View {
             case .couldNotLoad:
                 ErrorBanner(message: L("写真の一覧を取れませんでした。通信を確かめて、引き下げて読み直してください",
                                        "Couldn't load the photos. Pull to refresh."),
-                            isBusy: isReloading) {
+                            isBusy: isReloading, look: .classic) {
                     Task { await reloadAll() }
                 }
             case .empty:
                 // v2 WishlistTab B1: 何が無いか（明朝の見出し）→ どうすれば埋まるか → 一手
                 // 2026-10-16: 見出しと本文で「まだありません」を重ねない（本文は「どうすれば埋まるか」だけ）
-                EmptyState(title: L("行きたい場所はまだありません", "No places yet"),
+                EmptyState(icon: nil, title: L("行きたい場所はまだありません", "No places yet"),
                            message: MyPageEmpty.wishlistMessage)
                 // 板 WishlistTab の B1（空）の「撮影スポットを探す」
                 FindSpotsButton()
@@ -1223,7 +1225,7 @@ struct MyPageView: View {
     private var photoBanners: some View {
         // **読み直しの失敗は、格子の上に再試行つきで出す**（格子は残す）
         if let reloadError = model.reloadError {
-            ErrorBanner(message: reloadError) { Task { await model.load(for: auth.userId) } }
+            ErrorBanner(message: reloadError, look: .classic) { Task { await model.load(for: auth.userId) } }
         }
         if let action = model.actionMessage {
             // **一覧の代わりではなく、一覧に添える。**
@@ -1259,7 +1261,7 @@ struct MyPageView: View {
             // **写真の有無とは無関係。** 保存は他人の写真にもする
             favoritesArea
         } else if let error = model.errorMessage {
-            ErrorBanner(message: error) { Task { await model.load(for: auth.userId) } }
+            ErrorBanner(message: error, look: .classic) { Task { await model.load(for: auth.userId) } }
             // **旅の記録のタブでは、共同アルバム・旅行プランの札を残す**（2026-10-07 判断）。
             // どちらも自分の写真の読み込みと無関係なのに、最初の読み込みの失敗で入口ごと消えていた
             if tab == .trips {
@@ -1281,7 +1283,8 @@ struct MyPageView: View {
             if draftCount > 0 {
                 LazyVGrid(columns: columns, spacing: ProfileV2.gridSpacing) { draftsTile }
             }
-            EmptyState(message: L("まだ写真がありません", "No photos yet"),
+            // マイページは見た目を変えない（owner・2026-11-12 第2章）: 空は印なし
+            EmptyState(icon: nil, message: L("まだ写真がありません", "No photos yet"),
                        actionTitle: MyPageEmpty.postTitle, actionIdentifier: "mypage.emptyPost") {
                 tabRouter.openPost(.photo)
             }
