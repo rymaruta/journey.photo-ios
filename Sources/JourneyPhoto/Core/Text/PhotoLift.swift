@@ -12,9 +12,12 @@ import Foundation
 /// 0.5pt/ms 以上・20pt 以上動いた）
 enum PhotoLift {
 
-    /// ホームの写真の札で「手に取って運ぶ」を使うか。1.1.84 では false にして外した（run 1182・main の `fb5c8d3c3`）。
-    /// 1.1.85 で戻す（2026-11-12 判断・払いを奪わない組み方 `GestureStyle.pressCatcher` に直した）
-    static let homeGestureEnabled = true
+    /// ホームの写真の札で「手に取って運ぶ」を使うか。**1.1.85 でも使わない**（2026-11-12 確かめ役の指摘・1.1.86 以降）。
+    /// 既定の組み方 `.sequenced` は 1.1.84 でホームの払いを奪った形のまま。run 1192 の記録でも sequenced・noFrame は
+    /// 写真の上から 119pt 送って切り替えが y=406 のまま、longOnly・pressCatcher・身振りなしは送れた。
+    /// pressCatcher は運ぶ試験（testCapturesLiftAndPinchPressCatcher）で「取り消す」が出ず、まだ使えない。
+    /// 原因を記録で確かめた直しができるまで true に戻さない（`-JPLiftVariant` の事実取りは Debug で続けられる）
+    static let homeGestureEnabled = false
 
     /// 札に付ける身振りの組み方（2026-11-12・run 1182 の件の事実取り）。
     /// - `sequenced`: 1.1.84 の前の形。SwiftUI の `simultaneousGesture` に 長押し(0.35 秒) → `DragGesture(minimumDistance: 0)`
