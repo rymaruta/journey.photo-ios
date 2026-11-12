@@ -123,7 +123,7 @@ final class PhotoLiftCenter: ObservableObject {
 extension PhotoLift {
     /// 離した1回の行き先（運んだ先、無ければ弾いた向き）。`openFaces` は下へ弾いた（送る人の列を開いたまま）
     static func resolve(point: CGPoint, samples: [PhotoLiftCenter.Sample], size: CGSize,
-                        faces: Int, allowsStory: Bool = true) -> (target: Target?, openFaces: Bool) {
+                        faces: Int, allowsStory: Bool) -> (target: Target?, openFaces: Bool) {
         let w = Double(size.width), h = Double(size.height)
         // 動かさずに離したら元へ戻るだけ（手に取った所が行き先の上でも）
         // （指の跡が無い＝指の位置が分からないまま一度も動いていない、も同じ）

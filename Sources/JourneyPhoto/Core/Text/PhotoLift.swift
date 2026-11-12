@@ -68,7 +68,7 @@ enum PhotoLift {
 
     /// 指の位置の行き先（無ければ nil・外で離すと元へ戻る）。`allowsStory` が偽なら上の帯は無い
     static func target(x: Double, y: Double, width: Double, height: Double, faces: Int,
-                       allowsStory: Bool = true) -> Target? {
+                       allowsStory: Bool) -> Target? {
         if allowsStory, y < topBand { return .story }
         let c = saveCenter(width: width, height: height)
         if hypot(x - c.x, y - c.y) < saveRadius { return .save }
@@ -81,7 +81,7 @@ enum PhotoLift {
 
     /// 近くまで来た行き先（吸い付きの合図。中に入っていれば `target` と同じ）
     static func near(x: Double, y: Double, width: Double, height: Double, faces: Int,
-                     allowsStory: Bool = true) -> Target? {
+                     allowsStory: Bool) -> Target? {
         if let inside = target(x: x, y: y, width: width, height: height, faces: faces,
                                allowsStory: allowsStory) { return inside }
         if allowsStory, y < topBand + nearSlack { return .story }

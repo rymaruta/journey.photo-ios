@@ -9,24 +9,24 @@ final class PhotoLiftTests: XCTestCase {
     // MARK: - 行き先（上の帯・右の半円・下の顔の段）
 
     func testTargets() {
-        XCTAssertEqual(PhotoLift.target(x: 200, y: 60, width: w, height: h, faces: 4), .story, "上の帯")
+        XCTAssertEqual(PhotoLift.target(x: 200, y: 60, width: w, height: h, faces: 4, allowsStory: true), .story, "上の帯")
         // 右の半円の中心は右の縁・高さ 430（章の模型）。中心から 100pt 左は中
-        XCTAssertEqual(PhotoLift.target(x: 300, y: 430, width: w, height: h, faces: 4), .save, "右の半円")
-        XCTAssertNil(PhotoLift.target(x: 280, y: 430, width: w, height: h, faces: 4), "半円の外（110pt 左）で保存した")
+        XCTAssertEqual(PhotoLift.target(x: 300, y: 430, width: w, height: h, faces: 4, allowsStory: true), .save, "右の半円")
+        XCTAssertNil(PhotoLift.target(x: 280, y: 430, width: w, height: h, faces: 4, allowsStory: true), "半円の外（110pt 左）で保存した")
         // 下の段は横に4つに割る
-        XCTAssertEqual(PhotoLift.target(x: 10, y: 800, width: w, height: h, faces: 4), .face(0))
-        XCTAssertEqual(PhotoLift.target(x: 389, y: 800, width: w, height: h, faces: 4), .face(3))
-        XCTAssertNil(PhotoLift.target(x: 100, y: 800, width: w, height: h, faces: 0), "顔が無いのに送る先が出た")
+        XCTAssertEqual(PhotoLift.target(x: 10, y: 800, width: w, height: h, faces: 4, allowsStory: true), .face(0))
+        XCTAssertEqual(PhotoLift.target(x: 389, y: 800, width: w, height: h, faces: 4, allowsStory: true), .face(3))
+        XCTAssertNil(PhotoLift.target(x: 100, y: 800, width: w, height: h, faces: 0, allowsStory: true), "顔が無いのに送る先が出た")
         // 真ん中は行き先なし（元に戻る）。左の縁も使わない
-        XCTAssertNil(PhotoLift.target(x: 195, y: 430, width: w, height: h, faces: 4))
-        XCTAssertNil(PhotoLift.target(x: 2, y: 430, width: w, height: h, faces: 4), "左の縁（戻るの払い）を行き先にした")
+        XCTAssertNil(PhotoLift.target(x: 195, y: 430, width: w, height: h, faces: 4, allowsStory: true))
+        XCTAssertNil(PhotoLift.target(x: 2, y: 430, width: w, height: h, faces: 4, allowsStory: true), "左の縁（戻るの払い）を行き先にした")
     }
 
     /// 近づくと吸い付き始める（帯・半円の外側 40pt）
     func testNear() {
-        XCTAssertEqual(PhotoLift.near(x: 200, y: 140, width: w, height: h, faces: 4), .story)
-        XCTAssertNil(PhotoLift.near(x: 200, y: 160, width: w, height: h, faces: 4))
-        XCTAssertEqual(PhotoLift.near(x: 260, y: 430, width: w, height: h, faces: 4), .save)
+        XCTAssertEqual(PhotoLift.near(x: 200, y: 140, width: w, height: h, faces: 4, allowsStory: true), .story)
+        XCTAssertNil(PhotoLift.near(x: 200, y: 160, width: w, height: h, faces: 4, allowsStory: true))
+        XCTAssertEqual(PhotoLift.near(x: 260, y: 430, width: w, height: h, faces: 4, allowsStory: true), .save)
     }
 
     // MARK: - 弾く（離す直前 90ms の速さ 0.5pt/ms 以上・20pt 以上動いた）
@@ -62,14 +62,14 @@ final class PhotoLiftTests: XCTestCase {
     func testResolve() async {
         let size = CGSize(width: w, height: h)
         let samples = [PhotoLiftCenter.Sample(t: 0, x: 195, y: 400), PhotoLiftCenter.Sample(t: 0.05, x: 195, y: 430)]
-        let down = PhotoLift.resolve(point: CGPoint(x: 195, y: 430), samples: samples, size: size, faces: 4)
+        let down = PhotoLift.resolve(point: CGPoint(x: 195, y: 430), samples: samples, size: size, faces: 4, allowsStory: true)
         XCTAssertNil(down.target)
         XCTAssertTrue(down.openFaces)
         // 運んだ先（指の跡がある・20pt 以上動いた）。動かさずに離したら元へ戻る（`YubiReviewTests`）
         let carried = [PhotoLiftCenter.Sample(t: 0, x: 195, y: 430), PhotoLiftCenter.Sample(t: 1, x: 320, y: 430)]
-        let onSave = PhotoLift.resolve(point: CGPoint(x: 320, y: 430), samples: carried, size: size, faces: 4)
+        let onSave = PhotoLift.resolve(point: CGPoint(x: 320, y: 430), samples: carried, size: size, faces: 4, allowsStory: true)
         XCTAssertEqual(onSave.target, .save)
-        let none = PhotoLift.resolve(point: CGPoint(x: 195, y: 430), samples: [], size: size, faces: 4)
+        let none = PhotoLift.resolve(point: CGPoint(x: 195, y: 430), samples: [], size: size, faces: 4, allowsStory: true)
         XCTAssertNil(none.target)
         XCTAssertFalse(none.openFaces)
     }

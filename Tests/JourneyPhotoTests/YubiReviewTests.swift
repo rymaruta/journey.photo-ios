@@ -70,13 +70,13 @@ final class YubiReviewTests: XCTestCase {
         let size = CGSize(width: w, height: h)
         // 手に取った所が右の半円の上でも、動かさずに離したら保存しない
         let still = [PhotoLiftCenter.Sample(t: 0, x: 330, y: 430), PhotoLiftCenter.Sample(t: 0.5, x: 332, y: 431)]
-        XCTAssertNil(PhotoLift.resolve(point: CGPoint(x: 332, y: 431), samples: still, size: size, faces: 4).target,
+        XCTAssertNil(PhotoLift.resolve(point: CGPoint(x: 332, y: 431), samples: still, size: size, faces: 4, allowsStory: true).target,
                      "動かさずに離しただけで保存した")
         // 指の跡が無い（指の位置が届かないまま）も戻る
-        XCTAssertNil(PhotoLift.resolve(point: CGPoint(x: 330, y: 430), samples: [], size: size, faces: 4).target)
+        XCTAssertNil(PhotoLift.resolve(point: CGPoint(x: 330, y: 430), samples: [], size: size, faces: 4, allowsStory: true).target)
         // 運べば保存
         let carried = [PhotoLiftCenter.Sample(t: 0, x: 150, y: 430), PhotoLiftCenter.Sample(t: 1, x: 330, y: 430)]
-        XCTAssertEqual(PhotoLift.resolve(point: CGPoint(x: 330, y: 430), samples: carried, size: size, faces: 4).target, .save)
+        XCTAssertEqual(PhotoLift.resolve(point: CGPoint(x: 330, y: 430), samples: carried, size: size, faces: 4, allowsStory: true).target, .save)
     }
 
     /// 札の真ん中で代えた位置は指の跡にしない（動かした距離を見誤らない）
@@ -89,7 +89,7 @@ final class YubiReviewTests: XCTestCase {
         let drop = try XCTUnwrap(center.drop)
         XCTAssertEqual(drop.samples.count, 1)
         XCTAssertNil(PhotoLift.resolve(point: drop.point, samples: drop.samples, size: CGSize(width: w, height: h),
-                                       faces: 4).target)
+                                       faces: 4, allowsStory: true).target)
     }
 
     // MARK: - 3. ストーリーの行き先は自分の写真だけ
@@ -105,12 +105,35 @@ final class YubiReviewTests: XCTestCase {
         // 上へ弾いても何もしない
         let up = [PhotoLiftCenter.Sample(t: 0, x: 200, y: 500), PhotoLiftCenter.Sample(t: 0.05, x: 200, y: 400)]
         let size = CGSize(width: w, height: h)
-        XCTAssertEqual(PhotoLift.resolve(point: CGPoint(x: 200, y: 400), samples: up, size: size, faces: 4).target, .story)
+        XCTAssertEqual(PhotoLift.resolve(point: CGPoint(x: 200, y: 400), samples: up, size: size, faces: 4, allowsStory: true).target, .story)
         XCTAssertNil(PhotoLift.resolve(point: CGPoint(x: 200, y: 400), samples: up, size: size, faces: 4,
                                        allowsStory: false).target, "他人の写真を上へ弾いてストーリーにした")
     }
 
     // MARK: - 2・4. ①現像の投稿（開き直す・非公開で始める・閉じたら取り消す）
+
+    /// 🔴 行き先を決める口に「ストーリーに出せるか」の既定値を置かない（1.1.84 のまとめ・秘書室の指示）。
+    /// 既定が「出せる」だと、呼ぶ所で持ち主かを渡し忘れたときに他人の写真がストーリーへ通る。
+    /// 画面の側は毎回 `PhotoLift.allowsStory(ownerId:me:)`（自分の写真だけ）の答えを渡す
+    func testAllowsStoryHasNoDefaultAndCallersPassTheOwnerCheck() throws {
+        let rules = try source("Sources/JourneyPhoto/Core/Text/PhotoLift.swift")
+        let overlay = try source("Sources/JourneyPhoto/Features/Gallery/PhotoLiftOverlay.swift")
+        for text in [rules, overlay] {
+            XCTAssertFalse(text.contains("allowsStory: Bool ="), "ストーリーに出せるかに既定値がある")
+        }
+        XCTAssertTrue(overlay.contains("return PhotoLift.allowsStory(ownerId: photo.userId ?? photo.uploadedBy, me: auth.userId)"))
+        // 画面から行き先を決める呼び出しは、どれも写真ごとの答え（`allowsStory(…)`）を渡す
+        let calls = overlay.components(separatedBy: "allowsStory: ").dropFirst()
+        XCTAssertGreaterThanOrEqual(calls.count, 4)
+        for call in calls where !call.hasPrefix("Bool") {
+            XCTAssertTrue(call.hasPrefix("allowsStory(") || call.hasPrefix("allowsStory)"), String(call.prefix(60)))
+        }
+        // 持ち主の答え: 自分の写真だけ・ログインしていなければ出さない
+        XCTAssertTrue(PhotoLift.allowsStory(ownerId: "me", me: "me"))
+        XCTAssertFalse(PhotoLift.allowsStory(ownerId: "other", me: "me"))
+        XCTAssertFalse(PhotoLift.allowsStory(ownerId: "me", me: nil))
+        XCTAssertFalse(PhotoLift.allowsStory(ownerId: nil, me: "me"))
+    }
 
     func testDevelopPostDefaultsAndReopen() {
         XCTAssertFalse(DevelopTrips.startsPublic, "旅の写真から来た投稿を公開で始めた")
