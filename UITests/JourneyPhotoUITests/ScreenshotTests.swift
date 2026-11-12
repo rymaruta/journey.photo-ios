@@ -6199,12 +6199,20 @@ final class ScreenshotTests: XCTestCase {
         let height = app.frame.height
         // 札の行を画面の上のほう（高さの 30%）まで、勢いを付けずに引き上げる（`swipeUp` は勢いで飛ばす）
         let lift = recommended.frame.minY - height * 0.3
+        // 2026-11-12（run 1164 の 2/3 で「切り替えが見えるところまで送れない」）: 推定で直さず、送る前後の位置と、
+        // 押した所に何があったか（手に取って運ぶの幕・上の札）を記録する
+        let before = recommended.frame
+        let liftOverlay = app.descendants(matching: .any)["lift.faces"].firstMatch
         if lift > 0 {
             let from = origin.withOffset(CGVector(dx: width * 0.5, dy: height * 0.8))
             let to = origin.withOffset(CGVector(dx: width * 0.5, dy: height * 0.8 - lift))
             from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.5)
             Thread.sleep(forTimeInterval: 1)
         }
+        XCTContext.runActivity(named: "ホームの切り替えを送る: screen=\(app.frame) / before=\(before) / lift=\(lift)"
+            + " / after=\(recommended.frame) / hittable=\(recommended.isHittable) / liftOverlay=\(liftOverlay.exists)"
+            + " / topCards=\(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'home.'")).count)"
+            + " / ids=\(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'home.'")).allElementsBoundByIndex.prefix(30).map { "\($0.identifier)@\(Int($0.frame.minY))" })") { _ in }
         XCTAssertTrue(recommended.isHittable, "切り替えが見えるところまで送れない")
         guard recommended.isHittable else { return }
         XCTAssertTrue(recommended.isSelected, "開いたときに「おすすめ」を選んでいない")
