@@ -222,8 +222,9 @@ final class StoryVideoTrimTests: XCTestCase {
     /// 画面: 長さの札から開く・「…」からも開く・切ったあとで書き出しを確かめる・長い動画は取り込みで開く
     func testComposerWiresTheTrimSheet() throws {
         let composer = try repo("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
-        XCTAssertTrue(composer.contains(".sheet(isPresented: trimSheetShown) { trimSheet }"))
-        XCTAssertTrue(composer.contains("StoryVideoTrimSheet(clip: clip) { trim in applyTrim(trim, to: id) }"))
+        XCTAssertTrue(composer.contains(".sheet(isPresented: trimSheetShown, onDismiss: {"))
+        XCTAssertTrue(composer.contains("StoryVideoTrimSheet(clip: clip,"))
+        XCTAssertTrue(composer.contains("applyTrim(trim, to: id)"))
         XCTAssertTrue(composer.contains("Button { openTrim() } label: {"), "長さの札から切り取りを開けない")
         XCTAssertTrue(composer.contains("systemImage: \"scissors\""), "「…」に切り取りが無い")
         XCTAssertTrue(composer.contains("done.trims[$0.id] == $0.video?.trim"), "切り直しを送る直前に見ていない")

@@ -41,10 +41,16 @@ struct StoryComposerView: View {
     /// その1枚を置く（写真選び・下書きの問いを飛ばす）。札は端末で描いた絵（`SharedPhotoStoryCard`）
     private let sharing: StoryShareSeed?
 
-    init(openDraft: String? = nil, startsWithCamera: Bool = false, sharing: StoryShareSeed? = nil) {
+    /// 「24時間後も自分用に残す」を入れて始める（ハイライトの空の状態の「ストーリーを作る」から・2026-11-12）。
+    /// その入口は「残したストーリー」を作りに行く所なので、既定や人ごとの覚えに関わらず**明示で入れる**
+    private let keepsInArchive: Bool
+
+    init(openDraft: String? = nil, startsWithCamera: Bool = false, sharing: StoryShareSeed? = nil,
+         keepsInArchive: Bool = false) {
         self.openDraft = openDraft
         self.startsWithCamera = startsWithCamera
         self.sharing = sharing
+        self.keepsInArchive = keepsInArchive
     }
     /// 裏に回ったときに黙って残す書きかけ（本人の下書きとは別の枠・2026-10-16）
     @StateObject private var autoDrafts = StoryDraftStore(slot: .auto)
@@ -89,6 +95,12 @@ struct StoryComposerView: View {
     /// ログアウト・期限切れ（`auth.userId` が nil）では替えない（投稿の画面と同じ）
     @State private var attachesLocation = UploadLocationPreference.defaultValue
     @State private var showCamera = false
+    /// カメラで「写真から選ぶ」を押した（閉じたあとに写真選びへ・2026-11-12）
+    @State private var libraryAfterCamera = false
+    /// 切り取りで「別の動画を選ぶ」を押した（閉じたあとに写真選びへ・2026-11-12）
+    @State private var libraryAfterTrim = false
+    /// 「別の動画を選ぶ」で外す、開けなかった1本（閉じたあとに外してから写真選びを開く）
+    @State private var unopenableShotId: UUID?
     /// 開いたときの「書きかけの下書き」で「キャンセル（残す）」を選んだか
     /// 「続きから」で**残すと決めた下書きの印**（`savedAt`）。真偽では持たない——
     /// 裏の送信や人の替わりでその下書きが消えた後まで「守る下書きがある」ことにしていた
@@ -318,7 +330,16 @@ struct StoryComposerView: View {
         case .compose:
             composer
                 // 動画の切り取り（2026-11-09）。長い修飾子の鎖（`composer`）に足さず、外に付ける
-                .sheet(isPresented: trimSheetShown) { trimSheet }
+                .sheet(isPresented: trimSheetShown, onDismiss: {
+                    guard libraryAfterTrim else { return }
+                    libraryAfterTrim = false
+                    // 開けなかった1本は外してから写真選びへ（並びに送れない1本を残さない・選び直した分の枠も空く）
+                    if let id = unopenableShotId, let index = shots.firstIndex(where: { $0.id == id }) {
+                        remove(at: index)
+                    }
+                    unopenableShotId = nil
+                    showLibrary = true
+                }) { trimSheet }
         }
     }
 
@@ -439,8 +460,8 @@ struct StoryComposerView: View {
                     // **曲の札は変えない**（題と歌い手は同じ）。流し始めだけを入れ替える
                     SongStartSheet(song: song, durationSec: durationSec) { picked in self.song = picked }
                 }
-                // 中身は短い（画面いっぱいにしない）。大きな文字の人は引き上げられる
-                .presentationDetents([.medium, .large])
+                // 2026-11-12（設計の案 03）: 曲の絵・帯・下の「この位置にする」まで一度に見えるよう、画面いっぱいで出す
+                .presentationDetents([.large])
             }
         }
         // **表示秒数を延ばしたら、流し始めを収まる所まで引き戻す**（Web と同じ）。
@@ -524,6 +545,10 @@ struct StoryComposerView: View {
             // もう一度走り、開いたときの問いがまた出ていた
             guard !askedOnOpen else { return }
             askedOnOpen = true
+            // 開いた回だけ入れる（カメラから戻った onAppear では入れ直さない＝本人が切ったら切ったまま）。
+            // ⚠️ 人ごとの覚えを読む所（`loadKeepInArchive`）があれば、この行はその後ろに置く（覚えで上書きさせない）
+            // 1.1.84 のまとめ: 写真を紹介する札の早い return より前に置く（どちらの入口でも効くように）
+            if keepsInArchive { keepInArchive = true }
             // 写真を紹介する札（札 #541）。**下書き・書きかけの問いは出さない**——紹介しに来た人に前の写真を
             // 尋ねると、置いたはずの札が見えないまま問いに答えることになる（書きかけは次に開いたときに尋ねる）
             if let sharing, shots.isEmpty {
@@ -621,11 +646,18 @@ struct StoryComposerView: View {
             Text(L("この端末に残しておいたものです。続きから編集できます。",
                    "Kept on this device. You can pick up where you left off."))
         }
-        .fullScreenCover(isPresented: $showCamera) {
+        // 2026-11-12 判断（設計の案「ストーリーのデザイン 残り」01）: カメラの左下の最近の1枚・許可の無い画面の
+        // 「写真から選ぶ」は、カメラを閉じてから写真選びへ。まだ1枚も無ければ下の格子がそのまま見える（開かない）
+        .fullScreenCover(isPresented: $showCamera, onDismiss: {
+            guard libraryAfterCamera else { return }
+            libraryAfterCamera = false
+            if StoryCameraRules.opensLibraryAfterCamera(shotCount: shots.count) { showLibrary = true }
+        }) {
             // 自前のカメラ（写真｜動画・長押しで動画・前後の切り替え・触覚）。札 #500
             StoryCameraView(onPhoto: { data in
                 acceptFromCamera(CameraCapture(metadata: [:], capturedAt: Date(), encode: { data }))
-            }, onVideo: { url in acceptRecordedVideo(url) })
+            }, onVideo: { url in acceptRecordedVideo(url) },
+            onPickFromLibrary: { libraryAfterCamera = true })
                 .ignoresSafeArea()
         }
         // **まとめて選べる**（モック4-5）。メニューの中に `PhotosPicker` を置くと
@@ -2497,8 +2529,18 @@ struct StoryComposerView: View {
     @ViewBuilder
     private var trimSheet: some View {
         if let id = trimmingShotId, let clip = shots.first(where: { $0.id == id })?.video {
+            // 2026-11-12（設計の案 02）: 何枚目か（「1 / 2」）と、開けなかったときの「別の動画を選ぶ」
+            // （閉じたら開けなかった1本を外し、写真選びを開く）
+            let index = shots.firstIndex(where: { $0.id == id }) ?? 0
             NavigationStack {
-                StoryVideoTrimSheet(clip: clip) { trim in applyTrim(trim, to: id) }
+                StoryVideoTrimSheet(clip: clip,
+                                    positionLabel: StoryVideoTrimSheet.positionLabel(index: index, count: shots.count),
+                                    onPickAnother: {
+                                        unopenableShotId = id
+                                        libraryAfterTrim = true
+                                    }) { trim in
+                    applyTrim(trim, to: id)
+                }
             }
         }
     }

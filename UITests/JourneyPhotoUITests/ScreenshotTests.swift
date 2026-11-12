@@ -7632,6 +7632,64 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **曲の流し始め**（2026-11-12・設計の案「ストーリーのデザイン 残り」03）: 曲の絵を大きく・30 秒の帯と白い枠・
+    /// 下の「この位置にする」。`-JPPreviewStorySong YES` の見本の曲（通信しない）で作る画面を開き、道具の「曲」の
+    /// メニューから「流し始め」を開く。試聴の URL は見本なので、鳴らない回は「流せない」の段で撮れる。**出なければ撮らずに抜ける**
+    func testCapturesStorySongStart() {
+        let app = launchTrunk(["-JPPreviewStorySong", "YES", "-story.captionHintShown", "YES"])
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
+        tabBar.buttons.element(boundBy: 2).tap()
+        let toStory = app.buttons["post.choice.story"].firstMatch
+        guard toStory.waitForExistence(timeout: 5), toStory.isHittable else { return }
+        toStory.tap()
+        let songTool = app.buttons["曲・入れてあります"].firstMatch
+        guard songTool.waitForExistence(timeout: 20), songTool.isHittable else { return }
+        songTool.tap()
+        let startItem = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "流し始め")).firstMatch
+        guard startItem.waitForExistence(timeout: 5) else { return }
+        startItem.tap()
+        let done = app.buttons["songStart.done"].firstMatch
+        guard done.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        let failed = app.descendants(matching: .any)["songStart.failed"].firstMatch.exists
+        shoot(app, failed ? "62g-ストーリーの曲の流し始め（流せない）" : "62g-ストーリーの曲の流し始め")
+        XCTAssertGreaterThanOrEqual(done.frame.height, 44, "「この位置にする」の当たりが 44pt 未満")
+    }
+
+    /// **ハイライトを作る**（2026-11-12・設計の案 04）: マイページのハイライトの「新規」から開き、輪・名前・残したストーリーの
+    /// 3 列の格子（見本に残したストーリーが無ければ空の状態「ストーリーを作る」・読めなければ失敗の状態）を撮る。
+    /// **出なければ撮らずに抜ける**
+    func testCapturesHighlightEditor() {
+        let app = launchTrunk(["-JPPreviewLocalBackend", "YES", "-JPPreviewStories", "YES"])
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let create = app.buttons["ハイライトを作る"].firstMatch
+        var pushes = 0
+        while !(create.waitForExistence(timeout: 5) && create.isHittable), pushes < 3 {
+            app.swipeUp()
+            pushes += 1
+        }
+        guard create.exists, create.isHittable else { return }
+        create.tap()
+        let ring = app.buttons["highlightEditor.ring"].firstMatch
+        guard ring.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        let empty = app.buttons["highlightEditor.makeStory"].firstMatch.exists
+        shoot(app, empty ? "63a-ハイライトを作る（空・ストーリーを作る）" : "63a-ハイライトを作る")
+        // 名前の欄の当たり: 欄そのものは字の高さ（run 1093 で 27pt）。44pt の行の、欄より上の所を押しても入れること
+        let name = app.textFields["highlightEditor.name"].firstMatch
+        if name.exists, name.isHittable {
+            let gap = max(0, (44 - name.frame.height) / 2)
+            if gap >= 4 {
+                name.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0)).withOffset(CGVector(dx: 0, dy: -(gap - 2))).tap()
+                XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5),
+                              "名前の欄の上（44pt の行の中）を押しても欄に入れない")
+            }
+        }
+    }
+
     /// **下書きの一覧**（2026-10-29・#400「下書きを複数持つ」・モック 9JzQWmYxF14BmUiZ9yWbe8）: マイページの格子の
     /// 先頭の「下書き」の札 → 3列の格子（投稿・ストーリー・自動の書きかけ・あと n 日・読めない写真の「!」）→
     /// 「選ぶ」で2件 → 行の一覧 → 全部消した空の状態（「元に戻す」）。見本（`-JPPreviewDrafts YES`・端末の中だけ）で

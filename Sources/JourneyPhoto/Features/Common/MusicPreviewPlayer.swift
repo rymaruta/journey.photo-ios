@@ -45,6 +45,41 @@ final class MusicPreviewPlayer: ObservableObject {
     /// 見張っている値を書いた回数（＝見ている画面へ「変わった」を知らせた回数。テスト用に読める）
     private(set) var publishCount = 0
 
+    /// 試聴の読み込みの状態（2026-11-12・曲の流し始めの「読み込み中」「流せない」）
+    enum PreviewLoad: Equatable {
+        /// 鳴らしていない・まだ分からない
+        case idle
+        /// 鳴らそうとしているが、まだ音が出ていない
+        case loading
+        /// 音が出ている
+        case ready
+        /// 項目の読み込みに失敗した（圏外・URL が開けない）
+        case failed
+    }
+
+    /// 鳴らしている項目の読み込みの状態。**項目の `status` と `timeControlStatus` を見張って入れる**（KVO・`start`）。
+    /// 2026-11-12 判断（確かめ役の指摘）: 以前は曲の流し始めが `currentItem?.status` を直に読んでいたが、どちらの値も
+    /// 見張っておらず、変わっても知らせが出ない——圏外で開くと「読み込み中」のまま描き直されなかった
+    /// （`TimelineView` も鳴っている間しか回さない）。変わったときだけ書く。**`publishCount` には数えない**
+    /// （鳴らし直しで知らせる回数の試験は、この値と関わりなく今までどおり）
+    @Published private(set) var previewLoad: PreviewLoad = .idle
+    /// 読み込みの状態の見張り（鳴らし直す・止めるたびに外す）
+    private var loadObservations: [NSKeyValueObservation] = []
+
+    /// 読み込みの状態を決める（画面を持たない・単体テスト用）。失敗が先、次に待っているか
+    static func previewLoad(itemFailed: Bool, waiting: Bool, playing: Bool) -> PreviewLoad {
+        if itemFailed { return .failed }
+        guard playing else { return .idle }
+        return waiting ? .loading : .ready
+    }
+
+    /// 見張りから呼ぶ。**いま鳴らしている再生器の知らせだけ**受ける（前の曲の遅れた知らせで上書きしない）
+    func noteLoad(itemFailed: Bool, waiting: Bool, from source: AVPlayer?) {
+        guard source == nil || source === player else { return }
+        let next = Self.previewLoad(itemFailed: itemFailed, waiting: waiting, playing: playingURL != nil)
+        if previewLoad != next { previewLoad = next }
+    }
+
     /// 値が変わったときだけ書く（同じ値なら知らせを出さない）
     private func update<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<MusicPreviewPlayer, Value>,
                                           _ value: Value) {
@@ -112,6 +147,8 @@ final class MusicPreviewPlayer: ObservableObject {
             NotificationCenter.default.removeObserver(observer)
         }
         endObservers = []
+        for observation in loadObservations { observation.invalidate() }
+        loadObservations = []
         removeStartSeeker()
     }
 
@@ -136,6 +173,14 @@ final class MusicPreviewPlayer: ObservableObject {
         guard isPlaying(url), let player else { return 0 }
         return Self.previewProgress(current: player.currentTime().seconds,
                                     duration: player.currentItem?.duration.seconds)
+    }
+
+    /// 試聴のいまの位置（秒）。その曲が鳴っていなければ nil。進みと同じく知らせ（publish）にはしない
+    /// （曲の流し始めの帯が `TimelineView` の中で読みに来る・2026-11-12）
+    func previewTime(for url: URL?) -> Double? {
+        guard isPlaying(url), let player else { return nil }
+        let seconds = player.currentTime().seconds
+        return seconds.isFinite ? max(0, seconds) : nil
     }
 
     /// 進みの計算（画面を持たない・単体テスト用）。いつも 0〜1 に収める。
@@ -226,6 +271,17 @@ final class MusicPreviewPlayer: ObservableObject {
         // (2) `.playback` で奪った場を返さないので、**他のアプリの音楽が
         // 二度と戻らない**——止めるつもりで押した人しか回復できない
         removeEndObserver()
+        // 読み込みの状態を見張る（2026-11-12）。項目の失敗（圏外）は鳴り終わり・失敗の知らせでは来ないので、
+        // `status` を直に見張る。待っている間（`timeControlStatus`）も同じ
+        let reportLoad: (AVPlayer) -> Void = { [weak self] observed in
+            let failed = observed.currentItem?.status == .failed
+            let waiting = observed.timeControlStatus == .waitingToPlayAtSpecifiedRate
+            DispatchQueue.main.async { self?.noteLoad(itemFailed: failed, waiting: waiting, from: observed) }
+        }
+        loadObservations = [
+            player.observe(\.currentItem?.status, options: [.initial, .new]) { observed, _ in reportLoad(observed) },
+            player.observe(\.timeControlStatus, options: [.initial, .new]) { observed, _ in reportLoad(observed) },
+        ]
         endObservers.append(NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: player.currentItem,
@@ -286,6 +342,7 @@ final class MusicPreviewPlayer: ObservableObject {
         update(\.playingSong, nil)
         update(\.origin, nil)
         update(\.isPaused, false)
+        if previewLoad != .idle { previewLoad = .idle }
         guard releaseSession else { return }
         scheduleRelease()
     }
