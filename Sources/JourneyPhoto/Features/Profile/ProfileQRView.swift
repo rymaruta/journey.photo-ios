@@ -126,7 +126,7 @@ struct ProfileQRView: View {
                         .id(url)
                         .transition(.opacity)
                 } else {
-                    failedNote
+                    failedNote(reason: "QR の絵を作れなかった: \(url.absoluteString)")
                 }
             case .loading:
                 // 白い札と同じ大きさの空き（できたときに下の名前が跳ねない）
@@ -138,7 +138,7 @@ struct ProfileQRView: View {
                     .accessibilityLabel(ProfileQRText.loading)
                     .accessibilityIdentifier("profileQR.loading")
             case .failed:
-                failedNote
+                failedNote(reason: failure)
             }
             VStack(spacing: JPSpace.xxs) {
                 Text(profile.name)
@@ -229,7 +229,7 @@ struct ProfileQRView: View {
     }
 
     /// 作れなかった（id が URL に入れられない形・承認のあとは電波など）。空の白い四角を出さず、もう一度の口を置く
-    private var failedNote: some View {
+    private func failedNote(reason: String) -> some View {
         VStack(spacing: JPSpace.s) {
             Text(ProfileQRText.cannotMake)
                 .font(JPFont.body)
@@ -243,15 +243,14 @@ struct ProfileQRView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("profileQR.retry")
-        }
-        .padding(.top, JPSpace.emptyTop)
-        // 作れなかった理由（目に見えない1点・UI テストが事実を取る所。2026-11-12）
-        .background(alignment: .topLeading) {
-            Color.clear.frame(width: 1, height: 1)
-                .accessibilityElement()
-                .accessibilityLabel(failure)
+            // 作れなかった理由（目に見えない字・UI テストが事実を取る所。2026-11-12）
+            Text(reason.isEmpty ? "-" : reason)
+                .font(.system(size: 1))
+                .foregroundStyle(Color.clear)
+                .frame(height: 1)
                 .accessibilityIdentifier("profileQR.failureReason")
         }
+        .padding(.top, JPSpace.emptyTop)
         .accessibilityIdentifier("profileQR.failed")
     }
 }
