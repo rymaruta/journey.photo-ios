@@ -16,6 +16,8 @@ struct TripPlansView: View {
     @EnvironmentObject private var connectivity: Connectivity
     @EnvironmentObject private var wishlist: WishlistStore
     @StateObject private var model = TripPlansModel()
+    /// ホームの札から消した（元に戻すを待っている・圏外で送るのを待っている）プランは一覧にも出さない（2026-11-12）
+    @ObservedObject private var removal = TripPlanRemovalQueue.shared
     /// 作った直後に、そのプランを開く（Web の `onCreate` と同じ）
     @State private var openedPlanId: String?
     @State private var showOpened = false
@@ -186,7 +188,7 @@ struct TripPlansView: View {
                     .padding(.top, JPSpace.xl)
             } else {
                 LazyVStack(spacing: 10) {
-                    ForEach(model.plans) { plan in
+                    ForEach(model.plans.filter { !removal.removedIds.contains($0.planId) }) { plan in
                         planCard(plan)
                     }
                 }

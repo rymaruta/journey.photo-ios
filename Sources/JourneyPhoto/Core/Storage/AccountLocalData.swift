@@ -56,6 +56,9 @@ enum AccountLocalData {
         // 投稿の「撮影地の位置を付ける」の選んだ値（2026-10-18）
         UploadLocationPreference(defaults: defaults).removeData(for: userId)
         OpenedTripBooks(defaults: defaults).removeData(for: userId)
+        // ホームの上の札に出さない旅・消すのを待っている旅行プラン（2026-11-12）
+        HomeHiddenTrips(defaults: defaults).removeData(for: userId)
+        TripPlanRemovalQueue.removeData(for: userId, defaults: defaults)
         FollowingSeenStore(defaults: defaults).removeData(for: userId)
         // 行った県マップの記録（県ごとの行った日・外した候補・祝いを見せた周・2026-11-08・札 #503）
         VisitedPrefectureStore(defaults: defaults).removeData(for: userId)

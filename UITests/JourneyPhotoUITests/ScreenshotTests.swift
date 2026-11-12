@@ -2629,6 +2629,51 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "64d-旅行プランを作る・下書き（時間帯の順・日の出と日の入り）")
     }
 
+    // MARK: - ホームの旅行プランの札の「⋯」（2026-11-12）
+
+    /// **ホームの上の札（出発が近い旅行プラン）の「⋯」と、削除の「元に戻す」**（owner「削除するときは旅行プランの
+    /// ページに行かないといけないのめんどくさい」）。見本のプラン（`-JPTripPlanFixture`・Debug のときだけ・サーバーへは
+    /// 送らない）に、出発が2日後の「週末の鎌倉」を足して札を出す（`-JPTripPlanFixtureSoon`）。
+    /// 削除は押すだけで聞かずに札から消え、「元に戻す」で戻る（6秒の間はどこへも送らない）。出なければ撮らずに抜ける
+    func testCapturesHomeTripCardMenu() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripPlanFixtureSoon", "YES"])
+        let more = app.buttons["home.tripMenu"].firstMatch
+        guard more.waitForExistence(timeout: 30) else {
+            note(app, "旅行プランの札", "30 秒で札の「⋯」が出ない")
+            return
+        }
+        // 札の光の時刻・季節の札の写真が描かれるのを待つ
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "10g-ホーム（旅行プランの札の⋯）")
+        guard more.isHittable else {
+            note(app, "旅行プランの札", "「⋯」が押せない")
+            return
+        }
+        more.tap()
+        let delete = app.buttons["旅行プランを削除"].firstMatch
+        guard delete.waitForExistence(timeout: 5) else {
+            note(app, "旅行プランの札", "メニューに「旅行プランを削除」が無い")
+            return
+        }
+        XCTAssertTrue(app.buttons["この旅をホームに出さない"].firstMatch.exists, "メニューに「この旅をホームに出さない」が無い")
+        Thread.sleep(forTimeInterval: 0.5)
+        shoot(app, "10h-ホーム（旅行プランの札のメニュー）")
+
+        // 削除: 確かめを出さずに札から消え、「元に戻す」が出る
+        delete.tap()
+        let undo = app.buttons["home.tripMenu.undo"].firstMatch
+        guard undo.waitForExistence(timeout: 5) else {
+            note(app, "旅行プランの札", "削除のあとに「元に戻す」が出ない")
+            return
+        }
+        XCTAssertFalse(app.alerts.firstMatch.exists, "削除で確かめのダイアログが出た")
+        XCTAssertFalse(app.sheets.firstMatch.exists, "削除で確かめのダイアログが出た")
+        XCTAssertFalse(more.exists, "削除したのに札が残っている")
+        shoot(app, "10i-ホーム（旅行プランの札を削除・元に戻す）")
+        undo.tap()
+        XCTAssertTrue(app.buttons["home.tripMenu"].firstMatch.waitForExistence(timeout: 5), "「元に戻す」で札が戻らない")
+    }
+
     // MARK: - 旅行プランの日程（見本のプラン・2026-11-10 札 #521）
 
     /// 見本のプラン（`-JPTripPlanFixture`・Debug のときだけ・サーバーへは送らない）で旅行プランの日程を開く。開けたら true

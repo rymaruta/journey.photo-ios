@@ -13,6 +13,7 @@ import Foundation
 ///   この数を見える所に出す（自動保存が「手を止めてからまとめて送る」かを UI テストで数で確かめる）
 /// - `-JPTripPlanFixtureOffline YES`: 日程の画面を圏外として扱う（送らない・移動の見込みを聞かない）
 /// - `-JPTripPlanFixtureFail YES`: 書き込みを断る（「まだ送れていません」を撮る）
+/// - `-JPTripPlanFixtureSoon YES`: 出発が2日後の見本「週末の鎌倉」を先頭に足す（ホームの上の札の「⋯」を撮る・2026-11-12）
 ///
 /// 🔴 **Release では必ず効かない**（`isOn` などは `#if DEBUG` の外では false）
 enum TripPlanFixture {
@@ -20,6 +21,16 @@ enum TripPlanFixture {
     static let key = "JPTripPlanFixture"
     static let offlineKey = "JPTripPlanFixtureOffline"
     static let failKey = "JPTripPlanFixtureFail"
+    static let soonKey = "JPTripPlanFixtureSoon"
+
+    /// 出発の近い見本を足す（ホームの上の札に「出発まで 2 日」を出す）
+    static var soon: Bool {
+        #if DEBUG
+        return isOn && UserDefaults.standard.bool(forKey: soonKey)
+        #else
+        return false
+        #endif
+    }
 
     static var isOn: Bool {
         #if DEBUG
@@ -55,7 +66,7 @@ enum TripPlanFixture {
     }
 
     /// 見本のプラン。台帳に在る撮影スポットの鍵（`content/spots.json` の石川県・福井県）
-    static func initialPlans(today: Date) -> [TripPlan] {
+    static func initialPlans(today: Date, soon: Bool = TripPlanFixture.soon) -> [TripPlan] {
         let start = TripPlanText.calendar.date(byAdding: .day, value: 30, to: today) ?? today
         let end = TripPlanText.calendar.date(byAdding: .day, value: 1, to: start) ?? start
         let kanazawa = TripPlan(
@@ -89,7 +100,15 @@ enum TripPlanFixture {
                 TripDay(items: [.spot(spotId: "sp_2f29aa9f9a28", note: nil)]),   // サンパウロ美術館
             ],
             createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z")
-        return [kanazawa, hakodate, brazil]
+        guard soon else { return [kanazawa, hakodate, brazil] }
+        // 出発が2日後（ホームの上の札は出発の7日前から出る・`HomeTopCard.departureWindowDays`）
+        let soonStart = TripPlanText.calendar.date(byAdding: .day, value: 2, to: today) ?? today
+        let soonEnd = TripPlanText.calendar.date(byAdding: .day, value: 1, to: soonStart) ?? soonStart
+        let kamakura = TripPlan(planId: "fixture-kamakura", title: "週末の鎌倉",
+                                startDate: TripPlanText.ymd(soonStart), endDate: TripPlanText.ymd(soonEnd),
+                                days: [TripDay(items: [.location(slug: "鎌倉", note: nil)]), TripDay()],
+                                createdAt: "2026-11-12T00:00:00Z", updatedAt: "2026-11-12T00:00:00Z")
+        return [kamakura, kanazawa, hakodate, brazil]
     }
 }
 
