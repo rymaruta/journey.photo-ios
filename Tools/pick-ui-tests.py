@@ -58,8 +58,6 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    "ScreenshotTests/testMeasuresCamperStagesAANone", "ScreenshotTests/testMeasuresCamperStagesAA4x",
                    # 2026-11-10（札 #521）: 移動の見込みの前に、日本の区間で MKDirections が返す秒数を取る。`screens=MapETAProbeTests`
                    "MapETAProbeTests",
-                   # 2026-11-12（1.1.85）: DM の会話が払った直後に固まる件の事実取り（印あり・なしを並べる・約20分）。`screens=DMHangProbeTests`
-                   "DMHangProbeTests",
                    # 2026-11-11（owner「旅のトランク重すぎる」）: 回す・特別なトランクの一覧の重さ（直しの前後）と、直しの前後の画素の差。
                    # `screens=testMeasuresTrunk, testTrunkSpinMatchesBefore`
                    "ScreenshotTests/testMeasuresTrunkSpin", "ScreenshotTests/testMeasuresTrunkSpinBefore",

@@ -489,11 +489,8 @@ enum PreviewBackend {
                 }
                 items.append(msg(8, mine: false, "この曲いいね", 12))
                 // 撮影スポットを送った通（1.1.83・資料「SNS をもっと SNS に」⑤）: 頁のリンクだけの1通 → 札（`DMSpotCard`）
-                // `-JPDMNoSpotMessages`（UI テストの事実取りだけ・`DMHangProbe`）では除く（dm-base と同じ会話）
-                if !DMHangProbe.noSpotMessages {
-                    items.append(msg(9, mine: false, "https://journey-photo.com/spots/kenrokuen", 11))
-                    items.append(msg(10, mine: false, "雪吊り、見に行かない？", 10.5))
-                }
+                items.append(msg(9, mine: false, "https://journey-photo.com/spots/kenrokuen", 11))
+                items.append(msg(10, mine: false, "雪吊り、見に行かない？", 10.5))
                 answer["items"] = items
             }
             return Reply.json(answer)

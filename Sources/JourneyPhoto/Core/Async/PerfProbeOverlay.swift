@@ -157,9 +157,7 @@ final class PerfMainSampler: @unchecked Sendable {
             let top = Array(frames.prefix(8))
             let app = frames.dropFirst(8).filter { $0.hasPrefix("JourneyPhoto") }.prefix(10)
             let ms = Int((sent - origin) * 1000)
-            // DM の会話が固まる件（2026-11-12）: 観光スポットの札の数（`DMHangProbe.count`）を積みの前に出す
-            let dm = DMHangProbe.countSummary
-            let line = "ms=\(ms) ping=\(ping)" + (dm.isEmpty ? "" : " dm=\(dm)") + " | " + (top + (app.isEmpty ? [] : ["…"]) + Array(app)).joined(separator: " ; ") + "\n"
+            let line = "ms=\(ms) ping=\(ping) | " + (top + (app.isEmpty ? [] : ["…"]) + Array(app)).joined(separator: " ; ") + "\n"
             handle.write(Data(line.utf8))
             lines += 1
             if answered { Thread.sleep(forTimeInterval: 0.3) }

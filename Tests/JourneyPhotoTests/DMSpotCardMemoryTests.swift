@@ -56,8 +56,8 @@ final class DMSpotCardMemoryTests: XCTestCase {
         let card = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Messages/DMSpotCard.swift"),
                               encoding: .utf8)
         XCTAssertTrue(card.contains("DMSpotCardMemory.phase(for: slug)"), "札がいつも読み込み中から始まる")
-        XCTAssertTrue(card.contains("_phase = State(initialValue: start ?? .loading)"))
-        XCTAssertTrue(card.contains("guard phase == .loading else { return }\n            await load()"), "覚えた札を読み直している")
+        XCTAssertTrue(card.contains("_phase = State(initialValue: DMSpotCardMemory.phase(for: slug) ?? .loading)"))
+        XCTAssertTrue(card.contains("guard phase == .loading else { return }\n                await load()"), "覚えた札を読み直している")
         XCTAssertTrue(card.contains("DMSpotCardMemory.remember(settled, for: slug, failed: failed)"), "読み終えた中身を覚えていない")
         XCTAssertFalse(card.contains("@State private var phase: Phase = "), "札の状態の初めの値が決め打ち（作り直すと読み込み中に戻る）")
     }
@@ -70,7 +70,7 @@ final class DMSpotCardMemoryTests: XCTestCase {
         let card = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Messages/DMSpotCard.swift"),
                               encoding: .utf8)
         XCTAssertTrue(card.contains("DMSpotCardBox { phaseView }"), "札が枠に入っていない（読み込み中から読み終えると高さが替わる）")
-        XCTAssertTrue(card.contains("case .loading:") && card.contains("card(spot, index: index, fillsBox: true)")
+        XCTAssertTrue(card.contains("case .loading:") && card.contains("card(spot, index: index)")
                       && card.contains("missingCard"), "読み込み中・読めた・読めないのどれかが枠の外にある")
     }
 }

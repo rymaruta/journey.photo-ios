@@ -11,7 +11,8 @@ import SwiftUI
 /// 会話の行は `LazyVStack` に並ぶ。札の高さが読み込み中（250）から読み終えた札の高さに替わると、
 /// 会話を払った直後から配置のやり直しが終わらなくなった（Mac run 1186・1190 の `DMHANG` の行:
 /// 直す前は払い1回 60.8〜61.2 秒で固まる。札の高さを固定した版 `SpotCardFixed` は 3.1 秒。
-/// 読み終えた中身を覚えるだけの直しでは、1回目に開いた会話（作り直しなし・読み込み1回）が 61.2 秒で固まった）。
+/// 読み終えた中身を覚えるだけの直しでは、1回目に開いた会話（作り直しなし・読み込み1回）が 61.2 秒で固まった。
+/// この枠にした run 1191 では 3.0〜3.2 秒で固まらず、枠と覚える直しを戻すと 61.1・61.2 秒で固まった）。
 /// 枠の高さは、いちばん大きい札（名前2行・出典あり）の見本を同じ字で組んで決める（大きな文字の設定でも切れない）。
 ///
 /// 索引に無い・読めないときも同じ枠の中に、届いたリンクをそのまま出す（`fallback`）——黙って消さない。
@@ -34,32 +35,21 @@ struct DMSpotCard: View {
         self.slug = slug
         self.mine = mine
         self.fallback = fallback
-        // `-JPDMRevertSpotFix`（UI テストの事実取りだけ）: 直す前の形（いつも「読み込み中」から・枠なし）
-        let start = DMHangProbe.revertSpotFix ? nil : DMSpotCardMemory.phase(for: slug)
-        _phase = State(initialValue: start ?? .loading)
+        _phase = State(initialValue: DMSpotCardMemory.phase(for: slug) ?? .loading)
     }
 
     static let width: CGFloat = 240
     static let photoHeight: CGFloat = 130
 
     var body: some View {
-        Group {
-            if DMHangProbe.revertSpotFix {
-                // `-JPDMRevertSpotFix`（UI テストの事実取りだけ）: 直す前の形（状態ごとに高さが違う）
-                revertedPhaseView
-            } else {
-                DMSpotCardBox { phaseView }
+        DMSpotCardBox { phaseView }
+            .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
+            .padding(.top, JPSpace.xxs)
+            .task(id: slug) {
+                // 読み終えた中身で始まった札は読み直さない
+                guard phase == .loading else { return }
+                await load()
             }
-        }
-        .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
-        .padding(.top, JPSpace.xxs)
-        .onAppear { DMHangProbe.count("spotCard.appear") }
-        .onDisappear { DMHangProbe.count("spotCard.disappear") }
-        .task(id: slug) {
-            // 読み終えた中身で始まった札は読み直さない
-            guard phase == .loading else { return }
-            await load()
-        }
     }
 
     /// 枠の中の中身（どれも枠いっぱいに広がる）
@@ -71,36 +61,13 @@ struct DMSpotCard: View {
                 .accessibilityElement()
                 .accessibilityLabel(L("観光スポットを読み込み中", "Loading the spot"))
         case .found(let spot, let index):
-            card(spot, index: index, fillsBox: true)
+            card(spot, index: index)
         case .missing:
             missingCard
         }
     }
 
-    /// 直す前の形（`-JPDMRevertSpotFix` だけ。直しが効いている証しに、固まるのを確かめる）
-    @ViewBuilder private var revertedPhaseView: some View {
-        switch phase {
-        case .loading:
-            RoundedRectangle(cornerRadius: JPRadius.l)
-                .fill(WebTheme.surface3)
-                .frame(width: Self.width, height: Self.photoHeight + 120)
-        case .found(let spot, let index):
-            card(spot, index: index, fillsBox: false)
-        case .missing:
-            Link(destination: URL(string: fallback) ?? AppConfig.siteBaseURL) {
-                Text(fallback)
-                    .font(JPFont.body)
-                    .foregroundStyle(WebTheme.accent)
-                    .underline()
-                    .padding(.horizontal, JPSpace.m)
-                    .padding(.vertical, 10)
-                    .background(WebTheme.surface3, in: RoundedRectangle(cornerRadius: DMLook.bubbleRadius))
-            }
-            .accessibilityIdentifier("dm.spotCard.link")
-        }
-    }
-
-    private func card(_ spot: OfficialSpot, index: [OfficialSpot], fillsBox: Bool) -> some View {
+    private func card(_ spot: OfficialSpot, index: [OfficialSpot]) -> some View {
         let key = SavedSpotKey.official(spot.slug)
         let wanted = wishlist.contains(key)
         return VStack(alignment: .leading, spacing: 0) {
@@ -114,7 +81,7 @@ struct DMSpotCard: View {
                             .overlay(RemoteImage(url: photo.url))
                             .clipped()
                             .accessibilityHidden(true)
-                    } else if fillsBox {
+                    } else {
                         // 写真の無い観光スポットも写真の場所を取る（枠の上が空かないように・2026-11-12 判断）
                         DMSpotCardPhotoPlaceholder()
                     }
@@ -131,7 +98,7 @@ struct DMSpotCard: View {
             .accessibilityHint(L("観光スポットのページを開きます", "Opens the spot page"))
             .accessibilityIdentifier("dm.spotCard.open")
             // 名前が1行のとき・出典が無いときの余りは、ボタンの上に置く（ボタンと出典は枠の下端にそろう）
-            if fillsBox { Spacer(minLength: 0) }
+            Spacer(minLength: 0)
             Button {
                 guard !wanted else { return }
                 Task {
@@ -151,7 +118,7 @@ struct DMSpotCard: View {
             }
         }
         .frame(width: Self.width)
-        .frame(maxHeight: fillsBox ? .infinity : nil, alignment: .top)
+        .frame(maxHeight: .infinity, alignment: .top)
         .modifier(DMSpotCardSurface())
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("dm.spotCard")
@@ -192,7 +159,6 @@ struct DMSpotCard: View {
 
     /// 端末の索引からスラッグで引き、写真の無い行は詳細を重ねる。見つからなければリンクの文のまま
     private func load() async {
-        DMHangProbe.count("spotCard.load")
         guard let index = try? await environment.spots.fetchIndex() else {
             if !Task.isCancelled { settle(.missing, failed: true) }
             return
@@ -208,8 +174,7 @@ struct DMSpotCard: View {
 
     /// 読み終えた中身を札に映し、作り直した札が同じ中身から始まるよう覚える
     private func settle(_ settled: Phase, failed: Bool) {
-        DMHangProbe.count("spotCard.settle")
-        if !DMHangProbe.revertSpotFix { DMSpotCardMemory.remember(settled, for: slug, failed: failed) }
+        DMSpotCardMemory.remember(settled, for: slug, failed: failed)
         phase = settled
     }
 }
