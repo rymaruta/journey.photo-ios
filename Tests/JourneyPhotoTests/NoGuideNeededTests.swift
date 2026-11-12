@@ -12,6 +12,22 @@ final class NoGuideNeededTests: XCTestCase {
         return try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/" + path), encoding: .utf8)
     }
 
+    // MARK: - 項目6 ホームの札「現像前の旅」
+
+    /// 札の題は中身の名前、3行目はどこから見つけたか。「現像」の言葉を札に出さない
+    func testDevelopCardSaysWhatItIs() throws {
+        XCTAssertEqual(DevelopTrips.cardTitle, "まだ載せていない旅")
+        XCTAssertEqual(DevelopTrips.cardDetail(limited: false), "写真アプリから見つけました")
+        XCTAssertEqual(DevelopTrips.cardDetail(limited: true), "選んで許可した写真の中から見つけました")
+        XCTAssertEqual(DevelopTrips.resumePrefix(done: 4, total: 10), "続きから 4 / 10、")
+        XCTAssertFalse(DevelopTrips.cardEyebrowSpoken.contains("現像"))
+        let view = try source("Features/Gallery/HomeTopCardView.swift")
+        XCTAssertTrue(view.contains("title: DevelopTrips.cardTitle,"), "札の題が「まだ載せていない旅」でない")
+        XCTAssertTrue(view.contains("eyebrow: DevelopTrips.cardEyebrow, eyebrowLabel: DevelopTrips.cardEyebrowSpoken"))
+        XCTAssertNil(view.range(of: #"L\("[^"]*現像"#, options: .regularExpression),
+                     "ホームの札の字に「現像」が残っている")
+    }
+
     // MARK: - 項目16 ≡ の乗車券の行の一言
 
     /// 「入り切り」をやめ、押すと何ができるかで言う。オンの人には「オフにする」
