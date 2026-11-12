@@ -92,8 +92,14 @@ struct StoryComposerView: View {
     @State private var caption = ""
     /// 撮影地と、その候補（`StorySpotSuggestion.Place`）。撮影地が変わるのは本人が決めたときだけ
     @State private var place = StorySpotSuggestion.Place()
-    /// 24時間のあとも残すか（ハイライトの材料になる）
-    @State private var keepInArchive = false
+    /// 24時間のあとも残すか（ハイライトの材料になる）。
+    /// **2026-11-11 判断（owner「最初からオンでいい」）: 既定はオン、最後に選んだ値を人ごとに覚える**
+    /// （`StoryArchivePreference`）。開いたときにその人の値を読み（`loadKeepInArchive`）、「誰に見せる？」で
+    /// 切り替えたときだけ書く。下書きを開いた回は下書きの値（`restoreDraft`）
+    @State private var keepInArchive = StoryArchivePreference.defaultValue
+    /// 「自分用に残す」をどの人の覚えから読んだか。**同じ人では読み直さない**——カメラから戻る・
+    /// 期限切れで一度 nil になって戻るたびに読むと、開いた下書きの値を覚えの値で上書きする
+    @State private var keepInArchiveOwner: String?
     /// 返信を受けるか（Web の「返信を許可」。既定は入）
     @State private var allowReplies = true
     /// 「撮影地の位置を付ける」（2026-10-18 判断）。**投稿と同じ人ごとの覚え**（`UploadLocationPreference`）を
@@ -413,7 +419,14 @@ struct StoryComposerView: View {
         .onChange(of: shots.isEmpty) { _, empty in if !empty { librarySelection = [] } }
         // 誰に見せる（前は足元にあった「フォロワーが見られます」と2つのスイッチ）
         .sheet(isPresented: $showAudience) {
-            StoryAudienceSheet(allowReplies: $allowReplies, keepInArchive: $keepInArchive,
+            StoryAudienceSheet(allowReplies: $allowReplies,
+                               // 切り替えたら人ごとに覚える（2026-11-11 判断・`StoryArchivePreference`）
+                               keepInArchive: Binding(
+                                   get: { keepInArchive },
+                                   set: { value in
+                                       keepInArchive = value
+                                       StoryArchivePreference().set(value, userId: auth.userId)
+                                   }),
                                attachesLocation: Binding(
                                    get: { attachesLocation },
                                    set: { value in
@@ -506,7 +519,10 @@ struct StoryComposerView: View {
             place.resolve(coords: suggestionCoords, spots: spotIndex)
         }
         // 人が替わったら、その人の「撮影地の位置を付ける」を読む（nil では替えない・2026-10-18）
-        .onChange(of: auth.userId) { _, id in loadAttachesLocation(for: id) }
+        .onChange(of: auth.userId) { _, id in
+            loadAttachesLocation(for: id)
+            loadKeepInArchive(for: id)
+        }
         .alert(L("撮影地", "Place"), isPresented: $showPlaceEditor) {
             // サーバーが 200 で切る（`sanitizeText(location, 200)`）。画面で止める
             TextField(L("撮影地（任意）", "Place (optional)"), text: Binding(
@@ -544,6 +560,8 @@ struct StoryComposerView: View {
             autoDrafts.use(userId: auth.userId)
             refreshDraftCount()
             loadAttachesLocation(for: auth.userId)
+            // 下書きを戻すより先に読む（下書きを開いた回は、このあと下書きの値で上書きする）
+            loadKeepInArchive(for: auth.userId)
             // 2026-10-29 判断: ほかで鳴っている曲は止める（`StoryComposerSong.Owner.stopOthers`）
             songOwner.stopOthers()
             // 下書きから開いた・カメラから戻ったときも、曲が付いていれば流す
@@ -1449,6 +1467,14 @@ struct StoryComposerView: View {
     private func loadAttachesLocation(for userId: String?) {
         guard let userId, !userId.isEmpty else { return }
         attachesLocation = UploadLocationPreference().attachesLocation(userId: userId)
+    }
+
+    /// その人の「24時間後も自分用に残す」を読む（2026-11-11 判断）。**nil（ログアウト・期限切れ）と、
+    /// もう読んだ人では替えない**（開いた下書きの値・この回に切り替えた値を残す）
+    private func loadKeepInArchive(for userId: String?) {
+        guard let userId, !userId.isEmpty, userId != keepInArchiveOwner else { return }
+        keepInArchiveOwner = userId
+        keepInArchive = StoryArchivePreference().keepsInArchive(userId: userId)
     }
 
     private struct SuggestionKey: Equatable {

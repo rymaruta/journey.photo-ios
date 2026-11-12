@@ -136,6 +136,10 @@ struct PhotoDetailView: View {
     /// 「この写真を見て撮影」の元の写真（`GET /user/inspired/{id}`・2026-10-14）。**どの写真の、どの元の写真で
     /// 読んだかを持つ**（`InspiredBy.Loaded`）——写真を送った直後に前の写真の行を出さない（`tripLoaded` と同じ考え）
     @State private var inspiredLoaded: InspiredBy.Loaded?
+    /// この写真を作った元のストーリー（2026-11-11 判断・`StoryPhotoLink`）。本人の写真だけ探す。
+    /// `known` は元があると分かっている（`keptFrom`・`fromStory`・見つかった）。`story` はまだ在れば
+    @State private var sourceStory: (photoId: String, known: Bool, story: Story?)?
+    @State private var openedSourceStory: Story?
     /// 元の写真を開くときに引き当てる公開一覧（読んだときのもの・`InspiredBy.photoToOpen`）
     @State private var inspiredFeed: [Photo]?
     /// 元の写真の ID。画面写真の試験だけ、どの写真にも見本の元の写真が付いているものとする
@@ -499,10 +503,31 @@ struct PhotoDetailView: View {
             )
         }
         .alert(L("この写真を削除しますか？", "Delete this photo?"), isPresented: $showDeleteConfirm) {
-            Button(Labels.Common.delete, role: .destructive) { Task { await deletePhoto() } }
+            if sourceStory?.photoId == shown.id, sourceStory?.story != nil {
+                // 2026-11-11 判断: 元のストーリーがあれば2つの選び方（既定の選び方は無し）。
+                // 危険の色はストーリーも消える側だけ（確認の部品は系統のまま）
+                Button(StoryPhotoLink.deleteWithStory, role: .destructive) { Task { await deletePhoto(withStory: true) } }
+                Button(StoryPhotoLink.deletePhotoOnly) { Task { await deletePhoto(withStory: false) } }
+            } else {
+                // 元があると分かっていてもう無い回は「写真だけ」（古い動きで残りを巻き込まない）
+                Button(Labels.Common.delete, role: .destructive) {
+                    Task { await deletePhoto(withStory: sourceStory?.known == true ? false : nil) }
+                }
+            }
             Button(Labels.Common.cancel, role: .cancel) {}
         } message: {
-            Text(L("元に戻せません。画像そのものも消えます。", "This cannot be undone. The image file is deleted too."))
+            Text(sourceStory?.photoId == shown.id && sourceStory?.story != nil
+                 ? StoryPhotoLink.photoDeleteMessage
+                 : L("元に戻せません。画像そのものも消えます。", "This cannot be undone. The image file is deleted too."))
+        }
+        .task(id: "storySource|\(shown.id)|\(isMine)|\(shown.sourceStoryId ?? "")") { await loadSourceStory() }
+        .fullScreenCover(item: $openedSourceStory) { story in
+            StoryViewerView(stories: [story], startIndex: 0, viewerId: auth.userId,
+                            onPhotoDeleted: { photoId in
+                                // 「写真も一緒に消す」でこの写真が消えた: ストーリーを閉じ、もう無い写真の詳細も閉じる
+                                openedSourceStory = nil
+                                if PhotoDetailRules.closesAfterDelete(photoId: photoId, currentId: current.id) { dismiss() }
+                            })
         }
         .blockConfirmation(presenting: $ownerPendingBlock) { owner in
             Task { await block(owner) }
@@ -702,6 +727,7 @@ struct PhotoDetailView: View {
                 paragraphs
                 authorRow
                 inspiredRow
+                storySourceRow
             }
             socialBar(proxy)
             tripSection
@@ -954,6 +980,54 @@ struct PhotoDetailView: View {
             .accessibilityHint(L("元の写真を開きます", "Opens the original photo"))
             .accessibilityIdentifier("photo.inspiredBy")
         }
+    }
+
+    /// 「ストーリーから作った写真 ›」（2026-11-11 判断・`StoryPhotoLink`）。黒地なので真鍮。
+    /// 元のストーリーがまだあれば押すと開く・無ければ文字だけ。当たりは 44pt
+    @ViewBuilder
+    private var storySourceRow: some View {
+        if let link = sourceStory, link.photoId == shown.id, link.known {
+            if let story = link.story {
+                Button { openedSourceStory = story } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "circle.dashed").font(.footnote).accessibilityHidden(true)
+                        Text(StoryPhotoLink.madeFromStory).font(.footnote.weight(.semibold))
+                        Text("›").font(.footnote).accessibilityHidden(true)
+                    }
+                    .foregroundStyle(WebTheme.accent)
+                    .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(L("元のストーリーを開きます", "Opens the original story"))
+                .accessibilityIdentifier("photo.storySource")
+            } else {
+                Text(StoryPhotoLink.madeFromStory)
+                    .font(.footnote)
+                    .foregroundStyle(WebTheme.accent)
+                    .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
+                    .accessibilityIdentifier("photo.storySource")
+            }
+        }
+    }
+
+    /// 元のストーリーを探す。**本人の写真で、元のストーリーの id を持つときだけ**（`keptFrom`・`fromStory`・
+    /// 本人の一覧から開いた写真）。開くたびに一覧2つを読まない（確かめ役の指摘・2026-11-11）。
+    /// 写真ごとに1回（`.task(id:)` の鍵が写真の id）
+    private func loadSourceStory() async {
+        let photo = shown
+        // 画面写真の試験だけ: どの写真も「ストーリーから作った写真」にする（Debug のみ・口を呼ばない）
+        if let sample = PreviewSession.keptStorySample(photoId: photo.id, src: photo.src) {
+            sourceStory = (photo.id, true, sample)
+            return
+        }
+        guard isMine, auth.userId != nil, photo.sourceStoryId != nil else { sourceStory = nil; return }
+        async let live = try? environment.stories.list()
+        async let shelf = try? environment.highlights.archive()
+        let mine = ((await live) ?? []).filter { $0.userId == auth.userId } + ((await shelf) ?? [])
+        let story = StoryPhotoLink.source(of: photo.id, sourceStoryId: photo.sourceStoryId, in: mine)
+        guard photo.id == shown.id else { return }
+        sourceStory = (photo.id, story != nil || photo.sourceStoryId != nil, story)
     }
 
     /// 「行き先」の段（行きたい・経路・いつ・`PhotoTripSection`）。行き先の分からない写真では出さない
@@ -2463,7 +2537,7 @@ struct PhotoDetailView: View {
         environment.gallery.edits.record(fresh, since: mark)
     }
 
-    private func deletePhoto() async {
+    private func deletePhoto(withStory: Bool? = nil) async {
         let photoId = current.id
         // 二度押しは先頭で断る——下で知らせを消す前に（`postComment` と同じ順・`PhotoDetailViewModel.deletePhoto`）
         guard !model.deletingPhotoIds.contains(photoId) else { return }
@@ -2471,7 +2545,7 @@ struct PhotoDetailView: View {
         // 送る**前に**取る（待っている間に人が替わっていたら印を付けない）
         let owner = hidden.owner
         let sender = auth.userId
-        switch await model.deletePhoto(photoId, photos: environment.photos) {
+        switch await model.deletePhoto(photoId, photos: environment.photos, withStory: withStory) {
         case .refused:
             return
         case .deleted:

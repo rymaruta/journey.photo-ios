@@ -1223,6 +1223,71 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "45d-投稿（元の写真を選んだ欄）")
     }
 
+    /// **ストーリーとそこから作った写真の関係**（2026-11-11・owner「関係を明確にして」）。
+    ///
+    /// `-JPPreviewKeptStory YES` で、写真の詳細はどの写真も「本人のストーリーから作った」ものとして開く
+    /// （口を呼ばない見本・`PreviewSession.keptStorySample`）。写真の詳細の「ストーリーから作った写真 ›」（20k）、
+    /// 押して開いたストーリーの「写真にしました ›」（20l）、「…」→ 削除の2つから選ぶ確認（20m）を撮る。
+    /// 🔴 **確認のボタンは押さない**（見本のストーリーで本番の写真を消しにいかない）。出なければ撮らずに抜ける
+    func testCapturesKeptStoryRelation() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewKeptStory", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
+
+        let firstPhoto = app.buttons["feed.photo"].firstMatch
+        var pushes = 0
+        while !(firstPhoto.waitForExistence(timeout: 2) && firstPhoto.isHittable), pushes < 8 {
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            pushes += 1
+        }
+        guard firstPhoto.exists, firstPhoto.isHittable else { return }
+        firstPhoto.tap()
+
+        let row = app.buttons["photo.storySource"].firstMatch
+        guard row.waitForExistence(timeout: 10) else { return }
+        var rowPushes = 0
+        while !row.isHittable, rowPushes < 4 {
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            Thread.sleep(forTimeInterval: 1)
+            rowPushes += 1
+        }
+        guard row.isHittable else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "20k-写真の詳細（ストーリーから作った写真）")
+
+        row.tap()
+        let kept = app.buttons["story.viewer.keptPhoto"].firstMatch
+        guard kept.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "20l-ストーリー（写真にしました）")
+
+        let more = app.buttons["story.viewer.more"].firstMatch
+        guard more.waitForExistence(timeout: 5), more.isHittable else { return }
+        more.tap()
+        let delete = app.buttons["story.menu.delete"].firstMatch
+        guard delete.waitForExistence(timeout: 5), delete.isHittable else { return }
+        delete.tap()
+        guard app.buttons["story.delete.withPhoto"].firstMatch.waitForExistence(timeout: 5) else { return }
+        // 写真のいいね・コメントの数を読む間を置く
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "20m-写真にしたストーリーの消す確認")
+    }
+
     /// **写真を撮影スポットに自動で結ぶ（写真の詳細）**（2026-10-31・journey.photo-ios#425）。
     ///
     /// 見本の利用者の写真（マイページの格子）を頭から開き、自動で結ばれた1枚を探す。見つかったら

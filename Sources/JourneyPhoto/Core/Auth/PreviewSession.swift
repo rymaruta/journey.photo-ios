@@ -319,6 +319,30 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで「ストーリーから作った写真」の見本を出す（Debug のみ・2026-11-11）。`-JPPreviewKeptStory YES`。
+    ///
+    /// 写真にしたストーリーは見本の利用者に無いので、関係の札（写真の詳細の「ストーリーから作った写真 ›」・
+    /// ストーリーの「写真にしました ›」）と、2つから選ぶ消す確認が撮れない。この鍵のときだけ、写真の詳細は
+    /// どの写真も「本人のストーリーから作った」ものとし、口を呼ばずにその写真の絵のストーリーを1本こしらえる。
+    /// **画面の状態だけ**で、サーバー・端末の控えには何も書かない。Release では必ず nil
+    static let keptStorySampleKey = "JPPreviewKeptStory"
+
+    static func keptStorySample(photoId: String, src: String) -> Story? {
+        #if DEBUG
+        guard let userId, UserDefaults.standard.bool(forKey: keptStorySampleKey) else { return nil }
+        let row: [String: Any] = [
+            "id": "preview-kept-\(photoId)", "src": src, "userId": userId, "displayName": "あなた",
+            "keptAs": photoId, "archive": true,
+            "createdAt": ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3600)),
+            "expiresAt": ISO8601DateFormatter().string(from: Date().addingTimeInterval(20 * 3600)),
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: row) else { return nil }
+        return try? JSONDecoder.api.decode(Story.self, from: data)
+        #else
+        return nil
+        #endif
+    }
+
     /// UI テストで旅のトランクを見本の中身で出す（Debug のみ・2026-10-17）。`-JPPreviewTrunk YES`（見本）・
     /// `-JPPreviewTrunk empty`（届いたラベルが1枚も無い人）。
     ///

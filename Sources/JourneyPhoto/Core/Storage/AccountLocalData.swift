@@ -55,6 +55,8 @@ enum AccountLocalData {
         UploadDraftStore(defaults: defaults, directory: draftDirectory).removeAllJournals(for: userId)
         // 投稿の「撮影地の位置を付ける」の選んだ値（2026-10-18）
         UploadLocationPreference(defaults: defaults).removeData(for: userId)
+        // ストーリーの「24時間後も自分用に残す」の選んだ値（2026-11-11）
+        StoryArchivePreference(defaults: defaults).removeData(for: userId)
         OpenedTripBooks(defaults: defaults).removeData(for: userId)
         FollowingSeenStore(defaults: defaults).removeData(for: userId)
         // 行った県マップの記録（県ごとの行った日・外した候補・祝いを見せた周・2026-11-08・札 #503）

@@ -334,9 +334,14 @@ struct StoryService {
                                         as: StoryVoteState.self)
     }
 
-    /// 24時間で消える前に、自分の写真として残す。
-    func keep(id: String) async throws {
-        try await api.authorizedVoid(.post, "/stories/\(encoded(id))/keep")
+    /// 24時間で消える前に、自分の写真として残す。**作った写真の id を返す**（2026-11-11・
+    /// 「写真にしました ›」の札で写真へ飛ぶため）。読めなければ nil（残すのは成功している）。
+    /// 自分用に残すストーリー（`archive`）も残せる——サーバーが画像を写して切り離す（`storyKeptMedia.ts`）
+    @discardableResult
+    func keep(id: String) async throws -> String? {
+        struct Kept: Decodable { let photoId: String? }
+        let data = try await api.authorizedVoid(.post, "/stories/\(encoded(id))/keep")
+        return (try? JSONDecoder().decode(Kept.self, from: data))?.photoId
     }
 }
 
@@ -364,8 +369,11 @@ struct Story: Decodable, Identifiable, Equatable {
     /// 切った投稿にも返信欄と ♡ が出て、送ると 403 で断られていた
     let allowReplies: Bool?
     /// 「アーカイブに自動保存」の印。**本人にだけ返る**（`stories.ts`）。
-    /// この投稿は写真として残せない（`storyKeep.ts` が 409）
+    /// 2026-11-11 から写真にもできる（前は `storyKeep.ts` が 409 で断っていた）
     let archive: Bool?
+    /// 写真にしたときの写真の id（`POST /stories/{id}/keep`）。**本人にだけ返る**。
+    /// 「写真にしました ›」の札と、消すときの「写真も一緒に消す」に使う（2026-11-11）
+    let keptAs: String?
     /// 写真の上に**データで**置いたもの（文字・スタンプ・投票・`StoryTextItem`）。
     /// 置いていなければ空。**読んでいなかったので、Web で置いた文字も投票もアプリでは
     /// 見えなかった**
@@ -420,7 +428,7 @@ struct Story: Decodable, Identifiable, Equatable {
     }
     private enum CodingKeys: String, CodingKey {
         case id, src, userId, displayName, caption, mediaType, location, coords
-        case createdAt, expiresAt, replyCount, durationSec, song, allowReplies, archive, texts, vote
+        case createdAt, expiresAt, replyCount, durationSec, song, allowReplies, archive, keptAs, texts, vote
         case songOnPhoto, locationOnPhoto, sharedPhotoId
     }
 
@@ -445,6 +453,7 @@ struct Story: Decodable, Identifiable, Equatable {
         // 形が崩れていても一覧ごと落とさない（読めなければ既定＝受ける）
         allowReplies = (try? c.decodeIfPresent(Bool.self, forKey: .allowReplies)) ?? nil
         archive = (try? c.decodeIfPresent(Bool.self, forKey: .archive)) ?? nil
+        keptAs = ((try? c.decodeIfPresent(String.self, forKey: .keptAs)) ?? nil).flatMap { $0.isEmpty ? nil : $0 }
         // **壊れた1つで一覧ごと落とさない**（1つずつ読み、読めないものは捨てる）
         let raws = ((try? c.decodeIfPresent([StoryTextItem.Lossy].self, forKey: .texts)) ?? nil) ?? []
         texts = StoryTextItem.parseList(raws.compactMap(\.raw))
