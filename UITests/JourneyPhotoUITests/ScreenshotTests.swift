@@ -2954,6 +2954,14 @@ final class ScreenshotTests: XCTestCase {
         let before = row.frame.minY
         row.swipeUp()
         XCTAssertLessThan(row.frame.minY, before - 20, "行から上へスワイプしても一覧が動かない")
+        // 調べ（Mac 1101 で、待つ 3 秒の間は「3 回」にならず、あとで読んだ名前は「3 回」だった）:
+        // スワイプのあと 0.25 秒ごとに行と帯の名前・位置をログに出す（原因を数で取る・推定で直さない）
+        for step in 0..<12 {
+            print("VISITED-SWIPE: t=\(Double(step) * 0.25) exists=\(row.exists) label=\(row.exists ? row.label : "-") "
+                  + "frame=\(row.exists ? row.frame : .zero) hittable=\(row.exists && row.isHittable) "
+                  + "count=\(count.exists ? count.label : "-")")
+            Thread.sleep(forTimeInterval: 0.25)
+        }
         XCTAssertTrue(waitForLabel(row, "北海道、3 回"), "スワイプで回数が変わった: \(row.label)")
     }
 
@@ -3790,7 +3798,7 @@ final class ScreenshotTests: XCTestCase {
         for km in [5, 10, 50] {
             let chip = app.buttons["nearby.radius.\(km)"].firstMatch
             XCTAssertTrue(chip.exists, "範囲のチップ「約\(km)km」が無い")
-            XCTAssertGreaterThanOrEqual(chip.frame.height, 44, "範囲のチップ「約\(km)km」の当たりが 44pt 未満")
+            XCTAssertGreaterThanOrEqual(chip.frame.height, 43.99, "範囲のチップ「約\(km)km」の当たりが 44pt 未満")
         }
         XCTAssertFalse(app.segmentedControls.firstMatch.exists, "灰のセグメントが残っている")
         close.tap()
@@ -4009,7 +4017,8 @@ final class ScreenshotTests: XCTestCase {
         guard lockTab.waitForExistence(timeout: 10) else { return XCTFail("部品箱の種類のタブが無い") }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "99-部品箱")
-        XCTAssertGreaterThanOrEqual(lockTab.frame.height, 44, "種類のタブが 44pt 未満")
+        // 小数の誤差まで許す（Mac 1101 の実測 43.99999999999997・タブは minHeight 44 で組む）
+        XCTAssertGreaterThanOrEqual(lockTab.frame.height, 43.99, "種類のタブが 44pt 未満")
         lockTab.tap()
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "99-部品箱（錠前）")
@@ -4021,7 +4030,7 @@ final class ScreenshotTests: XCTestCase {
             guard sheetEquip.waitForExistence(timeout: 10) else { return XCTFail("持っている部品を押してもシートが出ない") }
             Thread.sleep(forTimeInterval: 1)
             shoot(app, "99j-部品のシート")
-            XCTAssertGreaterThanOrEqual(sheetEquip.frame.height, 44, "シートの主ボタンが 44pt 未満")
+            XCTAssertGreaterThanOrEqual(sheetEquip.frame.height, 43.99, "シートの主ボタンが 44pt 未満")
             let close = app.buttons["trunk.partSheet.close"].firstMatch
             if close.exists, close.isHittable { close.tap() }
             Thread.sleep(forTimeInterval: 1)
