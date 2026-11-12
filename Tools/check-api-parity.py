@@ -68,19 +68,35 @@ def normalize(path: str) -> str:
     return path.rstrip("/") or "/"
 
 
+def server_config_files(root: Path):
+    """口を書いてある設定ファイル。`api-user/serverless.yml` と `serverless.*.yml`。
+
+    **分けたファイルも読む（札 #569・2026-11-12 判断）。** Web 版は user API の部品が
+    上限 500 に近く、機能ごとの口を `serverless.<機能>.yml` の別のスタックに移した
+    （経路は同じ HTTP API に足すので、URL は変わらない）。`serverless.yml` だけを読むと、
+    移した口を「サーバーに無い」と 59 件 NG にしていた。
+    本番（main）のようにまだ分けていない形でも、`serverless.yml` だけがあれば同じに読める。
+    """
+    api = root / "api-user"
+    main = api / "serverless.yml"
+    split = sorted(p for p in api.glob("serverless.*.yml") if p != main)
+    return [main] + split
+
+
 def server_endpoints(root: Path):
-    """`api-user/serverless.yml` から (メソッド, パス, 認証が要るか) を拾う。"""
-    text = (root / "api-user" / "serverless.yml").read_text(encoding="utf-8")
+    """`api-user/serverless.yml`（と分けたファイル）から (メソッド, パス, 認証が要るか) を拾う。"""
     endpoints = {}
     # httpApi の各項目は path → method → （あれば）authorizer の順で並ぶ
     pattern = re.compile(
         r"path:\s*(?P<path>\S+)\s*\n\s*method:\s*(?P<method>\w+)(?P<rest>(?:\s*\n(?!\s*- httpApi)[^\n]*)*)"
     )
-    for m in pattern.finditer(text):
-        path = normalize(m.group("path"))
-        method = m.group("method").upper()
-        needs_auth = "authorizer" in m.group("rest")
-        endpoints[(method, path)] = needs_auth
+    for file in server_config_files(root):
+        text = file.read_text(encoding="utf-8")
+        for m in pattern.finditer(text):
+            path = normalize(m.group("path"))
+            method = m.group("method").upper()
+            needs_auth = "authorizer" in m.group("rest")
+            endpoints[(method, path)] = needs_auth
     return endpoints
 
 
