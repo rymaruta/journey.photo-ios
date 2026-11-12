@@ -10,7 +10,8 @@ import UIKit
 /// 切り替えは繋がったセグメント（板 Components の「表示の切替」・行った県の地図と同じ形）。
 ///
 /// - 見せる: 白い地に黒の QR（読み取れるのは明るい地の暗い点だけ）・名前・@名・一言。
-///   中身は `ProfileQRSource` が作る（今は公開プロフィールの URL。承認のあと更新できる合図に替える・2026-11-12 owner）
+///   中身は `ProfileQRSource` が作る（更新できる合図・`/qr?t=<合図>`・2026-11-12 owner 承認・札 #545）。
+///   QR の下に「QR コードを更新」→ 確かめ（前の QR に戻せないので聞く）→ 新しい QR と知らせ（資料 第10章・押す回数 2）
 /// - 読み取る: アプリの中のカメラ。**journey-photo.com の人の URL なら、この画面の上にその人の頁を開く**
 ///   （`UserProfileView`）。ほかの QR は開かない（外のサイトへ連れ出さない）。自分の QR は「あなたの QR です」と言うだけ
 ///
@@ -20,21 +21,30 @@ struct ProfileQRView: View {
     enum Mode: Hashable { case show, scan }
 
     let profile: UserProfile
-    /// QR の中身を作る所（`ProfileQRSources.current`・試験と画面写真で替えられる）
-    let source: any ProfileQRSource
+    /// QR の中身を作る所（無ければ `ProfileQRSources.current(api:)`・試験で替えられる）
+    private let given: (any ProfileQRSource)?
+    @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var toasts: ToastCenter
     @State private var mode: Mode
     /// 見せる QR の中身（読み込み中・失敗・できた）
     @State private var code: CodeState = .loading
     /// 読み取って開く人（この画面の上に積む）
     @State private var opened: OpenedPerson?
+    /// 「QR コードを更新しますか？」を出している
+    @State private var confirmingRenew = false
+    /// 更新している（2回押しで2度替えない）
+    @State private var renewing = false
 
     enum CodeState: Equatable { case loading, failed, ready(URL) }
 
-    init(profile: UserProfile, source: any ProfileQRSource = ProfileQRSources.current, startsWith mode: Mode = .show) {
+    init(profile: UserProfile, source: (any ProfileQRSource)? = nil, startsWith mode: Mode = .show) {
         self.profile = profile
-        self.source = source
+        self.given = source
         _mode = State(initialValue: mode)
     }
+
+    /// 使う中身の作り手（渡されなければ更新できる合図・`ProfileQRSources.current(api:)`）
+    private var source: any ProfileQRSource { given ?? ProfileQRSources.current(api: environment.api) }
 
     struct OpenedPerson: Hashable { let userId: String }
 
@@ -63,6 +73,15 @@ struct ProfileQRView: View {
         }
         .navigationDestination(item: $opened) { person in
             UserProfileView(userId: person.userId)
+        }
+        // シートの中なので、知らせはこの画面の上に出す（「新しい QR コードにしました」）
+        .overlay(alignment: .bottom) { ToastOverlay().padding(.bottom, JPSpace.l) }
+        // **前の QR に戻せない操作なので一度聞く**（資料 第10章・「直感的で簡単に」の物差しで確かめを出す所）
+        .confirmationDialog(ProfileQRText.renewTitle, isPresented: $confirmingRenew, titleVisibility: .visible) {
+            Button(ProfileQRText.renewConfirm) { Task { await renew() } }
+            Button(Labels.Common.cancel, role: .cancel) {}
+        } message: {
+            Text(ProfileQRText.renewMessage)
         }
     }
 
@@ -101,6 +120,9 @@ struct ProfileQRView: View {
             case .ready(let url):
                 if let image = ProfileQRImage.make(url.absoluteString) {
                     codeImage(image)
+                        // 更新したら新しい QR にふわっと替える（中身の URL が替わったときだけ・`renew()` の withAnimation）
+                        .id(url)
+                        .transition(.opacity)
                 } else {
                     failedNote
                 }
@@ -133,8 +155,11 @@ struct ProfileQRView: View {
                 .foregroundStyle(WebTheme.text2)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-            // ここに「QR コードを更新」（古い QR は使えなくなる）を置く——**承認のあとに作る**（2026-11-12 owner の要望・
-            // `ProfileQRSource.canRenew`）。今の仮の中身（公開プロフィールの URL）は取り替えられないので出さない
+            // QR の下に「QR コードを更新」（2026-11-12 owner 承認・札 #545）。止めたい人だけが押す1行で、
+            // 主ボタンにはしない（既定は何もしなくても使える）。QR が出ているときだけ出す
+            if source.canRenew, case .ready = code {
+                renewButton
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.top, JPSpace.m)
@@ -148,6 +173,42 @@ struct ProfileQRView: View {
             code = .ready(try await source.code(for: profile.userId))
         } catch {
             code = .failed
+        }
+    }
+
+    /// 「QR コードを更新」（資料 第10章の模型: 回る矢印と下線の文字・地の色は付けない・押せる高さ 44pt）
+    private var renewButton: some View {
+        Button { confirmingRenew = true } label: {
+            HStack(spacing: JPSpace.xxs) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(JPFont.caption)
+                Text(ProfileQRText.renew)
+                    .font(JPFont.caption)
+                    .underline(color: Color.white.opacity(0.25))
+            }
+            .foregroundStyle(WebTheme.text2)
+            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+            .padding(.horizontal, JPSpace.xs)
+            .contentShape(Rectangle())
+            .opacity(renewing ? 0.4 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(renewing)
+        .accessibilityIdentifier("profileQR.renew")
+    }
+
+    /// 新しい合図にする。うまくいったら QR を差し替え（ふわっと入れ替える）、知らせを出す。
+    /// 失敗したら今の QR はそのまま（前の QR はまだ使える）で、失敗の知らせだけ
+    private func renew() async {
+        guard !renewing else { return }
+        renewing = true
+        defer { renewing = false }
+        do {
+            let url = try await source.renew(for: profile.userId)
+            withAnimation(.easeInOut(duration: 0.25)) { code = .ready(url) }
+            toasts.show(ProfileQRText.renewed)
+        } catch {
+            toasts.show(ProfileQRText.renewFailed, kind: .failure)
         }
     }
 
@@ -210,8 +271,25 @@ enum ProfileQRText {
     static var cannotMake: String { L("QR を作れませんでした", "Couldn't make the QR code") }
     static var retry: String { L("もう一度", "Try again") }
     static var loading: String { L("QR を用意しています", "Preparing your QR code") }
+    /// 使えない合図を読んだとき（資料 第10章「古い QR を読んだとき」。Web の `/qr` の頁と同じ言葉）
     static var passNotValid: String {
-        L("この QR は使えなくなっています", "This QR code is no longer valid")
+        L("この QR コードは使えません。相手に新しい QR コードを出してもらってください",
+          "This QR code can't be used. Ask them to show you a new one")
+    }
+    /// 合図を確かめられなかった（圏外など）。「使えません」とは言わない
+    static var passCheckFailed: String {
+        L("QR コードを確かめられませんでした。電波のよい所でもう一度読み取ってください",
+          "Couldn't check this QR code. Try scanning again with a better connection")
+    }
+    static var renew: String { L("QR コードを更新", "Update QR code") }
+    static var renewTitle: String { L("QR コードを更新しますか？", "Update your QR code?") }
+    static var renewMessage: String {
+        L("今の QR コードとリンクは使えなくなります", "Your current QR code and link will stop working")
+    }
+    static var renewConfirm: String { L("更新する", "Update") }
+    static var renewed: String { L("新しい QR コードにしました", "Your QR code has been updated") }
+    static var renewFailed: String {
+        L("QR コードを更新できませんでした。もう一度お試しください", "Couldn't update your QR code. Please try again")
     }
     static func codeLabel(_ name: String) -> String {
         L("\(name) のプロフィールの QR", "Profile QR code for \(name)")
@@ -247,6 +325,8 @@ struct ProfileQRScanPane: View {
     @Environment(\.openURL) private var openURL
     /// 読んだものが人の QR ではなかった・自分の QR だった（一言を替える）
     @State private var note: String?
+    /// 一言が失敗の知らせか（使えない合図・確かめられなかった）。失敗は起きた所（小窓）のすぐ下に danger の字で出す
+    @State private var noteIsFailure = false
 
     var body: some View {
         VStack(spacing: JPSpace.m) {
@@ -292,12 +372,24 @@ struct ProfileQRScanPane: View {
                     .stroke(Color.white.opacity(scanner.state == .running ? 0.9 : 0.14), lineWidth: JPStroke.emphasis)
             }
             .accessibilityIdentifier("profileQR.camera")
-            Text(note ?? ProfileQRText.scanHint)
-                .font(JPFont.caption)
-                .foregroundStyle(note == nil ? WebTheme.text2 : WebTheme.text)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("profileQR.scanNote")
+            Group {
+                if noteIsFailure, let note {
+                    // 板の「失敗の知らせの置き場所」: 起きた所のすぐ下に danger の字（印つき）
+                    Label {
+                        Text(note)
+                    } icon: {
+                        Image(systemName: "exclamationmark.circle")
+                    }
+                    .foregroundStyle(WebTheme.danger)
+                } else {
+                    Text(note ?? ProfileQRText.scanHint)
+                        .foregroundStyle(note == nil ? WebTheme.text2 : WebTheme.text)
+                }
+            }
+            .font(JPFont.caption)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("profileQR.scanNote")
         }
         .frame(maxWidth: .infinity)
         .padding(.top, JPSpace.m)
@@ -305,6 +397,7 @@ struct ProfileQRScanPane: View {
         .onDisappear { scanner.stop() }
         .onChange(of: scanner.lastCode) { _, code in
             guard let code else { return }
+            noteIsFailure = false
             switch ProfileQRScanResult.of(code, myUserId: myUserId) {
             case .person(let userId):
                 note = nil
@@ -318,7 +411,16 @@ struct ProfileQRScanPane: View {
             case .pass(let pass):
                 // 更新できる QR の合図（承認のあと）。引けたら人として扱い、引けない（古い・取り消された）なら一言
                 Task { @MainActor in
-                    let userId = try? await source.resolve(pass: pass)
+                    let userId: String?
+                    do {
+                        userId = try await source.resolve(pass: pass)
+                    } catch {
+                        // 圏外・口の不調は「使えません」と言わない（使える QR を使えないと言わない）
+                        guard scanner.lastCode == code else { return }
+                        note = ProfileQRText.passCheckFailed
+                        noteIsFailure = true
+                        return
+                    }
                     // 待つ間に別の QR を読んでいたら、古い答えは使わない
                     guard scanner.lastCode == code else { return }
                     switch ProfileQRScanResult.resolved(userId, myUserId: myUserId) {
@@ -329,6 +431,7 @@ struct ProfileQRScanPane: View {
                         note = ProfileQRText.yours
                     case .other, .pass:
                         note = ProfileQRText.passNotValid
+                        noteIsFailure = true
                     }
                 }
             }

@@ -142,6 +142,10 @@ enum PreviewBackend {
         fileprivate func removeComment(_ id: String, _ cid: String) {
             comments[id]?.removeAll { ($0["id"] as? String) == cid }
         }
+        /// プロフィールの QR の合図（`GET /user/qr`・`POST /user/qr/rotate`・2026-11-12 札 #545）。更新のたびに数を進める
+        private var qrGeneration = 1
+        fileprivate func qrToken() -> String { PreviewBackend.qrToken(qrGeneration) }
+        fileprivate func renewQR() -> String { qrGeneration += 1; return PreviewBackend.qrToken(qrGeneration) }
         fileprivate func blob(_ key: String) -> Data? { blobs[key] }
         fileprivate func setBlob(_ key: String, _ data: Data) { blobs[key] = data }
     }
@@ -300,9 +304,21 @@ enum PreviewBackend {
             let users = dmFollowing(feed: await publicFeed(), me: uid)
             return .json(["users": users, "total": users.count])
 
+        // プロフィールの QR（2026-11-12 札 #545）。合図は見本の決まった形（本物は 24 バイトの乱数）。更新すると替わる
+        case ("GET", let p) where p == ["user", "qr"]:
+            return .json(["token": store.with { $0.qrToken() }, "issuedAt": stamp])
+        case ("POST", let p) where p == ["user", "qr", "rotate"]:
+            return .json(["token": store.with { $0.renewQR() }, "issuedAt": stamp])
+
         default:
             return .unsupported
         }
+    }
+
+    /// 見本の QR の合図（32 字の base64url の形・世代ごとに替わる）
+    static func qrToken(_ generation: Int) -> String {
+        let head = "previewQR\(generation)"
+        return head + String(repeating: "x", count: max(0, 32 - head.count))
     }
 
     // MARK: - メッセージの見本（2026-11-10 札 #505）

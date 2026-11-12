@@ -69,8 +69,13 @@ def normalize(path: str) -> str:
 
 
 def server_endpoints(root: Path):
-    """`api-user/serverless.yml` から (メソッド, パス, 認証が要るか) を拾う。"""
-    text = (root / "api-user" / "serverless.yml").read_text(encoding="utf-8")
+    """`api-user/serverless.yml` から (メソッド, パス, 認証が要るか) を拾う。
+
+    user API の HTTP API に経路を足す別のスタック（`serverless.<名前>.yml`・部品の上限 500 のために分けた。
+    2026-11-12 のプロフィールの QR `serverless.profile-qr.yml`）も同じ口として読む。
+    """
+    files = [root / "api-user" / "serverless.yml"] + sorted((root / "api-user").glob("serverless.*.yml"))
+    text = "\n".join(f.read_text(encoding="utf-8") for f in files)
     endpoints = {}
     # httpApi の各項目は path → method → （あれば）authorizer の順で並ぶ
     pattern = re.compile(

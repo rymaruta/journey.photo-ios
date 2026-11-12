@@ -7,12 +7,13 @@ import Foundation
 /// `/users?id=<id>`** を入れる——登録したばかりで投稿の無い人の `/users/<id>` は、次のビルドまで 404 になる。
 /// （指示にあった `/u/…` の形は Web に無い。2026-11-12 に `journey.photo-web` の main の `lib/routes.ts` で確かめた）
 ///
-/// 🔴 **2026-11-12 owner の要望: LINE のように QR を「更新」でき、古い QR は使えなくなる形にする（悪用を防ぐ）。**
-/// そのときの中身は取り替えられる合図（`/qr/<合図>`）で、サーバーの口と DB の行が要る（owner の承認待ち）。だから:
-/// - QR に入れる中身を作るのは `ProfileQRSource` の1か所だけ。今は公開プロフィールの URL を返す仮の実装
-///   （`PublicProfileQRSource`）。承認のあとは合図を返す実装に替えるだけで、画面は変えない
-/// - 読み取った文字を見分けるのは `ProfileQRLink.parse` の1か所だけ。`/qr/<合図>` も今から見分ける
-///   （引くのは `ProfileQRSource.resolve`。今は引けないので「使えなくなった QR」と言う）
+/// 🔴 **2026-11-12 owner の要望・承認（「DB の変更してもいいけどね」・札 #545）: LINE のように QR を「更新」でき、
+/// 古い QR は使えなくなる形にした（悪用を防ぐ）。** 中身は取り替えられる合図（`/qr?t=<合図>`・`ProfileQR.passURL`）で、
+/// サーバーの口（`GET /user/qr`・`POST /user/qr/rotate`・`GET /qr/{合図}`。user API とは別のスタック）が持つ:
+/// - QR に入れる中身を作るのは `ProfileQRSource` の1か所だけ。アプリは `ServerProfileQRSource`（合図）を使う。
+///   公開プロフィールの URL の実装（`PublicProfileQRSource`）は前の版の QR を読むために形だけ残す
+/// - 読み取った文字を見分けるのは `ProfileQRLink.parse` の1か所だけ。合図は `ProfileQRSource.resolve` で人に引き、
+///   引けない（更新された・退会した）ときは「この QR コードは使えません」
 ///
 /// 読み取りはアプリの中のカメラ。**journey-photo.com の人の URL だけ**をアプリの人の頁で開く（ほかの QR は開かない）。
 /// iPhone のカメラで読んだときにアプリが開く（Associated Domains・第2段）は作らない——Apple の設定が要る
@@ -40,6 +41,18 @@ enum ProfileQR {
         return nil
     }
 
+    /// 取り替えられる合図を入れた URL（`https://journey-photo.com/qr?t=<合図>`・2026-11-12 札 #545）。
+    /// Web の `/qr` の頁が `GET /qr/{合図}` で人を引いて人の頁へ送る。合図が URL に入れられない形なら nil。
+    /// 2026-11-12 判断: 設計の案は `/q?t=` だったが、Web の `/q` は今日の一問の頁なので `/qr` に置いた（静的な書き出しなので
+    /// パスではなくクエリ・共同アルバムの招待 `/j?t=` と同じ形）
+    static func passURL(token: String, base: URL = AppConfig.siteBaseURL) -> URL? {
+        guard PathID.isSafe(token),
+              var parts = URLComponents(url: base.appendingPathComponent("qr"), resolvingAgainstBaseURL: false)
+        else { return nil }
+        parts.queryItems = [URLQueryItem(name: "t", value: token)]
+        return parts.url
+    }
+
     /// `/users/` の下にある、人ではない頁（Web の `app/users/search`・`app/users/trip`）
     static let notPeople: Set<String> = ["search", "trip"]
 }
@@ -48,10 +61,10 @@ enum ProfileQR {
 enum ProfileQRLink: Equatable {
     /// 人の頁の URL（`/users?id=<id>`・`/users/<id>`・`/u/<id>`）
     case person(String)
-    /// 取り替えられる合図（`/qr/<合図>`・更新できる QR・承認のあとサーバーで人に引く）
+    /// 取り替えられる合図（`/qr?t=<合図>`・更新できる QR・サーバーの `GET /qr/{合図}` で人に引く）
     case pass(String)
 
-    /// 読める形: `/users?id=<id>`・`/users/<id>`（静的な頁）・`/u/<id>`（短い形・第2段のため）・`/qr/<合図>`。
+    /// 読める形: `/users?id=<id>`・`/users/<id>`（静的な頁）・`/u/<id>`（短い形・第2段のため）・`/qr?t=<合図>`（更新できる QR）・`/qr/<合図>`。
     /// `/users/search`・`/users/trip` は人の頁ではないので読まない。id と合図は API のパスに入れられる形だけ（`PathID`）。
     /// **journey-photo.com（と今のサイト）の https/http でなければ nil**——外のサイトへ連れ出さない
     static func parse(_ text: String, base: URL = AppConfig.siteBaseURL) -> ProfileQRLink? {
@@ -65,6 +78,9 @@ enum ProfileQRLink: Equatable {
         switch segments.count {
         case 1 where segments[0] == "users":
             link = parts.queryItems?.first(where: { $0.name == "id" })?.value.map(ProfileQRLink.person)
+        case 1 where segments[0] == "qr":
+            // 更新できる QR の中身（`ProfileQR.passURL`・2026-11-12）
+            link = parts.queryItems?.first(where: { $0.name == "t" })?.value.map(ProfileQRLink.pass)
         case 2 where segments[0] == "users" && !ProfileQR.notPeople.contains(segments[1]):
             link = segments[1].removingPercentEncoding.map(ProfileQRLink.person)
         case 2 where segments[0] == "u":
@@ -93,10 +109,13 @@ enum ProfileQRLink: Equatable {
 protocol ProfileQRSource {
     /// 自分の QR に入れる URL。作れないときは投げる（画面は「作れませんでした・もう一度」）
     func code(for userId: String) async throws -> URL
-    /// 合図（`/qr/<合図>`）を人の id に引く。引けない（古い・取り消された）なら nil
+    /// 合図（`/qr?t=<合図>`）を人の id に引く。引けない（古い・取り消された）なら nil。通信の失敗は投げる
+    /// （圏外で「使えません」と言わない）
     func resolve(pass: String) async throws -> String?
-    /// 「QR コードを更新」を出すか。更新すると古い QR は使えなくなる（承認のあと true の実装に替える）
+    /// 「QR コードを更新」を出すか。更新すると古い QR は使えなくなる
     var canRenew: Bool { get }
+    /// 新しい合図にして、その URL を返す。前の QR とリンクはすぐ使えなくなる（`canRenew` のときだけ呼ぶ）
+    func renew(for userId: String) async throws -> URL
 }
 
 enum ProfileQRSourceError: Error, Equatable {
@@ -115,9 +134,11 @@ struct PublicProfileQRSource: ProfileQRSource {
     func resolve(pass: String) async throws -> String? { nil }
 
     var canRenew: Bool { false }
+
+    func renew(for userId: String) async throws -> URL { throw ProfileQRSourceError.cannotMake }
 }
 
 enum ProfileQRSources {
-    /// アプリが使う中身の作り手。承認のあとはここを合図の実装に替える
-    static let current: any ProfileQRSource = PublicProfileQRSource()
+    /// アプリが使う中身の作り手（更新できる合図・2026-11-12 owner 承認）。API の口は画面の環境から渡す
+    static func current(api: APIClient) -> any ProfileQRSource { ServerProfileQRSource(api: api) }
 }

@@ -1416,6 +1416,7 @@ final class ScreenshotTests: XCTestCase {
     /// 入口は設定の「新しくなったこと」の行（`settings.whatsNew`）。設定は全部の版を `mode: .history` で渡すので、
     /// 2枚目（「これまでのお知らせ」と版の区切りの見出し）まで撮れる。シートが開いたのに履歴が無ければ落とす
     /// プロフィールの QR（札 #545・2026-11-12）: マイページの名前の横の印 → 1枚の画面で「自分の QR」と「読み取る」。
+    /// 「QR コードを更新」→ 確かめ → 新しい QR と知らせも撮る（見本の通信 `PreviewBackend` が合図を替える）。
     /// シミュレータにはカメラが無いので、読み取るは「この端末ではカメラを使えません」の状態を撮る
     func testCapturesProfileQR() {
         let app = XCUIApplication()
@@ -1443,6 +1444,21 @@ final class ScreenshotTests: XCTestCase {
         guard code.waitForExistence(timeout: 10) else { return XCTFail("QR の画面に自分の QR が出ない") }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "120a-プロフィールの QR（自分の QR）")
+        // QR の下の「QR コードを更新」→ 確かめ → 新しい QR と知らせ（2026-11-12 札 #545・見本の通信が合図を替える）
+        let renew = app.buttons["profileQR.renew"].firstMatch
+        guard renew.waitForExistence(timeout: 5) else { return XCTFail("QR の下に「QR コードを更新」が無い") }
+        XCTAssertGreaterThanOrEqual(renew.frame.height, 44, "「QR コードを更新」が 44pt 未満")
+        renew.tap()
+        let confirm = app.buttons["更新する"].firstMatch
+        guard confirm.waitForExistence(timeout: 5) else { return XCTFail("更新の確かめが出ない") }
+        Thread.sleep(forTimeInterval: 0.5)
+        shoot(app, "120c-プロフィールの QR（更新の確かめ）")
+        confirm.tap()
+        let toast = app.descendants(matching: .any)["toast"].firstMatch
+        guard toast.waitForExistence(timeout: 10) else { return XCTFail("更新したのに知らせが出ない") }
+        XCTAssertTrue(toast.label.contains("新しい QR コードにしました") || app.staticTexts["新しい QR コードにしました"].exists,
+                      "知らせの言葉が違う: \(toast.label)")
+        shoot(app, "120d-プロフィールの QR（新しい QR）")
         let scan = app.buttons["profileQR.mode.scan"].firstMatch
         guard scan.waitForExistence(timeout: 5) else { return XCTFail("読み取るへの切り替えが無い") }
         XCTAssertGreaterThanOrEqual(scan.frame.height, 44, "切り替えが 44pt 未満")
