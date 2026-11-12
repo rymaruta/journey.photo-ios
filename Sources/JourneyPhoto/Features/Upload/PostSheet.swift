@@ -224,9 +224,9 @@ struct PostSheet: View {
     /// 写真は敷かない黒い札（surface-3・`RaisedTile`）。構図の印だけ真鍮（黒い札の上）、カメラの印は白
     private var cameraSplit: some View {
         HStack(spacing: JPSpace.xs) {
-            cameraTile(title: Self.cameraTitle, systemImage: "camera", kind: .camera, accentIcon: false)
-            cameraTile(title: L("構図を重ねて撮る", "Composition guide"), systemImage: "camera.viewfinder",
-                       kind: .composition, accentIcon: true)
+            cameraTile(title: Self.cameraTitle, wrapped: nil, systemImage: "camera", kind: .camera, accentIcon: false)
+            cameraTile(title: Self.compositionTitle, wrapped: Self.compositionTitleWrapped,
+                       systemImage: "camera.viewfinder", kind: .composition, accentIcon: true)
         }
         .padding(.vertical, JPSpace.s)
         .overlay(alignment: .bottom) {
@@ -234,7 +234,13 @@ struct PostSheet: View {
         }
     }
 
-    private func cameraTile(title: String, systemImage: String, kind: Kind, accentIcon: Bool) -> some View {
+    /// 「構図を重ねて撮る」の題と、入らないときの2行の形（言葉の切れ目で折る）。
+    /// 2026-11-12 確かめ役: 390〜402 幅の端末では1行に入らず、ふつうに折ると「構図を重ねて撮／る」と1字だけ落ちる
+    static var compositionTitle: String { L("構図を重ねて撮る", "Composition guide") }
+    static var compositionTitleWrapped: String { L("構図を重ねて\n撮る", "Composition\nguide") }
+
+    private func cameraTile(title: String, wrapped: String?, systemImage: String, kind: Kind,
+                            accentIcon: Bool) -> some View {
         Button {
             onSelect(kind)
             dismiss()
@@ -244,12 +250,19 @@ struct PostSheet: View {
                     .font(.system(size: 20, weight: .regular))
                     .foregroundStyle(Self.iconColor(hasPhoto: false, accent: accentIcon))
                     .accessibilityHidden(true)
-                Text(title)
-                    .font(JPFont.bodyEmphasis)
-                    .foregroundStyle(WebTheme.text)
-                    .lineLimit(2)
-                    .minimumScaleFactor(WebTheme.minimumScale(forTextSize: JPTypeScale.body))
-                    .fixedSize(horizontal: false, vertical: true)
+                // 1行に入ればそのまま、入らなければ言葉の切れ目で2行（`ViewThatFits` が幅で選ぶ）
+                ViewThatFits(in: .horizontal) {
+                    Text(title)
+                        .lineLimit(1)
+                        .fixedSize()
+                    Text(wrapped ?? title)
+                        .lineLimit(wrapped == nil ? 2 : nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .font(JPFont.bodyEmphasis)
+                .foregroundStyle(WebTheme.text)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(title)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 14)

@@ -23,6 +23,18 @@ enum UploadSummary {
         queue.firstIndex(where: { failed.contains($0) }).map { $0 + 1 }
     }
 
+    /// 送り終えたあとに「n枚目からもう一度」を出す番号。**やめた回は出さない**（自分で止めたのに
+    /// 送り直しを勧めない・2026-11-12 確かめ役）。送れなかった写真が無ければ nil
+    static func resendAfterSubmit<ID: Equatable>(queue: [ID], failed: [ID], cancelled: Bool) -> Int? {
+        cancelled ? nil : resendStart(queue: queue, failed: failed)
+    }
+
+    /// 写真の並び（id の順）が変わっていなければ、送り直しの番号を残してよい。外した・足した・並べ替えたら下ろす
+    /// （題や説明を直しただけなら残す）
+    static func keepsResend<ID: Equatable>(old: [ID], new: [ID]) -> Bool {
+        old == new
+    }
+
     /// 圏外のときの一言（案 02）。書いた物は残っている・つながれば送れる、を言う（トーストにしない）
     static var offlineNote: String {
         L("圏外のため送れません。書いた内容は残っています。つながると「投稿する」で送れます。",

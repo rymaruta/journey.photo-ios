@@ -60,10 +60,12 @@ enum UploadDetails {
     /// ストーリーの「誰に見せる？」は下の一言が別なので、名前に入れたまま（`locationToggleTitle`）
     static var uploadLocationToggleTitle: String { L("撮影地の位置を付ける", "Attach the place's location") }
 
-    /// 投稿の画面の切り替えの下の一言。オンは「約1kmに丸めて地図に載せます」、オフは前のまま
+    /// 投稿の画面の切り替えの下の一言。オンは「約1kmに丸めて地図に載せます」、オフは前のまま。
+    /// オンも言い切らない——書き換えた撮影地には写真の位置を付けないことがある（2026-10-18 の決まり・`PlaceCoordsRule`）
     static func uploadLocationToggleNote(attaches: Bool) -> String {
         attaches
-            ? L("約1kmに丸めて地図に載せます", "Rounded to about 1 km and put on the map.")
+            ? L("約1kmに丸めて地図に載せます（撮影地を書き換えると載せないことがあります）",
+                "Rounded to about 1 km and put on the map (editing the place may keep it off).")
             : locationToggleNote(attaches: false)
     }
 

@@ -406,6 +406,11 @@ final class UploadViewModel: ObservableObject {
             // （外した・選び直した・投稿した・`reset()`。どの道でもここを通る）
             let inUse = Set(items.compactMap(\.editSource))
             if inUse != editSources.urls { editSources.keep(only: inUse) }
+            // 写真の並びが変わったら「n枚目からもう一度」は下ろす（番号が今の並びと合わなくなる・2026-11-12）
+            if resendFrom != nil,
+               !UploadSummary.keepsResend(old: oldValue.map(\.id), new: items.map(\.id)) {
+                resendFrom = nil
+            }
         }
     }
     /// 編集の元の一時ファイル。画面を閉じたら（`deinit`）全部消す
@@ -1911,7 +1916,7 @@ final class UploadViewModel: ObservableObject {
                 savedEarlier: savedEarlier), skipped: shareSkipped), dropped: inspiredDropped)
             songFailuresShown = songFailures
             // 送れなかった写真が残っていれば、そこからの送り直しを出す（やめた回・送れなかった写真が無い回は出さない）
-            resendFrom = UploadSummary.resendStart(queue: queue, failed: failedIds)
+            resendFrom = UploadSummary.resendAfterSubmit(queue: queue, failed: failedIds, cancelled: cancelled)
         }
     }
 

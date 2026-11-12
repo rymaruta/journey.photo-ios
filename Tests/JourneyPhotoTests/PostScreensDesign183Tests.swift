@@ -166,8 +166,57 @@ final class PostScreensDesign183Tests: XCTestCase {
         let model = try source("Features/Upload/UploadViewModel.swift")
         let submit = slice(model, from: "func submit() async {", to: "private func makeDraft(")
         assertInOrder(["resendFrom = nil", "failedIds.append(item.id)",
-                       "resendFrom = UploadSummary.resendStart(queue: queue, failed: failedIds)"], in: submit,
+                       "resendFrom = UploadSummary.resendAfterSubmit(queue: queue, failed: failedIds, cancelled: cancelled)"], in: submit,
                       "送れなかった番号")
+    }
+
+    // MARK: - 確かめ役の直し（2026-11-12）
+
+    /// 「構図を重ねて撮る」は 390〜402 幅で1行に入らない。1字落ちにせず、言葉の切れ目の2行の形を並べる
+    func testCompositionTitleWrapsAtWordBreak() async throws {
+        XCTAssertEqual(PostSheet.compositionTitle, "構図を重ねて撮る")
+        XCTAssertEqual(PostSheet.compositionTitleWrapped, "構図を重ねて\n撮る")
+        XCTAssertEqual(PostSheet.compositionTitleWrapped.replacingOccurrences(of: "\n", with: ""), PostSheet.compositionTitle)
+        let sheet = try source("Features/Upload/PostSheet.swift")
+        let tile = slice(sheet, from: "private func cameraTile(", to: "private var draftsLine")
+        assertInOrder(["ViewThatFits(in: .horizontal) {", "Text(title)", ".lineLimit(1)", ".fixedSize()",
+                       "Text(wrapped ?? title)"], in: tile, "カメラの札の題")
+        XCTAssertTrue(sheet.contains("wrapped: Self.compositionTitleWrapped"))
+        // 読み上げは折り目の無い題
+        XCTAssertTrue(tile.contains(".accessibilityLabel(title)"))
+    }
+
+    /// 撮影地の位置のオンの一言は言い切らない（2026-10-18 の決まり・`PlaceCoordsRule`）
+    func testLocationNoteKeepsCaveat() async {
+        XCTAssertTrue(UploadDetails.uploadLocationToggleNote(attaches: true).contains("撮影地を書き換えると載せないことがあります"))
+    }
+
+    /// 「n枚目からもう一度」は、やめた回は立てない・写真の並びが変わったら下ろす
+    func testResendIsDroppedWhenCancelledOrReordered() async throws {
+        XCTAssertNil(UploadSummary.resendAfterSubmit(queue: ["a", "b"], failed: ["b"], cancelled: true))
+        XCTAssertEqual(UploadSummary.resendAfterSubmit(queue: ["a", "b"], failed: ["b"], cancelled: false), 2)
+        XCTAssertTrue(UploadSummary.keepsResend(old: ["b", "c"], new: ["b", "c"]), "題を直しただけで下ろしている")
+        XCTAssertFalse(UploadSummary.keepsResend(old: ["b", "c"], new: ["c", "b"]), "並べ替えても残っている")
+        XCTAssertFalse(UploadSummary.keepsResend(old: ["b", "c"], new: ["b"]), "外しても残っている")
+        XCTAssertFalse(UploadSummary.keepsResend(old: ["b"], new: ["b", "d"]), "足しても残っている")
+        let model = try source("Features/Upload/UploadViewModel.swift")
+        let items = slice(model, from: "@Published var items: [PendingPhoto] = [] {", to: "let editSources")
+        assertInOrder(["if resendFrom != nil,", "UploadSummary.keepsResend(old: oldValue.map(\\.id), new: items.map(\\.id))",
+                       "resendFrom = nil"], in: items, "並びが変わったら下ろす")
+        XCTAssertTrue(model.contains("resendFrom = UploadSummary.resendAfterSubmit(queue: queue, failed: failedIds, cancelled: cancelled)"))
+    }
+
+    /// 下書きの件数は呼び手が開く前に数えて渡す（出てから数え直すと高さが跳ねる）。旅の札の「投稿済み n日」
+    func testDraftCountIsPassedAndPostedChip() async throws {
+        let root = try source("App/RootView.swift")
+        XCTAssertTrue(root.contains("PostSheet(drafts: PostSheet.draftCount(userId: auth.userId)) { kind in pendingPostChoice = kind }"))
+        let sheet = try source("Features/Upload/PostSheet.swift")
+        XCTAssertFalse(sheet.contains(".onAppear"), "シートが出てから件数を数え直している")
+        XCTAssertFalse(sheet.contains("@State private var drafts"))
+        let list = try source("Features/Trips/LibraryTripListView.swift")
+        let card = slice(list, from: "struct LibraryTripCard: View {", to: "\n}\n")
+        assertInOrder(["if postedDays > 0 {", "L(\"投稿済み \\(postedDays)日\"", ".foregroundStyle(WebTheme.foreground)",
+                       ".background(Color.black.opacity(0.55), in: Capsule())"], in: card, "投稿済みの札")
     }
 
     // MARK: - 03 下書きの一覧
