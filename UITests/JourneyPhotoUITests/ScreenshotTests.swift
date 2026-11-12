@@ -7853,25 +7853,14 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 1)
         shoot(app, sheetShown ? "120d-撮影スポット（送るシート）" : "120d-撮影スポット（送るシートが出ない）")
         XCTAssertTrue(sheetShown, "撮影スポットの右上を押しても送るシートが出ない")
-        // run 1109 で「ほかのアプリ」が Button として見つからなかった。推定で直さず、まず何として出ているかを記録する
-        let otherAny = app.descendants(matching: .any)["sendSheet.otherApps"].firstMatch
-        let copyAny = app.descendants(matching: .any)["sendSheet.copyLink"].firstMatch
-        XCTContext.runActivity(named: "120d の状態: otherApps.button=\(app.buttons["sendSheet.otherApps"].firstMatch.exists)"
-            + " otherApps.any=\(otherAny.exists) type=\(otherAny.exists ? String(otherAny.elementType.rawValue) : "-")"
-            + " frame=\(otherAny.exists ? String(describing: otherAny.frame) : "-")"
-            + " copyLink.button=\(app.buttons["sendSheet.copyLink"].firstMatch.exists) copyLink.any=\(copyAny.exists)"
-            + " sheet.frame=\(sheetShown ? String(describing: sheet.frame) : "-")"
-            + " buttons=\(app.buttons.allElementsBoundByIndex.suffix(12).map { $0.identifier + ":" + $0.label })") { _ in }
-        if !otherAny.exists {
-            // run 1119: 「sendSheet」は 30×19 の小さな要素で、行動の丸が木に無かった。木を丸ごと記録して何が出ているかを見る
-            let tree = app.debugDescription.components(separatedBy: "\n")
-            let shown = tree.filter { $0.contains("sendSheet") || $0.contains("dm.face") || $0.contains("Sheet")
-                || $0.contains("spot.official") || $0.contains("NavigationBar") || $0.contains("リンク") || $0.contains("送る") }
-            for (i, chunk) in stride(from: 0, to: shown.count, by: 8).map({ Array(shown[$0..<min($0 + 8, shown.count)]) }).enumerated() {
-                XCTContext.runActivity(named: "120d の木 \(i): " + chunk.joined(separator: " | ")) { _ in }
-            }
+        // 🔴 顔の段があるシートでは、行動の丸の道しるべが入れ物の「sendSheet」になる（Mac run 1127 の画面の木:
+        // `Button, identifier: 'sendSheet', label: 'ほかのアプリ'`・`label: 'リンクをコピー'`。顔の段の無い写真のシート（63a）では
+        // `sendSheet.otherApps` で見つかる）。丸そのものは出ているので、ここは**名前**で確かめる
+        for label in ["リンクをコピー", "ほかのアプリ"] {
+            let button = app.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
+            XCTAssertTrue(button.exists, "送るシートに「\(label)」が無い")
+            if button.exists { XCTAssertGreaterThanOrEqual(button.frame.height, 44, "「\(label)」の的が 44pt 未満") }
         }
-        XCTAssertTrue(otherAny.exists, "「ほかのアプリ」が無い（外への共有の口が消えた）")
     }
 
     /// **① 投稿したら共有カード**。見本の1枚を選んだ投稿画面（`-JPPreviewUploadSample`）で、見本の通信に投稿し、
