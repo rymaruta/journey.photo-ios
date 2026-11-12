@@ -288,6 +288,8 @@ final class ScreenStatesTests: XCTestCase {
                        "} else if choice == .failed {", "skin: .glass",
                        "} else if choice == .areaEmpty {", "actionTitle: L(\"写真全体を見る\"", "model.clearArea()",
                        "} else if choice == .empty", "} else if choice == .location",
+                       "} else if choice == .offlinePinsAndLocation, let note = locationNote {",
+                       "JPStateBand(kind: .offline", "statusCapsule(note, retry: false)",
                        "} else if choice == .offlinePins {", "前に見たピンだけを出しています"], in: line, "地図の上の帯")
         // 右の操作列に重ねない
         XCTAssertTrue(map.contains(".padding(.trailing, JPSpace.m + WebTheme.minTapTarget + JPSpace.xs)"))
@@ -309,8 +311,13 @@ final class ScreenStatesTests: XCTestCase {
                                    hasLocationNote: false, photosFailed: false), .empty, "語・カテゴリでも絞っているのに範囲の出口")
         XCTAssertEqual(V.stateBand(offline: false, loaded: true, empty: .noPlaces, areaOnly: true,
                                    hasLocationNote: false, photosFailed: false), .empty)
+        // run 1132 の記録: 電波なし・ピン 16 本・現在地の許可を待つ間、現在地の札だけで電波なしを知らせていなかった。
+        // 両方を出す（どちらも隠さない）
         XCTAssertEqual(V.stateBand(offline: true, loaded: true, empty: nil, areaOnly: false,
-                                   hasLocationNote: true, photosFailed: false), .location, "現在地の様子を電波なしで隠した")
+                                   hasLocationNote: true, photosFailed: false), .offlinePinsAndLocation,
+                       "電波なしか現在地の様子のどちらかを隠した")
+        XCTAssertEqual(V.stateBand(offline: false, loaded: true, empty: nil, areaOnly: false,
+                                   hasLocationNote: true, photosFailed: true), .location)
         XCTAssertEqual(V.stateBand(offline: true, loaded: true, empty: nil, areaOnly: false,
                                    hasLocationNote: false, photosFailed: true), .offlinePins)
         XCTAssertEqual(V.stateBand(offline: false, loaded: true, empty: nil, areaOnly: false,

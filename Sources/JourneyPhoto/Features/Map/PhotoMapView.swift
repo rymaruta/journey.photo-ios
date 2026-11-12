@@ -762,6 +762,17 @@ struct PhotoMapView: View {
         } else if choice == .location, let note = locationNote {
             // 現在地の様子が先（押した回の答えを隠さない・`loadFailedNote` の注記）
             statusCapsule(note, retry: false)
+        } else if choice == .offlinePinsAndLocation, let note = locationNote {
+            // 2026-11-12（run 1132 の記録）: 電波が無いのに現在地の札だけが出て、許可を待つ間ずっと電波なしを
+            // 知らせていなかった（choice=location offline=true location=asking・ピン 16 本）。両方を重ねて出す
+            VStack(spacing: 0) {
+                mapBand(JPStateBand(kind: .offline, title: JPStateBand.offlineTitle,
+                                    message: L("前に見たピンだけを出しています", "Showing pins you've already seen"),
+                                    skin: .glass, isBusy: model.isLoading, actionIdentifier: "map.offline.retry") {
+                    retryLoad()
+                })
+                statusCapsule(note, retry: false)
+            }
         } else if choice == .offlinePins {
             // 電波が無くても前に読めたピンはそのまま（画面は閉じない）。ピンがあるときだけここに来る
             mapBand(JPStateBand(kind: .offline, title: JPStateBand.offlineTitle,
@@ -846,6 +857,8 @@ struct PhotoMapView: View {
         case location
         /// 電波が無いが、前に読めたピンがある
         case offlinePins
+        /// 電波が無く前に読めたピンがあり、現在地の様子もある（帯の下に現在地の札を重ねる・どちらも隠さない）
+        case offlinePinsAndLocation
         /// スポットのピンは出ているが写真を読めなかった
         case photosFailed
         case none
@@ -863,8 +876,8 @@ struct PhotoMapView: View {
             case .categoryHidesSpots, .noPlaces: return .empty
             }
         }
+        if offline && loaded { return hasLocationNote ? .offlinePinsAndLocation : .offlinePins }
         if hasLocationNote { return .location }
-        if offline && loaded { return .offlinePins }
         if photosFailed { return .photosFailed }
         return .none
     }
