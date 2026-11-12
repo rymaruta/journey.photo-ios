@@ -89,7 +89,7 @@ enum SongStartStrip {
 
     /// 数字の横の「から 5秒」
     static func lengthNote(window: Int) -> String {
-        L("から \(window)秒", "· \(window)s")
+        L("から \(window)秒", "for \(window)s")
     }
 
     /// 試聴の状態（読み込み中・鳴っている・流せない・止まっている）

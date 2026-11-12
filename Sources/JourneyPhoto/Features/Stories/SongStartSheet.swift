@@ -244,7 +244,7 @@ struct SongStartSheet: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(L("流し始め", "Start point"))
         .accessibilityValue(Photo.Song.startLabel(start))
-        .accessibilityHint(L("増やす・減らすで1秒ずつ動かします", "Adjust to move by one second"))
+        .accessibilityHint(L("増やす、減らすで1秒ずつ動かします", "Adjust to move by one second"))
         .accessibilityAdjustableAction { direction in
             let next = start + (direction == .increment ? 1 : -1)
             start = min(max(0, next), Photo.Song.maxStart(window: durationSec))

@@ -79,13 +79,13 @@ struct StoryVideoTrim: Equatable {
     /// 60 秒の枠いっぱいか（反対のつまみがついてくる所・「60秒まで」の札と光の縁を出す）
     var atLimit: Bool { length >= Self.maxLength - 0.001 }
 
-    /// 長さの下の注記（2026-11-12 判断・設計の案 02）。以前は毎回2行の説明を出していた。
-    /// **60 秒を超える動画のときだけ**「60秒まで」を短く添える（「全体 2:24 · 60秒まで」）。短い動画は「全体 0:45」
-    var totalNote: String {
-        let whole = Self.label(total)
-        return total > Self.maxLength + 0.001
-            ? L("全体 \(whole) · 60秒まで", "Total \(whole) · up to 60s")
-            : L("全体 \(whole)", "Total \(whole)")
+    /// 長さの横の注記（「全体 2:24」・2026-11-12 判断・設計の案 02）。以前は毎回2行の説明を出していた
+    var totalNote: String { L("全体 \(Self.label(total))", "Total \(Self.label(total))") }
+
+    /// **60 秒を超える動画のときだけ**添える「60秒まで」。2026-11-12 owner「・」「·」で区切らない:
+    /// 「全体 2:24」とは余白（8pt）で分けて並べる
+    var limitNote: String? {
+        total > Self.maxLength + 0.001 ? L("60秒まで", "Up to 60s") : nil
     }
 
     /// 範囲の札（「0:12–1:12」）

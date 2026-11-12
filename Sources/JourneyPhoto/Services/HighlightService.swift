@@ -128,12 +128,12 @@ struct HighlightService {
         return "\(month)/\(day)"
     }
 
-    /// 格子の1枚の読み上げ（「9/12・2件目・表紙」・選んでいなければ日付だけ）
+    /// 格子の1枚の読み上げ（「9/12、2件目、表紙」・選んでいなければ日付だけ）。区切りは「、」（2026-11-12 owner・中黒で区切らない）
     static func cellLabel(day: String?, order: Int?, isCover: Bool) -> String {
         var parts: [String] = [day ?? L("ストーリー", "Story")]
         if let order { parts.append(L("\(order)件目", "#\(order)")) }
         if isCover { parts.append(L("表紙", "Cover")) }
-        return parts.joined(separator: L("・", ", "))
+        return parts.joined(separator: L("、", ", "))
     }
 
     /// 選んだ数と表紙の一文。**表紙は何件目かで言う**（直すときはサーバーが持つ

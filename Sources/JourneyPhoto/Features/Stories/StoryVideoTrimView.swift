@@ -15,7 +15,7 @@ import UIKit
 ///  - 動画は作る画面と同じく**上の面いっぱい**（下の角 24）に敷き、上の段（キャンセル 17・題 17/600・完了 17/700）を
 ///    動画の上に重ねる。以前は小さな角丸の窓に収まり、黒い余白が多かった
 ///  - 下の黒地に「長さ（白の 20pt）・範囲と全体（12pt の注記）」→ 帯 → 「−1秒／＋1秒」のチップ（見た目 32・当たり 44）
-///  - 長い説明の文は出さない。**60 秒を超える動画のときだけ**「全体 2:24 · 60秒まで」と短く（`StoryVideoTrim.totalNote`）
+///  - 長い説明の文は出さない。**60 秒を超える動画のときだけ**「全体 2:24」の横に余白を空けて「60秒まで」（`limitNote`）
 ///  - 長さの数は白（数は合図ではない・板 v2）。以前は真鍮だった
 ///  - つまみを動かしている間はつまみの上に「0:12.4」の吹き出し。60 秒の枠に当たったら枠の外に白い光の縁と「60秒まで」
 ///  - 選んだ枠を掴むと、長さを変えずに範囲ごと動かせる（`StoryVideoTrim.shift`）
@@ -236,10 +236,13 @@ struct StoryVideoTrimSheet: View {
                 .font(JPFont.mono(12, relativeTo: .caption))
                 .foregroundStyle(WebTheme.text3)
             Spacer(minLength: 0)
-            Text(trim.totalNote)
-                .font(JPFont.caption)
-                .foregroundStyle(WebTheme.text3)
-                .multilineTextAlignment(.trailing)
+            // 2026-11-12 owner「・」「·」で区切らない: 「全体 2:24」と「60秒まで」は余白 8 で分ける
+            HStack(spacing: JPSpace.xs) {
+                Text(trim.totalNote)
+                if let limit = trim.limitNote { Text(limit) }
+            }
+            .font(JPFont.caption)
+            .foregroundStyle(WebTheme.text3)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(trim.spokenSummary)

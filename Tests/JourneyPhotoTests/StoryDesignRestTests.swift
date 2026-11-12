@@ -29,9 +29,9 @@ final class StoryDesignRestTests: XCTestCase {
 
     /// 数えている間の案内・撮れなかった知らせ・録画の上限の札
     func testCameraNotes() {
-        XCTAssertEqual(StoryCameraRules.countdownNote(seconds: 3, action: .takePhoto), "3秒後に撮ります · 押すと取り消し")
-        XCTAssertEqual(StoryCameraRules.countdownNote(seconds: 10, action: .startRecording),
-                       "10秒後に録画を始めます · 押すと取り消し")
+        XCTAssertEqual(StoryCameraRules.countdownNote(seconds: 3, action: .takePhoto), "3秒後に撮ります")
+        XCTAssertEqual(StoryCameraRules.countdownNote(seconds: 10, action: .startRecording), "10秒後に録画を始めます")
+        XCTAssertEqual(StoryCameraRules.countdownCancelHint, "押すと取り消し")
         XCTAssertEqual(StoryCameraRules.failureNote, "撮れませんでした。もう一度押してください")
         XCTAssertEqual(StoryCameraRules.failureNoteSeconds, 3)
         XCTAssertEqual(StoryCameraRules.limitLabel, "/ 1:00")
@@ -99,7 +99,9 @@ final class StoryDesignRestTests: XCTestCase {
     /// 長さの下の注記: 60 秒を超える動画だけ「60秒まで」。範囲の札・吹き出しの時刻
     func testTrimLabels() {
         let long = StoryVideoTrim(total: 144, start: 12, end: 72)
-        XCTAssertEqual(long.totalNote, "全体 2:24 · 60秒まで")
+        XCTAssertEqual(long.totalNote, "全体 2:24")
+        XCTAssertEqual(long.limitNote, "60秒まで")
+        XCTAssertNil(StoryVideoTrim(total: 45).limitNote)
         XCTAssertEqual(long.rangeLabel, "0:12–1:12")
         XCTAssertEqual(StoryVideoTrim(total: 45).totalNote, "全体 0:45")
         XCTAssertEqual(StoryVideoTrim(total: 60).totalNote, "全体 1:00")
@@ -223,7 +225,7 @@ final class StoryDesignRestTests: XCTestCase {
         XCTAssertEqual(HighlightService.dayLabel("2026-10-03T23:59:59Z", calendar: utc), "10/3")
         XCTAssertNil(HighlightService.dayLabel(nil))
         XCTAssertNil(HighlightService.dayLabel("きのう"))
-        XCTAssertEqual(HighlightService.cellLabel(day: "9/12", order: 2, isCover: true), "9/12・2件目・表紙")
+        XCTAssertEqual(HighlightService.cellLabel(day: "9/12", order: 2, isCover: true), "9/12、2件目、表紙")
         XCTAssertEqual(HighlightService.cellLabel(day: "9/12", order: nil, isCover: false), "9/12")
     }
 
@@ -247,5 +249,42 @@ final class StoryDesignRestTests: XCTestCase {
         // 危険の色はテーマの赤（系統の赤を行に出さない）
         XCTAssertTrue(view.contains(".foregroundStyle(WebTheme.danger)"))
         XCTAssertFalse(view.contains("role: .destructive) {\n            showDeleteConfirm"))
+    }
+
+    // MARK: - 区切りの中黒（2026-11-12 owner）
+
+    /// この章で足した画面の文に「・」「·」の区切りを使わない（字の太さ・色と余白か改行、文の中は「、」で分ける）
+    func testNoMiddleDotSeparatorsInAddedText() throws {
+        let built = [
+            StoryCameraRules.countdownNote(seconds: 3, action: .takePhoto),
+            StoryCameraRules.countdownNote(seconds: 10, action: .startRecording),
+            StoryCameraRules.countdownCancelHint,
+            StoryCameraRules.failureNote,
+            StoryCameraRules.limitLabel,
+            StoryVideoTrim(total: 144).totalNote,
+            StoryVideoTrim(total: 144).limitNote ?? "",
+            StoryVideoTrim(total: 144).rangeLabel,
+            StoryVideoTrim.cannotOpenMessage,
+            SongStartStrip.lengthNote(window: 5),
+            HighlightService.cellLabel(day: "9/12", order: 2, isCover: true),
+            HighlightService.titleCount("金沢"),
+        ]
+        for text in built {
+            XCTAssertFalse(text.contains("·") || text.contains("・"), text)
+        }
+        // この章で書き起こした画面（全部この章の文）は、表の言葉（`L(` の行）に中黒を置かない
+        for path in ["Sources/JourneyPhoto/Features/Stories/SongStartSheet.swift",
+                     "Sources/JourneyPhoto/Features/Profile/HighlightEditorView.swift",
+                     "Sources/JourneyPhoto/Core/Text/SongStartStrip.swift"] {
+            let source = try repo(path)
+            for line in source.split(separator: "\n") where line.contains("L(\"") && !line.trimmingCharacters(in: .whitespaces).hasPrefix("//") {
+                XCTAssertFalse(line.contains("·") || line.contains("・"), "\(path): \(line)")
+            }
+        }
+        // 数えている案内・全体の注記は、字の大きさ・色と余白で分けている
+        let camera = try repo("Sources/JourneyPhoto/Features/Stories/StoryCameraView.swift")
+        XCTAssertTrue(camera.contains("Text(StoryCameraRules.countdownCancelHint)"))
+        let trim = try repo("Sources/JourneyPhoto/Features/Stories/StoryVideoTrimView.swift")
+        XCTAssertTrue(trim.contains("if let limit = trim.limitNote { Text(limit) }"))
     }
 }

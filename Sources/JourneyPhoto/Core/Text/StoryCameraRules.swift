@@ -277,15 +277,19 @@ enum StoryCameraRules {
     /// 準備中（映像が出る前）の部品の濃さ。部品を先に置いて沈め、映像が出たら明るくする（位置が跳ねない）
     static let preparingOpacity = 0.4
 
-    /// 数えている間の、シャッターの下の案内（「3秒後に撮ります · 押すと取り消し」）
+    /// 数えている間の、シャッターの下の案内の1行目（「3秒後に撮ります」）。
+    /// 2026-11-12 owner「・」「·」で区切らない: 取り消し方は2行目に小さい字で分ける（`countdownCancelHint`）
     static func countdownNote(seconds: Int, action: ShutterAction) -> String {
         switch action {
         case .startRecording:
-            return L("\(seconds)秒後に録画を始めます · 押すと取り消し", "Recording in \(seconds)s · Tap to cancel")
+            return L("\(seconds)秒後に録画を始めます", "Recording in \(seconds)s")
         case .takePhoto, .stopRecording:
-            return L("\(seconds)秒後に撮ります · 押すと取り消し", "Taking a photo in \(seconds)s · Tap to cancel")
+            return L("\(seconds)秒後に撮ります", "Taking a photo in \(seconds)s")
         }
     }
+
+    /// 数えている間の案内の2行目（白 72% の小さい字）
+    static var countdownCancelHint: String { L("押すと取り消し", "Tap to cancel") }
 
     /// 撮れなかった（写真・録画を始められない・録画が壊れた）ときの上の知らせ。以前は震えるだけで、目に見える知らせが無かった
     static var failureNote: String {

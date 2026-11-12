@@ -384,10 +384,22 @@ struct StoryCameraContent: View {
             .background(Color.black.opacity(0.45), in: Capsule())
     }
 
-    /// 数えている間の案内（「3秒後に撮ります · 押すと取り消し」）。読み上げは数え始めに声で知らせるので外す
+    /// 数えている間の案内。1行目「3秒後に撮ります」（白・13pt）、2行目「押すと取り消し」（白 72%・12pt）。
+    /// 2026-11-12 owner「・」「·」で区切らない: 字の大きさ・色と改行で分ける。読み上げは数え始めに声で知らせるので外す
     private var countdownNote: some View {
-        pillNote(StoryCameraRules.countdownNote(seconds: timerOption.seconds,
+        VStack(spacing: 2) {
+            Text(StoryCameraRules.countdownNote(seconds: timerOption.seconds,
                                                 action: StoryCameraRules.tapAction(mode: mode, isRecording: false)))
+                .font(JPFont.footnote)
+                .foregroundStyle(.white)
+            Text(StoryCameraRules.countdownCancelHint)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.muted2)
+        }
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, JPSpace.m)
+        .padding(.vertical, 6)
+        .background(Color.black.opacity(0.45), in: RoundedRectangle(cornerRadius: JPRadius.m))
             .fixedSize()
             .allowsHitTesting(false)
             .accessibilityHidden(true)
