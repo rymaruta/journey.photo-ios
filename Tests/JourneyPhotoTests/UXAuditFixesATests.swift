@@ -46,14 +46,15 @@ final class UXAuditFixesATests: XCTestCase {
         let header = try source("Features/Common/AppHeader.swift")
         let trailing = header.components(separatedBy: "ToolbarItem(placement: .topBarTrailing)").count - 1
         XCTAssertEqual(trailing, 1, "右の3つが別々の枠に戻っている（当たりを広げると帯が太る）")
-        XCTAssertEqual(header.components(separatedBy: ".appHeaderHitArea()").count - 1, 4,
-                       "探す・メッセージ・お知らせ・メニューのどれかの当たりが 44 になっていない")
+        // 2026-11-12: 見出しの「探す」を外した（下のタブと同じ所・案 第10章）ので3つ
+        XCTAssertEqual(header.components(separatedBy: ".appHeaderHitArea()").count - 1, 3,
+                       "メッセージ・お知らせ・メニューのどれかの当たりが 44 になっていない")
         let hit = slice(header, from: "func appHeaderHitArea()", to: "\n}\n")
         XCTAssertTrue(hit.contains(".frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)"))
         XCTAssertTrue(hit.contains(".contentShape(Rectangle())"))
         XCTAssertGreaterThanOrEqual(WebTheme.minTapTarget, 44)
         // 見た目（絵の大きさ・箱の幅）は前のまま
-        XCTAssertEqual(header.components(separatedBy: ".webToolbarIcon()").count - 1, 4)
+        XCTAssertEqual(header.components(separatedBy: ".webToolbarIcon()").count - 1, 3)
     }
 
     /// 探すはどのタブにも出す（前はホームだけで、右の枠の幅がタブごとに違い、ロゴの位置がずれた）

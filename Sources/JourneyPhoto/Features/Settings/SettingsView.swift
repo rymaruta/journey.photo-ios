@@ -150,18 +150,20 @@ struct SettingsView: View {
     /// **2026-10-18 判断（owner「設定の項目多くなってるのでわかりやすいように整理して」「キャンピングカーなどの入口は
     /// 基本的に設定の中に入れたい」）**: 使う目的ごとの少ない節に並べ直した。並びの決まりは `SettingsOutline`（テストで見張る）。
     /// 1. Pro（板 43 のとおりいちばん上・`ProSettingsSection` はそのまま）
-    /// 2. 旅の道具（旅のトランク・写真で作るキャンピングカー・すれちがい乗車券・すれちがい帳・共同アルバム・旅行プラン）
-    ///    ——マイページの「旅の記録」の札（`tripToolsCard`）の道具に、すれちがい乗車券の設定を足したもの。並びは設定の順
-    ///    （すれちがいの2つを続ける。マイページはトランク・車・アルバム・プラン・すれちがい帳の順）。マイページの行も残す
-    ///    キャンプ場は #339（2026-10-20）で外した
-    /// 3. お知らせ（プッシュ通知の入切）
-    /// 4. 公開範囲とプライバシー（ブロックした人・親しい友達・トランクを見せる）。**長い「トランクを見せる」の見本は
+    /// 2. お知らせ（プッシュ通知の入切）
+    /// 3. 公開範囲とプライバシー（ブロックした人・親しい友達・すれちがい乗車券・トランクを見せる）。**長い「トランクを見せる」の見本は
     ///    下の画面へ**（`SettingsTrunkPrivacyPage`）——いちばん上の画面の半分を占めていた
-    /// 5. 写真と撮影（いいねした写真・構図一覧・データとストレージ）。写真の控えは下の画面へ（`SettingsStoragePage`）
-    /// 6. ヘルプと規約（新しくなったこと・利用規約・問い合わせ。未ログインでも出す＝審査 1.2 の連絡先）
-    /// 7. アカウント（パスワードを変える）→ 最後にログアウトとアカウントの削除を別々の札で。
+    /// 4. 写真と撮影（構図一覧・データとストレージ）。写真の控えは下の画面へ（`SettingsStoragePage`）
+    /// 5. ヘルプと規約（新しくなったこと・利用規約・問い合わせ。未ログインでも出す＝審査 1.2 の連絡先）
+    /// 6. アカウント（パスワードを変える）→ 最後にログアウトとアカウントの削除を別々の札で。
     ///    **同じ札に並べない**（押し間違い・確認なしで効くログアウト）。危険の色は削除だけ（板: danger は削除・通報・エラー文）。
     ///    ログアウトは白い行のまま（メニューの `SiteMenuPlainRow(isQuiet:)` と同じく控えめ）
+    ///
+    /// **2026-11-12 判断（デザインの案 第10章「どこに何を置くか」）: 設定はオン・オフと決まりだけ。**
+    /// 以前の 5.「旅の道具」の節（旅のトランク・とおまわり号・すれちがい帳・共同アルバム・旅行プラン）は ≡ メニューへ移した
+    /// （`SiteMenuView`・道具の一覧はそこ1か所）。すれちがい乗車券の入り切りは、近くにいた人に届く機能なので
+    /// 「公開範囲とプライバシー」へ。いいねした写真は ≡ にあるので外した（構図一覧は `photosSection` の注記）。
+    /// 2026-10-18 の「キャンピングカーなどの入口は設定の中に」は、この案（owner「任せる」・秘書室の推奨）で替えた
     private var list: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: SettingsLayout.sectionSpacing) {
@@ -173,7 +175,6 @@ struct SettingsView: View {
                 if auth.userId != nil {
                     // 板 43 の並び: Pro がいちばん上
                     ProSettingsSection(profile: myProfile)
-                    tripToolsSection
                     notificationsSection
                     privacySection
                 }
@@ -249,47 +250,8 @@ struct SettingsView: View {
         }
     }
 
-    /// 旅の道具（2026-10-18 判断）。マイページの「旅の記録」の札（`MyPageView.tripToolsCard`）の道具＋すれちがい乗車券の設定。
-    /// 並びはすれちがいの2つを続けた設定の順（マイページとは同じでない）。
-    /// 行の形はどれも「NavigationLink＋JPRowLabel（絵なし）」。値は持つものだけ（トランクの硬貨・すれちがいの入切）
-    private var tripToolsSection: some View {
-        section(SettingsOutline.Part.tripTools.title) {
-            // ViewBuilder の子は10まで。写真で育つ2つ（トランク・車）を1つに包む
-            Group {
-                trunkRow
-                camperRow
-            }
-            JPCardDivider()
-            passRow
-            JPCardDivider()
-            NavigationLink { PassBookView() } label: {
-                JPRowLabel(title: L("すれちがい帳", "Pass book"),
-                           detail: L("旅先ですれちがった人から届いたカード",
-                                     "Cards from people you passed on your travels"))
-            }
-            .buttonStyle(JPRowButtonStyle())
-            .accessibilityIdentifier("settings.passBook")
-            JPCardDivider()
-            // 共同アルバムは「プライバシー」の札から移した（旅の仲間と写真を集める道具）
-            NavigationLink { AlbumsView() } label: {
-                JPRowLabel(title: Labels.Navigation.albums,
-                           detail: L("招待リンクで、旅の仲間と写真を集める",
-                                     "Collect photos with your travel companions via an invite link"))
-            }
-            .buttonStyle(JPRowButtonStyle())
-            .accessibilityIdentifier("settings.albums")
-            JPCardDivider()
-            NavigationLink { TripPlansView() } label: {
-                JPRowLabel(title: L("旅行プラン", "Trip plans"),
-                           detail: L("行きたい場所を、回る順に並べる",
-                                     "Put the places you want to visit in order"))
-            }
-            .buttonStyle(JPRowButtonStyle())
-            .accessibilityIdentifier("settings.plans")
-        }
-    }
-
-    /// すれちがい乗車券（板 PassSettings の戻り先が設定・2026-10-16）。2026-10-18 から「旅の道具」の札の中の1行
+    /// すれちがい乗車券（板 PassSettings の戻り先が設定・2026-10-16）。2026-11-12 から「公開範囲とプライバシー」の1行
+    /// （近くにいた人に届く機能なので。すれちがい帳は ≡ メニューの「すれちがい乗車券」から）
     private var passRow: some View {
         NavigationLink { PassSettingsView() } label: {
             // 題に「乗車券」が入るので、説明は短く（2026-10-18・呼び名を「すれちがい乗車券」にそろえた）
@@ -302,51 +264,6 @@ struct SettingsView: View {
         .accessibilityIdentifier("settings.pass")
     }
 
-    /// 写真で作るキャンピングカー「とおまわり号」（2026-10-18 owner「基本的に設定の中に入れたい」）。
-    /// 題はマイページの行と同じ。説明は頭に車の名前を足した。**設定は自分の写真を持たない**ので、行き先が自分で読む
-    /// （`CamperGarageLoader`・読めるまでは車の画面を出さず、「届いた」の判定と保存もしない）。マイページからは今までどおり読んだ写真を渡す（二重に読まない）
-    private var camperRow: some View {
-        NavigationLink {
-            CamperGarageLoader(ownerName: myProfile?.name, userId: auth.userId)
-        } label: {
-            JPRowLabel(title: L("写真で作るキャンピングカー", "Photo camper"),
-                       detail: L("\(CamperText.carName) · 旅を重ねるほど育つ車。撮るほど部品が集まる",
-                                 "\(CamperText.carName) · A camper that grows with your trips and collects parts as you shoot"))
-        }
-        .buttonStyle(JPRowButtonStyle())
-        .accessibilityIdentifier("settings.camper")
-    }
-
-    /// 旅のトランク（2026-10-18 owner「入口がわかりずらい」）。2026-10-18 から「旅の道具」の札の先頭の1行。
-    /// **口が読めたことのある人だけ**（`TrunkEntryRule.shows`）。出さないときは下の線も出さない。
-    /// 右の値は硬貨の枚数（読めていれば・ほかの行の値と同じ等幅の字）。読み上げは硬貨と貼っていないラベルの有無
-    @ViewBuilder
-    private var trunkRow: some View {
-        if TrunkEntryRule.shows(signedIn: auth.userId != nil, available: trunkAvailability.isAvailable) {
-            NavigationLink {
-                TrunkView(ownerName: myProfile?.name)
-                    .onDisappear { trunkEntry.markStale() }
-            } label: {
-                JPRowLabel(title: TrunkEntryText.title, detail: TrunkEntryText.detail,
-                           value: trunkEntry.summary.map { TrunkEntryText.coins($0.coins) })
-            }
-            .buttonStyle(JPRowButtonStyle())
-            // 押せる1つのボタンのまま、名前と値を付ける（`.ignore` で包むと VoiceOver の2回叩きで開けない）
-            .accessibilityLabel(TrunkEntryText.title)
-            .accessibilityValue(TrunkEntryText.accessibilityValue(trunkEntry.summary))
-            .accessibilityHint(TrunkEntryText.detail)
-            .accessibilityIdentifier("settings.trunk")
-            // トランクから戻ったら数を読み直す（`markStale` のときだけ読む・2026-10-18 見直し）
-            .onAppear {
-                Task {
-                    await trunkEntry.refresh(userId: auth.userId, available: trunkAvailability.isAvailable,
-                                             service: environment.trunk)
-                }
-            }
-            JPCardDivider()
-        }
-    }
-
     /// 札の中の注記（行ではない1文）
     private func note(_ text: String, color: Color) -> some View {
         Text(text)
@@ -357,7 +274,7 @@ struct SettingsView: View {
             .padding(.vertical, JPSpace.s)
     }
 
-    /// 公開範囲とプライバシー（2026-10-18 判断: 人に見せるもの・見せない人だけを集める）。
+    /// 公開範囲とプライバシー（2026-10-18 判断: 人に見せるもの・見せない人だけを集める。2026-11-12 にすれちがい乗車券を足した）。
     /// 共同アルバムは「旅の道具」へ、いいねした写真は「写真と撮影」へ移した。
     /// 「トランクを見せる」は入切と長い見本を下の画面（`SettingsTrunkPrivacyPage`）へ。行の値はいまの入切
     private var privacySection: some View {
@@ -373,6 +290,9 @@ struct SettingsView: View {
             }
             .buttonStyle(JPRowButtonStyle())
             .accessibilityIdentifier("settings.closeFriends")
+            // すれちがい乗車券の入り切り（2026-11-12 に「旅の道具」から移した・近くにいた人に届く機能）
+            JPCardDivider()
+            passRow
             // 板 TrunkPrivacy: 親しい友達の下（人に見せるかの切り替え）
             if showsTrunkPrivacy {
                 JPCardDivider()
@@ -392,20 +312,12 @@ struct SettingsView: View {
         }
     }
 
-    /// 写真と撮影（2026-10-18 判断）。いいねした写真（プライバシーの札から移した）・構図一覧・データとストレージ。
-    /// 構図一覧と控えは未ログインでも出す（今までどおり）
+    /// 写真と撮影（2026-10-18 判断）。構図一覧・データとストレージ（未ログインでも出す）。
+    /// 2026-11-12: いいねした写真は ≡ にあるので外した（設定はオン・オフと決まりだけ）。
+    /// 構図一覧（構図の説明を読む頁）は残す（2026-11-12 判断）。投稿のシートの形は第4章（投稿まわり）の担当が持ち、
+    /// カメラの中から説明の頁へ行く口はまだ無い。ここを外すと説明の頁が撮影スポットの頁の奥だけになる
     private var photosSection: some View {
         section(SettingsOutline.Part.photos.title) {
-            if auth.userId != nil {
-                // 板の文言は「お気に入り」（しおりの印）だが、アプリの画面名（01d の
-                // メニューも同じ）に揃える。しおりはアプリでは「保存」の印なので、ハート
-                NavigationLink { FavoritesView() } label: {
-                    JPRowLabel(title: Labels.Navigation.favorites)
-                }
-                .buttonStyle(JPRowButtonStyle())
-                .accessibilityIdentifier("settings.favorites")
-                JPCardDivider()
-            }
             NavigationLink { CompositionCatalogView() } label: {
                 JPRowLabel(title: L("構図一覧", "Composition guide"),
                            detail: L("構図の説明と作例の配置図を見る", "Explore compositions and illustrated examples"))
@@ -506,13 +418,13 @@ struct SettingsView: View {
 enum SettingsOutline {
 
     enum Part: String, CaseIterable {
-        case pro, tripTools, notifications, privacy, photos, help, account, danger
+        /// 2026-11-12: 「旅の道具」（`tripTools`）は ≡ メニューへ移した（`SiteMenuView`）
+        case pro, notifications, privacy, photos, help, account, danger
 
         /// 眉ラベル（危ない操作の札は見出しなし）
         var title: String? {
             switch self {
             case .pro: return "Pro"
-            case .tripTools: return L("旅の道具", "Travel tools")
             case .notifications: return L("お知らせ", "Activity")
             case .privacy: return L("公開範囲とプライバシー", "Sharing & privacy")
             case .photos: return L("写真と撮影", "Photos & shooting")
@@ -528,13 +440,10 @@ enum SettingsOutline {
             case .pro:
                 return ["settings.pro", "settings.supporterCard", "settings.nameSide", "settings.offlineTrips",
                         "settings.lightForecast", "settings.lightAlert"]
-            case .tripTools:
-                // キャンプ場の行は #339 で外した
-                return ["settings.trunk", "settings.camper", "settings.pass", "settings.passBook",
-                        "settings.albums", "settings.plans"]
             case .notifications: return ["settings.push"]
-            case .privacy: return ["settings.blocked", "settings.closeFriends", "settings.trunkPrivacy", "settings.searchHidden"]
-            case .photos: return ["settings.favorites", "settings.compositionCatalog", "settings.storage"]
+            case .privacy: return ["settings.blocked", "settings.closeFriends", "settings.pass", "settings.trunkPrivacy",
+                                   "settings.searchHidden"]
+            case .photos: return ["settings.compositionCatalog", "settings.storage"]
             case .help: return ["settings.whatsNew", "settings.legal", "settings.contact"]
             case .account: return ["settings.password"]
             case .danger: return ["settings.logout", "settings.deleteAccount"]

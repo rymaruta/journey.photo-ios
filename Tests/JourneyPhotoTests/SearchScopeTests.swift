@@ -118,13 +118,14 @@ final class SearchScopeTests: XCTestCase {
 
     // MARK: - 段
 
-    /// 板 11 の並び: 注目 → おすすめ → 色 → 季節 → 機材。無い段は飛ばす。
-    /// 「季節・時間帯から探す」（板に無い段・2026-10-03）は季節の次
+    /// 2026-11-12（案 第10章）: 撮影スポットを県から → 今日の一問 → 人気の撮影地 → おすすめ → いまの季節 →
+    /// 季節・時間帯 → 色 → 機材。無い段は飛ばす
     func testDiscoveryOrderFollowsBoard() {
         XCTAssertEqual(SearchDiscovery.sections(present: Set(SearchDiscovery.Section.allCases)),
-                       [.spots, .officialSpots, .featured, .colors, .seasonal, .shootingTime, .gear])
+                       [.officialSpots, .quiz, .spots, .featured, .seasonal, .shootingTime, .colors, .gear])
         XCTAssertEqual(SearchDiscovery.sections(present: [.gear, .seasonal, .colors]),
-                       [.colors, .seasonal, .gear])
+                       [.seasonal, .colors, .gear])
+        XCTAssertEqual(SearchDiscovery.order.first, .officialSpots, "撮影スポットを県から探す段が先頭でない")
     }
 
     /// おすすめは**ホームと同じ塊の先頭**（owner が選んだ公開写真が多いカテゴリ）

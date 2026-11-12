@@ -44,6 +44,8 @@ public final class CIContext {
     public init(options: [CIContextOption: Any]?) {}
     public func createCGImage(_ image: CIImage, from fromRect: CGRect,
                               format: CIFormat, colorSpace: CGColorSpace?) -> CGImage? { nil }
+    /// 既定の形で描く（プロフィールの QR `ProfileQRImage`・2026-11-12）
+    public func createCGImage(_ image: CIImage, from fromRect: CGRect) -> CGImage? { nil }
 }
 
 public let kCIInputImageKey = "inputImage"

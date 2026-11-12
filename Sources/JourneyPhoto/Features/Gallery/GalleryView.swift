@@ -557,6 +557,8 @@ struct GalleryView: View {
                 // 非公開にしただけ・サーバー索引が古い回は、読み直しが返るまで札に残りうる（従来どおり）
                 HomeTopCardView(themePhotos: dropped.visible(model.allPhotosForTheme),
                                 myPhotos: model.myPhotos.filter { !dropped.deleted.contains($0.id) },
+                                // 札の1枚目を人で替える（2026-11-12・`HomeTopCard.Audience`）。読めるまでは常連の並び
+                                myPhotosKnown: auth.userId != nil && model.myPhotosOwner == auth.userId,
                                 reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed,
                                 seasonShelf: $seasonShelf,
                                 scrolledAway: topCardsAway)

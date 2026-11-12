@@ -91,7 +91,7 @@
   "ScreenshotTests/testSwipesMyPageGridQuickly": 33.4,
   "ScreenshotTests/testSwipesMyPageTabs": 48.7,
   "SmokeTests/testHeaderIconHitAreaReachesBeyondTheDrawnBox": 16.1,
-  "SmokeTests/testHeaderMenuOpensAndRoutesToMap": 17.1,
+  "SmokeTests/testHeaderMenuOpensAndRoutesToSettings": 17.1,
   "SmokeTests/testLaunchesAndEveryTabDraws": 42.1,
   "SmokeTests/testNotificationsSheetCloses": 14.6,
   "StoryCaptionTests/testTappingThePhotoStartsTheCaptionAndEmptyCaptionHidesAgain": 33.0,

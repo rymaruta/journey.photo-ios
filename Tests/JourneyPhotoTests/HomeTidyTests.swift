@@ -116,11 +116,11 @@ final class HomeTidyTests: XCTestCase {
     func testTopCardsAreOneLineEach() throws {
         XCTAssertEqual(HomeTopCardView.cardHeight, 116)
         XCTAssertEqual(HomeTopCardView.lineLimit, 1, "札の字が2行に戻ると並びの背が 156 に伸びる")
-        let view = try source("Features/Gallery/HomeTopCardView.swift")
-        let card = slice(view, from: "private func card(eyebrow: String", to: "nonisolated static let cardHeight")
-        XCTAssertEqual(card.components(separatedBy: ".lineLimit(Self.lineLimit)").count - 1, 3, "題・一行・出典の3つが1行でない")
+        // 札の面は 2026-11-12 に `TopCardFace` へ切り出した（探すの今日の一問も同じ面）
+        let card = try source("Features/Gallery/TopCardFace.swift")
+        XCTAssertEqual(card.components(separatedBy: ".lineLimit(HomeTopCardView.lineLimit)").count - 1, 3, "題・一行・出典の3つが1行でない")
         XCTAssertFalse(card.contains(".lineLimit(2)"))
-        assertInOrder([".lineLimit(Self.lineLimit)", ".truncationMode(detailTruncation)"], in: card,
+        assertInOrder([".lineLimit(HomeTopCardView.lineLimit)", ".truncationMode(detailTruncation)"], in: card,
                       "出典を真ん中で切っていない（末尾のライセンス名が消える）")
     }
 

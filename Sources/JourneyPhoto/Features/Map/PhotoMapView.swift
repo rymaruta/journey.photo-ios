@@ -33,6 +33,8 @@ struct PhotoMapView: View {
     @EnvironmentObject private var hidden: ModerationStore
     /// 電波があるか（無いときは地図の上にガラスの帯・2026-11-12 第2章）
     @EnvironmentObject private var connectivity: Connectivity
+    /// 「行きたい」の鍵（地図の下の「行きたい場所 · 旅行プランを作る」・2026-11-12）
+    @EnvironmentObject private var wishlist: WishlistStore
     /// ブロック／通報があったが、まだピンから落としていない。
     /// **見ている最中には絞らない**（`FavoritesView` の `photos` の注記）——
     /// 押した元の `NavigationLink` が消えると、開いている詳細がその場で閉じ、
@@ -505,6 +507,13 @@ struct PhotoMapView: View {
         // その上に乗る
         .overlay(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 10) {
+                // 2026-11-12 判断（デザインの案 第10章「どこに何を置くか」・マップ＝計画する）: 行きたい場所があれば、
+                // 地図の下に「行きたい場所 N · 旅行プランを作る」。押すと行きたい場所の地図（選んで旅行プランを作る・
+                // `SavedSpotsMapView`）。旅行プランを作るまで 3 → 2回。札（ピン・スポット・地点）が出ている間は出さない
+                if showsWishlistLink {
+                    wishlistLink
+                        .padding(.horizontal, 16)
+                }
                 HStack(alignment: .bottom) {
                     areaControl
                     Spacer(minLength: 8)
@@ -1132,6 +1141,39 @@ struct PhotoMapView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
+    }
+
+    /// 地図の下の「行きたい場所」の口を出すか: 地図を見ていて、行きたい場所があり、札が出ていないとき
+    private var showsWishlistLink: Bool {
+        MapWishlistLink.shows(wishCount: wishlist.spotIds.count, mode: model.mode,
+                              cardShown: selected != nil || selectedOfficial != nil || chosenPlace != nil)
+    }
+
+    /// 「行きたい場所 N · 旅行プランを作る」（地図の上なのでガラスの地に白の字・CLAUDE.md「写真・地図の上は白」）
+    private var wishlistLink: some View {
+        NavigationLink {
+            MapWishlistDestination(keys: wishlist.spotIds, photos: model.photos, officialSpots: model.officialSpots,
+                                   photosKnown: model.photosKnown)
+        } label: {
+            HStack(spacing: JPSpace.xs) {
+                Image(systemName: "heart.fill")
+                    .font(.footnote)
+                    .accessibilityHidden(true)
+                Text(MapWishlistLink.title(count: wishlist.spotIds.count))
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .accessibilityHidden(true)
+            }
+            .foregroundStyle(WebTheme.foreground)
+            .padding(.horizontal, 14)
+            .frame(minHeight: WebTheme.minTapTarget)
+            .jpGlass(in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("map.wishlist")
     }
 
     /// 近くの写真へ。**現在地は端末の中だけ**（送らない・残さない）
@@ -2133,5 +2175,33 @@ struct MapPinSkeleton: View {
             try? await Task.sleep(for: JPLoadingState.revealDelay)
             revealed = true
         }
+    }
+}
+
+/// 地図の下の「行きたい場所」の口（2026-11-12・案 第10章）。出す決まりと文（試験で見る）
+enum MapWishlistLink {
+    static func shows(wishCount: Int, mode: PhotoMapViewModel.Mode, cardShown: Bool) -> Bool {
+        wishCount > 0 && mode == .map && !cardShown
+    }
+
+    static func title(count: Int) -> String {
+        L("行きたい場所 \(count) · 旅行プランを作る", "Wishlist \(count) · Plan a trip")
+    }
+}
+
+/// 行きたい場所の地図の行き先。**押されて開くときだけ並べる**（`NavigationLink` の行き先は先に作られるので、
+/// 撮影地を写真から束ねる計算を地図を描くたびにしない）。並べ方はマイページの「地図で見る」と同じ
+/// （`ProfileSections.wantedPlaces`・`OfficialWishlist.rows`・`SavedSpotsMap.split`）。引き当て先は地図の写真（公開の一覧）
+struct MapWishlistDestination: View {
+    let keys: Set<String>
+    let photos: [Photo]
+    let officialSpots: [OfficialSpot]
+    let photosKnown: Bool
+
+    var body: some View {
+        let places = ProfileSections.wantedPlaces(keys: keys, pool: photos)
+        let rows = OfficialWishlist.rows(keys: keys, index: officialSpots)
+        SavedSpotsMapView(split: SavedSpotsMap.split(places: places, officialRows: rows),
+                          officialSpots: officialSpots, photos: photos, photosKnown: photosKnown)
     }
 }

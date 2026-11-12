@@ -229,7 +229,8 @@ final class UXDeadEndsTests: XCTestCase {
     func testSavedIsCalledSaveEverywhere() async throws {
         XCTAssertEqual(ProfileTab.favorites.label, "保存")
         let menu = try source("Features/Common/SiteMenuView.swift")
-        XCTAssertTrue(menu.contains("SiteMenuRow(title: ProfileTab.favorites.label, systemImage: \"bookmark\""))
+        // 2026-11-12（デザインの案 第10章）: 保存は ≡ から外した（マイページの保存のタブと同じ所・タブと重なる行を置かない）
+        XCTAssertFalse(menu.contains("SiteMenuRow(title: ProfileTab.favorites.label"), "≡ に保存が残っている")
         XCTAssertFalse(menu.contains("保存した写真\", \"Saved photos\""))
     }
 

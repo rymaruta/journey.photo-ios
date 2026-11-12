@@ -95,6 +95,8 @@ struct MyPageView: View {
     private var deviceTrips: DeviceTripShelfStore { .shared }
     /// 名前の横の画面（名前の行を押すと開く・板 BadgePicker）
     @State private var showNameSide = false
+    /// プロフィールの QR（名前の横の印・札 #545・2026-11-12）
+    @State private var showQR = false
     /// 画面写真の試験だけの Pro の案内（`PreviewSession.opensPaywall`）。出したか・出ているか
     @State private var previewPaywallShown = false
     @State private var showPreviewPaywall = false
@@ -255,6 +257,12 @@ struct MyPageView: View {
         .sheet(isPresented: $showNameSide) {
             if let profile = model.profile {
                 NameSideBadgeView(profile: profile)
+            }
+        }
+        // プロフィールの QR（見せる／読み取るを1枚で切り替える・`ProfileQRView`）
+        .sheet(isPresented: $showQR) {
+            if let profile = model.profile {
+                NavigationStack { ProfileQRView(profile: profile) }
             }
         }
         // 画面写真の試験だけの Pro の案内（`PreviewSession.opensPaywall`・Debug のみ・1度だけ）
@@ -555,6 +563,8 @@ struct MyPageView: View {
                 HStack(alignment: .center, spacing: MyPageHeaderLayout.nameEditGap) {
                     nameLine(profile)
                         .layoutPriority(1)
+                    // 2026-11-12（owner の決定・札 #545）: **名前の横に QR の印**。マイページで変えるのはこの1点だけ
+                    qrLink()
                     Spacer(minLength: 0)
                     editLink()
                 }
@@ -621,6 +631,26 @@ struct MyPageView: View {
         .accessibilityLabel(L("プロフィールを編集", "Edit profile"))
         // 実機の絵の道しるべ（見出しが描けた＝読み込みが済んだ目印）
         .accessibilityIdentifier("mypage.edit")
+    }
+
+    /// 名前の横の QR の印（2026-11-12・owner の決定・札 #545）。押すとプロフィールの QR（見せる／読み取る）。
+    /// 黒地の上の手がかりなので真鍮（CLAUDE.md の owner の好み）。見た目は 17pt の印、当たりは 44。
+    /// 段の高さは名前の行のまま（上下へ張り出す・`editLink` と同じ）
+    private func qrLink() -> some View {
+        Button { showQR = true } label: {
+            Image(systemName: "qrcode")
+                .font(.system(size: WebTheme.toolbarIconSize, weight: .regular))
+                .foregroundStyle(WebTheme.accent)
+                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, -nameTapSlack)
+        // 名前のすぐ右に寄せる（当たりの 44 の左の余白で、名前から離れすぎない）
+        .padding(.leading, -JPSpace.s)
+        .fixedSize()
+        .accessibilityLabel(ProfileQRText.entryLabel)
+        .accessibilityIdentifier("mypage.qr")
     }
 
     /// 名前の行（板 05c・BadgePicker）: 明朝 26 の名前 → 公式の封印 → Pro マーク → 選んだバッジ。
