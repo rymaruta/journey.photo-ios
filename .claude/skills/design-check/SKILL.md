@@ -10,7 +10,9 @@ CLAUDE.md の「デザインするときは必ずデザインの板を読む」�
 ## 1. 板を読む
 
 Artifact ツールの `action: "read"` で https://claude.ai/artifact/XN38zw2BHegEU7SuxgKrr6 を読み、
-`path` に `project/DesignSystem.dc.html` と、変える画面の板（files の一覧から探す）。
+`path` に `project/DesignSystem.dc.html` と、変える画面の板（files の一覧か目次 `project/Index.dc.html` から探す）。
+この板は v2 の板（寸法・状態・動き）を統合したもの（2026-11-12）。同じ画面は `<名前>.dc.html` が v2 の決まりで正、
+`<名前>.v1.dc.html` は旧版。部品・状態・動きは `project/Components.dc.html`。別の「v2 の板」は読まない。
 読めなければ**作らずに止めて報告**する。
 
 ## 2. 決まり（板が変わっていたら板が正。ただし CLAUDE.md の owner の好みが優先）
