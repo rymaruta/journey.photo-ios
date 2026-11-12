@@ -545,4 +545,24 @@ final class ShareCardMapTests: XCTestCase {
             XCTAssertGreaterThan(layout.photoRect.height, 0)
         }
     }
+
+    // MARK: - 撮影情報の罫（2026-11-12）
+
+    /// 撮影情報の列の間の縦罫は、両側の列に字があるときだけ。無い写真では1本も描かない
+    /// （run 1194 の共有カードで、一番下に中身の無い段が縦の線だけ残っていた）
+    func testInfoDividersOnlyBetweenFilledColumns() {
+        XCTAssertEqual(ShareCardMap.infoDividerIndices(filled: [false, false, false]), [])
+        XCTAssertEqual(ShareCardMap.infoDividerIndices(filled: [true, true, true]), [0, 1])
+        XCTAssertEqual(ShareCardMap.infoDividerIndices(filled: [true, false, false]), [])
+        XCTAssertEqual(ShareCardMap.infoDividerIndices(filled: [false, true, false]), [])
+        XCTAssertEqual(ShareCardMap.infoDividerIndices(filled: [false, false, true]), [])
+        XCTAssertEqual(ShareCardMap.infoDividerIndices(filled: [true, true, false]), [0])
+        XCTAssertEqual(ShareCardMap.infoDividerIndices(filled: [false, true, true]), [1])
+        // 真ん中が空なら、空の欄を囲む線は描かない
+        XCTAssertEqual(ShareCardMap.infoDividerIndices(filled: [true, false, true]), [])
+        XCTAssertEqual(ShareCardMap.infoDividerIndices(filled: []), [])
+        // 帯の型の縦罫の x は、上の段の縦の線と、撮影値の列の 12 手前
+        let L = ShareCardMap.Layout.self
+        XCTAssertEqual(L.infoDividerXs, [L.rowDividerX, L.exposureX - 12])
+    }
 }

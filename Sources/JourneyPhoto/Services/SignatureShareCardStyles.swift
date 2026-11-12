@@ -145,8 +145,11 @@ extension SignatureShareCardRenderer {
                 let column = L.tableColumns[index]
                 drawLabeledValue(label: entry.0, value: entry.1, x: column.x, top: layout.tableTop, width: column.width)
             }
+            // 列の間の縦罫は、両側の列に字があるときだけ（2026-11-12・`ShareCardMap.infoDividerIndices`）
             cg.setStrokeColor(brass.withAlphaComponent(0.3).cgColor)
-            for x in [CGFloat(248), 456] {
+            let dividerXs: [CGFloat] = [248, 456]
+            for index in ShareCardMap.infoDividerIndices(filled: entries.map { !$0.1.isEmpty }) {
+                let x = dividerXs[index]
                 cg.move(to: CGPoint(x: x, y: layout.tableTop))
                 cg.addLine(to: CGPoint(x: x, y: layout.tableBottom))
                 cg.strokePath()

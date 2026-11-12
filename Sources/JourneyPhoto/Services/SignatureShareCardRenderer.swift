@@ -256,28 +256,29 @@ enum SignatureShareCardRenderer {
                                               in: layout.mapRect, color: brass, context: cg)
             }
 
-            // 区切り線（地図があるときは地図の手前で止める）
-            let separatorY = layout.separatorY
-            cg.setStrokeColor(lineColor)
-            cg.setLineWidth(L.lineWidth)
-            cg.move(to: CGPoint(x: L.contentLeft, y: separatorY + L.lineWidth / 2))
-            cg.addLine(to: CGPoint(x: layout.separatorEndX(hasMap: credit.coords != nil),
-                                   y: separatorY + L.lineWidth / 2))
-            cg.strokePath()
+            let exif = exifValues(credit)
+            let camera = exif.camera, lens = exif.lens, exposure = exif.exposure
+            let filled = [!camera.isEmpty, !lens.isEmpty, !exposure.isEmpty]
 
-            let camera = credit.camera?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let lens = credit.lens?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let exposure = [credit.aperture, credit.exposure,
-                            credit.iso.map { "ISO\($0)" }]
-                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }.joined(separator: "  ")
+            // 区切り線（地図があるときは地図の手前で止める）。撮影情報が1つも無ければ、下の段ごと描かない
+            // （2026-11-12 判断: 段の位置は変えない。撮影者の段は帯の開始から・地図は帯の高さいっぱいの板の決まり）
+            if filled.contains(true) {
+                let separatorY = layout.separatorY
+                cg.setStrokeColor(lineColor)
+                cg.setLineWidth(L.lineWidth)
+                cg.move(to: CGPoint(x: L.contentLeft, y: separatorY + L.lineWidth / 2))
+                cg.addLine(to: CGPoint(x: layout.separatorEndX(hasMap: credit.coords != nil),
+                                       y: separatorY + L.lineWidth / 2))
+                cg.strokePath()
+            }
             // 撮影情報は個別の箱ではなく細い縦罫線で区切る。3列の左端は上の段の縦の線にそろえる
             // （1列目＝アバターの左端・2列目＝縦線の右の印と同じ x・3列目＝地図の左端）。
-            // 縦罫は 40 の高さで、行の縦の中心に置く
+            // 縦罫は 40 の高さで、行の縦の中心に置く。両側の列に字があるときだけ描く
             let infoCenterY = layout.infoCenterY
             cg.setStrokeColor(lineColor)
             cg.setLineWidth(L.lineWidth)
-            for dividerX in [L.rowDividerX, L.exposureX - 12] {
+            for index in ShareCardMap.infoDividerIndices(filled: filled) {
+                let dividerX = L.infoDividerXs[index]
                 cg.move(to: CGPoint(x: dividerX, y: infoCenterY - 20))
                 cg.addLine(to: CGPoint(x: dividerX, y: infoCenterY + 20))
                 cg.strokePath()
