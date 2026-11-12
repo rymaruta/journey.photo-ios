@@ -52,7 +52,7 @@ struct SearchView: View {
     @State private var spotIndexRetrying = false
     /// 発見の「撮影スポット」の段の札（索引が変わったときだけ束ね直す）
     @State private var spotGroups: [SpotPrefectureIndex.Group] = []
-    /// 段で選んでいる地方
+    /// 段で選んでいる地方。nil は何も選んでいない（全国・開いたときはここから・2026-11-12 判断）
     @State private var spotRegion: String?
     /// 段の「写真｜地図」
     @State private var spotIndexMode = SpotIndexMode.photos
@@ -548,8 +548,8 @@ struct SearchView: View {
             // 出ている地方の札の表紙のために、まだ索引だけの行の詳細を読む（無ければ通信しない）。
             // 鍵は画面に出ている間だけ（出ていない間に届いて捨てた回は、戻ったときに読み直す・`coverTaskKey`）
             .task(id: SpotPrefectureIndex.coverTaskKey(
-                SpotPrefectureIndex.coverNeeds(SpotPrefectureIndex.selected(spotRegion, in: spotGroups)), onScreen: isOnScreen)) {
-                let needs = SpotPrefectureIndex.coverNeeds(SpotPrefectureIndex.selected(spotRegion, in: spotGroups))
+                SpotPrefectureIndex.coverNeeds(region: spotRegion, in: spotGroups), onScreen: isOnScreen)) {
+                let needs = SpotPrefectureIndex.coverNeeds(region: spotRegion, in: spotGroups)
                 guard isOnScreen, !needs.isEmpty else { return }
                 let merged = await environment.spots.withDetails(officialSpots, for: needs)
                 guard !Task.isCancelled, isOnScreen else { return }

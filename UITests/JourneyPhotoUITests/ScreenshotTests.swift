@@ -2936,6 +2936,76 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertLessThan(map.frame.minY, before - 20, "地図の上から払っても画面が流れない")
     }
 
+    /// **開いたときは何も選んでいない**（2026-11-12 owner「なんも押してないのに県を選ぶというのわかりづらいな。ガイドもないし」）。
+    ///
+    /// 1. 「写真」: チップは先頭の「全国」だけが選ばれた形（地方のチップは選ばれていない）
+    /// 2. 「地図」: 右の札は「全国」と「地方を押すと、ここに出ます」・「〇〇をすべて見る」は無い。撮る
+    /// 3. 地図の上の名前の札「近畿 ›」を1回押すと、札が近畿になり「近畿をすべて見る」が出る。撮る
+    ///
+    /// 直しを戻す（件数のいちばん多い地方を選んでおく）と、1 で地方のチップが選ばれ、2 で一言が無く「すべて見る」が出て落ちる。
+    /// 段が出なければ撮らない（この試験の決まり）
+    func testSearchSpotMapStartsWithNothingSelected() {
+        let app = XCUIApplication()
+        // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 1 else { return }
+        tabBar.buttons.element(boundBy: 1).tap()
+
+        let block = app.otherElements["search.spotIndex.block"].firstMatch
+        guard block.waitForExistence(timeout: 30) else { return }
+        let mapTab = app.buttons["search.spotIndex.mode.map"].firstMatch
+        guard mapTab.waitForExistence(timeout: 5) else { return }
+        let firstCard = app.buttons.matching(identifier: "search.spotIndex.prefecture").firstMatch
+        var swipes = 0
+        while !(mapTab.isHittable && firstCard.isHittable), swipes < 6 {
+            app.swipeUp(velocity: .slow)
+            Thread.sleep(forTimeInterval: 1)
+            swipes += 1
+        }
+        guard mapTab.isHittable, firstCard.isHittable else { return }
+
+        // 1. 写真: 「全国」だけが選ばれている
+        let all = app.buttons["search.spotIndex.region.all"].firstMatch
+        XCTAssertTrue(all.waitForExistence(timeout: 5), "先頭の「全国」のチップが無い")
+        print("spotIndex.allChip selected=\(all.isSelected)")
+        XCTAssertTrue(all.isSelected, "開いたときに「全国」が選ばれていない")
+        let chips = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'search.spotIndex.region.' AND identifier != 'search.spotIndex.region.all'"))
+        let picked = (0..<chips.count).map { chips.element(boundBy: $0) }.filter(\.isSelected).map(\.identifier)
+        print("spotIndex.selectedChips \(picked)")
+        XCTAssertTrue(picked.isEmpty, "何も押していないのに地方のチップが選ばれている: \(picked)")
+
+        // 2. 地図: 何も塗らず、右の札は「全国」と一言
+        mapTab.tap()
+        let map = app.descendants(matching: .any).matching(identifier: "search.spotIndex.map").firstMatch
+        XCTAssertTrue(map.waitForExistence(timeout: 5), "「地図」に替えても地図が出ない")
+        Thread.sleep(forTimeInterval: 1)
+        let hint = app.staticTexts["search.spotIndex.mapHint"].firstMatch
+        let seeAll = app.buttons["search.spotIndex.mapSeeAll"].firstMatch
+        print("spotMap.idle hint=\(hint.exists) seeAll=\(seeAll.exists) mapFrame=\(map.frame)")
+        XCTAssertTrue(hint.waitForExistence(timeout: 3), "何も選んでいないときの一言（地方を押すと、ここに出ます）が無い")
+        XCTAssertFalse(seeAll.exists, "何も押していないのに地方の「すべて見る」が出ている（地方を選んでいる）")
+        shoot(app, "11p-探す（撮影スポットの段・地図・何も選んでいない）")
+
+        // 3. 名前の札「近畿 ›」（地図の枠 189×212 の (78, 151)）を1回押す
+        map.coordinate(withNormalizedOffset: CGVector(dx: 78.0 / 189, dy: 151.0 / 212)).tap()
+        Thread.sleep(forTimeInterval: 1)
+        let card = app.otherElements["search.spotIndex.regionCard"].firstMatch
+        XCTAssertTrue(card.staticTexts["近畿"].waitForExistence(timeout: 3), "「近畿 ›」の札を押しても近畿にならない")
+        XCTAssertTrue(seeAll.waitForExistence(timeout: 3), "地方を押しても「すべて見る」が出ない")
+        XCTAssertFalse(hint.exists, "地方を選んだのに一言が残っている")
+        shoot(app, "11q-探す（撮影スポットの段・地図・名前の札で近畿）")
+    }
+
     /// **「行きたい場所」を地図で見る**（2026-10-03・3か月の計画の7の第一歩）。マイページの
     /// 「行きたい場所」のタブ（「地図で見る」が見える1枚）と、押した先の地図の1枚。
     ///
