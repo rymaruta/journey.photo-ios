@@ -4182,6 +4182,10 @@ final class ScreenshotTests: XCTestCase {
         let obsoleteCard = app.buttons["mypage.trunk"].firstMatch
         XCTAssertFalse(obsoleteCard.waitForExistence(timeout: 3), "マイページに削除済みの旅のトランク札が残っている")
 
+        // ≡ は見出し（`AppHeaderItems`・ホーム・探す・地図）にある。ログイン中のマイページは上のバーを出さない
+        // （`MyPageView` の `.toolbar(.hidden)`）ので、ホームへ戻ってから押す（Mac run 1162 でマイページの上に ≡ が無く落ちた・
+        // `CriticalFlowTests.testSignOutThenSignInReturnsToMyPage` と同じ道）
+        tabBar.buttons.element(boundBy: 0).tap()
         let menu = app.buttons["header.menu"].firstMatch
         guard menu.waitForExistence(timeout: 10) else { return XCTFail("見出しにメニューが無い") }
         menu.tap()
