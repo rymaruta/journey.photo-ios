@@ -292,4 +292,4 @@ PHOTO_GALLERY=<photo-gallery のパス> bash Tools/verify.sh
   叩いていれば NG になる（いまの `/user/devices` がそれ）
 - 実機（シミュレータ）での型検査・絵は **GitHub Actions の TestFlight ワークフロー**
   （`submit=false` ならビルドと絵だけ）。macOS ランナーは**公開リポジトリなら無料**
-- **絵は `screenshots` 枝**に置かれる（artifact は開発環境から取れないため）
+- **絵は非公開の S3** に置かれる（`screenshots` 枝は #451 で止めた。取り出しは `Tools/fetch-shots.sh <run>`・3日で消える）

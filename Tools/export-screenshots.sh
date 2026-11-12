@@ -12,6 +12,10 @@
 #
 #     bash Tools/export-screenshots.sh build/ios/test/Test.xcresult
 #     bash Tools/export-screenshots.sh a.xcresult b.xcresult …   # UI テストを分けて流した回（2026-10-31・#429）
+#
+# 🔴 **公開リポジトリの枝には置かない（#451）。** いま CI が使うのは `SHOTS_EXPORT_ONLY=1` の形だけで、
+# 取り出して縮めた絵と README を `/tmp/shots-out` に作って終わる（枝・成果物には何も押さない）。
+# そこから非公開の S3 へ置くのは `Tools/upload-shots.sh`（2026-11-12 owner）
 set -uo pipefail
 
 [ "$#" -gt 0 ] || set -- build/ios/test/Test.xcresult
@@ -90,7 +94,7 @@ fi
 # 審査に出す絵は機種ごとの寸法ちょうど（6.9インチ = 1320×2868）が要り、
 # 縮めた JPEG は使えない。`screenshots` の枝は別の作業の回が毎回
 # 上書きするので、**置き場を分ける**。1枚3MB近いので、出す画面だけに絞る
-if [ "${STORE_SHOTS:-false}" = "true" ]; then
+if [ "${STORE_SHOTS:-false}" = "true" ] && [ "${SHOTS_EXPORT_ONLY:-}" != "1" ]; then
     STORE=/tmp/store-out
     rm -rf "$STORE" && mkdir -p "$STORE"
     python3 - "$OUT" "$STORE" <<'STORE_PY'
@@ -163,7 +167,7 @@ import os, pathlib, sys, unicodedata
 
 if os.environ.get("NARROWED") == "true":
     pathlib.Path("/tmp/shots-report.md").write_text(
-        "絞った回（screens）なので、撮れなかった画面は数えていない。この枝には絞った分の絵だけがある\n")
+        "絞った回（screens）なので、撮れなかった画面は数えていない。ここには絞った分の絵だけがある\n")
     raise SystemExit(0)
 
 # 🔴 **macOS のファイル名は NFD で返る。** 「マップ」の「プ」は
@@ -207,10 +211,22 @@ cd "$OUT"
     echo "- コミット: ${GITHUB_SHA:-?}"
     echo "- 実行: ${GITHUB_RUN_NUMBER:-?}"
     echo
-    echo "**この枝は毎回まるごと置き換わる。** 手で何かを足さないこと。"
+    if [ "${SHOTS_EXPORT_ONLY:-}" = "1" ]; then
+        echo "- 組: ${SHOTS_PART:-?}"
+        echo
+        echo "**非公開の置き場から3日で消える。** 見終わったら手元からも消す（\`Tools/fetch-shots.sh\`）。"
+    else
+        echo "**この枝は毎回まるごと置き換わる。** 手で何かを足さないこと。"
+    fi
     echo
     cat /tmp/shots-report.md 2>/dev/null || true
 } > README.md
+
+# **取り出すだけの形**（CI の今の使い方）。置くのは呼んだ側（`Tools/upload-shots.sh`）
+if [ "${SHOTS_EXPORT_ONLY:-}" = "1" ]; then
+    echo "画面の絵 $count 枚を取り出しました（${OUT}）"
+    exit 0
+fi
 
 git init -q
 git checkout -qb screenshots

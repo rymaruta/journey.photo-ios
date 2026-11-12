@@ -90,10 +90,12 @@ env:
 
 jobs:
   build:
-    # **絵を置く枝（`screenshots`）へ押すのに書き込みが要る。**
-    # 既定は上の `permissions` のとおり読み取りだけ。ここだけ開ける
+    # **版の印（`testflight/<版>`）を押すのに書き込みが要る。**
+    # 既定は上の `permissions` のとおり読み取りだけ。ここだけ開ける。
+    # `id-token: write` は画面写真を非公開の S3 に置く役割に OIDC で入るため（`Tools/upload-shots.sh`・2026-11-12）
     permissions:
       contents: write
+      id-token: write
     # **`macos-latest` に固定しない。** ランナーの既定 Xcode が上がると
     # 挙動が変わるので、上げるときは意図して上げる
     runs-on: macos-15
@@ -527,6 +529,21 @@ jobs:
         if: ${{ !inputs.submit && (inputs.tests || inputs.storeShots) && steps.scope.outputs.full == 'true' && steps.unit.outcome == 'success' && steps.ui.outcome == 'success' }}
         run: echo "単体テストと UI テストを絞らずに全部流し、通りました"
 
+      # 🔴 **画面写真は非公開の S3 に置く**（2026-11-12 owner「S3 において…もちろんちゃんと消す前提で」）。
+      # 公開の枝・成果物には置かない（#451。下の「スクリーンショットを保存」は止めたまま）。
+      # 落ちた回こそ絵が要るので、UI テストが走った回は成否を問わず置く。置けなくても赤にしない。
+      # 取り出しは `bash Tools/fetch-shots.sh <run 番号>`、置き場は3日で自動で消える
+      - name: 画面写真を非公開の S3 に置く
+        if: ${{ always() && (steps.ui.outcome == 'success' || steps.ui.outcome == 'failure') && github.event_name != 'pull_request' }}
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          CI_SHOTS_ROLE_ARN: ${{ secrets.CI_SHOTS_ROLE_ARN }}
+          CI_SHOTS_BUCKET: ${{ secrets.CI_SHOTS_BUCKET }}
+          # 絞った回は撮らない画面があって当たり前なので、「撮れなかった画面」を数えない
+          NARROWED: ${{ steps.scope.outputs.full != 'true' }}
+        run: bash Tools/upload-shots.sh build build/ios/test/Test.xcresult
+
       # **絞った回（screens）は署名・Archive をしない**（2026-10-17 判断）。Archive は毎回10分前後
       # （run 454〜462 で 8〜14分）。絞った回は「変えた画面を早く見る」ための回で、Release の
       # 組み立ては全部の回（screens 空）と、上げる回（submit=true・いつも全部）で見る。
@@ -730,7 +747,7 @@ jobs:
       # しか存在しない。取り出し方と「なぜ artifact ではないのか」は
       # `Tools/export-screenshots.sh` の頭に書いた
       - name: スクリーンショットを保存
-        # 公開リポジトリでは常に無効
+        # 公開リポジトリでは常に無効（#451）。画面写真は上の「画面写真を非公開の S3 に置く」
         if: ${{ false }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -962,6 +979,10 @@ jobs:
   pre:
     name: ${{ matrix.part == 'unit' && '単体テスト' || 'UI テスト（先に流す分・変えた画面）' }}
     needs: test-build
+    # 画面写真を非公開の S3 に置く役割に OIDC で入る（`Tools/upload-shots.sh`・2026-11-12）
+    permissions:
+      contents: read
+      id-token: write
     runs-on: macos-15
     timeout-minutes: 60
     strategy:
@@ -975,11 +996,17 @@ jobs:
         with:
           part: ${{ matrix.part }}
           xcode: ${{ needs.test-build.outputs.xcode }}
+          shots-role: ${{ secrets.CI_SHOTS_ROLE_ARN }}
+          shots-bucket: ${{ secrets.CI_SHOTS_BUCKET }}
 
   ui:
     name: 分割UIテスト（${{ matrix.part }}/3）
     # 単体テストと先に流す分が両方とも通ったときだけ（どちらかが落ちたら skipped）
     needs: [test-build, pre]
+    # 画面写真を非公開の S3 に置く役割に OIDC で入る（`Tools/upload-shots.sh`・2026-11-12）
+    permissions:
+      contents: read
+      id-token: write
     runs-on: macos-15
     # 1台あたりの見積もりは約 34 分。1本ごとの上限（Tools/xcode-test.sh）に当たる詰まりが続いても抜けられる長さ
     timeout-minutes: 90
@@ -994,6 +1021,8 @@ jobs:
         with:
           part: ${{ matrix.part }}
           xcode: ${{ needs.test-build.outputs.xcode }}
+          shots-role: ${{ secrets.CI_SHOTS_ROLE_ARN }}
+          shots-bucket: ${{ secrets.CI_SHOTS_BUCKET }}
 
   finish:
     name: 分割テストの結果を集約
@@ -1014,6 +1043,7 @@ jobs:
         run: |
           echo "### 分割テストの結果" >> "$GITHUB_STEP_SUMMARY"
           echo "各MacジョブのSummaryに成功・失敗と理由を記録しています。公開Artifactへxcresult・画面画像は転送しません。" >> "$GITHUB_STEP_SUMMARY"
+          echo "画面写真は各 UI の組が非公開の S3 に置きます。取り出し方は各組の Summary（\`Tools/fetch-shots.sh\`・3日で自動で消える）" >> "$GITHUB_STEP_SUMMARY"
 
       # 🔴 **「PR の検証」が数える印**（`build` の job の同じ名前の段の注記）。単体・先に流す分・分けた組の
       # 全部が通った回だけ success。分けて流す回はいつも絞らない（`screens` 空・storeShots）

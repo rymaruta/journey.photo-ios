@@ -792,6 +792,49 @@ for _named in ("testLaunchProbe", "testBodyEvaluationCounts"):
     if f"func {_named}()" not in _perf_src:
         fail(f"PerformanceTests に {_named} がありません")
 
+# ---- 画面写真の非公開の置き場（2026-11-12 owner・#451 を守ったまま）--------------------
+# 公開リポジトリなので、画面写真は公開の枝・成果物に置かない。置くのは非公開の S3 だけで、
+# CI の役割は「その置き場に置く」しかできず、PR の回では入れず、置き場は数日で消える。どれかが崩れたら止める
+shots_dir = ROOT / "Tools/ci-shots"
+try:
+    writer = json.loads((shots_dir / "writer-policy.json").read_text(encoding="utf-8"))
+    stmts = writer["Statement"]
+    if len(stmts) != 1 or stmts[0].get("Effect") != "Allow" or stmts[0].get("Action") != "s3:PutObject" \
+            or stmts[0].get("Resource") != "arn:aws:s3:::${BUCKET}/*":
+        fail("Tools/ci-shots/writer-policy.json が「置き場に置く（s3:PutObject）だけ」ではありません")
+    trust = json.loads((shots_dir / "trust-policy.json").read_text(encoding="utf-8"))
+    cond = trust["Statement"][0]["Condition"]
+    if len(trust["Statement"]) != 1 \
+            or cond.get("StringEquals", {}).get("token.actions.githubusercontent.com:aud") != "sts.amazonaws.com" \
+            or cond.get("StringLike", {}).get("token.actions.githubusercontent.com:sub") \
+            != "repo:rymaruta/journey.photo-ios:ref:refs/heads/*":
+        fail("Tools/ci-shots/trust-policy.json が「このリポジトリの枝の回だけ」になっていません（PR の回が入れる）")
+    rules = json.loads((shots_dir / "lifecycle.json").read_text(encoding="utf-8"))["Rules"]
+    days = [r.get("Expiration", {}).get("Days") for r in rules if r.get("Status") == "Enabled"]
+    if not days or not all(isinstance(d, int) and 1 <= d <= 7 for d in days):
+        fail(f"Tools/ci-shots/lifecycle.json が画面写真を7日以内に消しません: {days}")
+except (OSError, KeyError, IndexError, ValueError) as e:
+    fail(f"Tools/ci-shots の設定が読めません: {e}")
+uploader = (ROOT / "Tools/upload-shots.sh").read_text(encoding="utf-8") if (ROOT / "Tools/upload-shots.sh").exists() else ""
+for needle, why in [("pull_request|pull_request_target) skip", "PR の回で止まる"),
+                    ("--only-show-errors", "aws の出力（置き場と鍵）をログに出さない"),
+                    ("SHOTS_EXPORT_ONLY=1", "公開の枝に押さない形で取り出す"),
+                    ("AWS_WEB_IDENTITY_TOKEN_FILE", "長く使える鍵でなく OIDC で入る")]:
+    if needle not in uploader:
+        fail(f"Tools/upload-shots.sh に「{needle}」がありません（{why}）")
+if testflight_yml.exists():
+    tf = testflight_yml.read_text(encoding="utf-8")
+    # 書き込みの印は job ごとに渡す。ワークフローの頭（全 job）には渡さない
+    head = tf.split("\njobs:\n", 1)[0]
+    if "id-token" in head:
+        fail("ios-testflight.yml の頭の permissions に id-token があります（全 job に OIDC が渡る）")
+    if re.search(r"^      - name: スクリーンショットを保存\n(?:\s+#.*\n)*\s+if: \$\{\{ false \}\}", tf, re.M) is None:
+        fail("ios-testflight.yml の「スクリーンショットを保存」（公開の枝に押す段）が止まっていません（#451）")
+    if "bash Tools/upload-shots.sh build build/ios/test/Test.xcresult" not in tf:
+        fail("ios-testflight.yml に画面写真を非公開の S3 に置く段がありません")
+if "Tools/upload-shots.sh" not in (ROOT / ".github/actions/mac-test-part/action.yml").read_text(encoding="utf-8"):
+    fail(".github/actions/mac-test-part/action.yml が画面写真を非公開の S3 に置いていません")
+
 # ---- 結果 -----------------------------------------------------------------
 if errors:
     for message in errors:

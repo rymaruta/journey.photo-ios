@@ -5,8 +5,8 @@
 # `test-without-building` で流す。run 778 の実測では、各台で組み直すと控えから戻す 2 分＋組む 6 分かかる。
 # 流し方（時間の上限・名指しした回だけ流すテストを飛ばす）は `Tools/xcode-test.sh` のまま
 #
-# 結果（xcresult）と全文ログは、落ちても成果物 `part-<組>` に残す。「まとめ」の job が集めて
-# 画面の絵を `screenshots` の枝に置き、`build-logs` にまとめる
+# 結果（xcresult）・画面の絵は公開の成果物に残さない（#451）。画面の絵は UI の組ごとに非公開の S3 に置く
+# （`Tools/upload-shots.sh`・2026-11-12 owner）。置き場を渡さない呼び方（`ios-perf.yml`）では置かない
 name: テストの1組を流す
 description: 組んだテストの品で、単体テスト・UI テストの1組を流す
 inputs:
@@ -15,6 +15,14 @@ inputs:
     required: true
   xcode:
     description: 組んだ台の Xcode の版（同じ版を選ぶ）
+    required: false
+    default: ""
+  shots-role:
+    description: 画面写真を置く役割（secrets.CI_SHOTS_ROLE_ARN）。空なら置かない
+    required: false
+    default: ""
+  shots-bucket:
+    description: 画面写真の非公開の置き場（secrets.CI_SHOTS_BUCKET）。空なら置かない
     required: false
     default: ""
 runs:
@@ -70,6 +78,20 @@ runs:
           [ -d "$r" ] || continue
           python3 Tools/xcresult-summary.py "$r" >> "$GITHUB_STEP_SUMMARY"
         done
+
+    # 🔴 **画面写真は非公開の S3 に置く**（2026-11-12 owner）。落ちた組こそ絵が要るので成否を問わず置く。
+    # 単体の組は絵を撮らない。置けなくても赤にしない（台本が警告を出して 0 で終わる）。
+    # 呼ぶ job に `id-token: write` が要る（`ios-testflight.yml` の pre・ui）
+    - name: 画面写真を非公開の S3 に置く（UI の組だけ）
+      if: ${{ always() && inputs.part != 'unit' && inputs.shots-bucket != '' && github.event_name != 'pull_request' }}
+      shell: bash
+      env:
+        PART: ${{ inputs.part }}
+        CI_SHOTS_ROLE_ARN: ${{ inputs.shots-role }}
+        CI_SHOTS_BUCKET: ${{ inputs.shots-bucket }}
+        # 組ごとに一部の画面しか撮らないので、「撮れなかった画面」は数えない
+        NARROWED: "true"
+      run: bash Tools/upload-shots.sh "$PART" "build/ios/test/Test-$PART.xcresult"
 
     - name: 組ごとの実行状況を渡す
       if: ${{ always() }}

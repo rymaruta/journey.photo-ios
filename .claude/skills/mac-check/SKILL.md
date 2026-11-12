@@ -39,13 +39,15 @@ gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight
 
 ## 緑なら
 
-- 画面写真は `screenshots` 枝に置かれる（700px の JPEG）。名前は `NN-画面名_…`。
+- 画面写真は**非公開の S3** に置かれる（700px の JPEG・3日で自動で消える。`screenshots` 枝は #451 で止めた）。
+  落ちた回も置かれる。名前は `NN-画面名_…`。run の印は TestFlight の回なら run 番号（Release Center から呼ばれた回は
+  `release-center-<番号>`。各 Mac の job の Summary に出る）。
   ```bash
-  git fetch -q origin screenshots
-  git ls-tree --name-only origin/screenshots            # 一覧
-  f=$(git ls-tree --name-only -z origin/screenshots | tr '\0' '\n' | grep '^13f')
-  git show "origin/screenshots:$f" > <scratchpad>/shot.jpg   # Read で見る・SendUserFile で渡す
+  bash Tools/fetch-shots.sh --list                  # 置き場にある run の一覧
+  bash Tools/fetch-shots.sh <run>                   # scratchpad の shots/<run>/<組>/ に落とす（Read で見る・SendUserFile で渡す）
+  bash Tools/fetch-shots.sh <run> --delete          # 見終わったら手元と S3 からすぐ消す（手元だけなら --clean）
   ```
+  落とす先はリポジトリの外だけ（中を指すと止まる）。見たら必ず消す。
 - owner に見せるときは「Mac のシミュレーターで自動撮影（モックではない）」と書く。
 
 ## 赤なら
