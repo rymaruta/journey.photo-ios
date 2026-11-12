@@ -37,14 +37,10 @@ struct StoryComposerView: View {
     /// 写真選びの段を飛ばして撮れる。撮らずに閉じれば写真選びの段に戻る。下書きの続き・送れなかった残りの問いが
     /// あるときは出さない（先に答えてもらう）
     private let startsWithCamera: Bool
-    /// **写真を紹介する札の1枚**（札 #541 の ①・写真の詳細の「共有 → ストーリーに載せる」）。在れば開いてすぐ
-    /// その1枚を置く（写真選び・下書きの問いを飛ばす）。札は端末で描いた絵（`SharedPhotoStoryCard`）
-    private let sharing: StoryShareSeed?
 
-    init(openDraft: String? = nil, startsWithCamera: Bool = false, sharing: StoryShareSeed? = nil) {
+    init(openDraft: String? = nil, startsWithCamera: Bool = false) {
         self.openDraft = openDraft
         self.startsWithCamera = startsWithCamera
-        self.sharing = sharing
     }
     /// 裏に回ったときに黙って残す書きかけ（本人の下書きとは別の枠・2026-10-16）
     @StateObject private var autoDrafts = StoryDraftStore(slot: .auto)
@@ -391,8 +387,7 @@ struct StoryComposerView: View {
                                    set: { value in
                                        attachesLocation = value
                                        UploadLocationPreference().set(value, userId: auth.userId)
-                                   }),
-                               keepToggle: StorySharedPhoto.keepToggle(sharedFlags: shots.map { $0.sharedPhotoId != nil })) {
+                                   })) {
                 showAudience = false
             }
             .presentationDetents([.medium, .large])
@@ -524,13 +519,6 @@ struct StoryComposerView: View {
             // もう一度走り、開いたときの問いがまた出ていた
             guard !askedOnOpen else { return }
             askedOnOpen = true
-            // 写真を紹介する札（札 #541）。**下書き・書きかけの問いは出さない**——紹介しに来た人に前の写真を
-            // 尋ねると、置いたはずの札が見えないまま問いに答えることになる（書きかけは次に開いたときに尋ねる）
-            if let sharing, shots.isEmpty {
-                autoSlotOwned = StorySimpleRules.ownsAutoSlot(hasAutoDraft: autoDrafts.draft != nil, asked: false)
-                Task { await accept(sharing.cardData, sharedPhotoId: sharing.photoId) }
-                return
-            }
             // 画面写真の試験だけ: 見本の写真と曲を入れて開く（`PreviewStorySample`・Debug のみ）
             if shots.isEmpty, let sample = PreviewStorySample.photoData() {
                 Task {
@@ -2105,7 +2093,7 @@ struct StoryComposerView: View {
         for shot in shots { discard(shot.video) }
     }
 
-    private func accept(_ data: Data, sharedPhotoId: String? = nil) async {
+    private func accept(_ data: Data) async {
         do {
             // **縮小・EXIF の書き直しは画面の処理の外で**（投稿の `prepareOffMain`・`EditPhotoView` と同じ）。
             // 1枚に数百ミリ秒かかり、選んだ枚数ぶん画面が止まっていた
@@ -2117,7 +2105,7 @@ struct StoryComposerView: View {
                             "You can post up to \(StoryQueue.maxShots) at once")
                 return
             }
-            let shot = StoryShot(prepared: prepared, image: UIImage(data: prepared.data), sharedPhotoId: sharedPhotoId)
+            let shot = StoryShot(prepared: prepared, image: UIImage(data: prepared.data))
             shots.append(shot)
             startThumb(for: shot)
             // 足したらそれを編集する（選んだ直後に文字を置ける）。
@@ -2758,7 +2746,7 @@ struct StoryComposerView: View {
     /// 並べた写真（下書きに書く形）。**焼き込む前の文字のまま**
     private var shotInputs: [StoryDraftStore.ShotInput] {
         shots.map { shot in
-            var input = StoryDraftStore.ShotInput(imageData: shot.prepared.data,
+            StoryDraftStore.ShotInput(imageData: shot.prepared.data,
                                       fileName: shot.prepared.fileName,
                                       contentType: shot.prepared.contentType,
                                       coords: shot.prepared.coords,
@@ -2767,9 +2755,6 @@ struct StoryComposerView: View {
                                       vote: shot.vote,
                                       filter: shot.filter,
                                       drawing: shot.drawing)
-            // 紹介した写真の id（札 #541）も下書きに残す（続きから出しても「写真を見る」が付く）
-            input.sharedPhotoId = shot.sharedPhotoId
-            return input
         }
     }
 
@@ -2875,12 +2860,10 @@ struct StoryComposerView: View {
                                                   contentType: item.shot.contentType,
                                                   // EXIF は下書きに残していない（ストーリーは送らない）
                                                   exif: nil, coords: item.shot.coords, takenOn: nil)
-            var shot = StoryShot(prepared: restored, image: UIImage(data: item.data),
+            return StoryShot(prepared: restored, image: UIImage(data: item.data),
                              overlays: item.shot.overlays, framing: item.shot.framing ?? .identity,
                              vote: item.shot.vote, filter: (item.shot.filter ?? StoryFilterChoice.off).sanitized,
                              drawing: item.shot.drawing ?? StoryDrawing.empty)
-            shot.sharedPhotoId = item.shot.sharedPhotoId
-            return shot
         }
         shots.forEach(startThumb(for:))
         // フィルターをかけてあった写真は、作る画面の絵も描き直す（下書きは元の画素のまま持つ）
@@ -3089,8 +3072,7 @@ struct StoryComposerView: View {
                     : TextOverlayRenderer.burn(shot.overlays, framing: shot.framing, into: shot.prepared.data,
                                                song: songArt, filter: shot.filter, drawing: shot.drawing),
                 caption: caption, location: placeText, coords: shotCoords,
-                // 写真を紹介した1枚は棚に残さない（札 #541・サーバーも書かない）
-                song: song, durationSec: durationSec, archive: keepInArchive && shot.sharedPhotoId == nil,
+                song: song, durationSec: durationSec, archive: keepInArchive,
                 allowReplies: allowReplies,
                 texts: StoryPostText.list(vote: shot.vote, caption: caption),
                 // 曲の札を焼き込んだ印（送る形は変えない。見る画面は 2026-10-28 から印に関わらず ♪ の行を出す）
@@ -3098,9 +3080,7 @@ struct StoryComposerView: View {
                 // 撮影地の札を焼き込んだ印（見る画面は固定の撮影地の札を出さない・札 #499）
                 locationOnPhoto: PlaceSticker.isOnPhoto(shot.overlays, location: placeText),
                 video: shot.video == nil ? nil : exported?.urls[shot.id]
-                    .map { StoryUploadCenter.Video(fileURL: $0, fileType: StoryVideoRules.exportFileType) },
-                // 紹介した写真の id（札 #541）。紹介の札の1枚だけ
-                sharedPhotoId: shot.sharedPhotoId)
+                    .map { StoryUploadCenter.Video(fileURL: $0, fileType: StoryVideoRules.exportFileType) })
         }
         // 🔴 動画のストーリーが静止画の投稿になっていないか、最後にもう一度確かめる(上の確かめをすり抜けた回の保険)
         guard zip(shots, jobs).allSatisfy({ ($0.video != nil) == ($1.video != nil) }) else {
@@ -3177,17 +3157,13 @@ struct StoryShot: Identifiable {
     var filteredPreview: Image?
     /// 描画（ペン・蛍光ペン・消しゴムの線・2026-11-09）。写真ごと。**書き出しで写真の上・文字と札の下に焼く**
     var drawing: StoryDrawing = .empty
-    /// **紹介した写真の id**（札 #541 の ①）。写真の詳細の「ストーリーに載せる」で作った札の1枚だけが持つ。
-    /// 送るときに `sharedPhotoId` として添える（見る人の「写真を見る」・持ち主への知らせ）
-    var sharedPhotoId: String?
 
     /// 作る画面に出す絵（フィルターをかけていればその絵）
     var shownPreview: Image? { filteredPreview ?? preview }
 
     init(prepared: ImagePreparer.Prepared, image: UIImage?, overlays: [TextOverlay] = [],
          framing: PhotoFraming = .identity, vote: StoryVoteDraft? = nil, video: StoryVideoClip? = nil,
-         filter: StoryFilterChoice = .off, drawing: StoryDrawing = .empty, sharedPhotoId: String? = nil) {
-        self.sharedPhotoId = sharedPhotoId
+         filter: StoryFilterChoice = .off, drawing: StoryDrawing = .empty) {
         self.video = video
         self.filter = filter
         self.drawing = drawing

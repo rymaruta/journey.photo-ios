@@ -34,10 +34,6 @@ final class PhotoDetailViewModel: ObservableObject {
         didSet { if draftComment != oldValue { commentPostError = nil } }
     }
     @Published var errorMessage: String?
-    /// **返信している相手のコメント**（2026-11-11・札 #541 の ②）。コメントの下の「返信」で入り、
-    /// 欄の上に「〇〇さんに返信中」と ×。送れたら外す。隣へ送る（`show`）・相手のコメントが一覧から
-    /// 消えた（`applyComments`・`deleteComment`）ときも外す——無い相手に「返信中」を出さない
-    @Published var replyingTo: PhotoComment?
     /// コメントを送れなかった知らせ。**入力欄のすぐ上に出す**（`errorMessage` は操作の段に出るので、
     /// 欄から遠く、送れなかったことに気づかれなかった）。書いた文は残す（下で消さない）。
     /// 2026-10-21 判断: 送り直す・打ち直す（`draftComment`）・隣へ送る（`show`）・人が替わる（`setUser`）ときに消す
@@ -144,7 +140,6 @@ final class PhotoDetailViewModel: ObservableObject {
             commentCount = nil
             commentsUnavailable = false
             draftComment = ""
-            replyingTo = nil
             errorMessage = nil
             commentPostError = nil
         } else if !likesFromServer, let initialLikes {
@@ -262,7 +257,6 @@ final class PhotoDetailViewModel: ObservableObject {
         comments = merged.items
         commentCount = merged.count
         commentsPhotoId = id
-        if let target = replyingTo, !comments.contains(where: { $0.id == target.id }) { replyingTo = nil }
     }
 
     /// **数は自分で足さない。** サーバーが押したあとの数を返すので、
@@ -374,10 +368,8 @@ final class PhotoDetailViewModel: ObservableObject {
         isPosting = true
         defer { isPosting = false }
         let id = photoId
-        // **押した時点の相手**を掴む（送っている間に「返信」を押し替えても、送った文の相手は変えない）
-        let target = replyingTo
         do {
-            let comment = try await social.postComment(photoId: id, text: text, replyTo: target?.id)
+            let comment = try await social.postComment(photoId: id, text: text)
             // 送った先の1枚に控える（隣へ送った後に届いても、戻ったときに出す）
             postedComments[id, default: []].append(comment)
             // 消したときの 404 の読み方を分けるため、投稿した時刻を控える（`deleteComment`）
@@ -396,8 +388,6 @@ final class PhotoDetailViewModel: ObservableObject {
             if draftComment.trimmingCharacters(in: .whitespacesAndNewlines) == text {
                 draftComment = ""
             }
-            // 送った相手への返信中だけ外す（送っている間に別の人へ押し替えていたら残す）
-            if replyingTo?.id == target?.id { replyingTo = nil }
         } catch {
             // **送った先の1枚でも失敗は出す。** 書きかけは送ったときに `show` が
             // 消しているので、黙ると「入った」と思われたまま文も残らない。
@@ -451,7 +441,6 @@ final class PhotoDetailViewModel: ObservableObject {
             guard id == photoId else { return }
             comments.removeAll { $0.id == comment.id }
             commentCount = commentCount.map { max(0, $0 - 1) }
-            if replyingTo?.id == comment.id { replyingTo = nil }
         } catch where SocialService.isNotFound(error) && !isJustPosted(comment.id) {
             // もう無い: 消せたのと同じ（束を送った後でも、戻ったときに出さない）
             deletedCommentIds.insert(comment.id)

@@ -46,16 +46,13 @@ final class StoryUploadCenter: ObservableObject {
         var video: Video?
         /// 上げ終えた画像（送り直しで二重に出さないための目印・`StoryService.post`）
         var uploaded: StoryService.UploadedMedia?
-        /// 紹介した写真の id（札 #541 の ①・写真の詳細の「ストーリーに載せる」）。紹介でなければ nil
-        var sharedPhotoId: String? = nil
 
         init(id: UUID = UUID(), imageData: Data, caption: String, location: String,
              coords: Photo.Coords?, song: Photo.Song?, durationSec: Int, archive: Bool,
              allowReplies: Bool = true, texts: [StoryPostText]? = nil,
              songOnPhoto: Bool = false, locationOnPhoto: Bool = false,
              video: Video? = nil,
-             uploaded: StoryService.UploadedMedia? = nil,
-             sharedPhotoId: String? = nil) {
+             uploaded: StoryService.UploadedMedia? = nil) {
             self.id = id
             self.imageData = imageData
             self.caption = caption
@@ -70,7 +67,6 @@ final class StoryUploadCenter: ObservableObject {
             self.locationOnPhoto = locationOnPhoto
             self.video = video
             self.uploaded = uploaded
-            self.sharedPhotoId = sharedPhotoId
         }
     }
 
@@ -340,9 +336,6 @@ final class StoryUploadCenter: ObservableObject {
             /// 動画の本体の拡張子（`<id>.<拡張子>` で並びの置き場に写す・札 #500）。前の版には無い（nil＝写真）
             let videoExtension: String?
             let videoFileType: String?
-            /// 紹介した写真の id（札 #541）。**書かないと、途中で落ちて戻したときに「写真を見る」の無い
-            /// ストーリーとして出て、持ち主にも知らせが届かない**。前の版には無い（nil＝紹介ではない）
-            let sharedPhotoId: String?
         }
         let ownerId: String
         let total: Int
@@ -388,8 +381,7 @@ final class StoryUploadCenter: ObservableObject {
                                songOnPhoto: job.songOnPhoto ? true : nil,
                                locationOnPhoto: job.locationOnPhoto ? true : nil,
                                videoExtension: job.video.map { Self.videoExtension($0) },
-                               videoFileType: job.video?.fileType,
-                               sharedPhotoId: job.sharedPhotoId)
+                               videoFileType: job.video?.fileType)
             }, draftToClear: draftToClear)
             try JSONEncoder().encode(manifest).write(to: manifestURL, options: .atomic)
         } catch {
@@ -449,8 +441,7 @@ final class StoryUploadCenter: ObservableObject {
                        coords: coords, song: entry.song, durationSec: entry.durationSec,
                        archive: entry.archive, allowReplies: entry.allowReplies != false,
                        texts: entry.texts, songOnPhoto: entry.songOnPhoto == true,
-                       locationOnPhoto: entry.locationOnPhoto == true, video: video, uploaded: entry.uploaded,
-                       sharedPhotoId: entry.sharedPhotoId)
+                       locationOnPhoto: entry.locationOnPhoto == true, video: video, uploaded: entry.uploaded)
         }
         guard !jobs.isEmpty, !manifest.ownerId.isEmpty else {
             clearStorage()

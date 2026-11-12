@@ -22,5 +22,3 @@
 /* ストーリーのメンション（2026-11-09・`notify.ts` の `LOC_KEYS.storymention`）。引数は投稿者の名前。
    サーバーは `PUSH_READY_TYPES` に入れるまで端末へ送らない（この鍵を持つ版を配ってから） */
 "NOTIF_STORY_MENTION" = "%@ がストーリーであなたをメンションしました";
-"NOTIF_STORY_SHARE" = "%@ があなたの写真をストーリーで紹介しました";
-"NOTIF_COMMENT_REPLY" = "%@ があなたのコメントに返信しました";

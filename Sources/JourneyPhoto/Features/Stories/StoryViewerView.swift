@@ -101,10 +101,6 @@ struct StoryViewerView: View {
     @State private var videoProgress: (storyId: String, progress: StoryPlayback.VideoProgress)?
     /// 撮影地から開いた撮影スポットのガイド（`StorySpotLink`）
     @State private var guideSpot: OfficialSpot?
-    /// 「写真を見る」で開いた紹介の写真（札 #541 の ①）。**見ている間は止める**（`frozen` の sheetOpen）
-    @State private var sharedPhoto: Photo?
-    /// 紹介の写真を探している最中（二度押しで2回開かない）
-    @State private var findingSharedPhoto = false
     /// 自分で読んだ撮影スポットの索引（外から渡されないとき）。**取れなかった回は空**＝つながないだけ
     @State private var loadedSpots: [OfficialSpot] = []
     /// いま見ている1本の撮影地から結んだスポット（`StorySpotLink`）。**1本ごとに一度だけ解く**
@@ -271,7 +267,7 @@ struct StoryViewerView: View {
             menuOpen: showMenu,
             sheetOpen: showReplies || showInsights || showReport || showBlockConfirm
                 || showAuthor || showDeleteConfirm || guideSpot != nil || showReactions || isHeld
-                || openedConversation != nil || sharedPhoto != nil,
+                || openedConversation != nil,
             replyFocused: replyFocused,
             isSending: isSending,
             mediaReady: mediaReady,
@@ -288,7 +284,7 @@ struct StoryViewerView: View {
     private var swipeLocked: Bool {
         replyFocused || isSending || showMenu || showReplies || showInsights || showReport
             || showBlockConfirm || showAuthor || showDeleteConfirm || guideSpot != nil || showReactions
-            || openedConversation != nil || sharedPhoto != nil
+            || openedConversation != nil
     }
 
     /// この人の束をもう見せられない（最後の1本を消した・通報した・ブロックした）。
@@ -591,17 +587,6 @@ struct StoryViewerView: View {
                 .environment(\.insideStoryViewer, true)
             }
         }
-        // 「写真を見る」（札 #541 の ①）。紹介された写真の詳細。**見ている間は止める**（`frozen` の sheetOpen）
-        .sheet(item: $sharedPhoto) { photo in
-            NavigationStack {
-                PhotoDetailView(photo: photo, fromPublicFeed: true)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
-                    }
-            }
-            // 閲覧画面の中から開いたページ。**顔の輪を出さない**（押すと閲覧画面が二重に重なる・`StoryAvatar`）
-            .environment(\.insideStoryViewer, true)
-        }
         // 撮影地から開いた撮影スポットのガイド。**見ている間は止める**（`frozen` の sheetOpen）
         .sheet(item: $guideSpot) { spot in
             NavigationStack {
@@ -735,17 +720,6 @@ struct StoryViewerView: View {
                 .opacity(chrome.hidesChrome ? 0 : 1)
                 .allowsHitTesting(!chrome.hidesChrome)
 
-            // **紹介した写真へ「写真を見る」**（札 #541 の ①・案の模型 1-E）。札の絵の下・真ん中にガラスの丸い帯。
-            // **送る的より上**（押せるように）。止めている間は隠す（ひとことと同じ）
-            if let sharedId = story.sharedPhotoId, highlight == nil {
-                GeometryReader { geo in
-                    sharedPhotoButton(photoId: sharedId)
-                        .position(x: geo.size.width / 2, y: geo.size.height * SharedPhotoStoryCard.buttonCenterY)
-                }
-                .opacity(chrome.hidesChrome ? 0 : 1)
-                .allowsHitTesting(!chrome.hidesChrome)
-            }
-
             // 読めなかった写真の読み直し（`StoryPlayback.mediaSettled`）。**送る的より上**に置く
             // ——`RemoteImage` の中の読み直しの印は送る的の下になり、押せない
             if offersMediaRetry {
@@ -804,51 +778,6 @@ struct StoryViewerView: View {
         // **止めている間は写真をわずかに縮める**（v2 StoryViewerPaused・名前やひとことを消しても
         // 「止まった」が形で分かる）。動きは `chrome` の切り替えに付いている
         .scaleEffect(chrome.showsPill ? StoryViewerMetrics.pausedScale : 1)
-    }
-
-    /// 「写真を見る ›」（ガラス・白 15 の 600・高さ 44・案の模型 1-E）。写真の上なので白（真鍮を置かない）
-    private func sharedPhotoButton(photoId: String) -> some View {
-        Button {
-            Task { await openSharedPhoto(photoId) }
-        } label: {
-            HStack(spacing: 6) {
-                Text(L("写真を見る", "View photo"))
-                    .font(.subheadline.weight(.semibold))
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .accessibilityHidden(true)
-            }
-            .dynamicTypeSize(...Self.chromeTypeLimit)
-            .foregroundStyle(.white)
-            .padding(.horizontal, 18)
-            .frame(minHeight: WebTheme.minTapTarget)
-            .jpGlass(in: Capsule())
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .disabled(findingSharedPhoto)
-        .accessibilityIdentifier("story.viewer.sharedPhoto")
-    }
-
-    /// 紹介の写真を**確かめてから**開く（`StorySharedPhoto.verified`）。一覧は控えでなく取り直したもの、
-    /// そのうえでサーバーのコメントの読み口（いまの公開・範囲・削除を見る）が通ったときだけ開く。
-    /// 外れたら（非公開にされた・消された・ブロック・読めなかった）「今は開けません」——空の詳細・見られない写真を開かない
-    private func openSharedPhoto(_ id: String) async {
-        guard !findingSharedPhoto else { return }
-        findingSharedPhoto = true
-        defer { findingSharedPhoto = false }
-        let feed = try? await environment.gallery.fetchPhotos(force: true)
-        let social = environment.social
-        let signedIn = viewerId != nil
-        let photo = await StorySharedPhoto.verified(id, in: feed, blocked: hidden.blockedUserIds) { photoId in
-            _ = try await social.comments(photoId: photoId, signedIn: signedIn)
-        }
-        guard !Task.isCancelled else { return }
-        if let photo {
-            sharedPhoto = photo
-        } else {
-            message = StorySharedPhoto.unavailableMessage
-        }
     }
 
     /// ひとこと（明朝30・影）・撮影地・曲。**写真の左下に重ねる**（板の配置）。

@@ -197,17 +197,11 @@ struct SocialService {
         try await api.anonymous(.get, "/photos/\(id)/comments", as: CommentPage.self)
     }
 
-    /// - Parameter replyTo: 返信するコメントの id（札 #541 の ②）。無ければふつうのコメント。
-    ///   相手への知らせはサーバーが決める（自分自身・ブロックのある相手・退会した人には送らない・`comments.ts`）
-    func postComment(photoId: String, text: String, replyTo: String? = nil) async throws -> PhotoComment {
-        struct Body: Encodable {
-            let text: String
-            /// 返信のときだけ送る（無い＝ふつうのコメント・古いサーバーは読まない）
-            let replyTo: String?
-        }
+    func postComment(photoId: String, text: String) async throws -> PhotoComment {
+        struct Body: Encodable { let text: String }
         return try await api.authorized(
             .post, "/photos/\(encoded(photoId))/comments",
-            body: Body(text: text, replyTo: replyTo.flatMap { PathID.isSafe($0) ? $0 : nil }), as: PostedComment.self
+            body: Body(text: text), as: PostedComment.self
         ).comment
     }
 
@@ -281,42 +275,8 @@ struct PhotoComment: Decodable, Identifiable, Equatable {
     /// 投稿時刻（ISO8601）
     let t: String?
     let deleted: Bool?
-    /// **返信の相手**（2026-11-11・札 #541 の ②）。返信のときだけ在る。`name` は返信した時点の相手の名前の写しで、
-    /// 相手が退会していればサーバーが伏せて `deleted` を立てる（`comments.ts`）。形が崩れていても1件ごと落とさない
-    var replyTo: ReplyTo? = nil
-
-    struct ReplyTo: Decodable, Equatable {
-        let id: String
-        let uid: String
-        let name: String
-        let deleted: Bool?
-    }
 
     var isFromDeletedUser: Bool { deleted == true }
-
-    private enum CodingKeys: String, CodingKey { case id, uid, name, text, t, deleted, replyTo }
-
-    init(id: String, uid: String, name: String, text: String, t: String?, deleted: Bool?, replyTo: ReplyTo? = nil) {
-        self.id = id
-        self.uid = uid
-        self.name = name
-        self.text = text
-        self.t = t
-        self.deleted = deleted
-        self.replyTo = replyTo
-    }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(String.self, forKey: .id)
-        uid = try c.decode(String.self, forKey: .uid)
-        name = try c.decode(String.self, forKey: .name)
-        text = try c.decode(String.self, forKey: .text)
-        t = try c.decodeIfPresent(String.self, forKey: .t)
-        deleted = try c.decodeIfPresent(Bool.self, forKey: .deleted)
-        // 返信の相手は飾り。壊れていても一覧ごと落とさない（ふつうのコメントとして出す）
-        replyTo = (try? c.decodeIfPresent(ReplyTo.self, forKey: .replyTo)) ?? nil
-    }
 }
 
 /// フォロー一覧・ブロック一覧の1人。名前を出していない人は `name` が無い。

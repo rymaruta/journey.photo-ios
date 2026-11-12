@@ -20,5 +20,3 @@
 
 /* Story mention (2026-11-09, `LOC_KEYS.storymention` in `notify.ts`). The argument is the poster's name. */
 "NOTIF_STORY_MENTION" = "%@ mentioned you in a story";
-"NOTIF_STORY_SHARE" = "%@ shared your photo in a story";
-"NOTIF_COMMENT_REPLY" = "%@ replied to your comment";

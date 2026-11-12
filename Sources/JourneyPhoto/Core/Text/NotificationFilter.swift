@@ -14,9 +14,6 @@ import Foundation
 ///
 /// **ストーリーのメンション（`storymention`）も「コメント」に入れる**（2026-11-09・Web の `inTab` と同じ）。
 ///
-/// **コメントへの返信（`commentreply`）は「コメント」、写真の紹介（`storyshare`）は「すべて」だけ**
-/// （2026-11-11・札 #541・Web の `inTab` と同じ）。
-///
 /// **ストーリーの返信は「コメント」に入れる。** 利用者から見れば
 /// どちらも「言葉が届いた」で、分けても探しやすくならない。
 enum NotificationFilter: String, CaseIterable, Identifiable {
@@ -37,9 +34,9 @@ enum NotificationFilter: String, CaseIterable, Identifiable {
         switch self {
         case .all: return true
         case .like: return kind == .like
-        case .comment: return kind == .comment || kind == .storyreply || kind == .storymention || kind == .commentreply
+        case .comment: return kind == .comment || kind == .storyreply || kind == .storymention
         case .follow: return kind == .follow
         }
-        // `badge`・`inspired`・`storyshare` は上のどれにも当たらない（「すべて」だけ）
+        // `badge`・`inspired` は上のどれにも当たらない（「すべて」だけ）
     }
 }
