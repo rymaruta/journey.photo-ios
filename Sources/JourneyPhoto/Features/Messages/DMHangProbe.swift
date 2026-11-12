@@ -18,10 +18,11 @@ import Foundation
 /// | `JPDMNoInnerIds` | 行の中の `.id(message.id)`（吹き出し・時刻・空の枠） |
 /// | `JPDMNoAutoScroll` | 開いたとき・数が変わったときの `scrollTo`（いちばん下へ送る） |
 /// | `JPDMEagerStack` | `LazyVStack` を `VStack` にする（遅延の配置そのものが要るかの確かめ） |
+/// | `JPDMRevertSpotFix` | 直し（`DMSpotCardMemory`）を戻す。札はいつも「読み込み中」から始まる（直す前の形） |
 enum DMHangProbe {
     static let names = [
         "NoSpotCard", "SpotCardFixed", "SpotCardStatic", "NoSpotMessages", "NoWidthRead", "NoTripBand",
-        "PlainText", "NoInnerIds", "NoAutoScroll", "EagerStack",
+        "PlainText", "NoInnerIds", "NoAutoScroll", "EagerStack", "RevertSpotFix",
     ]
 
     static func on(_ name: String) -> Bool {
@@ -42,6 +43,27 @@ enum DMHangProbe {
     static var noInnerIds: Bool { on("NoInnerIds") }
     static var noAutoScroll: Bool { on("NoAutoScroll") }
     static var eagerStack: Bool { on("EagerStack") }
+    static var revertSpotFix: Bool { on("RevertSpotFix") }
+
+    // MARK: 数（札が出た・消えた・読み始めた・読み終えた回数。主スレッドの見張りのファイルの各行に `dm=` で出す）
+
+    private static let countLock = NSLock()
+    nonisolated(unsafe) private static var counts: [String: Int] = [:]
+
+    static func count(_ name: String) {
+        #if DEBUG
+        countLock.lock()
+        counts[name, default: 0] += 1
+        countLock.unlock()
+        #endif
+    }
+
+    /// `spotCard.appear=3,spotCard.load=3,…`（何も数えていなければ空）
+    static var countSummary: String {
+        countLock.lock()
+        defer { countLock.unlock() }
+        return counts.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ",")
+    }
 
     /// 札を固定する高さ（読めた札のいちばん高い形より大きめ: 写真 130 ＋ 名前2行・種類・ボタン 44・出典 ≒ 300）
     static let spotCardFixedHeight: CGFloat = 320

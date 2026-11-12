@@ -8,7 +8,7 @@ import XCTest
 ///
 /// 疑う箇所を1つずつ外す・固定する印（アプリの `DMHangProbe`・`-JPDM<名前> YES`）を付けた版を、印の無い版と
 /// **1回の Mac の回に並べて**流す。**どの印で固まらなくなるか**を、1行（`DMHANG …`）でログと活動の名前に残す。
-/// 固まった版は試験を赤にする（印の無い版は赤になるのが今の事実）。
+/// 固まった版は試験を赤にする。直しを戻した版（`RevertSpotFix`）だけは、固まらなければ赤にする。
 ///
 /// **名指しした回だけ流れる**（`Tools/pick-ui-tests.py` の `ONLY_WHEN_NAMED`・`inputs[screens]=DMHangProbeTests`）。
 /// 原因が決まって直したら、この試験と印は外す。
@@ -23,11 +23,15 @@ final class DMHangProbeTests: XCTestCase {
         executionTimeAllowance = 300
     }
 
-    // 印の無い版（固まるのが今の事実）。最初と最後に1回ずつ（同じ回の中で再現するかを見る）
+    // 印の無い版。**直し（`DMSpotCardMemory`）が入っているので固まらないのが正しい**。最初と最後に1回ずつ
     func test00Baseline() { probe([]) }
     func test99BaselineAgain() { probe([]) }
     /// 1回目の訪問（URL を送って断られる 86m5）を飛ばし、いきなり取り消しの段の道で払う
     func test01BaselineNoFirstVisit() { probe([], firstVisit: false) }
+
+    // 直しを戻した版（`-JPDMRevertSpotFix`）。**固まるのが正しい**（直しが効いている証し・run 1186 の印なしと同じ形）
+    func test02RevertSpotFix() { probe(["RevertSpotFix"], expectHang: true) }
+    func test98RevertSpotFixAgain() { probe(["RevertSpotFix"], expectHang: true) }
 
     // sns-more が会話に足した物
     func test10NoSpotMessages() { probe(["NoSpotMessages"]) }
@@ -45,7 +49,7 @@ final class DMHangProbeTests: XCTestCase {
 
     // MARK: -
 
-    private func probe(_ flags: [String], firstVisit: Bool = true) {
+    private func probe(_ flags: [String], firstVisit: Bool = true, expectHang: Bool = false) {
         let app = XCUIApplication()
         let label = (flags.isEmpty ? "なし" : flags.joined(separator: "+")) + (firstVisit ? "" : "（1回目の訪問なし）")
         let samplePath = ScreenshotTests.mainSamplePath("dmhang-\(flags.joined(separator: "-"))\(firstVisit ? "" : "-nofirst")")
@@ -145,8 +149,16 @@ final class DMHangProbeTests: XCTestCase {
         }
         // 固まった回は画面の木を読まない（読むと長く止まる）
         let hittable = hung ? false : (bubble.exists && bubble.isHittable)
-        note("result=\(hung ? "固まった" : "固まらない") swipes=\(swipes) seconds=[\(durations.joined(separator: ","))] hittable=\(hittable)")
-        XCTAssertFalse(hung, "DMHANG flags=\(label): 払い1回が \(Self.hungSeconds) 秒を超えた（固まった）")
+        // 観光スポットの札の数（アプリの `DMHangProbe.count`。見張りのファイルの最後の行の `dm=`）
+        let counts = (try? String(contentsOfFile: samplePath, encoding: .utf8))?
+            .split(separator: "\n").last
+            .flatMap { $0.components(separatedBy: " dm=").dropFirst().first?.components(separatedBy: " | ").first } ?? "無し"
+        note("result=\(hung ? "固まった" : "固まらない") swipes=\(swipes) seconds=[\(durations.joined(separator: ","))] hittable=\(hittable) counts=\(counts)")
+        if expectHang {
+            XCTAssertTrue(hung, "DMHANG flags=\(label): 直しを戻した版が固まらない（直しが効いている証しにならない）")
+        } else {
+            XCTAssertFalse(hung, "DMHANG flags=\(label): 払い1回が \(Self.hungSeconds) 秒を超えた（固まった）")
+        }
     }
 
     /// 受信箱の行を名前で開き、会話が出るまで待つ（`ScreenshotTests.openThread` と同じ）
