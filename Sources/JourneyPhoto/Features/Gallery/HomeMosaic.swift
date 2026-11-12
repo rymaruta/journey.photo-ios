@@ -180,8 +180,10 @@ struct HomeFeedTile: View {
         .onDisappear { PhotoLiftCenter.shared.gestureReset(photoId: photo.id) }
         // 0.35秒押さえて手に取る（10pt 以上動いたらスクロール）。短く押せば今どおり開く。
         // ログインしていなければ手に取らない（保存・送る・ストーリーはログインが要る）
-        // `-JPPreviewNoLift`（UI テストの事実取りだけ・Debug のみ）では身振りを付けない
-        .simultaneousGesture(liftGesture, including: auth.userId == nil || PreviewSession.noLift ? .subviews : .all)
+        // `-JPPreviewNoLift`（UI テストの事実取りだけ・Debug のみ）では身振りを付けない。
+        // 1.1.84 は使わない（`PhotoLift.homeGestureEnabled`・ホームの払いを奪っていた）
+        .simultaneousGesture(liftGesture, including: !PhotoLift.homeGestureEnabled || auth.userId == nil || PreviewSession.noLift
+                                 ? .subviews : .all)
         .sensoryFeedback(.impact(weight: .medium), trigger: lifted) { _, new in new }
     }
 
@@ -591,7 +593,7 @@ private struct PhotoLiftIntro: View {
         }
         .onAppear {
             let defaults = UserDefaults.standard
-            guard PhotoLift.showsIntro(signedIn: auth.userId != nil,
+            guard PhotoLift.homeGestureEnabled, PhotoLift.showsIntro(signedIn: auth.userId != nil,
                                        alreadyShown: defaults.bool(forKey: PhotoLift.introKey)) else { return }
             defaults.set(true, forKey: PhotoLift.introKey)
             visible = true

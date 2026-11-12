@@ -112,6 +112,16 @@ final class YubiReviewTests: XCTestCase {
 
     // MARK: - 2・4. ①現像の投稿（開き直す・非公開で始める・閉じたら取り消す）
 
+    /// 1.1.84 はホームの写真の札で「手に取って運ぶ」を使わない（run 1182: 身振りがホームの払いを奪い、一覧が動かなかった。
+    /// 身振りを外した版は動いた）。身振りも初回の案内も出さない
+    func testHomeLiftIsOffIn1184() throws {
+        XCTAssertFalse(PhotoLift.homeGestureEnabled)
+        let mosaic = try source("Sources/JourneyPhoto/Features/Gallery/HomeMosaic.swift")
+        XCTAssertTrue(mosaic.contains(".simultaneousGesture(liftGesture, including: !PhotoLift.homeGestureEnabled ||"),
+                      "身振りの切り替えが外れている")
+        XCTAssertTrue(mosaic.contains("guard PhotoLift.homeGestureEnabled, PhotoLift.showsIntro("), "使わないのに案内を出す")
+    }
+
     /// 🔴 行き先を決める口に「ストーリーに出せるか」の既定値を置かない（1.1.84 のまとめ・秘書室の指示）。
     /// 既定が「出せる」だと、呼ぶ所で持ち主かを渡し忘れたときに他人の写真がストーリーへ通る。
     /// 画面の側は毎回 `PhotoLift.allowsStory(ownerId:me:)`（自分の写真だけ）の答えを渡す

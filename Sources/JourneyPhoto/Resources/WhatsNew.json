@@ -41,11 +41,6 @@
           "detail": { "ja": "ホームの上の札は3枚までにしました。今日の一問は探すに移り、地図の下から行きたい場所を開けます。", "en": "Home now shows up to three cards. Today's question moved to Search, and you can open your wishlist from the bottom of the map." }
         },
         {
-          "symbol": "paperplane",
-          "title": { "ja": "投稿したらすぐ共有", "en": "Share right after posting" },
-          "detail": { "ja": "投稿が終わると共有カードが出ます。フォローしている人がまだいないときはおすすめの人が出て、観光スポットはメッセージで送れます。", "en": "A share card appears when your post is done. If you don't follow anyone yet, we suggest people, and you can send sightseeing spots in messages." }
-        },
-        {
           "symbol": "map",
           "title": { "ja": "メッセージから旅行プラン", "en": "Trip plans from messages" },
           "detail": { "ja": "会話で送り合った写真や観光スポットから、旅行プランの下書きを作れます。", "en": "Start a trip plan draft from the photos and spots you shared in a conversation." }

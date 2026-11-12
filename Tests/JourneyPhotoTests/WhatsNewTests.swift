@@ -319,9 +319,11 @@ final class WhatsNewTests: XCTestCase {
         let v1184 = try XCTUnwrap(WhatsNew.decode(data).first)
         XCTAssertEqual(v1184.version, "1.1.84")
         XCTAssertEqual(v1184.date, WhatsNew.Day(year: 2026, month: 11, day: 12))
-        // 章: 状態・ストーリー・投稿・トランク・指ひとつ・旅をストーリーに・置き場・SNS をもっと・DM の旅行プラン・
+        // 章: 状態・ストーリー・投稿・トランク・指ひとつ・旅をストーリーに・置き場・DM の旅行プラン・
         // 旅行プランの共有・QR・送信の取り消し・ストーリーを残す既定・観光スポットを払う・意見箱
-        XCTAssertEqual(v1184.items.count, 15)
+        // （「SNS をもっと SNS に」は DM の会話が固まる件で 1.1.84 から外した）
+        XCTAssertEqual(v1184.items.count, 14)
+        XCTAssertFalse(v1184.items.contains { $0.title.ja == "投稿したらすぐ共有" }, "外した章の項目が残っている")
         XCTAssertEqual(Set(v1184.items.map(\.symbol)).count, v1184.items.count, "記号が重複している")
         XCTAssertEqual(Set(v1184.items.map(\.title.ja)).count, v1184.items.count)
         for item in v1184.items {

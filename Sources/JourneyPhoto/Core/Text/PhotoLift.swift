@@ -13,6 +13,12 @@ import Foundation
 enum PhotoLift {
 
     /// 押さえる長さ（秒）。ストーリーで止まるのと同じ長さ
+    /// ホームの写真の札で「手に取って運ぶ」を使うか。**1.1.84 では使わない**（2026-11-12）。
+    /// run 1182 の記録: 札に付けた身振り（`simultaneousGesture` の長押し → Drag）があると、ホームを 119pt 払っても一覧が
+    /// まったく動かなかった（切り替えの y=406 のまま）。同じ回で身振りを外した版（`-JPPreviewNoLift`）は 406 → 168 と動いた。
+    /// 払いを奪わない作りに直すまで、身振りと初回の案内を出さない（owner「固まらなかった分だけリリースして」）
+    static let homeGestureEnabled = false
+
     static let pressSeconds = 0.35
     /// 押さえている間にこれ以上動いたらスクロール（手に取らない）
     static let moveTolerance: Double = 10
