@@ -136,8 +136,8 @@ struct SearchView: View {
                 await model.reloadPhotos(environment: environment)
             }
         }
-        // 今日の一問（取れなかった日は段を出さない）。前面に戻ったときも日と答えを確かめ直す（`applyFrontModeration`）
-        .task { await loadQuiz() }
+        // 今日の一問（取れなかった日は段を出さない）は `applyFrontModeration` が読む——初めて出たとき（`front.appear()` の
+        // `.first`）も、前面に戻ったときも同じ所。2026-11-12 確かめ役: ここにも `.task` で読んでいて、初めての表示で2回読んでいた
         .onChange(of: query) { _, newValue in
             Task { await model.search(newValue, environment: environment) }
         }

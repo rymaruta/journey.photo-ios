@@ -1001,7 +1001,6 @@ struct PhotoMapView: View {
         .accessibilityLabel(label)
     }
 
-    /// 近くの写真へ。**現在地は端末の中だけ**（送らない・残さない）
     /// 地図の下の「行きたい場所」の口を出すか: 地図を見ていて、行きたい場所があり、札が出ていないとき
     private var showsWishlistLink: Bool {
         MapWishlistLink.shows(wishCount: wishlist.spotIds.count, mode: model.mode,
@@ -1035,6 +1034,7 @@ struct PhotoMapView: View {
         .accessibilityIdentifier("map.wishlist")
     }
 
+    /// 近くの写真へ。**現在地は端末の中だけ**（送らない・残さない）
     private var nearbyButton: some View {
         Button {
             showNearby = true

@@ -317,7 +317,7 @@ enum ProfileQRImage {
 /// 読み取りの面（カメラの映像・白い枠・一言）。人の URL を読んだら `onFound` で id を渡す
 struct ProfileQRScanPane: View {
     let myUserId: String
-    /// 合図（`/qr/<合図>`）を人に引く所（`ProfileQRSource.resolve`）
+    /// 合図（`/qr?t=<合図>`）を人に引く所（`ProfileQRSource.resolve`）
     let source: any ProfileQRSource
     let onFound: (String) -> Void
 
@@ -515,7 +515,16 @@ final class ProfileQRScanner: NSObject, ObservableObject {
             state = .denied
             return
         }
-        state = await run() ? .running : .unavailable
+        // 2026-11-12 確かめ役: 許可を待つ間・カメラを組む間に画面を離れた（「自分の QR」へ切り替え・閉じる）とき、
+        // `.task` は取り消され `onDisappear` の `stop()` は先に走り終わっている。そのまま点けると見えない所でカメラが動き続ける。
+        // 点ける前と点けたあとに取り消しを見て、離れていたら点けない・止める
+        guard !Task.isCancelled else { return }
+        let ok = await run()
+        if Task.isCancelled {
+            stop()
+            return
+        }
+        state = ok ? .running : .unavailable
     }
 
     func stop() {

@@ -62,6 +62,17 @@ final class HomeTopCardArrangeTests: XCTestCase {
         XCTAssertEqual(HomeTopCard.maxCards, 3)
     }
 
+    /// 空きがある日でも今日の一問はホームに出さない（`hiddenOnHome`・探すの段へ移した）。
+    /// 上の試験は札が多い日なので、表に無い一問は順位で落ちるだけで `hiddenOnHome` を縛らない——札が少ない日で見る
+    func testQuizNeverOnHomeEvenWithRoom() throws {
+        let quiz = try XCTUnwrap(DailyQuiz.parse(Data(DailyQuizTests.json(date: "2026-11-12").utf8), date: "2026-11-12"))
+        for audience in [HomeTopCard.Audience.guest, .newcomer, .regular] {
+            let arranged = HomeTopCard.arrange([.theme, .quiz(quiz)], audience: audience)
+            XCTAssertEqual(slots(arranged), ["theme"], "\(audience) のホームに一問が出た")
+        }
+        XCTAssertEqual(HomeTopCard.hiddenOnHome, ["quiz"])
+    }
+
     /// 季節の札は1枚にまとめる（行きたい場所の方が先）・旅の札も1枚
     func testOneSeasonCardAndOneTripCard() throws {
         let arranged = HomeTopCard.arrange(try everything(), audience: .newcomer)

@@ -64,7 +64,7 @@ enum ProfileQRLink: Equatable {
     /// 取り替えられる合図（`/qr?t=<合図>`・更新できる QR・サーバーの `GET /qr/{合図}` で人に引く）
     case pass(String)
 
-    /// 読める形: `/users?id=<id>`・`/users/<id>`（静的な頁）・`/u/<id>`（短い形・第2段のため）・`/qr?t=<合図>`（更新できる QR）・`/qr/<合図>`。
+    /// 読める形: `/users?id=<id>`・`/users/<id>`（静的な頁）・`/u/<id>`（短い形・第2段のため）・`/qr?t=<合図>`（更新できる QR）。`/qr/<合図>` は読まない（2026-11-12 秘書室の決定）。
     /// `/users/search`・`/users/trip` は人の頁ではないので読まない。id と合図は API のパスに入れられる形だけ（`PathID`）。
     /// **journey-photo.com（と今のサイト）の https/http でなければ nil**——外のサイトへ連れ出さない
     static func parse(_ text: String, base: URL = AppConfig.siteBaseURL) -> ProfileQRLink? {
@@ -85,8 +85,6 @@ enum ProfileQRLink: Equatable {
             link = segments[1].removingPercentEncoding.map(ProfileQRLink.person)
         case 2 where segments[0] == "u":
             link = segments[1].removingPercentEncoding.map(ProfileQRLink.person)
-        case 2 where segments[0] == "qr":
-            link = segments[1].removingPercentEncoding.map(ProfileQRLink.pass)
         default:
             link = nil
         }
