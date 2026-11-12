@@ -22,8 +22,8 @@
         },
         {
           "symbol": "map",
-          "title": { "ja": "撮影スポットを地図から探す", "en": "Find photo spots on a map" },
-          "detail": { "ja": "探すの「撮影スポット」で「地図」に切り替えると、日本地図から地方を選べます。", "en": "In Search, switch Photo spots to Map and pick a region on the map of Japan." },
+          "title": { "ja": "観光スポットを地図から探す", "en": "Find spots on a map" },
+          "detail": { "ja": "探すのスポットの段で「地図」に切り替えると、日本地図から地方を選べます。", "en": "In Search, switch the spots section to Map and pick a region on the map of Japan." },
           "destination": "search"
         },
         {

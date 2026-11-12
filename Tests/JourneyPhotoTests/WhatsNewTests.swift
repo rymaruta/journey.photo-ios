@@ -321,7 +321,7 @@ final class WhatsNewTests: XCTestCase {
         XCTAssertEqual(v1182.version, "1.1.82")
         XCTAssertEqual(v1182.date, WhatsNew.Day(year: 2026, month: 11, day: 11))
         XCTAssertEqual(v1182.items.map(\.title.ja), ["メッセージが新しい見た目に", "写真をストーリーで紹介", "コメントに返信",
-                                                     "撮影スポットを地図から探す",
+                                                     "観光スポットを地図から探す",
                                                      "ストーリーの録画は押し続けなくてよい", "旅のトランクが軽く", "日をまたぐ移動の目安",
                                                      "検索エンジンにプロフィールを出さない"])
         XCTAssertEqual(v1182.items.map(\.destination), [nil, nil, nil, .search, nil, nil, nil, nil])
