@@ -77,21 +77,39 @@ final class ProfileQRTests: XCTestCase {
 
     // MARK: - 更新できる QR に備える（2026-11-12 owner の要望・サーバーは承認待ち）
 
-    /// `/qr/<合図>` を今から見分ける（引くのは ProfileQRSource）。ほかの家・おかしな合図は見分けない
+    /// `/qr?t=<合図>` を今から見分ける（引くのは ProfileQRSource）。ほかの家・おかしな合図は見分けない。
+    /// 2026-11-12 秘書室の決定: 道は `/qr?t=`（`/q` は Web の今日の一問・`/qr/<合図>` の形は使わない）
     func testRecognizesPassLinks() {
-        XCTAssertEqual(ProfileQRLink.parse("https://journey-photo.com/qr/Ab3_x-9Zq", base: base), .pass("Ab3_x-9Zq"))
-        XCTAssertEqual(ProfileQRLink.parse("https://www.journey-photo.com/qr/abc/", base: base), .pass("abc"))
+        XCTAssertEqual(ProfileQRLink.parse("https://journey-photo.com/qr?t=Ab3_x-9Zq", base: base), .pass("Ab3_x-9Zq"))
+        XCTAssertEqual(ProfileQRLink.parse("https://www.journey-photo.com/qr/?t=abc", base: base), .pass("abc"))
         XCTAssertEqual(ProfileQRLink.parse("https://journey-photo.com/u/\(uid)", base: base), .person(uid))
-        for text in ["https://example.com/qr/abc",
+        for text in ["https://example.com/qr?t=abc",
                      "https://journey-photo.com/qr",
-                     "https://journey-photo.com/qr/a%2Fb",
-                     "https://journey-photo.com/qr/a b",
-                     "https://journey-photo.com/qr/abc/extra"] {
+                     "https://journey-photo.com/qr?t=",
+                     "https://journey-photo.com/qr?id=abc",
+                     "https://journey-photo.com/qr?t=a%2Fb",
+                     "https://journey-photo.com/qr/abc",
+                     "https://journey-photo.com/q?t=abc"] {
             XCTAssertNil(ProfileQRLink.parse(text, base: base), text)
         }
         // 合図は人の id としては読まない（引かずに人の頁を開かない）
-        XCTAssertNil(ProfileQR.userId(from: "https://journey-photo.com/qr/abc", base: base))
-        XCTAssertEqual(ProfileQRScanResult.of("https://journey-photo.com/qr/abc", myUserId: uid, base: base), .pass("abc"))
+        XCTAssertNil(ProfileQR.userId(from: "https://journey-photo.com/qr?t=abc", base: base))
+        XCTAssertEqual(ProfileQRScanResult.of("https://journey-photo.com/qr?t=abc", myUserId: uid, base: base), .pass("abc"))
+    }
+
+    /// カメラの使い道の説明に QR の読み取りを書く（審査 5.1.1・アプリの中で QR を読むため）
+    func testCameraUsageMentionsQR() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let yml = try String(contentsOf: root.appendingPathComponent("project.yml"), encoding: .utf8)
+        let line = try XCTUnwrap(yml.components(separatedBy: "\n").first { $0.contains("NSCameraUsageDescription:") })
+        XCTAssertTrue(line.contains("プロフィールの QR を読み取る"), line)
+        for (lang, word) in [("ja", "プロフィールの QR を読み取る"), ("en", "scan profile QR codes")] {
+            let strings = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/\(lang).lproj/InfoPlist.strings"),
+                                     encoding: .utf8)
+            let entry = try XCTUnwrap(strings.components(separatedBy: "\n").first { $0.hasPrefix("\"NSCameraUsageDescription\"") })
+            XCTAssertTrue(entry.contains(word), "\(lang): \(entry)")
+        }
     }
 
     /// 合図を引いた結果も人の id と同じ所で決める。引けない（古い・取り消された）は人を開かない
@@ -171,6 +189,14 @@ final class ProfileQRTests: XCTestCase {
         XCTAssertFalse(view.contains("ProfileQR.url("), "画面が中身を直に作っている")
         XCTAssertTrue(view.contains("source: any ProfileQRSource = ProfileQRSources.current"))
         XCTAssertTrue(view.contains("output.metadataObjectTypes = [.qr]"))
+        // 読み取りを離れた（取り消された）あとにカメラを点けない・点いたら止める（2026-11-12 確かめ役）
+        let start = try XCTUnwrap(view.components(separatedBy: "func start() async {").dropFirst().first)
+            .components(separatedBy: "func stop()").first ?? ""
+        let beforeRun = try XCTUnwrap(start.range(of: "guard !Task.isCancelled else { return }"), "点ける前に取り消しを見ていない")
+        let run = try XCTUnwrap(start.range(of: "let ok = await run()"))
+        let after = try XCTUnwrap(start.range(of: "if Task.isCancelled {\n            stop()"), "点けたあとに取り消しを見て止めていない")
+        XCTAssertLessThan(beforeRun.lowerBound, run.lowerBound)
+        XCTAssertLessThan(run.lowerBound, after.lowerBound)
         // 外のサイトを開かない（読み取った文字で openURL しない）
         XCTAssertFalse(view.contains("openURL(URL(string: code"))
     }

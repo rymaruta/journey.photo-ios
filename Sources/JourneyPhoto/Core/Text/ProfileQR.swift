@@ -8,10 +8,11 @@ import Foundation
 /// （指示にあった `/u/…` の形は Web に無い。2026-11-12 に `journey.photo-web` の main の `lib/routes.ts` で確かめた）
 ///
 /// 🔴 **2026-11-12 owner の要望: LINE のように QR を「更新」でき、古い QR は使えなくなる形にする（悪用を防ぐ）。**
-/// そのときの中身は取り替えられる合図（`/qr/<合図>`）で、サーバーの口と DB の行が要る（owner の承認待ち）。だから:
+/// そのときの中身は取り替えられる合図（`/qr?t=<合図>`・2026-11-12 秘書室が決定。`/q` は Web の今日の一問とぶつかるので
+/// 人の頁と同じく静的な頁 1 枚＋クエリの形）で、サーバーの口と DB の行が要る（owner の承認待ち）。だから:
 /// - QR に入れる中身を作るのは `ProfileQRSource` の1か所だけ。今は公開プロフィールの URL を返す仮の実装
 ///   （`PublicProfileQRSource`）。承認のあとは合図を返す実装に替えるだけで、画面は変えない
-/// - 読み取った文字を見分けるのは `ProfileQRLink.parse` の1か所だけ。`/qr/<合図>` も今から見分ける
+/// - 読み取った文字を見分けるのは `ProfileQRLink.parse` の1か所だけ。`/qr?t=<合図>` も今から見分ける
 ///   （引くのは `ProfileQRSource.resolve`。今は引けないので「使えなくなった QR」と言う）
 ///
 /// 読み取りはアプリの中のカメラ。**journey-photo.com の人の URL だけ**をアプリの人の頁で開く（ほかの QR は開かない）。
@@ -48,10 +49,10 @@ enum ProfileQR {
 enum ProfileQRLink: Equatable {
     /// 人の頁の URL（`/users?id=<id>`・`/users/<id>`・`/u/<id>`）
     case person(String)
-    /// 取り替えられる合図（`/qr/<合図>`・更新できる QR・承認のあとサーバーで人に引く）
+    /// 取り替えられる合図（`/qr?t=<合図>`・更新できる QR・承認のあとサーバーで人に引く）
     case pass(String)
 
-    /// 読める形: `/users?id=<id>`・`/users/<id>`（静的な頁）・`/u/<id>`（短い形・第2段のため）・`/qr/<合図>`。
+    /// 読める形: `/users?id=<id>`・`/users/<id>`（静的な頁）・`/u/<id>`（短い形・第2段のため）・`/qr?t=<合図>`。
     /// `/users/search`・`/users/trip` は人の頁ではないので読まない。id と合図は API のパスに入れられる形だけ（`PathID`）。
     /// **journey-photo.com（と今のサイト）の https/http でなければ nil**——外のサイトへ連れ出さない
     static func parse(_ text: String, base: URL = AppConfig.siteBaseURL) -> ProfileQRLink? {
@@ -65,12 +66,12 @@ enum ProfileQRLink: Equatable {
         switch segments.count {
         case 1 where segments[0] == "users":
             link = parts.queryItems?.first(where: { $0.name == "id" })?.value.map(ProfileQRLink.person)
+        case 1 where segments[0] == "qr":
+            link = parts.queryItems?.first(where: { $0.name == "t" })?.value.map(ProfileQRLink.pass)
         case 2 where segments[0] == "users" && !ProfileQR.notPeople.contains(segments[1]):
             link = segments[1].removingPercentEncoding.map(ProfileQRLink.person)
         case 2 where segments[0] == "u":
             link = segments[1].removingPercentEncoding.map(ProfileQRLink.person)
-        case 2 where segments[0] == "qr":
-            link = segments[1].removingPercentEncoding.map(ProfileQRLink.pass)
         default:
             link = nil
         }
@@ -93,7 +94,7 @@ enum ProfileQRLink: Equatable {
 protocol ProfileQRSource {
     /// 自分の QR に入れる URL。作れないときは投げる（画面は「作れませんでした・もう一度」）
     func code(for userId: String) async throws -> URL
-    /// 合図（`/qr/<合図>`）を人の id に引く。引けない（古い・取り消された）なら nil
+    /// 合図（`/qr?t=<合図>`）を人の id に引く。引けない（古い・取り消された）なら nil
     func resolve(pass: String) async throws -> String?
     /// 「QR コードを更新」を出すか。更新すると古い QR は使えなくなる（承認のあと true の実装に替える）
     var canRenew: Bool { get }

@@ -49,6 +49,9 @@ final class PlaceChapterTests: XCTestCase {
         XCTAssertTrue(search.contains("TopCardFace(eyebrow: \"DAILY QUIZ\""))
         // 開いている間は差し替えない
         XCTAssertTrue(search.contains("guard !Task.isCancelled, quiz == nil || isOnScreen else { return }"))
+        // 読むのは前面に出たとき（初めても戻りも）の1か所だけ（2026-11-12 確かめ役: 初めての表示で2回読んでいた）
+        XCTAssertEqual(search.components(separatedBy: "await loadQuiz()").count - 1, 1, "一問を読む所が2か所ある")
+        XCTAssertFalse(search.contains(".task { await loadQuiz() }"))
     }
 
     // MARK: - 見出し
