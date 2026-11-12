@@ -78,7 +78,7 @@ final class PhotoLiftTests: XCTestCase {
         XCTAssertEqual(PhotoLift.releaseLabel(.save), "離すと 保存")
         XCTAssertEqual(PhotoLift.releaseLabel(nil), "離すと 元に戻る")
         XCTAssertEqual(PhotoLift.releaseLabel(.face(0), faceName: "ken.t"), "離すと ken.t へ送る")
-        XCTAssertEqual(PhotoLift.doneMessage(.save, faceName: nil), "しおりにとっておきました")
+        XCTAssertEqual(PhotoLift.doneMessage(.save, faceName: nil), "保存しました")
         XCTAssertEqual(PhotoLift.shareText(title: "白い道", url: "https://journey-photo.com/photo/a"),
                        "白い道\nhttps://journey-photo.com/photo/a")
         XCTAssertEqual(PhotoLift.shareText(title: " ", url: "u"), "u")

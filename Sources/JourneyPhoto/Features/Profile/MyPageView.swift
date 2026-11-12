@@ -861,8 +861,8 @@ struct MyPageView: View {
                     .accessibilityLabel(photo.accessibilityText)
                 }
             }
-            Text(L("しおりで保存した写真。あなただけに見え、作者には届きません（いいねした写真はメニューの「いいねした写真」）",
-                   "Photos you bookmarked. Only you can see them, and the photographer isn't notified (liked photos are under Liked Photos in the menu)."))
+            Text(L("保存した写真。あなただけに見え、作者には届きません（いいねした写真はメニューの「いいねした写真」）",
+                   "Photos you saved. Only you can see them, and the photographer isn't notified (liked photos are under Liked Photos in the menu)."))
                 .font(JPFont.caption)
                 .foregroundStyle(WebTheme.text3)
                 .fixedSize(horizontal: false, vertical: true)

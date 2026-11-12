@@ -147,7 +147,7 @@ enum PhotoLift {
     /// 落とした後の一言
     static func doneMessage(_ target: Target, faceName: String?) -> String {
         switch target {
-        case .save: return L("しおりにとっておきました", "Saved to your bookmarks")
+        case .save: return L("保存しました", "Saved")
         case .story: return L("ストーリーで紹介します", "Sharing to your story")
         case .face:
             if let faceName, !faceName.isEmpty { return L("\(faceName) へ送ります", "Sending to \(faceName)") }

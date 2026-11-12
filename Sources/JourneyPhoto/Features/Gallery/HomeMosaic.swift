@@ -143,7 +143,7 @@ struct HomeFeedTile: View {
             // 『写真の詳細』として撮って**いた（run 49 の絵で判明）
             .accessibilityIdentifier("feed.photo")
             // 手に取って運ぶ（読み上げの道）: 写真の操作の一覧に「とっておく・送る・ストーリーで紹介」
-            .accessibilityAction(named: L("とっておく", "Save")) { liftByAction(.save) }
+            .accessibilityAction(named: L("保存", "Save")) { liftByAction(.save) }
             .accessibilityAction(named: L("送る", "Send")) { liftByAction(nil) }
             // ストーリーで紹介は自分の写真だけ（2026-11-12 判断・`PhotoLift.allowsStory`）
             .modifier(HomeTileStoryAction(enabled: PhotoLift.allowsStory(ownerId: ownerId, me: auth.userId)) {

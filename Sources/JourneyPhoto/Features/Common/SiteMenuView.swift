@@ -74,7 +74,7 @@ struct SiteMenuView: View {
                     // 保存は旅行プラン・撮影スポットの頁から）。前は設定の Pro の節にしか入口が無かった
                     if offline.hasLocalData {
                         NavigationLink { OfflineSavedView() } label: {
-                            SiteMenuRow(title: L("保存した旅", "Offline trips"), systemImage: "arrow.down.circle",
+                            SiteMenuRow(title: L("圏外で開ける旅", "Offline trips"), systemImage: "arrow.down.circle",
                                         note: L("圏外でも開ける\u{2002}Pro", "Opens without a connection\u{2002}Pro"),
                                         value: OfflineTripText.settingsDetail(count: offline.saved.count,
                                                                               bytes: offline.totalBytes))

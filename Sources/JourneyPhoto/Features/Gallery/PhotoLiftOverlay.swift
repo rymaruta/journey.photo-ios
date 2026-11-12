@@ -281,7 +281,7 @@ struct PhotoLiftOverlay: View {
                 .frame(width: r * 2, height: r * 2)
             VStack(spacing: JPSpace.xxs) {
                 Image(systemName: on ? "bookmark.fill" : "bookmark").font(.title3)
-                Text(L("とっておく", "Save")).font(JPFont.bodyEmphasis)
+                Text(L("保存", "Save")).font(JPFont.bodyEmphasis)
             }
             .foregroundStyle(WebTheme.foreground)
             .offset(x: -r / 2)
