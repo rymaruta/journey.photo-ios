@@ -3485,6 +3485,91 @@ final class ScreenshotTests: XCTestCase {
     /// 名指しのときだけ（`screens=testMeasuresTripPlanDragVelocityFast`）
     func testMeasuresTripPlanDragVelocityFast() { measureDragVelocity(.fast, "fast") }
 
+    /// **持ち手 ≡・「2日目へ移す」・外して戻す・場所を探して足す**（2026-11-12・1.1.85・札 #570・資料「みんなで埋める旅行プラン」
+    /// の場面5〜7）。見本の「金沢・福井の旅」で:
+    /// 1. 持ち手 ≡ が出ている。「…」の上へ → 1 番目へ、下へ → 2 番目へ戻る（持ち手の読み上げの上下と同じ `perform`。
+    ///    iOS の XCUIElement には `increment()` が無く、読み上げの調整の操作は UI テストから押せない）
+    /// 2. 「…」に日を選ぶ段を挟まず「2日目へ移す」（日が2つ）→ 2 日目の末尾へ
+    /// 3. 「…」の「この日程から外す」→ 日の下に「戻す」→ 押すと戻る
+    /// 4. 1 日目の「追加」→ 探す欄に「東尋坊」→ 観光スポットの結果を押す → 「入れました」→ 閉じると日程にある
+    func testCapturesTripPlanSearchAndHandle() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+        guard openFixturePlan(app) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "65g-旅行プランの日程（持ち手 ≡）")
+
+        // 1. 持ち手を上へ・下へ（読み上げの上下のスワイプと同じ操作）
+        let castleMenu = app.buttons["「金沢城公園」の操作"].firstMatch
+        func castleHandle() -> XCUIElement {
+            app.descendants(matching: .any).matching(identifier: "tripPlan.dragHandle")
+                .matching(NSPredicate(format: "label == %@", "「金沢城公園」を運ぶ")).firstMatch
+        }
+        XCTAssertTrue(castleHandle().waitForExistence(timeout: 10), "持ち手 ≡ が出ていない")
+        XCTAssertEqual(castleMenu.value as? String, "1 日目、2 番目")
+        XCTAssertEqual(castleHandle().value as? String, "1 日目、2 番目", "持ち手の読み上げの位置")
+        func menuPick(_ title: String) {
+            castleMenu.tap()
+            let item = app.buttons[title].firstMatch
+            XCTAssertTrue(item.waitForExistence(timeout: 5), "「…」に「\(title)」が無い")
+            item.tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        menuPick("上へ")
+        XCTAssertEqual(castleMenu.value as? String, "1 日目、1 番目", "「上へ」で動かない")
+        menuPick("下へ")
+        XCTAssertEqual(castleMenu.value as? String, "1 日目、2 番目", "「下へ」で動かない")
+
+        // 2. 「2日目へ移す」（日を選ぶ段を挟まない）
+        castleMenu.tap()
+        let direct = app.buttons["2日目へ移す"].firstMatch
+        XCTAssertTrue(direct.waitForExistence(timeout: 5), "「…」に「2日目へ移す」が直接出ない")
+        shoot(app, "65h-旅行プランの日程（…の2日目へ移す）")
+        direct.tap()
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertEqual(app.buttons["「金沢城公園」の操作"].firstMatch.value as? String, "2 日目、3 番目")
+
+        // 3. 外して戻す
+        let capeMenu = app.buttons["「越前岬」の操作"].firstMatch
+        var pushes = 0
+        while !capeMenu.isHittable, pushes < 3 { app.swipeUp(); Thread.sleep(forTimeInterval: 1); pushes += 1 }
+        capeMenu.tap()
+        let remove = app.buttons["この日程から外す"].firstMatch
+        XCTAssertTrue(remove.waitForExistence(timeout: 5))
+        remove.tap()
+        let restore = app.buttons.matching(identifier: "tripPlan.restore")
+            .matching(NSPredicate(format: "label == %@", "「越前岬」を戻す")).firstMatch
+        XCTAssertTrue(restore.waitForExistence(timeout: 5), "外したあとに「戻す」が出ない")
+        XCTAssertFalse(app.buttons["「越前岬」の操作"].firstMatch.exists, "外したのに日程に残っている")
+        shoot(app, "65i-旅行プランの日程（外して戻す）")
+        restore.tap()
+        XCTAssertTrue(app.buttons["「越前岬」の操作"].firstMatch.waitForExistence(timeout: 5), "「戻す」で戻らない")
+        XCTAssertEqual(app.buttons["「越前岬」の操作"].firstMatch.value as? String, "2 日目、2 番目", "外したときの位置へ戻らない")
+
+        // 4. 場所を探して足す
+        for _ in 0..<pushes { app.swipeDown(); Thread.sleep(forTimeInterval: 0.5) }
+        let add = app.buttons["tripPlan.addRow.0"].firstMatch
+        pushes = 0
+        while !(add.exists && add.isHittable), pushes < 3 { app.swipeUp(); Thread.sleep(forTimeInterval: 1); pushes += 1 }
+        XCTAssertTrue(add.isHittable, "1 日目の追加の行が押せない")
+        add.tap()
+        let field = app.textFields["trips.pick.search"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "場所を足すシートに探す欄が無い")
+        field.tap()
+        field.typeText("東尋坊")
+        let result = app.buttons.matching(identifier: "trips.pick.row")
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "東尋坊")).firstMatch
+        XCTAssertTrue(result.waitForExistence(timeout: 20), "「東尋坊」が観光スポットの結果に出ない")
+        result.tap()
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertTrue(((result.value as? String) ?? "").hasPrefix("入れました"), "押しても入らない（\(result.value as? String ?? "nil")）")
+        XCTAssertTrue(field.exists, "押したらシートが閉じた（続けて足せない）")
+        shoot(app, "65j-場所を足す（探して入れた）")
+        let close = app.buttons["閉じる"].firstMatch
+        if close.exists { close.tap() }
+        XCTAssertTrue(app.buttons["「東尋坊」の操作"].firstMatch.waitForExistence(timeout: 5), "入れた場所が日程に無い")
+        XCTAssertEqual(app.buttons["「東尋坊」の操作"].firstMatch.value as? String, "1 日目、3 番目")
+    }
+
     /// **日をまたぐ区間と長い移動**（2026-11-11 owner の実機「バスとか出てこないよ」「日本からブラジルとか無理じゃん」）。
     /// 見本の「京都とブラジルの旅」（1 日 1 か所・空の日・サンパウロ）を開き、前の日からの区間と、海を越える区間の
     /// 「飛行機などの長い移動」・そのシート（Google フライト）を撮る。出なければ撮らずに抜ける

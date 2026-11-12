@@ -147,16 +147,10 @@ final class TripsDesignTests: XCTestCase {
     func testRemainingAndPickToggle() {
         XCTAssertEqual(TripStyle.remaining(dayCount: 3, max: 5), 2)
         XCTAssertEqual(TripStyle.remaining(dayCount: 7, max: 5), 0)
-        var picked = TripPlanPickSheet.toggled([], id: "a", capacity: 2)
-        picked = TripPlanPickSheet.toggled(picked, id: "b", capacity: 2)
-        XCTAssertEqual(picked, ["a", "b"])
-        XCTAssertEqual(TripPlanPickSheet.toggled(picked, id: "c", capacity: 2), ["a", "b"], "残りを超えて選ばない")
-        XCTAssertEqual(TripPlanPickSheet.toggled(picked, id: "a", capacity: 2), ["b"], "外すのはいつでも")
-        XCTAssertEqual(TripPlanPickSheet.toggled([], id: "a", capacity: 0), [])
-        XCTAssertEqual(TripPlanPickSheet.addTitle(count: 3), L("3か所を追加", "Add 3 places"))
+        // 2026-11-12（札 #570）: 選んでからまとめて足す形をやめ、押せばすぐ入る（`TripPlanSearch`）
         XCTAssertEqual(TripPlanPickSheet.eyebrow(dayIndex: 0, date: "12月24日"), L("1日目\u{2002}12月24日", "Day 1 · 12月24日"))
         XCTAssertEqual(TripPlanPickSheet.eyebrow(dayIndex: 1, date: nil), L("2日目", "Day 2"))
-        XCTAssertEqual(TripPlanPickSheet.hint(capacity: 0), L("この日はいっぱいです", "This day is full"))
+        XCTAssertEqual(TripPlanSearch.hint(dayCount: TripPlanService.itemsPerDayMax), L("この日はいっぱいです", "This day is full"))
     }
 
     func testUsageAndBytes() {
@@ -274,21 +268,24 @@ final class TripsDesignTests: XCTestCase {
                       in: delete, "削除は危険の色の行 → 確かめ（共有したプランの仲間は「抜ける」・2026-11-12）")
         XCTAssertTrue(detail.contains("TripOutlineButton(title: L(\"削除する\", \"Remove\"), strong: true"), "日の削除の確かめ")
         XCTAssertFalse(detail.contains("Color.white.opacity(0.18)"), "v1 の白 18% の線が残っている")
-        XCTAssertTrue(detail.contains("capacity: TripStyle.remaining("), "候補のシートに残りの数を渡す")
+        XCTAssertTrue(detail.contains("days: days,"), "場所を足すシートに今の日程を渡す（入った行・いっぱいの日を出す）")
     }
 
-    func testPickSheetIsMultiSelect() throws {
+    /// 場所を足す（2026-11-12・札 #570）: 上端に探す欄 → 入れる日 → 結果。押せばすぐ入り、閉じない
+    func testPickSheetSearchesAndAddsOnTap() throws {
         let pick = try source("Features/Trips/TripPlanPickSheet.swift")
-        let row = section("private func row(", in: pick)
-        assertInOrder(["selected = Self.toggled(selected, id: choice.id, capacity: capacity)", "TripPickMark(isOn: isOn)",
-                       ".disabled(locked)", ".accessibilityAddTraits(isOn ? .isSelected : [])"],
-                      in: row, "選ぶ・外す")
-        XCTAssertFalse(row.contains("dismiss()"), "1つ押すたびに閉じている（v2 は選んでからまとめて足す）")
         let body = section("var body: some View {", in: pick)
-        assertInOrder([".safeAreaInset(edge: .bottom)", "Self.addTitle(count: selected.count)",
-                       ".jpPillButton(.main(onPhoto: false))", ".jpBottomBar()"], in: body, "下の主ボタン")
+        assertInOrder(["PeopleSearchField(query: $query, placeholder: TripPlanSearch.placeholder",
+                       "if days.count > 1 { daySegment }", "results"], in: body, "欄 → 日 → 結果")
+        XCTAssertFalse(body.contains(".safeAreaInset(edge: .bottom)"), "選んでからまとめて足す下の主ボタンが残っている")
+        let tap = section("private func tap(", in: pick)
+        assertInOrder(["case .open:", "onAdd(choice.item, day)", "case .added:", "onUndo(choice.item, day)"], in: tap, "押せば入る・もう一度で取り消す")
+        XCTAssertFalse(tap.contains("dismiss()"), "1つ押すたびに閉じている（続けて足せない）")
+        let row = section("private func row(", in: pick)
+        assertInOrder(["TripPlanSearch.state(of: choice.item", "TripAddMark(state: state)", ".disabled(locked)",
+                       ".accessibilityAddTraits(state == .added ? .isSelected : [])"], in: row, "行の状態")
         let mark = section("struct TripPickMark", in: pick)
-        assertInOrder(["Circle().fill(WebTheme.accent)", "WebTheme.accentText"], in: mark, "選んだ印は真鍮に墨のチェック")
+        assertInOrder(["Circle().fill(WebTheme.accent)", "WebTheme.accentText"], in: mark, "入れた印は真鍮に墨のチェック")
     }
 
     // MARK: - 電波なしで使う（板 OfflineTripSave・OfflineSaveStates・OfflineTrip・OfflineSpot・OfflineSaved）

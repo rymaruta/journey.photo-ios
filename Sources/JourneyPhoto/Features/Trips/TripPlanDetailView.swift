@@ -12,7 +12,7 @@ import UIKit
 /// 送れる状態なら、戻るときに確かめずに送ってから戻る。端末に控えは持たない（今の決まりのまま）。
 ///
 /// 並べ替えは行の右の**運ぶ印を押さえて運ぶ**（同じ日の中も、別の日へも・`TripPlanEdit.dropped`）。
-/// 行のほかの所を押すと今どおり撮影スポットが開く。読み上げでは「…」の上へ／下へ／別の日へ移すを残す。
+/// 行のほかの所を押すと今どおり撮影スポットが開く。読み上げでは持ち手 ≡ を上下にスワイプ（2026-11-12）と「…」。
 /// 場所と場所の間には移動の見込みの1行（`TripLegRow`・Apple の地図が返した数だけ）。
 struct TripPlanDetailView: View {
 
@@ -75,8 +75,13 @@ struct TripPlanDetailView: View {
     /// 保存で送った下書き。応答が届いたとき、**それ以降に打った編集があれば残す**
     @State private var sent: Draft?
     @State private var appeared = false
-    /// 「行きたい場所から追加」を押した日
+    /// 「場所を足す」を押した日
     @State private var picking: PickTarget?
+    /// 撮影スポットの別名（slug → 別名・場所を足すシートの探す欄で使う）。取れなければ空
+    @State private var aliases: [String: [String]] = [:]
+    /// 外した場所の控え（この画面を開いている間だけ・日の下に「外しました　戻す」・2026-11-12 モックの場面6）
+    @State private var removedShelf: [TripPlanEdit.Removed] = []
+    @State private var removedSeq = 0
     /// 「地図で見る」を押した日（`TripDayMapView`）
     @State private var mapDay: MapTarget?
     /// 消すか確かめている日（予定の入った日だけ・`TripPlanEdit.confirmsRemoving`）。
@@ -361,6 +366,9 @@ struct TripPlanDetailView: View {
             let fetchedIndex = try? await environment.spots.fetchIndex()
             if let fetchedPhotos { photos = fetchedPhotos; gotPhotos = true }
             if let fetchedIndex { index = fetchedIndex; gotIndex = true }
+            // 別名は取れなくてもよい（名前と読みで当たる・`fetchAliases` は投げない）
+            let fetchedAliases = await environment.spots.fetchAliases()
+            if !fetchedAliases.isEmpty { aliases = fetchedAliases }
             sourcesFailed = !gotPhotos || !gotIndex
             refreshPlaces()
         }
@@ -448,18 +456,24 @@ struct TripPlanDetailView: View {
                                stops: target.stops)
             }
         }
+        // 場所を足す（2026-11-12・1.1.85・札 #570）: 探す欄・押せばすぐ入る・入れる日を替えられる。
+        // 足すたびに親の `days` が変わり、シートの中身も描き直る（入れた行が「入れました」になる）
         .sheet(item: $picking) { target in
             NavigationStack {
-                TripPlanPickSheet(dayIndex: target.day,
-                                  dayDate: pickDayDate(target.day),
-                                  capacity: TripStyle.remaining(
-                                      dayCount: days.indices.contains(target.day) ? days[target.day].items.count : 0,
-                                      max: TripPlanService.itemsPerDayMax),
+                TripPlanPickSheet(startDay: target.day,
+                                  days: days,
+                                  dayLabels: days.indices.map {
+                                      TripPlanSheetDay(label: L("\($0 + 1)日目", "Day \($0 + 1)"), date: pickDayDate($0))
+                                  },
                                   sourcesFailed: sourcesFailed,
                                   choices: pickChoices,
-                                  seasonLines: seasonLines(for: pickChoices, day: target.day)) { choice in
-                    add(choice.item, to: target.day)
-                }
+                                  index: index,
+                                  aliases: aliases,
+                                  seasonLine: { choice, day in seasonLine(for: choice, day: day) },
+                                  onAdd: { item, day in add(item, to: day) },
+                                  onUndo: { item, day in
+                                      if let next = TripPlanSearch.undoing(item, day: day, in: days) { days = next }
+                                  })
             }
         }
     }
@@ -856,15 +870,11 @@ struct TripPlanDetailView: View {
     }
 
     /// 候補の季節の一文（その日の月の季節の案内がある撮影スポットだけ・`TripDraft.seasonLine`）
-    private func seasonLines(for choices: [TripPlanText.Choice], day di: Int) -> [String: String] {
+    private func seasonLine(for choice: TripPlanText.Choice, day di: Int) -> String? {
         guard days.indices.contains(di),
-              let ymd = TripPlanText.dayDate(index: di, day: days[di], start: start, end: end) else { return [:] }
-        var out: [String: String] = [:]
-        for choice in choices {
-            guard let spot = spotFor(choice.item), let line = TripDraft.seasonLine(spot, ymd: ymd) else { continue }
-            out[choice.id] = line
-        }
-        return out
+              let ymd = TripPlanText.dayDate(index: di, day: days[di], start: start, end: end),
+              let spot = spotFor(choice.item) else { return nil }
+        return TripDraft.seasonLine(spot, ymd: ymd)
     }
 
     /// 候補のシートの眉に添える日付（「12月24日」）。日付の無いプランは nil
@@ -991,6 +1001,10 @@ struct TripPlanDetailView: View {
                     }
                     if ii == day.items.count - 1 { divider }
                 }
+                // 外した場所（この画面を開いている間・日の下・「戻す」で外したときの位置へ）
+                ForEach(TripPlanEdit.shelf(removedShelf, day: di, days: days)) { removed in
+                    removedRow(removed)
+                }
                 addRow(di, full: day.items.count >= TripPlanService.itemsPerDayMax, compact: !day.items.isEmpty)
                     .overlay(alignment: .top) { dropLine(DropSpot(day: di, item: nil)) }
                     .dropDestination(for: String.self) { items, _ in
@@ -1105,6 +1119,7 @@ struct TripPlanDetailView: View {
         removingDay = nil
         guard let next = TripPlanEdit.removeDay(days, at: di, snapshot: snapshot) else { return }
         days = next
+        removedShelf = TripPlanEdit.shelfAfterRemovingDay(removedShelf, removedDay: di)
         announce(L("\(di + 1) 日目を削除しました", "Removed day \(di + 1)"))
     }
 
@@ -1134,34 +1149,128 @@ struct TripPlanDetailView: View {
     private func itemRow(_ di: Int, _ ii: Int, _ item: TripItem, number: Int,
                          season: String?, chip: String?) -> some View {
         let name = TripPlanText.label(for: item, index: index, places: places)
-        // 🔴 **右の印は「…」1つに**（2026-11-11 owner「UI もブラッシュアップして」: 「…」「×」「≡」の3つが並んで重かった）。
-        // - 外すは「…」の中（押す回数 1 → 2。日程から外すのは取り消せるが、誤って押しやすい × を行に置かない）
-        // - 並べ替えは**行を押さえて運ぶ**（iOS の決まりの操作。押す回数は変わらない）。行を押すと今どおり撮影スポットが開く
-        // - 読み上げの人は「…」の上へ・下へ・別の日へ移す・外す
+        // 右の印は「…」と ≡ の2つ（2026-11-12 判断・1.1.85・札 #570・資料「みんなで埋める旅行プラン」の場面7）。
+        // - 2026-11-11 は「…」1つにして、並べ替えは行を押さえて運ぶ形だった。**どこを掴めば動くかが見えなかった**ので、
+        //   行の右端に ≡ の持ち手を常に出す（owner「ドラッグアンドドロップで入れ替えたり…簡単に操作できるように」）
+        // - 運ぶのは ≡ だけ。行のほかの所を押すと今どおり撮影スポットが開く（押した所と運ぶ所が混ざらない）
+        // - 外すは今どおり「…」の中（誤って押しやすい × を行に置かない）
+        // - 読み上げの人は ≡ を上下にスワイプで上へ・下へ、操作で「N日目へ」「外す」（`TripPlanEdit.accessibilityMoves`）
         return HStack(spacing: 0) {
-            if TripPlanFixture.dragHandleVariant {
-                // 比べるための運ぶ印の版（見本のときだけ・`-JPTripPlanDragHandle`）
-                itemLink(item, name: name, number: number, season: season, chip: chip)
-                Image(systemName: "line.3.horizontal")
-                    .font(.subheadline)
-                    .foregroundStyle(WebTheme.text3)
-                    .webTappable()
-                    .contentShape(Rectangle())
-                    .draggable(TripPlanEdit.dragPayload(day: di, item: ii, of: item)) { dragPreview(name) }
-                    .accessibilityLabel(L("「\(name)」を運ぶ", "Move \(name)"))
-                    .accessibilityIdentifier("tripPlan.dragHandle")
-            } else {
-                itemLink(item, name: name, number: number, season: season, chip: chip)
-                    .draggable(TripPlanEdit.dragPayload(day: di, item: ii, of: item)) { dragPreview(name) }
-                    .accessibilityHint(L("押すと開きます。押さえたまま運ぶと並べ替えます", "Tap to open. Touch and hold, then drag to reorder."))
-                    .accessibilityIdentifier("tripPlan.dragHandle")
-            }
+            itemLink(item, name: name, number: number, season: season, chip: chip)
             itemMenu(di, ii, item, name: name)
+            dragHandle(di, ii, item, name: name)
         }
         .overlay(alignment: .top) { dropLine(DropSpot(day: di, item: ii)) }
         .dropDestination(for: String.self) { items, _ in
             drop(items.first, toDay: di, toItem: ii)
         } isTargeted: { setDropTarget($0, DropSpot(day: di, item: ii)) }
+    }
+
+    /// 持ち手 ≡（行の右端・当たり 44pt・2026-11-12 札 #570）。押さえて運ぶ（同じ日の中も、別の日へも）。
+    /// 読み上げでは**上下のスワイプで上へ・下へ**（調整できる要素）、操作で「N日目へ移す」「外す」
+    private func dragHandle(_ di: Int, _ ii: Int, _ item: TripItem, name: String) -> some View {
+        let moves = TripPlanEdit.accessibilityMoves(days, day: di, item: ii)
+        return Image(systemName: "line.3.horizontal")
+            .font(.body)
+            .foregroundStyle(WebTheme.text2)
+            .webTappable()
+            .contentShape(Rectangle())
+            .draggable(TripPlanEdit.dragPayload(day: di, item: ii, of: item)) { dragPreview(name) }
+            .accessibilityLabel(L("「\(name)」を運ぶ", "Move \(name)"))
+            .accessibilityValue(L("\(di + 1) 日目、\(ii + 1) 番目", "Day \(di + 1), item \(ii + 1)"))
+            .accessibilityHint(L("上か下にスワイプで並べ替えます。押さえたまま運ぶと別の日へも移せます",
+                                 "Swipe up or down to reorder. Touch and hold, then drag to move to another day."))
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: perform(.up, di, ii, item, name: name)
+                case .decrement: perform(.down, di, ii, item, name: name)
+                @unknown default: break
+                }
+            }
+            .accessibilityActions {
+                ForEach(Array(moves.enumerated()), id: \.offset) { _, move in
+                    Button(Self.moveTitle(move)) { perform(move, di, ii, item, name: name) }
+                }
+            }
+            .accessibilityIdentifier("tripPlan.dragHandle")
+    }
+
+    /// 読み上げの操作の名前（「…」のメニューと同じ言葉）
+    nonisolated static func moveTitle(_ move: TripPlanEdit.A11yMove) -> String {
+        switch move {
+        case .up: return L("上へ", "Move up")
+        case .down: return L("下へ", "Move down")
+        case .toDay(let to): return L("\(to + 1)日目へ移す", "Move to day \(to + 1)")
+        case .remove: return L("この日程から外す", "Remove from this trip")
+        }
+    }
+
+    /// 動かす・外す（持ち手の読み上げと「…」のメニューの両方から）。**押した時点の日程で同じ項目を探し直す**
+    /// （描いた時点の位置で動かすと、その間に保存の応答で差し替わった姿を巻き戻す・`TripPlanEdit.locate`）
+    private func perform(_ move: TripPlanEdit.A11yMove, _ di: Int, _ ii: Int, _ item: TripItem, name: String) {
+        guard let at = TripPlanEdit.locate(days, day: di, item: ii, original: item) else { return notMoved(name) }
+        switch move {
+        case .up:
+            guard let next = TripPlanEdit.moveUp(days, day: di, item: at) else { return notMoved(name) }
+            apply(next, said: L("「\(name)」を \(di + 1) 日目の \(at) 番目へ移しました", "Moved \(name) to position \(at) on day \(di + 1)"))
+        case .down:
+            guard let next = TripPlanEdit.moveDown(days, day: di, item: at) else { return notMoved(name) }
+            apply(next, said: L("「\(name)」を \(di + 1) 日目の \(at + 2) 番目へ移しました", "Moved \(name) to position \(at + 2) on day \(di + 1)"))
+        case .toDay(let to):
+            guard let next = TripPlanEdit.moveToDay(days, day: di, item: at, toDay: to) else { return notMoved(name) }
+            apply(next, said: L("「\(name)」を \(to + 1) 日目へ移しました", "Moved \(name) to day \(to + 1)"))
+        case .remove:
+            // `removing` も押した時点の日程で探し直す（外した位置 `at` は控えに残す）
+            guard let next = TripPlanEdit.removing(days, day: di, item: ii, original: item) else { return notMoved(name) }
+            days = next
+            // 外しても日の下に「外しました　戻す」を残す（この画面を開いている間・2026-11-12 モックの場面6）
+            removedSeq += 1
+            removedShelf.append(TripPlanEdit.Removed(id: removedSeq, day: di, index: at, item: item))
+            announce(L("「\(name)」を外しました。日の下の「戻す」で戻せます", "Removed \(name). Use Restore below the day to undo."))
+        }
+    }
+
+    /// 外した場所の行（日の下・点線の枠・打ち消した名前と「戻す」）。押す回数は 1（以前は戻す道が無く、足し直していた）
+    private func removedRow(_ removed: TripPlanEdit.Removed) -> some View {
+        let name = TripPlanText.label(for: removed.item, index: index, places: places)
+        return HStack(spacing: JPSpace.xs) {
+            Text(name)
+                .strikethrough(true, color: WebTheme.text3)
+                .font(JPFont.footnote)
+                .foregroundStyle(WebTheme.text3)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(L("外しました", "Removed"))
+                .font(JPFont.footnote)
+                .foregroundStyle(WebTheme.text2)
+            Spacer(minLength: JPSpace.xs)
+            Button {
+                restore(removed, name: name)
+            } label: {
+                // 線の小ボタン（見た目 36・当たり 44・`jpOutlineButton(.inline)`）
+                Text(L("戻す", "Restore"))
+                    .jpOutlineButton(.inline)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("「\(name)」を戻す", "Restore \(name)"))
+            .accessibilityIdentifier("tripPlan.restore")
+        }
+        .padding(.leading, JPSpace.s)
+        .padding(.trailing, JPSpace.xxs)
+        .overlay(RoundedRectangle(cornerRadius: JPRadius.field)
+            .strokeBorder(WebTheme.outline, style: StrokeStyle(lineWidth: JPStroke.hairline, dash: [4, 3])))
+        .padding(.vertical, JPSpace.xxs)
+        .accessibilityElement(children: .contain)
+    }
+
+    /// 戻す。外したときの日・位置へ（入らなければ知らせる）
+    private func restore(_ removed: TripPlanEdit.Removed, name: String) {
+        removedShelf.removeAll { $0.id == removed.id }
+        guard let next = TripPlanEdit.restoring(days, removed) else {
+            // もう入っている（足し直した）なら控えを消すだけ。日が無い・いっぱいのときは知らせる
+            if TripPlanEdit.dayContaining(removed.item, in: days) == nil { notMoved(name) }
+            return
+        }
+        apply(next, said: L("「\(name)」を戻しました", "Restored \(name)"))
     }
 
     /// 運んでいる間の絵（見本のときだけ、持ち上がった回数を数える）
@@ -1200,24 +1309,23 @@ struct TripPlanDetailView: View {
         let targets = TripPlanEdit.movableDays(days, from: di)
         return Menu {
             Button {
-                guard let at = TripPlanEdit.locate(days, day: di, item: ii, original: item),
-                      let next = TripPlanEdit.moveUp(days, day: di, item: at) else { return notMoved(name) }
-                apply(next, said: L("「\(name)」を \(di + 1) 日目の \(at) 番目へ移しました", "Moved \(name) to position \(at) on day \(di + 1)"))
+                perform(.up, di, ii, item, name: name)
             } label: { Label(L("上へ", "Move up"), systemImage: "arrow.up") }
             .disabled(!canUp)
             Button {
-                guard let at = TripPlanEdit.locate(days, day: di, item: ii, original: item),
-                      let next = TripPlanEdit.moveDown(days, day: di, item: at) else { return notMoved(name) }
-                apply(next, said: L("「\(name)」を \(di + 1) 日目の \(at + 2) 番目へ移しました", "Moved \(name) to position \(at + 2) on day \(di + 1)"))
+                perform(.down, di, ii, item, name: name)
             } label: { Label(L("下へ", "Move down"), systemImage: "arrow.down") }
             .disabled(!canDown)
-            if !targets.isEmpty {
+            // 移せる日が1つだけなら、日を選ぶ段を挟まず「2日目へ移す」と直接出す（押す回数 3 → 2・2026-11-12）
+            if let only = TripPlanEdit.directMoveTarget(days, from: di) {
+                Button {
+                    perform(.toDay(only), di, ii, item, name: name)
+                } label: { Label(Self.moveTitle(.toDay(only)), systemImage: "calendar") }
+            } else if !targets.isEmpty {
                 Menu {
                     ForEach(targets, id: \.self) { to in
                         Button(L("\(to + 1) 日目", "Day \(to + 1)")) {
-                            guard let at = TripPlanEdit.locate(days, day: di, item: ii, original: item),
-                                  let next = TripPlanEdit.moveToDay(days, day: di, item: at, toDay: to) else { return notMoved(name) }
-                            apply(next, said: L("「\(name)」を \(to + 1) 日目へ移しました", "Moved \(name) to day \(to + 1)"))
+                            perform(.toDay(to), di, ii, item, name: name)
                         }
                     }
                 } label: { Label(L("別の日へ移す", "Move to another day"), systemImage: "calendar") }
@@ -1229,11 +1337,10 @@ struct TripPlanDetailView: View {
                 Label(item.note == nil ? L("ひとことを書く", "Add a note") : L("ひとことを直す", "Edit note"),
                       systemImage: "text.bubble")
             }
-            // 外す（2026-11-11: 行の × をここへ畳んだ）。押した時点の日程で同じ項目を探し直す
+            // 外す（2026-11-11: 行の × をここへ畳んだ）。押した時点の日程で同じ項目を探し直す。
+            // 外しても日の下に「戻す」が残る（2026-11-12）
             Button(role: .destructive) {
-                guard let next = TripPlanEdit.removing(days, day: di, item: ii, original: item) else { return notMoved(name) }
-                days = next
-                announce(L("「\(name)」を外しました", "Removed \(name)"))
+                perform(.remove, di, ii, item, name: name)
             } label: {
                 Label(L("この日程から外す", "Remove from this trip"), systemImage: "minus.circle")
             }
@@ -1441,7 +1548,7 @@ struct TripPlanDetailView: View {
         }
     }
 
-    /// 「行きたい場所から追加…」（v2 の板 TripPlanDays の `.add`: 真鍮の ＋ と字・48）
+    /// 「場所を足す」（v2 の板 TripPlanDays の `.add`: 真鍮の ＋ と字・48）
     /// - `compact`: 場所の入った日は小さく（「＋ 追加」・真鍮の字・当たり 44pt）。**空の日だけ**真鍮の大きな行で目立たせる
     ///   （2026-11-11 owner「UI もブラッシュアップして」: 日ごとに大きな行が並んで縦に長かった。押す回数は変わらない）
     private func addRow(_ di: Int, full: Bool, compact: Bool = false) -> some View {
@@ -1452,7 +1559,8 @@ struct TripPlanDetailView: View {
                 Image(systemName: "plus")
                     .font(.footnote.weight(.semibold))
                     .accessibilityHidden(true)
-                Text(compact ? L("追加", "Add") : L("行きたい場所から追加…", "Add a saved place…"))
+                // 2026-11-12（札 #570）: シートで観光スポットも探せるので「場所を足す」（モックの場面5の言葉）
+                Text(compact ? L("追加", "Add") : L("場所を足す", "Add places"))
                     .font(compact ? JPFont.footnote.weight(.semibold) : JPFont.bodyEmphasis)
                 Spacer(minLength: 0)
             }
@@ -1461,7 +1569,7 @@ struct TripPlanDetailView: View {
             .frame(minHeight: compact ? WebTheme.minTapTarget : JPHeight.field)
             .contentShape(Rectangle())
         }
-        .accessibilityLabel(L("\(di + 1) 日目に行きたい場所から追加", "Add a saved place to day \(di + 1)"))
+        .accessibilityLabel(L("\(di + 1) 日目に場所を足す", "Add places to day \(di + 1)"))
         .buttonStyle(.plain)
         .accessibilityIdentifier("tripPlan.addRow.\(di)")
         // 1日に置ける数はサーバーと対（超えると保存で断られる）
@@ -1469,10 +1577,11 @@ struct TripPlanDetailView: View {
         .opacity(full ? 0.5 : 1)
     }
 
-    private func add(_ item: TripItem, to di: Int) {
-        guard days.indices.contains(di),
-              days[di].items.count < TripPlanService.itemsPerDayMax else { return }
-        days[di].items.append(item)
+    /// 足す。**入ったか**を返す（いっぱいの日・無い日は断る・`TripPlanEdit.adding`）
+    private func add(_ item: TripItem, to di: Int) -> Bool {
+        guard let next = TripPlanEdit.adding(item, to: days, day: di) else { return false }
+        days = next
+        return true
     }
 
     private var addDayButton: some View {

@@ -172,6 +172,68 @@ enum TripPlanEdit {
         days.indices.filter { $0 != day && days[$0].items.count < TripPlanService.itemsPerDayMax }
     }
 
+    // MARK: - 持ち手の読み上げの操作（2026-11-12・1.1.85・札 #570）
+
+    /// 読み上げで行に付ける操作（持ち手 ≡ の「操作」）。押すだけのメニュー（「…」）と同じ中身
+    enum A11yMove: Equatable {
+        case up, down
+        case toDay(Int)
+        case remove
+    }
+
+    /// 読み上げの操作の並び: 上へ（先頭でなければ）→ 下へ（末尾でなければ）→ 移せる日へ → 外す
+    static func accessibilityMoves(_ days: [TripDay], day: Int, item: Int) -> [A11yMove] {
+        guard days.indices.contains(day), days[day].items.indices.contains(item) else { return [] }
+        var out: [A11yMove] = []
+        if moveUp(days, day: day, item: item) != nil { out.append(.up) }
+        if moveDown(days, day: day, item: item) != nil { out.append(.down) }
+        out += movableDays(days, from: day).map { .toDay($0) }
+        out.append(.remove)
+        return out
+    }
+
+    /// 「…」に**日を選ぶ段を挟まずに**出す移す先（移せる日が1つだけのとき・資料の「2日目へ移す」）。
+    /// 2つ以上なら nil（今どおり「別の日へ移す」の下に日を並べる）
+    static func directMoveTarget(_ days: [TripDay], from day: Int) -> Int? {
+        let targets = movableDays(days, from: day)
+        return targets.count == 1 ? targets[0] : nil
+    }
+
+    // MARK: - 外した場所を戻す（2026-11-12・1.1.85・モックの場面6）
+
+    /// 外した場所の控え（**この画面を開いている間だけ・端末の中**）。日の下に「外しました　戻す」を出す。
+    /// 二人で見る「外した場所」の欄（サーバーの `trip#`）は 1.1.86（承認済みの DB の変更）なので、ここでは持たない
+    struct Removed: Equatable, Identifiable {
+        let id: Int
+        let day: Int
+        /// 外したときの位置（戻すときはここへ。日が短くなっていれば末尾）
+        let index: Int
+        let item: TripItem
+    }
+
+    /// 戻す。**外したときの日・位置へ**（位置が無くなっていれば日の末尾）。日が無い・いっぱい・もう入っているときは nil
+    static func restoring(_ days: [TripDay], _ removed: Removed) -> [TripDay]? {
+        guard days.indices.contains(removed.day),
+              days[removed.day].items.count < TripPlanService.itemsPerDayMax,
+              dayContaining(removed.item, in: days) == nil else { return nil }
+        var out = days
+        out[removed.day].items.insert(removed.item, at: min(max(removed.index, 0), out[removed.day].items.count))
+        return out
+    }
+
+    /// その日の下に出す控え。**もう日程に戻っている場所は出さない**（検索から足し直したときなど）
+    static func shelf(_ shelf: [Removed], day: Int, days: [TripDay]) -> [Removed] {
+        shelf.filter { $0.day == day && dayContaining($0.item, in: days) == nil }
+    }
+
+    /// 日を消したあとの控え。消した日の控えは捨て、後ろの日は1つ前へ詰める
+    static func shelfAfterRemovingDay(_ shelf: [Removed], removedDay: Int) -> [Removed] {
+        shelf.compactMap { r in
+            if r.day == removedDay { return nil }
+            return r.day > removedDay ? Removed(id: r.id, day: r.day - 1, index: r.index, item: r.item) : r
+        }
+    }
+
     /// ひとことを付け替える。**前後の空白を落とし、空なら外す**。長さはサーバーと同じく
     /// UTF-16 の単位で `TripPlanService.noteMax` まで（字の途中では切らない・`PostLimits.clamp`）
     static func setNote(_ days: [TripDay], day: Int, item: Int, note raw: String) -> [TripDay]? {
