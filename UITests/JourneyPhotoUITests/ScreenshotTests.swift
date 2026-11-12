@@ -1387,6 +1387,83 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "22b-写真を編集（欄の名前・撮影日）")
     }
 
+    /// **旅をストーリーに**（第9章・1.1.83・`TravelStorySheet`）。自分の写真の ⋯ →「ストーリーに」。
+    /// 型を払って選ぶ1枚（はじめは切手と消印）と、払った次の型（フィルムの帯）、ステッカーの形を撮る。
+    /// 見本の利用者の写真が全体に公開でない・読めないなど、出なければ撮らない（この試験の決まり）
+    func testCapturesTravelStory() {
+        let app = XCUIApplication()
+        // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        // 前に選んだ型を残さない（はじめの既定＝切手と消印・写真に重ねる から撮る）
+        for key in ["kind", "mode", "place", "date"] {
+            app.launchArguments += ["-travelStory.\(key)", ""]
+        }
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+
+        let myPhoto = app.buttons["mypage.photo"].firstMatch
+        guard myPhoto.waitForExistence(timeout: 15) else { return }
+        if !myPhoto.isHittable {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard myPhoto.isHittable else { return }
+        myPhoto.tap()
+
+        let menu = app.buttons["photo.menu"].firstMatch
+        guard menu.waitForExistence(timeout: 10), menu.isHittable else { return }
+        menu.tap()
+        let story = app.buttons["photo.travelStory"].firstMatch
+        guard story.waitForExistence(timeout: 5), story.isHittable else { return }
+        story.tap()
+
+        let share = app.buttons["travelStory.share"].firstMatch
+        guard share.waitForExistence(timeout: 15) else { return }
+        // 写真を読んで描き終える（主ボタンが押せるようになる）まで待つ
+        let ready = NSPredicate(format: "isEnabled == true")
+        _ = XCTWaiter.wait(for: [expectation(for: ready, evaluatedWith: share)], timeout: 20)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "22c-旅をストーリーに（切手と消印・写真に重ねる）")
+        XCTAssertTrue(app.buttons["閉じる"].firstMatch.exists, "ストーリーにの右上に閉じるが無い")
+
+        // 払って次の型（フィルムの帯）へ。払うのが効かなければ › で
+        let stage = app.descendants(matching: .any)["travelStory.stage"].firstMatch
+        if stage.exists { stage.swipeLeft() }
+        Thread.sleep(forTimeInterval: 2)
+        let name = app.staticTexts["travelStory.name"].firstMatch
+        if name.exists, !(name.label.contains("フィルム")) {
+            let next = app.buttons["travelStory.next"].firstMatch
+            if next.exists, next.isHittable { next.tap() }
+            Thread.sleep(forTimeInterval: 2)
+        }
+        _ = XCTWaiter.wait(for: [expectation(for: ready, evaluatedWith: share)], timeout: 20)
+        shoot(app, "22d-旅をストーリーに（フィルムの帯）")
+
+        // 搭乗券のステッカー
+        let prev = app.buttons["travelStory.prev"].firstMatch
+        for _ in 0..<2 where prev.exists && prev.isEnabled {
+            prev.tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        let sticker = app.buttons["travelStory.mode.sticker"].firstMatch
+        guard sticker.exists, sticker.isHittable else { return }
+        sticker.tap()
+        _ = XCTWaiter.wait(for: [expectation(for: ready, evaluatedWith: share)], timeout: 20)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "22e-旅をストーリーに（搭乗券・ステッカー）")
+        XCTAssertTrue(share.label.contains("コピー"), "ステッカーの主ボタンがコピーでない: \(share.label)")
+    }
+
     /// **「新しくなったこと」**（2026-10-04・`WhatsNewView`）。更新して初めて開いた人に出るシート。
     ///
     /// 更新した人を起動の引数で作る: 規約に同意済み（`-legal.consent.version 1`）・前に見た版が古い

@@ -48,6 +48,14 @@ struct PhotoDetailView: View {
         let avatarURL: URL?
     }
     @State private var preparingThreads = false
+    /// 旅をストーリーに（第9章・1.1.83・2026-11-12 判断）。押した時点の写真で作る
+    @State private var travelStory: TravelStoryBundle?
+    private struct TravelStoryBundle: Identifiable {
+        let id = UUID()
+        let lead: URL
+        let film: [URL]
+        let facts: TravelStory.Facts
+    }
     @State private var showViewer = false
     @State private var actionError: String?
     /// 編集して保存したあとの姿。**`photo` は `let` で書き換えられない**
@@ -423,6 +431,9 @@ struct PhotoDetailView: View {
                                     credit: bundle.credit,
                                     shareText: bundle.text,
                                     avatarURL: bundle.avatarURL)
+        }
+        .sheet(item: $travelStory) { bundle in
+            TravelStorySheet(leadURL: bundle.lead, filmURLs: bundle.film, facts: bundle.facts, phase: .now)
         }
         // **閉じたら引き直す。** 保存はできているのに画面が古いままだと、
         // 保存できていないように見える
@@ -1208,6 +1219,19 @@ struct PhotoDetailView: View {
             avatarURL: model.owner?.avatarURL(cacheBust: UUID().uuidString))
     }
 
+    /// 旅をストーリーに。先頭は上に出ている1枚、フィルムの帯は同じ投稿の束から（自分の・全体に公開した写真だけ）
+    private func openTravelStory() {
+        let target = shown
+        guard let lead = target.detailImageURL else { return }
+        let group = heroLineup.photos.filter(CollectionScreen.isShareable)
+        let ordered = [target] + group.filter { $0.id != target.id }
+        let film = TravelStory.filmPicks(ordered).compactMap(\.detailImageURL)
+        travelStory = TravelStoryBundle(
+            lead: lead, film: film,
+            facts: TravelStory.facts(of: target,
+                                     name: AuthorName.shown(profile: model.owner, photoDisplayName: target.displayName)))
+    }
+
     private var menu: some View {
         Menu {
             // **共有するのは画像ではなくページ。** 生の画像を送ると、
@@ -1234,6 +1258,13 @@ struct PhotoDetailView: View {
                         Label(L("SNS に載せる", "Share to social apps"), systemImage: "square.and.arrow.up.on.square")
                     }
                     .disabled(preparingThreads)
+                    // 旅をストーリーに（第9章・2026-11-12 判断）。条件は「SNS に載せる」と同じ（自分の・全体に公開した写真）。
+                    // 章は「SNS に載せる」の名前を替える案だったが、写真1枚のカード（第8章・投稿 4:5 など）の入口が
+                    // 消えるので、行を分けた。まとめるかは owner の判断に残す
+                    Button { openTravelStory() } label: {
+                        Label(L("ストーリーに", "To your story"), systemImage: "rectangle.portrait.on.rectangle.portrait")
+                    }
+                    .accessibilityIdentifier("photo.travelStory")
                 }
                 Button(role: .destructive) { showDeleteConfirm = true } label: {
                     Label(Labels.Common.delete, systemImage: "trash")

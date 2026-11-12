@@ -35,6 +35,8 @@ struct TripBookView: View {
     /// その画像を作った人。**人が替わったときだけ**共有を文に戻す（表紙が替わっただけなら前の画像のまま・
     /// 同じファイルを上書きするので、作り直しの間に共有のボタンが文に切り替わらない）
     @State private var cardOwner: String?
+    /// 旅をストーリーに（`TravelStorySheet`）
+    @State private var showStory = false
 
     var body: some View {
         ScrollView {
@@ -56,7 +58,17 @@ struct TripBookView: View {
         // （`JPPillStyle.main(onPhoto: true)`）。自分だけの一冊は出さない（`TripBook.canShare`）
         .safeAreaInset(edge: .bottom) {
             if TripBook.canShare(book, isMine: isMine) {
-                shareButton.jpBottomBar()
+                HStack(spacing: JPSpace.xs) {
+                    shareButton
+                    storyButton
+                }
+                .jpBottomBar()
+            }
+        }
+        // 旅をストーリーに（第9章・2026-11-12 判断）。一冊はもう帰ってきた旅なので、搭乗券は「ただいま」から
+        .sheet(isPresented: $showStory) {
+            if let story = storySource {
+                TravelStorySheet(leadURL: story.lead, filmURLs: story.film, facts: story.facts, phase: .home)
             }
         }
         .onAppear {
@@ -107,6 +119,38 @@ struct TripBookView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("trips.share")
         }
+    }
+
+    /// 旅をストーリーに（第9章「旅の一冊 →『ストーリーに』→ 払う → 共有」）。「この一冊を送る」の横に置く
+    /// （章は「この一冊を送る」の中に足す案。押す回数を増やさないよう、同じ帯に並べた・2026-11-12 判断）。
+    /// 載せるのは**全体に公開した写真だけ**（`CollectionScreen.isShareable`）。1枚も無ければ出さない
+    @ViewBuilder
+    private var storyButton: some View {
+        if storySource != nil {
+            Button { showStory = true } label: {
+                Text(L("ストーリーに", "To your story"))
+                    .jpPillButton(.outline, height: JPHeight.primaryButton)
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: 150)
+            .accessibilityIdentifier("trips.story")
+        }
+    }
+
+    private struct StorySource {
+        let lead: URL
+        let film: [URL]
+        let facts: TravelStory.Facts
+    }
+
+    /// 先頭は旅の最後の1枚（ただいまの場所）、フィルムの帯は始め・中ほど・終わり
+    private var storySource: StorySource? {
+        let shareable = book.photos.filter(CollectionScreen.isShareable)
+        guard let last = shareable.last, let lead = last.detailImageURL else { return nil }
+        let name = last.displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return StorySource(lead: lead,
+                           film: TravelStory.filmPicks(shareable).compactMap(\.detailImageURL),
+                           facts: TravelStory.facts(of: book, lead: last, name: name, distance: distance))
     }
 
     private var shareLabel: some View {
