@@ -97,6 +97,13 @@ struct SendSheet<People: View>: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("sendSheet.otherApps")
+        case .otherAppsText(let text):
+            // 撮影スポット（1.1.83・2026-11-12）: 名前・地域・頁・地図のリンクを並べた文を渡す（今の ↑ と同じ中身）
+            ShareLink(item: text) {
+                actionLabel(symbol: "square.and.arrow.up", text: L("ほかのアプリ", "Other apps"))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("sendSheet.otherApps")
         }
     }
 
@@ -153,12 +160,14 @@ enum SendSheetAction: Identifiable {
     case copyLink(URL)
     /// ほかのアプリ（iPhone の共有シート）
     case otherApps(URL)
+    /// ほかのアプリに文を渡す（撮影スポット・1.1.83）
+    case otherAppsText(String)
 
     var id: String {
         switch self {
         case .story: return "story"
         case .copyLink: return "copy"
-        case .otherApps: return "other"
+        case .otherApps, .otherAppsText: return "other"
         }
     }
 }
@@ -210,6 +219,12 @@ enum SendSheetLayout {
     /// 送れたときの知らせ
     static func sentLabel(_ name: String) -> String {
         L("\(name)さんに送りました", "Sent to \(name)")
+    }
+
+    /// 撮影スポットの頁から出す行動の並び（1.1.83・2026-11-12）。リンクをコピー（頁）とほかのアプリ（今の ↑ と同じ文）。
+    /// ストーリーは置かない（撮影スポットのストーリーの絵は無い）
+    static func spotActions(pageURL: URL, shareText: String) -> [SendSheetAction] {
+        [.copyLink(pageURL), .otherAppsText(shareText)]
     }
 
     /// 写真の詳細から出す行動の並び。**ストーリーはログイン中で、全体に公開した写真だけ**

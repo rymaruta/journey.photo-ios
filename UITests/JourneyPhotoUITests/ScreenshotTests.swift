@@ -643,6 +643,9 @@ final class ScreenshotTests: XCTestCase {
                     Thread.sleep(forTimeInterval: 2)
                     if app.buttons["home.emptyAction"].firstMatch.exists {
                         shoot(app, "10c-ホーム（空フィードの次の行動）")
+                    } else if app.descendants(matching: .any)["home.suggested"].firstMatch.exists {
+                        // 1.1.83（資料④）: 並べる人がいれば「写真や人を探す」の代わりに「おすすめの人」
+                        shoot(app, "10c-ホーム（フォロー中が空・おすすめの人）")
                     }
                 }
             }
@@ -8146,6 +8149,154 @@ final class ScreenshotTests: XCTestCase {
             if app.buttons["dm.deleted.remove"].firstMatch.waitForExistence(timeout: 5) {
                 shoot(app, "86m7-メッセージ（相手が退会）")
             }
+        }
+    }
+
+    // MARK: - 資料「SNS をもっと SNS に」（1.1.83・2026-11-12）
+
+    /// **④ ホームの「フォロー中」が空のときの「おすすめの人」**。見本の通信に `-JPPreviewFollowNone` を足すと、
+    /// 誰もフォローしていないことにする（`PreviewBackend`）。「フォロー中」を選んで並び（120a）→ 1人をフォローして
+    /// 「フォロー中の写真を見る」が出た所（120b）を撮る。**出なければ撮らずに抜ける**
+    func testCapturesSuggestedPeople() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewFollowNone", "YES"]
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        guard app.tabBars.firstMatch.waitForExistence(timeout: 20) else { return }
+        _ = app.buttons["feed.photo"].firstMatch.waitForExistence(timeout: 20)
+        let following = app.buttons["home.feed.following"].firstMatch
+        scrollUntilHittable(app, following, limit: 3)
+        guard following.exists, following.isHittable else { return }
+        following.tap()
+        let list = app.descendants(matching: .any)["home.suggested"].firstMatch
+        let shown = list.waitForExistence(timeout: 15)
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, shown ? "120a-ホーム（フォロー中が空・おすすめの人）" : "120a-ホーム（おすすめの人が出ない）")
+        guard shown else { return }
+        let follow = app.buttons["home.suggested.follow"].firstMatch
+        guard follow.waitForExistence(timeout: 5), follow.isHittable else { return }
+        XCTAssertGreaterThanOrEqual(follow.frame.height, 44, "「フォロー」の的が 44pt 未満")
+        follow.tap()
+        let see = app.buttons["home.suggested.seeFeed"].firstMatch
+        scrollUntilHittable(app, see)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, see.exists ? "120b-ホーム（おすすめの人をフォローした）" : "120b-ホーム（フォロー中の写真を見るが出ない）")
+        XCTAssertTrue(see.exists, "フォローしても「フォロー中の写真を見る」が出ない")
+    }
+
+    /// **⑤ 撮影スポットを DM で送る**。見本の会話（夕焼けの人）に撮影スポットの頁のリンクの1通を置いてある
+    /// （`PreviewBackend.dmReply`）。会話の札（120c）→ 札から撮影スポットの頁 → 右上の「送る」シート（120d）を撮る。
+    /// **出なければ撮らずに抜ける**
+    func testCapturesSpotSend() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewDM", "YES"]
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        guard app.tabBars.firstMatch.waitForExistence(timeout: 20) else { return }
+        let bubble = app.buttons["header.messages"].firstMatch
+        guard bubble.waitForExistence(timeout: 20) else { return }
+        bubble.tap()
+        guard app.descendants(matching: .any)["dm.inbox"].firstMatch.waitForExistence(timeout: 15),
+              openThread(app, named: "夕焼けの人") else { return }
+        let card = app.descendants(matching: .any)["dm.spotCard"].firstMatch
+        let cardShown = card.waitForExistence(timeout: 20)
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, cardShown ? "120c-メッセージ（撮影スポットの札）" : "120c-メッセージ（撮影スポットの札が出ない）")
+        guard cardShown else { return }
+        let wish = app.buttons["dm.spotCard.wish"].firstMatch
+        if wish.exists { XCTAssertGreaterThanOrEqual(wish.frame.height, 44, "「行きたい場所に入れる」の的が 44pt 未満") }
+        let open = app.buttons["dm.spotCard.open"].firstMatch
+        guard open.exists, open.isHittable else {
+            XCTContext.runActivity(named: "120d: 札の「撮影スポットの頁を開く」が押せない exists=\(open.exists)") { _ in }
+            return
+        }
+        open.tap()
+        let share = app.buttons["spot.official.share"].firstMatch
+        guard share.waitForExistence(timeout: 15), share.isHittable else { return }
+        share.tap()
+        let sheet = app.descendants(matching: .any)["sendSheet"].firstMatch
+        let sheetShown = sheet.waitForExistence(timeout: 10)
+        _ = app.buttons["dm.face"].firstMatch.waitForExistence(timeout: 10)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, sheetShown ? "120d-撮影スポット（送るシート）" : "120d-撮影スポット（送るシートが出ない）")
+        XCTAssertTrue(sheetShown, "撮影スポットの右上を押しても送るシートが出ない")
+        // 🔴 顔の段があるシートでは、行動の丸の道しるべが入れ物の「sendSheet」になる（Mac run 1127 の画面の木:
+        // `Button, identifier: 'sendSheet', label: 'ほかのアプリ'`・`label: 'リンクをコピー'`。顔の段の無い写真のシート（63a）では
+        // `sendSheet.otherApps` で見つかる）。丸そのものは出ているので、ここは**名前**で確かめる
+        for label in ["リンクをコピー", "ほかのアプリ"] {
+            let button = app.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
+            XCTAssertTrue(button.exists, "送るシートに「\(label)」が無い")
+            if button.exists { XCTAssertGreaterThanOrEqual(button.frame.height, 44, "「\(label)」の的が 44pt 未満") }
+        }
+    }
+
+    /// **① 投稿したら共有カード**。見本の1枚を選んだ投稿画面（`-JPPreviewUploadSample`）で、見本の通信に投稿し、
+    /// 上がった直後のカードの画面（120e）を撮る。**出なければ撮らずに抜ける**
+    func testCapturesPostedShareCard() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewUploadSample", "YES"]
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
+        tabBar.buttons.element(boundBy: 2).tap()
+        let toPhoto = app.buttons["post.choice.photo"].firstMatch
+        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
+        toPhoto.tap()
+        guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 20) else { return }
+        let title = app.textFields["upload.title"].firstMatch
+        scrollUntilHittable(app, title)
+        if title.exists, title.isHittable {
+            title.tap()
+            title.typeText("秋の兼六園")
+        }
+        let place = app.textFields["upload.place"].firstMatch
+        scrollUntilHittable(app, place)
+        if place.exists, place.isHittable {
+            place.tap()
+            place.typeText("Kanazawa")
+        }
+        let submit = app.buttons["upload.submit"].firstMatch
+        guard submit.waitForExistence(timeout: 5) else { return }
+        let enabled = XCTWaiter().wait(for: [expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: submit)],
+                                       timeout: 15)
+        guard enabled == .completed else { return }
+        submit.tap()
+        let header = app.descendants(matching: .any)["postedCard.header"].firstMatch
+        let shown = header.waitForExistence(timeout: 60)
+        // カードの絵ができるまで待つ（「カードを共有」が押せるようになる）
+        let share = app.buttons["signatureShare.share"].firstMatch
+        _ = XCTWaiter().wait(for: [expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: share)],
+                             timeout: 20)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, shown ? "120e-投稿の完了（共有カード）" : "120e-投稿の完了（共有カードが出ない）")
+        XCTAssertTrue(shown, "投稿しても共有カードが出ない")
+        guard shown else { return }
+        for id in ["postedCard.story", "postedCard.copyLink", "postedCard.close"] {
+            let button = app.buttons[id].firstMatch
+            XCTAssertTrue(button.exists, "\(id) が無い")
+            if button.exists { XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(id) の的が 44pt 未満") }
         }
     }
 
