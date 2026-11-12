@@ -120,10 +120,11 @@ struct DraftsView: View {
                 emptyState
             } else {
                 ScrollView {
+                    // 2026-11-12 判断（1.1.83・案「投稿まわりのデザイン」03）: 写真の前の4段（帯・絞り込み・容量・
+                    // 案内と切り替え）を2段に詰めた。絞り込みと切り替えは1段（`viewRow`）、容量の行は格子の下の注記
+                    // （`storageRow`）、「長押しで…」の一言は外した（押せば開く。長押しは慣れた人の近道）
                     LazyVStack(alignment: .leading, spacing: 0) {
                         bands
-                        chips
-                        if !selecting { storageRow }
                         viewRow
                         if let notice { noticeLine(notice) }
                         if visible.isEmpty {
@@ -137,6 +138,7 @@ struct DraftsView: View {
                         } else {
                             rows
                         }
+                        if !selecting { storageRow }
                     }
                     .padding(.bottom, JPSpace.screenEnd)
                 }
@@ -176,7 +178,7 @@ struct DraftsView: View {
         .padding(.vertical, JPSpace.xxs)
     }
 
-    /// 絞り込み（すべて／投稿／ストーリー）。独立の丸チップ（板 03）
+    /// 絞り込み（すべて／投稿／ストーリー）。独立の丸チップ（板 03）。切り替えと同じ段に置き、残りの幅で横に送る
     private var chips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: JPSpace.xs) {
@@ -184,11 +186,8 @@ struct DraftsView: View {
                 chip(.post)
                 chip(.story)
             }
-            .padding(.horizontal, JPSpace.m)
         }
         .padding(.vertical, -PillChip.tapSlack)
-        .padding(.top, JPSpace.xxs)
-        .padding(.bottom, JPSpace.xs)
         .accessibilityLabel(L("絞り込み", "Filter"))
     }
 
@@ -205,43 +204,39 @@ struct DraftsView: View {
         .accessibilityIdentifier("drafts.filter.\(kind?.rawValue ?? "all")")
     }
 
-    /// 「n / 20件 · 容量 · この端末にだけ保存」（押すと説明のシート）
+    /// 格子の下の注記「n / 20件 · 容量 · この端末にだけ保存」（押すと説明のシート）。
+    /// 2026-11-12 判断: 写真の上の札から、格子の下の地の文（12 の text-3・札の地なし）にした。押せる高さは 44
     private var storageRow: some View {
         Button { showAbout = true } label: {
-            HStack(spacing: JPSpace.xs) {
+            HStack(spacing: 6) {
                 Image(systemName: "iphone")
-                    .font(JPFont.footnote)
+                    .font(JPFont.caption)
                     .foregroundStyle(WebTheme.text3)
                     .accessibilityHidden(true)
                 Text(DraftsText.storageLine(count: savedCount, megabytes: DraftLibrary.megabytes(entries)))
                     .font(JPFont.number(JPTypeScale.caption, weight: .regular, relativeTo: .caption))
-                    .foregroundStyle(WebTheme.text2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .foregroundStyle(WebTheme.text3)
+                    .fixedSize(horizontal: false, vertical: true)
                 Image(systemName: "info.circle")
-                    .font(JPFont.footnote)
+                    .font(JPFont.caption)
                     .foregroundStyle(WebTheme.text3)
                     .accessibilityHidden(true)
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, JPSpace.s)
+            .padding(.horizontal, JPSpace.m)
             .frame(minHeight: WebTheme.minTapTarget)
-            .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.m))
-            .overlay(RoundedRectangle(cornerRadius: JPRadius.m).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, JPSpace.m)
         .padding(.top, JPSpace.xxs)
-        .padding(.bottom, JPSpace.xs)
         .accessibilityHint(DraftsText.aboutTitle)
         .accessibilityIdentifier("drafts.storage")
     }
 
-    /// 案内の一言と、格子／行の切り替え（繋がったセグメント）
+    /// 絞り込みのチップと、格子／行の切り替え（繋がったセグメント）を1段に（2026-11-12 判断）
     private var viewRow: some View {
         HStack(spacing: JPSpace.xs) {
-            Text(selecting ? "" : (layout == .grid ? DraftsText.gridHint : DraftsText.rowsHint))
-                .font(JPFont.caption)
-                .foregroundStyle(WebTheme.text3)
+            chips
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 0) {
                 layoutButton(.grid, symbol: "square.grid.3x3.fill", label: L("格子", "Grid"))
@@ -253,7 +248,8 @@ struct DraftsView: View {
         }
         .padding(.leading, JPSpace.m)
         .padding(.trailing, JPSpace.m)
-        .padding(.bottom, 6)
+        .padding(.top, JPSpace.xxs)
+        .padding(.bottom, JPSpace.xs)
     }
 
     private func layoutButton(_ value: DraftViewPreference.Layout, symbol: String, label: String) -> some View {
@@ -291,8 +287,12 @@ struct DraftsView: View {
 
     // MARK: 格子
 
+    /// 格子の隙間は 4・角なし（DesignSystem 02b「写真の格子」・2026-11-12 判断で 2 から）
+    static let gridSpacing: CGFloat = WebTheme.gridSpacing
+
     private var grid: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 3), spacing: 2) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Self.gridSpacing), count: 3),
+                  spacing: Self.gridSpacing) {
             ForEach(visible) { entry in
                 gridCell(entry)
             }
@@ -371,14 +371,24 @@ struct DraftsView: View {
 
     // MARK: 状態
 
+    /// 読み込み中の骨格（surface-4）。上の段（チップ2つ）と格子の形だけ（2026-11-12 判断・案 03）
     private var skeleton: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 3), spacing: 2) {
-            ForEach(0..<12, id: \.self) { _ in
-                WebTheme.surface4
-                    .aspectRatio(4.0 / 5.0, contentMode: .fit)
+        VStack(alignment: .leading, spacing: JPSpace.xs) {
+            HStack(spacing: JPSpace.xs) {
+                Capsule().fill(WebTheme.surface4).frame(width: 84, height: 34)
+                Capsule().fill(WebTheme.surface4).frame(width: 64, height: 34)
+            }
+            .padding(.horizontal, JPSpace.m)
+            .padding(.vertical, JPSpace.xxs)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Self.gridSpacing), count: 3),
+                      spacing: Self.gridSpacing) {
+                ForEach(0..<12, id: \.self) { _ in
+                    WebTheme.surface4
+                        .aspectRatio(4.0 / 5.0, contentMode: .fit)
+                }
             }
         }
-        .padding(.top, 56)
+        .padding(.top, JPSpace.xxs)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(DraftsText.loading)
     }

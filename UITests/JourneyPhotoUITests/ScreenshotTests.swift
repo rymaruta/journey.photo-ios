@@ -1025,9 +1025,10 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 2)
         if add.isHittable {
             add.tap()
+            // 2026-11-12: 写真がまだ無いときの「写真を選ぶ」の大きな枠（`upload.add`）は、押すとすぐ選ぶ画面を開く。
+            // 帯の「追加」（メニュー）のときだけ「ライブラリから選ぶ」を押す
             let library = app.buttons["ライブラリから選ぶ"].firstMatch
-            guard library.waitForExistence(timeout: 5) else { return }
-            library.tap()
+            if library.waitForExistence(timeout: 3) { library.tap() }
         }
 
         // 選ぶ画面の1枚目を選んで「追加」
@@ -7796,6 +7797,25 @@ final class ScreenshotTests: XCTestCase {
         guard app.descendants(matching: .any)["drafts.empty"].firstMatch.waitForExistence(timeout: 10) else { return }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "107f-下書きの一覧（空・元に戻す）")
+    }
+
+    /// **投稿のシートの「下書き n ›」**（2026-11-12・1.1.83 案「投稿まわりのデザイン」01）: 下書きの見本
+    /// （`-JPPreviewDrafts YES`）で起動し、下の「投稿」→ カメラの2つが1段の4行と下書きの行 → 押して下書きの一覧。
+    /// 出なければ撮らずに抜ける（この試験の決まり）
+    func testCapturesPostSheetDrafts() {
+        let app = launchTrunk(["-JPPreviewDrafts", "YES"])
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
+        tabBar.buttons.element(boundBy: 2).tap()
+        let drafts = app.buttons["post.choice.drafts"].firstMatch
+        guard drafts.waitForExistence(timeout: 8) else { return }
+        Thread.sleep(forTimeInterval: 1.5)
+        shoot(app, "40c-投稿の選択（カメラの段と下書きの行）")
+        guard drafts.isHittable else { return }
+        drafts.tap()
+        guard app.descendants(matching: .any)["drafts.list"].firstMatch.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "107g-下書きの一覧（投稿のシートから）")
     }
 
     /// **メッセージ（DM・第1段・札 #505・2026-11-10）**。見本の通信（`-JPPreviewLocalBackend`）に `-JPPreviewDM` を足すと、

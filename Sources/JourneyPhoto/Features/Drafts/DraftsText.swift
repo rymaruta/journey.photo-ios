@@ -86,17 +86,15 @@ enum DraftsText {
     }
 
     /// 明日までに消えるストーリーの帯
+    /// 2026-11-12 判断（案 03）: 帯は1文だけ。「作ってから7日で消えます」は説明のシート（`facts` の時計の行）に任せる
     static func expiringBand(_ count: Int) -> String {
-        L("ストーリーの下書き\(count)件が、あした消えます。作ってから\(Int(DraftLibrary.storyLifetime / 86_400))日で消えます。",
-          "\(count) story draft\(count == 1 ? "" : "s") will be deleted tomorrow. Story drafts last \(Int(DraftLibrary.storyLifetime / 86_400)) days.")
+        L("ストーリーの下書き\(count)件が、あした消えます。",
+          "\(count) story draft\(count == 1 ? "" : "s") will be deleted tomorrow.")
     }
 
     static var limitBand: String {
         L("1件以上削除すると、いまの書きかけを保存できます。", "Delete at least one draft to save what you\u{2019}re writing.")
     }
-
-    static var gridHint: String { L("長押しで題・撮影地・日時と操作", "Touch and hold for details and actions") }
-    static var rowsHint: String { L("「…」で操作", "Tap \u{2022}\u{2022}\u{2022} for actions") }
 
     // MARK: 選ぶ・削除
 

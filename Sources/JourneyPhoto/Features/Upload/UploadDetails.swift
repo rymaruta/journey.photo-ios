@@ -55,6 +55,23 @@ enum UploadDetails {
         L("撮影地の位置を付ける（約1kmに丸めて保存）", "Attach the place's location (rounded to about 1 km)")
     }
 
+    /// 投稿の画面の切り替えの名前（2026-11-12 判断・案「投稿まわりのデザイン」02）。「約1kmに丸めて」は
+    /// すぐ下の一言（`uploadLocationToggleNote` のオン）に移した——名前を短くしても、切り替える前に読める所にある。
+    /// ストーリーの「誰に見せる？」は下の一言が別なので、名前に入れたまま（`locationToggleTitle`）
+    static var uploadLocationToggleTitle: String { L("撮影地の位置を付ける", "Attach the place's location") }
+
+    /// 投稿の画面の切り替えの下の一言。オンは「約1kmに丸めて地図に載せます」、オフは前のまま。
+    /// オンも言い切らない——書き換えた撮影地には写真の位置を付けないことがある（2026-10-18 の決まり・`PlaceCoordsRule`）
+    static func uploadLocationToggleNote(attaches: Bool) -> String {
+        attaches
+            ? L("約1kmに丸めて地図に載せます（撮影地を書き換えると載せないことがあります）",
+                "Rounded to about 1 km and put on the map (editing the place may keep it off).")
+            : locationToggleNote(attaches: false)
+    }
+
+    /// 「この写真を見て撮影（任意）」の印（写真と矢印）。構図を重ねて撮る（`camera.viewfinder`）と分ける（2026-11-12）
+    static let inspiredSymbol = "photo.badge.arrow.down"
+
     /// 切り替えの下の一言。**いまの値で何が起きるか**を言う。オンも言い切らない（書き換えた撮影地には
     /// 写真の位置を付けないことがある・`PlaceCoordsRule`）
     ///

@@ -42,7 +42,8 @@ struct LibraryTripPickView: View {
         _selected = State(initialValue: LibraryTrips.spreadPick(trip, limit: UploadViewModel.maxSelection))
     }
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 4)
+    /// 格子の隙間は 4・角なし（DesignSystem 02b・2026-11-12 判断で 2 から）。左右は 16 あける（案 04 の模型）
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: WebTheme.gridSpacing), count: 4)
 
     /// モデルの今の旅（同じ id）。**地名を引いて時間帯が分かると、モデルが日を切り直す**
     /// （`LibraryTrips.applyingZones`）。開いたときの値のままだと、日の段も撮影日を付ける
@@ -62,9 +63,10 @@ struct LibraryTripPickView: View {
                             .foregroundStyle(WebTheme.accent)
                             .padding(.horizontal, 16)
                             .accessibilityAddTraits(.isHeader)
-                        LazyVGrid(columns: columns, spacing: 2) {
+                        LazyVGrid(columns: columns, spacing: WebTheme.gridSpacing) {
                             ForEach(day.shots, id: \.id) { shot in cell(shot) }
                         }
+                        .padding(.horizontal, JPSpace.m)
                     }
                 }
             }
@@ -103,11 +105,11 @@ struct LibraryTripPickView: View {
                 .accessibilityAddTraits(.isHeader)
             Text("\(LibraryTrips.periodText(current)) · \(PhotoMapViewModel.photoCountLabel(current.shots.count))")
                 .font(JPFont.mono(12))
-                .foregroundStyle(WebTheme.muted2)
-            Text(L("日ごとにばらけるよう選んであります。押すと選ぶ・外すが切り替わります",
-                   "We picked a few from each day. Tap to add or remove."))
-                .font(.caption)
-                .foregroundStyle(WebTheme.faint)
+                .foregroundStyle(WebTheme.text2)
+            // 2026-11-12 判断: 「押すと選ぶ・外すが切り替わります」は外した（印の形と押した手ざわりで分かる）
+            Text(L("日ごとにばらけるよう選んであります", "We picked a few from each day."))
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 16)
@@ -180,12 +182,13 @@ struct LibraryTripPickView: View {
                 // 旅の記録の一冊は2枚から（1枚では束にならず、非公開のままどこの棚にも出ない）
                 let canAdd = LibraryTrips.canAddToTrips(count: selected.count)
                 if !canAdd {
-                    Text(L("2枚から旅の記録に入れられます", "Pick 2 or more photos to add to your trips"))
-                        .font(.footnote)
-                        .foregroundStyle(WebTheme.muted2)
+                    Text(L("2枚から選べます（旅の記録に1冊でまとめます）", "Pick 2 or more (they\u{2019}re kept together as one trip)"))
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text2)
                 }
                 Button { startLoading() } label: {
-                    Text(L("\(selected.count)枚を旅の記録に入れる", "Add \(selected.count) to your trips"))
+                    // 2026-11-12 判断（案 04）: 押すと次は新規投稿の画面なので「n枚で投稿をつくる」（前は「旅の記録に入れる」）
+                    Text(LibraryTrips.makePostTitle(selected.count))
                         .jpPillButton(.primary)
                         .opacity(canAdd ? 1 : 0.5)
                 }

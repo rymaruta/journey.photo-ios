@@ -292,7 +292,8 @@ final class StoryV2DesignTests: XCTestCase {
         // 写真の無い札の構図の印だけ真鍮（黒地の上）のまま
         XCTAssertFalse(sheet.contains("\"PRO\""), "投稿のシートに PRO の合図が残っている")
         XCTAssertFalse(sheet.contains("Pro の機能"), "投稿のシートに Pro の読み上げが残っている")
-        XCTAssertTrue(sheet.contains("kind: .composition,\n                accentIcon: true,"))
+        // 2026-11-12: カメラの2つは1段の札に（構図の印だけ真鍮）
+        XCTAssertTrue(sheet.contains("kind: .composition, accentIcon: true)"))
         let onBlack = PostSheet.iconColor(hasPhoto: false, accent: true)
         let onPhoto = PostSheet.iconColor(hasPhoto: true, accent: true)
         XCTAssertEqual(onBlack, WebTheme.accent)

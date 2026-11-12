@@ -406,6 +406,11 @@ enum LibraryTrips {
         return "\(days)" + L("・", " · ") + PhotoMapViewModel.photoCountLabel(trip.shots.count)
     }
 
+    /// 旅の写真を選ぶ画面の主ボタン（2026-11-12 判断・案「投稿まわりのデザイン」04）。押すと次は新規投稿の画面
+    static func makePostTitle(_ count: Int) -> String {
+        L("\(count)枚で投稿をつくる", count == 1 ? "Make a post with 1 photo" : "Make a post with \(count) photos")
+    }
+
     /// 日の眉ラベル「DAY 1 · 9.12 · 京都市」。地名が引けなければ「DAY 1 · 9.12」
     static func dayLabel(_ day: LibraryTrip.Day, place: String?) -> String {
         let head = "DAY \(day.number) · \(day.month).\(day.day)"
