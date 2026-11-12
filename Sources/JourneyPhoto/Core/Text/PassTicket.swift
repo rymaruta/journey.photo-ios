@@ -49,6 +49,15 @@ enum PassTicket {
     /// サーバーの欄は変えない。古い呼び名が文に残っていないかは `PassBackFaceTests.testFeatureNameIsUnified` が見張る
     static var featureName: String { L("すれちがい乗車券", "Pass tickets") }
 
+    /// ≡ の「すれちがい乗車券」の行の下の一言（`SiteMenuView`）。**押すと何ができるか**で言う
+    /// （資料「説明なしで分かるアプリ」項目16・1.1.85 束H）。前は「すれちがい帳と入り切り」で、「入り切り」が伝わらなかった。
+    /// 2026-11-12 判断: 資料の「届いたカードを見る、オンにする」を、オンの人には「オフにする」と今の向きの逆で言う
+    /// （オンの人に「オンにする」と出すと、押すと何が起きるか取り違える）。右の値（今の入り切り）はそのまま
+    static func menuNote(enabled: Bool) -> String {
+        enabled ? L("届いたカードを見る、オフにする", "See cards you got, or turn off")
+                : L("届いたカードを見る、オンにする", "See cards you got, or turn on")
+    }
+
     /// 帳の小さなきっぷの眉ラベル（`PassTicketSlot`）
     static func eyebrow(_ kind: Kind) -> String {
         switch kind {

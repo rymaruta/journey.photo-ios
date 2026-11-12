@@ -215,7 +215,14 @@ struct PhotoEditScreen: Equatable {
         case began(at: Date)
         case tick(now: Date)
         case ended
+        /// 写真の右下の「元の写真」の印に指が触れた（資料「説明なしで分かるアプリ」項目7・2026-11-12）。
+        /// **見える印なので待たずに比べる**（写真の長押しの `holdDelay` は、ただのタップでちらつかないための待ち）。
+        /// 離したら写真と同じ `.ended`
+        case holdOriginal(at: Date)
     }
+
+    /// 写真の右下の印の字（押している間だけ元の写真）
+    static var originalButtonLabel: String { L("元の写真", "Original") }
 
     /// 指が触れた時刻（離していれば nil）
     private(set) var pressedAt: Date?
@@ -232,6 +239,11 @@ struct PhotoEditScreen: Equatable {
             pressedAt = nil
             comparingByAction = false
             history.setComparing(false)
+        case .holdOriginal(let at):
+            // 触れた印も立てる（写真の長押しの時計を重ねて走らせない）
+            if pressedAt == nil { pressedAt = at }
+            comparingByAction = false
+            history.setComparing(true)
         }
     }
 

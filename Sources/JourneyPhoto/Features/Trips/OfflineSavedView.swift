@@ -17,7 +17,7 @@ struct OfflineSavedView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 // 大見出し（v2 の板 OfflineSaved: 明朝の題）
-                Text(L("保存した旅", "Offline trips"))
+                Text(L("圏外で開ける旅", "Offline trips"))
                     .font(JPFont.screenTitle)
                     .foregroundStyle(WebTheme.foreground)
                     .accessibilityAddTraits(.isHeader)
@@ -50,7 +50,7 @@ struct OfflineSavedView: View {
                     Button {
                         removingAll = true
                     } label: {
-                        Text(L("保存した旅をすべて端末から削除", "Remove all offline trips from iPhone"))
+                        Text(L("圏外で開ける旅をすべて端末から削除", "Remove all offline trips from iPhone"))
                             .font(JPFont.body)
                             .foregroundStyle(WebTheme.danger)
                             .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
@@ -72,7 +72,7 @@ struct OfflineSavedView: View {
             .padding(.bottom, JPSpace.screenEnd)
         }
         .webScreen()
-        .navigationTitle(L("保存した旅", "Offline trips"))
+        .navigationTitle(L("圏外で開ける旅", "Offline trips"))
         .navigationBarTitleDisplayMode(.inline)
         // 題は画面の中の明朝の大見出し（同じ語を上のバーに2度出さない）。戻るの名前に `navigationTitle` は残す
         .toolbar {
@@ -91,7 +91,7 @@ struct OfflineSavedView: View {
         } message: {
             Text(OfflineTripText.deleteBody(bytes: removing?.bytes ?? 0))
         }
-        .confirmationDialog(L("保存した旅をすべて端末から削除しますか？", "Remove all offline trips from this iPhone?"),
+        .confirmationDialog(L("圏外で開ける旅をすべて端末から削除しますか？", "Remove all offline trips from this iPhone?"),
                             isPresented: $removingAll, titleVisibility: .visible) {
             Button(L("すべて削除する", "Remove all"), role: .destructive) { offline.deleteAll() }
             Button(Labels.Common.cancel, role: .cancel) {}
@@ -215,7 +215,7 @@ struct OfflineSavedSettingsRow: View {
             JPCardDivider()
             NavigationLink { OfflineSavedView() } label: {
                 // 板 v2（Settings）: 行の絵を外し、件数と容量は右の値（等幅）に
-                JPRowLabel(title: L("保存した旅", "Offline trips"),
+                JPRowLabel(title: L("圏外で開ける旅", "Offline trips"),
                            value: OfflineTripText.settingsDetail(count: offline.saved.count, bytes: offline.totalBytes))
             }
             .buttonStyle(JPRowButtonStyle())

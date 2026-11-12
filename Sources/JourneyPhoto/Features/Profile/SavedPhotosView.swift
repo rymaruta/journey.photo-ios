@@ -84,8 +84,8 @@ struct SavedPhotosView: View {
 
     /// マイページの「お気に入り」タブでも使う
     static var emptyMessage: String {
-        L("保存した写真はまだありません。写真の詳細のしおりで保存できます",
-          "No saved photos yet. Tap the bookmark on a photo to save it.")
+        L("保存した写真はまだありません。写真の詳細で保存の印を押すと、ここに入ります",
+          "No saved photos yet. Tap Save on a photo to keep it here.")
     }
 
     /// 保存はあるのに、引き当て先の読み込みが失敗して1枚も出せなかった回

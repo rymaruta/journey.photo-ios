@@ -164,9 +164,27 @@ enum DevelopTrips {
 
     // MARK: - 状態の字（章「状態」・2026-11-12 札 #543）
 
-    /// 札の3行目。**一部の写真だけ許可**のときだけ「選んで許可した写真の中から見つけました」（それ以外は出さない）
-    static func cardDetail(limited: Bool) -> String? {
-        limited ? L("選んで許可した写真の中から見つけました", "Found among the photos you allowed") : nil
+    /// 札の3行目。どこから見つけた旅かを1行で言う（資料「説明なしで分かるアプリ」項目6・1.1.85 束H）。
+    /// **一部の写真だけ許可**のときは「選んで許可した写真の中から見つけました」（章「状態」のまま）
+    static func cardDetail(limited: Bool) -> String {
+        limited ? L("選んで許可した写真の中から見つけました", "Found among the photos you allowed")
+                : L("写真アプリから見つけました", "Found in your Photos app")
+    }
+
+    // MARK: - 札の名前（資料「説明なしで分かるアプリ」項目6・2026-11-12 判断）
+
+    // 「現像前の旅」は、フィルムを知らない人には何の札か分からなかった。札の題を**中身の名前**
+    // 「まだ載せていない旅」にし、前の題「おかえりなさい」は眉へ移す。中の「載せる」「外す」と
+    // 色を抜いたフィルムの3コマ（見た目）はそのまま。識別子（`home.develop`・`DevelopTrips`）は変えない
+
+    /// 札の題
+    static var cardTitle: String { L("まだ載せていない旅", "Trip you haven't posted") }
+    /// 札の眉（英字）と、その読み上げ
+    static let cardEyebrow = "WELCOME BACK"
+    static var cardEyebrowSpoken: String { L("おかえりなさい", "Welcome back") }
+    /// 途中で閉じた旅の2行目の頭（「続きから 4 / 10、」）。押すと続きから開く
+    static func resumePrefix(done: Int, total: Int) -> String {
+        L("続きから \(done) / \(total)、", "Continue \(done) / \(total), ")
     }
 
     /// 一部だけ許可した人の追加の口（今の「写真を選び直す」と同じ `DeviceTripShelfStore.addMorePhotos`）

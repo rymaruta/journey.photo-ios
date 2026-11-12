@@ -37,6 +37,8 @@ struct PhotoEditView: View {
     /// （着信・通知・別のジェスチャーに奪われた）は `onEnded` が届かないことがあるが、
     /// `@GestureState` は取り消しでも自動で false に戻る。false になったら `.ended` を送る
     @GestureState private var touching = false
+    /// 右下の「元の写真」の印に指が触れているか（写真の `touching` と同じ理由で `@GestureState`）
+    @GestureState private var holdingOriginal = false
     @Environment(\.displayScale) private var displayScale
 
     init(recipe: PhotoRecipe, source: @escaping @Sendable () -> Data, placeholder: Image? = nil,
@@ -80,11 +82,8 @@ struct PhotoEditView: View {
                     .accessibilityIdentifier("photoEdit.note")
             }
             photo
-            Text(L("写真を長押しすると、編集前と比べられます", "Touch and hold the photo to compare with the original"))
-                .jpSystemFont(12, relativeTo: .caption)
-                .foregroundStyle(Self.hint)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 4)
+                // 2026-11-12（説明なしで分かる 項目7）: 「写真を長押しすると、編集前と比べられます」の一言を外した。
+                // 比べる口は写真の右下の「元の写真」の印（`originalButton`）。写真の長押しも近道として残す
                 .padding(.bottom, 8)
             tabs
             Group {
@@ -186,6 +185,8 @@ struct PhotoEditView: View {
                         .accessibilityHidden(true)
                 }
             }
+            // 右下の「元の写真」（2026-11-12・説明なしで分かる 項目7）。押している間だけ元の写真
+            .overlay(alignment: .bottomTrailing) { originalButton }
             .contentShape(Rectangle())
             // **触れている間を取る**（距離 0 の DragGesture）。`onLongPressGesture` は長押しと認めた瞬間に
             // 終わるので、離すまで編集前を出し続けられない。触れてから `holdDelay` たったら時計を送り、
@@ -225,6 +226,38 @@ struct PhotoEditView: View {
             .onChange(of: proxy.size) { _, size in startPreview(box: size) }
             .onDisappear { preview.stop() }
         }
+    }
+
+    /// 写真の右下の「元の写真」の印。**押している間だけ元の写真（無編集）**、離したら戻る。
+    /// 写真の上なので白（「編集前」の札と同じ黒 62% の丸）。見た目は札、当たりは 44。
+    /// 読み上げは写真の操作「編集前を見る」が受け持つ（写真の要素は中を1つにまとめている）
+    private var originalButton: some View {
+        HStack(spacing: JPSpace.xxs) {
+            Image(systemName: "photo")
+                .accessibilityHidden(true)
+            Text(PhotoEditScreen.originalButtonLabel)
+        }
+        .jpSystemFont(13, weight: .semibold, relativeTo: .footnote)
+        .foregroundStyle(Color.white)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.black.opacity(holdingOriginal ? 0.8 : 0.62), in: Capsule())
+        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+        .contentShape(Rectangle())
+        .padding(8)
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .updating($holdingOriginal) { _, state, _ in state = true }
+                .onChanged { _ in
+                    guard !screen.showsBeforeLabel else { return }
+                    screen.press(.holdOriginal(at: Date()))
+                }
+                .onEnded { _ in screen.press(.ended) }
+        )
+        .onChange(of: holdingOriginal) { _, now in
+            if !now { screen.press(.ended) }
+        }
+        .accessibilityIdentifier("photoEdit.original")
     }
 
     private func startPreview(box: CGSize) {

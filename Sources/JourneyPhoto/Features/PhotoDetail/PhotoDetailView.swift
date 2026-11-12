@@ -168,6 +168,11 @@ struct PhotoDetailView: View {
     @State private var viewerClosedAt: Date?
     /// 成功の知らせ（ブロックしました など）。**失敗の赤字（`actionError`）と分ける**
     @State private var actionNotice: String?
+    /// ⋯ の「プロフィールの先頭にピン留め」で変えたあとの一覧（サーバーが返したもの・`ProfilePinMenu`）。
+    /// 変えるまでは nil（写真の主のプロフィール `model.owner` の一覧を見る）
+    @State private var pinnedAfterChange: [String]?
+    /// ピン留めを送っている間（二度押しで重ねて送らない）
+    @State private var pinning = false
     /// 削除を確かめているコメント（押してすぐ消さない）
     @State private var commentPendingDelete: PhotoComment?
     /// 人のコメントの「…」から通報する1件・ブロックを確かめている1件（2026-10-11）
@@ -1482,6 +1487,17 @@ struct PhotoDetailView: View {
                 }
                 // 撮影の試験が「写真を編集」へ入る目印（`ScreenshotTests`）
                 .accessibilityIdentifier("photo.edit")
+                // 2026-11-12（説明なしで分かる 項目9）: マイページの写真の長押しだけだったピン留めを ⋯ にも置く。
+                // 今の一覧が分かるまで（写真の主のプロフィールを読む前）は出さない——留まっているかを取り違えない
+                if let pinnedIds = myPinnedIds {
+                    let pinned = pinnedIds.contains(current.id)
+                    Button { Task { await setPinnedHere(!pinned) } } label: {
+                        Label(ProfilePinMenu.title(pinned: pinned),
+                              systemImage: pinned ? "pin.slash" : "pin")
+                    }
+                    .disabled(pinning)
+                    .accessibilityIdentifier("photo.pin")
+                }
                 // **自分の、全体に公開した写真だけ**（`ThreadsShare`・絞った写真を外の SNS に流さない。
                 // 人の写真の画像を自分の SNS に載せる口も作らない・`PhotoDetailRules.showsSocialCard`）
                 if PhotoDetailRules.showsSocialCard(ownerId: ownerId, me: auth.userId,
@@ -1524,6 +1540,35 @@ struct PhotoDetailView: View {
                 .accessibilityLabel(L("この写真の操作", "More actions"))
         }
         .accessibilityIdentifier("photo.menu")
+    }
+
+    /// 自分のプロフィールのピン留めの一覧。**写真の主のプロフィールが自分のものとして読めたときだけ**
+    /// （読む前・別の人のプロフィールなら nil＝⋯ に行を出さない）
+    private var myPinnedIds: [String]? {
+        if let pinnedAfterChange { return pinnedAfterChange }
+        guard let owner = model.owner, let me = auth.userId, owner.userId == me else { return nil }
+        return owner.pinnedPhotoIds ?? []
+    }
+
+    /// ⋯ からピン留めを変える（マイページの長押しと同じ口 `ProfileService.setPinned`）。
+    /// **画面を先に動かさない**——3枚の上限はサーバーが持つ（`MyPageViewModel.setPinned` と同じ考え）。
+    /// 変えたらマイページへ知らせる（`AuthStore.noteProfileChanged` → `reloadProfile` が並びを直す）
+    private func setPinnedHere(_ pin: Bool) async {
+        guard !pinning, auth.userId != nil else { return }
+        pinning = true
+        defer { pinning = false }
+        let photoId = current.id
+        do {
+            pinnedAfterChange = try await environment.profiles.setPinned(photoId: photoId, pinned: pin)
+            actionError = nil
+            actionNotice = ProfilePinMenu.done(pinned: pin)
+            auth.noteProfileChanged()
+        } catch {
+            // 上限（409）はサーバーの「ピン留めは3枚までです」をそのまま出す
+            actionNotice = nil
+            actionError = (error as? LocalizedError)?.errorDescription
+                ?? L("ピン留めを変えられませんでした", "Couldn't change the pin")
+        }
     }
 
     @ViewBuilder

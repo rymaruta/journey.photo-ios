@@ -219,12 +219,12 @@ struct HomeTopCardView: View {
         return .develop(trip: trip, name: developName(trip))
     }
 
-    /// 札の2行目。途中で閉じた旅は「現像の途中 · 4 / 10」
+    /// 札の2行目。途中で閉じた旅は「続きから 4 / 10、」
     private func developLine(_ trip: LibraryTrip, name: String?) -> String {
         let frames = DevelopTrips.frames(of: trip)
         if let saved = developStore.progress(trip.id, for: auth.userId), !saved.decisions.isEmpty {
             let done = min(frames.count, DevelopTrips.nextIndex(frames, decisions: saved.decisions))
-            return L("現像の途中 \(done) / \(frames.count)、", "In progress \(done) / \(frames.count), ")
+            return DevelopTrips.resumePrefix(done: done, total: frames.count)
                 + DeviceTrips.title(of: trip, name: name)
         }
         return DevelopTrips.cardLine(trip, name: name)
@@ -363,8 +363,9 @@ struct HomeTopCardView: View {
             Button {
                 developing = trip
             } label: {
-                card(eyebrow: "DEVELOP", eyebrowLabel: L("現像前の旅", "Trip to develop"),
-                     title: L("おかえりなさい", "Welcome back"),
+                // 2026-11-12（説明なしで分かる 項目6）: 題は中身の名前「まだ載せていない旅」、3行目はどこから見つけたか
+                card(eyebrow: DevelopTrips.cardEyebrow, eyebrowLabel: DevelopTrips.cardEyebrowSpoken,
+                     title: DevelopTrips.cardTitle,
                      line: developLine(trip, name: name),
                      // 一部の写真だけ許可: 「選んで許可した写真の中から見つけました」（章「状態」）
                      detail: DevelopTrips.cardDetail(limited: deviceTrips.status == .limited
