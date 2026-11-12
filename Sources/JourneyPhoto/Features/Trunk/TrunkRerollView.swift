@@ -143,7 +143,7 @@ struct TrunkRerollView: View {
             // 下限だけにすると中の Spacer が伸びて、既定の大きさでも札が縦に伸びた・Mac run 639）
             .frame(minHeight: 96, maxHeight: typeSize.isAccessibilitySize ? nil : 96)
             .fixedSize(horizontal: false, vertical: typeSize.isAccessibilitySize)
-            .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 12))
+            .trunkCard(radius: 12)
             .overlay {
                 if checked { RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.accent, lineWidth: 2) }
             }

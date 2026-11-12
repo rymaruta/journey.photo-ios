@@ -1149,6 +1149,8 @@ struct PhotoMapView: View {
                 .foregroundStyle(WebTheme.accentText)
         }
         .buttonStyle(.plain)
+        // 近くの写真の画面写真（2026-11-12・`testCapturesNearbyPhotos`）
+        .accessibilityIdentifier("map.nearby")
     }
 
     /// 現在地。押すたびに**普通の地図アプリと同じ3段**で切り替わる:

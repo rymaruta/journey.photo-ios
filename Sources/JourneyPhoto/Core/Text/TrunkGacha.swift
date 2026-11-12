@@ -68,6 +68,16 @@ struct TrunkCrank: Equatable {
         return advance(Self.tapStep)
     }
 
+    /// 指を離した（押しただけでも4分の1は回さない・行き先は `TrunkGachaFlow.release` で決める・2026-11-12）
+    mutating func letGo() {
+        last = nil
+    }
+
+    /// 決まった角度だけ回す（自分で回るとき・`autoAdvance`）。越えた目盛りの数を返す
+    mutating func turn(by delta: Double) -> Int {
+        advance(delta)
+    }
+
     private mutating func advance(_ delta: Double) -> Int {
         let before = turned
         turned = min(Self.goal, max(0, turned + delta))

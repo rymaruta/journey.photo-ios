@@ -11,6 +11,10 @@ import SwiftUI
 ///  - 「行きたい」は結果に置かず、**ガイド（`OfficialSpotView`）で押す**——「行きたい」は
 ///    サーバーとの同期（未送信の控え・送信中）を持つ部品で、同じものを二度作らない
 ///  - 前面に戻ったときに日付が変わっていたら読み直す（夜に開いて朝に戻った）
+///
+/// **1.1.83 の案（2026-11-12 判断）**: 写真のある画面なので、答えの後の主ボタン「撮影スポットを見る」は白（板 05）、
+/// 共有は線の副ボタン。答えた後は正解を白の塗り＋✓、外した自分の選択は danger の縁＋「あなた」（形でも示す）。
+/// 選択肢は 52（押しやすさ・行の高さの段）。読み込み中は写真 4:3 と選択肢 4 本の骨格、失敗・まだ無いは状態の部品
 struct DailyQuizView: View {
 
     /// ガイドの「この場所の写真」を引く公開写真（ホームから渡す）
@@ -99,34 +103,18 @@ struct DailyQuizView: View {
     private var content: some View {
         switch load {
         case .loading:
-            VStack(alignment: .leading, spacing: 12) {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(WebTheme.surface)
-                    .aspectRatio(4.0 / 3.0, contentMode: .fit)
-                Text(L("今日の一問を読み込んでいます…", "Loading today's question…"))
-                    .font(.footnote)
-                    .foregroundStyle(WebTheme.muted2)
-            }
+            DailyQuizSkeleton()
         case .none:
-            notice(L("今日の一問はまだありません。時間をおいて開き直してください。",
-                     "There's no question for today yet. Please check back later."))
+            EmptyState(title: L("今日の一問はまだありません", "No question yet today"),
+                       message: L("時間をおいて開き直してください", "Please check back later."))
         case .failed:
-            VStack(spacing: 12) {
-                notice(L("今日の一問を読み込めませんでした。", "Couldn't load today's question."))
-                Button {
-                    load = .loading
-                    attempt &+= 1
-                } label: {
-                    Text(L("もう一度読み込む", "Try again"))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(WebTheme.accentText)
-                        .padding(.horizontal, 20)
-                        .frame(minHeight: WebTheme.minTapTarget)
-                        .background(WebTheme.accentFill, in: Capsule())
-                }
-                .buttonStyle(.plain)
+            ErrorBanner(title: L("今日の一問を読み込めませんでした", "Couldn't load today's question"),
+                        message: L("通信が途切れたようです。電波のあるところでもう一度試してください",
+                                   "The connection dropped. Try again where you have a signal.")) {
+                load = .loading
+                attempt &+= 1
             }
-            .frame(maxWidth: .infinity)
+            .accessibilityIdentifier("quiz.failed")
         case .ready(let quiz, let chosen):
             quizBody(quiz, chosen: chosen)
         }
@@ -189,6 +177,7 @@ struct DailyQuizView: View {
         let answered = chosen != nil
         let isAnswer = choice.spotId == quiz.answer
         let isChosen = choice.spotId == chosen
+        let look = DailyQuizChoiceLook(answered: answered, isAnswer: isAnswer, isChosen: isChosen)
         return Button {
             guard !answered else { return }
             answers.save(choice.spotId, date: quiz.date)
@@ -196,25 +185,31 @@ struct DailyQuizView: View {
         } label: {
             HStack(spacing: 12) {
                 Text(choice.name)
-                    .font(.body.weight(isChosen ? .semibold : .regular))
+                    .font(.body.weight(isChosen || (answered && isAnswer) ? .semibold : .regular))
                     .multilineTextAlignment(.leading)
                 Spacer(minLength: 0)
-                if answered && isAnswer {
+                switch look {
+                case .answer:
                     // ✓ は飾り（読み上げは「正解」だけ）
                     Text("✓ " + L("正解", "ANSWER"))
                         .font(JPFont.mono(12, medium: true, relativeTo: .caption))
-                        .foregroundStyle(isChosen ? WebTheme.accentText : WebTheme.accent)
                         .accessibilityLabel(L("正解", "Answer"))
+                case .wrongChoice:
+                    Text(L("あなた", "YOU"))
+                        .font(JPFont.mono(12, medium: true, relativeTo: .caption))
+                        .foregroundStyle(WebTheme.danger)
+                        .accessibilityLabel(L("あなたの答え", "Your answer"))
+                case .plain, .faded:
+                    EmptyView()
                 }
             }
-            .foregroundStyle(isChosen ? WebTheme.accentText
-                             : (answered && !isAnswer ? WebTheme.faint : WebTheme.foreground))
+            .foregroundStyle(look == .answer ? WebTheme.accentText : (look == .faded ? WebTheme.faint : WebTheme.foreground))
             .padding(.horizontal, 16)
-            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-            .background(isChosen ? WebTheme.accentBackground : WebTheme.surface,
+            .frame(maxWidth: .infinity, minHeight: JPHeight.row, alignment: .leading)
+            .background(look == .answer ? WebTheme.accentBackground : WebTheme.surface,
                         in: RoundedRectangle(cornerRadius: 12))
             .overlay {
-                if isChosen && !isAnswer {
+                if look == .wrongChoice {
                     RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.danger, lineWidth: 2)
                 }
             }
@@ -247,26 +242,22 @@ struct DailyQuizView: View {
                     NavigationLink {
                         OfficialSpotView(spot: guideSpot, spots: spots, photos: photos)
                     } label: {
-                        // 2026-10-11 判断: 「結果を共有」と横に並ぶので1行に収めて縮める（0.8 まで＝12pt。板の本文の最小）
+                        // 写真のある画面の主ボタンは白（板 05・2026-11-12 判断。前は真鍮の塗り）。
+                        // 「共有」と横に並ぶので1行に収めて縮める（0.8 まで＝12pt。板の本文の最小）
                         Text(L("撮影スポットを見る", "See the photo spot"))
-                            .font(.subheadline.weight(.semibold))
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
-                            .foregroundStyle(WebTheme.accentText)
-                            .padding(.horizontal, 20)
-                            .frame(minHeight: WebTheme.minTapTarget)
-                            .background(WebTheme.accentFill, in: Capsule())
+                            .jpPillButton(.main(onPhoto: true))
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("quiz.spot")
                 }
                 ShareLink(item: DailyQuiz.shareText(date: quiz.date, correct: correct, url: AppConfig.quizPageURL)) {
-                    Text(L("結果を共有", "Share"))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(WebTheme.foreground)
-                        .padding(.horizontal, 20)
-                        .frame(minHeight: WebTheme.minTapTarget)
-                        .overlay(Capsule().strokeBorder(WebTheme.outline, lineWidth: 1))
+                    Text(L("共有", "Share"))
+                        .jpOutlineButton()
                 }
+                .accessibilityLabel(L("結果を共有", "Share the result"))
+                .accessibilityIdentifier("quiz.share")
             }
             .padding(.top, 12)
             Text(L("明日また新しい写真が出ます。", "A new photo tomorrow."))
@@ -304,5 +295,58 @@ struct DailyQuizView: View {
         let fetched = try? await environment.spots.fetchIndex()
         guard !Task.isCancelled, let fetched else { return }
         spots = fetched
+    }
+}
+
+/// 選択肢の見え方（答える前・答えた後の正解・外した自分の選択・ほか）。**色だけで分けない**——正解は白の塗り＋✓、
+/// 外した選択は danger の縁＋「あなた」の字（2026-11-12 判断・案「今日の一問」）
+enum DailyQuizChoiceLook: Equatable {
+    /// 答える前
+    case plain
+    /// 答えた後の正解（白の塗り＋✓ 正解）。自分が当てたときもこれ
+    case answer
+    /// 外した自分の選択（danger の縁＋「あなた」）
+    case wrongChoice
+    /// 答えた後の、選ばなかった誤り（薄く）
+    case faded
+
+    init(answered: Bool, isAnswer: Bool, isChosen: Bool) {
+        if !answered { self = .plain } else if isAnswer { self = .answer } else if isChosen { self = .wrongChoice } else { self = .faded }
+    }
+}
+
+/// 今日の一問の読み込み中（写真 4:3 と選択肢 4 本の骨格・2026-11-12 判断。前は灰の枠と字だけ）。
+/// 0.3 秒より早く読めたら出さない・光は流さない・読み上げは「読み込み中」1つ（`JPLoadingState` と同じ決まり）
+struct DailyQuizSkeleton: View {
+    @State private var revealed = false
+
+    var body: some View {
+        let bone = WebTheme.surface4
+        VStack(alignment: .leading, spacing: 12) {
+            if revealed {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(bone)
+                    .aspectRatio(4.0 / 3.0, contentMode: .fit)
+                RoundedRectangle(cornerRadius: JPRadius.xs)
+                    .fill(bone)
+                    .frame(width: 160, height: 20)
+                    .padding(.top, 8)
+                VStack(spacing: 8) {
+                    ForEach(0..<4, id: \.self) { _ in
+                        RoundedRectangle(cornerRadius: 12).fill(bone).frame(height: JPHeight.row)
+                    }
+                }
+            } else {
+                Color.clear.frame(height: 1)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L("読み込み中", "Loading"))
+        .accessibilityIdentifier("quiz.loading")
+        .task {
+            try? await Task.sleep(for: JPLoadingState.revealDelay)
+            revealed = true
+        }
     }
 }

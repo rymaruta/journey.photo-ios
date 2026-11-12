@@ -2,6 +2,11 @@ import SwiftUI
 
 /// カプセルの機械（モック Gacha.dc.html・2026-10-17 次の版）。
 ///
+/// **主ボタンは「硬貨を入れて回す」1つ（2026-11-12 判断・1.1.83 の案）**: 押すとハンドルが自分で1周してカプセルが
+/// 落ちる（入れる → 回す → 開ける → 付けるの 4 回が 3 回に）。ハンドルを指で回しても出る——硬貨を入れる手順は要らず、
+/// 押さえた所から回り始める。**途中で離すとハンドルは元へ戻り、硬貨は減らない**（部品と硬貨は1周したときにサーバーが
+/// 決める・`TrunkGachaFlow`）。写真の無い画面なので主ボタンは真鍮の塗り。硬貨 0 のときは投稿への1手。
+///
 /// 硬貨を入れる → ハンドルを指で円を描いて右へ1周（押すたびに4分の1でも回る）→ カプセルが落ちる →
 /// 「カプセルを開ける」（`TrunkGachaOpenView`）。**部品はハンドルが1周したときにサーバーが決める**
 /// （硬貨を入れただけでは減らさない・2026-10-17 判断: 入れて閉じた人の硬貨を消さない）。
@@ -12,6 +17,7 @@ struct TrunkGachaView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var toasts: ToastCenter
+    @EnvironmentObject private var connectivity: Connectivity
     @State private var phase: TrunkGachaPhase = .idle
     /// 画面に出ているか（1周したあと返事を待つ間に戻った人へ、一言で知らせる）
     @State private var visible = false
@@ -22,6 +28,9 @@ struct TrunkGachaView: View {
     @State private var showOpen = false
     /// カプセルが落ちきったか（落ちる動き）
     @State private var landed = false
+    /// ハンドルが自分で回っている（ボタン・ハンドルを軽く押した）。その間は指で回さない
+    @State private var autoTurning = false
+    @ObservedObject private var tabRouter = TabRouter.shared
 
     /// 機械の絵の大きさ（モック 300×540）
     private static let machine = (w: 300.0, h: 540.0)
@@ -252,16 +261,25 @@ struct TrunkGachaView: View {
         .contentShape(Circle())
         .gesture(crankGesture)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(L("ハンドルを右へまわす", "Turn the handle to the right"))
+        .accessibilityLabel(phase == .idle ? TrunkGachaText.spinTitle(coins: coins) : L("ハンドルを右へまわす", "Turn the handle to the right"))
         .accessibilityValue("\(crank.percent)%")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { turnTap() }
         .accessibilityIdentifier("trunk.gacha.crank")
     }
 
+    /// ハンドルを指で回す（2026-11-12 判断）。硬貨があれば、入れる手順なしに押さえた所から回り始める。
+    /// 離したときの行き先は `TrunkGachaFlow.release`（1周＝回す・押しただけ＝自分で1周・途中＝元へ戻る）
     private var crankGesture: some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                guard !autoTurning else { return }
+                if phase == .idle {
+                    guard coins > 0, !model.busy else { return }
+                    model.actionError = nil
+                    crank = TrunkCrank()
+                    phase = .turning
+                }
                 guard phase == .turning else { return }
                 let dx = Double(value.location.x) - 48, dy = Double(value.location.y) - 48
                 if !crank.isHolding {
@@ -271,15 +289,57 @@ struct TrunkGachaView: View {
                 }
             }
             .onEnded { _ in
-                guard phase == .turning else { return }
-                notice(crank.end())
+                guard phase == .turning, !autoTurning else { return }
+                let next = TrunkGachaFlow.release(crank)
+                crank.letGo()
+                switch next {
+                case .draw: break
+                case .autoTurn: Task { await autoTurn() }
+                case .springBack: springBack()
+                }
             }
     }
 
-    /// 押すたびに4分の1（読み上げの「まわす」も）
+    /// 押す（読み上げの「まわす」も）: 硬貨を入れて自分で1周
     private func turnTap() {
+        guard phase == .idle || (phase == .turning && !autoTurning) else { return }
+        Task { await autoTurn() }
+    }
+
+    /// 硬貨を入れてハンドルが自分で1周する（目盛りごとに触覚と音）。「視差効果を減らす」の人には待たずに回し切る
+    private func autoTurn() async {
+        guard !autoTurning, coins > 0 || phase == .turning, !model.busy else { return }
+        if phase == .idle {
+            model.actionError = nil
+            crank = TrunkCrank()
+            phase = .turning
+        }
         guard phase == .turning else { return }
-        notice(crank.tap())
+        autoTurning = true
+        defer { autoTurning = false }
+        while !crank.isDone, phase == .turning {
+            if !reduceMotion {
+                try? await Task.sleep(nanoseconds: UInt64(TrunkGachaFlow.autoStepSeconds * 1_000_000_000))
+                if Task.isCancelled { return }
+            }
+            // 回っている途中で画面を離れた: 元へ戻して送らない（硬貨は減らない・2026-11-12 判断・確かめ役の指摘）
+            guard TrunkGachaFlow.keepsAutoTurning(visible: visible) else {
+                crank = TrunkCrank()
+                phase = .idle
+                return
+            }
+            notice(crank.autoAdvance())
+        }
+    }
+
+    /// 途中で離した: ハンドルを元へ戻す（硬貨は減っていない・サーバーには何も送っていない）
+    private func springBack() {
+        if reduceMotion {
+            crank = TrunkCrank()
+        } else {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) { crank = TrunkCrank() }
+        }
+        phase = .idle
     }
 
     /// 目盛りを越えたら触覚と音。1周したら回す
@@ -351,35 +411,30 @@ struct TrunkGachaView: View {
             }
             switch phase {
             case .idle:
-                Button {
-                    guard coins > 0 else { return }
-                    model.actionError = nil
-                    crank = TrunkCrank()
-                    phase = .turning
-                } label: {
-                    if coins > 0 {
-                        TrunkButtonFace(title: TrunkGachaText.insertTitle(coins: coins))
-                    } else {
-                        Text(TrunkGachaText.insertTitle(coins: coins))
-                            .font(.body.weight(.semibold))
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(TrunkStyle.faint)
-                            .frame(maxWidth: .infinity, minHeight: 52)
-                            .background(TrunkStyle.line, in: RoundedRectangle(cornerRadius: 14))
+                if coins > 0 {
+                    Button { Task { await autoTurn() } } label: {
+                        TrunkButtonFace(title: TrunkGachaText.spinTitle(coins: coins))
                     }
+                    .buttonStyle(.plain)
+                    .disabled(model.busy)
+                    .accessibilityIdentifier("trunk.gacha.insert")
+                } else {
+                    // 硬貨 0: 埋め方の一手（投稿へ1回で・2026-11-12 判断）
+                    Button { tabRouter.openPost(.photo) } label: {
+                        TrunkButtonFace(title: L("写真を投稿する", "Post a photo"))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("trunk.gacha.post")
                 }
-                .buttonStyle(.plain)
-                .disabled(coins == 0 || model.busy)
-                .accessibilityIdentifier("trunk.gacha.insert")
             case .turning, .waiting:
+                // 回っている間（主ボタンと同じ高さ 50 で入れ替え、帯を跳ねさせない）
                 HStack(spacing: 8) {
                     Text(L("ハンドルを右へまわす", "Turn the handle right"))
                     Text("· \(crank.percent)%").font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
                 }
-                .font(JPFont.bodyEmphasis)
-                .foregroundStyle(WebTheme.accent)
-                .frame(maxWidth: .infinity, minHeight: 52)
-                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(WebTheme.accent.opacity(0.6), lineWidth: 1))
+                .jpCapsuleFace(font: JPFont.bodyEmphasis, text: WebTheme.accent, fill: Color.clear,
+                               border: WebTheme.accent.opacity(0.6), fullWidth: true,
+                               minHeight: JPHeight.primaryButton, textInset: nil)
                 .accessibilityElement(children: .combine)
             case .out:
                 Button { showOpen = true } label: {
@@ -388,7 +443,7 @@ struct TrunkGachaView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("trunk.gacha.openCapsule")
             }
-            Text(TrunkGachaText.hint(coins: coins, phase: phase))
+            Text(TrunkGachaText.spinHint(coins: coins, phase: phase))
                 .font(JPFont.footnote)
                 .foregroundStyle(TrunkStyle.faint)
                 .multilineTextAlignment(.center)
@@ -399,7 +454,7 @@ struct TrunkGachaView: View {
 
     /// 1周した: サーバーに回してもらう
     private func draw() async {
-        guard let got = await model.gacha() else {
+        guard let got = await model.gacha(offline: connectivity.isOffline) else {
             phase = .idle
             crank = TrunkCrank()
             return
@@ -674,7 +729,7 @@ struct TrunkGachaOpenView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
+        .trunkCard(radius: 14)
         .padding(.horizontal, 20)
         .accessibilityElement(children: .combine)
     }
@@ -696,9 +751,12 @@ struct TrunkGachaOpenView: View {
                         model.actionError = TrunkEquipText.fullNote(part.kind)
                         return
                     }
+                    let before = state.equipped
                     if await model.equip(next.equipped) {
                         dismiss()
-                        toasts.show(L("トランクに付けました", "Put on your trunk"))
+                        // 「取り消す」で付ける前に戻す（2026-11-12 判断）
+                        toasts.show(L("トランクに付けました", "Put on your trunk"),
+                                    undo: ToastCenter.Undo(title: TrunkText.undoTitle) { [model] in await model.equip(before) })
                     }
                 }
             } label: {
@@ -708,7 +766,7 @@ struct TrunkGachaOpenView: View {
             .disabled(model.busy || equippedNow)
             .accessibilityIdentifier("trunk.gachaOpen.equip")
             Button { dismiss() } label: {
-                TrunkButtonFace(title: L("部品箱にしまう", "Keep in the parts box"), kind: .secondary, height: 48, size: 15)
+                TrunkButtonFace(title: L("部品箱にしまう", "Keep in the parts box"), kind: .secondary)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("trunk.gachaOpen.keep")
@@ -776,7 +834,7 @@ struct TrunkGachaOddsView: View {
                         .accessibilityElement(children: .combine)
                     }
                 }
-                .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
+                .trunkCard(radius: 14)
                 .padding(.top, 8)
                 // 1点あたり（段の確率 ÷ 段の点数）
                 Text(L("同じ段の中は、どの部品も同じ確率です。1点あたり: ",
@@ -818,7 +876,7 @@ struct TrunkGachaOddsView: View {
                         .accessibilityElement(children: .combine)
                     }
                 }
-                .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
+                .trunkCard(radius: 14)
                 .padding(.top, 8)
                 Text(L("硬貨は公開の投稿1件につき1枚（1日3枚まで）。お金では買えません。同じ部品が出たときは「かけら」になり、かけら5つで好きな部品と1つ交換できます。",
                        "You get one coin per public post (up to 3 a day). Coins can\u{2019}t be bought. A part you already have becomes a fragment; five fragments get you any part you choose."))

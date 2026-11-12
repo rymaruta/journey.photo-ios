@@ -44,7 +44,8 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(stats.contains("JPFont.number(28"), "集めた部品の数が主役の大きさでない")
         XCTAssertEqual(stats.components(separatedBy: "JPFont.number(").count - 1, 3, "数え札の数字の数が変わった")
         XCTAssertFalse(stats.contains("TrunkFragmentMark"), "かけらが上の数え札に戻っている")
-        XCTAssertEqual(stats.components(separatedBy: ".background(TrunkStyle.cell").count - 1, 1, "数え札が1枚でない")
+        // 2026-11-12: 札は v2 の地＋縁（`trunkCard`）
+        XCTAssertEqual(stats.components(separatedBy: ".trunkCard(").count - 1, 1, "数え札が1枚でない")
         let exchange = try XCTUnwrap(box.range(of: "private func exchangeCard("))
         XCTAssertTrue(box[exchange.lowerBound...].contains("TrunkFragmentMark(filled:"), "交換の札にかけらの印が無い")
     }
@@ -233,7 +234,8 @@ final class TrunkWiringTests: XCTestCase {
                       "通知の説明が閉じても残った束を出し直さない")
         XCTAssertTrue(root.contains(".onChange(of: reviewDeciding) { _, deciding in\n                if !deciding, trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }"),
                       "評価の判断が終わっても残った束を出し直さない")
-        XCTAssertTrue(root.contains("if trunkArrivals.consumeStuckFromArrival() { toasts.show("),
+        // 2026-11-12: 知らせに「取り消す」を添える（`consumeArrivalUndo`）
+        XCTAssertTrue(root.contains("if trunkArrivals.consumeStuckFromArrival() {\n                    toasts.show(notice, undo:"),
                       "届いた画面で貼った知らせを閉じ切ってから出していない")
         let arrived = try source("Features/Trunk/LabelArrivedView.swift")
         XCTAssertFalse(arrived.contains("toasts.show(L(\"トランクに貼りました\""), "届いた画面の上でも知らせを出している（2つ見える）")
@@ -384,7 +386,8 @@ final class TrunkWiringTests: XCTestCase {
         for use in ["images?.front", "images?.lidInside", "images?.handle", "images?.baseBelow", "images?.baseAbove"] {
             XCTAssertTrue(open.contains(use), "\(use) を使い回していない")
         }
-        XCTAssertTrue(open.contains("settle(to: TrunkLid.settled(p))"), "指を離しても近い方へ寄らない")
+        // 2026-11-12: 払った勢いでも決める（`TrunkLidCopy.settled`）。勢いが取れないときは今までどおり近い方へ
+        XCTAssertTrue(open.contains("} ?? TrunkLid.settled(p)") && open.contains("settle(to: target)"), "指を離しても近い方へ寄らない")
         XCTAssertTrue(open.contains(".accessibilityValue(TrunkLid.accessibilityValue(p))"), "開き具合を読み上げない")
         // 本物の中身（新しい通信は増やさない: 自分のプロフィールと端末の中のすれちがい帳）
         XCTAssertTrue(open.contains("environment.profiles.myProfile()"))
@@ -402,9 +405,9 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(open.contains(".sensoryFeedback(.selection, trigger: picks)"))
         XCTAssertTrue(open.contains("if reduceMotion {"))
         XCTAssertTrue(open.contains("TrunkSound" + ".tick()"), "持ち上げたときに音が無い")
-        // 押せるもの 44pt 以上（棒の行・ボタン 48・主ボタン 52）
+        // 押せるもの 44pt 以上（読み上げのときの棒の行・副ボタン 44・主ボタン 50・2026-11-12 v2 の高さ）
         XCTAssertTrue(open.contains(".frame(minHeight: WebTheme.minTapTarget)"))
-        XCTAssertTrue(open.contains("kind: .secondary, height: 48"))
+        XCTAssertTrue(open.contains("kind: .secondary)"))
         // 画面写真（ふたを開けた・中身を手に取った・空のトランク・回した側面）
         let shots = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"), encoding: .utf8)
         for name in ["100a-ふたを開けた", "100b-中身を手に取った（メダル）", "100e-空のトランク", "91a-回した側面", "91c-回した底（蝶番と足）",
@@ -451,7 +454,10 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(medal.contains("private static let boxRestingYaw: Float = -34 * .pi / 180"))
         XCTAssertTrue(medal.contains("for x in TrunkFaces.handleClipCenters.map("), "立体の付け根が絵とずれる")
         // 描く順: 表を先に、残りは処理を一度返してから
-        XCTAssertTrue(spin.contains("do { try await Task.sleep(for: .milliseconds(16)) } catch { return }\n            guard !Task.isCancelled else { return }\n            boxFaces = " + "TrunkTextures" + ".box("))
+        // （2026-11-11: 側面などは端末に置いた絵があればそれを使う。無ければ 1 コマ待ってから描く）
+        let waited = try XCTUnwrap(spin.range(of: "do { try await Task.sleep(for: .milliseconds(16)) } catch { return }\n            guard !Task.isCancelled else { return }"))
+        let sidesDrawn = try XCTUnwrap(spin.range(of: "boxFaces = diskSides ?? " + "TrunkTextures" + ".box("))
+        XCTAssertLessThan(waited.upperBound, sidesDrawn.lowerBound, "正面を出す前に側面などを描いている")
         XCTAssertFalse(medal.contains("buildCard(aspect: aspect, cornerRatio: corner, thicknessRatio: depth, glossyEdge: false)"),
                        "箱が押し出しの形（側面が1つの材質）に戻っている")
         // 正面と同じ描き方を使う（2度書かない）

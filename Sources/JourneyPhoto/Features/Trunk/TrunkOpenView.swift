@@ -31,6 +31,7 @@ struct TrunkOpenView: View {
     @EnvironmentObject private var pass: PassStore
     @EnvironmentObject private var hidden: ModerationStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @ObservedObject private var tabRouter = TabRouter.shared
 
     /// 開き具合（0 閉じ・1 開き切る）
@@ -116,8 +117,9 @@ struct TrunkOpenView: View {
         .onAppear {
             // 動きの終わりの合図が来ないまま画面を離れて戻ったときの逃げ道
             if TrunkLid.isOpen(p), dragStart == nil { lidSettled = true }
-            // 人のトランクは開けたところを見に来た画面（板 TheirInside）: 来たらふたを開ける
-            if theirs != nil, p == 0, dragStart == nil { settle(to: 1) }
+            // 来たらふたを開ける（人のトランクは板 TheirInside・自分のトランクも 2026-11-12 判断で同じに: 開けるのに
+            // 2 回 → 1 回。「視差効果を減らす」ならその場で開く・`move`）
+            if TrunkLidCopy.opensOnAppear(p: p, dragging: dragStart != nil, holding: held != nil) { settle(to: 1) }
         }
         .fullScreenCover(item: $viewingMedal) { badge in
             MedalViewerView(badge: badge, ownerName: theirs.map { TheirTrunkText.owner($0.name) } ?? profile?.name ?? ownerName ?? "")
@@ -210,6 +212,15 @@ struct TrunkOpenView: View {
                         .scaleEffect(k, anchor: .top)
                         .frame(width: width, height: TrunkLid.stageHeight * k, alignment: .top)
                         .contentShape(Rectangle())
+                        // 閉じているときだけ: トランクを押すとふたが開く（開いている間は中身の押しに何も重ねない・#424）
+                        .overlay {
+                            if !TrunkLid.isOpen(p), dragStart == nil, p <= 0.02 {
+                                Button { settle(to: 1) } label: { Color.clear.contentShape(Rectangle()) }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(L("ふたを開ける", "Open the lid"))
+                                    .accessibilityIdentifier("trunk.open.tapToOpen")
+                            }
+                        }
                         .modifier(LidDragPriority(overflows: overflows, gesture: drag(scale: k)))
                     controls(contents)
                         .padding(.horizontal, 20)
@@ -263,10 +274,14 @@ struct TrunkOpenView: View {
                 if TrunkLid.claspProgress(p) < 1, TrunkLid.claspProgress(next) >= 1 { claspTicks += 1 }
                 p = next
             }
-            .onEnded { _ in
+            .onEnded { value in
                 TrunkPickProbe.shared.recordDragEnded()
+                // 払った勢いでも決める（開いたふたを上へ払うと、半分まで引かなくても閉じる・2026-11-12 判断）
+                let target = dragStart.map {
+                    TrunkLidCopy.settled(from: $0, predictedDy: Double(value.predictedEndTranslation.height) / max(0.1, k))
+                } ?? TrunkLid.settled(p)
                 dragStart = nil
-                settle(to: TrunkLid.settled(p))
+                settle(to: target)
             }
     }
 
@@ -334,51 +349,50 @@ struct TrunkOpenView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-            .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
+            .trunkCard(radius: 14)
             .accessibilityElement(children: .combine)
         }
     }
 
+    /// 自分のトランクの下（2026-11-12 判断）: 一言だけ。開き具合の棒は読み上げのときだけ（ふたは押す・払う・
+    /// 読み上げの「増やす／減らす」で動く）。読めなかったら帯で言い、「もう一度」で読み直す
     private func mineControls(_ contents: TrunkInsideContents) -> some View {
         VStack(spacing: 10) {
-            Text(phase == .failed
-                 ? L("メダルと会員証を読み込めませんでした。電波のあるところで開き直すと入ります。",
-                     "Couldn\u{2019}t load your medals and card. Open this again where you have a signal.")
-                 : TrunkLid.hint(p))
+            if phase == .failed {
+                HStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.circle")
+                        .foregroundStyle(TrunkStyle.muted)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L("メダルと会員証を読み込めませんでした", "Couldn\u{2019}t load your medals and card"))
+                            .font(JPFont.footnote.weight(.semibold))
+                            .foregroundStyle(WebTheme.text)
+                        Text(L("電波のあるところで開き直すと入ります", "Try again where you have a signal"))
+                            .font(JPFont.footnote)
+                            .foregroundStyle(TrunkStyle.muted)
+                    }
+                    Spacer(minLength: 0)
+                    RetryButton(compact: true) { Task { await load() } }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .trunkCard(radius: 14)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("trunk.open.failed")
+            }
+            Text(TrunkLidCopy.hint(p))
                 .font(.footnote)
-                .foregroundStyle(phase == .failed ? WebTheme.danger : TrunkStyle.muted)
+                .foregroundStyle(TrunkStyle.muted)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity, minHeight: 20)
                 .accessibilityIdentifier("trunk.open.hint")
-            HStack(spacing: 12) {
-                Text(L("開き具合", "Open"))
-                    .font(.caption)
-                    .foregroundStyle(TrunkStyle.faint)
-                    .accessibilityHidden(true)
+            if voiceOver {
                 Slider(value: Binding(get: { p }, set: { p = $0; lidSettled = TrunkLid.isOpen($0) }), in: 0...1)
                     .tint(Color(trunk: TrunkRGBA(0x2A2A2A)))
                     .accessibilityLabel(L("ふたの開き具合", "How far the lid is open"))
                     .accessibilityValue(TrunkLid.accessibilityValue(p))
                     .accessibilityIdentifier("trunk.open.amount")
-                Text(TrunkLid.percentText(p))
-                    .font(JPFont.mono(12))
-                    .foregroundStyle(WebTheme.text)
-                    .frame(width: 40, alignment: .trailing)
-                    .accessibilityHidden(true)
-            }
-            .frame(minHeight: WebTheme.minTapTarget)
-            HStack(spacing: 8) {
-                Button { settle(to: TrunkLid.toggled(p)) } label: {
-                    TrunkButtonFace(title: TrunkLid.toggleTitle(p), kind: .secondary, height: 48, size: 15)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("trunk.open.toggle")
-                Button { takeFirst(contents) } label: {
-                    TrunkButtonFace(title: L("中身を手に取る", "Pick something up"), kind: .secondary, height: 48, size: 15)
-                }
-                .buttonStyle(.plain)
-                .disabled(contents.firstItem == nil)
-                .accessibilityIdentifier("trunk.open.take")
+                    .frame(minHeight: WebTheme.minTapTarget)
             }
         }
     }
@@ -433,11 +447,11 @@ struct TrunkOpenView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 24)
                 VStack(spacing: 8) {
-                    Button { go(item) } label: { TrunkButtonFace(title: contents.actionTitle(item), size: 15) }
+                    Button { go(item) } label: { TrunkButtonFace(title: contents.actionTitle(item)) }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("trunk.hold.go")
                     Button { putBack() } label: {
-                        TrunkButtonFace(title: TrunkInsideContents.putBackTitle, kind: .secondary, height: 48, size: 15)
+                        TrunkButtonFace(title: TrunkInsideContents.putBackTitle, kind: .secondary)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("trunk.hold.putBack")
@@ -597,7 +611,7 @@ struct TrunkOpenView: View {
                             if i < rows.count - 1 { TrunkStyle.line.frame(height: 1) }
                         }
                     }
-                    .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 16))
+                    .trunkCard(radius: 16)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .padding(.horizontal, 20)
                     .padding(.top, 18)
@@ -605,7 +619,7 @@ struct TrunkOpenView: View {
                 .padding(.bottom, 16)
             }
             Button { tabRouter.openPost(.photo) } label: {
-                TrunkButtonFace(title: TrunkInsideEmpty.actionTitle, size: 15)
+                TrunkButtonFace(title: TrunkInsideEmpty.actionTitle)
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 20)
@@ -617,21 +631,22 @@ struct TrunkOpenView: View {
         .accessibilityIdentifier("trunk.open.empty")
     }
 
+    /// 空き枠の破線は板の line（白 14%・2026-11-12 判断。前は生の白 35%）
     private func emptyRow(_ row: TrunkInsideEmpty.Row) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Group {
                 switch row.shape {
                 case .medal:
-                    Circle().strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                    Circle().strokeBorder(WebTheme.line, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
                         .frame(width: 28, height: 28)
                 case .card:
                     RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                        .strokeBorder(WebTheme.line, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
                         .frame(width: 28, height: 20)
                         .padding(.vertical, 4)
                 case .ticket:
                     RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                        .strokeBorder(WebTheme.line, style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
                         .frame(width: 20, height: 28)
                         .padding(.horizontal, 4)
                 }

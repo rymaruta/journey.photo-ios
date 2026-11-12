@@ -16,18 +16,33 @@ struct ToastOverlay: View {
                 Text(message.text)
                     .font(.subheadline)
                     .lineLimit(2)
+                // 「取り消す」（2026-11-12 判断）。ガラスの上なので白の字（真鍮はガラスの上に置かない）・当たり 44
+                if let undo = toasts.undo {
+                    Button { Task { await toasts.performUndo() } } label: {
+                        Text(undo.title)
+                            .font(.subheadline.weight(.semibold))
+                            .underline()
+                            .padding(.horizontal, 6)
+                            .frame(minHeight: WebTheme.minTapTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("toast.undo")
+                }
             }
             .foregroundStyle(WebTheme.foreground)
             .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.vertical, toasts.undo == nil ? 10 : 0)
             .background(.ultraThinMaterial, in: Capsule())
             .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
             .shadow(radius: 10)
             .padding(.horizontal, 24)
             // **押したら消せる。** 読み終わった人を3秒待たせない
-            .onTapGesture { toasts.dismiss() }
+            .onTapGesture { if toasts.undo == nil { toasts.dismiss() } }
             .transition(.opacity)
             .id(message.id)
+            // 子の「取り消す」の目印を消さないよう、入れ物の要素にしてから名前を付ける
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("toast")
         }
     }

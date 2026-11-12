@@ -113,6 +113,17 @@ enum NearbyPhotos {
         return L("約\(Int(km.rounded()))km", "about \(Int(km.rounded())) km")
     }
 
+    /// 写真の上の距離の札（短く・2026-11-12 判断）。1km 未満は「1km内」、ほかは整数の「約Nkm」
+    static func chipLabel(km: Double) -> String {
+        if km < 1 { return L("1km内", "<1 km") }
+        return L("約\(Int(km.rounded()))km", "~\(Int(km.rounded())) km")
+    }
+
+    /// 0 件のときの一手で広げる先（次に広い範囲・いちばん広ければ nil）
+    static func widerRadius(than km: Double) -> Double? {
+        radiusChoices.first { $0 > km }
+    }
+
     /// 見出し。**数えた件数だけ**を出す
     static func heading(radiusKm: Double, count: Int) -> String {
         let r = radiusKm < 10 ? String(format: "%.0f", radiusKm) : String(Int(radiusKm))

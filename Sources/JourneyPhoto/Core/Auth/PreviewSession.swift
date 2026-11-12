@@ -369,6 +369,16 @@ enum PreviewSession {
         #endif
     }
 
+    /// 見本の届いた画面の枚数（`-JPPreviewTrunkArrived 3` で3枚・「まとめて貼る」の画面写真・2026-11-12）。`YES` は 1 枚
+    static var trunkArrivedCount: Int {
+        #if DEBUG
+        guard opensTrunkArrived else { return 0 }
+        return max(1, min(3, UserDefaults.standard.integer(forKey: trunkArrivedKey)))
+        #else
+        return 0
+        #endif
+    }
+
     /// UI テストで、お知らせに「はじめてのいいね」の見本の行を出す（Debug のみ・2026-11-08）。`-JPPreviewFirstReaction YES`。
     /// サーバーには何も送らず、端末の控えにも書かない。入っている見本の利用者のときだけ。Release では必ず false
     static let firstReactionKey = "JPPreviewFirstReaction"
@@ -482,7 +492,7 @@ enum PreviewSession {
     /// `noshadow` 胴の影 2 つを外す・`nodg` 胴の `drawingGroup` を外す・`spinaa0`/`spinaa2` 回す箱の輪郭のなめらかさを なし/2x に
     /// （この 3 つは見た目が変わる。比べるためだけ）。
     /// 前の作りに戻す（絵の見比べの「前」・2026-11-11 の直し）: `spincont` 回す箱を描き続ける・
-    /// `spinlazy` 回す箱の絵を使い回さない・`spinlink` 止まっている箱の表示の刻みを止めない・`rastercost` 回す箱の絵を塗る時間の内訳を測る
+    /// `spinlazy` 回す箱の絵を使い回さない・`spinlink` 止まっている箱の表示の刻みを止めない・`rastercost` 回す箱の絵を塗る時間の内訳を測る・`boldcheck` 文字を太くする設定が回す箱の正面に効くかを測る
     static let trunkDiagKey = "JPPreviewTrunkDiag"
 
     static var trunkDiag: Set<String> {

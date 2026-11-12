@@ -63,7 +63,7 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    "ScreenshotTests/testMeasuresTrunkSpin", "ScreenshotTests/testMeasuresTrunkSpinBefore",
                    "ScreenshotTests/testMeasuresTrunkProModels", "ScreenshotTests/testTrunkSpinMatchesBefore",
                    "ScreenshotTests/testMeasuresTrunkMemory", "ScreenshotTests/testMeasuresTrunkMemoryBefore",
-                   "ScreenshotTests/testMeasuresTrunkSpinFirstOpen", "ScreenshotTests/testMeasuresTrunkRasterCost", "ScreenshotTests/testMeasuresTrunkSpinLinkRunning",
+                   "ScreenshotTests/testMeasuresTrunkSpinFirstOpen", "ScreenshotTests/testMeasuresTrunkRasterCost", "ScreenshotTests/testMeasuresTrunkBoldText", "ScreenshotTests/testMeasuresTrunkSpinLinkRunning",
                    # 2026-11-11（札 #521）: 運ぶ操作を数で分ける（合否なし・1 本 20 分以内）。
                    # `screens=testMeasuresTripPlanDragTrail`（(b) の出来事の並び）・`screens=testMeasuresTripPlanDragFirstTry`（試しの運びのあとの 1 回目）
                    "ScreenshotTests/testMeasuresTripPlanDragTrail", "ScreenshotTests/testMeasuresTripPlanDragFirstTry",

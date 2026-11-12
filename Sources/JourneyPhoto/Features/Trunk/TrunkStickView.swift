@@ -441,7 +441,7 @@ struct TrunkStickView: View {
         let lifted = carry?.label.id == label.id
         return TrunkLabelView(label: label, w: size.w * 0.8, h: size.h * 0.8, rot: 0)
             .frame(width: 96, height: 96)
-            .background(TrunkStyle.cell, in: RoundedRectangle(cornerRadius: 14))
+            .trunkCard(radius: 14)
             .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(WebTheme.accent, lineWidth: lifted ? 2 : 0))
             .opacity(lifted ? 0.45 : 1)
             .contentShape(RoundedRectangle(cornerRadius: 14))
@@ -576,7 +576,7 @@ struct TrunkStickView: View {
                     }
                 }
             } label: {
-                TrunkButtonFace(title: L("おまかせで並べる", "Arrange for me"), kind: .secondary, height: 48, size: 15)
+                TrunkButtonFace(title: L("おまかせで並べる", "Arrange for me"), kind: .secondary)
             }
             .buttonStyle(.plain)
             .disabled(model.busy || pocket.isEmpty)
@@ -584,7 +584,7 @@ struct TrunkStickView: View {
             Button {
                 Task { await unstickTarget() }
             } label: {
-                TrunkButtonFace(title: L("はがして手持ちに戻す", "Peel off to pocket"), kind: .secondary, height: 48, size: 15)
+                TrunkButtonFace(title: L("はがして手持ちに戻す", "Peel off to pocket"), kind: .secondary)
             }
             .buttonStyle(.plain)
             .disabled(model.busy || target == nil)
