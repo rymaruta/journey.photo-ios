@@ -28,6 +28,32 @@ final class NoGuideNeededTests: XCTestCase {
                      "ホームの札の字に「現像」が残っている")
     }
 
+    // MARK: - 項目7 写真の編集の「元の写真」
+
+    /// 右下の印は**触れたらすぐ**元の写真（写真の長押しのように待たない）。離したら戻る
+    func testOriginalButtonComparesWhileHeld() {
+        var screen = PhotoEditScreen(original: PhotoRecipe(exposure: 0.4))
+        XCTAssertFalse(screen.showsBeforeLabel)
+        screen.press(.holdOriginal(at: Date()))
+        XCTAssertTrue(screen.showsBeforeLabel, "印に触れても元の写真が出ない")
+        XCTAssertEqual(screen.displayed, .identity, "出すのは元の写真（無編集）")
+        screen.press(.ended)
+        XCTAssertFalse(screen.showsBeforeLabel, "離しても元の写真のまま")
+        XCTAssertEqual(screen.displayed, screen.current)
+        XCTAssertEqual(PhotoEditScreen.originalButtonLabel, "元の写真")
+    }
+
+    /// 説明の一言を外し、写真の右下に印を置く。写真の長押し（近道）は残す
+    func testPhotoEditShowsTheOriginalButtonInsteadOfTheHint() throws {
+        let view = try source("Features/Upload/PhotoEditView.swift")
+        XCTAssertFalse(view.contains(#"L("写真を長押しすると、編集前と比べられます""#), "説明の一言が残っている")
+        XCTAssertTrue(view.contains(".overlay(alignment: .bottomTrailing) { originalButton }"), "右下に「元の写真」が無い")
+        XCTAssertTrue(view.contains("screen.press(.holdOriginal(at: Date()))"))
+        XCTAssertTrue(view.contains(".frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)"),
+                      "印の当たりが 44 でない")
+        XCTAssertTrue(view.contains("screen.press(.tick(now: Date()))"), "写真の長押しの近道が無くなった")
+    }
+
     // MARK: - 項目16 ≡ の乗車券の行の一言
 
     /// 「入り切り」をやめ、押すと何ができるかで言う。オンの人には「オフにする」
