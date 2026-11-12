@@ -109,6 +109,15 @@ struct DMConversationView: View {
     private var username: String? {
         isDeletedPeer ? nil : (meta?.username ?? seed?.username ?? startingWith?.username)
     }
+    /// 作ったプランを「[名前] と共有する」相手（2026-11-12・札 #553）。**承認済みの会話だけ**——承認前の
+    /// リクエスト（受け取った側も送った側も）では出さない（サーバーも承認済みの会話の相手にしか共有させない）
+    private var tripSharePeer: TripSharePeer? {
+        // 旅行プランの入口（`tripOffered`）と同じく、受け取った承認前のリクエストでは出さない。加えて、自分が送って
+        // まだ承認されていない会話でも出さない（サーバーが断る・`tripShare.ts` の `canShareDirectly`）
+        guard tripOffered, let peerId, !isNew, !isDeletedPeer, meta?.state == .inbox, remaining == nil else { return nil }
+        return TripSharePeer(id: peerId, name: peerName)
+    }
+
     /// 相手からのリクエスト（自分が受け取った・まだ承認していない）
     private var isIncomingRequest: Bool { (meta?.state ?? seed?.state) == .request }
     /// 旅行プランの入口（帯・長押しの「旅行プランに入れる」・索引の読み込み）を出すか。
@@ -186,7 +195,7 @@ struct DMConversationView: View {
             if let openedPhoto { PhotoDetailView(photo: openedPhoto, fromPublicFeed: openedPhotoIsPublic) }
         }
         .navigationDestination(item: $createdTripId) { planId in
-            TripPlanDetailView(planId: planId, model: tripPlans)
+            TripPlanDetailView(planId: planId, model: tripPlans, sharePeer: tripSharePeer)
         }
         .fullScreenCover(isPresented: $showTrip, onDismiss: {
             guard let planId = pendingTripId else { return }

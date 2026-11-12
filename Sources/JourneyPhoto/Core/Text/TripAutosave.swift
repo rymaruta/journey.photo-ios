@@ -49,6 +49,29 @@ enum TripAutosave {
         return (base.updatedAt ?? "") != (server.updatedAt ?? "")
     }
 
+    /// 共有したプランで、ほかの仲間の変更に重ね直して送り直す回数の上限（読み直しで見つけた回と 409 の回を合わせて数える）
+    static let maxRebases = 3
+
+    /// 送ったあとにすること
+    enum AfterSave: Equatable {
+        /// 送れた
+        case done
+        /// 読み直して重ね直し、もう一度送る（数えた後の回数）
+        case retry(rebases: Int)
+        /// 止めて「まだ送れていません」を出す
+        case fail
+    }
+
+    /// 送ったあとの決め方。**409（ほかの仲間が先に書いた）は読み直して送り直すが、回数を必ず数える**
+    /// （2026-11-12 確かめ役の指摘: 409 の道で数えておらず、読み直しが古い姿を返し続けると上限なしに送り直した）。
+    /// 409 はサーバーが共有したプランにだけ返す（本人だけのプランでは返らない）ので、手元のプランが共有と
+    /// 知らない古い姿でも送り直す（読み直すと共有した姿と版が届き、版を添えて送れる）
+    static func afterSave(ok: Bool, conflict: Bool, rebases: Int) -> AfterSave {
+        if ok { return .done }
+        if conflict, rebases < maxRebases { return .retry(rebases: rebases + 1) }
+        return .fail
+    }
+
     enum Leave: Equatable {
         /// そのまま戻る（変えていない）
         case now
@@ -83,8 +106,15 @@ enum TripAutosave {
         !dirty && !sending
     }
 
-    /// 画面の上に残す1行。無ければ nil
-    static func banner(_ problem: Problem?, dirty: Bool) -> String? {
+    /// 止まったとき（`.conflict`）の頭の一文。**共有したプランは「ほかの仲間」**（2026-11-12 確かめ役の見直し2:
+    /// 仲間が変えたのに「別の端末で」と出ていた）。本人だけのプランは今までどおり
+    static func conflictLead(shared: Bool) -> String {
+        shared ? L("ほかの仲間がこのプランを変えました。", "Someone else in this trip changed it.")
+            : L("別の端末でこのプランが変わりました。", "This trip changed on another device.")
+    }
+
+    /// 画面の上に残す1行。無ければ nil。`shared`: 共有したプラン（止まったときの言い方を変える）
+    static func banner(_ problem: Problem?, dirty: Bool, shared: Bool = false) -> String? {
         switch problem {
         case .none: return nil
         case .offline?:
@@ -93,8 +123,8 @@ enum TripAutosave {
         case .failed(let message)?:
             return dirty ? L("まだ送れていません。\(message)", "Not sent yet. \(message)") : nil
         case .conflict?:
-            return L("別の端末でこのプランが変わりました。読み直すと、この画面で変えた分は残りません",
-                     "This trip changed on another device. Reloading drops the changes made here.")
+            return conflictLead(shared: shared) + L("読み直すと、この画面で変えた分は残りません",
+                                                    " Reloading drops the changes made here.")
         }
     }
 

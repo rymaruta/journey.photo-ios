@@ -6,6 +6,8 @@ enum DMRoute: Hashable {
     case requests
     /// 会話を始める（「新しいメッセージ」で選んだ人・2026-11-10）。まだ会話が無くても開く
     case start(DMPeerSeed)
+    /// 旅行プランの会話（2026-11-12・札 #553）。プランの詳細を「会話」で開く
+    case trip(String)
 }
 
 /// メッセージの受信箱（画面案「受信箱」・札 #505・2026-11-10）。ホームの見出しの吹き出しから、シートで開く。
@@ -36,6 +38,8 @@ struct DMInboxView: View {
     @State private var picked: DMPeerSeed?
     /// 空の受信箱の顔の列（フォロー中の人・読めなければ列を出さない）
     @State private var faces: [FollowUser] = []
+    /// 旅行プランの会話（入っている共有プラン・2026-11-12）。読めなければ出さない（DM の一覧は止めない）
+    @State private var trips: [TripInboxItem] = []
 
     var body: some View {
         Group {
@@ -60,6 +64,8 @@ struct DMInboxView: View {
                 if let id = DMStart.conversationId(me: auth.userId, peer: peer.id) {
                     DMConversationView(conversationId: id, startingWith: peer)
                 }
+            case .trip(let planId):
+                TripShareOpenView(planId: planId)
             }
         }
         .toolbar {
@@ -87,7 +93,7 @@ struct DMInboxView: View {
         .onChange(of: connectivity.isOffline) { _, offline in
             if !offline { Task { await reload() } }
         }
-        .onChange(of: auth.userId) { _, _ in route = nil }
+        .onChange(of: auth.userId) { _, _ in route = nil; trips = [] }
         .onAppear { takeOpenRequest() }
         .onChange(of: openConversation) { _, _ in takeOpenRequest() }
     }
@@ -96,11 +102,24 @@ struct DMInboxView: View {
     private func takeOpenRequest() {
         guard let id = openConversation else { return }
         openConversation = nil
-        route = .conversation(id)
+        // 旅行プランの会話の知らせ（`trip_<planId>`）はプランの会話へ
+        if let planId = TripShareText.planId(fromConversation: id) {
+            route = .trip(planId)
+        } else {
+            route = .conversation(id)
+        }
     }
 
     private func reload() async {
         await store.refresh(service: environment.dm, owner: auth.userId)
+        await reloadTrips()
+    }
+
+    private func reloadTrips() async {
+        guard let me = auth.userId else { trips = []; return }
+        guard let fetched = try? await environment.tripShare.inbox(), auth.userId == me else { return }
+        // 仲間が1人だけ（自分だけ）のプランは会話の相手がいないので並べない
+        trips = fetched.filter { $0.members.count > 1 }
     }
 
     /// 空の受信箱の顔の列（フォロー中の名前つき一覧・`DMNewMessageView` と同じ口と同じふるい）。
@@ -150,7 +169,13 @@ struct DMInboxView: View {
                 if requestCount > 0 {
                     requestEntry
                 }
-                if threads.isEmpty && requestCount == 0 {
+                // 旅行プランの会話（DM の会話の上・2026-11-12）
+                ForEach(trips) { trip in
+                    Button { route = .trip(trip.planId) } label: { TripInboxRow(item: trip, me: auth.userId) }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("dm.trip")
+                }
+                if threads.isEmpty && requestCount == 0 && trips.isEmpty {
                     // 2026-11-10 判断: 一手は「新しいメッセージ」（フォロー中の人から選ぶ）。ストーリーへの返信も残るが、
                     // 始め方の主はこちら
                     EmptyState(icon: "bubble.left.and.bubble.right", title: L("まだメッセージはありません", "No messages yet"),

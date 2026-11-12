@@ -420,6 +420,13 @@ final class TripPlansModel: ObservableObject {
         return pool.max { ($0.createdAt ?? "") < ($1.createdAt ?? "") }
     }
 
+    /// 読み直したプラン1つを映す（共有したプランで、ほかの仲間の変更に重ね直すとき・`TripPlanDetailView`）。
+    /// 一覧の並びは変えない
+    func adopt(_ plan: TripPlan) {
+        guard let i = plans.firstIndex(where: { $0.planId == plan.planId }) else { return }
+        plans[i] = plan
+    }
+
     /// 送る前の読み直し（自動保存・`TripAutosave.conflicted`）。**一覧には映さない**——映すと、
     /// 日程の画面が手元の下書きをサーバーの姿で合わせ直してしまう。読めなければ nil
     func fetchFresh(environment: AppEnvironment) async -> [TripPlan]? {
@@ -438,16 +445,29 @@ final class TripPlansModel: ObservableObject {
         }) != nil
     }
 
+    /// 直近の書き込みが、ほかの仲間の変更とぶつかった（409・`TripPlanService.Conflict`）。日程の画面が読み直して重ね直す
+    @Published private(set) var lastConflict = false
+
+    /// 書き込みの応答を映す一覧。**共有したプランを読めなかった応答（`sharedFailed`）では、前に見えていた
+    /// 共有したプランを残す**——残さないと、自分のプランを直しただけで仲間のプランが一覧から消えて見える
+    nonisolated static func merged(previous: [TripPlan], response: TripPlanList) -> [TripPlan] {
+        guard response.sharedFailed else { return response.plans }
+        let ids = Set(response.plans.map(\.planId))
+        return response.plans + previous.filter { $0.share != nil && !ids.contains($0.planId) }
+    }
+
     private func write(_ key: String, _ fallback: String,
-                       _ call: () async throws -> [TripPlan]) async -> [TripPlan]? {
+                       _ call: () async throws -> TripPlanList) async -> [TripPlan]? {
         guard busy == nil else { return nil }
         let myEra = era
         busy = key
         errorMessage = nil
         // 人が替わった後に返った前の人の書き込みは、次の人の「送っている最中」を外さない
         defer { if myEra == era { busy = nil } }
+        lastConflict = false
         do {
-            let list = try await call()
+            let response = try await call()
+            let list = Self.merged(previous: plans, response: response)
             // **人が替わっていたら何も書かない**（前の人のプランを次の人の画面に出さず、
             // `writes` を進めて次の人の読み込みを捨てさせもしない）
             guard myEra == era else { return nil }
@@ -458,6 +478,7 @@ final class TripPlansModel: ObservableObject {
             return list
         } catch {
             guard myEra == era else { return nil }
+            lastConflict = error is TripPlanService.Conflict
             errorMessage = (error as? LocalizedError)?.errorDescription ?? fallback
             return nil
         }

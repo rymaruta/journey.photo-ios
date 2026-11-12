@@ -469,7 +469,7 @@ final class TripPlanStage1FollowUpTests: XCTestCase {
             XCTAssertTrue(body.prefix(200).contains("#if DEBUG") && body.prefix(260).contains("#else\n        return false"),
                           "\(name) が Release で false にならない")
         }
-        XCTAssertTrue(try source("Services/TripPlanService.swift").contains("if TripPlanFixture.isOn { return try await TripPlanFixtureStore.shared.update"))
+        XCTAssertTrue(try source("Services/TripPlanService.swift").contains("if TripPlanFixture.isOn { return TripPlanList(plans: try await TripPlanFixtureStore.shared.update"))
     }
 
     /// 見本の書き込みは送った回数を数える（サーバーへは送らない）
