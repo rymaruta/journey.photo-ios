@@ -1441,7 +1441,14 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "120-マイページ（名前の横の QR）")
         entry.tap()
         let code = app.descendants(matching: .any)["profileQR.code"].firstMatch
-        guard code.waitForExistence(timeout: 10) else { return XCTFail("QR の画面に自分の QR が出ない") }
+        guard code.waitForExistence(timeout: 10) else {
+            // 事実を取る（2026-11-12）: 読み込み中のままか、作れなかったか（作れなかった理由は読み上げの値）
+            let failed = app.descendants(matching: .any)["profileQR.failed"].firstMatch
+            let loading = app.descendants(matching: .any)["profileQR.loading"].firstMatch
+            let reason = app.descendants(matching: .any)["profileQR.failureReason"].firstMatch
+            return XCTFail("QR の画面に自分の QR が出ない（読み込み中: \(loading.exists)・失敗: \(failed.exists)"
+                           + "・理由: \(reason.exists ? reason.label : "")）")
+        }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "120a-プロフィールの QR（自分の QR）")
         // QR の下の「QR コードを更新」→ 確かめ → 新しい QR と知らせ（2026-11-12 札 #545・見本の通信が合図を替える）

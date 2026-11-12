@@ -28,6 +28,8 @@ struct ProfileQRView: View {
     @State private var mode: Mode
     /// 見せる QR の中身（読み込み中・失敗・できた）
     @State private var code: CodeState = .loading
+    /// 中身を作れなかった理由（読み上げの値にだけ出す。UI テストが落ちたときに事実を取るため・2026-11-12）
+    @State private var failure = ""
     /// 読み取って開く人（この画面の上に積む）
     @State private var opened: OpenedPerson?
     /// 「QR コードを更新しますか？」を出している
@@ -172,6 +174,7 @@ struct ProfileQRView: View {
         do {
             code = .ready(try await source.code(for: profile.userId))
         } catch {
+            failure = String(describing: error)
             code = .failed
         }
     }
@@ -242,6 +245,13 @@ struct ProfileQRView: View {
             .accessibilityIdentifier("profileQR.retry")
         }
         .padding(.top, JPSpace.emptyTop)
+        // 作れなかった理由（目に見えない1点・UI テストが事実を取る所。2026-11-12）
+        .background(alignment: .topLeading) {
+            Color.clear.frame(width: 1, height: 1)
+                .accessibilityElement()
+                .accessibilityLabel(failure)
+                .accessibilityIdentifier("profileQR.failureReason")
+        }
         .accessibilityIdentifier("profileQR.failed")
     }
 }
