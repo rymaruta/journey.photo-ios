@@ -1426,6 +1426,9 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        // QR の中身はサーバーの口（GET /user/qr・POST /user/qr/rotate）が作る。見本の通信（`PreviewBackend`）で答える。
+        // 無いと鍵が無く `notAuthenticated` で QR が出ない（run 1144 で事実を取った・2026-11-12）
+        app.launchArguments += ["-JPPreviewLocalBackend", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
