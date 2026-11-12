@@ -189,6 +189,7 @@ enum PreviewBackend {
                       store: Store = PreviewBackend.store,
                       stories: Bool = false,
                       dm: Bool = false,
+                      followNone: Bool = false,
                       publicFeed: () async -> [[String: Any]] = { [] },
                       publicLikes: (String) async -> Int?) async -> Reply {
         let json = body.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any] ?? [:]
@@ -313,6 +314,14 @@ enum PreviewBackend {
             return .json(["viewers": [Any]()])
         case ("GET", let p) where stories && p.count == 3 && p[0] == "stories" && p[2] == "replies":
             return .json(["items": [Any]()])
+
+        // 誰もフォローしていない（`-JPPreviewFollowNone` のときだけ・1.1.83 資料④「おすすめの人」を撮る）。
+        // フォローする・外すは受けたことにするだけ（何も覚えない）
+        case ("GET", let p) where followNone && p == ["user", "following"]:
+            return .json(["userIds": [String]()])
+        case (let m, let p) where followNone && (m == "POST" || m == "DELETE")
+            && p.count == 3 && p[0] == "users" && p[2] == "follow":
+            return .json(["following": m == "POST", "followers": 1])
 
         // フォロー中（`-JPPreviewDM` のときだけ・2026-11-10「新しいメッセージ」とプロフィールの「メッセージ」を撮る）。
         // 公開の新着の作者と、見本の会話の相手の一部をフォローしていることにする（`dmFollowing`）
@@ -479,6 +488,9 @@ enum PreviewBackend {
                     items.append(gone)
                 }
                 items.append(msg(8, mine: false, "この曲いいね", 12))
+                // 撮影スポットを送った通（1.1.83・資料「SNS をもっと SNS に」⑤）: 頁のリンクだけの1通 → 札（`DMSpotCard`）
+                items.append(msg(9, mine: false, "https://journey-photo.com/spots/kenrokuen", 11))
+                items.append(msg(10, mine: false, "雪吊り、見に行かない？", 10.5))
                 answer["items"] = items
             }
             return Reply.json(answer)
@@ -626,6 +638,7 @@ final class PreviewBackendProtocol: URLProtocol {
                 body: body, userId: PreviewSession.userId,
                 stories: PreviewSession.stories,
                 dm: PreviewSession.dm,
+                followNone: PreviewSession.followNone,
                 publicFeed: { await PreviewBackend.readPublicFeed() },
                 publicLikes: { await PreviewBackend.readPublicLikes($0) })
             home.perform { self?.deliver(reply, url: url) }
