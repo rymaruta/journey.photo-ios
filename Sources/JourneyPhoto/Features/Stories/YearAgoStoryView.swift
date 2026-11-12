@@ -61,6 +61,8 @@ struct YearAgoStoryView: View {
         .statusBarHidden()
         .task(id: index) { await play() }
         .onChange(of: ids.isEmpty) { _, empty in if empty { dismiss() } }
+        // 中のボタンの目印（yearAgo.share など）を上書きしないよう、中を含む入れ物にしてから付ける（Mac run 1106）
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("yearAgo.viewer")
     }
 

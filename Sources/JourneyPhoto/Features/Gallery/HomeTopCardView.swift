@@ -102,8 +102,6 @@ struct HomeTopCardView: View {
     @State private var developEdit: (trip: LibraryTrip, ids: [String])?
     /// 現像の控え（払った途中・閉じた旅）を読み直す合図（画面を閉じたら上げる）
     @State private var developRevision = 0
-    /// UI テストのときだけ: 札を押した回数（`home.develop.probe` に出す・Mac run 1100 で押しても画面が出なかった件を調べる）
-    @State private var developTaps = 0
 
     private let opened = OpenedTripBooks()
     private let developStore = DevelopProgressStore()
@@ -158,19 +156,6 @@ struct HomeTopCardView: View {
                 DevelopPhotos.openUploadScreen(ids: edit.ids, trip: edit.trip)
             }) { trip in
                 DevelopView(trip: trip, name: developName(trip)) { ids in developEdit = (trip, ids) }
-            }
-            // UI テストのときだけ: 押した回数と、出そうとしている旅（`-JPPreviewDevelop`）。見えない要素
-            .overlay(alignment: .bottomTrailing) {
-                if PreviewSession.develop {
-                    TimelineView(.animation(minimumInterval: 1)) { _ in
-                    Text("taps=\(developTaps) developing=\(developing?.id ?? "nil") revision=\(developRevision)"
-                         + " appeared=\(DevelopView.appearCount) modal=\(ModalProbe.chainText())")
-                        .font(.system(size: 1))
-                        .opacity(0.01)
-                        .allowsHitTesting(false)
-                        .accessibilityIdentifier("home.develop.probe")
-                    }
-                }
             }
     }
 
@@ -320,7 +305,6 @@ struct HomeTopCardView: View {
         case .develop(let trip, let name):
             // ①現像前の旅（2026-11-12 札 #543）。左の写真の代わりに、色を抜いたフィルムの3コマ
             Button {
-                developTaps += 1
                 developing = trip
             } label: {
                 card(eyebrow: "DEVELOP", eyebrowLabel: L("現像前の旅", "Trip to develop"),

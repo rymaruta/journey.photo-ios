@@ -47,8 +47,6 @@ struct DevelopView: View {
 
     private let store = DevelopProgressStore()
     private let frames: [String]
-    /// UI テストのときだけ読む: 画面が出た回数（Mac run 1106 で札を押しても出なかった件を調べる）
-    @MainActor static var appearCount = 0
 
     init(trip: LibraryTrip, name: String?, onEdit: @escaping ([String]) -> Void) {
         self.trip = trip
@@ -85,12 +83,12 @@ struct DevelopView: View {
                     .transition(.opacity)
             }
         }
-        .onAppear {
-            Self.appearCount += 1
-            restore()
-        }
+        .onAppear(perform: restore)
         // 閉じたら待っている投稿はいま送り出す（取り消しの札は画面と一緒に消えるため。積んだまま捨てない）
         .onDisappear { undo.finishNow() }
+        // 入れ物の目印は中の部品の目印を上書きする（Mac run 1106 の画面の木で、中のボタン「develop.keep」まで
+        // 全部「develop.screen」になっていた）。中を含む入れ物にしてから目印を付ける
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("develop.screen")
     }
 
@@ -450,6 +448,7 @@ struct DevelopView: View {
         }
         .padding(.horizontal, JPSpace.gutter)
         .padding(.bottom, JPSpace.xs)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("develop.cover")
     }
 
@@ -543,6 +542,7 @@ struct DevelopView: View {
         }
         .padding(.horizontal, JPSpace.gutter)
         .padding(.bottom, JPSpace.l)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("develop.tooFew")
     }
 
