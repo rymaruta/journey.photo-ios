@@ -2,6 +2,68 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.85",
+      "items": [
+        {
+          "symbol": "map",
+          "title": { "ja": "地図は地方の名前を押して選ぶ", "en": "Tap a region on the map" },
+          "detail": { "ja": "探すの地図は、開いたときは何も選ばず、全国の観光スポットを多い順に並べます。地図の上の地方の名前を押すと、その地方の観光スポットが出ます。", "en": "The map in Search now opens with nothing selected and lists sightseeing spots across Japan. Tap a region's name on the map to see its spots." },
+          "destination": "search"
+        },
+        {
+          "symbol": "magnifyingglass",
+          "title": { "ja": "旅行プランに場所を探して足す", "en": "Search to add places to a trip plan" },
+          "detail": { "ja": "場所を足す画面の上で、行きたい場所や観光スポットを探せます。押すとすぐ日程に入り、もう一度押すと取り消せます。", "en": "Search your wishlist and sightseeing spots right in the add-a-place screen. Tap to add it to the schedule, and tap again to undo." }
+        },
+        {
+          "symbol": "line.3.horizontal",
+          "title": { "ja": "旅行プランの順番は ≡ で運ぶ", "en": "Reorder a trip plan with ≡" },
+          "detail": { "ja": "日程の行の右にある ≡ を持って運ぶと、順番や日を替えられます。外した場所は「戻す」で元に戻せます。", "en": "Drag the ≡ on the right of a row to change its order or day. Places you remove can be put back with Undo." }
+        },
+        {
+          "symbol": "paperplane",
+          "title": { "ja": "投稿したらすぐ共有", "en": "Share right after posting" },
+          "detail": { "ja": "公開の投稿が終わると、その写真のカードが出ます。そのまま、ほかのアプリで共有できます。", "en": "When a public post is done, a card of the photo appears so you can share it to other apps right away." }
+        },
+        {
+          "symbol": "person.badge.plus",
+          "title": { "ja": "おすすめの人", "en": "People you might like" },
+          "detail": { "ja": "フォローしている人がまだいないときは、ホームにおすすめの人が出ます。", "en": "If you don't follow anyone yet, Home suggests people to follow." },
+          "destination": "home"
+        },
+        {
+          "symbol": "bubble.left.and.bubble.right",
+          "title": { "ja": "観光スポットをメッセージで送る", "en": "Send sightseeing spots in messages" },
+          "detail": { "ja": "観光スポットの頁から、友達にメッセージで送れます。受け取った人は行きたい場所にすぐ入れられます。", "en": "Send a sightseeing spot to a friend in messages from its page. They can save it to their wishlist right away." }
+        },
+        {
+          "symbol": "eye.slash",
+          "title": { "ja": "写真だけを大きく見る", "en": "Just the photo" },
+          "detail": { "ja": "写真を大きく見る画面で1回押すと、上下の情報が隠れて写真だけになります。もう1回押すと戻ります。", "en": "Tap once while viewing a photo full screen to hide everything but the photo. Tap again to bring it back." }
+        },
+        {
+          "symbol": "pin",
+          "title": { "ja": "プロフィールの先頭にピン留め", "en": "Pin to the top of your profile" },
+          "detail": { "ja": "自分の写真の ⋯ から、見せたい写真をプロフィールの先頭にピン留めできます。", "en": "Pin a photo to the top of your profile from the ⋯ menu on your own photo." }
+        },
+        {
+          "symbol": "photo",
+          "title": { "ja": "編集中に元の写真と比べる", "en": "Compare with the original while editing" },
+          "detail": { "ja": "写真の編集で右下の「元の写真」を押している間、編集前の写真が見られます。", "en": "While editing, press and hold Original in the corner to see the photo before your edits." }
+        },
+        {
+          "symbol": "ellipsis.circle",
+          "title": { "ja": "参加したアルバムを一覧から消す", "en": "Remove joined albums from your list" },
+          "detail": { "ja": "参加したアルバムの行の「…」から、一覧から消せます。", "en": "Remove an album you joined from your list using the … on its row." }
+        },
+        {
+          "symbol": "bookmark",
+          "title": { "ja": "言葉をわかりやすく", "en": "Clearer words" },
+          "detail": { "ja": "写真を残す言葉は「保存」にそろえました。ホームの札は「まだ載せていない旅」に、乗車券の行は押すと何ができるかを書きました。", "en": "Saving photos is now always called Save. The Home card is now “Trip you haven't posted,” and the ticket row says what tapping it does." }
+        }
+      ]
+    },
+    {
       "version": "1.1.84",
       "date": "2026-11-12",
       "items": [
