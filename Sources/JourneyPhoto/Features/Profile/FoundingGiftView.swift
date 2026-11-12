@@ -120,8 +120,8 @@ struct FoundingGiftView: View {
         } catch {
             saving = false
             errorMessage = (error as? LocalizedError)?.errorDescription
-                ?? L("飾れませんでした。時間をおいてもう一度お試しください。プロフィールの編集の「名前の横のバッジ」からも飾れます。",
-                     "Couldn't save. Please try again later. You can also choose it from \"Badge beside your name\" in Edit profile.")
+                ?? L("飾れませんでした。時間をおいてもう一度お試しください。マイページの名前の横からも飾れます。",
+                     "Couldn't save. Please try again later. You can also add it from beside your name on My Page.")
         }
     }
 }

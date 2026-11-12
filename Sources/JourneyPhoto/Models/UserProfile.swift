@@ -180,6 +180,10 @@ struct UserProfile: Decodable, Equatable, Identifiable {
 
     /// 画面に出す名前。username も無ければ ID の頭で代用する。
     var name: String {
+        #if DEBUG
+        // UI テストの見本の名前（`PreviewSession.displayName`・入っている本人だけ）
+        if userId == PreviewSession.userId, let preview = PreviewSession.displayName { return preview }
+        #endif
         if let displayName, !displayName.isEmpty { return displayName }
         if let username, !username.isEmpty { return username }
         return Labels.Common.unnamedUser

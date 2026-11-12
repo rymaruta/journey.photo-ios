@@ -3,12 +3,12 @@ import XCTest
 /// **メダルを回す全画面（`MedalViewerView`）を × で閉じると、元の画面に戻る**（2026-10-09）。
 ///
 /// owner の報告（TestFlight 1.0.75 でも）: メダルを回す画面から戻れない。どこで起きたかは
-/// 分かっていないので、開く経路3つ × 閉じ方3つを全部ここで流す。
+/// 分かっていないので、開く経路 × 閉じ方3つを全部ここで流す。
 ///
 /// 経路:
 /// - shelf: マイページ → 名前の横（シート）→ バッジの棚 → メダルを押す
 /// - nameSide: マイページ → 名前の横（シート）→ メダルを長押し
-/// - profileEdit: プロフィールの編集 → 名前の横（シート）→ メダルを長押し
+/// （プロフィールの編集 → 名前の横の経路は、2026-11-12 owner 案 A で編集の「バッジ」の節ごと外した）
 ///
 /// 閉じ方: 開いてすぐ × / 回した後（払って2秒待つ）に × / 回している最中（払った直後）に ×
 ///
@@ -22,7 +22,7 @@ import XCTest
 /// 開けたのに × で戻れなければ落とす——それがこの試験の見張り。
 final class MedalViewerTests: XCTestCase {
 
-    enum Route: String { case shelf, nameSide, profileEdit }
+    enum Route: String { case shelf, nameSide }
     enum Close: String { case immediately, afterSpin, whileSpinning }
 
     override func setUp() {
@@ -48,9 +48,6 @@ final class MedalViewerTests: XCTestCase {
     func testNameSideCloseImmediately() throws { try run(.nameSide, .immediately) }
     func testNameSideCloseAfterSpin() throws { try run(.nameSide, .afterSpin) }
     func testNameSideCloseWhileSpinning() throws { try run(.nameSide, .whileSpinning) }
-    func testProfileEditCloseImmediately() throws { try run(.profileEdit, .immediately) }
-    func testProfileEditCloseAfterSpin() throws { try run(.profileEdit, .afterSpin) }
-    func testProfileEditCloseWhileSpinning() throws { try run(.profileEdit, .whileSpinning) }
 
     // MARK: - 流れ
 
@@ -148,29 +145,10 @@ final class MedalViewerTests: XCTestCase {
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return false }
         tabBar.buttons.element(boundBy: 4).tap()
 
-        switch route {
-        case .shelf, .nameSide:
-            let nameLine = element(app, "mypage.nameLine")
-            guard nameLine.waitForExistence(timeout: 20) else { return false }
-            nameLine.tap()
-        case .profileEdit:
-            let edit = element(app, "mypage.edit")
-            guard edit.waitForExistence(timeout: 20) else { return false }
-            edit.tap()
-            // 編集の欄は BGM の下。一覧は画面の外の行を作らない（run 371: 送らずに待って行が無かった）。
-            // 読み込みが済むのを待ってから、行が出て押せるまで送る
-            _ = app.buttons["保存"].firstMatch.waitForExistence(timeout: 15)
-            Thread.sleep(forTimeInterval: 2)
-            let row = element(app, "profileEdit.nameSide")
-            // 見つけたら抜ける（`where` で書くと、見つけた後も残りの回数ぶん問い合わせて約 20 秒むだにしていた）
-            for _ in 0..<12 {
-                if row.exists && row.isHittable && row.isEnabled { break }
-                app.swipeUp()
-                Thread.sleep(forTimeInterval: 0.8)
-            }
-            guard row.exists, row.isHittable, row.isEnabled else { return false }
-            row.tap()
-        }
+        // どちらの経路も、マイページの名前の行から名前の横（シート）を開く
+        let nameLine = element(app, "mypage.nameLine")
+        guard nameLine.waitForExistence(timeout: 20) else { return false }
+        nameLine.tap()
 
         guard element(app, "nameSide.save").waitForExistence(timeout: 10) else { return false }
         Thread.sleep(forTimeInterval: 1)
@@ -187,7 +165,7 @@ final class MedalViewerTests: XCTestCase {
             guard medal.waitForExistence(timeout: 15), medal.isHittable else { return false }
             shoot(app, "\(tag)-0-棚")
             medal.tap()
-        case .nameSide, .profileEdit:
+        case .nameSide:
             let badge = element(app, "nameSide.badge.\(key)")
             guard badge.waitForExistence(timeout: 15), badge.isHittable else { return false }
             badge.press(forDuration: 1.0)
@@ -199,7 +177,7 @@ final class MedalViewerTests: XCTestCase {
     private func backMarker(_ route: Route, key: String, in app: XCUIApplication) -> XCUIElement {
         switch route {
         case .shelf: return element(app, "shelf.medal.\(key)")
-        case .nameSide, .profileEdit: return element(app, "nameSide.save")
+        case .nameSide: return element(app, "nameSide.save")
         }
     }
 
