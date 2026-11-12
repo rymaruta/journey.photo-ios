@@ -75,9 +75,58 @@ final class ProfileQRTests: XCTestCase {
         XCTAssertEqual(ProfileQRScanResult.of("https://example.com", myUserId: uid, base: base), .other)
     }
 
+    // MARK: - 更新できる QR に備える（2026-11-12 owner の要望・サーバーは承認待ち）
+
+    /// `/qr/<合図>` を今から見分ける（引くのは ProfileQRSource）。ほかの家・おかしな合図は見分けない
+    func testRecognizesPassLinks() {
+        XCTAssertEqual(ProfileQRLink.parse("https://journey-photo.com/qr/Ab3_x-9Zq", base: base), .pass("Ab3_x-9Zq"))
+        XCTAssertEqual(ProfileQRLink.parse("https://www.journey-photo.com/qr/abc/", base: base), .pass("abc"))
+        XCTAssertEqual(ProfileQRLink.parse("https://journey-photo.com/u/\(uid)", base: base), .person(uid))
+        for text in ["https://example.com/qr/abc",
+                     "https://journey-photo.com/qr",
+                     "https://journey-photo.com/qr/a%2Fb",
+                     "https://journey-photo.com/qr/a b",
+                     "https://journey-photo.com/qr/abc/extra"] {
+            XCTAssertNil(ProfileQRLink.parse(text, base: base), text)
+        }
+        // 合図は人の id としては読まない（引かずに人の頁を開かない）
+        XCTAssertNil(ProfileQR.userId(from: "https://journey-photo.com/qr/abc", base: base))
+        XCTAssertEqual(ProfileQRScanResult.of("https://journey-photo.com/qr/abc", myUserId: uid, base: base), .pass("abc"))
+    }
+
+    /// 合図を引いた結果も人の id と同じ所で決める。引けない（古い・取り消された）は人を開かない
+    func testResolvedPass() {
+        XCTAssertEqual(ProfileQRScanResult.resolved("someone", myUserId: uid), .person("someone"))
+        XCTAssertEqual(ProfileQRScanResult.resolved(uid, myUserId: uid), .mine)
+        XCTAssertEqual(ProfileQRScanResult.resolved(nil, myUserId: uid), .other)
+    }
+
+    /// 今の中身は仮の実装: 公開プロフィールの URL・合図は引けない・更新は出さない
+    func testCurrentSourceIsPublicProfileURL() async throws {
+        let source = PublicProfileQRSource(base: base)
+        let url = try await source.code(for: uid)
+        XCTAssertEqual(url.absoluteString, "https://journey-photo.com/users?id=\(uid)")
+        do {
+            _ = try await source.code(for: "a/b")
+            XCTFail("URL に入れられない id で中身を作った")
+        } catch {
+            XCTAssertEqual(error as? ProfileQRSourceError, .cannotMake)
+        }
+        let resolved = try await source.resolve(pass: "abc")
+        XCTAssertNil(resolved)
+        XCTAssertFalse(source.canRenew)
+        // アプリが使うのは今はこの仮の実装（Linux の試験では AppConfig を読めないので文で見る）
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let text = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Core/Text/ProfileQR.swift"),
+                              encoding: .utf8)
+        XCTAssertTrue(text.contains("static let current: any ProfileQRSource = PublicProfileQRSource()"))
+    }
+
     func testWordsAreJapaneseFirstAndNoBannedWords() {
         for text in [ProfileQRText.title, ProfileQRText.showTab, ProfileQRText.scanTab, ProfileQRText.showHint,
-                     ProfileQRText.scanHint, ProfileQRText.notOurs, ProfileQRText.yours, ProfileQRText.denied] {
+                     ProfileQRText.scanHint, ProfileQRText.notOurs, ProfileQRText.yours, ProfileQRText.denied,
+                     ProfileQRText.retry, ProfileQRText.loading, ProfileQRText.passNotValid] {
             XCTAssertFalse(text.isEmpty)
             for banned in ["捨てる", "撮りどき", "この場所"] {
                 XCTAssertFalse(text.contains(banned), "\(text) に「\(banned)」")
@@ -117,7 +166,10 @@ final class ProfileQRTests: XCTestCase {
         XCTAssertTrue(view.contains("segment(.scan, title: ProfileQRText.scanTab"))
         XCTAssertTrue(view.contains("UserProfileView(userId: person.userId)"))
         XCTAssertTrue(view.contains("switch ProfileQRScanResult.of(code, myUserId: myUserId)"))
-        XCTAssertTrue(view.contains("ProfileQR.url(userId: profile.userId)"))
+        // 中身は ProfileQRSource の1か所だけが作る（あとで更新できる合図に替える・2026-11-12 owner）
+        XCTAssertTrue(view.contains("try await source.code(for: profile.userId)"))
+        XCTAssertFalse(view.contains("ProfileQR.url("), "画面が中身を直に作っている")
+        XCTAssertTrue(view.contains("source: any ProfileQRSource = ProfileQRSources.current"))
         XCTAssertTrue(view.contains("output.metadataObjectTypes = [.qr]"))
         // 外のサイトを開かない（読み取った文字で openURL しない）
         XCTAssertFalse(view.contains("openURL(URL(string: code"))

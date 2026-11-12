@@ -21,16 +21,14 @@ struct RootView: View {
     @State private var messagesTarget: String?
     /// メッセージの通知を押したあと、ほかの画面が閉じるのを待つ仕事
     @State private var messagesWait: Task<Void, Never>?
-    /// 投稿のシートの「構図を重ねて撮る」（作例なし・2026-10-17 から全員無料）を開く流れ（`ComposeGuideLauncher`）
+    /// 投稿のシートの「カメラで撮る」（作例なし・構図の線を中で切り替える・2026-11-12）を開く流れ（`ComposeGuideLauncher`）
     @StateObject private var composeLauncher = ComposeGuideLauncher()
     /// 構図を重ねて撮った1枚（撮る画面の「投稿」）。撮る画面を閉じきってから投稿画面に入れる
     @State private var pendingCapture: CameraCapture?
-    /// 投稿のシートで「構図を重ねて撮る」を押した。**シートが閉じきってから**撮る画面（全画面）を開く
-    /// （閉じている途中に全画面を重ねると出ないことがある・2026-10-10 確かめ役の指摘）
+    /// 投稿のシートで「カメラで撮る」を押した。**シートが閉じきってから**撮る画面（全画面）を開く
+    /// （閉じている途中に全画面を重ねると出ないことがある・2026-10-10 確かめ役の指摘）。撮った1枚は `pendingCapture` に入れ、
+    /// **カメラが閉じきってから**投稿画面を開く（`postCapturedPhotoIfAny`）。2026-11-12 から構図の線はこのカメラの中
     @State private var openCompositionAfterPostSheet = false
-    /// 投稿のシートの「カメラで撮る」（2026-10-16）。撮った1枚は `pendingCapture` に入れ、
-    /// **カメラが閉じきってから**投稿画面を開く（構図を重ねて撮ったあとと同じ道・`postCapturedPhotoIfAny`）
-    @State private var showPostCamera = false
     @State private var selection: Tab = .home
     /// 地図の札の積み重ねの番号。上げると地図の札が根から作り直される（詳細を積んだ所から語を持って地図へ送るとき）
     @State private var mapStackId = 0
@@ -1136,15 +1134,10 @@ struct RootView: View {
             .sheet(isPresented: $showPostChoice, onDismiss: postChoiceDismissed) {
                 PostSheet { kind in pendingPostChoice = kind }
             }
-            // 構図を重ねて撮る（作例なし）。「投稿」で撮った1枚を受け、**閉じきってから**投稿画面を開く
+            // カメラで撮る（構図の線を中で切り替える・作例なし）。「投稿」で撮った1枚を受け、**閉じきってから**投稿画面を開く
             .composeGuidePresenter(composeLauncher, spotName: nil,
                                    onPost: { capture in pendingCapture = capture },
                                    onDismiss: postCapturedPhotoIfAny)
-            // 「カメラで撮る」。投稿画面の帯の「追加」→「写真を撮る」と同じカメラ（`CameraPicker`）
-            .fullScreenCover(isPresented: $showPostCamera, onDismiss: postCapturedPhotoIfAny) {
-                CameraPicker { capture in pendingCapture = capture }
-                    .ignoresSafeArea()
-            }
             // 空の画面の「次の一手」（`TabRouter.openPost`）。**ほかの投稿の画面が出ていたら開かない**
             // （端末の旅の一冊の「この旅の写真を投稿する」と同じ `postScreensShown` を見る）
             .onChange(of: tabRouter.postRequests) { _, _ in
@@ -1177,7 +1170,7 @@ struct RootView: View {
     /// 開かない（重なる）。2026-10-16 判断: 2か所で別々に書いていたら、#260 側に「カメラで撮る」が抜けた。
     /// 1か所にまとめ、⚠️ 投稿の画面を足したらここに足す
     private var postScreensShown: [Bool] {
-        [showTripImport, showPhotoUpload, showStoryComposer, showPostChoice, showPostCamera]
+        [showTripImport, showPhotoUpload, showStoryComposer, showPostChoice, composeLauncher.launch != nil]
     }
 
     /// 下書きを開く。ほかの投稿の画面・シートが出ている間は少し待つ（最大およそ3秒・出ないままなら開かない——
@@ -1228,16 +1221,14 @@ struct RootView: View {
         case .trip:
             pendingTripPhotos = []
             showTripImport = true
-        case .composition:
-            // シートが閉じきってから開く（`openCompositionIfRequested`）
-            openCompositionAfterPostSheet = true
         case .camera:
+            // 2026-11-12: アプリのカメラ（構図の線を中で切り替える）。シートが閉じきってから開く（`openCompositionIfRequested`）
             pendingCapture = nil
-            showPostCamera = true
+            openCompositionAfterPostSheet = true
         }
     }
 
-    /// 投稿のシートが閉じきった。「構図を重ねて撮る」が押されていれば、作例なしで開く
+    /// 投稿のシートが閉じきった。「カメラで撮る」が押されていれば、アプリのカメラを作例なしで開く
     /// （2026-10-17 判断: 全員無料。Pro の確かめもサーバーへの問い合わせもしない・`ComposeGuideLauncher`）
     private func openCompositionIfRequested() {
         guard openCompositionAfterPostSheet else { return }

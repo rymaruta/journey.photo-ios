@@ -77,10 +77,10 @@ final class SettingsOutlineTests: XCTestCase {
                        ["settings.blocked", "settings.closeFriends", "settings.pass", "settings.trunkPrivacy"])
         XCTAssertEqual(SettingsOutline.Part.photos.items, ["settings.compositionCatalog", "settings.storage"])
         // 道具の行は設定に無い（≡ にある）
-        let all = SettingsOutline.Part.allCases.flatMap(\.items)
+        let topLevel = SettingsOutline.Part.allCases.flatMap(\.items)
         for moved in ["settings.trunk", "settings.camper", "settings.passBook", "settings.albums", "settings.plans",
                       "settings.favorites"] {
-            XCTAssertFalse(all.contains(moved), "\(moved) が設定に残っている（≡ へ移した）")
+            XCTAssertFalse(topLevel.contains(moved), "\(moved) が設定に残っている（≡ へ移した）")
         }
         XCTAssertEqual(SettingsOutline.Part.danger.items, ["settings.logout", "settings.deleteAccount"])
         // 目印は重ならない

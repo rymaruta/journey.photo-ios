@@ -71,7 +71,8 @@ final class DesignDedupeTests: XCTestCase {
             "Features/Trips/TripPlansView.swift": ".jpCardFace()",
             "Features/Trips/OfflineTripCard.swift": ".jpCardFace()",
             "Features/Gallery/DailyThemeCard.swift": ".jpCardFace()",
-            "Features/Gallery/HomeTopCardView.swift": ".jpCardFace()",
+            // 2026-11-12: ホームの札の面は探すの今日の一問と共有するので `TopCardFace` へ移した
+            "Features/Gallery/TopCardFace.swift": ".jpCardFace()",
             "Features/Profile/BadgeShelfView.swift": ".jpCardFace()",
             "Features/Trips/TripPlanDetailView.swift": ".jpCardFace()",
             "Features/Spots/SpotDetailParts.swift": ".jpCardFace()",

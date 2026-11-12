@@ -175,11 +175,13 @@ final class UXDeadEndsTests: XCTestCase {
     func testPostRequestGateCoversEveryPostScreen() async throws {
         let root = try source("App/RootView.swift")
         let gate = slice(root, from: "private var postScreensShown: [Bool] {", to: "]\n    }")
-        let flags = ["showTripImport", "showPhotoUpload", "showStoryComposer", "showPostChoice", "showPostCamera"]
+        let flags = ["showTripImport", "showPhotoUpload", "showStoryComposer", "showPostChoice"]
         for flag in flags {
             XCTAssertTrue(root.contains("@State private var \(flag) = false"), "\(flag) が RootView に無い")
             XCTAssertTrue(gate.contains(flag), "\(flag) が出ている間も空の画面の一手が投稿の画面を開く")
         }
+        // 「カメラで撮る」（2026-11-12 からアプリのカメラ）が出ている間も開かない
+        XCTAssertTrue(gate.contains("composeLauncher.launch != nil"), "カメラが出ている間も空の画面の一手が投稿の画面を開く")
         // 空の画面の一手と、端末の旅の一冊の「この旅の写真を投稿する」が、同じ並びを見る（別々に書くと抜ける）
         // 下書きの一覧から下書きを開く道（`openDraftWhenFree`・2026-10-29・#400）も同じ並びを見る
         // アイコン長押しの「ストーリーを撮る」(`StoryShortcutOpener`・札 #500)も同じ並びを見る(4つ目の入口)
@@ -228,7 +230,8 @@ final class UXDeadEndsTests: XCTestCase {
     func testSavedIsCalledSaveEverywhere() async throws {
         XCTAssertEqual(ProfileTab.favorites.label, "保存")
         let menu = try source("Features/Common/SiteMenuView.swift")
-        XCTAssertTrue(menu.contains("SiteMenuRow(title: ProfileTab.favorites.label, systemImage: \"bookmark\""))
+        // 2026-11-12（デザインの案 第10章）: 保存は ≡ から外した（マイページの保存のタブと同じ所・タブと重なる行を置かない）
+        XCTAssertFalse(menu.contains("SiteMenuRow(title: ProfileTab.favorites.label"), "≡ に保存が残っている")
         XCTAssertFalse(menu.contains("保存した写真\", \"Saved photos\""))
     }
 
@@ -236,13 +239,16 @@ final class UXDeadEndsTests: XCTestCase {
 
     func testPostSheetOffersCameraThroughExistingFlow() async throws {
         let sheet = try source("Features/Upload/PostSheet.swift")
-        XCTAssertTrue(sheet.contains("if CameraPicker.isAvailable {"), "カメラの無い端末にも出している")
+        XCTAssertTrue(sheet.contains("if CameraPicker.isAvailable || ComposeGuideAccess.previewUnlocked {"),
+                      "カメラの無い端末にも出している")
         XCTAssertTrue(sheet.contains("kind: .camera"))
         XCTAssertEqual(PostSheet.cameraTitle, "カメラで撮る")
         let root = try source("App/RootView.swift")
-        XCTAssertTrue(root.contains("case .camera:\n            pendingCapture = nil\n            showPostCamera = true"))
-        // 撮った1枚は構図を重ねて撮ったあとと同じ道（閉じきってから投稿画面へ・`UploadView.initialCapture`）
-        XCTAssertTrue(root.contains(".fullScreenCover(isPresented: $showPostCamera, onDismiss: postCapturedPhotoIfAny) {\n                CameraPicker { capture in pendingCapture = capture }"))
+        // 2026-11-12（第10章・行 5 → 4）: アプリのカメラ（構図の線を中で切り替える）を、シートが閉じきってから開く
+        XCTAssertTrue(root.contains("case .camera:\n            pendingCapture = nil\n            openCompositionAfterPostSheet = true"))
+        // 撮った1枚は閉じきってから投稿画面へ（`UploadView.initialCapture`）
+        XCTAssertTrue(root.contains(".composeGuidePresenter(composeLauncher, spotName: nil,\n                                   onPost: { capture in pendingCapture = capture },\n                                   onDismiss: postCapturedPhotoIfAny)"))
+        XCTAssertFalse(root.contains("showPostCamera"), "系統のカメラの道が残っている")
     }
 
     // MARK: - 7. ストーリーへの返信の通知

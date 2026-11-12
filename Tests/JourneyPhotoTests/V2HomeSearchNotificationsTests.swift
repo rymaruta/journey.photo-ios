@@ -219,9 +219,9 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
                        ".font(JPFont.rowTitle)", ".font(JPFont.caption)", ".foregroundStyle(WebTheme.text3)"],
                       in: row, "「見る」の行（印の札 → 明朝の題 → 説明）")
         XCTAssertTrue(row.contains(".frame(minHeight: Self.height)"))
-        // 「いいね＝作者に届く／保存＝自分だけ」の違いを説明の一行で読ませる（板の付箋）
+        // 「いいね＝作者に届く」を説明の一行で読ませる（板の付箋）。保存（自分だけ）の行は 2026-11-12 に ≡ から外した
+        // （マイページの保存のタブと同じ所）
         XCTAssertTrue(view.contains("作者に届きます"))
-        XCTAssertTrue(view.contains("自分だけ"))
     }
 
     // MARK: - 探す

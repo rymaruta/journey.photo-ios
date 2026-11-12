@@ -9,7 +9,8 @@ import UIKit
 /// **1枚の画面で「自分の QR を見せる」と「読み取る」を切り替える**（他のアプリのように2つの画面に分けない・指示）。
 /// 切り替えは繋がったセグメント（板 Components の「表示の切替」・行った県の地図と同じ形）。
 ///
-/// - 見せる: 白い地に黒の QR（読み取れるのは明るい地の暗い点だけ）・名前・@名・一言。中身は公開プロフィールの URL（`ProfileQR.url`）
+/// - 見せる: 白い地に黒の QR（読み取れるのは明るい地の暗い点だけ）・名前・@名・一言。
+///   中身は `ProfileQRSource` が作る（今は公開プロフィールの URL。承認のあと更新できる合図に替える・2026-11-12 owner）
 /// - 読み取る: アプリの中のカメラ。**journey-photo.com の人の URL なら、この画面の上にその人の頁を開く**
 ///   （`UserProfileView`）。ほかの QR は開かない（外のサイトへ連れ出さない）。自分の QR は「あなたの QR です」と言うだけ
 ///
@@ -19,12 +20,19 @@ struct ProfileQRView: View {
     enum Mode: Hashable { case show, scan }
 
     let profile: UserProfile
+    /// QR の中身を作る所（`ProfileQRSources.current`・試験と画面写真で替えられる）
+    let source: any ProfileQRSource
     @State private var mode: Mode
+    /// 見せる QR の中身（読み込み中・失敗・できた）
+    @State private var code: CodeState = .loading
     /// 読み取って開く人（この画面の上に積む）
     @State private var opened: OpenedPerson?
 
-    init(profile: UserProfile, startsWith mode: Mode = .show) {
+    enum CodeState: Equatable { case loading, failed, ready(URL) }
+
+    init(profile: UserProfile, source: any ProfileQRSource = ProfileQRSources.current, startsWith mode: Mode = .show) {
         self.profile = profile
+        self.source = source
         _mode = State(initialValue: mode)
     }
 
@@ -38,7 +46,7 @@ struct ProfileQRView: View {
                 case .show:
                     showPane
                 case .scan:
-                    ProfileQRScanPane(myUserId: profile.userId) { userId in
+                    ProfileQRScanPane(myUserId: profile.userId, source: source) { userId in
                         opened = OpenedPerson(userId: userId)
                     }
                 }
@@ -89,24 +97,24 @@ struct ProfileQRView: View {
 
     private var showPane: some View {
         VStack(spacing: JPSpace.l) {
-            if let url = ProfileQR.url(userId: profile.userId), let image = ProfileQRImage.make(url.absoluteString) {
-                Image(uiImage: image)
-                    .interpolation(.none)
-                    .resizable()
-                    .scaledToFit()
-                    // 読み取りの決まり（明るい地に暗い点・周りに余白）。写真ではないので白い面のまま
-                    .padding(JPSpace.m)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: JPRadius.l))
+            switch code {
+            case .ready(let url):
+                if let image = ProfileQRImage.make(url.absoluteString) {
+                    codeImage(image)
+                } else {
+                    failedNote
+                }
+            case .loading:
+                // 白い札と同じ大きさの空き（できたときに下の名前が跳ねない）
+                RoundedRectangle(cornerRadius: JPRadius.l)
+                    .fill(WebTheme.surface8)
+                    .aspectRatio(1, contentMode: .fit)
                     .frame(maxWidth: ProfileQRText.codeSide)
-                    .accessibilityLabel(ProfileQRText.codeLabel(profile.name))
-                    .accessibilityIdentifier("profileQR.code")
-            } else {
-                // 作れなかった（id が URL に入れられない形）。空の白い四角を出さない
-                Text(ProfileQRText.cannotMake)
-                    .font(JPFont.body)
-                    .foregroundStyle(WebTheme.text2)
-                    .multilineTextAlignment(.center)
-                    .padding(.top, JPSpace.emptyTop)
+                    .overlay { ProgressView().tint(WebTheme.text2) }
+                    .accessibilityLabel(ProfileQRText.loading)
+                    .accessibilityIdentifier("profileQR.loading")
+            case .failed:
+                failedNote
             }
             VStack(spacing: JPSpace.xxs) {
                 Text(profile.name)
@@ -125,9 +133,55 @@ struct ProfileQRView: View {
                 .foregroundStyle(WebTheme.text2)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+            // ここに「QR コードを更新」（古い QR は使えなくなる）を置く——**承認のあとに作る**（2026-11-12 owner の要望・
+            // `ProfileQRSource.canRenew`）。今の仮の中身（公開プロフィールの URL）は取り替えられないので出さない
         }
         .frame(maxWidth: .infinity)
         .padding(.top, JPSpace.m)
+        .task(id: profile.userId) { await loadCode() }
+    }
+
+    /// 中身を作る（`ProfileQRSource`）。承認のあとはサーバーに聞くので、読み込み中と失敗を持つ
+    private func loadCode() async {
+        code = .loading
+        do {
+            code = .ready(try await source.code(for: profile.userId))
+        } catch {
+            code = .failed
+        }
+    }
+
+    private func codeImage(_ image: UIImage) -> some View {
+        Image(uiImage: image)
+            .interpolation(.none)
+            .resizable()
+            .scaledToFit()
+            // 読み取りの決まり（明るい地に暗い点・周りに余白）。写真ではないので白い面のまま
+            .padding(JPSpace.m)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: JPRadius.l))
+            .frame(maxWidth: ProfileQRText.codeSide)
+            .accessibilityLabel(ProfileQRText.codeLabel(profile.name))
+            .accessibilityIdentifier("profileQR.code")
+    }
+
+    /// 作れなかった（id が URL に入れられない形・承認のあとは電波など）。空の白い四角を出さず、もう一度の口を置く
+    private var failedNote: some View {
+        VStack(spacing: JPSpace.s) {
+            Text(ProfileQRText.cannotMake)
+                .font(JPFont.body)
+                .foregroundStyle(WebTheme.text2)
+                .multilineTextAlignment(.center)
+            Button {
+                Task { await loadCode() }
+            } label: {
+                Text(ProfileQRText.retry)
+                    .jpPillButton(.accent)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("profileQR.retry")
+        }
+        .padding(.top, JPSpace.emptyTop)
+        .accessibilityIdentifier("profileQR.failed")
     }
 }
 
@@ -154,6 +208,11 @@ enum ProfileQRText {
     static var openSettings: String { L("設定を開く", "Open Settings") }
     static var unavailable: String { L("この端末ではカメラを使えません", "The camera isn't available on this device") }
     static var cannotMake: String { L("QR を作れませんでした", "Couldn't make the QR code") }
+    static var retry: String { L("もう一度", "Try again") }
+    static var loading: String { L("QR を用意しています", "Preparing your QR code") }
+    static var passNotValid: String {
+        L("この QR は使えなくなっています", "This QR code is no longer valid")
+    }
     static func codeLabel(_ name: String) -> String {
         L("\(name) のプロフィールの QR", "Profile QR code for \(name)")
     }
@@ -180,6 +239,8 @@ enum ProfileQRImage {
 /// 読み取りの面（カメラの映像・白い枠・一言）。人の URL を読んだら `onFound` で id を渡す
 struct ProfileQRScanPane: View {
     let myUserId: String
+    /// 合図（`/qr/<合図>`）を人に引く所（`ProfileQRSource.resolve`）
+    let source: any ProfileQRSource
     let onFound: (String) -> Void
 
     @StateObject private var scanner = ProfileQRScanner()
@@ -254,6 +315,22 @@ struct ProfileQRScanPane: View {
                 note = ProfileQRText.yours
             case .other:
                 note = ProfileQRText.notOurs
+            case .pass(let pass):
+                // 更新できる QR の合図（承認のあと）。引けたら人として扱い、引けない（古い・取り消された）なら一言
+                Task { @MainActor in
+                    let userId = try? await source.resolve(pass: pass)
+                    // 待つ間に別の QR を読んでいたら、古い答えは使わない
+                    guard scanner.lastCode == code else { return }
+                    switch ProfileQRScanResult.resolved(userId, myUserId: myUserId) {
+                    case .person(let id):
+                        note = nil
+                        onFound(id)
+                    case .mine:
+                        note = ProfileQRText.yours
+                    case .other, .pass:
+                        note = ProfileQRText.passNotValid
+                    }
+                }
             }
         }
     }
@@ -264,9 +341,21 @@ enum ProfileQRScanResult: Equatable {
     case person(String)
     case mine
     case other
+    /// 更新できる QR の合図。人に引いてから `resolved` で決める
+    case pass(String)
 
+    /// 見分けるのは `ProfileQRLink.parse`（1か所）
     static func of(_ text: String, myUserId: String?, base: URL = AppConfig.siteBaseURL) -> ProfileQRScanResult {
-        guard let userId = ProfileQR.userId(from: text, base: base) else { return .other }
+        switch ProfileQRLink.parse(text, base: base) {
+        case .person(let userId)?: return resolved(userId, myUserId: myUserId)
+        case .pass(let pass)?: return .pass(pass)
+        case nil: return .other
+        }
+    }
+
+    /// 人の id が決まったあと（合図を引いた結果も同じ所を通る）。引けなかった（nil）は `.other`
+    static func resolved(_ userId: String?, myUserId: String?) -> ProfileQRScanResult {
+        guard let userId else { return .other }
         return userId == myUserId ? .mine : .person(userId)
     }
 }

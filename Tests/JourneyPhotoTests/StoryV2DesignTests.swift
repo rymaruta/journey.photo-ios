@@ -283,7 +283,7 @@ final class StoryV2DesignTests: XCTestCase {
         XCTAssertTrue(sheet.contains(".presentationBackground(WebTheme.sheet)"))
         // 画面写真の道しるべ（40 系）
         XCTAssertTrue(sheet.contains(".accessibilityIdentifier(\"post.choice.\\(Self.identifier(kind))\")"))
-        for kind in ["photo", "story", "trip", "composition"] {
+        for kind in ["photo", "camera", "story", "trip"] {
             XCTAssertTrue(sheet.contains("case .\(kind): return \"\(kind)\""))
         }
         // owner の決まり: 札に敷くのは自分の写真（v2 の板の印だけの札より優先）
@@ -292,7 +292,9 @@ final class StoryV2DesignTests: XCTestCase {
         // 写真の無い札の構図の印だけ真鍮（黒地の上）のまま
         XCTAssertFalse(sheet.contains("\"PRO\""), "投稿のシートに PRO の合図が残っている")
         XCTAssertFalse(sheet.contains("Pro の機能"), "投稿のシートに Pro の読み上げが残っている")
-        XCTAssertTrue(sheet.contains("kind: .composition,\n                accentIcon: true,"))
+        // 2026-11-12: 構図はカメラの中へ。真鍮の印は「カメラで撮る」の行へ移した（行 5 → 4）
+        XCTAssertTrue(sheet.contains("kind: .camera,\n                    accentIcon: true"))
+        XCTAssertFalse(sheet.contains("case composition"), "「構図を重ねて撮る」の行が残っている")
         let onBlack = PostSheet.iconColor(hasPhoto: false, accent: true)
         let onPhoto = PostSheet.iconColor(hasPhoto: true, accent: true)
         XCTAssertEqual(onBlack, WebTheme.accent)
