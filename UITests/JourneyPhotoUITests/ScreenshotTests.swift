@@ -7862,6 +7862,15 @@ final class ScreenshotTests: XCTestCase {
             + " copyLink.button=\(app.buttons["sendSheet.copyLink"].firstMatch.exists) copyLink.any=\(copyAny.exists)"
             + " sheet.frame=\(sheetShown ? String(describing: sheet.frame) : "-")"
             + " buttons=\(app.buttons.allElementsBoundByIndex.suffix(12).map { $0.identifier + ":" + $0.label })") { _ in }
+        if !otherAny.exists {
+            // run 1119: 「sendSheet」は 30×19 の小さな要素で、行動の丸が木に無かった。木を丸ごと記録して何が出ているかを見る
+            let tree = app.debugDescription.components(separatedBy: "\n")
+            let shown = tree.filter { $0.contains("sendSheet") || $0.contains("dm.face") || $0.contains("Sheet")
+                || $0.contains("spot.official") || $0.contains("NavigationBar") || $0.contains("リンク") || $0.contains("送る") }
+            for (i, chunk) in stride(from: 0, to: shown.count, by: 8).map({ Array(shown[$0..<min($0 + 8, shown.count)]) }).enumerated() {
+                XCTContext.runActivity(named: "120d の木 \(i): " + chunk.joined(separator: " | ")) { _ in }
+            }
+        }
         XCTAssertTrue(otherAny.exists, "「ほかのアプリ」が無い（外への共有の口が消えた）")
     }
 
