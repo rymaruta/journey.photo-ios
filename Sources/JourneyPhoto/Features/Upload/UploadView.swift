@@ -8,6 +8,8 @@ struct UploadView: View {
     /// 撮影スポットの索引を読むため（`model.fetchSpotIndex`）。撮影地の欄（`PlaceSearchField`）も同じものを読む
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var toasts: ToastCenter
+    /// 圏外か（「圏外のため送れません」の一言と「下書きに保存」・2026-11-12）
+    @EnvironmentObject private var connectivity: Connectivity
     @StateObject private var model: UploadViewModel
     /// 下書きの一覧（件数・入口・#400）
     @ObservedObject private var draftLibrary = DraftLibrary.shared
@@ -324,6 +326,28 @@ struct UploadView: View {
         dismiss()
     }
 
+    /// 圏外の「下書きに保存」を出してよいか。閉じる確認と同じ決まり（いっぱい・読み込み中・送りかけなら出さない）
+    private var offlineCanSaveDraft: Bool {
+        switch closeChoice {
+        case .update: return true
+        case .full: return false
+        default: return closeDialog.canSave
+        }
+    }
+
+    /// 失敗・圏外の一言（危険の色・13pt・丸に！の印・DesignSystem 06）
+    private func alertLine(_ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: JPSpace.xs) {
+            Image(systemName: "exclamationmark.circle")
+                .accessibilityHidden(true)
+            Text(text)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(JPFont.footnote)
+        .foregroundStyle(WebTheme.danger)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     /// 「下書きに保存」「この下書きを更新」。**書けたときだけ閉じる**（書けなければ上に知らせを出して残る）
     private func saveDraftAndClose(update: Bool = false) {
         if model.saveDraft() {
@@ -477,15 +501,10 @@ struct UploadView: View {
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(WebTheme.border, lineWidth: 1))
     }
 
-    /// 知らせと下書きの入口（`form` の VStack の上限 10 を超えないよう、ひとまとめ）
+    /// 知らせ（`form` の VStack の上限 10 を超えないよう、ひとまとめ）
     @ViewBuilder
     private var topBlock: some View {
         progressAndErrors
-        // 下書きの入口（「下書き n ›」・2026-10-29・#400）。**写真がまだ無いときだけ**——並べた写真を
-        // 残したまま別の下書きを開くと、今の書きかけが行き場を失う
-        if model.items.isEmpty && !model.isWorking && !model.isRestoringDraft && draftCount > 0 {
-            draftsEntryRow
-        }
     }
 
     /// 上の「下書き n ›」（件数バッジは真鍮＋墨＋黒の縁・黒地の上）
@@ -506,8 +525,12 @@ struct UploadView: View {
                     .foregroundStyle(WebTheme.text3)
                     .accessibilityHidden(true)
             }
-            .frame(minHeight: WebTheme.minTapTarget)
-            .contentShape(Rectangle())
+            // 2026-11-12 判断（案 02）: 札の行（地・縁・角 16・高さ 52）にして、大きな2枚の枠の下に置く
+            .padding(.horizontal, 14)
+            .frame(minHeight: JPHeight.row)
+            .jpCardFace()
+            .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
+            .contentShape(RoundedRectangle(cornerRadius: JPRadius.l))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(DraftsText.entryAccessibility(draftCount))
@@ -519,18 +542,51 @@ struct UploadView: View {
     @ViewBuilder
     private var photosBlock: some View {
         if showEditHint { editHint }
-        strip
-        // 帯のすぐ下に「写真を編集」（押せる合図がサムネだけだと気づかれなかった）
-        editButton
-        if !model.items.isEmpty {
-            // 見本 3 の一言。2026-10-03: 何ができるか（色や明るさ）を先に言い、短くした
-            // （本文系の最小 12pt＝.caption）
-            Text(L("写真を押すと、色や明るさを編集できます。元の写真は変わりません。",
-                   "Tap a photo to adjust its color and light. The original stays as it is."))
-                .font(.caption)
-                .foregroundStyle(WebTheme.text3)
-                .padding(.horizontal, 4)
+        // 2026-11-12 判断（1.1.83・案「投稿まわりのデザイン」02）: 写真がまだ無いとき（選ぶ画面を閉じた）は
+        // 大きな2枚の枠「写真を選ぶ」「撮る」。「追加」→ メニューの2手を1手にする
+        if model.items.isEmpty && !model.isLoadingPicked {
+            emptyPickers
+            // 下書きの入口（「下書き n ›」・2026-10-29・#400）。**写真がまだ無いときだけ**——並べた写真を
+            // 残したまま別の下書きを開くと、今の書きかけが行き場を失う。2026-11-12: 大きな枠の下へ（案 02）
+            if !model.isWorking && !model.isRestoringDraft && draftCount > 0 {
+                draftsEntryRow
+            }
+        } else {
+            strip
         }
+        // 帯のすぐ下に「色を編集」（押せる合図がサムネだけだと気づかれなかった）。
+        // 2026-11-12 判断: 下の「写真を押すと、色や明るさを…」の一言は外した（ボタンと帯の札の「編集」で分かる）
+        editButton
+    }
+
+    /// 写真がまだ無いときの「写真を選ぶ」「撮る」（案 02 の 120×150・真鍮の点線と字＝「追加」と同じ扱い）
+    private var emptyPickers: some View {
+        HStack(spacing: UploadStripLayout.spacing) {
+            emptyPicker(symbol: "plus", title: L("写真を選ぶ", "Choose photos"), action: openLibrary)
+                .accessibilityIdentifier("upload.add")
+            if CameraPicker.isAvailable {
+                emptyPicker(symbol: "camera", title: L("撮る", "Take"), action: { showCamera = true })
+                    .accessibilityIdentifier("upload.camera")
+            }
+        }
+        // 🔴 送っている間・下書きを戻している間は足させない（`addTile` と同じ）
+        .disabled(model.isWorking || model.isRestoringDraft)
+    }
+
+    private func emptyPicker(symbol: String, title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: JPSpace.xxs) {
+                Image(systemName: symbol).font(.system(size: 28, weight: .light))
+                Text(title).font(JPFont.footnote)
+            }
+            .foregroundStyle(WebTheme.accent)
+            .frame(width: UploadStripLayout.emptyTileWidth, height: UploadStripLayout.emptyTileHeight)
+            .overlay(RoundedRectangle(cornerRadius: JPRadius.field)
+                .strokeBorder(WebTheme.accent.opacity(UploadStripLayout.addBorderOpacity),
+                              style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])))
+            .contentShape(RoundedRectangle(cornerRadius: JPRadius.field))
+        }
+        .buttonStyle(.plain)
     }
 
     private var form: some View {
@@ -685,7 +741,14 @@ struct UploadView: View {
         .sheet(isPresented: $showInspiredPicker) {
             NavigationStack {
                 InspiredPickerView(currentLocation: model.items.first?.location,
-                                   selectedId: model.inspired?.id) { pick in model.inspired = pick }
+                                   selectedId: model.inspired?.id,
+                                   selectedLabel: model.inspired.map { pick in
+                                       [pick.label, pick.authorName ?? ""].filter { !$0.isEmpty }
+                                           .joined(separator: PhotoMetaLine.separator)
+                                   },
+                                   onPick: { pick in model.inspired = pick },
+                                   // 2026-11-12: 選ぶ画面の下の段でも外せる（案 06）
+                                   onRemove: { model.inspired = nil })
             }
         }
         // 写真の編集（帯のサムネを押す）。**その写真だけ**にレシピを入れる（`applyEdit`）
@@ -849,7 +912,9 @@ struct UploadView: View {
         .accessibilityIdentifier("upload.editHint")
     }
 
-    /// 帯の下の「写真を編集」（黒地の上の副ボタン・真鍮の文字）。開ける写真のうち最初の1枚を開く。
+    /// 帯の下の「色を編集」（黒地の上の副ボタン・真鍮の文字）。開ける写真のうち最初の1枚を開く。
+    /// 2026-11-12 判断（案 02）: 「写真を編集」から改めた——写真の詳細の「写真を編集」（題・説明を直す画面）と
+    /// 名前がぶつかる。開くのは色の画面なので、EditPhoto の板と同じ「色を編集」
     /// 開ける写真が無ければ出さない（`UploadEditEntry.buttonTarget`）
     @ViewBuilder
     private var editButton: some View {
@@ -861,7 +926,7 @@ struct UploadView: View {
                     Image(systemName: "slider.horizontal.3")
                         .font(.system(size: 14, weight: .semibold))
                         .accessibilityHidden(true)
-                    Text(L("写真を編集", "Edit photo"))
+                    Text(UploadEditEntry.buttonTitle)
                         .font(.subheadline.weight(.semibold))
                 }
                 .foregroundStyle(WebTheme.accent)
@@ -872,7 +937,7 @@ struct UploadView: View {
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(L("写真を編集", "Edit photo"))
+            .accessibilityLabel(UploadEditEntry.buttonTitle)
             .accessibilityHint(model.items.count > 1
                                ? L("\(index + 1)枚目の色や明るさを編集します", "Adjusts the color and light of photo \(index + 1)")
                                : L("色や明るさを編集します", "Adjusts the color and light"))
@@ -926,11 +991,13 @@ struct UploadView: View {
             // 名前が読める幅に: サムネの幅いっぱい（左右 6pt を残す）まで・1行・入らなければ 0.8 まで縮める
             // （文字を詰めて「旅の葉…」にしない）
             if let badge = tag.text {
+                // 2026-11-12 判断（案 02）: 札の字と印は固定の 12・10 をやめ、caption の段に追従させる
+                // （大きい文字の設定で読める。外す丸の × 11 は決まった枠の記号なので固定のまま）
                 HStack(spacing: 4) {
                     Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(JPFont.caption.weight(.bold))
                     Text(badge)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(JPFont.caption.weight(.semibold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                 }
@@ -1204,22 +1271,33 @@ struct UploadView: View {
         Button {
             withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { showsDetails.toggle() }
         } label: {
+            // 2026-11-12 判断（案 02）: 閉じたままでも今の値を**行の右に1行で**（「全体に公開 · 曲なし · アルバムなし」）。
+            // 入らない長さ（SNS・カテゴリ・大きい文字）のときだけ、前のように題の下に回す（切って隠さない）
             HStack(spacing: 12) {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 17))
-                    .foregroundStyle(WebTheme.text2)
-                    .frame(width: 24)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(L("詳しい設定", "More settings"))
-                        .font(.subheadline)
-                        .foregroundStyle(WebTheme.text)
-                    Text(detailsSummary)
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.text3)
-                        .fixedSize(horizontal: false, vertical: true)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) {
+                        Text(L("詳しい設定", "More settings"))
+                            .font(.subheadline)
+                            .foregroundStyle(WebTheme.text)
+                            .fixedSize()
+                        Spacer(minLength: 0)
+                        Text(detailsSummary)
+                            .font(JPFont.footnote)
+                            .foregroundStyle(WebTheme.text3)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(L("詳しい設定", "More settings"))
+                            .font(.subheadline)
+                            .foregroundStyle(WebTheme.text)
+                        Text(detailsSummary)
+                            .font(JPFont.footnote)
+                            .foregroundStyle(WebTheme.text3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(WebTheme.text3)
@@ -1371,8 +1449,9 @@ struct UploadView: View {
             .accessibilityIdentifier("upload.inspired")
         } else {
             Button { showInspiredPicker = true } label: {
+                // 2026-11-12 判断（案 02）: 印は「写真と矢印」。構図（camera.viewfinder）と同じ印で紛れていた
                 JPRowLabel(title: L("この写真を見て撮影（任意）", "Inspired by (optional)"),
-                           systemImage: "camera.viewfinder",
+                           systemImage: UploadDetails.inspiredSymbol,
                            value: L("元の写真を付ける", "Add"))
             }
             .buttonStyle(JPRowButtonStyle())
@@ -1384,8 +1463,8 @@ struct UploadView: View {
     private func inspiredThumb(_ pick: InspiredBy.Pick) -> some View {
         RemoteImage(url: pick.thumbURL.flatMap(URL.init(string:)))
             .frame(width: 24, height: 24)
-            .clipShape(RoundedRectangle(cornerRadius: 5))
-            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
+            // 2026-11-12 判断（案 02）: 白 20% の縁は字の段に無いのでやめ、角を段の 6（`JPRadius.xs`）に
+            .clipShape(RoundedRectangle(cornerRadius: JPRadius.xs))
     }
 
     @ViewBuilder
@@ -1436,11 +1515,11 @@ struct UploadView: View {
             Toggle(isOn: Binding(get: { model.attachesLocation },
                                  set: { model.setAttachesLocation($0) })) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(UploadDetails.locationToggleTitle)
+                    Text(UploadDetails.uploadLocationToggleTitle)
                         .font(.callout)
                         .foregroundStyle(WebTheme.text)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text(UploadDetails.locationToggleNote(attaches: model.attachesLocation))
+                    Text(UploadDetails.uploadLocationToggleNote(attaches: model.attachesLocation))
                         .font(.caption)
                         .foregroundStyle(WebTheme.text3)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1517,8 +1596,30 @@ struct UploadView: View {
     /// 送信の途中・失敗の知らせと、残りをやめる口
     @ViewBuilder
     private var progressAndErrors: some View {
+        // 2026-11-12 判断（案 02・DesignSystem 06）: 失敗・圏外は起きた所（上）に、危険の色の 13pt と丸に！の印。
+        // トーストにしない。書いた題・説明・選んだ写真は消さない
+        if connectivity.isOffline && !model.items.isEmpty && !model.isWorking {
+            alertLine(UploadSummary.offlineNote)
+                .accessibilityIdentifier("upload.offline")
+            if offlineCanSaveDraft {
+                Button { saveDraftAndClose(update: closeChoice == .update) } label: {
+                    Text(L("下書きに保存", "Save draft")).jpPillButton(.outline)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("upload.offline.saveDraft")
+            }
+        }
         if let error = model.errorMessage {
-            Text(error).foregroundStyle(WebTheme.danger).font(.callout)
+            alertLine(error)
+        }
+        // 送れなかった写真があれば、そこから送り直す口（「2枚目からもう一度」）。圏外の間は出さない（押しても届かない）
+        if let from = model.resendFrom, !model.items.isEmpty, !model.isWorking, !connectivity.isOffline {
+            Button { Task { await model.submit() } } label: {
+                Text(UploadSummary.resendTitle(from: from)).jpPillButton(.outline)
+            }
+            .buttonStyle(.plain)
+            .disabled(!model.canSubmit)
+            .accessibilityIdentifier("upload.resend")
         }
         if model.canRetryUnreadable {
             // 読めなかった写真（時間切れ・iCloud から落とせなかった）を読み直す口（2026-10-03）。
@@ -1554,6 +1655,9 @@ struct UploadView: View {
 enum UploadStripLayout {
     /// 写真と写真の間（v2 の板 gap 8。v1 は 10）
     static let spacing: CGFloat = 8
+    /// 写真がまだ無いときの「写真を選ぶ」「撮る」の大きな枠（案「投稿まわりのデザイン」02 の 120×150・2026-11-12）
+    static let emptyTileWidth: CGFloat = 120
+    static let emptyTileHeight: CGFloat = 150
     /// 1枚の大きさ（v2 の板 84×104。v1 は 96×120）。「追加」の枠も同じ
     static let thumbWidth: CGFloat = 84
     static let thumbHeight: CGFloat = 104

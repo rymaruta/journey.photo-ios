@@ -443,6 +443,8 @@ final class UploadLocationToggleTests: XCTestCase {
     /// 名前に「約1kmに丸めて保存」を入れる。英語もある
     func testWording() async {
         XCTAssertTrue(UploadDetails.locationToggleTitle.contains(L("約1km", "1 km")))
+        // 投稿の画面（2026-11-12）: 名前は短く、「約1km」はすぐ下の一言（オン）で言う
+        XCTAssertTrue(UploadDetails.uploadLocationToggleNote(attaches: true).contains(L("約1km", "1 km")))
         XCTAssertNotEqual(UploadDetails.locationToggleNote(attaches: true),
                           UploadDetails.locationToggleNote(attaches: false))
     }

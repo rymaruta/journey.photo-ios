@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// 「写真を投稿／ストーリーを投稿／旅の写真からまとめて／構図を重ねて撮る」の4択（＋カメラで撮る）。
+/// 「写真を投稿／カメラで撮る・構図を重ねて撮る／ストーリーを投稿／旅の写真からまとめて」の4行
+/// （＋下書きがあれば「下書き n ›」・2026-11-12）。
 ///
 /// Web 側の `app/components/PostSheet.tsx` と対。owner:「写真を追加のとこで
 /// 投稿かストーリーを選べるようにしたい」。
@@ -15,11 +16,11 @@ struct PostSheet: View {
 
     /// 札の絵に敷く写真（板 21: 絵の後ろに写真・85%）。**本人の写真だけ**。無ければ地の色のまま
     @State private var thumbs: [URL] = []
-    /// 端末の下書きの件数（投稿・ストーリー・2026-10-29・#400）。行の右に件数バッジ（真鍮）。
-    /// 押すと前と同じく作る画面へ——そこに「下書き n ›」の入口がある
-    @State private var postDrafts = 0
-    @State private var storyDrafts = 0
 
+    /// 端末の下書きの件数（投稿・ストーリーの合計・2026-10-29・#400）。1件以上ならシートの下に
+    /// 「下書き n ›」の行（2026-11-12 判断）。**呼び手が開く前に数えて渡す**——出てから数えるとシートの高さ
+    /// （`presentationDetents`）が出たあとに替わり、跳ねるか全画面に開き直す
+    var drafts: Int = 0
     /// 選ばれたもの。閉じたあとに呼び手が開く
     let onSelect: (Kind) -> Void
 
@@ -34,6 +35,8 @@ struct PostSheet: View {
         /// 構図を重ねて撮る（作例なし・2026-10-10 owner）。撮ってから投稿へ進める（`ComposeGuideLauncher`・呼び手が開く）。
         /// 2026-10-17 判断（owner）: 全員無料。Pro の案内は出さない
         case composition
+        /// 下書きの一覧（シートの下の「下書き n ›」・2026-11-12 判断）。1件を選ぶと続きから開く（`TabRouter.openDraft`）
+        case drafts
     }
 
     var body: some View {
@@ -58,65 +61,47 @@ struct PostSheet: View {
             }
             .padding(.top, JPSpace.s)
             .padding(.bottom, JPSpace.xxs)
+            // 2026-11-12 判断（1.1.83・案「投稿まわりのデザイン」01）: **行を5本から4本に。** 「カメラで撮る」と
+            // 「構図を重ねて撮る」はどちらもカメラを開く入口なので、半分ずつの黒い札（surface-3）で1段に並べる。
+            // 下書きの件数は行の右のバッジから、シートの下の「下書き n ›」の行に移した（押すと一覧 → 1件で続きから。
+            // 前は 写真を投稿 → 選ぶ画面を閉じる → 下書き → 1件 の5回、いまは 投稿 → 下書き → 1件 の3回）
             choice(
                 thumb: thumbs.first,
                 title: L("写真を投稿", "Post a photo"),
                 detail: L("撮影地やタグを付けて残します。ずっと出ます。", "Keep it with a place and tags. It stays."),
                 systemImage: "photo",
-                kind: .photo,
-                drafts: postDrafts
+                kind: .photo
             )
-            // 2026-10-16 判断: 「カメラで撮る」は写真の投稿の次（同じ「写真を投稿」の入口の別の手）。
-            // 札に自分の写真は敷かない（敷く写真は4枚まで・`PostSheetThumbs`）。カメラの無い端末では出さない
+            // カメラの無い端末では段ごと出さない（構図を重ねて撮るもカメラを使う）
             if CameraPicker.isAvailable {
-                choice(
-                    thumb: nil,
-                    title: Self.cameraTitle,
-                    detail: L("撮った1枚から、そのまま投稿します。", "Take a photo and post it right away."),
-                    systemImage: "camera",
-                    kind: .camera
-                )
+                cameraSplit
             }
             choice(
                 thumb: thumbs.dropFirst().first,
                 title: L("ストーリーを投稿", "Post a story"),
                 detail: L("24時間で消えます。見た人が分かります。", "Disappears in 24 hours. You can see who viewed it."),
                 systemImage: "clock",
-                kind: .story,
-                drafts: storyDrafts
+                kind: .story
             )
             choice(
                 thumb: thumbs.dropFirst(2).first,
                 title: L("旅の写真からまとめて", "From a trip in your photos"),
                 detail: L("撮影日と場所から旅を見つけます。", "Finds trips by when and where you shot."),
                 systemImage: "suitcase",
-                kind: .trip
-            )
-            // 2026-10-10: 4つ目。印は真鍮の線（v2）。
-            // 2026-10-17 判断（owner）: 全員無料にしたので、板にある題の横の「PRO」の合図は外した
-            choice(
-                thumb: thumbs.dropFirst(3).first,
-                title: L("構図を重ねて撮る", "Shoot with a composition guide"),
-                detail: L("三分割や黄金比の線をカメラに重ねて撮り、そのまま投稿できます。",
-                          "Overlay thirds, golden ratio and more on the camera, then post."),
-                systemImage: "camera.viewfinder",
-                kind: .composition,
-                accentIcon: true,
+                kind: .trip,
                 last: true
             )
+            if drafts > 0 {
+                draftsLine
+            }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, JPSpace.l)
         // 文字を大きくしたときに切れないよう、全画面にも伸ばせる
-        .presentationDetents([.height(Self.sheetHeight), .large])
+        .presentationDetents([.height(Self.sheetHeight(hasCamera: CameraPicker.isAvailable, hasDrafts: drafts > 0)), .large])
         .presentationDragIndicator(.visible)
         .presentationBackground(WebTheme.sheet)
         .presentationCornerRadius(Self.sheetRadius)
-        .onAppear {
-            guard let userId = auth.userId else { return }
-            postDrafts = DraftLibrary.shared.count(for: userId, kind: .post)
-            storyDrafts = DraftLibrary.shared.count(for: userId, kind: .story)
-        }
         .task {
             // **自分が最近出した写真**（`PostSheetThumbs`）。取れない・まだ無いときは
             // 印だけの無地のまま——**他人の写真で埋めない**
@@ -141,15 +126,33 @@ struct PostSheet: View {
         case .camera: return "camera"
         case .trip: return "trip"
         case .composition: return "composition"
+        case .drafts: return "drafts"
         }
+    }
+
+    /// 下書きの件数（投稿・ストーリーの合計）。ログインしていなければ 0
+    static func draftCount(userId: String?) -> Int {
+        guard let userId else { return 0 }
+        return DraftLibrary.shared.count(for: userId, kind: .post) + DraftLibrary.shared.count(for: userId, kind: .story)
     }
 
     /// 「カメラで撮る」の題
     static var cameraTitle: String { L("カメラで撮る", "Take a photo") }
 
-    /// シートの高さ（見出し 68 ＋ 行 5 本 × 約 92 ＋ 下の余白）。札から行にして詰まった。
-    /// 2026-10-16: 「カメラで撮る」の1行ぶん伸ばした（カメラの無い端末では1行ぶん下が空く）
-    static let sheetHeight: CGFloat = 572
+    /// シートの高さ（見出し 68 ＋ 行 3 本 × 約 92 ＋ カメラの段 84 ＋ 下書きの行 56 ＋ 下の余白 44）。
+    /// 2026-11-12 判断: 行を5本から4本にした（カメラの2つを1段に）。カメラの無い端末は段ごと、
+    /// 下書きの無い人は下書きの行ぶん詰める（下に空きを残さない）
+    static func sheetHeight(hasCamera: Bool, hasDrafts: Bool) -> CGFloat {
+        sheetHeaderHeight + 3 * rowHeight + (hasCamera ? cameraRowHeight : 0)
+            + (hasDrafts ? draftsRowHeight : 0) + sheetBottom
+    }
+    static let sheetHeaderHeight: CGFloat = 68
+    static let rowHeight: CGFloat = 92
+    static let cameraRowHeight: CGFloat = 84
+    static let draftsRowHeight: CGFloat = 56
+    static let sheetBottom: CGFloat = 44
+    /// カメラの段の札（案: 高さ 56・角 16・surface-3）
+    static let cameraTileHeight: CGFloat = 56
     /// シートの上の角（v2 PostSheet の 28）
     static let sheetRadius: CGFloat = 28
     /// 行の印の札（板 52・角 16）
@@ -164,7 +167,7 @@ struct PostSheet: View {
     /// 「その人自身が最近出した写真」という owner の決まり（`PostSheetThumbs`）があり、板より優先した。
     /// 写真の上の印は白（写真の上に真鍮を置かない）。写真が無いときだけ構図の印を真鍮にする
     private func choice(thumb: URL?, title: String, detail: String, systemImage: String, kind: Kind,
-                        drafts: Int = 0, accentIcon: Bool = false, last: Bool = false) -> some View {
+                        last: Bool = false) -> some View {
         Button {
             // 選択を先に記録し、シートが閉じきった後に呼び手が次の画面を開く
             onSelect(kind)
@@ -186,7 +189,7 @@ struct PostSheet: View {
                     .overlay {
                         Image(systemName: systemImage)
                             .font(.system(size: 22, weight: .light))
-                            .foregroundStyle(Self.iconColor(hasPhoto: thumb != nil, accent: accentIcon))
+                            .foregroundStyle(Self.iconColor(hasPhoto: thumb != nil, accent: false))
                             .shadow(color: Color.black.opacity(thumb == nil ? 0 : 0.8), radius: 3, x: 0, y: 1)
                     }
                     .clipShape(RoundedRectangle(cornerRadius: Self.tileRadius))
@@ -202,10 +205,6 @@ struct PostSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                // 下書きの件数（合図なので真鍮のバッジ・行の字は白のまま。シートの黒地の上）
-                if drafts > 0 {
-                    CountBadge(count: drafts)
-                }
             }
             .padding(.vertical, 14)
             .frame(minHeight: WebTheme.minTapTarget)
@@ -217,10 +216,85 @@ struct PostSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(JPRowButtonStyle())
-        // 件数バッジは読み上げないので、行の値として読む（名前は中の題と説明のまま）
-        .accessibilityValue(drafts > 0 ? DraftsText.entryAccessibility(drafts) : "")
         // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
         .accessibilityIdentifier("post.choice.\(Self.identifier(kind))")
+    }
+
+    /// 「カメラで撮る」「構図を重ねて撮る」を半分ずつの札で1段に（2026-11-12 判断・案 01）。
+    /// 写真は敷かない黒い札（surface-3・`RaisedTile`）。構図の印だけ真鍮（黒い札の上）、カメラの印は白
+    private var cameraSplit: some View {
+        HStack(spacing: JPSpace.xs) {
+            cameraTile(title: Self.cameraTitle, systemImage: "camera", kind: .camera, accentIcon: false)
+            cameraTile(title: L("構図を重ねて撮る", "Composition guide"), systemImage: "camera.viewfinder",
+                       kind: .composition, accentIcon: true)
+        }
+        .padding(.vertical, JPSpace.s)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+        }
+    }
+
+    private func cameraTile(title: String, systemImage: String, kind: Kind, accentIcon: Bool) -> some View {
+        Button {
+            onSelect(kind)
+            dismiss()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 20, weight: .regular))
+                    .foregroundStyle(Self.iconColor(hasPhoto: false, accent: accentIcon))
+                    .accessibilityHidden(true)
+                Text(title)
+                    .font(JPFont.bodyEmphasis)
+                    .foregroundStyle(WebTheme.text)
+                    .lineLimit(2)
+                    .minimumScaleFactor(WebTheme.minimumScale(forTextSize: JPTypeScale.body))
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, minHeight: Self.cameraTileHeight)
+            .background(Self.tileFill, in: RoundedRectangle(cornerRadius: Self.tileRadius))
+            .contentShape(RoundedRectangle(cornerRadius: Self.tileRadius))
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(kind == .composition
+                           ? L("三分割や黄金比の線をカメラに重ねて撮り、そのまま投稿できます。",
+                               "Overlay thirds, golden ratio and more on the camera, then post.")
+                           : L("撮った1枚から、そのまま投稿します。", "Take a photo and post it right away."))
+        .accessibilityIdentifier("post.choice.\(Self.identifier(kind))")
+    }
+
+    /// シートの下の「下書き n ›」（2026-11-12 判断・案 01）。件数は真鍮のバッジ（黒地の上の合図）
+    private var draftsLine: some View {
+        Button {
+            onSelect(.drafts)
+            dismiss()
+        } label: {
+            HStack(spacing: JPSpace.s) {
+                Image(systemName: "square.and.pencil")
+                    .font(.system(size: 17))
+                    .foregroundStyle(WebTheme.text2)
+                    .accessibilityHidden(true)
+                Text(DraftsText.title)
+                    .font(JPFont.body)
+                    .foregroundStyle(WebTheme.text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                CountBadge(count: drafts)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.text3)
+                    .accessibilityHidden(true)
+            }
+            .frame(minHeight: JPHeight.row)
+            .overlay(alignment: .top) {
+                Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(JPRowButtonStyle())
+        .accessibilityLabel(DraftsText.entryAccessibility(drafts))
+        .accessibilityIdentifier("post.choice.drafts")
     }
 
     /// 印の色。**写真の上は白、写真が無い札の上の構図の印だけ真鍮**（v2 の板の真鍮の線・黒い札の上）

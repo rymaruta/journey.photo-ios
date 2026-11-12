@@ -6,6 +6,29 @@ import Foundation
 /// 呼べなくなる。この轍は3回目なので、最初からこちらに置く）。
 enum UploadSummary {
 
+    /// 送れなかったあとの「もう一度」の名前（2026-11-12 判断・案「投稿まわりのデザイン」02）。
+    /// 前の写真が上がっていれば「n枚目からもう一度」（どこから送り直すかを言う）、1枚目から落ちていれば「もう一度送る」
+    ///
+    /// - Parameter from: 最初に送れなかった写真の、送った束の中の番号（1 から）
+    static func resendTitle(from: Int) -> String {
+        from <= 1 ? L("もう一度送る", "Send again") : L("\(from)枚目からもう一度", "Retry from photo \(from)")
+    }
+
+    /// 最初に送れなかった写真の番号（1 から）。送れなかった写真が無ければ nil
+    ///
+    /// - Parameters:
+    ///   - queue: 送った順の写真
+    ///   - failed: 送れなかった写真
+    static func resendStart<ID: Equatable>(queue: [ID], failed: [ID]) -> Int? {
+        queue.firstIndex(where: { failed.contains($0) }).map { $0 + 1 }
+    }
+
+    /// 圏外のときの一言（案 02）。書いた物は残っている・つながれば送れる、を言う（トーストにしない）
+    static var offlineNote: String {
+        L("圏外のため送れません。書いた内容は残っています。つながると「投稿する」で送れます。",
+          "You\u{2019}re offline, so this can\u{2019}t be sent. What you wrote is kept. Tap \u{201C}Post\u{201D} once you\u{2019}re connected.")
+    }
+
     /// 結果の一言。**何枚上がって、何枚残ったか**を必ず出す。
     ///
     /// - Parameter songFailures: 写真は上がったが**曲を付けられなかった**枚数。

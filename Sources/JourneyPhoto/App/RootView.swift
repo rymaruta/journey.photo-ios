@@ -31,6 +31,11 @@ struct RootView: View {
     /// 投稿のシートの「カメラで撮る」（2026-10-16）。撮った1枚は `pendingCapture` に入れ、
     /// **カメラが閉じきってから**投稿画面を開く（構図を重ねて撮ったあとと同じ道・`postCapturedPhotoIfAny`）
     @State private var showPostCamera = false
+    /// 投稿のシートの「下書き n ›」から開く下書きの一覧（2026-11-12 判断・案「投稿まわりのデザイン」01）。
+    /// 1件を選ぶと一覧を閉じ、閉じきってから続きを開く（`TabRouter.openDraft` → `openDraftWhenFree`）
+    @State private var showPostDrafts = false
+    /// 旅の写真からまとめての「1枚ずつ投稿する」（旅が見つからなかった回・2026-11-12）。流れが閉じきってから投稿の画面を開く
+    @State private var postSinglyAfterTripImport = false
     @State private var selection: Tab = .home
     /// 地図の札の積み重ねの番号。上げると地図の札が根から作り直される（詳細を積んだ所から語を持って地図へ送るとき）
     @State private var mapStackId = 0
@@ -1029,12 +1034,19 @@ struct RootView: View {
             .fullScreenCover(isPresented: $showTripImport, onDismiss: {
                 importTrip = nil
                 pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .tripFlow, pending: pendingTripPhotos)
-                if !pendingTripPhotos.isEmpty { showPhotoUpload = true }
+                if !pendingTripPhotos.isEmpty {
+                    showPhotoUpload = true
+                } else if postSinglyAfterTripImport {
+                    // 旅が見つからなかった回の「1枚ずつ投稿する」（2026-11-12）。ふつうの投稿の画面（写真なし）
+                    showPhotoUpload = true
+                }
+                postSinglyAfterTripImport = false
             }) {
                 // **開いている間だけ受ける**（閉じたあとに届いた読み込みの結果で控えを汚さない）。
                 // 端末の一冊から来たら、その旅を開いた形で出し、棚が読んだ要約を使う（読み直さない）
                 LibraryTripFlowView(opening: importTrip,
-                                    preloaded: importTrip == nil ? nil : DeviceTripShelfStore.shared.preloadedShots) { photos in
+                                    preloaded: importTrip == nil ? nil : DeviceTripShelfStore.shared.preloadedShots,
+                                    onPostSingly: { postSinglyAfterTripImport = true }) { photos in
                     pendingTripPhotos = TripImportHandoff.received(photos, flowOpen: showTripImport)
                 }
             }
@@ -1134,12 +1146,31 @@ struct RootView: View {
                 }
             }
             .sheet(isPresented: $showPostChoice, onDismiss: postChoiceDismissed) {
-                PostSheet { kind in pendingPostChoice = kind }
+                PostSheet(drafts: PostSheet.draftCount(userId: auth.userId)) { kind in pendingPostChoice = kind }
             }
             // 構図を重ねて撮る（作例なし）。「投稿」で撮った1枚を受け、**閉じきってから**投稿画面を開く
             .composeGuidePresenter(composeLauncher, spotName: nil,
                                    onPost: { capture in pendingCapture = capture },
                                    onDismiss: postCapturedPhotoIfAny)
+            // 投稿のシートの「下書き n ›」（2026-11-12）。開くのはマイページの一覧と同じ道（`TabRouter.openDraft`）。
+            // 一覧を閉じてから頼む——`openDraftWhenFree` は一覧（`postScreensShown`）が閉じきるのを待って開く
+            // 0件の「写真を選ぶ」は、一覧が閉じきってから投稿の画面を開く（投稿のシートと同じ `postChoiceDismissed`）
+            .sheet(isPresented: $showPostDrafts, onDismiss: {
+                tabRouter.postSheetClosed()
+                postChoiceDismissed()
+            }) {
+                NavigationStack {
+                    DraftsView(presentation: .sheet,
+                               onOpen: { entry in
+                                   showPostDrafts = false
+                                   tabRouter.openDraft(entry)
+                               },
+                               onChoosePhotos: {
+                                   pendingPostChoice = .photo
+                                   showPostDrafts = false
+                               })
+                }
+            }
             // 「カメラで撮る」。投稿画面の帯の「追加」→「写真を撮る」と同じカメラ（`CameraPicker`）
             .fullScreenCover(isPresented: $showPostCamera, onDismiss: postCapturedPhotoIfAny) {
                 CameraPicker { capture in pendingCapture = capture }
@@ -1177,7 +1208,7 @@ struct RootView: View {
     /// 開かない（重なる）。2026-10-16 判断: 2か所で別々に書いていたら、#260 側に「カメラで撮る」が抜けた。
     /// 1か所にまとめ、⚠️ 投稿の画面を足したらここに足す
     private var postScreensShown: [Bool] {
-        [showTripImport, showPhotoUpload, showStoryComposer, showPostChoice, showPostCamera]
+        [showTripImport, showPhotoUpload, showStoryComposer, showPostChoice, showPostCamera, showPostDrafts]
     }
 
     /// 下書きを開く。ほかの投稿の画面・シートが出ている間は少し待つ（最大およそ3秒・出ないままなら開かない——
@@ -1234,6 +1265,8 @@ struct RootView: View {
         case .camera:
             pendingCapture = nil
             showPostCamera = true
+        case .drafts:
+            showPostDrafts = true
         }
     }
 
