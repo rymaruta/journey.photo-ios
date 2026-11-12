@@ -452,6 +452,9 @@ enum PreviewBackend {
                 answer["items"] = items
             }
             return Reply.json(answer)
+        case ("POST", 3) where parts[2] == "messages" && json["unsend"] != nil:
+            // 送信の取り消し（2026-11-12）。見本では受け付けるだけ（`dm.ts` の `unsendMessage` の応答の形）
+            return Reply.json(["ok": true])
         case ("POST", 3) where parts[2] == "messages":
             let text = (json["text"] as? String) ?? ""
             if text.contains("http") || text.contains("www.") {
