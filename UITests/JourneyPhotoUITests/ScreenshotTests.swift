@@ -1456,6 +1456,47 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "22b-写真を編集（欄の名前・撮影日）")
     }
 
+    /// **自分の写真の ⋯ のピン留め**（資料「説明なしで分かるアプリ」項目9・1.1.85 束H・2026-11-12）。
+    /// マイページの長押しだけだったピン留めを ⋯ にも置いた。行は写真の主のプロフィールを読んでから出るので、
+    /// 鍵なしログインで自分の写真が出ない回・プロフィールが読めない回は**撮らずに抜ける**（この試験の決まり）。
+    /// 押さない（押すと見本の利用者のピンが変わる）
+    func testCapturesPhotoMenuPin() {
+        let app = XCUIApplication()
+        // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+
+        let myPhoto = app.buttons["mypage.photo"].firstMatch
+        guard myPhoto.waitForExistence(timeout: 15) else { return }
+        if !myPhoto.isHittable {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard myPhoto.isHittable else { return }
+        myPhoto.tap()
+
+        let menu = app.buttons["photo.menu"].firstMatch
+        guard menu.waitForExistence(timeout: 10), menu.isHittable else { return }
+        // 写真の主のプロフィールを読み終えるのを待ってから開く（読む前は行を出さない作り）
+        Thread.sleep(forTimeInterval: 3)
+        menu.tap()
+        let pin = app.buttons["photo.pin"].firstMatch
+        guard pin.waitForExistence(timeout: 5) else { return }
+        XCTAssertTrue(pin.label.contains("ピン留め"), "⋯ のピン留めの行の字が違う: \(pin.label)")
+        shoot(app, "22d-自分の写真の ⋯（プロフィールの先頭にピン留め）")
+    }
+
     /// **旅をストーリーに**（第9章・1.1.83・`TravelStorySheet`）。自分の写真の ⋯ →「SNS に載せる」→ 上の「ストーリー」
     /// （⋯ の行は増やさない・2026-11-12 秘書室の判断・`SocialShareSheet`）。
     /// 型を払って選ぶ1枚（はじめは切手と消印）と、払った次の型（フィルムの帯）、ステッカーの形を撮る。
