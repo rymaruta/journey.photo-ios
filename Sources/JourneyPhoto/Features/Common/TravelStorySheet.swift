@@ -1,5 +1,8 @@
 import SwiftUI
 import UIKit
+#if !os(Linux)
+import ImageIO
+#endif
 
 /// 旅をストーリーに（資料「画面デザインの案」第9章・1.1.83・2026-11-12 判断）。
 ///
@@ -28,23 +31,37 @@ struct TravelStorySheet: View {
     @State private var filmData: [Data]?
     @State private var loadFailed = false
     @State private var loadAttempt = 0
-    /// 描いた絵（`Choice.renderKey` ごと）。閉じると捨てる
-    @State private var outputs: [String: TravelStoryRenderer.Output] = [:]
+    /// 描いた絵（`Choice.renderKey` ごと）。**置くのは今の選びと両隣の型だけ**（`keep(_:)`）、閉じると捨てる
+    @State private var outputs: [String: Rendered] = [:]
     @State private var failedKeys: Set<String> = []
     @State private var renderAttempt = 0
     @State private var drag: CGFloat = 0
     @State private var shareItem: ShareItem?
+
+    /// 描いた絵と、見本に出す縮めた絵（2026-11-12・確かめ役）。払っている間に 1080×1920 の JPEG を
+    /// 毎回 `UIImage(data:)` で開かない——描いたときに1度だけ見本の大きさに縮めて持つ
+    private struct Rendered {
+        let output: TravelStoryRenderer.Output
+        let preview: UIImage?
+    }
 
     private struct ShareItem: Identifiable {
         let id = UUID()
         let data: Data
     }
 
-    init(leadURL: URL, filmURLs: [URL], facts: TravelStory.Facts, phase: TravelStory.Phase) {
+    /// 上に置く部品（「SNS に載せる」の「投稿 4:5 | ストーリー 9:16」の切り替え・`SocialShareSheet`）
+    private let header: AnyView?
+
+    /// `leadData` は呼び手がもう読んだ先頭の写真（写真の詳細の「SNS に載せる」）。あれば読み直さない
+    init(leadURL: URL, filmURLs: [URL], facts: TravelStory.Facts, phase: TravelStory.Phase,
+         leadData: Data? = nil, header: AnyView? = nil) {
         self.leadURL = leadURL
         self.filmURLs = filmURLs.isEmpty ? [leadURL] : filmURLs
         self.facts = facts
+        self.header = header
         _choice = State(initialValue: TravelStory.load(phase: phase))
+        _leadData = State(initialValue: leadData)
     }
 
     private var kinds: [TravelStory.Kind] { TravelStory.Kind.allCases }
@@ -53,6 +70,7 @@ struct TravelStorySheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                if let header { header }
                 stage
                     .frame(maxHeight: .infinity)
                 nameRow
@@ -153,7 +171,7 @@ struct TravelStorySheet: View {
         let sticker = choice.with(kind: kind).effectiveMode == .sticker
         ZStack {
             if sticker { StickerChecker() } else { WebTheme.sheet }
-            if let output = outputs[key], let image = UIImage(data: output.data) {
+            if let image = outputs[key]?.preview {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
@@ -293,7 +311,7 @@ struct TravelStorySheet: View {
 
     // MARK: - 渡す
 
-    private var currentOutput: TravelStoryRenderer.Output? { outputs[choice.renderKey] }
+    private var currentOutput: TravelStoryRenderer.Output? { outputs[choice.renderKey]?.output }
 
     /// 写真に重ねる絵は共有シートへ、ステッカーはクリップボードへ（理由は型の注記）
     private var primaryButton: some View {
@@ -344,27 +362,58 @@ struct TravelStorySheet: View {
         filmData = films.isEmpty ? leadData.map { [$0] } : films
     }
 
+    /// 今の型を先に、両隣を後から描く（払ったときに待たせない）。**今の選びと両隣でない絵は捨てる**
+    /// （場所・日付を替えるたびに増えていかない・`TravelStory.nearby`）。
+    /// 選びが替わって task が取り消されたら、まだ始めていない描画は始めず、走っている描画（detached）にも取り消しを伝える
     private func renderVisible() async {
+        let wanted = TravelStory.nearby(choice.kind).map { choice.with(kind: $0) }
+        let keys = Set(wanted.map(\.renderKey))
+        outputs = outputs.filter { keys.contains($0.key) }
         guard let leadData else { return }
-        let order = [choice.kind] + kinds.filter { $0 != choice.kind }
-        for kind in order {
-            let each = choice.with(kind: kind)
+        for each in wanted {
+            guard !Task.isCancelled else { return }
             let key = each.renderKey
             guard outputs[key] == nil, !failedKeys.contains(key) else { continue }
             let photos: [Data]
-            if kind == .film {
+            if each.kind == .film {
                 guard let filmData else { continue }   // 読み終えたら描き直しの task が来る
                 photos = filmData
             } else {
                 photos = [leadData]
             }
             let facts = facts
-            let output = await Task.detached(priority: .userInitiated) {
-                TravelStoryRenderer.render(photos, facts: facts, choice: each)
-            }.value
+            let job = Task.detached(priority: .userInitiated) { () -> Rendered? in
+                guard !Task.isCancelled,
+                      let output = TravelStoryRenderer.render(photos, facts: facts, choice: each) else { return nil }
+                guard !Task.isCancelled else { return nil }
+                return Rendered(output: output, preview: Self.preview(output.data))
+            }
+            let rendered = await withTaskCancellationHandler { await job.value } onCancel: { job.cancel() }
             guard !Task.isCancelled else { return }
-            if let output { outputs[key] = output } else { failedKeys.insert(key) }
+            if let rendered { outputs[key] = rendered } else { failedKeys.insert(key) }
         }
+    }
+
+    /// 見本の大きさ（長い辺 1600px）。見本の幅は画面の 74%（6.9 インチで約 320pt・3倍で約 960px）までなので、
+    /// 9:16 の長い辺 1600px（幅 900px）で足りる
+    nonisolated static let previewMaxPixel: CGFloat = 1600
+
+    nonisolated static func preview(_ data: Data) -> UIImage? {
+        #if os(Linux)
+        return UIImage(data: data)
+        #else
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return UIImage(data: data) }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: previewMaxPixel,
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return UIImage(data: data)
+        }
+        return UIImage(cgImage: cg)
+        #endif
     }
 }
 

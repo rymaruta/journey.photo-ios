@@ -137,20 +137,11 @@ struct TripBookView: View {
         }
     }
 
-    private struct StorySource {
-        let lead: URL
-        let film: [URL]
-        let facts: TravelStory.Facts
-    }
-
-    /// 先頭は旅の最後の1枚（ただいまの場所）、フィルムの帯は始め・中ほど・終わり
-    private var storySource: StorySource? {
-        let shareable = book.photos.filter(CollectionScreen.isShareable)
-        guard let last = shareable.last, let lead = last.detailImageURL else { return nil }
-        let name = last.displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return StorySource(lead: lead,
-                           film: TravelStory.filmPicks(shareable).compactMap(\.detailImageURL),
-                           facts: TravelStory.facts(of: book, lead: last, name: name, distance: distance))
+    /// 先頭は旅の最後の1枚（ただいまの場所）、フィルムの帯は始め・中ほど・終わり（全体に公開した写真だけ・`TravelStory.source`）
+    private var storySource: TravelStory.Source? {
+        let last = book.photos.last(where: CollectionScreen.isShareable)
+        let name = last?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return TravelStory.source(of: book, name: name, distance: distance)
     }
 
     private var shareLabel: some View {

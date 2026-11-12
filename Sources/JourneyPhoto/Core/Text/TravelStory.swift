@@ -39,6 +39,14 @@ enum TravelStory {
         var usesPhase: Bool { self == .pass }
     }
 
+    /// 描いて置いておく型: 今の型と両隣（払った先だけ。2026-11-12・確かめ役「置き場を今の選び＋両隣に」）。
+    /// 先頭が今の型（先に描く）
+    static func nearby(_ kind: Kind) -> [Kind] {
+        let all = Kind.allCases
+        guard let index = all.firstIndex(of: kind) else { return [kind] }
+        return [kind] + [index - 1, index + 1].filter(all.indices.contains).map { all[$0] }
+    }
+
     /// 形。写真に重ねる（9:16 の JPEG）か、ステッカー（透明の PNG）か
     enum Mode: String, CaseIterable, Identifiable {
         case photo
@@ -206,6 +214,31 @@ enum TravelStory {
                                      leadDay: leadDay))
     }
 
+    /// 画面に渡す写真の URL と事実（写真の詳細・旅の一冊の両方の入口から作る）
+    struct Source: Equatable {
+        let lead: URL
+        let film: [URL]
+        let facts: Facts
+    }
+
+    /// 写真の詳細から開いたときのフィルムの帯。先頭は上に出ている1枚、残りは同じ投稿の束から。
+    /// **載せるのは自分の、全体に公開した写真だけ**（`CollectionScreen.isShareable`・2026-11-12 確かめ役「入口の条件を試験で縛る」）
+    static func filmPicks(target: Photo, group: [Photo]) -> [Photo] {
+        guard CollectionScreen.isShareable(target) else { return [] }
+        let rest = group.filter { $0.id != target.id && CollectionScreen.isShareable($0) }
+        return filmPicks([target] + rest)
+    }
+
+    /// 旅の一冊から開くときの元。先頭は旅の最後の、配ってよい1枚（ただいまの場所）、フィルムの帯は始め・中ほど・終わり。
+    /// **配ってよい写真が1枚も無ければ nil**（入口を出さない）。配らない写真の撮影地・画像は使わない
+    static func source(of trip: TripBook.Trip, name: String, distance: Double?) -> Source? {
+        let shareable = trip.photos.filter(CollectionScreen.isShareable)
+        guard let last = shareable.last, let lead = last.detailImageURL else { return nil }
+        return Source(lead: lead,
+                      film: filmPicks(shareable).compactMap(\.detailImageURL),
+                      facts: facts(of: trip, lead: last, name: name, distance: distance))
+    }
+
     /// フィルムの帯に並べる写真（最大3枚）。**旅の流れに沿って、始め・中ほど・終わり**を選ぶ。
     /// 3枚に満たなければあるだけ（同じ写真を繰り返さない）
     static func filmPicks<T>(_ items: [T]) -> [T] {
@@ -247,23 +280,52 @@ enum TravelStory {
     /// 文字だけでは見分けられないので出さない（安全側・2026-11-12 判断）
     static func placeText(_ location: String?, level: PlaceLevel) -> String? {
         guard level != .none, let place = LocationMatch.shareCardPlace(location) else { return nil }
+        let region = isRegion(place.primary, location: location)
         switch level {
         case .prefecture:
-            return isRegion(place.primary, location: location) ? place.primary : nil
+            return region ? place.primary : nil
         case .city:
-            return place.secondary ?? (isRegion(place.primary, location: location) ? place.primary : nil)
+            return cityText(place, location: location, region: region) ?? (region ? place.primary : nil)
         case .none:
             return nil
         }
     }
 
-    /// 1行目が県・国か。都道府県の名前、または欠片が2つ以上ある住所の最後（国）
-    private static func isRegion(_ primary: String, location: String?) -> Bool {
-        if RegionList.prefectures.contains(primary) { return true }
-        let pieces = (location ?? "").components(separatedBy: CharacterSet(charactersIn: ",，、"))
+    /// 住所の欠片（`LocationMatch.shareCardPlace` と同じ区切り・郵便番号だけの欠片は落とす）
+    private static func pieces(_ location: String?) -> [String] {
+        (location ?? "").components(separatedBy: CharacterSet(charactersIn: ",，、"))
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        return pieces.count >= 2
+            .filter { !$0.isEmpty && !LocationMatch.isPostalOrNumber($0) }
+    }
+
+    /// 1行目が県・国か（確かめ役の実測・2026-11-12 で直した）。
+    /// - 都道府県の和名（「石川県」）
+    /// - 最後が日本（「日本」「Japan」）の住所: 英文の県（"Kyoto Prefecture" から作った "Kyoto"）だけ。
+    ///   「富士山, 日本」「富士吉田市, 日本」「Kyoto City, Japan」「Mt Fuji, Japan」の1行目は県より細かいので国とみなさない
+    /// - それ以外（海外）: 欠片が2つ以上あり、1行目が最後の欠片（国）そのもののとき
+    static func isRegion(_ primary: String, location: String?) -> Bool {
+        if RegionList.prefectures.contains(primary) { return true }
+        let parts = pieces(location)
+        guard parts.count >= 2, let last = parts.last else { return false }
+        if LocationMatch.isJapan(last) {
+            return parts.dropLast().contains {
+                LocationMatch.isEnglishPrefecture($0) && LocationMatch.shortEnglishPrefecture($0) == primary
+            }
+        }
+        return primary == last
+    }
+
+    /// 市までの文字。海外で欠片が3つ以上（「エッフェル塔, …, パリ, フランス」）なら、最初の欠片（施設・番地のことが多い）を
+    /// 使わず、国の1つ手前（郵便番号の数字は外す）にする。細かすぎるより粗い側に倒す（2026-11-12 判断）
+    private static func cityText(_ place: LocationMatch.ShareCardPlace, location: String?, region: Bool) -> String? {
+        let parts = pieces(location)
+        if region, let last = parts.last, !LocationMatch.isJapan(last), place.primary == last, parts.count >= 3 {
+            let near = parts[parts.count - 2].split(separator: " ")
+                .filter { !LocationMatch.isPostalOrNumber(String($0)) }
+                .joined(separator: " ")
+            return near.isEmpty ? nil : near
+        }
+        return place.secondary
     }
 
     /// 大きな字のラテン文字。日本は都道府県の英名（`ShareCardMap.englishPrefectures`）、

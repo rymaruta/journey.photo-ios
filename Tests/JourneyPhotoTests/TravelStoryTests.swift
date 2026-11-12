@@ -12,12 +12,19 @@ import XCTest
 final class TravelStoryTests: XCTestCase {
 
     private func photo(_ id: String, location: String? = nil, date: String? = nil,
-                       createdAt: String? = nil) throws -> Photo {
+                       createdAt: String? = nil, published: Bool? = nil) throws -> Photo {
         var fields = ["\"id\":\"\(id)\"", "\"src\":\"https://x/\(id).jpg\""]
+        if let published { fields.append("\"published\":\(published)") }
         if let location { fields.append("\"location\":\"\(location)\"") }
         if let date { fields.append("\"date\":\"\(date)\"") }
         if let createdAt { fields.append("\"createdAt\":\"\(createdAt)\"") }
         return try JSONDecoder.api.decode(Photo.self, from: Data("{\(fields.joined(separator: ","))}".utf8))
+    }
+
+    private func source(_ path: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
     }
 
     private let tokyo = TimeZone(identifier: "Asia/Tokyo")!
@@ -95,6 +102,28 @@ final class TravelStoryTests: XCTestCase {
         XCTAssertNil(TravelStory.placeText("山中湖", level: .prefecture))
         XCTAssertNil(TravelStory.placeLatin("山中湖"))
         XCTAssertEqual(TravelStory.placeText("山梨県", level: .prefecture), "山梨県")
+    }
+
+    /// 最後が日本なのに1行目が都道府県でない住所は、県までに出さない（確かめ役の実測・2026-11-12）。
+    /// 国とみなすのは最後の欠片が日本でないときだけ
+    func testJapanWithoutPrefectureShowsNothingAtPrefectureLevel() {
+        for raw in ["富士山, 日本", "富士吉田市, 日本", "Kyoto City, Japan", "Mt Fuji, Japan"] {
+            XCTAssertNil(TravelStory.placeText(raw, level: .prefecture), raw)
+            XCTAssertNil(TravelStory.placeLatin(raw), raw)
+        }
+        // 英文の県があれば県まで（"Kyoto Prefecture" → Kyoto）
+        XCTAssertEqual(TravelStory.placeText("Higashiyama Ward, Kyoto, Kyoto Prefecture, Japan", level: .prefecture), "Kyoto")
+        XCTAssertEqual(TravelStory.placeLatin("Higashiyama Ward, Kyoto, Kyoto Prefecture, Japan"), "KYOTO")
+    }
+
+    /// 海外の市まで: 欠片が3つ以上なら最初の欠片（施設・番地）を使わず、国の1つ手前（2026-11-12）
+    func testAbroadCityDoesNotShowTheLandmark() {
+        let raw = "エッフェル塔, シャン・ド・マルス, パリ, フランス"
+        XCTAssertEqual(TravelStory.placeText(raw, level: .city), "パリ")
+        XCTAssertEqual(TravelStory.placeText(raw, level: .prefecture), "フランス")
+        XCTAssertEqual(TravelStory.placeText("Eiffel Tower, Champ de Mars, 75007 Paris, France", level: .city), "Paris",
+                       "郵便番号の数字は外す")
+        XCTAssertEqual(TravelStory.placeText("パリ, フランス", level: .city), "パリ", "2つなら最初が市")
     }
 
     func testHiddenPlaceLeavesNoLatinEither() {
@@ -194,6 +223,87 @@ final class TravelStoryTests: XCTestCase {
         // 数えられない・0 km の移動は載せない（旅の一冊の画面と同じ）
         let noDistance = TravelStory.facts(of: trip, lead: photos[1], name: "mika", distance: nil)
         XCTAssertEqual(TravelStory.pass(noDistance, choice: choice, texts: texts).foot.map(\.key), ["PHOTOS"])
+    }
+
+    // MARK: - 入口の条件（2026-11-12 確かめ役「入口の条件を試験で縛る」）
+
+    /// 写真の詳細: 絞った写真（全体に公開でない）はフィルムの帯に入れない。上の1枚が絞った写真なら何も出さない
+    func testPhotoDetailFilmUsesOnlyShareablePhotos() throws {
+        let target = try photo("a")
+        let group = [target, try photo("b", published: false), try photo("c"), try photo("d", published: false)]
+        XCTAssertEqual(TravelStory.filmPicks(target: target, group: group).map(\.id), ["a", "c"])
+        XCTAssertTrue(TravelStory.filmPicks(target: try photo("x", published: false), group: group).isEmpty)
+    }
+
+    /// 旅の一冊: 先頭（ただいまの場所）は最後の配ってよい1枚。絞った写真の撮影地・画像を使わない。
+    /// 配ってよい写真が無ければ入口を出さない（nil）
+    func testTripBookSourceUsesOnlyShareablePhotos() throws {
+        let start = Date(timeIntervalSince1970: 1_794_182_400)
+        let photos = [try photo("a", location: "金沢市, 石川県, 日本", date: "2026-11-09"),
+                      try photo("b", location: "輪島市, 石川県, 日本", date: "2026-11-10", published: false),
+                      try photo("c", location: "射水市, 富山県, 日本", date: "2026-11-11"),
+                      try photo("d", location: "高山市, 岐阜県, 日本", date: "2026-11-11", published: false)]
+        let trip = TripBook.Trip(id: "t", place: "石川県", start: start, end: start.addingTimeInterval(2 * 86_400),
+                                 photos: photos, timeZone: TimeZone(identifier: "UTC")!)
+        let source = try XCTUnwrap(TravelStory.source(of: trip, name: "mika", distance: nil))
+        XCTAssertEqual(source.facts.location, "射水市, 富山県, 日本", "絞った写真（高山市）の撮影地を使った")
+        XCTAssertEqual(source.lead, photos[2].detailImageURL)
+        XCTAssertEqual(source.film, [photos[0].detailImageURL, photos[2].detailImageURL].compactMap { $0 })
+        let hidden = TripBook.Trip(id: "h", place: "", start: start, end: start,
+                                   photos: [photos[1], photos[3]], timeZone: TimeZone(identifier: "UTC")!)
+        XCTAssertNil(TravelStory.source(of: hidden, name: "mika", distance: nil))
+    }
+
+    /// 写真の詳細の ⋯: 「SNS に載せる」（ストーリーはこの中）は自分の、全体に公開した写真のときだけ。
+    /// ⋯ に「ストーリーに」の行を足さない（2026-11-12 秘書室の判断）
+    func testPhotoDetailMenuShowsSocialShareOnlyForShareablePhotos() throws {
+        let detail = try source("Sources/JourneyPhoto/Features/PhotoDetail/PhotoDetailView.swift")
+        let gate = try XCTUnwrap(detail.range(of: "if CollectionScreen.isShareable(shown) {"))
+        let row = try XCTUnwrap(detail.range(of: "L(\"SNS に載せる\", \"Share to social apps\")"))
+        XCTAssertLessThan(gate.lowerBound, row.lowerBound)
+        // 条件の `{` に対応する `}` を数えて探し、行がその中にあることを確かめる
+        var depth = 1
+        var end = gate.upperBound
+        while depth > 0, end < detail.endIndex {
+            if detail[end] == "{" { depth += 1 } else if detail[end] == "}" { depth -= 1 }
+            end = detail.index(after: end)
+        }
+        XCTAssertLessThan(row.lowerBound, end, "「SNS に載せる」が全体に公開した写真の条件の外にある")
+        XCTAssertFalse(detail.contains("photo.travelStory"), "⋯ に「ストーリーに」の行を足している（1行にまとめる）")
+        XCTAssertTrue(detail.contains("SocialShareSheet("), "「SNS に載せる」の画面に投稿とストーリーの切り替えが無い")
+        XCTAssertTrue(detail.contains("TravelStory.filmPicks(target: target, group:"), "写真の詳細が絞り込みを通さずに帯を作っている")
+        let book = try source("Sources/JourneyPhoto/Features/Trips/TripBookView.swift")
+        XCTAssertTrue(book.contains("TravelStory.source(of: book"), "旅の一冊が絞り込みを通さずに元を作っている")
+    }
+
+    /// 「SNS に載せる」の画面: はじめは投稿（今までどおり）、前に選んだ側から始まる
+    func testSocialShareStartsAtPostAndRemembers() {
+        let name = "TravelStoryTests-mode-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        XCTAssertEqual(SocialShareSheet.Mode.load(defaults), .post)
+        SocialShareSheet.Mode.save(.story, defaults)
+        XCTAssertEqual(SocialShareSheet.Mode.load(defaults), .story)
+        XCTAssertEqual(SocialShareSheet.Mode.allCases.map(\.label), [L("投稿 4:5", "Post 4:5"), L("ストーリー 9:16", "Story 9:16")])
+    }
+
+    /// 共有シートに空の文を渡さない（2026-11-12 確かめ役・`ShareSheet`）
+    func testShareSheetDoesNotPassAnEmptyText() throws {
+        let sheet = try source("Sources/JourneyPhoto/Features/Common/ShareSheet.swift")
+        XCTAssertFalse(sheet.contains("+ [text]"), "空の文も項目として渡している")
+        XCTAssertTrue(sheet.contains("if !text.isEmpty { items.append(text) }"))
+    }
+
+    // MARK: - 描いて置いておく型（2026-11-12 確かめ役「今の選び＋両隣」）
+
+    func testKeepsOnlyTheCurrentKindAndItsNeighbours() {
+        XCTAssertEqual(TravelStory.nearby(.pass), [.pass, .stamp])
+        XCTAssertEqual(TravelStory.nearby(.stamp), [.stamp, .pass, .film])
+        XCTAssertEqual(TravelStory.nearby(.film), [.film, .stamp])
+        let sheet = try? source("Sources/JourneyPhoto/Features/Common/TravelStorySheet.swift")
+        XCTAssertTrue(sheet?.contains("outputs = outputs.filter { keys.contains($0.key) }") == true, "置き場を絞っていない")
+        XCTAssertTrue(sheet?.contains("onCancel: { job.cancel() }") == true, "取り消した描画を止めていない")
+        XCTAssertFalse(sheet?.contains("UIImage(data: output.data)") == true, "払うたびに 1080×1920 を開いている")
     }
 
     // MARK: - フィルムの帯

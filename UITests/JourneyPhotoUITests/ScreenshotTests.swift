@@ -1387,7 +1387,8 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "22b-写真を編集（欄の名前・撮影日）")
     }
 
-    /// **旅をストーリーに**（第9章・1.1.83・`TravelStorySheet`）。自分の写真の ⋯ →「ストーリーに」。
+    /// **旅をストーリーに**（第9章・1.1.83・`TravelStorySheet`）。自分の写真の ⋯ →「SNS に載せる」→ 上の「ストーリー 9:16」
+    /// （⋯ の行は増やさない・2026-11-12 秘書室の判断・`SocialShareSheet`）。
     /// 型を払って選ぶ1枚（はじめは切手と消印）と、払った次の型（フィルムの帯）、ステッカーの形を撮る。
     /// 見本の利用者の写真が全体に公開でない・読めないなど、出なければ撮らない（この試験の決まり）
     func testCapturesTravelStory() {
@@ -1403,6 +1404,8 @@ final class ScreenshotTests: XCTestCase {
         for key in ["kind", "mode", "place", "date"] {
             app.launchArguments += ["-travelStory.\(key)", ""]
         }
+        // 「SNS に載せる」の画面ははじめ投稿（4:5）から
+        app.launchArguments += ["-socialShare.mode", ""]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -1423,8 +1426,13 @@ final class ScreenshotTests: XCTestCase {
         let menu = app.buttons["photo.menu"].firstMatch
         guard menu.waitForExistence(timeout: 10), menu.isHittable else { return }
         menu.tap()
-        let story = app.buttons["photo.travelStory"].firstMatch
-        guard story.waitForExistence(timeout: 5), story.isHittable else { return }
+        let social = app.buttons["photo.socialShare"].firstMatch
+        guard social.waitForExistence(timeout: 5), social.isHittable else { return }
+        social.tap()
+        // 写真を読み終えると開く（はじめは投稿 4:5）。上の切り替えでストーリーへ
+        let story = app.buttons["socialShare.mode.story"].firstMatch
+        guard story.waitForExistence(timeout: 20) else { return }
+        XCTAssertTrue(app.buttons["signatureShare.share"].firstMatch.exists, "はじめが投稿（今のカードの画面）でない")
         story.tap()
 
         let share = app.buttons["travelStory.share"].firstMatch
