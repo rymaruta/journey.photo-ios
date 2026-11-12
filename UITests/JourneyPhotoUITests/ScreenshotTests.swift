@@ -7449,29 +7449,18 @@ final class ScreenshotTests: XCTestCase {
 
     /// 🔴 **人の写真の送るシートに「ストーリーに載せる」が無い**（2026-11-12 owner の原則・#577）。
     /// 新着の1枚目（人の写真）の「共有」を開き、リンクのコピーと「ほかのアプリ」だけが並ぶのを撮る（63a2）。
-    /// 1枚目が自分の写真だった回（⋯ に「編集」がある）は確かめずに抜ける
+    /// 1枚目が自分の写真だった回（作者の横に「フォロー」が無い）は確かめずに抜ける
     func testCapturesSendSheetOthersPhotoHasNoStory() {
         guard let app = launchSNSPreview(sharedStory: false), openFirstLatestPhoto(app) else { return }
-        let menu = app.buttons["photo.menu"].firstMatch
-        guard menu.waitForExistence(timeout: 15), menu.isHittable else {
-            shoot(app, "63a2-送るシート（人の写真・⋯ が無い）")
-            return
-        }
-        menu.tap()
-        let mine = app.buttons["photo.edit"].firstMatch.waitForExistence(timeout: 3)
-        // メニューを閉じる（上の空いた所を叩く）
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
-        Thread.sleep(forTimeInterval: 1)
-        guard !mine else {
-            shoot(app, "63a2-送るシート（新着の1枚目が自分の写真）")
+        // 人の写真か: 作者の横の「フォロー」「フォロー中」は人の写真にだけ出る（`PhotoDetailRules.showsFollow`）。
+        // run 1159: ⋯ を開いて「編集」の有無で見ていた回は、閉じた後も共有の印が押せなかった（frame は画面の中・
+        // isHittable=false・送っても動かない）。⋯ を開かずに見る
+        let follow = app.buttons.matching(NSPredicate(format: "label == %@ OR label == %@", "フォロー", "フォロー中")).firstMatch
+        guard follow.waitForExistence(timeout: 15) else {
+            shoot(app, "63a2-送るシート（新着の1枚目が自分の写真か、フォローが読めない）")
             return
         }
         let share = app.buttons["photo.share"].firstMatch
-        // run 1158: ここで抜けた（共有の印が押せない）。推定で直さず、メニューを閉じた後の状態を記録する
-        XCTContext.runActivity(named: "63a2 の状態（閉じた後）: menuOpen=\(app.buttons["report"].firstMatch.exists || app.buttons["通報する"].firstMatch.exists)"
-            + " share.exists=\(share.exists) hittable=\(share.exists && share.isHittable)"
-            + " frame=\(share.exists ? String(describing: share.frame) : "-")"
-            + " menu.exists=\(menu.exists) buttons=\(app.buttons.allElementsBoundByIndex.suffix(12).map { $0.identifier + ":" + $0.label })") { _ in }
         scrollUntilHittable(app, share)
         guard share.exists, share.isHittable else {
             XCTContext.runActivity(named: "63a2 の状態（送った後）: share.exists=\(share.exists)"
