@@ -8300,6 +8300,69 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **DM の会話から旅行プランを作る（2026-11-12・資料「SNS をもっと SNS に」2a の段①と段②）**。
+    /// 見本の会話「夕焼けの人」には公開の新着の1枚目を送った通がある（撮影地つきなら帯が出る）。
+    /// 帯 → 下書き → 日付（休みの組を押す）と、吹き出しの長押しのメニューを撮る。**出なければ撮らずに抜ける**
+    func testCapturesDirectMessageTripPlan() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewDM", "YES"]
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        guard app.tabBars.firstMatch.waitForExistence(timeout: 20) else { return }
+        let bubble = app.buttons["header.messages"].firstMatch
+        guard bubble.waitForExistence(timeout: 20) else { return }
+        bubble.tap()
+        guard app.descendants(matching: .any)["dm.inbox"].firstMatch.waitForExistence(timeout: 15),
+              openThread(app, named: "夕焼けの人") else { return }
+
+        // 吹き出しの長押し（段②）: 「旅行プランに入れる」「コピー」
+        let said = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "行ってみたい")).firstMatch
+        if said.waitForExistence(timeout: 5), said.isHittable {
+            said.press(forDuration: 1.0)
+            let add = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "旅行プランに入れる")).firstMatch
+            if add.waitForExistence(timeout: 5) {
+                Thread.sleep(forTimeInterval: 1)
+                shoot(app, "86p1-メッセージ（吹き出しの長押し・旅行プランに入れる）")
+            }
+            // メニューを閉じる（押さずに外を押す）
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+
+        // 帯（段①）
+        let band = app.buttons["dm.tripBand"].firstMatch
+        let hasBand = band.waitForExistence(timeout: 15)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, hasBand ? "86p2-メッセージ（旅行プランの帯）" : "86p2-メッセージ（旅行プランの帯が出ない）")
+        XCTContext.runActivity(named: "86p2 の状態: band=\(hasBand)"
+            + " / label=\(band.exists ? band.label : "無し")"
+            + " / photoLive=\(app.buttons["dm.photoCard.live"].firstMatch.exists)") { _ in }
+        guard hasBand, band.isHittable else { return }
+        XCTAssertGreaterThanOrEqual(band.frame.height, 44, "帯の当たりが 44pt 未満")
+        band.tap()
+        let next = app.buttons["dmTrip.next"].firstMatch
+        guard next.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "86p3-メッセージ（旅行プランの下書き）")
+        next.tap()
+        let finish = app.buttons["tripCreate.finish"].firstMatch
+        guard finish.waitForExistence(timeout: 10) else { return }
+        let pair = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'tripCreate.holiday.'")).firstMatch
+        if pair.waitForExistence(timeout: 5), pair.isHittable {
+            XCTAssertGreaterThanOrEqual(pair.frame.height, 44, "休みの組の当たりが 44pt 未満")
+            pair.tap()
+        }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "86p4-メッセージ（旅行プランの日付・休みの組）")
+    }
+
     /// 受信箱の行を名前で開き、会話が出るまで待つ（出なければ false）
     private func openThread(_ app: XCUIApplication, named name: String) -> Bool {
         let row = app.buttons.matching(NSPredicate(format: "identifier == 'dm.thread' AND label CONTAINS %@", name)).firstMatch

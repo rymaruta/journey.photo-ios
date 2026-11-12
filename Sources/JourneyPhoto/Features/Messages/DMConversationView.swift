@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 1対1の会話（画面案「会話」「状態（会話）」・札 #505・2026-11-10）。
 ///
@@ -83,6 +84,17 @@ struct DMConversationView: View {
     @State private var newSent = 0
     /// UI テストのときだけ（`-JPPreviewDM`）: 送った・断られた・断りの文が消えた回数を見えない要素に出す（`dm.probe`）
     @State private var probe = (sends: 0, refusals: 0, errorCleared: 0)
+    /// この会話から旅行プランを作る（2026-11-12・資料 2a の段①と段②・`DMTripViews.swift`）
+    @StateObject private var trip = DMTripModel()
+    @StateObject private var tripPlans = TripPlansModel()
+    @State private var showTrip = false
+    /// 文から撮影スポットを拾えなかった吹き出し（候補のシートを開く）
+    @State private var tripCandidates: DMTripCandidateTarget?
+    /// 候補を選んだ: シートが閉じ切ってから下書きを開く
+    @State private var openTripAfterSheet = false
+    /// 作る流れで保存したプラン。**板が閉じ切ってから積む**（`SavedSpotsMapView` と同じ）
+    @State private var pendingTripId: String?
+    @State private var createdTripId: String?
 
     /// 受信箱の行（読み込む前の見出しの名前に使う）
     private var seed: DMThread? { store.inbox.items.first { $0.id == conversationId } }
@@ -99,6 +111,9 @@ struct DMConversationView: View {
     }
     /// 相手からのリクエスト（自分が受け取った・まだ承認していない）
     private var isIncomingRequest: Bool { (meta?.state ?? seed?.state) == .request }
+    /// 旅行プランの入口（帯・長押しの「旅行プランに入れる」・索引の読み込み）を出すか。
+    /// **承認前のリクエストには出さない**（2026-11-12 確かめ役の指摘・まだ話していない相手の写真や文を集めない）
+    private var tripOffered: Bool { !isIncomingRequest }
     /// 承認前の残り（自分が始めて、相手がまだ話していない間だけ）。まだ会話が無い間は手元で数える
     private var remaining: Int? {
         isNew ? max(0, DMRules.requestLimit - newSent) : meta?.requestRemaining
@@ -138,6 +153,10 @@ struct DMConversationView: View {
             case .loaded:
                 if isIncomingRequest { requestBand }
                 thread
+                // 場所が1つでも出た会話にだけ（リクエストの帯と重ねない・送れない会話にも出す——読めた写真から作れる）
+                if tripOffered, !tripFound.isEmpty {
+                    DMTripBand(count: tripFound.count) { showTrip = true }
+                }
                 footer
             }
         }
@@ -165,6 +184,36 @@ struct DMConversationView: View {
         }
         .navigationDestination(isPresented: photoIsOpen) {
             if let openedPhoto { PhotoDetailView(photo: openedPhoto, fromPublicFeed: openedPhotoIsPublic) }
+        }
+        .navigationDestination(item: $createdTripId) { planId in
+            TripPlanDetailView(planId: planId, model: tripPlans)
+        }
+        .fullScreenCover(isPresented: $showTrip, onDismiss: {
+            guard let planId = pendingTripId else { return }
+            pendingTripId = nil
+            createdTripId = planId
+        }) {
+            DMTripCreateView(peerName: peerName, found: tripFound, plans: tripPlans) { planId in
+                pendingTripId = planId
+                showTrip = false
+            }
+        }
+        .sheet(item: $tripCandidates, onDismiss: {
+            if openTripAfterSheet {
+                openTripAfterSheet = false
+                showTrip = true
+            }
+        }) { target in
+            DMTripCandidatesSheet(text: target.text, trip: trip, near: tripFound.compactMap(\.place.coords).first) { spot in
+                trip.add([spot], source: .picked)
+                openTripAfterSheet = true
+                tripCandidates = nil
+            }
+        }
+        // 写真の撮影地を撮影スポットに当てる索引と、座標を引く公開の写真（写真のある会話だけ・控えを使う口）
+        // 読めなかった回は、電波が戻ったら読み直す（id に圏外かどうかを入れる）
+        .task(id: "\(tripOffered && log.messages.contains(where: \.hasPhoto))#\(connectivity.isOffline)") {
+            if tripOffered, log.messages.contains(where: \.hasPhoto) { await trip.load(environment: environment) }
         }
         .task(id: conversationId) { await load() }
         // 開いている間だけ読み直す（前面・電波あり）
@@ -363,6 +412,7 @@ struct DMConversationView: View {
                             DMBubble(text: text, mine: message.mine, time: time,
                                      joinsPrevious: DMText.joinsPrevious(current: message, previous: previous),
                                      maxWidth: DMLook.bubbleMaxWidth(container: threadWidth))
+                                .contextMenu { bubbleMenu(text) }
                                 .id(message.id)
                         } else if let time {
                             // 写真だけの通は吹き出しを出さず、時刻だけ写真の下に
@@ -398,6 +448,39 @@ struct DMConversationView: View {
     }
 
     private static let bottomId = "dm.bottom"
+
+    // MARK: - 旅行プラン（2026-11-12・資料 2a）
+
+    /// 下書きに出す場所（写真が先・吹き出しから入れた場所が後）
+    private var tripFound: [DMTripPlaces.Found] {
+        trip.places(log.messages, blocked: hidden.blockedUserIds)
+    }
+
+    /// 吹き出しの長押し（段②）: 「旅行プランに入れる」と「コピー」
+    @ViewBuilder
+    private func bubbleMenu(_ text: String) -> some View {
+        if tripOffered {
+            Button { Task { await addToTrip(text) } } label: {
+                Label(L("旅行プランに入れる", "Add to a trip"), systemImage: "plus")
+            }
+        }
+        Button { UIPasteboard.general.string = text } label: {
+            Label(L("コピー", "Copy"), systemImage: "doc.on.doc")
+        }
+    }
+
+    /// 文の中の撮影スポットを索引で拾って下書きに入れ、下書きを開く。拾えなければ候補のシート
+    private func addToTrip(_ text: String) async {
+        guard tripOffered else { return }
+        await trip.load(environment: environment)
+        let spots = trip.spots(in: text)
+        if spots.isEmpty {
+            tripCandidates = DMTripCandidateTarget(text: text)
+        } else {
+            trip.add(spots, source: .text)
+            showTrip = true
+        }
+    }
 
     /// まだ会話が無い相手の、空の会話の上（2026-11-10 判断・板の人の行と同じ並び: 顔 64・名前 17・@ユーザー名 12）。
     /// 写真の無い画面なので、字は白と text-3 だけ（真鍮の合図は置かない）
