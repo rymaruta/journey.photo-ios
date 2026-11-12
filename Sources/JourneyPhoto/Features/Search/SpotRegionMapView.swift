@@ -9,7 +9,11 @@ import SwiftUI
 ///   地図の外で離すと取り消し（Web と同じ）。なぞる前に動かした指は画面のスクロールに渡す（長押しが先）
 /// - 塗り: 選んでいる・なぞっている区分は真鍮（黒地の上なので可・CLAUDE.md）。撮影スポットのある片は白 14%、
 ///   無い片は白 5%（押しても何もしない）。片の境は黒 0.6pt。日本の沖縄は左上の挿入図（細い枠）
-/// - 読み上げ: 地図は1つの要素として名前だけ言う。日本の地方は上の地方のチップでも同じに選べる
+/// - 読み上げ: 地図は1つの要素として名前だけ言う。日本の地方は写真の地方のチップでも同じに選べる
+/// - **地方の名前の札**（「近畿 ›」・2026-11-12 owner「ガイドもないし」・Web の #625 とそろえる）: 黒の地・真鍮の細い縁・
+///   白い名前・真鍮の「›」。押すとその地方を選ぶ（地図を押したのと同じ）。札は指を受けず（`allowsHitTesting(false)`）、
+///   当たりは地図の側（`SpotRegionMap.area(at:)` が札の枠を先に見る）——札の上から長押ししてもなぞれる。
+///   選んでいる・なぞっている地方の札は、名前と縁が真鍮になる（Web の `.jm-on`）。札は読み上げから外す（地図が1つの要素）
 struct SpotRegionMapView: View {
 
     let map: SpotRegionMap
@@ -39,6 +43,7 @@ struct SpotRegionMapView: View {
         GeometryReader { proxy in
             let size = proxy.size
             Canvas { ctx, _ in draw(&ctx, size: size) }
+                .overlay(alignment: .topLeading) { labels(size: size) }
                 .contentShape(Rectangle())
                 // ひと押し（SwiftUI の押す操作は画面のスクロールを止めない・run 1022 の「tap」の回で 680.7 → 325.3）
                 .onTapGesture(coordinateSpace: .local) { point in
@@ -66,13 +71,28 @@ struct SpotRegionMapView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(L("\(map.title)の地図", "Map of \(map.title)"))
         .accessibilityValue(areas.first { $0.id == selected }?.title ?? "")
-        .accessibilityHint(L("上下に払うと地方を替えられます。ダブルタップでその地方の観光スポットの一覧へ進みます",
-                             "Swipe up or down to change the region. Double-tap to see its photo spots"))
+        .accessibilityHint(L("上下に払うと地方を替えられます。ダブルタップで観光スポットの一覧へ進みます",
+                             "Swipe up or down to change the region. Double-tap to see the photo spots"))
         .accessibilityAction { onActivate() }
         .accessibilityAdjustableAction { direction in
             if let next = SpotRegionMap.step(selected, in: areas, forward: direction == .increment) { onSelect(next) }
         }
         .accessibilityIdentifier("search.spotIndex.map")
+    }
+
+    /// 地方の名前の札。指は地図が受ける（札の枠は `area(at:)` が先に見る）
+    private func labels(size: CGSize) -> some View {
+        let lit = traced ?? selected
+        return ZStack(alignment: .topLeading) {
+            ForEach(map.labelFrames(container: size, in: areas)) { item in
+                SpotMapLabelChip(text: item.label.text, on: item.label.area == lit)
+                    .frame(width: item.frame.width, height: item.frame.height)
+                    .offset(x: item.frame.minX, y: item.frame.minY)
+            }
+        }
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private func draw(_ ctx: inout GraphicsContext, size: CGSize) {
@@ -101,6 +121,40 @@ struct SpotRegionMapView: View {
             frame.addRect(CGRect(x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y))
             ctx.stroke(frame, with: .color(WebTheme.hairline), lineWidth: JPStroke.hairline)
         }
+    }
+}
+
+/// 地図の上の地方の名前の札（「近畿 ›」）。見た目は Web の `.jm-rlabel`（黒 78% の地・真鍮 55% の 1pt の縁・影・白い名前・
+/// 真鍮の「›」）。選んでいる・なぞっている地方は名前と縁が真鍮（縁 1.5pt）。
+///
+/// 2026-11-12 判断: 字は**システムの 12pt semibold**（Web は明朝 14px）。明朝は 18pt 未満に使わない決まり（`JPFont`）で、
+/// 段の地図（幅 189）に 18pt の札は入らない。地図の絵の一部なので文字サイズの設定に追従させない（札の幅と置き場を
+/// `SpotRegionMap.labelWidth` で決めているため。大きな字の人は、写真の地方のチップと読み上げで同じ地方を選べる）
+struct SpotMapLabelChip: View {
+    let text: String
+    let on: Bool
+
+    /// 地の黒（Web の rgb(0 0 0 / 0.78)）
+    nonisolated static let fillOpacity: Double = 0.78
+    /// 縁の真鍮（Web の 0.55）
+    nonisolated static let edgeOpacity: Double = 0.55
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Text(text)
+                .foregroundStyle(on ? WebTheme.accent : WebTheme.text)
+            Text(verbatim: "›")
+                .foregroundStyle(WebTheme.accent)
+        }
+        .font(.system(size: SpotRegionMap.labelFontSize, weight: .semibold))
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+        .padding(.leading, 7)
+        .padding(.trailing, 5)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Capsule().fill(Color.black.opacity(Self.fillOpacity)))
+        .overlay(Capsule().strokeBorder(WebTheme.accent.opacity(on ? 1 : Self.edgeOpacity), lineWidth: on ? 1.5 : 1))
+        .shadow(color: Color.black.opacity(0.5), radius: 4, y: 2)
     }
 }
 

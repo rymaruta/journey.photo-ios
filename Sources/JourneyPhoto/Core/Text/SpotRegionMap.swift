@@ -33,6 +33,8 @@ struct SpotRegionMap: Identifiable {
     /// 片の外を押したとき、区分へ寄せる強さ（画面の pt・区分の id → 足す近さ）。**小さな区分ほど大きくする**——
     /// 境までの距離だけで分けると、周りを囲まれた小さな区分（四国・近畿）が 44×44 に届かない
     var hitBonus: [String: CGFloat] = [:]
+    /// 地図の上に置く区分の名前の札（`SpotMapLabel`）。無ければ札を置かない
+    var labels: [SpotMapLabel] = []
 
     /// 地図の上の点（画面の pt・地図の枠の左上が原点）の区分の id。**撮影スポットのある区分だけ**。
     ///
@@ -43,6 +45,10 @@ struct SpotRegionMap: Identifiable {
     /// とし、地図の枠ぜんたいを区分で分け合う。押せる広さは `SpotRegionMapTests` が 1pt ごとに数えて縛る
     func area(at point: CGPoint, container: CGSize, in areas: [SpotMapArea]) -> String? {
         guard CGRect(origin: .zero, size: container).contains(point) else { return nil }
+        // 名前の札の上は、その札の区分（2026-11-12 判断: 札が隣の地方の陸に掛かっていても、見えている札の地方を選ぶ）
+        if let label = labelFrames(container: container, in: areas).first(where: { $0.frame.contains(point) }) {
+            return label.label.area
+        }
         let unit = VisitedMapViewport().unitPoint(forScreen: point, content: shapes.size, container: container)
         if let inside = shapes.piece(at: unit, tolerance: 0) {
             return areas.first { $0.pieces.contains(inside) }?.id
@@ -61,6 +67,34 @@ struct SpotRegionMap: Identifiable {
 
     /// 海岸から何 pt までは、いちばん近い区分が必ず勝つか（寄せを使わない）
     nonisolated static let coastSlack: CGFloat = 8
+
+    /// 名前の札の枠（画面の pt・地図の枠の左上が原点）。**撮影スポットのある区分の札だけ**。札は地図の枠の中に収める
+    func labelFrames(container: CGSize, in areas: [SpotMapArea]) -> [SpotMapLabelFrame] {
+        let present = Set(areas.map(\.id))
+        let viewport = VisitedMapViewport()
+        return labels.filter { present.contains($0.area) }.map { label in
+            let center = viewport.screenPoint(forUnit: label.center, content: shapes.size, container: container)
+            let size = CGSize(width: Self.labelWidth(label.text), height: Self.labelHeight)
+            let x = min(max(center.x - size.width / 2, 0), max(container.width - size.width, 0))
+            let y = min(max(center.y - size.height / 2, 0), max(container.height - size.height, 0))
+            return SpotMapLabelFrame(label: label, frame: CGRect(origin: CGPoint(x: x, y: y), size: size))
+        }
+    }
+
+    /// 名前の札の高さ（見た目）。当たりは札の上と、その区分の陣地（`area(at:)`・どの地方も 44×44 以上）
+    nonisolated static let labelHeight: CGFloat = 22
+    /// 名前の札の字の大きさ（地図の絵の一部なので文字サイズの設定に追従させない・札の幅をこの大きさで決めるため）
+    nonisolated static let labelFontSize: CGFloat = 12
+    /// 名前の札の左右の余白と「›」の分（左 7・字と › の間 2・› 6・右 5）
+    nonisolated static let labelChrome: CGFloat = 20
+
+    /// 名前の札の幅。字の幅を見積もる（漢字・かなは字の大きさ、英数字はその 0.62 倍）＋余白。最小 44
+    static func labelWidth(_ text: String) -> CGFloat {
+        let glyphs = text.reduce(CGFloat(0)) { sum, ch in
+            sum + (ch.isASCII ? labelFontSize * 0.62 : labelFontSize)
+        }
+        return max(44, (glyphs + labelChrome).rounded(.up))
+    }
 
     /// 区分を順に替える（読み上げの上下の払い・`accessibilityAdjustableAction`）。端で止まる
     static func step(_ current: String?, in areas: [SpotMapArea], forward: Bool) -> String? {
@@ -92,10 +126,32 @@ struct SpotRegionMap: Identifiable {
     /// 日本地図（地方で塗る）。形は「行った県」の地図と同じ `PrefectureMapGeometry`
     static func japan(_ geometry: PrefectureMapGeometry) -> SpotRegionMap {
         SpotRegionMap(id: "japan", title: L("日本", "Japan"), shapes: geometry,
-                      areas: { japanAreas($0.japanGroups) }, sharesRegionChips: true, hitBonus: japanHitBonus)
+                      areas: { japanAreas($0.japanGroups) }, sharesRegionChips: true, hitBonus: japanHitBonus,
+                      labels: japanLabels)
     }
 
-    /// 日本の地方の寄せ（画面の pt）。段の中の地図（幅 143・高さ 160）で、どの地方も 44×44（1936pt²）以上
+    /// 日本の地方の名前の札（2026-11-12 owner「なんも押してないのに県を選ぶというのわかりづらいな。ガイドもないし」。
+    /// Web の #625 と同じ考え: 地方の名前を**押せる札**にして、地図が押せることを見て分かるようにする）。
+    ///
+    /// 2026-11-12 判断:
+    /// - 置き場は段の地図（幅 189・高さ 212）で、札（高さ 22）どうしが重ならず、地方の上かすぐ隣の海に来る点。
+    ///   単位の空間の点で持つ（地図の大きさが変わっても同じ所に来る）。重ならないことは `SpotRegionMapTests` が縛る
+    /// - 九州・沖縄は「九州」と「沖縄」（左上の挿入図）の2枚。どちらも九州・沖縄を選ぶ（Web も沖縄県に別の札がある）
+    /// - 中部と関東、中国と四国は近いので、関東は太平洋側、中国は日本海側へずらした
+    static var japanLabels: [SpotMapLabel] { [
+        SpotMapLabel(area: "北海道", text: L("北海道", "Hokkaido"), center: CGPoint(x: 805, y: 175)),
+        SpotMapLabel(area: "東北", text: L("東北", "Tohoku"), center: CGPoint(x: 794, y: 483)),
+        SpotMapLabel(area: "関東", text: L("関東", "Kanto"), center: CGPoint(x: 847, y: 737)),
+        SpotMapLabel(area: "中部", text: L("中部", "Chubu"), center: CGPoint(x: 534, y: 663)),
+        SpotMapLabel(area: "近畿", text: L("近畿", "Kinki"), center: CGPoint(x: 412, y: 801)),
+        SpotMapLabel(area: "中国", text: L("中国", "Chugoku"), center: CGPoint(x: 200, y: 642)),
+        SpotMapLabel(area: "四国", text: L("四国", "Shikoku"), center: CGPoint(x: 328, y: 939)),
+        SpotMapLabel(area: "九州・沖縄", text: L("九州", "Kyushu"), center: CGPoint(x: 115, y: 1066)),
+        SpotMapLabel(area: "九州・沖縄", text: L("沖縄", "Okinawa"), center: CGPoint(x: 158, y: 101)),
+    ] }
+
+    /// 日本の地方の寄せ（画面の pt）。段の中の地図（決めたときは幅 143・高さ 160。2026-11-12 に地図を段の高さ 212 へ
+    /// 広げた後もこの値のまま。広くなったので、どの地方の押せる広さも増える）で、どの地方も 44×44（1936pt²）以上
     /// 押せるように決めた値（2026-11-11: 1pt ごとに押した広さを数え、いちばん狭い地方（沖縄の挿入図を除いた九州本土も含む）が
     /// 広くなる値を探した。海岸から `coastSlack`（8pt）より遠い点だけに効く。いちばん狭いのは 2150pt²。
     /// `SpotRegionMapTests.testEveryRegionIsAtLeast44x44` が縛り、前後の広さはログに出す）
@@ -186,6 +242,27 @@ struct SpotMapArea: Identifiable, Equatable {
         let joined = names.joined(separator: L("、", ", "))
         return count > names.count ? L("\(joined) ほか", "\(joined), and more") : joined
     }
+}
+
+/// 地図の上の区分の名前の札（「近畿 ›」・2026-11-12）。押すとその区分を選ぶ（地図を押したのと同じ）。
+/// 見た目は Web の地方名の札（黒の地・真鍮の細い縁・白い名前・真鍮の「›」）
+struct SpotMapLabel: Equatable, Identifiable {
+    /// 区分の id（押したら選ぶ区分）
+    let area: String
+    /// 札の字（区分の名前。九州・沖縄は「九州」「沖縄」の2枚）
+    let text: String
+    /// 札の真ん中（単位の空間）
+    let center: CGPoint
+
+    var id: String { text }
+}
+
+/// 名前の札と、地図の枠の中の置き場（画面の pt）
+struct SpotMapLabelFrame: Identifiable {
+    let label: SpotMapLabel
+    let frame: CGRect
+
+    var id: String { label.id }
 }
 
 /// 区分を作る材料（台帳と、日本の地方の束ね）。地図ごとに要るものだけ読む
