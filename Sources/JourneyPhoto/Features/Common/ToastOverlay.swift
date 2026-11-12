@@ -16,6 +16,21 @@ struct ToastOverlay: View {
                 Text(message.text)
                     .font(.subheadline)
                     .lineLimit(2)
+                // 押せる一手（1.1.83「カードにする」）。当たりは 44
+                if let title = message.actionTitle, let action = message.action {
+                    Button {
+                        toasts.dismiss()
+                        action()
+                    } label: {
+                        Text(title)
+                            .font(.subheadline.weight(.semibold))
+                            .underline()
+                            .frame(minHeight: WebTheme.minTapTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("toast.action")
+                }
             }
             .foregroundStyle(WebTheme.foreground)
             .padding(.horizontal, 14)
