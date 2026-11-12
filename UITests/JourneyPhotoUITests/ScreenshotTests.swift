@@ -2666,11 +2666,14 @@ final class ScreenshotTests: XCTestCase {
             note(app, "旅行プランの札", "削除のあとに「元に戻す」が出ない")
             return
         }
+        // 🔴 「元に戻す」は6秒で閉じる。run 1167 では出てから押すまでに検査と撮影で 4.2 秒かかり（t=38.57→42.74、
+        // 削除を押したのは t=35.28〜37.52）、押しに行った時には閉じていた。出たらすぐ撮って押し、検査はその後
+        shoot(app, "10i-ホーム（旅行プランの札を削除・元に戻す）")
+        let cardGone = !more.exists
+        undo.tap()
+        XCTAssertTrue(cardGone, "削除したのに札が残っている")
         XCTAssertFalse(app.alerts.firstMatch.exists, "削除で確かめのダイアログが出た")
         XCTAssertFalse(app.sheets.firstMatch.exists, "削除で確かめのダイアログが出た")
-        XCTAssertFalse(more.exists, "削除したのに札が残っている")
-        shoot(app, "10i-ホーム（旅行プランの札を削除・元に戻す）")
-        undo.tap()
         XCTAssertTrue(app.buttons["home.tripMenu"].firstMatch.waitForExistence(timeout: 5), "「元に戻す」で札が戻らない")
     }
 
