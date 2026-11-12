@@ -7467,8 +7467,16 @@ final class ScreenshotTests: XCTestCase {
             return
         }
         let share = app.buttons["photo.share"].firstMatch
+        // run 1158: ここで抜けた（共有の印が押せない）。推定で直さず、メニューを閉じた後の状態を記録する
+        XCTContext.runActivity(named: "63a2 の状態（閉じた後）: menuOpen=\(app.buttons["report"].firstMatch.exists || app.buttons["通報する"].firstMatch.exists)"
+            + " share.exists=\(share.exists) hittable=\(share.exists && share.isHittable)"
+            + " frame=\(share.exists ? String(describing: share.frame) : "-")"
+            + " menu.exists=\(menu.exists) buttons=\(app.buttons.allElementsBoundByIndex.suffix(12).map { $0.identifier + ":" + $0.label })") { _ in }
         scrollUntilHittable(app, share)
         guard share.exists, share.isHittable else {
+            XCTContext.runActivity(named: "63a2 の状態（送った後）: share.exists=\(share.exists)"
+                + " frame=\(share.exists ? String(describing: share.frame) : "-")"
+                + " buttons=\(app.buttons.allElementsBoundByIndex.suffix(12).map { $0.identifier + ":" + $0.label })") { _ in }
             shoot(app, "63a2-送るシート（人の写真・共有の印が出ない）")
             return
         }
