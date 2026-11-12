@@ -350,15 +350,15 @@ final class ProfileQRTests: XCTestCase {
         let view = try source("Features/Profile/ProfileQRView.swift")
         XCTAssertEqual(ProfileQRText.passNotValid, "この QR コードは使えません。相手に新しい QR コードを出してもらってください")
         XCTAssertTrue(view.contains(".foregroundStyle(WebTheme.danger)"))
-        let pass = try XCTUnwrap(view.range(of: "case .other, .pass:"))
-        let after = String(view[pass.upperBound...].prefix(160))
-        XCTAssertTrue(after.contains("note = ProfileQRText.passNotValid"))
-        XCTAssertTrue(after.contains("noteIsFailure = true"))
-        // 引けなかった（投げた）ときは「使えません」と言わない
-        let failed = try XCTUnwrap(view.range(of: "userId = try await source.resolve(pass: pass)"))
-        let rest = String(view[failed.upperBound...].prefix(400))
-        XCTAssertTrue(rest.contains("note = ProfileQRText.passCheckFailed"))
-        XCTAssertFalse(rest.prefix(through: rest.range(of: "return")!.lowerBound).contains("passNotValid"))
+        // 使えない合図（引けない＝nil）は「使えません」を danger で。引けなかった（投げた）は別の言葉（`ProfileQRScanFlow`）
+        let unusable = try XCTUnwrap(view.range(of: "case .unusable:\n"))
+        let afterUnusable = String(view[unusable.upperBound...].prefix(160))
+        XCTAssertTrue(afterUnusable.contains("note = ProfileQRText.passNotValid"))
+        XCTAssertTrue(afterUnusable.contains("noteIsFailure = true"))
+        let checkFailed = try XCTUnwrap(view.range(of: "case .checkFailed:\n"))
+        let afterFailed = String(view[checkFailed.upperBound...].prefix(160))
+        XCTAssertTrue(afterFailed.contains("note = ProfileQRText.passCheckFailed"))
+        XCTAssertFalse(afterFailed.contains("passNotValid"))
     }
 
     /// 見本の通信（画面写真）でも QR を出して更新できる
@@ -376,5 +376,131 @@ final class ProfileQRTests: XCTestCase {
         XCTAssertNotEqual(a, b, "更新しても合図が替わらない")
         XCTAssertTrue(PathID.isSafe(a ?? ""))
         XCTAssertEqual(a?.count, 32)
+    }
+
+    // MARK: - 確かめ役の指摘の直し（2026-11-12）
+
+    /// 合図を引く間の試験用の作り手。引く途中で `during` を走らせる（その間に別の QR を読んだ、を作る）
+    private final class FakeSource: ProfileQRSource, @unchecked Sendable {
+        var answer: Result<String?, Error>
+        var during: (@MainActor () -> Void)?
+        init(_ answer: Result<String?, Error>) { self.answer = answer }
+        func code(for userId: String) async throws -> URL { URL(string: "https://journey-photo.com/qr?t=x")! }
+        func resolve(pass: String) async throws -> String? {
+            if let during { await MainActor.run { during() } }
+            return try answer.get()
+        }
+        var canRenew: Bool { true }
+        func renew(for userId: String) async throws -> URL { URL(string: "https://journey-photo.com/qr?t=y")! }
+    }
+
+    /// 待つ間に別の QR を読んだら、古い答え（人を開く・使えない）を使わない
+    @MainActor
+    func testScanFlowDropsStaleAnswer() async {
+        var current: String? = "A"
+        let source = FakeSource(.success("someone"))
+        source.during = { current = "B" }
+        let stale = await ProfileQRScanFlow.resolve(pass: "p", code: "A", myUserId: uid, source: source,
+                                                    currentCode: { current })
+        XCTAssertEqual(stale, .stale, "待つ間に別の QR を読んだのに古い答えで人を開いた")
+        let failing = FakeSource(.failure(APIError.unreachable))
+        failing.during = { current = "C" }
+        current = "A"
+        let staleFailure = await ProfileQRScanFlow.resolve(pass: "p", code: "A", myUserId: uid, source: failing,
+                                                           currentCode: { current })
+        XCTAssertEqual(staleFailure, .stale)
+    }
+
+    @MainActor
+    func testScanFlowOutcomes() async {
+        let now: () -> String? = { "A" }
+        let open = await ProfileQRScanFlow.resolve(pass: "p", code: "A", myUserId: uid,
+                                                   source: FakeSource(.success("someone")), currentCode: now)
+        XCTAssertEqual(open, .open("someone"))
+        let mine = await ProfileQRScanFlow.resolve(pass: "p", code: "A", myUserId: uid,
+                                                   source: FakeSource(.success(uid)), currentCode: now)
+        XCTAssertEqual(mine, .mine)
+        let unusable = await ProfileQRScanFlow.resolve(pass: "p", code: "A", myUserId: uid,
+                                                       source: FakeSource(.success(nil)), currentCode: now)
+        XCTAssertEqual(unusable, .unusable)
+        let failed = await ProfileQRScanFlow.resolve(pass: "p", code: "A", myUserId: uid,
+                                                     source: FakeSource(.failure(APIError.unreachable)), currentCode: now)
+        XCTAssertEqual(failed, .checkFailed)
+    }
+
+    /// 失敗したとき・人の頁を開いたときは読みを空け、同じ QR を（少し置いて）もう一度読める
+    func testReadGateLetsTheSameCodeBeReadAgain() {
+        var gate = ProfileQRReadGate()
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        XCTAssertTrue(gate.accepts("A", now: t0))
+        gate.hold("A", now: t0)
+        XCTAssertFalse(gate.accepts("A", now: t0.addingTimeInterval(1)), "読みを空けた直後に同じ答えを繰り返す")
+        XCTAssertTrue(gate.accepts("B", now: t0.addingTimeInterval(1)), "別の QR まで止めた")
+        XCTAssertTrue(gate.accepts("A", now: t0.addingTimeInterval(ProfileQRReadGate.holdOff)), "同じ QR をもう一度読めない")
+    }
+
+    /// 画面: 失敗したときと人の頁を開いたときに読みを空ける（`scanner.release`）。門は読み取りの知らせで使う
+    func testScanPaneReleasesTheCode() throws {
+        let view = try source("Features/Profile/ProfileQRView.swift")
+        let apply = try XCTUnwrap(view.range(of: "private func apply(_ outcome: ProfileQRScanFlow.Outcome, code: String) {"))
+        let body = String(view[apply.upperBound...].prefix(900))
+        for c in ["case .open(let id):", "case .unusable:", "case .checkFailed:"] {
+            let r = try XCTUnwrap(body.range(of: c), c)
+            let next = String(body[r.upperBound...].prefix(160))
+            XCTAssertTrue(next.contains("scanner.release(code)"), "\(c) で読みを空けていない")
+        }
+        XCTAssertTrue(view.contains("case .person(let userId):\n                apply(.open(userId), code: code)"))
+        XCTAssertTrue(view.contains("if lastCode != text, gate.accepts(text) { lastCode = text }"))
+    }
+
+    /// 作れなかった理由の見えない字は UI テストのときだけ（VoiceOver に内部の言葉と合図を読ませない）
+    func testFailureReasonOnlyInUITests() throws {
+        let view = try source("Features/Profile/ProfileQRView.swift")
+        let guardRange = try XCTUnwrap(view.range(of: "if ProfileQRDiagnostics.showsFailureReason {"))
+        let reason = try XCTUnwrap(view.range(of: #".accessibilityIdentifier("profileQR.failureReason")"#))
+        XCTAssertLessThan(guardRange.lowerBound, reason.lowerBound)
+        XCTAssertLessThan(view.distance(from: guardRange.upperBound, to: reason.lowerBound), 400)
+        let key = PreviewSession.defaultsKey
+        let before = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(before, forKey: key) }
+        UserDefaults.standard.removeObject(forKey: key)
+        XCTAssertFalse(ProfileQRDiagnostics.showsFailureReason, "ふだんの起動で理由を読み上げに出している")
+        UserDefaults.standard.set("ui-test-user", forKey: key)
+        XCTAssertTrue(ProfileQRDiagnostics.showsFailureReason)
+    }
+
+    /// 更新が 409（別の画面・端末が先に更新）で失敗したら読み直す。前に戻ったときも読み直す
+    func testReloadsAfterConflictAndOnForeground() throws {
+        XCTAssertTrue(ProfileQRRenewFailure.shouldReload(APIError.server(status: 409, message: "x")))
+        XCTAssertFalse(ProfileQRRenewFailure.shouldReload(APIError.server(status: 500, message: "x")))
+        XCTAssertFalse(ProfileQRRenewFailure.shouldReload(APIError.unreachable))
+        let view = try source("Features/Profile/ProfileQRView.swift")
+        XCTAssertTrue(view.contains("if ProfileQRRenewFailure.shouldReload(error) { await refreshCode() }"))
+        XCTAssertTrue(view.contains(".onChange(of: scenePhase) { _, phase in"))
+        XCTAssertTrue(view.contains("if phase == .active { Task { await refreshCode() } }"))
+    }
+
+    /// 見本の通信は合図を人に引く口にも答える（今の合図だけ・更新した前の合図は使えない）
+    func testPreviewBackendResolvesPass() async throws {
+        let store = PreviewBackend.Store()
+        let get = await PreviewBackend.reply(method: "GET", route: ["user", "qr"], body: nil, userId: "me", store: store,
+                                             publicLikes: { _ in nil })
+        let first = try XCTUnwrap((try? JSONSerialization.jsonObject(with: get.body)) as? [String: Any])["token"] as? String
+        let ok = await PreviewBackend.reply(method: "GET", route: ["qr", first ?? ""], body: nil, userId: "me",
+                                            store: store, publicLikes: { _ in nil })
+        XCTAssertEqual(ok.status, 200)
+        XCTAssertEqual((try? JSONSerialization.jsonObject(with: ok.body)) as? [String: String], ["userId": "me"])
+        _ = await PreviewBackend.reply(method: "POST", route: ["user", "qr", "rotate"], body: nil, userId: "me",
+                                       store: store, publicLikes: { _ in nil })
+        let old = await PreviewBackend.reply(method: "GET", route: ["qr", first ?? ""], body: nil, userId: "me",
+                                             store: store, publicLikes: { _ in nil })
+        XCTAssertEqual(old.status, 404)
+        XCTAssertEqual((try? JSONSerialization.jsonObject(with: old.body)) as? [String: String], ["error": "この QR コードは使えません"])
+        // ログイン不要の口（鍵が付かない）も端末の中で受ける
+        let api = URL(string: "https://api.example.test")!
+        XCTAssertTrue(PreviewBackend.isPassLookup(URL(string: "https://api.example.test/qr/abc")!, base: api))
+        XCTAssertFalse(PreviewBackend.isPassLookup(URL(string: "https://api.example.test/qr")!, base: api))
+        XCTAssertFalse(PreviewBackend.isPassLookup(URL(string: "https://other.example/qr/abc")!, base: api))
+        XCTAssertFalse(PreviewBackend.isPassLookup(URL(string: "https://api.example.test/user/qr")!, base: api))
     }
 }

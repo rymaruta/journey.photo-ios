@@ -101,7 +101,17 @@ enum PreviewBackend {
     /// この要求に答えるか（見本の鍵を付けた要求と、見本の置き場）
     static func handles(_ request: URLRequest) -> Bool {
         if request.url?.host == host { return true }
+        // プロフィールの QR の合図を人に引く口（`GET /qr/{合図}`・ログイン不要なので鍵が付かない・2026-11-12）。
+        // 見本の合図は端末の中にしか無いので、本物の口へは出さずにここで答える
+        if let url = request.url, isPassLookup(url) { return true }
         return request.value(forHTTPHeaderField: "Authorization") == "Bearer \(token)"
+    }
+
+    /// `GET <user API>/qr/{合図}` か（見本の通信の端末の中の答え手が受ける）
+    static func isPassLookup(_ url: URL, base: URL = AppConfig.userAPIBaseURL) -> Bool {
+        guard url.host == base.host else { return false }
+        let parts = route(url, basePath: base.path)
+        return parts.count == 2 && parts[0] == "qr"
     }
 
     // MARK: - 端末の中の状態
@@ -317,6 +327,10 @@ enum PreviewBackend {
             return .json(["token": store.with { $0.qrToken() }, "issuedAt": stamp])
         case ("POST", let p) where p == ["user", "qr", "rotate"]:
             return .json(["token": store.with { $0.renewQR() }, "issuedAt": stamp])
+        // 合図を人に引く（ログイン不要）。今の合図なら見本の利用者、更新で替わった前の合図・知らない合図は使えない
+        case ("GET", let p) where p.count == 2 && p[0] == "qr":
+            guard p[1] == store.with({ $0.qrToken() }) else { return .json(["error": "この QR コードは使えません"], status: 404) }
+            return .json(["userId": uid])
 
         default:
             return .unsupported
