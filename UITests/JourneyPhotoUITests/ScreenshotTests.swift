@@ -7004,7 +7004,15 @@ final class ScreenshotTests: XCTestCase {
             // Mac run 1100: 押しても現像の画面が出なかった。押した回数・出そうとした旅・画面の木を残す
             let probe = app.staticTexts["home.develop.probe"].firstMatch
             note(app, "現像の画面が出ない", "probe=\(probe.exists ? probe.label : "（無い）") hittable=\(card.isHittable)")
-            print("UINOTE 現像の画面が出ない（画面の木）:\n\(app.debugDescription)")
+            // 同じホームから②「1年前」の輪（ストーリーの列の全画面）は出るか
+            let ringProbe = app.buttons["stories.yearAgo"].firstMatch
+            if ringProbe.exists, ringProbe.isHittable {
+                ringProbe.tap()
+                let opened = app.buttons["yearAgo.share"].firstMatch.waitForExistence(timeout: 8)
+                print("UINOTE 1年前の輪から閲覧が出たか: \(opened) probe=\(probe.exists ? probe.label : "（無い）")")
+            } else {
+                print("UINOTE 1年前の輪: exists=\(ringProbe.exists) hittable=\(ringProbe.isHittable)")
+            }
             return
         }
         Thread.sleep(forTimeInterval: 2)

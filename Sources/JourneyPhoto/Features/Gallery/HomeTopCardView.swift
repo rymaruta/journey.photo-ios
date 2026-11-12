@@ -162,11 +162,14 @@ struct HomeTopCardView: View {
             // UI テストのときだけ: 押した回数と、出そうとしている旅（`-JPPreviewDevelop`）。見えない要素
             .overlay(alignment: .bottomTrailing) {
                 if PreviewSession.develop {
-                    Text("taps=\(developTaps) developing=\(developing?.id ?? "nil") revision=\(developRevision)")
+                    TimelineView(.animation(minimumInterval: 1)) { _ in
+                    Text("taps=\(developTaps) developing=\(developing?.id ?? "nil") revision=\(developRevision)"
+                         + " appeared=\(DevelopView.appearCount) modal=\(ModalProbe.chainText())")
                         .font(.system(size: 1))
                         .opacity(0.01)
                         .allowsHitTesting(false)
                         .accessibilityIdentifier("home.develop.probe")
+                    }
                 }
             }
     }

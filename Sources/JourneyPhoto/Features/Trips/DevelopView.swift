@@ -47,6 +47,8 @@ struct DevelopView: View {
 
     private let store = DevelopProgressStore()
     private let frames: [String]
+    /// UI テストのときだけ読む: 画面が出た回数（Mac run 1106 で札を押しても出なかった件を調べる）
+    @MainActor static var appearCount = 0
 
     init(trip: LibraryTrip, name: String?, onEdit: @escaping ([String]) -> Void) {
         self.trip = trip
@@ -83,7 +85,10 @@ struct DevelopView: View {
                     .transition(.opacity)
             }
         }
-        .onAppear(perform: restore)
+        .onAppear {
+            Self.appearCount += 1
+            restore()
+        }
         // 閉じたら待っている投稿はいま送り出す（取り消しの札は画面と一緒に消えるため。積んだまま捨てない）
         .onDisappear { undo.finishNow() }
         .accessibilityIdentifier("develop.screen")
