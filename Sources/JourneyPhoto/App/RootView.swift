@@ -173,6 +173,10 @@ struct RootView: View {
         .overlay(alignment: .bottomLeading) {
             if PerfRecorder.shared.isEnabled { PerfProbeOverlay() }
         }
+        // UI テストのときだけ: 旅のトランクの重さの数を見えない要素 `trunk.perf` に出す（`-JPPreviewTrunkPerf YES`・2026-11-11）
+        .overlay(alignment: .bottomTrailing) {
+            if TrunkPerfMeter.shared.enabled { TrunkPerfProbe() }
+        }
         .overlay(alignment: .top) {
             if let configurationError {
                 Text(L("認証の初期化に失敗しました: \(configurationError)", "Sign-in setup failed: \(configurationError)"))

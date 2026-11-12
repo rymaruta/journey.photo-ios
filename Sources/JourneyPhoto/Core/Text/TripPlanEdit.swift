@@ -158,6 +158,15 @@ enum TripPlanEdit {
         return best?.day ?? open.last
     }
 
+    /// 「この日程から外す」（「…」の中・2026-11-11）。**押した時点の日程で同じ項目を探し直す**（`locate`）。
+    /// 見つからなければ nil（何もしない・呼ぶ側が知らせる）
+    static func removing(_ days: [TripDay], day: Int, item: Int, original: TripItem) -> [TripDay]? {
+        guard let at = locate(days, day: day, item: item, original: original) else { return nil }
+        var out = days
+        out[day].items.remove(at: at)
+        return out
+    }
+
     /// 移せる先の日（自分の日を除き、いっぱいでない日）。メニューに並べる
     static func movableDays(_ days: [TripDay], from day: Int) -> [Int] {
         days.indices.filter { $0 != day && days[$0].items.count < TripPlanService.itemsPerDayMax }

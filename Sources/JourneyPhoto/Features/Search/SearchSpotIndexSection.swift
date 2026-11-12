@@ -21,8 +21,29 @@ struct SearchSpotIndexSection: View {
     let photosKnown: Bool
     var isRetrying = false
     let retry: () -> Void
-    /// 選んでいる地方（`PrefectureRegions.Region.name`）。nil なら撮影スポットのいちばん多い地方
+    /// 選んでいる地方（`PrefectureRegions.Region.name`）。nil なら撮影スポットのいちばん多い地方。
+    /// **写真の札・地方のチップ・地図で1つ**（どれで選んでも同じ地方）
     @Binding var region: String?
+    /// 「写真｜地図」（2026-11-11 owner「タブ切り替えとかでもいいから縦に長くならないように」）
+    @Binding var mode: SpotIndexMode
+    /// 地図をなぞっている区分（離すまで札がこれに替わる）。**探すの画面が持つ**——なぞっている間は外側の
+    /// スクロールを止める（`SearchView` の `.scrollDisabled`・確かめ役の指摘 2026-11-11）
+    @Binding var tracing: String?
+    /// 出している地図の id（地図が2つ以上のとき、地図の右上の切り替えで替える）
+    @State private var mapId: String?
+    /// 地方のチップと選択を分けない地図（日本以外）で選んでいる区分（地図の id → 区分の id）
+    @State private var otherSelections: [String: String] = [:]
+    /// 読み上げのダブルタップで開く一覧（地図の区分の「すべて見る」と同じ行き先）
+    @State private var openArea: SpotIndexScope?
+
+    /// 出せる地図（いまは日本だけ・`SpotRegionMap.available`）。無ければ「地図」の札を出さない
+    private var maps: [SpotRegionMap] { SpotRegionMap.available(japan: PrefectureMapGeometry.bundled) }
+
+    /// 地図の幅（段の中の高さ `cardColumnHeight` に地図の縦横比を合わせる）
+    nonisolated static func mapWidth(for shapes: SpotMapShapes) -> CGFloat {
+        guard shapes.size.height > 0 else { return cardColumnHeight }
+        return (cardColumnHeight * shapes.size.width / shapes.size.height).rounded(.up)
+    }
 
     /// 札の大きさ（「人気の撮影地」の札と同じ・板 11 の 156×116）
     nonisolated static let cardWidth: CGFloat = 156
@@ -69,7 +90,20 @@ struct SearchSpotIndexSection: View {
                             isBusy: isRetrying, retry: retry)
             case .ready:
                 if let selected {
-                    strip(selected)
+                    VStack(alignment: .leading, spacing: 0) {
+                        // 「写真｜地図」。地図の形が読めなければ札を出さない（写真だけ）
+                        if !maps.isEmpty {
+                            ProfileTabBar(tabs: SpotIndexMode.allCases, selection: $mode, movesContent: false)
+                                .padding(.bottom, JPSpace.xs)
+                        }
+                        strip(selected)
+                    }
+                    // UI テストが「写真」と「地図」で段ぜんたいの高さが同じかを測る目印
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("search.spotIndex.block")
+                    .navigationDestination(item: $openArea) { scope in
+                        OfficialSpotIndexView(scope: scope, spots: spots, photos: photos, photosKnown: photosKnown)
+                    }
                 } else {
                     EmptyState(message: L("公開中の撮影スポットはまだありません", "No photo spots yet"))
                 }
@@ -91,6 +125,111 @@ struct SearchSpotIndexSection: View {
                 }
                 .padding(.horizontal, JPSpace.gutter)
             }
+            if mode == .map, let map = maps.first(where: { $0.id == mapId }) ?? maps.first {
+                mapRow(selected, map: map)
+                    .frame(height: Self.cardColumnHeight)
+            } else {
+                cardsRow(selected)
+            }
+        }
+        // **写真と地図で同じ高さ**（替えても下の段が動かない・`bodyHeight`）
+        .frame(height: Self.bodyHeight, alignment: .top)
+        // 実機の絵・UI テストが段の高さを測る目印（地方を替えた前後・写真と地図で同じか）
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("search.spotIndex")
+    }
+
+    /// 地図と、選んでいる（なぞっている）区分の札（Web のホームの地図の下の札と同じ中身）。**地図の型に依らない**
+    private func mapRow(_ selected: SpotPrefectureIndex.Group, map: SpotRegionMap) -> some View {
+        let areas = map.areas(SpotMapSource(spots: spots, japanGroups: groups))
+        // 日本の地方は上のチップ・写真の札の列と同じ選択。ほかの地図は地図ごとに覚える（無ければ件数のいちばん多い区分）
+        let chosen = map.sharesRegionChips ? selected.region.name
+            : otherSelections[map.id] ?? areas.max { $0.count < $1.count }?.id
+        let shown = areas.first { $0.id == (tracing ?? chosen) }
+        return HStack(alignment: .top, spacing: JPSpace.s) {
+            SpotRegionMapView(map: map, areas: areas, selected: chosen, tracing: $tracing, onSelect: { id in
+                if map.sharesRegionChips { region = id } else { otherSelections[map.id] = id }
+            }, onActivate: {
+                // 読み上げのダブルタップ: いまの区分の一覧へ（右の札の「すべて見る」と同じ行き先）
+                openArea = areas.first { $0.id == chosen }?.scope
+            })
+            .frame(width: Self.mapWidth(for: map.shapes), height: Self.cardColumnHeight)
+            // 地図が2つ以上のときだけ、地図の右上に重ねて切り替え（段の高さは変えない・`SpotRegionMap.showsSwitcher`）
+            .overlay(alignment: .topTrailing) {
+                if SpotRegionMap.showsSwitcher(maps) { mapSwitcher(current: map) }
+            }
+            if let shown { areaCard(shown) }
+        }
+        .padding(.horizontal, JPSpace.gutter)
+    }
+
+    /// 地図の切り替え（「日本｜世界」）。地図の枠の中に重ねる小さな札。**地図が1つの間は出さない**
+    private func mapSwitcher(current: SpotRegionMap) -> some View {
+        HStack(spacing: 0) {
+            ForEach(maps) { map in
+                Button {
+                    tracing = nil
+                    mapId = map.id
+                } label: {
+                    Text(map.title)
+                        .font(JPFont.caption.weight(map.id == current.id ? .semibold : .regular))
+                        .foregroundStyle(map.id == current.id ? WebTheme.accent : WebTheme.text2)
+                        .padding(.horizontal, JPSpace.xs)
+                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(map.id == current.id ? .isSelected : [])
+                .accessibilityIdentifier("search.spotIndex.mapKind.\(map.id)")
+            }
+        }
+    }
+
+    /// 地図の右の札: 区分の名前・件数・上位の名前・「すべて見る」（その区分の撮影スポットの一覧へ）
+    private func areaCard(_ area: SpotMapArea) -> some View {
+        VStack(alignment: .leading, spacing: JPSpace.xxs) {
+            Text(area.title)
+                .font(JPFont.rowTitle)
+                .foregroundStyle(WebTheme.text)
+                .lineLimit(1)
+                .accessibilityAddTraits(.isHeader)
+            Text(L("撮影スポット \(area.count)件", area.count == 1 ? "1 photo spot" : "\(area.count) photo spots"))
+                .font(JPFont.meta)
+                .foregroundStyle(WebTheme.text2)
+                .lineLimit(1)
+            // 名前の行は**切れる側**（大きな字では先に縮む・2行まで）
+            Text(area.namesLine)
+                .font(JPFont.footnote)
+                .foregroundStyle(WebTheme.text2)
+                .lineLimit(2)
+                .layoutPriority(-1)
+            Spacer(minLength: 0)
+            NavigationLink {
+                OfficialSpotIndexView(scope: area.scope, spots: spots, photos: photos, photosKnown: photosKnown)
+            } label: {
+                // 「北海道をすべて見る ›」（見出しの全国の「すべて見る」と分ける）。**切れない側**（大きな字でも残す）。
+                // 読み上げは「北海道の撮影スポットをすべて見る」
+                MoreLink(text: area.seeAllLabel)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .layoutPriority(1)
+            .accessibilityLabel(area.seeAll)
+            .accessibilityIdentifier("search.spotIndex.mapSeeAll")
+        }
+        .padding(.horizontal, JPSpace.s)
+        .padding(.top, JPSpace.s)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .jpCardFace()
+        .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("search.spotIndex.regionCard")
+    }
+
+    /// その地方の県の札の列（横に送る）
+    private func cardsRow(_ selected: SpotPrefectureIndex.Group) -> some View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 8) {
                     ForEach(selected.cards) { card in
@@ -112,10 +251,6 @@ struct SearchSpotIndexSection: View {
             .frame(height: Self.cardColumnHeight)
             // 地方を替えたら札の列は頭から（前の地方の送った位置を持ち越さない）
             .id(selected.id)
-        }
-        // 実機の絵・UI テストが段の高さを測る目印（地方を替えた前後で同じか）
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("search.spotIndex")
     }
 
     /// 県の札（写真・明朝の県名・件数）。写真が無ければ札の地に真鍮のピン（黒地の上）

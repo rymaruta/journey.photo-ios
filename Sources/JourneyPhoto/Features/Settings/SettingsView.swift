@@ -387,6 +387,8 @@ struct SettingsView: View {
                 .buttonStyle(JPRowButtonStyle())
                 .accessibilityIdentifier("settings.trunkPrivacy")
             }
+            // 2026-11-11 owner 承認（#526）: 検索エンジンにプロフィールを表示しない（既定はオフ＝表示する）
+            SearchHiddenSettingRow(profile: myProfile)
         }
     }
 
@@ -531,7 +533,7 @@ enum SettingsOutline {
                 return ["settings.trunk", "settings.camper", "settings.pass", "settings.passBook",
                         "settings.albums", "settings.plans"]
             case .notifications: return ["settings.push"]
-            case .privacy: return ["settings.blocked", "settings.closeFriends", "settings.trunkPrivacy"]
+            case .privacy: return ["settings.blocked", "settings.closeFriends", "settings.trunkPrivacy", "settings.searchHidden"]
             case .photos: return ["settings.favorites", "settings.compositionCatalog", "settings.storage"]
             case .help: return ["settings.whatsNew", "settings.legal", "settings.contact"]
             case .account: return ["settings.password"]

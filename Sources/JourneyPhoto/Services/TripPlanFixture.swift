@@ -37,6 +37,15 @@ enum TripPlanFixture {
         #endif
     }
 
+    /// 運ぶ印の版で描く（`-JPTripPlanDragHandle YES`・見本のときだけ）。行全体を運ぶ版と比べる UI テスト用
+    static var dragHandleVariant: Bool {
+        #if DEBUG
+        return isOn && UserDefaults.standard.bool(forKey: "JPTripPlanDragHandle")
+        #else
+        return false
+        #endif
+    }
+
     static var failing: Bool {
         #if DEBUG
         return isOn && UserDefaults.standard.bool(forKey: failKey)
@@ -67,7 +76,20 @@ enum TripPlanFixture {
         let hakodate = TripPlan(planId: "fixture-hakodate", title: "函館の旅",
                                 days: [TripDay(items: [.location(slug: "函館", note: nil)])],
                                 createdAt: "2026-11-01T00:00:00Z", updatedAt: "2026-11-01T00:00:00Z")
-        return [kanazawa, hakodate]
+        // 2026-11-11 owner の実機の形（1 日 1 か所・空の日）に、海を越える日を足したもの。
+        // 日をまたぐ区間・長い移動（日本 → ブラジル）・空の日の追加の行を撮る（`testCapturesTripPlanLongLegs`）
+        let longEnd = TripPlanText.calendar.date(byAdding: .day, value: 3, to: start) ?? start
+        let brazil = TripPlan(
+            planId: "fixture-kyoto-brazil", title: "京都とブラジルの旅",
+            startDate: TripPlanText.ymd(start), endDate: TripPlanText.ymd(longEnd),
+            days: [
+                TripDay(items: [.spot(spotId: "sp_d41c6b8e7025", note: nil)]),   // 伏見稲荷大社
+                TripDay(items: [.spot(spotId: "sp_4e08cfbfd65d", note: nil)]),   // 一乗寺 圓光寺
+                TripDay(),                                                        // 空の日
+                TripDay(items: [.spot(spotId: "sp_2f29aa9f9a28", note: nil)]),   // サンパウロ美術館
+            ],
+            createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z")
+        return [kanazawa, hakodate, brazil]
     }
 }
 
@@ -139,4 +161,28 @@ actor TripPlanFixtureStore {
 final class TripPlanFixtureCounter: ObservableObject {
     static let shared = TripPlanFixtureCounter()
     @Published var sends = 0
+    /// 運ぶ操作の数（見本のときだけ・2026-11-11 運ぶの回帰を数で分ける）:
+    /// 持ち上がった（preview が出た）・落とす先に入った（isTargeted が真）・落とした（drop が呼ばれた）・断った
+    @Published var lifted = 0
+    @Published var targeted = 0
+    @Published var dropped = 0
+    @Published var rejected = 0
+
+    var dragLine: String { "lift=\(lifted) target=\(targeted) drop=\(dropped) reject=\(rejected)" }
+
+    /// 運ぶ操作の出来事の並び（見本のときだけ・(b)「持ち上がったが落ちない」をどの部品で止まったかで分ける）。
+    /// `L` 持ち上がった（preview が出た）・`E` preview が消えた・`T+日.行` 落とす先に入った・`T-日.行` 出た・
+    /// `D日.行` drop が呼ばれた・`R` 断った・`S` 落とした先の日程に入れた。`@` の後は持ち上がってからのミリ秒。最後の 24 個
+    @Published var trail: [String] = []
+    private var liftedAt: Date?
+
+    func mark(_ event: String) {
+        let now = Date()
+        if event == "L" { liftedAt = now }
+        let ms = liftedAt.map { Int(now.timeIntervalSince($0) * 1000) } ?? -1
+        trail.append("\(event)@\(ms)")
+        if trail.count > 24 { trail.removeFirst(trail.count - 24) }
+    }
+
+    var trailLine: String { trail.joined(separator: " ") }
 }

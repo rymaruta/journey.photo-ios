@@ -213,6 +213,11 @@ struct TheirTrunkView: View {
                                     parts: trunk.equipped, tagPicks: trunk.tagPicks)
                 }
             }
+            // 回す画面で取っておいた絵（`TrunkTextures.keep`）を、この画面から離れたら手放す（回す画面を出している間は持っておく・
+            // 2026-11-11・自分のトランクの画面と同じ）
+            .onDisappear {
+                if !showSpin { TrunkTextures.forget() }
+            }
     }
 
     private func reload() async {

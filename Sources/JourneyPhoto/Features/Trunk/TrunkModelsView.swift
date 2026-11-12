@@ -191,6 +191,16 @@ struct TrunkProModelsView: View {
         .webScreen()
         .navigationTitle(L("特別なトランク", "Special trunks"))
         .navigationBarTitleDisplayMode(.inline)
+        // 測る起動（`-JPPreviewTrunkPerf YES`・Debug のみ）のときだけ: 開いて落ち着いた後と、離れた後のメモリ（2026-11-11・測るだけ）
+        .task {
+            guard TrunkPerfMeter.shared.enabled else { return }
+            TrunkPerfMeter.shared.hit("ProListOpen")
+            try? await Task.sleep(for: .seconds(2))
+            TrunkPerfMeter.shared.mark("ProList")
+            // この後の送りの最中の停止の積みを撮れるよう、起動の間に溜まった見本を空にする
+            PerfRecorder.shared.clearSamples()
+        }
+        .onDisappear { TrunkPerfMeter.shared.mark("ProListGone") }
         .fullScreenCover(isPresented: $showPaywall, onDismiss: {
             // 買えたかもしれない: Pro の型を選べるか読み直す
             Task { await model.refreshAfterPaywall() }
@@ -201,6 +211,8 @@ struct TrunkProModelsView: View {
     }
 
     private func proCard(_ trunk: TrunkModel) -> some View {
+        // 測る起動のときだけ、札を作った回数を数える（2026-11-11・測るだけ）
+        let _ = TrunkPerfMeter.shared.hit("ProCardBuild")
         let info = TrunkText.info(trunk)
         let state = model.state
         let isPro = state?.isPro ?? false

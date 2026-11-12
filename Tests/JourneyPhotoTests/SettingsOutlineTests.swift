@@ -54,7 +54,8 @@ final class SettingsOutlineTests: XCTestCase {
     private func settingsSources() throws -> String {
         try ["Features/Settings/SettingsView.swift", "Features/Settings/TrunkPrivacySection.swift",
              "Features/Pro/ProSettingsSection.swift", "Features/Pro/LightAlertSettingsRows.swift",
-             "Features/Trips/OfflineSavedView.swift"].map(source).joined(separator: "\n")
+             "Features/Trips/OfflineSavedView.swift",
+             "Features/Settings/SearchHiddenSettingRow.swift"].map(source).joined(separator: "\n")
     }
 
     // MARK: - 並び（値）
@@ -179,7 +180,9 @@ final class SettingsOutlineTests: XCTestCase {
                        id("settings.passBook"), id("settings.albums"), id("settings.plans")], in: tools, "旅の道具の順")
         let privacy = slice(view, from: "private var privacySection: some View {", to: "private var photosSection")
         assertInOrder(["SettingsOutline.Part.privacy.title", id("settings.blocked"), id("settings.closeFriends"),
-                       "if showsTrunkPrivacy {", id("settings.trunkPrivacy")], in: privacy, "プライバシーの順")
+                       "if showsTrunkPrivacy {", id("settings.trunkPrivacy"),
+                       // 2026-11-11 owner 承認（#526）: トランクを見せるの下
+                       "SearchHiddenSettingRow(profile: myProfile)"], in: privacy, "プライバシーの順")
         let photos = slice(view, from: "private var photosSection: some View {", to: "private var helpSection")
         assertInOrder(["SettingsOutline.Part.photos.title", id("settings.favorites"), id("settings.compositionCatalog"),
                        id("settings.storage")], in: photos, "写真と撮影の順")

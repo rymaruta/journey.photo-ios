@@ -2431,6 +2431,93 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "11k-撮影スポットの一覧（全国・「寺」で絞った）")
     }
 
+    /// **探すの「撮影スポット」の段の地図**（2026-11-11 owner「iOS 側にもこの機能欲しい」）。
+    ///
+    /// 1. 「写真」の段ぜんたい（`search.spotIndex.block`）の高さを取り、「地図」に替えて**同じ高さか**を数で確かめる
+    /// 2. 地図の右上（北海道）をひと押しして、右の札が北海道になったことを確かめて撮る
+    /// 3. 長押し（0.6 秒）してから南西へなぞって離し、別の地方に替わったことを撮る
+    /// 4. 札の「すべて見る」→ その地方の撮影スポットの一覧を撮る
+    ///
+    /// 高さはログに `spotMap.height photos=… map=…`。段が出なければ撮らない（この試験の決まり）
+    func testCapturesSearchSpotMap() {
+        let app = XCUIApplication()
+        // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 1 else { return }
+        tabBar.buttons.element(boundBy: 1).tap()
+
+        let block = app.otherElements["search.spotIndex.block"].firstMatch
+        guard block.waitForExistence(timeout: 30) else { return }
+        let mapTab = app.buttons["search.spotIndex.mode.map"].firstMatch
+        guard mapTab.waitForExistence(timeout: 5) else { return }
+        // 段の下の端まで見えるように送る（札の行が押せるまで）
+        let firstCard = app.buttons.matching(identifier: "search.spotIndex.prefecture").firstMatch
+        var swipes = 0
+        while !(mapTab.isHittable && firstCard.isHittable), swipes < 6 {
+            app.swipeUp(velocity: .slow)
+            Thread.sleep(forTimeInterval: 1)
+            swipes += 1
+        }
+        guard mapTab.isHittable, firstCard.isHittable else { return }
+        Thread.sleep(forTimeInterval: 2)
+        let photosHeight = block.frame.height
+
+        mapTab.tap()
+        // 型を問わずに探す（run 1032 で Other では見つからなかった。この回で足したのは読み上げの既定の操作。型はログに出す）
+        let map = app.descendants(matching: .any).matching(identifier: "search.spotIndex.map").firstMatch
+        if map.waitForExistence(timeout: 5) { print("spotMap.elementType \(map.elementType.rawValue)") }
+        XCTAssertTrue(map.waitForExistence(timeout: 5), "「地図」に替えても地図が出ない")
+        Thread.sleep(forTimeInterval: 1)
+        let mapHeight = block.frame.height
+        print("spotMap.height photos=\(photosHeight) map=\(mapHeight)")
+        XCTAssertEqual(photosHeight, mapHeight, accuracy: 0.5, "「写真｜地図」で段の高さが変わった（\(photosHeight) → \(mapHeight)）")
+        shoot(app, "11l-探す（撮影スポットの段・地図）")
+
+        // 右上（北海道）をひと押し
+        let card = app.otherElements["search.spotIndex.regionCard"].firstMatch
+        map.coordinate(withNormalizedOffset: CGVector(dx: 0.82, dy: 0.14)).tap()
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertTrue(card.staticTexts["北海道"].waitForExistence(timeout: 3), "地図で北海道を押しても札が替わらない")
+        shoot(app, "11m-探す（撮影スポットの段・地図で北海道）")
+
+        // 長押ししてから南西（九州の辺り）へなぞって離す。**なぞる間は画面が流れない**（地図の y が前後で同じ）
+        let mapTop = map.frame.minY
+        map.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.62))
+            .press(forDuration: 0.6, thenDragTo: map.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.85)))
+        Thread.sleep(forTimeInterval: 1)
+        print("spotMap.trace mapTop before=\(mapTop) after=\(map.frame.minY)")
+        XCTAssertEqual(map.frame.minY, mapTop, accuracy: 0.5, "なぞっている間に画面が流れた")
+        XCTAssertFalse(card.staticTexts["北海道"].exists, "なぞって離しても地方が替わらない")
+        shoot(app, "11n-探す（撮影スポットの段・地図をなぞった）")
+
+        let seeAll = app.buttons["search.spotIndex.mapSeeAll"].firstMatch
+        guard seeAll.waitForExistence(timeout: 5), seeAll.isHittable else { return }
+        seeAll.tap()
+        guard app.textFields["spotIndex.field"].waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "11o-撮影スポットの一覧（地方）")
+
+        // 戻って、地図の上から払うと段（画面）が流れる（長押しをしない指はスクロールに渡す）
+        goBack(app)
+        guard map.waitForExistence(timeout: 5), map.isHittable else { return }
+        // 地図の上から払っても流れなかった件（run 1009〜1018）は、SwiftUI の「長押し → 引く」が指を取っていた（run 1022）
+        let before = map.frame.minY
+        map.swipeUp()
+        Thread.sleep(forTimeInterval: 1)
+        print("spotMap.swipe mapTop before=\(before) after=\(map.frame.minY)")
+        XCTAssertLessThan(map.frame.minY, before - 20, "地図の上から払っても画面が流れない")
+    }
+
     /// **「行きたい場所」を地図で見る**（2026-10-03・3か月の計画の7の第一歩）。マイページの
     /// 「行きたい場所」のタブ（「地図で見る」が見える1枚）と、押した先の地図の1枚。
     ///
@@ -2592,11 +2679,29 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 8)
         shoot(app, "65-旅行プランの日程（自動保存・移動の見込み）")
         XCTAssertEqual(fixtureSends(app, "open"), "0", "開いただけで送っている")
+        // 日をまたぐ区間（2026-11-11 owner の実機「バスとか出てこないよ」）: 2 日目の最初の上に「前の日の千里浜…から」
+        let crossDay = app.descendants(matching: .any).matching(identifier: "trip.leg")
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "前の日の")).firstMatch
+        var crossPushes = 0
+        while !crossDay.exists, crossPushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            crossPushes += 1
+        }
+        let crossLine = "TRIPLEG crossDay exists=\(crossDay.exists) label=\(crossDay.exists ? crossDay.label : "-")"
+        print(crossLine)
+        XCTContext.runActivity(named: crossLine) { _ in }
+        XCTAssertTrue(crossDay.exists, "日をまたぐ区間が出ていない")
+        if crossDay.exists {
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "65f-旅行プランの日程（前の日の最後の場所からの移動の目安）")
+        }
+        for _ in 0..<crossPushes { app.swipeDown(); Thread.sleep(forTimeInterval: 0.5) }
 
         // 運ぶ: 1 日目の最後（千里浜）を 2 日目の最初の行へ（日をまたぐ）。運んだら待って 1 回送る。
-        // run 971: 押さえて運んだのに送った回数が 0 のままだった。run 974: 名前の順は日をまたいでも変わらない
-        // （1 日目の最後 → 2 日目の最初）ので測れなかった。**千里浜の「…」の位置（「1 日目・3 番目」）**を前後で残し、
-        // 落とせたかを見る。1 回目は押さえて運ぶだけ、位置が変わらなければ 2 回目は行き先で止まってから離す
+        // 千里浜の「…」の位置（「1 日目・3 番目」）を前後で見る。1 回目は止めずに離す。入らなければ 2 回目は行き先で止まってから離す。
+        // **「止めずに離して 1 回目で入る」で縛らない理由**（札 #521・run 1031）: 試しの運びのあと 1.2 秒でも 7 回中 2 回入らなかった
+        // （持ち上がったが drop が呼ばれない・落とす先から出た知らせも来ない）。各回の 1 回目の数と出来事の並びはログに残す
         let handles = app.descendants(matching: .any).matching(identifier: "tripPlan.dragHandle")
         let menu = app.buttons["「千里浜なぎさドライブウェイ」の操作"].firstMatch
         func order() -> String { (menu.value as? String) ?? "nil" }
@@ -2617,19 +2722,19 @@ final class ScreenshotTests: XCTestCase {
                 from.press(forDuration: 1.2, thenDragTo: to)
                 Thread.sleep(forTimeInterval: 2)
                 var after = order()
-                _ = fixtureSends(app, "orderAfterPress[\(after)]")
+                _ = fixtureSends(app, "orderAfterPress[\(after)] drag[\(dragCounts(app))]")
                 if after == before {
                     let again = handles.element(boundBy: 2)
                     again.press(forDuration: 1.2, thenDragTo: handles.element(boundBy: 3),
                                 withVelocity: .slow, thenHoldForDuration: 1.0)
                     Thread.sleep(forTimeInterval: 2)
                     after = order()
-                    _ = fixtureSends(app, "orderAfterHold[\(after)]")
+                    _ = fixtureSends(app, "orderAfterHold[\(after)] drag[\(dragCounts(app))]")
                 }
                 Thread.sleep(forTimeInterval: 11)
                 shoot(app, "65b-旅行プランの日程（運んだ・日をまたいで2日目へ）")
                 let sent = fixtureSends(app, "afterDrag")
-                XCTAssertNotEqual(after, before, "運ぶ印で運んでも並びが変わらない")
+                XCTAssertNotEqual(after, before, "運んでも並びが変わらない")
                 if after != before { XCTAssertEqual(sent, "1", "運んだあとに 1 回送っていない") }
             }
         }
@@ -2666,6 +2771,190 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 13)
         XCTAssertEqual(fixtureSends(app, "after5edits"), "\(sentBefore + 1)",
                        "続けて 5 回直したのに、まとめて 1 回で送っていない")
+    }
+
+    /// 運ぶ操作の数（見本のときだけ画面に出す `tripPlan.fixtureDrag`）と出来事の並び（`tripPlan.fixtureDragTrail`）
+    private func dragCounts(_ app: XCUIApplication) -> String {
+        let counts = (app.descendants(matching: .any)["tripPlan.fixtureDrag"].firstMatch.value as? String) ?? "nil"
+        let trail = (app.descendants(matching: .any)["tripPlan.fixtureDragTrail"].firstMatch.value as? String) ?? "nil"
+        return "\(counts)] trail[\(trail)"
+    }
+
+    /// **数えない試しの運び**: 押さえて自分の行の上で離す（並びは変わらない）。テストの最初の起動の 1 回目は
+    /// 持ち上がらないことがある（run 1016/1020/1025/1030 で 4/4）ので、測る運びの前に 1 回入れる。
+    /// run 1031: 動かさずに離すこの形では 2 回とも持ち上がらなかった（lift=0）。試しとして効いているかは確かめていない
+    private func warmUpDrag(_ app: XCUIApplication, _ source: XCUIElement) {
+        source.press(forDuration: 1.2, thenDragTo: source)
+        Thread.sleep(forTimeInterval: 2)
+        let line = "TRIPDRAG warm-up after[\(dragCounts(app))]"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+    }
+
+    /// 見本の旅を開き、運ぶ元（1 日目の 3 番目）と行き先（2 日目の「越前海岸 呼鳥門」の「…」）が押せる所まで上げる
+    private func dragStage(_ app: XCUIApplication) -> (XCUIElement, XCUIElement, Int)? {
+        guard openFixturePlan(app) else { return nil }
+        Thread.sleep(forTimeInterval: 3)
+        let source = app.descendants(matching: .any).matching(identifier: "tripPlan.dragHandle").element(boundBy: 2)
+        let target = app.buttons["「越前海岸 呼鳥門」の操作"].firstMatch
+        var pushes = 0
+        while !(source.isHittable && target.isHittable), pushes < 4 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard source.isHittable, target.isHittable else { return nil }
+        return (source, target, pushes)
+    }
+
+    /// **(b)「持ち上がったが落ちない」をどの部品で止まったかで分ける**（札 #521・2026-11-11）。
+    /// run 1025 で押さえる時間 0.8 秒のとき 2/5 出た。0.8 秒で 6 起動 × 4 回運び、1 回ごとに出来事の並び
+    /// （持ち上がった・落とす先に入った／出た・drop が呼ばれた・断った・preview が消えた）を残す。合否は無い。
+    /// 名指しのときだけ（`screens=testMeasuresTripPlanDragTrail`）。1 起動 80 秒ほど × 6 で 20 分の上限に入れる
+    func testMeasuresTripPlanDragTrail() {
+        executionTimeAllowance = 1200
+        for launch in 0..<6 {
+            let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+            defer { app.terminate() }
+            guard let stage = dragStage(app) else {
+                let line = "TRIPDRAG trail launch=\(launch) not-ready"
+                print(line); XCTContext.runActivity(named: line) { _ in }
+                continue
+            }
+            let (source, target, pushes) = stage
+            for drag in 1...4 {
+                guard source.isHittable, target.isHittable else { break }
+                source.press(forDuration: 0.8, thenDragTo: target)
+                Thread.sleep(forTimeInterval: 2)
+                let line = "TRIPDRAG trail launch=\(launch) drag=\(drag) hold=0.8 pushes=\(pushes) after[\(dragCounts(app))]"
+                print(line)
+                XCTContext.runActivity(named: line) { _ in }
+            }
+        }
+    }
+
+    /// **試しの運びを 1 回入れたあと、押さえて 1.2 秒・止めずに離して 1 回目で入るか**を続けて数える
+    /// （`testCapturesTripPlanDays` を縛る前の裏づけ・札 #521）。7 起動。合否は無く、入ったかを位置で残す。
+    /// 名指しのときだけ（`screens=testMeasuresTripPlanDragFirstTry`）。テストの最初の起動を含める
+    func testMeasuresTripPlanDragFirstTry() {
+        executionTimeAllowance = 1200
+        for launch in 0..<7 {
+            let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+            defer { app.terminate() }
+            guard let stage = dragStage(app) else {
+                let line = "TRIPDRAG first launch=\(launch) not-ready"
+                print(line); XCTContext.runActivity(named: line) { _ in }
+                continue
+            }
+            let (source, target, pushes) = stage
+            let position = app.buttons["「千里浜なぎさドライブウェイ」の操作"].firstMatch
+            let posBefore = (position.value as? String) ?? "nil"
+            warmUpDrag(app, source)
+            let posWarm = (position.value as? String) ?? "nil"
+            source.press(forDuration: 1.2, thenDragTo: target)
+            Thread.sleep(forTimeInterval: 2)
+            let posAfter = (position.value as? String) ?? "nil"
+            let line = "TRIPDRAG first launch=\(launch) pushes=\(pushes) entered=\(posAfter != posWarm) "
+                + "pos[\(posBefore) -> \(posWarm) -> \(posAfter)] after[\(dragCounts(app))]"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+        }
+    }
+
+    /// **動かす速さで (b)「持ち上がったが落ちない」の率を比べる**（札 #521・2026-11-11）。(b) は起動の最初の運びでだけ出た
+    /// （4/27、2 回目以降 0/33）ので、1 起動 1 回だけ運ぶ。押さえて 1.2 秒・止めずに離す（`thenHoldForDuration: 0`）。
+    /// 9 起動（テストの最初の起動は (a) が出るので数えない）。離して 2 秒後と 5 秒後に、真鍮の落とす先の線
+    /// （`tripPlan.dropLine`・見本のときだけ数えられる）が残っているかも数える。合否は無い。1 本 10 分ほど
+    private func measureDragVelocity(_ velocity: XCUIGestureVelocity, _ label: String) {
+        executionTimeAllowance = 1200
+        for launch in 0..<9 {
+            let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+            defer { app.terminate() }
+            guard let stage = dragStage(app) else {
+                let line = "TRIPDRAG velocity=\(label) launch=\(launch) not-ready"
+                print(line); XCTContext.runActivity(named: line) { _ in }
+                continue
+            }
+            let (source, target, pushes) = stage
+            let lines = app.descendants(matching: .any).matching(identifier: "tripPlan.dropLine")
+            let linesBefore = lines.count
+            source.press(forDuration: 1.2, thenDragTo: target, withVelocity: velocity, thenHoldForDuration: 0)
+            Thread.sleep(forTimeInterval: 2)
+            let at2 = lines.count
+            let counts = dragCounts(app)
+            Thread.sleep(forTimeInterval: 3)
+            let at5 = lines.count
+            let where5 = at5 > 0 ? lines.firstMatch.label : "-"
+            let line = "TRIPDRAG velocity=\(label) launch=\(launch) pushes=\(pushes) "
+                + "dropLine[before=\(linesBefore) 2s=\(at2) 5s=\(at5) at=\(where5)] after[\(counts)]"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+        }
+    }
+
+    /// 名指しのときだけ（`screens=testMeasuresTripPlanDragVelocitySlow`）
+    func testMeasuresTripPlanDragVelocitySlow() { measureDragVelocity(.slow, "slow") }
+    /// 名指しのときだけ（`screens=testMeasuresTripPlanDragVelocityDefault`）
+    func testMeasuresTripPlanDragVelocityDefault() { measureDragVelocity(.default, "default") }
+    /// 名指しのときだけ（`screens=testMeasuresTripPlanDragVelocityFast`）
+    func testMeasuresTripPlanDragVelocityFast() { measureDragVelocity(.fast, "fast") }
+
+    /// **日をまたぐ区間と長い移動**（2026-11-11 owner の実機「バスとか出てこないよ」「日本からブラジルとか無理じゃん」）。
+    /// 見本の「京都とブラジルの旅」（1 日 1 か所・空の日・サンパウロ）を開き、前の日からの区間と、海を越える区間の
+    /// 「飛行機などの長い移動」・そのシート（Google フライト）を撮る。出なければ撮らずに抜ける
+    func testCapturesTripPlanLongLegs() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+        guard openTripsRow(app, "trips.plans") else { return }
+        let plan = app.descendants(matching: .any).matching(identifier: "trips.plan")
+            .matching(NSPredicate(format: "label CONTAINS %@", "京都とブラジル")).firstMatch
+        var pushes = 0
+        while plan.waitForExistence(timeout: 10), !plan.isHittable, pushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard plan.exists, plan.isHittable else { return }
+        plan.tap()
+        guard app.descendants(matching: .any)["tripPlan.fixtureSends"].firstMatch.waitForExistence(timeout: 15) else { return }
+        // 移動の見込み（Apple のサーバー）を待つ
+        Thread.sleep(forTimeInterval: 8)
+        shoot(app, "66-旅行プランの日程（1日1か所・前の日からの移動・空の日）")
+        let legs = app.descendants(matching: .any).matching(identifier: "trip.leg")
+        let cross = legs.matching(NSPredicate(format: "label BEGINSWITH %@", "前の日の伏見稲荷大社から")).firstMatch
+        let long = legs.matching(NSPredicate(format: "label CONTAINS %@", "飛行機などの長い移動")).firstMatch
+        let line = "TRIPLEG legs=\(legs.count) cross=\(cross.exists) long=\(long.exists)"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        XCTAssertTrue(cross.exists, "1 日 1 か所のプランで、前の日からの区間が出ない")
+        // 縦の線は行の高さいっぱい（見本のときだけ値に「line=… row=…」が出る・確かめ役の指摘）
+        if cross.exists, let value = cross.value as? String {
+            let nums = value.split(separator: " ").compactMap { Double($0.split(separator: "=").last ?? "") }
+            let measured = "TRIPLEG connector \(value)"
+            print(measured)
+            XCTContext.runActivity(named: measured) { _ in }
+            if nums.count == 2 {
+                XCTAssertGreaterThanOrEqual(nums[0], nums[1] - 1, "縦の線が行の高さまで伸びていない: \(value)")
+                XCTAssertGreaterThanOrEqual(nums[1], 44 - 0.5, "区間の行が 44pt より低い: \(value)")
+            } else {
+                XCTFail("線の高さが読めない: \(value)")
+            }
+        }
+        XCTAssertTrue(long.exists, "日本 → ブラジルの区間が長い移動の形で出ない")
+        pushes = 0
+        while long.exists, !long.isHittable, pushes < 4 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard long.exists, long.isHittable else { return }
+        shoot(app, "66b-旅行プランの日程（飛行機などの長い移動・空の日の追加）")
+        long.tap()
+        let flights = app.buttons["trip.leg.flights"].firstMatch
+        XCTAssertTrue(flights.waitForExistence(timeout: 10), "長い移動のシートに Google フライトが無い")
+        XCTAssertFalse(app.buttons["trip.leg.apple"].firstMatch.exists, "長い移動のシートに Apple のマップがある（経路が無い）")
+        guard flights.exists else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "66c-長い移動のシート（Google フライトで探す）")
     }
 
     /// **送れていないとき**（圏外・断られた）。直しは画面に残り、「まだ送れていません」と「もう一度試す」が出る
@@ -3522,6 +3811,16 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
         }
 
+        // 公開範囲とプライバシー: 「検索エンジンにプロフィールを表示しない」（2026-11-11 owner 承認・#526）。
+        // 自分のプロフィールが読めているときだけ出る行なので、出なければ撮らずに先へ（撮れないのを失敗にしない）
+        let searchHidden = app.descendants(matching: .any)["settings.searchHidden"].firstMatch
+        if searchHidden.waitForExistence(timeout: 5) {
+            scrollTo(searchHidden, in: app)
+            XCTAssertGreaterThanOrEqual(searchHidden.frame.height, 44, "検索エンジンの入切が 44pt 未満")
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "102g-設定（公開範囲とプライバシー）")
+        }
+
         // 最後の危ない操作（ログアウト・アカウントの削除は別々の札）
         let delete = app.buttons["settings.deleteAccount"].firstMatch
         guard delete.waitForExistence(timeout: 5) else { return XCTFail("設定にアカウントの削除が無い") }
@@ -4315,6 +4614,460 @@ final class ScreenshotTests: XCTestCase {
             shoot(app, name)
         }
         close.tap()
+    }
+
+    // MARK: - 旅のトランクの重さを測る（2026-11-11・owner「旅のトランク重すぎるな」「重いのはトランクを回したり、Pro で使える
+    // トランクの一覧を見たとき」）
+    //
+    // アプリ側の `TrunkPerfMeter`（`-JPPreviewTrunkPerf YES`・見えない要素 `trunk.perf`）の数を操作の前後で読み、差をログの
+    // `TRUNKPERF:` の行に出す。主スレッドが止まった時刻と、止まっている最中の積み（`perf.probe` の `stalls=`・`samples=`）は
+    // 最後に `PERF-PROBE` の行で残す。普段の回では流さない（`Tools/pick-ui-tests.py` の `ONLY_WHEN_NAMED`）。
+    // 名指しは `screens=testMeasuresTrunk`。値は Mac の CI のシミュレーターのもの（実機ではない）。
+    // `…Before` は 2026-11-11 の直しの前の作り（`-JPPreviewTrunkDiag spincont,spinlazy,spinlink`）で、同じ回の前後を比べる
+
+    private static let trunkPerfArgs = ["-JPPreviewTrunk", "YES", "-JPPreviewPro", "YES", "-JPPreviewTrunkPerf", "YES",
+                                        "-JPPreviewPerfProbe", "YES"]
+
+    /// `trunk.perf` の値を「名前 → 欄=値」に分ける（`Process` の欄も同じ形）
+    private func trunkPerf(_ app: XCUIApplication) -> [String: [String: String]] {
+        let probe = app.descendants(matching: .any)["trunk.perf"].firstMatch
+        guard probe.waitForExistence(timeout: 5) else { return [:] }
+        // 読み上げの値は 0.5 秒ごとに読み直される。いちばん新しい値を読む
+        Thread.sleep(forTimeInterval: 0.6)
+        var out: [String: [String: String]] = [:]
+        for entry in ((probe.value as? String) ?? "").split(separator: ";") {
+            let words = entry.split(separator: " ")
+            guard let name = words.first else { continue }
+            var fields: [String: String] = ["_raw": words.dropFirst().joined(separator: " ")]
+            for w in words.dropFirst() {
+                let kv = w.split(separator: "=", maxSplits: 1)
+                if kv.count == 2 { fields[String(kv[0])] = String(kv[1]) }
+            }
+            out[String(name)] = fields
+        }
+        return out
+    }
+
+    /// 1 つの操作の前後の差を行にする（回数・時間は差、コマの間隔は差、注記とメモリはそのまま）。
+    /// 返す値は「名前.欄 → 差」（`GapMain.over100` など。試験の合否に使う）
+    @discardableResult
+    private func trunkPhase(_ app: XCUIApplication, _ label: String, lines: inout [String], _ body: () -> Void) -> [String: Double] {
+        let before = trunkPerf(app)
+        let start = Date()
+        body()
+        let secs = Date().timeIntervalSince(start)
+        let after = trunkPerf(app)
+        var deltas: [String: Double] = [:]
+        if after.isEmpty { lines.append("\(label) | 数が読めない（trunk.perf が無い）"); return deltas }
+        func d(_ k: String, _ f: String) -> Double {
+            let v = (Double(after[k]?[f] ?? "") ?? 0) - (Double(before[k]?[f] ?? "") ?? 0)
+            deltas["\(k).\(f)"] = v
+            return v
+        }
+        if let a = after["Process"] {
+            let cpu = d("Process", "cpu_ms")
+            deltas["Process.mem_mb"] = Double(a["mem_mb"] ?? "") ?? 0
+            lines.append(String(format: "%@ | Process secs=%.1f cpu_ms=%.0f cpu_pct=%.1f mem_mb_before=%@ mem_mb_after=%@ dev_mb_after=%@",
+                                label, secs, cpu, cpu / max(secs, 0.001) / 10,
+                                before["Process"]?["mem_mb"] ?? "-", a["mem_mb"] ?? "-", a["dev_mb"] ?? "-"))
+        }
+        for key in after.keys.sorted() where key != "Process" {
+            let a = after[key]!
+            if key.hasPrefix("Gap") {
+                let frames = d(key, "frames")
+                guard frames > 0 else { continue }
+                // max は全体の最長（差は取れない）
+                lines.append(String(format: "%@ | %@ frames=%.0f over25=%.0f over50=%.0f over100=%.0f dropped=%.0f excess_ms=%.1f avg_ms=%.2f max_all_ms=%@",
+                                    label, key, frames, d(key, "over25"), d(key, "over50"), d(key, "over100"), d(key, "dropped"),
+                                    d(key, "excess"), d(key, "sum") / max(frames, 1), a["max"] ?? "-"))
+            } else if a["n"] != nil {
+                let n = d(key, "n")
+                guard n > 0 else { continue }
+                let ms = d(key, "ms")
+                lines.append(String(format: "%@ | %@ n=%.0f total_ms=%.1f avg_ms=%.2f slow=%.0f max_all_ms=%@",
+                                    label, key, n, ms, ms / max(n, 1), d(key, "slow"), a["max"] ?? "-"))
+            } else if before[key]?["_raw"] != a["_raw"] {
+                // 生きている数・注記・途中のメモリは、変わったものだけ原文で
+                lines.append("\(label) | \(key) \(a["_raw"] ?? "")")
+            }
+        }
+        return deltas
+    }
+
+    private func trunkPerfReport(_ title: String, _ app: XCUIApplication, _ lines: [String]) {
+        for line in lines { print("TRUNKPERF: \(perfTestName) \(line)") }
+        let text = XCTAttachment(string: lines.joined(separator: "\n"))
+        text.name = "計測（旅のトランク・\(title)）"
+        text.lifetime = .keepAlways
+        add(text)
+        // 主スレッドの停止の起点と、止まっている最中の積み（`perf.probe`）
+        notePerfProbe(app, label: title)
+    }
+
+    /// **回す**（owner「トランクを回したとき重い」）: 開く（面を描き終えるまで）→ 止まっている → 指で横・縦に払う →
+    /// 止まり際の後 → 向きのボタン → 閉じる → もう一度開く。回している間の 1 コマ（`GapMain`・`GapSpin`・`SpinFrame`）・
+    /// 主スレッドの停止・前後のメモリ。**直しの合否**（直しを戻すと落ちる）: 止まっている間に箱を描かない（2026-11-11 の
+    /// 「動いている間だけ描く」）・2 回目に開くと絵を使い回す
+    func testMeasuresTrunkSpin() { measureTrunkSpin(diag: nil) }
+    /// 直しの前の作り（描き続ける・絵を塗り切らず使い回さない）。同じ回で前後を比べる。合否は付けない
+    func testMeasuresTrunkSpinBefore() { measureTrunkSpin(diag: "spincont,spinlazy,spinlink") }
+    /// 止まっている間も表示の刻みを止めない作り（2026-11-11 の `isPaused` の前）。止まっている間の CPU を比べる。合否は付けない
+    func testMeasuresTrunkSpinLinkRunning() { measureTrunkSpin(diag: "spinlink") }
+
+    private func measureTrunkSpin(diag: String?) {
+        executionTimeAllowance = 600
+        let app = launchTrunk(Self.trunkPerfArgs + (diag.map { ["-JPPreviewTrunkDiag", $0] } ?? []))
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        var lines: [String] = []
+        trunkPhase(app, "トランクの画面・止まっている", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
+        let spin = app.buttons["trunk.spin"].firstMatch
+        let box = app.descendants(matching: .any)["trunk.spin.box"].firstMatch
+        let close = app.buttons["trunk.spin.close"].firstMatch
+        for round in 1...2 {
+            guard spin.waitForExistence(timeout: 10), spin.isHittable else { return XCTFail("トランクを押せない（\(round) 回目）") }
+            var marker = ""
+            var wall = 0.0
+            let opened = trunkPhase(app, "回す画面を開く\(round)（面を描き終えるまで）", lines: &lines) {
+                let began = Date()
+                spin.tap()
+                let ready = NSPredicate(format: "value BEGINSWITH %@", "faces-ready")
+                if XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: box)], timeout: 20) == .completed {
+                    marker = (box.value as? String) ?? ""
+                    wall = Date().timeIntervalSince(began)
+                } else {
+                    XCTFail("回す画面の面を描き終えない（\(round) 回目）")
+                }
+            }
+            lines.append(String(format: "回す画面を開く%d | %@ test_wall_to_ready_s=%.2f（XCUITest の待ちを含む）", round, marker, wall))
+            if diag == nil, round == 2 {
+                XCTAssertGreaterThanOrEqual(opened["SpinReuse.n"] ?? 0, 1, "2 回目に開いても絵を使い回していない")
+            }
+            let still = trunkPhase(app, "回す画面・止まっている\(round)", lines: &lines) { Thread.sleep(forTimeInterval: 4) }
+            if diag == nil {
+                // 止まっている 4 秒（前の作りは 240 コマ）に描くのは、出した直後の数コマまで
+                XCTAssertLessThanOrEqual(still["SpinFrame.n"] ?? 0, 12, "止まっている間も箱を描き続けている（\(round) 回目）")
+            }
+            trunkPhase(app, "回す画面・指で払う\(round)", lines: &lines) {
+                for i in 0..<2 {
+                    let top = box.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15))
+                    let bottom = box.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85))
+                    let (from, to) = i % 2 == 0 ? (top, bottom) : (bottom, top)
+                    from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .default, thenHoldForDuration: 0)
+                }
+                // 最後は横に払って離す（惰性で回る）
+                for i in 0..<6 {
+                    let left = box.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5))
+                    let right = box.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
+                    let (from, to) = i % 2 == 0 ? (right, left) : (left, right)
+                    from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .fast, thenHoldForDuration: 0)
+                }
+            }
+            // 惰性で回り終える間（止まり際まで描く）と、止まりきった後
+            let coasting = trunkPhase(app, "回す画面・離した後の惰性\(round)", lines: &lines) { Thread.sleep(forTimeInterval: 6) }
+            let settled = trunkPhase(app, "回す画面・止まりきった後\(round)", lines: &lines) { Thread.sleep(forTimeInterval: 4) }
+            let perf = trunkPerf(app)
+            let applied = perf["SpinApplied"]?["_raw"] ?? "-", drawn = perf["SpinDrawn"]?["_raw"] ?? "-"
+            lines.append("回す画面・止まりきった後\(round) | 書いた向き \(applied) | 描いた向き \(drawn)")
+            if diag == nil {
+                XCTAssertGreaterThanOrEqual(Int(perf["SpinLinkPaused"]?["n"] ?? "") ?? 0, 1, "止まっても表示の刻みを止めていない（\(round) 回目）")
+                XCTAssertGreaterThan(coasting["SpinFrame.n"] ?? 0, 0, "離した後の惰性を描いていない（\(round) 回目）")
+                XCTAssertLessThanOrEqual(settled["SpinFrame.n"] ?? 0, 12, "止まりきった後も箱を描き続けている（\(round) 回目）")
+                XCTAssertEqual(applied, drawn, "止まり際の向きを描いていない（\(round) 回目）")
+            }
+            trunkPhase(app, "回す画面・向きのボタン\(round)", lines: &lines) {
+                for id in ["side", "topBack", "bottom", "front"] {
+                    let button = app.buttons["trunk.spin.view.\(id)"].firstMatch
+                    if button.waitForExistence(timeout: 5) { button.tap() }
+                    Thread.sleep(forTimeInterval: 1.5)
+                }
+            }
+            trunkPhase(app, "回す画面を閉じた後\(round)", lines: &lines) {
+                close.tap()
+                Thread.sleep(forTimeInterval: 4)
+            }
+        }
+        trunkPerfReport("回す" + (diag.map { "・\($0)" } ?? ""), app, lines)
+    }
+
+    /// **メモリの内訳**（2026-11-11・run 1014 / 1019 で、回す画面の絵をトランクの画面で先に作るとメモリが戻らないと分かった）。
+    /// トランクの画面 → 回す画面 → 閉じた後で、アプリの段ごとの印（`SpinReady`・`SpinGone`・`SpinGoneLater`）の
+    /// phys_footprint と user_tag 別をログの `TRUNKMEM:` に出す。
+    /// 今の作りと直しの前（`spincont,spinlazy,spinlink`）を、それぞれ起動し直して比べる
+    func testMeasuresTrunkMemory() { measureTrunkMemory(diag: nil) }
+    func testMeasuresTrunkMemoryBefore() { measureTrunkMemory(diag: "spincont,spinlazy,spinlink") }
+    /// **回す箱の絵を塗る時間の内訳**（2026-11-11・測るだけ）: `-JPPreviewTrunkDiag rastercost` でトランクの画面を開くと、アプリが
+    /// 回す箱の正面・背面と同じ絵を部品を 1 つずつ外して描き、組む時間と塗る時間を `RasterCost…` に残す。ログの `TRUNKRASTER:` に出す
+    func testMeasuresTrunkRasterCost() {
+        executionTimeAllowance = 300
+        let app = launchTrunk(Self.trunkPerfArgs + ["-JPPreviewTrunkDiag", "rastercost"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        let until = Date().addingTimeInterval(150)
+        var perf: [String: [String: String]] = [:]
+        while Date() < until {
+            perf = trunkPerf(app)
+            if perf["RasterCostDone"] != nil { break }
+            Thread.sleep(forTimeInterval: 2)
+        }
+        XCTAssertNotNil(perf["RasterCostDone"], "塗る時間の内訳を測り終えない")
+        for key in perf.keys.sorted() where key.hasPrefix("RasterCost") && key != "RasterCostDone" {
+            print("TRUNKRASTER: \(perf[key]?["_raw"] ?? "")")
+        }
+    }
+
+    /// **1 回目に開く間の止まり**（2026-11-11）: 前の作りと今の作りを交互に 3 回ずつ起動し、回す画面を初めて開く間の
+    /// 主スレッドの止まりを同じ回で比べる（run 1019: 今 5.25 秒・前 3.41 秒が揺れか悪化かを見る）。止まっている最中の積みも残す
+    func testMeasuresTrunkSpinFirstOpen() {
+        executionTimeAllowance = 600
+        var lines: [String] = []
+        for pair in 1...3 {
+            // 前の作り → 今（端末の正面の絵を消してから＝トランクが変わった後の 1 回目）→ 今（その次＝端末の絵を使う）
+            for diag in ["spincont,spinlazy,spinlink", "spindiskclear", "now"] {
+                let app = launchTrunk(Self.trunkPerfArgs + (diag == "now" ? [] : ["-JPPreviewTrunkDiag", diag]))
+                defer { app.terminate() }
+                guard openTrunk(app) else { XCTFail("旅のトランクを開けない"); continue }
+                Thread.sleep(forTimeInterval: 3)
+                let box = app.descendants(matching: .any)["trunk.spin.box"].firstMatch
+                trunkPhase(app, "\(diag) \(pair) 回目・回す画面を初めて開く（面を描き終えて 3 秒）", lines: &lines) {
+                    app.buttons["trunk.spin"].firstMatch.tap()
+                    let ready = NSPredicate(format: "value BEGINSWITH %@", "faces-ready")
+                    _ = XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: box)], timeout: 20)
+                    Thread.sleep(forTimeInterval: 3)
+                }
+                noteSpinDisk(app, diag: diag == "now" ? nil : diag)
+                notePerfProbe(app, label: "初めて開く・\(diag)・\(pair)")
+            }
+        }
+        for line in lines where line.contains("GapMain") || line.contains("| Spin") || line.contains("| TexL") || line.contains("| Process") {
+            print("TRUNKPERF: \(perfTestName) \(line)")
+        }
+    }
+
+    private func measureTrunkMemory(diag: String?) {
+        executionTimeAllowance = 400
+        let app = launchTrunk(Self.trunkPerfArgs + (diag.map { ["-JPPreviewTrunkDiag", $0] } ?? []))
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        let tag = diag ?? "now"
+        func dump(_ label: String) {
+            let perf = trunkPerf(app)
+            print("TRUNKMEM: \(tag) \(label) | Process mem_mb=\(perf["Process"]?["mem_mb"] ?? "-") int_mb=\(perf["Process"]?["int_mb"] ?? "-") cmp_mb=\(perf["Process"]?["cmp_mb"] ?? "-")")
+            for key in perf.keys.sorted() where key.hasPrefix("Mem") || key.hasPrefix("VM") || key == "WarmPx" || key == "SpinScene" {
+                print("TRUNKMEM: \(tag) \(label) | \(key) \(perf[key]?["_raw"] ?? "")")
+            }
+        }
+        Thread.sleep(forTimeInterval: 9)
+        dump("トランクの画面（9秒後）")
+        app.buttons["trunk.spin"].firstMatch.tap()
+        let box = app.descendants(matching: .any)["trunk.spin.box"].firstMatch
+        let ready = NSPredicate(format: "value BEGINSWITH %@", "faces-ready")
+        guard XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: box)], timeout: 20) == .completed else {
+            return XCTFail("回す画面の面を描き終えない")
+        }
+        Thread.sleep(forTimeInterval: 4)
+        dump("回す画面（4秒後）")
+        app.buttons["trunk.spin.close"].firstMatch.tap()
+        Thread.sleep(forTimeInterval: 6)
+        dump("閉じた後（6秒後）")
+    }
+
+    /// **Pro で使えるトランクの一覧**（owner「Pro で使えるトランクの一覧を見たとき重い」）: 型の画面 → 特別なトランク（6 型）を開く
+    /// （開くまで）→ 縦に送る（measure・送りのコマ落ち）→ 戻る、を 2 回。札を作った回数・作られているトランクの絵の数・
+    /// メモリの増え方と戻り方
+    func testMeasuresTrunkProModels() { measureTrunkPro(diag: nil) }
+
+    private func measureTrunkPro(diag: String?) {
+        executionTimeAllowance = 600
+        let app = launchTrunk(Self.trunkPerfArgs + (diag.map { ["-JPPreviewTrunkDiag", $0] } ?? []))
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        var lines: [String] = []
+        trunkPhase(app, "トランクの画面・止まっている", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
+        trunkPhase(app, "型の画面を開く", lines: &lines) {
+            guard openTrunkRow(app, "trunk.models") else { return XCTFail("型の行が無い") }
+            _ = app.buttons["trunk.models.pro"].firstMatch.waitForExistence(timeout: 10)
+            Thread.sleep(forTimeInterval: 2)
+        }
+        let proRow = app.buttons["trunk.models.pro"].firstMatch
+        let card = app.buttons["trunk.proModels.card"].firstMatch
+        for round in 1...2 {
+            scrollTo(proRow, in: app)
+            guard proRow.isHittable else { return XCTFail("特別なトランクの行を押せない（\(round) 回目）") }
+            var opened = 0.0
+            trunkPhase(app, "特別なトランクを開く\(round)（札が出るまで＋2秒）", lines: &lines) {
+                let began = Date()
+                proRow.tap()
+                _ = card.waitForExistence(timeout: 15)
+                opened = Date().timeIntervalSince(began)
+                Thread.sleep(forTimeInterval: 2)
+            }
+            lines.append(String(format: "特別なトランクを開く%d | test_wall_to_card_s=%.2f（XCUITest の待ちを含む）", round, opened))
+            trunkPhase(app, "特別なトランク・止まっている\(round)", lines: &lines) { Thread.sleep(forTimeInterval: 3) }
+            trunkPhase(app, "特別なトランク・縦に送る\(round)", lines: &lines) {
+                if round == 1 {
+                    let options = XCTMeasureOptions()
+                    options.iterationCount = 3
+                    measure(metrics: [XCTOSSignpostMetric.scrollingAndDecelerationMetric, XCTCPUMetric(application: app),
+                                      XCTMemoryMetric(application: app)], options: options) {
+                        app.swipeUp(velocity: .fast)
+                        app.swipeUp(velocity: .fast)
+                        app.swipeDown(velocity: .fast)
+                        app.swipeDown(velocity: .fast)
+                    }
+                } else {
+                    for _ in 0..<3 {
+                        app.swipeUp(velocity: .fast)
+                        app.swipeUp(velocity: .fast)
+                        app.swipeDown(velocity: .fast)
+                        app.swipeDown(velocity: .fast)
+                    }
+                }
+            }
+            trunkPhase(app, "特別なトランクから戻った後\(round)", lines: &lines) {
+                goBack(app)
+                Thread.sleep(forTimeInterval: 4)
+            }
+        }
+        trunkPerfReport("特別なトランク" + (diag.map { "・\($0)" } ?? ""), app, lines)
+    }
+
+    // MARK: - 直しの前後で絵が同じか（2026-11-11・画素の差。owner はトランクの見た目を妥協しない）
+    //
+    // 同じ見本で、前の作り（`-JPPreviewTrunkDiag`）と今の作りを起動し直して同じ所を撮り、画素の差をログの `TRUNKPIXEL:` に出す。
+    // 公開リポジトリでは絵が残らないので、数で比べる。差のある画素（どれかの色が 2 より大きく違う）が 0.1% を越えたら落とす
+
+    struct TrunkPixelDiff {
+        var width = 0
+        var height = 0
+        var meanAbs = 0.0
+        var maxAbs = 0
+        /// どれかの色が 2 より大きく違う画素の割合（%）
+        var over2Pct = 0.0
+        var over16Pct = 0.0
+        var sizeMismatch = false
+
+        var line: String {
+            sizeMismatch ? "size-mismatch"
+                : String(format: "w=%d h=%d mean_abs=%.4f max_abs=%d over2_pct=%.4f over16_pct=%.4f",
+                         width, height, meanAbs, maxAbs, over2Pct, over16Pct)
+        }
+    }
+
+    /// 2 枚の絵の画素の差（RGBA 8 ビット・sRGB に並べ直して比べる）
+    private func pixelDiff(_ a: UIImage, _ b: UIImage) -> TrunkPixelDiff {
+        func rgba(_ image: UIImage) -> (Int, Int, [UInt8])? {
+            guard let cg = image.cgImage else { return nil }
+            let w = cg.width, h = cg.height
+            var data = [UInt8](repeating: 0, count: w * h * 4)
+            let ok = data.withUnsafeMutableBytes { raw -> Bool in
+                guard let ctx = CGContext(data: raw.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                          space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+                ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+                return true
+            }
+            return ok ? (w, h, data) : nil
+        }
+        var out = TrunkPixelDiff()
+        guard let ra = rgba(a), let rb = rgba(b), ra.0 == rb.0, ra.1 == rb.1 else {
+            out.sizeMismatch = true
+            return out
+        }
+        let wa = ra.0, ha = ra.1, da = ra.2, db = rb.2
+        out.width = wa
+        out.height = ha
+        var sum = 0, maxAbs = 0, over2 = 0, over16 = 0
+        for p in 0..<(wa * ha) {
+            var pixelMax = 0
+            for c in 0..<3 {
+                let diff = abs(Int(da[p * 4 + c]) - Int(db[p * 4 + c]))
+                sum += diff
+                pixelMax = max(pixelMax, diff)
+            }
+            maxAbs = max(maxAbs, pixelMax)
+            if pixelMax > 2 { over2 += 1 }
+            if pixelMax > 16 { over16 += 1 }
+        }
+        let pixels = Double(wa * ha)
+        out.meanAbs = Double(sum) / (pixels * 3)
+        out.maxAbs = maxAbs
+        out.over2Pct = Double(over2) / pixels * 100
+        out.over16Pct = Double(over16) / pixels * 100
+        return out
+    }
+
+    private func notePixel(_ label: String, _ diff: TrunkPixelDiff, _ a: UIImage, _ b: UIImage) {
+        let line = "TRUNKPIXEL: \(perfTestName) \(label) | \(diff.line)"
+        print(line)
+        XCTContext.runActivity(named: line) { activity in
+            for (name, image) in [("前", a), ("今", b)] {
+                let shot = XCTAttachment(image: image)
+                shot.name = "\(label)（\(name)）"
+                shot.lifetime = .keepAlways
+                activity.add(shot)
+            }
+        }
+        XCTAssertFalse(diff.sizeMismatch, "\(label): 前と今で絵の大きさが違う")
+        XCTAssertLessThanOrEqual(diff.over2Pct, 0.1, "\(label): 前と今で絵が違う（\(diff.line)）")
+    }
+
+    /// 端末の正面の絵: 消してから開いた回は書き終えるまで待ち（次の起動で読めるように）、今の作りの回は読んだかを確かめる
+    private func noteSpinDisk(_ app: XCUIApplication, diag: String?) {
+        if diag == "spindiskclear" {
+            let until = Date().addingTimeInterval(20)
+            while Date() < until, trunkPerf(app)["SpinDiskSaved"] == nil { Thread.sleep(forTimeInterval: 1) }
+            XCTAssertNotNil(trunkPerf(app)["SpinDiskSaved"], "正面の絵を端末に書き終えない")
+        } else if diag == nil {
+            XCTAssertNotNil(trunkPerf(app)["SpinDiskHit"], "端末に置いた正面の絵を使っていない")
+        }
+    }
+
+    /// 回す箱を、開いた直後・向きのボタンで止めた所（側面・上と背面・底・正面）で撮る
+    private func shootSpinFaces(diag: String?) -> [(String, UIImage)] {
+        let app = launchTrunk(Self.trunkPerfArgs + (diag.map { ["-JPPreviewTrunkDiag", $0] } ?? []))
+        defer { app.terminate() }
+        guard openTrunk(app) else { XCTFail("旅のトランクを開けない"); return [] }
+        app.buttons["trunk.spin"].firstMatch.tap()
+        let box = app.descendants(matching: .any)["trunk.spin.box"].firstMatch
+        let ready = NSPredicate(format: "value BEGINSWITH %@", "faces-ready")
+        guard XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: box)], timeout: 20) == .completed else {
+            XCTFail("回す画面の面を描き終えない")
+            return []
+        }
+        Thread.sleep(forTimeInterval: 3)
+        noteSpinDisk(app, diag: diag)
+        var shots = [("開いた直後", box.screenshot().image)]
+        for id in ["side", "topBack", "bottom", "front"] {
+            let button = app.buttons["trunk.spin.view.\(id)"].firstMatch
+            guard button.waitForExistence(timeout: 5) else { XCTFail("向きのボタン \(id) が無い"); return shots }
+            button.tap()
+            // 寄せ終えて止まるまで（止まり際まで描かれているか）
+            Thread.sleep(forTimeInterval: 3)
+            shots.append(("向き \(id)", box.screenshot().image))
+        }
+        return shots
+    }
+
+    /// **回す箱**: 前の作り（描き続ける・後で塗る絵）と今の作り（動く間だけ描く・塗り切った絵）で、止まった絵が同じか
+    func testTrunkSpinMatchesBefore() {
+        executionTimeAllowance = 500
+        let before = shootSpinFaces(diag: "spincont,spinlazy,spinlink")
+        // 同じ作りを 2 回起動した差（撮り方の揺れ）。今と前の差がこれと同じ程度なら、直しによる差ではない
+        let again = shootSpinFaces(diag: "spincont,spinlazy,spinlink")
+        // 今の作り: 端末の正面の絵を消してから（その場で塗る）と、その次（端末に置いた PNG を読む）の両方
+        let cold = shootSpinFaces(diag: "spindiskclear")
+        let now = shootSpinFaces(diag: nil)
+        guard before.count == now.count, again.count == now.count, cold.count == now.count, !now.isEmpty else {
+            return XCTFail("撮れた数が前と今で違う")
+        }
+        for (b, c) in zip(before, cold) {
+            notePixel("回す箱（端末の絵なし）・\(c.0)", pixelDiff(b.1, c.1), b.1, c.1)
+        }
+        for (b, a) in zip(before, again) {
+            let line = "TRUNKPIXEL: \(perfTestName) 揺れ（前と前）・\(a.0) | \(pixelDiff(b.1, a.1).line)"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+        }
+        for (b, n) in zip(before, now) {
+            notePixel("回す箱（端末の絵あり）・\(n.0)", pixelDiff(b.1, n.1), b.1, n.1)
+        }
     }
 
     // MARK: - 人のトランク（2026-10-18・板 TheirTrunk・TheirInside・ProfileTrunk）
@@ -6592,6 +7345,156 @@ final class ScreenshotTests: XCTestCase {
         if rowShown, heart.exists {
             XCTAssertGreaterThanOrEqual(heart.frame.height, 44, "絵文字の列の的が 44pt 未満")
         }
+    }
+
+    // MARK: - SNS の輪（札 #541・2026-11-11）
+
+    /// 見本の通信で起動する（ストーリー・紹介の見本つき）。開けなければ nil
+    private func launchSNSPreview(sharedStory: Bool) -> XCUIApplication? {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewStories", "YES"]
+        if sharedStory { app.launchArguments += ["-JPPreviewSharedStory", "YES"] }
+        // 入口の案内「写真を押してひとこと」（端末に1回だけ）は撮らない（札の絵に被る）
+        app.launchArguments += ["-story.captionHintShown", "YES"]
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        guard app.tabBars.firstMatch.waitForExistence(timeout: 20) else { return nil }
+        return app
+    }
+
+    /// 切り替えの「新着」の1枚目の写真の詳細を開く（見本のストーリーは新着の作者に付けてある）。開けなければ false
+    private func openFirstLatestPhoto(_ app: XCUIApplication) -> Bool {
+        let latestTab = app.buttons["home.feed.latest"].firstMatch
+        if latestTab.waitForExistence(timeout: 20), latestTab.isHittable {
+            latestTab.tap()
+            Thread.sleep(forTimeInterval: 3)
+        }
+        let photo = app.buttons["feed.photo"].firstMatch
+        let lowPoint = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+        let highPoint = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+        var pushes = 0
+        while photo.waitForExistence(timeout: 10), !photo.isHittable, pushes < Self.shelfPushLimit {
+            lowPoint.press(forDuration: 0.05, thenDragTo: highPoint)
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard photo.exists, photo.isHittable else { return false }
+        photo.tap()
+        return true
+    }
+
+    /// 要素が押せるまで短い引きで送る（上限あり）
+    private func scrollUntilHittable(_ app: XCUIApplication, _ element: XCUIElement, limit: Int = 8) {
+        var pushes = 0
+        while element.waitForExistence(timeout: 3), !element.isHittable, pushes < limit {
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+    }
+
+    /// **写真の「共有」→ 送るシート → ストーリーに載せる**（札 #541 の ①・案の模型 1-C / 1-D）。
+    /// 送るシート（63a）と、写真の札が置かれた作る画面（63b）を撮る。投稿はしない。**出なければ撮らずに抜ける**
+    func testCapturesSendSheetToStory() {
+        guard let app = launchSNSPreview(sharedStory: false), openFirstLatestPhoto(app) else { return }
+        let share = app.buttons["photo.share"].firstMatch
+        scrollUntilHittable(app, share)
+        guard share.exists, share.isHittable else {
+            shoot(app, "63a-送るシート（共有の印が出ない）")
+            return
+        }
+        share.tap()
+        let story = app.buttons["sendSheet.story"].firstMatch
+        let shown = story.waitForExistence(timeout: 10)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, shown ? "63a-送るシート" : "63a-送るシート（ストーリーに載せるが無い）")
+        guard shown else { return }
+        XCTAssertGreaterThanOrEqual(story.frame.height, 44, "「ストーリーに載せる」の的が 44pt 未満")
+        XCTAssertTrue(app.buttons["sendSheet.otherApps"].firstMatch.exists, "「ほかのアプリ」が無い（外への共有の口が消えた）")
+        story.tap()
+        let canvas = app.descendants(matching: .any)["story.canvas"].firstMatch
+        let opened = canvas.waitForExistence(timeout: 30)
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, opened ? "63b-ストーリーに載せる（写真の札）" : "63b-ストーリーに載せる（作る画面が開かない）")
+        XCTAssertTrue(opened, "「ストーリーに載せる」で作る画面が開かない")
+    }
+
+    /// **コメントに返信**（札 #541 の ②・案の模型 2-B）。見本の通信でコメントを1件書き、「返信」→
+    /// 「〇〇さんに返信中」（63c）→ 送ると相手の下に1段下げて並ぶ（63d）。**出なければ撮らずに抜ける**
+    func testCapturesCommentReply() {
+        guard let app = launchSNSPreview(sharedStory: false), openFirstLatestPhoto(app) else { return }
+        let field = app.textFields["photo.commentField"].firstMatch
+        let fieldAny = field.exists ? field : app.descendants(matching: .any)["photo.commentField"].firstMatch
+        guard fieldAny.waitForExistence(timeout: 15), fieldAny.isHittable else {
+            shoot(app, "63c-コメントに返信（欄が無い）")
+            return
+        }
+        fieldAny.tap()
+        fieldAny.typeText("どこから撮りましたか？")
+        let send = app.buttons["photo.commentSend"].firstMatch
+        guard send.waitForExistence(timeout: 5) else { return }
+        send.tap()
+        let reply = app.buttons["photo.commentReply"].firstMatch
+        scrollUntilHittable(app, reply)
+        guard reply.exists, reply.isHittable else {
+            shoot(app, "63c-コメントに返信（返信の印が無い）")
+            return
+        }
+        XCTAssertGreaterThanOrEqual(reply.frame.height, 44, "「返信」の的が 44pt 未満")
+        reply.tap()
+        let replying = app.descendants(matching: .any)["photo.commentReplying"].firstMatch
+        let replyingShown = replying.waitForExistence(timeout: 5)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, replyingShown ? "63c-コメントに返信中" : "63c-コメントに返信中（返信中の行が出ない）")
+        guard replyingShown else { return XCTFail("「返信」を押しても「〇〇さんに返信中」が出ない") }
+        fieldAny.typeText("坂の上からです")
+        send.tap()
+        Thread.sleep(forTimeInterval: 3)
+        // キーボードを閉じて並びを見る
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "63d-コメントの返信（1段下げて並ぶ）")
+        XCTAssertFalse(replying.exists, "送ったのに「返信中」が残っている")
+    }
+
+    /// **ストーリーで紹介された写真を見る**（札 #541 の ①・案の模型 1-E）。見本の通信の `-JPPreviewSharedStory` で、
+    /// 新着の1人目の2本目のストーリーに紹介の写真を付ける（`PreviewBackend.previewStories`）。作者の顔の輪から開き、
+    /// 2本目へ送って「写真を見る」（63e）→ 写真の詳細（63f）を撮る。**出なければ撮らずに抜ける**
+    func testCapturesSharedPhotoStory() {
+        guard let app = launchSNSPreview(sharedStory: true), openFirstLatestPhoto(app) else { return }
+        let ring = app.buttons["story.avatar.ring"].firstMatch
+        scrollUntilHittable(app, ring, limit: 3)
+        guard ring.exists, ring.isHittable else {
+            shoot(app, "63e-ストーリー（作者の顔に輪が無い）")
+            return
+        }
+        ring.tap()
+        Thread.sleep(forTimeInterval: 3)
+        let viewPhoto = app.buttons["story.viewer.sharedPhoto"].firstMatch
+        // 1本目には付いていない。右を叩いて2本目へ
+        if !viewPhoto.waitForExistence(timeout: 3) {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.45)).tap()
+        }
+        let shown = viewPhoto.waitForExistence(timeout: 10)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, shown ? "63e-ストーリー（写真を見る）" : "63e-ストーリー（写真を見るが出ない）")
+        guard shown else { return XCTFail("紹介のストーリーに「写真を見る」が出ない") }
+        XCTAssertGreaterThanOrEqual(viewPhoto.frame.height, 44, "「写真を見る」の的が 44pt 未満")
+        viewPhoto.tap()
+        let detail = app.buttons["photo.like"].firstMatch
+        let opened = detail.waitForExistence(timeout: 20)
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, opened ? "63f-写真を見る（写真の詳細）" : "63f-写真を見る（詳細が開かない）")
+        XCTAssertTrue(opened, "「写真を見る」で写真の詳細が開かない")
     }
 
     /// **ストーリーの曲の札の6つの形**（2026-10-28・owner「押して替える めっちゃいいね！」）。

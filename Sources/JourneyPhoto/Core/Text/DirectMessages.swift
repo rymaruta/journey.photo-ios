@@ -294,6 +294,12 @@ enum DMText {
             return t("この会話は表示できません", "This conversation isn't available.")
         case "empty":
             return t("メッセージを入力してください", "Type a message.")
+        case "requestPhoto":
+            // 承認前は写真を送れない（2026-11-11 判断・URL と同じ考え・`dm.ts` の `PHOTO_REFUSED`）
+            return t("承認されるまでは写真を送れません。文字で送ってください",
+                     "You can't send photos until they accept. Send text instead.")
+        case "photoNotFound":
+            return t("この写真は送れません", "This photo can't be sent.")
         default:
             return APIError.server(status: status, message: fallback).description(language: language)
         }
@@ -302,7 +308,8 @@ enum DMText {
     /// 断られたあと、入力欄に本文を戻すか（吹き出しにして「もう一度送る」を出すのは、押し直せば通りうる回だけ）
     static func returnsToField(code: String?) -> Bool {
         switch code {
-        case "requestUrl", "requestLimit", "blockedByMe", "empty", "selfFull", "unavailable", "dailyLimit", "notFound":
+        case "requestUrl", "requestLimit", "blockedByMe", "empty", "selfFull", "unavailable", "dailyLimit", "notFound",
+             "requestPhoto", "photoNotFound":
             return true
         default:
             return false
@@ -375,6 +382,39 @@ enum DMText {
         if next.mine != current.mine { return true }
         guard let a = NotificationGroups.parse(current.t), let b = NotificationGroups.parse(next.t) else { return true }
         return b.timeIntervalSince(a) >= 5 * 60
+    }
+
+    /// 吹き出しを前の1通とつなげるか（2026-11-11 案C・付け根の側の上の角も 6 に詰める）。
+    /// 同じ人の続きで5分以内（前の1通に時刻が出ない＝`showsTime` が false）・同じ日・この通に札（ストーリー・写真）が無いとき
+    static func joinsPrevious(current: DMMessage, previous: DMMessage?, calendar: Calendar = .current) -> Bool {
+        guard let previous, previous.bubbleText != nil else { return false }
+        guard !current.isStoryReply, !current.hasPhoto else { return false }
+        if startsDay(current: current, previous: previous, calendar: calendar) { return false }
+        return !showsTime(current: previous, next: current)
+    }
+
+    /// 札の読み上げ（「mika さんのストーリーへの返信、タップで見られます」）
+    static func storyCardSpoken(owner: String, mine: Bool, state: DMStoryCardState) -> String {
+        let head = mine ? L("\(owner) さんのストーリーへの返信", "Reply to \(owner)'s story")
+                        : L("あなたのストーリーへの返信", "Reply to your story")
+        switch state {
+        case .live: return head + "、" + L("タップでストーリーを見る", "tap to view the story")
+        case .ended: return head + "、" + L("ストーリーは終了しました", "this story has ended")
+        case .none, .unknown: return head
+        }
+    }
+
+    /// 送った写真の読み上げ（「あなたが送った写真、弘前城の桜、撮影地 青森県弘前市」）
+    static func photoSpoken(title: String?, location: String?, mine: Bool) -> String {
+        let head = mine ? L("あなたが送った写真", "Photo you sent") : L("届いた写真", "Photo you received")
+        let parts = [head, title, location.map { L("撮影地 \($0)", "taken in \($0)") }].compactMap { $0 }.filter { !$0.isEmpty }
+        return parts.joined(separator: "、")
+    }
+
+    /// 1通の下に出す時刻（「18:30」）。同じ人の続きで5分以内なら最後の1通だけ（`showsTime`）。出さないときは nil
+    static func timeLabel(current: DMMessage, next: DMMessage?) -> String? {
+        guard showsTime(current: current, next: next), let date = NotificationGroups.parse(current.t) else { return nil }
+        return clock(date)
     }
 
     /// 日付の区切りを前に置くか（前の1通と暦の日が違う）
@@ -497,9 +537,43 @@ enum DMStoryCardState: Equatable {
 }
 
 extension DMText {
-    /// 受信箱の行の抜粋。最後の1通が自分のものなら頭に「あなた: 」（**欄があるときだけ**・画面案）
+    /// 受信箱の行の抜粋。最後の1通が自分のものなら頭に「あなた: 」（**欄があるときだけ**・画面案）。
+    /// 写真だけの通の抜粋（サーバーが古いアプリ向けに日本語で埋める「写真を送りました」）は端末の言葉に直す
     static func excerpt(_ thread: DMThread, language: String = Locale.preferredAppLanguage) -> String {
-        thread.lastMine == true ? L("あなた: ", "You: ", language: language) + thread.excerpt : thread.excerpt
+        let body = thread.excerpt == serverPhotoText ? photoOnlyText(mine: thread.lastMine == true, language: language)
+                                                     : thread.excerpt
+        return thread.lastMine == true ? L("あなた: ", "You: ", language: language) + body : body
+    }
+
+    /// サーバーが写真だけの通の本文・抜粋に入れる文（`dm.ts` の `DM_PHOTO_TEXT`・古いアプリ向け・日本語だけ）。
+    /// **受信箱の行には `photoOnly` の欄が無い**ので、抜粋がこの文と同じときだけ写真だけの通と読む（2026-11-11 判断）
+    static let serverPhotoText = "写真を送りました"
+
+    /// 写真だけの通を端末の言葉で言う（受信箱の抜粋・中身の分からない写真の札）
+    static func photoOnlyText(mine: Bool, language: String = Locale.preferredAppLanguage) -> String {
+        mine ? L("写真を送りました", "Sent a photo", language: language)
+             : L("写真が届きました", "Sent you a photo", language: language)
+    }
+}
+
+/// 送った写真の札の見せ方（2026-11-11・札 #541・`DMStoryCardState` と同じ考え）
+enum DMPhotoCardState: Equatable {
+    /// 写真の通ではない
+    case none
+    /// 写真の通だが札の中身が分からない（古い通・新しい方から20枚を越えた通・送った直後の応答）。「表示できません」と言い切らない
+    case unknown
+    /// 見られる（押すと写真の詳細）
+    case live(DMPhotoQuote)
+    /// 見られない（消した・非公開・範囲の外・持ち主にブロックされた・**見る人が持ち主をブロックした**）
+    case gone
+
+    static func of(_ message: DMMessage, blocked: Set<String>) -> DMPhotoCardState {
+        guard message.hasPhoto else { return .none }
+        guard let quote = message.photo else { return .unknown }
+        // 見る人がブロックした人の写真は出さない（サーバーは見る人の側のブロックを見ない・ほかの画面と同じく端末でふるう）
+        if let owner = quote.ownerId, blocked.contains(owner) { return .gone }
+        if quote.isLive { return .live(quote) }
+        return quote.state == "gone" || quote.state == "live" ? .gone : .unknown
     }
 }
 
@@ -652,5 +726,109 @@ enum DMStart {
     /// 選んだ人から、会話の画面に渡す相手
     static func seed(_ user: FollowUser) -> DMPeerSeed {
         DMPeerSeed(id: user.id, name: user.name, username: user.username)
+    }
+}
+
+// MARK: - 会話の中のリンク（2026-11-11・札 #541）
+
+/// 吹き出しの中の URL を見つける（押せるリンクにする）。**画面を持たない**ので Linux の試験で見張る。
+///
+/// - 見つけるのは `http(s)://`・`www.`・よくある末尾のドメイン（`example.com/x`）。スキームの無いものは `https://` を付ける
+/// - **開けるのは http と https だけ**（`javascript:`・`file:`・`tel:` などは見つけても押せるようにしない）
+/// - 末尾の句読点・閉じ括弧（`。`・`、`・`)`・`」` など）はリンクに含めない
+/// - メールアドレスの一部（`@` の後ろのドメイン）は拾わない
+/// - 承認前の会話には URL が届かない（サーバーが断る・`requestUrl`）。ここは承認後の通のためだけ
+///
+/// 開く先は **Safari**（2026-11-11 判断: 知らない人が送ったリンクでも、アドレスバーと鍵の印が見える所で開く。
+/// アプリの中の小さな窓で開くと、偽のログイン画面と見分けにくい）。SwiftUI の `Text` のリンクの既定の動き
+enum DMLinks {
+
+    struct Link: Equatable {
+        let range: Range<String.Index>
+        let url: URL
+    }
+
+    /// 見つけたリンク（本文の中の位置と開く URL）。重なりは先に見つけた方
+    static func find(in text: String) -> [Link] {
+        guard !text.isEmpty else { return [] }
+        let ns = text as NSString
+        var out: [Link] = []
+        var taken: [NSRange] = []
+        for regex in regexes {
+            for m in regex.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+                var r = m.range
+                // 末尾の句読点・閉じ括弧を外す
+                while r.length > 0, let last = ns.substring(with: NSRange(location: r.location + r.length - 1, length: 1)).first,
+                      trailing.contains(last) {
+                    r.length -= 1
+                }
+                guard r.length > 0, !taken.contains(where: { NSIntersectionRange($0, r).length > 0 }) else { continue }
+                // メールの `@` の後ろ・語の途中から始まるものは拾わない
+                if r.location > 0 {
+                    let before = ns.substring(with: NSRange(location: r.location - 1, length: 1))
+                    if before == "@" || before == "." || before == "/" { continue }
+                }
+                let raw = ns.substring(with: r)
+                let lower = raw.lowercased()
+                let full = lower.hasPrefix("http://") || lower.hasPrefix("https://") ? raw : "https://" + raw
+                guard let url = URL(string: full) else { continue }
+                // 🔴 **名前・合言葉の付いた URL はリンクにしない**（`https://apple.com@evil.com/login` は evil.com へ行く。
+                // 見えている字と行き先が違う・2026-11-11 確かめ役の指摘）。その範囲は取ったことにして、中の
+                // `apple.com` だけを別のリンクにもしない
+                if url.user != nil || url.password != nil {
+                    taken.append(r)
+                    continue
+                }
+                guard isOpenable(url), let range = Range(r, in: text) else { continue }
+                taken.append(r)
+                out.append(Link(range: range, url: url))
+            }
+        }
+        return out.sorted { $0.range.lowerBound < $1.range.lowerBound }
+    }
+
+    /// 開けるリンクか（http・https・ホストあり・名前や合言葉が付いていない）
+    static func isOpenable(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
+        return (scheme == "http" || scheme == "https") && url.host?.isEmpty == false
+            && url.user == nil && url.password == nil
+    }
+
+    /// URL に使える ASCII の字だけ（日本語が続いてもリンクに含めない・閉じ括弧は外す）
+    private static let body = #"[A-Za-z0-9\-._~:/?#\[\]@!$&'*+,;=%]"#
+    /// 見つける式（1回だけ作る・2026-11-11 確かめ役の指摘）
+    private static let regexes: [NSRegularExpression] = patterns.compactMap {
+        try? NSRegularExpression(pattern: $0, options: [.caseInsensitive])
+    }
+    private static let patterns: [String] = [
+        #"https?://"# + body + "+",
+        #"www\."# + body + "+",
+        #"(?<![A-Za-z0-9_@.-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:"# + tlds + #")(?![A-Za-z0-9_-])(?:/"# + body + "*)?",
+    ]
+    /// サーバーの `TLDS` と同じ並び（`DMRules.containsURL` と同じ末尾を押せるようにする）
+    private static let tlds = "com|net|org|jp|io|co|me|ly|gl|link|app|dev|xyz|info|biz|cc|tv|to|us|uk|ru|cn|site|online|shop|top|club"
+        + "|gg|be|ee|asia|ink|page|live|store|tech"
+    private static let trailing: Set<Character> = [".", ",", "!", "?", ":", ";", ")", "]", "}", "'", "\"",
+                                                   "。", "、", "！", "？", "）", "」", "』", "】", "…"]
+}
+
+// MARK: - 写真を送る（2026-11-11・札 #541）
+
+/// 写真を DM で送る口（写真の詳細の「送る」のシートから呼ぶ）。会話 id は2人から組む（`DMStart.conversationId`）。
+/// **承認前の相手には送れない**（サーバーが 400 `requestPhoto` を返す・`DMText.refusal` の言葉）
+enum DMPhotoSend {
+
+    enum Failure: Error, Equatable {
+        /// ログインしていない・自分あて・相手の id の形が違う
+        case invalid
+    }
+
+    /// 写真を1通送る。`text` は添える文（空でよい）。鍵は1回の送信につき1つ（押し直しは呼ぶ側が同じ鍵で）
+    @discardableResult
+    static func send(service: DMService, me: String?, peerId: String, photoId: String, text: String = "",
+                     clientId: String = DMRules.newClientId()) async throws -> DMSendResult {
+        guard let id = DMStart.conversationId(me: me, peer: peerId), !photoId.isEmpty else { throw Failure.invalid }
+        return try await service.send(id, text: text.trimmingCharacters(in: .whitespacesAndNewlines),
+                                      clientId: clientId, photoId: photoId)
     }
 }

@@ -199,7 +199,9 @@ enum PreviewBackend {
         }
 
         // メッセージ（`-JPPreviewDM` のときだけ・2026-11-10 札 #505）
-        if dm, parts.first == "dm", let answer = dmReply(method: method, parts: parts, json: json, me: uid, now: now) {
+        if dm, parts.first == "dm",
+           let answer = dmReply(method: method, parts: parts, json: json, me: uid, now: now,
+                                samplePhoto: method == "GET" && parts.count == 2 ? dmSamplePhoto(await publicFeed()) : nil) {
             return answer
         }
 
@@ -244,7 +246,12 @@ enum PreviewBackend {
                 return .json(["error": "コメントを入力してください"], status: 400)
             }
             let comment: [String: Any] = store.with { s in
-                let c: [String: Any] = ["id": "preview-c\(s.next())", "uid": uid, "name": "見本の利用者", "text": text, "t": stamp]
+                var c: [String: Any] = ["id": "preview-c\(s.next())", "uid": uid, "name": "見本の利用者", "text": text, "t": stamp]
+                // 返信（札 #541 の ②）。相手がこの端末のコメントに在れば、サーバーと同じ形で相手を書く（`comments.ts`）
+                if let replyTo = json["replyTo"] as? String,
+                   let target = s.comments(p[1]).first(where: { ($0["id"] as? String) == replyTo }) {
+                    c["replyTo"] = ["id": replyTo, "uid": target["uid"] ?? "", "name": target["name"] ?? ""]
+                }
                 s.addComment(p[1], c)
                 return c
             }
@@ -284,7 +291,8 @@ enum PreviewBackend {
         // ストーリー（`-JPPreviewStories` のときだけ・2026-10-22）。一覧は公開の新着の作者から作る（`previewStories`）。
         // 見た・反応・返信は受けたことにするだけ（何も書かない）
         case ("GET", let p) where stories && p == ["stories"]:
-            return .json(previewStories(feed: await publicFeed(), me: uid, now: now))
+            return .json(previewStories(feed: await publicFeed(), me: uid, now: now,
+                                        sharedStory: PreviewSession.sharedStory))
         case ("POST", let p) where stories && p.count == 3 && p[0] == "stories" && (p[2] == "view" || p[2] == "replies"):
             return .json([:])
         case ("GET", let p) where stories && p.count == 3 && p[0] == "stories" && p[2] == "viewers":
@@ -339,8 +347,21 @@ enum PreviewBackend {
         return out
     }
 
+    /// 会話の見本に載せる写真（公開の新着の1枚目・2026-11-11 札 #541）。無ければ nil（写真の通を出さない）
+    static func dmSamplePhoto(_ feed: [[String: Any]]) -> [String: Any]? {
+        guard let first = feed.first(where: { ($0["id"] as? String) != nil && ($0["src"] as? String) != nil }),
+              let id = first["id"] as? String else { return nil }
+        let src = (first["thumbSrc"] as? String) ?? (first["src"] as? String) ?? ""
+        var quote: [String: Any] = ["id": id, "state": "live", "src": src]
+        if let title = first["title"] as? String, !title.isEmpty { quote["title"] = title }
+        if let location = first["location"] as? String, !location.isEmpty { quote["location"] = location }
+        if let owner = (first["userId"] as? String) ?? (first["uploadedBy"] as? String) { quote["ownerId"] = owner }
+        return quote
+    }
+
     /// `/dm` の答え。知らない口は nil（ふだんの 503 へ）
-    static func dmReply(method: String, parts: [String], json: [String: Any], me: String, now: Date) -> Reply? {
+    static func dmReply(method: String, parts: [String], json: [String: Any], me: String, now: Date,
+                        samplePhoto: [String: Any]? = nil) -> Reply? {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         func ago(_ minutes: Double) -> String { iso.string(from: now.addingTimeInterval(-minutes * 60)) }
@@ -410,11 +431,25 @@ enum PreviewBackend {
                                    msg(3, mine: true, "どこですか？", 60 * 50)]
             default:
                 answer["state"] = "inbox"
-                answer["items"] = [msg(1, mine: false, "夕焼けの色がすごい。どこですか？", 60 * 26, story: true),
-                                   msg(2, mine: true, "ありがとうございます。伊豆の海沿いです。", 60 * 25.8),
-                                   msg(3, mine: false, "行ってみたい", 60 * 25.7),
-                                   msg(4, mine: false, "日没の30分前に着くのがおすすめです", 60 * 25.6),
-                                   msg(5, mine: false, "この曲いいね", 12)]
+                var items = [msg(1, mine: false, "夕焼けの色がすごい。どこですか？", 60 * 26, story: true),
+                             msg(2, mine: true, "ありがとうございます。伊豆の海沿いです。", 60 * 25.8),
+                             msg(3, mine: true, "地図はここに載っています journey-photo.com/spots", 60 * 25.75),
+                             msg(4, mine: false, "行ってみたい", 60 * 25.7),
+                             msg(5, mine: false, "日没の30分前に着くのがおすすめです", 60 * 25.6)]
+                // 写真の通（2026-11-11 札 #541）: 写真だけの1通（`photoOnly`）と、見られなくなった写真の1通
+                if let samplePhoto, let pid = samplePhoto["id"] as? String {
+                    var photo = msg(6, mine: true, "写真を送りました", 30)
+                    photo["photoId"] = pid
+                    photo["photoOnly"] = true
+                    photo["photo"] = samplePhoto
+                    items.append(photo)
+                    var gone = msg(7, mine: false, "この写真もよかった", 20)
+                    gone["photoId"] = "preview-gone-photo"
+                    gone["photo"] = ["id": "preview-gone-photo", "state": "gone"] as [String: Any]
+                    items.append(gone)
+                }
+                items.append(msg(8, mine: false, "この曲いいね", 12))
+                answer["items"] = items
             }
             return Reply.json(answer)
         case ("POST", 3) where parts[2] == "messages":
@@ -438,7 +473,8 @@ enum PreviewBackend {
     /// 見本のストーリーの一覧（`GET /stories` の形）。**公開の新着の作者ごとに1本**（先頭の人は2本・輪の切れ目を
     /// 見せる）と、自分にも1本。写真は公開の写真の `src` をそのまま使う（新しく画像を置かない）。
     /// 作者の顔の輪・人のページの輪を UI テストで撮るため——どの写真を開いても、その作者に輪が出る
-    static func previewStories(feed: [[String: Any]], me: String, now: Date) -> [[String: Any]] {
+    /// - Parameter sharedStory: 1人目の2本目に**紹介した写真**（その人の写真）を付ける（札 #541・`-JPPreviewSharedStory`）
+    static func previewStories(feed: [[String: Any]], me: String, now: Date, sharedStory: Bool = false) -> [[String: Any]] {
         let iso = ISO8601DateFormatter()
         let created = iso.string(from: now.addingTimeInterval(-3600))
         let expires = iso.string(from: now.addingTimeInterval(23 * 3600))
@@ -459,7 +495,9 @@ enum PreviewBackend {
             row["songOnPhoto"] = true
             out.append(row)
             if seen.count == 1 {
-                out.append(story("preview-story-\(seen.count)b", src: src, user: user, name: photo["displayName"]))
+                var second = story("preview-story-\(seen.count)b", src: src, user: user, name: photo["displayName"])
+                if sharedStory, let photoId = photo["id"] as? String { second["sharedPhotoId"] = photoId }
+                out.append(second)
             }
         }
         if let src = feed.first?["src"] as? String {

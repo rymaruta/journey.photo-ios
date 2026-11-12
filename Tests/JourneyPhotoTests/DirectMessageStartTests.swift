@@ -228,7 +228,8 @@ final class DirectMessageStartTests: XCTestCase {
         // 空の状態と一覧の下の文は始め方を言う（ストーリーへの返信だけではなくなった）
         XCTAssertFalse(inbox.contains("メッセージは、ストーリーへの返信から始まります。"))
         XCTAssertFalse(inbox.contains("ホームでストーリーを見る"))
-        XCTAssertEqual(inbox.components(separatedBy: "DMText.startHint").count - 1, 2, "空の状態と一覧の下の両方")
+        // 2026-11-11 案C: 一覧の下の説明文はやめた（右上の鉛筆で分かる）。空の状態だけ
+        XCTAssertEqual(inbox.components(separatedBy: "DMText.startHint").count - 1, 1, "空の状態だけ")
         XCTAssertTrue(inbox.contains("actionTitle: DMText.newMessageTitle"))
 
         let picker = try source("Features/Messages/DMNewMessageView.swift")

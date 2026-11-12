@@ -91,6 +91,8 @@ final class StoryDraftStore: ObservableObject {
         var filter: StoryFilterChoice? = nil
         /// 描画（2026-11-09）。描いていなければ nil（前の版の下書きにも無い＝描いていない）。端末の中だけ
         var drawing: StoryDrawing? = nil
+        /// 紹介した写真の id（札 #541 の ①）。紹介の札の1枚だけ。前の版の下書きには無い（nil＝紹介ではない）
+        var sharedPhotoId: String? = nil
 
         var coords: Photo.Coords? {
             guard let latitude, let longitude else { return nil }
@@ -111,6 +113,8 @@ final class StoryDraftStore: ObservableObject {
         var filter: StoryFilterChoice = .off
         /// 描画。目に見える線が無ければ書かない
         var drawing: StoryDrawing = .empty
+        /// 紹介した写真の id（札 #541）。紹介でなければ nil
+        var sharedPhotoId: String? = nil
     }
 
     @Published private(set) var draft: Draft?
@@ -472,7 +476,8 @@ final class StoryDraftStore: ObservableObject {
                  latitude: input.coords?.lat, longitude: input.coords?.lng, overlays: input.overlays,
                  framing: input.framing, vote: input.vote,
                  filter: input.filter.isNone ? nil : input.filter.sanitized,
-                 drawing: input.drawing.hasInk ? input.drawing : nil)
+                 drawing: input.drawing.hasInk ? input.drawing : nil,
+                 sharedPhotoId: input.sharedPhotoId)
         }
         let first = shots[0]
         var saved = Draft(imageFile: first.imageFile, fileName: first.fileName,

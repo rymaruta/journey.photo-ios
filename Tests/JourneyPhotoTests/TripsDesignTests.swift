@@ -263,6 +263,7 @@ final class TripsDesignTests: XCTestCase {
         assertInOrder(["TripStopNumber(number: number)", "isSpot ? JPFont.rowTitle : JPFont.bodyEmphasis"],
                       in: stop, "番号の丸 → 名前")
         let add = section("private func addRow(", in: detail)
+        // 追加は真鍮の字（場所の入った日は小さく・空の日は大きく。2026-11-11）
         XCTAssertTrue(add.contains(".foregroundStyle(WebTheme.accent)"), "追加は真鍮の字")
         let date = section("private func dateField(", in: detail)
         XCTAssertTrue(date.contains("TripStyle.dateFieldHeight"))

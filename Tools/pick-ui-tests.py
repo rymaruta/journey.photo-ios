@@ -57,7 +57,19 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    "ScreenshotTests/testMeasuresCamperStages", "ScreenshotTests/testMeasuresCamperStagesKeepMesh",
                    "ScreenshotTests/testMeasuresCamperStagesAANone", "ScreenshotTests/testMeasuresCamperStagesAA4x",
                    # 2026-11-10（札 #521）: 移動の見込みの前に、日本の区間で MKDirections が返す秒数を取る。`screens=MapETAProbeTests`
-                   "MapETAProbeTests"]
+                   "MapETAProbeTests",
+                   # 2026-11-11（owner「旅のトランク重すぎる」）: 回す・特別なトランクの一覧の重さ（直しの前後）と、直しの前後の画素の差。
+                   # `screens=testMeasuresTrunk, testTrunkSpinMatchesBefore`
+                   "ScreenshotTests/testMeasuresTrunkSpin", "ScreenshotTests/testMeasuresTrunkSpinBefore",
+                   "ScreenshotTests/testMeasuresTrunkProModels", "ScreenshotTests/testTrunkSpinMatchesBefore",
+                   "ScreenshotTests/testMeasuresTrunkMemory", "ScreenshotTests/testMeasuresTrunkMemoryBefore",
+                   "ScreenshotTests/testMeasuresTrunkSpinFirstOpen", "ScreenshotTests/testMeasuresTrunkRasterCost", "ScreenshotTests/testMeasuresTrunkSpinLinkRunning",
+                   # 2026-11-11（札 #521）: 運ぶ操作を数で分ける（合否なし・1 本 20 分以内）。
+                   # `screens=testMeasuresTripPlanDragTrail`（(b) の出来事の並び）・`screens=testMeasuresTripPlanDragFirstTry`（試しの運びのあとの 1 回目）
+                   "ScreenshotTests/testMeasuresTripPlanDragTrail", "ScreenshotTests/testMeasuresTripPlanDragFirstTry",
+                   # 動かす速さで (b) の率と、落とす先の線が残るかを比べる（各 10 分ほど）
+                   "ScreenshotTests/testMeasuresTripPlanDragVelocitySlow", "ScreenshotTests/testMeasuresTripPlanDragVelocityDefault",
+                   "ScreenshotTests/testMeasuresTripPlanDragVelocityFast"]
 
 # クラスの直下（字下げ4つ）の関数だけを区切りにする。中の入れ子の関数は本体に含める
 MEMBER = re.compile(r"^    (?:@\w+\s+)*(?:(?:private|fileprivate|override|static|final)\s+)*func\s+(\w+)\s*\(", re.M)

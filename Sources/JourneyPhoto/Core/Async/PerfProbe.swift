@@ -187,6 +187,14 @@ final class PerfRecorder: @unchecked Sendable {
         samples.append(PerfSample(ms: now, frames: Array(frames.prefix(Self.sampleFrameCap))))
     }
 
+    /// 止まっている最中の積みの見本を空にする（上限に達した後の停止も撮れるように・2026-11-11 旅のトランクの計測）。無効なら何もしない
+    func clearSamples() {
+        guard isEnabled else { return }
+        lock.lock()
+        samples = []
+        lock.unlock()
+    }
+
     /// 何度も起きる出来事を数える（2026-11-07・札 #435 / #429）。**1〜4 回目と、2 の累乗の回だけ**
     /// `名前#回数` として時刻つきで残す（`home.tile#8` が +9100 なら、8 回目の評価が 9100ms）。無効のときは何もしない
     func hit(_ name: @autoclosure () -> String) {
