@@ -54,6 +54,35 @@ final class NoGuideNeededTests: XCTestCase {
         XCTAssertTrue(view.contains("screen.press(.tick(now: Date()))"), "写真の長押しの近道が無くなった")
     }
 
+    // MARK: - 項目9 写真の詳細の ⋯ にピン留め
+
+    func testPinMenuWording() {
+        XCTAssertEqual(ProfilePinMenu.title(pinned: false), "プロフィールの先頭にピン留め")
+        XCTAssertEqual(ProfilePinMenu.title(pinned: true), "ピン留めを解除")
+        XCTAssertEqual(ProfilePinMenu.done(pinned: true), "プロフィールの先頭にピン留めしました")
+    }
+
+    /// 自分の写真の ⋯ に行がある。今の一覧が分かるまで出さない。マイページの長押し（近道）は残す。
+    /// 変えたらマイページの並びもそろえる
+    func testPhotoDetailMenuCanPin() throws {
+        let detail = try source("Features/PhotoDetail/PhotoDetailView.swift")
+        guard let mine = detail.range(of: "            if isMine {\n                // **Menu の中に NavigationLink を置かない。**"),
+              let other = detail.range(of: "            } else {\n                // **通報とブロックは1タップで届くところに置く**") else {
+            return XCTFail("⋯ の自分の写真の節が見つからない")
+        }
+        let own = String(detail[mine.upperBound..<other.lowerBound])
+        XCTAssertTrue(own.contains("if let pinnedIds = myPinnedIds {"), "自分の写真の ⋯ にピン留めが無い")
+        XCTAssertTrue(own.contains("await setPinnedHere(!pinned)"))
+        XCTAssertTrue(detail.contains("owner.userId == me"), "人のプロフィールの一覧でピンの向きを決めている")
+        XCTAssertTrue(detail.contains("try await environment.profiles.setPinned(photoId: photoId, pinned: pin)"))
+        XCTAssertTrue(detail.contains("auth.noteProfileChanged()"), "変えたことをマイページへ知らせていない")
+
+        let myPage = try source("Features/Profile/MyPageView.swift")
+        XCTAssertTrue(myPage.contains("if let ids = fresh.pinnedPhotoIds, ids != pinnedIds {"),
+                      "プロフィールを読み直してもピンの並びが変わらない")
+        XCTAssertTrue(myPage.contains("Task { await model.setPinned(photo.id, pinned: !pinned) }"), "長押しの近道が無くなった")
+    }
+
     // MARK: - 項目22 参加したアルバムを一覧から消す
 
     /// 払うだけだった「一覧から消す」を、右の「…」にも置く（自分のアルバムと同じ形）。払いも近道で残す

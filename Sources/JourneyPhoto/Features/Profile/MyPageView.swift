@@ -1861,6 +1861,11 @@ final class MyPageViewModel: ObservableObject {
         guard let fresh, fresh.userId == userId, gen == generation, seq > shownProfileSeq else { return }
         profile = fresh
         shownProfileSeq = seq
+        // 写真の詳細の ⋯ でピン留めを変えた（2026-11-12・説明なしで分かる 項目9）。並びもそろえる
+        if let ids = fresh.pinnedPhotoIds, ids != pinnedIds {
+            pinnedIds = ids
+            photos = PhotoPinning.pinnedFirst(photos, pinned: pinnedIds)
+        }
     }
 }
 
