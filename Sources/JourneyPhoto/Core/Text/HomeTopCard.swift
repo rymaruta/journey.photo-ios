@@ -69,6 +69,10 @@ enum HomeTopCard {
         case theme
         /// 今日の一問（Web の `/q` と同じ問題）。**その日のファイルが取れたときだけ**
         case quiz(DailyQuiz)
+        /// 撮影スポットを払う入口（2026-11-11・`SpotSwipe`）。`withSwipe` が並びの頭に入れ、ホームに何枚目で
+        /// 出すかは `arrange` の人ごとの表（`spotSwipe`）が決める（1.1.84 のまとめ・第10章）。
+        /// `cover` は左の写真に使う撮影スポット（写真を出せるものが無い回は nil・写真なしの札）
+        case swipe(cover: OfficialSpot?)
 
         /// 並びの中の目印。**種類ごとに1枚まで**なので種類で足りる（並び順で持つと、
         /// 一冊の札が下がったときに隣の札と取り違える）
@@ -83,6 +87,7 @@ enum HomeTopCard {
             case .inSeason: return "inSeason"
             case .theme: return "theme"
             case .quiz: return "quiz"
+            case .swipe: return "spotSwipe"
             }
         }
     }
@@ -233,6 +238,26 @@ enum HomeTopCard {
         ]
         let yearAgo = oneYearAgo(today: today, myPhotos: myPhotos, timeZone: timeZone)
         return found.compactMap { $0 } + season.compactMap { $0 } + daily + [yearAgo].compactMap { $0 }
+    }
+
+    /// 札の並びの**1枚目**に、撮影スポットを払う入口を置く（2026-11-11 owner「撮影スポットを払う」の①・
+    /// 新しい段は足さない）。`cards` は変えない——入口は毎日あるので、`cards` の「当たる札」とは分ける
+    ///
+    /// - Parameters:
+    ///   - choices: `cards` の並び
+    ///   - spots: 撮影スポットの索引（左の写真を選ぶ。ほかの札に出ている場所は使わない）
+    ///   - today: `today(_:in:)` の今日（写真を日替わりにする）。nil なら索引の先頭から
+    static func withSwipe(_ choices: [Choice], spots: [OfficialSpot], today: Date?) -> [Choice] {
+        var shown = Set<String>()
+        for choice in choices {
+            switch choice {
+            case .inSeason(let spot, _, _), .wishlistSeason(let spot, _, _): shown.insert(spot.spotId)
+            case .quiz(let quiz): shown.formUnion(quiz.choices.map(\.spotId) + [quiz.answer])
+            default: break
+            }
+        }
+        let cover = SpotSwipe.cover(spots: spots, excluding: shown, day: today.map(dayNumber) ?? 0)
+        return [.swipe(cover: cover)] + choices.filter { $0.slot != "spotSwipe" }
     }
 
     /// 端末の時刻帯の今日を、**その日の UTC 0 時**にする（`TripPlanText` と `TripBook.day` の基準）

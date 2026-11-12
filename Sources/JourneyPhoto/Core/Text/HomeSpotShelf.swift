@@ -100,7 +100,7 @@ enum HomeSpotShelf {
         var ids = Set<String>()
         for choice in choices {
             switch choice {
-            case .inSeason(let spot, _, _), .wishlistSeason(let spot, _, _): ids.insert(spot.spotId)
+            case .inSeason(let spot, _, _), .wishlistSeason(let spot, _, _), .swipe(let spot?): ids.insert(spot.spotId)
             default: break
             }
         }

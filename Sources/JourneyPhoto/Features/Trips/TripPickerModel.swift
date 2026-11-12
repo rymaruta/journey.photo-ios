@@ -36,6 +36,8 @@ final class TripPickerModel: ObservableObject {
     /// 詳細（写真・季節の文）を一度頼み終えた場所（`spotId`・`applyDetails`）。
     /// 頼み終えても写真が無い札は読み込み中の輪を止める（`TripPicker.cardFace`）
     @Published private(set) var detailTried: Set<String> = []
+    /// 山を `fallbackExcluding` で作り直した（前に見た札を除くと空だった・`load`）
+    @Published private(set) var restarted = false
 
     /// 下書きの題・日付・失敗の文は**下書きの画面ではなくここに持つ**——下書きの画面は
     /// 戻って開き直すと作り直される（開き直しで消さない・本人が付けた題を案の題で上書きしない）
@@ -100,7 +102,10 @@ final class TripPickerModel: ObservableObject {
     ///   - excluding: もう「行きたい」に入っている鍵。**開いた時点の写し**を渡す
     ///     （選んでいる間に入れた鍵で山を作り直さない）
     ///   - seed: 混ぜ方の種（画面は開くたびに新しく作る）
-    func load(fetch: () async throws -> [OfficialSpot], excluding: Set<String>, seed: UInt64) async {
+    ///   - fallbackExcluding: `excluding` で山が空になったときに使い直す鍵（撮影スポットを払う画面・2026-11-11:
+    ///     前に見送った札を除いて空になったら、「行きたい」だけを除いて最初から）。使い直したら `restarted` が立つ
+    func load(fetch: () async throws -> [OfficialSpot], excluding: Set<String>, seed: UInt64,
+              fallbackExcluding: Set<String>? = nil) async {
         guard status != .loaded else { return }
         status = .loading
         do {
@@ -108,6 +113,10 @@ final class TripPickerModel: ObservableObject {
             // 待っている間に別の読み込みが済んでいたら、そちらを残す
             guard status != .loaded else { return }
             deck = TripPicker.deck(from: index, excluding: excluding, seed: seed)
+            if deck.isEmpty, let fallbackExcluding {
+                deck = TripPicker.deck(from: index, excluding: fallbackExcluding, seed: seed)
+                restarted = !deck.isEmpty
+            }
             status = .loaded
         } catch {
             if Task.isCancelled { return }

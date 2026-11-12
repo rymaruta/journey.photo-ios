@@ -2972,6 +2972,56 @@ final class ScreenshotTests: XCTestCase {
         return true
     }
 
+    /// **撮影スポットを払う**（2026-11-11 owner の要望の①・`SpotSwipeView`）。**未ログイン**で、ホームの上の札の
+    /// 1枚目から開く → 1枚目を「行きたい」・4枚を「見送る」→ 山に挟む札 → 「ログインして見る」でログインの板。
+    /// 「行きたい」は未ログインなので端末の共有の鍵に入るだけ（サーバーへは送らない）。出なければ撮らずに抜ける
+    func testCapturesSpotSwipe() {
+        let app = XCUIApplication()
+        // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）。**`-JPPreviewUserId` を渡さない**＝未ログイン
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        // 前の回の続き（見た札・開いた印）を残さない
+        app.launchArguments += ["-journey-photo-spot-swipe-started", "NO", "-journey-photo-spot-swipe-seen", "()"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let entry = app.buttons["home.spotSwipe"].firstMatch
+        guard entry.waitForExistence(timeout: 30) else { return }
+        // 入口の札の写真（撮影スポットの詳細）が描かれるのを待つ
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "66-撮影スポットを払う（ホームの札の1枚目・未ログイン）")
+        guard entry.isHittable else { return }
+        entry.tap()
+
+        let card = app.descendants(matching: .any).matching(identifier: "tripPicker.card").firstMatch
+        guard card.waitForExistence(timeout: 20) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "66b-撮影スポットを払う（全画面・未ログイン）")
+
+        let want = app.buttons["tripPicker.want"].firstMatch
+        let pass = app.buttons["tripPicker.pass"].firstMatch
+        guard want.waitForExistence(timeout: 5), want.isHittable else { return }
+        want.tap()
+        Thread.sleep(forTimeInterval: 1)
+        for _ in 0..<4 {
+            guard pass.waitForExistence(timeout: 5), pass.isHittable else { return }
+            pass.tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        let pause = app.descendants(matching: .any).matching(identifier: "tripPicker.pause").firstMatch
+        guard pause.waitForExistence(timeout: 10) else { return }
+        shoot(app, "66c-撮影スポットを払う（5枚で挟む札・未ログイン）")
+
+        let action = app.buttons["tripPicker.pause.action"].firstMatch
+        guard action.waitForExistence(timeout: 5), action.isHittable else { return }
+        action.tap()
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "66d-撮影スポットを払う（ログインの板）")
+    }
+
     /// **旅行プランの日程**（自動保存・運ぶ・移動の見込み・区間のシート）。
     /// 自動保存は**手を止めてから 2 秒待ってまとめて送る**——続けて 5 回直しても送るのは 1 回（数で確かめる）。
     /// 出なければ撮らずに抜ける

@@ -91,6 +91,8 @@ struct OfficialSpotView: View {
 
     /// 自動の結びの表（`spot-photo-links.json`・2026-10-31 #425）。読み終えるまで空（`spotId` だけ）
     @State private var photoLinks = SpotPhotoLinks.empty
+    /// みんなの「行きたい」（今月の数が10以上のときだけ・2026-11-11 撮影スポットを払うの②）
+    @State private var wantEntry: SpotWants.Entry?
     /// 写真の詳細で外した・戻したときに上がる（開いたままのこの頁も読み直す）
     @ObservedObject private var linkRevision = SpotLinkRevision.shared
 
@@ -190,6 +192,11 @@ struct OfficialSpotView: View {
         }
         // 自動の結びの表（2026-10-31 #425）。索引と同じ口で控えがあれば通信しない。
         // 写真の詳細で外した・戻したら（`SpotLinkRevision`）読み直し、端末に重ねた分をすぐ映す
+        .task(id: "wants|\(spot.slug)") {
+            // 下書きには出さない（公開した撮影スポットだけを数える）
+            guard !spot.isDraft else { wantEntry = nil; return }
+            wantEntry = await environment.spotWants.file()?.entry(slug: spot.slug)
+        }
         .task(id: "links|\(spot.spotId)|\(linkRevision.value)") {
             let links = await environment.spots.fetchPhotoLinks()
             guard !Task.isCancelled else { return }
@@ -399,6 +406,13 @@ struct OfficialSpotView: View {
                     .font(JPFont.mono(JPTypeScale.footnote, relativeTo: .footnote))
                     .foregroundStyle(onPhoto ? WebTheme.muted : WebTheme.text2)
             }
+            // 「今月の行きたい 1,284 · 全国1位」（題の下・数が10以上のときだけ。無いときは行を置かない）
+            if let wantEntry {
+                Text(SpotWants.line(wantEntry))
+                    .font(JPFont.mono(JPTypeScale.footnote, relativeTo: .footnote))
+                    .foregroundStyle(onPhoto ? WebTheme.muted : WebTheme.text2)
+                    .accessibilityIdentifier("spot.official.wants")
+            }
         }
         // 写真の上だけ字の影（`jpPhotoTextShadow` と同じ 0 2 14 / 60%）。黒地の上は影なし
         .shadow(color: Color.black.opacity(onPhoto ? 0.6 : 0), radius: 7, x: 0, y: 2)
@@ -456,6 +470,11 @@ struct OfficialSpotView: View {
                 Task {
                     let outcome = await WishlistSync.toggle(wishKey, store: wishlist, service: environment.savedSpots)
                     if let notice = WishlistSync.notice(for: outcome) { toasts.show(notice.text, kind: notice.kind) }
+                    // みんなの「行きたい」に数える（2026-11-11・撮影スポットを払うの②）。入れたときだけ・その場で送る
+                    if SpotWants.counts(outcome), !spot.isDraft {
+                        SpotWantSender.want(spot.slug, service: environment.spotWants)
+                        SpotWantSender.flush(service: environment.spotWants)
+                    }
                 }
             } label: {
                 SpotDetailParts.actionLabel(icon: wanted ? "heart.fill" : "heart",
