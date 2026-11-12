@@ -10,6 +10,9 @@ struct StoriesRow: View {
     /// 気づけず、投稿したのに自分のストーリーが並ばなかった。
     /// 真偽値にしないのは `NotificationRouter` と同じ理由（2回目が効かない）。
     var reloadToken: Int = 0
+    /// 自分の投稿（②「1年前」で**投稿済みの旅を出さない**・2026-11-12 確かめ役。ホームの札と同じ
+    /// `LibraryTrips.postedShots(of:)` で、投稿済みの日と重なる旅を落とす）
+    var myPhotos: [Photo] = []
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
@@ -40,7 +43,7 @@ struct StoriesRow: View {
     /// 「投稿にする」で開く①現像の旅
     @State private var developTrip: LibraryTrip?
     /// 現像の「題・公開範囲を変える」で選んだ写真
-    @State private var developEdit: [String]?
+    @State private var developEdit: (ids: [String], published: Bool)?
     /// 見た・出したの印を読み直す合図
     @State private var yearAgoRevision = 0
     private let yearAgoStore = YearAgoRingStore()
@@ -207,9 +210,9 @@ struct StoriesRow: View {
         .fullScreenCover(item: $developTrip, onDismiss: {
             guard let ids = developEdit, let trip = yearAgoPick?.trip else { return }
             developEdit = nil
-            DevelopPhotos.openUploadScreen(ids: ids, trip: trip)
+            DevelopPhotos.openUploadScreen(ids: ids.ids, trip: trip, published: ids.published)
         }) { trip in
-            DevelopView(trip: trip, name: yearAgoName(trip)) { developEdit = $0 }
+            DevelopView(trip: trip, name: yearAgoName(trip)) { developEdit = (ids: $0, published: $1) }
         }
     }
 
@@ -219,7 +222,8 @@ struct StoriesRow: View {
     private var yearAgoPick: YearAgoTrips.Pick? {
         guard auth.userId != nil else { return nil }
         let preview = DevelopPreview.trips()
-        let trips = preview.isEmpty ? deviceTrips.books(posted: [], isMine: true) : preview
+        let trips = preview.isEmpty
+            ? deviceTrips.books(posted: LibraryTrips.postedShots(of: myPhotos), isMine: true) : preview
         return YearAgoTrips.find(trips: trips, now: Date())
     }
 

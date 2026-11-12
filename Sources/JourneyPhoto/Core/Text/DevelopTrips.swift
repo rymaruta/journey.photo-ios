@@ -51,10 +51,11 @@ enum DevelopTrips {
         LibraryTrips.spreadPick(trip, limit: frameLimit)
     }
 
-    /// 札の2行目「金沢の旅 · 3日 · 42枚」（地名が無ければ期間）
+    /// 札の2行目「金沢の旅、3日、42枚」（地名が無ければ期間）
     static func cardLine(_ trip: LibraryTrip, name: String?) -> String {
-        "\(DeviceTrips.title(of: trip, name: name)) · \(TripBook.daysLabel(LibraryTrips.calendarDays(trip)))"
-            + " · " + PhotoMapViewModel.photoCountLabel(trip.shots.count)
+        // 2026-11-12 確かめ役: 中黒で区切らない（読点で並べる）
+        "\(DeviceTrips.title(of: trip, name: name))、\(TripBook.daysLabel(LibraryTrips.calendarDays(trip)))"
+            + "、" + PhotoMapViewModel.photoCountLabel(trip.shots.count)
     }
 
     // MARK: - 払う判定（章「払う判定」）
@@ -110,12 +111,13 @@ enum DevelopTrips {
         return [cover] + kept.filter { $0 != cover }
     }
 
-    /// 一番上の札の文字「4 / 10 · DAY 1 · 金沢市」（地名が無ければ「4 / 10 · DAY 1 · 9.12」）
+    /// 一番上の札の文字「4 / 10  DAY 1  金沢市」（地名が無ければ「4 / 10  DAY 1  9.12」）
     static func counter(index: Int, total: Int, day: LibraryTrip.Day?, place: String?) -> String {
         let head = "\(min(index + 1, total)) / \(total)"
         guard let day else { return head }
-        if let place, !place.isEmpty { return "\(head) · DAY \(day.number) · \(place)" }
-        return "\(head) · DAY \(day.number) · \(day.month).\(day.day)"
+        // 中黒で区切らず余白で（2026-11-12 確かめ役）
+        if let place, !place.isEmpty { return "\(head)  DAY \(day.number)  \(place)" }
+        return "\(head)  DAY \(day.number)  \(day.month).\(day.day)"
     }
 
     /// コマの写真の日（無ければ nil）
@@ -123,7 +125,7 @@ enum DevelopTrips {
         trip.days.first { day in day.shots.contains { $0.id == shotId } }
     }
 
-    /// 表紙の眉「TRIP · 9.12 – 9.14」（1日なら「TRIP · 9.12」）。**旅の時間帯で出す**
+    /// 表紙の眉「TRIP 9.12 – 9.14」（1日なら「TRIP 9.12」）。**旅の時間帯で出す**
     static func coverEyebrow(_ trip: LibraryTrip) -> String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = trip.timeZone
@@ -131,8 +133,34 @@ enum DevelopTrips {
         let b = calendar.dateComponents([.month, .day], from: trip.end)
         let head = "\(a.month ?? 0).\(a.day ?? 0)"
         let tail = "\(b.month ?? 0).\(b.day ?? 0)"
-        return head == tail ? "TRIP · \(head)" : "TRIP · \(head) – \(tail)"
+        return head == tail ? "TRIP \(head)" : "TRIP \(head) – \(tail)"
     }
+
+    // MARK: - 公開範囲と送ったあと（2026-11-12 確かめ役）
+
+    /// 現像・1年前から来た投稿を**公開で始めるか**。owner の判断が出るまで、main の「旅の写真から」と同じく
+    /// **非公開で始める**（`RootView` の `startPrivate`）。表紙の画面の公開範囲の行を1回押せば公開に替わる
+    static let startsPublic = false
+
+    /// 旅の写真から来た投稿の画面を非公開で始めるか。**旅の写真から来たら非公開**（main と同じ）。
+    /// 現像の表紙で本人が公開を選んで来たときだけ公開で始める
+    static func uploadStartsPrivate(hasTripPhotos: Bool, chosePublic: Bool) -> Bool {
+        hasTripPhotos && !chosePublic
+    }
+
+    /// 表紙の公開範囲の行の字（押すと替わる）
+    static func audienceLabel(published: Bool) -> String {
+        published ? L("みんなに公開", "Public") : L("自分だけ（非公開）", "Only me (private)")
+    }
+
+    /// 「投稿する」で閉じた札を開き直すか。**1枚も上がらなかったとき**（読めなかった・送れなかった）
+    static func reopensAfterPost(posted: Int) -> Bool {
+        posted == 0
+    }
+
+    /// 現像の画面を閉じたとき、取り消しを待っている投稿をどうするか。**取り消す**（送り出さない）。
+    /// 2026-11-12 確かめ役: 5秒の取り消しの間に × で閉じると、閉じた合図で送り出していた
+    static let closingCancelsPendingPost = true
 
     // MARK: - 状態の字（章「状態」・2026-11-12 札 #543）
 

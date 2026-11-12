@@ -43,6 +43,17 @@ enum PinchToMap {
         return (place, L("広げると写真へ", "Spread to go back to the photo"))
     }
 
+    /// 段の振動を鳴らすか。**段を越えて進んだときだけ**（広げて戻すときは鳴らさない・2026-11-12 確かめ役）
+    static func buzzes(wasPast: Bool, isPast: Bool) -> Bool {
+        !wasPast && isPast
+    }
+
+    /// 写真の詳細の「地図で見る ›」を出すか。**撮影地があれば出す**（近くの写真が0枚でも・2026-11-12 確かめ役）。
+    /// つまむと地図に気づく口と、指を使わない人の道を兼ねる
+    static func showsMapLink(hasPlace: Bool, nearbyCount: Int) -> Bool {
+        hasPlace
+    }
+
     /// 離したときに地図へ行くか
     static func opensMap(endScale: Double, hasPlace: Bool) -> Bool {
         hasPlace && endScale <= openScale

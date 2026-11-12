@@ -116,11 +116,11 @@ final class DevelopTripsTests: XCTestCase {
 
     func testTexts() {
         let t = trip()
-        XCTAssertEqual(DevelopTrips.coverEyebrow(t), "TRIP · 9.12 – 9.14")
+        XCTAssertEqual(DevelopTrips.coverEyebrow(t), "TRIP 9.12 – 9.14")
         let day = DevelopTrips.day(of: "k1-0", in: t)
         XCTAssertEqual(day?.number, 2)
-        XCTAssertEqual(DevelopTrips.counter(index: 3, total: 10, day: day, place: "金沢市"), "4 / 10 · DAY 2 · 金沢市")
-        XCTAssertEqual(DevelopTrips.counter(index: 3, total: 10, day: day, place: nil), "4 / 10 · DAY 2 · 9.13")
+        XCTAssertEqual(DevelopTrips.counter(index: 3, total: 10, day: day, place: "金沢市"), "4 / 10  DAY 2  金沢市")
+        XCTAssertEqual(DevelopTrips.counter(index: 3, total: 10, day: day, place: nil), "4 / 10  DAY 2  9.13")
     }
 
     // MARK: - 端末の控え

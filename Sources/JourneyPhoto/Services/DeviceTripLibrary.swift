@@ -326,12 +326,19 @@ final class DeviceTripShelfStore: ObservableObject {
 
     typealias PlaceLookup = @Sendable (Photo.Coords) async -> (name: String?, timeZone: TimeZone?)
 
-    @Published private(set) var status: PHAuthorizationStatus
+    @Published private(set) var status: PHAuthorizationStatus { didSet { booksRevision &+= 1 } }
     /// 探した旅（新しい順・投稿済みの日の絞りの前）。棚は `books(posted:isMine:)`
-    @Published private(set) var trips: [LibraryTrip] = []
+    @Published private(set) var trips: [LibraryTrip] = [] { didSet { booksRevision &+= 1 } }
     /// 一冊の地名（鍵は旅の id）
     @Published private(set) var names: [String: String] = [:]
-    @Published private(set) var zones: [String: String] = [:]
+    @Published private(set) var zones: [String: String] = [:] { didSet { booksRevision &+= 1 } }
+
+    /// `books` の控え（2026-11-12 確かめ役: ホームの札とストーリーの列が描くたびに切り直していた）。
+    /// 旅・時間帯・許可が変わるたびに番号が上がり、控えは捨てる
+    private var booksRevision = 0
+    private var booksCache: (revision: Int, posted: [LibraryTrips.PostedShot], isMine: Bool, books: [LibraryTrip])?
+    /// 切り直した回数（試験）
+    private(set) var booksComputeCount = 0
     /// 読んでいる最中
     @Published private(set) var isScanning = false
     /// 一度でも読み終えた（「見つかりませんでした」を出してよい）
@@ -429,9 +436,16 @@ final class DeviceTripShelfStore: ObservableObject {
     }
 
     /// 棚に出す一冊（`DeviceTrips.books`）。**許可が無ければ出さない**（あとで許可を外した）
+    /// 同じ旅・同じ投稿済みのあいだは**覚えた一冊を返す**（描くたびに切り直さない）
     func books(posted: [LibraryTrips.PostedShot], isMine: Bool) -> [LibraryTrip] {
         guard PhotoLibrary.canRead(status) else { return [] }
-        return DeviceTrips.books(trips, posted: posted, zones: zones, isMine: isMine)
+        if let cache = booksCache, cache.revision == booksRevision, cache.isMine == isMine, cache.posted == posted {
+            return cache.books
+        }
+        let made = DeviceTrips.books(trips, posted: posted, zones: zones, isMine: isMine)
+        booksComputeCount += 1
+        booksCache = (booksRevision, posted, isMine, made)
+        return made
     }
 
     func dismissIntro() {

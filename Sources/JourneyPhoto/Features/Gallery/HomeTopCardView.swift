@@ -96,10 +96,12 @@ struct HomeTopCardView: View {
     @Environment(\.scenePhase) private var scenePhase
     /// 端末の写真の一冊（①現像の「現像前の旅」を探す・2026-11-12 札 #543）。読むのは店（起動・ログインで後ろで読む）
     @ObservedObject private var deviceTrips = DeviceTripShelfStore.shared
+    /// ①現像の送り終わりを見張る（1枚も上がらず札を開き直したら、札を出し直す・2026-11-12 確かめ役）
+    @ObservedObject private var developPosting = DevelopPostCenter.shared
     /// 現像の画面を開いている旅
     @State private var developing: LibraryTrip?
     /// 現像の「題・公開範囲を変える」で選んだ写真（画面が閉じきってから投稿の画面へ渡す）
-    @State private var developEdit: (trip: LibraryTrip, ids: [String])?
+    @State private var developEdit: (trip: LibraryTrip, ids: [String], published: Bool)?
     /// 現像の控え（払った途中・閉じた旅）を読み直す合図（画面を閉じたら上げる）
     @State private var developRevision = 0
 
@@ -153,9 +155,9 @@ struct HomeTopCardView: View {
                 developRevision += 1
                 guard let edit = developEdit else { return }
                 developEdit = nil
-                DevelopPhotos.openUploadScreen(ids: edit.ids, trip: edit.trip)
+                DevelopPhotos.openUploadScreen(ids: edit.ids, trip: edit.trip, published: edit.published)
             }) { trip in
-                DevelopView(trip: trip, name: developName(trip)) { ids in developEdit = (trip, ids) }
+                DevelopView(trip: trip, name: developName(trip)) { ids, published in developEdit = (trip, ids, published) }
             }
     }
 
@@ -175,6 +177,7 @@ struct HomeTopCardView: View {
     /// ホームに出す「現像前の旅」の札（`DevelopTrips.candidate`）。`developRevision` で閉じた旅を読み直す
     private var developChoice: HomeTopCard.Choice? {
         _ = developRevision
+        _ = developPosting.isPosting
         guard auth.userId != nil else { return nil }
         guard let trip = DevelopTrips.candidate(books: deviceBooks, now: cardsNow,
                                                 closed: developStore.closed(for: auth.userId)) else { return nil }
@@ -186,7 +189,7 @@ struct HomeTopCardView: View {
         let frames = DevelopTrips.frames(of: trip)
         if let saved = developStore.progress(trip.id, for: auth.userId), !saved.decisions.isEmpty {
             let done = min(frames.count, DevelopTrips.nextIndex(frames, decisions: saved.decisions))
-            return L("現像の途中 · \(done) / \(frames.count) · ", "In progress · \(done) / \(frames.count) · ")
+            return L("現像の途中 \(done) / \(frames.count)、", "In progress \(done) / \(frames.count), ")
                 + DeviceTrips.title(of: trip, name: name)
         }
         return DevelopTrips.cardLine(trip, name: name)
@@ -308,7 +311,7 @@ struct HomeTopCardView: View {
                 developing = trip
             } label: {
                 card(eyebrow: "DEVELOP", eyebrowLabel: L("現像前の旅", "Trip to develop"),
-                     title: L("おかえりなさい · 現像前", "Welcome back · Ready to develop"),
+                     title: L("おかえりなさい", "Welcome back"),
                      line: developLine(trip, name: name),
                      // 一部の写真だけ許可: 「選んで許可した写真の中から見つけました」（章「状態」）
                      detail: DevelopTrips.cardDetail(limited: deviceTrips.status == .limited

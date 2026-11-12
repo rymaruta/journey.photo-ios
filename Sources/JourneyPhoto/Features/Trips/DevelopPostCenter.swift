@@ -23,8 +23,11 @@ final class DevelopPostCenter: ObservableObject {
     ///
     /// - Parameters:
     ///   - ids: 送る写真（`DevelopTrips.uploadOrder`・表紙が先頭）
-    ///   - published: 公開するか（2026-11-12 判断: 現像の「投稿する」は**みんなに公開**。表紙の画面に
-    ///     「みんなに公開」と出し、5秒は取り消せる。変えたい人は「題・公開範囲を変える」で今の投稿の画面へ）
+    ///   - published: 公開するか。**既定は非公開**（`DevelopTrips.startsPublic`・main の「旅の写真から」と同じ・
+    ///     2026-11-12 確かめ役。owner の判断待ち）。表紙の画面の公開範囲の行を1回押すと公開に替わる
+    ///
+    /// **1枚も上がらなかったら札を開き直す**（`DevelopProgressStore.reopen`）——押した時に札を閉じているので、
+    /// 開き直さないと現像前の旅がホームから消えたままになる（2026-11-12 確かめ役）
     func post(trip: LibraryTrip, ids: [String], published: Bool, userId: String,
               environment: AppEnvironment, toasts: ToastCenter, onDone: @escaping (Bool) -> Void = { _ in }) {
         guard !isPosting, !ids.isEmpty else { return }
@@ -32,6 +35,7 @@ final class DevelopPostCenter: ObservableObject {
         Task {
             let loaded = await DevelopPhotos.prepare(ids: ids, trip: trip)
             guard LibraryTrips.canAddToTrips(count: loaded.photos.count) else {
+                if DevelopTrips.reopensAfterPost(posted: 0) { DevelopProgressStore().reopen(trip.id, for: userId) }
                 isPosting = false
                 toasts.show(L("写真を読み込めなかったため投稿できませんでした。通信できる場所でもう一度お試しください",
                               "Couldn't load the photos, so nothing was posted. Try again with a connection."),
@@ -49,12 +53,17 @@ final class DevelopPostCenter: ObservableObject {
             made.fetchSpotMatchIndex = { [spots = environment.spots] in await spots.fetchMatchIndex() }
             made.drafts = UploadDraftStore(slot: .entry(UUID().uuidString))
             made.draftOwner = userId
-            made.onSaved = { TabRouter.shared.notePosted($0) }
+            var posted = 0
+            made.onSaved = {
+                posted += 1
+                TabRouter.shared.notePosted($0)
+            }
             made.applyInitialPhotos(loaded.photos, startPrivate: !published)
             // 撮影地の地名を引き終えるまで待つ（1枚5秒で諦める・`fillPlaceName`）。待たずに送ると地名が空で上がる
             for task in made.placeTasks.values { await task.value }
             await made.submit()
             let ok = made.didPostAll && loaded.failed == 0
+            if DevelopTrips.reopensAfterPost(posted: posted) { DevelopProgressStore().reopen(trip.id, for: userId) }
             isPosting = false
             model = nil
             TabRouter.shared.postSheetClosed()
@@ -79,13 +88,13 @@ final class DevelopPostCenter: ObservableObject {
 enum DevelopPhotos {
 
     /// 「題・公開範囲を変える」: 選んだ写真を読んで整え、今の投稿の画面に並べて開く（現像の画面が閉じきってから呼ぶ）。
-    /// 現像の続きなので**公開で始める**（表紙の画面で「みんなに公開」と見せた続き・変えられる）
+    /// 公開範囲は表紙の画面で選んでいた方で始める（既定は非公開・`DevelopTrips.startsPublic`）
     @MainActor
-    static func openUploadScreen(ids: [String], trip: LibraryTrip) {
+    static func openUploadScreen(ids: [String], trip: LibraryTrip, published: Bool = DevelopTrips.startsPublic) {
         Task {
             let loaded = await prepare(ids: ids, trip: trip)
             guard !loaded.photos.isEmpty else { return }
-            TabRouter.shared.openDevelopUpload(loaded.photos, published: true)
+            TabRouter.shared.openDevelopUpload(loaded.photos, published: published)
         }
     }
 

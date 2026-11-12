@@ -39,7 +39,7 @@ struct StoryComposerView: View {
     private let startsWithCamera: Bool
 
     /// ②「1年前」の「ストーリーに出す」から開いたときの写真と文字（2026-11-12 札 #543）。
-    /// 写真は端末の1枚、文字は「1年前の今日 · 竹富町」（最初から置いてある・動かせる・消せる）
+    /// 写真は端末の1枚、文字は「1年前の今日、竹富町」（最初から置いてある・動かせる・消せる）
     private let seed: StoryComposerSeed?
     /// 送り始めた（裏の係に渡して画面を閉じる直前）。②の輪を「出した」にする
     private let onStarted: (() -> Void)?
@@ -3156,7 +3156,7 @@ struct StoryComposerSeed: Identifiable {
     let id = UUID()
     /// 端末の写真の本体（作る画面が整える・`accept`）
     let photo: Data
-    /// 最初から置く文字（「1年前の今日 · 竹富町」）。空なら置かない（ホームで手に取った写真の「ストーリーで紹介」）
+    /// 最初から置く文字（「1年前の今日、竹富町」）。空なら置かない（ホームで手に取った写真の「ストーリーで紹介」）
     let text: String
 
     /// 置く札。明朝・下の方（ひとことの欄より上）。**ふつうの文字の札**なので動かせる・消せる

@@ -100,10 +100,10 @@ final class YearAgoTripsTests: XCTestCase {
         let t = trip(2025, 11, 10)
         let pick = try XCTUnwrap(YearAgoTrips.find(trips: [t], now: date(2026, 11, 11), timeZone: tokyo))
         XCTAssertEqual(YearAgoTrips.title(name: "竹富町", day: pick.day, year: YearAgoTrips.year(of: pick.day)),
-                       "竹富町 · 2025.11.11")
+                       "竹富町  2025.11.11")
         XCTAssertEqual(YearAgoTrips.title(name: nil, day: pick.day, year: 2025), "2025.11.11", "地名が無いときは日付だけ")
-        XCTAssertEqual(YearAgoTrips.subtitle(trip: t, day: pick.day, count: 4), "3日の旅の2日目 · 端末の写真から4枚")
-        XCTAssertEqual(YearAgoTrips.storyText(years: 1, name: "竹富町"), "1年前の今日 · 竹富町")
+        XCTAssertEqual(YearAgoTrips.subtitle(trip: t, day: pick.day, count: 4), "3日の旅の2日目、端末の写真から4枚")
+        XCTAssertEqual(YearAgoTrips.storyText(years: 1, name: "竹富町"), "1年前の今日、竹富町")
         XCTAssertEqual(YearAgoTrips.storyText(years: 2, name: nil), "2年前の今日")
         XCTAssertEqual(YearAgoTrips.ringName(1), "1年前")
     }
@@ -124,8 +124,8 @@ final class YearAgoTripsTests: XCTestCase {
 
     /// 作る画面に置く文字は、動かせる・消せるふつうの文字の札（明朝）
     func testComposerSeedOverlay() {
-        let overlay = StoryComposerSeed.overlay("1年前の今日 · 竹富町")
-        XCTAssertEqual(overlay.text, "1年前の今日 · 竹富町")
+        let overlay = StoryComposerSeed.overlay("1年前の今日、竹富町")
+        XCTAssertEqual(overlay.text, "1年前の今日、竹富町")
         XCTAssertEqual(overlay.kind, .text)
         XCTAssertEqual(overlay.face, .mincho)
     }

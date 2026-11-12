@@ -32,10 +32,12 @@ final class PhotoLiftCenter: ObservableObject {
     /// 縦の送りの払いを止める印（UIKit の払いの始まりが読む・`ProfileTabPager`）
     nonisolated(unsafe) static var holding = false
 
-    func lift(_ photo: Photo, at point: CGPoint) {
+    /// 手に取る。`fingerKnown` が偽（指の位置がまだ届いていない・札の真ん中で代える）なら、指の跡は最初の
+    /// `move` から始める（札の真ん中を動き始めの点にしない——動かした距離を見誤る）
+    func lift(_ photo: Photo, at point: CGPoint, fingerKnown: Bool = true) {
         self.photo = photo
         self.point = point
-        samples = [(Date().timeIntervalSinceReferenceDate, Double(point.x), Double(point.y))]
+        samples = fingerKnown ? [(Date().timeIntervalSinceReferenceDate, Double(point.x), Double(point.y))] : []
         Self.holding = true
     }
 
@@ -95,20 +97,47 @@ final class PhotoLiftCenter: ObservableObject {
         photo = nil
         facesOpenFor = nil
         Self.holding = false
+        samples = []
+    }
+
+    /// 札の身振りが終わった（`@GestureState` が戻った）。**離した（`end`）が来ないまま終わった**——着信・通知センター・
+    /// 裏に回った・一覧の読み直しで身振りが取り消された——なら、手に取ったままにせず元へ戻す。
+    /// 2026-11-12 確かめ役: 取り消されると `onEnded` が来ず `photo` が残り、幕がかかって全体が押せなくなっていた
+    func gestureReset(photoId: String) {
+        guard photo?.id == photoId else { return }
+        cancel()
+    }
+
+    /// 前面でなくなった（裏に回る・通知センター）。手に取ったもの・開いた送る人の列を戻す
+    func sceneChanged(active: Bool) {
+        guard !active else { return }
+        cancel()
+    }
+
+    /// 暗い幕を押した: 手に取ったもの・送る人の列を戻す（幕で閉じ込めない）
+    func backdropTapped() {
+        cancel()
     }
 }
 
 extension PhotoLift {
     /// 離した1回の行き先（運んだ先、無ければ弾いた向き）。`openFaces` は下へ弾いた（送る人の列を開いたまま）
     static func resolve(point: CGPoint, samples: [PhotoLiftCenter.Sample], size: CGSize,
-                        faces: Int) -> (target: Target?, openFaces: Bool) {
+                        faces: Int, allowsStory: Bool = true) -> (target: Target?, openFaces: Bool) {
         let w = Double(size.width), h = Double(size.height)
-        if let target = target(x: Double(point.x), y: Double(point.y), width: w, height: h, faces: faces) {
+        // 動かさずに離したら元へ戻るだけ（手に取った所が行き先の上でも）
+        // （指の跡が無い＝指の位置が分からないまま一度も動いていない、も同じ）
+        guard let start = samples.first,
+              hypot(Double(point.x) - start.x, Double(point.y) - start.y) >= carryDistance else {
+            return (nil, false)
+        }
+        if let target = target(x: Double(point.x), y: Double(point.y), width: w, height: h, faces: faces,
+                               allowsStory: allowsStory) {
             return (target, false)
         }
         switch flick(samples: samples.map { (t: $0.t, x: $0.x, y: $0.y) }) {
         case .save: return (.save, false)
-        case .story: return (.story, false)
+        case .story: return allowsStory ? (.story, false) : (nil, false)
         case .faces: return (nil, true)
         case nil: return (nil, false)
         }
@@ -127,6 +156,7 @@ struct PhotoLiftOverlay: View {
     @EnvironmentObject private var toasts: ToastCenter
     @EnvironmentObject private var hidden: ModerationStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var undo: CountdownUndo
 
     /// 顔の段（フォロー中・今の DM の顔の列と同じ人）
@@ -145,6 +175,12 @@ struct PhotoLiftOverlay: View {
         self._undo = ObservedObject(wrappedValue: center.undo)
     }
 
+    /// 写真をストーリーの行き先へ運べるか（自分の写真だけ・`PhotoLift.allowsStory`）
+    private func allowsStory(_ photo: Photo?) -> Bool {
+        guard let photo else { return false }
+        return PhotoLift.allowsStory(ownerId: photo.userId ?? photo.uploadedBy, me: auth.userId)
+    }
+
     /// 顔の段に出す人数
     nonisolated static let faceCount = 4
     nonisolated static let hintKey = "photoLift.hintShown"
@@ -156,10 +192,11 @@ struct PhotoLiftOverlay: View {
                 if center.isHolding {
                     Color.black.opacity(0.55)
                         .ignoresSafeArea()
-                        .onTapGesture { center.closeFaces() }
+                        // 幕を押したら戻す（手に取ったまま残った写真も・幕で閉じ込めない）
+                        .onTapGesture { center.backdropTapped() }
                         .accessibilityHidden(true)
                     if center.photo != nil {
-                        topBand(size)
+                        if allowsStory(center.photo) { topBand(size) }
                         saveHalfCircle(size)
                     }
                     facesRow(size)
@@ -171,6 +208,8 @@ struct PhotoLiftOverlay: View {
             .onAppear { self.size = size }
             .onChange(of: size) { _, new in self.size = new }
             .onChange(of: center.drop) { _, drop in if let drop { handle(drop) } }
+            // 裏に回る・通知センターを下ろした: 手に取ったものを戻す
+            .onChange(of: scenePhase) { _, phase in center.sceneChanged(active: phase == .active) }
             .onChange(of: center.photo?.id) { _, id in
                 guard id != nil else { return }
                 Task { await loadFaces() }
@@ -203,7 +242,8 @@ struct PhotoLiftOverlay: View {
 
     private func hot(_ target: PhotoLift.Target, size: CGSize) -> Bool {
         PhotoLift.near(x: Double(center.point.x), y: Double(center.point.y), width: Double(size.width),
-                       height: Double(size.height), faces: faces.count).map { near in
+                       height: Double(size.height), faces: faces.count,
+                       allowsStory: allowsStory(center.photo)).map { near in
             if case .face = near, case .face = target { return true }
             return near == target
         } ?? false
@@ -262,7 +302,8 @@ struct PhotoLiftOverlay: View {
                 ForEach(Array(faces.prefix(Self.faceCount).enumerated()), id: \.element.id) { offset, user in
                     let on = center.photo != nil && PhotoLift.target(
                         x: Double(center.point.x), y: Double(center.point.y), width: Double(size.width),
-                        height: Double(size.height), faces: min(faces.count, Self.faceCount)) == .face(offset)
+                        height: Double(size.height), faces: min(faces.count, Self.faceCount),
+                        allowsStory: allowsStory(center.photo)) == .face(offset)
                     Button {
                         if let photo = center.facesOpenFor { send(photo, to: user) }
                     } label: {
@@ -304,7 +345,8 @@ struct PhotoLiftOverlay: View {
     /// 指に付いた写真と、離すと何が起きるかの札
     private func lifted(_ photo: Photo, size: CGSize) -> some View {
         let target = PhotoLift.target(x: Double(center.point.x), y: Double(center.point.y), width: Double(size.width),
-                                      height: Double(size.height), faces: min(faces.count, Self.faceCount))
+                                      height: Double(size.height), faces: min(faces.count, Self.faceCount),
+                                      allowsStory: allowsStory(photo))
         let faceName: String? = {
             if case .face(let i)? = target, faces.indices.contains(i) { return faces[i].displayName }
             return nil
@@ -332,7 +374,9 @@ struct PhotoLiftOverlay: View {
     /// はじめての1回だけ: 3つの向きの矢印（2.2秒）
     private func hintArrows(_ size: CGSize) -> some View {
         ZStack {
-            Image(systemName: "arrow.up").position(x: center.point.x, y: center.point.y - 150)
+            if allowsStory(center.photo) {
+                Image(systemName: "arrow.up").position(x: center.point.x, y: center.point.y - 150)
+            }
             Image(systemName: "arrow.right").position(x: min(size.width - 30, center.point.x + 110), y: center.point.y)
             Image(systemName: "arrow.down").position(x: center.point.x, y: center.point.y + 110)
         }
@@ -350,13 +394,14 @@ struct PhotoLiftOverlay: View {
         if let chosen = drop.chosen {
             switch chosen {
             case .save: save(drop.photo)
-            case .story: openStory(drop.photo)
+            case .story: if allowsStory(drop.photo) { openStory(drop.photo) }
             case .face: center.openFaces(for: drop.photo)
             }
             return
         }
         let decided = PhotoLift.resolve(point: drop.point, samples: drop.samples, size: size,
-                                        faces: min(faces.count, Self.faceCount))
+                                        faces: min(faces.count, Self.faceCount),
+                                        allowsStory: allowsStory(drop.photo))
         if decided.openFaces {
             center.openFaces(for: drop.photo)
             return

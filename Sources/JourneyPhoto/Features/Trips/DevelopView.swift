@@ -18,7 +18,7 @@ struct DevelopView: View {
     /// 端末の一冊の地名（引けていなければ nil・題は期間）
     let name: String?
     /// 「題・公開範囲を変える」: 選んだ写真（表紙が先頭）を渡す。**呼び手は画面が閉じきってから**今の投稿の画面を開く
-    let onEdit: ([String]) -> Void
+    let onEdit: ([String], Bool) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -27,6 +27,10 @@ struct DevelopView: View {
     @EnvironmentObject private var toasts: ToastCenter
     @EnvironmentObject private var connectivity: Connectivity
     @StateObject private var undo = CountdownUndo()
+    /// 送っている最中を見張る（送り終えるまで「投稿する」を押させない・2026-11-12 確かめ役）
+    @ObservedObject private var postCenter = DevelopPostCenter.shared
+    /// 公開範囲。**既定は非公開**（`DevelopTrips.startsPublic`）。表紙の行を1回押すと替わる
+    @State private var published = DevelopTrips.startsPublic
     /// 一部の写真だけ許可か（追加の口を出す）・選び足している最中か
     @ObservedObject private var deviceTrips = DeviceTripShelfStore.shared
 
@@ -48,7 +52,7 @@ struct DevelopView: View {
     private let store = DevelopProgressStore()
     private let frames: [String]
 
-    init(trip: LibraryTrip, name: String?, onEdit: @escaping ([String]) -> Void) {
+    init(trip: LibraryTrip, name: String?, onEdit: @escaping ([String], Bool) -> Void) {
         self.trip = trip
         self.name = name
         self.onEdit = onEdit
@@ -85,7 +89,10 @@ struct DevelopView: View {
         }
         .onAppear(perform: restore)
         // 閉じたら待っている投稿はいま送り出す（取り消しの札は画面と一緒に消えるため。積んだまま捨てない）
-        .onDisappear { undo.finishNow() }
+        // 閉じたら、取り消しを待っている投稿は**取り消す**（閉じた合図で送り出さない・`closingCancelsPendingPost`）
+        .onDisappear {
+            if DevelopTrips.closingCancelsPendingPost { undo.undo() } else { undo.finishNow() }
+        }
         // 入れ物の目印は中の部品の目印を上書きする（Mac run 1106 の画面の木で、中のボタン「develop.keep」まで
         // 全部「develop.screen」になっていた）。中を含む入れ物にしてから目印を付ける
         .accessibilityElement(children: .contain)
@@ -116,7 +123,7 @@ struct DevelopView: View {
             strip
                 .padding(.top, JPSpace.xs)
             if unreadable.isEmpty {
-                Text(L("右へ払うと載せる・左で外す", "Swipe right to keep, left to skip"))
+                Text(L("右へ払うと載せる、左で外す", "Swipe right to keep, left to skip"))
                     .font(JPFont.caption)
                     .foregroundStyle(WebTheme.text3)
                     .padding(.top, JPSpace.xs)
@@ -136,7 +143,7 @@ struct DevelopView: View {
         }
     }
 
-    /// 上の丸（閉じる・ガラス）と、真ん中の札「4 / 10 · DAY 1 · 金沢市」
+    /// 上の丸（閉じる・ガラス）と、真ん中の札「4 / 10  DAY 1  金沢市」
     private var topBar: some View {
         ZStack {
             Text(DevelopTrips.counter(index: index, total: frames.count,
@@ -203,7 +210,7 @@ struct DevelopView: View {
     private func caption(_ shot: LibraryShot) -> some View {
         let day = DevelopTrips.day(of: shot.id, in: trip)
         let date = day.map { "\($0.month).\($0.day)" } ?? ""
-        let head = [name, date].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+        let head = [name, date].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
         return VStack(alignment: .leading, spacing: JPSpace.xxs) {
             Text(head)
                 .font(JPFont.display(20, relativeTo: .title3))
@@ -227,8 +234,8 @@ struct DevelopView: View {
 
     private static func spokenShot(_ shot: LibraryShot, place: String?) -> String {
         let time = clock(of: shot, zone: .current)
-        if let place, !place.isEmpty { return L("\(place)の写真 · \(time)", "Photo in \(place) · \(time)") }
-        return L("写真 · \(time)", "Photo · \(time)")
+        if let place, !place.isEmpty { return L("\(place)の写真、\(time)", "Photo in \(place), \(time)") }
+        return L("写真、\(time)", "Photo, \(time)")
     }
 
     /// 払っている向きの判子（写真の上なので白の字と縁）
@@ -394,8 +401,8 @@ struct DevelopView: View {
         return VStack(alignment: .leading, spacing: JPSpace.s) {
             closeRow
             JPSectionHeading(eyebrow: DevelopTrips.coverEyebrow(trip), spoken: LibraryTrips.periodText(trip), title: title)
-            Text(L("\(kept.count)枚 · 押した写真が表紙になります",
-                   kept.count == 1 ? "1 photo · Tap one to make it the cover" : "\(kept.count) photos · Tap one to make it the cover"))
+            Text(L("\(kept.count)枚、押した写真が表紙になります",
+                   kept.count == 1 ? "1 photo. Tap one to make it the cover" : "\(kept.count) photos. Tap one to make it the cover"))
                 .font(JPFont.caption)
                 .foregroundStyle(WebTheme.text2)
             ScrollView {
@@ -414,10 +421,7 @@ struct DevelopView: View {
                     .multilineTextAlignment(.center)
                     .accessibilityIdentifier("develop.offline")
             } else {
-                Text(L("みんなに公開 · 撮影地と日付は写真の情報から入れます", "Public · Place and date come from the photos"))
-                    .font(JPFont.caption)
-                    .foregroundStyle(WebTheme.text3)
-                    .accessibilityIdentifier("develop.audience")
+                audienceRow
             }
             VStack(spacing: JPSpace.xxs) {
                 Button { post(order) } label: {
@@ -425,16 +429,16 @@ struct DevelopView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!DevelopTrips.canPost(offline: offline, undoShown: undo.message != nil,
-                                                posting: DevelopPostCenter.shared.isPosting))
+                                                posting: postCenter.isPosting))
                 // 押せないときは薄く（章の圏外の絵: 50%）
                 .opacity(offline ? 0.5 : 1)
                 .accessibilityIdentifier("develop.post")
                 Button {
                     undo.undo()
-                    onEdit(order)
+                    onEdit(order, published)
                     dismiss()
                 } label: {
-                    Text(L("題・公開範囲を変える", "Change title or audience"))
+                    Text(L("題を変える", "Change title"))
                         .font(JPFont.body)
                         .foregroundStyle(WebTheme.accent)
                         .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
@@ -450,6 +454,40 @@ struct DevelopView: View {
         .padding(.bottom, JPSpace.xs)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("develop.cover")
+    }
+
+    /// 公開範囲の行（押すと 非公開 ⇄ 公開。1回で替わる）。下に撮影地と日付の出どころ
+    private var audienceRow: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Button {
+                published.toggle()
+            } label: {
+                HStack(spacing: JPSpace.xs) {
+                    Image(systemName: published ? "globe" : "lock.fill")
+                        .font(.callout)
+                        .foregroundStyle(WebTheme.text2)
+                        .accessibilityHidden(true)
+                    Text(DevelopTrips.audienceLabel(published: published))
+                        .font(JPFont.bodyEmphasis)
+                        .foregroundStyle(WebTheme.text)
+                    Spacer(minLength: JPSpace.xs)
+                    Text(L("変える", "Change"))
+                        .font(JPFont.body)
+                        .foregroundStyle(WebTheme.accent)
+                }
+                .frame(minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(undo.message != nil)
+            .accessibilityLabel(L("公開範囲", "Audience"))
+            .accessibilityValue(DevelopTrips.audienceLabel(published: published))
+            .accessibilityHint(L("押すと替わります", "Tap to change"))
+            .accessibilityIdentifier("develop.audience")
+            Text(L("撮影地と日付は写真の情報から入れます", "Place and date come from the photos"))
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
+        }
     }
 
     private func coverCell(_ id: String, isCover: Bool) -> some View {
@@ -609,10 +647,11 @@ struct DevelopView: View {
         let environment = environment
         let toasts = toasts
         let store = store
+        let published = published
         undo.schedule(DevelopTrips.postingNotice(count: order.count), seconds: DevelopTrips.undoSeconds) {
             // 札は先に閉じる（送っている間にホームへ戻っても同じ旅の札が出ない）
             store.close(trip.id, for: userId)
-            DevelopPostCenter.shared.post(trip: trip, ids: order, published: true, userId: userId,
+            DevelopPostCenter.shared.post(trip: trip, ids: order, published: published, userId: userId,
                                           environment: environment, toasts: toasts) { _ in }
             dismiss()
         }

@@ -65,7 +65,9 @@ final class PhotoLiftTests: XCTestCase {
         let down = PhotoLift.resolve(point: CGPoint(x: 195, y: 430), samples: samples, size: size, faces: 4)
         XCTAssertNil(down.target)
         XCTAssertTrue(down.openFaces)
-        let onSave = PhotoLift.resolve(point: CGPoint(x: 320, y: 430), samples: [], size: size, faces: 4)
+        // 運んだ先（指の跡がある・20pt 以上動いた）。動かさずに離したら元へ戻る（`YubiReviewTests`）
+        let carried = [PhotoLiftCenter.Sample(t: 0, x: 195, y: 430), PhotoLiftCenter.Sample(t: 1, x: 320, y: 430)]
+        let onSave = PhotoLift.resolve(point: CGPoint(x: 320, y: 430), samples: carried, size: size, faces: 4)
         XCTAssertEqual(onSave.target, .save)
         let none = PhotoLift.resolve(point: CGPoint(x: 195, y: 430), samples: [], size: size, faces: 4)
         XCTAssertNil(none.target)

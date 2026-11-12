@@ -106,8 +106,8 @@ struct RootView: View {
     @State private var showTripImport = false
     /// 旅の写真から選んだ本体。**流れが閉じきってから**投稿画面を開き、そこへ渡す
     @State private var pendingTripPhotos: [ImagePreparer.Prepared] = []
-    /// ①現像から来た写真は**公開で始める**（表紙の画面で「みんなに公開」と見せた続き・2026-11-12 札 #543）。
-    /// 投稿の画面を閉じたら下ろす
+    /// ①現像の表紙で公開を選んでから「題を変える」で来た（2026-11-12 札 #543）。**既定は非公開**のまま
+    /// （`DevelopTrips.uploadStartsPrivate`）。投稿の画面を閉じたら下ろす
     @State private var pendingTripPublic = false
     /// 端末の写真の一冊から「この旅の写真を投稿する」で来たときに開く旅（`TabRouter.openTripImport`）。
     /// 流れを閉じたら忘れる
@@ -1120,7 +1120,8 @@ struct RootView: View {
     private var uploadSheet: some View {
         NavigationStack {
             UploadView(initialTag: pendingThemeTag, initialPhotos: pendingTripPhotos,
-                       startPrivate: !pendingTripPhotos.isEmpty && !pendingTripPublic,
+                       startPrivate: DevelopTrips.uploadStartsPrivate(hasTripPhotos: !pendingTripPhotos.isEmpty,
+                                                                   chosePublic: pendingTripPublic),
                        initialCapture: pendingCapture,
                        resumeJournal: resumeJournalId,
                        openDraft: openPostDraftId,

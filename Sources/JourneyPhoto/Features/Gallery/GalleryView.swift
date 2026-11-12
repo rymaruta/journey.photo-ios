@@ -507,7 +507,8 @@ struct GalleryView: View {
                 // 届いた束をまだ開いていないときだけ出る（`PassHomeSlot`）
                 let passBundle = passCards(now: passNow)
                 PassHomeSlot(cards: passBundle, now: passNow) { passDeck = PassDeck(cards: passBundle) }
-                StoriesRow(reloadToken: tabRouter.postSheetsClosed &+ storiesRefresh)
+                StoriesRow(reloadToken: tabRouter.postSheetsClosed &+ storiesRefresh,
+                           myPhotos: model.myPhotos.filter { !dropped.deleted.contains($0.id) })
                 // **#417 ⑦（2026-10-30 owner 採用）: 「NEW（みんなの新しい写真）」の段（2026-10-21・`HomeFreshStrip`）は外した。**
                 // 新着は切り替えの「新着」に一本化。最初の画面の人の写真は、写真の一覧の1段目が受け持つ
                 // （④で季節の段を一覧の中へ移し、①③で上を詰めたので、写真の大きな1枚目が1画面目に入る・Compare の板）。

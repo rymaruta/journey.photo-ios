@@ -40,6 +40,8 @@ struct YearAgoStoryView: View {
     @State private var dust: Double = 1
     /// 「ストーリーに出す」で本体を読んでいる
     @State private var loadingShare = false
+    /// 本体の読み（閉じたら取り消す・`CancellableLoad`）
+    @State private var shareLoad = CancellableLoad<Data?>()
     /// 読めた写真（iCloud の本体を落としている間は進まない・`YearAgoTrips.canAdvance`）
     @State private var loaded: Set<String> = []
 
@@ -61,6 +63,8 @@ struct YearAgoStoryView: View {
         .statusBarHidden()
         .task(id: index) { await play() }
         .onChange(of: ids.isEmpty) { _, empty in if empty { dismiss() } }
+        // 閉じたら読みを取り消す（閉じたあとに作る画面を開かない）
+        .onDisappear { shareLoad.cancel() }
         // 中のボタンの目印（yearAgo.share など）を上書きしないよう、中を含む入れ物にしてから付ける（Mac run 1106）
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("yearAgo.viewer")
@@ -305,13 +309,10 @@ struct YearAgoStoryView: View {
         guard ids.indices.contains(index), !loadingShare else { return }
         let id = ids[index]
         loadingShare = true
-        Task {
-            let data: Data?
-            if let sample = DevelopPreview.image(for: id) {
-                data = sample.jpegData(compressionQuality: 0.9)
-            } else {
-                data = await PhotoLibrary.imageData(for: id)
-            }
+        shareLoad.start({
+            if let sample = DevelopPreview.image(for: id) { return sample.jpegData(compressionQuality: 0.9) }
+            return await PhotoLibrary.imageData(for: id)
+        }) { data in
             loadingShare = false
             guard let data else {
                 toasts.show(L("写真を読み込めませんでした。通信できる場所でもう一度お試しください",

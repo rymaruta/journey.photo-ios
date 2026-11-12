@@ -84,11 +84,11 @@ enum YearAgoTrips {
         L("\(years)年前の今日", years == 1 ? "1 year ago today" : "\(years) years ago today")
     }
 
-    /// 閲覧の題「竹富町 · 2025.11.11」。地名が無ければ日付だけ（圏外で引けていない）
+    /// 閲覧の題「竹富町  2025.11.11」。地名が無ければ日付だけ（圏外で引けていない）
     static func title(name: String?, day: LibraryTrip.Day, year: Int) -> String {
         let date = String(format: "%04d.%02d.%02d", year, day.month, day.day)
         guard let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return date }
-        return "\(name) · \(date)"
+        return "\(name)  \(date)"
     }
 
     /// 題の年（日の鍵の頭）
@@ -102,14 +102,14 @@ enum YearAgoTrips {
         let head = days <= 1
             ? L("日帰りの旅", "A day trip")
             : L("\(days)日の旅の\(day.number)日目", "Day \(day.number) of a \(days)-day trip")
-        return head + " · " + L("端末の写真から\(count)枚", count == 1 ? "1 photo on this iPhone" : "\(count) photos on this iPhone")
+        return head + "、" + L("端末の写真から\(count)枚", count == 1 ? "1 photo on this iPhone" : "\(count) photos on this iPhone")
     }
 
-    /// ストーリーの作る画面に最初から置く文字「1年前の今日 · 竹富町」（動かせる・消せる）
+    /// ストーリーの作る画面に最初から置く文字「1年前の今日、竹富町」（動かせる・消せる）
     static func storyText(years: Int, name: String?) -> String {
         let head = headline(years)
         guard let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return head }
-        return "\(head) · \(name)"
+        return "\(head)、\(name)"
     }
 
     /// 圏外の一言（写真の上のガラス）。**見るのは端末の中だけでできる**ので閲覧は止めない。送るのはあとで
@@ -194,5 +194,30 @@ final class YearAgoRingStore {
     func markPosted(_ day: String, for userId: String?) {
         guard let userId else { return }
         defaults.set(day, forKey: postedKey(userId))
+    }
+}
+
+/// 1回だけの読み込み（②「ストーリーに出す」の写真の本体）。**閉じたら取り消し、取り消した読みの結果は渡さない**
+/// （2026-11-12 確かめ役: 読んでいる途中で閉じると、閉じたあとに作る画面が開いていた）
+@MainActor
+final class CancellableLoad<Value> {
+    private var task: Task<Void, Never>?
+
+    var isLoading: Bool { task != nil }
+
+    /// 読み始める（前の読みは取り消す）。読み終えたら `done`（取り消していたら呼ばない）
+    func start(_ load: @escaping () async -> Value, done: @escaping (Value) -> Void) {
+        task?.cancel()
+        task = Task { @MainActor [weak self] in
+            let value = await load()
+            guard !Task.isCancelled else { return }
+            self?.task = nil
+            done(value)
+        }
+    }
+
+    func cancel() {
+        task?.cancel()
+        task = nil
     }
 }

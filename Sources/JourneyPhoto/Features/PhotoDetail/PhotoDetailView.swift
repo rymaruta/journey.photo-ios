@@ -1,6 +1,5 @@
 import SwiftUI
 import CoreLocation
-import MapKit
 
 struct PhotoDetailView: View {
 
@@ -50,8 +49,6 @@ struct PhotoDetailView: View {
     }
     @State private var preparingThreads = false
     @State private var showViewer = false
-    /// 写真をつまんで縮めている量（1 = 等倍・`PinchToMap`・2026-11-12 札 #543）。取り消されたら自動で戻る
-    @GestureState private var heroPinch: Double = 1
     /// つまんで地図へ（離した所が `PinchToMap.openScale` 以下）。行き先は「地図で見る ›」と同じ地図
     @State private var pinchOpensMap = false
     @State private var actionError: String?
@@ -593,109 +590,16 @@ struct PhotoDetailView: View {
     nonisolated static let inactiveDotOpacity = 0.4
 
     private func heroImage(_ item: Photo) -> some View {
-        Button {
-            showViewer = true
-        } label: {
-            // 🔴 **写真は重ね（overlay）に置く。** 引き伸ばした写真（fill）を直に
-            // `.frame(maxWidth: .infinity)` で包むと、横長の写真では包みの幅が
-            // 写真の幅（画面より広い）になり、`.clipped()` は見た目を切るだけなので
-            // 下の本文まで画面より広く組まれていた（説明・撮影情報・操作の列が
-            // 右端で切れる。実機の絵で見つかった）。重ねは親の幅を変えない
-            Color.clear
-                .frame(maxWidth: .infinity)
-                .frame(height: Self.heroHeight)
-                .overlay {
-                    // **縮めて読む部品（`DownsampledRemoteImage`）には替えない**（2026-10-31 判断・札 #429 アプリ 2）。
-                    // 枠（画面の幅 × 520pt・3倍の画面）を覆うには長い辺 1,792〜2,048px が要り、元の画像（1,920px）と
-                    // ほぼ同じで縮まない。替えた回（Mac run 793）は開いた時のメモリの山が 156.9→159.0MB と減らず、
-                    // 閉じた後のメモリが 132.4→154.9MB に増えた（縮めた絵の控えに残る）ので、元に戻した
-                    RemoteImage(url: item.detailImageURL, alignment: item.gridAlignment)
-                        // つまんで縮めると小さくなる（撮影地が無ければ段で止まる・`PinchToMap`）
-                        .scaleEffect(PinchToMap.displayScale(scale: heroPinch, hasPlace: item.coords != nil))
-                        .clipShape(RoundedRectangle(cornerRadius: heroPinch < 1 ? JPRadius.l : 0))
-                }
-                // 縮めるほど撮影地の地図が引いてくる（後ろ）
-                .background { pinchMap(item) }
-                .overlay { pinchHint(item) }
-                .overlay(alignment: .bottomLeading) { pinchPlace(item) }
-                .clipped()
-                .contentShape(Rectangle())
-                .accessibilityLabel(item.accessibilityText)
-        }
-        .buttonStyle(.plain)
-        .accessibilityHint(L("拡大して見る", "Opens the photo full screen"))
-        // UI テストがつまむ所（2026-11-12 札 #543・つまむと地図の絵）
-        .accessibilityIdentifier("detail.hero")
-        // 2本指でつまんで縮めると地図（写真の詳細の大きな写真だけ。広げる向きは今までどおり押して大きく見る）
-        .simultaneousGesture(
-            MagnifyGesture()
-                .updating($heroPinch) { value, state, _ in state = value.magnification }
-                .onEnded { value in
-                    if PinchToMap.opensMap(endScale: value.magnification, hasPlace: item.coords != nil) {
-                        pinchOpensMap = true
-                    }
-                }
-        )
-        // 段を越えたら軽く振動（ここで離すと戻る）
-        .sensoryFeedback(.impact(weight: .light), trigger: PinchToMap.passedStep(scale: heroPinch))
-        .accessibilityAction(named: L("地図で見る", "View on map")) {
-            if item.coords != nil { pinchOpensMap = true }
-        }
-    }
-
-    /// つまんでいる間の後ろの地図（撮影地の無い写真・つまんでいないときは描かない）
-    @ViewBuilder
-    private func pinchMap(_ item: Photo) -> some View {
-        if heroPinch < 1, let coords = item.coords {
-            let point = CLLocationCoordinate2D(latitude: coords.lat, longitude: coords.lng)
-            Map(position: .constant(.region(MKCoordinateRegion(
-                center: point, span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05))))) {
-                Annotation("", coordinate: point) {
-                    Circle().fill(WebTheme.accent).frame(width: 14, height: 14)
-                        .overlay(Circle().strokeBorder(Color.black, lineWidth: JPStroke.emphasis))
-                }
-            }
-            .opacity(PinchToMap.progress(scale: heroPinch))
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-        }
-    }
-
-    /// 地図が引いてきたら、撮影地の名前と「広げると写真へ」（章の模型の下の札・戻り方が見て分かる）
-    @ViewBuilder
-    private func pinchPlace(_ item: Photo) -> some View {
-        if let label = PinchToMap.placeLabel(location: item.location, scale: heroPinch, hasPlace: item.coords != nil) {
-            VStack(alignment: .leading, spacing: 2) {
-                if !label.place.isEmpty {
-                    Text(label.place)
-                        .font(JPFont.bodyEmphasis)
-                        .foregroundStyle(WebTheme.foreground)
-                }
-                Text(label.back)
-                    .font(JPFont.footnote)
-                    .foregroundStyle(WebTheme.muted2)
-            }
-            .jpPhotoTextShadow()
-            .padding(JPSpace.m)
-            .allowsHitTesting(false)
-            .accessibilityIdentifier("detail.pinchPlace")
-        }
-    }
-
-    /// 段を越えたら「さらに縮めると地図」（撮影地が無ければ「撮影地がありません」）。写真の上なので白・ガラス
-    @ViewBuilder
-    private func pinchHint(_ item: Photo) -> some View {
-        if PinchToMap.passedStep(scale: heroPinch) {
-            Text(item.coords == nil ? L("撮影地がありません", "No place for this photo")
-                 : heroPinch <= PinchToMap.openScale ? L("離すと地図", "Release for the map")
-                 : L("さらに縮めると地図", "Pinch more for the map"))
-                .font(JPFont.bodyEmphasis)
-                .foregroundStyle(WebTheme.foreground)
-                .padding(.horizontal, JPSpace.s)
-                .padding(.vertical, JPSpace.xs)
-                .jpGlass(in: Capsule())
-                .allowsHitTesting(false)
-                .accessibilityIdentifier("detail.pinchHint")
+        // つまむと地図（2026-11-12 札 #543）。つまむ値は**この部品の中だけ**で持つ（2026-11-12 確かめ役:
+        // 画面の `@GestureState` に置くと、指が動くたびに写真の詳細の全体が描き直されていた）
+        PinchToMapHero(item: item, height: Self.heroHeight,
+                       onOpen: { showViewer = true },
+                       onOpenMap: { pinchOpensMap = true }) {
+            // **縮めて読む部品（`DownsampledRemoteImage`）には替えない**（2026-10-31 判断・札 #429 アプリ 2）。
+            // 枠（画面の幅 × 520pt・3倍の画面）を覆うには長い辺 1,792〜2,048px が要り、元の画像（1,920px）と
+            // ほぼ同じで縮まない。替えた回（Mac run 793）は開いた時のメモリの山が 156.9→159.0MB と減らず、
+            // 閉じた後のメモリが 132.4→154.9MB に増えた（縮めた絵の控えに残る）ので、元に戻した
+            RemoteImage(url: item.detailImageURL, alignment: item.gridAlignment)
         }
     }
 
@@ -1669,6 +1573,23 @@ struct PhotoDetailView: View {
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: JPRadius.field))
+            }
+        } else if PinchToMap.showsMapLink(hasPlace: shown.coords != nil, nearbyCount: nearby.count) {
+            // 近くの写真が無くても、撮影地があれば「地図で見る ›」は出す（つまむと地図の、指を使わない道・
+            // 見つけ口。2026-11-12 確かめ役）。見出しの「この近くで撮られた写真」は0枚なので置かない
+            HStack {
+                Spacer()
+                NavigationLink {
+                    NearbyMapScreen(opened: shown, nearby: nearby, openedFromPublicFeed: fromPublicFeed)
+                } label: {
+                    Text(L("地図で見る ›", "View on map ›"))
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text2)
+                        .frame(minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("photo.mapLink")
             }
         }
     }

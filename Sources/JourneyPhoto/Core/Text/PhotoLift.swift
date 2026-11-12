@@ -54,9 +54,22 @@ enum PhotoLift {
         (width, height * saveCenterRatio)
     }
 
-    /// 指の位置の行き先（無ければ nil・外で離すと元へ戻る）
-    static func target(x: Double, y: Double, width: Double, height: Double, faces: Int) -> Target? {
-        if y < topBand { return .story }
+    /// 運んだとみなす最小の動き（pt）。**これより動かさずに離したら元へ戻るだけ**——手に取った所がもともと
+    /// 右の縁・上・下の段の上だと、動かさずに離しただけで保存・送るになっていた（2026-11-12 確かめ役）
+    static let carryDistance: Double = 20
+
+    /// ストーリーの行き先（上の帯）を出すか。**自分の写真のときだけ**。
+    /// 2026-11-12 判断（確かめ役）: 他人の写真を作者名なしで自分のストーリーに出せてしまうので、owner の判断が出るまで
+    /// 他人の写真では上の帯を出さず、上へ弾いても何もしない
+    static func allowsStory(ownerId: String?, me: String?) -> Bool {
+        guard let ownerId, let me, !ownerId.isEmpty else { return false }
+        return ownerId == me
+    }
+
+    /// 指の位置の行き先（無ければ nil・外で離すと元へ戻る）。`allowsStory` が偽なら上の帯は無い
+    static func target(x: Double, y: Double, width: Double, height: Double, faces: Int,
+                       allowsStory: Bool = true) -> Target? {
+        if allowsStory, y < topBand { return .story }
         let c = saveCenter(width: width, height: height)
         if hypot(x - c.x, y - c.y) < saveRadius { return .save }
         if faces > 0, y > height - bottomBand {
@@ -67,9 +80,11 @@ enum PhotoLift {
     }
 
     /// 近くまで来た行き先（吸い付きの合図。中に入っていれば `target` と同じ）
-    static func near(x: Double, y: Double, width: Double, height: Double, faces: Int) -> Target? {
-        if let inside = target(x: x, y: y, width: width, height: height, faces: faces) { return inside }
-        if y < topBand + nearSlack { return .story }
+    static func near(x: Double, y: Double, width: Double, height: Double, faces: Int,
+                     allowsStory: Bool = true) -> Target? {
+        if let inside = target(x: x, y: y, width: width, height: height, faces: faces,
+                               allowsStory: allowsStory) { return inside }
+        if allowsStory, y < topBand + nearSlack { return .story }
         let c = saveCenter(width: width, height: height)
         if hypot(x - c.x, y - c.y) < saveRadius + nearSlack { return .save }
         if faces > 0, y > height - bottomBand - nearSlack { return .face(-1) }
@@ -98,6 +113,23 @@ enum PhotoLift {
         guard hypot(vx, vy) >= flickSpeed else { return nil }
         if abs(vx) >= abs(vy) { return vx > 0 ? .save : nil }
         return vy < 0 ? .story : .faces
+    }
+
+    // MARK: - はじめての案内（2026-11-12 確かめ役「気づけるように」）
+
+    /// 長押しで運べることの案内を、はじめて手に取れる写真を見たとき**1回だけ**出す（覚えるのは端末の中）
+    static let introKey = "photoLift.introShown"
+    /// 案内を出しておく秒数（押しても消える）
+    static let introSeconds: Double = 5
+
+    /// 案内の字（写真の上なので白・ガラス）
+    static var introText: String {
+        L("写真を長押しすると、保存や送り先へ運べます", "Press and hold a photo to save it or send it")
+    }
+
+    /// 案内を出すか（ログインしていて、まだ出していない）。手に取れるのはログインしているときだけ
+    static func showsIntro(signedIn: Bool, alreadyShown: Bool) -> Bool {
+        signedIn && !alreadyShown
     }
 
     /// 指の上の札「離すと 保存」（離すと何が起きるかだけ）
