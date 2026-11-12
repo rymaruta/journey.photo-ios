@@ -58,17 +58,28 @@ final class NoMiddleDotSweepTests: XCTestCase {
 
     /// 見張りそのもの: 注記は読まず、文字列だけを拾う
     func testLiteralReaderSkipsComments() {
-        let code = """
-        // 区切り · 注記
-        let a = L("名前 · 時刻", "x") /* 中黒・注記 */
-        let b = "\\(f("・")) と"
-        """
-        XCTAssertEqual(Self.literals(code), ["名前 · 時刻", "x", "\\(f(\"・\")) と"])
+        let q = Self.quote
+        let code = "// 区切り · 注記\n"
+            + "let a = L(" + q + "名前 · 時刻" + q + ", " + q + "x" + q + ") " + "/" + "* 中黒・注記 *" + "/" + "\n"
+        let bs = String(Unicode.Scalar(0x5C))
+        let inner = bs + "(f(" + q + "・" + q + ")) と"
+        let code2 = code + "let b = " + q + inner + q + "\n"
+        XCTAssertEqual(Self.literals(code2), ["名前 · 時刻", "x", inner])
     }
 
     /// Swift の文字列リテラルの中身（注記を飛ばす・補間の中の文字列は外側の中身に含める）
+    /// 引用符（構文の検査 `check-swift-syntax.js` が引用符の字の書き方で迷うので、字の番号で持つ）
+    static let quote = String(Unicode.Scalar(0x22))
+    private static let quoteScalar = Unicode.Scalar(0x22)
+    private static let backslash = Unicode.Scalar(0x5C)
+    private static let open = Unicode.Scalar(0x28)
+    private static let close = Unicode.Scalar(0x29)
+    private static let newline = Unicode.Scalar(0x0A)
+
     static func literals(_ text: String) -> [String] {
         let s = Array(text.unicodeScalars)
+        let q = quote
+        let triple = q + q + q
         var out: [String] = []
         var i = 0
         func starts(_ p: String, _ at: Int) -> Bool {
@@ -83,41 +94,41 @@ final class NoMiddleDotSweepTests: XCTestCase {
         }
         while i < s.count {
             if starts("//", i) {
-                while i < s.count, s[i] != "\n" { i += 1 }
+                while i < s.count, s[i] != newline { i += 1 }
                 continue
             }
-            if starts("/*", i) {
+            if starts("/" + "*", i) {
                 i += 2
-                while i < s.count, !starts("*/", i) { i += 1 }
+                while i < s.count, !starts("*" + "/", i) { i += 1 }
                 i += 2
                 continue
             }
-            if starts("\"\"\"", i) {
+            if starts(triple, i) {
                 var j = i + 3
-                while j < s.count, !starts("\"\"\"", j) { j += 1 }
+                while j < s.count, !starts(triple, j) { j += 1 }
                 out.append(str(i + 3, j))
                 i = j + 3
                 continue
             }
-            if starts("#\"", i) {
+            if starts("#" + q, i) {
                 var j = i + 2
-                while j < s.count, !starts("\"#", j) { j += 1 }
+                while j < s.count, !starts(q + "#", j) { j += 1 }
                 out.append(str(i + 2, j))
                 i = j + 2
                 continue
             }
-            if s[i] == "\"" {
+            if s[i] == quoteScalar {
                 var j = i + 1
-                while j < s.count, s[j] != "\"", s[j] != "\n" {
-                    if s[j] == "\\" {
-                        if j + 1 < s.count, s[j + 1] == "(" {
+                while j < s.count, s[j] != quoteScalar, s[j] != newline {
+                    if s[j] == backslash {
+                        if j + 1 < s.count, s[j + 1] == open {
                             var k = j + 2
                             var depth = 1
                             while k < s.count, depth > 0 {
-                                if s[k] == "(" { depth += 1 } else if s[k] == ")" { depth -= 1 } else if s[k] == "\"" {
+                                if s[k] == open { depth += 1 } else if s[k] == close { depth -= 1 } else if s[k] == quoteScalar {
                                     k += 1
-                                    while k < s.count, s[k] != "\"" {
-                                        if s[k] == "\\" { k += 1 }
+                                    while k < s.count, s[k] != quoteScalar {
+                                        if s[k] == backslash { k += 1 }
                                         k += 1
                                     }
                                 }
