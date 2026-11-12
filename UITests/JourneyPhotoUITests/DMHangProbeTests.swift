@@ -23,7 +23,7 @@ final class DMHangProbeTests: XCTestCase {
         executionTimeAllowance = 300
     }
 
-    // 印の無い版。**直し（`DMSpotCardMemory`）が入っているので固まらないのが正しい**。最初と最後に1回ずつ
+    // 印の無い版。**直し（札の枠 `DMSpotCardBox`）が入っているので固まらないのが正しい**。最初と最後に1回ずつ
     func test00Baseline() { probe([]) }
     func test99BaselineAgain() { probe([]) }
     /// 1回目の訪問（URL を送って断られる 86m5）を飛ばし、いきなり取り消しの段の道で払う

@@ -55,10 +55,22 @@ final class DMSpotCardMemoryTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let card = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Messages/DMSpotCard.swift"),
                               encoding: .utf8)
-        XCTAssertTrue(card.contains("start = DMSpotCardMemory.phase(for: slug) ?? .loading"), "札がいつも読み込み中から始まる")
-        XCTAssertTrue(card.contains("_phase = State(initialValue: start)"))
+        XCTAssertTrue(card.contains("DMSpotCardMemory.phase(for: slug)"), "札がいつも読み込み中から始まる")
+        XCTAssertTrue(card.contains("_phase = State(initialValue: start ?? .loading)"))
         XCTAssertTrue(card.contains("guard phase == .loading else { return }\n            await load()"), "覚えた札を読み直している")
         XCTAssertTrue(card.contains("DMSpotCardMemory.remember(settled, for: slug, failed: failed)"), "読み終えた中身を覚えていない")
         XCTAssertFalse(card.contains("@State private var phase: Phase = "), "札の状態の初めの値が決め打ち（作り直すと読み込み中に戻る）")
+    }
+
+    /// 🔴 固まる件の直し: 札はどの状態でも同じ枠（`DMSpotCardBox`）に入る。枠の大きさが中身で替わらないことは
+    /// `DMSpotCardBoxTests`（iOS だけ）が測る。ここでは Linux でも、枠を通らない道が無いことを読む
+    func testEveryPhaseIsDrawnInTheFixedBox() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let card = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Messages/DMSpotCard.swift"),
+                              encoding: .utf8)
+        XCTAssertTrue(card.contains("DMSpotCardBox { phaseView }"), "札が枠に入っていない（読み込み中から読み終えると高さが替わる）")
+        XCTAssertTrue(card.contains("case .loading:") && card.contains("card(spot, index: index, fillsBox: true)")
+                      && card.contains("missingCard"), "読み込み中・読めた・読めないのどれかが枠の外にある")
     }
 }

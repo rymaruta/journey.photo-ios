@@ -18,7 +18,7 @@ import Foundation
 /// | `JPDMNoInnerIds` | 行の中の `.id(message.id)`（吹き出し・時刻・空の枠） |
 /// | `JPDMNoAutoScroll` | 開いたとき・数が変わったときの `scrollTo`（いちばん下へ送る） |
 /// | `JPDMEagerStack` | `LazyVStack` を `VStack` にする（遅延の配置そのものが要るかの確かめ） |
-/// | `JPDMRevertSpotFix` | 直し（`DMSpotCardMemory`）を戻す。札はいつも「読み込み中」から始まる（直す前の形） |
+/// | `JPDMRevertSpotFix` | 直し（札の枠 `DMSpotCardBox` と `DMSpotCardMemory`）を戻す。札はいつも「読み込み中」から始まり、状態ごとに高さが違う（直す前の形） |
 enum DMHangProbe {
     static let names = [
         "NoSpotCard", "SpotCardFixed", "SpotCardStatic", "NoSpotMessages", "NoWidthRead", "NoTripBand",
