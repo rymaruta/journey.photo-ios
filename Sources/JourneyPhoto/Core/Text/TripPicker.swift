@@ -371,7 +371,7 @@ enum TripPicker {
     static func regionLabel<P: TripAllocatable>(of day: [P]) -> String? {
         var seen = Set<String>()
         let labels = day.compactMap { $0.allocationRegion.label }.filter { seen.insert($0).inserted }
-        return labels.isEmpty ? nil : labels.joined(separator: "・")
+        return labels.isEmpty ? nil : labels.joined(separator: "、")
     }
 
     /// 題の下書き。地域の名前を2つまで（「京都府・奈良県の旅」「京都府・奈良県ほかの旅」）。
@@ -381,7 +381,7 @@ enum TripPicker {
         let labels = groups.compactMap { $0.first?.allocationRegion.label }
             .filter { seen.insert($0).inserted }
         guard !labels.isEmpty else { return L("行きたい場所の旅", "Places I want to go") }
-        let head = labels.prefix(2).joined(separator: "・")
+        let head = labels.prefix(2).joined(separator: "、")
         let more = labels.count > 2
         return L("\(head)\(more ? "ほか" : "")の旅", "Trip to \(labels.prefix(2).joined(separator: ", "))\(more ? " and more" : "")")
     }

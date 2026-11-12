@@ -31,7 +31,7 @@ struct PushPrimerView: View {
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                     // 2026-10-11: owner が承認した言い方（問いの形で、何が届くかを先に言う）
-                    Text(L("いいね・コメントが届いたらお知らせしますか？",
+                    Text(L("いいね、コメントが届いたらお知らせしますか？",
                            "Want a heads-up when you get likes and comments?"))
                         .font(JPFont.cardTitle)
                         .foregroundStyle(WebTheme.text)
@@ -144,7 +144,7 @@ struct PushPrimerPoint: Identifiable, Equatable {
     static func shown(isPro: Bool) -> [PushPrimerPoint] {
         var points = [
             PushPrimerPoint(systemImage: "heart",
-                            text: L("いいね・コメント・フォローが届いたとき", "When you get likes, comments and follows")),
+                            text: L("いいね、コメント、フォローが届いたとき", "When you get likes, comments and follows")),
             PushPrimerPoint(systemImage: "bubble.left",
                             text: L("ストーリーに返信が来たとき", "When someone replies to your story")),
         ]

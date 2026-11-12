@@ -35,7 +35,7 @@ final class PhotoEditScreenTests: XCTestCase {
         let recipe = PhotoRecipe(exposure: 0.5)
         XCTAssertTrue(Adjustment.exposure.isChanged(in: recipe))
         XCTAssertFalse(Adjustment.contrast.isChanged(in: recipe))
-        XCTAssertEqual(Adjustment.exposure.accessibilityLabel(changed: true), "露出・変えてあります")
+        XCTAssertEqual(Adjustment.exposure.accessibilityLabel(changed: true), "露出、変えてあります")
         XCTAssertEqual(Adjustment.exposure.accessibilityLabel(changed: false), "露出")
         // つまみの表示で 0 に丸まる小ささは「変えていない」（点が付いたのに 0 と出さない）
         XCTAssertFalse(Adjustment.contrast.isChanged(in: PhotoRecipe(contrast: 0.004)))

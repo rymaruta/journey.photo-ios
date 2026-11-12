@@ -39,7 +39,7 @@ enum DMTripPlaces {
             case .text: from = L("文から拾った", "from a message")
             case .picked: from = L("候補から選んだ", "picked from suggestions")
             }
-            return "\(kind) · \(from)"
+            return "\(kind)\u{2002}\(from)"
         }
     }
 

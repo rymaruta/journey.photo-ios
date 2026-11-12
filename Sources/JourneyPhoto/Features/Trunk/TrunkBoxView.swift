@@ -426,7 +426,7 @@ struct TrunkBoxView: View {
         if let plate = look.plate {
             let small = plate == .chrome
             VStack(spacing: 1) {
-                Text(small ? "AIR · JOURNEY PHOTO" : "JOURNEY PHOTO")
+                Text(small ? "AIR\u{2002}JOURNEY PHOTO" : "JOURNEY PHOTO")
                     .font(.system(size: 7, weight: .bold))
                     .tracking(7 * 0.3)
                 Text(ownerName.flatMap { $0.isEmpty ? nil : $0 } ?? L("持ち主の名前", "Owner\u{2019}s name"))

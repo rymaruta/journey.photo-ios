@@ -415,7 +415,7 @@ final class HomeSpotShelfTests: XCTestCase {
     // MARK: - 言葉
 
     func testEyebrowNamesTheSeason() {
-        XCTAssertEqual(HomeSpotShelf.eyebrow("autumn"), "THIS SEASON · 秋")
+        XCTAssertEqual(HomeSpotShelf.eyebrow("autumn"), "THIS SEASON\u{2002}秋")
         XCTAssertEqual(HomeSpotShelf.eyebrow("???"), "THIS SEASON")
         // 作例の撮影者は利用者ではないと添える。2026-10-21 から角の立たない言い方（「アプリの外の撮影者」）
         XCTAssertTrue(HomeSpotShelf.note.contains("アプリの外の撮影者"), "作例の撮影者は利用者ではないと添える")

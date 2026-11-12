@@ -339,7 +339,7 @@ final class ProPurchaseTests: XCTestCase {
         let state = ProSubscriptionState(plan: .monthly, renewalDate: date("2026-11-09T03:00:00Z"),
                                          willAutoRenew: true, displayPrice: "¥500")
         XCTAssertEqual(ProStatusText.settingsDetail(isPro: true, state: state, timeZone: tokyo),
-                       "月 ¥500 · 次の更新 2026.11.09 · App Store で管理")
+                       "月 ¥500\u{2002}次の更新 2026.11.09\u{2002}App Store で管理")
     }
 
     /// 解約を予約している → 「2026.11.09 まで」
@@ -347,7 +347,7 @@ final class ProPurchaseTests: XCTestCase {
         let state = ProSubscriptionState(plan: .yearly, renewalDate: date("2027-10-09T03:00:00Z"),
                                          willAutoRenew: false, displayPrice: nil)
         XCTAssertEqual(ProStatusText.settingsDetail(isPro: true, state: state, timeZone: tokyo),
-                       "年 ¥5,000 · 2027.10.09 まで · App Store で管理")
+                       "年 ¥5,000\u{2002}2027.10.09 まで\u{2002}App Store で管理")
     }
 
     /// Pro だが、この端末の App Store では読めない（別の Apple ID など）
@@ -379,7 +379,7 @@ final class ProPurchaseTests: XCTestCase {
     }
 
     func testSupporterRowDetail() {
-        XCTAssertEqual(ProStatusText.supporterDetail(number: 1), "No. 0001 · 手に取って回せます")
+        XCTAssertEqual(ProStatusText.supporterDetail(number: 1), "No. 0001\u{2002}手に取って回せます")
     }
 
     private func profile(_ json: String) throws -> UserProfile {
@@ -391,15 +391,15 @@ final class ProPurchaseTests: XCTestCase {
         {"userId":"u1","badges":{"earlyUser":{"tier":1,"at":"2026-09-01T00:00:00Z"}},
          "displayBadge":"earlyUser","pro":true,"proMarkStyle":"iris"}
         """)
-        XCTAssertEqual(ProStatusText.nameSideDetail(pro), "初期ユーザー · Pro マークは 絞り羽根")
+        XCTAssertEqual(ProStatusText.nameSideDetail(pro), "初期ユーザー\u{2002}Pro マークは 絞り羽根")
         let free = try profile(#"{"userId":"u2","pro":false}"#)
         XCTAssertEqual(ProStatusText.nameSideDetail(free), "バッジなし")
         // 外しているときは「外しています」（絞り羽根と言わない・2026-10-10）
         let off = try profile(#"{"userId":"u3","pro":true,"proMarkStyle":"none"}"#)
-        XCTAssertEqual(ProStatusText.nameSideDetail(off), "バッジなし · Pro マークは外しています")
+        XCTAssertEqual(ProStatusText.nameSideDetail(off), "バッジなし\u{2002}Pro マークは外しています")
         // 公式の印を外していれば言う。付けている・資格の無い人には言わない
         let verifiedOff = try profile(#"{"userId":"u4","verified":true,"verifiedMarkOff":true}"#)
-        XCTAssertEqual(ProStatusText.nameSideDetail(verifiedOff), "バッジなし · 公式の印は外しています")
+        XCTAssertEqual(ProStatusText.nameSideDetail(verifiedOff), "バッジなし\u{2002}公式の印は外しています")
         let verifiedOn = try profile(#"{"userId":"u5","verified":true}"#)
         XCTAssertEqual(ProStatusText.nameSideDetail(verifiedOn), "バッジなし")
     }
@@ -624,7 +624,7 @@ final class ProBadgeTests: XCTestCase {
         XCTAssertEqual(BadgeCatalog.metal("proAutumn2026", tier: 1), .brass)
         XCTAssertEqual(BadgeCatalog.name("proAutumn2026"), "秋 2026")
         XCTAssertEqual(BadgeCatalog.fullName("proAutumn2026", tier: 1), "秋の章 2026")
-        XCTAssertEqual(BadgeCatalog.fullName("supporterYear", tier: 2), "続けた年 · 2年目")
+        XCTAssertEqual(BadgeCatalog.fullName("supporterYear", tier: 2), "続けた年\u{2002}2年目")
         XCTAssertEqual(BadgeCatalog.discRatio("proAutumn2026"), 0.91)
     }
 

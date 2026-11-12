@@ -78,7 +78,7 @@ enum LocalizedEdit {
             // 英語の無い写真は、全体を 2000 に縮めても保存できる——それも言う
             let japaneseOnly = map["en"] == nil
             if japaneseOnly {
-                return L("説明は、全体を\(limit)字以内にするか、1段落\(limit)字以内・\(PostLimits.descriptionParagraphs)段落以内にしてください",
+                return L("説明は、全体を\(limit)字以内にするか、1段落\(limit)字以内、\(PostLimits.descriptionParagraphs)段落以内にしてください",
                          "Keep the description within \(limit) characters, or within \(PostLimits.descriptionParagraphs) paragraphs of up to \(limit) characters each")
             }
             return tooMany

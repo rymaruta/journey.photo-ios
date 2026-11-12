@@ -169,7 +169,7 @@ struct DMRequestsView: View {
                                 .foregroundStyle(WebTheme.text)
                                 .lineLimit(1)
                             Text([request.username.map { "@\($0)" }, DMText.listTime(request.t)]
-                                    .compactMap { $0 }.joined(separator: " · "))
+                                    .compactMap { $0 }.joined(separator: "\u{2002}"))
                                 .font(JPFont.caption)
                                 .foregroundStyle(WebTheme.text3)
                                 .lineLimit(1)
@@ -190,7 +190,7 @@ struct DMRequestsView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(L("その他の操作（ブロック・通報）", "More (block, report)"))
+                .accessibilityLabel(L("その他の操作（ブロック、通報）", "More (block, report)"))
                 .accessibilityIdentifier("dm.request.more")
             }
             Button { route = request.id } label: {

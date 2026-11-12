@@ -84,7 +84,7 @@ final class SpotRegionMapTests: XCTestCase {
         XCTAssertEqual(hokkaido.names, ["akan", "tomita", "zz-sapporo", "asahidake"])
         XCTAssertEqual(hokkaido.count, 5)
         XCTAssertEqual(hokkaido.namesLine,
-                       L("akan・tomita・zz-sapporo・asahidake ほか", "akan, tomita, zz-sapporo, asahidake, and more"))
+                       L("akan、tomita、zz-sapporo、asahidake ほか", "akan, tomita, zz-sapporo, asahidake, and more"))
         XCTAssertEqual(hokkaido.scope, .region("北海道"))
         XCTAssertEqual(hokkaido.seeAll, L("北海道の撮影スポットをすべて見る", "See all photo spots in Hokkaido"))
         // 札の字は地方名入り（見出しの全国の「すべて見る」と分ける）
@@ -140,7 +140,7 @@ final class SpotRegionMapTests: XCTestCase {
         XCTAssertNil(map.area(at: CGPoint(x: 130, y: 25), container: size, in: areas), "撮影スポットの無い区分を選んだ")
         XCTAssertEqual(SpotRegionMap.highlighted("A", in: areas), ["A1", "A2"])
         XCTAssertEqual(SpotRegionMap.covered(areas), ["A1"])
-        XCTAssertEqual(areas[0].namesLine, L("a・b", "a, b"))
+        XCTAssertEqual(areas[0].namesLine, L("a、b", "a, b"))
         XCTAssertFalse(map.sharesRegionChips)
         XCTAssertEqual(SearchSpotIndexSection.mapWidth(for: map.shapes), 480, "縦横比 3:1 の地図は札の列の高さ 160 で幅 480")
     }

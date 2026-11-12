@@ -85,7 +85,7 @@ final class StoryTextEditingTests: XCTestCase {
 
     /// 文言は板 v2 のまま
     func testPlaceHintText() {
-        XCTAssertEqual(StoryTextEditing.placeHint, L("指で動かす · 2本指で回す",
+        XCTAssertEqual(StoryTextEditing.placeHint, L("指で動かす、2本指で回す",
                                                      "Drag to move · Twist with two fingers to rotate"))
     }
 

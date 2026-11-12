@@ -44,7 +44,7 @@ final class StoryPhotoLinkTests: XCTestCase {
     func testStoryDeleteMessageCounts() {
         let none = StoryPhotoLink.storyDeleteMessage(likes: nil, comments: nil)
         XCTAssertFalse(none.contains("消えます"), none)
-        XCTAssertTrue(StoryPhotoLink.storyDeleteMessage(likes: 3, comments: 2).contains("いいね 3・コメント 2 も消えます"))
+        XCTAssertTrue(StoryPhotoLink.storyDeleteMessage(likes: 3, comments: 2).contains("いいね 3、コメント 2 も消えます"))
         XCTAssertTrue(StoryPhotoLink.storyDeleteMessage(likes: 0, comments: 1).contains("コメント 1 も消えます"))
     }
 

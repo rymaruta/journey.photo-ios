@@ -34,7 +34,7 @@ enum DailyTheme: Equatable {
         Theme(tag: "朝", title: L("朝のはじまり", "First light"),
               prompt: L("一日の最初の色を撮ってみませんか。", "Catch the day's first color.")),
         Theme(tag: "海", title: L("水のある風景", "By the water"),
-              prompt: L("海・湖・川——水がある場所の一枚を。", "Sea, lake or river.")),
+              prompt: L("海、湖、川——水がある場所の一枚を。", "Sea, lake or river.")),
         Theme(tag: "夜", title: L("夜のあかり", "Night lights"),
               prompt: L("暗くなってから見えてくるものを。", "What only appears after dark.")),
         Theme(tag: "花", title: L("足もとの色", "Color underfoot"),

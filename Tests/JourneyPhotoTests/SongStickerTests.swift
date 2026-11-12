@@ -49,7 +49,7 @@ final class SongStickerTests: XCTestCase {
     /// 札は「曲名 · アーティスト」の曲の札（動かせる `.song`）。題が空なら置かない
     func testMakeSticker() {
         let sticker = SongSticker.make(for: song("海へ", "誰か"), style: nil)
-        XCTAssertEqual(sticker?.text, "海へ · 誰か")
+        XCTAssertEqual(sticker?.text, "海へ、誰か")
         XCTAssertEqual(sticker?.kind, .song)
         XCTAssertEqual(SongSticker.make(for: song("海へ"), style: nil)?.text, "海へ")
         XCTAssertNil(SongSticker.make(for: song("  "), style: nil))
@@ -62,7 +62,7 @@ final class SongStickerTests: XCTestCase {
         let other = TextOverlay(text: "こんにちは")
         let result = SongSticker.retext([other, sticker], from: song("海へ"), to: song("山へ", "誰か"))
         XCTAssertTrue(result.found)
-        XCTAssertEqual(result.overlays.map(\.text), ["こんにちは", "山へ · 誰か"])
+        XCTAssertEqual(result.overlays.map(\.text), ["こんにちは", "山へ、誰か"])
         XCTAssertEqual(result.overlays[1].x, 0.2, "動かした位置は残す")
     }
 

@@ -67,7 +67,7 @@ final class SpotScreenTests: XCTestCase {
     /// 🔴 **下書きを「公式」「PHOTO SPOT」と名乗らない。** 索引の全件が
     /// 運営未確認の下書き（2026-09-25）なので、小見出しからそう言う
     func testEyebrowSaysDraftForUnreviewedSpots() {
-        XCTAssertEqual(SpotScreen.eyebrow(review: true), L("下書き・未確認", "DRAFT · UNREVIEWED"))
+        XCTAssertEqual(SpotScreen.eyebrow(review: true), L("下書き\u{2002}未確認", "DRAFT · UNREVIEWED"))
         XCTAssertNotEqual(SpotScreen.eyebrow(review: true), SpotScreen.eyebrow(review: false))
         XCTAssertFalse(SpotScreen.eyebrow(review: true).lowercased().contains("photo spot"))
         XCTAssertFalse(SpotScreen.eyebrow(review: true).contains("公式"))
@@ -94,10 +94,10 @@ final class SpotScreenTests: XCTestCase {
     /// 「[都道府県] · [市区町村] · N枚の写真」。地域が無ければ枚数だけ
     func testSubtitleJoinsRegionAndCount() {
         XCTAssertEqual(SpotScreen.subtitle(region: "香川県 · 観音寺市", photoCount: 3),
-                       L("香川県 · 観音寺市 · 3枚の写真", "香川県 · 観音寺市 · 3 photos"))
+                       L("香川県 · 観音寺市\u{2002}3枚の写真", "香川県 · 観音寺市 · 3 photos"))
         // 0 枚は数を出さず、最初の1枚への誘い（2026-10-21）
         XCTAssertEqual(SpotScreen.subtitle(region: nil, photoCount: 0), SpotScreen.firstPhotoInvite)
-        XCTAssertEqual(SpotScreen.subtitle(region: "香川県", photoCount: 0), "香川県 · \(SpotScreen.firstPhotoInvite)")
+        XCTAssertEqual(SpotScreen.subtitle(region: "香川県", photoCount: 0), "香川県\u{2002}\(SpotScreen.firstPhotoInvite)")
         XCTAssertEqual(SpotScreen.subtitle(region: "  ", photoCount: 1), L("1枚の写真", "1 photo"))
         // 写真の一覧を持たない画面から開いたときは枚数を言わない（0 と言うと事実と違う）
         XCTAssertEqual(SpotScreen.subtitle(region: "香川県 · 観音寺市", photoCount: nil), "香川県 · 観音寺市")

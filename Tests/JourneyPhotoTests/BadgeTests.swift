@@ -306,7 +306,7 @@ final class BadgePatchTests: XCTestCase {
     func testNameSideDetailMentionsRemovedEarlyMark() throws {
         let early = #""badges":{"earlyUser":{"tier":1,"at":"2026-10-01T00:00:00.000Z"}}"#
         XCTAssertEqual(ProStatusText.nameSideDetail(try profile(#"{"userId":"u1",\#(early),"earlyMarkOn":false}"#)),
-                       "バッジなし · 初期メンバーの印は外しています")
+                       "バッジなし\u{2002}初期メンバーの印は外しています")
         XCTAssertEqual(ProStatusText.nameSideDetail(try profile(#"{"userId":"u1",\#(early)}"#)), "バッジなし")
         XCTAssertEqual(ProStatusText.nameSideDetail(try profile(#"{"userId":"u1","earlyMarkOn":false}"#)), "バッジなし")
     }
@@ -483,7 +483,7 @@ final class BadgeCatalogTests: XCTestCase {
     }
 
     func testFullNamesAndOwnedOrder() throws {
-        XCTAssertEqual(BadgeCatalog.fullName("countries", tier: 3), L("国・地域 · 白金", "Countries · Platinum"))
+        XCTAssertEqual(BadgeCatalog.fullName("countries", tier: 3), L("国と地域\u{2002}白金", "Countries · Platinum"))
         XCTAssertEqual(BadgeCatalog.fullName("earlyUser", tier: 1), L("初期ユーザー", "Early user"))
         let owned = BadgeCatalog.owned(try badges(#"{"wish":{"tier":1},"zzz":{"tier":1},"first":{"tier":1}}"#))
         XCTAssertEqual(owned.map(\.key), ["first", "wish"])
@@ -506,7 +506,7 @@ final class BadgeCatalogTests: XCTestCase {
                                             earned: EarnedBadge(key: "prefectures", tier: 2, at: nil),
                                             progress: L("あと17で次", "17 more to next"))
         XCTAssertEqual(BadgeShelfRules.label(earned),
-                       L("都道府県 · 銀、あと17で次", "Prefectures · Silver, 17 more to next"))
+                       L("都道府県\u{2002}銀、あと17で次", "Prefectures · Silver, 17 more to next"))
         let locked = BadgeCatalog.ShelfItem(key: "night", tier: 1, earned: nil, progress: nil)
         XCTAssertEqual(BadgeShelfRules.label(locked), L("夜の光、まだ持っていません", "Night light, not earned yet"))
     }
@@ -582,7 +582,7 @@ final class BadgeNotificationTests: XCTestCase {
         let n = try notification(#"{"type":"badge","key":"morning","tier":1}"#)
         let line = try XCTUnwrap(NotificationText.line(for: NotificationText.Entry(lead: n, others: 0, unread: false)))
         XCTAssertEqual(line.who, L("朝の光", "Morning light"))
-        XCTAssertEqual(line.plain, L("朝の光のメダルを手に入れました · 銅", "Morning light medal earned · Bronze"))
+        XCTAssertEqual(line.plain, L("朝の光のメダルを手に入れました\u{2002}銅", "Morning light medal earned · Bronze"))
         let early = try notification(#"{"type":"badge","key":"earlyUser","tier":1}"#)
         XCTAssertEqual(NotificationText.badgeLine(early)?.plain,
                        L("初期ユーザーのメダルを手に入れました", "Early user medal earned"))

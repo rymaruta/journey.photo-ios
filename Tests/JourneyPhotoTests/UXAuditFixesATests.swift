@@ -354,8 +354,8 @@ final class UXAuditFixesATests: XCTestCase {
 
     func testTheirTrunkEyebrowIsNotMine() async throws {
         let model = TrunkModel.allCases[0]
-        XCTAssertTrue(TrunkText.eyebrow(model).hasPrefix("MY TRUNK · "))
-        XCTAssertTrue(TrunkText.eyebrow(model, theirs: true).hasPrefix("TRUNK · "))
+        XCTAssertTrue(TrunkText.eyebrow(model).hasPrefix("MY TRUNK\u{2002}"))
+        XCTAssertTrue(TrunkText.eyebrow(model, theirs: true).hasPrefix("TRUNK\u{2002}"))
         XCTAssertFalse(TrunkText.eyebrow(model, theirs: true).contains("MY"))
         let open = try source("Features/Trunk/TrunkOpenView.swift")
         XCTAssertEqual(open.components(separatedBy: "TrunkText.eyebrow(model, theirs: theirs != nil)").count - 1, 2)

@@ -91,20 +91,20 @@ enum ProfileTravelRecord {
     /// 人のページは公開写真だけを数えると言い、本人にしかできない手立ては言わない
     static func countriesNote(isMine: Bool) -> String {
         if isMine {
-            return L("撮影地に国・地域の名前が書かれている写真だけを数えています。地名から国を推測はしません。撮影地に国名を足すと、この数もサイトの地名ページも増えます。",
+            return L("撮影地に国や地域の名前が書かれている写真だけを数えています。地名から国を推測はしません。撮影地に国名を足すと、この数もサイトの地名ページも増えます。",
                      "Counts only photos whose location text names a country or region. We don't guess a country from a place name. Adding the country to your location text raises this number.")
         }
-        return L("公開されている写真のうち、撮影地に国・地域の名前が書かれている写真だけを数えています。地名から国を推測はしません。",
+        return L("公開されている写真のうち、撮影地に国や地域の名前が書かれている写真だけを数えています。地名から国を推測はしません。",
                  "Counts only public photos whose location text names a country or region. We don't guess a country from a place name.")
     }
 
     /// 距離の数え方。**「旅した距離」とだけ書かない**——実際に歩いた・乗った距離だと読まれる（指示書 8-3）
     static func distanceNote(isMine: Bool) -> String {
         if isMine {
-            return L("撮影地の分かる写真を、古い順に直線で結んだ合計です。実際に歩いた・乗った距離ではありません（道のりではなく直線で、撮っていない区間は飛び、座標は約1kmに丸めてあります）。",
+            return L("撮影地の分かる写真を、古い順に直線で結んだ合計です。実際に歩いた、乗った距離ではありません（道のりではなく直線で、撮っていない区間は飛び、座標は約1kmに丸めてあります）。",
                      "The straight-line total between photos that have coordinates, oldest first. Not the distance you actually travelled.")
         }
-        return L("撮影地の分かる公開写真を、古い順に直線で結んだ合計です。実際に歩いた・乗った距離ではありません（道のりではなく直線で、撮っていない区間は飛び、座標は約1kmに丸めてあります）。",
+        return L("撮影地の分かる公開写真を、古い順に直線で結んだ合計です。実際に歩いた、乗った距離ではありません（道のりではなく直線で、撮っていない区間は飛び、座標は約1kmに丸めてあります）。",
                  "The straight-line total between public photos that have coordinates, oldest first. Not the distance actually travelled.")
     }
 }

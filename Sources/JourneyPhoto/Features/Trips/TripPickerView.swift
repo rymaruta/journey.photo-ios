@@ -240,7 +240,7 @@ struct TripPickerView: View {
             }
             // いまの季節の案内があるときだけ（無ければ作らない）
             if let hint = TripPicker.seasonHint(spot, now: Date()) {
-                Text("\(hint.label) · \(hint.text)")
+                Text("\(hint.label)\u{2002}\(hint.text)")
                     .font(.footnote)
                     .foregroundStyle(WebTheme.muted2)
                     .lineLimit(1)
@@ -264,7 +264,7 @@ struct TripPickerView: View {
         let parts = [spot.region?.country, spot.region?.prefecture, spot.region?.city]
             .compactMap { $0?.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return parts.isEmpty ? nil : parts.joined(separator: "\u{2002}")
     }
 
     // MARK: - 押す（払うのと同じ）

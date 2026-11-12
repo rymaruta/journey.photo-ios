@@ -215,7 +215,7 @@ struct StoryCanvas: View {
                     }
                     .accessibilityElement()
                     .accessibilityLabel(L("写真", "Photo"))
-                    .accessibilityHint(L("2本指で拡大・回転、指で動かします。押すとひとことを書きます",
+                    .accessibilityHint(L("2本指で拡大、回転、指で動かします。押すとひとことを書きます",
                                          "Pinch or twist to zoom and rotate, drag to move. Tap to write a caption"))
                     .accessibilityAction(named: L("ひとことを書く", "Write a caption")) { onWriteCaption() }
                     // UI テストが写真の枠の位置を見る（作る画面が窓の上の端から始まるか・2026-10-30 #406）

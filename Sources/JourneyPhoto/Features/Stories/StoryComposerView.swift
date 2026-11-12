@@ -2445,7 +2445,7 @@ struct StoryComposerView: View {
         if hasVideo {
             return LeaveDialog(
                 title: L("閉じますか？", "Close?"), canSave: false,
-                message: L("動画が入っていると下書きに残せません。閉じると、選んだ写真・動画と置いた文字は消えます。",
+                message: L("動画が入っていると下書きに残せません。閉じると、選んだ写真、動画と置いた文字は消えます。",
                            "A draft can't include a video. If you close now, the photos, videos and text you added will be lost."))
         }
         guard canSaveDraft else {

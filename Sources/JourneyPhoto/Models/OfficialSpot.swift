@@ -155,7 +155,7 @@ struct OfficialSpot: Decodable, Identifiable, Equatable {
         let parts = [region?.prefecture, region?.city]
             .compactMap { $0?.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return parts.isEmpty ? nil : parts.joined(separator: "\u{2002}")
     }
 }
 

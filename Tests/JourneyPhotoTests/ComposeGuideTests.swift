@@ -126,8 +126,8 @@ final class ComposeGuideTests: XCTestCase {
 
     func testCounterMatchesBoard() {
         // 板: 「[撮影地の名前] · 作例 [2] / [6]」（番号は 1 から）
-        XCTAssertEqual(ComposeGuide.counter(spotName: "鍋ヶ滝", index: 1, count: 6), "鍋ヶ滝 · 作例 2 / 6")
-        XCTAssertEqual(ComposeGuide.counter(spotName: "鍋ヶ滝", index: 9, count: 6), "鍋ヶ滝 · 作例 6 / 6")
+        XCTAssertEqual(ComposeGuide.counter(spotName: "鍋ヶ滝", index: 1, count: 6), "鍋ヶ滝\u{2002}作例 2 / 6")
+        XCTAssertEqual(ComposeGuide.counter(spotName: "鍋ヶ滝", index: 9, count: 6), "鍋ヶ滝\u{2002}作例 6 / 6")
         XCTAssertEqual(ComposeGuide.counterAccessibility(spotName: "鍋ヶ滝", index: 0, count: 6),
                        "鍋ヶ滝、作例 1 枚目、全 6 枚")
     }

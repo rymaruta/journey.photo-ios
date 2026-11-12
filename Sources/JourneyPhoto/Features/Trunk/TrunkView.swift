@@ -194,7 +194,7 @@ struct TrunkView: View {
         let s = TrunkText.stats(state)
         return HStack(spacing: 8) {
             statCell(String(s.stuck), L("貼ったラベル", "Labels stuck"))
-            statCell(String(s.countries), L("か国・地域", "Countries & regions"))
+            statCell(String(s.countries), L("の国と地域", "Countries & regions"))
             statCell(s.sinceYear.map(String.init) ?? "—", L("年から", "Since"))
         }
         .padding(.vertical, 12)
@@ -415,7 +415,7 @@ struct TrunkView: View {
         guard milestone.posts > seen else { return }
         UserDefaults.standard.set(milestone.posts, forKey: key)
         // はじめて開いた人には、いまの姿の言葉だけを出す（過ぎた区切りを全部は言わない）
-        toasts.show(L("投稿 \(milestone.posts) · \(milestone.ja)", "Post \(milestone.posts) · \(milestone.en)"), kind: .info)
+        toasts.show(L("投稿 \(milestone.posts)\u{2002}\(milestone.ja)", "Post \(milestone.posts)\u{2002}\(milestone.en)"), kind: .info)
     }
 }
 

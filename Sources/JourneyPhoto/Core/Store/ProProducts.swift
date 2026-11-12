@@ -351,7 +351,7 @@ enum ProStatusText {
             parts.append(state.willAutoRenew ? L("次の更新 \(day)", "Renews \(day)") : L("\(day) まで", "Until \(day)"))
         }
         parts.append(manage)
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: "\u{2002}")
     }
 
     /// 設定の「Journey Photo Pro」の行を押したときの行き先
@@ -382,7 +382,7 @@ enum ProStatusText {
 
     /// 設定の「サポーター証」の行の2行目（板 43: 「No. 0001 · 手に取って回せます」）
     static func supporterDetail(number: Int) -> String {
-        "\(SupporterText.numberLabel(number)) · " + L("手に取って回せます", "Turn it in your hand")
+        "\(SupporterText.numberLabel(number))\u{2002}" + L("手に取って回せます", "Turn it in your hand")
     }
 
     /// 設定の「名前の横のバッジと Pro マーク」の行の2行目（板 43: 「初期ユーザー · Pro マークは 絞り羽根」）。
@@ -407,7 +407,7 @@ enum ProStatusText {
         if profile.hasEarlyMemberQualification, profile.earlyMarkChoice == false {
             parts.append(L("初期メンバーの印は外しています", "Early member mark off"))
         }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: "\u{2002}")
     }
 }
 

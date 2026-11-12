@@ -59,7 +59,7 @@ struct CoverCropView: View {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
                     stage(frame)
-                    Text(L("指で動かす · 2本指で大きさを合わせる", "Drag to move · Pinch to zoom"))
+                    Text(L("指で動かす、2本指で大きさを合わせる", "Drag to move, Pinch to zoom"))
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)
                         .padding(.top, 12)

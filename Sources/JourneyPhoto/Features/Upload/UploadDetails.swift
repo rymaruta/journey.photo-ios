@@ -22,7 +22,7 @@ enum UploadDetails {
         if let albumTitle, !albumTitle.isEmpty { parts.append(L("アルバム", "Album")) }
         let trimmed = category.trimmingCharacters(in: .whitespaces)
         if !trimmed.isEmpty { parts.append(trimmed) }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: "\u{2002}")
     }
 
     /// 撮影地の下に「撮影地のページに作例として並ぶ」と一言出すか。

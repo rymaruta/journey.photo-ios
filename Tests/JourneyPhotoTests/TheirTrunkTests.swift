@@ -260,7 +260,7 @@ final class TheirTrunkTests: XCTestCase {
             XCTAssertFalse(TheirTrunkText.hiddenTitle.contains(word))
         }
         XCTAssertEqual(TheirTrunkText.sheetSubtitle(place: "京都", owner: "丸田", count: 3),
-                       L("丸田さんが京都で撮った写真 · 3 枚", "Photos 丸田 took in 京都 · 3"))
+                       L("丸田さんが京都で撮った写真\u{2002}3 枚", "Photos 丸田 took in 京都 · 3"))
         XCTAssertFalse(TheirTrunkText.sheetSubtitle(place: "京都", owner: "丸田", count: nil).contains("0"),
                        "読み込み中に 0 枚と言う")
         XCTAssertEqual(TheirTrunkText.owner("  "), L("この人", "This person"))

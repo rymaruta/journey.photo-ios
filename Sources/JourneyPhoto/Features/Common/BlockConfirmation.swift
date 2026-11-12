@@ -44,7 +44,7 @@ enum BlockConfirmationText {
     static var title: String { L("この人をブロックしますか？", "Block this person?") }
     static var confirm: String { L("ブロック", "Block") }
     static var message: String {
-        L("おたがいの投稿・ストーリー・通知が見えなくなります。設定からいつでも解除できます。",
+        L("おたがいの投稿、ストーリー、通知が見えなくなります。設定からいつでも解除できます。",
           "You won't see each other's posts, stories or notifications. You can undo this in Settings.")
     }
 }

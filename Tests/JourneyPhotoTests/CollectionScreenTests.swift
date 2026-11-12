@@ -71,7 +71,7 @@ final class CollectionScreenTests: XCTestCase {
 
     func testSubtitleCountsAndAddsNote() {
         XCTAssertEqual(CollectionScreen.subtitle(count: 12, note: L("いまの季節", "This season")),
-                       "\(L("12枚", "12 photos")) · \(L("いまの季節", "This season"))")
+                       "\(L("12枚", "12 photos"))\u{2002}\(L("いまの季節", "This season"))")
         XCTAssertEqual(CollectionScreen.subtitle(count: 3, note: "  "), L("3枚", "3 photos"))
         XCTAssertEqual(CollectionScreen.subtitle(count: 3, note: nil), L("3枚", "3 photos"))
     }
@@ -117,7 +117,7 @@ final class CollectionScreenTests: XCTestCase {
         let text = CollectionScreen.shareText(title: "パリ", count: 3, kind: .location("パリ, フランス"),
                                               lead: lead, photos: [lead])
         let lines = text.split(separator: "\n").map(String.init)
-        XCTAssertEqual(lines.first, "パリ · \(L("3枚", "3 photos"))")
+        XCTAssertEqual(lines.first, "パリ\u{2002}\(L("3枚", "3 photos"))")
         XCTAssertEqual(lines.last.flatMap { URL(string: $0) }?.path, "/location/パリ,-フランス")
     }
 

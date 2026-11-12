@@ -41,7 +41,7 @@ enum ProfileRewardText {
     /// 1つ設定したときの枚数（サーバーの `REWARD_COINS`。これより少ない回は上限に当たった）
     static let coinsPerKind = 3
 
-    static var eyebrow: String { L("旅のトランク · 硬貨", "TRAVEL TRUNK · COINS") }
+    static var eyebrow: String { L("旅のトランク\u{2002}硬貨", "TRAVEL TRUNK\u{2002}COINS") }
 
     static func title(_ grant: ProfileReward.Grant) -> String {
         if grant.kinds.count > 1 { return L("アイコンとカバーのお礼", "Thanks for your avatar and cover") }
@@ -62,7 +62,7 @@ enum ProfileRewardText {
     /// 両方まとめた回だけの内訳
     static func breakdown(_ grant: ProfileReward.Grant) -> String? {
         guard grant.kinds.count > 1 else { return nil }
-        return L("アイコン +\(coinsPerKind) · カバー +\(coinsPerKind)", "Avatar +\(coinsPerKind) · Cover +\(coinsPerKind)")
+        return L("アイコン +\(coinsPerKind)\u{2002}カバー +\(coinsPerKind)", "Avatar +\(coinsPerKind)\u{2002}Cover +\(coinsPerKind)")
     }
 
     /// 上限に当たって、決まりの枚数より少なかった回の一言

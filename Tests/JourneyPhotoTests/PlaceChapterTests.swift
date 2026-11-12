@@ -20,7 +20,7 @@ final class PlaceChapterTests: XCTestCase {
         XCTAssertFalse(MapWishlistLink.shows(wishCount: 3, mode: .list, cardShown: false))
         XCTAssertFalse(MapWishlistLink.shows(wishCount: 3, mode: .spots, cardShown: false))
         XCTAssertFalse(MapWishlistLink.shows(wishCount: 3, mode: .map, cardShown: true), "札と重なる")
-        XCTAssertEqual(MapWishlistLink.title(count: 6), L("行きたい場所 6 · 旅行プランを作る", "Wishlist 6 · Plan a trip"))
+        XCTAssertEqual(MapWishlistLink.title(count: 6), L("行きたい場所 6\u{2002}旅行プランを作る", "Wishlist 6 · Plan a trip"))
     }
 
     /// 行き先は行きたい場所の地図（選んで旅行プランを作る）。並べ方はマイページの「地図で見る」と同じ

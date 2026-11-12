@@ -157,7 +157,7 @@ final class SettingsOutlineTests: XCTestCase {
             "L(\"ブロックした人\"", "L(\"親しい友達\"", "L(\"トランクを見せる\"", "L(\"わたしの乗車券もトランクに入れる\"",
             "Labels.Navigation.favorites", "Labels.Navigation.albums", "L(\"構図一覧\"", "L(\"写真の控え\"",
             "L(\"控えを空にする\"", "L(\"パスワードを変える\"", "L(\"新しくなったこと\"",
-            "L(\"利用規約・プライバシーポリシー\"", "L(\"問い合わせ\"", "L(\"アカウントの削除\"", "Labels.Navigation.logout",
+            "L(\"利用規約、プライバシーポリシー\"", "L(\"問い合わせ\"", "L(\"アカウントの削除\"", "Labels.Navigation.logout",
             "TrunkPrivacyPreview(model:", "ProSettingsSection(profile: myProfile)",
         ]
         for row in before {

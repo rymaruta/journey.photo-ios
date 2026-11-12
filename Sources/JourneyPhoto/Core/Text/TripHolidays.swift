@@ -170,14 +170,14 @@ enum TripHolidays {
         let second = m1 == m2 ? "\(d2)" : "\(m2)/\(d2)"
         let marks = [mark(start, years: &years), mark(end, years: &years)]
         let weekendOnly = marks == [L("土", "Sat"), L("日", "Sun")]
-        let tail = weekendOnly ? L("土日", "weekend") : marks.joined(separator: L("・", ", "))
-        return L("\(m1)/\(d1) · \(second)（\(tail)）", "\(m1)/\(d1) – \(second) (\(tail))")
+        let tail = weekendOnly ? L("土日", "weekend") : marks.joined(separator: L("、", ", "))
+        return L("\(m1)/\(d1)\u{2002}\(second)（\(tail)）", "\(m1)/\(d1) – \(second) (\(tail))")
     }
 
     /// 読み上げ（「11月22日 日曜日から 11月23日 祝日まで」は長いので、期間の1行と同じ形）
     static func spoken(_ pair: Pair) -> String {
         let range = TripDraft.rangeLine(start: pair.start, end: pair.end) ?? pair.label
-        return pair.hasHoliday ? L("\(range)・祝日を含む", "\(range), includes a holiday") : range
+        return pair.hasHoliday ? L("\(range)、祝日を含む", "\(range), includes a holiday") : range
     }
 
     /// 曜日の1字。平日の祝日は「祝」

@@ -134,7 +134,7 @@ struct MyPageDraftsTile: View {
     private func accessibilityLabel(_ latest: DraftLibrary.Entry?) -> String {
         let head = DraftsText.entryAccessibility(count)
         guard let latest else { return head }
-        return "\(head) · \(DraftsText.accessibility(latest, now: now))"
+        return "\(head)" + L("、", ", ") + DraftsText.accessibility(latest, now: now)
     }
 
     /// 開く（読めない写真があれば一覧と同じ問いを出す）

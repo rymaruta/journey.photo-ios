@@ -351,7 +351,7 @@ enum CompositionExample {
                                          "Divide the frame into thirds. An intersection leaves room for context.")
         case .halves: return L("中央の十字で画面を分けます。対になる形や明暗を比べたいときに使います。",
                                 "Split the frame at the center to compare paired shapes or tones.")
-        case .symmetry: return L("中央の縦線・横線を対称軸にします。両側の形や余白が釣り合う位置を探します。",
+        case .symmetry: return L("中央の縦線、横線を対称軸にします。両側の形や余白が釣り合う位置を探します。",
                                   "Use the center line as an axis and balance both sides.")
         case .hinomaru: return L("主役を中央に置きます。背景を整理すると、視線が迷わず主役に集まります。",
                                  "Center the subject and simplify the background to draw attention to it.")
@@ -379,7 +379,7 @@ enum CompositionExample {
                                       "An app-specific slanted-thirds guide to organize angled outlines.")
         case .dynamicSymmetry: return L("長方形の対角線と逆対角線が交わる点を使います。複数の方向を整理できます。",
                                         "Intersecting diagonals help organize several directions within a rectangle.")
-        case .armature: return L("対角線・ひし形・角から中点への線を重ねます。形が多い場面では一部だけを目安に。",
+        case .armature: return L("対角線、ひし形、角から中点への線を重ねます。形が多い場面では一部だけを目安に。",
                                  "A network of diagonals and midpoints; use only the lines that help a busy scene.")
         case .rootRectangle: return L("√2比率の切り出し枠とその中の対角線です。明るい範囲に主役を収めます。",
                                      "Compose within a √2 crop, using its diagonals as placement cues.")

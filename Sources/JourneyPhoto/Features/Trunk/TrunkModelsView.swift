@@ -158,8 +158,8 @@ struct TrunkProModelsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Text(L("SPECIAL TRUNKS · Pro に含まれる \(TrunkModel.pro.count) 型",
-                       "SPECIAL TRUNKS · \(TrunkModel.pro.count) styles with Pro"))
+                Text(L("SPECIAL TRUNKS\u{2002}Pro に含まれる \(TrunkModel.pro.count) 型",
+                       "SPECIAL TRUNKS\u{2002}\(TrunkModel.pro.count) styles with Pro"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                 Text(L("本物の職人の仕事を、手のひらに", "Real craftsmanship, in your hand"))

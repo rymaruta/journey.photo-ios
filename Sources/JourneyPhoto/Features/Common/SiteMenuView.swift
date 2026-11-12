@@ -65,7 +65,7 @@ struct SiteMenuView: View {
                         // Pro でない人には一覧の画面が Pro の案内を出す（`LightForecastView` の `.notPro`）
                         NavigationLink { LightForecastView() } label: {
                             SiteMenuRow(title: L("光と天気の予報", "Light & weather forecast"), systemImage: "sun.max",
-                                        note: L("行きたい場所の今週の光 · Pro", "This week's light at your wishlist · Pro"))
+                                        note: L("行きたい場所の今週の光\u{2002}Pro", "This week's light at your wishlist\u{2002}Pro"))
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("menu.lightForecast")
@@ -75,7 +75,7 @@ struct SiteMenuView: View {
                     if offline.hasLocalData {
                         NavigationLink { OfflineSavedView() } label: {
                             SiteMenuRow(title: L("保存した旅", "Offline trips"), systemImage: "arrow.down.circle",
-                                        note: L("圏外でも開ける · Pro", "Opens without a connection · Pro"),
+                                        note: L("圏外でも開ける\u{2002}Pro", "Opens without a connection\u{2002}Pro"),
                                         value: OfflineTripText.settingsDetail(count: offline.saved.count,
                                                                               bytes: offline.totalBytes))
                         }
@@ -107,7 +107,7 @@ struct SiteMenuView: View {
                     if auth.userId != nil {
                         NavigationLink { FavoritesView() } label: {
                             SiteMenuRow(title: Labels.Navigation.favorites, systemImage: "heart",
-                                        note: L("ハートを押した写真 · 作者に届きます", "Photos you liked · the author is told"))
+                                        note: L("ハートを押した写真、作者に届きます", "Photos you liked, the author is told"))
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("menu.favorites")
@@ -203,8 +203,8 @@ struct SiteMenuView: View {
             }
         } label: {
             SiteMenuRow(title: CamperText.carName, systemImage: "bus",
-                        note: L("写真で作るキャンピングカー · 撮るほど部品が集まる",
-                                "A camper made from your photos · collect parts as you shoot"))
+                        note: L("写真で作るキャンピングカー、撮るほど部品が集まる",
+                                "A camper made from your photos, collect parts as you shoot"))
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("menu.camper")
@@ -227,7 +227,7 @@ struct SiteMenuView: View {
             }
             .font(JPFont.caption)
             .foregroundStyle(WebTheme.accent)
-            Text("Journey Photo \(Self.version) · journey-photo.com")
+            Text("Journey Photo \(Self.version)\u{2002}journey-photo.com")
                 .font(JPFont.meta)
                 .foregroundStyle(WebTheme.text3)
         }

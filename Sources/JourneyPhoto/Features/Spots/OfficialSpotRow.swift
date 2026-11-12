@@ -72,6 +72,6 @@ struct OfficialSpotRow: View {
             ? SpotScreen.firstPhotoInvite
             : L("写真 \(row.photoCount)枚", PhotoMapViewModel.photoCountLabel(row.photoCount))
         guard let distance else { return photos }
-        return "\(distance) · \(photos)"
+        return "\(distance)\u{2002}\(photos)"
     }
 }

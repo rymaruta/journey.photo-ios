@@ -257,8 +257,8 @@ struct SongStickerLayout: Equatable {
             let tSize = measure(t, .title, fs)
             let rest = maxW - tSize.width - U.pillGap * u
             // 曲名で幅を使い切ったら歌手は出さない（「· …」だけを置かない）
-            let a = rest < measure("· …", .artist, fs).width ? nil
-                : artist.map { fit("· \($0)", .artist, fs, maxWidth: rest, measure) }
+            let a = rest < measure("…", .artist, fs).width ? nil
+                : artist.map { fit("\($0)", .artist, fs, maxWidth: rest, measure) }
             let aSize = a.map { measure($0, .artist, fs) } ?? .zero
             let lineH = max(tSize.height, aSize.height, U.eqHeight * u)
             let height = U.pillPadV * u * 2 + lineH
@@ -486,7 +486,7 @@ struct SongStickerLayout: Equatable {
             let text = min(U.cardTextMax, max(em(title, U.titleSize), artist.map { em($0, U.artistSize) } ?? 0))
             return U.cardPadLeft + U.cardJacket + U.cardGap + text + U.cardEqGap + U.eqWidth + U.cardPadRight
         case .pill:
-            let text = em(title, U.pillFont) + (artist.map { U.pillGap + em("· \($0)", U.pillFont) } ?? 0)
+            let text = em(title, U.pillFont) + (artist.map { U.pillGap + em("\($0)", U.pillFont) } ?? 0)
             return U.pillPadH * 2 + U.eqWidth + U.pillGap + min(U.pillTextMax, text)
         case .sleeve, .disc:
             let text = min(U.bigTextMax, max(em(title, U.titleSize), artist.map { em($0, U.artistSize) } ?? 0))

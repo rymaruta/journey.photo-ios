@@ -166,7 +166,7 @@ struct PassSpinCard: View {
     }
 
     private var flipHint: some View {
-        Text(reduceMotion ? L("押すと裏返る", "Tap to flip") : L("指を置いて回す · 押すと裏返る", "Hold and turn · Tap to flip"))
+        Text(reduceMotion ? L("押すと裏返る", "Tap to flip") : L("指を置いて回す、押すと裏返る", "Hold and turn, tap to flip"))
             .font(JPFont.caption)
             .foregroundStyle(WebTheme.text3)
             .fixedSize(horizontal: false, vertical: true)

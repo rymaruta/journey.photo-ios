@@ -222,7 +222,7 @@ struct PassCardPickView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(L("写真 \(index + 1) · \(photo.displayTitle)", "Photo \(index + 1) · \(photo.displayTitle)"))
+                .accessibilityLabel(L("写真 \(index + 1)\u{2002}\(photo.displayTitle)", "Photo \(index + 1)\u{2002}\(photo.displayTitle)"))
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
@@ -307,9 +307,9 @@ struct PassCardPickView: View {
     /// 「居住地から（自動）」の行の名前（居住地が無ければそう言う）
     private var homeTitle: String {
         guard let pref = pass.homePrefecture else {
-            return L("居住地から（自動・居住地が未設定）", "From where I live (automatic \u{00B7} not set)")
+            return L("居住地から（自動、居住地が未設定）", "From where I live (automatic \u{00B7} not set)")
         }
-        return L("居住地から（自動・\(PassTicket.shortPlace(pref))）", "From where I live (automatic \u{00B7} \(pref))")
+        return L("居住地から（自動、\(PassTicket.shortPlace(pref))）", "From where I live (automatic \u{00B7} \(pref))")
     }
 
     private func labelField(_ title: String, placeholder: String, text: Binding<String>, id: String) -> some View {

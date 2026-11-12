@@ -140,7 +140,7 @@ final class SpotLightTests: XCTestCase {
         let golden = blocks.flatMap(\.rows).filter { $0.label == "ゴールデンアワー" }
         XCTAssertEqual(golden.count, 1)
         let value = try XCTUnwrap(golden.first?.value)
-        XCTAssertTrue(value.hasSuffix("（一日中・太陽が 6° より上がらない）"), value)
+        XCTAssertTrue(value.hasSuffix("（一日中、太陽が 6° より上がらない）"), value)
         XCTAssertNotNil(value.range(of: #"^\d{2}:\d{2}–\d{2}:\d{2}"#, options: .regularExpression), value)
         XCTAssertNotNil(blocks.first?.rows.first { $0.label == "日の出" }?.detail, "日の出はあるので方角も出す")
     }
@@ -151,8 +151,8 @@ final class SpotLightTests: XCTestCase {
         XCTAssertEqual(SpotLight.ymd(offset: 0, from: now, in: tokyo), "2026-10-04")
         XCTAssertEqual(SpotLight.ymd(offset: 0, from: now, in: TimeZone(identifier: "Europe/Paris")!), "2026-10-03")
         XCTAssertEqual(SpotLight.ymd(offset: -1, from: now, in: tokyo), "2026-10-03")
-        XCTAssertEqual(SpotLight.dateLabel("2026-10-03", offset: 0, todayYMD: "2026-10-03"), "10月3日（土） · 今日")
-        XCTAssertEqual(SpotLight.dateLabel("2026-10-04", offset: 1, todayYMD: "2026-10-03"), "10月4日（日） · 明日")
+        XCTAssertEqual(SpotLight.dateLabel("2026-10-03", offset: 0, todayYMD: "2026-10-03"), "10月3日（土）\u{2002}今日")
+        XCTAssertEqual(SpotLight.dateLabel("2026-10-04", offset: 1, todayYMD: "2026-10-03"), "10月4日（日）\u{2002}明日")
         XCTAssertEqual(SpotLight.dateLabel("2027-01-05", offset: 94, todayYMD: "2026-10-03"), "2027年1月5日（火）")
     }
 

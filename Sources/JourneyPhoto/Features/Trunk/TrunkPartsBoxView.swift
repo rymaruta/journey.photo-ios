@@ -493,7 +493,7 @@ struct TrunkEquipView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(model.busy)
-                    .accessibilityLabel("\(part.kind.title) · \(part.name)\(on ? L("（付けている）", " (on)") : "")")
+                    .accessibilityLabel("\(part.kind.title)\u{2002}\(part.name)\(on ? L("（付けている）", " (on)") : "")")
                     .accessibilityAddTraits(on ? .isSelected : [])
                     .accessibilityIdentifier("trunk.equip.part")
                 }

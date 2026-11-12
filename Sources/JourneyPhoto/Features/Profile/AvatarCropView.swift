@@ -38,7 +38,7 @@ struct AvatarCropView: View {
         ScrollView {
             VStack(spacing: 0) {
                 stage
-                Text(L("指で動かす · 2本指で大きさを合わせる", "Drag to move · Pinch to resize"))
+                Text(L("指で動かす、2本指で大きさを合わせる", "Drag to move, Pinch to resize"))
                     .font(JPFont.caption)
                     .foregroundStyle(WebTheme.text3)
                     .padding(.top, 8)

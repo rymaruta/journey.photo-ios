@@ -147,7 +147,7 @@ struct OfficialSpotIndexView: View {
                         } else {
                             if case .prefecture = scope {
                                 wantsTop(rows: rows, source: source)
-                                JPEyebrowLine(here != nil ? L("撮影スポット · 近い順", "Photo spots · nearest first")
+                                JPEyebrowLine(here != nil ? L("撮影スポット\u{2002}近い順", "Photo spots\u{2002}nearest first")
                                                           : L("撮影スポット", "Photo spots"),
                                               trailing: SpotPrefectureIndex.countLabel(rows.count))
                                     .padding(.bottom, JPSpace.xs)

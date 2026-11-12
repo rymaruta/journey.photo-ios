@@ -58,8 +58,8 @@ struct DeleteAccountView: View {
                     }
                     .foregroundStyle(WebTheme.danger)
                     removed(L("投稿した写真と画像ファイル", "Your photos and image files"))
-                    removed(L("プロフィール（名前・自己紹介・アイコン）", "Your profile (name, bio, avatar)"))
-                    removed(L("フォロー・いいね・お知らせ", "Follows, likes and activity"))
+                    removed(L("プロフィール（名前、自己紹介、アイコン）", "Your profile (name, bio, avatar)"))
+                    removed(L("フォロー、いいね、お知らせ", "Follows, likes and activity"))
                     // 嘘をつかない。実装がそうなっている（コメントは読むときに
                     // 名前を伏せる扱いで、行そのものは残る）
                     Text(L("他の人の写真に書いたコメントの本文は残りますが、名前は「退会したユーザー」に変わります。", "Comments you left on other photos remain, but your name becomes “Deleted user”."))

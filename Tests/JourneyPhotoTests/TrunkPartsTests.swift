@@ -301,7 +301,7 @@ final class TrunkPartsTests: XCTestCase {
         XCTAssertEqual(TrunkGachaText.insertTitle(coins: 0), "硬貨がありません")
         XCTAssertEqual(TrunkGachaText.insertTitle(coins: 2), "硬貨を入れる")
         XCTAssertEqual(TrunkGachaText.hint(coins: 0, phase: .idle), "公開の投稿1件で1枚もらえます")
-        XCTAssertEqual(TrunkGachaText.exchangeNote(fragments: 3, selected: nil), "まだ持っていない部品から選べます · あと 2 つ")
+        XCTAssertEqual(TrunkGachaText.exchangeNote(fragments: 3, selected: nil), "まだ持っていない部品から選べます\u{2002}あと 2 つ")
         XCTAssertFalse(TrunkPartsBoxText.canExchange(fragments: 4))
         XCTAssertTrue(TrunkPartsBoxText.canExchange(fragments: 5))
         XCTAssertEqual(TrunkPartsBoxText.filledFragments(12), 5)

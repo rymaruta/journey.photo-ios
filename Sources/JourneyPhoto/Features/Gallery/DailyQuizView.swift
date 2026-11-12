@@ -96,7 +96,7 @@ struct DailyQuizView: View {
     private var eyebrow: String {
         let head = L("今日の一問", "TODAY'S QUESTION")
         guard let date = shownDate else { return head }
-        return "\(head) · \(DailyQuiz.dottedDate(date))"
+        return "\(head)\u{2002}\(DailyQuiz.dottedDate(date))"
     }
 
     @ViewBuilder

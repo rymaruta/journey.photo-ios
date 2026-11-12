@@ -42,7 +42,7 @@ struct FeedbackSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: JPSpace.s) {
                     JPField(L("ひとこと", "Your feedback"), multiline: true) {
-                        TextField(L("使ってみて思ったこと・困ったこと・欲しい機能など、自由に書いてください",
+                        TextField(L("使ってみて思ったこと、困ったこと、欲しい機能など、自由に書いてください",
                                     "Anything you noticed, got stuck on, or would like to see"),
                                   text: $text, axis: .vertical)
                             .lineLimit(5...12)

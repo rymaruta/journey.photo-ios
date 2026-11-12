@@ -118,7 +118,7 @@ struct BadgeShelfView: View {
                     .accessibilityHidden(true)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(L("名前の横に飾る · 1つ（Pro でも1つ）", "Next to your name · one (Pro included)"))
+                Text(L("名前の横に飾る、1つ（Pro でも1つ）", "Next to your name, one (Pro included)"))
                     .font(JPFont.caption)
                     .foregroundStyle(WebTheme.text3)
                 Text(shown.map { BadgeCatalog.fullName($0.key, tier: $0.tier) } ?? L("まだ選んでいません", "Nothing chosen yet"))

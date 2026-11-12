@@ -150,7 +150,7 @@ final class ShootingTimeTests: XCTestCase {
         XCTAssertEqual(ShootingTime.Filter().prefix, "")
         XCTAssertNil(ShootingTime.Filter().note)
         let both = ShootingTime.Filter(season: .autumn, dayPart: .evening)
-        XCTAssertEqual(both.prefix, L("秋・夕方の", "Autumn evening "))
+        XCTAssertEqual(both.prefix, L("秋、夕方の", "Autumn evening "))
         XCTAssertTrue(both.note?.contains(L("16〜18時", "16–18")) ?? false)
         XCTAssertTrue(both.note?.contains(L("南半球", "Southern Hemisphere")) ?? false)
         XCTAssertEqual(ShootingTime.Filter(dayPart: .evening).prefix, L("夕方の", "Evening "))
@@ -163,7 +163,7 @@ final class ShootingTimeTests: XCTestCase {
         XCTAssertEqual(ShootingTime.Filter(season: .winter).spotsHeading(count: 5),
                        L("冬の案内がある撮影スポット（5か所）", "Shooting spots with winter notes (5)"))
         XCTAssertEqual(ShootingTime.Filter(season: .autumn, dayPart: .evening).spotsHeading(count: 2),
-                       L("秋・夕方の案内がある撮影スポット（2か所）", "Shooting spots with autumn evening notes (2)"))
+                       L("秋、夕方の案内がある撮影スポット（2か所）", "Shooting spots with autumn evening notes (2)"))
     }
 
     /// 0件の時間帯の札を薄くするための集計（写真は撮影時刻、撮影地は時間帯の案内・下書きは数えない）

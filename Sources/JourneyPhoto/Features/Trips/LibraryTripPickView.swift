@@ -103,7 +103,7 @@ struct LibraryTripPickView: View {
                 .font(JPFont.cardTitle)
                 .foregroundStyle(WebTheme.text)
                 .accessibilityAddTraits(.isHeader)
-            Text("\(LibraryTrips.periodText(current)) · \(PhotoMapViewModel.photoCountLabel(current.shots.count))")
+            Text("\(LibraryTrips.periodText(current))\u{2002}\(PhotoMapViewModel.photoCountLabel(current.shots.count))")
                 .font(JPFont.mono(12))
                 .foregroundStyle(WebTheme.text2)
             // 2026-11-12 判断: 「押すと選ぶ・外すが切り替わります」は外した（印の形と押した手ざわりで分かる）

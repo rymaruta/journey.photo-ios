@@ -222,15 +222,15 @@ final class WhatsNewTests: XCTestCase {
 
     private let now = Date(timeIntervalSince1970: 1_792_300_000) // 2026-10 の半ば
 
-    /// 区切りの見出し: 「1.0.82 · 10月10日」・"1.0.82 · Oct 10"・日付が無ければ版だけ・今年でなければ年も
+    /// 区切りの見出し: 「1.0.82 · 10月10日」・"1.0.82\u{2002}Oct 10"・日付が無ければ版だけ・今年でなければ年も
     func testReleaseHeading() async {
         let r = WhatsNew.Release(version: "1.0.82", items: [], date: WhatsNew.Day(year: 2026, month: 10, day: 10))
-        XCTAssertEqual(WhatsNew.heading(for: r, now: now, english: false), "1.0.82 · 10月10日")
-        XCTAssertEqual(WhatsNew.heading(for: r, now: now, english: true), "1.0.82 · Oct 10")
+        XCTAssertEqual(WhatsNew.heading(for: r, now: now, english: false), "1.0.82\u{2002}10月10日")
+        XCTAssertEqual(WhatsNew.heading(for: r, now: now, english: true), "1.0.82\u{2002}Oct 10")
         XCTAssertEqual(WhatsNew.heading(for: release("1.0.67"), now: now, english: false), "1.0.67")
         let old = WhatsNew.Release(version: "0.9.0", items: [], date: WhatsNew.Day(year: 2025, month: 12, day: 1))
-        XCTAssertEqual(WhatsNew.heading(for: old, now: now, english: false), "0.9.0 · 2025年12月1日")
-        XCTAssertEqual(WhatsNew.heading(for: old, now: now, english: true), "0.9.0 · Dec 1, 2025")
+        XCTAssertEqual(WhatsNew.heading(for: old, now: now, english: false), "0.9.0\u{2002}2025年12月1日")
+        XCTAssertEqual(WhatsNew.heading(for: old, now: now, english: true), "0.9.0\u{2002}Dec 1, 2025")
         // 読み上げは「·」や略した月を読ませない
         XCTAssertEqual(WhatsNew.spokenHeading(for: r, now: now, english: false), "バージョン 1.0.82、10月10日")
         XCTAssertEqual(WhatsNew.spokenHeading(for: r, now: now, english: true), "Version 1.0.82, October 10")
@@ -243,7 +243,7 @@ final class WhatsNewTests: XCTestCase {
         let data = Data(#"{"releases":[\#(dated("1.0.67", "2026-10-04")),\#(dated("1.0.82", "2026-10-10")),\#(dated("1.0.73", nil))]}"#.utf8)
         let sections = WhatsNew.sections(WhatsNew.decode(data), mode: .history, now: now)
         XCTAssertEqual(sections.map(\.id), ["1.0.82", "1.0.73", "1.0.67"])
-        XCTAssertEqual(sections.map(\.heading), [nil, "1.0.73", "1.0.67 · 10月4日"])
+        XCTAssertEqual(sections.map(\.heading), [nil, "1.0.73", "1.0.67\u{2002}10月4日"])
         XCTAssertEqual(sections.map(\.spokenHeading), [nil, "バージョン 1.0.73", "バージョン 1.0.67、10月4日"])
         XCTAssertEqual(sections.map(\.items.count), [1, 1, 1])
         XCTAssertEqual(WhatsNew.sections([], mode: .history), [])

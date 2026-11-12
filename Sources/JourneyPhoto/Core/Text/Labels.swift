@@ -53,7 +53,7 @@ enum Labels {
 
     enum Gallery {
         static var empty: String { L("該当する写真がありません。", "No photos found.") }
-        static var search: String { L("写真を検索（タイトル・説明・タグなど）", "Search photos") }
+        static var search: String { L("写真を検索（タイトル、説明、タグなど）", "Search photos") }
     }
 
     enum Category {

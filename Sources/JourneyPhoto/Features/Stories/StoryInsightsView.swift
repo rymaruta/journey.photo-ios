@@ -207,7 +207,7 @@ struct StoryInsightsView: View {
     private var postedLine: String? {
         let parts = [StoryPlayback.postedAt(story.createdAt),
                      StoryPlayback.remaining(until: story.expiresAt)].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return parts.isEmpty ? nil : parts.joined(separator: "\u{2002}")
     }
 
     /// 写真の大きさ（板 48×64）
@@ -352,7 +352,7 @@ struct StoryInsightsView: View {
     private func subline(for viewer: StoryViewer) -> String? {
         let reply = replyText(from: viewer.userId).map { "「\($0)」" }
         let parts = [ago(from: viewer.at), reply].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return parts.isEmpty ? nil : parts.joined(separator: "\u{2002}")
     }
 
     /// 行（板 60）と顔（板 40）

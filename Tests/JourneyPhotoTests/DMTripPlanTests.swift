@@ -58,8 +58,8 @@ final class DMTripPlanTests: XCTestCase {
         XCTAssertFalse(found[1].place.isSpot)
         XCTAssertEqual(found[1].place.coords, Photo.Coords(lat: 36.57, lng: 136.67), "公開の写真の行から座標を引く")
         XCTAssertNil(found[2].place.coords, "非公開は文字だけ")
-        XCTAssertEqual(found[0].detail, "撮影スポット · 送られた写真から")
-        XCTAssertEqual(found[1].detail, "撮影地 · 送った写真から")
+        XCTAssertEqual(found[0].detail, "撮影スポット\u{2002}送られた写真から")
+        XCTAssertEqual(found[1].detail, "撮影地\u{2002}送った写真から")
     }
 
     /// 名前の一部が同じだけでは撮影スポットにしない（違う場所を入れない）・下書きの行は使わない
@@ -160,11 +160,11 @@ final class DMTripPlanTests: XCTestCase {
         let pairs = TripHolidays.pairs(from: "2026-11-11")
         XCTAssertEqual(pairs.map(\.start), ["2026-11-14", "2026-11-22"], "いちばん近い組と、祝日を含むいちばん近い組")
         XCTAssertEqual(pairs.map(\.end), ["2026-11-15", "2026-11-23"])
-        XCTAssertEqual(pairs.map(\.label), ["11/14 · 15（土日）", "11/22 · 23（日・祝）"])
+        XCTAssertEqual(pairs.map(\.label), ["11/14\u{2002}15（土日）", "11/22\u{2002}23（日、祝）"])
         XCTAssertEqual(TripHolidays.allPairs(from: "2026-11-11").count, TripHolidays.allPairs(from: "2026-11-11").count)
         XCTAssertEqual(TripHolidays.pair(of: ["2026-05-02", "2026-05-03", "2026-05-04", "2026-05-05", "2026-05-06"]).start,
                        "2026-05-03", "平日の祝日とその隣の休み")
-        XCTAssertEqual(TripHolidays.label("2026-12-31", "2027-01-01"), "12/31 · 1/1（木・祝）")
+        XCTAssertEqual(TripHolidays.label("2026-12-31", "2027-01-01"), "12/31\u{2002}1/1（木、祝）")
     }
 
     /// 見出しだけ（説明文に頼らない）。祝日を含む組もあるので英語も「週末」と言わない

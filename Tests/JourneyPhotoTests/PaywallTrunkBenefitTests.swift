@@ -52,7 +52,7 @@ final class PaywallTrunkBenefitTests: XCTestCase {
         let trunk = ProBenefit.trunk
         XCTAssertEqual(trunk.icon, .trunk)
         XCTAssertEqual(trunk.title, "旅のトランクをもっと")
-        XCTAssertEqual(trunk.body, "特別なトランク 6 型・ラベルの図柄の作り直し 月 3 回・手持ち 150 枚（無料は 30 枚）")
+        XCTAssertEqual(trunk.body, "特別なトランク 6 型、ラベルの図柄の作り直し 月 3 回、手持ち 150 枚（無料は 30 枚）")
         XCTAssertEqual(TrunkModel.pro.count, 6)
         XCTAssertEqual(ProBenefit.trunkRerollsPerMonth, 3)
         XCTAssertEqual(TrunkState.proLimit, 150)

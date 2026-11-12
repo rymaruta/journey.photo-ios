@@ -209,13 +209,13 @@ struct OfflineTripContent: View {
             parts.append(range)
         }
         parts.append(L("\(manifest.stopCount) か所", "\(manifest.stopCount) \(manifest.stopCount == 1 ? "place" : "places")"))
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: "\u{2002}")
     }
 
     /// 日の眉（「1 日目 · 12月24日」）
     nonisolated static func dayHeading(_ day: OfflineTripManifest.Day) -> String {
         var head = L("\(day.number) 日目", "Day \(day.number)")
-        if let label = TakenDay.label(day.date) { head += " · \(label)" }
+        if let label = TakenDay.label(day.date) { head += "\u{2002}\(label)" }
         return head
     }
 
@@ -259,7 +259,7 @@ struct OfflineTripContent: View {
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel([String(stop.number), stop.name, stop.travel, stop.light?.line].compactMap { $0 }.joined(separator: " · "))
+        .accessibilityLabel([String(stop.number), stop.name, stop.travel, stop.light?.line].compactMap { $0 }.joined(separator: L("、", ", ")))
     }
 }
 
@@ -376,7 +376,7 @@ struct OfflineSpotView: View {
 
     /// 「光の時刻 · 1 日目 12月24日」
     private var lightHeading: String {
-        var head = L("光の時刻 · \(day.number) 日目", "Light · Day \(day.number)")
+        var head = L("光の時刻\u{2002}\(day.number) 日目", "Light\u{2002}Day \(day.number)")
         if let date = OfflineTripText.shortDate(ymd: day.date) { head += " \(date)" }
         return head
     }
@@ -385,7 +385,7 @@ struct OfflineSpotView: View {
     private var samplesSection: some View {
         if !stop.samples.isEmpty {
             VStack(alignment: .leading, spacing: JPSpace.xs) {
-                JPEyebrowLine(L("保存した作例 · \(stop.samples.count) 枚", "Saved examples · \(stop.samples.count)"))
+                JPEyebrowLine(L("保存した作例\u{2002}\(stop.samples.count) 枚", "Saved examples\u{2002}\(stop.samples.count)"))
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
                     ForEach(Array(stop.samples.enumerated()), id: \.offset) { i, sample in
                         Button {
@@ -398,7 +398,7 @@ struct OfflineSpotView: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("\(sample.title) · \(sample.credit)")
+                        .accessibilityLabel("\(sample.title)\u{2002}\(sample.credit)")
                     }
                 }
             }

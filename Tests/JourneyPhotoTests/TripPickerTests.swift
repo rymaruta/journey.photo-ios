@@ -366,10 +366,10 @@ final class TripPickerTests: XCTestCase {
 
     func testTitleAndDayRegionLabel() throws {
         let k = try kyoto("k"), n = try nara("n"), h = try hokkaido("h")
-        XCTAssertEqual(TripPicker.defaultTitle([[k], [n]]), L("京都府・奈良県の旅", "Trip to 京都府, 奈良県"))
-        XCTAssertEqual(TripPicker.defaultTitle([[k], [n], [h]]), L("京都府・奈良県ほかの旅", "Trip to 京都府, 奈良県 and more"))
+        XCTAssertEqual(TripPicker.defaultTitle([[k], [n]]), L("京都府、奈良県の旅", "Trip to 京都府, 奈良県"))
+        XCTAssertEqual(TripPicker.defaultTitle([[k], [n], [h]]), L("京都府、奈良県ほかの旅", "Trip to 京都府, 奈良県 and more"))
         XCTAssertEqual(TripPicker.defaultTitle([[try spot("x")]]), L("行きたい場所の旅", "Places I want to go"))
-        XCTAssertEqual(TripPicker.regionLabel(of: [k, n, k]), "京都府・奈良県")
+        XCTAssertEqual(TripPicker.regionLabel(of: [k, n, k]), "京都府、奈良県")
         XCTAssertNil(TripPicker.regionLabel(of: [try spot("x")]))
     }
 

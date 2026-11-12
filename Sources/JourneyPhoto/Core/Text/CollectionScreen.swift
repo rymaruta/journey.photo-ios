@@ -27,7 +27,7 @@ enum CollectionScreen {
         if isLoading { return extra }
         // 英語は1枚のとき単数形（地図の `photoCountLabel` を使い回す・2026-10-07）
         let counted = PhotoMapViewModel.photoCountLabel(count)
-        return extra.isEmpty ? counted : "\(counted) · \(extra)"
+        return extra.isEmpty ? counted : "\(counted)\u{2002}\(extra)"
     }
 
     /// 先頭の大きい1枚に載せる大きい字（板 12 の「[撮影地]」）。
@@ -94,7 +94,7 @@ enum CollectionScreen {
     /// `photos` は並んでいる写真（撮影地のページを付けてよいかを見る）
     static func shareText(title: String, count: Int, kind: PhotoQuery.Collection?, lead: Photo?,
                           photos: [Photo]) -> String {
-        var lines = ["\(title) · \(PhotoMapViewModel.photoCountLabel(count))"]
+        var lines = ["\(title)\u{2002}\(PhotoMapViewModel.photoCountLabel(count))"]
         if let url = pageURL(kind, photos: photos) ?? lead.flatMap({
             // 配れない写真（絞った・下書き）は URL を付けない（`PhotoDetailView.shareURL`）
             isShareable($0) ? PhotoLink.url(photoId: $0.id, isPublished: true) : nil

@@ -106,7 +106,7 @@ final class TripsDesignTests: XCTestCase {
     func testPageMetaJoinsOnlyWhatItHas() throws {
         let full = try photo(["id": "a", "date": "2026-09-12",
                               "exif": ["dateTimeOriginal": "2026:09:12 07:12:00", "focalLength": "24", "aperture": "8"]])
-        XCTAssertEqual(TripStyle.pageMeta(full), "07:12 · 24mm · f/8")
+        XCTAssertEqual(TripStyle.pageMeta(full), "07:12\u{2002}24mm\u{2002}f/8")
         // 撮影日と食い違う時刻は出さない
         let other = try photo(["id": "b", "date": "2026-09-13",
                                "exif": ["dateTimeOriginal": "2026:09:12 07:12:00", "aperture": "f/2.8"]])
@@ -133,7 +133,7 @@ final class TripsDesignTests: XCTestCase {
         XCTAssertFalse(TripStyle.isFinished(end: "2026-10-14", today: "2026-10-14"), "帰着の日の当日はまだ旅の中")
         XCTAssertFalse(TripStyle.isFinished(end: nil, today: "2026-10-14"))
         let line = TripStyle.planLine(start: nil, end: nil, places: 3, finished: false)
-        XCTAssertEqual(line, "\(L("日付未定", "No dates yet")) · \(TripPlanText.placeCount(3))")
+        XCTAssertEqual(line, "\(L("日付未定", "No dates yet"))\u{2002}\(TripPlanText.placeCount(3))")
         XCTAssertTrue(TripStyle.planLine(start: "2026-09-12", end: "2026-09-14", places: 6, finished: true)
             .hasSuffix(L("帰着済み", "Back home")))
     }
@@ -154,7 +154,7 @@ final class TripsDesignTests: XCTestCase {
         XCTAssertEqual(TripPlanPickSheet.toggled(picked, id: "a", capacity: 2), ["b"], "外すのはいつでも")
         XCTAssertEqual(TripPlanPickSheet.toggled([], id: "a", capacity: 0), [])
         XCTAssertEqual(TripPlanPickSheet.addTitle(count: 3), L("3か所を追加", "Add 3 places"))
-        XCTAssertEqual(TripPlanPickSheet.eyebrow(dayIndex: 0, date: "12月24日"), L("1日目 · 12月24日", "Day 1 · 12月24日"))
+        XCTAssertEqual(TripPlanPickSheet.eyebrow(dayIndex: 0, date: "12月24日"), L("1日目\u{2002}12月24日", "Day 1 · 12月24日"))
         XCTAssertEqual(TripPlanPickSheet.eyebrow(dayIndex: 1, date: nil), L("2日目", "Day 2"))
         XCTAssertEqual(TripPlanPickSheet.hint(capacity: 0), L("この日はいっぱいです", "This day is full"))
     }
@@ -171,7 +171,7 @@ final class TripsDesignTests: XCTestCase {
 
     /// 日の見出しの読み上げは「1日目 · 09.12」（眉の英字「DAY」を読ませない）
     func testSpokenDayHeader() {
-        XCTAssertEqual(TripBookView.spokenDayHeader(1, monthDay: "09.12"), "\(TripBookView.spokenDay(1)) · 09.12")
+        XCTAssertEqual(TripBookView.spokenDayHeader(1, monthDay: "09.12"), "\(TripBookView.spokenDay(1))\(L("、", ", "))09.12")
         XCTAssertFalse(TripBookView.spokenDayHeader(2, monthDay: "09.13").contains("DAY"))
         let day = OfflineTripManifest.Day(number: 2, date: nil, stops: [])
         XCTAssertEqual(OfflineTripContent.dayHeading(day), L("2 日目", "Day 2"))

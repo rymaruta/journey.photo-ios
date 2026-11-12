@@ -487,7 +487,7 @@ enum HomeTileText {
     /// 撮影地の下の1行（板: 「名前 · 2日前」、2枚の段は名前だけ）
     static func byline(author: String, ago: String?) -> String {
         guard let ago, !ago.isEmpty else { return author }
-        return "\(author) · \(ago)"
+        return "\(author)\u{2002}\(ago)"
     }
 }
 

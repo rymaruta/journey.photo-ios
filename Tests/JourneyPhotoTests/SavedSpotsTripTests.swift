@@ -101,7 +101,7 @@ final class SavedSpotsTripTests: XCTestCase {
             [.spot(spotId: "sp_todaiji", note: nil)],
             [.location(slug: "osaka", note: nil)],
         ])
-        XCTAssertEqual(draft.title, "京都府・奈良県の旅")
+        XCTAssertEqual(draft.title, "京都府、奈良県の旅")
         // 作る流れの割り振りと同じ答え
         let places = SavedSpotsTrip.draftPlaces([kyoto, osaka, nara])
         XCTAssertEqual(TripDraft.tripDays(TripDraft.plan(places, dayCount: nil)), draft.days)

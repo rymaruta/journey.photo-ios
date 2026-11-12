@@ -44,7 +44,7 @@ final class SpotAutoLinkWiringTests: XCTestCase {
         let miyagi = try XCTUnwrap(sections.first { $0.key == .prefecture("宮城県") })
         XCTAssertEqual(Set(miyagi.photos.map(\.id)), ["dream", "mine"])
         XCTAssertEqual(miyagi.photos.count, miyagi.spots.first?.photoCount, "段と行の枚数が食い違う")
-        XCTAssertEqual(RegionList.countLabel(miyagi), L("1件 · 写真 2枚", "1 spot · 2 photos"))
+        XCTAssertEqual(RegionList.countLabel(miyagi), L("1件\u{2002}写真 2枚", "1 spot · 2 photos"))
         // 外した写真（座標なし・県名なし）は結ばない＝段に分けられない
         XCTAssertEqual(sections.first { $0.key == .unknown }?.photos.map(\.id), ["removed"])
     }

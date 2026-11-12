@@ -380,7 +380,7 @@ struct TripChoiceRow: View {
         .buttonStyle(.plain)
         .disabled(locked)
         .opacity(locked ? 0.5 : 1)
-        .accessibilityLabel([place.name, detail ?? place.regionLabel].compactMap { $0 }.joined(separator: L("・", ", ")))
+        .accessibilityLabel([place.name, detail ?? place.regionLabel].compactMap { $0 }.joined(separator: L("、", ", ")))
         .accessibilityAddTraits(isOn ? .isSelected : [])
         .accessibilityHint(isOn ? L("押すと外します", "Tap to deselect") : L("押すと選びます", "Tap to select"))
         .accessibilityIdentifier("tripCreate.choice")
@@ -756,10 +756,9 @@ struct TripCreateDraftStep: View {
         }
         let sun = TripDraft.sun(ymd: ymd, spots: spots)
         return VStack(alignment: .leading, spacing: JPSpace.xs) {
-            JPEyebrowLine(TripPlanText.dayHeading(index: di, day: TripDay(), start: start, end: end)
-                .replacingOccurrences(of: "・", with: " · "))
+            JPEyebrowLine(TripPlanText.dayHeading(index: di, day: TripDay(), start: start, end: end))
             if let sun, let line = TripSunText.line(sun) {
-                TripDayNote(text: [line, TripPicker.regionLabel(of: day)].compactMap { $0 }.joined(separator: " · "),
+                TripDayNote(text: [line, TripPicker.regionLabel(of: day)].compactMap { $0 }.joined(separator: "\u{2002}"),
                             symbol: "sun.max")
             }
             if let overlap = TripDraft.overlapNote(day.map(\.times)) {

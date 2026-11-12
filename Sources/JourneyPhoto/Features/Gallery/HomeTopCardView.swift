@@ -286,7 +286,7 @@ struct HomeTopCardView: View {
                 card(eyebrow: "TRIP PLAN", eyebrowLabel: L("旅行プラン", "Trip plan"),
                      title: planTitle(plan),
                      line: daysUntil == 0
-                        ? L("今日から · 1日目", "Starts today · Day 1")
+                        ? L("今日から\u{2002}1日目", "Starts today\u{2002}Day 1")
                         : L("出発まで \(daysUntil) 日", daysUntil == 1 ? "1 day to go" : "\(daysUntil) days to go"),
                      // 前日と当日は、予定した撮影スポットの光の時刻（当日モード・`TripLight`）
                      detail: tripLight(plan) ?? (plan.itemCount > 0 ? TripPlanText.placeCount(plan.itemCount) : nil),
@@ -299,7 +299,7 @@ struct HomeTopCardView: View {
             } label: {
                 card(eyebrow: "ON TRIP", eyebrowLabel: L("旅の最中", "On a trip"),
                      title: planTitle(plan),
-                     line: L("\(dayNumber)日目 · 写真を投稿する", "Day \(dayNumber) · Post a photo"),
+                     line: L("\(dayNumber)日目\u{2002}写真を投稿する", "Day \(dayNumber)\u{2002}Post a photo"),
                      detail: tripLight(plan),
                      backdrop: nil,
                      // 押すと投稿画面が開く（別の画面へ進む「›」ではない）
@@ -317,7 +317,7 @@ struct HomeTopCardView: View {
             } label: {
                 card(eyebrow: "TRIP BOOK", eyebrowLabel: L("旅の一冊", "Trip book"),
                      title: L("旅の一冊ができました", "Your trip book is ready"),
-                     line: "\(TripBook.title(of: trip)) · \(TripBook.daysLabel(trip.days)) · "
+                     line: "\(TripBook.title(of: trip))\u{2002}\(TripBook.daysLabel(trip.days))\u{2002}"
                         + PhotoMapViewModel.photoCountLabel(trip.photos.count),
                      detail: nil,
                      backdrop: trip.cover, inCarousel: inCarousel)
@@ -406,7 +406,7 @@ struct HomeTopCardView: View {
                 card(eyebrow: "DAILY QUIZ", eyebrowLabel: L("今日の一問", "Today's question"),
                      title: L("この写真はどこ？", "Where is this?"),
                      line: quizAnswered
-                        ? L("答えました · 明日また新しい写真", "Answered · A new photo tomorrow")
+                        ? L("答えました、明日また新しい写真", "Answered, a new photo tomorrow")
                         : L("4つの中から撮影地を当てる", "Guess the spot from four choices"),
                      // 写真を出すなら作者とライセンスも出す（季節の札と同じ）
                      detail: quiz.photo.credit,
@@ -441,7 +441,7 @@ struct HomeTopCardView: View {
     /// 頭の地域と末尾のライセンス名は残る
     nonisolated static func spotDetail(region: String?, credit: String?) -> String? {
         let parts = [region, credit].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return parts.isEmpty ? nil : parts.joined(separator: "\u{2002}")
     }
 
     private static func spotDetail(_ spot: OfficialSpot) -> String? {

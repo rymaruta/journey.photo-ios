@@ -393,7 +393,7 @@ final class MultiDraftsTests: XCTestCase {
         XCTAssertEqual(DraftsText.daysLeftShort(2), L("あと2日", "2d left"))
         XCTAssertEqual(DraftsText.photos(1), L("1枚", "1 photo"))
         XCTAssertEqual(DraftsText.storageLine(count: 12, megabytes: 31),
-                       L("12 / 20件 · 31 MB · この端末にだけ保存", "12 / 20 · 31 MB · Saved on this device only"))
+                       L("12 / 20件\u{2002}31 MB\u{2002}この端末にだけ保存", "12 / 20 · 31 MB · Saved on this device only"))
         XCTAssertEqual(DraftsText.selectionTitle(0), L("選んでください", "Select drafts"))
         XCTAssertEqual(DraftsText.deleteButton(2), L("2件を削除", "Delete 2"))
     }

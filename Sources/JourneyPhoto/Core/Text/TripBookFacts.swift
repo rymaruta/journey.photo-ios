@@ -207,7 +207,7 @@ extension TripBook {
     /// 画面で別物）。推測で URL を作ると**開けないリンクを配る**
     static func shareText(of trip: Trip) -> String {
         let count = PhotoMapViewModel.photoCountLabel(trip.photos.count)
-        return "\(title(of: trip))\n\(dateRange(from: trip.start, to: trip.end)) · \(daysLabel(trip.days)) · \(count)"
+        return "\(title(of: trip))\n\(dateRange(from: trip.start, to: trip.end))\u{2002}\(daysLabel(trip.days))\u{2002}\(count)"
     }
 
     // MARK: - 下回り

@@ -119,7 +119,7 @@ final class StoryDurationDecodingTests: XCTestCase {
     /// 付けた曲を読む（閲覧画面の「曲名 · アーティスト」の行）
     func testSongIsDecoded() throws {
         let s = try story(#"{"id":"story-1","src":"https://x.test/1.jpg","song":{"title":"夜に駆ける","artist":"YOASOBI","previewUrl":"https://audio.test/p.m4a"}}"#)
-        XCTAssertEqual(s.songLine, "夜に駆ける · YOASOBI")
+        XCTAssertEqual(s.songLine, "夜に駆ける、YOASOBI")
     }
 
     /// アーティストが無ければ曲名だけ

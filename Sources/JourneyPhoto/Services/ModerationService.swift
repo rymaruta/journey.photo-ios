@@ -30,13 +30,13 @@ struct ModerationService {
         var label: String {
             switch self {
             case .copyright: return L("自分の写真を無断で使われている", "My photo is used without permission")
-            case .privacy: return L("写っている人・場所の権利を害している", "Violates someone's privacy or rights")
+            case .privacy: return L("写っている人、場所の権利を害している", "Violates someone's privacy or rights")
             case .sexual: return L("わいせつな内容", "Sexually explicit")
-            case .violence: return L("暴力的・残虐な内容", "Violent or graphic")
-            case .harassment: return L("特定の人への攻撃・いやがらせ", "Harassment of a person")
-            case .spam: return L("広告・勧誘・スパム", "Spam or advertising")
+            case .violence: return L("暴力的、残虐な内容", "Violent or graphic")
+            case .harassment: return L("特定の人への攻撃、いやがらせ", "Harassment of a person")
+            case .spam: return L("広告、勧誘、スパム", "Spam or advertising")
             // 2026-11-09: DM の通報から足された理由（`report.ts` の `REPORT_REASONS`。Web の ReportDialog と同じ文言・同じ並び）
-            case .minor: return L("未成年へのいやな接触・誘い出し", "Inappropriate contact with a minor")
+            case .minor: return L("未成年へのいやな接触、誘い出し", "Inappropriate contact with a minor")
             case .other: return L("その他", "Something else")
             }
         }

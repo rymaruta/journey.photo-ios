@@ -728,7 +728,7 @@ enum CompositionSection: String, CaseIterable, Identifiable {
         switch self {
         case .classic: return L("定番の分割", "Classic divisions")
         case .golden: return L("黄金比", "Golden ratio")
-        case .diagonal: return L("対角・幾何", "Diagonals & geometry")
+        case .diagonal: return L("対角と幾何", "Diagonals & geometry")
         case .shape: return L("配置と形", "Placement & shapes")
         case .ratio: return L("比率の枠", "Aspect frames")
         case .device: return L("機種の格子", "Camera grids")
@@ -801,7 +801,7 @@ enum CompositionKind: String, CaseIterable, Identifiable {
     var japaneseName: String {
         switch self {
         case .thirds: return "三分割"
-        case .halves: return "二分割・十字"
+        case .halves: return "二分割と十字"
         case .symmetry: return "シンメトリー"
         case .hinomaru: return "日の丸"
         case .horizon: return "水平線"
@@ -833,7 +833,7 @@ enum CompositionKind: String, CaseIterable, Identifiable {
         case .ratio4x5: return "4:5"
         case .ratio9x16: return "9:16"
         case .ratio16x9: return "16:9"
-        case .otherRatios: return "3:2・2:1・XPan・√2"
+        case .otherRatios: return "3:2、2:1、XPan、√2"
         case .grid6x4: return "6×4"
         case .iphone: return "iPhone 標準"
         case .level: return "水準器"
@@ -875,7 +875,7 @@ enum CompositionKind: String, CaseIterable, Identifiable {
         case .ratio4x5: return "4:5"
         case .ratio9x16: return "9:16"
         case .ratio16x9: return "16:9"
-        case .otherRatios: return "3:2 · 2:1 · XPan · √2"
+        case .otherRatios: return "3:2, 2:1, XPan, √2"
         case .grid6x4: return "6×4 grid"
         case .iphone: return "iPhone default"
         case .level: return "Level"

@@ -238,7 +238,7 @@ enum PhotoTrip {
         let kinds = Set(spot.seasonKinds?.value ?? spot.seasonalGuide?.value.map(\.season) ?? [])
         let labels = SpotBodyText.seasonOrder.filter(kinds.contains).compactMap(SpotBodyText.seasonLabel)
         guard !labels.isEmpty else { return nil }
-        return L("おすすめの季節 \(labels.joined(separator: "・"))", "Best in \(labels.joined(separator: ", "))")
+        return L("おすすめの季節 \(labels.joined(separator: "、"))", "Best in \(labels.joined(separator: ", "))")
     }
 
     /// 「経路」を出すか（座標のある台帳のスポットだけ。撮影地の文字列は場所が確かでない）

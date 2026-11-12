@@ -65,6 +65,6 @@ final class SpotWantsServiceTests: XCTestCase {
     func testAbroadHasCountButNoRank() throws {
         let file = try XCTUnwrap(SpotWants.decode(Data(body.utf8)))
         XCTAssertEqual(SpotWants.line(try XCTUnwrap(file.entry(slug: "louvre"))), "今月の行きたい 30")
-        XCTAssertEqual(SpotWants.line(try XCTUnwrap(file.entry(slug: "a"))), "今月の行きたい 20 · 全国1位")
+        XCTAssertEqual(SpotWants.line(try XCTUnwrap(file.entry(slug: "a"))), "今月の行きたい 20\u{2002}全国1位")
     }
 }

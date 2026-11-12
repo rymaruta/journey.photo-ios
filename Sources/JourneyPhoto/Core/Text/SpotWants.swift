@@ -58,7 +58,7 @@ enum SpotWants {
         guard let rank = e.rank else {
             return L("今月の行きたい \(count(e.n))", "Want to go this month \(count(e.n))")
         }
-        return L("今月の行きたい \(count(e.n)) · 全国\(rank)位", "Want to go this month \(count(e.n)) · #\(rank) in Japan")
+        return L("今月の行きたい \(count(e.n))\u{2002}全国\(rank)位", "Want to go this month \(count(e.n))\u{2002}#\(rank) in Japan")
     }
 
     /// 撮影スポットの頁の「行きたい」を押した結果が、数える「行きたい」か（入れた・端末に入れた）。外した・失敗は数えない

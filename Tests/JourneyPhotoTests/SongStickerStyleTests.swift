@@ -106,7 +106,7 @@ final class SongStickerStyleTests: XCTestCase {
             sticker.x = 0.2
             let changed = SongSticker.retext([sticker], from: old, to: new)
             XCTAssertTrue(changed.found, "\(style)")
-            XCTAssertEqual(changed.overlays[0].text, "山へ · 彼方", "\(style)")
+            XCTAssertEqual(changed.overlays[0].text, "山へ、彼方", "\(style)")
             XCTAssertEqual(changed.overlays[0].songStyle, style, "曲を変えたら形が戻った \(style)")
             XCTAssertEqual(changed.overlays[0].x, 0.2)
             XCTAssertTrue(SongSticker.isOnPhoto(changed.overlays, song: new), "\(style)")

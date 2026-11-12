@@ -150,7 +150,7 @@ struct FavoritesView: View {
     /// 板の題は明朝 30 だが、字の段（`JPTypeScale`）に 30 は無いので画面の題の 26（`JPFont.screenTitle`）
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(photos.isEmpty ? L("LIKED", "LIKED") : L("LIKED · \(photos.count)枚", "LIKED · \(photos.count)"))
+            Text(photos.isEmpty ? L("LIKED", "LIKED") : L("LIKED\u{2002}\(photos.count)枚", "LIKED\u{2002}\(photos.count)"))
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
                 .accessibilityHidden(true)

@@ -447,7 +447,7 @@ struct EditPhotoView: View {
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
             // 縁は題・説明の欄（`JPField`）と同じ `outline`（部品の縁の 3:1・2026-10-17）
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.outline, lineWidth: 1))
-            Text(L("1990年より前・未来の日付は入れられません", "Dates before 1990 or in the future can't be set"))
+            Text(L("1990年より前、未来の日付は入れられません", "Dates before 1990 or in the future can't be set"))
                 .font(JPFont.caption)
                 .foregroundStyle(WebTheme.text3)
         }
@@ -573,7 +573,7 @@ struct EditPhotoView: View {
             message = L("差し替えました（反映まで数分かかります）", "Replaced. It takes a few minutes to appear.")
             // 撮影日を載せなかった回は、前の撮影日が残ることを言う（黙って古い日付を残さない）
             if keptOldDate {
-                message = (message ?? "") + "\n" + L("撮影日は前のままです（1990年より前・未来の日付は入れられません）",
+                message = (message ?? "") + "\n" + L("撮影日は前のままです（1990年より前、未来の日付は入れられません）",
                                                      "The date taken is unchanged (dates before 1990 or in the future can't be set).")
             }
         } catch {

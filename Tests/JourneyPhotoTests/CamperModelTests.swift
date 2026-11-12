@@ -398,11 +398,11 @@ final class CamperWiringTests: XCTestCase {
     /// （2026-10-18 Mac の絵 run 529 で「ユーザー の車」と出ていた）
     func testEyebrowName() {
         let named = CamperText.eyebrow(owner: "旅人", stage: .camper)
-        XCTAssertEqual(named, L("旅人の車 · キャンピングカー", "旅人\u{2019}s camper · Camper"))
+        XCTAssertEqual(named, L("旅人の車\u{2002}キャンピングカー", "旅人\u{2019}s camper · Camper"))
         XCTAssertFalse(named.contains(" の車"), "名前と「の車」の間が空いている")
         for none in [nil, "", "  ", "ユーザー", "User", Labels.Common.unnamedUser] {
             let text = CamperText.eyebrow(owner: none, stage: .camper)
-            XCTAssertEqual(text, L("わたしの車 · キャンピングカー", "My camper · Camper"), String(describing: none))
+            XCTAssertEqual(text, L("わたしの車\u{2002}キャンピングカー", "My camper · Camper"), String(describing: none))
             XCTAssertFalse(text.contains("ユーザー") || text.contains("User"))
         }
     }
@@ -441,7 +441,7 @@ final class CamperWiringTests: XCTestCase {
     func testCarNameIsDetour() throws {
         XCTAssertEqual(CamperText.carName, L("とおまわり号", "Detour"))
         XCTAssertEqual(CamperText.partsTitle, L("とおまわり号の部品", "Detour\u{2019}s parts"))
-        XCTAssertEqual(CamperText.eyebrow(owner: nil, stage: .camper), L("わたしの車 · キャンピングカー", "My camper · Camper"))
+        XCTAssertEqual(CamperText.eyebrow(owner: nil, stage: .camper), L("わたしの車\u{2002}キャンピングカー", "My camper · Camper"))
         let view = try source("Sources/JourneyPhoto/Features/Camper/CamperGarageView.swift")
         XCTAssertTrue(view.contains("Text(CamperText.carName)"))
         XCTAssertTrue(view.contains("Text(CamperText.partsTitle)"))

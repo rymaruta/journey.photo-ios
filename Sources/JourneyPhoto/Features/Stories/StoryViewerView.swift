@@ -902,7 +902,7 @@ struct StoryViewerView: View {
                         .allowsHitTesting(false)
                 }
                 if let keptDate {
-                    Text(L("\(keptDate) · 残したストーリー", "\(keptDate) · Kept story"))
+                    Text(L("\(keptDate)\u{2002}残したストーリー", "\(keptDate)\u{2002}Kept story"))
                         .font(JPFont.mono(13, relativeTo: .footnote))
                         .foregroundStyle(Color.white.opacity(StoryViewerMetrics.highlightDateOpacity))
                         .jpPhotoTextShadow()
@@ -1134,7 +1134,7 @@ struct StoryViewerView: View {
                     .font(JPFont.bodyEmphasis)
                     .foregroundStyle(.white)
                     .lineLimit(1)
-                Text(L("ストーリーハイライト · \(highlight.count)件", "Story highlight · \(highlight.count)"))
+                Text(L("ストーリーハイライト\u{2002}\(highlight.count)件", "Story highlight\u{2002}\(highlight.count)"))
                     .font(JPFont.meta)
                     .foregroundStyle(WebTheme.muted)
                 songRow(for: story)
@@ -1285,7 +1285,7 @@ struct StoryViewerView: View {
         // 画面いっぱいの1つの要素にして、上下に払う操作で選ぶ
         .accessibilityElement()
         .accessibilityLabel(storyAccessibilityLabel)
-        .accessibilityHint(L("上下に払って、次へ・前へ・一時停止を選べます",
+        .accessibilityHint(L("上下に払って、次へ、前へ、一時停止を選べます",
                              "Swipe up or down to choose next, previous or pause"))
         // 「次へ」は右を押したときと同じ判定（返信を打っている間は閉じるだけ）
         .accessibilityAction(named: L("次へ", "Next")) { forward() }
@@ -2214,7 +2214,7 @@ struct StoryViewerView: View {
     private func ownTimeLine(for story: Story) -> String? {
         let parts = [StoryPlayback.ago(from: story.createdAt),
                      StoryPlayback.remaining(until: story.expiresAt)].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return parts.isEmpty ? nil : parts.joined(separator: "\u{2002}")
     }
 
     /// 見た人の顔を3つ重ねる（26pt・黒の縁・8pt ずつ重ねる）
@@ -2340,7 +2340,7 @@ struct StoryViewerView: View {
         .buttonStyle(.plain)
         // 上の「…」と同じ名前（同じシートを開く）。残す・削除がこの奥にあることをヒントで言う
         .accessibilityLabel(L("その他の操作", "More actions"))
-        .accessibilityHint(L("写真として残す・削除", "Keep as photo, delete"))
+        .accessibilityHint(L("写真として残す、削除", "Keep as photo, delete"))
         .accessibilityIdentifier("story.viewer.more")
     }
 

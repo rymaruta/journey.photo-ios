@@ -403,7 +403,7 @@ enum LibraryTrips {
     /// （`days.count`）だと、中日に撮らなかった旅が一冊の「3日間」と違う「2日」になった
     static func countText(_ trip: LibraryTrip) -> String {
         let days = TripBook.daysLabel(calendarDays(trip))
-        return "\(days)" + L("・", " · ") + PhotoMapViewModel.photoCountLabel(trip.shots.count)
+        return "\(days)" + L("\u{2002}", "\u{2002}") + PhotoMapViewModel.photoCountLabel(trip.shots.count)
     }
 
     /// 旅の写真を選ぶ画面の主ボタン（2026-11-12 判断・案「投稿まわりのデザイン」04）。押すと次は新規投稿の画面
@@ -413,9 +413,9 @@ enum LibraryTrips {
 
     /// 日の眉ラベル「DAY 1 · 9.12 · 京都市」。地名が引けなければ「DAY 1 · 9.12」
     static func dayLabel(_ day: LibraryTrip.Day, place: String?) -> String {
-        let head = "DAY \(day.number) · \(day.month).\(day.day)"
+        let head = "DAY \(day.number)\u{2002}\(day.month).\(day.day)"
         guard let place, !place.isEmpty else { return head }
-        return "\(head) · \(place)"
+        return "\(head)\u{2002}\(place)"
     }
 
     /// 探し直しで、仮の家のほかに**家のまま扱う**本当の家（最初に推した家）。

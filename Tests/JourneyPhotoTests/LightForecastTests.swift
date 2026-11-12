@@ -134,7 +134,7 @@ final class LightForecastTests: XCTestCase {
     func testNoForecastFallsBackToNextSunTime() async {
         let p = place(1, forecast: false, [day("2026-10-09"), day("2026-10-10")])
         let card = LightForecastText.card(for: p, now: noon)
-        XCTAssertEqual(card.when, "今日 · 日の入り 17:21")
+        XCTAssertEqual(card.when, "今日\u{2002}日の入り 17:21")
         XCTAssertEqual(card.weather, "予報なし")
         XCTAssertEqual(card.kind, "光の時刻だけ")
         XCTAssertEqual(card.tone, .none)
@@ -145,20 +145,20 @@ final class LightForecastTests: XCTestCase {
     func testCardTextFollowsTheBoard() async {
         let a = LightForecastText.card(for: place(1, [day("2026-10-10", morning: high)]), now: noon)
         XCTAssertEqual(a.name, "場所1")
-        XCTAssertEqual(a.when, "明日 · 日の出 5:42")
+        XCTAssertEqual(a.when, "明日\u{2002}日の出 5:42")
         XCTAssertEqual(a.weather, "晴れ")
         XCTAssertEqual(a.kind, "朝焼け 見込み高")
         XCTAssertEqual(a.tone, .morning)
 
         // 2026-10-12 は月曜
         let b = LightForecastText.card(for: place(2, [day("2026-10-12", morning: low)]), now: noon)
-        XCTAssertEqual(b.when, "月曜 · 日の出 5:42")
+        XCTAssertEqual(b.when, "月曜\u{2002}日の出 5:42")
         XCTAssertEqual(b.weather, "雨")
         XCTAssertEqual(b.kind, "見込み低")
         XCTAssertEqual(b.tone, .low)
 
         let c = LightForecastText.card(for: place(3, [day("2026-10-11", night: mid)]), now: noon)
-        XCTAssertEqual(c.when, "日曜 · ブルーアワー 17:40")
+        XCTAssertEqual(c.when, "日曜\u{2002}ブルーアワー 17:40")
         XCTAssertEqual(c.kind, "夜景 見込み中")
         XCTAssertEqual(c.weather, "くもり時々晴れ")
         XCTAssertEqual(c.tone, .night)
@@ -196,7 +196,7 @@ final class LightForecastTests: XCTestCase {
         XCTAssertEqual(week.map(\.id), ["2026-10-09", "2026-10-11"])
         XCTAssertEqual(week[0].title, "今日")
         XCTAssertEqual(week[0].items.first?.event, "日の出 5:42")
-        XCTAssertEqual(week[0].items.first?.outlook, "朝焼け 見込み高 · 晴れ")
+        XCTAssertEqual(week[0].items.first?.outlook, "朝焼け 見込み高\u{2002}晴れ")
         XCTAssertEqual(week[0].items[2].outlook, "夜景 予報なし")
         XCTAssertEqual(week[1].title, "10月11日（日）")
     }

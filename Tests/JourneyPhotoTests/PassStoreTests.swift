@@ -593,7 +593,7 @@ final class PassStoreTests: XCTestCase {
                      card(3, day: 16, owner: "a", place: "京都市"),
                      card(4, day: 16, owner: "a", place: nil)]
         let bound = PassBook.sections(cards, order: .bound, names: [:], calendar: calendar)
-        XCTAssertEqual(bound.map(\.title), ["2026.10.16 · 京都市", "2026.10.15 · 金沢市"])
+        XCTAssertEqual(bound.map(\.title), ["2026.10.16\u{2002}京都市", "2026.10.15\u{2002}金沢市"])
         XCTAssertEqual(bound[0].cards.map(\.number), [2, 3, 4])
 
         let place = PassBook.sections(cards, order: .place, names: [:], calendar: calendar)

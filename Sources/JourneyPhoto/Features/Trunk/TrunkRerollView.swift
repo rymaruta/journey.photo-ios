@@ -212,7 +212,7 @@ struct TrunkRerollView: View {
             Text(TrunkText.rerollsLeft(model.state?.rerollsLeft ?? 0))
                 .font(JPFont.mono(13, relativeTo: .footnote))
                 .foregroundStyle(WebTheme.text)
-            Text(L("（毎月 3 回 · 繰り越しなし）", " (3 a month · no carry-over)"))
+            Text(L("（毎月 3 回、繰り越しなし）", " (3 a month, no carry-over)"))
         }
         .font(JPFont.footnote)
         .foregroundStyle(TrunkStyle.muted)

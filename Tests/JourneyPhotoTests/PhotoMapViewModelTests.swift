@@ -566,7 +566,7 @@ final class PhotoMapTextTests: XCTestCase {
     /// B12: 範囲の帯は枚数・地点数の関数を通す（英語の単数形「1 place」はその関数が持つ）
     func testAreaCountLabel() {
         XCTAssertEqual(PhotoMapViewModel.placeCountLabel(1), "1地点")
-        XCTAssertEqual(PhotoMapViewModel.areaCountLabel(photos: 3, places: 1), "この範囲の写真 3枚・1地点")
+        XCTAssertEqual(PhotoMapViewModel.areaCountLabel(photos: 3, places: 1), "この範囲の写真 3枚\u{2002}1地点")
     }
 
     /// 写真のピンは撮影地と枚数を読み上げる。撮影地が無ければ札と同じ語

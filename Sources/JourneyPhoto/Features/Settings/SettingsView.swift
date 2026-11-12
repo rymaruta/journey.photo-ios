@@ -45,7 +45,7 @@ struct SettingsView: View {
     /// 最下部の1行。接続先は**いつも出す**（本番かどうかを見分けるため）
     private var versionLine: String {
         let env = AppConfig.environment == .staging ? "staging" : L("本番", "production")
-        return L("バージョン \(version) · 接続先 \(env)", "Version \(version) · \(env)")
+        return L("バージョン \(version)\u{2002}接続先 \(env)", "Version \(version)\u{2002}\(env)")
     }
 
     var body: some View {
@@ -232,7 +232,7 @@ struct SettingsView: View {
     private var notificationsSection: some View {
         section(SettingsOutline.Part.notifications.title) {
             JPToggleRow(title: L("プッシュ通知を受け取る", "Push notifications"),
-                        detail: L("いいね・コメント・フォロー・ストーリーへの返信を、アプリを開いていなくても受け取れます。",
+                        detail: L("いいね、コメント、フォロー、ストーリーへの返信を、アプリを開いていなくても受け取れます。",
                                   "Get likes, comments, follows and story replies even when the app is closed."),
                         isOn: pushBinding)
                 .disabled(isApplying)
@@ -349,7 +349,7 @@ struct SettingsView: View {
             .accessibilityIdentifier("settings.whatsNew")
             JPCardDivider()
             NavigationLink { LegalLinksView() } label: {
-                JPRowLabel(title: L("利用規約・プライバシーポリシー", "Terms & Privacy"))
+                JPRowLabel(title: L("利用規約、プライバシーポリシー", "Terms & Privacy"))
             }
             .buttonStyle(JPRowButtonStyle())
             .accessibilityIdentifier("settings.legal")

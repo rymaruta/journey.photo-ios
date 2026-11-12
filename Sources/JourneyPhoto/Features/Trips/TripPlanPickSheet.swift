@@ -172,7 +172,7 @@ struct TripPlanPickSheet: View {
         .disabled(locked)
         .opacity(locked ? 0.5 : 1)
         // 名前だけにしない（札の語と県・市も読む）。選んだかは「選択中」で言う
-        .accessibilityLabel(L("\(choice.name)\(choice.isDraft ? "・下書き" : "")\(choice.regionLabel.map { "・" + $0 } ?? "")\(seasonLines[choice.id].map { "・" + $0 } ?? "")",
+        .accessibilityLabel(L("\(choice.name)\(choice.isDraft ? "、下書き" : "")\(choice.regionLabel.map { "、" + $0 } ?? "")\(seasonLines[choice.id].map { "、" + $0 } ?? "")",
                               "\(choice.name)\(choice.isDraft ? ", draft" : "")\(choice.regionLabel.map { ", " + $0 } ?? "")\(seasonLines[choice.id].map { ", " + $0 } ?? "")"))
         .accessibilityAddTraits(isOn ? .isSelected : [])
         .accessibilityHint(isOn ? L("押すと外します", "Tap to deselect") : L("押すと選びます", "Tap to select"))
@@ -195,7 +195,7 @@ struct TripPlanPickSheet: View {
     nonisolated static func eyebrow(dayIndex: Int, date: String?) -> String {
         let day = L("\(dayIndex + 1)日目", "Day \(dayIndex + 1)")
         guard let date, !date.isEmpty else { return day }
-        return "\(day) · \(date)"
+        return "\(day)\u{2002}\(date)"
     }
 
     /// 主ボタンの字（「3か所を追加」・0 のときは「追加」）

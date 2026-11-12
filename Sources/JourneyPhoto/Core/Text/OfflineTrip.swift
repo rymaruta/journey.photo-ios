@@ -121,7 +121,7 @@ enum OfflineTripPlan {
 
     /// 「前の場所から 車 約 50 分 · 電車など 約 1 時間 20 分」
     static func travelLine(_ estimates: [TripTravel.Estimate]) -> String {
-        let parts = estimates.map { "\($0.mode.label) \(TripTravel.duration($0.seconds))" }.joined(separator: " · ")
+        let parts = estimates.map { "\($0.mode.label) \(TripTravel.duration($0.seconds))" }.joined(separator: "\u{2002}")
         return L("前の場所から \(parts)", "From the previous stop: \(parts)")
     }
 
@@ -238,7 +238,7 @@ struct OfflineLight: Codable, Equatable {
             if let morningBlue { parts.append(L("ブルーアワー \(morningBlue)", "Blue hour \(morningBlue)")) }
             if let eveningBlue { parts.append(L("ブルーアワー \(eveningBlue)", "Blue hour \(eveningBlue)")) }
         }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return parts.isEmpty ? nil : parts.joined(separator: "\u{2002}")
     }
 }
 
@@ -514,20 +514,20 @@ enum OfflineTripText {
 
     /// 保存済みの札・帯の小さい行「24 MB · 10月9日に保存」
     static func savedLine(bytes: Int64, savedAt: Date, zone: TimeZone = .current) -> String {
-        L("\(OfflineTripBytes.label(bytes)) · \(shortDate(savedAt, in: zone))に保存",
-          "\(OfflineTripBytes.label(bytes)) · Saved \(shortDate(savedAt, in: zone))")
+        L("\(OfflineTripBytes.label(bytes))\u{2002}\(shortDate(savedAt, in: zone))に保存",
+          "\(OfflineTripBytes.label(bytes))\u{2002}Saved \(shortDate(savedAt, in: zone))")
     }
 
     /// 保存前の札の説明（板 72b-1）
     static func beforeBody(stops: Int) -> String {
-        L("\(stops) か所の作例・光の時刻・メモと、周りの地図を画像で端末に保存します。圏外でも、どこで・いつ・何を撮るかを確かめられます。",
+        L("\(stops) か所の作例、光の時刻、メモと、周りの地図を画像で端末に保存します。圏外でも、どこで、いつ、何を撮るかを確かめられます。",
           "Saves examples, light times and notes for \(stops) \(stops == 1 ? "place" : "places"), plus map images, to this iPhone. Even with no signal, you can check where, when and what to shoot.")
     }
 
     /// 「約 24 MB · Wi‑Fi のあるところで保存すると安心です」
     static func estimateLine(stops: Int) -> String {
-        L("約 \(OfflineTripBytes.label(OfflineTripBytes.estimate(stops: stops))) · Wi‑Fi のあるところで保存すると安心です",
-          "About \(OfflineTripBytes.label(OfflineTripBytes.estimate(stops: stops))) · Best saved on Wi‑Fi")
+        L("約 \(OfflineTripBytes.label(OfflineTripBytes.estimate(stops: stops)))、Wi‑Fi のあるところで保存すると安心です",
+          "About \(OfflineTripBytes.label(OfflineTripBytes.estimate(stops: stops))), best saved on Wi‑Fi")
     }
 
     /// 保存中の左「3 / 6 か所」
@@ -577,7 +577,7 @@ enum OfflineTripText {
         parts.append(L("\(m.stopCount) か所", "\(m.stopCount) \(m.stopCount == 1 ? "place" : "places")"))
         parts.append(OfflineTripBytes.label(m.bytes))
         parts.append(L("\(shortDate(m.savedAt, in: zone))に保存", "Saved \(shortDate(m.savedAt, in: zone))"))
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: "\u{2002}")
     }
 
     /// 日程の幅。`short` は「12月24日〜25日」（同じ月なら後ろの月を省く）、そうでなければ「2026年12月24日 〜 2026年12月25日」
@@ -597,7 +597,7 @@ enum OfflineTripText {
 
     /// 設定の行「2 件 · 48 MB」
     static func settingsDetail(count: Int, bytes: Int64) -> String {
-        L("\(count) 件 · \(OfflineTripBytes.label(bytes))", "\(count) \(count == 1 ? "trip" : "trips") · \(OfflineTripBytes.label(bytes))")
+        L("\(count) 件\u{2002}\(OfflineTripBytes.label(bytes))", "\(count) \(count == 1 ? "trip" : "trips")\u{2002}\(OfflineTripBytes.label(bytes))")
     }
 
     /// 圏外の帯（板 72c・72d）
@@ -612,8 +612,8 @@ enum OfflineTripText {
 
     /// 帯の2行目「10月9日に保存 · 電波が戻るまでプランは変えられません」
     static func bannerDetail(savedAt: Date, zone: TimeZone = .current) -> String {
-        L("\(shortDate(savedAt, in: zone))に保存 · 電波が戻るまでプランは変えられません",
-          "Saved \(shortDate(savedAt, in: zone)) · You can't edit the trip until you're back online")
+        L("\(shortDate(savedAt, in: zone))に保存、電波が戻るまでプランは変えられません",
+          "Saved \(shortDate(savedAt, in: zone)), you can't edit the trip until you're back online")
     }
 
     /// 地図アプリで開くの下の注記（owner 2026-10-09: 圏外でも押せるまま、添えるだけ）

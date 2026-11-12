@@ -31,7 +31,7 @@ enum StoryPhotoLink {
                      "You made a photo from this story. Choose whether to delete the photo too. This can't be undone.")
         let l = max(likes ?? 0, 0), c = max(comments ?? 0, 0)
         guard l > 0 || c > 0 else { return head }
-        let ja = [l > 0 ? "いいね \(l)" : nil, c > 0 ? "コメント \(c)" : nil].compactMap { $0 }.joined(separator: "・")
+        let ja = [l > 0 ? "いいね \(l)" : nil, c > 0 ? "コメント \(c)" : nil].compactMap { $0 }.joined(separator: "、")
         let en = [l > 0 ? "\(l) like\(l == 1 ? "" : "s")" : nil,
                   c > 0 ? "\(c) comment\(c == 1 ? "" : "s")" : nil].compactMap { $0 }.joined(separator: " and ")
         return head + L("写真を消すと、\(ja) も消えます。", " Deleting the photo also removes its \(en).")

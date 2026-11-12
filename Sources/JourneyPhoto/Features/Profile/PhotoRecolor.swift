@@ -101,7 +101,7 @@ enum PhotoRecolor {
         case .unchanged:
             return nil
         case .busy:
-            return (L("保存・差し替えの途中だったので、色の編集はまだ反映していません。終わってから「もう一度」を押してください",
+            return (L("保存、差し替えの途中だったので、色の編集はまだ反映していません。終わってから「もう一度」を押してください",
                       "Your color edits weren't applied because a save or replace was in progress. Tap \"Try again\" when it finishes."),
                     true)
         case .replaced:

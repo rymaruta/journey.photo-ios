@@ -180,7 +180,7 @@ struct SignInView: View {
                 Task { await resumeVerification(knownUnconfirmed: false, fromOffer: true) }
             } label: {
                 // 形は**中身の側**に付ける（`.plain` は外の枠を押せる範囲にしない）
-                Text(L("確認コードを入力・再送する", "Enter or resend the code"))
+                Text(L("確認コードを入力、再送する", "Enter or resend the code"))
                     .jpPillButton(.outline)
             }
             .buttonStyle(.plain)

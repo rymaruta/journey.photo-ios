@@ -223,7 +223,7 @@ struct SpotDetailView: View {
     /// **推測しない。** 同じ一覧に実際に在って、含む関係にあるものだけ
     /// （`DerivedSpot.broader`）。無ければ行ごと出さない。
     private var placeLine: String? {
-        place.broader.isEmpty ? nil : place.broader.map { LocationMatch.display($0) }.joined(separator: " ・ ")
+        place.broader.isEmpty ? nil : place.broader.map { LocationMatch.display($0) }.joined(separator: "、")
     }
 
     /// 概要。

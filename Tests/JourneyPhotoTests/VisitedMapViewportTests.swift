@@ -75,7 +75,7 @@ final class VisitedMapViewportTests: XCTestCase {
         XCTAssertEqual(VisitedMapText.quickAdded("東京都", count: 3), "東京都、3 回、1 回足しました")
         XCTAssertEqual(VisitedMapText.quickRemoved("東京都", count: 2), "東京都、2 回、1 回減らしました")
         XCTAssertEqual(VisitedMapText.quickRemoved("東京都", count: 0), "東京都、未、1 回減らしました")
-        XCTAssertEqual(VisitedMapText.quickHint, "押す＝1 回足す · 長押し＝見るだけ")
+        XCTAssertEqual(VisitedMapText.quickHint, "押す＝1 回足す、長押し＝見るだけ")
         XCTAssertEqual(VisitedMapText.limitShort, "99 回までです")
         XCTAssertEqual(VisitedMapText.entryAccessibility(31), "行った県、31 / 47")
         XCTAssertEqual(VisitedMapText.ratio(31), "31/47")
@@ -84,7 +84,7 @@ final class VisitedMapViewportTests: XCTestCase {
     func testRoundsLine() {
         XCTAssertNil(VisitedMapText.roundsLine(completed: 0, inProgress: (1, 12)))
         XCTAssertEqual(VisitedMapText.roundsLine(completed: 1, inProgress: (2, 0)), "1 周そろった")
-        XCTAssertEqual(VisitedMapText.roundsLine(completed: 2, inProgress: (3, 12)), "2 周そろった · 3 周目 12/47")
+        XCTAssertEqual(VisitedMapText.roundsLine(completed: 2, inProgress: (3, 12)), "2 周そろった\u{2002}3 周目 12/47")
     }
 
     // MARK: - 地図・一覧の指の判定（札 #510・レビュー 2026-11-10 の 3・4・7）

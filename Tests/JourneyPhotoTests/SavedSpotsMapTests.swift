@@ -169,6 +169,6 @@ final class SavedSpotsMapTests: XCTestCase {
         let b = place("b", coords: nil)
         XCTAssertEqual(SavedSpotsMap.summary(SavedSpotsMap.split(places: [a], officialRows: [])), "地図に 1 か所")
         XCTAssertEqual(SavedSpotsMap.summary(SavedSpotsMap.split(places: [a, b], officialRows: [])),
-                       "地図に 1 か所 · 場所の分からないもの 1 か所")
+                       "地図に 1 か所、場所の分からないもの 1 か所")
     }
 }

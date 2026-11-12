@@ -467,7 +467,7 @@ struct SearchView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(L("季節・時間帯の絞り込みをすべて解除", "Clear all season and time filters"))
+                .accessibilityLabel(L("季節、時間帯の絞り込みをすべて解除", "Clear all season and time filters"))
                 .accessibilityIdentifier("search.clearTimeFilters")
                 .fixedSize()
                 .padding(.trailing, 8)
@@ -485,8 +485,8 @@ struct SearchView: View {
     /// （語・種類・カテゴリと重ねられる——「秋」を押してから「京都」と打てば秋の京都）
     private var shootingTimeSection: some View {
         VStack(alignment: .leading, spacing: JPSpace.s) {
-            sectionHeader(eyebrow: "SEASON · TIME", spoken: L("季節と時間帯", "Season and time"),
-                          title: L("季節・時間帯から探す", "Browse by season & time of day"))
+            sectionHeader(eyebrow: "SEASON\u{2002}TIME", spoken: L("季節と時間帯", "Season and time"),
+                          title: L("季節、時間帯から探す", "Browse by season & time of day"))
             shootingTimeChips
         }
     }
@@ -517,7 +517,7 @@ struct SearchView: View {
                 TopCardFace(eyebrow: "DAILY QUIZ", eyebrowLabel: L("今日の一問", "Today's question"),
                             title: L("この写真はどこ？", "Where is this?"),
                             line: quizAnswered
-                                ? L("答えました · 明日また新しい写真", "Answered · A new photo tomorrow")
+                                ? L("答えました、明日また新しい写真", "Answered, a new photo tomorrow")
                                 : L("4つの中から撮影地を当てる", "Guess the spot from four choices"),
                             // 写真を出すなら作者とライセンスも出す（ホームの札と同じ）
                             detail: quiz.photo.credit,
@@ -688,7 +688,7 @@ struct SearchView: View {
     private var featured: some View {
         if let group = model.featured {
             VStack(alignment: .leading, spacing: JPSpace.s) {
-                sectionHeader(eyebrow: "PICKS · \(group.label)", spoken: L("おすすめ · \(group.label)", "Picks · \(group.label)"),
+                sectionHeader(eyebrow: "PICKS\u{2002}\(group.label)", spoken: L("おすすめ\u{2002}\(group.label)", "Picks\u{2002}\(group.label)"),
                               title: L("おすすめ", "Picks")) {
                     NavigationLink {
                         TagPhotosView(kind: .category(group.id))
@@ -1121,7 +1121,7 @@ struct SearchView: View {
         let r = spot.region
         let place = [r?.country, r?.prefecture, r?.city].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
         let head = L("撮影スポット", "Photo spot")
-        return place.isEmpty ? head : "\(head)・\(place)"
+        return place.isEmpty ? head : "\(head)\u{2002}\(place)"
     }
 
     /// 0件の文を絞り込みの上（チップのすぐ下）に出すか（`zeroHitOnTop(...)`）

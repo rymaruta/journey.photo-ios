@@ -362,7 +362,7 @@ struct PhotoMapView: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(WebTheme.text3)
-            TextField(L("撮影地・撮影スポット名で絞る", "Filter by place or photo spot"),
+            TextField(L("撮影地、撮影スポット名で絞る", "Filter by place or photo spot"),
                       text: $model.typedQuery)
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier("map.search")
@@ -808,7 +808,6 @@ struct PhotoMapView: View {
             } label: {
                 HStack(spacing: 6) {
                     Text(L("近くに写真はありません", "No photos nearby"))
-                    Text("·").accessibilityHidden(true)
                     Text(L("全体を見る", "Show all")).font(.subheadline.weight(.semibold))
                 }
                 .font(.subheadline)
@@ -1770,8 +1769,8 @@ struct PhotoMapView: View {
     }
 
     private func spotsHeading(hasHere: Bool, hasCenter: Bool) -> String {
-        if hasHere { return L("撮影スポット · 近い順", "Photo spots · nearest first") }
-        if hasCenter { return L("撮影スポット · 地図の中心から近い順", "Photo spots · nearest to the map") }
+        if hasHere { return L("撮影スポット\u{2002}近い順", "Photo spots\u{2002}nearest first") }
+        if hasCenter { return L("撮影スポット\u{2002}地図の中心から近い順", "Photo spots\u{2002}nearest to the map") }
         return L("撮影スポット", "Photo spots")
     }
 
@@ -2185,7 +2184,7 @@ enum MapWishlistLink {
     }
 
     static func title(count: Int) -> String {
-        L("行きたい場所 \(count) · 旅行プランを作る", "Wishlist \(count) · Plan a trip")
+        L("行きたい場所 \(count)\u{2002}旅行プランを作る", "Wishlist \(count)\u{2002}Plan a trip")
     }
 }
 

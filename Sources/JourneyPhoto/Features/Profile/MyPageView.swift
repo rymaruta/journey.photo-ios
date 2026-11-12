@@ -943,7 +943,7 @@ struct MyPageView: View {
     private func wishlistMapLink(_ split: SavedSpotsMap.Split, pool: [Photo], photosKnown: Bool) -> some View {
         HStack(spacing: JPSpace.s) {
             // v2 WishlistTab: 節の見出しは眉（真鍮＋消える線）。見出しの読み上げは部品が付ける
-            JPEyebrowLine(L("すべての行きたい場所 · \(split.count)", "All places · \(split.count)"))
+            JPEyebrowLine(L("すべての行きたい場所\u{2002}\(split.count)", "All places\u{2002}\(split.count)"))
             NavigationLink {
                 SavedSpotsMapView(split: split, officialSpots: officialSpots, photos: pool,
                                   photosKnown: photosKnown)
@@ -1057,7 +1057,7 @@ struct MyPageView: View {
                     .font(JPFont.rowTitle)
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
-                let place = spot.broader.map { LocationMatch.display($0) }.joined(separator: " ・ ")
+                let place = spot.broader.map { LocationMatch.display($0) }.joined(separator: "、")
                 if !place.isEmpty {
                     Text(place)
                         .font(JPFont.caption)

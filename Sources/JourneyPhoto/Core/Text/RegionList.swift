@@ -61,7 +61,7 @@ enum RegionList {
             // ここに入るのは**県・国を決められなかった**写真なので、そう言う。
             // 「地図に置けない写真」にしないのは、座標があって近くに撮影スポットが無い写真
             // （地図には置ける）もここに入るため。板 MapList の注記の字（「場所が分からない写真」）とは違う
-            case .unknown: return L("県・国に分けられない写真", "Photos not sorted by prefecture or country")
+            case .unknown: return L("県や国に分けられない写真", "Photos not sorted by prefecture or country")
             }
         }
     }
@@ -78,7 +78,7 @@ enum RegionList {
         /// 見出し。「県・国に分けられない」段に撮影スポットも入った回は「写真」と言わない
         var title: String {
             if key == .unknown && !spots.isEmpty {
-                return L("県・国に分けられないもの", "Not sorted by prefecture or country")
+                return L("県や国に分けられないもの", "Not sorted by prefecture or country")
             }
             return key.title
         }
@@ -94,7 +94,7 @@ enum RegionList {
         switch (spots, photos) {
         case (_, 0): return L("\(spots)件", spotsEnglish)
         case (0, _): return photoText
-        default: return L("\(spots)件 · 写真 \(photos)枚", "\(spotsEnglish) · \(english)")
+        default: return L("\(spots)件\u{2002}写真 \(photos)枚", "\(spotsEnglish)\u{2002}\(english)")
         }
     }
 

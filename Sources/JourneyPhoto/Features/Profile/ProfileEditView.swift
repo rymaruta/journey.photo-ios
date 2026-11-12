@@ -283,7 +283,7 @@ struct ProfileEditView: View {
                 showLooks = true
             } label: {
                 linkRow(title: L("ほかの人からの見え方", "How others see you"),
-                        detail: L("人のページ・コメントの横", "Your page and beside comments"), systemImage: "eye")
+                        detail: L("人のページ、コメントの横", "Your page and beside comments"), systemImage: "eye")
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("profileEdit.looks")
@@ -379,7 +379,7 @@ struct ProfileEditView: View {
             }
             .frame(height: Self.coverHeight - 40 + Self.avatarSide + ProfileCover.cutoutWidth, alignment: .top)
         } footer: {
-            Text(L("写真・文字・BGMは右上の「保存」で反映されます。バッジは選択画面で決定します。",
+            Text(L("写真、文字、BGMは右上の「保存」で反映されます。バッジは選択画面で決定します。",
                    "Save photos, text and BGM with the button above. Confirm badges on their selection screen."))
                 .font(JPFont.caption)
                 .foregroundStyle(WebTheme.text3)

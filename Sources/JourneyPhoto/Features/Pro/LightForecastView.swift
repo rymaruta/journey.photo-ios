@@ -302,8 +302,8 @@ struct LightForecastView: View {
                 .fixedSize(horizontal: false, vertical: true)
             // Apple Weather の出典（Apple が表示を求めている）。黒地の上の外へ出るリンクは真鍮（CLAUDE.md）
             Link(destination: forecast.attribution.legalURL) {
-                Text(L("天気: \(forecast.attribution.serviceName) · データの出典",
-                       "Weather: \(forecast.attribution.serviceName) · Data sources"))
+                Text(L("天気: \(forecast.attribution.serviceName)\u{2002}データの出典",
+                       "Weather: \(forecast.attribution.serviceName)\u{2002}Data sources"))
                     .font(JPFont.caption)
                     .foregroundStyle(WebTheme.accent)
                     .underline()
@@ -440,6 +440,6 @@ enum LightForecastStyle {
 
     /// 札の2行目「明日 · 日の出 5:42 · 晴れ」（v1 は天気を右上に分けていた）。予報の無い場所は「… · 予報なし」
     static func whenLine(_ card: LightForecastText.Card) -> String {
-        [card.when, card.weather].filter { !$0.isEmpty }.joined(separator: " · ")
+        [card.when, card.weather].filter { !$0.isEmpty }.joined(separator: "\u{2002}")
     }
 }

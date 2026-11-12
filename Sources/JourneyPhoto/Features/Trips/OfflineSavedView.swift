@@ -34,8 +34,8 @@ struct OfflineSavedView: View {
                         .padding(.top, JPSpace.xs)
                 } else {
                     VStack(alignment: .leading, spacing: 0) {
-                        JPEyebrowLine(L("電波なしで使える旅 · \(offline.saved.count) 件",
-                                        "Offline trips · \(offline.saved.count)"))
+                        JPEyebrowLine(L("電波なしで使える旅\u{2002}\(offline.saved.count) 件",
+                                        "Offline trips\u{2002}\(offline.saved.count)"))
                             .padding(.bottom, JPSpace.xxs)
                         ForEach(offline.saved) { manifest in
                             row(manifest)

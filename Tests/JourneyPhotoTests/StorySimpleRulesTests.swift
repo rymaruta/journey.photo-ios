@@ -224,7 +224,7 @@ final class StorySimpleRulesTests: XCTestCase {
     }
 
     func testAccessibilityLabelReadsState() {
-        XCTAssertEqual(StoryTool.text.accessibilityLabel(used: true), L("文字・入れてあります", "Text, added"))
+        XCTAssertEqual(StoryTool.text.accessibilityLabel(used: true), L("文字、入れてあります", "Text, added"))
         XCTAssertEqual(StoryTool.text.accessibilityLabel(used: false), L("文字", "Text"))
     }
 }

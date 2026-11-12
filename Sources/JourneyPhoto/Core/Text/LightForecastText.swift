@@ -91,7 +91,7 @@ enum LightForecastText {
 
     /// 札の右下: 「朝焼け 見込み高」。**低いときは「見込み低」だけ**（板の4枚目）
     static func kindLine(_ moment: Moment, _ chance: LightForecast.Chance) -> String {
-        chance == .low ? chanceWord(.low) : L("\(moment.word) \(chanceWord(chance))", "\(moment.word) · \(chanceWord(chance))")
+        chance == .low ? chanceWord(.low) : L("\(moment.word) \(chanceWord(chance))", "\(moment.word)\u{2002}\(chanceWord(chance))")
     }
 
     /// "05:42" → "5:42"（板の書き方・サーバーの知らせの文面と同じ）
@@ -271,7 +271,7 @@ enum LightForecastText {
     static func whenLine(_ pick: Pick, today: String) -> String {
         var event = pick.moment.eventWord
         if let clock = pick.moment.clock(in: pick.day)?.clock { event += " " + shortClock(clock) }
-        return "\(dayWord(pick.day.date, today: today)) · \(event)"
+        return "\(dayWord(pick.day.date, today: today))\u{2002}\(event)"
     }
 
     /// 一覧の札（並べ方と真鍮の縁は上の注記）
@@ -316,7 +316,7 @@ enum LightForecastText {
                 guard clock != nil || outlook != nil else { return nil }
                 var event = moment.eventWord
                 if let clock { event += " " + shortClock(clock.clock) }
-                let text = outlook.map { "\(moment.word) \(chanceWord($0.chance)) · \(weatherWord($0.weather))" }
+                let text = outlook.map { "\(moment.word) \(chanceWord($0.chance))\u{2002}\(weatherWord($0.weather))" }
                     ?? "\(moment.word) " + L("予報なし", "no forecast")
                 return DayLine.Item(event: event, outlook: text, chance: outlook?.chance)
             }

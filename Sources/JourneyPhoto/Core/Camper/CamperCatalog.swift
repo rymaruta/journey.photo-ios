@@ -441,7 +441,7 @@ enum CamperCatalog {
 
     static let dex: [CamperPart] = [
         // ホイール（wheel）
-        p(.wheel, "chrome_dish", "クロームの皿", "Chrome dish", "鏡の皿・ナット 6・真鍮のキャップ", "Mirror dish, six nuts and a brass cap", .common, .starter),
+        p(.wheel, "chrome_dish", "クロームの皿", "Chrome dish", "鏡の皿、ナット 6、真鍮のキャップ", "Mirror dish, six nuts and a brass cap", .common, .starter),
         p(.wheel, "steel_black", "黒い鉄ホイール", "Black steel wheel", "黒い鉄に丸い穴 6", "Black steel with six round holes", .occasional, .posts(30)),
         p(.wheel, "whitewall", "白い帯のタイヤ", "Whitewall tyre", "側面に白い帯", "A white band on the sidewall", .occasional, .prefectures(5)),
         p(.wheel, "brass_spoke", "真鍮のスポーク", "Brass spokes", "細い真鍮のスポーク 16 本", "Sixteen thin brass spokes", .veryRare, .server("旅を公開で 20 回投稿", "Post 20 public trips")),
@@ -1025,9 +1025,9 @@ enum CamperText {
     static func eyebrow(owner: String?, stage: CamperStage) -> String {
         let name = owner?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !name.isEmpty, name != Labels.Common.unnamedUser, name != "ユーザー", name != "User" else {
-            return L("わたしの車 · \(stage.name)", "My camper · \(stage.name)")
+            return L("わたしの車\u{2002}\(stage.name)", "My camper\u{2002}\(stage.name)")
         }
-        return L("\(name)の車 · \(stage.name)", "\(name)\u{2019}s camper · \(stage.name)")
+        return L("\(name)の車\u{2002}\(stage.name)", "\(name)\u{2019}s camper\u{2002}\(stage.name)")
     }
 
     /// 一目で見る数「集めた 45 / 98」（2026-10-21 判断・全画面の点検 95・96b）。
@@ -1053,7 +1053,7 @@ enum CamperText {
     static func roomDexFootnote(all: Int, soon: Int) -> String {
         let a = PassExchange.grouped(all)
         guard soon > 0 else { return L("図鑑は全 \(a) 点。", "\(a) pieces in all.") }
-        return L("図鑑は全 \(a) 点。「近日」の \(soon) 点（友達・旅の投稿・行事の暦・天気で届く家具と、形を作っている家具）は数に入れていません。",
+        return L("図鑑は全 \(a) 点。「近日」の \(soon) 点（友達、旅の投稿、行事の暦、天気で届く家具と、形を作っている家具）は数に入れていません。",
                  "\(a) pieces in all. The \(soon) marked \u{201C}Soon\u{201D} (arriving through friends, trips, festivals and weather, or still being made) aren\u{2019}t counted yet.")
     }
 
@@ -1071,7 +1071,7 @@ enum CamperText {
                      : L("オーニングは畳んである", "Awning stowed"))
         let outside = [CamperCategory.chair, .table, .firePit, .outdoorLight, .rug].compactMap { loadout.pickedPart($0)?.name }
         if !outside.isEmpty {
-            parts.append(L("外に\(outside.joined(separator: "・"))", "Outside: \(outside.joined(separator: ", "))"))
+            parts.append(L("外に\(outside.joined(separator: "、"))", "Outside: \(outside.joined(separator: ", "))"))
         }
         parts.append(L("室内に\(loadout.part(.plant).name)と\(loadout.part(.mug).name)", "Inside: \(loadout.part(.plant).name), \(loadout.part(.mug).name)"))
         parts.append(doorOpen ? L("扉が開いている", "Door open") : L("扉は閉じている", "Door closed"))

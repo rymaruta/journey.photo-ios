@@ -46,6 +46,6 @@ enum HomeFollowingNews {
 
     /// 「フォロー中」の読み上げ（点を色と形だけにしない）
     static func spokenLabel(_ label: String, hasNew: Bool) -> String {
-        hasNew ? L("\(label)・新しい写真あり", "\(label), new photos") : label
+        hasNew ? L("\(label)、新しい写真あり", "\(label), new photos") : label
     }
 }

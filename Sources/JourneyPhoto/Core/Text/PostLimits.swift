@@ -116,8 +116,8 @@ enum PostLimits {
     static func overLimitNote(_ text: String, limit: Int) -> String? {
         let count = length(text)
         guard count > limit else { return nil }
-        return L("\(count)/\(limit)・\(limit)字まで。この欄を直して保存すると \(limit)字に切れます",
-                 "\(count)/\(limit) · Up to \(limit) characters. If you edit this field and save, it will be cut to \(limit)")
+        return L("\(count)/\(limit)、\(limit)字まで。この欄を直して保存すると \(limit)字に切れます",
+                 "\(count)/\(limit), up to \(limit) characters. If you edit this field and save, it will be cut to \(limit)")
     }
 
     /// 上限で切る（画面側で止める）。**字の途中では切らない**（サーバーの `truncate` と同じく、

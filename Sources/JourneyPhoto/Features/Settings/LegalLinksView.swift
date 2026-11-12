@@ -13,6 +13,6 @@ struct LegalLinksView: View {
                 .foregroundStyle(WebTheme.accent)
         }
         .webScreen()
-        .navigationTitle(L("利用規約・プライバシーポリシー", "Terms & Privacy"))
+        .navigationTitle(L("利用規約、プライバシーポリシー", "Terms & Privacy"))
     }
 }

@@ -170,7 +170,7 @@ enum DeviceTripText {
     static func line(_ trip: LibraryTrip, name: String?) -> String {
         let count = LibraryTrips.countText(trip)
         guard let name, !name.trimmingCharacters(in: .whitespaces).isEmpty else { return count }
-        return LibraryTrips.periodText(trip) + " · " + count
+        return LibraryTrips.periodText(trip) + "\u{2002}" + count
     }
 }
 
@@ -330,7 +330,7 @@ struct DeviceTripBookView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             // 題が期間でも、開いた画面では期間と枚数をそろえて出す
-            Text(LibraryTrips.periodText(shown) + " · " + LibraryTrips.countText(shown))
+            Text(LibraryTrips.periodText(shown) + "\u{2002}" + LibraryTrips.countText(shown))
                 .font(JPFont.meta)
                 .foregroundStyle(WebTheme.text3)
             Text(L("端末の写真から見つけた旅です。投稿するまで、ほかの人には見えません",

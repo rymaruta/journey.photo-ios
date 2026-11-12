@@ -47,9 +47,9 @@ extension CamperText {
     static func visitEyebrow(owner: String?) -> String {
         let name = owner?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !name.isEmpty, name != Labels.Common.unnamedUser, name != "ユーザー", name != "User" else {
-            return L("友達の車 · 訪ねています", "A friend\u{2019}s camper · Visiting")
+            return L("友達の車\u{2002}訪ねています", "A friend\u{2019}s camper\u{2002}Visiting")
         }
-        return L("\(name)の車 · 訪ねています", "\(name)\u{2019}s camper · Visiting")
+        return L("\(name)の車\u{2002}訪ねています", "\(name)\u{2019}s camper\u{2002}Visiting")
     }
 
     /// 車の下の一行（2026-10-19 判断: 飾りのサーバー保存は別の札なので、相手が集めた要サーバーの部品を付けた姿で見せる）

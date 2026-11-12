@@ -125,7 +125,7 @@ struct InviteView: View {
             VStack(alignment: .leading, spacing: 0) {
                 mosaic(photos)
                 VStack(alignment: .leading, spacing: JPSpace.xs) {
-                    Text(L("SHARED ALBUM · 招待されています", "SHARED ALBUM · YOU'RE INVITED"))
+                    Text(L("SHARED ALBUM\u{2002}招待されています", "SHARED ALBUM\u{2002}YOU'RE INVITED"))
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                         .accessibilityHidden(true)
@@ -136,7 +136,7 @@ struct InviteView: View {
                         .accessibilityAddTraits(.isHeader)
                     // 英語は1人なら単数（「1 members」にしない）
                     Text(L("\(preview.album.members) 人", preview.album.members == 1 ? "1 member" : "\(preview.album.members) members")
-                         + " · " + L("\(photos.count)枚", photos.count == 1 ? "1 photo" : "\(photos.count) photos"))
+                         + "\u{2002}" + L("\(photos.count)枚", photos.count == 1 ? "1 photo" : "\(photos.count) photos"))
                         .font(JPFont.number(JPTypeScale.footnote, weight: .regular, relativeTo: .footnote))
                         .foregroundStyle(WebTheme.text2)
                 }

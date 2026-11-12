@@ -127,7 +127,7 @@ final class HomeTidyTests: XCTestCase {
     /// 出典は1行（地域 · 作者とライセンス）。改行で2行にしない
     func testSpotDetailIsOneLine() {
         let line = HomeTopCardView.spotDetail(region: "岡山", credit: "写真: A / CC BY-SA 4.0")
-        XCTAssertEqual(line, "岡山 · 写真: A / CC BY-SA 4.0")
+        XCTAssertEqual(line, "岡山\u{2002}写真: A / CC BY-SA 4.0")
         XCTAssertFalse(line?.contains("\n") ?? true)
         XCTAssertEqual(HomeTopCardView.spotDetail(region: nil, credit: "c"), "c")
         XCTAssertNil(HomeTopCardView.spotDetail(region: nil, credit: nil))
@@ -321,7 +321,7 @@ final class HomeTidyTests: XCTestCase {
                       in: dot, "真鍮の点と黒 2 の縁")
         assertInOrder([".overlay(alignment: .topTrailing) {", "if dot(option) { ProfileTabDot() }",
                        ".accessibilityLabel(spoken(option))"], in: bar, "札の部品の点と読み上げ")
-        XCTAssertEqual(HomeFollowingNews.spokenLabel("フォロー中", hasNew: true), L("フォロー中・新しい写真あり", "フォロー中, new photos"))
+        XCTAssertEqual(HomeFollowingNews.spokenLabel("フォロー中", hasNew: true), L("フォロー中、新しい写真あり", "フォロー中, new photos"))
         XCTAssertEqual(HomeFollowingNews.spokenLabel("フォロー中", hasNew: false), "フォロー中")
     }
 

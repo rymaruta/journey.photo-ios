@@ -146,7 +146,7 @@ enum ActivityPushBanner: Equatable {
     var detail: String {
         switch self {
         case .turnOn:
-            return L("いいね・コメントが届いたら、アプリを開いていなくてもお知らせします。",
+            return L("いいね、コメントが届いたら、アプリを開いていなくてもお知らせします。",
                      "Get likes and comments even when the app is closed.")
         case .openSettings:
             return L("iPhone の設定で通知が切られています。設定アプリで許可してください。",

@@ -114,7 +114,7 @@ enum TripLight {
         var parts = [when, entry.spot.name]
         if let golden = entry.eveningGolden { parts.append(L("ゴールデンアワー \(golden)", "Golden hour \(golden)")) }
         if let sunset = entry.sunset { parts.append(L("日の入り \(sunset)", "Sunset \(sunset)")) }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: "\u{2002}")
     }
 
     static func seasonLabel(_ season: String) -> String {

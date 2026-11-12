@@ -368,7 +368,7 @@ struct ProBenefit: Identifiable, Equatable {
             ProBenefit(icon: .offline,
                        title: L("電波なしで使える旅", "Offline trips"),
                        // 2026-10-09 owner: 「迷わない」をやめる（道案内はしない。地図は画像で、拡大も経路も無い）
-                       body: L("地図・作例・光の時刻を端末に。圏外でも、どこで何を撮るか分かる",
+                       body: L("地図、作例、光の時刻を端末に。圏外でも、どこで何を撮るか分かる",
                                "Maps, references and light times on your device — know where and what to shoot, even with no signal")),
             ProBenefit(icon: .chapter,
                        title: L("Pro マークと Pro 限定の章", "Pro mark & Pro-only chapters"),
@@ -377,7 +377,7 @@ struct ProBenefit: Identifiable, Equatable {
             // 2026-10-17: すれちがいの「特別な乗車券」（券面を選べる・`PassTicketFaceStyle`）
             ProBenefit(icon: .card,
                        title: L("特別な乗車券", "Special Pass tickets"),
-                       body: L("すれちがい乗車券を、真鍮・漆・革などの券面で。表も裏も、その券面で相手に届く",
+                       body: L("すれちがい乗車券を、真鍮、漆、革などの券面で。表も裏も、その券面で相手に届く",
                                "Pick a brass, lacquer, leather or other design for your Pass ticket — front and back, it reaches others that way")),
             trunk,
         ]
@@ -393,8 +393,8 @@ struct ProBenefit: Identifiable, Equatable {
         let free = TrunkState.freeLimit
         return ProBenefit(icon: .trunk,
                           title: L("旅のトランクをもっと", "More from your Travel trunk"),
-                          body: L("特別なトランク \(models) 型・ラベルの図柄の作り直し 月 \(rerolls) 回・手持ち \(pro) 枚（無料は \(free) 枚）",
-                                  "\(models) special trunks · \(rerolls) label redesigns a month · hold \(pro) labels (\(free) free)"))
+                          body: L("特別なトランク \(models) 型、ラベルの図柄の作り直し 月 \(rerolls) 回、手持ち \(pro) 枚（無料は \(free) 枚）",
+                                  "\(models) special trunks, \(rerolls) label redesigns a month, hold \(pro) labels (\(free) free)"))
     }
 
     /// 作り直しの月の回数（サーバーの `REROLLS_PER_MONTH`。繰り越しなし）。

@@ -85,7 +85,7 @@ enum TrunkTagText {
             return L("あと \(more) 件の投稿で、\(slot + 1)枚目が吊るせます", "\(more) more posts to hang tag \(slot + 1)")
         case .auto:
             return result.label == nil
-                ? L("おまかせ・載せられる地名がまだありません", "Auto · no place to show yet")
+                ? L("おまかせ、載せられる地名がまだありません", "Auto, no place to show yet")
                 : L("おまかせ（新しく貼ったラベルから）", "Auto (from your newest labels)")
         case .chosen:
             return L("あなたが選びました", "You chose this")
@@ -177,7 +177,7 @@ enum TrunkTagText {
         case .available, .current:
             if selected { parts.append(onTag) }
         }
-        return parts.joined(separator: " ・")
+        return parts.joined(separator: "\u{2002}")
     }
 
     /// 行の1行目

@@ -103,7 +103,7 @@ final class SearchScopeTests: XCTestCase {
         XCTAssertEqual(SearchScope.allCases.filter(\.showsPhotos), [.all, .photos, .tags, .places])
         XCTAssertNotEqual(SearchScope.people.prompt, SearchScope.photos.prompt)
         XCTAssertEqual(SearchScope.people.prompt, L("人を検索（名前）", "Search people"))
-        XCTAssertEqual(SearchScope.all.prompt, L("写真を検索（題・説明・タグなど）", "Search photos"))
+        XCTAssertEqual(SearchScope.all.prompt, L("写真を検索（題、説明、タグなど）", "Search photos"))
     }
 
     /// **撮影地ではタグのチップを出さない。** 押すとタグの語が撮影地に当たり、

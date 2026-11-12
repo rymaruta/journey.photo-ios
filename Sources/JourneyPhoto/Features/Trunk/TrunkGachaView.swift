@@ -393,7 +393,7 @@ struct TrunkGachaView: View {
                 }
             }
             .foregroundStyle(WebTheme.text)
-            Text(L("· 公開の投稿1件で1枚", "· One per public post"))
+            Text(L("公開の投稿1件で1枚", "One per public post"))
                 .font(JPFont.footnote)
                 .foregroundStyle(TrunkStyle.faint)
         }
@@ -430,7 +430,7 @@ struct TrunkGachaView: View {
                 // 回っている間（主ボタンと同じ高さ 50 で入れ替え、帯を跳ねさせない）
                 HStack(spacing: 8) {
                     Text(L("ハンドルを右へまわす", "Turn the handle right"))
-                    Text("· \(crank.percent)%").font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
+                    Text("\(crank.percent)%").font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
                 }
                 .jpCapsuleFace(font: JPFont.bodyEmphasis, text: WebTheme.accent, fill: Color.clear,
                                border: WebTheme.accent.opacity(0.6), fullWidth: true,
@@ -840,14 +840,14 @@ struct TrunkGachaOddsView: View {
                 Text(L("同じ段の中は、どの部品も同じ確率です。1点あたり: ",
                        "Within a tier every part is equally likely. Per part: ")
                      + TrunkPartRarity.allCases.map { "\($0.name) \(TrunkGachaText.percentText(TrunkGachaText.perPart($0)))" }
-                        .joined(separator: " · "))
+                        .joined(separator: "\u{2002}"))
                     .font(JPFont.footnote)
                     .foregroundStyle(TrunkStyle.faint)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 4)
                     .padding(.top, 8)
                     .accessibilityIdentifier("trunk.odds.perPart")
-                Text(L("入っている部品 · 9 種類 · 108 点", "Inside · 9 kinds · 108 parts"))
+                Text(L("入っている部品\u{2002}9 種類\u{2002}108 点", "Inside\u{2002}9 kinds\u{2002}108 parts"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                     .padding(.top, 24)

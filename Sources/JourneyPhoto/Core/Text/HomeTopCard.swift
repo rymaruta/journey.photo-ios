@@ -453,7 +453,7 @@ enum HomeTopCard {
         guard let label = SpotBodyText.seasonLabel(season) else {
             return L("行きたい場所", "Your wishlist")
         }
-        return L("行きたい場所・\(label)", "Your wishlist · \(label)")
+        return L("行きたい場所\u{2002}\(label)", "Your wishlist\u{2002}\(label)")
     }
 
     /// 季節の札の見出しの読み（「今日の撮影スポット・秋」）。**日替わり**なのでそう名乗る（2026-10-18・
@@ -462,7 +462,7 @@ enum HomeTopCard {
         guard let label = SpotBodyText.seasonLabel(season) else {
             return L("今日の撮影スポット", "Today's photo spot")
         }
-        return L("今日の撮影スポット・\(label)", "Today's photo spot · \(label)")
+        return L("今日の撮影スポット\u{2002}\(label)", "Today's photo spot\u{2002}\(label)")
     }
 
     // MARK: - 5. 行きたい場所のこの季節

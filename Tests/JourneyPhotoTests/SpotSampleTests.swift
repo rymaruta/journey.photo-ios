@@ -335,7 +335,7 @@ final class SpotSampleTests: XCTestCase {
         // 見出しは Commons が先、その後は出ている順
         let mixed = try body(samples: "[\(otherSample()),\(flickrSample()),\(sample())]").samples
         XCTAssertEqual(SpotSampleText.heading(mixed),
-                       L("作例（Wikimedia Commons・環境省・Flickr より）", "Example photos (from Wikimedia Commons and 環境省 and Flickr)"))
+                       L("作例（Wikimedia Commons、環境省、Flickr より）", "Example photos (from Wikimedia Commons and 環境省 and Flickr)"))
     }
 
     /// その他の出どころでも、https でない画像・出典のページ・NC/ND・作者や題やライセンスの無い1枚は出さない
@@ -362,8 +362,8 @@ final class SpotSampleTests: XCTestCase {
         let both = try body(samples: "[\(flickrSample()),\(sample())]").samples
         XCTAssertEqual(both.map(\.origin), [.flickr, .commons])
         XCTAssertEqual(SpotSampleText.heading(both),
-                       L("作例（Wikimedia Commons・Flickr より）", "Example photos (from Wikimedia Commons and Flickr)"))
-        XCTAssertTrue(SpotSampleText.note(both).contains(L("Wikimedia Commons・Flickr で自由な", "on Wikimedia Commons and Flickr.")))
+                       L("作例（Wikimedia Commons、Flickr より）", "Example photos (from Wikimedia Commons and Flickr)"))
+        XCTAssertTrue(SpotSampleText.note(both).contains(L("Wikimedia Commons、Flickr で自由な", "on Wikimedia Commons and Flickr.")))
         let flickrOnly = try body(samples: "[\(flickrSample())]").samples
         XCTAssertEqual(SpotSampleText.heading(flickrOnly), L("作例（Flickr より）", "Example photos (from Flickr)"))
         XCTAssertFalse(SpotSampleText.note(flickrOnly).contains("Wikimedia Commons"))

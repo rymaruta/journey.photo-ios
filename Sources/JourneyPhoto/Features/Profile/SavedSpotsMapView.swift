@@ -175,7 +175,7 @@ struct SavedSpotsMapView: View {
     private func pinLabel(_ item: SavedSpotsMap.Item, inPlans: [String]) -> String {
         var parts = [SavedSpotsMap.spokenLabel(item)]
         if let phrase = SavedSpotsTrip.membershipPhrase(inPlans) { parts.append(phrase) }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: "\u{2002}")
     }
 
     private func toggle(_ item: SavedSpotsMap.Item) {
@@ -250,7 +250,7 @@ struct SavedSpotsMapView: View {
                     .foregroundStyle(WebTheme.foreground)
                     .accessibilityAddTraits(.isHeader)
                 // **何をするかを正直に書く**（並べ方は作る流れの下書きで見せる・2026-11-10 札 #521）
-                Text(L("選んだ順です。次の画面で日付を入れると、地域と近さ・時間帯の案内で日ごとに並べた下書きができます。",
+                Text(L("選んだ順です。次の画面で日付を入れると、地域と近さ、時間帯の案内で日ごとに並べた下書きができます。",
                        "In the order you picked. Set dates next to get a draft grouped by area, distance and time of day."))
                     .font(.caption)
                     .foregroundStyle(WebTheme.muted2)
@@ -303,7 +303,7 @@ struct SavedSpotsMapView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(L("\(offset + 1) 番目 · ", "Stop \(offset + 1) · ") + pinLabel(item, inPlans: inPlans))
+            .accessibilityLabel(L("\(offset + 1) 番目\u{2002}", "Stop \(offset + 1)\u{2002}") + pinLabel(item, inPlans: inPlans))
             .accessibilityHint(SavedSpotsMap.openHint(item))
             .accessibilityIdentifier("savedMap.selected")
 

@@ -341,7 +341,7 @@ struct TripLegSheet: View {
                 }
 
                 Text(isTransit
-                     ? L("どの電車・バス・のりばまで、地図のアプリが出します。見終わったら左上の「journey.photo」で戻れます",
+                     ? L("どの電車、バス、のりばまで、地図のアプリが出します。見終わったら左上の「journey.photo」で戻れます",
                          "The maps app shows which train or bus and where to board. Tap “journey.photo” at the top left to come back.")
                      : L("見終わったら左上の「journey.photo」で戻れます", "Tap “journey.photo” at the top left to come back."))
                     .font(JPFont.caption)

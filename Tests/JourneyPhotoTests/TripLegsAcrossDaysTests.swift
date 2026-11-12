@@ -81,7 +81,7 @@ final class TripLegsAcrossDaysTests: XCTestCase {
         XCTAssertTrue(TripTravel.showsAsLong(near, estimates: [], settled: false))
         let brazil = leg(fushimi, saoPaulo, "日本", "ブラジル")
         XCTAssertTrue(TripTravel.skipsDirections(brazil))
-        XCTAssertTrue(TripTravel.longLine(brazil).hasPrefix("飛行機などの長い移動・約 18,"))
+        XCTAssertTrue(TripTravel.longLine(brazil).hasPrefix("飛行機などの長い移動\u{2002}約 18,"))
         XCTAssertEqual(TripLegRow.state(leg: brazil, estimates: [], settled: false, offline: true, throttled: false), .long,
                        "圏外でも長い移動の形（聞かないので）")
     }
@@ -218,8 +218,8 @@ final class TripLegsAcrossDaysTests: XCTestCase {
     /// 場所が1か所だけの1行: 地図の場所の分からない場所があるときは、そう言う
     func testSinglePlaceHintWithUnlocatedPlaces() {
         XCTAssertEqual(TripTravel.singlePlaceHint(locatedPlaces: 1, allPlaces: 1),
-                       "場所が 2 つ以上になると、間の移動の目安（車・歩き・電車など）が出ます")
+                       "場所が 2 つ以上になると、間の移動の目安（車、歩き、電車など）が出ます")
         XCTAssertEqual(TripTravel.singlePlaceHint(locatedPlaces: 1, allPlaces: 3),
-                       "地図の場所が分かる所が 2 つ以上になると、間の移動の目安（車・歩き・電車など）が出ます")
+                       "地図の場所が分かる所が 2 つ以上になると、間の移動の目安（車、歩き、電車など）が出ます")
     }
 }

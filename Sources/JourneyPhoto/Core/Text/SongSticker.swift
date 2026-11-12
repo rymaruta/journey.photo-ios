@@ -21,7 +21,7 @@ enum SongSticker {
         let title = TextOverlay.cleaned(song.title, kind: .song).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return nil }
         let artist = TextOverlay.cleaned(song.artist ?? "", kind: .song).trimmingCharacters(in: .whitespacesAndNewlines)
-        return artist.isEmpty ? title : "\(title) · \(artist)"
+        return artist.isEmpty ? title : L("\(title)、\(artist)", "\(title), \(artist)")
     }
 
     /// この写真に**いまの曲の札**が焼き込まれるか（見る画面の ♪ の行を出さない印・`songOnPhoto`）。

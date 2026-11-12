@@ -100,7 +100,7 @@ struct PhotoEditScreen: Equatable {
 
         /// 読み上げ（「露出・変えてあります」。ストーリーの道具と同じ言い方）
         func accessibilityLabel(changed: Bool) -> String {
-            changed ? L("\(label)・変えてあります", "\(label), adjusted") : label
+            changed ? L("\(label)、変えてあります", "\(label), adjusted") : label
         }
     }
 

@@ -212,7 +212,7 @@ extension SignatureShareCardRenderer {
             drawFadeAuthor(credit, avatarData: avatarData, top: layout.authorTop,
                            columnWidth: C.exifX - C.contentLeft - 64 - 16 - 20, context: cg)
             let exif = exifValues(credit)
-            let exifLine = [exif.camera, exif.lens].filter { !$0.isEmpty }.joined(separator: " · ")
+            let exifLine = [exif.camera, exif.lens].filter { !$0.isEmpty }.joined(separator: "\u{2002}")
             if !exifLine.isEmpty {
                 draw(exifLine, at: CGPoint(x: C.exifX, y: layout.exifTop), maxWidth: C.exifWidth,
                      size: 20, color: .white, bold: true)

@@ -75,7 +75,7 @@ enum TripStyle {
 
     /// 一覧の行・表紙の札の下の1行（「2026.09.12 — 09.14 · 3日間 · 24枚」）
     nonisolated static func tripLine(_ trip: TripBook.Trip) -> String {
-        "\(TripBook.dateRange(from: trip.start, to: trip.end)) · \(TripBook.daysLabel(trip.days)) · \(PhotoMapViewModel.photoCountLabel(trip.photos.count))"
+        "\(TripBook.dateRange(from: trip.start, to: trip.end))\u{2002}\(TripBook.daysLabel(trip.days))\u{2002}\(PhotoMapViewModel.photoCountLabel(trip.photos.count))"
     }
 
     /// 一冊のページの写真の下の1行（板「07:12 · 24mm · f/8」）。**持っているものだけを繋ぐ**。
@@ -123,7 +123,7 @@ enum TripStyle {
         var parts = [TripPlanText.period(start: start, end: end) ?? L("日付未定", "No dates yet"),
                      TripPlanText.placeCount(places)]
         if finished { parts.append(L("帰着済み", "Back home")) }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: "\u{2002}")
     }
 
     /// 日程の通し番号（板: 1日目 1・2、2日目 3 …）。日ごとに、その日の項目の番号を返す
@@ -270,7 +270,7 @@ struct TripStopLabel: View {
         // 読み上げは「1 · 名前 · 季節 · 時間帯 · ひとこと」（番号の丸は絵として隠している）
         .accessibilityElement(children: .combine)
         .accessibilityLabel([String(number), name, season, timeChip, note].compactMap { $0 }
-            .filter { !$0.isEmpty }.joined(separator: " · "))
+            .filter { !$0.isEmpty }.joined(separator: "\u{2002}"))
     }
 }
 
@@ -332,6 +332,6 @@ enum TripSunText {
         var parts: [String] = []
         if let r = sun.sunrise { parts.append(L("日の出 \(r)", "Sunrise \(r)")) }
         if let s = sun.sunset { parts.append(L("日の入り \(s)", "Sunset \(s)")) }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return parts.isEmpty ? nil : parts.joined(separator: "\u{2002}")
     }
 }

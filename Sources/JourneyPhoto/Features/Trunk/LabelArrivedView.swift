@@ -121,7 +121,7 @@ struct LabelArrivedView: View {
 
     private var heading: some View {
         VStack(spacing: 0) {
-            Text("NEW LABEL · " + L("投稿のお礼", "THANK YOU"))
+            Text("NEW LABEL\u{2002}" + L("投稿のお礼", "THANK YOU"))
                 .font(JPFont.eyebrow)
                 .tracking(11 * 0.12)
                 .foregroundStyle(WebTheme.accent)
@@ -304,7 +304,7 @@ struct LabelArrivedView: View {
                 Text(TrunkText.pocketCounter(count: state.pocket.count, limit: state.limit))
                     .font(JPFont.mono(13, relativeTo: .footnote))
                     .foregroundStyle(WebTheme.text)
-                Text("· " + TrunkText.remaining(count: state.pocket.count, limit: state.limit))
+                Text(TrunkText.remaining(count: state.pocket.count, limit: state.limit))
             }
             .font(JPFont.footnote)
             .foregroundStyle(TrunkStyle.muted)
@@ -414,8 +414,8 @@ enum TrunkArrivalText {
     static func chips(_ label: TrunkLabel) -> [Chip] {
         var out: [Chip] = []
         if label.kind == .milestone, let m = label.milestone {
-            out.append(Chip(symbol: "star", text: L("節目のラベル · \(TrunkLabelDesign.milestoneWords(m).ja)",
-                                                    "Milestone · \(TrunkLabelDesign.milestoneWords(m).en.capitalized)")))
+            out.append(Chip(symbol: "star", text: L("節目のラベル\u{2002}\(TrunkLabelDesign.milestoneWords(m).ja)",
+                                                    "Milestone\u{2002}\(TrunkLabelDesign.milestoneWords(m).en.capitalized)")))
         } else if label.kind == .timeslot, let t = label.timeslot {
             out.append(Chip(symbol: "clock", text: L("\(TrunkLabelDesign.timeslotWords(t).ja)に撮った図柄",
                                                      "\(TrunkLabelDesign.timeslotWords(t).en.capitalized) design")))

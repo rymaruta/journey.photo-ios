@@ -573,7 +573,7 @@ final class ActivityPushBannerTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let primer = try String(contentsOf: root.appendingPathComponent(
             "Sources/JourneyPhoto/Features/Settings/PushPrimerView.swift"), encoding: .utf8)
-        XCTAssertTrue(primer.contains("いいね・コメントが届いたらお知らせしますか？"))
+        XCTAssertTrue(primer.contains("いいね、コメントが届いたらお知らせしますか？"))
         XCTAssertTrue(primer.contains(#"Text(L("オンにする", "Turn on"))"#))
         XCTAssertTrue(primer.contains(#"Text(L("あとで", "Not now"))"#))
     }

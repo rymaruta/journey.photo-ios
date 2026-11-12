@@ -332,7 +332,7 @@ struct UserProfileView: View {
                     CamperVisitView(userId: userId, ownerName: model.shownName)
                 } label: {
                     JPRowLabel(title: L("とおまわり号を訪ねる", "Visit their Detour"), systemImage: "bus",
-                               detail: L("部品を贈る・焚き火に薪をくべる", "Give a part or add wood to their fire"))
+                               detail: L("部品を贈る、焚き火に薪をくべる", "Give a part or add wood to their fire"))
                 }
                 .buttonStyle(JPRowButtonStyle())
                 .accessibilityIdentifier("profile.camper")

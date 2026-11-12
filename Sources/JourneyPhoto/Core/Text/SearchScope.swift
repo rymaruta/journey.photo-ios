@@ -45,7 +45,7 @@ enum SearchScope: String, CaseIterable, Identifiable {
     var prompt: String {
         switch self {
         case .people: return L("人を検索（名前）", "Search people")
-        default: return L("写真を検索（題・説明・タグなど）", "Search photos")
+        default: return L("写真を検索（題、説明、タグなど）", "Search photos")
         }
     }
 

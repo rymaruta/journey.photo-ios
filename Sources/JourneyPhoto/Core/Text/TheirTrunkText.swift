@@ -60,7 +60,7 @@ enum TheirTrunkText {
         let who = owner(name)
         guard let place else { return L("\(who)さんの旅のラベル", "A travel label from \(who)") }
         guard let count, count > 0 else { return L("\(who)さんが\(place)で撮った写真", "Photos \(who) took in \(place)") }
-        return L("\(who)さんが\(place)で撮った写真 · \(count) 枚", "Photos \(who) took in \(place) · \(count)")
+        return L("\(who)さんが\(place)で撮った写真\u{2002}\(count) 枚", "Photos \(who) took in \(place)\u{2002}\(count)")
     }
 
     /// その土地の写真が一覧に無いとき（読み終えて0枚）
@@ -93,7 +93,7 @@ enum TheirTrunkText {
 
     /// 写真の読み上げ（板「京都の写真 1」）
     static func photoAccessibility(place: String, index: Int, title: String) -> String {
-        L("\(place)の写真 \(index + 1) · \(title)", "Photo \(index + 1) from \(place) · \(title)")
+        L("\(place)の写真 \(index + 1)\u{2002}\(title)", "Photo \(index + 1) from \(place)\u{2002}\(title)")
     }
 
     // MARK: トランクの上の押せる所と選んだ印
@@ -161,8 +161,8 @@ enum TheirTrunkText {
 
     static func cardAccessibility(owner name: String?, model: TrunkModel) -> String {
         let who = owner(name)
-        return L("\(who)さんの旅のトランク · \(TrunkText.info(model).name) · 押すと手に取って見られます",
-                 "\(who)\u{2019}s travel trunk · \(TrunkText.info(model).name) · Tap to take a look")
+        return L("\(who)さんの旅のトランク、\(TrunkText.info(model).name)、押すと手に取って見られます",
+                 "\(who)\u{2019}s travel trunk, \(TrunkText.info(model).name), tap to take a look")
     }
 
     // MARK: 状態

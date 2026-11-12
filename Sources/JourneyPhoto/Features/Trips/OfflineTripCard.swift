@@ -264,7 +264,7 @@ struct OfflineTripCard: View {
                         .overlay(RoundedRectangle(cornerRadius: JPRadius.s)
                             .strokeBorder(WebTheme.accent.opacity(0.6), lineWidth: JPStroke.hairline))
                 }
-                Text(L("作例・光の時刻・メモと周りの地図を端末に保存して、圏外でも旅を確かめられます。",
+                Text(L("作例、光の時刻、メモと周りの地図を端末に保存して、圏外でも旅を確かめられます。",
                        "Save examples, light times, notes and map images to your iPhone to check your trip with no signal."))
                     .font(JPFont.footnote)
                     .lineSpacing(4)
@@ -281,8 +281,8 @@ struct OfflineTripCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(L("電波なしで使えるようにする · Pro の機能 · Pro について見る",
-                              "Make available offline · Pro feature · Learn about Pro"))
+        .accessibilityLabel(L("電波なしで使えるようにする、Pro の機能、Pro について見る",
+                              "Make available offline, Pro feature, learn about Pro"))
         .accessibilityAddTraits(.isButton)
     }
 

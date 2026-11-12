@@ -812,7 +812,7 @@ struct DraftPreviewCard: View {
                 if !entry.place.isEmpty {
                     Text(entry.place).font(JPFont.footnote).foregroundStyle(WebTheme.text2)
                 }
-                Text("\(DraftsText.kindAndPhotos(entry)) · \(DraftsText.saved(entry.savedAt, now: now))")
+                Text("\(DraftsText.kindAndPhotos(entry))\u{2002}\(DraftsText.saved(entry.savedAt, now: now))")
                     .font(JPFont.number(JPTypeScale.caption, weight: .regular, relativeTo: .caption))
                     .foregroundStyle(WebTheme.text3)
                 if DraftLibrary.showsDaysLeft(days), let days {

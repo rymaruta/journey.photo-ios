@@ -182,13 +182,13 @@ enum HomeSpotShelf {
     /// 眉ラベル（「THIS SEASON · 秋」）。知らない季節は季節を付けない
     static func eyebrow(_ season: String) -> String {
         guard let label = SpotBodyText.seasonLabel(season) else { return "THIS SEASON" }
-        return "THIS SEASON · \(label)"
+        return "THIS SEASON\u{2002}\(label)"
     }
 
     /// 眉ラベルの読み上げ（英字の眉は日本語で読ませる）
     static func eyebrowSpoken(_ season: String) -> String {
         guard let label = SpotBodyText.seasonLabel(season) else { return L("いまの季節", "This season") }
-        return L("いまの季節・\(label)", "This season · \(label)")
+        return L("いまの季節\u{2002}\(label)", "This season\u{2002}\(label)")
     }
 
     static var heading: String { L("いまの季節の撮影スポット", "Photo spots for this season") }

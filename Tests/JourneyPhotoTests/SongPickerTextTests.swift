@@ -39,7 +39,7 @@ final class SongPickerTextTests: XCTestCase {
     /// 板の文言: 注記・再生バーの1行目・鳴っている間の読み上げ「止める」
     func testWords() {
         XCTAssertEqual(SongPickerText.previewNote, "30秒の試聴だけを使います。")
-        XCTAssertEqual(SongPickerText.nowPreviewing("海へ"), "海へ · 試し聴き中")
+        XCTAssertEqual(SongPickerText.nowPreviewing("海へ"), "海へ、試し聴き中")
         XCTAssertEqual(SongPickerText.previewButtonLabel(isPlaying: true), "止める")
         XCTAssertEqual(SongPickerText.previewButtonLabel(isPlaying: false), "試し聴き")
     }
@@ -69,7 +69,7 @@ final class SongPickerTextTests: XCTestCase {
     /// 「· 試し聴き中」は曲選びで鳴らした曲を、シートの中で出すときだけ。
     /// 前から鳴っていた曲は試し聴きではないので題だけ
     func testPreviewingSuffixOnlyForPickerSongs() {
-        XCTAssertEqual(SongPickerText.barTitle("海へ", playingFrom: .songPicker, inSongPicker: true), "海へ · 試し聴き中")
+        XCTAssertEqual(SongPickerText.barTitle("海へ", playingFrom: .songPicker, inSongPicker: true), "海へ、試し聴き中")
         XCTAssertEqual(SongPickerText.barTitle("海へ", playingFrom: .app, inSongPicker: true), "海へ")
         XCTAssertEqual(SongPickerText.barTitle("海へ", playingFrom: .app, inSongPicker: false), "海へ")
     }

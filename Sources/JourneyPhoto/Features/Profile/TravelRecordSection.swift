@@ -37,7 +37,7 @@ struct TravelRecordSection: View {
                          })
         .padding(.horizontal, ProfileV2.gutter)
         .padding(.top, JPSpace.xs)
-        .alert(L("訪れた国・地域", "Countries and regions"),
+        .alert(L("訪れた国と地域", "Countries and regions"),
                isPresented: $showCountriesNote) {
             Button(Labels.Common.close, role: .cancel) {}
         } message: {
@@ -98,7 +98,7 @@ struct ProfileTripsLine: View {
                     ProfileTripsScreen(shelf: shelf)
                 } label: {
                     HStack(spacing: 6) {
-                        Text(L("すべての旅 · \(shelf.trips.count)冊", "All trips · \(shelf.trips.count)"))
+                        Text(L("すべての旅\u{2002}\(shelf.trips.count)冊", "All trips\u{2002}\(shelf.trips.count)"))
                             .font(JPFont.footnote)
                             .foregroundStyle(WebTheme.text2)
                         Image(systemName: "chevron.right")
@@ -118,7 +118,7 @@ struct ProfileTripsLine: View {
 
     /// 「2日間 · 22枚」（板の等幅の数字の1行）
     nonisolated static func facts(_ trip: TripBook.Trip) -> String {
-        "\(TripBook.daysLabel(trip.days)) · \(PhotoMapViewModel.photoCountLabel(trip.photos.count))"
+        "\(TripBook.daysLabel(trip.days))\u{2002}\(PhotoMapViewModel.photoCountLabel(trip.photos.count))"
     }
 
     private func card(_ trip: TripBook.Trip) -> some View {

@@ -139,9 +139,9 @@ final class RegionListTests: XCTestCase {
         let odd = try spot("odd", prefecture: "不明", lat: 27.09, lng: 142.19)
         let withSpot = RegionList.sections(photos: [], spots: [odd], from: nil)
         XCTAssertEqual(withSpot.map(\.key), [.unknown])
-        XCTAssertEqual(withSpot[0].title, L("県・国に分けられないもの", "Not sorted by prefecture or country"))
+        XCTAssertEqual(withSpot[0].title, L("県や国に分けられないもの", "Not sorted by prefecture or country"))
         let photoOnly = RegionList.sections(photos: [try photo("p")], spots: [], from: nil)
-        XCTAssertEqual(photoOnly[0].title, L("県・国に分けられない写真", "Photos not sorted by prefecture or country"))
+        XCTAssertEqual(photoOnly[0].title, L("県や国に分けられない写真", "Photos not sorted by prefecture or country"))
     }
 
     /// 2026-10-07: 撮影地に「福岡」「土谷棚田」と書いてある写真（県の正式名も座標も無い）が
@@ -154,7 +154,7 @@ final class RegionListTests: XCTestCase {
         XCTAssertEqual(sections[0].photos.map(\.id), ["f", "t"])
         XCTAssertFalse(sections[0].title.contains("場所が分からない"), sections[0].title)
         XCTAssertFalse(sections[0].title.contains("without a place"), sections[0].title)
-        XCTAssertEqual(sections[0].title, L("県・国に分けられない写真", "Photos not sorted by prefecture or country"))
+        XCTAssertEqual(sections[0].title, L("県や国に分けられない写真", "Photos not sorted by prefecture or country"))
     }
 
     // MARK: - 並び
@@ -268,7 +268,7 @@ final class RegionListTests: XCTestCase {
 
     func testCountLabel() throws {
         let s = RegionList.sections(photos: [try photo("p", location: "東京都")], spots: try spots(), from: tokyo)
-        XCTAssertEqual(RegionList.countLabel(s[0]), L("2件 · 写真 1枚", "2 spots · 1 photo"))
+        XCTAssertEqual(RegionList.countLabel(s[0]), L("2件\u{2002}写真 1枚", "2 spots · 1 photo"))
         XCTAssertEqual(RegionList.countLabel(s[1]), L("1件", "1 spot"))
     }
 

@@ -92,7 +92,7 @@ struct LegalGateView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label(L("安心して写真を楽しむために", "For a safe photo community"), systemImage: "shield")
                 .font(.footnote.weight(.semibold)).foregroundStyle(WebTheme.accent)
-            Text(L("いやがらせ・わいせつ・権利を侵す投稿は認めません。写真から通報・ブロックできます。撮影情報（EXIF）は端末で取り除き、撮影地は約1kmに丸めて保存します。", "Harassment, obscene content and rights violations are not allowed. Photos can be reported and posters blocked. Metadata is removed on device and locations are rounded to about 1 km."))
+            Text(L("いやがらせ、わいせつ、権利を侵す投稿は認めません。写真から通報、ブロックできます。撮影情報（EXIF）は端末で取り除き、撮影地は約1kmに丸めて保存します。", "Harassment, obscene content and rights violations are not allowed. Photos can be reported and posters blocked. Metadata is removed on device and locations are rounded to about 1 km."))
                 .font(JPFont.footnote).lineSpacing(4).foregroundStyle(WebTheme.text2).fixedSize(horizontal: false, vertical: true)
         }.padding(14)
         // 板 v2 の札（surface-1・白 8% の縁・角 14）

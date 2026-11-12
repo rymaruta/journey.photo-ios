@@ -47,8 +47,8 @@ enum SpotSwipe {
     ///   - signedIn: ログイン中か
     static func cardLine(started: Bool, wishCount: Int, signedIn: Bool) -> String {
         if started {
-            return L("行きたい \(wishCount) か所 · 続きから",
-                     wishCount == 1 ? "1 place saved · Continue" : "\(wishCount) places saved · Continue")
+            return L("行きたい \(wishCount) か所\u{2002}続きから",
+                     wishCount == 1 ? "1 place saved\u{2002}Continue" : "\(wishCount) places saved\u{2002}Continue")
         }
         return signedIn
             ? L("右へ払うと行きたい", "Swipe right to save")

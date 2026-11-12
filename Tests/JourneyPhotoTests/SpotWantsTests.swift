@@ -34,7 +34,7 @@ final class SpotWantsTests: XCTestCase {
 
     func testLineAndAreaTop() throws {
         let file = try XCTUnwrap(SpotWants.decode(json))
-        XCTAssertEqual(SpotWants.line(try XCTUnwrap(file.entry(slug: "shirakawago"))), "今月の行きたい 1,284 · 全国1位")
+        XCTAssertEqual(SpotWants.line(try XCTUnwrap(file.entry(slug: "shirakawago"))), "今月の行きたい 1,284\u{2002}全国1位")
         XCTAssertEqual(SpotWants.areaTop(file, slugs: ["monet", "few", "shirakawago", "x"]).map(\.slug), ["shirakawago", "monet"])
         XCTAssertEqual(SpotWants.areaTop(nil, slugs: ["monet"]), [])
         // 3桁ごとの区切り（Apple の端末でも Linux でも同じ・Mac で「1284」になった回の確かめ）

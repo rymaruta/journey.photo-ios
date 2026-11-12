@@ -879,7 +879,7 @@ struct TripPlanDetailView: View {
         var head = L("\(di + 1) 日目", "Day \(di + 1)")
         if let date = TripPlanText.dayDate(index: di, day: day, start: start, end: end),
            let label = TakenDay.label(date) {
-            head += L(" · \(label)", " · \(label)")
+            head += L("\u{2002}\(label)", "\u{2002}\(label)")
         }
         return head
     }
@@ -1248,7 +1248,7 @@ struct TripPlanDetailView: View {
         .accessibilityLabel(L("「\(name)」の操作", "Actions for \(name)"))
         // 行の身元は位置なので、並べ替えのあと読み上げの焦点は同じ位置に残る。
         // 位置を値として読ませ、動かした結果は `apply` が読み上げる
-        .accessibilityValue(L("\(di + 1) 日目・\(ii + 1) 番目", "Day \(di + 1), item \(ii + 1)"))
+        .accessibilityValue(L("\(di + 1) 日目、\(ii + 1) 番目", "Day \(di + 1), item \(ii + 1)"))
     }
 
     /// 並べ替え・移動を映し、結果を読み上げる（目で追えない人に、項目がどこへ行ったかを伝える）

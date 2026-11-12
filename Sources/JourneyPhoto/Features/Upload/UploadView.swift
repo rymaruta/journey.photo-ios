@@ -970,8 +970,8 @@ struct UploadView: View {
         .buttonStyle(.plain)
         // 送っている間は開かせない（送信は1枚ごとにその時点の写真を読む）
         .disabled(model.isWorking)
-        .accessibilityLabel(item.editBadge.map { L("\(index + 1)枚目・\($0)で編集済み", "Photo \(index + 1), edited: \($0)") }
-                            ?? L("\(index + 1)枚目・未編集", "Photo \(index + 1), not edited"))
+        .accessibilityLabel(item.editBadge.map { L("\(index + 1)枚目、\($0)で編集済み", "Photo \(index + 1), edited: \($0)") }
+                            ?? L("\(index + 1)枚目、未編集", "Photo \(index + 1), not edited"))
         .accessibilityHint(canEdit
                            ? L("押すと色や明るさを編集できます", "Opens the editor to adjust color and light")
                            : L("押すと、いま編集できない理由を表示します", "Shows why this photo can't be edited now"))
@@ -1318,7 +1318,7 @@ struct UploadView: View {
         .accessibilityValue(detailsSummary)
         .accessibilityHint(showsDetails
                            ? L("押すと畳みます", "Collapses the settings")
-                           : L("押すと公開範囲・曲・アルバムなどを変えられます",
+                           : L("押すと公開範囲、曲、アルバムなどを変えられます",
                                "Shows visibility, song, album and more"))
         .accessibilityIdentifier("upload.details")
     }
@@ -1445,7 +1445,7 @@ struct UploadView: View {
             }
             .buttonStyle(JPRowButtonStyle())
             .accessibilityLabel(L("この写真を見て撮影: \(pick.label)", "Inspired by: \(pick.label)"))
-            .accessibilityHint(L("選び直す・外す", "Choose another or remove"))
+            .accessibilityHint(L("選び直す、外す", "Choose another or remove"))
             .accessibilityIdentifier("upload.inspired")
         } else {
             Button { showInspiredPicker = true } label: {

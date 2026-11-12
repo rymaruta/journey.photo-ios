@@ -426,7 +426,7 @@ enum SpotSampleText {
         for sample in samples where !origins.contains(sample.origin) { origins.append(sample.origin) }
         origins = origins.filter { $0 == .commons } + origins.filter { $0 != .commons }
         let names = (origins.isEmpty ? [.commons] : origins).map(\.name)
-        return names.joined(separator: L("・", " and "))
+        return names.joined(separator: L("、", " and "))
     }
 
     /// 節の見出し（docs/spot-samples-commons.md の決まり）。Commons だけなら「作例（Wikimedia Commons より）」

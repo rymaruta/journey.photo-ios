@@ -98,10 +98,10 @@ struct PassViewerView: View {
                     deck(current)
                         .padding(.top, 26)
                     Text(reduceMotion
-                         ? L("写真を押すと全面 · 下を押すと裏返る · 左右に払って次のカード",
-                             "Tap the photo to view it · Tap below to flip · Swipe for the next card")
-                         : L("写真を押すと全面 · 指を置いて回す · 素早く払うと次のカード",
-                             "Tap the photo to view it · Hold and turn · Flick for the next card"))
+                         ? L("写真を押すと全面、下を押すと裏返る、左右に払って次のカード",
+                             "Tap the photo to view it, tap below to flip, swipe for the next card")
+                         : L("写真を押すと全面、指を置いて回す、素早く払うと次のカード",
+                             "Tap the photo to view it, hold and turn, flick for the next card"))
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)
                         .multilineTextAlignment(.center)

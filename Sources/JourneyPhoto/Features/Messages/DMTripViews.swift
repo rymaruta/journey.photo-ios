@@ -125,7 +125,7 @@ struct DMTripBand: View {
         .buttonStyle(.plain)
         .padding(.horizontal, JPSpace.gutter)
         .padding(.vertical, JPSpace.xxs)
-        .accessibilityLabel("\(DMTripPlaces.bandTitle)・\(DMTripPlaces.countLabel(count))")
+        .accessibilityLabel("\(DMTripPlaces.bandTitle)\u{2002}\(DMTripPlaces.countLabel(count))")
         .accessibilityHint(L("会話に出た場所で旅行プランの下書きを開きます", "Opens a trip draft with the places from this chat"))
         .accessibilityIdentifier("dm.tripBand")
     }

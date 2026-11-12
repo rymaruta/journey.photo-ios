@@ -166,7 +166,7 @@ struct DMThreadRow: View {
                         .lineLimit(1)
                         .layoutPriority(1)
                     if let time = DMText.listTime(thread.t, now: now) {
-                        Text("· " + time)
+                        Text(time)
                             .font(JPFont.caption.monospacedDigit())
                             .foregroundStyle(WebTheme.text3)
                             .lineLimit(1)
@@ -316,7 +316,7 @@ enum DMBlockText {
         L("\(name) さんをブロックしますか？", "Block \(name)?")
     }
     static var message: String {
-        L("おたがいの投稿・ストーリー・メッセージ・通知が見えなくなります。相手には知らされません。解除は 設定 › ブロックした人 から。",
+        L("おたがいの投稿、ストーリー、メッセージ、通知が見えなくなります。相手には知らされません。解除は 設定 › ブロックした人 から。",
           "You won't see each other's posts, stories, messages or notifications. They won't be told. Undo it in Settings › Blocked.")
     }
 }

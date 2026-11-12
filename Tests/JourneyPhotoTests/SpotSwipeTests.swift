@@ -100,7 +100,7 @@ final class SpotSwipeTests: XCTestCase {
     // MARK: - 3. 入口の一行
 
     func testCardLineSaysContinueFromSecondTime() {
-        XCTAssertEqual(SpotSwipe.cardLine(started: true, wishCount: 3, signedIn: false), "行きたい 3 か所 · 続きから")
+        XCTAssertEqual(SpotSwipe.cardLine(started: true, wishCount: 3, signedIn: false), "行きたい 3 か所\u{2002}続きから")
         XCTAssertEqual(SpotSwipe.cardLine(started: false, wishCount: 0, signedIn: false), "ログインなしではじめる")
         XCTAssertEqual(SpotSwipe.cardLine(started: false, wishCount: 0, signedIn: true), "右へ払うと行きたい")
         // 札の題・一行は1行（#417 ③）。札の字の幅に収まる長さに抑える

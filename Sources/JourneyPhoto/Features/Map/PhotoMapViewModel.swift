@@ -517,8 +517,8 @@ extension PhotoMapViewModel {
     /// 範囲で絞っているときの帯「この範囲の写真 3枚・2地点」／「3 photos · 1 place here」。
     /// 枚数と地点数は上の2つの関数で数える（単数形をここで書き直さない）
     nonisolated static func areaCountLabel(photos: Int, places: Int) -> String {
-        L("この範囲の写真 \(photoCountLabel(photos))・\(placeCountLabel(places))",
-          "\(photoCountLabel(photos)) · \(placeCountLabel(places)) here")
+        L("この範囲の写真 \(photoCountLabel(photos))\u{2002}\(placeCountLabel(places))",
+          "\(photoCountLabel(photos))\u{2002}\(placeCountLabel(places)) here")
     }
 
     /// ピンの札の「この周辺の写真 3枚」

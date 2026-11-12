@@ -270,7 +270,7 @@ enum StoryPlayback {
         let n = index + 1
         let base = inHighlight ? L("\(count)件中\(n)件目", "\(n) of \(count)")
                                : L("\(count)本中\(n)本目", "\(n) of \(count)")
-        return paused ? base + L("・止まっています", ", paused") : base
+        return paused ? base + L("、止まっています", ", paused") : base
     }
 
     // MARK: - 押したとき・読み上げの操作

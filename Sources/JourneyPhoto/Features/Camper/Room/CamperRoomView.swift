@@ -553,7 +553,7 @@ struct CamperRoomView: View {
 
     private var sceneLabel: String {
         let n = editor?.counts.floor ?? 0
-        let base = L("\(CamperText.carName)の中。\(layout.kind.name)・\(mood == .night ? "夜" : "昼")・家具 \(n)",
+        let base = L("\(CamperText.carName)の中。\(layout.kind.name)、\(mood == .night ? "夜" : "昼")、家具 \(n)",
                      "Inside \(CamperText.carName). \(layout.kind.name), \(mood == .night ? "night" : "day"), \(n) pieces")
         guard let uid = selected, let f = editor?.doc.item(uid)?.furniture else { return base }
         return base + L("。選んでいる家具: \(f.name)", ". Selected: \(f.name)")
@@ -585,7 +585,7 @@ struct CamperRoomView: View {
                 .position(x: width / 2, y: height - 38)
         }
         if mode == .style, trial != nil {
-            Text(L("見本 · まだ持っていない柄", "Preview · not collected yet"))
+            Text(L("見本\u{2002}まだ持っていない柄", "Preview\u{2002}not collected yet"))
                 .jpSystemFont(12, weight: .semibold, relativeTo: .caption)
                 .foregroundStyle(WebTheme.accent)
                 .padding(.horizontal, 12)
@@ -614,7 +614,7 @@ struct CamperRoomView: View {
                 Text(L("\(armed.name)を置く所を押す", "Tap where \(armed.name) goes"))
                     .jpSystemFont(13, weight: .semibold).foregroundStyle(Color.white)
                     .lineLimit(1).minimumScaleFactor(0.8)
-                Text(L("白いマスに置けます · 棚でもう一度押すと空いた所へ", "White squares fit · tap it again on the shelf to drop it anywhere"))
+                Text(L("白いマスに置けます、棚でもう一度押すと空いた所へ", "White squares fit, tap it again on the shelf to drop it anywhere"))
                     .jpSystemFont(12).foregroundStyle(WebTheme.text2)
                     .lineLimit(2).minimumScaleFactor(0.8)
             }
@@ -676,8 +676,8 @@ struct CamperRoomView: View {
 
     static let coachLines: [(symbol: String, text: String)] = [
         ("hand.tap", L("家具を長押しすると持ち上がる。そのまま動かして離すと置ける", "Press and hold a piece to lift it, then drag and let go")),
-        ("rotate.right", L("二本指でひねると 90 度回る。選ぶと横に「回す・しまう」も出る", "Twist with two fingers to turn it. Select it for Turn and Put away")),
-        ("plus.magnifyingglass", L("二度押しで寄る・もう一度で戻る。指一本で部屋を回す", "Double-tap to zoom in and again to zoom out. Drag to turn the room")),
+        ("rotate.right", L("二本指でひねると 90 度回る。選ぶと横に「回す、しまう」も出る", "Twist with two fingers to turn it. Select it for Turn and Put away")),
+        ("plus.magnifyingglass", L("二度押しで寄る、もう一度で戻る。指一本で部屋を回す", "Double-tap to zoom in and again to zoom out. Drag to turn the room")),
     ]
 
     private static let pickFirst = L("先に家具を選んでください", "Select a piece first")
@@ -1110,8 +1110,8 @@ struct CamperRoomView: View {
     private var countsLine: some View {
         let c = editor?.counts ?? (floor: 0, wall: 0, ceiling: 0, photos: 0)
         let l = layout
-        return Text(L("家具 \(c.floor) / \(l.floorLimit) · 壁 \(c.wall) / \(l.wallLimit) · 天井 \(c.ceiling) / \(l.ceilingLimit) · 写真 \(c.photos) / \(l.photoLimit)",
-                      "Floor \(c.floor)/\(l.floorLimit) · Wall \(c.wall)/\(l.wallLimit) · Ceiling \(c.ceiling)/\(l.ceilingLimit) · Photos \(c.photos)/\(l.photoLimit)"))
+        return Text(L("家具 \(c.floor) / \(l.floorLimit)\u{2002}壁 \(c.wall) / \(l.wallLimit)\u{2002}天井 \(c.ceiling) / \(l.ceilingLimit)\u{2002}写真 \(c.photos) / \(l.photoLimit)",
+                      "Floor \(c.floor)/\(l.floorLimit)\u{2002}Wall \(c.wall)/\(l.wallLimit)\u{2002}Ceiling \(c.ceiling)/\(l.ceilingLimit)\u{2002}Photos \(c.photos)/\(l.photoLimit)"))
             .font(JPFont.number(13, weight: .regular, relativeTo: .footnote))
             .foregroundStyle(WebTheme.text2)
             // 大きい文字では縮めず折り返す（等幅の数字の塊は切らない・板 06）
@@ -1440,7 +1440,7 @@ struct CamperRoomView: View {
     private func trialCard(_ c: CamperRoomStyleChoice) -> some View {
         let part = c.partId.flatMap { CamperCatalog.part($0) }
         return VStack(alignment: .leading, spacing: 6) {
-            Text(L("見本 · まだ持っていない柄", "Preview · not collected yet")).jpEyebrow().foregroundStyle(WebTheme.accent)
+            Text(L("見本\u{2002}まだ持っていない柄", "Preview\u{2002}not collected yet")).jpEyebrow().foregroundStyle(WebTheme.accent)
             Text(c.name).font(JPFont.rowTitle).foregroundStyle(WebTheme.foreground)
                 .fixedSize(horizontal: false, vertical: true)
             if let part {

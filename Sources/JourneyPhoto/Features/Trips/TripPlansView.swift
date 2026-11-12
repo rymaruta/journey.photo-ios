@@ -141,7 +141,7 @@ struct TripPlansView: View {
     nonisolated static func subtitle(plans: Int?, wishlist: Int) -> String {
         let head = TripPlanText.listSubtitle(count: plans)
         guard plans != nil, wishlist > 0 else { return head }
-        return L("\(head) · 行きたい場所 \(wishlist) か所", "\(head) · \(Plural.count(wishlist, "saved place"))")
+        return L("\(head)\u{2002}行きたい場所 \(wishlist) か所", "\(head)\u{2002}\(Plural.count(wishlist, "saved place"))")
     }
 
     /// 読めなかった（v2 Components 06: 灰の印 → 何が起きたか → 「もう一度」）。**赤にしない**——
@@ -164,8 +164,8 @@ struct TripPlansView: View {
             // （圏外で一覧が読めなくても、保存した旅は開ける・板 72c）
             if !offline.saved.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
-                    JPEyebrowLine(L("電波なしで使える旅 · \(offline.saved.count) 件",
-                                    "Offline trips · \(offline.saved.count)"))
+                    JPEyebrowLine(L("電波なしで使える旅\u{2002}\(offline.saved.count) 件",
+                                    "Offline trips\u{2002}\(offline.saved.count)"))
                     LazyVStack(spacing: 10) {
                         ForEach(offline.saved) { manifest in
                             NavigationLink {

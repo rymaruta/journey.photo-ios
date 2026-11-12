@@ -229,7 +229,7 @@ enum CamperRoomLegs {
                 let minX = hosts.map { ps[$0].lo.x }.min()!, maxX = hosts.map { ps[$0].hi.x }.max()!
                 let minZ = hosts.map { ps[$0].lo.z }.min()!, maxZ = hosts.map { ps[$0].hi.z }.max()!
                 let out_ = max(0, minX - leg.topLo.x, leg.topHi.x - maxX, minZ - leg.topLo.z, leg.topHi.z - maxZ)
-                if out_ > 0.6 { out.append("脚が座・天板の外へ \(fmt(out_))（\(where_(leg))）") }
+                if out_ > 0.6 { out.append("脚が座、天板の外へ \(fmt(out_))（\(where_(leg))）") }
             }
             // 長さをそろえるのは、上端で下面を受ける物ごと（胴の横を上る帯・框に差し込んだ柱は比べない）
             for j in hosts { carried[j, default: []].append(i) }

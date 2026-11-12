@@ -172,7 +172,7 @@ final class OfflineTripTests: XCTestCase {
         XCTAssertFalse(light.sunrise!.hasPrefix("0"), "時の頭の 0 は落とす（板「6:51」）")
         XCTAssertEqual(light.entries.map(\.label), ["朝のブルーアワー", "日の出", "日の入り", "夕のブルーアワー"])
         XCTAssertTrue(light.morningBlue!.contains("〜"))
-        XCTAssertEqual(light.line, "日の出 \(light.sunrise!) · 日の入り 17:09")
+        XCTAssertEqual(light.line, "日の出 \(light.sunrise!)\u{2002}日の入り 17:09")
     }
 
     func testLightNeedsDateCoordsAndZone() {
@@ -232,8 +232,8 @@ final class OfflineTripTests: XCTestCase {
     func testTexts() {
         let utc = TimeZone(identifier: "UTC")!
         let at = TripPlanText.date(fromYMD: "2026-10-09")!
-        XCTAssertEqual(OfflineTripText.savedLine(bytes: 24_000_000, savedAt: at, zone: utc), "24 MB · 10月9日に保存")
-        XCTAssertEqual(OfflineTripText.settingsDetail(count: 2, bytes: 48_000_000), "2 件 · 48 MB")
+        XCTAssertEqual(OfflineTripText.savedLine(bytes: 24_000_000, savedAt: at, zone: utc), "24 MB\u{2002}10月9日に保存")
+        XCTAssertEqual(OfflineTripText.settingsDetail(count: 2, bytes: 48_000_000), "2 件\u{2002}48 MB")
         XCTAssertEqual(OfflineTripText.progressPlaces(done: 3, total: 6), "3 / 6 か所")
         XCTAssertEqual(OfflineTripText.progressBytes(bytes: 12_000_000, estimate: 24_000_000), "12 / 24 MB")
         XCTAssertEqual(OfflineTripText.progressBytes(bytes: 30_000_000, estimate: 24_000_000), "30 / 30 MB",
@@ -259,7 +259,7 @@ final class OfflineTripTests: XCTestCase {
                                     overviewMap: nil, bytes: 24_000_000)
         XCTAssertEqual(m.stopCount, 4)
         XCTAssertEqual(OfflineTripText.savedRow(m, zone: TimeZone(identifier: "UTC")!),
-                       "12月24日〜25日 · 4 か所 · 24 MB · 10月9日に保存")
+                       "12月24日〜25日\u{2002}4 か所\u{2002}24 MB\u{2002}10月9日に保存")
     }
 
     private func stop(_ n: Int) -> OfflineTripManifest.Stop {
@@ -270,7 +270,7 @@ final class OfflineTripTests: XCTestCase {
     func testPaywallBenefitWording() {
         // owner 2026-10-09: 「迷わない」をやめる
         let offline = ProBenefit.all.first { $0.icon == .offline }
-        XCTAssertEqual(offline?.body, "地図・作例・光の時刻を端末に。圏外でも、どこで何を撮るか分かる")
+        XCTAssertEqual(offline?.body, "地図、作例、光の時刻を端末に。圏外でも、どこで何を撮るか分かる")
     }
 }
 
