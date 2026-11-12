@@ -266,6 +266,13 @@ struct UploadView: View {
             // 打った文字ごと消える
             if posted {
                 onPosted?(model.postedToSpot)
+                // カードの画面を出さない回（`PostedCardHabit`）は「カードにする」付きの知らせだけ（押すといちばん外の画面が開く）
+                if let quiet = model.quietPostedCard {
+                    PostedCardOffer.shared.offer(quiet)
+                    toasts.show(PostedCardHabit.quietText, kind: .success, actionTitle: PostedCardHabit.quietAction) {
+                        PostedCardOffer.shared.present()
+                    }
+                }
                 // 共有カードを出す回は、カードの画面を閉じてから閉じる（`postedCard`・1.1.83 資料①）
                 if model.postedCard == nil { dismiss() }
             }

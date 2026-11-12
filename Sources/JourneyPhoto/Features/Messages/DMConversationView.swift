@@ -352,7 +352,10 @@ struct DMConversationView: View {
                         let spotSlug = message.hasPhoto ? nil
                             : DMSpotShare.slug(in: message.text, siteBase: AppConfig.siteBaseURL)
                         if let spotSlug {
-                            DMSpotCard(slug: spotSlug, mine: message.mine, fallback: message.text)
+                            // 札が作れなかったときは拾ったリンクだけを出す（文全体は下の吹き出しに残る）
+                            DMSpotCard(slug: spotSlug, mine: message.mine,
+                                       fallback: DMSpotShare.link(in: message.text, siteBase: AppConfig.siteBaseURL)
+                                           ?? message.text)
                         }
                         let time = DMText.timeLabel(current: message, next: next)
                         if let text = spotSlug == nil ? message.bubbleText

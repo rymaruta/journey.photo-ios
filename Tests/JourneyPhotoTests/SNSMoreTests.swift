@@ -122,8 +122,8 @@ final class SNSMoreTests: XCTestCase {
     func testSpotCardWordsUseSightseeingSpotAndNoPeak() {
         XCTAssertEqual(DMSpotShare.kindLabel, L("観光スポット", "Sightseeing spot"))
         XCTAssertEqual(DMSpotShare.spoken(name: "兼六園", region: "石川県 金沢市", mine: false),
-                       L("届いた観光スポット、兼六園、石川県 金沢市", "Spot received、兼六園、石川県 金沢市"))
-        XCTAssertEqual(DMSpotShare.spoken(name: "兼六園", region: nil, mine: true), L("送った観光スポット、兼六園", "Spot you sent、兼六園"))
+                       L("届いた観光スポット、兼六園、石川県 金沢市", "Spot received, 兼六園, 石川県 金沢市"))
+        XCTAssertEqual(DMSpotShare.spoken(name: "兼六園", region: nil, mine: true), L("送った観光スポット、兼六園", "Spot you sent, 兼六園"))
     }
 
     /// 🔴 この枝で足した画面の文に中黒の区切り（「・」「·」）を使わない（2026-11-12 の決まり）。
@@ -168,11 +168,96 @@ final class SNSMoreTests: XCTestCase {
         XCTAssertTrue(view.contains("DMSpotShare.send(service: environment.dm"))
         XCTAssertTrue(view.contains(".sheet(isPresented: $showSendSheet) { sendSheet }"))
         let dm = try source("Sources/JourneyPhoto/Features/Messages/DMConversationView.swift")
-        XCTAssertTrue(dm.contains("DMSpotCard(slug: spotSlug, mine: message.mine, fallback: message.text)"),
-                      "届いた頁のリンクは札にする")
+        XCTAssertTrue(dm.contains("DMSpotCard(slug: spotSlug, mine: message.mine,\n                                       fallback: DMSpotShare.link(in: message.text, siteBase: AppConfig.siteBaseURL)"),
+                      "届いた頁のリンクは札にする・札が作れなければ拾ったリンクだけを出す")
         let card = try source("Sources/JourneyPhoto/Features/Messages/DMSpotCard.swift")
-        XCTAssertTrue(card.contains(".accessibilityAddTraits(.isButton)\n            .accessibilityHint(L(\"観光スポットの頁を開きます\""),
+        XCTAssertTrue(card.contains(".accessibilityAddTraits(.isButton)\n            .accessibilityHint(L(\"観光スポットのページを開きます\""),
                       "札を畳んだあとにボタンの印が無い（読み上げ・UI テストで押せる物と分からない）")
+    }
+
+    /// 札が作れなかったときに出すのは、拾ったリンクだけ（文全体を出さない）
+    func testSpotLinkIsPickedOutOfTheText() {
+        XCTAssertEqual(DMSpotShare.link(in: "雪吊り https://journey-photo.com/spots/kenrokuen 見に行かない？", siteBase: site),
+                       "https://journey-photo.com/spots/kenrokuen")
+        XCTAssertNil(DMSpotShare.link(in: "ふつうの文", siteBase: site))
+    }
+
+    private func thread(_ peer: String, _ state: DMEntryState) -> DMThread {
+        DMThread(id: "c-\(peer)", peerId: peer, name: peer, t: "2026-11-12T00:00:00Z", excerpt: "", unread: 0, state: state)
+    }
+
+    /// 🔴 観光スポット（リンク）は承認前の会話に届かない。会話が無い・こちらから始めて承認待ちの相手は顔を薄くする。
+    /// 受信箱・相手からのリクエスト（返信で承認になる）は薄くしない。受信箱を読めていなければ薄くしない
+    func testUnreachablePeersForSpotLinks() {
+        let people = ["inbox", "request", "pending", "none"].map { FollowUser(id: $0, name: $0, deleted: nil) }
+        let inbox = DMInbox(items: [thread("inbox", .inbox), thread("request", .request), thread("pending", .pending)],
+                            unread: 0, requestCount: 1)
+        XCTAssertEqual(DMSpotShare.unreachablePeers(people, inbox: inbox, inboxLoaded: true), ["pending", "none"])
+        XCTAssertEqual(DMSpotShare.unreachablePeers(people, inbox: inbox, inboxLoaded: false), [])
+    }
+
+    /// サーバーが `requestUrl` で断ったら、URL の言葉ではなく観光スポットの言葉を出す
+    func testSpotRefusalWording() {
+        let refused = DMService.Refused(status: 400, message: "承認されるまではリンクを送れません", code: "requestUrl")
+        XCTAssertEqual(DMSpotShare.failureText(refused), DMSpotShare.refusedBeforeAccept)
+        XCTAssertFalse(DMSpotShare.failureText(refused).contains("URL"))
+        let other = DMService.Refused(status: 400, message: "x", code: "blockedByMe")
+        XCTAssertEqual(DMSpotShare.failureText(other), other.errorDescription)
+        let view = try? source("Sources/JourneyPhoto/Features/Spots/OfficialSpotView.swift")
+        XCTAssertTrue(view?.contains("toasts.show(DMSpotShare.failureText(error), kind: .failure)") ?? false)
+        XCTAssertTrue(view?.contains("DMPeopleFacesRow(people: faces,\n                                     dimmed: DMSpotShare.unreachablePeers(") ?? false,
+                      "送れない相手の顔を薄くしていない")
+    }
+
+    // MARK: - 投稿のたびのカード（閉じるだけが2回続いたら知らせだけ）
+
+    func testPostedCardHabitQuietsAfterTwoClosesAndResetsOnShare() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "SNSMoreTests.habit"))
+        defaults.removePersistentDomain(forName: "SNSMoreTests.habit")
+        XCTAssertTrue(PostedCardHabit.showsCard(defaults: defaults), "はじめはカードを出す")
+        PostedCardHabit.noteFinished(shared: false, defaults: defaults)
+        XCTAssertTrue(PostedCardHabit.showsCard(defaults: defaults), "1回閉じただけではまだ出す")
+        PostedCardHabit.noteFinished(shared: false, defaults: defaults)
+        XCTAssertFalse(PostedCardHabit.showsCard(defaults: defaults), "2回続けて閉じたら知らせだけ")
+        PostedCardHabit.noteFinished(shared: true, defaults: defaults)
+        XCTAssertTrue(PostedCardHabit.showsCard(defaults: defaults), "一度でも共有したら毎回カードに戻す")
+        PostedCardHabit.noteFinished(shared: false, defaults: defaults)
+        PostedCardHabit.noteFinished(shared: true, defaults: defaults)
+        XCTAssertTrue(PostedCardHabit.showsCard(defaults: defaults), "共有で数え直す（続けて閉じた回だけ数える）")
+        defaults.removePersistentDomain(forName: "SNSMoreTests.habit")
+    }
+
+    /// 知らせの「カードにする」: 押せる一手を持った知らせ。押せばいちばん外の画面がカードを開く
+    @MainActor
+    func testQuietCardToastCarriesTheAction() async throws {
+        let toasts = ToastCenter()
+        var opened = false
+        toasts.show(PostedCardHabit.quietText, actionTitle: PostedCardHabit.quietAction) { opened = true }
+        XCTAssertEqual(toasts.current?.actionTitle, L("カードにする", "Make a card"))
+        toasts.current?.action?()
+        XCTAssertTrue(opened)
+        toasts.show("x")
+        XCTAssertNil(toasts.current?.actionTitle, "一手の無い知らせに一手を残さない")
+        let upload = try source("Sources/JourneyPhoto/Features/Upload/UploadView.swift")
+        XCTAssertTrue(upload.contains("PostedCardOffer.shared.offer(quiet)"))
+        let root = try source("Sources/JourneyPhoto/App/RootView.swift")
+        XCTAssertTrue(root.contains(".sheet(item: $postedCardOffer.presented) { card in\n                PostedShareCardSheet(card: card)"))
+        let sheet = try source("Sources/JourneyPhoto/Features/Common/SignatureShareCardSheet.swift")
+        XCTAssertTrue(sheet.contains(".onDisappear { posted?.onFinish?(didShare) }"), "閉じたときに共有したかを覚えていない")
+    }
+
+    /// 手元にある自分のプロフィールがあれば、カードの画面は通信で待たない
+    func testMyProfileCacheIsPerUser() throws {
+        let json = #"{"userId":"me-1","displayName":"あや"}"#
+        let profile = try JSONDecoder.api.decode(UserProfile.self, from: Data(json.utf8))
+        MyProfileCache.shared.remember(profile)
+        XCTAssertEqual(MyProfileCache.shared.profile(for: "me-1")?.displayName, "あや")
+        XCTAssertNil(MyProfileCache.shared.profile(for: "other"), "別の人の控えを使った")
+        XCTAssertNil(MyProfileCache.shared.profile(for: nil))
+        let sheet = try source("Sources/JourneyPhoto/Features/Upload/PostedShareCard.swift")
+        XCTAssertTrue(sheet.contains("if let cached = MyProfileCache.shared.profile(for: auth.userId) {"))
+        let service = try source("Sources/JourneyPhoto/Services/ProfileService.swift")
+        XCTAssertTrue(service.contains("MyProfileCache.shared.remember(profile)\n        return profile"))
     }
 
     // MARK: - ① 投稿したら共有カード

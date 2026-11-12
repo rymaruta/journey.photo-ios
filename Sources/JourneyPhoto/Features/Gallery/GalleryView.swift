@@ -769,9 +769,10 @@ struct GalleryView: View {
         }
     }
 
-    /// 「おすすめの人」に並べる人（`SuggestedPeople`）。ブロック・通報は画面の写し（`dropped`）で落とす
+    /// 「おすすめの人」に並べる人（`SuggestedPeople`）。ブロック・通報は画面の写し（`dropped`）で落とし、
+    /// 描くたびに全件をなめない（`GalleryViewModel.suggestedPeople` が控える）
     private func suggestedPeople(_ userId: String) -> [SuggestedPeople.Person] {
-        SuggestedPeople.pick(dropped.visible(model.allPhotosForTheme), viewerId: userId, following: model.followingIds)
+        model.suggestedPeople(viewerId: userId, hiding: dropped)
     }
 
     /// 「おすすめの人」でフォローしたあとの「フォロー中の写真を見る」。フォロー一覧を引き直して「フォロー中」に並べる。

@@ -2498,3 +2498,27 @@ extension ViewModelTests {
         XCTAssertNil(model.followingNewest(viewerId: "B", hiding: ModerationSnapshot()), "前の人のフォロー一覧で点を出した")
     }
 }
+
+// MARK: - ホームの「おすすめの人」（1.1.83・資料「SNS をもっと SNS に」④）
+
+extension ViewModelTests {
+
+    /// 🔴 ブロックした人・通報した写真の持ち主を、おすすめの人に並べない（`hidden.visible` で先に落とす）。
+    /// フォロー中の人・自分も並べない
+    func testSuggestedPeopleDropsBlockedAndFollowed() async {
+        let model = GalleryViewModel(gallery: gallery("""
+        [{"id":"b1","src":"https://x/b.jpg","createdAt":"2026-10-01T00:00:00Z","userId":"blocked"},
+         {"id":"r1","src":"https://x/r.jpg","createdAt":"2026-09-01T00:00:00Z","userId":"reportedOnly"},
+         {"id":"f1","src":"https://x/f.jpg","createdAt":"2026-08-01T00:00:00Z","userId":"f"},
+         {"id":"m1","src":"https://x/m.jpg","createdAt":"2026-08-01T00:00:00Z","userId":"me"},
+         {"id":"o1","src":"https://x/o.jpg","createdAt":"2026-07-01T00:00:00Z","userId":"o"}]
+        """))
+        await model.load()
+        model.use(viewerId: "me", following: ["f"])
+        XCTAssertEqual(model.suggestedPeople(viewerId: "me", hiding: ModerationSnapshot()).map(\.userId),
+                       ["blocked", "reportedOnly", "o"], "前提: 絞らなければ並ぶ")
+        let hidden = ModerationSnapshot(blocked: ["blocked"], reported: ["r1"])
+        XCTAssertEqual(model.suggestedPeople(viewerId: "me", hiding: hidden).map(\.userId), ["o"],
+                       "ブロックした人・通報した写真の持ち主を並べた")
+    }
+}

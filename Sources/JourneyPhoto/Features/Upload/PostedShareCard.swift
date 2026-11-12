@@ -43,6 +43,7 @@ struct PostedShareCardSheet: View {
     let card: PostedShareCard
 
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var auth: AuthStore
     @State private var me: UserProfile?
     @State private var loaded = false
 
@@ -59,7 +60,8 @@ struct PostedShareCardSheet: View {
                                         posted: .init(photoId: card.photo.id, link: card.link,
                                                       storyTitle: SharedPhotoStoryCard.titleLine(
                                                         title: card.photo.title?.resolved(),
-                                                        location: LocationMatch.shareCardDisplay(card.photo.location))))
+                                                        location: LocationMatch.shareCardDisplay(card.photo.location)),
+                                                      onFinish: { PostedCardHabit.noteFinished(shared: $0) }))
             } else {
                 VStack(spacing: 12) {
                     ProgressView()
@@ -74,6 +76,12 @@ struct PostedShareCardSheet: View {
         .accessibilityIdentifier("postedCard")
         .task {
             guard !loaded else { return }
+            // 手元にある自分のプロフィール（起動時などに読んだもの・`MyProfileCache`）があれば待たない
+            if let cached = MyProfileCache.shared.profile(for: auth.userId) {
+                me = cached
+                loaded = true
+                return
+            }
             let profiles = environment.profiles
             me = await withTaskGroup(of: UserProfile?.self) { group in
                 group.addTask { try? await profiles.myProfile() }
@@ -110,5 +118,66 @@ enum PostedShareCardCredit {
             early: me?.showsEarlyMark ?? false,
             badge: me?.shownBadge,
             place: LocationMatch.shareCardPlace(photo.location))
+    }
+}
+
+/// **投稿のたびのカードを、使わない人には出しすぎない**（確かめ役の指摘・2026-11-12 判断）。
+///
+/// カードを閉じるだけで共有しなかった回が**2回続いたら**、次からはカードの画面を出さず、投稿のあとに
+/// 「カードにする」付きの短い知らせ（`ToastCenter`）だけを出す。**一度でも共有したら**（カードを共有・
+/// ストーリーに載せる・リンクをコピー）、また毎回カードに戻す。端末の中だけで覚え、設定の行は足さない
+/// （CLAUDE.md「直感的で簡単に」: 既定で動く・設定を入口にしない）
+enum PostedCardHabit {
+    static let defaultsKey = "postedCard.closedWithoutSharing"
+    /// 続けて閉じた回数がこれに届いたら、知らせだけにする
+    static let quietAfter = 2
+
+    static func showsCard(defaults: UserDefaults = .standard) -> Bool {
+        defaults.integer(forKey: defaultsKey) < quietAfter
+    }
+
+    /// カードの画面を閉じた（`shared`: そこで共有したか）
+    static func noteFinished(shared: Bool, defaults: UserDefaults = .standard) {
+        defaults.set(shared ? 0 : defaults.integer(forKey: defaultsKey) + 1, forKey: defaultsKey)
+    }
+
+    /// 知らせだけの回の言葉
+    static var quietText: String { L("投稿しました", "Posted") }
+    static var quietAction: String { L("カードにする", "Make a card") }
+}
+
+/// 知らせの「カードにする」で開くカード（投稿の画面はもう閉じているので、いちばん外の画面が開く・`RootView`）
+@MainActor
+final class PostedCardOffer: ObservableObject {
+    static let shared = PostedCardOffer()
+    /// 「カードにする」を押したら開くカード
+    private(set) var pending: PostedShareCard?
+    /// 開いているカード
+    @Published var presented: PostedShareCard?
+
+    func offer(_ card: PostedShareCard) { pending = card }
+
+    func present() {
+        presented = pending
+        pending = nil
+    }
+}
+
+/// 自分のプロフィールの手元の控え（`ProfileService.myProfile` が読めたら入れる）。カードの画面が通信で待たないため
+final class MyProfileCache: @unchecked Sendable {
+    static let shared = MyProfileCache()
+    private let lock = NSLock()
+    private var stored: UserProfile?
+
+    func remember(_ profile: UserProfile) {
+        lock.lock(); defer { lock.unlock() }
+        stored = profile
+    }
+
+    /// その人の控え（人が替わっていれば nil）
+    func profile(for userId: String?) -> UserProfile? {
+        lock.lock(); defer { lock.unlock() }
+        guard let userId, let stored, stored.userId == userId else { return nil }
+        return stored
     }
 }

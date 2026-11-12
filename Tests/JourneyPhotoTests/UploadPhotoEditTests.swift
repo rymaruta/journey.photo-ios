@@ -39,6 +39,8 @@ final class UploadPhotoEditTests: XCTestCase {
         let model = UploadViewModel(uploads: UploadService(api: api(), session: session), albums: AlbumService(api: api()),
                                     photos: PhotoService(api: api()), discovery: DiscoveryService(api: api()))
         model.renderStripPreview = { _, _ in nil }
+        // 端末に覚えた「カードを閉じるだけが続いた」に左右されない（`PostedCardHabit`）
+        model.showsCardSheet = { true }
         return model
     }
 
@@ -459,6 +461,50 @@ final class UploadPhotoEditTests: XCTestCase {
         XCTAssertNil(model.postedCard)
     }
 
+    /// 🔴 カードに使うのは先頭の1枚だけ。2枚目の編集した写真を作り直せなくても、先頭が無事なら閉じてカードを出す
+    /// （前は全部の写真を控えて書き出し直し、どれか1枚でも作れないと投稿画面が閉じなかった・確かめ役の指摘）
+    @MainActor
+    func testCardUsesOnlyTheLeadPhoto() async throws {
+        let log = ExportLog()
+        let savedOverrides = AppConfig.testOverrides
+        defer { AppConfig.testOverrides = savedOverrides }
+        AppConfig.testOverrides = (savedOverrides ?? [:]).merging(["JPSiteBaseURL": "https://site.example.test"]) { $1 }
+        let model = model()
+        model.exportEdited = fakeExport(log)
+        ScriptedProtocol.script = twoPresigns + twoPresigns + [
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: saved, once: true),
+            .init(match: "/upload/save", status: 500, body: #"{"error":"x"}"#),
+        ]
+        model.items = [PendingPhoto(prepared: original()), PendingPhoto(prepared: original(bytes: 20))]
+        model.applyEdit(model.items[1].id, recipe: PhotoRecipe(exposure: 0.4))
+        await model.submit()
+        XCTAssertEqual(model.items.count, 1, "前提: 2枚目の保存が落ちて残る")
+        // やり直しでは2枚目を書き出し直せない
+        model.exportEdited = { _, _, _ in throw ImagePreparer.PrepareError.encodeFailed }
+        ScriptedProtocol.script = [.init(match: "/upload/save", status: 200, body: saved)]
+        await model.submit()
+        XCTAssertTrue(model.items.isEmpty)
+        XCTAssertTrue(model.didPostAll, "先頭が無事なのに投稿画面が閉じない")
+        XCTAssertEqual(model.postedCard?.photoData, Data(repeating: 0x11, count: 16), "カードは先頭の1枚")
+    }
+
+    /// カードを閉じるだけが続いた人（`PostedCardHabit`）には、カードの画面を出さず知らせだけ
+    @MainActor
+    func testQuietCardWhenTheHabitSaysSo() async throws {
+        let model = model()
+        model.showsCardSheet = { false }
+        ScriptedProtocol.script = twoPresigns + [
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 200, body: saved),
+        ]
+        model.items = [PendingPhoto(prepared: original())]
+        await model.submit()
+        XCTAssertNil(model.postedCard, "知らせだけの回にカードの画面を出した")
+        XCTAssertEqual(model.quietPostedCard?.photo.id, "p1")
+        XCTAssertTrue(model.didPostAll)
+    }
+
     @MainActor
     func testThreadsSkipsAnEditedPictureThatCannotBeRebuilt() async throws {
         let log = ExportLog()
@@ -483,7 +529,7 @@ final class UploadPhotoEditTests: XCTestCase {
         XCTAssertTrue(model.items.isEmpty, "投稿自体は済んでいる")
         XCTAssertNil(model.postedCard, "編集前の絵を渡さない")
         XCTAssertFalse(model.didPostAll, "知らせを見せるため閉じない")
-        XCTAssertTrue(model.errorMessage?.contains("SNS への共有は開いていません") ?? false, model.errorMessage ?? "nil")
+        XCTAssertTrue(model.errorMessage?.contains("カードは出していません") ?? false, model.errorMessage ?? "nil")
     }
 
     /// 書き出しが落ちたときの知らせに、編集を「なし」に戻せば送れることを添える

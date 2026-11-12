@@ -20,6 +20,8 @@ struct SignatureShareCardSheet: View {
         let link: URL?
         /// ストーリーの札に描く題（`SharedPhotoStoryCard.titleLine`）
         let storyTitle: String
+        /// 閉じたとき（そこで共有したか・`PostedCardHabit`）
+        var onFinish: ((Bool) -> Void)? = nil
     }
 
     @Environment(\.dismiss) private var dismiss
@@ -27,6 +29,8 @@ struct SignatureShareCardSheet: View {
     /// 「ストーリーに載せる」で開く作る画面（写真の詳細の「送る」と同じ `StoryComposerView(sharing:)`）
     @State private var storySeed: StoryShareSeed?
     @State private var preparingStory = false
+    /// この画面で共有したか（カードを共有・ストーリーに載せる・リンクをコピー）。閉じたときに `Posted.onFinish` へ
+    @State private var didShare = false
     @State private var ratio: SignatureShareCardRenderer.Ratio = .portrait
     /// カードの型（帯／フェード）。前に選んだものを次も使う（2026-11-05 owner「ユーザが選べるように」）
     /// 2026-11-05: `@AppStorage` は使わない（Linux の SwiftUI 模型に無く、他の画面も UserDefaults を直に読む）
@@ -105,6 +109,7 @@ struct SignatureShareCardSheet: View {
 
                 Button {
                     showShare = true
+                    didShare = true
                 } label: {
                     Text(posted == nil ? L("この画像を共有", "Share this image") : L("カードを共有", "Share card"))
                         .frame(maxWidth: .infinity)
@@ -132,6 +137,7 @@ struct SignatureShareCardSheet: View {
             .fullScreenCover(item: $storySeed) { seed in
                 NavigationStack { StoryComposerView(sharing: seed) }
             }
+            .onDisappear { posted?.onFinish?(didShare) }
             .onChange(of: styleRaw) { _, newValue in
                 UserDefaults.standard.set(newValue, forKey: Self.styleDefaultsKey)
             }
@@ -213,6 +219,7 @@ extension SignatureShareCardSheet {
                 if let link = posted.link {
                     Button {
                         UIPasteboard.general.string = link.absoluteString
+                        didShare = true
                         toasts.show(L("リンクをコピーしました", "Link copied"))
                     } label: {
                         Text(L("リンクをコピー", "Copy link"))
@@ -251,6 +258,7 @@ extension SignatureShareCardSheet {
             toasts.show(L("ストーリーの絵を作れませんでした", "Couldn't make the story image"), kind: .failure)
             return
         }
+        didShare = true
         storySeed = StoryShareSeed(photoId: posted.photoId, cardData: card)
     }
 }

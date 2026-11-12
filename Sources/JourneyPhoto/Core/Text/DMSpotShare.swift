@@ -25,6 +25,11 @@ enum DMSpotShare {
         firstMatch(in: text, siteBase: siteBase)?.slug
     }
 
+    /// 文の中の撮影スポットの頁のリンクそのもの（札が作れなかったときに出す・文全体は出さない）
+    static func link(in text: String, siteBase: URL) -> String? {
+        firstMatch(in: text, siteBase: siteBase).map { String(text[$0.range]) }
+    }
+
     /// 札のほかに吹き出しに残す文（頁のリンクを抜いた残り）。残りが空なら nil（札だけ出す）
     static func remainder(_ text: String, siteBase: URL) -> String? {
         guard let match = firstMatch(in: text, siteBase: siteBase) else {
@@ -84,7 +89,39 @@ enum DMSpotShare {
     /// 札を読めなかったとき（索引に無い・読めない）は札を出さず、リンクの文のまま出す
     static func spoken(name: String, region: String?, mine: Bool) -> String {
         let head = mine ? L("送った観光スポット", "Spot you sent") : L("届いた観光スポット", "Spot received")
-        guard let region, !region.isEmpty else { return "\(head)、\(name)" }
-        return "\(head)、\(name)、\(region)"
+        // 区切りは日本語は「、」、英語は「, 」（確かめ役の指摘・2026-11-12）
+        let comma = L("、", ", ")
+        guard let region, !region.isEmpty else { return head + comma + name }
+        return head + comma + name + comma + region
+    }
+
+    // MARK: 送る前に分かる「送れない相手」（確かめ役の指摘・2026-11-12）
+
+    /// サーバーは、承認されるまで会話にリンクを入れない（`dm.ts` の `containsUrl` → 400 `requestUrl`）。
+    /// 観光スポットは頁のリンクで送るので、**まだ会話が無い相手・こちらから始めて承認待ちの相手**には届かない。
+    /// 受信箱を読めているときだけ見分け、その顔を薄くする（読めていなければ薄くしない＝サーバーが決める）。
+    /// 相手から届いたリクエスト（`request`）は、返信すると承認したことになる（板 DM）ので薄くしない
+    static func unreachablePeers(_ people: [FollowUser], inbox: DMInbox, inboxLoaded: Bool) -> Set<String> {
+        guard inboxLoaded else { return [] }
+        var states: [String: DMEntryState] = [:]
+        for thread in inbox.items { states[thread.peerId] = thread.state }
+        return Set(people.compactMap { person in
+            switch states[person.id] {
+            case .inbox?, .request?: return nil
+            case .pending?, nil: return person.id
+            }
+        })
+    }
+
+    /// 承認前の相手に送ろうとしたとき・サーバーが `requestUrl` で断ったときの言葉（写真の `requestPhoto` と同じ考え）
+    static var refusedBeforeAccept: String {
+        L("承認されるまでは観光スポットを送れません。まず文字で話しかけてください",
+          "You can't send spots until they accept. Start with a text message.")
+    }
+
+    /// 送れなかったときの言葉。リンクを断られた（`requestUrl`）なら観光スポットの言葉、ほかはサーバーの言葉
+    static func failureText(_ error: Error) -> String {
+        if let refused = error as? DMService.Refused, refused.code == "requestUrl" { return refusedBeforeAccept }
+        return (error as? LocalizedError)?.errorDescription ?? L("送れませんでした", "Couldn't send")
     }
 }

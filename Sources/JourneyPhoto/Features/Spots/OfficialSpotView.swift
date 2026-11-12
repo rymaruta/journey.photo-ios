@@ -40,6 +40,8 @@ struct OfficialSpotView: View {
     @EnvironmentObject private var toasts: ToastCenter
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
+    /// 受信箱（送る前に送れない相手を見分ける・`DMSpotShare.unreachablePeers`）
+    @EnvironmentObject private var messages: DMInboxStore
     /// 「送る」シート（1.1.83・資料「SNS をもっと SNS に」⑤）。送る相手の顔はシートを開いてから読む
     @State private var showSendSheet = false
     @State private var sendFaces: [FollowUser] = []
@@ -248,7 +250,9 @@ struct OfficialSpotView: View {
                 SendSheet(actions: actions, people: { SendSheetFacesPlaceholder() })
             case .faces(let faces):
                 SendSheet(actions: actions, people: {
-                    DMPeopleFacesRow(people: faces) { user in
+                    DMPeopleFacesRow(people: faces,
+                                     dimmed: DMSpotShare.unreachablePeers(faces, inbox: messages.inbox,
+                                                                          inboxLoaded: messages.phase == .loaded)) { user in
                         Task { await sendSpot(to: user, pageURL: pageURL) }
                     }
                     .disabled(sendingTo != nil)
@@ -261,6 +265,10 @@ struct OfficialSpotView: View {
     private func openSendSheet() async {
         showSendSheet = true
         guard !sendFacesLoaded, !sendFacesLoading, let me = auth.userId else { return }
+        // 受信箱をまだ読んでいなければ一緒に読む（送れない相手を薄くするため。読めなければ薄くしない）
+        if messages.phase != .loaded {
+            Task { await messages.refresh(service: environment.dm, owner: me) }
+        }
         sendFacesLoading = true
         defer { sendFacesLoading = false }
         let fetched = try? await environment.social.following(userId: me)
@@ -275,6 +283,12 @@ struct OfficialSpotView: View {
     /// 承認前の相手などで断られたらサーバーの言葉を出す
     private func sendSpot(to user: FollowUser, pageURL: URL) async {
         guard sendingTo == nil else { return }
+        // 送る前に送れないと分かる相手（会話が無い・承認待ち）には送らず、理由を言う
+        if DMSpotShare.unreachablePeers([user], inbox: messages.inbox, inboxLoaded: messages.phase == .loaded)
+            .contains(user.id) {
+            toasts.show(DMSpotShare.refusedBeforeAccept, kind: .info)
+            return
+        }
         sendingTo = user.id
         defer { sendingTo = nil }
         do {
@@ -282,8 +296,7 @@ struct OfficialSpotView: View {
             showSendSheet = false
             toasts.show(SendSheetLayout.sentLabel(user.displayName))
         } catch {
-            toasts.show((error as? LocalizedError)?.errorDescription
-                        ?? L("送れませんでした", "Couldn't send"), kind: .failure)
+            toasts.show(DMSpotShare.failureText(error), kind: .failure)
         }
     }
 

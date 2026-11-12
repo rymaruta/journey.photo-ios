@@ -110,7 +110,7 @@ struct DMSpotCard: View {
             // 子を畳む（`.ignore`）とボタンの印が落ちる（Mac run 1096 で `dm.spotCard.open` が Button として見つからなかった）。
             // 送るシートの丸（`SendSheet.actionLabel`）と同じく、印を付け直す
             .accessibilityAddTraits(.isButton)
-            .accessibilityHint(L("観光スポットの頁を開きます", "Opens the spot page"))
+            .accessibilityHint(L("観光スポットのページを開きます", "Opens the spot page"))
             .accessibilityIdentifier("dm.spotCard.open")
             Button {
                 guard !wanted else { return }
@@ -124,10 +124,11 @@ struct DMSpotCard: View {
                 Text(wanted ? DMSpotShare.addedToWishlist : DMSpotShare.addToWishlist)
                     .font(JPFont.bodyEmphasis)
                     .foregroundStyle(wanted ? Color.white : WebTheme.accentText)
+                    // 2026-11-12（確かめ役の指摘・板 DM）: DM の画面の主ボタン（送る・承認）と同じ accent-fill に墨
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                     .frame(maxWidth: .infinity, minHeight: 36)
-                    .background(wanted ? Color.white.opacity(0.12) : WebTheme.accentBackground, in: Capsule())
+                    .background(wanted ? Color.white.opacity(0.12) : WebTheme.accentFill, in: Capsule())
                     .padding(.vertical, 4)
                     .contentShape(Rectangle())
             }
@@ -149,7 +150,8 @@ struct DMSpotCard: View {
             }
         }
         .frame(width: Self.width)
-        .background(WebTheme.surface3)
+        // 札の地は板どおり surface-1（`WebTheme.card`・確かめ役の指摘・2026-11-12）
+        .background(WebTheme.card)
         .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
         .overlay(RoundedRectangle(cornerRadius: JPRadius.l).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
         .accessibilityElement(children: .contain)
