@@ -284,7 +284,7 @@ final class TripPlanTests: XCTestCase {
         let created = try await service().create(title: "冬")
         XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "POST")
         XCTAssertEqual(StubProtocol.lastRequest?.url?.path, "/user/trips")
-        XCTAssertEqual(created.map(\.planId), ["4f0c2b1e-8a3d-4c5e-9f10-2b3c4d5e6f70"])
+        XCTAssertEqual(created.plans.map(\.planId), ["4f0c2b1e-8a3d-4c5e-9f10-2b3c4d5e6f70"])
 
         // プランの ID はサーバーが `randomUUID()` で作る（記号を含まない）
         _ = try await service().update(planId: "4f0c2b1e-8a3d-4c5e-9f10-2b3c4d5e6f70", TripPlanService.Patch(endDate: ""))

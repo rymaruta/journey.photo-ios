@@ -268,8 +268,8 @@ final class TripsDesignTests: XCTestCase {
         let date = section("private func dateField(", in: detail)
         XCTAssertTrue(date.contains("TripStyle.dateFieldHeight"))
         let delete = section("private func deleteCard(", in: detail)
-        assertInOrder([".foregroundStyle(WebTheme.danger)", "TripOutlineButton(title: L(\"削除する\", \"Delete\"), strong: true"],
-                      in: delete, "削除は危険の色の行 → 確かめ")
+        assertInOrder([".foregroundStyle(WebTheme.danger)", "TripOutlineButton(title: leaving ? L(\"抜ける\", \"Leave\") : L(\"削除する\", \"Delete\"), strong: true"],
+                      in: delete, "削除は危険の色の行 → 確かめ（共有したプランの仲間は「抜ける」・2026-11-12）")
         XCTAssertTrue(detail.contains("TripOutlineButton(title: L(\"削除する\", \"Remove\"), strong: true"), "日の削除の確かめ")
         XCTAssertFalse(detail.contains("Color.white.opacity(0.18)"), "v1 の白 18% の線が残っている")
         XCTAssertTrue(detail.contains("capacity: TripStyle.remaining("), "候補のシートに残りの数を渡す")

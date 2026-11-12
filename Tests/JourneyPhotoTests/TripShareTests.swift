@@ -53,14 +53,6 @@ final class TripShareTests: XCTestCase {
         XCTAssertTrue(shared.contains("\"rev\":7"))
     }
 
-    func testSharedFailedKeepsPreviousSharedPlans() {
-        let mine = TripPlan(planId: "own", title: "ひとり")
-        let shared = TripPlan(planId: "s1", title: "仲間", share: TripShare(ownerId: "u2", memberIds: ["u1", "u2"], rev: 1))
-        let failed = TripPlanList(plans: [mine], sharedFailed: true)
-        XCTAssertEqual(TripPlansModel.merged(previous: [mine, shared], response: failed).map(\.planId), ["own", "s1"])
-        // 読めた回は応答のとおり（抜けたプランは消える）
-        XCTAssertEqual(TripPlansModel.merged(previous: [mine, shared], response: TripPlanList(plans: [mine])).map(\.planId), ["own"])
-    }
 
     // MARK: - ぶつかったときの重ね直し
 
@@ -115,15 +107,6 @@ final class TripShareTests: XCTestCase {
 
     // MARK: - 受信箱・知らせ
 
-    func testConversationIdRoundTripAndPush() {
-        XCTAssertEqual(TripShareText.planId(fromConversation: TripShareText.conversationId(planId: "11111111-2222-4333-8444-555555555555")),
-                       "11111111-2222-4333-8444-555555555555")
-        XCTAssertNil(TripShareText.planId(fromConversation: "aaa_bbb"), "DM の会話 ID はプランの印にならない")
-        XCTAssertNil(TripShareText.planId(fromConversation: "trip_"))
-        XCTAssertEqual(NotificationRouter.dmConversationId(["type": "tripchat", "planId": "p-1"]), "trip_p-1")
-        XCTAssertEqual(NotificationRouter.dmConversationId(["type": "tripshare", "planId": "p-1"]), "trip_p-1")
-        XCTAssertNil(NotificationRouter.dmConversationId(["type": "tripchat", "planId": "../x"]))
-    }
 
     func testAddedByShowsOnlyOthers() {
         let plan = TripPlan(planId: "p", title: "t", days: [day("a", "b")],
@@ -140,5 +123,29 @@ final class TripShareTests: XCTestCase {
 
     func testInviteLinkIsWebPage() {
         XCTAssertEqual(TripInviteLink(token: "abc_DEF-123", expiresAt: nil).url?.absoluteString, "https://journey-photo.com/t?t=abc_DEF-123")
+    }
+}
+
+/// `@MainActor` の型（`TripPlansModel`・`NotificationRouter`）の静的メンバを見る分（`DirectMessageMainActorTests` と同じ形）
+@MainActor
+final class TripShareMainActorTests: XCTestCase {
+
+    func testSharedFailedKeepsPreviousSharedPlans() async {
+        let mine = TripPlan(planId: "own", title: "ひとり")
+        let shared = TripPlan(planId: "s1", title: "仲間", share: TripShare(ownerId: "u2", memberIds: ["u1", "u2"], rev: 1))
+        let failed = TripPlanList(plans: [mine], sharedFailed: true)
+        XCTAssertEqual(TripPlansModel.merged(previous: [mine, shared], response: failed).map(\.planId), ["own", "s1"])
+        // 読めた回は応答のとおり（抜けたプランは消える）
+        XCTAssertEqual(TripPlansModel.merged(previous: [mine, shared], response: TripPlanList(plans: [mine])).map(\.planId), ["own"])
+    }
+
+    func testConversationIdRoundTripAndPush() async {
+        XCTAssertEqual(TripShareText.planId(fromConversation: TripShareText.conversationId(planId: "11111111-2222-4333-8444-555555555555")),
+                       "11111111-2222-4333-8444-555555555555")
+        XCTAssertNil(TripShareText.planId(fromConversation: "aaa_bbb"), "DM の会話 ID はプランの印にならない")
+        XCTAssertNil(TripShareText.planId(fromConversation: "trip_"))
+        XCTAssertEqual(NotificationRouter.dmConversationId(["type": "tripchat", "planId": "p-1"]), "trip_p-1")
+        XCTAssertEqual(NotificationRouter.dmConversationId(["type": "tripshare", "planId": "p-1"]), "trip_p-1")
+        XCTAssertNil(NotificationRouter.dmConversationId(["type": "tripchat", "planId": "../x"]))
     }
 }

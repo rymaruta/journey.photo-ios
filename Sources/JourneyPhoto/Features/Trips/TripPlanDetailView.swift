@@ -725,19 +725,7 @@ struct TripPlanDetailView: View {
         let layout = travelLayout()
         return ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                // 題（v2 の板 TripPlanDays: 明朝の大見出し・Title 1）
-                Text(plan.title.isEmpty ? L("無題のプラン", "Untitled trip") : plan.title)
-                    .font(JPFont.screenTitle)
-                    .foregroundStyle(WebTheme.foreground)
-                    .accessibilityAddTraits(.isHeader)
-
-                HStack(spacing: JPSpace.xs) {
-                    dateField(L("出発", "From"), value: $start, fallback: end, isStart: true)
-                    dateField(L("帰着", "To"), value: $end, fallback: start, isStart: false)
-                }
-
-                // 仲間（共有する・誘う・「日程 | 会話」・2026-11-12）。圏外の間は出さない（送れない）
-                if !isOffline { shareStrip(plan) }
+                header(plan)
 
                 // 送れていない直し（圏外・断られた・別の端末の変更）。日付の下・日程の上に残す。
                 // UI テストの見本のときだけ、その下に自動保存が送った回数（`TripPlanFixture`・Debug のみ）
@@ -1343,7 +1331,31 @@ struct TripPlanDetailView: View {
         Binding(get: { chosenTab ?? startTab }, set: { chosenTab = $0 })
     }
 
-    private func shareStrip(_ plan: TripPlan) -> some View {
+    /// 題・出発と帰着・仲間の段（日程の画面の頭。式を分けて型の推論を軽くする）
+    private func header(_ plan: TripPlan) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            // 題（v2 の板 TripPlanDays: 明朝の大見出し・Title 1）
+            Text(plan.title.isEmpty ? L("無題のプラン", "Untitled trip") : plan.title)
+                .font(JPFont.screenTitle)
+                .foregroundStyle(WebTheme.foreground)
+                .accessibilityAddTraits(.isHeader)
+
+            HStack(spacing: JPSpace.xs) {
+                dateField(L("出発", "From"), value: $start, fallback: end, isStart: true)
+                dateField(L("帰着", "To"), value: $end, fallback: start, isStart: false)
+            }
+
+            // 仲間（共有する・誘う・「日程 | 会話」・2026-11-12）。圏外の間は出さない（送れない）
+            shareSection(plan)
+        }
+    }
+
+    @ViewBuilder
+    private func shareSection(_ plan: TripPlan) -> some View {
+        if !isOffline { shareStrip(plan) }
+    }
+
+    private func shareStrip(_ plan: TripPlan) -> TripShareStrip {
         TripShareStrip(plan: plan, members: members, peer: sharePeer, working: shareWorking,
                        tab: tab, chatUnread: chatUnread,
                        onShareWithPeer: { Task { await share(with: sharePeer) } },
@@ -1369,12 +1381,21 @@ struct TripPlanDetailView: View {
     /// 仲間の名前と会話の未読（共有したプランだけ）
     private func loadShare() async {
         guard let plan, plan.share != nil, !isOffline else { return }
-        if let detail = try? await environment.tripShare.detail(planId: planId) {
+        do {
+            let detail = try await environment.tripShare.detail(planId: planId)
             members = detail.members
             if let link = detail.invite { inviteLink = link }
+        } catch {
+            // 名前が引けなくても日程は使える（顔の段は印だけ・「足しました」は出さない）
         }
-        if tab.wrappedValue == .days, let items = try? await environment.tripShare.inbox() {
-            chatUnread = (items.first { $0.planId == planId }?.unread ?? 0) > 0
+        let current = chosenTab ?? startTab
+        if current == .chat { return }
+        do {
+            let items = try await environment.tripShare.inbox()
+            let mine = items.first(where: { $0.planId == planId })
+            chatUnread = (mine?.unread ?? 0) > 0
+        } catch {
+            chatUnread = false
         }
     }
 

@@ -171,7 +171,7 @@ struct TripInviteSheet: View {
                 .accessibilityIdentifier("tripShare.line")
                 HStack(spacing: JPSpace.xs) {
                     TripOutlineButton(title: copied ? L("コピーしました", "Copied") : L("リンクをコピー", "Copy link"), fill: true) {
-                        UIPasteboard.general.url = url
+                        UIPasteboard.general.string = url.absoluteString
                         copied = true
                     }
                     ShareLink(item: url) {

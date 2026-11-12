@@ -240,7 +240,10 @@ final class DMTripPlanTests: XCTestCase {
         XCTAssertTrue(add.contains("{\n        guard tripOffered else { return }\n"), "長押しから呼ばれても入れない")
         XCTAssertTrue(conversation.contains(".contextMenu { bubbleMenu(text) }"), "吹き出しの長押し")
         XCTAssertTrue(conversation.contains("L(\"旅行プランに入れる\", \"Add to a trip\")"))
-        XCTAssertTrue(conversation.contains("TripPlanDetailView(planId: planId, model: tripPlans)"), "作ったら日程の画面")
+        XCTAssertTrue(conversation.contains("TripPlanDetailView(planId: planId, model: tripPlans, sharePeer: tripSharePeer)"), "作ったら日程の画面")
+        // 「[名前] と共有する」（2b・2026-11-12）は承認済みの会話だけ。承認前のリクエスト（受け取った・送った）では出さない
+        let peer = try XCTUnwrap(body(of: "private var tripSharePeer", in: conversation))
+        XCTAssertTrue(peer.contains("meta?.state == .inbox, remaining == nil"), "承認前の会話で共有の口を出している")
         let views = try source("Features/Messages/DMTripViews.swift")
         XCTAssertTrue(views.contains("TripCreateDatesStep(model: model, next: save, finishTitle:"), "日付の段で保存（押す回数 4 回）")
         XCTAssertTrue(views.contains("WebTheme.accentSoft") && views.contains("strokeBorder(WebTheme.accent"),
