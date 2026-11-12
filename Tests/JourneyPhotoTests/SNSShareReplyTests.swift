@@ -234,6 +234,47 @@ final class SNSShareReplyTests: XCTestCase {
         XCTAssertGreaterThan(SendSheetLayout.height(hasPeople: true), SendSheetLayout.height(hasPeople: false))
     }
 
+    /// 🔴 「ストーリーに載せる」は**自分の写真だけ**（2026-11-12 owner の原則・#577）。人の写真は、送れる写真
+    /// （公開・ログイン中）でも出さない。持ち主・自分が分からないときも出さない
+    func testShareToStoryOnlyOwnPhoto() async {
+        XCTAssertTrue(SendSheetLayout.canShareToStory(ownerId: "me", me: "me", canSendPhoto: true))
+        XCTAssertFalse(SendSheetLayout.canShareToStory(ownerId: "mika", me: "me", canSendPhoto: true),
+                       "人の写真を自分のストーリーに載せ直せてしまう")
+        XCTAssertFalse(SendSheetLayout.canShareToStory(ownerId: "me", me: "me", canSendPhoto: false),
+                       "公開でない自分の写真（下書き・範囲を絞った）を出している")
+        XCTAssertFalse(SendSheetLayout.canShareToStory(ownerId: nil, me: "me", canSendPhoto: true))
+        XCTAssertFalse(SendSheetLayout.canShareToStory(ownerId: "", me: "", canSendPhoto: true))
+        XCTAssertFalse(SendSheetLayout.canShareToStory(ownerId: "me", me: nil, canSendPhoto: true))
+        // 人の写真の送るシート: リンクのコピーと「ほかのアプリ」（ページの URL だけ）は残る
+        let url = URL(string: "https://site.example.test/photo/p1")!
+        let others = SendSheetLayout.photoActions(
+            url: url, canShareToStory: SendSheetLayout.canShareToStory(ownerId: "mika", me: "me", canSendPhoto: true),
+            story: {})
+        XCTAssertEqual(others.map(\.id), ["copy", "other"])
+        // DM で写真を送る段（③）は人の写真でも出る（持ち主の写真へ連れて行くだけ）
+        let people = [FollowUser(id: "u1", name: "人", deleted: nil)]
+        XCTAssertEqual(SendSheetLayout.peopleRow(loaded: true, people: people, canSend: true), .faces(people))
+    }
+
+    /// 🔴 ⋯ の「SNS に載せる」（共有カードの画像を書き出す）は**自分の、全体に公開した写真だけ**（#577）
+    func testSocialCardOnlyOwnPhoto() async {
+        XCTAssertTrue(PhotoDetailRules.showsSocialCard(ownerId: "me", me: "me", shareable: true))
+        XCTAssertFalse(PhotoDetailRules.showsSocialCard(ownerId: "mika", me: "me", shareable: true),
+                       "人の写真の画像を書き出せてしまう")
+        XCTAssertFalse(PhotoDetailRules.showsSocialCard(ownerId: "me", me: "me", shareable: false))
+        XCTAssertFalse(PhotoDetailRules.showsSocialCard(ownerId: nil, me: nil, shareable: true))
+    }
+
+    /// サーバーの断り（人の写真は 403「この写真はストーリーで紹介できません」・#577）を、送る係がそのまま出す
+    /// （日本語の画面。輪の「もう一度送る」と失敗の知らせの文）。英語の画面は 403 の決まった文
+    func testNotOwnPhotoRefusalShownAsIs() async {
+        let refusal = APIError.server(status: 403, message: "この写真はストーリーで紹介できません")
+        XCTAssertEqual(refusal.description(language: "ja"), "この写真はストーリーで紹介できません")
+        XCTAssertEqual(StoryQueue.partialFailure(posted: 0, total: 1, reason: refusal.description(language: "ja")),
+                       "この写真はストーリーで紹介できません")
+        XCTAssertFalse(APIError.containsJapanese(refusal.description(language: "en")))
+    }
+
     /// 送る相手の顔（③）は送れる写真のときだけ・12 人まで
     func testSendSheetFaces() async {
         let people = (0..<20).map { FollowUser(id: "u\($0)", name: "人\($0)", deleted: nil) }

@@ -2,6 +2,17 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.83",
+      "date": "2026-11-12",
+      "items": [
+        {
+          "symbol": "hand.raised",
+          "title": { "ja": "写真は撮った人のもの", "en": "Photos belong to the people who took them" },
+          "detail": { "ja": "ほかの人の写真は、ストーリーに載せたり、カードにして書き出したりできなくなりました。写真は撮った人のものなので、リンクの共有とメッセージで送ることはこれまでどおりできます。", "en": "You can no longer add other people's photos to your story or export them as cards, because photos belong to the people who took them. You can still share links and send photos in messages." }
+        }
+      ]
+    },
+    {
       "version": "1.1.82",
       "date": "2026-11-11",
       "items": [
