@@ -213,6 +213,15 @@ Xcode のテストになる。
 流す前に `git -C ../photo-gallery checkout origin/develop` でそろえるか、
 `PHOTO_GALLERY=<最新の photo-gallery>` を渡す。
 
+## サーバーの口は機能ごとのスタックに足す（2026-11-12・札 #552）
+
+CloudFormation は1スタック 500 部品までで、user API は 488 まで来ていた（機能ごとに分けて 277 に下げた）。
+
+- **user API（`api-user/serverless.yml`）に口を足さない。** 機能のまとまりのスタック（`api-user/serverless.<機能>.yml`、手本は `serverless.albums.yml`）に足す
+- 別スタックは `sls-photo-gallery-user-api-<stage>-HttpApiId` と `…-CognitoAuthorizerId` を取り込む（自分で認可を作らない）。URL は変わらない
+- 移したまとまりは `deploy-api.yml` の `STACKS` と `splitStacks.test.ts` の `MOVED` に足す。1スタック 450 を超えると `scripts/check-stack-size.mjs` が落とす
+- 戻すときは、先に別スタックを消して（`aws cloudformation delete-stack`）から user API に戻す。逆の順だと経路がぶつかって反映が落ちる
+
 ## デザインするときは必ずデザインの板を読む（2026-09-29 owner のルール・絶対）
 
 **画面の見た目を変える・候補を作るときは、先に Artifact の板
