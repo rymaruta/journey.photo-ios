@@ -554,7 +554,9 @@ extension DMText {
     static func excerpt(_ thread: DMThread, language: String = Locale.preferredAppLanguage) -> String {
         let body = thread.excerpt == serverPhotoText ? photoOnlyText(mine: thread.lastMine == true, language: language)
                                                      : thread.excerpt
-        return thread.lastMine == true ? L("あなた: ", "You: ", language: language) + body : body
+        // 抜粋が空（全部の通を取り消した・2026-11-12）なら「あなた: 」だけを出さない
+        guard thread.lastMine == true, !body.isEmpty else { return body }
+        return L("あなた: ", "You: ", language: language) + body
     }
 
     /// サーバーが写真だけの通の本文・抜粋に入れる文（`dm.ts` の `DM_PHOTO_TEXT`・古いアプリ向け・日本語だけ）。
@@ -851,10 +853,32 @@ enum DMPhotoSend {
 /// ——直して送り直せるし、間違えて押しても文を失わない。写真・ストーリーへの返信の通は、入力欄に戻すと
 /// 別の通（ただの文字）になってしまうので、取り消すだけ（2026-11-12 判断・秘書室）。
 enum DMUnsend {
-    /// 入力欄に戻す文。文字だけの自分の通だけ（写真・ストーリーへの返信は nil）
-    static func returnedText(_ message: DMMessage) -> String? {
-        guard message.mine, !message.hasPhoto, !message.isStoryReply, let text = message.bubbleText else { return nil }
+    /// 入力欄に戻す文。文字だけの自分の通だけ（写真・ストーリーへの返信は nil）。
+    /// **送れない会話（`canSend` が偽: 承認前の3通を使い切った・相手が退会）では戻さない**——欄は止まっていて、
+    /// 戻しても送り直せない（2026-11-12・確かめ役の指摘）
+    static func returnedText(_ message: DMMessage, canSend: Bool = true) -> String? {
+        guard canSend, message.mine, !message.hasPhoto, !message.isStoryReply, let text = message.bubbleText else { return nil }
         return text
+    }
+
+    /// 取り消しの答えを受けて、画面をどうするか（2026-11-12・確かめ役の指摘: 404 を一律「消えたまま」にしていた）
+    enum Outcome: Equatable {
+        /// サーバーで消えた（成功・`messageNotFound`＝もう消えている・自分の通ではない）。吹き出しは消えたまま
+        case gone
+        /// サーバーが断った（会話が見られない `notFound`＝ブロックの関係など・上限・形の誤り）。**消えていないのが確か**:
+        /// 吹き出しを戻し、欄も戻す
+        case refused
+        /// 答えが分からない（時間切れ・圏外・5xx）。サーバーでは消えたかもしれない: 吹き出しは戻すが、**戻した文は欄に残す**
+        /// （消えていたら次の読み直しで吹き出しが消え、文は欄に残る＝失わない）
+        case unknown
+    }
+
+    static func outcome(of error: Error?) -> Outcome {
+        guard let error else { return .gone }
+        if let refused = error as? DMService.Refused {
+            return refused.status == 404 && refused.code == "messageNotFound" ? .gone : .refused
+        }
+        return .unknown
     }
 
     /// 戻したあとの入力欄。**打ちかけの文は消さない**（空ならそのまま、あれば改行して後ろに足す）。上限で切る

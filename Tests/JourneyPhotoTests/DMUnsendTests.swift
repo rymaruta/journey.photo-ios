@@ -135,6 +135,53 @@ final class DMUnsendTests: XCTestCase {
                        "戻したあとに打ち直した文を消している")
     }
 
+    // MARK: - 答えで分ける（2026-11-12・確かめ役の指摘: 404 を一律「消えたまま」にしていた）
+
+    /// 成功と `messageNotFound`（もう消えている・取り消せる通ではない）は消えたまま。会話が見られない `notFound`
+    /// （ブロックの関係など）・ほかの断りは「消えていない」と確か。時間切れなどは分からない
+    func testOutcomeSeparatesGoneRefusedAndUnknown() async {
+        XCTAssertEqual(DMUnsend.outcome(of: nil), .gone)
+        XCTAssertEqual(DMUnsend.outcome(of: DMService.Refused(status: 404, message: "", code: "messageNotFound")), .gone)
+        XCTAssertEqual(DMUnsend.outcome(of: DMService.Refused(status: 404, message: "", code: "notFound")), .refused,
+                       "ブロックの関係（会話が見られない）で、残っている吹き出しを消えたままにしている")
+        XCTAssertEqual(DMUnsend.outcome(of: DMService.Refused(status: 404, message: "", code: nil)), .refused,
+                       "口の無い 404 を消えたと読んでいる")
+        XCTAssertEqual(DMUnsend.outcome(of: DMService.Refused(status: 409, message: "", code: "busy")), .refused)
+        XCTAssertEqual(DMUnsend.outcome(of: URLError(.timedOut)), .unknown)
+        XCTAssertEqual(DMUnsend.outcome(of: APIError.server(status: 500, message: "x")), .unknown)
+    }
+
+    /// サーバーの断りの本文から、実際に `Refused` の `code` を読んで分ける（口から通しで）
+    func testOutcomeFromServerBodies() async throws {
+        let cases: [(String, DMUnsend.Outcome)] = [
+            (#"{"error":"メッセージが見つかりません","code":"messageNotFound"}"#, .gone),
+            (#"{"error":"会話が見つかりません","code":"notFound"}"#, .refused),
+        ]
+        for (body, want) in cases {
+            StubProtocol.respond(status: 404, body: body)
+            var failure: Error?
+            do { try await service().unsend(Self.conv, messageId: "k-12345678") } catch { failure = error }
+            XCTAssertEqual(DMUnsend.outcome(of: failure), want, body)
+        }
+    }
+
+    /// 送れない会話（承認前の3通を使い切った・相手が退会）では、文を欄に戻さない（戻しても送れない）
+    func testReturnedTextNeedsCanSend() async {
+        let mine = message("m-0000001", t: "t", text: "まちがい")
+        XCTAssertEqual(DMUnsend.returnedText(mine, canSend: true), "まちがい")
+        XCTAssertNil(DMUnsend.returnedText(mine, canSend: false), "送れない欄に文を戻している")
+    }
+
+    /// 全部取り消した会話（抜粋が空）で、受信箱の行を「あなた: 」だけにしない
+    func testEmptyExcerptHasNoYouPrefix() async {
+        let row = DMThread(id: "c", peerId: "p", name: "A", t: "2026-11-12T00:00:00.000Z", excerpt: "", unread: 0,
+                           state: .pending, lastMine: true)
+        XCTAssertEqual(DMText.excerpt(row, language: "ja"), "")
+        let kept = DMThread(id: "c", peerId: "p", name: "A", t: "2026-11-12T00:00:00.000Z", excerpt: "やあ", unread: 0,
+                            state: .inbox, lastMine: true)
+        XCTAssertEqual(DMText.excerpt(kept, language: "ja"), "あなた: やあ")
+    }
+
     // MARK: - 画面の配線（Linux では SwiftUI を描けないので、元のファイルを読む）
 
     private func source(_ path: String) throws -> String {
@@ -181,6 +228,11 @@ final class DMUnsendTests: XCTestCase {
         XCTAssertLessThan(remove.lowerBound, call.lowerBound, "サーバーの答えを待ってから消している（押したらすぐ消えない）")
         XCTAssertLessThan(toField.lowerBound, call.lowerBound, "文を欄に戻すのが答えの後")
         XCTAssertTrue(action.contains("log.restore(removed)"), "失敗したときに1通を戻さない")
+        XCTAssertTrue(action.contains("switch DMUnsend.outcome(of: failure)"), "答えで分けていない")
+        XCTAssertTrue(action.contains("DMUnsend.returnedText(removed, canSend: canSend)"), "送れない欄にも文を戻す")
+        // 分からない（時間切れ）の回は、戻した文を欄から消さない（サーバーで消えていたら文を失う）
+        let unknown = slice(action, from: "case .unknown:", to: "\n        }\n")
+        XCTAssertFalse(unknown.contains("draft ="), "時間切れの回に、戻した文を欄から外している")
         XCTAssertTrue(action.contains("actionError = L("), "失敗したときに一言を出さない")
         XCTAssertTrue(action.contains("store.refresh(service: environment.dm"), "受信箱の最後の一言を読み直さない")
     }

@@ -997,32 +997,41 @@ struct DMConversationView: View {
 
     // MARK: - 送信の取り消し（2026-11-12）
 
-    /// 押したらすぐ消し、文字だけの通は文を入力欄へ。失敗したら1通を元の位置に戻し、欄も戻して赤の一言
+    /// 押したらすぐ消し、文字だけの通は文を入力欄へ（送れる会話だけ）。答えで3つに分ける（`DMUnsend.Outcome`）:
+    /// 消えた → そのまま。断られた（ブロックの関係など）→ 1通と欄を戻して赤の一言。分からない（時間切れ）→ 1通は戻すが
+    /// 戻した文は欄に残す（サーバーで消えていたら次の読み直しで消え、文は失わない）
     private func unsend(_ message: DMMessage) async {
         guard let removed = log.unsend(message.id) else { return }
         actionError = nil
         let before = draft
-        let returned = DMUnsend.returnedText(removed).map { DMUnsend.draft(current: draft, returning: $0) }
+        let returned = DMUnsend.returnedText(removed, canSend: canSend).map { DMUnsend.draft(current: draft, returning: $0) }
         if let returned {
             restoredDraft = returned
             draft = returned
             fieldFocused = true
         }
+        var failure: Error?
         do {
             try await environment.dm.unsend(conversationId, messageId: removed.id)
+        } catch {
+            failure = error
+        }
+        switch DMUnsend.outcome(of: failure) {
+        case .gone:
             // 受信箱の抜粋（最後の一言）はサーバーが直した。控えも読み直す
             await store.refresh(service: environment.dm, owner: auth.userId)
-        } catch let refused as DMService.Refused where refused.isConversationMissing {
-            // サーバーに無い（もう取り消した・会話が無い）: 消えたままでよい
-        } catch {
+        case .refused:
             log.restore(removed)
             if let returned {
                 let back = DMUnsend.draftAfterFailure(current: draft, returned: returned, before: before)
                 restoredDraft = back
                 draft = back
             }
-            actionError = L("送信を取り消せませんでした。もう一度お試しください。",
-                            "Couldn't unsend. Please try again.")
+            actionError = L("送信を取り消せませんでした。", "Couldn't unsend.")
+        case .unknown:
+            log.restore(removed)
+            actionError = L("送信を取り消せたか確かめられませんでした。もう一度お試しください。",
+                            "Couldn't confirm the unsend. Please try again.")
         }
     }
 
