@@ -2387,15 +2387,24 @@ final class ScreenshotTests: XCTestCase {
             }
         }
 
-        // 1c. 地図: ガラスの帯
+        // 1c. 地図: ガラスの帯。いま出している帯・札の種類を `map.stateProbe` の値で記録する
+        // （2026-11-12: run 1117 で帯が出なかった訳を数で取る）。時間を追って5回読む
         tabBar.buttons.element(boundBy: 3).tap()
+        let probe = app.descendants(matching: .any)["map.stateProbe"].firstMatch
         let mapBand = app.descendants(matching: .any)["map.stateBand"].firstMatch
-        let mapFound = mapBand.waitForExistence(timeout: 30)
-        print("states.offline map.band=\(mapFound)")
-        if mapFound {
-            Thread.sleep(forTimeInterval: 3)
-            shoot(app, "13h-マップ（電波なし・ガラスの帯）")
+        _ = probe.waitForExistence(timeout: 15)
+        for i in 0..<5 {
+            Thread.sleep(forTimeInterval: i == 0 ? 1 : 4)
+            print("states.offline map.probe[\(i)] band=\(mapBand.exists) \((probe.value as? String) ?? "-")")
         }
+        let mapFound = mapBand.waitForExistence(timeout: 10)
+        print("states.offline map.band=\(mapFound)")
+        let probeNote = XCTAttachment(string: (probe.value as? String) ?? "-")
+        probeNote.name = "13h-地図の帯の記録"
+        probeNote.lifetime = .keepAlways
+        add(probeNote)
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, mapFound ? "13h-マップ（電波なし・ガラスの帯）" : "13h-マップ（電波なし・帯の無い回）")
     }
 
     /// **探すの「撮影スポット」の段と、そこから開く一覧**（札 #524・2026-11-11）。

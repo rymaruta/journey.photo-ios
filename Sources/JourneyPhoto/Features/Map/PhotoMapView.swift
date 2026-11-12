@@ -482,6 +482,19 @@ struct PhotoMapView: View {
             if !model.loaded { MapPinSkeleton() }
         }
         .overlay(alignment: .top) { statusLine }
+        // UI テストのときだけ（電波なしの絵・`PreviewSession.forcesOffline`・Debug のみ）: いま出している帯・札の種類を
+        // 見えない要素 `map.stateProbe` に出す（2026-11-12・run 1117 で帯が出なかった訳を記録で調べる）
+        .overlay(alignment: .bottomLeading) {
+            if PreviewSession.forcesOffline {
+                Text(" ")
+                    .font(.caption2)
+                    .foregroundStyle(Color.clear)
+                    .frame(width: 1, height: 1)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("map.stateProbe")
+                    .accessibilityValue(stateProbeValue)
+            }
+        }
         .overlay(alignment: .topTrailing) {
             mapControls
                 .padding(.trailing, 16)
@@ -915,6 +928,18 @@ struct PhotoMapView: View {
         // 読んでいる最中は重ねない（ボタンも止めている。古い回の答えは模型が捨てる）
         guard !model.isLoading else { return }
         Task { await model.load(environment: environment) }
+    }
+
+    /// `map.stateProbe` の値（UI テストのときだけ読む）
+    private var stateProbeValue: String {
+        let choice = Self.stateBand(offline: connectivity.isOffline, loaded: model.loaded, empty: emptyKind,
+                                    areaOnly: model.areaFrame != nil && MapSearch.fold(model.query).isEmpty
+                                        && model.category == nil,
+                                    hasLocationNote: locationNote != nil, photosFailed: loadFailedNote != nil)
+        return "choice=\(choice) offline=\(connectivity.isOffline) loaded=\(model.loaded) "
+            + "empty=\(emptyKind.map { "\($0)" } ?? "nil") location=\(location.state) "
+            + "locationNote=\(locationNote ?? "nil") photos=\(model.photos.count) shown=\(model.shown.count) "
+            + "pins=\(model.pins.count) spotPins=\(model.officialPins.count) loadFailed=\(model.loadFailed)"
     }
 
     /// 地図の上のガラスの帯（第2章）。左 12・上 12。**右は操作列（右 16・幅 44・上から 56）の分を空ける**
