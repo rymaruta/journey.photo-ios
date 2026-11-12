@@ -180,7 +180,8 @@ struct HomeFeedTile: View {
         .onDisappear { PhotoLiftCenter.shared.gestureReset(photoId: photo.id) }
         // 0.35秒押さえて手に取る（10pt 以上動いたらスクロール）。短く押せば今どおり開く。
         // ログインしていなければ手に取らない（保存・送る・ストーリーはログインが要る）
-        .simultaneousGesture(liftGesture, including: auth.userId == nil ? .subviews : .all)
+        // `-JPPreviewNoLift`（UI テストの事実取りだけ・Debug のみ）では身振りを付けない
+        .simultaneousGesture(liftGesture, including: auth.userId == nil || PreviewSession.noLift ? .subviews : .all)
         .sensoryFeedback(.impact(weight: .medium), trigger: lifted) { _, new in new }
     }
 

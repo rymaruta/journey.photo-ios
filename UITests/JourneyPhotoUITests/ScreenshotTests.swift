@@ -6289,7 +6289,19 @@ final class ScreenshotTests: XCTestCase {
     /// 札の行は跳ばない。下へ送ると札の行は見出しの下に留まり、留まったまま中身を払っても替わって、札の行は動かない。
     /// 🔴 札が見つからない・払って替わらない・札の行が跳ぶ・留まらないときは**落とす**（黙って通らない）
     func testSwipesHomeFeedTabs() {
+        swipesHomeFeedTabs(noLift: false)
+    }
+
+    /// 事実取り（2026-11-12・run 1171）: 写真の札の「手に取って運ぶ」の身振り（`HomeMosaic.liftGesture`）を外した版。
+    /// 外した版だけ送れれば、身振りが ScrollView の払いを奪っている（`-JPPreviewNoLift`・UI テストのときだけ）
+    func testSwipesHomeFeedTabsWithoutLift() {
+        swipesHomeFeedTabs(noLift: true)
+    }
+
+    private func swipesHomeFeedTabs(noLift: Bool) {
         let app = XCUIApplication()
+        if noLift { app.launchArguments += ["-JPPreviewNoLift", "YES"] }
+        XCTContext.runActivity(named: "ホームの切り替えを送る: noLift=\(noLift)") { _ in }
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
