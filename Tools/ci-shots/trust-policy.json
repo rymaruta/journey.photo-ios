@@ -13,7 +13,10 @@
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
         },
         "StringLike": {
-          "token.actions.githubusercontent.com:sub": "repo:rymaruta/journey.photo-ios:ref:refs/heads/*"
+          "token.actions.githubusercontent.com:sub": [
+            "repo:rymaruta/journey.photo-ios:ref:refs/heads/*",
+            "repo:rymaruta@100843202/journey.photo-ios@1377793012:ref:refs/heads/*"
+          ]
         }
       }
     }

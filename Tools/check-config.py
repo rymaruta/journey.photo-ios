@@ -807,7 +807,10 @@ try:
     if len(trust["Statement"]) != 1 \
             or cond.get("StringEquals", {}).get("token.actions.githubusercontent.com:aud") != "sts.amazonaws.com" \
             or cond.get("StringLike", {}).get("token.actions.githubusercontent.com:sub") \
-            != "repo:rymaruta/journey.photo-ios:ref:refs/heads/*":
+            != ["repo:rymaruta/journey.photo-ios:ref:refs/heads/*",
+                # 2026-11-12 判断: このリポジトリの OIDC の sub は、owner と repo の数の id を含む形で届く
+                # （CloudTrail の AssumeRoleWithWebIdentity の記録で確かめた）。どちらも枝の回だけ
+                "repo:rymaruta@100843202/journey.photo-ios@1377793012:ref:refs/heads/*"]:
         fail("Tools/ci-shots/trust-policy.json が「このリポジトリの枝の回だけ」になっていません（PR の回が入れる）")
     rules = json.loads((shots_dir / "lifecycle.json").read_text(encoding="utf-8"))["Rules"]
     days = [r.get("Expiration", {}).get("Days") for r in rules if r.get("Status") == "Enabled"]
