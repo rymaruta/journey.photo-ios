@@ -356,6 +356,10 @@ struct JourneyPhotoApp: App {
                     let probe = PerfRecorder.shared.beginTask("pass")
                     defer { PerfRecorder.shared.endTask(probe) }
                     guard !auth.isResolving, !auth.isSignedOutUncertain else { return }
+                    #if DEBUG
+                    // 前の起動（UI テスト）が入れた見本の帳は、見本なしの起動で消す（`PassStore.discardPreviewSeed`）
+                    PassStore.shared.discardPreviewSeed(seeding: PreviewSession.passSample)
+                    #endif
                     // 期限切れのログアウトでも電波は止める（帳は端末に残り、入り直せば読み戻す）
                     PassStore.shared.use(userId: auth.userId)
                     // 起動したときの前面は `onChange(of: scenePhase)` に来ないので、ここで渡す
