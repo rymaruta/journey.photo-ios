@@ -55,7 +55,6 @@ enum OfficialSpotIndex {
         }
 
         fileprivate struct Row {
-            let spot: OfficialSpot
             /// 名前・英語名・読み・別名をそろえた字（空は落とす）
             let names: [Text]
             /// 国（日本は除く）・県・市区町村・県＋市・全部をつないだ字をそろえたもの（空は落とす）
@@ -72,8 +71,7 @@ enum OfficialSpotIndex {
         init(_ spots: [OfficialSpot], aliases: [String: [String]] = [:]) {
             self.spots = spots
             rows = spots.map { spot in
-                Row(spot: spot,
-                    names: ([spot.name, spot.nameEn, spot.reading] + (aliases[spot.slug] ?? []))
+                Row(names: ([spot.name, spot.nameEn, spot.reading] + (aliases[spot.slug] ?? []))
                         .map(OfficialSpotIndex.spotName).filter { !$0.isEmpty }.map(Text.init),
                     regionFields: OfficialSpotIndex.regionFields(spot).map(Text.init))
             }
@@ -81,6 +79,13 @@ enum OfficialSpotIndex {
 
         /// `OfficialSpotIndex.matches` と同じ当て方・並び（そろえた字を使う）
         func matches(query: String, limit: Int? = nil) -> [OfficialSpot] {
+            let positions = matchPositions(query: query)
+            return (limit.map { Array(positions.prefix($0)) } ?? positions).map { spots[$0] }
+        }
+
+        /// 当たった行の位置（`spots` の添字）を `matches` と同じ順で。
+        /// 探すは、当てる材料が同じ今の一覧（詳細を重ねた後）の行をこの位置で取る（`SearchSpotHits`）
+        func matchPositions(query: String) -> [Int] {
             // 当てる1回の区間（`PerfSignpost.spotMatch`・2026-11-13 札 #590）。**UI テストのときだけ**（Debug・`-JPPreviewPerfProbe`）
             let signpost = PerfRecorder.shared.isEnabled ? PerfSignpost.begin(.spotMatch) : nil
             defer { if let signpost { PerfSignpost.end(signpost) } }
@@ -88,16 +93,14 @@ enum OfficialSpotIndex {
             guard !needle.isEmpty else { return [] }
             let needleText = Text(needle)
             let region = RegionQuery(query)
-            let ranked = rows.enumerated()
-                .compactMap { i, row -> (OfficialSpot, Int, Int)? in
+            return rows.enumerated()
+                .compactMap { i, row -> (Int, Int)? in
                     var rank = OfficialSpotIndex.rankByNames(row.names, needleText)
                     if rank < 0, region.hits(row.regionFields) { rank = 3 }
-                    return rank < 0 ? nil : (row.spot, rank, i)
+                    return rank < 0 ? nil : (rank, i)
                 }
-                .sorted { $0.1 != $1.1 ? $0.1 < $1.1 : $0.2 < $1.2 }
-                .map(\.0)
-            guard let limit else { return ranked }
-            return Array(ranked.prefix(limit))
+                .sorted { $0.0 != $1.0 ? $0.0 < $1.0 : $0.1 < $1.1 }
+                .map(\.1)
         }
     }
 

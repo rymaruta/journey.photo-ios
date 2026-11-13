@@ -46,9 +46,13 @@ struct SearchView: View {
     @State private var spotAliases: [String: [String]] = [:]
     /// 撮影スポットの節の行の控え（`spotHits`・2026-11-13 札 #590）。参照の型なので、body の中で控えても描き直しは起きない
     @State private var spotHitsMemo = SearchSpotHits()
-    /// 字をそろえ終えた索引（`SearchSpotHits.prepare`）。索引・別名が替わったら**主スレッドの外で**作り直す
+    /// 字をそろえ終えた索引（`SearchSpotHits.prepare`）。当てる材料・別名が替わったら**主スレッドの外で**作り直す
     /// （2026-11-13 判断・札 #590）。作り直している間は前のものを使う
     @State private var spotSearchIndex: OfficialSpotIndex.Prepared?
+    /// `spotSearchIndex` を作った世代（`spotMaterialGeneration` のどれで作ったか）
+    @State private var spotSearchIndexGeneration: Int?
+    /// 当てる材料（`SearchSpotHits.sameMaterial`）か別名が替わったときだけ進む。詳細を重ねただけでは進まない
+    @State private var spotMaterialGeneration = 0
     /// 撮影スポットの節を全部出しているか（語が変わったら畳む）
     @State private var spotsExpandedFor: String? = nil
     /// 撮影スポットの索引の読み込みの段階（発見の「撮影スポット」の段の読み込み中・失敗・空・札 #524）
@@ -168,22 +172,33 @@ struct SearchView: View {
             Task { await model.search(newValue, environment: environment) }
         }
         // 発見の「撮影スポット」の段の札は、索引が変わったとき（届いた・詳細を重ねた）だけ束ね直す
-        .onChange(of: officialSpots) { _, spots in
+        .onChange(of: officialSpots) { old, spots in
             spotGroups = SpotPrefectureIndex.groups(spots: spots)
+            // 当てる材料が替わったときだけ、語で当てる索引を作り直す（詳細を重ねただけでは作り直さない・札 #590）
+            if !SearchSpotHits.sameMaterial(old, spots) { spotMaterialGeneration += 1 }
         }
-        // 🔴 語で当てる相手の索引（字をそろえ終えたもの）は、索引・別名が替わったときに**主スレッドの外で**作る
-        // （2026-11-13 判断・札 #590。Linux の Release で約 220ms、シミュレータでその約2倍。body の中で作ると、
-        // 索引・別名が届いた字で画面が止まる）。作り直している間は前の索引で当てる
-        .task(id: SearchSpotHits.Source(spots: officialSpots, aliases: spotAliases)) {
-            guard !officialSpots.isEmpty else {
-                spotSearchIndex = nil
-                return
-            }
+        .onChange(of: spotAliases) { _, _ in
+            spotMaterialGeneration += 1
+        }
+        // 🔴 語で当てる相手の索引（字をそろえ終えたもの）は、**語があるときだけ**、当てる材料か別名が替わったときに
+        // **主スレッドの外で**作る（2026-11-13 判断・札 #590。Linux の Release で約 220ms、シミュレータでその約2倍。
+        // body の中で作ると、索引・別名が届いた字で画面が止まる）。作り直している間は前の索引で当てる。
+        // 発見の表紙・季節の案内の詳細を重ねたとき・画面に戻ったときは、材料が同じなので作り直さない（確かめ役の指摘）
+        .task(id: SearchSpotHits.IndexNeed(generation: spotMaterialGeneration,
+                                           needed: !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)) {
+            let need = SearchSpotHits.IndexNeed(generation: spotMaterialGeneration,
+                                                needed: !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            guard SearchSpotHits.shouldBuild(need, builtGeneration: spotSearchIndexGeneration,
+                                             hasSpots: !officialSpots.isEmpty) else { return }
             let spots = officialSpots, aliases = spotAliases
             let built = await Task.detached(priority: .userInitiated) {
                 SearchSpotHits.prepare(spots: spots, aliases: aliases)
             }.value
-            if !Task.isCancelled { spotSearchIndex = built }
+            // 語を消して取り消された回も、作り終えた索引が今の世代なら使う（打ち直したときに作り直さない）
+            if spotMaterialGeneration == need.generation {
+                spotSearchIndex = built
+                spotSearchIndexGeneration = need.generation
+            }
         }
         // 見出しの「探す」: **この札が前に出ているときだけ**探す口に焦点を当てる。ほかの札（ホーム・マップ）から
         // 押した回は札を移るだけ（移った途端にキーボードを出さない・`isOnScreen` はまだ false）
@@ -1038,9 +1053,15 @@ struct SearchView: View {
     /// 1字で 3.8〜7.3 秒、画面が止まっていた。いまは語・絞り込み・索引・別名が同じ間は1回だけ当てる
     /// （`SearchSpotHits`）。**下書きは出さない**（地図の一覧・ホームと同じ。「撮影地ガイド」と名乗らせない）
     private var spotHits: [OfficialSpot] {
+        spotHitsResult.rows
+    }
+
+    /// `spotHits` と、まだ分からない（そろえた索引を作っている最中）か。
+    /// **作っている最中は0件と扱わない**（「見つかりませんでした」と言わない・2026-11-13 確かめ役の指摘）
+    private var spotHitsResult: SearchSpotHits.Hits {
         // 呼ばれた回数と時間を語ごとに数える（UI テストのときだけ・2026-11-13 札 #590）
-        PerfRecorder.shared.searchSpotHits { () -> [OfficialSpot] in
-            spotHitsMemo.hits(index: spotSearchIndex, query: query,
+        PerfRecorder.shared.searchSpotHits { () -> SearchSpotHits.Hits in
+            spotHitsMemo.hits(spots: officialSpots, index: spotSearchIndex, query: query,
                               filter: model.timeFilter, showsSpots: model.scope.showsSpots)
         }
     }
@@ -1151,7 +1172,7 @@ struct SearchView: View {
     private var zeroHitOnTop: Bool {
         Self.zeroHitOnTop(discovering: isDiscovering, showsPhotos: model.scope.showsPhotos,
                           hasLoaded: model.hasLoaded, photosEmpty: model.shown.isEmpty,
-                          spotsEmpty: spotHits.isEmpty,
+                          spotsEmpty: spotHits.isEmpty, spotsPending: spotHitsResult.pending,
                           usersEmpty: !model.scope.showsPeople || dropped.users(model.users).isEmpty,
                           loadFailed: model.loadFailed && model.everything.isEmpty)
     }
@@ -1159,10 +1180,11 @@ struct SearchView: View {
     /// **0件の文と地図への出口を、絞り込みの上に出すか**（2026-10-21 判断・run 609 の 11b）。
     /// 写真も撮影スポットも人も0件で、読み終えていて、読み込みの失敗ではないとき。
     /// 失敗は「引き下げて読み直せます」を結果の場所に出したまま（0件と言わない）
+    /// 撮影スポットがまだ分からない間（`spotsPending`・そろえた索引を作っている最中）は出さない（2026-11-13・札 #590）
     nonisolated static func zeroHitOnTop(discovering: Bool, showsPhotos: Bool, hasLoaded: Bool,
-                                         photosEmpty: Bool, spotsEmpty: Bool, usersEmpty: Bool,
-                                         loadFailed: Bool) -> Bool {
-        !discovering && showsPhotos && hasLoaded && photosEmpty && spotsEmpty && usersEmpty && !loadFailed
+                                         photosEmpty: Bool, spotsEmpty: Bool, spotsPending: Bool = false,
+                                         usersEmpty: Bool, loadFailed: Bool) -> Bool {
+        !discovering && showsPhotos && hasLoaded && photosEmpty && spotsEmpty && !spotsPending && usersEmpty && !loadFailed
     }
 
     /// 季節・時間帯のチップを出すか。**0件の間は畳む**（チップの列が0件の文をキーボードの裏へ押し下げていた）。
@@ -1233,8 +1255,9 @@ struct SearchView: View {
             VStack(spacing: 12) {
                 Text(model.loadFailed && model.everything.isEmpty
                      ? L("写真を読み込めませんでした。引き下げて読み直せます", "Couldn't load photos. Pull to retry")
-                     // 上に撮影スポットが当たっているときは「写真は」と言う（全部0件に読ませない）
-                     : (spotHits.isEmpty ? L("見つかりませんでした", "No results")
+                     // 上に撮影スポットが当たっているとき・まだ分からないとき（索引を作っている最中）は
+                     // 「写真は」と言う（全部0件に読ませない・2026-11-13 札 #590）
+                     : (spotHitsResult.isEmpty ? L("見つかりませんでした", "No results")
                         : L("写真は見つかりませんでした", "No photos found")))
                     .font(JPFont.body)
                     .foregroundStyle(WebTheme.text2)
