@@ -20,10 +20,11 @@ import SwiftUI
 ///
 /// **2026-11-13 判断（デザインの点検「次の旅への札で『旅行プラ…』と切れる」）**: 札を観光スポットの頁と同じ部品
 /// （`SpotDetailParts.actionLabel`: 高さ 64・印の下に 13 の太字の名前・押した状態は白 94% の塗り）にそろえた。
-/// 前の札（印と 15 の字を横に並べ、左右に 16 の余白・高さ 48）は、点検の画面写真（Mac・390 幅）で3つが1段に並び、
-/// 札1つ約 114pt から余白と印を引いた字の幅（約 57pt）に「旅行プランに入れる」が入らず「旅行プラ…」と切れていた。
-/// 新しい札は余白と横の印が無く、字の幅は札の幅いっぱい。字は部品の決まりで 0.8 まで縮めて1行に収める
-/// （`ViewThatFits` の2段の並びは外した。観光スポットの頁と同じく1段。なぜ2段に替わらなかったかは確かめていない）。
+/// 前の札は印と 15 の字を横に並べ、左右に 16 の余白・高さ 48。並びは `ViewThatFits` で1段か2段（2つ＋1つ）。
+/// 前の並びを組み直して測ると（Mac run 1213・`ActionRowFitMeasureTests` の `measured oldTripRow`）、札の理想の幅の合計は
+/// 既定の字でも 410.3 で並びの幅（358・408）を超え、どの字の大きさでも2段を選んでいた。2段の「旅行プランに入れる」の札は
+/// 理想の幅 189.0 に対し 390 の画面で 175 しか無い。点検の画面写真の切れがどの並びのものかは確かめていない。
+/// 並びは観光スポットの頁と同じ `ActionTilesLayout`（名前が入れば1段、入らなければ縦に積む・2026-11-13 確かめ役の指摘）。
 /// 印は旗のまま（写真の詳細ではハートがいいね、しおりが保存なので、場所の「行きたい」は旗で分ける）。
 /// 押した状態は縁の真鍮ではなく、観光スポットの頁と同じ白 94% の塗り（形でも伝わる）
 struct PhotoTripSection: View {
@@ -48,8 +49,9 @@ struct PhotoTripSection: View {
         VStack(alignment: .leading, spacing: 10) {
             JPEyebrowLine(L("NEXT TRIP\u{2002}次の旅へ", "NEXT TRIP"),
                           spoken: L("写真から、次の旅へ", "From this photo to your next trip"))
-            // 観光スポットの頁と同じ並び（同じ幅の札を 8 のすき間で1段に・`OfficialSpotView.actions`）
-            HStack(spacing: JPSpace.xs) {
+            // 観光スポットの頁と同じ並び（同じ幅の札を 8 のすき間で1段に。名前が入らない字の大きさでは縦に積む・
+            // `ActionTilesLayout`・`OfficialSpotView.actions`）
+            ActionTilesLayout() {
                 wishButton
                 tripButton
                 if PhotoTrip.offersDirections(destination) {

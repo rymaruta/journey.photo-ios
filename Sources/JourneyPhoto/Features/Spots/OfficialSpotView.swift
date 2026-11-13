@@ -447,7 +447,8 @@ struct OfficialSpotView: View {
     private var actions: some View {
         // v2 の板 SpotDetail: 同じ幅の札を 8 のすき間で並べる（札は `SpotDetailParts.actionLabel`）
         VStack(spacing: JPSpace.xs) {
-            HStack(spacing: JPSpace.xs) {
+            // 名前が入らない字の大きさでは縦に積む（`ActionTilesLayout`・写真の詳細「次の旅へ」と同じ）
+            ActionTilesLayout() {
                 ForEach(SpotScreen.officialActions(hasCoords: spot.coords != nil), id: \.self) { action in
                     actionButton(action)
                 }

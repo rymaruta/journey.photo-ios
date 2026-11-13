@@ -1801,6 +1801,12 @@ final class ScreenshotTests: XCTestCase {
             let nameProbe = app.descendants(matching: .any)["mypage.name.probe"].firstMatch
             print("measured mypageName tag=\(c.tag) name=\(nameLine.frame) handle=\(handle.exists ? "\(handle.frame)" : "none") "
                   + "probe=\(nameProbe.exists ? (nameProbe.value as? String ?? "") : "none")")
+            // 名前の行の frame は当たりの範囲（Mac run 1213: 1行で高さ 44＝1行 36＋上下の張り出し 4）。
+            // 折り返しても、下の「@ユーザー名」の行に掛からない（run 1213: 3件とも名前の下端＝下の行の上端）
+            if handle.exists {
+                XCTAssertLessThanOrEqual(nameLine.frame.maxY, handle.frame.minY + 0.5,
+                                         "\(c.tag): 名前の当たりが下の行に重なる（\(rows)・handle=\(handle.frame)）")
+            }
             XCTAssertTrue(qr.exists, "\(c.tag): QR の印が無い")
             XCTAssertGreaterThan(nameLine.frame.width, 0, "\(c.tag): 名前の行が潰れた（\(rows)）")
             XCTAssertLessThan(abs(slot.frame.midY - nameLine.frame.midY), 12, "\(c.tag): 丸が名前の段にない（\(rows)）")
@@ -9324,9 +9330,13 @@ final class ScreenshotTests: XCTestCase {
         let topClose = app.buttons["develop.close"].firstMatch
         let safeProbe = app.descendants(matching: .any).matching(identifier: "develop.safeTop").firstMatch
         if expect(counter.exists && topClose.exists && safeProbe.exists, "現像の上の札と × と安全な範囲の値", app) {
-            let safeTop = Double(safeProbe.value as? String ?? "") ?? -1
-            print("measured developTopBar safeTop=\(safeTop) counterMinY=\(counter.frame.minY) closeMinY=\(topClose.frame.minY)")
-            XCTAssertGreaterThan(safeTop, 0, "安全な範囲の上端が取れない")
+            // 値は「top=<安全な範囲の上端> inset=<そこで読める上の幅>」（`DevelopView`）。比べるのは上端
+            let probeValue = safeProbe.value as? String ?? ""
+            let safeTop = probeValue.split(separator: " ").first
+                .flatMap { $0.hasPrefix("top=") ? Double($0.dropFirst(4)) : nil } ?? -1
+            print("measured developTopBar \(probeValue) counterMinY=\(counter.frame.minY) closeMinY=\(topClose.frame.minY)")
+            // 状態バーの無い機種は無いので、上端は 0 より下（0 なら測り方が違う）
+            XCTAssertGreaterThan(safeTop, 0, "安全な範囲の上端が取れない: \(probeValue)")
             XCTAssertGreaterThanOrEqual(Double(counter.frame.minY), safeTop - 0.5, "現像の上の札が状態バーに重なる")
             XCTAssertGreaterThanOrEqual(Double(topClose.frame.minY), safeTop - 0.5, "現像の × が状態バーに重なる")
         }

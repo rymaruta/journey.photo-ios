@@ -48,8 +48,9 @@ struct DevelopView: View {
     @State private var history: [String] = []
     /// 読めないコマを飛ばした直後の札（写真の上のガラス・`DevelopTrips.unreadableNoticeSeconds` で消える）
     @State private var unreadableNotice = false
-    /// UI テストのときだけ: 安全な範囲の上端（画面の座標・`develop.safeTop` の値）
+    /// UI テストのときだけ: 払う画面の上端（画面の座標）と、そこで読める安全な範囲の上の幅（`develop.safeTop` の値）
     @State private var safeTop: CGFloat = 0
+    @State private var safeInset: CGFloat = 0
 
     private let store = DevelopProgressStore()
     private let frames: [String]
@@ -147,19 +148,24 @@ struct DevelopView: View {
                 .padding(.bottom, JPSpace.l)
         }
         // UI テストのときだけ: 安全な範囲の上端（画面の座標）を値で出す。上の札と × がその下にあるかを
-        // 機種の状態バーの高さに頼らず比べる（2026-11-13 確かめ役: `minY ≥ 44` では島の機種で重なっても通る）
+        // 機種の状態バーの高さに頼らず比べる（2026-11-13 確かめ役: `minY ≥ 44` では島の機種で重なっても通る）。
+        // 払う画面の並び（`VStack`）は安全な範囲の中に置かれるので、その上端が安全な範囲の上端。
+        // Mac run 1213 では「上端＋読める安全な範囲の上の幅」を出して 124.0 になり、× の上端 65.5 より下だった
+        // （上端の中で安全な範囲の幅も読めて二重に足していた）。上端と幅を分けて出し、試験は上端と比べる
         .background {
             if PreviewSession.layoutProbe {
                 GeometryReader { g in
-                    let top = g.frame(in: .global).minY + g.safeAreaInsets.top
+                    let top = g.frame(in: .global).minY
+                    let inset = g.safeAreaInsets.top
                     Color.clear
-                        .onAppear { safeTop = top }
+                        .onAppear { safeTop = top; safeInset = inset }
                         .onChange(of: top) { _, value in safeTop = value }
+                        .onChange(of: inset) { _, value in safeInset = value }
                 }
             }
         }
         .overlay(alignment: .bottomLeading) {
-            LayoutProbe(identifier: "develop.safeTop", value: String(format: "%.1f", safeTop))
+            LayoutProbe(identifier: "develop.safeTop", value: String(format: "top=%.1f inset=%.1f", safeTop, safeInset))
         }
     }
 

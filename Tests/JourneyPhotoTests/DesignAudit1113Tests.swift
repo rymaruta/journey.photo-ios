@@ -82,7 +82,7 @@ final class DesignAudit1113Tests: XCTestCase {
     func testPhotoTripActionsUseTheSpotPageParts() async throws {
         let section = try source("Features/PhotoDetail/PhotoTripSection.swift")
         let body = slice(section, from: "var body: some View {", to: ".tripAddSheet($tripAdd)")
-        assertInOrder(["HStack(spacing: JPSpace.xs) {", "wishButton", "tripButton",
+        assertInOrder(["ActionTilesLayout() {", "wishButton", "tripButton",
                        "if PhotoTrip.offersDirections(destination) {", "directionsButton"], in: body, "札の並び")
         XCTAssertFalse(body.contains("ViewThatFits"), "2段の並びが残っている（観光スポットの頁と形が割れる）")
         XCTAssertFalse(section.contains("private func chip("), "前の横の札が残っている")
@@ -94,12 +94,35 @@ final class DesignAudit1113Tests: XCTestCase {
         // 合わせる先（観光スポットの頁）も同じ部品・同じすき間
         let spot = try source("Features/Spots/OfficialSpotView.swift")
         let actions = slice(spot, from: "private var actions: some View {", to: ".tripAddSheet($tripAdd)")
-        XCTAssertTrue(actions.contains("HStack(spacing: JPSpace.xs) {"))
+        XCTAssertTrue(actions.contains("ActionTilesLayout() {"), "観光スポットの頁と写真の詳細で並びが割れている")
         XCTAssertTrue(spot.contains("SpotDetailParts.actionLabel(icon: \"calendar.badge.plus\", title: L(\"旅行プランに入れる\""))
         // 部品は字を切らずに縮める（0.8 まで）・押せる高さは 44 以上
         let parts = try source("Features/Spots/SpotDetailParts.swift")
         XCTAssertTrue(parts.contains(".minimumScaleFactor(WebTheme.minimumScale(forTextSize: JPTypeScale.footnote))"))
         XCTAssertGreaterThanOrEqual(SpotDetailParts.actionHeight, WebTheme.minTapTarget)
+    }
+
+    /// 名前が入らない字の大きさでは縦に積む（Mac run 1213 で測った「旅行プランに入れる」の要る幅と札1つの幅）
+    func testActionTilesStackWhenTheLongestNameDoesNotFit() async throws {
+        let scale = ActionTilesLayout.minScale
+        XCTAssertEqual(scale, 12.0 / 13.0, accuracy: 0.001)
+        XCTAssertEqual(ActionTilesLayout.column(available: 358, count: 3, spacing: 8), 114, accuracy: 0.1)
+        XCTAssertEqual(ActionTilesLayout.column(available: 408, count: 3, spacing: 8), 130.7, accuracy: 0.1)
+        // 既定の字（large）: 390 の画面でも1段（113.0 × 0.923 = 104.3 ≤ 114.0）
+        XCTAssertTrue(ActionTilesLayout.fitsInOneRow(ideals: [55, 113.0, 30], available: 358, spacing: 8, minScale: scale))
+        // 1段上（xLarge）: 390 の画面は積む（130.3 × 0.923 = 120.3 > 114.0）、440 は1段（126.3 × 0.923 = 116.6 ≤ 130.7）
+        XCTAssertFalse(ActionTilesLayout.fitsInOneRow(ideals: [62, 130.3, 34], available: 358, spacing: 8, minScale: scale))
+        XCTAssertTrue(ActionTilesLayout.fitsInOneRow(ideals: [62, 126.3, 34], available: 408, spacing: 8, minScale: scale))
+        // 2段上（xxLarge）と AXL: 440 の画面でも積む
+        XCTAssertFalse(ActionTilesLayout.fitsInOneRow(ideals: [70, 147.3, 38], available: 408, spacing: 8, minScale: scale))
+        XCTAssertFalse(ActionTilesLayout.fitsInOneRow(ideals: [130, 278.0, 60], available: 408, spacing: 8, minScale: scale))
+        // 積んだら札は並びの幅いっぱい: AXL の 278.0 も 408 に入る
+        XCTAssertLessThanOrEqual(278.0 * scale, 408)
+        // 札の名前の縮める下限は並びの決め方と同じ値
+        let parts = try source("Features/Spots/SpotDetailParts.swift")
+        XCTAssertTrue(parts.contains(".minimumScaleFactor(WebTheme.minimumScale(forTextSize: JPTypeScale.footnote))"))
+        XCTAssertTrue(try source("Features/Spots/ActionTilesLayout.swift")
+            .contains("static var minScale: CGFloat { WebTheme.minimumScale(forTextSize: JPTypeScale.footnote) }"))
     }
 
     // MARK: - 3 現像の上の札

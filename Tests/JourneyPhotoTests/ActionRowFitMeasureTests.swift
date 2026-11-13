@@ -40,6 +40,38 @@ final class ActionRowFitMeasureTests: XCTestCase {
         }
     }
 
+    /// 直した並び（`ActionTilesLayout`）: 名前が入る字の大きさでは1段（高さ＝札1つ）、入らなければ縦に積む（札3つ＋すき間2つ）。
+    /// 積んだときは並びの幅いっぱいなので、AXL（accessibility3）の名前も入る
+    func testActionTilesLayoutStacksWhenNamesDoNotFit() {
+        for size in Self.sizes {
+            let need = Self.titles.map { title in
+                fit(Text(title).font(SpotDetailParts.actionTitleFont).lineLimit(1).fixedSize()
+                        .environment(\.dynamicTypeSize, size)).width
+            }.max() ?? 0
+            for row in Self.rowWidths {
+                let tiles = ActionTilesLayout() {
+                    SpotDetailParts.actionLabel(icon: "flag", title: Self.titles[0], filled: false)
+                    SpotDetailParts.actionLabel(icon: "calendar.badge.plus", title: Self.titles[1], filled: false)
+                    SpotDetailParts.actionLabel(icon: "arrow.triangle.turn.up.right.diamond", title: Self.titles[2], filled: false)
+                }.environment(\.dynamicTypeSize, size)
+                let height = fit(tiles, width: row).height
+                let oneTile = fit(SpotDetailParts.actionLabel(icon: "flag", title: Self.titles[1], filled: false)
+                    .environment(\.dynamicTypeSize, size), width: row).height
+                let scale = ActionTilesLayout.minScale
+                let column = ActionTilesLayout.column(available: row, count: 3, spacing: JPSpace.xs)
+                let oneRow = need * scale <= column + 0.5
+                print(String(format: "measured actionTiles size=%@ row=%.0f need=%.1f height=%.1f tile=%.1f layout=%@",
+                             "\(size)", row, need, height, oneTile, oneRow ? "row" : "stack"))
+                if oneRow {
+                    XCTAssertEqual(height, oneTile, accuracy: 0.5, "\(size) \(row): 入るのに積んでいる")
+                } else {
+                    XCTAssertGreaterThanOrEqual(height, oneTile * 3 + JPSpace.xs * 2 - 0.5, "\(size) \(row): 入らないのに1段")
+                    XCTAssertLessThanOrEqual(need * scale, row + 0.5, "\(size) \(row): 積んでも入らない")
+                }
+            }
+        }
+    }
+
     // MARK: - 前の写真の詳細の並び（2026-11-13 の直しの前・`PhotoTripSection` の `chip`）
 
     private func oldChip(_ icon: String, _ title: String) -> some View {

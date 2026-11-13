@@ -22,11 +22,11 @@ struct LayoutProbe: View {
     }
 }
 
-/// 同じ幅に割った行動の札（`SpotDetailParts.actionLabel`）に、いちばん長い名前が切れずに入るか。
+/// 行動の札（`SpotDetailParts.actionLabel`・並びは `ActionTilesLayout`）に、いちばん長い名前が切れずに入るか。
 ///
-/// 値は `need=<名前の要る幅> column=<札1つの幅> minScale=<縮める下限> fits=<yes|no>`。
-/// `need` は今の字の大きさで1行に組んだ幅（縮める前）、`column` は並びの幅を札の数で割った幅
-/// （すき間 `JPSpace.xs` を引く）。`fits` は `need × minScale ≤ column`（部品の `minimumScaleFactor` で入るか）
+/// 値は `need=<名前の要る幅> column=<札1つの幅> minScale=<縮める下限> layout=<row|stack> fits=<yes|no>`。
+/// `need` は今の字の大きさで1行に組んだ幅（縮める前）。`column` は1段に並べるなら等分した幅（すき間 `JPSpace.xs` を引く）、
+/// 縦に積むなら並びの幅（`ActionTilesLayout.fitsInOneRow` と同じ決め方）。`fits` は `need × minScale ≤ column`
 struct ActionRowFitProbe: View {
     let identifier: String
     let titles: [String]
@@ -68,16 +68,19 @@ struct ActionRowFitProbe: View {
         }
     }
 
-    /// 札1つの幅（並びの幅から、すき間を引いて等分）
+    /// 1段に並べたときの札1つの幅（並びの幅から、すき間を引いて等分）
     nonisolated static func column(rowWidth: CGFloat, count: Int) -> CGFloat {
-        guard count > 0 else { return 0 }
-        return (rowWidth - JPSpace.xs * CGFloat(count - 1)) / CGFloat(count)
+        ActionTilesLayout.column(available: rowWidth, count: count, spacing: JPSpace.xs)
     }
 
     static func describe(need: CGFloat, rowWidth: CGFloat, count: Int) -> String {
-        let column = column(rowWidth: rowWidth, count: count)
-        let scale = WebTheme.minimumScale(forTextSize: JPTypeScale.footnote)
-        let fits = need * scale <= column + 0.5
-        return String(format: "need=%.1f column=%.1f minScale=%.3f fits=%@", need, column, scale, fits ? "yes" : "no")
+        let scale = ActionTilesLayout.minScale
+        // 並びと同じ決め方（いちばん長い名前を下限まで縮めて、等分した幅に入れば1段）
+        let row = ActionTilesLayout.fitsInOneRow(ideals: Array(repeating: need, count: max(count, 1)),
+                                                 available: rowWidth, spacing: JPSpace.xs, minScale: scale)
+        let placed = row ? column(rowWidth: rowWidth, count: count) : rowWidth
+        let fits = need * scale <= placed + 0.5
+        return String(format: "need=%.1f column=%.1f minScale=%.3f layout=%@ fits=%@",
+                      need, placed, scale, row ? "row" : "stack", fits ? "yes" : "no")
     }
 }
