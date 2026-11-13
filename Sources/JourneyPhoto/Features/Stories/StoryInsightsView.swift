@@ -99,6 +99,9 @@ struct StoryInsightsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: JPSpace.m) {
                 VStack(alignment: .leading, spacing: JPSpace.m) {
+                    // 閉じるは左上のシートの「閉じる」（2026-11-13 owner 承認・#187。前は v2 の板どおり見出しの行の右端）。
+                    // 上のバーは隠しているので中身の頭に置く（`.toolbar(.hidden, for: .navigationBar)`）
+                    SheetCloseButton(onContent: true)
                     header
                     if let refreshNotice {
                         Text(refreshNotice)
@@ -193,13 +196,6 @@ struct StoryInsightsView: View {
             }
             .padding(.top, JPSpace.xxs)
             Spacer(minLength: 0)
-            // v2 StoryInsights: 「閉じる」は**見出しと同じ行の右端**（板の header の中）。
-            // 上のバーは隠している（`body` の `.toolbar(.hidden, for: .navigationBar)`）
-            SheetCloseButton()
-                .font(JPFont.bodyEmphasis)
-                .foregroundStyle(WebTheme.text)
-                .frame(minHeight: WebTheme.minTapTarget)
-                .padding(.leading, JPSpace.xs)
         }
     }
 

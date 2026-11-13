@@ -289,9 +289,9 @@ final class PostScreensDesign183Tests: XCTestCase {
         XCTAssertFalse(view.contains("ProgressView()"), "読み込み中が回る印のまま")
         XCTAssertFalse(view.contains("cornerRadius: 6"), "格子に角が残っている")
         XCTAssertTrue(view.contains("Rectangle().strokeBorder(Color.white, lineWidth: JPStroke.emphasis)"))
-        // 閉じるは黒地の上の文字ボタン＝真鍮
-        let close = slice(view, from: "ToolbarItem(placement: .topBarTrailing) {", to: "inspiredPicker.close")
-        XCTAssertTrue(close.contains(".foregroundStyle(WebTheme.accent)"))
+        // 閉じるは左上のシートの「閉じる」（2026-11-13 owner 承認・#187。前は右上の真鍮の字）
+        let close = slice(view, from: "ToolbarItem(placement: .cancellationAction) {", to: "inspiredPicker.close")
+        XCTAssertTrue(close.contains("SheetCloseButton()"))
         // 下の段で外せる
         let bar = slice(view, from: "private var selectedBar: some View {", to: "private func tile(")
         assertInOrder(["onRemove()", "dismiss()"], in: bar, "下の段の外す")

@@ -99,14 +99,16 @@ final class StoryV2RingsFixTests: XCTestCase {
         XCTAssertTrue(viewer.contains("ownCircle(symbol: \"\(StoryInsightsView.replySymbol)\")"))
     }
 
-    // MARK: - 25 「閉じる」は見出しの行の右端
+    // MARK: - 25 「閉じる」は左上（2026-11-13 owner 承認・#187。前は見出しの行の右端）
 
     func testInsightsCloseSitsInTheHeaderRow() throws {
         let insights = try source("Features/Stories/StoryInsightsView.swift")
         let header = slice(insights, from: "private var header: some View", to: "private var postedLine")
         assertInOrder(["HStack(alignment: .top", "StoryPoster(story: story)", "ストーリーの反応",
-                       "Spacer(minLength: 0)", "SheetCloseButton()",
-                       ".frame(minHeight: WebTheme.minTapTarget)"], in: header, "見出しの行")
+                       "Spacer(minLength: 0)"], in: header, "見出しの行")
+        XCTAssertFalse(header.contains("SheetCloseButton"), "閉じるが見出しの行の右端に残っている")
+        let head = slice(insights, from: "var body: some View", to: "private var header: some View")
+        assertInOrder(["SheetCloseButton(onContent: true)", "header"], in: head, "閉じるは見出しの上の左")
         // 上のバーは隠す（呼び出し側のバーの「閉じる」と2つ出さない）
         let body = slice(insights, from: "var body: some View", to: "private var header: some View")
         XCTAssertTrue(body.contains(".toolbar(.hidden, for: .navigationBar)"), "上のバーに2つ目の「閉じる」が出る")

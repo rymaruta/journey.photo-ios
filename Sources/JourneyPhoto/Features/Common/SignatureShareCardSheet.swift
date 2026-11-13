@@ -131,9 +131,8 @@ struct SignatureShareCardSheet: View {
             .toolbar {
                 // 投稿の完了では「閉じる」は下に置く（資料の模型・頭は「投稿しました」の見出し）
                 if posted == nil {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button(L("閉じる", "Close")) { dismiss() }
-                    }
+                    // 閉じるは左上（2026-11-13 owner 承認・#187・右上は決める操作だけ）
+                    ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
                 }
             }
             .toolbar(posted == nil ? .visible : .hidden, for: .navigationBar)

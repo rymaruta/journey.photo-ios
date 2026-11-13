@@ -1572,7 +1572,7 @@ final class ScreenshotTests: XCTestCase {
         _ = XCTWaiter.wait(for: [expectation(for: ready, evaluatedWith: share)], timeout: 20)
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "22c-旅をストーリーに（切手と消印・写真に重ねる）")
-        XCTAssertTrue(app.buttons["閉じる"].firstMatch.exists, "ストーリーにの右上に閉じるが無い")
+        XCTAssertTrue(app.buttons["閉じる"].firstMatch.exists, "ストーリーにの左上に閉じるが無い")
 
         // 払って次の型（フィルムの帯）へ。払うのが効かなければ › で
         let stage = app.descendants(matching: .any)["travelStory.stage"].firstMatch

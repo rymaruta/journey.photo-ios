@@ -44,7 +44,10 @@ struct VisitedPrefectureCard: View {
     // MARK: - 見出し
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
+        // 閉じるは左上のシートの「閉じる」（2026-11-13 owner 承認・#187。前は右の真鍮の字だけ）
+        HStack(alignment: .top, spacing: JPSpace.s) {
+            SheetCloseButton(onContent: true, action: onClose)
+                .accessibilityIdentifier("visitedMap.card.close")
             VStack(alignment: .leading, spacing: JPSpace.xxs) {
                 if let region = PrefectureRegions.region(of: prefecture) {
                     Text(L(region.name, PrefectureRegions.englishName(region)))
@@ -57,14 +60,6 @@ struct VisitedPrefectureCard: View {
                     .accessibilityAddTraits(.isHeader)
             }
             Spacer(minLength: 0)
-            Button(action: onClose) {
-                Text(VisitedMapText.close)
-                    .font(JPFont.body)
-                    .foregroundStyle(WebTheme.accent)
-                    .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("visitedMap.card.close")
         }
     }
 

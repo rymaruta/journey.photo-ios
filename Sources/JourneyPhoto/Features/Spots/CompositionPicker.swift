@@ -58,27 +58,18 @@ struct CompositionPicker: View {
     // MARK: - 見出し
 
     private var header: some View {
-        HStack {
-            // v2: 見出しは明朝 22、閉じるは白 8% の丸（投稿のシートと同じ形）
+        // v2: 見出しは明朝 22。閉じるは見出しの左のシートの「閉じる」（2026-11-13 owner 承認・#187。前は右の白 8% の丸の ×）
+        HStack(spacing: JPSpace.s) {
+            SheetCloseButton(onContent: true)
+                .accessibilityIdentifier("composition.close")
             Text(L("構図", "Composition"))
                 .font(JPFont.cardTitle)
                 .foregroundStyle(WebTheme.text)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(WebTheme.foreground)
-                    .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                    .background(Color.white.opacity(0.08), in: Circle())
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Labels.Common.close)
-            .accessibilityIdentifier("composition.close")
         }
-        .padding(.leading, 20)
-        .padding(.trailing, 8)
+        .padding(.leading, 8)
+        .padding(.trailing, 20)
         .padding(.top, 16)
     }
 

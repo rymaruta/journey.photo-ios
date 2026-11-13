@@ -325,7 +325,7 @@ struct TripLegSheet: View {
         }
         .webScreen()
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { SheetCloseButton() }
+            ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
         }
     }
 
@@ -430,7 +430,7 @@ struct TripLegSheet: View {
         }
         .webScreen()
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { SheetCloseButton() }
+            ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
         }
         .onDisappear { task?.cancel() }
     }

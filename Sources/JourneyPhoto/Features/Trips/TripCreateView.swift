@@ -222,7 +222,8 @@ struct TripCreatePickStep: View {
         .navigationTitle(L("旅行プランを作る", "New trip"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            // 閉じるは左上（2026-11-13 owner 承認・#187・右上は決める操作だけ）
+            ToolbarItem(placement: .cancellationAction) {
                 SheetCloseButton().disabled(model.saving)
             }
         }
