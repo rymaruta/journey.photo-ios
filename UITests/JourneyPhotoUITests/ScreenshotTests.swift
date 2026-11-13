@@ -3395,10 +3395,20 @@ final class ScreenshotTests: XCTestCase {
             pushes += 1
         }
         if leg.exists, leg.isHittable {
+            let legLine = "TRIPLEG row label=\(leg.label) before[\(dragCounts(app))]"
+            print(legLine)
+            XCTContext.runActivity(named: legLine) { _ in }
+            let tapped = Date()
             leg.tap()
-            // 名前で探し直す（最大で数秒）のを待つ
-            Thread.sleep(forTimeInterval: 6)
-            let trail = dragCounts(app)
+            // 名前で探し直す（最大で数秒）のを待つ。少しずつ読んで、段の印（LT・LM・LR・LX・M:）をその都度残す（run 1208）
+            var trail = dragCounts(app)
+            while !trail.contains("M:"), Date().timeIntervalSince(tapped) < 6 {
+                Thread.sleep(forTimeInterval: 0.5)
+                trail = dragCounts(app)
+                let pollLine = String(format: "TRIPLEG poll t+%.1fs trail[%@]", Date().timeIntervalSince(tapped), trail)
+                print(pollLine)
+                XCTContext.runActivity(named: pollLine) { _ in }
+            }
             let mapsLine = "TRIPLEG maps trail[\(trail)]"
             print(mapsLine)
             XCTContext.runActivity(named: mapsLine) { _ in }

@@ -58,12 +58,15 @@ struct TripLegRow: View {
 
     /// 行を押したとき。長い移動はシート、ほかは Apple のマップ
     private func tap() {
+        // 見本のときだけ: 行の押下が届いた（形・探している間か）。M: が出ない回をどの段で止まったかで分ける（run 1208）
+        TripLegMaps.probe("LT:\(state)\(opening ? ",busy" : "")")
         guard state != .long else { details(); return }
         guard !opening else { return }
         opening = true
         let mode = mode
         // 圏外では名前で探し直さない（返らずに待つだけ）。丸めた座標に名前を付けて渡す
         let search = !offline
+        TripLegMaps.probe("LM:\(mode.rawValue),s\(search ? 1 : 0)")
         openTask = Task { @MainActor in
             defer { opening = false }
             await TripLegMaps.open(leg, mode: mode, search: search)
@@ -477,6 +480,14 @@ enum TripLegMaps {
         return await (from, to)
     }
 
+    /// 見本（UI テスト・Debug）のときだけ、区間の行の段の印を出来事の並びに残す（Release では何もしない）。
+    /// `LT` 行の押下が届いた・`LM` 開く手段を決めた・`LR` 両端を探し終えた（かかった ms）・`LX` 取り消しで止めた
+    static func probe(_ event: @autoclosure () -> String) {
+        #if DEBUG
+        if TripPlanFixture.isOn { TripPlanFixtureCounter.shared.mark(event()) }
+        #endif
+    }
+
     /// 開く手段の鍵（Apple の地図の `launchOptions`）
     nonisolated static func launchOptions(_ mode: TripTravel.Mode) -> [String: Any] {
         [MKLaunchOptionsDirectionsModeKey: TravelEstimator.launchMode(mode)]
@@ -484,8 +495,13 @@ enum TripLegMaps {
 
     /// 🔴 **探している間に画面を離れた（取り消された）回は開かない**（押していないものが開いたように見える・`SpotDirections`）
     static func open(_ leg: TripTravel.Leg, mode: TripTravel.Mode, search: Bool) async {
+        let began = Date()
         let (origin, target) = await resolve(leg, search: search)
-        guard SpotDirections.shouldOpen(cancelled: Task.isCancelled, stillWanted: true) else { return }
+        probe("LR:\(Int(Date().timeIntervalSince(began) * 1000))ms")
+        guard SpotDirections.shouldOpen(cancelled: Task.isCancelled, stillWanted: true) else {
+            probe("LX:cancelled")
+            return
+        }
         #if DEBUG
         // UI テストの見本では地図のアプリへ出ない（試験の画面から出てしまう）。開いた手段を数えに残す
         if TripPlanFixture.isOn {
