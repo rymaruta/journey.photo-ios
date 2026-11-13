@@ -69,7 +69,10 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    "ScreenshotTests/testMeasuresTripPlanDragTrail", "ScreenshotTests/testMeasuresTripPlanDragFirstTry",
                    # 動かす速さで (b) の率と、落とす先の線が残るかを比べる（各 10 分ほど）
                    "ScreenshotTests/testMeasuresTripPlanDragVelocitySlow", "ScreenshotTests/testMeasuresTripPlanDragVelocityDefault",
-                   "ScreenshotTests/testMeasuresTripPlanDragVelocityFast"]
+                   "ScreenshotTests/testMeasuresTripPlanDragVelocityFast",
+                   # 2026-11-13（札 #594「アプリ全体を軽くする」の下調べ）: よく使う操作を一通り流し、段ごとの停止・body の回数・メモリ・積みを出す。
+                   # `screens=testUsageSurveyProbe`（1 本 5 分以内）
+                   "PerformanceTests/testUsageSurveyProbe"]
 
 # クラスの直下（字下げ4つ）の関数だけを区切りにする。中の入れ子の関数は本体に含める
 MEMBER = re.compile(r"^    (?:@\w+\s+)*(?:(?:private|fileprivate|override|static|final)\s+)*func\s+(\w+)\s*\(", re.M)

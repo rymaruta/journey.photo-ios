@@ -113,6 +113,8 @@ struct PhotoMapView: View {
     @State private var spotSelectTicks = 0
 
     var body: some View {
+        // UI テストのときだけ: body の評価を数える（`PerfTimeline`・札 #594 の下調べ。無効なら何もしない）
+        let _ = PerfTimeline.shared.count("body.map")
         VStack(spacing: 0) {
             searchField
             // カテゴリは写真の分類。「スポット」の札では効かないので出さない

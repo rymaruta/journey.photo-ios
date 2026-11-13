@@ -791,6 +791,11 @@ for _named in ("testLaunchProbe", "testBodyEvaluationCounts"):
         fail(f"pick-ui-tests.py の ONLY_WHEN_NAMED に PerformanceTests/{_named} がありません（全部の回で流れてしまう）")
     if f"func {_named}()" not in _perf_src:
         fail(f"PerformanceTests に {_named} がありません")
+# 札 #594 の下調べ（よく使う操作を一通り・2026-11-13）も、UI テストに実在し、全部の回では流れない
+if "PerformanceTests/testUsageSurveyProbe" not in _pick.ONLY_WHEN_NAMED:
+    fail("pick-ui-tests.py の ONLY_WHEN_NAMED に PerformanceTests/testUsageSurveyProbe がありません（全部の回で流れてしまう）")
+if "func testUsageSurveyProbe()" not in _perf_src:
+    fail("PerformanceTests に testUsageSurveyProbe がありません")
 
 # ---- 画面写真の非公開の置き場（2026-11-12 owner・#451 を守ったまま）--------------------
 # 公開リポジトリなので、画面写真は公開の枝・成果物に置かない。置くのは非公開の S3 だけで、

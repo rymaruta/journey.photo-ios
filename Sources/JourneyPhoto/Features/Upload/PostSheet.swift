@@ -40,6 +40,8 @@ struct PostSheet: View {
     }
 
     var body: some View {
+        // UI テストのときだけ: body の評価を数える（`PerfTimeline`・札 #594 の下調べ。無効なら何もしない）
+        let _ = PerfTimeline.shared.count("body.postSheet")
         // v2 PostSheet: 下から出る短いシート。左に明朝 26 の見出し、右に × の丸、
         // 4つの行き先を「52 の角丸の札＋明朝の題＋一行の説明」の行で（行の間は白 8% の線）
         VStack(alignment: .leading, spacing: 0) {

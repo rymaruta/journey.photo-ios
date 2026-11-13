@@ -42,6 +42,8 @@ struct DMInboxView: View {
     @State private var trips: [TripInboxItem] = []
 
     var body: some View {
+        // UI テストのときだけ: body の評価を数える（`PerfTimeline`・札 #594 の下調べ。無効なら何もしない）
+        let _ = PerfTimeline.shared.count("body.dmInbox")
         Group {
             if auth.isResolving {
                 ScrollView { JPLoadingState(kind: .people).padding(.horizontal, JPSpace.gutter) }

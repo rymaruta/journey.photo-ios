@@ -115,6 +115,8 @@ struct UploadView: View {
     }
 
     var body: some View {
+        // UI テストのときだけ: body の評価を数える（`PerfTimeline`・札 #594 の下調べ。無効なら何もしない）
+        let _ = PerfTimeline.shared.count("body.upload")
         Group {
             if auth.isResolving {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
