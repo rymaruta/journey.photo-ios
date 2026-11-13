@@ -3387,14 +3387,44 @@ final class ScreenshotTests: XCTestCase {
         }
 
         // 区間の行を押すと Apple のマップ（2026-11-12）。見本では地図のアプリへ出ず、開いた手段を数えに残す（`TripLegMaps`）
-        let leg = app.descendants(matching: .any).matching(identifier: "trip.leg").firstMatch
+        //
+        // 🔴 **押すのは、上の帯（ナビゲーションバー）と下のタブの間に丸ごと見えている行だけ**（run 1208・1212）。
+        // `firstMatch` の行（1 日目の最初の区間）は運んだあと {16, 37.7, 364×44} で、上の帯（y 62〜116）の下に隠れていた。
+        // それでも `isHittable` は真で、押した点（y 約 60）は画面の上の端に落ち、行のボタンは呼ばれなかった
+        // （段の印 `LT` が 1 つも無い・同じ所にある「i」も開かなかった）。見えている枠を数で見て選ぶ
+        let legs = app.descendants(matching: .any).matching(identifier: "trip.leg")
+        let mores = app.buttons.matching(identifier: "trip.leg.more")
+        let window = app.windows.firstMatch.frame
+        func visibleBand() -> (top: CGFloat, bottom: CGFloat) {
+            let bar = app.navigationBars.firstMatch
+            let tabs = app.tabBars.firstMatch
+            return (bar.exists ? bar.frame.maxY : window.minY, tabs.exists ? tabs.frame.minY : window.maxY)
+        }
+        func fullyVisible(_ query: XCUIElementQuery) -> XCUIElement? {
+            let band = visibleBand()
+            for i in 0..<query.count {
+                let element = query.element(boundBy: i)
+                let frame = element.frame
+                if frame.minY >= band.top, frame.maxY <= band.bottom { return element }
+            }
+            return nil
+        }
+        var shown = fullyVisible(legs)
         var pushes = 0
-        while leg.exists, !leg.isHittable, pushes < 4 {
-            app.swipeDown()
+        while shown == nil, legs.count > 0, pushes < 6 {
+            // 上に隠れているなら下へ（swipeDown で上の方が出る）。先に 3 回、だめなら逆へ 3 回
+            if pushes < 3 { app.swipeDown() } else { app.swipeUp() }
             Thread.sleep(forTimeInterval: 1)
             pushes += 1
+            shown = fullyVisible(legs)
         }
-        if leg.exists, leg.isHittable {
+        let band = visibleBand()
+        let pickLine = "TRIPLEG pick band=\(Int(band.top))-\(Int(band.bottom)) legs=\(legs.count) pushes=\(pushes) "
+            + "frame=\(shown.map { "\(Int($0.frame.minX)),\(Int($0.frame.minY)) \(Int($0.frame.width))x\(Int($0.frame.height))" } ?? "nil")"
+        print(pickLine)
+        XCTContext.runActivity(named: pickLine) { _ in }
+        XCTAssertNotNil(shown, "区間の行が画面の見える所に出ない")
+        if let leg = shown {
             let legLine = "TRIPLEG row label=\(leg.label) before[\(dragCounts(app))]"
             print(legLine)
             XCTContext.runActivity(named: legLine) { _ in }
@@ -3412,11 +3442,11 @@ final class ScreenshotTests: XCTestCase {
             let mapsLine = "TRIPLEG maps trail[\(trail)]"
             print(mapsLine)
             XCTContext.runActivity(named: mapsLine) { _ in }
+            XCTAssertTrue(trail.contains("LT:"), "区間の行を押しても行のボタンが呼ばれていない: \(trail)")
             XCTAssertTrue(trail.contains("M:"), "区間の行を押しても Apple のマップを開いていない: \(trail)")
         }
-        // 区間のシート（行の右端の「i」・出る時刻の目安と Google マップ）
-        let more = app.buttons["trip.leg.more"].firstMatch
-        if more.exists, more.isHittable {
+        // 区間のシート（行の右端の「i」・出る時刻の目安と Google マップ）。同じく見えている「i」だけを押す
+        if let more = fullyVisible(mores) {
             more.tap()
             let apple = app.buttons["trip.leg.apple"].firstMatch
             if apple.waitForExistence(timeout: 10) {
