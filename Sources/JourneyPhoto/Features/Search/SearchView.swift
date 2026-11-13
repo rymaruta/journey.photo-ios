@@ -64,6 +64,8 @@ struct SearchView: View {
     @State private var quizAnswered = false
 
     var body: some View {
+        // 探すの重さの記録（UI テストのときだけ・2026-11-13 札 #590）: body の評価回数を、いまの語ごとに数える
+        let _ = PerfRecorder.shared.searchBody(query: query)
         VStack(spacing: 0) {
             // 検索中も探す口と種類の切り替えを画面上部に残す。
             // 結果を下まで見た後に、上へ戻らず語と種類を変えられる。
@@ -1012,13 +1014,16 @@ struct SearchView: View {
     /// 季節・時間帯を選んでいるときは、その季節・時間帯の案内を持つ撮影地に絞る（`ShootingTime`）。
     /// **語が無くても出す**——「秋」だけ選べば、秋の案内のある撮影地が並ぶ（場所の図鑑が主役・戦略の計画6）
     private var spotHits: [OfficialSpot] {
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let filter = model.timeFilter
-        guard model.scope.showsSpots, !q.isEmpty || !filter.isEmpty else { return [] }
-        // **下書きは出さない**（地図の一覧・ホームと同じ。「撮影地ガイド」と名乗らせない）
-        let published = officialSpots.filter { !$0.isDraft }
-        let matched = q.isEmpty ? published : OfficialSpotIndex.matches(published, query: q, aliases: spotAliases)
-        return ShootingTime.spots(matched, filter: filter)
+        // 呼ばれた回数と時間を語ごとに数える（UI テストのときだけ・2026-11-13 札 #590）。中身は変えない
+        PerfRecorder.shared.searchSpotHits { () -> [OfficialSpot] in
+            let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            let filter = model.timeFilter
+            guard model.scope.showsSpots, !q.isEmpty || !filter.isEmpty else { return [] }
+            // **下書きは出さない**（地図の一覧・ホームと同じ。「撮影地ガイド」と名乗らせない）
+            let published = officialSpots.filter { !$0.isDraft }
+            let matched = q.isEmpty ? published : OfficialSpotIndex.matches(published, query: q, aliases: spotAliases)
+            return ShootingTime.spots(matched, filter: filter)
+        }
     }
 
     /// 撮影スポットの節を開いた鍵（語と絞り込みが変わったら畳む）

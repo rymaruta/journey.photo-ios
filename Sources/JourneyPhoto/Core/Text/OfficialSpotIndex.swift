@@ -18,6 +18,10 @@ enum OfficialSpotIndex {
     /// `aliases` は slug → 別名（`OfficialSpotService.fetchAliases`・無ければ空）
     static func matches(_ spots: [OfficialSpot], query: String, limit: Int? = nil,
                         aliases: [String: [String]] = [:]) -> [OfficialSpot] {
+        // 当てる1回の区間（`PerfSignpost.spotMatch`・2026-11-13 札 #590）。**UI テストのときだけ**（Debug・`-JPPreviewPerfProbe`）。
+        // 中身は変えない
+        let signpost = PerfRecorder.shared.isEnabled ? PerfSignpost.begin(.spotMatch) : nil
+        defer { if let signpost { PerfSignpost.end(signpost) } }
         let needle = spotName(query)
         guard !needle.isEmpty else { return [] }
         let ranked = spots.enumerated()

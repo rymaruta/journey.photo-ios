@@ -47,6 +47,9 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    "PerformanceTests/testPhotoDetailMemory", "PerformanceTests/testStoryReelMemory",
                    # 2026-11-04（札 #435・#429）: 起動直後の動きの記録（`perf.probe`）と body の評価回数。名指しした回だけ
                    "PerformanceTests/testLaunchProbe", "PerformanceTests/testBodyEvaluationCounts",
+                   # 2026-11-13（札 #590「探すの検索が重い」）: 探すで1字ずつ打ったときの body の回数・撮影スポットを当てた ms・止まった長さ。
+                   # `screens=testSearchTypingProbe`（または `PerformanceTests`）
+                   "PerformanceTests/testSearchTypingProbe",
                    # 2026-10-31（#430）: とおまわり号の描画を測る試験（4 本・計 6 分ほど）。直している間だけ `screens=testMeasuresCamperRender` で流す
                    "ScreenshotTests/testMeasuresCamperRenderExterior", "ScreenshotTests/testMeasuresCamperRenderNight",
                    "ScreenshotTests/testMeasuresCamperRenderRoom", "ScreenshotTests/testMeasuresCamperRenderRoomNight",

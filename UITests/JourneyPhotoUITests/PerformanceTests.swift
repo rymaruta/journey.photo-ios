@@ -13,6 +13,7 @@ import XCTest
 /// - ホームを送ったときのメモリ（`XCTMemoryMetric`）
 /// - ストーリーの輪のある画面（ホームの上の輪の列）のメモリ
 /// - 写真の詳細を開いて戻るときのメモリ（大きな写真）
+/// - 探すで1字ずつ打ったときの、1字あたりの body の回数・撮影スポットを当てた回数と ms・止まった長さ（`testSearchTypingProbe`・札 #590）
 ///
 /// 🔴 **シミュレータの Debug ビルドの数。** 実機・Release とは違う。比べるのは同じ条件の前後だけ。
 /// 写真は本物の公開の写真を通信で読む（見本の通信 `-JPPreviewLocalBackend` は API だけを端末の中で答える）ので、
@@ -83,7 +84,10 @@ final class PerformanceTests: XCTestCase {
          ("samples", reading.samples.joined(separator: ";").replacingOccurrences(of: " ", with: "_")),
          ("bodyHome", "\(reading.bodyCount("home"))"),
          ("bodyMyPage", "\(reading.bodyCount("myPage"))"),
-         ("bodyPhotoDetail", "\(reading.bodyCount("photoDetail"))")]
+         ("bodyPhotoDetail", "\(reading.bodyCount("photoDetail"))"),
+         // 探す（2026-11-13 札 #590）: body の評価回数と、撮影スポットを語で当てた 回数/合計/最大
+         ("bodySearch", "\(reading.bodyCount("search"))"),
+         ("spot", reading.section("spot"))]
     }
 
     private func configuredApp(localBackend: Bool, stories: Bool = false) -> XCUIApplication {
@@ -222,6 +226,95 @@ final class PerformanceTests: XCTestCase {
         XCTAssertTrue(photo.waitForExistence(timeout: 10), "ホームに戻らない")
         Thread.sleep(forTimeInterval: 1)
         perf(perfProbeFields("backFromDetail", readProbe(app, label: "backFromDetail")))
+    }
+
+    // MARK: - 探す（2026-11-13 札 #590「探すの検索が重い」）
+
+    /// 1字ずつ打つ語。「京」→「京都」→（消す）→「富」→「富士」→「富士山」→（消す）
+    private static let searchWords = ["京都", "富士山"]
+
+    /// 1字ごとの語（アプリの `srch=` の語と同じ）
+    private static var searchPrefixes: [String] {
+        searchWords.flatMap { word in (1...word.count).map { String(word.prefix($0)) } }
+    }
+
+    /// **探すで1字ずつ打ったときの重さ**（2026-11-13 札 #590・owner「探すの検索がめっちゃ重い」）。合否は付けない。
+    ///
+    /// 探すを開き、撮影スポットの索引（本番 約 3,900 件）を読み終えてから、「京」「京都」「富士山」を1字ずつ打つ（3回）。
+    /// アプリの記録（`perf.probe` の `srch=`・`PerfRecorder.searchBody`）から、**1字あたり**の
+    /// - body の評価回数（`SearchView`）
+    /// - 撮影スポットを語で当てた回数（`SearchView.spotHits`）と合計・最大 ms
+    /// - 画面の刻みの間隔の最大 ms（メインスレッドが止まった長さ）と、100ms を超えた回数
+    ///
+    /// を取り、`measured [Search 京 body, count] …` の行（`SearchProbeMetric`）と `PERF test=testSearchTypingProbe …` の行に残す。
+    /// 当てる関数（`OfficialSpotIndex.matches`）の区間 `SpotMatch` も `XCTOSSignpostMetric` で取る。
+    /// 止まっている最中の積み（`samples=`）は `PERF-PROBE` の行に残る
+    func testSearchTypingProbe() {
+        let app = configuredApp(localBackend: true)
+        enablePerfProbe(app)
+        app.launch()
+        attachPerfProbeOnFailure(app)
+        passConsent(app)
+        waitForHomePhoto(app)
+
+        let searchTab = app.tabBars.firstMatch.buttons["探す"]
+        XCTAssertTrue(searchTab.waitForExistence(timeout: 10), "探すのタブが無い")
+        searchTab.tap()
+        let field = app.textFields["search.field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 15), "探す欄が出ない")
+        // 撮影スポットの索引（約 1.5MB）を読み終えるまで待つ（読む前に打つと、当てる相手が空で軽く見える）
+        Thread.sleep(forTimeInterval: 8)
+        perf(perfProbeFields("searchOpen", readProbe(app, label: "searchOpen")))
+
+        let box = SearchProbeBox(prefixes: Self.searchPrefixes)
+        let metrics: [XCTMetric] = [
+            XCTOSSignpostMetric(subsystem: Self.signpostSubsystem, category: Self.signpostCategory, name: "SpotMatch"),
+            SearchProbeMetric(box: box),
+        ]
+        var round = 0
+        measure(metrics: metrics, options: Self.options(3)) {
+            round += 1
+            let before = SearchWindowReading.all(readProbe(app, label: "search\(round)Before")).count
+            for word in Self.searchWords {
+                field.tap()
+                XCTAssertTrue(waitForFocus(field, app), "\(round) 回目: 探す欄に焦点が来ない")
+                for ch in word {
+                    field.typeText(String(ch))
+                    // 人の検索の待ち（300ms）と返事、見えない要素の更新（0.5 秒ごと）を待つ
+                    Thread.sleep(forTimeInterval: 1.5)
+                }
+                let clear = app.buttons["search.clear"].firstMatch
+                XCTAssertTrue(clear.waitForExistence(timeout: 10), "\(round) 回目: 消す「×」が無い")
+                clear.tap()
+                Thread.sleep(forTimeInterval: 1.5)
+            }
+            let reading = readProbe(app, label: "search\(round)")
+            let windows = Array(SearchWindowReading.all(reading).dropFirst(before))
+            var rows: [SearchWindowReading] = []
+            for prefix in Self.searchPrefixes {
+                let w = windows.first { $0.query == prefix } ?? SearchWindowReading(query: prefix)
+                rows.append(w)
+                perf([("stage", "round\(round)"), ("q", prefix), ("found", windows.contains { $0.query == prefix } ? "1" : "0"),
+                      ("body", "\(w.bodies)"), ("spotHits", "\(w.spotHits)"), ("spotTotalMs", "\(w.spotTotalMs)"),
+                      ("spotMaxMs", "\(w.spotMaxMs)"), ("gapMaxMs", "\(w.gapMaxMs)"), ("stalls", "\(w.stalls)")],
+                     test: "testSearchTypingProbe")
+            }
+            box.push(rows)
+        }
+    }
+
+    /// 欄に焦点が来るまで待つ（`ScreenshotTests.waitForKeyboardFocus` と同じ見方。来なければ false）
+    private func waitForFocus(_ field: XCUIElement, _ app: XCUIApplication, timeout: TimeInterval = 6) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if field.responds(to: NSSelectorFromString("hasKeyboardFocus")),
+               (field.value(forKey: "hasKeyboardFocus") as? Bool) == true {
+                return true
+            }
+            if app.keyboards.firstMatch.exists { return true }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        return false
     }
 
     // MARK: - メインタブ切り替え
@@ -375,5 +468,98 @@ final class PerformanceTests: XCTestCase {
             XCTAssertTrue(photo.waitForExistence(timeout: 10), "ホームに戻らない")
             Thread.sleep(forTimeInterval: 1)
         }
+    }
+}
+
+/// アプリの `srch=` の1語分（`+1234ms 京 b2 h2/400ms/300ms g450ms s1`・`PerfRecorder.searchBody` の形。変えるときは両方）
+struct SearchWindowReading {
+    let query: String
+    var bodies = 0
+    var spotHits = 0
+    var spotTotalMs = 0
+    var spotMaxMs = 0
+    var gapMaxMs = 0
+    var stalls = 0
+
+    init(query: String) {
+        self.query = query
+    }
+
+    /// 1語分を読む。形が違えば nil（溢れた数 `+Ndropped` も nil）
+    init?(_ entry: String) {
+        let parts = entry.split(separator: " ").map(String.init)
+        guard parts.count == 6, parts[2].hasPrefix("b"), parts[3].hasPrefix("h"),
+              parts[4].hasPrefix("g"), parts[5].hasPrefix("s") else { return nil }
+        query = parts[1]
+        bodies = Int(parts[2].dropFirst()) ?? 0
+        let hits = parts[3].dropFirst().split(separator: "/").map { Int($0.replacingOccurrences(of: "ms", with: "")) ?? 0 }
+        spotHits = hits.count > 0 ? hits[0] : 0
+        spotTotalMs = hits.count > 1 ? hits[1] : 0
+        spotMaxMs = hits.count > 2 ? hits[2] : 0
+        gapMaxMs = Int(parts[4].dropFirst().replacingOccurrences(of: "ms", with: "")) ?? 0
+        stalls = Int(parts[5].dropFirst()) ?? 0
+    }
+
+    /// `srch=` の全部（起きた順）
+    static func all(_ reading: PerfProbeReading) -> [SearchWindowReading] {
+        reading.section("srch").split(separator: ";").compactMap { SearchWindowReading(String($0)) }
+    }
+}
+
+/// 1回ごとの記録を、測った回の順に渡す置き場（`SearchProbeMetric` が取り出す）
+final class SearchProbeBox: @unchecked Sendable {
+    let prefixes: [String]
+    private let lock = NSLock()
+    private var rounds: [[SearchWindowReading]] = []
+
+    init(prefixes: [String]) {
+        self.prefixes = prefixes
+    }
+
+    func push(_ rows: [SearchWindowReading]) {
+        lock.lock()
+        rounds.append(rows)
+        lock.unlock()
+    }
+
+    /// 先に入れた回から取り出す。無ければ 0 の並び（形をそろえる）
+    func pop() -> [SearchWindowReading] {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !rounds.isEmpty else { return prefixes.map { SearchWindowReading(query: $0) } }
+        return rounds.removeFirst()
+    }
+}
+
+/// 探すの1字ごとの数を XCTest の `measured [...]` の行に出す（`Tools/perf-collect.py` が拾う）。
+/// 中身は試験の本体が `SearchProbeBox` に入れた値（アプリの `perf.probe` から読んだもの）
+final class SearchProbeMetric: NSObject, XCTMetric, @unchecked Sendable {
+    let box: SearchProbeBox
+
+    init(box: SearchProbeBox) {
+        self.box = box
+    }
+
+    func copy(with zone: NSZone? = nil) -> Any {
+        SearchProbeMetric(box: box)
+    }
+
+    func reportMeasurements(from startTime: XCTPerformanceMeasurementTimestamp,
+                            to endTime: XCTPerformanceMeasurementTimestamp) throws -> [XCTPerformanceMeasurement] {
+        var out: [XCTPerformanceMeasurement] = []
+        for (i, w) in box.pop().enumerated() {
+            let id = "com.journeyphoto.search.c\(i + 1)"
+            out.append(XCTPerformanceMeasurement(identifier: "\(id).body", displayName: "Search \(w.query) body",
+                                                 doubleValue: Double(w.bodies), unitSymbol: "count"))
+            out.append(XCTPerformanceMeasurement(identifier: "\(id).spotHits", displayName: "Search \(w.query) spotHits",
+                                                 doubleValue: Double(w.spotHits), unitSymbol: "count"))
+            out.append(XCTPerformanceMeasurement(identifier: "\(id).spotTotal", displayName: "Search \(w.query) spotHits total",
+                                                 doubleValue: Double(w.spotTotalMs), unitSymbol: "ms"))
+            out.append(XCTPerformanceMeasurement(identifier: "\(id).spotMax", displayName: "Search \(w.query) spotHits max",
+                                                 doubleValue: Double(w.spotMaxMs), unitSymbol: "ms"))
+            out.append(XCTPerformanceMeasurement(identifier: "\(id).gapMax", displayName: "Search \(w.query) frame gap max",
+                                                 doubleValue: Double(w.gapMaxMs), unitSymbol: "ms"))
+        }
+        return out
     }
 }
