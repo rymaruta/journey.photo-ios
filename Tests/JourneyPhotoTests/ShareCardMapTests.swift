@@ -84,6 +84,46 @@ final class ShareCardMapTests: XCTestCase {
         }
     }
 
+    /// 2026-11-13（owner 承認）: 撮影情報が1つも無いと、撮影者の段の下に 138 の黒い空きが残っていた
+    /// （4:5 で撮影者の段の下端 1114 → 帯の下端 1290 が 176）。無いときは下の段の分だけ帯を縮め、写真を伸ばす
+    func testBandShrinksWithoutShotInfo() {
+        typealias L = ShareCardMap.Layout
+        XCTAssertEqual(L.shotInfoBlockHeight, 138)
+        // 撮影情報があるとき: 今までどおり（4:5 の写真 898・帯 268）
+        let withInfo = L(ratio: .portrait)
+        XCTAssertEqual(withInfo.photoRect.height, 898)
+        XCTAssertEqual(withInfo.bandRect.height, 268)
+        // 無いとき: 写真 898 → 1036・帯 268 → 130。撮影者の段の下端 1252 から帯の下端 1290 は 38（撮影情報の下と同じ）
+        let without = L(ratio: .portrait, hasShotInfo: false)
+        XCTAssertEqual(without.photoRect.height, 1036)
+        XCTAssertEqual(without.bandRect.height, 130)
+        XCTAssertEqual(without.rowTop, 1176)
+        XCTAssertEqual(without.bandRect.maxY - (without.rowTop + L.avatarSize), 38)
+        // 地図は帯の高さ（上下 12）に収まるよう比のまま縮め、右端は本文の右端
+        XCTAssertEqual(without.mapRect.minY, without.photoBottom + 12)
+        XCTAssertEqual(without.mapRect.height, 106)
+        XCTAssertEqual(without.mapRect.width, 286 * 106 / 244, accuracy: 0.001)
+        XCTAssertEqual(without.mapRect.maxX, L.contentRight, accuracy: 0.001)
+
+        for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
+            let info = L(ratio: ratio)
+            let none = L(ratio: ratio, hasShotInfo: false)
+            // 空き0: 撮影者の段の下の余白は、撮影情報があるときの撮影情報の下の余白と同じ
+            XCTAssertEqual(none.bandRect.maxY - (none.rowTop + L.avatarSize),
+                           info.bandRect.maxY - (info.infoTop + L.infoHeight), "\(ratio) 空き0")
+            XCTAssertEqual(none.photoRect.height - info.photoRect.height, 138, "\(ratio) 写真が伸びる")
+            XCTAssertEqual(info.bandRect.height - none.bandRect.height, 138, "\(ratio) 帯が縮む")
+            XCTAssertEqual(none.height, info.height, "\(ratio) カードの大きさは同じ")
+            XCTAssertEqual(none.photoRect.maxY, none.bandRect.minY, "\(ratio)")
+            // 地図は帯の中だけ
+            XCTAssertGreaterThanOrEqual(none.mapRect.minY, none.bandRect.minY + 12, "\(ratio)")
+            XCTAssertLessThanOrEqual(none.mapRect.maxY, none.bandRect.maxY - 12 + 0.001, "\(ratio)")
+            XCTAssertEqual(none.mapRect.maxX, L.contentRight, accuracy: 0.001, "\(ratio)")
+            // 撮影情報があるときの地図は変えない
+            XCTAssertEqual(info.mapRect, CGRect(x: 734, y: info.photoBottom + 12, width: 286, height: 244), "\(ratio)")
+        }
+    }
+
     /// 2026-11-04 owner「フェードする境界線いらない」: 写真は帯の開始位置できれいに終わる。
     /// 写真と帯は隙間も重なりも無く接する
     func testPhotoEndsCleanlyWhereTheBandStarts() {
