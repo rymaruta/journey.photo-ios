@@ -3430,7 +3430,7 @@ final class ScreenshotTests: XCTestCase {
             XCTContext.runActivity(named: legLine) { _ in }
             let tapped = Date()
             leg.tap()
-            // 名前で探し直す（最大で数秒）のを待つ。少しずつ読んで、段の印（LT・LM・LR・LX・M:）をその都度残す（run 1208）
+            // 名前で探し直す（最大で数秒）のを待つ。少しずつ読んで、段の印（LT=・LM=・LR=・LX=・開いた M:）をその都度残す（run 1208）
             var trail = dragCounts(app)
             while !trail.contains("M:"), Date().timeIntervalSince(tapped) < 6 {
                 Thread.sleep(forTimeInterval: 0.5)
@@ -3442,7 +3442,7 @@ final class ScreenshotTests: XCTestCase {
             let mapsLine = "TRIPLEG maps trail[\(trail)]"
             print(mapsLine)
             XCTContext.runActivity(named: mapsLine) { _ in }
-            XCTAssertTrue(trail.contains("LT:"), "区間の行を押しても行のボタンが呼ばれていない: \(trail)")
+            XCTAssertTrue(trail.contains("LT="), "区間の行を押しても行のボタンが呼ばれていない: \(trail)")
             XCTAssertTrue(trail.contains("M:"), "区間の行を押しても Apple のマップを開いていない: \(trail)")
         }
         // 区間のシート（行の右端の「i」・出る時刻の目安と Google マップ）。同じく見えている「i」だけを押す
