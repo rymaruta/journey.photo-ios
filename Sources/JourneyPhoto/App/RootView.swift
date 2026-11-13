@@ -187,6 +187,10 @@ struct RootView: View {
         .overlay(alignment: .bottomTrailing) {
             if TrunkPerfMeter.shared.enabled { TrunkPerfProbe() }
         }
+        // UI テストのときだけ: 写真の詳細の「下に引いて戻る」の値（`-JPPreviewPullProbe YES`・札 #592）。閉じた後も読めるよう根に置く
+        .overlay(alignment: .topTrailing) {
+            if PreviewSession.pullProbe { DetailPullProbeView() }
+        }
         // ホームの写真を手に取って運ぶ（2026-11-12 札 #543）。見出しと下の札の上に重ね、画面の座標で描く
         .overlay { PhotoLiftOverlay(center: PhotoLiftCenter.shared).ignoresSafeArea() }
         .overlay(alignment: .top) {

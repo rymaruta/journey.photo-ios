@@ -9556,7 +9556,8 @@ final class ScreenshotTests: XCTestCase {
     ///    その間に写真の詳細の body が描き直されないこと（`perf.probe` の `photoDetail` の数・2026-11-13 確かめ役）
     /// 4. 写真の上で下へ引く → 前の画面（ホーム）に戻る
     func testDetailPullDownGoesBack() {
-        let app = launchTrunk(["-JPPreviewPerfProbe", "YES"])
+        // 2026-11-13 Mac の回 1228: 手順3（少し引いて離す）で閉じた。どの値で閉じたかを `detail.pull.probe` で取る
+        let app = launchTrunk(["-JPPreviewPerfProbe", "YES", "-JPPreviewPullProbe", "YES"])
         defer { app.terminate() }
         let recommended = app.buttons["おすすめ"].firstMatch
         if recommended.waitForExistence(timeout: 15), recommended.isHittable { recommended.tap() }
@@ -9606,7 +9607,8 @@ final class ScreenshotTests: XCTestCase {
         let bodyAfter = perfProbeValue(app).map { PerfProbeReading($0).bodyCount("photoDetail") }
         let topAfterSmall = hero.exists ? hero.frame.minY : .nan
         XCTContext.runActivity(named: "[detailPull] 少し引いて離す: 写真の上端 \(topAtOpen) → \(topAfterSmall)・…=\(menu.exists)"
-            + "・photoDetail の body \(bodyBefore.map(String.init) ?? "-") → \(bodyAfter.map(String.init) ?? "-")") { _ in }
+            + "・photoDetail の body \(bodyBefore.map(String.init) ?? "-") → \(bodyAfter.map(String.init) ?? "-")"
+            + "・probe=\(pullProbeValue(app))") { _ in }
         guard expect(menu.exists && hero.exists, "少し引いて離した後の写真の詳細（閉じた）", app) else { return }
         XCTAssertLessThan(abs(topAfterSmall - topAtOpen), 2, "少し引いて離した写真が元の位置へ戻らない")
         if let bodyBefore, let bodyAfter {
@@ -9622,9 +9624,16 @@ final class ScreenshotTests: XCTestCase {
             .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)))
         let gone = XCTWaiter().wait(for: [XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == false"), object: menu)], timeout: 5) == .completed
-        XCTContext.runActivity(named: "[detailPull] 下へ引く: 閉じた=\(gone)・ホームの写真=\(photo.exists)") { _ in }
+        XCTContext.runActivity(named: "[detailPull] 下へ引く: 閉じた=\(gone)・ホームの写真=\(photo.exists)・probe=\(pullProbeValue(app))") { _ in }
         guard expect(gone, "写真を下に引いた後に前の画面へ戻る", app) else { return }
         XCTAssertTrue(photo.waitForExistence(timeout: 5) && photo.isHittable, "下に引いて戻った先にホームの写真が無い")
+    }
+
+    /// 「下に引いて戻る」の値（`detail.pull.probe`・`-JPPreviewPullProbe YES`）。写真の詳細の中とアプリの根の両方に在る
+    /// （同じ1つの記録）。読めなければ「-」
+    private func pullProbeValue(_ app: XCUIApplication) -> String {
+        let probe = app.descendants(matching: .any)["detail.pull.probe"].firstMatch
+        return (probe.exists ? probe.value as? String : nil) ?? "-"
     }
 
     /// **コメントを打っている間は、写真を下に引いても閉じない**（札 #592・`PhotoDetailView.pullCatcher`）。
@@ -9662,9 +9671,17 @@ final class ScreenshotTests: XCTestCase {
             return XCTFail("見本の写真の詳細が開かない")
         }
         defer { app.terminate() }
+        // 2026-11-13 Mac の回 1228: 写真の詳細を開いて約 1.5 秒で輪の存在を確かめ、続く1回きりの「在って押せるか」の
+        // 判定（開いて約 2.5 秒）で落ちた。落ちた直後の画面の木には輪が在った（{{16, 572}, {44, 44}}・
+        // 「luzhj のストーリー 2本（まだ見ていない）」）。1回だけ読んで決めず、在って押せるまで待つ（値はログに残す）
         let ring = app.buttons["story.avatar.ring"].firstMatch
+        _ = ring.waitForExistence(timeout: 15)
         scrollUntilHittable(app, ring, limit: 3)
-        guard expect(ring.exists && ring.isHittable, "作者の顔の輪", app) else { return }
+        let ringReady = XCTWaiter().wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true"), object: ring)], timeout: 10) == .completed
+        XCTContext.runActivity(named: "[detailPull.sheet] 作者の輪: 押せる=\(ringReady)・在る=\(ring.exists)"
+            + "・枠=\(ring.exists ? "\(ring.frame)" : "-")") { _ in }
+        guard expect(ringReady, "作者の顔の輪", app) else { return }
         ring.tap()
         Thread.sleep(forTimeInterval: 3)
         let viewPhoto = app.buttons["story.viewer.sharedPhoto"].firstMatch
@@ -9699,6 +9716,7 @@ final class ScreenshotTests: XCTestCase {
             }.first
         }
         let line = "[detailPull.sheet] 戻った=\(back) 離した直後=\(rawNow ?? "-") 閉じた後=\(rawLater ?? "-")"
+            + " 根の目印=\(pullProbeValue(app))"
         print(line)
         XCTContext.runActivity(named: line) { _ in }
         let note = XCTAttachment(string: line)

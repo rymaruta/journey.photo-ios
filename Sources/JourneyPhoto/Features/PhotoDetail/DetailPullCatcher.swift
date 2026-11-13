@@ -31,14 +31,25 @@ final class PhotoDetailPullHolder: ObservableObject {
 /// - `pullMax`: 写真を引いた量の最大（pt）
 /// - `dropWhilePull`: 写真を引いている間に器が下がった量の最大（シートの「下へ引いて閉じる」と二重なら 0 より大きい）
 /// - `dropMax`: 指が写真に触れてからの器の下がりの最大（閉じる動きも入る）
+///
+/// 2026-11-13 Mac の回 1228: 90pt ゆっくり引いて 1.5 秒止めて離した指で写真の詳細が閉じた（閉じない決まり）。
+/// どの値で閉じたかを数字で見るため、離したときの値を足した（直しは値を見てから）:
+/// - `cancels`: 取り消し・失敗で終わった回数
+/// - `endDy`・`endVy`・`endProj`・`endCloses`: 最後に離したときの縦の量・縦の速さ（UIKit が返した値）・
+///   勢いを足した行き先・戻ると決めたか（1/0）
+/// - `moves`: 最後の指で量が変わった回数（`.changed` で縦の量が前と違った回）
+/// - `moveAgeMs`: 最後に量が変わってから離すまでの時間（ms）。止めてから離したのに速さが残っていれば、ここが大きく `endVy` も大きい
+/// - `peakVy`: 最後の指で動いている間の縦の速さの最大
 final class DetailPullProbe: ObservableObject {
     static let shared = DetailPullProbe()
     static let identifier = "detail.pull.probe"
 
-    @Published private(set) var value = "began=0;ended=0;closes=0;pullMax=0;dropWhilePull=0;dropMax=0"
+    @Published private(set) var value = "began=0;ended=0;closes=0;cancels=0;pullMax=0;dropWhilePull=0;dropMax=0"
 
-    private var began = 0, ended = 0, closes = 0
+    private var began = 0, ended = 0, closes = 0, cancels = 0
     private var pullMax = 0.0, dropWhilePull = 0.0, dropMax = 0.0
+    private var endDy = 0.0, endVy = 0.0, endProj = 0.0, endCloses = false
+    private var moves = 0, moveAgeMs = 0.0, peakVy = 0.0
     /// 指が写真に触れた時の器の上端（窓の向き）
     private(set) var baseline: Double?
 
@@ -61,7 +72,20 @@ final class DetailPullProbe: ObservableObject {
         if changed { publish() }
     }
 
-    func pullBegan() { began += 1; publish() }
+    func pullBegan() {
+        began += 1
+        moves = 0
+        peakVy = 0
+        publish()
+    }
+
+    /// 量が変わった（`.changed` で縦の量が前と違った）。そのときの縦の速さ
+    func moved(velocityY: Double) {
+        moves += 1
+        peakVy = max(peakVy, velocityY)
+    }
+
+    func pullCancelled() { cancels += 1; publish() }
 
     func pulled(dy: Double) {
         guard dy > pullMax + 0.5 else { return }
@@ -69,20 +93,28 @@ final class DetailPullProbe: ObservableObject {
         publish()
     }
 
-    func pullEnded(closes willClose: Bool) {
+    /// 離した: 縦の量・速さ・最後に量が変わってからの時間（ms）と、戻ると決めたか
+    func pullEnded(dy: Double, velocityY: Double, moveAgeMs age: Double, closes willClose: Bool) {
         ended += 1
         if willClose { closes += 1 }
+        endDy = dy
+        endVy = velocityY
+        endProj = dy + velocityY * PhotoDetailPull.projectionSeconds
+        endCloses = willClose
+        moveAgeMs = age
         publish()
     }
 
     private func publish() {
-        value = "began=\(began);ended=\(ended);closes=\(closes);pullMax=\(Int(pullMax.rounded()))"
+        value = "began=\(began);ended=\(ended);closes=\(closes);cancels=\(cancels);pullMax=\(Int(pullMax.rounded()))"
             + ";dropWhilePull=\(Int(dropWhilePull.rounded()));dropMax=\(Int(dropMax.rounded()))"
+            + ";endDy=\(Int(endDy.rounded()));endVy=\(Int(endVy.rounded()));endProj=\(Int(endProj.rounded()))"
+            + ";endCloses=\(endCloses ? 1 : 0);moves=\(moves);moveAgeMs=\(Int(moveAgeMs.rounded()));peakVy=\(Int(peakVy.rounded()))"
     }
 }
 
-/// `DetailPullProbe` を見えない要素に出す（1pt・押せない）
-private struct DetailPullProbeView: View {
+/// `DetailPullProbe` を見えない要素に出す（1pt・押せない）。写真の詳細の中と、閉じた後も読めるようにアプリの根（`RootView`）に置く
+struct DetailPullProbeView: View {
     @ObservedObject var probe = DetailPullProbe.shared
 
     var body: some View {
@@ -262,6 +294,10 @@ struct DetailPullPanHost: UIViewRepresentable {
             DetailPullProbe.shared.sample(top: top, pulling: pan.state == .began || pan.state == .changed)
         }
 
+        /// UI テストの事実取りだけ: 最後に縦の量が変わった値と時刻（`DetailPullProbe` の `moveAgeMs`）
+        private var probeLastMoveY: CGFloat?
+        private var probeLastMoveTime: CFTimeInterval = 0
+
         @objc private func handle(_ pan: UIPanGestureRecognizer) {
             guard let handlers else { return }
             // 量と速さは窓の向きで取る（写真の枠は指に付いて動き・縮むので、枠の向きで取ると量が狂う）
@@ -275,17 +311,29 @@ struct DetailPullPanHost: UIViewRepresentable {
                     return
                 }
                 if PreviewSession.pullProbe {
-                    if pan.state == .began { DetailPullProbe.shared.pullBegan() }
+                    if pan.state == .began {
+                        DetailPullProbe.shared.pullBegan()
+                        probeLastMoveY = nil
+                    }
+                    if move.y != probeLastMoveY {
+                        probeLastMoveY = move.y
+                        probeLastMoveTime = CACurrentMediaTime()
+                        DetailPullProbe.shared.moved(velocityY: Double(pan.velocity(in: nil).y))
+                    }
                     DetailPullProbe.shared.pulled(dy: Double(move.y))
                 }
                 handlers.onChange(Double(move.x), Double(move.y))
             case .ended:
                 let velocityY = Double(pan.velocity(in: nil).y)
                 if PreviewSession.pullProbe {
-                    DetailPullProbe.shared.pullEnded(closes: PhotoDetailPull.closes(dy: Double(move.y), velocityY: velocityY))
+                    DetailPullProbe.shared.pullEnded(
+                        dy: Double(move.y), velocityY: velocityY,
+                        moveAgeMs: (CACurrentMediaTime() - probeLastMoveTime) * 1000,
+                        closes: PhotoDetailPull.closes(dy: Double(move.y), velocityY: velocityY))
                 }
                 handlers.onEnd(Double(move.y), velocityY)
             case .cancelled, .failed:
+                if PreviewSession.pullProbe { DetailPullProbe.shared.pullCancelled() }
                 handlers.onCancel()
             default:
                 break
