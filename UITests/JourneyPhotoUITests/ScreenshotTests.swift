@@ -6914,7 +6914,8 @@ final class ScreenshotTests: XCTestCase {
     }
 
     private func probePinnedTabsSwipe(_ extra: [String], _ tag: String) {
-        let app = launchProfileLooks(extra)
+        // どの指の操作が受けたかの記録（`mypage.tabs.probe`・`ProfileTabSwipeLog`・Debug のみ）
+        let app = launchProfileLooks(extra + ["-JPPreviewTabSwipeProbe", "YES"])
         defer { app.terminate() }
         let tabBar = app.tabBars.firstMatch
         XCTAssertTrue(tabBar.waitForExistence(timeout: 20) && tabBar.buttons.count > 4, "\(tag): 下のタブが出ない")
@@ -6932,6 +6933,7 @@ final class ScreenshotTests: XCTestCase {
         // カバーは通信で来る（来てから測る）
         Thread.sleep(forTimeInterval: 3)
         let pinnedRow = app.descendants(matching: .any)["mypage.tabs.pinned"].firstMatch
+        let swipeProbe = app.descendants(matching: .any)["mypage.tabs.probe"].firstMatch
         let width = app.frame.width
         // 旅の記録の中身の目印（見本の利用者で出るものから、在る最初の1つ）
         let tripMarks = ["trips.trunk", "trips.camper", "trips.albums", "trips.plans", "trips.passBook"]
@@ -6961,6 +6963,8 @@ final class ScreenshotTests: XCTestCase {
             let line = "[tabsAX] \(tag) \(step): width=\(width) height=\(app.frame.height) sel=\(selected().joined(separator: "+")) "
                 + "pinned=\(pinnedRow.exists) pinnedFrame=\(frame(pinnedRow)) rowScrollViews=\(scrolls) "
                 + "tabs=[\(row)] photo=\(frame(photo)) edit=\(frame(edit)) trips=[\(marks)] scrollViews=[\(scrollViews)]"
+                // どの指の操作が受けたか（UIKit のパン pan[row|content]・留まった札 overlay・横の送り hx・選んだ札 sel）
+                + " probe={\(swipeProbe.exists ? ((swipeProbe.value as? String) ?? "-") : "missing")}"
             print(line)
             XCTContext.runActivity(named: line) { _ in }
             let note = XCTAttachment(string: line)

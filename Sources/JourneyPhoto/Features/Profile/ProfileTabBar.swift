@@ -207,6 +207,9 @@ struct ProfileTabOverlaySwipe<Tab: PagedTab>: ViewModifier {
                         let dx = Double(value.translation.width)
                         if swiping == nil {
                             swiping = Tab.startsSwipe(from: selection, in: tabs, dx: dx, dy: Double(value.translation.height))
+                            // UI テストの記録（Debug・`-JPPreviewTabSwipeProbe` のときだけ）
+                            ProfileTabSwipeLog.shared.note("overlay began dx=\(ProfileTabSwipeLog.n(dx)) "
+                                + "dy=\(ProfileTabSwipeLog.n(Double(value.translation.height))) -> \(swiping == true)")
                         }
                         guard swiping == true else { return }
                         if let next = Tab.neighbor(of: selection, in: tabs, towards: dx) { control.willShow?(next) }
@@ -218,6 +221,8 @@ struct ProfileTabOverlaySwipe<Tab: PagedTab>: ViewModifier {
                         guard swiping == true else { return }
                         let next = Tab.settled(from: selection, in: tabs, dx: Double(value.translation.width),
                                                velocity: Double(value.velocity.width), width: Double(width))
+                        ProfileTabSwipeLog.shared.note("overlay ended dx=\(ProfileTabSwipeLog.n(Double(value.translation.width))) "
+                            + "vx=\(ProfileTabSwipeLog.n(Double(value.velocity.width))) next=\(next.map { "\($0)" } ?? "nil")")
                         withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
                             if let next { selection = next }
                             control.drag.offset = 0

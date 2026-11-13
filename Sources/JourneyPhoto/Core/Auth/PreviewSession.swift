@@ -150,6 +150,17 @@ enum PreviewSession {
     /// 主要画面の body の評価回数を、推定でなく実際の数で見るため。Release では必ず false（記録も要素も出ない）
     /// UI テストの事実取りだけ: ホームの写真の札の「手に取って運ぶ」の身振りを付けない（`-JPPreviewNoLift YES`・Debug のみ・
     /// 2026-11-12 run 1171 で、ホームを払っても一覧が動かなかった件を、身振りの有り無しで比べるため）
+    /// UI テストの事実取りだけ: マイページの札の行・中身の横の払いを、どの指の操作が受けたか（UIKit のパンの始まり・終わりと
+    /// 移動量・速さ、留まった札の払い、横に送る札の行の送りの位置、選んだ札の替わり）を見えない要素 `mypage.tabs.probe` に出す
+    /// （`-JPPreviewTabSwipeProbe YES`・Debug のみ・2026-11-13 #187 Mac run 1227・`ProfileTabSwipeLog`）。Release では必ず false
+    static var tabSwipeProbe: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "JPPreviewTabSwipeProbe")
+        #else
+        return false
+        #endif
+    }
+
     /// UI テストの事実取りだけ: 写真を大きく見る画面の上下の情報を出しているかを、見えない要素 `viewer.chrome.probe` の値
     /// （shown / hidden）に出す（`-JPPreviewViewerProbe YES`・Debug のみ）。2026-11-12 run 1193: 1回押した後の絵では ✕ と下の
     /// 情報が消えていたのに、UI テストからは `viewer.close`・`viewer.caption` が在るままに見えた（`accessibilityHidden` では

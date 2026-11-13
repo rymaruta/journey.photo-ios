@@ -389,6 +389,10 @@ struct MyPageView: View {
                 // カバーの有無にかかわらず時計の帯のすぐ下に置ける
                 if tabRowPinned { pinnedTabRow }
             }
+            // UI テストのときだけ: 横の払いをどの指の操作が受けたか（`ProfileTabSwipeLog`・Debug のみ）
+            .overlay(alignment: .bottomTrailing) {
+                ProfileTabSwipeProbeView(selection: tab.rawValue)
+            }
         }
     }
 
@@ -465,7 +469,8 @@ struct MyPageView: View {
                     tabPicker(stuck: false)
                         .modifier(ProfileTabSwipe(tabs: ProfileTab.tabs(isMe: true), selection: $tab,
                                                   follow: tabPager.drag,
-                                                  willShow: { next in tabPager.willShow?(next) }))
+                                                  willShow: { next in tabPager.willShow?(next) },
+                                                  probeTag: "row"))
                         .opacity(tabRowPinned ? 0 : 1)
                         .allowsHitTesting(!tabRowPinned)
                         .accessibilityHidden(tabRowPinned)

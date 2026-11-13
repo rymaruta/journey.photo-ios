@@ -336,6 +336,8 @@ struct ProfileTabSwipe<Tab: PagedTab>: ViewModifier {
     var extendsUp: CGFloat = 0
     /// 動いている間、入ってくる隣の札を知らせる（作っておく・縦の位置をそろえる）
     var willShow: ((Tab) -> Void)? = nil
+    /// UI テストの記録（`ProfileTabSwipeLog`）での名前。札の行は "row"、中身は "content"
+    var probeTag: String = "content"
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -344,8 +346,12 @@ struct ProfileTabSwipe<Tab: PagedTab>: ViewModifier {
             .background {
                 ProfileSwipeCatcher(
                     isEnabled: enabled,
+                    tag: probeTag,
                     shouldBegin: { dx, dy in
-                        Tab.startsSwipe(from: selection, in: tabs, dx: dx, dy: dy)
+                        let starts = Tab.startsSwipe(from: selection, in: tabs, dx: dx, dy: dy)
+                        ProfileTabSwipeLog.shared.note("pan[\(probeTag)] shouldBegin dx=\(ProfileTabSwipeLog.n(dx)) "
+                            + "dy=\(ProfileTabSwipeLog.n(dy)) -> \(starts)")
+                        return starts
                     },
                     onChange: { dx, width in
                         if let next = Tab.neighbor(of: selection, in: tabs, towards: dx) { willShow?(next) }
@@ -356,6 +362,7 @@ struct ProfileTabSwipe<Tab: PagedTab>: ViewModifier {
                     onEnd: { dx, velocity, width in
                         let next = Tab.settled(from: selection, in: tabs,
                                                dx: dx, velocity: velocity, width: width)
+                        ProfileTabSwipeLog.shared.note("pan[\(probeTag)] settle next=\(next.map { "\($0)" } ?? "nil")")
                         withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
                             if let next { selection = next }
                             follow?.offset = 0
@@ -372,6 +379,8 @@ struct ProfileTabSwipe<Tab: PagedTab>: ViewModifier {
 struct ProfileSwipeCatcher: View {
 
     var isEnabled: Bool
+    /// UI テストの記録（`ProfileTabSwipeLog`）での名前
+    var tag: String = ""
     /// 動き始めの横・縦の量で、始めるか
     var shouldBegin: (Double, Double) -> Bool
     /// 動いている間（横の量・枠の幅）
@@ -461,6 +470,21 @@ struct ProfileSwipePanHost: UIViewRepresentable {
         @objc private func handle(_ pan: UIPanGestureRecognizer) {
             guard let probe, let handlers else { return }
             let width = Double(probe.bounds.width)
+            // UI テストの記録（Debug・`-JPPreviewTabSwipeProbe` のときだけ）: 始まり・終わりと移動量・速さ
+            let log = ProfileTabSwipeLog.shared
+            if log.enabled, pan.state != .changed {
+                let move = pan.translation(in: probe), speed = pan.velocity(in: probe)
+                let state: String
+                switch pan.state {
+                case .began: state = "began"
+                case .ended: state = "ended"
+                case .cancelled: state = "cancelled"
+                case .failed: state = "failed"
+                default: state = "state\(pan.state.rawValue)"
+                }
+                log.note("pan[\(handlers.tag)] \(state) dx=\(ProfileTabSwipeLog.n(Double(move.x))) "
+                    + "dy=\(ProfileTabSwipeLog.n(Double(move.y))) vx=\(ProfileTabSwipeLog.n(Double(speed.x)))")
+            }
             switch pan.state {
             case .began, .changed:
                 handlers.onChange(Double(pan.translation(in: probe).x), width)
@@ -482,6 +506,11 @@ struct ProfileSwipePanHost: UIViewRepresentable {
             // 2026-10-31 判断（#426・ホームの「おすすめ」には横に流れる列がある——PICKS・季節の撮影スポット）:
             // 横に流れる列の上で始まった指は、その列に渡す（列を流したいのか札を替えたいのか指だけでは分けられない）。
             // 札を替えるのは列の外の払いか札を押す
+            // UI テストの記録（Debug・`-JPPreviewTabSwipeProbe` のときだけ）: この枠の中の指を受けたか・横の列に渡したか
+            if ProfileTabSwipeLog.shared.enabled {
+                let inScroller = Self.startsInHorizontalScroller(touch.view, host: host)
+                ProfileTabSwipeLog.shared.note("pan[\(handlers?.tag ?? "")] receive -> \(inScroller ? "no(hscroll)" : "yes")")
+            }
             return !Self.startsInHorizontalScroller(touch.view, host: host)
         }
 

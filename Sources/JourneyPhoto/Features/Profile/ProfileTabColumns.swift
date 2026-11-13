@@ -40,6 +40,13 @@ struct ProfileTabColumnRow<Tab: PagedTab>: View {
             ScrollViewReader { reader in
                 ScrollView(.horizontal, showsIndicators: false) {
                     row(scrolls: true)
+                        // UI テストの記録（Debug・`-JPPreviewTabSwipeProbe` のときだけ値を控える）: 横の送りの位置
+                        // （contentOffset.x ＝ 並びの左端が送りの枠からどれだけ左へ出たか）
+                        .onGeometryChange(for: CGFloat.self) { proxy in
+                            proxy.frame(in: .scrollView).minX
+                        } action: { minX in
+                            ProfileTabSwipeLog.shared.horizontal(Double(-minX))
+                        }
                 }
                 .onChange(of: selection) { _, next in
                     withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
