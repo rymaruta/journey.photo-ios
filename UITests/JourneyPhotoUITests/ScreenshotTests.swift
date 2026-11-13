@@ -6889,6 +6889,127 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(gap >= 0 && gap < 240, "\(suffix): 替えた札が頭から出ない（札の行と格子の1枚目の間 \(gap)）")
     }
 
+    /// **とても大きい字で、留まった札の行を横に払う**（#187 案 B「絵と字」の確かめ役の指摘・2026-11-13）。
+    /// 札の行は2行に折っても4列に入らないと、横に送る並び（`ProfileTabColumnRow` の `ScrollView(.horizontal)`）に替わる。
+    /// 留まった札の払い（`ProfileTabOverlaySwipe` の `simultaneousGesture`）と、横に送る並びの指がぶつかるかは
+    /// コードから読んだだけでは分からない——**推定で直さず、数を取る**（CLAUDE.md「推定で直さない」）。
+    /// 字の大きさ（AX1・AX3・AX5）ごとに、留まったときと払った後の「選んでいる札・札の位置・横に送る並びか・中身の位置」を
+    /// `[tabsAX]` の行でログ（と注記）に出す。合否は、どちらに転んでも崩れてはいけない所だけ見る:
+    /// 選んでいる札がちょうど1つ・1回の払いで2つ先へ飛ばない・中身が選んでいる札のもので、横にずれて止まっていない。
+    /// 名指し: `screens=testPinsMyPageTabs`（既存の `testPinsMyPageTabs` と一緒に選ばれる）
+    func testPinsMyPageTabsAtLargeText() {
+        for (category, tag) in [("UICTContentSizeCategoryAccessibilityMedium", "AX1"),
+                                ("UICTContentSizeCategoryAccessibilityXL", "AX3"),
+                                ("UICTContentSizeCategoryAccessibilityXXXL", "AX5")] {
+            probePinnedTabsSwipe(["-UIPreferredContentSizeCategoryName", category], tag)
+        }
+    }
+
+    private func probePinnedTabsSwipe(_ extra: [String], _ tag: String) {
+        let app = launchProfileLooks(extra)
+        defer { app.terminate() }
+        let tabBar = app.tabBars.firstMatch
+        XCTAssertTrue(tabBar.waitForExistence(timeout: 20) && tabBar.buttons.count > 4, "\(tag): 下のタブが出ない")
+        guard tabBar.exists, tabBar.buttons.count > 4 else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        let edit = app.buttons["mypage.edit"].firstMatch
+        XCTAssertTrue(edit.waitForExistence(timeout: 20), "\(tag): マイページの見出しが出ない")
+        // マイページの札の並び（`ProfileTab.tabs(isMe: true)`）
+        let ids = ["posts", "trips", "wishlist", "favorites"]
+        let tabs = ids.map { app.buttons["profile.tab.\($0)"].firstMatch }
+        XCTAssertTrue(tabs[0].waitForExistence(timeout: 10), "\(tag): 区分の札（投稿）が見つからない")
+        let photo = app.buttons["mypage.photo"].firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 20), "\(tag): 投稿の格子が出ない（深く送れない）")
+        guard tabs[0].exists, photo.exists else { return }
+        // カバーは通信で来る（来てから測る）
+        Thread.sleep(forTimeInterval: 3)
+        let pinnedRow = app.descendants(matching: .any)["mypage.tabs.pinned"].firstMatch
+        let width = app.frame.width
+        // 旅の記録の中身の目印（見本の利用者で出るものから、在る最初の1つ）
+        let tripMarks = ["trips.trunk", "trips.camper", "trips.albums", "trips.plans", "trips.passBook"]
+            .map { app.descendants(matching: .any)[$0].firstMatch }
+
+        func frame(_ e: XCUIElement) -> String {
+            guard e.exists else { return "-" }
+            let f = e.frame
+            return String(format: "x%.1f-%.1f,y%.1f-%.1f", f.minX, f.maxX, f.minY, f.maxY) + (e.isHittable ? ",hit" : "")
+        }
+        func selected() -> [String] { zip(ids, tabs).filter { $0.1.exists && $0.1.isSelected }.map(\.0) }
+        func tripMark() -> XCUIElement? { tripMarks.first { $0.exists } }
+        func log(_ step: String) {
+            let row = zip(ids, tabs).map { "\($0.0)(\(frame($0.1)))" }.joined(separator: " ")
+            let scrolls = pinnedRow.exists ? "\(pinnedRow.scrollViews.count)" : "-"
+            let mark = tripMark()
+            let line = "[tabsAX] \(tag) \(step): width=\(width) sel=\(selected().joined(separator: "+")) "
+                + "pinned=\(pinnedRow.exists) pinnedFrame=\(frame(pinnedRow)) rowScrollViews=\(scrolls) "
+                + "tabs=[\(row)] photo=\(frame(photo)) trip=\(mark?.identifier ?? "-")(\(mark.map(frame) ?? "-"))"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+            let note = XCTAttachment(string: line)
+            note.name = "tabsAX \(tag) \(step)"
+            note.lifetime = .keepAlways
+            add(note)
+        }
+        /// 札の行の上を、画面の横幅の 6 割だけ払う（左へ払うと右隣の札）。留まった札が無ければ流れている元の行の上
+        func swipeRow(left: Bool) {
+            let y = pinnedRow.exists ? pinnedRow.frame.midY : tabs[0].frame.midY
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let from = origin.withOffset(CGVector(dx: left ? width * 0.8 : width * 0.2, dy: y))
+            let to = origin.withOffset(CGVector(dx: left ? width * 0.2 : width * 0.8, dy: y))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            Thread.sleep(forTimeInterval: 1.5)
+        }
+        /// どちらに転んでも崩れてはいけない所: 選んでいる札は1つ・`allowed` の中・中身がその札のもので横にずれていない
+        func checkSettled(_ step: String, allowed: [String], photoX: CGFloat) {
+            let sel = selected()
+            XCTAssertEqual(sel.count, 1, "\(tag) \(step): 選んでいる札が1つでない（\(sel)）")
+            guard let now = sel.first else { return }
+            XCTAssertTrue(allowed.contains(now), "\(tag) \(step): 1回の払いで \(now) へ替わった（期待 \(allowed) のどれか）")
+            switch now {
+            case "posts":
+                XCTAssertTrue(photo.exists, "\(tag) \(step): 投稿を選んでいるのに格子が見えない")
+                if photo.exists {
+                    XCTAssertEqual(photo.frame.minX, photoX, accuracy: 2, "\(tag) \(step): 投稿の中身が横にずれて止まった")
+                }
+            case "trips":
+                // 選んでいない札は読み上げから外す（`ProfileTabPager`）——投稿の格子が押せれば中身が替わっていない
+                XCTAssertFalse(photo.exists && photo.isHittable, "\(tag) \(step): 旅の記録を選んでいるのに投稿の格子が押せる")
+                if let mark = tripMark() {
+                    XCTAssertTrue(mark.frame.minX >= -2 && mark.frame.minX < width * 0.5,
+                                  "\(tag) \(step): 旅の記録の中身が横にずれて止まった（\(frame(mark))）")
+                }
+            default:
+                break
+            }
+        }
+
+        log("rest")
+        // 下へ送る（重ねた札が出るまで。大きい字は見出しが長い）
+        var pushes = 0
+        while !pinnedRow.exists, pushes < 10 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        XCTAssertTrue(pinnedRow.exists, "\(tag): 下へ送っても区分の札が上に留まらない（\(pushes) 回送った）")
+        guard pinnedRow.exists else { return }
+        log("pinned(pushes=\(pushes))")
+        XCTAssertEqual(selected(), ["posts"], "\(tag): 留まった時に「投稿」を選んでいない")
+        let photoX = photo.exists ? photo.frame.minX : 0
+        shoot(app, "14y-マイページ（大きい字で札が留まる・\(tag)）")
+
+        // 1. 留まった札の行を左へ払う（投稿 → 旅の記録のはず。替わらなくても数は残す）
+        swipeRow(left: true)
+        log("after-left")
+        shoot(app, "14y-マイページ（大きい字で留まった札を左へ払う・\(tag)）")
+        checkSettled("左へ払った後", allowed: ["posts", "trips"], photoX: photoX)
+
+        // 2. 右へ払って戻す（替えた札は頭から見せるので、留まりが外れていれば元の行の上で払う。どちらかはログの pinned=）
+        swipeRow(left: false)
+        log("after-right")
+        checkSettled("右へ払った後", allowed: ["posts", "trips"], photoX: photoX)
+    }
+
     /// 画面の絵の1点（ポイント）の明るさ（0〜255）。読めなければ nil
     private static func luma(_ image: UIImage, at point: CGPoint) -> Double? {
         guard let cg = image.cgImage else { return nil }

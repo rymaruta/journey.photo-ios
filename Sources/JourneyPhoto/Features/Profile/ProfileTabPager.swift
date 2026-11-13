@@ -209,7 +209,9 @@ enum ProfileTabPrebuild {
     static let delayNanoseconds: UInt64 = 1_200_000_000
 }
 
-/// 指に付いてくる横の量の箱。**見張るのは `ProfileTabDragOffset` だけ**（入れ物は持つだけ）
+/// 指に付いてくる横の量の箱。**見張るのは2つだけ**: 中身をずらす `ProfileTabDragOffset` と、
+/// 札の行「絵と字」の線を寄せる `ProfileTabColumnRow`（マイページ・人のページの札の行が `follow` で渡す・2026-11-13 #187）。
+/// 入れ物（`ProfileTabPager`・画面）は持つだけ——払っている間に描き直すのは、この2つの小さな子に限る
 final class ProfileTabDrag: ObservableObject {
     @Published var offset: CGFloat = 0
     /// 払っている中身の幅（`offset` より先に書く。見張らない）。札の行「絵と字」が線を寄せる割合の分母
@@ -315,7 +317,9 @@ enum ProfileTabMotion {
 /// - 始まったら写真を押す操作は取り消される（払って離した指で写真の詳細が開かない）。長押しのメニューは
 ///   指を止めたときだけなので、払いとはぶつからない
 /// - `follow` を渡すと、動いている間の横の量をそこへ書く（中身が指に付いてくる・`ProfileTabPager`）。
-///   札の行は渡さない（離したときに替わる）
+///   中身（`ProfileTabPager`）に加え、マイページ・人のページの札の行も同じ箱（`tabPager.drag`）を渡す——
+///   札の行の上で払っても中身と線が指に付いてくる（2026-11-13 #187 案 B。線は `ProfileTabColumnRow` が見張る）。
+///   渡さない札の行（`ProfileTabSection` の字の札・フォロー一覧など）は、離したときに替わる
 ///
 /// `enabled` が false の札（人のページの地図）では、この部品の枠の中の指を受けない——地図を横に
 /// 動かす操作を優先する（2026-10-28 判断: 地図の中で払って札を替えると、地図を動かしたいのか札を替え
