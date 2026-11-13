@@ -4007,11 +4007,32 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(waitForLabel(row, "北海道、3 回", timeout: 10), "スワイプで回数が変わった: \(row.label)")
     }
 
-    /// 要素の読み上げの名前が `text` になるまで待つ（帯の数は押したあとに描き直される）
+    /// 要素の読み上げの名前が `text` になるまで待つ（帯の数は押したあとに描き直される）。
+    ///
+    /// 2026-11-13 判断（値取り・待ち時間は変えない）: run 1203 で「一覧の長押しで帯が出ない／回数が変わった: 北海道、2 回」と落ちた。
+    /// 3 秒の待ちの中で読めたのは 1 回（探すのに 2.2 秒）で、その値はログに残らず、直後に読み直した値は正しかった。
+    /// 原因（アプリの描き直しが遅いのか・読んだ値が古いのか）を決めるため、0.3 秒ごとに読み、読み始めの時刻・
+    /// 読むのにかかった秒・在るか・値を `[labelWait]` で記録する（ログの行と XCTest の活動の両方）
     private func waitForLabel(_ element: XCUIElement, _ text: String, timeout: TimeInterval = 3) -> Bool {
-        let matches = NSPredicate(format: "label == %@", text)
-        return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: matches, object: element)],
-                              timeout: timeout) == .completed
+        let start = Date()
+        var reads: [String] = []
+        var matched = false
+        while true {
+            let readStart = Date().timeIntervalSince(start)
+            // 無い要素の `label` を読むと試験が落ちるので、先に在るかを見る
+            let exists = element.exists
+            let label = exists ? element.label : "-"
+            let took = Date().timeIntervalSince(start) - readStart
+            reads.append(String(format: "t=%.2f took=%.2f exists=%@ got=%@", readStart, took, exists ? "1" : "0", label))
+            if exists, label == text { matched = true; break }
+            if Date().timeIntervalSince(start) >= timeout { break }
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+        let line = "[labelWait] want=\(text) ok=\(matched) timeout=\(timeout) reads=\(reads.count): "
+            + reads.joined(separator: " | ")
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        return matched
     }
 
     // MARK: - 旅のトランク（2026-10-17・モック「旅のトランク」）
