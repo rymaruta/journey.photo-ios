@@ -308,8 +308,7 @@ struct PhotoLiftOverlay: View {
                         if let photo = center.facesOpenFor { send(photo, to: user) }
                     } label: {
                         VStack(spacing: JPSpace.xxs) {
-                            RemoteImage(url: UserProfile.profileAssetURL(userId: user.id, suffix: nil, cacheBust: nil),
-                                        placeholderSymbol: "person.crop.circle.fill")
+                            FaceImage(url: UserProfile.profileAssetURL(userId: user.id, suffix: nil, cacheBust: nil))
                                 .frame(width: 52, height: 52)
                                 .clipShape(Circle())
                                 .overlay(Circle().strokeBorder(Color.white.opacity(on ? 1 : 0.3), lineWidth: on ? 2 : 1))

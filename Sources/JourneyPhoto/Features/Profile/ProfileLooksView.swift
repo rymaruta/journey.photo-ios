@@ -154,7 +154,7 @@ struct ProfileLooksView: View {
                 if let avatarPreview {
                     Image(uiImage: avatarPreview).resizable().scaledToFill()
                 } else if avatarSet {
-                    RemoteImage(url: assetURL(nil))
+                    FaceImage(url: assetURL(nil))
                 } else {
                     Text(String(name.prefix(1)))
                         .font(JPFont.display(side * 0.4, relativeTo: .body))

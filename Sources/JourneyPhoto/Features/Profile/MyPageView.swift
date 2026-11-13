@@ -589,10 +589,10 @@ struct MyPageView: View {
     /// 自分の顔。**ストーリーがあれば輪を描き、押すと自分のストーリーから**（2026-10-22・`StoryAvatar`）
     private func avatar(_ profile: UserProfile, side: CGFloat) -> some View {
         StoryAvatar(userId: profile.userId, name: L("あなた", "You"), diameter: side) {
-            RemoteImage(url: profile.avatarURL(cacheBust: ProfileImageVersions.shared.token(for: profile.userId)))
+            FaceImage(url: profile.avatarURL(cacheBust: ProfileImageVersions.shared.token(for: profile.userId)))
                 .background(WebTheme.card)
         } plain: {
-            RemoteImage(url: profile.avatarURL(cacheBust: ProfileImageVersions.shared.token(for: profile.userId)))
+            FaceImage(url: profile.avatarURL(cacheBust: ProfileImageVersions.shared.token(for: profile.userId)))
                 .frame(width: side, height: side)
                 .background(WebTheme.card)
                 .clipShape(Circle())
@@ -695,10 +695,12 @@ struct MyPageView: View {
     private func nameLine(_ profile: UserProfile) -> some View {
         Button { showNameSide = true } label: {
             HStack(spacing: 4) {
+                // 名前は3行まで折り返す（板 06「名前は3行まで折り返す、切らない」）。
+                // 2026-11-13 デザインの点検: 1行に限っていたので、大きい文字では右の QR・編集に押されて「とて…」と2字で切れた
                 Text(profile.name)
                     .font(JPFont.screenTitle)
                     .foregroundStyle(Color.white)
-                    .lineLimit(1)
+                    .lineLimit(MyPageNameLine.maxLines)
                 NameMarks(profile: profile, nameSize: 26, relativeTo: .title, fit: .mincho, showsBadge: true)
             }
             .frame(minHeight: WebTheme.minTapTarget)

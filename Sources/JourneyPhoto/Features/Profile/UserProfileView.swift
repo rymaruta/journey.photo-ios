@@ -434,10 +434,10 @@ struct UserProfileView: View {
             HStack(alignment: .bottom) {
                 // **ストーリーがあれば顔に輪を描き、押すとその人のストーリーから**（2026-10-22・`StoryAvatar`）
                 StoryAvatar(userId: userId, name: model.shownName ?? "", diameter: ProfileCover.avatarSize) {
-                    RemoteImage(url: model.profile?.avatarURL(cacheBust: model.cacheBust))
+                    FaceImage(url: model.profile?.avatarURL(cacheBust: model.cacheBust))
                         .background(WebTheme.card)
                 } plain: {
-                    RemoteImage(url: model.profile?.avatarURL(cacheBust: model.cacheBust))
+                    FaceImage(url: model.profile?.avatarURL(cacheBust: model.cacheBust))
                         .frame(width: ProfileCover.avatarSize, height: ProfileCover.avatarSize)
                         .background(WebTheme.card)
                         .clipShape(Circle())

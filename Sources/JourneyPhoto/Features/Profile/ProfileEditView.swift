@@ -339,7 +339,7 @@ struct ProfileEditView: View {
                         if let avatarPreview {
                             Image(uiImage: avatarPreview).resizable().scaledToFill()
                         } else {
-                            RemoteImage(url: (userId ?? auth.userId).flatMap { UserProfile.profileAssetURL(userId: $0, suffix: nil, cacheBust: imageBust) })
+                            FaceImage(url: (userId ?? auth.userId).flatMap { UserProfile.profileAssetURL(userId: $0, suffix: nil, cacheBust: imageBust) })
                         }
                     }
                         .frame(width: Self.avatarSide, height: Self.avatarSide)

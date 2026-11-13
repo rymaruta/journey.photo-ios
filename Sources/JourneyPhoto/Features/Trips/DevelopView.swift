@@ -118,8 +118,11 @@ struct DevelopView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay { if unreadableNotice { unreadableCard } }
-            .overlay(alignment: .top) { topBar }
+            // 上に広げるのは写真の札だけ。上の札と × は**広げた後に**重ね、状態バー（島）の下に置く
+            // （2026-11-13 デザインの点検: 先に重ねてから広げていたので、上の札まで状態バーの中に入っていた。
+            // 画面写真で札が時計と同じ高さ。`DesignAudit1113Tests`・ScreenshotTests の 120b）
             .ignoresSafeArea(edges: .top)
+            .overlay(alignment: .top) { topBar }
             strip
                 .padding(.top, JPSpace.xs)
             if unreadable.isEmpty {
@@ -170,7 +173,8 @@ struct DevelopView: View {
             }
         }
         .padding(.horizontal, JPSpace.s)
-        .safeAreaPadding(.top)
+        // 状態バーの下は重ねる側（安全な範囲の中）で決まる。`.safeAreaPadding(.top)` は安全な範囲に既定の余白を
+        // **足す**もので、状態バーの高さを足すものではない（広げた中では 0 に足すだけだった）ので外した
         .padding(.top, JPSpace.xxs)
     }
 

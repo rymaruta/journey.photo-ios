@@ -306,9 +306,8 @@ struct StoryInsightsView: View {
                     .environment(\.insideStoryViewer, true)
             } label: {
                 HStack(spacing: JPSpace.s) {
-                    RemoteImage(url: UserProfile.profileAssetURL(
-                        userId: viewer.userId, suffix: nil, cacheBust: nil),
-                                placeholderSymbol: "person.crop.circle.fill")
+                    FaceImage(url: UserProfile.profileAssetURL(
+                        userId: viewer.userId, suffix: nil, cacheBust: nil))
                         .frame(width: Self.avatarSize, height: Self.avatarSize)
                         .clipShape(Circle())
                     VStack(alignment: .leading, spacing: 2) {

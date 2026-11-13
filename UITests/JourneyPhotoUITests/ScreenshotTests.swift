@@ -9240,6 +9240,15 @@ final class ScreenshotTests: XCTestCase {
         guard expect(keep.waitForExistence(timeout: 10), "現像の払う画面", app) else { return }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "120b-現像（はじめのコマ）")
+        // 上の札と × は状態バーの下（2026-11-13 デザインの点検: 状態バーの中に入っていた・`DevelopView.deckScreen`）。
+        // 測る機種（iPhone 17 Pro Max）の状態バーは 44pt より高いので、上端が 44 未満なら状態バーに重なっている
+        let counter = app.descendants(matching: .any).matching(identifier: "develop.counter").firstMatch
+        let topClose = app.buttons["develop.close"].firstMatch
+        if expect(counter.exists && topClose.exists, "現像の上の札と ×", app) {
+            print("develop.topBar counterMinY=\(counter.frame.minY) closeMinY=\(topClose.frame.minY)")
+            XCTAssertGreaterThanOrEqual(counter.frame.minY, 44, "現像の上の札が状態バーに重なる")
+            XCTAssertGreaterThanOrEqual(topClose.frame.minY, 44, "現像の × が状態バーに重なる")
+        }
         // 右へ払う（載せる）。払いの判定は 110pt 以上
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.4))
         start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.42)))

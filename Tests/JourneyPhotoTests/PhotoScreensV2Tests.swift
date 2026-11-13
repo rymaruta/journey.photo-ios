@@ -143,17 +143,16 @@ final class PhotoScreensV2Tests: XCTestCase {
         XCTAssertEqual(PhotoDetailView.nearbyColumns, 4)
     }
 
-    /// 行き先の段: 眉ラベル（真鍮・黒地）と、幅を分け合う 48 の札。印は真鍮、字は白
+    /// 行き先の段: 眉ラベル（真鍮・黒地）と、観光スポットの頁と同じ行動の札（2026-11-13 点検で 48 の横の札から替えた）
     func testTripSectionBrassOnBlackAndTall() throws {
         let section = try source("Features/PhotoDetail/PhotoTripSection.swift")
         XCTAssertTrue(section.contains("JPEyebrowLine(L(\"NEXT TRIP\\u{2002}次の旅へ\""))
-        XCTAssertTrue(section.contains(".foregroundStyle(WebTheme.accent)"))
-        XCTAssertTrue(section.contains("selected ? WebTheme.accent : WebTheme.line"), "選んだ状態を縁で伝えていない")
-        XCTAssertTrue(section.contains(".frame(maxWidth: .infinity, minHeight: Self.goHeight)"))
+        XCTAssertTrue(section.contains(".foregroundStyle(WebTheme.accent)"), "「いつ」の太陽が真鍮でない")
+        XCTAssertEqual(section.components(separatedBy: "Parts.actionLabel(").count - 1, 3,
+                       "行きたい・旅行プランに入れる・経路が観光スポットの頁と同じ札でない")
+        XCTAssertTrue(section.contains("filled: wanted)"), "選んだ状態を塗りで伝えていない")
         XCTAssertFalse(section.contains("WebTheme.muted2"), "黒地の「いつ」が写真の上の灰のまま")
-        XCTAssertGreaterThanOrEqual(PhotoTripSection.goHeight, WebTheme.minTapTarget)
-        XCTAssertEqual(PhotoTripSection.goHeight, 48)
-        XCTAssertEqual(PhotoTripSection.goRadius, 14)
+        // 札の高さ（64・押せる 44 以上）は `DesignAudit1113Tests`（@MainActor の部品の値を読む）
     }
 
     // MARK: - 全画面

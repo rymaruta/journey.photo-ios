@@ -1178,8 +1178,7 @@ struct StoryViewerView: View {
     private func authorLabel(for story: Story) -> some View {
         HStack(spacing: 10) {
             if let userId = story.userId {
-                RemoteImage(url: UserProfile.profileAssetURL(userId: userId, suffix: nil, cacheBust: nil),
-                            placeholderSymbol: "person.crop.circle.fill")
+                FaceImage(url: UserProfile.profileAssetURL(userId: userId, suffix: nil, cacheBust: nil))
                     .frame(width: 34, height: 34)
                     .clipShape(Circle())
             }
@@ -1725,8 +1724,7 @@ struct StoryViewerView: View {
                 .frame(width: StoryViewerMetrics.menuAvatar, height: StoryViewerMetrics.menuAvatar)
                 .clipShape(Circle())
             } else if let userId = story.userId {
-                RemoteImage(url: UserProfile.profileAssetURL(userId: userId, suffix: nil, cacheBust: nil),
-                            placeholderSymbol: "person.crop.circle.fill")
+                FaceImage(url: UserProfile.profileAssetURL(userId: userId, suffix: nil, cacheBust: nil))
                     .frame(width: StoryViewerMetrics.menuAvatar, height: StoryViewerMetrics.menuAvatar)
                     .clipShape(Circle())
             }
@@ -2221,8 +2219,7 @@ struct StoryViewerView: View {
     private var viewerFaces: some View {
         HStack(spacing: -8) {
             ForEach(Array(viewers.prefix(3))) { viewer in
-                RemoteImage(url: UserProfile.profileAssetURL(userId: viewer.userId, suffix: nil, cacheBust: nil),
-                            placeholderSymbol: "person.crop.circle.fill")
+                FaceImage(url: UserProfile.profileAssetURL(userId: viewer.userId, suffix: nil, cacheBust: nil))
                     .frame(width: 26, height: 26)
                     .clipShape(Circle())
                     .overlay(Circle().strokeBorder(Color.black, lineWidth: 2))

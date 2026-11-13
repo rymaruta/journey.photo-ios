@@ -87,8 +87,7 @@ struct DMAvatar: View {
     let size: CGFloat
 
     var body: some View {
-        RemoteImage(url: deleted ? nil : UserProfile.profileAssetURL(userId: userId, suffix: nil, cacheBust: nil),
-                    placeholderSymbol: "person.fill")
+        FaceImage(url: deleted ? nil : UserProfile.profileAssetURL(userId: userId, suffix: nil, cacheBust: nil))
             .frame(width: size, height: size)
             .background(WebTheme.card)
             .clipShape(Circle())
@@ -112,8 +111,7 @@ struct DMStoryFace: View {
             DMAvatar(userId: userId, deleted: true, size: size)
         } else {
             StoryAvatar(userId: userId, name: name, diameter: size) {
-                RemoteImage(url: UserProfile.profileAssetURL(userId: userId, suffix: nil, cacheBust: nil),
-                            placeholderSymbol: "person.fill")
+                FaceImage(url: UserProfile.profileAssetURL(userId: userId, suffix: nil, cacheBust: nil))
                     .background(WebTheme.card)
             } plain: {
                 if let plainTap {
