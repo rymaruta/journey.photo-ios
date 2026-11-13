@@ -633,6 +633,19 @@ final class SignatureShareCardRendererTests: XCTestCase {
         return stride(from: 0, to: rgba.count, by: 4).map { Int(rgba[$0]) }.max() ?? 0
     }
 
+    /// 描いたカードの、ある範囲の中でいちばん暗い赤の値（黒い帯が混じれば帯の地の 14 前後まで下がる）
+    private func minRed(_ data: Data, in rect: CGRect) throws -> Int {
+        let image = try XCTUnwrap(UIImage(data: data)?.cgImage)
+        let cropped = try XCTUnwrap(image.cropping(to: rect.integral))
+        let width = cropped.width, height = cropped.height
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        let context = try XCTUnwrap(CGContext(
+            data: &rgba, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(cropped, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return stride(from: 0, to: rgba.count, by: 4).map { Int(rgba[$0]) }.min() ?? 0
+    }
+
     /// 描いたカード（XCTUnwrap の autoclosure に await を入れられないので、いったん受けてから）
     private func renderCard(_ data: Data, credit: SignatureShareCardRenderer.Credit,
                             ratio: SignatureShareCardRenderer.Ratio,
@@ -657,6 +670,9 @@ final class SignatureShareCardRendererTests: XCTestCase {
 
     /// 帯の型（4:5）: 撮影情報が無ければ、下の段の区切り線と縦罫を描かない（run 1194 で縦の線だけ残っていた）。
     /// 一部だけ空なら、空の欄に掛かる縦罫を描かない。線は真鍮 45%（赤 ≈ 98）、帯の地は赤 14
+    ///
+    /// 2026-11-13: 撮影情報が無いカードは帯が 138 低い（`hasShotInfo: false` の寸法）。前の帯の上の所
+    /// （4:5 の 1022〜1160）まで写真が伸び、撮影者の段の下（1252〜1290）には線が無いことを画素で見る
     func testBandCardDrawsNoInfoLinesWithoutExif() async throws {
         typealias L = ShareCardMap.Layout
         let layout = L(ratio: .portrait)
@@ -668,10 +684,17 @@ final class SignatureShareCardRendererTests: XCTestCase {
 
         let empty = try await renderCard(
             grayPhoto(), credit: credit(camera: nil, lens: " ", exposure: nil), ratio: .portrait, style: .band)
-        XCTAssertLessThan(try maxRed(empty, in: separator), threshold, "撮影情報が無いのに区切り線を描いた")
-        for (index, rect) in dividers.enumerated() {
-            XCTAssertLessThan(try maxRed(empty, in: rect), threshold, "撮影情報が無いのに縦罫 \(index) を描いた")
-        }
+        let none = L(ratio: .portrait, hasShotInfo: false)
+        XCTAssertEqual(none.photoBottom, 1160)
+        // 帯があった所（撮影情報ありの帯の上端 1022 → 新しい帯の上端 1160）は写真（暗い灰色・赤 ≈ 85）で埋まる。
+        // 黒い帯（赤 14）が残っていれば最小が閾値を下回る
+        let formerBand = CGRect(x: L.contentLeft + 4, y: layout.photoBottom + 2,
+                                width: L.contentRight - L.contentLeft - 8, height: none.photoBottom - layout.photoBottom - 6)
+        XCTAssertGreaterThan(try minRed(empty, in: formerBand), threshold, "撮影情報が無いのに写真の下に黒い帯が残った")
+        // 撮影者の段の下（帯の下端まで 38）には、区切り線も縦罫も無い（額縁の手前まで・地図は無い）
+        let belowRow = CGRect(x: L.contentLeft, y: none.rowTop + L.avatarSize + 4,
+                              width: L.contentRight - L.contentLeft, height: none.bandRect.maxY - none.rowTop - L.avatarSize - 8)
+        XCTAssertLessThan(try maxRed(empty, in: belowRow), threshold, "撮影情報が無いのに撮影者の段の下に線を描いた")
 
         let full = try await renderCard(
             grayPhoto(), credit: credit(camera: "Camera", lens: "35mm", exposure: "1/125s"),

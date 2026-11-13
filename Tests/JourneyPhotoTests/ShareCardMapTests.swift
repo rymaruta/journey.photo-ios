@@ -119,9 +119,24 @@ final class ShareCardMapTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(none.mapRect.minY, none.bandRect.minY + 12, "\(ratio)")
             XCTAssertLessThanOrEqual(none.mapRect.maxY, none.bandRect.maxY - 12 + 0.001, "\(ratio)")
             XCTAssertEqual(none.mapRect.maxX, L.contentRight, accuracy: 0.001, "\(ratio)")
+            // 9:16 は下の 75（返信欄）に地図を掛けない
+            XCTAssertLessThanOrEqual(none.mapRect.maxY, none.bandRect.maxY - none.bottomInset - 12 + 0.001, "\(ratio) 返信欄")
+            XCTAssertLessThanOrEqual(info.mapRect.maxY, info.bandRect.maxY - info.bottomInset - 12 + 0.001, "\(ratio) 返信欄")
+            // どの比でも地図は同じ大きさ（撮影情報なしは 4:5 と同じ 106 の高さ）
+            XCTAssertEqual(none.mapRect.size.height, without.mapRect.size.height, accuracy: 0.001, "\(ratio) 地図の大きさ")
+            XCTAssertEqual(none.mapRect.size.width, without.mapRect.size.width, accuracy: 0.001, "\(ratio) 地図の大きさ")
             // 撮影情報があるときの地図は変えない
             XCTAssertEqual(info.mapRect, CGRect(x: 734, y: info.photoBottom + 12, width: 286, height: 244), "\(ratio)")
+            // 撮影地の字の幅: 撮影情報があるときは今までどおり。地図が縮めばその分広い（地図の左端の 8 手前まで）
+            XCTAssertEqual(info.placeWidth(hasMap: true), L.placeWidthWithMap, accuracy: 0.001, "\(ratio)")
+            XCTAssertEqual(info.placeWidth(hasMap: false), L.placeWidthWithoutMap, "\(ratio)")
+            XCTAssertEqual(none.placeWidth(hasMap: true), none.mapRect.minX - 8 - L.placeX, accuracy: 0.001, "\(ratio)")
+            XCTAssertGreaterThan(none.placeWidth(hasMap: true), L.placeWidthWithMap, "\(ratio)")
         }
+        // 9:16・撮影情報なしの地図: 帯 1655〜1860・返信欄 75 を除いた下端 1773 まで
+        let story = L(ratio: .story, hasShotInfo: false)
+        XCTAssertEqual(story.mapRect.minY, 1667)
+        XCTAssertEqual(story.mapRect.maxY, 1773, accuracy: 0.001)
     }
 
     /// 2026-11-04 owner「フェードする境界線いらない」: 写真は帯の開始位置できれいに終わる。

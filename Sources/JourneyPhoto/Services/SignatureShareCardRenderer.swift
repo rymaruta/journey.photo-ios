@@ -249,7 +249,7 @@ enum SignatureShareCardRenderer {
                 // 2行の塊をアバターの縦の中心に置く
                 drawPlaceLines(placeLines,
                                at: CGPoint(x: L.placeX, y: layout.rowCenterY - L.placeHeight / 2),
-                               maxWidth: credit.coords == nil ? L.placeWidthWithoutMap : L.placeWidthWithMap,
+                               maxWidth: layout.placeWidth(hasMap: credit.coords != nil),
                                color: .white)
             }
             if let coordinate = credit.coords {

@@ -131,6 +131,8 @@ enum ShareCardMap {
         let footer: CGFloat
         /// 撮影情報（カメラ・レンズ・撮影値）が1つでもあるか。無いときは下の段（区切り線・間・撮影情報の行）を描かない
         let hasShotInfo: Bool
+        /// 下の空き（帯の下端から上へ）。9:16 だけ 75（Instagram の返信欄に隠れる・`FadeLayout.bottomInset` と同じ）
+        let bottomInset: CGFloat
 
         /// 下の段（撮影者の段の下の間 → 区切り線 → 間 → 撮影情報の行）の高さ。42 + 2 + 42 + 52 = 138
         static var shotInfoBlockHeight: CGFloat { rowGap + lineWidth + rowGap + infoHeight }
@@ -141,6 +143,7 @@ enum ShareCardMap {
         init(ratio: SignatureShareCardRenderer.Ratio, hasShotInfo: Bool = true) {
             height = Layout.width / CGFloat(ratio.rawValue)
             self.hasShotInfo = hasShotInfo
+            bottomInset = ratio == .story ? 75 : 0
             footer = (ratio == .story ? 403 : 328) - (hasShotInfo ? 0 : Self.shotInfoBlockHeight)
         }
 
@@ -170,12 +173,17 @@ enum ShareCardMap {
 
         /// 地図の枠。**黒い帯の中だけ**で、帯の高さいっぱい（上下の余白 12）。右端は本文の右端（1020）。
         /// 写真には掛けない（フェードをやめたため）。
-        /// 撮影情報が無く帯が低いときは、帯の高さ（上下 12）に収まるよう 286:244 の比のまま縮め、右端はそろえたまま
+        /// 撮影情報が無く帯が低いときは、帯の高さ（上下 12・9:16 は下の返信欄 75 も除く）に収まるよう
+        /// 286:244 の比のまま縮め、右端はそろえたまま。どの比でも地図は同じ大きさになる（4:5・1:1・9:16 とも 106 の高さ）
         var mapRect: CGRect {
-            let fitHeight = min(Layout.mapHeight, bandRect.height - Layout.mapBandInset * 2)
+            let fitHeight = min(Layout.mapHeight, bandRect.height - bottomInset - Layout.mapBandInset * 2)
             let width = Layout.mapWidth * fitHeight / Layout.mapHeight
             return CGRect(x: Layout.contentRight - width, y: photoBottom + Layout.mapBandInset,
                           width: width, height: fitHeight)
+        }
+        /// 撮影地の字が使える幅。地図があるときは地図の左端の 8 手前まで（地図が縮めばその分広い）
+        func placeWidth(hasMap: Bool) -> CGFloat {
+            hasMap ? mapRect.minX - Layout.mapGapToPlace - Layout.placeX : Layout.placeWidthWithoutMap
         }
     }
 
