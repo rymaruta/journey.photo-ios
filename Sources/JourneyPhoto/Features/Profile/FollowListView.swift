@@ -261,8 +261,8 @@ struct FollowListView: View {
 
     private func person(_ user: FollowUser) -> some View {
         HStack(spacing: 12) {
-            RemoteImage(url: user.deleted == true ? nil
-                        : UserProfile.profileAssetURL(userId: user.id, suffix: nil, cacheBust: nil))
+            FaceImage(url: user.deleted == true ? nil
+                      : UserProfile.profileAssetURL(userId: user.id, suffix: nil, cacheBust: nil))
                 .frame(width: 44, height: 44)
                 .background(WebTheme.card)
                 .clipShape(Circle())

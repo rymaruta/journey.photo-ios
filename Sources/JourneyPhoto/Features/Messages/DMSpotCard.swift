@@ -3,7 +3,7 @@ import SwiftUI
 /// **DM に届いた撮影スポットの札**（資料「SNS をもっと SNS に」⑤「一緒に行こう」の受けた人の画面・1.1.83・2026-11-12）。
 ///
 /// 文の中の撮影スポットの頁のリンク（`DMSpotShare.slug`）から、端末の撮影スポットの索引を引いて描く。
-/// 並び（資料の模型どおり）: 写真 130 → 真鍮の眉「一緒に行こう」→ 明朝 18 の名前 →
+/// 並び（資料の模型どおり）: 写真 130（枠の余りがあれば伸びる）→ 真鍮の眉「一緒に行こう」→ 明朝 18 の名前 →
 /// 12 の「観光スポット」と地域 → 真鍮の塗りに墨の「行きたい場所に入れる」（見た目 36・当たり 44）→ 出典を1行（CC の表示条件）。
 /// 札（写真と名前）を押すと撮影スポットの頁。札の幅は 240（資料「画面デザインの案」第1章の模型 `.spot{width:240}`）。
 ///
@@ -75,15 +75,16 @@ struct DMSpotCard: View {
                 OfficialSpotView(spot: spot, spots: index, photos: [], photosKnown: false)
             } label: {
                 VStack(alignment: .leading, spacing: 0) {
+                    // 写真は 130 から、枠の余り（名前が1行・出典が無い分）まで伸びる（`DMSpotCardPhotoPlaceholder.grows`）
                     if let photo = spot.photo {
                         Color.clear
-                            .frame(height: Self.photoHeight)
+                            .frame(minHeight: Self.photoHeight, maxHeight: .infinity)
                             .overlay(RemoteImage(url: photo.url))
                             .clipped()
                             .accessibilityHidden(true)
                     } else {
                         // 写真の無い観光スポットも写真の場所を取る（枠の上が空かないように・2026-11-12 判断）
-                        DMSpotCardPhotoPlaceholder()
+                        DMSpotCardPhotoPlaceholder(grows: true)
                     }
                     DMSpotCardText(name: spot.name, region: spot.regionLabel)
                 }
@@ -97,8 +98,9 @@ struct DMSpotCard: View {
             .accessibilityAddTraits(.isButton)
             .accessibilityHint(L("観光スポットのページを開きます", "Opens the spot page"))
             .accessibilityIdentifier("dm.spotCard.open")
-            // 名前が1行のとき・出典が無いときの余りは、ボタンの上に置く（ボタンと出典は枠の下端にそろう）
-            Spacer(minLength: 0)
+            // 名前が1行のとき・出典が無いときの余りは、写真の高さに回す（上の写真が伸びる）。
+            // 2026-11-13 デザインの点検: 前は余りをここ（ボタンの上）に `Spacer` で置き、兼六園のような1行の名前で
+            // 地域の行とボタンの間が約1行分空いていた。枠の高さ（`DMSpotCardBox`）は変えない——中の配置だけ
             Button {
                 guard !wanted else { return }
                 Task {
@@ -227,9 +229,13 @@ private struct DMSpotCardSurface: ViewModifier {
 
 /// 写真の場所の代わり（写真の無い観光スポット・読めないとき・枠の見本）。灰の地に場所の印
 struct DMSpotCardPhotoPlaceholder: View {
+    /// 枠の余りまで伸びるか（読めた札の写真の場所）。**枠の見本（`DMSpotCardSkeleton`）では伸ばさない**——
+    /// 見本は 130 のまま組んで枠の高さを決める
+    var grows = false
+
     var body: some View {
         WebTheme.surface3
-            .frame(height: DMSpotCard.photoHeight)
+            .frame(minHeight: DMSpotCard.photoHeight, maxHeight: grows ? .infinity : DMSpotCard.photoHeight)
             .overlay(
                 Image(systemName: "mappin.and.ellipse")
                     .font(.system(size: 22, weight: .regular))

@@ -576,6 +576,12 @@ struct MyPageView: View {
                 handleLine(profile)
                 aboutLines(profile)
             }
+            // UI テストのときだけ: 名前の行の当たりの張り出し（上下それぞれ）と、その元の1行の高さを値で出す
+            // （2026-11-13 確かめ役: 名前が折り返すと張り出しが下の「@ユーザー名」の行に重なるかを、frame と合わせて見る）
+            .overlay(alignment: .topLeading) {
+                LayoutProbe(identifier: "mypage.name.probe",
+                            value: String(format: "slack=%.1f lineHeight=%.1f", nameTapSlack, nameLineHeight))
+            }
             // BGM はひとことの下の1行（2026-10-21・全画面の点検）。以前は数の下の札で、
             // 旅の記録の線と合わせて写真の格子を最初の画面の一番下まで押し下げていた
             bgmLine(profile)
@@ -589,10 +595,10 @@ struct MyPageView: View {
     /// 自分の顔。**ストーリーがあれば輪を描き、押すと自分のストーリーから**（2026-10-22・`StoryAvatar`）
     private func avatar(_ profile: UserProfile, side: CGFloat) -> some View {
         StoryAvatar(userId: profile.userId, name: L("あなた", "You"), diameter: side) {
-            RemoteImage(url: profile.avatarURL(cacheBust: ProfileImageVersions.shared.token(for: profile.userId)))
+            FaceImage(url: profile.avatarURL(cacheBust: ProfileImageVersions.shared.token(for: profile.userId)))
                 .background(WebTheme.card)
         } plain: {
-            RemoteImage(url: profile.avatarURL(cacheBust: ProfileImageVersions.shared.token(for: profile.userId)))
+            FaceImage(url: profile.avatarURL(cacheBust: ProfileImageVersions.shared.token(for: profile.userId)))
                 .frame(width: side, height: side)
                 .background(WebTheme.card)
                 .clipShape(Circle())
@@ -605,6 +611,7 @@ struct MyPageView: View {
         if let line = ProfileLine.handleAndHome(username: profile.username,
                                                 home: profile.homeLocation) {
             ProfileHandleLine(line: line, showsPin: true)
+                .accessibilityIdentifier("mypage.handleLine")
         }
     }
 
@@ -695,10 +702,12 @@ struct MyPageView: View {
     private func nameLine(_ profile: UserProfile) -> some View {
         Button { showNameSide = true } label: {
             HStack(spacing: 4) {
+                // 名前は3行まで折り返す（板 06「名前は3行まで折り返す、切らない」）。
+                // 2026-11-13 デザインの点検: 1行に限っていたので、大きい文字では右の QR・編集に押されて「とて…」と2字で切れた
                 Text(profile.name)
                     .font(JPFont.screenTitle)
                     .foregroundStyle(Color.white)
-                    .lineLimit(1)
+                    .lineLimit(MyPageNameLine.maxLines)
                 NameMarks(profile: profile, nameSize: 26, relativeTo: .title, fit: .mincho, showsBadge: true)
             }
             .frame(minHeight: WebTheme.minTapTarget)

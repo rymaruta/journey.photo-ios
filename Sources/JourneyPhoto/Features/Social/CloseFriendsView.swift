@@ -196,8 +196,7 @@ struct CloseFriendsView: View {
             if picked { chosen.remove(user.id) } else { chosen.insert(user.id) }
         } label: {
             HStack(spacing: 12) {
-                RemoteImage(url: UserProfile.profileAssetURL(userId: user.id, suffix: nil, cacheBust: nil),
-                            placeholderSymbol: "person.crop.circle.fill")
+                FaceImage(url: UserProfile.profileAssetURL(userId: user.id, suffix: nil, cacheBust: nil))
                     .frame(width: 44, height: 44)
                     .clipShape(Circle())
                 PersonNameLines(user: user)

@@ -219,6 +219,9 @@ struct RasterBadgeArt: View {
 
 /// マイページの名前の行の読み上げ（行ごと1つのボタンにまとめるので、印の名前もここで言う）
 enum MyPageNameLine {
+    /// 名前を折り返す行数の上限（板 06「名前は3行まで折り返す（『貼ったラ…』と切らない）」・2026-11-13）
+    static let maxLines = 3
+
     /// 「丸田、認証済み、Pro 会員、名前の横のバッジ: 都道府県 · 銀」
     static func label(_ profile: UserProfile) -> String {
         var parts = [profile.name]

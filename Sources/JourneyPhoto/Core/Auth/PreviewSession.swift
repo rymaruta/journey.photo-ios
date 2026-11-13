@@ -162,6 +162,17 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストの事実取りだけ: 並びの寸法（字の要る幅と札の幅・名前の行の張り出し・安全な範囲の上端）を、見えない要素
+    /// （`LayoutProbe`）の値に出す（`-JPPreviewLayoutProbe YES`・Debug のみ・2026-11-13 デザインの点検の確かめ）。
+    /// 字が切れたか・当たりが重なるかは画面の木から取れないので、推定でなく数で見る。Release では必ず false
+    static var layoutProbe: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "JPPreviewLayoutProbe")
+        #else
+        return false
+        #endif
+    }
+
     static var noLift: Bool {
         #if DEBUG
         return UserDefaults.standard.bool(forKey: "JPPreviewNoLift")
