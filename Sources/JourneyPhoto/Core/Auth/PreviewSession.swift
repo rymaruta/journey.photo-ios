@@ -132,9 +132,10 @@ enum PreviewSession {
         #endif
     }
 
-    /// UI テストでホームの札の行の位置の数を見えない要素に出す（Debug のみ・2026-10-31 #426）。
-    /// `-JPPreviewFeedProbe YES`。留まったまま替えたときに札の行が動く件を、推定でなく実際の数で見るため
-    /// （`GalleryView` の `home.feed.probe`・`ScreenshotTests.testSwipesHomeFeedTabs`）。Release では必ず false
+    /// UI テストでホームの1本の並びの数（読んだページ・並びの数・続きの目印・新着の最初の札）を見えない要素に出す
+    /// （Debug のみ・2026-10-31 #426 で札の行の位置を見るために足し、札 #595 で1本の並びの数に替えた）。
+    /// `-JPPreviewFeedProbe YES`（`GalleryView` の `home.feed.probe`・`ScreenshotTests.testScrollsHomeSingleFeed`・
+    /// `revealNewestFeedTile`）。Release では必ず false
     static let feedProbeKey = "JPPreviewFeedProbe"
 
     static var feedProbe: Bool {

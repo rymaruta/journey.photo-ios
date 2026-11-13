@@ -59,24 +59,18 @@ struct GalleryView: View {
     @State private var shownViewer: String??
     /// 「いまの季節のスポット」の段の中身（決めるのは上の札 `HomeTopCardView`・#417 ④）
     @State private var seasonShelf: HomeSeasonShelfSlot?
-    /// 切り替えの札の行の位置の控え（マイページと同じ `ProfileTabRowSpot`）。送るたびに変わる値なので見張らない箱に置く
-    @State private var feedRowSpot = ProfileTabRowSpot()
-    /// 中身の横の量の箱を、縦の送りの外に重ねた札の行（留まった札）と分け合う（`ProfileTabPagerControl`）
-    @State private var feedPager = ProfileTabPagerControl<HomeFeed>()
     /// 上の札（`HomeTopCardView`）が見えている上端より上へ流れ切っているか
     @State private var topCardsAway = false
-    /// 札ごとの写真の束ね（ブロックを落とす・投稿で束ねる・季節の段の前後に割る）の控え（#426 確かめ役の見直し）。
-    /// 描き直しのたびに全部の札で計算し直さない——元の写真か「見せない」が変わったときだけ
+    /// 1本の並び（混ぜる・ブロックを落とす・投稿で束ねる・季節の段の前後に割る）の控え。
+    /// 描き直しのたびに計算し直さない——材料か「見せない」が変わったときだけ（`HomeFeedPageMemo`）
     @State private var pageMemo = HomeFeedPageMemo()
-    /// 札の行が上に留まっているか（重ねて描く札 `pinnedFeedRow` を出す。変わったときだけ書く）
-    @State private var feedRowPinned = false
-    /// 札の行の高さ・見えている高さ（札の中身の最低の高さ `ProfileTabScroll.minPageHeight`）
-    @State private var feedRowHeight: CGFloat = ProfileTabStyle.height
-    @State private var feedViewport: CGFloat = 0
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// 「フォロー中」をどこまで見たか（#417 ⑨・`FollowingSeenStore`）。人が替わったとき・覚え直したときに読み直す
-    @State private var followingSeen: String?
+    /// フォロー中の人の新しい写真を、どこまで上に出したか（`FollowingSeenStore`・札 #595）。
+    /// **並べる基準は、人が決まったときと引き下げたときにだけ読み直す**（`FollowingBaseline`）——上に出した端から
+    /// 覚えた値で並べ直すと、見ている間に上の段が消えて下の写真がずれる
+    @State private var followingBaseline = FollowingBaseline()
     private let followingSeenStore = FollowingSeenStore()
+    /// 「おすすめの人」でフォローしたあと、並びの頭へ送る合図（上にその人の写真が出る）
+    @State private var scrollToTopRequests = 0
     /// ヘッダーのベル用（タブから外したので、ここから開く）
     var unread: Int = 0
     var onOpenNotifications: () -> Void = {}
@@ -87,9 +81,8 @@ struct GalleryView: View {
         // UI テストのときだけ: body の評価を数える（`PerfRecorder`・札 #435 / #429。無効なら何もしない）
         let _ = PerfRecorder.shared.bodyHit(.home)
         VStack(spacing: 0) {
-            // **範囲の切り替え（自分／フォロー中／すべて）は置かない。**
-            // 下のフィード（おすすめ／フォロー中／新着）が範囲も決めるので、
-            // 「フォロー中」が2段に並んでいた（整理案 01c・2026-09-26）。
+            // **切り替えは置かない。** 範囲の切り替え（自分／フォロー中／すべて）は整理案 01c（2026-09-26）で、
+            // フィードの切り替え（おすすめ／フォロー中／新着）は札 #595（2026-11-13）で外し、1本の並びにした。
             // 自分の写真はマイページが持ち場
             switch model.state {
             case .loading:
@@ -112,10 +105,7 @@ struct GalleryView: View {
                 if connectivity.isOffline {
                     HomeOfflineBand(isBusy: isRefreshing) { retryHome() }
                 }
-                // 🔴 **0枚でもフィードごと描く**（切り替えのタブを残す）。
-                // 空の知らせで画面ごと置き換えると、「フォロー中」を押して
-                // 0枚だった人が「おすすめ」へ戻れなかった——以前は上の段の
-                // 切り替えが逃げ道だったが、整理案 01c で外した
+                // 🔴 **0枚でも並びごと描く**（ストーリー・上の札・空の知らせの一手を残す）
                 feed(photos)
                     .onAppear { PerfRecorder.shared.mark("home.feed.appear") }   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07）
             }
@@ -150,6 +140,8 @@ struct GalleryView: View {
             // 再開した時点の `auth.userId` で前の人の集合を記録しない
             let userId = auth.userId
             model.expect(viewerId: userId)
+            // 人が決まった・替わった → フォロー中の人の写真を上に出した所の基準を読み直す（札 #595）
+            followingBaseline.capture(viewer: userId, store: followingSeenStore)
             // **人が替わったら一覧を読み直す**（前の人の限定公開を捨てる）。
             // 初回（`shownViewer` がまだ無い）は上の `.task` が読むので何もしない
             if let previous = shownViewer, previous != userId {
@@ -388,15 +380,21 @@ struct GalleryView: View {
         reloadMyPhotos()
     }
 
-    /// owner が選んだ「おすすめ」。Web はトップの一覧の上に、
-    /// カテゴリごとの横並びで出している（`FeaturedSections`）。
+    /// 選ばれた写真の横並び（カテゴリごと・Web の `FeaturedSections`）。1本の並びの 2. の頭に置く。
+    /// 1.（フォロー中の人の新しい写真）に出した写真は落とす（同じ写真を2回出さない）
+    private func featuredGroups(excluding shown: Set<String>) -> [FeaturedGroups.Group] {
+        model.featured.compactMap { group in
+            let photos = dropped.visible(group.photos).filter { !shown.contains($0.id) }
+            return photos.isEmpty ? nil : FeaturedGroups.Group(id: group.id, label: group.label, photos: photos)
+        }
+    }
+
     @ViewBuilder
-    private func featuredSections(_ page: HomeFeed) -> some View {
-        // おすすめの横並びも、モザイクと同じ写しで落とす（戻った直後に見えない）
-        ForEach(model.featured(for: page).filter { !dropped.visible($0.photos).isEmpty }) { group in
+    private func featuredSections(_ groups: [FeaturedGroups.Group]) -> some View {
+        ForEach(groups) { group in
             VStack(alignment: .leading, spacing: JPSpace.s) {
                 // v2（Search の板の節の見出しと同じ型）: 眉（真鍮＋消える線）→ 明朝 22 → 右に「すべて ›」
-                JPSectionHeading(eyebrow: "PICKS", spoken: L("おすすめ", "Picks"), title: group.label) {
+                JPSectionHeading(eyebrow: "PICKS", spoken: L("選ばれた写真", "Picks"), title: group.label) {
                     NavigationLink {
                         TagPhotosView(kind: .category(group.id))
                     } label: {
@@ -408,9 +406,9 @@ struct GalleryView: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: WebTheme.gridSpacing) {
-                        ForEach(dropped.visible(group.photos)) { photo in
+                        ForEach(group.photos) { photo in
                             NavigationLink {
-                                PhotoDetailView(photo: photo, context: dropped.visible(group.photos))
+                                PhotoDetailView(photo: photo, context: group.photos)
                             } label: {
                                 PhotoTile(photo: photo, aspect: 3.0 / 4.0)
                                     .frame(width: 240)
@@ -421,131 +419,36 @@ struct GalleryView: View {
                     .padding(.horizontal, JPSpace.gutter)
                 }
             }
-            // 画面写真の試験が「新着」で出ていないことを確かめる目印（`ScreenshotTests`）
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("home.featured")
         }
     }
 
-    /// フィードの切り替え（おすすめ / フォロー中 / 新着）。
-    ///
-    /// **推薦の口は無い**ので、おすすめの規則を下に1行で出す
-    /// （指示書 5-2——実装済みであるかのように見せない）。**その一文は
-    /// 整理案 01c で画面から外した**（owner の承認・2026-09-26）。文言は `HomeFeed.note`
-    ///
-    /// **v2（2026-10-14・Main の板）: 字のタブにした。** 選んだタブは真鍮の字（600）と 2 の真鍮の下線、
-    /// ほかは text-3 の字。並びの下に白 8% の区切り線。黒地の上なので真鍮が読める。
-    /// **選んだことは下線（形）と読み上げ（`.isSelected`）でも伝える**——色だけにしない
-    ///
-    /// **2026-10-31 判断（#426・owner「ホームのタブの切り替えもマイページと同じようにスムーズに」）:
-    /// マイページと同じ札の部品（`ProfileTabBar`）にした。** 下線は次の札の幅に伸び縮みしながらばねで滑り
-    /// （0.28 秒・減衰 0.85）、押せる範囲は札の間の半分（12）まで左右に広がり、高さ 48。札の行でも横に払える
-    /// （`ProfileTabSwipe`）。以前はここだけ自前の札（下線は瞬時に入れ替わる・当たりは字の幅だけ・高さ 44）だった
-    ///
-    /// **#417 ⑧（2026-10-30 owner 採用）: 写真の一覧の頭で、下へ送っても見出しの下に留まる**
-    /// （`feed` の `LazyVStack(pinnedViews: [.sectionHeaders])` の見出し）。留まっている間は札の部品の
-    /// 「留まった姿」（地を黒 100%・下の線を白 12%・マイページと同じ）。外した NEW の段の「すべて見る」が無くても、
-    /// 「新着」はいつも1回で押せる。
-    ///
-    /// **#417 ⑨: フォロー中に新しい写真がある日は「フォロー中」の右上に真鍮の点**（8・黒 2 の縁・字の右端から 11・上から 9。
-    /// お知らせの未読の点と同じ形・`ProfileTabDot`）。読み上げは「フォロー中・新しい写真あり」（`HomeFollowingNews`）
-    private func feedPicker(followingHasNew: Bool, stuck: Bool) -> some View {
-        ProfileTabBar(tabs: HomeFeed.allCases, selection: feedSelection, stuck: stuck,
-                      dot: { $0 == .following && followingHasNew },
-                      spokenLabel: { HomeFollowingNews.spokenLabel($0.label, hasNew: $0 == .following && followingHasNew) })
-            // **規則の一文は出さない**（整理案 01c）。写真より先に
-            // 説明が並ぶと、開いた瞬間に読むものが増える。
-            // 文言は `HomeFeed.note` に残してある
-            // 地は画面の黒（流れている札の行も黒地の上・留まった札は部品が黒 100% で塗る）
-            .background(WebTheme.background)
-    }
-
-    /// 上に留まった切り替え（流れている元の行が見えている上端を越えている間だけ、縦の送りの外に重ねる）。
-    ///
-    /// **2026-10-31 判断（#426 Mac の確かめ・run 41201788362 の数）: マイページと同じ「重ねて描く札」にした。**
-    /// 以前は `LazyVStack(pinnedViews: [.sectionHeaders])` の節の見出しで留めていたが、遅れて作る並びは札の中身
-    /// （横に並べた入れ物）の高さを**1つ前の選びの高さのまま**持ち続けた（新着 → フォロー中で中身の高さ 6320、
-    /// フォロー中 → 新着で 1042）。短い高さが残った回に送りの位置が詰められ（offset 178.33 → 169.00）、札の行が
-    /// 留まりから外れて下がった（y 116 → 121.33・前の回は 118.33・130.33）。並びを `VStack` にして高さが選びと
-    /// 一緒に変わるようにし、留め方はマイページ（`pinnedTabRow`）と同じにした。
-    /// 横の払い: 重ねた札は縦の送りの外なので、縦の送りに足すパンは届かない。札の行の上だけ SwiftUI の
-    /// 指の操作（`ProfileTabOverlaySwipe`）で受け、中身と同じ箱（`feedPager`）を動かす——中身が指に付いてくる
-    private func pinnedFeedRow(followingHasNew: Bool) -> some View {
-        feedPicker(followingHasNew: followingHasNew, stuck: true)
-            .modifier(ProfileTabOverlaySwipe(tabs: HomeFeed.allCases, selection: feedSelection, control: feedPager))
-            // 札の目印（`home.feed.*`）は中に残す（入れ物の目印で上書きしない）
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("home.feed.pinned")
-    }
-
-    /// 札で選んでいるフィード。押した・払ったのどちらも `selectFeed` を通す
-    private var feedSelection: Binding<HomeFeed> {
-        Binding(get: { model.feed }, set: { selectFeed($0) })
-    }
-
-    /// フィードを選ぶ（札を押した・中身か札の行を横に払った）
-    private func selectFeed(_ feed: HomeFeed) {
-        model.select(feed: feed, viewerId: auth.userId)
-        // ⑧ 留まった切り替えで別のフィードを選んだら、新しい一覧の**頭**へ送る（PR #422 の確かめ）——
-        // `feed` の `.onChange(of: model.feed)`（マイページと同じ `ProfileTabScroll.scrollsToRow`）
-        // **選んだときにフォロー一覧を引き直す。** 一覧は
-        // `.task(id: auth.userId)` で一度しか引いていないので、
-        // 誰かをフォローしても「フォロー中」に出てこない
-        // （上の段にあった範囲の切り替えが持っていた処理を移した）
-        guard feed == .following, let userId = auth.userId else { return }
-        Task {
-            // **取れなかった回に空で潰さない**（圏外で押しただけで
-            // 「フォロー中」が知らせも無く空になる）——nil は `refreshFollowing` が捨てる
-            let ticket = model.beginFollowingFetch()
-            let following = await fetchFollowing()
-            // 待っている間に人が替わっていたら捨てる（前の人の集合を今の人に入れない）
-            guard auth.userId == userId else { return }
-            model.refreshFollowing(following, viewerId: userId, ticket: ticket)
-        }
-    }
-
-
-    /// UI テストのときだけ、札の行の位置の数を見えない要素（`home.feed.probe`）に出す（`PreviewSession.feedProbe`）
-    @State private var feedProbeText = ""
-    /// UI テストのときだけ: 札の行より上の部品と中身の枠（`FeedProbeFrame`・2026-11-13 PR #589 の
-    /// `testSwipesHomeFeedTabsWithoutLift` で札の行が 48 下がった件。上の部品が伸びたのか、送りの位置が戻ったのかを分ける）
-    @State private var feedProbeFrames: [String: CGRect] = [:]
-
-    private func updateFeedProbe() {
-        let n: (CGFloat) -> String = { String(format: "%.2f", Double($0)) }
-        let text = "feed=\(model.feed.rawValue) rowMinY=\(n(feedRowSpot.minY))"
-            + " overflow=\(n(ProfileTabScroll.rowOverflow(rowMinY: feedRowSpot.minY, visibleTop: 0)))"
-            + " pinned=\(feedRowPinned) rowH=\(n(feedRowHeight)) viewport=\(n(feedViewport))"
-            + " pages=\(model.loadedPageCount) topCardsAway=\(topCardsAway)"
-            // 中身の上端（送った量の符号違い）と高さ、上の部品の高さ。すれちがいの帯は届いた束の枚数も（0 なら帯は出ない）
-            + " content=\(probeFrame("content"))"
-            + " passSlot=\(passCards(now: passNow).count)/\(probeFrame("passSlot"))"
-            + " stories=\(probeFrame("stories")) topCard=\(probeFrame("topCard"))"
-        if text != feedProbeText { feedProbeText = text }
-    }
-
-    /// 枠を「上端/高さ」で書く（まだ測っていなければ「-」）
-    private func probeFrame(_ key: String) -> String {
-        guard let frame = feedProbeFrames[key] else { return "-" }
-        return String(format: "%.2f/%.2f", Double(frame.minY), Double(frame.height))
-    }
-
-    /// 枠を控えて、値を出し直す（`FeedProbeFrame` から）
-    private func recordProbeFrame(_ key: String, _ frame: CGRect) {
-        guard feedProbeFrames[key] != frame else { return }
-        feedProbeFrames[key] = frame
-        updateFeedProbe()
+    /// UI テストのときだけ、1本の並びの数を見えない要素（`home.feed.probe`）に出す（`PreviewSession.feedProbe`）。
+    /// 読んだページの数・上の段の数・並びの数・続きの目印があるか・新着の最初の札が上から何枚目か（無ければ -1）
+    private func feedProbeText(_ rows: HomeFeedPageMemo.Rows) -> String {
+        "pages=\(model.loadedPageCount) following=\(rows.following.count) main=\(rows.lead.count + rows.rest.count)"
+            + " more=\(rows.truncated || model.hasMorePages) firstLatest=\(rows.firstLatestTile ?? -1)"
+            + " topCardsAway=\(topCardsAway)"
     }
 
     /// ホームは**板 01c の写真の並び**（`HomeMosaic`・2026-09-26）。
     /// 集約ページ（タグ・撮影地・機材）は角丸の `PhotoGrid` のまま。
+    ///
+    /// **2026-11-13（札 #595・owner 決定）: 「おすすめ・フォロー中・新着」の切り替えをやめ、タブの無い1本の並びにした。**
+    /// 上から、フォロー中の人の新しい写真 → 選ばれた写真の横並び → 選ばれた写真・いいね順に新着を混ぜた並び
+    /// （ひと回りの後ろに季節の撮影スポットの段）。並べ方は `HomeFeed.arrange`（純粋な関数）。
+    /// 切り替えの札・留まる札の行・横に払う入れ物（`ProfileTabBar`・`ProfileTabPager`）はホームから外した
+    /// （マイページ・人のページは今までどおり）
     private func feed(_ photos: [Photo]) -> some View {
-        ZStack(alignment: .top) {
-        ScrollViewReader { proxy in
+        let fresh = followingFresh
+        let featured = featuredGroups(excluding: Set(fresh.map(\.id)))
+        let rows = pageMemo.rows(HomeFeedPageMemo.Input(
+            following: fresh, recommended: model.recommendedPhotos, latest: photos,
+            latestHasMore: model.hasMorePages, excluding: Set(featured.flatMap { $0.photos.map(\.id) })),
+            hidden: dropped)
+        return ScrollViewReader { proxy in
         ScrollView {
-            // 2026-10-31（#426 Mac の確かめ）: `LazyVStack` の節の見出しで留めるのをやめ、マイページと同じ `VStack` と
-            // 重ねて描く札（`pinnedFeedRow`）にした。遅れて作る並びが札の中身の高さを1つ前の選びのまま持ち、送りの位置を
-            // 詰めて札の行を動かしていた。写真の一覧の遅れて作る並びは `HomeMosaic` の中にある（画面に入った段だけ作る）
             VStack(spacing: Self.feedSpacing) {
                 // 「ホーム」をもう一度押したときに戻る先（高さ0の目印）
                 Color.clear.frame(height: 0).id(Self.feedTopID)
@@ -559,15 +462,8 @@ struct GalleryView: View {
                 // 届いた束をまだ開いていないときだけ出る（`PassHomeSlot`）
                 let passBundle = passCards(now: passNow)
                 PassHomeSlot(cards: passBundle, now: passNow) { passDeck = PassDeck(cards: passBundle) }
-                    .modifier(FeedProbeFrame { recordProbeFrame("passSlot", $0) })
                 StoriesRow(reloadToken: tabRouter.postSheetsClosed &+ storiesRefresh,
                            myPhotos: model.myPhotos.filter { !dropped.deleted.contains($0.id) })
-                    .modifier(FeedProbeFrame { recordProbeFrame("stories", $0) })
-                // **#417 ⑦（2026-10-30 owner 採用）: 「NEW（みんなの新しい写真）」の段（2026-10-21・`HomeFreshStrip`）は外した。**
-                // 新着は切り替えの「新着」に一本化。最初の画面の人の写真は、写真の一覧の1段目が受け持つ
-                // （④で季節の段を一覧の中へ移し、①③で上を詰めたので、写真の大きな1枚目が1画面目に入る・Compare の板）。
-                // 「フォロー中の人の写真を先に」の役目は、切り替えの「フォロー中」の真鍮の点（⑨）が引き継ぐ
-                //
                 // **今日のテーマ**（モック1）。通信はしない——日付から決まる。
                 // 整理案 01c で1枚目の写真の後ろの細い帯にしたが、owner の
                 // 「前の方が好きだった」で先頭の大きな札に戻した（2026-09-26）
@@ -586,198 +482,135 @@ struct GalleryView: View {
                                 reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed,
                                 seasonShelf: $seasonShelf,
                                 scrolledAway: topCardsAway)
-                    .modifier(FeedProbeFrame { recordProbeFrame("topCard", $0) })
                     // 上の札が見えている上端より上へ流れ切ったか（`HomeTopCardView.scrolledAway`・#426）。
-                    // 外側を `VStack` にしたので、流れ出ても `onDisappear` が来ない。main（`LazyVStack`）では流れ出ると
-                    // `onDisappear` が来て、札の差し替え（今日の一問・旅行プラン・日替わり）を戻るまで後回しにしていた。
-                    // その扱いを位置で続ける——深く送っている間に札の高さが変わって、下の写真がずれないように
+                    // 札の差し替え（今日の一問・旅行プラン・日替わり）を戻るまで後回しにし、深く送っている間に
+                    // 札の高さが変わって下の写真がずれないようにする
                     .onGeometryChange(for: Bool.self) { proxy in
                         proxy.frame(in: .scrollView).maxY < 0
                     } action: { away in
                         topCardsAway = away
-                        if PreviewSession.feedProbe { updateFeedProbe() }
                     }
-                // ⑧ 切り替えは写真の一覧の頭。下へ送ると、見えている上端に留まる（重ねて描く `pinnedFeedRow`）。
-                // 留まっている間は元の行を見せず・押させず・読ませない（場所は取り続ける——位置の控えと「替えたら頭から」の目印）
-                feedPicker(followingHasNew: followingHasNew, stuck: false)
-                    .opacity(feedRowPinned ? 0 : 1)
-                    .allowsHitTesting(!feedRowPinned)
-                    .accessibilityHidden(feedRowPinned)
-                    .id(Self.feedRowID)
-                    .onGeometryChange(for: CGRect.self) { proxy in
-                        proxy.frame(in: .scrollView)
-                    } action: { frame in
-                        if let height = feedRowSpot.record(frame, height: feedRowHeight) { feedRowHeight = height }
-                        if PreviewSession.feedProbe { updateFeedProbe() }
-                    }
-                    // 上端を越えたかは、越えた・戻ったときだけ値が変わる（送るたびに描き直さない）
-                    .onGeometryChange(for: Bool.self) { proxy in
-                        ProfileTabScroll.pinsRow(rowMinY: proxy.frame(in: .scrollView).minY, visibleTop: 0)
-                    } action: { feedRowPinned = $0 }
-                // #426: 中身はフィードごとの札を横に並べて持つ（`ProfileTabPager`・マイページと同じ入れ物）。
-                // 最低の高さは「見えている高さ − 札の行と間」——短いフィードへ替えても送りの位置が詰められず、札の行が跳ばない
-                ProfileTabPager(tabs: HomeFeed.allCases, selection: feedSelection,
-                                minHeight: ProfileTabScroll.minPageHeight(viewport: feedViewport, visibleTop: 0,
-                                                                          rowHeight: feedRowHeight, spacing: Self.feedSpacing),
-                                rowOverflow: { ProfileTabScroll.rowOverflow(rowMinY: feedRowSpot.minY, visibleTop: 0) },
-                                // 選んでいる札と左右の隣だけを持つ（写真の一覧が長いので、離れた札は捨てる）
-                                keepsDistantPages: false,
-                                // 流れている札の行の上の払いも、この1つの払いが受ける（中身が指に付いてくる・`swipeExtendsUp`）
-                                swipeExtendsUp: feedRowHeight + Self.feedSpacing,
-                                // 重ねた札の行の払いと、中身の横の量の箱を分け合う
-                                control: feedPager) { page in
-                    VStack(spacing: Self.feedSpacing) {
-                        feedSection(page, rows: pageRows(page, selected: photos))
-                    }
-                }
+                feedSection(rows, featured: featured)
             }
-            .modifier(FeedProbeFrame { recordProbeFrame("content", $0) })
             .padding(.top, 8)
             // 最後のカードがタブバーに掛からないようにする
             .padding(.bottom, 24)
         }
         // 写真を手に取っている間は縦の送りを止める（2026-11-12 札 #543・`PhotoLift`）
         .modifier(PhotoLiftScrollLock(center: PhotoLiftCenter.shared))
-        // UI テストのときだけ: 札の行の位置の数を見えない要素に出す（`PreviewSession.feedProbe`）
+        // UI テストのときだけ: 1本の並びの数を見えない要素に出す（`PreviewSession.feedProbe`）
         .overlay(alignment: .bottomTrailing) {
             if PreviewSession.feedProbe {
                 Text(".")
                     .font(.caption2)
                     .foregroundStyle(Color.clear)
                     .accessibilityIdentifier("home.feed.probe")
-                    .accessibilityValue(feedProbeText)
+                    .accessibilityValue(feedProbeText(rows))
             }
         }
-        // 見えている高さ（札の中身の最低の高さに使う。回したとき・文字の大きさで変わる）
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height
-        } action: { height in
-            if height != feedViewport { feedViewport = height }
-        }
         // **ホームを開いたまま「ホーム」をもう一度押したら一番上へ**
-        // （`TabRouter.homeTopRequests`）
-        .onChange(of: tabRouter.homeTopRequests) { _, _ in
+        // （`TabRouter.homeTopRequests`）。「おすすめの人」でフォローした後も頭へ（上にその人の写真が出る）
+        .onChange(of: tabRouter.homeTopRequests &+ scrollToTopRequests) { _, _ in
             withAnimation(.easeOut(duration: 0.3)) {
                 proxy.scrollTo(Self.feedTopID, anchor: .top)
             }
         }
-        // UI テストのときだけ: 読んだページの数・選んでいるフィードが変わったら数を出し直す
-        .onChange(of: model.loadedPageCount) { _, _ in
-            if PreviewSession.feedProbe { updateFeedProbe() }
+        // 1. を出した（新しく届いた分も）→ 上に出した所を覚える（次に並べ直すときは、それより新しい分だけを上に出す）
+        .onChange(of: rows.following.map(\.id), initial: true) { _, shown in
+            guard !shown.isEmpty else { return }
+            markFollowingShown()
         }
-        // ⑧ 深く送ってから替えたら、新しい一覧は頭から（札の行を上端へ・マイページと同じ）。まだ送っていなければそのまま
-        .onChange(of: model.feed) { _, _ in
-            if PreviewSession.feedProbe { updateFeedProbe() }
-            guard ProfileTabScroll.scrollsToRow(rowMinY: feedRowSpot.minY, visibleTop: 0) else { return }
-            withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
-                proxy.scrollTo(Self.feedRowID, anchor: .top)
-            }
-        }
-        // ⑨ 「フォロー中」を開いた・開いている間に届いた・人が替わった・初めての日 → 既読を覚え直す
-        .onChange(of: FollowingSeenKey(feed: model.feed, newest: followingNewest, viewer: auth.userId),
-                  initial: true) { _, _ in
-            syncFollowingSeen()
-        }
-        }
-        // 送ると上に留まる切り替え（縦の送りの外に重ねる・マイページの `pinnedTabRow` と同じ）
-        if feedRowPinned { pinnedFeedRow(followingHasNew: followingHasNew) }
         }
     }
 
     private static let feedTopID = "home-feed-top"
-    /// 切り替えの札の行（深く送ってから替えたら、ここを上端へ）
-    static let feedRowID = "home.feed.row"
 
-    /// 札ごとの写真の束。**選んでいるフィードは出している一覧**（`model.state`）、選んでいないフィード
-    /// （横にめくった隣）は同じ決まりで手元から作る（`GalleryViewModel.photos(for:)`）。ブロックを落とし、
-    /// 投稿で束ね、季節の段の前後に割るのは控えから（`HomeFeedPageMemo`）
-    private func pageRows(_ page: HomeFeed, selected: [Photo]) -> HomeFeedPageMemo.Rows {
-        let raw = page == model.feed ? selected : model.photos(for: page)
-        return pageMemo.rows(page, photos: raw, hidden: dropped)
+    /// 1. フォロー中の人の新しい写真（`HomeFeed.followingFresh`）。基準は画面が持つ（`followingBaseline`）
+    private var followingFresh: [Photo] {
+        guard let userId = auth.userId, followingBaseline.viewer == userId else { return [] }
+        return model.followingFresh(viewerId: userId, seen: followingBaseline.seen, hiding: dropped)
     }
 
-    /// 札の中身の段の間（以前の一覧の `LazyVStack` の間と同じ 24）
+    /// 上に出したフォロー中の人の写真の、いちばん新しい投稿日を覚える（並べる基準 `followingBaseline` は替えない）
+    private func markFollowingShown() {
+        guard let userId = auth.userId,
+              let newest = model.followingNewest(viewerId: userId, hiding: dropped) else { return }
+        followingSeenStore.mark(newest, for: userId)
+    }
+
+    /// 並びの段の間（以前の一覧の `LazyVStack` の間と同じ 24）
     nonisolated static let feedSpacing: CGFloat = 24
 
-    /// 切り替えの下の中身（そのフィードの中身だけ）。**`model.feed` ではなく渡された札で分ける**——
-    /// 選んでいない札も持ち続ける（`ProfileTabPager`・マイページの `tabContent` と同じ）。
+    /// 1本の並びの中身。
     ///
-    /// 🔴 **切り替えの下には、選んだフィードの中身だけを置く**（2026-10-11 判断）。
-    /// 前は切り替えの下に「撮影地を探す／写真から探す」の2枚の札と、おすすめの
-    /// 横並び（カテゴリごと）がいつも挟まり、「新着」「フォロー中」を押しても
-    /// 結果がずっと下に出て、押して何が変わったか見えなかった。
-    /// - 「撮影地を探す／写真から探す」は**消した**。板（Main「ホーム」）に無く、
-    ///   下の札の「マップ」・見出しの 🔍 と行き先が同じ（同じ場所への入口が2つ）。
-    ///   0枚のときの出口は `feedEmptyState` の主ボタンが持っている
-    /// - おすすめの横並びは「おすすめ」の中身なので、**「おすすめ」のときだけ**出す
-    ///   （`HomeFeed.showsFeatured`）
-    /// - **#417 ④: 「いまの季節のスポット」の段も「おすすめ」の中身**。写真の大1→2→2（5枚）の後ろに置く
-    ///   （`HomeFeed.showsSeasonShelf`・`splitForSeasonShelf`）
+    /// - 1. フォロー中の人の新しい写真: 眉「FOLLOWING」（真鍮・黒地）＋明朝の題の節。無い日は節ごと出さない
+    /// - 2. の頭に選ばれた写真の横並び（PICKS）
+    /// - 2.・3. を混ぜた写真の並び（`HomeMosaic`）。**ひと回り（大1→2→2）の後ろに季節の撮影スポットの段**
+    ///   （#417 ④・`HomeFeed.splitForSeasonShelf`）。段の有無で枝を替えない（段の中身は後から届くので、
+    ///   替えると一覧が作り直され、ちらつき・開いた詳細の元の札が作り直される）
+    /// - フォローが0人のログイン中の人には、ひと回りと季節の段の後ろに「おすすめの人」（1.1.83・資料④）
+    /// - 読めた新着を使い切ったら並びを切り、最後の段に続きを読む目印（`pageFooter`）
+    ///
+    /// 2026-11-13 判断（#595）: フォロー一覧を読めなかった回（`followingFailed`）は、1. の段を出さないだけにする。
+    /// 前は「フォロー中」の札の中で「フォロー中の人を読み込めませんでした」を出していたが、1本の並びでは 2.・3. は
+    /// 読めているので、ホームの上に失敗の帯を出すと写真より先に読むものが増える。引き下げで読み直す。
+    /// 「おすすめの人」も、読めなかった回には出さない（フォローしている人に「まず、写真の好きな人を」と言わない）
     @ViewBuilder
-    private func feedSection(_ page: HomeFeed, rows: HomeFeedPageMemo.Rows) -> some View {
-        if page.showsFeatured {
-            featuredSections(page)
+    private func feedSection(_ rows: HomeFeedPageMemo.Rows, featured: [FeaturedGroups.Group]) -> some View {
+        if !rows.following.isEmpty {
+            VStack(alignment: .leading, spacing: JPSpace.s) {
+                // 眉は真鍮（黒地の上の合図）・題は明朝（板の節の見出し・PICKS と同じ型）
+                JPSectionHeading(eyebrow: "FOLLOWING", spoken: L("フォロー中", "Following"),
+                                 title: L("フォロー中の人の新しい写真", "New from people you follow"))
+                    .padding(.horizontal, JPSpace.gutter)
+                HomeMosaic(groups: rows.following, onReport: { reportTarget = $0 })
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("home.following")
         }
-        // **同じ投稿の写真は1枚のカードに束ねる**（モック6・8）。
-        // 行は1枚ずつのままなので、個別ページもサイトマップも変わらない
-        let groups = rows.groups
+        featuredSections(featured)
+        let isEmpty = rows.lead.isEmpty && rows.rest.isEmpty
         // **続きがある間は「まだありません」と言わない**（読んだ範囲がブロックで全部落ちた・
         // 続きを読んでいる最中）。下の目印が次を読む
-        if groups.isEmpty && !(page == model.feed && model.hasMorePages) {
-            feedEmptyState(page)
+        if isEmpty && rows.following.isEmpty && featured.isEmpty && !model.hasMorePages {
+            feedEmptyState
         }
-        // 板 01c: 大きく1枚 → 2枚 → 2枚、端から端まで・隙間 4pt
-        // 🔴 **「おすすめ」では段の有無に関係なく、いつも5枚で割る**（PR #422 の確かめ）。段の中身は後から届くので、
-        // 段の有無で枝を替えると写真の一覧（`HomeMosaic`）が作り直され、ちらつき・開いた詳細の元の札が作り直される。
-        // 段だけを間に挟む。**写真が0枚の日は段を出さない**——空の知らせのすぐ下に作例の段が並ぶと、
-        // 「おすすめ」が空なのか分からなくなる（空の知らせの一手は地図）
-        if page.showsSeasonShelf {
-            let split = (lead: rows.lead, rest: rows.rest)
-            HomeMosaic(groups: split.lead, onReport: { reportTarget = $0 })
-            if !groups.isEmpty, let seasonShelf {
-                HomeSpotShelfView(shelf: seasonShelf.shelf, spots: seasonShelf.spots,
-                                  photos: dropped.visible(model.allPhotosForTheme),
-                                  reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed)
-                    // 板: 段の上 12＋写真の隙間 4・下 8＋4（一覧の段の間 24 から詰める）
-                    .padding(.top, Self.seasonShelfTopTrim)
-                    .padding(.bottom, Self.seasonShelfBottomTrim)
-            }
-            if !split.rest.isEmpty {
-                HomeMosaic(groups: split.rest, onReport: { reportTarget = $0 })
-            }
-        } else {
-            // 「新着」の続きを読む目印は、写真の一覧の遅れて作る並び（`HomeMosaic` の `LazyVStack`）の最後の段。
-            // 札の中身の普通の並びに置くと、画面の外でも `onAppear` がすぐ走り、作り直す（`id`）たびにまた読んで、
-            // 送らなくても全部のページを読んでいた（#426 確かめ役）。続きを読むのは選んでいる「新着」だけ（`hasMorePages`）
-            HomeMosaic(groups: groups, onReport: { reportTarget = $0 },
-                       footer: page == model.feed && model.hasMorePages ? AnyView(pageFooter) : nil)
+        HomeMosaic(groups: rows.lead, onReport: { reportTarget = $0 },
+                   footer: rows.rest.isEmpty ? footer(rows) : nil)
+        // 写真が0枚の日は段を出さない——空の知らせのすぐ下に作例の段が並ぶと、空なのか分からなくなる
+        if !isEmpty, let seasonShelf {
+            HomeSpotShelfView(shelf: seasonShelf.shelf, spots: seasonShelf.spots,
+                              photos: dropped.visible(model.allPhotosForTheme),
+                              reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed)
+                // 板: 段の上 12＋写真の隙間 4・下 8＋4（一覧の段の間 24 から詰める）
+                .padding(.top, Self.seasonShelfTopTrim)
+                .padding(.bottom, Self.seasonShelfBottomTrim)
         }
+        if !isEmpty, let userId = auth.userId, model.following(for: userId).isEmpty,
+           !model.followingFailed, !suggestedPeople(userId).isEmpty {
+            // 資料「SNS をもっと SNS に」④（1.1.83）: 写真のある人をその場に並べる（フォローまで 1回）。
+            // 2026-11-13（#595）: 「フォロー中」の札が無くなったので、誰もフォローしていない人の並びの中に置く。
+            // 写真が主役なので、ひと回り（1画面目）と季節の段の後ろ
+            HomeSuggestedPeopleView(people: suggestedPeople(userId)) { followed in
+                Task { await showFollowingAfterSuggested(followed, userId: userId) }
+            }
+        }
+        if !rows.rest.isEmpty {
+            HomeMosaic(groups: rows.rest, onReport: { reportTarget = $0 }, footer: footer(rows))
+        }
+    }
+
+    /// 続きを読む目印。並びの遅れて作る段（`HomeMosaic` の `LazyVStack`）の最後に置く——普通の並びに置くと、
+    /// 画面の外でも `onAppear` がすぐ走り、送らなくても全部のページを読んでいた（#426 確かめ役）
+    private func footer(_ rows: HomeFeedPageMemo.Rows) -> AnyView? {
+        rows.truncated || model.hasMorePages ? AnyView(pageFooter) : nil
     }
 
     /// 季節の段の上下を、一覧の段の間（24）から板の間（上 16・下 12）へ詰める量
     nonisolated static let seasonShelfTopTrim: CGFloat = -8
     nonisolated static let seasonShelfBottomTrim: CGFloat = -12
 
-    /// ⑨ フォロー中に、まだ見ていない新しい写真があるか（`HomeFollowingNews`）
-    private var followingHasNew: Bool {
-        HomeFollowingNews.showsDot(feed: model.feed, newest: followingNewest, seen: followingSeen)
-    }
-
-    private var followingNewest: String? {
-        model.followingNewest(viewerId: auth.userId, hiding: dropped)
-    }
-
-    /// ⑨ 既読を覚え直す（「フォロー中」を開いている間・初めての日）。覚えたら読み直す
-    private func syncFollowingSeen() {
-        let userId = auth.userId
-        let seen = followingSeenStore.seen(for: userId)
-        if let value = HomeFollowingNews.seenToStore(feed: model.feed, newest: followingNewest, seen: seen) {
-            followingSeenStore.mark(value, for: userId)
-        }
-        followingSeen = followingSeenStore.seen(for: userId)
-    }
-
-    /// 「新着」の続き（`GET /feed`・2026-10-03）。**下まで送ったら次のページを読む**。
+    /// 続き（`GET /feed`・2026-10-03）。**下まで送ったら次のページを読む**。
     ///
     /// `LazyVStack` の最後の子なので、ここが作られる＝下まで来た。読んだページの数で
     /// 作り直す（`id`）——短いページで目印が画面に残ったままでも次を頼むため。
@@ -800,36 +633,13 @@ struct GalleryView: View {
         }
     }
 
-    /// 0枚のとき。**v2（2026-10-14・Main の「フォロー中が空」・Components 06）**:
-    /// 共通の `EmptyState`（明朝 20 の見出し → 15 の text-2 → 一手）に寄せた。読めなかった回は
-    /// `ErrorBanner`（三角の印と「もう一度試す」）——0件と失敗を同じ形にしない。
-    ///
-    /// 一手は `EmptyState` の主ボタン（写真の無い所＝真鍮の塗り＋墨・CLAUDE.md の owner の好み）。
-    /// 板は真鍮の下線の字のリンクだが、0件の画面で押す所が1つしかないので主ボタンの形を取った
-    @ViewBuilder
-    private func feedEmptyState(_ page: HomeFeed) -> some View {
-        if model.followingFailed && page == .following {
-            // 引き下げを知らない人にも出口を（2026-10-02 の調査）
-            // 2026-11-12（第2章）: 見出しは何が読めなかったか、説明はどうすれば読み直せるか
-            ErrorBanner(title: L("フォロー中の人を読み込めませんでした", "Couldn't load the people you follow"),
-                        message: L("引き下げるか、もう一度試すと読み直します", "Pull down or try again to reload"),
-                        isBusy: isRefreshing) { Task { await refreshAll() } }
-        } else if model.followingFailed {
-            EmptyState(title: emptyTitle(page), message: emptyMessage(page))
-        } else if page == .following, let userId = auth.userId, !suggestedPeople(userId).isEmpty {
-            // 資料「SNS をもっと SNS に」④（1.1.83・2026-11-12）: 「探す」へ送る代わりに、写真のある人をその場に並べる
-            // （フォローまで 4回＋文字 → 1回）。並べる人がいなければ、今までの「写真や人を探す」のまま
-            HomeSuggestedPeopleView(people: suggestedPeople(userId)) { followed in
-                Task { await showFollowingAfterSuggested(followed, userId: userId) }
-            }
-        } else {
-            EmptyState(title: emptyTitle(page), message: emptyMessage(page),
-                       actionTitle: page == .following
-                           ? L("写真や人を探す", "Find photos and people")
-                           : L("撮影地を地図で探す", "Explore shooting places"),
-                       actionIdentifier: "home.emptyAction") {
-                page == .following ? tabRouter.openSearch() : tabRouter.openMap()
-            }
+    /// 0枚のとき。**v2（2026-10-14・Components 06）**: 共通の `EmptyState`（明朝 20 の見出し → 15 の text-2 → 一手）。
+    /// 一手は `EmptyState` の主ボタン（写真の無い所＝真鍮の塗り＋墨・CLAUDE.md の owner の好み）
+    private var feedEmptyState: some View {
+        EmptyState(title: nil, message: Labels.Gallery.empty,
+                   actionTitle: L("撮影地を地図で探す", "Explore shooting places"),
+                   actionIdentifier: "home.emptyAction") {
+            tabRouter.openMap()
         }
     }
 
@@ -839,32 +649,15 @@ struct GalleryView: View {
         model.suggestedPeople(viewerId: userId, hiding: dropped)
     }
 
-    /// 「おすすめの人」でフォローしたあとの「フォロー中の写真を見る」。フォロー一覧を引き直して「フォロー中」に並べる。
-    /// 引けなかったら、この場でフォローした人を足した手元の一覧で並べる（押して何も起きない、を作らない）
+    /// 「おすすめの人」でフォローしたあとの「フォロー中の写真を見る」。フォロー一覧を引き直し、並びの頭へ送る
+    /// （上の段にその人の新しい写真が出る）。引けなかったら、この場でフォローした人を足した手元の一覧で並べる
+    /// （押して何も起きない、を作らない）
     private func showFollowingAfterSuggested(_ followed: Set<String>, userId: String) async {
         let ticket = model.beginFollowingFetch()
         let fetched = await fetchFollowing()
         guard auth.userId == userId else { return }
         model.refreshFollowing(fetched ?? model.followingIds.union(followed), viewerId: userId, ticket: ticket)
-    }
-
-    /// 0枚のときの見出し（明朝 20）。フォロー中が空の回だけ「何が無いか」を言う（板 Main）
-    private func emptyTitle(_ page: HomeFeed) -> String? {
-        page == .following && !model.followingFailed
-            ? L("フォロー中の人の写真はまだありません", "No photos from people you follow yet")
-            : nil
-    }
-
-    /// 0枚のときの一文。**フォロー一覧を取れなかった回に「まだありません」と言わない**
-    /// （形は探すの写真の「読み込めませんでした。引き下げて読み直せます」と同じ）。
-    /// フォロー中が空の回は、見出しが「何が無いか」を言うので、ここは「どうすれば埋まるか」（板 Main）
-    private func emptyMessage(_ page: HomeFeed) -> String {
-        guard page == .following else { return Labels.Gallery.empty }
-        return model.followingFailed
-            ? L("フォロー中の人を読み込めませんでした。引き下げて読み直せます",
-                "Couldn't load the people you follow. Pull to retry")
-            : L("気になる作者をフォローすると、新しい写真がここに並びます。",
-                "Follow photographers you like and their new photos will appear here.")
+        scrollToTopRequests &+= 1
     }
 
     /// 引き下げ・「もう一度試す」の読み直し。**重ねて走らせない**——続けて押すと、
@@ -880,9 +673,10 @@ struct GalleryView: View {
         defer { isRefreshing = false }
         // ストーリーの輪も読み直す（写真だけ読み直すと、輪は古いまま残った）
         storiesRefresh &+= 1
+        // 上に出したフォロー中の人の写真は、引き下げたら上から外す（並べる基準を覚えた所まで進める）
+        followingBaseline.capture(viewer: auth.userId, store: followingSeenStore)
         await model.load(force: true)
-        // **フォロー一覧も取り直す。** 取れなかった回の出口
-        // （「読み込めませんでした」の下の「もう一度試す」と引き下げ）
+        // **フォロー一覧も取り直す**（取れなかった回の出口は引き下げ）
         if let userId = auth.userId {
             let ticket = model.beginFollowingFetch()
             let following = await fetchFollowing()
@@ -901,43 +695,59 @@ struct GalleryView: View {
     }
 }
 
-/// ホームの札ごとの写真の束ねの控え（#426 確かめ役の見直し・`GalleryView.pageRows`）。
-/// 元の写真（同じ入れ物なら中身を見ずに一致）と「見せない」の写しが同じなら、前の答えを返す
+/// ホームの1本の並びの控え（`GalleryView.feed`）。材料（同じ入れ物なら中身を見ずに一致）と
+/// 「見せない」の写しが同じなら、前の答えを返す
 final class HomeFeedPageMemo {
 
+    /// 並べる材料（`HomeFeed.arrange` の入力）
+    struct Input: Equatable {
+        let following: [Photo]
+        let recommended: [Photo]
+        let latest: [Photo]
+        let latestHasMore: Bool
+        let excluding: Set<String>
+    }
+
     struct Rows: Equatable {
-        /// 投稿で束ねた写真（ブロックを落とした後）
-        let groups: [PhotoGroups.Group]
-        /// 「おすすめ」の季節の段の前（大1→2→2）と後ろ。段を出さないフィードは全部 `lead`
+        /// 1. フォロー中の人の新しい写真（投稿で束ねた後）
+        let following: [PhotoGroups.Group]
+        /// 2.・3. を混ぜた並びの、季節の段の前（大1→2→2）と後ろ
         let lead: [PhotoGroups.Group]
         let rest: [PhotoGroups.Group]
+        /// 読めた新着を使い切ったので、ここで切った（`HomeFeed.Arranged.truncated`）
+        let truncated: Bool
+        /// 新着から入れた最初の束が、写真の札（`feed.photo`）の上から何枚目か（0 から・1. の札も数える）。
+        /// UI テストが新着の1枚目を開くため（`home.feed.probe` の `firstLatest`）
+        var firstLatestTile: Int? = nil
     }
 
     struct Key: Equatable {
-        let photos: [Photo]
+        let input: Input
         let hidden: ModerationSnapshot
     }
 
-    private var memos: [HomeFeed: DerivedMemo<Key, Rows>] = [:]
+    private let memo = DerivedMemo<Key, Rows>()
 
     init() {}
 
-    func rows(_ page: HomeFeed, photos: [Photo], hidden: ModerationSnapshot) -> Rows {
-        let memo = memos[page] ?? DerivedMemo<Key, Rows>()
-        memos[page] = memo
-        return memo.value(for: Key(photos: photos, hidden: hidden)) {
-            Self.make(page, photos: photos, hidden: hidden)
-        }
+    func rows(_ input: Input, hidden: ModerationSnapshot) -> Rows {
+        memo.value(for: Key(input: input, hidden: hidden)) { Self.make(input, hidden: hidden) }
     }
 
     /// 計算した回数（試験用）
-    func computeCount(_ page: HomeFeed) -> Int { memos[page]?.computeCount ?? 0 }
+    var computeCount: Int { memo.computeCount }
 
-    static func make(_ page: HomeFeed, photos: [Photo], hidden: ModerationSnapshot) -> Rows {
-        let groups = PhotoGroups.group(hidden.visible(photos))
-        guard page.showsSeasonShelf else { return Rows(groups: groups, lead: groups, rest: []) }
-        let split = HomeFeed.splitForSeasonShelf(groups)
-        return Rows(groups: groups, lead: split.lead, rest: split.rest)
+    static func make(_ input: Input, hidden: ModerationSnapshot) -> Rows {
+        let arranged = HomeFeed.arrange(following: hidden.visible(input.following),
+                                        recommended: hidden.visible(input.recommended),
+                                        latest: hidden.visible(input.latest),
+                                        latestHasMore: input.latestHasMore, excluding: input.excluding)
+        let main = PhotoGroups.group(arranged.main)
+        let split = HomeFeed.splitForSeasonShelf(main)
+        let following = PhotoGroups.group(arranged.following)
+        let firstLatest = main.firstIndex { arranged.fromLatest.contains($0.cover.id) }.map { following.count + $0 }
+        return Rows(following: following, lead: split.lead, rest: split.rest,
+                    truncated: arranged.truncated, firstLatestTile: firstLatest)
     }
 }
 
@@ -947,27 +757,15 @@ private struct PassResolveKey: Equatable {
     let hidden: Int
 }
 
-/// 「フォロー中」の既読を覚え直す合図（`GalleryView.syncFollowingSeen`）
-private struct FollowingSeenKey: Equatable {
-    let feed: HomeFeed
-    let newest: String?
-    let viewer: String?
-}
+/// フォロー中の人の新しい写真を並べる基準（`FollowingSeenStore` の値を、決まったときにだけ写す・札 #595）
+struct FollowingBaseline: Equatable {
+    /// 誰の基準か（nil なら未ログイン・まだ読んでいない）
+    private(set) var viewer: String?
+    /// 上に出した所（nil なら1度も出していない＝全部が新しい）
+    private(set) var seen: String?
 
-/// UI テストのときだけ（`PreviewSession.feedProbe`）、部品の枠を送りの枠（`.scrollView`）で測って渡す。
-/// ふだんは何も足さない（送るたびに枠を測る仕事を増やさない）。2026-11-13 PR #589 の事実取り
-private struct FeedProbeFrame: ViewModifier {
-    let record: (CGRect) -> Void
-
-    func body(content: Content) -> some View {
-        if PreviewSession.feedProbe {
-            content.onGeometryChange(for: CGRect.self) { proxy in
-                proxy.frame(in: .scrollView)
-            } action: { frame in
-                record(frame)
-            }
-        } else {
-            content
-        }
+    mutating func capture(viewer: String?, store: FollowingSeenStore) {
+        self.viewer = viewer
+        seen = store.seen(for: viewer)
     }
 }
