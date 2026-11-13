@@ -212,6 +212,9 @@ enum ProfileTabPrebuild {
 /// 指に付いてくる横の量の箱。**見張るのは `ProfileTabDragOffset` だけ**（入れ物は持つだけ）
 final class ProfileTabDrag: ObservableObject {
     @Published var offset: CGFloat = 0
+    /// 払っている中身の幅（`offset` より先に書く。見張らない）。札の行「絵と字」が線を寄せる割合の分母
+    /// （`ProfileTabColumnStyle.progress`・2026-11-13 #187）
+    var width: CGFloat = 0
 }
 
 /// 中身を横にずらす小さな子。払っている間に描き直すのはここだけ。**中身は親が作った値で受け取る**
@@ -342,6 +345,7 @@ struct ProfileTabSwipe<Tab: PagedTab>: ViewModifier {
                     },
                     onChange: { dx, width in
                         if let next = Tab.neighbor(of: selection, in: tabs, towards: dx) { willShow?(next) }
+                        follow?.width = CGFloat(width)
                         follow?.offset = CGFloat(Tab.followOffset(from: selection, in: tabs,
                                                                   dx: dx, width: width))
                     },
