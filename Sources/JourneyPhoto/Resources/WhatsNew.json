@@ -2,6 +2,22 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.86",
+      "date": "2026-11-14",
+      "items": [
+        {
+          "symbol": "tram",
+          "title": { "ja": "移動の行から Apple のマップへ", "en": "Open Apple Maps from a travel row" },
+          "detail": { "ja": "旅行プランで場所と場所の間の行を押すと、Apple のマップで経路が開きます。近ければ徒歩、それより遠ければ電車やバスの経路です（無いときは車）。右の i から詳しく見られます。", "en": "In a trip plan, tap the row between two places to open the route in Apple Maps: walking when it's close, otherwise transit (or driving when there is none). Tap the i on the right for details." }
+        },
+        {
+          "symbol": "textformat.size",
+          "title": { "ja": "大きい文字でも読みやすく", "en": "Easier to read with larger text" },
+          "detail": { "ja": "文字を大きくしているときは、観光スポットや写真の詳細のボタンを縦に並べて、字が切れないようにしました。マイページの長い名前も折り返して全部出ます。", "en": "With larger text, the buttons on spot and photo pages now stack so their labels aren't cut off, and long names on My Page wrap in full." }
+        }
+      ]
+    },
+    {
       "version": "1.1.85",
       "date": "2026-11-13",
       "items": [
