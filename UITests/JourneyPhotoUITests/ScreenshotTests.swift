@@ -9541,6 +9541,63 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "121b-写真の詳細（つまんで地図）")
     }
 
+    /// **写真の詳細で、上で写真を下に引くと前の画面に戻る・上に払うと閉じない**（2026-11-13 owner 決定・札 #592・`PhotoDetailPull`）。
+    /// 絵は撮らない。**閉じなければ・上へ払って閉じたら落とす**
+    ///
+    /// 1. 写真の上で上へ払う → 説明へ流れる（写真の上端が上へ動く）・写真の詳細のまま
+    /// 2. 写真の下（説明）で下へ戻して、いちばん上へ戻す（写真の外の指なので閉じない）
+    /// 3. 写真の上で下へ引く → 前の画面（ホーム）に戻る
+    func testDetailPullDownGoesBack() {
+        let app = launchTrunk([])
+        defer { app.terminate() }
+        let recommended = app.buttons["おすすめ"].firstMatch
+        if recommended.waitForExistence(timeout: 15), recommended.isHittable { recommended.tap() }
+        let photo = app.buttons["feed.photo"].firstMatch
+        var pushes = 0
+        while !(photo.waitForExistence(timeout: 2) && photo.isHittable), pushes < 8 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)))
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard expect(photo.exists && photo.isHittable, "ホームの写真", app) else { return }
+        photo.tap()
+        let hero = app.buttons["detail.hero"].firstMatch
+        let menu = app.buttons["photo.menu"].firstMatch
+        guard expect(hero.waitForExistence(timeout: 10) && hero.isHittable, "写真の詳細の写真", app) else { return }
+        guard expect(menu.waitForExistence(timeout: 5), "写真の詳細の「…」", app) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        let topAtOpen = hero.frame.minY
+
+        // 1. 写真の上で上へ払う（ゆっくり・止めてから離す＝勢いで流れ過ぎない）
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)),
+                   withVelocity: .slow, thenHoldForDuration: 0.3)
+        Thread.sleep(forTimeInterval: 1.5)
+        let topAfterUp = hero.exists ? hero.frame.minY : .nan
+        XCTContext.runActivity(named: "[detailPull] 上へ払う: 写真の上端 \(topAtOpen) → \(topAfterUp)・…=\(menu.exists)") { _ in }
+        XCTAssertTrue(menu.exists && hero.exists, "上へ払ったら写真の詳細が閉じた")
+        XCTAssertLessThan(topAfterUp, topAtOpen - 40, "上へ払っても説明へ流れない（送りを奪っている）")
+
+        // 2. 写真の下（説明）で下へ戻す。写真の外の指なので、上に着いても閉じない
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98)),
+                   withVelocity: .slow, thenHoldForDuration: 0.3)
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTContext.runActivity(named: "[detailPull] 下へ戻す: 写真の上端 \(hero.exists ? hero.frame.minY : .nan)・…=\(menu.exists)") { _ in }
+        guard expect(menu.exists && hero.exists, "説明の上で下へ戻した後の写真の詳細", app) else { return }
+        guard expect(abs(hero.frame.minY - topAtOpen) < 2, "いちばん上へ戻った写真の詳細", app) else { return }
+
+        // 3. 写真の上で下へ引く → 前の画面へ
+        hero.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)))
+        let gone = XCTWaiter().wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: menu)], timeout: 5) == .completed
+        XCTContext.runActivity(named: "[detailPull] 下へ引く: 閉じた=\(gone)・ホームの写真=\(photo.exists)") { _ in }
+        guard expect(gone, "写真を下に引いた後に前の画面へ戻る", app) else { return }
+        XCTAssertTrue(photo.waitForExistence(timeout: 5) && photo.isHittable, "下に引いて戻った先にホームの写真が無い")
+    }
+
     /// **写真を大きく見る画面で、1回押すと上下の情報が消え、もう1回で戻る**（2026-11-12 owner の要望・`ViewerChrome`）。
     /// 2回押し（拡大中なので倍率を戻す側・いいねは送らない）では消えないことも見る。**出なければ落とす**
     func testViewerTapHidesChrome() {
