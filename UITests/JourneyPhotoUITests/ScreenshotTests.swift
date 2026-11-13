@@ -9337,10 +9337,14 @@ final class ScreenshotTests: XCTestCase {
         shoot(offline, "120i-1年前（圏外・送るのはあとで）")
     }
 
-    /// **手に取って運ぶ・つまむと地図**（2026-11-12 札 #543・章 段1）。ホームの写真を 0.8秒押さえて右の縁の
-    /// 半円（とっておく）へ運び、3秒の「取り消す」を撮る（撮ったら取り消す＝しおりに残さない）。
-    /// 次に写真の詳細の写真をつまんで縮め、地図（「この近くで撮られた写真」）を撮る。**出なければ落とす**
-    func testCapturesLiftAndPinch() {
+    /// **つまむと地図**（2026-11-12 札 #543・章 段1）。ホームの写真を開き、写真の詳細の写真をつまんで縮め、
+    /// 地図（「この近くで撮られた写真」）を撮る。**出なければ落とす**
+    ///
+    /// 2026-11-13 判断: 前の `testCapturesLiftAndPinch` から「手に取って運ぶ」の段（右の半円へ運んで「取り消す」を撮る）を消した。
+    /// 1.1.84 からホームの札の身振りを使わない（`PhotoLift.homeGestureEnabled = false`・fb5c8d3c3）ので、
+    /// その段は毎回落ちていた（run 1201「運んだ後の「取り消す」 が出ない」）。身振りを戻すときは、消した段も戻す
+    /// （`YubiReviewTests.testHomeLiftIsOffIn1184` の注記）
+    func testCapturesPinchToMap() {
         let app = launchTrunk([])
         let recommended = app.buttons["おすすめ"].firstMatch
         if recommended.waitForExistence(timeout: 15), recommended.isHittable { recommended.tap() }
@@ -9353,20 +9357,6 @@ final class ScreenshotTests: XCTestCase {
             pushes += 1
         }
         guard expect(photo.exists && photo.isHittable, "ホームの写真", app) else { return }
-        // はじめての案内（出ていたら5秒で消える）を待つ
-        Thread.sleep(forTimeInterval: 1)
-        // 手に取って（0.35秒より長く押さえる）右の縁の真ん中（半円・半径 105pt）へ運ぶ
-        photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            .press(forDuration: 0.8,
-                   thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 430.0 / 844.0)))
-        let undo = app.buttons["lift.undo"].firstMatch
-        guard expect(undo.waitForExistence(timeout: 3), "運んだ後の「取り消す」", app) else { return }
-        shoot(app, "121a-ホーム（手に取って運んだ・取り消す）")
-        XCTAssertGreaterThanOrEqual(undo.frame.height, 44, "「取り消す」が 44pt 未満")
-        undo.tap()
-        Thread.sleep(forTimeInterval: 1)
-        // 運び終えたら幕は残らない（ホームの写真がまた押せる）
-        guard expect(photo.exists && photo.isHittable, "運んだ後に押せるホームの写真", app) else { return }
         photo.tap()
         let hero = app.buttons["detail.hero"].firstMatch
         guard expect(hero.waitForExistence(timeout: 10) && hero.isHittable, "写真の詳細の写真", app) else { return }
