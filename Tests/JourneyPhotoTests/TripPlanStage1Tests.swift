@@ -262,11 +262,12 @@ final class TripPlanStage1Tests: XCTestCase {
                        to: .init(name: "B", coords: Photo.Coords(lat: to.0, lng: to.1), number: 2))
     }
 
-    /// 近ければ歩きを先に・遠ければ車を先に。公共交通が使えなければ車と歩き
+    /// 近ければ歩きと電車など（2026-11-12）・遠ければ車を先に。公共交通が使えなければ車と歩き
     func testModesByDistance() {
         let near = leg((36.5781, 136.6479), (36.5700, 136.6560))   // 約 1.1km
         let far = leg((36.5781, 136.6479), (36.2376, 136.1260))    // 約 60km
-        XCTAssertEqual(TripTravel.modes(for: near, transitAvailable: true), [.walking, .automobile])
+        XCTAssertEqual(TripTravel.modes(for: near, transitAvailable: true), [.walking, .transit])
+        XCTAssertEqual(TripTravel.modes(for: near, transitAvailable: false), [.walking, .automobile])
         XCTAssertEqual(TripTravel.modes(for: far, transitAvailable: true), [.automobile, .transit])
         XCTAssertEqual(TripTravel.modes(for: far, transitAvailable: false), [.automobile, .walking])
     }
@@ -337,25 +338,25 @@ final class TripPlanStage1Tests: XCTestCase {
         XCTAssertNil(afterMorning.caution)
     }
 
-    /// 地図のアプリへ: Google は鍵の要らない Maps URLs・手段は電車などが返ればそれ
+    /// 地図のアプリへ: Google は鍵の要らない Maps URLs・手段は電車などが返ればそれ（`mapsMode`）
     func testMapsHandOff() throws {
         let url = try XCTUnwrap(TripTravel.googleURL(from: Photo.Coords(lat: 36.578, lng: 136.648),
                                                      to: Photo.Coords(lat: 36.2376, lng: 136.126), mode: .transit))
         XCTAssertEqual(url.absoluteString,
                        "https://www.google.com/maps/dir/?api=1&origin=36.578000,136.648000&destination=36.237600,136.126000&travelmode=transit")
         XCTAssertFalse(url.absoluteString.contains("key="), "鍵を付けない")
-        XCTAssertEqual(TripTravel.openMode([.init(mode: .automobile, seconds: 1), .init(mode: .transit, seconds: 2)],
-                                           modes: [.automobile, .transit]), .transit)
-        XCTAssertEqual(TripTravel.openMode([], modes: [.walking, .automobile]), .walking)
+        let far = leg((36.5781, 136.6479), (36.2376, 136.1260))
+        XCTAssertEqual(TripTravel.mapsMode([.init(mode: .automobile, seconds: 1), .init(mode: .transit, seconds: 2)],
+                                           leg: far, settled: true), .transit)
     }
 
-    /// 区間の行は1つの型（`TripTravel.Leg`）を受け取り、押すと区間のシート（第2段で中身だけ差し替える）
+    /// 区間の行は1つの型（`TripTravel.Leg`）を受け取り、右端の「i」で区間のシート（行そのものは Apple のマップ・2026-11-12）
     func testLegRowOpensTheLegSheet() throws {
         let detail = try source("Features/Trips/TripPlanDetailView.swift")
         XCTAssertTrue(detail.contains("TripLegSheet(leg: target.leg"))
         XCTAssertTrue(detail.contains("TripLegRow(leg: leg"))
         let sheet = try source("Features/Trips/TripLegViews.swift")
-        XCTAssertTrue(sheet.contains("MKMapItem.openMaps(with: [origin, target]"))
+        XCTAssertTrue(sheet.contains("MKMapItem.openMaps(with: [origin, target], launchOptions: launchOptions(mode))"))
         XCTAssertTrue(sheet.contains("TripTravel.googleURL(from: from, to: to, mode: mode)"))
         XCTAssertFalse(sheet.contains("forCurrentLocation"), "今いる場所を取らない")
         let estimator = try source("Services/TravelEstimator.swift")
