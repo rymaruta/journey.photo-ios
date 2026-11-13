@@ -114,6 +114,11 @@ final class YubiReviewTests: XCTestCase {
 
     /// 1.1.84 はホームの写真の札で「手に取って運ぶ」を使わない（run 1182: 身振りがホームの払いを奪い、一覧が動かなかった。
     /// 身振りを外した版は動いた）。身振りも初回の案内も出さない
+    ///
+    /// 2026-11-13 判断: **身振りを戻すときは、この UI 試験の段（コミット e76c348f3）も戻す。**
+    /// `ScreenshotTests.testCapturesLiftAndPinch` の「手に取って運ぶ」の段（ホームの写真を右の半円へ運び、
+    /// 「取り消す」`lift.undo` を撮る・絵 121a）を消し、つまむと地図だけを `testCapturesPinchToMap` に残した
+    /// （run 1201: 身振りが無いので毎回落ちていた）
     func testHomeLiftIsOffIn1184() throws {
         XCTAssertFalse(PhotoLift.homeGestureEnabled)
         let mosaic = try source("Sources/JourneyPhoto/Features/Gallery/HomeMosaic.swift")
