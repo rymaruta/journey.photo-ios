@@ -507,6 +507,9 @@ struct GalleryView: View {
 
     /// UI テストのときだけ、札の行の位置の数を見えない要素（`home.feed.probe`）に出す（`PreviewSession.feedProbe`）
     @State private var feedProbeText = ""
+    /// UI テストのときだけ: 札の行より上の部品と中身の枠（`FeedProbeFrame`・2026-11-13 PR #589 の
+    /// `testSwipesHomeFeedTabsWithoutLift` で札の行が 48 下がった件。上の部品が伸びたのか、送りの位置が戻ったのかを分ける）
+    @State private var feedProbeFrames: [String: CGRect] = [:]
 
     private func updateFeedProbe() {
         let n: (CGFloat) -> String = { String(format: "%.2f", Double($0)) }
@@ -514,7 +517,24 @@ struct GalleryView: View {
             + " overflow=\(n(ProfileTabScroll.rowOverflow(rowMinY: feedRowSpot.minY, visibleTop: 0)))"
             + " pinned=\(feedRowPinned) rowH=\(n(feedRowHeight)) viewport=\(n(feedViewport))"
             + " pages=\(model.loadedPageCount) topCardsAway=\(topCardsAway)"
+            // 中身の上端（送った量の符号違い）と高さ、上の部品の高さ。すれちがいの帯は届いた束の枚数も（0 なら帯は出ない）
+            + " content=\(probeFrame("content"))"
+            + " passSlot=\(passCards(now: passNow).count)/\(probeFrame("passSlot"))"
+            + " stories=\(probeFrame("stories")) topCard=\(probeFrame("topCard"))"
         if text != feedProbeText { feedProbeText = text }
+    }
+
+    /// 枠を「上端/高さ」で書く（まだ測っていなければ「-」）
+    private func probeFrame(_ key: String) -> String {
+        guard let frame = feedProbeFrames[key] else { return "-" }
+        return String(format: "%.2f/%.2f", Double(frame.minY), Double(frame.height))
+    }
+
+    /// 枠を控えて、値を出し直す（`FeedProbeFrame` から）
+    private func recordProbeFrame(_ key: String, _ frame: CGRect) {
+        guard feedProbeFrames[key] != frame else { return }
+        feedProbeFrames[key] = frame
+        updateFeedProbe()
     }
 
     /// ホームは**板 01c の写真の並び**（`HomeMosaic`・2026-09-26）。
@@ -539,8 +559,10 @@ struct GalleryView: View {
                 // 届いた束をまだ開いていないときだけ出る（`PassHomeSlot`）
                 let passBundle = passCards(now: passNow)
                 PassHomeSlot(cards: passBundle, now: passNow) { passDeck = PassDeck(cards: passBundle) }
+                    .modifier(FeedProbeFrame { recordProbeFrame("passSlot", $0) })
                 StoriesRow(reloadToken: tabRouter.postSheetsClosed &+ storiesRefresh,
                            myPhotos: model.myPhotos.filter { !dropped.deleted.contains($0.id) })
+                    .modifier(FeedProbeFrame { recordProbeFrame("stories", $0) })
                 // **#417 ⑦（2026-10-30 owner 採用）: 「NEW（みんなの新しい写真）」の段（2026-10-21・`HomeFreshStrip`）は外した。**
                 // 新着は切り替えの「新着」に一本化。最初の画面の人の写真は、写真の一覧の1段目が受け持つ
                 // （④で季節の段を一覧の中へ移し、①③で上を詰めたので、写真の大きな1枚目が1画面目に入る・Compare の板）。
@@ -564,6 +586,7 @@ struct GalleryView: View {
                                 reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed,
                                 seasonShelf: $seasonShelf,
                                 scrolledAway: topCardsAway)
+                    .modifier(FeedProbeFrame { recordProbeFrame("topCard", $0) })
                     // 上の札が見えている上端より上へ流れ切ったか（`HomeTopCardView.scrolledAway`・#426）。
                     // 外側を `VStack` にしたので、流れ出ても `onDisappear` が来ない。main（`LazyVStack`）では流れ出ると
                     // `onDisappear` が来て、札の差し替え（今日の一問・旅行プラン・日替わり）を戻るまで後回しにしていた。
@@ -608,6 +631,7 @@ struct GalleryView: View {
                     }
                 }
             }
+            .modifier(FeedProbeFrame { recordProbeFrame("content", $0) })
             .padding(.top, 8)
             // 最後のカードがタブバーに掛からないようにする
             .padding(.bottom, 24)
@@ -928,4 +952,22 @@ private struct FollowingSeenKey: Equatable {
     let feed: HomeFeed
     let newest: String?
     let viewer: String?
+}
+
+/// UI テストのときだけ（`PreviewSession.feedProbe`）、部品の枠を送りの枠（`.scrollView`）で測って渡す。
+/// ふだんは何も足さない（送るたびに枠を測る仕事を増やさない）。2026-11-13 PR #589 の事実取り
+private struct FeedProbeFrame: ViewModifier {
+    let record: (CGRect) -> Void
+
+    func body(content: Content) -> some View {
+        if PreviewSession.feedProbe {
+            content.onGeometryChange(for: CGRect.self) { proxy in
+                proxy.frame(in: .scrollView)
+            } action: { frame in
+                record(frame)
+            }
+        } else {
+            content
+        }
+    }
 }

@@ -6761,6 +6761,9 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1.5)
         }
 
+        // 送り始めの姿（すれちがいの帯の枚数・上の部品の高さ・中身の上端。2026-11-13 PR #589 で始めの札の行が 100 低かった）
+        logProbe("0-start")
+
         // 1. 札の行の上を左へ払う → フォロー中
         swipe(left: true, atY: recommended.frame.midY)
         XCTAssertTrue(following.isSelected, "札の行を左へ払っても「フォロー中」に替わらない")
