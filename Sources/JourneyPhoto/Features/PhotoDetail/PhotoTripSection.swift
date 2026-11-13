@@ -56,6 +56,12 @@ struct PhotoTripSection: View {
                     directionsButton
                 }
             }
+            // UI テストのときだけ: 名前が札に入るかを値で出す（`ActionRowFitProbe`）
+            .background {
+                ActionRowFitProbe(identifier: "photo.trip.fit",
+                                  titles: [L("行きたい", "Want to go"), L("旅行プランに入れる", "Add to trip")]
+                                      + (PhotoTrip.offersDirections(destination) ? [L("経路", "Directions")] : []))
+            }
             .tripAddSheet($tripAdd)
             if let when {
                 Label {

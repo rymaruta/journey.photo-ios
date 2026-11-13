@@ -48,6 +48,8 @@ struct DevelopView: View {
     @State private var history: [String] = []
     /// 読めないコマを飛ばした直後の札（写真の上のガラス・`DevelopTrips.unreadableNoticeSeconds` で消える）
     @State private var unreadableNotice = false
+    /// UI テストのときだけ: 安全な範囲の上端（画面の座標・`develop.safeTop` の値）
+    @State private var safeTop: CGFloat = 0
 
     private let store = DevelopProgressStore()
     private let frames: [String]
@@ -143,6 +145,21 @@ struct DevelopView: View {
             controls
                 .padding(.top, JPSpace.m)
                 .padding(.bottom, JPSpace.l)
+        }
+        // UI テストのときだけ: 安全な範囲の上端（画面の座標）を値で出す。上の札と × がその下にあるかを
+        // 機種の状態バーの高さに頼らず比べる（2026-11-13 確かめ役: `minY ≥ 44` では島の機種で重なっても通る）
+        .background {
+            if PreviewSession.layoutProbe {
+                GeometryReader { g in
+                    let top = g.frame(in: .global).minY + g.safeAreaInsets.top
+                    Color.clear
+                        .onAppear { safeTop = top }
+                        .onChange(of: top) { _, value in safeTop = value }
+                }
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            LayoutProbe(identifier: "develop.safeTop", value: String(format: "%.1f", safeTop))
         }
     }
 
