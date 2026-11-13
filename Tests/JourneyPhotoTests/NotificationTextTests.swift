@@ -238,7 +238,55 @@ final class NotificationTextTests: XCTestCase {
         XCTAssertEqual(ago("2026-09-18T20:00:00.000Z"), L("3日前", "3d ago"))
         XCTAssertNil(ago(nil))
         XCTAssertNil(ago("壊れた値"))
-        XCTAssertNil(ago("2026-09-22T10:00:00.000Z"))   // 未来
+        // 2026-11-12 判断: 未来（サーバーの時計が少し進んでいる）は「たった今」。見出しは「今日」に入れるので、
+        // 何も出さないと時刻の無い行になる
+        XCTAssertEqual(ago("2026-09-22T10:00:00.000Z"), L("たった今", "just now"))
+        XCTAssertEqual(ago("2026-09-21T12:00:30.000Z"), L("たった今", "just now"))
+        // 6日前までは「N日前」、7日前からは月/日（DM の受信箱・Web と同じ。前は上限が無く「34日前」）
+        XCTAssertEqual(ago("2026-09-15T09:00:00.000Z"), L("6日前", "6d ago"))
+        XCTAssertEqual(ago("2026-09-14T23:00:00.000Z"), "9/14")
+        XCTAssertEqual(ago("2026-09-13T10:00:00.000Z"), "9/13")
+        XCTAssertEqual(ago("2026-08-18T10:00:00.000Z"), "8/18")   // 34日前
+    }
+
+    /// 年をまたぐ: 6日前までは「N日前」、それより前は年を付けずに月/日（DM の受信箱の作りと同じ）
+    func testAgoAcrossTheYear() {
+        let newYear = NotificationGroups.parse("2026-01-03T12:00:00.000Z")!
+        func ago(_ t: String) -> String? { NotificationText.ago(t, now: newYear, calendar: calendar) }
+        XCTAssertEqual(ago("2026-01-02T08:00:00.000Z"), L("昨日", "Yesterday"))
+        XCTAssertEqual(ago("2025-12-30T08:00:00.000Z"), L("4日前", "4d ago"))
+        XCTAssertEqual(ago("2025-12-28T08:00:00.000Z"), L("6日前", "6d ago"))
+        XCTAssertEqual(ago("2025-12-27T08:00:00.000Z"), "12/27")   // 7日前
+        XCTAssertEqual(ago("2025-11-20T08:00:00.000Z"), "11/20")
+    }
+
+    /// 日本時間で日をまたぐ境目: `2026-10-08T15:30:00Z` は日本時間で 10/9 0:30。
+    /// 暦の日数も月/日も端末の時刻帯で数える（UTC で数えると 10/8 になる）
+    func testAgoUsesTheDeviceTimeZoneAtTheDayBoundary() {
+        var tokyo = Calendar(identifier: .gregorian)
+        tokyo.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+        let t = "2026-10-08T15:30:00Z"
+        // 日本時間 10/15 21:00 → 6日前
+        XCTAssertEqual(NotificationText.ago(t, now: NotificationGroups.parse("2026-10-15T12:00:00Z")!, calendar: tokyo),
+                       L("6日前", "6d ago"))
+        // 日本時間 10/16 21:00 → 7日前なので月/日（日本時間の日付）
+        XCTAssertEqual(NotificationText.ago(t, now: NotificationGroups.parse("2026-10-16T12:00:00Z")!, calendar: tokyo),
+                       "10/9")
+        // 日本時間 10/9 7:30 → 同じ日
+        XCTAssertEqual(NotificationText.ago(t, now: NotificationGroups.parse("2026-10-08T22:30:00Z")!, calendar: tokyo),
+                       L("7時間前", "7h ago"))
+        // 日本時間 10/10 0:10（40分後だが暦では昨日）
+        XCTAssertEqual(NotificationText.ago(t, now: NotificationGroups.parse("2026-10-09T15:10:00Z")!, calendar: tokyo),
+                       L("昨日", "Yesterday"))
+    }
+
+    /// DM の受信箱の行も同じ決まり（2026-11-12 判断・決まりは1か所）
+    func testDMListTimeSharesTheRule() {
+        for t in ["2026-09-21T11:55:00Z", "2026-09-20T23:00:00.000Z", "2026-09-15T09:00:00.000Z",
+                  "2026-09-14T23:00:00.000Z", "2026-08-18T10:00:00.000Z", "2026-09-22T10:00:00.000Z"] {
+            XCTAssertEqual(DMText.listTime(t, now: now, calendar: calendar),
+                           NotificationText.ago(t, now: now, calendar: calendar), t)
+        }
     }
 }
 

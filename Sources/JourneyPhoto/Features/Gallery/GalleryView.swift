@@ -792,6 +792,12 @@ struct GalleryView: View {
                         isBusy: isRefreshing) { Task { await refreshAll() } }
         } else if model.followingFailed {
             EmptyState(title: emptyTitle(page), message: emptyMessage(page))
+        } else if page == .following, let userId = auth.userId, !suggestedPeople(userId).isEmpty {
+            // 資料「SNS をもっと SNS に」④（1.1.83・2026-11-12）: 「探す」へ送る代わりに、写真のある人をその場に並べる
+            // （フォローまで 4回＋文字 → 1回）。並べる人がいなければ、今までの「写真や人を探す」のまま
+            HomeSuggestedPeopleView(people: suggestedPeople(userId)) { followed in
+                Task { await showFollowingAfterSuggested(followed, userId: userId) }
+            }
         } else {
             EmptyState(title: emptyTitle(page), message: emptyMessage(page),
                        actionTitle: page == .following
@@ -801,6 +807,21 @@ struct GalleryView: View {
                 page == .following ? tabRouter.openSearch() : tabRouter.openMap()
             }
         }
+    }
+
+    /// 「おすすめの人」に並べる人（`SuggestedPeople`）。ブロック・通報は画面の写し（`dropped`）で落とし、
+    /// 描くたびに全件をなめない（`GalleryViewModel.suggestedPeople` が控える）
+    private func suggestedPeople(_ userId: String) -> [SuggestedPeople.Person] {
+        model.suggestedPeople(viewerId: userId, hiding: dropped)
+    }
+
+    /// 「おすすめの人」でフォローしたあとの「フォロー中の写真を見る」。フォロー一覧を引き直して「フォロー中」に並べる。
+    /// 引けなかったら、この場でフォローした人を足した手元の一覧で並べる（押して何も起きない、を作らない）
+    private func showFollowingAfterSuggested(_ followed: Set<String>, userId: String) async {
+        let ticket = model.beginFollowingFetch()
+        let fetched = await fetchFollowing()
+        guard auth.userId == userId else { return }
+        model.refreshFollowing(fetched ?? model.followingIds.union(followed), viewerId: userId, ticket: ticket)
     }
 
     /// 0枚のときの見出し（明朝 20）。フォロー中が空の回だけ「何が無いか」を言う（板 Main）

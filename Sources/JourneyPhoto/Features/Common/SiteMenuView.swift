@@ -74,7 +74,7 @@ struct SiteMenuView: View {
                     // 保存は旅行プラン・撮影スポットの頁から）。前は設定の Pro の節にしか入口が無かった
                     if offline.hasLocalData {
                         NavigationLink { OfflineSavedView() } label: {
-                            SiteMenuRow(title: L("保存した旅", "Offline trips"), systemImage: "arrow.down.circle",
+                            SiteMenuRow(title: L("圏外で開ける旅", "Offline trips"), systemImage: "arrow.down.circle",
                                         note: L("圏外でも開ける\u{2002}Pro", "Opens without a connection\u{2002}Pro"),
                                         value: OfflineTripText.settingsDetail(count: offline.saved.count,
                                                                               bytes: offline.totalBytes))
@@ -91,7 +91,7 @@ struct SiteMenuView: View {
                         // すれちがい乗車券（帳の頭に入り切りの行がある・`PassBookView`）。右の値はいまの入り切り
                         NavigationLink { PassBookView() } label: {
                             SiteMenuRow(title: PassTicket.featureName, systemImage: "ticket",
-                                        note: L("すれちがい帳と入り切り", "Your pass book and on/off"),
+                                        note: PassTicket.menuNote(enabled: pass.settings.enabled),
                                         value: pass.settings.enabled ? pass.settings.mode.label : L("オフ", "Off"))
                         }
                         .buttonStyle(.plain)

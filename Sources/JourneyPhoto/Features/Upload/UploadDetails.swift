@@ -3,9 +3,9 @@ import Foundation
 /// 投稿画面を軽くするための決まり（2026-10-03・計画9「投稿の摩擦を下げる」）。
 ///
 /// いちばん多い道は「写真を選ぶ → 撮影地 → 投稿する」。公開範囲・親しい友達・曲・アルバム・
-/// SNS・カテゴリは**機能は残したまま**「詳しい設定」に畳む（今の既定値のまま投稿できる）。
-/// 畳んでいても**いま何になっているかは行の右に出す**——公開範囲や SNS が見えないまま
-/// 投稿されないように。
+/// カテゴリは**機能は残したまま**「詳しい設定」に畳む（今の既定値のまま投稿できる）。
+/// 畳んでいても**いま何になっているかは行の右に出す**——公開範囲が見えないまま
+/// 投稿されないように。「SNS にも載せる」の行は 1.1.83 で無くした（投稿のあとに毎回共有カード・`PostedShareCard`）
 ///
 /// **`@MainActor` の型に置かない**（`UploadGrouping` と同じ理由——試験から直に呼ぶ）。
 enum UploadDetails {
@@ -14,17 +14,12 @@ enum UploadDetails {
     ///
     /// **公開範囲はいつも先頭に出す**（既定の「全体に公開」でも省かない）。旅の写真から来た回は
     /// 非公開で始まるので、畳んだままでも「非公開」と読めないといけない。
-    /// 曲・アルバム・SNS・カテゴリは**付けたときだけ**足す（既定の「無し」は並べない）。
+    /// 曲・アルバム・カテゴリは**付けたときだけ**足す（既定の「無し」は並べない）。
     static func summary(published: Bool, audience: Audience, songTitle: String?,
-                        albumTitle: String?, sharesToSocial: Bool, category: String) -> String {
+                        albumTitle: String?, category: String) -> String {
         var parts = [published ? audience.label : L("非公開", "Private")]
         if let songTitle, !songTitle.isEmpty { parts.append(L("曲", "Song")) }
         if let albumTitle, !albumTitle.isEmpty { parts.append(L("アルバム", "Album")) }
-        // SNS は載せられるとき（公開・全体に公開）だけ効く（`ThreadsShare.isEligible`）。
-        // 効かない回に「SNS」と書くと、載ると思わせる
-        if sharesToSocial, ThreadsShare.isEligible(published: published, audience: audience) {
-            parts.append(L("SNS にも載せる", "Share to social"))
-        }
         let trimmed = category.trimmingCharacters(in: .whitespaces)
         if !trimmed.isEmpty { parts.append(trimmed) }
         return parts.joined(separator: "\u{2002}")

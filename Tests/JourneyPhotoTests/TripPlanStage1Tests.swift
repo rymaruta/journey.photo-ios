@@ -513,8 +513,10 @@ final class TripPlanStage1FollowUpTests: XCTestCase {
         let page = try source("Features/Profile/MyPageView.swift")
         XCTAssertFalse(page.contains("TripAddTarget"), "マイページの行に「旅行プランに入れる」を置かない")
         let pick = try source("Features/Trips/TripPlanPickSheet.swift")
-        XCTAssertTrue(pick.contains("if let season = seasonLines[choice.id] {"))
-        XCTAssertTrue(try source("Features/Trips/TripPlanDetailView.swift").contains("seasonLines: seasonLines(for: pickChoices, day: target.day)"))
+        // 2026-11-12: 入れる日をシートの中で替えられるので、その日の季節の一文を行ごとに引く
+        XCTAssertTrue(pick.contains("let season = seasonLine(choice, day)"))
+        XCTAssertTrue(pick.contains("if let season {"))
+        XCTAssertTrue(try source("Features/Trips/TripPlanDetailView.swift").contains("seasonLine: { choice, day in seasonLine(for: choice, day: day) }"))
     }
 }
 

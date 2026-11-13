@@ -215,7 +215,14 @@ struct PhotoEditScreen: Equatable {
         case began(at: Date)
         case tick(now: Date)
         case ended
+        /// 写真の右下の「元の写真」の印に指が触れた（資料「説明なしで分かるアプリ」項目7・2026-11-12）。
+        /// **見える印なので待たずに比べる**（写真の長押しの `holdDelay` は、ただのタップでちらつかないための待ち）。
+        /// 離したら写真と同じ `.ended`
+        case holdOriginal(at: Date)
     }
+
+    /// 写真の右下の印の字（押している間だけ元の写真）
+    static var originalButtonLabel: String { L("元の写真", "Original") }
 
     /// 指が触れた時刻（離していれば nil）
     private(set) var pressedAt: Date?
@@ -232,6 +239,11 @@ struct PhotoEditScreen: Equatable {
             pressedAt = nil
             comparingByAction = false
             history.setComparing(false)
+        case .holdOriginal(let at):
+            // 触れた印も立てる（写真の長押しの時計を重ねて走らせない）
+            if pressedAt == nil { pressedAt = at }
+            comparingByAction = false
+            history.setComparing(true)
         }
     }
 
@@ -456,10 +468,9 @@ enum UploadEditRules {
     /// 共有から外した写真があれば、そのことを知らせに足す（編集前の絵を黙って SNS に渡さない）
     static func withShareSkipped(_ summary: String?, skipped: Int) -> String? {
         guard skipped > 0 else { return summary }
-        // 外した写真があると共有の画面そのものを開かない（`UploadViewModel` の `shareSkipped == 0`）ので、
-        // 「その枚数だけ外した」ではなく「共有を開かなかった」と言う（残りが共有されたと読ませない）
-        let note = L("編集した写真 \(skipped) 枚を共有用に用意できなかったため、SNS への共有は開いていません（投稿は済んでいます）",
-                     "\(skipped) edited photo(s) couldn't be prepared for sharing, so sharing to social media was not opened (the post itself went through).")
+        // 1.1.83（資料①）: 外すのはカードに使う先頭の1枚だけ（`UploadViewModel.cardLeadId`）。作れなければカードは出さない
+        let note = L("編集した写真を共有カード用に用意できなかったため、カードは出していません（投稿は済んでいます）",
+                     "The edited photo couldn't be prepared for the share card, so no card was made (the post itself went through).")
         guard let summary else { return note }
         return summary + L("　", " ") + note
     }

@@ -41,7 +41,7 @@ final class NotificationGroupsTests: XCTestCase {
     func testThisWeekAgreesWithTheDaysAgoLabel() throws {
         let monday = NotificationGroups.parse("2026-09-28T08:00:00.000Z")!
         let t = "2026-09-21T09:00:00.000Z"   // 6日23時間前・暦では7日前
-        XCTAssertEqual(NotificationText.ago(t, now: monday, calendar: calendar), L("7日前", "7d ago"))
+        XCTAssertEqual(NotificationText.ago(t, now: monday, calendar: calendar), "9/21")   // 7日前からは月/日（2026-11-12）
         XCTAssertEqual(NotificationGroups.bucket(of: try row(t), now: monday, calendar: calendar), .earlier)
         // 端末の時計より少し先（日をまたいだ）は「今日」
         XCTAssertEqual(NotificationGroups.bucket(of: try row("2026-09-29T00:01:00.000Z"),

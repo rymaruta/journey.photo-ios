@@ -152,6 +152,8 @@ enum ShareCardMap {
         /// 撮影情報の上端。区切り線（2px）の下も同じ 32
         var infoTop: CGFloat { separatorY + Layout.lineWidth + Layout.rowGap }
         var infoCenterY: CGFloat { infoTop + Layout.infoHeight / 2 }
+        /// 撮影情報の3列の間の縦罫の x（カメラ|レンズ・レンズ|撮影値）。描くかどうかは `infoDividerIndices`
+        static var infoDividerXs: [CGFloat] { [rowDividerX, exposureX - 12] }
         /// 区切り線の右端。地図があるときは地図の手前で止める
         func separatorEndX(hasMap: Bool) -> CGFloat {
             hasMap ? Layout.mapX - Layout.mapLineGap : Layout.contentRight
@@ -163,6 +165,17 @@ enum ShareCardMap {
             CGRect(x: Layout.mapX, y: photoBottom + Layout.mapBandInset,
                    width: Layout.mapWidth, height: Layout.mapHeight)
         }
+    }
+
+    // MARK: - 撮影情報の罫
+
+    /// 撮影情報の列（カメラ・レンズ・撮影値）の間の縦罫のうち、描くものの番号（i は i 列目と i+1 列目の間）。
+    /// 2026-11-12 判断: 罫は2つの字を分けるためのものなので、両側の列に字があるときだけ描く。
+    /// 撮影情報の無い写真で、帯の型の一番下に中身の無い段が縦の線だけ残っていた（run 1194 の画面写真）。
+    /// 字のある列の位置は変えない（板の決まり: 3列の左端は上の段の縦の線にそろえる）
+    static func infoDividerIndices(filled: [Bool]) -> [Int] {
+        guard filled.count >= 2 else { return [] }
+        return (0..<(filled.count - 1)).filter { filled[$0] && filled[$0 + 1] }
     }
 
     // MARK: - フェード型の寸法

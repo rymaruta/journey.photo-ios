@@ -25,3 +25,19 @@ enum PhotoPinning {
         return head + photos.filter { !headIds.contains($0.id) }
     }
 }
+
+/// 写真の詳細の ⋯ の「プロフィールの先頭にピン留め」（資料「説明なしで分かるアプリ」項目9・1.1.85 束H・2026-11-12）。
+/// マイページの写真の長押しだけでは、見せたい1枚を先頭に置けると分からなかった。長押しは近道として残す。
+/// 押す回数: 長押し → 選ぶ の2回（見えない）→ 写真 → ⋯ → ピン留め の3回（見える）
+enum ProfilePinMenu {
+    static func title(pinned: Bool) -> String {
+        pinned ? L("ピン留めを解除", "Unpin from profile")
+               : L("プロフィールの先頭にピン留め", "Pin to top of profile")
+    }
+
+    /// 変えたあとの一言
+    static func done(pinned: Bool) -> String {
+        pinned ? L("プロフィールの先頭にピン留めしました", "Pinned to the top of your profile")
+               : L("ピン留めを解除しました", "Unpinned")
+    }
+}

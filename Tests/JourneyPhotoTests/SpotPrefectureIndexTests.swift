@@ -71,23 +71,37 @@ final class SpotPrefectureIndexTests: XCTestCase {
         XCTAssertEqual(SpotPrefectureIndex.cover(tie)?.url.lastPathComponent, "a.jpg")
     }
 
-    /// 最初に選ぶ地方は撮影スポットのいちばん多い地方。前に選んだ地方が残っていればそれ。消えていれば多い方へ
-    func testSelectedRegionDefaultsToLargest() throws {
+    /// 🔴 **開いたときは何も選ばない**（2026-11-12 owner「なんも押してないのに県を選ぶというのわかりづらいな」）。
+    /// 前は nil で撮影スポットのいちばん多い地方（近畿）を返し、地図がその地方を真鍮で塗っていた。
+    /// 選んだ地方が索引から消えたときも全国（nil）に戻る（ほかの地方を勝手に選ばない）
+    func testNothingSelectedUntilPressed() throws {
         // 関東 3件・近畿 4件（京都 3・奈良 1）
         let groups = SpotPrefectureIndex.groups(spots: try spots() + [try spot("todaiji", prefecture: "奈良県", lat: 34.689, lng: 135.84)])
-        XCTAssertEqual(SpotPrefectureIndex.selected(nil, in: groups)?.region.name, "近畿")
+        XCTAssertNil(SpotPrefectureIndex.selected(nil, in: groups), "何も押していないのに地方を選んだ")
         XCTAssertEqual(SpotPrefectureIndex.selected("北海道", in: groups)?.region.name, "北海道")
-        XCTAssertEqual(SpotPrefectureIndex.selected("九州・沖縄", in: groups)?.region.name, "近畿")
+        XCTAssertNil(SpotPrefectureIndex.selected("九州・沖縄", in: groups), "消えた地方の代わりに別の地方を選んだ")
         XCTAssertNil(SpotPrefectureIndex.selected(nil, in: []))
     }
 
-    /// 同じ件数なら北の地方
-    func testSelectedRegionTieGoesNorth() throws {
-        let groups = SpotPrefectureIndex.groups(spots: [
-            try spot("s", prefecture: "北海道", lat: 43.06, lng: 141.35),
-            try spot("k", prefecture: "京都府", lat: 35.0, lng: 135.7),
-        ])
-        XCTAssertEqual(SpotPrefectureIndex.selected(nil, in: groups)?.region.name, "北海道")
+    /// 何も選んでいない（全国）ときの県の札は、全国の県を撮影スポットの多い順（同じなら北から）。
+    /// 地方を選べばその地方の県だけ。表紙を読む行も、出ている札の分
+    func testNationalCardsWhenNothingSelected() throws {
+        let groups = SpotPrefectureIndex.groups(spots: try spots() + [try spot("todaiji", prefecture: "奈良県", lat: 34.689, lng: 135.84)])
+        XCTAssertEqual(SpotPrefectureIndex.nationalCards(groups).map(\.prefecture),
+                       ["京都府", "東京都", "北海道", "神奈川県", "奈良県"])
+        XCTAssertEqual(SpotPrefectureIndex.shownCards(nil, in: groups).map(\.prefecture),
+                       ["京都府", "東京都", "北海道", "神奈川県", "奈良県"])
+        XCTAssertEqual(SpotPrefectureIndex.shownCards("関東", in: groups).map(\.prefecture), ["東京都", "神奈川県"])
+        XCTAssertTrue(SpotPrefectureIndex.nationalCards([]).isEmpty)
+
+        var pictured = try spot("pictured", prefecture: "奈良県", lat: 34.69, lng: 135.84)
+        pictured.isIndexOnly = true
+        pictured.hasImage = LenientFlag(true)
+        let withPending = SpotPrefectureIndex.groups(spots: try spots() + [pictured])
+        XCTAssertEqual(SpotPrefectureIndex.coverNeeds(region: nil, in: withPending).map(\.slug), ["pictured"],
+                       "全国の札の表紙を読まない")
+        XCTAssertEqual(SpotPrefectureIndex.coverNeeds(region: "近畿", in: withPending).map(\.slug), ["pictured"])
+        XCTAssertTrue(SpotPrefectureIndex.coverNeeds(region: "関東", in: withPending).isEmpty)
     }
 
     // MARK: - 一覧

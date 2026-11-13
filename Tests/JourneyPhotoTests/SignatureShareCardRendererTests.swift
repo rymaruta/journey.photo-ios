@@ -617,6 +617,99 @@ final class SignatureShareCardRendererTests: XCTestCase {
         XCTAssertNotNil(UIImage(data: try XCTUnwrap(rendered)))
     }
 
+
+    // MARK: - 撮影情報が無いとき（2026-11-12）
+
+    /// 描いたカードの、ある範囲の中でいちばん明るい赤の値（線があれば真鍮で明るくなる）
+    private func maxRed(_ data: Data, in rect: CGRect) throws -> Int {
+        let image = try XCTUnwrap(UIImage(data: data)?.cgImage)
+        let cropped = try XCTUnwrap(image.cropping(to: rect.integral))
+        let width = cropped.width, height = cropped.height
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        let context = try XCTUnwrap(CGContext(
+            data: &rgba, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(cropped, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return stride(from: 0, to: rgba.count, by: 4).map { Int(rgba[$0]) }.max() ?? 0
+    }
+
+    /// 描いたカード（XCTUnwrap の autoclosure に await を入れられないので、いったん受けてから）
+    private func renderCard(_ data: Data, credit: SignatureShareCardRenderer.Credit,
+                            ratio: SignatureShareCardRenderer.Ratio,
+                            style: SignatureShareCardRenderer.Style) async throws -> Data {
+        let rendered = await SignatureShareCardRenderer.render(data, credit: credit, ratio: ratio, style: style)
+        return try XCTUnwrap(rendered)
+    }
+
+    private func grayPhoto() -> Data {
+        UIGraphicsImageRenderer(size: CGSize(width: 800, height: 1000)).jpegData(withCompressionQuality: 0.95) { context in
+            UIColor.darkGray.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 800, height: 1000))
+        }
+    }
+
+    private func credit(camera: String?, lens: String?, exposure: String?) -> SignatureShareCardRenderer.Credit {
+        SignatureShareCardRenderer.Credit(
+            name: "Creator", username: "creator", location: nil, coords: nil,
+            camera: camera, lens: lens, exposure: exposure, aperture: nil, iso: nil,
+            verified: false, proStyle: nil, early: false, badge: nil)
+    }
+
+    /// 帯の型（4:5）: 撮影情報が無ければ、下の段の区切り線と縦罫を描かない（run 1194 で縦の線だけ残っていた）。
+    /// 一部だけ空なら、空の欄に掛かる縦罫を描かない。線は真鍮 45%（赤 ≈ 98）、帯の地は赤 14
+    func testBandCardDrawsNoInfoLinesWithoutExif() async throws {
+        typealias L = ShareCardMap.Layout
+        let layout = L(ratio: .portrait)
+        let separator = CGRect(x: L.contentLeft + 20, y: layout.separatorY - 2, width: 200, height: 6)
+        let dividers = L.infoDividerXs.map {
+            CGRect(x: $0 - 3, y: layout.infoCenterY - 15, width: 6, height: 30)
+        }
+        let threshold = 55
+
+        let empty = try await renderCard(
+            grayPhoto(), credit: credit(camera: nil, lens: " ", exposure: nil), ratio: .portrait, style: .band)
+        XCTAssertLessThan(try maxRed(empty, in: separator), threshold, "撮影情報が無いのに区切り線を描いた")
+        for (index, rect) in dividers.enumerated() {
+            XCTAssertLessThan(try maxRed(empty, in: rect), threshold, "撮影情報が無いのに縦罫 \(index) を描いた")
+        }
+
+        let full = try await renderCard(
+            grayPhoto(), credit: credit(camera: "Camera", lens: "35mm", exposure: "1/125s"),
+            ratio: .portrait, style: .band)
+        XCTAssertGreaterThan(try maxRed(full, in: separator), threshold, "撮影情報があるのに区切り線が無い")
+        for (index, rect) in dividers.enumerated() {
+            XCTAssertGreaterThan(try maxRed(full, in: rect), threshold, "撮影情報があるのに縦罫 \(index) が無い")
+        }
+
+        // カメラだけ: 区切り線は描き、縦罫は描かない
+        let cameraOnly = try await renderCard(
+            grayPhoto(), credit: credit(camera: "Camera", lens: nil, exposure: nil), ratio: .portrait, style: .band)
+        XCTAssertGreaterThan(try maxRed(cameraOnly, in: separator), threshold)
+        for (index, rect) in dividers.enumerated() {
+            XCTAssertLessThan(try maxRed(cameraOnly, in: rect), threshold, "空の欄に縦罫 \(index) を描いた")
+        }
+    }
+
+    /// 展示札の型（4:5）: 表の列の間の縦罫（真鍮 30%・赤 ≈ 60）も、両側に字があるときだけ
+    func testLabelCardDrawsNoTableDividersWithoutExif() async throws {
+        let layout = ShareCardMap.LabelLayout(ratio: .portrait)
+        let dividers = [CGFloat(248), 456].map {
+            CGRect(x: $0 - 3, y: layout.tableTop + 30, width: 6, height: 30)
+        }
+        let threshold = 35
+        let empty = try await renderCard(
+            grayPhoto(), credit: credit(camera: nil, lens: nil, exposure: nil), ratio: .portrait, style: .label)
+        for (index, rect) in dividers.enumerated() {
+            XCTAssertLessThan(try maxRed(empty, in: rect), threshold, "撮影情報が無いのに縦罫 \(index) を描いた")
+        }
+        let full = try await renderCard(
+            grayPhoto(), credit: credit(camera: "Camera", lens: "35mm", exposure: "1/125s"),
+            ratio: .portrait, style: .label)
+        for (index, rect) in dividers.enumerated() {
+            XCTAssertGreaterThan(try maxRed(full, in: rect), threshold, "撮影情報があるのに縦罫 \(index) が無い")
+        }
+    }
+
 }
 
 #endif

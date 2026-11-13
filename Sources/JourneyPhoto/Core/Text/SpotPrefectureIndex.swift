@@ -148,14 +148,34 @@ enum SpotPrefectureIndex {
         group?.cards.compactMap(\.pending) ?? []
     }
 
-    /// 段で最初に選んでおく地方。前に選んだ地方がまだあればそれ、無ければ**撮影スポットのいちばん多い地方**
-    /// （同じなら北から）。2026-11-11 判断: 北から順（北海道）だと、件数の少ない地方で段が始まりやすい。
-    /// 板 Search の「都道府県から探す」も多い順に並べている
+    /// 段で選んでいる地方。**選んでいなければ nil（全国）**——前に選んだ地方が索引から消えたときも全国に戻る。
+    ///
+    /// 2026-11-12 判断（owner「なんも押してないのに県を選ぶというのわかりづらいな。ガイドもないし」）:
+    /// 前は、何も押していないのに撮影スポットのいちばん多い地方を選んでおき、地図でその地方が真鍮で塗られ、
+    /// 右の札にも出ていた（2026-11-11 判断）。**開いたときは何も選ばない**。写真の札の列は全国の県（`nationalCards`）、
+    /// 地図は塗らずに「地方を押すと、ここに出ます」の札。Web の #625 と同じ考え
     static func selected(_ name: String?, in groups: [Group]) -> Group? {
-        if let name, let hit = groups.first(where: { $0.region.name == name }) { return hit }
-        return groups.enumerated().max { a, b in
-            a.element.count != b.element.count ? a.element.count < b.element.count : a.offset > b.offset
-        }?.element
+        guard let name else { return nil }
+        return groups.first { $0.region.name == name }
+    }
+
+    /// 何も選んでいない（全国）ときの県の札。**撮影スポットの多い県から**（同じなら北から）。
+    /// 2026-11-12 判断: 前は件数のいちばん多い地方を選んでおいて、その県の札を出していた。選ばずに、
+    /// 全国の県を多い順に並べる（どの県も札を1回押せば一覧へ行ける。前は選んでいない地方の県はチップ＋札の2回）
+    static func nationalCards(_ groups: [Group]) -> [Card] {
+        groups.flatMap(\.cards).enumerated()
+            .sorted { a, b in a.element.count != b.element.count ? a.element.count > b.element.count : a.offset < b.offset }
+            .map(\.element)
+    }
+
+    /// 段に出ている県の札（地方を選んでいればその地方、選んでいなければ全国）
+    static func shownCards(_ name: String?, in groups: [Group]) -> [Card] {
+        selected(name, in: groups)?.cards ?? nationalCards(groups)
+    }
+
+    /// 段に出ている県の札で、表紙のために詳細を読む行（全国のときも、出ている札の分だけ）
+    static func coverNeeds(region name: String?, in groups: [Group]) -> [OfficialSpot] {
+        shownCards(name, in: groups).compactMap(\.pending)
     }
 
     /// 地方の段だけ（地図の札の「すべて見る」の先・県は北から）

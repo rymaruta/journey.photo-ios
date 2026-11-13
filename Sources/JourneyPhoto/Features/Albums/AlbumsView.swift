@@ -265,29 +265,30 @@ struct AlbumsView: View {
                 .profileListRow()
             Section {
                 ForEach(others) { entry in
-                    Button {
-                        openedToken = InviteToken(id: entry.token)
-                    } label: {
-                        HStack(spacing: JPSpace.s) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(entry.title.isEmpty
-                                     ? L("無題のアルバム", "Untitled album") : entry.title)
-                                    .font(JPFont.rowTitle)
-                                    .foregroundStyle(entry.title.isEmpty ? WebTheme.text2 : WebTheme.foreground)
-                                Text(L("招待リンクから参加", "Joined with a link"))
-                                    .font(JPFont.caption)
-                                    .foregroundStyle(WebTheme.text3)
+                    HStack(spacing: JPSpace.s) {
+                        Button {
+                            openedToken = InviteToken(id: entry.token)
+                        } label: {
+                            HStack(spacing: JPSpace.s) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(entry.title.isEmpty
+                                         ? L("無題のアルバム", "Untitled album") : entry.title)
+                                        .font(JPFont.rowTitle)
+                                        .foregroundStyle(entry.title.isEmpty ? WebTheme.text2 : WebTheme.foreground)
+                                    Text(L("招待リンクから参加", "Joined with a link"))
+                                        .font(JPFont.caption)
+                                        .foregroundStyle(WebTheme.text3)
+                                }
+                                Spacer(minLength: 0)
                             }
-                            Spacer(minLength: 0)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(Color.white.opacity(0.35))
-                                .accessibilityHidden(true)
+                            .frame(minHeight: JPHeight.tallRow)
+                            .contentShape(Rectangle())
                         }
-                        .frame(minHeight: JPHeight.tallRow)
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
+                        // 2026-11-12（説明なしで分かる 項目22）: 払うだけだった「一覧から消す」を、自分のアルバムと
+                        // 同じ右の「…」にも置く（板 Albums の参加しているアルバムの行も右に「…」）。右の › は「…」に替えた
+                        joinedMenu(entry)
                     }
-                    .buttonStyle(.plain)
                     .profileListRow(divider: true)
                     .swipeActions {
                         // **抜けるのではなく、この端末の控えを消すだけ。**
@@ -371,6 +372,27 @@ struct AlbumsView: View {
         }
         .buttonStyle(.borderless)
         .accessibilityLabel(L("アルバムの操作", "Album actions"))
+    }
+
+    /// 参加しているアルバムの行の右の「…」（自分のアルバムの `albumMenu` と同じ形・44pt）。
+    /// 中は払いと同じ「一覧から消す」——**抜けるのではなく、この端末の控えを消すだけ**（サーバーに抜ける口は無い）
+    private func joinedMenu(_ entry: JoinedAlbumsStore.Entry) -> some View {
+        Menu {
+            Button(role: .destructive) {
+                joined.forget(id: entry.id)
+            } label: {
+                Label(L("一覧から消す", "Remove"), systemImage: "trash")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 17, weight: .regular))
+                .foregroundStyle(WebTheme.foreground)
+                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(L("アルバムの操作", "Album actions"))
+        .accessibilityIdentifier("albums.joined.menu")
     }
 
     /// 🔴 **期限が切れたリンクは共有させない。** サーバーは切れた招待も一覧に

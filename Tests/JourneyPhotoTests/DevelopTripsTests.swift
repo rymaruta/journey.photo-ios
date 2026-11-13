@@ -217,7 +217,8 @@ final class DevelopStateTests: XCTestCase {
     /// 一部の写真だけ許可のときだけ、札に「選んで許可した写真の中から見つけました」
     func testLimitedCardDetail() {
         XCTAssertEqual(DevelopTrips.cardDetail(limited: true), "選んで許可した写真の中から見つけました")
-        XCTAssertNil(DevelopTrips.cardDetail(limited: false), "全部許可した人にも許可の一言を出した")
+        XCTAssertEqual(DevelopTrips.cardDetail(limited: false), "写真アプリから見つけました",
+                       "全部許可した人に、どこから見つけた旅かを言っていない（説明なしで分かる 項目6）")
         XCTAssertEqual(DevelopTrips.addMoreLabel, "ほかの写真も選べるようにする")
     }
 

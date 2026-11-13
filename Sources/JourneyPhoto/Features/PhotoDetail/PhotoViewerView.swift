@@ -62,6 +62,11 @@ struct PhotoViewerView: View {
     /// 全画面の上に出すので、詳細画面ではなくここに持つ
     @State private var signInAsk: SignInRequest?
     @State private var signInOpen: SignInRequest?
+    /// 1回押して上下の情報を隠したか（2026-11-12 判断・決まりは `ViewerChrome`）。
+    /// **送っても戻さない**（`onChange(of: index)` では触らない・iPhone の「写真」と同じ）
+    @State private var chrome = ViewerChrome()
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -109,7 +114,15 @@ struct PhotoViewerView: View {
                         // 拡大中だけは倍率を戻す側に倒す（`DoubleTapLike`）。
                         // 🔴 **叩いたページの写真を渡す**——`index` は送りの直後に遅れて替わるので、
                         // そこから引くと隣の写真に付く窓があった（`DoubleTapLike.tap`）
+                        // 2026-11-12 判断: **押せる所はページ全体**（写真の上下の黒い余白も）。収めた写真の
+                        // 大きさだけだと、横長の写真で余白を押しても隠す・出すが効かない（「写真」と同じに）
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
                         .onTapGesture(count: 2) { handleDoubleTap(photo, at: offset) }
+                        // **1回押すと上下の情報を隠す・もう1回で出す**（2026-11-12 owner の要望・`ViewerChrome`）。
+                        // 🔴 **2回押しの後ろに付ける**——こうすると1回押しは2回押しが成り立たなかったときだけ
+                        // 届き、2回押し（いいね・拡大を戻す）で隠れたり出たりしない。拡大中は倍率を保ったまま
+                        .onTapGesture { toggleChrome() }
                         .accessibilityLabel(photo.accessibilityText)
                         .tag(offset)
                 }
@@ -143,6 +156,7 @@ struct PhotoViewerView: View {
             }
             .padding(.bottom, 24)
             .frame(maxWidth: .infinity)
+            .modifier(ChromeVisibility(shown: showsChrome, edge: .bottom, reduceMotion: reduceMotion))
 
             // ダブルタップの演出。Web も同じ位置（画面の中央）で出す
             if burst > 0 {
@@ -158,6 +172,7 @@ struct PhotoViewerView: View {
             }
 
             topBar
+                .modifier(ChromeVisibility(shown: showsChrome, edge: .top, reduceMotion: reduceMotion))
 
             // **全画面の中の知らせ**（いいねが届かなかった）。アプリの下の知らせ（`RootView`）と
             // 裏の詳細画面の赤字は全画面に隠れるので、ここにも置く（`StoryReelView` と同じ）。
@@ -165,8 +180,30 @@ struct PhotoViewerView: View {
             ToastOverlay()
                 .padding(.top, 56)
         }
+        // UI テストのときだけ: 上下の情報を出しているかを見えない要素に出す（`PreviewSession.viewerProbe`・2026-11-12 run 1193）
+        .overlay(alignment: .topLeading) {
+            if PreviewSession.viewerProbe {
+                Text(" ")
+                    .font(.system(size: 1))
+                    .frame(width: 1, height: 1)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("viewer.chrome.probe")
+                    .accessibilityValue(showsChrome ? "shown" : "hidden")
+            }
+        }
         .statusBarHidden()
+        // VoiceOver の「戻る」（2本指で Z）で閉じる。✕ に届かなくても出られる（2026-11-12 判断）
+        .accessibilityAction(.escape) { dismiss() }
         .signInPrompt(ask: $signInAsk, open: $signInOpen)
+    }
+
+    /// 上下の情報を出しているか（VoiceOver 中はいつも出す・`ViewerChrome`）
+    private var showsChrome: Bool { chrome.shows(voiceOver: voiceOver) }
+
+    private func toggleChrome() {
+        withAnimation(.easeInOut(duration: ViewerChrome.fadeDuration)) {
+            chrome.singleTap(voiceOver: voiceOver)
+        }
     }
 
     /// いま見ている写真。送っている途中で添字が外れていたら nil
@@ -197,6 +234,7 @@ struct PhotoViewerView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Labels.Common.close)
+            .accessibilityIdentifier("viewer.close")
 
             Spacer()
 
@@ -291,6 +329,10 @@ struct PhotoViewerView: View {
             }
             .padding(.leading, JPSpace.m)
             .padding(.trailing, JPSpace.xs)
+            // UI テストが「1回押すと消え、もう1回で戻る」を見る下の情報（2026-11-12 判断）。サムネイルの帯は2枚以上の投稿だけ
+            // なので（`thumbnailStrip`）、1枚の写真でも必ずある題・撮影情報の段で見る（run 1182: 1枚の写真で帯を待って落ちた）
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("viewer.caption")
         }
     }
 
@@ -326,6 +368,8 @@ struct PhotoViewerView: View {
                 .padding(.horizontal, 16)
             }
             .frame(height: 60)
+            // UI テストが「1回押すと消え、もう1回で戻る」を見る所
+            .accessibilityIdentifier("viewer.strip")
         }
     }
 
@@ -374,5 +418,25 @@ struct PhotoViewerView: View {
             try? await Task.sleep(nanoseconds: 700_000_000)
             if burst == shown { burst = 0 }
         }
+    }
+}
+
+/// 上下の情報の消え方・出方（2026-11-12 判断・`ViewerChrome`）。
+///
+/// **消しても形は残す**（濃さを 0 にする）——サムネイルの帯を作り直すと、送った位置が先頭に戻るため。
+/// そのかわり、隠している間は押せない・読み上げない（下の写真に1回押しが届き、もう一度出せる）
+private struct ChromeVisibility: ViewModifier {
+    let shown: Bool
+    /// 寄っていく端（上の列は上へ・下の重ねは下へ）
+    let edge: VerticalEdge
+    let reduceMotion: Bool
+
+    func body(content: Content) -> some View {
+        let slide = ViewerChrome.slide(reduceMotion: reduceMotion)
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown ? 0 : (edge == .top ? -slide : slide))
+            .allowsHitTesting(shown)
+            .accessibilityHidden(!shown)
     }
 }

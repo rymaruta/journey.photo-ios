@@ -270,6 +270,8 @@ extension View {
     public func dynamicTypeSize(_ range: PartialRangeThrough<DynamicTypeSize>) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
     public func textCase(_ c: Text.Case?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func underline(_ on: Bool = true, color: Color? = nil) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// 打ち消し線（本物と同じ形・旅行プランの外した場所）
+    public func strikethrough(_ on: Bool = true, color: Color? = nil) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
 
     // 見た目
     public func font(_ f: Font?) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
@@ -444,6 +446,8 @@ extension View {
     public func contextMenu<M: View, P: View>(@ViewBuilder menuItems: () -> M,
                                               @ViewBuilder preview: () -> P) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func accessibilityAction(named name: String, _ handler: @escaping () -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
+    /// 読み上げの操作をまとめて付ける（本物は iOS 16 以降・中身は `Button` の並び・旅行プランの持ち手）
+    public func accessibilityActions<C: View>(@ViewBuilder _ content: () -> C) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     /// 本物の `accessibilityAdjustableAction`（読み上げの「増やす・減らす」）
     public func accessibilityAdjustableAction(_ handler: @escaping (AccessibilityAdjustmentDirection) -> Void) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     /// 名前を付けた座標を置く（iOS 17。指の位置をこの枠の座標で読む）

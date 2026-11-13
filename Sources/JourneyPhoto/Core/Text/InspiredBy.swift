@@ -334,8 +334,8 @@ enum InspiredBy {
         var emptyMessage: String {
             switch self {
             case .saved:
-                return L("保存した写真はまだありません。写真の詳細のしおりで保存できます",
-                         "No saved photos yet. Tap the bookmark on a photo to save it.")
+                return L("保存した写真はまだありません。写真の詳細で保存の印を押すと、ここに入ります",
+                         "No saved photos yet. Tap Save on a photo to keep it here.")
             case .wishlist:
                 return L("行きたい場所の写真はまだありません。写真の詳細の「行きたい」で場所を入れると、ここに並びます",
                          "No photos from places you want to go yet. Tap “Want to go” on a photo to add its place.")
