@@ -6897,12 +6897,20 @@ final class ScreenshotTests: XCTestCase {
     /// `[tabsAX]` の行でログ（と注記）に出す。合否は、どちらに転んでも崩れてはいけない所だけ見る:
     /// 選んでいる札がちょうど1つ・1回の払いで2つ先へ飛ばない・中身が選んでいる札のもので、横にずれて止まっていない。
     /// 名指し: `screens=testPinsMyPageTabs`（既存の `testPinsMyPageTabs` と一緒に選ばれる）
-    func testPinsMyPageTabsAtLargeText() {
-        for (category, tag) in [("UICTContentSizeCategoryAccessibilityMedium", "AX1"),
-                                ("UICTContentSizeCategoryAccessibilityXL", "AX3"),
-                                ("UICTContentSizeCategoryAccessibilityXXXL", "AX5")] {
-            probePinnedTabsSwipe(["-UIPreferredContentSizeCategoryName", category], tag)
-        }
+    ///
+    /// **字の大きさごとに1本ずつ・1本で1回だけ起動する**（ほかの大きい文字の試験 `testCapturesCamperLargeText` などと同じ）。
+    /// 1本で3つの大きさを続けて起動すると、AX3 の途中で XCTest の1本 5 分の持ち時間を越え、止める途中で
+    /// 「Failed to terminate」で落ちた（Mac run 1227・AX1 と AX3 で 300 秒。1 回の値の書き出しに 4〜5 秒かかる）
+    func testPinsMyPageTabsAtLargeTextAX1() {
+        probePinnedTabsSwipe(["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityMedium"], "AX1")
+    }
+
+    func testPinsMyPageTabsAtLargeTextAX3() {
+        probePinnedTabsSwipe(["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"], "AX3")
+    }
+
+    func testPinsMyPageTabsAtLargeTextAX5() {
+        probePinnedTabsSwipe(["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"], "AX5")
     }
 
     private func probePinnedTabsSwipe(_ extra: [String], _ tag: String) {
