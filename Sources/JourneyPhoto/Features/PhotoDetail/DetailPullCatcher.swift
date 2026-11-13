@@ -15,6 +15,86 @@ final class PhotoDetailPullDrag: ObservableObject {
     var closing = false
 }
 
+/// 引く量の箱を持つ入れ物（札 #592・2026-11-13 確かめ役）。**画面の `@StateObject` に置く**——`@State` の初期値に
+/// 箱を書くと、格子のマスが行き先（`NavigationLink` の `PhotoDetailView`）を作るたびに箱が割り当てられていた
+/// （`@State` の初期値は作るたびに評価される。`@StateObject` は画面が出たときに1回だけ作る）。
+/// 入れ物自身は何も知らせない（`@Published` が無い）ので、引いている間に画面の `body` は描き直さない
+final class PhotoDetailPullHolder: ObservableObject {
+    let drag = PhotoDetailPullDrag()
+}
+
+/// UI テストの事実取りだけ（`PreviewSession.pullProbe`・`-JPPreviewPullProbe YES`）: 写真を引いた量と、指が触れている間に
+/// 画面の器（シートで開いたときはシート）が下がった量。見えない要素 `detail.pull.probe` の値に出す。
+///
+///     began=1;ended=1;closes=1;pullMax=212;dropWhilePull=0;dropMax=640
+///
+/// - `pullMax`: 写真を引いた量の最大（pt）
+/// - `dropWhilePull`: 写真を引いている間に器が下がった量の最大（シートの「下へ引いて閉じる」と二重なら 0 より大きい）
+/// - `dropMax`: 指が写真に触れてからの器の下がりの最大（閉じる動きも入る）
+final class DetailPullProbe: ObservableObject {
+    static let shared = DetailPullProbe()
+    static let identifier = "detail.pull.probe"
+
+    @Published private(set) var value = "began=0;ended=0;closes=0;pullMax=0;dropWhilePull=0;dropMax=0"
+
+    private var began = 0, ended = 0, closes = 0
+    private var pullMax = 0.0, dropWhilePull = 0.0, dropMax = 0.0
+    /// 指が写真に触れた時の器の上端（窓の向き）
+    private(set) var baseline: Double?
+
+    /// 指が写真に触れた: 器の上端を控え、この指の分の最大を0から数える
+    func touchDown(top: Double) {
+        baseline = top
+        pullMax = 0
+        dropWhilePull = 0
+        dropMax = 0
+        publish()
+    }
+
+    /// 毎フレーム: 器の上端と、写真を引いている最中か
+    func sample(top: Double, pulling: Bool) {
+        guard let baseline else { return }
+        let drop = top - baseline
+        var changed = false
+        if drop > dropMax + 0.5 { dropMax = drop; changed = true }
+        if pulling, drop > dropWhilePull + 0.5 { dropWhilePull = drop; changed = true }
+        if changed { publish() }
+    }
+
+    func pullBegan() { began += 1; publish() }
+
+    func pulled(dy: Double) {
+        guard dy > pullMax + 0.5 else { return }
+        pullMax = dy
+        publish()
+    }
+
+    func pullEnded(closes willClose: Bool) {
+        ended += 1
+        if willClose { closes += 1 }
+        publish()
+    }
+
+    private func publish() {
+        value = "began=\(began);ended=\(ended);closes=\(closes);pullMax=\(Int(pullMax.rounded()))"
+            + ";dropWhilePull=\(Int(dropWhilePull.rounded()));dropMax=\(Int(dropMax.rounded()))"
+    }
+}
+
+/// `DetailPullProbe` を見えない要素に出す（1pt・押せない）
+private struct DetailPullProbeView: View {
+    @ObservedObject var probe = DetailPullProbe.shared
+
+    var body: some View {
+        Text(" ")
+            .font(.system(size: 1))
+            .frame(width: 1, height: 1)
+            .allowsHitTesting(false)
+            .accessibilityIdentifier(DetailPullProbe.identifier)
+            .accessibilityValue(probe.value)
+    }
+}
+
 /// 引いている量に合わせて動く小さな子。**中身は親が作った値で受け取る**（作り方の関数で受けると、
 /// ここが描き直すたびに説明・コメントの段を作り直す・`ProfileTabDragOffset` と同じ）
 struct DetailPullFollow<Content: View>: View {
@@ -74,11 +154,14 @@ struct DetailPullCatcher: View {
     var onCancel: () -> Void
 
     var body: some View {
-        #if os(iOS)
-        DetailPullPanHost(handlers: self)
-        #else
-        Color.clear
-        #endif
+        ZStack(alignment: .topLeading) {
+            #if os(iOS)
+            DetailPullPanHost(handlers: self)
+            #else
+            Color.clear
+            #endif
+            if PreviewSession.pullProbe { DetailPullProbeView() }
+        }
     }
 }
 
@@ -144,6 +227,7 @@ struct DetailPullPanHost: UIViewRepresentable {
             detach()
             scroll.addGestureRecognizer(pan)
             host = scroll
+            startProbeIfNeeded()
         }
 
         /// 外す。**引いている途中なら取り消しとして終える**（画面を離れたときにずらしを残さない）
@@ -151,6 +235,31 @@ struct DetailPullPanHost: UIViewRepresentable {
             if pan.state == .began || pan.state == .changed { handlers?.onCancel() }
             pan.view?.removeGestureRecognizer(pan)
             host = nil
+            probeLink?.invalidate()
+            probeLink = nil
+        }
+
+        // MARK: UI テストの事実取りだけ（`DetailPullProbe`）
+
+        private var probeLink: CADisplayLink?
+
+        /// 器（縦の送り）の見えている上端の、窓の中の高さ。シートが下がるとこれが増える。
+        /// 写真を引く動きは送りの中身だけを動かすので、ここには入らない
+        private var hostTop: Double? {
+            guard let host, host.window != nil else { return nil }
+            return Double(host.convert(host.bounds.origin, to: nil).y)
+        }
+
+        private func startProbeIfNeeded() {
+            guard PreviewSession.pullProbe, probeLink == nil else { return }
+            let link = CADisplayLink(target: self, selector: #selector(probeTick))
+            link.add(to: .main, forMode: .common)
+            probeLink = link
+        }
+
+        @objc private func probeTick() {
+            guard let top = hostTop else { return }
+            DetailPullProbe.shared.sample(top: top, pulling: pan.state == .began || pan.state == .changed)
         }
 
         @objc private func handle(_ pan: UIPanGestureRecognizer) {
@@ -165,9 +274,17 @@ struct DetailPullPanHost: UIViewRepresentable {
                     pan.isEnabled = true
                     return
                 }
+                if PreviewSession.pullProbe {
+                    if pan.state == .began { DetailPullProbe.shared.pullBegan() }
+                    DetailPullProbe.shared.pulled(dy: Double(move.y))
+                }
                 handlers.onChange(Double(move.x), Double(move.y))
             case .ended:
-                handlers.onEnd(Double(move.y), Double(pan.velocity(in: nil).y))
+                let velocityY = Double(pan.velocity(in: nil).y)
+                if PreviewSession.pullProbe {
+                    DetailPullProbe.shared.pullEnded(closes: PhotoDetailPull.closes(dy: Double(move.y), velocityY: velocityY))
+                }
+                handlers.onEnd(Double(move.y), velocityY)
             case .cancelled, .failed:
                 handlers.onCancel()
             default:
@@ -180,7 +297,9 @@ struct DetailPullPanHost: UIViewRepresentable {
             guard gestureRecognizer === pan, let probe, probe.window != nil, handlers?.isEnabled == true else {
                 return false
             }
-            return probe.bounds.contains(touch.location(in: probe))
+            guard probe.bounds.contains(touch.location(in: probe)) else { return false }
+            if PreviewSession.pullProbe, let top = hostTop { DetailPullProbe.shared.touchDown(top: top) }
+            return true
         }
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {

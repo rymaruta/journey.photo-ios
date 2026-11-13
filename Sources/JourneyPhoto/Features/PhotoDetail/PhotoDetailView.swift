@@ -27,9 +27,11 @@ struct PhotoDetailView: View {
     @Environment(\.isPresented) private var isPresented
     /// 「視差効果を減らす」: 下へ引いている間に写真を縮めない・戻すばねを弾ませない（札 #592）
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// 写真を下へ引いている量（札 #592・`PhotoDetailPull`）。**参照だけを持つ**——中を書き換えても
-    /// この画面の `body` は描き直さない（見張るのは `DetailPullFollow` だけ・`ProfileTabDrag` と同じ形）
-    @State private var pull = PhotoDetailPullDrag()
+    /// 写真を下へ引いている量（札 #592・`PhotoDetailPull`）の入れ物。**画面が出たときに1回だけ作る**
+    /// （`@State` の初期値だと、格子のマスが行き先を作るたびに箱が割り当てられる・`PhotoDetailPullHolder`）。
+    /// 入れ物は何も知らせないので、引いている間もこの画面の `body` は描き直さない（見張るのは `DetailPullFollow` だけ）
+    @StateObject private var pullHolder = PhotoDetailPullHolder()
+    private var pull: PhotoDetailPullDrag { pullHolder.drag }
     @StateObject private var model: PhotoDetailViewModel
     /// 保存（しおり）を送っている最中の写真。**写真ごとに持つ**（2026-10-09）——1つの印だと、
     /// 束の隣へ送った後の保存が、前の1枚の送信中は黙って無視されていた（いいねと同じ直し方・

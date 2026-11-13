@@ -8407,8 +8407,13 @@ final class ScreenshotTests: XCTestCase {
 
     // MARK: - SNS の輪（札 #541・2026-11-11）
 
+    /// 見本の通信で起動する（紹介のストーリーつき）に、引数を足して起動する。開けなければ nil
+    private func launchSNSPreviewWith(_ extra: [String]) -> XCUIApplication? {
+        launchSNSPreview(sharedStory: true, extra: extra)
+    }
+
     /// 見本の通信で起動する（ストーリー・紹介の見本つき）。開けなければ nil
-    private func launchSNSPreview(sharedStory: Bool) -> XCUIApplication? {
+    private func launchSNSPreview(sharedStory: Bool, extra: [String] = []) -> XCUIApplication? {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -8420,6 +8425,7 @@ final class ScreenshotTests: XCTestCase {
         if sharedStory { app.launchArguments += ["-JPPreviewSharedStory", "YES"] }
         // 入口の案内「写真を押してひとこと」（端末に1回だけ）は撮らない（札の絵に被る）
         app.launchArguments += ["-story.captionHintShown", "YES"]
+        app.launchArguments += extra
         app.launch()
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
@@ -9546,9 +9552,11 @@ final class ScreenshotTests: XCTestCase {
     ///
     /// 1. 写真の上で上へ払う → 説明へ流れる（写真の上端が上へ動く）・写真の詳細のまま
     /// 2. 写真の下（説明）で下へ戻して、いちばん上へ戻す（写真の外の指なので閉じない）
-    /// 3. 写真の上で下へ引く → 前の画面（ホーム）に戻る
+    /// 3. 写真の上で少し（90pt）ゆっくり引いて止め、離す → 閉じずに元の位置へ戻る。
+    ///    その間に写真の詳細の body が描き直されないこと（`perf.probe` の `photoDetail` の数・2026-11-13 確かめ役）
+    /// 4. 写真の上で下へ引く → 前の画面（ホーム）に戻る
     func testDetailPullDownGoesBack() {
-        let app = launchTrunk([])
+        let app = launchTrunk(["-JPPreviewPerfProbe", "YES"])
         defer { app.terminate() }
         let recommended = app.buttons["おすすめ"].firstMatch
         if recommended.waitForExistence(timeout: 15), recommended.isHittable { recommended.tap() }
@@ -9588,7 +9596,28 @@ final class ScreenshotTests: XCTestCase {
         guard expect(menu.exists && hero.exists, "説明の上で下へ戻した後の写真の詳細", app) else { return }
         guard expect(abs(hero.frame.minY - topAtOpen) < 2, "いちばん上へ戻った写真の詳細", app) else { return }
 
-        // 3. 写真の上で下へ引く → 前の画面へ
+        // 3. 少しだけゆっくり引いて止め、離す（120pt に届かない・止めてから離すので勢いも無い）→ 戻る・閉じない
+        Thread.sleep(forTimeInterval: 2)
+        let bodyBefore = perfProbeValue(app).map { PerfProbeReading($0).bodyCount("photoDetail") }
+        let small = hero.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+        small.press(forDuration: 0.05, thenDragTo: small.withOffset(CGVector(dx: 0, dy: 90)),
+                    withVelocity: .slow, thenHoldForDuration: 1.5)
+        Thread.sleep(forTimeInterval: 1.5)
+        let bodyAfter = perfProbeValue(app).map { PerfProbeReading($0).bodyCount("photoDetail") }
+        let topAfterSmall = hero.exists ? hero.frame.minY : .nan
+        XCTContext.runActivity(named: "[detailPull] 少し引いて離す: 写真の上端 \(topAtOpen) → \(topAfterSmall)・…=\(menu.exists)"
+            + "・photoDetail の body \(bodyBefore.map(String.init) ?? "-") → \(bodyAfter.map(String.init) ?? "-")") { _ in }
+        guard expect(menu.exists && hero.exists, "少し引いて離した後の写真の詳細（閉じた）", app) else { return }
+        XCTAssertLessThan(abs(topAfterSmall - topAtOpen), 2, "少し引いて離した写真が元の位置へ戻らない")
+        if let bodyBefore, let bodyAfter {
+            // ゆっくり 90pt 引いて 1.5 秒止める間は 100 フレームを越える。引く量で画面ぜんぶを描き直していれば
+            // その数だけ増える。読み込みの答えなどで数回は増えうるので、10 回未満を合格にする（数はログに残す）
+            XCTAssertLessThan(bodyAfter - bodyBefore, 10, "写真を引いている間に写真の詳細の body が描き直された")
+        } else {
+            XCTFail("perf.probe が読めない（-JPPreviewPerfProbe）")
+        }
+
+        // 4. 写真の上で下へ引く → 前の画面へ
         hero.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
             .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)))
         let gone = XCTWaiter().wait(for: [XCTNSPredicateExpectation(
@@ -9596,6 +9625,92 @@ final class ScreenshotTests: XCTestCase {
         XCTContext.runActivity(named: "[detailPull] 下へ引く: 閉じた=\(gone)・ホームの写真=\(photo.exists)") { _ in }
         guard expect(gone, "写真を下に引いた後に前の画面へ戻る", app) else { return }
         XCTAssertTrue(photo.waitForExistence(timeout: 5) && photo.isHittable, "下に引いて戻った先にホームの写真が無い")
+    }
+
+    /// **コメントを打っている間は、写真を下に引いても閉じない**（札 #592・`PhotoDetailView.pullCatcher`）。
+    /// 下へ払う指はキーボードをしまいたい指で、書きかけのまま画面を閉じない。**閉じたら落とす**
+    func testDetailPullKeepsWhileTyping() {
+        guard let app = launchSNSPreview(sharedStory: false), openFirstLatestPhoto(app) else {
+            return XCTFail("見本の写真の詳細が開かない")
+        }
+        defer { app.terminate() }
+        let hero = app.buttons["detail.hero"].firstMatch
+        let menu = app.buttons["photo.menu"].firstMatch
+        guard expect(hero.waitForExistence(timeout: 10) && hero.isHittable, "写真の詳細の写真", app) else { return }
+        let field = app.textFields["photo.commentField"].firstMatch
+        let fieldAny = field.exists ? field : app.descendants(matching: .any)["photo.commentField"].firstMatch
+        guard expect(fieldAny.waitForExistence(timeout: 15) && fieldAny.isHittable, "コメントの欄", app) else { return }
+        fieldAny.tap()
+        fieldAny.typeText("書きかけ")
+        guard expect(app.keyboards.firstMatch.waitForExistence(timeout: 5), "コメントを打つキーボード", app) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        let topAtOpen = hero.frame.minY
+        hero.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
+        Thread.sleep(forTimeInterval: 2)
+        XCTContext.runActivity(named: "[detailPull] 打っている間に下へ引く: …=\(menu.exists)・写真の上端 \(topAtOpen) → "
+            + "\(hero.exists ? hero.frame.minY : .nan)・キーボード=\(app.keyboards.firstMatch.exists)") { _ in }
+        XCTAssertTrue(menu.exists && hero.exists, "コメントを打っている間に写真を下に引いたら写真の詳細が閉じた")
+    }
+
+    /// **ストーリーの「写真を見る」のシートの根で写真を下に引く**（札 #592・2026-11-13 確かめ役）。
+    /// シート（UIKit）の「下へ引いて閉じる」と写真を引く動きが二重になるかを**値で取る**（`detail.pull.probe`・`DetailPullProbe`）。
+    /// 正しい姿は「写真の詳細が閉じて元のストーリーに戻る1つの動き」。
+    /// 落とすのは、戻らない・写真を引いている間にシートも下がった（二重）とき。値はどの回もログと添付に残す
+    func testDetailPullInStorySheet() {
+        guard let app = launchSNSPreviewWith(["-JPPreviewPullProbe", "YES"]), openFirstLatestPhoto(app) else {
+            return XCTFail("見本の写真の詳細が開かない")
+        }
+        defer { app.terminate() }
+        let ring = app.buttons["story.avatar.ring"].firstMatch
+        scrollUntilHittable(app, ring, limit: 3)
+        guard expect(ring.exists && ring.isHittable, "作者の顔の輪", app) else { return }
+        ring.tap()
+        Thread.sleep(forTimeInterval: 3)
+        let viewPhoto = app.buttons["story.viewer.sharedPhoto"].firstMatch
+        if !viewPhoto.waitForExistence(timeout: 3) {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.45)).tap()
+        }
+        guard expect(viewPhoto.waitForExistence(timeout: 10), "紹介のストーリーの「写真を見る」", app) else { return }
+        viewPhoto.tap()
+        guard expect(app.buttons["photo.like"].firstMatch.waitForExistence(timeout: 20), "シートの写真の詳細", app) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        // シートの写真の詳細の写真（下に積んだ詳細は閲覧画面の裏で押せない）
+        let hero = app.buttons.matching(identifier: "detail.hero").allElementsBoundByIndex.first { $0.isHittable }
+        guard let hero else { return XCTFail("シートの写真の詳細の写真が押せない") }
+        let probe = app.descendants(matching: .any)["detail.pull.probe"].firstMatch
+        guard expect(probe.waitForExistence(timeout: 5), "下に引く動きの目印（detail.pull.probe）", app) else { return }
+
+        hero.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
+        // 離した直後（シートが閉じきる前）に1回読む。閉じた後は、シートの目印が消えて読めないことがある
+        // （下に積んだ詳細にも同じ1つの記録の目印があるが、閲覧画面の裏で UI テストの木に出るかは確かめていない）
+        let rawNow = probe.exists ? probe.value as? String : nil
+        // シートが閉じて、閲覧画面の「写真を見る」がまた押せるまで
+        let back = XCTWaiter().wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hittable == true"), object: viewPhoto)], timeout: 6) == .completed
+        Thread.sleep(forTimeInterval: 0.5)
+        let rawLater = probe.exists ? probe.value as? String : nil
+        let raw = rawLater ?? rawNow ?? "読めない"
+        func field(_ key: String) -> Int? {
+            raw.split(separator: ";").compactMap { part -> Int? in
+                let kv = part.split(separator: "=")
+                return kv.count == 2 && kv[0] == key ? Int(kv[1]) : nil
+            }.first
+        }
+        let line = "[detailPull.sheet] 戻った=\(back) 離した直後=\(rawNow ?? "-") 閉じた後=\(rawLater ?? "-")"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        let note = XCTAttachment(string: line)
+        note.name = "detail.pull.probe sheet"
+        note.lifetime = .keepAlways
+        add(note)
+        XCTAssertTrue(back, "シートの根で写真を下に引いても、元のストーリーに戻らない")
+        if let pulled = field("pullMax"), let both = field("dropWhilePull") {
+            XCTAssertFalse(pulled > 0 && both > 2, "写真を引いている間にシートも下がった（二重）: \(raw)")
+        } else {
+            XCTFail("下に引く動きの目印が読めない: \(raw)")
+        }
     }
 
     /// **写真を大きく見る画面で、1回押すと上下の情報が消え、もう1回で戻る**（2026-11-12 owner の要望・`ViewerChrome`）。

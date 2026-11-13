@@ -61,4 +61,24 @@ final class PhotoDetailPullTests: XCTestCase {
         XCTAssertFalse(PhotoDetailPull.rounds(dy: 0))
         XCTAssertTrue(PhotoDetailPull.rounds(dy: 1))
     }
+
+    /// 🔴 **引く量の箱は画面が出たときに1回だけ作る**（2026-11-13 確かめ役）。`@State` の初期値に書くと、格子のマスが
+    /// 行き先の `PhotoDetailView` を作るたびに箱が割り当てられていた。入れ物は `@StateObject`、入れ物自身は知らせない
+    func testPullBoxIsMadeOnceAndHolderNeverPublishes() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let view = try String(contentsOf: root.appendingPathComponent(
+            "Sources/JourneyPhoto/Features/PhotoDetail/PhotoDetailView.swift"), encoding: .utf8)
+            .components(separatedBy: "\n")
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+        XCTAssertTrue(view.contains("@StateObject private var pullHolder = PhotoDetailPullHolder()"),
+                      "引く量の箱の入れ物が @StateObject に無い")
+        XCTAssertFalse(view.contains("= PhotoDetailPullDrag()"), "画面を作るたびに引く量の箱を割り当てている")
+
+        // 入れ物は知らせない（`@Published` を持つと、引いている間に写真の詳細の body ぜんぶが描き直される）。
+        // Linux の模型の Combine は知らせを流さないので、持ち物の型で見る
+        let kinds = Mirror(reflecting: PhotoDetailPullHolder()).children.map { String(describing: type(of: $0.value)) }
+        XCTAssertEqual(kinds, ["PhotoDetailPullDrag"], "入れ物が箱のほかに持ち物を持った（知らせる値なら body が描き直される）")
+    }
 }

@@ -162,6 +162,18 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストの事実取りだけ: 写真の詳細の「下に引いて戻る」（札 #592）で、写真を引いた量と、その間に画面の器
+    /// （シートで開いたときはシートそのもの）が下がった量を、見えない要素 `detail.pull.probe` の値に出す
+    /// （`-JPPreviewPullProbe YES`・Debug のみ・`DetailPullProbe`）。ストーリーの「写真を見る」のシートの根で、
+    /// シートの「下へ引いて閉じる」と写真を引く動きが二重になるかを、推定でなく値で見る。Release では必ず false
+    static var pullProbe: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "JPPreviewPullProbe")
+        #else
+        return false
+        #endif
+    }
+
     /// UI テストの事実取りだけ: 並びの寸法（字の要る幅と札の幅・名前の行の張り出し・安全な範囲の上端）を、見えない要素
     /// （`LayoutProbe`）の値に出す（`-JPPreviewLayoutProbe YES`・Debug のみ・2026-11-13 デザインの点検の確かめ）。
     /// 字が切れたか・当たりが重なるかは画面の木から取れないので、推定でなく数で見る。Release では必ず false
