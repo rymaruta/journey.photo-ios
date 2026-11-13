@@ -6929,20 +6929,30 @@ final class ScreenshotTests: XCTestCase {
         let tripMarks = ["trips.trunk", "trips.camper", "trips.albums", "trips.plans", "trips.passBook"]
             .map { app.descendants(matching: .any)[$0].firstMatch }
 
+        /// 画面と交わっているか。**画面の外の要素に `isHittable` を聞かない**——横に送る並びで画面の外へ出た札に聞くと、
+        /// XCTest が「押す点を決められない」で落ちる（Mac run 1222・AX3 の favorites x457.7-567.7・画面幅 440）
+        func onScreen(_ e: XCUIElement) -> Bool {
+            e.exists && !e.frame.isEmpty && e.frame.intersects(app.frame)
+        }
         func frame(_ e: XCUIElement) -> String {
             guard e.exists else { return "-" }
             let f = e.frame
-            return String(format: "x%.1f-%.1f,y%.1f-%.1f", f.minX, f.maxX, f.minY, f.maxY) + (e.isHittable ? ",hit" : "")
+            let text = String(format: "x%.1f-%.1f,y%.1f-%.1f", f.minX, f.maxX, f.minY, f.maxY)
+            guard onScreen(e) else { return text + ",off" }
+            return text + (e.isHittable ? ",hit" : "")
         }
         func selected() -> [String] { zip(ids, tabs).filter { $0.1.exists && $0.1.isSelected }.map(\.0) }
         func tripMark() -> XCUIElement? { tripMarks.first { $0.exists } }
         func log(_ step: String) {
             let row = zip(ids, tabs).map { "\($0.0)(\(frame($0.1)))" }.joined(separator: " ")
             let scrolls = pinnedRow.exists ? "\(pinnedRow.scrollViews.count)" : "-"
-            let mark = tripMark()
-            let line = "[tabsAX] \(tag) \(step): width=\(width) sel=\(selected().joined(separator: "+")) "
+            // 縦の送りの位置の目安: 見出し（「編集」）の位置・縦の送りの枠・旅の記録の目印の全部（中身の長さの目安）
+            let marks = tripMarks.filter(\.exists).map { "\($0.identifier)(\(frame($0)))" }.joined(separator: " ")
+            let scrollViews = (0..<min(app.scrollViews.count, 3))
+                .map { frame(app.scrollViews.element(boundBy: $0)) }.joined(separator: " ")
+            let line = "[tabsAX] \(tag) \(step): width=\(width) height=\(app.frame.height) sel=\(selected().joined(separator: "+")) "
                 + "pinned=\(pinnedRow.exists) pinnedFrame=\(frame(pinnedRow)) rowScrollViews=\(scrolls) "
-                + "tabs=[\(row)] photo=\(frame(photo)) trip=\(mark?.identifier ?? "-")(\(mark.map(frame) ?? "-"))"
+                + "tabs=[\(row)] photo=\(frame(photo)) edit=\(frame(edit)) trips=[\(marks)] scrollViews=[\(scrollViews)]"
             print(line)
             XCTContext.runActivity(named: line) { _ in }
             let note = XCTAttachment(string: line)
@@ -6973,7 +6983,7 @@ final class ScreenshotTests: XCTestCase {
                 }
             case "trips":
                 // 選んでいない札は読み上げから外す（`ProfileTabPager`）——投稿の格子が押せれば中身が替わっていない
-                XCTAssertFalse(photo.exists && photo.isHittable, "\(tag) \(step): 旅の記録を選んでいるのに投稿の格子が押せる")
+                XCTAssertFalse(onScreen(photo) && photo.isHittable, "\(tag) \(step): 旅の記録を選んでいるのに投稿の格子が押せる")
                 if let mark = tripMark() {
                     XCTAssertTrue(mark.frame.minX >= -2 && mark.frame.minX < width * 0.5,
                                   "\(tag) \(step): 旅の記録の中身が横にずれて止まった（\(frame(mark))）")
