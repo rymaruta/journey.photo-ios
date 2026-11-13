@@ -211,8 +211,8 @@ final class TripLegsAcrossDaysTests: XCTestCase {
         XCTAssertTrue(TripLegRow.spoken(leg: domestic, estimates: [], offline: false, state: .long).contains("飛行機などの長い移動"),
                       "国内で返らずに倒れた区間も長い移動と読む")
         XCTAssertFalse(TripLegRow.spoken(leg: domestic, estimates: [], offline: false, state: .unavailable).contains("飛行機"))
-        XCTAssertTrue(TripLegRow.hint(.long).contains("Google フライト"))
-        XCTAssertTrue(TripLegRow.hint(.estimates).contains("地図のアプリ"))
+        XCTAssertTrue(TripLegRow.hint(.long, mode: .transit).contains("Google フライト"))
+        XCTAssertTrue(TripLegRow.hint(.estimates, mode: .transit).contains("Apple のマップ"))
     }
 
     /// 場所が1か所だけの1行: 地図の場所の分からない場所があるときは、そう言う

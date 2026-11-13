@@ -56,7 +56,8 @@ struct TripPlanDetailView: View {
     private struct LegTarget: Identifiable {
         let leg: TripTravel.Leg
         let estimates: [TripTravel.Estimate]
-        let modes: [TripTravel.Mode]
+        /// 地図のアプリを開く手段（行と同じ `TripTravel.mapsMode`）
+        let mode: TripTravel.Mode
         let sun: TripDraft.Sun?
         let destinationTimes: [String]
         let previousTimes: [String]
@@ -436,7 +437,7 @@ struct TripPlanDetailView: View {
         // 移動の見込みを聞く（開いているプランの区間だけ・同じ区間は控え）
         .sheet(item: $legTarget) { target in
             NavigationStack {
-                TripLegSheet(leg: target.leg, estimates: target.estimates, modes: target.modes,
+                TripLegSheet(leg: target.leg, estimates: target.estimates, mode: target.mode,
                              sun: target.sun, destinationTimes: target.destinationTimes,
                              previousTimes: target.previousTimes, long: target.long, date: target.date)
             }
@@ -1044,7 +1045,9 @@ struct TripPlanDetailView: View {
         let settled = travel.isSettled(leg, modes: modes)
         return TripLegRow(leg: leg, estimates: estimates, settled: settled,
                           offline: isOffline, throttled: travel.throttled) {
-            legTarget = LegTarget(leg: leg, estimates: estimates, modes: modes, sun: sun, destinationTimes: toTimes,
+            legTarget = LegTarget(leg: leg, estimates: estimates,
+                                  mode: TripTravel.mapsMode(estimates, leg: leg, settled: settled),
+                                  sun: sun, destinationTimes: toTimes,
                                   previousTimes: fromTimes,
                                   long: TripTravel.showsAsLong(leg, estimates: estimates, settled: settled),
                                   date: date)

@@ -3386,7 +3386,7 @@ final class ScreenshotTests: XCTestCase {
             }
         }
 
-        // 区間のシート（場所と場所の間の1行を押す）
+        // 区間の行を押すと Apple のマップ（2026-11-12）。見本では地図のアプリへ出ず、開いた手段を数えに残す（`TripLegMaps`）
         let leg = app.descendants(matching: .any).matching(identifier: "trip.leg").firstMatch
         var pushes = 0
         while leg.exists, !leg.isHittable, pushes < 4 {
@@ -3396,6 +3396,18 @@ final class ScreenshotTests: XCTestCase {
         }
         if leg.exists, leg.isHittable {
             leg.tap()
+            // 名前で探し直す（最大で数秒）のを待つ
+            Thread.sleep(forTimeInterval: 6)
+            let trail = dragCounts(app)
+            let mapsLine = "TRIPLEG maps trail[\(trail)]"
+            print(mapsLine)
+            XCTContext.runActivity(named: mapsLine) { _ in }
+            XCTAssertTrue(trail.contains("M:"), "区間の行を押しても Apple のマップを開いていない: \(trail)")
+        }
+        // 区間のシート（行の右端の「i」・出る時刻の目安と Google マップ）
+        let more = app.buttons["trip.leg.more"].firstMatch
+        if more.exists, more.isHittable {
+            more.tap()
             let apple = app.buttons["trip.leg.apple"].firstMatch
             if apple.waitForExistence(timeout: 10) {
                 Thread.sleep(forTimeInterval: 1)

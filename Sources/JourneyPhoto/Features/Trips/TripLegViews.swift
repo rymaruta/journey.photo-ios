@@ -11,7 +11,12 @@ import MapKit
 /// 長い移動（飛行機・まっすぐの距離の概数・所要時間は出さない）・見込み（手段ごとの記号と時間）。
 /// 日をまたぐ区間は字の頭に「前の日の〇〇から」。
 ///
-/// **押すと区間のシート**（`TripLegSheet`）。第2段で「どの電車・バスか」を出すときは、シートの中身だけを差し替える
+/// **押すと、その区間の両端で Apple のマップを開く**（2026-11-12 判断・owner「Apple の地図を開いたり、何線に乗ればいいかはできる？」）。
+/// 何線に乗るか・乗り換え・時刻は Apple のマップの公共交通の経路が出す（アプリの中では出せない・`TripTravel.mapsMode`）。
+/// 開く手段は字の先頭に出し（`TripTravel.ordered`）、右端の外へ出る矢印（真鍮）で「地図のアプリが開く」と分かるように。
+/// 押す回数: 前は 行 → シート → 「Apple のマップで乗り換えを見る」の 2 回。いまは行の 1 回。
+/// 出る時刻の目安と Google マップは右端の「i」（区間のシート `TripLegSheet`・1 回）。
+/// 長い移動（国をまたぐ・海を越える）は Apple のマップに経路が無いので、行を押すと Google フライトのシート（前と同じ）
 struct TripLegRow: View {
     let leg: TripTravel.Leg
     let estimates: [TripTravel.Estimate]
@@ -19,7 +24,12 @@ struct TripLegRow: View {
     let settled: Bool
     let offline: Bool
     let throttled: Bool
-    let open: () -> Void
+    /// 区間のシート（出る時刻の目安・Google マップ。長い移動は Google フライト）
+    let details: () -> Void
+
+    /// 探している間（名前で探し直す・最大で数秒）。続けて押しても1回だけ開く
+    @State private var opening = false
+    @State private var openTask: Task<Void, Never>?
 
     /// 縦の線の太さ（番号の丸の線と同じ 1.5）・濃さ（白 18%）
     nonisolated static let connectorWidth: CGFloat = TripStyle.stopNumberStroke
@@ -43,56 +53,112 @@ struct TripLegRow: View {
         Self.state(leg: leg, estimates: estimates, settled: settled, offline: offline, throttled: throttled)
     }
 
+    /// Apple のマップを開く手段
+    private var mode: TripTravel.Mode { TripTravel.mapsMode(estimates, leg: leg, settled: settled) }
+
+    /// 行を押したとき。長い移動はシート、ほかは Apple のマップ
+    private func tap() {
+        guard state != .long else { details(); return }
+        guard !opening else { return }
+        opening = true
+        let mode = mode
+        // 圏外では名前で探し直さない（返らずに待つだけ）。丸めた座標に名前を付けて渡す
+        let search = !offline
+        openTask = Task { @MainActor in
+            defer { opening = false }
+            await TripLegMaps.open(leg, mode: mode, search: search)
+        }
+    }
+
     /// 縦の線と行の高さ（UI テストの見本のときだけ読み上げの値に出して数で確かめる・Debug）
     @State private var connectorHeight: CGFloat = 0
     @State private var rowHeight: CGFloat = 0
 
     var body: some View {
-        Button(action: open) {
-            HStack(spacing: JPSpace.s) {
-                // 番号の丸の列（縦の線は下の `background` で行の高さいっぱいに描く）
-                Color.clear
-                    .frame(width: TripStyle.stopNumberSide, height: 1)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 1) {
-                    // 日をまたぐ区間は、どこからの区間かを頭に（「前の日の伏見稲荷大社から」）
-                    if leg.crossesDay {
-                        Text(TripTravel.crossDayLabel(leg))
-                            .font(JPFont.caption)
-                            .foregroundStyle(WebTheme.faint)
-                            .lineLimit(1)
+        HStack(spacing: 0) {
+            Button(action: tap) {
+                HStack(spacing: JPSpace.s) {
+                    // 番号の丸の列（縦の線は下の `background` で行の高さいっぱいに描く）
+                    Color.clear
+                        .frame(width: TripStyle.stopNumberSide, height: 1)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 1) {
+                        // 日をまたぐ区間は、どこからの区間かを頭に（「前の日の伏見稲荷大社から」）
+                        if leg.crossesDay {
+                            Text(TripTravel.crossDayLabel(leg))
+                                .font(JPFont.caption)
+                                .foregroundStyle(WebTheme.faint)
+                                .lineLimit(1)
+                        }
+                        line
                     }
-                    line
+                    .padding(.vertical, 6)
+                    Spacer(minLength: 0)
+                    trailingMark
                 }
-                .padding(.vertical, 6)
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(WebTheme.text3)
-                    .accessibilityHidden(true)
+                .frame(minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
             }
-            .frame(minHeight: WebTheme.minTapTarget)
-            // 🔴 **縦の線は行の高さに合わせて描く**（確かめ役の指摘: ScrollView の中では `maxHeight: .infinity` が
-            // 行の高さまで伸びない見込みだった）。番号の丸の列の真ん中に、上の端から下の端まで
-            .background(alignment: .leading) {
-                Rectangle()
-                    .fill(Color.white.opacity(Self.connectorOpacity))
-                    .frame(width: Self.connectorWidth)
-                    .frame(maxHeight: .infinity)
-                    .frame(width: TripStyle.stopNumberSide)
-                    .measuringHeight(Self.measures) { connectorHeight = $0 }
-                    .accessibilityHidden(true)
+            .buttonStyle(.plain)
+            .disabled(opening)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Self.spoken(leg: leg, estimates: shownEstimates, offline: offline, state: state))
+            .accessibilityHint(Self.hint(state, mode: mode))
+            .accessibilityValue(measuredValue)
+            .accessibilityIdentifier("trip.leg")
+
+            // 出る時刻の目安・Google マップ（区間のシート）。長い移動は行そのものがシートを開くので出さない
+            if state != .long {
+                Button(action: details) {
+                    Image(systemName: "info.circle")
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
+                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("区間の案内（出る時刻の目安、Google マップ）", "Leg details (when to leave, Google Maps)"))
+                .accessibilityIdentifier("trip.leg.more")
             }
-            .measuringHeight(Self.measures) { rowHeight = $0 }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Self.spoken(leg: leg, estimates: estimates, offline: offline, state: state))
-        .accessibilityHint(Self.hint(state))
-        .accessibilityValue(measuredValue)
-        .accessibilityIdentifier("trip.leg")
+        // 🔴 **縦の線は行の高さに合わせて描く**（確かめ役の指摘: ScrollView の中では `maxHeight: .infinity` が
+        // 行の高さまで伸びない見込みだった）。番号の丸の列の真ん中に、上の端から下の端まで
+        .background(alignment: .leading) {
+            Rectangle()
+                .fill(Color.white.opacity(Self.connectorOpacity))
+                .frame(width: Self.connectorWidth)
+                .frame(maxHeight: .infinity)
+                .frame(width: TripStyle.stopNumberSide)
+                .measuringHeight(Self.measures) { connectorHeight = $0 }
+                .accessibilityHidden(true)
+        }
+        .measuringHeight(Self.measures) { rowHeight = $0 }
+        .onDisappear { openTask?.cancel() }
     }
+
+    /// 右端の印。Apple のマップへ出る行は外へ出る矢印（真鍮・黒地の上のリンク）、探している間は回る印。
+    /// 長い移動はシートが開くので山形
+    @ViewBuilder
+    private var trailingMark: some View {
+        if opening {
+            ProgressView()
+                .tint(WebTheme.accent)
+                .accessibilityHidden(true)
+        } else if state == .long {
+            Image(systemName: "chevron.right")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(WebTheme.text3)
+                .accessibilityHidden(true)
+        } else {
+            Image(systemName: "arrow.up.right")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(WebTheme.accent)
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// 行に出す見込み（開く手段を先頭に）
+    private var shownEstimates: [TripTravel.Estimate] { TripTravel.ordered(estimates, first: mode) }
 
     /// 高さを測るのは見本のときだけ（Debug・ふだんは描き直しのたびに状態を書かない）
     nonisolated static var measures: Bool {
@@ -113,11 +179,11 @@ struct TripLegRow: View {
         return ""
     }
 
-    /// 押すと何が開くか（長い移動は Google フライト・ほかは地図のアプリ）
-    nonisolated static func hint(_ state: Look) -> String {
+    /// 押すと何が開くか（長い移動は Google フライトのシート・ほかは Apple のマップ）
+    nonisolated static func hint(_ state: Look, mode: TripTravel.Mode) -> String {
         state == .long
             ? L("Google フライトで便を探す画面を出します", "Shows a way to search Google Flights.")
-            : L("区間の経路を地図のアプリで開く画面を出します", "Shows ways to open this route in a maps app.")
+            : TripTravel.mapsHint(mode)
     }
 
     /// 1行（記号 → 字）。見込みは手段ごとに記号と等幅数字の時間を並べる
@@ -126,7 +192,7 @@ struct TripLegRow: View {
         switch state {
         case .estimates:
             HStack(spacing: JPSpace.s) {
-                ForEach(estimates, id: \.mode) { estimate in
+                ForEach(shownEstimates, id: \.mode) { estimate in
                     HStack(spacing: 4) {
                         Image(systemName: estimate.mode.symbol)
                             .font(JPFont.caption)
@@ -136,7 +202,8 @@ struct TripLegRow: View {
                         Text(TripTravel.duration(estimate.seconds))
                             .font(JPFont.mono(12, medium: true))
                     }
-                    .foregroundStyle(WebTheme.muted2)
+                    // 開く手段（先頭）は明るく、ほかは控えめに（並びでも伝える・色だけに頼らない）
+                    .foregroundStyle(estimate.mode == mode ? WebTheme.text : WebTheme.muted2)
                     .lineLimit(1)
                 }
             }
@@ -178,14 +245,15 @@ struct TripLegRow: View {
 /// - 区間の両端と、返った見込み（Apple のマップによるもの）
 /// - 出る時刻の目安（「13:00 ごろに出ると、日の入り 16:47 の前に着く見込み」）。地図のアプリには日時を渡せないので、
 ///   合わせる時刻を見せる
-/// - 主: 「Apple のマップで乗り換えを見る」（`MKMapItem.openMaps`・その区間の手段）。副: 「Google マップで乗り換えを見る」
+/// - 主: 「Apple のマップで乗り換えを見る」（`MKMapItem.openMaps`・その区間の手段・行を押したときと同じ `TripLegMaps`）。副: 「Google マップで乗り換えを見る」
 ///   （Maps URLs・鍵は要らない・`travelmode`）。選ぶのは2つのボタンだけ。設定は作らない
 ///
 /// 両端は名前で探し直してから渡す（索引の座標は約1kmに丸めてある・`SpotDirections`）
 struct TripLegSheet: View {
     let leg: TripTravel.Leg
     let estimates: [TripTravel.Estimate]
-    let modes: [TripTravel.Mode]
+    /// Apple のマップ・Google マップを開く手段（行と同じ `TripTravel.mapsMode`）
+    let mode: TripTravel.Mode
     /// 行き先の日の日の出・日の入り（端末の計算）
     let sun: TripDraft.Sun?
     /// 行き先の時間帯の案内（「夕方の斜光」なら、その始まりに間に合う時刻で言う）
@@ -201,7 +269,6 @@ struct TripLegSheet: View {
     @State private var opening = false
     @State private var task: Task<Void, Never>?
 
-    private var mode: TripTravel.Mode { TripTravel.openMode(estimates, modes: modes) }
     private var isTransit: Bool { mode == .transit }
 
     var body: some View {
@@ -365,24 +432,14 @@ struct TripLegSheet: View {
         .onDisappear { task?.cancel() }
     }
 
-    /// 両端を名前で探し直す（並べて探す・待ちを1回分に）
-    private func resolve() async -> (MKMapItem, MKMapItem) {
-        async let from = SpotDirections.item(name: leg.from.name, coords: leg.from.coords)
-        async let to = SpotDirections.item(name: leg.to.name, coords: leg.to.coords)
-        return await (from, to)
-    }
-
     /// 🔴 **閉じたら開かない**（探している間に閉じると、押していないものが開く・`TripDayMapView` と同じ）
     private func openApple() {
         guard !opening else { return }
         opening = true
+        let mode = mode
         task = Task { @MainActor in
             defer { opening = false }
-            let (origin, target) = await resolve()
-            guard !Task.isCancelled else { return }
-            MKMapItem.openMaps(with: [origin, target], launchOptions: [
-                MKLaunchOptionsDirectionsModeKey: TravelEstimator.launchMode(mode)
-            ])
+            await TripLegMaps.open(leg, mode: mode, search: true)
         }
     }
 
@@ -391,12 +448,52 @@ struct TripLegSheet: View {
         opening = true
         task = Task { @MainActor in
             defer { opening = false }
-            let (origin, target) = await resolve()
+            let (origin, target) = await TripLegMaps.resolve(leg, search: true)
             guard !Task.isCancelled else { return }
             let from = Photo.Coords(lat: origin.placemark.coordinate.latitude, lng: origin.placemark.coordinate.longitude)
             let to = Photo.Coords(lat: target.placemark.coordinate.latitude, lng: target.placemark.coordinate.longitude)
             if let url = TripTravel.googleURL(from: from, to: to, mode: mode) { openURL(url) }
         }
+    }
+}
+
+/// 区間の両端で Apple のマップを開く（区間の行・区間のシートで共通・2026-11-12）。
+///
+/// `MKMapItem.openMaps(with: [出発, 到着], launchOptions: [手段])`: Apple の文書「2つ渡すと、1つ目から2つ目への経路」。
+/// 手段の鍵 `MKLaunchOptionsDirectionsModeTransit` で公共交通の経路が開き、何線か・乗り換え・時刻は地図のアプリが出す。
+/// **出発の時刻は渡せない**（開く口の鍵にも、Apple の地図の URL の `directions` の引数にも、時刻が無い）。
+/// 両端は名前で探し直してから渡す（索引の座標は約1kmに丸めてある・`SpotDirections`）
+@MainActor
+enum TripLegMaps {
+
+    /// 両端（名前で探し直す・並べて探す・待ちを1回分に）。`search == false`（圏外）は丸めた座標に名前を付けたもの
+    static func resolve(_ leg: TripTravel.Leg, search: Bool) async -> (MKMapItem, MKMapItem) {
+        guard search else {
+            return (SpotDirections.rounded(name: leg.from.name, coords: leg.from.coords),
+                    SpotDirections.rounded(name: leg.to.name, coords: leg.to.coords))
+        }
+        async let from = SpotDirections.item(name: leg.from.name, coords: leg.from.coords)
+        async let to = SpotDirections.item(name: leg.to.name, coords: leg.to.coords)
+        return await (from, to)
+    }
+
+    /// 開く手段の鍵（Apple の地図の `launchOptions`）
+    nonisolated static func launchOptions(_ mode: TripTravel.Mode) -> [String: Any] {
+        [MKLaunchOptionsDirectionsModeKey: TravelEstimator.launchMode(mode)]
+    }
+
+    /// 🔴 **探している間に画面を離れた（取り消された）回は開かない**（押していないものが開いたように見える・`SpotDirections`）
+    static func open(_ leg: TripTravel.Leg, mode: TripTravel.Mode, search: Bool) async {
+        let (origin, target) = await resolve(leg, search: search)
+        guard SpotDirections.shouldOpen(cancelled: Task.isCancelled, stillWanted: true) else { return }
+        #if DEBUG
+        // UI テストの見本では地図のアプリへ出ない（試験の画面から出てしまう）。開いた手段を数えに残す
+        if TripPlanFixture.isOn {
+            TripPlanFixtureCounter.shared.mark("M:\(mode.rawValue)")
+            return
+        }
+        #endif
+        MKMapItem.openMaps(with: [origin, target], launchOptions: launchOptions(mode))
     }
 }
 
