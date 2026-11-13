@@ -492,7 +492,8 @@ final class PerfProbeTests: XCTestCase {
         XCTAssertTrue(search.contains("let _ = PerfRecorder.shared.searchBody(query: query)"), "body を数えていない")
         let hits = try XCTUnwrap(search.range(of: "private var spotHits: [OfficialSpot] {"))
         let wrap = try XCTUnwrap(search.range(of: "PerfRecorder.shared.searchSpotHits {"))
-        let match = try XCTUnwrap(search.range(of: "OfficialSpotIndex.matches(published, query: q, aliases: spotAliases)"))
+        // 2026-11-13 の直しで、当てる所は控え（`SearchSpotHits`）を通る
+        let match = try XCTUnwrap(search.range(of: "spotHitsMemo.hits(index: spotSearchIndex, query: query,"))
         XCTAssertLessThan(hits.lowerBound, wrap.lowerBound)
         XCTAssertLessThan(wrap.lowerBound, match.lowerBound, "当てる所が測る包みの中にない")
         let index = try source("Sources/JourneyPhoto/Core/Text/OfficialSpotIndex.swift")

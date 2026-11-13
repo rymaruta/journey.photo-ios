@@ -44,6 +44,11 @@ struct SearchView: View {
     @State private var officialSpots: [OfficialSpot] = []
     /// 撮影スポットの別名（slug → 別名・`fetchAliases`）。取れなければ空で、名前と読みだけで当てる
     @State private var spotAliases: [String: [String]] = [:]
+    /// 撮影スポットの節の行の控え（`spotHits`・2026-11-13 札 #590）。参照の型なので、body の中で控えても描き直しは起きない
+    @State private var spotHitsMemo = SearchSpotHits()
+    /// 字をそろえ終えた索引（`SearchSpotHits.prepare`）。索引・別名が替わったら**主スレッドの外で**作り直す
+    /// （2026-11-13 判断・札 #590）。作り直している間は前のものを使う
+    @State private var spotSearchIndex: OfficialSpotIndex.Prepared?
     /// 撮影スポットの節を全部出しているか（語が変わったら畳む）
     @State private var spotsExpandedFor: String? = nil
     /// 撮影スポットの索引の読み込みの段階（発見の「撮影スポット」の段の読み込み中・失敗・空・札 #524）
@@ -165,6 +170,20 @@ struct SearchView: View {
         // 発見の「撮影スポット」の段の札は、索引が変わったとき（届いた・詳細を重ねた）だけ束ね直す
         .onChange(of: officialSpots) { _, spots in
             spotGroups = SpotPrefectureIndex.groups(spots: spots)
+        }
+        // 🔴 語で当てる相手の索引（字をそろえ終えたもの）は、索引・別名が替わったときに**主スレッドの外で**作る
+        // （2026-11-13 判断・札 #590。Linux の Release で約 220ms、シミュレータでその約2倍。body の中で作ると、
+        // 索引・別名が届いた字で画面が止まる）。作り直している間は前の索引で当てる
+        .task(id: SearchSpotHits.Source(spots: officialSpots, aliases: spotAliases)) {
+            guard !officialSpots.isEmpty else {
+                spotSearchIndex = nil
+                return
+            }
+            let spots = officialSpots, aliases = spotAliases
+            let built = await Task.detached(priority: .userInitiated) {
+                SearchSpotHits.prepare(spots: spots, aliases: aliases)
+            }.value
+            if !Task.isCancelled { spotSearchIndex = built }
         }
         // 見出しの「探す」: **この札が前に出ているときだけ**探す口に焦点を当てる。ほかの札（ホーム・マップ）から
         // 押した回は札を移るだけ（移った途端にキーボードを出さない・`isOnScreen` はまだ false）
@@ -1013,16 +1032,16 @@ struct SearchView: View {
     ///
     /// 季節・時間帯を選んでいるときは、その季節・時間帯の案内を持つ撮影地に絞る（`ShootingTime`）。
     /// **語が無くても出す**——「秋」だけ選べば、秋の案内のある撮影地が並ぶ（場所の図鑑が主役・戦略の計画6）
+    ///
+    /// 🔴 **控えを通す（2026-11-13 判断・札 #590「探すの検索が重い」）。** body の中で何度も呼ばれる
+    /// （1字ごとに 9〜12 回・Mac の回 1219）。以前は呼ばれるたびに全件（3,899 件）の字をそろえて当て直し、
+    /// 1字で 3.8〜7.3 秒、画面が止まっていた。いまは語・絞り込み・索引・別名が同じ間は1回だけ当てる
+    /// （`SearchSpotHits`）。**下書きは出さない**（地図の一覧・ホームと同じ。「撮影地ガイド」と名乗らせない）
     private var spotHits: [OfficialSpot] {
-        // 呼ばれた回数と時間を語ごとに数える（UI テストのときだけ・2026-11-13 札 #590）。中身は変えない
+        // 呼ばれた回数と時間を語ごとに数える（UI テストのときだけ・2026-11-13 札 #590）
         PerfRecorder.shared.searchSpotHits { () -> [OfficialSpot] in
-            let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-            let filter = model.timeFilter
-            guard model.scope.showsSpots, !q.isEmpty || !filter.isEmpty else { return [] }
-            // **下書きは出さない**（地図の一覧・ホームと同じ。「撮影地ガイド」と名乗らせない）
-            let published = officialSpots.filter { !$0.isDraft }
-            let matched = q.isEmpty ? published : OfficialSpotIndex.matches(published, query: q, aliases: spotAliases)
-            return ShootingTime.spots(matched, filter: filter)
+            spotHitsMemo.hits(index: spotSearchIndex, query: query,
+                              filter: model.timeFilter, showsSpots: model.scope.showsSpots)
         }
     }
 

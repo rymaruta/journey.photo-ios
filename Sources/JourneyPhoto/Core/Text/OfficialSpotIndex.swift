@@ -18,22 +18,110 @@ enum OfficialSpotIndex {
     /// `aliases` は slug → 別名（`OfficialSpotService.fetchAliases`・無ければ空）
     static func matches(_ spots: [OfficialSpot], query: String, limit: Int? = nil,
                         aliases: [String: [String]] = [:]) -> [OfficialSpot] {
-        // 当てる1回の区間（`PerfSignpost.spotMatch`・2026-11-13 札 #590）。**UI テストのときだけ**（Debug・`-JPPreviewPerfProbe`）。
-        // 中身は変えない
-        let signpost = PerfRecorder.shared.isEnabled ? PerfSignpost.begin(.spotMatch) : nil
-        defer { if let signpost { PerfSignpost.end(signpost) } }
-        let needle = spotName(query)
-        guard !needle.isEmpty else { return [] }
-        let ranked = spots.enumerated()
-            .compactMap { i, spot -> (OfficialSpot, Int, Int)? in
-                var rank = rankByNames([spot.name, spot.nameEn, spot.reading] + (aliases[spot.slug] ?? []), needle)
-                if rank < 0, regionMatches(spot, query: query) { rank = 3 }
-                return rank < 0 ? nil : (spot, rank, i)
+        // 空の語は、索引をそろえる前に返す（そろえる手間を払わない）
+        guard !spotName(query).isEmpty else { return [] }
+        return Prepared(spots, aliases: aliases).matches(query: query, limit: limit)
+    }
+
+    /// **字をそろえ終えた索引**（2026-11-13 判断・札 #590「探すの検索が重い」）。
+    ///
+    /// Mac の UI テスト（回 1219）で、探すの1字ごとに `matches` が 9〜12 回・1回 475〜812ms かかっていた。
+    /// Linux の Release（本番 3,899 件）での内訳は次のとおりで、**語に関わらず毎回、全件の字をそろえ直していた**:
+    /// - 名前・読み・英語名・別名をそろえる（`spotName`）のに約 160ms
+    /// - 地域をそろえて当てる（`regionMatches`）のに約 175ms
+    ///
+    /// そこで次のようにする:
+    /// - 各行の名前・別名・地域のそろえた字を、ここで**1回だけ**作って控える。当てるときはそろえ直さない
+    ///   （語のほうは1回の当てに1回だけそろえる）
+    /// - 部分一致（`contains`）と地域の名前の当て方（`LocationMatch.nameIn`）は、字（Character）単位で比べるので重い
+    ///   （そろえ終えた後でも 1回 約 13〜19ms と 12〜18ms）。そこで先に **UTF-8 のバイト列で含まれるか**を見て、
+    ///   含まれない行は字単位の比べ方を飛ばす。どちらも語が中に字として入っていることが前提で、
+    ///   バイト列は両方とも字をそろえた（NFC）形なので、字として入っていればバイト列でも入っている。
+    ///   **結果は変わらない**（バイト列で入っていた行は、今までの比べ方で決める）
+    ///
+    /// Linux の Release では、1回の当てが約 265ms から約 5ms 前後になり、そろえるのは索引ごとに約 220ms。
+    /// 当て方・並びは `matches` と同じ（`matches` もこれを通るので、当て方は1か所）。
+    /// 作り終えたら変えない（参照の型。同じ索引かは `===` で見る）
+    final class Prepared: @unchecked Sendable {
+        /// そろえた字と、その UTF-8 のバイト列（含まれるかの下調べ用）
+        fileprivate struct Text {
+            let value: String
+            let bytes: [UInt8]
+
+            init(_ value: String) {
+                self.value = value
+                bytes = Array(value.precomposedStringWithCanonicalMapping.utf8)
             }
-            .sorted { $0.1 != $1.1 ? $0.1 < $1.1 : $0.2 < $1.2 }
-            .map(\.0)
-        guard let limit else { return ranked }
-        return Array(ranked.prefix(limit))
+        }
+
+        fileprivate struct Row {
+            let spot: OfficialSpot
+            /// 名前・英語名・読み・別名をそろえた字（空は落とす）
+            let names: [Text]
+            /// 国（日本は除く）・県・市区町村・県＋市・全部をつないだ字をそろえたもの（空は落とす）
+            let regionFields: [Text]
+        }
+
+        fileprivate let rows: [Row]
+        /// 渡された行（順はそのまま）
+        let spots: [OfficialSpot]
+
+        /// そろえた行の数
+        var count: Int { rows.count }
+
+        init(_ spots: [OfficialSpot], aliases: [String: [String]] = [:]) {
+            self.spots = spots
+            rows = spots.map { spot in
+                Row(spot: spot,
+                    names: ([spot.name, spot.nameEn, spot.reading] + (aliases[spot.slug] ?? []))
+                        .map(OfficialSpotIndex.spotName).filter { !$0.isEmpty }.map(Text.init),
+                    regionFields: OfficialSpotIndex.regionFields(spot).map(Text.init))
+            }
+        }
+
+        /// `OfficialSpotIndex.matches` と同じ当て方・並び（そろえた字を使う）
+        func matches(query: String, limit: Int? = nil) -> [OfficialSpot] {
+            // 当てる1回の区間（`PerfSignpost.spotMatch`・2026-11-13 札 #590）。**UI テストのときだけ**（Debug・`-JPPreviewPerfProbe`）
+            let signpost = PerfRecorder.shared.isEnabled ? PerfSignpost.begin(.spotMatch) : nil
+            defer { if let signpost { PerfSignpost.end(signpost) } }
+            let needle = OfficialSpotIndex.spotName(query)
+            guard !needle.isEmpty else { return [] }
+            let needleText = Text(needle)
+            let region = RegionQuery(query)
+            let ranked = rows.enumerated()
+                .compactMap { i, row -> (OfficialSpot, Int, Int)? in
+                    var rank = OfficialSpotIndex.rankByNames(row.names, needleText)
+                    if rank < 0, region.hits(row.regionFields) { rank = 3 }
+                    return rank < 0 ? nil : (row.spot, rank, i)
+                }
+                .sorted { $0.1 != $1.1 ? $0.1 < $1.1 : $0.2 < $1.2 }
+                .map(\.0)
+            guard let limit else { return ranked }
+            return Array(ranked.prefix(limit))
+        }
+    }
+
+    /// `hay` の中に `needle` のバイト列が入っているか（字単位で比べる前の下調べ）
+    fileprivate static func bytesContain(_ hay: [UInt8], _ needle: [UInt8]) -> Bool {
+        let n = needle.count
+        guard n > 0 else { return true }
+        guard n <= hay.count else { return false }
+        let first = needle[0]
+        return hay.withUnsafeBufferPointer { h in
+            needle.withUnsafeBufferPointer { l in
+                var i = 0
+                let last = h.count - n
+                while i <= last {
+                    if h[i] == first {
+                        var j = 1
+                        while j < n, h[i + j] == l[j] { j += 1 }
+                        if j == n { return true }
+                    }
+                    i += 1
+                }
+                return false
+            }
+        }
     }
 
     /// Web の `normalizeSpotName`（`lib/utils/spots.ts`）と同じ。**判定にしか使わない**。
@@ -44,15 +132,14 @@ enum OfficialSpotIndex {
             .filter { !$0.isWhitespace && !"()（）「」『』,、，".contains($0) }
     }
 
-    /// Web の `rankByNames`。完全一致 0・前方一致 1・部分一致 2・外れ -1
-    private static func rankByNames(_ names: [String?], _ needle: String) -> Int {
+    /// Web の `rankByNames`。完全一致 0・前方一致 1・部分一致 2・外れ -1。
+    /// `names` は**そろえ終えた**字（空は落としてある・`Prepared`）。部分一致はバイト列で下調べしてから字で比べる
+    fileprivate static func rankByNames(_ names: [Prepared.Text], _ needle: Prepared.Text) -> Int {
         var rank = -1
-        for raw in names {
-            let name = spotName(raw)
-            if name.isEmpty { continue }
-            if name == needle { return 0 }
-            if name.hasPrefix(needle) { rank = 1; continue }
-            if name.contains(needle), rank < 0 { rank = 2 }
+        for name in names {
+            if name.value == needle.value { return 0 }
+            if name.value.hasPrefix(needle.value) { rank = 1; continue }
+            if rank < 0, bytesContain(name.bytes, needle.bytes), name.value.contains(needle.value) { rank = 2 }
         }
         return rank
     }
@@ -70,22 +157,49 @@ enum OfficialSpotIndex {
     /// 空白で区切った語（「神奈川 箱根」）は**どの語もどれかの欄に**当たること。
     /// 区切らずに続けた「東京都千代田区」は県＋市をつないだ字に当てる
     static func regionMatches(_ spot: OfficialSpot, query: String) -> Bool {
-        guard let r = spot.region else { return false }
+        RegionQuery(query).hits(regionFields(spot).map(Prepared.Text.init))
+    }
+
+    /// 地域の欄をそろえた字（国（日本は除く）・県・市区町村・県＋市・全部をつないだ字。空は落とす）。
+    /// 索引をそろえるとき（`Prepared`）に1回だけ作る
+    fileprivate static func regionFields(_ spot: OfficialSpot) -> [String] {
+        guard let r = spot.region else { return [] }
         let country = r.country == "日本" ? nil : r.country
         let pair: String = [r.prefecture, r.city].compactMap { $0 }.joined()
         let whole: String = [country, r.prefecture, r.city].compactMap { $0 }.joined()
-        let fields = [country, r.prefecture, r.city, pair, whole].map(spotName).filter { !$0.isEmpty }
-        func hit(_ word: String) -> Bool {
-            !word.isEmpty && fields.contains { $0.hasPrefix(word) || LocationMatch.nameIn($0, word, boundaries: regionMarks) }
+        return [country, r.prefecture, r.city, pair, whole].map(spotName).filter { !$0.isEmpty }
+    }
+
+    /// 語を地域に当てる形にそろえたもの（1回の当てで1回だけ作る。以前は行ごとにそろえ直していた）
+    fileprivate struct RegionQuery {
+        /// 空白・読点で区切ってそろえた語（空は落とす）
+        let words: [Prepared.Text]
+        /// 区切らずにそろえた語全体
+        let whole: Prepared.Text
+
+        init(_ query: String) {
+            words = query.components(separatedBy: CharacterSet(charactersIn: "、,，").union(.whitespacesAndNewlines))
+                .map(OfficialSpotIndex.spotName).filter { !$0.isEmpty }.map(Prepared.Text.init)
+            whole = Prepared.Text(OfficialSpotIndex.spotName(query))
         }
-        let words = query.components(separatedBy: CharacterSet(charactersIn: "、,，").union(.whitespacesAndNewlines))
-            .map(spotName).filter { !$0.isEmpty }
-        if words.count > 1, words.allSatisfy(hit) { return true }
-        return hit(spotName(query))
+
+        func hits(_ fields: [Prepared.Text]) -> Bool {
+            guard !fields.isEmpty else { return false }
+            func hit(_ word: Prepared.Text) -> Bool {
+                // `nameIn` は語が字として中に入っているときだけ当たる。バイト列で入っていなければ飛ばす
+                !word.value.isEmpty && fields.contains {
+                    $0.value.hasPrefix(word.value)
+                        || (OfficialSpotIndex.bytesContain($0.bytes, word.bytes)
+                            && LocationMatch.nameIn($0.value, word.value, boundaries: OfficialSpotIndex.regionMarks))
+                }
+            }
+            if words.count > 1, words.allSatisfy(hit) { return true }
+            return hit(whole)
+        }
     }
 
     /// 海外の地域名の切れ目（「アンダルシア州」「ブルターニュ地方」）
-    private static let regionMarks = ["州", "地方"]
+    fileprivate static let regionMarks = ["州", "地方"]
 
     /// 写真の場所の候補（`PlaceSpotSuggestions`）が使う別名の当て方（`MapSearch.fold` の揃え方のまま）
     static func aliasMatches(_ aliases: [String]?, needle: String) -> Bool {
