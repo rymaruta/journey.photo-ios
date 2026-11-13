@@ -252,6 +252,11 @@ final class PerformanceTests: XCTestCase {
     func testSearchTypingProbe() {
         let app = configuredApp(localBackend: true)
         enablePerfProbe(app)
+        // 主スレッドの積みを 0.3 秒ごとにファイルへ（画面の木を読まない・止まっている最中も撮れる）。
+        // `samples=` は 16 枚で、探すを開くまでに使い切っていた（回 1229）。回ごとに遅い行を `PERF-MAINSAMPLE` で出す
+        let samplePath = ScreenshotTests.mainSamplePath("search")
+        app.launchArguments += ["-JPMainSampleFile", samplePath]
+        var sampleLinesSeen = 0
         app.launch()
         attachPerfProbeOnFailure(app)
         passConsent(app)
@@ -288,6 +293,7 @@ final class PerformanceTests: XCTestCase {
                 clear.tap()
                 Thread.sleep(forTimeInterval: 1.5)
             }
+            sampleLinesSeen = logSlowMainSamples(samplePath, round: round, from: sampleLinesSeen)
             let reading = readProbe(app, label: "search\(round)")
             let windows = Array(SearchWindowReading.all(reading).dropFirst(before))
             var rows: [SearchWindowReading] = []
@@ -301,6 +307,30 @@ final class PerformanceTests: XCTestCase {
             }
             box.push(rows)
         }
+    }
+
+    /// 積みのファイルの `from` 行目から後で、主スレッドの返事が遅い行（pending・100ms 以上）を
+    /// `PERF-MAINSAMPLE round=N ms=… wall=… ping=… | 積み` でログに出す（行頭の UTC の時刻と、UI テストの操作を突き合わせる）。
+    /// 読んだ行の数を返す。行の前後の速い行も1つずつ出す（止まり始めと終わりが分かるように）
+    private func logSlowMainSamples(_ path: String, round: Int, from: Int) -> Int {
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
+            print("PERF-MAINSAMPLE round=\(round) unreadable path=\(path)")
+            return from
+        }
+        let lines = text.split(separator: "\n").map(String.init)
+        guard from < lines.count else { return lines.count }
+        func slow(_ line: String) -> Bool {
+            guard let ping = line.components(separatedBy: "ping=").dropFirst().first?.split(separator: " ").first else { return false }
+            return ping == "pending" || (Int(ping) ?? 0) >= 100
+        }
+        var printed = Set<Int>()
+        for i in from..<lines.count where slow(lines[i]) {
+            for j in max(from, i - 1)...min(lines.count - 1, i + 1) where printed.insert(j).inserted {
+                print("PERF-MAINSAMPLE round=\(round) \(String(lines[j].prefix(1200)))")
+            }
+        }
+        print("PERF-MAINSAMPLE round=\(round) summary lines=\(lines.count - from) slow=\(lines[from...].filter(slow).count)")
+        return lines.count
     }
 
     /// 欄に焦点が来るまで待つ（`ScreenshotTests.waitForKeyboardFocus` と同じ見方。来なければ false）

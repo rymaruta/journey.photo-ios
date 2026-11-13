@@ -136,15 +136,21 @@ final class PerfMainSampler: @unchecked Sendable {
     /// 積みを撮る所が2つ（停止の見張り・ファイル）あるので、信号の置き場を1つずつ使う
     private let captureLock = NSLock()
 
-    /// 0.3 秒ごとに 1 行: 起動からの ms・主スレッドの返事の遅れ（ms。0.3 秒で戻らなければ pending）・主スレッドの積み。
-    /// 書くのは 1500 行まで
+    /// 0.3 秒ごとに 1 行: 起動からの ms・壁時計（UTC の `HH:mm:ss.SSS`）・主スレッドの返事の遅れ
+    /// （ms。0.3 秒で戻らなければ pending）・主スレッドの積み。書くのは 1500 行まで。
+    /// 壁時計は、UI テストのログ（行頭の UTC の時刻）の操作（要素を探す・押す）と突き合わせるため（2026-11-13 札 #590）
     private func fileLoop(path: String) {
         FileManager.default.createFile(atPath: path, contents: nil)
         guard let handle = FileHandle(forWritingAtPath: path) else { return }
         let origin = ProcessInfo.processInfo.systemUptime
+        let wall = DateFormatter()
+        wall.locale = Locale(identifier: "en_US_POSIX")
+        wall.timeZone = TimeZone(identifier: "UTC")
+        wall.dateFormat = "HH:mm:ss.SSS"
         var lines = 0
         while lines < 1500 {
             let sent = ProcessInfo.processInfo.systemUptime
+            let sentWall = wall.string(from: Date())
             let reply = DispatchSemaphore(value: 0)
             let box = PerfPingBox()
             DispatchQueue.main.async {
@@ -157,7 +163,7 @@ final class PerfMainSampler: @unchecked Sendable {
             let top = Array(frames.prefix(8))
             let app = frames.dropFirst(8).filter { $0.hasPrefix("JourneyPhoto") }.prefix(10)
             let ms = Int((sent - origin) * 1000)
-            let line = "ms=\(ms) ping=\(ping) | " + (top + (app.isEmpty ? [] : ["…"]) + Array(app)).joined(separator: " ; ") + "\n"
+            let line = "ms=\(ms) wall=\(sentWall) ping=\(ping) | " + (top + (app.isEmpty ? [] : ["…"]) + Array(app)).joined(separator: " ; ") + "\n"
             handle.write(Data(line.utf8))
             lines += 1
             if answered { Thread.sleep(forTimeInterval: 0.3) }
