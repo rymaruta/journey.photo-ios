@@ -61,7 +61,10 @@ struct CamperRoomDexView: View {
 
     private var header: some View {
         let count = CamperRoomCatalog.dexCount(owned)
+        // 閉じるは見出しの行の左端（2026-11-13 owner 承認・#187。前は右端の真鍮の字だけ）
         return HStack(alignment: .top) {
+            SheetCloseButton(onContent: true, action: onClose)
+                .accessibilityIdentifier("camper.room.dex.close")
             VStack(alignment: .leading, spacing: 4) {
                 Text(L("家具を集める", "Collect furniture")).jpEyebrow().foregroundStyle(WebTheme.accent)
                 Text(L("\(CamperText.carName)の家具", "\(CamperText.carName) furniture")).font(JPFont.screenTitle).foregroundStyle(WebTheme.foreground)
@@ -75,16 +78,7 @@ struct CamperRoomDexView: View {
                     .jpSystemFont(12)
                     .foregroundStyle(WebTheme.text2)
             }
-            Spacer()
-            Button(action: onClose) {
-                Text(L("閉じる", "Close"))
-                    .jpSystemFont(15, weight: .semibold)
-                    .foregroundStyle(WebTheme.accent)
-                    .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("camper.room.dex.close")
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)
@@ -248,18 +242,12 @@ struct CamperRoomCloseUpView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // 閉じるは見出しの行の左端（2026-11-13 owner 承認・#187。前は右端の真鍮の字だけ）
             HStack {
+                SheetCloseButton(onContent: true, action: onClose)
+                    .accessibilityIdentifier("camper.room.closeup.close")
                 Text(furniture.category.name).jpEyebrow().foregroundStyle(WebTheme.accent)
-                Spacer()
-                Button(action: onClose) {
-                    Text(L("閉じる", "Close"))
-                        .jpSystemFont(15, weight: .semibold)
-                        .foregroundStyle(WebTheme.accent)
-                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("camper.room.closeup.close")
+                Spacer(minLength: 0)
             }
             if furniture.built {
                 ZStack(alignment: .bottomTrailing) {

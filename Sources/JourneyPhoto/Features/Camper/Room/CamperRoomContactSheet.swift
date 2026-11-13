@@ -172,12 +172,9 @@ struct CamperRoomContactSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 4) {
-                Button(action: onClose) {
-                    Text(L("閉じる", "Close")).jpSystemFont(15, weight: .semibold).foregroundStyle(WebTheme.accent)
-                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("camper.room.contact.close")
+                // 閉じるは他のシートと同じ部品（2026-11-13 owner 承認・#187。前は左端だが真鍮の字だけ）
+                SheetCloseButton(onContent: true, action: onClose)
+                    .accessibilityIdentifier("camper.room.contact.close")
                 Spacer()
                 // 読み上げの値に描き終えた合図（画面写真の試験が待つ。部屋の場面の `camper-room-ready` と同じ仕組み）
                 Text("\(mood == .night ? L("夜", "Night") : L("昼", "Day")) \(page + 1) / \(CamperRoomContactPages.count(kind))")

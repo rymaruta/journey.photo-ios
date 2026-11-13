@@ -868,7 +868,7 @@ struct RootView: View {
                     DMInboxView(openConversation: $messagesTarget)
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
-                                Button(Labels.Common.close) { showMessages = false }
+                                SheetCloseButton(action: { showMessages = false })
                                     .accessibilityIdentifier("messages.close")
                             }
                         }
@@ -1042,7 +1042,7 @@ struct RootView: View {
                 // （写真の編集・曲の選択）と同じ `cancellationAction`
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button(Labels.Common.close) { showNotifications = false }
+                        SheetCloseButton(action: { showNotifications = false })
                             .accessibilityIdentifier("notifications.close")
                     }
                 }

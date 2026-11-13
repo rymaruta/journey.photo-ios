@@ -104,11 +104,12 @@ final class StoryV2RingsFixTests: XCTestCase {
     func testInsightsCloseSitsInTheHeaderRow() throws {
         let insights = try source("Features/Stories/StoryInsightsView.swift")
         let header = slice(insights, from: "private var header: some View", to: "private var postedLine")
-        assertInOrder(["HStack(alignment: .top", "StoryPoster(story: story)", "ストーリーの反応",
-                       "Spacer(minLength: 0)"], in: header, "見出しの行")
-        XCTAssertFalse(header.contains("SheetCloseButton"), "閉じるが見出しの行の右端に残っている")
+        // 閉じるは見出しの行の HStack の先頭（左端）。他のバーの無いシートとそろえる
+        assertInOrder(["HStack(alignment: .top", "SheetCloseButton(onContent: true)", "StoryPoster(story: story)",
+                       "ストーリーの反応", "Spacer(minLength: 0)"], in: header, "見出しの行")
+        XCTAssertEqual(header.components(separatedBy: "SheetCloseButton").count - 1, 1, "閉じるが見出しの行に2つある")
         let head = slice(insights, from: "var body: some View", to: "private var header: some View")
-        assertInOrder(["SheetCloseButton(onContent: true)", "header"], in: head, "閉じるは見出しの上の左")
+        XCTAssertFalse(head.contains("SheetCloseButton"), "閉じるが見出しの上の別の行に残っている")
         // 上のバーは隠す（呼び出し側のバーの「閉じる」と2つ出さない）
         let body = slice(insights, from: "var body: some View", to: "private var header: some View")
         XCTAssertTrue(body.contains(".toolbar(.hidden, for: .navigationBar)"), "上のバーに2つ目の「閉じる」が出る")

@@ -75,6 +75,77 @@ final class SheetClosePlacementTests: XCTestCase {
         XCTAssertEqual(bad, [], "右上（決める操作の場所）に「閉じる」がある。閉じるは左上の `SheetCloseButton`（cancellationAction）へ")
     }
 
+    /// 上のバーの無いシートの**見出しの行（中身の `HStack`）の右端**にも「閉じる」を置かない
+    /// （2026-11-13 確かめ役の指摘・#187。上のバーだけ見ていて、とおまわり号の図鑑・家具の寄りの右端の真鍮の字が漏れた）。
+    /// `HStack` の直下の最後の `Spacer(` より後ろ（＝右端へ押した所）に、字の「閉じる」があれば落とす。
+    /// × の印は見ない——案内を消す ×・返信をやめる ×・画面いっぱいの写真の × など、シートを閉じる以外にも使う
+    func testNoCloseAtTrailingEndOfContentHeaderRows() throws {
+        let closeWords = ["SheetCloseButton", "Text(L(\"閉じる\"", "Text(Labels.Common.close)", "Button(L(\"閉じる\"",
+                          "Button(Labels.Common.close", "Text(VisitedMapText.close)", "Text(TrunkTagText.close)"]
+        var bad: [String] = []
+        for (name, text) in try allSources() {
+            var search = text.startIndex..<text.endIndex
+            while let found = text.range(of: #"\bHStack\b"#, options: .regularExpression, range: search) {
+                search = found.upperBound..<text.endIndex
+                let body = Self.braceBody(text, after: found.upperBound)
+                // 直下（入れ子の `{}` の外）の最後の Spacer(
+                var depth = 0
+                var lastSpacer: String.Index?
+                var i = body.startIndex
+                while i < body.endIndex {
+                    switch body[i] {
+                    case "{": depth += 1
+                    case "}": depth -= 1
+                    default:
+                        if depth == 0, body[i...].hasPrefix("Spacer(") { lastSpacer = i }
+                    }
+                    i = body.index(after: i)
+                }
+                guard let lastSpacer else { continue }
+                let trailing = body[lastSpacer...]
+                if closeWords.contains(where: { trailing.contains($0) }) {
+                    bad.append("\(name):\(text[..<found.lowerBound].components(separatedBy: "\n").count)")
+                }
+            }
+        }
+        XCTAssertEqual(bad, [], "見出しの行の右端に「閉じる」がある。閉じるは行の左端の `SheetCloseButton(onContent: true)` へ")
+    }
+
+    /// 見出しの行（`HStack`）の「閉じる」を字だけで手描きしない（2026-11-13 確かめ役の指摘・#187。接写の一覧は左端だったが
+    /// 真鍮の字だけで、ほかのシートの「閉じる」（ガラス・当たり 44pt）と形が違った）。見出しの行の閉じるは部品だけ。
+    /// 札の下の縁取りのボタン（行った県の祝いの「閉じる」など）は見出しの行ではないので見ない
+    func testNoHandDrawnCloseInHeaderRows() throws {
+        let handDrawn = ["Text(L(\"閉じる\"", "Text(Labels.Common.close)", "Text(VisitedMapText.close)", "Text(TrunkTagText.close)"]
+        var bad: [String] = []
+        for (name, text) in try allSources() where name != "Features/Common/SheetCloseButton.swift" {
+            var search = text.startIndex..<text.endIndex
+            while let found = text.range(of: #"\bHStack\b"#, options: .regularExpression, range: search) {
+                search = found.upperBound..<text.endIndex
+                let body = Self.braceBody(text, after: found.upperBound)
+                if let word = handDrawn.first(where: { body.contains($0) }) {
+                    bad.append("\(name):\(text[..<found.lowerBound].components(separatedBy: "\n").count) \(word)")
+                }
+            }
+        }
+        XCTAssertEqual(bad, [], "見出しの行に字だけの「閉じる」がある。`SheetCloseButton(onContent: true)` を使う")
+    }
+
+    /// とおまわり号の図鑑・家具の寄り・接写の一覧（2026-11-13 確かめ役の指摘・#187）: 見出しの行の左端に部品、識別子は残す
+    /// （UI テスト `ScreenshotTests` が押して 44pt を測る）
+    func testCamperRoomSheetsPutCloseFirst() throws {
+        let dex = try source("Features/Camper/Room/CamperRoomDexView.swift")
+        assertInOrder(["private var header: some View", "HStack(alignment: .top) {",
+                       "SheetCloseButton(onContent: true, action: onClose)", ".accessibilityIdentifier(\"camper.room.dex.close\")",
+                       "L(\"家具を集める\"", "Spacer(minLength: 0)"], in: dex, "図鑑")
+        assertInOrder(["struct CamperRoomCloseUpView", "HStack {", "SheetCloseButton(onContent: true, action: onClose)",
+                       ".accessibilityIdentifier(\"camper.room.closeup.close\")", "furniture.category.name",
+                       "Spacer(minLength: 0)"], in: dex, "家具の寄り")
+        let contact = try source("Features/Camper/Room/CamperRoomContactSheet.swift")
+        assertInOrder(["HStack(spacing: 4) {", "SheetCloseButton(onContent: true, action: onClose)",
+                       ".accessibilityIdentifier(\"camper.room.contact.close\")", "Spacer()",
+                       "\"camper.room.contact\""], in: contact, "接写の一覧")
+    }
+
     // MARK: - 洗い出した所が左上の SheetCloseButton になっていること
 
     /// 上のバーに置く所（`cancellationAction` の `SheetCloseButton`）
@@ -133,8 +204,9 @@ final class SheetClosePlacementTests: XCTestCase {
              ["SheetCloseButton(onContent: true)", "\"trunk.partSheet.close\"", "TrunkGachaText.eyebrow(part)", "Spacer()"]),
             ("Features/Drafts/DraftsView.swift",             // 下書きについて
              ["SheetCloseButton(onContent: true)", "DraftsText.aboutTitle", "Spacer(minLength: 0)"]),
-            ("Features/Stories/StoryInsightsView.swift",     // ストーリーの反応（前は見出しの行の右端）
-             ["SheetCloseButton(onContent: true)", "header", "private var header: some View"]),
+            ("Features/Stories/StoryInsightsView.swift",     // ストーリーの反応（前は見出しの行の右端→見出しの上の別の行）
+             ["private var header: some View", "HStack(alignment: .top", "SheetCloseButton(onContent: true)",
+              "StoryPoster(story: story)", "Spacer(minLength: 0)"]),
         ]
         for (path, order) in cases {
             let text = try source(path)
@@ -144,6 +216,49 @@ final class SheetClosePlacementTests: XCTestCase {
             XCTAssertFalse(text.contains("Text(VisitedMapText.close)"), "\(path): 字だけの「閉じる」が残っている")
             XCTAssertFalse(text.contains(".accessibilityLabel(Labels.Common.close)"), "\(path): × の印の閉じるが残っている")
         }
+    }
+
+    /// 系統の字のボタンで置いていた左上の「閉じる」も部品にそろえる（2026-11-13 確かめ役の指摘・#187）。
+    /// 閉じ方は前のまま（`action` に前の閉じ方をそのまま渡す）。識別子も残す
+    func testToolbarCloseUsesSheetCloseButton() throws {
+        let cases: [(path: String, closes: [String], ids: [String])] = [
+            ("App/RootView.swift", ["SheetCloseButton(action: { showMessages = false })",
+                                    "SheetCloseButton(action: { showNotifications = false })"],
+             ["messages.close", "notifications.close"]),
+            ("Features/Albums/InviteView.swift", ["SheetCloseButton(action: { dismiss() })"], []),
+            ("Features/Auth/SignInPrompt.swift", ["SheetCloseButton(action: { dismiss() })"], []),
+            ("Features/Stories/StoryComposerView.swift", ["SheetCloseButton(action: { dismiss() })"], []),
+        ]
+        for (path, closes, ids) in cases {
+            let text = try source(path)
+            XCTAssertFalse(text.contains("Button(Labels.Common.close)"), "\(path): 系統の字のボタンの「閉じる」が残っている")
+            for close in closes {
+                XCTAssertNotNil(text.range(of: #"ToolbarItem\(placement: \.cancellationAction\) \{\s*"#
+                                           + NSRegularExpression.escapedPattern(for: close), options: .regularExpression),
+                                "\(path): 左上に「\(close)」が無い")
+            }
+            for id in ids {
+                XCTAssertNotNil(text.range(of: #"SheetCloseButton\([^\n]*\)\s*\.accessibilityIdentifier\(""#
+                                           + NSRegularExpression.escapedPattern(for: id) + #""\)"#, options: .regularExpression),
+                                "\(path): 「\(id)」が `SheetCloseButton` に付いていない")
+            }
+        }
+        // ストーリーを作る画面はログインの確かめの段とログインの段の2か所
+        let composer = try source("Features/Stories/StoryComposerView.swift")
+        XCTAssertEqual(composer.components(separatedBy: "SheetCloseButton(action: { dismiss() })").count - 1, 2)
+    }
+
+    /// ハイライトの表紙を選ぶシート: 表紙は押した時点で決まる（`coverId = id`）ので、右上の「完了」はただ閉じるだけだった。
+    /// 左上の `SheetCloseButton` にする（2026-11-13・#187）
+    func testHighlightCoverPickerClosesFromLeading() throws {
+        let text = try source("Features/Profile/HighlightEditorView.swift")
+        guard let start = text.range(of: "private var coverPicker: some View") else { return XCTFail("表紙を選ぶシートが無い") }
+        let picker = String(text[start.upperBound...].prefix(4000))
+        assertInOrder(["coverId = id", "ToolbarItem(placement: .cancellationAction) {", "SheetCloseButton()",
+                       ".accessibilityIdentifier(\"highlightEditor.coverDone\")"], in: picker, "表紙を選ぶシート")
+        XCTAssertFalse(picker.contains("L(\"完了\", \"Done\")"), "右上の「完了」（閉じるだけ）が残っている")
+        // 下へ払って閉じても選んだ表紙が戻らない（閉じるだけで決まる作りの前提）
+        XCTAssertTrue(text.contains(".sheet(isPresented: $showCoverPicker) { coverPicker }"))
     }
 
     // MARK: - UI テストが押す識別子を変えない

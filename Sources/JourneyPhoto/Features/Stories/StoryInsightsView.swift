@@ -99,9 +99,6 @@ struct StoryInsightsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: JPSpace.m) {
                 VStack(alignment: .leading, spacing: JPSpace.m) {
-                    // 閉じるは左上のシートの「閉じる」（2026-11-13 owner 承認・#187。前は v2 の板どおり見出しの行の右端）。
-                    // 上のバーは隠しているので中身の頭に置く（`.toolbar(.hidden, for: .navigationBar)`）
-                    SheetCloseButton(onContent: true)
                     header
                     if let refreshNotice {
                         Text(refreshNotice)
@@ -179,6 +176,10 @@ struct StoryInsightsView: View {
     /// 「9月24日 18:20に投稿 · あと 22 時間」（12・text-3・等幅の数字）
     private var header: some View {
         HStack(alignment: .top, spacing: JPSpace.s) {
+            // 閉じるは見出しの行の左端（2026-11-13 owner 承認・#187。前は v2 の板どおり見出しの行の右端）。
+            // 他のバーの無いシートと同じく、見出しの行の HStack の先頭に置く。上のバーは隠している
+            // （`.toolbar(.hidden, for: .navigationBar)`）
+            SheetCloseButton(onContent: true)
             StoryPoster(story: story)
                 .frame(width: Self.thumbSize.width, height: Self.thumbSize.height)
                 .clipShape(RoundedRectangle(cornerRadius: 8))

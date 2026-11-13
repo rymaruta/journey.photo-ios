@@ -56,7 +56,7 @@ struct SignInSheet: View {
                 // 閉じる口は画面に置く（ほかのシートと同じ `cancellationAction`）
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button(Labels.Common.close) { dismiss() }
+                        SheetCloseButton(action: { dismiss() })
                     }
                 }
         }
