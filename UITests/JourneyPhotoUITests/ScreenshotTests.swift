@@ -9987,4 +9987,129 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 1)
         XCTAssertTrue(waitChrome("shown", "3-double-tap"), "2回押しで上下の情報が消えた（1回押しとぶつかっている）")
     }
+
+    /// **写真を大きく見る画面で、写真を下へ引くと閉じる・少し引いて離すと戻る**（2026-11-14 判断・人間工学の点検・
+    /// `PhotoDetailPull.viewerStarts`）。写真の詳細（#592）と同じ 120pt。絵は撮らない。
+    /// 2枚以上の並びで開く（横の送りを見るため）。各段で `detail.pull.probe` の値をログに残す。
+    ///
+    /// **マイページの格子から開く**（Mac の回 1266）。ホームの1枚は並びが「同じ投稿の写真」だけ
+    /// （`HomeFeedTile` の `siblings`）で、公開の写真（`photos.json` 53枚・本番の `/feed` 53枚・2026-11-14）は
+    /// どれも `groupId` を持たない＝2枚以上の投稿が1つも無く、ホームの5枚を順に開いても「N枚中M枚目」が
+    /// 一度も出なかった。マイページの1枚は並びが自分の写真の全部（`MyPageView` の `context: model.photos`・
+    /// 見本の利用者の公開写真は 42 枚）なので、必ず2枚以上で開く
+    ///
+    /// 1. 少し（90pt）ゆっくり引いて止め、離す → 引く動きは始まる（began が増える）が閉じない
+    /// 2. 横に払う → 隣の頁へ送られる（「N枚中M枚目」が替わる）・引く動きは始まらない（began が増えない）
+    /// 3. 隣の頁で広げて拡大してから下へ動かす → 閉じない（拡大中は始めない・`viewer.zoom.probe` で拡大できた回だけ見る）
+    /// 4. 2回押して等倍に戻し、隣の頁のまま下へ大きく引く → 大きく見る画面だけが閉じ、写真の詳細に戻る
+    ///    （頁を替えた後もパンが付け替わっている）
+    ///
+    /// 引く動きが無ければ 1 の began が増えず、4 で ✕ が残るので落ちる
+    func testViewerPullDownCloses() {
+        let app = launchTrunk(["-JPPreviewPullProbe", "YES", "-JPPreviewViewerProbe", "YES"])
+        defer { app.terminate() }
+        let tabBar = app.tabBars.firstMatch
+        guard expect(tabBar.waitForExistence(timeout: 20) && tabBar.buttons.count > 4, "下のタブ", app) else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        // 自分の写真（名指し・位置で探さない）。タブの下に隠れていたら1回だけ送る
+        let photo = app.buttons["mypage.photo"].firstMatch
+        guard expect(photo.waitForExistence(timeout: 20), "マイページの写真の格子", app) else { return }
+        if !photo.isHittable {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        guard expect(photo.isHittable, "マイページの写真（押せる）", app) else { return }
+        let hero = app.buttons["detail.hero"].firstMatch
+        let menu = app.buttons["photo.menu"].firstMatch
+        let close = app.buttons["viewer.close"].firstMatch
+        let zoomProbe = app.descendants(matching: .any)["viewer.zoom.probe"].firstMatch
+        /// 何枚目か（上の列の「N枚中M枚目」）。1枚だけの並びでは出ない
+        let position = app.staticTexts.matching(NSPredicate(format: "label CONTAINS '枚中'")).firstMatch
+        func page() -> String { position.exists ? position.label : "-" }
+
+        photo.tap()
+        guard expect(hero.waitForExistence(timeout: 10) && hero.isHittable, "写真の詳細の写真", app) else { return }
+        hero.tap()
+        guard expect(close.waitForExistence(timeout: 10), "大きく見る画面の ✕", app) else { return }
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTContext.runActivity(named: "[viewerPull] マイページの1枚目を開いた: 位置=\(page())") { _ in }
+        guard expect(position.exists, "2枚以上の並びの大きく見る画面", app) else { return }
+        guard expect(zoomProbe.waitForExistence(timeout: 5), "拡大の目印（viewer.zoom.probe）", app) else { return }
+
+        /// `detail.pull.probe` の値の1つ（`began=1;…`）。読めなければ nil
+        func probeField(_ name: String) -> Int? {
+            pullProbeValue(app).split(separator: ";").first { $0.hasPrefix(name + "=") }
+                .flatMap { Int($0.dropFirst(name.count + 1)) }
+        }
+        /// 拡大の目印の値。**閉じた後は目印ごと無い**ので、在るときだけ読む（Mac の回 1269: 4b で閉じた後に
+        /// `zoomProbe.value` を読み、「Failed to get matching snapshot」で落ちた。`pullProbeValue` と同じ読み方）
+        func zoomState() -> String { (zoomProbe.exists ? zoomProbe.value as? String : nil) ?? "-" }
+        func log(_ step: String) {
+            XCTContext.runActivity(named: "[viewerPull] \(step): ✕=\(close.exists)・位置=\(page())"
+                + "・拡大=\(zoomState())・probe=\(pullProbeValue(app))") { _ in }
+        }
+        log("0-開いた")
+
+        // 1. 少しだけゆっくり引いて止め、離す（120pt に届かない・止めてから離すので勢いも無い）→ 戻る・閉じない
+        let began0 = probeField("began") ?? 0
+        let small = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+        small.press(forDuration: 0.05, thenDragTo: small.withOffset(CGVector(dx: 0, dy: 90)),
+                    withVelocity: .slow, thenHoldForDuration: 1.5)
+        Thread.sleep(forTimeInterval: 1.5)
+        log("1-少し引いて離す")
+        guard expect(close.exists, "少し引いて離した後の大きく見る画面（閉じた）", app) else { return }
+        let began1 = probeField("began") ?? 0
+        XCTAssertGreaterThan(began1, began0, "大きく見る画面で写真を下へ引いても、引く動きが始まらない")
+        XCTAssertEqual(probeField("endCloses"), 0, "少し引いて止めてから離したのに、閉じると決めた")
+
+        // 2. 横に払う → 隣の頁へ（最後の頁なら前の頁へ）。引く動きは始まらない
+        let before = page()
+        // 「N枚中M枚目」: 最後の頁（M == N）だけ前へ払う
+        let parts = before.components(separatedBy: "枚中")
+        let total = parts.first.flatMap { Int($0) }
+        let current = parts.dropFirst().first.flatMap { Int($0.replacingOccurrences(of: "枚目", with: "")) }
+        let rightToLeft = !(total != nil && total == current)
+        let from = app.coordinate(withNormalizedOffset: CGVector(dx: rightToLeft ? 0.85 : 0.15, dy: 0.45))
+        let to = app.coordinate(withNormalizedOffset: CGVector(dx: rightToLeft ? 0.1 : 0.9, dy: 0.45))
+        from.press(forDuration: 0.05, thenDragTo: to)
+        let paged = XCTWaiter().wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label != %@", before), object: position)], timeout: 5) == .completed
+        Thread.sleep(forTimeInterval: 1)
+        log("2-横に払う（\(before) →）")
+        guard expect(close.exists, "横に払った後の大きく見る画面（閉じた）", app) else { return }
+        XCTAssertTrue(paged, "横に払っても隣の頁へ送られない（引く動きが送りを奪っている）: \(before) → \(page())")
+        XCTAssertEqual(probeField("began") ?? 0, began1, "横に払う指で引く動きが始まった")
+
+        // 3. 隣の頁で広げて拡大してから、1本指で下へ動かす → 閉じない（拡大中は写真を動かす指）
+        var zoomed = false
+        for _ in 0..<3 where !zoomed {
+            app.windows.firstMatch.pinch(withScale: 2.5, velocity: 2)
+            zoomed = XCTWaiter().wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == %@", "zoomed"), object: zoomProbe)], timeout: 3) == .completed
+        }
+        log("3a-広げた")
+        guard expect(zoomed, "広げて拡大した大きく見る画面（viewer.zoom.probe=zoomed）", app) else { return }
+        let began3 = probeField("began") ?? 0
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
+        Thread.sleep(forTimeInterval: 2)
+        log("3b-拡大中に下へ動かす")
+        guard expect(close.exists, "拡大中に下へ動かした後の大きく見る画面（閉じた）", app) else { return }
+        XCTAssertEqual(probeField("began") ?? 0, began3, "拡大中に下へ動かす指で引く動きが始まった")
+
+        // 4. 2回押して等倍に戻し、隣の頁のまま下へ大きく引く → 大きく見る画面だけが閉じ、写真の詳細に戻る
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).doubleTap()
+        let flat = XCTWaiter().wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "flat"), object: zoomProbe)], timeout: 3) == .completed
+        Thread.sleep(forTimeInterval: 1)
+        log("4a-等倍に戻す")
+        guard expect(flat, "2回押して等倍に戻った大きく見る画面", app) else { return }
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
+        let gone = XCTWaiter().wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: close)], timeout: 5) == .completed
+        log("4b-隣の頁で下へ引く: 閉じた=\(gone)・写真の詳細=\(menu.exists)")
+        guard expect(gone, "頁を替えた後に写真を下へ引いて大きく見る画面が閉じる", app) else { return }
+        XCTAssertTrue(hero.waitForExistence(timeout: 5) && menu.exists, "大きく見る画面を閉じた先が写真の詳細でない")
+    }
 }

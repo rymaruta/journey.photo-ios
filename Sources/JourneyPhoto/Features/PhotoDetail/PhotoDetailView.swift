@@ -610,13 +610,8 @@ struct PhotoDetailView: View {
                 pull.translation = CGSize(width: dx, height: dy)
             },
             onEnd: { dy, velocityY in
-                if PhotoDetailPull.closes(dy: dy, velocityY: velocityY) {
-                    // 写真は引いた所に残したまま閉じる（戻してから閉じると一瞬跳ねる）
-                    pull.closing = true
-                    dismiss()
-                } else {
-                    pullReset()
-                }
+                // 写真は引いた所に残したまま閉じる・届かなければ戻す（`PhotoDetailPullDrag.release`）
+                if pull.release(dy: dy, velocityY: velocityY, reduceMotion: reduceMotion) { dismiss() }
             },
             onCancel: { pullReset() }
         )
@@ -624,11 +619,7 @@ struct PhotoDetailView: View {
 
     /// 引いた写真を元の位置へ戻す。**「視差効果を減らす」なら弾ませない**（人のストーリーの戻し方 `StoryReelView` と同じ値）
     private func pullReset() {
-        pull.closing = false
-        guard pull.translation != .zero else { return }
-        withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.3, dampingFraction: 0.85)) {
-            pull.translation = .zero
-        }
+        pull.reset(reduceMotion: reduceMotion)
     }
 
     /// 押すと大きく見る（隣の写真へも送れる）。
