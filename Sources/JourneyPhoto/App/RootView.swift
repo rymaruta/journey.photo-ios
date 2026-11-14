@@ -161,6 +161,8 @@ struct RootView: View {
     }
 
     var body: some View {
+        let _ = PerfTimeline.shared.count("body.root")   // 評価の回数（UI テストのときだけ・札 #594 の下調べ）
+        let _ = PerfChangeLog.note(Self.self)   // なぜ評価し直したか（UI テストのときだけ・札 #594 の下調べ）
         Group {
             if consent.needsConsent {
                 // **使う前に規約へ同意させる**（審査要件 1.2 / UGC）

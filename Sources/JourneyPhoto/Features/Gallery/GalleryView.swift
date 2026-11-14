@@ -86,6 +86,7 @@ struct GalleryView: View {
     var body: some View {
         // UI テストのときだけ: body の評価を数える（`PerfRecorder`・札 #435 / #429。無効なら何もしない）
         let _ = PerfRecorder.shared.bodyHit(.home)
+        let _ = PerfChangeLog.note(Self.self)   // なぜ評価し直したか（UI テストのときだけ・札 #594 の下調べ）
         VStack(spacing: 0) {
             // **範囲の切り替え（自分／フォロー中／すべて）は置かない。**
             // 下のフィード（おすすめ／フォロー中／新着）が範囲も決めるので、

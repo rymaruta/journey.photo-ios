@@ -34,6 +34,7 @@ struct HomeMosaic: View {
     nonisolated static let corner: CGFloat = JPRadius.m
 
     var body: some View {
+        let _ = PerfChangeLog.note(Self.self)   // なぜ評価し直したか（UI テストのときだけ・札 #594 の下調べ）
         let _ = PerfRecorder.shared.hit("home.mosaic.body")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07）
         let byCover = Dictionary(groups.map { ($0.cover.id, $0) }, uniquingKeysWith: { first, _ in first })
         LazyVStack(spacing: gap) {
@@ -98,6 +99,7 @@ struct HomeFeedTile: View {
     @State private var globalFrame: CGRect = .zero
 
     var body: some View {
+        let _ = PerfChangeLog.note(Self.self)   // なぜ評価し直したか（UI テストのときだけ・札 #594 の下調べ）
         let _ = PerfRecorder.shared.hit("home.tile.body")
         ZStack(alignment: .bottomTrailing) {
             NavigationLink {

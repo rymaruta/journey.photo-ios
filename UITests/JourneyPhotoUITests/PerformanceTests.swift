@@ -501,6 +501,11 @@ final class PerformanceTests: XCTestCase {
                   ("stallCount", "\(stage.stallCount)"), ("stallMaxMs", "\(stage.stallMaxMs)"), ("stallTotalMs", "\(stage.stallTotalMs)"),
                   ("memPeakMB", "\(stage.memPeakMB)"), ("memEndMB", "\(stage.memEndMB)"), ("bodyTotal", "\(stage.bodyTotal)"),
                   ("bodies", stage.bodies.map { "\($0.0):\($0.1)" }.joined(separator: ",")),
+                  // 2026-11-14: 止まりの種類（XCUITest が画面を読む ax・ログ log・アプリ app）・評価し直した理由・処理の時間・控えの大きさ
+                  ("stallKinds", stage.stallKinds.map { "\($0.0):\($0.1)x/\($0.2)ms" }.joined(separator: ",")),
+                  ("changes", stage.changes.map { "\($0.0):\($0.1)" }.joined(separator: ",")),
+                  ("durs", stage.durations.map { "\($0.0):\($0.1)x/\($0.2)ms" }.joined(separator: ",")),
+                  ("gauges", stage.gauges.map { "\($0.0):\($0.1)" }.joined(separator: ",")),
                   ("samples", stage.samples.joined(separator: ";").replacingOccurrences(of: " ", with: "_"))])
         }
         // 停止の合計の大きい順（段:合計 ms/回数/最大 ms）

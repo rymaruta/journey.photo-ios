@@ -81,18 +81,56 @@ final class PerfTimelineTests: XCTestCase {
         XCTAssertEqual(section(tl.summary(), "cnt"), "[body.home:1,body.map:2]")
     }
 
-    /// 積みの見本は**新しい方から** 12 件。段は浅い方の 2 段とこのアプリの段だけ。区切りの字は値に入れない
+    /// 積みの見本は**新しい方から** `sampleCap` 件。区切りの字は値に入れない
     func testKeepsNewestSamplesWithAppFrames() {
         let box = Box()
         let tl = timeline(box)
-        for i in 0..<15 {
+        for i in 0..<(PerfTimeline.sampleCap + 3) {
             box.now = 1000 + Double(i)
             tl.recordSample(frames: ["libA`top\(i)", "SwiftUI`x", "SwiftUI`y", "JourneyPhoto.debug.dylib`Foo;bar^[1]"])
         }
         let rs = section(tl.summary(), "rs")
-        XCTAssertTrue(rs.hasPrefix("[+3000 libA`top3^SwiftUI`x^JourneyPhoto.debug.dylib`Foo_bar__1_;"), rs)
-        XCTAssertTrue(rs.hasSuffix("+14000 libA`top14^SwiftUI`x^JourneyPhoto.debug.dylib`Foo_bar__1_]"), rs)
+        XCTAssertTrue(rs.hasPrefix("[+3000 libA`top3^SwiftUI`x^SwiftUI`y^JourneyPhoto.debug.dylib`Foo_bar__1_;"), rs)
+        let last = PerfTimeline.sampleCap + 2
+        XCTAssertTrue(rs.hasSuffix("+\(last)000 libA`top\(last)^SwiftUI`x^SwiftUI`y^JourneyPhoto.debug.dylib`Foo_bar__1_]"), rs)
         XCTAssertEqual(rs.components(separatedBy: ";").count, PerfTimeline.sampleCap)
+    }
+
+    /// 残す段: 浅い 3 段・その下で初めて出る画像（下回りは除く）を 4 つ・アプリの段（`$main` は除く）を 3 つ。
+    /// ログを標準エラーに写す所を、誰が呼んだか（MapKit など）が残る（2026-11-14・run 1231 では分からなかった）
+    func testPickFramesKeepsCallerImages() {
+        let frames = ["libsystem_trace.dylib`_os_trace_writev", "libsystem_trace.dylib`_os_log_impl_mirror_to_stderr",
+                      "libsystem_trace.dylib`_os_log_impl", "libsystem_trace.dylib`os_log_x", "VectorKit`-[VKMap draw]",
+                      "VectorKit`-[VKMap other]", "libdispatch.dylib`_dispatch_call", "MapKit`-[MKMapView layout]",
+                      "SwiftUICore`body", "JourneyPhoto.debug.dylib`PhotoMapView.body", "JourneyPhoto.debug.dylib`static_JourneyPhoto.JourneyPhotoApp.$main()"]
+        XCTAssertEqual(PerfTimeline.pickFrames(frames), [
+            "libsystem_trace.dylib`_os_trace_writev", "libsystem_trace.dylib`_os_log_impl_mirror_to_stderr",
+            "libsystem_trace.dylib`_os_log_impl", "VectorKit`-[VKMap draw]", "MapKit`-[MKMapView layout]",
+            "JourneyPhoto.debug.dylib`PhotoMapView.body"])
+    }
+
+    /// 処理の時間は名前ごとに 回数/合計/最大、いまの値は足し引き・置き換え（名前の順）
+    func testMeasureAndGauges() {
+        let box = Box()
+        let tl = timeline(box)
+        XCTAssertEqual(tl.measure("home.choices") { box.now += 0.040; return 1 }, 1)
+        _ = tl.measure("home.choices") { box.now += 0.010 }
+        tl.gauge("img.decodedKB", add: 300)
+        tl.gauge("img.decodedKB", add: -100)
+        tl.gauge("urlcache.memKB", set: 50)
+        let summary = tl.summary()
+        XCTAssertEqual(section(summary, "dur"), "[home.choices:2/50/40]")
+        XCTAssertEqual(section(summary, "gauge"), "[img.decodedKB:200,urlcache.memKB:50]")
+    }
+
+    /// `_printChanges` の行から「評価し直した理由」の名前を作る。別の出力は数えない
+    func testChangeLogKeys() {
+        XCTAssertEqual(PerfChangeLog.keys(fromLine: "GalleryView: @self, _auth changed.\n"),
+                       ["chg.GalleryView.@self", "chg.GalleryView._auth"])
+        XCTAssertEqual(PerfChangeLog.keys(fromLine: "HomeFeedTile: unchanged."), ["chg.HomeFeedTile.unchanged"])
+        XCTAssertEqual(PerfChangeLog.keys(fromLine: "Foo<Bar>: _x changed."), ["chg.Foo._x"])
+        XCTAssertEqual(PerfChangeLog.keys(fromLine: "[feed] 公開写真のページを読めませんでした: x changed."), [])
+        XCTAssertEqual(PerfChangeLog.keys(fromLine: "PERF something"), [])
     }
 
     /// 無効のとき（本番）は何も残さない
@@ -104,7 +142,9 @@ final class PerfTimelineTests: XCTestCase {
         tl.count("body.map")
         tl.recordSample(frames: ["a"])
         box.now = 1002
-        XCTAssertEqual(tl.summary(), "t=2000 | st=[] | mem=[] | cnt=[] | rs=[]")
+        tl.gauge("img.decodedKB", add: 10)
+        XCTAssertEqual(tl.measure("x") { 7 }, 7)
+        XCTAssertEqual(tl.summary(), "t=2000 | st=[] | mem=[] | cnt=[] | rs=[] | dur=[] | gauge=[]")
     }
 
     /// 🔴 配線: 刻み・裏に入る・積みの見本・body の回数が通しの記録に届いている（外すと落ちる）
@@ -120,6 +160,19 @@ final class PerfTimelineTests: XCTestCase {
                      "accessibilityIdentifier(Self.timelineIdentifier)", "static let timelineIdentifier = \"perf.timeline\""] {
             XCTAssertTrue(overlay.contains(wire), "PerfProbeOverlay に \(wire) が無い")
         }
+        XCTAssertTrue(overlay.contains("PerfChangeLog.start()"), "評価し直した理由を読み始めていない")
+        for (path, wire) in [("Sources/JourneyPhoto/Features/Gallery/HomeTopCardView.swift", "PerfTimeline.shared.measure(\"home.topCard.choices\")"),
+                             ("Sources/JourneyPhoto/Features/Gallery/HomeTopCardView.swift", "PerfTimeline.shared.measure(\"home.topCard.visibleShelf\")"),
+                             ("Sources/JourneyPhoto/Features/Gallery/HomeTopCardView.swift", "PerfTimeline.shared.measure(\"home.topCard.detailNeeds\")"),
+                             ("Sources/JourneyPhoto/Features/Gallery/HomeTopCardView.swift", "PerfChangeLog.note(Self.self)"),
+                             ("Sources/JourneyPhoto/Features/Gallery/GalleryView.swift", "PerfChangeLog.note(Self.self)"),
+                             ("Sources/JourneyPhoto/App/RootView.swift", "PerfChangeLog.note(Self.self)"),
+                             ("Sources/JourneyPhoto/Features/Common/DownsampledRemoteImage.swift", "PerfTimeline.shared.gauge(\"img.decodedKB\", add: cost / 1024)"),
+                             ("Sources/JourneyPhoto/Core/Async/PerfTimeline.swift", "gauges[\"urlcache.memKB\"] = urlCacheKB")] {
+            XCTAssertTrue(try read(path).contains(wire), "\(path) に \(wire) が無い")
+        }
+        XCTAssertEqual(try read("Sources/JourneyPhoto/Features/Gallery/HomeMosaic.swift").components(separatedBy: "PerfChangeLog.note(Self.self)").count, 3,
+                       "格子と札の body で理由を書かせていない")
         let recorder = try read("Sources/JourneyPhoto/Core/Async/PerfProbe.swift")
         XCTAssertTrue(recorder.contains("PerfTimeline.shared.count(key)"), "hit が通しの記録に数えていない")
         XCTAssertTrue(recorder.contains("PerfTimeline.shared.count(\"body.\\(screen.rawValue)\")"), "bodyHit が通しの記録に数えていない")

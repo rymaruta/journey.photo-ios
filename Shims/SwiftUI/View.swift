@@ -53,6 +53,11 @@ public protocol View {
     @ViewBuilder @MainActor var body: Self.Body { get }
 }
 
+extension View {
+    /// 本物は body を評価した理由（変わったプロパティ）を標準出力に書く（2026-11-13 札 #594 の下調べで使う）
+    public static func _printChanges() {}
+}
+
 extension Never: View {
     nonisolated public var body: Never { fatalError("模型") }
 }

@@ -120,6 +120,8 @@ struct HomeTopCardView: View {
     private let developStore = DevelopProgressStore()
 
     var body: some View {
+        let _ = PerfChangeLog.note(Self.self)   // なぜ評価し直したか（UI テストのときだけ・札 #594 の下調べ）
+        let _ = PerfRecorder.shared.hit("home.topCard.body")   // 評価の回数（UI テストのときだけ・札 #594）
         // 「いまの季節のスポット」の段は、2026-10-03 から札の並びの下に置いていたが、**#417 ④（2026-10-30 owner 採用）で
         // 「おすすめ」の写真の大1→2→2 の後ろへ移した**（札の「AUTUMN SPOT」との2段続きが解け、切り替えが1画面目に上がる）。
         // 中身はここで決めて `seasonShelf` で渡す（札の並びは**1回だけ計算して**、札と段の両方に使う）
@@ -243,6 +245,11 @@ struct HomeTopCardView: View {
     /// 撮影スポットを払う入口（`HomeTopCard.withSwipe`・2026-11-11）も候補に入れ、何枚目に出すかは人ごとの表
     /// （`HomeTopCard.priority`・`order` の `spotSwipe`・第10章）で決める（1.1.84 のまとめ）
     private var choices: [HomeTopCard.Choice] {
+        // 時間を測る（UI テストのときだけ・`PerfTimeline.measure`・札 #594 の下調べ。無効ならそのまま計算する）
+        PerfTimeline.shared.measure("home.topCard.choices") { computeChoices() }
+    }
+
+    private func computeChoices() -> [HomeTopCard.Choice] {
         let all = HomeTopCard.withSwipe(
             HomeTopCard.cards(now: cardsNow,
                               // ホームに出さない旅・札から消した旅行プランは渡さない（2026-11-12・`HomeHiddenTrips`）
@@ -261,8 +268,10 @@ struct HomeTopCardView: View {
     /// 並びが変わるのは、札と同じく索引が取れたとき・ホームに戻ったとき（行きたい場所）・
     /// 見えている間（今日の一問）だけ——段から開いた画面が前に出ている間に札が消えて閉じることはない
     private func visibleShelf(_ choices: [HomeTopCard.Choice]) -> HomeSpotShelf.Shelf? {
+        PerfTimeline.shared.measure("home.topCard.visibleShelf") {   // 時間を測る（UI テストのときだけ・札 #594）
         HomeSpotShelf.visibleShelf(today: HomeTopCard.today(cardsNow, in: .current), spots: spots,
                                    choices: choices, quiz: quiz, quizSettled: quizSettled)
+        }
     }
 
     /// 段を渡し直す合図（段の中身と、索引の書き換え）
@@ -561,6 +570,11 @@ struct HomeTopCardView: View {
 
     /// 札・段・当日の行に出る、まだ索引だけのスポット
     private func detailNeeds(_ choices: [HomeTopCard.Choice]) -> [OfficialSpot] {
+        // 時間を測る（UI テストのときだけ・札 #594 の下調べ）
+        PerfTimeline.shared.measure("home.topCard.detailNeeds") { computeDetailNeeds(choices) }
+    }
+
+    private func computeDetailNeeds(_ choices: [HomeTopCard.Choice]) -> [OfficialSpot] {
         guard !spots.isEmpty else { return [] }
         let shelf = HomeSpotShelf.visibleShelf(today: HomeTopCard.today(cardsNow, in: .current), spots: spots,
                                                choices: choices, quiz: quiz, quizSettled: quizSettled)

@@ -49,6 +49,8 @@ final class PerfStallWatcher: NSObject {
         // **Debug のビルドだけ**（Release からは `PerfMainSampler` ごと消える＝信号の受け手も見張りのスレッドも作られない）
         #if DEBUG
         PerfMainSampler.shared.start()
+        // body を評価し直した理由（`_printChanges` の出力）を数える（2026-11-14 札 #594）
+        PerfChangeLog.start()
         #endif
         let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
         link.add(to: .main, forMode: .common)
