@@ -18,6 +18,7 @@ final class EnglishPluralTests: XCTestCase {
         "\\(limit) photos",                    // 一度に入れられる上限
         "\\(StoryQueue.maxShots) photos",      // ストーリーの上限
         "Post \\(model.items.count) photos",   // 2枚以上のときだけ
+        "Post \\(count) photos\")",             // 投稿の下の主ボタン（`UploadSubmitBar.title`・`count > 1` の枝だけ）
         "\\(savedEarlier) photos were",        // 1枚のときは別の文
         "\\(cap) places a day",                // 1日の上限（`TripPlanService.itemsPerDayMax`）
         "\\(SavedSpotsTrip.selectMax) places", // 選べる上限

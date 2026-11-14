@@ -130,7 +130,9 @@ struct UploadView: View {
         .navigationBarTitleDisplayMode(.inline)
         // **閉じる口を置く。** シートで出しているので、下に払う以外の
         // 出口が無いと戻れないと思う人が出る
-        // 板 22: 左に ×、右に真鍮の「投稿する」（下の大きいボタンはやめる）
+        // 2026-11-14（#188・点検「直すべき 2」）: 「投稿する」は**下の主ボタン**（`submitBar`・板の投稿画面
+        // `project/Upload.dc.html`）。右上の真鍮の字はやめた（親指からいちばん遠い角。板は上のバーの右を空ける）。
+        // 前の判断「板 22: 右に真鍮の『投稿する』（下の大きいボタンはやめる）」は、今の板で覆った（`UploadSubmitBar` の注記）
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 // 🔴 **書きかけを黙って捨てない**（2026-09-30）。選んだ写真と書いた題・説明が
@@ -138,13 +140,7 @@ struct UploadView: View {
                 // v2 Upload・Components 04「シート · 左に『キャンセル』/右に確定（真鍮の字）」。
                 // 以前は ×。動き（書きかけがあれば確かめる）は同じ
                 Button {
-                    if model.hasDraft {
-                        confirmDiscard = true
-                    } else {
-                        // 中身が無くなった自動の書きかけ・この画面の控えを片づけてから閉じる（モデルの注記）
-                        model.closeWithoutDraft()
-                        dismiss()
-                    }
+                    attemptClose()
                 } label: {
                     Text(Labels.Common.cancel)
                         .font(.body)
@@ -156,9 +152,6 @@ struct UploadView: View {
                 // 途中でやめるのは送信中の「やめる」（`model.cancel()`）
                 .disabled(model.isWorking)
             }
-            if auth.userId != nil {
-                ToolbarItem(placement: .confirmationAction) { submitButton }
-            }
         }
         // 🔴 **人が替わったら、この画面の書きかけを誰の下書きにも保存しない**（前の人の写真が
         // 次の人の下書きに入る）。下書きは人ごと（`UploadDraftStore`）
@@ -167,8 +160,9 @@ struct UploadView: View {
             // 「撮影地の位置を付ける」も次の人の値に替える（前の人の値を使わない・2026-10-18）
             model.useLocationOwner(id)
         }
-        // 書きかけがある間は、下へ払っても閉じない（× で確かめてから）
-        .interactiveDismissDisabled(model.isWorking || model.hasDraft)
+        // 書きかけがある間は、下へ払っても閉じず、**左上の「キャンセル」と同じ閉じる確認を出す**
+        // （2026-11-14・#188・点検「直すべき 1」。前は跳ね返るだけで何も言わなかった）。送っている間は止めるだけ
+        .sheetSwipeGuard(SheetSwipe.from(leave)) { attemptClose() }
         // 2026-10-11: **「下書きに保存」を足した**（端末に残す・`UploadDraftStore`）。以前は
         // 「投稿をやめる」「書き続ける」の2択で、閉じると選んだ写真と題・説明が全部消えていた。
         // 保存できないとき（読み込み中・送りかけ）は出さずに理由を言う（`UploadDraftRules.closeDialog`）
@@ -283,6 +277,26 @@ struct UploadView: View {
         }
         .sheet(item: $model.postedCard, onDismiss: { dismiss() }) { card in
             PostedShareCardSheet(card: card)
+        }
+    }
+
+    /// 閉じようとしたときの扱い（左上の「キャンセル」と下へ払うで同じ・`UploadDraftRules.leave`）
+    private var leave: UnsavedLeave {
+        UploadDraftRules.leave(hasDraft: model.hasDraft, isWorking: model.isWorking)
+    }
+
+    /// 左上の「キャンセル」と、書きかけのまま下へ払ったとき（`sheetSwipeGuard`）の同じ手。
+    /// 書きかけがあれば閉じる確認、無ければ片づけて閉じる。送っている間は何もしない（「キャンセル」も押せない）
+    private func attemptClose() {
+        switch leave {
+        case .confirm:
+            confirmDiscard = true
+        case .now:
+            // 中身が無くなった自動の書きかけ・この画面の控えを片づけてから閉じる（モデルの注記）
+            model.closeWithoutDraft()
+            dismiss()
+        case .wait:
+            break
         }
     }
 
@@ -598,7 +612,7 @@ struct UploadView: View {
     private var form: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                // **知らせは上に。** 投稿は右上で押すので、下に出すと画面の外になる
+                // **知らせは上に。** 下の主ボタンの帯に隠れない所（送れなかった理由は書いた所の近くで読む）
                 topBlock
                 if let spot = model.spot { spotBanner(spot) }
                 photosBlock
@@ -627,6 +641,8 @@ struct UploadView: View {
             .padding(16)
         }
         .scrollDismissesKeyboard(.interactively)
+        // 下の帯に幅いっぱいの主ボタン（板の投稿画面）。キーボードが出ている間はその上に乗る（系統の動き）
+        .safeAreaInset(edge: .bottom, spacing: 0) { submitBar }
         .webScreen()
         .task(id: joined.entries) { await model.loadAlbums(joined: joined.entries) }
         // 撮影スポットの自動の候補の索引（撮影地・題・説明のどれかが入ってから1回だけ・#425）
@@ -801,45 +817,56 @@ struct UploadView: View {
                       photoLibrary: .shared())
     }
 
-    /// 右上の「投稿する」（板: 真鍮・15pt semibold）。送信中は何枚目かを出す
-    private var submitButton: some View {
-        Button {
-            Task { await model.submit() }
-        } label: {
-            if let export = model.exportProgress {
-                // 送り始める前の書き出し（「0/N」のまま止まって見えないように）
-                HStack(spacing: 6) {
-                    ProgressView().tint(WebTheme.accent)
-                    Text(export.label)
-                        .font(JPFont.mono(13, relativeTo: .footnote))
-                }
-            } else if model.isWorking {
-                // **何枚目かを出す。** 5枚選んだときに、進んでいるのか
-                // 止まっているのかが分からないのがいちばん不安
-                HStack(spacing: 6) {
-                    ProgressView().tint(WebTheme.accent)
-                    if model.items.count > 1 {
-                        Text("\(model.uploadingIndex)/\(model.items.count)")
-                            .font(JPFont.mono(13, relativeTo: .footnote))
+    /// 下の帯の主ボタン（板の投稿画面: 幅いっぱい・白・「3枚を投稿する」・`UploadSubmitBar`）。
+    /// 送信中は輪を前に足して何枚目かを出す。押せない間は薄めて理由を下に1行
+    private var submitBar: some View {
+        let reason = UploadSubmitBar.blockedReason(hasPhotos: !model.items.isEmpty,
+                                                   loading: model.isLoadingPicked || model.preparingCaptures > 0
+                                                       || model.isRestoringDraft,
+                                                   working: model.isWorking)
+        return VStack(spacing: JPSpace.xs) {
+            Button {
+                Task { await model.submit() }
+            } label: {
+                HStack(spacing: JPSpace.xs) {
+                    if let export = model.exportProgress {
+                        // 送り始める前の書き出し（「0/N」のまま止まって見えないように）
+                        ProgressView().tint(WebTheme.accentText)
+                        Text(export.label)
+                            .font(JPFont.mono(15, relativeTo: .callout))
+                    } else if model.isWorking {
+                        // **何枚目かを出す。** 5枚選んだときに、進んでいるのか
+                        // 止まっているのかが分からないのがいちばん不安
+                        ProgressView().tint(WebTheme.accentText)
+                        Text(UploadSubmitBar.sendingTitle)
+                        if model.items.count > 1 {
+                            Text("\(model.uploadingIndex)/\(model.items.count)")
+                                .font(JPFont.mono(15, relativeTo: .callout))
+                        }
+                    } else {
+                        if model.isLoadingPicked { ProgressView().tint(WebTheme.accentText) }
+                        Text(UploadSubmitBar.title(count: model.items.count))
                     }
                 }
-            } else if model.isLoadingPicked {
-                ProgressView().tint(WebTheme.accent)
-            } else {
-                Text(L("投稿する", "Post"))
-                    .font(.subheadline.weight(.semibold))
+                .jpPillButton(.primary)
+            }
+            .buttonStyle(.plain)
+            .opacity(model.canSubmit || model.isWorking ? 1 : UploadSubmitBar.disabledOpacity)
+            .disabled(!model.canSubmit)
+            .accessibilityLabel(model.exportProgress?.accessibilityLabel ?? (model.isWorking
+                                ? L("送信中 \(model.uploadingIndex) / \(model.items.count) 枚目",
+                                    "Sending \(model.uploadingIndex) of \(model.items.count)")
+                                : UploadSubmitBar.title(count: model.items.count)))
+            // UI テストが名指しで押す（`CriticalFlowTests`・2026-10-22）
+            .accessibilityIdentifier("upload.submit")
+            if let reason {
+                Text(reason)
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.text3)
+                    .accessibilityIdentifier("upload.submitReason")
             }
         }
-        .foregroundStyle(model.canSubmit ? WebTheme.accent : WebTheme.text3)
-        .disabled(!model.canSubmit)
-        .accessibilityLabel(model.exportProgress?.accessibilityLabel ?? (model.isWorking
-                            ? L("送信中 \(model.uploadingIndex) / \(model.items.count) 枚目",
-                                "Sending \(model.uploadingIndex) of \(model.items.count)")
-                            : (model.items.count > 1
-                               ? L("\(model.items.count) 枚を投稿する", "Post \(model.items.count) photos")
-                               : L("投稿する", "Post"))))
-        // UI テストが名指しで押す（`CriticalFlowTests`・2026-10-22）
-        .accessibilityIdentifier("upload.submit")
+        .jpBottomBar()
     }
 
     /// 選んだ写真の帯（v2 の板: 84×104・角丸12、右上に外す丸、左上に番号、最後に「追加」）。

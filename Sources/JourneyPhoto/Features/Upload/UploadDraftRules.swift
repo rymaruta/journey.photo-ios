@@ -108,6 +108,13 @@ enum UploadDraftRules {
         return full ? .full : .standard
     }
 
+    /// 閉じようとしたとき（左上の「キャンセル」・下へ払う）の扱い（2026-11-14・#188）。
+    /// **どちらの閉じ方も同じ判断**——送っている間は閉じない、書きかけがあれば閉じる確認、無ければそのまま閉じる。
+    /// 下へ払う側は `SheetSwipe.from(_:)` に読み替える（`sheetSwipeGuard`）
+    static func leave(hasDraft: Bool, isWorking: Bool) -> UnsavedLeave {
+        UnsavedLeave.decide(hasChanges: hasDraft, isSaving: isWorking)
+    }
+
     /// 開いたときに「下書きを続けますか？」を尋ねるか。**何かを持って開いた回は尋ねない**
     /// （旅の写真・構図を重ねて撮った1枚・今日のテーマのタグ・撮影スポット——それを投稿しに来た人に、
     /// 前の写真や欄を混ぜない。戻すとテーマのタグやスポットの紐付けを下書きの値で上書きする・2026-10-11）

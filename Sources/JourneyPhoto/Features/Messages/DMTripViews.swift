@@ -160,7 +160,7 @@ struct DMTripCreateView: View {
                     TripCreateDatesStep(model: model, next: save, finishTitle: L("旅行プランを作る", "Create trip"))
                 }
         }
-        .interactiveDismissDisabled(model.saving)
+        .sheetSwipeGuard(.busy(model.saving))
         .overlay(alignment: .bottom) {
             ToastOverlay().padding(.bottom, 84)
         }

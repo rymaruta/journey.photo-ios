@@ -61,7 +61,7 @@ struct CoverOfferView: View {
         .presentationBackground(WebTheme.background)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .interactiveDismissDisabled(applying)
+        .sheetSwipeGuard(.busy(applying))
         .task {
             let profile = try? await environment.profiles.myProfile()
             name = profile?.name ?? ""

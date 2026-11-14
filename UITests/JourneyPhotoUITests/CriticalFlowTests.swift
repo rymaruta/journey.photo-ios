@@ -211,6 +211,16 @@ final class CriticalFlowTests: XCTestCase {
         toPhoto.tap()
         let thumb = app.buttons["upload.thumb.0"].firstMatch
         XCTAssertTrue(thumb.waitForExistence(timeout: 20), "見本の1枚が投稿画面に入らない")
+        // 2026-11-14（#188）: 「投稿する」は下の帯の主ボタン（板の投稿画面）。キーボードが出る前に、画面の下の方に
+        // 幅いっぱい・高さ 44 以上で在るかを見る（右上の字に戻ると落ちる）
+        let bottomSubmit = app.buttons["upload.submit"].firstMatch
+        XCTAssertTrue(bottomSubmit.waitForExistence(timeout: 5), "下の「投稿する」が無い")
+        let screen = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(bottomSubmit.frame.minY, screen.height * 0.8,
+                             "「投稿する」が下に無い（frame \(bottomSubmit.frame)・画面 \(screen)）")
+        XCTAssertGreaterThan(bottomSubmit.frame.width, screen.width * 0.8, "「投稿する」が幅いっぱいでない（\(bottomSubmit.frame)）")
+        XCTAssertGreaterThanOrEqual(bottomSubmit.frame.height, 44, "「投稿する」の的が 44pt 未満")
+        XCTAssertTrue(bottomSubmit.label.contains("投稿する"), "「投稿する」の字が違う（\(bottomSubmit.label)）")
 
         let title = "JP\(Int(Date().timeIntervalSince1970) % 1_000_000)"
         let titleField = app.textFields["upload.title"].firstMatch
@@ -254,6 +264,205 @@ final class CriticalFlowTests: XCTestCase {
             add(note)
         }
         XCTAssertTrue(posted.exists, "投稿した「\(title)」がマイページに並ばない")
+    }
+
+    /// 2026-11-14（#188・点検「直すべき 1」）: 書きかけ（見本の1枚を選んだ）の投稿画面を下へ払うと、跳ね返るだけでなく
+    /// 左上の「キャンセル」と同じ閉じる確認が出る。画面は閉じない（書きかけが消えない）
+    func testSwipeDownOnUploadDraftAsksBeforeClosing() {
+        let app = launch(["-JPPreviewUploadSample", "YES"])
+        tab(app, 2)
+        let toPhoto = app.buttons["post.choice.photo"].firstMatch
+        XCTAssertTrue(toPhoto.waitForExistence(timeout: 10), "投稿の2択が出ない")
+        toPhoto.tap()
+        let thumb = app.buttons["upload.thumb.0"].firstMatch
+        XCTAssertTrue(thumb.waitForExistence(timeout: 20), "見本の1枚が投稿画面に入らない")
+        Thread.sleep(forTimeInterval: 1)
+
+        // 上のバー（題「新規投稿」の辺り）から下へ大きく払う
+        var log: [String] = []
+        defer { attachSwipeLog(log, "uploadDraft") }
+        swipeSheetDown(app, log: &log, "書きかけの投稿")
+        let bar = app.navigationBars.firstMatch
+
+        let stop = app.buttons["投稿をやめる"].firstMatch
+        let asked = stop.waitForExistence(timeout: 5)
+        if !asked {
+            // 推定で直さないための記録: 払ったあとの姿（画面が残ったか・どの確かめが出たか・バーの位置）
+            let line = "[swipeProbe] uploadOpen=\(thumb.exists) sheets=\(app.sheets.count) alerts=\(app.alerts.count)"
+                + " buttons=\(app.sheets.firstMatch.buttons.allElementsBoundByIndex.map(\.label))"
+                + " bar=\(bar.exists ? "\(bar.frame)" : "none")"
+            print(line)
+            let note = XCTAttachment(string: line)
+            note.name = "swipeProbe"
+            note.lifetime = .keepAlways
+            add(note)
+        }
+        XCTAssertTrue(asked, "書きかけの投稿画面を下へ払っても閉じる確認が出ない")
+        XCTAssertTrue(app.buttons["下書きに保存"].firstMatch.exists, "閉じる確認が「キャンセル」と違う（下書きに保存が無い）")
+        XCTAssertTrue(thumb.exists, "払っただけで書きかけの投稿画面が閉じた")
+        // 「書き続ける」で確かめを閉じると、書きかけのまま画面に戻る
+        let keep = app.buttons["書き続ける"].firstMatch
+        if keep.exists {
+            keep.tap()
+            XCTAssertTrue(stop.waitForNonExistence(timeout: 5), "「書き続ける」で確かめが閉じない")
+            XCTAssertTrue(thumb.exists, "「書き続ける」なのに書きかけが消えた")
+        }
+    }
+
+    // MARK: - 1c. 書きかけの無いシートは、払えば閉じて開き直せる（#599 の見直し）
+    //
+    // 払うのを受ける中継ぎ（`SheetSwipeRelay`）は、SwiftUI がもともと持つ受け手へ知らせを回す（`forwardingTarget`）。
+    // 回らないと、払って閉じても `isPresented` が戻らず onDismiss も走らず、**同じ所から開き直せない**。
+    // 3種のシート（投稿・意見・名前の横）で「払って閉じる → 開き直せる」を見る。各段の値は `swipeLog` に残す
+
+    /// 投稿画面: 見本の1枚を外して書きかけを無くし、払うと閉じる。もう一度「投稿」から開ける
+    func testSwipeClosesEmptyUploadAndReopens() {
+        let app = launch(["-JPPreviewUploadSample", "YES"])
+        var log: [String] = []
+        defer { attachSwipeLog(log, "upload") }
+        tab(app, 2)
+        let toPhoto = app.buttons["post.choice.photo"].firstMatch
+        XCTAssertTrue(toPhoto.waitForExistence(timeout: 10), "投稿の2択が出ない")
+        toPhoto.tap()
+        let thumb = app.buttons["upload.thumb.0"].firstMatch
+        XCTAssertTrue(thumb.waitForExistence(timeout: 20), "見本の1枚が投稿画面に入らない")
+        let remove = app.buttons["1枚目を外す"].firstMatch
+        XCTAssertTrue(remove.waitForExistence(timeout: 5), "1枚目を外す丸が無い")
+        remove.tap()
+        XCTAssertTrue(thumb.waitForNonExistence(timeout: 10), "外しても1枚目が残る")
+        let submit = app.buttons["upload.submit"].firstMatch
+        log.append("外した後: thumb=\(thumb.exists) submit=\(submit.exists ? "\(submit.isEnabled)" : "none")"
+                   + " reason=\(app.staticTexts["upload.submitReason"].firstMatch.exists)")
+
+        swipeSheetDown(app, log: &log, "投稿")
+        let stop = app.buttons["投稿をやめる"].firstMatch
+        log.append("払った後: dialog=\(stop.exists) submit=\(submit.exists) bar=\(app.navigationBars.firstMatch.exists)")
+        XCTAssertFalse(stop.exists, "書きかけが無いのに閉じる確認が出た")
+        XCTAssertTrue(submit.waitForNonExistence(timeout: 10), "書きかけの無い投稿画面を払っても閉じない")
+
+        // 開き直す（`isPresented` が戻っていないと、押しても開かない）
+        tab(app, 2)
+        let again = app.buttons["post.choice.photo"].firstMatch
+        let choiceShown = again.waitForExistence(timeout: 10)
+        log.append("開き直し: choice=\(choiceShown)")
+        XCTAssertTrue(choiceShown, "払って閉じたあと、投稿の2択が出ない")
+        again.tap()
+        let reopened = app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 20)
+            || submit.waitForExistence(timeout: 5)
+        log.append("開き直し: upload=\(reopened)")
+        XCTAssertTrue(reopened, "払って閉じた投稿画面を、同じ所から開き直せない")
+    }
+
+    /// 意見を送るシート（送っている最中だけ止めるシート）: 払うと閉じ、設定の行から開き直せる
+    func testSwipeClosesFeedbackAndReopens() {
+        let app = launch()
+        var log: [String] = []
+        defer { attachSwipeLog(log, "feedback") }
+        tab(app, 4)
+        XCTAssertTrue(app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 20), "マイページが出ない")
+        let gear = app.buttons["設定"].firstMatch
+        XCTAssertTrue(gear.waitForExistence(timeout: 5), "設定の印が無い")
+        gear.tap()
+        let row = app.buttons["settings.feedback"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "設定に「意見を送る」が無い")
+        reveal(row, in: app, "意見を送るの行")
+        row.tap()
+        let send = app.buttons["feedback.send"].firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 10), "意見のシートが開かない")
+        Thread.sleep(forTimeInterval: 1)
+        swipeSheetDown(app, log: &log, "意見")
+        let closed = send.waitForNonExistence(timeout: 10)
+        log.append("払った後: closed=\(closed) row=\(row.exists)")
+        XCTAssertTrue(closed, "意見のシートを払っても閉じない")
+        reveal(row, in: app, "意見を送るの行（開き直し）")
+        row.tap()
+        let reopened = send.waitForExistence(timeout: 10)
+        log.append("開き直し: sheet=\(reopened)")
+        XCTAssertTrue(reopened, "払って閉じた意見のシートを開き直せない")
+    }
+
+    /// 名前の横のシート（つまみのあるシート・保存中だけ止める）: 払うと閉じ、名前の行から開き直せる
+    func testSwipeClosesNameSideAndReopens() {
+        let app = launch()
+        var log: [String] = []
+        defer { attachSwipeLog(log, "nameSide") }
+        tab(app, 4)
+        let nameLine = app.descendants(matching: .any)["mypage.nameLine"].firstMatch
+        XCTAssertTrue(nameLine.waitForExistence(timeout: 20), "マイページの名前の行が無い")
+        nameLine.tap()
+        let save = app.descendants(matching: .any)["nameSide.save"].firstMatch
+        XCTAssertTrue(save.waitForExistence(timeout: 10), "名前の横のシートが開かない")
+        Thread.sleep(forTimeInterval: 1)
+        swipeSheetDown(app, log: &log, "名前の横")
+        let closed = save.waitForNonExistence(timeout: 10)
+        log.append("払った後: closed=\(closed) nameLine=\(nameLine.exists)")
+        XCTAssertTrue(closed, "名前の横のシートを払っても閉じない")
+        nameLine.tap()
+        let reopened = save.waitForExistence(timeout: 10)
+        log.append("開き直し: sheet=\(reopened)")
+        XCTAssertTrue(reopened, "払って閉じた名前の横のシートを開き直せない")
+    }
+
+    /// **値を取るだけ（合否なし・名指しした回だけ・`pick-ui-tests.py` の `ONLY_WHEN_NAMED`）**。
+    /// 書きかけの投稿画面から親しい友達（同じシートに積む画面）を開き、何も変えずに払ったときに何が起きるか
+    /// （跳ね返る・閉じる・どの確かめが出る）を記録する。`SheetSwipeRelay` の注記の「奥の書きかけ」を決める材料
+    func testMeasuresUploadStackedSwipe() {
+        let app = launch(["-JPPreviewUploadSample", "YES"])
+        var log: [String] = []
+        defer { attachSwipeLog(log, "stacked") }
+        tab(app, 2)
+        let toPhoto = app.buttons["post.choice.photo"].firstMatch
+        guard toPhoto.waitForExistence(timeout: 10) else { log.append("投稿の2択が出ない"); return }
+        toPhoto.tap()
+        let thumb = app.buttons["upload.thumb.0"].firstMatch
+        guard thumb.waitForExistence(timeout: 20) else { log.append("見本の1枚が入らない"); return }
+        let details = app.buttons["upload.details"].firstMatch
+        for _ in 0..<4 where !(details.exists && details.isHittable) { app.swipeUp(); Thread.sleep(forTimeInterval: 1) }
+        guard details.exists, details.isHittable else { log.append("詳しい設定が無い"); return }
+        details.tap()
+        let audience = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "公開範囲")).firstMatch
+        for _ in 0..<4 where !(audience.exists && audience.isHittable) { app.swipeUp(); Thread.sleep(forTimeInterval: 1) }
+        guard audience.exists, audience.isHittable else { log.append("公開範囲の行が無い"); return }
+        audience.tap()
+        let close = app.buttons["親しい友達"].firstMatch
+        guard close.waitForExistence(timeout: 5) else { log.append("公開範囲のメニューに親しい友達が無い"); return }
+        close.tap()
+        let pick = app.buttons["親しい友達を選ぶ"].firstMatch
+        for _ in 0..<4 where !(pick.exists && pick.isHittable) { app.swipeUp(); Thread.sleep(forTimeInterval: 1) }
+        guard pick.exists, pick.isHittable else { log.append("親しい友達を選ぶの行が無い"); return }
+        pick.tap()
+        Thread.sleep(forTimeInterval: 2)
+        log.append("積んだ後: bar=\(app.navigationBars.firstMatch.identifier) thumb=\(thumb.exists)")
+        swipeSheetDown(app, log: &log, "積んだ親しい友達")
+        Thread.sleep(forTimeInterval: 2)
+        log.append("払った後: stop=\(app.buttons["投稿をやめる"].firstMatch.exists)"
+                   + " back=\(app.buttons["保存せずに戻る"].firstMatch.exists)"
+                   + " sheets=\(app.sheets.firstMatch.buttons.allElementsBoundByIndex.map(\.label))"
+                   + " uploadOpen=\(app.buttons["upload.submit"].firstMatch.exists)"
+                   + " bar=\(app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.identifier : "none")")
+    }
+
+    /// シートの上の端（シートの上のバー＝いちばん下にある上のバーの真ん中、無ければ画面の上 12%）から下へ大きく払う。
+    /// シートの後ろの画面のバー（上に少し覗く）を掴まないよう、いちばん下のバーを選ぶ。払う前の姿を記録に足す
+    private func swipeSheetDown(_ app: XCUIApplication, log: inout [String], _ what: String) {
+        let bars = app.navigationBars.allElementsBoundByIndex.filter { $0.exists && $0.isHittable }
+        let bar = bars.max { $0.frame.minY < $1.frame.minY }
+        let from = bar.map { $0.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)) }
+            ?? app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12))
+        log.append("\(what) 払う前: bars=\(bars.map { "\($0.frame)" }) chose=\(bar.map { "\($0.frame)" } ?? "none")"
+                   + " window=\(app.windows.firstMatch.frame)")
+        from.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)))
+        Thread.sleep(forTimeInterval: 1.5)
+    }
+
+    /// 払う試験の各段の値を、ログと添付に残す（推定で直さないため）
+    private func attachSwipeLog(_ log: [String], _ name: String) {
+        let text = log.map { "[swipeLog \(name)] \($0)" }.joined(separator: "\n")
+        print(text)
+        let note = XCTAttachment(string: text)
+        note.name = "swipeLog-\(name)"
+        note.lifetime = .keepAlways
+        add(note)
     }
 
     // MARK: - 4. ログアウト → ログイン
