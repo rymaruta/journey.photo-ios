@@ -21,6 +21,16 @@
           "detail": { "ja": "投稿の後に「ストーリーに載せる」を押すと、写真の色をぼかした背景の上に写真が載ります。文字を大きくしていても、下の2つのボタンは切れずに縦に並びます。", "en": "When you tap Add to story after posting, your photo sits on a soft, blurred backdrop in its own colors. With larger text, the two buttons stack instead of getting cut off." }
         },
         {
+          "symbol": "rectangle.on.rectangle.angled",
+          "title": { "ja": "SNS に載せるカードに新しいデザイン3つ", "en": "Three new designs for share cards" },
+          "detail": { "ja": "写真を SNS に載せるカードに、プリント、切符、シネマの3つの形が増えました。形は横に並んだ名前から選べます。", "en": "Share cards for posting photos on social media now come in three more styles: Print, Ticket and Cinema. Pick a style from the row of names." }
+        },
+        {
+          "symbol": "rectangle.inset.filled",
+          "title": { "ja": "カードの文字を端から離して見やすく", "en": "Card text sits further from the edges" },
+          "detail": { "ja": "SNS に載せるカードの文字を端から少し離し、ストーリーの上と下に出る表示にも重ならないようにしました。", "en": "Text on share cards now sits a little further from the edges, and stays clear of what stories show at the top and bottom." }
+        },
+        {
           "symbol": "hand.draw",
           "title": { "ja": "書きかけでも下へ払うと確かめが出る", "en": "Swiping away asks first if you have unsaved text" },
           "detail": { "ja": "書きかけの投稿などを下へ払って閉じようとすると、保存せずに閉じるかを確かめます。何も書いていなければ、そのまま閉じます。", "en": "If you swipe down on something you haven't finished, such as a post, we ask before closing without saving. If nothing is written, it just closes." }
