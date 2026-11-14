@@ -33,8 +33,10 @@ final class StoryViewTypeDepthTests: XCTestCase {
     }
 
     #if os(iOS)
-    /// 1つの型の深さの上限（札 #596）。直す前と直した後の数は、上の注記と `docs` ではなくここに書く:
-    /// 直す前（main deb4dda69）と直した後の数は Mac の回で測って書き足す
+    /// 1つの型の深さの上限（札 #596）。Mac の模擬機で測った数:
+    /// - 直す前（main deb4dda69・回 1299）: `body` 100・`content(for:)` 69・`photoArea` 33・`menuSheet` 32・
+    ///   `footer` 29・`header` 25（この6つで落ちる）
+    /// - 直した後（回 1301）: `body` 18・いちばん深い塊は `deleteConfirm` 24（直す前も 24 で、変えていない）
     static let depthLimit = 24
 
     /// **どの塊も上限以下**。超えたら、その塊の中に境目（`storyTypeBoundary`）を足す
