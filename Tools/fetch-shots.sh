@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
 # Mac の CI が非公開の S3 に置いた画面写真を、手元（scratchpad）に落として見る・消す（2026-11-12 owner）。
+# TestFlight の落ちた記録（`Tools/testflight-crashes.sh`・印 testflight-crashes-<run>）も同じ使い方（2026-11-14）。
 # 置くのは `Tools/upload-shots.sh`。置き場は3日で自動で消える（`Tools/ci-shots/lifecycle.json`）。
 #
 #     bash Tools/fetch-shots.sh --list            # 置き場にある run の印の一覧
@@ -23,7 +24,7 @@ BUCKET="${CI_SHOTS_BUCKET:-journey-photo-ios-ci-shots}"
 export AWS_REGION=ap-northeast-1 AWS_DEFAULT_REGION=ap-northeast-1
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-usage() { sed -n '5,9p' "$0" | sed 's/^# \{0,4\}//'; exit 2; }
+usage() { sed -n '6,10p' "$0" | sed 's/^# \{0,4\}//'; exit 2; }
 
 if [ "${1:-}" = "--list" ]; then
     aws s3 ls "s3://$BUCKET/" | awk '$1 == "PRE" { sub("/$", "", $2); print $2 }' | sort -n
@@ -103,7 +104,13 @@ PY
 done
 
 n="$(find "$DEST" -type f \( -name '*.jpg' -o -name '*.png' \) | wc -l | tr -d ' ')"
-echo "run $RUN の絵 $n 枚を落としました: $DEST"
+# TestFlight の落ちた記録（`Tools/testflight-crashes.sh`・組 crashes）も同じ置き場から落とす
+c="$(find "$DEST" -type f \( -name '*.ips' -o -name '*.crash' \) | wc -l | tr -d ' ')"
+if [ "$c" != "0" ]; then
+    echo "run $RUN の落ちた記録 $c 件を落としました: ${DEST}（要点は crashes/index.json・読み方は docs/TESTFLIGHT.md）"
+else
+    echo "run $RUN の絵 $n 枚を落としました: $DEST"
+fi
 for readme in "$DEST"/*/README.md; do
     [ -f "$readme" ] || continue
     echo "  $(basename "$(dirname "$readme")"): $(grep -m1 '撮れなかった画面\|絞った回' "$readme" || true)"

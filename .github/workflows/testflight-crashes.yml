@@ -1,0 +1,56 @@
+# TestFlight のテスターが送った落ちた記録を取ってきて、非公開の S3 に置く（手で起動するだけ・2026-11-14・札 #596）。
+#
+# シミュレータでは落ちず実機だけで落ちる不具合は、実機の落ちた記録が無いと原因を確かめられない
+# （CLAUDE.md「推定で直さない」）。App Store Connect API の TestFlight のフィードバック
+# （`betaFeedbackCrashSubmissions` と、その `crashLog`）から、指定した版の分を新しい順に取る。
+# 口と応答の形は Apple の文書で確かめた（`Tools/testflight-crashes.py` の頭）。
+#
+# 🔴 **公開リポジトリなので、記録の本文はログ・成果物に出さない（#451）。**
+#   本文は画面写真と同じ非公開の置き場（`Tools/private-s3.sh`・3日で消える）にだけ置く。
+#   ログに出すのは件数と各件の要点（版・ビルド・日時・例外の型・落ちたスレッドの上の数段の関数名）だけ。
+#   成果物（Actions の artifact）は作らない
+#
+# 使い方: Actions の「TestFlight crashes」→ Run workflow → 版（例 1.1.85）。
+#   取り出し: `bash Tools/fetch-shots.sh testflight-crashes-<run 番号>`（scratchpad に落ちる。見終わったら `--delete`）。
+#   読み方（シンボル化・dSYM）は docs/TESTFLIGHT.md の「落ちた記録を読む」
+#
+# 名前は英字にしておく: 置き場の run の印がワークフロー名から作られる（`testflight-crashes-<run 番号>`）
+name: TestFlight crashes
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "表に出る版（例 1.1.85）"
+        required: true
+        type: string
+      limit:
+        description: "取る件数の上限（新しい順）"
+        type: string
+        default: "50"
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    name: 落ちた記録を非公開の置き場に置く
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # 非公開の置き場に置く役割に OIDC で入る（`Tools/private-s3.sh`。役割ができるのは置くことだけ）
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 落ちた記録を取って置く
+        env:
+          VERSION: ${{ inputs.version }}
+          LIMIT: ${{ inputs.limit }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          CI_SHOTS_ROLE_ARN: ${{ secrets.CI_SHOTS_ROLE_ARN }}
+          CI_SHOTS_BUCKET: ${{ secrets.CI_SHOTS_BUCKET }}
+        run: bash Tools/testflight-crashes.sh "$VERSION" "$LIMIT"

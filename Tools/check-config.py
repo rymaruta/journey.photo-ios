@@ -820,13 +820,39 @@ try:
         fail(f"Tools/ci-shots/lifecycle.json が画面写真を7日以内に消しません: {days}")
 except (OSError, KeyError, IndexError, ValueError) as e:
     fail(f"Tools/ci-shots の設定が読めません: {e}")
-uploader = (ROOT / "Tools/upload-shots.sh").read_text(encoding="utf-8") if (ROOT / "Tools/upload-shots.sh").exists() else ""
-for needle, why in [("pull_request|pull_request_target) skip", "PR の回で止まる"),
+def _read(rel: str) -> str:
+    path = ROOT / rel
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+uploader = _read("Tools/upload-shots.sh")
+# 置き方（PR の回で止まる・OIDC・aws の出力を伏せる）は `Tools/private-s3.sh` に1か所（2026-11-14・落ちた記録と共用）
+private_s3 = _read("Tools/private-s3.sh")
+for needle, why in [("pull_request|pull_request_target) PRIVATE_S3_WHY=\"PR の回\"; return 2", "PR の回で止まる"),
                     ("--only-show-errors", "aws の出力（置き場と鍵）をログに出さない"),
-                    ("SHOTS_EXPORT_ONLY=1", "公開の枝に押さない形で取り出す"),
                     ("AWS_WEB_IDENTITY_TOKEN_FILE", "長く使える鍵でなく OIDC で入る")]:
-    if needle not in uploader:
-        fail(f"Tools/upload-shots.sh に「{needle}」がありません（{why}）")
+    if needle not in private_s3:
+        fail(f"Tools/private-s3.sh に「{needle}」がありません（{why}）")
+for name, text, needles in [
+        ("Tools/upload-shots.sh", uploader,
+         ["SHOTS_EXPORT_ONLY=1", '[ "$rc" -eq 2 ] && skip', "private_s3_put "]),
+        # TestFlight の落ちた記録（札 #596）: 置けない回は取りに行かない・置くのは非公開の置き場だけ
+        ("Tools/testflight-crashes.sh", _read("Tools/testflight-crashes.sh"),
+         ['if [ "$rc" -ne 0 ]; then\n    echo "::error::落ちた記録を置く非公開の置き場が使えないので', "private_s3_put "])]:
+    for needle in needles:
+        if needle not in text:
+            fail(f"{name} に「{needle}」がありません（非公開の置き場の使い方が崩れた）")
+crash_yml = _read(".github/workflows/testflight-crashes.yml")
+if crash_yml:
+    # 落ちた記録は端末の識別子・利用者の言葉を含みうる。公開の成果物に出さない・手で起動する回だけ・OIDC は job にだけ
+    if "upload-artifact" in crash_yml:
+        fail("testflight-crashes.yml が成果物を作っています（落ちた記録は公開の成果物に出さない）")
+    if re.search(r"^on:\n  workflow_dispatch:\n(?!  \S)", crash_yml, re.M) is None or "pull_request" in crash_yml:
+        fail("testflight-crashes.yml は手で起動する回（workflow_dispatch）だけにする")
+    if "id-token" in crash_yml.split("\njobs:\n", 1)[0]:
+        fail("testflight-crashes.yml の頭の permissions に id-token があります")
+    if "bash Tools/testflight-crashes.sh" not in crash_yml:
+        fail("testflight-crashes.yml が Tools/testflight-crashes.sh を通していません（ログに要点だけを出す道）")
 if testflight_yml.exists():
     tf = testflight_yml.read_text(encoding="utf-8")
     # 書き込みの印は job ごとに渡す。ワークフローの頭（全 job）には渡さない

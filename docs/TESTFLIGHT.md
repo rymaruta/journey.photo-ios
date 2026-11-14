@@ -132,6 +132,43 @@ App Store Connect → **配信** タブ →「審査用に提出」。
 入力するものは `docs/APP_REVIEW.md` と `docs/APP_STORE_METADATA.md` に
 写せる形で置いてある。
 
+## 7. 落ちた記録を読む（2026-11-14・札 #596）
+
+実機だけで落ちるときは、実機の落ちた記録から原因を確かめる（CLAUDE.md「推定で直さない」）。
+
+**届くもの。** テスターが落ちたあとの TestFlight の知らせで「共有」を押した記録だけが、App Store Connect の
+フィードバックに届く（API の `betaFeedbackCrashSubmissions`）。共有しなかった落ちは API では取れない
+（`diagnosticSignatures` が扱うのは `DISK_WRITES`・`HANGS`・`LAUNCHES` だけで、落ちたものは含まない。Apple の文書で確認）。
+共有し忘れたときは、iPhone の「設定 → プライバシーとセキュリティ → 解析と改善 → 解析データ」にある
+`JourneyPhoto-<日時>.ips` を送ってもらう（項目の名前は iOS の版で変わることがある）。
+
+**取る。** Actions の「TestFlight crashes」（`.github/workflows/testflight-crashes.yml`）を版（例 `1.1.85`）を入れて流す。
+本文は画面写真と同じ非公開の S3 に置かれ（3日で消える）、ログには件数と要点（版・ビルド・日時・例外の型・
+落ちたスレッドの上の数段の関数名）だけが出る。手元へは
+`bash Tools/fetch-shots.sh testflight-crashes-<run 番号>` → scratchpad の `.../crashes/` に
+`<番号>-<日時>-b<ビルド>.ips`（または `.crash`）と同じ名前の `.json`（端末・OS・テスターの書いた言葉）、要点の `index.json`。
+**見終わったら `--delete`**（端末の識別子・利用者の言葉が入りうる。リポジトリ・Issue・PR に貼らない。貼るのは関数名と行だけ）。
+
+**読む。** `.ips` は1行目が見出しの JSON、2行目からが本体の JSON。本体の `exception`（型と信号）、
+`faultingThread`（落ちたスレッドの番号）、`threads[番号].frames`（上から順に `imageIndex`・`imageOffset`・
+あれば `symbol`・`sourceFile`・`sourceLine`）、`usedImages`（`name`・`uuid`・`base`）を見る。
+Swift の止まり（`fatalError`・配列の範囲外・`!` で nil）は `EXC_BREAKPOINT (SIGTRAP)` になり、
+理由の文は本体の `asi` などに入る。
+
+**シンボル化が要るか。** JourneyPhoto の段に `symbol` と `sourceFile` があれば要らない（そのまま落ちた行）。
+`+0x…（シンボル無し）` だけならシンボル化が要る。
+
+- **dSYM は CI に残っていない。** `ios-testflight.yml` は Archive を Mac のランナーの `build/ios/xcarchive/` に作るが、
+  成果物 `build-logs` に入れるのは ipa と `app-size.txt` だけで、ビルドの控えからも `*.dSYM` を外している。
+  同じコミットを組み直しても UUID が変わるので、あとから作った dSYM では読めない
+- **App Store Connect にはシンボルが送られているはず。** `xcode-project build-ipa` は `uploadSymbols` を指定せず
+  （codemagic-cli-tools 0.70.2 の書き出しの設定で確認）、Xcode の既定（App Store 向けは送る）になる。
+  その場合、Mac の Xcode の Organizer（Window → Organizer → Crashes）で版を選ぶと、Apple がシンボル化した記録が見られる。
+  **API の `logText` が Apple の側でシンボル化済みかは、まだ確かめていない**（初回に取ったもので確かめる）
+- 手元に同じビルドの dSYM があるときだけ（`dwarfdump --uuid` が `usedImages` の `uuid` と同じ）、Mac で
+  `atos -arch arm64 -o JourneyPhoto.app.dSYM/Contents/Resources/DWARF/JourneyPhoto -l <base> <base + imageOffset>`
+- 今後のために、Archive の dSYM を非公開の S3 に置く段を `ios-testflight.yml` に足すかは別に決める（まだ入れていない）
+
 ## よくある詰まり
 
 | 症状 | 直し方 |

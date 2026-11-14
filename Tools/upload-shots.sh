@@ -15,9 +15,7 @@
 #     bash Tools/upload-shots.sh <組> <xcresult>…
 #       組: build（1台で流した回）・first・1〜3（分けて流した回の組）
 #
-# 置く場所: s3://<バケット>/<run の印>/<組>.tar
-#   run の印は TestFlight の回なら run 番号そのまま（例 1160）、ほかのワークフローから呼ばれた回は
-#   `<ワークフロー名の英小文字>-<run 番号>`（例 release-center-12）。番号の数え方がワークフローごとに別なので重ねない
+# 置く場所: s3://<バケット>/<run の印>/<組>.tar（run の印の決め方と置き方は `Tools/private-s3.sh`）
 set -uo pipefail
 
 PART="${1:-}"
@@ -26,19 +24,14 @@ PART="${1:-}"
 skip() { echo "画面写真は置きません: $*"; exit 0; }
 warn() { echo "::warning::画面写真を置けませんでした: $*"; exit 0; }
 
-case "${GITHUB_EVENT_NAME:-}" in
-    pull_request|pull_request_target) skip "PR の回" ;;
-esac
-[ "${GITHUB_REPOSITORY:-}" = "rymaruta/journey.photo-ios" ] || skip "このリポジトリの回ではない"
+# 置けるか・置かない回か（PR の回・別のリポジトリ）を先に見る。置き方は `Tools/private-s3.sh`（落ちた記録と共用）
+. "$(dirname "$0")/private-s3.sh"
+rc=0
+private_s3_check || rc=$?
+[ "$rc" -eq 2 ] && skip "$PRIVATE_S3_WHY"
+[ "$rc" -eq 0 ] || warn "$PRIVATE_S3_WHY"
 [[ "$PART" =~ ^[a-z0-9-]{1,20}$ ]] || warn "組の名前が変です"
 [ "$#" -gt 0 ] || warn "xcresult が渡されていません"
-if [ -z "${CI_SHOTS_ROLE_ARN:-}" ] || [ -z "${CI_SHOTS_BUCKET:-}" ]; then
-    warn "secrets の CI_SHOTS_ROLE_ARN・CI_SHOTS_BUCKET が未設定"
-fi
-if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
-    warn "この job に id-token: write がありません"
-fi
-command -v aws > /dev/null 2>&1 || warn "aws の CLI がありません"
 
 # ---- 取り出して縮める（枝には押さない形）--------------------------------------
 SHOTS_EXPORT_ONLY=1 SHOTS_PART="$PART" bash Tools/export-screenshots.sh "$@"
@@ -46,37 +39,15 @@ OUT=/tmp/shots-out
 count=$(find "$OUT" -maxdepth 1 -type f -name '*.jpg' 2>/dev/null | wc -l | tr -d ' ')
 [ "${count:-0}" -gt 0 ] || skip "絵が1枚もありません"
 
-if [ "${GITHUB_WORKFLOW:-}" = "TestFlight" ]; then
-    RUN_KEY="${GITHUB_RUN_NUMBER:?}"
-else
-    slug="$(printf '%s' "${GITHUB_WORKFLOW:-other}" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '-' | sed -e 's/-\{2,\}/-/g' -e 's/^-//' -e 's/-$//')"
-    RUN_KEY="${slug:-other}-${GITHUB_RUN_NUMBER:?}"
-fi
+RUN_KEY="$(private_s3_run_key)"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 chmod 700 "$WORK"
 tar -cf "$WORK/$PART.tar" -C "$OUT" . || warn "まとめられませんでした"
 
-# ---- OIDC の札を取り、役割に入って置く ----------------------------------------
-# 札はファイルに置き、aws の CLI に `AWS_WEB_IDENTITY_TOKEN_FILE` で渡す（コマンドの引数・ログに出さない）
-if ! curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-        "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" 2> /dev/null \
-        | python3 -I -c 'import json, sys; print(json.load(sys.stdin)["value"])' > "$WORK/token" 2> /dev/null \
-   || [ ! -s "$WORK/token" ]; then
-    warn "OIDC の札を取れませんでした"
-fi
-
-(
-    unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_PROFILE
-    export AWS_ROLE_ARN="$CI_SHOTS_ROLE_ARN"
-    export AWS_WEB_IDENTITY_TOKEN_FILE="$WORK/token"
-    export AWS_ROLE_SESSION_NAME="gh-${GITHUB_RUN_ID:-0}-${PART}"
-    export AWS_REGION=ap-northeast-1 AWS_DEFAULT_REGION=ap-northeast-1
-    # 失敗の文には置き場の名前と鍵が入るので、ログには出さない（エラーの種類だけを拾う）
-    aws s3 cp "$WORK/$PART.tar" "s3://${CI_SHOTS_BUCKET}/${RUN_KEY}/${PART}.tar" \
-        --only-show-errors --no-progress > /dev/null 2> "$WORK/err"
-) || warn "S3 に置けませんでした（$(grep -o 'An error occurred ([A-Za-z]*)' "$WORK/err" | head -1 || true)）"
+# OIDC で役割に入って置く（札・置き場の名前・鍵はログに出さない。`Tools/private-s3.sh`）
+private_s3_put "$WORK/$PART.tar" "$PART.tar" || warn "$PRIVATE_S3_WHY"
 
 echo "画面の絵 $count 枚を非公開の置き場に置きました（run の印: ${RUN_KEY}・組: ${PART}・3日で消える）"
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
