@@ -307,7 +307,8 @@ struct StoryViewerView: View {
         if let onGroupEnd { onGroupEnd() } else { dismiss() }
     }
 
-    var body: some View {
+    /// 画面の土台と前半の修飾子（札 #596: `body` の修飾子の鎖を途中で切るために分けた・`storyTypeBoundary`）
+    private var viewerBase: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let story = current {
@@ -352,6 +353,11 @@ struct StoryViewerView: View {
         .onChange(of: voiceOverOn) { _, _ in settlePendingEnd() }
         // 読み上げの「閉じる」（2本指で Z を描く）
         .accessibilityAction(.escape) { dismiss() }
+    }
+
+    var body: some View {
+        // 型の境目（札 #596・`storyTypeBoundary`）。前半は `viewerBase`
+        viewerBase.storyTypeBoundary()
         .onChange(of: frozen) { _, isFrozen in
             // **止まった瞬間にバーも止める。** 時計の見回り（`runClock`）を待つと、長押しから
             // 最大 `clockStep` だけバーが進み続けて見える
@@ -448,7 +454,21 @@ struct StoryViewerView: View {
     /// 以前は 進行バー → 見出し → 写真（`.fit`）→ ひとこと → 足元 と縦に積んでいて、
     /// 写真の上下に黒い帯が出ていた。板は写真が上端まで伸び、下の角だけ丸く、
     /// その下の黒い帯に返信欄が乗る
-    private func content(for story: Story) -> some View {
+    ///
+    /// **戻り値は `AnyView`、中身は5つに分けて境目でつなぐ**（札 #596・2026-11-14 判断）。この塊は写真・足元・
+    /// 進行バー・見出し・札・暗幕・メニュー・削除の確認に、`.task`・`.sheet` などの修飾子が 20 余り続く。
+    /// 1つの `some View` のままだと、実機で型の名前の解読が入れ子の深さだけ再帰し、メインスレッドのスタックを
+    /// 使い切って落ちた（TestFlight 1.1.87）。修飾子の順番は前と同じ
+    private func content(for story: Story) -> AnyView {
+        let layers = contentLayers(for: story).storyTypeBoundary()
+        let lifecycle = contentLifecycle(layers, for: story).storyTypeBoundary()
+        let sheetsA = contentSheetsA(lifecycle, for: story).storyTypeBoundary()
+        let sheetsB = contentSheetsB(sheetsA, for: story).storyTypeBoundary()
+        return contentSheetsC(sheetsB, for: story).storyTypeBoundary()
+    }
+
+    /// 重ねた層（写真・足元・進行バー・見出し・札・暗幕・メニュー・削除の確認）。`content(for:)` の1つ目
+    private func contentLayers(for story: Story) -> some View {
         ZStack(alignment: .top) {
             // **写真の枠はキーボードで縮めない**（2026-10-16・板 StoryViewerReply は写真 752 のまま、
             // 返信欄だけがキーボードの上へ上がる）。写真と足元の黒帯の場所はキーボードを無視して敷き、
@@ -456,17 +476,19 @@ struct StoryViewerView: View {
             // **ハイライトも同じ形**（2026-10-16・板 HighlightPlayer: 写真の下の角丸 24＋足元 92 の黒帯）
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
-                    photoArea(for: story)
+                    // 型の境目（札 #596・`storyTypeBoundary`）
+                    photoArea(for: story).storyTypeBoundary()
                         .ignoresSafeArea(edges: .top)
                     // 足元の黒帯の場所（中身は下で重ねる）。高さは足元の中身と同じ
                     Color.clear.frame(height: Self.footerHeight)
                 }
                 .ignoresSafeArea(.keyboard, edges: .bottom)
                 Group {
+                    // 型の境目（札 #596・`storyTypeBoundary`）
                     if let highlight {
-                        highlightFooter(for: story, highlight: highlight)
+                        highlightFooter(for: story, highlight: highlight).storyTypeBoundary()
                     } else {
-                        footer(for: story)
+                        footer(for: story).storyTypeBoundary()
                     }
                 }
                 .dynamicTypeSize(...Self.chromeTypeLimit)
@@ -476,8 +498,9 @@ struct StoryViewerView: View {
                 .allowsHitTesting(!chrome.hidesChrome)
             }
             VStack(spacing: 9) {
-                progressBar(for: story)
-                header(for: story)
+                // 型の境目（札 #596・`storyTypeBoundary`）
+                progressBar(for: story).storyTypeBoundary()
+                header(for: story).storyTypeBoundary()
                     .opacity(chrome.hidesChrome ? 0 : 1)
                     .allowsHitTesting(!chrome.hidesChrome)
             }
@@ -487,7 +510,8 @@ struct StoryViewerView: View {
             if chrome.showsPill {
                 // 板 StoryViewerPaused: 札は**上から 360（中心 380／844）**——真ん中より少し上
                 GeometryReader { geo in
-                    pausedPill
+                    // 型の境目（札 #596・`storyTypeBoundary`）
+                    pausedPill.storyTypeBoundary()
                         .dynamicTypeSize(...Self.chromeTypeLimit)
                         .position(x: geo.size.width / 2,
                                   y: geo.size.height * StoryViewerMetrics.pausedPillCenter)
@@ -510,13 +534,19 @@ struct StoryViewerView: View {
                     .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             }
             if showDeleteConfirm {
-                deleteConfirm(for: story)
+                // 型の境目（札 #596・`storyTypeBoundary`）。メニュー（`menuSheet`）は動きの `.transition` を外に残すため中で切る
+                deleteConfirm(for: story).storyTypeBoundary()
                     .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             }
         }
         .animation(.easeOut(duration: 0.18), value: showMenu)
         .animation(.easeOut(duration: 0.18), value: showDeleteConfirm)
         .animation(.easeOut(duration: 0.18), value: chrome)
+    }
+
+    /// 1本ごとの読み込み・時計・先読み・会話のシート・前面の見張り。`content(for:)` の2つ目
+    private func contentLifecycle(_ base: AnyView, for story: Story) -> some View {
+        base
         .task(id: story.id) {
             // 前に居るまま終わったときの足跡（札 #596・本番の版でも書く・id は書かない）。この1本を出し始めた
             ExitTrail.mark("story.show i=\(index)/\(visible.count) video=\(story.isVideo) mine=\(isMine(story))")
@@ -587,6 +617,11 @@ struct StoryViewerView: View {
         .onChange(of: swipeLocked) { _, locked in onSwipeLockChange?(locked) }
         .onChange(of: replyFocused) { _, focused in onTypingChange?(focused) }
         .onChange(of: scenePhase) { _, phase in isForeground = phase == .active }
+    }
+
+    /// ブロックの確認・通報・返信のシート。`content(for:)` の3つ目
+    private func contentSheetsA(_ base: AnyView, for story: Story) -> some View {
+        base
         .blockConfirmation(isPresented: $showBlockConfirm) {
             Task { await block(story) }
         }
@@ -608,6 +643,11 @@ struct StoryViewerView: View {
         }) {
             repliesSheet
         }
+    }
+
+    /// 投稿者のページ・紹介の写真・写真にした1本・撮影スポットのシート。`content(for:)` の4つ目
+    private func contentSheetsB(_ base: AnyView, for story: Story) -> some View {
+        base
         // **ページの中でブロックしたら、閲覧画面ごと閉じる**（「…」からの
         // ブロックと同じ後始末）。閉じないとブロックした人のストーリーが流れ続ける
         .sheet(isPresented: $showAuthor, onDismiss: {
@@ -649,6 +689,11 @@ struct StoryViewerView: View {
                     }
             }
         }
+    }
+
+    /// 撮影スポットの索引・結び付け・反応の画面。`content(for:)` の5つ目
+    private func contentSheetsC(_ base: AnyView, for story: Story) -> some View {
+        base
         // 撮影スポットの索引。**外から渡されないときだけ一度読む**（静的な JSON）
         .task {
             guard providedSpots == nil, loadedSpots.isEmpty else { return }
@@ -684,44 +729,8 @@ struct StoryViewerView: View {
             // 大きい寸法を申告するので、そのまま並べると ZStack ごと画面より
             // 広がり、上に重ねた文字や操作が画面の外へずれる
             Color.black
-            Color.clear.overlay {
-            StoryMedia(
-                story: story,
-                isMuted: StoryPlayback.videoMuted(muted: muted,
-                                                  hasSong: StoryPlayback.songURL(for: story) != nil),
-                isPaused: frozen,
-                onEnded: { [id = story.id] in mediaEnded(id) },
-                // 読めなかった回は時計を回さず、読み直しのボタンを出す（`StoryPlayback.mediaSettled`）。
-                // 読み直しを使い切ったら進める——止めたままだと永久に固まる
-                onSettled: { [id = story.id, hasURL = story.imageURL != nil] loaded in
-                    mediaSettled(loaded, storyId: id, hasURL: hasURL)
-                },
-                onImageLayout: { [id = story.id] size in
-                    // 前の1本の絵の知らせが遅れて来ても、いまの1本に当てない
-                    if visible.indices.contains(index), visible[index].id == id { mediaImageSize = size }
-                },
-                restartToken: restartCount,
-                onVideoProgress: { [id = story.id] seconds, length, playing in
-                    // 前の1本の知らせが遅れて来ても、いまの1本に当てない（`onImageLayout` と同じ）
-                    guard visible.indices.contains(index), visible[index].id == id else { return }
-                    let next = StoryPlayback.VideoProgress(seconds: seconds, duration: length,
-                                                           at: Date(), playing: playing)
-                    let old = videoProgress?.storyId == id ? videoProgress?.progress : nil
-                    // **ずれた・止まった・動き出したときだけ書く**（毎回書くと画面全体を描き直す）
-                    if StoryPlayback.VideoProgress.needsUpdate(from: old, to: next) {
-                        videoProgress = (id, next)
-                    }
-                }
-            )
-            // 🔴 **1本ごとに作り直す。** 同じ型・同じ場所のままだと SwiftUI は
-            // 部品を使い回し、動画の再生器（`StoryVideo` の `@State`）が前の1本の
-            // まま残る——動画が2本続くと、2本目は1本目の終わりの絵で止まり、
-            // 鳴り終わりの合図も来ないので先へ進めなかった
-            // 読み直しのボタンを押したら作り直して読み直す（`mediaReloads`）
-            .id("\(story.id)#\(mediaReloads)")
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipped()
+            // 型の境目（札 #596・`storyTypeBoundary`）
+            mediaLayer(for: story).storyTypeBoundary()
             // 上と下の暗がり（白い文字を写真の明るさに負けさせない。v2 の板は上 170・60%、下 260・70%）。
             // **重ねて置き、寸法の申告に加えない**（縦に積むと合わせて 430pt を求め、狭い枠で
             // 枠ごと画面からあふれる）。**止めている間は消す**（板 StoryViewerPaused は写真と札だけ）
@@ -741,7 +750,8 @@ struct StoryViewerView: View {
                     .allowsHitTesting(false)
             }
 
-            tapZones
+            // 型の境目（札 #596・`storyTypeBoundary`）
+            tapZones.storyTypeBoundary()
 
             // Web で置いた文字・スタンプ・投票（`texts`）。**送る的より上**——投票のボタンを
             // 押せるように（ほかは指を素通りさせる）。「テキストを非表示」で隠す（Web と同じ）
@@ -765,7 +775,8 @@ struct StoryViewerView: View {
             // 左右の送る的を塞がない（中で1つずつ `allowsHitTesting(false)` を付ける）。
             // **止めている間は隠す**（板 StoryViewerPaused は進み線・写真・札だけ）。
             // ハイライトも同じ高さ（日付はひとことの下に入った・板 HighlightPlayer）
-            captionBlock(for: story)
+            // 型の境目（札 #596・`storyTypeBoundary`）
+            captionBlock(for: story).storyTypeBoundary()
                 .dynamicTypeSize(...Self.chromeTypeLimit)
                 .padding(.horizontal, StoryViewerMetrics.captionInset)
                 .padding(.bottom, 96)
@@ -776,7 +787,8 @@ struct StoryViewerView: View {
             // **送る的より上**（押せるように）。止めている間は隠す（ひとことと同じ）
             if let sharedId = story.sharedPhotoId, highlight == nil {
                 GeometryReader { geo in
-                    sharedPhotoButton(photoId: sharedId)
+                    // 型の境目（札 #596・`storyTypeBoundary`）
+                    sharedPhotoButton(photoId: sharedId).storyTypeBoundary()
                         .position(x: geo.size.width / 2, y: geo.size.height * SharedPhotoStoryCard.buttonCenterY)
                 }
                 .opacity(chrome.hidesChrome ? 0 : 1)
@@ -786,36 +798,14 @@ struct StoryViewerView: View {
             // 読めなかった写真の読み直し（`StoryPlayback.mediaSettled`）。**送る的より上**に置く
             // ——`RemoteImage` の中の読み直しの印は送る的の下になり、押せない
             if offersMediaRetry {
-                mediaRetryButton
+                // 型の境目（札 #596・`storyTypeBoundary`）。Mac の回 1298 で、これを含む `photoArea` が深さ 27（上限 24）だった
+                mediaRetryButton.storyTypeBoundary()
             }
 
             // 送った直後（板の案 C）: 「送りました ›メッセージを見る」を4秒。押すと会話（戻るとストーリー）
             if let sentConversation {
-                Button {
-                    openedConversation = DMSheetTarget(id: sentConversation)
-                    self.sentConversation = nil
-                } label: {
-                    HStack(spacing: 6) {
-                        Text(L("送りました", "Sent"))
-                        Text(L("メッセージを見る", "View message")).font(.footnote.weight(.semibold))
-                        Image(systemName: "chevron.right").font(.caption.weight(.semibold))
-                    }
-                    .font(.footnote)
-                    .dynamicTypeSize(...Self.chromeTypeLimit)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .frame(minHeight: WebTheme.minTapTarget)
-                    .jpGlass(in: Capsule())
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity)
-                .padding(.bottom, 24)
-                .accessibilityIdentifier("story.reply.openMessage")
-                .task(id: sentConversation) {
-                    try? await Task.sleep(for: DMActionToast.duration)
-                    if !Task.isCancelled { self.sentConversation = nil }
-                }
+                // 型の境目（札 #596・`storyTypeBoundary`）
+                sentNotice(sentConversation).storyTypeBoundary()
             }
             if let message {
                 Text(message)
@@ -841,6 +831,77 @@ struct StoryViewerView: View {
         // **止めている間は写真をわずかに縮める**（v2 StoryViewerPaused・名前やひとことを消しても
         // 「止まった」が形で分かる）。動きは `chrome` の切り替えに付いている
         .scaleEffect(chrome.showsPill ? StoryViewerMetrics.pausedScale : 1)
+    }
+
+    /// 写真・動画（`StoryMedia`）を枠いっぱいに敷いた層。`photoArea` の一番下（札 #596 で分けた）
+    private func mediaLayer(for story: Story) -> some View {
+        Color.clear.overlay {
+        StoryMedia(
+            story: story,
+            isMuted: StoryPlayback.videoMuted(muted: muted,
+                                              hasSong: StoryPlayback.songURL(for: story) != nil),
+            isPaused: frozen,
+            onEnded: { [id = story.id] in mediaEnded(id) },
+            // 読めなかった回は時計を回さず、読み直しのボタンを出す（`StoryPlayback.mediaSettled`）。
+            // 読み直しを使い切ったら進める——止めたままだと永久に固まる
+            onSettled: { [id = story.id, hasURL = story.imageURL != nil] loaded in
+                mediaSettled(loaded, storyId: id, hasURL: hasURL)
+            },
+            onImageLayout: { [id = story.id] size in
+                // 前の1本の絵の知らせが遅れて来ても、いまの1本に当てない
+                if visible.indices.contains(index), visible[index].id == id { mediaImageSize = size }
+            },
+            restartToken: restartCount,
+            onVideoProgress: { [id = story.id] seconds, length, playing in
+                // 前の1本の知らせが遅れて来ても、いまの1本に当てない（`onImageLayout` と同じ）
+                guard visible.indices.contains(index), visible[index].id == id else { return }
+                let next = StoryPlayback.VideoProgress(seconds: seconds, duration: length,
+                                                       at: Date(), playing: playing)
+                let old = videoProgress?.storyId == id ? videoProgress?.progress : nil
+                // **ずれた・止まった・動き出したときだけ書く**（毎回書くと画面全体を描き直す）
+                if StoryPlayback.VideoProgress.needsUpdate(from: old, to: next) {
+                    videoProgress = (id, next)
+                }
+            }
+        )
+        // 🔴 **1本ごとに作り直す。** 同じ型・同じ場所のままだと SwiftUI は
+        // 部品を使い回し、動画の再生器（`StoryVideo` の `@State`）が前の1本の
+        // まま残る——動画が2本続くと、2本目は1本目の終わりの絵で止まり、
+        // 鳴り終わりの合図も来ないので先へ進めなかった
+        // 読み直しのボタンを押したら作り直して読み直す（`mediaReloads`）
+        .id("\(story.id)#\(mediaReloads)")
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+    }
+
+    /// 送った直後の「送りました ›メッセージを見る」（板の案 C・4秒）。`photoArea` から分けた（札 #596）
+    private func sentNotice(_ conversation: String) -> some View {
+        Button {
+            openedConversation = DMSheetTarget(id: conversation)
+            self.sentConversation = nil
+        } label: {
+            HStack(spacing: 6) {
+                Text(L("送りました", "Sent"))
+                Text(L("メッセージを見る", "View message")).font(.footnote.weight(.semibold))
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+            }
+            .font(.footnote)
+            .dynamicTypeSize(...Self.chromeTypeLimit)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .frame(minHeight: WebTheme.minTapTarget)
+            .jpGlass(in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 24)
+        .accessibilityIdentifier("story.reply.openMessage")
+        .task(id: conversation) {
+            try? await Task.sleep(for: DMActionToast.duration)
+            if !Task.isCancelled { self.sentConversation = nil }
+        }
     }
 
     /// 「写真を見る ›」（ガラス・白 15 の 600・高さ 44・案の模型 1-E）。写真の上なので白（真鍮を置かない）
@@ -1094,15 +1155,16 @@ struct StoryViewerView: View {
         HStack(spacing: 10) {
             // 自分の名前は押せない形で描く（自分のページはマイページ）。
             // 無効のボタンにすると薄く描かれ、読み上げも「使用不可」になる
+            // 型の境目（札 #596・`storyTypeBoundary`）
             if let highlight {
-                highlightLabel(highlight, story: story)
+                highlightLabel(highlight, story: story).storyTypeBoundary()
             } else if isMine(story) || story.userId == nil {
-                authorLabel(for: story)
+                authorLabel(for: story).storyTypeBoundary()
             } else {
                 Button {
                     showAuthor = true
                 } label: {
-                    authorLabel(for: story)
+                    authorLabel(for: story).storyTypeBoundary()
                 }
                 .buttonStyle(.plain)
             }
@@ -1641,6 +1703,15 @@ struct StoryViewerView: View {
     /// 出す項目は `StoryPlayback.menuItems` が決める（押しても何も起きない
     /// 項目は出さない）
     private func menuSheet(for story: Story) -> some View {
+        // 型の境目（札 #596・`storyTypeBoundary`）。動きの `.transition` はこの外に置いたまま（出し入れの動きを変えない）
+        menuPanel(for: story).storyTypeBoundary()
+            // 読み上げでも裏（見出し・返信欄）に触れさせない
+            .accessibilityAddTraits(.isModal)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    /// 「…」のシートの中身（`menuSheet` から分けた・札 #596）
+    private func menuPanel(for story: Story) -> some View {
         let items = StoryPlayback.menuItems(
             isMine: isMine(story),
             isVideo: story.isVideo,
@@ -1660,7 +1731,8 @@ struct StoryViewerView: View {
                 VStack(spacing: 0) {
                     // **誰のストーリーかを先に出してから操作**（v2 StoryViewerMenu）。
                     // ブロック・通報を取り違えないように、顔と名前を先頭に置く
-                    menuHeader(for: story)
+                    // 型の境目（札 #596・`storyTypeBoundary`）
+                    menuHeader(for: story).storyTypeBoundary()
                     if items.contains(.pause) {
                         menuRow(symbol: paused ? "play" : "pause",
                                 title: paused ? L("再開", "Resume") : L("一時停止", "Pause")) {
@@ -1732,9 +1804,6 @@ struct StoryViewerView: View {
             .padding(.horizontal, JPSpace.xs)
             .padding(.bottom, JPSpace.xs)
         }
-        // 読み上げでも裏（見出し・返信欄）に触れさせない
-        .accessibilityAddTraits(.isModal)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
     /// 「…」のシートの先頭（v2: 顔 28・「〇〇 のストーリー」14 の太字・「開いている間は止まっています」12）。
@@ -1782,8 +1851,15 @@ struct StoryViewerView: View {
     private static let sheetColor = WebTheme.surface5
 
     /// メニューの1行（v2: 56・17pt・左右 20・印との間 14・上に白 10% の線）。**押したらメニューを閉じてから動く**
+    ///
+    /// **`AnyView` を返す**（型の境目（札 #596・`storyTypeBoundary`）。中身は `menuRowContent`）
     private func menuRow(symbol: String, title: String, danger: Bool = false,
-                         action: @escaping () -> Void) -> some View {
+                         action: @escaping () -> Void) -> AnyView {
+        menuRowContent(symbol: symbol, title: title, danger: danger, action: action).storyTypeBoundary()
+    }
+
+    private func menuRowContent(symbol: String, title: String, danger: Bool,
+                                action: @escaping () -> Void) -> some View {
         Button {
             showMenu = false
             action()
@@ -1895,8 +1971,14 @@ struct StoryViewerView: View {
     /// 確認の地（v2 の `rgba(40,40,42,.96)`）
     private static let confirmFill = WebTheme.surface6.opacity(StoryViewerMetrics.confirmFillOpacity)
 
+    /// 確認のボタン。**`AnyView` を返す**（型の境目（札 #596・`storyTypeBoundary`）。中身は `confirmButtonContent`）
     private func confirmButton(_ title: String, color: Color, weight: Font.Weight,
-                               action: @escaping () -> Void) -> some View {
+                               action: @escaping () -> Void) -> AnyView {
+        confirmButtonContent(title, color: color, weight: weight, action: action).storyTypeBoundary()
+    }
+
+    private func confirmButtonContent(_ title: String, color: Color, weight: Font.Weight,
+                                      action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
                 .font(.body.weight(weight))
@@ -1981,12 +2063,13 @@ struct StoryViewerView: View {
             HStack(spacing: 10) {
                 // 期限が切れた投稿は見た人・返信の記録が無い（サーバーが期限で消す）
                 if !isExpired(story) {
-                    insightsButton
-                    replyButton(for: story)
+                    // 型の境目（札 #596・`storyTypeBoundary`）
+                    insightsButton.storyTypeBoundary()
+                    replyButton(for: story).storyTypeBoundary()
                 } else {
                     Spacer(minLength: 0)
                 }
-                moreButton
+                moreButton.storyTypeBoundary()
             }
             .frame(height: 46)
             .padding(.horizontal, 12)
@@ -1998,73 +2081,18 @@ struct StoryViewerView: View {
                 if replyFocused {
                     // **反応の6つを入力欄の上に並べる**（2026-10-22・Instagram と同じ）。♡ の長押しの
                     // 並びは知られていなかった。押すとキーボードを閉じて送る（書きかけは消さない）
-                    replyReactionRow(for: story)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(StoryPlayback.quickReplies.indices, id: \.self) { i in
-                                let text = L(StoryPlayback.quickReplies[i], StoryPlayback.quickRepliesEnglish[i])
-                                Button {
-                                    Task { await sendReply(text, to: story) }
-                                } label: {
-                                    // 板 `.qr`: 14・白 14% の地・縁なし・高さ 36
-                                    Text(text)
-                                        .jpSystemFont(StoryViewerMetrics.smallTextSize)
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, 14)
-                                        .frame(minHeight: StoryViewerMetrics.quickReplyHeight)
-                                        .background(Color.white.opacity(StoryViewerMetrics.quickReplyFill), in: Capsule())
-                                        // 見た目は 36 の札のまま、押せる所は 44
-                                        .frame(minHeight: WebTheme.minTapTarget)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(isSending)
-                            }
-                        }
-                    }
+                    // 型の境目（札 #596・`storyTypeBoundary`）
+                    replyReactionRow(for: story).storyTypeBoundary()
+                    quickReplyRow(for: story).storyTypeBoundary()
                 }
                 // URL を断った訳（板の案 D: 写真の上なので白い字＋印・黒 55% のガラスの札。赤に頼らない）
                 if let replyRefusal {
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.circle").accessibilityHidden(true)
-                        Text(replyRefusal).fixedSize(horizontal: false, vertical: true)
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 16))
-                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.1), lineWidth: JPStroke.hairline))
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("story.reply.refusal")
+                    // 型の境目（札 #596・`storyTypeBoundary`）
+                    replyRefusalNote(replyRefusal).storyTypeBoundary()
                 }
                 HStack(spacing: 6) {
-                    TextField(L("返信する", "Reply"), text: $reply)
-                        // サーバーの上限（200）で止める——超えたぶんは黙って切られる
-                        .onChange(of: reply) { old, value in
-                            let kept = PostLimits.limited(old: old, new: value, limit: PostLimits.storyReply)
-                            if kept != value { reply = kept }
-                            // 打ち直したら断りの訳を消す（URL を消した・書き直した）
-                            if replyRefusal != nil, value != old { replyRefusal = nil }
-                        }
-                        .accessibilityLabel(L("\(story.authorName) さんに返信", "Reply to \(story.authorName)"))
-                        .font(.subheadline)
-                        .foregroundStyle(.white)
-                        // 打っている間は止める（打ち終わる前に次へ送られない）
-                        .focused($replyFocused)
-                        .submitLabel(.send)
-                        // **空なら送らない**（送信キーは空でも押せる。空の本文は
-                        // サーバーが 400 で断り、その間は再生も止まっていた）
-                        .onSubmit { if canSend { Task { await sendReply(to: story) } } }
-                        .padding(.horizontal, 16)
-                        .frame(minHeight: StoryViewerMetrics.replyFieldHeight)
-                        // v2: ふだんは**線だけの欄**（白 30%・足元は写真の外の黒地）。書いている間は
-                        // 暗い地（#1C1C1E の 90%）＋白 20% の縁（板 StoryViewer・StoryViewerReply）
-                        .background(replyFocused ? Self.replyFocusedFill : Color.clear, in: Capsule())
-                        .overlay(Capsule().strokeBorder(
-                            Color.white.opacity(replyFocused ? StoryViewerMetrics.replyFieldFocusedBorder
-                                                             : StoryViewerMetrics.replyFieldBorder),
-                            lineWidth: JPStroke.hairline))
+                    // 型の境目（札 #596・`storyTypeBoundary`）
+                    replyField(for: story).storyTypeBoundary()
                     if canSend || replyFocused {
                         Button {
                             Task { await sendReply(to: story) }
@@ -2080,51 +2108,8 @@ struct StoryViewerView: View {
                         .disabled(isSending || !canSend || replyGate(for: story)?.limitReached == true)
                         .accessibilityLabel(Labels.Common.send)
                     } else {
-                        // ♡ は定型の反応の ❤️ を送る（Web の ♡ と同じ `STORY_REACTIONS[0]`）。
-                        // **長押しで6つから選ぶ**（サーバーは6つとも受ける。以前は ❤️ だけだった）。
-                        // 🔴 **Button にしない。** Button に長押しを足すと、OS の版によっては長押しの
-                        // あとに Button の送信も走る（❤️ が送られてから並びが開く）。押すと長押しを
-                        // 別々の手振りにして、どちらか片方だけが効くようにする
-                        // **送る前から真鍮の線、送れたら真鍮の塗り**（足元は写真の外の黒地・CLAUDE.md の
-                        // 「ストーリーの反応のハートは真鍮」・v2 StoryViewer）。送ったかは塗りの形でも分かる
-                        // **押した瞬間に塗る**（返事を待たない・`sendReaction`）。弾ませて震わせる
-                        let reacted = sentReactions.emoji(on: story.id) != nil
-                        Image(systemName: reacted ? "heart.fill" : "heart")
-                            // 板 26
-                            .jpSystemFont(StoryViewerMetrics.heartSize, relativeTo: .title2)
-                            .foregroundStyle(Self.heartColor)
-                            .scaleEffect(heartPopped ? StoryViewerMetrics.heartPopScale : 1)
-                            .webTappable()
-                            .opacity(isSending ? 0.4 : 1)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                guard !isSending else { return }
-                                showReactions = false
-                                Task { await sendReaction(StoryService.reactions[0], to: story) }
-                            }
-                            .onLongPressGesture(minimumDuration: 0.35, perform: {
-                                guard !isSending else { return }
-                                showReactions = true
-                            })
-                            .accessibilityElement()
-                            .accessibilityAddTraits(.isButton)
-                            .accessibilityLabel(L("いいね", "Like"))
-                            .accessibilityAddTraits(reacted ? .isSelected : [])
-                            .accessibilityHint(L("長押しでほかの反応を選べます", "Press and hold for more reactions"))
-                            .accessibilityAction {
-                                guard !isSending else { return }
-                                Task { await sendReaction(StoryService.reactions[0], to: story) }
-                            }
-                            .accessibilityAction(named: L("反応を選ぶ", "Choose a reaction")) {
-                                guard !isSending else { return }
-                                showReactions = true
-                            }
-                        .overlay(alignment: .bottomTrailing) {
-                            if showReactions {
-                                reactionPicker(for: story)
-                                    .dynamicTypeSize(...Self.chromeTypeLimit)
-                            }
-                        }
+                        // 型の境目（札 #596・`storyTypeBoundary`）
+                        heartButton(for: story).storyTypeBoundary()
                     }
                 }
                 // 2026-10-16: 板 StoryViewerReply の並び「一言の候補 → 欄 → だれに届くか」。**欄の下**に置く。
@@ -2157,6 +2142,138 @@ struct StoryViewerView: View {
 
     /// ♡ を大きくしている最中（弾む動きの山）
     @State private var heartPopped = false
+
+    /// 返信を書いている間の一言の候補（横に流す）。`footer` から分けた（札 #596）
+    private func quickReplyRow(for story: Story) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(StoryPlayback.quickReplies.indices, id: \.self) { i in
+                    let text = L(StoryPlayback.quickReplies[i], StoryPlayback.quickRepliesEnglish[i])
+                    Button {
+                        Task { await sendReply(text, to: story) }
+                    } label: {
+                        // 板 `.qr`: 14・白 14% の地・縁なし・高さ 36
+                        Text(text)
+                            .jpSystemFont(StoryViewerMetrics.smallTextSize)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .frame(minHeight: StoryViewerMetrics.quickReplyHeight)
+                            .background(Color.white.opacity(StoryViewerMetrics.quickReplyFill), in: Capsule())
+                            // 見た目は 36 の札のまま、押せる所は 44
+                            .frame(minHeight: WebTheme.minTapTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isSending)
+                }
+            }
+        }
+    }
+
+    /// 返信を断った訳の札（板の案 D）。`footer` から分けた（札 #596）
+    private func replyRefusalNote(_ text: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.circle").accessibilityHidden(true)
+            Text(text).fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.caption)
+        .foregroundStyle(.white)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.white.opacity(0.1), lineWidth: JPStroke.hairline))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("story.reply.refusal")
+    }
+
+    /// 返信欄（線だけの丸い欄・書いている間は暗い地）。`footer` から分けた（札 #596）
+    private func replyField(for story: Story) -> some View {
+        TextField(L("返信する", "Reply"), text: $reply)
+            // サーバーの上限（200）で止める——超えたぶんは黙って切られる
+            .onChange(of: reply) { old, value in
+                let kept = PostLimits.limited(old: old, new: value, limit: PostLimits.storyReply)
+                if kept != value { reply = kept }
+                // 打ち直したら断りの訳を消す（URL を消した・書き直した）
+                if replyRefusal != nil, value != old { replyRefusal = nil }
+            }
+            .accessibilityLabel(L("\(story.authorName) さんに返信", "Reply to \(story.authorName)"))
+            .font(.subheadline)
+            .foregroundStyle(.white)
+            // 打っている間は止める（打ち終わる前に次へ送られない）
+            .focused($replyFocused)
+            .submitLabel(.send)
+            // **空なら送らない**（送信キーは空でも押せる。空の本文は
+            // サーバーが 400 で断り、その間は再生も止まっていた）
+            .onSubmit { if canSend { Task { await sendReply(to: story) } } }
+            .padding(.horizontal, 16)
+            .frame(minHeight: StoryViewerMetrics.replyFieldHeight)
+            // v2: ふだんは**線だけの欄**（白 30%・足元は写真の外の黒地）。書いている間は
+            // 暗い地（#1C1C1E の 90%）＋白 20% の縁（板 StoryViewer・StoryViewerReply）
+            .background(replyFocused ? Self.replyFocusedFill : Color.clear, in: Capsule())
+            .overlay(Capsule().strokeBorder(
+                Color.white.opacity(replyFocused ? StoryViewerMetrics.replyFieldFocusedBorder
+                                                 : StoryViewerMetrics.replyFieldBorder),
+                lineWidth: JPStroke.hairline))
+    }
+
+    /// ♡ の絵（送ったら塗る・弾む）。`footer` から分けた（札 #596）
+    @ViewBuilder
+    private func heartImage(for story: Story) -> some View {
+        // ♡ は定型の反応の ❤️ を送る（Web の ♡ と同じ `STORY_REACTIONS[0]`）。
+        // **長押しで6つから選ぶ**（サーバーは6つとも受ける。以前は ❤️ だけだった）。
+        // 🔴 **Button にしない。** Button に長押しを足すと、OS の版によっては長押しの
+        // あとに Button の送信も走る（❤️ が送られてから並びが開く）。押すと長押しを
+        // 別々の手振りにして、どちらか片方だけが効くようにする
+        // **送る前から真鍮の線、送れたら真鍮の塗り**（足元は写真の外の黒地・CLAUDE.md の
+        // 「ストーリーの反応のハートは真鍮」・v2 StoryViewer）。送ったかは塗りの形でも分かる
+        // **押した瞬間に塗る**（返事を待たない・`sendReaction`）。弾ませて震わせる
+        let reacted = sentReactions.emoji(on: story.id) != nil
+        Image(systemName: reacted ? "heart.fill" : "heart")
+            // 板 26
+            .jpSystemFont(StoryViewerMetrics.heartSize, relativeTo: .title2)
+            .foregroundStyle(Self.heartColor)
+            .scaleEffect(heartPopped ? StoryViewerMetrics.heartPopScale : 1)
+            .webTappable()
+            .opacity(isSending ? 0.4 : 1)
+            .contentShape(Rectangle())
+    }
+
+    /// ♡（押すと ❤️・長押しで6つから選ぶ）。修飾子の鎖が 20 余りあるので、絵（`heartImage`）との間に境目を置く（札 #596）
+    @ViewBuilder
+    private func heartButton(for story: Story) -> some View {
+        let reacted = sentReactions.emoji(on: story.id) != nil
+        // 型の境目（札 #596・`storyTypeBoundary`）
+        heartImage(for: story).storyTypeBoundary()
+            .onTapGesture {
+                guard !isSending else { return }
+                showReactions = false
+                Task { await sendReaction(StoryService.reactions[0], to: story) }
+            }
+            .onLongPressGesture(minimumDuration: 0.35, perform: {
+                guard !isSending else { return }
+                showReactions = true
+            })
+            .accessibilityElement()
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel(L("いいね", "Like"))
+            .accessibilityAddTraits(reacted ? .isSelected : [])
+            .accessibilityHint(L("長押しでほかの反応を選べます", "Press and hold for more reactions"))
+            .accessibilityAction {
+                guard !isSending else { return }
+                Task { await sendReaction(StoryService.reactions[0], to: story) }
+            }
+            .accessibilityAction(named: L("反応を選ぶ", "Choose a reaction")) {
+                guard !isSending else { return }
+                showReactions = true
+            }
+        .overlay(alignment: .bottomTrailing) {
+            if showReactions {
+                // 型の境目（札 #596・`storyTypeBoundary`）
+                reactionPicker(for: story).storyTypeBoundary()
+                    .dynamicTypeSize(...Self.chromeTypeLimit)
+            }
+        }
+    }
 
     /// ♡ を弾ませる（大きく → ばねで戻す）。**「動きを減らす」なら弾ませない**（塗りと振動だけ）
     private func popHeart() {
@@ -2650,5 +2767,113 @@ struct StoryViewerView: View {
         } catch {
             message = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
         }
+    }
+}
+
+// MARK: - 型の境目（札 #596）
+
+extension View {
+    /// **型の境目**（札 #596・2026-11-14 判断）。`AnyView` で包み、これより内側の具体的な型を外の型の名前から外す。
+    ///
+    /// 実機（TestFlight 1.1.87）で、ストーリーを開くとメインスレッドのスタックを使い切って落ちた。落ちた記録の段は、
+    /// `StoryViewerView.content(for:)` の具体的な型のメタデータを作る所（`__swift_instantiateConcreteTypeFromMangledNameV2`）
+    /// から上の 141 段がすべて型の名前の解読（`decodeMangledType` ⇄ `decodeGenericArgs` の再帰）だった。
+    /// `some View` を返す関数に分けても、外の型の名前には中の型がまるごと入る（解読は中まで再帰する）。
+    /// `AnyView` で包むと外の型の名前は `AnyView` の1語になり、中の型は包んだ所で別に（浅い深さで）作られる。
+    ///
+    /// **小さい `struct` に切り出さなかった訳**: この画面の部品は `@State`・`@FocusState` と画面の関数を数十個
+    /// 読み書きしていて、切り出すと全部を `Binding` と閉包で渡し直すことになる。見た目・動きを変えずに移すのが難しく、
+    /// 時計の写しで値が固まる件（`isForeground` の注記）と同じ種類の危険もある。`AnyView` は同じ画面の `body` の
+    /// 中で評価されたまま型だけを隠すので、描き方・状態・識別子・読み上げは今のまま。包む中の型は毎回同じなので、
+    /// SwiftUI は作り直さず差分で更新する（`.transition` を持つ所は、その外で包まないようにした・`menuSheet`）。
+    ///
+    /// 深さは `StoryViewTypeDepthTests` が Mac で塊ごとに測る（上限を超えたら落ちる）
+    func storyTypeBoundary() -> AnyView { AnyView(self) }
+}
+
+/// 画面の型の深さを測る（札 #596・`StoryViewTypeDepthTests`）
+enum ViewTypeDepth {
+    /// `String(reflecting:)` の型の名前の、`<`・`(` の入れ子の最大の深さ（`->` の `>` は数えない）
+    static func depth(of name: String) -> Int {
+        var current = 0
+        var deepest = 0
+        var previous: Character = " "
+        for ch in name {
+            if ch == "<" || ch == "(" {
+                current += 1
+                deepest = max(deepest, current)
+            } else if (ch == ">" && previous != "-") || ch == ")" {
+                current -= 1
+            }
+            previous = ch
+        }
+        return deepest
+    }
+
+    /// 画面の `body` の具体的な型の名前（値を作らずに、型だけから取る）
+    static func bodyTypeName<V: View>(_ view: V.Type) -> String {
+        String(reflecting: V.Body.self)
+    }
+
+    /// 関数の戻り値の具体的な型の名前（呼ばずに、型だけから取る）
+    static func name<R>(_ f: () -> R) -> String { String(reflecting: R.self) }
+    static func name<A, R>(_ f: (A) -> R) -> String { String(reflecting: R.self) }
+    static func name<A, B, R>(_ f: (A, B) -> R) -> String { String(reflecting: R.self) }
+    static func name<A, B, C, D, R>(_ f: (A, B, C, D) -> R) -> String { String(reflecting: R.self) }
+}
+
+extension StoryViewerView {
+    /// **型の境目（`storyTypeBoundary`）で切った塊ごとの、具体的な型の名前**（札 #596・`StoryViewTypeDepthTests`）。
+    /// 包む前の部品と、その部品を中に持つ関数を全部並べる（どの塊も、ここのどれかの型の名前に丸ごと出る）。
+    /// 値は作るが `body` は呼ばない（環境の物を読まない）
+    static func typeSegments() -> [(name: String, type: String)] {
+        let v = StoryViewerView(stories: [], startIndex: 0, viewerId: nil)
+        typealias D = ViewTypeDepth
+        return [
+            ("body", D.bodyTypeName(StoryViewerView.self)),
+            ("viewerBase", D.name { v.viewerBase }),
+            ("contentLayers", D.name(v.contentLayers(for:))),
+            ("contentLifecycle", D.name(v.contentLifecycle(_:for:))),
+            ("contentSheetsA", D.name(v.contentSheetsA(_:for:))),
+            ("contentSheetsB", D.name(v.contentSheetsB(_:for:))),
+            ("contentSheetsC", D.name(v.contentSheetsC(_:for:))),
+            ("photoArea", D.name(v.photoArea(for:))),
+            ("mediaLayer", D.name(v.mediaLayer(for:))),
+            ("tapZones", D.name { v.tapZones }),
+            ("captionBlock", D.name(v.captionBlock(for:))),
+            ("sharedPhotoButton", D.name(v.sharedPhotoButton(photoId:))),
+            ("sentNotice", D.name(v.sentNotice(_:))),
+            ("mediaRetryButton", D.name { v.mediaRetryButton }),
+            ("progressBar", D.name(v.progressBar(for:))),
+            ("header", D.name(v.header(for:))),
+            ("highlightLabel", D.name(v.highlightLabel(_:story:))),
+            ("authorLabel", D.name(v.authorLabel(for:))),
+            ("highlightFooter", D.name(v.highlightFooter(for:highlight:))),
+            ("pausedPill", D.name { v.pausedPill }),
+            ("menuSheet", D.name(v.menuSheet(for:))),
+            ("menuPanel", D.name(v.menuPanel(for:))),
+            ("menuHeader", D.name(v.menuHeader(for:))),
+            ("menuRowContent", D.name(v.menuRowContent(symbol:title:danger:action:))),
+            ("deleteConfirm", D.name(v.deleteConfirm(for:))),
+            ("confirmButtonContent", D.name(v.confirmButtonContent(_:color:weight:action:))),
+            ("footer", D.name(v.footer(for:))),
+            ("insightsButton", D.name { v.insightsButton }),
+            ("replyButton", D.name(v.replyButton(for:))),
+            ("moreButton", D.name { v.moreButton }),
+            ("replyReactionRow", D.name(v.replyReactionRow(for:))),
+            ("quickReplyRow", D.name(v.quickReplyRow(for:))),
+            ("replyRefusalNote", D.name(v.replyRefusalNote(_:))),
+            ("replyField", D.name(v.replyField(for:))),
+            ("heartImage", D.name(v.heartImage(for:))),
+            ("heartButton", D.name(v.heartButton(for:))),
+            ("reactionPicker", D.name(v.reactionPicker(for:))),
+            ("repliesSheet", D.name { v.repliesSheet }),
+            ("songRow", D.name(v.songRow(for:))),
+            ("photoMeta", D.name(v.photoMeta(symbol:text:))),
+            ("segment", D.name(v.segment(fill:isCurrent:))),
+            ("ownCount", D.name(v.ownCount(_:_:))),
+            ("ownCircle", D.name(v.ownCircle(symbol:))),
+            ("viewerFaces", D.name { v.viewerFaces }),
+        ]
     }
 }

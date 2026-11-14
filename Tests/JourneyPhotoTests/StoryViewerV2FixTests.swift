@@ -68,7 +68,7 @@ final class StoryViewerV2FixTests: XCTestCase {
     /// 🔴 暗幕は画面全体（足元・見出しの上まで）。写真の中に敷くのは返信を書いている間だけ
     func testOverlayDimCoversTheWholeScreen() throws {
         let text = try viewer()
-        let content = member("private func content(for story: Story)", in: text)
+        let content = member("private func contentLayers(for story: Story)", in: text)
         assertInOrder(["header(for: story)", "if overlayDimOpacity > 0 {", ".opacity(overlayDimOpacity)",
                        ".ignoresSafeArea()", "if showMenu {", "menuSheet(for: story)", "if showDeleteConfirm {"],
                       in: content, "画面全体の暗幕")
@@ -87,7 +87,7 @@ final class StoryViewerV2FixTests: XCTestCase {
         let c = StoryPlayback.chrome(longHeld: false, paused: false, overlayOpen: true)
         XCTAssertTrue(c.hidesChrome)
         XCTAssertFalse(c.showsPill)
-        let content = member("private func content(for story: Story)", in: try viewer())
+        let content = member("private func contentLayers(for story: Story)", in: try viewer())
         assertInOrder(["progressBar(for: story)", "header(for: story)", ".opacity(chrome.hidesChrome ? 0 : 1)"],
                       in: content, "見出しの隠し方")
         let chrome = member("private var chrome: StoryPlayback.Chrome", in: try viewer())
@@ -113,10 +113,16 @@ final class StoryViewerV2FixTests: XCTestCase {
     /// 板 StoryViewerReply の並び: 一言の候補 → 入力欄 → だれに届くか。2026-11-10（札 #505・DM の画面案 A）から
     /// 「返信はメッセージとして残ります」（返信は会話の1通として写る）
     func testReplyOrder() throws {
-        let footer = member("private func footer(for story: Story)", in: try viewer())
-        assertInOrder(["StoryPlayback.quickReplies.indices", "TextField(L(\"返信する\"",
+        // 一言の候補・入力欄は札 #596 で `quickReplyRow`・`replyField` に分けた（型の境目）
+        let text = try viewer()
+        let footer = member("private func footer(for story: Story)", in: text)
+        assertInOrder(["quickReplyRow(for: story)", "replyField(for: story)",
                        "if replyFocused {", "返信はメッセージとして残ります"],
                       in: footer, "返信の並び")
+        XCTAssertTrue(member("private func quickReplyRow(for story: Story)", in: text)
+            .contains("StoryPlayback.quickReplies.indices"))
+        XCTAssertTrue(member("private func replyField(for story: Story)", in: text)
+            .contains("TextField(L(\"返信する\""))
     }
 
     /// 送信は上向きの矢印（紙飛行機ではない）
@@ -130,7 +136,8 @@ final class StoryViewerV2FixTests: XCTestCase {
     func testQuickReplyChips() throws {
         XCTAssertEqual(StoryViewerMetrics.quickReplyHeight, 36)
         XCTAssertEqual(StoryViewerMetrics.quickReplyFill, 0.14)
-        let footer = member("private func footer(for story: Story)", in: try viewer())
+        // 札 #596 で `footer` から分けた（型の境目）
+        let footer = member("private func quickReplyRow(for story: Story)", in: try viewer())
         assertInOrder([".jpSystemFont(StoryViewerMetrics.smallTextSize)",
                        ".frame(minHeight: StoryViewerMetrics.quickReplyHeight)",
                        ".background(Color.white.opacity(StoryViewerMetrics.quickReplyFill), in: Capsule())",
@@ -141,7 +148,8 @@ final class StoryViewerV2FixTests: XCTestCase {
     /// ♡ は 26（色は owner の好みの真鍮のまま）
     func testHeartSize() throws {
         XCTAssertEqual(StoryViewerMetrics.heartSize, 26)
-        let footer = member("private func footer(for story: Story)", in: try viewer())
+        // 札 #596 で `footer` から分けた（型の境目）
+        let footer = member("private func heartImage(for story: Story)", in: try viewer())
         assertInOrder(["Image(systemName: reacted ? \"heart.fill\" : \"heart\")",
                        ".jpSystemFont(StoryViewerMetrics.heartSize", ".foregroundStyle(Self.heartColor)",
                        ".webTappable()"], in: footer, "♡")
@@ -173,7 +181,7 @@ final class StoryViewerV2FixTests: XCTestCase {
     func testPausedPillSitsAboveCenter() throws {
         XCTAssertEqual(StoryViewerMetrics.pausedPillCenter, 380.0 / 844.0, accuracy: 0.0001)
         XCTAssertLessThan(StoryViewerMetrics.pausedPillCenter, 0.5, "真ん中より上でない")
-        let content = member("private func content(for story: Story)", in: try viewer())
+        let content = member("private func contentLayers(for story: Story)", in: try viewer())
         assertInOrder(["if chrome.showsPill {", "GeometryReader { geo in", "pausedPill",
                        "y: geo.size.height * StoryViewerMetrics.pausedPillCenter", ".ignoresSafeArea()"],
                       in: content, "札の位置")
@@ -182,7 +190,8 @@ final class StoryViewerV2FixTests: XCTestCase {
     // MARK: - 11. 「文字を隠す」
 
     func testHideTextMenuRow() throws {
-        let menu = member("private func menuSheet(for story: Story)", in: try viewer())
+        // 札 #596 で中身を `menuPanel` に分けた（型の境目）
+        let menu = member("private func menuPanel(for story: Story)", in: try viewer())
         assertInOrder(["if items.contains(.hideCaption) {", "captionHidden ? \"textformat\" : \"strikethrough\"",
                        "L(\"文字を隠す\", \"Hide text\")"], in: menu, "「文字を隠す」")
         XCTAssertFalse(menu.contains("テキストを非表示"))
@@ -219,7 +228,7 @@ final class StoryViewerV2FixTests: XCTestCase {
 
     /// 🔴 キーボードが出ても写真の枠を縮めない（写真と黒帯の場所はキーボードを無視・足元の中身だけ上がる）
     func testKeyboardDoesNotShrinkThePhoto() throws {
-        let content = member("private func content(for story: Story)", in: try viewer())
+        let content = member("private func contentLayers(for story: Story)", in: try viewer())
         assertInOrder(["ZStack(alignment: .bottom) {", "VStack(spacing: 0) {", "photoArea(for: story)",
                        "Color.clear.frame(height: Self.footerHeight)", ".ignoresSafeArea(.keyboard, edges: .bottom)",
                        "footer(for: story)"], in: content, "写真と足元")
@@ -245,7 +254,10 @@ final class StoryViewerV2FixTests: XCTestCase {
     /// 読み直しのボタンは送る的より上（`RemoteImage` の中の印は的の下で押せない）。移ったら数え直す
     func testRetryButtonIsAboveTheTapZones() throws {
         let text = try viewer()
-        let photo = member("private func photoArea(for story: Story)", in: text)
+        // 写真の層は札 #596 で `mediaLayer` に分けた（型の境目）。`photoArea` の一番下に敷く
+        let photo = member("private func mediaLayer(for story: Story)", in: text)
+            + member("private func photoArea(for story: Story)", in: text)
+        XCTAssertTrue(member("private func photoArea(for story: Story)", in: text).contains("mediaLayer(for: story)"))
         assertInOrder(["mediaSettled(loaded, storyId: id, hasURL: hasURL)", ".id(\"\\(story.id)#\\(mediaReloads)\")",
                        "tapZones", "if offersMediaRetry {", "mediaRetryButton"], in: photo, "読み直しの置き場所")
         XCTAssertFalse(photo.contains("onSettled: { _ in mediaReady = true }"), "失敗でも時計を回している")
@@ -321,7 +333,7 @@ final class StoryViewerV2FixTests: XCTestCase {
     func testHighlightUsesTheFooterBand() throws {
         XCTAssertEqual(JPRadius.xl, 24)
         let text = try viewer()
-        let content = member("private func content(for story: Story)", in: text)
+        let content = member("private func contentLayers(for story: Story)", in: text)
         assertInOrder(["photoArea(for: story)", "Color.clear.frame(height: Self.footerHeight)",
                        "if let highlight {", "highlightFooter(for: story, highlight: highlight)"],
                       in: content, "ハイライトの足元")
