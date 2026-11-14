@@ -37,6 +37,9 @@ struct PassViewerView: View {
     @State private var spin = PassSpinDrag()
     /// 「視差効果を減らす」・きっぷの外で払っている間の横のずれ
     @State private var drag: CGFloat = 0
+    /// **UI テストの事実取りだけ**（`PreviewSession.layoutProbe`・2026-11-14 Mac run 1317）: 指を離すたびの決め方の材料
+    /// （`PassSpinGesture.classify` に渡した量・置いていた長さ・動いている間の知らせの数と時刻）。ふだんは書かない
+    @State private var dragProbe = PassViewerDragProbe()
 
     private var showsBack: Bool { SpinMotion.showsBack(yaw) }
     @State private var thanking = false
@@ -85,6 +88,7 @@ struct PassViewerView: View {
                     DragGesture(minimumDistance: 12)
                         .onChanged { value in
                             spin.begin(yaw: yaw)
+                            if PreviewSession.layoutProbe { dragProbe.changed(Double(value.translation.width)) }
                             drag = value.translation.width
                         }
                         .onEnded { value in
@@ -92,6 +96,8 @@ struct PassViewerView: View {
                                     predicted: Double(value.predictedEndTranslation.width), onCard: false)
                         }
                 )
+            // UI テストのときだけ: 指を離すたびの決め方の材料（`PassViewerDragProbe`）
+            LayoutProbe(identifier: "pass.viewer.dragProbe", value: dragProbe.value)
             VStack(spacing: 0) {
                 header
                 if let current {
@@ -222,6 +228,7 @@ struct PassViewerView: View {
                 DragGesture(minimumDistance: 12)
                     .onChanged { value in
                         spin.begin(yaw: yaw)
+                        if PreviewSession.layoutProbe { dragProbe.changed(Double(value.translation.width)) }
                         if reduceMotion {
                             drag = value.translation.width
                         } else {
@@ -273,6 +280,10 @@ struct PassViewerView: View {
         let outcome = PassSpinGesture.classify(translation: translation, predicted: predicted, duration: duration,
                                                onCard: onCard, reduceMotion: reduceMotion,
                                                swipeDistance: Double(Self.swipeDistance))
+        if PreviewSession.layoutProbe {
+            dragProbe.ended(translation: translation, predicted: predicted, duration: duration, onCard: onCard,
+                            outcome: outcome)
+        }
         // 指の速さのおよそ（勢いの見込みは、離してから約 0.25 秒ぶん）
         let velocity = SpinMotion.releaseVelocity(vx: (predicted - translation) / 0.25,
                                                   width: Double(PassCardStyle.deckSize.width), reduceMotion: reduceMotion)
@@ -487,5 +498,39 @@ struct PassThanksFitProbe: View {
                     .onChange(of: g.size.width) { _, w in widths[key] = w }
             }
         }
+    }
+}
+
+/// **UI テストの事実取りだけ**（`PreviewSession.layoutProbe`・2026-11-14）。束の画面で指を離すたびに、
+/// 払い（次／前）か回すかを決めた材料を値に出す（`pass.viewer.dragProbe`）。
+///
+/// Mac run 1317 で `testPassViewerPager` の「きっぷの上で素早く払っても次へ進まない（1 / 7 枚）」が1回だけ落ちた
+/// （1304・1321 は通った）。決め方（`PassSpinGesture.classify`）は、置いていた長さ（最初の動きの知らせから離すまで・
+/// 0.25 秒以内）・勢いの見込み（200pt 以上）・動いた量（120pt 未満）で決まるが、どれで外れたかは画面の木から
+/// 取れない。推定で直さず数で見るため、離すたびに 1 行ずつ足す（最後の 8 回ぶん）。
+/// 値は `#<回> card=<yes|no> changes=<動きの知らせの数> first=<最初の知らせの横の量> tr=<離した時の横の量>
+/// pred=<勢いの見込み> dur=<置いていた長さ 秒> out=<rotate|next|previous|none>` を ` | ` でつないだもの
+struct PassViewerDragProbe {
+    private(set) var ends = 0
+    private var changes = 0
+    private var first: Double?
+    private var lines: [String] = []
+
+    var value: String { "ends=\(ends) " + lines.joined(separator: " | ") }
+
+    mutating func changed(_ dx: Double) {
+        changes += 1
+        if first == nil { first = dx }
+    }
+
+    mutating func ended(translation: Double, predicted: Double, duration: Double, onCard: Bool,
+                        outcome: PassSpinGesture.Outcome) {
+        ends += 1
+        let line = String(format: "#%d card=%@ changes=%d first=%.1f tr=%.1f pred=%.1f dur=%.3f out=%@",
+                          ends, onCard ? "yes" : "no", changes, first ?? .nan, translation, predicted, duration,
+                          "\(outcome)")
+        lines = Array((lines + [line]).suffix(8))
+        changes = 0
+        first = nil
     }
 }

@@ -2092,6 +2092,8 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewPass", "YES"]
+        // 払いの決め方の材料を値で出す（`pass.viewer.dragProbe`・2026-11-14 Mac run 1317 の1回だけの失敗を数で見る）
+        app.launchArguments += ["-JPPreviewLayoutProbe", "YES"]
         app.launch()
         defer { app.terminate() }
         let agree = app.buttons["legal.agree"]
@@ -2150,10 +2152,29 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 1)
         // 4. 払う操作は今までどおり: きっぷの下（写真ではない所）で左へ素早く短く払う
         //    （今の決め方 `PassSpinGesture.classify`: 0.25 秒以内・動いた量 120pt 未満・勢いの見込み 200pt 以上で次へ）
-        let start = card.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.85))
-        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -80, dy: 0)),
-                    withVelocity: XCUIGestureVelocity(rawValue: 2000), thenHoldForDuration: 0)
-        XCTAssertTrue(waitCount("2 / \(n) 枚"), "きっぷの上で素早く払っても次へ進まない（\(count.label)）")
+        //    払うたびに、アプリが決めた材料（置いていた長さ・勢いの見込み・動いた量）を出す（`PassViewerDragProbe`）。
+        //    1回だけでは落ちる形が取れない（run 1317 だけ落ちた）ので、最後の1枚まで続けて払い、全部を残してから確かめる
+        let probe = app.descendants(matching: .any)["pass.viewer.dragProbe"].firstMatch
+        func flick() {
+            let start = card.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.85))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -80, dy: 0)),
+                        withVelocity: XCUIGestureVelocity(rawValue: 2000), thenHoldForDuration: 0)
+        }
+        var missed: [String] = []
+        for page in 1..<n {
+            flick()
+            let advanced = waitCount("\(page + 1) / \(n) 枚")
+            let line = "PASSFLICK from=\(page) advanced=\(advanced) count=\(count.label) "
+                + "probe=\(probe.exists ? (probe.value as? String ?? "nil") : "無し")"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+            guard advanced else {
+                missed.append(line)
+                break
+            }
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertTrue(missed.isEmpty, "きっぷの上で素早く払っても次へ進まない（\(missed.joined(separator: " / "))）")
     }
 
     /// **すれちがいの設定の「届き方」**（2026-11-10 owner「すれちがったら即時交換されて欲しい」）: 既定はすぐ届く。
