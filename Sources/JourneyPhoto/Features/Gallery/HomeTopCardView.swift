@@ -130,6 +130,10 @@ struct HomeTopCardView: View {
         // 中身はここで決めて `seasonShelf` で渡す（札の並びは**1回だけ計算して**、札と段の両方に使う）
         let choices = self.choices
         content(choices)
+            // UI テストのときだけ: 札の小さい行（出典）の幅と札の背を、札の外の見えない要素に出す（`TopCardProbe`・2026-11-14）
+            .overlayPreferenceValue(TopCardProbeKey.self) { values in
+                LayoutProbe(identifier: "home.topCard.probe", value: values.joined(separator: " | "))
+            }
             .fullScreenCover(isPresented: $showSwipe, onDismiss: { swipeStarted = SpotSwipeProgress().started }) {
                 SpotSwipeView()
             }

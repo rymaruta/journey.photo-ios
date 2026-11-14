@@ -62,6 +62,8 @@ struct TopCardFace: View {
                             // 出典は真ん中で切る（末尾のライセンス名を残す）。当日モードは末尾で切る
                             // （名前が長くても、先頭の「明日 · 名前 · ゴールデンアワー」を残す）
                             .truncationMode(detailTruncation)
+                            // UI テストのときだけ: 渡された幅と要る幅を値に出す（`TopCardProbe`・2026-11-14）
+                            .modifier(TopCardDetailProbe(title: title, detail: detail))
                     }
                 }
                 Spacer(minLength: 0)
@@ -79,6 +81,8 @@ struct TopCardFace: View {
         }
         .frame(maxWidth: .infinity, minHeight: HomeTopCardView.cardHeight,
                maxHeight: inCarousel ? .infinity : nil, alignment: .leading)
+        // UI テストのときだけ: 札の背を値に出す（`TopCardProbe`・2026-11-14）
+        .modifier(TopCardHeightProbe(title: title))
         .jpCardFace()
         .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
         .contentShape(RoundedRectangle(cornerRadius: JPRadius.l))
