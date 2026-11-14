@@ -794,9 +794,9 @@ struct PhotoDetailView: View {
             nearbySection
             commentsBlock
                 .id(Self.commentsAnchor)
-            // 意見箱の小さな「使ってみてどう？」（2026-11-11 札 #546）。写真の詳細のいちばん下に1行だけ
-            // （写真・題・操作の流れの外。押すとシートが開いてすぐ書ける）
-            FeedbackPrompt(screen: "photo-detail")
+            // 2026-11-14 判断（owner「使ってみてどう？がコメント欄開いた時にもでてくるから紛らわしい」）:
+            // 意見箱の「使ってみてどう？」は写真の詳細に置かない。コメントの塊のすぐ下に出て、コメントの入力・返信と紛れる。
+            // 意見を送る入口は設定の「意見を送る」の行（`settings.feedback`・札 #546）に残す（`FeedbackTests`）
         }
         // v2 の板: 画面の端は 16（`JPSpace.gutter`・以前は 20）
         .padding(.horizontal, JPSpace.gutter)
