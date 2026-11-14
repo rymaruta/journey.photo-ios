@@ -16,6 +16,11 @@
           "detail": { "ja": "投稿の画面の「投稿する」を、画面の下の大きなボタンにしました。親指で押しやすくなります。", "en": "Post now sits as a big button at the bottom of the screen, easy to reach with your thumb." }
         },
         {
+          "symbol": "photo.on.rectangle",
+          "title": { "ja": "ストーリーに載せる画面の背景を写真の色に", "en": "Story backgrounds take your photo's colors" },
+          "detail": { "ja": "投稿の後に「ストーリーに載せる」を押すと、写真の色をぼかした背景の上に写真が載ります。文字を大きくしていても、下の2つのボタンは切れずに縦に並びます。", "en": "When you tap Add to story after posting, your photo sits on a soft, blurred backdrop in its own colors. With larger text, the two buttons stack instead of getting cut off." }
+        },
+        {
           "symbol": "hand.draw",
           "title": { "ja": "書きかけでも下へ払うと確かめが出る", "en": "Swiping away asks first if you have unsaved text" },
           "detail": { "ja": "書きかけの投稿などを下へ払って閉じようとすると、保存せずに閉じるかを確かめます。何も書いていなければ、そのまま閉じます。", "en": "If you swipe down on something you haven't finished, such as a post, we ask before closing without saving. If nothing is written, it just closes." }
