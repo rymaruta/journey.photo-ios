@@ -25,6 +25,10 @@ struct FeedbackSheet: View {
 
     @State private var text = ""
     @State private var wantsReply = false
+    /// 前回アプリが前に居るまま終わったときの記録（`ExitTrail`・札 #596・2026-11-14）。あるときだけ「添える」を出す
+    @State private var exitTrail: String?
+    /// 記録を添えるか（**既定は添える**。中身は下に小さく見せ、押せば外せる）
+    @State private var attachesTrail = true
     @State private var photoItem: PhotosPickerItem?
     @State private var photo: Data?
     @State private var preview: UIImage?
@@ -68,7 +72,10 @@ struct FeedbackSheet: View {
         .presentationBackground(WebTheme.sheet)
         .preferredColorScheme(.dark)
         // 開いたらすぐ書ける（押す回数を増やさない）
-        .onAppear { focused = true }
+        .onAppear {
+            focused = true
+            exitTrail = ExitTrail.attachment(limit: Self.trailLimit)
+        }
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
             Task { await loadPhoto(item) }
@@ -142,7 +149,56 @@ struct FeedbackSheet: View {
                 .accessibilityAddTraits(wantsReply ? .isSelected : [])
                 .accessibilityIdentifier("feedback.wantsReply")
             }
+            // 前回アプリが途中で終わったときの記録（札 #596）。**何を送るかを字で見せる**（写真・端末の識別子は入っていない）
+            if let exitTrail {
+                Button { attachesTrail.toggle() } label: {
+                    Label(L("前回アプリが途中で終わった記録を添える", "Attach a note about the last time the app quit unexpectedly"),
+                          systemImage: attachesTrail ? "checkmark.circle.fill" : "circle")
+                        .font(JPFont.caption)
+                        .foregroundStyle(attachesTrail ? WebTheme.accent : WebTheme.text2)
+                        .frame(minHeight: WebTheme.minTapTarget)
+                }
+                .buttonStyle(.plain)
+                .disabled(isSending)
+                .accessibilityAddTraits(attachesTrail ? .isSelected : [])
+                .accessibilityIdentifier("feedback.exitTrail")
+                if attachesTrail {
+                    Text(exitTrail)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("feedback.exitTrail.text")
+                }
+            }
         }
+    }
+
+    /// 添える記録の長さの上限（意見の本文の上限 1000 のうち）。本文が長いときは本文の残りに収める（`FeedbackSheet.body(text:trail:)`）
+    nonisolated static let trailLimit = 400
+
+    /// 送る本文（書いたもの＋添える記録）。**サーバーの上限（`FeedbackService.textMax`）を超えない**——記録の方を切る
+    nonisolated static func body(text: String, trail: String?) -> String {
+        guard let trail, !trail.isEmpty else { return text }
+        let room = FeedbackService.textMax - text.utf16.count - 2
+        guard let fitted = fit(trail, room: room) else { return text }
+        return text + "\n\n" + fitted
+    }
+
+    /// 届かず捨てた回（本文はどこにも残っていない）。記録は消さずに次に添えられるよう残す
+    private static func isDropped(_ outcome: FeedbackOutbox.Outcome) -> Bool {
+        if case .dropped = outcome { return true }
+        return false
+    }
+
+    nonisolated static func fit(_ text: String, room: Int) -> String? {
+        guard room > 0 else { return nil }
+        if text.utf16.count <= room { return text }
+        var cut = ""
+        for character in text {
+            if (cut + String(character)).utf16.count > room { break }
+            cut.append(character)
+        }
+        return cut.isEmpty ? nil : cut
     }
 
     private var footer: some View {
@@ -205,7 +261,9 @@ struct FeedbackSheet: View {
         isSending = true
         errorMessage = nil
         defer { isSending = false }
-        let draft = FeedbackDraft(text: trimmed, screen: screen, wantsReply: wantsReply, userId: auth.userId)
+        let sendsTrail = attachesTrail && exitTrail != nil
+        let draft = FeedbackDraft(text: Self.body(text: trimmed, trail: sendsTrail ? exitTrail : nil),
+                                  screen: screen, wantsReply: wantsReply, userId: auth.userId)
         let outbox = FeedbackOutbox()
         // **先に下書きとして残してから送る**（送っている間に閉じても書いたものが消えない）
         try? outbox.save(draft, photo: photo)
@@ -213,6 +271,8 @@ struct FeedbackSheet: View {
         let outcome = await outbox.deliver(draft, currentUserId: auth.userId) { draft, photo, signedIn in
             try await service.send(draft, photo: photo, signedIn: signedIn)
         }
+        // 記録は下書きの本文に入った（届いた・あとで送る）。同じ記録を次の意見に2度添えない
+        if sendsTrail, !Self.isDropped(outcome) { ExitTrail.clear() }
         switch outcome {
         case .sent:
             toasts.show(L("届きました。ありがとうございます", "Received — thank you!"))

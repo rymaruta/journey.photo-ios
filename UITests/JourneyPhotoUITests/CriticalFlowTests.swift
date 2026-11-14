@@ -258,41 +258,138 @@ final class CriticalFlowTests: XCTestCase {
 
     // MARK: - 1b. 投稿 → ストーリーに載せる → 見る（札 #596・2026-11-13）
 
-    /// **owner の報告（1.1.85）: 写真を投稿してストーリーに載せ、そのストーリーを開いた瞬間に落ちる。
+    /// **owner の報告（1.1.85〜1.1.87）: 写真を投稿してストーリーに載せ、そのストーリーを開いた瞬間に落ちる。
     /// ホームの輪からでもマイページの顔からでも落ちる。** その道を見本の通信（`-JPPreviewLocalBackend`・
     /// `-JPPreviewStories`）でそのまま通す。ストーリーの本体と行は端末の中の答え手が受けて覚える
     /// （`PreviewBackend` の `POST /stories`）——**サーバーには何も書かない**。
     ///
-    /// 落ちたかは `app.state` で見る（落ちると `.notRunning`）。各段で `[storyCrash]` の行と画面の木をログと添付に残し、
-    /// どの段の後で落ちたかを数字で言えるようにする。落ちたときの積み（呼び出し履歴）は、XCTest の失敗の文
-    /// （「… crashed in …」）と、`Tools/xcode-test.sh` が UI テストの失敗の後に出すシミュレーターの落ちた記録
-    /// （`Tools/sim-crash-summary.py`・`[simCrash]` の行）に出る
+    /// 2026-11-14 owner の追加の事実: 「投稿 → ストーリーで共有、を**2回くらい**。その後どの画面からでもストーリーを押すと落ちる」
+    /// 「載せた写真は iPhone のカメラで撮ったそのままの写真（HEIC）」。だから 2 本載せる形（同じ投稿から2回・別の投稿を1回ずつ）と、
+    /// 実寸の HEIC（向きの情報つき・`-JPPreviewUploadSampleKind`）の種を足した。
+    ///
+    /// 落ちたかは `app.state` で見る（落ちると `.notRunning`）。各段で `[storyCrash]` の行を出し、画面の木は添付に残す。
+    /// 閲覧画面の中身（id の並び・位置・メモリ）は見えない要素 `story.viewer.probe`、ホームの輪が読んだ並びは
+    /// `stories.probe` に出る（`-JPPreviewFeedProbe`・Debug のみ）。
+    /// 落ちたときの積みは、XCTest の失敗の文と `Tools/sim-crash-summary.py`（`[simCrash]` の行）に出る
     func testPostedPhotoStoryOpensFromHomeRing() {
-        let app = postPhotoThenShareToStory()
-        tab(app, 0)
-        storyCrashStep(app, "home.shown")
-        // 裏の送信（`StoryUploadCenter`）が済むと輪が「送信中」から「あなたのストーリー」に替わる（`StoriesRow`）
-        let uploading = app.descendants(matching: .any)["stories.uploading"].firstMatch
-        if uploading.exists { _ = uploading.waitForNonExistence(timeout: 60) }
-        let ring = app.buttons.matching(NSPredicate(format: "label == %@", "あなたのストーリー")).firstMatch
-        let ringShown = ring.waitForExistence(timeout: 30)
-        storyCrashStep(app, "home.ring ringShown=\(ringShown) uploadingLeft=\(uploading.exists)")
-        XCTAssertTrue(ringShown, "ストーリーを出したのに、ホームに自分の輪（あなたのストーリー）が出ない")
-        guard ringShown else { return }
-        ring.tap()
-        watchStoryViewer(app, entry: "home", reopen: ring)
+        let app = launchForStory()
+        postAndShare(app, shares: 1, tag: "a")
+        openFromHomeRing(app)
     }
 
     /// 同じ道を**マイページの顔の輪**から開く（`MyPageView.avatar` → `StoryAvatar` → `StoryReelView`）
     func testPostedPhotoStoryOpensFromMyPage() {
-        let app = postPhotoThenShareToStory()
-        // 送り終えるまで待ってからマイページへ（マイページの輪はその時の一覧を読む・`StoryDirectory`）
+        let app = launchForStory()
+        postAndShare(app, shares: 1, tag: "a")
+        openFromMyPage(app)
+    }
+
+    /// **同じ投稿から2回**ストーリーに載せる（共有カードの「ストーリーに載せる」を2回）→ ホームの輪 → マイページ。
+    /// 写真は 48MP の HEIC（8064×6048・向き 6）。owner の「2回くらい」の形
+    func testPostedPhotoSharedTwiceFromSameCardOpens() {
+        let app = launchForStory(kind: "heic48")
+        postAndShare(app, shares: 2, tag: "a")
+        openFromHomeRing(app)
+        openFromMyPage(app)
+    }
+
+    /// **別の投稿を1回ずつ**ストーリーに載せる（2本）→ ホームの輪 → マイページ。写真は 12MP の HEIC（4032×3024・向き 6）
+    func testTwoPostsSharedToStoryOpen() {
+        let app = launchForStory(kind: "heic12")
+        postAndShare(app, shares: 1, tag: "a")
+        postAndShare(app, shares: 1, tag: "b")
+        openFromHomeRing(app)
+        openFromMyPage(app)
+    }
+
+    /// 大きい写真の種類ごとに1本ずつ載せて開く（メモリを `[storyCrash] … mem=` で残す）。
+    /// パノラマ（16000×3000）・縦長の HEIC（3024×4032 向き 1）・大きい PNG（6000×4000）
+    func testLargePhotoKindsSharedToStoryOpen() {
+        for kind in ["pano", "portrait", "png"] {
+            let app = launchForStory(kind: kind)
+            postAndShare(app, shares: 1, tag: kind)
+            openFromHomeRing(app, reopen: false)
+            app.terminate()
+        }
+    }
+
+    private func launchForStory(kind: String? = nil) -> XCUIApplication {
+        var extra = ["-JPPreviewUploadSample", "YES", "-JPPreviewStories", "YES", "-JPPreviewFeedProbe", "YES"]
+        if let kind { extra += ["-JPPreviewUploadSampleKind", kind] }
+        let app = launch(extra)
+        storyCrashStep(app, "launched kind=\(kind ?? "asset")")
+        return app
+    }
+
+    /// 見本の1枚を投稿 → 共有カードの「ストーリーに載せる」→ 作る画面の「シェアする」を `shares` 回 → カードを閉じる、まで。
+    /// どの段も**出なければ落とす**（この組の決まり）
+    private func postAndShare(_ app: XCUIApplication, shares: Int, tag: String) {
+        tab(app, 2)
+        let toPhoto = app.buttons["post.choice.photo"].firstMatch
+        XCTAssertTrue(toPhoto.waitForExistence(timeout: 10), "投稿の2択が出ない")
+        toPhoto.tap()
+        let thumb = app.buttons["upload.thumb.0"].firstMatch
+        // 実寸の HEIC は作って整えるのに数秒かかる
+        XCTAssertTrue(thumb.waitForExistence(timeout: 60), "見本の1枚が投稿画面に入らない")
+        storyCrashStep(app, "\(tag).upload.thumb")
+        let titleField = app.textFields["upload.title"].firstMatch
+        reveal(titleField, in: app, "題の欄")
+        enter("SC\(tag)\(Int(Date().timeIntervalSince1970) % 1_000_000)", into: titleField, "題の欄")
+        let place = app.textFields["upload.place"].firstMatch
+        reveal(place, in: app, "撮影地の欄")
+        enter("Kagawa", into: place, "撮影地の欄")
+        let submit = app.buttons["upload.submit"].firstMatch
+        XCTAssertTrue(submit.waitForExistence(timeout: 5), "「投稿する」が無い")
+        XCTAssertTrue(wait(submit, "enabled == true", timeout: 30), "題と撮影地を入れても「投稿する」が押せない")
+        submit.tap()
+        storyCrashStep(app, "\(tag).upload.submitted")
+
+        let toStory = app.buttons["postedCard.story"].firstMatch
+        XCTAssertTrue(toStory.waitForExistence(timeout: 90), "投稿しても共有カード（ストーリーに載せる）が出ない")
+        storyCrashStep(app, "\(tag).postedCard.shown")
+        for round in 1...shares {
+            XCTAssertTrue(toStory.waitForExistence(timeout: 15) && wait(toStory, "hittable == true", timeout: 10),
+                          "\(round)回目: カードの「ストーリーに載せる」が押せない")
+            toStory.tap()
+            // 作る画面（`StoryComposerView(sharing:)`）。札の絵が入ると「シェアする」が押せる
+            let share = app.buttons.matching(NSPredicate(format: "label == %@", "シェアする")).firstMatch
+            XCTAssertTrue(share.waitForExistence(timeout: 30), "\(round)回目: 「ストーリーに載せる」で作る画面が開かない")
+            XCTAssertTrue(wait(share, "enabled == true", timeout: 30),
+                          "\(round)回目: 作る画面の「シェアする」が押せるようにならない（札の絵が入らない）")
+            storyCrashStep(app, "\(tag).composer\(round).ready")
+            share.tap()
+            // 押すと作る画面が閉じ、カードの画面に戻る（送るのは裏の係）
+            XCTAssertTrue(share.waitForNonExistence(timeout: 30), "\(round)回目: 「シェアする」を押しても作る画面が閉じない")
+            storyCrashStep(app, "\(tag).composer\(round).shared")
+        }
+        let close = app.buttons["postedCard.close"].firstMatch
+        XCTAssertTrue(close.waitForExistence(timeout: 15), "作る画面を閉じたあとにカードの「閉じる」が無い")
+        close.tap()
+        XCTAssertTrue(thumb.waitForNonExistence(timeout: 30), "カードを閉じても投稿画面が閉じない")
+        storyCrashStep(app, "\(tag).postedCard.closed")
+        // 裏の送信（`StoryUploadCenter`）が済むまで待つ（輪が「送信中」から「あなたのストーリー」に替わる・`StoriesRow`）
         tab(app, 0)
         let uploading = app.descendants(matching: .any)["stories.uploading"].firstMatch
-        if uploading.exists { _ = uploading.waitForNonExistence(timeout: 60) }
+        if uploading.exists { _ = uploading.waitForNonExistence(timeout: 90) }
         _ = app.buttons.matching(NSPredicate(format: "label == %@", "あなたのストーリー")).firstMatch
             .waitForExistence(timeout: 30)
-        storyCrashStep(app, "home.afterUpload uploadingLeft=\(uploading.exists)")
+        storyCrashStep(app, "\(tag).afterUpload uploadingLeft=\(uploading.exists)")
+    }
+
+    private func openFromHomeRing(_ app: XCUIApplication, reopen: Bool = true) {
+        tab(app, 0)
+        let ring = app.buttons.matching(NSPredicate(format: "label == %@", "あなたのストーリー")).firstMatch
+        let ringShown = ring.waitForExistence(timeout: 30)
+        storyCrashStep(app, "home.ring ringShown=\(ringShown)")
+        XCTAssertTrue(ringShown, "ストーリーを出したのに、ホームに自分の輪（あなたのストーリー）が出ない")
+        guard ringShown else { return }
+        ring.tap()
+        watchStoryViewer(app, entry: "home", rounds: reopen ? 2 : 1) {
+            app.buttons.matching(NSPredicate(format: "label == %@", "あなたのストーリー")).firstMatch
+        }
+    }
+
+    private func openFromMyPage(_ app: XCUIApplication) {
         tab(app, 4)
         XCTAssertTrue(app.descendants(matching: .any)["mypage.nameLine"].firstMatch.waitForExistence(timeout: 20),
                       "ログイン中のマイページが出ない")
@@ -302,102 +399,79 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(ringShown, "ストーリーを出したのに、マイページの顔に輪が出ない")
         guard ringShown else { return }
         ring.tap()
-        watchStoryViewer(app, entry: "mypage", reopen: ring)
-    }
-
-    /// 見本の1枚を投稿 → 共有カードの「ストーリーに載せる」→ 作る画面の「シェアする」→ カードを閉じる、まで。
-    /// どの段も**出なければ落とす**（この組の決まり）
-    private func postPhotoThenShareToStory() -> XCUIApplication {
-        let app = launch(["-JPPreviewUploadSample", "YES", "-JPPreviewStories", "YES"])
-        storyCrashStep(app, "launched")
-        tab(app, 2)
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        XCTAssertTrue(toPhoto.waitForExistence(timeout: 10), "投稿の2択が出ない")
-        toPhoto.tap()
-        let thumb = app.buttons["upload.thumb.0"].firstMatch
-        XCTAssertTrue(thumb.waitForExistence(timeout: 20), "見本の1枚が投稿画面に入らない")
-        let titleField = app.textFields["upload.title"].firstMatch
-        reveal(titleField, in: app, "題の欄")
-        enter("SC\(Int(Date().timeIntervalSince1970) % 1_000_000)", into: titleField, "題の欄")
-        let place = app.textFields["upload.place"].firstMatch
-        reveal(place, in: app, "撮影地の欄")
-        enter("Kagawa", into: place, "撮影地の欄")
-        let submit = app.buttons["upload.submit"].firstMatch
-        XCTAssertTrue(submit.waitForExistence(timeout: 5), "「投稿する」が無い")
-        XCTAssertTrue(wait(submit, "enabled == true", timeout: 15), "題と撮影地を入れても「投稿する」が押せない")
-        submit.tap()
-        storyCrashStep(app, "upload.submitted")
-
-        let toStory = app.buttons["postedCard.story"].firstMatch
-        XCTAssertTrue(toStory.waitForExistence(timeout: 60), "投稿しても共有カード（ストーリーに載せる）が出ない")
-        storyCrashStep(app, "postedCard.shown")
-        toStory.tap()
-        // 作る画面（`StoryComposerView(sharing:)`）。札の絵が入ると「シェアする」が押せる
-        let share = app.buttons.matching(NSPredicate(format: "label == %@", "シェアする")).firstMatch
-        XCTAssertTrue(share.waitForExistence(timeout: 30), "「ストーリーに載せる」で作る画面が開かない")
-        XCTAssertTrue(wait(share, "enabled == true", timeout: 30), "作る画面の「シェアする」が押せるようにならない（札の絵が入らない）")
-        storyCrashStep(app, "composer.ready")
-        share.tap()
-        // 押すと作る画面が閉じ、カードの画面に戻る（送るのは裏の係）
-        XCTAssertTrue(share.waitForNonExistence(timeout: 30), "「シェアする」を押しても作る画面が閉じない")
-        storyCrashStep(app, "composer.shared")
-        let close = app.buttons["postedCard.close"].firstMatch
-        XCTAssertTrue(close.waitForExistence(timeout: 15), "作る画面を閉じたあとにカードの「閉じる」が無い")
-        close.tap()
-        XCTAssertTrue(thumb.waitForNonExistence(timeout: 30), "カードを閉じても投稿画面が閉じない")
-        storyCrashStep(app, "postedCard.closed")
-        return app
+        watchStoryViewer(app, entry: "mypage", rounds: 2) { app.buttons["story.avatar.ring"].firstMatch }
     }
 
     /// 開いたストーリーを、開いた瞬間・見終わるまで・**もう一度開いた瞬間**（2回目は「見た」の輪）と区切って見張る。
     /// 落ちていたら（`app.state != .runningForeground`）その段の名前で落とす。
     ///
     /// 2026-11-14（Mac run 1236）: 前の版は開いて5秒たってから「写真を見る」を探していた。出した1本は5秒で終わり、
-    /// 束が1本だけなので閲覧画面が閉じていた（開いた直後の木には `あなたのストーリー、1 / 1` と `story.viewer.sharedPhoto` が
-    /// 在り、5秒後の木はホーム）。**開いている間に**探す。画面の木を撮るのに1〜2秒かかるので、開いた直後は撮らない
-    private func watchStoryViewer(_ app: XCUIApplication, entry: String, reopen ring: XCUIElement) {
+    /// 束が1本だけなので閲覧画面が閉じていた。**開いている間に**探す。
+    /// 閲覧画面の中身は 0.5 秒ごとに `story.viewer.probe`（id の並び・位置・メモリ）を読み、変わったら `[storyCrash]` の行に出す
+    private func watchStoryViewer(_ app: XCUIApplication, entry: String, rounds: Int, ring: () -> XCUIElement) {
         let viewPhoto = app.buttons["story.viewer.sharedPhoto"].firstMatch
-        for round in 1...2 {
+        let probe = app.descendants(matching: .any)["story.viewer.probe"].firstMatch
+        for round in 1...rounds {
             let label = "\(entry).open\(round)"
             print("[storyCrash] \(label).tapped state=\(app.state.rawValue)")
             // 紹介の札のストーリーには「写真を見る」が付く（`StoryViewerView.sharedPhotoButton`）。開いた瞬間に描く所
             let seen = viewPhoto.waitForExistence(timeout: 3)
-            print("[storyCrash] \(label).first sharedPhotoButton=\(seen) state=\(app.state.rawValue)")
+            print("[storyCrash] \(label).first sharedPhotoButton=\(seen) state=\(app.state.rawValue)"
+                  + " probe=\(probe.exists ? (probe.value as? String ?? "?") : "-")")
             if app.state != .runningForeground {
                 storyCrashStep(app, "\(label).crashed")
                 return XCTFail("[storyCrash] \(entry) から\(round)回目に開いた直後にアプリが前に居ない（state=\(app.state.rawValue)・落ちた可能性）")
             }
             XCTAssertTrue(seen, "\(entry) から\(round)回目に開いても、出したばかりの紹介のストーリー（「写真を見る」）が出ない")
-            // 見終わるまで（出した1本は5秒・束の終わりで次の人へ送るか閉じる）0.5 秒刻みで見る
-            for tick in 1...16 {
+            // 見終わるまで（出した1本は5秒ずつ・束の終わりで次の人へ送るか閉じる）0.5 秒刻みで見る
+            var lastProbe = ""
+            for tick in 1...28 {
                 Thread.sleep(forTimeInterval: 0.5)
                 if app.state != .runningForeground {
-                    storyCrashStep(app, "\(label).crashed+\(Double(tick) * 0.5)s")
-                    return XCTFail("[storyCrash] \(entry) から\(round)回目に開いて \(Double(tick) * 0.5) 秒でアプリが前に居ない（state=\(app.state.rawValue)）")
+                    storyCrashStep(app, "\(label).crashed+\(Double(tick) * 0.5)s lastProbe=\(lastProbe)")
+                    return XCTFail("[storyCrash] \(entry) から\(round)回目に開いて \(Double(tick) * 0.5) 秒でアプリが前に居ない（state=\(app.state.rawValue)・最後の中身 \(lastProbe)）")
                 }
+                let value = probe.exists ? (probe.value as? String ?? "?") : "-"
+                if value != lastProbe {
+                    print("[storyCrash] \(label).t=\(Double(tick) * 0.5)s probe=\(value)")
+                    lastProbe = value
+                }
+                // 閉じた、または自分の束を見終わって人の束へ進んだら、それ以上は見ない
+                if value == "-" && tick > 2 { break }
+                if value != "-", !value.contains("user=\(Self.previewUserId)") { break }
             }
             storyCrashStep(app, "\(label).played")
-            // ホームは人の束へ続くので、閲覧画面が閉じるまで待つ（見本の人のストーリーは5秒ずつ）
+            // 閲覧画面が閉じるまで（人の束へ続いたら下へ払って閉じる）
             let viewer = app.buttons["story.viewer.more"].firstMatch
-            if viewer.exists { _ = viewer.waitForNonExistence(timeout: 40) }
+            if viewer.exists, !viewer.waitForNonExistence(timeout: 3) {
+                app.swipeDown(velocity: .fast)
+                _ = viewer.waitForNonExistence(timeout: 15)
+            }
             XCTAssertEqual(app.state, .runningForeground, "[storyCrash] \(entry) で見終わるまでにアプリが前に居ない")
-            guard round == 1 else { break }
-            // もう一度（今度は「見た」の輪から）
-            XCTAssertTrue(ring.waitForExistence(timeout: 15) && ring.isHittable, "\(entry) の輪にもう一度押せない")
-            storyCrashStep(app, "\(entry).beforeReopen")
-            ring.tap()
+            guard round < rounds else { break }
+            // もう一度（今度は「見た」の輪から）。前の要素を使い回さず、探し直す
+            let again = ring()
+            let ready = again.waitForExistence(timeout: 15) && wait(again, "hittable == true", timeout: 10)
+            storyCrashStep(app, "\(entry).beforeReopen ready=\(ready)")
+            XCTAssertTrue(ready, "\(entry) の輪にもう一度押せない")
+            guard ready else { return }
+            again.tap()
         }
     }
 
-    /// `[storyCrash] <段> state=<数>` の行と、その時の画面の木をログ（xcodebuild のログ）と添付に残す。
-    /// state: 1 = 動いていない（落ちた）・4 = 前に居る（`XCUIApplication.State`）
+    /// `[storyCrash] <段> state=<数>` の行をログ（xcodebuild のログ）に、その時の画面の木を添付に残す。
+    /// state: 1 = 動いていない（落ちた）・4 = 前に居る（`XCUIApplication.State`）。
+    /// ホームの輪が読んだ並び（`stories.probe`）が見えていれば行に添える
     private func storyCrashStep(_ app: XCUIApplication, _ step: String) {
         let state = app.state
-        print("[storyCrash] \(step) state=\(state.rawValue) t=\(ISO8601DateFormatter().string(from: Date()))")
+        var line = "[storyCrash] \(step) state=\(state.rawValue) t=\(ISO8601DateFormatter().string(from: Date()))"
+        if state == .runningForeground {
+            let rows = app.descendants(matching: .any)["stories.probe"].firstMatch
+            if rows.exists { line += " rows=\(rows.value as? String ?? "?")" }
+        }
+        print(line)
         guard state == .runningForeground else { return }
-        let tree = app.debugDescription
-        print("[storyCrash] \(step) tree:\n\(tree)")
-        let attachment = XCTAttachment(string: tree)
+        let attachment = XCTAttachment(string: app.debugDescription)
         attachment.name = "storyCrash-\(step)"
         attachment.lifetime = .keepAlways
         add(attachment)
