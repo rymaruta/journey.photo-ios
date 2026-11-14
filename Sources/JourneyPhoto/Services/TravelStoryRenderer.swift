@@ -630,20 +630,10 @@ extension TravelStoryRenderer {
 
     /// ぼかした写真（模型 blur 5cqw・彩度 1.2）。小さく縮めてからぼかす（重くしない）
     static func blurred(_ image: UIImage) -> UIImage? {
-        guard let cg = image.cgImage else { return nil }
-        let input = CIImage(cgImage: cg)
-        let scale = min(1, 540 / max(input.extent.width, input.extent.height))
-        let small = input.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         // 絵の上で 5cqw（54px）。写真は高さ 1920＋はみ出し 2×10cqw に敷くので、縮めた写真の上の px に直す
-        let radius = Double(u(5)) * Double(small.extent.height) / Double(Layout.canvas.height + u(20))
-        guard let blur = CIFilter(name: "CIGaussianBlur"), let color = CIFilter(name: "CIColorControls") else { return nil }
-        blur.setValue(small.clampedToExtent(), forKey: kCIInputImageKey)
-        blur.setValue(max(4, radius), forKey: kCIInputRadiusKey)
-        color.setValue(blur.outputImage, forKey: kCIInputImageKey)
-        color.setValue(1.2, forKey: kCIInputSaturationKey)
-        guard let output = color.outputImage?.cropped(to: small.extent),
-              let result = CIContext(options: nil).createCGImage(output, from: small.extent) else { return nil }
-        return UIImage(cgImage: result)
+        SignatureShareCardRenderer.blurredBackdrop(image, longEdge: 540,
+                                                   radiusFraction: Double(u(5)) / Double(Layout.canvas.height + u(20)),
+                                                   saturation: 1.2)
     }
 }
 #endif

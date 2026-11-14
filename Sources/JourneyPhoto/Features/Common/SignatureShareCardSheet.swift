@@ -207,29 +207,13 @@ extension SignatureShareCardSheet {
     }
 
     /// 下: 「ストーリーに載せる」「リンクをコピー」（線の副ボタン 44 を2つ並べる）と「閉じる」（文字のボタン）。
-    /// 確かめは出さない（閉じれば何も起きない・CLAUDE.md「聞くのは最小に」）
+    /// 確かめは出さない（閉じれば何も起きない・CLAUDE.md「聞くのは最小に」）。
+    /// 2026-11-14: 大きい文字で2つが横に収まらなければ縦に積む（板 06「大きい文字」・字を「…」で切らない）
     func postedActions(_ posted: Posted) -> some View {
         VStack(spacing: 4) {
-            HStack(spacing: 8) {
-                Button { Task { await prepareStory(posted) } } label: {
-                    Text(SendSheetLayout.storyLabel)
-                        .jpOutlineButton(fullWidth: true)
-                }
-                .buttonStyle(.plain)
-                .disabled(preparingStory)
-                .accessibilityIdentifier("postedCard.story")
-                if let link = posted.link {
-                    Button {
-                        UIPasteboard.general.string = link.absoluteString
-                        didShare = true
-                        toasts.show(L("リンクをコピーしました", "Link copied"))
-                    } label: {
-                        Text(L("リンクをコピー", "Copy link"))
-                            .jpOutlineButton(fullWidth: true)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("postedCard.copyLink")
-                }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { postedShareButtons(posted) }
+                VStack(spacing: 8) { postedShareButtons(posted) }
             }
             Button(L("閉じる", "Close")) { dismiss() }
                 .font(JPFont.bodyEmphasis)
@@ -241,6 +225,41 @@ extension SignatureShareCardSheet {
         }
         .padding(.horizontal)
         .padding(.bottom, 8)
+    }
+
+    /// 「ストーリーに載せる」と「リンクをコピー」。ストーリーの絵を作っている間は、字の代わりに回る印を出す
+    /// （押した手ごたえ・二度押しを受けない・板 06「送っている間は印を出す」）
+    @ViewBuilder
+    func postedShareButtons(_ posted: Posted) -> some View {
+        Button { Task { await prepareStory(posted) } } label: {
+            ZStack {
+                Text(SendSheetLayout.storyLabel)
+                    .opacity(preparingStory ? 0 : 1)
+                if preparingStory {
+                    ProgressView()
+                        .tint(WebTheme.text)
+                        .accessibilityHidden(true)
+                }
+            }
+            .jpOutlineButton(fullWidth: true)
+        }
+        .buttonStyle(.plain)
+        .disabled(preparingStory)
+        .accessibilityLabel(SendSheetLayout.storyLabel)
+        .accessibilityValue(preparingStory ? L("準備しています", "Preparing") : "")
+        .accessibilityIdentifier("postedCard.story")
+        if let link = posted.link {
+            Button {
+                UIPasteboard.general.string = link.absoluteString
+                didShare = true
+                toasts.show(L("リンクをコピーしました", "Link copied"))
+            } label: {
+                Text(L("リンクをコピー", "Copy link"))
+                    .jpOutlineButton(fullWidth: true)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("postedCard.copyLink")
+        }
     }
 
     /// 写真を札にしたストーリーの絵を作り、作る画面を開く（写真の詳細の `prepareStory` と同じ絵・`SharedPhotoStoryCard`）。
