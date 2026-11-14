@@ -9283,6 +9283,16 @@ final class ScreenshotTests: XCTestCase {
             XCTAssertTrue(button.exists, "\(id) が無い")
             if button.exists { XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(id) の的が 44pt 未満") }
         }
+        // 2026-11-14（owner「投稿した後にストーリーに載せるの背景寂しいね」）: 「ストーリーに載せる」で開く作る画面の
+        // 写真の札と、その後ろの地（`SharedPhotoStoryCard`）を撮る（120f）。投稿はしない
+        let story = app.buttons["postedCard.story"].firstMatch
+        guard story.exists, story.isHittable else { return }
+        story.tap()
+        let canvas = app.descendants(matching: .any)["story.canvas"].firstMatch
+        let opened = canvas.waitForExistence(timeout: 30)
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, opened ? "120f-投稿の完了からストーリーに載せる" : "120f-投稿の完了からストーリーに載せる（作る画面が開かない）")
+        XCTAssertTrue(opened, "投稿の完了の「ストーリーに載せる」で作る画面が開かない")
     }
 
     /// **DM の会話から旅行プランを作る（2026-11-12・資料「SNS をもっと SNS に」2a の段①と段②）**。
