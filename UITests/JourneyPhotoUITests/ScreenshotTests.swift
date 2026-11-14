@@ -9521,7 +9521,9 @@ final class ScreenshotTests: XCTestCase {
         // 2026-11-14（#599 の見直し）: 送っている間の下の主ボタン（輪＋「投稿しています」）が、系統に薄くされて
         // いないかを絵で見る。見本の通信は速いので、押した直後に撮る（間に合わなかった回は字で分かる）
         let sendingLabel = submit.exists ? submit.label : "none"
-        shoot(app, "120d-投稿（送信中の主ボタン）")
+        // 2026-11-14 判断（統合 1.1.88）: 共有カードの試験が2本（標準・大きい文字）でこの道を通るので、絵の名前を分ける
+        // （同じ名前だと置き場で標準の 120d が大きい文字の絵で上書きされる）
+        shoot(app, extraArguments.isEmpty ? "120d-投稿（送信中の主ボタン）" : "120d2-投稿（送信中の主ボタン・大きい文字）")
         print("[sendingShot] label=\(sendingLabel) enabled=\(submit.exists ? "\(submit.isEnabled)" : "none")"
               + " frame=\(submit.exists ? "\(submit.frame)" : "none")")
         let header = app.descendants(matching: .any)["postedCard.header"].firstMatch
