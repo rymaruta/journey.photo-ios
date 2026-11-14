@@ -305,12 +305,12 @@ struct PassViewerView: View {
     private func actions(_ content: PassCardContent) -> some View {
         let thanked = favorites.contains(content.photo.id)
         return VStack(spacing: JPSpace.xs) {
-            // 横に入らない大きさ（文字の大きさの設定）では2つのボタンを縦に積む（2026-10-21・線のボタンの字は1行なので、
-            // 横 2 つのままでは「ありがとうを返しました」が切れる）
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: JPSpace.xs) { actionButtons(content, thanked: thanked) }
-                VStack(spacing: JPSpace.xs) { actionButtons(content, thanked: thanked) }
-            }
+            // 2つのボタンは、いちばん長い名前が等分した幅に入るときだけ横に並べ、入らなければ縦に積む
+            // （`ActionTilesLayout`・線のボタンの字は縮めないので scale 1）。**2026-11-14**: 前の `ViewThatFits` は
+            // 理想の幅の合計で横を選び、横では等分するので、標準の大きさでも「ありがとうを返しました」が切れていた
+            // （Mac run 1271 の 81p・数は UI テストの `pass.viewer.actionsFit` の値）。押した後の名前も「送りました」に短くした
+            ActionTilesLayout(spacing: JPSpace.xs, scale: 1) { actionButtons(content, thanked: thanked) }
+                .overlay(alignment: .topLeading) { PassThanksFitProbe() }
             // 「ありがとう」は名前つきのいいね（相手のお知らせにこちらの名前が出る）。押す前に言う
             Text(PassPrivacyText.thanksNotice)
                 .font(JPFont.caption)
@@ -331,12 +331,13 @@ struct PassViewerView: View {
                     .font(.body)
                     .foregroundStyle(WebTheme.foreground)
                     .accessibilityHidden(true)
-                Text(thanked ? L("ありがとうを返しました", "Thanks sent") : L("ありがとう", "Thank you"))
+                Text(thanked ? PassViewerText.thanked : PassViewerText.thank)
             }
             .jpOutlineButton(fullWidth: true)
         }
         .buttonStyle(.plain)
         .disabled(thanked || thanking)
+        .accessibilityLabel(thanked ? PassViewerText.thankedSpoken : PassViewerText.thank)
         .accessibilityHint(L("相手にありがとうを送ります", "Sends your thanks to them"))
         .accessibilityIdentifier("pass.viewer.thanks")
         if mode == .bundle {
@@ -345,7 +346,7 @@ struct PassViewerView: View {
                 onFile()
                 dismiss()
             } label: {
-                Text(L("すれちがい帳に入れる", "Add to Pass book")).jpOutlineButton(fullWidth: true)
+                Text(PassViewerText.file).jpOutlineButton(fullWidth: true)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("pass.viewer.file")
@@ -360,7 +361,7 @@ struct PassViewerView: View {
         // 押した人。失敗の戻しは、この人の控えにだけ書く
         let owner = favorites.owner
         favorites.set(content.photo.id, favorite: true)
-        // 見本の束（`-JPPreviewPass`・Debug のみ）はサーバーに送らない。押した後の形（「ありがとうを返しました」）を
+        // 見本の束（`-JPPreviewPass`・Debug のみ）はサーバーに送らない。押した後の形（「送りました」）を
         // 画面写真で見るため、端末の中だけで済ませる（2026-10-21）
         if PreviewSession.passSample { return }
         do {
@@ -379,5 +380,70 @@ struct PassViewerView: View {
     /// ありがとうの失敗を、押した人の画面に書くか
     nonisolated static func keepsThanks(owner: String?, viewer: String?) -> Bool {
         owner != nil && owner == viewer
+    }
+}
+
+/// 束の下の2つのボタンの名前（2026-11-14）。押した後は「送りました」——前の「ありがとうを返しました」は横に2つ並べると
+/// 標準の文字の大きさでも切れた。読み上げは何を送ったか分かるよう「ありがとうを送りました」
+enum PassViewerText {
+    static var thank: String { L("ありがとう", "Thank you") }
+    static var thanked: String { L("送りました", "Sent") }
+    static var thankedSpoken: String { L("ありがとうを送りました", "Thanks sent") }
+    static var file: String { L("すれちがい帳に入れる", "Add to Pass book") }
+    /// 切れの数を取るときだけ比べる前の名前
+    static var oldThanked: String { L("ありがとうを返しました", "Thanks sent") }
+}
+
+/// **UI テストの事実取りだけ**（`-JPPreviewLayoutProbe YES`・Debug のみ）: 束の下の2つのボタンの名前が、
+/// 等分した幅に1行で入るか。値は `old=<前の名前の要る幅> thanked=<今の名前> thank=<押す前> file=<帳に入れる> column=<1つの幅>`。
+/// 要る幅はボタンと同じ組み方（ハート・すき間・字・左右の内側）で1行に組んだ幅
+struct PassThanksFitProbe: View {
+    @State private var widths: [String: CGFloat] = [:]
+    @State private var rowWidth: CGFloat = 0
+
+    var body: some View {
+        if PreviewSession.layoutProbe {
+            GeometryReader { g in
+                Color.clear
+                    .onAppear { rowWidth = g.size.width }
+                    .onChange(of: g.size.width) { _, w in rowWidth = w }
+            }
+            .background(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 0) {
+                    measured("old", heart: true, PassViewerText.oldThanked)
+                    measured("thanked", heart: true, PassViewerText.thanked)
+                    measured("thank", heart: true, PassViewerText.thank)
+                    measured("file", heart: false, PassViewerText.file)
+                }
+                .hidden()
+            }
+            .overlay(alignment: .topLeading) {
+                LayoutProbe(identifier: "pass.viewer.actionsFit", value: value)
+            }
+            .allowsHitTesting(false)
+        }
+    }
+
+    private var value: String {
+        let column = ActionTilesLayout.column(available: rowWidth, count: 2, spacing: JPSpace.xs)
+        func w(_ key: String) -> String { String(format: "%.1f", widths[key] ?? -1) }
+        return "old=\(w("old")) thanked=\(w("thanked")) thank=\(w("thank")) file=\(w("file")) "
+            + String(format: "column=%.1f", column)
+    }
+
+    private func measured(_ key: String, heart: Bool, _ text: String) -> some View {
+        HStack(spacing: JPSpace.xs) {
+            if heart { Image(systemName: "heart.fill").font(.body) }
+            Text(text)
+        }
+        .jpOutlineButton(fullWidth: false)
+        .fixedSize()
+        .background {
+            GeometryReader { g in
+                Color.clear
+                    .onAppear { widths[key] = g.size.width }
+                    .onChange(of: g.size.width) { _, w in widths[key] = w }
+            }
+        }
     }
 }

@@ -2013,7 +2013,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
-        app.launchArguments += ["-JPPreviewPass", "YES"]
+        app.launchArguments += ["-JPPreviewPass", "YES", "-JPPreviewLayoutProbe", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -2056,6 +2056,17 @@ final class ScreenshotTests: XCTestCase {
         for (button, name) in [(close, "閉じる"), (thanks, "ありがとう"), (file, "帳に入れる")] {
             XCTAssertTrue(button.exists, "「\(name)」が無い")
             XCTAssertGreaterThanOrEqual(button.frame.height, 44, "「\(name)」が 44pt 未満")
+        }
+        // 2026-11-14: 標準の文字の大きさで「ありがとう」を押した後の名前が切れない（前は「ありがとうを返しました」が切れた）
+        if thanks.isHittable {
+            assertThanksFit(app, when: "押す前（標準）")
+            thanks.tap()
+            let sent = NSPredicate(format: "label CONTAINS %@", "送りました")
+            XCTAssertEqual(XCTWaiter().wait(for: [expectation(for: sent, evaluatedWith: thanks)], timeout: 5), .completed,
+                           "「ありがとう」を押しても「送りました」にならない")
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "82a-すれちがいの束（ありがとうを送った）")
+            assertThanksFit(app, when: "押した後（標準）")
         }
         guard file.exists, file.isHittable else { return XCTFail("「帳に入れる」を押せない") }
         file.tap()
@@ -8316,7 +8327,7 @@ final class ScreenshotTests: XCTestCase {
 
     /// **すれちがいの束（大きい文字）**: 束の画面は送らないので字の伸びを xxxLarge で止めている（`PassViewerView.typeLimit`）。
     /// 文字をアクセシビリティの XL にしても、下のボタン（ありがとう・帳に入れる）と × が画面の中で押せるか。
-    /// 「ありがとう」を押した後（「ありがとうを返しました」・見本の束ではサーバーに送らない）も見る。
+    /// 「ありがとう」を押した後（「送りました」・見本の束ではサーバーに送らない）も見る。
     /// 札が出なければ撮らずに抜ける。**出たのにボタンが画面の外・44pt 未満・押せなければ落とす**
     func testCapturesPassViewerLargeText() {
         let app = XCUIApplication()
@@ -8325,7 +8336,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
-        app.launchArguments += ["-JPPreviewPass", "YES"]
+        app.launchArguments += ["-JPPreviewPass", "YES", "-JPPreviewLayoutProbe", "YES"]
         app.launchArguments += Self.largeText
         app.launch()
         let agree = app.buttons["legal.agree"]
@@ -8355,12 +8366,39 @@ final class ScreenshotTests: XCTestCase {
         guard thanks.isHittable else { return }
         thanks.tap()
         let sent = app.buttons["pass.viewer.thanks"].firstMatch
-        let done = NSPredicate(format: "label CONTAINS %@", "返しました")
+        let done = NSPredicate(format: "label CONTAINS %@", "送りました")
         XCTAssertEqual(XCTWaiter().wait(for: [expectation(for: done, evaluatedWith: sent)], timeout: 5), .completed,
-                       "「ありがとう」を押しても「ありがとうを返しました」にならない")
+                       "「ありがとう」を押しても「送りました」にならない")
         Thread.sleep(forTimeInterval: 1)
-        shoot(app, "81y-大きい文字（すれちがいの束・ありがとうを返した）")
+        shoot(app, "81y-大きい文字（すれちがいの束・ありがとうを送った）")
         checkButtons("ありがとうの後に")
+        assertThanksFit(app, when: "押した後（大きい文字）")
+    }
+
+    /// 束の下の「ありがとう」「すれちがい帳に入れる」の名前が切れていないか（2026-11-14）。字の切れは画面の木に出ないので、
+    /// 見えない要素 `pass.viewer.actionsFit`（`PassThanksFitProbe`・`-JPPreviewLayoutProbe YES`）の「名前の要る幅」と、
+    /// ボタンの実の幅を比べる。数は `measured passActions` の行に出す
+    private func assertThanksFit(_ app: XCUIApplication, when: String) {
+        let probe = app.descendants(matching: .any).matching(identifier: "pass.viewer.actionsFit").firstMatch
+        guard probe.waitForExistence(timeout: 5) else { return XCTFail("\(when): 寸法の見えない要素が無い") }
+        let value = probe.value as? String ?? ""
+        let thanks = app.buttons["pass.viewer.thanks"].firstMatch
+        let file = app.buttons["pass.viewer.file"].firstMatch
+        print("measured passActions \(when) \(value) thanksButton=\(thanks.frame) fileButton=\(file.frame) label=\(thanks.label)")
+        var widths: [String: Double] = [:]
+        for pair in value.split(separator: " ") {
+            let kv = pair.split(separator: "=")
+            if kv.count == 2, let v = Double(kv[1]) { widths[String(kv[0])] = v }
+        }
+        let thankedNow = thanks.label.contains("送りました")
+        guard let needThanks = widths[thankedNow ? "thanked" : "thank"], let needFile = widths["file"],
+              needThanks > 0, needFile > 0 else { return XCTFail("\(when): 寸法が読めない（\(value)）") }
+        XCTAssertLessThanOrEqual(needThanks, thanks.frame.width + 0.5,
+                                 "\(when): 「ありがとう」の名前が切れる（要る \(needThanks) > 幅 \(thanks.frame.width)）")
+        if file.exists {
+            XCTAssertLessThanOrEqual(needFile, file.frame.width + 0.5,
+                                     "\(when): 「すれちがい帳に入れる」が切れる（要る \(needFile) > 幅 \(file.frame.width)）")
+        }
     }
 
     /// サポーター証（マイページ → 設定 → サポーター証）まで進める。行が無い（サポーターでない・読めない）なら false

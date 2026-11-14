@@ -119,7 +119,8 @@ final class CamperPassTrunkDynamicTypeTests: XCTestCase {
             ("Trunk/TrunkView.swift", "private func statCell(", ["lineLimit(typeSize.isAccessibilitySize ? 3 : 1)"]),
             ("Trunk/TrunkParts.swift", "struct TrunkButtonFace: View {", ["lineLimit(typeSize.isAccessibilitySize ? 3 : 1)"]),
             ("Pass/PassViewerView.swift", "private func actions(_ content: PassCardContent) -> some View {",
-             ["ViewThatFits(in: .horizontal)", "VStack(spacing: JPSpace.xs) { actionButtons(content, thanked: thanked) }"]),
+             // 2026-11-14: 等分した幅に入るかで横と縦を決める（`ViewThatFits` は合計で選び、等分した横で切れた）
+             ["ActionTilesLayout(spacing: JPSpace.xs, scale: 1) { actionButtons(content, thanked: thanked) }"]),
             ("Pass/PassSpinCard.swift", "struct PassSpinCard: View {", ["ViewThatFits(in: .horizontal)", "flipButton"]),
             ("Pro/SupporterCardView.swift", "private func yearsSection(width: Double) -> some View {",
              ["ViewThatFits(in: .horizontal)", "monthCount(month)"]),

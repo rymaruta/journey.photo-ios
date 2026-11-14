@@ -102,4 +102,19 @@ final class PassWordingTests: XCTestCase {
         XCTAssertTrue(PassTicketFaceStyle.profileUnreadable.contains(L("通信できる所で、もう一度お試しください",
                                                                        "Please try again when you\u{2019}re online")))
     }
+
+    /// 🔴 束の下の2つのボタン（2026-11-14）: 押した後の名前は短く（「送りました」・読み上げは「ありがとうを送りました」）、
+    /// 並びは等分した幅に入るかで横・縦を決める（`ViewThatFits` の合計で選ぶと、横で等分して切れた）
+    func testThanksButtonDoesNotTruncate() throws {
+        XCTAssertEqual(PassViewerText.thanked, L("送りました", "Sent"))
+        XCTAssertEqual(PassViewerText.thankedSpoken, L("ありがとうを送りました", "Thanks sent"))
+        XCTAssertLessThanOrEqual(PassViewerText.thanked.count, PassViewerText.thank.count,
+                                 "押した後の名前が押す前より長い（横に2つ並べると切れる）")
+        // 合計なら入るが、等分すると入らない幅（例: 230 と 160 を 408 に）は縦に積む
+        XCTAssertFalse(ActionTilesLayout.fitsInOneRow(ideals: [230, 160], available: 408, spacing: JPSpace.xs, minScale: 1))
+        XCTAssertTrue(ActionTilesLayout.fitsInOneRow(ideals: [150, 190], available: 408, spacing: JPSpace.xs, minScale: 1))
+        let viewer = try String(contentsOf: sourcesRoot.appendingPathComponent("Features/Pass/PassViewerView.swift"), encoding: .utf8)
+        XCTAssertTrue(viewer.contains("ActionTilesLayout(spacing: JPSpace.xs, scale: 1) { actionButtons(content, thanked: thanked) }"))
+        XCTAssertFalse(viewer.contains("HStack(spacing: JPSpace.xs) { actionButtons"), "合計で横を選ぶ並びに戻った")
+    }
 }
