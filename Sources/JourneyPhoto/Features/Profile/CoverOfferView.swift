@@ -90,7 +90,7 @@ struct CoverOfferView: View {
                         .frame(height: 70)
                 }
             VStack(alignment: .leading, spacing: 6) {
-                RemoteImage(url: auth.userId.flatMap {
+                FaceImage(url: auth.userId.flatMap {
                     UserProfile.profileAssetURL(userId: $0, suffix: nil,
                                                 cacheBust: ProfileImageVersions.shared.token(for: $0)) })
                     .frame(width: 56, height: 56)

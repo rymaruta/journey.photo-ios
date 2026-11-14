@@ -1766,7 +1766,8 @@ final class ScreenshotTests: XCTestCase {
             Case(extra: ["-JPPreviewBadges", "none:1"] + notShown, tag: "メダルの無い人", slot: false, shot: nil),
         ]
         for c in cases {
-            let app = launchProfileLooks(c.extra)
+            // 名前の行の当たりの張り出しを値で出す（`mypage.name.probe`・2026-11-13 確かめ役）
+            let app = launchProfileLooks(c.extra + ["-JPPreviewLayoutProbe", "YES"])
             defer { app.terminate() }
             let tabBar = app.tabBars.firstMatch
             guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return XCTFail("\(c.tag): 下の札が出ない") }
@@ -1795,6 +1796,17 @@ final class ScreenshotTests: XCTestCase {
             note.name = "121-名前の段の並び（\(c.tag)）"
             note.lifetime = .keepAlways
             add(note)
+            // 名前の行と下の「@ユーザー名」の行の frame、当たりの張り出し（2026-11-13 確かめ役: 名前が折り返したとき重なるか）
+            let handle = app.descendants(matching: .any)["mypage.handleLine"].firstMatch
+            let nameProbe = app.descendants(matching: .any)["mypage.name.probe"].firstMatch
+            print("measured mypageName tag=\(c.tag) name=\(nameLine.frame) handle=\(handle.exists ? "\(handle.frame)" : "none") "
+                  + "probe=\(nameProbe.exists ? (nameProbe.value as? String ?? "") : "none")")
+            // 名前の行の frame は当たりの範囲（Mac run 1213: 1行で高さ 44＝1行 36＋上下の張り出し 4）。
+            // 折り返しても、下の「@ユーザー名」の行に掛からない（run 1213: 3件とも名前の下端＝下の行の上端）
+            if handle.exists {
+                XCTAssertLessThanOrEqual(nameLine.frame.maxY, handle.frame.minY + 0.5,
+                                         "\(c.tag): 名前の当たりが下の行に重なる（\(rows)・handle=\(handle.frame)）")
+            }
             XCTAssertTrue(qr.exists, "\(c.tag): QR の印が無い")
             XCTAssertGreaterThan(nameLine.frame.width, 0, "\(c.tag): 名前の行が潰れた（\(rows)）")
             XCTAssertLessThan(abs(slot.frame.midY - nameLine.frame.midY), 12, "\(c.tag): 丸が名前の段にない（\(rows)）")
@@ -2200,6 +2212,78 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(toggle.waitForExistence(timeout: 5), "設定から来た帳の頭の行で、設定に戻らない")
         Thread.sleep(forTimeInterval: 1)
         XCTAssertFalse(status.exists, "設定から来た帳の頭の行で、設定を積み直した（帳が残っている）")
+    }
+
+    /// **大きい文字で、行動の札（行きたい・旅行プランに入れる・経路）の名前が切れないか**（2026-11-13 確かめ役の指摘）。
+    ///
+    /// 字の大きさを1段上（XL）とアクセシビリティの大きさ（AccessibilityXL）にして、観光スポットの頁（マップ →「スポット」の
+    /// 一覧の先頭）と写真の詳細（ホームの先頭の写真・行き先の段）を撮る。字の切れは画面の木から取れないので、見えない要素
+    /// （`spot.official.fit`・`photo.trip.fit`・`ActionRowFitProbe`）の「名前の要る幅・札1つの幅・入るか」をログに出す
+    /// （`measured tripActions` の行）。**入らなければ落とす**。画面が出なければ撮らずに抜ける（この試験の決まり）
+    func testCapturesTripActionsLargeText() {
+        for (category, tag) in [("UICTContentSizeCategoryXL", "XL"), ("UICTContentSizeCategoryAccessibilityXL", "AXL")] {
+            let app = XCUIApplication()
+            app.launchArguments += ["-legal.consent.version", "0"]
+            app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+            app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", category, "-JPPreviewLayoutProbe", "YES"]
+            app.launch()
+            defer { app.terminate() }
+            let agree = app.buttons["legal.agree"]
+            if agree.waitForExistence(timeout: 30) { agree.tap() }
+            let tabBar = app.tabBars.firstMatch
+            guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 3 else { continue }
+
+            // 観光スポットの頁
+            tabBar.buttons.element(boundBy: 3).tap()
+            let spots = app.buttons["map.mode.spots"].firstMatch
+            if spots.waitForExistence(timeout: 15) {
+                spots.tap()
+                let row = app.buttons.matching(identifier: "map.spotRow").firstMatch
+                if row.waitForExistence(timeout: 15), row.isHittable {
+                    row.tap()
+                    let fit = app.descendants(matching: .any).matching(identifier: "spot.official.fit").firstMatch
+                    if fit.waitForExistence(timeout: 10) {
+                        Thread.sleep(forTimeInterval: 2)
+                        let value = fit.value as? String ?? ""
+                        let trip = app.buttons["spot.official.trip"].firstMatch
+                        print("measured tripActions screen=spot size=\(tag) \(value) tripButton=\(trip.frame)")
+                        shoot(app, "13x-撮影スポット（行動の札・大きい文字 \(tag)）")
+                        XCTAssertTrue(value.hasSuffix("fits=yes"), "観光スポットの頁の札に名前が入らない（\(tag)）: \(value)")
+                    }
+                    goBack(app)
+                }
+            }
+
+            // 写真の詳細（ホームの先頭の写真。行き先の段の無い写真なら撮らない）
+            tabBar.buttons.element(boundBy: 0).tap()
+            let photo = app.buttons["feed.photo"].firstMatch
+            var pushes = 0
+            while !(photo.waitForExistence(timeout: 2) && photo.isHittable), pushes < 8 {
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                    .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)))
+                pushes += 1
+            }
+            guard photo.exists, photo.isHittable else { continue }
+            photo.tap()
+            let wish = app.buttons["photo.trip.wish"].firstMatch
+            guard wish.waitForExistence(timeout: 10) else { continue }
+            var tripPushes = 0
+            while !wish.isHittable, tripPushes < 6 {
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                    .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)))
+                Thread.sleep(forTimeInterval: 1)
+                tripPushes += 1
+            }
+            let fit = app.descendants(matching: .any).matching(identifier: "photo.trip.fit").firstMatch
+            guard wish.isHittable, fit.exists else { continue }
+            Thread.sleep(forTimeInterval: 1)
+            let value = fit.value as? String ?? ""
+            let add = app.buttons["photo.trip.add"].firstMatch
+            print("measured tripActions screen=photo size=\(tag) \(value) tripButton=\(add.frame)")
+            shoot(app, "20x-写真の詳細（行き先の札・大きい文字 \(tag)）")
+            XCTAssertTrue(value.hasSuffix("fits=yes"), "写真の詳細の札に名前が入らない（\(tag)）: \(value)")
+        }
     }
 
     /// **撮影スポットの頁の「構図一覧を見る ›」**（札 #519）。マップ →「スポット」の一覧の行から撮影スポットを開き、
@@ -3386,16 +3470,68 @@ final class ScreenshotTests: XCTestCase {
             }
         }
 
-        // 区間のシート（場所と場所の間の1行を押す）
-        let leg = app.descendants(matching: .any).matching(identifier: "trip.leg").firstMatch
+        // 区間の行を押すと Apple のマップ（2026-11-12）。見本では地図のアプリへ出ず、開いた手段を数えに残す（`TripLegMaps`）
+        //
+        // 🔴 **押すのは、上の帯（ナビゲーションバー）と下のタブの間に丸ごと見えている行だけ**（run 1208・1212）。
+        // `firstMatch` の行（1 日目の最初の区間）は運んだあと {16, 37.7, 364×44} で、上の帯（y 62〜116）の下に隠れていた。
+        // それでも `isHittable` は真で、押した点（y 約 60）は画面の上の端に落ち、行のボタンは呼ばれなかった
+        // （段の印 `LT` が 1 つも無い・同じ所にある「i」も開かなかった）。見えている枠を数で見て選ぶ
+        let legs = app.descendants(matching: .any).matching(identifier: "trip.leg")
+        let mores = app.buttons.matching(identifier: "trip.leg.more")
+        let window = app.windows.firstMatch.frame
+        func visibleBand() -> (top: CGFloat, bottom: CGFloat) {
+            let bar = app.navigationBars.firstMatch
+            let tabs = app.tabBars.firstMatch
+            return (bar.exists ? bar.frame.maxY : window.minY, tabs.exists ? tabs.frame.minY : window.maxY)
+        }
+        func fullyVisible(_ query: XCUIElementQuery) -> XCUIElement? {
+            let band = visibleBand()
+            for i in 0..<query.count {
+                let element = query.element(boundBy: i)
+                let frame = element.frame
+                if frame.minY >= band.top, frame.maxY <= band.bottom { return element }
+            }
+            return nil
+        }
+        var shown = fullyVisible(legs)
         var pushes = 0
-        while leg.exists, !leg.isHittable, pushes < 4 {
-            app.swipeDown()
+        while shown == nil, legs.count > 0, pushes < 6 {
+            // 上に隠れているなら下へ（swipeDown で上の方が出る）。先に 3 回、だめなら逆へ 3 回
+            if pushes < 3 { app.swipeDown() } else { app.swipeUp() }
             Thread.sleep(forTimeInterval: 1)
             pushes += 1
+            shown = fullyVisible(legs)
         }
-        if leg.exists, leg.isHittable {
+        let band = visibleBand()
+        let pickLine = "TRIPLEG pick band=\(Int(band.top))-\(Int(band.bottom)) legs=\(legs.count) pushes=\(pushes) "
+            + "frame=\(shown.map { "\(Int($0.frame.minX)),\(Int($0.frame.minY)) \(Int($0.frame.width))x\(Int($0.frame.height))" } ?? "nil")"
+        print(pickLine)
+        XCTContext.runActivity(named: pickLine) { _ in }
+        XCTAssertNotNil(shown, "区間の行が画面の見える所に出ない")
+        if let leg = shown {
+            let legLine = "TRIPLEG row label=\(leg.label) before[\(dragCounts(app))]"
+            print(legLine)
+            XCTContext.runActivity(named: legLine) { _ in }
+            let tapped = Date()
             leg.tap()
+            // 名前で探し直す（最大で数秒）のを待つ。少しずつ読んで、段の印（LT=・LM=・LR=・LX=・開いた M:）をその都度残す（run 1208）
+            var trail = dragCounts(app)
+            while !trail.contains("M:"), Date().timeIntervalSince(tapped) < 6 {
+                Thread.sleep(forTimeInterval: 0.5)
+                trail = dragCounts(app)
+                let pollLine = String(format: "TRIPLEG poll t+%.1fs trail[%@]", Date().timeIntervalSince(tapped), trail)
+                print(pollLine)
+                XCTContext.runActivity(named: pollLine) { _ in }
+            }
+            let mapsLine = "TRIPLEG maps trail[\(trail)]"
+            print(mapsLine)
+            XCTContext.runActivity(named: mapsLine) { _ in }
+            XCTAssertTrue(trail.contains("LT="), "区間の行を押しても行のボタンが呼ばれていない: \(trail)")
+            XCTAssertTrue(trail.contains("M:"), "区間の行を押しても Apple のマップを開いていない: \(trail)")
+        }
+        // 区間のシート（行の右端の「i」・出る時刻の目安と Google マップ）。同じく見えている「i」だけを押す
+        if let more = fullyVisible(mores) {
+            more.tap()
             let apple = app.buttons["trip.leg.apple"].firstMatch
             if apple.waitForExistence(timeout: 10) {
                 Thread.sleep(forTimeInterval: 1)
@@ -4007,11 +4143,32 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(waitForLabel(row, "北海道、3 回", timeout: 10), "スワイプで回数が変わった: \(row.label)")
     }
 
-    /// 要素の読み上げの名前が `text` になるまで待つ（帯の数は押したあとに描き直される）
+    /// 要素の読み上げの名前が `text` になるまで待つ（帯の数は押したあとに描き直される）。
+    ///
+    /// 2026-11-13 判断（値取り・待ち時間は変えない）: run 1203 で「一覧の長押しで帯が出ない／回数が変わった: 北海道、2 回」と落ちた。
+    /// 3 秒の待ちの中で読めたのは 1 回（探すのに 2.2 秒）で、その値はログに残らず、直後に読み直した値は正しかった。
+    /// 原因（アプリの描き直しが遅いのか・読んだ値が古いのか）を決めるため、0.3 秒ごとに読み、読み始めの時刻・
+    /// 読むのにかかった秒・在るか・値を `[labelWait]` で記録する（ログの行と XCTest の活動の両方）
     private func waitForLabel(_ element: XCUIElement, _ text: String, timeout: TimeInterval = 3) -> Bool {
-        let matches = NSPredicate(format: "label == %@", text)
-        return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: matches, object: element)],
-                              timeout: timeout) == .completed
+        let start = Date()
+        var reads: [String] = []
+        var matched = false
+        while true {
+            let readStart = Date().timeIntervalSince(start)
+            // 無い要素の `label` を読むと試験が落ちるので、先に在るかを見る
+            let exists = element.exists
+            let label = exists ? element.label : "-"
+            let took = Date().timeIntervalSince(start) - readStart
+            reads.append(String(format: "t=%.2f took=%.2f exists=%@ got=%@", readStart, took, exists ? "1" : "0", label))
+            if exists, label == text { matched = true; break }
+            if Date().timeIntervalSince(start) >= timeout { break }
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+        let line = "[labelWait] want=\(text) ok=\(matched) timeout=\(timeout) reads=\(reads.count): "
+            + reads.joined(separator: " | ")
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        return matched
     }
 
     // MARK: - 旅のトランク（2026-10-17・モック「旅のトランク」）
@@ -6603,6 +6760,9 @@ final class ScreenshotTests: XCTestCase {
             from.press(forDuration: 0.05, thenDragTo: to)
             Thread.sleep(forTimeInterval: 1.5)
         }
+
+        // 送り始めの姿（すれちがいの帯の枚数・上の部品の高さ・中身の上端。2026-11-13 PR #589 で始めの札の行が 100 低かった）
+        logProbe("0-start")
 
         // 1. 札の行の上を左へ払う → フォロー中
         swipe(left: true, atY: recommended.frame.midY)
@@ -9229,7 +9389,7 @@ final class ScreenshotTests: XCTestCase {
     /// ホームの「現像前の旅」の札 → 払う画面（はじめ・右へ払った後）→ 払い終えた表紙、
     /// ストーリーの列の「1年前」の輪 → 閲覧、の順に撮る。見本で必ず出るので、**出なければ落とす**
     func testCapturesDevelopAndYearAgo() {
-        let app = launchTrunk(["-JPPreviewDevelop", "YES"] + Self.freshDevelop)
+        let app = launchTrunk(["-JPPreviewDevelop", "YES", "-JPPreviewLayoutProbe", "YES"] + Self.freshDevelop)
         let card = app.buttons["home.develop"].firstMatch
         guard expect(card.waitForExistence(timeout: 25), "ホームの現像前の旅の札", app) else { return }
         Thread.sleep(forTimeInterval: 2)
@@ -9240,6 +9400,22 @@ final class ScreenshotTests: XCTestCase {
         guard expect(keep.waitForExistence(timeout: 10), "現像の払う画面", app) else { return }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "120b-現像（はじめのコマ）")
+        // 上の札と × は状態バーの下（2026-11-13 デザインの点検: 状態バーの中に入っていた・`DevelopView.deckScreen`）。
+        // 機種の状態バーの高さに頼らず、アプリの安全な範囲の上端（見えない要素 `develop.safeTop`・画面の座標）と比べる
+        let counter = app.descendants(matching: .any).matching(identifier: "develop.counter").firstMatch
+        let topClose = app.buttons["develop.close"].firstMatch
+        let safeProbe = app.descendants(matching: .any).matching(identifier: "develop.safeTop").firstMatch
+        if expect(counter.exists && topClose.exists && safeProbe.exists, "現像の上の札と × と安全な範囲の値", app) {
+            // 値は「top=<安全な範囲の上端> inset=<そこで読める上の幅>」（`DevelopView`）。比べるのは上端
+            let probeValue = safeProbe.value as? String ?? ""
+            let safeTop = probeValue.split(separator: " ").first
+                .flatMap { $0.hasPrefix("top=") ? Double($0.dropFirst(4)) : nil } ?? -1
+            print("measured developTopBar \(probeValue) counterMinY=\(counter.frame.minY) closeMinY=\(topClose.frame.minY)")
+            // 状態バーの無い機種は無いので、上端は 0 より下（0 なら測り方が違う）
+            XCTAssertGreaterThan(safeTop, 0, "安全な範囲の上端が取れない: \(probeValue)")
+            XCTAssertGreaterThanOrEqual(Double(counter.frame.minY), safeTop - 0.5, "現像の上の札が状態バーに重なる")
+            XCTAssertGreaterThanOrEqual(Double(topClose.frame.minY), safeTop - 0.5, "現像の × が状態バーに重なる")
+        }
         // 右へ払う（載せる）。払いの判定は 110pt 以上
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.4))
         start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.42)))
@@ -9337,10 +9513,14 @@ final class ScreenshotTests: XCTestCase {
         shoot(offline, "120i-1年前（圏外・送るのはあとで）")
     }
 
-    /// **手に取って運ぶ・つまむと地図**（2026-11-12 札 #543・章 段1）。ホームの写真を 0.8秒押さえて右の縁の
-    /// 半円（とっておく）へ運び、3秒の「取り消す」を撮る（撮ったら取り消す＝しおりに残さない）。
-    /// 次に写真の詳細の写真をつまんで縮め、地図（「この近くで撮られた写真」）を撮る。**出なければ落とす**
-    func testCapturesLiftAndPinch() {
+    /// **つまむと地図**（2026-11-12 札 #543・章 段1）。ホームの写真を開き、写真の詳細の写真をつまんで縮め、
+    /// 地図（「この近くで撮られた写真」）を撮る。**出なければ落とす**
+    ///
+    /// 2026-11-13 判断: 前の `testCapturesLiftAndPinch` から「手に取って運ぶ」の段（右の半円へ運んで「取り消す」を撮る）を消した。
+    /// 1.1.84 からホームの札の身振りを使わない（`PhotoLift.homeGestureEnabled = false`・fb5c8d3c3）ので、
+    /// その段は毎回落ちていた（run 1201「運んだ後の「取り消す」 が出ない」）。身振りを戻すときは、消した段も戻す
+    /// （`YubiReviewTests.testHomeLiftIsOffIn1184` の注記）
+    func testCapturesPinchToMap() {
         let app = launchTrunk([])
         let recommended = app.buttons["おすすめ"].firstMatch
         if recommended.waitForExistence(timeout: 15), recommended.isHittable { recommended.tap() }
@@ -9353,20 +9533,6 @@ final class ScreenshotTests: XCTestCase {
             pushes += 1
         }
         guard expect(photo.exists && photo.isHittable, "ホームの写真", app) else { return }
-        // はじめての案内（出ていたら5秒で消える）を待つ
-        Thread.sleep(forTimeInterval: 1)
-        // 手に取って（0.35秒より長く押さえる）右の縁の真ん中（半円・半径 105pt）へ運ぶ
-        photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            .press(forDuration: 0.8,
-                   thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 430.0 / 844.0)))
-        let undo = app.buttons["lift.undo"].firstMatch
-        guard expect(undo.waitForExistence(timeout: 3), "運んだ後の「取り消す」", app) else { return }
-        shoot(app, "121a-ホーム（手に取って運んだ・取り消す）")
-        XCTAssertGreaterThanOrEqual(undo.frame.height, 44, "「取り消す」が 44pt 未満")
-        undo.tap()
-        Thread.sleep(forTimeInterval: 1)
-        // 運び終えたら幕は残らない（ホームの写真がまた押せる）
-        guard expect(photo.exists && photo.isHittable, "運んだ後に押せるホームの写真", app) else { return }
         photo.tap()
         let hero = app.buttons["detail.hero"].firstMatch
         guard expect(hero.waitForExistence(timeout: 10) && hero.isHittable, "写真の詳細の写真", app) else { return }

@@ -54,6 +54,10 @@ struct NotificationsView: View {
             route = nil
         }
         .navigationTitle(L("お知らせ", "Activity"))
+        // 題は上のバーの真ん中に 17 の太字（板 Notifications の見出し・板 02 の Headline「ナビ、シートの題」）。
+        // 2026-11-13 デザインの点検: 表示の形を決めておらず、シートの中で標準の大きい見出し（34 のゴシックの太字）が
+        // 出ていた。同じくシートで開くメッセージの一覧（`DMInboxView`）と同じ形
+        .navigationBarTitleDisplayMode(.inline)
         // **通知の設定**（板 15 の右上の歯車）。行き先は設定の画面——
         // プッシュ通知の入／切はそこにある。閉じる口は `RootView` が
         // 左に置いているので、右に置いてぶつからない
@@ -522,8 +526,8 @@ private struct NotificationRow: View {
     @ViewBuilder
     private var personAvatar: some View {
         let userId = notification.byId.flatMap { $0.isEmpty ? nil : $0 }
-        let face = RemoteImage(url: notification.deleted == true ? nil
-                               : userId.flatMap { UserProfile.profileAssetURL(userId: $0, suffix: nil, cacheBust: nil) })
+        let face = FaceImage(url: notification.deleted == true ? nil
+                             : userId.flatMap { UserProfile.profileAssetURL(userId: $0, suffix: nil, cacheBust: nil) })
             .frame(width: 42, height: 42)
             .background(WebTheme.surface)
             .clipShape(Circle())

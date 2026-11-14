@@ -28,8 +28,15 @@ struct RemoteImage: View {
     /// **人のアイコンに「壊れた写真」の記号を出さない。** アバターを
     /// 設定していない人は珍しくないのに、丸の中に写真の記号が出て
     /// 「読み込みに失敗した」ように見えていた（実機の絵・run 40）。
-    /// 人を指す場所では人型を置く。
+    /// 人を指す場所では人型を置く——顔は `FaceImage` を使う（印は `personSymbol` の1つ）。
     var placeholderSymbol: String = "photo"
+    /// 顔写真の無い人の印（人の影）。**顔を出す所はすべてこれ**（`FaceImage`）。
+    ///
+    /// 2026-11-13 判断（デザインの点検「顔写真の無い人の印が画面で違う」）: 人のページ・マイページ・お知らせ・
+    /// フォロー一覧は既定の「写真」の印（風景）、DM は `person.fill`、ストーリー・写真の詳細などは
+    /// `person.crop.circle.fill`（丸の中に丸の人）と3通りに割れていた。丸く切り抜く顔の中に丸の印を置くと
+    /// 二重の丸になるので、DM の人の影 `person.fill` にそろえる
+    nonisolated static let personSymbol = "person.fill"
     /// 自動の1回のあと、**押して読み直せる**記号を出すか。**既定は出さない。**
     ///
     /// 🔴 ボタンは周りの操作を奪う——ストーリーでは左右送りの押下を、一覧・旅の本では
@@ -141,6 +148,17 @@ struct RemoteImage: View {
             .foregroundStyle(.tertiary)
             // 飾り。読み上げの邪魔をしない
             .accessibilityHidden(true)
+    }
+}
+
+/// **人の顔**（アイコン）。顔写真が無い・読めない・退会した人（`url` が nil）は人の影（`RemoteImage.personSymbol`）。
+///
+/// 顔を出す所はどこもこの部品にする（2026-11-13・画面ごとに印が割れていた件）。大きさ・丸く切る・地の色は呼ぶ側
+struct FaceImage: View {
+    let url: URL?
+
+    var body: some View {
+        RemoteImage(url: url, placeholderSymbol: RemoteImage.personSymbol)
     }
 }
 

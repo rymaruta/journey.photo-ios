@@ -48,6 +48,9 @@ struct DevelopView: View {
     @State private var history: [String] = []
     /// 読めないコマを飛ばした直後の札（写真の上のガラス・`DevelopTrips.unreadableNoticeSeconds` で消える）
     @State private var unreadableNotice = false
+    /// UI テストのときだけ: 払う画面の上端（画面の座標）と、そこで読める安全な範囲の上の幅（`develop.safeTop` の値）
+    @State private var safeTop: CGFloat = 0
+    @State private var safeInset: CGFloat = 0
 
     private let store = DevelopProgressStore()
     private let frames: [String]
@@ -118,8 +121,11 @@ struct DevelopView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay { if unreadableNotice { unreadableCard } }
-            .overlay(alignment: .top) { topBar }
+            // 上に広げるのは写真の札だけ。上の札と × は**広げた後に**重ね、状態バー（島）の下に置く
+            // （2026-11-13 デザインの点検: 先に重ねてから広げていたので、上の札まで状態バーの中に入っていた。
+            // 画面写真で札が時計と同じ高さ。`DesignAudit1113Tests`・ScreenshotTests の 120b）
             .ignoresSafeArea(edges: .top)
+            .overlay(alignment: .top) { topBar }
             strip
                 .padding(.top, JPSpace.xs)
             if unreadable.isEmpty {
@@ -140,6 +146,26 @@ struct DevelopView: View {
             controls
                 .padding(.top, JPSpace.m)
                 .padding(.bottom, JPSpace.l)
+        }
+        // UI テストのときだけ: 安全な範囲の上端（画面の座標）を値で出す。上の札と × がその下にあるかを
+        // 機種の状態バーの高さに頼らず比べる（2026-11-13 確かめ役: `minY ≥ 44` では島の機種で重なっても通る）。
+        // 払う画面の並び（`VStack`）は安全な範囲の中に置かれるので、その上端が安全な範囲の上端。
+        // Mac run 1213 では「上端＋読める安全な範囲の上の幅」を出して 124.0 になり、× の上端 65.5 より下だった
+        // （上端の中で安全な範囲の幅も読めて二重に足していた）。上端と幅を分けて出し、試験は上端と比べる
+        .background {
+            if PreviewSession.layoutProbe {
+                GeometryReader { g in
+                    let top = g.frame(in: .global).minY
+                    let inset = g.safeAreaInsets.top
+                    Color.clear
+                        .onAppear { safeTop = top; safeInset = inset }
+                        .onChange(of: top) { _, value in safeTop = value }
+                        .onChange(of: inset) { _, value in safeInset = value }
+                }
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            LayoutProbe(identifier: "develop.safeTop", value: String(format: "top=%.1f inset=%.1f", safeTop, safeInset))
         }
     }
 
@@ -170,7 +196,8 @@ struct DevelopView: View {
             }
         }
         .padding(.horizontal, JPSpace.s)
-        .safeAreaPadding(.top)
+        // 状態バーの下は重ねる側（安全な範囲の中）で決まる。`.safeAreaPadding(.top)` は安全な範囲に既定の余白を
+        // **足す**もので、状態バーの高さを足すものではない（広げた中では 0 に足すだけだった）ので外した
         .padding(.top, JPSpace.xxs)
     }
 

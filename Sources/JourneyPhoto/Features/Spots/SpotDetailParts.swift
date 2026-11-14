@@ -23,7 +23,7 @@ enum SpotDetailParts {
                     .font(.system(size: actionIconSize))
             }
             Text(title)
-                .font(.footnote.weight(.semibold))
+                .font(actionTitleFont)
                 .lineLimit(1)
                 .minimumScaleFactor(WebTheme.minimumScale(forTextSize: JPTypeScale.footnote))
         }
@@ -57,6 +57,9 @@ enum SpotDetailParts {
         .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: JPRadius.m))
         .contentShape(RoundedRectangle(cornerRadius: JPRadius.m))
     }
+
+    /// 行動の札の名前の字（13 の太字・字の大きさの設定に追従）。字が入るかを測る `ActionRowFitProbe` も同じ字で組む
+    static let actionTitleFont: Font = .footnote.weight(.semibold)
 
     /// 行動の札の高さ（板 64）・印の大きさ（板 18）
     nonisolated static let actionHeight: CGFloat = JPHeight.tallRow

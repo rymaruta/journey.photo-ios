@@ -10,20 +10,24 @@ import SwiftUI
 /// 行きたいは**場所**を旅の候補に入れる（旗の印・文字つき）——押すと「行きたい」の一覧と旅のプランに並ぶ。
 /// 鍵はスポットの頁・撮影地の頁と同じ（`PhotoTrip.Destination.wishKey`）なので、どこで押しても状態がそろう。
 ///
-/// 見た目（デザインの板「黒塗りの真鍮」）: 写真の下の黒地の段なので、印（旗・経路・太陽）は真鍮
-/// （黒地の上の手がかり・CLAUDE.md の owner の好み「デザインの箇所は白より真鍮」）、文字は白。
-/// 札の地は surface（白 7%）。**選んだ状態は形でも伝える**——旗が塗りに変わり、縁が真鍮になり、
-/// 読み上げは「選択中」。押せるものは高さ 44pt。
+/// 見た目（デザインの板「黒塗りの真鍮」）: 札は観光スポットの頁と同じ部品（下の 2026-11-13 判断）。
+/// 「いつ」の太陽は真鍮（黒地の上の手がかり）。**選んだ状態は形でも伝える**——旗が塗りに変わり、札が白の塗りになり、
+/// 読み上げは「選択中」。押せるものは高さ 44pt 以上。
 ///
 /// **v2（2026-10-14・板 PhotoDetail の「写真から、次の旅へ」）**: 頭に眉ラベル「NEXT TRIP · 次の旅へ」
 /// （真鍮＋消える線・`JPEyebrowLine`。板の「この場所へ」は使わないと決めた呼び名なので「次の旅へ」・2026-10-11 の呼び名の決まり）。行きたい・経路は**幅を分け合う同じ大きさの札**（高さ 48・角 14・
 /// 地 白 7%・縁 白 12%）。「いつ」の1行は 13 の text-2 に真鍮の太陽
+///
+/// **2026-11-13 判断（デザインの点検「次の旅への札で『旅行プラ…』と切れる」）**: 札を観光スポットの頁と同じ部品
+/// （`SpotDetailParts.actionLabel`: 高さ 64・印の下に 13 の太字の名前・押した状態は白 94% の塗り）にそろえた。
+/// 前の札は印と 15 の字を横に並べ、左右に 16 の余白・高さ 48。並びは `ViewThatFits` で1段か2段（2つ＋1つ）。
+/// 前の並びを組み直して測ると（Mac run 1213・`ActionRowFitMeasureTests` の `measured oldTripRow`）、札の理想の幅の合計は
+/// 既定の字でも 410.3 で並びの幅（358・408）を超え、どの字の大きさでも2段を選んでいた。2段の「旅行プランに入れる」の札は
+/// 理想の幅 189.0 に対し 390 の画面で 175 しか無い。点検の画面写真の切れがどの並びのものかは確かめていない。
+/// 並びは観光スポットの頁と同じ `ActionTilesLayout`（名前が入れば1段、入らなければ縦に積む・2026-11-13 確かめ役の指摘）。
+/// 印は旗のまま（写真の詳細ではハートがいいね、しおりが保存なので、場所の「行きたい」は旗で分ける）。
+/// 押した状態は縁の真鍮ではなく、観光スポットの頁と同じ白 94% の塗り（形でも伝わる）
 struct PhotoTripSection: View {
-
-    /// 札の高さ（v2 の板の 48）。押せるものの最小 44 より大きい
-    nonisolated static let goHeight: CGFloat = JPHeight.field
-    /// 札の角（v2 の板の 14）
-    nonisolated static let goRadius: CGFloat = JPRadius.m
 
     let destination: PhotoTrip.Destination
     /// 「いつ」の1行（台帳のスポットで、座標か季節が分かるときだけ）
@@ -45,24 +49,20 @@ struct PhotoTripSection: View {
         VStack(alignment: .leading, spacing: 10) {
             JPEyebrowLine(L("NEXT TRIP\u{2002}次の旅へ", "NEXT TRIP"),
                           spoken: L("写真から、次の旅へ", "From this photo to your next trip"))
-            // 3つが1行に収まらない幅・字の大きさでは、経路を下の行へ（字を切らない・2026-11-10 札 #521）
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: JPSpace.xs) {
-                    wishButton
-                    tripButton
-                    if PhotoTrip.offersDirections(destination) {
-                        directionsButton
-                    }
+            // 観光スポットの頁と同じ並び（同じ幅の札を 8 のすき間で1段に。名前が入らない字の大きさでは縦に積む・
+            // `ActionTilesLayout`・`OfficialSpotView.actions`）
+            ActionTilesLayout() {
+                wishButton
+                tripButton
+                if PhotoTrip.offersDirections(destination) {
+                    directionsButton
                 }
-                VStack(spacing: JPSpace.xs) {
-                    HStack(spacing: JPSpace.xs) {
-                        wishButton
-                        tripButton
-                    }
-                    if PhotoTrip.offersDirections(destination) {
-                        directionsButton
-                    }
-                }
+            }
+            // UI テストのときだけ: 名前が札に入るかを値で出す（`ActionRowFitProbe`）
+            .background {
+                ActionRowFitProbe(identifier: "photo.trip.fit",
+                                  titles: [L("行きたい", "Want to go"), L("旅行プランに入れる", "Add to trip")]
+                                      + (PhotoTrip.offersDirections(destination) ? [L("経路", "Directions")] : []))
             }
             .tripAddSheet($tripAdd)
             if let when {
@@ -103,7 +103,8 @@ struct PhotoTripSection: View {
                 if let notice = WishlistSync.notice(for: outcome) { toasts.show(notice.text, kind: notice.kind) }
             }
         } label: {
-            chip(icon: wanted ? "flag.fill" : "flag", title: L("行きたい", "Want to go"), selected: wanted)
+            SpotDetailParts.actionLabel(icon: wanted ? "flag.fill" : "flag", title: L("行きたい", "Want to go"),
+                                        filled: wanted)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(L("行きたい: \(destination.name)", "Want to go: \(destination.name)"))
@@ -120,7 +121,8 @@ struct PhotoTripSection: View {
         Button {
             tripAdd = TripAddTarget(place: Self.tripPlace(destination), wishKey: destination.wishKey)
         } label: {
-            chip(icon: "calendar.badge.plus", title: L("旅行プランに入れる", "Add to trip"), selected: false)
+            SpotDetailParts.actionLabel(icon: "calendar.badge.plus", title: L("旅行プランに入れる", "Add to trip"),
+                                        filled: false)
         }
         .buttonStyle(.plain)
         .accessibilityHint(L("旅行プランの日程に入れます。「行きたい」にも入ります",
@@ -147,8 +149,8 @@ struct PhotoTripSection: View {
         Button {
             openDirections()
         } label: {
-            chip(icon: "arrow.triangle.turn.up.right.diamond", title: L("経路", "Directions"),
-                 selected: false, busy: openingDirections)
+            SpotDetailParts.actionLabel(icon: "arrow.triangle.turn.up.right.diamond", title: L("経路", "Directions"),
+                                        filled: false, busy: openingDirections)
         }
         .buttonStyle(.plain)
         .disabled(openingDirections)
@@ -166,33 +168,5 @@ struct PhotoTripSection: View {
             defer { openingDirections = false }
             await SpotDirections.openDirections(name: name, coords: coords, stillWanted: { onScreen })
         }
-    }
-
-    // MARK: - 札
-
-    /// 黒地の札（v2: 幅を分け合う・高さ 48・角 14・地 白 7%）。印は真鍮、字は白 15pt。
-    /// 選んだら縁を真鍮に（形でも伝える）。選んでいないときの縁は v2 の線（白 14%・板の `.go` は 12% だが、
-    /// `WebTheme.border` は部品の縁に使わない決まりなので、線のボタンの縁 `line` にそろえた）
-    private func chip(icon: String, title: String, selected: Bool, busy: Bool = false) -> some View {
-        HStack(spacing: JPSpace.xs) {
-            if busy {
-                ProgressView().tint(WebTheme.accent)
-            } else {
-                Image(systemName: icon)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(WebTheme.accent)
-                    .accessibilityHidden(true)
-            }
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(WebTheme.foreground)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, JPSpace.m)
-        .frame(maxWidth: .infinity, minHeight: Self.goHeight)
-        .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: Self.goRadius))
-        .overlay(RoundedRectangle(cornerRadius: Self.goRadius)
-            .strokeBorder(selected ? WebTheme.accent : WebTheme.line, lineWidth: JPStroke.hairline))
-        .contentShape(RoundedRectangle(cornerRadius: Self.goRadius))
     }
 }

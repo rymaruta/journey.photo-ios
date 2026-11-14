@@ -948,8 +948,7 @@ struct SearchView: View {
                         UserProfileView(userId: user.userId)
                     } label: {
                         HStack(spacing: 12) {
-                            RemoteImage(url: user.avatarURL(),
-                                        placeholderSymbol: "person.crop.circle.fill")
+                            FaceImage(url: user.avatarURL())
                                 .frame(width: 44, height: 44)
                                 .clipShape(Circle())
                             Text(user.name)

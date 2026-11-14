@@ -1174,8 +1174,7 @@ struct PhotoDetailView: View {
 
     /// 作者の顔の写真だけ（枠と丸めは呼ぶ側・`StoryAvatar`）
     private func authorFace(_ ownerId: String) -> some View {
-        RemoteImage(url: UserProfile.profileAssetURL(userId: ownerId, suffix: nil, cacheBust: nil),
-                    placeholderSymbol: "person.crop.circle.fill")
+        FaceImage(url: UserProfile.profileAssetURL(userId: ownerId, suffix: nil, cacheBust: nil))
     }
 
     private func followButton(_ userId: String, following isFollowing: Bool) -> some View {
@@ -2213,16 +2212,9 @@ struct PhotoDetailView: View {
     /// コメントした人の顔（v2 の板: 32pt の丸）。退会した人は人の形の印だけ（プロフィールを引かない）
     @ViewBuilder
     private func commentAvatar(_ comment: PhotoComment, size: CGFloat = PhotoDetailView.commentAvatarSize) -> some View {
-        Group {
-            if comment.isFromDeletedUser {
-                Image(systemName: "person.crop.circle.fill")
-                    .resizable()
-                    .foregroundStyle(WebTheme.text3)
-            } else {
-                RemoteImage(url: UserProfile.profileAssetURL(userId: comment.uid, suffix: nil, cacheBust: nil),
-                            placeholderSymbol: "person.crop.circle.fill")
-            }
-        }
+        // 退会した人は URL を渡さない（顔写真の無い人と同じ人の影・`FaceImage`）
+        FaceImage(url: comment.isFromDeletedUser ? nil
+                  : UserProfile.profileAssetURL(userId: comment.uid, suffix: nil, cacheBust: nil))
         .frame(width: size, height: size)
         .clipShape(Circle())
         .accessibilityHidden(true)

@@ -334,8 +334,8 @@ final class PhotoTripTests: XCTestCase {
         XCTAssertTrue(section.contains("\"flag.fill\" : \"flag\""), "保存（しおり）・いいね（ハート）と印を分ける")
         XCTAssertTrue(section.contains("if PhotoTrip.offersDirections(destination) {"))
         XCTAssertTrue(section.contains(".openDirections(name: name, coords: coords, stillWanted: { onScreen })"))
-        XCTAssertTrue(section.contains(".frame(maxWidth: .infinity, minHeight: Self.goHeight)"), "押せるものは 44pt")
-        XCTAssertGreaterThanOrEqual(PhotoTripSection.goHeight, WebTheme.minTapTarget)
+        XCTAssertTrue(section.contains("Parts.actionLabel("), "押せる札が観光スポットの頁の部品でない")
+        // 札の高さ（押せるものは 44pt 以上）は `DesignAudit1113Tests` が見る
         XCTAssertTrue(section.contains(".accessibilityAddTraits(wanted ? .isSelected : [])"), "選んだ状態を読み上げない")
     }
 

@@ -327,10 +327,11 @@ final class MapSpotsV2Tests: XCTestCase {
     func testActionTilesAreV2() throws {
         XCTAssertEqual(SpotDetailParts.actionHeight, 64)
         XCTAssertEqual(SpotDetailParts.actionIconSize, 18)
+        XCTAssertTrue(try source("Features/Spots/SpotDetailParts.swift").contains("static let actionTitleFont: Font = .footnote.weight(.semibold)"))
         let parts = try source("Features/Spots/SpotDetailParts.swift")
         let label = segment(parts, from: "static func actionLabel(")
         assertInOrder(["VStack(spacing: JPSpace.xxs)", ".font(.system(size: actionIconSize))",
-                       ".font(.footnote.weight(.semibold))", ".frame(minHeight: actionHeight)",
+                       ".font(actionTitleFont)", ".frame(minHeight: actionHeight)",
                        "AnyShapeStyle(WebTheme.accentBackground)", "RoundedRectangle(cornerRadius: JPRadius.m)"],
                       in: label, "行動の札")
         XCTAssertFalse(label.contains(".frame(height: 48)"), "v1 の 48 が残っている")

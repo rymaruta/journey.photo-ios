@@ -507,6 +507,12 @@ struct GalleryView: View {
 
     /// UI テストのときだけ、札の行の位置の数を見えない要素（`home.feed.probe`）に出す（`PreviewSession.feedProbe`）
     @State private var feedProbeText = ""
+    /// UI テストのときだけ: 札の行より上の部品と中身の枠（`FeedProbeFrame`・2026-11-13 PR #589 の
+    /// `testSwipesHomeFeedTabsWithoutLift` で札の行が 48 下がった件。上の部品が伸びたのか、送りの位置が戻ったのかを分ける）
+    @State private var feedProbeFrames: [String: CGRect] = [:]
+    /// UI テストのときだけ: フィードを替えてから 3 秒の、中身・入れ物・札の行の枠の移り変わり（`FeedProbeTrail`・2026-11-13
+    /// run 1223: 留まった状態から「新着」を押して替えたら、送りの位置が上端より 13 手前で止まった。いつ・何が伸びて動いたかを取る）
+    @State private var feedProbeTrail = FeedProbeTrail()
 
     private func updateFeedProbe() {
         let n: (CGFloat) -> String = { String(format: "%.2f", Double($0)) }
@@ -514,7 +520,29 @@ struct GalleryView: View {
             + " overflow=\(n(ProfileTabScroll.rowOverflow(rowMinY: feedRowSpot.minY, visibleTop: 0)))"
             + " pinned=\(feedRowPinned) rowH=\(n(feedRowHeight)) viewport=\(n(feedViewport))"
             + " pages=\(model.loadedPageCount) topCardsAway=\(topCardsAway)"
+            // 中身の上端（送った量の符号違い）と高さ、上の部品の高さ。すれちがいの帯は届いた束の枚数も（0 なら帯は出ない）
+            + " content=\(probeFrame("content"))"
+            + " passSlot=\(passCards(now: passNow).count)/\(probeFrame("passSlot"))"
+            + " stories=\(probeFrame("stories")) topCard=\(probeFrame("topCard"))"
+            + " pager=\(probeFrame("pager")) row=\(probeFrame("row")) minPage=\(n(ProfileTabScroll.minPageHeight(viewport: feedViewport, visibleTop: 0, rowHeight: feedRowHeight, spacing: Self.feedSpacing)))"
+            + " trail=[\(feedProbeTrail.items.joined(separator: ";"))]"
         if text != feedProbeText { feedProbeText = text }
+    }
+
+    /// 枠を「上端/高さ」で書く（まだ測っていなければ「-」）
+    private func probeFrame(_ key: String) -> String {
+        guard let frame = feedProbeFrames[key] else { return "-" }
+        return String(format: "%.2f/%.2f", Double(frame.minY), Double(frame.height))
+    }
+
+    /// 枠を控えて、値を出し直す（`FeedProbeFrame` から）
+    private func recordProbeFrame(_ key: String, _ frame: CGRect) {
+        guard feedProbeFrames[key] != frame else { return }
+        feedProbeFrames[key] = frame
+        if ["content", "pager", "row"].contains(key) {
+            feedProbeTrail.add(key + String(format: "=%.2f/%.2f", Double(frame.minY), Double(frame.height)))
+        }
+        updateFeedProbe()
     }
 
     /// ホームは**板 01c の写真の並び**（`HomeMosaic`・2026-09-26）。
@@ -539,8 +567,10 @@ struct GalleryView: View {
                 // 届いた束をまだ開いていないときだけ出る（`PassHomeSlot`）
                 let passBundle = passCards(now: passNow)
                 PassHomeSlot(cards: passBundle, now: passNow) { passDeck = PassDeck(cards: passBundle) }
+                    .modifier(FeedProbeFrame { recordProbeFrame("passSlot", $0) })
                 StoriesRow(reloadToken: tabRouter.postSheetsClosed &+ storiesRefresh,
                            myPhotos: model.myPhotos.filter { !dropped.deleted.contains($0.id) })
+                    .modifier(FeedProbeFrame { recordProbeFrame("stories", $0) })
                 // **#417 ⑦（2026-10-30 owner 採用）: 「NEW（みんなの新しい写真）」の段（2026-10-21・`HomeFreshStrip`）は外した。**
                 // 新着は切り替えの「新着」に一本化。最初の画面の人の写真は、写真の一覧の1段目が受け持つ
                 // （④で季節の段を一覧の中へ移し、①③で上を詰めたので、写真の大きな1枚目が1画面目に入る・Compare の板）。
@@ -564,6 +594,7 @@ struct GalleryView: View {
                                 reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed,
                                 seasonShelf: $seasonShelf,
                                 scrolledAway: topCardsAway)
+                    .modifier(FeedProbeFrame { recordProbeFrame("topCard", $0) })
                     // 上の札が見えている上端より上へ流れ切ったか（`HomeTopCardView.scrolledAway`・#426）。
                     // 外側を `VStack` にしたので、流れ出ても `onDisappear` が来ない。main（`LazyVStack`）では流れ出ると
                     // `onDisappear` が来て、札の差し替え（今日の一問・旅行プラン・日替わり）を戻るまで後回しにしていた。
@@ -585,7 +616,7 @@ struct GalleryView: View {
                         proxy.frame(in: .scrollView)
                     } action: { frame in
                         if let height = feedRowSpot.record(frame, height: feedRowHeight) { feedRowHeight = height }
-                        if PreviewSession.feedProbe { updateFeedProbe() }
+                        if PreviewSession.feedProbe { recordProbeFrame("row", frame) }
                     }
                     // 上端を越えたかは、越えた・戻ったときだけ値が変わる（送るたびに描き直さない）
                     .onGeometryChange(for: Bool.self) { proxy in
@@ -607,7 +638,14 @@ struct GalleryView: View {
                         feedSection(page, rows: pageRows(page, selected: photos))
                     }
                 }
+                .modifier(FeedProbeFrame { recordProbeFrame("pager", $0) })
             }
+            .modifier(FeedProbeFrame { recordProbeFrame("content", $0) })
+            // 縦の送りの位置・内側の余白・中身の高さを直に見る（UI テストのときだけ・`FeedScrollSpy`・run 1230）
+            .modifier(FeedScrollSpyModifier { line in
+                feedProbeTrail.add(line)
+                updateFeedProbe()
+            })
             .padding(.top, 8)
             // 最後のカードがタブバーに掛からないようにする
             .padding(.bottom, 24)
@@ -643,7 +681,14 @@ struct GalleryView: View {
         }
         // ⑧ 深く送ってから替えたら、新しい一覧は頭から（札の行を上端へ・マイページと同じ）。まだ送っていなければそのまま
         .onChange(of: model.feed) { _, _ in
-            if PreviewSession.feedProbe { updateFeedProbe() }
+            if PreviewSession.feedProbe {
+                // 替えた時の札の行の上端と、頭へ送るか（`scrollsToRow`）を先頭に置いて、3 秒の移り変わりを取り直す
+                let scrolls = ProfileTabScroll.scrollsToRow(rowMinY: feedRowSpot.minY, visibleTop: 0)
+                feedProbeTrail.restart("feed>\(model.feed.rawValue)"
+                                       + String(format: " rowSpot=%.2f", Double(feedRowSpot.minY))
+                                       + " scrollTo=\(scrolls ? "yes" : "no")")
+                updateFeedProbe()
+            }
             guard ProfileTabScroll.scrollsToRow(rowMinY: feedRowSpot.minY, visibleTop: 0) else { return }
             withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
                 proxy.scrollTo(Self.feedRowID, anchor: .top)
@@ -928,4 +973,44 @@ private struct FollowingSeenKey: Equatable {
     let feed: HomeFeed
     let newest: String?
     let viewer: String?
+}
+
+/// UI テストのときだけ: フィードを替えてから 3 秒の出来事を、替えてからのミリ秒つきで控える（`home.feed.probe` の `trail=`）。
+/// 箱（参照）なので、書き足しても画面を描き直さない（描き直すのは `feedProbeText` が変わったときだけ）
+final class FeedProbeTrail {
+    private var start: Date?
+    private(set) var items: [String] = []
+    /// 控える長さ（替えてから）と、件数の上限（見えない要素の値を長くしすぎない）
+    static let window: TimeInterval = 3
+    static let limit = 80
+
+    func restart(_ first: String) {
+        start = Date()
+        items = ["+0 " + first]
+    }
+
+    func add(_ entry: String) {
+        guard let start else { return }
+        let elapsed = Date().timeIntervalSince(start)
+        guard elapsed <= Self.window, items.count < Self.limit else { return }
+        items.append("+\(Int(elapsed * 1000)) " + entry)
+    }
+}
+
+/// UI テストのときだけ（`PreviewSession.feedProbe`）、部品の枠を送りの枠（`.scrollView`）で測って渡す。
+/// ふだんは何も足さない（送るたびに枠を測る仕事を増やさない）。2026-11-13 PR #589 の事実取り
+private struct FeedProbeFrame: ViewModifier {
+    let record: (CGRect) -> Void
+
+    func body(content: Content) -> some View {
+        if PreviewSession.feedProbe {
+            content.onGeometryChange(for: CGRect.self) { proxy in
+                proxy.frame(in: .scrollView)
+            } action: { frame in
+                record(frame)
+            }
+        } else {
+            content
+        }
+    }
 }

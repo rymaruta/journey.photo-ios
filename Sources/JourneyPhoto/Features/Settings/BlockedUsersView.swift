@@ -104,7 +104,7 @@ struct BlockedUsersView: View {
     /// （2026-09-26 から）。無い人・退会した人・101人目以降は名前だけ
     private func person(_ user: FollowUser) -> some View {
         HStack(spacing: 12) {
-            RemoteImage(url: UserProfile.profileAssetURL(userId: user.id, suffix: nil, cacheBust: nil))
+            FaceImage(url: UserProfile.profileAssetURL(userId: user.id, suffix: nil, cacheBust: nil))
                 .frame(width: 44, height: 44)
                 .background(WebTheme.surface)
                 .clipShape(Circle())

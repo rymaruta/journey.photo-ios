@@ -283,8 +283,7 @@ struct StoryRepliesSheet: View {
     }
 
     private func avatar(_ uid: String) -> some View {
-        RemoteImage(url: UserProfile.profileAssetURL(userId: uid, suffix: nil, cacheBust: nil),
-                    placeholderSymbol: "person.crop.circle.fill")
+        FaceImage(url: UserProfile.profileAssetURL(userId: uid, suffix: nil, cacheBust: nil))
             .frame(width: Self.avatarSize, height: Self.avatarSize)
             .clipShape(Circle())
     }

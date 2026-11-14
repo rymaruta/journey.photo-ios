@@ -237,7 +237,25 @@ final class CriticalFlowTests: XCTestCase {
         // 本体が空なら見本の答え手が 400 で断り、投稿画面は閉じない（`PreviewBackend.PreviewTransfer`）——上で落ちる
         let posted = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier == 'mypage.photo' AND label CONTAINS %@", title)).firstMatch
-        XCTAssertTrue(posted.waitForExistence(timeout: 20), "投稿した「\(title)」がマイページに並ばない")
+        if !posted.waitForExistence(timeout: 20) {
+            // 2026-11-13（PR #589 で4番目に流れて落ちた・最初に流れた回はいつも通る）: 推定で直さず、並ばなかったときの
+            // マイページの姿を値で残す——格子の数と先頭の題・位置、下の札、区分の札、名前の行、投稿の画面が残っていないか
+            let cells = app.descendants(matching: .any).matching(identifier: "mypage.photo")
+            let first = cells.allElementsBoundByIndex.prefix(10).map { "\($0.label)@\(Int($0.frame.minY))" }
+            let tabs = app.tabBars.firstMatch.buttons.allElementsBoundByIndex.map { "\($0.label)=\($0.isSelected)" }
+            let posts = app.buttons["profile.tab.posts"].firstMatch
+            let name = app.descendants(matching: .any)["mypage.nameLine"].firstMatch
+            let line = "[postProbe] title=\(title) cells=\(cells.count) first=\(first) tabs=\(tabs)"
+                + " postsTab=\(posts.exists ? "\(posts.isSelected)@\(Int(posts.frame.minY))" : "none")"
+                + " nameLine=\(name.exists ? "\(name.frame)" : "none")"
+                + " postedCard=\(app.buttons["postedCard.close"].exists) uploadOpen=\(app.buttons["upload.submit"].exists)"
+            print(line)
+            let note = XCTAttachment(string: line)
+            note.name = "postProbe"
+            note.lifetime = .keepAlways
+            add(note)
+        }
+        XCTAssertTrue(posted.exists, "投稿した「\(title)」がマイページに並ばない")
     }
 
     // MARK: - 4. ログアウト → ログイン
