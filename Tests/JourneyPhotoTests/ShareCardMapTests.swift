@@ -247,7 +247,27 @@ final class ShareCardMapTests: XCTestCase {
     }
 
     func testFadeStopsAreSmoothAndEndOnBlack() {
-        let stops = ShareCardMap.FadeLayout.fadeStops
+        assertSmooth(ShareCardMap.FadeLayout.fadeStops)
+        assertSmooth(ShareCardMap.CoverLayout.fadeStops)
+    }
+
+    /// 表紙の型: 明朝の撮影地の枠の上端で黒 75% 以上（2026-11-14 判断・白い写真の上で 4.67:1 だった）
+    func testCoverHeadlineSitsOnTheDarkPartOfTheFade() {
+        typealias C = ShareCardMap.CoverLayout
+        func alpha(at location: CGFloat) -> CGFloat {
+            let stops = C.fadeStops
+            guard let upper = stops.firstIndex(where: { $0.location >= location }), upper > 0 else { return stops.first?.alpha ?? 0 }
+            let a = stops[upper - 1], b = stops[upper]
+            return a.alpha + (b.alpha - a.alpha) * (location - a.location) / (b.location - a.location)
+        }
+        for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
+            let layout = C(ratio: ratio)
+            XCTAssertEqual(layout.placeFadeLocation, (340 - 182) / 340, accuracy: 0.001, "\(ratio)")
+            XCTAssertGreaterThanOrEqual(alpha(at: layout.placeFadeLocation), 0.75, "\(ratio)")
+        }
+    }
+
+    private func assertSmooth(_ stops: [(location: CGFloat, alpha: CGFloat)]) {
         XCTAssertEqual(stops.first?.location, 0)
         XCTAssertEqual(stops.first?.alpha, 0)
         XCTAssertEqual(stops.last?.location, 1)
@@ -325,9 +345,9 @@ final class ShareCardMapTests: XCTestCase {
 
     func testAllStylesAreOfferedInOrder() {
         // 共有画面の切り替え（帯・フェード・表紙・展示札）の元になる型。保存済みの値が消えない（rawValue を変えない）。
-        // 2026-11-14: プリント・切符・シネマを後ろに足した（前の4つの値は変えない）
+        // 2026-11-14: プリント・切符・シネマを後ろに足した（前の4つの値は変えない）。続けて額装・フィルム・縦書きを後ろに足した
         XCTAssertEqual(SignatureShareCardRenderer.Style.allCases.map(\.rawValue),
-                       ["band", "fade", "label", "cover", "printed", "ticket", "cinema"])
+                       ["band", "fade", "label", "cover", "printed", "ticket", "cinema", "mat", "film", "tanzaku"])
     }
 
     // MARK: - 残す島
@@ -633,8 +653,9 @@ final class ShareCardMapTests: XCTestCase {
         let dividerTop = L.headerCenter - 29, dividerBottom = L.headerCenter + 28
         XCTAssertEqual(dividerTop - inner, 51.5, accuracy: 1, "額縁の内側から 51.5")
         XCTAssertEqual(L.header - dividerBottom, 52.5, accuracy: 1, "写真まで 52.5")
-        // 9:16 は見出しと写真を 207 下げ、字の上端をストーリーの上の帯（14% = 268.8）の 4 下へ
-        XCTAssertEqual(L.topShift(.story), 207)
+        // 9:16 は見出しと写真を 288 下げ、字の上端を安全域の上（フィードの 4:5 の切り取り 285 + 6% = 349.8）の 4 下へ。
+        // 2026-11-14 判断: 前の 207（上端 274）は Instagram・Facebook のフィードの 4:5 の切り取りで 6〜11px 欠けていた（run 1296）
+        XCTAssertEqual(L.topShift(.story), 288)
         XCTAssertEqual(L.topShift(.portrait), 0)
         XCTAssertEqual(L.topShift(.square), 0)
         XCTAssertGreaterThanOrEqual(L.headerCenter - L.headerTextHalfHeight + L.topShift(.story),

@@ -419,6 +419,15 @@ enum ShareCardMap {
         var headerCenterY: CGFloat { Layout.headerCenter + topShift }
         static let blackHeight: CGFloat = 250
         static let fadeLength: CGFloat = 340
+        /// 表紙の型のグラデーションの形（2026-11-14 判断）。前はフェードの型と同じ `FadeLayout.fadeStops` で、
+        /// 明朝の撮影地（112pt・枠の上端は写真の下端の 182 上＝グラデーションの 46%）の所が黒 47% しかなく、
+        /// 白い写真の上の明暗の比が 4.67:1（run 1296・下限 4.5 のすぐ上）だった。
+        /// 字の枠の上端（46%）で黒 75% にし、見出しを 7:1 以上に（白い写真の上で約 9:1）。長さ 340 と点の数は同じで、境目は見せない
+        static let fadeStops: [(location: CGFloat, alpha: CGFloat)] = [
+            (0, 0), (0.06, 0.05), (0.16, 0.18), (0.28, 0.40), (0.40, 0.64), (0.46, 0.75), (0.7, 0.92), (1, 1)
+        ]
+        /// 撮影地の枠の上端がグラデーションのどこか（0〜1）
+        var placeFadeLocation: CGFloat { (placeTop - fadeTop) / Self.fadeLength }
         var photoBottom: CGFloat { base - Self.blackHeight }
         var fadeTop: CGFloat { photoBottom - Self.fadeLength }
         var placeTop: CGFloat { photoBottom - 182 }
