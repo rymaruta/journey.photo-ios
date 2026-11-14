@@ -261,16 +261,16 @@ extension TravelStoryRenderer {
         let left = rect.minX + u(5)
         let right = rect.maxX - u(5)
         let inner = right - left
-        // 上の段: JOURNEY PASS と場面（明朝）
+        // 上の段: JOURNEY PASS だけ。右上の場面の日本語（行ってきます・今ここ・ただいま）は描かない
+        // （2026-11-14 判断: owner「今ここ」がダサいのでなくていい。場面は下の眉ラベル TO・NOW・FROM で伝わる）。
+        // 段の高さと字の並びの線は、前に右上にあった明朝 4.8 の行のまま残す——本体の高さ（`passBodyHeight`）が
+        // 決まっているので、段を詰めると下の字がミシン目から離れて、本体の下に空きができる（章の模型の縦の釣り合いを保つ）
         var y = rect.minY + u(4.4)
         let top = sans(u(2.9), .heavy)
-        let phase = mincho(u(4.8))
-        let phaseWidth = (pass.phaseLabel as NSString).size(withAttributes: [.font: phase]).width
-        let baselineGap = phase.ascender - top.ascender
-        text("JOURNEY PASS", font: top, color: ink, kern: 0.22, at: CGPoint(x: left, y: y + baselineGap),
-             maxWidth: inner - phaseWidth - u(3))
-        text(pass.phaseLabel, font: phase, color: ink, kern: 0.04, at: CGPoint(x: right - phaseWidth, y: y))
-        y += phase.lineHeight + u(3)
+        let row = mincho(u(4.8))
+        text("JOURNEY PASS", font: top, color: ink, kern: 0.22, at: CGPoint(x: left, y: y + row.ascender - top.ascender),
+             maxWidth: inner)
+        y += row.lineHeight + u(3)
 
         // 真ん中: 小さな見出し・大きな字・明朝の地名、右に DAY
         let key = sans(u(2.8), .bold)
