@@ -677,7 +677,7 @@ struct ComposeGuideView: View {
     private var topBar: some View {
         HStack(spacing: 4) {
             Button { dismiss() } label: {
-                roundIcon("xmark")
+                roundIcon("xmark", corner: .topLeading)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Labels.Common.close)
@@ -708,14 +708,20 @@ struct ComposeGuideView: View {
     static let roundVisual: CGFloat = 34
 
     /// 上の帯の小さな丸（白 12% の丸に白の印。`tinted` なら印を真鍮＝いま効いている合図）
-    private func roundIcon(_ systemName: String, tinted: Bool = false) -> some View {
-        Image(systemName: systemName)
+    /// - `corner`: 画面の角に置く物（左上の閉じる）だけ渡す。当たりを角の側へ 60pt 四方まで広げる（`CornerTapArea`・2026-11-14）
+    @ViewBuilder
+    private func roundIcon(_ systemName: String, tinted: Bool = false, corner: CornerTapArea.Corner? = nil) -> some View {
+        let icon = Image(systemName: systemName)
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(tinted ? WebTheme.accent : WebTheme.foreground)
             .frame(width: Self.roundVisual, height: Self.roundVisual)
             .background(Color.white.opacity(0.12), in: Circle())
             .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-            .contentShape(Rectangle())
+        if let corner {
+            icon.cornerTapArea(corner)
+        } else {
+            icon.contentShape(Rectangle())
+        }
     }
 
     /// 向き（反転）。2026-10-16: 下の「構図」の行から上の帯の小さな丸へ移した（回す・隠すと並べる）

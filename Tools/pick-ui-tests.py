@@ -50,6 +50,9 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    # 2026-11-13（札 #590「探すの検索が重い」）: 探すで1字ずつ打ったときの body の回数・撮影スポットを当てた ms・止まった長さ。
                    # `screens=testSearchTypingProbe`（または `PerformanceTests`）
                    "PerformanceTests/testSearchTypingProbe",
+                   # 2026-11-14（人間工学の点検「追加の点検」4・5）: すれちがいの束の上限を段ごとに測る（6 回起動・合否なし）と、
+                   # シートのバーの「閉じる」の当たりを測る（UIKit が決める・合否なし）。`screens=testMeasuresPassViewerTypeLimits` など
+                   "ScreenshotTests/testMeasuresPassViewerTypeLimits", "ScreenshotTests/testCornerTapAreaSheetClose",
                    # 2026-10-31（#430）: とおまわり号の描画を測る試験（4 本・計 6 分ほど）。直している間だけ `screens=testMeasuresCamperRender` で流す
                    "ScreenshotTests/testMeasuresCamperRenderExterior", "ScreenshotTests/testMeasuresCamperRenderNight",
                    "ScreenshotTests/testMeasuresCamperRenderRoom", "ScreenshotTests/testMeasuresCamperRenderRoomNight",

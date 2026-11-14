@@ -431,7 +431,12 @@ struct StoryViewerView: View {
     /// **写真の上の飾り（見出し・足元・ひとこと・知らせ）の文字の大きさの上限。**
     /// 文字は Dynamic Type に付いてくる（2026-10-02 まで `.system(size:)` の固定だった）が、
     /// 写真の上は広さが決まっているので、ここで止める。写真に焼き込む文字
-    /// （`StoryTextLayer`）は見る人と同じ位置に出すため固定のまま
+    /// （`StoryTextLayer`）は見る人と同じ位置に出すため固定のまま。
+    ///
+    /// 2026-11-14 判断（人間工学の点検「追加の点検 4」）: 上限を残すのは**写真の上に重なる字**と、写真の下の決まった高さの
+    /// 帯（足元の返信欄・`StoryViewerMetrics.footerHeight`。下の札・道具の帯と同じく大きくできない帯）だけ。そこで押せる字には
+    /// 長押しで大きく見せる仕組み（`accessibilityShowsLargeContentViewer`）を付けた。「…」のシートと削除の確認は
+    /// ボタンなので上限を外した（`menuSheet`・`deleteConfirm`）
     static let chromeTypeLimit = DynamicTypeSize.xxLarge
 
     /// 写真の下に残す黒い帯の高さ（足元の操作がここに乗る。板は 844 のうち 84）
@@ -498,14 +503,13 @@ struct StoryViewerView: View {
                     .allowsHitTesting(false)
                     .transition(.opacity)
             }
+            // 「…」のシートと削除の確認は**文字の大きさの上限を置かない**（項目はボタン・HIG「少なくとも 200%」・
+            // 2026-11-14）。入りきらない大きさでは中だけ送る（`menuSheet`・`deleteConfirm` の `ViewThatFits`）
             if showMenu {
                 menuSheet(for: story)
-                    // 写真の上に重ねる板（スクロールしない）。大きすぎると項目が画面からはみ出す
-                    .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             }
             if showDeleteConfirm {
                 deleteConfirm(for: story)
-                    .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             }
         }
         .animation(.easeOut(duration: 0.18), value: showMenu)
@@ -803,6 +807,7 @@ struct StoryViewerView: View {
                 .buttonStyle(.plain)
                 .frame(maxWidth: .infinity)
                 .padding(.bottom, 24)
+                .accessibilityShowsLargeContentViewer()
                 .accessibilityIdentifier("story.reply.openMessage")
                 .task(id: sentConversation) {
                     try? await Task.sleep(for: DMActionToast.duration)
@@ -856,6 +861,8 @@ struct StoryViewerView: View {
         }
         .buttonStyle(.plain)
         .disabled(findingSharedPhoto)
+        // 字の大きさに上限を置いた写真の上の字。長押しで大きく見せる（Large Content Viewer・2026-11-14）
+        .accessibilityShowsLargeContentViewer()
         .accessibilityIdentifier("story.viewer.sharedPhoto")
     }
 
@@ -1097,6 +1104,8 @@ struct StoryViewerView: View {
                     authorLabel(for: story)
                 }
                 .buttonStyle(.plain)
+                // 字の大きさに上限を置いた写真の上の字。長押しで大きく見せる（Large Content Viewer・2026-11-14）
+                .accessibilityShowsLargeContentViewer()
             }
             Spacer(minLength: 0)
             // 上の「…」は人の投稿（通報とブロックの入口・審査 1.2。人のハイライトも）と、
@@ -1120,7 +1129,9 @@ struct StoryViewerView: View {
                 Image(systemName: "xmark")
                     .font(.title3)
                     .foregroundStyle(.white)
-                    .webTappable()
+                    .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                    // 角の物は当たりを角の側へ 60pt 四方まで広げる（見た目はそのまま・`CornerTapArea`・2026-11-14）
+                    .cornerTapArea(.topTrailing)
                     .accessibilityLabel(Labels.Common.close)
             }
         }
@@ -1573,6 +1584,7 @@ struct StoryViewerView: View {
         .dynamicTypeSize(...Self.chromeTypeLimit)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(L("写真を読み込めませんでした。読み直す", "Couldn't load the photo. Reload"))
+        .accessibilityShowsLargeContentViewer()
         .accessibilityAddTraits(.isButton)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -1640,87 +1652,93 @@ struct StoryViewerView: View {
             canKeep: StoryPhotoLink.canKeep(isVideo: story.isVideo, keptPhotoId: keptPhotoId(story)),
             inHighlight: highlight != nil
         )
+        // 2026-11-14 判断（人間工学の点検「追加の点検 4」）: 文字の大きさの上限（AX1）を外した。項目はボタンなので
+        // 設定どおりに大きくし、画面に入りきらない大きさでは中だけ送れるようにする（入るときは今までどおり下に寄せる）
+        let panel = VStack(spacing: 8) {
+            VStack(spacing: 0) {
+                // **誰のストーリーかを先に出してから操作**（v2 StoryViewerMenu）。
+                // ブロック・通報を取り違えないように、顔と名前を先頭に置く
+                menuHeader(for: story)
+                if items.contains(.pause) {
+                    menuRow(symbol: paused ? "play" : "pause",
+                            title: paused ? L("再開", "Resume") : L("一時停止", "Pause")) {
+                        paused.toggle()
+                    }
+                }
+                if items.contains(.mute) {
+                    menuRow(symbol: muted ? "speaker.wave.2" : "speaker.slash",
+                            title: muted ? L("音を出す", "Unmute") : L("音を消す", "Mute")) {
+                        muted.toggle()
+                    }
+                }
+                if items.contains(.hideCaption) {
+                    // 2026-10-16: 板 StoryViewerMenu の「文字を隠す」。印は打ち消しの入った文字
+                    // （`strikethrough`）。出すときは打ち消しの無い文字（`textformat`）
+                    menuRow(symbol: captionHidden ? "textformat" : "strikethrough",
+                            title: captionHidden ? L("文字を出す", "Show text") : L("文字を隠す", "Hide text")) {
+                        captionHidden.toggle()
+                    }
+                }
+                if items.contains(.block) {
+                    // 「非表示」とは書かない。サーバーにあるのは両向きのブロックだけで、
+                    // 片向きに隠す口は無い（相手からも見えなくなる）
+                    menuRow(symbol: "nosign", title: L("\(story.authorName) をブロック", "Block \(story.authorName)"),
+                            danger: true) {
+                        showBlockConfirm = true
+                    }
+                }
+                if items.contains(.report) {
+                    menuRow(symbol: "flag", title: L("通報する", "Report"), danger: true) {
+                        reportingStory = story
+                        showReport = true
+                    }
+                }
+                // 24時間で消える前に、自分の写真として残す。
+                // **動画には出さない**（サーバーが 400 で断る・`storyKeep.ts`）
+                // **自分用（アーカイブ）の投稿にも出さない**（サーバーが 409 で断る・`storyKeep.ts`）
+                if items.contains(.keep) {
+                    menuRow(symbol: "bookmark", title: L("写真として残す", "Keep as photo")) {
+                        Task { await keep(story) }
+                    }
+                    .disabled(isSending)
+                }
+                // **確かめてから消す**（以前は押した瞬間に消えていた）
+                if items.contains(.delete) {
+                    menuRow(symbol: "trash", title: Labels.Common.delete, danger: true) {
+                        showDeleteConfirm = true
+                    }
+                    .disabled(isSending)
+                    .accessibilityIdentifier("story.menu.delete")
+                }
+            }
+            .background(Self.sheetColor,
+                        in: RoundedRectangle(cornerRadius: StoryViewerMetrics.menuRadius))
+            .clipShape(RoundedRectangle(cornerRadius: StoryViewerMetrics.menuRadius))
+
+            Button {
+                showMenu = false
+            } label: {
+                Text(Labels.Common.cancel)
+                    .font(JPFont.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: StoryViewerMetrics.menuRowHeight)
+                    .background(Self.sheetColor,
+                                in: RoundedRectangle(cornerRadius: StoryViewerMetrics.menuRadius))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, JPSpace.xs)
+        .padding(.bottom, JPSpace.xs)
         return ZStack(alignment: .bottom) {
             // 外を押したら閉じる
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture { showMenu = false }
                 .ignoresSafeArea()
-            VStack(spacing: 8) {
-                VStack(spacing: 0) {
-                    // **誰のストーリーかを先に出してから操作**（v2 StoryViewerMenu）。
-                    // ブロック・通報を取り違えないように、顔と名前を先頭に置く
-                    menuHeader(for: story)
-                    if items.contains(.pause) {
-                        menuRow(symbol: paused ? "play" : "pause",
-                                title: paused ? L("再開", "Resume") : L("一時停止", "Pause")) {
-                            paused.toggle()
-                        }
-                    }
-                    if items.contains(.mute) {
-                        menuRow(symbol: muted ? "speaker.wave.2" : "speaker.slash",
-                                title: muted ? L("音を出す", "Unmute") : L("音を消す", "Mute")) {
-                            muted.toggle()
-                        }
-                    }
-                    if items.contains(.hideCaption) {
-                        // 2026-10-16: 板 StoryViewerMenu の「文字を隠す」。印は打ち消しの入った文字
-                        // （`strikethrough`）。出すときは打ち消しの無い文字（`textformat`）
-                        menuRow(symbol: captionHidden ? "textformat" : "strikethrough",
-                                title: captionHidden ? L("文字を出す", "Show text") : L("文字を隠す", "Hide text")) {
-                            captionHidden.toggle()
-                        }
-                    }
-                    if items.contains(.block) {
-                        // 「非表示」とは書かない。サーバーにあるのは両向きのブロックだけで、
-                        // 片向きに隠す口は無い（相手からも見えなくなる）
-                        menuRow(symbol: "nosign", title: L("\(story.authorName) をブロック", "Block \(story.authorName)"),
-                                danger: true) {
-                            showBlockConfirm = true
-                        }
-                    }
-                    if items.contains(.report) {
-                        menuRow(symbol: "flag", title: L("通報する", "Report"), danger: true) {
-                            reportingStory = story
-                            showReport = true
-                        }
-                    }
-                    // 24時間で消える前に、自分の写真として残す。
-                    // **動画には出さない**（サーバーが 400 で断る・`storyKeep.ts`）
-                    // **自分用（アーカイブ）の投稿にも出さない**（サーバーが 409 で断る・`storyKeep.ts`）
-                    if items.contains(.keep) {
-                        menuRow(symbol: "bookmark", title: L("写真として残す", "Keep as photo")) {
-                            Task { await keep(story) }
-                        }
-                        .disabled(isSending)
-                    }
-                    // **確かめてから消す**（以前は押した瞬間に消えていた）
-                    if items.contains(.delete) {
-                        menuRow(symbol: "trash", title: Labels.Common.delete, danger: true) {
-                            showDeleteConfirm = true
-                        }
-                        .disabled(isSending)
-                        .accessibilityIdentifier("story.menu.delete")
-                    }
-                }
-                .background(Self.sheetColor,
-                            in: RoundedRectangle(cornerRadius: StoryViewerMetrics.menuRadius))
-                .clipShape(RoundedRectangle(cornerRadius: StoryViewerMetrics.menuRadius))
-
-                Button {
-                    showMenu = false
-                } label: {
-                    Text(Labels.Common.cancel)
-                        .font(JPFont.headline)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, minHeight: StoryViewerMetrics.menuRowHeight)
-                        .background(Self.sheetColor,
-                                    in: RoundedRectangle(cornerRadius: StoryViewerMetrics.menuRadius))
-                }
-                .buttonStyle(.plain)
+            ViewThatFits(in: .vertical) {
+                panel
+                ScrollView { panel }
             }
-            .padding(.horizontal, JPSpace.xs)
-            .padding(.bottom, JPSpace.xs)
         }
         // 読み上げでも裏（見出し・返信欄）に触れさせない
         .accessibilityAddTraits(.isModal)
@@ -1802,62 +1820,60 @@ struct StoryViewerView: View {
     /// 板「25f」。**見た人の記録と返信も消える**ことを書く（`stories.ts` の
     /// deleteStory が返信と票を消してから行を消す）
     private func deleteConfirm(for story: Story) -> some View {
-        ZStack {
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { showDeleteConfirm = false }
-                .ignoresSafeArea()
-            VStack(spacing: 0) {
-                VStack(spacing: 6) {
-                    // **何を消すかが分かるよう、ストーリーの写真を小さく入れる**（v2 StoryDeleteConfirm）
-                    StoryPoster(story: story)
-                        .frame(width: StoryViewerMetrics.confirmThumb.width,
-                               height: StoryViewerMetrics.confirmThumb.height)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .shadow(color: Color.black.opacity(0.5), radius: 8, x: 0, y: 6)
-                        .padding(.bottom, JPSpace.xs)
-                        .accessibilityHidden(true)
-                    Text(L("このストーリーを削除しますか？", "Delete this story?"))
-                        .font(JPFont.headline)
-                    Text(keptPhotoId(story) == nil
-                         ? L("見た人の記録と返信も消えます。元に戻せません。",
-                             "Viewers and replies are deleted too. This can't be undone.")
-                         : StoryPhotoLink.storyDeleteMessage(likes: keptCounts?.likes, comments: keptCounts?.comments))
-                        .font(JPFont.footnote)
-                        .foregroundStyle(WebTheme.muted2)
-                        .lineSpacing(4)
+        // 2026-11-14 判断（追加の点検 4）: 文字の大きさの上限（AX1）を外した。入りきらない大きさでは札の中だけ送る
+        let card = VStack(spacing: 0) {
+            VStack(spacing: 6) {
+                // **何を消すかが分かるよう、ストーリーの写真を小さく入れる**（v2 StoryDeleteConfirm）
+                StoryPoster(story: story)
+                    .frame(width: StoryViewerMetrics.confirmThumb.width,
+                           height: StoryViewerMetrics.confirmThumb.height)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .shadow(color: Color.black.opacity(0.5), radius: 8, x: 0, y: 6)
+                    .padding(.bottom, JPSpace.xs)
+                    .accessibilityHidden(true)
+                Text(L("このストーリーを削除しますか？", "Delete this story?"))
+                    .font(JPFont.headline)
+                Text(keptPhotoId(story) == nil
+                     ? L("見た人の記録と返信も消えます。元に戻せません。",
+                         "Viewers and replies are deleted too. This can't be undone.")
+                     : StoryPhotoLink.storyDeleteMessage(likes: keptCounts?.likes, comments: keptCounts?.comments))
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.muted2)
+                    .lineSpacing(4)
+            }
+            .multilineTextAlignment(.center)
+            .foregroundStyle(.white)
+            .padding(.horizontal, JPSpace.l)
+            .padding(.top, 22)
+            .padding(.bottom, 18)
+            if let keptPhoto = keptPhotoId(story) {
+                // 2026-11-11 判断: 写真にした1本は「写真も一緒に消す」「ストーリーだけ消す」を縦に並べる
+                // （既定の選び方は無し・危険の色は写真も消える側だけ）。キャンセルは一番下
+                VStack(spacing: 0) {
+                    confirmButton(StoryPhotoLink.deleteWithPhoto, color: Self.storyDanger, weight: .semibold) {
+                        showDeleteConfirm = false
+                        Task { await deleteStory(story, withPhoto: keptPhoto) }
+                    }
+                    .accessibilityIdentifier("story.delete.withPhoto")
+                    Rectangle().fill(Color.white.opacity(0.12)).frame(height: JPStroke.hairline)
+                    confirmButton(StoryPhotoLink.deleteStoryOnly, color: .white, weight: .semibold) {
+                        showDeleteConfirm = false
+                        Task { await deleteStory(story) }
+                    }
+                    .accessibilityIdentifier("story.delete.storyOnly")
+                    Rectangle().fill(Color.white.opacity(0.12)).frame(height: JPStroke.hairline)
+                    confirmButton(Labels.Common.cancel, color: .white, weight: .regular) {
+                        showDeleteConfirm = false
+                    }
                 }
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.white)
-                .padding(.horizontal, JPSpace.l)
-                .padding(.top, 22)
-                .padding(.bottom, 18)
-                if let keptPhoto = keptPhotoId(story) {
-                    // 2026-11-11 判断: 写真にした1本は「写真も一緒に消す」「ストーリーだけ消す」を縦に並べる
-                    // （既定の選び方は無し・危険の色は写真も消える側だけ）。キャンセルは一番下
-                    VStack(spacing: 0) {
-                        confirmButton(StoryPhotoLink.deleteWithPhoto, color: Self.storyDanger, weight: .semibold) {
-                            showDeleteConfirm = false
-                            Task { await deleteStory(story, withPhoto: keptPhoto) }
-                        }
-                        .accessibilityIdentifier("story.delete.withPhoto")
-                        Rectangle().fill(Color.white.opacity(0.12)).frame(height: JPStroke.hairline)
-                        confirmButton(StoryPhotoLink.deleteStoryOnly, color: .white, weight: .semibold) {
-                            showDeleteConfirm = false
-                            Task { await deleteStory(story) }
-                        }
-                        .accessibilityIdentifier("story.delete.storyOnly")
-                        Rectangle().fill(Color.white.opacity(0.12)).frame(height: JPStroke.hairline)
-                        confirmButton(Labels.Common.cancel, color: .white, weight: .regular) {
-                            showDeleteConfirm = false
-                        }
-                    }
-                    .overlay(alignment: .top) {
-                        Rectangle().fill(Color.white.opacity(0.12)).frame(height: JPStroke.hairline)
-                    }
-                    .task(id: keptPhoto) { await loadKeptCounts(keptPhoto) }
-                } else {
-                // v2: **キャンセル｜削除 の2つ並び**（系統の確認の形・削除は右で #F0565A）
+                .overlay(alignment: .top) {
+                    Rectangle().fill(Color.white.opacity(0.12)).frame(height: JPStroke.hairline)
+                }
+                .task(id: keptPhoto) { await loadKeptCounts(keptPhoto) }
+            } else {
+            // v2: **キャンセル｜削除 の2つ並び**（系統の確認の形・削除は右で #F0565A）。
+            // 横に入らない文字の大きさでは縦に積む（削除が上・2026-11-14 上限を外したため）
+            ViewThatFits(in: .horizontal) {
                 HStack(spacing: 0) {
                     confirmButton(Labels.Common.cancel, color: .white, weight: .regular) {
                         showDeleteConfirm = false
@@ -1868,16 +1884,36 @@ struct StoryViewerView: View {
                         Task { await deleteStory(story) }
                     }
                 }
-                .fixedSize(horizontal: false, vertical: true)
-                .overlay(alignment: .top) {
+                VStack(spacing: 0) {
+                    confirmButton(L("削除", "Delete"), color: Self.storyDanger, weight: .semibold) {
+                        showDeleteConfirm = false
+                        Task { await deleteStory(story) }
+                    }
                     Rectangle().fill(Color.white.opacity(0.12)).frame(height: JPStroke.hairline)
-                }
+                    confirmButton(Labels.Common.cancel, color: .white, weight: .regular) {
+                        showDeleteConfirm = false
+                    }
                 }
             }
-            .frame(width: StoryViewerMetrics.confirmWidth)
-            .background(Self.confirmFill, in: RoundedRectangle(cornerRadius: StoryViewerMetrics.confirmRadius))
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(L("このストーリーを削除しますか？", "Delete this story?"))
+            .fixedSize(horizontal: false, vertical: true)
+            .overlay(alignment: .top) {
+                Rectangle().fill(Color.white.opacity(0.12)).frame(height: JPStroke.hairline)
+            }
+            }
+        }
+        .frame(width: StoryViewerMetrics.confirmWidth)
+        .background(Self.confirmFill, in: RoundedRectangle(cornerRadius: StoryViewerMetrics.confirmRadius))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L("このストーリーを削除しますか？", "Delete this story?"))
+        return ZStack {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { showDeleteConfirm = false }
+                .ignoresSafeArea()
+            ViewThatFits(in: .vertical) {
+                card
+                ScrollView { card.padding(.vertical, JPSpace.m) }
+            }
         }
         .accessibilityAddTraits(.isModal)
     }

@@ -188,6 +188,8 @@ struct DevelopView: View {
                         .foregroundStyle(WebTheme.foreground)
                         .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                         .jpGlass(in: Circle())
+                        // 角の物は当たりを角の側へ 60pt 四方まで広げる（見た目はそのまま・`CornerTapArea`・2026-11-14）
+                        .cornerTapArea(.topLeading)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Labels.Common.close)
@@ -557,7 +559,7 @@ struct DevelopView: View {
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(WebTheme.foreground)
                     .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                    .contentShape(Rectangle())
+                    .cornerTapArea(.topLeading)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Labels.Common.close)

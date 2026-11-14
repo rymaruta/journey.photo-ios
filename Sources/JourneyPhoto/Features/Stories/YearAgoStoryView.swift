@@ -143,7 +143,8 @@ struct YearAgoStoryView: View {
                         .foregroundStyle(WebTheme.foreground)
                         .jpPhotoTextShadow()
                         .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                        .contentShape(Rectangle())
+                        // 角の物は当たりを角の側へ 60pt 四方まで広げる（見た目はそのまま・`CornerTapArea`・2026-11-14）
+                        .cornerTapArea(.topTrailing)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Labels.Common.close)

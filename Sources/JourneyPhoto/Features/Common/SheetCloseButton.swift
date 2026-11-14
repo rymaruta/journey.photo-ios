@@ -36,7 +36,8 @@ struct SheetCloseButton: View {
                     .padding(.horizontal, JPSpace.s)
                     .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
                     .jpGlass(in: Capsule())
-                    .contentShape(Capsule())
+                    // 見出しの行の左端＝シートの左上の角。当たりは角の側へ 60pt 四方まで（`CornerTapArea`・2026-11-14）
+                    .cornerTapArea(.topLeading)
             }
             .buttonStyle(.plain)
         } else {

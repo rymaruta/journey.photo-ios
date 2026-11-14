@@ -433,6 +433,9 @@ extension View {
     public func accessibilityIdentifier(_ id: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     public func accessibilityAddTraits(_ traits: AccessibilityTraits) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     public func accessibilityHidden(_ hidden: Bool) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
+    /// 長押しで字を大きく見せる系統の仕組み（Large Content Viewer・本物と同じ・2026-11-14）。
+    /// 文字の大きさに上限を置いた写真の上の字・大きくできない帯に付ける
+    public func accessibilityShowsLargeContentViewer() -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     /// 読み上げの補足（本物と同じ）。`DailyThemeCard` が使う——**模型に無いと
     /// Linux 側のビルドだけが落ちる**（75f98e2 で main がそうなっていた）
     public func accessibilityHint(_ hint: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }

@@ -239,7 +239,6 @@ struct TripPlanDetailView: View {
         // 今の「保存して戻る／保存せずに戻る」の確かめを出す（`TripAutosave.leave`）
         .unsavedLeaveGuard(TripAutosave.unsaved(leaveAction), isPresented: leaveBinding,
                            canSave: model.busy == nil && !isOffline && problem != .conflict,
-                           backTitle: L("旅行プラン", "Trip plans"),
                            message: L("まだ送れていない変更があります。保存せずに戻ると、変えた日程は残りません。",
                                       "Some changes aren't sent yet. If you go back without saving, they'll be lost."),
                            onSave: {

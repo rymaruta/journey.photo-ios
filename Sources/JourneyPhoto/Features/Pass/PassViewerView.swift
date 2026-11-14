@@ -55,7 +55,7 @@ struct PassViewerView: View {
     nonisolated static let swipeDistance: CGFloat = 90
 
     /// 字の伸びの上限（送らない画面なので、ボタンが画面の外へ出ない大きさまで）
-    nonisolated static let typeLimit: DynamicTypeSize = .xxxLarge
+    nonisolated static let typeLimit: DynamicTypeSize = PassViewerTypeLimit.value
 
     /// いま見せる並び: 外した・通報した写真・ブロックした人のカードを落とす
     private var shown: [PassCardContent] {

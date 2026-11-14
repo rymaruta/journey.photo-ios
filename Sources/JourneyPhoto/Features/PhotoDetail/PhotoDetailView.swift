@@ -2754,6 +2754,8 @@ private struct ExifRow: View {
 
     /// 開いた状態は画面を離れるまで覚える
     @State private var expanded = false
+    /// 文字の大きさ（アクセシビリティの大きさでは升を2列ずつに積む・`PhotoMetaLine.settingsRows`）
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     /// 機種名。**`CameraName.deduped` を通す**——保存済みの値にはメーカー名が二重に残っている行がある
     var camera: String? { CameraName.deduped(exif.camera) }
@@ -2796,6 +2798,7 @@ private struct ExifRow: View {
                 .accessibilityLabel(expanded ? L("撮影情報を閉じる", "Hide camera info")
                                              : L("撮影情報を開く", "Show camera info"))
                 .accessibilityValue(PhotoMetaLine.settingsLine(exif) ?? "")
+                .accessibilityIdentifier("detail.exif.toggle")
 
                 if expanded {
                     VStack(spacing: 0) {
@@ -2825,33 +2828,56 @@ private struct ExifRow: View {
         }
     }
 
-    /// 4つの升（v2 の板: 名前 12 の text-3・値は細い数字 20）。**大きい文字の設定で切れないよう上限を置く**
-    /// （4列で1列 約85pt。縮小は `WebTheme.minimumScale` までで、12pt を割らない）
+    /// 4つの升（v2 の板: 名前 12 の text-3・値は細い数字 20）。ふだんは1段に4列（1列 約85pt。縮小は
+    /// `WebTheme.minimumScale` までで、12pt を割らない）。
+    ///
+    /// 2026-11-14 判断（追加の点検 4）: 前は文字の大きさの上限（xxxLarge）を置いて4列に押し込めていた。上限を外し、
+    /// **アクセシビリティの大きさでは2列ずつの段に積む**（`PhotoMetaLine.settingsRows`）。名前は折り返してよい
     private var settingsGrid: some View {
-        HStack(spacing: 0) {
-            ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
-                if index > 0 {
-                    Rectangle().fill(WebTheme.hairline).frame(width: JPStroke.hairline)
+        let accessibility = typeSize.isAccessibilitySize
+        let rows = PhotoMetaLine.settingsRows(count: cells.count, accessibilitySize: accessibility)
+        let columns = PhotoMetaLine.settingsColumns(count: cells.count, accessibilitySize: accessibility)
+        return VStack(spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
+                if rowIndex > 0 {
+                    Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(cell.label)
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.text3)
-                        .lineLimit(1)
-                    Text(cell.value)
-                        .font(JPFont.number(JPTypeScale.figureMedium, weight: JPFont.figureWeight, relativeTo: .title3))
-                        .foregroundStyle(WebTheme.foreground)
-                        .lineLimit(1)
-                        .minimumScaleFactor(WebTheme.minimumScale(forTextSize: CGFloat(JPTypeScale.figureMedium)))
+                HStack(spacing: 0) {
+                    ForEach(Array(row.enumerated()), id: \.offset) { index, cellIndex in
+                        if index > 0 {
+                            Rectangle().fill(WebTheme.hairline).frame(width: JPStroke.hairline)
+                        }
+                        settingsCell(cells[cellIndex])
+                    }
+                    // 欠けた段（升が奇数）も、上の段と同じ幅に割る
+                    ForEach(Array(row.count..<columns), id: \.self) { _ in
+                        Color.clear.frame(maxWidth: .infinity)
+                    }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, JPSpace.s)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityElement(children: .combine)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+        .accessibilityIdentifier("detail.exif.grid")
+    }
+
+    private func settingsCell(_ cell: (label: String, value: String)) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(cell.label)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(cell.value)
+                .font(JPFont.number(JPTypeScale.figureMedium, weight: JPFont.figureWeight, relativeTo: .title3))
+                .foregroundStyle(WebTheme.foreground)
+                .lineLimit(1)
+                .minimumScaleFactor(WebTheme.minimumScale(forTextSize: CGFloat(JPTypeScale.figureMedium)))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, JPSpace.s)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("detail.exif.cell")
     }
 
     /// 機材の行（v2 の板: 高さ 48・左に名前 12 の text-3・右に値 14）。機種だけ「›」で機材の頁へ
