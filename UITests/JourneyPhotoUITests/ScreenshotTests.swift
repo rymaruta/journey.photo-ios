@@ -8561,13 +8561,13 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 3)
         note("3-opened")
         let viewPhoto = app.buttons["story.viewer.sharedPhoto"].firstMatch
-        // 1本目には付いていない。右を叩いて2本目へ
-        if !viewPhoto.waitForExistence(timeout: 3) {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.45)).tap()
-            Thread.sleep(forTimeInterval: 0.5)
-            note("4-after-right-tap")
-        }
-        let shown = viewPhoto.waitForExistence(timeout: 10)
+        // 1本目には付いていない。**叩かずに、2本目へ自分で送られるのを待つ**（写真の秒数は 3〜15・読み込みも待つ）。
+        // 2026-11-14 判断（回 1246 が落ち・1249 が通った値から）: 1249 では輪を押してから約6秒で 1本目（preview-story-1・
+        // 紹介なし）→ 2本目（preview-story-1b・紹介あり）へ自分で送られた。1246 は押してから8秒たっても2本目が出ず、
+        // 約10秒の所で決まった時間のあとに右を叩いていた。叩いた時に2本目へ送られていれば、叩きで2本目を飛ばして
+        // 束が閉じる（その後10秒「写真を見る」が出ないのと合う）。決まった時間で叩くのは、この飛ばしと競うのでやめた
+        let shown = viewPhoto.waitForExistence(timeout: 25)
+        if !shown { note("4-not-advanced") }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, shown ? "63e-ストーリー（写真を見る）" : "63e-ストーリー（写真を見るが出ない）")
         if !shown {
