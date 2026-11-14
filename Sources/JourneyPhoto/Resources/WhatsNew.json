@@ -52,6 +52,12 @@
           "detail": { "ja": "とおまわり号の部屋は、指で回すほかに上のボタンでも向きを変えられます。", "en": "You can turn the Detour camper room with the buttons at the top as well as with your finger." }
         },
         {
+          "symbol": "person.text.rectangle",
+          "title": { "ja": "ホームの札で、誰の写真かが切れずに見える", "en": "See who took the photo on Home cards" },
+          "detail": { "ja": "ホームの上の札に出る写真の撮った人の名前が、頭から切れずに見えるようにしました。長い名前は後ろだけを短くします。", "en": "The name of who took the photo on the top card on Home is no longer cut off at the start. Long names are shortened at the end only." },
+          "destination": "home"
+        },
+        {
           "symbol": "flag",
           "title": { "ja": "「行きたい」の印を旗に", "en": "Want to go is now a flag" },
           "detail": { "ja": "「行きたい」に入れた場所の印を旗の形にしました。", "en": "Places you saved to Want to go are now marked with a flag." }
