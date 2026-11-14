@@ -264,7 +264,7 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(ringShown, "ストーリーを出したのに、ホームに自分の輪（あなたのストーリー）が出ない")
         guard ringShown else { return }
         ring.tap()
-        watchStoryViewer(app, entry: "home")
+        watchStoryViewer(app, entry: "home", reopen: ring)
     }
 
     /// 同じ道を**マイページの顔の輪**から開く（`MyPageView.avatar` → `StoryAvatar` → `StoryReelView`）
@@ -286,7 +286,7 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(ringShown, "ストーリーを出したのに、マイページの顔に輪が出ない")
         guard ringShown else { return }
         ring.tap()
-        watchStoryViewer(app, entry: "mypage")
+        watchStoryViewer(app, entry: "mypage", reopen: ring)
     }
 
     /// 見本の1枚を投稿 → 共有カードの「ストーリーに載せる」→ 作る画面の「シェアする」→ カードを閉じる、まで。
@@ -333,32 +333,44 @@ final class CriticalFlowTests: XCTestCase {
         return app
     }
 
-    /// 開いたストーリーを、開いた瞬間・描き終えた頃・次へ送ったあと・最後まで、と区切って見張る。
-    /// 落ちていたら（`app.state != .runningForeground`）その段の名前で落とす
-    private func watchStoryViewer(_ app: XCUIApplication, entry: String) {
-        storyCrashStep(app, "\(entry).tapped")
-        // 開いた瞬間（owner の報告）: 0.5 秒刻みで 5 秒見る
-        for tick in 1...10 {
-            Thread.sleep(forTimeInterval: 0.5)
-            if app.state != .runningForeground {
-                storyCrashStep(app, "\(entry).opened+\(Double(tick) * 0.5)s")
-                XCTFail("[storyCrash] \(entry) から開いて \(Double(tick) * 0.5) 秒でアプリが前に居ない（state=\(app.state.rawValue)・落ちた可能性）")
-                return
-            }
-        }
-        // 紹介の札のストーリーには「写真を見る」が付く（`StoryViewerView.sharedPhotoButton`）
+    /// 開いたストーリーを、開いた瞬間・見終わるまで・**もう一度開いた瞬間**（2回目は「見た」の輪）と区切って見張る。
+    /// 落ちていたら（`app.state != .runningForeground`）その段の名前で落とす。
+    ///
+    /// 2026-11-14（Mac run 1236）: 前の版は開いて5秒たってから「写真を見る」を探していた。出した1本は5秒で終わり、
+    /// 束が1本だけなので閲覧画面が閉じていた（開いた直後の木には `あなたのストーリー、1 / 1` と `story.viewer.sharedPhoto` が
+    /// 在り、5秒後の木はホーム）。**開いている間に**探す。画面の木を撮るのに1〜2秒かかるので、開いた直後は撮らない
+    private func watchStoryViewer(_ app: XCUIApplication, entry: String, reopen ring: XCUIElement) {
         let viewPhoto = app.buttons["story.viewer.sharedPhoto"].firstMatch
-        storyCrashStep(app, "\(entry).opened5s sharedPhotoButton=\(viewPhoto.exists)")
-        XCTAssertTrue(viewPhoto.exists, "出したばかりの紹介のストーリーが開かない（「写真を見る」が無い）")
-        // 次へ送る（右を叩く）。束の終わりなら次の人・閉じる
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.45)).tap()
-        Thread.sleep(forTimeInterval: 2)
-        storyCrashStep(app, "\(entry).advanced")
-        XCTAssertEqual(app.state, .runningForeground, "[storyCrash] \(entry) で次へ送ったあとにアプリが前に居ない")
-        // 最後まで（見本の人のストーリーは5秒ずつ）
-        Thread.sleep(forTimeInterval: 12)
-        storyCrashStep(app, "\(entry).played")
-        XCTAssertEqual(app.state, .runningForeground, "[storyCrash] \(entry) で見終わるまでにアプリが前に居ない")
+        for round in 1...2 {
+            let label = "\(entry).open\(round)"
+            print("[storyCrash] \(label).tapped state=\(app.state.rawValue)")
+            // 紹介の札のストーリーには「写真を見る」が付く（`StoryViewerView.sharedPhotoButton`）。開いた瞬間に描く所
+            let seen = viewPhoto.waitForExistence(timeout: 3)
+            print("[storyCrash] \(label).first sharedPhotoButton=\(seen) state=\(app.state.rawValue)")
+            if app.state != .runningForeground {
+                storyCrashStep(app, "\(label).crashed")
+                return XCTFail("[storyCrash] \(entry) から\(round)回目に開いた直後にアプリが前に居ない（state=\(app.state.rawValue)・落ちた可能性）")
+            }
+            XCTAssertTrue(seen, "\(entry) から\(round)回目に開いても、出したばかりの紹介のストーリー（「写真を見る」）が出ない")
+            // 見終わるまで（出した1本は5秒・束の終わりで次の人へ送るか閉じる）0.5 秒刻みで見る
+            for tick in 1...16 {
+                Thread.sleep(forTimeInterval: 0.5)
+                if app.state != .runningForeground {
+                    storyCrashStep(app, "\(label).crashed+\(Double(tick) * 0.5)s")
+                    return XCTFail("[storyCrash] \(entry) から\(round)回目に開いて \(Double(tick) * 0.5) 秒でアプリが前に居ない（state=\(app.state.rawValue)）")
+                }
+            }
+            storyCrashStep(app, "\(label).played")
+            // ホームは人の束へ続くので、閲覧画面が閉じるまで待つ（見本の人のストーリーは5秒ずつ）
+            let viewer = app.buttons["story.viewer.more"].firstMatch
+            if viewer.exists { _ = viewer.waitForNonExistence(timeout: 40) }
+            XCTAssertEqual(app.state, .runningForeground, "[storyCrash] \(entry) で見終わるまでにアプリが前に居ない")
+            guard round == 1 else { break }
+            // もう一度（今度は「見た」の輪から）
+            XCTAssertTrue(ring.waitForExistence(timeout: 15) && ring.isHittable, "\(entry) の輪にもう一度押せない")
+            storyCrashStep(app, "\(entry).beforeReopen")
+            ring.tap()
+        }
     }
 
     /// `[storyCrash] <段> state=<数>` の行と、その時の画面の木をログ（xcodebuild のログ）と添付に残す。
