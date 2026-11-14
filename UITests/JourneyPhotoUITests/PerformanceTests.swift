@@ -302,7 +302,8 @@ final class PerformanceTests: XCTestCase {
                 rows.append(w)
                 perf([("stage", "round\(round)"), ("q", prefix), ("found", windows.contains { $0.query == prefix } ? "1" : "0"),
                       ("body", "\(w.bodies)"), ("spotHits", "\(w.spotHits)"), ("spotTotalMs", "\(w.spotTotalMs)"),
-                      ("spotMaxMs", "\(w.spotMaxMs)"), ("gapMaxMs", "\(w.gapMaxMs)"), ("stalls", "\(w.stalls)")],
+                      ("spotMaxMs", "\(w.spotMaxMs)"), ("gapMaxMs", "\(w.gapMaxMs)"), ("stalls", "\(w.stalls)"),
+                      ("spotsChanged", "\(w.spotsChanged)"), ("spotsChangedMs", "\(w.spotsChangedMs)")],
                      test: "testSearchTypingProbe")
             }
             box.push(rows)
@@ -501,7 +502,8 @@ final class PerformanceTests: XCTestCase {
     }
 }
 
-/// アプリの `srch=` の1語分（`+1234ms 京 b2 h2/400ms/300ms g450ms s1`・`PerfRecorder.searchBody` の形。変えるときは両方）
+/// アプリの `srch=` の1語分（`+1234ms 京 b2 h2/400ms/300ms g450ms s1 c1/80ms`・`PerfRecorder.searchBody` の形。変えるときは両方。
+/// 末尾の `c…` は 2026-11-14 に足した——古い形（6つ）も読む）
 struct SearchWindowReading {
     let query: String
     var bodies = 0
@@ -510,6 +512,9 @@ struct SearchWindowReading {
     var spotMaxMs = 0
     var gapMaxMs = 0
     var stalls = 0
+    /// `officialSpots` が書き換わった回数と、束ね直した合計 ms
+    var spotsChanged = 0
+    var spotsChangedMs = 0
 
     init(query: String) {
         self.query = query
@@ -518,7 +523,7 @@ struct SearchWindowReading {
     /// 1語分を読む。形が違えば nil（溢れた数 `+Ndropped` も nil）
     init?(_ entry: String) {
         let parts = entry.split(separator: " ").map(String.init)
-        guard parts.count == 6, parts[2].hasPrefix("b"), parts[3].hasPrefix("h"),
+        guard parts.count == 6 || parts.count == 7, parts[2].hasPrefix("b"), parts[3].hasPrefix("h"),
               parts[4].hasPrefix("g"), parts[5].hasPrefix("s") else { return nil }
         query = parts[1]
         bodies = Int(parts[2].dropFirst()) ?? 0
@@ -528,6 +533,11 @@ struct SearchWindowReading {
         spotMaxMs = hits.count > 2 ? hits[2] : 0
         gapMaxMs = Int(parts[4].dropFirst().replacingOccurrences(of: "ms", with: "")) ?? 0
         stalls = Int(parts[5].dropFirst()) ?? 0
+        if parts.count == 7, parts[6].hasPrefix("c") {
+            let changed = parts[6].dropFirst().split(separator: "/").map { Int($0.replacingOccurrences(of: "ms", with: "")) ?? 0 }
+            spotsChanged = changed.first ?? 0
+            spotsChangedMs = changed.count > 1 ? changed[1] : 0
+        }
     }
 
     /// `srch=` の全部（起きた順）

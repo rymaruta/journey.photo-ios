@@ -61,6 +61,10 @@ struct SearchView: View {
     @State private var spotIndexRetrying = false
     /// 発見の「撮影スポット」の段の札（索引が変わったときだけ束ね直す）
     @State private var spotGroups: [SpotPrefectureIndex.Group] = []
+    /// 撮影スポットの側で当たるものがある時間帯（`ShootingTime.dayParts(photos: [], spots: officialSpots)`）。
+    /// 🔴 **索引が替わったときだけ数える**（2026-11-14 札 #590）。以前は body の中で、時間帯のチップ1つごとに
+    /// 全件（3,899 件）を見直していて、×で消した直後・打った直後の止まりの積みに出ていた（Mac の回 1235）
+    @State private var spotDayParts = Set<ShootingTime.DayPart>()
     /// 段で選んでいる地方。nil は何も選んでいない（全国・開いたときはここから・2026-11-12 判断）
     @State private var spotRegion: String?
     /// 段の「写真｜地図」
@@ -173,9 +177,13 @@ struct SearchView: View {
         }
         // 発見の「撮影スポット」の段の札は、索引が変わったとき（届いた・詳細を重ねた）だけ束ね直す
         .onChange(of: officialSpots) { old, spots in
-            spotGroups = SpotPrefectureIndex.groups(spots: spots)
-            // 当てる材料が替わったときだけ、語で当てる索引を作り直す（詳細を重ねただけでは作り直さない・札 #590）
-            if !SearchSpotHits.sameMaterial(old, spots) { spotMaterialGeneration += 1 }
+            // 書き換わった回数と時間を語ごとに数える（UI テストのときだけ・2026-11-14 札 #590）
+            PerfRecorder.shared.searchSpotsChanged {
+                spotGroups = SpotPrefectureIndex.groups(spots: spots)
+                spotDayParts = ShootingTime.dayParts(photos: [], spots: spots)
+                // 当てる材料が替わったときだけ、語で当てる索引を作り直す（詳細を重ねただけでは作り直さない・札 #590）
+                if !SearchSpotHits.sameMaterial(old, spots) { spotMaterialGeneration += 1 }
+            }
         }
         .onChange(of: spotAliases) { _, _ in
             spotMaterialGeneration += 1
@@ -512,9 +520,10 @@ struct SearchView: View {
     }
 
     /// 当たるものがある時間帯（写真の側はモデル、撮影地の側は索引の `timeOfDayGuide` から。
-    /// 索引は時間帯の案内を載せている——2026-10-07 の実データで 1079件中 315件）
+    /// 索引は時間帯の案内を載せている——2026-10-07 の実データで 1079件中 315件）。
+    /// 撮影地の側は索引が替わったときに数えた控え（`spotDayParts`）を使う——body の中で全件を見直さない
     private var availableDayParts: Set<ShootingTime.DayPart> {
-        model.dayPartsWithPhotos.union(ShootingTime.dayParts(photos: [], spots: officialSpots))
+        model.dayPartsWithPhotos.union(spotDayParts)
     }
 
     /// 発見の顔の「季節・時間帯から探す」。札を押すと結果の顔に移り、同じ札の列が上に残る

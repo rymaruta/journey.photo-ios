@@ -283,6 +283,21 @@ final class PerfRecorder: @unchecked Sendable {
         return result
     }
 
+    /// 探すの `officialSpots` が書き換わった（`.onChange(of: officialSpots)`）回数と、その中で束ね直した時間を、
+    /// 今の語の記録に足す（`c<回数>/<合計>ms`・2026-11-14 札 #590）。×で消した直後の 3.4 秒の止まり（回 1235）が、
+    /// 撮影スポットの書き換え（発見の札の表紙の詳細を重ねた）の後に起きたかを数字で見る。**無効のときは測らずにそのまま走る**
+    func searchSpotsChanged(_ body: () -> Void) {
+        guard isEnabled else { return body() }
+        let start = clock()
+        body()
+        let ms = (clock() - start) * 1000
+        lock.lock()
+        defer { lock.unlock() }
+        if !searchWindows.isEmpty, droppedSearchWindows == 0 {
+            searchWindows[searchWindows.count - 1].spotsChanged.add(ms)
+        }
+    }
+
     /// 語ごとの記録の上限（3回 ×「京」「京都」「（空）」「富」「富士」「富士山」「（空）」= 21 と、開いたときの空の分）
     static let searchWindowCap = 32
 
@@ -380,8 +395,8 @@ struct StallMeter: Equatable {
 }
 
 /// 探すの語 1 つ分の記録（2026-11-13 札 #590）。語が画面の `body` に初めて来た時刻から、次の語が来るまで。
-/// 形は `+1234ms 京都 b3 h9/3012ms/400ms g450ms s2`（始めた ms・語・body の回数・撮影スポットを当てた 回数/合計/最大・
-/// 刻みの間隔の最大・100ms を超えた回数）。空の語は `(空)`。語の中の `;` `|` `[` `]` と空白は `_` に替える
+/// 形は `+1234ms 京都 b3 h9/3012ms/400ms g450ms s2 c1/80ms`（始めた ms・語・body の回数・撮影スポットを当てた 回数/合計/最大・
+/// 刻みの間隔の最大・100ms を超えた回数・`officialSpots` が書き換わった回数/束ね直した合計（2026-11-14 に足した））。空の語は `(空)`。語の中の `;` `|` `[` `]` と空白は `_` に替える
 struct SearchWindow: Equatable {
     /// 回数・合計・最大（ms・整数に丸めて出す）
     struct SpotHits: Equatable {
@@ -402,6 +417,8 @@ struct SearchWindow: Equatable {
     let startMs: Int
     var bodies = 0
     var spotHits = SpotHits()
+    /// `officialSpots` が書き換わった回数・その中の時間（`searchSpotsChanged`・2026-11-14）
+    var spotsChanged = SpotHits()
     /// 刻みの間隔の最大（ms）と、閾値を超えた回数
     private(set) var maxGapMs = 0
     private(set) var stalls = 0
@@ -424,7 +441,7 @@ struct SearchWindow: Equatable {
 
     var summary: String {
         "+\(startMs)ms \(Self.label(query)) b\(bodies) h\(spotHits.count)/\(spotHits.totalMs)ms/\(spotHits.maxMs)ms"
-            + " g\(maxGapMs)ms s\(stalls)"
+            + " g\(maxGapMs)ms s\(stalls) c\(spotsChanged.count)/\(spotsChanged.totalMs)ms"
     }
 }
 

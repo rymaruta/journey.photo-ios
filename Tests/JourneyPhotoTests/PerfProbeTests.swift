@@ -442,11 +442,28 @@ final class PerfProbeTests: XCTestCase {
         clock.now = 1003.000
         rec.searchBody(query: "京都 ;嵐")
         XCTAssertEqual(searchTail(rec),
-                       "[+1000ms (空) b1 h0/0ms/0ms g0ms s0;"
-                       + "+2000ms 京 b2 h2/400ms/300ms g450ms s1;"
-                       + "+3000ms 京都__嵐 b1 h0/0ms/0ms g0ms s0]")
+                       "[+1000ms (空) b1 h0/0ms/0ms g0ms s0 c0/0ms;"
+                       + "+2000ms 京 b2 h2/400ms/300ms g450ms s1 c0/0ms;"
+                       + "+3000ms 京都__嵐 b1 h0/0ms/0ms g0ms s0 c0/0ms]")
         XCTAssertTrue(rec.summary().contains(" | spot=2/400ms/300ms | "), rec.summary())
         XCTAssertEqual(rec.bodyCount(.search), 4)
+    }
+
+    /// `officialSpots` が書き換わった回数と時間を、今の語の記録に足す（`c<回数>/<合計>ms`・2026-11-14）。無効なら中身だけ走る
+    func testSearchSpotsChangedCountsPerQuery() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        rec.searchBody(query: "京")
+        var ran = 0
+        rec.searchSpotsChanged { ran += 1; clock.now += 0.080 }
+        rec.searchSpotsChanged { ran += 1; clock.now += 0.020 }
+        XCTAssertEqual(ran, 2)
+        XCTAssertTrue(searchTail(rec).hasSuffix(" c2/100ms]"), searchTail(rec))
+        let off = PerfRecorder(enabled: false, clock: { clock.now })
+        var offRan = 0
+        off.searchSpotsChanged { offRan += 1 }
+        XCTAssertEqual(offRan, 1)
+        XCTAssertEqual(searchTail(off), "[]")
     }
 
     /// 最初の語の記録を始めるときに、止まっている最中の積みの見本を空にする（起動の停止で枠を使い切らない）

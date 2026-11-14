@@ -298,4 +298,23 @@ final class SearchSpotHitsTests: XCTestCase {
         XCTAssertTrue(search.contains(": (spotHitsResult.isEmpty ? L(\"見つかりませんでした\""),
                       "作っている最中に「見つかりませんでした」と言う")
     }
+
+    /// 🔴 時間帯のチップが押せるか（`availableDayParts`）は、撮影地の側を**索引が替わったときだけ**数えた控えから出す。
+    /// body の中で全件（3,899 件）を見直す形に戻すと落ちる（2026-11-14・Mac の回 1235 の×で消した直後の積み）
+    func testAvailableDayPartsUsesCachedSpotParts() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto/Features/Search/SearchView.swift")
+        let search = try String(contentsOf: url, encoding: .utf8)
+        let getter = try XCTUnwrap(search.range(of: "private var availableDayParts: Set<ShootingTime.DayPart> {"))
+        let body = search[getter.upperBound...].prefix(200)
+        XCTAssertTrue(body.contains("model.dayPartsWithPhotos.union(spotDayParts)"), String(body))
+        XCTAssertFalse(body.contains("ShootingTime.dayParts("), "body の中で全件を見直している")
+        let change = try XCTUnwrap(search.range(of: ".onChange(of: officialSpots) { old, spots in"))
+        XCTAssertTrue(search[change.upperBound...].prefix(700).contains("spotDayParts = ShootingTime.dayParts(photos: [], spots: spots)"),
+                      "索引が替わったときに数え直していない（古い時間帯のまま）")
+        // 控えの中身は、全件を見直したときと同じ（下書きは数えない）
+        let spots = try corpus()
+        XCTAssertEqual(ShootingTime.dayParts(photos: [], spots: spots),
+                       ShootingTime.dayParts(photos: [], spots: spots.filter { !$0.isDraft }))
+    }
 }
