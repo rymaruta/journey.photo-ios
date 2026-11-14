@@ -141,7 +141,8 @@ final class StoryV2DesignTests: XCTestCase {
         let dim = member("private var overlayDimOpacity: Double", in: viewer)
         assertInOrder(["StoryViewerMetrics.deleteDim", "StoryViewerMetrics.menuDim"], in: dim, "暗幕")
         XCTAssertTrue(member("private var photoDimOpacity: Double", in: viewer).contains("StoryViewerMetrics.replyDim"))
-        let row = member("private func menuRow(", in: viewer)
+        // 札 #596 で中身を `menuRowContent` に分けた（型の境目）
+        let row = member("private func menuRowContent(", in: viewer)
         XCTAssertTrue(row.contains(".frame(minHeight: StoryViewerMetrics.menuRowHeight)"))
         XCTAssertTrue(row.contains("danger ? Self.storyDanger : WebTheme.text"), "ブロック・通報が危険の色でない")
         XCTAssertTrue(viewer.contains("private static let storyDanger = WebTheme.danger"))
@@ -150,7 +151,8 @@ final class StoryV2DesignTests: XCTestCase {
     /// 「…」のシートは誰のストーリーかを先に出す（v2 StoryViewerMenu）
     func testMenuStartsWithWhose() throws {
         let viewer = try source("Features/Stories/StoryViewerView.swift")
-        let menu = member("private func menuSheet(for story: Story)", in: viewer)
+        // 札 #596 で中身を `menuPanel` に分けた（型の境目）
+        let menu = member("private func menuPanel(for story: Story)", in: viewer)
         assertInOrder(["menuHeader(for: story)", "if items.contains(.pause)", "if items.contains(.block)"],
                       in: menu, "「…」のシート")
         let header = member("private func menuHeader(for story: Story)", in: viewer)

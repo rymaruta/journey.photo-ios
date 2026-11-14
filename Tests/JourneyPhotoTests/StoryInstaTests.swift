@@ -170,11 +170,17 @@ final class StoryInstaTests: XCTestCase {
     func testReplyFieldShowsReactionRow() throws {
         let viewer = try source("Features/Stories/StoryViewerView.swift")
         let footer = member("private func footer(for story: Story) -> some View {", in: viewer)
-        let row = try XCTUnwrap(footer.range(of: "if replyFocused {\n                    replyReactionRow(for: story)"),
+        // 入力欄と ♡ は札 #596 で `replyField`・`heartButton` に分けた（型の境目）
+        let focused = try XCTUnwrap(footer.range(of: "if replyFocused {"), "返信欄に入っても絵文字の列が出ない")
+        let row = try XCTUnwrap(footer.range(of: "replyReactionRow(for: story)", range: focused.upperBound..<footer.endIndex),
                                 "返信欄に入っても絵文字の列が出ない")
-        let field = try XCTUnwrap(footer.range(of: "TextField(L(\"返信する\", \"Reply\")"))
+        let field = try XCTUnwrap(footer.range(of: "replyField(for: story)"))
         XCTAssertLessThan(row.lowerBound, field.lowerBound, "絵文字の列は入力欄の上")
-        XCTAssertTrue(footer.contains("showReactions = true"), "♡ の長押しの並びを消した")
+        XCTAssertTrue(member("private func replyField(for story: Story) -> some View {", in: viewer)
+            .contains("TextField(L(\"返信する\", \"Reply\")"))
+        XCTAssertTrue(footer.contains("heartButton(for: story)"))
+        XCTAssertTrue(member("private func heartButton(for story: Story) -> some View {", in: viewer)
+            .contains("showReactions = true"), "♡ の長押しの並びを消した")
         let rowBody = member("private func replyReactionRow(for story: Story) -> some View {", in: viewer)
         XCTAssertTrue(rowBody.contains("ForEach(StoryService.reactions"))
         XCTAssertTrue(rowBody.contains("minHeight: WebTheme.minTapTarget"), "押せる高さが 44 に満たない")
