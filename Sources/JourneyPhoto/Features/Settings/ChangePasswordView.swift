@@ -16,8 +16,11 @@ struct ChangePasswordView: View {
     @State private var current = ""
     @State private var updated = ""
 
-    private enum Field { case current, updated }
-    @FocusState private var focused: Field?
+    /// いま打っている欄。**右下のキーで「新しいパスワード」へ進み、そこで押すと変える**
+    /// （2026-11-14 判断・ログインと同じ決まり `AuthFieldFlow`）
+    @FocusState private var focused: AuthFieldFlow.Field?
+
+    private var canSubmit: Bool { !auth.isWorking && !current.isEmpty && !updated.isEmpty }
 
     var body: some View {
         Form {
@@ -34,15 +37,21 @@ struct ChangePasswordView: View {
                 JPField(L("いまのパスワード", "Current password")) {
                     SecureField("", text: $current)
                         .textContentType(.password)
-                        .focused($focused, equals: .current)
+                        .focused($focused, equals: .currentPassword)
+                        .submitLabel(AuthFieldFlow.key(for: .currentPassword, in: .changePassword).label)
+                        .onSubmit { advance(from: .currentPassword) }
+                        .accessibilityIdentifier("changePassword.current")
                 }
-                .overlay(alignment: .bottom) { focusRing(focused == .current) }
+                .overlay(alignment: .bottom) { focusRing(focused == .currentPassword) }
                 JPField(L("新しいパスワード", "New password")) {
                     SecureField("", text: $updated)
                         .textContentType(.newPassword)
-                        .focused($focused, equals: .updated)
+                        .focused($focused, equals: .newPassword)
+                        .submitLabel(AuthFieldFlow.key(for: .newPassword, in: .changePassword).label)
+                        .onSubmit { advance(from: .newPassword) }
+                        .accessibilityIdentifier("changePassword.new")
                 }
-                .overlay(alignment: .bottom) { focusRing(focused == .updated) }
+                .overlay(alignment: .bottom) { focusRing(focused == .newPassword) }
             } footer: {
                 // 板には無いが残す——決まりを知らずに打つと、送ってから断られる
                 Text(AuthMessage.passwordRule)
@@ -58,20 +67,15 @@ struct ChangePasswordView: View {
 
             Section {
                 Button {
-                    Task {
-                        auth.errorMessage = nil
-                        if await auth.changePassword(current: current, new: updated) {
-                            dismiss()
-                        }
-                    }
+                    submit()
                 } label: {
                     // 写真の無い画面の主ボタンは真鍮の塗り（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29））
                     Text(L("変える", "Change"))
                         .jpPillButton(ChangePasswordLayout.submitStyle)
                 }
                 .buttonStyle(.plain)
-                .disabled(auth.isWorking || current.isEmpty || updated.isEmpty)
-                .opacity(auth.isWorking || current.isEmpty || updated.isEmpty ? 0.4 : 1)
+                .disabled(!canSubmit)
+                .opacity(canSubmit ? 1 : 0.4)
             }
             .jpFormRow()
         }
@@ -84,6 +88,29 @@ struct ChangePasswordView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
+        }
+    }
+
+    private func submit() {
+        guard canSubmit else { return }
+        Task {
+            auth.errorMessage = nil
+            if await auth.changePassword(current: current, new: updated) {
+                dismiss()
+            }
+        }
+    }
+
+    /// 右下のキーを押した。次の欄へ移るか、最後の欄なら「変える」と同じことをする
+    private func advance(from field: AuthFieldFlow.Field) {
+        var filled: Set<AuthFieldFlow.Field> = []
+        if !current.isEmpty { filled.insert(.currentPassword) }
+        if !updated.isEmpty { filled.insert(.newPassword) }
+        switch AuthFieldFlow.step(after: field, in: .changePassword, filled: filled) {
+        case .focus(let next): focused = next
+        case .submit:
+            focused = nil
+            submit()
         }
     }
 
