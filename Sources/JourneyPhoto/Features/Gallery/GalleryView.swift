@@ -641,6 +641,11 @@ struct GalleryView: View {
                 .modifier(FeedProbeFrame { recordProbeFrame("pager", $0) })
             }
             .modifier(FeedProbeFrame { recordProbeFrame("content", $0) })
+            // 縦の送りの位置・内側の余白・中身の高さを直に見る（UI テストのときだけ・`FeedScrollSpy`・run 1230）
+            .modifier(FeedScrollSpyModifier { line in
+                feedProbeTrail.add(line)
+                updateFeedProbe()
+            })
             .padding(.top, 8)
             // 最後のカードがタブバーに掛からないようにする
             .padding(.bottom, 24)
@@ -977,7 +982,7 @@ final class FeedProbeTrail {
     private(set) var items: [String] = []
     /// 控える長さ（替えてから）と、件数の上限（見えない要素の値を長くしすぎない）
     static let window: TimeInterval = 3
-    static let limit = 40
+    static let limit = 80
 
     func restart(_ first: String) {
         start = Date()
