@@ -9989,9 +9989,12 @@ final class ScreenshotTests: XCTestCase {
             pullProbeValue(app).split(separator: ";").first { $0.hasPrefix(name + "=") }
                 .flatMap { Int($0.dropFirst(name.count + 1)) }
         }
+        /// 拡大の目印の値。**閉じた後は目印ごと無い**ので、在るときだけ読む（Mac の回 1269: 4b で閉じた後に
+        /// `zoomProbe.value` を読み、「Failed to get matching snapshot」で落ちた。`pullProbeValue` と同じ読み方）
+        func zoomState() -> String { (zoomProbe.exists ? zoomProbe.value as? String : nil) ?? "-" }
         func log(_ step: String) {
             XCTContext.runActivity(named: "[viewerPull] \(step): ✕=\(close.exists)・位置=\(page())"
-                + "・拡大=\((zoomProbe.value as? String) ?? "-")・probe=\(pullProbeValue(app))") { _ in }
+                + "・拡大=\(zoomState())・probe=\(pullProbeValue(app))") { _ in }
         }
         log("0-開いた")
 
