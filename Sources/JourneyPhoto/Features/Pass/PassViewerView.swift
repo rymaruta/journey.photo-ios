@@ -169,7 +169,7 @@ struct PassViewerView: View {
     private var header: some View {
         HStack(alignment: .center) {
             // 枚数は下の「‹ 1 / 7 枚 ›」へ移した（親指の届く所・`PassViewerPager`・2026-11-14）。
-            // 眉の言葉は「今日の乗車券」（すれちがい乗車券の言葉の統一・2026-11-14 判断 統合 1.1.89）
+            // 眉の言葉は「今日の乗車券」（すれちがい乗車券の言葉の統一・2026-11-14 判断 統合 1.1.90）
             Text(mode == .bundle ? L("今日の乗車券", "Today\u{2019}s tickets") : L("すれちがい帳", "Pass book"))
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
