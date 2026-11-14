@@ -1,5 +1,6 @@
 #if !os(Linux)
 import UIKit
+import CoreImage
 import CoreLocation
 
 /// SNS 共有カードの型（2026-11-06 owner「iOS の SNS に載せるデザインの種類が2つしかないので、めっちゃいいのを考えて増やして」）。
@@ -20,6 +21,26 @@ extension SignatureShareCardRenderer {
         guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
                                         colors: colors, locations: locations) else { return }
         cg.drawLinearGradient(gradient, start: CGPoint(x: 0, y: y0), end: CGPoint(x: 0, y: y1), options: [])
+    }
+
+    /// 地に敷く、ぼかした写真（旅をストーリーに・写真を紹介するストーリーの地で使い回す）。
+    /// 長い辺を `longEdge` px に縮めてからぼかす（重くしない）。`radiusFraction` は縮めた写真の**高さ**に対するぼかしの半径。
+    /// `saturation` は彩度（1 で元のまま）。作れなければ nil（呼ぶ側が元の写真か小さな写真で代える）
+    static func blurredBackdrop(_ image: UIImage, longEdge: CGFloat, radiusFraction: Double,
+                                saturation: Double) -> UIImage? {
+        guard let cg = image.cgImage else { return nil }
+        let input = CIImage(cgImage: cg)
+        let scale = min(1, longEdge / max(input.extent.width, input.extent.height))
+        let small = input.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let radius = radiusFraction * Double(small.extent.height)
+        guard let blur = CIFilter(name: "CIGaussianBlur"), let color = CIFilter(name: "CIColorControls") else { return nil }
+        blur.setValue(small.clampedToExtent(), forKey: kCIInputImageKey)
+        blur.setValue(max(4, radius), forKey: kCIInputRadiusKey)
+        color.setValue(blur.outputImage, forKey: kCIInputImageKey)
+        color.setValue(saturation, forKey: kCIInputSaturationKey)
+        guard let output = color.outputImage?.cropped(to: small.extent),
+              let result = CIContext(options: nil).createCGImage(output, from: small.extent) else { return nil }
+        return UIImage(cgImage: result)
     }
 
     /// 写真を、縦横比を保って枠いっぱいに敷く（はみ出しは枠で切る）

@@ -9436,8 +9436,48 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// **① 投稿したら共有カード**。見本の1枚を選んだ投稿画面（`-JPPreviewUploadSample`）で、見本の通信に投稿し、
-    /// 上がった直後のカードの画面（120e）を撮る。**出なければ撮らずに抜ける**
+    /// 上がった直後のカードの画面（120e）を撮る。続けて「ストーリーに載せる」で開く作る画面（120f）を撮る。
+    /// **出なければ撮らずに抜ける**
     func testCapturesPostedShareCard() {
+        guard let app = postToSharedCard(extraArguments: []) else { return }
+        shoot(app, "120e-投稿の完了（共有カード）")
+        for id in ["postedCard.story", "postedCard.copyLink", "postedCard.close"] {
+            let button = app.buttons[id].firstMatch
+            XCTAssertTrue(button.exists, "\(id) が無い")
+            if button.exists { XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(id) の的が 44pt 未満") }
+        }
+        // 2026-11-14（owner「投稿した後にストーリーに載せるの背景寂しいね」）: 「ストーリーに載せる」で開く作る画面の
+        // 写真の札と、その後ろの地（`SharedPhotoStoryBackdrop`）を撮る（120f）。投稿はしない
+        let story = app.buttons["postedCard.story"].firstMatch
+        guard story.exists, story.isHittable else { return }
+        story.tap()
+        let canvas = app.descendants(matching: .any)["story.canvas"].firstMatch
+        let opened = canvas.waitForExistence(timeout: 30)
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, opened ? "120f-投稿の完了からストーリーに載せる" : "120f-投稿の完了からストーリーに載せる（作る画面が開かない）")
+        XCTAssertTrue(opened, "投稿の完了の「ストーリーに載せる」で作る画面が開かない")
+    }
+
+    /// 投稿の完了のカード（大きい文字 AX5・120e2）。「ストーリーに載せる」「リンクをコピー」が「…」で切れず、
+    /// 収まらなければ縦に積む（2026-11-14・板 06「大きい文字」）。**出なければ撮らずに抜ける**
+    func testCapturesPostedShareCardLargeText() {
+        guard let app = postToSharedCard(extraArguments: ["-UIPreferredContentSizeCategoryName",
+                                                          "UICTContentSizeCategoryAccessibilityXXXL"]) else { return }
+        let story = app.buttons["postedCard.story"].firstMatch
+        let copy = app.buttons["postedCard.copyLink"].firstMatch
+        scrollUntilHittable(app, story, limit: 3)
+        shoot(app, "120e2-投稿の完了（共有カード・大きい文字）")
+        guard story.exists, copy.exists else { return XCTFail("大きい文字で「ストーリーに載せる」か「リンクをコピー」が無い") }
+        XCTAssertGreaterThanOrEqual(story.frame.height, 44, "「ストーリーに載せる」の的が 44pt 未満")
+        // 横に並べて字が切れるなら縦に積む（2つが同じ行に詰め込まれていない）
+        XCTContext.runActivity(named: "120e2 の位置: story=\(story.frame) copy=\(copy.frame)") { _ in }
+        XCTAssertGreaterThanOrEqual(copy.frame.minY, story.frame.maxY - 1,
+                                    "大きい文字で2つのボタンを横に詰めている（字が「…」で切れる）")
+    }
+
+    /// 見本の1枚を選んだ投稿画面から見本の通信に投稿し、共有カードの画面（「カードを共有」が押せるまで）を開く。
+    /// 出なければ nil（撮らずに抜ける）。カードが出ないのは失敗（`XCTAssertTrue`）
+    private func postToSharedCard(extraArguments: [String]) -> XCUIApplication? {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -9448,16 +9488,17 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewUploadSample", "YES"]
         // 閉じた回数に関係なくカードを出す（`CriticalFlowTests.postedCardHabitKey`・同じ模擬機で3回目の投稿から出なくなる道）
         app.launchArguments += ["-\(CriticalFlowTests.postedCardHabitKey)", "0"]
+        app.launchArguments += extraArguments
         app.launch()
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         let tabBar = app.tabBars.firstMatch
-        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return nil }
         tabBar.buttons.element(boundBy: 2).tap()
         let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
+        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return nil }
         toPhoto.tap()
-        guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 20) else { return }
+        guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 20) else { return nil }
         let title = app.textFields["upload.title"].firstMatch
         scrollUntilHittable(app, title)
         if title.exists, title.isHittable {
@@ -9471,10 +9512,11 @@ final class ScreenshotTests: XCTestCase {
             place.typeText("Kanazawa")
         }
         let submit = app.buttons["upload.submit"].firstMatch
-        guard submit.waitForExistence(timeout: 5) else { return }
+        scrollUntilHittable(app, submit)
+        guard submit.waitForExistence(timeout: 5) else { return nil }
         let enabled = XCTWaiter().wait(for: [expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: submit)],
                                        timeout: 15)
-        guard enabled == .completed else { return }
+        guard enabled == .completed else { return nil }
         submit.tap()
         // 2026-11-14（#599 の見直し）: 送っている間の下の主ボタン（輪＋「投稿しています」）が、系統に薄くされて
         // いないかを絵で見る。見本の通信は速いので、押した直後に撮る（間に合わなかった回は字で分かる）
@@ -9489,14 +9531,9 @@ final class ScreenshotTests: XCTestCase {
         _ = XCTWaiter().wait(for: [expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: share)],
                              timeout: 20)
         Thread.sleep(forTimeInterval: 1)
-        shoot(app, shown ? "120e-投稿の完了（共有カード）" : "120e-投稿の完了（共有カードが出ない）")
+        if !shown { shoot(app, "120e-投稿の完了（共有カードが出ない）") }
         XCTAssertTrue(shown, "投稿しても共有カードが出ない")
-        guard shown else { return }
-        for id in ["postedCard.story", "postedCard.copyLink", "postedCard.close"] {
-            let button = app.buttons[id].firstMatch
-            XCTAssertTrue(button.exists, "\(id) が無い")
-            if button.exists { XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(id) の的が 44pt 未満") }
-        }
+        return shown ? app : nil
     }
 
     /// **DM の会話から旅行プランを作る（2026-11-12・資料「SNS をもっと SNS に」2a の段①と段②）**。
