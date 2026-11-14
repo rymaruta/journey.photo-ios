@@ -304,16 +304,19 @@ final class CriticalFlowTests: XCTestCase {
 
     /// 大きい写真の種類ごとに1本ずつ載せて開く（メモリを `[storyCrash] … mem=` で残す）。
     /// パノラマ（16000×3000）・縦長の HEIC（3024×4032 向き 1）・大きい PNG（6000×4000）
-    func testLargePhotoKindsSharedToStoryOpen() {
-        for kind in ["pano", "portrait", "png"] {
-            let app = launchForStory(kind: kind)
-            postAndShare(app, shares: 1, tag: kind)
-            openFromHomeRing(app, reopen: false)
-            app.terminate()
-        }
+    func testLargePhotoPanoramaSharedToStoryOpens() { largeKind("pano") }
+    func testLargePhotoPortraitSharedToStoryOpens() { largeKind("portrait") }
+    func testLargePhotoPNGSharedToStoryOpens() { largeKind("png") }
+
+    private func largeKind(_ kind: String) {
+        let app = launchForStory(kind: kind)
+        postAndShare(app, shares: 1, tag: kind)
+        openFromHomeRing(app)
     }
 
     private func launchForStory(kind: String? = nil) -> XCUIApplication {
+        // 投稿 → 載せる → 見る、を2回まで通すので、1つの試験の持ち時間（既定 5 分・run 1272 で打ち切られた）を延ばす
+        executionTimeAllowance = 900
         var extra = ["-JPPreviewUploadSample", "YES", "-JPPreviewStories", "YES", "-JPPreviewFeedProbe", "YES"]
         if let kind { extra += ["-JPPreviewUploadSampleKind", kind] }
         let app = launch(extra)
@@ -411,13 +414,15 @@ final class CriticalFlowTests: XCTestCase {
     private func watchStoryViewer(_ app: XCUIApplication, entry: String, rounds: Int, ring: () -> XCUIElement) {
         let viewPhoto = app.buttons["story.viewer.sharedPhoto"].firstMatch
         let probe = app.descendants(matching: .any)["story.viewer.probe"].firstMatch
+        // 閲覧画面が閉じる瞬間に `value` を読むと試験が落ちる（run 1272 のマイページ「No matches found」）。
+        // `snapshot()` は見つからなければ投げるだけなので、無ければ "-" にする
+        func probeValue() -> String { ((try? probe.snapshot())?.value as? String) ?? "-" }
         for round in 1...rounds {
             let label = "\(entry).open\(round)"
             print("[storyCrash] \(label).tapped state=\(app.state.rawValue)")
             // 紹介の札のストーリーには「写真を見る」が付く（`StoryViewerView.sharedPhotoButton`）。開いた瞬間に描く所
             let seen = viewPhoto.waitForExistence(timeout: 3)
-            print("[storyCrash] \(label).first sharedPhotoButton=\(seen) state=\(app.state.rawValue)"
-                  + " probe=\(probe.exists ? (probe.value as? String ?? "?") : "-")")
+            print("[storyCrash] \(label).first sharedPhotoButton=\(seen) state=\(app.state.rawValue) probe=\(probeValue())")
             if app.state != .runningForeground {
                 storyCrashStep(app, "\(label).crashed")
                 return XCTFail("[storyCrash] \(entry) から\(round)回目に開いた直後にアプリが前に居ない（state=\(app.state.rawValue)・落ちた可能性）")
@@ -431,7 +436,7 @@ final class CriticalFlowTests: XCTestCase {
                     storyCrashStep(app, "\(label).crashed+\(Double(tick) * 0.5)s lastProbe=\(lastProbe)")
                     return XCTFail("[storyCrash] \(entry) から\(round)回目に開いて \(Double(tick) * 0.5) 秒でアプリが前に居ない（state=\(app.state.rawValue)・最後の中身 \(lastProbe)）")
                 }
-                let value = probe.exists ? (probe.value as? String ?? "?") : "-"
+                let value = probeValue()
                 if value != lastProbe {
                     print("[storyCrash] \(label).t=\(Double(tick) * 0.5)s probe=\(value)")
                     lastProbe = value
@@ -441,12 +446,13 @@ final class CriticalFlowTests: XCTestCase {
                 if value != "-", !value.contains("user=\(Self.previewUserId)") { break }
             }
             storyCrashStep(app, "\(label).played")
-            // 閲覧画面が閉じるまで（人の束へ続いたら下へ払って閉じる）
-            let viewer = app.buttons["story.viewer.more"].firstMatch
-            if viewer.exists, !viewer.waitForNonExistence(timeout: 3) {
+            // 閲覧画面が閉じるまで（人の束へ続いたら下へ払って閉じる）。run 1272: 人の束には「…」（`story.viewer.more`）が
+            // 無く、閉じずに輪が押せなかった。閲覧画面の印（`story.viewer.probe`）で見る
+            for _ in 1...3 where probeValue() != "-" {
                 app.swipeDown(velocity: .fast)
-                _ = viewer.waitForNonExistence(timeout: 15)
+                Thread.sleep(forTimeInterval: 1.5)
             }
+            print("[storyCrash] \(label).closed probe=\(probeValue()) state=\(app.state.rawValue)")
             XCTAssertEqual(app.state, .runningForeground, "[storyCrash] \(entry) で見終わるまでにアプリが前に居ない")
             guard round < rounds else { break }
             // もう一度（今度は「見た」の輪から）。前の要素を使い回さず、探し直す
