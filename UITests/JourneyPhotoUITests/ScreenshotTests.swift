@@ -9960,7 +9960,7 @@ final class ScreenshotTests: XCTestCase {
     /// 画面の端より外は端の 0.5pt 内側にする（端まで届けば角まで押せる）。閉じたら `reopen` で開き直す。
     /// 行は `measured cornerHit …` で出す（成果物の記録と `xcodebuild` のログで読む）
     private func probeCornerHit(_ app: XCUIApplication, name: String, element: () -> XCUIElement,
-                                corner: String, reaches: [CGFloat], isOpen: () -> Bool,
+                                corner: String, reaches: [CGFloat], isOpen: @escaping () -> Bool,
                                 afterMiss: () -> Void = {}, reopen: () -> Bool) -> [CGFloat: Bool] {
         var results: [CGFloat: Bool] = [:]
         let window = app.windows.firstMatch.frame
