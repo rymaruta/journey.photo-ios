@@ -154,13 +154,14 @@ final class ShareCardMapTests: XCTestCase {
     /// 縦の線の位置: 撮影情報の3列の左端・縦罫は、上の段の縦の線にそろう
     func testInfoColumnsAlignWithRowAboveLines() {
         typealias L = ShareCardMap.Layout
-        XCTAssertEqual(L.nameX, 168)   // 2026-11-14: 余白 72。名前の列を 12 詰め、縦線から右は前のまま
-        XCTAssertEqual(L.rowDividerX, 337)
-        XCTAssertEqual(L.pinX, 361)
-        XCTAssertEqual(L.placeX, 411)
+        // 2026-11-14: 余白 72。名前の列（165）は詰めず（詰めると絵文字の名前が切れた・run 1292）、レンズの列を 215 → 203
+        XCTAssertEqual(L.nameX, 168)
+        XCTAssertEqual(L.rowDividerX, 349)
+        XCTAssertEqual(L.pinX, 373)
+        XCTAssertEqual(L.placeX, 423)
         XCTAssertEqual(L.mapX, 734)
         XCTAssertEqual(L.exposureX, 590)
-        XCTAssertEqual(L.lensColumnWidth, 215)
+        XCTAssertEqual(L.lensColumnWidth, 203)
         // 区切り線は地図の手前（16）で止まる
         let layout = ShareCardMap.Layout(ratio: .portrait)
         XCTAssertEqual(layout.separatorEndX(hasMap: true), 718)
@@ -212,6 +213,36 @@ final class ShareCardMapTests: XCTestCase {
             // 地図の上はグラデーションの中（写真の明るい所に真鍮の線を置かない）
             XCTAssertGreaterThanOrEqual(l.mapRect.minY, l.fadeTop, "\(ratio)")
             XCTAssertGreaterThanOrEqual(l.fadeTop, 0, "\(ratio)")
+        }
+    }
+
+    /// 2026-11-14: フェードの型のグラデーションは、字の所の濃さを基準線からの距離で決める（run 1292 の画素で
+    /// 白い写真の上の地名 4.42・市区町村 3.68・1:1 の地図 2.46）。どの比でも、地名と地図の所は黒 62% 以上、
+    /// 市区町村から下は黒 80% 以上（真鍮は黒 78% 以上の上だけ）。点の間の差は 0.3 まで（境目を見せない）
+    func testFadeGradientIsDarkEnoughWhereTheTextIs() {
+        typealias F = ShareCardMap.FadeLayout
+        func alpha(_ stops: [(location: CGFloat, alpha: CGFloat)], at location: CGFloat) -> CGFloat {
+            for (a, b) in zip(stops, stops.dropFirst()) where location >= a.location && location <= b.location {
+                return a.alpha + (b.alpha - a.alpha) * (location - a.location) / (b.location - a.location)
+            }
+            return location < (stops.first?.location ?? 0) ? 0 : 1
+        }
+        for ratio in [SignatureShareCardRenderer.Ratio.portrait, .story, .square] {
+            let l = F(ratio: ratio)
+            let stops = l.stops
+            XCTAssertEqual(stops.first?.location ?? -1, 0, accuracy: 0.0001, "\(ratio)")
+            XCTAssertEqual(stops.last?.location ?? -1, 1, accuracy: 0.0001, "\(ratio)")
+            for (a, b) in zip(stops, stops.dropFirst()) {
+                XCTAssertLessThan(a.location, b.location, "\(ratio)")
+                XCTAssertLessThanOrEqual(b.alpha - a.alpha, 0.3, "\(ratio)")
+            }
+            func at(_ y: CGFloat) -> CGFloat { alpha(stops, at: (y - l.fadeTop) / l.fadeLength) }
+            XCTAssertGreaterThanOrEqual(at(l.placeTop), 0.62, "\(ratio) 地名")
+            XCTAssertGreaterThanOrEqual(at(l.mapRect.minY), 0.6, "\(ratio) 地図の上端")
+            XCTAssertGreaterThanOrEqual(at(l.subPlaceTop), 0.78, "\(ratio) 市区町村（真鍮）")
+            XCTAssertGreaterThanOrEqual(at(l.authorTop), 0.8, "\(ratio) 撮影者の印（真鍮）")
+            // 撮影者の行（名前と印）は地図の手前で終わる
+            XCTAssertLessThanOrEqual(F.contentLeft + F.avatarSize + 16 + F.authorColumnWidth, l.mapRect.minX - 16, "\(ratio)")
         }
     }
 

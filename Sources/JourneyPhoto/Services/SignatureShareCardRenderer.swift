@@ -646,7 +646,7 @@ enum SignatureShareCardRenderer {
             }
             shade(from: 0, to: layout.topShadeHeight, stops: layout.topShadeStops)
             // 下の空き（9:16）は黒一色。グラデーションは基準線で 1 に着き、その下は 1 のまま
-            var bottomStops = F.fadeStops.map { stop in
+            var bottomStops = layout.stops.map { stop in
                 (location: stop.location * layout.fadeLength / (layout.height - layout.fadeTop), alpha: stop.alpha)
             }
             if let last = bottomStops.last, last.location < 1 { bottomStops.append((location: 1, alpha: 1)) }
@@ -692,7 +692,8 @@ enum SignatureShareCardRenderer {
             }
 
             // 撮影者（アバター・名前・ユーザー名）
-            drawFadeAuthor(credit, avatarData: avatarData, top: layout.authorTop, context: cg)
+            drawFadeAuthor(credit, avatarData: avatarData, top: layout.authorTop,
+                           columnWidth: F.authorColumnWidth, context: cg)
 
             // 撮影情報は1行（地図の下端より下・幅いっぱいを3つに分ける）
             let camera = credit.camera?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

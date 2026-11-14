@@ -119,8 +119,9 @@ enum ShareCardMap {
 
         /// 撮影者の名前の列（アバターの 20 右）。区切りの縦線はその 165 幅の 16 右（名前 30 → 26・ユーザー名 24 → 21 に合わせて詰めた）
         static var nameX: CGFloat { contentLeft + avatarSize + 20 }
-        /// 2026-11-14: 165 → 153。余白 60 → 72 の分（12）をここで詰め、縦線から右（撮影地・撮影情報の列）の位置は変えない
-        static let nameColumnWidth: CGFloat = 153
+        /// 2026-11-14: 余白 60 → 72 の分（12）は、名前の列でなくレンズの列（215 → 203）で詰める。
+        /// 一度 153 に詰めたら絵文字の名前（「🌸さくら🌸旅人📷」）が下限の大きさでも入らず「…」で切れた（run 1292・3 比とも）。165 では切れない（run 1287）
+        static let nameColumnWidth: CGFloat = 165
         static var rowDividerX: CGFloat { nameX + nameColumnWidth + 16 }
         /// 撮影地の印（pin）と字
         static var pinX: CGFloat { rowDividerX + 24 }
@@ -136,7 +137,8 @@ enum ShareCardMap {
         static let mapHeight: CGFloat = 244
         static let mapLineGap: CGFloat = 16
         /// 撮影情報の3列: カメラ（アバターの左端〜縦線）・レンズ（印の右・215 幅）・撮影値（レンズの 14 右〜地図の 24 手前）
-        static let lensColumnWidth: CGFloat = 215
+        /// 2026-11-14: 215 → 203（余白 72 の分。撮影値の列の左端 590 は変えない）
+        static let lensColumnWidth: CGFloat = 203
         static var exposureX: CGFloat { pinX + lensColumnWidth + 14 }
         static var mapX: CGFloat { contentRight - mapWidth }
         static var placeWidthWithMap: CGFloat { mapX - mapGapToPlace - placeX }
@@ -276,6 +278,7 @@ enum ShareCardMap {
                     (solid + (1 - solid) * 0.45, Self.topShadeAlpha * 0.45), (1, 0)]
         }
         /// グラデーションの形（0〜1 の位置・黒の濃さ）。短い帯にせず6点で滑らかにする（境目を見せない）
+        /// 表紙の型（`CoverLayout`・長さ 340）が使う形。フェードの型は `stops`（字の所の濃さを基準線からの距離で決める）
         static let fadeStops: [(location: CGFloat, alpha: CGFloat)] = [
             (0, 0), (0.06, 0.04), (0.18, 0.16), (0.38, 0.38), (0.62, 0.66), (0.85, 0.88), (1, 1)
         ]
@@ -291,6 +294,28 @@ enum ShareCardMap {
         }
         /// 左の列の幅（地図の手前まで）。2026-11-14: 余白 72 に合わせ 580 → 556
         static let leftColumnWidth: CGFloat = 556
+        /// 撮影者の行（名前と印）の幅。アバター（64）と間（16）の右から、地図の 16 手前まで。
+        /// 2026-11-14: 480 のままだと長い名前の横の印が地図に掛かった（run 1292・4:5 と 1:1 と 9:16 の長い名前）
+        static var authorColumnWidth: CGFloat { leftColumnWidth - avatarSize - 16 - 16 }
+
+        /// グラデーションの濃さを、基準線から上への距離（d）で決めた点（2026-11-14）。
+        /// run 1292 の画素: 白い写真の上で地名（白・基準線の 366 上）4.42、市区町村と印（真鍮・246 上）3.68、
+        /// 1:1 は地図 2.46・地名 2.65（グラデーションが短く、字の所の黒が薄かった）。
+        /// 地名と地図の所（d ≤ 376）は黒 62% 以上（白い写真の上で白の字が約 6.5:1）、
+        /// 市区町村から下（d ≤ 270）は黒 80% 以上（真鍮が約 5.6:1・板の「写真の上の真鍮は黒 78% 以上」）
+        static let stopsByDistance: [(distance: CGFloat, alpha: CGFloat)] = [
+            (710, 0), (625, 0.05), (525, 0.2), (426, 0.45), (376, 0.62), (270, 0.8), (106, 0.92), (0, 1)
+        ]
+        /// この長さのグラデーションの点（0〜1 の位置）。1:1（560）は d > 376 の柔らかい所だけを縮め、字の所の濃さは同じ
+        var stops: [(location: CGFloat, alpha: CGFloat)] {
+            let length = fadeLength
+            let firm: CGFloat = 376
+            return Self.stopsByDistance.map { point in
+                var d = point.distance
+                if d > firm, length < 710 { d = firm + (d - firm) * (length - firm) / (710 - firm) }
+                return (location: 1 - d / length, alpha: point.alpha)
+            }
+        }
         /// 撮影情報の3つの欄（左端からの位置・幅）。右端は本文の右端（2026-11-14: 余白 72 に合わせて詰めた）
         static let exifCells: [(x: CGFloat, width: CGFloat)] = [(0, 310), (330, 330), (680, 256)]
 
