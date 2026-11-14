@@ -10050,11 +10050,12 @@ final class ScreenshotTests: XCTestCase {
                                         isOpen: { viewerClose.exists && !hero.isHittable },
                                         afterMiss: {
                                             // 外れて写真を1回押した（上下の情報が隠れた）なら、もう1回押して出す
-                                            if (probe.value as? String) == "hidden" {
+                                            if probe.exists, (probe.value as? String) == "hidden" {
                                                 app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
                                                 Thread.sleep(forTimeInterval: 0.6)
                                             }
                                         },
+                                        state: { "closeExists=\(viewerClose.exists) closeHittable=\(viewerClose.exists && viewerClose.isHittable) heroHittable=\(hero.exists && hero.isHittable) chrome=\(probe.exists ? (probe.value as? String ?? "") : "none")" },
                                         reopen: openViewer)
         XCTAssertEqual(results["left"], true, "写真を大きく見るの × の当たりが左へ広がっていない（見た目の 14pt 外・安全な範囲の中で閉じない）")
     }
@@ -10070,6 +10071,7 @@ final class ScreenshotTests: XCTestCase {
     /// 行は `measured cornerPoint …`
     private func probeCornerPoints(_ app: XCUIApplication, name: String, element: () -> XCUIElement,
                                    isOpen: @escaping () -> Bool, afterMiss: () -> Void = {},
+                                   state: () -> String = { "" },
                                    reopen: () -> Bool) -> [String: Bool] {
         var results: [String: Bool] = [:]
         let origin = app.coordinate(withNormalizedOffset: .zero)
@@ -10099,7 +10101,7 @@ final class ScreenshotTests: XCTestCase {
             let closed = XCTWaiter().wait(for: [expectation(for: NSPredicate { _, _ in !isOpen() }, evaluatedWith: NSObject())],
                                           timeout: 2.5) == .completed
             results[label] = closed
-            let line = "measured cornerPoint name=\(name) point=\(label) at=(\(point.x), \(point.y)) closed=\(closed)"
+            let line = "measured cornerPoint name=\(name) point=\(label) at=(\(point.x), \(point.y)) closed=\(closed) state=\(state())"
             print(line)
             XCTContext.runActivity(named: line) { _ in }
             if !closed { afterMiss() }
@@ -10166,11 +10168,12 @@ final class ScreenshotTests: XCTestCase {
         _ = probeCornerPoints(app, name: "viewer.close.noClamp", element: { viewerClose },
                               isOpen: { viewerClose.exists && !hero.isHittable },
                               afterMiss: {
-                                  if (probe.value as? String) == "hidden" {
+                                  if probe.exists, (probe.value as? String) == "hidden" {
                                       app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
                                       Thread.sleep(forTimeInterval: 0.6)
                                   }
                               },
+                              state: { "closeExists=\(viewerClose.exists) closeHittable=\(viewerClose.exists && viewerClose.isHittable) heroHittable=\(hero.exists && hero.isHittable) chrome=\(probe.exists ? (probe.value as? String ?? "") : "none")" },
                               reopen: openViewer)
     }
 
@@ -10269,9 +10272,18 @@ final class ScreenshotTests: XCTestCase {
         guard editButton.waitForExistence(timeout: 20) else { return }
         scrollTo(editButton, in: app)
         guard editButton.isHittable else { return }
+        let before = "frame=\(editButton.frame) enabled=\(editButton.isEnabled) hittable=\(editButton.isHittable)"
         editButton.tap()
         let done = app.buttons["photoEdit.done"].firstMatch
-        guard done.waitForExistence(timeout: 10) else { return XCTFail("写真を編集を押しても編集の画面が開かない") }
+        guard done.waitForExistence(timeout: 10) else {
+            // run 1289 で開かなかった（run 1278 では開いた）。何が出ていたかを残す（推定で直さない）
+            shoot(app, "45w-大きい文字 AX5（写真を編集を押した後・開かなかった）")
+            let after = editButton.exists ? "frame=\(editButton.frame) enabled=\(editButton.isEnabled)" : "none"
+            let line = "measured photoEditOpenMiss before=\(before) after=\(after) sheets=\(app.sheets.count) alerts=\(app.alerts.count)"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+            return XCTFail("写真を編集を押しても編集の画面が開かない（\(before)）")
+        }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "45x-大きい文字 AX5（写真の編集・フィルム）")
         let window = app.windows.firstMatch.frame
