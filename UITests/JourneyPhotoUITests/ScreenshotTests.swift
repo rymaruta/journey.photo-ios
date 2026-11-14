@@ -10840,4 +10840,33 @@ final class ScreenshotTests: XCTestCase {
         XCTContext.runActivity(named: line2) { _ in }
         XCTAssertTrue(storyOnly.isHittable && window.contains(storyOnly.frame), "AX5 で削除の確認の「ストーリーだけ削除」が押せない（\(storyOnly.frame)）")
     }
+
+    /// **共有カードの書き出し画像**（2026-11-14 owner「SNS に載せる、はちゃんとデザイン壊れてないか厳しく確認して」）。
+    /// 見本の画面（`-JPPreviewShareCards YES`・`ShareCardGalleryPreview`）で、7つの型 × 3つの比 × ふつう／長い中身の
+    /// 書き出し画像を1枚ずつ撮る（画像の所だけ）。数で測る点検は単体テスト `ShareCardAuditTests`。出なければ撮らずに抜ける
+    func testCapturesShareCardDesigns() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewShareCards", "YES"]
+        app.launch()
+        let label = app.staticTexts["shareCardGallery.label"].firstMatch
+        let card = app.images["shareCardGallery.card"].firstMatch
+        let next = app.buttons["shareCardGallery.next"].firstMatch
+        guard label.waitForExistence(timeout: 30) else { return }
+        var index = 0
+        while index < 60 {
+            let ready = NSPredicate(format: "label BEGINSWITH %@ AND label ENDSWITH %@", "\(index) ", "ready")
+            let done = XCTNSPredicateExpectation(predicate: ready, object: label)
+            guard XCTWaiter().wait(for: [done], timeout: 30) == .completed, card.exists else { break }
+            let name = label.label.split(separator: " ").dropFirst().first.map(String.init) ?? "\(index)"
+            let shot = XCTAttachment(screenshot: card.screenshot())
+            shot.name = String(format: "130-共有カード（%02d %@）", index, name)
+            shot.lifetime = .keepAlways
+            add(shot)
+            guard next.isEnabled else { break }
+            next.tap()
+            index += 1
+        }
+        XCTAssertGreaterThanOrEqual(index, 1, "共有カードの見本が出ない")
+    }
 }

@@ -58,9 +58,10 @@ extension SignatureShareCardRenderer {
     static func drawBrandHeader(centerY: CGFloat, left: CGFloat, right: CGFloat, taglineSize: CGFloat,
                                 addressColor: UIColor) {
         let markSize = ShareCardMap.Layout.headerMarkSize
-        if let mark = UIImage(named: "BrandMark")?.withRenderingMode(.alwaysTemplate) {
-            mark.withTintColor(.white).draw(in: CGRect(x: left, y: centerY - markSize / 2,
-                                                       width: markSize, height: markSize))
+        let markRect = CGRect(x: left, y: centerY - markSize / 2, width: markSize, height: markSize)
+        if ShareCardProbe.note(.logo, "BrandMark", rect: markRect),
+           let mark = UIImage(named: "BrandMark")?.withRenderingMode(.alwaysTemplate) {
+            mark.withTintColor(.white).draw(in: markRect)
         }
         draw("Journey Photo",
              at: CGPoint(x: left + markSize + 17, y: wordmarkTop(markMidY: centerY)),
@@ -108,6 +109,10 @@ extension SignatureShareCardRenderer {
 
     /// 小さな見出し（真鍮・字間を空けた大文字）。「PLACE」「CAMERA」など
     private static func drawEyebrow(_ text: String, at origin: CGPoint, size: CGFloat) {
+        let font = UIFont.systemFont(ofSize: size, weight: .semibold)
+        let measured = (text as NSString).size(withAttributes: [.font: font, .kern: size * 0.16])
+        guard ShareCardProbe.note(.text, text, rect: CGRect(origin: origin, size: measured),
+                                  color: brass, fontSize: size) else { return }
         (text as NSString).draw(at: origin, withAttributes: [
             .font: UIFont.systemFont(ofSize: size, weight: .semibold),
             .foregroundColor: brass, .kern: size * 0.16])
@@ -122,6 +127,11 @@ extension SignatureShareCardRenderer {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 1
         paragraph.lineBreakMode = .byClipping
+        let widest = fitted.lines.map { measuredWidth($0, size: fitted.size) }.max() ?? 0
+        guard ShareCardProbe.note(.text, fitted.lines.joined(separator: " / "),
+                                  rect: CGRect(x: x, y: top + 26, width: min(width, widest),
+                                               height: CGFloat(fitted.lines.count) * (font.lineHeight + 1) - 1),
+                                  color: .white, fontSize: fitted.size, truncated: fitted.truncated) else { return }
         (fitted.lines.joined(separator: "\n") as NSString).draw(
             with: CGRect(x: x, y: top + 26, width: width, height: L.tableValueHeight + 2),
             options: [.usesLineFragmentOrigin],
@@ -139,7 +149,7 @@ extension SignatureShareCardRenderer {
             UIColor.black.setFill()
             cg.fill(CGRect(origin: .zero, size: canvas))
             drawPhotoFill(photo, in: layout.photoRect, context: cg)
-            drawBrandHeader(centerY: L.headerCenter, left: L.contentLeft, right: L.contentRight,
+            drawBrandHeader(centerY: layout.headerCenterY, left: L.contentLeft, right: L.contentRight,
                             taglineSize: 24, addressColor: brass)
 
             // 地名（明朝）
@@ -151,11 +161,13 @@ extension SignatureShareCardRenderer {
                                 minimumSize: L.placeMinimumFontSize, color: .white)
             }
             // 罫線と撮影者
+            if ShareCardProbe.drawsContent {
             cg.setStrokeColor(brass.withAlphaComponent(ShareCardMap.Layout.lineAlpha).cgColor)
             cg.setLineWidth(ShareCardMap.Layout.lineWidth)
             cg.move(to: CGPoint(x: L.contentLeft, y: layout.ruleY))
             cg.addLine(to: CGPoint(x: L.contentLeft + L.leftColumnWidth, y: layout.ruleY))
             cg.strokePath()
+            }
             drawFadeAuthor(credit, avatarData: avatarData, top: layout.authorTop,
                            columnWidth: L.leftColumnWidth - 80, context: cg)
 
@@ -168,8 +180,8 @@ extension SignatureShareCardRenderer {
             }
             // 列の間の縦罫は、両側の列に字があるときだけ（2026-11-12・`ShareCardMap.infoDividerIndices`）
             cg.setStrokeColor(brass.withAlphaComponent(0.3).cgColor)
-            let dividerXs: [CGFloat] = [248, 456]
-            for index in ShareCardMap.infoDividerIndices(filled: entries.map { !$0.1.isEmpty }) {
+            let dividerXs = L.tableDividerXs
+            for index in ShareCardMap.infoDividerIndices(filled: entries.map { !$0.1.isEmpty }) where ShareCardProbe.drawsContent {
                 let x = dividerXs[index]
                 cg.move(to: CGPoint(x: x, y: layout.tableTop))
                 cg.addLine(to: CGPoint(x: x, y: layout.tableBottom))
@@ -201,21 +213,21 @@ extension SignatureShareCardRenderer {
             cg.fill(CGRect(origin: .zero, size: canvas))
             drawPhotoFill(photo, in: CGRect(x: 0, y: 0, width: C.width, height: layout.photoBottom), context: cg)
             // 上の影・下のグラデーション（長く滑らか・境目を見せない）。その下は黒一色
-            drawShade(cg, from: 0, to: F.topShadeHeight, stops: [
-                (0, F.topShadeAlpha), (0.45, F.topShadeAlpha * 0.5), (1, 0)])
+            let shade = F(ratio: ratio)
+            drawShade(cg, from: 0, to: shade.topShadeHeight, stops: shade.topShadeStops)
             drawShade(cg, from: layout.fadeTop, to: layout.photoBottom, stops: F.fadeStops)
             UIColor.black.setFill()
             cg.fill(CGRect(x: 0, y: layout.photoBottom, width: C.width, height: layout.height - layout.photoBottom))
 
             // 写真の上なので、字も住所も白（真鍮は黒い地の上だけ）
-            drawBrandHeader(centerY: ShareCardMap.Layout.headerCenter, left: C.contentLeft, right: C.contentRight,
+            drawBrandHeader(centerY: layout.headerCenterY, left: C.contentLeft, right: C.contentRight,
                             taglineSize: 24, addressColor: .white)
 
-            // 右: 地図
+            // 右: 地図。上は写真の上（黒 69% から）なので白で描く（2026-11-14・真鍮は黒地の上だけ）
             if let coordinate = credit.coords {
                 let placeText = (credit.placeLines + [credit.location ?? ""]).joined(separator: ", ")
                 CountryOutline.drawAtLocation(pin: coordinate, place: placeText,
-                                              in: layout.mapRect, color: brass, context: cg)
+                                              in: layout.mapRect, color: .white, context: cg)
             }
             // 左: 地名（大きな明朝）と市区町村（真鍮）
             let lines = credit.placeLines

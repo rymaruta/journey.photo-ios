@@ -50,7 +50,7 @@ struct SignatureShareCardSheet: View {
     }
     @State private var output: Data?
     // 同じ共有画面内で比率を戻したときはJPEGの再生成を避ける。
-    // 最大 3 比率 × 2 型のみ保持し、画面を閉じると破棄する。
+    // 最大 3 比率 × 7 型のみ保持し、画面を閉じると破棄する。
     @State private var renderedByKey: [CardKey: Data] = [:]
     @State private var preparing = true
     @State private var showShare = false
@@ -63,15 +63,23 @@ struct SignatureShareCardSheet: View {
             VStack(spacing: 16) {
                 if let header { header }
                 if posted != nil { postedHeader }
-                Picker(L("共有画像の型", "Share image style"), selection: $styleRaw) {
-                    // 型の名前は短く（4つを1行の切り替えに並べる）。順は「いつもの帯」→ 写真を活かす順
-                    Text(L("帯", "Band")).tag(SignatureShareCardRenderer.Style.band.rawValue)
-                    Text(L("フェード", "Fade")).tag(SignatureShareCardRenderer.Style.fade.rawValue)
-                    Text(L("表紙", "Cover")).tag(SignatureShareCardRenderer.Style.cover.rawValue)
-                    Text(L("展示札", "Label")).tag(SignatureShareCardRenderer.Style.label.rawValue)
+                // 型は横に流れるチップの並び（2026-11-14: 7つになり、1行の切り替えには入らない）。
+                // 押す回数は前と同じ1回。順は「いつもの帯」→ 写真を活かす順 → 新しい3つ（`ShareCardStyleChoice.order`）
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: JPSpace.xs) {
+                        ForEach(ShareCardStyleChoice.order, id: \.rawValue) { option in
+                            PillChip(title: ShareCardStyleChoice.title(option), selected: style == option) {
+                                styleRaw = option.rawValue
+                            }
+                            .accessibilityIdentifier("signatureShare.style.\(option.rawValue)")
+                        }
+                    }
+                    .padding(.horizontal)
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
+                // 札の押せる余白（上下 5）の分だけ詰め、並びの見た目の間隔は前のまま
+                .padding(.vertical, -PillChip.tapSlack)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(L("共有画像の型", "Share image style"))
                 .accessibilityIdentifier("signatureShare.style")
 
                 Picker(L("共有画像の比率", "Share image ratio"), selection: $ratio) {
@@ -291,4 +299,21 @@ extension SignatureShareCardSheet {
 enum PostedShareCardText {
     static var eyebrow: String { L("投稿しました", "Posted") }
     static var title: String { L("カードにして、ほかの SNS にも", "Turn it into a card for other social apps") }
+}
+
+/// 共有画像の型の並びと名前（2026-11-14・試験で見る）。名前は短く（チップに1語）
+enum ShareCardStyleChoice {
+    static let order: [SignatureShareCardRenderer.Style] = [.band, .fade, .cover, .label, .printed, .ticket, .cinema]
+
+    static func title(_ style: SignatureShareCardRenderer.Style) -> String {
+        switch style {
+        case .band: return L("帯", "Band")
+        case .fade: return L("フェード", "Fade")
+        case .cover: return L("表紙", "Cover")
+        case .label: return L("展示札", "Label")
+        case .printed: return L("プリント", "Print")
+        case .ticket: return L("切符", "Ticket")
+        case .cinema: return L("シネマ", "Cinema")
+        }
+    }
 }
