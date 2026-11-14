@@ -1176,7 +1176,12 @@ final class ScreenshotTests: XCTestCase {
             // 出ない理由（段階・見本の元の写真・隠す写真か）を見本の起動だけの要素から読む（`PhotoDetailView.inspiredProbe`）
             let probe = app.descendants(matching: .any)["photo.inspiredProbe"].firstMatch
             let value = probe.exists ? ((probe.value as? String) ?? "(値なし)") : "(probe 無し)"
-            return unreached(app, "写真の詳細に photo.inspiredBy が無い: \(value)")
+            // 札 #531（run 1319: stage=ready・target=true・visible=true＝行を出す条件はそろっていた）。
+            // 行は NavigationLink に `.accessibilityElement(children: .ignore)` を付けた形なので、ボタン以外の型で
+            // 出ていないかを、型を問わずに引いて残す
+            let any = app.descendants(matching: .any)["photo.inspiredBy"].firstMatch
+            let anyText = any.exists ? "型=\(any.elementType.rawValue) 枠=\(any.frame)" : "型を問わずにも無い"
+            return unreached(app, "写真の詳細に photo.inspiredBy（ボタン）が無い: \(anyText) \(value)")
         }
         // 作者の行の下にある。見えるまで短い引きで送る（上限あり）
         var linePushes = 0
@@ -2774,6 +2779,16 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
             pulls += 1
         }
+        // 札 #531（run 1319 の絵・枠 358,277 44x44）: 季節を選ぶと段の右端に「すべて解除」（固定）が出て、
+        // 横に送る札の並びの右が狭まり、「夕」はその下に隠れていた。段の上で、隠れた分だけ左へ送る
+        let clear = app.buttons["search.clearTimeFilters"].firstMatch
+        if !evening.isHittable, clear.exists, evening.frame.maxX > clear.frame.minX {
+            let from = app.buttons["search.season.winter"].firstMatch
+            let start = (from.exists ? from : evening).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -(evening.frame.maxX - clear.frame.minX + 24), dy: 0)),
+                        withVelocity: .slow, thenHoldForDuration: 0.3)
+            Thread.sleep(forTimeInterval: 1)
+        }
         guard evening.isHittable else {
             return unreached(app, "時間帯の「夕」を押せる所へ戻せない（\(pulls) 回引いた・枠 \(evening.frame)・enabled=\(evening.isEnabled)）")
         }
@@ -3982,14 +3997,21 @@ final class ScreenshotTests: XCTestCase {
         // まだ届いていない季節の章（無ければ機能の章）を押すと、届く時期が下に出る
         let season = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'nameSide.pro.proWinter'")).firstMatch
         let target = season.exists ? season : app.buttons["nameSide.pro.dawn"].firstMatch
-        guard target.waitForExistence(timeout: 3), target.isHittable else {
-            // 札 #531（run 1308）: 在るのに押せないと出た。冬の章か暁か・枠・窓の枠・押せるかを数で残す
-            let frame = target.exists ? "\(target.frame)" : "なし"
-            return unreached(app, "PRO 限定の章を押せない（冬の章=\(season.exists) 識別子=\(target.exists ? target.identifier : "-") "
-                             + "枠=\(frame) 窓=\(app.windows.firstMatch.frame) enabled=\(target.exists && target.isEnabled)）")
+        guard target.waitForExistence(timeout: 3) else { return unreached(app, "PRO 限定の章（冬の章・暁）が無い") }
+        // 札 #531（run 1319）: 章は窓の中（枠 14,671.7 102x80・窓 440x956）に見えていて enabled なのに、isHittable が false。
+        // 押して知らせが出るか（下の確かめ）で、指が届くかを見る。届かなければ下の `toast` の待ちで落ちる
+        let hittable = target.isHittable
+        let line = "[proNameSide] 章=\(target.identifier) isHittable=\(hittable) 枠=\(target.frame)"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        if hittable {
+            target.tap()
+        } else {
+            target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         }
-        target.tap()
-        guard app.descendants(matching: .any)["toast"].firstMatch.waitForExistence(timeout: 3) else { return unreached(app, "app.descendants(matching: .any)[\"toast\"].firstMatch.waitForExistence(timeout: 3)") }
+        guard app.descendants(matching: .any)["toast"].firstMatch.waitForExistence(timeout: 3) else {
+            return unreached(app, "PRO 限定の章を押しても届く時期の知らせ（toast）が出ない（isHittable=\(hittable)）")
+        }
         shoot(app, "83f-名前の横（Pro の人・届く時期の知らせ）")
     }
 
