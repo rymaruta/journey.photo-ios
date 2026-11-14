@@ -8818,7 +8818,7 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// 投稿画面の欄が、下の主ボタンの帯（主ボタン `submit` の上 12pt から下・`jpBottomBar` の上の余白）より上に
-    /// 全部出るまで送る（最大 limit 回）。2026-11-14 調べ（統合 1.1.90・回 1304）
+    /// 全部出るまで送る（最大 limit 回）。`isHittable` は帯の裏の欄でも真を返すので、それに頼らない（2026-11-14・回 1304/1317）
     private func scrollAboveSubmitBar(_ app: XCUIApplication, _ element: XCUIElement, submit: XCUIElement,
                                       limit: Int = 8) {
         var pushes = 0
@@ -8832,7 +8832,7 @@ final class ScreenshotTests: XCTestCase {
         print("[uploadFieldProbe] scrollAboveSubmitBar pushes=\(pushes)")
     }
 
-    /// 調べの数（2026-11-14・回 1304）: 欄・下の主ボタン・欄を持つスクロールの領域・キーボード・窓の枠と、欄の焦点
+    /// 投稿画面の欄の数を出す（2026-11-14・回 1304/1317）: 欄・下の主ボタン・欄を持つスクロールの領域・キーボード・窓の枠と、欄の焦点
     private func uploadFieldProbe(_ app: XCUIApplication, _ step: String, _ field: XCUIElement, submit: XCUIElement) {
         func frame(_ e: XCUIElement) -> String { e.exists ? "\(e.frame)" : "none" }
         let scroll = app.scrollViews.containing(.textField, identifier: "upload.title").firstMatch
@@ -9576,8 +9576,11 @@ final class ScreenshotTests: XCTestCase {
         guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 20) else { return nil }
         let title = app.textFields["upload.title"].firstMatch
         scrollUntilHittable(app, title)
-        // 2026-11-14 調べ（統合 1.1.90・回 1304）: 大きい文字で題の欄に打てなかった。欄・下の主ボタン・
-        // スクロールの領域・キーボードの枠を出す（[uploadFieldProbe]）。帯の上まで送ってから押す実験も同じ回で取る
+        // 2026-11-14 判断（統合 1.1.90・回 1304 → 1317 の数）: 大きい文字（AX5）では題の欄が下の主ボタンの帯の裏にあり
+        // （欄 y=948.7〜1007.7・主ボタン y=853〜914・帯の上端 841）、系統は `isHittable` を真と返すので
+        // `scrollUntilHittable` は送らず、押した所が帯で欄に焦点が来なかった（「keyboard focus が無い」で落ちた）。
+        // 帯より上まで1回送れば（y=554）押せて焦点が来て打てる（アプリは正しく、試験の送り方の誤り）。
+        // 枠と焦点は [uploadFieldProbe] で毎回出す
         let submitBar = app.buttons["upload.submit"].firstMatch
         uploadFieldProbe(app, "title.before", title, submit: submitBar)
         scrollAboveSubmitBar(app, title, submit: submitBar)
