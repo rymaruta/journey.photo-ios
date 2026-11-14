@@ -126,6 +126,40 @@ final class PerformanceTests: XCTestCase {
     }
 
     /// 積んだ画面から1つ戻る（`ScreenshotTests.goBack` と同じ順。見出しのベルを押さない）
+    /// ホームの写真が押せないときの事実（写真の位置・画面の大きさ・1本の並びの上端 `top`・並びの写真の札の位置と押せるか・
+    /// 画面の木のホームの部分）をログに出し、画面の絵を残す（2026-11-14 Mac の回 1255・推定で直さないための記録）
+    private func noteUnhittableHomePhoto(_ app: XCUIApplication, _ photo: XCUIElement, round: Int) {
+        var lines: [String] = []
+        let exists = photo.exists
+        lines.append("[surveyPhoto] round=\(round) exists=\(exists) hittable=\(exists && photo.isHittable) "
+                     + "frame=\(exists ? String(describing: photo.frame) : "-") label=\(exists ? photo.label : "-") "
+                     + "window=\(String(describing: app.windows.firstMatch.frame))")
+        let probe = app.descendants(matching: .any)["home.feed.probe"].firstMatch
+        lines.append("[surveyPhoto] probe=\(probe.exists ? String(describing: probe.value ?? "-") : "(無い)")")
+        let tabs = app.tabBars.firstMatch
+        lines.append("[surveyPhoto] tabBar=\(tabs.exists ? String(describing: tabs.frame) : "(無い)") "
+                     + "selected=\(tabs.exists ? tabs.buttons.matching(NSPredicate(format: "isSelected == true")).firstMatch.label : "-")")
+        let tiles = app.buttons.matching(identifier: "feed.photo")
+        let count = tiles.count
+        lines.append("[surveyPhoto] feed.photo count=\(count)")
+        for index in 0..<min(count, 8) {
+            let tile = tiles.element(boundBy: index)
+            lines.append("[surveyPhoto] tile[\(index)] frame=\(String(describing: tile.frame)) hittable=\(tile.isHittable) label=\(tile.label)")
+        }
+        // 画面の木のうち、ホームの札・写真・見出しの行だけ（全部は長すぎる）
+        let tree = app.debugDescription.components(separatedBy: "\n")
+            .filter { $0.contains("feed.") || $0.contains("home.") || $0.contains("header.") || $0.contains("NavigationBar") }
+        for line in tree.prefix(60) { lines.append("[surveyPhoto] tree \(line.trimmingCharacters(in: .whitespaces))") }
+        for line in lines {
+            print(line)
+            XCTContext.runActivity(named: String(line.prefix(900))) { _ in }
+        }
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "surveyPhoto round \(round)"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
     private func goBack(_ app: XCUIApplication) {
         let standard = app.navigationBars.buttons["BackButton"].firstMatch
         if standard.exists, standard.isHittable {
@@ -502,6 +536,8 @@ final class PerformanceTests: XCTestCase {
         // DM の一覧を見本の通信で答える・投稿の画面を見本の 1 枚を選んだ状態で開く（写真の選び手を出さない）
         app.launchArguments += ["-JPPreviewDM", "YES", "-JPPreviewUploadSample", "YES"]
         enablePerfProbe(app)
+        // 1本の並び（札 #595）の数と上端（`home.feed.probe` の `top`）。押せないときの事実取りに読む（2026-11-14 Mac の回 1255）
+        app.launchArguments += ["-JPPreviewFeedProbe", "YES"]
         // 主スレッドの積みを 0.3 秒ごとにファイルへ（止まりの見張りは 650ms までしか撮らない。run 1244 の 5956ms の
         // 止まりの残りが、XCUITest の画面読みかアプリの描画か分けられなかった・2026-11-14 札 #594）
         let tracePath = ScreenshotTests.mainSamplePath("survey")
@@ -542,7 +578,11 @@ final class PerformanceTests: XCTestCase {
         // 3. 写真詳細を開いて戻る × 3
         let tabs = app.tabBars.firstMatch
         for round in 1...3 {
-            XCTAssertTrue(photo.waitForExistence(timeout: 10) && photo.isHittable, "\(round) 回目: ホームの 1 枚目の写真が押せない")
+            let tappable = photo.waitForExistence(timeout: 10) && photo.isHittable
+            // 事実取り（2026-11-14 Mac の回 1255: 統合 1.1.87 で 1 回目に押せず落ちた。位置・上端が記録に無かった）。
+            // 押せないときだけ読む（通る回の段の数は変えない）
+            if !tappable { noteUnhittableHomePhoto(app, photo, round: round) }
+            XCTAssertTrue(tappable, "\(round) 回目: ホームの 1 枚目の写真が押せない")
             photo.tap()
             XCTAssertTrue(app.buttons["photo.author"].firstMatch.waitForExistence(timeout: 20), "\(round) 回目: 写真の詳細が出ない")
             Thread.sleep(forTimeInterval: 1.5)

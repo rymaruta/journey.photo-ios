@@ -230,5 +230,18 @@ final class PerfTimelineTests: XCTestCase {
         // 印は読む側の種類分けと同じ（片方だけ変えない）
         for marker in PerfMainTrace.markers { XCTAssertTrue(support.contains("\"\(marker)\""), "\(marker) を読む側が知らない") }
     }
+
+    /// 🔴 下調べで写真詳細の段の写真が押せないとき、押す前に事実（位置・上端・札の並び・画面の木）を残す（2026-11-14 Mac の回 1255）
+    func testUsageSurveyNotesTheHomePhotoBeforeFailing() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let probe = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/PerformanceTests.swift"), encoding: .utf8)
+        let note = try XCTUnwrap(probe.range(of: "if !tappable { noteUnhittableHomePhoto(app, photo, round: round) }"), "押せないときの記録が無い")
+        let assert = try XCTUnwrap(probe.range(of: "XCTAssertTrue(tappable, \"\\(round) 回目: ホームの 1 枚目の写真が押せない\")"))
+        XCTAssertLessThan(note.lowerBound, assert.lowerBound, "落とす前に記録する")
+        XCTAssertTrue(probe.contains("app.launchArguments += [\"-JPPreviewFeedProbe\", \"YES\"]"), "上端（home.feed.probe）を出していない")
+        for field in ["frame=", "window=", "probe=", "tabBar=", "tile[", "tree "] {
+            XCTAssertTrue(probe.contains("[surveyPhoto] \(field)") || probe.contains(field), "\(field) を残していない")
+        }
+    }
 }
 
