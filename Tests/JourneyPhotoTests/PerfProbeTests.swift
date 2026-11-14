@@ -99,7 +99,7 @@ final class PerfProbeTests: XCTestCase {
         rec.recordFrame(at: 2)
         rec.bodyHit(.home)
         XCTAssertEqual(rec.bodyCount(.home), 0)
-        XCTAssertTrue(rec.summary().hasPrefix("sel=[] | task=[] | stall=0/0ms/0f | body=home:0,myPage:0,photoDetail:0 | t="),
+        XCTAssertTrue(rec.summary().hasPrefix("sel=[] | task=[] | stall=0/0ms/0f | body=home:0,myPage:0,photoDetail:0,search:0 | t="),
                       rec.summary())
     }
 
@@ -127,13 +127,15 @@ final class PerfProbeTests: XCTestCase {
                        "sel=[+120ms home>search@tabs.set;+300ms post>home@post.revert]"
                        + " | task=[#0 auth.state.sync 200-450ms]"
                        + " | stall=1/150ms/3f"
-                       + " | body=home:2,myPage:0,photoDetail:1"
+                       + " | body=home:2,myPage:0,photoDetail:1,search:0"
                        + " | t=500ms"
                        // 150ms 止まった刻みが戻ってきたのが 200ms → 止まり始めは 50ms（2026-11-07）
                        + " | stalls=[+50ms 150ms]"
                        // 出来事（2026-11-07）: body の最初の 2 回までが入る。ホームの 2 回・写真詳細の 1 回
                        + " | ev=[+200 body.home#1;+200 body.home#2;+200 body.photoDetail#1]"
-                       + " | samples=[]")
+                       + " | samples=[]"
+                       // さらに後ろ（2026-11-13 札 #590）: 撮影スポットを当てた回数/合計/最大と、探すの語ごとの記録
+                       + " | spot=0/0ms/0ms | srch=[]")
         XCTAssertEqual(rec.bodyCount(.home), 2)
     }
 
@@ -253,21 +255,32 @@ final class PerfProbeTests: XCTestCase {
             .components(separatedBy: " | samples=").first ?? ""
     }
 
+    /// `samples=` の右から `spot=` の手前まで（`[…]`。2026-11-13 に後ろへ `spot=`・`srch=` を足した）
+    private func samplesTail(_ rec: PerfRecorder) -> String {
+        (rec.summary().components(separatedBy: " | samples=").last ?? "")
+            .components(separatedBy: " | spot=").first ?? ""
+    }
+
+    /// `srch=` の右（`[…]`）
+    private func searchTail(_ rec: PerfRecorder) -> String {
+        rec.summary().components(separatedBy: " | srch=").last ?? ""
+    }
+
     /// 止まっている最中の積みの見本: `+撮った ms 段^段`・浅い方が先・段は上限まで・件数にも上限。無効なら残さない
     func testSamplesAreRecordedAndCapped() {
         let clock = FakeClock()
         let rec = recorder(clock)
         clock.now = 1005.300
         rec.recordSample(frames: (0..<(PerfRecorder.sampleFrameCap + 5)).map { "f\($0)" })
-        let tail = rec.summary().components(separatedBy: " | samples=").last ?? ""
+        let tail = samplesTail(rec)
         XCTAssertTrue(tail.hasPrefix("[+5300 f0^f1^"), tail)
         XCTAssertTrue(tail.hasSuffix("^f\(PerfRecorder.sampleFrameCap - 1)]"), tail)
         for _ in 0..<(PerfRecorder.sampleCap + 3) { rec.recordSample(frames: ["x"]) }
-        let after = rec.summary().components(separatedBy: " | samples=").last ?? ""
+        let after = samplesTail(rec)
         XCTAssertEqual(after.components(separatedBy: ";").count, PerfRecorder.sampleCap)
         let off = PerfRecorder(enabled: false, clock: { clock.now })
         off.recordSample(frames: ["x"])
-        XCTAssertEqual(off.summary().components(separatedBy: " | samples=").last, "[]")
+        XCTAssertEqual(samplesTail(off), "[]")
     }
 
     /// 出来事は `+起動からのms 名前`・起きた順。何も無ければ空。`stalls=` の後ろに付く（既存の欄の順は変えない）
@@ -281,10 +294,12 @@ final class PerfProbeTests: XCTestCase {
         rec.event("camper.ext.plan>")
         XCTAssertEqual(evTail(rec), "[+12 app.init.start;+340 camper.ext.plan>]")
         let parts = rec.summary().components(separatedBy: " | ")
-        // 欄の順: … | stalls | ev | samples（後ろに足していく。既存の欄の順は変えない）
-        XCTAssertEqual(parts.last?.hasPrefix("samples="), true)
-        XCTAssertEqual(parts.dropLast().last?.hasPrefix("ev="), true, "ev は stalls の後ろ")
-        XCTAssertTrue(parts.dropLast(2).last?.hasPrefix("stalls=") == true)
+        // 欄の順: … | stalls | ev | samples | spot | srch（後ろに足していく。既存の欄の順は変えない）
+        XCTAssertEqual(parts.last?.hasPrefix("srch="), true)
+        XCTAssertEqual(parts.dropLast().last?.hasPrefix("spot="), true)
+        XCTAssertEqual(parts.dropLast(2).last?.hasPrefix("samples="), true)
+        XCTAssertEqual(parts.dropLast(3).last?.hasPrefix("ev="), true, "ev は stalls の後ろ")
+        XCTAssertTrue(parts.dropLast(4).last?.hasPrefix("stalls=") == true)
     }
 
     /// 上限を超えたら先の分を残し、溢れた数を残す。無効のときは何も残さない（名前の文字列も作らない）
@@ -404,7 +419,115 @@ final class PerfProbeTests: XCTestCase {
         for _ in 0..<1000 { off.bodyHit(.home) }
         XCTAssertEqual(built, 0, "無効のときに名前を作っている")
         XCTAssertEqual(off.bodyCount(.home), 0)
-        XCTAssertTrue(off.summary().hasSuffix(" | ev=[] | samples=[]"), off.summary())
+        XCTAssertTrue(off.summary().hasSuffix(" | ev=[] | samples=[] | spot=0/0ms/0ms | srch=[]"), off.summary())
+    }
+
+    // MARK: - 探す（2026-11-13 札 #590「探すの検索が重い」）
+
+    /// 語が替わるたびに語の記録を始め、body の回数・撮影スポットを当てた回数と時間・刻みの間隔の最大を、その語に足す
+    func testSearchWindowsCountPerQuery() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        clock.now = 1001.000
+        rec.searchBody(query: "")
+        clock.now = 1002.000
+        rec.searchBody(query: "京")
+        // 当てるのに 300ms かかった（測る時計を進める）
+        let hits: [Int] = rec.searchSpotHits { clock.now += 0.300; return [1, 2] }
+        XCTAssertEqual(hits, [1, 2], "包んだ中身の値をそのまま返す")
+        rec.searchSpotHits { clock.now += 0.100 }
+        // 刻み: 16ms → 450ms（止まった）
+        for t in [20.0, 20.016, 20.466] { rec.recordFrame(at: t) }
+        rec.searchBody(query: "京")
+        clock.now = 1003.000
+        rec.searchBody(query: "京都 ;嵐")
+        XCTAssertEqual(searchTail(rec),
+                       "[+1000ms (空) b1 h0/0ms/0ms g0ms s0 c0/0ms;"
+                       + "+2000ms 京 b2 h2/400ms/300ms g450ms s1 c0/0ms;"
+                       + "+3000ms 京都__嵐 b1 h0/0ms/0ms g0ms s0 c0/0ms]")
+        XCTAssertTrue(rec.summary().contains(" | spot=2/400ms/300ms | "), rec.summary())
+        XCTAssertEqual(rec.bodyCount(.search), 4)
+    }
+
+    /// `officialSpots` が書き換わった回数と時間を、今の語の記録に足す（`c<回数>/<合計>ms`・2026-11-14）。無効なら中身だけ走る
+    func testSearchSpotsChangedCountsPerQuery() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        rec.searchBody(query: "京")
+        var ran = 0
+        rec.searchSpotsChanged { ran += 1; clock.now += 0.080 }
+        rec.searchSpotsChanged { ran += 1; clock.now += 0.020 }
+        XCTAssertEqual(ran, 2)
+        XCTAssertTrue(searchTail(rec).hasSuffix(" c2/100ms]"), searchTail(rec))
+        let off = PerfRecorder(enabled: false, clock: { clock.now })
+        var offRan = 0
+        off.searchSpotsChanged { offRan += 1 }
+        XCTAssertEqual(offRan, 1)
+        XCTAssertEqual(searchTail(off), "[]")
+    }
+
+    /// 最初の語の記録を始めるときに、止まっている最中の積みの見本を空にする（起動の停止で枠を使い切らない）
+    func testFirstSearchWindowClearsSamples() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        rec.recordSample(frames: ["launch"])
+        rec.searchBody(query: "")
+        XCTAssertEqual(samplesTail(rec), "[]")
+        rec.recordSample(frames: ["search"])
+        rec.searchBody(query: "京")
+        XCTAssertEqual(samplesTail(rec), "[+0 search]", "2つ目の語では空にしない")
+    }
+
+    /// 語の記録には上限がある。溢れたら数えるのを止め、溢れた数を残す
+    func testSearchWindowsAreCapped() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        for i in 0..<(PerfRecorder.searchWindowCap + 2) { rec.searchBody(query: "q\(i)") }
+        rec.searchSpotHits { clock.now += 0.010 }
+        let tail = searchTail(rec)
+        XCTAssertEqual(tail.components(separatedBy: ";").count, PerfRecorder.searchWindowCap + 1)
+        XCTAssertTrue(tail.hasSuffix(";+2dropped]"), tail)
+        XCTAssertTrue(rec.summary().contains(" | spot=1/10ms/10ms | "), "通しの数は溢れても数える")
+    }
+
+    /// 無効のとき（本番）は何も数えず、包んだ中身はそのまま走る
+    func testSearchRecordingDisabledDoesNothing() {
+        let clock = FakeClock()
+        let off = PerfRecorder(enabled: false, clock: { clock.now })
+        off.searchBody(query: "京")
+        var ran = 0
+        let value: Int = off.searchSpotHits { ran += 1; return 7 }
+        XCTAssertEqual(value, 7)
+        XCTAssertEqual(ran, 1)
+        XCTAssertEqual(off.bodyCount(.search), 0)
+        XCTAssertTrue(off.summary().hasSuffix(" | spot=0/0ms/0ms | srch=[]"), off.summary())
+    }
+
+    /// 🔴 探すの body が語ごとに数え、撮影スポットを当てる所を測っている。当てる関数は signpost で包む（UI テストのときだけ）
+    func testSearchScreenIsInstrumented() throws {
+        let search = try source("Sources/JourneyPhoto/Features/Search/SearchView.swift")
+        XCTAssertTrue(search.contains("let _ = PerfRecorder.shared.searchBody(query: query)"), "body を数えていない")
+        let hits = try XCTUnwrap(search.range(of: "private var spotHits: [OfficialSpot] {"))
+        let wrap = try XCTUnwrap(search.range(of: "PerfRecorder.shared.searchSpotHits {"))
+        // 2026-11-13 の直しで、当てる所は控え（`SearchSpotHits`）を通る
+        let match = try XCTUnwrap(search.range(of: "spotHitsMemo.hits(spots: officialSpots, index: spotSearchIndex, query: query,"))
+        XCTAssertLessThan(hits.lowerBound, wrap.lowerBound)
+        XCTAssertLessThan(wrap.lowerBound, match.lowerBound, "当てる所が測る包みの中にない")
+        let index = try source("Sources/JourneyPhoto/Core/Text/OfficialSpotIndex.swift")
+        XCTAssertTrue(index.contains("PerfRecorder.shared.isEnabled ? PerfSignpost.begin(.spotMatch) : nil"),
+                      "SpotMatch の区間が無いか、UI テストのとき以外も付けている")
+        XCTAssertEqual(PerfSignpost.Name.spotMatch.rawValue, "SpotMatch")
+        XCTAssertFalse(PerfSignpost.recordsEvent(.spotMatch), "打つたびに走る区間で出来事の枠を使い切る")
+        let ui = try source("UITests/JourneyPhotoUITests/PerformanceTests.swift")
+        XCTAssertTrue(ui.contains("name: \"SpotMatch\""), "UI テストが SpotMatch の区間を測っていない")
+    }
+
+    /// 打つたびに走る `matches` は、無効のとき（本番）は記録を何も変えない（区間も出来事も残さない）
+    func testSpotMatchLeavesNoRecordWhenDisabled() {
+        XCTAssertFalse(PerfRecorder.shared.isEnabled, "単体テストでは無効のはず")
+        let before = PerfRecorder.shared.summary().components(separatedBy: " | t=").first
+        _ = OfficialSpotIndex.matches([], query: "京")
+        XCTAssertEqual(PerfRecorder.shared.summary().components(separatedBy: " | t=").first, before)
     }
 
     // MARK: - 配線
