@@ -254,7 +254,7 @@ final class PassExchangeTests: XCTestCase {
         if ja.contains("暗号化") {
             XCTAssertTrue(ja.contains("暗号化していません"))
             XCTAssertTrue(ja.contains("ブロックした人にも"))
-            XCTAssertTrue(ja.contains("乗車券の写真、ひとこと、発と着の字が読めます"))
+            XCTAssertTrue(ja.contains("乗車券の写真、ひとこと、区間（発と着）が読めます"))
         } else {
             XCTAssertTrue(ja.contains("isn\u{2019}t encrypted"))
             XCTAssertTrue(ja.contains("blocked may still receive"))

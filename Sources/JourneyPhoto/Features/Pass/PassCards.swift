@@ -18,6 +18,9 @@ struct PassCardContent: Identifiable, Equatable {
         return L("名前の無い人", "Unnamed")
     }
 
+    /// 読み上げの呼び名（「〇〇さんの乗車券」・名前が無ければ「乗車券」）。**2026-11-14 判断**: 呼び名を「乗車券」にそろえた
+    var ticketTitle: String { TheirTrunkText.ticketTitle(owner?.name ?? photo.displayName) }
+
     /// 住まい（都道府県庁のあたり）からすれちがった場所までの km。出せなければ nil
     var km: Int? { PassExchange.travelKm(fromPrefecture: fromPrefecture, to: card.place) }
 

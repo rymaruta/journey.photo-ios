@@ -109,9 +109,9 @@ struct PassSettingsView: View {
 
     private var mainCard: some View {
         JPCard {
-            JPToggleRow(title: L("すれちがう", "Swap passes nearby"),
-                        detail: L("近くにいたアプリの人と、わたしの乗車券をカードで交換します",
-                                  "Swap your ticket with app users you pass nearby"),
+            JPToggleRow(title: PassTicket.featureName,
+                        detail: L("近くにいた人と、わたしの乗車券を交換します",
+                                  "Swap your ticket with people you pass nearby"),
                         isOn: enabledBinding)
                 .accessibilityIdentifier("pass.settings.toggle")
             JPCardDivider()
@@ -270,7 +270,7 @@ struct PassSettingsView: View {
         VStack(alignment: .leading, spacing: JPSpace.xs) {
             eyebrow(L("届き方", "Delivery"))
             JPCard {
-                JPToggleRow(title: L("夕方にまとめて受け取る", "Get cards together in the evening"),
+                JPToggleRow(title: L("夕方にまとめて受け取る", "Get tickets together in the evening"),
                             detail: PassPrivacyText.eveningDetail,
                             isOn: eveningBinding)
                     .accessibilityIdentifier("pass.settings.evening")
@@ -283,11 +283,11 @@ struct PassSettingsView: View {
                 set: { on in pass.update { $0.delivery = on ? .evening : .instant } })
     }
 
-    // MARK: - カードに載るもの
+    // MARK: - 乗車券に載るもの
 
     private var contentsSection: some View {
         VStack(alignment: .leading, spacing: JPSpace.xs) {
-            eyebrow(L("カードに載るもの", "On your card"))
+            eyebrow(L("乗車券に載るもの", "On your ticket"))
             JPCard {
                 JPRowLabel(title: L("乗車券の写真、名前、ひとこと", "Ticket photo, name and note"),
                            detail: L("いつも載ります", "Always included"), chevron: false)
@@ -300,7 +300,7 @@ struct PassSettingsView: View {
                 .buttonStyle(JPRowButtonStyle())
                 JPCardDivider()
                 JPRowLabel(title: L("すれちがった場所と時刻", "Where and when you passed"),
-                           detail: L("「京都市のあたり\u{2002}15 時ごろ」の粒度。番地や分は載せません",
+                           detail: L("「京都市のあたり\u{2002}15 時ごろ」くらいの大まかさ。番地や分は載せません",
                                      "As rough as \u{201C}around Kyoto\u{2002}around 3 PM\u{201D}. Never street addresses or minutes."),
                            chevron: false)
             }
@@ -335,7 +335,7 @@ struct PassSettingsView: View {
             NavigationLink { PassBookView(fromSettings: true) } label: {
                 JPRowLabel(title: L("すれちがい帳", "Pass book"),
                            detail: L("\(pass.book(hiding: hidden.snapshot).count) 枚",
-                                     "\(pass.book(hiding: hidden.snapshot).count) cards"))
+                                     Plural.count(pass.book(hiding: hidden.snapshot).count, "ticket")))
             }
             .buttonStyle(JPRowButtonStyle())
         }
@@ -468,8 +468,8 @@ enum PassSettingsText {
     /// すれちがい帳の頭の行（`PassBookStatus.distanceUnknown`）が同じ決まりで読む
     static func travelUnknownReason(homePrefecture: String?, locationAuthorized: Bool) -> String? {
         if homePrefecture == nil {
-            return L("プロフィールの居住地に都道府県が無いため、家からの距離が分かりません。居住地を入れるか、ほかの「いつ」を選んでください。",
-                     "Your profile has no prefecture under \u{201C}Where you\u{2019}re based\u{201D}, so distance from home is unknown. Add it, or pick another option.")
+            return L("家からの距離が分かりません。プロフィールに居住地の都道府県を入れるか、ほかの「いつ」を選んでください。",
+                     "Distance from home is unknown. Add your prefecture under \u{201C}Where you\u{2019}re based\u{201D} in your profile, or pick another option.")
         }
         if !locationAuthorized {
             return L("位置情報が許可されていないため、旅のあいだか分かりません。撮影地マップで現在地を許可するか、ほかの「いつ」を選んでください。",

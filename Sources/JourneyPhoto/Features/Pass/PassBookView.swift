@@ -69,7 +69,7 @@ struct PassBookView: View {
                         .font(JPFont.display(SettingsLayout.titleSize, relativeTo: .largeTitle))
                         .foregroundStyle(WebTheme.text)
                         .accessibilityAddTraits(.isHeader)
-                    Text(L("受け取ったカードは、消えずにここに残ります", "Cards you receive stay here"))
+                    Text(L("受け取った乗車券は、消えずにここに残ります", "Tickets you receive stay here"))
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)
                 }
@@ -86,13 +86,13 @@ struct PassBookView: View {
                         JPLoadingState(kind: .grid)
                     } else if let actionTitle = status.emptyActionTitle {
                         // オフ: 主ボタン1つ。押すと設定を積み、まず「オンにする」前の説明（札 #519）
-                        EmptyState(title: L("まだカードがありません", "No cards yet"), message: status.emptyMessage,
+                        EmptyState(title: L("まだ乗車券がありません", "No tickets yet"), message: status.emptyMessage,
                                    actionTitle: actionTitle, actionIdentifier: PassBookStatus.emptyActionIdentifier) {
                             openSettings(intro: true)
                         }
                     } else {
                         // オン: ボタンは出さない（止まっている訳は頭の行が言う）
-                        EmptyState(title: L("まだカードがありません", "No cards yet"), message: status.emptyMessage)
+                        EmptyState(title: L("まだ乗車券がありません", "No tickets yet"), message: status.emptyMessage)
                     }
                 } else {
                     statsRow(PassBook.stats(book.filter { byId[$0.id] != nil }, prefectures: pass.ownerPrefectures))
@@ -111,7 +111,7 @@ struct PassBookView: View {
                         .padding(.horizontal, JPSpace.gutter)
                     }
                     .padding(.top, 14)
-                    Text(L("場所は「〇〇のあたり」の粒度だけを、この iPhone の中に記録します。",
+                    Text(L("場所は「〇〇のあたり」くらいの大まかさで、この iPhone の中にだけ記録します。",
                            "Places are recorded only roughly (\u{201C}around …\u{201D}), on this iPhone only."))
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)
@@ -206,7 +206,7 @@ struct PassBookView: View {
                         PassTicketSlot(content: content)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(L("\(content.name) のカード", "\(content.name)\u{2019}s card"))
+                    .accessibilityLabel(content.ticketTitle)
                     // 「…」（通報・ブロック・帳から外す）。写真の上なのでガラスの丸に白
                     .overlay(alignment: .topTrailing) {
                         PassCardMenu(content: content,

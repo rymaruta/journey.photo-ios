@@ -63,16 +63,16 @@ final class HomeTidyTests: XCTestCase {
                        "帯の絵の前の1枚が板の 50 にならない")
     }
 
-    /// 帯: 束の絵（縮めた小さなきっぷ）→ 眉 → 明朝 18 の「今日 N 枚」→ 12 の地名、右に「束を開く ›」（真鍮・当たり 44）
+    /// 帯: 束の絵（縮めた小さなきっぷ）→ 眉 → 明朝 18 の「今日 N 枚」→ 12 の地名、右に「見る ›」（真鍮・当たり 44）
     func testPassBandLayout() throws {
         let slot = try source("Features/Pass/PassHomeSlot.swift")
         let card = slice(slot, from: "struct PassHomeCard", to: "private var countTitle")
         assertInOrder(["PassMiniStack(faces: cards.prefix(3).map { $0.face() }, compact: true)",
-                       "Text(L(\"カードが届きました\"", ".jpEyebrow()",
+                       "Text(L(\"乗車券が届きました\"", ".jpEyebrow()",
                        "countTitle", ".font(JPFont.rowTitle)",
                        "Text(PassBook.bundleLine(cards.map(\\.card)))", ".font(JPFont.caption)", ".lineLimit(1)",
                        ".frame(maxWidth: .infinity, alignment: .leading)",
-                       "Text(L(\"束を開く ›\"", ".foregroundStyle(WebTheme.accent)",
+                       "Text(L(\"見る ›\"", ".foregroundStyle(WebTheme.accent)",
                        ".frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)",
                        ".frame(minHeight: Self.height)"], in: card, "帯の並び")
         XCTAssertFalse(card.contains("JPFont.cardTitle"), "数の題が明朝 22 のまま（板は 18）")

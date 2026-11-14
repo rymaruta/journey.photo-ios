@@ -2021,7 +2021,7 @@ final class ScreenshotTests: XCTestCase {
         let open = app.buttons["pass.home.open"].firstMatch
         // 札が出なければ落とす（2026-10-16 の読み直し: 出ないまま抜けると、札の .task が走らない回を見逃した）
         guard open.waitForExistence(timeout: 45) else {
-            return XCTFail("見本のカードを入れたのに、ホームに「カードが届きました」の札が出ない")
+            return XCTFail("見本の乗車券を入れたのに、ホームに「乗車券が届きました」の札が出ない")
         }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "80-すれちがいの束")
@@ -2123,7 +2123,7 @@ final class ScreenshotTests: XCTestCase {
         let home = app.tabBars.firstMatch.buttons.element(boundBy: 0)
         XCTAssertTrue(home.isSelected, "帳を積んだあと、下の札がホームでない")
         XCTAssertEqual(status.label, "すれちがい乗車券はオフです")
-        XCTAssertEqual(status.value as? String, "オンにすると、近くにいたアプリの人と乗車券のカードを交換します")
+        XCTAssertEqual(status.value as? String, "オンにすると、近くにいた人と乗車券を交換します")
         XCTAssertGreaterThanOrEqual(status.frame.height, 43.9, "頭の行が 44pt 未満")
         let turnOn = app.buttons["passBook.emptyTurnOn"].firstMatch
         XCTAssertTrue(turnOn.waitForExistence(timeout: 10), "オフで 0 枚なのに「説明を読んでオンにする」が無い")

@@ -31,7 +31,7 @@ final class PassWiringTests: XCTestCase {
     /// カードの「…」（通報・ブロック・帳から外す）が束の画面と帳の両方にある（審査 1.2）
     func testCardsHaveReportBlockAndRemove() throws {
         let menu = try source("Features/Pass/PassCardMenu.swift")
-        for word in ["通報する", "この人をブロック", "帳から外す"] { XCTAssertTrue(menu.contains(word), word) }
+        for word in ["通報する", "この人をブロック", "すれちがい帳から外す"] { XCTAssertTrue(menu.contains(word), word) }
         for path in ["Features/Pass/PassViewerView.swift", "Features/Pass/PassBookView.swift"] {
             let text = try source(path)
             XCTAssertTrue(text.contains("PassCardMenu(content:"), "\(path) に「…」が無い")
@@ -63,7 +63,7 @@ final class PassWiringTests: XCTestCase {
         XCTAssertTrue(sheet.contains("if comment == nil && passNote == nil {\n                hidden.markReported"),
                       "ひとことの通報で写真を隠している")
         let menu = try source("Features/Pass/PassCardMenu.swift")
-        for word in ["写真を通報する", "書かれた字を通報する", "ひとことを伏せる", "ひとことを出す"] {
+        for word in ["写真を通報する", "書かれた言葉を通報する", "ひとことを伏せる", "ひとことを出す"] {
             XCTAssertTrue(menu.contains(word), word)
         }
         let pick = try source("Features/Pass/PassCardPickView.swift")
@@ -128,8 +128,9 @@ final class PassWiringTests: XCTestCase {
             XCTAssertTrue(pick.contains(part), part)
         }
         let menu = try source("Features/Pass/PassCardMenu.swift")
-        XCTAssertTrue(menu.contains("区間の字を伏せる"))
-        XCTAssertTrue(menu.contains("書かれた字を通報する"))
+        XCTAssertTrue(menu.contains("区間を隠す"))
+        XCTAssertTrue(menu.contains("区間を表示"))
+        XCTAssertTrue(menu.contains("書かれた言葉を通報する"))
         for path in ["Features/Pass/PassViewerView.swift", "Features/Pass/PassBookView.swift"] {
             let text = try source(path)
             XCTAssertTrue(text.contains("passNote: target.card.writtenText"), "\(path): 通報に発・着の字が入らない")
@@ -147,7 +148,7 @@ final class PassWiringTests: XCTestCase {
         let viewer = try source("Features/Pass/PassViewerView.swift")
         for part in ["PassSpinTicket(yaw: yaw", "spin.liveYaw(", "PassSpinGesture.classify(",
                      "SpinMotion.snapTarget(",
-                     "accessibilityAction(named: L(\"次のカード\"", "accessibilityAction(named: L(\"写真を全面で見る\""] {
+                     "accessibilityAction(named: L(\"次の乗車券\"", "accessibilityAction(named: L(\"写真を全面で見る\""] {
             XCTAssertTrue(viewer.contains(part), part)
         }
         // 回す描き方・手つきは共有の部品（自分のカードの見本も使う・`PassOwnCardSpinTests`）

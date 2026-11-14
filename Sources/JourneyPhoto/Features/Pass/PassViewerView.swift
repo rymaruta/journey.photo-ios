@@ -164,7 +164,7 @@ struct PassViewerView: View {
     private var header: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 0) {
-                Text(mode == .bundle ? L("今日のカード", "Today\u{2019}s cards") : L("すれちがい帳", "Pass book"))
+                Text(mode == .bundle ? L("今日の乗車券", "Today\u{2019}s tickets") : L("すれちがい帳", "Pass book"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                 Text(L("\(index + 1) / \(shown.count) 枚", "\(index + 1) of \(shown.count)"))
@@ -238,11 +238,11 @@ struct PassViewerView: View {
             .accessibilityValue(PassSpinTicket.spokenSide(yaw))
             .accessibilityAddTraits(.isButton)
             .accessibilityHint(showsBack ? L("押すと表に戻ります", "Tap to see the front")
-                                         : L("押すと裏返します", "Tap to flip the card"))
+                                         : L("押すと裏返します", "Tap to flip the ticket"))
             .accessibilityAction { flip() }
             .accessibilityAction(named: L("写真を全面で見る", "View photo full screen")) { fullPhoto = content.photo }
-            .accessibilityAction(named: L("次のカード", "Next card")) { move(by: 1) }
-            .accessibilityAction(named: L("前のカード", "Previous card")) { move(by: -1) }
+            .accessibilityAction(named: L("次の乗車券", "Next ticket")) { move(by: 1) }
+            .accessibilityAction(named: L("前の乗車券", "Previous ticket")) { move(by: -1) }
             .accessibilityIdentifier("pass.viewer.card")
         }
         .frame(width: PassCardStyle.deckSize.width, height: PassCardStyle.deckSize.height)
@@ -337,7 +337,7 @@ struct PassViewerView: View {
         }
         .buttonStyle(.plain)
         .disabled(thanked || thanking)
-        .accessibilityHint(L("この写真にいいねを送ります", "Sends a like to this photo"))
+        .accessibilityHint(L("相手にありがとうを送ります", "Sends your thanks to them"))
         .accessibilityIdentifier("pass.viewer.thanks")
         if mode == .bundle {
             Button {
@@ -345,7 +345,7 @@ struct PassViewerView: View {
                 onFile()
                 dismiss()
             } label: {
-                Text(L("帳に入れる", "Add to the book")).jpOutlineButton(fullWidth: true)
+                Text(L("すれちがい帳に入れる", "Add to Pass book")).jpOutlineButton(fullWidth: true)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("pass.viewer.file")
@@ -371,8 +371,8 @@ struct PassViewerView: View {
             // 同期のあとにも残る印になる（`FavoritesStore.set(_:favorite:for:)`）
             favorites.set(content.photo.id, favorite: false, for: owner)
             guard Self.keepsThanks(owner: owner, viewer: favorites.owner) else { return }
-            errorMessage = L("ありがとうを送れませんでした。電波のあるところでもう一度お試しください。",
-                             "Couldn\u{2019}t send your thanks. Please try again with a signal.")
+            errorMessage = L("ありがとうを送れませんでした。通信できる所で、もう一度お試しください。",
+                             "Couldn\u{2019}t send your thanks. Please try again when you\u{2019}re online.")
         }
     }
 

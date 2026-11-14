@@ -146,7 +146,7 @@ struct PassSpinCard: View {
                                       "\(PassSpinTicket.spokenSide(yaw)) of \(spokenName)"))
                 .accessibilityAddTraits(.isButton)
                 .accessibilityHint(showsBack ? L("押すと表に戻ります", "Tap to see the front")
-                                             : L("押すと裏返します", "Tap to flip the card"))
+                                             : L("押すと裏返します", "Tap to flip the ticket"))
                 .accessibilityAction { flip() }
                 .accessibilityIdentifier("pass.pick.card")
             // 横に入らない大きさ（文字の大きさの設定）では「裏を見る」を手がかりの下へ回す（2026-10-21）
