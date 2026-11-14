@@ -199,7 +199,6 @@ struct StoryComposerView: View {
     @State private var librarySelection: [PhotosPickerItem] = []
     /// 「誰に見せる？」のシート
     @State private var showAudience = false
-    @State private var placeDraft = ""
     /// 撮影スポットの索引（静的な JSON・一度だけ読む）。**取れなかった回は空**＝候補を出さないだけ
     @State private var spotIndex: [OfficialSpot] = []
     /// 送る前に撮影スポットの索引を待っている（`post`・押し直しを受けない）
@@ -525,20 +524,16 @@ struct StoryComposerView: View {
             loadAttachesLocation(for: id)
             loadKeepInArchive(for: id)
         }
-        .alert(L("撮影地", "Place"), isPresented: $showPlaceEditor) {
-            // サーバーが 200 で切る（`sanitizeText(location, 200)`）。画面で止める
-            TextField(L("撮影地（任意）", "Place (optional)"), text: Binding(
-                get: { placeDraft },
-                set: { placeDraft = PostLimits.limited(old: placeDraft, new: $0, limit: PostLimits.location) }))
-            Button(L("決める", "Set")) { setPlace(placeDraft.trimmingCharacters(in: .whitespacesAndNewlines)) }
-            if !place.location.isEmpty {
-                Button(L("外す", "Remove"), role: .destructive) { setPlace("") }
+        // 撮影地は候補つきの欄のシートで決める（2026-11-14 判断・`StoryPlaceSheet`）。前は字を打つだけの窓
+        // （`alert`）で、地名を最後まで打って「決める」を押していた。今は数文字 → 候補を押す（押したら決めて閉じる）。
+        // 座標は地名とセットのときだけ送る（`Place.coordsToSend`）。欄の説明は「撮影地の位置を付ける」の今の値で言い分ける
+        .sheet(isPresented: $showPlaceEditor) {
+            StoryPlaceSheet(initial: place.location,
+                            near: StoryQueue.baseCoords(suggestionCoords),
+                            note: StoryLocationText.placeEditorNote(attaches: attachesLocation)) { picked in
+                setPlace(picked)
             }
-            Button(Labels.Common.cancel, role: .cancel) {}
-        } message: {
-            // 座標は地名とセットのときだけ送る（名前の無い点は画面に出しようがない）。
-            // 「撮影地の位置を付ける」の今の値で言い分ける（2026-10-18・変えるのは「誰に見せる？」）
-            Text(StoryLocationText.placeEditorNote(attaches: attachesLocation))
+            .presentationDetents([.large])
         }
     }
 
@@ -1174,7 +1169,6 @@ struct StoryComposerView: View {
             }
         case .place:
             Button {
-                placeDraft = place.location
                 showPlaceEditor = true
             } label: { toolCell(tool, used: used) }
                 .buttonStyle(.plain)

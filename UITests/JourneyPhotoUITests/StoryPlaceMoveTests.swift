@@ -153,11 +153,17 @@ final class StoryPlaceMoveTests: XCTestCase {
         let placeTool = tool(app, "場所")
         guard placeTool.waitForExistence(timeout: 5) else { log("場所の道具が無い"); return }
         placeTool.tap()
-        let field = app.alerts.firstMatch.textFields.firstMatch
+        // 2026-11-14: 撮影地は候補つきの欄のシート（`StoryPlaceSheet`）。候補に無い名前は打って「決める」
+        let field = app.textFields["story.place.field"].firstMatch
         guard field.waitForExistence(timeout: 5) else { log("撮影地の入力欄が出ない"); shoot(app, "入力欄なし"); return }
-        field.tap()
-        field.typeText("Capetest")
-        app.alerts.firstMatch.buttons["決める"].tap()
+        if app.keyboards.firstMatch.waitForExistence(timeout: 3) {
+            app.typeText("Capetest")
+        } else {
+            field.tap()
+            field.typeText("Capetest")
+        }
+        app.buttons["story.place.set"].firstMatch.tap()
+        _ = field.waitForNonExistence(timeout: 5)
         Thread.sleep(forTimeInterval: 0.8)
         log("場所を入れた probe=\(probe(app))")
         shoot(app, "場所を入れた")
@@ -165,6 +171,33 @@ final class StoryPlaceMoveTests: XCTestCase {
         dragTrials(app, name: "chip(場所の道具)") { self.element(app, label: "Capetest") }
         dragTrials(app, name: "song(場所の後)") { app.descendants(matching: .any)["story.songSticker"].firstMatch }
         finish(app)
+    }
+
+    /// **「場所」で数文字打つと候補が出て、押すと撮影地に入りシートが閉じる**（2026-11-14 判断・`StoryPlaceSheet`）。
+    /// 前は字を打つだけの窓で、地名を最後まで打って「決める」を押していた。
+    /// 開いたらすぐ打てる（欄を押さない）・候補を押したら決まる（「決める」を押さない）まで、出なければ落とす
+    func testPlaceToolPicksSuggestion() {
+        guard let app = launch() else { XCTFail("作る画面まで行けない"); return }
+        let placeTool = tool(app, "場所")
+        XCTAssertTrue(placeTool.waitForExistence(timeout: 5), "場所の道具が無い")
+        placeTool.tap()
+        let field = app.textFields["story.place.field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "場所を押しても候補つきの欄が出ない")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "開いてもすぐ打てない（キーボードが出ない）")
+        // 欄を押さずに打つ（開いた時点で焦点が欄にある）。撮影スポットの英語の名前の頭（Takaya Shrine Hongu）
+        app.typeText("Takaya Shr")
+        let candidate = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "観光スポット 高屋神社")).firstMatch
+        let shown = candidate.waitForExistence(timeout: 20)
+        shoot(app, "撮影地の候補")
+        XCTAssertTrue(shown, "数文字打っても撮影スポットの候補が出ない")
+        guard shown else { return }
+        candidate.tap()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5), "候補を押してもシートが閉じない")
+        let chip = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "高屋神社")).firstMatch
+        XCTAssertTrue(chip.waitForExistence(timeout: 5), "候補を押しても撮影地に入らない probe=\(probe(app))")
+        log("候補を選んだ probe=\(probe(app))")
+        shoot(app, "候補を選んだ")
     }
 
     /// 文字・撮影地の札を打ち終えた後、その札と曲の札を動かす

@@ -33,6 +33,8 @@ struct SignInView: View {
     @State private var offerVerification = false
     /// 上に敷く写真のタイル（板 41 の 3×3）。取れなければ地の色のまま
     @State private var tiles: [Photo] = []
+    /// いま打っている欄。**右下のキーで次の欄へ進め、最後の欄で送る**（2026-11-14 判断・`AuthFieldFlow`）
+    @FocusState private var focusedField: AuthFieldFlow.Field?
 
     enum Mode {
         case signIn
@@ -205,18 +207,29 @@ struct SignInView: View {
                     .textContentType(.emailAddress)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    // 右下のキーで次の欄へ（2026-11-14 判断・`AuthFieldFlow`）
+                    .focused($focusedField, equals: .email)
+                    .submitLabel(AuthFieldFlow.key(for: .email, in: flowForm).label)
+                    .onSubmit { advance(from: .email) }
                     // UI テストが名指しで打つ（`CriticalFlowTests`・2026-10-22）
                     .accessibilityIdentifier("signin.email")
             }
             JPField(L("パスワード", "Password")) {
                 JPSecureField("", text: $password)
                     .textContentType(mode == .signUp ? .newPassword : .password)
+                    // ログインはここが最後の欄（右下のキーでログイン）。登録は表示名へ
+                    .focused($focusedField, equals: .password)
+                    .submitLabel(AuthFieldFlow.key(for: .password, in: flowForm).label)
+                    .onSubmit { advance(from: .password) }
                     .accessibilityIdentifier("signin.password")
             }
             if mode == .signUp {
                 JPField(L("表示名（あとで変えられます）", "Display name (you can change it later)")) {
                     JPTextField("", text: $displayName)
                         .textContentType(.name)
+                        .focused($focusedField, equals: .displayName)
+                        .submitLabel(AuthFieldFlow.key(for: .displayName, in: flowForm).label)
+                        .onSubmit { advance(from: .displayName) }
                         // 登録後にプロフィールへ書く名前。サーバーは 100 を超えたぶんを黙って切るので、
                         // 欄で止める（プロフィール編集と同じ `PostLimits.Profile.displayName`）
                         .onChange(of: displayName) { old, new in
@@ -548,17 +561,27 @@ struct SignInView: View {
                     .textContentType(.emailAddress)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    // コードを送る前はここだけ。右下のキー（送信）でコードを送る（2026-11-14 判断・`AuthFieldFlow`）
+                    .focused($focusedField, equals: .email)
+                    .submitLabel(AuthFieldFlow.key(for: .email, in: flowForm).label)
+                    .onSubmit { advance(from: .email) }
+                    .accessibilityIdentifier("signin.reset.email")
                     .disabled(mode == .resetConfirm)
             }
             if mode == .resetConfirm {
                 JPField(L("確認コード", "Verification code")) {
+                    // 数字のキーボードには右下のキーが無い。並びには入れ、続く欄へは指で移る
                     JPTextField("", text: $code)
                         .keyboardType(.numberPad)
                         .textContentType(.oneTimeCode)
+                        .focused($focusedField, equals: .code)
                 }
                 JPField(L("新しいパスワード", "New password")) {
                     JPSecureField("", text: $password)
                         .textContentType(.newPassword)
+                        .focused($focusedField, equals: .newPassword)
+                        .submitLabel(AuthFieldFlow.key(for: .newPassword, in: flowForm).label)
+                        .onSubmit { advance(from: .newPassword) }
                 }
             }
             Text(mode == .resetConfirm
@@ -570,14 +593,7 @@ struct SignInView: View {
 
             if mode == .resetRequested {
                 Button {
-                    Task {
-                        clearMessages()
-                        if await auth.startPasswordReset(email: email) {
-                            mode = .resetConfirm
-                            notice = L("送りました。メールをご確認ください。",
-                                       "Sent. Please check your email.")
-                        }
-                    }
+                    requestReset()
                 } label: {
                     Text(L("コードを送る", "Send code")).jpPillButton(SignInLayout.primaryStyle)
                 }
@@ -586,22 +602,7 @@ struct SignInView: View {
                 .opacity(auth.isWorking || email.isEmpty ? 0.4 : 1)
             } else {
                 Button {
-                    Task {
-                        clearMessages()
-                        let done = await auth.confirmPasswordReset(
-                            email: email, code: code, newPassword: password
-                        )
-                        if done {
-                            // そのままログインまで通す（もう一度打たせない）
-                            await auth.signIn(email: email, password: password)
-                            await afterSignIn()
-                            if auth.userId == nil {
-                                mode = .signIn
-                                notice = L("変えました。新しいパスワードでログインしてください。",
-                                           "Changed. Please sign in with your new password.")
-                            }
-                        }
-                    }
+                    confirmReset()
                 } label: {
                     Text(L("パスワードを変える", "Change password")).jpPillButton(SignInLayout.primaryStyle)
                 }
@@ -620,6 +621,83 @@ struct SignInView: View {
             }
             .buttonStyle(.plain)
             .disabled(auth.isWorking)
+        }
+    }
+
+    /// 再設定: 確認コードを送る（ボタンと、メールの欄の右下のキー）
+    private func requestReset() {
+        guard !auth.isWorking, !email.isEmpty else { return }
+        Task {
+            clearMessages()
+            if await auth.startPasswordReset(email: email) {
+                mode = .resetConfirm
+                // 届いたコードをすぐ打てるように（数字のキーボードが開いたまま続く）
+                focusedField = .code
+                notice = L("送りました。メールをご確認ください。",
+                           "Sent. Please check your email.")
+            }
+        }
+    }
+
+    /// 再設定: 新しいパスワードに変えて、そのままログイン（ボタンと、新しいパスワードの欄の右下のキー）
+    private func confirmReset() {
+        guard !auth.isWorking, !code.isEmpty, !password.isEmpty else { return }
+        Task {
+            clearMessages()
+            let done = await auth.confirmPasswordReset(
+                email: email, code: code, newPassword: password
+            )
+            if done {
+                // そのままログインまで通す（もう一度打たせない）
+                await auth.signIn(email: email, password: password)
+                await afterSignIn()
+                if auth.userId == nil {
+                    mode = .signIn
+                    notice = L("変えました。新しいパスワードでログインしてください。",
+                               "Changed. Please sign in with your new password.")
+                }
+            }
+        }
+    }
+
+    // MARK: - 右下のキーで進む（2026-11-14 判断・`AuthFieldFlow`）
+
+    /// いまの画面の欄の並び
+    private var flowForm: AuthFieldFlow.Form {
+        switch mode {
+        case .signIn: return .signIn
+        case .signUp: return .signUp
+        case .resetRequested: return .resetRequest
+        case .resetConfirm: return .resetConfirm
+        }
+    }
+
+    /// 字が入っている欄
+    private var filledFields: Set<AuthFieldFlow.Field> {
+        var filled: Set<AuthFieldFlow.Field> = []
+        if !email.isEmpty { filled.insert(.email) }
+        if !password.isEmpty { filled.insert(.password); filled.insert(.newPassword) }
+        if !displayName.isEmpty { filled.insert(.displayName) }
+        if !code.isEmpty { filled.insert(.code) }
+        return filled
+    }
+
+    /// 右下のキーを押した。次の欄へ移るか、最後の欄ならボタンと同じことをする
+    private func advance(from field: AuthFieldFlow.Field) {
+        switch AuthFieldFlow.step(after: field, in: flowForm, filled: filledFields) {
+        case .focus(let next):
+            focusedField = next
+        case .submit:
+            focusedField = nil
+            switch mode {
+            case .signIn, .signUp:
+                guard canSubmit else { return }
+                Task { await submitCredentials() }
+            case .resetRequested:
+                requestReset()
+            case .resetConfirm:
+                confirmReset()
+            }
         }
     }
 

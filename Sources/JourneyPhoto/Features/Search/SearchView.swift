@@ -18,6 +18,8 @@ struct SearchView: View {
     @EnvironmentObject private var connectivity: Connectivity
     /// **「見せない」が変わったら控えを捨てるため**に見ている
     @EnvironmentObject private var hidden: ModerationStore
+    /// 最近の検索を人ごとに覚えるため（`RecentSearchesStore`・2026-11-14 判断）
+    @EnvironmentObject private var auth: AuthStore
     /// タブの切り替え（「地図で見る」）。**`TabRouter.shared` を直に見る**（ほかの画面と同じ）
     /// ——`@EnvironmentObject` はどこからも配られておらず、開いた瞬間に落ちた（verify.sh の NG）
     @ObservedObject private var tabRouter = TabRouter.shared
@@ -29,6 +31,8 @@ struct SearchView: View {
     /// 探す口に焦点があるか。**探すの札の上で見出しの「探す」を押したら、ここに字を打てるようにする**
     /// （2026-10-21・見出しの3つをどのタブにも置いたので、探すの札では押しても何も起きなかった）
     @FocusState private var fieldFocused: Bool
+    /// 前に探した言葉（新しい順に5つまで・端末の中だけ。2026-11-14 判断・`RecentSearchesStore`）
+    @State private var recentWords: [String] = []
     /// いまこの画面が出ているか。**詳細・人のページを上に積んでいる間は読み直さない**
     /// （`GalleryView` と同じ形）
     @State private var isOnScreen = false
@@ -114,6 +118,16 @@ struct SearchView: View {
                 // 頭の印（下の「探す」をもう一度押したら、ここへ戻す・`TabRouter.searchFocusRequests`）
                 Color.clear.frame(height: 0).id(Self.resultsTopID)
                 VStack(alignment: .leading, spacing: isDiscovering ? JPSpace.section : 20) {
+                    // 欄が空の間は、前に探した言葉を上に（押すとその言葉で探す・2026-11-14 判断）
+                    if showsRecentSearches {
+                        RecentSearchesSection(words: recentWords,
+                                              onPick: { word in pickRecent(word) },
+                                              onRemove: { word in recentWords = RecentSearchesStore().remove(word, userId: auth.userId) },
+                                              onRemoveAll: {
+                                                  RecentSearchesStore().removeAll(userId: auth.userId)
+                                                  recentWords = []
+                                              })
+                    }
                     if isDiscovering {
                         // **何も打っていないときは「発見」の顔**（板 11）。段の並びは
                         // `SearchDiscovery`、段の間は v2 で 32（`JPSpace.section`・板は 36）
@@ -343,6 +357,26 @@ struct SearchView: View {
         }
     }
 
+    /// 最近の検索を出すか: 欄が空で、言葉が1つ以上あり、「発見」の顔か欄を押しているとき
+    /// （カテゴリだけで絞っている間は結果の上に割り込ませない）
+    private var showsRecentSearches: Bool {
+        RecentSearchesStore.shows(query: query, words: recentWords, discovering: isDiscovering, focused: fieldFocused)
+    }
+
+    /// 欄の言葉を最近の検索に覚える（空・覚えている言葉のままなら並びを上げるだけ）
+    private func rememberQuery() {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        recentWords = RecentSearchesStore().remember(trimmed, userId: auth.userId)
+    }
+
+    /// 最近の言葉を押した: その言葉で探し（`query` の `onChange` が探す）、いちばん上へ上げる
+    private func pickRecent(_ word: String) {
+        query = word
+        fieldFocused = false
+        recentWords = RecentSearchesStore().remember(word, userId: auth.userId)
+    }
+
     /// 何も打たず、種類もカテゴリも選んでいない＝「発見」の顔
     private var isDiscovering: Bool {
         query.isEmpty && model.category == nil && model.scope == .all && model.timeFilter.isEmpty
@@ -366,6 +400,13 @@ struct SearchView: View {
                 .foregroundStyle(WebTheme.foreground)
                 // 実機の絵の道しるべ（`ScreenshotTests` が「11b」で探している名前。付いていなかった）
                 .accessibilityIdentifier("search.field")
+                // 探した言葉を覚える: 右下の「検索」か、言葉を残したまま欄を離れた（結果を開いた・払った）とき
+                .submitLabel(.search)
+                .onSubmit { rememberQuery() }
+                .onChange(of: fieldFocused) { _, focused in if !focused { rememberQuery() } }
+                // 人が替わったら、その人の言葉を読み直す（前の人の言葉を並べない）
+                .onChange(of: auth.userId) { _, id in recentWords = RecentSearchesStore().words(userId: id) }
+                .onAppear { recentWords = RecentSearchesStore().words(userId: auth.userId) }
             if !query.isEmpty {
                 Button {
                     query = ""

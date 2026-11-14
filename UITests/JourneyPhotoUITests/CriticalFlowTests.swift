@@ -714,9 +714,8 @@ final class CriticalFlowTests: XCTestCase {
 
     // MARK: - 4. ログアウト → ログイン
 
-    /// メニューからログアウトするとマイページがログイン画面になり、見本の認証でログインすると元のマイページに戻る
-    func testSignOutThenSignInReturnsToMyPage() {
-        let app = launch()
+    /// メニューからログアウトし、マイページがログイン画面になるまで。マイページの名前の行とログインの欄の入れ物を返す
+    private func signOutToForm(_ app: XCUIApplication) -> (nameLine: XCUIElement, form: XCUIElement) {
         tab(app, 4)
         let nameLine = app.descendants(matching: .any)["mypage.nameLine"].firstMatch
         XCTAssertTrue(nameLine.waitForExistence(timeout: 20), "ログイン中のマイページが出ない")
@@ -739,6 +738,13 @@ final class CriticalFlowTests: XCTestCase {
         let form = app.descendants(matching: .any)["signin.form"].firstMatch
         XCTAssertTrue(form.waitForExistence(timeout: 30), "ログアウトしてもマイページがログイン画面にならない")
         XCTAssertFalse(nameLine.exists, "ログアウトしたのにマイページの中身が残っている")
+        return (nameLine, form)
+    }
+
+    /// メニューからログアウトするとマイページがログイン画面になり、見本の認証でログインすると元のマイページに戻る
+    func testSignOutThenSignInReturnsToMyPage() {
+        let app = launch()
+        let (nameLine, form) = signOutToForm(app)
 
         let email = app.textFields["signin.email"].firstMatch
         XCTAssertTrue(email.waitForExistence(timeout: 5), "メールアドレスの欄が無い")
@@ -752,6 +758,62 @@ final class CriticalFlowTests: XCTestCase {
 
         XCTAssertTrue(nameLine.waitForExistence(timeout: 30), "ログインしてもマイページに戻らない")
         XCTAssertTrue(form.waitForNonExistence(timeout: 10), "ログインしたのにログイン画面が残っている")
+    }
+
+    /// **キーボードの右下のキーだけでログインできる**（2026-11-14 判断・`AuthFieldFlow`）:
+    /// メールを打って右下のキー → パスワードの欄に焦点が移る → 打って右下のキー → ログインしてマイページに戻る。
+    /// 前は右下のキーを押してもキーボードが閉じるだけで、パスワードの欄へ指で移り「ログイン」を押していた
+    func testSignInMovesWithReturnKey() {
+        let app = launch()
+        let (nameLine, form) = signOutToForm(app)
+
+        let email = app.textFields["signin.email"].firstMatch
+        XCTAssertTrue(email.waitForExistence(timeout: 5), "メールアドレスの欄が無い")
+        enter(Self.previewEmail + "\n", into: email, "メールアドレスの欄")
+        let password = app.secureTextFields["signin.password"].firstMatch
+        XCTAssertTrue(password.waitForExistence(timeout: 5), "パスワードの欄が無い")
+        // 右下のキーで焦点がパスワードの欄へ移ったか（読めない環境では、続けて打てるかで見る）
+        if password.responds(to: NSSelectorFromString("hasKeyboardFocus")) {
+            XCTAssertTrue(wait(password, "hasKeyboardFocus == true", timeout: 5),
+                          "メールの欄で右下のキーを押しても、パスワードの欄に焦点が移らない")
+        }
+        XCTAssertTrue(app.keyboards.firstMatch.exists, "メールの欄で右下のキーを押したらキーボードが閉じた（次の欄へ進まない）")
+        // 押さずに続けて打つ（焦点が移っていなければ typeText が落ちる）
+        app.typeText(Self.previewPassword + "\n")
+
+        XCTAssertTrue(nameLine.waitForExistence(timeout: 30), "パスワードの欄で右下のキーを押してもログインしない")
+        XCTAssertTrue(form.waitForNonExistence(timeout: 10), "ログインしたのにログイン画面が残っている")
+    }
+
+    // MARK: - 4b. 探す: 最近の検索
+
+    /// **前に探した言葉が欄の下に残り、押すとその言葉で探せる。1つずつ消せる**（2026-11-14 判断・`RecentSearchesStore`）
+    func testSearchRemembersRecentWords() {
+        let app = launch()
+        tab(app, 1)
+        let field = app.textFields["search.field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 20), "探すの欄が無い")
+        // 前の回の言葉と重ならない言葉（同じ模擬機で流し直しても先頭に上がるだけ）
+        let word = "Recent\(Int(Date().timeIntervalSince1970) % 100000)"
+        enter(word + "\n", into: field, "探すの欄")
+        let clear = app.buttons["search.clear"].firstMatch
+        XCTAssertTrue(clear.waitForExistence(timeout: 5), "打っても欄の「消す」が出ない")
+        clear.tap()
+
+        let recent = app.buttons["\(word)で探す"].firstMatch
+        XCTAssertTrue(recent.waitForExistence(timeout: 5), "探した言葉が、欄を空にしても最近の検索に出ない")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "最近の検索"
+        shot.lifetime = .keepAlways
+        add(shot)
+        recent.tap()
+        XCTAssertTrue(wait(field, "value == %@", [word], timeout: 5), "最近の言葉を押しても、その言葉で探さない")
+
+        clear.tap()
+        let remove = app.buttons["「\(word)」を最近の検索から消す"].firstMatch
+        XCTAssertTrue(remove.waitForExistence(timeout: 5), "最近の言葉に消す印が無い")
+        remove.tap()
+        XCTAssertTrue(recent.waitForNonExistence(timeout: 5), "消す印を押しても最近の言葉が残る")
     }
 
     // MARK: - 5. キャンピングカー
