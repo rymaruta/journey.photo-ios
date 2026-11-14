@@ -7743,6 +7743,49 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// **部屋を回すボタン ⟲ ⟳**（2026-11-14・人間工学の点検 6・WCAG 2.5.7 引かなくても回せる）: 右上の並びに 44pt 以上で出て、
+    /// ⟳ を押すと横の向きが 30° 変わり、⟲ で元に戻る。向きは見本の起動のときだけ読み上げの値に出る ` yaw=度`（`CamperRoomView.sceneView`）
+    func testCapturesCamperRoomTurnButtons() {
+        let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES"])
+        XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
+        guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { return XCTFail("部屋を組み終えない") }
+        let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
+        func yaw() -> Int? {
+            let value = (scene.value as? String) ?? ""
+            guard let r = value.range(of: " yaw=") else { return nil }
+            return Int(value[r.upperBound...].prefix { $0 == "-" || $0.isNumber })
+        }
+        let right = app.buttons["camper.room.turn.right"].firstMatch
+        let left = app.buttons["camper.room.turn.left"].firstMatch
+        XCTAssertTrue(right.waitForExistence(timeout: 5), "⟳ が無い")
+        XCTAssertTrue(left.exists, "⟲ が無い")
+        let frame = scene.frame
+        for (id, b) in [("⟲", left), ("⟳", right)] {
+            XCTAssertGreaterThanOrEqual(b.frame.width, 44, "\(id) の幅が 44pt 未満")
+            XCTAssertGreaterThanOrEqual(b.frame.height, 44, "\(id) が 44pt 未満")
+            XCTAssertTrue(frame.insetBy(dx: -1, dy: -1).contains(b.frame), "\(id) が部屋の絵の外へはみ出す")
+        }
+        assertNoOverlap([("⟲", left.frame), ("⟳", right.frame)], "⟲ ⟳")
+        shoot(app, "96s-とおまわり号の中（回すボタン）")
+        guard let start = yaw() else { return XCTFail("向きが読めない（\(scene.value ?? "")）") }
+        right.tap()
+        let turned = NSPredicate(format: "value MATCHES %@", "(?s).* yaw=\(start + 30)")
+        XCTAssertEqual(XCTWaiter().wait(for: [expectation(for: turned, evaluatedWith: scene)], timeout: 5), .completed,
+                       "⟳ を押しても向きが 30° 変わらない（\(start) → \(yaw().map(String.init) ?? "?")）")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "96t-とおまわり号の中（⟳ で回した）")
+        // 回した後は「向きを戻す」が ⟲ ⟳ の左に出る。重ならない
+        let reset = app.buttons["camper.room.resetView"].firstMatch
+        XCTAssertTrue(reset.waitForExistence(timeout: 3), "回しても「向きを戻す」が出ない")
+        XCTAssertGreaterThanOrEqual(reset.frame.height, 44, "「向きを戻す」が 44pt 未満")
+        assertNoOverlap([("向きを戻す", reset.frame), ("⟲", left.frame), ("⟳", right.frame)], "向きを戻す・⟲ ⟳")
+        left.tap()
+        let back = NSPredicate(format: "value MATCHES %@", "(?s).* yaw=\(start)")
+        XCTAssertEqual(XCTWaiter().wait(for: [expectation(for: back, evaluatedWith: scene)], timeout: 5), .completed,
+                       "⟲ を押しても元の向きに戻らない（\(yaw().map(String.init) ?? "?")）")
+        app.terminate()
+    }
+
     /// 家 → 模様替え（4 札）→ 写真 → 置く → 図鑑 の順に撮って確かめる
     private func tourRoomPanels(_ app: XCUIApplication, tag: String) {
         shoot(app, "96k-部屋の下の板（家\(tag)）")
