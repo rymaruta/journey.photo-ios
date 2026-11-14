@@ -27,6 +27,12 @@ enum SignatureShareCardRenderer {
         case ticket
         /// 写真を左右の端まで敷き、上下を黒い帯に（2026-11-14）
         case cinema
+        /// 写真の色を引いた額に入れ、字を真ん中にそろえる（2026-11-14・`ShareCardMap.MatLayout`）
+        case mat
+        /// 35mm のフィルムの1コマ。撮影値を等幅数字で主役に（2026-11-14・`ShareCardMap.FilmLayout`）
+        case film
+        /// 写真の右の黒い列に、撮影地を明朝の縦書きで（2026-11-14・`ShareCardMap.TanzakuLayout`）
+        case tanzaku
     }
 
     struct Credit {
@@ -98,6 +104,9 @@ enum SignatureShareCardRenderer {
         case .printed: return renderPrint(photo: photo, credit: credit, ratio: ratio)
         case .ticket: return renderTicket(photo: photo, credit: credit, ratio: ratio)
         case .cinema: return renderCinema(photo: photo, credit: credit, ratio: ratio)
+        case .mat: return renderMat(photo: photo, credit: credit, ratio: ratio)
+        case .film: return renderFilm(photo: photo, credit: credit, ratio: ratio)
+        case .tanzaku: return renderTanzaku(photo: photo, credit: credit, ratio: ratio)
         case .band: break   // 帯の型
         }
         typealias L = ShareCardMap.Layout

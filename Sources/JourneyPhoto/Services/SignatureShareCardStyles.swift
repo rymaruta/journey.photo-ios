@@ -194,7 +194,7 @@ extension SignatureShareCardRenderer {
             // 上の影・下のグラデーション（長く滑らか・境目を見せない）。その下は黒一色
             let shade = F(ratio: ratio)
             drawShade(cg, from: 0, to: shade.topShadeHeight, stops: shade.topShadeStops)
-            drawShade(cg, from: layout.fadeTop, to: layout.photoBottom, stops: F.fadeStops)
+            drawShade(cg, from: layout.fadeTop, to: layout.photoBottom, stops: C.fadeStops)
             UIColor.black.setFill()
             cg.fill(CGRect(x: 0, y: layout.photoBottom, width: C.width, height: layout.height - layout.photoBottom))
 

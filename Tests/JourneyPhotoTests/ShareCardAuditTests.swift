@@ -111,6 +111,9 @@ final class ShareCardAuditTests: XCTestCase {
         var unsafeBox: CGRect?
         var minTextContrast = Double.infinity
         var minTextItem = ""
+        /// 見出しの字（48pt 以上・明朝の撮影地や撮影値）の一番低い明暗の比
+        var minHeadlineContrast = Double.infinity
+        var minHeadlineItem = ""
         var minMapContrast = Double.infinity  // 地図・印（部品）
         var truncated: [String] = []
         /// 明暗の比が 7 を下回った部品（名前:比）。直す所を数で見るため
@@ -188,6 +191,9 @@ final class ShareCardAuditTests: XCTestCase {
                 guard let bg = backdropMaxLuminance(item.rect) else { continue }
                 let c = ShareCardSafeArea.contrast(luminance(item.color), bg)
                 if c < m.minTextContrast { m.minTextContrast = c; m.minTextItem = item.text }
+                if item.fontSize >= Self.headlineFontSize, c < m.minHeadlineContrast {
+                    m.minHeadlineContrast = c; m.minHeadlineItem = item.text
+                }
                 if c < 7 { m.lowContrast.append("\(item.text.prefix(10))@\(Int(item.rect.minY)):\(String(format: "%.2f", c))") }
                 if item.truncated { m.truncated.append(item.text) }
             case .logo:
@@ -221,6 +227,12 @@ final class ShareCardAuditTests: XCTestCase {
         return (m, fullData)
     }
 
+    /// 見出しとみなす字の大きさと、見出しの明暗の比の下限（2026-11-14 判断）。
+    /// 表紙の型の明朝の撮影地（112pt）が、白い写真の上で 4.67:1（run 1296）と下限 4.5 のすぐ上だった。
+    /// 主役の字は WCAG の AAA（7:1）までくっきりさせる
+    static let headlineFontSize: CGFloat = 48
+    static let minimumHeadlineContrast: Double = 7
+
     static func percent(_ value: CGFloat) -> String { String(format: "%.2f%%", Double(value * 100)) }
 
     // MARK: - 全部の組み合わせ
@@ -251,6 +263,7 @@ final class ShareCardAuditTests: XCTestCase {
                     print("measured [sharecard] \(label) edges(L T R B)=\(edgeText) unsafePx=\(m.unsafePixels)"
                           + " unsafeBox=\(m.unsafeBox.map { "\(Int($0.minX)),\(Int($0.minY)),\(Int($0.maxX)),\(Int($0.maxY))" } ?? "-")"
                           + " textContrast=\(String(format: "%.2f", m.minTextContrast))(\(m.minTextItem.prefix(16)))"
+                          + " headline=\(String(format: "%.2f", m.minHeadlineContrast))(\(m.minHeadlineItem.prefix(12)))"
                           + " mapContrast=\(String(format: "%.2f", m.minMapContrast))"
                           + " truncated=\(m.truncated.map { String($0.prefix(16)) })"
                           + " overlaps=\(m.overlaps) low=\(m.lowContrast)")
@@ -279,6 +292,9 @@ final class ShareCardAuditTests: XCTestCase {
                     if m.minTextContrast < ShareCardSafeArea.minimumTextContrast {
                         failures.append("\(label): 字の明暗の比 \(String(format: "%.2f", m.minTextContrast))（\(m.minTextItem.prefix(16))）")
                     }
+                    if m.minHeadlineContrast < Self.minimumHeadlineContrast {
+                        failures.append("\(label): 見出しの明暗の比 \(String(format: "%.2f", m.minHeadlineContrast))（\(m.minHeadlineItem.prefix(16))）")
+                    }
                     if m.minMapContrast < ShareCardSafeArea.minimumGraphicContrast {
                         failures.append("\(label): 地図の線の明暗の比 \(String(format: "%.2f", m.minMapContrast))")
                     }
@@ -297,7 +313,7 @@ final class ShareCardAuditTests: XCTestCase {
 
     /// 全部の型が下の試験に並んでいるか（型を足したら試験も足す）
     func testEveryStyleHasAnAudit() {
-        XCTAssertEqual(R.Style.allCases.count, 7)
+        XCTAssertEqual(R.Style.allCases.count, 10)
     }
 
     func testBandPortrait() async throws { try await audit(.band, .portrait) }
@@ -321,5 +337,14 @@ final class ShareCardAuditTests: XCTestCase {
     func testCinemaPortrait() async throws { try await audit(.cinema, .portrait) }
     func testCinemaStory() async throws { try await audit(.cinema, .story) }
     func testCinemaSquare() async throws { try await audit(.cinema, .square) }
+    func testMatPortrait() async throws { try await audit(.mat, .portrait) }
+    func testMatStory() async throws { try await audit(.mat, .story) }
+    func testMatSquare() async throws { try await audit(.mat, .square) }
+    func testFilmPortrait() async throws { try await audit(.film, .portrait) }
+    func testFilmStory() async throws { try await audit(.film, .story) }
+    func testFilmSquare() async throws { try await audit(.film, .square) }
+    func testTanzakuPortrait() async throws { try await audit(.tanzaku, .portrait) }
+    func testTanzakuStory() async throws { try await audit(.tanzaku, .story) }
+    func testTanzakuSquare() async throws { try await audit(.tanzaku, .square) }
 }
 #endif

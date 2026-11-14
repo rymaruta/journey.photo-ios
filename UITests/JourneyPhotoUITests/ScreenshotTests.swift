@@ -1538,6 +1538,12 @@ final class ScreenshotTests: XCTestCase {
         let story = app.buttons["socialShare.mode.story"].firstMatch
         guard story.waitForExistence(timeout: 20) else { return }
         XCTAssertTrue(app.buttons["signatureShare.share"].firstMatch.exists, "はじめが投稿（今のカードの画面）でない")
+        // 投稿の画面: 型の小さな見本の並び（2026-11-14）。見本は後ろで1つずつ作るので、少し待ってから撮る
+        let postShare = app.buttons["signatureShare.share"].firstMatch
+        _ = XCTWaiter.wait(for: [expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: postShare)],
+                           timeout: 20)
+        Thread.sleep(forTimeInterval: 4)
+        shoot(app, "22b-共有カード（投稿・型の見本の並び）")
         story.tap()
 
         let share = app.buttons["travelStory.share"].firstMatch
@@ -9937,7 +9943,7 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// **共有カードの書き出し画像**（2026-11-14 owner「SNS に載せる、はちゃんとデザイン壊れてないか厳しく確認して」）。
-    /// 見本の画面（`-JPPreviewShareCards YES`・`ShareCardGalleryPreview`）で、7つの型 × 3つの比 × ふつう／長い中身の
+    /// 見本の画面（`-JPPreviewShareCards YES`・`ShareCardGalleryPreview`）で、10 の型 × 3つの比 × ふつう／長い中身の
     /// 書き出し画像を1枚ずつ撮る（画像の所だけ）。数で測る点検は単体テスト `ShareCardAuditTests`。出なければ撮らずに抜ける
     func testCapturesShareCardDesigns() {
         let app = XCUIApplication()
@@ -9949,7 +9955,7 @@ final class ScreenshotTests: XCTestCase {
         let next = app.buttons["shareCardGallery.next"].firstMatch
         guard label.waitForExistence(timeout: 30) else { return }
         var index = 0
-        while index < 60 {
+        while index < 80 {
             let ready = NSPredicate(format: "label BEGINSWITH %@ AND label ENDSWITH %@", "\(index) ", "ready")
             let done = XCTNSPredicateExpectation(predicate: ready, object: label)
             guard XCTWaiter().wait(for: [done], timeout: 30) == .completed, card.exists else { break }

@@ -15,7 +15,7 @@ extension SignatureShareCardRenderer {
     /// 紙の上の副文（白 94% の上で 5.9:1）
     static let paperSecondary = UIColor(white: 0.36, alpha: 1)
 
-    private static func canvas(_ size: CGSize) -> UIGraphicsImageRenderer {
+    static func canvas(_ size: CGSize) -> UIGraphicsImageRenderer {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
@@ -24,7 +24,7 @@ extension SignatureShareCardRenderer {
     }
 
     /// 撮影者の名前と印（認証・Pro・初期・章）を1行に。名前は幅に入るまで縮める（`draw` と同じ）
-    private static func drawNameLine(_ credit: Credit, at origin: CGPoint, maxWidth: CGFloat,
+    static func drawNameLine(_ credit: Credit, at origin: CGPoint, maxWidth: CGFloat,
                                      size: CGFloat, color: UIColor, palette: MarkPalette = .onBlack) {
         let name = credit.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let markCount = (credit.verified ? 1 : 0) + (credit.proStyle == nil ? 0 : 1)
@@ -45,13 +45,13 @@ extension SignatureShareCardRenderer {
     }
 
     /// 撮影情報の1行（カメラ・レンズ・撮影値を空白2つで）
-    private static func exifLine(_ credit: Credit) -> String {
+    static func exifLine(_ credit: Credit) -> String {
         let exif = exifValues(credit)
         return [exif.camera, exif.lens, exif.exposure].filter { !$0.isEmpty }.joined(separator: "\u{2003}")
     }
 
     /// ロゴのマークと字（右揃え）。字の大文字の高さの中心を centerY に置く
-    private static func drawWordmarkRight(right: CGFloat, centerY: CGFloat, size: CGFloat, color: UIColor) {
+    static func drawWordmarkRight(right: CGFloat, centerY: CGFloat, size: CGFloat, color: UIColor) {
         let base = UIFont.systemFont(ofSize: size, weight: .regular)
         let font = base.fontDescriptor.withDesign(.serif).map { UIFont(descriptor: $0, size: size) } ?? base
         let text = "Journey Photo"
@@ -191,7 +191,7 @@ extension SignatureShareCardRenderer {
         }
     }
 
-    private static func drawTicketEyebrow(_ text: String, at origin: CGPoint) {
+    static func drawTicketEyebrow(_ text: String, at origin: CGPoint) {
         let size = ShareCardMap.TicketLayout.eyebrowSize
         let attributes: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: size, weight: .semibold), .foregroundColor: brass, .kern: size * 0.16]
@@ -249,7 +249,7 @@ extension SignatureShareCardRenderer {
     }
 
     /// 明朝の1行が `drawFittedSerif` で描かれる幅
-    private static func serifWidth(_ value: String, size: CGFloat, minimum: CGFloat, maxWidth: CGFloat) -> CGFloat {
+    static func serifWidth(_ value: String, size: CGFloat, minimum: CGFloat, maxWidth: CGFloat) -> CGFloat {
         func serif(_ s: CGFloat) -> UIFont {
             let base = UIFont.systemFont(ofSize: s, weight: .bold)
             return base.fontDescriptor.withDesign(.serif).map { UIFont(descriptor: $0, size: s) } ?? base

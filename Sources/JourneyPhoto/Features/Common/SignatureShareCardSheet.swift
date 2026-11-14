@@ -57,27 +57,35 @@ struct SignatureShareCardSheet: View {
     @State private var retryCount = 0
     @State private var avatarData: Data?
     @State private var avatarFetchAttempted = false
+    /// 型の小さな見本（自分の写真で作った 4:5・型の名前ごと）。開いたプレビューができてから、後ろで順に作る
+    @State private var thumbnails: [String: UIImage] = [:]
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 16) {
                 if let header { header }
                 if posted != nil { postedHeader }
-                // 型は横に流れるチップの並び（2026-11-14: 7つになり、1行の切り替えには入らない）。
-                // 押す回数は前と同じ1回。順は「いつもの帯」→ 写真を活かす順 → 新しい3つ（`ShareCardStyleChoice.order`）
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: JPSpace.xs) {
-                        ForEach(ShareCardStyleChoice.order, id: \.rawValue) { option in
-                            PillChip(title: ShareCardStyleChoice.title(option), selected: style == option) {
-                                styleRaw = option.rawValue
+                // 型は横に流れる小さな見本の並び（2026-11-14 判断・owner「更にブラッシュアップさせたいな」）。
+                // 前は名前だけのチップで、押すまで形が分からなかった（10 の型）。いまは自分の写真で作った各型の 4:5 の見本に名前を添える
+                // （インスタのフィルターの並びと同じ形）。押す回数は前と同じ1回。既定は帯のまま
+                ScrollViewReader { reader in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(alignment: .top, spacing: JPSpace.xs) {
+                            ForEach(ShareCardStyleChoice.order, id: \.rawValue) { option in
+                                ShareCardStyleTile(title: ShareCardStyleChoice.title(option),
+                                                   image: thumbnails[option.rawValue],
+                                                   selected: style == option) {
+                                    styleRaw = option.rawValue
+                                }
+                                .id(option.rawValue)
+                                .accessibilityIdentifier("signatureShare.style.\(option.rawValue)")
                             }
-                            .accessibilityIdentifier("signatureShare.style.\(option.rawValue)")
                         }
+                        .padding(.horizontal)
                     }
-                    .padding(.horizontal)
+                    // 前に選んだ型が並びの外（後ろの方）にあっても、開いたときに見えるようにする
+                    .onAppear { reader.scrollTo(styleRaw, anchor: .center) }
                 }
-                // 札の押せる余白（上下 5）の分だけ詰め、並びの見た目の間隔は前のまま
-                .padding(.vertical, -PillChip.tapSlack)
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel(L("共有画像の型", "Share image style"))
                 .accessibilityIdentifier("signatureShare.style")
@@ -181,6 +189,20 @@ struct SignatureShareCardSheet: View {
                 output = result
                 preparing = false
             }
+            .task {
+                // 見本は 4:5・顔なしで。先に今のプレビューを作らせ（最大 3 秒待つ）、見本は後ろで1つずつ（144×180 に縮めて持つ）
+                for _ in 0..<30 where preparing {
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+                for option in ShareCardStyleChoice.order where thumbnails[option.rawValue] == nil {
+                    if Task.isCancelled { return }
+                    guard let data = await SignatureShareCardRenderer.render(photoData, credit: credit,
+                                                                             ratio: .portrait, style: option),
+                          let image = UIImage(data: data)?.preparingThumbnail(of: ShareCardStyleTile.pixelSize)
+                    else { continue }
+                    thumbnails[option.rawValue] = image
+                }
+            }
             .sheet(isPresented: $showShare) {
                 if let output {
                     ShareSheet(images: [output], text: shareText)
@@ -281,7 +303,8 @@ enum PostedShareCardText {
 
 /// 共有画像の型の並びと名前（2026-11-14・試験で見る）。名前は短く（チップに1語）
 enum ShareCardStyleChoice {
-    static let order: [SignatureShareCardRenderer.Style] = [.band, .fade, .cover, .label, .printed, .ticket, .cinema]
+    static let order: [SignatureShareCardRenderer.Style] = [.band, .fade, .cover, .label, .printed, .ticket, .cinema,
+                                                            .mat, .film, .tanzaku]
 
     static func title(_ style: SignatureShareCardRenderer.Style) -> String {
         switch style {
@@ -292,6 +315,62 @@ enum ShareCardStyleChoice {
         case .printed: return L("プリント", "Print")
         case .ticket: return L("切符", "Ticket")
         case .cinema: return L("シネマ", "Cinema")
+        case .mat: return L("額装", "Mat")
+        case .film: return L("フィルム", "Film")
+        case .tanzaku: return L("縦書き", "Vertical")
         }
+    }
+}
+
+/// 共有画像の型の小さな見本（2026-11-14 判断）。自分の写真で作った 4:5 の見本と名前。
+/// 選んだものは真鍮の輪とチェックと太字（色だけに頼らない・owner の好み「選んでいるものは真鍮」）。押せる所は 44 以上
+struct ShareCardStyleTile: View {
+    let title: String
+    let image: UIImage?
+    let selected: Bool
+    let action: () -> Void
+
+    /// 見本の大きさ（4:5）
+    static let size = CGSize(width: 48, height: 60)
+    /// 見本の画像を縮めて持つ画素の大きさ（3 倍の画面でも粗くならない）
+    static let pixelSize = CGSize(width: 144, height: 180)
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6).fill(WebTheme.card)
+                    if let image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    }
+                }
+                .frame(width: Self.size.width, height: Self.size.height)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(selected ? WebTheme.accent : WebTheme.hairline, lineWidth: selected ? 2 : 1)
+                )
+                .padding(3)
+                HStack(spacing: 2) {
+                    if selected {
+                        Image(systemName: "checkmark")
+                            .font(.caption2.weight(.bold))
+                            .accessibilityHidden(true)
+                    }
+                    Text(title)
+                        .font(JPFont.caption.weight(selected ? .semibold : .regular))
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+                .foregroundStyle(selected ? WebTheme.accent : WebTheme.text2)
+            }
+            .frame(minWidth: 60, minHeight: WebTheme.minTapTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 }
