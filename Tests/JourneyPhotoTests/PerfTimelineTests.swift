@@ -231,17 +231,24 @@ final class PerfTimelineTests: XCTestCase {
         for marker in PerfMainTrace.markers { XCTAssertTrue(support.contains("\"\(marker)\""), "\(marker) を読む側が知らない") }
     }
 
-    /// 🔴 下調べで写真詳細の段の写真が押せないとき、押す前に事実（位置・上端・札の並び・画面の木）を残す（2026-11-14 Mac の回 1255）
-    func testUsageSurveyNotesTheHomePhotoBeforeFailing() throws {
+    /// 🔴 下調べの写真詳細の段は、画面の中で押せる写真のうち一番上を押す（木の順の 1 つ目ではない・Mac の回 1256）。
+    /// 押せる札が無いときは、落とす前に事実（位置・上端・札の並び・画面の木）を残す（回 1255）
+    func testUsageSurveyTapsTheTopmostHittableHomePhoto() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let probe = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/PerformanceTests.swift"), encoding: .utf8)
-        let note = try XCTUnwrap(probe.range(of: "if !tappable { noteUnhittableHomePhoto(app, photo, round: round) }"), "押せないときの記録が無い")
-        let assert = try XCTUnwrap(probe.range(of: "XCTAssertTrue(tappable, \"\\(round) 回目: ホームの 1 枚目の写真が押せない\")"))
-        XCTAssertLessThan(note.lowerBound, assert.lowerBound, "落とす前に記録する")
+        let begin = try XCTUnwrap(probe.range(of: "// 3. 写真詳細を開いて戻る × 3"))
+        let end = try XCTUnwrap(probe.range(of: "finish(\"photoDetailOpenBack3\")"))
+        let stage = String(probe[begin.upperBound..<end.lowerBound])
+        XCTAssertTrue(stage.contains("let target = topmostHittableFeedPhoto(app)"), "押す写真を位置で選んでいない")
+        XCTAssertTrue(stage.contains("target.tap()"))
+        XCTAssertFalse(stage.contains("photo.tap()"), "木の順の 1 つ目（firstMatch）を押している")
+        let note = try XCTUnwrap(stage.range(of: "if target == nil { noteUnhittableHomePhoto(app, photo, round: round) }"), "押せないときの記録が無い")
+        let fail = try XCTUnwrap(stage.range(of: "XCTFail(\"\\(round) 回目: ホームの画面の中に押せる写真が無い\")"))
+        XCTAssertLessThan(note.lowerBound, fail.lowerBound, "落とす前に記録する")
+        // 選び方: 押せるもののうち、上（同じ高さなら左）
+        XCTAssertTrue(probe.contains(".filter { $0.isHittable }"))
+        XCTAssertTrue(probe.contains("return fa.minY != fb.minY ? fa.minY < fb.minY : fa.minX < fb.minX"))
         XCTAssertTrue(probe.contains("app.launchArguments += [\"-JPPreviewFeedProbe\", \"YES\"]"), "上端（home.feed.probe）を出していない")
-        for field in ["frame=", "window=", "probe=", "tabBar=", "tile[", "tree "] {
-            XCTAssertTrue(probe.contains("[surveyPhoto] \(field)") || probe.contains(field), "\(field) を残していない")
-        }
     }
 }
 

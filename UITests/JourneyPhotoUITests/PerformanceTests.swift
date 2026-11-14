@@ -126,6 +126,17 @@ final class PerformanceTests: XCTestCase {
     }
 
     /// 積んだ画面から1つ戻る（`ScreenshotTests.goBack` と同じ順。見出しのベルを押さない）
+    /// ホームの画面の中で押せる写真の札（`feed.photo`）のうち一番上（同じ高さなら左）。無ければ nil。
+    /// 木の順の 1 つ目は画面の外のことがある（2026-11-14 Mac の回 1256・1 本の並び）ので、位置で選ぶ
+    private func topmostHittableFeedPhoto(_ app: XCUIApplication) -> XCUIElement? {
+        app.buttons.matching(identifier: "feed.photo").allElementsBoundByIndex
+            .filter { $0.isHittable }
+            .min { a, b in
+                let fa = a.frame, fb = b.frame
+                return fa.minY != fb.minY ? fa.minY < fb.minY : fa.minX < fb.minX
+            }
+    }
+
     /// ホームの写真が押せないときの事実（写真の位置・画面の大きさ・1本の並びの上端 `top`・並びの写真の札の位置と押せるか・
     /// 画面の木のホームの部分）をログに出し、画面の絵を残す（2026-11-14 Mac の回 1255・推定で直さないための記録）
     private func noteUnhittableHomePhoto(_ app: XCUIApplication, _ photo: XCUIElement, round: Int) {
@@ -578,12 +589,19 @@ final class PerformanceTests: XCTestCase {
         // 3. 写真詳細を開いて戻る × 3
         let tabs = app.tabBars.firstMatch
         for round in 1...3 {
-            let tappable = photo.waitForExistence(timeout: 10) && photo.isHittable
-            // 事実取り（2026-11-14 Mac の回 1255: 統合 1.1.87 で 1 回目に押せず落ちた。位置・上端が記録に無かった）。
-            // 押せないときだけ読む（通る回の段の数は変えない）
-            if !tappable { noteUnhittableHomePhoto(app, photo, round: round) }
-            XCTAssertTrue(tappable, "\(round) 回目: ホームの 1 枚目の写真が押せない")
-            photo.tap()
+            // 押すのは**画面の中で押せる写真の札のうち一番上**（`topmostHittableFeedPhoto`）。木の順の 1 つ目（`firstMatch`）ではない。
+            // 2026-11-14 判断（Mac の回 1256 の `[surveyPhoto]`）: 統合 1.1.87（札 #595 の 1 本の並び）で、頭にいる（`top=0.00`）のに
+            // `feed.photo` の木の順の 1 つ目が y=946.7（画面 956・タブの帯 873 より下＝画面の外・押せない）で、押せる札は
+            // 2〜4 つ目（y=469・712・712）だった（`following=3`）。木の順は画面の上からの順と限らない
+            _ = photo.waitForExistence(timeout: 10)
+            let target = topmostHittableFeedPhoto(app)
+            // 押せる札が無いときだけ事実を残す（回 1255 は位置・上端が記録に無かった）
+            if target == nil { noteUnhittableHomePhoto(app, photo, round: round) }
+            guard let target else {
+                XCTFail("\(round) 回目: ホームの画面の中に押せる写真が無い")
+                return
+            }
+            target.tap()
             XCTAssertTrue(app.buttons["photo.author"].firstMatch.waitForExistence(timeout: 20), "\(round) 回目: 写真の詳細が出ない")
             Thread.sleep(forTimeInterval: 1.5)
             goBack(app)
