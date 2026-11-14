@@ -92,8 +92,9 @@ final class ProfileTabColumnTests: XCTestCase {
                        ["square.grid.2x2", "book.closed", "flag", "bookmark"])
         XCTAssertEqual(ProfileTab.tabs(isMe: false).map(\.tabSymbol), ["square.grid.2x2", "map"])
         XCTAssertNotEqual(ProfileTab.wishlist.systemImage, "heart", "行きたい場所がいいねのハートと同じ印")
-        // 印を持たない区分（ホームのフィードなど）は nil のまま
-        XCTAssertNil(HomeFeed.allCases.first?.tabSymbol)
+        // 印を持たない区分（すれちがい帳の並びなど）は nil のまま。
+        // 2026-11-14 判断（統合 1.1.87）: ホームのフィードの区分は #595 で無くなった（`HomeFeed` は並べ方だけ）ので、残る区分で見る
+        XCTAssertNil(PassBook.Order.allCases.first?.tabSymbol)
     }
 
     // MARK: - 払いに付いてくる線
