@@ -54,6 +54,13 @@ enum SheetSwipe: Equatable {
         }
         return nil
     }
+
+    /// 部品の並びに1つ足す。**すでに居れば今の位置のまま**（描き直しのたびに `attach` が呼ばれても、
+    /// 並びは「窓に載った順」のまま。最後に描き直された順にしない）。居なければ最後（いちばん手前）に足す。
+    /// 窓から外れた部品（積んだ画面の奥に回った）は `remove` で抜け、戻ったときに最後へ足し直される
+    static func joined<Member: Equatable>(_ member: Member, to members: [Member]) -> [Member] {
+        members.contains(member) ? members : members + [member]
+    }
 }
 
 extension View {
@@ -192,15 +199,25 @@ struct SheetSwipeHost: UIViewRepresentable {
         return relay
     }
 
+    /// 窓に載った・描き直した部品を並びに入れる。すでに居れば今の位置のまま（`SheetSwipe.joined`）
     func add(_ coordinator: SheetSwipeHost.Coordinator) {
-        members.removeAll { $0.value == nil || $0.value === coordinator }
-        members.append(WeakCoordinator(value: coordinator))
+        let alive = members.compactMap(\.value)
+        let ids = SheetSwipe.joined(ObjectIdentifier(coordinator), to: alive.map(ObjectIdentifier.init))
+        let all = alive + [coordinator]
+        members = ids.compactMap { id in all.first { ObjectIdentifier($0) == id } }.map { WeakCoordinator(value: $0) }
     }
 
     func remove(_ coordinator: SheetSwipeHost.Coordinator) {
         members.removeAll { $0.value == nil || $0.value === coordinator }
     }
 
+    /// ⚠️ 2026-11-14（#599 の見直し）: **積んだ画面の奥の書きかけは、今は確かめを出さない。** 書きかけの投稿画面から
+    /// 親しい友達（同じシートの中に積む画面）を開き、何も変えずに払うと、手前の部品は `.close` で、奥の投稿画面の
+    /// 部品は窓から外れて並びに居ない（`remove`）ので、答える部品が無い（前と同じく跳ね返るだけか、SwiftUI が
+    /// 手前の「止めない」を取って閉じるか——どちらが勝つかは SwiftUI 任せと `UploadView` の注記にある）。
+    /// 奥の部品を並びに残しても、確かめ（`confirmationDialog`）は窓に居ない投稿画面に付いていて、出るかを
+    /// この環境では確かめられない。推定で変えず、Mac で値を取る試験（`CriticalFlowTests.testMeasuresUploadStackedSwipe`・
+    /// 名指しした回だけ）の記録を見てから決める。前より悪くはなっていない
     func presentationControllerDidAttemptToDismiss(_ presentationController: UIPresentationController) {
         let alive = members.compactMap(\.value)
         if let index = SheetSwipe.responder(in: alive.map(\.swipe)) {

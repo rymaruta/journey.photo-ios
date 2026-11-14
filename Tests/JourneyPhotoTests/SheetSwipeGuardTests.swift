@@ -41,6 +41,23 @@ final class SheetSwipeGuardTests: XCTestCase {
         XCTAssertEqual(SheetSwipe.responder(in: [.hold, .ask]), 1)
     }
 
+    /// 描き直しのたびに足し直しても、並びは「窓に載った順」のまま（最後に描き直された順にしない・#599 の見直し）
+    func testJoiningKeepsTheOrderOfAppearance() throws {
+        XCTAssertEqual(SheetSwipe.joined("a", to: []), ["a"])
+        XCTAssertEqual(SheetSwipe.joined("b", to: ["a"]), ["a", "b"])
+        XCTAssertEqual(SheetSwipe.joined("a", to: ["a", "b"]), ["a", "b"], "奥の画面が描き直されただけで手前に来た")
+        XCTAssertEqual(SheetSwipe.joined("b", to: ["a", "b"]), ["a", "b"])
+        // 奥が書きかけ・手前が送信中のまま、奥が描き直されても手前が答える（奥の「保存せずに閉じる」を出さない）
+        let order = SheetSwipe.joined("upload", to: ["upload", "sending"])
+        let swipes: [String: SheetSwipe] = ["upload": .ask, "sending": .hold]
+        XCTAssertNil(SheetSwipe.responder(in: order.map { swipes[$0]! }))
+        // 中継ぎは並びをこの決まりで作る
+        let guardFile = try source("Features/Common/SheetSwipeGuard.swift")
+        let add = slice(guardFile, from: "func add(_ coordinator: SheetSwipeHost.Coordinator) {", to: "func remove(")
+        XCTAssertTrue(add.contains("SheetSwipe.joined(ObjectIdentifier(coordinator)"), "中継ぎが並びの決まりを通っていない")
+        XCTAssertFalse(add.contains("members.append("), "描き直しのたびに最後へ付け直している")
+    }
+
     /// 🔴 **払って閉じるのを止めるのは必ず `sheetSwipeGuard` を通す**（直に `interactiveDismissDisabled` を書くと、
     /// 払っても跳ね返るだけで何も言わない画面に戻る）
     func testNoScreenBlocksSwipeDirectly() throws {

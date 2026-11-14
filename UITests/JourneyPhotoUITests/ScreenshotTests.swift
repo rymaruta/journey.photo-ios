@@ -9268,6 +9268,12 @@ final class ScreenshotTests: XCTestCase {
                                        timeout: 15)
         guard enabled == .completed else { return }
         submit.tap()
+        // 2026-11-14（#599 の見直し）: 送っている間の下の主ボタン（輪＋「投稿しています」）が、系統に薄くされて
+        // いないかを絵で見る。見本の通信は速いので、押した直後に撮る（間に合わなかった回は字で分かる）
+        let sendingLabel = submit.exists ? submit.label : "none"
+        shoot(app, "120d-投稿（送信中の主ボタン）")
+        print("[sendingShot] label=\(sendingLabel) enabled=\(submit.exists ? "\(submit.isEnabled)" : "none")"
+              + " frame=\(submit.exists ? "\(submit.frame)" : "none")")
         let header = app.descendants(matching: .any)["postedCard.header"].firstMatch
         let shown = header.waitForExistence(timeout: 60)
         // カードの絵ができるまで待つ（「カードを共有」が押せるようになる）
