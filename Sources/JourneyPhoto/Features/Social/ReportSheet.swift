@@ -88,7 +88,7 @@ struct ReportSheet: View {
                         receipt
                     } else {
                         if let passNote {
-                            Text(L("すれちがい乗車券に書かれた字：\(passNote)", "Text on a Pass ticket: \(passNote)"))
+                            Text(L("乗車券に書かれた言葉：\(passNote)", "Text on a Pass ticket: \(passNote)"))
                                 .font(.subheadline)
                                 .foregroundStyle(WebTheme.muted2)
                                 .lineLimit(3)
@@ -178,7 +178,7 @@ struct ReportSheet: View {
             SheetCloseButton(onContent: true)
                 .disabled(isWorking)
             // v2 の板は明朝 24。字の段（32/26/22/20/18）に無いので、画面の題の 26 にそろえた
-            Text(passNote != nil ? L("書かれた字を通報", "Report text")
+            Text(passNote != nil ? L("書かれた言葉を通報", "Report text")
                  : comment == nil || conversation != nil ? L("通報", "Report") : L("コメントを通報", "Report comment"))
                 .font(JPFont.screenTitle)
                 .foregroundStyle(WebTheme.text)

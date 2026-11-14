@@ -75,8 +75,8 @@ struct PassCardPickView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: JPSpace.m) {
-                Text(L("すれちがった人の手元に、カードになって届く一枚です。いちばん好きな写真を選んでください。いつでも変えられます。",
-                       "This photo reaches the people you pass as a card. Pick your favorite — you can change it any time."))
+                Text(L("すれちがった人に、乗車券になって届く写真です。いちばん好きな1枚を選んでください。いつでも変えられます。",
+                       "This photo reaches the people you pass as your ticket. Pick your favorite \u{2014} you can change it any time."))
                     .font(.subheadline)
                     .lineSpacing(5)
                     .foregroundStyle(WebTheme.text2)
@@ -86,7 +86,7 @@ struct PassCardPickView: View {
                 // なので出さない。日付・区間（km）・回数も会ってから決まるので、表・裏とも「—」（2026-10-17 マルス券）
                 // **縮めない**（縮めると字が 12pt を割る・2026-10-16 の読み直し）。束の画面と同じ 300 幅で出す
                 PassSpinCard(front: previewFace, back: previewBack,
-                             spokenName: L("相手に届くカード", "the card others receive"), active: !showPaywall)
+                             spokenName: L("相手に届く乗車券", "the ticket others receive"), active: !showPaywall)
                     .frame(maxWidth: .infinity)
                     .padding(.top, 6)
                 faceSection
@@ -95,7 +95,7 @@ struct PassCardPickView: View {
                 noteField
                 routeSection
                 Button(action: save) {
-                    Text(L("この一枚をカードにする", "Use this photo as my card")).jpPillButton(.main(onPhoto: true))
+                    Text(L("この写真を乗車券にする", "Use this photo for my ticket")).jpPillButton(.main(onPhoto: true))
                 }
                 .buttonStyle(.plain)
                 .disabled(selected == nil || noteTooLong)
@@ -172,7 +172,7 @@ struct PassCardPickView: View {
             // 🔴 **読めなかったのを「公開している写真がありません」と言わない**（2026-10-21）。
             // 前に選んだ写真はそのまま（保存しても乗車券は変わらない）。読めた分があれば下に並べる
             ErrorBanner(title: L("写真を読み込めませんでした", "Couldn\u{2019}t load your photos"),
-                        message: L("つながる所で、もう一度お試しください。前に選んだ写真はそのままです",
+                        message: L("通信できる所で、もう一度お試しください。前に選んだ写真はそのままです",
                                    "Try again when you\u{2019}re online. Your chosen photo stays as it is."),
                         isBusy: isRetrying) { Task { await retryPhotos() } }
                 .accessibilityIdentifier("pass.pick.loadFailed")
@@ -274,7 +274,7 @@ struct PassCardPickView: View {
                 .accessibilityIdentifier("pass.pick.origin.hidden")
             }
             if originChoice == .custom {
-                labelField(L("発に書く字（\(PassExchange.labelLimit)字まで）", "From (up to \(PassExchange.labelLimit))"),
+                labelField(L("出発地（\(PassExchange.labelLimit)字まで）", "From (up to \(PassExchange.labelLimit))"),
                            placeholder: L("例：雪国", "e.g. Snow"), text: $originText, id: "pass.pick.origin.text")
             }
             Text(L("着（旅先）", "To"))
@@ -292,12 +292,12 @@ struct PassCardPickView: View {
                     .accessibilityIdentifier("pass.pick.destination.custom")
             }
             if destinationCustom {
-                labelField(L("着に書く字（\(PassExchange.labelLimit)字まで）", "To (up to \(PassExchange.labelLimit))"),
+                labelField(L("行き先（\(PassExchange.labelLimit)字まで）", "To (up to \(PassExchange.labelLimit))"),
                            placeholder: L("例：北陸ひとり旅", "e.g. Hokuriku"), text: $destinationText,
                            id: "pass.pick.destination.text")
             }
-            Text(L("書いた字は相手の端末にそのまま届きます（署名はありません）。「経由 〇〇のあたり」の行は、受け取った人の位置で自動です。",
-                   "What you write reaches the other device as is (unsigned). The \u{201C}via …\u{201D} line always uses where they were."))
+            Text(L("書いた言葉は、そのまま相手に届きます（署名はありません）。「経由 〇〇のあたり」は、受け取った人の位置で自動で入ります。",
+                   "What you write reaches them as is (unsigned). The \u{201C}via …\u{201D} line always uses where they were."))
                 .font(JPFont.caption)
                 .foregroundStyle(WebTheme.text3)
                 .fixedSize(horizontal: false, vertical: true)
@@ -307,9 +307,9 @@ struct PassCardPickView: View {
     /// 「居住地から（自動）」の行の名前（居住地が無ければそう言う）
     private var homeTitle: String {
         guard let pref = pass.homePrefecture else {
-            return L("居住地から（自動、居住地が未設定）", "From where I live (automatic \u{00B7} not set)")
+            return L("居住地から（未設定）", "From where I live (not set)")
         }
-        return L("居住地から（自動、\(PassTicket.shortPlace(pref))）", "From where I live (automatic \u{00B7} \(pref))")
+        return L("居住地から（\(PassTicket.shortPlace(pref))）", "From where I live (\(pref))")
     }
 
     private func labelField(_ title: String, placeholder: String, text: Binding<String>, id: String) -> some View {

@@ -262,7 +262,7 @@ enum PassBook {
     /// カードが 0 枚のときは帳がこの数を出さず、空の案内（`PassBookView` の `EmptyState`）だけになる
     static func statItems(_ stats: Stats) -> [StatItem] {
         let cards = PassExchange.grouped(stats.cards)
-        let cardLabel = L("枚のカード", "cards")
+        let cardLabel = L("枚の乗車券", "tickets")
         let prefectureLabel = L("都道府県から", "prefectures")
         let farLabel = L("いちばん遠く", "farthest")
         let prefecture = stats.prefectures > 0
@@ -277,7 +277,7 @@ enum PassBook {
                       spoken: L("いちばん遠くはまだ分かりません", "Farthest not known yet"))
         return [
             StatItem(value: cards, unit: nil, label: cardLabel,
-                     spoken: L("\(cards) 枚のカード", Plural.count(stats.cards, "card"))),
+                     spoken: L("乗車券 \(cards) 枚", Plural.count(stats.cards, "ticket"))),
             prefecture, far,
         ]
     }
@@ -389,8 +389,8 @@ enum PassBookStatus: Equatable {
     var detail: String {
         switch self {
         case .off:
-            return L("オンにすると、近くにいたアプリの人と乗車券のカードを交換します",
-                     "Turn on to swap ticket cards with app users you pass nearby")
+            return L("オンにすると、近くにいた人と乗車券を交換します",
+                     "Turn on to swap tickets with people you pass nearby")
         case .noTicket:
             return L("乗車券を選ぶまで、交換は止まっています", "Paused until you choose your ticket")
         case .bluetoothOff:
@@ -419,15 +419,15 @@ enum PassBookStatus: Equatable {
     /// 読み上げのヒント。設定から積まれた帳では戻るだけ
     static func hint(fromSettings: Bool) -> String {
         fromSettings ? L("設定に戻ります", "Goes back to settings")
-                     : L("すれちがい乗車券の設定を開きます", "Opens Pass ticket settings")
+                     : L("すれちがい乗車券の設定を開きます", "Opens settings for Pass tickets")
     }
 
     /// 空の状態の本文
     var emptyMessage: String {
-        isOn ? L("出かけると、近くにいたアプリの人のカードが届きます。",
-                 "Head out — cards from app users you pass arrive here.")
-             : L("オンにして出かけると、近くにいたアプリの人のカードが届きます。",
-                 "Turn it on and head out — cards from app users you pass arrive here.")
+        isOn ? L("出かけると、近くにいた人の乗車券が届きます。",
+                 "Head out \u{2014} tickets from people you pass arrive here.")
+             : L("オンにして出かけると、近くにいた人の乗車券が届きます。",
+                 "Turn it on and head out \u{2014} tickets from people you pass arrive here.")
     }
 
     /// 空の状態の主ボタン（オフのときだけ・押すと説明を読んでからオンにする）。オンなら出さない

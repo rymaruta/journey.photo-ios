@@ -499,7 +499,7 @@ struct TheirTrunkView: View {
     }
 }
 
-/// 人の「わたしの乗車券」を回して見る（すれちがいの乗車券と同じ回る部品 `PassSpinCard`・番号は出さない）
+/// 人の乗車券（「〇〇さんの乗車券」）を回して見る（すれちがいの乗車券と同じ回る部品 `PassSpinCard`・番号は出さない）
 struct TrunkTheirTicketView: View {
     let theirs: TheirTrunkInside
 
@@ -509,8 +509,7 @@ struct TrunkTheirTicketView: View {
                 if let ticket = theirs.trunk.ticket {
                     let faces = Self.faces(ticket, theirs: theirs)
                     PassSpinCard(front: faces.front, back: faces.back,
-                                 spokenName: L("\(TheirTrunkText.owner(theirs.name))さんの乗車券",
-                                               "\(TheirTrunkText.owner(theirs.name))\u{2019}s ticket"))
+                                 spokenName: TheirTrunkText.ticketTitle(theirs.name))
                         .frame(maxWidth: .infinity)
                         .padding(.top, 24)
                     Text(L("指で回すと、裏のひとことが見られます", "Turn it with your finger to read the note on the back"))
@@ -523,7 +522,7 @@ struct TrunkTheirTicketView: View {
             .padding(.bottom, 32)
         }
         .background { TrunkStyle.stageBackground(centerY: 0.4) }
-        .navigationTitle(L("わたしの乗車券", "Their ticket"))
+        .navigationTitle(TheirTrunkText.ticketTitle(theirs.name))
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("trunk.their.ticket")

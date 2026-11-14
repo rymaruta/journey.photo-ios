@@ -47,7 +47,8 @@ final class PassViewerPagerTests: XCTestCase {
                      ".disabled(!enabled)", ".opacity(enabled ? 1 : PassViewerPager.disabledOpacity)",
                      ".accessibilityLabel(label)", ".webTappable()",
                      // 払う・回す操作（速さの境目は変えない）と読み上げの操作は残す
-                     "PassSpinGesture.classify(", "accessibilityAction(named: L(\"次のカード\""] {
+                     // 読み上げの操作の名前は「次の乗車券」（呼び名の統一・`PassWordingTests`・2026-11-14 統合 1.1.88）
+                     "PassSpinGesture.classify(", "accessibilityAction(named: L(\"次の乗車券\""] {
             XCTAssertTrue(viewer.contains(part), "束の画面に \(part) が無い")
         }
         XCTAssertEqual(viewer.components(separatedBy: "PassViewerPager.countText(").count - 1, 1,

@@ -102,8 +102,8 @@ final class NoGuideNeededTests: XCTestCase {
 
     /// 「入り切り」をやめ、押すと何ができるかで言う。オンの人には「オフにする」
     func testPassMenuNoteSaysWhatHappens() throws {
-        XCTAssertEqual(PassTicket.menuNote(enabled: false), "届いたカードを見る、オンにする")
-        XCTAssertEqual(PassTicket.menuNote(enabled: true), "届いたカードを見る、オフにする")
+        XCTAssertEqual(PassTicket.menuNote(enabled: false), "届いた乗車券を見る、オンにする")
+        XCTAssertEqual(PassTicket.menuNote(enabled: true), "届いた乗車券を見る、オフにする")
         let menu = try source("Features/Common/SiteMenuView.swift")
         XCTAssertTrue(menu.contains("note: PassTicket.menuNote(enabled: pass.settings.enabled)"),
                       "≡ の乗車券の行が一言を使っていない")
