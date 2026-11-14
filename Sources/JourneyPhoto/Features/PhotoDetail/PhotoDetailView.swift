@@ -1068,6 +1068,10 @@ struct PhotoDetailView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(InspiredBy.spokenLabel(source))
             .accessibilityHint(L("元の写真を開きます", "Opens the original photo"))
+            // 2026-11-14 判断（札 #531・Mac run 1322）: 子を束ねた（`children: .ignore`）ことで、押すと開く行が
+            // 読み上げの木で「ボタン」でなくなっていた（型 other・UI テストの `app.buttons` で引けない）。
+            // VoiceOver でも押せる行と分かるよう、ボタンの印を付け直す（探すの機材の札と同じ形）
+            .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier("photo.inspiredBy")
         }
     }
