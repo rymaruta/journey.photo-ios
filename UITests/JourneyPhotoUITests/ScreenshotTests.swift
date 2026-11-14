@@ -6741,21 +6741,26 @@ final class ScreenshotTests: XCTestCase {
         }
         XCTAssertFalse(app.descendants(matching: .any)["home.feed.latest"].firstMatch.exists, "送った先に切り替えの札が出ている")
 
-        // 「ホーム」をもう一度押すと頭へ戻る（`TabRouter.homeTopRequests`）
+        // 「ホーム」をもう一度押すと頭へ戻る（`TabRouter.homeTopRequests`）。中身の上端（probe の `top`）も開いたときと同じ
         app.tabBars.firstMatch.buttons.element(boundBy: 0).tap()
         Thread.sleep(forTimeInterval: 1.5)
-        _ = readProbe("3-home-again")
+        let back = readProbe("3-home-again")
+        XCTContext.runActivity(named: "頭へ戻った: photoY=\(photo.frame.minY) firstY=\(firstY) top=\(back["top"] ?? "-") startTop=\(start["top"] ?? "-")") { _ in }
         XCTAssertEqual(photo.frame.minY, firstY, accuracy: 4, "「ホーム」を押しても頭へ戻らない")
+        if let top = Double(back["top"] ?? ""), let startTop = Double(start["top"] ?? "") {
+            XCTAssertEqual(top, startTop, accuracy: 1, "「ホーム」を押した後の中身の上端が、開いたときと違う")
+        }
         shoot(app, "10i-ホーム（「ホーム」を押して頭へ）")
     }
 
     /// 1本の並びを下へ送る上限（画面の 60% の引き）。1ページ（30 枚）で並びはおよそ 120 個ぶんになる
     private static let singleFeedPushLimit = 60
 
-    /// 1本の並び（札 #595）で、**新しく載った写真の札**を画面に出して返す。前は「新着」の札を押して1枚目を開いていた。
-    /// フォロー中の人の新しい写真の段があればその1枚目（見本ではフォロー中＝新着の作者）、無ければ新着から入れた最初の札
-    /// （`home.feed.probe` の `firstLatest`）。見本のストーリーは新着の作者に付けてある（`PreviewBackend.previewStories`）。
-    /// 出せなければ nil
+    /// 1本の並び（札 #595）で、**新着の作者（自分以外でいちばん新しく載せた人）の写真の札**を画面に出して返す。
+    /// 前は「新着」の札を押して1枚目を開いていた。札は `home.feed.probe` の `newestOther`（無ければ `firstLatest`）。
+    /// 見本のストーリーは自分以外の新着の作者に付けてある（`PreviewBackend.previewStories`）。
+    /// 2026-11-14（Mac の回 1239）: 新着の1枚目が見本の利用者自身の写真の日があり、`firstLatest` だと自分の写真を開いて
+    /// 紹介のストーリーに届かなかった。出せなければ nil
     private func revealNewestFeedTile(_ app: XCUIApplication) -> XCUIElement? {
         let probe = app.descendants(matching: .any)["home.feed.probe"].firstMatch
         _ = app.buttons["feed.photo"].firstMatch.waitForExistence(timeout: 20)
@@ -6766,7 +6771,11 @@ final class ScreenshotTests: XCTestCase {
                 let kv = pair.split(separator: "=", maxSplits: 1)
                 if kv.count == 2, let n = Int(kv[1]) { fields[String(kv[0])] = n }
             }
-            if (fields["following"] ?? 0) == 0, let first = fields["firstLatest"], first >= 0 { index = first }
+            if let other = fields["newestOther"], other >= 0 {
+                index = other
+            } else if let first = fields["firstLatest"], first >= 0 {
+                index = first
+            }
             XCTContext.runActivity(named: "新着の札: index=\(index) probe=\(value)") { _ in }
         }
         let photo = app.buttons.matching(identifier: "feed.photo").element(boundBy: index)

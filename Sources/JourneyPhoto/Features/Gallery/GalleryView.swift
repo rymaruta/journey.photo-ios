@@ -425,12 +425,17 @@ struct GalleryView: View {
     }
 
     /// UI テストのときだけ、1本の並びの数を見えない要素（`home.feed.probe`）に出す（`PreviewSession.feedProbe`）。
-    /// 読んだページの数・上の段の数・並びの数・続きの目印があるか・新着の最初の札が上から何枚目か（無ければ -1）
-    private func feedProbeText(_ rows: HomeFeedPageMemo.Rows) -> String {
+    /// 読んだページの数・上の段の数・並びの数・続きの目印があるか・新着の最初の札が上から何枚目か（無ければ -1）・
+    /// 新着でいちばん新しい「自分以外の人」の写真の札が上から何枚目か（`newestOther`・無ければ -1）・中身の上端（`top`）
+    private func feedProbeText(_ rows: HomeFeedPageMemo.Rows, latest: [Photo]) -> String {
         "pages=\(model.loadedPageCount) following=\(rows.following.count) main=\(rows.lead.count + rows.rest.count)"
             + " more=\(rows.truncated || model.hasMorePages) firstLatest=\(rows.firstLatestTile ?? -1)"
-            + " topCardsAway=\(topCardsAway)"
+            + " newestOther=\(HomeFeedPageMemo.newestOtherTile(rows, latest: latest, viewerId: auth.userId) ?? -1)"
+            + " top=\(String(format: "%.2f", Double(feedProbeTop))) topCardsAway=\(topCardsAway)"
     }
+
+    /// UI テストのときだけ: 中身の上端（`FeedTopProbe`）
+    @State private var feedProbeTop: CGFloat = 0
 
     /// ホームは**板 01c の写真の並び**（`HomeMosaic`・2026-09-26）。
     /// 集約ページ（タグ・撮影地・機材）は角丸の `PhotoGrid` のまま。
@@ -449,9 +454,15 @@ struct GalleryView: View {
             hidden: dropped)
         return ScrollViewReader { proxy in
         ScrollView {
+            // 「ホーム」をもう一度押したときに戻る先（高さ0の目印）は、**上の余白（8）の外**、中身のいちばん上に置く。
+            // 2026-11-14 判断（Mac の回 1239・`testScrollsHomeSingleFeed`）: 目印を余白の内側に置いていたので、
+            // `scrollTo(.top)` が余白の 8 を見えている上端より上へ送り、開いたときより写真が 8 上で止まっていた
+            // （開いたとき 406.33 → 押した後 398.33。差は余白の 8 と同じ）
+            VStack(spacing: 0) {
+            Color.clear.frame(height: 0).id(Self.feedTopID)
             VStack(spacing: Self.feedSpacing) {
-                // 「ホーム」をもう一度押したときに戻る先（高さ0の目印）
-                Color.clear.frame(height: 0).id(Self.feedTopID)
+                // 並びの頭（高さ0）。前は「ホーム」の戻り先の目印だった。段の間（24）の位置を変えないために残す
+                Color.clear.frame(height: 0)
                 // **ストーリーはホームの一番上**（モック1）。
                 // 2026-09-20 に Web がトップから外してマイページへ移したが、
                 // アプリの提案図では**ホームに戻っている**ので合わせる
@@ -495,6 +506,9 @@ struct GalleryView: View {
             .padding(.top, 8)
             // 最後のカードがタブバーに掛からないようにする
             .padding(.bottom, 24)
+            }
+            // UI テストのときだけ: 中身の上端（送りの枠での位置）を数に出す（開いたときと「ホーム」を押した後を比べる）
+            .modifier(FeedTopProbe { top in if top != feedProbeTop { feedProbeTop = top } })
         }
         // 写真を手に取っている間は縦の送りを止める（2026-11-12 札 #543・`PhotoLift`）
         .modifier(PhotoLiftScrollLock(center: PhotoLiftCenter.shared))
@@ -505,7 +519,7 @@ struct GalleryView: View {
                     .font(.caption2)
                     .foregroundStyle(Color.clear)
                     .accessibilityIdentifier("home.feed.probe")
-                    .accessibilityValue(feedProbeText(rows))
+                    .accessibilityValue(feedProbeText(rows, latest: photos))
             }
         }
         // **ホームを開いたまま「ホーム」をもう一度押したら一番上へ**
@@ -751,6 +765,18 @@ final class HomeFeedPageMemo {
     /// 計算した回数（試験用）
     var computeCount: Int { memo.computeCount }
 
+    /// 新着（`latest`・新しい順）で、いちばん新しい**自分以外の人**の写真の作者の札が、写真の札（`feed.photo`）の
+    /// 上から何枚目か（0 から・1. の札も数える）。UI テストが「新着の作者」の写真を開くため（`home.feed.probe` の `newestOther`）。
+    ///
+    /// 2026-11-14 判断（Mac の回 1239・`testCapturesSharedPhotoStory`）: 新着の1枚目が見本の利用者自身の写真（67d49a68…）
+    /// だった。見本のストーリーは**自分以外の**新着の作者に付く（`PreviewBackend.previewStories` は `user != me`）ので、
+    /// 自分の写真から作者の輪を開くと自分のストーリー（1本）で、紹介の写真の付いた2本目に届かなかった
+    static func newestOtherTile(_ rows: Rows, latest: [Photo], viewerId: String?) -> Int? {
+        func owner(_ photo: Photo) -> String? { photo.userId ?? photo.uploadedBy }
+        guard let author = latest.lazy.compactMap(owner).first(where: { $0 != viewerId }) else { return nil }
+        return (rows.following + rows.lead + rows.rest).firstIndex { owner($0.cover) == author }
+    }
+
     static func make(_ input: Input, hidden: ModerationSnapshot) -> Rows {
         let arranged = HomeFeed.arrange(following: hidden.visible(input.following),
                                         recommended: hidden.visible(input.recommended),
@@ -812,6 +838,23 @@ struct FollowingBaseline: Equatable {
     func visible(_ candidates: [Photo]) -> [Photo] {
         guard let shown else { return candidates }
         return candidates.filter { shown.contains($0.id) }
+    }
+}
+
+/// UI テストのときだけ（`PreviewSession.feedProbe`）、中身の上端を送りの枠（`.scrollView`）で測って渡す。ふだんは何も足さない
+private struct FeedTopProbe: ViewModifier {
+    let record: (CGFloat) -> Void
+
+    func body(content: Content) -> some View {
+        if PreviewSession.feedProbe {
+            content.onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.frame(in: .scrollView).minY
+            } action: { top in
+                record(top)
+            }
+        } else {
+            content
+        }
     }
 }
 

@@ -62,6 +62,41 @@ final class HomeFeedTests: XCTestCase {
         XCTAssertEqual(withFollowing.firstLatestTile, 4)
     }
 
+    /// 🔴 Mac の回 1239: 新着の1枚目が**見本の利用者自身の写真**の日があった。UI テストが開く「新着の作者」の札
+    /// （`newestOtherTile`）は、新着で自分以外のいちばん新しい作者の札（見本のストーリーは自分以外の作者に付く）
+    func testNewestOtherTileSkipsTheViewersOwnPhoto() throws {
+        let mine = try photo("mine", at: "2026-10-30", user: "me")
+        let theirs = try photo("theirs", likes: 3, at: "2026-10-29", user: "other")
+        let rec = [try photo("r1", likes: 9, user: "x"), try photo("r2", likes: 8, user: "y"), theirs,
+                   try photo("r3", likes: 1, user: "z")]
+        let latest = [mine, theirs]
+        let rows = HomeFeedPageMemo.make(HomeFeedPageMemo.Input(following: [], recommended: rec, latest: latest,
+                                                                latestHasMore: false, excluding: []),
+                                         hidden: ModerationSnapshot())
+        // 並び: r1, r2, theirs（いいね順で先に出た）, mine（4つめの新着）, r3
+        XCTAssertEqual(rows.lead.map(\.cover.id), ["r1", "r2", "theirs", "mine", "r3"])
+        XCTAssertEqual(rows.firstLatestTile, 3, "前提: 新着から入れた最初の札は自分の写真")
+        XCTAssertEqual(HomeFeedPageMemo.newestOtherTile(rows, latest: latest, viewerId: "me"), 2,
+                       "自分の写真の札を「新着の作者」の札にした（自分の輪を開いてしまう）")
+        XCTAssertNil(HomeFeedPageMemo.newestOtherTile(rows, latest: [mine], viewerId: "me"))
+    }
+
+    /// 🔴 Mac の回 1239: 「ホーム」を押して頭へ戻る目印は、上の余白（8）の**外**（中身のいちばん上）。
+    /// 余白の内側にあると、開いたときより写真が 8 上で止まった（406.33 → 398.33）
+    func testHomeTopMarkerSitsAboveTheTopPadding() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let gallery = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Gallery/GalleryView.swift"),
+                                 encoding: .utf8)
+        let marker = try XCTUnwrap(gallery.range(of: "Color.clear.frame(height: 0).id(Self.feedTopID)"))
+        let inner = try XCTUnwrap(gallery.range(of: "VStack(spacing: Self.feedSpacing) {"))
+        let outer = try XCTUnwrap(gallery.range(of: "VStack(spacing: 0) {\n            Color.clear.frame(height: 0).id(Self.feedTopID)"))
+        XCTAssertLessThan(marker.lowerBound, inner.lowerBound, "目印が余白の付いた並びの内側にある")
+        XCTAssertLessThan(outer.lowerBound, inner.lowerBound)
+        let afterInner = gallery[inner.upperBound...]
+        XCTAssertFalse(afterInner.prefix(400).contains(".id(Self.feedTopID)"), "並びの内側にも戻り先の目印がある")
+    }
+
     /// 🔴 **同じ写真は2回出さない。** 1.（フォロー中）・2.（いいね順）・3.（新着）・横並びのどれに居ても1回だけ
     func testNoPhotoIsShownTwice() throws {
         let shared = try photo("shared", likes: 50, at: "2026-10-30", user: "friend")
