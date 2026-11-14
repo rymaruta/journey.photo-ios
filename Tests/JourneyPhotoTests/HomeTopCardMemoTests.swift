@@ -8,8 +8,8 @@ import XCTest
 /// 3. 札の画面が控えを使っている・ホームが親の描き直しだけでは描き直さない（`GalleryView` の `==`）
 final class HomeTopCardMemoTests: XCTestCase {
 
-    private func spot(_ id: String, image: Bool = true, draft: Bool = false) throws -> OfficialSpot {
-        var fields = ["\"spotId\":\"\(id)\"", "\"slug\":\"\(id)\"", "\"name\":\"[\(id)]\"",
+    private func spot(_ id: String, slug: String? = nil, image: Bool = true, draft: Bool = false) throws -> OfficialSpot {
+        var fields = ["\"spotId\":\"\(id)\"", "\"slug\":\"\(slug ?? id)\"", "\"name\":\"[\(id)]\"",
                       "\"stage\":\"\(draft ? "draft" : "published")\""]
         if image {
             fields.append("\"image\":{\"url\":\"https://journey-photo.com/images/spots/\(id).jpg\",\"author\":\"A\",\"license\":\"CC BY 4.0\"}")
@@ -52,6 +52,48 @@ final class HomeTopCardMemoTests: XCTestCase {
             }
         }
         XCTAssertNil(SpotSwipe.CoverPool(spots: []).cover(spots: [], excluding: [], day: 3))
+    }
+
+    /// 🔴 同じ `spotId` が並ぶとき（どちらも公開済み・写真あり）、元の索引の順を保つ（前の安定な並べ替えと同じ）。
+    /// `lhs < rhs` を `>` にすると、同じ `spotId` の後ろの方（slug が違う）を選んで落ちる
+    func testCoverPoolKeepsIndexOrderForTheSameSpotId() throws {
+        let spots = [try spot("b", slug: "b-first"), try spot("a"), try spot("b", slug: "b-second"),
+                     try spot("c"), try spot("b", slug: "b-third")]
+        let pool = SpotSwipe.CoverPool(spots: spots)
+        XCTAssertEqual(pool.ids, ["a", "b", "b", "b", "c"])
+        XCTAssertEqual(pool.indices, [1, 0, 2, 4, 3])
+        for day in -10...10 {
+            for excluded: Set<String> in [[], ["a"], ["c", "zz"]] {
+                let expected = oldCover(spots, excluded, day)
+                let got = pool.cover(spots: spots, excluding: excluded, day: day)
+                XCTAssertEqual(got?.slug, expected?.slug, "除く \(excluded.sorted()) 日 \(day)")
+                XCTAssertEqual(SpotSwipe.cover(spots: spots, excluding: excluded, day: day)?.slug, expected?.slug)
+            }
+        }
+        XCTAssertEqual(pool.cover(spots: spots, excluding: [], day: 1)?.slug, "b-first")
+        XCTAssertEqual(pool.cover(spots: spots, excluding: [], day: 3)?.slug, "b-third")
+    }
+
+    /// 🔴 索引を書き換えて番号を進め忘れても、古い並びで範囲外を引いて落ちない。その場で作り直して正しい 1 件を選ぶ
+    func testCoverPoolRebuildsWhenGivenADifferentIndex() throws {
+        let old = [try spot("a"), try spot("b"), try spot("c"), try spot("d"), try spot("e")]
+        let pool = SpotSwipe.CoverPool(spots: old)
+        // 件数が減った（古い位置 3・4 は範囲外）
+        let shorter = [try spot("e"), try spot("d")]
+        for day in 0..<6 {
+            XCTAssertEqual(pool.cover(spots: shorter, excluding: [], day: day)?.slug, oldCover(shorter, [], day)?.slug, "日 \(day)")
+        }
+        // 件数が増えた
+        let longer = old + [try spot("0"), try spot("f")]
+        for day in 0..<8 {
+            XCTAssertEqual(pool.cover(spots: longer, excluding: ["c"], day: day)?.slug, oldCover(longer, ["c"], day)?.slug, "日 \(day)")
+        }
+        // 件数は同じで中身が違う（並びが変わった）
+        let reordered = [try spot("e"), try spot("d"), try spot("c"), try spot("b"), try spot("a")]
+        for day in 0..<5 {
+            XCTAssertEqual(pool.cover(spots: reordered, excluding: [], day: day)?.slug, oldCover(reordered, [], day)?.slug, "日 \(day)")
+        }
+        XCTAssertNil(pool.cover(spots: [], excluding: [], day: 0))
     }
 
     // MARK: - 2. 控え

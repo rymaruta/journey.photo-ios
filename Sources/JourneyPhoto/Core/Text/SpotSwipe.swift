@@ -73,6 +73,8 @@ enum SpotSwipe {
         let indices: [Int]
         /// 同じ順の `spotId`
         let ids: [String]
+        /// 作ったときの索引の件数（違う索引を渡されたと気づくため）
+        let spotCount: Int
 
         init(spots: [OfficialSpot]) {
             let eligible = spots.indices.filter { TripPicker.isEligible(spots[$0]) }
@@ -82,15 +84,28 @@ enum SpotSwipe {
             }
             indices = sorted
             ids = sorted.map { spots[$0].spotId }
+            spotCount = spots.count
         }
 
-        /// `spots` は作ったときと同じ索引を渡す。除く場所を飛ばして、日替わりの 1 件
+        /// `spots` は作ったときと同じ索引を渡す。除く場所を飛ばして、日替わりの 1 件。
+        ///
+        /// 2026-11-14 判断（札 #594 の確かめ役）: 索引を書き換えて `spotsRevision` を進め忘れると、古い位置で
+        /// 引いて範囲外で落ちる。件数が違う・選んだ位置の `spotId` が違うときは、その場で作り直して選ぶ（落ちない・選ぶ 1 件は正しい）
         func cover(spots: [OfficialSpot], excluding excluded: Set<String>, day: Int) -> OfficialSpot? {
+            guard spots.count == spotCount else {
+                return CoverPool(spots: spots).cover(spots: spots, excluding: excluded, day: day)
+            }
             let count = excluded.isEmpty ? ids.count : ids.reduce(0) { $0 + (excluded.contains($1) ? 0 : 1) }
             guard count > 0 else { return nil }
             var remaining = ((day % count) + count) % count
             for (position, id) in ids.enumerated() where !excluded.contains(id) {
-                if remaining == 0 { return spots[indices[position]] }
+                if remaining == 0 {
+                    let spot = spots[indices[position]]
+                    guard spot.spotId == id else {
+                        return CoverPool(spots: spots).cover(spots: spots, excluding: excluded, day: day)
+                    }
+                    return spot
+                }
                 remaining -= 1
             }
             return nil
