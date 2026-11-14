@@ -6787,6 +6787,10 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
             pushes += 1
         }
+        // 事実取り（2026-11-14 Mac の回 1246）: 開く札の読み上げ（題・作者）と位置を残す
+        let picked = "[newestTile] index=\(index) label=\(photo.exists ? photo.label : "-") frame=\(photo.exists ? String(describing: photo.frame) : "-")"
+        print(picked)
+        XCTContext.runActivity(named: picked) { _ in }
         return photo.exists && photo.isHittable ? photo : nil
     }
 
@@ -8530,22 +8534,53 @@ final class ScreenshotTests: XCTestCase {
     /// 2本目へ送って「写真を見る」（63e）→ 写真の詳細（63f）を撮る。**出なければ撮らずに抜ける**
     func testCapturesSharedPhotoStory() {
         guard let app = launchSNSPreview(sharedStory: true), openFirstLatestPhoto(app) else { return }
+        /// 事実取り（2026-11-14 Mac の回 1246）: どの写真の詳細で、どの輪を押し、ストーリーの何本目が出ていたかを残す
+        func note(_ step: String) {
+            let author = app.buttons["photo.author"].firstMatch
+            let rings = app.buttons.matching(identifier: "story.avatar.ring").allElementsBoundByIndex
+                .map { "\($0.label)@\(Int($0.frame.minY))\($0.isHittable ? "" : "(hidden)")" }
+            let probe = app.descendants(matching: .any)["story.viewer.probe"].firstMatch
+            let line = "[sharedStory] \(step): author=\(author.exists ? author.label : "-") rings=\(rings)"
+                + " viewer=\(probe.exists ? ((probe.value as? String) ?? "-") : "-")"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+            let attachment = XCTAttachment(string: line)
+            attachment.name = "sharedStory \(step)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        note("1-detail")
         let ring = app.buttons["story.avatar.ring"].firstMatch
         scrollUntilHittable(app, ring, limit: 3)
         guard ring.exists, ring.isHittable else {
             shoot(app, "63e-ストーリー（作者の顔に輪が無い）")
             return
         }
+        note("2-before-ring (押す輪: \(ring.label))")
         ring.tap()
         Thread.sleep(forTimeInterval: 3)
+        note("3-opened")
         let viewPhoto = app.buttons["story.viewer.sharedPhoto"].firstMatch
         // 1本目には付いていない。右を叩いて2本目へ
         if !viewPhoto.waitForExistence(timeout: 3) {
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.45)).tap()
+            Thread.sleep(forTimeInterval: 0.5)
+            note("4-after-right-tap")
         }
         let shown = viewPhoto.waitForExistence(timeout: 10)
         Thread.sleep(forTimeInterval: 1)
         shoot(app, shown ? "63e-ストーリー（写真を見る）" : "63e-ストーリー（写真を見るが出ない）")
+        if !shown {
+            note("5-failed")
+            // 失敗した回は画面の木も残す（ログで読めるように、ストーリーと写真の詳細の行だけ）
+            let tree = app.debugDescription
+            let lines = tree.components(separatedBy: "\n").filter { $0.contains("story") || $0.contains("photo.") }
+            print("[sharedStory] tree:\n" + lines.prefix(60).joined(separator: "\n"))
+            let attachment = XCTAttachment(string: tree)
+            attachment.name = "sharedStory tree"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
         guard shown else { return XCTFail("紹介のストーリーに「写真を見る」が出ない") }
         XCTAssertGreaterThanOrEqual(viewPhoto.frame.height, 44, "「写真を見る」の的が 44pt 未満")
         viewPhoto.tap()
