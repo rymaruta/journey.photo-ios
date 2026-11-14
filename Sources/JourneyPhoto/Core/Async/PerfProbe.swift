@@ -60,7 +60,8 @@ final class PerfRecorder: @unchecked Sendable {
 
     let isEnabled: Bool
     private let clock: () -> TimeInterval
-    private let origin: TimeInterval
+    /// 0ms の時刻（`PerfTimeline` も同じ起点にする・2026-11-13 札 #594）
+    let origin: TimeInterval
     private let lock = NSLock()
     private var selections: [SelectionEntry] = []
     private var droppedSelections = 0
@@ -213,6 +214,8 @@ final class PerfRecorder: @unchecked Sendable {
         guard isEnabled else { return }
         let now = elapsedMs()
         let key = name()
+        // 段ごとの回数は通しの記録にも足す（`PerfTimeline`・2026-11-13 札 #594。こちらの枠が尽きても数える）
+        PerfTimeline.shared.count(key)
         lock.lock()
         defer { lock.unlock() }
         guard hitCounts[key] != nil || hitCounts.count < 32 else { return }
@@ -307,6 +310,8 @@ final class PerfRecorder: @unchecked Sendable {
     /// 最初の 2 回は出来事にも残す（`body.home#1`）
     func bodyHit(_ screen: BodyScreen) {
         guard isEnabled else { return }
+        // 段ごとの回数は通しの記録にも足す（`PerfTimeline`・2026-11-13 札 #594）
+        PerfTimeline.shared.count("body.\(screen.rawValue)")
         let now = elapsedMs()
         lock.lock()
         defer { lock.unlock() }

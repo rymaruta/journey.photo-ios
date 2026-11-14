@@ -14,6 +14,7 @@ import XCTest
 /// - ストーリーの輪のある画面（ホームの上の輪の列）のメモリ
 /// - 写真の詳細を開いて戻るときのメモリ（大きな写真）
 /// - 探すで1字ずつ打ったときの、1字あたりの body の回数・撮影スポットを当てた回数と ms・止まった長さ（`testSearchTypingProbe`・札 #590）
+/// - よく使う操作を一通り流したときの、段ごとの停止・body の回数・メモリ・積みの見本（`testUsageSurveyProbe`・札 #594）
 ///
 /// 🔴 **シミュレータの Debug ビルドの数。** 実機・Release とは違う。比べるのは同じ条件の前後だけ。
 /// 写真は本物の公開の写真を通信で読む（見本の通信 `-JPPreviewLocalBackend` は API だけを端末の中で答える）ので、
@@ -311,7 +312,7 @@ final class PerformanceTests: XCTestCase {
     }
 
     /// 積みのファイルの `from` 行目から後で、主スレッドの返事が遅い行（pending・100ms 以上）を
-    /// `PERF-MAINSAMPLE round=N ms=… wall=… ping=… | 積み` でログに出す（行頭の UTC の時刻と、UI テストの操作を突き合わせる）。
+    /// `PERF-MAINSAMPLE round=N ms=… t=… wall=… ping=… | 積み` でログに出す（行頭の UTC の時刻と、UI テストの操作を突き合わせる）。
     /// 読んだ行の数を返す。行の前後の速い行も1つずつ出す（止まり始めと終わりが分かるように）
     private func logSlowMainSamples(_ path: String, round: Int, from: Int) -> Int {
         guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
@@ -471,6 +472,208 @@ final class PerformanceTests: XCTestCase {
             XCTAssertTrue(mine.waitForExistence(timeout: 15), "\(round) 回目: 閉じてホームに戻らない")
             Thread.sleep(forTimeInterval: 2)
         }
+    }
+
+    // MARK: - よく使う操作を一通り（札 #594「アプリ全体を軽くする」の下調べ・2026-11-13）
+
+    /// 見えない要素 `perf.timeline` を読む（0.5 秒ごとに更新されるので、少し待ってから）
+    private func readTimeline(_ app: XCUIApplication) -> PerfTimelineReading {
+        Thread.sleep(forTimeInterval: 0.6)
+        let element = app.descendants(matching: .any)[PerfTimelineReading.identifier].firstMatch
+        return PerfTimelineReading((element.exists ? element.value as? String : nil) ?? "")
+    }
+
+    /// **よく使う操作を一通り流し、画面（段）ごとの重さを数で並べる**（札 #594・owner「アプリ全体を軽くしたい」）。合否は付けない。
+    ///
+    /// 段: 起動→ホーム・ホームを速く縦に送る・写真詳細を開いて戻る×3・マイページを開いて送る・地図を開いて動かす・
+    /// DM の一覧を開く・投稿の札を開く・投稿の画面を開く（投稿の画面は閉じずに終える＝最後に置く）。
+    /// 各段の始めと終わりにアプリの通しの記録（`perf.timeline`・`PerfTimeline`）を読み、その間の
+    /// - 100ms を超えた主スレッドの停止の回数・最大 ms・合計 ms（`CADisplayLink` の刻みの間隔）
+    /// - 画面ごとの body の評価回数（`body.home`・`home.tile.body`・`body.map` など）
+    /// - アプリの使うメモリの山と終わり（MB・`phys_footprint`）
+    /// - 止まっている最中の主スレッドの積みの見本（`PerfMainSampler`）
+    ///
+    /// を `PERF test=testUsageSurveyProbe stage=<段> …` と `measured [Survey <番号> <段> stall total, ms] …` に残す。
+    /// 最後に停止の合計の大きい順の並び（`stage=ranking`）も残す。
+    /// 🔴 シミュレータの Debug ビルドの数（実機・Release とは違う）。比べるのは同じ条件の前後だけ。
+    /// **名指しした回だけ流す**（`screens=testUsageSurveyProbe`・`ONLY_WHEN_NAMED`）。1 本 5 分以内（`xcode-test.sh` の上限 300 秒）
+    func testUsageSurveyProbe() {
+        let app = configuredApp(localBackend: true)
+        // DM の一覧を見本の通信で答える・投稿の画面を見本の 1 枚を選んだ状態で開く（写真の選び手を出さない）
+        app.launchArguments += ["-JPPreviewDM", "YES", "-JPPreviewUploadSample", "YES"]
+        enablePerfProbe(app)
+        // 主スレッドの積みを 0.3 秒ごとにファイルへ（止まりの見張りは 650ms までしか撮らない。run 1244 の 5956ms の
+        // 止まりの残りが、XCUITest の画面読みかアプリの描画か分けられなかった・2026-11-14 札 #594）
+        let tracePath = ScreenshotTests.mainSamplePath("survey")
+        app.launchArguments += ["-JPMainSampleFile", tracePath]
+
+        var marks: [(name: String, start: PerfTimelineReading, end: PerfTimelineReading, wallMs: Int)] = []
+        var pool: [(ms: Int, stack: String)] = []
+        var last = PerfTimelineReading("t=0")
+        var began = Date()
+        func finish(_ name: String) {
+            let wallMs = Int(Date().timeIntervalSince(began) * 1000)
+            let reading = readTimeline(app)
+            for sample in reading.samples where !pool.contains(where: { $0.ms == sample.ms && $0.stack == sample.stack }) {
+                pool.append(sample)
+            }
+            marks.append((name, last, reading, wallMs))
+            last = reading
+            began = Date()
+        }
+
+        // 1. 起動 → ホームの 1 枚目（同意を含む）
+        app.launch()
+        attachPerfProbeOnFailure(app)
+        passConsent(app)
+        let photo = app.buttons["feed.photo"].firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 30), "ホームに写真が出ない")
+        XCTAssertTrue(app.descendants(matching: .any)[PerfTimelineReading.identifier].firstMatch.waitForExistence(timeout: 10),
+                      "perf.timeline が出ない（-JPPreviewPerfProbe が効いていない）")
+        Thread.sleep(forTimeInterval: 2)
+        finish("launchToHome")
+
+        // 2. ホームを速く縦に送って戻す
+        for _ in 0..<6 { app.swipeUp(velocity: .fast) }
+        for _ in 0..<7 { app.swipeDown(velocity: .fast) }
+        Thread.sleep(forTimeInterval: 1)
+        finish("homeFastScroll")
+
+        // 3. 写真詳細を開いて戻る × 3
+        let tabs = app.tabBars.firstMatch
+        for round in 1...3 {
+            XCTAssertTrue(photo.waitForExistence(timeout: 10) && photo.isHittable, "\(round) 回目: ホームの 1 枚目の写真が押せない")
+            photo.tap()
+            XCTAssertTrue(app.buttons["photo.author"].firstMatch.waitForExistence(timeout: 20), "\(round) 回目: 写真の詳細が出ない")
+            Thread.sleep(forTimeInterval: 1.5)
+            goBack(app)
+            XCTAssertTrue(photo.waitForExistence(timeout: 10), "\(round) 回目: ホームに戻らない")
+            Thread.sleep(forTimeInterval: 1)
+        }
+        finish("photoDetailOpenBack3")
+
+        // 4. マイページを開いて送る
+        let myPage = tabs.buttons["マイページ"]
+        XCTAssertTrue(myPage.waitForExistence(timeout: 10), "マイページのタブが無い")
+        myPage.tap()
+        _ = app.descendants(matching: .any)["mypage.nameLine"].firstMatch.waitForExistence(timeout: 15)
+        Thread.sleep(forTimeInterval: 2)
+        for _ in 0..<4 { app.swipeUp(velocity: .fast) }
+        for _ in 0..<3 { app.swipeDown(velocity: .fast) }
+        Thread.sleep(forTimeInterval: 1)
+        finish("myPageOpenScroll")
+
+        // 5. 地図を開いて動かす（ずらす 4 回・寄る・引く）
+        let mapTab = tabs.buttons["マップ"]
+        XCTAssertTrue(mapTab.waitForExistence(timeout: 10), "マップのタブが無い")
+        mapTab.tap()
+        let map = app.maps.firstMatch
+        _ = map.waitForExistence(timeout: 15)
+        Thread.sleep(forTimeInterval: 2)
+        let surface = map.exists ? map : app
+        let center = surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55))
+        for offset in [CGVector(dx: 0.2, dy: 0.65), CGVector(dx: 0.8, dy: 0.45), CGVector(dx: 0.5, dy: 0.3), CGVector(dx: 0.5, dy: 0.75)] {
+            center.press(forDuration: 0.05, thenDragTo: surface.coordinate(withNormalizedOffset: offset))
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        if map.exists {
+            map.pinch(withScale: 2.5, velocity: 2)
+            Thread.sleep(forTimeInterval: 0.8)
+            map.pinch(withScale: 0.4, velocity: -2)
+        }
+        Thread.sleep(forTimeInterval: 1.5)
+        finish("mapOpenPan")
+
+        // 6. DM の一覧を開く（ホームの見出しの吹き出しから）
+        let home = tabs.buttons["ホーム"]
+        home.tap()
+        let bubble = app.buttons["header.messages"].firstMatch
+        XCTAssertTrue(bubble.waitForExistence(timeout: 15), "見出しの吹き出しが無い")
+        began = Date()   // 段はタブを替えた後から（ホームに戻るのは前の段の後片づけ）
+        bubble.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["dm.inbox"].firstMatch.waitForExistence(timeout: 15), "DM の一覧が出ない")
+        Thread.sleep(forTimeInterval: 2)
+        finish("dmInboxOpen")
+        // DM の一覧はシート（`RootView` の `showMessages`）。左上の「閉じる」で閉じる
+        let closeMessages = app.buttons["messages.close"].firstMatch
+        if closeMessages.waitForExistence(timeout: 5) { closeMessages.tap() }
+        XCTAssertTrue(closeMessages.waitForNonExistence(timeout: 10), "DM の一覧が閉じない")
+        Thread.sleep(forTimeInterval: 1)
+
+        // 7. 投稿の札を開く（下のタブの真ん中）
+        began = Date()
+        XCTAssertGreaterThan(tabs.buttons.count, 2, "投稿のタブが無い")
+        tabs.buttons.element(boundBy: 2).tap()
+        let toPhoto = app.buttons["post.choice.photo"].firstMatch
+        XCTAssertTrue(toPhoto.waitForExistence(timeout: 10), "投稿の札が出ない")
+        Thread.sleep(forTimeInterval: 1)
+        finish("postSheetOpen")
+
+        // 8. 投稿の画面を開く（見本の 1 枚を選んだ状態）。閉じずに終える
+        toPhoto.tap()
+        XCTAssertTrue(app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 20), "投稿の画面が出ない")
+        Thread.sleep(forTimeInterval: 2)
+        finish("composeOpen")
+
+        // 最後の段の終わりにまだ止まっていた分も入るように、少し待って読み直す（停止とメモリはこの読み取りから数える）
+        Thread.sleep(forTimeInterval: 1.5)
+        let final = readTimeline(app)
+        for sample in final.samples where !pool.contains(where: { $0.ms == sample.ms && $0.stack == sample.stack }) {
+            pool.append(sample)
+        }
+        let stages = marks.map {
+            PerfSurveyStage(name: $0.name, from: $0.start, to: $0.end, final: final, samplePool: pool, wallMs: $0.wallMs)
+        }
+        // 主スレッドの積みのファイル（`-JPMainSampleFile`）。止まりの最中の行を、止まりごとに全部ログに出す（2026-11-14）
+        let traceText = (try? String(contentsOfFile: tracePath, encoding: .utf8)) ?? ""
+        let trace = traceText.split(separator: "\n").compactMap { PerfMainTraceLine(String($0)) }
+        print("PERF-MAIN test=testUsageSurveyProbe lines=\(trace.count) slow=\(trace.filter(\.isSlow).count) path=\(tracePath)")
+        for stage in stages {
+            for stall in stage.stalls where stall.gapMs >= 300 {
+                for line in PerfMainTraceLine.during(trace, startMs: stall.startMs, gapMs: stall.gapMs) {
+                    print("PERF-MAIN test=testUsageSurveyProbe stage=\(stage.name) stall=\(stall.startMs):\(stall.gapMs) "
+                          + "kind=\(PerfSurveyStage.kind(of: [line.frames.joined(separator: "^")])) \(line.raw)")
+                }
+            }
+        }
+        let traceFile = XCTAttachment(string: traceText)
+        traceFile.name = "main thread trace"
+        traceFile.lifetime = .keepAlways
+        add(traceFile)
+        for stage in stages {
+            var stallTexts: [String] = []
+            for stall in stage.stalls {
+                let kinds = PerfMainTraceLine.kinds(PerfMainTraceLine.during(trace, startMs: stall.startMs, gapMs: stall.gapMs))
+                stallTexts.append("\(stall.startMs):\(stall.gapMs)" + (kinds.isEmpty ? "" : "[\(kinds)]"))
+            }
+            let stallsText = stallTexts.joined(separator: ",")
+            perf([("stage", stage.name), ("startMs", "\(stage.startMs)"), ("endMs", "\(stage.endMs)"), ("wallMs", "\(stage.wallMs)"),
+                  ("stallCount", "\(stage.stallCount)"), ("stallMaxMs", "\(stage.stallMaxMs)"), ("stallTotalMs", "\(stage.stallTotalMs)"),
+                  // 止まりの全部（始め:長さ ms・アプリの時計）と、その最中の 0.3 秒ごとの積みの種類（2026-11-14）
+                  ("stalls", stallsText),
+                  ("memPeakMB", "\(stage.memPeakMB)"), ("memEndMB", "\(stage.memEndMB)"), ("bodyTotal", "\(stage.bodyTotal)"),
+                  ("bodies", stage.bodies.map { "\($0.0):\($0.1)" }.joined(separator: ",")),
+                  // 2026-11-14: 止まりの種類（XCUITest が画面を読む ax・ログ log・アプリ app）・評価し直した理由・処理の時間・控えの大きさ
+                  ("stallKinds", stage.stallKinds.map { "\($0.0):\($0.1)x/\($0.2)ms" }.joined(separator: ",")),
+                  ("changes", stage.changes.map { "\($0.0):\($0.1)" }.joined(separator: ",")),
+                  ("durs", stage.durations.map { "\($0.0):\($0.1)x/\($0.2)ms" }.joined(separator: ",")),
+                  ("gauges", stage.gauges.map { "\($0.0):\($0.1)" }.joined(separator: ",")),
+                  ("samples", stage.samples.joined(separator: ";").replacingOccurrences(of: " ", with: "_"))])
+        }
+        // 停止の合計の大きい順（段:合計 ms/回数/最大 ms）
+        let ranking = stages.sorted { $0.stallTotalMs > $1.stallTotalMs }
+            .map { "\($0.name):\($0.stallTotalMs)ms/\($0.stallCount)x/max\($0.stallMaxMs)ms" }
+        perf([("stage", "ranking"), ("byStallTotal", ranking.joined(separator: ",")),
+              ("droppedStalls", "\(final.droppedStalls)")])
+        let raw = XCTAttachment(string: final.raw)
+        raw.name = "perf.timeline final"
+        raw.lifetime = .keepAlways
+        add(raw)
+        // 起動の切り分けの記録（`ev=`・最初の 16 件の積み）も残す
+        notePerfProbe(app, label: "surveyEnd")
+
+        // 段ごとの数を `measured [...]` の行に出す（値は段を流し終えた後に決まっている。回数 1）
+        measure(metrics: [PerfSurveyMetric(stages: stages)], options: Self.options(1)) {}
     }
 
     /// 試験の途中の様子をログと結果に残す

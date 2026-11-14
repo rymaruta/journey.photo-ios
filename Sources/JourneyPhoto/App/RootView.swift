@@ -161,6 +161,8 @@ struct RootView: View {
     }
 
     var body: some View {
+        let _ = PerfTimeline.shared.count("body.root")   // 評価の回数（UI テストのときだけ・札 #594 の下調べ）
+        let _ = PerfChangeLog.note(Self.self)   // なぜ評価し直したか（UI テストのときだけ・札 #594 の下調べ）
         Group {
             if consent.needsConsent {
                 // **使う前に規約へ同意させる**（審査要件 1.2 / UGC）
@@ -1344,6 +1346,8 @@ struct RootView: View {
             NavigationStack {
                 GalleryView(unread: unread, onOpenNotifications: { openNotificationsFromBell() },
                             messagesUnread: messagesUnread)
+                    // 親が描き直されただけでは描き直さない（未読の数が変わったときだけ・`GalleryView+Equatable`・札 #594）
+                    .equatable()
                     .perfMark("tab.home.appear")
             }
             .tint(WebTheme.foreground)

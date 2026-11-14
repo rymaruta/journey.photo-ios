@@ -197,9 +197,19 @@ final class DecodedImageMemory<Image> {
     private final class Entry {
         let image: Image
         let pixels: Int
-        init(image: Image, pixels: Int) {
+        /// 展開後の大きさ（byte）。UI テストのときだけ、控えに在る合計を `PerfTimeline` の `img.decodedKB` に数える
+        /// （OS が捨てたら `deinit` で引く・2026-11-14 札 #594 の下調べ。無効なら何もしない）
+        let cost: Int
+        init(image: Image, pixels: Int, cost: Int = 0) {
             self.image = image
             self.pixels = pixels
+            self.cost = cost
+            PerfTimeline.shared.gauge("img.decodedKB", add: cost / 1024)
+            PerfTimeline.shared.gauge("img.decodedCount", add: 1)
+        }
+        deinit {
+            PerfTimeline.shared.gauge("img.decodedKB", add: -(cost / 1024))
+            PerfTimeline.shared.gauge("img.decodedCount", add: -1)
         }
     }
 
@@ -219,7 +229,7 @@ final class DecodedImageMemory<Image> {
     func store(_ image: Image, pixels: Int, for url: URL, cost: Int) {
         let key = url.absoluteString as NSString
         if let current = cache.object(forKey: key), current.pixels >= pixels { return }
-        cache.setObject(Entry(image: image, pixels: pixels), forKey: key, cost: max(0, cost))
+        cache.setObject(Entry(image: image, pixels: pixels, cost: max(0, cost)), forKey: key, cost: max(0, cost))
     }
 
     func removeAll() { cache.removeAllObjects() }
