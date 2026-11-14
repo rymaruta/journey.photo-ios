@@ -86,7 +86,8 @@ final class PhotoScreensV2Tests: XCTestCase {
         XCTAssertFalse(heading.contains("WebTheme.faint"), "黒地の日時が写真の上の透過の灰のまま")
         // 題を写真に重ねる負の余白は無い（v2 は写真の下）
         XCTAssertFalse(view.contains("heroOverlap"))
-        XCTAssertTrue(view.contains("details(proxy, hero: hero)\n                                .padding(.top, JPSpace.l)"))
+        // 2026-11-13（札 #592）: 下へ引いて戻るときに薄れる子（`DetailPullFollow`）へ包んだ。題の上の余白は同じ
+        XCTAssertTrue(view.contains("content: details(proxy, hero: hero).padding(.top, JPSpace.l)"))
         // 説明は本文 15 の text-2
         let paragraphs = member("private var paragraphs", in: view)
         XCTAssertTrue(paragraphs.contains(".font(JPFont.body)"))
@@ -188,9 +189,9 @@ final class PhotoScreensV2Tests: XCTestCase {
         XCTAssertGreaterThanOrEqual(JPHeight.field, WebTheme.minTapTarget)
         XCTAssertFalse(sheet.contains("JPRadioRow("), "通報の理由が共通の右の白い丸のまま")
         XCTAssertTrue(sheet.contains(".jpPillButton(JPPillStyle.main(onPhoto: false))"))
-        // 閉じるはガラスの丸 44
+        // 閉じるは見出しの左のシートの「閉じる」（ガラス・当たり 44。2026-11-13 owner 承認・#187。前は右のガラスの丸の ×）
         let header = member("private var header", in: sheet)
-        XCTAssertTrue(header.contains(".frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)"))
+        XCTAssertTrue(header.contains("SheetCloseButton(onContent: true)"))
         // 通報する写真の札は写真の詳細から渡す
         let detail = try source("Features/PhotoDetail/PhotoDetailView.swift")
         XCTAssertTrue(detail.contains("ReportSheet(photoId: current.id, ownerId: ownerId, subject: reportSubject)"))

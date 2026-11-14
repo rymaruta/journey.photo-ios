@@ -148,7 +148,10 @@ struct ReportSheet: View {
     private static let sheetBackground = WebTheme.sheet
 
     private var header: some View {
-        HStack {
+        // 閉じるは左上のシートの「閉じる」（2026-11-13 owner 承認・#187。前は v2 の板どおり右上のガラスの ×）
+        HStack(spacing: JPSpace.s) {
+            SheetCloseButton(onContent: true)
+                .disabled(isWorking)
             // v2 の板は明朝 24。字の段（32/26/22/20/18）に無いので、画面の題の 26 にそろえた
             Text(passNote != nil ? L("書かれた字を通報", "Report text")
                  : comment == nil || conversation != nil ? L("通報", "Report") : L("コメントを通報", "Report comment"))
@@ -156,21 +159,9 @@ struct ReportSheet: View {
                 .foregroundStyle(WebTheme.text)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
-            Button { dismiss() } label: {
-                // v2 の板: ガラスの丸（44pt）の ×
-                Image(systemName: "xmark")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(WebTheme.foreground)
-                    .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                    .jpGlass(in: Circle())
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(isWorking)
-            .accessibilityLabel(Labels.Common.close)
         }
-        .padding(.leading, JPSpace.l)
-        .padding(.trailing, JPSpace.s)
+        .padding(.leading, JPSpace.s)
+        .padding(.trailing, JPSpace.l)
         .padding(.top, JPSpace.s)
     }
 

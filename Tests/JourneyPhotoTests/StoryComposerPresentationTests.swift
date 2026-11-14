@@ -67,7 +67,7 @@ final class StoryComposerPresentationTests: XCTestCase {
             return XCTFail("body の段の分け方が見つからない")
         }
         let resolving = text[start.upperBound..<end.lowerBound]
-        XCTAssertTrue(resolving.contains("Labels.Common.close") && resolving.contains("dismiss()"),
+        XCTAssertTrue(resolving.contains("SheetCloseButton(action: { dismiss() })"),
                       "ログインを確かめている間の段に閉じる口が無い（画面いっぱいでは出られなくなる）")
     }
 }

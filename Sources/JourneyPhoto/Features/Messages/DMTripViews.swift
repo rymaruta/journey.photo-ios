@@ -222,8 +222,8 @@ struct DMTripDraftStep: View {
         .navigationTitle(L("旅行プランの下書き", "Trip draft"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // 閉じるは右上（旅行プランを作る流れと同じ位置・画面ごとに割らない）
-            ToolbarItem(placement: .topBarTrailing) {
+            // 閉じるは左上（2026-11-13 owner 承認・#187・旅行プランを作る流れと同じ位置・画面ごとに割らない）
+            ToolbarItem(placement: .cancellationAction) {
                 SheetCloseButton().disabled(model.saving)
             }
         }
@@ -311,7 +311,7 @@ struct DMTripCandidatesSheet: View {
             .navigationTitle(L("旅行プランに入れる", "Add to a trip"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { SheetCloseButton() }
+                ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
             }
             .task(id: trip.loaded) {
                 if trip.loaded { suggested = trip.candidates(for: text) }

@@ -165,10 +165,14 @@ final class TrunkWiringTests: XCTestCase {
     func testTapTargets() throws {
         let parts = try source("Features/Trunk/TrunkParts.swift")
         XCTAssertTrue(parts.contains(".frame(minHeight: 52)"), "札の行が 52 でない")
-        for path in ["Features/Trunk/TrunkRerollView.swift", "Features/Trunk/LabelArrivedView.swift",
-                     "Features/Trunk/TrunkSpinViewer.swift"] {
-            XCTAssertTrue(try source(path).contains("WebTheme.minTapTarget"), "\(path) の閉じるが 44pt でない")
+        // 作り直す・届いた画面の閉じるは `SheetCloseButton(onContent: true)`（当たり 44pt・2026-11-13 #187）
+        for path in ["Features/Trunk/TrunkRerollView.swift", "Features/Trunk/LabelArrivedView.swift"] {
+            XCTAssertTrue(try source(path).contains("SheetCloseButton(onContent: true)"), "\(path) の閉じるがシートの「閉じる」でない")
         }
+        XCTAssertTrue(try source("Features/Common/SheetCloseButton.swift").contains("minHeight: WebTheme.minTapTarget"),
+                      "シートの「閉じる」が 44pt でない")
+        XCTAssertTrue(try source("Features/Trunk/TrunkSpinViewer.swift").contains("WebTheme.minTapTarget"),
+                      "TrunkSpinViewer の閉じるが 44pt でない")
     }
 
     /// 手に取って回す: メダルと同じ仕組みに箱の形を足し、表に胴の絵を貼る

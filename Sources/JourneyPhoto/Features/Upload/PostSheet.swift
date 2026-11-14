@@ -40,24 +40,19 @@ struct PostSheet: View {
     }
 
     var body: some View {
-        // v2 PostSheet: 下から出る短いシート。左に明朝 26 の見出し、右に × の丸、
-        // 4つの行き先を「52 の角丸の札＋明朝の題＋一行の説明」の行で（行の間は白 8% の線）
+        // UI テストのときだけ: body の評価を数える（`PerfTimeline`・札 #594 の下調べ。無効なら何もしない）
+        let _ = PerfTimeline.shared.count("body.postSheet")
+        // v2 PostSheet: 下から出る短いシート。明朝 26 の見出し、
+        // 4つの行き先を「52 の角丸の札＋明朝の題＋一行の説明」の行で（行の間は白 8% の線）。
+        // 閉じるは見出しの左のシートの「閉じる」（2026-11-13 owner 承認・#187。前は右の × の丸）
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
+            HStack(spacing: JPSpace.s) {
+                SheetCloseButton(onContent: true)
                 Text(L("投稿する", "Create"))
                     .font(JPFont.screenTitle)
                     .foregroundStyle(WebTheme.text)
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 0)
-                Button { dismiss() } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(WebTheme.foreground)
-                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                        .background(Color.white.opacity(0.08), in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Labels.Common.close)
             }
             .padding(.top, JPSpace.s)
             .padding(.bottom, JPSpace.xxs)

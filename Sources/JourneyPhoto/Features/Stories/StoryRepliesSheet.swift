@@ -95,8 +95,8 @@ struct StoryRepliesSheet: View {
             .background(WebTheme.card)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // v2: 「閉じる」は右（見出しは中身の左に明朝で置く）
-                ToolbarItem(placement: .topBarTrailing) { SheetCloseButton() }
+                // 「閉じる」は左上（2026-11-13 owner 承認・#187。前は v2 の板どおり右）
+                ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
             }
             .toolbarBackground(WebTheme.card, for: .navigationBar)
             .blockConfirmation(presenting: $pendingBlock) { reply in

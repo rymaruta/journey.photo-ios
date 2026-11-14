@@ -161,6 +161,8 @@ struct RootView: View {
     }
 
     var body: some View {
+        let _ = PerfTimeline.shared.count("body.root")   // 評価の回数（UI テストのときだけ・札 #594 の下調べ）
+        let _ = PerfChangeLog.note(Self.self)   // なぜ評価し直したか（UI テストのときだけ・札 #594 の下調べ）
         Group {
             if consent.needsConsent {
                 // **使う前に規約へ同意させる**（審査要件 1.2 / UGC）
@@ -186,6 +188,10 @@ struct RootView: View {
         // UI テストのときだけ: 旅のトランクの重さの数を見えない要素 `trunk.perf` に出す（`-JPPreviewTrunkPerf YES`・2026-11-11）
         .overlay(alignment: .bottomTrailing) {
             if TrunkPerfMeter.shared.enabled { TrunkPerfProbe() }
+        }
+        // UI テストのときだけ: 写真の詳細の「下に引いて戻る」の値（`-JPPreviewPullProbe YES`・札 #592）。閉じた後も読めるよう根に置く
+        .overlay(alignment: .topTrailing) {
+            if PreviewSession.pullProbe { DetailPullProbeView() }
         }
         // ホームの写真を手に取って運ぶ（2026-11-12 札 #543）。見出しと下の札の上に重ね、画面の座標で描く
         .overlay { PhotoLiftOverlay(center: PhotoLiftCenter.shared).ignoresSafeArea() }
@@ -868,7 +874,7 @@ struct RootView: View {
                     DMInboxView(openConversation: $messagesTarget)
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
-                                Button(Labels.Common.close) { showMessages = false }
+                                SheetCloseButton(action: { showMessages = false })
                                     .accessibilityIdentifier("messages.close")
                             }
                         }
@@ -1042,7 +1048,7 @@ struct RootView: View {
                 // （写真の編集・曲の選択）と同じ `cancellationAction`
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button(Labels.Common.close) { showNotifications = false }
+                        SheetCloseButton(action: { showNotifications = false })
                             .accessibilityIdentifier("notifications.close")
                     }
                 }
@@ -1340,6 +1346,8 @@ struct RootView: View {
             NavigationStack {
                 GalleryView(unread: unread, onOpenNotifications: { openNotificationsFromBell() },
                             messagesUnread: messagesUnread)
+                    // 親が描き直されただけでは描き直さない（未読の数が変わったときだけ・`GalleryView+Equatable`・札 #594）
+                    .equatable()
                     .perfMark("tab.home.appear")
             }
             .tint(WebTheme.foreground)

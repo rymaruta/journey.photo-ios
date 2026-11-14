@@ -9,14 +9,24 @@ import UIKit
 /// 見えない 1pt・押せない。識別子は `perf.probe`（UI テストは `PerfProbeSupport` で読む）
 struct PerfProbeOverlay: View {
     static let identifier = "perf.probe"
+    /// `PerfTimeline.summary()` を出す要素（UI テストは `PerfTimelineReading` で読む・2026-11-13 札 #594）
+    static let timelineIdentifier = "perf.timeline"
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 0.5)) { _ in
-            Text(" ")
-                .font(.system(size: 1))
-                .accessibilityLabel("perf probe")
-                .accessibilityValue(PerfRecorder.shared.summary())
-                .accessibilityIdentifier(Self.identifier)
+            ZStack {
+                Text(" ")
+                    .font(.system(size: 1))
+                    .accessibilityLabel("perf probe")
+                    .accessibilityValue(PerfRecorder.shared.summary())
+                    .accessibilityIdentifier(Self.identifier)
+                // 時刻つきの通しの記録（停止の全部・メモリ・body の回数・新しい積みの見本・2026-11-13 札 #594）
+                Text(" ")
+                    .font(.system(size: 1))
+                    .accessibilityLabel("perf timeline")
+                    .accessibilityValue(PerfTimeline.shared.summary())
+                    .accessibilityIdentifier(Self.timelineIdentifier)
+            }
         }
         .frame(width: 1, height: 1)
         .allowsHitTesting(false)
@@ -39,6 +49,8 @@ final class PerfStallWatcher: NSObject {
         // **Debug のビルドだけ**（Release からは `PerfMainSampler` ごと消える＝信号の受け手も見張りのスレッドも作られない）
         #if DEBUG
         PerfMainSampler.shared.start()
+        // body を評価し直した理由（`_printChanges` の出力）を数える（2026-11-14 札 #594）
+        PerfChangeLog.start()
         #endif
         let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
         link.add(to: .main, forMode: .common)
@@ -50,10 +62,12 @@ final class PerfStallWatcher: NSObject {
 
     @objc private func tick(_ link: CADisplayLink) {
         PerfRecorder.shared.recordFrame(at: link.timestamp)
+        PerfTimeline.shared.recordFrame(at: link.timestamp)
     }
 
     @objc private func resetFrames() {
         PerfRecorder.shared.resetFrames()
+        PerfTimeline.shared.resetFrames()
     }
     #else
     func start() {}
@@ -136,15 +150,21 @@ final class PerfMainSampler: @unchecked Sendable {
     /// 積みを撮る所が2つ（停止の見張り・ファイル）あるので、信号の置き場を1つずつ使う
     private let captureLock = NSLock()
 
-    /// 0.3 秒ごとに 1 行: 起動からの ms・主スレッドの返事の遅れ（ms。0.3 秒で戻らなければ pending）・主スレッドの積み。
-    /// 書くのは 1500 行まで
+    /// 0.3 秒ごとに 1 行: 起動からの ms・壁時計（UTC の `HH:mm:ss.SSS`）・主スレッドの返事の遅れ
+    /// （ms。0.3 秒で戻らなければ pending）・主スレッドの積み。書くのは 1500 行まで。
+    /// 壁時計は、UI テストのログ（行頭の UTC の時刻）の操作（要素を探す・押す）と突き合わせるため（2026-11-13 札 #590）
     private func fileLoop(path: String) {
         FileManager.default.createFile(atPath: path, contents: nil)
         guard let handle = FileHandle(forWritingAtPath: path) else { return }
         let origin = ProcessInfo.processInfo.systemUptime
+        let wall = DateFormatter()
+        wall.locale = Locale(identifier: "en_US_POSIX")
+        wall.timeZone = TimeZone(identifier: "UTC")
+        wall.dateFormat = "HH:mm:ss.SSS"
         var lines = 0
         while lines < 1500 {
             let sent = ProcessInfo.processInfo.systemUptime
+            let sentWall = wall.string(from: Date())
             let reply = DispatchSemaphore(value: 0)
             let box = PerfPingBox()
             DispatchQueue.main.async {
@@ -152,12 +172,13 @@ final class PerfMainSampler: @unchecked Sendable {
                 reply.signal()
             }
             let answered = reply.wait(timeout: .now() + 0.3) == .success
-            let ping = answered ? String(Int(((box.value ?? sent) - sent) * 1000)) : "pending"
-            let frames = captureFrames() ?? []
-            let top = Array(frames.prefix(8))
-            let app = frames.dropFirst(8).filter { $0.hasPrefix("JourneyPhoto") }.prefix(10)
-            let ms = Int((sent - origin) * 1000)
-            let line = "ms=\(ms) ping=\(ping) | " + (top + (app.isEmpty ? [] : ["…"]) + Array(app)).joined(separator: " ; ") + "\n"
+            let ping = answered ? Int(((box.value ?? sent) - sent) * 1000) : nil
+            // 行の形は `PerfMainTrace.line`（`t=` は止まりの `st=` と同じ時計・画面読みの段も残す・2026-11-14 札 #594）。
+            // `wall=` は UI テストのログの時刻と突き合わせる壁時計（札 #590）。統合の枝で両方を残した（2026-11-14 判断）
+            let line = PerfMainTrace.line(ms: Int((sent - origin) * 1000),
+                                          timelineMs: Int(((sent - PerfRecorder.shared.origin) * 1000).rounded()),
+                                          wall: sentWall,
+                                          pingMs: ping, frames: captureFrames() ?? []) + "\n"
             handle.write(Data(line.utf8))
             lines += 1
             if answered { Thread.sleep(forTimeInterval: 0.3) }
@@ -193,6 +214,8 @@ final class PerfMainSampler: @unchecked Sendable {
 
     private func capture() {
         guard let frames = captureFrames() else { return }
+        // 新しい方から残す通しの記録にも渡す（`PerfRecorder` は最初の 16 件で尽きる・2026-11-13 札 #594）
+        PerfTimeline.shared.recordSample(frames: frames)
         // 浅い方の 7 段（いま実行中の処理）と、その先にある**このアプリの段**（`JourneyPhoto` の画像）を 6 段まで。
         // 浅い方が SwiftUI の中ばかりでも、どの画面の何が呼んだかが残る（2026-11-07）
         let top = Array(frames.prefix(7))

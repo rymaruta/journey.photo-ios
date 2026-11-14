@@ -67,6 +67,9 @@ struct HomeTopCardView: View {
     @State private var spots: [OfficialSpot] = []
     /// `spots` を書き換えた回数（段の中身を `seasonShelf` へ渡し直す合図。1,400件の配列を毎回比べない）
     @State private var spotsRevision = 0
+    /// 重い計算の控え（写真の候補の並び・季節の段・詳細を取りに行く場所。材料が変わったときだけ計算し直す・
+    /// `HomeTopCardMemo`・2026-11-14 札 #594）。中身を書き換えても画面は描き直さない（入れ物は同じ）
+    @State private var memo = HomeTopCardMemo()
     /// 今日の一問（取れなかった日は nil のまま＝札を出さない）。サービスが日付ごとに覚えるので、
     /// 札から開いた画面は取り直さない
     @State private var quiz: DailyQuiz?
@@ -120,6 +123,8 @@ struct HomeTopCardView: View {
     private let developStore = DevelopProgressStore()
 
     var body: some View {
+        let _ = PerfChangeLog.note(Self.self)   // なぜ評価し直したか（UI テストのときだけ・札 #594 の下調べ）
+        let _ = PerfRecorder.shared.hit("home.topCard.body")   // 評価の回数（UI テストのときだけ・札 #594）
         // 「いまの季節のスポット」の段は、2026-10-03 から札の並びの下に置いていたが、**#417 ④（2026-10-30 owner 採用）で
         // 「おすすめ」の写真の大1→2→2 の後ろへ移した**（札の「AUTUMN SPOT」との2段続きが解け、切り替えが1画面目に上がる）。
         // 中身はここで決めて `seasonShelf` で渡す（札の並びは**1回だけ計算して**、札と段の両方に使う）
@@ -243,6 +248,11 @@ struct HomeTopCardView: View {
     /// 撮影スポットを払う入口（`HomeTopCard.withSwipe`・2026-11-11）も候補に入れ、何枚目に出すかは人ごとの表
     /// （`HomeTopCard.priority`・`order` の `spotSwipe`・第10章）で決める（1.1.84 のまとめ）
     private var choices: [HomeTopCard.Choice] {
+        // 時間を測る（UI テストのときだけ・`PerfTimeline.measure`・札 #594 の下調べ。無効ならそのまま計算する）
+        PerfTimeline.shared.measure("home.topCard.choices") { computeChoices() }
+    }
+
+    private func computeChoices() -> [HomeTopCard.Choice] {
         let all = HomeTopCard.withSwipe(
             HomeTopCard.cards(now: cardsNow,
                               // ホームに出さない旅・札から消した旅行プランは渡さない（2026-11-12・`HomeHiddenTrips`）
@@ -250,7 +260,8 @@ struct HomeTopCardView: View {
                                                              hidden: removal.hiddenTrips, excluding: removal.removedIds),
                               myPhotos: myPhotos, openedBookDays: openedBooks, spots: spots,
                               wishlist: wishedKeys, quiz: quiz, develop: developChoice),
-            spots: spots, today: HomeTopCard.today(cardsNow, in: .current))
+            spots: spots, today: HomeTopCard.today(cardsNow, in: .current),
+            pool: memo.coverPool(spots: spots, revision: spotsRevision))
         let audience = HomeTopCard.Audience.of(signedIn: auth.userId != nil,
                                                myPhotos: myPhotosKnown ? myPhotos : nil)
         return HomeTopCard.arrange(all, audience: audience)
@@ -261,8 +272,18 @@ struct HomeTopCardView: View {
     /// 並びが変わるのは、札と同じく索引が取れたとき・ホームに戻ったとき（行きたい場所）・
     /// 見えている間（今日の一問）だけ——段から開いた画面が前に出ている間に札が消えて閉じることはない
     private func visibleShelf(_ choices: [HomeTopCard.Choice]) -> HomeSpotShelf.Shelf? {
-        HomeSpotShelf.visibleShelf(today: HomeTopCard.today(cardsNow, in: .current), spots: spots,
-                                   choices: choices, quiz: quiz, quizSettled: quizSettled)
+        PerfTimeline.shared.measure("home.topCard.visibleShelf") {   // 時間を測る（UI テストのときだけ・札 #594）
+            memo.visibleShelf(shelfMemoKey(choices)) {
+                HomeSpotShelf.visibleShelf(today: HomeTopCard.today(cardsNow, in: .current), spots: spots,
+                                           choices: choices, quiz: quiz, quizSettled: quizSettled)
+            }
+        }
+    }
+
+    /// 季節の段と詳細の控えの鍵（`visibleShelf` の材料。索引は書き換えの番号で見る）
+    private func shelfMemoKey(_ choices: [HomeTopCard.Choice]) -> HomeTopCardMemo.ShelfKey {
+        HomeTopCardMemo.ShelfKey(today: HomeTopCard.today(cardsNow, in: .current), spotsRevision: spotsRevision,
+                                 choices: choices, quiz: quiz, quizSettled: quizSettled)
     }
 
     /// 段を渡し直す合図（段の中身と、索引の書き換え）
@@ -561,10 +582,15 @@ struct HomeTopCardView: View {
 
     /// 札・段・当日の行に出る、まだ索引だけのスポット
     private func detailNeeds(_ choices: [HomeTopCard.Choice]) -> [OfficialSpot] {
+        // 時間を測る（UI テストのときだけ・札 #594 の下調べ）
+        PerfTimeline.shared.measure("home.topCard.detailNeeds") {
+            memo.detailNeeds(shelfMemoKey(choices)) { computeDetailNeeds(choices) }
+        }
+    }
+
+    private func computeDetailNeeds(_ choices: [HomeTopCard.Choice]) -> [OfficialSpot] {
         guard !spots.isEmpty else { return [] }
-        let shelf = HomeSpotShelf.visibleShelf(today: HomeTopCard.today(cardsNow, in: .current), spots: spots,
-                                               choices: choices, quiz: quiz, quizSettled: quizSettled)
-        return SpotDetailNeeds.home(choices: choices, shelf: shelf, spots: spots)
+        return SpotDetailNeeds.home(choices: choices, shelf: visibleShelf(choices), spots: spots)
     }
 
     /// 出すスポットの詳細を重ねる（`OfficialSpotService.withDetails`）。取れなければ索引のまま（写真・文が出ないだけ）

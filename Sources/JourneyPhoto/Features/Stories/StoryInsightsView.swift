@@ -176,6 +176,10 @@ struct StoryInsightsView: View {
     /// 「9月24日 18:20に投稿 · あと 22 時間」（12・text-3・等幅の数字）
     private var header: some View {
         HStack(alignment: .top, spacing: JPSpace.s) {
+            // 閉じるは見出しの行の左端（2026-11-13 owner 承認・#187。前は v2 の板どおり見出しの行の右端）。
+            // 他のバーの無いシートと同じく、見出しの行の HStack の先頭に置く。上のバーは隠している
+            // （`.toolbar(.hidden, for: .navigationBar)`）
+            SheetCloseButton(onContent: true)
             StoryPoster(story: story)
                 .frame(width: Self.thumbSize.width, height: Self.thumbSize.height)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -193,13 +197,6 @@ struct StoryInsightsView: View {
             }
             .padding(.top, JPSpace.xxs)
             Spacer(minLength: 0)
-            // v2 StoryInsights: 「閉じる」は**見出しと同じ行の右端**（板の header の中）。
-            // 上のバーは隠している（`body` の `.toolbar(.hidden, for: .navigationBar)`）
-            SheetCloseButton()
-                .font(JPFont.bodyEmphasis)
-                .foregroundStyle(WebTheme.text)
-                .frame(minHeight: WebTheme.minTapTarget)
-                .padding(.leading, JPSpace.xs)
         }
     }
 

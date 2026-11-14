@@ -248,7 +248,9 @@ enum HomeTopCard {
     ///   - choices: `cards` の並び
     ///   - spots: 撮影スポットの索引（左の写真を選ぶ。ほかの札に出ている場所は使わない）
     ///   - today: `today(_:in:)` の今日（写真を日替わりにする）。nil なら索引の先頭から
-    static func withSwipe(_ choices: [Choice], spots: [OfficialSpot], today: Date?) -> [Choice] {
+    ///   - pool: `spots` から作った写真の候補の並び（控えてあれば渡す・2026-11-14 札 #594）。nil ならここで作る
+    static func withSwipe(_ choices: [Choice], spots: [OfficialSpot], today: Date?,
+                          pool: SpotSwipe.CoverPool? = nil) -> [Choice] {
         var shown = Set<String>()
         for choice in choices {
             switch choice {
@@ -257,7 +259,8 @@ enum HomeTopCard {
             default: break
             }
         }
-        let cover = SpotSwipe.cover(spots: spots, excluding: shown, day: today.map(dayNumber) ?? 0)
+        let cover = (pool ?? SpotSwipe.CoverPool(spots: spots))
+            .cover(spots: spots, excluding: shown, day: today.map(dayNumber) ?? 0)
         return [.swipe(cover: cover)] + choices.filter { $0.slot != "spotSwipe" }
     }
 

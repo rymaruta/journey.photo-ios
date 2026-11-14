@@ -10,6 +10,7 @@ import os
 ///
 /// - `launch`: アプリの `init` から、最初の画面（`RootView`）が出るまで
 /// - `homeLoad`: ホームの一覧の読み込み（`GalleryViewModel.load`）の始めから終わりまで
+/// - `spotMatch`: 撮影スポットを語で当てる1回（`OfficialSpotIndex.matches`）。**UI テストのときだけ**（2026-11-13 札 #590）
 /// - `spotIndexDecode`: 撮影スポットの索引（`spot-feed/index.json`・約 1.1MB・2,853件 2026-10-31）を解析する間
 ///
 /// - `launchSync` ほか: 起動後の `.task(id: auth.state)` の同期の区間（`launchSync` は保存・いいねの同期の終わりまで。ブロック・行きたい場所・購入の送り直しは区間に含めない(行きたい場所と購入の送り直しは `LaunchDeferral` の待ちの後ろ)・2026-11-07。2026-11-04・札 #435 / #429。**包むだけで動作は変えない**）
@@ -36,12 +37,15 @@ enum PerfSignpost {
         case launchSyncSweepOrphans = "LaunchSyncSweepOrphans"
         /// その中の `DraftLibrary.prepare`
         case launchSyncDraftPrepare = "LaunchSyncDraftPrepare"
+        /// 撮影スポットを語で当てる1回（`OfficialSpotIndex.matches`・2026-11-13 札 #590「探すの検索が重い」）。
+        /// **UI テストのときだけ**付ける（`PerfRecorder.shared.isEnabled`・Debug のみ）。打つたびに何度も走るので、出来事には残さない
+        case spotMatch = "SpotMatch"
     }
 
     /// 出来事の記録（`PerfRecorder.event`）に残す区間。起動の同期の細かい 2 つ（10ms 台と取れている）は、
     /// 40 件の枠を使わないよう残さない（2026-11-07）
     static func recordsEvent(_ name: Name) -> Bool {
-        name != .launchSyncSweepOrphans && name != .launchSyncDraftPrepare
+        name != .launchSyncSweepOrphans && name != .launchSyncDraftPrepare && name != .spotMatch
     }
 
     /// 始めた区間（終えるときに渡す）
@@ -74,6 +78,7 @@ enum PerfSignpost {
         case .launchSyncStores: state = signposter.beginInterval("LaunchSyncStores", id: id)
         case .launchSyncSweepOrphans: state = signposter.beginInterval("LaunchSyncSweepOrphans", id: id)
         case .launchSyncDraftPrepare: state = signposter.beginInterval("LaunchSyncDraftPrepare", id: id)
+        case .spotMatch: state = signposter.beginInterval("SpotMatch", id: id)
         }
         return Interval(name: name, state: state)
         #else
@@ -95,6 +100,7 @@ enum PerfSignpost {
         case .launchSyncStores: signposter.endInterval("LaunchSyncStores", interval.state)
         case .launchSyncSweepOrphans: signposter.endInterval("LaunchSyncSweepOrphans", interval.state)
         case .launchSyncDraftPrepare: signposter.endInterval("LaunchSyncDraftPrepare", interval.state)
+        case .spotMatch: signposter.endInterval("SpotMatch", interval.state)
         }
         #endif
     }

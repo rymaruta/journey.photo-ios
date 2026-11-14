@@ -150,13 +150,7 @@ final class HomeTidyTests: XCTestCase {
         XCTAssertEqual(DailyThemeCard.joinInset, 14)
     }
 
-    // MARK: - ④ 季節の段は「おすすめ」の中・写真の大1→2→2 の後ろ
-
-    func testSeasonShelfOnlyInRecommended() {
-        XCTAssertTrue(HomeFeed.recommended.showsSeasonShelf)
-        XCTAssertFalse(HomeFeed.following.showsSeasonShelf, "フォロー中に季節の段を出している")
-        XCTAssertFalse(HomeFeed.latest.showsSeasonShelf, "新着に季節の段を出している")
-    }
+    // MARK: - ④ 季節の段は1本の並びの中・写真の大1→2→2 の後ろ（札 #595 で「おすすめ」の札は無くなった）
 
     /// 段の前は5枚（大1→2→2 のひと回り）。後ろの写真も大きい1枚から始まる（並びのリズムを崩さない）
     func testSeasonShelfSplitsAfterOneCycle() throws {
@@ -181,27 +175,21 @@ final class HomeTidyTests: XCTestCase {
 
     func testSeasonShelfMovedIntoTheFeed() throws {
         let gallery = try source("Features/Gallery/GalleryView.swift")
-        // #426: 束ねと 5 枚の割りは控え（`HomeFeedPageMemo.make`）が計算する
-        let make = slice(gallery, from: "static func make(_ page: HomeFeed,", to: "private struct PassResolveKey")
-        assertInOrder(["PhotoGroups.group(hidden.visible(photos))", "guard page.showsSeasonShelf else",
-                       "HomeFeed.splitForSeasonShelf(groups)"], in: make, "季節の段の前後に割る")
-        let section = slice(gallery, from: "private func feedSection(_ page: HomeFeed, rows: HomeFeedPageMemo.Rows) -> some View {",
+        // 束ねと 5 枚の割りは控え（`HomeFeedPageMemo.make`）が計算する
+        let make = slice(gallery, from: "static func make(_ input: Input, hidden: ModerationSnapshot) -> Rows {",
+                         to: "private struct PassResolveKey")
+        assertInOrder(["HomeFeed.arrange(following: hidden.visible(input.following),",
+                       "HomeFeed.splitForSeasonShelf(main)"], in: make, "季節の段の前後に割る")
+        let section = slice(gallery, from: "private func feedSection(_ rows: HomeFeedPageMemo.Rows, featured: [FeaturedGroups.Group]) -> some View {",
                             to: "nonisolated static let seasonShelfTopTrim")
-        // 「おすすめ」では段の有無に関係なくいつも5枚で割り、段だけを挟む（後から届いた段で一覧を作り直さない）。
-        // 写真が0枚の日は段を出さない
-        assertInOrder(["featuredSections(page)",
-                       "if page.showsSeasonShelf {",
-                       "let split = (lead: rows.lead, rest: rows.rest)",
-                       "HomeMosaic(groups: split.lead",
-                       "if !groups.isEmpty, let seasonShelf {",
+        // 段の有無に関係なくいつも5枚で割り、段だけを挟む（後から届いた段で一覧を作り直さない）。写真が0枚の日は段を出さない
+        assertInOrder(["featuredSections(featured)",
+                       "HomeMosaic(groups: rows.lead",
+                       "if !isEmpty, let seasonShelf {",
                        "HomeSpotShelfView(shelf: seasonShelf.shelf",
-                       "HomeMosaic(groups: split.rest",
-                       "} else {",
-                       "HomeMosaic(groups: groups"], in: section, "季節の段の置き場所")
-        // #426: 続きの目印は札の中身に置かない（外側の遅延の並びの子・`TabSwitchUnifyTests.testNextPageMarkerIsLazy`）
+                       "HomeMosaic(groups: rows.rest"], in: section, "季節の段の置き場所")
+        // 続きの目印は並びの遅れて作る段の最後（`HomeMosaic` の footer）。普通の並びに置かない
         XCTAssertFalse(section.contains("{ pageFooter }"))
-        XCTAssertFalse(section.contains("showsSeasonShelf, let seasonShelf"),
-                       "段の有無で写真の一覧の枝が替わる（段が届いた瞬間に一覧が作り直される）")
         // 上の札の並びの下には置かない（2段続きに戻さない）
         let top = try source("Features/Gallery/HomeTopCardView.swift")
         XCTAssertFalse(top.contains("HomeSpotShelfView("), "季節の段が上の札の下に残っている")
@@ -257,72 +245,31 @@ final class HomeTidyTests: XCTestCase {
         XCTAssertFalse(gallery.contains("home.fresh"))
     }
 
-    // MARK: - ⑧ 切り替えは見出しの下に留まる
+    // MARK: - ⑧⑨ 札 #595: 切り替え（留まる札の行・「フォロー中」の点）はやめて1本の並び
 
-    func testFeedPickerIsPinned() throws {
+    /// 上から: 上の札 → フォロー中の人の新しい写真 → 選ばれた写真の横並び → 混ぜた並び。切り替えの札・留まる札・点は無い
+    func testHomeIsOneFeedWithFollowingOnTop() throws {
         let gallery = try source("Features/Gallery/GalleryView.swift")
         let feed = slice(gallery, from: "private func feed(_ photos: [Photo]) -> some View", to: "private static let feedTopID")
-        // #426 Mac の確かめ: 節の見出しで留めるのをやめ、マイページと同じ（流れる札の行＋縦の送りの外に重ねる札）
         assertInOrder(["VStack(spacing: Self.feedSpacing) {",
                        "HomeTopCardView(",
-                       "feedPicker(followingHasNew: followingHasNew, stuck: false)",
-                       "ProfileTabPager(tabs: HomeFeed.allCases, selection: feedSelection,",
-                       "feedSection(page, rows: pageRows(page, selected: photos))",
-                       "if feedRowPinned { pinnedFeedRow(followingHasNew: followingHasNew) }"],
-                      in: feed, "切り替えは写真の一覧の頭・送ると上に重ねて留める")
-        // 留まった姿はマイページと同じ札の部品の `stuck`（地は黒 100%・下の線は白 12%）
-        let picker = slice(gallery, from: "private func feedPicker(followingHasNew: Bool, stuck: Bool) -> some View",
-                           to: "private var feedSelection: Binding<HomeFeed>")
-        assertInOrder(["ProfileTabBar(tabs: HomeFeed.allCases, selection: feedSelection, stuck: stuck,",
-                       ".background(WebTheme.background)",
-                       "feedPicker(followingHasNew: followingHasNew, stuck: true)"], in: picker, "留まった切り替えの地と下の線")
-        XCTAssertEqual(ProfileTabStyle.lineOpacity(stuck: true), 0.12)
-        // 既定の選びは「おすすめ」のまま（owner の過去の判断）
-        XCTAssertEqual(HomeFeed.allCases.first, .recommended)
-        XCTAssertTrue(try source("Features/Gallery/GalleryViewModel.swift")
-            .contains("@Published private(set) var feed: HomeFeed = .recommended"))
-    }
-
-    /// 留まった切り替えで別のフィードを押したら、新しい一覧の頭へ送る（上の札が見えている間は送らない）
-    func testPinnedPickerScrollsToTheListHead() throws {
-        let gallery = try source("Features/Gallery/GalleryView.swift")
-        // #426: 押した・払ったのどちらも `model.feed` が替わる。深く送っていれば札の行を上端へ（マイページと同じ）
-        XCTAssertTrue(gallery.contains("Binding(get: { model.feed }, set: { selectFeed($0) })"), "払った回が一覧の頭へ送らない")
-        XCTAssertFalse(gallery.contains("topCardsVisible"), "上の札の出入りで留まりを見ている（境がずれる）")
-        let feed = slice(gallery, from: "private func feed(_ photos: [Photo]) -> some View", to: "private static let feedTopID")
-        assertInOrder([".id(Self.feedRowID)",
-                       ".onChange(of: model.feed) { _, _ in",
-                       "guard ProfileTabScroll.scrollsToRow(rowMinY: feedRowSpot.minY, visibleTop: 0) else { return }",
-                       "withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {",
-                       "proxy.scrollTo(Self.feedRowID, anchor: .top)"],
-                      in: feed, "一覧の頭へ送る仕組み")
-        XCTAssertFalse(gallery.contains("feedPickerID"), "留まった札の行を目印に scrollTo している（いちばん上まで戻る）")
-        XCTAssertFalse(gallery.contains("feedHeadRequests"))
-    }
-
-    // MARK: - ⑨ 「フォロー中」の真鍮の点
-
-    func testFollowingDotMeasuresAndSpeaks() throws {
-        // #426: 点は札の部品（`ProfileTabDot`）が描く。位置と大きさは `ProfileTabStyle`
-        XCTAssertEqual(ProfileTabStyle.dotSize, 8)
-        XCTAssertEqual(ProfileTabStyle.dotOffset.x, 11, "字の右端から 11 でない")
-        XCTAssertEqual(ProfileTabStyle.dotOffset.y, 9, "上から 9 でない")
-        let gallery = try source("Features/Gallery/GalleryView.swift")
-        let picker = slice(gallery, from: "private func feedPicker(followingHasNew: Bool, stuck: Bool) -> some View",
-                           to: "private var feedSelection: Binding<HomeFeed>")
-        assertInOrder(["dot: { $0 == .following && followingHasNew },",
-                       "spokenLabel: { HomeFollowingNews.spokenLabel($0.label, hasNew: $0 == .following && followingHasNew) })"],
-                      in: picker, "点と読み上げ")
-        XCTAssertEqual(HomeFeed.latest.tabIdentifier, "home.feed.latest", "UI テストの道しるべが変わった")
-        XCTAssertEqual(HomeFeed.following.tabTitle, HomeFeed.following.label, "UI テストは「新着」「フォロー中」を字でも探す")
-        let bar = try source("Features/Profile/ProfileTabBar.swift")
-        let dot = slice(bar, from: "struct ProfileTabDot: View {", to: "enum ProfileTabStyle {")
-        assertInOrder(["Circle().fill(WebTheme.accent)", ".strokeBorder(WebTheme.background, lineWidth: 2)"],
-                      in: dot, "真鍮の点と黒 2 の縁")
-        assertInOrder([".overlay(alignment: .topTrailing) {", "if dot(option) { ProfileTabDot() }",
-                       ".accessibilityLabel(spoken(option))"], in: bar, "札の部品の点と読み上げ")
-        XCTAssertEqual(HomeFollowingNews.spokenLabel("フォロー中", hasNew: true), L("フォロー中、新しい写真あり", "フォロー中, new photos"))
-        XCTAssertEqual(HomeFollowingNews.spokenLabel("フォロー中", hasNew: false), "フォロー中")
+                       "feedSection(rows, featured: featured)"], in: feed, "上の札の下に1本の並び")
+        let section = slice(gallery, from: "private func feedSection(_ rows: HomeFeedPageMemo.Rows, featured: [FeaturedGroups.Group]) -> some View {",
+                            to: "nonisolated static let seasonShelfTopTrim")
+        assertInOrder(["if !rows.following.isEmpty {",
+                       "JPSectionHeading(eyebrow: \"FOLLOWING\"",
+                       "HomeMosaic(groups: rows.following",
+                       "featuredSections(featured)",
+                       "HomeMosaic(groups: rows.lead"], in: section, "フォロー中の人の新しい写真がいちばん上")
+        for gone in ["feedPicker(", "pinnedFeedRow(", "feedRowPinned", "ProfileTabDot", "followingHasNew", "model.feed"] {
+            XCTAssertFalse(gallery.contains(gone), "切り替えの名残（\(gone)）が残っている")
+        }
+        XCTAssertFalse(try source("Features/Gallery/GalleryViewModel.swift").contains("var feed: HomeFeed"),
+                       "選んでいるフィードの状態が残っている")
+        // 推薦の仕組みがあるように見せない: 「おすすめ」の注釈・札の言葉を画面に出さない
+        let homeFeed = try source("Core/Text/HomeFeed.swift")
+        XCTAssertFalse(homeFeed.contains("L(\"おすすめ\""), "「おすすめ」の札の言葉が残っている")
+        XCTAssertFalse(homeFeed.contains("選ばれた写真と、よく見られている写真から"), "おすすめの注釈が残っている")
     }
 
     /// 「新しい」はフォロー中の人の、下書きでない・自分のでない写真のいちばん新しい投稿日
@@ -335,59 +282,42 @@ final class HomeTidyTests: XCTestCase {
             try photo("nodate", owner: "f", at: nil),
         ]
         XCTAssertEqual(HomeFollowingNews.newest(photos, viewerId: "me", followingIds: ["f", "me"]), "2026-10-01")
-        XCTAssertNil(HomeFollowingNews.newest(photos, viewerId: nil, followingIds: ["f"]), "未ログインで点を出す")
-        XCTAssertNil(HomeFollowingNews.newest(photos, viewerId: "me", followingIds: []), "誰もフォローしていないのに点を出す")
+        XCTAssertNil(HomeFollowingNews.newest(photos, viewerId: nil, followingIds: ["f"]), "未ログインでフォロー中の段を作る")
+        XCTAssertNil(HomeFollowingNews.newest(photos, viewerId: "me", followingIds: []), "誰もフォローしていないのにフォロー中の段を作る")
     }
 
-    func testDotRules() {
-        // 覚えが無い日（初めて）は出さない
-        XCTAssertFalse(HomeFollowingNews.showsDot(feed: .recommended, newest: "2026-10-02", seen: nil))
-        XCTAssertTrue(HomeFollowingNews.showsDot(feed: .recommended, newest: "2026-10-02", seen: "2026-10-01"))
-        XCTAssertTrue(HomeFollowingNews.showsDot(feed: .latest, newest: "2026-10-02", seen: "2026-10-01"))
-        XCTAssertFalse(HomeFollowingNews.showsDot(feed: .following, newest: "2026-10-02", seen: "2026-10-01"),
-                       "開いている「フォロー中」に点を出している")
-        XCTAssertFalse(HomeFollowingNews.showsDot(feed: .recommended, newest: "2026-10-01", seen: "2026-10-01"))
-        XCTAssertFalse(HomeFollowingNews.showsDot(feed: .recommended, newest: nil, seen: "2026-10-01"))
-    }
-
-    func testSeenRules() {
-        XCTAssertEqual(HomeFollowingNews.seenToStore(feed: .recommended, newest: "b", seen: nil), "b", "初めての日に覚えない")
-        XCTAssertNil(HomeFollowingNews.seenToStore(feed: .recommended, newest: "b", seen: "a"),
-                     "「フォロー中」を開いていないのに既読にした")
-        XCTAssertEqual(HomeFollowingNews.seenToStore(feed: .following, newest: "b", seen: "a"), "b")
-        XCTAssertNil(HomeFollowingNews.seenToStore(feed: .following, newest: "a", seen: "b"), "既読を戻した")
-        XCTAssertNil(HomeFollowingNews.seenToStore(feed: .following, newest: nil, seen: "a"))
-    }
-
-    /// 🔴 振る舞い: 初めて → 点なし。新しい写真が届く → 点。「フォロー中」を開く → 既読で消える。戻っても出ない。
+    /// 🔴 振る舞い: 覚えが無い → 全部が新しい（上に出す）。出したら覚える。**見ている間は基準を替えない**
+    /// （上の段が消えて下がずれない）。引き下げ（基準の読み直し）で、出した分は上から外れ、届いた新しい分だけが上に出る。
     /// 人ごとに分かれる・戻さない・退会で消える
-    func testFollowingDotLifecycle() throws {
+    func testFollowingSectionLifecycle() throws {
         let suite = "HomeTidyTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = FollowingSeenStore(defaults: defaults)
-        var feed = HomeFeed.recommended
+        var baseline = FollowingBaseline()
         var photos = [try photo("old", owner: "f", at: "2026-10-01T00:00:00Z")]
 
-        /// 画面の `syncFollowingSeen` と同じ順: 覚え直す → 点を決める
-        func render() -> Bool {
-            let newest = HomeFollowingNews.newest(photos, viewerId: "me", followingIds: ["f"])
-            if let value = HomeFollowingNews.seenToStore(feed: feed, newest: newest, seen: store.seen(for: "me")) {
-                store.mark(value, for: "me")
+        /// 画面と同じ順: 基準で上の段を作る → 出したら、いちばん新しい投稿日を覚える（基準は替えない）
+        func render() -> [String] {
+            let shown = HomeFeed.followingFresh(photos, viewerId: "me", followingIds: ["f"], seen: baseline.seen)
+            if !shown.isEmpty, let newest = HomeFollowingNews.newest(photos, viewerId: "me", followingIds: ["f"]) {
+                store.mark(newest, for: "me")
             }
-            return HomeFollowingNews.showsDot(feed: feed, newest: newest, seen: store.seen(for: "me"))
+            return shown.map(\.id)
         }
 
-        XCTAssertFalse(render(), "初めての日に（前に見たか分からない写真で）点を出した")
+        baseline.capture(viewer: "me", store: store)
+        XCTAssertEqual(render(), ["old"], "覚えが無いのに上に出さない")
         XCTAssertEqual(store.seen(for: "me"), "2026-10-01T00:00:00Z")
+        XCTAssertEqual(render(), ["old"], "見ている間に上の段が消えた（基準を替えた）")
+        baseline.capture(viewer: "me", store: store)   // 引き下げ
+        XCTAssertEqual(render(), [], "一度上に出した写真を、引き下げのあともまた上に出した")
         photos.append(try photo("new", owner: "f", at: "2026-10-30T00:00:00Z"))
-        XCTAssertTrue(render(), "フォロー中の人の新しい写真で点が出ない")
-        feed = .following
-        XCTAssertFalse(render(), "開いている「フォロー中」に点を出した")
-        feed = .recommended
-        XCTAssertFalse(render(), "開いて見た分で、戻ったあとも点が出る")
-        // 別の人には前の人の既読を使わない（初めての日として覚えるだけ）
-        XCTAssertNil(store.seen(for: "other"))
+        XCTAssertEqual(render(), ["new"], "フォロー中の人の新しい写真が上に出ない")
+        // 別の人には前の人の覚えを使わない
+        baseline.capture(viewer: "other", store: store)
+        XCTAssertEqual(baseline.viewer, "other")
+        XCTAssertNil(baseline.seen)
         // 古い値で戻さない
         store.mark("2026-01-01T00:00:00Z", for: "me")
         XCTAssertEqual(store.seen(for: "me"), "2026-10-30T00:00:00Z")
@@ -395,13 +325,18 @@ final class HomeTidyTests: XCTestCase {
         XCTAssertNil(store.seen(for: "me"))
     }
 
-    /// 既読の覚えは退会で消す・画面は開いた／届いた／人が替わったで覚え直す
+    /// 覚えは退会で消す・画面は人が決まったとき・引き下げで基準を読み直し、上の段を出したら覚える
     func testSeenIsWiredIntoTheScreenAndAccountRemoval() throws {
         XCTAssertTrue(try source("Core/Storage/AccountLocalData.swift").contains("FollowingSeenStore(defaults: defaults).removeData(for: userId)"))
         let gallery = try source("Features/Gallery/GalleryView.swift")
-        XCTAssertTrue(gallery.contains(".onChange(of: FollowingSeenKey(feed: model.feed, newest: followingNewest, viewer: auth.userId),\n                  initial: true)"),
-                      "「フォロー中」を開いても既読にならない")
-        XCTAssertTrue(gallery.contains("model.followingNewest(viewerId: auth.userId, hiding: dropped)"),
-                      "ブロック・通報を落とした写しで決めていない")
+        XCTAssertEqual(gallery.components(separatedBy: "followingBaseline.capture(viewer:").count - 1, 2,
+                       "人が決まったとき・引き下げのときに基準を読み直していない")
+        XCTAssertTrue(gallery.contains(".onChange(of: rows.following.map(\\.id), initial: true)"), "上の段を出しても覚えない")
+        XCTAssertTrue(gallery.contains("markFollowingShown(fresh)"), "上に出した分ではなく、候補の全部で覚えている")
+        XCTAssertTrue(gallery.contains("alwaysNew: followingBaseline.followees, hiding: dropped)"),
+                      "ブロック・通報を落とした写しで決めていない・新しくフォローした人を覚えに関係なく出していない")
+        XCTAssertTrue(gallery.contains("followingBaseline.settle(candidates: key.candidates, atHead: key.atHead)"),
+                      "上に出す分を、頭にいるときだけ決め直していない")
+        XCTAssertTrue(gallery.contains("followingBaseline.addFollowees(followed)"), "おすすめの人でフォローした人の写真が上に出ない")
     }
 }

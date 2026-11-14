@@ -780,17 +780,22 @@ else:
     if "build/ui-plan/first.txt" not in perf_text:
         fail("ios-perf.yml が流す試験の一覧（first.txt）を作っていません")
 
-# 名指しした回だけ流す2本（起動直後の記録・body の評価回数）は、UI テストに実在し、全部の回では流れない
+# 名指しした回だけ流す3本（起動直後の記録・body の評価回数・探すの1字ごとの重さ 札 #590）は、UI テストに実在し、全部の回では流れない
 import importlib.util as _perf_ilu
 _pick_spec = _perf_ilu.spec_from_file_location("pick_ui_tests_perf", ROOT / "Tools/pick-ui-tests.py")
 _pick = _perf_ilu.module_from_spec(_pick_spec)
 _pick_spec.loader.exec_module(_pick)
 _perf_src = (ROOT / "UITests/JourneyPhotoUITests/PerformanceTests.swift").read_text(encoding="utf-8")
-for _named in ("testLaunchProbe", "testBodyEvaluationCounts"):
+for _named in ("testLaunchProbe", "testBodyEvaluationCounts", "testSearchTypingProbe"):
     if f"PerformanceTests/{_named}" not in _pick.ONLY_WHEN_NAMED:
         fail(f"pick-ui-tests.py の ONLY_WHEN_NAMED に PerformanceTests/{_named} がありません（全部の回で流れてしまう）")
     if f"func {_named}()" not in _perf_src:
         fail(f"PerformanceTests に {_named} がありません")
+# 札 #594 の下調べ（よく使う操作を一通り・2026-11-13）も、UI テストに実在し、全部の回では流れない
+if "PerformanceTests/testUsageSurveyProbe" not in _pick.ONLY_WHEN_NAMED:
+    fail("pick-ui-tests.py の ONLY_WHEN_NAMED に PerformanceTests/testUsageSurveyProbe がありません（全部の回で流れてしまう）")
+if "func testUsageSurveyProbe()" not in _perf_src:
+    fail("PerformanceTests に testUsageSurveyProbe がありません")
 
 # ---- 画面写真の非公開の置き場（2026-11-12 owner・#451 を守ったまま）--------------------
 # 公開リポジトリなので、画面写真は公開の枝・成果物に置かない。置くのは非公開の S3 だけで、

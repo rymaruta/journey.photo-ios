@@ -150,16 +150,8 @@ struct NameSideBadgeView: View {
                         .foregroundStyle(WebTheme.foreground)
                         .accessibilityAddTraits(.isHeader)
                 }
-                ToolbarItem(placement: .cancellationAction) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(WebTheme.foreground)
-                            .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                            .contentShape(Rectangle())
-                    }
-                    .accessibilityLabel(Labels.Common.close)
-                }
+                // 閉じるはほかのシートと同じ左上の「閉じる」（2026-11-13 owner 承認・#187。前は × の印）
+                ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
             }
         }
         .presentationBackground(NameSideChoice.sheetBackground)

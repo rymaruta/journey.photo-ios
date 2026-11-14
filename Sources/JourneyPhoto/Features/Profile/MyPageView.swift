@@ -112,6 +112,7 @@ struct MyPageView: View {
     var body: some View {
         // UI テストのときだけ: body の評価を数える（`PerfRecorder`・札 #435 / #429。無効なら何もしない）
         let _ = PerfRecorder.shared.bodyHit(.myPage)
+        let _ = PerfChangeLog.note(Self.self)   // なぜ評価し直したか（UI テストのときだけ・札 #594 の下調べ）
         Group {
             if auth.isResolving {
                 // 確認が終わるまでログイン画面を出さない（ちらつきを作らない）
@@ -389,6 +390,10 @@ struct MyPageView: View {
                 // カバーの有無にかかわらず時計の帯のすぐ下に置ける
                 if tabRowPinned { pinnedTabRow }
             }
+            // UI テストのときだけ: 横の払いをどの指の操作が受けたか（`ProfileTabSwipeLog`・Debug のみ）
+            .overlay(alignment: .bottomTrailing) {
+                ProfileTabSwipeProbeView(selection: tab.rawValue)
+            }
         }
     }
 
@@ -461,8 +466,12 @@ struct MyPageView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     // 上に留まっている間（`tabRowPinned`）は、元の行を見せず・押させず・読ませない
                     // （重ねた札と二重にしない。場所は取り続けるので、位置の控えと「替えたら頭から」の目印はそのまま）
+                    // 札の行の払いも中身と線を指に付ける（横の量の箱 `tabPager` を分け合う・2026-11-13 #187 案 B）
                     tabPicker(stuck: false)
-                        .modifier(ProfileTabSwipe(tabs: ProfileTab.tabs(isMe: true), selection: $tab))
+                        .modifier(ProfileTabSwipe(tabs: ProfileTab.tabs(isMe: true), selection: $tab,
+                                                  follow: tabPager.drag,
+                                                  willShow: { next in tabPager.willShow?(next) },
+                                                  probeTag: "row", yieldsToHorizontalScrollers: false))
                         .opacity(tabRowPinned ? 0 : 1)
                         .allowsHitTesting(!tabRowPinned)
                         .accessibilityHidden(tabRowPinned)
@@ -1150,8 +1159,11 @@ struct MyPageView: View {
     /// 整理案 05c の4つ（投稿 / 旅の記録 / 行きたい場所 / お気に入り）。
     /// 見た目は人のページと同じ下線の札（`ProfileTabBar`）
     /// 区分の札。`stuck` は上に留まった姿（地を黒 100%・下の線を白 12%・2026-10-30 owner 採用 #418）
+    /// 2026-11-13 owner 承認（#187・案 B「絵と字」）: 幅を4つに等しく割り、印の下に名前・高さ 56。
+    /// 払っている間、線が指に付いてくる（中身の横の量 `tabPager.drag` を見る）
     private func tabPicker(stuck: Bool) -> some View {
-        ProfileTabBar(tabs: ProfileTab.tabs(isMe: true), selection: $tab, stuck: stuck)
+        ProfileTabBar(tabs: ProfileTab.tabs(isMe: true), selection: $tab, stuck: stuck,
+                      iconColumns: true, follow: tabPager.drag)
     }
 
     /// 上に留まった区分の札（流れている元の行が見えている上端を越えている間だけ重ねる）。

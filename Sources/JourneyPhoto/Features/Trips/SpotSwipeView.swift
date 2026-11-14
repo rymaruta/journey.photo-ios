@@ -51,7 +51,7 @@ struct SpotSwipeView: View {
                 .navigationTitle(L("行きたい場所を探す", "Find places to go"))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) { SheetCloseButton() }
+                    ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
                 }
                 .safeAreaInset(edge: .bottom) { footer }
                 .navigationDestination(item: $createdPlanId) { planId in

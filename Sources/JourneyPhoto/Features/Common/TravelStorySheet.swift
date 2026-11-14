@@ -22,7 +22,6 @@ struct TravelStorySheet: View {
     let filmURLs: [URL]
     let facts: TravelStory.Facts
 
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var toasts: ToastCenter
 
@@ -91,8 +90,9 @@ struct TravelStorySheet: View {
             .navigationTitle(L("ストーリーに", "To your story"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(L("閉じる", "Close")) { dismiss() }
+                // 閉じるは左上（2026-11-13 owner 承認・#187・右上は決める操作だけ）
+                ToolbarItem(placement: .cancellationAction) {
+                    SheetCloseButton()
                         .accessibilityIdentifier("travelStory.close")
                 }
             }

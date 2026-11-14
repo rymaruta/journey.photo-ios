@@ -4,7 +4,8 @@ import XCTest
 import FoundationNetworking
 #endif
 
-/// ホームの「新着」を `GET /feed` のページで読む（2026-10-03）。
+/// ホームの新着を `GET /feed` のページで読む（2026-10-03）。札 #595（2026-11-13）からホームは1本の並びで、
+/// 新着はいつも読み、選ばれた写真→いいね順（全件 `photos.json`）の間に混ぜる（`HomeFeed.arrange`・`HomeFeedTests`）。
 ///
 /// 契約: 続きの有無は **`nextCursor` だけ**で決める（`items` が少なくても・空でも、
 /// 札があれば続きがある）。`/feed` が使えない回（道が無い 404・500・圏外）は
@@ -51,8 +52,8 @@ final class HomeFeedPagingTests: XCTestCase {
     /// 最後に作ったホームの公開一覧（ブロック・限定公開の口を入れるため）
     private var lastGallery: PublicGalleryService!
 
-    /// 「新着」を選んだホーム。`gates` を渡すと `/feed` の要求を手前で止められる
-    private func makeModel(gates: PathGates? = nil, startsOnLatest: Bool = true,
+    /// ホーム。`gates` を渡すと `/feed` の要求を手前で止められる
+    private func makeModel(gates: PathGates? = nil,
                            snapshot: PhotoSnapshotStore = PhotoSnapshotStore(fileName: UUID().uuidString)) -> GalleryViewModel {
         let gallery = PublicGalleryService(
             url: URL(string: "https://site.example.test/app/data/photos.json")!,
@@ -65,7 +66,6 @@ final class HomeFeedPagingTests: XCTestCase {
                             beforeRequest: gates.map { gates in { (request: URLRequest) async in await gates.wait(for: request) } })
         lastGallery = gallery
         let model = GalleryViewModel(gallery: gallery, feed: PublicFeedService(api: api))
-        if startsOnLatest { model.select(feed: .latest, viewerId: nil) }
         return model
     }
 
@@ -145,29 +145,18 @@ final class HomeFeedPagingTests: XCTestCase {
         XCTAssertEqual(feedCursors, [nil, "c1"], "前の答えの札をそのまま渡していない")
     }
 
-    /// 🔴 2026-10-31（#426）: ホームのフィードは横にめくって切り替える。**隣の札の中身は、選んだときに出す一覧と同じ**
-    /// （選び替えても一覧が作り直されない）で、**通信しない**（読み込みのやり直しが無い）。
-    /// 「新着」の隣の札は読んだページ、「おすすめ」は全件の並び
-    func testNeighbourFeedMatchesWhatSelectingShowsWithoutReloading() async {
+    /// 🔴 札 #595: 1本の並びの 2.（選ばれた写真→いいね順）は全件から作る。**新着のページの並びとは別の材料**で、
+    /// 作るのに通信しない（読み込みのやり直しが無い）
+    func testRecommendedSourceComesFromTheSnapshotWithoutReloading() async {
         prepare()
         StubProtocol.respond(path: "/feed", status: 200, body: page(["p1", "p2"], next: nil))
         StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: snapshotBody)
         let model = makeModel()
         await model.load()
-        XCTAssertEqual(shown(model), ["p1", "p2"])
+        XCTAssertEqual(shown(model), ["p1", "p2"], "新着の材料が読んだページでない")
         let requests = StubProtocol.allRequests.count
-
-        // 選んでいない「おすすめ」の中身を先に作る（指に付いてくる隣の札）
-        let neighbour = model.photos(for: .recommended).map(\.id)
-        XCTAssertEqual(StubProtocol.allRequests.count, requests, "隣の札を作るのに通信した")
-        model.select(feed: .recommended, viewerId: nil)
-        XCTAssertEqual(neighbour, shown(model), "隣の札の中身と、選んだときの一覧が違う（選び替えで一覧が作り直される）")
-
-        // 「新着」へ戻る隣の札は、読んだページの並び（全件の新しい順ではない）
-        XCTAssertEqual(model.photos(for: .latest).map(\.id), ["p1", "p2"], "新着の隣の札が読んだページでない")
-        // 選んでいるフィードは出している一覧そのもの
-        XCTAssertEqual(model.photos(for: .recommended).map(\.id), shown(model))
-        XCTAssertEqual(StubProtocol.allRequests.count, requests, "隣の札を作るのに通信した")
+        XCTAssertEqual(Set(model.recommendedPhotos.map(\.id)), ["s1", "s2"], "いいね順の材料が全件でない")
+        XCTAssertEqual(StubProtocol.allRequests.count, requests, "いいね順の材料を作るのに通信した")
     }
 
     /// 🔴 2026-10-09: **ページの境目をまたぐ複数枚の投稿を、前半だけの束で出さない。**
@@ -413,23 +402,18 @@ final class HomeFeedPagingTests: XCTestCase {
 
     // MARK: - 全件のまま残す札（2026-10-03 判断）
 
-    /// おすすめ・絞り込みは全件（photos.json）の並び。ページだけで並べると全体の答えと食い違う
-    func testRecommendedAndFiltersKeepUsingTheSnapshot() async {
+    /// 絞り込みは全件（photos.json）の並び。ページだけで並べると全体の答えと食い違う
+    func testFiltersKeepUsingTheSnapshot() async {
         prepare()
         StubProtocol.respond(path: "/feed", status: 200, body: page(["p1"], next: "c1"))
         StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: snapshotBody)
         let model = makeModel()
         await model.load()
         XCTAssertEqual(shown(model), ["p1"])
-
-        model.select(feed: .recommended, viewerId: nil)
-        XCTAssertEqual(Set(shown(model)), ["s1", "s2"], "おすすめがページの並びになった")
-        XCTAssertFalse(model.hasMorePages)
-
-        model.select(feed: .latest, viewerId: nil)
-        XCTAssertEqual(shown(model), ["p1"])
+        XCTAssertTrue(model.hasMorePages)
         model.query = "s"
         XCTAssertFalse(model.usesPagedFeed, "検索中にページの並びを使った")
+        XCTAssertFalse(model.hasMorePages)
         model.query = ""
         XCTAssertEqual(shown(model), ["p1"])
     }
@@ -462,31 +446,29 @@ final class HomeFeedPagingTests: XCTestCase {
 
     // MARK: - レビュー（2026-10-03）
 
-    /// 🔴 **おすすめでは `/feed` を読まない・待たない。** `/feed` が遅くても、おすすめは
-    /// photos.json が着いた時点で出る。「新着」を選んだら初めて1ページ目を読む
-    func testRecommendedNeitherReadsNorWaitsForTheFeed() async {
+    /// 🔴 札 #595: **1ページ目が全件より先に着いても、1ページ目だけを出さない。** 1本の並びは全件（いいね順）が要るので、
+    /// 新着だけを先に出すと、全件が着いた瞬間に上が入れ替わる。全件の答えが出たら、読めたページと一緒に出す
+    func testFirstPageAloneIsNotShownBeforeTheSnapshot() async {
         prepare()
-        StubProtocol.respond(path: "/feed", status: 200, body: page(["p1"], next: nil))
+        StubProtocol.respond(path: "/feed", status: 200, body: page(["p1", "p2"], next: nil))
         StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: snapshotBody)
-        let gate = Gate(holds: 1)
-        let model = makeModel(gates: PathGates(["/feed": gate]), startsOnLatest: false)
-        XCTAssertEqual(model.feed, .recommended)
-
-        var finished = false
-        let loading = Task { await model.load(); finished = true }
-        let done = await waitUntil { finished }
-        XCTAssertTrue(done, "おすすめの読み込みが /feed を待っている")
-        XCTAssertEqual(Set(shown(model)), ["s1", "s2"])
-        let arrived = await gate.arrived
-        XCTAssertEqual(arrived, 0, "おすすめで /feed を読んだ")
-        await gate.open()
+        let restrictedGate = Gate(holds: 1)
+        let model = makeModel()
+        await lastGallery.setRestrictedLoader {
+            await restrictedGate.wait()
+            return []
+        }
+        let loading = Task { await model.load() }
+        await restrictedGate.untilWaiting(1)   // 全件の回が限定公開を待っている（全件の答えはまだ）
+        let pageRead = await waitUntil { self.feedCursors == [nil] }
+        XCTAssertTrue(pageRead, "前提: 1ページ目を読んでいない")
+        _ = await waitUntil(timeout: 0.2) { false }
+        XCTAssertEqual(model.state, .loading, "全件の前に1ページ目だけを出した（全件が着くと上が入れ替わる）")
+        XCTAssertFalse(model.snapshotWritten)
+        await restrictedGate.open()
         await loading.value
-
-        // 「新着」を選ぶと読む
-        model.select(feed: .latest, viewerId: nil)
-        await model.pagesTask?.value
-        XCTAssertEqual(shown(model), ["p1"], "「新着」を選んでも1ページ目を読まない")
-        XCTAssertEqual(feedCursors, [nil])
+        XCTAssertEqual(shown(model), ["p1", "p2"], "全件が着いても読めたページを出さない")
+        XCTAssertTrue(model.snapshotWritten)
     }
 
     /// 「新着」でも全件の結果はその場で書く（1ページ目を待たない）。1ページ目が着いたら差し替える
@@ -503,7 +485,6 @@ final class HomeFeedPagingTests: XCTestCase {
         XCTAssertTrue(wrote, "1ページ目を待つ間、全件の結果を書いていない: \(model.state)")
         await gate.open()
         await loading.value
-        await model.pagesTask?.value
         XCTAssertEqual(shown(model), ["p1", "p2"])
         // 札を選んだ回の読み込みと起動の読み込みは、同じ1ページ目を使い回す
         XCTAssertEqual(feedCursors, [nil], "1ページ目を2度読んだ")
@@ -524,19 +505,18 @@ final class HomeFeedPagingTests: XCTestCase {
         await gate.open()
         await first.value
         await second.value
-        await model.pagesTask?.value
         XCTAssertEqual(feedCursors, [nil], "重なった読み込みで /feed の1ページ目を2度読んだ")
         XCTAssertEqual(shown(model), ["p1", "p2"])
     }
 
-    /// 全件を読んでいる最中に「新着」を選んでも、`/feed/restricted` は全件の回の1回だけ。
-    /// 1ページ目は手元の控えで先に出し、全件が読み終えたら限定公開を重ね直す
+    /// 全件と1ページ目を同時に読んでも、`/feed/restricted` は全件の回の1回だけ。
+    /// 1ページ目は手元の控えで重ね、全件が読み終えたら限定公開を重ね直す
     func testFirstPageDuringASnapshotLoadDoesNotReadRestrictedAgain() async {
         prepare()
         StubProtocol.respond(path: "/feed", status: 200, body: page(["p1", "p2"], next: nil))
         StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: snapshotBody)
         let restrictedGate = Gate(holds: 1)
-        let model = makeModel(startsOnLatest: false)
+        let model = makeModel()
         let limited = decodePhoto(#"{"id":"r1","src":"https://x/r.jpg","createdAt":"2026-09-26T12:00:00Z","audience":"followers"}"#)
         await lastGallery.setRestrictedLoader {
             await restrictedGate.wait()
@@ -544,9 +524,6 @@ final class HomeFeedPagingTests: XCTestCase {
         }
         let loading = Task { await model.load() }
         await restrictedGate.untilWaiting(1)   // 全件の回が限定公開を読んでいる最中
-        model.select(feed: .latest, viewerId: nil)
-        await model.pagesTask?.value
-        XCTAssertEqual(shown(model), ["p1", "p2"], "限定公開を待つ間、1ページ目が出ない")
         await restrictedGate.open()
         await loading.value
         let reads = await restrictedGate.arrived
@@ -698,14 +675,13 @@ final class HomeFeedPagingTests: XCTestCase {
         XCTAssertEqual(shown(model), ["p1", "p2", "p3", "p4"])
     }
 
-    /// 時計を差し替えたホーム（1ページ目 p1・p2、続きあり）を作って読む
-    private func loadedWithClock(_ now: @escaping () -> Date) async -> GalleryViewModel {
+    /// 読み終えたホーム（1ページ目 p1・p2、続きあり）
+    private func loadedHome() async -> GalleryViewModel {
         prepare()
         StubProtocol.respond(path: "/feed?cursor=c1", status: 200, body: page(["p3", "p4"], next: nil))
         StubProtocol.respond(path: "/feed", status: 200, body: page(["p1", "p2"], next: "c1"))
         StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: snapshotBody)
         let model = makeModel()
-        model.clock = now
         await model.load()
         XCTAssertEqual(shown(model), ["p1", "p2"])
         return model
@@ -719,63 +695,60 @@ final class HomeFeedPagingTests: XCTestCase {
         StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: snapshotBody)
     }
 
-    /// 🔴 おすすめを見ている間に60秒過ぎたら、「新着」に戻ったとき1ページ目を読み直す。60秒以内は読まない
-    func testReturningToLatestRereadsAStaleFirstPage() async {
-        var now = Date(timeIntervalSince1970: 1_000_000)
-        let model = await loadedWithClock { now }
-        model.select(feed: .recommended, viewerId: nil)
+    /// 🔴 札 #595 の確かめ役: **強制でない読み直し**（限定公開の期限切れ・口の入れ替え・ブロックの後・詳細から戻った）は、
+    /// 時間が経っていても `/feed` の1ページ目を読み直さない。読み直すと4つめごとに混ぜる新着が入れ替わり、見ている並びがずれる。
+    /// 新しくするのは引き下げだけ（前は「新着」を選んでいる間、60秒過ぎたら読み直していた）
+    func testPlainReloadNeverRereadsTheFirstPage() async {
+        let model = await loadedHome()
         publishNewPhoto()
-
-        now += 30
-        model.select(feed: .latest, viewerId: nil)
-        await model.pagesTask?.value
-        XCTAssertEqual(feedCursors, [], "60秒以内なのに読み直した")
-        XCTAssertEqual(shown(model), ["p1", "p2"])
-
-        model.select(feed: .recommended, viewerId: nil)
-        now += 31
-        model.select(feed: .latest, viewerId: nil)
-        await model.pagesTask?.value
-        XCTAssertEqual(feedCursors, [nil], "古い1ページ目を読み直さない")
-        XCTAssertEqual(shown(model), ["p0", "p1"], "「新着」が古いまま")
-    }
-
-    /// 詳細から戻った・ブロックの後の読み直し（force なしの load）でも、古ければ読み直す
-    func testPlainReloadRereadsAStaleFirstPage() async {
-        var now = Date(timeIntervalSince1970: 1_000_000)
-        let model = await loadedWithClock { now }
-        publishNewPhoto()
-        now += 61
         await model.load()
-        XCTAssertEqual(feedCursors, [nil], "古い1ページ目のまま読み直しを終えた")
-        XCTAssertEqual(shown(model), ["p0", "p1"])
+        await model.load()
+        XCTAssertEqual(feedCursors, [], "強制でない読み直しで1ページ目を読み直した（混ぜる新着がずれる）")
+        XCTAssertEqual(shown(model), ["p1", "p2"])
+        XCTAssertTrue(model.hasMorePages, "読んだページの続きの札を捨てた")
+        // 時間で読み直す決まり（60秒で古いとする `firstPageIsStale`）を戻さない。読み直すのは引き下げとまだ試していない回だけ
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try? String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Gallery/GalleryViewModel.swift"),
+                                 encoding: .utf8)
+        XCTAssertTrue(source?.contains("let readsFirstPage = feedPages != nil && (force || pageSource == .untried)\n") == true,
+                      "強制でない読み直しでも1ページ目を読む条件が入っている")
+        XCTAssertFalse(source?.contains("firstPageIsStale") == true, "時間で1ページ目を読み直す決まりが戻っている")
     }
 
-    /// おすすめで引き下げたら、時間に関係なく次の「新着」で読み直す
-    func testRefreshOnAnotherFeedMarksTheFirstPageStale() async {
-        let now = Date(timeIntervalSince1970: 1_000_000)
-        let model = await loadedWithClock { now }
-        model.select(feed: .recommended, viewerId: nil)
+    /// 引き下げたら、時間に関係なく1ページ目から読み直す（新しく載った写真が混ざる）
+    func testRefreshRereadsTheFirstPageRightAway() async {
+        let model = await loadedHome()
         publishNewPhoto()
         await model.load(force: true)
-        XCTAssertEqual(feedCursors, [], "おすすめの引き下げで /feed を読んだ")
-        model.select(feed: .latest, viewerId: nil)
-        await model.pagesTask?.value
-        XCTAssertEqual(shown(model), ["p0", "p1"], "おすすめで引き下げた後も「新着」が古いまま")
+        XCTAssertEqual(feedCursors, [nil], "引き下げで /feed を読み直さない")
+        XCTAssertEqual(shown(model), ["p0", "p1"], "引き下げた後も新着が古いまま")
     }
 
-    /// 下まで送った一覧は、古くても1ページ目に縮めない（引き下げで新しくする）
-    func testDeepListIsNotShrunkWhenStale() async {
-        var now = Date(timeIntervalSince1970: 1_000_000)
-        let model = await loadedWithClock { now }
+    /// 🔴 札 #595: ページで出していても、引き下げたら全件も取り直す。全件は1本の並びのいいね順・フォロー中の人の新しい写真の元
+    /// （前は「新着」の間だけ全件の取り直しを省いていた・#448。1本の並びではいつもページを持つので、省くと全件が古いまま残る）
+    func testRefreshAlsoRereadsTheSnapshot() async {
+        let model = await loadedHome()
+        XCTAssertEqual(Set(model.recommendedPhotos.map(\.id)), ["s1", "s2"])
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/feed", status: 200, body: page(["p1", "p2"], next: "c1"))
+        StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: """
+        [{"id":"s3","src":"https://x/s3.jpg","createdAt":"2026-03-01T00:00:00Z"}]
+        """)
+        await model.load(force: true)
+        XCTAssertTrue(StubProtocol.allRequests.contains { $0.url?.path.hasSuffix("photos.json") == true },
+                      "引き下げで全件を取り直さない")
+        XCTAssertEqual(model.recommendedPhotos.map(\.id), ["s3"], "引き下げても、いいね順の元が古いまま")
+        XCTAssertEqual(shown(model), ["p1", "p2"])
+    }
+
+    /// 下まで送った一覧は、読み直しで1ページ目に縮めない（引き下げで新しくする）
+    func testDeepListIsNotShrunkByAPlainReload() async {
+        let model = await loadedHome()
         await model.loadNextPage()
         XCTAssertEqual(shown(model), ["p1", "p2", "p3", "p4"])
         publishNewPhoto()
-        now += 120
         await model.load()
-        model.select(feed: .recommended, viewerId: nil)
-        model.select(feed: .latest, viewerId: nil)
-        await model.pagesTask?.value
         XCTAssertEqual(feedCursors, [], "下まで送った一覧を読み直して縮めた")
         XCTAssertEqual(shown(model), ["p1", "p2", "p3", "p4"])
     }
