@@ -3388,6 +3388,21 @@ final class ScreenshotTests: XCTestCase {
         note.name = "66-撮影スポットを払う（札の出典の寸法）"
         note.lifetime = .keepAlways
         add(note)
+        // 2026-11-14 判断（`TopCardCredit`）: 札の背（116）と1行のまま、出典の頭（「写真: 作者」の頭）を必ず見せる。
+        // 直す前（Mac run 1274）は「福岡県　久留米市　写…rio / CC BY-SA 4.0」（幅 222.0 に 307.0 要る字を真ん中で切った）
+        guard probe.exists else { return XCTFail("札の寸法の要素（home.topCard.probe）が無い") }
+        let parts = value.components(separatedBy: " | ")
+        let credits = parts.filter { $0.hasPrefix("credit ") }
+        XCTAssertFalse(credits.isEmpty, "写真のある札に出典の行（creditLine）が無い: \(value)")
+        for credit in credits {
+            XCTAssertTrue(credit.contains("headVisible=yes"), "出典の頭が切れている: \(credit)")
+        }
+        XCTAssertFalse(parts.contains { $0.hasPrefix("detail ") && $0.contains("写真: ") },
+                       "出典を1本の字（真ん中で切る小さい行）で出している: \(value)")
+        for card in parts where card.hasPrefix("card ") {
+            let height = card.components(separatedBy: "height=").last.flatMap { Double($0) } ?? 0
+            XCTAssertEqual(height, 116, accuracy: 0.5, "札の背が 116 から変わった: \(card)")
+        }
     }
 
     /// **旅行プランの日程**（自動保存・運ぶ・移動の見込み・区間のシート）。

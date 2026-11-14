@@ -564,8 +564,8 @@ struct SearchView: View {
                             line: quizAnswered
                                 ? L("答えました、明日また新しい写真", "Answered, a new photo tomorrow")
                                 : L("4つの中から撮影地を当てる", "Guess the spot from four choices"),
-                            // 写真を出すなら作者とライセンスも出す（ホームの札と同じ）
-                            detail: quiz.photo.credit,
+                            // 写真を出すなら作者とライセンスも出す（ホームの札と同じ・出典の頭は切らない `TopCardCredit`）
+                            detail: nil, credit: TopCardCredit(photo: quiz.photo),
                             backdrop: nil, backdropURL: quiz.photo.url)
             }
             .buttonStyle(.plain)

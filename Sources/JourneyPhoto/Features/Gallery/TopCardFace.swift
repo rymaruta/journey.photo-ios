@@ -9,6 +9,8 @@ struct TopCardFace: View {
     let title: String
     let line: String
     let detail: String?
+    /// 写真の出典の行（撮影スポット・今日の一問の写真）。あれば `detail` の代わりに出す（`TopCardCredit`・2026-11-14 判断）
+    var credit: TopCardCredit? = nil
     let backdrop: Photo?
     var backdropURL: URL? = nil
     /// ①現像前の旅の札（2026-11-12 札 #543）: 左の写真の代わりに置く、色を抜いたフィルムの3コマ（端末の写真の id）。
@@ -50,16 +52,16 @@ struct TopCardFace: View {
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text2)
                         .lineLimit(HomeTopCardView.lineLimit)
-                    if let detail {
-                        // **1行。** 写真の作者名には100文字を超える機械文がある（Commons の
-                        // 「No machine-readable author provided…」）。並びは背を揃えるので、
-                        // 1枚が高くなると全部の札が高くなり、下の写真の一覧が押し下がる。
-                        // 切るのは真ん中——末尾のライセンス名を残す
+                    if let credit {
+                        creditLine(credit)
+                    } else if let detail {
+                        // **1行。** 並びは背を揃えるので、1枚が高くなると全部の札が高くなり、
+                        // 下の写真の一覧が押し下がる。写真の出典はここを通らない（上の `creditLine`・2026-11-14）
                         Text(detail)
                             .font(JPFont.caption)
                             .foregroundStyle(WebTheme.text3)
                             .lineLimit(HomeTopCardView.lineLimit)
-                            // 出典は真ん中で切る（末尾のライセンス名を残す）。当日モードは末尾で切る
+                            // 既定は真ん中で切る。当日モードは末尾で切る
                             // （名前が長くても、先頭の「明日 · 名前 · ゴールデンアワー」を残す）
                             .truncationMode(detailTruncation)
                             // UI テストのときだけ: 渡された幅と要る幅を値に出す（`TopCardProbe`・2026-11-14）
@@ -88,6 +90,33 @@ struct TopCardFace: View {
         .contentShape(RoundedRectangle(cornerRadius: JPRadius.l))
         .accessibilityElement(children: .combine)
         .padding(.horizontal, inCarousel ? 0 : JPSpace.gutter)
+    }
+
+    /// 写真の出典の1行（**2026-11-14 判断**・`TopCardCredit`）。札の背も行の数も変えず、出典の頭を必ず見せる。
+    /// 入る最初の形を出す: 地域＋出典 → 県＋出典 → 出典だけ → 作者の後ろだけを切る（ライセンス名は先に幅を取って残す）。
+    /// 前は1本の字を真ん中で切り、ちょうど「写真: 作者」が消えていた。
+    /// 読み上げは形にかかわらず全文（地域と出典）。全文は札を押した先（`SpotImageCredit`）にリンクつきで出ている
+    private func creditLine(_ credit: TopCardCredit) -> some View {
+        ViewThatFits(in: .horizontal) {
+            ForEach(credit.wholeLines, id: \.self) { line in
+                Text(line)
+                    .lineLimit(HomeTopCardView.lineLimit)
+            }
+            HStack(spacing: 0) {
+                Text(credit.author)
+                    .lineLimit(HomeTopCardView.lineLimit)
+                    .truncationMode(.tail)
+                Text(credit.licenseTail)
+                    .lineLimit(HomeTopCardView.lineLimit)
+                    .layoutPriority(1)
+            }
+        }
+        .font(JPFont.caption)
+        .foregroundStyle(WebTheme.text3)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(credit.spoken)
+        // UI テストのときだけ: 行の幅と各形の要る幅・残った頭を値に出す（`TopCardProbe`・2026-11-14）
+        .modifier(TopCardCreditProbe(title: title, credit: credit))
     }
 
     /// 札の左の写真。**写真の無い札（旅行プラン・旅の最中）は置かない**——空の枠を作らない
