@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 /// **利用者の大事な流れを、画面を押して確かめる**（2026-10-22）。
 ///
@@ -296,6 +297,51 @@ final class CriticalFlowTests: XCTestCase {
 
         XCTAssertTrue(nameLine.waitForExistence(timeout: 30), "ログインしてもマイページに戻らない")
         XCTAssertTrue(form.waitForNonExistence(timeout: 10), "ログインしたのにログイン画面が残っている")
+    }
+
+    // MARK: - 6. 縮んだ下の札から投稿
+
+    /// ホームで下へ送ると、iOS 26 では下の札が縮む（`TabBarMinimize`・2026-11-14 人間工学の点検 7）。
+    /// 縮んだ後も「投稿」を 1 回押して投稿の 2 択が出るか（投稿の入口が遠くならないか）を確かめる。
+    /// 札の姿（各ボタンの名前・枠・押せるか）を送る前と後で必ず残す（推定で判断しないため）
+    func testPostReachableAfterTabBarMinimizes() throws {
+        let major = Int(UIDevice.current.systemVersion.split(separator: ".").first ?? "0") ?? 0
+        guard major >= 26 else { throw XCTSkip("下の札を縮めるのは iOS 26 から（いまは \(UIDevice.current.systemVersion)）") }
+        let app = launch()
+        tab(app, 0)
+        let photo = app.buttons["feed.photo"].firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 30), "ホームに写真が出ない")
+        let bar = app.tabBars.firstMatch
+        func state(_ when: String) -> String {
+            let buttons = bar.buttons.allElementsBoundByIndex.map {
+                "\($0.label)@\(Int($0.frame.minX)),\(Int($0.frame.minY)),\(Int($0.frame.width))x\(Int($0.frame.height)) hit=\($0.isHittable)"
+            }
+            let line = "[tabMinimize] \(when) bar=\(bar.exists ? "\(bar.frame)" : "none") buttons=\(buttons)"
+            print(line)
+            let note = XCTAttachment(string: line)
+            note.name = "tabMinimize-\(when)"
+            note.lifetime = .keepAlways
+            add(note)
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = "97-下の札（ホーム・\(when)）"
+            shot.lifetime = .keepAlways
+            add(shot)
+            return line
+        }
+        _ = state("送る前")
+        // 下へ送る（勢いの付かない短い引きを 4 回）
+        for _ in 0..<4 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)))
+            Thread.sleep(forTimeInterval: 1)
+        }
+        let after = state("下へ送った後")
+        let post = bar.buttons["投稿"]
+        XCTAssertTrue(post.exists && post.isHittable, "縮んだ下の札から「投稿」を押せない（\(after)）")
+        guard post.exists, post.isHittable else { return }
+        post.tap()
+        XCTAssertTrue(app.buttons["post.choice.photo"].firstMatch.waitForExistence(timeout: 10),
+                      "縮んだ下の札の「投稿」を 1 回押しても投稿の 2 択が出ない（\(after)）")
     }
 
     // MARK: - 5. キャンピングカー

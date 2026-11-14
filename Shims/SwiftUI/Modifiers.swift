@@ -571,6 +571,14 @@ public struct TabViewStyleShim {
     public static let automatic = TabViewStyleShim()
 }
 
+/// 下の札を送りで縮めるか（本物と同じ名前・iOS 26。`TabBarMinimize`・2026-11-14）
+public struct TabBarMinimizeBehavior {
+    public static let automatic = TabBarMinimizeBehavior()
+    public static let onScrollDown = TabBarMinimizeBehavior()
+    public static let onScrollUp = TabBarMinimizeBehavior()
+    public static let never = TabBarMinimizeBehavior()
+}
+
 public struct IndexDisplayModeShim {
     public static let never = IndexDisplayModeShim()
     public static let always = IndexDisplayModeShim()
@@ -616,6 +624,8 @@ extension View {
     /// 動きを中の修飾だけに閉じ込める（iOS 17 の `animation(_:body:)`。本物は `PlaceholderContentView<Self>` を渡す）
     public func animation<V: View>(_ animation: Animation?, @ViewBuilder body: (Self) -> V) -> V { body(self) }
     public func tabViewStyle(_ style: TabViewStyleShim) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
+    /// 下の札を送りで縮める（本物は iOS 26 から。呼ぶ側は `if #available(iOS 26, *)` で囲む）
+    public func tabBarMinimizeBehavior(_ behavior: TabBarMinimizeBehavior) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
     public func statusBarHidden(_ hidden: Bool = true) -> ModifiedContent<Self, Mod.Style> { ModifiedContent() }
 }
 
