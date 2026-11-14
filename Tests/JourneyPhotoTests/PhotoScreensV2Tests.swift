@@ -188,9 +188,9 @@ final class PhotoScreensV2Tests: XCTestCase {
         XCTAssertGreaterThanOrEqual(JPHeight.field, WebTheme.minTapTarget)
         XCTAssertFalse(sheet.contains("JPRadioRow("), "通報の理由が共通の右の白い丸のまま")
         XCTAssertTrue(sheet.contains(".jpPillButton(JPPillStyle.main(onPhoto: false))"))
-        // 閉じるはガラスの丸 44
+        // 閉じるは見出しの左のシートの「閉じる」（ガラス・当たり 44。2026-11-13 owner 承認・#187。前は右のガラスの丸の ×）
         let header = member("private var header", in: sheet)
-        XCTAssertTrue(header.contains(".frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)"))
+        XCTAssertTrue(header.contains("SheetCloseButton(onContent: true)"))
         // 通報する写真の札は写真の詳細から渡す
         let detail = try source("Features/PhotoDetail/PhotoDetailView.swift")
         XCTAssertTrue(detail.contains("ReportSheet(photoId: current.id, ownerId: ownerId, subject: reportSubject)"))

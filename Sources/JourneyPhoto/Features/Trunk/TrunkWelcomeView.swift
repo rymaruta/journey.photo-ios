@@ -61,18 +61,11 @@ struct TrunkWelcomeView: View {
         ZStack(alignment: .top) {
             TrunkStyle.stageBackground(centerY: 0.32)
             VStack(spacing: 0) {
+                // 閉じるは左上のシートの「閉じる」（2026-11-13 owner 承認・#187。前は右上の白の字だけ）
                 HStack {
+                    SheetCloseButton(onContent: true)
+                        .accessibilityIdentifier("\(copy.id).close")
                     Spacer()
-                    Button { dismiss() } label: {
-                        Text(Labels.Common.close)
-                            .font(.body)
-                            .foregroundStyle(WebTheme.text)
-                            .padding(.horizontal, 10)
-                            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("\(copy.id).close")
                 }
                 .padding(.horizontal, 8)
                 .frame(height: 56)

@@ -428,9 +428,11 @@ struct HighlightEditorView: View {
             .webScreen()
             .navigationTitle(L("表紙", "Cover"))
             .navigationBarTitleDisplayMode(.inline)
+            // 2026-11-13 判断（#187）: 表紙は押した時点で決まる（上の `coverId = id`。シートに戻す処理は無い）ので、
+            // 右上の「完了」はただ閉じるだけだった。閉じるは左上のシートの「閉じる」にそろえる（右上は決める操作だけ）
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(L("完了", "Done")) { showCoverPicker = false }
+                ToolbarItem(placement: .cancellationAction) {
+                    SheetCloseButton()
                         .accessibilityIdentifier("highlightEditor.coverDone")
                 }
             }

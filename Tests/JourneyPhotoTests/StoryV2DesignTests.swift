@@ -214,7 +214,8 @@ final class StoryV2DesignTests: XCTestCase {
         XCTAssertTrue(sheet.contains(".background(WebTheme.card)"))
         XCTAssertTrue(sheet.contains("JPFont.cardTitle"), "見出しが明朝 22 でない")
         XCTAssertTrue(sheet.contains("UnevenRoundedRectangle(topLeadingRadius: 4"), "吹き出しの形でない")
-        XCTAssertTrue(sheet.contains("ToolbarItem(placement: .topBarTrailing) { SheetCloseButton() }"))
+        // 閉じるは左上（2026-11-13 owner 承認・#187。前は右上）
+        XCTAssertTrue(sheet.contains("ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }"))
         let viewer = try source("Features/Stories/StoryViewerView.swift")
         XCTAssertTrue(viewer.contains("StoryRepliesSheet(items: replies.textReplies, loaded: repliesLoaded"))
         for opaque in ["WebTheme.text2", "WebTheme.text3", "WebTheme.card"] {

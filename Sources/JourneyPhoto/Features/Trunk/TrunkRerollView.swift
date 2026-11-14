@@ -50,18 +50,11 @@ struct TrunkRerollView: View {
             Text(L("図柄を作り直す", "Redo the design"))
                 .font(.headline)
                 .foregroundStyle(WebTheme.text)
+            // 閉じるは左上のシートの「閉じる」（2026-11-13 owner 承認・#187。前は右上の白の字だけ）
             HStack {
+                SheetCloseButton(onContent: true)
+                    .accessibilityIdentifier("trunk.reroll.close")
                 Spacer()
-                Button { dismiss() } label: {
-                    Text(Labels.Common.close)
-                        .font(.body)
-                        .foregroundStyle(WebTheme.text)
-                        .padding(.horizontal, 10)
-                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("trunk.reroll.close")
             }
             .padding(.horizontal, 8)
         }

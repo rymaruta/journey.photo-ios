@@ -20,7 +20,6 @@ struct NearbyPhotosSheet: View {
     /// 読むのに失敗した回の「もう一度試す」（地図が読み直す）。nil なら出さない（読み込み中）
     var onRetry: (() -> Void)? = nil
 
-    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var hidden: ModerationStore
     @State private var radius = NearbyPhotos.defaultRadius
     /// 🔴 シートの中の詳細でブロック／通報して戻ったら落とす。**戻ったとき
@@ -67,15 +66,10 @@ struct NearbyPhotosSheet: View {
             .navigationTitle(L("近くの写真", "Photos near me"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    // 閉じるは白の字（板の3型・系統の青にしない）
-                    Button { dismiss() } label: {
-                        Text(Labels.Common.close)
-                            .font(.body)
-                            .foregroundStyle(WebTheme.foreground)
-                            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
-                    }
-                    .accessibilityIdentifier("nearby.close")
+                // 閉じるは左上のシートの「閉じる」（2026-11-13 owner 承認・#187。前は右上の白の字）
+                ToolbarItem(placement: .cancellationAction) {
+                    SheetCloseButton()
+                        .accessibilityIdentifier("nearby.close")
                 }
             }
         }

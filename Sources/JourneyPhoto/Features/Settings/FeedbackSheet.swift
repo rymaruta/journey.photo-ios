@@ -76,26 +76,18 @@ struct FeedbackSheet: View {
     }
 
     private var header: some View {
-        HStack {
+        // 閉じるは左上のシートの「閉じる」（2026-11-13 owner 承認・#187。前は右上のガラスの ×）
+        HStack(spacing: JPSpace.s) {
+            SheetCloseButton(onContent: true)
+                .disabled(isSending)
             Text(L("意見を送る", "Send feedback"))
                 .font(JPFont.screenTitle)
                 .foregroundStyle(WebTheme.text)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(WebTheme.foreground)
-                    .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                    .jpGlass(in: Circle())
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(isSending)
-            .accessibilityLabel(Labels.Common.close)
         }
-        .padding(.leading, JPSpace.l)
-        .padding(.trailing, JPSpace.s)
+        .padding(.leading, JPSpace.s)
+        .padding(.trailing, JPSpace.l)
         .padding(.top, JPSpace.s)
     }
 

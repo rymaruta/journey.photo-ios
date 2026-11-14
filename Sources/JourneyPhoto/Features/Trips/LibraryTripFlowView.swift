@@ -58,15 +58,8 @@ struct LibraryTripFlowView: View {
                 if phase == .active { model.refreshStatus() }
             }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundStyle(WebTheme.foreground)
-                            .webTappable()
-                    }
-                    .accessibilityLabel(Labels.Common.close)
-                }
+                // 閉じるはほかのシートと同じ左上の「閉じる」（2026-11-13 owner 承認・#187。前は × の印）
+                ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
             }
         }
     }
