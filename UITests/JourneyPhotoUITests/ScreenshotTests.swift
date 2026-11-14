@@ -3827,6 +3827,48 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "66e-旅行プラン（仲間を誘う）")
     }
 
+    /// 旅行プランの会話の1通を通報する（2026-11-14・札 #597・審査ガイドライン 1.2）。見本（`-JPTripShareFixture`）の
+    /// 「あお」の通を長押しすると「通報」「ブロック」が出て、「通報」で DM と同じ通報のシート（どの通か・理由・送られる範囲）が開く。
+    /// 自分の通（「いいね、朝いちで行こう」）の長押しには通報が出ない
+    func testCapturesTripChatReport() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripShareFixture", "YES"])
+        guard openTripsRow(app, "trips.plans") else { XCTFail("旅行プランの一覧が開かない"); return }
+        let plan = app.descendants(matching: .any).matching(identifier: "trips.plan")
+            .matching(NSPredicate(format: "label CONTAINS %@", "金沢")).firstMatch
+        XCTAssertTrue(plan.waitForExistence(timeout: 10), "見本の金沢のプランが無い")
+        guard plan.exists else { return }
+        plan.tap()
+        let chatTab = app.buttons["tripShare.tab.chat"].firstMatch
+        XCTAssertTrue(chatTab.waitForExistence(timeout: 15), "「会話」の切り替えが無い")
+        guard chatTab.exists else { return }
+        chatTab.tap()
+        // 自分の通には通報を出さない
+        let mine = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "朝いちで行こう")).firstMatch
+        XCTAssertTrue(mine.waitForExistence(timeout: 10), "自分の通が出ない")
+        if mine.exists {
+            mine.press(forDuration: 1.0)
+            Thread.sleep(forTimeInterval: 1)
+            XCTAssertFalse(app.buttons["通報"].exists, "自分の通の長押しに「通報」が出ている")
+            if app.buttons["ブロック"].exists { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap() }
+        }
+        let theirs = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "ひがし茶屋街、人が少なくて")).firstMatch
+        XCTAssertTrue(theirs.waitForExistence(timeout: 10), "あおの通が出ない")
+        guard theirs.exists else { return }
+        theirs.press(forDuration: 1.0)
+        let report = app.buttons["通報"].firstMatch
+        XCTAssertTrue(report.waitForExistence(timeout: 5), "あおの通の長押しに「通報」が出ない")
+        XCTAssertTrue(app.buttons["ブロック"].firstMatch.exists, "あおの通の長押しに「ブロック」が出ない")
+        guard report.exists else { return }
+        shoot(app, "66f-旅行プランの会話（1通の長押し・通報とブロック）")
+        report.tap()
+        let quoted = app.descendants(matching: .any)["report.tripMessage"].firstMatch
+        XCTAssertTrue(quoted.waitForExistence(timeout: 10), "通報のシートに、どの通かが出ない")
+        XCTAssertTrue(app.descendants(matching: .any)["report.dmScope"].firstMatch.exists, "送られる範囲の説明が無い")
+        guard quoted.exists else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "66g-旅行プランの会話の通報")
+    }
+
     /// **送れていないとき**（圏外・断られた）。直しは画面に残り、「まだ送れていません」と「もう一度試す」が出る
     func testCapturesTripPlanDaysUnsent() {
         for (extra, name) in [(["-JPTripPlanFixtureOffline", "YES"], "65d-旅行プランの日程（圏外・まだ送れていません）"),
