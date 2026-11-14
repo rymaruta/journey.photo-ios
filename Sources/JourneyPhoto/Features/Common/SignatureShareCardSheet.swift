@@ -208,7 +208,8 @@ extension SignatureShareCardSheet {
 
     /// 下: 「ストーリーに載せる」「リンクをコピー」（線の副ボタン 44 を2つ並べる）と「閉じる」（文字のボタン）。
     /// 確かめは出さない（閉じれば何も起きない・CLAUDE.md「聞くのは最小に」）。
-    /// 2026-11-14: 大きい文字で2つが横に収まらなければ縦に積む（板 06「大きい文字」・字を「…」で切らない）
+    /// 2026-11-14: 大きい文字で2つが横に収まらなければ縦に積む（板 06「大きい文字」・字を「…」で切らない）。
+    /// 縦に積んでも1行に収まらない大きさ（AX5 の「ストーリーに載せる」・Mac run 1273 の 120e2）は字を少し縮める
     func postedActions(_ posted: Posted) -> some View {
         VStack(spacing: 4) {
             ViewThatFits(in: .horizontal) {
@@ -241,6 +242,7 @@ extension SignatureShareCardSheet {
                         .accessibilityHidden(true)
                 }
             }
+            .minimumScaleFactor(0.7)
             .jpOutlineButton(fullWidth: true)
         }
         .buttonStyle(.plain)
@@ -255,6 +257,7 @@ extension SignatureShareCardSheet {
                 toasts.show(L("リンクをコピーしました", "Link copied"))
             } label: {
                 Text(L("リンクをコピー", "Copy link"))
+                    .minimumScaleFactor(0.7)
                     .jpOutlineButton(fullWidth: true)
             }
             .buttonStyle(.plain)
