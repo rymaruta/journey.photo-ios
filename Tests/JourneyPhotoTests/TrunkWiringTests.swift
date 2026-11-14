@@ -343,6 +343,17 @@ final class TrunkWiringTests: XCTestCase {
                       "TrunkFigure がよれを箱に渡していない")
     }
 
+    /// 札 #605: よれの折れ目は紙の上・刷りの字と絵の下に描き、濃さは `TrunkPlacement` の決まりから取る
+    /// （前は字と絵の上に白 0.40・黒 0.24 の線を重ね、「月崎」の切符で描画が壊れたように見えた）
+    func testCreasesSitUnderInkAndUseFaintAlpha() throws {
+        let label = try source("Features/Trunk/TrunkLabelView.swift")
+        let crease = try XCTUnwrap(label.range(of: "if wrinkle > 0 { creases.clipShape(outline(0)) }"), "折れ目の層が無い")
+        let ink = try XCTUnwrap(label.range(of: "\n            content\n"), "刷りの層が無い")
+        XCTAssertLessThan(crease.lowerBound, ink.lowerBound, "折れ目が刷りの字と絵の上に乗っている")
+        XCTAssertTrue(label.contains("TrunkPlacement.creaseAlpha(wrinkle: wrinkle)"), "折れ目の濃さが決まりから来ていない")
+        XCTAssertFalse(label.contains("0.28 + 0.12 * wrinkle"), "前の濃い折れ目が残っている")
+    }
+
     /// ふたを開ける（2026-10-18・板 TrunkOpen・InsideHold・InsideEmpty）: 入口・前開き・本物の中身・出口・触覚
     func testOpenLidIsWired() throws {
         let main = try source("Features/Trunk/TrunkView.swift")

@@ -53,9 +53,10 @@ struct TrunkLabelView: View {
             outline(l.border2).fill(Color(trunk: fg).opacity(0.6))
             paper.clipShape(outline(l.innerPaper))
             wear.clipShape(outline(0))
+            // よれの折れ目は紙の上・刷りの字と絵の下（札 #605: 字と絵の上を横切る線は「描画が壊れている」に見えた）
+            if wrinkle > 0 { creases.clipShape(outline(0)) }
             content
             if l.showsCurl { curl }
-            if wrinkle > 0 { creases.clipShape(outline(0)) }
         }
         .frame(width: w, height: h)
         // よれ: 貼り直した紙は少しだけ縮んで浮く（2026-10-17 次の版）
@@ -96,22 +97,36 @@ struct TrunkLabelView: View {
         }
     }
 
-    /// 貼り直したよれの折れ目（明るい線と、その横の影の線）
+    /// 貼り直したよれの折れ目（明るい筋と、その横の陰の筋）。札 #605（2026-11-14）: 硬い 1pt の線をやめ、
+    /// 少しぼかした筋を線に沿って端へ消えるように引く。濃さは `TrunkPlacement.creaseAlpha`・`creaseFade`
     private var creases: some View {
         let lines = TrunkPlacement.creases(seed: wrinkleSeed, wrinkle: wrinkle)
+        let alpha = TrunkPlacement.creaseAlpha(wrinkle: wrinkle)
+        func fade(_ color: Color, _ a: Double) -> Gradient {
+            Gradient(stops: TrunkPlacement.creaseFade.map { Gradient.Stop(color: color.opacity(a * $0.amount), location: $0.location) })
+        }
         return Canvas { ctx, _ in
             for line in lines {
+                let start = CGPoint(x: line.x0 * w, y: line.y0 * h)
+                let end = CGPoint(x: line.x1 * w, y: line.y1 * h)
+                // 陰の筋は線の向きに直交して 1pt ずらす（横にずらすと、斜めの線で筋の間が細る）
+                let dx = end.x - start.x, dy = end.y - start.y
+                let length = max(0.001, (dx * dx + dy * dy).squareRoot())
+                let nx = dy / length, ny = -dx / length
                 var light = Path()
-                light.move(to: CGPoint(x: line.x0 * w, y: line.y0 * h))
-                light.addLine(to: CGPoint(x: line.x1 * w, y: line.y1 * h))
+                light.move(to: start)
+                light.addLine(to: end)
                 var dark = Path()
-                dark.move(to: CGPoint(x: line.x0 * w + 1, y: line.y0 * h))
-                dark.addLine(to: CGPoint(x: line.x1 * w + 1, y: line.y1 * h))
-                ctx.stroke(light, with: .color(Color.white.opacity(0.28 + 0.12 * wrinkle)), lineWidth: 1)
-                ctx.stroke(dark, with: .color(Color.black.opacity(0.14 + 0.1 * wrinkle)), lineWidth: 1)
+                dark.move(to: CGPoint(x: start.x + nx, y: start.y + ny))
+                dark.addLine(to: CGPoint(x: end.x + nx, y: end.y + ny))
+                ctx.stroke(light, with: .linearGradient(fade(.white, alpha.light), startPoint: start, endPoint: end), lineWidth: 1.2)
+                ctx.stroke(dark, with: .linearGradient(fade(.black, alpha.dark),
+                                                       startPoint: CGPoint(x: start.x + nx, y: start.y + ny),
+                                                       endPoint: CGPoint(x: end.x + nx, y: end.y + ny)), lineWidth: 1.2)
             }
         }
         .frame(width: w, height: h)
+        .blur(radius: 0.5)
         .allowsHitTesting(false)
     }
 
