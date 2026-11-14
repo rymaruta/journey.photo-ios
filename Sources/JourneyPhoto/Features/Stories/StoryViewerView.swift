@@ -2652,3 +2652,72 @@ struct StoryViewerView: View {
         }
     }
 }
+
+// MARK: - 札 #596 の測り（直す前の数を取るための枝だけ・main には入れない）
+
+enum ViewTypeDepth {
+    static func depth(of name: String) -> Int {
+        var current = 0
+        var deepest = 0
+        var previous: Character = " "
+        for ch in name {
+            if ch == "<" || ch == "(" {
+                current += 1
+                deepest = max(deepest, current)
+            } else if (ch == ">" && previous != "-") || ch == ")" {
+                current -= 1
+            }
+            previous = ch
+        }
+        return deepest
+    }
+
+    static func bodyTypeName<V: View>(_ view: V.Type) -> String {
+        String(reflecting: V.Body.self)
+    }
+
+    static func name<R>(_ f: () -> R) -> String { String(reflecting: R.self) }
+    static func name<A, R>(_ f: (A) -> R) -> String { String(reflecting: R.self) }
+    static func name<A, B, R>(_ f: (A, B) -> R) -> String { String(reflecting: R.self) }
+    static func name<A, B, C, D, R>(_ f: (A, B, C, D) -> R) -> String { String(reflecting: R.self) }
+}
+
+extension StoryViewerView {
+    static func typeSegments() -> [(name: String, type: String)] {
+        let v = StoryViewerView(stories: [], startIndex: 0, viewerId: nil)
+        typealias D = ViewTypeDepth
+        return [
+            ("body", D.bodyTypeName(StoryViewerView.self)),
+            ("content", D.name(v.content(for:))),
+            ("photoArea", D.name(v.photoArea(for:))),
+            ("tapZones", D.name { v.tapZones }),
+            ("captionBlock", D.name(v.captionBlock(for:))),
+            ("sharedPhotoButton", D.name(v.sharedPhotoButton(photoId:))),
+            ("mediaRetryButton", D.name { v.mediaRetryButton }),
+            ("progressBar", D.name(v.progressBar(for:))),
+            ("header", D.name(v.header(for:))),
+            ("highlightLabel", D.name(v.highlightLabel(_:story:))),
+            ("authorLabel", D.name(v.authorLabel(for:))),
+            ("highlightFooter", D.name(v.highlightFooter(for:highlight:))),
+            ("pausedPill", D.name { v.pausedPill }),
+            ("menuSheet", D.name(v.menuSheet(for:))),
+            ("menuHeader", D.name(v.menuHeader(for:))),
+            ("menuRow", D.name(v.menuRow(symbol:title:danger:action:))),
+            ("deleteConfirm", D.name(v.deleteConfirm(for:))),
+            ("confirmButton", D.name(v.confirmButton(_:color:weight:action:))),
+            ("footer", D.name(v.footer(for:))),
+            ("insightsButton", D.name { v.insightsButton }),
+            ("replyButton", D.name(v.replyButton(for:))),
+            ("moreButton", D.name { v.moreButton }),
+            ("replyReactionRow", D.name(v.replyReactionRow(for:))),
+            ("reactionPicker", D.name(v.reactionPicker(for:))),
+            ("repliesSheet", D.name { v.repliesSheet }),
+            ("songRow", D.name(v.songRow(for:))),
+            ("photoMeta", D.name(v.photoMeta(symbol:text:))),
+            ("segment", D.name(v.segment(fill:isCurrent:))),
+            ("ownCount", D.name(v.ownCount(_:_:))),
+            ("ownCircle", D.name(v.ownCircle(symbol:))),
+            ("viewerFaces", D.name { v.viewerFaces }),
+        ]
+    }
+}
