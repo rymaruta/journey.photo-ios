@@ -138,19 +138,22 @@ enum SignatureShareCardRenderer {
             // 上の帯。字の大文字の高さの中心を、マークの中心にそろえる（2026-11-04 owner）
             let markY = L.headerMarkY
             let markMidY = markY + L.headerMarkSize / 2
-            if let mark = UIImage(named: "BrandMark")?.withRenderingMode(.alwaysTemplate) {
-                mark.withTintColor(.white).draw(in: CGRect(x: L.contentLeft, y: markY,
-                                                           width: L.headerMarkSize, height: L.headerMarkSize))
+            let markRect = CGRect(x: L.contentLeft, y: markY, width: L.headerMarkSize, height: L.headerMarkSize)
+            if ShareCardProbe.note(.logo, "BrandMark", rect: markRect),
+               let mark = UIImage(named: "BrandMark")?.withRenderingMode(.alwaysTemplate) {
+                mark.withTintColor(.white).draw(in: markRect)
             }
             draw("Journey Photo",
                  at: CGPoint(x: L.contentLeft + L.headerMarkSize + 17, y: wordmarkTop(markMidY: markMidY)),
                  maxWidth: 365, size: 39, color: .white, serif: true)
             let lineColor = brass.withAlphaComponent(L.lineAlpha).cgColor
-            cg.setStrokeColor(lineColor)
-            cg.setLineWidth(L.lineWidth)
-            cg.move(to: CGPoint(x: L.width / 2, y: L.headerCenter - 29))
-            cg.addLine(to: CGPoint(x: L.width / 2, y: L.headerCenter + 28))
-            cg.strokePath()
+            if ShareCardProbe.drawsContent {
+                cg.setStrokeColor(lineColor)
+                cg.setLineWidth(L.lineWidth)
+                cg.move(to: CGPoint(x: L.width / 2, y: L.headerCenter - 29))
+                cg.addLine(to: CGPoint(x: L.width / 2, y: L.headerCenter + 28))
+                cg.strokePath()
+            }
             // 一文と Web の住所の2行の塊は、帯の縦の中心にそろえる。右端は本文の右端
             drawTaglineAndAddress(centerY: L.headerCenter, right: L.contentRight, taglineSize: 25,
                                   addressColor: brass)
@@ -160,7 +163,10 @@ enum SignatureShareCardRenderer {
             let avatarSize = L.avatarSize
             // アバター未取得の場合はブランド色の円形モノグラムで代替。
             let avatarRect = CGRect(x: L.contentLeft, y: rowTop, width: avatarSize, height: avatarSize)
-            if let avatarData, let avatar = UIImage(data: avatarData) {
+            let drawsAvatar = ShareCardProbe.note(.avatar, rect: avatarRect, color: brass)
+            if !drawsAvatar {
+                // 点検の「背景だけ」の絵: アバターを描かない
+            } else if let avatarData, let avatar = UIImage(data: avatarData) {
                 cg.saveGState()
                 cg.addEllipse(in: avatarRect)
                 cg.clip()
@@ -175,9 +181,11 @@ enum SignatureShareCardRenderer {
                 cg.setFillColor(brass.withAlphaComponent(0.15).cgColor)
                 cg.fillEllipse(in: avatarRect)
             }
-            cg.setStrokeColor(brass.cgColor)
-            cg.setLineWidth(2)
-            cg.strokeEllipse(in: avatarRect)
+            if drawsAvatar {
+                cg.setStrokeColor(brass.cgColor)
+                cg.setLineWidth(2)
+                cg.strokeEllipse(in: avatarRect)
+            }
             let initial = String(credit.name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1))
             if avatarData.flatMap(UIImage.init(data:)) == nil {
                 let initialFont = UIFont.systemFont(ofSize: 34)
@@ -234,11 +242,13 @@ enum SignatureShareCardRenderer {
                      maxWidth: columnWidth, size: usernameSize, color: secondary)
             }
             // 縦の区切りは、撮影情報の左の縦線と同じ x（撮影者の段の上端から下端まで）
-            cg.setStrokeColor(lineColor)
-            cg.setLineWidth(L.lineWidth)
-            cg.move(to: CGPoint(x: L.rowDividerX, y: rowTop))
-            cg.addLine(to: CGPoint(x: L.rowDividerX, y: rowTop + avatarSize))
-            cg.strokePath()
+            if ShareCardProbe.drawsContent {
+                cg.setStrokeColor(lineColor)
+                cg.setLineWidth(L.lineWidth)
+                cg.move(to: CGPoint(x: L.rowDividerX, y: rowTop))
+                cg.addLine(to: CGPoint(x: L.rowDividerX, y: rowTop + avatarSize))
+                cg.strokePath()
+            }
 
             let placeLines = credit.placeLines
             if !placeLines.isEmpty {
@@ -262,7 +272,7 @@ enum SignatureShareCardRenderer {
 
             // 区切り線（地図があるときは地図の手前で止める）。撮影情報が1つも無ければ、下の段ごと描かない
             // （2026-11-13: そのときは帯もその分低い・`ShareCardMap.Layout.hasShotInfo`）
-            if layout.hasShotInfo {
+            if layout.hasShotInfo, ShareCardProbe.drawsContent {
                 let separatorY = layout.separatorY
                 cg.setStrokeColor(lineColor)
                 cg.setLineWidth(L.lineWidth)
@@ -277,7 +287,7 @@ enum SignatureShareCardRenderer {
             let infoCenterY = layout.infoCenterY
             cg.setStrokeColor(lineColor)
             cg.setLineWidth(L.lineWidth)
-            for index in ShareCardMap.infoDividerIndices(filled: filled) {
+            for index in ShareCardMap.infoDividerIndices(filled: filled) where ShareCardProbe.drawsContent {
                 let dividerX = L.infoDividerXs[index]
                 cg.move(to: CGPoint(x: dividerX, y: infoCenterY - 20))
                 cg.addLine(to: CGPoint(x: dividerX, y: infoCenterY + 20))
@@ -481,6 +491,7 @@ enum SignatureShareCardRenderer {
             guard pin.latitude.isFinite, pin.longitude.isFinite,
                   (-90...90).contains(pin.latitude),
                   (-180...180).contains(pin.longitude) else { return }
+            guard ShareCardProbe.note(.map, rect: rect, color: color) else { return }
             guard let shape = shapeForDisplay(at: pin) else {
                 // Tiny islands and open-water locations are absent from the
                 // bundled coastline data. Never leave the map slot blank.
@@ -635,9 +646,11 @@ enum SignatureShareCardRenderer {
             // 上: ロゴ（マーク＋字）と一文
             let markY = ShareCardMap.Layout.headerMarkY // 帯の型の見出しと同じ中心
             let markMidY = markY + ShareCardMap.Layout.headerMarkSize / 2
-            if let mark = UIImage(named: "BrandMark")?.withRenderingMode(.alwaysTemplate) {
-                mark.withTintColor(.white).draw(in: CGRect(x: F.contentLeft, y: markY,
-                    width: ShareCardMap.Layout.headerMarkSize, height: ShareCardMap.Layout.headerMarkSize))
+            let markRect = CGRect(x: F.contentLeft, y: markY,
+                                  width: ShareCardMap.Layout.headerMarkSize, height: ShareCardMap.Layout.headerMarkSize)
+            if ShareCardProbe.note(.logo, "BrandMark", rect: markRect),
+               let mark = UIImage(named: "BrandMark")?.withRenderingMode(.alwaysTemplate) {
+                mark.withTintColor(.white).draw(in: markRect)
             }
             draw("Journey Photo",
                  at: CGPoint(x: F.contentLeft + ShareCardMap.Layout.headerMarkSize + 17, y: wordmarkTop(markMidY: markMidY)),
@@ -717,6 +730,14 @@ enum SignatureShareCardRenderer {
               (value as NSString).size(withAttributes: [.font: serif(fitted)]).width > maxWidth {
             fitted -= 1
         }
+        if let probe = ShareCardProbe.current {
+            let font = serif(fitted)
+            let full = ceil((value as NSString).size(withAttributes: [.font: font]).width)
+            probe.record(.text, value, rect: CGRect(x: origin.x, y: origin.y, width: min(maxWidth, full),
+                                                    height: min(font.lineHeight, fitted * 1.3)),
+                         color: color, fontSize: fitted, truncated: full > maxWidth)
+            if probe.skipContent { return }
+        }
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
         (value as NSString).draw(in: CGRect(x: origin.x, y: origin.y, width: maxWidth, height: fitted * 1.3),
@@ -730,7 +751,10 @@ enum SignatureShareCardRenderer {
         typealias F = ShareCardMap.FadeLayout
         let size = F.avatarSize
         let avatarRect = CGRect(x: F.contentLeft, y: top, width: size, height: size)
-        if let avatarData, let avatar = UIImage(data: avatarData) {
+        let drawsAvatar = ShareCardProbe.note(.avatar, rect: avatarRect, color: brass)
+        if !drawsAvatar {
+            // 点検の「背景だけ」の絵: アバターを描かない
+        } else if let avatarData, let avatar = UIImage(data: avatarData) {
             cg.saveGState()
             cg.addEllipse(in: avatarRect)
             cg.clip()
@@ -748,9 +772,11 @@ enum SignatureShareCardRenderer {
                  at: CGPoint(x: avatarRect.minX + 18, y: avatarRect.midY - font.lineHeight / 2),
                  maxWidth: 40, size: 28, color: .white, serif: true)
         }
-        cg.setStrokeColor(brass.cgColor)
-        cg.setLineWidth(2)
-        cg.strokeEllipse(in: avatarRect)
+        if drawsAvatar {
+            cg.setStrokeColor(brass.cgColor)
+            cg.setLineWidth(2)
+            cg.strokeEllipse(in: avatarRect)
+        }
 
         let name = credit.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let markCount = (credit.verified ? 1 : 0) + (credit.proStyle == nil ? 0 : 1)
@@ -778,6 +804,12 @@ enum SignatureShareCardRenderer {
 
     /// 既存の ProMarkGeometry / EarlyMemberMarkGeometry を使い、画面と同じ輪郭を描く。
     private static func drawNameMarks(_ credit: Credit, at origin: CGPoint) {
+        let count = (credit.verified ? 1 : 0) + (credit.proStyle == nil ? 0 : 1) + (credit.early ? 1 : 0)
+            + ((credit.badge.map { BadgeCatalog.isKnown($0.key) } ?? false) ? 1 : 0)
+        guard count > 0 else { return }
+        let width = CGFloat(count * 30 + (credit.proStyle == .plate ? 16 : 0)) - 3
+        guard ShareCardProbe.note(.marks, rect: CGRect(x: origin.x, y: origin.y - 2, width: width, height: 30),
+                                  color: brass) else { return }
         var x = origin.x
         func advance(_ width: CGFloat = 30) { x += width }
         if credit.verified {
@@ -906,6 +938,12 @@ enum SignatureShareCardRenderer {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byClipping
         let font = UIFont.systemFont(ofSize: fitted.size, weight: .semibold)
+        let widest = fitted.lines.map { measuredWidth($0, size: fitted.size) }.max() ?? 0
+        guard ShareCardProbe.note(.text, fitted.lines.joined(separator: " / "),
+                                  rect: CGRect(x: origin.x, y: origin.y, width: min(maxWidth, widest),
+                                               height: min(ShareCardMap.Layout.placeHeight,
+                                                           CGFloat(fitted.lines.count) * font.lineHeight)),
+                                  color: color, fontSize: fitted.size, truncated: fitted.truncated) else { return }
         (fitted.lines.joined(separator: "\n") as NSString).draw(
             in: CGRect(x: origin.x, y: origin.y, width: maxWidth,
                        height: ShareCardMap.Layout.placeHeight),
@@ -937,6 +975,18 @@ enum SignatureShareCardRenderer {
         let lineHeight = font.lineHeight
         let blockHeight = CGFloat(fitted.lines.count) * lineHeight
             + CGFloat(max(0, fitted.lines.count - 1))
+        if let probe = ShareCardProbe.current {
+            let widest = fitted.lines.map { measuredWidth($0, size: fitted.size) }.max() ?? 0
+            probe.record(.text, fitted.lines.joined(separator: " / "),
+                         rect: CGRect(x: x + symbolSize + textGap, y: centerY - blockHeight / 2,
+                                      width: min(textWidth, widest), height: blockHeight),
+                         color: .white, fontSize: fitted.size, truncated: fitted.truncated)
+        }
+        guard ShareCardProbe.drawsContent else {
+            ShareCardProbe.current?.record(.symbol, symbolName,
+                rect: CGRect(x: x, y: centerY - symbolSize / 2, width: symbolSize, height: symbolSize), color: color)
+            return
+        }
         (fitted.lines.joined(separator: "\n") as NSString).draw(
             with: CGRect(x: x + symbolSize + textGap, y: centerY - blockHeight / 2,
                          width: textWidth, height: blockHeight + 2),
@@ -951,6 +1001,9 @@ enum SignatureShareCardRenderer {
         // symbolSize の正方形に縦横比を保って収め、その正方形の中心を行の中心に置く
         let scale = min(symbolSize / symbol.size.width, symbolSize / symbol.size.height)
         let drawn = CGSize(width: symbol.size.width * scale, height: symbol.size.height * scale)
+        ShareCardProbe.current?.record(.symbol, symbolName,
+            rect: CGRect(x: x + (symbolSize - drawn.width) / 2, y: centerY - drawn.height / 2,
+                         width: drawn.width, height: drawn.height), color: color)
         symbol.draw(in: CGRect(x: x + (symbolSize - drawn.width) / 2,
                                y: centerY - drawn.height / 2,
                                width: drawn.width, height: drawn.height))
@@ -970,6 +1023,8 @@ enum SignatureShareCardRenderer {
                                 height: intrinsicSize.height * scale)
         let fittedOrigin = CGPoint(x: origin.x + (size - fittedSize.width) / 2,
                                    y: origin.y + (size - fittedSize.height) / 2)
+        guard ShareCardProbe.note(.symbol, name, rect: CGRect(origin: fittedOrigin, size: fittedSize),
+                                  color: color) else { return }
         symbol.draw(in: CGRect(origin: fittedOrigin, size: fittedSize))
     }
 
@@ -1001,6 +1056,15 @@ enum SignatureShareCardRenderer {
               text.size(withAttributes: [.font: fittedFont]).width > maxWidth {
             fittedFont = UIFont(descriptor: font.fontDescriptor,
                                 size: max(minimumSize, fittedFont.pointSize - 1))
+        }
+        if let probe = ShareCardProbe.current {
+            let full = ceil(text.size(withAttributes: [.font: fittedFont]).width)
+            let shown = min(maxWidth, full)
+            let x = alignment == .right ? origin.x + maxWidth - shown
+                : alignment == .center ? origin.x + (maxWidth - shown) / 2 : origin.x
+            probe.record(.text, value, rect: CGRect(x: x, y: origin.y, width: shown, height: fittedFont.lineHeight),
+                         color: color, fontSize: fittedFont.pointSize, truncated: full > maxWidth)
+            if probe.skipContent { return }
         }
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = alignment
