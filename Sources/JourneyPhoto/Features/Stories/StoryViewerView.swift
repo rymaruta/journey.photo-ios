@@ -798,7 +798,8 @@ struct StoryViewerView: View {
             // 読めなかった写真の読み直し（`StoryPlayback.mediaSettled`）。**送る的より上**に置く
             // ——`RemoteImage` の中の読み直しの印は送る的の下になり、押せない
             if offersMediaRetry {
-                mediaRetryButton
+                // 型の境目（札 #596・`storyTypeBoundary`）。Mac の回 1298 で、これを含む `photoArea` が深さ 27（上限 24）だった
+                mediaRetryButton.storyTypeBoundary()
             }
 
             // 送った直後（板の案 C）: 「送りました ›メッセージを見る」を4秒。押すと会話（戻るとストーリー）
