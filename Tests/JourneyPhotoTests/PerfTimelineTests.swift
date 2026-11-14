@@ -250,5 +250,22 @@ final class PerfTimelineTests: XCTestCase {
         XCTAssertTrue(probe.contains("return fa.minY != fb.minY ? fa.minY < fb.minY : fa.minX < fb.minX"))
         XCTAssertTrue(probe.contains("app.launchArguments += [\"-JPPreviewFeedProbe\", \"YES\"]"), "上端（home.feed.probe）を出していない")
     }
+
+    /// 🔴 写真詳細のメモリの試験も、画面の中で押せる写真のうち一番上を毎回選んで押す（木の順の 1 つ目ではない・Mac の回 1256）
+    func testPhotoDetailMemoryTapsTheTopmostHittableHomePhoto() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let probe = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/PerformanceTests.swift"), encoding: .utf8)
+        let begin = try XCTUnwrap(probe.range(of: "func testPhotoDetailMemory() {"))
+        let body = String(probe[begin.upperBound...].prefix(1600))
+        let measure = try XCTUnwrap(body.range(of: "measureTimed([XCTMemoryMetric(application: app)], 3) {"))
+        let pick = try XCTUnwrap(body.range(of: "let target = topmostHittableFeedPhoto(app)"), "押す写真を位置で選んでいない")
+        XCTAssertLessThan(measure.lowerBound, pick.lowerBound, "1 回ごとに選び直していない")
+        XCTAssertTrue(body.contains("target.tap()"))
+        XCTAssertFalse(body.contains("photo.tap()"), "木の順の 1 つ目（firstMatch）を押している")
+        XCTAssertFalse(body.contains("photo.isHittable"), "木の順の 1 つ目が押せるかで確かめている")
+        let note = try XCTUnwrap(body.range(of: "if target == nil { noteUnhittableHomePhoto(app, photo, round: round) }"))
+        let fail = try XCTUnwrap(body.range(of: "XCTFail(\"\\(round) 回目: ホームの画面の中に押せる写真が無い\")"))
+        XCTAssertLessThan(note.lowerBound, fail.lowerBound, "落とす前に記録する")
+    }
 }
 
