@@ -306,7 +306,7 @@ final class WhatsNewTests: XCTestCase {
     }
 
     /// 1.1.88（2026-11-14）: 人間工学の点検（#188）の大きく見るを下に引いて閉じる・投稿するを下の主ボタン・書きかけを払うと確かめ・
-    /// 入力欄の見本の字・探すの押し直し・乗車券の ‹ ›・とおまわり号の部屋の ⟲ ⟳ と、「行きたい」の旗（#593）・旅行プランの会話の通報（#597）。
+    /// 入力欄の見本の字・探すの押し直し・乗車券の ‹ ›・とおまわり号の部屋の ⟲ ⟳ と、すれちがい乗車券の言葉の統一（pass-wording）・「行きたい」の旗（#593）・旅行プランの会話の通報（#597）。
     /// 中黒・禁止語なし
     func testVersion1188() async throws {
         let root = URL(fileURLWithPath: #filePath)
@@ -318,15 +318,19 @@ final class WhatsNewTests: XCTestCase {
         XCTAssertEqual(v.items.map(\.title.ja), ["写真を大きく見る画面は下に引いて閉じる", "投稿するは下の大きなボタンに",
                                                  "書きかけでも下へ払うと確かめが出る", "入力欄の見本の字を読みやすく",
                                                  "探すをもう一度押すとすぐ打てる", "乗車券は ‹ › でもめくれる",
-                                                 "とおまわり号の部屋をボタンでも回せる", "「行きたい」の印を旗に",
+                                                 "すれちがい乗車券の言葉をわかりやすく", "とおまわり号の部屋をボタンでも回せる", "「行きたい」の印を旗に",
                                                  "旅行プランの会話で通報できる"])
         XCTAssertEqual(Set(v.items.map(\.symbol)).count, v.items.count, "記号が重複している")
-        XCTAssertEqual(v.items.map(\.destination), [nil, nil, nil, nil, .search, nil, nil, nil, nil])
+        XCTAssertEqual(v.items.map(\.destination), [nil, nil, nil, nil, .search, nil, nil, nil, nil, nil])
         // 払うと確かめるのは書きかけがあるときだけ（何も無ければそのまま閉じる・`sheetSwipeGuard`）
         XCTAssertTrue(v.items[2].detail.ja.contains("保存せずに閉じる") && v.items[2].detail.ja.contains("そのまま閉じます"),
                       v.items[2].detail.ja)
         // 旅行プランの会話の通報は長押しから（`TripMessageMenu`・札 #597）
-        XCTAssertTrue(v.items[8].detail.ja.contains("長押し"), v.items[8].detail.ja)
+        XCTAssertTrue(v.items[9].detail.ja.contains("長押し"), v.items[9].detail.ja)
+        // 乗車券の項は呼び名の統一に合わせて「カード」「束」と書かない（`PassWordingTests`）
+        for item in v.items[5...6] {
+            XCTAssertFalse(item.detail.ja.contains("カード") || item.detail.ja.contains("束"), item.detail.ja)
+        }
         for item in v.items {
             for text in [item.title.ja, item.detail.ja] {
                 for word in ["撮りどき", "捨て", "注目スポット", "撮影地ガイド", "ガイドを見る", "この場所", "綴じ", "・", "·",

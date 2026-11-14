@@ -34,7 +34,12 @@
         {
           "symbol": "ticket",
           "title": { "ja": "乗車券は ‹ › でもめくれる", "en": "Flip passes with ‹ ›" },
-          "detail": { "ja": "乗車券の束は、払うほかに下の ‹ › のボタンでもめくれます。何枚目かも分かります。", "en": "You can flip through your passes with the ‹ › buttons as well as by swiping, and see which one you're on." }
+          "detail": { "ja": "すれちがい乗車券は、払うほかに下の ‹ › のボタンでもめくれます。何枚目かも分かります。", "en": "You can flip through your Pass tickets with the ‹ › buttons as well as by swiping, and see which one you're on." }
+        },
+        {
+          "symbol": "text.quote",
+          "title": { "ja": "すれちがい乗車券の言葉をわかりやすく", "en": "Clearer words for Pass tickets" },
+          "detail": { "ja": "すれちがいで届くものの呼び名を「乗車券」と「すれちがい帳」にそろえました。「ありがとう」を押した後のボタンの名前も切れずに出ます。", "en": "What you receive from people you pass is now always called a ticket, kept in your Pass book. The Thanks button no longer cuts off after you tap it." }
         },
         {
           "symbol": "arrow.clockwise",
