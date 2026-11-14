@@ -445,6 +445,42 @@ final class StoryInstaTests: XCTestCase {
                                                publicLikes: { _ in nil })
         XCTAssertEqual(react.status, 200)
     }
+
+    /// 見本の通信は**出したストーリーを覚えて一覧に返す**（札 #596・投稿 → ストーリーに載せる → 見る の UI テスト）。
+    /// 答えは本物の読み手（`Story`）で読め、紹介した写真の id も残る。自分の束（見本の1本のあと）に入り、消せば消える。
+    /// 鍵（`-JPPreviewStories`）が無ければ今までどおり断る（ほかの UI テストの道を変えない）
+    func testPreviewBackendKeepsPostedStories() async throws {
+        let feed: [[String: Any]] = [["id": "p1", "src": "https://img.test/p1.jpg", "userId": "a"]]
+        let store = PreviewBackend.Store()
+        let body = Data(#"{"publicUrl":"https://preview-local.invalid/img/uploads/me/s.jpg","mediaType":"image","sharedPhotoId":"photo-1"}"#.utf8)
+        let off = await PreviewBackend.reply(method: "POST", route: ["stories"], body: body, userId: "me",
+                                             store: store, publicLikes: { _ in nil })
+        XCTAssertNotEqual(off.status, 200, "鍵が無いのにストーリーを受けた")
+        let posted = await PreviewBackend.reply(method: "POST", route: ["stories"], body: body, userId: "me",
+                                                store: store, stories: true, publicLikes: { _ in nil })
+        XCTAssertEqual(posted.status, 200)
+        struct Created: Decodable { let story: Story }
+        let created = try JSONDecoder.api.decode(Created.self, from: posted.body).story
+        XCTAssertEqual(created.sharedPhotoId, "photo-1")
+        XCTAssertEqual(created.userId, "me")
+        XCTAssertNoThrow(try PathID.segment(created.id))
+        let list = await PreviewBackend.reply(method: "GET", route: ["stories"], body: nil, userId: "me",
+                                              store: store, stories: true, publicFeed: { feed }, publicLikes: { _ in nil })
+        let stories = try JSONDecoder.api.decode([Story].self, from: list.body)
+        // 出した分があれば自分の束はその分だけ（輪を開いた瞬間に描くのが出したばかりの1本になる）
+        XCTAssertEqual(stories.map(\.id), [created.id, "preview-story-1", "preview-story-1b"])
+        XCTAssertEqual(stories[0].src, "https://preview-local.invalid/img/uploads/me/s.jpg")
+        let removed = await PreviewBackend.reply(method: "DELETE", route: ["stories", created.id], body: nil, userId: "me",
+                                                 store: store, stories: true, publicLikes: { _ in nil })
+        XCTAssertEqual(removed.status, 200)
+        let after = await PreviewBackend.reply(method: "GET", route: ["stories"], body: nil, userId: "me",
+                                               store: store, stories: true, publicFeed: { feed }, publicLikes: { _ in nil })
+        let left = try JSONDecoder.api.decode([Story].self, from: after.body)
+        XCTAssertFalse(left.contains { $0.id == created.id }, "消したストーリーが一覧に残った")
+        XCTAssertEqual(left.first?.id, "preview-story-me", "出した分が無くなったら見本の自分の1本に戻る")
+        // 出した画像を UI テストが読めるよう、ストーリーの本体も見本の置き場へ直に渡る（`UploadService.app`）
+        XCTAssertTrue(try source("Services/StoryService.swift").contains("self.uploads = UploadService.app(api: api)"))
+    }
 }
 
 /// 呼ばれた回数（読み込みをまとめたかを数える）

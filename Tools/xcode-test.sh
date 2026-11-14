@@ -125,6 +125,8 @@ else
 fi
 
 mkdir -p "$(dirname "$LOG")"
+# この回より新しいアプリの落ちた記録（.ips）だけを、失敗したときに読む印（2026-11-13・札 #596・`Tools/sim-crash-summary.py`）
+crash_marker="$(mktemp)"
 # `extra`・`source_args` は空白を含まない語の並び（置き場の名前・時間の上限・-only-testing:…）なので、わざと分けて渡す
 # GitHub Actions に進捗を逐次出す。tail -n 400 は先頭400行が揃うまで出力を
 # バッファするため、長い UI テストが停止したように見える原因になる。
@@ -137,6 +139,10 @@ xcodebuild \
     "$action" 2>&1 | tee -a "$LOG" || {
         echo "::group::error: と落ちたテストの行だけ"
         grep -E "error:|Failing tests|\*\* TEST|' failed \(" "$LOG" | sort -u | head -200 || true
+        echo "::endgroup::"
+        # アプリが落ちた回は、落ちたスレッドの積みを `[simCrash]` の行で出す（XCTest の失敗の文は1行だけ）
+        echo "::group::シミュレーターでアプリが落ちた記録"
+        python3 Tools/sim-crash-summary.py "$crash_marker" || true
         echo "::endgroup::"
         exit 1
     }

@@ -8,7 +8,10 @@ struct StoryService {
 
     init(api: APIClient) {
         self.api = api
-        self.uploads = UploadService(api: api)
+        // 見本の通信（UI テスト・Debug のみ）では本体も端末の中の答え手へ。ふだんは今までどおり背景の転送
+        // （`UploadService.app`・`AppEnvironment.uploads` と同じ）。2026-11-13 判断（札 #596）: 投稿 → ストーリーに載せる →
+        // 見る、を UI テストで通すため。Release は `PreviewBackend.transfer` が nil なので変わらない
+        self.uploads = UploadService.app(api: api)
     }
 
     /// パスに入れる ID。**英数字・`-`・`_` 以外は要求を出さずに失敗にする**（`PathID`）
