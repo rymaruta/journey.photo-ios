@@ -785,6 +785,7 @@ struct PhotoDetailView: View {
                 paragraphs
                 authorRow
                 inspiredRow
+                inspiredProbe
                 storySourceRow
             }
             socialBar(proxy)
@@ -981,6 +982,34 @@ struct PhotoDetailView: View {
             .accessibilityLabel(PhotoTrip.nearbySpotTitle + ": " + spot.name)
             .accessibilityIdentifier("photo.nearbySpot")
         }
+    }
+
+    /// **「この写真を見て撮影」の見本の行が出ない理由を数で見る**（札 #531・2026-11-14・見本の鍵のときだけ・Debug のみ）。
+    /// Mac の run 1308 で `testCapturesInspiredBy` の写真の詳細に `photo.inspiredBy` が 10 秒出なかった。段階（読みに行く前・
+    /// 読んでいる・読み終えた）・見本の元の写真・開く1枚が引けたか・隠す写真か・公開一覧の数を、見えない要素の値に出す
+    @ViewBuilder
+    private var inspiredProbe: some View {
+        #if DEBUG
+        if PreviewSession.showsInspiredSample {
+            let stage = inspiredStage
+            let source = stage.source
+            let target = source.flatMap { InspiredBy.photoToOpen($0, feed: inspiredFeed) }
+            let stageName: String = {
+                switch stage {
+                case .none: return "none"
+                case .loading: return "loading"
+                case .ready(let s): return s == nil ? "ready-nil" : "ready"
+                }
+            }()
+            Color.clear
+                .frame(width: 1, height: 1)
+                .accessibilityElement()
+                .accessibilityIdentifier("photo.inspiredProbe")
+                .accessibilityValue("stage=\(stageName) source=\(source?.id ?? "-") target=\(target != nil) "
+                                    + "visible=\(target.map { !hidden.visible([$0.photo]).isEmpty } ?? false) "
+                                    + "feed=\(inspiredFeed?.count ?? -1) user=\(auth.userId != nil) photo=\(shown.id)")
+        }
+        #endif
     }
 
     /// 「この写真を見て撮影 · [元の写真の小さな画像] [題・作者] ›」（2026-10-14・`InspiredBy`）。

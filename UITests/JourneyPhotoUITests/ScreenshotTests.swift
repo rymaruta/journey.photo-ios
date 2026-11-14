@@ -1172,7 +1172,12 @@ final class ScreenshotTests: XCTestCase {
         guard firstPhoto.exists, firstPhoto.isHittable else { return unreached(app, "ホームの写真（feed.photo）を押せない") }
         firstPhoto.tap()
         let line = app.buttons["photo.inspiredBy"].firstMatch
-        guard line.waitForExistence(timeout: 10) else { return unreached(app, "写真の詳細に photo.inspiredBy が無い") }
+        guard line.waitForExistence(timeout: 10) else {
+            // 出ない理由（段階・見本の元の写真・隠す写真か）を見本の起動だけの要素から読む（`PhotoDetailView.inspiredProbe`）
+            let probe = app.descendants(matching: .any)["photo.inspiredProbe"].firstMatch
+            let value = probe.exists ? ((probe.value as? String) ?? "(値なし)") : "(probe 無し)"
+            return unreached(app, "写真の詳細に photo.inspiredBy が無い: \(value)")
+        }
         // 作者の行の下にある。見えるまで短い引きで送る（上限あり）
         var linePushes = 0
         while !line.isHittable, linePushes < 4 {
@@ -2758,7 +2763,20 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "11c-探す（季節で絞る・秋）")
 
         let evening = app.buttons["search.dayPart.evening"].firstMatch
-        guard evening.waitForExistence(timeout: 5), evening.isHittable else { return unreached(app, "evening.waitForExistence(timeout: 5), evening.isHittable") }
+        guard evening.waitForExistence(timeout: 5) else { return unreached(app, "時間帯の札（search.dayPart.evening）が無い") }
+        // 札 #531（run 1308 の絵）: 「秋」を押すと結果の並びが出て、季節と時間帯の札の段は画面の上へ送られている
+        // （札は在るが押せない）。短い引きで上へ戻してから押す（上限あり）
+        var pulls = 0
+        while !evening.isHittable, evening.frame.maxY < app.frame.height * 0.3, pulls < 6 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)),
+                       withVelocity: .slow, thenHoldForDuration: 0.3)
+            Thread.sleep(forTimeInterval: 1)
+            pulls += 1
+        }
+        guard evening.isHittable else {
+            return unreached(app, "時間帯の「夕」を押せる所へ戻せない（\(pulls) 回引いた・枠 \(evening.frame)・enabled=\(evening.isEnabled)）")
+        }
         evening.tap()
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "11d-探す（季節と時間帯で絞る・秋の夕方）")
@@ -2797,8 +2815,15 @@ final class ScreenshotTests: XCTestCase {
             swipes += 1
         }
         guard card.isHittable else { return unreached(app, "機材の札を押せる所まで送れない（\(swipes) 回送った・枠 \(card.exists ? "\(card.frame)" : "なし")）") }
-        // 札の下に余白が出るまでもう少し送る（段の下端で切れた絵にしない）
-        app.swipeUp(velocity: .slow)
+        // 札の下に余白が出るまでもう少し送る（段の下端で切れた絵にしない）。
+        // 札 #531（run 1308）: 前は `swipeUp(.slow)` を1回足していた。いまの探すは機材の段の下にも写真の並びが続くので、
+        // 勢いで札が上の帯の下（枠 y=-9）まで流れて押せなくなった。足りない分（下の札の帯の上 140pt まで）だけ、止めて引く
+        let bottom = app.frame.height - 140
+        if card.frame.maxY > bottom {
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -(card.frame.maxY - bottom))),
+                        withVelocity: .slow, thenHoldForDuration: 0.3)
+        }
         Thread.sleep(forTimeInterval: 2)
         guard card.isHittable else { return unreached(app, "もう一度送ったら機材の札が押せなくなった（枠 \(card.exists ? "\(card.frame)" : "なし")）") }
         shoot(app, "11e-探す（機材の札・色の丸）")
@@ -3957,7 +3982,12 @@ final class ScreenshotTests: XCTestCase {
         // まだ届いていない季節の章（無ければ機能の章）を押すと、届く時期が下に出る
         let season = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'nameSide.pro.proWinter'")).firstMatch
         let target = season.exists ? season : app.buttons["nameSide.pro.dawn"].firstMatch
-        guard target.waitForExistence(timeout: 3), target.isHittable else { return unreached(app, "target.waitForExistence(timeout: 3), target.isHittable") }
+        guard target.waitForExistence(timeout: 3), target.isHittable else {
+            // 札 #531（run 1308）: 在るのに押せないと出た。冬の章か暁か・枠・窓の枠・押せるかを数で残す
+            let frame = target.exists ? "\(target.frame)" : "なし"
+            return unreached(app, "PRO 限定の章を押せない（冬の章=\(season.exists) 識別子=\(target.exists ? target.identifier : "-") "
+                             + "枠=\(frame) 窓=\(app.windows.firstMatch.frame) enabled=\(target.exists && target.isEnabled)）")
+        }
         target.tap()
         guard app.descendants(matching: .any)["toast"].firstMatch.waitForExistence(timeout: 3) else { return unreached(app, "app.descendants(matching: .any)[\"toast\"].firstMatch.waitForExistence(timeout: 3)") }
         shoot(app, "83f-名前の横（Pro の人・届く時期の知らせ）")
@@ -8428,6 +8458,10 @@ final class ScreenshotTests: XCTestCase {
             app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
             app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
             app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+            // 札 #531（run 1308: settings.pro=true・settings.nameSide=true・settings.supporterCard=false）: 見本の利用者の
+            // 公開プロフィールには `supporter` の欄が無い（`PreviewSession.supporter` の注記）ので、行が出なかった。
+            // トランクの会員証の試験と同じく、本人にだけ番号を重ねる（`-JPPreviewSupporter`・Debug のみ）
+            app.launchArguments += ["-JPPreviewSupporter", "7"]
             app.launchArguments += extra
             app.launch()
             if let stop = openSupporterCard(app) {
