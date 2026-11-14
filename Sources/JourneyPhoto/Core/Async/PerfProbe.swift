@@ -57,6 +57,8 @@ final class PerfRecorder: @unchecked Sendable {
     /// メインスレッドの積み(スタック)の見本の上限と、1 件に残す段の数（2026-11-07・`PerfMainSampler`）
     static let sampleCap = 16
     static let sampleFrameCap = 14
+    /// 操作の段の足あと（`step(_:)`）の上限。**新しい方から**残す（起動の後の操作でも尽きない・2026-11-14 札 #435）
+    static let stepCap = 32
 
     let isEnabled: Bool
     private let clock: () -> TimeInterval
@@ -84,6 +86,9 @@ final class PerfRecorder: @unchecked Sendable {
     private var droppedSearchWindows = 0
     /// 撮影スポットを語で当てた（`SearchView.spotHits`）回数・合計・最大（起動から通して）
     private var spotHitsTotal = SearchWindow.SpotHits()
+    /// 操作の段の足あと（`step(_:)`・新しい方から `stepCap` 件）と、溢れて捨てた古い方の数
+    private var steps: [PerfEvent] = []
+    private var droppedSteps = 0
 
     /// - Parameter clock: 秒を返す時計（試験で差し替える）。作った時点を 0ms とする
     init(enabled: Bool, clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
@@ -185,6 +190,24 @@ final class PerfRecorder: @unchecked Sendable {
             events.append(PerfEvent(ms: now, name: label))
         } else {
             droppedEvents += 1
+        }
+    }
+
+    // MARK: - step
+
+    /// 操作の段を1つ残す（2026-11-14 札 #435「中に入る」を押しても部屋に入らない）。**測るだけで動作は変えない**。
+    /// `event(_:)` は起動から先の 64 件で尽き、同じ名前を1回しか残さない（起動の後の操作が残らない）。
+    /// こちらは同じ名前も毎回、**新しい方から** `stepCap` 件を残す。無効のときは名前も作らない
+    func step(_ name: @autoclosure () -> String) {
+        guard isEnabled else { return }
+        let now = elapsedMs()
+        let label = name()
+        lock.lock()
+        defer { lock.unlock() }
+        steps.append(PerfEvent(ms: now, name: label))
+        if steps.count > Self.stepCap {
+            steps.removeFirst()
+            droppedSteps += 1
         }
     }
 
@@ -364,6 +387,8 @@ final class PerfRecorder: @unchecked Sendable {
             // さらに後ろ（2026-11-13 札 #590）: 撮影スポットを語で当てた 回数/合計/最大（起動から通して）と、探すの語ごとの記録
             + " | spot=\(spotHitsTotal.count)/\(spotHitsTotal.totalMs)ms/\(spotHitsTotal.maxMs)ms"
             + " | srch=[\((searchWindows.map(\.summary) + (droppedSearchWindows > 0 ? ["+\(droppedSearchWindows)dropped"] : [])).joined(separator: ";"))]"
+            // さらに後ろ（2026-11-14 札 #435）: 操作の段の足あと。`+ms 名前`。古い方を捨てた数は先頭に `+Ndropped`
+            + " | step=[\(((droppedSteps > 0 ? ["+\(droppedSteps)dropped"] : []) + steps.map { "+\($0.ms) \($0.name)" }).joined(separator: ";"))]"
     }
 }
 

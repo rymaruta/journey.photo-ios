@@ -205,6 +205,8 @@ final class CriticalFlowTests: XCTestCase {
         tab(app, 4)
         XCTAssertTrue(app.descendants(matching: .any)["mypage.nameLine"].firstMatch.waitForExistence(timeout: 20),
                       "ログイン中のマイページが出ない")
+        // 札 #435（2026-11-14）: 起動直後にマイページを押した回の selection の履歴を、通った回も残す（冷えた起動の比べる元）
+        notePerfProbe(app, label: "mypageShown")
         tab(app, 2)
         let toPhoto = app.buttons["post.choice.photo"].firstMatch
         XCTAssertTrue(toPhoto.waitForExistence(timeout: 10), "投稿の2択が出ない")
@@ -571,6 +573,8 @@ final class CriticalFlowTests: XCTestCase {
 
         let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
         XCTAssertTrue(scene.waitForExistence(timeout: 20), "部屋に入れない")
+        // 札 #435（2026-11-14）: 「中に入る」の段（`step=` の camper.enter.*）を、通った回も残す（冷えた起動の比べる元）
+        notePerfProbe(app, label: "camperEntered")
         XCTAssertTrue(wait(scene, "value CONTAINS 'camper-room-ready'", timeout: 60), "部屋を組み終えない")
 
         app.buttons["camper.room.tool.photos"].firstMatch.tap()

@@ -135,7 +135,9 @@ final class PerfProbeTests: XCTestCase {
                        + " | ev=[+200 body.home#1;+200 body.home#2;+200 body.photoDetail#1]"
                        + " | samples=[]"
                        // さらに後ろ（2026-11-13 札 #590）: 撮影スポットを当てた回数/合計/最大と、探すの語ごとの記録
-                       + " | spot=0/0ms/0ms | srch=[]")
+                       + " | spot=0/0ms/0ms | srch=[]"
+                       // さらに後ろ（2026-11-14 札 #435）: 操作の段の足あと
+                       + " | step=[]")
         XCTAssertEqual(rec.bodyCount(.home), 2)
     }
 
@@ -261,9 +263,10 @@ final class PerfProbeTests: XCTestCase {
             .components(separatedBy: " | spot=").first ?? ""
     }
 
-    /// `srch=` の右（`[…]`）
+    /// `srch=` の右（`[…]`）。後ろに足した `step=`（2026-11-14）の手前まで
     private func searchTail(_ rec: PerfRecorder) -> String {
-        rec.summary().components(separatedBy: " | srch=").last ?? ""
+        (rec.summary().components(separatedBy: " | srch=").last ?? "")
+            .components(separatedBy: " | step=").first ?? ""
     }
 
     /// 止まっている最中の積みの見本: `+撮った ms 段^段`・浅い方が先・段は上限まで・件数にも上限。無効なら残さない
@@ -294,12 +297,13 @@ final class PerfProbeTests: XCTestCase {
         rec.event("camper.ext.plan>")
         XCTAssertEqual(evTail(rec), "[+12 app.init.start;+340 camper.ext.plan>]")
         let parts = rec.summary().components(separatedBy: " | ")
-        // 欄の順: … | stalls | ev | samples | spot | srch（後ろに足していく。既存の欄の順は変えない）
-        XCTAssertEqual(parts.last?.hasPrefix("srch="), true)
-        XCTAssertEqual(parts.dropLast().last?.hasPrefix("spot="), true)
-        XCTAssertEqual(parts.dropLast(2).last?.hasPrefix("samples="), true)
-        XCTAssertEqual(parts.dropLast(3).last?.hasPrefix("ev="), true, "ev は stalls の後ろ")
-        XCTAssertTrue(parts.dropLast(4).last?.hasPrefix("stalls=") == true)
+        // 欄の順: … | stalls | ev | samples | spot | srch | step（後ろに足していく。既存の欄の順は変えない）
+        XCTAssertEqual(parts.last?.hasPrefix("step="), true)
+        XCTAssertEqual(parts.dropLast().last?.hasPrefix("srch="), true)
+        XCTAssertEqual(parts.dropLast(2).last?.hasPrefix("spot="), true)
+        XCTAssertEqual(parts.dropLast(3).last?.hasPrefix("samples="), true)
+        XCTAssertEqual(parts.dropLast(4).last?.hasPrefix("ev="), true, "ev は stalls の後ろ")
+        XCTAssertTrue(parts.dropLast(5).last?.hasPrefix("stalls=") == true)
     }
 
     /// 上限を超えたら先の分を残し、溢れた数を残す。無効のときは何も残さない（名前の文字列も作らない）
@@ -318,6 +322,54 @@ final class PerfProbeTests: XCTestCase {
         off.bodyHit(.home)
         XCTAssertEqual(evTail(off), "[]")
         XCTAssertFalse(built, "無効のときは名前を作らない")
+    }
+
+    // MARK: - 操作の段の足あと（2026-11-14 札 #435）
+
+    /// `step=` の中身（`[…]`）
+    private func stepTail(_ rec: PerfRecorder) -> String {
+        rec.summary().components(separatedBy: " | step=").last ?? ""
+    }
+
+    /// 段の足あとは同じ名前も毎回、時刻つきで残る。**`ev=` の枠（先の 64 件）が尽きた後でも残る**
+    /// （起動の後の「中に入る」の段が、起動の出来事で埋まった `ev=` からこぼれないように）
+    func testStepsAreKeptAfterEventsRunOut() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        for i in 0..<(PerfRecorder.eventCap + 5) { rec.event("e\(i)") }
+        clock.now = 1030.000
+        rec.step("camper.enter.tap")
+        clock.now = 1030.500
+        rec.step("camper.enter.tap")
+        rec.step("camper.enter.push")
+        XCTAssertEqual(stepTail(rec), "[+30000 camper.enter.tap;+30500 camper.enter.tap;+30500 camper.enter.push]")
+    }
+
+    /// 上限を超えたら**古い方を捨て**、捨てた数を先頭に残す。無効のときは何もしない（名前も作らない）
+    func testStepsKeepTheNewestAndDisabledRecordsNothing() {
+        let clock = FakeClock()
+        let rec = recorder(clock)
+        for i in 0..<(PerfRecorder.stepCap + 2) { rec.step("s\(i)") }
+        let tail = stepTail(rec)
+        XCTAssertTrue(tail.hasPrefix("[+2dropped;+0 s2;"), tail)
+        XCTAssertTrue(tail.hasSuffix("+0 s\(PerfRecorder.stepCap + 1)]"), tail)
+        XCTAssertFalse(tail.contains(" s1;"), "古い方は捨てる")
+
+        var built = false
+        let off = PerfRecorder(enabled: false, clock: { clock.now })
+        off.step({ built = true; return "x" }())
+        XCTAssertEqual(stepTail(off), "[]")
+        XCTAssertFalse(built, "無効のときは名前を作らない")
+    }
+
+    /// 「中に入る」の段（押した・部屋へ送った・部屋が出た・外の画面が出た/消えた）が配線されている
+    func testCamperEnterStepsAreWired() throws {
+        let garage = try source("Sources/JourneyPhoto/Features/Camper/CamperGarageView.swift")
+        let room = try source("Sources/JourneyPhoto/Features/Camper/Room/CamperRoomView.swift")
+        for name in ["camper.enter.tap", "camper.enter.push", "camper.insideRoom=", "camper.garage.appear", "camper.garage.disappear"] {
+            XCTAssertTrue(garage.contains("PerfRecorder.shared.step(\"\(name)"), name)
+        }
+        XCTAssertTrue(room.contains("PerfRecorder.shared.step(\"camper.room.appear\")"))
     }
 
     /// 同じ名前は最初の1回だけ（何度も起きる出来事が 40 件の枠を使い切らない）。細かい 2 区間は枠を使わない
@@ -419,7 +471,7 @@ final class PerfProbeTests: XCTestCase {
         for _ in 0..<1000 { off.bodyHit(.home) }
         XCTAssertEqual(built, 0, "無効のときに名前を作っている")
         XCTAssertEqual(off.bodyCount(.home), 0)
-        XCTAssertTrue(off.summary().hasSuffix(" | ev=[] | samples=[] | spot=0/0ms/0ms | srch=[]"), off.summary())
+        XCTAssertTrue(off.summary().hasSuffix(" | ev=[] | samples=[] | spot=0/0ms/0ms | srch=[] | step=[]"), off.summary())
     }
 
     // MARK: - 探す（2026-11-13 札 #590「探すの検索が重い」）
@@ -500,7 +552,7 @@ final class PerfProbeTests: XCTestCase {
         XCTAssertEqual(value, 7)
         XCTAssertEqual(ran, 1)
         XCTAssertEqual(off.bodyCount(.search), 0)
-        XCTAssertTrue(off.summary().hasSuffix(" | spot=0/0ms/0ms | srch=[]"), off.summary())
+        XCTAssertTrue(off.summary().hasSuffix(" | spot=0/0ms/0ms | srch=[] | step=[]"), off.summary())
     }
 
     /// 🔴 探すの body が語ごとに数え、撮影スポットを当てる所を測っている。当てる関数は signpost で包む（UI テストのときだけ）
