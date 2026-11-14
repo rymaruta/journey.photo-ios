@@ -111,6 +111,8 @@ final class ShareCardAuditTests: XCTestCase {
         var minTextItem = ""
         var minMapContrast = Double.infinity  // 地図・印（部品）
         var truncated: [String] = []
+        /// 明暗の比が 7 を下回った部品（名前:比）。直す所を数で見るため
+        var lowContrast: [String] = []
         var overlaps: [String] = []
         var items: [ShareCardProbe.Item] = []
     }
@@ -184,6 +186,7 @@ final class ShareCardAuditTests: XCTestCase {
                 guard let bg = backdropMaxLuminance(item.rect) else { continue }
                 let c = ShareCardSafeArea.contrast(luminance(item.color), bg)
                 if c < m.minTextContrast { m.minTextContrast = c; m.minTextItem = item.text }
+                if c < 7 { m.lowContrast.append("\(item.text.prefix(10))@\(Int(item.rect.minY)):\(String(format: "%.2f", c))") }
                 if item.truncated { m.truncated.append(item.text) }
             case .logo:
                 guard let bg = backdropMaxLuminance(item.rect) else { continue }
@@ -191,7 +194,9 @@ final class ShareCardAuditTests: XCTestCase {
                 if c < m.minTextContrast { m.minTextContrast = c; m.minTextItem = "ロゴ" }
             case .map, .symbol, .marks:
                 if let bg = backdropMaxLuminance(item.rect) {
-                    m.minMapContrast = min(m.minMapContrast, ShareCardSafeArea.contrast(luminance(item.color), bg))
+                    let c = ShareCardSafeArea.contrast(luminance(item.color), bg)
+                    m.minMapContrast = min(m.minMapContrast, c)
+                    if c < 4 { m.lowContrast.append("\(item.kind.rawValue)@\(Int(item.rect.minY)):\(String(format: "%.2f", c))") }
                 }
             default: break
             }
@@ -218,7 +223,9 @@ final class ShareCardAuditTests: XCTestCase {
 
     // MARK: - 全部の組み合わせ
 
-    func testEveryStyleRatioAndContentStaysInsideTheSafeAreaAndReadable() async throws {
+    /// 1つの型 × 比を、全部の中身 × 写真で測る。Xcode の試験は1本 1 分で打ち切られる
+    /// （run 1287: 全部を1本にしたら 164 件目で止まった）ので、型 × 比ごとに1本にする
+    func audit(_ style: R.Style, _ ratio: R.Ratio) async throws {
         var cases: [(String, R.Credit, Bool, String)] = []
         for content in Self.contents {
             for photo in ["白", "黒"] { cases.append((content.name, content.credit, content.allowsTruncation, photo)) }
@@ -228,8 +235,8 @@ final class ShareCardAuditTests: XCTestCase {
         var photos: [String: Data] = [:]
         var failures: [String] = []
         var count = 0
-        for style in R.Style.allCases {
-            for ratio in [R.Ratio.portrait, .story, .square] {
+        do {
+            do {
                 for (contentName, credit, allowsTruncation, photoName) in cases {
                     let photo = photos[photoName] ?? Self.photo(photoName)
                     photos[photoName] = photo
@@ -244,7 +251,7 @@ final class ShareCardAuditTests: XCTestCase {
                           + " textContrast=\(String(format: "%.2f", m.minTextContrast))(\(m.minTextItem.prefix(16)))"
                           + " mapContrast=\(String(format: "%.2f", m.minMapContrast))"
                           + " truncated=\(m.truncated.map { String($0.prefix(16)) })"
-                          + " overlaps=\(m.overlaps)")
+                          + " overlaps=\(m.overlaps) low=\(m.lowContrast)")
                     if m.unsafePixels > 0 {
                         failures.append("\(label): 安全域の外に部品 \(m.unsafePixels)px（端からの距離 \(edgeText)）")
                     }
@@ -263,8 +270,35 @@ final class ShareCardAuditTests: XCTestCase {
                 }
             }
         }
-        print("measured [sharecard] 組み合わせ \(count) 件・崩れ \(failures.count) 件")
+        print("measured [sharecard] \(style.rawValue) \(ratio) 組み合わせ \(count) 件 崩れ \(failures.count) 件")
         XCTAssertTrue(failures.isEmpty, "共有カードの崩れ \(failures.count) 件 / \(count) 件:\n" + failures.joined(separator: "\n"))
     }
+
+    /// 全部の型が下の試験に並んでいるか（型を足したら試験も足す）
+    func testEveryStyleHasAnAudit() {
+        XCTAssertEqual(R.Style.allCases.count, 7)
+    }
+
+    func testBandPortrait() async throws { try await audit(.band, .portrait) }
+    func testBandStory() async throws { try await audit(.band, .story) }
+    func testBandSquare() async throws { try await audit(.band, .square) }
+    func testFadePortrait() async throws { try await audit(.fade, .portrait) }
+    func testFadeStory() async throws { try await audit(.fade, .story) }
+    func testFadeSquare() async throws { try await audit(.fade, .square) }
+    func testLabelPortrait() async throws { try await audit(.label, .portrait) }
+    func testLabelStory() async throws { try await audit(.label, .story) }
+    func testLabelSquare() async throws { try await audit(.label, .square) }
+    func testCoverPortrait() async throws { try await audit(.cover, .portrait) }
+    func testCoverStory() async throws { try await audit(.cover, .story) }
+    func testCoverSquare() async throws { try await audit(.cover, .square) }
+    func testPrintedPortrait() async throws { try await audit(.printed, .portrait) }
+    func testPrintedStory() async throws { try await audit(.printed, .story) }
+    func testPrintedSquare() async throws { try await audit(.printed, .square) }
+    func testTicketPortrait() async throws { try await audit(.ticket, .portrait) }
+    func testTicketStory() async throws { try await audit(.ticket, .story) }
+    func testTicketSquare() async throws { try await audit(.ticket, .square) }
+    func testCinemaPortrait() async throws { try await audit(.cinema, .portrait) }
+    func testCinemaStory() async throws { try await audit(.cinema, .story) }
+    func testCinemaSquare() async throws { try await audit(.cinema, .square) }
 }
 #endif

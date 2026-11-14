@@ -128,7 +128,7 @@ extension SignatureShareCardRenderer {
             UIColor.black.setFill()
             cg.fill(CGRect(origin: .zero, size: canvas))
             drawPhotoFill(photo, in: layout.photoRect, context: cg)
-            drawBrandHeader(centerY: L.headerCenter, left: L.contentLeft, right: L.contentRight,
+            drawBrandHeader(centerY: layout.headerCenterY, left: L.contentLeft, right: L.contentRight,
                             taglineSize: 24, addressColor: brass)
 
             // 地名（明朝）
@@ -159,7 +159,7 @@ extension SignatureShareCardRenderer {
             }
             // 列の間の縦罫は、両側の列に字があるときだけ（2026-11-12・`ShareCardMap.infoDividerIndices`）
             cg.setStrokeColor(brass.withAlphaComponent(0.3).cgColor)
-            let dividerXs: [CGFloat] = [248, 456]
+            let dividerXs = L.tableDividerXs
             for index in ShareCardMap.infoDividerIndices(filled: entries.map { !$0.1.isEmpty }) where ShareCardProbe.drawsContent {
                 let x = dividerXs[index]
                 cg.move(to: CGPoint(x: x, y: layout.tableTop))
@@ -192,21 +192,21 @@ extension SignatureShareCardRenderer {
             cg.fill(CGRect(origin: .zero, size: canvas))
             drawPhotoFill(photo, in: CGRect(x: 0, y: 0, width: C.width, height: layout.photoBottom), context: cg)
             // 上の影・下のグラデーション（長く滑らか・境目を見せない）。その下は黒一色
-            drawShade(cg, from: 0, to: F.topShadeHeight, stops: [
-                (0, F.topShadeAlpha), (0.45, F.topShadeAlpha * 0.5), (1, 0)])
+            let shade = F(ratio: ratio)
+            drawShade(cg, from: 0, to: shade.topShadeHeight, stops: shade.topShadeStops)
             drawShade(cg, from: layout.fadeTop, to: layout.photoBottom, stops: F.fadeStops)
             UIColor.black.setFill()
             cg.fill(CGRect(x: 0, y: layout.photoBottom, width: C.width, height: layout.height - layout.photoBottom))
 
             // 写真の上なので、字も住所も白（真鍮は黒い地の上だけ）
-            drawBrandHeader(centerY: ShareCardMap.Layout.headerCenter, left: C.contentLeft, right: C.contentRight,
+            drawBrandHeader(centerY: layout.headerCenterY, left: C.contentLeft, right: C.contentRight,
                             taglineSize: 24, addressColor: .white)
 
-            // 右: 地図
+            // 右: 地図。上は写真の上（黒 69% から）なので白で描く（2026-11-14・真鍮は黒地の上だけ）
             if let coordinate = credit.coords {
                 let placeText = (credit.placeLines + [credit.location ?? ""]).joined(separator: ", ")
                 CountryOutline.drawAtLocation(pin: coordinate, place: placeText,
-                                              in: layout.mapRect, color: brass, context: cg)
+                                              in: layout.mapRect, color: .white, context: cg)
             }
             // 左: 地名（大きな明朝）と市区町村（真鍮）
             let lines = credit.placeLines

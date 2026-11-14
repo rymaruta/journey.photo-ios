@@ -145,7 +145,8 @@ enum SignatureShareCardRenderer {
             cg.fill(layout.bandRect)
 
             // 上の帯。字の大文字の高さの中心を、マークの中心にそろえる（2026-11-04 owner）
-            let markY = L.headerMarkY
+            // 2026-11-14: 見出しの位置は寸法の値から（9:16 はストーリーの上の帯の下へ下げる・`Layout.topShift`）
+            let markY = layout.headerMarkY
             let markMidY = markY + L.headerMarkSize / 2
             let markRect = CGRect(x: L.contentLeft, y: markY, width: L.headerMarkSize, height: L.headerMarkSize)
             if ShareCardProbe.note(.logo, "BrandMark", rect: markRect),
@@ -159,12 +160,12 @@ enum SignatureShareCardRenderer {
             if ShareCardProbe.drawsContent {
                 cg.setStrokeColor(lineColor)
                 cg.setLineWidth(L.lineWidth)
-                cg.move(to: CGPoint(x: L.width / 2, y: L.headerCenter - 29))
-                cg.addLine(to: CGPoint(x: L.width / 2, y: L.headerCenter + 28))
+                cg.move(to: CGPoint(x: L.width / 2, y: layout.headerCenterY - 29))
+                cg.addLine(to: CGPoint(x: L.width / 2, y: layout.headerCenterY + 28))
                 cg.strokePath()
             }
             // 一文と Web の住所の2行の塊は、帯の縦の中心にそろえる。右端は本文の右端
-            drawTaglineAndAddress(centerY: L.headerCenter, right: L.contentRight, taglineSize: 25,
+            drawTaglineAndAddress(centerY: layout.headerCenterY, right: L.contentRight, taglineSize: 25,
                                   addressColor: brass)
 
             // 撮影者の段。要素はアバターの縦の中心にそろえる
@@ -643,8 +644,7 @@ enum SignatureShareCardRenderer {
                                                 colors: colors, locations: locations) else { return }
                 cg.drawLinearGradient(gradient, start: CGPoint(x: 0, y: y0), end: CGPoint(x: 0, y: y1), options: [])
             }
-            shade(from: 0, to: F.topShadeHeight, stops: [
-                (0, F.topShadeAlpha), (0.45, F.topShadeAlpha * 0.5), (1, 0)])
+            shade(from: 0, to: layout.topShadeHeight, stops: layout.topShadeStops)
             // 下の空き（9:16）は黒一色。グラデーションは基準線で 1 に着き、その下は 1 のまま
             var bottomStops = F.fadeStops.map { stop in
                 (location: stop.location * layout.fadeLength / (layout.height - layout.fadeTop), alpha: stop.alpha)
@@ -653,7 +653,7 @@ enum SignatureShareCardRenderer {
             shade(from: layout.fadeTop, to: layout.height, stops: bottomStops)
 
             // 上: ロゴ（マーク＋字）と一文
-            let markY = ShareCardMap.Layout.headerMarkY // 帯の型の見出しと同じ中心
+            let markY = layout.headerCenterY - ShareCardMap.Layout.headerMarkSize / 2 // 帯の型の見出しと同じ中心
             let markMidY = markY + ShareCardMap.Layout.headerMarkSize / 2
             let markRect = CGRect(x: F.contentLeft, y: markY,
                                   width: ShareCardMap.Layout.headerMarkSize, height: ShareCardMap.Layout.headerMarkSize)
@@ -668,11 +668,11 @@ enum SignatureShareCardRenderer {
             drawTaglineAndAddress(centerY: markMidY, right: F.contentRight, taglineSize: 24,
                                   addressColor: .white)
 
-            // 右: 地図（真鍮の細線・黒に溶けた所に置く）
+            // 右: 地図。写真の上（黒 49〜88%）なので白で描く（2026-11-14・真鍮は黒地の上だけ）
             if let coordinate = credit.coords {
                 let placeText = (credit.placeLines + [credit.location ?? ""]).joined(separator: ", ")
                 CountryOutline.drawAtLocation(pin: coordinate, place: placeText,
-                                              in: layout.mapRect, color: brass, context: cg)
+                                              in: layout.mapRect, color: .white, context: cg)
             }
 
             // 左: 地名（明朝）・市区町村（真鍮）
@@ -700,11 +700,9 @@ enum SignatureShareCardRenderer {
             let exposure = [credit.aperture, credit.exposure, credit.iso.map { "ISO\($0)" }]
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }.joined(separator: "  ")
-            let cells: [(String, String, CGFloat, CGFloat)] = [
-                ("camera", camera, F.contentLeft, 320),
-                ("camera.aperture", lens, F.contentLeft + 340, 340),
-                ("timer", exposure, F.contentLeft + 700, 260)
-            ]
+            let cells: [(String, String, CGFloat, CGFloat)] = zip(
+                [("camera", camera), ("camera.aperture", lens), ("timer", exposure)], F.exifCells
+            ).map { ($0.0.0, $0.0.1, F.contentLeft + $0.1.x, $0.1.width) }
             for (symbol, text, x, width) in cells where !text.isEmpty {
                 drawMetadataRow(symbol, text: text, x: x, centerY: layout.exifCenterY,
                                 textWidth: width - F.exifSymbolSize - 10, fontSize: F.exifFontSize,

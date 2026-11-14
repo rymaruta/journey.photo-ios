@@ -67,8 +67,11 @@ enum ShareCardMap {
         /// 一文と住所の2行の塊（一文 25 の行 + 間 4 + 住所 20 の行）を、見出しの縦の中心にそろえる
         static let siteAddressFontSize: CGFloat = 20
         static let taglineAddressGap: CGFloat = 4
-        /// 写真と黒い帯の左右の余白（外の余白）
-        static let margin: CGFloat = 60
+        /// 写真と黒い帯の左右の余白（外の余白）。
+        /// 2026-11-14（owner「文字などがギリギリの端すぎて SNS で見にくい、みたいなことないように」）: 60 → 72。
+        /// 書き出した画像の画素で測ると、字の左端が 59px（短い辺の 5.46%）・右端が 61px（5.65%）で、安全域（6%・`ShareCardSafeArea`）の外だった。
+        /// 新しい型（`newStyleMargin`）と同じ 72 の線にそろえる
+        static let margin: CGFloat = ShareCardMap.newStyleMargin
         /// 帯の端から中身（アバター・区切り線・地図）まで。
         /// 2026-11-04 owner「写真の角とアイコンの先頭の端が合うように」: 0。写真の左右の端（60・1020）に、
         /// ロゴのマーク・アバター・区切り線・撮影情報の左端、一文・地図の右端をそろえる（以前は 48 内側で、端が合っていなかった）
@@ -78,7 +81,21 @@ enum ShareCardMap {
         /// 上の帯（ロゴと一文）の高さ。写真はこの下から始まる
         /// 2026-11-04 owner「上のヘッダーの余白の幅も短すぎる」: 100 → 124。中身（一番高い区切り線 57）の上は額縁の内側から、
         /// 下は写真まで、どちらも同じ 26 になる（中心は額縁の内側と写真の真ん中）
-        static let header: CGFloat = 124
+        ///
+        /// 2026-11-14: 124 → 176。画素で測ると一文と住所の上端が画像の上端から 41px（短い辺の 3.8%）で、安全域（6%）の外だった。
+        /// 字の塊（高さ約 58）を上端から 66 に下げ、額縁の内側（15）と写真の上端までの空きを上下とも約 51 にそろえる
+        static let header: CGFloat = 176
+        /// 見出しの字の塊（一文 25 と住所 20 の2行・約 58）の高さの半分。上端 = 見出しの中心 − これ
+        static let headerTextHalfHeight: CGFloat = 29
+        /// 9:16 で見出しを下げる量。ストーリーの上の帯（14%・`ShareCardSafeArea`）の 4 下に字の上端が来る（2026-11-14）
+        static func topShift(_ ratio: SignatureShareCardRenderer.Ratio) -> CGFloat {
+            guard ratio == .story else { return 0 }
+            return (ShareCardSafeArea.rect(ratio: ratio).minY + 4 - (headerCenter - headerTextHalfHeight)).rounded(.up)
+        }
+        /// 9:16 の字の下端（ストーリーの下の帯 20% の 4 上）。型ごとの下の段は、ここから上に置く（2026-11-14）
+        static var storyTextBottom: CGFloat {
+            ShareCardSafeArea.rect(ratio: .story).maxY.rounded(.down) - 4
+        }
         /// ロゴのマーク（45 角）の上端。字の中心はこのマークの中心にそろえる
         static var headerCenter: CGFloat { (frameInset + frameWidth + header) / 2 }
         static var headerMarkY: CGFloat { headerCenter - headerMarkSize / 2 }
@@ -102,13 +119,15 @@ enum ShareCardMap {
 
         /// 撮影者の名前の列（アバターの 20 右）。区切りの縦線はその 165 幅の 16 右（名前 30 → 26・ユーザー名 24 → 21 に合わせて詰めた）
         static var nameX: CGFloat { contentLeft + avatarSize + 20 }
-        static let nameColumnWidth: CGFloat = 165
+        /// 2026-11-14: 165 → 153。余白 60 → 72 の分（12）をここで詰め、縦線から右（撮影地・撮影情報の列）の位置は変えない
+        static let nameColumnWidth: CGFloat = 153
         static var rowDividerX: CGFloat { nameX + nameColumnWidth + 16 }
         /// 撮影地の印（pin）と字
         static var pinX: CGFloat { rowDividerX + 24 }
         static var placeX: CGFloat { pinX + 50 }
         /// 地図の枠の幅。右端は本文の右端にそろえる
-        static let mapWidth: CGFloat = 286
+        /// 2026-11-14: 286 → 274（右の余白 72 の分。地図の左端 734 は変えない）
+        static let mapWidth: CGFloat = 274
         static let mapGapToPlace: CGFloat = 8
         /// 地図の下端と撮影情報の上端の間（区切り線は地図の手前で止める）
         /// 地図は黒い帯の高さいっぱい（上下の余白 12）。撮影情報は地図の左へ詰める
@@ -131,8 +150,11 @@ enum ShareCardMap {
         let footer: CGFloat
         /// 撮影情報（カメラ・レンズ・撮影値）が1つでもあるか。無いときは下の段（区切り線・間・撮影情報の行）を描かない
         let hasShotInfo: Bool
-        /// 下の空き（帯の下端から上へ）。9:16 だけ 75（Instagram の返信欄に隠れる・`FadeLayout.bottomInset` と同じ）
+        /// 下の空き（帯の下端から上へ）。9:16 だけ。地図の下端（帯の下端の 12 上）がストーリーの下の帯（20%）の上に来る分
+        /// （2026-11-14: 75 → 304。75 では撮影情報と地図が返信欄の帯に掛かっていた・画素で下端から 13.6%）
         let bottomInset: CGFloat
+        /// 9:16 で見出しと写真を下げる量（`topShift`）
+        let topShift: CGFloat
 
         /// 下の段（撮影者の段の下の間 → 区切り線 → 間 → 撮影情報の行）の高さ。42 + 2 + 42 + 52 = 138
         static var shotInfoBlockHeight: CGFloat { rowGap + lineWidth + rowGap + infoHeight }
@@ -143,14 +165,22 @@ enum ShareCardMap {
         init(ratio: SignatureShareCardRenderer.Ratio, hasShotInfo: Bool = true) {
             height = Layout.width / CGFloat(ratio.rawValue)
             self.hasShotInfo = hasShotInfo
-            bottomInset = ratio == .story ? 75 : 0
-            footer = (ratio == .story ? 403 : 328) - (hasShotInfo ? 0 : Self.shotInfoBlockHeight)
+            bottomInset = ratio == .story
+                ? max(0, height - Layout.margin - Layout.mapBandInset - Layout.storyTextBottom) : 0
+            topShift = Layout.topShift(ratio)
+            // 帯の高さ（268）は前のまま。外の余白が 72 になった分、footer も 12 増える（4:5 で 328 → 340）
+            footer = Layout.bandHeight + Layout.margin + bottomInset - (hasShotInfo ? 0 : Self.shotInfoBlockHeight)
         }
+        /// 黒い帯の高さ（撮影情報があるとき）。地図 244 と上下 12
+        static var bandHeight: CGFloat { mapHeight + mapBandInset * 2 }
 
+        /// 見出し（ロゴ・一文・住所）の縦の中心
+        var headerCenterY: CGFloat { Layout.headerCenter + topShift }
+        var headerMarkY: CGFloat { headerCenterY - Layout.headerMarkSize / 2 }
         var photoBottom: CGFloat { height - footer }
         var photoRect: CGRect {
-            CGRect(x: Layout.margin, y: Layout.header,
-                   width: Layout.width - Layout.margin * 2, height: photoBottom - Layout.header)
+            CGRect(x: Layout.margin, y: Layout.header + topShift,
+                   width: Layout.width - Layout.margin * 2, height: photoBottom - Layout.header - topShift)
         }
         var bandRect: CGRect {
             CGRect(x: Layout.margin, y: photoBottom,
@@ -208,43 +238,61 @@ enum ShareCardMap {
     /// 2026-11-05 判断: 写真の上に真鍮の額縁は載せない（真鍮は黒い地の上だけ・写真の上は白だけ）。
     struct FadeLayout {
         static let width: CGFloat = 1080
-        static let margin: CGFloat = 60
+        /// 2026-11-14: 60 → 72（`Layout.margin` と同じ）
+        static let margin: CGFloat = Layout.margin
         static var contentLeft: CGFloat { margin }
         static var contentRight: CGFloat { width - margin }
 
         let height: CGFloat
         let isSquare: Bool
-        /// 下の空き。9:16 だけ 75（`Layout` の footer 403 と 328 の差）
+        /// 下の空き。9:16 だけ（2026-11-14: 75 → 字の下端がストーリーの下の帯 20% の上に来る分。75 では下端から 13.1% だった）
         let bottomInset: CGFloat
+        /// 9:16 で見出しを下げる量（`Layout.topShift`）
+        let topShift: CGFloat
+        /// 基準線から一番下の字（撮影情報の行）の下端まで（画素で測った 66）
+        static let contentBelowBase: CGFloat = 66
 
         init(ratio: SignatureShareCardRenderer.Ratio) {
             height = Self.width / CGFloat(ratio.rawValue)
             isSquare = ratio == .square
-            bottomInset = ratio == .story ? 75 : 0
+            bottomInset = ratio == .story ? height - (Layout.storyTextBottom + Self.contentBelowBase) : 0
+            topShift = Layout.topShift(ratio)
         }
+        var headerCenterY: CGFloat { Layout.headerCenter + topShift }
 
         /// 下の情報の基準線（これより下は「下の空き」）
         var base: CGFloat { height - bottomInset }
         /// グラデーションの長さ。1:1 は写真が低いので短い
         var fadeLength: CGFloat { isSquare ? 560 : 710 }
         var fadeTop: CGFloat { base - fadeLength }
-        /// 上のロゴの下に敷く薄い影の高さ（白い字を空の上でも読めるように）
-        static let topShadeHeight: CGFloat = 220
-        static let topShadeAlpha: CGFloat = 0.55
+        /// 上のロゴの下に敷く影（白い字を空の上でも読めるように）。
+        /// 2026-11-14: 白い写真の上で一文と住所の明暗の比が 2.01（画素で測った値。黒 55% から下へ薄れる影で、字の所は 21〜37%）だった。
+        /// 字の塊の下端の 8 下までは黒 62%（白い写真の上で約 6:1）、そこから 150 で消す
+        static let topShadeAlpha: CGFloat = 0.62
+        var topShadeHeight: CGFloat { headerCenterY + Layout.headerTextHalfHeight + 8 + 150 }
+        var topShadeStops: [(location: CGFloat, alpha: CGFloat)] {
+            let solid = (headerCenterY + Layout.headerTextHalfHeight + 8) / topShadeHeight
+            return [(0, Self.topShadeAlpha), (solid, Self.topShadeAlpha),
+                    (solid + (1 - solid) * 0.45, Self.topShadeAlpha * 0.45), (1, 0)]
+        }
         /// グラデーションの形（0〜1 の位置・黒の濃さ）。短い帯にせず6点で滑らかにする（境目を見せない）
         static let fadeStops: [(location: CGFloat, alpha: CGFloat)] = [
             (0, 0), (0.06, 0.04), (0.18, 0.16), (0.38, 0.38), (0.62, 0.66), (0.85, 0.88), (1, 1)
         ]
 
-        // 右: 地図（右端は写真の右端にそろえる）
+        // 右: 地図（右端は写真の右端にそろえる）。
+        // 2026-11-14: 地図の上の所は黒 4% しか掛からない写真の上で、真鍮の線の明暗の比が 1.46〜1.93（画素）だった。
+        // 写真の上は白だけ（板）なので白で描き、黒 49% 以上が掛かる所（基準線の 370 上から）へ下げる
         static let mapWidth: CGFloat = 380
-        var mapHeight: CGFloat { isSquare ? 400 : 520 }
+        var mapHeight: CGFloat { 240 }
         var mapRect: CGRect {
-            CGRect(x: Self.contentRight - Self.mapWidth, y: base - 140 - mapHeight,
+            CGRect(x: Self.contentRight - Self.mapWidth, y: base - 130 - mapHeight,
                    width: Self.mapWidth, height: mapHeight)
         }
-        /// 左の列の幅（地図の手前まで）
-        static let leftColumnWidth: CGFloat = 580
+        /// 左の列の幅（地図の手前まで）。2026-11-14: 余白 72 に合わせ 580 → 556
+        static let leftColumnWidth: CGFloat = 556
+        /// 撮影情報の3つの欄（左端からの位置・幅）。右端は本文の右端（2026-11-14: 余白 72 に合わせて詰めた）
+        static let exifCells: [(x: CGFloat, width: CGFloat)] = [(0, 310), (330, 330), (680, 256)]
 
         // 左: 地名（明朝）・市区町村（真鍮）・撮影者・撮影情報
         static let placeFontSize: CGFloat = 96
@@ -268,25 +316,34 @@ enum ShareCardMap {
     /// 余白は 60 の線にそろえる。9:16 は下の 75 を空ける（Instagram の返信欄）。
     struct LabelLayout {
         static let width: CGFloat = 1080
-        static let margin: CGFloat = 60
+        /// 2026-11-14: 60 → 72（`Layout.margin`）
+        static let margin: CGFloat = Layout.margin
         static var contentLeft: CGFloat { margin }
         static var contentRight: CGFloat { width - margin }
-        static let header: CGFloat = 112
+        /// 2026-11-14: 112 → 176（帯の型と同じ。画素で一文の上端が 40px＝3.7% だった）
+        static let header: CGFloat = Layout.header
         /// 見出しの縦の中心（額縁の内側と写真の真ん中）
         static var headerCenter: CGFloat { (15 + header) / 2 }
+        /// 基準線から一番下の字（表の値）の下端まで（画素で測った 104）
+        static let contentBelowBase: CGFloat = 104
 
         let height: CGFloat
         let base: CGFloat
         let labelHeight: CGFloat
+        let topShift: CGFloat
 
         init(ratio: SignatureShareCardRenderer.Ratio) {
             height = Self.width / CGFloat(ratio.rawValue)
-            base = height - (ratio == .story ? 75 : 0)
+            // 9:16 は表の下端がストーリーの下の帯（20%）の上に来る所（2026-11-14: 75 では下端から 16.6% だった）
+            base = ratio == .story ? Layout.storyTextBottom + Self.contentBelowBase : height
             labelHeight = ratio == .square ? 420 : 450
+            topShift = Layout.topShift(ratio)
         }
+        var headerCenterY: CGFloat { Self.headerCenter + topShift }
         var photoBottom: CGFloat { base - labelHeight }
         var photoRect: CGRect {
-            CGRect(x: Self.margin, y: Self.header, width: Self.width - Self.margin * 2, height: photoBottom - Self.header)
+            CGRect(x: Self.margin, y: Self.header + topShift, width: Self.width - Self.margin * 2,
+                   height: photoBottom - Self.header - topShift)
         }
         var eyebrowTop: CGFloat { photoBottom + 44 }
         var placeTop: CGFloat { photoBottom + 68 }
@@ -298,13 +355,16 @@ enum ShareCardMap {
         /// 表の値の最大の高さ（22 の字で2行）
         static let tableValueHeight: CGFloat = 60
         /// 左の列（地名・罫線・撮影者・表）の幅。右は地図
-        static let leftColumnWidth: CGFloat = 620
+        /// 2026-11-14: 620 → 608（余白 72 に合わせる。地図の左端 704 の 24 手前まで）
+        static let leftColumnWidth: CGFloat = 608
         static let mapWidth: CGFloat = 304
         var mapRect: CGRect {
             CGRect(x: Self.contentRight - Self.mapWidth, y: photoBottom + 28, width: Self.mapWidth, height: 300)
         }
         /// 表の3列の左端と幅（ラベル CAMERA / LENS / EXPOSURE）
-        static let tableColumns: [(x: CGFloat, width: CGFloat)] = [(60, 180), (268, 180), (476, 180)]
+        /// 2026-11-14: 余白 72 に合わせて 12 右へ（60・268・476 → 72・280・488）。列の間の縦罫は `tableDividerXs`
+        static let tableColumns: [(x: CGFloat, width: CGFloat)] = [(72, 180), (280, 180), (488, 180)]
+        static let tableDividerXs: [CGFloat] = [260, 468]
         /// 表の中身が終わる縦の位置（下の余白 60 より上に収まる）
         var tableBottom: CGFloat { tableTop + 26 + Self.tableValueHeight }
     }
@@ -315,16 +375,23 @@ enum ShareCardMap {
     /// その途中に地名（大きな明朝）をまたがせる。額縁は載せない（写真の上は白だけ・真鍮は黒い地の上だけ）。
     struct CoverLayout {
         static let width: CGFloat = 1080
-        static let margin: CGFloat = 60
+        /// 2026-11-14: 60 → 72（`Layout.margin`）
+        static let margin: CGFloat = Layout.margin
         static var contentLeft: CGFloat { margin }
         static var contentRight: CGFloat { width - margin }
+        /// 基準線から一番下の字（撮影者のアバター）の下端まで（画素で測った 115）
+        static let contentBelowBase: CGFloat = 115
         let height: CGFloat
         let base: CGFloat
+        let topShift: CGFloat
 
         init(ratio: SignatureShareCardRenderer.Ratio) {
             height = Self.width / CGFloat(ratio.rawValue)
-            base = height - (ratio == .story ? 75 : 0)
+            // 9:16 はストーリーの下の帯（20%）の上（2026-11-14: 75 では下端から 17.6% だった）
+            base = ratio == .story ? Layout.storyTextBottom + Self.contentBelowBase : height
+            topShift = Layout.topShift(ratio)
         }
+        var headerCenterY: CGFloat { Layout.headerCenter + topShift }
         static let blackHeight: CGFloat = 250
         static let fadeLength: CGFloat = 340
         var photoBottom: CGFloat { base - Self.blackHeight }
@@ -335,15 +402,18 @@ enum ShareCardMap {
         static let leftColumnWidth: CGFloat = 660
         var subPlaceTop: CGFloat { photoBottom - 48 }
         static let subPlaceFontSize: CGFloat = 40
-        /// 地図（右端は写真の右端）。上半分はグラデーションの中・下半分は黒の上
+        /// 地図（右端は写真の右端）。上はグラデーションの中・下は黒の上。
+        /// 2026-11-14: 上端（写真の下端の 220 上・黒 35%）で真鍮の線の明暗の比が 1.42〜1.54（画素）だった。
+        /// 写真の上は白だけ（板）なので白で描き、黒 69% 以上の所（写真の下端の 120 上）から始める
         static let mapWidth: CGFloat = 260
         var mapRect: CGRect {
-            CGRect(x: Self.contentRight - Self.mapWidth, y: photoBottom - 220, width: Self.mapWidth, height: 300)
+            CGRect(x: Self.contentRight - Self.mapWidth, y: photoBottom - 120, width: Self.mapWidth, height: 250)
         }
         var authorTop: CGFloat { photoBottom + 70 }
         /// 撮影情報の2行（撮影者の右）
         static let exifX: CGFloat = 430
-        static let exifWidth: CGFloat = 320
+        /// 2026-11-14: 320 → 306（地図の左端 748 の 12 手前まで）
+        static let exifWidth: CGFloat = 306
         var exifTop: CGFloat { photoBottom + 78 }
     }
 

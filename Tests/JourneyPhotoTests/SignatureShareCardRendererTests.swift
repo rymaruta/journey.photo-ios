@@ -223,7 +223,8 @@ final class SignatureShareCardRendererTests: XCTestCase {
         XCTAssertFalse(names.isEmpty)
     }
 
-    /// 2026-11-05 フェード型: 3 比率とも大きさが正しく、写真は全面・下は黒へ溶け、地図の線（真鍮）が出る
+    /// 2026-11-05 フェード型: 3 比率とも大きさが正しく、写真は全面・下は黒へ溶け、地図の線が出る。
+    /// 2026-11-14: 地図は写真の上（黒 49〜88%）なので白で描く（真鍮は黒地の上だけ・明るい写真の上で真鍮の線が 1.46〜1.93 だった）
     func testFadeStyleRendersAllRatios() async throws {
         let source = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 1200))
             .jpegData(withCompressionQuality: 0.95) { context in
@@ -266,19 +267,19 @@ final class SignatureShareCardRendererTests: XCTestCase {
             // 下は黒へ溶ける: 左下の隅（文字の無い所）は黒に近い
             let bottom = try rgb(bitmap, 6, Int(layout.height) - 6)
             XCTAssertLessThan(bottom.max() ?? 255, 24, "\(ratio) 下が黒に着いていない \(bottom)")
-            // 写真の上に真鍮の額縁を載せない（左上の隅 (13,13) は写真の色）
-            let corner = try rgb(bitmap, 13, 300)
+            // 写真の上に真鍮の額縁を載せない（左の端は写真の色）。上の影（9:16 は 490 まで）とグラデーションの間で見る
+            let corner = try rgb(bitmap, 13, Int(layout.fadeTop) - 20)
             XCTAssertGreaterThan(corner[2], 120, "\(ratio) 左の端に額縁が載っている \(corner)")
-            // 地図の枠の中に、真鍮の線（赤が青より明るい色）がある
+            // 地図の枠の中に、白い線（どの色も明るい）がある
             let map = layout.mapRect
-            var brassPixels = 0
-            for yy in stride(from: Int(map.minY), to: Int(map.maxY), by: 4) {
-                for xx in stride(from: Int(map.minX), to: Int(map.maxX), by: 4) {
+            var whitePixels = 0
+            for yy in stride(from: Int(map.minY), to: Int(map.maxY), by: 2) {
+                for xx in stride(from: Int(map.minX), to: Int(map.maxX), by: 2) {
                     let p = try rgb(bitmap, xx, yy)
-                    if p[0] > 150, p[0] > p[2] + 40 { brassPixels += 1 }
+                    if (p.min() ?? 0) > 170 { whitePixels += 1 }
                 }
             }
-            XCTAssertGreaterThan(brassPixels, 20, "\(ratio) 地図の線が見えない（\(brassPixels)）")
+            XCTAssertGreaterThan(whitePixels, 20, "\(ratio) 地図の線が見えない（\(whitePixels)）")
         }
     }
 
@@ -307,6 +308,16 @@ final class SignatureShareCardRendererTests: XCTestCase {
         }
         func isPhotoBlue(_ p: [Int]) -> Bool { p[2] > 150 && p[2] > p[0] + 40 }
         func isDark(_ p: [Int]) -> Bool { (p.max() ?? 255) < 40 }
+        /// 白い線（2026-11-14: 表紙の地図は写真の上に掛かるので白）
+        func whiteCount(_ image: CGImage, in rect: CGRect) throws -> Int {
+            var n = 0
+            for y in stride(from: Int(rect.minY), to: Int(rect.maxY), by: 2) {
+                for x in stride(from: Int(rect.minX), to: Int(rect.maxX), by: 2) {
+                    if (try rgb(image, x, y).min() ?? 0) > 170 { n += 1 }
+                }
+            }
+            return n
+        }
         func brassCount(_ image: CGImage, in rect: CGRect) throws -> Int {
             var n = 0
             for y in stride(from: Int(rect.minY), to: Int(rect.maxY), by: 4) {
@@ -346,7 +357,7 @@ final class SignatureShareCardRendererTests: XCTestCase {
                     XCTAssertTrue(isPhotoBlue(try rgb(bitmap, 13, Int(layout.fadeTop) / 2 + 100)), "\(name) 左の端が写真でない")
                     XCTAssertTrue(isDark(try rgb(bitmap, 6, height - 6)), name)
                     XCTAssertTrue(isDark(try rgb(bitmap, 300, Int(layout.photoBottom) + 6)), "\(name) 写真の下端が黒くない")
-                    XCTAssertGreaterThan(try brassCount(bitmap, in: layout.mapRect), 20, "\(name) 地図の線が見えない")
+                    XCTAssertGreaterThan(try whiteCount(bitmap, in: layout.mapRect), 20, "\(name) 地図の線が見えない")
                 default: break
                 }
             }
@@ -672,7 +683,7 @@ final class SignatureShareCardRendererTests: XCTestCase {
     /// 一部だけ空なら、空の欄に掛かる縦罫を描かない。線は真鍮 45%（赤 ≈ 98）、帯の地は赤 14
     ///
     /// 2026-11-13: 撮影情報が無いカードは帯が 138 低い（`hasShotInfo: false` の寸法）。前の帯の上の所
-    /// （4:5 の 1022〜1160）まで写真が伸び、撮影者の段の下（1252〜1290）には線が無いことを画素で見る
+    /// （4:5 の 1010〜1148・2026-11-14 に余白 72 で 12 上がった）まで写真が伸び、撮影者の段の下（1240〜1278）には線が無いことを画素で見る
     func testBandCardDrawsNoInfoLinesWithoutExif() async throws {
         typealias L = ShareCardMap.Layout
         let layout = L(ratio: .portrait)
@@ -685,8 +696,8 @@ final class SignatureShareCardRendererTests: XCTestCase {
         let empty = try await renderCard(
             grayPhoto(), credit: credit(camera: nil, lens: " ", exposure: nil), ratio: .portrait, style: .band)
         let none = L(ratio: .portrait, hasShotInfo: false)
-        XCTAssertEqual(none.photoBottom, 1160)
-        // 帯があった所（撮影情報ありの帯の上端 1022 → 新しい帯の上端 1160）は写真（暗い灰色・赤 ≈ 85）で埋まる。
+        XCTAssertEqual(none.photoBottom, 1148)
+        // 帯があった所（撮影情報ありの帯の上端 1010 → 新しい帯の上端 1148）は写真（暗い灰色・赤 ≈ 85）で埋まる。
         // 黒い帯（赤 14）が残っていれば最小が閾値を下回る
         let formerBand = CGRect(x: L.contentLeft + 4, y: layout.photoBottom + 2,
                                 width: L.contentRight - L.contentLeft - 8, height: none.photoBottom - layout.photoBottom - 6)
@@ -716,7 +727,7 @@ final class SignatureShareCardRendererTests: XCTestCase {
     /// 展示札の型（4:5）: 表の列の間の縦罫（真鍮 30%・赤 ≈ 60）も、両側に字があるときだけ
     func testLabelCardDrawsNoTableDividersWithoutExif() async throws {
         let layout = ShareCardMap.LabelLayout(ratio: .portrait)
-        let dividers = [CGFloat(248), 456].map {
+        let dividers = ShareCardMap.LabelLayout.tableDividerXs.map {
             CGRect(x: $0 - 3, y: layout.tableTop + 30, width: 6, height: 30)
         }
         let threshold = 35
