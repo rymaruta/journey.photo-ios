@@ -96,4 +96,22 @@ enum PhotoDetailPull {
     static func rounds(dy: Double) -> Bool {
         dy > 0
     }
+
+    /// 引いている写真を切り抜く四角（`DetailPullClip`）。**nil は切り抜かない。**
+    ///
+    /// - `photo` が nil（写真の詳細・#592）: いつも枠で切り抜く（角は `rounds` の間だけ丸い）。#592 の見た目のまま
+    /// - `photo` あり（写真を大きく見る画面・2026-11-14 確かめ役）: 枠の中に収めて真ん中に置いた写真の大きさ
+    ///   （`ZoomPan` の `content` と同じ値）。**引いている間だけ**写真の形で切り抜いて角を丸め、引いていない時は切り抜かない
+    ///   ——枠（頁いっぱい）で切ると、丸まるのは写真の外の地の四角で、写真の角は丸まらない（写真の詳細と見た目が割れる）。
+    ///   引けるのは等倍の時だけ（`viewerAccepts`）なので、拡大した写真を切ることはない
+    static func clipRect(frame: CGRect, photo: CGSize?, dy: Double) -> CGRect? {
+        guard let photo else { return frame }
+        guard rounds(dy: dy) else { return nil }
+        let width = min(max(Double(photo.width), 0), Double(frame.width))
+        let height = min(max(Double(photo.height), 0), Double(frame.height))
+        return CGRect(x: Double(frame.midX) - width / 2, y: Double(frame.midY) - height / 2, width: width, height: height)
+    }
+
+    /// 切り抜かないときに置く四角の、枠からのはみ出し（pt）。拡大した写真（4倍）より十分に大きい
+    static let unclippedMargin: Double = 100_000
 }

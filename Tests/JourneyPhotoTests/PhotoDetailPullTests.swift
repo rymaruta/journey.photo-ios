@@ -147,7 +147,7 @@ final class PhotoDetailPullTests: XCTestCase {
     }
 
     /// 🔴 大きく見る画面は**写真の詳細と同じ部品と計算を使う**（写しを作らない）。拡大中は始めない決まりを通し、
-    /// パンは見ている頁にだけ置く。引く部品には頁いっぱいの枠で渡す（写真の枠のままだと拡大した写真が切り抜かれる）
+    /// パンは見ている頁にだけ置く。引いている写真は写真の形で切り抜く（`PhotoDetailPull.clipRect`）
     func testViewerUsesTheSharedPull() throws {
         let viewer = try viewSource("PhotoViewerView.swift")
         XCTAssertTrue(viewer.contains("@StateObject private var pullHolder = PhotoDetailPullHolder()"), "引く量の箱の入れ物が @StateObject に無い")
@@ -161,11 +161,42 @@ final class PhotoDetailPullTests: XCTestCase {
         XCTAssertFalse(catcher.contains("120"), "閾値を画面に写している（`PhotoDetailPull.closeDistance`）")
         XCTAssertTrue(viewer.contains(".background { if shown { pullCatcher } }"), "パンを見ている頁にだけ置いていない")
         XCTAssertTrue(viewer.contains("DetailPullFollow(drag: shown ? pull : stillHolder.drag, part: .photo"), "見ている写真が指に付いて動かない")
-        XCTAssertTrue(viewer.contains(".offset(x: shown ? Double(liveOffset.width) : 0, y: shown ? Double(liveOffset.height) : 0)\n"
-            + "                        .frame(maxWidth: .infinity, maxHeight: .infinity))"), "拡大した写真が写真の枠で切り抜かれる")
+        XCTAssertTrue(viewer.contains("photoSize: content(for: offset))"), "引いている写真を写真の形で切り抜いていない（角が丸まらない）")
         // 写真の詳細も同じ決め方を使う
         let detail = try viewSource("PhotoDetailView.swift")
         XCTAssertTrue(detail.contains("pull.release(dy: dy, velocityY: velocityY, reduceMotion: reduceMotion)"))
+        XCTAssertFalse(detail.contains("photoSize:"), "写真の詳細の切り抜き（枠ごと・#592）を変えた")
+        let follow = try viewSource("DetailPullCatcher.swift")
+        XCTAssertTrue(follow.contains(".clipShape(DetailPullClip(photo: photoSize, dy: dy))"))
+        XCTAssertTrue(follow.contains("var photoSize: CGSize? = nil"), "写真の詳細の既定（枠ごと切り抜く）が変わった")
+    }
+
+    /// 🔴 **写真の詳細（#592）の切り抜きは今までどおり**: 引いていなくても枠で切り抜き、引いている間だけ角が丸い
+    /// （以前の `RoundedRectangle(cornerRadius: rounds ? JPRadius.l : 0)` と同じ枠）
+    func testDetailClipStaysTheFrame() {
+        let frame = CGRect(x: 0, y: 0, width: 440, height: 460)
+        XCTAssertEqual(PhotoDetailPull.clipRect(frame: frame, photo: nil, dy: 0), frame, "引いていない写真の詳細の写真を枠で切り抜かない")
+        XCTAssertEqual(PhotoDetailPull.clipRect(frame: frame, photo: nil, dy: 80), frame)
+        XCTAssertEqual(PhotoDetailPull.clipRect(frame: frame, photo: nil, dy: -20), frame, "上へ払う間も枠で切り抜く")
+        XCTAssertFalse(PhotoDetailPull.rounds(dy: 0))
+        XCTAssertTrue(PhotoDetailPull.rounds(dy: 80))
+    }
+
+    /// 🔴 **大きく見る画面は、引いている間だけ写真の形で切り抜く**（2026-11-14 確かめ役）。頁いっぱいで切ると、丸まるのは
+    /// 写真の外の地の四角で写真の角は丸まらない。引いていない時は切り抜かない（拡大した写真を切らない）
+    func testViewerClipFollowsThePhoto() {
+        let page = CGRect(x: 0, y: 0, width: 440, height: 956)
+        let landscape = CGSize(width: 440, height: 293)
+        XCTAssertNil(PhotoDetailPull.clipRect(frame: page, photo: landscape, dy: 0), "引いていないのに切り抜く（拡大した写真が切れる）")
+        XCTAssertNil(PhotoDetailPull.clipRect(frame: page, photo: landscape, dy: -10))
+        let clip = PhotoDetailPull.clipRect(frame: page, photo: landscape, dy: 60)
+        XCTAssertEqual(clip, CGRect(x: 0, y: (956 - 293) / 2.0, width: 440, height: 293), "写真の形（真ん中に収めた大きさ）で切り抜かない")
+        // 縦長の写真は左右が空く
+        let portrait = PhotoDetailPull.clipRect(frame: page, photo: CGSize(width: 300, height: 956), dy: 60)
+        XCTAssertEqual(portrait, CGRect(x: 70, y: 0, width: 300, height: 956))
+        // 写真の大きさがまだ測れず画面の大きさで代えたときは頁いっぱい（はみ出さない）
+        XCTAssertEqual(PhotoDetailPull.clipRect(frame: page, photo: CGSize(width: 900, height: 2000), dy: 60), page)
+        XCTAssertGreaterThan(PhotoDetailPull.unclippedMargin, 956 * ZoomPan.maxScale, "切り抜かない四角が拡大した写真より小さい")
     }
 
     private func viewSource(_ name: String) throws -> String {

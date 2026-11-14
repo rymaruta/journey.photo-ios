@@ -164,6 +164,9 @@ struct DetailPullFollow<Content: View>: View {
     let part: Part
     let reduceMotion: Bool
     let content: Content
+    /// 枠の中に収めて真ん中に置いた写真の大きさ（写真を大きく見る画面）。nil は枠ごと切り抜く（写真の詳細）。
+    /// 決まりは `PhotoDetailPull.clipRect`
+    var photoSize: CGSize? = nil
 
     var body: some View {
         let dx = Double(drag.translation.width), dy = Double(drag.translation.height)
@@ -171,12 +174,32 @@ struct DetailPullFollow<Content: View>: View {
         case .photo:
             let shift = PhotoDetailPull.offset(dx: dx, dy: dy)
             content
-                .clipShape(RoundedRectangle(cornerRadius: PhotoDetailPull.rounds(dy: dy) ? JPRadius.l : 0))
+                .clipShape(DetailPullClip(photo: photoSize, dy: dy))
                 .scaleEffect(PhotoDetailPull.scale(dy: dy, reduceMotion: reduceMotion))
                 .offset(x: shift.x, y: shift.y)
         case .rest:
             content.opacity(PhotoDetailPull.restOpacity(dy: dy))
         }
+    }
+}
+
+/// 引いている写真の切り抜き（`PhotoDetailPull.clipRect`）。角は引いている間だけ `JPRadius.l`
+/// （つまむと地図で縮めたときと同じ角・`PinchToMapHero`）。形を1つにして、写真の詳細と大きく見る画面で
+/// 部品の型を割らない（切り抜く・切り抜かないで型が替わると、中の写真が作り直されて読み直しになる）
+struct DetailPullClip: Shape {
+    let photo: CGSize?
+    let dy: Double
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        guard let clip = PhotoDetailPull.clipRect(frame: rect, photo: photo, dy: dy) else {
+            let margin = CGFloat(PhotoDetailPull.unclippedMargin)
+            path.addRect(rect.insetBy(dx: -margin, dy: -margin))
+            return path
+        }
+        let radius = CGFloat(PhotoDetailPull.rounds(dy: dy) ? JPRadius.l : 0)
+        path.addRoundedRect(in: clip, cornerSize: CGSize(width: radius, height: radius))
+        return path
     }
 }
 

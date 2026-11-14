@@ -89,11 +89,10 @@ struct PhotoViewerView: View {
                                                           onLayout: { size in fitted[offset] = size })
                         // **拡大・移動は見ている1枚にだけ掛ける**（送りの途中で隣が拡大されて見えない）
                         .scaleEffect(shown ? zoom.liveScale(pinch: pinch) : 1)
-                        .offset(x: shown ? Double(liveOffset.width) : 0, y: shown ? Double(liveOffset.height) : 0)
-                        // 2026-11-14 判断: **頁いっぱいの枠に置いてから引く部品に渡す。** 引く部品は角を丸めるために
-                        // 中身の枠で切り抜く（`DetailPullFollow` の `.photo`）。写真の枠のまま渡すと、拡大した写真が
-                        // 画面に収めた大きさで切り抜かれる（`scaleEffect` は枠を広げない）
-                        .frame(maxWidth: .infinity, maxHeight: .infinity))
+                        .offset(x: shown ? Double(liveOffset.width) : 0, y: shown ? Double(liveOffset.height) : 0),
+                                     // 2026-11-14 確かめ役: 引いている間は**写真の形**で切り抜いて角を丸める（写真の詳細と同じ見た目）。
+                                     // 引いていない時は切り抜かない（拡大した写真を切らない・`PhotoDetailPull.clipRect`）
+                                     photoSize: content(for: offset))
                         // **両指で広げて拡大。離しても倍率を保つ**（2026-09-30 のレビュー:
                         // 以前は離すと 1 倍に戻り、細部を見ていられなかった）
                         .gesture(
@@ -206,6 +205,14 @@ struct PhotoViewerView: View {
                     .allowsHitTesting(false)
                     .accessibilityIdentifier("viewer.chrome.probe")
                     .accessibilityValue(showsChrome ? "shown" : "hidden")
+                // 拡大しているか（2026-11-14 確かめ役・`testViewerPullDownCloses`）。広げた後に下へ動かしても閉じないことを、
+                // 本当に拡大できた回だけで見る（シミュレーターで広げられない回を「閉じない」と取り違えない）
+                Text(" ")
+                    .font(.system(size: 1))
+                    .frame(width: 1, height: 1)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("viewer.zoom.probe")
+                    .accessibilityValue(zoom.isZoomed ? "zoomed" : "flat")
             }
         }
         .statusBarHidden()
