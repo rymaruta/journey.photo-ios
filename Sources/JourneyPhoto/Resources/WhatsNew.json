@@ -57,6 +57,22 @@
           "destination": "search"
         },
         {
+          "symbol": "clock.arrow.circlepath",
+          "title": { "ja": "探すで前に探した言葉を出す", "en": "Recent searches in Search" },
+          "detail": { "ja": "探すの欄が空のとき、前に探した言葉が上に並びます。押すとその言葉でもう一度探せます。", "en": "When the Search box is empty, your recent searches appear at the top. Tap one to search for it again." },
+          "destination": "search"
+        },
+        {
+          "symbol": "mappin.and.ellipse",
+          "title": { "ja": "ストーリーの場所は数文字で候補から選べる", "en": "Pick a story place from suggestions" },
+          "detail": { "ja": "ストーリーに場所を付けるとき、数文字打つと場所の候補が出て、押すだけで決まります。", "en": "When adding a place to a story, type a few letters and tap one of the suggested places." }
+        },
+        {
+          "symbol": "key",
+          "title": { "ja": "ログインはキーボードの右下で次へ進める", "en": "Use the keyboard's return key to sign in" },
+          "detail": { "ja": "ログインや登録の画面で、キーボードの右下のキーを押すと次の欄へ進み、最後の欄からそのまま送れます。", "en": "On the sign-in and sign-up screens, the return key moves to the next field and sends from the last one." }
+        },
+        {
           "symbol": "ticket",
           "title": { "ja": "乗車券は ‹ › でもめくれる", "en": "Flip passes with ‹ ›" },
           "detail": { "ja": "すれちがい乗車券は、払うほかに下の ‹ › のボタンでもめくれます。何枚目かも分かります。", "en": "You can flip through your Pass tickets with the ‹ › buttons as well as by swiping, and see which one you're on." }

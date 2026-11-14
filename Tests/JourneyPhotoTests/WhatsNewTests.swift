@@ -306,7 +306,7 @@ final class WhatsNewTests: XCTestCase {
     }
 
     /// 1.1.89（2026-11-14・1.1.88 はストーリーの落ちる件の足跡 #602 だけで項目なし）: 人間工学の点検（#188）の大きく見るを下に引いて閉じる・投稿するを下の主ボタン・書きかけを払うと確かめ・
-    /// 入力欄の見本の字・探すの押し直し・乗車券の ‹ ›・とおまわり号の部屋の ⟲ ⟳ と、すれちがい乗車券の言葉の統一（pass-wording）・ストーリーに載せる画面の背景（story-share-backdrop）・ホームの札の出典（home-card-attribution）・大きい文字とコントラストと角の当たり（188-ergo-a11y）・共有カードの新しい型と安全域（share-card-audit）・「行きたい」の旗（#593）・旅行プランの会話の通報（#597）。
+    /// 入力欄の見本の字・探すの押し直し・乗車券の ‹ ›・とおまわり号の部屋の ⟲ ⟳ と、すれちがい乗車券の言葉の統一（pass-wording）・ストーリーに載せる画面の背景（story-share-backdrop）・ホームの札の出典（home-card-attribution）・大きい文字とコントラストと角の当たり（188-ergo-a11y）・共有カードの新しい型と安全域（share-card-audit）・ストーリーの場所と最近の検索とログインの右下のキー（ergo-followup-3）・「行きたい」の旗（#593）・旅行プランの会話の通報（#597）。
     /// 中黒・禁止語なし
     func testVersion1189() async throws {
         let root = URL(fileURLWithPath: #filePath)
@@ -320,19 +320,21 @@ final class WhatsNewTests: XCTestCase {
                                                  "SNS に載せるカードに新しいデザイン3つ", "カードの文字を端から離して見やすく",
                                                  "書きかけでも下へ払うと確かめが出る", "入力欄の見本の字を読みやすく",
                                                  "大きい文字やコントラストを上げる設定でも見やすく", "角の閉じるを押しやすく",
-                                                 "探すをもう一度押すとすぐ打てる", "乗車券は ‹ › でもめくれる",
+                                                 "探すをもう一度押すとすぐ打てる", "探すで前に探した言葉を出す",
+                                                 "ストーリーの場所は数文字で候補から選べる", "ログインはキーボードの右下で次へ進める",
+                                                 "乗車券は ‹ › でもめくれる",
                                                  "すれちがい乗車券の言葉をわかりやすく", "とおまわり号の部屋をボタンでも回せる", "ホームの札で、誰の写真かが切れずに見える",
                                                  "「行きたい」の印を旗に",
                                                  "旅行プランの会話で通報できる"])
         XCTAssertEqual(Set(v.items.map(\.symbol)).count, v.items.count, "記号が重複している")
-        XCTAssertEqual(v.items.map(\.destination), [nil, nil, nil, nil, nil, nil, nil, nil, nil, .search, nil, nil, nil, .home, nil, nil])
+        XCTAssertEqual(v.items.map(\.destination), [nil, nil, nil, nil, nil, nil, nil, nil, nil, .search, .search, nil, nil, nil, nil, nil, .home, nil, nil])
         // 払うと確かめるのは書きかけがあるときだけ（何も無ければそのまま閉じる・`sheetSwipeGuard`）
         XCTAssertTrue(v.items[5].detail.ja.contains("保存せずに閉じる") && v.items[5].detail.ja.contains("そのまま閉じます"),
                       v.items[5].detail.ja)
         // 旅行プランの会話の通報は長押しから（`TripMessageMenu`・札 #597）
-        XCTAssertTrue(v.items[15].detail.ja.contains("長押し"), v.items[15].detail.ja)
+        XCTAssertTrue(v.items[18].detail.ja.contains("長押し"), v.items[18].detail.ja)
         // 乗車券の項は呼び名の統一に合わせて「カード」「束」と書かない（`PassWordingTests`）
-        for item in v.items[10...11] {
+        for item in v.items[13...14] {
             XCTAssertFalse(item.detail.ja.contains("カード") || item.detail.ja.contains("束"), item.detail.ja)
         }
         for item in v.items {
