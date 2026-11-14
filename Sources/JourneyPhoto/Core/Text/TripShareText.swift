@@ -21,15 +21,17 @@ enum TripShareText {
     // MARK: - 会話の1通の通報とブロック（2026-11-14・札 #597・審査ガイドライン 1.2）
 
     /// 1通の長押しに出す操作
-    enum MessageAction: Equatable { case report, block }
+    enum MessageAction: Equatable { case copy, report, block }
 
-    /// 1通の長押しに出す操作。**ほかの仲間が書いた文の通だけ**（自分の通・「日程に足しました」の札には出さない——
+    /// 1通の長押しに出す操作。**文の通にはコピーを先頭に**（自分の通にも・DM の吹き出しの長押しと同じ並び）。
+    /// 「通報」「ブロック」は**ほかの仲間が書いた文の通だけ**、コピーの後ろ（自分の通・「日程に足しました」の札には出さない——
     /// サーバーも自分の通・札の通報は 400 で断る）。退会した人はブロックの相手にならない（DM の「…」と同じ・通報は出す）。
     /// ブロック中の人の通は画面から外れているので、ここに来ない
     static func messageActions(_ message: TripChatMessage, authorDeleted: Bool) -> [MessageAction] {
-        guard !message.mine, message.event == nil, let text = message.text,
+        guard message.event == nil, let text = message.text,
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
-        return authorDeleted ? [.report] : [.report, .block]
+        if message.mine { return [.copy] }
+        return authorDeleted ? [.copy, .report] : [.copy, .report, .block]
     }
 
     // MARK: - 受信箱・プッシュ

@@ -3828,8 +3828,8 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// 旅行プランの会話の1通を通報する（2026-11-14・札 #597・審査ガイドライン 1.2）。見本（`-JPTripShareFixture`）の
-    /// 「あお」の通を長押しすると「通報」「ブロック」が出て、「通報」で DM と同じ通報のシート（どの通か・理由・送られる範囲）が開く。
-    /// 自分の通（「いいね、朝いちで行こう」）の長押しには通報が出ない
+    /// 「あお」の通を長押しすると「コピー」「通報」「ブロック」が出て、「通報」で DM と同じ通報のシート（どの通か・理由・送られる範囲）が開く。
+    /// 自分の通（「いいね、朝いちで行こう」）の長押しはコピーだけで、通報・ブロックは出ない
     func testCapturesTripChatReport() {
         let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripShareFixture", "YES"])
         guard openTripsRow(app, "trips.plans") else { XCTFail("旅行プランの一覧が開かない"); return }
@@ -3847,9 +3847,12 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(mine.waitForExistence(timeout: 10), "自分の通が出ない")
         if mine.exists {
             mine.press(forDuration: 1.0)
-            Thread.sleep(forTimeInterval: 1)
+            XCTAssertTrue(app.buttons["コピー"].firstMatch.waitForExistence(timeout: 5), "自分の通の長押しに「コピー」が出ない")
             XCTAssertFalse(app.buttons["通報"].exists, "自分の通の長押しに「通報」が出ている")
-            if app.buttons["ブロック"].exists { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap() }
+            XCTAssertFalse(app.buttons["ブロック"].exists, "自分の通の長押しに「ブロック」が出ている")
+            // メニューの外を押して閉じる
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+            Thread.sleep(forTimeInterval: 1)
         }
         let theirs = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "ひがし茶屋街、人が少なくて")).firstMatch
         XCTAssertTrue(theirs.waitForExistence(timeout: 10), "あおの通が出ない")
@@ -3858,6 +3861,7 @@ final class ScreenshotTests: XCTestCase {
         let report = app.buttons["通報"].firstMatch
         XCTAssertTrue(report.waitForExistence(timeout: 5), "あおの通の長押しに「通報」が出ない")
         XCTAssertTrue(app.buttons["ブロック"].firstMatch.exists, "あおの通の長押しに「ブロック」が出ない")
+        XCTAssertTrue(app.buttons["コピー"].firstMatch.exists, "あおの通の長押しに「コピー」が出ない")
         guard report.exists else { return }
         shoot(app, "66f-旅行プランの会話（1通の長押し・通報とブロック）")
         report.tap()

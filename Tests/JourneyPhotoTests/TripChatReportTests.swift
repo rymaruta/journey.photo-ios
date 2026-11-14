@@ -7,8 +7,9 @@ import FoundationNetworking
 /// 旅行プランの会話の1通の通報とブロック（2026-11-14・札 #597・審査ガイドライン 1.2）。
 ///
 /// 見張ること:
-///  - 長押しの「通報」「ブロック」は**ほかの仲間の文の通にだけ**出る（自分の通・「日程に足しました」の札には出ない）
-///  - 退会した人の通は通報だけ（ブロックの相手にならない・DM の「…」と同じ）
+///  - 文の通の長押しは「コピー」が先頭（自分の通にも・DM の吹き出しと同じ）
+///  - 「通報」「ブロック」は**ほかの仲間の文の通にだけ**、コピーの後ろに出る（自分の通・「日程に足しました」の札には出ない）
+///  - 退会した人の通はコピーと通報だけ（ブロックの相手にならない・DM の「…」と同じ）
 ///  - 通報は `POST /trip-share/{planId}/report` に `{messageId, reason, note}` で送る（DM の口 `/dm/{id}/report` ではない）
 ///  - 理由は DM の会話の通報と同じ選び方（なりすましは「その他」＋補足の頭の印）
 final class TripChatReportTests: XCTestCase {
@@ -45,20 +46,21 @@ final class TripChatReportTests: XCTestCase {
 
     // MARK: - メニューに出る条件
 
-    func testOthersTextMessageOffersReportAndBlock() {
-        XCTAssertEqual(TripShareText.messageActions(message(), authorDeleted: false), [.report, .block])
+    func testOthersTextMessageOffersCopyThenReportAndBlock() {
+        XCTAssertEqual(TripShareText.messageActions(message(), authorDeleted: false), [.copy, .report, .block])
     }
 
-    func testOwnMessageOffersNothing() {
-        XCTAssertEqual(TripShareText.messageActions(message(mine: true), authorDeleted: false), [])
+    /// 自分の通はコピーだけ（通報・ブロックは出さない）
+    func testOwnMessageOffersCopyOnly() {
+        XCTAssertEqual(TripShareText.messageActions(message(mine: true), authorDeleted: false), [.copy])
     }
 
     func testAddedEventOffersNothing() {
         XCTAssertEqual(TripShareText.messageActions(message(event: true), authorDeleted: false), [])
     }
 
-    func testDeletedAuthorOffersReportOnly() {
-        XCTAssertEqual(TripShareText.messageActions(message(), authorDeleted: true), [.report])
+    func testDeletedAuthorOffersCopyAndReportOnly() {
+        XCTAssertEqual(TripShareText.messageActions(message(), authorDeleted: true), [.copy, .report])
     }
 
     func testBlankTextOffersNothing() {

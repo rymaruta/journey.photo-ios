@@ -358,6 +358,7 @@ struct TripChatPane: View {
                 }
                 DMBubble(text: text, mine: message.mine, time: nil)
                     .modifier(TripMessageMenu(actions: TripShareText.messageActions(message, authorDeleted: isDeleted(message.from)),
+                                              copy: { UIPasteboard.general.string = text },
                                               report: { report(message, text: text) },
                                               block: { blockTarget = BlockTarget(userId: message.from, name: name(message.from)) }))
             }
@@ -448,10 +449,12 @@ struct TripChatPane: View {
     }
 }
 
-/// 会話の1通の長押し（2026-11-14・札 #597・審査ガイドライン 1.2）。**ほかの仲間の文の通にだけ**「通報」「ブロック」を出す
-/// （`TripShareText.messageActions`）。言葉と印は DM の「…」の通報・ブロックと同じ。出すものが無い通にはメニューを付けない
+/// 会話の1通の長押し（2026-11-14・札 #597・審査ガイドライン 1.2）。文の通には「コピー」を先頭に（自分の通にも・DM の吹き出しの
+/// 長押しと同じ）、**ほかの仲間の文の通にだけ**その後ろに「通報」「ブロック」を出す（`TripShareText.messageActions`）。
+/// 言葉と印は DM の吹き出しのコピー・「…」の通報・ブロックと同じ。出すものが無い通（札）にはメニューを付けない
 private struct TripMessageMenu: ViewModifier {
     let actions: [TripShareText.MessageAction]
+    let copy: () -> Void
     let report: () -> Void
     let block: () -> Void
 
@@ -461,6 +464,9 @@ private struct TripMessageMenu: ViewModifier {
         } else {
             content
                 .contextMenu {
+                    if actions.contains(.copy) {
+                        Button(action: copy) { Label(L("コピー", "Copy"), systemImage: "doc.on.doc") }
+                    }
                     if actions.contains(.report) {
                         Button(action: report) { Label(L("通報", "Report"), systemImage: "exclamationmark.bubble") }
                     }
