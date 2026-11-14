@@ -271,6 +271,21 @@ enum TrunkPlacement {
         min(1, Double(max(0, moves)) / 3)
     }
 
+    /// 折れ目の濃さ（明るい筋・その横の陰の筋）。札 #605（2026-11-14 判断）で下げた。
+    ///
+    /// 前は明るい筋が白 0.28〜0.40・陰の筋が黒 0.14〜0.24 の 1pt の硬い線で、ラベルの端から端まで（字と絵の上にも）
+    /// 引いていた。生成りの切符（#F3E6CC）では陰の筋が地より 24% 暗い線になり、owner の実機の「月崎」で
+    /// 「描画が壊れている・ギザギザ」に見えた。トランクの面のいちばん強い擦れの筋（`TrunkEdgeWear` の白 0.14）と
+    /// 同じくらいを上限にする: 明るい筋 0.08〜0.16、陰の筋 0.05〜0.10
+    static func creaseAlpha(wrinkle: Double) -> (light: Double, dark: Double) {
+        let w = max(0, min(1, wrinkle))
+        return (0.08 + 0.08 * w, 0.05 + 0.05 * w)
+    }
+
+    /// 折れ目の線に沿った濃さの割合（始まり 0 → 終わり 1 の位置と、`creaseAlpha` に掛ける割合）。
+    /// 紙の折れ目は端へ向かって消える（端から端まで同じ濃さの線にしない・札 #605）
+    static let creaseFade: [(location: Double, amount: Double)] = [(0, 0), (0.3, 1), (0.7, 1), (1, 0)]
+
     /// よれの折れ目（ラベルの枠の割合で、始まりと終わり）。**同じ種・同じ強さなら同じ線**。
     /// 強いほど本数が増える（1〜3 本）
     static func creases(seed: Int, wrinkle: Double) -> [(x0: Double, y0: Double, x1: Double, y1: Double)] {

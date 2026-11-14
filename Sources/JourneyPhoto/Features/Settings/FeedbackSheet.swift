@@ -11,7 +11,11 @@ import UIKit
 /// 欄は `JPField`、下に固定した主ボタン（写真の無い画面＝真鍮の塗りに墨・`JPPillStyle.main(onPhoto: false)`）。
 ///
 /// 送ったら閉じて「届きました」。**圏外なら下書きに残して閉じ、つながったら送る**（`FeedbackOutbox`）——
-/// 書いたものを失わせない・送れるまで待たせない。送り直しても届かない理由（その日の上限など）だけはシートに残して読ませる。
+/// 書いたものを失わせない・送れるまで待たせない。送り直しても届かない理由で断られたときは、シートに理由を出して閉じない。
+///
+/// 2026-11-14 判断（1.1.91）: **断られても本文を失わせない。** 下書きは理由を付けて残し（`FeedbackOutbox.Outcome.held`）、
+/// 欄の中身もそのまま、理由の下の主ボタンが「もう一度送る」になる（押す回数 1）。閉じても、次に開いたら欄に戻る。
+/// 自動の送り直しには乗せない（同じ理由で断られ続ける）。要らなければ欄を空にして閉じれば消える。
 struct FeedbackSheet: View {
 
     /// どの画面から開いたか（英数字の短い名前。サーバーの `screen`）
@@ -35,6 +39,10 @@ struct FeedbackSheet: View {
     @State private var isPreparingPhoto = false
     @State private var isSending = false
     @State private var errorMessage: String?
+    /// 断られて残っている下書きの id（あれば、送るときに同じ id で送り直す＝サーバーでは1件のまま）
+    @State private var heldId: String?
+    /// 添える記録の中身（言葉を合わせる）
+    @State private var trailContents: ExitTrail.Contents?
     @FocusState private var focused: Bool
 
     private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -74,8 +82,10 @@ struct FeedbackSheet: View {
         // 開いたらすぐ書ける（押す回数を増やさない）
         .onAppear {
             focused = true
-            exitTrail = ExitTrail.attachment(limit: Self.trailLimit)
+            loadTrail()
+            restoreHeld()
         }
+        .onDisappear(perform: keepOrForgetHeld)
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
             Task { await loadPhoto(item) }
@@ -152,7 +162,7 @@ struct FeedbackSheet: View {
             // 前回アプリが途中で終わったときの記録（札 #596）。**何を送るかを字で見せる**（写真・端末の識別子は入っていない）
             if let exitTrail {
                 Button { attachesTrail.toggle() } label: {
-                    Label(L("前回アプリが途中で終わった記録を添える", "Attach a note about the last time the app quit unexpectedly"),
+                    Label(Self.trailLabel(trailContents),
                           systemImage: attachesTrail ? "checkmark.circle.fill" : "circle")
                         .font(JPFont.caption)
                         .foregroundStyle(attachesTrail ? WebTheme.accent : WebTheme.text2)
@@ -184,10 +194,34 @@ struct FeedbackSheet: View {
         return text + "\n\n" + fitted
     }
 
-    /// 届かず捨てた回（本文はどこにも残っていない）。記録は消さずに次に添えられるよう残す
-    private static func isDropped(_ outcome: FeedbackOutbox.Outcome) -> Bool {
-        if case .dropped = outcome { return true }
+    /// 断られて下書きに残した回。記録は消さずに次に添えられるよう残す
+    private static func isHeld(_ outcome: FeedbackOutbox.Outcome) -> Bool {
+        if case .held = outcome { return true }
         return false
+    }
+
+    /// 「添える」の言葉（中身に合わせる。何を送るかは下に字で見せる）
+    nonisolated static func trailLabel(_ contents: ExitTrail.Contents?) -> String {
+        switch contents {
+        case .feedback:
+            return L("前回送れなかったときの記録を添える", "Attach a note about the last time sending failed")
+        case .both:
+            return L("前回の不具合の記録を添える", "Attach notes about the last problems")
+        case .exit, .none:
+            return L("前回アプリが途中で終わった記録を添える", "Attach a note about the last time the app quit unexpectedly")
+        }
+    }
+
+    /// 送る下書きを組む。**断られて残っている下書きがあれば同じ id で**（`feedback.ts` の冪等の鍵。
+    /// 断られたと見えて実は届いていた回でも、二重にならない）
+    nonisolated static func draft(typed: String, trail: String?, screen: String, wantsReply: Bool,
+                                  userId: String?, heldId: String?) -> FeedbackDraft {
+        let body = body(text: typed, trail: trail)
+        if let heldId, FeedbackOutbox.isValidId(heldId) {
+            return FeedbackDraft(id: heldId, text: body, screen: screen, wantsReply: wantsReply,
+                                 userId: userId, typed: typed)
+        }
+        return FeedbackDraft(text: body, screen: screen, wantsReply: wantsReply, userId: userId, typed: typed)
     }
 
     nonisolated static func fit(_ text: String, room: Int) -> String? {
@@ -204,11 +238,18 @@ struct FeedbackSheet: View {
     private var footer: some View {
         VStack(spacing: 8) {
             if let errorMessage {
-                Text(errorMessage)
-                    .font(.callout)
-                    .foregroundStyle(WebTheme.danger)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityIdentifier("feedback.error")
+                // 失敗の知らせ（危険の色・13pt・丸に！の印・起きた所のすぐ上。板 DesignSystem 06）
+                HStack(alignment: .firstTextBaseline, spacing: JPSpace.xs) {
+                    Image(systemName: "exclamationmark.circle")
+                        .accessibilityHidden(true)
+                    Text(errorMessage)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .font(JPFont.footnote)
+                .foregroundStyle(WebTheme.danger)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("feedback.error")
             }
             Button {
                 Task { await submit() }
@@ -219,6 +260,9 @@ struct FeedbackSheet: View {
                             ProgressView().tint(WebTheme.accentText)
                             Text(L("送っています…", "Sending…"))
                         }
+                    } else if heldId != nil {
+                        // 断られて残っている（理由はすぐ上の赤字）。押せば同じ下書きをもう一度送る
+                        Text(L("もう一度送る", "Send again"))
                     } else {
                         Text(L("送る", "Send"))
                     }
@@ -262,9 +306,11 @@ struct FeedbackSheet: View {
         errorMessage = nil
         defer { isSending = false }
         let sendsTrail = attachesTrail && exitTrail != nil
-        let draft = FeedbackDraft(text: Self.body(text: trimmed, trail: sendsTrail ? exitTrail : nil),
-                                  screen: screen, wantsReply: wantsReply, userId: auth.userId)
+        let draft = Self.draft(typed: trimmed, trail: sendsTrail ? exitTrail : nil, screen: screen,
+                               wantsReply: wantsReply, userId: auth.userId, heldId: heldId)
         let outbox = FeedbackOutbox()
+        // 断られて残っていた分は、いまの欄の中身で置き換える（外した写真を残さない）
+        if let heldId { outbox.remove(heldId) }
         // **先に下書きとして残してから送る**（送っている間に閉じても書いたものが消えない）
         try? outbox.save(draft, photo: photo)
         let service = environment.feedback
@@ -272,7 +318,9 @@ struct FeedbackSheet: View {
             try await service.send(draft, photo: photo, signedIn: signedIn)
         }
         // 記録は下書きの本文に入った（届いた・あとで送る）。同じ記録を次の意見に2度添えない
-        if sendsTrail, !Self.isDropped(outcome) { ExitTrail.clear() }
+        if sendsTrail, !Self.isHeld(outcome) { ExitTrail.clear() }
+        // 断られた回だけ、下書きは残ったまま（シートも開いたまま）。ほかは届いた・自動で送る側に渡した
+        heldId = Self.isHeld(outcome) ? draft.id : nil
         switch outcome {
         case .sent:
             toasts.show(L("届きました。ありがとうございます", "Received — thank you!"))
@@ -300,8 +348,40 @@ struct FeedbackSheet: View {
             toasts.show(L("今日はこれ以上送れません。明日、自動で送ります",
                           "You've reached today's limit. We'll send it tomorrow."))
             dismiss()
-        case .dropped(let message):
+        case .held(let message):
             errorMessage = message
+            // 断られた回の記録（種類・状態・時刻）が増えた。添えるかどうかを見せる
+            loadTrail()
+        }
+    }
+
+    private func loadTrail() {
+        exitTrail = ExitTrail.attachment(limit: Self.trailLimit)
+        trailContents = ExitTrail.contents()
+    }
+
+    /// 前に断られて残っている下書きを欄に戻す（**書いた人が同じときだけ**）
+    private func restoreHeld() {
+        let outbox = FeedbackOutbox()
+        guard heldId == nil, text.isEmpty, let held = outbox.held(for: auth.userId) else { return }
+        heldId = held.id
+        text = held.typed ?? held.text
+        wantsReply = held.wantsReply && auth.userId != nil
+        errorMessage = held.rejectedReason
+        if let data = outbox.photo(for: held.id) {
+            photo = data
+            preview = UIImage(data: data)
+        }
+    }
+
+    /// 閉じたとき: 断られて残っている下書きは、欄を空にしていれば消し、書いてあれば欄の中身に合わせて残す
+    private func keepOrForgetHeld() {
+        guard let heldId else { return }
+        let outbox = FeedbackOutbox()
+        if trimmed.isEmpty {
+            outbox.remove(heldId)
+        } else {
+            outbox.updateHeld(heldId, typed: trimmed, wantsReply: wantsReply, photo: photo)
         }
     }
 }

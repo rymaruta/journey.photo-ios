@@ -2,6 +2,43 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.91",
+      "date": "2026-11-14",
+      "items": [
+        {
+          "symbol": "envelope",
+          "title": { "ja": "意見を送れなくても、書いた文は残る", "en": "Your feedback stays if it can't be sent" },
+          "detail": { "ja": "意見を送る画面で送れなかったときも、書いた文は欄に残ります。閉じても次に開いたときに戻るので、「もう一度送る」で送り直せます。", "en": "If your feedback can't be sent, what you wrote stays in the box. It comes back the next time you open it, so you can tap Send again." }
+        },
+        {
+          "symbol": "keyboard",
+          "title": { "ja": "投稿の題を打っても、欄がキーボードに隠れない", "en": "The title field stays above the keyboard" },
+          "detail": { "ja": "投稿の画面で題や説明を打っている間に、上に観光スポットの候補が出ても、打っている欄が見える所に残ります。", "en": "While you type a title or description on the post screen, the field stays in view even when a spot suggestion appears above it." }
+        },
+        {
+          "symbol": "rectangle.on.rectangle.angled",
+          "title": { "ja": "SNS に載せるカードに額装、フィルム、縦書き", "en": "Mat, Film and Vertical share cards" },
+          "detail": { "ja": "写真を SNS に載せるカードに、額装、フィルム、縦書きの3つの形が増えました。形は見本の絵を見て選べます。縦長のカードは、SNS の一覧で上下が切り取られても字が欠けない所に置いています。", "en": "Share cards now come in three more styles: Mat, Film and Vertical. Pick a style from its preview. On tall cards, text stays clear of the edges social apps crop in their feeds." }
+        },
+        {
+          "symbol": "suitcase",
+          "title": { "ja": "トランクのラベルに線が出ない", "en": "No more lines across trunk labels" },
+          "detail": { "ja": "旅のトランクで、貼ったあと動かしたラベルに出ていた斜めの線を薄くして、字や絵の上に重ならないようにしました。", "en": "On your travel trunk, the diagonal lines on labels you moved after sticking are now faint and stay under the text and art." },
+          "destination": "mypage"
+        },
+        {
+          "symbol": "airplane",
+          "title": { "ja": "ストーリー用の搭乗券をすっきり", "en": "A cleaner boarding pass for stories" },
+          "detail": { "ja": "「SNS に載せる」で作る搭乗券の形の1枚から、右上に出ていた「行ってきます」「今ここ」「ただいま」の言葉を外しました。", "en": "The boarding pass story image from Post to social no longer shows the scene words in the top right corner." }
+        },
+        {
+          "symbol": "accessibility",
+          "title": { "ja": "「この写真を見て撮影」を VoiceOver で押せる", "en": "Inspired by works with VoiceOver" },
+          "detail": { "ja": "写真の詳細の「この写真を見て撮影」の行が、VoiceOver で押せるボタンとして読まれます。", "en": "On a photo's details, the Inspired by row is now read by VoiceOver as a button you can tap." }
+        }
+      ]
+    },
+    {
       "version": "1.1.90",
       "date": "2026-11-14",
       "items": [

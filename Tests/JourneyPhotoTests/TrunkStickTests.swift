@@ -193,6 +193,24 @@ final class TrunkStickTests: XCTestCase {
         XCTAssertTrue(a.allSatisfy { (0...1).contains($0.x0) && (0...1).contains($0.x1) })
     }
 
+    /// 札 #605: 折れ目は薄く、端へ消える。前は白 0.40・黒 0.24 の硬い線が端から端まで出て、生成りの切符
+    /// （owner の「月崎」）で描画が壊れたように見えた。トランクの面の擦れの筋（白 0.14）と同じくらいが上限
+    func testCreaseIsFaintAndFadesAtEnds() {
+        let strong = TrunkPlacement.creaseAlpha(wrinkle: 1)
+        XCTAssertLessThanOrEqual(strong.light, 0.16, "よれ 1 の明るい筋が濃すぎる")
+        XCTAssertLessThanOrEqual(strong.dark, 0.10, "よれ 1 の陰の筋が濃すぎる")
+        let weak = TrunkPlacement.creaseAlpha(wrinkle: 0.34)
+        XCTAssertLessThan(weak.light, strong.light, "動かした回数で濃くならない")
+        XCTAssertGreaterThan(weak.dark, 0, "よれがあるのに陰の筋が消えている")
+        XCTAssertEqual(TrunkPlacement.creaseAlpha(wrinkle: 5).light, strong.light, "1 を超えて濃くなる")
+        let fade = TrunkPlacement.creaseFade
+        XCTAssertEqual(fade.first?.location, 0)
+        XCTAssertEqual(fade.last?.location, 1)
+        XCTAssertEqual(fade.first?.amount, 0, "折れ目が始まりの端まで同じ濃さで出る")
+        XCTAssertEqual(fade.last?.amount, 0, "折れ目が終わりの端まで同じ濃さで出る")
+        XCTAssertEqual(fade.map(\.amount).max(), 1)
+    }
+
     func testWrinkleStore() throws {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "trunk.wrinkles.test"))
         defaults.removePersistentDomain(forName: "trunk.wrinkles.test")

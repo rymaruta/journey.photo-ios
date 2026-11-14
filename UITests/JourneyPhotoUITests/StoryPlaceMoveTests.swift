@@ -89,11 +89,29 @@ final class StoryPlaceMoveTests: XCTestCase {
         let done = app.buttons["story.typing.done"].firstMatch
         guard done.waitForExistence(timeout: 3) else { return false }
         done.tap()
+        let tappedAt = Date()
+        // 札 #522（2026-11-14）: 「完了」の後にキーボードが 6 秒で消えない回を数で見る。押した直後と、待ちが切れた時に、
+        // アプリの記録（`typing.finish`・`typing.focus`・キーボードの `kb.*`・指の `touch.*`）と、キーボードの
+        // ピントを持つ要素を残す。待ちの長さ（押してから 6 秒・記録を読んだ時間も含める）・落とし方は変えない
+        log("完了を押した直後(\(text)) focus=\(keyboardFocus(app)) probe=\(probe(app))")
         let gone = NSPredicate(format: "exists == false")
         let keyboardGone = expectation(for: gone, evaluatedWith: app.keyboards.firstMatch)
-        wait(for: [keyboardGone], timeout: 6)
+        let result = XCTWaiter().wait(for: [keyboardGone], timeout: max(0.5, 6 - Date().timeIntervalSince(tappedAt)))
+        if result != .completed {
+            log("完了の後 6 秒でキーボードが消えない(\(text)) kb=\(app.keyboards.count) focus=\(keyboardFocus(app)) probe=\(probe(app))")
+            shoot(app, "完了の後もキーボードが残る")
+            XCTFail("「完了」を押して 6 秒たってもキーボードが消えない（\(text)）")
+        }
         Thread.sleep(forTimeInterval: 0.6)
         return true
+    }
+
+    /// キーボードのピントを持つ要素（型・識別子・値の頭）。無ければ「なし」
+    private func keyboardFocus(_ app: XCUIApplication) -> String {
+        let focused = app.descendants(matching: .any).matching(NSPredicate(format: "hasKeyboardFocus == true")).firstMatch
+        guard focused.exists else { return "なし" }
+        let value = String(((focused.value as? String) ?? "").prefix(20))
+        return "\(focused.elementType.rawValue):\(focused.identifier):\"\(value)\""
     }
 
     private func element(_ app: XCUIApplication, label: String) -> XCUIElement {

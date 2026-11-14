@@ -14,9 +14,17 @@ struct FeedbackDraft: Codable, Equatable, Identifiable {
     let createdAt: Date
     /// この時刻までは送らない（その日の上限に当たった下書き・次の JST の0時）。無ければいつでも送る
     var notBefore: Date?
+    /// 利用者が欄に書いた字そのもの（添えた記録を含まない）。**端末の中だけ**で、送る本文（`text`）には入れない。
+    /// 断られた下書きをシートに戻すときに使う（`FeedbackSheet`）
+    var typed: String?
+    /// 送り直しても届かない理由で断られたときの、画面に出した理由（2026-11-14 判断・1.1.91）。
+    /// これがある下書きは**自動の送り直しに乗せない**（同じ理由で断られ続ける）。次にシートを開いたら欄に戻し、
+    /// 利用者が「もう一度送る」を押したときだけ送る
+    var rejectedReason: String?
 
     init(id: String = UUID().uuidString.lowercased(), text: String, screen: String,
-         wantsReply: Bool, userId: String?, createdAt: Date = Date(), notBefore: Date? = nil) {
+         wantsReply: Bool, userId: String?, createdAt: Date = Date(), notBefore: Date? = nil,
+         typed: String? = nil, rejectedReason: String? = nil) {
         self.id = id
         self.text = text
         self.screen = screen
@@ -24,6 +32,8 @@ struct FeedbackDraft: Codable, Equatable, Identifiable {
         self.userId = userId
         self.createdAt = createdAt
         self.notBefore = notBefore
+        self.typed = typed
+        self.rejectedReason = rejectedReason
     }
 }
 
@@ -35,6 +45,10 @@ struct FeedbackDraft: Codable, Equatable, Identifiable {
 ///
 /// 送り直すのは「起動してログインの確かめが済んだとき」「前面に戻ったとき」「電波が戻ったとき」（`JourneyPhotoApp`）。
 /// 古すぎる・多すぎる下書きは送らずに捨てる（`maxAge`・`maxCount`）。
+///
+/// 2026-11-14 判断（1.1.91）: **断られた下書きも消さない。** 前は送り直しても届かない理由で断られたら消していて、
+/// 書いた本文が端末のどこにも残らなかった。いまは理由（`rejectedReason`）を付けて残し、自動の送り直しには乗せず、
+/// 次にシートを開いたら欄に戻す（`held(for:)`）。要らなければ利用者が欄を空にして閉じれば消える
 struct FeedbackOutbox {
 
     /// 下書きを持っておく長さ（これより古いものは送らずに捨てる）
@@ -101,6 +115,28 @@ struct FeedbackOutbox {
         try? fileManager.removeItem(at: photoURL(id))
     }
 
+    /// 断られて残っている下書きのうち、この人が書いたいちばん新しいもの（シートの欄に戻す）。
+    /// **書いた人が違えば戻さない**（別の人の本文を見せない。ログインしていない回どうしは nil どうしで合わせる）
+    func held(for userId: String?) -> FeedbackDraft? {
+        all().last { $0.rejectedReason != nil && $0.userId == userId }
+    }
+
+    /// 断られて残っている下書きを、シートで書き直した中身に合わせる（閉じたとき）。写真を外していたら写真も消す
+    func updateHeld(_ id: String, typed: String, wantsReply: Bool, photo: Data?) {
+        guard Self.isValidId(id),
+              let data = try? Data(contentsOf: jsonURL(id)),
+              let old = try? JSONDecoder().decode(FeedbackDraft.self, from: data) else { return }
+        let draft = FeedbackDraft(id: old.id, text: old.text, screen: old.screen, wantsReply: wantsReply,
+                                  userId: old.userId, createdAt: old.createdAt, notBefore: old.notBefore,
+                                  typed: typed, rejectedReason: old.rejectedReason)
+        try? writeJSON(draft)
+        if let photo {
+            try? photo.write(to: photoURL(id), options: .atomic)
+        } else {
+            try? fileManager.removeItem(at: photoURL(id))
+        }
+    }
+
     /// 退会した人の下書きを消す（`AccountLocalData.remove`）
     func removeData(for userId: String) {
         for draft in all() where draft.userId == userId { remove(draft.id) }
@@ -141,20 +177,25 @@ struct FeedbackOutbox {
         case serverBusy
         /// その日の上限。下書きに残し、次の JST の0時まで送らない
         case tomorrow
-        /// 送り直しても届かない理由で断られた（下書きを消した）
-        case dropped(String)
+        /// 送り直しても届かない理由で断られた。**下書きは理由を付けて残した**（自動では送り直さない。
+        /// シートに理由を出し、利用者が「もう一度送る」を押したときだけ送る・2026-11-14 判断）
+        case held(String)
 
-        /// 下書きに残したか
+        /// 下書きに残し、**残りの送り直しもここで止める**か（圏外・混雑・その日の上限）。
+        /// 断られた回（`held`）は残すが、その1件の事情なので後ろの分は続けて送る
         var isKept: Bool { self == .unreachable || self == .serverBusy || self == .tomorrow }
         /// 本文が届いたか
         var isDelivered: Bool { self == .sent || self == .sentWithoutReply || self == .sentWithoutPhoto }
     }
 
-    /// 1件送る。送れたら・送り直しても届かないなら消し、圏外・混雑・その日の上限なら残す。
+    /// 1件送る。送れたら消し、圏外・混雑・その日の上限なら残す。送り直しても届かない理由で断られたら、
+    /// 理由を付けて残し（`held`）、失敗の種類・HTTP の状態・時刻だけを端末の記録に1行残す（`ExitTrail.keepFeedbackFailure`。
+    /// 本文・利用者の情報は入れない。次の意見に添えられる）
     ///
     /// **ログインが切れていたら（トークンが無い・401）、その場でログインしていない人の口で送り直す**——
     /// 下書きの先頭に残したままにすると、ログインし直すまで後ろの分も全部詰まる
     func deliver(_ draft: FeedbackDraft, currentUserId: String?, now: Date = Date(),
+                 trailDefaults: UserDefaults = .standard,
                  send: (FeedbackDraft, Data?, Bool) async throws -> Void) async -> Outcome {
         let photo = photo(for: draft.id)
         let signedIn = Self.signedIn(draft, currentUserId: currentUserId)
@@ -184,8 +225,14 @@ struct FeedbackOutbox {
                 try? writeJSON(later)
                 return .tomorrow
             case .rejected:
-                remove(draft.id)
-                return .dropped((error as? LocalizedError)?.errorDescription ?? L("送れませんでした", "Couldn't send"))
+                let reason = (error as? LocalizedError)?.errorDescription ?? L("送れませんでした", "Couldn't send")
+                var held = draft
+                held.rejectedReason = reason
+                held.notBefore = nil
+                try? writeJSON(held)
+                let note = FeedbackService.failureNote(error)
+                ExitTrail.keepFeedbackFailure(kind: note.kind, status: note.status, defaults: trailDefaults, now: now)
+                return .held(reason)
             }
         }
     }
@@ -193,14 +240,17 @@ struct FeedbackOutbox {
     /// 残っている下書きを古い順に送る。
     /// - 圏外・混雑ならそこで止める（全部を順に叩かない）
     /// - その日の上限の下書きは、待つ時刻（`notBefore`）まで飛ばす。上限に当たったら、その日はもう送らない
+    /// - **断られた下書き（`rejectedReason`）は送らない**（同じ理由で断られ続ける。シートで利用者が送り直す）
     @discardableResult
-    func flush(currentUserId: String?, now: Date = Date(),
+    func flush(currentUserId: String?, now: Date = Date(), trailDefaults: UserDefaults = .standard,
                send: (FeedbackDraft, Data?, Bool) async throws -> Void) async -> Int {
         trim(now: now)
         var sent = 0
         for draft in all() {
+            if draft.rejectedReason != nil { continue }
             if let notBefore = draft.notBefore, notBefore > now { continue }
-            let outcome = await deliver(draft, currentUserId: currentUserId, now: now, send: send)
+            let outcome = await deliver(draft, currentUserId: currentUserId, now: now,
+                                        trailDefaults: trailDefaults, send: send)
             if outcome.isKept { break }
             if outcome.isDelivered { sent += 1 }
         }
@@ -214,7 +264,8 @@ enum FeedbackOutboxRunner {
     private static var running = false
 
     static func flush(environment: AppEnvironment, userId: String?, outbox: FeedbackOutbox = FeedbackOutbox()) {
-        guard !running, !outbox.all().isEmpty else { return }
+        // 断られた下書きだけなら走らせない（自動では送り直さない）
+        guard !running, outbox.all().contains(where: { $0.rejectedReason == nil }) else { return }
         running = true
         let service = environment.feedback
         Task { @MainActor in

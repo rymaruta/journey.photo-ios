@@ -27,12 +27,70 @@ enum ShareCardSafeArea {
     /// 地図の線などの部品の明暗の比の下限
     static let minimumGraphicContrast: Double = 3
 
+    /// SNS のフィードで縦長の画像が切られる比（縦 ÷ 横の逆・幅 ÷ 高さ）。
+    ///
+    /// 2026-11-14 判断（owner「投稿もレイアウトギリギリすぎて、別の SNS に投稿しようとしたら変になる、みたいなことないよね？」）:
+    /// 「投稿」の切り替えでも 9:16 を選べるので、9:16 のカードがフィードに載ると、真ん中で 4:5 に切られる
+    /// （Meta の広告の決まり「Instagram フィード 最小の縦横比 400×500」「Facebook フィード 4:5」・
+    /// Threads も縦長は 4:5 で見せる目安。Instagram は 2025-05-29 から 3:4 も受けるが、4:5 の方が多く切る）。
+    /// run 1296（ea4015e81）で測ると、帯・フェード・表紙・展示札の 9:16 の見出し（ロゴと一文）の上端は 274〜279px で、
+    /// 4:5 の切り取り（上下 285px ずつ）で 6〜11px 切れていた。
+    /// そこで、4:5 より縦長の比では、字・ロゴを **4:5 の切り取りの内側に、その端から短い辺の 6%** 離して置く。
+    /// 9:16 はストーリーの帯（上 14%）より、この線（上 285 + 64.8 = 349.8px）の方が内側になる。下は返信欄の 20%（384px）の方が内側のまま
+    static let feedCropAspect: CGFloat = 0.8
+
+    /// フィードの真ん中の切り取りで上下から落ちる高さ（4:5 より縦長でなければ 0）
+    static func feedCropInset(width: CGFloat, height: CGFloat) -> CGFloat {
+        max(0, (height - width / feedCropAspect) / 2)
+    }
+
     /// 字・ロゴを置いてよい枠（画像の画素の座標・左上が原点）
     static func rect(width: CGFloat, height: CGFloat, isStory: Bool) -> CGRect {
         let edge = min(width, height) * edgeFraction
-        let top = max(edge, isStory ? height * storyTopFraction : 0)
-        let bottom = max(edge, isStory ? height * storyBottomFraction : 0)
+        let crop = feedCropInset(width: width, height: height)
+        let cropEdge = crop > 0 ? crop + edge : 0
+        let top = max(edge, isStory ? height * storyTopFraction : 0, cropEdge)
+        let bottom = max(edge, isStory ? height * storyBottomFraction : 0, cropEdge)
         return CGRect(x: edge, y: top, width: width - edge * 2, height: height - top - bottom)
+    }
+
+    // MARK: - SNS ごとの切り取り（2026-11-14）
+
+    /// SNS が画像を真ん中で切って見せる形（`ShareCardAuditTests` が書き出した画像に当てて測る）。
+    /// 出典と確かめた日は各ケースの注記。公式の頁で確かめられないものは「目安」
+    enum PlatformCrop: String, CaseIterable {
+        /// Instagram・Facebook・Threads のフィード。4:5 より縦長は真ん中で 4:5 に切る
+        /// （公式: Meta の広告の決まり Instagram フィード「Minimum Aspect Ratio: 400 x 500」・Facebook フィード「4:5」、2026-11-14 に確かめた。
+        /// Threads は目安）
+        case feed4x5
+        /// Instagram（2025-05-29 から 3:4 を受ける・Mosseri の Threads の投稿を 9to5mac が引用）と、X の縦長の真ん中の切り取り（目安）
+        case feed3x4
+        /// Instagram のプロフィールの格子（3:4 の小さな見本・真ん中。目安・Buffer などの解説）。
+        /// 4:5 と 1:1 は左右を切る。開けば全体が見えるので、字の欠けは「見本だけ」として数を出すだけにする
+        case grid3x4
+
+        /// 幅 ÷ 高さ
+        var aspect: CGFloat {
+            switch self {
+            case .feed4x5: return 0.8
+            case .feed3x4, .grid3x4: return 0.75
+            }
+        }
+
+        /// 字が欠けてはいけない切り取りか（フィードは投稿そのもの。格子は小さな見本）
+        var mustKeepText: Bool { self != .grid3x4 }
+
+        /// 画像に当てた切り取りの枠。フィードは縦長だけを切り（横長・正方形はそのまま見せる）、格子は横も切る
+        func rect(width: CGFloat, height: CGFloat) -> CGRect? {
+            let current = width / height
+            if current < aspect - 0.0001 {
+                let h = width / aspect
+                return CGRect(x: 0, y: (height - h) / 2, width: width, height: h)
+            }
+            guard self == .grid3x4, current > aspect + 0.0001 else { return nil }
+            let w = height * aspect
+            return CGRect(x: (width - w) / 2, y: 0, width: w, height: height)
+        }
     }
 
     static func rect(ratio: SignatureShareCardRenderer.Ratio, width: CGFloat = 1080) -> CGRect {

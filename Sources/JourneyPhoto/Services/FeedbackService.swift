@@ -182,6 +182,19 @@ struct FeedbackService {
         }
     }
 
+    /// 断られた回を端末の記録に残すときの中身（2026-11-14 判断・1.1.91）。**失敗の種類と HTTP の状態だけ**——
+    /// 本文・サーバーの文・利用者の情報は入れない（種類は型の名前か決まった短い名前）
+    static func failureNote(_ error: Error) -> (kind: String, status: Int?) {
+        switch error {
+        case APIError.server(let status, _): return ("server", status)
+        case APIError.decoding: return ("decoding", nil)
+        case APIError.invalidIdentifier: return ("invalidIdentifier", nil)
+        case APIError.notAuthenticated: return ("notAuthenticated", nil)
+        case APIError.unreachable: return ("unreachable", nil)
+        default: return (String(String(describing: type(of: error)).prefix(40)), nil)
+        }
+    }
+
     /// 次に送ってよい時刻（その日の上限のとき）: 次の JST の0時（サーバーの日の区切り `feedbackDayOf` と同じ）
     static func nextJSTMidnight(after now: Date) -> Date {
         let jst = TimeInterval(9 * 3600)

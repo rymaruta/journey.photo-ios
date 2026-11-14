@@ -454,6 +454,21 @@ enum PreviewSession {
         #endif
     }
 
+    /// 旅のトランクの見本に、貼ったあと動かした「月崎」の切符（`TrunkSample.creased`）を足し、その動かした回数にする
+    /// （Debug のみ・札 #605）。`-JPPreviewTrunkWrinkles 3` でよれの強さ 1（折れ目 3 本）、`0` で同じラベルを
+    /// よれなしで描く（よれの層だけを切った絵）。見本の起動のときだけ効く。Release では必ず nil
+    static let trunkWrinklesKey = "JPPreviewTrunkWrinkles"
+
+    static var trunkWrinkleMoves: Int? {
+        #if DEBUG
+        guard trunkSample == .sample, let raw = UserDefaults.standard.string(forKey: trunkWrinklesKey),
+              let value = Int(raw.trimmingCharacters(in: .whitespacesAndNewlines)), value >= 0 else { return nil }
+        return min(99, value)
+        #else
+        return nil
+        #endif
+    }
+
     /// UI テストで、起動のときに「ラベルが届きました」の画面を1回出す（Debug のみ）。`-JPPreviewTrunkArrived YES`。
     /// 投稿しないと届かないので、見本の1枚（`TrunkSample.arrived`）で出す。入っている見本の利用者のときだけ。
     /// Release では必ず false

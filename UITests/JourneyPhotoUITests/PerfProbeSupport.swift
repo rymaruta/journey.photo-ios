@@ -11,7 +11,7 @@ import XCTest
 ///
 /// 値の形（アプリの `PerfRecorder.summary()` と同じ。変えるときは両方）:
 ///
-///     sel=[+120ms home>search@tabs.set;…] | task=[#0 auth.state.sync 80-310ms;…] | stall=2/180ms/540f | body=home:12,myPage:3,photoDetail:0,search:5 | t=1234ms | stalls=[+1750ms 1634ms;…] | ev=[+12 app.init.start;…] | samples=[+5300 SwiftUI`xxx^JourneyPhoto`yyy;…] | spot=9/3012ms/400ms | srch=[+2000ms 京 b3 h9/3012ms/400ms g450ms s2;…]
+///     sel=[+120ms home>search@tabs.set;…] | task=[#0 auth.state.sync 80-310ms;…] | stall=2/180ms/540f | body=home:12,myPage:3,photoDetail:0,search:5 | t=1234ms | stalls=[+1750ms 1634ms;…] | ev=[+12 app.init.start;…] | samples=[+5300 SwiftUI`xxx^JourneyPhoto`yyy;…] | spot=9/3012ms/400ms | srch=[+2000ms 京 b3 h9/3012ms/400ms g450ms s2;…] | step=[+30000 camper.enter.tap{…};+31050 camper.enter.push;…]
 extension XCTestCase {
 
     /// 起動の引数に足す（`app.launch()` の前）
