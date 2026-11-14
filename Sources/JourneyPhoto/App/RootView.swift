@@ -164,7 +164,10 @@ struct RootView: View {
         let _ = PerfTimeline.shared.count("body.root")   // 評価の回数（UI テストのときだけ・札 #594 の下調べ）
         let _ = PerfChangeLog.note(Self.self)   // なぜ評価し直したか（UI テストのときだけ・札 #594 の下調べ）
         Group {
-            if consent.needsConsent {
+            if ShareCardGalleryPreview.isRequested {
+                // UI テストのときだけ: 共有カードの書き出し画像を全部の型 × 比で出す（`-JPPreviewShareCards YES`・2026-11-14）
+                ShareCardGalleryPreview()
+            } else if consent.needsConsent {
                 // **使う前に規約へ同意させる**（審査要件 1.2 / UGC）
                 LegalGateView()
                     .perfMark("legal.gate.appear")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07 札 #435 / #429）

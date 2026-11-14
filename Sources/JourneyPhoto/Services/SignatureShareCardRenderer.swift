@@ -21,6 +21,12 @@ enum SignatureShareCardRenderer {
         case label
         /// 地名を大きな明朝で、写真と黒のあいだにまたがらせる（見本 F5）
         case cover
+        /// 白い紙の焼き増し。白いフチと下の広いフチに墨の字（2026-11-14）
+        case printed
+        /// 黒地の切符。ミシン目と半券に眉ラベル（2026-11-14）
+        case ticket
+        /// 写真を左右の端まで敷き、上下を黒い帯に（2026-11-14）
+        case cinema
     }
 
     struct Credit {
@@ -89,6 +95,9 @@ enum SignatureShareCardRenderer {
         case .fade: return renderFade(photo: photo, credit: credit, ratio: ratio, avatarData: avatarData)
         case .label: return renderLabel(photo: photo, credit: credit, ratio: ratio, avatarData: avatarData)
         case .cover: return renderCover(photo: photo, credit: credit, ratio: ratio, avatarData: avatarData)
+        case .printed: return renderPrint(photo: photo, credit: credit, ratio: ratio)
+        case .ticket: return renderTicket(photo: photo, credit: credit, ratio: ratio)
+        case .cinema: return renderCinema(photo: photo, credit: credit, ratio: ratio)
         case .band: break   // 帯の型
         }
         typealias L = ShareCardMap.Layout
@@ -802,23 +811,33 @@ enum SignatureShareCardRenderer {
         }
     }
 
+    /// 名前の横の印の色。黒地の上は真鍮、白い紙の上（プリント型）は墨（真鍮は黒地の上だけ・2026-11-14）
+    struct MarkPalette {
+        let gold: UIColor
+        let inner: UIColor
+        let plateFill: UIColor
+        static let onBlack = MarkPalette(gold: brass, inner: UIColor(red: 26/255, green: 20/255, blue: 10/255, alpha: 1),
+                                         plateFill: UIColor(red: 12/255, green: 12/255, blue: 13/255, alpha: 1))
+        static let onPaper = MarkPalette(gold: UIColor(red: 7/255, green: 9/255, blue: 10/255, alpha: 1),
+                                         inner: UIColor(red: 240/255, green: 240/255, blue: 240/255, alpha: 1),
+                                         plateFill: UIColor(red: 240/255, green: 240/255, blue: 240/255, alpha: 1))
+    }
+
     /// 既存の ProMarkGeometry / EarlyMemberMarkGeometry を使い、画面と同じ輪郭を描く。
-    private static func drawNameMarks(_ credit: Credit, at origin: CGPoint) {
+    static func drawNameMarks(_ credit: Credit, at origin: CGPoint, palette: MarkPalette = .onBlack) {
         let count = (credit.verified ? 1 : 0) + (credit.proStyle == nil ? 0 : 1) + (credit.early ? 1 : 0)
             + ((credit.badge.map { BadgeCatalog.isKnown($0.key) } ?? false) ? 1 : 0)
         guard count > 0 else { return }
         let width = CGFloat(count * 30 + (credit.proStyle == .plate ? 16 : 0)) - 3
         guard ShareCardProbe.note(.marks, rect: CGRect(x: origin.x, y: origin.y - 2, width: width, height: 30),
-                                  color: brass) else { return }
+                                  color: palette.gold) else { return }
         var x = origin.x
         func advance(_ width: CGFloat = 30) { x += width }
         if credit.verified {
             // VerifiedBadge と同じ2色の封印（チェック＝墨、封印＝真鍮）。
             // 単色 SF Symbol では公式マークの意匠が失われる。
             let palette = UIImage.SymbolConfiguration(pointSize: 25, weight: .regular)
-                .applying(UIImage.SymbolConfiguration(paletteColors: [
-                    UIColor(red: 26/255, green: 20/255, blue: 10/255, alpha: 1), brass
-                ]))
+                .applying(UIImage.SymbolConfiguration(paletteColors: [palette.inner, palette.gold]))
             if let symbol = UIImage(systemName: "checkmark.seal.fill", withConfiguration: palette) {
                 symbol.draw(in: CGRect(x: x, y: origin.y, width: 27, height: 27))
             }
@@ -826,16 +845,16 @@ enum SignatureShareCardRenderer {
         }
         if let style = credit.proStyle {
             let rect = CGRect(x: x, y: origin.y, width: style == .plate ? 43 : 27, height: 27)
-            drawProMark(style, in: rect)
+            drawProMark(style, in: rect, palette: palette)
             advance(style == .plate ? 46 : 30)
         }
         if credit.early {
             let rect = CGRect(x: x, y: origin.y, width: 27, height: 27)
             let shield = EarlyMemberMarkShape(part: .shield).path(in: rect)
             let star = EarlyMemberMarkShape(part: .star).path(in: rect)
-            brass.setFill()
+            palette.gold.setFill()
             UIBezierPath(cgPath: shield.cgPath).fill()
-            UIColor(red: 26/255, green: 20/255, blue: 10/255, alpha: 1).setFill()
+            palette.inner.setFill()
             UIBezierPath(cgPath: star.cgPath).fill()
             advance()
         }
@@ -845,12 +864,12 @@ enum SignatureShareCardRenderer {
         }
     }
 
-    private static func drawProMark(_ style: ProMarkStyle, in rect: CGRect) {
-        let gold = brass
-        let ink = UIColor(red: 26/255, green: 20/255, blue: 10/255, alpha: 1)
+    private static func drawProMark(_ style: ProMarkStyle, in rect: CGRect, palette: MarkPalette) {
+        let gold = palette.gold
+        let ink = palette.inner
         if style == .plate {
             let pill = UIBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 3), cornerRadius: 10)
-            UIColor(red: 12/255, green: 12/255, blue: 13/255, alpha: 1).setFill()
+            palette.plateFill.setFill()
             pill.fill()
             gold.setStroke()
             pill.lineWidth = 1.8

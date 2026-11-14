@@ -287,9 +287,10 @@ final class ShareCardMapTests: XCTestCase {
     }
 
     func testAllStylesAreOfferedInOrder() {
-        // 共有画面の切り替え（帯・フェード・表紙・展示札）の元になる型。保存済みの値が消えない（rawValue を変えない）
+        // 共有画面の切り替え（帯・フェード・表紙・展示札）の元になる型。保存済みの値が消えない（rawValue を変えない）。
+        // 2026-11-14: プリント・切符・シネマを後ろに足した（前の4つの値は変えない）
         XCTAssertEqual(SignatureShareCardRenderer.Style.allCases.map(\.rawValue),
-                       ["band", "fade", "label", "cover"])
+                       ["band", "fade", "label", "cover", "printed", "ticket", "cinema"])
     }
 
     // MARK: - 残す島
