@@ -9743,25 +9743,28 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// 新着の写真を順に開き、作者の輪が「2本」（紹介の写真の付いた見本のストーリーの人）の写真の詳細で止まる。
-    /// その輪（押せる）を返す。見つからなければ落として nil
+    /// その輪（押せる）を返す。見つからなければ落として nil。
+    /// 2026-11-14 判断（統合 1.1.87）: 札 #595 で「新着」の札（`home.feed.latest`）が無くなったので、先に1本の並びの
+    /// 新着の作者の札（`revealNewestFeedTile`・自分以外でいちばん新しく載せた人）を開き、違えば画面の写真を順に開く
     private func openSharedStoryAuthorPhoto(_ app: XCUIApplication) -> XCUIElement? {
-        let latestTab = app.buttons["home.feed.latest"].firstMatch
-        if latestTab.waitForExistence(timeout: 20), latestTab.isHittable {
-            latestTab.tap()
-            Thread.sleep(forTimeInterval: 3)
-        }
+        let newest = revealNewestFeedTile(app)
         _ = app.buttons["feed.photo"].firstMatch.waitForExistence(timeout: 15)
-        for attempt in 0..<6 {
-            let photos = app.buttons.matching(identifier: "feed.photo").allElementsBoundByIndex.filter { $0.isHittable }
-            guard attempt < photos.count else { break }
-            photos[attempt].tap()
+        for attempt in -1..<6 {
+            if attempt < 0 {
+                guard let newest else { continue }
+                newest.tap()
+            } else {
+                let photos = app.buttons.matching(identifier: "feed.photo").allElementsBoundByIndex.filter { $0.isHittable }
+                guard attempt < photos.count else { break }
+                photos[attempt].tap()
+            }
             let ring = app.buttons["story.avatar.ring"].firstMatch
             _ = ring.waitForExistence(timeout: 15)
             scrollUntilHittable(app, ring, limit: 3)
             let ready = XCTWaiter().wait(for: [XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "exists == true AND hittable == true"), object: ring)], timeout: 10) == .completed
             let label = ring.exists ? ring.label : "-"
-            XCTContext.runActivity(named: "[detailPull.sheet] 新着 \(attempt + 1) 枚目: 輪 押せる=\(ready)・「\(label)」"
+            XCTContext.runActivity(named: "[detailPull.sheet] \(attempt < 0 ? "新着の作者の札" : "画面の \(attempt + 1) 枚目"): 輪 押せる=\(ready)・「\(label)」"
                 + "・枠=\(ring.exists ? "\(ring.frame)" : "-")") { _ in }
             if ready, label.contains("2本") { return ring }
             let back = app.navigationBars.buttons["BackButton"].firstMatch
