@@ -125,6 +125,44 @@ else
 fi
 
 mkdir -p "$(dirname "$LOG")"
+
+# **流し始めから最初のテストまでの内訳を数で出す**（札 #610・2026-11-14 判断）。
+# 単体テストの段で、結果の置き場を書いてから最初のテストが始まるまで 78〜526秒と回ごとに大きく違った
+# （run 931・1197・1329・1330）。シミュレーターが起動した時と、テストを載せるアプリが立ち上がった時を
+# 1秒ごとに見て `measured [sim] …` の行に秒だけ出す（端末の識別子・置き場は出さない）。
+# 組む段と、xcrun の無い所（Linux の検査の偽の xcodebuild）では見ない
+watcher=""
+if [ "$mode" != "build" ] && command -v xcrun >/dev/null 2>&1; then
+    (
+        started=$(date +%s); booted=""; launched=""; limit=1800
+        if xcrun simctl list devices booted 2>/dev/null | grep -qF "$DEVICE ("; then
+            booted=1; echo "measured [sim] $mode 始めから起動済み" | tee -a "$LOG"
+        fi
+        while [ $(( $(date +%s) - started )) -lt $limit ]; do
+            elapsed=$(( $(date +%s) - started ))
+            if [ -z "$booted" ] && xcrun simctl list devices booted 2>/dev/null | grep -qF "$DEVICE ("; then
+                booted=1; echo "measured [sim] $mode 起動 ${elapsed}s" | tee -a "$LOG"
+            fi
+            if [ -z "$launched" ] && pgrep -f "JourneyPhoto.app/JourneyPhoto" >/dev/null 2>&1; then
+                launched=1; echo "measured [sim] $mode アプリが立ち上がった ${elapsed}s" | tee -a "$LOG"
+            fi
+            if [ -n "$booted" ] && [ -n "$launched" ]; then break; fi
+            sleep 1
+        done
+    ) &
+    watcher=$!
+    # 載せる品の大きさ（入れる時間の手がかり。MB だけ）
+    for product in JourneyPhoto.app JourneyPhoto.app/PlugIns/JourneyPhotoTests.xctest; do
+        found="$(find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 7 -type d \
+            -path "*Debug-iphonesimulator/$product" 2>/dev/null | head -1 || true)"
+        if [ -n "$found" ]; then
+            echo "measured [sim] $mode $product $(du -sm "$found" | cut -f1)MB" | tee -a "$LOG"
+        fi
+    done
+fi
+stop_watcher() { if [ -n "$watcher" ]; then kill "$watcher" 2>/dev/null || true; fi; }
+trap stop_watcher EXIT
+
 # この回より新しいアプリの落ちた記録（.ips）だけを、失敗したときに読む印（2026-11-13・札 #596・`Tools/sim-crash-summary.py`）
 crash_marker="$(mktemp)"
 # `extra`・`source_args` は空白を含まない語の並び（置き場の名前・時間の上限・-only-testing:…）なので、わざと分けて渡す

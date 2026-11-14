@@ -120,10 +120,19 @@ final class ShareCardAuditTests: XCTestCase {
         var lowContrast: [String] = []
         var overlaps: [String] = []
         var items: [ShareCardProbe.Item] = []
+        /// 1つの組み合わせの段ごとの時間（秒）。単体テストの時間の内訳を数で見るため（札 #610・2026-11-14 判断）
+        var renderSeconds = 0.0, decodeSeconds = 0.0, diffSeconds = 0.0, contrastSeconds = 0.0
+    }
+
+    static func seconds(_ d: Duration) -> Double {
+        Double(d.components.seconds) + Double(d.components.attoseconds) / 1e18
     }
 
     /// 1つの組み合わせを書き出して測る
     func measure(_ photo: Data, credit: R.Credit, ratio: R.Ratio, style: R.Style) async throws -> (Measure, Data) {
+        let clock = ContinuousClock()
+        var mark = clock.now
+        func lap() -> Double { let now = clock.now; defer { mark = now }; return Self.seconds(now - mark) }
         let probe = ShareCardProbe(skipContent: false)
         let full = await ShareCardProbe.$current.withValue(probe) {
             await R.render(photo, credit: credit, ratio: ratio, style: style)
@@ -131,8 +140,10 @@ final class ShareCardAuditTests: XCTestCase {
         let bare = await ShareCardProbe.$current.withValue(ShareCardProbe(skipContent: true)) {
             await R.render(photo, credit: credit, ratio: ratio, style: style)
         }
+        let renderSeconds = lap()
         let fullData = try XCTUnwrap(full), bareData = try XCTUnwrap(bare)
         let a = try XCTUnwrap(Bitmap(fullData)), b = try XCTUnwrap(Bitmap(bareData))
+        let decodeSeconds = lap()
         XCTAssertEqual(a.width, b.width); XCTAssertEqual(a.height, b.height)
         let width = a.width, height = a.height
         let safe = ShareCardSafeArea.rect(ratio: ratio, width: CGFloat(width))
@@ -141,6 +152,8 @@ final class ShareCardAuditTests: XCTestCase {
         var minX = width, minY = height, maxX = -1, maxY = -1
         var uMinX = width, uMinY = height, uMaxX = -1, uMaxY = -1
         var m = Measure()
+        m.renderSeconds = renderSeconds
+        m.decodeSeconds = decodeSeconds
         a.pixels.withUnsafeBufferPointer { pa in
             b.pixels.withUnsafeBufferPointer { pb in
                 for y in 0..<height {
@@ -161,6 +174,7 @@ final class ShareCardAuditTests: XCTestCase {
             }
         }
         if maxX >= 0 { m.box = CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1) }
+        m.diffSeconds = lap()
         if uMaxX >= 0 { m.unsafeBox = CGRect(x: uMinX, y: uMinY, width: uMaxX - uMinX + 1, height: uMaxY - uMinY + 1) }
 
         // 明暗の比: 部品の画素の所の背景（部品を描かない絵）の一番明るい所と、部品の色
@@ -224,6 +238,7 @@ final class ShareCardAuditTests: XCTestCase {
                 }
             }
         }
+        m.contrastSeconds = lap()
         return (m, fullData)
     }
 
@@ -249,6 +264,7 @@ final class ShareCardAuditTests: XCTestCase {
         var photos: [String: Data] = [:]
         var failures: [String] = []
         var count = 0
+        var spent = (render: 0.0, decode: 0.0, diff: 0.0, contrast: 0.0)
         do {
             do {
                 for (contentName, credit, allowsTruncation, photoName) in cases {
@@ -256,6 +272,8 @@ final class ShareCardAuditTests: XCTestCase {
                     photos[photoName] = photo
                     let (m, _) = try await measure(photo, credit: credit, ratio: ratio, style: style)
                     count += 1
+                    spent.render += m.renderSeconds; spent.decode += m.decodeSeconds
+                    spent.diff += m.diffSeconds; spent.contrast += m.contrastSeconds
                     let width: CGFloat = 1080, height = 1080 / CGFloat(ratio.rawValue)
                     let label = "\(style.rawValue) \(ratio) \(contentName) \(photoName)"
                     let edges = m.box.map { ShareCardSafeArea.edgeDistances(of: $0, width: width, height: height) } ?? []
@@ -308,6 +326,9 @@ final class ShareCardAuditTests: XCTestCase {
             }
         }
         print("measured [sharecard] \(style.rawValue) \(ratio) 組み合わせ \(count) 件 崩れ \(failures.count) 件")
+        print("measured [sharecard-time] \(style.rawValue) \(ratio) render=" + String(format: "%.2f", spent.render)
+              + "s decode=" + String(format: "%.2f", spent.decode) + "s diff=" + String(format: "%.2f", spent.diff)
+              + "s contrast=" + String(format: "%.2f", spent.contrast) + "s")
         XCTAssertTrue(failures.isEmpty, "共有カードの崩れ \(failures.count) 件 / \(count) 件:\n" + failures.joined(separator: "\n"))
     }
 
