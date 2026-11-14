@@ -37,6 +37,8 @@ struct CamperRoomSceneView: UIViewRepresentable {
     /// **`onReady` より前に置く**（後ろに置くと、Swift 5 の後ろから合わせる規則で、末尾の閉包 `{ ready = $0 }` が
     /// こちらに渡り、図鑑の寄りが「組み終えた」を出さなくなった・Mac run 654）
     var onProbe: ((String) -> Void)?
+    /// 見本の起動の試験用: 部屋を組む段の記録（`CamperRoomScene.noteStage`・札 #530）。nil なら記録しない
+    var onStage: ((String) -> Void)?
     var onReady: (String) -> Void = { _ in }
     /// 額の中身が替わった（保存した中身・選んだだけの見本。額の uid → 写真 id・UI テストの読み上げの値に出す・2026-10-22）
     var onFramed: (_ framed: [String: String], _ previewed: [String: String]) -> Void = { _, _ in }
@@ -99,6 +101,7 @@ struct CamperRoomSceneView: UIViewRepresentable {
             DispatchQueue.main.async { onFramed(framed, previewed) }
         }
         if let onProbe { c.onProbe = { probe in DispatchQueue.main.async { onProbe(probe) } } }
+        if let onStage { c.onStage = { stage in DispatchQueue.main.async { onStage(stage) } } }
         c.setCamera(camera, animated: false)
         c.setMood(mood)
         c.show(layout: layout, doc: doc, paint: paint)

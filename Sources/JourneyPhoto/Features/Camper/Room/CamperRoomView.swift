@@ -82,6 +82,8 @@ struct CamperRoomView: View {
     /// 二度押しを見分ける（前に押した時刻と場所）
     @State private var lastTap: (at: Date, point: CGPoint)?
     @State private var readyMarker = ""
+    /// 部屋を組む段の記録（見本の起動の UI テストのときだけ・札 #530）
+    @State private var buildStage = ""
     /// 額の中身（読み上げの値の後ろに ` framed=<保存した id>,… preview=<選んだだけの id>,…` で足す・見本の起動のときだけ）。
     /// UI テストが「飾った写真が額に入ったか」を確かめる（`CriticalFlowTests`・2026-10-22）
     @State private var framedMarker = ""
@@ -502,6 +504,7 @@ struct CamperRoomView: View {
                             previewPhotoId: mode == .photos ? photoPick : nil, selected: selected, drag: drag, dragCheck: dragCheck,
                             photoImages: photoImages.images, hints: mode == .edit ? hints : nil,
                             onProbe: PreviewSession.userId != nil ? { photoProbe = $0 } : nil,
+                            onStage: PreviewSession.userId != nil ? { buildStage = $0 } : nil,
                             onReady: { marker in readyMarker = marker },
                             onFramed: { framed, previewed in
                                 framedMarker = " framed=" + framed.values.sorted().joined(separator: ",")
@@ -517,8 +520,10 @@ struct CamperRoomView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(sceneLabel)
         .accessibilityAddTraits(.isImage)
-        // 見本の起動のときだけ、横の向き（yaw=度）も出す（UI テストが ⟲ ⟳ で 30° ずつ替わるのを読む・2026-11-14）
-        .accessibilityValue(PreviewSession.userId != nil ? readyMarker + " " + photoProbe + framedMarker + " yaw=\(Int(camera.yaw.rounded()))" : "")
+        // 見本の起動のときだけ、組み立ての段（stage=・札 #530）と横の向き（yaw=度）も出す
+        // （2026-11-14 判断: 1.1.91 の統合で両方を残す。yaw= は末尾に置く——testCapturesCamperRoomTurnButtons が
+        // 「(?s).* yaw=<度>」の MATCHES（末尾まで一致）で読むため）
+        .accessibilityValue(PreviewSession.userId != nil ? readyMarker + " " + photoProbe + framedMarker + " stage=" + buildStage + " yaw=\(Int(camera.yaw.rounded()))" : "")
     }
 
     /// 読み上げの操作（部屋を回す・家具を選ぶ）。修飾を分けて、Xcode の型検査が時間切れにならないようにする

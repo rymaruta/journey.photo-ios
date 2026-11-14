@@ -90,6 +90,11 @@ final class CamperRoomScene {
     var onFramed: ((_ framed: [String: String], _ previewed: [String: String]) -> Void)?
     /// 見本の起動の試験用: 額の印画の様子（`photoProbe`）が変わったら呼ぶ。nil なら測らない
     var onProbe: ((String) -> Void)?
+    /// 見本の起動の試験用: 部屋を組む段の記録（札 #530・`noteStage`）が変わったら呼ぶ。nil なら記録しない
+    var onStage: ((String) -> Void)?
+    /// 組む段の記録（新しい順ではなく古い順・最大 10 件）。形は `段#組み直しの回 +経過ms`
+    private var stages: [String] = []
+    private let stageClock = Date()
     /// 額ごとの、絵（読めた写真）が入った印画の数
     private var shownPhotos: [String: Int] = [:]
     private var probeToken = 0
@@ -173,16 +178,22 @@ final class CamperRoomScene {
         // 同じ鍵を組んでいる途中なら始め直さない（文書は self.doc に入れたので、組み終えた後に合わせる）。
         // 組んでいる途中に元の鍵へ戻ったときは、材質を作り直し始めているので、元の鍵も組み直す
         if key == buildingKey { return }
+        if buildTask != nil, buildingKey != nil { noteStage("restart") }
         buildTask?.cancel()
         buildingKey = key
         buildsStarted += 1
+        noteStage("start")
         let started = Date()
         let extra = doc.all.map(\.k)
         buildTask = Task { [weak self] in
             let plan = await Task.detached(priority: .userInitiated) {
                 CamperRoomScenePlan.make(layout, doc: doc, paint: paint, extra: extra)
             }.value
-            guard !Task.isCancelled, let self else { return }
+            guard !Task.isCancelled, let self else {
+                self?.noteStage("cancelled")
+                return
+            }
+            self.noteStage("planned")
             CamperRenderMeter.shared.mark("B1planned")
             PerfRecorder.shared.event("camper.room.install>")   // 起動直後の停止の切り分け（UI テストのときだけ・2026-11-07）
             self.install(plan, key: key, shell: self.buildShell(plan))
@@ -204,6 +215,7 @@ final class CamperRoomScene {
             #endif
             CamperRenderMeter.shared.mark("B4ready", vm: true)
             PerfRecorder.shared.event("camper.room.install<")
+            self.noteStage("ready")
             self.onReady?(self.marker(ms: ms))
         }
     }
@@ -244,6 +256,18 @@ final class CamperRoomScene {
         guard let layout else { return }
         self.doc = doc
         syncItems(layout: layout, doc: doc)
+    }
+
+    /// **部屋を組む段の記録**（札 #530・2026-11-14・見本の起動の UI テストのときだけ）。Mac の run 987 で
+    /// `testCapturesCamperRoomCloseUps` の「手前の右の角」が 45 秒 `camper-room-ready` にならず、場面（`camper.room.scene`）は
+    /// 出ていた。組み始めない・下ごしらえ（`CamperRoomScenePlan.make`）が終わらない・途中で取り消された・組み終えたのに合図が
+    /// 届かない、のどれかを数で見分けるため、段と時刻を読み上げの値（`stage=`）に出す。合図の中身・組み方は変えない
+    private func noteStage(_ name: String) {
+        guard let onStage else { return }
+        let ms = Int(Date().timeIntervalSince(stageClock) * 1000)
+        stages.append("\(name)#\(buildsStarted)+\(ms)")
+        if stages.count > 10 { stages.removeFirst(stages.count - 10) }
+        onStage(stages.joined(separator: ","))
     }
 
     /// 組み終えた合図（画面写真の試験が待つ）
@@ -1025,6 +1049,7 @@ final class CamperRoomScene {
     }
 
     func cancel() {
+        if buildingKey != nil { noteStage("dismantled") }
         buildTask?.cancel()
         buildTask = nil
         buildingKey = nil
