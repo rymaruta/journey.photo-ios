@@ -219,7 +219,24 @@ struct TripChatPane: View {
     @State private var sending = false
     @State private var sendError: String?
     @State private var memberList: [TripMember] = []
+    /// 通報する通（長押しの「通報」・2026-11-14 札 #597）
+    @State private var reportTarget: ReportTarget?
+    /// ブロックを確かめる相手（長押しの「ブロック」）
+    @State private var blockTarget: BlockTarget?
+    @State private var blockError: String?
     @Environment(\.scenePhase) private var scenePhase
+
+    struct ReportTarget: Identifiable, Equatable {
+        let message: ReportSheet.TripMessage
+        let authorId: String
+        var id: String { message.messageId }
+    }
+
+    struct BlockTarget: Identifiable, Equatable {
+        let userId: String
+        let name: String
+        var id: String { userId }
+    }
 
     enum Phase: Equatable { case loading, loaded, failed }
 
@@ -262,6 +279,19 @@ struct TripChatPane: View {
             inputBar
         }
         .accessibilityIdentifier("tripShare.chat")
+        // 通報は DM の会話の通報と同じシート（理由・補足・「この人をブロックする」・送られる範囲）
+        .sheet(item: $reportTarget) { target in
+            ReportSheet(photoId: "", ownerId: target.authorId, tripMessage: target.message)
+        }
+        // ブロックの確かめは DM の「…」のブロックと同じ言葉（`DMBlockText`）。取り消せない操作なので確かめる
+        .alert(blockTarget.map { DMBlockText.title($0.name) } ?? "",
+               isPresented: Binding(get: { blockTarget != nil }, set: { if !$0 { blockTarget = nil } }),
+               presenting: blockTarget) { target in
+            Button(L("ブロック", "Block"), role: .destructive) { Task { await block(target.userId) } }
+            Button(Labels.Common.cancel, role: .cancel) {}
+        } message: { _ in
+            Text(DMBlockText.message)
+        }
         // 1通の上限（500 字）を越えて打てない（DM の入力欄と同じ・2026-11-12 確かめ役の指摘10）
         .onChange(of: draft) { old, new in
             let kept = TripShareText.limitedDraft(old: old, new: new)
@@ -281,6 +311,10 @@ struct TripChatPane: View {
     /// ブロックした人の通は出さない（サーバーも外すが、ブロックした直後の手元でも外す）
     private var visible: [TripChatMessage] {
         messages.filter { !hidden.blockedUserIds.contains($0.from) }
+    }
+
+    private func isDeleted(_ uid: String) -> Bool {
+        everyone.first(where: { $0.id == uid })?.deleted == true
     }
 
     private func name(_ uid: String) -> String {
@@ -323,15 +357,35 @@ struct TripChatPane: View {
                         .padding(.horizontal, JPSpace.xxs)
                 }
                 DMBubble(text: text, mine: message.mine, time: nil)
+                    .modifier(TripMessageMenu(actions: TripShareText.messageActions(message, authorDeleted: isDeleted(message.from)),
+                                              copy: { UIPasteboard.general.string = text },
+                                              report: { report(message, text: text) },
+                                              block: { blockTarget = BlockTarget(userId: message.from, name: name(message.from)) }))
             }
             .frame(maxWidth: .infinity, alignment: message.mine ? .trailing : .leading)
         }
     }
 
+    private func report(_ message: TripChatMessage, text: String) {
+        reportTarget = ReportTarget(message: .init(planId: planId, messageId: message.id,
+                                                   authorName: name(message.from), text: text),
+                                    authorId: message.from)
+    }
+
+    /// ブロックする。相手の通はその場で画面から外れる（`visible` が `blockedUserIds` を見る）。落ちたら入力欄の上に出す
+    private func block(_ userId: String) async {
+        blockError = nil
+        do {
+            try await hidden.blockAndHide(userId, environment: environment)
+        } catch {
+            blockError = (error as? LocalizedError)?.errorDescription ?? L("ブロックできませんでした", "Couldn't block")
+        }
+    }
+
     private var inputBar: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if let sendError {
-                Text(sendError)
+            if let message = sendError ?? blockError {
+                Text(message)
                     .font(JPFont.caption)
                     .foregroundStyle(WebTheme.danger)
             }
@@ -391,6 +445,36 @@ struct TripChatPane: View {
         } catch {
             // 書いた文は欄に残す（送れなかった文を消さない）
             sendError = (error as? LocalizedError)?.errorDescription ?? L("送れませんでした。もう一度お試しください。", "Couldn't send. Please try again.")
+        }
+    }
+}
+
+/// 会話の1通の長押し（2026-11-14・札 #597・審査ガイドライン 1.2）。文の通には「コピー」を先頭に（自分の通にも・DM の吹き出しの
+/// 長押しと同じ）、**ほかの仲間の文の通にだけ**その後ろに「通報」「ブロック」を出す（`TripShareText.messageActions`）。
+/// 言葉と印は DM の吹き出しのコピー・「…」の通報・ブロックと同じ。出すものが無い通（札）にはメニューを付けない
+private struct TripMessageMenu: ViewModifier {
+    let actions: [TripShareText.MessageAction]
+    let copy: () -> Void
+    let report: () -> Void
+    let block: () -> Void
+
+    func body(content: Content) -> some View {
+        if actions.isEmpty {
+            content
+        } else {
+            content
+                .contextMenu {
+                    if actions.contains(.copy) {
+                        Button(action: copy) { Label(L("コピー", "Copy"), systemImage: "doc.on.doc") }
+                    }
+                    if actions.contains(.report) {
+                        Button(action: report) { Label(L("通報", "Report"), systemImage: "exclamationmark.bubble") }
+                    }
+                    if actions.contains(.block) {
+                        Button(role: .destructive, action: block) { Label(L("ブロック", "Block"), systemImage: "hand.raised") }
+                    }
+                }
+                .accessibilityIdentifier("tripShare.bubble")
         }
     }
 }
