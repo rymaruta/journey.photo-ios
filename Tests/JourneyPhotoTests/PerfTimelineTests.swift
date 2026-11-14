@@ -183,4 +183,48 @@ final class PerfTimelineTests: XCTestCase {
             XCTAssertTrue(try read(path).contains("PerfTimeline.shared.count(\"\(key)\")"), "\(path) の body を数えていない")
         }
     }
+
+    // MARK: - 主スレッドの積みのファイル（`PerfMainTrace`・2026-11-14 run 1244 の 5956ms）
+
+    /// 行に止まりと同じ時計の `t=` があり、浅い 8 段で切れる深い所の**画面読み・ログの段**と、このアプリの段を残す
+    func testMainTraceLineKeepsTimelineClockAndDeepScreenReadFrames() {
+        let shallow = (0..<8).map { "SwiftUICore`frame\($0)" }
+        let deep = ["UIKitCore`x", "XCTAutomationSupport`-[XCTAccessibilityFramework attributesForElement:]",
+                    "JourneyPhoto.debug.dylib`JourneyPhoto.HomeTopCardView.body.getter", "UIAccessibility`load",
+                    "AXCoreUtilities`a", "AXRuntime`b", "libsystem_trace.dylib`_os_trace_writev"]
+        let line = PerfMainTrace.line(ms: 1200, timelineMs: 9440, pingMs: nil, frames: shallow + deep)
+        let head = line.components(separatedBy: " | ")[0]
+        XCTAssertEqual(head, "ms=1200 t=9440 ping=pending")
+        let frames = line.components(separatedBy: " | ")[1].components(separatedBy: " ; ")
+        XCTAssertEqual(Array(frames.prefix(8)), shallow)
+        XCTAssertEqual(frames[8], "…")
+        // 印のある段は 3 つまで（深い方の順）。アプリの段はそのあと
+        XCTAssertEqual(Array(frames[9...]), [deep[1], deep[3], deep[4], deep[2]])
+        XCTAssertEqual(PerfMainTrace.line(ms: 5, timelineMs: 7, pingMs: 12, frames: ["a`b"]), "ms=5 t=7 ping=12 | a`b")
+        // 印は UI テストの種類分け（`PerfSurveyStage.kind`）と同じもの
+        XCTAssertEqual(Set(PerfMainTrace.markers), ["UIAccessibility", "AXRuntime", "AXCoreUtilities", "XCTAutomationSupport",
+                                                    "_os_log_impl_mirror_to_stderr", "_os_trace_writev"])
+    }
+
+    /// 🔴 ファイルの書き手が `PerfMainTrace.line` で `t=` を書き、下調べの UI テストがファイルを渡して止まりごとにログへ出す
+    func testUsageSurveyWiresTheMainTraceFile() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        func read(_ path: String) throws -> String {
+            try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+        }
+        let overlay = try read("Sources/JourneyPhoto/Core/Async/PerfProbeOverlay.swift")
+        XCTAssertTrue(overlay.contains("PerfMainTrace.line(ms:"), "ファイルの行を PerfMainTrace で書いていない")
+        XCTAssertTrue(overlay.contains("timelineMs: Int(((sent - PerfRecorder.shared.origin) * 1000).rounded())"),
+                      "t= が止まり（PerfTimeline）と同じ時計でない")
+        let probe = try read("UITests/JourneyPhotoUITests/PerformanceTests.swift")
+        XCTAssertTrue(probe.contains("app.launchArguments += [\"-JPMainSampleFile\", tracePath]"), "下調べでファイルを渡していない")
+        XCTAssertTrue(probe.contains("(\"stalls\", stallsText)"), "PERF の行に止まりの一覧が無い")
+        XCTAssertTrue(probe.contains("PerfMainTraceLine.during(trace, startMs: stall.startMs, gapMs: stall.gapMs)"))
+        let support = try read("UITests/JourneyPhotoUITests/PerfSurveySupport.swift")
+        XCTAssertTrue(support.contains("if field.hasPrefix(\"t=\") { t = Int(field.dropFirst(2)) }"), "読む側が t= を読んでいない")
+        XCTAssertTrue(support.contains("stalls = inside"))
+        // 印は読む側の種類分けと同じ（片方だけ変えない）
+        for marker in PerfMainTrace.markers { XCTAssertTrue(support.contains("\"\(marker)\""), "\(marker) を読む側が知らない") }
+    }
 }
+

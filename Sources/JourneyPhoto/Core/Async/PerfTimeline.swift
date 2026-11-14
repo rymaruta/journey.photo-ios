@@ -277,3 +277,35 @@ final class PerfTimeline: @unchecked Sendable {
         #endif
     }
 }
+
+/// 主スレッドの積みを 0.3 秒ごとにファイルへ書く 1 行（`PerfMainSampler` の `-JPMainSampleFile`）の形（2026-11-14・札 #594）。
+///
+/// 形: `ms=<書き手の起動からの ms> t=<PerfTimeline の時計の ms> ping=<ms|pending> | 段 ; 段 ; …`
+///
+/// 2026-11-14 判断（run 1244 の起動からホームの段の 5956ms の止まり）: 止まりの見張りは 1 回の止まりで 650ms までの
+/// 3 枚しか撮らず、残りの 5.3 秒が XCUITest の画面読みかアプリの描画か分けられなかった。ファイルの行を止まりと
+/// 突き合わせられるよう `t=`（止まりの `st=` と同じ時計）を足し、浅い 8 段で切れていた**画面読み・ログの段**も残す。
+/// 読む側は UI テストの `PerfMainTraceLine`（変えるときは両方と `PerfTimelineTests`）
+enum PerfMainTrace {
+    /// 浅い方から残す段の数
+    static let headFrames = 8
+    /// 深い所から拾うこのアプリの段の数
+    static let appFrames = 10
+    /// 深い所から拾う、画面読み・ログの段の数
+    static let markerFrames = 3
+    /// 画面読み（XCUITest・読み上げの木）とログの写しの印（UI テストの `PerfSurveyStage.kind` と同じ）
+    static let markers = ["UIAccessibility", "AXRuntime", "AXCoreUtilities", "XCTAutomationSupport",
+                          "_os_log_impl_mirror_to_stderr", "_os_trace_writev"]
+
+    /// 1 行（改行なし）。`frames` は浅い方から
+    static func line(ms: Int, timelineMs: Int, pingMs: Int?, frames: [String]) -> String {
+        let head = Array(frames.prefix(headFrames))
+        let deep = frames.dropFirst(headFrames)
+        let marked = deep.filter { frame in markers.contains { frame.contains($0) } }.prefix(markerFrames)
+        let app = deep.filter { $0.hasPrefix("JourneyPhoto") }.prefix(appFrames)
+        let rest = Array(marked) + Array(app)
+        let ping = pingMs.map(String.init) ?? "pending"
+        return "ms=\(ms) t=\(timelineMs) ping=\(ping) | " + (head + (rest.isEmpty ? [] : ["…"]) + rest).joined(separator: " ; ")
+    }
+}
+

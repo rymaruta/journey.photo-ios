@@ -378,6 +378,10 @@ final class PerformanceTests: XCTestCase {
         // DM の一覧を見本の通信で答える・投稿の画面を見本の 1 枚を選んだ状態で開く（写真の選び手を出さない）
         app.launchArguments += ["-JPPreviewDM", "YES", "-JPPreviewUploadSample", "YES"]
         enablePerfProbe(app)
+        // 主スレッドの積みを 0.3 秒ごとにファイルへ（止まりの見張りは 650ms までしか撮らない。run 1244 の 5956ms の
+        // 止まりの残りが、XCUITest の画面読みかアプリの描画か分けられなかった・2026-11-14 札 #594）
+        let tracePath = ScreenshotTests.mainSamplePath("survey")
+        app.launchArguments += ["-JPMainSampleFile", tracePath]
 
         var marks: [(name: String, start: PerfTimelineReading, end: PerfTimelineReading, wallMs: Int)] = []
         var pool: [(ms: Int, stack: String)] = []
@@ -496,9 +500,33 @@ final class PerformanceTests: XCTestCase {
         let stages = marks.map {
             PerfSurveyStage(name: $0.name, from: $0.start, to: $0.end, final: final, samplePool: pool, wallMs: $0.wallMs)
         }
+        // 主スレッドの積みのファイル（`-JPMainSampleFile`）。止まりの最中の行を、止まりごとに全部ログに出す（2026-11-14）
+        let traceText = (try? String(contentsOfFile: tracePath, encoding: .utf8)) ?? ""
+        let trace = traceText.split(separator: "\n").compactMap { PerfMainTraceLine(String($0)) }
+        print("PERF-MAIN test=testUsageSurveyProbe lines=\(trace.count) slow=\(trace.filter(\.isSlow).count) path=\(tracePath)")
         for stage in stages {
+            for stall in stage.stalls where stall.gapMs >= 300 {
+                for line in PerfMainTraceLine.during(trace, startMs: stall.startMs, gapMs: stall.gapMs) {
+                    print("PERF-MAIN test=testUsageSurveyProbe stage=\(stage.name) stall=\(stall.startMs):\(stall.gapMs) "
+                          + "kind=\(PerfSurveyStage.kind(of: [line.frames.joined(separator: "^")])) \(line.raw)")
+                }
+            }
+        }
+        let traceFile = XCTAttachment(string: traceText)
+        traceFile.name = "main thread trace"
+        traceFile.lifetime = .keepAlways
+        add(traceFile)
+        for stage in stages {
+            var stallTexts: [String] = []
+            for stall in stage.stalls {
+                let kinds = PerfMainTraceLine.kinds(PerfMainTraceLine.during(trace, startMs: stall.startMs, gapMs: stall.gapMs))
+                stallTexts.append("\(stall.startMs):\(stall.gapMs)" + (kinds.isEmpty ? "" : "[\(kinds)]"))
+            }
+            let stallsText = stallTexts.joined(separator: ",")
             perf([("stage", stage.name), ("startMs", "\(stage.startMs)"), ("endMs", "\(stage.endMs)"), ("wallMs", "\(stage.wallMs)"),
                   ("stallCount", "\(stage.stallCount)"), ("stallMaxMs", "\(stage.stallMaxMs)"), ("stallTotalMs", "\(stage.stallTotalMs)"),
+                  // 止まりの全部（始め:長さ ms・アプリの時計）と、その最中の 0.3 秒ごとの積みの種類（2026-11-14）
+                  ("stalls", stallsText),
                   ("memPeakMB", "\(stage.memPeakMB)"), ("memEndMB", "\(stage.memEndMB)"), ("bodyTotal", "\(stage.bodyTotal)"),
                   ("bodies", stage.bodies.map { "\($0.0):\($0.1)" }.joined(separator: ",")),
                   // 2026-11-14: 止まりの種類（XCUITest が画面を読む ax・ログ log・アプリ app）・評価し直した理由・処理の時間・控えの大きさ

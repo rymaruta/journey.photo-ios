@@ -106,6 +106,8 @@ struct PerfSurveyStage {
     let stallCount: Int
     let stallMaxMs: Int
     let stallTotalMs: Int
+    /// 段の中で始まった止まりの全部（始め ms, 長さ ms・アプリの `st=` と同じ時計）。PERF の行の `stalls=`（2026-11-14）
+    let stalls: [(startMs: Int, gapMs: Int)]
     let memPeakMB: Int
     let memEndMB: Int
     /// 段の間に増えた body の評価回数（名前ごと・0 は除く）
@@ -153,6 +155,7 @@ struct PerfSurveyStage {
         startMs = start.nowMs
         endMs = end.nowMs
         let inside = final.stalls.filter { $0.startMs >= start.nowMs && $0.startMs < end.nowMs }
+        stalls = inside
         stallCount = inside.count
         stallMaxMs = inside.map(\.gapMs).max() ?? 0
         stallTotalMs = inside.reduce(0) { $0 + $1.gapMs }
@@ -222,3 +225,54 @@ final class PerfSurveyMetric: NSObject, XCTMetric, @unchecked Sendable {
         return out
     }
 }
+
+/// 主スレッドの積みのファイル（`-JPMainSampleFile`・アプリの `PerfMainTrace.line`）の 1 行（2026-11-14・札 #594）。
+///
+///     ms=1234 t=9440 ping=pending | 段 ; 段 ; … ; 段
+///
+/// `t` は止まり（`st=`）と同じ時計。止まりの見張りは 650ms までの 3 枚しか撮らないので、長い止まりの残りはこの行で見る
+/// （run 1244 の起動からホームの 5956ms）。形を変えるときはアプリの `PerfMainTrace` と `PerfTimelineTests` も
+struct PerfMainTraceLine {
+    let timelineMs: Int
+    /// 主スレッドに投げた合図が戻るまでの ms。0.3 秒で戻らなければ nil（pending）
+    let pingMs: Int?
+    let frames: [String]
+    let raw: String
+
+    init?(_ line: String) {
+        let parts = line.components(separatedBy: " | ")
+        guard let head = parts.first else { return nil }
+        var t: Int?
+        var ping: Int?
+        var pending = false
+        for field in head.split(separator: " ") {
+            if field.hasPrefix("t=") { t = Int(field.dropFirst(2)) }
+            if field.hasPrefix("ping=") {
+                let value = field.dropFirst(5)
+                if value == "pending" { pending = true } else { ping = Int(value) }
+            }
+        }
+        guard let t, pending || ping != nil else { return nil }
+        timelineMs = t
+        pingMs = pending ? nil : ping
+        frames = parts.count > 1 ? parts[1...].joined(separator: " | ").components(separatedBy: " ; ") : []
+        raw = line
+    }
+
+    /// 主スレッドが止まっていた行（0.3 秒で戻らない・または 200ms 以上）
+    var isSlow: Bool { (pingMs ?? Int.max) >= 200 }
+
+    /// 止まり（始め・長さ）の最中に書いた行。合図は投げてから 0.3 秒待つので、終わりは 300ms 足す
+    static func during(_ lines: [PerfMainTraceLine], startMs: Int, gapMs: Int) -> [PerfMainTraceLine] {
+        lines.filter { $0.timelineMs >= startMs && $0.timelineMs <= startMs + gapMs + 300 }
+    }
+
+    /// 行の種類の数（`PerfSurveyStage.kind` を 1 行ずつ。`ax:14,app:3`）
+    static func kinds(_ lines: [PerfMainTraceLine]) -> String {
+        var counts: [String: Int] = [:]
+        for line in lines { counts[PerfSurveyStage.kind(of: [line.frames.joined(separator: "^")]), default: 0] += 1 }
+        return counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+            .map { "\($0.key):\($0.value)" }.joined(separator: ",")
+    }
+}
+

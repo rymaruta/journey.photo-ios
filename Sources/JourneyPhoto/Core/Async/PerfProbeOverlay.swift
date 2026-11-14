@@ -166,12 +166,11 @@ final class PerfMainSampler: @unchecked Sendable {
                 reply.signal()
             }
             let answered = reply.wait(timeout: .now() + 0.3) == .success
-            let ping = answered ? String(Int(((box.value ?? sent) - sent) * 1000)) : "pending"
-            let frames = captureFrames() ?? []
-            let top = Array(frames.prefix(8))
-            let app = frames.dropFirst(8).filter { $0.hasPrefix("JourneyPhoto") }.prefix(10)
-            let ms = Int((sent - origin) * 1000)
-            let line = "ms=\(ms) ping=\(ping) | " + (top + (app.isEmpty ? [] : ["…"]) + Array(app)).joined(separator: " ; ") + "\n"
+            let ping = answered ? Int(((box.value ?? sent) - sent) * 1000) : nil
+            // 行の形は `PerfMainTrace.line`（`t=` は止まりの `st=` と同じ時計・画面読みの段も残す・2026-11-14 札 #594）
+            let line = PerfMainTrace.line(ms: Int((sent - origin) * 1000),
+                                          timelineMs: Int(((sent - PerfRecorder.shared.origin) * 1000).rounded()),
+                                          pingMs: ping, frames: captureFrames() ?? []) + "\n"
             handle.write(Data(line.utf8))
             lines += 1
             if answered { Thread.sleep(forTimeInterval: 0.3) }
