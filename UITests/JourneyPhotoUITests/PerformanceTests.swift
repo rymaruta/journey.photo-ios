@@ -125,7 +125,6 @@ final class PerformanceTests: XCTestCase {
         return photo
     }
 
-    /// 積んだ画面から1つ戻る（`ScreenshotTests.goBack` と同じ順。見出しのベルを押さない）
     /// ホームの画面の中で押せる写真の札（`feed.photo`）のうち一番上（同じ高さなら左）。無ければ nil。
     /// 木の順の 1 つ目は画面の外のことがある（2026-11-14 Mac の回 1256・1 本の並び）ので、位置で選ぶ
     private func topmostHittableFeedPhoto(_ app: XCUIApplication) -> XCUIElement? {
@@ -171,6 +170,7 @@ final class PerformanceTests: XCTestCase {
         add(shot)
     }
 
+    /// 積んだ画面から1つ戻る（`ScreenshotTests.goBack` と同じ順。見出しのベルを押さない）
     private func goBack(_ app: XCUIApplication) {
         let standard = app.navigationBars.buttons["BackButton"].firstMatch
         if standard.exists, standard.isHittable {
@@ -749,9 +749,20 @@ final class PerformanceTests: XCTestCase {
         app.launch()
         passConsent(app)
         let photo = waitForHomePhoto(app)
-        XCTAssertTrue(photo.isHittable, "ホームの1枚目の写真が押せない")
+        // 押すのは画面の中で押せる写真のうち一番上（`topmostHittableFeedPhoto`・下調べの写真詳細の段と同じ）。
+        // 2026-11-14 判断（Mac の回 1256）: 1 本の並び（札 #595）では木の順の 1 つ目（`firstMatch`）が画面の外のことがある
+        var round = 0
         measureTimed([XCTMemoryMetric(application: app)], 3) {
-            photo.tap()
+            round += 1
+            _ = photo.waitForExistence(timeout: 10)
+            let target = topmostHittableFeedPhoto(app)
+            // 押せる札が無いときだけ事実を残す
+            if target == nil { noteUnhittableHomePhoto(app, photo, round: round) }
+            guard let target else {
+                XCTFail("\(round) 回目: ホームの画面の中に押せる写真が無い")
+                return
+            }
+            target.tap()
             let author = app.buttons["photo.author"].firstMatch
             XCTAssertTrue(author.waitForExistence(timeout: 20), "写真の詳細が出ない")
             // 大きな写真の読み込みが落ち着くまで
