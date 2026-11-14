@@ -47,6 +47,22 @@ final class ErgonomicsFollowupTests: XCTestCase {
         XCTAssertEqual(CornerTapArea.side, 60)
     }
 
+    /// 上へは安全な範囲の上端まで（状態バーの帯へ広げない・2026-11-14）。横（角の外側）は 60 まで広げる
+    func testCornerHitRectStopsAtTheSafeAreaTop() {
+        let rect = CGRect(x: 0, y: 0, width: 44, height: 44)
+        // 物の上端が安全な範囲の上端から 4.5pt 下 → 上へは 4.5 だけ
+        let up = CornerTapArea.allowedUp(viewMinY: 66, safeTop: 61.5)
+        XCTAssertEqual(up, 4.5)
+        XCTAssertEqual(CornerTapArea.hitRect(rect, corner: .topLeading, maxUp: up),
+                       CGRect(x: -16, y: -4.5, width: 60, height: 48.5))
+        // 安全な範囲の外（上端より上）にいれば上へは広げない
+        XCTAssertEqual(CornerTapArea.allowedUp(viewMinY: 50, safeTop: 61.5), 0)
+        XCTAssertEqual(CornerTapArea.hitRect(rect, corner: .topTrailing, maxUp: 0),
+                       CGRect(x: 0, y: 0, width: 60, height: 44))
+        // 十分に下なら 60 まで
+        XCTAssertEqual(CornerTapArea.hitRect(rect, corner: .topLeading, maxUp: 100).height, 60)
+    }
+
     /// 画面の角の「閉じる」「×」は、どれも共通の当たり（`cornerTapArea`）を使う。1か所でも前の円・44 の四角に戻ると落ちる
     func testCornerButtonsUseTheSharedCornerTapArea() throws {
         let expected: [(file: String, corner: String, count: Int)] = [

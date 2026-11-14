@@ -24,6 +24,19 @@ open class UIWindowScene: UIScene {
 open class UIWindow {
     public var isKeyWindow: Bool { false }
     public var rootViewController: UIViewController?
+    /// 安全な範囲の幅（本物と同じ・角の当たりを状態バーの下に止める `CornerTapArea` が上を読む）
+    public var safeAreaInsets: UIEdgeInsets { UIEdgeInsets() }
+}
+
+/// 4辺の幅（本物と同じ）
+public struct UIEdgeInsets: Equatable {
+    public var top: CGFloat
+    public var left: CGFloat
+    public var bottom: CGFloat
+    public var right: CGFloat
+    public init(top: CGFloat = 0, left: CGFloat = 0, bottom: CGFloat = 0, right: CGFloat = 0) {
+        self.top = top; self.left = left; self.bottom = bottom; self.right = right
+    }
 }
 
 /// `@UIApplicationDelegateAdaptor` で繋ぐ側の模型。

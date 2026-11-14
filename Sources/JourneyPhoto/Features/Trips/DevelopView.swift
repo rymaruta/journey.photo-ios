@@ -50,6 +50,9 @@ struct DevelopView: View {
     @State private var unreadableNotice = false
     /// UI テストのときだけ: 払う画面の上端（画面の座標）と、そこで読める安全な範囲の上の幅（`develop.safeTop` の値）
     @State private var safeTop: CGFloat = 0
+    /// UI テストのときだけ: 払う画面の × の**見た目の**上端（画面の座標・`develop.close.visual` の値）。
+    /// × の読み上げの枠は当たりの形の大きさになるので（`CornerTapArea`）、状態バーと比べるのは見た目の枠にする
+    @State private var closeVisualMinY: CGFloat = -1
     @State private var safeInset: CGFloat = 0
 
     private let store = DevelopProgressStore()
@@ -167,6 +170,9 @@ struct DevelopView: View {
         .overlay(alignment: .bottomLeading) {
             LayoutProbe(identifier: "develop.safeTop", value: String(format: "top=%.1f inset=%.1f", safeTop, safeInset))
         }
+        .overlay(alignment: .bottomTrailing) {
+            LayoutProbe(identifier: "develop.close.visual", value: String(format: "minY=%.1f", closeVisualMinY))
+        }
     }
 
     /// 上の丸（閉じる・ガラス）と、真ん中の札「4 / 10  DAY 1  金沢市」
@@ -188,6 +194,16 @@ struct DevelopView: View {
                         .foregroundStyle(WebTheme.foreground)
                         .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                         .jpGlass(in: Circle())
+                        .background {
+                            if PreviewSession.layoutProbe {
+                                GeometryReader { g in
+                                    let top = g.frame(in: .global).minY
+                                    Color.clear
+                                        .onAppear { closeVisualMinY = top }
+                                        .onChange(of: top) { _, value in closeVisualMinY = value }
+                                }
+                            }
+                        }
                         // 角の物は当たりを角の側へ 60pt 四方まで広げる（見た目はそのまま・`CornerTapArea`・2026-11-14）
                         .cornerTapArea(.topLeading)
                 }
