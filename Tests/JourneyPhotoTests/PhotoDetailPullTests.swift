@@ -36,6 +36,22 @@ final class PhotoDetailPullTests: XCTestCase {
         XCTAssertEqual(PhotoDetailPull.projectionSeconds, 0.499, accuracy: 0.0005)
     }
 
+    /// 🔴 **止めてから離した指は速さ 0**（Mac の回 1232: 80pt 引いて 1.5 秒止めて離した指に、UIKit は 172pt/秒を返し、
+    /// 80 ＋ 172 × 0.499 ≒ 166 で閉じた）。最後に量が変わってから 100ms を越えて止めていたら勢いを足さない
+    func testStillFingerReleasesWithoutVelocity() {
+        let velocity = PhotoDetailPull.releaseVelocity(reportedY: 172, sinceLastMoveMs: 1478)
+        XCTAssertEqual(velocity, 0, "止めてから離した指に、動いていた頃の速さを使った")
+        XCTAssertFalse(PhotoDetailPull.closes(dy: 80, velocityY: velocity), "回 1232 の値（80pt・止めて離す）で閉じた")
+        // 動きながら離した（払った）指は速さを使う
+        XCTAssertEqual(PhotoDetailPull.releaseVelocity(reportedY: 400, sinceLastMoveMs: 12), 400)
+        XCTAssertTrue(PhotoDetailPull.closes(dy: 40, velocityY: PhotoDetailPull.releaseVelocity(reportedY: 400, sinceLastMoveMs: 12)),
+                      "短く素早く払って戻れない")
+        XCTAssertEqual(PhotoDetailPull.releaseVelocity(reportedY: 300, sinceLastMoveMs: 100), 300, "境目（100ms ちょうど）はまだ動いている")
+        XCTAssertEqual(PhotoDetailPull.releaseVelocity(reportedY: 300, sinceLastMoveMs: 101), 0)
+        // 止めて離しても、引いた量が 120pt 以上なら戻る
+        XCTAssertTrue(PhotoDetailPull.closes(dy: 130, velocityY: PhotoDetailPull.releaseVelocity(reportedY: 50, sinceLastMoveMs: 900)))
+    }
+
     /// 引くほど縮む（下限 0.75）。「視差効果を減らす」では縮めない
     func testScaleShrinksWithPullUnlessReduceMotion() {
         XCTAssertEqual(PhotoDetailPull.scale(dy: 0, reduceMotion: false), 1)

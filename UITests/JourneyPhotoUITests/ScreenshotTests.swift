@@ -9629,6 +9629,37 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(photo.waitForExistence(timeout: 5) && photo.isHittable, "下に引いて戻った先にホームの写真が無い")
     }
 
+    /// 新着の写真を順に開き、作者の輪が「2本」（紹介の写真の付いた見本のストーリーの人）の写真の詳細で止まる。
+    /// その輪（押せる）を返す。見つからなければ落として nil
+    private func openSharedStoryAuthorPhoto(_ app: XCUIApplication) -> XCUIElement? {
+        let latestTab = app.buttons["home.feed.latest"].firstMatch
+        if latestTab.waitForExistence(timeout: 20), latestTab.isHittable {
+            latestTab.tap()
+            Thread.sleep(forTimeInterval: 3)
+        }
+        _ = app.buttons["feed.photo"].firstMatch.waitForExistence(timeout: 15)
+        for attempt in 0..<6 {
+            let photos = app.buttons.matching(identifier: "feed.photo").allElementsBoundByIndex.filter { $0.isHittable }
+            guard attempt < photos.count else { break }
+            photos[attempt].tap()
+            let ring = app.buttons["story.avatar.ring"].firstMatch
+            _ = ring.waitForExistence(timeout: 15)
+            scrollUntilHittable(app, ring, limit: 3)
+            let ready = XCTWaiter().wait(for: [XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == true AND hittable == true"), object: ring)], timeout: 10) == .completed
+            let label = ring.exists ? ring.label : "-"
+            XCTContext.runActivity(named: "[detailPull.sheet] 新着 \(attempt + 1) 枚目: 輪 押せる=\(ready)・「\(label)」"
+                + "・枠=\(ring.exists ? "\(ring.frame)" : "-")") { _ in }
+            if ready, label.contains("2本") { return ring }
+            let back = app.navigationBars.buttons["BackButton"].firstMatch
+            guard back.waitForExistence(timeout: 5) else { break }
+            back.tap()
+            Thread.sleep(forTimeInterval: 1.5)
+        }
+        _ = expect(false, "紹介のストーリーの人（輪が「2本」）の写真", app)
+        return nil
+    }
+
     /// 「下に引いて戻る」の値（`detail.pull.probe`・`-JPPreviewPullProbe YES`）。写真の詳細の中とアプリの根の両方に在る
     /// （同じ1つの記録）。読めなければ「-」
     private func pullProbeValue(_ app: XCUIApplication) -> String {
@@ -9667,21 +9698,15 @@ final class ScreenshotTests: XCTestCase {
     /// 正しい姿は「写真の詳細が閉じて元のストーリーに戻る1つの動き」。
     /// 落とすのは、戻らない・写真を引いている間にシートも下がった（二重）とき。値はどの回もログと添付に残す
     func testDetailPullInStorySheet() {
-        guard let app = launchSNSPreviewWith(["-JPPreviewPullProbe", "YES"]), openFirstLatestPhoto(app) else {
-            return XCTFail("見本の写真の詳細が開かない")
+        guard let app = launchSNSPreviewWith(["-JPPreviewPullProbe", "YES"]) else {
+            return XCTFail("見本の通信で起動できない")
         }
         defer { app.terminate() }
-        // 2026-11-13 Mac の回 1228: 写真の詳細を開いて約 1.5 秒で輪の存在を確かめ、続く1回きりの「在って押せるか」の
-        // 判定（開いて約 2.5 秒）で落ちた。落ちた直後の画面の木には輪が在った（{{16, 572}, {44, 44}}・
-        // 「luzhj のストーリー 2本（まだ見ていない）」）。1回だけ読んで決めず、在って押せるまで待つ（値はログに残す）
-        let ring = app.buttons["story.avatar.ring"].firstMatch
-        _ = ring.waitForExistence(timeout: 15)
-        scrollUntilHittable(app, ring, limit: 3)
-        let ringReady = XCTWaiter().wait(for: [XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == true AND hittable == true"), object: ring)], timeout: 10) == .completed
-        XCTContext.runActivity(named: "[detailPull.sheet] 作者の輪: 押せる=\(ringReady)・在る=\(ring.exists)"
-            + "・枠=\(ring.exists ? "\(ring.frame)" : "-")") { _ in }
-        guard expect(ringReady, "作者の顔の輪", app) else { return }
+        // 紹介の写真が付くのは「新着で自分以外の1人目」の2本目（`PreviewBackend.previewStories`）。その人の輪だけ「2本」と読む。
+        // 2026-11-14 Mac の回 1232: 新着の1枚目が自分の写真で（輪は「あなたのストーリー」）、自分のストーリーを開いて
+        // 「写真を見る」が無いまま落ちた（回 1228 は1枚目が人の写真だった）。新着の写真を順に開き、輪が「2本」の写真を探す
+        // 2026-11-13 回 1228: 輪の存在を確かめた直後の1回きりの「押せるか」で落ちた（落ちた時の木には輪が在った）ので、押せるまで待つ
+        guard let ring = openSharedStoryAuthorPhoto(app) else { return }
         ring.tap()
         Thread.sleep(forTimeInterval: 3)
         let viewPhoto = app.buttons["story.viewer.sharedPhoto"].firstMatch

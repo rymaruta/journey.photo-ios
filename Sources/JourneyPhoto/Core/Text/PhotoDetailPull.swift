@@ -40,7 +40,23 @@ enum PhotoDetailPull {
         atTop && dy > 0 && dy >= abs(dx)
     }
 
-    /// 離したとき（勢いを足した行き先）に前の画面へ戻るか
+    /// 指を止めているとみなす時間（ms）。最後に量が変わってからこれより長く経って離した指は、速さ 0 として扱う。
+    ///
+    /// **2026-11-14 判断（Mac の回 1232 の値）**: 90pt ゆっくり引いて 1.5 秒止めて離した指で、UIKit のパン
+    /// （`UIPanGestureRecognizer.velocity(in:)`）が離した時の縦の速さとして 172pt/秒を返した
+    /// （`moveAgeMs=1478`・止めている間に量は一度も変わっていない・動いている間の最大は 288）。止めた指の速さを
+    /// 0 に戻さず、最後に動いていた頃の速さを返していた。そのため行き先が 80 ＋ 172 × 0.499 ≒ 166pt になり、
+    /// 戻る所（120pt）を越えて閉じた（`endCloses=1`）。
+    /// 100ms は、触れている指の動きが届く間隔（60〜120Hz で 8〜17ms）の6倍以上。これだけ量が変わらなければ止めている
+    static let stillMilliseconds: Double = 100
+
+    /// 離したときに使う縦の速さ。**最後に量が変わってから `stillMilliseconds` を越えて止めていたら 0**
+    /// （UIKit が返す速さは、止めている間も最後に動いていた頃の値のまま）
+    static func releaseVelocity(reportedY: Double, sinceLastMoveMs: Double) -> Double {
+        sinceLastMoveMs > stillMilliseconds ? 0 : reportedY
+    }
+
+    /// 離したとき（勢いを足した行き先）に前の画面へ戻るか。`velocityY` は `releaseVelocity` を通した値
     static func closes(dy: Double, velocityY: Double) -> Bool {
         dy + velocityY * projectionSeconds >= closeDistance
     }
