@@ -96,6 +96,9 @@ struct CamperGarageView: View {
         .navigationTitle(L("キャンピングカー", "Camper"))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: load)
+        // 札 #435: 外の画面が出た・消えた（作り直されて「中に入る」の状態が消えていないかを見る・UI テストのときだけ）
+        .onAppear { PerfRecorder.shared.step("camper.garage.appear{inside=\(insideRoom)}") }
+        .onDisappear { PerfRecorder.shared.step("camper.garage.disappear{inside=\(insideRoom)}") }
         .task(id: countKey) { recount() }
         .task(id: userId) { await loadServer() }
         .onChange(of: server.settled) { _, _ in checkArrivals() }
@@ -204,6 +207,9 @@ struct CamperGarageView: View {
     /// 2026-10-21: 扉が開き切る少し前から口の真正面へ寄り（`CamperFraming.enter`）、灯った部屋が画面に広がってから
     /// 切り替える。見本の起動では `-JPPreviewCamperEnterSlow` で全体をゆっくりにできる（途中の光を画面写真で見る）
     private func goInside() {
+        // 札 #435（2026-11-14）: 冷えた起動の直後に押しても部屋に入らなかった回がある。どの段まで進んだかを
+        // UI テストのときだけ時刻つきで残す（`PerfRecorder.step`・本番では何もしない）
+        PerfRecorder.shared.step("camper.enter.tap{door=\(doorOpen),ready=\(readyMarker.hasPrefix("camper-ready")),inside=\(insideRoom)}")
         let slow = PreviewSession.camperEnterSlow
         if !doorOpen { toggleDoor() }
         Task { @MainActor in
@@ -215,6 +221,7 @@ struct CamperGarageView: View {
             // 寄った口の絵を写し、部屋が組み上がるまでの覆いにする（暗い画面を出さない）
             snapshot.capture()
             insideRoom = true
+            PerfRecorder.shared.step("camper.enter.push")
         }
     }
 
@@ -254,6 +261,7 @@ struct CamperGarageView: View {
         }
         // 部屋から戻ったら、口の真正面の寄りから扉の口を斜めに見る向きへ戻す（確かめ役 2026-10-21: 口に寄ったままだった）
         .onChange(of: insideRoom) { _, inside in
+            PerfRecorder.shared.step("camper.insideRoom=\(inside)")
             guard !inside else { return }
             snapshot.clear()
             if doorOpen { aim(CamperFraming.door(stage)) }

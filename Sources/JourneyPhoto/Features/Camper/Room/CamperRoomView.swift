@@ -161,6 +161,8 @@ struct CamperRoomView: View {
         // 部屋の中はタブを隠す（下の道具の段がタブに掛からない・Mac run 568）
         .toolbar(.hidden, for: .tabBar)
         .onAppear(perform: load)
+        // 札 #435: 部屋の画面が出た時刻（「中に入る」の段 `camper.enter.*` と並べる・UI テストのときだけ）
+        .onAppear { PerfRecorder.shared.step("camper.room.appear") }
         // 部屋を閉じたら家具の小さな絵の控えを捨てる（2026-10-21 点検: 控えが増え続けた）
         .onDisappear {
             CamperRoomThumbs.shared.removeAll()
