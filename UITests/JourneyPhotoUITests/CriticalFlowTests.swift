@@ -291,6 +291,7 @@ final class CriticalFlowTests: XCTestCase {
         postAndShare(app, shares: 2, tag: "a")
         openFromHomeRing(app)
         openFromMyPage(app)
+        assertNoStoryProblems()
     }
 
     /// **別の投稿を1回ずつ**ストーリーに載せる（2本）→ ホームの輪 → マイページ。写真は 12MP の HEIC（4032×3024・向き 6）
@@ -300,6 +301,21 @@ final class CriticalFlowTests: XCTestCase {
         postAndShare(app, shares: 1, tag: "b")
         openFromHomeRing(app)
         openFromMyPage(app)
+        assertNoStoryProblems()
+    }
+
+    /// 開く途中の不備（輪がもう一度押せない・「写真を見る」が出ない）は**その場で止めず**、最後にまとめて落とす。
+    /// `continueAfterFailure = false` の組なので、途中で落とすとマイページから開く記録が残らなかった（run 1272）。
+    /// アプリが落ちた（前に居ない）ときだけはその場で落とす
+    private var storyProblems: [String] = []
+
+    private func storyProblem(_ text: String) {
+        print("[storyCrash] problem: \(text)")
+        storyProblems.append(text)
+    }
+
+    private func assertNoStoryProblems() {
+        XCTAssertTrue(storyProblems.isEmpty, storyProblems.joined(separator: " / "))
     }
 
     /// 大きい写真の種類ごとに1本ずつ載せて開く（メモリを `[storyCrash] … mem=` で残す）。
@@ -384,8 +400,7 @@ final class CriticalFlowTests: XCTestCase {
         let ring = app.buttons.matching(NSPredicate(format: "label == %@", "あなたのストーリー")).firstMatch
         let ringShown = ring.waitForExistence(timeout: 30)
         storyCrashStep(app, "home.ring ringShown=\(ringShown)")
-        XCTAssertTrue(ringShown, "ストーリーを出したのに、ホームに自分の輪（あなたのストーリー）が出ない")
-        guard ringShown else { return }
+        guard ringShown else { return storyProblem("ストーリーを出したのに、ホームに自分の輪（あなたのストーリー）が出ない") }
         ring.tap()
         watchStoryViewer(app, entry: "home", rounds: reopen ? 2 : 1) {
             app.buttons.matching(NSPredicate(format: "label == %@", "あなたのストーリー")).firstMatch
@@ -399,8 +414,7 @@ final class CriticalFlowTests: XCTestCase {
         let ring = app.buttons["story.avatar.ring"].firstMatch
         let ringShown = ring.waitForExistence(timeout: 30)
         storyCrashStep(app, "mypage.ring ringShown=\(ringShown)")
-        XCTAssertTrue(ringShown, "ストーリーを出したのに、マイページの顔に輪が出ない")
-        guard ringShown else { return }
+        guard ringShown else { return storyProblem("ストーリーを出したのに、マイページの顔に輪が出ない") }
         ring.tap()
         watchStoryViewer(app, entry: "mypage", rounds: 2) { app.buttons["story.avatar.ring"].firstMatch }
     }
@@ -427,7 +441,7 @@ final class CriticalFlowTests: XCTestCase {
                 storyCrashStep(app, "\(label).crashed")
                 return XCTFail("[storyCrash] \(entry) から\(round)回目に開いた直後にアプリが前に居ない（state=\(app.state.rawValue)・落ちた可能性）")
             }
-            XCTAssertTrue(seen, "\(entry) から\(round)回目に開いても、出したばかりの紹介のストーリー（「写真を見る」）が出ない")
+            if !seen { storyProblem("\(entry) から\(round)回目に開いても、出したばかりの紹介のストーリー（「写真を見る」）が出ない") }
             // 見終わるまで（出した1本は5秒ずつ・束の終わりで次の人へ送るか閉じる）0.5 秒刻みで見る
             var lastProbe = ""
             for tick in 1...28 {
@@ -453,14 +467,20 @@ final class CriticalFlowTests: XCTestCase {
                 Thread.sleep(forTimeInterval: 1.5)
             }
             print("[storyCrash] \(label).closed probe=\(probeValue()) state=\(app.state.rawValue)")
-            XCTAssertEqual(app.state, .runningForeground, "[storyCrash] \(entry) で見終わるまでにアプリが前に居ない")
+            if app.state != .runningForeground {
+                storyCrashStep(app, "\(label).crashedAfterClose")
+                return XCTFail("[storyCrash] \(entry) で見終わるまでにアプリが前に居ない（state=\(app.state.rawValue)）")
+            }
             guard round < rounds else { break }
             // もう一度（今度は「見た」の輪から）。前の要素を使い回さず、探し直す
             let again = ring()
             let ready = again.waitForExistence(timeout: 15) && wait(again, "hittable == true", timeout: 10)
             storyCrashStep(app, "\(entry).beforeReopen ready=\(ready)")
-            XCTAssertTrue(ready, "\(entry) の輪にもう一度押せない")
-            guard ready else { return }
+            guard ready else {
+                // 押せない理由を値で残す（何が上に居るか）
+                print("[storyCrash] \(entry).reopenBlocked tree:\n\(app.debugDescription.prefix(6000))")
+                return storyProblem("\(entry) の輪にもう一度押せない")
+            }
             again.tap()
         }
     }
