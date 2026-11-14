@@ -40,6 +40,20 @@ enum PhotoDetailPull {
         atTop && dy > 0 && dy >= abs(dx)
     }
 
+    /// **写真を大きく見る画面**（`PhotoViewerView`）で下へ引く指を受けるか（2026-11-14 判断・人間工学の点検
+    /// 「写真を大きく見る画面は左上の × でしか閉じられない」）。**拡大していない・つまんでいないときだけ**——
+    /// 送りを止める条件（`ZoomPan.locksPaging`）と同じ。拡大中の1本指は写真を動かす指、つまんでいる指は倍率を変える指
+    static func viewerAccepts(zoom: ZoomPan, pinch: Double) -> Bool {
+        !zoom.locksPaging(pinch: pinch)
+    }
+
+    /// 写真を大きく見る画面で、動き始めに引く動きを始めるか。写真の詳細と同じ「下向きで、縦が横より大きい」
+    /// （`starts`）に、`viewerAccepts` を足す。横に払う指（写真を送る）・上へ払う指は始めずに送り（ページ式の TabView）へ渡す。
+    /// この画面は縦に送らないので「送りの上に居るか」は無い（いつも上として扱う）
+    static func viewerStarts(dx: Double, dy: Double, zoom: ZoomPan, pinch: Double) -> Bool {
+        viewerAccepts(zoom: zoom, pinch: pinch) && starts(dx: dx, dy: dy, atTop: true)
+    }
+
     /// 指を止めているとみなす時間（ms）。最後に量が変わってからこれより長く経って離した指は、速さ 0 として扱う。
     ///
     /// **2026-11-14 判断（Mac の回 1232 の値）**: 90pt ゆっくり引いて 1.5 秒止めて離した指で、UIKit のパン

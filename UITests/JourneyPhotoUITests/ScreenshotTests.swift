@@ -9935,4 +9935,60 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 1)
         XCTAssertTrue(waitChrome("shown", "3-double-tap"), "2回押しで上下の情報が消えた（1回押しとぶつかっている）")
     }
+
+    /// **写真を大きく見る画面で、写真を下へ引くと閉じる・少し引いて離すと戻る**（2026-11-14 判断・人間工学の点検・
+    /// `PhotoDetailPull.viewerStarts`）。写真の詳細（#592）と同じ 120pt。絵は撮らない。
+    ///
+    /// 1. 少し（90pt）ゆっくり引いて止め、離す → 引く動きは始まる（`detail.pull.probe` の began が増える）が閉じない
+    /// 2. 下へ大きく引く → 大きく見る画面だけが閉じ、写真の詳細に戻る
+    ///
+    /// 引く動きが無ければ 1 の began が増えず、2 で ✕ が残るので落ちる
+    func testViewerPullDownCloses() {
+        let app = launchTrunk(["-JPPreviewPullProbe", "YES"])
+        defer { app.terminate() }
+        let photo = app.buttons["feed.photo"].firstMatch
+        var pushes = 0
+        while !(photo.waitForExistence(timeout: 2) && photo.isHittable), pushes < 8 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)))
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard expect(photo.exists && photo.isHittable, "ホームの写真", app) else { return }
+        photo.tap()
+        let hero = app.buttons["detail.hero"].firstMatch
+        let menu = app.buttons["photo.menu"].firstMatch
+        guard expect(hero.waitForExistence(timeout: 10) && hero.isHittable, "写真の詳細の写真", app) else { return }
+        hero.tap()
+        let close = app.buttons["viewer.close"].firstMatch
+        guard expect(close.waitForExistence(timeout: 10), "大きく見る画面の ✕", app) else { return }
+        Thread.sleep(forTimeInterval: 2)
+
+        /// `detail.pull.probe` の値の1つ（`began=1;…`）。読めなければ nil
+        func probeField(_ name: String) -> Int? {
+            pullProbeValue(app).split(separator: ";").first { $0.hasPrefix(name + "=") }
+                .flatMap { Int($0.dropFirst(name.count + 1)) }
+        }
+        let beganBefore = probeField("began") ?? 0
+
+        // 1. 少しだけゆっくり引いて止め、離す（120pt に届かない・止めてから離すので勢いも無い）→ 戻る・閉じない
+        let small = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+        small.press(forDuration: 0.05, thenDragTo: small.withOffset(CGVector(dx: 0, dy: 90)),
+                    withVelocity: .slow, thenHoldForDuration: 1.5)
+        Thread.sleep(forTimeInterval: 1.5)
+        let beganAfter = probeField("began") ?? 0
+        XCTContext.runActivity(named: "[viewerPull] 少し引いて離す: ✕=\(close.exists)・probe=\(pullProbeValue(app))") { _ in }
+        guard expect(close.exists, "少し引いて離した後の大きく見る画面（閉じた）", app) else { return }
+        XCTAssertGreaterThan(beganAfter, beganBefore, "大きく見る画面で写真を下へ引いても、引く動きが始まらない")
+        XCTAssertEqual(probeField("endCloses"), 0, "少し引いて止めてから離したのに、閉じると決めた")
+
+        // 2. 下へ大きく引く → 大きく見る画面だけが閉じ、写真の詳細に戻る
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
+        let gone = XCTWaiter().wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: close)], timeout: 5) == .completed
+        XCTContext.runActivity(named: "[viewerPull] 下へ引く: 閉じた=\(gone)・写真の詳細=\(menu.exists)・probe=\(pullProbeValue(app))") { _ in }
+        guard expect(gone, "写真を下へ引いた後に大きく見る画面が閉じる", app) else { return }
+        XCTAssertTrue(hero.waitForExistence(timeout: 5) && menu.exists, "大きく見る画面を閉じた先が写真の詳細でない")
+    }
 }

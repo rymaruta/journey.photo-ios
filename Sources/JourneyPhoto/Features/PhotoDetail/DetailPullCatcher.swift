@@ -13,6 +13,27 @@ final class PhotoDetailPullDrag: ObservableObject {
     @Published var translation: CGSize = .zero
     /// 戻ると決めて閉じている最中（閉じる動きの間に、もう一度つかませない）
     var closing = false
+
+    /// 離した。勢いを足した行き先が戻る所に届けば `closing` にして真を返す（画面はそこで閉じる）。
+    /// **写真は引いた所に残したまま閉じる**（戻してから閉じると一瞬跳ねる）。届かなければ元の位置へ戻す。
+    /// 写真の詳細（札 #592）と写真を大きく見る画面（2026-11-14）の両方がこれを使う（判定を2つに割らない）
+    func release(dy: Double, velocityY: Double, reduceMotion: Bool) -> Bool {
+        if PhotoDetailPull.closes(dy: dy, velocityY: velocityY) {
+            closing = true
+            return true
+        }
+        reset(reduceMotion: reduceMotion)
+        return false
+    }
+
+    /// 引いた写真を元の位置へ戻す。**「視差効果を減らす」なら弾ませない**（人のストーリーの戻し方 `StoryReelView` と同じ値）
+    func reset(reduceMotion: Bool) {
+        closing = false
+        guard translation != .zero else { return }
+        withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.3, dampingFraction: 0.85)) {
+            translation = .zero
+        }
+    }
 }
 
 /// 引く量の箱を持つ入れ物（札 #592・2026-11-13 確かめ役）。**画面の `@StateObject` に置く**——`@State` の初期値に

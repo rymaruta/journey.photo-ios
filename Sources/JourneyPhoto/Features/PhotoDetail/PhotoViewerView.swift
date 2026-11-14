@@ -65,6 +65,13 @@ struct PhotoViewerView: View {
     /// 1回押して上下の情報を隠したか（2026-11-12 判断・決まりは `ViewerChrome`）。
     /// **送っても戻さない**（`onChange(of: index)` では触らない・iPhone の「写真」と同じ）
     @State private var chrome = ViewerChrome()
+    /// 写真を下へ引いている量（2026-11-14 判断・点検「写真を大きく見る」・`PhotoDetailPull.viewerStarts`）。
+    /// 写真の詳細（札 #592）と同じ箱と入れ物を使う——**画面が出たときに1回だけ作り、引いている間にこの画面の
+    /// `body` を描き直さない**（見張るのは `DetailPullFollow` だけ・`PhotoDetailPullHolder` の注記）
+    @StateObject private var pullHolder = PhotoDetailPullHolder()
+    /// 見ていない頁に渡す、いつも 0 の箱（隣の頁が指に付いて動かない）
+    @StateObject private var stillHolder = PhotoDetailPullHolder()
+    private var pull: PhotoDetailPullDrag { pullHolder.drag }
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -75,11 +82,18 @@ struct PhotoViewerView: View {
             TabView(selection: $index) {
                 ForEach(Array(photos.enumerated()), id: \.offset) { offset, photo in
                     let shown = offset == index
-                    RemoteImage(url: photo.detailImageURL, contentMode: .fit,
-                                onLayout: { size in fitted[offset] = size })
+                    // 下へ引くと、写真が指に付いて縮み、離すと閉じる（写真の詳細 #592 と同じ部品・`PhotoDetailPull`）。
+                    // 動かすのは見ている1枚だけ
+                    DetailPullFollow(drag: shown ? pull : stillHolder.drag, part: .photo, reduceMotion: reduceMotion,
+                                     content: RemoteImage(url: photo.detailImageURL, contentMode: .fit,
+                                                          onLayout: { size in fitted[offset] = size })
                         // **拡大・移動は見ている1枚にだけ掛ける**（送りの途中で隣が拡大されて見えない）
                         .scaleEffect(shown ? zoom.liveScale(pinch: pinch) : 1)
                         .offset(x: shown ? Double(liveOffset.width) : 0, y: shown ? Double(liveOffset.height) : 0)
+                        // 2026-11-14 判断: **頁いっぱいの枠に置いてから引く部品に渡す。** 引く部品は角を丸めるために
+                        // 中身の枠で切り抜く（`DetailPullFollow` の `.photo`）。写真の枠のまま渡すと、拡大した写真が
+                        // 画面に収めた大きさで切り抜かれる（`scaleEffect` は枠を広げない）
+                        .frame(maxWidth: .infinity, maxHeight: .infinity))
                         // **両指で広げて拡大。離しても倍率を保つ**（2026-09-30 のレビュー:
                         // 以前は離すと 1 倍に戻り、細部を見ていられなかった）
                         .gesture(
@@ -118,6 +132,8 @@ struct PhotoViewerView: View {
                         // 大きさだけだと、横長の写真で余白を押しても隠す・出すが効かない（「写真」と同じに）
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .contentShape(Rectangle())
+                        // 下へ引くパン（UIKit・送りの UIScrollView に付く）は見ている頁にだけ置く（1本だけにする）
+                        .background { if shown { pullCatcher } }
                         .onTapGesture(count: 2) { handleDoubleTap(photo, at: offset) }
                         // **1回押すと上下の情報を隠す・もう1回で出す**（2026-11-12 owner の要望・`ViewerChrome`）。
                         // 🔴 **2回押しの後ろに付ける**——こうすると1回押しは2回押しが成り立たなかったときだけ
@@ -148,15 +164,16 @@ struct PhotoViewerView: View {
                 if value == 1 { pinchStartPage = nil }
             }
 
-            // 下: サムネイルの帯と、題・撮影情報・いいね（板 14）。**下に重ねる**
-            VStack(spacing: 14) {
+            // 下: サムネイルの帯と、題・撮影情報・いいね（板 14）。**下に重ねる**。
+            // 写真を下へ引いている間は薄れて消える（写真の詳細の説明・コメントと同じ・`DetailPullFollow` の `.rest`）
+            DetailPullFollow(drag: pull, part: .rest, reduceMotion: reduceMotion, content: VStack(spacing: 14) {
                 Spacer()
                 thumbnailStrip
                 caption
             }
             .padding(.bottom, 24)
             .frame(maxWidth: .infinity)
-            .modifier(ChromeVisibility(shown: showsChrome, edge: .bottom, reduceMotion: reduceMotion))
+            .modifier(ChromeVisibility(shown: showsChrome, edge: .bottom, reduceMotion: reduceMotion)))
 
             // ダブルタップの演出。Web も同じ位置（画面の中央）で出す
             if burst > 0 {
@@ -171,8 +188,8 @@ struct PhotoViewerView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            topBar
-                .modifier(ChromeVisibility(shown: showsChrome, edge: .top, reduceMotion: reduceMotion))
+            DetailPullFollow(drag: pull, part: .rest, reduceMotion: reduceMotion, content: topBar
+                .modifier(ChromeVisibility(shown: showsChrome, edge: .top, reduceMotion: reduceMotion)))
 
             // **全画面の中の知らせ**（いいねが届かなかった）。アプリの下の知らせ（`RootView`）と
             // 裏の詳細画面の赤字は全画面に隠れるので、ここにも置く（`StoryReelView` と同じ）。
@@ -195,6 +212,31 @@ struct PhotoViewerView: View {
         // VoiceOver の「戻る」（2本指で Z）で閉じる。✕ に届かなくても出られる（2026-11-12 判断）
         .accessibilityAction(.escape) { dismiss() }
         .signInPrompt(ask: $signInAsk, open: $signInOpen)
+    }
+
+    /// **写真を下へ 120pt 引いて閉じる**（2026-11-14 判断・点検「写真を大きく見る画面は左上の × でしか閉じられない」）。
+    /// 写真の詳細（札 #592）・人のストーリーと同じ手ごたえ。判定は `PhotoDetailPull`（閾値・止めた指の速さを 0 にする
+    /// `releaseVelocity`・勢いを足した行き先）、指の受け方は `DetailPullCatcher`（送りのパンはこちらが「始めない」と
+    /// 決まってから動く）をそのまま使う。✕・VoiceOver の「戻る」は残す。
+    ///
+    /// **始めないとき**（`PhotoDetailPull.viewerStarts`）: 拡大中（1本指は写真を動かす指）・つまんでいる最中・横に払う
+    /// （写真を送る）・上へ払う。「視差効果を減らす」では縮めない（`PhotoDetailPull.scale`）
+    private var pullCatcher: some View {
+        DetailPullCatcher(
+            isEnabled: PhotoDetailPull.viewerAccepts(zoom: zoom, pinch: pinch),
+            shouldBegin: { [pull, zoom, pinch] dx, dy, _ in
+                // この画面は縦に送らないので、送りの「上に居るか」は見ない（ページ式の送りは横だけ）
+                !pull.closing && PhotoDetailPull.viewerStarts(dx: dx, dy: dy, zoom: zoom, pinch: pinch)
+            },
+            onChange: { [pull] dx, dy in
+                pull.translation = CGSize(width: dx, height: dy)
+            },
+            onEnd: { dy, velocityY in
+                // 写真は引いた所に残したまま閉じる・届かなければ戻す（写真の詳細と同じ `PhotoDetailPullDrag.release`）
+                if pull.release(dy: dy, velocityY: velocityY, reduceMotion: reduceMotion) { dismiss() }
+            },
+            onCancel: { pull.reset(reduceMotion: reduceMotion) }
+        )
     }
 
     /// 上下の情報を出しているか（VoiceOver 中はいつも出す・`ViewerChrome`）
