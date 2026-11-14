@@ -9940,6 +9940,12 @@ final class ScreenshotTests: XCTestCase {
     /// `PhotoDetailPull.viewerStarts`）。写真の詳細（#592）と同じ 120pt。絵は撮らない。
     /// 2枚以上の並びで開く（横の送りを見るため）。各段で `detail.pull.probe` の値をログに残す。
     ///
+    /// **マイページの格子から開く**（Mac の回 1266）。ホームの1枚は並びが「同じ投稿の写真」だけ
+    /// （`HomeFeedTile` の `siblings`）で、公開の写真（`photos.json` 53枚・本番の `/feed` 53枚・2026-11-14）は
+    /// どれも `groupId` を持たない＝2枚以上の投稿が1つも無く、ホームの5枚を順に開いても「N枚中M枚目」が
+    /// 一度も出なかった。マイページの1枚は並びが自分の写真の全部（`MyPageView` の `context: model.photos`・
+    /// 見本の利用者の公開写真は 42 枚）なので、必ず2枚以上で開く
+    ///
     /// 1. 少し（90pt）ゆっくり引いて止め、離す → 引く動きは始まる（began が増える）が閉じない
     /// 2. 横に払う → 隣の頁へ送られる（「N枚中M枚目」が替わる）・引く動きは始まらない（began が増えない）
     /// 3. 隣の頁で広げて拡大してから下へ動かす → 閉じない（拡大中は始めない・`viewer.zoom.probe` で拡大できた回だけ見る）
@@ -9950,15 +9956,17 @@ final class ScreenshotTests: XCTestCase {
     func testViewerPullDownCloses() {
         let app = launchTrunk(["-JPPreviewPullProbe", "YES", "-JPPreviewViewerProbe", "YES"])
         defer { app.terminate() }
-        let photo = app.buttons["feed.photo"].firstMatch
-        var pushes = 0
-        while !(photo.waitForExistence(timeout: 2) && photo.isHittable), pushes < 8 {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
-                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)))
+        let tabBar = app.tabBars.firstMatch
+        guard expect(tabBar.waitForExistence(timeout: 20) && tabBar.buttons.count > 4, "下のタブ", app) else { return }
+        tabBar.buttons.element(boundBy: 4).tap()
+        // 自分の写真（名指し・位置で探さない）。タブの下に隠れていたら1回だけ送る
+        let photo = app.buttons["mypage.photo"].firstMatch
+        guard expect(photo.waitForExistence(timeout: 20), "マイページの写真の格子", app) else { return }
+        if !photo.isHittable {
+            app.swipeUp()
             Thread.sleep(forTimeInterval: 1)
-            pushes += 1
         }
-        guard expect(photo.exists && photo.isHittable, "ホームの写真", app) else { return }
+        guard expect(photo.isHittable, "マイページの写真（押せる）", app) else { return }
         let hero = app.buttons["detail.hero"].firstMatch
         let menu = app.buttons["photo.menu"].firstMatch
         let close = app.buttons["viewer.close"].firstMatch
@@ -9967,26 +9975,13 @@ final class ScreenshotTests: XCTestCase {
         let position = app.staticTexts.matching(NSPredicate(format: "label CONTAINS '枚中'")).firstMatch
         func page() -> String { position.exists ? position.label : "-" }
 
-        // 2枚以上の並びで開くまで、ホームの写真を順に開く（1枚の並びでは送りを見られない）
-        var opened = false
-        for attempt in 0..<6 {
-            let photos = app.buttons.matching(identifier: "feed.photo").allElementsBoundByIndex.filter { $0.isHittable }
-            guard attempt < photos.count else { break }
-            photos[attempt].tap()
-            guard hero.waitForExistence(timeout: 10), hero.isHittable else { break }
-            hero.tap()
-            guard close.waitForExistence(timeout: 10) else { break }
-            Thread.sleep(forTimeInterval: 1.5)
-            XCTContext.runActivity(named: "[viewerPull] \(attempt + 1) 枚目を開いた: 位置=\(page())") { _ in }
-            if position.exists { opened = true; break }
-            close.tap()
-            _ = hero.waitForExistence(timeout: 5)
-            let back = app.navigationBars.buttons["BackButton"].firstMatch
-            guard back.waitForExistence(timeout: 5) else { break }
-            back.tap()
-            Thread.sleep(forTimeInterval: 1.5)
-        }
-        guard expect(opened, "2枚以上の並びの大きく見る画面", app) else { return }
+        photo.tap()
+        guard expect(hero.waitForExistence(timeout: 10) && hero.isHittable, "写真の詳細の写真", app) else { return }
+        hero.tap()
+        guard expect(close.waitForExistence(timeout: 10), "大きく見る画面の ✕", app) else { return }
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTContext.runActivity(named: "[viewerPull] マイページの1枚目を開いた: 位置=\(page())") { _ in }
+        guard expect(position.exists, "2枚以上の並びの大きく見る画面", app) else { return }
         guard expect(zoomProbe.waitForExistence(timeout: 5), "拡大の目印（viewer.zoom.probe）", app) else { return }
 
         /// `detail.pull.probe` の値の1つ（`began=1;…`）。読めなければ nil
