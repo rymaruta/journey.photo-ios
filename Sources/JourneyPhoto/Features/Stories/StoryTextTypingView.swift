@@ -139,6 +139,8 @@ struct StoryTextTypingView: View {
         }
         // 画面が差し込まれた後に1拍おいてから（同じ更新でひとことの欄のピントが外れる）
         .task { focused = true }
+        // 欄のピントの出入り（UI テストのときだけ・札 #522。「完了」の後にピントが外れたかを `kb.*` と並べて見る）
+        .onChange(of: focused) { _, now in StoryComposeProbe.shared.note("typing.focus", "\(now)") }
         // **VoiceOver では打つ画面だけを読む**（後ろの「ストーリーに投稿」や他の札に移れた・
         // 4ffb74f のレビュー）。2本指の Z でも確定して閉じる
         // 入れ物を1つの読み上げの単位にしてから付ける（子それぞれに配られると、1つの要素に閉じ込められる）

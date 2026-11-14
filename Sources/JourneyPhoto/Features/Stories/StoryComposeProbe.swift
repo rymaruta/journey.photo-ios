@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 /// ストーリー作成の札の動きの記録（UI テストのときだけ有効・`-JPPreviewStoryProbe YES`・Debug のみ）。
 ///
@@ -16,6 +19,34 @@ final class StoryComposeProbe {
     static var isEnabled: Bool { PreviewSession.storyProbe }
 
     private let startedAt = Date()
+    /// キーボードの出入りの見張り（札 #522・下の `watchKeyboard`）
+    private var keyboardObservers: [NSObjectProtocol] = []
+
+    private init() {
+        watchKeyboard()
+    }
+
+    /// **キーボードの出入りを出来事に足す**（札 #522・2026-11-14・UI テストのときだけ）。
+    /// 「完了」を押してもキーボードが 6 秒で消えない回が Mac で出た（run 42886441355・1.1.82 の run 1091）。
+    /// 押した指が届いたか（`touch.*`）・打ち終えたか（`typing.finish`）・欄のピントが外れたか（`typing.focus`）と、
+    /// キーボードが閉じ始めた・閉じ終えた時刻（`kb.*`）を同じ時計で並べ、どこで止まったかを数で見る
+    private func watchKeyboard() {
+        #if os(iOS)
+        guard Self.isEnabled else { return }
+        let names: [(Notification.Name, String)] = [
+            (UIResponder.keyboardWillShowNotification, "kb.willShow"), (UIResponder.keyboardDidShowNotification, "kb.didShow"),
+            (UIResponder.keyboardWillHideNotification, "kb.willHide"), (UIResponder.keyboardDidHideNotification, "kb.didHide")
+        ]
+        for (name, label) in names {
+            keyboardObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { note in
+                let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect) ?? .zero
+                MainActor.assumeIsolated {
+                    StoryComposeProbe.shared.note(label, "y=\(Int(frame.minY)) h=\(Int(frame.height))")
+                }
+            })
+        }
+        #endif
+    }
     /// 数（名前 → 回数）。`ov.changed` は札の動かす操作の途中の呼び出し、`ov.ended` は指を離した回
     private var counts: [String: Int] = [:]
     /// 出来事の並び（古い順・最大 40 件。2026-11-12 に指の届き先 `touch.*` を足したので 14 → 40）。形は `+経過ms 名前 詳細`

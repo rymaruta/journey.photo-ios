@@ -1847,6 +1847,8 @@ struct StoryComposerView: View {
     /// 片付ける先は**打ち始めた写真**（表示中の写真ではない）。
     /// 札が残った（置いた）ら、端末で1回だけ「指で動かす · 2本指で回す」を出す（キャンセルでは出さない）
     private func finishTyping(showsHint: Bool = true) {
+        // 打ち終えた時刻（UI テストのときだけ・札 #522。キーボードの `kb.*` と並べて見る）
+        StoryComposeProbe.shared.note("typing.finish", "typing=\(typingId != nil)")
         if let id = typingId, let shotId = typingShotId,
            let i = shots.firstIndex(where: { $0.id == shotId }) {
             let before = shots[i].overlays.first { $0.id == id }

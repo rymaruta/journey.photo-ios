@@ -35,6 +35,23 @@ final class ScreenshotTests: XCTestCase {
         add(shot)
     }
 
+    /// **撮る画面まで届かなかったら落とす**（札 #531・2026-11-14）。前は撮るだけの試験が `guard … else { return }` で
+    /// 抜けて黙って緑になり、run 42920469610 では SupporterCard・SearchGearCards が 1 枚も撮らずに緑だった。
+    /// 止まった所（`step`）と、名指しした要素が在るか（`probes`）をログに出し、その時の画面と要素の木を残してから落とす
+    private func unreached(_ app: XCUIApplication, _ step: String, probes: [String] = [],
+                           file: StaticString = #filePath, line: UInt = #line) {
+        let seen = probes.map { "\($0)=\(app.descendants(matching: .any)[$0].firstMatch.exists)" }.joined(separator: " ")
+        let text = "[unreached] \(step)\(seen.isEmpty ? "" : " " + seen)"
+        print(text)
+        XCTContext.runActivity(named: text) { _ in }
+        shoot(app, "届かない（\(step)）")
+        let tree = XCTAttachment(string: app.debugDescription)
+        tree.name = "要素の木（\(step)）"
+        tree.lifetime = .keepAlways
+        add(tree)
+        XCTFail("撮る画面まで届かない: \(text)", file: file, line: line)
+    }
+
     /// **ホームの「いまの季節のスポット」の段を撮る**（2026-10-03・`HomeSpotShelfView`）。
     /// 札が画面の下に隠れていたら少しずつ送る（上限あり）。作例の写真は本文と Commons から来るので
     /// 少し待つ。段が出なければ撮らない（索引が取れない回・その季節の候補が無い回）。
@@ -1124,7 +1141,7 @@ final class ScreenshotTests: XCTestCase {
     /// **「この写真を見て撮影」の見本**（2026-10-14・`-JPPreviewInspired YES`・Debug のみ）。
     /// 元の写真の付いた写真も `GET /user/inspired` も本番にまだ無いので、見本の鍵で
     /// 写真の詳細の行（20e）・元の写真へ（20f）・元の写真を選んだ投稿の欄（45d）を撮る。
-    /// 見本は画面の状態だけ（サーバー・端末の控えには書かない）。**出なければ撮らない**
+    /// 見本は画面の状態だけ（サーバー・端末の控えには書かない）。**出なければ落とす**（札 #531）
     func testCapturesInspiredBy() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -1139,7 +1156,7 @@ final class ScreenshotTests: XCTestCase {
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         let tabBar = app.tabBars.firstMatch
-        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return unreached(app, "tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2") }
 
         // 写真の詳細（ホームの写真を名指しで押す・一巡と同じく短い引きで少しずつ送る）
         let firstPhoto = app.buttons["feed.photo"].firstMatch
@@ -1150,28 +1167,27 @@ final class ScreenshotTests: XCTestCase {
             from.press(forDuration: 0.05, thenDragTo: to)
             pushes += 1
         }
-        if firstPhoto.exists, firstPhoto.isHittable {
-            firstPhoto.tap()
-            let line = app.buttons["photo.inspiredBy"].firstMatch
-            if line.waitForExistence(timeout: 10) {
-                // 作者の行の下にある。見えるまで短い引きで送る（上限あり）
-                var linePushes = 0
-                while !line.isHittable, linePushes < 4 {
-                    let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
-                    let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
-                    from.press(forDuration: 0.05, thenDragTo: to)
-                    Thread.sleep(forTimeInterval: 1)
-                    linePushes += 1
-                }
-                if line.isHittable {
-                    Thread.sleep(forTimeInterval: 2)
-                    shoot(app, "20e-写真の詳細（この写真を見て撮影）")
-                    line.tap()
-                    Thread.sleep(forTimeInterval: 4)
-                    shoot(app, "20f-元の写真へ")
-                }
-            }
+        // 札 #531（2026-11-14）: 前はここで写真・行が出なくても黙って先へ進んだ。見本の鍵（`-JPPreviewInspired`）で
+        // どの写真の詳細にも出る行なので、出なければ落とす
+        guard firstPhoto.exists, firstPhoto.isHittable else { return unreached(app, "ホームの写真（feed.photo）を押せない") }
+        firstPhoto.tap()
+        let line = app.buttons["photo.inspiredBy"].firstMatch
+        guard line.waitForExistence(timeout: 10) else { return unreached(app, "写真の詳細に photo.inspiredBy が無い") }
+        // 作者の行の下にある。見えるまで短い引きで送る（上限あり）
+        var linePushes = 0
+        while !line.isHittable, linePushes < 4 {
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            Thread.sleep(forTimeInterval: 1)
+            linePushes += 1
         }
+        guard line.isHittable else { return unreached(app, "photo.inspiredBy を押せる所まで送れない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "20e-写真の詳細（この写真を見て撮影）")
+        line.tap()
+        Thread.sleep(forTimeInterval: 4)
+        shoot(app, "20f-元の写真へ")
 
         // 投稿画面（見本の1枚・見本の元の写真を選んだ状態）。開いた詳細は戻ってから（下のタブを出す）
         for _ in 0..<2 where !(tabBar.exists && tabBar.isHittable) {
@@ -1180,19 +1196,19 @@ final class ScreenshotTests: XCTestCase {
             back.tap()
             Thread.sleep(forTimeInterval: 2)
         }
-        guard tabBar.exists, tabBar.buttons.count > 2 else { return }
+        guard tabBar.exists, tabBar.buttons.count > 2 else { return unreached(app, "tabBar.exists, tabBar.buttons.count > 2") }
         tabBar.buttons.element(boundBy: 2).tap()
         let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
+        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return unreached(app, "toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable") }
         toPhoto.tap()
         let inspired = app.buttons["upload.inspired"].firstMatch
         guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 15),
-              inspired.waitForExistence(timeout: 10) else { return }
+              inspired.waitForExistence(timeout: 10) else { return unreached(app, "app.buttons[\"upload.thumb.0\"].firstMatch.waitForExistence(timeout: 15), inspired.waitForExistence(timeout: 10)") }
         for _ in 0..<3 where !inspired.isHittable {
             app.swipeUp()
             Thread.sleep(forTimeInterval: 1)
         }
-        guard inspired.isHittable else { return }
+        guard inspired.isHittable else { return unreached(app, "inspired.isHittable") }
         // 見本の元の写真が欄に入る（公開一覧を読むので少し待つ）
         Thread.sleep(forTimeInterval: 4)
         shoot(app, "45d-投稿（元の写真を選んだ欄）")
@@ -1268,7 +1284,7 @@ final class ScreenshotTests: XCTestCase {
     /// 見本の利用者の写真（マイページの格子）を頭から開き、自動で結ばれた1枚を探す。見つかったら
     /// 写真の裾の「撮影スポット · ◯◯」の札（20g）と、題の下の本人だけの「外す」の札（20h）を撮る。
     /// 🔴 **「違う場所なので外す」は押さない**（本番の写真の行に外した印を書いてしまう）。
-    /// 自動で結ばれた写真が無い・表が読めない回は**撮らずに抜ける**（この試験の決まり）
+    /// 自動で結ばれた写真が無い・表が読めない回は**落とす**（札 #531）
     func testCapturesSpotAutoNotice() {
         let app = XCUIApplication()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
@@ -1283,11 +1299,11 @@ final class ScreenshotTests: XCTestCase {
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         let tabBar = app.tabBars.firstMatch
-        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return unreached(app, "tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4") }
         tabBar.buttons.element(boundBy: 4).tap()
 
         let photos = app.buttons.matching(identifier: "mypage.photo")
-        guard photos.firstMatch.waitForExistence(timeout: 15) else { return }
+        guard photos.firstMatch.waitForExistence(timeout: 15) else { return unreached(app, "photos.firstMatch.waitForExistence(timeout: 15)") }
         let notice = app.descendants(matching: .any).matching(identifier: "photo.spotAuto").firstMatch
         // 頭から 9 枚まで（格子の1画面ぶん）。押せない枚は飛ばす
         for index in 0..<9 {
@@ -1310,16 +1326,18 @@ final class ScreenshotTests: XCTestCase {
             }
             // この1枚は結ばれていない。マイページへ戻って次へ
             let back = app.navigationBars.buttons.firstMatch
-            guard back.exists else { return }
+            guard back.exists else { return unreached(app, "back.exists") }
             back.tap()
             Thread.sleep(forTimeInterval: 1.5)
         }
+        // 頭から 9 枚に自動で結ばれた写真が無かった（撮らずに抜けると黙って緑になる・札 #531）
+        unreached(app, "頭から 9 枚に photo.spotAuto の写真が無い")
     }
 
     /// **投稿の「撮影スポット「◯◯」に結ぶ」**（2026-10-31・journey.photo-ios#425・板 UploadIOS）。
     ///
     /// 見本の1枚（位置なし）の撮影地に「蔵王キツネ村」と打ち、撮影地の欄の下に切り替えが出たら撮る（45e）。
-    /// 候補の索引（`spot-match.json`）は本番を読む。**投稿は押さない**。切り替えが出ない回は撮らずに抜ける
+    /// 候補の索引（`spot-match.json`）は本番を読む。**投稿は押さない**。切り替えが出ない回は落とす（札 #531）
     func testCapturesUploadSpotAutoToggle() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -1333,28 +1351,28 @@ final class ScreenshotTests: XCTestCase {
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         let tabBar = app.tabBars.firstMatch
-        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return unreached(app, "tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2") }
         tabBar.buttons.element(boundBy: 2).tap()
         let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
+        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return unreached(app, "toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable") }
         toPhoto.tap()
-        guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 15) else { return }
+        guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 15) else { return unreached(app, "app.buttons[\"upload.thumb.0\"].firstMatch.waitForExistence(timeout: 15)") }
 
         let place = app.textFields["upload.place"].firstMatch
-        guard place.waitForExistence(timeout: 10) else { return }
+        guard place.waitForExistence(timeout: 10) else { return unreached(app, "place.waitForExistence(timeout: 10)") }
         for _ in 0..<3 where !place.isHittable {
             app.swipeUp()
             Thread.sleep(forTimeInterval: 1)
         }
-        guard place.isHittable else { return }
+        guard place.isHittable else { return unreached(app, "place.isHittable") }
         place.tap()
         // 焦点が来てから打つ（来ないまま打つと失敗として記録される・`shootSearchedSpot` と同じ）
-        guard waitForKeyboardFocus(place) else { return }
+        guard waitForKeyboardFocus(place) else { return unreached(app, "waitForKeyboardFocus(place)") }
         place.typeText("蔵王キツネ村\n")
 
         let toggle = app.switches["upload.autoSpot"].firstMatch
         // 索引（約 400KB・圧縮して配られる）を読み終えるまで待つ
-        guard toggle.waitForExistence(timeout: 20) else { return }
+        guard toggle.waitForExistence(timeout: 20) else { return unreached(app, "toggle.waitForExistence(timeout: 20)") }
         for _ in 0..<3 where !toggle.isHittable {
             let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
             let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
@@ -1581,7 +1599,7 @@ final class ScreenshotTests: XCTestCase {
     ///
     /// 更新した人を起動の引数で作る: 規約に同意済み（`-legal.consent.version 1`）・前に見た版が古い
     /// （`-whatsNew.seenVersion 0.0.1`）。どちらも UserDefaults の引数の領域で、端末には書かない。
-    /// 出たら撮って、主ボタン「はじめる」で閉じられることも見る。出なければ撮らない（この試験の決まり）
+    /// 出たら撮って、主ボタン「はじめる」で閉じられることも見る。出なければ落とす（札 #531・前は撮らずに抜けて黙って緑だった）
     func testCapturesWhatsNew() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "1"]
@@ -1592,13 +1610,15 @@ final class ScreenshotTests: XCTestCase {
 
         // 見出しの文字で待つ（目印が部品の作りで変わっても、出たかどうかは見分けられる）
         let title = app.staticTexts["新しくなったこと"].firstMatch
-        guard title.waitForExistence(timeout: 20) else { return }
+        guard title.waitForExistence(timeout: 20) else { return unreached(app, "title.waitForExistence(timeout: 20)") }
         let close = app.buttons["whatsNew.close"].firstMatch
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "02b-新しくなったこと")
         if close.exists { close.tap() } else { app.buttons["はじめる"].firstMatch.tap() }
-        // 閉じたあとはホームが見える（主ボタンで閉じられる）
-        _ = app.tabBars.firstMatch.waitForExistence(timeout: 5)
+        // 閉じたあとはホームが見える（主ボタンで閉じられる）。札 #531: 前は待つだけで確かめていなかった
+        let closed = XCTWaiter().wait(for: [expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: title)], timeout: 5)
+        XCTAssertEqual(closed, .completed, "主ボタンを押しても「新しくなったこと」が閉じない")
+        XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 5), "「新しくなったこと」を閉じても、下の札が出ない")
     }
 
     /// **意見を送る**（2026-11-11 札 #546・`FeedbackSheet`）。設定の「意見を送る」の行から開き、
@@ -2602,7 +2622,7 @@ final class ScreenshotTests: XCTestCase {
     /// **Pro の案内**（板 63・審査に出す画面写真）。見本の利用者には Pro の案内へ行く口が無い
     /// （公開プロフィールでは Pro・設定の行は「App Store で管理」）ので、`-JPPreviewPaywall YES`
     /// （Debug のみ・見本の利用者で入っているときだけ・`PreviewSession.opensPaywall`）でマイページを
-    /// 開いたときに1度だけ出す。**主ボタン（購入）は押さない**。出なければ撮らない（この試験の決まり）
+    /// 開いたときに1度だけ出す。**主ボタン（購入）は押さない**。出なければ落とす（札 #531・前は撮らずに抜けて黙って緑だった）
     func testCapturesProPaywall() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -2617,9 +2637,9 @@ final class ScreenshotTests: XCTestCase {
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         let tabBar = app.tabBars.firstMatch
-        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return unreached(app, "tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4") }
         tabBar.buttons.element(boundBy: 4).tap()
-        guard app.buttons["paywall.purchase"].firstMatch.waitForExistence(timeout: 20) else { return }
+        guard app.buttons["paywall.purchase"].firstMatch.waitForExistence(timeout: 20) else { return unreached(app, "app.buttons[\"paywall.purchase\"].firstMatch.waitForExistence(timeout: 20)") }
         // 上の写真（朝の公開写真・写真の一覧を読んでから選ぶ）と値段が届くのを待つ。
         // run 389 は 4 秒で撮り、上の写真がまだ黒かった
         Thread.sleep(forTimeInterval: 10)
@@ -2705,7 +2725,7 @@ final class ScreenshotTests: XCTestCase {
     /// 「秋」を押した1枚（秋の案内のある撮影スポットと、秋に撮った写真）と、続けて「夕」を重ねた1枚。
     ///
     /// 札は名指しで探す（`search.season.autumn`・`search.dayPart.evening`）。段が画面の下にあれば少しずつ送る。
-    /// **別の試験にしてある**（一巡の「11-探す」の絵に絞った状態を持ち越さない）。出なければ撮らない（この試験の決まり）
+    /// **別の試験にしてある**（一巡の「11-探す」の絵に絞った状態を持ち越さない）。出なければ落とす（札 #531・前は撮らずに抜けて黙って緑だった）
     func testCapturesSearchSeasonTimeFilter() {
         let app = XCUIApplication()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
@@ -2720,25 +2740,25 @@ final class ScreenshotTests: XCTestCase {
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         let tabBar = app.tabBars.firstMatch
-        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 1 else { return }
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 1 else { return unreached(app, "tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 1") }
         tabBar.buttons.element(boundBy: 1).tap()
 
         let autumn = app.buttons["search.season.autumn"].firstMatch
-        guard autumn.waitForExistence(timeout: 20) else { return }
+        guard autumn.waitForExistence(timeout: 20) else { return unreached(app, "autumn.waitForExistence(timeout: 20)") }
         var swipes = 0
         while !autumn.isHittable, swipes < 6 {
             app.swipeUp()
             Thread.sleep(forTimeInterval: 1)
             swipes += 1
         }
-        guard autumn.isHittable else { return }
+        guard autumn.isHittable else { return unreached(app, "autumn.isHittable") }
         autumn.tap()
         // 撮影スポットの索引と写真の絵が描かれるのを待つ（枠だけの絵を「壊れている」と読み違えない）
         Thread.sleep(forTimeInterval: 4)
         shoot(app, "11c-探す（季節で絞る・秋）")
 
         let evening = app.buttons["search.dayPart.evening"].firstMatch
-        guard evening.waitForExistence(timeout: 5), evening.isHittable else { return }
+        guard evening.waitForExistence(timeout: 5), evening.isHittable else { return unreached(app, "evening.waitForExistence(timeout: 5), evening.isHittable") }
         evening.tap()
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "11d-探す（季節と時間帯で絞る・秋の夕方）")
@@ -2746,7 +2766,7 @@ final class ScreenshotTests: XCTestCase {
 
     /// **探すの「機材から探す」の札3枚**（2026-10-30 owner 採用・#419）。発見の顔のいちばん下の段なので、
     /// 札（`search.gear.wide` など）が押せる所まで少しずつ送ってから撮る。色の丸の段も同じ絵に入ることが多い。
-    /// **別の試験にしてある**（一巡の「11-探す」は上のままの絵）。出なければ撮らない（この試験の決まり）
+    /// **別の試験にしてある**（一巡の「11-探す」は上のままの絵）。出なければ落とす（札 #531・前は撮らずに抜けて黙って緑だった）
     func testCapturesSearchGearCards() {
         let app = XCUIApplication()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
@@ -2761,23 +2781,26 @@ final class ScreenshotTests: XCTestCase {
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         let tabBar = app.tabBars.firstMatch
-        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 1 else { return }
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 1 else { return unreached(app, "tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 1") }
         tabBar.buttons.element(boundBy: 1).tap()
 
         // 写真の無い区分は札にしないので、どれか1枚が出ればよい
         let card = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'search.gear.'")).firstMatch
-        guard card.waitForExistence(timeout: 20) else { return }
+        // 札が出ないときは、探すの発見の顔が出ていたか（季節の札）・機材の段の見出しが在るかを一緒に残す
+        guard card.waitForExistence(timeout: 20) else {
+            return unreached(app, "探すに機材の札（search.gear.*）が 20 秒出ない", probes: ["search.season.autumn", "機材から探す"])
+        }
         var swipes = 0
         while !card.isHittable, swipes < 10 {
             app.swipeUp(velocity: .slow)
             Thread.sleep(forTimeInterval: 1)
             swipes += 1
         }
-        guard card.isHittable else { return }
+        guard card.isHittable else { return unreached(app, "機材の札を押せる所まで送れない（\(swipes) 回送った・枠 \(card.exists ? "\(card.frame)" : "なし")）") }
         // 札の下に余白が出るまでもう少し送る（段の下端で切れた絵にしない）
         app.swipeUp(velocity: .slow)
         Thread.sleep(forTimeInterval: 2)
-        guard card.isHittable else { return }
+        guard card.isHittable else { return unreached(app, "もう一度送ったら機材の札が押せなくなった（枠 \(card.exists ? "\(card.frame)" : "なし")）") }
         shoot(app, "11e-探す（機材の札・色の丸）")
     }
 
@@ -3135,7 +3158,7 @@ final class ScreenshotTests: XCTestCase {
     /// 401 で止まり、`replace` は呼ばれない）。絵の名前にもそう書く（中身と名前を食い違わせない）。
     /// スポットは索引（`app/data/spots.json`）の公開済み・座標ありの行。
     ///
-    /// **別の試験にしてある**（一巡の絵に「入れた控え」を混ぜない）。出なければ撮らない（この試験の決まり）
+    /// **別の試験にしてある**（一巡の絵に「入れた控え」を混ぜない）。出なければ落とす（札 #531・前は撮らずに抜けて黙って緑だった）
     func testCapturesWishlistMap() {
         let app = XCUIApplication()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
@@ -3155,28 +3178,28 @@ final class ScreenshotTests: XCTestCase {
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         let tabBar = app.tabBars.firstMatch
-        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return unreached(app, "tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4") }
         tabBar.buttons.element(boundBy: 4).tap()
 
         // タブの札（名指し）。画面の下に隠れていたら少しずつ送る（上限あり）
         let wishTab = app.buttons["profile.tab.wishlist"].firstMatch
-        guard wishTab.waitForExistence(timeout: 15) else { return }
+        guard wishTab.waitForExistence(timeout: 15) else { return unreached(app, "wishTab.waitForExistence(timeout: 15)") }
         var pushes = 0
         while !wishTab.isHittable, pushes < 3 {
             app.swipeUp()
             Thread.sleep(forTimeInterval: 1)
             pushes += 1
         }
-        guard wishTab.isHittable else { return }
+        guard wishTab.isHittable else { return unreached(app, "wishTab.isHittable") }
         wishTab.tap()
 
         let mapLink = app.buttons["mypage.wishlistMap"].firstMatch
-        guard mapLink.waitForExistence(timeout: 15) else { return }
+        guard mapLink.waitForExistence(timeout: 15) else { return unreached(app, "mapLink.waitForExistence(timeout: 15)") }
         if !mapLink.isHittable {
             app.swipeUp()
             Thread.sleep(forTimeInterval: 1)
         }
-        guard mapLink.isHittable else { return }
+        guard mapLink.isHittable else { return unreached(app, "mapLink.isHittable") }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "62-行きたい場所（撮影用に端末の控えへ3件）")
 
@@ -3184,7 +3207,7 @@ final class ScreenshotTests: XCTestCase {
         mapLink.tap()
 
         let pin = app.descendants(matching: .any).matching(identifier: "savedMap.pin").firstMatch
-        guard pin.waitForExistence(timeout: 15) else { return }
+        guard pin.waitForExistence(timeout: 15) else { return unreached(app, "pin.waitForExistence(timeout: 15)") }
         // ピンの写真と地図の絵が描かれるのを待つ
         Thread.sleep(forTimeInterval: 4)
         shoot(app, "63-行きたい場所の地図（撮影用に端末の控えへ3件）")
@@ -3198,9 +3221,9 @@ final class ScreenshotTests: XCTestCase {
             tapped += 1
             Thread.sleep(forTimeInterval: 0.5)
         }
-        guard tapped > 0 else { return }
+        guard tapped > 0 else { return unreached(app, "tapped > 0") }
         let create = app.buttons["savedMap.createTrip"].firstMatch
-        guard create.waitForExistence(timeout: 5) else { return }
+        guard create.waitForExistence(timeout: 5) else { return unreached(app, "create.waitForExistence(timeout: 5)") }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "64-行きたい場所の地図で選んだ（この N か所で旅行プランを作る）")
 
@@ -3208,30 +3231,30 @@ final class ScreenshotTests: XCTestCase {
         // **日付と下書きを撮るだけで「保存」は押さない**（押すとプランを作りに行く）。出なければ撮らずに抜ける
         create.tap()
         let toDraft = app.buttons["tripCreate.toDraft"].firstMatch
-        guard toDraft.waitForExistence(timeout: 10) else { return }
+        guard toDraft.waitForExistence(timeout: 10) else { return unreached(app, "toDraft.waitForExistence(timeout: 10)") }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "64b-旅行プランを作る・日付（いつ行く？）")
         // 翌月の 10 日と 11 日（今日より前は押せないので、翌月にする）
         let next = app.buttons["tripCreate.nextMonth"].firstMatch
-        guard next.waitForExistence(timeout: 5), next.isHittable else { return }
+        guard next.waitForExistence(timeout: 5), next.isHittable else { return unreached(app, "next.waitForExistence(timeout: 5), next.isHittable") }
         next.tap()
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone.current
-        guard let month = calendar.date(byAdding: .month, value: 1, to: Date()) else { return }
+        guard let month = calendar.date(byAdding: .month, value: 1, to: Date()) else { return unreached(app, "let month = calendar.date(byAdding: .month, value: 1, to: Date())") }
         let parts = calendar.dateComponents([.year, .month], from: month)
         let prefix = String(format: "tripCreate.day.%04d-%02d-", parts.year ?? 0, parts.month ?? 0)
         for day in ["10", "11"] {
             let cell = app.buttons[prefix + day].firstMatch
-            guard cell.waitForExistence(timeout: 5), cell.isHittable else { return }
+            guard cell.waitForExistence(timeout: 5), cell.isHittable else { return unreached(app, "cell.waitForExistence(timeout: 5), cell.isHittable") }
             cell.tap()
             Thread.sleep(forTimeInterval: 0.3)
         }
         Thread.sleep(forTimeInterval: 0.5)
         shoot(app, "64c-旅行プランを作る・日付を選んだ（1 泊 2 日）")
-        guard toDraft.isHittable else { return }
+        guard toDraft.isHittable else { return unreached(app, "toDraft.isHittable") }
         toDraft.tap()
         let save = app.buttons["tripCreate.save"].firstMatch
-        guard save.waitForExistence(timeout: 10) else { return }
+        guard save.waitForExistence(timeout: 10) else { return unreached(app, "save.waitForExistence(timeout: 10)") }
         // 日の出・日の入りと写真の縮小版が描かれるのを待つ
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "64d-旅行プランを作る・下書き（時間帯の順・日の出と日の入り）")
@@ -3850,7 +3873,7 @@ final class ScreenshotTests: XCTestCase {
     /// 見本の利用者は鍵を持たず、バッジも選んでいないので、持ち物は `-JPPreviewBadges`、
     /// 名前の横に出す鍵は `-JPPreviewDisplayBadge`（どちらも Debug のみ・`PreviewSession`）で渡す。
     /// 後光のある初期ユーザーと、段のあるメダル（都道府県 · 銀）を撮る。**保存は押さない**。
-    /// 出なければ撮らない（この試験の決まり）
+    /// 出なければ落とす（札 #531・前は撮らずに抜けて黙って緑だった）
     func testCapturesNameSideBadge() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -3866,22 +3889,22 @@ final class ScreenshotTests: XCTestCase {
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         let tabBar = app.tabBars.firstMatch
-        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return unreached(app, "tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4") }
         tabBar.buttons.element(boundBy: 4).tap()
         let nameLine = app.descendants(matching: .any)["mypage.nameLine"].firstMatch
-        guard nameLine.waitForExistence(timeout: 20) else { return }
+        guard nameLine.waitForExistence(timeout: 20) else { return unreached(app, "nameLine.waitForExistence(timeout: 20)") }
         // 縮めた絵ができるのを待つ（画面の処理の外で作る）
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "83-マイページ（名前の横のバッジ・初期ユーザー）")
 
-        guard nameLine.isHittable else { return }
+        guard nameLine.isHittable else { return unreached(app, "nameLine.isHittable") }
         nameLine.tap()
-        guard app.descendants(matching: .any)["nameSide.save"].firstMatch.waitForExistence(timeout: 10) else { return }
+        guard app.descendants(matching: .any)["nameSide.save"].firstMatch.waitForExistence(timeout: 10) else { return unreached(app, "app.descendants(matching: .any)[\"nameSide.save\"].firstMatch.waitForExistence(timeout: 10)") }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "83b-名前の横（下見・初期ユーザー）")
 
         let plain = app.descendants(matching: .any)["nameSide.badge.prefectures"].firstMatch
-        guard plain.waitForExistence(timeout: 5), plain.isHittable else { return }
+        guard plain.waitForExistence(timeout: 5), plain.isHittable else { return unreached(app, "plain.waitForExistence(timeout: 5), plain.isHittable") }
         plain.tap()
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "83c-名前の横（下見・都道府県 · 銀）")
@@ -3892,7 +3915,7 @@ final class ScreenshotTests: XCTestCase {
     ///
     /// 見本の利用者は Pro を買っていないので `-JPPreviewPro YES`（Debug のみ・`PreviewSession.isPro`）で
     /// 本人のプロフィールにだけ Pro を重ねる。持ち物は 83 と同じ見本。**保存は押さない**。
-    /// 出なければ撮らない（この試験の決まり）
+    /// 出なければ落とす（札 #531・前は撮らずに抜けて黙って緑だった）
     func testCapturesProNameSide() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -3909,18 +3932,18 @@ final class ScreenshotTests: XCTestCase {
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         let tabBar = app.tabBars.firstMatch
-        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return unreached(app, "tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4") }
         tabBar.buttons.element(boundBy: 4).tap()
         let nameLine = app.descendants(matching: .any)["mypage.nameLine"].firstMatch
-        guard nameLine.waitForExistence(timeout: 20), nameLine.isHittable else { return }
+        guard nameLine.waitForExistence(timeout: 20), nameLine.isHittable else { return unreached(app, "nameLine.waitForExistence(timeout: 20), nameLine.isHittable") }
         nameLine.tap()
-        guard app.descendants(matching: .any)["nameSide.save"].firstMatch.waitForExistence(timeout: 10) else { return }
+        guard app.descendants(matching: .any)["nameSide.save"].firstMatch.waitForExistence(timeout: 10) else { return unreached(app, "app.descendants(matching: .any)[\"nameSide.save\"].firstMatch.waitForExistence(timeout: 10)") }
         // 縮めた絵ができるのを待つ（画面の処理の外で作る）
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "83d-名前の横（Pro の人・持っているバッジ）")
 
         let note = app.descendants(matching: .any)["nameSide.proNote"].firstMatch
-        guard note.waitForExistence(timeout: 5) else { return }
+        guard note.waitForExistence(timeout: 5) else { return unreached(app, "note.waitForExistence(timeout: 5)") }
         var pushes = 0
         while !note.isHittable, pushes < 3 {
             app.swipeUp()
@@ -3934,9 +3957,9 @@ final class ScreenshotTests: XCTestCase {
         // まだ届いていない季節の章（無ければ機能の章）を押すと、届く時期が下に出る
         let season = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'nameSide.pro.proWinter'")).firstMatch
         let target = season.exists ? season : app.buttons["nameSide.pro.dawn"].firstMatch
-        guard target.waitForExistence(timeout: 3), target.isHittable else { return }
+        guard target.waitForExistence(timeout: 3), target.isHittable else { return unreached(app, "target.waitForExistence(timeout: 3), target.isHittable") }
         target.tap()
-        guard app.descendants(matching: .any)["toast"].firstMatch.waitForExistence(timeout: 3) else { return }
+        guard app.descendants(matching: .any)["toast"].firstMatch.waitForExistence(timeout: 3) else { return unreached(app, "app.descendants(matching: .any)[\"toast\"].firstMatch.waitForExistence(timeout: 3)") }
         shoot(app, "83f-名前の横（Pro の人・届く時期の知らせ）")
     }
 
@@ -3949,7 +3972,7 @@ final class ScreenshotTests: XCTestCase {
     /// 比べる用に少し傾けたまま強さ 0（前の作り）。メダルは段のある都道府県（銀）。
     ///
     /// 🔴 **浮き彫りを貼り終えた印を待ってから撮る**（run 427: 強さを変えた直後に撮り、2 と 0 が同じ絵だった）。
-    /// 硬貨の読み上げの値が「pose-<番号>-ready」になるまで待つ。来なければ撮らない（この試験の決まり）
+    /// 硬貨の読み上げの値が「pose-<番号>-ready」になるまで待つ。来なければ落とす（札 #531）
     func testCapturesMedalRelief() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -3965,18 +3988,18 @@ final class ScreenshotTests: XCTestCase {
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         let tabBar = app.tabBars.firstMatch
-        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return unreached(app, "tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4") }
         tabBar.buttons.element(boundBy: 4).tap()
         let nameLine = app.descendants(matching: .any)["mypage.nameLine"].firstMatch
-        guard nameLine.waitForExistence(timeout: 20), nameLine.isHittable else { return }
+        guard nameLine.waitForExistence(timeout: 20), nameLine.isHittable else { return unreached(app, "nameLine.waitForExistence(timeout: 20), nameLine.isHittable") }
         nameLine.tap()
-        guard app.descendants(matching: .any)["nameSide.save"].firstMatch.waitForExistence(timeout: 10) else { return }
+        guard app.descendants(matching: .any)["nameSide.save"].firstMatch.waitForExistence(timeout: 10) else { return unreached(app, "app.descendants(matching: .any)[\"nameSide.save\"].firstMatch.waitForExistence(timeout: 10)") }
         // 名前の横の画面でメダルを長押しすると全画面で手に取れる（`MedalViewerTests` と同じ道）
         let badge = app.descendants(matching: .any)["nameSide.badge.prefectures"].firstMatch
-        guard badge.waitForExistence(timeout: 15), badge.isHittable else { return }
+        guard badge.waitForExistence(timeout: 15), badge.isHittable else { return unreached(app, "badge.waitForExistence(timeout: 15), badge.isHittable") }
         badge.press(forDuration: 1.0)
         let coin = app.descendants(matching: .any)["medalViewer.coin"].firstMatch
-        guard coin.waitForExistence(timeout: 15) else { return }
+        guard coin.waitForExistence(timeout: 15) else { return unreached(app, "coin.waitForExistence(timeout: 15)") }
 
         let names = ["85a-メダルの浮き彫り（少し傾けた・既定の強さ2.5）",
                      "85b-メダルの浮き彫り（正面・既定の強さ2.5）",
@@ -3984,13 +4007,13 @@ final class ScreenshotTests: XCTestCase {
                      "85f-メダルの浮き彫り（少し傾けた・強さ0＝前の作り）"]
         for (index, name) in names.enumerated() {
             if index > 0 {
-                guard coin.exists, coin.isHittable else { return }
+                guard coin.exists, coin.isHittable else { return unreached(app, "coin.exists, coin.isHittable") }
                 coin.tap()
             }
             // 法線の絵は画面の処理の外で作る（強さを変えた回は作り直す）。貼り終えた印を待つ
             let ready = NSPredicate(format: "value == %@", "pose-\(index)-ready")
             let waited = XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: coin)], timeout: 30)
-            guard waited == .completed else { return }
+            guard waited == .completed else { return unreached(app, "waited == .completed") }
             // 貼った絵が次のコマで描かれるまで
             Thread.sleep(forTimeInterval: 1)
             shoot(app, name)
@@ -6515,7 +6538,7 @@ final class ScreenshotTests: XCTestCase {
     /// 地をぼかし無しの薄い黒にしたので、白い写真・模様の多い写真（白い字つき）・黒い写真の上で、曲名・歌手名・
     /// 停止ボタンが読めて、後ろの色と形が見えるかを撮る。後ろは見本の地（`-JPPreviewMiniPlayerBackdrop`・
     /// `MiniPlayerBackdrop`: 上から白 40%・模様 30%・黒 30%）。最初の置き場所（右下）が黒、真ん中が模様、
-    /// いちばん上が白。曲の行・再生器が出なければ撮らない（この試験の決まり）
+    /// いちばん上が白。曲の行・再生器が出なければ落とす（札 #531・前は撮らずに抜けて黙って緑だった）
     func testCapturesMiniPlayerSeeThrough() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -6530,14 +6553,14 @@ final class ScreenshotTests: XCTestCase {
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         let tabBar = app.tabBars.firstMatch
-        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return unreached(app, "tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4") }
         tabBar.buttons.element(boundBy: 4).tap()
-        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 20) else { return }
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 20) else { return unreached(app, "app.buttons[\"mypage.edit\"].firstMatch.waitForExistence(timeout: 20)") }
         let song = app.descendants(matching: .any)["mypage.bgm"].firstMatch
-        guard song.waitForExistence(timeout: 20) else { return }
+        guard song.waitForExistence(timeout: 20) else { return unreached(app, "song.waitForExistence(timeout: 20)") }
         song.tap()
         let bar = app.descendants(matching: .any)["mini.player"].firstMatch
-        guard bar.waitForExistence(timeout: 15) else { return }
+        guard bar.waitForExistence(timeout: 15) else { return unreached(app, "bar.waitForExistence(timeout: 15)") }
         // ジャケットは通信で来るので少し待つ
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "10m-再生器の透け方（黒い写真の上）")
@@ -6547,7 +6570,7 @@ final class ScreenshotTests: XCTestCase {
             .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.55)),
                    withVelocity: .fast, thenHoldForDuration: 0.3)
         Thread.sleep(forTimeInterval: 1.5)
-        guard bar.exists else { return }
+        guard bar.exists else { return unreached(app, "bar.exists") }
         shoot(app, "10m-再生器の透け方（模様の多い写真の上）")
 
         // いちばん上（白の段）へ
@@ -6555,7 +6578,7 @@ final class ScreenshotTests: XCTestCase {
             .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.02)),
                    withVelocity: .fast, thenHoldForDuration: 0.3)
         Thread.sleep(forTimeInterval: 1.5)
-        guard bar.exists else { return }
+        guard bar.exists else { return unreached(app, "bar.exists") }
         shoot(app, "10m-再生器の透け方（白い写真の上）")
         app.terminate()
     }
@@ -7026,21 +7049,21 @@ final class ScreenshotTests: XCTestCase {
 
     /// **カバーの下端のフェード**（2026-10-28 owner が案A を選んだ・`ProfileCoverFade`）。マイページの上を1枚と、
     /// カバーの下端と黒の継ぎ目を切り出した1枚を撮る。前の絵は main の回の `14-マイページ`。
-    /// 見本の利用者にカバーが無い（額縁が出る・見出しが上に詰まる）回は撮らない（この試験の決まり）
+    /// 見本の利用者にカバーが無い（額縁が出る・見出しが上に詰まる）回は落とす（札 #531）
     func testCapturesProfileCoverFade() {
         let app = launchProfileLooks()
         let tabBar = app.tabBars.firstMatch
-        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return unreached(app, "tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4") }
         tabBar.buttons.element(boundBy: 4).tap()
         let edit = app.buttons["mypage.edit"].firstMatch
-        guard edit.waitForExistence(timeout: 20) else { return }
+        guard edit.waitForExistence(timeout: 20) else { return unreached(app, "edit.waitForExistence(timeout: 20)") }
         // カバーは通信で来る。「編集」はカバーの有無にかかわらず名前の段にある（#415）ので、
         // カバーが出たかは名前の段の高さで見る: カバー（240）の下端に顔（88）を 44 重ねた下＝200pt より下。
         // 無い人は設定の丸の高さから 72pt の顔の下（約 150pt）
         Thread.sleep(forTimeInterval: 4)
         let nameLine = app.descendants(matching: .any)["mypage.nameLine"].firstMatch
         guard nameLine.exists, !app.descendants(matching: .any)["mypage.coverFrame"].firstMatch.exists,
-              nameLine.frame.minY > 200 else { return }
+              nameLine.frame.minY > 200 else { return unreached(app, "nameLine.exists, !app.descendants(matching: .any)[\"mypage.coverFrame\"].firstMatch.exists, nameLine.frame.minY > 200") }
         shoot(app, "106-マイページ（カバーの下端のフェード）")
 
         // 継ぎ目の寄り: 帯の下の方（60% の透明 → 下端の黒）と、その下の黒い地。
@@ -7050,7 +7073,7 @@ final class ScreenshotTests: XCTestCase {
         let seam = CGRect(x: 0, y: max(0, nameLine.frame.minY - 280), width: screen.size.width, height: 300)
         guard let cg = screen.cgImage?.cropping(to: CGRect(x: seam.minX * scale, y: seam.minY * scale,
                                                            width: seam.width * scale, height: seam.height * scale))
-        else { return }
+        else { return unreached(app, "let cg = screen.cgImage?.cropping(to: CGRect(x: seam.minX * scale, y: seam.minY * scale, width: seam.width * scale, height: seam.height * scale))") }
         let crop = XCTAttachment(image: UIImage(cgImage: cg, scale: scale, orientation: .up))
         crop.name = "106a-マイページ（カバーの継ぎ目の寄り）"
         crop.lifetime = .keepAlways
@@ -7264,6 +7287,18 @@ final class ScreenshotTests: XCTestCase {
         let done = XCTWaiter().wait(for: [expectation(for: ready, evaluatedWith: scene)], timeout: timeout) == .completed
         // 組んだ形が次のコマで描かれ、カメラの動き（0.6 秒）が止まるまで
         Thread.sleep(forTimeInterval: 2)
+        // 場面の値（組む段の記録 `stage=`・札 #530）をログに残す。待ちが切れた回は、どの段で止まったかを数で見る
+        // （通った回の値も残し、組み終えるまでの時間の幅と比べる）
+        let value = scene.exists ? ((scene.value as? String) ?? "(値なし)") : "(場面が無い)"
+        let line = "[roomProbe] \(id) 「\(marker)」 \(done ? "ok" : "時間切れ（\(Int(timeout)) 秒）"): \(value)"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        if !done {
+            let note = XCTAttachment(string: line)
+            note.name = "roomProbe"
+            note.lifetime = .keepAlways
+            add(note)
+        }
         return done
     }
 
@@ -8363,26 +8398,27 @@ final class ScreenshotTests: XCTestCase {
         checkButtons("ありがとうの後に")
     }
 
-    /// サポーター証（マイページ → 設定 → サポーター証）まで進める。行が無い（サポーターでない・読めない）なら false
-    private func openSupporterCard(_ app: XCUIApplication) -> Bool {
+    /// サポーター証（マイページ → 設定 → サポーター証）まで進める。開けたら nil、開けなければ止まった所（札 #531）
+    private func openSupporterCard(_ app: XCUIApplication) -> String? {
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         let tabBar = app.tabBars.firstMatch
-        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return false }
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return "下の札が出ない" }
         tabBar.buttons.element(boundBy: 4).tap()
-        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return false }
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return "マイページの「編集」が出ない" }
         let gear = app.buttons["設定"].firstMatch
-        guard gear.waitForExistence(timeout: 5), gear.isHittable else { return false }
+        guard gear.waitForExistence(timeout: 5), gear.isHittable else { return "マイページの「設定」を押せない" }
         gear.tap()
         let row = app.buttons["settings.supporterCard"].firstMatch
-        guard row.waitForExistence(timeout: 15) else { return false }
+        guard row.waitForExistence(timeout: 15) else { return "設定に settings.supporterCard の行が 15 秒出ない" }
         scrollTo(row, in: app)
-        guard row.isHittable else { return false }
+        guard row.isHittable else { return "settings.supporterCard を押せる所まで送れない" }
         row.tap()
-        return app.buttons["supporter.card"].firstMatch.waitForExistence(timeout: 10)
+        guard app.buttons["supporter.card"].firstMatch.waitForExistence(timeout: 10) else { return "行を押してもサポーター証（supporter.card）が出ない" }
+        return nil
     }
 
-    /// **サポーター証**（既定の文字と、大きい文字）: 見本の利用者がサポーターのときだけ。行が無ければ撮らずに抜ける
+    /// **サポーター証**（既定の文字と、大きい文字）: 見本の利用者がサポーターのときだけ。行が無ければ落とす（札 #531）
     func testCapturesSupporterCard() {
         for (extra, name) in [([String](), "88-サポーター証"), (Self.largeText, "88x-大きい文字（サポーター証）")] {
             let app = XCUIApplication()
@@ -8394,7 +8430,10 @@ final class ScreenshotTests: XCTestCase {
             app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
             app.launchArguments += extra
             app.launch()
-            guard openSupporterCard(app) else { return }
+            if let stop = openSupporterCard(app) {
+                // 行が出ないときは、プロフィールが読めていたか（`settings.nameSide` はプロフィールがあると出る）を一緒に残す
+                return unreached(app, stop, probes: ["settings.pro", "settings.nameSide", "settings.supporterCard"])
+            }
             Thread.sleep(forTimeInterval: 2)
             shoot(app, name)
             app.swipeUp()
