@@ -1399,8 +1399,6 @@ struct RootView: View {
         // tint（白）を札に使うことがある（2026-10-02 の調査）。選択色はタブバーそのものに
         // 書いてある（`TabBarStyle.apply`・起動時）。ここの tint は残す（同じ色の念押し）
         .tint(WebTheme.accent)
-        // ホームと探すだけ、下へ送ると札を縮めて写真の面を広げる（iOS 26 から・`TabBarMinimize`・2026-11-14）
-        .modifier(TabBarMinimizeOnScroll(tab: selection))
         .task(id: auth.userId) { await refreshUnread() }
         // **人が替わったら待ちをやめる。** `.task(id:)` の中で取り消すと、
         // 出てきた瞬間（`onAppear` で待ちを作った直後）にも走って、
