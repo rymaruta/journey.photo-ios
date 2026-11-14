@@ -447,10 +447,18 @@ enum TrunkSample {
     /// 見本のカプセルの機械で出る順（めずらしい錠前「菊」→ まだ持っていない部品 → 持っている部品（かけら））
     static let gachaOrder = ["lock.2", "charm.12", "pin.1", "patch.6"]
 
-    /// 見本の状態。`empty` は届いたラベルが1枚も無い人（空の状態の絵）。`coins` で硬貨の枚数を替える（画面写真の「硬貨がありません」）
-    static func state(isPro: Bool, empty: Bool = false, coins: Int? = nil) -> TrunkState {
-        TrunkState(model: .leather, effectiveModel: .leather,
-                   pocket: empty ? [] : pocket, stuck: empty ? [] : stuck,
+    /// 貼ったあと動かした切符の見本（札 #605・`-JPPreviewTrunkWrinkles`）。owner の実機の「月崎」と同じ組
+    /// （春・切符の形・生成りの地 #F3E6CC・桜の絵）になる種
+    static let creased = label("s-tsukizaki", .season, "月崎", latin: "Tsukizaki", country: "日本", season: .spring,
+                               seed: 852_009, at: "2026-05-02T09:00:00Z")
+
+    /// 見本の状態。`empty` は届いたラベルが1枚も無い人（空の状態の絵）。`coins` で硬貨の枚数を替える（画面写真の「硬貨がありません」）。
+    /// `creasedMoves` があれば、貼ったラベルのいちばん新しい所に `creased` を足す（よれの絵・札 #605）
+    static func state(isPro: Bool, empty: Bool = false, coins: Int? = nil,
+                      creasedMoves: Int? = PreviewSession.trunkWrinkleMoves) -> TrunkState {
+        let stuckLabels = empty ? [] : (creasedMoves == nil ? stuck : [creased] + stuck)
+        return TrunkState(model: .leather, effectiveModel: .leather,
+                   pocket: empty ? [] : pocket, stuck: stuckLabels,
                    limit: isPro ? TrunkState.proLimit : TrunkState.freeLimit, isPro: isPro,
                    rerollsLeft: isPro ? 2 : 0, pendingReroll: nil,
                    posts: empty ? 0 : 42, receiveLabels: true,

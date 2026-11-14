@@ -21,6 +21,10 @@ struct TrunkWrinkles {
 
     /// ラベルの id → 動かした回数
     var moves: [String: Int] {
+        #if DEBUG
+        // 画面写真の見本（札 #605）: 「月崎」の切符だけを、決まった回数動かしたことにする
+        if let n = PreviewSession.trunkWrinkleMoves { return [TrunkSample.creased.id: n] }
+        #endif
         guard let userId, let raw = defaults.dictionary(forKey: Self.key(userId)) else { return [:] }
         return raw.compactMapValues { ($0 as? Int).map { max(0, $0) } }
     }

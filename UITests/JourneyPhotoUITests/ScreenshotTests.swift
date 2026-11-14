@@ -4903,6 +4903,26 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// **旅のトランク（届いたラベルが1枚も無い人）**: 空の状態（「写真を投稿」の一手）と、空の手持ち
+    /// **動かしてよれた切符**（札 #605）: owner の実機で「月崎」の切符に白い斜めの線が出た。同じ組の切符
+    /// （`TrunkSample.creased`）を 3 回動かした絵と、同じラベルをよれなし（0 回・よれの層を描かない）で撮って比べる。
+    /// トランクの絵だけも撮る（縮んだ全体の絵では細い線が見えにくい）
+    func testCapturesTrunkCreasedTicket() {
+        for (moves, name) in [(3, "90c-旅のトランク（動かした切符・よれ 3 回）"), (0, "90d-旅のトランク（同じ切符・よれなし）")] {
+            let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewTrunkWrinkles", "\(moves)"])
+            guard openTrunk(app) else { return XCTFail("見本のトランクが開かない（よれ \(moves) 回）") }
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, name)
+            let trunk = app.buttons["trunk.spin"].firstMatch
+            if trunk.exists {
+                let part = XCTAttachment(screenshot: trunk.screenshot())
+                part.name = name + "（トランクだけ）"
+                part.lifetime = .keepAlways
+                add(part)
+            }
+            app.terminate()
+        }
+    }
+
     func testCapturesTrunkEmpty() {
         let app = launchTrunk(["-JPPreviewTrunk", "empty"])
         guard openTrunk(app) else { return }
