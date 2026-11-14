@@ -1342,6 +1342,8 @@ struct RootView: View {
             NavigationStack {
                 GalleryView(unread: unread, onOpenNotifications: { openNotificationsFromBell() },
                             messagesUnread: messagesUnread)
+                    // 親が描き直されただけでは描き直さない（未読の数が変わったときだけ・`GalleryView+Equatable`・札 #594）
+                    .equatable()
                     .perfMark("tab.home.appear")
             }
             .tint(WebTheme.foreground)

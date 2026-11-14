@@ -58,11 +58,43 @@ enum SpotSwipe {
     /// 入口の札の左の写真に使う撮影スポット。**写真を出せる公開済み**（`TripPicker.isEligible`）で、
     /// ほかの札に出ているものを除き、日替わりで1件（同じ日なら同じ札・開くたびに替わらない）
     static func cover(spots: [OfficialSpot], excluding ids: Set<String>, day: Int) -> OfficialSpot? {
-        let pool = spots.filter { TripPicker.isEligible($0) && !ids.contains($0.spotId) }
-            .sorted { $0.spotId < $1.spotId }
-        guard !pool.isEmpty else { return nil }
-        let index = ((day % pool.count) + pool.count) % pool.count
-        return pool[index]
+        CoverPool(spots: spots).cover(spots: spots, excluding: ids, day: day)
+    }
+
+    /// 入口の札の写真の候補の並び（写真を出せる場所の**位置**を `spotId` の順に）。**索引が変わったときだけ作る**。
+    ///
+    /// 2026-11-14 判断（札 #594・Mac run 1238 の数）: 前は札の body を評価するたびに、索引（本番 約 3,900 件）を
+    /// 絞って `spotId` で並べ替えていた。`home.topCard.choices` が 70 回で合計 8.3 秒（1 回 約 120〜140ms）、
+    /// その最中の積みの見本は 11 件すべて `SpotSwipe.cover` の並べ替え・写しだった。並びは索引だけで決まるので、
+    /// 索引が変わったとき 1 回だけ作り（`HomeTopCardView` の `HomeTopCardMemo`）、毎回は除く場所を飛ばして数えるだけにする。
+    /// 選ぶ 1 件は前と同じ（同じ `spotId` が並ぶときも元の順を保つ）
+    struct CoverPool {
+        /// 写真を出せる場所の、元の索引の中の位置（`spotId` の順・同じ `spotId` は元の順）
+        let indices: [Int]
+        /// 同じ順の `spotId`
+        let ids: [String]
+
+        init(spots: [OfficialSpot]) {
+            let eligible = spots.indices.filter { TripPicker.isEligible(spots[$0]) }
+            let sorted = eligible.sorted { lhs, rhs in
+                let a = spots[lhs].spotId, b = spots[rhs].spotId
+                return a != b ? a < b : lhs < rhs
+            }
+            indices = sorted
+            ids = sorted.map { spots[$0].spotId }
+        }
+
+        /// `spots` は作ったときと同じ索引を渡す。除く場所を飛ばして、日替わりの 1 件
+        func cover(spots: [OfficialSpot], excluding excluded: Set<String>, day: Int) -> OfficialSpot? {
+            let count = excluded.isEmpty ? ids.count : ids.reduce(0) { $0 + (excluded.contains($1) ? 0 : 1) }
+            guard count > 0 else { return nil }
+            var remaining = ((day % count) + count) % count
+            for (position, id) in ids.enumerated() where !excluded.contains(id) {
+                if remaining == 0 { return spots[indices[position]] }
+                remaining -= 1
+            }
+            return nil
+        }
     }
 
     // MARK: - 挟む札・足元

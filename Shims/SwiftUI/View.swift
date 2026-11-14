@@ -58,6 +58,11 @@ extension View {
     public static func _printChanges() {}
 }
 
+extension View where Self: Equatable {
+    /// 本物は `EquatableView`（前と `==` なら body を評価しない）。模型では自分を返す（2026-11-14 札 #594）
+    public func equatable() -> Self { self }
+}
+
 extension Never: View {
     nonisolated public var body: Never { fatalError("模型") }
 }

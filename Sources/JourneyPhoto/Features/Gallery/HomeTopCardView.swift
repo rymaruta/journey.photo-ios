@@ -67,6 +67,9 @@ struct HomeTopCardView: View {
     @State private var spots: [OfficialSpot] = []
     /// `spots` を書き換えた回数（段の中身を `seasonShelf` へ渡し直す合図。1,400件の配列を毎回比べない）
     @State private var spotsRevision = 0
+    /// 重い計算の控え（写真の候補の並び・季節の段・詳細を取りに行く場所。材料が変わったときだけ計算し直す・
+    /// `HomeTopCardMemo`・2026-11-14 札 #594）。中身を書き換えても画面は描き直さない（入れ物は同じ）
+    @State private var memo = HomeTopCardMemo()
     /// 今日の一問（取れなかった日は nil のまま＝札を出さない）。サービスが日付ごとに覚えるので、
     /// 札から開いた画面は取り直さない
     @State private var quiz: DailyQuiz?
@@ -257,7 +260,8 @@ struct HomeTopCardView: View {
                                                              hidden: removal.hiddenTrips, excluding: removal.removedIds),
                               myPhotos: myPhotos, openedBookDays: openedBooks, spots: spots,
                               wishlist: wishedKeys, quiz: quiz, develop: developChoice),
-            spots: spots, today: HomeTopCard.today(cardsNow, in: .current))
+            spots: spots, today: HomeTopCard.today(cardsNow, in: .current),
+            pool: memo.coverPool(spots: spots, revision: spotsRevision))
         let audience = HomeTopCard.Audience.of(signedIn: auth.userId != nil,
                                                myPhotos: myPhotosKnown ? myPhotos : nil)
         return HomeTopCard.arrange(all, audience: audience)
@@ -269,9 +273,17 @@ struct HomeTopCardView: View {
     /// 見えている間（今日の一問）だけ——段から開いた画面が前に出ている間に札が消えて閉じることはない
     private func visibleShelf(_ choices: [HomeTopCard.Choice]) -> HomeSpotShelf.Shelf? {
         PerfTimeline.shared.measure("home.topCard.visibleShelf") {   // 時間を測る（UI テストのときだけ・札 #594）
-        HomeSpotShelf.visibleShelf(today: HomeTopCard.today(cardsNow, in: .current), spots: spots,
-                                   choices: choices, quiz: quiz, quizSettled: quizSettled)
+            memo.visibleShelf(shelfMemoKey(choices)) {
+                HomeSpotShelf.visibleShelf(today: HomeTopCard.today(cardsNow, in: .current), spots: spots,
+                                           choices: choices, quiz: quiz, quizSettled: quizSettled)
+            }
         }
+    }
+
+    /// 季節の段と詳細の控えの鍵（`visibleShelf` の材料。索引は書き換えの番号で見る）
+    private func shelfMemoKey(_ choices: [HomeTopCard.Choice]) -> HomeTopCardMemo.ShelfKey {
+        HomeTopCardMemo.ShelfKey(today: HomeTopCard.today(cardsNow, in: .current), spotsRevision: spotsRevision,
+                                 choices: choices, quiz: quiz, quizSettled: quizSettled)
     }
 
     /// 段を渡し直す合図（段の中身と、索引の書き換え）
@@ -571,14 +583,14 @@ struct HomeTopCardView: View {
     /// 札・段・当日の行に出る、まだ索引だけのスポット
     private func detailNeeds(_ choices: [HomeTopCard.Choice]) -> [OfficialSpot] {
         // 時間を測る（UI テストのときだけ・札 #594 の下調べ）
-        PerfTimeline.shared.measure("home.topCard.detailNeeds") { computeDetailNeeds(choices) }
+        PerfTimeline.shared.measure("home.topCard.detailNeeds") {
+            memo.detailNeeds(shelfMemoKey(choices)) { computeDetailNeeds(choices) }
+        }
     }
 
     private func computeDetailNeeds(_ choices: [HomeTopCard.Choice]) -> [OfficialSpot] {
         guard !spots.isEmpty else { return [] }
-        let shelf = HomeSpotShelf.visibleShelf(today: HomeTopCard.today(cardsNow, in: .current), spots: spots,
-                                               choices: choices, quiz: quiz, quizSettled: quizSettled)
-        return SpotDetailNeeds.home(choices: choices, shelf: shelf, spots: spots)
+        return SpotDetailNeeds.home(choices: choices, shelf: visibleShelf(choices), spots: spots)
     }
 
     /// 出すスポットの詳細を重ねる（`OfficialSpotService.withDetails`）。取れなければ索引のまま（写真・文が出ないだけ）

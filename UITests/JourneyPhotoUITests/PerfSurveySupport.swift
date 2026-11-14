@@ -129,7 +129,10 @@ struct PerfSurveyStage {
     /// 見本の種類（どれか 1 枚でも読み上げの木なら `ax`。次にログ、アプリの段）
     static func kind(of stacks: [String]) -> String {
         guard !stacks.isEmpty else { return "none" }
-        if stacks.contains(where: { $0.contains("UIAccessibility") || $0.contains("AXRuntime") || $0.contains("AXCoreUtilities") }) {
+        // 2026-11-14（run 1238）: `log` に数えていた標準エラーへの写しは、呼び手がどれも `XCTAutomationSupport`
+        // （XCUITest が画面の要素を読む所）だった。XCUITest の分として `ax` に数える
+        if stacks.contains(where: { $0.contains("UIAccessibility") || $0.contains("AXRuntime") || $0.contains("AXCoreUtilities")
+            || $0.contains("XCTAutomationSupport") }) {
             return "ax"
         }
         if stacks.contains(where: { $0.contains("_os_log_impl_mirror_to_stderr") || $0.contains("_os_trace_writev") }) { return "log" }
