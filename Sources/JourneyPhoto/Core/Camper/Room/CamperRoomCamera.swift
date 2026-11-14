@@ -177,6 +177,21 @@ struct CamperRoomCamera: Equatable, Sendable {
 
     static let doubleTapZoom = 2.4
 
+    /// 部屋を回すボタン（⟲ ⟳）と読み上げの「右へ回す・左へ回す」の 1 回の角度（2026-11-14・`CamperRoomTurn`）
+    static let turnStep = 30.0
+
+    /// 横に回す（正で右へ。範囲の端で止まる）。ボタンと読み上げは同じこの式を使う
+    func turned(by degrees: Double) -> CamperRoomCamera {
+        var c = self
+        c.yaw += degrees
+        return c.clamped()
+    }
+
+    /// その向きへまだ回せるか（範囲の端に着いていたらボタンを薄くする）
+    func canTurn(by degrees: Double) -> Bool {
+        abs(turned(by: degrees).yaw - yaw) > 0.5
+    }
+
     /// 初めの向きから動いているか（「向きを戻す」を出す）
     func differs(from other: CamperRoomCamera) -> Bool {
         abs(yaw - other.yaw) > 2 || abs(pitch - other.pitch) > 2 || abs(zoom - other.zoom) > 0.06 || (target - other.target).length > 3
@@ -325,4 +340,17 @@ enum CamperRoomPick {
         }
         return out
     }
+}
+
+/// 部屋を回すボタン（2026-11-14・人間工学の点検 6・WCAG 2.5.7 引かなくても回せる）。
+/// 上の札の並びに ⟲ ⟳ を置き、1 回で `CamperRoomCamera.turnStep`（30°）回す。読み上げの操作も同じ値と同じ式
+/// （`CamperRoomCamera.turned(by:)`）。指で引いて回すのは今のまま残す。
+/// ⟳（右へ）は yaw を増やす: カメラが上から見て左回りに部屋のまわりを回るので、部屋は右回りに回って見える（`eye(_:)`）
+enum CamperRoomTurn: CaseIterable {
+    case left, right
+
+    var degrees: Double { self == .right ? CamperRoomCamera.turnStep : -CamperRoomCamera.turnStep }
+    var symbol: String { self == .right ? "arrow.clockwise" : "arrow.counterclockwise" }
+    var id: String { self == .right ? "camper.room.turn.right" : "camper.room.turn.left" }
+    var label: String { self == .right ? L("右へ回す", "Turn right") : L("左へ回す", "Turn left") }
 }
