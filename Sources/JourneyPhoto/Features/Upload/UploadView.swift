@@ -57,6 +57,8 @@ struct UploadView: View {
     private struct EditTarget: Identifiable { let id: UUID }
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 打っている題・説明の欄（写真ごと）。上に札が差し込まれたとき、その欄へ送り直す（`UploadFieldFocus`・#607）
+    @FocusState private var focusedField: UploadFieldFocus?
 
     /// 最初から入れておくタグ（今日のテーマの「参加する」から来たとき）。
     /// **入れるだけで、消せる**——決めつけない
@@ -596,37 +598,53 @@ struct UploadView: View {
     }
 
     private var form: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                // **知らせは上に。** 投稿は右上で押すので、下に出すと画面の外になる
-                topBlock
-                if let spot = model.spot { spotBanner(spot) }
-                photosBlock
-                // 旅の流れでは切り替えを出さない（いつもまとめる）。代わりに一言
-                if let note = UploadGrouping.tripNote(fromTrip: model.fromTripImport, count: model.items.count) {
-                    Text(note)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    // **知らせは上に。** 投稿は右上で押すので、下に出すと画面の外になる
+                    topBlock
+                    if let spot = model.spot { spotBanner(spot) }
+                    photosBlock
+                    // 旅の流れでは切り替えを出さない（いつもまとめる）。代わりに一言
+                    if let note = UploadGrouping.tripNote(fromTrip: model.fromTripImport, count: model.items.count) {
+                        Text(note)
+                            .font(.caption)
+                            .foregroundStyle(WebTheme.text3)
+                            .padding(.horizontal, 4)
+                    } else if model.items.count > 1 {
+                        groupChoice
+                    }
+                    // 撮影地の欄のすぐ上（2026-10-18 判断）。**写真を選ぶ前から出す**——撮影地は読み込んだ瞬間に
+                    // 写真の位置から引き始めるので、選んでから出しても遅い（Web の切り替えと同じ）
+                    locationToggle
+                    detailSection
+                    inspiredCard
+                    rowsCard
+                    tagsAndCategory
+                    // 板: 本文の最後に注記（板は 11px だが、本文系の最小は 12pt）
+                    Text(L("撮影情報（EXIF）は端末で取り除いてから送ります。撮影地の座標は約1kmに丸めて保存します。", "Photo metadata (EXIF) is removed on your device before upload. Coordinates are rounded to about 1 km."))
                         .font(.caption)
                         .foregroundStyle(WebTheme.text3)
                         .padding(.horizontal, 4)
-                } else if model.items.count > 1 {
-                    groupChoice
                 }
-                // 撮影地の欄のすぐ上（2026-10-18 判断）。**写真を選ぶ前から出す**——撮影地は読み込んだ瞬間に
-                // 写真の位置から引き始めるので、選んでから出しても遅い（Web の切り替えと同じ）
-                locationToggle
-                detailSection
-                inspiredCard
-                rowsCard
-                tagsAndCategory
-                // 板: 本文の最後に注記（板は 11px だが、本文系の最小は 12pt）
-                Text(L("撮影情報（EXIF）は端末で取り除いてから送ります。撮影地の座標は約1kmに丸めて保存します。", "Photo metadata (EXIF) is removed on your device before upload. Coordinates are rounded to about 1 km."))
-                    .font(.caption)
-                    .foregroundStyle(WebTheme.text3)
-                    .padding(.horizontal, 4)
+                .padding(16)
             }
-            .padding(16)
+            .scrollDismissesKeyboard(.interactively)
+            // 🔴 打っている欄を見失わせない（2026-11-14・札 #607）。題・説明から撮影スポットの候補が出ると、
+            // 撮影地の欄の下（打っている題の欄より上）に「観光スポット「◯◯」に結ぶ」の札が差し込まれ、欄だけが下へ押される。
+            // UI テスト（回 1324・`UploadTitleFieldTests`）で「秋の兼六園」と打つと、題の欄より上で増えたのはこの札だけ
+            // （標準の文字 高さ 71pt → 欄 y=359→460、大きい文字 716pt → 欄 y=176→922 でキーボード（y=655）の裏）。
+            // 札が出た・消えた・名前や入り切りで高さが変わったときに、打っている欄を見える所（キーボードと下の帯の上）へ送る
+            .onChange(of: autoSpotLayoutKey) { _, _ in
+                guard let field = focusedField else { return }
+                // 札を描いた後の回に送る（札の高さが決まってから欄の位置を求めさせる）
+                DispatchQueue.main.async {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+                        proxy.scrollTo(field, anchor: .bottom)
+                    }
+                }
+            }
         }
-        .scrollDismissesKeyboard(.interactively)
         .webScreen()
         .task(id: joined.entries) { await model.loadAlbums(joined: joined.entries) }
         // 撮影スポットの自動の候補の索引（撮影地・題・説明のどれかが入ってから1回だけ・#425）
@@ -1189,6 +1207,7 @@ struct UploadView: View {
                 JPField(L("タイトル", "Title")) {
                     TextField(L("例: 高屋神社の雲海", "e.g. Sea of clouds at Takaya"),
                               text: $item.title)
+                        .focused($focusedField, equals: .title(item.id))
                         // UI テストが名指しで打つ（`CriticalFlowTests`・2026-10-22）
                         .accessibilityIdentifier("upload.title")
                         .onChange(of: item.title) { old, value in
@@ -1196,19 +1215,29 @@ struct UploadView: View {
                             if kept != value { item.title = kept }
                         }
                 }
+                // 送り先（`form` の `scrollTo`）
+                .id(UploadFieldFocus.title(item.id))
                 count(item.title, limit: PostLimits.title)
                 JPField(L("説明文", "Description"), multiline: true) {
                     TextField(L("どんな写真ですか", "What is this photo about?"),
                               text: $item.caption, axis: .vertical)
                         .lineLimit(3...8)
+                        .focused($focusedField, equals: .caption(item.id))
                         .onChange(of: item.caption) { old, value in
                             let kept = PostLimits.limited(old: old, new: value, limit: PostLimits.description)
                             if kept != value { item.caption = kept }
                         }
                 }
+                .id(UploadFieldFocus.caption(item.id))
                 count(item.caption, limit: PostLimits.description)
             }
         }
+    }
+
+    /// 打っている欄より上の高さを変える「観光スポットに結ぶ」の札の並び（写真ごとに 候補の id と入り切り。無ければ空）。
+    /// 変わったら打っている欄へ送り直す（`form` の `onChange`・#607）
+    private var autoSpotLayoutKey: [String] {
+        model.items.map { item in model.autoSpotRow(for: item).map { "\($0.spotId)|\($0.on)" } ?? "" }
     }
 
     /// 「撮影スポット「◯◯」に結ぶ」（2026-10-31 判断・journey.photo-ios#425・板 UploadIOS）。
@@ -1667,4 +1696,10 @@ enum UploadStripLayout {
     static var dotInsideHit: Bool {
         (removeHit + removeDot) / 2 + removeDotNudge <= removeHit
     }
+}
+
+/// 投稿の画面で打っている欄（写真ごとの題・説明）。焦点（`@FocusState`）と送り先（`.id`）に使う（#607）
+enum UploadFieldFocus: Hashable {
+    case title(UUID)
+    case caption(UUID)
 }

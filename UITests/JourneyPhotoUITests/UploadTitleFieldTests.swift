@@ -7,6 +7,12 @@ import XCTest
 /// スクロールの領域とキーボードの枠は同じだったので、欄より上に何かが差し込まれたと見て、
 /// **打つ前と後で、欄より上の要素を全部（種類・識別子・字・枠）**書き出して見比べる（`UPLOADTITLE …` の行）。
 ///
+/// 回 1324（直す前・main 7b95b3b）の答え: 打った後に欄より上で増えたのは「観光スポット「兼六園」に結ぶ」の札
+/// （`upload.autoSpot`・題から撮影スポットの候補が出た）だけで、ほかの要素は1つも動いていない。
+/// 札の高さは標準の文字で 71pt（欄 y=359→460）、大きい文字で 716pt（欄 y=176→922・キーボードの上端 655 の裏）。
+/// 直し（`UploadView.form` の `onChange(of: autoSpotLayoutKey)`）を戻すと、大きい文字の試験が落ちる
+/// （下の主ボタンの帯がある版では標準の文字も落ちる）。
+///
 /// 見本の1枚（`-JPPreviewUploadSample`）と端末の中の通信（`-JPPreviewLocalBackend`）で開く。
 final class UploadTitleFieldTests: XCTestCase {
 
@@ -61,17 +67,19 @@ final class UploadTitleFieldTests: XCTestCase {
         diff(tag, before, after)
         shoot(app, "\(tag)-打った後")
 
-        // 打っている欄が、スクロールの領域の中で、帯（主ボタンの上 12pt）とキーボードより上に全部見えていること
+        // 打っている欄が、スクロールの領域の中で、キーボードと下の主ボタンの帯（主ボタンの上 12pt）より上に全部見えていること。
+        // 「投稿する」が右上（ナビの帯）にある版では、下の帯は無い（main 7b95b3b・回 1324 で submit y=86）
         let field = title.frame
-        let barTop = submit.frame.minY - 12
         let keyboard = app.keyboards.firstMatch
-        let limit = keyboard.exists ? min(barTop, keyboard.frame.minY) : barTop
         let scroll = app.scrollViews.containing(.textField, identifier: "upload.title").firstMatch
-        let top = scroll.exists ? scroll.frame.minY : app.windows.firstMatch.frame.minY
+        let window = app.windows.firstMatch.frame
+        let top = scroll.exists ? scroll.frame.minY : window.minY
+        var limit = keyboard.exists ? keyboard.frame.minY : window.maxY
+        if submit.frame.minY > window.midY { limit = min(limit, submit.frame.minY - 12) }
         XCTAssertEqual((title.value as? String) ?? "", Self.typedTitle, "[\(tag)] 打った字が欄に入っていない")
         XCTAssertTrue(waitForFocus(title, timeout: 1), "[\(tag)] 打った後に題の欄の焦点が外れた")
         XCTAssertLessThanOrEqual(field.maxY, limit + 0.5,
-                                 "[\(tag)] 打った後の題の欄 \(field) が帯・キーボードの上端 \(limit) より下にある（見えない）")
+                                 "[\(tag)] 打った後の題の欄 \(field) がキーボード・下の帯の上端 \(limit) より下にある（見えない）")
         XCTAssertGreaterThanOrEqual(field.minY, top - 0.5,
                                     "[\(tag)] 打った後の題の欄 \(field) がスクロールの領域の上端 \(top) より上にある（見えない）")
     }
