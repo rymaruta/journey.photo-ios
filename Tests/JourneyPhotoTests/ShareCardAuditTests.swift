@@ -12,7 +12,9 @@ import CoreLocation
 ///   その外枠と画像の端の距離（短い辺に対する %）が `ShareCardSafeArea` の枠に収まるか。9:16 の上 14%・下 20% に部品が無いか
 /// - 字の下の背景（部品を描かない絵の、字の画素の所）の一番明るい所と字の色の明暗の比が 4.5:1 以上か。地図の線は 3:1 以上
 /// - 字が切れていないか（「…」）・部品の枠が重なっていないか（記録した枠で）
-/// 数は `measured [sharecard] …` の行でログに出す（Mac の `xcodebuild-full.log`）。
+/// - SNS ごとの切り取り（フィードの 4:5・3:4、プロフィールの格子の 3:4・`ShareCardSafeArea.PlatformCrop`）の内側に、
+///   切り取った画像の端から 6% 以上離れて部品が残るか（2026-11-14 owner「別の SNS に投稿しようとしたら変になる、みたいなことないよね？」）
+/// 数は `measured [sharecard] …`・`measured [sharecard-crop] …` の行でログに出す（Mac の `xcodebuild-full.log`）。
 final class ShareCardAuditTests: XCTestCase {
     typealias R = SignatureShareCardRenderer
 
@@ -252,6 +254,25 @@ final class ShareCardAuditTests: XCTestCase {
                           + " mapContrast=\(String(format: "%.2f", m.minMapContrast))"
                           + " truncated=\(m.truncated.map { String($0.prefix(16)) })"
                           + " overlaps=\(m.overlaps) low=\(m.lowContrast)")
+                    // SNS ごとの切り取り（2026-11-14 判断・`ShareCardSafeArea.PlatformCrop`）。部品の外枠が、切り取った画像の端から
+                    // その短い辺の 6% 以上内側にあるか。フィードは投稿そのものなので落とす。格子（小さな見本）は数を出すだけ
+                    if let box = m.box {
+                        for crop in ShareCardSafeArea.PlatformCrop.allCases {
+                            guard let cropRect = crop.rect(width: width, height: height) else { continue }
+                            let margin = min(cropRect.width, cropRect.height) * ShareCardSafeArea.edgeFraction
+                            let gaps = [box.minX - cropRect.minX, box.minY - cropRect.minY,
+                                        cropRect.maxX - box.maxX, cropRect.maxY - box.maxY]
+                            let worst = gaps.min() ?? 0
+                            let verdict = worst < 0 ? "切れる" : (worst < margin - 0.5 ? "端に近い" : "内側")
+                            print("measured [sharecard-crop] \(label) \(crop.rawValue) gaps(L T R B)="
+                                  + gaps.map { String(format: "%.0f", Double($0)) }.joined(separator: " ")
+                                  + " margin=\(String(format: "%.1f", Double(margin))) \(verdict)")
+                            if crop.mustKeepText, worst < margin - 0.5 {
+                                failures.append("\(label): \(crop.rawValue) の切り取りで部品が\(verdict)（端からの距離 L T R B "
+                                                + gaps.map { String(format: "%.0f", Double($0)) }.joined(separator: " ") + "px）")
+                            }
+                        }
+                    }
                     if m.unsafePixels > 0 {
                         failures.append("\(label): 安全域の外に部品 \(m.unsafePixels)px（端からの距離 \(edgeText)）")
                     }

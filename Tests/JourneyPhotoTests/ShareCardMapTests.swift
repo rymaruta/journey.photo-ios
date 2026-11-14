@@ -633,8 +633,9 @@ final class ShareCardMapTests: XCTestCase {
         let dividerTop = L.headerCenter - 29, dividerBottom = L.headerCenter + 28
         XCTAssertEqual(dividerTop - inner, 51.5, accuracy: 1, "額縁の内側から 51.5")
         XCTAssertEqual(L.header - dividerBottom, 52.5, accuracy: 1, "写真まで 52.5")
-        // 9:16 は見出しと写真を 207 下げ、字の上端をストーリーの上の帯（14% = 268.8）の 4 下へ
-        XCTAssertEqual(L.topShift(.story), 207)
+        // 9:16 は見出しと写真を 288 下げ、字の上端を安全域の上（フィードの 4:5 の切り取り 285 + 6% = 349.8）の 4 下へ。
+        // 2026-11-14 判断: 前の 207（上端 274）は Instagram・Facebook のフィードの 4:5 の切り取りで 6〜11px 欠けていた（run 1296）
+        XCTAssertEqual(L.topShift(.story), 288)
         XCTAssertEqual(L.topShift(.portrait), 0)
         XCTAssertEqual(L.topShift(.square), 0)
         XCTAssertGreaterThanOrEqual(L.headerCenter - L.headerTextHalfHeight + L.topShift(.story),
