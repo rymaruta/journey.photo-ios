@@ -67,6 +67,9 @@ enum TravelStory {
 
         var id: String { rawValue }
 
+        /// 選ぶ画面の選択肢の言葉（選ぶときは何を選ぶか分かる言葉が要る）。
+        /// **券面には描かない**（2026-11-14 判断: owner「今ここ」がダサいのでなくていい。場面は券面の
+        /// 眉ラベル `head`（TO・NOW・FROM）で伝わる。「今ここ」だけ外すと券面の形が場面ごとに割れるので3つともそろえて外した）
         var label: String {
             switch self {
             case .go: return L("行ってきます", "Off I go")
@@ -389,9 +392,9 @@ enum TravelStory {
 
     // MARK: - 搭乗券の文字
 
+    /// 搭乗券の券面の字。**場面の日本語（`Phase.label`）は持たない**——券面の右上は空けて、場面は `head` で言う
+    /// （2026-11-14 判断。上の段は「JOURNEY PASS」だけ）
     struct PassTexts: Equatable {
-        /// 右上（明朝）の場面の名前
-        let phaseLabel: String
         /// 左の小さな字（TO・NOW・FROM）
         let head: String
         /// 大きな字（ラテン文字）
@@ -426,8 +429,7 @@ enum TravelStory {
             let name = facts.name.trimmingCharacters(in: .whitespacesAndNewlines)
             if !name.isEmpty { foot.append(.init(key: "PASSENGER", value: name)) }
         }
-        return PassTexts(phaseLabel: phase.label,
-                         head: phase.head,
+        return PassTexts(head: phase.head,
                          big: texts.placeLatin ?? "ON THE ROAD",
                          local: texts.place ?? onTheRoad,
                          day: day,

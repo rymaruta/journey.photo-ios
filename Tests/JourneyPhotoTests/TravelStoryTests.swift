@@ -234,6 +234,51 @@ final class TravelStoryTests: XCTestCase {
         XCTAssertEqual(TravelStory.pass(noDistance, choice: choice, texts: texts).foot.map(\.key), ["PHOTOS"])
     }
 
+    /// 搭乗券の券面に場面の日本語（行ってきます・今ここ・ただいま）を描かない（2026-11-14 判断・owner
+    /// 「今ここ」がダサいのでなくていい）。3つの場面とも、券面に載る字のどれにも入っていない。場面は眉ラベルで言う
+    func testPassFaceHasNoPhaseWords() throws {
+        let texts = TravelStory.Texts(place: "石川県", placeLatin: "ISHIKAWA", date: "2026.11.11",
+                                      postmark: "26.11.11", tripDay: 2)
+        let facts = TravelStory.Facts(location: "輪島市, 石川県, 日本", takenDay: nil, name: "mika")
+        var choice = TravelStory.Choice()
+        choice.kind = .pass
+        let words = ["行ってきます", "今ここ", "ただいま", "Off I go", "Right now", "Back home"]
+        var heads: [String] = []
+        for phase in TravelStory.Phase.allCases {
+            choice.phase = phase
+            let pass = TravelStory.pass(facts, choice: choice, texts: texts)
+            let onFace = strings(in: pass)
+            XCTAssertFalse(onFace.isEmpty)
+            for word in words + [phase.label] {
+                XCTAssertFalse(onFace.contains { $0.contains(word) }, "\(phase) の券面に場面の言葉「\(word)」がある: \(onFace)")
+            }
+            heads.append(pass.head)
+        }
+        XCTAssertEqual(heads, ["TO", "NOW", "FROM"], "場面は券面の眉ラベルで伝える")
+        // 描く所にも、場面の言葉を券面に置くコードが無い
+        let code = try source("Sources/JourneyPhoto/Services/TravelStoryRenderer.swift").components(separatedBy: "\n")
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+        XCTAssertFalse(code.contains("phaseLabel") || code.contains("phase.label") || code.contains("Phase"),
+                       "TravelStoryRenderer が場面の言葉を描いている")
+    }
+
+    /// 選ぶ画面の選択肢の言葉は残す（選ぶときは何を選ぶか分かる言葉が要る・2026-11-14 判断）
+    func testPhaseChoicesKeepTheirWords() throws {
+        XCTAssertEqual(TravelStory.Phase.allCases.map(\.label), [L("行ってきます", "Off I go"), L("今ここ", "Right now"),
+                                                                 L("ただいま", "Back home")])
+        let sheet = try source("Sources/JourneyPhoto/Features/Common/TravelStorySheet.swift")
+        let squashed = sheet.components(separatedBy: .whitespacesAndNewlines).joined()
+        XCTAssertTrue(squashed.contains("TravelStorySegment(items:TravelStory.Phase.allCases,selection:choice.phase,label:\\.label"),
+                      "旅のどこを選ぶ欄が、場面の言葉（Phase.label）で出ていない")
+    }
+
+    /// 値の中の文字をすべて集める（券面に載る字の見張り。欄を足しても漏れないように Mirror で辿る）
+    private func strings(in value: Any) -> [String] {
+        if let text = value as? String { return [text] }
+        return Mirror(reflecting: value).children.flatMap { strings(in: $0.value) }
+    }
+
     // MARK: - 入口の条件（2026-11-12 確かめ役「入口の条件を試験で縛る」）
 
     /// 写真の詳細: 絞った写真（全体に公開でない）はフィルムの帯に入れない。上の1枚が絞った写真なら何も出さない
@@ -348,7 +393,7 @@ final class TravelStoryTests: XCTestCase {
         for phase in TravelStory.Phase.allCases {
             choice.phase = phase
             let pass = TravelStory.pass(facts, choice: choice, texts: texts)
-            all += [pass.phaseLabel, pass.head, pass.big, pass.local] + pass.foot.flatMap { [$0.key, $0.value] }
+            all += [pass.head, pass.big, pass.local] + pass.foot.flatMap { [$0.key, $0.value] }
         }
         for value in all {
             XCTAssertFalse(value.contains("·") || value.contains("・"), "絵の文字に中黒がある: \(value)")
