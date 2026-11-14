@@ -163,15 +163,128 @@ final class FeedbackTests: XCTestCase {
         XCTAssertEqual(outbox.all(), [])
     }
 
-    func testRejectedDraftIsDroppedNotRetriedForever() async throws {
+    // MARK: - 断られた下書き（2026-11-14 判断・1.1.91: 消さずに残す・自動では送り直さない）
+
+    private func trailDefaults() -> UserDefaults {
+        let name = "FeedbackTests.trail.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: name) }
+        return defaults
+    }
+
+    /// 送り直しても届かない理由で断られても、**書いた本文は端末に残る**（前は消していた）。シートに戻せる
+    func testRejectedDraftIsKeptWithReason() async throws {
+        let outbox = FeedbackOutbox(root: root)
+        let d = FeedbackDraft(text: "地図が見づらい\n\n[終了の記録] x", screen: "settings", wantsReply: true,
+                              userId: "u1", typed: "地図が見づらい")
+        try outbox.save(d, photo: Data([7]))
+        let outcome = await outbox.deliver(d, currentUserId: "u1", trailDefaults: trailDefaults()) { _, _, _ in
+            throw APIError.server(status: 403, message: "断られました")
+        }
+        guard case .held(let reason) = outcome else { return XCTFail("\(outcome)") }
+        XCTAssertEqual(reason, "断られました")
+        XCTAssertFalse(outcome.isKept, "断られた1件の事情で、後ろの下書きの送り直しを止めない")
+        XCTAssertEqual(outbox.all().count, 1)
+        let held = try XCTUnwrap(outbox.held(for: "u1"))
+        XCTAssertEqual(held.id, d.id)
+        XCTAssertEqual(held.typed, "地図が見づらい")
+        XCTAssertEqual(held.rejectedReason, "断られました")
+        XCTAssertEqual(outbox.photo(for: d.id), Data([7]))
+        // 別の人には戻さない（ほかの人の本文を見せない）
+        XCTAssertNil(outbox.held(for: "u2"))
+        XCTAssertNil(outbox.held(for: nil))
+    }
+
+    /// 断られた下書きは、起動・前面・電波が戻ったときの自動の送り直しに乗らない。後ろの下書きは送る
+    func testFlushSkipsRejectedDraft() async throws {
+        let outbox = FeedbackOutbox(root: root)
+        let rejected = draft("断られた", createdAt: Date(timeIntervalSinceNow: -50))
+        try outbox.save(rejected, photo: nil)
+        _ = await outbox.deliver(rejected, currentUserId: "u1", trailDefaults: trailDefaults()) { _, _, _ in
+            throw APIError.server(status: 400, message: "形が違います")
+        }
+        try outbox.save(draft("後", createdAt: Date(timeIntervalSinceNow: -5)), photo: nil)
+        var tried: [String] = []
+        let sent = await outbox.flush(currentUserId: "u1", trailDefaults: trailDefaults()) { d, _, _ in
+            tried.append(d.text)
+        }
+        XCTAssertEqual(tried, ["後"])
+        XCTAssertEqual(sent, 1)
+        XCTAssertEqual(outbox.all().map(\.text), ["断られた"])
+    }
+
+    /// 「もう一度送る」: 同じ id で組み直して送れば届き、下書きは消える（サーバーでは1件のまま）
+    func testSendAgainUsesSameIdAndRemovesWhenDelivered() async throws {
+        let outbox = FeedbackOutbox(root: root)
+        let first = FeedbackSheet.draft(typed: "使いやすい", trail: nil, screen: "settings", wantsReply: false,
+                                        userId: "u1", heldId: nil)
+        try outbox.save(first, photo: nil)
+        _ = await outbox.deliver(first, currentUserId: "u1", trailDefaults: trailDefaults()) { _, _, _ in
+            throw APIError.server(status: 404, message: "見つかりません")
+        }
+        let held = try XCTUnwrap(outbox.held(for: "u1"))
+        let again = FeedbackSheet.draft(typed: held.typed ?? "", trail: nil, screen: "settings", wantsReply: false,
+                                        userId: "u1", heldId: held.id)
+        XCTAssertEqual(again.id, first.id)
+        XCTAssertNil(again.rejectedReason, "組み直した下書きは、もう断られた印を持たない")
+        outbox.remove(held.id)
+        try outbox.save(again, photo: nil)
+        var sentIds: [String] = []
+        let outcome = await outbox.deliver(again, currentUserId: "u1", trailDefaults: trailDefaults()) { d, _, _ in
+            sentIds.append(d.id)
+        }
+        XCTAssertEqual(outcome, .sent)
+        XCTAssertEqual(sentIds, [first.id])
+        XCTAssertEqual(outbox.all(), [])
+    }
+
+    /// 閉じたとき: 欄の中身に合わせて残す（写真を外していたら写真も消す）
+    func testUpdateHeldFollowsTheSheet() async throws {
         let outbox = FeedbackOutbox(root: root)
         let d = draft()
-        try outbox.save(d, photo: nil)
-        let outcome = await outbox.deliver(d, currentUserId: "u1") { _, _, _ in
-            throw APIError.server(status: 400, message: "ひとことを書いてください")
+        try outbox.save(d, photo: Data([1]))
+        _ = await outbox.deliver(d, currentUserId: "u1", trailDefaults: trailDefaults()) { _, _, _ in
+            throw APIError.decoding("x")
         }
-        guard case .dropped = outcome else { return XCTFail("\(outcome)") }
-        XCTAssertEqual(outbox.all(), [])
+        outbox.updateHeld(d.id, typed: "書き直した", wantsReply: false, photo: nil)
+        let held = try XCTUnwrap(outbox.held(for: "u1"))
+        XCTAssertEqual(held.typed, "書き直した")
+        XCTAssertFalse(held.wantsReply)
+        XCTAssertNotNil(held.rejectedReason)
+        XCTAssertNil(outbox.photo(for: d.id))
+    }
+
+    /// 断られた回は、種類・HTTP の状態・時刻だけを端末の記録に1行残す（本文・サーバーの文は入れない）。次の意見に添えられる
+    func testRejectionLeavesOneLineWithoutText() async throws {
+        let outbox = FeedbackOutbox(root: root)
+        let defaults = trailDefaults()
+        let d = draft("秘密の本文")
+        try outbox.save(d, photo: nil)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        _ = await outbox.deliver(d, currentUserId: "u1", now: now, trailDefaults: defaults) { _, _, _ in
+            throw APIError.server(status: 403, message: "サーバーの文")
+        }
+        let line = try XCTUnwrap(ExitTrail.feedbackFailure(defaults: defaults))
+        XCTAssertTrue(line.contains("kind=server status=403"), line)
+        XCTAssertTrue(line.contains("2027-01-15T08:00:00Z"), line)
+        XCTAssertFalse(line.contains("秘密の本文"))
+        XCTAssertFalse(line.contains("サーバーの文"))
+        XCTAssertEqual(ExitTrail.contents(defaults: defaults), .feedback)
+        let attachment = try XCTUnwrap(ExitTrail.attachment(defaults: defaults, limit: 400))
+        XCTAssertTrue(attachment.hasPrefix("[意見の送信] "), attachment)
+        XCTAssertEqual(FeedbackSheet.trailLabel(.feedback), "前回送れなかったときの記録を添える")
+        ExitTrail.clear(defaults: defaults)
+        XCTAssertNil(ExitTrail.feedbackFailure(defaults: defaults))
+    }
+
+    /// 前の版が書いた下書き（新しい欄が無い JSON）も読める
+    func testOldDraftJSONStillDecodes() throws {
+        let json = """
+        {"id":"0f8fad5b-d9cb-469f-a165-70867728950e","text":"a","screen":"settings","wantsReply":false,"createdAt":0}
+        """
+        let d = try JSONDecoder().decode(FeedbackDraft.self, from: Data(json.utf8))
+        XCTAssertNil(d.typed)
+        XCTAssertNil(d.rejectedReason)
     }
 
     func testTrimDropsOldAndOverflow() throws {
