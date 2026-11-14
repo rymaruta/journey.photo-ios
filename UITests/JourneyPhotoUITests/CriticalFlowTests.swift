@@ -120,8 +120,6 @@ final class CriticalFlowTests: XCTestCase {
     /// ホームの1枚目の写真を開く
     private func openFirstFeedPhoto(_ app: XCUIApplication) {
         tab(app, 0)
-        let recommended = app.buttons["おすすめ"].firstMatch
-        if recommended.waitForExistence(timeout: 5), recommended.isHittable { recommended.tap() }
         let photo = app.buttons["feed.photo"].firstMatch
         XCTAssertTrue(photo.waitForExistence(timeout: 30), "ホームに写真が出ない")
         reveal(photo, in: app, "ホームの1枚目")

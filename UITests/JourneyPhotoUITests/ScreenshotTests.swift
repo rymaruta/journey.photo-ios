@@ -46,15 +46,10 @@ final class ScreenshotTests: XCTestCase {
     /// 2026-10-18: 札の下端の「行きたい」（`home.spotShelf.wish`）まで画面に入れて撮る
     /// （ボタンの位置・余白を写真で確かめる）。ボタンが無い版では札だけを待つ
     ///
-    /// #417（2026-10-30）: 段は「おすすめ」の中・写真の大1→2→2 の後ろへ移った。**「おすすめ」に戻してから**送り
-    /// （前の手順で「フォロー中」を選んでいる）、送る回数の上限を増やした。段まで送った所で、
-    /// **切り替えが見出しの下に留まっている**（「新着」が押せる）ことも確かめる（⑧）
+    /// #417（2026-10-30）: 段は写真の大1→2→2 の後ろへ移った。送る回数の上限を増やした。
+    /// 札 #595（2026-11-13）: ホームは切り替えの無い1本の並び。下へ送った所でも**切り替えの札が出ない**ことと、
+    /// 写真が続いていることを確かめる（前は「切り替えが見出しの下に留まる」を確かめていた）
     private func shootSpotShelf(_ app: XCUIApplication) {
-        let recommended = app.buttons["home.feed.recommended"].firstMatch
-        if recommended.exists, recommended.isHittable {
-            recommended.tap()
-            Thread.sleep(forTimeInterval: 2)
-        }
         // 🔴 段は画面の下（約 1000pt）なので、**在って押せるまで送る**（先に待って見つからず黙って抜けていた・PR #422 の確かめ）。
         // 「行きたい」（札の下端）が在ればそれを、無ければ札を待つ
         let photo = app.buttons["home.spotShelf.card"].firstMatch
@@ -75,22 +70,22 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 4)
             shoot(app, "10d-ホーム（いまの季節のスポット・作例）")
         }
-        // ⑧ 下へ送った後も、切り替えは見出しの下に留まって押せる。**段の無い日も確かめる**（数回は必ず送る）
+        // 下へ送った後も、写真が続き、切り替えの札は出ない。**段の無い日も確かめる**（数回は必ず送る）
         while pushes < Self.pinCheckPushes {
             low.press(forDuration: 0.05, thenDragTo: high)
             Thread.sleep(forTimeInterval: 1)
             pushes += 1
         }
-        let latest = app.buttons["home.feed.latest"].firstMatch
-        XCTAssertTrue(latest.exists && latest.isHittable, "下へ送ったら切り替えが流れて消えた（見出しの下に留まらない）")
-        shoot(app, "10f-ホーム（下へ送った後・切り替えが留まる）")
+        XCTAssertFalse(app.buttons["home.feed.latest"].firstMatch.exists, "ホームに切り替えの札（新着）が出ている（札 #595 でやめた）")
+        XCTAssertTrue(app.buttons["feed.photo"].firstMatch.exists, "下へ送ったら写真が無い")
+        shoot(app, "10f-ホーム（下へ送った後・1本の並び）")
         for _ in 0..<pushes {
             high.press(forDuration: 0.05, thenDragTo: low)
             Thread.sleep(forTimeInterval: 1)
         }
     }
 
-    /// ⑧ の確かめで、段が無い日でも必ず送る回数（1画面ぶんより下へ）
+    /// 下へ送った所の確かめで、段が無い日でも必ず送る回数（1画面ぶんより下へ）
     private static let pinCheckPushes = 4
 
     /// 季節の段まで送る回数の上限（短い引き＝画面の 35%）。#417 で段が写真の5枚の後ろへ移ったので 3 から増やした
@@ -619,34 +614,21 @@ final class ScreenshotTests: XCTestCase {
             let signedOut = app.descendants(matching: .any)
                 .matching(identifier: "signin.form").firstMatch.exists
             shoot(app, "1\(index)-\(name)\(signedOut ? "（未ログイン＝ログイン画面）" : "")")
-            // **「新着」を選んだ直後**（2026-10-11）。切り替えのすぐ下に新着の写真が並ぶ
-            // （前は「撮影地を探す／写真から探す」の札と、おすすめの横並びが挟まり、結果がずっと下だった）。
-            // 切り替えが出ていなければ撮らない。押せたのに横並び・札が出ていたら落とす
             // 見出しの帯はどのタブも同じ中身（2026-10-21）。探す・マップも寸法を残して見比べる
             if name == "ホーム" || name == "探す" || name == "マップ" { shootHeaderBand(app, tab: "1\(index)e-\(name)") }
             if name == "ホーム" {
-                let latest = app.buttons["home.feed.latest"].firstMatch
-                if latest.waitForExistence(timeout: 5), latest.isHittable {
-                    latest.tap()
-                    Thread.sleep(forTimeInterval: 3)
-                    shoot(app, "10b-ホーム（新着を選んだ直後）")
-                    XCTAssertFalse(app.descendants(matching: .any)["home.featured"].firstMatch.exists,
-                                   "「新着」なのに、おすすめの横並びが切り替えの下に挟まっている")
-                    XCTAssertFalse(app.buttons["home.exploreMap"].firstMatch.exists,
-                                   "消したはずの「撮影地を探す」の札が出ている")
+                // 札 #595（2026-11-13 owner 決定）: 「おすすめ・フォロー中・新着」の切り替えはやめ、1本の並びにした。
+                // 前は「新着」を押した直後（10b）と「フォロー中」が空の回（10c）を撮っていた。いまは札が無いことを確かめ、
+                // フォロー中の人の新しい写真の段（`home.following`）が出ている日はそれを撮る。空の知らせは出た日だけ撮る
+                for id in ["home.feed.recommended", "home.feed.following", "home.feed.latest"] {
+                    XCTAssertFalse(app.buttons[id].firstMatch.exists, "ホームに切り替えの札（\(id)）が出ている")
                 }
-                // フォロー中が0件の回は、行き止まりではなく発見へのCTAが出ることも残す
-                // 「フォロー中」は点のある日に読み上げの名前が「フォロー中・新しい写真あり」になる（#417 ⑨）。道しるべで探す
-                let following = app.buttons["home.feed.following"].firstMatch
-                if following.exists, following.isHittable {
-                    following.tap()
-                    Thread.sleep(forTimeInterval: 2)
-                    if app.buttons["home.emptyAction"].firstMatch.exists {
-                        shoot(app, "10c-ホーム（空フィードの次の行動）")
-                    } else if app.descendants(matching: .any)["home.suggested"].firstMatch.exists {
-                        // 1.1.83（資料④）: 並べる人がいれば「写真や人を探す」の代わりに「おすすめの人」
-                        shoot(app, "10c-ホーム（フォロー中が空・おすすめの人）")
-                    }
+                XCTAssertFalse(app.buttons["home.exploreMap"].firstMatch.exists, "消したはずの「撮影地を探す」の札が出ている")
+                if app.descendants(matching: .any)["home.following"].firstMatch.exists {
+                    shoot(app, "10b-ホーム（フォロー中の人の新しい写真）")
+                }
+                if app.buttons["home.emptyAction"].firstMatch.exists {
+                    shoot(app, "10c-ホーム（写真が無い日の次の行動）")
                 }
             }
             if name == "ホーム" { shootSpotShelf(app) }
@@ -809,13 +791,6 @@ final class ScreenshotTests: XCTestCase {
         // 巡回は「出なければ撮らない」ので、赤くもならない。
         tabBar.buttons.element(boundBy: 0).tap()
         Thread.sleep(forTimeInterval: 2)
-        // **フィードを「おすすめ」へ戻す。** 一巡の `10c` が「フォロー中」に切り替えることがある
-        // （鍵なしログインのフォロー一覧は空＝`feed.photo` が出ない）。
-        let recommended = app.buttons["おすすめ"].firstMatch
-        if recommended.waitForExistence(timeout: 5), recommended.isHittable {
-            recommended.tap()
-            Thread.sleep(forTimeInterval: 2)
-        }
         // **写真そのものを名指しで押す**（`feed.photo`）。
         // 位置で探していたときは、今日のテーマの「参加する」に当たって
         // **ログイン画面を「写真の詳細」として撮って**いた（run 49）。
@@ -6678,149 +6653,145 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(gap >= 0 && gap < 240, "深く送ってから替えても頭から出ない（札の行と格子の1枚目の間 \(gap)）")
     }
 
-    /// **ホームのフィードの切り替えもマイページと同じ手ざわり**（2026-10-31 #426・`ProfileTabBar`・`ProfileTabPager`）。
-    /// 札の行を左へ払うと「フォロー中」、中身を左へ払うと「新着」、札を押すと「おすすめ」に戻る。どの替え方でも
-    /// 札の行は跳ばない。下へ送ると札の行は見出しの下に留まり、留まったまま中身を払っても替わって、札の行は動かない。
-    /// 🔴 札が見つからない・払って替わらない・札の行が跳ぶ・留まらないときは**落とす**（黙って通らない）
-    func testSwipesHomeFeedTabs() {
-        swipesHomeFeedTabs(noLift: false)
+    /// **ホームはタブの無い1本の並び**（札 #595・2026-11-13 owner 決定）。前の `testSwipesHomeFeedTabs`
+    /// （札の行・中身を払って「おすすめ・フォロー中・新着」を替える・留まる札の行）を置き換えた。
+    /// 切り替えの札が無い・下へ送ると写真が続き、読めた新着を使い切ったら続きのページを読む（読んだページの数が増える）・
+    /// 「ホーム」をもう一度押すと頭へ戻る、を確かめる。
+    /// 🔴 写真が出ない・送れない・続きを読まない・頭へ戻らないときは**落とす**（黙って通らない）
+    func testScrollsHomeSingleFeed() {
+        scrollsHomeSingleFeed(noLift: false)
     }
 
     /// 事実取り（2026-11-12・run 1171）: 写真の札の「手に取って運ぶ」の身振り（`HomeMosaic.liftGesture`）を外した版。
-    /// 外した版だけ送れれば、身振りが ScrollView の払いを奪っている（`-JPPreviewNoLift`・UI テストのときだけ）
-    func testSwipesHomeFeedTabsWithoutLift() {
-        swipesHomeFeedTabs(noLift: true)
+    /// 外した版だけ送れれば、身振りが ScrollView の送りを奪っている（`-JPPreviewNoLift`・UI テストのときだけ）。
+    /// 前の `testSwipesHomeFeedTabsWithoutLift` を置き換えた
+    func testScrollsHomeSingleFeedWithoutLift() {
+        scrollsHomeSingleFeed(noLift: true)
     }
 
-    private func swipesHomeFeedTabs(noLift: Bool) {
+    private func scrollsHomeSingleFeed(noLift: Bool) {
         let app = XCUIApplication()
         if noLift { app.launchArguments += ["-JPPreviewNoLift", "YES"] }
-        XCTContext.runActivity(named: "ホームの切り替えを送る: noLift=\(noLift)") { _ in }
+        XCTContext.runActivity(named: "ホームの1本の並びを送る: noLift=\(noLift)") { _ in }
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
-        // 札の行の位置の数を見えない要素に出す（#426 Mac で札の行が動いた件を数で見る）
+        // 1本の並びの数（読んだページ・並びの数・続きの目印）を見えない要素に出す
         app.launchArguments += ["-JPPreviewFeedProbe", "YES"]
         app.launch()
         defer { app.terminate() }
 
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
-        let recommended = app.buttons["home.feed.recommended"].firstMatch
-        let following = app.buttons["home.feed.following"].firstMatch
-        let latest = app.buttons["home.feed.latest"].firstMatch
-        XCTAssertTrue(recommended.waitForExistence(timeout: 30), "ホームの切り替え（おすすめ）が見つからない")
-        guard recommended.exists else { return }
-        // 写真が並ぶまで待つ（中身が無いと払う場所が無い）
-        _ = app.buttons["feed.photo"].firstMatch.waitForExistence(timeout: 20)
-        let origin = app.coordinate(withNormalizedOffset: .zero)
-        let width = app.frame.width
-        let height = app.frame.height
-        // 札の行を画面の上のほう（高さの 30%）まで、勢いを付けずに引き上げる（`swipeUp` は勢いで飛ばす）
-        let lift = recommended.frame.minY - height * 0.3
-        // 2026-11-12（run 1164 の 2/3 で「切り替えが見えるところまで送れない」）: 推定で直さず、送る前後の位置と、
-        // 押した所に何があったか（手に取って運ぶの幕・上の札）を記録する
-        let before = recommended.frame
-        let liftOverlay = app.descendants(matching: .any)["lift.faces"].firstMatch
-        if lift > 0 {
-            let from = origin.withOffset(CGVector(dx: width * 0.5, dy: height * 0.8))
-            let to = origin.withOffset(CGVector(dx: width * 0.5, dy: height * 0.8 - lift))
-            from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.5)
-            Thread.sleep(forTimeInterval: 1)
+        let photo = app.buttons["feed.photo"].firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout: 30), "ホームに写真が出ない")
+        guard photo.exists else { return }
+        for id in ["home.feed.recommended", "home.feed.following", "home.feed.latest", "home.feed.pinned"] {
+            XCTAssertFalse(app.descendants(matching: .any)[id].firstMatch.exists, "ホームに切り替えの札（\(id)）が出ている")
         }
-        XCTContext.runActivity(named: "ホームの切り替えを送る: screen=\(app.frame) / before=\(before) / lift=\(lift)"
-            + " / after=\(recommended.frame) / hittable=\(recommended.isHittable) / liftOverlay=\(liftOverlay.exists)"
-            + " / topCards=\(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'home.'")).count)"
-            + " / ids=\(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'home.'")).allElementsBoundByIndex.prefix(30).map { "\($0.identifier)@\(Int($0.frame.minY))" })") { _ in }
-        XCTAssertTrue(recommended.isHittable, "切り替えが見えるところまで送れない")
-        guard recommended.isHittable else { return }
-        XCTAssertTrue(recommended.isSelected, "開いたときに「おすすめ」を選んでいない")
-        let rowY = recommended.frame.minY
 
-        /// 札の行の位置の数をログに残す（`home.feed.probe`・UI テストのときだけ出る）
+        /// 1本の並びの数をログに残し、値を返す（`home.feed.probe`・UI テストのときだけ出る）
         let probe = app.descendants(matching: .any)["home.feed.probe"].firstMatch
-        func logProbe(_ step: String) {
+        func readProbe(_ step: String) -> [String: String] {
             let value = probe.exists ? ((probe.value as? String) ?? "-") : "probe missing"
-            let line = "[feedProbe] \(step): rowMinY=\(recommended.frame.minY) \(value)"
+            let line = "[feedProbe] \(step): \(value)"
             print(line)
             XCTContext.runActivity(named: line) { _ in }
             let note = XCTAttachment(string: line)
             note.name = "feedProbe \(step)"
             note.lifetime = .keepAlways
             add(note)
+            var fields: [String: String] = [:]
+            for pair in value.split(separator: " ") {
+                let kv = pair.split(separator: "=", maxSplits: 1)
+                if kv.count == 2 { fields[String(kv[0])] = String(kv[1]) }
+            }
+            return fields
         }
+        let start = readProbe("0-start")
+        // 送る前は1ページだけ（続きの目印が画面の外で読んでいない・#426）
+        let startPages = Int(start["pages"] ?? "") ?? -1
+        XCTAssertTrue((0...1).contains(startPages), "送る前に続きのページを読んだ（pages=\(startPages)・目印が画面の外で動いた）")
+        shoot(app, "10g-ホーム（1本の並び・開いたところ）")
 
-        /// 画面の横幅の 6 割を、指定の高さで払う（左へ払うと右隣の札）
-        func swipe(left: Bool, atY y: CGFloat) {
-            let from = origin.withOffset(CGVector(dx: left ? width * 0.8 : width * 0.2, dy: y))
-            let to = origin.withOffset(CGVector(dx: left ? width * 0.2 : width * 0.8, dy: y))
-            from.press(forDuration: 0.05, thenDragTo: to)
-            Thread.sleep(forTimeInterval: 1.5)
-        }
-
-        // 送り始めの姿（すれちがいの帯の枚数・上の部品の高さ・中身の上端。2026-11-13 PR #589 で始めの札の行が 100 低かった）
-        logProbe("0-start")
-
-        // 1. 札の行の上を左へ払う → フォロー中
-        swipe(left: true, atY: recommended.frame.midY)
-        XCTAssertTrue(following.isSelected, "札の行を左へ払っても「フォロー中」に替わらない")
-        XCTAssertEqual(recommended.frame.minY, rowY, accuracy: 2, "払って替えたら札の行の位置が跳んだ")
-        shoot(app, "10g-ホーム（札の行を払ってフォロー中へ）")
-
-        // 2. 中身の上を左へ払う → 新着（フォロー中は写真が無い人もいるので、札の行の 1.5 段下＝空の知らせの上でも効く）
-        swipe(left: true, atY: min(height * 0.85, recommended.frame.maxY + 150))
-        XCTAssertTrue(latest.isSelected, "中身を左へ払っても「新着」に替わらない")
-        XCTAssertEqual(recommended.frame.minY, rowY, accuracy: 2, "中身を払って替えたら札の行の位置が跳んだ")
-        shoot(app, "10h-ホーム（中身を払って新着へ）")
-
-        // 3. 押して戻す → おすすめ（下線はばねで滑る。押した後も札の行は同じ位置）
-        recommended.tap()
-        Thread.sleep(forTimeInterval: 1.5)
-        XCTAssertTrue(recommended.isSelected, "「おすすめ」を押しても戻らない")
-        XCTAssertEqual(recommended.frame.minY, rowY, accuracy: 2, "押して替えたら札の行の位置が跳んだ")
-
-        // 4. 下へ送ると札の行は見出しの下に留まる。留まったまま中身を払っても替わり、札の行は動かない。
-        // 「新着」で送る——「おすすめ」には横に流れる列（PICKS・季節の撮影スポット）があり、その上の指は列に渡す
-        latest.tap()
-        Thread.sleep(forTimeInterval: 2)
-        XCTAssertTrue(latest.isSelected, "「新着」を押しても替わらない")
-        // 新着を押した直後・送る前: 読んだページは1ページのまま（続きの目印が画面の外で読んでいない・#426）
-        logProbe("4-latest-before-push")
-        if let value = probe.value as? String, let pages = value.components(separatedBy: " ")
-            .first(where: { $0.hasPrefix("pages=") }) {
-            let count = Int(pages.dropFirst("pages=".count)) ?? -1
-            XCTAssertTrue((0...1).contains(count), "送る前に続きのページを読んだ（\(pages)・目印が画面の外で動いた）")
-        }
-        let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
-        let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
-        for _ in 0..<Self.pinCheckPushes {
+        // 下へ送る。勢いを付けない短い引きで、続きの目印に届くまで（上限あり）
+        let firstY = photo.frame.minY
+        let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+        let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
+        var pages = startPages
+        var more = start["more"] == "true"
+        for push in 0..<Self.singleFeedPushLimit {
             low.press(forDuration: 0.05, thenDragTo: high)
-            Thread.sleep(forTimeInterval: 1)
+            Thread.sleep(forTimeInterval: 0.6)
+            if push == 2 {
+                XCTAssertLessThan(photo.frame.minY, firstY, "下へ送れない（1枚目の写真が動かない）")
+                shoot(app, "10h-ホーム（1本の並びを下へ送った）")
+            }
+            let now = readProbe("1-push\(push)")
+            pages = Int(now["pages"] ?? "") ?? pages
+            more = now["more"] == "true"
+            if pages > startPages || !more { break }
         }
-        XCTAssertTrue(latest.exists && latest.isHittable, "下へ送ったら切り替えが流れて消えた（見出しの下に留まらない）")
-        XCTAssertLessThan(recommended.frame.minY, rowY, "送っても札の行が上へ動かない（送れていない）")
-        guard latest.isHittable, recommended.frame.minY < rowY else { return }
-        let pinnedY = recommended.frame.minY
-        logProbe("4-pinned-before")
-        swipe(left: false, atY: height * 0.6)
-        logProbe("4-after-swipe")
-        XCTAssertTrue(following.isSelected, "留まった札の下の中身を右へ払っても「フォロー中」に替わらない")
-        XCTAssertEqual(recommended.frame.minY, pinnedY, accuracy: 2, "留まったまま替えたら札の行が動いた")
-        shoot(app, "10i-ホーム（留まったまま払って替える）")
-        latest.tap()
+        _ = readProbe("2-after-push")
+        if start["more"] == "true" {
+            XCTAssertGreaterThan(pages, startPages, "下まで送っても続きのページを読まない")
+        }
+        XCTAssertFalse(app.descendants(matching: .any)["home.feed.latest"].firstMatch.exists, "送った先に切り替えの札が出ている")
+
+        // 「ホーム」をもう一度押すと頭へ戻る（`TabRouter.homeTopRequests`）。中身の上端（probe の `top`）も開いたときと同じ
+        app.tabBars.firstMatch.buttons.element(boundBy: 0).tap()
         Thread.sleep(forTimeInterval: 1.5)
-        logProbe("4-after-tap-latest")
-        XCTAssertTrue(latest.isSelected, "留まった「新着」を押しても戻らない")
-        // 5. 留まった札の行の上で払っても替わる（中身の払い1つが受ける・指を取り合わない・#426 確かめ役）
-        swipe(left: false, atY: recommended.frame.midY)
-        logProbe("5-after-row-swipe")
-        XCTAssertTrue(following.isSelected, "留まった札の行の上を右へ払っても「フォロー中」に替わらない")
-        XCTAssertEqual(recommended.frame.minY, pinnedY, accuracy: 2, "留まった札の行の上で払ったら札の行が動いた")
-        // 替えた札は頭から: 頭へ送ったので札の行はまだ留まりの位置（見出しの下）に居る
-        XCTAssertEqual(recommended.frame.minY, pinnedY, accuracy: 2, "留まったまま押して替えたら札の行が動いた")
+        let back = readProbe("3-home-again")
+        XCTContext.runActivity(named: "頭へ戻った: photoY=\(photo.frame.minY) firstY=\(firstY) top=\(back["top"] ?? "-") startTop=\(start["top"] ?? "-")") { _ in }
+        XCTAssertEqual(photo.frame.minY, firstY, accuracy: 4, "「ホーム」を押しても頭へ戻らない")
+        if let top = Double(back["top"] ?? ""), let startTop = Double(start["top"] ?? "") {
+            XCTAssertEqual(top, startTop, accuracy: 1, "「ホーム」を押した後の中身の上端が、開いたときと違う")
+        }
+        shoot(app, "10i-ホーム（「ホーム」を押して頭へ）")
+    }
+
+    /// 1本の並びを下へ送る上限（画面の 60% の引き）。1ページ（30 枚）で並びはおよそ 120 個ぶんになる
+    private static let singleFeedPushLimit = 60
+
+    /// 1本の並び（札 #595）で、**新着の作者（自分以外でいちばん新しく載せた人）の写真の札**を画面に出して返す。
+    /// 前は「新着」の札を押して1枚目を開いていた。札は `home.feed.probe` の `newestOther`（無ければ `firstLatest`）。
+    /// 見本のストーリーは自分以外の新着の作者に付けてある（`PreviewBackend.previewStories`）。
+    /// 2026-11-14（Mac の回 1239）: 新着の1枚目が見本の利用者自身の写真の日があり、`firstLatest` だと自分の写真を開いて
+    /// 紹介のストーリーに届かなかった。出せなければ nil
+    private func revealNewestFeedTile(_ app: XCUIApplication) -> XCUIElement? {
+        let probe = app.descendants(matching: .any)["home.feed.probe"].firstMatch
+        _ = app.buttons["feed.photo"].firstMatch.waitForExistence(timeout: 20)
+        var index = 0
+        if probe.waitForExistence(timeout: 10), let value = probe.value as? String {
+            var fields: [String: Int] = [:]
+            for pair in value.split(separator: " ") {
+                let kv = pair.split(separator: "=", maxSplits: 1)
+                if kv.count == 2, let n = Int(kv[1]) { fields[String(kv[0])] = n }
+            }
+            if let other = fields["newestOther"], other >= 0 {
+                index = other
+            } else if let first = fields["firstLatest"], first >= 0 {
+                index = first
+            }
+            XCTContext.runActivity(named: "新着の札: index=\(index) probe=\(value)") { _ in }
+        }
+        let photo = app.buttons.matching(identifier: "feed.photo").element(boundBy: index)
+        let lowPoint = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+        let highPoint = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+        var pushes = 0
+        while !(photo.waitForExistence(timeout: 3) && photo.isHittable), pushes < Self.shelfPushLimit {
+            lowPoint.press(forDuration: 0.05, thenDragTo: highPoint)
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        // 事実取り（2026-11-14 Mac の回 1246）: 開く札の読み上げ（題・作者）と位置を残す
+        let picked = "[newestTile] index=\(index) label=\(photo.exists ? photo.label : "-") frame=\(photo.exists ? String(describing: photo.frame) : "-")"
+        print(picked)
+        XCTContext.runActivity(named: picked) { _ in }
+        return photo.exists && photo.isHittable ? photo : nil
     }
 
     /// **区分の札は送ると上に留まる**（2026-10-30 owner 採用 #418・板「マイページ」の状態「区分の札が上に留まった」）。
@@ -8464,6 +8435,8 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewStories", "YES"]
+        // 新着の札を探す目印（`revealNewestFeedTile`・札 #595）
+        app.launchArguments += ["-JPPreviewFeedProbe", "YES"]
         app.launch()
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
@@ -8489,24 +8462,9 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 2)
         }
 
-        // 写真の詳細の作者の顔。**切り替えの「新着」の1枚目から開く**（見本のストーリーは新着の作者に付けてある・
-        // `PreviewBackend.previewStories`）。2026-10-30（#417 ⑦）に「NEW」の段を外し、新着は切り替えの「新着」に一本化した。
-        // 1枚目が画面の下なら、同じ短い引きで送る（上限あり）
-        let latestTab = app.buttons["home.feed.latest"].firstMatch
-        if latestTab.waitForExistence(timeout: 20), latestTab.isHittable {
-            latestTab.tap()
-            Thread.sleep(forTimeInterval: 3)
-        }
-        let photo = app.buttons["feed.photo"].firstMatch
-        let lowPoint = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
-        let highPoint = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
-        var photoPushes = 0
-        while photo.waitForExistence(timeout: 10), !photo.isHittable, photoPushes < Self.shelfPushLimit {
-            lowPoint.press(forDuration: 0.05, thenDragTo: highPoint)
-            Thread.sleep(forTimeInterval: 1)
-            photoPushes += 1
-        }
-        guard photo.exists, photo.isHittable else {
+        // 写真の詳細の作者の顔。**新しく載った写真から開く**（見本のストーリーは新着の作者に付けてある・
+        // `PreviewBackend.previewStories`）。札 #595 で「新着」の札は無くなり、新着は1本の並びに混ざる（`revealNewestFeedTile`）
+        guard let photo = revealNewestFeedTile(app) else {
             shoot(app, "60b-ストーリーの輪（ホームに写真が出ない）")
             return
         }
@@ -8571,6 +8529,8 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewStories", "YES"]
+        // 新着の札を探す目印（`revealNewestFeedTile`・札 #595）
+        app.launchArguments += ["-JPPreviewFeedProbe", "YES"]
         if sharedStory { app.launchArguments += ["-JPPreviewSharedStory", "YES"] }
         // 入口の案内「写真を押してひとこと」（端末に1回だけ）は撮らない（札の絵に被る）
         app.launchArguments += ["-story.captionHintShown", "YES"]
@@ -8582,23 +8542,10 @@ final class ScreenshotTests: XCTestCase {
         return app
     }
 
-    /// 切り替えの「新着」の1枚目の写真の詳細を開く（見本のストーリーは新着の作者に付けてある）。開けなければ false
+    /// 新しく載った写真の詳細を開く（見本のストーリーは新着の作者に付けてある・札 #595 で「新着」の札は無くなった）。
+    /// 開けなければ false
     private func openFirstLatestPhoto(_ app: XCUIApplication) -> Bool {
-        let latestTab = app.buttons["home.feed.latest"].firstMatch
-        if latestTab.waitForExistence(timeout: 20), latestTab.isHittable {
-            latestTab.tap()
-            Thread.sleep(forTimeInterval: 3)
-        }
-        let photo = app.buttons["feed.photo"].firstMatch
-        let lowPoint = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
-        let highPoint = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
-        var pushes = 0
-        while photo.waitForExistence(timeout: 10), !photo.isHittable, pushes < Self.shelfPushLimit {
-            lowPoint.press(forDuration: 0.05, thenDragTo: highPoint)
-            Thread.sleep(forTimeInterval: 1)
-            pushes += 1
-        }
-        guard photo.exists, photo.isHittable else { return false }
+        guard let photo = revealNewestFeedTile(app) else { return false }
         photo.tap()
         return true
     }
@@ -8739,22 +8686,53 @@ final class ScreenshotTests: XCTestCase {
     /// 2本目へ送って「写真を見る」（63e）→ 写真の詳細（63f）を撮る。**出なければ撮らずに抜ける**
     func testCapturesSharedPhotoStory() {
         guard let app = launchSNSPreview(sharedStory: true), openFirstLatestPhoto(app) else { return }
+        /// 事実取り（2026-11-14 Mac の回 1246）: どの写真の詳細で、どの輪を押し、ストーリーの何本目が出ていたかを残す
+        func note(_ step: String) {
+            let author = app.buttons["photo.author"].firstMatch
+            let rings = app.buttons.matching(identifier: "story.avatar.ring").allElementsBoundByIndex
+                .map { "\($0.label)@\(Int($0.frame.minY))\($0.isHittable ? "" : "(hidden)")" }
+            let probe = app.descendants(matching: .any)["story.viewer.probe"].firstMatch
+            let line = "[sharedStory] \(step): author=\(author.exists ? author.label : "-") rings=\(rings)"
+                + " viewer=\(probe.exists ? ((probe.value as? String) ?? "-") : "-")"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+            let attachment = XCTAttachment(string: line)
+            attachment.name = "sharedStory \(step)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        note("1-detail")
         let ring = app.buttons["story.avatar.ring"].firstMatch
         scrollUntilHittable(app, ring, limit: 3)
         guard ring.exists, ring.isHittable else {
             shoot(app, "63e-ストーリー（作者の顔に輪が無い）")
             return
         }
+        note("2-before-ring (押す輪: \(ring.label))")
         ring.tap()
         Thread.sleep(forTimeInterval: 3)
+        note("3-opened")
         let viewPhoto = app.buttons["story.viewer.sharedPhoto"].firstMatch
-        // 1本目には付いていない。右を叩いて2本目へ
-        if !viewPhoto.waitForExistence(timeout: 3) {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.45)).tap()
-        }
-        let shown = viewPhoto.waitForExistence(timeout: 10)
+        // 1本目には付いていない。**叩かずに、2本目へ自分で送られるのを待つ**（写真の秒数は 3〜15・読み込みも待つ）。
+        // 2026-11-14 判断（回 1246 が落ち・1249 が通った値から）: 1249 では輪を押してから約6秒で 1本目（preview-story-1・
+        // 紹介なし）→ 2本目（preview-story-1b・紹介あり）へ自分で送られた。1246 は押してから8秒たっても2本目が出ず、
+        // 約10秒の所で決まった時間のあとに右を叩いていた。叩いた時に2本目へ送られていれば、叩きで2本目を飛ばして
+        // 束が閉じる（その後10秒「写真を見る」が出ないのと合う）。決まった時間で叩くのは、この飛ばしと競うのでやめた
+        let shown = viewPhoto.waitForExistence(timeout: 25)
+        if !shown { note("4-not-advanced") }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, shown ? "63e-ストーリー（写真を見る）" : "63e-ストーリー（写真を見るが出ない）")
+        if !shown {
+            note("5-failed")
+            // 失敗した回は画面の木も残す（ログで読めるように、ストーリーと写真の詳細の行だけ）
+            let tree = app.debugDescription
+            let lines = tree.components(separatedBy: "\n").filter { $0.contains("story") || $0.contains("photo.") }
+            print("[sharedStory] tree:\n" + lines.prefix(60).joined(separator: "\n"))
+            let attachment = XCTAttachment(string: tree)
+            attachment.name = "sharedStory tree"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
         guard shown else { return XCTFail("紹介のストーリーに「写真を見る」が出ない") }
         XCTAssertGreaterThanOrEqual(viewPhoto.frame.height, 44, "「写真を見る」の的が 44pt 未満")
         viewPhoto.tap()
@@ -9159,9 +9137,10 @@ final class ScreenshotTests: XCTestCase {
 
     // MARK: - 資料「SNS をもっと SNS に」（1.1.83・2026-11-12）
 
-    /// **④ ホームの「フォロー中」が空のときの「おすすめの人」**。見本の通信に `-JPPreviewFollowNone` を足すと、
-    /// 誰もフォローしていないことにする（`PreviewBackend`）。「フォロー中」を選んで並び（120a）→ 1人をフォローして
-    /// 「フォロー中の写真を見る」が出た所（120b）を撮る。**出なければ撮らずに抜ける**
+    /// **④ 誰もフォローしていない人のホームの「おすすめの人」**。見本の通信に `-JPPreviewFollowNone` を足すと、
+    /// 誰もフォローしていないことにする（`PreviewBackend`）。札 #595 で「フォロー中」の札は無くなり、おすすめの人は
+    /// 1本の並びの中（写真のひと回りと季節の段の後ろ）に出る。送って並び（120a）→ 1人をフォローして
+    /// 「フォロー中の写真を見る」が出た所（120b）→ 押して並びの頭へ戻った所（120c）を撮る。**出なければ撮らずに抜ける**
     func testCapturesSuggestedPeople() {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -9176,17 +9155,12 @@ final class ScreenshotTests: XCTestCase {
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         guard app.tabBars.firstMatch.waitForExistence(timeout: 20) else { return }
         _ = app.buttons["feed.photo"].firstMatch.waitForExistence(timeout: 20)
-        let following = app.buttons["home.feed.following"].firstMatch
-        scrollUntilHittable(app, following, limit: 3)
-        guard following.exists, following.isHittable else { return }
-        following.tap()
-        let list = app.descendants(matching: .any)["home.suggested"].firstMatch
-        let shown = list.waitForExistence(timeout: 15)
-        Thread.sleep(forTimeInterval: 2)
-        shoot(app, shown ? "120a-ホーム（フォロー中が空・おすすめの人）" : "120a-ホーム（おすすめの人が出ない）")
-        guard shown else { return }
         let follow = app.buttons["home.suggested.follow"].firstMatch
-        guard follow.waitForExistence(timeout: 5), follow.isHittable else { return }
+        scrollUntilHittable(app, follow)
+        let shown = follow.exists && follow.isHittable
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, shown ? "120a-ホーム（誰もフォローしていない・おすすめの人）" : "120a-ホーム（おすすめの人が出ない）")
+        guard shown else { return }
         XCTAssertGreaterThanOrEqual(follow.frame.height, 44, "「フォロー」の的が 44pt 未満")
         follow.tap()
         let see = app.buttons["home.suggested.seeFeed"].firstMatch
@@ -9194,6 +9168,10 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 1)
         shoot(app, see.exists ? "120b-ホーム（おすすめの人をフォローした）" : "120b-ホーム（フォロー中の写真を見るが出ない）")
         XCTAssertTrue(see.exists, "フォローしても「フォロー中の写真を見る」が出ない")
+        guard see.exists, see.isHittable else { return }
+        see.tap()
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "120c-ホーム（フォロー中の写真を見る→並びの頭へ）")
     }
 
     /// **⑤ 撮影スポットを DM で送る**。見本の会話（夕焼けの人）に撮影スポットの頁のリンクの1通を置いてある
@@ -9430,6 +9408,8 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewDM", "YES"]
+        // 新着の札を探す目印（`revealNewestFeedTile`・札 #595）
+        app.launchArguments += ["-JPPreviewFeedProbe", "YES"]
         app.launch()
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
@@ -9471,22 +9451,8 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
         }
 
-        // ホームの新着の1枚目 → 作者のページ（見本ではフォロー中）→「メッセージ」
-        let latestTab = app.buttons["home.feed.latest"].firstMatch
-        if latestTab.waitForExistence(timeout: 20), latestTab.isHittable {
-            latestTab.tap()
-            Thread.sleep(forTimeInterval: 3)
-        }
-        let photo = app.buttons["feed.photo"].firstMatch
-        let lowPoint = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
-        let highPoint = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
-        var photoPushes = 0
-        while photo.waitForExistence(timeout: 10), !photo.isHittable, photoPushes < Self.shelfPushLimit {
-            lowPoint.press(forDuration: 0.05, thenDragTo: highPoint)
-            Thread.sleep(forTimeInterval: 1)
-            photoPushes += 1
-        }
-        guard photo.exists, photo.isHittable else { return }
+        // ホームの新しく載った写真 → 作者のページ（見本ではフォロー中）→「メッセージ」（札 #595 で「新着」の札は無くなった）
+        guard let photo = revealNewestFeedTile(app) else { return }
         photo.tap()
         let author = app.buttons["photo.author"].firstMatch
         var pushes = 0
@@ -9674,8 +9640,6 @@ final class ScreenshotTests: XCTestCase {
     /// （`YubiReviewTests.testHomeLiftIsOffIn1184` の注記）
     func testCapturesPinchToMap() {
         let app = launchTrunk([])
-        let recommended = app.buttons["おすすめ"].firstMatch
-        if recommended.waitForExistence(timeout: 15), recommended.isHittable { recommended.tap() }
         let photo = app.buttons["feed.photo"].firstMatch
         var pushes = 0
         while !(photo.waitForExistence(timeout: 2) && photo.isHittable), pushes < 8 {
@@ -9911,8 +9875,6 @@ final class ScreenshotTests: XCTestCase {
         // 上下の情報を出しているかは見えない要素の値で見る（`viewer.chrome.probe`・`PreviewSession.viewerProbe`）
         let app = launchTrunk(["-JPPreviewViewerProbe", "YES"])
         defer { app.terminate() }
-        let recommended = app.buttons["おすすめ"].firstMatch
-        if recommended.waitForExistence(timeout: 15), recommended.isHittable { recommended.tap() }
         let photo = app.buttons["feed.photo"].firstMatch
         var pushes = 0
         while !(photo.waitForExistence(timeout: 2) && photo.isHittable), pushes < 8 {

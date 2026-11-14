@@ -15,23 +15,22 @@ final class GalleryViewModel: ObservableObject {
     @Published private(set) var state: State = .loading
     /// 選ばれているカテゴリ。nil は「すべて」
     @Published var category: String?
-    /// 並び替え。**Web の `FilterBar` と同じ3つ**（新しい順／古い順／人気順）
-    /// **初めのフィード（おすすめ）の並びで始める。** `.new` から始めると、最初の
-    /// 読み込みが新しい順で並び、あとから `use` で並べ直されて一覧が入れ替わっていた
-    @Published var sort: GallerySort = HomeFeed.recommended.sort
-    /// ホームのフィード（おすすめ / フォロー中 / 新着）。
-    /// **範囲と並びの組に名前を付けたもの**（`HomeFeed`）
-    @Published private(set) var feed: HomeFeed = .recommended
+    /// 並び替え。**Web の `FilterBar` と同じ3つ**（新しい順／古い順／人気順）。
+    ///
+    /// 2026-11-13（札 #595・ホームを1本の並びに）: `state` に出すのは**新着の並び**（新しい順）。
+    /// ホームの1本の並びは、これと「選ばれた写真→いいね順」（`recommendedPhotos`）と
+    /// フォロー中の新しい写真（`followingFresh`）を、画面の側で `HomeFeed.arrange` が混ぜて作る
+    @Published var sort: GallerySort = .new
     /// 選んでいるタグ。**複数選べて、全部を持つ写真だけが残る**
     /// （Web の `selectedTags` と同じ）
     @Published private(set) var selectedTags: [String] = []
     /// 打った文字。題・説明・撮影地・タグを見る
     @Published var query: String = "" { didSet { state = .loaded(filtered()) } }
-    /// 出す範囲（自分 / フォロー中 / すべて）。**選んでいるフィードが決める**（`HomeFeed.scope`）
+    /// 出す範囲（自分 / フォロー中 / すべて）。ホームはいつも「すべて」
     @Published private(set) var scope: GalleryScope = .all
-    /// フォローしている人。`following` のときだけ要る
-    /// フォロー先。**カードのフォローボタンにも渡す**（モック1）
-    private(set) var followingIds: Set<String> = []
+    /// フォロー先。ホームの1本の並びの 1.（フォロー中の人の新しい写真）を決める。
+    /// **`@Published`**——取れたら画面の上の段を作り直す
+    @Published private(set) var followingIds: Set<String> = []
     /// フォロー一覧を**取れなかった**（圏外など）。
     ///
     /// 取れなかった回を空の集合で表すと、「フォロー中」に
@@ -99,8 +98,9 @@ final class GalleryViewModel: ObservableObject {
     /// - Parameter force: 控えを無視して取り直す（引き下げ更新）。**ページは1ページ目から読み直す**
     ///
     /// **`photos.json`（全件）と `/feed` の1ページ目を同時に読む**（2026-10-03）。
-    /// 「新着」は1ページ目が着いた時点で出す（全件を待たない）。全件は、全件が要る
-    /// 札（おすすめ・フォロー中・カテゴリ・タグ・検索・今日のテーマ）のために今までどおり読む。
+    /// 全件は、選ばれた写真→いいね順・フォロー中の新しい写真・今日のテーマのために今までどおり読む。
+    /// **1本の並びは全件が要るので、1ページ目だけが先に着いても全件の答えが出るまで書かない**
+    /// （`snapshotWritten`・先に新着だけを出すと、全件が着いたときに上が入れ替わる）。
     /// `/feed` が使えない（道が無い 404・500・圏外・壊れた答え）回は全件の並びに戻る
     func load(force: Bool = false) async {
         // ホームの読み込みの区間（`PerfSignpost`・2026-10-31 札 #429。動きは変えない）
@@ -118,26 +118,16 @@ final class GalleryViewModel: ObservableObject {
         if force { runningForced.insert(mine) }
         defer { runningForced.remove(mine) }
         loadedEpoch = await gallery.restrictedEpoch
-        // **`/feed` は「新着」のときだけ読む**（2026-10-03 のレビュー）。おすすめなどでは読まない・待たない。
-        // 「新着」でも、引き下げ・まだ試していない回・1ページ目が古い回（`firstPageIsStale`）だけ
-        // 1ページ目から読む。それ以外の読み直し（force なし）は、読んだページを持ったまま
-        // 仕上げだけ掛け直す（下まで送った一覧を縮めない）
-        let readsFirstPage = feed == .latest && feedPages != nil
-            && (force || pageSource == .untried || firstPageIsStale)
-        // 「新着」以外で引き下げた回は、手元の1ページ目を古いことにする（次に「新着」を選んだら読み直す）
-        if force, !readsFirstPage, pageSource == .pages { firstPageReadAt = nil }
-        // すでに全件の控えがあり、新着をページで表示できている場合は、
-        // 引き下げ更新でも巨大な全件スナップショットを再取得しない。
-        // /feed が失敗しても手元の全件に戻れることを条件にする。
-        // 絞り込み中は全件を使うため従来どおり読み込む。
-        if feed == .latest, pageSource == .pages, !all.isEmpty,
-           sort == .new, scope == .all, category == nil, selectedTags.isEmpty,
-           query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            if readsFirstPage {
-                await showFirstPage(force: force, generation: generation, alongsideSnapshot: false)
-            }
-            return
-        }
+        // **1ページ目から読むのは、引き下げ（force）と、まだ試していない回だけ**（2026-11-13 #595 の確かめ役）。
+        // 1本の並びはいつも新着を4つめごとに混ぜるので、強制でない読み直し（限定公開の期限切れ・口の入れ替え
+        // `restrictedChanges`・ブロックの後 `reloadHidden`・詳細から戻った）で1ページ目を読み直すと、混ぜる新着が
+        // 入れ替わって見ている並びがずれる。前は「新着」を選んでいる間だけ、60秒過ぎたら読み直していた
+        // が、その決まりは外した。強制でない回は、読んだページを持ったまま仕上げだけ掛け直す
+        let readsFirstPage = feedPages != nil && (force || pageSource == .untried)
+        // 2026-11-13 判断（#595）: 「新着をページで出している間は全件を取り直さない」近道（#448）は外した。
+        // 前は「新着」の札を選んでいる間だけ効いていたが、1本の並びはいつもページを持つので、近道が残ると
+        // 引き下げ・ブロックの後の読み直しでも全件（選ばれた写真→いいね順・フォロー中の人の新しい写真の元）が古いまま残る。
+        // 前の既定（「おすすめ」）と同じく、読み直しのたびに全件も読む
         if readsFirstPage {
             // 1ページ目と全件を同時に読み、**どちらも着いた時点で書く**（片方を待たない）
             async let firstPage: Void = showFirstPage(force: force, generation: generation, alongsideSnapshot: true)
@@ -163,6 +153,7 @@ final class GalleryViewModel: ObservableObject {
         // （`writes` の後に await を挟まない——書くと決めたら必ずすぐ書く）
         if pageSource == .pages, pendingPage == nil { await representPages(loadsRestricted: true) }
         guard writes(mine, force: force, generation: generation) else { return }
+        snapshotWritten = true
         let processInterval = PerfSignpost.begin(.homeSnapshotProcess)
         defer { PerfSignpost.end(processInterval) }
         switch result {
@@ -264,9 +255,9 @@ final class GalleryViewModel: ObservableObject {
 
     /// 走っている全件の読み込み（`load`）の数
     private var snapshotLoadsInFlight = 0
-
-    /// 札を選んだときなどに起こした、1ページ目の読み込み（試験が待つため）
-    private(set) var pagesTask: Task<Void, Never>?
+    /// 全件の回の答え（成功・失敗）を一度でも書いたか（人が替わったら戻す）。
+    /// **書くまでは1ページ目だけを出さない**（`showFirstPage`・1本の並びは全件が要る）
+    private(set) var snapshotWritten = false
 
     /// 空のページ（`items` が空で `nextCursor` だけ）が続いたとき、1回の頼みで続けて読む上限。
     /// 超えたら一度返し、一覧の下の目印が次を頼む
@@ -286,15 +277,14 @@ final class GalleryViewModel: ObservableObject {
         (isOnScreen || !showsPages) ? .now : .whenVisible
     }
 
-    /// いま「新着」をページで出しているか。
+    /// いま新着をページで出しているか。
     ///
-    /// **2026-10-03 判断:** ページで出すのは「新着」（新しい順・範囲はすべて）で、
+    /// **2026-10-03 判断:** ページで出すのは新着（新しい順・範囲はすべて）で、
     /// カテゴリ・タグ・検索の絞りが無いときだけ。`/feed` は新しい順しか返さないので、
-    /// おすすめ（選んだ写真を先頭に・いいね順）・フォロー中（フォロー先で絞る）・
     /// 絞り込みは、読んだページだけで並べると全体の答えと食い違う。全件の `photos.json` のまま
     var usesPagedFeed: Bool {
         pageSource == .pages
-            && feed == .latest && sort == .new && scope == .all
+            && sort == .new && scope == .all
             && category == nil && selectedTags.isEmpty
             && query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -319,37 +309,13 @@ final class GalleryViewModel: ObservableObject {
             return
         }
         guard serial == pageSerial, !keepsShownFeed, generation == viewerGeneration, usesPagedFeed else { return }
+        // 全件の答えがまだなら書かない——全件の回が、読めたページの並びで書く（`finishSnapshot`）
+        guard snapshotWritten else { return }
         guard isOnScreen else {
             pageWriteDeferred = true
             return
         }
         state = .loaded(filtered())
-    }
-
-    /// 「新着」を選んだとき、まだ試していない・1ページ目が古ければ1ページ目を読む
-    func loadPagesIfNeeded() async {
-        guard feed == .latest, feedPages != nil, pageSource == .untried || firstPageIsStale else { return }
-        await showFirstPage(force: false, generation: viewerGeneration, alongsideSnapshot: false)
-    }
-
-    /// 1ページ目を読み終えた時刻。nil は「古いことにした」（新着以外で引き下げた）
-    private var firstPageReadAt: Date?
-    /// 今の時刻（試験が進める）
-    var clock: () -> Date = Date.init
-    /// 1ページ目をこれより前に読んでいたら、「新着」を選んだとき・読み込みのときに読み直す
-    static let firstPageFreshness: TimeInterval = 60
-
-    /// 手元の1ページ目が古いか。
-    ///
-    /// **2026-10-03 判断:** 「新着」は「新着」を見ている間しか読まないので、おすすめで引き下げた・
-    /// 詳細から戻った・ブロックの後の読み直しのあとも、前に読んだ1ページ目が出続けていた。
-    /// 読んでから60秒（全件の控え `PublicGalleryService.cacheLifetime` と同じ）を過ぎたら古いとする。
-    /// **読み直すのは2ページ目以降をまだ読んでいないときだけ**——下まで送った一覧を1ページに
-    /// 縮めると、見ていた場所が消える（そちらは引き下げで新しくする）
-    var firstPageIsStale: Bool {
-        guard pageSource == .pages, loadedPageCount <= 1, pendingPage == nil else { return false }
-        guard let readAt = firstPageReadAt else { return true }
-        return clock().timeIntervalSince(readAt) >= Self.firstPageFreshness
     }
 
     /// 1ページ目から読み直す。読めたらその回の番号（`pageSerial`）を返す
@@ -384,7 +350,6 @@ final class GalleryViewModel: ObservableObject {
             pageSource = .pages
             pageFailed = false
             loadedPageCount = 1
-            firstPageReadAt = clock()
             await representPages(loadsRestricted: loadsRestricted)
             return serial == pageSerial
         case .failure(let error):
@@ -525,7 +490,6 @@ final class GalleryViewModel: ObservableObject {
         pendingPage = nil
         pageWriteDeferred = false
         firstPageTask = nil
-        firstPageReadAt = nil
     }
 
     /// 人が替わった回数。**替わる前に読み始めた回の答えを書かない**ために使う
@@ -552,6 +516,7 @@ final class GalleryViewModel: ObservableObject {
             myPhotos = []
             myPhotosOwner = nil
             myPhotosWanted = next
+            snapshotWritten = false
             state = .loading
             // **前の人の「フォロー中」で絞らない。** 画面はこの読み直しを待ってから
             // 新しい人のフォロー中を渡すので、それまでは空で絞る。
@@ -730,12 +695,7 @@ final class GalleryViewModel: ObservableObject {
 
     /// ログイン状態が決まったら呼ぶ。
     ///
-    /// **範囲はいま選んでいるフィードが決める**（指示書のホームは
-    /// おすすめ／フォロー中／新着）。以前はここで「自分」へ倒していたが、
-    /// それだと**押したフィードが即座に打ち消される**。
-    ///
-    /// **フォロー中は未ログインだと中身が無い。** 絞れないので
-    /// 「おすすめ」へ戻す（空の画面に置き去りにしない）。
+    /// 2026-11-13（#595）: 範囲・並びはもう替えない（ホームは1本の並び）。フォロー先だけを入れる。
     ///
     /// - Parameter following: nil は「取れなかった」。
     ///   - **同じ人の集合が手元にあれば潰さない**（詳細から戻って `.task` が
@@ -743,8 +703,6 @@ final class GalleryViewModel: ObservableObject {
     ///     開いた詳細の元のタイルが消えて閉じる）
     ///   - 人が替わった回・一度も取れていない回は、空にして `followingFailed` を立てる
     func use(viewerId: String?, following: Set<String>?, ticket: Int? = nil) {
-        // 並びは sort と feed の両方で決まる（`sorted`）。**どちらかが変わったら**並べ直す
-        let previousFeed = feed
         setViewer(viewerId)
         // 後から始めた取得の答えがもう入っていたら、この古い答えでは一覧に触らない
         // （「取れなかった」の枝に入れると、A→B→A と戻った回に一覧を空にして失敗を出していた）。
@@ -761,13 +719,6 @@ final class GalleryViewModel: ObservableObject {
             followingOwner = nil
             followingFailed = viewerId != nil
         }
-        if viewerId == nil && feed.needsSignIn { feed = .recommended }
-        let previousSort = sort
-        scope = feed.scope
-        sort = feed.sort
-        // **並びが変わったときだけ**並べ直す（同じなら一覧を入れ替えない——
-        // 開いている詳細の元のタイルが作り直されて閉じる）
-        if sort != previousSort || feed != previousFeed { all = sorted(all) }
         if case .loaded = state { state = .loaded(filtered()) }
     }
 
@@ -846,12 +797,9 @@ final class GalleryViewModel: ObservableObject {
     }
 
     /// 並びは `GallerySort` に置いてある（画面を持たない層なので
-    /// Linux 上の `swift test` で検証できる）。
-    /// 🔴 **おすすめは owner が選んだ写真（featured）を先頭に。** 以前は
-    /// フィードの札を押したとき（`select(feed:)`）しか `arrange` を通らず、
-    /// 起動・引き下げ・ブロック後の読み直しでは新しい順のまま出ていた
+    /// Linux 上の `swift test` で検証できる）。選ばれた写真を先頭にする並びは `recommendedPhotos`
     private func sorted(_ photos: [Photo]) -> [Photo] {
-        sort == feed.sort ? feed.arrange(photos) : sort.apply(photos)
+        sort.apply(photos)
     }
 
     /// タグのチップ。**押し直すと外れる**（カテゴリと同じ約束）
@@ -881,102 +829,59 @@ final class GalleryViewModel: ObservableObject {
         return TagChoices.all.filter { present.contains(TagChoices.key($0)) }
     }
 
-    /// フィードを選ぶ。**範囲と並びを一緒に切り替える**。
-    ///
-    /// **`use(viewerId:following:)` は呼ばない。** あちらは範囲を
-    /// 「自分」に倒すので、押したフィードが即座に打ち消される
-    /// （組み込んだ直後に踏んだ）。
-    func select(feed: HomeFeed, viewerId: String?) {
-        self.feed = feed
-        self.scope = feed.scope
-        self.sort = feed.sort
-        // 人が替わっていたら、手元のフォロー一覧は前の人のもの——持ち越さない
-        // （`use` の前に取れていた今の人の集合は残す）
-        if viewerId != self.viewerId, followingOwner != viewerId {
-            followingIds = []
-            followingOwner = nil
-            // 前の人の「読み込めませんでした／読めた」を持ち越さない。今の人の集合は
-            // まだ無い＝`use` と同じく「取れていない」（空の集合で「まだありません」と言わない）
-            followingFailed = viewerId != nil
-        }
-        setViewer(viewerId)
-        all = feed.arrange(all)
-        state = .loaded(filtered())
-        // 「新着」を初めて選んだ回・1ページ目が古い回は `/feed` の1ページ目を読む（おすすめでは読まないので）
-        if feed == .latest, feedPages != nil, pageSource == .untried || firstPageIsStale {
-            pagesTask = Task { await self.loadPagesIfNeeded() }
-        }
-    }
-
     func select(sort: GallerySort) {
         self.sort = sort
         all = sort.apply(all)
         state = .loaded(filtered())
     }
 
-    /// トップに出す「おすすめ」。**絞り込みが掛かっているときは出さない**
+    /// 選ばれた写真の横並び（カテゴリごと・`FeaturedGroups`）。**絞り込みが掛かっているときは出さない**
     /// ——絞った結果の上に別の並びが出ると、何を見ているのか分からなくなる。
-    ///
-    /// **「おすすめ」の札のときだけ出す**（owner の判断 2026-09-27）。全員の写真から
-    /// 作る段なので、「フォロー中」ではフォローしていない人の写真が
-    /// 「フォロー中の人の写真はまだありません」の上に並んでいた
     /// **2026-10-03 判断:** owner が選んだ写真は日付を問わず全件から拾うので `photos.json` のまま
-    var featured: [FeaturedGroups.Group] { featured(for: feed) }
-
-    /// `page` のフィードの札に出す「おすすめ」の横並び（選んでいない札も横にめくって見えるので、札ごとに決める）
-    func featured(for page: HomeFeed) -> [FeaturedGroups.Group] {
-        guard category == nil, page == .recommended else { return [] }
+    var featured: [FeaturedGroups.Group] {
+        guard category == nil else { return [] }
         return FeaturedGroups.groups(from: all)
     }
 
-    // MARK: - 横にめくる隣のフィード（#426）
+    // MARK: - ホームの1本の並びの材料（札 #595・2026-11-13）
 
-    /// `page` のフィードの写真（ブロックで落とす前）。**選んでいるフィードは出している一覧そのもの**（`state`）。
-    ///
-    /// **2026-10-31 判断（#426・owner「ホームのタブの切り替えもマイページと同じようにスムーズに」）。**
-    /// ホームのフィードも横にめくって切り替える（`ProfileTabPager`）ので、指に付いてくる隣の札にも中身が要る。
-    /// 選んでいないフィードは**選んだときと同じ決まり**（範囲・並び・絞り、「新着」は読んだページ）で、
-    /// 手元の全件から作る——**通信はしない**（選んだときに読むのは今までどおり「新着」の1ページ目だけ）。
-    /// 選び替えても中身が同じなので、一覧（`HomeMosaic`）は作り直されない。
-    /// 計算は控え（`DerivedMemo`）から——見えていない札の分まで描き直しのたびに並べ替えない
-    func photos(for page: HomeFeed) -> [Photo] {
-        if page == feed, case .loaded(let photos) = state { return photos }
-        let key = FeedPreviewKey(all: all, paged: pageSource == .pages ? pagedPhotos : nil, viewerId: viewerId,
-                                 following: followingIds, category: category, tags: selectedTags, query: query)
-        let memo = previewMemos[page] ?? DerivedMemo<FeedPreviewKey, [Photo]>()
-        previewMemos[page] = memo
-        return memo.value(for: key) { Self.preview(page, key: key) }
+    /// 2. 選ばれた写真→いいねの多い順（今までの「おすすめ」の並び・`HomeFeed.recommended`）。
+    /// 元は全件。**描くたびに並べ替えない**——全件が変わったときだけ作り直す
+    var recommendedPhotos: [Photo] {
+        // 範囲は「すべて」（下書きを除く・`filtered` と同じ `GalleryScope.all`）
+        recommendedMemo.value(for: allRevision) {
+            HomeFeed.recommended(GalleryScope.all.photos(all, viewerId: viewerId, followingIds: []))
+        }
     }
 
-    /// 隣のフィードの計算の入力（どれかが変わったときだけ計算し直す）
-    struct FeedPreviewKey: Equatable {
-        let all: [Photo]
-        /// 読んだ「新着」のページ（`/feed` が使えていないときは nil）
-        let paged: [Photo]?
+    private let recommendedMemo = DerivedMemo<Int, [Photo]>()
+
+    /// 今の人のフォロー先（人が替わった直後に前の人のフォロー先を使わない）
+    func following(for viewerId: String?) -> Set<String> {
+        viewerId != nil && followingOwner == viewerId ? followingIds : []
+    }
+
+    /// 1. フォロー中の人の新しい写真（`HomeFeed.followingFresh`）。ブロック・通報は `hidden`（画面の写し）で落とす。
+    /// `seen` は画面が覚えている「上に出した所」（`FollowingSeenStore`）。描くたびに全件をなめない
+    func followingFresh(viewerId: String?, seen: String?, alwaysNew: Set<String> = [],
+                        hiding hidden: ModerationSnapshot) -> [Photo] {
+        let following = following(for: viewerId)
+        let key = FollowingFreshKey(allRevision: allRevision, viewerId: viewerId, following: following,
+                                    hidden: hidden, seen: seen, alwaysNew: alwaysNew)
+        return followingFreshMemo.value(for: key) {
+            HomeFeed.followingFresh(hidden.visible(all), viewerId: viewerId, followingIds: following, seen: seen,
+                                    alwaysNew: alwaysNew)
+        }
+    }
+
+    private struct FollowingFreshKey: Equatable {
+        let allRevision: Int
         let viewerId: String?
         let following: Set<String>
-        let category: String?
-        let tags: [String]
-        let query: String
+        let hidden: ModerationSnapshot
+        let seen: String?
+        let alwaysNew: Set<String>
     }
 
-    private var previewMemos: [HomeFeed: DerivedMemo<FeedPreviewKey, [Photo]>] = [:]
-
-    /// 選んでいない `page` の一覧。`filtered()` と同じ決まり（範囲 → カテゴリ → タグ → 打った文字）で、
-    /// 状態は書き換えない（チップの一覧・カテゴリの絞りは選んでいるフィードのもの）
-    nonisolated static func preview(_ page: HomeFeed, key: FeedPreviewKey) -> [Photo] {
-        let unfiltered = key.category == nil && key.tags.isEmpty
-            && key.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        // 「新着」で絞りが無く、ページで読めているときは読んだページの並び（`usesPagedFeed` と同じ）
-        if page == .latest, unfiltered, let paged = key.paged { return paged }
-        let inScope = page.scope.photos(page.arrange(key.all), viewerId: key.viewerId, followingIds: key.following)
-        let inCategory: [Photo]
-        if let category = key.category {
-            let wanted = CategoryChoices.key(category)
-            inCategory = inScope.filter { CategoryChoices.key($0.category ?? "") == wanted }
-        } else {
-            inCategory = inScope
-        }
-        return PhotoQuery.photos(PhotoQuery.photos(inCategory, withAllTags: key.tags), matching: key.query)
-    }
+    private let followingFreshMemo = DerivedMemo<FollowingFreshKey, [Photo]>()
 }

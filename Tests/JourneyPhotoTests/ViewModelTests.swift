@@ -125,21 +125,19 @@ final class ViewModelTests: XCTestCase {
 
     // MARK: - ギャラリー
 
-    /// 🔴 **おすすめの横並びは「おすすめ」の札のときだけ。** 全員の写真から作る段なので、
-    /// 「フォロー中」ではフォローしていない人の写真が並んでいた（owner の判断 2026-09-27）
-    func testFeaturedRowsShowOnlyOnTheRecommendedFeed() async {
+    /// 選ばれた写真の横並び（PICKS）は全件から作る。**カテゴリで絞っている間は出さない**
+    /// （札 #595: ホームは1本の並びなので、前の「おすすめの札のときだけ」の条件は無くなった）
+    func testFeaturedRowsComeFromAllPhotosUnlessFiltered() async {
         let model = GalleryViewModel(gallery: gallery("""
         [{"id":"f1","src":"https://x/f1.jpg","createdAt":"2026-01-02T00:00:00Z","category":"風景","featured":true,"userId":"u1"},
          {"id":"f2","src":"https://x/f2.jpg","createdAt":"2026-01-03T00:00:00Z","category":"風景","featured":true,"userId":"u1"}]
         """))
         await model.load()
-        XCTAssertFalse(model.featured.isEmpty, "前提: おすすめの段が作れていない")
-        model.select(feed: .following, viewerId: "me")
-        XCTAssertTrue(model.featured.isEmpty, "フォロー中で全員のおすすめを出している")
-        model.select(feed: .latest, viewerId: "me")
-        XCTAssertTrue(model.featured.isEmpty, "新着でおすすめの段を出している")
-        model.select(feed: .recommended, viewerId: "me")
-        XCTAssertFalse(model.featured.isEmpty, "おすすめに戻しても段が出ない")
+        XCTAssertFalse(model.featured.isEmpty, "前提: 横並びが作れていない")
+        model.use(viewerId: "me", following: ["u1"])
+        XCTAssertFalse(model.featured.isEmpty, "ログインしたら横並びが消えた")
+        model.select(category: "風景")
+        XCTAssertTrue(model.featured.isEmpty, "絞った結果の上に横並びを出している")
     }
 
     /// 新しい順。**`createdAt` が無い写真は末尾**（落とさない）。
@@ -152,8 +150,8 @@ final class ViewModelTests: XCTestCase {
         XCTAssertEqual(photos.map(\.id), ["b", "a", "c"])
     }
 
-    /// 🔴 **おすすめは owner が選んだ写真（featured）を先頭に**——読み込み直後も、
-    /// 並びが同じまま「フォロー中」からおすすめへ戻ったとき（ログアウト）も
+    /// 🔴 **1本の並びの 2.（`recommendedPhotos`）は owner が選んだ写真（featured）を先頭に**——読み込み直後も、
+    /// ログアウトの後も（以前は札を押したときしか並べ替えず、起動直後は新しい順のまま出ていた）
     func testRecommendedPutsFeaturedFirst() async {
         let body = """
         [{"id":"pop","src":"https://x/p.jpg","createdAt":"2026-03-04T00:00:00Z","likes":50},
@@ -161,14 +159,13 @@ final class ViewModelTests: XCTestCase {
         """
         let model = GalleryViewModel(gallery: gallery(body))
         await model.load()
-        guard case .loaded(let first) = model.state else { return XCTFail("読み込めていない") }
-        XCTAssertEqual(first.map(\.id), ["picked", "pop"], "読み込み直後に featured が先頭に来ない")
+        XCTAssertEqual(model.recommendedPhotos.map(\.id), ["picked", "pop"], "読み込み直後に featured が先頭に来ない")
+        guard case .loaded(let latest) = model.state else { return XCTFail("読み込めていない") }
+        XCTAssertEqual(latest.map(\.id), ["pop", "picked"], "新着の材料が新しい順になっていない")
 
-        model.select(feed: .following, viewerId: "me")
-        model.select(sort: .popular)
-        model.use(viewerId: nil, following: [])   // ログアウト → おすすめへ戻る
-        guard case .loaded(let back) = model.state else { return XCTFail("状態が違う") }
-        XCTAssertEqual(back.map(\.id), ["picked", "pop"], "おすすめに戻ったのに featured が先頭に来ない")
+        model.use(viewerId: "me", following: ["x"])
+        model.use(viewerId: nil, following: [])   // ログアウト
+        XCTAssertEqual(model.recommendedPhotos.map(\.id), ["picked", "pop"], "ログアウトの後に featured が先頭に来ない")
     }
 
     /// カテゴリの絞り込みは**押し直すと外れる**（Web の FilterBar と同じ）。
