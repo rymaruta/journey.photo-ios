@@ -8817,6 +8817,34 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// 投稿画面の欄が、下の主ボタンの帯（主ボタン `submit` の上 12pt から下・`jpBottomBar` の上の余白）より上に
+    /// 全部出るまで送る（最大 limit 回）。2026-11-14 調べ（統合 1.1.90・回 1304）
+    private func scrollAboveSubmitBar(_ app: XCUIApplication, _ element: XCUIElement, submit: XCUIElement,
+                                      limit: Int = 8) {
+        var pushes = 0
+        while element.exists, submit.exists, element.frame.maxY > submit.frame.minY - 12, pushes < limit {
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        print("[uploadFieldProbe] scrollAboveSubmitBar pushes=\(pushes)")
+    }
+
+    /// 調べの数（2026-11-14・回 1304）: 欄・下の主ボタン・欄を持つスクロールの領域・キーボード・窓の枠と、欄の焦点
+    private func uploadFieldProbe(_ app: XCUIApplication, _ step: String, _ field: XCUIElement, submit: XCUIElement) {
+        func frame(_ e: XCUIElement) -> String { e.exists ? "\(e.frame)" : "none" }
+        let scroll = app.scrollViews.containing(.textField, identifier: "upload.title").firstMatch
+        let keyboard = app.keyboards.firstMatch
+        let focus = field.exists && field.responds(to: NSSelectorFromString("hasKeyboardFocus"))
+            ? "\((field.value(forKey: "hasKeyboardFocus") as? Bool) == true)" : "unknown"
+        print("[uploadFieldProbe] \(step) field=\(frame(field)) hittable=\(field.exists && field.isHittable)"
+              + " focus=\(focus) value=\(field.exists ? "\(field.value ?? "nil")" : "none")"
+              + " submit=\(frame(submit)) scroll=\(frame(scroll)) keyboard=\(frame(keyboard))"
+              + " window=\(frame(app.windows.firstMatch))")
+    }
+
     /// マイページの自分の写真の詳細を開く（「ストーリーに載せる」は自分の写真だけ・#577）。開けなければ false
     private func openFirstMyPhoto(_ app: XCUIApplication) -> Bool {
         let tabBar = app.tabBars.firstMatch
@@ -9548,9 +9576,17 @@ final class ScreenshotTests: XCTestCase {
         guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 20) else { return nil }
         let title = app.textFields["upload.title"].firstMatch
         scrollUntilHittable(app, title)
+        // 2026-11-14 調べ（統合 1.1.90・回 1304）: 大きい文字で題の欄に打てなかった。欄・下の主ボタン・
+        // スクロールの領域・キーボードの枠を出す（[uploadFieldProbe]）。帯の上まで送ってから押す実験も同じ回で取る
+        let submitBar = app.buttons["upload.submit"].firstMatch
+        uploadFieldProbe(app, "title.before", title, submit: submitBar)
+        scrollAboveSubmitBar(app, title, submit: submitBar)
+        uploadFieldProbe(app, "title.scrolled", title, submit: submitBar)
         if title.exists, title.isHittable {
             title.tap()
+            uploadFieldProbe(app, "title.tapped", title, submit: submitBar)
             title.typeText("秋の兼六園")
+            uploadFieldProbe(app, "title.typed", title, submit: submitBar)
         }
         let place = app.textFields["upload.place"].firstMatch
         scrollUntilHittable(app, place)
