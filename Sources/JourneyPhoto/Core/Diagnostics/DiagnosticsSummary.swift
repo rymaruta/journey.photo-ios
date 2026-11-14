@@ -55,5 +55,31 @@ enum DiagnosticsSummary {
         return result
     }
 
+    /// 前面での終わり方の回数（`MXAppExitMetric.foregroundExitData`・札 #596・2026-11-14）。
+    /// `memory` がメモリの上限で OS に止められた回（jetsam）。クラッシュ報告が出ない終わり方も数に入る
+    static func foregroundExits(normal: Int, memory: Int, abnormal: Int, badAccess: Int, illegal: Int,
+                                watchdog: Int, appVersion: String) -> String {
+        "fgExit version=\(appVersion) normal=\(normal) memoryLimit=\(memory) abnormal=\(abnormal) "
+            + "badAccess=\(badAccess) illegalInstruction=\(illegal) watchdog=\(watchdog)"
+    }
+
+    /// 呼び出し履歴（`MXCallStackTree.jsonRepresentation`）から、**落ちたスレッドの上から `limit` 個**を
+    /// `名前+0x位置` の形で取り出す（札 #596）。位置は実行ファイルの中の場所（`offsetIntoBinaryTextSegment`）で、
+    /// 版の dSYM があれば行に直せる。利用者・端末の情報は入っていない。読めなければ nil
+    static func crashedFrames(_ json: Data, limit: Int = 8) -> String? {
+        guard let root = try? JSONSerialization.jsonObject(with: json) as? [String: Any],
+              let stacks = root["callStacks"] as? [[String: Any]] else { return nil }
+        let thread = stacks.first { ($0["threadAttributed"] as? Bool) == true } ?? stacks.first
+        var frame = (thread?["callStackRootFrames"] as? [[String: Any]])?.first
+        var names: [String] = []
+        while let current = frame, names.count < limit {
+            let binary = (current["binaryName"] as? String) ?? "?"
+            let offset = (current["offsetIntoBinaryTextSegment"] as? NSNumber)?.intValue
+            names.append(offset.map { "\(binary)+0x\(String($0, radix: 16))" } ?? binary)
+            frame = (current["subFrames"] as? [[String: Any]])?.first
+        }
+        return names.isEmpty ? nil : names.joined(separator: " ")
+    }
+
     private static func show(_ value: Int?) -> String { value.map(String.init) ?? "-" }
 }

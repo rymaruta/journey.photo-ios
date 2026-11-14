@@ -277,6 +277,9 @@ struct JourneyPhotoApp: App {
                     if phase == .active { PassCoordinator.shared.setForeground(true) }
                     if phase == .background { PassCoordinator.shared.setForeground(false) }
                     if phase == .background { wentToBackground = true }
+                    // 前に居るまま終わったときの足跡（札 #596・`ExitTrail`）。背面での終わりは数えない
+                    if phase == .background { ExitTrail.enteredBackground() }
+                    if phase == .active { ExitTrail.mark("app.active") }
                     guard phase == .active, wentToBackground else { return }
                     wentToBackground = false
                     guard !auth.isResolving, !auth.isSignedOutUncertain else { return }

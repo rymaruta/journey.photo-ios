@@ -119,6 +119,21 @@ struct StoriesRow: View {
                 Self.loadingAnchor
             }
         }
+        // UI テストのときだけ（`PreviewSession.feedProbe`・札 #596・2026-11-14）: 一覧から読んだ並びを見えない要素に出す。
+        // 2本載せたあとに落ちる件で、サーバーの並びに同じ id が2回入っていないか・自分の束の順を値で見る。ふだんは何も足さない
+        .overlay(alignment: .topLeading) {
+            if PreviewSession.feedProbe {
+                let ids = model.stories.map(\.id)
+                Text(".")
+                    .font(.caption2)
+                    .foregroundStyle(Color.clear)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("stories.probe")
+                    .accessibilityValue("total=\(ids.count) dupIds=\(ids.count - Set(ids).count)"
+                        + " mine=\(model.stories.filter { $0.userId == auth.userId }.map(\.id).joined(separator: ","))"
+                        + " uploading=\(uploads.isBusy)")
+            }
+        }
         // 🔴 **閲覧画面を開いている間は読み直さない**（下の `hidden.revision` と同じ理由）。
         // 裏で送っていたストーリーが送り終わる・投稿シートが閉じる、で読み直すと、
         // 閲覧画面に渡す並びが開いたまま作り直され、見ている1本の位置がずれる。
@@ -549,6 +564,9 @@ struct StoriesRow: View {
         let rings = [ordered.mine].compactMap { $0 } + ordered.others
         let groups = StoryReel.groups(rings: rings, in: model.stories)
         let start = groups.firstIndex { $0.stories.contains { $0.id == story.id } }
+        // 前に居るまま終わったときの足跡（札 #596・本番の版でも書く）。ホームの輪を押した（人の数・押した人の位置・その束の数）
+        ExitTrail.mark("story.ring.home groups=\(groups.count) start=\(start ?? -1)"
+                       + " n=\(start.map { groups[$0].stories.count } ?? 0)")
         if let start {
             openedReel = (groups, start)
         } else {

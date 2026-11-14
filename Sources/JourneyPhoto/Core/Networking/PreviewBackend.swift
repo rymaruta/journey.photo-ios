@@ -156,6 +156,11 @@ enum PreviewBackend {
         private var qrGeneration = 1
         fileprivate func qrToken() -> String { PreviewBackend.qrToken(qrGeneration) }
         fileprivate func renewQR() -> String { qrGeneration += 1; return PreviewBackend.qrToken(qrGeneration) }
+        /// この端末で出したストーリー（`POST /stories`・札 #596 の再現の試験）。古い順
+        private var posted: [[String: Any]] = []
+        fileprivate var postedStories: [[String: Any]] { posted }
+        fileprivate func addStory(_ row: [String: Any]) { posted.append(row) }
+        fileprivate func removeStory(_ id: String) { posted.removeAll { ($0["id"] as? String) == id } }
         fileprivate func blob(_ key: String) -> Data? { blobs[key] }
         fileprivate func setBlob(_ key: String, _ data: Data) { blobs[key] = data }
     }
@@ -306,8 +311,39 @@ enum PreviewBackend {
         // ストーリー（`-JPPreviewStories` のときだけ・2026-10-22）。一覧は公開の新着の作者から作る（`previewStories`）。
         // 見た・反応・返信は受けたことにするだけ（何も書かない）
         case ("GET", let p) where stories && p == ["stories"]:
-            return .json(previewStories(feed: await publicFeed(), me: uid, now: now,
-                                        sharedStory: PreviewSession.sharedStory))
+            // この端末で出した分があれば、**自分の束はその分だけ**にする（見本の自分の1本は外す・札 #596）。
+            // 輪を開いた瞬間に描くのが出したばかりの1本になる（owner の報告「開いた瞬間に落ちる」をそのまま通す）
+            var rows = previewStories(feed: await publicFeed(), me: uid, now: now,
+                                      sharedStory: PreviewSession.sharedStory)
+            let posted = store.with { $0.postedStories }
+            if !posted.isEmpty {
+                rows.removeAll { ($0["userId"] as? String) == uid }
+                rows.insert(contentsOf: posted, at: 0)
+            }
+            return .json(rows)
+        // ストーリーを出す（札 #596・2026-11-13）。**本物の口と同じ形**（`{ story }`）で行を作って覚える。
+        // 画像は見本の置き場に PUT 済みのもの（`publicUrl`）。投稿 → ストーリーに載せる → 見る、を UI テストで通すため
+        case ("POST", let p) where stories && p == ["stories"]:
+            guard let src = json["publicUrl"] as? String, !src.isEmpty else {
+                return .json(["error": "publicUrl がありません"], status: 400)
+            }
+            let iso = ISO8601DateFormatter()
+            let row: [String: Any] = store.with { s in
+                var row: [String: Any] = [
+                    "id": "preview-story-posted-\(s.next())", "src": src, "userId": uid,
+                    "createdAt": iso.string(from: now), "expiresAt": iso.string(from: now.addingTimeInterval(24 * 3600)),
+                ]
+                for field in ["caption", "mediaType", "location", "coords", "song", "durationSec", "archive",
+                              "allowReplies", "texts", "songOnPhoto", "locationOnPhoto", "sharedPhotoId"] {
+                    if let value = json[field] { row[field] = value }
+                }
+                s.addStory(row)
+                return row
+            }
+            return .json(["story": row])
+        case ("DELETE", let p) where stories && p.count == 2 && p[0] == "stories":
+            store.with { $0.removeStory(p[1]) }
+            return .json([:])
         case ("POST", let p) where stories && p.count == 3 && p[0] == "stories" && (p[2] == "view" || p[2] == "replies"):
             return .json([:])
         case ("GET", let p) where stories && p.count == 3 && p[0] == "stories" && p[2] == "viewers":

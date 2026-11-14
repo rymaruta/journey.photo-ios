@@ -28,6 +28,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // **クラッシュ・ハング・起動時間の診断を受け取って端末のログに出す**（2026-11-07・`MetricKitReceiver`）。
         // OS は起動の早い時期に登録した購読者へ届けるので、ここで登録する。サーバーには送らない
         MetricKitReceiver.shared.start()
+        // **前回、前に居るまま終わったか**を見て、その最後の段を残す（札 #596・2026-11-14・`ExitTrail`）。
+        // OS に起こされた起動（画面を作らない Bluetooth の復元）でも、前回の足跡は「背面」なので残さない
+        ExitTrail.launched()
         // 起動の時刻を固定する（アイコン長押しの受け口が「起動直後の約2秒は待つ」ために使う・`StoryCameraRules.settleWait`）
         _ = StoryCameraRules.launchedAt
         // **前の起動の写真の転送を繋ぎ直す**（`BackgroundTransfer.reconnect`）。待つ人の
