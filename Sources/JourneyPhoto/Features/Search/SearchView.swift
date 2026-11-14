@@ -21,6 +21,7 @@ struct SearchView: View {
     /// タブの切り替え（「地図で見る」）。**`TabRouter.shared` を直に見る**（ほかの画面と同じ）
     /// ——`@EnvironmentObject` はどこからも配られておらず、開いた瞬間に落ちた（verify.sh の NG）
     @ObservedObject private var tabRouter = TabRouter.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var model = SearchViewModel()
     /// 引き下げ・「もう一度試す」の読み直しの最中
     @State private var isReloading = false
@@ -108,7 +109,10 @@ struct SearchView: View {
             .padding(.bottom, JPSpace.s)
             .background(WebTheme.background)
 
+            ScrollViewReader { proxy in
             ScrollView {
+                // 頭の印（下の「探す」をもう一度押したら、ここへ戻す・`TabRouter.searchFocusRequests`）
+                Color.clear.frame(height: 0).id(Self.resultsTopID)
                 VStack(alignment: .leading, spacing: isDiscovering ? JPSpace.section : 20) {
                     if isDiscovering {
                         // **何も打っていないときは「発見」の顔**（板 11）。段の並びは
@@ -147,6 +151,17 @@ struct SearchView: View {
             .refreshable { await reloadAll() }
             // 撮影スポットの段の地図をなぞっている間は流さない（札 #524・確かめ役の指摘 2026-11-11）
             .scrollDisabled(spotTracing != nil)
+            // 2026-11-14 判断（点検「画面と手ざわり」）: **探すを開いたまま下の「探す」をもう一度押したら、
+            // 結果を頭へ戻して探す口に字を打てるようにする。** 詳細を積んでいた回は iOS が根へ戻すだけ
+            // （`TabRouter.searchRootOnScreen` を押した瞬間に見る）
+            .onChange(of: tabRouter.searchFocusRequests) { _, _ in
+                guard isOnScreen else { return }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) {
+                    proxy.scrollTo(Self.resultsTopID, anchor: .top)
+                }
+                fieldFocused = true
+            }
+            }
         }
         .webScreen()
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
@@ -278,12 +293,23 @@ struct SearchView: View {
             frontSettle = nil
             front.disappear()
             isOnScreen = false
+            tabRouter.searchRootOnScreen = false
         }
     }
+
+    /// 人だけを探して**見つからなかった**か（打つ前・探している最中・読めなかった・短すぎる語は別の文）。
+    /// 見つからなかった時だけ空の部品（`EmptyState`）にする
+    nonisolated static func showsPeopleNoHit(query: String, searching: Bool, failed: Bool, tooShort: Bool) -> Bool {
+        !query.isEmpty && !searching && !failed && !tooShort
+    }
+
+    /// 結果の頭の印（`TabRouter.searchFocusRequests`）
+    static let resultsTopID = "search.results.top"
 
     /// 前面が確定したあとに写しを当て、必要なら読み直す
     private func applyFrontModeration(reloadIfNeeded: Bool) {
         isOnScreen = true
+        tabRouter.searchRootOnScreen = true
         dropped = hidden.snapshot
         // 手元の一覧を写しで絞る（読み直し完了を待たない——ブロックのフラッシュ止め）
         model.applyHidden(dropped)
@@ -332,7 +358,7 @@ struct SearchView: View {
                 .font(.system(size: 17))
                 .foregroundStyle(WebTheme.text3)
                 .accessibilityHidden(true)
-            TextField(model.scope.prompt, text: $query)
+            JPTextField(model.scope.prompt, text: $query)
                 .focused($fieldFocused)
                 .textFieldStyle(.plain)
                 // 板の 16（`.callout`）
@@ -1019,6 +1045,17 @@ struct SearchView: View {
         if model.scope.showsPhotos {
             spotResults
             photoResults
+        } else if users.isEmpty, Self.showsPeopleNoHit(query: query, searching: model.isSearching,
+                                                       failed: model.usersFailed, tooShort: model.peopleQueryTooShort) {
+            // 2026-11-14 判断（前回の点検の「空と0件の形をそろえる」の残り）: 人の0件も空の部品（印・明朝 20 の見出し・
+            // 説明・一手）にする。前は灰の本文「見つかりませんでした」だけで、写真の0件（地図への出口）と形が割れていた。
+            // 一手は「すべてで探す」——打った語のまま写真・撮影地・観光スポットにも当てる（語を打ち直させない）
+            EmptyState(icon: "person.2", title: L("見つかりませんでした", "No results"),
+                       message: L("名前か @ユーザー名の一部で探せます", "Search by part of a name or @username"),
+                       actionTitle: L("すべてで探す", "Search everything"),
+                       actionIdentifier: "search.people.noHit") {
+                model.select(scope: .all)
+            }
         } else if users.isEmpty {
             // 人だけを探しているとき。**打つ前と見つからなかったを分ける**
             Text(query.isEmpty

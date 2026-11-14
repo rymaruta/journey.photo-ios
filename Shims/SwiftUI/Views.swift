@@ -206,6 +206,8 @@ public struct TextField: View {
 }
 public struct SecureField: View {
     public init(_ title: String, text: Binding<String>) {}
+    /// 案内の字を自分で組む版（本物にもある・iOS 15）。見本の字の色を `WebTheme.placeholder` にする（`JPSecureField`）
+    public init(_ title: String, text: Binding<String>, prompt: Text?) {}
     public var body: Never { fatalError("模型") }
 }
 /// 日付を選ぶ部品。本物は押すと暦が開く（`.compact`）

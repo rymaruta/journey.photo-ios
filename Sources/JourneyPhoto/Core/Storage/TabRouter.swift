@@ -141,6 +141,18 @@ final class TabRouter: ObservableObject {
     /// 押した時点ではまだ戻っていないので、ここで見れば順序に左右されない
     var mapRootOnScreen = false
 
+    /// **探すを開いたまま、下の「探す」をもう一度押した回数。** 探すはこれを見て結果を頭へ戻し、
+    /// 探す口に字を打てるようにする（キーボードが出る）。
+    ///
+    /// 2026-11-14 判断（点検「画面と手ざわり」・直したほうがよい）: 打ちたい時の一押しを、上から 205pt の
+    /// 探す口（持ち替え）から、下の札（913pt・親指の楽な帯）へ。知らない人には今と何も変わらない（入口も設定も増やさない）
+    @Published private(set) var searchFocusRequests = 0
+
+    /// 探すの一番上の画面（`SearchView`）が前に出ているか。探すが前面の確定（`applyFrontModeration`）と
+    /// `onDisappear` で書く。**詳細を積んだまま押した1回目は iOS が根へ戻すだけ**で、字を打つのは次の1回
+    /// （`mapRootOnScreen` と同じく、押した瞬間に見る）
+    var searchRootOnScreen = false
+
     /// **下の「投稿」から出した写真・ストーリーの画面を閉じた回数。**
     ///
     /// 投稿の入口は下の札の「投稿」1つ（整理案 05c でマイページの
@@ -207,12 +219,12 @@ final class TabRouter: ObservableObject {
 
     /// もう一度押したときに合図を出す札
     enum Reselectable {
-        case home, map
+        case home, map, search
     }
 
     /// 下の札が押された。**選ばれている札をもう一度押したときだけ**
     /// 合図を出す（別の札から来たときは何もしない＝開き直しで勝手に
-    /// 上へ飛ばない・現在地へ引き戻さない）。受け取るのはホームと地図
+    /// 上へ飛ばない・現在地へ引き戻さない・キーボードを出さない）。受け取るのはホームと地図と探す
     func tabTapped(_ tab: Reselectable?, alreadySelected: Bool) {
         // 人が下の札を押した＝探すの出口の続きではない。残っていた語が
         // あとで（詳細から根へ戻ったときなど）勝手に当たらないよう捨てる。
@@ -228,6 +240,10 @@ final class TabRouter: ObservableObject {
             // 詳細を開いていた回は「地図へ戻る」だけ（iOS がやる）。現在地へは次の1回で
             guard mapRootOnScreen else { return }
             mapLocateRequests += 1
+        case .search:
+            // 詳細を開いていた回は「探すへ戻る」だけ（iOS がやる）。字を打つのは次の1回
+            guard searchRootOnScreen else { return }
+            searchFocusRequests += 1
         }
     }
 }

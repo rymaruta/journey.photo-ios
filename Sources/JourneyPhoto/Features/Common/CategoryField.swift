@@ -19,7 +19,7 @@ struct CategoryField: View {
                     chip(choice)
                 }
             }
-            TextField(L("カテゴリ（一覧に無い語はここに）", "Category (something else)"), text: $category)
+            JPTextField(L("カテゴリ（一覧に無い語はここに）", "Category (something else)"), text: $category)
                 .textInputAutocapitalization(.never)
                 .font(.callout)
         }

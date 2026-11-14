@@ -125,7 +125,7 @@ struct CamperRoomDexView: View {
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass").foregroundStyle(WebTheme.text3)
-            TextField(L("名前で探す", "Search by name"), text: $query)
+            JPTextField(L("名前で探す", "Search by name"), text: $query)
                 .textFieldStyle(.plain)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()

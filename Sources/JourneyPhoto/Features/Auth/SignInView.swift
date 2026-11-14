@@ -200,7 +200,7 @@ struct SignInView: View {
             // **黒地では枠が要る。** 既定の入力欄は下線も背景も無く、
             // 黒の上では**どこを押すのか分からない**（実機の絵で確認）
             JPField(L("メールアドレス", "Email")) {
-                TextField("you@example.com", text: $email)
+                JPTextField("you@example.com", text: $email)
                     .keyboardType(.emailAddress)
                     .textContentType(.emailAddress)
                     .textInputAutocapitalization(.never)
@@ -209,13 +209,13 @@ struct SignInView: View {
                     .accessibilityIdentifier("signin.email")
             }
             JPField(L("パスワード", "Password")) {
-                SecureField("", text: $password)
+                JPSecureField("", text: $password)
                     .textContentType(mode == .signUp ? .newPassword : .password)
                     .accessibilityIdentifier("signin.password")
             }
             if mode == .signUp {
                 JPField(L("表示名（あとで変えられます）", "Display name (you can change it later)")) {
-                    TextField("", text: $displayName)
+                    JPTextField("", text: $displayName)
                         .textContentType(.name)
                         // 登録後にプロフィールへ書く名前。サーバーは 100 を超えたぶんを黙って切るので、
                         // 欄で止める（プロフィール編集と同じ `PostLimits.Profile.displayName`）
@@ -445,7 +445,7 @@ struct SignInView: View {
                 .font(.callout)
                 .foregroundStyle(WebTheme.muted2)
             JPField(L("確認コード", "Verification code")) {
-                TextField("", text: $code)
+                JPTextField("", text: $code)
                     .keyboardType(.numberPad)
                     .textContentType(.oneTimeCode)
             }
@@ -543,7 +543,7 @@ struct SignInView: View {
     private var resetSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             JPField(L("メールアドレス", "Email")) {
-                TextField("you@example.com", text: $email)
+                JPTextField("you@example.com", text: $email)
                     .keyboardType(.emailAddress)
                     .textContentType(.emailAddress)
                     .textInputAutocapitalization(.never)
@@ -552,12 +552,12 @@ struct SignInView: View {
             }
             if mode == .resetConfirm {
                 JPField(L("確認コード", "Verification code")) {
-                    TextField("", text: $code)
+                    JPTextField("", text: $code)
                         .keyboardType(.numberPad)
                         .textContentType(.oneTimeCode)
                 }
                 JPField(L("新しいパスワード", "New password")) {
-                    SecureField("", text: $password)
+                    JPSecureField("", text: $password)
                         .textContentType(.newPassword)
                 }
             }

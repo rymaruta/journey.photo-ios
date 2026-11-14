@@ -60,9 +60,45 @@ final class TabRouterTests: XCTestCase {
     func testTabsMapToTheirReselectSignal() async {
         XCTAssertEqual(RootView.Tab.home.reselectable, .home)
         XCTAssertEqual(RootView.Tab.map.reselectable, .map)
-        XCTAssertNil(RootView.Tab.search.reselectable)
+        XCTAssertEqual(RootView.Tab.search.reselectable, .search)
         XCTAssertNil(RootView.Tab.post.reselectable)
         XCTAssertNil(RootView.Tab.mypage.reselectable)
+    }
+
+    /// 2026-11-14（点検「画面と手ざわり」）: **探すを開いたまま「探す」を押し直したら、字を打てるようにする合図。**
+    /// 別の札から来た回・詳細を積んでいた回（iOS が根へ戻すだけ）は出さない。ホームと地図の合図とは別の数
+    func testReselectingSearchAtRootAsksToFocusField() async {
+        let router = TabRouter()
+        router.searchRootOnScreen = true
+        router.tabTapped(.search, alreadySelected: false)   // 別の札から探すへ
+        XCTAssertEqual(router.searchFocusRequests, 0)
+
+        router.searchRootOnScreen = false                   // 詳細を積んでいる
+        router.tabTapped(.search, alreadySelected: true)
+        XCTAssertEqual(router.searchFocusRequests, 0)
+
+        router.searchRootOnScreen = true                    // 根へ戻った
+        router.tabTapped(.search, alreadySelected: true)
+        router.tabTapped(.search, alreadySelected: true)
+        XCTAssertEqual(router.searchFocusRequests, 2)
+        XCTAssertEqual(router.homeTopRequests, 0)
+        XCTAssertEqual(router.mapLocateRequests, 0)
+        XCTAssertEqual(router.searchRequests, 0, "見出しの「探す」の数とは分ける（RootView が札を移す合図）")
+    }
+
+    /// 探すの画面が合図を受けて、頭へ戻して探す口に焦点を当てること（画面は Linux で描けないので書いてあるもので見る）
+    func testSearchViewFocusesFieldOnReselect() async throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources/JourneyPhoto")
+        let text = try String(contentsOf: root.appendingPathComponent("Features/Search/SearchView.swift"), encoding: .utf8)
+        guard let start = text.range(of: ".onChange(of: tabRouter.searchFocusRequests)") else {
+            return XCTFail("探すが `searchFocusRequests` を受けていない")
+        }
+        let body = String(text[start.upperBound...].prefix(400))
+        XCTAssertTrue(body.contains("proxy.scrollTo(Self.resultsTopID"), "頭へ戻していない")
+        XCTAssertTrue(body.contains("fieldFocused = true"), "探す口に焦点を当てていない")
+        XCTAssertTrue(text.contains("tabRouter.searchRootOnScreen = true"))
+        XCTAssertTrue(text.contains("tabRouter.searchRootOnScreen = false"))
     }
 
     /// 見出しの「探す」・メニューの「撮影地マップ」・見出しの「メニュー」は

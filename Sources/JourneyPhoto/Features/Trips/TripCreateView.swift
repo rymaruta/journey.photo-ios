@@ -633,6 +633,11 @@ struct TripCalendar: View {
         .accessibilityLabel(label)
     }
 
+    /// 端の日（出発・帰着）の丸（白 94%・`WebTheme.accentBackground`）。字は墨（`accentText`）
+    static let endFill = WebTheme.accentBackground
+    /// 間の日の帯（白 8%）
+    static let insideFill = Color.white.opacity(0.08)
+
     private func cell(_ day: String) -> some View {
         let isEnd = day == start || day == (end ?? start)
         let inside = start.map { s in day > s && day < (end ?? s) } ?? false
@@ -643,11 +648,14 @@ struct TripCalendar: View {
                 .font(JPFont.number(JPTypeScale.body, weight: isEnd ? .bold : .regular))
                 .foregroundStyle(isEnd ? WebTheme.accentText : WebTheme.foreground)
                 .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                // 2026-11-14 判断（前回の点検の残り・板 04「選択中は白」「10px 以上の塗りの丸に真鍮を使わない」）:
+                // **端の日は白 94% の丸に墨、間の日は白 8% の帯。** 前は真鍮の塗りの丸と真鍮 18% の帯で、
+                // 下の真鍮の主ボタン「旅行プランを作る」と色が重なり、選んだ日が先に目に入らなかった
                 .background {
                     if isEnd {
-                        Circle().fill(WebTheme.accentFill).frame(width: 40, height: 40)
+                        Circle().fill(Self.endFill).frame(width: 40, height: 40)
                     } else if inside {
-                        Rectangle().fill(WebTheme.accent.opacity(0.18))
+                        Rectangle().fill(Self.insideFill)
                     }
                 }
                 .contentShape(Rectangle())
@@ -683,7 +691,7 @@ struct TripCreateDraftStep: View {
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                     // 題（行き先から案を出す・直せる）
-                    TextField(model.suggestedTitle, text: $model.title)
+                    JPTextField(model.suggestedTitle, text: $model.title)
                         .font(JPFont.screenTitle)
                         .foregroundStyle(WebTheme.foreground)
                         .submitLabel(.done)

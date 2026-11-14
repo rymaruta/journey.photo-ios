@@ -31,7 +31,7 @@ struct SearchBox: View {
                 .font(.system(size: 17))
                 .foregroundStyle(WebTheme.text3)
                 .accessibilityHidden(true)
-            TextField(prompt, text: $text)
+            JPTextField(prompt, text: $text)
                 .textFieldStyle(.plain)
                 .font(.callout)
                 .foregroundStyle(WebTheme.foreground)

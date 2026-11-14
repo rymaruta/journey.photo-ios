@@ -24,7 +24,8 @@ struct PlaceSearchField: View {
     /// **選んだ名前から書き換えたら外す**（`UploadSpotTarget.keepsPicked`）。nil の画面（写真の編集）は持たない
     var pickedSpot: Binding<UploadSpotTarget?>? = nil
     /// 欄に枠を付けるか（投稿画面）。**タイトル・説明と同じ枠**（`jpFieldBox`）にして、押せる欄だと分かるようにする
-    /// （2026-10-21・撮影地の欄だけ枠が無く、地の上の灰の字に見えた・run 609 の 42・43）。写真の編集は Form の行なので付けない
+    /// （2026-10-21・撮影地の欄だけ枠が無く、地の上の灰の字に見えた・run 609 の 42・43）。
+    /// 写真の編集も付ける（2026-11-14・前回の点検の残り。板 EditPhoto の撮影地も枠の欄）
     var boxed = false
 
     @EnvironmentObject private var environment: AppEnvironment
@@ -130,7 +131,7 @@ struct PlaceSearchField: View {
     /// 撮影地を打つ欄。投稿画面（`boxed`）はタイトル・説明と同じ枠に入れる
     @ViewBuilder
     private var placeField: some View {
-        let field = TextField(L("撮影地（例: 高屋神社, 香川）", "Place (e.g. Takaya Shrine, Kagawa)"), text: $location)
+        let field = JPTextField(L("撮影地（例: 高屋神社, 香川）", "Place (e.g. Takaya Shrine, Kagawa)"), text: $location)
         if boxed {
             field
                 .font(.subheadline)

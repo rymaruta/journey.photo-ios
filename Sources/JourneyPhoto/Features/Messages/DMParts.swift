@@ -15,6 +15,10 @@ struct DMSheetTarget: Identifiable, Equatable {
 /// ストーリーへの返信の写真 40×52 → 104×138・送った写真 220×275（4:5）・吹き出しの最大幅は画面の 78%
 /// （固定の 304 をやめた）・空の受信箱の顔の列 52
 enum DMLook {
+    /// 入力欄・送るの丸の下の間（12pt）。2026-11-14 判断（点検「人間工学」の追加の点検・HIG Accessibility
+    /// 「縁のある部品のまわりに約 12pt」）: プロフィールの「メッセージ」から積んだ会話は下の札が出る（HIG Tab bars
+    /// どおり隠さない）。前は 8pt（`JPSpace.xs`）で、送るの丸と札の間が画面写真で約 10〜15pt しかなく、取り違えやすかった
+    nonisolated static let composerBottomGap: CGFloat = 12
     /// 受信箱の顔（52）・リクエストの札の顔（44）・会話の見出しの顔（32）
     nonisolated static let rowAvatar: CGFloat = 52
     nonisolated static let requestAvatar: CGFloat = 44

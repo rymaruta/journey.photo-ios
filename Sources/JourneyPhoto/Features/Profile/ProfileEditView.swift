@@ -92,11 +92,11 @@ struct ProfileEditView: View {
 
             Section {
                 labeled(L("表示名", "Display name"), over: PostLimits.overLimitNote(displayName, limit: PostLimits.Profile.displayName)) {
-                    TextField("", text: $displayName)
+                    JPTextField("", text: $displayName)
                         .onChange(of: displayName, limitLength($displayName, to: PostLimits.Profile.displayName, loaded: \.displayName))
                 }
                 labeled(L("ユーザー名", "Username")) {
-                    TextField(L("半角英数字", "Letters and numbers"), text: $username)
+                    JPTextField(L("半角英数字", "Letters and numbers"), text: $username)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }
@@ -105,7 +105,7 @@ struct ProfileEditView: View {
                     // 板の下書き「ひとこと」は付けない——下の演出欄に同じ名前の欄
                     // （statusText）があり、どちらに書くのか紛れる
                     // 行数は `bioLines` の注記（owner 2026-10-12: 枠が小さい）
-                    TextField(L("好きな写真や旅について", "Tell people about your photography and travels"), text: $bio, axis: .vertical)
+                    JPTextField(L("好きな写真や旅について", "Tell people about your photography and travels"), text: $bio, axis: .vertical)
                         .lineLimit(Self.bioLines)
                         .onChange(of: bio, limitLength($bio, to: PostLimits.Profile.bio, loaded: \.bio))
                 }
@@ -118,17 +118,17 @@ struct ProfileEditView: View {
 
             Section {
                 labeled(L("居住地", "Where you're based"), over: PostLimits.overLimitNote(homeLocation, limit: PostLimits.Profile.homeLocation)) {
-                    TextField(L("例：東京都", "e.g. Tokyo"), text: $homeLocation)
+                    JPTextField(L("例：東京都", "e.g. Tokyo"), text: $homeLocation)
                         .onChange(of: homeLocation, limitLength($homeLocation, to: PostLimits.Profile.homeLocation, loaded: \.homeLocation))
                 }
                 labeled(L("Instagram", "Instagram"), over: PostLimits.overLimitNote(instagram, limit: PostLimits.Profile.instagram)) {
-                    TextField(L("ユーザー名（@なし）", "Username without @"), text: $instagram)
+                    JPTextField(L("ユーザー名（@なし）", "Username without @"), text: $instagram)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .onChange(of: instagram, limitLength($instagram, to: PostLimits.Profile.instagram, loaded: \.instagram))
                 }
                 labeled(L("ウェブサイト", "Website"), over: PostLimits.overLimitNote(website, limit: PostLimits.Profile.website)) {
-                    TextField(L("https://", "https://"), text: $website)
+                    JPTextField(L("https://", "https://"), text: $website)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
@@ -141,7 +141,7 @@ struct ProfileEditView: View {
 
             Section {
                 labeled(L("ひとこと", "Status"), over: PostLimits.overLimitNote(statusText, limit: PostLimits.Profile.statusText)) {
-                    TextField(L("短いひとこと", "A short status"), text: $statusText)
+                    JPTextField(L("短いひとこと", "A short status"), text: $statusText)
                         .onChange(of: statusText, limitLength($statusText, to: PostLimits.Profile.statusText, loaded: \.statusText))
                 }
                 ThemeColorField(themeColor: $themeColor)

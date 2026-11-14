@@ -245,15 +245,52 @@ struct PassSettingsView: View {
                 .foregroundStyle(WebTheme.text3)
                 .padding(.horizontal, JPSpace.xxs)
                 .fixedSize(horizontal: false, vertical: true)
+            // 2026-11-14 判断（前回の点検の残り・板 04「真鍮を使わない: 警告は白＋アイコン」）: **注意は text-2 の字に
+            // 注意の印。** 前は真鍮の字で、すぐ上の「通知がオフのため届きません」（owner が真鍮と決めた案内の帯）と紛れた。
+            // 居住地が無い訳のときは、押すとプロフィールの編集を開く（その場で入れられる）
             if pass.settings.mode == .traveling, let reason = travelUnknownReason {
-                Text(reason)
-                    .font(JPFont.caption)
-                    .foregroundStyle(WebTheme.accent)
-                    .padding(.horizontal, JPSpace.xxs)
-                    .fixedSize(horizontal: false, vertical: true)
+                if pass.homePrefecture == nil {
+                    NavigationLink { ProfileEditView() } label: {
+                        travelWarning(reason, opens: true)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("pass.settings.addHome")
+                } else {
+                    travelWarning(reason, opens: false)
+                }
             }
         }
     }
+
+    /// 「旅のあいだ」で家からの距離が分からない、の注意の行（text-2・注意の印。押せる時は右に ›）
+    private func travelWarning(_ reason: String, opens: Bool) -> some View {
+        HStack(alignment: .top, spacing: JPSpace.xs) {
+            Image(systemName: Self.warningSymbol)
+                .font(JPFont.footnote)
+                .padding(.top, 1)
+                .accessibilityHidden(true)
+            Text(reason)
+                .font(JPFont.caption)
+                .fixedSize(horizontal: false, vertical: true)
+            if opens {
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.text3)
+                    .padding(.top, 1)
+                    .accessibilityHidden(true)
+            }
+        }
+        .foregroundStyle(Self.warningColor)
+        .padding(.horizontal, JPSpace.xxs)
+        .frame(minHeight: opens ? WebTheme.minTapTarget : nil, alignment: .topLeading)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+
+    /// 注意の行の色と印（板 04: 警告は白＋アイコン。真鍮にしない）
+    static let warningColor = WebTheme.text2
+    static let warningSymbol = "exclamationmark.triangle"
 
     /// 「旅のあいだ」で、家からの距離が分からない訳（分からない日は交換しない）
     /// （すれちがい帳の頭の行も同じ訳で「家からの距離が分からない」と言う・`PassSettingsText.travelUnknownReason`）

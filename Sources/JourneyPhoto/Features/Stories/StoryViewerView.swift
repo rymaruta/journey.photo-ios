@@ -2029,7 +2029,7 @@ struct StoryViewerView: View {
                     .accessibilityIdentifier("story.reply.refusal")
                 }
                 HStack(spacing: 6) {
-                    TextField(L("返信する", "Reply"), text: $reply)
+                    JPTextField(L("返信する", "Reply"), text: $reply)
                         // サーバーの上限（200）で止める——超えたぶんは黙って切られる
                         .onChange(of: reply) { old, value in
                             let kept = PostLimits.limited(old: old, new: value, limit: PostLimits.storyReply)

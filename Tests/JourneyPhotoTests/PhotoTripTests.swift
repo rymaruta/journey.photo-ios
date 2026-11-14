@@ -351,7 +351,8 @@ final class PhotoTripTests: XCTestCase {
         XCTAssertTrue(model.contains("draft.spotId = UploadSpotTarget.spotIdToSend(screen: spot, for: item)"))
         // 写真の編集は撮影スポットの候補を出さない（座標の食い違い・`PlaceSearchField.offersSpots` の注記）
         let edit = try source("Sources/JourneyPhoto/Features/Profile/EditPhotoView.swift")
-        XCTAssertTrue(edit.contains("PlaceSearchField(location: $location, coords: $pickedCoords)"))
+        XCTAssertTrue(edit.contains("PlaceSearchField(location: $location, coords: $pickedCoords, boxed: true)"))
+        XCTAssertFalse(edit.contains("offersSpots: true"))
     }
 
     func testComposeGuideFromASpotCanPost() throws {

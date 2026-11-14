@@ -746,8 +746,10 @@ struct DMConversationView: View {
                     .foregroundStyle(WebTheme.text2)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
+                // 2026-11-14 判断（前回の点検の残り・板「危険の色は danger #F0565A（削除、通報）」）: 危険の線のボタン
+                // （赤の字・赤 40% の線・`JPOutlineTone.danger`）。前は白の線のボタンで、消す操作に見えなかった。確かめのダイアログは今のまま
                 Button { showDeleteConfirm = true } label: {
-                    Text(L("会話を削除", "Delete conversation")).jpPillButton(.outline)
+                    Text(L("会話を削除", "Delete conversation")).jpOutlineButton(.regular, tone: .danger, fullWidth: true)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("dm.deleted.remove")
@@ -779,7 +781,7 @@ struct DMConversationView: View {
             }
             HStack(alignment: .bottom, spacing: 6) {
                 // 欄は surface-2 に outline の縁（黒地 3.66:1・部品の縁 3:1 以上）。断られたら縁も赤（色だけにしない: 上に印と文）
-                TextField(L("メッセージ", "Message"), text: $draft, axis: .vertical)
+                JPTextField(L("メッセージ", "Message"), text: $draft, axis: .vertical)
                     .lineLimit(1...5)
                     .font(JPFont.body)
                     .foregroundStyle(WebTheme.text)
@@ -810,7 +812,8 @@ struct DMConversationView: View {
         }
         .padding(.horizontal, JPSpace.s)
         .padding(.top, JPSpace.xs)
-        .padding(.bottom, JPSpace.xs)
+        // 入力欄・送るの丸と、その下（下の札・画面の下端）の間は 12pt（`DMLook.composerBottomGap`）
+        .padding(.bottom, DMLook.composerBottomGap)
         .background(WebTheme.background, ignoresSafeAreaEdges: .bottom)
         .overlay(alignment: .top) {
             Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)

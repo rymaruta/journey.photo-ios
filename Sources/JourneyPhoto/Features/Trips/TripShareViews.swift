@@ -336,7 +336,7 @@ struct TripChatPane: View {
                     .foregroundStyle(WebTheme.danger)
             }
             HStack(spacing: JPSpace.xs) {
-                TextField(L("メッセージ", "Message"), text: $draft, axis: .vertical)
+                JPTextField(L("メッセージ", "Message"), text: $draft, axis: .vertical)
                     .font(JPFont.body)
                     .lineLimit(1...4)
                     .padding(.horizontal, 14)
@@ -358,7 +358,9 @@ struct TripChatPane: View {
             }
         }
         .padding(.horizontal, JPSpace.gutter)
-        .padding(.vertical, JPSpace.xs)
+        .padding(.top, JPSpace.xs)
+        // 下の札との間は 12pt（DM の会話と同じ・`DMLook.composerBottomGap`）
+        .padding(.bottom, DMLook.composerBottomGap)
         .background(WebTheme.background)
     }
 

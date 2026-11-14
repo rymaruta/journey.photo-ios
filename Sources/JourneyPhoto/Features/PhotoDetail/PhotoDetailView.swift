@@ -2008,7 +2008,7 @@ struct PhotoDetailView: View {
                 .accessibilityIdentifier("photo.commentReplying")
             }
             HStack(spacing: JPSpace.xs) {
-                TextField(L("コメントを書く", "Write a comment"), text: $model.draftComment, axis: .vertical)
+                JPTextField(L("コメントを書く", "Write a comment"), text: $model.draftComment, axis: .vertical)
                     .focused($commentFieldFocused)
                     // **サーバーの上限で止める。** 超えたぶんは黙って切られ、送った文と同じとして
                     // 下書きも消えるので、後ろが二度と戻らなかった（Web は maxLength=500）
