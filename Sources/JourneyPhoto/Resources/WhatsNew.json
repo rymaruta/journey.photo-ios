@@ -2,6 +2,58 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.88",
+      "date": "2026-11-14",
+      "items": [
+        {
+          "symbol": "arrow.down",
+          "title": { "ja": "写真を大きく見る画面は下に引いて閉じる", "en": "Pull down to close the full-screen photo" },
+          "detail": { "ja": "写真を大きく見る画面で、写真を下に引いて離すと閉じます。", "en": "When viewing a photo full screen, pull it down and let go to close." }
+        },
+        {
+          "symbol": "plus.app",
+          "title": { "ja": "投稿するは下の大きなボタンに", "en": "Post is now a big button at the bottom" },
+          "detail": { "ja": "投稿の画面の「投稿する」を、画面の下の大きなボタンにしました。親指で押しやすくなります。", "en": "Post now sits as a big button at the bottom of the screen, easy to reach with your thumb." }
+        },
+        {
+          "symbol": "hand.draw",
+          "title": { "ja": "書きかけでも下へ払うと確かめが出る", "en": "Swiping away asks first if you have unsaved text" },
+          "detail": { "ja": "書きかけの投稿などを下へ払って閉じようとすると、保存せずに閉じるかを確かめます。何も書いていなければ、そのまま閉じます。", "en": "If you swipe down on something you haven't finished, such as a post, we ask before closing without saving. If nothing is written, it just closes." }
+        },
+        {
+          "symbol": "textformat",
+          "title": { "ja": "入力欄の見本の字を読みやすく", "en": "Easier-to-read hints in text fields" },
+          "detail": { "ja": "入力欄に薄く出る見本の字を、暗い画面でも読みやすい明るさにそろえました。", "en": "The faint hint text inside text fields is now bright enough to read on dark screens." }
+        },
+        {
+          "symbol": "magnifyingglass",
+          "title": { "ja": "探すをもう一度押すとすぐ打てる", "en": "Tap Search again to start typing" },
+          "detail": { "ja": "探すを開いているときに下の「探す」をもう一度押すと、一覧の頭に戻って、すぐに字を打てます。", "en": "While on Search, tap Search at the bottom again to jump to the top and start typing right away." },
+          "destination": "search"
+        },
+        {
+          "symbol": "ticket",
+          "title": { "ja": "乗車券は ‹ › でもめくれる", "en": "Flip passes with ‹ ›" },
+          "detail": { "ja": "乗車券の束は、払うほかに下の ‹ › のボタンでもめくれます。何枚目かも分かります。", "en": "You can flip through your passes with the ‹ › buttons as well as by swiping, and see which one you're on." }
+        },
+        {
+          "symbol": "arrow.clockwise",
+          "title": { "ja": "とおまわり号の部屋をボタンでも回せる", "en": "Turn the Detour room with buttons" },
+          "detail": { "ja": "とおまわり号の部屋は、指で回すほかに上のボタンでも向きを変えられます。", "en": "You can turn the Detour camper room with the buttons at the top as well as with your finger." }
+        },
+        {
+          "symbol": "flag",
+          "title": { "ja": "「行きたい」の印を旗に", "en": "Want to go is now a flag" },
+          "detail": { "ja": "「行きたい」に入れた場所の印を旗の形にしました。", "en": "Places you saved to Want to go are now marked with a flag." }
+        },
+        {
+          "symbol": "exclamationmark.bubble",
+          "title": { "ja": "旅行プランの会話で通報できる", "en": "Report messages in trip plan chats" },
+          "detail": { "ja": "旅行プランの会話で、いやなメッセージを長押しして運営に知らせられます。", "en": "In a trip plan chat, long-press an unpleasant message to report it to our team." }
+        }
+      ]
+    },
+    {
       "version": "1.1.87",
       "date": "2026-11-14",
       "items": [
