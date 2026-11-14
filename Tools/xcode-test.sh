@@ -79,6 +79,8 @@ case "$mode" in
         extra="$extra -test-timeouts-enabled YES"
         extra="$extra -default-test-execution-time-allowance $UI_TIME_ALLOWANCE"
         extra="$extra -maximum-test-execution-time-allowance $UI_TIME_MAXIMUM"
+        # 事実取りの枝だけ（札 #522・#530・#531・2026-11-14）: 同じ UI テストを 3 回続けて流す。main には入れない
+        extra="$extra -test-iterations 3"
         only=""
         if [ -n "${2:-}" ] && [ -f "$2" ]; then
             while IFS= read -r line; do
