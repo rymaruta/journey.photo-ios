@@ -82,7 +82,7 @@ final class PassWiringTests: XCTestCase {
             XCTAssertTrue(cards.contains(part), "きっぷに \(part) が無い")
         }
         let ticket = try source("Core/Text/PassTicket.swift")
-        for part in ["L(\"発行\", \"Issued by\")", "L(\"有効\", \"Valid\")", "L(\"区間\", \"Distance\")",
+        for part in ["L(\"発行\", \"Issued by\")", "L(\"有効\", \"Valid\")", "L(\"区間\", \"Route\")",
                      "L(\"回数\", \"Times\")", "L(\"日付\", \"Date\")"] {
             XCTAssertTrue(ticket.contains(part), "きっぷの欄に \(part) が無い")
         }
@@ -230,7 +230,7 @@ final class PassWiringTests: XCTestCase {
     func testEveningOptionAndInstantArrivalWiring() throws {
         let settings = try source("Features/Pass/PassSettingsView.swift")
         XCTAssertTrue(settings.contains("deliverySection"), "届き方の節を画面に置いていない")
-        XCTAssertTrue(settings.contains(#"L("夕方にまとめて受け取る", "Get cards together in the evening")"#))
+        XCTAssertTrue(settings.contains(#"L("夕方にまとめて受け取る", "Get tickets together in the evening")"#))
         XCTAssertTrue(settings.contains("pass.update { $0.delivery = on ? .evening : .instant }"), "入切が届き方に繋がっていない")
         XCTAssertTrue(settings.contains(#".accessibilityIdentifier("pass.settings.evening")"#))
         // 前面で綴じたカードは `arrivals` で「いま」を入れ直して札へ出す（ホームの側は今のつなぎのまま）

@@ -284,7 +284,7 @@ final class TrunkInsideTests: XCTestCase {
         XCTAssertEqual(all.actionTitle(.medal(badge("first"))), L("メダルを回して見る", "Turn the medal"))
         XCTAssertEqual(all.actionTitle(.more), L("バッジの棚で見る", "See them on the badge shelf"))
         XCTAssertEqual(all.actionTitle(.card), L("サポーター証を開く", "Open the supporter card"))
-        XCTAssertEqual(all.actionTitle(.tickets), L("すれちがい帳を開く", "Open the pass book"))
+        XCTAssertEqual(all.actionTitle(.tickets), L("すれちがい帳を開く", "Open Pass book"))
         XCTAssertTrue(all.subtitle(.tickets).contains("4"))
     }
 
