@@ -114,22 +114,19 @@ struct TopCardFace: View {
         .modifier(TopCardCreditProbe(title: title, credit: credit))
     }
 
-    /// 札の左の写真。**写真の無い札（旅行プラン・旅の最中）は置かない**——空の枠を作らない
+    /// 札の左の写真。**写真の無い札（旅行プラン・旅の最中）は置かない**——空の枠を作らない。
+    /// 写真は `TopCardPhotoSlot` の枠に敷く（写真の縦横比で札の背を変えない・2026-11-14 Mac run 1321）
     @ViewBuilder
     private func cardPhoto(backdrop: Photo?, backdropURL: URL?) -> some View {
         if let backdrop {
-            RemoteImage(url: backdrop.gridImageURL, alignment: backdrop.gridAlignment)
-                .frame(width: HomeTopCardView.photoWidth)
-                .frame(maxHeight: .infinity)
-                .clipped()
-                .accessibilityHidden(true)
+            TopCardPhotoSlot {
+                RemoteImage(url: backdrop.gridImageURL, alignment: backdrop.gridAlignment)
+            }
         } else if let backdropURL {
             // 撮影スポット・今日の一問の写真（`Photo` ではない）。出典は右の字に出す
-            RemoteImage(url: backdropURL)
-                .frame(width: HomeTopCardView.photoWidth)
-                .frame(maxHeight: .infinity)
-                .clipped()
-                .accessibilityHidden(true)
+            TopCardPhotoSlot {
+                RemoteImage(url: backdropURL)
+            }
         }
     }
 
@@ -150,6 +147,28 @@ struct TopCardFace: View {
         .background(Color.black)
         .clipped()
         .accessibilityHidden(true)
+    }
+}
+
+/// 札の左の写真の枠（幅 112・札の背いっぱい）。**写真の縦横比で札の背を変えない**（2026-11-14）。
+///
+/// 前は写真（`RemoteImage` の `resizable().aspectRatio(contentMode: .fill)`）に直に `.frame(maxHeight: .infinity)` を
+/// 付けていた。横にめくる並びは背を揃えるため高さを決めずに測る（`fixedSize(vertical:)`）ので、そのとき写真は
+/// 幅 112 に縦横比で合わせた背を返し、縦長の写真では札の背がそれに伸びていた。Mac run 1321 では
+/// 花の窟神社の写真（960×1280・3:4）で 112×1280/960 = 149.3 になり、並びの3枚とも 149.3 に揃った
+/// （横長の谷川岳 一ノ倉沢 960×720 なら 84 で、最小の 116 のまま。写真が読めるまでも 116）。
+/// 枠は背の要らない `Color.clear` で作り、写真は上に重ねて枠に合わせて切る（①現像前の旅の3コマ
+/// `LibraryShotImage` と同じ形）。高さを決めずに測っても写真の背を返さないので、札の背は最小の 116 か字の背で決まる
+struct TopCardPhotoSlot<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        Color.clear
+            .frame(width: HomeTopCardView.photoWidth)
+            .frame(maxHeight: .infinity)
+            .overlay { content }
+            .clipped()
+            .accessibilityHidden(true)
     }
 }
 
