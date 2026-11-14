@@ -3426,6 +3426,8 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         // 前の回の続き（見た札・開いた印）を残さない
         app.launchArguments += ["-journey-photo-spot-swipe-started", "NO", "-journey-photo-spot-swipe-seen", "()"]
+        // 札の出典の行の幅と札の背を値で出す（`home.topCard.probe`・2026-11-14 出典の頭が切れる件）
+        app.launchArguments += ["-JPPreviewLayoutProbe", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -3435,6 +3437,7 @@ final class ScreenshotTests: XCTestCase {
         // 入口の札の写真（撮影スポットの詳細）が描かれるのを待つ
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "66-撮影スポットを払う（ホームの札の1枚目・未ログイン）")
+        recordTopCardProbe(app, entry: entry)
         guard entry.isHittable else { return }
         entry.tap()
 
@@ -3462,6 +3465,37 @@ final class ScreenshotTests: XCTestCase {
         action.tap()
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "66d-撮影スポットを払う（ログインの板）")
+    }
+
+    /// ホームの上の札の出典の行の幅（渡された幅・全文の要る幅）と札の背を書き出す（`home.topCard.probe`・2026-11-14）。
+    /// 字が切れたかは画面の木から取れないので、`TopCardProbe` が札の中で測った値を読む
+    private func recordTopCardProbe(_ app: XCUIApplication, entry: XCUIElement) {
+        let probe = app.descendants(matching: .any)["home.topCard.probe"].firstMatch
+        let value = probe.exists ? (probe.value as? String ?? "nil") : "無し"
+        let line = "TOPCARD entry=\(entry.frame) width=\(app.windows.firstMatch.frame.width) probe=\(value)"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        let note = XCTAttachment(string: value.replacingOccurrences(of: " | ", with: "\n"))
+        note.name = "66-撮影スポットを払う（札の出典の寸法）"
+        note.lifetime = .keepAlways
+        add(note)
+        // 2026-11-14 判断（`TopCardCredit`）: 札の背（116）と1行のまま、出典の頭（「写真: 作者」の頭）を必ず見せる。
+        // 直す前（Mac run 1274）は「福岡県　久留米市　写…rio / CC BY-SA 4.0」（幅 222.0 に 307.0 要る字を真ん中で切った）
+        guard probe.exists else { return XCTFail("札の寸法の要素（home.topCard.probe）が無い") }
+        let parts = value.components(separatedBy: " | ")
+        let credits = parts.filter { $0.hasPrefix("credit ") }
+        XCTAssertFalse(credits.isEmpty, "写真のある札に出典の行（creditLine）が無い: \(value)")
+        for credit in credits {
+            XCTAssertTrue(credit.contains(" headVisible=yes"), "出典の頭が切れている: \(credit)")
+            // 長い作者の見本（最後の形・作者の後ろを切る）でも頭が残る（本物の写真は日によって替わるので見本で確かめる）
+            XCTAssertTrue(credit.contains("sampleHeadVisible=yes"), "長い作者で出典の頭が切れる: \(credit)")
+        }
+        XCTAssertFalse(parts.contains { $0.hasPrefix("detail ") && $0.contains("写真: ") },
+                       "出典を1本の字（真ん中で切る小さい行）で出している: \(value)")
+        for card in parts where card.hasPrefix("card ") {
+            let height = card.components(separatedBy: "height=").last.flatMap { Double($0) } ?? 0
+            XCTAssertEqual(height, 116, accuracy: 0.5, "札の背が 116 から変わった: \(card)")
+        }
     }
 
     /// **旅行プランの日程**（自動保存・運ぶ・移動の見込み・区間のシート）。

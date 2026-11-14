@@ -130,6 +130,10 @@ struct HomeTopCardView: View {
         // 中身はここで決めて `seasonShelf` で渡す（札の並びは**1回だけ計算して**、札と段の両方に使う）
         let choices = self.choices
         content(choices)
+            // UI テストのときだけ: 札の小さい行（出典）の幅と札の背を、札の外の見えない要素に出す（`TopCardProbe`・2026-11-14）
+            .overlayPreferenceValue(TopCardProbeKey.self) { values in
+                LayoutProbe(identifier: "home.topCard.probe", value: values.joined(separator: " | "))
+            }
             .fullScreenCover(isPresented: $showSwipe, onDismiss: { swipeStarted = SpotSwipeProgress().started }) {
                 SpotSwipeView()
             }
@@ -420,8 +424,8 @@ struct HomeTopCardView: View {
                      title: spot.name,
                      line: guide,
                      // **写真を出すなら作者とライセンスも出す**（CC BY・CC BY-SA の条件。
-                     // 薄い背景でも写真は写真）
-                     detail: Self.spotDetail(spot),
+                     // 薄い背景でも写真は写真）。出典の頭は切らない（`TopCardCredit`・2026-11-14 判断）
+                     detail: Self.spotDetail(spot), credit: Self.spotCredit(spot),
                      backdrop: nil, backdropURL: spot.photo?.url, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
@@ -434,7 +438,7 @@ struct HomeTopCardView: View {
                      title: spot.name,
                      line: guide,
                      // 写真を出すなら作者とライセンスも出す（季節の札と同じ）
-                     detail: Self.spotDetail(spot),
+                     detail: Self.spotDetail(spot), credit: Self.spotCredit(spot),
                      backdrop: nil, backdropURL: spot.photo?.url, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
@@ -449,7 +453,7 @@ struct HomeTopCardView: View {
                      line: SpotSwipe.cardLine(started: swipeStarted, wishCount: wishlist.spotIds.count,
                                               signedIn: auth.userId != nil),
                      // 写真を出すなら作者とライセンスも出す（季節の札と同じ）
-                     detail: cover.flatMap { $0.photo == nil ? nil : Self.spotDetail($0) },
+                     detail: nil, credit: cover.flatMap(Self.spotCredit),
                      backdrop: nil, backdropURL: cover?.photo?.url, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
@@ -466,7 +470,7 @@ struct HomeTopCardView: View {
                         ? L("答えました、明日また新しい写真", "Answered, a new photo tomorrow")
                         : L("4つの中から撮影地を当てる", "Guess the spot from four choices"),
                      // 写真を出すなら作者とライセンスも出す（季節の札と同じ）
-                     detail: quiz.photo.credit,
+                     detail: nil, credit: TopCardCredit(photo: quiz.photo),
                      backdrop: nil, backdropURL: quiz.photo.url, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
@@ -476,14 +480,15 @@ struct HomeTopCardView: View {
     // MARK: - 札1枚（今日のテーマの札と同じ地・角・余白）
 
     private func card(eyebrow: String, eyebrowLabel: String, title: String, line: String,
-                      detail: String?, backdrop: Photo?, backdropURL: URL? = nil, film: [String] = [],
+                      detail: String?, credit: TopCardCredit? = nil, backdrop: Photo?, backdropURL: URL? = nil,
+                      film: [String] = [],
                       trailingSymbol: String = "chevron.right", detailTruncation: Text.TruncationMode = .middle,
                       reservesMenu: Bool = false, inCarousel: Bool) -> some View {
         // 札の面は探すの「今日の一問」の段と同じ部品（`TopCardFace`・2026-11-12 に切り出した）。
         // ①現像前の旅の札は左の写真の代わりにフィルムの3コマ（`film`・札 #543。1.1.84 のまとめで面に移した）。
         // 旅行プランの札は右上の「⋯」の分を空ける（`reservesMenu`・1.1.84 のまとめで面に移した）
         TopCardFace(eyebrow: eyebrow, eyebrowLabel: eyebrowLabel, title: title, line: line, detail: detail,
-                    backdrop: backdrop, backdropURL: backdropURL, film: film, trailingSymbol: trailingSymbol,
+                    credit: credit, backdrop: backdrop, backdropURL: backdropURL, film: film, trailingSymbol: trailingSymbol,
                     detailTruncation: detailTruncation, reservesMenu: reservesMenu, inCarousel: inCarousel)
     }
 
@@ -498,16 +503,17 @@ struct HomeTopCardView: View {
     /// 札の左の写真の幅（板の 112）
     nonisolated static let photoWidth: CGFloat = 112
 
-    /// スポットの札の小さい行: 地域と、写真の作者・ライセンス。**どちらも無ければ出さない**
-    /// （空の行が並んでいた）。#417 ③で1行にした（「岡山 · 写真: … / CC BY-SA 4.0」）——真ん中で切るので、
-    /// 頭の地域と末尾のライセンス名は残る
-    nonisolated static func spotDetail(region: String?, credit: String?) -> String? {
-        let parts = [region, credit].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: "\u{2002}")
+    /// スポットの札の小さい行のうち、**写真の無い札**の分（地域だけ）。写真があれば出典の行（`spotCredit`）を出し、
+    /// こちらは使わない（`TopCardFace` は `credit` を先に見る）。どちらも無ければ出さない（空の行が並んでいた）
+    private static func spotDetail(_ spot: OfficialSpot) -> String? {
+        spot.photo == nil ? spot.regionLabel : nil
     }
 
-    private static func spotDetail(_ spot: OfficialSpot) -> String? {
-        spotDetail(region: spot.regionLabel, credit: spot.photo?.credit)
+    /// スポットの札の写真の出典（地域つき）。**2026-11-14 判断**: 前は「地域　写真: … / ライセンス」の1本の字を
+    /// 真ん中で切っていて、ちょうど出典の頭（「写真: 作者」）が消えていた。いまは地域から削り、出典の頭を必ず残す
+    /// （`TopCardCredit`・`TopCardFace.creditLine`）
+    nonisolated static func spotCredit(_ spot: OfficialSpot) -> TopCardCredit? {
+        spot.photo.map { TopCardCredit(spot: spot, photo: $0) }
     }
 
     /// 当日モードの小さい行（今日か明日の撮影スポットの光の時刻）。当たらなければ nil
