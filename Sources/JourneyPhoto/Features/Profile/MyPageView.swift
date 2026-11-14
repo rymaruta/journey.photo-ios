@@ -470,7 +470,7 @@ struct MyPageView: View {
                         .modifier(ProfileTabSwipe(tabs: ProfileTab.tabs(isMe: true), selection: $tab,
                                                   follow: tabPager.drag,
                                                   willShow: { next in tabPager.willShow?(next) },
-                                                  probeTag: "row"))
+                                                  probeTag: "row", yieldsToHorizontalScrollers: false))
                         .opacity(tabRowPinned ? 0 : 1)
                         .allowsHitTesting(!tabRowPinned)
                         .accessibilityHidden(tabRowPinned)

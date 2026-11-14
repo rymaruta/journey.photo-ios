@@ -231,7 +231,8 @@ struct UserProfileView: View {
                               iconColumns: true, follow: tabPager.drag)
                     .modifier(ProfileTabSwipe(tabs: ProfileTab.tabs(isMe: false), selection: $tab,
                                               follow: tabPager.drag,
-                                              willShow: { next in tabPager.willShow?(next) }))
+                                              willShow: { next in tabPager.willShow?(next) },
+                                              probeTag: "row", yieldsToHorizontalScrollers: false))
                     .id(ProfileTabScroll.rowID)
                     .onGeometryChange(for: CGRect.self) { proxy in
                         proxy.frame(in: .scrollView)

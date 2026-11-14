@@ -338,6 +338,16 @@ struct ProfileTabSwipe<Tab: PagedTab>: ViewModifier {
     var willShow: ((Tab) -> Void)? = nil
     /// UI テストの記録（`ProfileTabSwipeLog`）での名前。札の行は "row"、中身は "content"
     var probeTag: String = "content"
+    /// 枠の中の横に流れる列に指を渡すか（既定は渡す——ホームの PICKS・季節の撮影スポットの列）。
+    ///
+    /// **2026-11-14 判断（#187 案 B・Mac run 1233 の記録）: 札の行（マイページ・人のページ）は false。**
+    /// とても大きい字（AX3・AX5）で札の行が横に送る並び（`ProfileTabColumnRow` の `ScrollView(.horizontal)`）に替わると、
+    /// 流れている札の行の上を右へ払っても札が替わらなかった。記録は `pan[row] receive -> no(hscroll)`——この払いが
+    /// 札の行そのものの横の送りを「中の横の列」と見て指を渡し、横の送りが端で弾んだだけ（hxRange -105.0〜0）だった。
+    /// 4列に入る字（AX1）・留まった札（`ProfileTabOverlaySwipe`）では同じ払いで替わる（AX1 は pan[row] settle next=posts）。
+    /// false では指を受け、横の送りは**こちらが「始めない」と決まってから**動く（隣の札が無い向き・縦の動き）——
+    /// 払えば札が替わり、選んだ札は横の送りが真ん中へ寄せる（字の大きさで手ざわりを割らない）
+    var yieldsToHorizontalScrollers: Bool = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -347,6 +357,7 @@ struct ProfileTabSwipe<Tab: PagedTab>: ViewModifier {
                 ProfileSwipeCatcher(
                     isEnabled: enabled,
                     tag: probeTag,
+                    yieldsToHorizontalScrollers: yieldsToHorizontalScrollers,
                     shouldBegin: { dx, dy in
                         let starts = Tab.startsSwipe(from: selection, in: tabs, dx: dx, dy: dy)
                         ProfileTabSwipeLog.shared.note("pan[\(probeTag)] shouldBegin dx=\(ProfileTabSwipeLog.n(dx)) "
@@ -381,6 +392,8 @@ struct ProfileSwipeCatcher: View {
     var isEnabled: Bool
     /// UI テストの記録（`ProfileTabSwipeLog`）での名前
     var tag: String = ""
+    /// 枠の中の横に流れる列に指を渡すか（`ProfileTabSwipe.yieldsToHorizontalScrollers`）
+    var yieldsToHorizontalScrollers: Bool = true
     /// 動き始めの横・縦の量で、始めるか
     var shouldBegin: (Double, Double) -> Bool
     /// 動いている間（横の量・枠の幅）
@@ -503,6 +516,11 @@ struct ProfileSwipePanHost: UIViewRepresentable {
                 return false
             }
             guard probe.bounds.contains(touch.location(in: probe)) else { return false }
+            // 札の行（2026-11-14 #187・`ProfileTabSwipe.yieldsToHorizontalScrollers`）: 札の行の横の送りの上でも指を受ける
+            if handlers?.yieldsToHorizontalScrollers == false {
+                ProfileTabSwipeLog.shared.note("pan[\(handlers?.tag ?? "")] receive -> yes(row)")
+                return true
+            }
             // 2026-10-31 判断（#426・ホームの「おすすめ」には横に流れる列がある——PICKS・季節の撮影スポット）:
             // 横に流れる列の上で始まった指は、その列に渡す（列を流したいのか札を替えたいのか指だけでは分けられない）。
             // 札を替えるのは列の外の払いか札を押す
@@ -536,10 +554,25 @@ struct ProfileSwipePanHost: UIViewRepresentable {
             return handlers.shouldBegin(Double(move.x), Double(move.y))
         }
 
-        /// 縦の送りは、こちらが「始めない」と決まってから（向きの固定）
+        /// 縦の送りは、こちらが「始めない」と決まってから（向きの固定）。札の行（`yieldsToHorizontalScrollers` が false）の
+        /// 中の横に送る並びも同じ——払えば札が替わり、隣の札が無い向き・縦の動きでは横の送りが動く（2026-11-14 #187）
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                                shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer) -> Bool {
             gestureRecognizer === pan && otherGestureRecognizer === host?.panGestureRecognizer
+                || gestureRecognizer === pan && waitsForRow(otherGestureRecognizer)
+        }
+
+        /// `other` が、この部品の枠の中にある横に送る並び（札の行の `ScrollView(.horizontal)`）の送りか。
+        /// 札の行（`yieldsToHorizontalScrollers` が false）のときだけ
+        private func waitsForRow(_ other: UIGestureRecognizer) -> Bool {
+            guard handlers?.yieldsToHorizontalScrollers == false, let probe, let host,
+                  let scroll = other.view as? UIScrollView, scroll !== host,
+                  scroll.panGestureRecognizer === other, scroll.isDescendant(of: host) else { return false }
+            let frame = scroll.convert(scroll.bounds, to: probe)
+            let inside = probe.bounds.insetBy(dx: -1, dy: -1).contains(frame)
+            // UI テストの記録（Debug・`-JPPreviewTabSwipeProbe` のときだけ）: 横の送りを待たせたか（枠に入らなければ待たせない）
+            ProfileTabSwipeLog.shared.note("pan[\(handlers?.tag ?? "")] holds hscroll -> \(inside)")
+            return inside
         }
     }
 }

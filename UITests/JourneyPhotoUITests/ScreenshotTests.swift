@@ -6894,8 +6894,9 @@ final class ScreenshotTests: XCTestCase {
     /// 留まった札の払い（`ProfileTabOverlaySwipe` の `simultaneousGesture`）と、横に送る並びの指がぶつかるかは
     /// コードから読んだだけでは分からない——**推定で直さず、数を取る**（CLAUDE.md「推定で直さない」）。
     /// 字の大きさ（AX1・AX3・AX5）ごとに、留まったときと払った後の「選んでいる札・札の位置・横に送る並びか・中身の位置」を
-    /// `[tabsAX]` の行でログ（と注記）に出す。合否は、どちらに転んでも崩れてはいけない所だけ見る:
-    /// 選んでいる札がちょうど1つ・1回の払いで2つ先へ飛ばない・中身が選んでいる札のもので、横にずれて止まっていない。
+    /// `[tabsAX]` の行でログ（と注記）に出す。合否: 選んでいる札がちょうど1つ・左へ払えば「旅の記録」、右へ払えば「投稿」に
+    /// 替わる（2026-11-14 Mac run 1233 の記録で原因を確かめてから足した・`ProfileTabSwipe.yieldsToHorizontalScrollers`）・
+    /// 中身が選んでいる札のもので、横にずれて止まっていない。
     /// 名指し: `screens=testPinsMyPageTabs`（既存の `testPinsMyPageTabs` と一緒に選ばれる）
     ///
     /// **字の大きさごとに1本ずつ・1本で1回だけ起動する**（ほかの大きい文字の試験 `testCapturesCamperLargeText` などと同じ）。
@@ -7024,12 +7025,14 @@ final class ScreenshotTests: XCTestCase {
         swipeRow(left: true)
         log("after-left")
         shoot(app, "14y-マイページ（大きい字で留まった札を左へ払う・\(tag)）")
-        checkSettled("左へ払った後", allowed: ["posts", "trips"], photoX: photoX)
+        checkSettled("左へ払った後", allowed: ["trips"], photoX: photoX)
 
         // 2. 右へ払って戻す（替えた札は頭から見せるので、留まりが外れていれば元の行の上で払う。どちらかはログの pinned=）
         swipeRow(left: false)
         log("after-right")
-        checkSettled("右へ払った後", allowed: ["posts", "trips"], photoX: photoX)
+        // 2026-11-14（Mac run 1233）: AX3・AX5 で横に送る並びの札の行の上を右へ払っても「旅の記録」のままだった
+        // （`pan[row] receive -> no(hscroll)`）。直した後は、どの字の大きさでも払いで「投稿」に戻る
+        checkSettled("右へ払った後", allowed: ["posts"], photoX: photoX)
     }
 
     /// 画面の絵の1点（ポイント）の明るさ（0〜255）。読めなければ nil
