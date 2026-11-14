@@ -102,15 +102,10 @@ struct TopCardFace: View {
                 Text(line)
                     .lineLimit(HomeTopCardView.lineLimit)
             }
-            HStack(spacing: 0) {
-                Text(credit.author)
-                    .lineLimit(HomeTopCardView.lineLimit)
-                    .truncationMode(.tail)
-                Text(credit.licenseTail)
-                    .lineLimit(HomeTopCardView.lineLimit)
-                    .layoutPriority(1)
-            }
+            TopCardCreditCutLine(credit: credit)
         }
+        // 行の幅いっぱい（字は左に寄せたまま・見た目は変わらない）。UI テストの事実取りが、渡された幅を測れるように
+        .frame(maxWidth: .infinity, alignment: .leading)
         .font(JPFont.caption)
         .foregroundStyle(WebTheme.text3)
         .accessibilityElement(children: .ignore)
@@ -155,5 +150,32 @@ struct TopCardFace: View {
         .background(Color.black)
         .clipped()
         .accessibilityHidden(true)
+    }
+}
+
+/// 出典の行の最後の形（どの全文の形も入らないとき・2026-11-14 判断）: **作者の後ろだけを切り**、「 / ライセンス」は
+/// 先に幅を取って残す。「写真: 作者の頭… / CC BY-SA 4.0」。UI テストの事実取り（`TopCardCreditProbe`）も同じ部品で
+/// 長い作者の見本を組み、作者に残る幅を測る（`onAuthorWidth`・ふだんは nil で何も足さない）
+struct TopCardCreditCutLine: View {
+    let credit: TopCardCredit
+    var onAuthorWidth: ((CGFloat) -> Void)? = nil
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if let onAuthorWidth {
+                author.onGeometryChange(for: CGFloat.self) { $0.size.width } action: { onAuthorWidth($0) }
+            } else {
+                author
+            }
+            Text(credit.licenseTail)
+                .lineLimit(HomeTopCardView.lineLimit)
+                .layoutPriority(1)
+        }
+    }
+
+    private var author: some View {
+        Text(credit.author)
+            .lineLimit(HomeTopCardView.lineLimit)
+            .truncationMode(.tail)
     }
 }

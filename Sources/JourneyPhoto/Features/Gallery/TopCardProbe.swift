@@ -66,18 +66,30 @@ struct TopCardHeightProbe: ViewModifier {
 
 /// 写真の出典の行（`TopCardFace.creditLine`・2026-11-14）の寸法を測る（`PreviewSession.layoutProbe` のときだけ）。
 ///
-/// 値は `credit title=… avail=<行の幅> needs=<形ごとの要る幅> tail=<「 / ライセンス」の要る幅> head=<頭＋…の要る幅>
-/// form=<入った形の番号 1〜 か cut> headVisible=<yes|no> text=<全文>`。
-/// 入る形の決め方は `ViewThatFits` と同じ（1行に組んだ幅が行の幅以下の最初の形）。どれも入らない（cut）ときは、
-/// 作者に残る幅（行の幅 − ライセンスの分）に「頭＋…」が入るかを `headVisible` に出す
+/// 値は `credit title=… avail=<行に渡された幅> needs=<形ごとの要る幅> tail=<「 / ライセンス」の要る幅> head=<頭＋…の要る幅>
+/// form=<入った形の番号 1〜 か cut> headVisible=<yes|no> sample=<見本の作者に残った幅>/<見本の頭＋…の要る幅>
+/// sampleHeadVisible=<yes|no> text=<全文>`。
+/// 入る形の決め方は `ViewThatFits` と同じ（1行に組んだ幅が渡された幅以下の最初の形）。どれも入らない（cut）ときは、
+/// 作者に残る幅（渡された幅 − ライセンスの分）に「頭＋…」が入るかを `headVisible` に出す。
+/// 本物の索引の写真は日によって替わり、最後の形（作者の後ろを切る）が出ない日もあるので、**長い作者の見本**
+/// （索引に実在する「Maarten Heerlien from Voorschoten, The Netherlands / CC BY-SA 2.0」）を同じ部品
+/// （`TopCardCreditCutLine`）・同じ幅で見えないまま組み、作者に実際に残った幅を測る（`sample`）
 struct TopCardCreditProbe: ViewModifier {
     let title: String
     let credit: TopCardCredit
 
     @State private var avail: CGFloat = 0
     @State private var widths: [CGFloat] = []
+    @State private var sampleAuthor: CGFloat = 0
 
-    private var lines: [String] { credit.wholeLines + [credit.licenseTail, credit.head + "…"] }
+    /// 長い作者の見本（索引の hirome・nakayama-senmaida の写真の作者の欄）
+    static let sample = TopCardCredit(photo: SpotImage(url: URL(string: "https://journey-photo.com/")!,
+                                                       author: "Maarten Heerlien from Voorschoten, The Netherlands",
+                                                       license: "CC BY-SA 2.0", pageUrl: nil))
+
+    private var lines: [String] {
+        credit.wholeLines + [credit.licenseTail, credit.head + "…", Self.sample.head + "…"]
+    }
 
     func body(content: Content) -> some View {
         if PreviewSession.layoutProbe {
@@ -85,6 +97,13 @@ struct TopCardCreditProbe: ViewModifier {
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { avail = $0 }
                 .background(alignment: .leading) {
                     TopCardLineWidths(lines: lines) { widths = $0 }
+                }
+                .background(alignment: .leading) {
+                    // 同じ幅で、長い作者の見本を最後の形に組む（見えない）
+                    TopCardCreditCutLine(credit: Self.sample) { sampleAuthor = $0 }
+                        .font(JPFont.caption)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .hidden()
                 }
                 .preference(key: TopCardProbeKey.self, value: [describe()])
         } else {
@@ -94,14 +113,19 @@ struct TopCardCreditProbe: ViewModifier {
 
     private func describe() -> String {
         let count = credit.wholeLines.count
+        let measured = widths.count == lines.count
         let needs = Array(widths.prefix(count))
-        let tail = widths.count > count ? widths[count] : 0
-        let head = widths.count > count + 1 ? widths[count + 1] : 0
+        let tail = measured ? widths[count] : 0
+        let head = measured ? widths[count + 1] : 0
+        let sampleHead = measured ? widths[count + 2] : 0
         let form = needs.firstIndex { $0 <= avail + 0.5 }
-        let headVisible = widths.count == lines.count && (form != nil || avail - tail + 0.5 >= head)
-        return String(format: "credit title=%@ avail=%.1f needs=%@ tail=%.1f head=%.1f form=%@ headVisible=%@ text=%@",
+        let headVisible = measured && (form != nil || avail - tail + 0.5 >= head)
+        let sampleVisible = measured && sampleAuthor + 0.5 >= sampleHead
+        return String(format: "credit title=%@ avail=%.1f needs=%@ tail=%.1f head=%.1f form=%@ headVisible=%@ "
+                      + "sample=%.1f/%.1f sampleHeadVisible=%@ text=%@",
                       title, avail, needs.map { String(format: "%.1f", $0) }.joined(separator: ","), tail, head,
-                      form.map { String($0 + 1) } ?? "cut", headVisible ? "yes" : "no", credit.spoken)
+                      form.map { String($0 + 1) } ?? "cut", headVisible ? "yes" : "no",
+                      sampleAuthor, sampleHead, sampleVisible ? "yes" : "no", credit.spoken)
     }
 }
 

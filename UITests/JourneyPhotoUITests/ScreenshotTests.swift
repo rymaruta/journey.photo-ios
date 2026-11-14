@@ -3395,7 +3395,9 @@ final class ScreenshotTests: XCTestCase {
         let credits = parts.filter { $0.hasPrefix("credit ") }
         XCTAssertFalse(credits.isEmpty, "写真のある札に出典の行（creditLine）が無い: \(value)")
         for credit in credits {
-            XCTAssertTrue(credit.contains("headVisible=yes"), "出典の頭が切れている: \(credit)")
+            XCTAssertTrue(credit.contains(" headVisible=yes"), "出典の頭が切れている: \(credit)")
+            // 長い作者の見本（最後の形・作者の後ろを切る）でも頭が残る（本物の写真は日によって替わるので見本で確かめる）
+            XCTAssertTrue(credit.contains("sampleHeadVisible=yes"), "長い作者で出典の頭が切れる: \(credit)")
         }
         XCTAssertFalse(parts.contains { $0.hasPrefix("detail ") && $0.contains("写真: ") },
                        "出典を1本の字（真ん中で切る小さい行）で出している: \(value)")
