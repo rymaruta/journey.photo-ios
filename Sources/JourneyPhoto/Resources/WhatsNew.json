@@ -31,6 +31,16 @@
           "detail": { "ja": "入力欄に薄く出る見本の字を、暗い画面でも読みやすい明るさにそろえました。", "en": "The faint hint text inside text fields is now bright enough to read on dark screens." }
         },
         {
+          "symbol": "textformat.size",
+          "title": { "ja": "大きい文字やコントラストを上げる設定でも見やすく", "en": "Easier to read with larger text or higher contrast" },
+          "detail": { "ja": "iPhone の設定で文字を大きくすると、写真の詳細やストーリーのメニューの字も途中で止まらずに大きくなります。「コントラストを上げる」をオンにすると、薄い字や線もはっきり見えます。", "en": "When you make text larger in iPhone settings, text on photo pages and in story menus now grows all the way. With Increase Contrast on, faint text and lines are easier to see." }
+        },
+        {
+          "symbol": "xmark.circle",
+          "title": { "ja": "角の閉じるを押しやすく", "en": "Easier-to-tap close buttons in the corners" },
+          "detail": { "ja": "画面の角にある閉じるや × は、少し外れた所を押しても効くようにしました。", "en": "Close and × buttons in screen corners now respond even if your tap lands a little off." }
+        },
+        {
           "symbol": "magnifyingglass",
           "title": { "ja": "探すをもう一度押すとすぐ打てる", "en": "Tap Search again to start typing" },
           "detail": { "ja": "探すを開いているときに下の「探す」をもう一度押すと、一覧の頭に戻って、すぐに字を打てます。", "en": "While on Search, tap Search at the bottom again to jump to the top and start typing right away." },
