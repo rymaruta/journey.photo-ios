@@ -152,6 +152,8 @@ public struct EnvironmentValues {
     public var colorScheme: ColorScheme { .light }
     /// 「視差効果を減らす」（本物と同じ）
     public var accessibilityReduceMotion: Bool { false }
+    /// 積まれた・出された画面か（本物と同じ。写真の詳細の下へ引いて戻る・札 #592）
+    public var isPresented: Bool { true }
     /// 読み上げ（VoiceOver）が動いているか（本物と同じ）
     public var accessibilityVoiceOverEnabled: Bool { false }
     /// 画面の倍率（本物と同じ。写真の編集の見本を画面の画素で描くのに使う）

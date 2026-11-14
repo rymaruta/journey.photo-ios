@@ -86,7 +86,8 @@ final class PhotoScreensV2Tests: XCTestCase {
         XCTAssertFalse(heading.contains("WebTheme.faint"), "黒地の日時が写真の上の透過の灰のまま")
         // 題を写真に重ねる負の余白は無い（v2 は写真の下）
         XCTAssertFalse(view.contains("heroOverlap"))
-        XCTAssertTrue(view.contains("details(proxy, hero: hero)\n                                .padding(.top, JPSpace.l)"))
+        // 2026-11-13（札 #592）: 下へ引いて戻るときに薄れる子（`DetailPullFollow`）へ包んだ。題の上の余白は同じ
+        XCTAssertTrue(view.contains("content: details(proxy, hero: hero).padding(.top, JPSpace.l)"))
         // 説明は本文 15 の text-2
         let paragraphs = member("private var paragraphs", in: view)
         XCTAssertTrue(paragraphs.contains(".font(JPFont.body)"))
