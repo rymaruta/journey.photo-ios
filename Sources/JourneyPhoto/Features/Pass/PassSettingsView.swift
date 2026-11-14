@@ -109,9 +109,9 @@ struct PassSettingsView: View {
 
     private var mainCard: some View {
         JPCard {
-            JPToggleRow(title: L("すれちがう", "Swap passes nearby"),
-                        detail: L("近くにいたアプリの人と、わたしの乗車券をカードで交換します",
-                                  "Swap your ticket with app users you pass nearby"),
+            JPToggleRow(title: PassTicket.featureName,
+                        detail: L("近くにいた人と、わたしの乗車券を交換します",
+                                  "Swap your ticket with people you pass nearby"),
                         isOn: enabledBinding)
                 .accessibilityIdentifier("pass.settings.toggle")
             JPCardDivider()
@@ -245,15 +245,52 @@ struct PassSettingsView: View {
                 .foregroundStyle(WebTheme.text3)
                 .padding(.horizontal, JPSpace.xxs)
                 .fixedSize(horizontal: false, vertical: true)
+            // 2026-11-14 判断（前回の点検の残り・板 04「真鍮を使わない: 警告は白＋アイコン」）: **注意は text-2 の字に
+            // 注意の印。** 前は真鍮の字で、すぐ上の「通知がオフのため届きません」（owner が真鍮と決めた案内の帯）と紛れた。
+            // 居住地が無い訳のときは、押すとプロフィールの編集を開く（その場で入れられる）
             if pass.settings.mode == .traveling, let reason = travelUnknownReason {
-                Text(reason)
-                    .font(JPFont.caption)
-                    .foregroundStyle(WebTheme.accent)
-                    .padding(.horizontal, JPSpace.xxs)
-                    .fixedSize(horizontal: false, vertical: true)
+                if pass.homePrefecture == nil {
+                    NavigationLink { ProfileEditView() } label: {
+                        travelWarning(reason, opens: true)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("pass.settings.addHome")
+                } else {
+                    travelWarning(reason, opens: false)
+                }
             }
         }
     }
+
+    /// 「旅のあいだ」で家からの距離が分からない、の注意の行（text-2・注意の印。押せる時は右に ›）
+    private func travelWarning(_ reason: String, opens: Bool) -> some View {
+        HStack(alignment: .top, spacing: JPSpace.xs) {
+            Image(systemName: Self.warningSymbol)
+                .font(JPFont.footnote)
+                .padding(.top, 1)
+                .accessibilityHidden(true)
+            Text(reason)
+                .font(JPFont.caption)
+                .fixedSize(horizontal: false, vertical: true)
+            if opens {
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.text3)
+                    .padding(.top, 1)
+                    .accessibilityHidden(true)
+            }
+        }
+        .foregroundStyle(Self.warningColor)
+        .padding(.horizontal, JPSpace.xxs)
+        .frame(minHeight: opens ? WebTheme.minTapTarget : nil, alignment: .topLeading)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+
+    /// 注意の行の色と印（板 04: 警告は白＋アイコン。真鍮にしない）
+    static let warningColor = WebTheme.text2
+    static let warningSymbol = "exclamationmark.triangle"
 
     /// 「旅のあいだ」で、家からの距離が分からない訳（分からない日は交換しない）
     /// （すれちがい帳の頭の行も同じ訳で「家からの距離が分からない」と言う・`PassSettingsText.travelUnknownReason`）
@@ -270,7 +307,7 @@ struct PassSettingsView: View {
         VStack(alignment: .leading, spacing: JPSpace.xs) {
             eyebrow(L("届き方", "Delivery"))
             JPCard {
-                JPToggleRow(title: L("夕方にまとめて受け取る", "Get cards together in the evening"),
+                JPToggleRow(title: L("夕方にまとめて受け取る", "Get tickets together in the evening"),
                             detail: PassPrivacyText.eveningDetail,
                             isOn: eveningBinding)
                     .accessibilityIdentifier("pass.settings.evening")
@@ -283,11 +320,11 @@ struct PassSettingsView: View {
                 set: { on in pass.update { $0.delivery = on ? .evening : .instant } })
     }
 
-    // MARK: - カードに載るもの
+    // MARK: - 乗車券に載るもの
 
     private var contentsSection: some View {
         VStack(alignment: .leading, spacing: JPSpace.xs) {
-            eyebrow(L("カードに載るもの", "On your card"))
+            eyebrow(L("乗車券に載るもの", "On your ticket"))
             JPCard {
                 JPRowLabel(title: L("乗車券の写真、名前、ひとこと", "Ticket photo, name and note"),
                            detail: L("いつも載ります", "Always included"), chevron: false)
@@ -300,7 +337,7 @@ struct PassSettingsView: View {
                 .buttonStyle(JPRowButtonStyle())
                 JPCardDivider()
                 JPRowLabel(title: L("すれちがった場所と時刻", "Where and when you passed"),
-                           detail: L("「京都市のあたり\u{2002}15 時ごろ」の粒度。番地や分は載せません",
+                           detail: L("「京都市のあたり\u{2002}15 時ごろ」くらいの大まかさ。番地や分は載せません",
                                      "As rough as \u{201C}around Kyoto\u{2002}around 3 PM\u{201D}. Never street addresses or minutes."),
                            chevron: false)
             }
@@ -335,7 +372,7 @@ struct PassSettingsView: View {
             NavigationLink { PassBookView(fromSettings: true) } label: {
                 JPRowLabel(title: L("すれちがい帳", "Pass book"),
                            detail: L("\(pass.book(hiding: hidden.snapshot).count) 枚",
-                                     "\(pass.book(hiding: hidden.snapshot).count) cards"))
+                                     Plural.count(pass.book(hiding: hidden.snapshot).count, "ticket")))
             }
             .buttonStyle(JPRowButtonStyle())
         }
@@ -468,8 +505,8 @@ enum PassSettingsText {
     /// すれちがい帳の頭の行（`PassBookStatus.distanceUnknown`）が同じ決まりで読む
     static func travelUnknownReason(homePrefecture: String?, locationAuthorized: Bool) -> String? {
         if homePrefecture == nil {
-            return L("プロフィールの居住地に都道府県が無いため、家からの距離が分かりません。居住地を入れるか、ほかの「いつ」を選んでください。",
-                     "Your profile has no prefecture under \u{201C}Where you\u{2019}re based\u{201D}, so distance from home is unknown. Add it, or pick another option.")
+            return L("家からの距離が分かりません。プロフィールに居住地の都道府県を入れるか、ほかの「いつ」を選んでください。",
+                     "Distance from home is unknown. Add your prefecture under \u{201C}Where you\u{2019}re based\u{201D} in your profile, or pick another option.")
         }
         if !locationAuthorized {
             return L("位置情報が許可されていないため、旅のあいだか分かりません。撮影地マップで現在地を許可するか、ほかの「いつ」を選んでください。",

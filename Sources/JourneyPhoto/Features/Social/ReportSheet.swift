@@ -13,6 +13,9 @@ struct ReportSheet: View {
     /// 「未成年へのいやな接触・誘い出し」「なりすまし」を並べ、送られる範囲（直近の抜粋）と相手に知らされないことを書く。
     /// 送る口は `POST /dm/{id}/report`（`photoId` は使わない）。ブロックの相手は `ownerId`（会話の相手）
     var conversation: Conversation? = nil
+    /// 旅行プランの会話の1通の通報（2026-11-14・札 #597・審査ガイドライン 1.2）。DM の会話の通報と同じ理由・同じ言葉で、
+    /// どの通かを上に出す。送る口は `POST /trip-share/{planId}/report`（`photoId` は使わない）。ブロックの相手は `ownerId`（書いた人）
+    var tripMessage: TripMessage? = nil
     /// コメントの通報（2026-10-11）。写真の通報の口に、誰のどのコメントかを補足に書いて送る
     /// （`ModerationService.commentReportNote`）。ブロックの相手はコメントを書いた人
     var comment: ModerationService.ReportedComment? = nil
@@ -33,6 +36,18 @@ struct ReportSheet: View {
         /// 相手の名前（見出しに出す）
         let name: String
     }
+
+    /// 通報する旅行プランの会話の1通
+    struct TripMessage: Equatable {
+        let planId: String
+        let messageId: String
+        /// 書いた人の名前（どの通か見分ける）
+        let authorName: String
+        let text: String
+    }
+
+    /// 会話（DM・旅行プラン）の通報か。理由の並び・ブロックの説明・送られる範囲の言葉をそろえる
+    private var isChatReport: Bool { conversation != nil || tripMessage != nil }
 
     /// 通報する写真の札の中身
     struct Subject: Equatable {
@@ -73,13 +88,23 @@ struct ReportSheet: View {
                         receipt
                     } else {
                         if let passNote {
-                            Text(L("すれちがい乗車券に書かれた字：\(passNote)", "Text on a Pass ticket: \(passNote)"))
+                            Text(L("乗車券に書かれた言葉：\(passNote)", "Text on a Pass ticket: \(passNote)"))
                                 .font(.subheadline)
                                 .foregroundStyle(WebTheme.muted2)
                                 .lineLimit(3)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         } else if comment == nil, let subject {
                             subjectCard(subject)
+                        }
+                        if let tripMessage {
+                            // どの通を通報するか（押し間違いに気づけるように・コメントの通報と同じ形）
+                            Text(L("\(tripMessage.authorName)さんのメッセージ：「\(tripMessage.text)」",
+                                   "Message from \(tripMessage.authorName): \"\(tripMessage.text)\""))
+                                .font(.subheadline)
+                                .foregroundStyle(WebTheme.muted2)
+                                .lineLimit(3)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .accessibilityIdentifier("report.tripMessage")
                         }
                         if let comment {
                             // どのコメントを通報するか（押し間違いに気づけるように）
@@ -104,7 +129,7 @@ struct ReportSheet: View {
                         }
                         reasons
                         JPField(L("補足（任意）", "Details (optional)"), multiline: true) {
-                            TextField(L("状況を書いてください", "Tell us what happened"), text: $note, axis: .vertical)
+                            JPTextField(L("状況を書いてください", "Tell us what happened"), text: $note, axis: .vertical)
                                 .lineLimit(3...6)
                                 // **500 で止める。** 送る前に黙って切っていたので、書いた末尾が
                                 // 届いていないことに気づけなかった（数え方はサーバーと同じ UTF-16）
@@ -117,7 +142,7 @@ struct ReportSheet: View {
                             JPCard(fill: WebTheme.surface) {
                                 JPToggleRow(
                                     title: L("この人をブロックする", "Also block this person"),
-                                    detail: conversation != nil
+                                    detail: isChatReport
                                         ? L("ブロックすると、おたがいの投稿、ストーリー、メッセージ、通知が見えなくなります。",
                                             "Blocking hides each other's posts, stories, messages and notifications.")
                                         : L("ブロックすると、おたがいの投稿、ストーリー、通知が見えなくなります。", "Blocking hides each other's posts, stories and notifications."),
@@ -136,7 +161,7 @@ struct ReportSheet: View {
         // **送っている間は閉じさせない。** 閉じた瞬間に呼び出し側の後始末
         // （ストーリーの `afterReport`）が走り、まだ記録されていない通報を
         // 見落とす。そのあと送信が成立しても後始末は二度と呼ばれない
-        .interactiveDismissDisabled(isWorking)
+        .sheetSwipeGuard(.busy(isWorking))
         .safeAreaInset(edge: .bottom) { footer }
         .background(Self.sheetBackground)
         .presentationBackground(Self.sheetBackground)
@@ -153,7 +178,7 @@ struct ReportSheet: View {
             SheetCloseButton(onContent: true)
                 .disabled(isWorking)
             // v2 の板は明朝 24。字の段（32/26/22/20/18）に無いので、画面の題の 26 にそろえた
-            Text(passNote != nil ? L("書かれた字を通報", "Report text")
+            Text(passNote != nil ? L("書かれた言葉を通報", "Report text")
                  : comment == nil || conversation != nil ? L("通報", "Report") : L("コメントを通報", "Report comment"))
                 .font(JPFont.screenTitle)
                 .foregroundStyle(WebTheme.text)
@@ -174,7 +199,7 @@ struct ReportSheet: View {
                 .foregroundStyle(WebTheme.text2)
                 .accessibilityAddTraits(.isHeader)
             VStack(spacing: 0) {
-                if conversation != nil {
+                if isChatReport {
                     let all = DMReportReason.allCases
                     ForEach(Array(all.enumerated()), id: \.element) { index, item in
                         ReportReasonRow(title: item.label, selected: dmReason == item,
@@ -263,10 +288,13 @@ struct ReportSheet: View {
             }
             .buttonStyle(.plain)
             .disabled(isWorking)
-            if conversation != nil {
+            if isChatReport {
                 // 送られる範囲と、相手に知らされないこと（画面案「通報」）
-                Text(L("この会話の直近のやりとりが運営に届きます。相手には知らされません。",
-                       "The latest messages in this conversation are sent to our team. They won't be told."))
+                Text(tripMessage != nil
+                     ? L("このメッセージと、会話の直近のやりとりが運営に届きます。相手には知らされません。",
+                         "This message and the latest messages in the chat are sent to our team. They won't be told.")
+                     : L("この会話の直近のやりとりが運営に届きます。相手には知らされません。",
+                         "The latest messages in this conversation are sent to our team. They won't be told."))
                     .font(JPFont.caption)
                     .foregroundStyle(WebTheme.text2)
                     .multilineTextAlignment(.center)
@@ -301,6 +329,13 @@ struct ReportSheet: View {
                 // 会話の通報（2026-11-10 札 #505）。写真の印は付けない（会話の写しはサーバーが取る）
                 try await environment.dm.report(conversation.id, reason: dmReason.serverReason,
                                                  note: dmReason.note(adding: note))
+                await finishReport(blocker: blocker)
+                return
+            }
+            if let tripMessage {
+                // 旅行プランの会話の1通の通報（2026-11-14 札 #597）。会話の写しはサーバーが取る
+                try await environment.tripShare.report(planId: tripMessage.planId, messageId: tripMessage.messageId,
+                                                       reason: dmReason.serverReason, note: dmReason.note(adding: note))
                 await finishReport(blocker: blocker)
                 return
             }

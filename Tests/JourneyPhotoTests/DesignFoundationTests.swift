@@ -147,7 +147,8 @@ final class DesignFoundationTests: XCTestCase {
     func testThemeUsesV2Values() throws {
         let theme = try source("Core/Design/WebTheme.swift")
         XCTAssertTrue(theme.contains("static let text2 = rgb(BrandPalette.text2)"))
-        XCTAssertTrue(theme.contains("static let text3 = rgb(BrandPalette.text3)"))
+        // 2026-11-14: ふだんは text-3 のまま、「コントラストを上げる」のときだけ text-2（`BrandPalette.IncreasedContrast`）
+        XCTAssertTrue(theme.contains("static let text3 = contrastAware(normal: (BrandPalette.text3, 1),"))
         XCTAssertTrue(theme.contains("static let card = rgb(BrandPalette.surface)"))
         XCTAssertTrue(theme.contains("static let sheet = rgb(BrandPalette.surface2)"))
         XCTAssertTrue(theme.contains("Color.white.opacity(primaryFillOpacity)"))

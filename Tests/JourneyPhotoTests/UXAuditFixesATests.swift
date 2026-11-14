@@ -135,9 +135,9 @@ final class UXAuditFixesATests: XCTestCase {
         let upload = try source("Features/Upload/UploadView.swift")
         XCTAssertTrue(upload.contains("pickedSpot: $item.pickedSpot, boxed: true)"), "投稿の撮影地に枠を付けていない")
         XCTAssertTrue(upload.contains("JPFieldTitle(L(\"撮影地\", \"Place\"))"), "見出しがタイトル・説明と違う形")
-        // 写真の編集（Form の行）は枠を付けない
+        // 写真の編集も同じ枠（2026-11-14 判断・前回の点検の残り。板 EditPhoto も枠の欄）
         let edit = try source("Features/Profile/EditPhotoView.swift")
-        XCTAssertFalse(edit.contains("boxed: true"))
+        XCTAssertTrue(edit.contains("boxed: true"))
     }
 
     // MARK: - 5. 探すの0件

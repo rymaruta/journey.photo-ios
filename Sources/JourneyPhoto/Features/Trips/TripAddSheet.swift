@@ -52,7 +52,7 @@ struct TripAddSheet: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { SheetCloseButton().disabled(plans.busy != nil) }
         }
-        .interactiveDismissDisabled(plans.busy != nil)
+        .sheetSwipeGuard(.busy(plans.busy != nil))
         .task {
             await plans.load(environment: environment)
             let fetched = try? await environment.spots.fetchIndex()

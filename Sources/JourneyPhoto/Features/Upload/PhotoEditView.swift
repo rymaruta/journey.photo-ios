@@ -64,7 +64,12 @@ struct PhotoEditView: View {
     static let panelHeight: CGFloat = 150
     /// **文字の大きさの上限（2026-10-17 判断）。** 字は文字サイズの設定に付いてくる
     /// （それまで `.system(size:)` の固定だった）が、写真を主役に残すため、
-    /// 写真の欄を押しつぶす「さらに大きな文字」の段では止める
+    /// 写真の欄を押しつぶす「さらに大きな文字」の段では止める。
+    ///
+    /// 2026-11-14 判断（人間工学の点検「追加の点検 4」・HIG「少なくとも 200%」）: 前は画面まるごとに置いていた上限を、
+    /// **写真の上の字（「編集前」「元の写真」）と、大きくできない帯（上のバー・下のタブ・フィルムと調整の横の帯）だけ**に
+    /// 残した。帯の押せる字は長押しで大きく見せる（`accessibilityShowsLargeContentViewer`・系統の上のバー・下の札と同じ形）。
+    /// 説明の一言・強さと値・「0に戻す」は上限を外した（字が伸びたら道具の段が伸び、写真の欄が縮む）
     static let typeLimit = DynamicTypeSize.xxxLarge
 
     var body: some View {
@@ -95,7 +100,6 @@ struct PhotoEditView: View {
             .frame(minHeight: Self.panelHeight, alignment: .top)
             .padding(.top, 10)
         }
-        .dynamicTypeSize(...Self.typeLimit)
         // 色の背景は安全域の外まで塗る（`background(_:ignoresSafeAreaEdges:)` の既定）
         .background(Color.black)
         .preferredColorScheme(.dark)
@@ -124,6 +128,8 @@ struct PhotoEditView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityShowsLargeContentViewer()
+            .accessibilityIdentifier("photoEdit.cancel")
             Spacer(minLength: 0)
             HStack(spacing: 4) {
                 historyButton(symbol: "arrow.uturn.backward", label: L("取り消す", "Undo"),
@@ -144,10 +150,13 @@ struct PhotoEditView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityShowsLargeContentViewer()
             .accessibilityIdentifier("photoEdit.done")
         }
         .padding(.horizontal, 6)
         .frame(height: 52)
+        // 大きくできない上のバー（高さ 52）。字は上限で止め、長押しで大きく見せる（`typeLimit` の注記）
+        .dynamicTypeSize(...Self.typeLimit)
     }
 
     private func historyButton(symbol: String, label: String, enabled: Bool,
@@ -187,6 +196,8 @@ struct PhotoEditView: View {
             }
             // 右下の「元の写真」（2026-11-12・説明なしで分かる 項目7）。押している間だけ元の写真
             .overlay(alignment: .bottomTrailing) { originalButton }
+            // 写真の上の字（「編集前」「元の写真」）は上限で止める（`typeLimit` の注記）
+            .dynamicTypeSize(...Self.typeLimit)
             .contentShape(Rectangle())
             // **触れている間を取る**（距離 0 の DragGesture）。`onLongPressGesture` は長押しと認めた瞬間に
             // 終わるので、離すまで編集前を出し続けられない。触れてから `holdDelay` たったら時計を送り、
@@ -216,6 +227,7 @@ struct PhotoEditView: View {
             .accessibilityLabel(screen.showsBeforeLabel ? L("元の写真", "Original photo")
                                                         : L("編集中の写真", "Photo being edited"))
             .accessibilityAddTraits(.isImage)
+            .accessibilityIdentifier("photoEdit.photo")
             // 読み上げでは長押しが届かない。操作で切り替える（`PhotoEditScreen.toggleCompare`・2026-10-17）
             .accessibilityAction(named: screen.compareActionName) {
                 screen.toggleCompare()
@@ -257,6 +269,7 @@ struct PhotoEditView: View {
         .onChange(of: holdingOriginal) { _, now in
             if !now { screen.press(.ended) }
         }
+        .accessibilityShowsLargeContentViewer()
         .accessibilityIdentifier("photoEdit.original")
     }
 
@@ -318,6 +331,8 @@ struct PhotoEditView: View {
     /// 横に動かすので、払いで札を替えると指の意味が分からなくなる（札を押して替える）
     private var tabs: some View {
         ProfileTabBar(tabs: PhotoEditScreen.Tab.allCases, selection: $screen.tab, movesContent: false)
+            // 大きくできない下のタブ（`typeLimit` の注記）
+            .dynamicTypeSize(...Self.typeLimit)
     }
 
     // MARK: - フィルム
@@ -335,6 +350,8 @@ struct PhotoEditView: View {
                 // 選んでいる輪（外へ 4pt）が切れないように
                 .padding(.vertical, 4)
             }
+            // 見本の絵の幅に名前を置く横の帯（`typeLimit` の注記）。名前は長押しで大きく見せる
+            .dynamicTypeSize(...Self.typeLimit)
             if let strength = screen.strengthSlider {
                 HStack(spacing: 14) {
                     Text(L("強さ", "Strength"))
@@ -349,7 +366,9 @@ struct PhotoEditView: View {
                     Text("\(Int(strength))")
                         .font(JPFont.number(15, weight: .regular, relativeTo: .subheadline))
                         .foregroundStyle(WebTheme.foreground)
-                        .frame(width: 34, alignment: .trailing)
+                        // 上限を外したので、字が伸びたら幅も伸ばす（34 に押し込めると「…」になる）
+                        .frame(minWidth: 34, alignment: .trailing)
+                        .fixedSize()
                         .accessibilityHidden(true)
                 }
                 .padding(.horizontal, 16)
@@ -391,6 +410,7 @@ struct PhotoEditView: View {
         .buttonStyle(.plain)
         .accessibilityLabel(name)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityShowsLargeContentViewer()
     }
 
     // MARK: - 調整
@@ -405,6 +425,8 @@ struct PhotoEditView: View {
                 }
                 .padding(.horizontal, 10)
             }
+            // 印と名前の横の帯（`typeLimit` の注記）。名前は長押しで大きく見せる
+            .dynamicTypeSize(...Self.typeLimit)
             HStack(spacing: 12) {
                 let value = screen.adjustmentSlider
                 Slider(value: Binding(get: { value }, set: { screen.dragAdjustment($0) }),
@@ -416,7 +438,9 @@ struct PhotoEditView: View {
                 Text(PhotoEditScreen.valueText(value))
                     .font(JPFont.number(15, weight: .regular, relativeTo: .subheadline))
                     .foregroundStyle(WebTheme.foreground)
-                    .frame(width: 44, alignment: .trailing)
+                    // 上限を外したので、字が伸びたら幅も伸ばす
+                    .frame(minWidth: 44, alignment: .trailing)
+                    .fixedSize()
                     .accessibilityHidden(true)
                 Button {
                     screen.resetAdjustment()
@@ -472,6 +496,7 @@ struct PhotoEditView: View {
         .buttonStyle(.plain)
         .accessibilityLabel(item.accessibilityLabel(changed: changed))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityShowsLargeContentViewer()
     }
 }
 

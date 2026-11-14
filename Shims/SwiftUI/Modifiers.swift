@@ -433,6 +433,9 @@ extension View {
     public func accessibilityIdentifier(_ id: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     public func accessibilityAddTraits(_ traits: AccessibilityTraits) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     public func accessibilityHidden(_ hidden: Bool) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
+    /// 長押しで字を大きく見せる系統の仕組み（Large Content Viewer・本物と同じ・2026-11-14）。
+    /// 文字の大きさに上限を置いた写真の上の字・大きくできない帯に付ける
+    public func accessibilityShowsLargeContentViewer() -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
     /// 読み上げの補足（本物と同じ）。`DailyThemeCard` が使う——**模型に無いと
     /// Linux 側のビルドだけが落ちる**（75f98e2 で main がそうなっていた）
     public func accessibilityHint(_ hint: String) -> ModifiedContent<Self, Mod.Accessibility> { ModifiedContent() }
@@ -698,4 +701,21 @@ extension View {
     public func dropDestination<T: Transferable>(for payloadType: T.Type = T.self,
                                                  action: @escaping ([T], CGPoint) -> Bool,
                                                  isTargeted: @escaping (Bool) -> Void = { _ in }) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
+}
+
+// 値を上へ渡す（本物の `PreferenceKey`・iOS 13〜）。ホームの上の札の出典の寸法を、UI テストのときだけ札の外へ渡す
+// （2026-11-14・`TopCardProbe`）
+public protocol PreferenceKey {
+    associatedtype Value
+    static var defaultValue: Value { get }
+    static func reduce(value: inout Value, nextValue: () -> Value)
+}
+
+extension View {
+    public func preference<K: PreferenceKey>(key: K.Type = K.self, value: K.Value) -> Self { self }
+    public func transformPreference<K: PreferenceKey>(_ key: K.Type = K.self,
+                                                      _ callback: @escaping (inout K.Value) -> Void) -> Self { self }
+    public func overlayPreferenceValue<K: PreferenceKey, V: View>(
+        _ key: K.Type, alignment: Alignment = .center,
+        @ViewBuilder _ transform: @escaping (K.Value) -> V) -> Self { self }
 }

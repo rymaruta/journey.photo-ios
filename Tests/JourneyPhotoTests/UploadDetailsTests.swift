@@ -109,7 +109,7 @@ final class UploadDetailsTests: XCTestCase {
         let start = try XCTUnwrap(source.range(of: "private var detailSection: some View {"))
         let body = source[start.upperBound...]
         let place = try XCTUnwrap(body.range(of: "PlaceSearchField("))
-        let title = try XCTUnwrap(body.range(of: "JPField(L(\"タイトル\""))
+        let title = try XCTUnwrap(body.range(of: "JPField(L(\"題\""))
         XCTAssertLessThan(place.lowerBound, title.lowerBound, "撮影地が題より後ろにある")
         XCTAssertTrue(body.prefix(2500).contains("UploadDetails.showsSampleNote("), "作例の一言が撮影地の下に無い")
     }

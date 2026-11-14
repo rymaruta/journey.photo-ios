@@ -15,6 +15,13 @@ enum TheirTrunkText {
         return trimmed.isEmpty ? L("この人", "This person") : trimmed
     }
 
+    /// 人の乗車券の呼び名（「〇〇さんの乗車券」・名前が無ければ「乗車券」）。**2026-11-14 判断**: 「わたしの乗車券」は
+    /// 本人の物だけの呼び名なので、人のトランクの中・題・読み上げではこちらを使う
+    static func ticketTitle(_ name: String?) -> String {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? L("乗車券", "Ticket") : L("\(trimmed)さんの乗車券", "\(trimmed)\u{2019}s ticket")
+    }
+
     /// 画面の題（板「[表示名]さんのトランク」）
     static func title(_ name: String?) -> String {
         guard let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
@@ -183,7 +190,7 @@ enum TheirTrunkText {
     static var insideNotes: [(head: String, body: String)] {
         [(L("会員証", "Member card"), L("は名前とサポーター証の絵だけ。番号と始めた年月は出しません。",
                                        " shows only the name and the card art \u{2014} never the number or start date.")),
-         (L("乗車券", "Ticket"), L("はこの人の「わたしの乗車券」1枚だけ。受け取った乗車券は、すれちがった相手の写真と名前が入るので出しません。",
+         (L("乗車券", "Ticket"), L("はこの人が選んだ1枚だけ。受け取った乗車券は、すれちがった相手の写真と名前が入るので出しません。",
                                   " is only this person\u{2019}s own ticket. Tickets they received carry other people\u{2019}s photos and names, so they stay private."))]
     }
 

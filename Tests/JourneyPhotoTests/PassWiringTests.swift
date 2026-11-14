@@ -31,7 +31,7 @@ final class PassWiringTests: XCTestCase {
     /// カードの「…」（通報・ブロック・帳から外す）が束の画面と帳の両方にある（審査 1.2）
     func testCardsHaveReportBlockAndRemove() throws {
         let menu = try source("Features/Pass/PassCardMenu.swift")
-        for word in ["通報する", "この人をブロック", "帳から外す"] { XCTAssertTrue(menu.contains(word), word) }
+        for word in ["通報する", "この人をブロック", "すれちがい帳から外す"] { XCTAssertTrue(menu.contains(word), word) }
         for path in ["Features/Pass/PassViewerView.swift", "Features/Pass/PassBookView.swift"] {
             let text = try source(path)
             XCTAssertTrue(text.contains("PassCardMenu(content:"), "\(path) に「…」が無い")
@@ -63,7 +63,7 @@ final class PassWiringTests: XCTestCase {
         XCTAssertTrue(sheet.contains("if comment == nil && passNote == nil {\n                hidden.markReported"),
                       "ひとことの通報で写真を隠している")
         let menu = try source("Features/Pass/PassCardMenu.swift")
-        for word in ["写真を通報する", "書かれた字を通報する", "ひとことを伏せる", "ひとことを出す"] {
+        for word in ["写真を通報する", "書かれた言葉を通報する", "ひとことを伏せる", "ひとことを出す"] {
             XCTAssertTrue(menu.contains(word), word)
         }
         let pick = try source("Features/Pass/PassCardPickView.swift")
@@ -82,7 +82,7 @@ final class PassWiringTests: XCTestCase {
             XCTAssertTrue(cards.contains(part), "きっぷに \(part) が無い")
         }
         let ticket = try source("Core/Text/PassTicket.swift")
-        for part in ["L(\"発行\", \"Issued by\")", "L(\"有効\", \"Valid\")", "L(\"区間\", \"Distance\")",
+        for part in ["L(\"発行\", \"Issued by\")", "L(\"有効\", \"Valid\")", "L(\"区間\", \"Route\")",
                      "L(\"回数\", \"Times\")", "L(\"日付\", \"Date\")"] {
             XCTAssertTrue(ticket.contains(part), "きっぷの欄に \(part) が無い")
         }
@@ -128,8 +128,9 @@ final class PassWiringTests: XCTestCase {
             XCTAssertTrue(pick.contains(part), part)
         }
         let menu = try source("Features/Pass/PassCardMenu.swift")
-        XCTAssertTrue(menu.contains("区間の字を伏せる"))
-        XCTAssertTrue(menu.contains("書かれた字を通報する"))
+        XCTAssertTrue(menu.contains("区間を隠す"))
+        XCTAssertTrue(menu.contains("区間を表示"))
+        XCTAssertTrue(menu.contains("書かれた言葉を通報する"))
         for path in ["Features/Pass/PassViewerView.swift", "Features/Pass/PassBookView.swift"] {
             let text = try source(path)
             XCTAssertTrue(text.contains("passNote: target.card.writtenText"), "\(path): 通報に発・着の字が入らない")
@@ -147,7 +148,7 @@ final class PassWiringTests: XCTestCase {
         let viewer = try source("Features/Pass/PassViewerView.swift")
         for part in ["PassSpinTicket(yaw: yaw", "spin.liveYaw(", "PassSpinGesture.classify(",
                      "SpinMotion.snapTarget(",
-                     "accessibilityAction(named: L(\"次のカード\"", "accessibilityAction(named: L(\"写真を全面で見る\""] {
+                     "accessibilityAction(named: L(\"次の乗車券\"", "accessibilityAction(named: L(\"写真を全面で見る\""] {
             XCTAssertTrue(viewer.contains(part), part)
         }
         // 回す描き方・手つきは共有の部品（自分のカードの見本も使う・`PassOwnCardSpinTests`）
@@ -229,7 +230,7 @@ final class PassWiringTests: XCTestCase {
     func testEveningOptionAndInstantArrivalWiring() throws {
         let settings = try source("Features/Pass/PassSettingsView.swift")
         XCTAssertTrue(settings.contains("deliverySection"), "届き方の節を画面に置いていない")
-        XCTAssertTrue(settings.contains(#"L("夕方にまとめて受け取る", "Get cards together in the evening")"#))
+        XCTAssertTrue(settings.contains(#"L("夕方にまとめて受け取る", "Get tickets together in the evening")"#))
         XCTAssertTrue(settings.contains("pass.update { $0.delivery = on ? .evening : .instant }"), "入切が届き方に繋がっていない")
         XCTAssertTrue(settings.contains(#".accessibilityIdentifier("pass.settings.evening")"#))
         // 前面で綴じたカードは `arrivals` で「いま」を入れ直して札へ出す（ホームの側は今のつなぎのまま）

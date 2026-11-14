@@ -254,7 +254,8 @@ struct SpotDetailView: View {
                         if let notice = WishlistSync.notice(for: outcome) { toasts.show(notice.text, kind: notice.kind) }
                     }
                 } label: {
-                    SpotDetailParts.actionLabel(icon: wanted ? "heart.fill" : "heart",
+                    // 行きたい＝旗（2026-11-14 判断・#593。いいねのハートと紛れないよう旗にそろえる。保存済みは塗り・まだは線）
+                    SpotDetailParts.actionLabel(icon: wanted ? "flag.fill" : "flag",
                                                 title: L("行きたい", "Want to go"), filled: wanted)
                 }
                 .buttonStyle(.plain)

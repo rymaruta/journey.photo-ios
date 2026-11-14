@@ -24,7 +24,7 @@ final class PassBookStatusTests: XCTestCase {
     }
 
     func testDetailTexts() {
-        XCTAssertEqual(PassBookStatus.off.detail, "オンにすると、近くにいたアプリの人と乗車券のカードを交換します")
+        XCTAssertEqual(PassBookStatus.off.detail, "オンにすると、近くにいた人と乗車券を交換します")
         XCTAssertEqual(PassBookStatus.noTicket.detail, "乗車券を選ぶまで、交換は止まっています")
         XCTAssertEqual(PassBookStatus.bluetoothOff.detail, "Bluetooth がオフのため、交換は止まっています")
         XCTAssertEqual(PassBookStatus.bluetoothNotAllowed.detail, "Bluetooth の使用が許可されていないため、交換は止まっています")
@@ -78,11 +78,11 @@ final class PassBookStatusTests: XCTestCase {
     /// 空の状態: オフなら主ボタン「説明を読んでオンにする」、オンならボタンを出さない
     func testEmptyStateAction() {
         XCTAssertEqual(PassBookStatus.off.emptyActionTitle, "説明を読んでオンにする")
-        XCTAssertEqual(PassBookStatus.off.emptyMessage, "オンにして出かけると、近くにいたアプリの人のカードが届きます。")
+        XCTAssertEqual(PassBookStatus.off.emptyMessage, "オンにして出かけると、近くにいた人の乗車券が届きます。")
         for status in [PassBookStatus.noTicket, .bluetoothOff, .bluetoothNotAllowed, .distanceUnknown, .nearHome,
                        .running(.always, .instant)] {
             XCTAssertNil(status.emptyActionTitle, "オンなのに主ボタンが出る（\(status)）")
-            XCTAssertEqual(status.emptyMessage, "出かけると、近くにいたアプリの人のカードが届きます。")
+            XCTAssertEqual(status.emptyMessage, "出かけると、近くにいた人の乗車券が届きます。")
         }
         XCTAssertEqual(PassBookStatus.emptyActionIdentifier, "passBook.emptyTurnOn")
         XCTAssertEqual(PassBookStatus.statusIdentifier, "passBook.status")
@@ -127,7 +127,7 @@ final class PassBookStatusTests: XCTestCase {
         XCTAssertFalse(book.contains("requestAuthorization"))
         XCTAssertFalse(book.contains("CBCentralManager("))
         // 空の状態は共通の EmptyState（帳だけ別に組まない）
-        XCTAssertTrue(book.contains("EmptyState(title: L(\"まだカードがありません\", \"No cards yet\"), message: status.emptyMessage,\n                                   actionTitle: actionTitle, actionIdentifier: PassBookStatus.emptyActionIdentifier) {\n                            openSettings(intro: true)"))
+        XCTAssertTrue(book.contains("EmptyState(title: L(\"まだ乗車券がありません\", \"No tickets yet\"), message: status.emptyMessage,\n                                   actionTitle: actionTitle, actionIdentifier: PassBookStatus.emptyActionIdentifier) {\n                            openSettings(intro: true)"))
         XCTAssertFalse(book.contains("passBook.emptySettings"))
         // 主ボタンは設定を積み、はじめから「オンにする」前の説明を出す
         XCTAssertTrue(book.contains("PassSettingsView(startsWithIntro: settingsIntro)"))

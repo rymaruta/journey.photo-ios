@@ -313,9 +313,11 @@ final class TheirTrunkTests: XCTestCase {
         let trunk = try decode(TheirTrunk.self, Self.full)
         let contents = TrunkInsideContents(theirs: trunk, name: "丸田")
         XCTAssertTrue(contents.isTheirs)
-        XCTAssertEqual(contents.ticketCount, 1, "乗車券はわたしの乗車券1枚だけ")
-        XCTAssertEqual(contents.ticketTab, L("わたしの乗車券", "Their ticket"))
-        XCTAssertEqual(contents.ticketTabWidth, 112)
+        XCTAssertEqual(contents.ticketCount, 1, "乗車券はこの人の1枚だけ")
+        // 2026-11-14: 人の物に「わたしの乗車券」と出さない（札は「乗車券」・読み上げは「〇〇さんの乗車券」）
+        XCTAssertEqual(contents.ticketTab, L("乗車券", "Ticket"))
+        XCTAssertEqual(contents.ticketTabWidth, 92)
+        XCTAssertEqual(contents.ticketLabel, L("丸田さんの乗車券", "丸田\u{2019}s ticket"))
         XCTAssertEqual(contents.ticketPoses.count, 1)
         XCTAssertTrue(contents.showsCard)
         XCTAssertEqual(contents.medals.count, 2)
@@ -326,7 +328,7 @@ final class TheirTrunkTests: XCTestCase {
         XCTAssertEqual(mine.ticketTab, L("乗車券 12", "Tickets 12"))
         XCTAssertEqual(mine.ticketTabWidth, 92)
         XCTAssertEqual(mine.ticketPoses.count, 3)
-        XCTAssertEqual(mine.actionTitle(.tickets), L("すれちがい帳を開く", "Open the pass book"))
+        XCTAssertEqual(mine.actionTitle(.tickets), L("すれちがい帳を開く", "Open Pass book"))
     }
 
     /// 会員証は番号を刷らない: 表の絵・回す画面の番号の行・読み上げが同じ `numberLine` を通る

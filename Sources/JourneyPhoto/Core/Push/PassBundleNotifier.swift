@@ -25,17 +25,17 @@ enum PassBundleNotifier {
     static func identifier(day: String) -> String { prefix + day }
     static func instantIdentifier(day: String) -> String { instantPrefix + day }
 
-    static func title() -> String { L("カードが届きました", "Cards have arrived") }
+    static func title() -> String { L("乗車券が届きました", "Tickets have arrived") }
 
     static func body(count: Int) -> String {
-        L("今日すれちがった \(count) 人のカードです。束を開いて、めくってみましょう。",
-          "\(Plural.count(count, "card")) from people you passed today. Open the bundle and flip through \(count == 1 ? "it" : "them").")
+        L("今日すれちがった \(count) 人から乗車券が届きました",
+          "Tickets have arrived from \(Plural.count(count, "person", "people")) you passed today")
     }
 
     /// すぐ届く形の本文。数は**まだ開いていない枚数**（束に入っている分）。名前・場所・時刻は書かない
     static func instantBody(count: Int) -> String {
-        L("すれちがった人のカードが \(count) 枚届いています。束を開いて、めくってみましょう。",
-          "\(Plural.count(count, "card")) from people you passed. Open the bundle and flip through \(count == 1 ? "it" : "them").")
+        L("すれちがった人から乗車券が \(count) 枚届いています",
+          "\(Plural.count(count, "ticket")) from people you passed \(count == 1 ? "has" : "have") arrived")
     }
 
     /// 夕方の束の知らせを予約する（届く時がいまより後のときだけ）

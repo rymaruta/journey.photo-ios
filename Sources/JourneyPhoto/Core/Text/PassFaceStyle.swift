@@ -105,8 +105,8 @@ enum PassTicketFaceStyle: UInt8, CaseIterable, Identifiable, Codable {
 
     /// 自分のプロフィールが読めなかったときの注記
     static var profileUnreadable: String {
-        L("Pro かどうかを読み込めませんでした。電波のあるところで開き直してください",
-          "Couldn\u{2019}t check your Pro status. Open this again with a signal")
+        L("Pro かどうかを読み込めませんでした。通信できる所で、もう一度お試しください",
+          "Couldn\u{2019}t check your Pro status. Please try again when you\u{2019}re online")
     }
 
     /// 選ぶ画面の並び（マルス券が先・モックの番号の順）

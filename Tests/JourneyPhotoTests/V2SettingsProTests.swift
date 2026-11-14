@@ -278,10 +278,11 @@ final class V2SettingsProTests: XCTestCase {
     func testChangePasswordHasFocusRingButNoEyeButton() throws {
         XCTAssertEqual(ChangePasswordLayout.submitStyle, .accent)
         let view = try source("Features/Settings/ChangePasswordView.swift")
-        assertInOrder(["SecureField(\"\", text: $current)", ".focused($focused, equals: .current)",
-                       ".overlay(alignment: .bottom) { focusRing(focused == .current) }",
-                       "SecureField(\"\", text: $updated)", ".focused($focused, equals: .updated)",
-                       ".overlay(alignment: .bottom) { focusRing(focused == .updated) }",
+        // 欄の名前は 2026-11-14 からログインと同じ `AuthFieldFlow.Field`（右下のキーで進む）
+        assertInOrder(["SecureField(\"\", text: $current)", ".focused($focused, equals: .currentPassword)",
+                       ".overlay(alignment: .bottom) { focusRing(focused == .currentPassword) }",
+                       "SecureField(\"\", text: $updated)", ".focused($focused, equals: .newPassword)",
+                       ".overlay(alignment: .bottom) { focusRing(focused == .newPassword) }",
                        ".jpPillButton(ChangePasswordLayout.submitStyle)"], in: view, "パスワードを変える")
         let ring = slice(view, from: "private func focusRing", to: "\n}\n")
         assertInOrder([".strokeBorder(WebTheme.accent", ".frame(height: JPHeight.field)", ".opacity(on ? 1 : 0)",

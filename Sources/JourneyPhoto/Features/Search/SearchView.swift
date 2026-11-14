@@ -18,9 +18,12 @@ struct SearchView: View {
     @EnvironmentObject private var connectivity: Connectivity
     /// **「見せない」が変わったら控えを捨てるため**に見ている
     @EnvironmentObject private var hidden: ModerationStore
+    /// 最近の検索を人ごとに覚えるため（`RecentSearchesStore`・2026-11-14 判断）
+    @EnvironmentObject private var auth: AuthStore
     /// タブの切り替え（「地図で見る」）。**`TabRouter.shared` を直に見る**（ほかの画面と同じ）
     /// ——`@EnvironmentObject` はどこからも配られておらず、開いた瞬間に落ちた（verify.sh の NG）
     @ObservedObject private var tabRouter = TabRouter.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var model = SearchViewModel()
     /// 引き下げ・「もう一度試す」の読み直しの最中
     @State private var isReloading = false
@@ -28,6 +31,8 @@ struct SearchView: View {
     /// 探す口に焦点があるか。**探すの札の上で見出しの「探す」を押したら、ここに字を打てるようにする**
     /// （2026-10-21・見出しの3つをどのタブにも置いたので、探すの札では押しても何も起きなかった）
     @FocusState private var fieldFocused: Bool
+    /// 前に探した言葉（新しい順に5つまで・端末の中だけ。2026-11-14 判断・`RecentSearchesStore`）
+    @State private var recentWords: [String] = []
     /// いまこの画面が出ているか。**詳細・人のページを上に積んでいる間は読み直さない**
     /// （`GalleryView` と同じ形）
     @State private var isOnScreen = false
@@ -108,8 +113,21 @@ struct SearchView: View {
             .padding(.bottom, JPSpace.s)
             .background(WebTheme.background)
 
+            ScrollViewReader { proxy in
             ScrollView {
+                // 頭の印（下の「探す」をもう一度押したら、ここへ戻す・`TabRouter.searchFocusRequests`）
+                Color.clear.frame(height: 0).id(Self.resultsTopID)
                 VStack(alignment: .leading, spacing: isDiscovering ? JPSpace.section : 20) {
+                    // 欄が空の間は、前に探した言葉を上に（押すとその言葉で探す・2026-11-14 判断）
+                    if showsRecentSearches {
+                        RecentSearchesSection(words: recentWords,
+                                              onPick: { word in pickRecent(word) },
+                                              onRemove: { word in recentWords = RecentSearchesStore().remove(word, userId: auth.userId) },
+                                              onRemoveAll: {
+                                                  RecentSearchesStore().removeAll(userId: auth.userId)
+                                                  recentWords = []
+                                              })
+                    }
                     if isDiscovering {
                         // **何も打っていないときは「発見」の顔**（板 11）。段の並びは
                         // `SearchDiscovery`、段の間は v2 で 32（`JPSpace.section`・板は 36）
@@ -147,6 +165,17 @@ struct SearchView: View {
             .refreshable { await reloadAll() }
             // 撮影スポットの段の地図をなぞっている間は流さない（札 #524・確かめ役の指摘 2026-11-11）
             .scrollDisabled(spotTracing != nil)
+            // 2026-11-14 判断（点検「画面と手ざわり」）: **探すを開いたまま下の「探す」をもう一度押したら、
+            // 結果を頭へ戻して探す口に字を打てるようにする。** 詳細を積んでいた回は iOS が根へ戻すだけ
+            // （`TabRouter.searchRootOnScreen` を押した瞬間に見る）
+            .onChange(of: tabRouter.searchFocusRequests) { _, _ in
+                guard isOnScreen else { return }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) {
+                    proxy.scrollTo(Self.resultsTopID, anchor: .top)
+                }
+                fieldFocused = true
+            }
+            }
         }
         .webScreen()
         .navigationTitle(Labels.Navigation.searchTab)  // 見た目はロゴ（AppHeaderItems）。この字は次の画面の「戻る」と読み上げに使う
@@ -278,12 +307,23 @@ struct SearchView: View {
             frontSettle = nil
             front.disappear()
             isOnScreen = false
+            tabRouter.searchRootOnScreen = false
         }
     }
+
+    /// 人だけを探して**見つからなかった**か（打つ前・探している最中・読めなかった・短すぎる語は別の文）。
+    /// 見つからなかった時だけ空の部品（`EmptyState`）にする
+    nonisolated static func showsPeopleNoHit(query: String, searching: Bool, failed: Bool, tooShort: Bool) -> Bool {
+        !query.isEmpty && !searching && !failed && !tooShort
+    }
+
+    /// 結果の頭の印（`TabRouter.searchFocusRequests`）
+    static let resultsTopID = "search.results.top"
 
     /// 前面が確定したあとに写しを当て、必要なら読み直す
     private func applyFrontModeration(reloadIfNeeded: Bool) {
         isOnScreen = true
+        tabRouter.searchRootOnScreen = true
         dropped = hidden.snapshot
         // 手元の一覧を写しで絞る（読み直し完了を待たない——ブロックのフラッシュ止め）
         model.applyHidden(dropped)
@@ -317,6 +357,26 @@ struct SearchView: View {
         }
     }
 
+    /// 最近の検索を出すか: 欄が空で、言葉が1つ以上あり、「発見」の顔か欄を押しているとき
+    /// （カテゴリだけで絞っている間は結果の上に割り込ませない）
+    private var showsRecentSearches: Bool {
+        RecentSearchesStore.shows(query: query, words: recentWords, discovering: isDiscovering, focused: fieldFocused)
+    }
+
+    /// 欄の言葉を最近の検索に覚える（空・覚えている言葉のままなら並びを上げるだけ）
+    private func rememberQuery() {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        recentWords = RecentSearchesStore().remember(trimmed, userId: auth.userId)
+    }
+
+    /// 最近の言葉を押した: その言葉で探し（`query` の `onChange` が探す）、いちばん上へ上げる
+    private func pickRecent(_ word: String) {
+        query = word
+        fieldFocused = false
+        recentWords = RecentSearchesStore().remember(word, userId: auth.userId)
+    }
+
     /// 何も打たず、種類もカテゴリも選んでいない＝「発見」の顔
     private var isDiscovering: Bool {
         query.isEmpty && model.category == nil && model.scope == .all && model.timeFilter.isEmpty
@@ -332,7 +392,7 @@ struct SearchView: View {
                 .font(.system(size: 17))
                 .foregroundStyle(WebTheme.text3)
                 .accessibilityHidden(true)
-            TextField(model.scope.prompt, text: $query)
+            JPTextField(model.scope.prompt, text: $query)
                 .focused($fieldFocused)
                 .textFieldStyle(.plain)
                 // 板の 16（`.callout`）
@@ -340,6 +400,13 @@ struct SearchView: View {
                 .foregroundStyle(WebTheme.foreground)
                 // 実機の絵の道しるべ（`ScreenshotTests` が「11b」で探している名前。付いていなかった）
                 .accessibilityIdentifier("search.field")
+                // 探した言葉を覚える: 右下の「検索」か、言葉を残したまま欄を離れた（結果を開いた・払った）とき
+                .submitLabel(.search)
+                .onSubmit { rememberQuery() }
+                .onChange(of: fieldFocused) { _, focused in if !focused { rememberQuery() } }
+                // 人が替わったら、その人の言葉を読み直す（前の人の言葉を並べない）
+                .onChange(of: auth.userId) { _, id in recentWords = RecentSearchesStore().words(userId: id) }
+                .onAppear { recentWords = RecentSearchesStore().words(userId: auth.userId) }
             if !query.isEmpty {
                 Button {
                     query = ""
@@ -564,8 +631,8 @@ struct SearchView: View {
                             line: quizAnswered
                                 ? L("答えました、明日また新しい写真", "Answered, a new photo tomorrow")
                                 : L("4つの中から撮影地を当てる", "Guess the spot from four choices"),
-                            // 写真を出すなら作者とライセンスも出す（ホームの札と同じ）
-                            detail: quiz.photo.credit,
+                            // 写真を出すなら作者とライセンスも出す（ホームの札と同じ・出典の頭は切らない `TopCardCredit`）
+                            detail: nil, credit: TopCardCredit(photo: quiz.photo),
                             backdrop: nil, backdropURL: quiz.photo.url)
             }
             .buttonStyle(.plain)
@@ -1019,6 +1086,17 @@ struct SearchView: View {
         if model.scope.showsPhotos {
             spotResults
             photoResults
+        } else if users.isEmpty, Self.showsPeopleNoHit(query: query, searching: model.isSearching,
+                                                       failed: model.usersFailed, tooShort: model.peopleQueryTooShort) {
+            // 2026-11-14 判断（前回の点検の「空と0件の形をそろえる」の残り）: 人の0件も空の部品（印・明朝 20 の見出し・
+            // 説明・一手）にする。前は灰の本文「見つかりませんでした」だけで、写真の0件（地図への出口）と形が割れていた。
+            // 一手は「すべてで探す」——打った語のまま写真・撮影地・観光スポットにも当てる（語を打ち直させない）
+            EmptyState(icon: "person.2", title: L("見つかりませんでした", "No results"),
+                       message: L("名前か @ユーザー名の一部で探せます", "Search by part of a name or @username"),
+                       actionTitle: L("すべてで探す", "Search everything"),
+                       actionIdentifier: "search.people.noHit") {
+                model.select(scope: .all)
+            }
         } else if users.isEmpty {
             // 人だけを探しているとき。**打つ前と見つからなかったを分ける**
             Text(query.isEmpty

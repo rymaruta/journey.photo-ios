@@ -109,7 +109,11 @@ final class SpotSwipeTests: XCTestCase {
     }
 
     func testPauseWordsSayWhatYouSee() {
-        XCTAssertEqual(SpotSwipe.pauseTitle(wants: 3), "選んだ 3 か所を、地図と旅行プランで")
+        XCTAssertEqual(SpotSwipe.pauseTitle(wants: 3), "選んだ 3 か所を\n地図と旅行プランで見る")
+        // 2行目が1字だけにならない（「で」だけが次の行に落ちていた・2026-11-13）
+        let lines = SpotSwipe.pauseTitle(wants: 12).components(separatedBy: "\n")
+        XCTAssertEqual(lines.count, 2)
+        XCTAssertTrue(lines.allSatisfy { $0.count >= 4 })
         XCTAssertEqual(SpotSwipe.actionTitle(signedIn: false), "ログインして見る")
         XCTAssertEqual(SpotSwipe.actionTitle(signedIn: true), "旅行プランにする")
         XCTAssertEqual(SpotSwipe.footerAction(signedIn: false), "地図で見る")

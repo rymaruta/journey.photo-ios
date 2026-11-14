@@ -14,6 +14,11 @@ import SwiftUI
 struct ActionTilesLayout: Layout {
 
     var spacing: CGFloat = JPSpace.xs
+    /// 名前を縮める下限。nil なら行動の札の値（`minScale`）。字を縮めない部品（線のボタン `jpOutlineButton`）は 1
+    /// （2026-11-14・すれちがいの「ありがとう」の並びでも使う）
+    var scale: CGFloat? = nil
+
+    private var rowScale: CGFloat { scale ?? Self.minScale }
 
     /// 縮める下限（`SpotDetailParts.actionLabel` の名前の `minimumScaleFactor` と同じ値）
     static var minScale: CGFloat { WebTheme.minimumScale(forTextSize: JPTypeScale.footnote) }
@@ -34,7 +39,7 @@ struct ActionTilesLayout: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let ideals = subviews.map { $0.sizeThatFits(.unspecified).width }
         let available = proposal.width ?? (ideals.reduce(0, +) + spacing * CGFloat(max(0, ideals.count - 1)))
-        if Self.fitsInOneRow(ideals: ideals, available: available, spacing: spacing, minScale: Self.minScale) {
+        if Self.fitsInOneRow(ideals: ideals, available: available, spacing: spacing, minScale: rowScale) {
             let column = Self.column(available: available, count: subviews.count, spacing: spacing)
             let height = subviews.map { $0.sizeThatFits(ProposedViewSize(width: column, height: nil)).height }.max() ?? 0
             return CGSize(width: available, height: height)
@@ -45,7 +50,7 @@ struct ActionTilesLayout: Layout {
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         let ideals = subviews.map { $0.sizeThatFits(.unspecified).width }
-        if Self.fitsInOneRow(ideals: ideals, available: bounds.width, spacing: spacing, minScale: Self.minScale) {
+        if Self.fitsInOneRow(ideals: ideals, available: bounds.width, spacing: spacing, minScale: rowScale) {
             let column = Self.column(available: bounds.width, count: subviews.count, spacing: spacing)
             var x = bounds.minX
             for subview in subviews {

@@ -527,7 +527,7 @@ final class PassStoreTests: XCTestCase {
     func testTextsSayInstantAndKeepLockScreenPlain() async {
         let point = PassPrivacyText.introPoints.map(\.text).joined()
         XCTAssertTrue(point.contains("すれちがうとすぐ届きます"), "オンにする前の説明が「すぐ」になっていない")
-        XCTAssertTrue(point.contains("夕方 18 時に束でまとめて受け取ることもできます"))
+        XCTAssertTrue(point.contains("夕方 18 時にまとめて受け取ることもできます"))
         XCTAssertFalse(point.contains("その日の夕方 18 時に束でまとめて届きます"), "前の「夕方に届く」が残っている")
         XCTAssertTrue(PassPrivacyText.noteBody.contains("近くにいたことが相手に分かります"),
                       "すぐ届くと相手に分かることを書いていない")

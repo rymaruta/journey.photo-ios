@@ -414,8 +414,8 @@ struct CamperRoomView: View {
                     refit { viewport.height = h }
                 }
             if let selected, drag == nil, mode == .edit || mode == .home, let point = actionPoint(selected) {
-                // 右上の「向きを戻す」（44pt・上端 12）が出ている時は、その下まで下げて重ねない（2026-10-22）
-                let top: CGFloat = showsResetView ? 86 : 30
+                // 右上の札の並び（⟲ ⟳・向きを戻す。44pt・上端 12）が出ている時は、その下まで下げて重ねない（2026-10-22・2026-11-14）
+                let top: CGFloat = showsTopBar ? 86 : 30
                 itemActions(selected)
                     .position(x: min(max(point.x, 110), width - 110), y: min(max(point.y - 34, top), height - 30))
             }
@@ -515,14 +515,16 @@ struct CamperRoomView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(sceneLabel)
         .accessibilityAddTraits(.isImage)
-        .accessibilityValue(PreviewSession.userId != nil ? readyMarker + " " + photoProbe + framedMarker : "")
+        // 見本の起動のときだけ、横の向き（yaw=度）も出す（UI テストが ⟲ ⟳ で 30° ずつ替わるのを読む・2026-11-14）
+        .accessibilityValue(PreviewSession.userId != nil ? readyMarker + " " + photoProbe + framedMarker + " yaw=\(Int(camera.yaw.rounded()))" : "")
     }
 
     /// 読み上げの操作（部屋を回す・家具を選ぶ）。修飾を分けて、Xcode の型検査が時間切れにならないようにする
     private func sceneActions<V: View>(_ v: V) -> some View {
         itemVoiceActions(
-            v.accessibilityAction(named: L("右へ回す", "Turn right")) { turn(by: 30) }
-                .accessibilityAction(named: L("左へ回す", "Turn left")) { turn(by: -30) }
+            // 上の ⟲ ⟳ と同じ値・同じ式（`CamperRoomTurn`・2026-11-14）
+            v.accessibilityAction(named: CamperRoomTurn.right.label) { turn(CamperRoomTurn.right) }
+                .accessibilityAction(named: CamperRoomTurn.left.label) { turn(CamperRoomTurn.left) }
                 // 読み上げでも家具を選ぶ・動かす・回す・しまうができる（2026-10-21）
                 .accessibilityAction(named: L("次の家具を選ぶ", "Select the next piece")) { selectNext(1) }
                 .accessibilityAction(named: L("前の家具を選ぶ", "Select the previous piece")) { selectNext(-1) }
@@ -563,21 +565,12 @@ struct CamperRoomView: View {
 
     @ViewBuilder
     private func sceneOverlays(width: CGFloat, height: CGFloat) -> some View {
-        // 向きを初めに戻す（回した・寄った後。写真を飾る場面は額へ寄るので出さない）
-        if showsResetView {
-            Button(action: resetCamera) {
-                Image(systemName: "arrow.counterclockwise")
-                    .jpSystemFont(15, weight: .semibold)
-                    .foregroundStyle(Color.white)
-                    .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                    .background(Color.black.opacity(0.62), in: Circle())
-                    .overlay(Circle().strokeBorder(Color.white.opacity(0.16), lineWidth: 1))
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L("向きを初めに戻す", "Reset the view"))
-            .accessibilityIdentifier("camper.room.resetView")
-            .position(x: width - 34, y: 34)
+        // 右上の札の並び: 向きを初めに戻す（回した・寄った後だけ）・⟲・⟳（2026-11-14）。写真を飾る場面は額へ寄るので出さない
+        if showsTopBar {
+            topBar
+                .padding(.horizontal, 12)
+                .frame(width: width)
+                .position(x: width / 2, y: 34)
         }
         // 押して置く: 何を置こうとしているか・やめる
         if let armed, mode == .edit {
@@ -591,7 +584,8 @@ struct CamperRoomView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(Color.black.opacity(0.82), in: Capsule())
-                .position(x: width / 2, y: 22)
+                // 2026-11-14 判断: 上の端は ⟲ ⟳ の並びが使うので、見本の札は部屋の絵の下の端へ（狭い画面で重なる）
+                .position(x: width / 2, y: height - 22)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
@@ -602,9 +596,62 @@ struct CamperRoomView: View {
         }
     }
 
-    /// 向きを初めに戻すボタンを出すか（回した・寄った後。写真を飾る場面は額へ寄るので出さない）
+    /// 右上の札の並び（⟲ ⟳）を出すか。写真を飾る場面は額へ寄るので出さない。家具を運ぶ途中も隠す
+    private var showsTopBar: Bool {
+        mode != .photos && drag == nil
+    }
+
+    /// 向きを初めに戻すボタンを出すか（回した・寄った後）
     private var showsResetView: Bool {
-        mode != .photos && drag == nil && camera.differs(from: overviewCamera)
+        showsTopBar && camera.differs(from: overviewCamera)
+    }
+
+    /// 右上の札の並び。部屋の絵の上なので白（ガラスの丸・板の決まり）。
+    /// 2026-11-14 判断: ⟲ ⟳ は位置を変えずに続けて押せるよう右の端に固め、「向きを戻す」はその左に出す。
+    /// 「向きを戻す」は前は ⟲ と同じ形の印だったので、見分けられるよう字の札にした
+    private var topBar: some View {
+        HStack(spacing: 8) {
+            Spacer(minLength: 0)
+            if showsResetView {
+                Button(action: resetCamera) {
+                    Text(L("向きを戻す", "Reset view"))
+                        .jpSystemFont(13, weight: .semibold)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .foregroundStyle(Color.white)
+                        .padding(.horizontal, 14)
+                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                        .background(Color.black.opacity(0.62), in: Capsule())
+                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.16), lineWidth: 1))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("向きを初めに戻す", "Reset the view"))
+                .accessibilityIdentifier("camper.room.resetView")
+            }
+            ForEach(CamperRoomTurn.allCases, id: \.self) { direction in
+                turnButton(direction)
+            }
+        }
+    }
+
+    /// ⟲ ⟳（44pt の丸・1 回で 30°）。回せる範囲の端では薄くして押せなくする
+    private func turnButton(_ direction: CamperRoomTurn) -> some View {
+        let enabled = camera.canTurn(by: direction.degrees)
+        return Button { turn(direction) } label: {
+            Image(systemName: direction.symbol)
+                .jpSystemFont(15, weight: .semibold)
+                .foregroundStyle(Color.white)
+                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                .background(Color.black.opacity(0.62), in: Circle())
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.16), lineWidth: 1))
+                .contentShape(Circle())
+                .opacity(enabled ? 1 : 0.4)
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .accessibilityLabel(direction.label)
+        .accessibilityIdentifier(direction.id)
     }
 
     /// 押して置く途中の札（何を置くか・やめる）
@@ -898,11 +945,12 @@ struct CamperRoomView: View {
             }
     }
 
-    private func turn(by degrees: Double) {
+    /// 部屋を 30° 回す（上の ⟲ ⟳ と読み上げの操作）。今の動き（0.6 秒）で滑らかに回る。
+    /// 2026-11-14 判断: 視差効果を減らす設定では、向きを戻す・二度押しと同じく動きを付けずに一度で替える（`sceneView` の `animateCamera`）
+    private func turn(_ direction: CamperRoomTurn) {
+        guard camera.canTurn(by: direction.degrees) else { return }
         animateCamera = true
-        var c = camera
-        c.yaw += degrees
-        camera = c.clamped()
+        camera = camera.turned(by: direction.degrees)
     }
 
     // MARK: 家具の操作
@@ -1131,8 +1179,9 @@ struct CamperRoomView: View {
                 tool(L("写真", "Photos"), symbol: "photo.on.rectangle", id: "photos") { enter(.photos) }
                 tool(L("図鑑", "Collection"), symbol: "books.vertical", id: "dex") { showDex = true }
             }
-            Text(L("家具を長押しで持ち上げる。指一本で部屋を回し、二本指か二度押しで寄る。夜にすると灯りが付く。",
-                   "Press and hold a piece to lift it. Drag to turn the room; pinch or double-tap to zoom. Lights come on at night."))
+            // 2026-11-14: 部屋を回すのは上の ⟲ ⟳ で分かるので、説明から外して短くした
+            Text(L("家具を長押しで持ち上げる。二本指か二度押しで寄る。夜にすると灯りが付く。",
+                   "Press and hold a piece to lift it. Pinch or double-tap to zoom. Lights come on at night."))
                 .jpSystemFont(13)
                 .foregroundStyle(WebTheme.text2)
                 .fixedSize(horizontal: false, vertical: true)

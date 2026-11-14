@@ -131,7 +131,7 @@ struct EditPhotoView: View {
             Section {
                 JPField(L("題", "Title")) {
                     // 題は投稿の画面と同じ上限で止める（超えたぶんはサーバーが黙って切る）
-                    TextField("", text: $title)
+                    JPTextField("", text: $title)
                         .onChange(of: title) { old, value in
                             let kept = PostLimits.limited(old: old, new: value, limit: PostLimits.title)
                             if kept != value { title = kept }
@@ -142,7 +142,7 @@ struct EditPhotoView: View {
                     // 🔴 **説明は欄で止めない**（Web の `/user/edit` と同じ）。送る形で上限が変わり、
                     // 全体を 2000 で切ると英語の説明がある写真で後ろの段落が消えた。超えていれば
                     // 保存の前に知らせる（`LocalizedEdit.descriptionOverLimit`）
-                    TextField("", text: $caption, axis: .vertical)
+                    JPTextField("", text: $caption, axis: .vertical)
                         .lineLimit(3...8)
                 }
                 .accessibilityIdentifier("editPhoto.caption")
@@ -165,7 +165,9 @@ struct EditPhotoView: View {
                 // ただの入力欄だと座標が付かず、直した瞬間に
                 // サーバーが `geoApprox` の座標を消す＝地図から消える。
                 // アプリには戻す口が無かった（Web の `/user/edit` にはある）
-                PlaceSearchField(location: $location, coords: $pickedCoords)
+                // 欄は投稿画面と同じ枠（2026-11-14 判断・前回の点検の残り。板 EditPhoto も 48pt の枠の欄）。
+                // 前は撮影地だけ枠の無い行で、住所の文字列が地の上の灰の字に見えて切れていた
+                PlaceSearchField(location: $location, coords: $pickedCoords, boxed: true)
                 TagField(tagsText: $tagsText)
                 CategoryField(category: $category)
             }

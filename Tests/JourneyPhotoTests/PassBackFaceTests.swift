@@ -304,6 +304,7 @@ final class PassBackFaceTests: XCTestCase {
         XCTAssertTrue(settings.contains("NavigationLink { PassSettingsView() } label: {"))
         XCTAssertTrue(settings.contains("JPRowLabel(title: PassTicket.featureName,"))
         let pass = try source("Features/Pass/PassSettingsView.swift")
-        XCTAssertEqual(pass.components(separatedBy: "PassTicket.featureName").count - 1, 3)
+        // 2026-11-14: 切り替えの行の名前も「すれちがい乗車券」にそろえた（前は「すれちがう」）
+        XCTAssertEqual(pass.components(separatedBy: "PassTicket.featureName").count - 1, 4)
     }
 }

@@ -12,7 +12,7 @@ struct StoryShareSeed: Identifiable, Equatable {
 
 /// **写真を紹介するストーリーの絵**（2026-11-11・札 #541 の ①「写真をストーリーで紹介」・案の模型 1-D / 1-E）。
 ///
-/// 9:16 の地に、写真をぼかして暗くしたもの（黒 45%）を敷き、真ん中より少し上に**写真の札**を −2° 傾けて置く。
+/// 9:16 の地に、写真をぼかして暗くしたもの（`SharedPhotoStoryBackdrop`・2026-11-14 に作り直した）を敷き、真ん中より少し上に**写真の札**を −2° 傾けて置く。
 /// 札は写真の下に白（primary #F0F0F0）の帯を持ち、持ち主の顔（24 → 64px）・@ユーザー名（墨・太字）・題（墨 #3a3d3f）を出す。
 /// 写真の上に置く字は無い（帯の上だけ・CLAUDE.md の「写真の上は白だけ」に当たらない）。
 ///
@@ -39,8 +39,6 @@ enum SharedPhotoStoryCard {
     static let tiltDegrees: Double = -2
     /// 札の中心の高さ（地の上から）。真ん中より少し上——下に「写真を見る」と返信欄が来る
     static let cardCenterY: Double = 0.42
-    /// 地の暗さ（模型の brightness .55 ≒ 黒 45%）
-    static let backdropShade: Double = 0.45
 
     /// 札の写真の部分（傾ける前・地の座標）
     static func photoRect(imageSize: CGSize) -> CGRect {
@@ -97,16 +95,10 @@ enum SharedPhotoStoryCard {
             let full = CGRect(origin: .zero, size: size)
             UIColor.black.setFill()
             context.fill(full)
-            // 地: 小さく縮めた写真を引き伸ばす（にじんでぼける・重いぼかしを掛けない）。そのうえを暗く
-            let tiny = image.preparingThumbnail(of: CGSize(width: 24, height: 24 * image.size.height / max(image.size.width, 1)))
-                ?? image
-            tiny.draw(in: fillRect(imageSize: image.size, in: full.insetBy(dx: -80, dy: -80)))
-            UIColor.black.withAlphaComponent(backdropShade).setFill()
-            context.fill(full)
-
             let card = cardRect(imageSize: image.size)
             let photoBox = photoRect(imageSize: image.size)
             let cg = context.cgContext
+            drawBackdrop(image, card: card, in: full, context: cg)
             cg.saveGState()
             // 札の中心で回す
             cg.translateBy(x: card.midX, y: card.midY)
@@ -171,4 +163,215 @@ extension SharedPhotoStoryCard {
             path.fill()
         }
     }
+}
+
+// MARK: - 地（2026-11-14）
+
+/// **写真を紹介するストーリーの地**（2026-11-14 owner「投稿した後にストーリーに載せるの背景寂しいね」）。
+///
+/// 前は、24px に縮めた写真を引き伸ばして、黒 45% を一様に重ねていた。色が濁った暗い一枚の面になり、
+/// 写真の札だけが浮いて見えた（Mac run 1268 の 120f: 写真の色も形も消えた灰色の一枚の面）。
+///
+/// 2026-11-14 判断: インスタの「投稿をストーリーに」と同じく**写真から色を引いた地**のまま、厚みを足す。
+/// 1. 写真を本物のぼかし（高さの 3.5%）で敷き、彩度 1.35 で色を残す（形がうっすら見え、写真の続きに見える）
+/// 2. 札の後ろに白い光（10% → 0）を敷く（展示の札に光を当てる。暗い写真でも地が真っ黒の板にならない）
+/// 3. 黒を重ねる量は**帯ごとに、その帯のいちばん明るい所を測って**決める。上（見る画面の進み線と名前）と
+///    下（「写真を見る」・ひとこと・返信欄）は白の字との比 4.5 以上、真ん中（札の周り）は 3 以上。
+///    暗い写真には少しだけ（一様に 45% だと暗い写真ほど沈む）
+/// 4. 四隅を黒 35% へ落とす（周辺減光）。目が札へ行く
+///
+/// 色の決まり: 地は写真から引いた色と白・黒だけ。真鍮は置かない（写真の上・CLAUDE.md）。
+/// 量の計算（`shades`）は画面を持たないので Linux の試験で見る。描くのは Mac / 実機だけ。
+enum SharedPhotoStoryBackdrop {
+    /// ぼかしの半径（縮めた写真の高さに対する割合）
+    static let blurRadiusFraction: Double = 0.035
+    /// 縮める長い辺（ぼかしを軽くする・地は大きく引き伸ばすので足りる）
+    static let blurLongEdge: CGFloat = 720
+    /// 彩度（ぼかして暗くしても色が残るように）
+    static let saturation: Double = 1.35
+    /// 札の後ろの白い光の濃さと、半径（地の幅に対する割合）
+    static let glowAlpha: Double = 0.10
+    static let glowRadiusFraction: Double = 0.62
+    /// 四隅の黒（周辺減光）の濃さ
+    static let vignetteAlpha: Double = 0.35
+
+    /// 明るさを測る升目（18 × 32 = 1 升 60px）。ぼかし（67px）とほぼ同じ大きさで、明るい所を取りこぼさない
+    static let gridColumns = 18
+    static let gridRows = 32
+    /// 上の帯（0〜0.19・見る画面の進み線と名前）と下の帯（0.69〜1・「写真を見る」0.75 と返信欄）の升目の行
+    static let topRows = 0..<6
+    static let bottomRows = 22..<32
+    /// 帯の上の明るさの上限（WCAG の相対輝度）。上下は白の字と 4.5:1、真ん中は 3:1
+    static let edgeMaxLuminance: Double = 0.18
+    static let middleMaxLuminance: Double = 0.30
+    /// 黒を重ねる量の下限（暗い写真でも、上下は少し落として札を浮かせる）と上限
+    static let minimumTop: Double = 0.30
+    static let minimumMiddle: Double = 0.12
+    static let minimumBottom: Double = 0.40
+    static let maximumShade: Double = 0.88
+
+    /// 帯ごとの黒の濃さ（0〜1）
+    struct Shades: Equatable {
+        let top: Double
+        let middle: Double
+        let bottom: Double
+    }
+
+    /// 1 つの色に、白の光（`lift`）を重ね、その上に黒（`shade`）を重ねた色（描く順と同じ）
+    static func shaded(_ rgb: UInt32, lift: Double, shade: Double) -> UInt32 {
+        func channel(_ shift: UInt32) -> UInt32 {
+            let v = Double((rgb >> shift) & 0xFF) / 255
+            let lifted = v + lift * (1 - v)
+            return UInt32(max(0, min(255, (lifted * (1 - shade) * 255).rounded())))
+        }
+        return (channel(16) << 16) | (channel(8) << 8) | channel(0)
+    }
+
+    /// その色を `maxLuminance` 以下にするのに要る黒の濃さ（`minimum` 〜 `maximumShade`）
+    static func shadeNeeded(_ rgb: UInt32, lift: Double, maxLuminance: Double, minimum: Double) -> Double {
+        if BrandPalette.luminance(shaded(rgb, lift: lift, shade: minimum)) <= maxLuminance { return minimum }
+        var low = minimum
+        var high = maximumShade
+        for _ in 0..<24 {
+            let mid = (low + high) / 2
+            if BrandPalette.luminance(shaded(rgb, lift: lift, shade: mid)) <= maxLuminance { high = mid } else { low = mid }
+        }
+        return high
+    }
+
+    /// 升目（左上から行ごと・`gridColumns × gridRows`）から帯ごとの黒の濃さを決める。
+    /// 升目が足りなければ（測れなかった）白とみなす（明るい写真と同じに暗くして、字を読めなくしない）。
+    /// 上と下は真ん中より薄くしない（帯の間のぼかしで、真ん中の明るい所が薄い側に入らないように）
+    static func shades(grid: [UInt32]) -> Shades {
+        let measured = grid.count == gridColumns * gridRows
+        func brightest(_ rows: Range<Int>) -> UInt32 {
+            guard measured else { return 0xFFFFFF }
+            var best: UInt32 = 0
+            var bestLuminance = -1.0
+            for row in rows {
+                for column in 0..<gridColumns {
+                    let rgb = grid[row * gridColumns + column]
+                    let luminance = BrandPalette.luminance(rgb)
+                    if luminance > bestLuminance { bestLuminance = luminance; best = rgb }
+                }
+            }
+            return best
+        }
+        // 光は札の後ろから広がる。帯の明るさの見積もりには、どの帯にも光が満ちたとして足す（明るい側に倒す）
+        let middle = shadeNeeded(brightest(topRows.upperBound..<bottomRows.lowerBound), lift: glowAlpha,
+                                 maxLuminance: middleMaxLuminance, minimum: minimumMiddle)
+        let top = shadeNeeded(brightest(topRows), lift: glowAlpha, maxLuminance: edgeMaxLuminance, minimum: minimumTop)
+        let bottom = shadeNeeded(brightest(bottomRows), lift: glowAlpha, maxLuminance: edgeMaxLuminance,
+                                 minimum: minimumBottom)
+        return Shades(top: max(top, middle), middle: middle, bottom: max(bottom, middle))
+    }
+
+    /// 縦の黒のグラデーションの段（位置 0〜1 と濃さ）。上の帯と下の帯は升目の境まで同じ濃さを保ち、
+    /// 移り変わりは真ん中の帯の中で済ませる（真ん中は上下より薄くならない＝どの升目も要る濃さ以上）
+    static func stops(_ shades: Shades) -> [(location: CGFloat, alpha: CGFloat)] {
+        let rows = CGFloat(gridRows)
+        return [
+            (0, CGFloat(shades.top)),
+            (CGFloat(topRows.upperBound) / rows, CGFloat(shades.top)),
+            (CGFloat(topRows.upperBound + 4) / rows, CGFloat(shades.middle)),
+            (CGFloat(bottomRows.lowerBound - 4) / rows, CGFloat(shades.middle)),
+            (CGFloat(bottomRows.lowerBound) / rows, CGFloat(shades.bottom)),
+            (1, CGFloat(shades.bottom)),
+        ]
+    }
+
+    /// 位置 `y`（0〜1）での黒の濃さ（`stops` を線でつないだ値・試験で見る）
+    static func alpha(at y: CGFloat, _ shades: Shades) -> CGFloat {
+        let points = stops(shades)
+        guard let first = points.first, let last = points.last else { return 0 }
+        if y <= first.location { return first.alpha }
+        for (a, b) in zip(points, points.dropFirst()) where y <= b.location {
+            let span = b.location - a.location
+            guard span > 0 else { return b.alpha }
+            return a.alpha + (b.alpha - a.alpha) * (y - a.location) / span
+        }
+        return last.alpha
+    }
+}
+
+extension SharedPhotoStoryCard {
+    /// 地を描く（`SharedPhotoStoryBackdrop`）: ぼかした写真 → 札の後ろの光 → 帯ごとの黒 → 四隅の黒
+    fileprivate static func drawBackdrop(_ image: UIImage, card: CGRect, in full: CGRect, context cg: CGContext) {
+        typealias B = SharedPhotoStoryBackdrop
+        let spread = full.insetBy(dx: -80, dy: -80)
+        #if os(Linux)
+        // Linux の SDK 模型には CoreGraphics のグラデーションが無い。描く絵は Mac / 実機で確かめる
+        drawTinyBackdrop(image, in: spread)
+        #else
+        var grid: [UInt32] = []
+        if let blurred = SignatureShareCardRenderer.blurredBackdrop(image, longEdge: B.blurLongEdge,
+                                                                    radiusFraction: B.blurRadiusFraction,
+                                                                    saturation: B.saturation) {
+            blurred.draw(in: fillRect(imageSize: blurred.size, in: spread))
+            grid = sampleGrid(blurred, spread: spread, canvas: full.size)
+        } else {
+            drawTinyBackdrop(image, in: spread)
+        }
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        // 札の後ろの光（白 → 透明）
+        let glowColors = [UIColor.white.withAlphaComponent(B.glowAlpha).cgColor,
+                          UIColor.white.withAlphaComponent(0).cgColor] as CFArray
+        if let glow = CGGradient(colorsSpace: colorSpace, colors: glowColors, locations: [0, 1]) {
+            let center = CGPoint(x: card.midX, y: card.midY)
+            cg.drawRadialGradient(glow, startCenter: center, startRadius: 0, endCenter: center,
+                                  endRadius: full.width * B.glowRadiusFraction, options: [])
+        }
+        // 帯ごとの黒
+        let stops = B.stops(B.shades(grid: grid))
+        let colors = stops.map { UIColor.black.withAlphaComponent($0.alpha).cgColor } as CFArray
+        if let gradient = CGGradient(colorsSpace: colorSpace, colors: colors, locations: stops.map { $0.location }) {
+            cg.drawLinearGradient(gradient, start: CGPoint(x: 0, y: full.minY), end: CGPoint(x: 0, y: full.maxY),
+                                  options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+        }
+        // 四隅の黒（真ん中は透明・角で vignetteAlpha）
+        let vignetteColors = [UIColor.black.withAlphaComponent(0).cgColor,
+                              UIColor.black.withAlphaComponent(B.vignetteAlpha).cgColor] as CFArray
+        if let vignette = CGGradient(colorsSpace: colorSpace, colors: vignetteColors, locations: [0.45, 1]) {
+            let center = CGPoint(x: full.midX, y: full.midY)
+            cg.drawRadialGradient(vignette, startCenter: center, startRadius: 0, endCenter: center,
+                                  endRadius: hypot(full.width, full.height) / 2, options: [.drawsAfterEndLocation])
+        }
+        #endif
+    }
+
+    /// ぼかしが作れないときの地（前の作り: 小さく縮めた写真を引き伸ばす）
+    fileprivate static func drawTinyBackdrop(_ image: UIImage, in spread: CGRect) {
+        let tiny = image.preparingThumbnail(of: CGSize(width: 24, height: 24 * image.size.height / max(image.size.width, 1)))
+            ?? image
+        tiny.draw(in: fillRect(imageSize: image.size, in: spread))
+    }
+
+    #if !os(Linux)
+    /// 地に敷いたぼかしの写真を、升目（`gridColumns × gridRows`）に縮めて色を読む。読めなければ空
+    fileprivate static func sampleGrid(_ blurred: UIImage, spread: CGRect, canvas: CGSize) -> [UInt32] {
+        typealias B = SharedPhotoStoryBackdrop
+        let columns = B.gridColumns
+        let rows = B.gridRows
+        guard let cgImage = blurred.cgImage else { return [] }
+        var bytes = [UInt8](repeating: 0, count: columns * rows * 4)
+        let drawn: Bool = bytes.withUnsafeMutableBytes { buffer in
+            guard let base = buffer.baseAddress,
+                  let small = CGContext(data: base, width: columns, height: rows, bitsPerComponent: 8,
+                                        bytesPerRow: columns * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                        bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return false }
+            small.interpolationQuality = .medium
+            // 地の座標（上が 0）を升目の座標（下が 0・CGContext の向き）へ
+            let sx = CGFloat(columns) / canvas.width
+            let sy = CGFloat(rows) / canvas.height
+            let rect = fillRect(imageSize: blurred.size, in: spread)
+            small.draw(cgImage, in: CGRect(x: rect.minX * sx, y: (canvas.height - rect.maxY) * sy,
+                                           width: rect.width * sx, height: rect.height * sy))
+            return true
+        }
+        guard drawn else { return [] }
+        return (0..<(columns * rows)).map { i in
+            (UInt32(bytes[i * 4]) << 16) | (UInt32(bytes[i * 4 + 1]) << 8) | UInt32(bytes[i * 4 + 2])
+        }
+    }
+    #endif
 }

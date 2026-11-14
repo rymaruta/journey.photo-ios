@@ -104,6 +104,23 @@ enum PhotoMetaLine {
 
     /// 撮影情報を開いたときの升目（v2 の板 PhotoDetail: 焦点距離・絞り・シャッター・ISO）。
     /// **無いものは詰める**——空の升を立てない
+    /// 撮影設定の升の段の分け方（2026-11-14 判断・人間工学の点検「追加の点検 4」）。
+    ///
+    /// ふだんは1段に並べる（最大4つ）。**アクセシビリティの文字の大きさでは2列ずつの段に積む**——前は
+    /// 文字の大きさの上限（xxxLarge）で止めて4列に押し込めていたが、上限を外した（HIG「少なくとも 200%」・
+    /// 板 06「アクセシビリティの大きさでは横に並べた札を縦に積む。格子は列を減らす」）。
+    /// 返すのは各段の升の位置（`cells` の添え字）
+    static func settingsRows(count: Int, accessibilitySize: Bool) -> [[Int]] {
+        guard count > 0 else { return [] }
+        let columns = accessibilitySize ? 2 : count
+        return stride(from: 0, to: count, by: columns).map { Array($0..<min($0 + columns, count)) }
+    }
+
+    /// 1段の列の数（欠けた段も同じ幅に割るため）
+    static func settingsColumns(count: Int, accessibilitySize: Bool) -> Int {
+        accessibilitySize ? min(2, max(count, 1)) : max(count, 1)
+    }
+
     static func settingsCells(_ exif: Photo.Exif?) -> [(label: String, value: String)] {
         guard let exif else { return [] }
         let cells: [(String, String?)] = [

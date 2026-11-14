@@ -169,7 +169,8 @@ struct HomeSpotShelfView: View {
                 ProgressView().controlSize(.mini)
                     .tint(wanted ? WebTheme.accentText : WebTheme.foreground)
             } else {
-                Image(systemName: wanted ? "heart.fill" : "heart")
+                // 行きたい＝旗（2026-11-14 判断・#593。いいねのハートと紛れないよう旗にそろえる。保存済みは塗り・まだは線）
+                Image(systemName: wanted ? "flag.fill" : "flag")
                     .font(.footnote.weight(.semibold))
                     .accessibilityHidden(true)
             }

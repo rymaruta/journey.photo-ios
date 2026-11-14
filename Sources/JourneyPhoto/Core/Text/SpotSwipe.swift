@@ -114,9 +114,11 @@ enum SpotSwipe {
 
     // MARK: - 挟む札・足元
 
-    /// 挟む札の題（何が見られるかで言う）
+    /// 挟む札の題（何が見られるかで言う）。
+    /// 2026-11-14 判断（前回の点検の残り）: **「を」の後で改行し、文を「見る」で閉じる。** 前は明朝 22 の1文が
+    /// 「…旅行プラン」で折り返し、2行目が「で」1字だけになっていた（2026-11-13 の画面写真）
     static func pauseTitle(wants: Int) -> String {
-        L("選んだ \(wants) か所を、地図と旅行プランで",
+        L("選んだ \(wants) か所を\n地図と旅行プランで見る",
           wants == 1 ? "See your 1 place on a map and in a trip" : "See your \(wants) places on a map and in a trip")
     }
 

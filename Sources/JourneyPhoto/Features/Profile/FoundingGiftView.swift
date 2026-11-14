@@ -103,7 +103,7 @@ struct FoundingGiftView: View {
         }
         // 板 v2: 地は黒（v1 の丸い灰のグラデーションは、章の後ろの真鍮の光に替えた）
         .background { WebTheme.background.ignoresSafeArea() }
-        .interactiveDismissDisabled(saving)
+        .sheetSwipeGuard(.busy(saving))
     }
 
     private func accept() async {

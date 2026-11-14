@@ -9,6 +9,8 @@ struct TopCardFace: View {
     let title: String
     let line: String
     let detail: String?
+    /// 写真の出典の行（撮影スポット・今日の一問の写真）。あれば `detail` の代わりに出す（`TopCardCredit`・2026-11-14 判断）
+    var credit: TopCardCredit? = nil
     let backdrop: Photo?
     var backdropURL: URL? = nil
     /// ①現像前の旅の札（2026-11-12 札 #543）: 左の写真の代わりに置く、色を抜いたフィルムの3コマ（端末の写真の id）。
@@ -50,18 +52,20 @@ struct TopCardFace: View {
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text2)
                         .lineLimit(HomeTopCardView.lineLimit)
-                    if let detail {
-                        // **1行。** 写真の作者名には100文字を超える機械文がある（Commons の
-                        // 「No machine-readable author provided…」）。並びは背を揃えるので、
-                        // 1枚が高くなると全部の札が高くなり、下の写真の一覧が押し下がる。
-                        // 切るのは真ん中——末尾のライセンス名を残す
+                    if let credit {
+                        creditLine(credit)
+                    } else if let detail {
+                        // **1行。** 並びは背を揃えるので、1枚が高くなると全部の札が高くなり、
+                        // 下の写真の一覧が押し下がる。写真の出典はここを通らない（上の `creditLine`・2026-11-14）
                         Text(detail)
                             .font(JPFont.caption)
                             .foregroundStyle(WebTheme.text3)
                             .lineLimit(HomeTopCardView.lineLimit)
-                            // 出典は真ん中で切る（末尾のライセンス名を残す）。当日モードは末尾で切る
+                            // 既定は真ん中で切る。当日モードは末尾で切る
                             // （名前が長くても、先頭の「明日 · 名前 · ゴールデンアワー」を残す）
                             .truncationMode(detailTruncation)
+                            // UI テストのときだけ: 渡された幅と要る幅を値に出す（`TopCardProbe`・2026-11-14）
+                            .modifier(TopCardDetailProbe(title: title, detail: detail))
                     }
                 }
                 Spacer(minLength: 0)
@@ -79,6 +83,8 @@ struct TopCardFace: View {
         }
         .frame(maxWidth: .infinity, minHeight: HomeTopCardView.cardHeight,
                maxHeight: inCarousel ? .infinity : nil, alignment: .leading)
+        // UI テストのときだけ: 札の背を値に出す（`TopCardProbe`・2026-11-14）
+        .modifier(TopCardHeightProbe(title: title))
         .jpCardFace()
         .clipShape(RoundedRectangle(cornerRadius: JPRadius.l))
         .contentShape(RoundedRectangle(cornerRadius: JPRadius.l))
@@ -86,22 +92,41 @@ struct TopCardFace: View {
         .padding(.horizontal, inCarousel ? 0 : JPSpace.gutter)
     }
 
-    /// 札の左の写真。**写真の無い札（旅行プラン・旅の最中）は置かない**——空の枠を作らない
+    /// 写真の出典の1行（**2026-11-14 判断**・`TopCardCredit`）。札の背も行の数も変えず、出典の頭を必ず見せる。
+    /// 入る最初の形を出す: 地域＋出典 → 県＋出典 → 出典だけ → 作者の後ろだけを切る（ライセンス名は先に幅を取って残す）。
+    /// 前は1本の字を真ん中で切り、ちょうど「写真: 作者」が消えていた。
+    /// 読み上げは形にかかわらず全文（地域と出典）。全文は札を押した先（`SpotImageCredit`）にリンクつきで出ている
+    private func creditLine(_ credit: TopCardCredit) -> some View {
+        ViewThatFits(in: .horizontal) {
+            ForEach(credit.wholeLines, id: \.self) { line in
+                Text(line)
+                    .lineLimit(HomeTopCardView.lineLimit)
+            }
+            TopCardCreditCutLine(credit: credit)
+        }
+        // 行の幅いっぱい（字は左に寄せたまま・見た目は変わらない）。UI テストの事実取りが、渡された幅を測れるように
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .font(JPFont.caption)
+        .foregroundStyle(WebTheme.text3)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(credit.spoken)
+        // UI テストのときだけ: 行の幅と各形の要る幅・残った頭を値に出す（`TopCardProbe`・2026-11-14）
+        .modifier(TopCardCreditProbe(title: title, credit: credit))
+    }
+
+    /// 札の左の写真。**写真の無い札（旅行プラン・旅の最中）は置かない**——空の枠を作らない。
+    /// 写真は `TopCardPhotoSlot` の枠に敷く（写真の縦横比で札の背を変えない・2026-11-14 Mac run 1321）
     @ViewBuilder
     private func cardPhoto(backdrop: Photo?, backdropURL: URL?) -> some View {
         if let backdrop {
-            RemoteImage(url: backdrop.gridImageURL, alignment: backdrop.gridAlignment)
-                .frame(width: HomeTopCardView.photoWidth)
-                .frame(maxHeight: .infinity)
-                .clipped()
-                .accessibilityHidden(true)
+            TopCardPhotoSlot {
+                RemoteImage(url: backdrop.gridImageURL, alignment: backdrop.gridAlignment)
+            }
         } else if let backdropURL {
             // 撮影スポット・今日の一問の写真（`Photo` ではない）。出典は右の字に出す
-            RemoteImage(url: backdropURL)
-                .frame(width: HomeTopCardView.photoWidth)
-                .frame(maxHeight: .infinity)
-                .clipped()
-                .accessibilityHidden(true)
+            TopCardPhotoSlot {
+                RemoteImage(url: backdropURL)
+            }
         }
     }
 
@@ -122,5 +147,54 @@ struct TopCardFace: View {
         .background(Color.black)
         .clipped()
         .accessibilityHidden(true)
+    }
+}
+
+/// 札の左の写真の枠（幅 112・札の背いっぱい）。**写真の縦横比で札の背を変えない**（2026-11-14）。
+///
+/// 前は写真（`RemoteImage` の `resizable().aspectRatio(contentMode: .fill)`）に直に `.frame(maxHeight: .infinity)` を
+/// 付けていた。横にめくる並びは背を揃えるため高さを決めずに測る（`fixedSize(vertical:)`）ので、そのとき写真は
+/// 幅 112 に縦横比で合わせた背を返し、縦長の写真では札の背がそれに伸びていた。Mac run 1321 では
+/// 花の窟神社の写真（960×1280・3:4）で 112×1280/960 = 149.3 になり、並びの3枚とも 149.3 に揃った
+/// （横長の谷川岳 一ノ倉沢 960×720 なら 84 で、最小の 116 のまま。写真が読めるまでも 116）。
+/// 枠は背の要らない `Color.clear` で作り、写真は上に重ねて枠に合わせて切る（①現像前の旅の3コマ
+/// `LibraryShotImage` と同じ形）。高さを決めずに測っても写真の背を返さないので、札の背は最小の 116 か字の背で決まる
+struct TopCardPhotoSlot<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        Color.clear
+            .frame(width: HomeTopCardView.photoWidth)
+            .frame(maxHeight: .infinity)
+            .overlay { content }
+            .clipped()
+            .accessibilityHidden(true)
+    }
+}
+
+/// 出典の行の最後の形（どの全文の形も入らないとき・2026-11-14 判断）: **作者の後ろだけを切り**、「 / ライセンス」は
+/// 先に幅を取って残す。「写真: 作者の頭… / CC BY-SA 4.0」。UI テストの事実取り（`TopCardCreditProbe`）も同じ部品で
+/// 長い作者の見本を組み、作者に残る幅を測る（`onAuthorWidth`・ふだんは nil で何も足さない）
+struct TopCardCreditCutLine: View {
+    let credit: TopCardCredit
+    var onAuthorWidth: ((CGFloat) -> Void)? = nil
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if let onAuthorWidth {
+                author.onGeometryChange(for: CGFloat.self) { $0.size.width } action: { onAuthorWidth($0) }
+            } else {
+                author
+            }
+            Text(credit.licenseTail)
+                .lineLimit(HomeTopCardView.lineLimit)
+                .layoutPriority(1)
+        }
+    }
+
+    private var author: some View {
+        Text(credit.author)
+            .lineLimit(HomeTopCardView.lineLimit)
+            .truncationMode(.tail)
     }
 }

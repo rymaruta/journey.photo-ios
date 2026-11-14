@@ -226,7 +226,7 @@ struct HighlightEditorView: View {
     /// 名前の欄（明朝 18 の中央寄せ・下に髪線・右に「2/30」）
     private var nameField: some View {
         ZStack(alignment: .trailing) {
-            TextField(L("名前", "Name"), text: $title)
+            JPTextField(L("名前", "Name"), text: $title)
                 .focused($nameFocused)
                 .font(JPFont.rowTitle)
                 .multilineTextAlignment(.center)

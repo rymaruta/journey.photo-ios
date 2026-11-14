@@ -56,10 +56,10 @@ struct PassHomeCard: View {
 
     /// 帯の高さ（板 76）
     nonisolated static let height: CGFloat = 76
-    /// 帯の内側（板 padding: 0 4 0 12）。右は「束を開く ›」の当たり 44 が端まで届くよう 4 だけ
+    /// 帯の内側（板 padding: 0 4 0 12）。右は「見る ›」の当たり 44 が端まで届くよう 4 だけ
     nonisolated static let leadingInset: CGFloat = 12
     nonisolated static let trailingInset: CGFloat = 4
-    /// 絵・字・「束を開く」の間（板 gap 12）
+    /// 絵・字・「見る ›」の間（板 gap 12）
     nonisolated static let gap: CGFloat = 12
 
     var body: some View {
@@ -67,7 +67,7 @@ struct PassHomeCard: View {
             HStack(spacing: Self.gap) {
                 PassMiniStack(faces: cards.prefix(3).map { $0.face() }, compact: true)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(L("カードが届きました", "Cards have arrived"))
+                    Text(L("乗車券が届きました", "Tickets have arrived"))
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                         .lineLimit(1)
@@ -82,7 +82,7 @@ struct PassHomeCard: View {
                         .truncationMode(.tail)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                Text(L("束を開く ›", "Open ›"))
+                Text(L("見る ›", "View ›"))
                     .font(JPFont.footnote)
                     .foregroundStyle(WebTheme.accent)
                     .lineLimit(1)
@@ -102,8 +102,8 @@ struct PassHomeCard: View {
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(isToday
-            ? L("今日すれちがった \(cards.count)人のカードを開く", "Open cards from \(Plural.count(cards.count, "person", "people")) you passed today")
-            : L("届いた \(cards.count)人のカードを開く", "Open \(Plural.count(cards.count, "card")) that arrived"))
+            ? L("今日届いた乗車券 \(cards.count) 枚を見る", "View \(Plural.count(cards.count, "ticket")) that arrived today")
+            : L("届いた乗車券 \(cards.count) 枚を見る", "View \(Plural.count(cards.count, "ticket")) that arrived"))
         .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("pass.home.open")
     }
@@ -118,6 +118,6 @@ struct PassHomeCard: View {
 
     /// 数の前後の字（「今日 」「 枚」）。英語は「N today」「N cards」
     nonisolated static func countParts(count: Int, isToday: Bool) -> (prefix: String, suffix: String) {
-        isToday ? (L("今日 ", ""), L(" 枚", " today")) : ("", L(" 枚", Plural.word(count, " card", " cards")))
+        isToday ? (L("今日 ", ""), L(" 枚", " today")) : ("", L(" 枚", Plural.word(count, " ticket", " tickets")))
     }
 }

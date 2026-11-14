@@ -24,8 +24,16 @@ struct PlaceSearchField: View {
     /// **選んだ名前から書き換えたら外す**（`UploadSpotTarget.keepsPicked`）。nil の画面（写真の編集）は持たない
     var pickedSpot: Binding<UploadSpotTarget?>? = nil
     /// 欄に枠を付けるか（投稿画面）。**タイトル・説明と同じ枠**（`jpFieldBox`）にして、押せる欄だと分かるようにする
-    /// （2026-10-21・撮影地の欄だけ枠が無く、地の上の灰の字に見えた・run 609 の 42・43）。写真の編集は Form の行なので付けない
+    /// （2026-10-21・撮影地の欄だけ枠が無く、地の上の灰の字に見えた・run 609 の 42・43）。
+    /// 写真の編集も付ける（2026-11-14・前回の点検の残り。板 EditPhoto の撮影地も枠の欄）
     var boxed = false
+    /// 枠付きの欄の UI テストの名前（投稿画面は `upload.place`。ストーリーの撮影地は `story.place.field`）
+    var fieldIdentifier = "upload.place"
+    /// 開いたらすぐ打てるようにする（ストーリーの撮影地のシート・2026-11-14 判断）。投稿画面は欄が並ぶので当てない
+    var autoFocus = false
+    /// 候補を選んだ（撮影スポット・地名のどちらも）。選んだ名前を渡す。ストーリーの撮影地は**押したら決めて閉じる**
+    /// （2026-11-14 判断: 前は字を最後まで打って「決める」を押していた）。nil の画面（投稿・写真の編集）は欄に入れるだけ
+    var onPick: ((String) -> Void)? = nil
 
     @EnvironmentObject private var environment: AppEnvironment
     @State private var suggestions: [DiscoveryService.Place] = []
@@ -62,6 +70,7 @@ struct PlaceSearchField: View {
                     }
                     Task { await loadSpotsAndSuggest() }
                 }
+                .onAppear { if autoFocus { focused = true } }
 
             // 撮影スポット（公開済み）の候補。名前と座標を入れ、投稿画面では紐付け（`pickedSpot`）も入れる
             ForEach(spotSuggestions) { spot in
@@ -79,6 +88,7 @@ struct PlaceSearchField: View {
                     location = spot.name
                     spotSuggestions = []
                     suggestions = []
+                    onPick?(spot.name)
                 } label: {
                     // 当たりは地名の候補（下）と同じ形: 行の幅いっぱい・縦は外へ 3pt
                     Label(spot.regionLabel.map { "\(spot.name)\u{2002}\($0)" } ?? spot.name,
@@ -106,6 +116,7 @@ struct PlaceSearchField: View {
                     location = place.label
                     suggestions = []
                     spotSuggestions = []
+                    onPick?(place.label)
                 } label: {
                     // **当たりを行の幅いっぱいに**（字の上だけだった）。縦は候補の間
                     // （投稿画面の 6pt）の半分まで——外へ広げて同じだけ詰めるので
@@ -130,13 +141,13 @@ struct PlaceSearchField: View {
     /// 撮影地を打つ欄。投稿画面（`boxed`）はタイトル・説明と同じ枠に入れる
     @ViewBuilder
     private var placeField: some View {
-        let field = TextField(L("撮影地（例: 高屋神社, 香川）", "Place (e.g. Takaya Shrine, Kagawa)"), text: $location)
+        let field = JPTextField(L("撮影地（例: 高屋神社, 香川）", "Place (e.g. Takaya Shrine, Kagawa)"), text: $location)
         if boxed {
             field
                 .font(.subheadline)
                 .accessibilityLabel(L("撮影地", "Place"))
                 // UI テストが名指しで打つ（`CriticalFlowTests`・2026-10-22）
-                .accessibilityIdentifier("upload.place")
+                .accessibilityIdentifier(fieldIdentifier)
                 .jpFieldBox()
         } else {
             field

@@ -50,6 +50,9 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    # 2026-11-13（札 #590「探すの検索が重い」）: 探すで1字ずつ打ったときの body の回数・撮影スポットを当てた ms・止まった長さ。
                    # `screens=testSearchTypingProbe`（または `PerformanceTests`）
                    "PerformanceTests/testSearchTypingProbe",
+                   # 2026-11-14（人間工学の点検「追加の点検」4・5）: すれちがいの束の上限を段ごとに測る（6 回起動・合否なし）と、
+                   # シートのバーの「閉じる」の当たりを測る（UIKit が決める・合否なし）。`screens=testMeasuresPassViewerTypeLimits` など
+                   "ScreenshotTests/testMeasuresPassViewerTypeLimits", "ScreenshotTests/testCornerTapAreaSheetClose",
                    # 2026-10-31（#430）: とおまわり号の描画を測る試験（4 本・計 6 分ほど）。直している間だけ `screens=testMeasuresCamperRender` で流す
                    "ScreenshotTests/testMeasuresCamperRenderExterior", "ScreenshotTests/testMeasuresCamperRenderNight",
                    "ScreenshotTests/testMeasuresCamperRenderRoom", "ScreenshotTests/testMeasuresCamperRenderRoomNight",
@@ -75,7 +78,10 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    "ScreenshotTests/testMeasuresTripPlanDragVelocityFast",
                    # 2026-11-13（札 #594「アプリ全体を軽くする」の下調べ）: よく使う操作を一通り流し、段ごとの停止・body の回数・メモリ・積みを出す。
                    # `screens=testUsageSurveyProbe`（1 本 5 分以内）
-                   "PerformanceTests/testUsageSurveyProbe"]
+                   "PerformanceTests/testUsageSurveyProbe",
+                   # 2026-11-14（#599 の見直し）: 書きかけの投稿に親しい友達を積んで払ったときの姿を取る（合否なし）。
+                   # `screens=testMeasuresUploadStackedSwipe`
+                   "CriticalFlowTests/testMeasuresUploadStackedSwipe"]
 
 # クラスの直下（字下げ4つ）の関数だけを区切りにする。中の入れ子の関数は本体に含める
 MEMBER = re.compile(r"^    (?:@\w+\s+)*(?:(?:private|fileprivate|override|static|final)\s+)*func\s+(\w+)\s*\(", re.M)

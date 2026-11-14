@@ -297,3 +297,34 @@ final class FeedbackAccountDeletionTests: XCTestCase {
         XCTAssertNil(outbox.photo(for: mine.id))
     }
 }
+
+/// 意見箱の入口の置き場（2026-11-14 判断・札 #546）。写真の詳細に「使ってみてどう？」を出さない
+/// （コメントの塊のすぐ下に出て、コメントの入力・返信と紛れた）。設定の「意見を送る」は残す。
+final class FeedbackPlacementTests: XCTestCase {
+
+    private func source(_ path: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/" + path), encoding: .utf8)
+    }
+
+    /// 注記（`//` の行）を除いたコード
+    private func code(_ text: String) -> String {
+        text.split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+    }
+
+    func testPhotoDetailHasNoFeedbackPrompt() throws {
+        let view = code(try source("Features/PhotoDetail/PhotoDetailView.swift"))
+        XCTAssertFalse(view.contains("FeedbackPrompt("), "写真の詳細に「使ってみてどう？」を置かない（コメント欄と紛れる）")
+        XCTAssertFalse(view.contains("FeedbackSheet("))
+        XCTAssertFalse(view.contains("使ってみてどう"))
+    }
+
+    func testSettingsKeepsFeedbackEntry() throws {
+        let settings = code(try source("Features/Settings/SettingsView.swift"))
+        XCTAssertTrue(settings.contains("FeedbackSheet(screen: \"settings\")"), "意見を送る入口が設定に無い")
+        XCTAssertTrue(settings.contains("\"settings.feedback\""))
+    }
+}

@@ -63,16 +63,16 @@ final class HomeTidyTests: XCTestCase {
                        "帯の絵の前の1枚が板の 50 にならない")
     }
 
-    /// 帯: 束の絵（縮めた小さなきっぷ）→ 眉 → 明朝 18 の「今日 N 枚」→ 12 の地名、右に「束を開く ›」（真鍮・当たり 44）
+    /// 帯: 束の絵（縮めた小さなきっぷ）→ 眉 → 明朝 18 の「今日 N 枚」→ 12 の地名、右に「見る ›」（真鍮・当たり 44）
     func testPassBandLayout() throws {
         let slot = try source("Features/Pass/PassHomeSlot.swift")
         let card = slice(slot, from: "struct PassHomeCard", to: "private var countTitle")
         assertInOrder(["PassMiniStack(faces: cards.prefix(3).map { $0.face() }, compact: true)",
-                       "Text(L(\"カードが届きました\"", ".jpEyebrow()",
+                       "Text(L(\"乗車券が届きました\"", ".jpEyebrow()",
                        "countTitle", ".font(JPFont.rowTitle)",
                        "Text(PassBook.bundleLine(cards.map(\\.card)))", ".font(JPFont.caption)", ".lineLimit(1)",
                        ".frame(maxWidth: .infinity, alignment: .leading)",
-                       "Text(L(\"束を開く ›\"", ".foregroundStyle(WebTheme.accent)",
+                       "Text(L(\"見る ›\"", ".foregroundStyle(WebTheme.accent)",
                        ".frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)",
                        ".frame(minHeight: Self.height)"], in: card, "帯の並び")
         XCTAssertFalse(card.contains("JPFont.cardTitle"), "数の題が明朝 22 のまま（板は 18）")
@@ -118,19 +118,23 @@ final class HomeTidyTests: XCTestCase {
         XCTAssertEqual(HomeTopCardView.lineLimit, 1, "札の字が2行に戻ると並びの背が 156 に伸びる")
         // 札の面は 2026-11-12 に `TopCardFace` へ切り出した（探すの今日の一問も同じ面）
         let card = try source("Features/Gallery/TopCardFace.swift")
-        XCTAssertEqual(card.components(separatedBy: ".lineLimit(HomeTopCardView.lineLimit)").count - 1, 3, "題・一行・出典の3つが1行でない")
+        // 題・一行・小さい行（写真の無い札）の3つと、出典の行（`creditLine`）の形の3つ（全文の形・作者・ライセンス）。
+        // 2026-11-14: 出典の行も1行のまま（札の背を変えない・owner「出典のせいで縦をとるのあんまり好きじゃない」）
+        XCTAssertEqual(card.components(separatedBy: ".lineLimit(HomeTopCardView.lineLimit)").count - 1, 6,
+                       "題・一行・小さい行・出典の行が1行でない")
         XCTAssertFalse(card.contains(".lineLimit(2)"))
         assertInOrder([".lineLimit(HomeTopCardView.lineLimit)", ".truncationMode(detailTruncation)"], in: card,
-                      "出典を真ん中で切っていない（末尾のライセンス名が消える）")
+                      "写真の無い札の小さい行の切り方が無い")
     }
 
-    /// 出典は1行（地域 · 作者とライセンス）。改行で2行にしない
+    /// 出典は1行（地域　作者とライセンス）。改行で2行にしない（`TopCardCredit`・2026-11-14 判断）
     func testSpotDetailIsOneLine() {
-        let line = HomeTopCardView.spotDetail(region: "岡山", credit: "写真: A / CC BY-SA 4.0")
-        XCTAssertEqual(line, "岡山\u{2002}写真: A / CC BY-SA 4.0")
-        XCTAssertFalse(line?.contains("\n") ?? true)
-        XCTAssertEqual(HomeTopCardView.spotDetail(region: nil, credit: "c"), "c")
-        XCTAssertNil(HomeTopCardView.spotDetail(region: nil, credit: nil))
+        let photo = SpotImage(url: URL(string: "https://example.com/a.jpg")!, author: "A", license: "CC BY-SA 4.0",
+                              pageUrl: nil)
+        let credit = TopCardCredit(region: "岡山", prefecture: "岡山", photo: photo)
+        XCTAssertEqual(credit.spoken, "岡山\u{2002}" + L("写真: A", "Photo: A") + " / CC BY-SA 4.0")
+        XCTAssertTrue(credit.wholeLines.allSatisfy { !$0.contains("\n") })
+        XCTAssertEqual(TopCardCredit(photo: photo).spoken, photo.credit)
     }
 
     /// 今日のテーマ: 「参加する」は題の右（見た目 36・当たり 44）・説明は1行・背は隣の札と同じ 116

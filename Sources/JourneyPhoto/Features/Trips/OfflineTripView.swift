@@ -564,7 +564,8 @@ struct OfflineSampleViewer: View {
                     .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                     .background(Color.black.opacity(0.55), in: Circle())
                     .overlay(Circle().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
-                    .contentShape(Circle())
+                    // 角の物は当たりを角の側へ 60pt 四方まで広げる（見た目はそのまま・`CornerTapArea`・2026-11-14）
+                    .cornerTapArea(.topTrailing)
             }
             .buttonStyle(.plain)
             .padding(.trailing, 8)

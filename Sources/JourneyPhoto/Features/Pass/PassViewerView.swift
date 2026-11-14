@@ -37,6 +37,9 @@ struct PassViewerView: View {
     @State private var spin = PassSpinDrag()
     /// 「視差効果を減らす」・きっぷの外で払っている間の横のずれ
     @State private var drag: CGFloat = 0
+    /// **UI テストの事実取りだけ**（`PreviewSession.layoutProbe`・2026-11-14 Mac run 1317）: 指を離すたびの決め方の材料
+    /// （`PassSpinGesture.classify` に渡した量・置いていた長さ・動いている間の知らせの数と時刻）。ふだんは書かない
+    @State private var dragProbe = PassViewerDragProbe()
 
     private var showsBack: Bool { SpinMotion.showsBack(yaw) }
     @State private var thanking = false
@@ -55,7 +58,7 @@ struct PassViewerView: View {
     nonisolated static let swipeDistance: CGFloat = 90
 
     /// 字の伸びの上限（送らない画面なので、ボタンが画面の外へ出ない大きさまで）
-    nonisolated static let typeLimit: DynamicTypeSize = .xxxLarge
+    nonisolated static let typeLimit: DynamicTypeSize = PassViewerTypeLimit.value
 
     /// いま見せる並び: 外した・通報した写真・ブロックした人のカードを落とす
     private var shown: [PassCardContent] {
@@ -85,6 +88,7 @@ struct PassViewerView: View {
                     DragGesture(minimumDistance: 12)
                         .onChanged { value in
                             spin.begin(yaw: yaw)
+                            if PreviewSession.layoutProbe { dragProbe.changed(Double(value.translation.width)) }
                             drag = value.translation.width
                         }
                         .onEnded { value in
@@ -92,16 +96,20 @@ struct PassViewerView: View {
                                     predicted: Double(value.predictedEndTranslation.width), onCard: false)
                         }
                 )
+            // UI テストのときだけ: 指を離すたびの決め方の材料（`PassViewerDragProbe`）
+            LayoutProbe(identifier: "pass.viewer.dragProbe", value: dragProbe.value)
             VStack(spacing: 0) {
                 header
                 if let current {
                     deck(current)
                         .padding(.top, 26)
+                    // 次・前は下の「‹ ›」で分かるので、案内は乗車券そのものの触り方だけにする
+                    // （2026-11-14 判断・人間工学の点検。払って次へ行く操作はそのまま残す）
                     Text(reduceMotion
-                         ? L("写真を押すと全面、下を押すと裏返る、左右に払って次のカード",
-                             "Tap the photo to view it, tap below to flip, swipe for the next card")
-                         : L("写真を押すと全面、指を置いて回す、素早く払うと次のカード",
-                             "Tap the photo to view it, hold and turn, flick for the next card"))
+                         ? L("写真を押すと全面、下を押すと裏返る",
+                             "Tap the photo to view it, tap below to flip")
+                         : L("写真を押すと全面、指を置いて回す",
+                             "Tap the photo to view it, hold and turn"))
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)
                         .multilineTextAlignment(.center)
@@ -116,7 +124,10 @@ struct PassViewerView: View {
                         .padding(.horizontal, JPSpace.gutter)
                         .padding(.bottom, JPSpace.xs)
                 }
-                if let current { actions(current) }
+                if let current {
+                    pager
+                    actions(current)
+                }
             }
         }
         .preferredColorScheme(.dark)
@@ -163,15 +174,11 @@ struct PassViewerView: View {
 
     private var header: some View {
         HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(mode == .bundle ? L("今日のカード", "Today\u{2019}s cards") : L("すれちがい帳", "Pass book"))
-                    .jpEyebrow()
-                    .foregroundStyle(WebTheme.accent)
-                Text(L("\(index + 1) / \(shown.count) 枚", "\(index + 1) of \(shown.count)"))
-                    .font(JPFont.number(15, weight: .semibold, relativeTo: .subheadline))
-                    .foregroundStyle(WebTheme.text)
-            }
-            .accessibilityElement(children: .combine)
+            // 枚数は下の「‹ 1 / 7 枚 ›」へ移した（親指の届く所・`PassViewerPager`・2026-11-14）。
+            // 眉の言葉は「今日の乗車券」（すれちがい乗車券の言葉の統一・2026-11-14 判断 統合 1.1.90）
+            Text(mode == .bundle ? L("今日の乗車券", "Today\u{2019}s tickets") : L("すれちがい帳", "Pass book"))
+                .jpEyebrow()
+                .foregroundStyle(WebTheme.accent)
             Spacer()
             // 表でも裏でも同じ所に出る「…」（通報・ブロック・帳から外す）
             if let current {
@@ -221,6 +228,7 @@ struct PassViewerView: View {
                 DragGesture(minimumDistance: 12)
                     .onChanged { value in
                         spin.begin(yaw: yaw)
+                        if PreviewSession.layoutProbe { dragProbe.changed(Double(value.translation.width)) }
                         if reduceMotion {
                             drag = value.translation.width
                         } else {
@@ -238,11 +246,11 @@ struct PassViewerView: View {
             .accessibilityValue(PassSpinTicket.spokenSide(yaw))
             .accessibilityAddTraits(.isButton)
             .accessibilityHint(showsBack ? L("押すと表に戻ります", "Tap to see the front")
-                                         : L("押すと裏返します", "Tap to flip the card"))
+                                         : L("押すと裏返します", "Tap to flip the ticket"))
             .accessibilityAction { flip() }
             .accessibilityAction(named: L("写真を全面で見る", "View photo full screen")) { fullPhoto = content.photo }
-            .accessibilityAction(named: L("次のカード", "Next card")) { move(by: 1) }
-            .accessibilityAction(named: L("前のカード", "Previous card")) { move(by: -1) }
+            .accessibilityAction(named: L("次の乗車券", "Next ticket")) { move(by: 1) }
+            .accessibilityAction(named: L("前の乗車券", "Previous ticket")) { move(by: -1) }
             .accessibilityIdentifier("pass.viewer.card")
         }
         .frame(width: PassCardStyle.deckSize.width, height: PassCardStyle.deckSize.height)
@@ -272,6 +280,10 @@ struct PassViewerView: View {
         let outcome = PassSpinGesture.classify(translation: translation, predicted: predicted, duration: duration,
                                                onCard: onCard, reduceMotion: reduceMotion,
                                                swipeDistance: Double(Self.swipeDistance))
+        if PreviewSession.layoutProbe {
+            dragProbe.ended(translation: translation, predicted: predicted, duration: duration, onCard: onCard,
+                            outcome: outcome)
+        }
         // 指の速さのおよそ（勢いの見込みは、離してから約 0.25 秒ぶん）
         let velocity = SpinMotion.releaseVelocity(vx: (predicted - translation) / 0.25,
                                                   width: Double(PassCardStyle.deckSize.width), reduceMotion: reduceMotion)
@@ -302,15 +314,56 @@ struct PassViewerView: View {
 
     // MARK: - 下
 
+    /// 「‹ 1 / 7 枚 ›」。払わなくても押して前・次の乗車券へ行ける（WCAG 2.5.1・`PassViewerPager`）。
+    /// 黒地の上の操作なので白（数は白・板「03 合図」）。最初と最後では押せない側を 32% に薄め、押せなくする
+    private var pager: some View {
+        let count = shown.count
+        return HStack(spacing: JPSpace.xs) {
+            pagerButton(systemImage: "chevron.left", label: PassViewerPager.previousLabel,
+                        identifier: PassViewerPager.previousIdentifier,
+                        enabled: PassViewerPager.canGoBack(index: index, count: count)) { step(by: -1) }
+            Text(PassViewerPager.countText(index: index, count: count))
+                .font(JPFont.number(15, weight: .semibold, relativeTo: .subheadline))
+                .foregroundStyle(WebTheme.text)
+                .frame(minWidth: 72)
+                .accessibilityIdentifier(PassViewerPager.countIdentifier)
+            pagerButton(systemImage: "chevron.right", label: PassViewerPager.nextLabel,
+                        identifier: PassViewerPager.nextIdentifier,
+                        enabled: PassViewerPager.canGoForward(index: index, count: count)) { step(by: 1) }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, JPSpace.xxs)
+    }
+
+    private func pagerButton(systemImage: String, label: String, identifier: String, enabled: Bool,
+                             action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(WebTheme.foreground)
+                .opacity(enabled ? 1 : PassViewerPager.disabledOpacity)
+                .webTappable()
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(identifier)
+    }
+
+    /// ボタンで前・次へ（払ったときと同じ動き。「視差効果を減らす」では動かさずに替える）
+    private func step(by delta: Int) {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.82)) { move(by: delta) }
+    }
+
     private func actions(_ content: PassCardContent) -> some View {
         let thanked = favorites.contains(content.photo.id)
         return VStack(spacing: JPSpace.xs) {
-            // 横に入らない大きさ（文字の大きさの設定）では2つのボタンを縦に積む（2026-10-21・線のボタンの字は1行なので、
-            // 横 2 つのままでは「ありがとうを返しました」が切れる）
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: JPSpace.xs) { actionButtons(content, thanked: thanked) }
-                VStack(spacing: JPSpace.xs) { actionButtons(content, thanked: thanked) }
-            }
+            // 2つのボタンは、いちばん長い名前が等分した幅に入るときだけ横に並べ、入らなければ縦に積む
+            // （`ActionTilesLayout`・線のボタンの字は縮めないので scale 1）。**2026-11-14**: 前の `ViewThatFits` は
+            // 理想の幅の合計で横を選び、横では等分するので、標準の大きさでも「ありがとうを返しました」が切れていた
+            // （Mac run 1271 の 81p・数は UI テストの `pass.viewer.actionsFit` の値）。押した後の名前も「送りました」に短くした
+            ActionTilesLayout(spacing: JPSpace.xs, scale: 1) { actionButtons(content, thanked: thanked) }
+                .overlay(alignment: .topLeading) { PassThanksFitProbe() }
             // 「ありがとう」は名前つきのいいね（相手のお知らせにこちらの名前が出る）。押す前に言う
             Text(PassPrivacyText.thanksNotice)
                 .font(JPFont.caption)
@@ -331,13 +384,14 @@ struct PassViewerView: View {
                     .font(.body)
                     .foregroundStyle(WebTheme.foreground)
                     .accessibilityHidden(true)
-                Text(thanked ? L("ありがとうを返しました", "Thanks sent") : L("ありがとう", "Thank you"))
+                Text(thanked ? PassViewerText.thanked : PassViewerText.thank)
             }
             .jpOutlineButton(fullWidth: true)
         }
         .buttonStyle(.plain)
         .disabled(thanked || thanking)
-        .accessibilityHint(L("この写真にいいねを送ります", "Sends a like to this photo"))
+        .accessibilityLabel(thanked ? PassViewerText.thankedSpoken : PassViewerText.thank)
+        .accessibilityHint(L("相手にありがとうを送ります", "Sends your thanks to them"))
         .accessibilityIdentifier("pass.viewer.thanks")
         if mode == .bundle {
             Button {
@@ -345,7 +399,7 @@ struct PassViewerView: View {
                 onFile()
                 dismiss()
             } label: {
-                Text(L("帳に入れる", "Add to the book")).jpOutlineButton(fullWidth: true)
+                Text(PassViewerText.file).jpOutlineButton(fullWidth: true)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("pass.viewer.file")
@@ -360,7 +414,7 @@ struct PassViewerView: View {
         // 押した人。失敗の戻しは、この人の控えにだけ書く
         let owner = favorites.owner
         favorites.set(content.photo.id, favorite: true)
-        // 見本の束（`-JPPreviewPass`・Debug のみ）はサーバーに送らない。押した後の形（「ありがとうを返しました」）を
+        // 見本の束（`-JPPreviewPass`・Debug のみ）はサーバーに送らない。押した後の形（「送りました」）を
         // 画面写真で見るため、端末の中だけで済ませる（2026-10-21）
         if PreviewSession.passSample { return }
         do {
@@ -371,13 +425,112 @@ struct PassViewerView: View {
             // 同期のあとにも残る印になる（`FavoritesStore.set(_:favorite:for:)`）
             favorites.set(content.photo.id, favorite: false, for: owner)
             guard Self.keepsThanks(owner: owner, viewer: favorites.owner) else { return }
-            errorMessage = L("ありがとうを送れませんでした。電波のあるところでもう一度お試しください。",
-                             "Couldn\u{2019}t send your thanks. Please try again with a signal.")
+            errorMessage = L("ありがとうを送れませんでした。通信できる所で、もう一度お試しください。",
+                             "Couldn\u{2019}t send your thanks. Please try again when you\u{2019}re online.")
         }
     }
 
     /// ありがとうの失敗を、押した人の画面に書くか
     nonisolated static func keepsThanks(owner: String?, viewer: String?) -> Bool {
         owner != nil && owner == viewer
+    }
+}
+
+/// 束の下の2つのボタンの名前（2026-11-14）。押した後は「送りました」——前の「ありがとうを返しました」は横に2つ並べると
+/// 標準の文字の大きさでも切れた。読み上げは何を送ったか分かるよう「ありがとうを送りました」
+enum PassViewerText {
+    static var thank: String { L("ありがとう", "Thank you") }
+    static var thanked: String { L("送りました", "Sent") }
+    static var thankedSpoken: String { L("ありがとうを送りました", "Thanks sent") }
+    static var file: String { L("すれちがい帳に入れる", "Add to Pass book") }
+    /// 切れの数を取るときだけ比べる前の名前
+    static var oldThanked: String { L("ありがとうを返しました", "Thanks sent") }
+}
+
+/// **UI テストの事実取りだけ**（`-JPPreviewLayoutProbe YES`・Debug のみ）: 束の下の2つのボタンの名前が、
+/// 等分した幅に1行で入るか。値は `old=<前の名前の要る幅> thanked=<今の名前> thank=<押す前> file=<帳に入れる> column=<1つの幅>`。
+/// 要る幅はボタンと同じ組み方（ハート・すき間・字・左右の内側）で1行に組んだ幅
+struct PassThanksFitProbe: View {
+    @State private var widths: [String: CGFloat] = [:]
+    @State private var rowWidth: CGFloat = 0
+
+    var body: some View {
+        if PreviewSession.layoutProbe {
+            GeometryReader { g in
+                Color.clear
+                    .onAppear { rowWidth = g.size.width }
+                    .onChange(of: g.size.width) { _, w in rowWidth = w }
+            }
+            .background(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 0) {
+                    measured("old", heart: true, PassViewerText.oldThanked)
+                    measured("thanked", heart: true, PassViewerText.thanked)
+                    measured("thank", heart: true, PassViewerText.thank)
+                    measured("file", heart: false, PassViewerText.file)
+                }
+                .hidden()
+            }
+            .overlay(alignment: .topLeading) {
+                LayoutProbe(identifier: "pass.viewer.actionsFit", value: value)
+            }
+            .allowsHitTesting(false)
+        }
+    }
+
+    private var value: String {
+        let column = ActionTilesLayout.column(available: rowWidth, count: 2, spacing: JPSpace.xs)
+        func w(_ key: String) -> String { String(format: "%.1f", widths[key] ?? -1) }
+        return "old=\(w("old")) thanked=\(w("thanked")) thank=\(w("thank")) file=\(w("file")) "
+            + String(format: "column=%.1f", column)
+    }
+
+    private func measured(_ key: String, heart: Bool, _ text: String) -> some View {
+        HStack(spacing: JPSpace.xs) {
+            if heart { Image(systemName: "heart.fill").font(.body) }
+            Text(text)
+        }
+        .jpOutlineButton(fullWidth: false)
+        .fixedSize()
+        .background {
+            GeometryReader { g in
+                Color.clear
+                    .onAppear { widths[key] = g.size.width }
+                    .onChange(of: g.size.width) { _, w in widths[key] = w }
+            }
+        }
+    }
+}
+
+/// **UI テストの事実取りだけ**（`PreviewSession.layoutProbe`・2026-11-14）。束の画面で指を離すたびに、
+/// 払い（次／前）か回すかを決めた材料を値に出す（`pass.viewer.dragProbe`）。
+///
+/// Mac run 1317 で `testPassViewerPager` の「きっぷの上で素早く払っても次へ進まない（1 / 7 枚）」が1回だけ落ちた
+/// （1304・1321 は通った）。決め方（`PassSpinGesture.classify`）は、置いていた長さ（最初の動きの知らせから離すまで・
+/// 0.25 秒以内）・勢いの見込み（200pt 以上）・動いた量（120pt 未満）で決まるが、どれで外れたかは画面の木から
+/// 取れない。推定で直さず数で見るため、離すたびに 1 行ずつ足す（最後の 8 回ぶん）。
+/// 値は `#<回> card=<yes|no> changes=<動きの知らせの数> first=<最初の知らせの横の量> tr=<離した時の横の量>
+/// pred=<勢いの見込み> dur=<置いていた長さ 秒> out=<rotate|next|previous|none>` を ` | ` でつないだもの
+struct PassViewerDragProbe {
+    private(set) var ends = 0
+    private var changes = 0
+    private var first: Double?
+    private var lines: [String] = []
+
+    var value: String { "ends=\(ends) " + lines.joined(separator: " | ") }
+
+    mutating func changed(_ dx: Double) {
+        changes += 1
+        if first == nil { first = dx }
+    }
+
+    mutating func ended(translation: Double, predicted: Double, duration: Double, onCard: Bool,
+                        outcome: PassSpinGesture.Outcome) {
+        ends += 1
+        let line = String(format: "#%d card=%@ changes=%d first=%.1f tr=%.1f pred=%.1f dur=%.3f out=%@",
+                          ends, onCard ? "yes" : "no", changes, first ?? .nan, translation, predicted, duration,
+                          "\(outcome)")
+        lines = Array((lines + [line]).suffix(8))
+        changes = 0
+        first = nil
     }
 }

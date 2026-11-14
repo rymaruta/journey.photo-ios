@@ -665,6 +665,25 @@ final class UploadViewModel: ObservableObject {
     /// 何枚目を上げているか（`0` は上げていない）。画面の「3 / 5 枚目」に使う
     @Published private(set) var uploadingIndex = 0
     @Published var errorMessage: String?
+    /// **投稿が終わった回数・送れなかった回数**（画面がこれで触覚を1回だけ鳴らす・`UploadView`）。
+    ///
+    /// 2026-11-14 判断（点検「画面と手ざわり」・直したほうがよい）: 投稿は数秒〜数十秒かかり、その間に画面から目を離す。
+    /// 終わっても共有カードの画面に替わるだけで、手には何も届かなかった。成功は `.success`、送れなかった写真が
+    /// 残ったら `.error`。やめた回は鳴らさない。音や動きは足さない（系統の触覚は利用者が設定で切れる）
+    @Published private(set) var postSucceededTicks = 0
+    @Published private(set) var postFailedTicks = 0
+
+    /// 投稿の終わりに鳴らす触覚（`postSucceededTicks`・`postFailedTicks`）。nil は鳴らさない
+    enum SubmitHaptic: Equatable { case success, failure }
+
+    /// 送り終えた結果から、鳴らす触覚を決める。**全部上がったら成功、送れなかった写真が1枚でもあれば失敗**。
+    /// やめた回（`cancelled`）・何も送っていない回は鳴らさない
+    static func submitHaptic(posted: Int, failed: Int, cancelled: Bool) -> SubmitHaptic? {
+        if cancelled { return nil }
+        if failed > 0 { return .failure }
+        return posted > 0 ? .success : nil
+    }
+
     /// 送れなかった写真があったとき、最初の1枚の番号（1 から・`UploadSummary.resendStart`）。
     /// 画面の「n枚目からもう一度」に使う（2026-11-12）。送り直し始めたら下ろす
     @Published private(set) var resendFrom: Int?
@@ -1860,6 +1879,12 @@ final class UploadViewModel: ObservableObject {
         // と読み、**同じ写真をもう一度読み込んで上げる**（`remove` と同じ理由）
         let remaining = PickerReconcile.dropPosted(picked: pickerItems, posted: postedKeys)
         if remaining.count != pickerItems.count { setSelectionQuietly(remaining) }
+        // 終わったことを手に知らせる（2026-11-14 判断・`submitHaptic`）
+        switch Self.submitHaptic(posted: done.count, failed: failures.count, cancelled: cancelled) {
+        case .success?: postSucceededTicks += 1
+        case .failure?: postFailedTicks += 1
+        case nil: break
+        }
         // **曲が付かなかった回は閉じない。** `didPostAll` を立てると
         // `UploadView` が即 `dismiss()` するので、警告が一度も描かれない
         if items.isEmpty && failures.isEmpty {

@@ -184,7 +184,7 @@ final class SheetClosePlacementTests: XCTestCase {
             ("Features/Settings/FeedbackSheet.swift",        // 意見を送る（前は右上の ×）
              ["SheetCloseButton(onContent: true)", ".disabled(isSending)", "L(\"意見を送る\"", "Spacer(minLength: 0)"]),
             ("Features/Social/ReportSheet.swift",            // 通報（前は右上の ×）
-             ["SheetCloseButton(onContent: true)", ".disabled(isWorking)", "L(\"書かれた字を通報\"", "Spacer(minLength: 0)"]),
+             ["SheetCloseButton(onContent: true)", ".disabled(isWorking)", "L(\"書かれた言葉を通報\"", "Spacer(minLength: 0)"]),
             ("Features/Upload/PostSheet.swift",              // 投稿する（前は右の × の丸）
              ["SheetCloseButton(onContent: true)", "L(\"投稿する\", \"Create\")", "Spacer(minLength: 0)"]),
             ("Features/Spots/CompositionPicker.swift",       // 構図（前は右の × の丸）

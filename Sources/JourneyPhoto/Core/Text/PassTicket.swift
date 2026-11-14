@@ -54,8 +54,8 @@ enum PassTicket {
     /// 2026-11-12 判断: 資料の「届いたカードを見る、オンにする」を、オンの人には「オフにする」と今の向きの逆で言う
     /// （オンの人に「オンにする」と出すと、押すと何が起きるか取り違える）。右の値（今の入り切り）はそのまま
     static func menuNote(enabled: Bool) -> String {
-        enabled ? L("届いたカードを見る、オフにする", "See cards you got, or turn off")
-                : L("届いたカードを見る、オンにする", "See cards you got, or turn on")
+        enabled ? L("届いた乗車券を見る、オフにする", "See tickets you got, or turn off")
+                : L("届いた乗車券を見る、オンにする", "See tickets you got, or turn on")
     }
 
     /// 帳の小さなきっぷの眉ラベル（`PassTicketSlot`）
@@ -103,7 +103,7 @@ enum PassTicket {
     }
 
     static var dateTitle: String { L("日付", "Date") }
-    static var sectionTitle: String { L("区間", "Distance") }
+    static var sectionTitle: String { L("区間", "Route") }
     static var countTitle: String { L("回数", "Times") }
 
     /// 表の3つの欄（日付・区間・回数）。**値が無い欄は「—」**で、欄は抜かない（格子が崩れない）
@@ -167,13 +167,13 @@ enum PassTicket {
 
     /// 裏の裾の一行（届いたカード）
     static var receivedFootnote: String {
-        L("この券は、旅先ですれちがった Journey Photo の人から届きました。",
+        L("この乗車券は、旅先ですれちがった Journey Photo の人から届きました。",
           "This ticket came from a Journey Photo traveler you passed on your trip.")
     }
 
     /// 裏の裾の一行（自分のカードの見本: 相手の手元に届く側の言い方）
     static var ownFootnote: String {
-        L("この券は、旅先ですれちがった人の手元に届きます。",
+        L("この乗車券は、旅先ですれちがった人の手元に届きます。",
           "This ticket reaches the people you pass on your trip.")
     }
 

@@ -27,7 +27,7 @@ struct PassCardMenu: View {
             if content.card.hasWrittenText {
                 // ひとこと・発・着（相手の端末から届いた、署名の無い字）を1つの通報で
                 Button(action: reportNote) {
-                    Label(L("書かれた字を通報する", "Report the text"), systemImage: "text.bubble")
+                    Label(L("書かれた言葉を通報する", "Report the text"), systemImage: "text.bubble")
                 }
             }
             // 連絡先の形で出さない字は、出す口も置かない（`PassEncounter.shownNote`）
@@ -35,8 +35,8 @@ struct PassCardMenu: View {
                !(content.card.originLabel ?? "").isEmpty || !(content.card.destinationLabel ?? "").isEmpty {
                 Button(action: toggleLabels) {
                     content.card.labelsHidden == true
-                        ? Label(L("区間の字を出す", "Show route text"), systemImage: "eye")
-                        : Label(L("区間の字を伏せる", "Hide route text"), systemImage: "eye.slash")
+                        ? Label(L("区間を表示", "Show route"), systemImage: "eye")
+                        : Label(L("区間を隠す", "Hide route"), systemImage: "eye.slash")
                 }
             }
             if !content.card.note.isEmpty, !content.card.noteHasContact {
@@ -52,7 +52,7 @@ struct PassCardMenu: View {
                 }
             }
             Button(action: remove) {
-                Label(L("帳から外す", "Remove from the book"), systemImage: "minus.circle")
+                Label(L("すれちがい帳から外す", "Remove from Pass book"), systemImage: "minus.circle")
             }
         } label: {
             Group {
@@ -71,7 +71,7 @@ struct PassCardMenu: View {
             }
             .webTappable()
         }
-        .accessibilityLabel(L("このカードの操作", "Card actions"))
+        .accessibilityLabel(L("この乗車券の操作", "Ticket actions"))
         .accessibilityIdentifier("pass.card.menu")
     }
 }

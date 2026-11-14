@@ -983,8 +983,10 @@ final class NoDataLossTests: XCTestCase {
     /// 投稿の × の配線: 確かめずに閉じる道で片づける
     func testUploadCloseWithoutDraftIsWired() async throws {
         let upload = try source("Sources/JourneyPhoto/Features/Upload/UploadView.swift")
-        let cancel = try XCTUnwrap(upload.range(of: "if model.hasDraft {"))
-        XCTAssertTrue(upload[cancel.upperBound...].prefix(300).contains("model.closeWithoutDraft()"),
+        // 2026-11-14（#188）: 「キャンセル」と下へ払うは同じ手（`attemptClose`）を通る。確かめない道（`.now`）で片づける
+        let cancel = try XCTUnwrap(upload.range(of: "private func attemptClose() {"))
+        let now = try XCTUnwrap(upload[cancel.upperBound...].range(of: "case .now:"))
+        XCTAssertTrue(upload[now.upperBound...].prefix(300).contains("model.closeWithoutDraft()"),
                       "× で確かめずに閉じる道が自動の書きかけ・控えを片づけない")
     }
 

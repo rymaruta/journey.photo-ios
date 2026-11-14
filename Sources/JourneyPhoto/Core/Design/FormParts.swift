@@ -53,6 +53,53 @@ extension View {
     }
 }
 
+/// 入力欄の見本の字（placeholder）。**白 50%（`WebTheme.placeholder`）**——入力欄の地 #161617 の上で 5.24:1。
+///
+/// 2026-11-14 判断（点検「画面と手ざわり」・直すべき）: `WebTheme.placeholder` は定義してあったのに、
+/// どの入力欄も使っておらず、iOS の既定の見本の色（暗い画面で 235,235,245 の 30%）のまま 2.2〜2.5:1 しか無かった
+/// （「コメントを書く」「メッセージ」「返信する」「写真を検索…」など）。字の線 4.5:1 に届かず、暗い所では
+/// 何も書いていない黒い枠に見える。板のデザインシステム 01「placeholder 白 50%（35% は 3.0 で届かない）」。
+/// **入力欄はここの `JPTextField`・`JPSecureField` だけで作る**（`TextField(` を直に書かない・`InputPlaceholderTests` が見張る）
+@MainActor
+enum JPInputPrompt {
+    static let color = WebTheme.placeholder
+    static func text(_ title: String) -> Text { Text(title).foregroundStyle(color) }
+}
+
+/// 1行・複数行の入力欄（見本の字は `JPInputPrompt`）。`TextField(title, text:, axis:)` と同じ形で置き換えられる。
+/// 修飾子（`.focused`・`.onSubmit`・`.lineLimit`・`.accessibilityIdentifier` など）は中の `TextField` に効く
+/// （`body` が欄1つだけの透けた部品）
+struct JPTextField: View {
+    let title: String
+    @Binding var text: String
+    var axis: Axis = .horizontal
+
+    init(_ title: String, text: Binding<String>, axis: Axis = .horizontal) {
+        self.title = title
+        self._text = text
+        self.axis = axis
+    }
+
+    var body: some View {
+        TextField(title, text: $text, prompt: JPInputPrompt.text(title), axis: axis)
+    }
+}
+
+/// パスワードの欄（見本の字は `JPInputPrompt`）
+struct JPSecureField: View {
+    let title: String
+    @Binding var text: String
+
+    init(_ title: String, text: Binding<String>) {
+        self.title = title
+        self._text = text
+    }
+
+    var body: some View {
+        SecureField(title, text: $text, prompt: JPInputPrompt.text(title))
+    }
+}
+
 /// 欄の名前（`JPField` の見出しと同じ字・色）。見出しと欄を別々に置く画面が使う
 struct JPFieldTitle: View {
     let text: String

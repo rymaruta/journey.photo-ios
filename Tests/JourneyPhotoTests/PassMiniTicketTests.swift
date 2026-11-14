@@ -213,17 +213,17 @@ final class PassMiniTicketTests: XCTestCase {
         XCTAssertTrue(words.allSatisfy { $0.count <= 4 })
     }
 
-    /// 読み上げは今と同じ: 帳の札はボタンの名前「〇〇 のカード」・ホームの束は読まない（札のボタンが読む）
+    /// 読み上げ: 帳の札はボタンの名前「〇〇さんの乗車券」（2026-11-14 に呼び名をそろえた）・ホームの束は読まない（札のボタンが読む）
     func testSpokenLabelsUnchanged() throws {
         let book = try source("Features/Pass/PassBookView.swift")
         XCTAssertTrue(book.contains("PassTicketSlot(content: content)"))
-        XCTAssertTrue(book.contains(".accessibilityLabel(L(\"\\(content.name) のカード\", \"\\(content.name)\\u{2019}s card\"))"))
+        XCTAssertTrue(book.contains(".accessibilityLabel(content.ticketTitle)"))
         let cards = try source("Features/Pass/PassCards.swift")
         let stack = try XCTUnwrap(cards.range(of: "struct PassMiniStack"))
         let full = try XCTUnwrap(cards.range(of: "struct PassPhotoFullView"))
         XCTAssertTrue(cards[stack.lowerBound..<full.lowerBound].contains(".accessibilityHidden(true)"), "束を読み上げている")
         let home = try source("Features/Pass/PassHomeSlot.swift")
         XCTAssertTrue(home.contains(".accessibilityElement(children: .ignore)"))
-        XCTAssertTrue(home.contains("今日すれちがった \\(cards.count)人のカードを開く"))
+        XCTAssertTrue(home.contains("今日届いた乗車券 \\(cards.count) 枚を見る"))
     }
 }

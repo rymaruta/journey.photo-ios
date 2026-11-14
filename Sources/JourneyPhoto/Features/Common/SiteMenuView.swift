@@ -22,7 +22,7 @@ import SwiftUI
 /// **2026-11-12 判断（デザインの案 第10章「どこに何を置くか」）: 道具の一覧はここ1か所。**
 /// - タブと重なる3行（撮影地マップ＝マップのタブ・マイページ＝タブ・保存＝マイページの保存のタブ）を外した
 /// - 設定の「旅の道具」の節（6行）をここへ移した。設定はオン・オフと決まりだけ（設定の中にしか無い入口を作らない）
-/// - 節は「旅の準備」（旅行プラン・共同アルバム・光と天気の予報・保存した旅）と
+/// - 節は「旅の準備」（旅行プラン・共同アルバム・光と天気の知らせ・保存した旅）と
 ///   「旅の楽しみ」（すれちがい乗車券・旅のトランク・とおまわり号）。輪から外れる楽しみは下の段
 /// - いいねした写真・設定・ログアウトは「ほか」。眉の節は3つ
 /// - 意見を送る（札 #546）・使い方（札 #517）は、それぞれの札の担当がこの「ほか」に足す
@@ -61,10 +61,11 @@ struct SiteMenuView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("menu.albums")
                     if auth.userId != nil {
-                        // 光と天気の予報（Pro）。前は設定の Pro の節にしか一覧の入口が無かった。
+                        // 光と天気の知らせ（Pro）。前は設定の Pro の節にしか一覧の入口が無かった。呼び名は押した先の題・設定の行と同じ
+                        // （2026-11-14 判断・前回の点検の残り。前はメニューだけ「光と天気の予報」）。
                         // Pro でない人には一覧の画面が Pro の案内を出す（`LightForecastView` の `.notPro`）
                         NavigationLink { LightForecastView() } label: {
-                            SiteMenuRow(title: L("光と天気の予報", "Light & weather forecast"), systemImage: "sun.max",
+                            SiteMenuRow(title: L("光と天気の知らせ", "Light & weather alerts"), systemImage: "sun.max",
                                         note: L("行きたい場所の今週の光\u{2002}Pro", "This week's light at your wishlist\u{2002}Pro"))
                         }
                         .buttonStyle(.plain)

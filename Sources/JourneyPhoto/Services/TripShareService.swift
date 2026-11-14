@@ -55,6 +55,21 @@ struct TripShareService {
                                         as: TripChatSent.self).message
     }
 
+    /// 会話の1通を通報する（2026-11-14・札 #597・審査ガイドライン 1.2）。サーバーの `POST /trip-share/{planId}/report`。
+    /// DM の通報（`DMService.report`）は会話 ID（2人の uid）で引く口なので使えない。理由は DM・写真と同じ許可リスト。
+    /// サーバーは通報時点の直近 20 通と通報した通を写して運営に残す（相手には知らせない）
+    func report(planId: String, messageId: String, reason: ModerationService.ReportReason, note: String?) async throws {
+        struct Body: Encodable {
+            let messageId: String
+            let reason: String
+            let note: String?
+        }
+        if TripPlanFixture.isOn { return }
+        try await api.authorizedVoid(.post, "/trip-share/\(encoded(planId))/report",
+                                     body: Body(messageId: try encoded(messageId), reason: reason.rawValue,
+                                                note: ModerationService.reportNote(note)))
+    }
+
     /// 受信箱に並べるプランの会話
     func inbox() async throws -> [TripInboxItem] {
         if TripPlanFixture.isOn { return await TripShareFixtureStore.shared.inbox() }

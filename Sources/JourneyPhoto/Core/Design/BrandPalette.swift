@@ -110,6 +110,35 @@ enum BrandPalette {
     /// 地図の現在地だけ（黒 2pt の縁と組む）
     static let location: UInt32 = 0x9CC3E6
 
+    // MARK: 「コントラストを上げる」（2026-11-14）
+
+    /// 端末の「コントラストを上げる」（設定 → アクセシビリティ → 画面表示とテキストサイズ）が**オンのときだけ**濃くする値。
+    ///
+    /// 2026-11-14 判断（人間工学の点検「追加の点検 3」・HIG Accessibility「既定で足りなければ、コントラストを上げるの
+    /// 設定の時に濃い色にする」）: 前は設定を読む所が 0 だった。**ふだんの見た目（板の値）は変えない**——オフのときは
+    /// 上の `text3`・白 8%・白 50% のまま。切り替えは `WebTheme.text3`・`hairline`・`placeholder` の1か所だけで、
+    /// 画面の部品はそのまま付いてくる（`WebTheme.contrastAware`）。比は `IncreasedContrastTests` が見張る
+    enum IncreasedContrast {
+        /// 注記・@名・日時の字: text-3（#9A9A9A・黒 7.46）→ text-2（#B8B8B8・黒 10.59）
+        static let text3: UInt32 = BrandPalette.text2
+        /// 区切り線（札の縁・行の間）: 白 8% → 白 20%
+        static let hairlineOpacity: Double = 0.20
+        /// 入力欄の見本の字: 白 50% → 白 62%
+        static let placeholderOpacity: Double = 0.62
+        /// ふだんの区切り線・見本の字の濃さ（`WebTheme.hairline`・`placeholder` と同じ値）
+        static let normalHairlineOpacity: Double = 0.08
+        static let normalPlaceholderOpacity: Double = 0.5
+
+        /// 白を `opacity` で地に重ねた色（比を測るため）
+        static func whiteOver(_ base: UInt32, opacity: Double) -> UInt32 {
+            func mix(_ shift: UInt32) -> UInt32 {
+                let b = Double((base >> shift) & 0xFF)
+                return UInt32((b + (255 - b) * opacity).rounded()) << shift
+            }
+            return mix(16) | mix(8) | mix(0)
+        }
+    }
+
     // MARK: 比
 
     /// WCAG 2.x の相対輝度。サイトの `textContrast.test.ts` と同じ式
