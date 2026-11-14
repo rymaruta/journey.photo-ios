@@ -44,7 +44,7 @@ final class PassWordingTests: XCTestCase {
             .map { sourcesRoot.appendingPathComponent($0) }
     }
 
-    /// 2026-11-14 判断（統合 1.1.88）: 写真の下の操作の案内（「写真を押すと全面、…」）も除かずに見る。
+    /// 2026-11-14 判断（統合 1.1.89）: 写真の下の操作の案内（「写真を押すと全面、…」）も除かずに見る。
     /// 乗車券の ‹ › の直し（`PassViewerPager`）で「次のカード」の説明が消えたので、案内にも「カード」「束」は無い
     private func passStrings() throws -> [(at: String, text: String)] {
         try passFiles().flatMap { try japaneseStrings(in: $0) }
@@ -57,7 +57,7 @@ final class PassWordingTests: XCTestCase {
         let banned = ["カード", "束", "アプリの人", "届きえ", "粒度", "の字", "書く字", "書いた字"]
         let bad = strings.filter { s in banned.contains { s.text.contains($0) } }.map { "\($0.at) \($0.text)" }
         XCTAssertEqual(bad, [], "乗車券の呼び名がそろっていない")
-        // 写真の下の操作の案内も見ている（前は除いていた・2026-11-14 統合 1.1.88）
+        // 写真の下の操作の案内も見ている（前は除いていた・2026-11-14 統合 1.1.89）
         let guide = strings.filter { $0.text.hasPrefix("写真を押すと全面、") }
         XCTAssertEqual(guide.count, 2, "写真の下の操作の案内（2通り）を読めていない")
         // 「帳」は「すれちがい帳」の形でだけ使う

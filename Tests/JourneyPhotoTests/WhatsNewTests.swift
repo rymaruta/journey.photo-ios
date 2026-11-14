@@ -115,8 +115,8 @@ final class WhatsNewTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let all = WhatsNew.decode(data)
-        XCTAssertEqual(all.map(\.version), ["1.1.88", "1.1.87", "1.1.86", "1.1.85", "1.1.84", "1.1.83", "1.1.82", "1.1.81", "1.1.80", "1.1.79", "1.1.78", "1.1.77", "1.1.76", "1.1.75", "1.1.74", "1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14", "1.0.82", "1.0.73", "1.0.67"])
-        // 1.1.88 は `testVersion1188`、1.1.87 は `testVersion1187`、1.1.86 は `testVersion1186`、1.1.85 は `testVersion1185`、1.1.84 は `testVersion1184OneItemPerChapter`、1.1.83 は `testVersion1183OthersPhotos`、1.1.82・1.1.81・1.1.80・1.1.79・1.1.78・1.1.77・1.1.76・1.1.75・1.1.74・1.1.72 の中身は `testVersion1172SummarizesChangesSince1087` で見る。以下は 1.1.18 以前の項目
+        XCTAssertEqual(all.map(\.version), ["1.1.89", "1.1.87", "1.1.86", "1.1.85", "1.1.84", "1.1.83", "1.1.82", "1.1.81", "1.1.80", "1.1.79", "1.1.78", "1.1.77", "1.1.76", "1.1.75", "1.1.74", "1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14", "1.0.82", "1.0.73", "1.0.67"])
+        // 1.1.89 は `testVersion1189`、1.1.87 は `testVersion1187`、1.1.86 は `testVersion1186`、1.1.85 は `testVersion1185`、1.1.84 は `testVersion1184OneItemPerChapter`、1.1.83 は `testVersion1183OthersPhotos`、1.1.82・1.1.81・1.1.80・1.1.79・1.1.78・1.1.77・1.1.76・1.1.75・1.1.74・1.1.72 の中身は `testVersion1172SummarizesChangesSince1087` で見る。以下は 1.1.18 以前の項目
         let releases = Array(all.dropFirst(16))
         // 版に重複が無い（履歴の区切りと「見た版」の比べ方が版で1つに決まる前提）
         let versions = releases.map(\.version)
@@ -267,7 +267,7 @@ final class WhatsNewTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
-        // 1.1.72 より前の分だけで見る（1.1.88 は `testVersion1188`、1.1.87 は `testVersion1187`、1.1.86 は `testVersion1186`、1.1.85 は `testVersion1185`、1.1.84 は `testVersion1184OneItemPerChapter`、1.1.83 は `testVersion1183OthersPhotos`、1.1.82・1.1.81・1.1.80・1.1.79・1.1.78・1.1.77・1.1.76・1.1.75・1.1.74・1.1.72 は `testVersion1172SummarizesChangesSince1087`）
+        // 1.1.72 より前の分だけで見る（1.1.89 は `testVersion1189`、1.1.87 は `testVersion1187`、1.1.86 は `testVersion1186`、1.1.85 は `testVersion1185`、1.1.84 は `testVersion1184OneItemPerChapter`、1.1.83 は `testVersion1183OthersPhotos`、1.1.82・1.1.81・1.1.80・1.1.79・1.1.78・1.1.77・1.1.76・1.1.75・1.1.74・1.1.72 は `testVersion1172SummarizesChangesSince1087`）
         let releases = Array(WhatsNew.decode(data).dropFirst(16))
         XCTAssertEqual(releases.first?.version, "1.1.18")
         XCTAssertEqual(releases.first?.items.count, 2)
@@ -305,15 +305,15 @@ final class WhatsNewTests: XCTestCase {
                        "project.yml の版（\(marketing)）が 1.1.17 より新しい——次の版が 1.1.18 にならない。項目の版を見直す")
     }
 
-    /// 1.1.88（2026-11-14）: 人間工学の点検（#188）の大きく見るを下に引いて閉じる・投稿するを下の主ボタン・書きかけを払うと確かめ・
+    /// 1.1.89（2026-11-14・1.1.88 はストーリーの落ちる件の足跡 #602 だけで項目なし）: 人間工学の点検（#188）の大きく見るを下に引いて閉じる・投稿するを下の主ボタン・書きかけを払うと確かめ・
     /// 入力欄の見本の字・探すの押し直し・乗車券の ‹ ›・とおまわり号の部屋の ⟲ ⟳ と、すれちがい乗車券の言葉の統一（pass-wording）・ストーリーに載せる画面の背景（story-share-backdrop）・ホームの札の出典（home-card-attribution）・「行きたい」の旗（#593）・旅行プランの会話の通報（#597）。
     /// 中黒・禁止語なし
-    func testVersion1188() async throws {
+    func testVersion1189() async throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let v = try XCTUnwrap(WhatsNew.decode(data).first)
-        XCTAssertEqual(v.version, "1.1.88")
+        XCTAssertEqual(v.version, "1.1.89")
         XCTAssertEqual(v.date, WhatsNew.Day(year: 2026, month: 11, day: 14))
         XCTAssertEqual(v.items.map(\.title.ja), ["写真を大きく見る画面は下に引いて閉じる", "投稿するは下の大きなボタンに",
                                                  "ストーリーに載せる画面の背景を写真の色に",
@@ -495,7 +495,7 @@ final class WhatsNewTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
-        // 1.1.88・1.1.87・1.1.86・1.1.85・1.1.84・1.1.83 はそれぞれの試験で見る。ここは 1.1.82 から
+        // 1.1.89・1.1.87・1.1.86・1.1.85・1.1.84・1.1.83 はそれぞれの試験で見る。ここは 1.1.82 から
         let all = Array(WhatsNew.decode(data).dropFirst(6))
         // 1.1.82（2026-11-11・札 #541・#524・#526・#521）: DM の新しい見た目・写真をストーリーで紹介・コメントに返信・
         // 探すの撮影スポットの地図（おすすめの新しい投稿・今週のお題 #537 は #540 が分かるまで次の版へ）・録画は押し続けない・トランクが軽く・日をまたぐ移動の目安・検索エンジンに出さない
