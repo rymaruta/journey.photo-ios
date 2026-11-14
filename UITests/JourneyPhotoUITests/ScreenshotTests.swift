@@ -2065,6 +2065,86 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "83-すれちがい帳")
     }
 
+    /// **すれちがいの束の「‹ 1 / 7 枚 ›」**（2026-11-14・人間工学の点検・WCAG 2.5.1・`PassViewerPager`）: 払わなくても
+    /// 押して前・次の乗車券へ行ける。払う操作は今までどおり次へ進む（速さの境目は変えていない）。
+    /// 束が開かなければ落とす（見本のカードは端末の中だけで作る・`-JPPreviewPass`）。
+    ///
+    /// 1. 最初の1枚: 「1 / N 枚」・‹ は押せない（`isEnabled == false`）・› は押せる・どちらも 44pt 以上
+    /// 2. › を押す → 「2 / N 枚」・‹ が押せるようになる
+    /// 3. ‹ を押す → 「1 / N 枚」・‹ はまた押せない
+    /// 4. きっぷの上で素早く短く払う → 「2 / N 枚」（払う操作は残っている）
+    func testPassViewerPager() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewPass", "YES"]
+        app.launch()
+        defer { app.terminate() }
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let open = app.buttons["pass.home.open"].firstMatch
+        guard open.waitForExistence(timeout: 45) else {
+            return XCTFail("見本のカードを入れたのに、ホームに「カードが届きました」の札が出ない")
+        }
+        open.tap()
+        let card = app.descendants(matching: .any)["pass.viewer.card"].firstMatch
+        guard card.waitForExistence(timeout: 10) else { return XCTFail("札を押しても束が開かない") }
+        Thread.sleep(forTimeInterval: 2)
+        let previous = app.buttons["pass.viewer.previous"].firstMatch
+        let next = app.buttons["pass.viewer.next"].firstMatch
+        let count = app.staticTexts["pass.viewer.count"].firstMatch
+        guard previous.exists, next.exists, count.exists else {
+            return XCTFail("「‹」「›」・枚数が無い（‹=\(previous.exists)・›=\(next.exists)・枚数=\(count.exists)）")
+        }
+        // 「1 / 7 枚」の分母（見本の枚数）
+        let first = count.label
+        XCTContext.runActivity(named: "[passPager] 開いた時: 枚数「\(first)」・‹ \(previous.frame)・› \(next.frame)") { _ in }
+        guard first.hasPrefix("1 / "), let total = first.dropFirst(4).split(separator: " ").first.map(String.init),
+              let n = Int(total), n >= 2 else {
+            return XCTFail("開いた時の枚数が「1 / N 枚」（N は2以上）でない（\(first)）")
+        }
+        func waitCount(_ text: String) -> Bool {
+            XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", text),
+                                                             object: count)], timeout: 5) == .completed
+        }
+        XCTAssertEqual(previous.label, "前の乗車券")
+        XCTAssertEqual(next.label, "次の乗車券")
+        for (button, name) in [(previous, "‹"), (next, "›")] {
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "「\(name)」の当たりが 44pt 未満")
+            XCTAssertGreaterThanOrEqual(button.frame.width, 44, "「\(name)」の当たりが 44pt 未満")
+        }
+        // ボタンは下の「ありがとう」の行のすぐ上（親指の届く帯）
+        let thanks = app.buttons["pass.viewer.thanks"].firstMatch
+        if thanks.exists {
+            XCTAssertLessThanOrEqual(next.frame.maxY, thanks.frame.minY + 1, "「›」が「ありがとう」より下にある")
+            XCTAssertGreaterThan(next.frame.minY, card.frame.maxY - 1, "「›」が乗車券に重なっている")
+        }
+        // 1. 最初では ‹ を押せない
+        XCTAssertFalse(previous.isEnabled, "最初の1枚で「‹」が押せる")
+        XCTAssertTrue(next.isEnabled, "「›」が押せない")
+        shoot(app, "81p-すれちがいの束（‹ 1 / 7 枚 ›）")
+        // 2. › → 2 枚目
+        next.tap()
+        XCTAssertTrue(waitCount("2 / \(n) 枚"), "「›」を押しても 2 枚目にならない（\(count.label)）")
+        XCTAssertTrue(previous.isEnabled, "2 枚目で「‹」が押せない")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "81q-すれちがいの束（› を押した）")
+        // 3. ‹ → 1 枚目
+        previous.tap()
+        XCTAssertTrue(waitCount("1 / \(n) 枚"), "「‹」を押しても 1 枚目に戻らない（\(count.label)）")
+        XCTAssertFalse(previous.isEnabled, "1 枚目に戻っても「‹」が押せる")
+        Thread.sleep(forTimeInterval: 1)
+        // 4. 払う操作は今までどおり: きっぷの下（写真ではない所）で左へ素早く短く払う
+        //    （今の決め方 `PassSpinGesture.classify`: 0.25 秒以内・動いた量 120pt 未満・勢いの見込み 200pt 以上で次へ）
+        let start = card.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.85))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -80, dy: 0)),
+                    withVelocity: XCUIGestureVelocity(rawValue: 2000), thenHoldForDuration: 0)
+        XCTAssertTrue(waitCount("2 / \(n) 枚"), "きっぷの上で素早く払っても次へ進まない（\(count.label)）")
+    }
+
     /// **すれちがいの設定の「届き方」**（2026-11-10 owner「すれちがったら即時交換されて欲しい」）: 既定はすぐ届く。
     /// 「夕方にまとめて受け取る」の行が出て、既定でオフになっているかを撮る。画面まで行けなければ撮らずに抜ける。
     /// **出たのに行がオンのまま・44pt 未満なら落とす**
@@ -8387,7 +8467,8 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "81x-大きい文字（すれちがいの束）")
         let window = app.windows.firstMatch.frame
         func checkButtons(_ when: String) {
-            for (id, name) in [("pass.viewer.close", "閉じる"), ("pass.viewer.thanks", "ありがとう"), ("pass.viewer.file", "帳に入れる")] {
+            for (id, name) in [("pass.viewer.close", "閉じる"), ("pass.viewer.thanks", "ありがとう"), ("pass.viewer.file", "帳に入れる"),
+                               ("pass.viewer.next", "次の乗車券（›）")] {
                 let b = app.buttons[id].firstMatch
                 XCTAssertTrue(b.exists, "\(when)「\(name)」が無い")
                 guard b.exists else { continue }

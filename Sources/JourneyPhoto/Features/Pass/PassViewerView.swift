@@ -97,11 +97,13 @@ struct PassViewerView: View {
                 if let current {
                     deck(current)
                         .padding(.top, 26)
+                    // 次・前は下の「‹ ›」で分かるので、案内は乗車券そのものの触り方だけにする
+                    // （2026-11-14 判断・人間工学の点検。払って次へ行く操作はそのまま残す）
                     Text(reduceMotion
-                         ? L("写真を押すと全面、下を押すと裏返る、左右に払って次のカード",
-                             "Tap the photo to view it, tap below to flip, swipe for the next card")
-                         : L("写真を押すと全面、指を置いて回す、素早く払うと次のカード",
-                             "Tap the photo to view it, hold and turn, flick for the next card"))
+                         ? L("写真を押すと全面、下を押すと裏返る",
+                             "Tap the photo to view it, tap below to flip")
+                         : L("写真を押すと全面、指を置いて回す",
+                             "Tap the photo to view it, hold and turn"))
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)
                         .multilineTextAlignment(.center)
@@ -116,7 +118,10 @@ struct PassViewerView: View {
                         .padding(.horizontal, JPSpace.gutter)
                         .padding(.bottom, JPSpace.xs)
                 }
-                if let current { actions(current) }
+                if let current {
+                    pager
+                    actions(current)
+                }
             }
         }
         .preferredColorScheme(.dark)
@@ -163,15 +168,10 @@ struct PassViewerView: View {
 
     private var header: some View {
         HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(mode == .bundle ? L("今日のカード", "Today\u{2019}s cards") : L("すれちがい帳", "Pass book"))
-                    .jpEyebrow()
-                    .foregroundStyle(WebTheme.accent)
-                Text(L("\(index + 1) / \(shown.count) 枚", "\(index + 1) of \(shown.count)"))
-                    .font(JPFont.number(15, weight: .semibold, relativeTo: .subheadline))
-                    .foregroundStyle(WebTheme.text)
-            }
-            .accessibilityElement(children: .combine)
+            // 枚数は下の「‹ 1 / 7 枚 ›」へ移した（親指の届く所・`PassViewerPager`・2026-11-14）
+            Text(mode == .bundle ? L("今日のカード", "Today\u{2019}s cards") : L("すれちがい帳", "Pass book"))
+                .jpEyebrow()
+                .foregroundStyle(WebTheme.accent)
             Spacer()
             // 表でも裏でも同じ所に出る「…」（通報・ブロック・帳から外す）
             if let current {
@@ -301,6 +301,47 @@ struct PassViewerView: View {
     }
 
     // MARK: - 下
+
+    /// 「‹ 1 / 7 枚 ›」。払わなくても押して前・次の乗車券へ行ける（WCAG 2.5.1・`PassViewerPager`）。
+    /// 黒地の上の操作なので白（数は白・板「03 合図」）。最初と最後では押せない側を 32% に薄め、押せなくする
+    private var pager: some View {
+        let count = shown.count
+        return HStack(spacing: JPSpace.xs) {
+            pagerButton(systemImage: "chevron.left", label: PassViewerPager.previousLabel,
+                        identifier: PassViewerPager.previousIdentifier,
+                        enabled: PassViewerPager.canGoBack(index: index, count: count)) { step(by: -1) }
+            Text(PassViewerPager.countText(index: index, count: count))
+                .font(JPFont.number(15, weight: .semibold, relativeTo: .subheadline))
+                .foregroundStyle(WebTheme.text)
+                .frame(minWidth: 72)
+                .accessibilityIdentifier(PassViewerPager.countIdentifier)
+            pagerButton(systemImage: "chevron.right", label: PassViewerPager.nextLabel,
+                        identifier: PassViewerPager.nextIdentifier,
+                        enabled: PassViewerPager.canGoForward(index: index, count: count)) { step(by: 1) }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, JPSpace.xxs)
+    }
+
+    private func pagerButton(systemImage: String, label: String, identifier: String, enabled: Bool,
+                             action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(WebTheme.foreground)
+                .opacity(enabled ? 1 : PassViewerPager.disabledOpacity)
+                .webTappable()
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(identifier)
+    }
+
+    /// ボタンで前・次へ（払ったときと同じ動き。「視差効果を減らす」では動かさずに替える）
+    private func step(by delta: Int) {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.82)) { move(by: delta) }
+    }
 
     private func actions(_ content: PassCardContent) -> some View {
         let thanked = favorites.contains(content.photo.id)
