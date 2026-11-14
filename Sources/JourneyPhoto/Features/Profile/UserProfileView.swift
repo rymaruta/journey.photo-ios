@@ -36,6 +36,8 @@ struct UserProfileView: View {
     /// 札の行の上端（スクロールの見えている枠から）と高さ。替えたとき頭から見せるか・最低の高さに使う（2026-10-24）
     /// 札の行の上端の控え（見張らない箱。送るたびに画面全体を作り直さない・`ProfileTabRowSpot`）
     @State private var tabRow = ProfileTabRowSpot()
+    /// 中身の横の量の箱を札の行と分け合う（払っている間、札の行の線が指に付いてくる・2026-11-13 #187 案 B）
+    @State private var tabPager = ProfileTabPagerControl<ProfileTab>()
     @State private var tabRowHeight: CGFloat = WebTheme.minTapTarget
     /// 旅の記録・旅の棚の計算の控え（描き直しのたびに数え直さない・2026-10-28）
     @State private var travelMemo = OthersTravelMemo()
@@ -223,8 +225,14 @@ struct UserProfileView: View {
                 // 札の行と中身は横に払っても切り替わる（マイページと同じ部品・2026-10-24 判断）。
                 // **地図の札の中身では払いを受けない**——地図を横に動かす操作とぶつかる（札の行では受ける）
                 // 2026-10-28 判断: 投稿の中身を左へ払えば地図へ入る（指に付いてくる）。地図から出るのは札の行の払いか札を押す
-                ProfileTabBar(tabs: ProfileTab.tabs(isMe: false), selection: $tab)
-                    .modifier(ProfileTabSwipe(tabs: ProfileTab.tabs(isMe: false), selection: $tab))
+                // 2026-11-13（#187・案 B「絵と字」）: マイページと同じ札の行（2つに等しく割る・印の下に名前・高さ 56）。
+                // 札の行と中身は横の量の箱（`tabPager`）を分け合い、どちらで払っても中身と線が指に付いてくる
+                ProfileTabBar(tabs: ProfileTab.tabs(isMe: false), selection: $tab,
+                              iconColumns: true, follow: tabPager.drag)
+                    .modifier(ProfileTabSwipe(tabs: ProfileTab.tabs(isMe: false), selection: $tab,
+                                              follow: tabPager.drag,
+                                              willShow: { next in tabPager.willShow?(next) },
+                                              probeTag: "row", yieldsToHorizontalScrollers: false))
                     .id(ProfileTabScroll.rowID)
                     .onGeometryChange(for: CGRect.self) { proxy in
                         proxy.frame(in: .scrollView)
@@ -240,7 +248,8 @@ struct UserProfileView: View {
                                 swipeBlocked: [.map],
                                 rowOverflow: { ProfileTabScroll.rowOverflow(rowMinY: tabRow.minY, visibleTop: visibleTop) },
                                 // 地図は払いの途中に初めて作ると引っかかる。開いて少し待ってから先に作る（2026-10-28）
-                                prebuilt: [.map]) { page in
+                                prebuilt: [.map],
+                                control: tabPager) { page in
                     VStack(alignment: .leading, spacing: JPSpace.m) {
                         tabContent(page)
                     }

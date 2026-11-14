@@ -43,6 +43,12 @@ struct ProfileTabBar<Tab: PagedTab>: View {
     /// （`ProfileTabPager`）は札と同じばねで滑る。**札だけの画面（地図・写真の編集）は false**: 下線だけを
     /// ばねで滑らせ、中身は前と同じく一瞬で替える（地図や編集の道具まで、ばねの取引で入れ替えない）
     var movesContent: Bool = true
+    /// 札の行「絵と字」で描くか（2026-11-13 owner 承認 #187・案 B）。**プロフィール（マイページ・人のページ）だけ**。
+    /// 幅を等しく割り、印（`PagedTab.tabSymbol`）の下に名前、高さ 56（`ProfileTabColumnRow`）。
+    /// ホーム・フォロー一覧などは印を持たない区分なので、今の字の札のまま
+    var iconColumns: Bool = false
+    /// 中身の横の量（`ProfileTabPager` と分け合う箱）。渡すと、払っている間に線が指に付いてくる（`iconColumns` のとき）
+    var follow: ProfileTabDrag? = nil
     /// 名前の字の大きさ（`.subheadline` と同じだけ伸びる。既定 15）。縮める下限の計算に使う
     @ScaledMetric(relativeTo: .subheadline) private var labelSize: CGFloat = ProfileTabStyle.labelSize
     /// 下線を選んだ札へ滑らせる目印（2026-10-24 判断・owner「切り替えスムーズに」）。
@@ -51,6 +57,29 @@ struct ProfileTabBar<Tab: PagedTab>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        Group {
+            if iconColumns {
+                ProfileTabColumnRow(tabs: tabs, selection: $selection, drag: follow ?? ProfileTabDrag(),
+                                    movesContent: movesContent, spoken: spoken)
+                    // 読み上げ: 札の並びを1つのまとまりに（`.isTabBar` の印は付けない・下の注記）
+                    .accessibilityElement(children: .contain)
+            } else {
+                textRow
+            }
+        }
+        // 区切り線は地の側（`background`）——真鍮の下線の上に重ねない
+        .background {
+            (stuck ? Color.black : Color.clear)
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(Color.white.opacity(ProfileTabStyle.lineOpacity(stuck: stuck)))
+                        .frame(height: JPStroke.hairline)
+                }
+        }
+    }
+
+    /// 字の札の行（2026-10-30 owner 採用 #418・案A）。ホーム・フォロー一覧・地図の見せ方などの画面
+    private var textRow: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 0) {
                 ForEach(tabs, id: \.self) { option in tab(option, fill: false) }
@@ -71,15 +100,6 @@ struct ProfileTabBar<Tab: PagedTab>: View {
         // （マイページの留まった札 `mypage.tabs.pinned` と同じ形）
         .accessibilityElement(children: .contain)
         .padding(.horizontal, ProfileTabStyle.rowInset(gutter: gutter))
-        // 区切り線は地の側（`background`）——真鍮の下線の上に重ねない
-        .background {
-            (stuck ? Color.black : Color.clear)
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(Color.white.opacity(ProfileTabStyle.lineOpacity(stuck: stuck)))
-                        .frame(height: JPStroke.hairline)
-                }
-        }
     }
 
     /// 1つの札。下線は字の幅＋左右 2（`fill` のときも割り当てた幅いっぱいにしない）
@@ -187,9 +207,13 @@ struct ProfileTabOverlaySwipe<Tab: PagedTab>: ViewModifier {
                         let dx = Double(value.translation.width)
                         if swiping == nil {
                             swiping = Tab.startsSwipe(from: selection, in: tabs, dx: dx, dy: Double(value.translation.height))
+                            // UI テストの記録（Debug・`-JPPreviewTabSwipeProbe` のときだけ）
+                            ProfileTabSwipeLog.shared.note("overlay began dx=\(ProfileTabSwipeLog.n(dx)) "
+                                + "dy=\(ProfileTabSwipeLog.n(Double(value.translation.height))) -> \(swiping == true)")
                         }
                         guard swiping == true else { return }
                         if let next = Tab.neighbor(of: selection, in: tabs, towards: dx) { control.willShow?(next) }
+                        control.drag.width = width
                         control.drag.offset = CGFloat(Tab.followOffset(from: selection, in: tabs, dx: dx, width: Double(width)))
                     }
                     .onEnded { value in
@@ -197,6 +221,8 @@ struct ProfileTabOverlaySwipe<Tab: PagedTab>: ViewModifier {
                         guard swiping == true else { return }
                         let next = Tab.settled(from: selection, in: tabs, dx: Double(value.translation.width),
                                                velocity: Double(value.velocity.width), width: Double(width))
+                        ProfileTabSwipeLog.shared.note("overlay ended dx=\(ProfileTabSwipeLog.n(Double(value.translation.width))) "
+                            + "vx=\(ProfileTabSwipeLog.n(Double(value.velocity.width))) next=\(next.map { "\($0)" } ?? "nil")")
                         withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
                             if let next { selection = next }
                             control.drag.offset = 0

@@ -209,9 +209,14 @@ enum ProfileTabPrebuild {
     static let delayNanoseconds: UInt64 = 1_200_000_000
 }
 
-/// 指に付いてくる横の量の箱。**見張るのは `ProfileTabDragOffset` だけ**（入れ物は持つだけ）
+/// 指に付いてくる横の量の箱。**見張るのは2つだけ**: 中身をずらす `ProfileTabDragOffset` と、
+/// 札の行「絵と字」の線を寄せる `ProfileTabColumnRow`（マイページ・人のページの札の行が `follow` で渡す・2026-11-13 #187）。
+/// 入れ物（`ProfileTabPager`・画面）は持つだけ——払っている間に描き直すのは、この2つの小さな子に限る
 final class ProfileTabDrag: ObservableObject {
     @Published var offset: CGFloat = 0
+    /// 払っている中身の幅（`offset` より先に書く。見張らない）。札の行「絵と字」が線を寄せる割合の分母
+    /// （`ProfileTabColumnStyle.progress`・2026-11-13 #187）
+    var width: CGFloat = 0
 }
 
 /// 中身を横にずらす小さな子。払っている間に描き直すのはここだけ。**中身は親が作った値で受け取る**
@@ -312,7 +317,9 @@ enum ProfileTabMotion {
 /// - 始まったら写真を押す操作は取り消される（払って離した指で写真の詳細が開かない）。長押しのメニューは
 ///   指を止めたときだけなので、払いとはぶつからない
 /// - `follow` を渡すと、動いている間の横の量をそこへ書く（中身が指に付いてくる・`ProfileTabPager`）。
-///   札の行は渡さない（離したときに替わる）
+///   中身（`ProfileTabPager`）に加え、マイページ・人のページの札の行も同じ箱（`tabPager.drag`）を渡す——
+///   札の行の上で払っても中身と線が指に付いてくる（2026-11-13 #187 案 B。線は `ProfileTabColumnRow` が見張る）。
+///   渡さない札の行（`ProfileTabSection` の字の札・フォロー一覧など）は、離したときに替わる
 ///
 /// `enabled` が false の札（人のページの地図）では、この部品の枠の中の指を受けない——地図を横に
 /// 動かす操作を優先する（2026-10-28 判断: 地図の中で払って札を替えると、地図を動かしたいのか札を替え
@@ -329,6 +336,18 @@ struct ProfileTabSwipe<Tab: PagedTab>: ViewModifier {
     var extendsUp: CGFloat = 0
     /// 動いている間、入ってくる隣の札を知らせる（作っておく・縦の位置をそろえる）
     var willShow: ((Tab) -> Void)? = nil
+    /// UI テストの記録（`ProfileTabSwipeLog`）での名前。札の行は "row"、中身は "content"
+    var probeTag: String = "content"
+    /// 枠の中の横に流れる列に指を渡すか（既定は渡す——ホームの PICKS・季節の撮影スポットの列）。
+    ///
+    /// **2026-11-14 判断（#187 案 B・Mac run 1233 の記録）: 札の行（マイページ・人のページ）は false。**
+    /// とても大きい字（AX3・AX5）で札の行が横に送る並び（`ProfileTabColumnRow` の `ScrollView(.horizontal)`）に替わると、
+    /// 流れている札の行の上を右へ払っても札が替わらなかった。記録は `pan[row] receive -> no(hscroll)`——この払いが
+    /// 札の行そのものの横の送りを「中の横の列」と見て指を渡し、横の送りが端で弾んだだけ（hxRange -105.0〜0）だった。
+    /// 4列に入る字（AX1）・留まった札（`ProfileTabOverlaySwipe`）では同じ払いで替わる（AX1 は pan[row] settle next=posts）。
+    /// false では指を受け、横の送りは**こちらが「始めない」と決まってから**動く（隣の札が無い向き・縦の動き）——
+    /// 払えば札が替わり、選んだ札は横の送りが真ん中へ寄せる（字の大きさで手ざわりを割らない）
+    var yieldsToHorizontalScrollers: Bool = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -337,17 +356,24 @@ struct ProfileTabSwipe<Tab: PagedTab>: ViewModifier {
             .background {
                 ProfileSwipeCatcher(
                     isEnabled: enabled,
+                    tag: probeTag,
+                    yieldsToHorizontalScrollers: yieldsToHorizontalScrollers,
                     shouldBegin: { dx, dy in
-                        Tab.startsSwipe(from: selection, in: tabs, dx: dx, dy: dy)
+                        let starts = Tab.startsSwipe(from: selection, in: tabs, dx: dx, dy: dy)
+                        ProfileTabSwipeLog.shared.note("pan[\(probeTag)] shouldBegin dx=\(ProfileTabSwipeLog.n(dx)) "
+                            + "dy=\(ProfileTabSwipeLog.n(dy)) -> \(starts)")
+                        return starts
                     },
                     onChange: { dx, width in
                         if let next = Tab.neighbor(of: selection, in: tabs, towards: dx) { willShow?(next) }
+                        follow?.width = CGFloat(width)
                         follow?.offset = CGFloat(Tab.followOffset(from: selection, in: tabs,
                                                                   dx: dx, width: width))
                     },
                     onEnd: { dx, velocity, width in
                         let next = Tab.settled(from: selection, in: tabs,
                                                dx: dx, velocity: velocity, width: width)
+                        ProfileTabSwipeLog.shared.note("pan[\(probeTag)] settle next=\(next.map { "\($0)" } ?? "nil")")
                         withAnimation(ProfileTabMotion.animation(reduceMotion: reduceMotion)) {
                             if let next { selection = next }
                             follow?.offset = 0
@@ -364,6 +390,10 @@ struct ProfileTabSwipe<Tab: PagedTab>: ViewModifier {
 struct ProfileSwipeCatcher: View {
 
     var isEnabled: Bool
+    /// UI テストの記録（`ProfileTabSwipeLog`）での名前
+    var tag: String = ""
+    /// 枠の中の横に流れる列に指を渡すか（`ProfileTabSwipe.yieldsToHorizontalScrollers`）
+    var yieldsToHorizontalScrollers: Bool = true
     /// 動き始めの横・縦の量で、始めるか
     var shouldBegin: (Double, Double) -> Bool
     /// 動いている間（横の量・枠の幅）
@@ -453,6 +483,21 @@ struct ProfileSwipePanHost: UIViewRepresentable {
         @objc private func handle(_ pan: UIPanGestureRecognizer) {
             guard let probe, let handlers else { return }
             let width = Double(probe.bounds.width)
+            // UI テストの記録（Debug・`-JPPreviewTabSwipeProbe` のときだけ）: 始まり・終わりと移動量・速さ
+            let log = ProfileTabSwipeLog.shared
+            if log.enabled, pan.state != .changed {
+                let move = pan.translation(in: probe), speed = pan.velocity(in: probe)
+                let state: String
+                switch pan.state {
+                case .began: state = "began"
+                case .ended: state = "ended"
+                case .cancelled: state = "cancelled"
+                case .failed: state = "failed"
+                default: state = "state\(pan.state.rawValue)"
+                }
+                log.note("pan[\(handlers.tag)] \(state) dx=\(ProfileTabSwipeLog.n(Double(move.x))) "
+                    + "dy=\(ProfileTabSwipeLog.n(Double(move.y))) vx=\(ProfileTabSwipeLog.n(Double(speed.x)))")
+            }
             switch pan.state {
             case .began, .changed:
                 handlers.onChange(Double(pan.translation(in: probe).x), width)
@@ -471,9 +516,19 @@ struct ProfileSwipePanHost: UIViewRepresentable {
                 return false
             }
             guard probe.bounds.contains(touch.location(in: probe)) else { return false }
+            // 札の行（2026-11-14 #187・`ProfileTabSwipe.yieldsToHorizontalScrollers`）: 札の行の横の送りの上でも指を受ける
+            if handlers?.yieldsToHorizontalScrollers == false {
+                ProfileTabSwipeLog.shared.note("pan[\(handlers?.tag ?? "")] receive -> yes(row)")
+                return true
+            }
             // 2026-10-31 判断（#426・ホームの「おすすめ」には横に流れる列がある——PICKS・季節の撮影スポット）:
             // 横に流れる列の上で始まった指は、その列に渡す（列を流したいのか札を替えたいのか指だけでは分けられない）。
             // 札を替えるのは列の外の払いか札を押す
+            // UI テストの記録（Debug・`-JPPreviewTabSwipeProbe` のときだけ）: この枠の中の指を受けたか・横の列に渡したか
+            if ProfileTabSwipeLog.shared.enabled {
+                let inScroller = Self.startsInHorizontalScroller(touch.view, host: host)
+                ProfileTabSwipeLog.shared.note("pan[\(handlers?.tag ?? "")] receive -> \(inScroller ? "no(hscroll)" : "yes")")
+            }
             return !Self.startsInHorizontalScroller(touch.view, host: host)
         }
 
@@ -499,10 +554,25 @@ struct ProfileSwipePanHost: UIViewRepresentable {
             return handlers.shouldBegin(Double(move.x), Double(move.y))
         }
 
-        /// 縦の送りは、こちらが「始めない」と決まってから（向きの固定）
+        /// 縦の送りは、こちらが「始めない」と決まってから（向きの固定）。札の行（`yieldsToHorizontalScrollers` が false）の
+        /// 中の横に送る並びも同じ——払えば札が替わり、隣の札が無い向き・縦の動きでは横の送りが動く（2026-11-14 #187）
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                                shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer) -> Bool {
             gestureRecognizer === pan && otherGestureRecognizer === host?.panGestureRecognizer
+                || gestureRecognizer === pan && waitsForRow(otherGestureRecognizer)
+        }
+
+        /// `other` が、この部品の枠の中にある横に送る並び（札の行の `ScrollView(.horizontal)`）の送りか。
+        /// 札の行（`yieldsToHorizontalScrollers` が false）のときだけ
+        private func waitsForRow(_ other: UIGestureRecognizer) -> Bool {
+            guard handlers?.yieldsToHorizontalScrollers == false, let probe, let host,
+                  let scroll = other.view as? UIScrollView, scroll !== host,
+                  scroll.panGestureRecognizer === other, scroll.isDescendant(of: host) else { return false }
+            let frame = scroll.convert(scroll.bounds, to: probe)
+            let inside = probe.bounds.insetBy(dx: -1, dy: -1).contains(frame)
+            // UI テストの記録（Debug・`-JPPreviewTabSwipeProbe` のときだけ）: 横の送りを待たせたか（枠に入らなければ待たせない）
+            ProfileTabSwipeLog.shared.note("pan[\(handlers?.tag ?? "")] holds hscroll -> \(inside)")
+            return inside
         }
     }
 }
