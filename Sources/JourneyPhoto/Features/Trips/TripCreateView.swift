@@ -564,7 +564,7 @@ struct TripCreateDatesStep: View {
     }
 }
 
-/// 1か月の暦（板の案: 日〜土・選んだ出発と帰着は真鍮の塗りに墨・間は真鍮の薄い地）。
+/// 1か月の暦（板の案: 日〜土・選んだ出発と帰着は白 94% の丸に墨の字・間は白 8% の帯）。
 /// 押せる日は 44pt。今日より前の日は押せない
 struct TripCalendar: View {
     @Binding var month: (year: Int, month: Int)

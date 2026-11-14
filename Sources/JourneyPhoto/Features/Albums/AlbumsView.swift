@@ -79,7 +79,7 @@ struct AlbumsView: View {
         }
         .toolbar { addMenu }
         .alert(L("名前を変える", "Rename"), isPresented: $showRename) {
-            JPTextField(L("名前", "Name"), text: $renameTitle)
+            TextField(L("名前", "Name"), text: $renameTitle)
             Button(Labels.Common.save) {
                 let id = renamingId
                 let title = renameTitle
@@ -525,7 +525,7 @@ struct AlbumsView: View {
 
     @ViewBuilder
     private var joinAlertButtons: some View {
-        JPTextField(L("リンクか招待コード", "Link or invite code"), text: $inviteText)
+        TextField(L("リンクか招待コード", "Link or invite code"), text: $inviteText)
         // 札の「開く」と同じ1本（押した瞬間に参加させない・`openInvite`）
         Button(L("開く", "Open")) { openInvite() }
         Button(Labels.Common.cancel, role: .cancel) { inviteText = "" }
@@ -533,7 +533,7 @@ struct AlbumsView: View {
 
     @ViewBuilder
     private var createAlertButtons: some View {
-        JPTextField(L("名前", "Name"), text: $newTitle)
+        TextField(L("名前", "Name"), text: $newTitle)
         Button(L("作る", "Create")) {
             guard !model.isCreating else { return }
             let title = newTitle

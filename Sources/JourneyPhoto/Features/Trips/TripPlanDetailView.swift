@@ -294,7 +294,7 @@ struct TripPlanDetailView: View {
         .alert(L("ひとこと", "Note"),
                isPresented: Binding(get: { noteTarget != nil },
                                     set: { if !$0 { noteTarget = nil } })) {
-            JPTextField(L("例: 朝いちばんに行く", "e.g. Go first thing in the morning"), text: $noteText)
+            TextField(L("例: 朝いちばんに行く", "e.g. Go first thing in the morning"), text: $noteText)
             Button(Labels.Common.save) {
                 let target = noteTarget
                 noteTarget = nil

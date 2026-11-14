@@ -32,13 +32,44 @@ final class InputPlaceholderTests: XCTestCase {
         "Features/Stories/StoryTextTypingView.swift": "写真の上に直に打つ文字（欄の地が無い）",
     ]
 
+    /// 確かめの画面（`.alert`）の中の欄（iOS が描く）。iOS が部品を置き換えて描くので、自前の View に包むと
+    /// 欄が出ない恐れがあり、見本の字も iOS が描く（白 50% を当てても得るものが無い）。この行だけ直の `TextField` を許す
+    private static let alertFields: [String: [String]] = [
+        "Features/Albums/AlbumsView.swift": [
+            #"TextField(L("名前", "Name"), text: $renameTitle)"#,
+            #"TextField(L("リンクか招待コード", "Link or invite code"), text: $inviteText)"#,
+            #"TextField(L("名前", "Name"), text: $newTitle)"#,
+        ],
+        "Features/Trips/TripPlanDetailView.swift": [
+            #"TextField(L("例: 朝いちばんに行く", "e.g. Go first thing in the morning"), text: $noteText)"#,
+        ],
+    ]
+
+    /// 確かめの画面の欄は直の `TextField` のまま（`JPTextField` に包むと確かめの画面に欄が出ない恐れ）
+    func testAlertFieldsStayPlainTextField() async throws {
+        let sources = try allSources()
+        for (name, lines) in Self.alertFields {
+            let text = try XCTUnwrap(sources.first { $0.name == name }?.text, name)
+            let trimmed = text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+            for line in lines {
+                XCTAssertTrue(trimmed.contains(line), "\(name): 確かめの画面の欄が直の TextField でない・\(line)")
+            }
+        }
+    }
+
     /// 🔴 入力欄を `TextField(`・`SecureField(` で直に作らない（見本の字が iOS の既定の色に戻る）
     func testEveryInputUsesThePlaceholderComponent() async throws {
         let raw = try NSRegularExpression(pattern: #"(?<![A-Za-z_.])(TextField|SecureField)\("#)
         var bad: [String] = []
         for (name, text) in try allSources() where Self.allowed[name] == nil {
+            // 確かめの画面の欄は、書いた行ごとに1回だけ許す（同じ字の欄を alert の外に足すと落ちる）
+            var spare = Self.alertFields[name] ?? []
             for (index, line) in text.components(separatedBy: "\n").enumerated() {
                 let code = line.components(separatedBy: "//").first ?? line
+                if let hit = spare.firstIndex(of: code.trimmingCharacters(in: .whitespaces)) {
+                    spare.remove(at: hit)
+                    continue
+                }
                 let range = NSRange(code.startIndex..., in: code)
                 if raw.firstMatch(in: code, range: range) != nil { bad.append("\(name):\(index + 1)") }
             }
