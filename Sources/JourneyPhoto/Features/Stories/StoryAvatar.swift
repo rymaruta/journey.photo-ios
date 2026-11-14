@@ -57,6 +57,8 @@ struct StoryAvatar<Face: View, Plain: View>: View {
                 // 自分の輪は**見たかどうかに関係なく真鍮**（ホームの「あなた」の輪と同じ）
                 let unseen = isMine || ring.unseen
                 Button {
+                    // 前に居るまま終わったときの足跡（札 #596・本番の版でも書く）。顔の輪を押した（束の数・開く位置）
+                    ExitTrail.mark("story.ring.avatar n=\(ring.group.stories.count) start=\(ring.group.start)")
                     opened = ring.group
                 } label: {
                     StoryRing(count: ring.count, unseen: unseen, diameter: diameter) { face }

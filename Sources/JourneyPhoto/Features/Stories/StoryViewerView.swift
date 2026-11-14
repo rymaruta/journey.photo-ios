@@ -326,11 +326,16 @@ struct StoryViewerView: View {
                     .accessibilityIdentifier("story.viewer.probe")
                     .accessibilityValue("story=\(current?.id ?? "-") index=\(index)/\(visible.count)"
                         + " user=\(current?.userId ?? "-") shared=\(current?.sharedPhotoId ?? "-")"
-                        + " ids=\(visible.map(\.id).joined(separator: ","))")
+                        + " ids=\(visible.map(\.id).joined(separator: ","))"
+                        // 札 #596（2026-11-14）: 2本載せたあとに落ちる件。束の数・同じ id の重なり・アプリのメモリを値で見る
+                        + " count=\(stories.count) dupIds=\(stories.count - Set(stories.map(\.id)).count)"
+                        + " mem=\((PerfTimeline.physFootprint() ?? 0) / 1_048_576)MB")
             }
         }
         // 曲（板の「♪」）。**鳴らしていなかった**——曲名を文字で出すだけだった
         .onAppear {
+            // 前に居るまま終わったときの足跡（札 #596）。閲覧画面を開いた（束の数と開く位置）
+            ExitTrail.mark("story.viewer.open n=\(stories.count) i=\(index)")
             // 開いている間は場を返さない（動画の音を切らない）。返すのは閉じたとき
             MusicPreviewPlayer.shared.beginStoryViewing(viewingToken)
             // **ほかで鳴っている曲は止める**（Web の `stopGlobalMusic`）。止めないと
@@ -380,6 +385,7 @@ struct StoryViewerView: View {
         // 閉じたら止める（閉じたあとも鳴り続けないように）。場は最後の閲覧画面が
         // 閉じたときに返す（返さないと他のアプリの音楽が戻らない）
         .onDisappear {
+            ExitTrail.mark("story.viewer.close")
             stopSong()
             MusicPreviewPlayer.shared.endStoryViewing(viewingToken)
             // 先読みした動画の再生器を持ち越さない（閉じたあとも読み続けない）
@@ -512,6 +518,8 @@ struct StoryViewerView: View {
         .animation(.easeOut(duration: 0.18), value: showDeleteConfirm)
         .animation(.easeOut(duration: 0.18), value: chrome)
         .task(id: story.id) {
+            // 前に居るまま終わったときの足跡（札 #596・本番の版でも書く・id は書かない）。この1本を出し始めた
+            ExitTrail.mark("story.show i=\(index)/\(visible.count) video=\(story.isVideo) mine=\(isMine(story))")
             // 端末の既読（輪の色）。**サーバーの応答を待たない**
             // ——圏外でも、見たものは見たことにする
             onSeen?(story.id)
@@ -1539,6 +1547,8 @@ struct StoryViewerView: View {
     /// 写真の読み込みが片付いた（`StoryPlayback.mediaSettled`）。**前の1本の知らせは当てない**
     private func mediaSettled(_ loaded: Bool, storyId: String, hasURL: Bool) {
         guard current?.id == storyId else { return }
+        // 絵を読み終えた（展開した後）の足跡（札 #596）
+        ExitTrail.mark("story.media \(loaded ? "ok" : "fail") i=\(index)/\(visible.count)")
         let settle = StoryPlayback.mediaSettled(loaded: loaded, hasURL: hasURL, retriesUsed: mediaRetries)
         offersMediaRetry = settle.offersRetry
         if settle.ready { mediaReady = true }

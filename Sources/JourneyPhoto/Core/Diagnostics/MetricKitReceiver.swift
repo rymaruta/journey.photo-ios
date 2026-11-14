@@ -45,6 +45,24 @@ extension MetricKitReceiver: MXMetricManagerSubscriber {
     func didReceive(_ payloads: [MXMetricPayload]) {
         for payload in payloads {
             let version = payload.latestApplicationVersion
+            // 前面での終わり方の回数（札 #596・2026-11-14）。メモリの上限で止められた回はクラッシュ報告が出ないので、ここで数を見る。
+            // 端末の足跡に1行残し（`ExitTrail`）、利用者が意見に添えたときだけ外へ出る
+            if let exits = payload.applicationExitMetrics?.foregroundExitData {
+                let line = DiagnosticsSummary.foregroundExits(
+                    normal: exits.cumulativeNormalAppExitCount,
+                    memory: exits.cumulativeMemoryResourceLimitExitCount,
+                    abnormal: exits.cumulativeAbnormalExitCount,
+                    badAccess: exits.cumulativeBadAccessExitCount,
+                    illegal: exits.cumulativeIllegalInstructionExitCount,
+                    watchdog: exits.cumulativeAppWatchdogExitCount,
+                    appVersion: version)
+                Self.log.notice("\(line, privacy: .public)")
+                if exits.cumulativeMemoryResourceLimitExitCount + exits.cumulativeAbnormalExitCount
+                    + exits.cumulativeBadAccessExitCount + exits.cumulativeIllegalInstructionExitCount
+                    + exits.cumulativeAppWatchdogExitCount > 0 {
+                    ExitTrail.keepMetric(line)
+                }
+            }
             guard let histogram = payload.applicationLaunchMetrics?.histogrammedTimeToFirstDraw else { continue }
             let buckets = histogram.bucketEnumerator.allObjects
                 .compactMap { $0 as? MXHistogramBucket<UnitDuration> }
@@ -66,6 +84,9 @@ extension MetricKitReceiver: MXMetricManagerSubscriber {
                     appVersion: crash.applicationVersion)
                 Self.log.error("\(line, privacy: .public)")
                 emitCallStack(crash.callStackTree)
+                // 落ちたスレッドの上の数個を足跡に残す（札 #596・意見に添えたときだけ外へ出る）
+                let frames = DiagnosticsSummary.crashedFrames(crash.callStackTree.jsonRepresentation()) ?? "-"
+                ExitTrail.keepMetric(line + " frames=" + frames)
             }
             for hang in payload.hangDiagnostics ?? [] {
                 let line = DiagnosticsSummary.hang(
