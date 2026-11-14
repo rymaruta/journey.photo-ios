@@ -14,7 +14,7 @@ struct PeopleSearchField: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(WebTheme.faint)
                 .accessibilityHidden(true)
-            TextField(placeholder, text: $query)
+            JPTextField(placeholder, text: $query)
                 .textFieldStyle(.plain)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()

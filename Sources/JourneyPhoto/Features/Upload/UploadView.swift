@@ -258,6 +258,9 @@ struct UploadView: View {
         .onChange(of: model.postedToSpot) { _, n in
             if n > 0 { onPosted?(n) }
         }
+        // 投稿が終わった・送れなかったことを触覚で1回だけ（2026-11-14 判断・`UploadViewModel.submitHaptic`）
+        .sensoryFeedback(.success, trigger: model.postSucceededTicks)
+        .sensoryFeedback(.error, trigger: model.postFailedTicks)
         .onChange(of: model.didPostAll) { _, posted in
             // **全部上がったときだけ閉じる。** 「待ち行列が空」で見ると、
             // 選び直しの読み込み中（一度空にする）にも閉じてしまい、
@@ -1213,8 +1216,10 @@ struct UploadView: View {
                         autoSpotToggle(row, itemId: item.id)
                     }
                 }
-                JPField(L("タイトル", "Title")) {
-                    TextField(L("例: 高屋神社の雲海", "e.g. Sea of clouds at Takaya"),
+                // 欄の名前は写真の編集・写真の詳細の見出しと同じ「題」「説明」（2026-11-14 判断・前回の点検の残り。
+                // 前は投稿が「タイトル」「説明文」、編集が「題」「説明」で、同じ欄が2つの名前だった）
+                JPField(L("題", "Title")) {
+                    JPTextField(L("例: 高屋神社の雲海", "e.g. Sea of clouds at Takaya"),
                               text: $item.title)
                         // UI テストが名指しで打つ（`CriticalFlowTests`・2026-10-22）
                         .accessibilityIdentifier("upload.title")
@@ -1224,8 +1229,8 @@ struct UploadView: View {
                         }
                 }
                 count(item.title, limit: PostLimits.title)
-                JPField(L("説明文", "Description"), multiline: true) {
-                    TextField(L("どんな写真ですか", "What is this photo about?"),
+                JPField(L("説明", "Description"), multiline: true) {
+                    JPTextField(L("どんな写真ですか", "What is this photo about?"),
                               text: $item.caption, axis: .vertical)
                         .lineLimit(3...8)
                         .onChange(of: item.caption) { old, value in

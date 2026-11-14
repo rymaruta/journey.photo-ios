@@ -84,10 +84,15 @@ struct SearchSpotIndexSection: View {
     static var failedTitle: String { L("観光スポットを読み込めませんでした", "Couldn't load photo spots") }
     static var failedMessage: String { L("写真と撮影地はそのまま探せます", "You can still search photos and places") }
 
+    /// 段の眉ラベル
+    static let eyebrow = "SPOTS"
+
     var body: some View {
         let selected = SpotPrefectureIndex.selected(region, in: groups)
         VStack(alignment: .leading, spacing: JPSpace.s) {
-            JPSectionHeading(eyebrow: "PHOTO SPOTS", spoken: L("観光スポット", "Photo spots"),
+            // 眉は「SPOTS」（2026-11-14 判断・前回の点検の残り。呼び名を「観光スポット」に替えた後も英語の眉が
+            // 前の呼び名「PHOTO SPOTS」のままだった。短く、どちらの呼び名とも合う）
+            JPSectionHeading(eyebrow: Self.eyebrow, spoken: L("観光スポット", "Photo spots"),
                              title: L("観光スポット", "Photo spots")) {
                 if load == .ready, !groups.isEmpty {
                     NavigationLink {

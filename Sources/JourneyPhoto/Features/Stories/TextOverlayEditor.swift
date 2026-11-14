@@ -957,7 +957,7 @@ struct VotePanel: View {
     }
 
     private func field(_ placeholder: String, _ which: Field, text: Binding<String>) -> some View {
-        TextField(placeholder, text: text)
+        JPTextField(placeholder, text: text)
             .focused($focused, equals: which)
             .font(.system(size: 15))
             .foregroundStyle(.white)

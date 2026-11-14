@@ -47,13 +47,12 @@ struct HighlightsRow: View {
     }
 
     private var header: some View {
-        HStack {
-            // 板 v2 MyPage: 13px・semibold・text-2 の見出し
-            Text(L("ストーリーハイライト", "Story highlights"))
-                .font(JPFont.footnote.weight(.semibold))
-                .foregroundStyle(WebTheme.text2)
-                .accessibilityAddTraits(.isHeader)
-            Spacer()
+        HStack(spacing: JPSpace.s) {
+            // 2026-11-14 判断（前回の点検の残り・板 デザインシステム 06「段の見出しは眉ラベル（真鍮、黒地の上）と
+            // 消える線＋右に『すべて見る ›』」）: すぐ上の「旅の記録」と同じ眉ラベルにそろえる。
+            // 前は 13pt semibold の text-2（板 v2 MyPage）で、隣の段と見出しの形が割れていた
+            JPEyebrowLine(L("ストーリーハイライト", "STORY HIGHLIGHTS"),
+                          spoken: L("ストーリーハイライト", "Story highlights"))
             // **すべて見るは、2つ以上あるときだけ。** 1つしかない画面で
             // 「すべて見る」を押すと同じものがもう一度出るだけになる
             if highlights.count > 1 {

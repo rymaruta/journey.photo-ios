@@ -19,7 +19,7 @@ struct TagField: View {
                     chip(tag)
                 }
             }
-            TextField(L("タグ（カンマ区切り。打つと候補が絞れます）",
+            JPTextField(L("タグ（カンマ区切り。打つと候補が絞れます）",
                         "Tags (comma separated; typing filters the chips)"), text: $tagsText)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()

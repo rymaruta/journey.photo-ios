@@ -365,7 +365,7 @@ struct PhotoMapView: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(WebTheme.text3)
-            TextField(L("撮影地、観光スポット名で絞る", "Filter by place or photo spot"),
+            JPTextField(L("撮影地、観光スポット名で絞る", "Filter by place or photo spot"),
                       text: $model.typedQuery)
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier("map.search")

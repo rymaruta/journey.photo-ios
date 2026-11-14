@@ -98,7 +98,7 @@ struct DeleteAccountView: View {
             Section {
                 // 板は欄の上に見出し、欄の中は語そのものの下書き
                 JPField(L("確認のため「\(Self.confirmWord)」と入力", "Type “\(Self.confirmWord)” to confirm")) {
-                    TextField(Self.confirmWord, text: $typed)
+                    JPTextField(Self.confirmWord, text: $typed)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }

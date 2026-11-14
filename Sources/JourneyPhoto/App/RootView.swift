@@ -155,7 +155,9 @@ struct RootView: View {
             switch self {
             case .home: return .home
             case .map: return .map
-            case .search, .post, .mypage: return nil
+            // もう一度押すと頭へ戻して探す口に字を打てるようにする（2026-11-14 判断・`TabRouter.searchFocusRequests`）
+            case .search: return .search
+            case .post, .mypage: return nil
             }
         }
     }

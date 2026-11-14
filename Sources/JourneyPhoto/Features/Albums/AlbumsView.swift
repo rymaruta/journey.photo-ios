@@ -205,7 +205,7 @@ struct AlbumsView: View {
                     .font(JPFont.body.weight(.semibold))
                     .foregroundStyle(WebTheme.foreground)
                 HStack(spacing: JPSpace.xs) {
-                    TextField(L("リンクか招待コード", "Link or invite code"), text: $inviteText)
+                    JPTextField(L("リンクか招待コード", "Link or invite code"), text: $inviteText)
                         .font(.callout)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()

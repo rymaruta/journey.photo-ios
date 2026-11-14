@@ -234,7 +234,7 @@ struct PassCardPickView: View {
             HStack {
                 // 打っている途中では切らない（かな漢字の変換中に字数で切ると、変換が壊れる）。
                 // 超えたら数を危険の色にして、主ボタンを押せなくする
-                TextField(L("例：霧の朝が好きです", "e.g. I love misty mornings"), text: $note)
+                JPTextField(L("例：霧の朝が好きです", "e.g. I love misty mornings"), text: $note)
                 Text("\(note.count)/\(PassExchange.noteLimit)")
                     .font(JPFont.meta)
                     .foregroundStyle(PassExchange.noteProblem(note) == nil ? WebTheme.text3 : WebTheme.danger)
@@ -317,7 +317,7 @@ struct PassCardPickView: View {
             JPField(title) {
                 HStack {
                     // 打っている途中では切らない（ひとことと同じ）。超えたら数を危険の色にして訳を出す
-                    TextField(placeholder, text: text)
+                    JPTextField(placeholder, text: text)
                         .accessibilityIdentifier(id)
                     Text("\(text.wrappedValue.count)/\(PassExchange.labelLimit)")
                         .font(JPFont.meta)

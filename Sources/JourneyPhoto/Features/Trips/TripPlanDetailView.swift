@@ -753,11 +753,11 @@ struct TripPlanDetailView: View {
                 header(plan)
 
                 // 送れていない直し（圏外・断られた・別の端末の変更）。日付の下・日程の上に残す。
-                // UI テストの見本のときだけ、その下に自動保存が送った回数（`TripPlanFixture`・Debug のみ）
+                // UI テストの見本のときだけ、自動保存が送った回数を**見えない要素**に重ねる（`TripPlanFixture`・Debug のみ）
                 VStack(alignment: .leading, spacing: JPSpace.xs) {
                     autosaveBanner
-                    fixtureSendsLabel
                 }
+                .overlay(alignment: .topLeading) { fixtureSendsLabel }
 
                 // 電波なしで使えるようにする（板 72・日付の下）。比べるのはサーバーの姿のプラン
                 OfflineTripCard(plan: plan, index: index, places: places, sourcesReady: gotIndex && gotPhotos)
@@ -1669,25 +1669,28 @@ struct TripPlanDetailView: View {
 private struct TripPlanFixtureSendsLabel: View {
     @ObservedObject private var counter = TripPlanFixtureCounter.shared
 
+    /// 2026-11-14 判断（前回の点検の残り）: **画面には出さず、見えない要素の値にだけ出す**（CLAUDE.md「値を出す仕組みは
+    /// UI テストのときだけ見えない要素に」）。前は日程の上に「送った回数 0 / lift=0 target=0 …」が字で見え、
+    /// 画面写真を板と比べるときに見た目が違った。UI テストは値（`accessibilityValue`）だけを読む
     var body: some View {
-        Text(L("送った回数 \(counter.sends)", "Sent \(counter.sends)"))
-            .font(JPFont.caption.monospacedDigit())
-            .foregroundStyle(WebTheme.text3)
-            .accessibilityIdentifier("tripPlan.fixtureSends")
-            .accessibilityValue("\(counter.sends)")
-        // 運ぶ操作の数（UI テストが値で読む）
-        Text(counter.dragLine)
-            .font(JPFont.caption.monospacedDigit())
-            .foregroundStyle(WebTheme.text3)
-            .accessibilityIdentifier("tripPlan.fixtureDrag")
-            .accessibilityValue(counter.dragLine)
-        // 運ぶ操作の出来事の並び（UI テストが値で読む。見本のときだけ 1 行で出す）
-        Text(counter.trail.last ?? "-")
-            .font(JPFont.caption.monospacedDigit())
-            .foregroundStyle(WebTheme.text3)
-            .lineLimit(1)
-            .accessibilityIdentifier("tripPlan.fixtureDragTrail")
-            .accessibilityValue(counter.trailLine)
+        ZStack(alignment: .topLeading) {
+            Self.probe(id: "tripPlan.fixtureSends", value: "\(counter.sends)")
+            // 運ぶ操作の数（UI テストが値で読む）
+            Self.probe(id: "tripPlan.fixtureDrag", value: counter.dragLine)
+            // 運ぶ操作の出来事の並び（UI テストが値で読む）
+            Self.probe(id: "tripPlan.fixtureDragTrail", value: counter.trailLine)
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// 見えない値の要素（字は透明・1pt）
+    static func probe(id: String, value: String) -> some View {
+        Text(".")
+            .font(JPFont.caption)
+            .foregroundStyle(Color.clear)
+            .frame(width: 1, height: 1)
+            .accessibilityIdentifier(id)
+            .accessibilityValue(value)
     }
 }
 #endif

@@ -190,7 +190,7 @@ struct DMTripDraftStep: View {
                         .foregroundStyle(WebTheme.accent)
                         .lineLimit(1)
                     // 題（行き先から案を出す・直せる。作る流れの下書きの段と同じ）
-                    TextField(model.suggestedTitle, text: $model.title)
+                    JPTextField(model.suggestedTitle, text: $model.title)
                         .font(JPFont.screenTitle)
                         .foregroundStyle(WebTheme.foreground)
                         .submitLabel(.done)
@@ -277,7 +277,7 @@ struct DMTripCandidatesSheet: View {
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)
                         .fixedSize(horizontal: false, vertical: true)
-                    TextField(L("観光スポットの名前", "Photo spot name"), text: $query)
+                    JPTextField(L("観光スポットの名前", "Photo spot name"), text: $query)
                         .font(JPFont.body)
                         .submitLabel(.search)
                         .jpFieldBox()

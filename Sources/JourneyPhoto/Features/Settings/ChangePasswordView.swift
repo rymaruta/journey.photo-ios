@@ -32,13 +32,13 @@ struct ChangePasswordView: View {
             // 板 44: 欄の上に小さい見出し
             Section {
                 JPField(L("いまのパスワード", "Current password")) {
-                    SecureField("", text: $current)
+                    JPSecureField("", text: $current)
                         .textContentType(.password)
                         .focused($focused, equals: .current)
                 }
                 .overlay(alignment: .bottom) { focusRing(focused == .current) }
                 JPField(L("新しいパスワード", "New password")) {
-                    SecureField("", text: $updated)
+                    JPSecureField("", text: $updated)
                         .textContentType(.newPassword)
                         .focused($focused, equals: .updated)
                 }

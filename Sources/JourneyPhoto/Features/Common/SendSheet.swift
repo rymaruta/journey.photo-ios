@@ -37,12 +37,23 @@ struct SendSheet<People: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text(title)
-                .font(JPFont.headline)
-                .foregroundStyle(WebTheme.text)
-                .frame(maxWidth: .infinity, minHeight: 48)
-                .padding(.top, 10)
-                .accessibilityAddTraits(.isHeader)
+            // 2026-11-14 判断（点検「画面と手ざわり」・好みで決める→推奨どおり）: **見出しの左にシートの「閉じる」。**
+            // 前は下へ払うか外を押すしか閉じ方が無く、同じ短いシートの「投稿する」の選択（左上の閉じる）とそろって
+            // いなかった。2026-09-25 に owner が踏んだ「払えることに気づかないと閉じられない」と同じ形を残さない
+            ZStack {
+                Text(title)
+                    .font(JPFont.headline)
+                    .foregroundStyle(WebTheme.text)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityAddTraits(.isHeader)
+                HStack {
+                    SheetCloseButton(onContent: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, JPSpace.m)
+            }
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .padding(.top, 10)
             if hasPeople {
                 people()
                     .padding(.top, JPSpace.xs)
