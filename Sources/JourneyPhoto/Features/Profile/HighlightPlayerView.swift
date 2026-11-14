@@ -108,7 +108,9 @@ struct HighlightPlayerView: View {
             Image(systemName: "xmark")
                 .font(.title3)
                 .foregroundStyle(.white)
-                .webTappable()
+                .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                // 角の物は当たりを角の側へ 60pt 四方まで広げる（見た目はそのまま・`CornerTapArea`・2026-11-14）
+                .cornerTapArea(.topTrailing)
                 .accessibilityLabel(Labels.Common.close)
         }
         // 閲覧画面の見出しの行と同じ高さ（上 5 ＋ 進み線 2.5 ＋ 間 9）・右 4

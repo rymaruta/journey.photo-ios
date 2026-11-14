@@ -4012,6 +4012,19 @@ final class ScreenshotTests: XCTestCase {
             if extra.first == "-JPTripPlanFixtureOffline" {
                 XCTAssertEqual(fixtureSends(app, "offline"), "0", "圏外なのに送っている")
             }
+            // 2026-11-14（追加の点検 2）: 送れていない間の自前の戻るも、標準と同じ丸い矢印（題を添えない・読み上げは「戻る」）。
+            // 前は「‹ 旅行プラン」（幅 120pt ほど）に替わっていた
+            let back = app.buttons["unsavedLeave.back"].firstMatch
+            XCTAssertTrue(back.waitForExistence(timeout: 5), "\(name): 送れていない間の戻るが無い")
+            if back.exists {
+                let line = "measured unsavedLeaveBack name=\(name) frame=\(back.frame) label=\(back.label)"
+                print(line)
+                XCTContext.runActivity(named: line) { _ in }
+                XCTAssertEqual(back.label, "戻る", "\(name): 戻るの読み上げが「戻る」でない")
+                XCTAssertLessThanOrEqual(back.frame.width, 60, "\(name): 戻るに題が付いている（標準の丸い矢印と形が違う・\(back.frame)）")
+                XCTAssertFalse(app.buttons["旅行プラン"].exists && app.navigationBars.buttons["旅行プラン"].exists,
+                               "\(name): 上のバーに「旅行プラン」の戻るが出ている")
+            }
             shoot(app, name)
         }
     }
@@ -9815,11 +9828,17 @@ final class ScreenshotTests: XCTestCase {
             let probeValue = safeProbe.value as? String ?? ""
             let safeTop = probeValue.split(separator: " ").first
                 .flatMap { $0.hasPrefix("top=") ? Double($0.dropFirst(4)) : nil } ?? -1
-            print("measured developTopBar \(probeValue) counterMinY=\(counter.frame.minY) closeMinY=\(topClose.frame.minY)")
+            // 2026-11-14: × の読み上げの枠は当たりの形（角の側へ広げた `CornerTapArea`）の大きさになる（run 1278 で
+            // (-4, 50, 60, 60)）。比べる物を**見た目の枠の上端**（`develop.close.visual`）に替えた。当たりの上端も記録する
+            let visualProbe = app.descendants(matching: .any).matching(identifier: "develop.close.visual").firstMatch
+            let visualValue = visualProbe.exists ? (visualProbe.value as? String ?? "") : ""
+            let visualTop = visualValue.hasPrefix("minY=") ? Double(visualValue.dropFirst(5)) ?? -1 : -1
+            print("measured developTopBar \(probeValue) counterMinY=\(counter.frame.minY) closeHitMinY=\(topClose.frame.minY) closeVisual=\(visualValue) closeValue=\(topClose.value as? String ?? "")")
             // 状態バーの無い機種は無いので、上端は 0 より下（0 なら測り方が違う）
             XCTAssertGreaterThan(safeTop, 0, "安全な範囲の上端が取れない: \(probeValue)")
             XCTAssertGreaterThanOrEqual(Double(counter.frame.minY), safeTop - 0.5, "現像の上の札が状態バーに重なる")
-            XCTAssertGreaterThanOrEqual(Double(topClose.frame.minY), safeTop - 0.5, "現像の × が状態バーに重なる")
+            XCTAssertGreaterThan(visualTop, 0, "× の見た目の上端が取れない: \(visualValue)")
+            XCTAssertGreaterThanOrEqual(visualTop, safeTop - 0.5, "現像の × が状態バーに重なる")
         }
         // 右へ払う（載せる）。払いの判定は 110pt 以上
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.4))
@@ -10346,5 +10365,479 @@ final class ScreenshotTests: XCTestCase {
         log("4b-隣の頁で下へ引く: 閉じた=\(gone)・写真の詳細=\(menu.exists)")
         guard expect(gone, "頁を替えた後に写真を下へ引いて大きく見る画面が閉じる", app) else { return }
         XCTAssertTrue(hero.waitForExistence(timeout: 5) && menu.exists, "大きく見る画面を閉じた先が写真の詳細でない")
+    }
+
+    // MARK: - 人間工学の点検「追加の点検」（2026-11-14・角の当たり・大きい文字）
+
+    /// アクセシビリティのいちばん大きい文字（AX5）で起動する鍵
+    private static let largestText = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+
+    /// 角の物の当たりを**指で押して測る**（`CornerTapArea`・追加の点検 5）。当たりは形（`contentShape`）だけ広げるので
+    /// 読み上げの枠（`frame`）は見た目のまま。見た目の枠の外の点を押し、閉じたか（`isOpen` が偽になったか）を記録する。
+    /// 点は「角の側へ `reach` pt の四方の、角に近い隅」（左上なら見た目の右下の角から左へ・上へ `reach`）。
+    /// 画面の端より外は端の 0.5pt 内側にする（端まで届けば角まで押せる）。閉じたら `reopen` で開き直す。
+    /// 行は `measured cornerHit …` で出す（成果物の記録と `xcodebuild` のログで読む）
+    private func probeCornerHit(_ app: XCUIApplication, name: String, element: () -> XCUIElement,
+                                corner: String, reaches: [CGFloat], isOpen: @escaping () -> Bool,
+                                afterMiss: () -> Void = {}, reopen: () -> Bool) -> [CGFloat: Bool] {
+        var results: [CGFloat: Bool] = [:]
+        let window = app.windows.firstMatch.frame
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        for reach in reaches {
+            guard isOpen() || reopen() else {
+                XCTContext.runActivity(named: "measured cornerHit name=\(name) reach=\(reach) 開き直せない") { _ in }
+                break
+            }
+            let target = element()
+            guard target.waitForExistence(timeout: 5) else { break }
+            let f = target.frame
+            let x = corner == "topLeading" ? max(f.maxX - reach, window.minX + 0.5) : min(f.minX + reach, window.maxX - 0.5)
+            let y = max(f.maxY - reach, window.minY + 0.5)
+            origin.withOffset(CGVector(dx: x, dy: y)).tap()
+            let closed = XCTWaiter().wait(for: [expectation(for: NSPredicate { _, _ in !isOpen() }, evaluatedWith: NSObject())],
+                                          timeout: 2.5) == .completed
+            results[reach] = closed
+            let line = "measured cornerHit name=\(name) frame=\(f) reach=\(reach) point=(\(x), \(y)) closed=\(closed)"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+            if !closed { afterMiss() }
+        }
+        return results
+    }
+
+    /// **写真の詳細の戻る（標準）と、写真を大きく見るの ×**（追加の点検 5）。
+    /// × は見た目 44pt のまま当たりを角の側へ 60pt 四方まで広げた（`CornerTapArea`）——見た目の右下から 59.5pt 離れた
+    /// 左上の点（見た目の 15.5pt 外）を押して閉じなければ落とす。詳細の戻るは標準の部品（UIKit が当たりを決める）なので測るだけ
+    func testCornerTapAreaViewerAndDetailBack() {
+        let app = launchTrunk(["-JPPreviewViewerProbe", "YES", "-JPPreviewLayoutProbe", "YES"])
+        defer { app.terminate() }
+        let photo = app.buttons["feed.photo"].firstMatch
+        var pushes = 0
+        while !(photo.waitForExistence(timeout: 2) && photo.isHittable), pushes < 8 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)))
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard expect(photo.exists && photo.isHittable, "ホームの写真", app) else { return }
+        let hero = app.buttons["detail.hero"].firstMatch
+        let viewerClose = app.buttons["viewer.close"].firstMatch
+        let probe = app.descendants(matching: .any)["viewer.chrome.probe"].firstMatch
+        func openDetail() -> Bool {
+            let photo = app.buttons["feed.photo"].firstMatch
+            guard photo.waitForExistence(timeout: 5), photo.isHittable else { return false }
+            photo.tap()
+            return hero.waitForExistence(timeout: 10)
+        }
+        guard expect(openDetail(), "写真の詳細", app) else { return }
+        Thread.sleep(forTimeInterval: 1)
+
+        // 1. 写真の詳細の戻る（標準の部品・測るだけ）
+        let back = app.navigationBars.buttons["BackButton"].firstMatch
+        if back.waitForExistence(timeout: 5) {
+            XCTContext.runActivity(named: "measured cornerHit name=detail.back frame=\(back.frame) window=\(app.windows.firstMatch.frame)") { _ in }
+            _ = probeCornerHit(app, name: "detail.back", element: { app.navigationBars.buttons["BackButton"].firstMatch },
+                               corner: "topLeading", reaches: [44, 52, 59.5],
+                               isOpen: { hero.exists },
+                               afterMiss: {
+                                   // 外れて写真を押した（大きく見るが開いた）なら閉じる
+                                   if viewerClose.waitForExistence(timeout: 1.5) { viewerClose.tap(); Thread.sleep(forTimeInterval: 1) }
+                               },
+                               reopen: openDetail)
+        } else {
+            XCTContext.runActivity(named: "measured cornerHit name=detail.back 標準の戻るが無い") { _ in }
+        }
+
+        // 2. 写真を大きく見るの ×（角の側へ 60pt 四方・上は安全な範囲の中まで）
+        guard expect(hero.exists || openDetail(), "写真の詳細（2回目）", app) else { return }
+        func openViewer() -> Bool {
+            guard hero.waitForExistence(timeout: 5) || openDetail() else { return false }
+            guard hero.isHittable else { return false }
+            hero.tap()
+            return viewerClose.waitForExistence(timeout: 10)
+        }
+        guard expect(openViewer(), "写真を大きく見る画面", app) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        let results = probeCornerPoints(app, name: "viewer.close", element: { viewerClose },
+                                        isOpen: { viewerClose.exists && !hero.isHittable },
+                                        afterMiss: {
+                                            // 外れて写真を1回押した（上下の情報が隠れた）なら、もう1回押して出す
+                                            if probe.exists, (probe.value as? String) == "hidden" {
+                                                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
+                                                Thread.sleep(forTimeInterval: 0.6)
+                                            }
+                                        },
+                                        state: { "closeExists=\(viewerClose.exists) closeHittable=\(viewerClose.exists && viewerClose.isHittable) heroHittable=\(hero.exists && hero.isHittable) chrome=\(probe.exists ? (probe.value as? String ?? "") : "none")" },
+                                        reopen: openViewer)
+        XCTAssertEqual(results["left"], true, "写真を大きく見るの × の当たりが左へ広がっていない（見た目の 14pt 外・安全な範囲の中で閉じない）")
+    }
+
+    /// 角の当たりを、**見た目の枠を基準にした点**で押して測る（`CornerTapArea`・追加の点検 5・2026-11-14 測り直し）。
+    ///
+    /// run 1278 で、読み上げの枠（`frame`）は見た目ではなく当たりの形の大きさになると分かった。見た目は当たりの右下（左上の物）の
+    /// 44pt 四方として決める（× は見た目 44）。安全な範囲の上端と、上へ広げた幅は × の値（`safeTop=… maxUp=…`・
+    /// `-JPPreviewLayoutProbe YES` のときだけ）から読む。押す点:
+    /// - `left`: 見た目の左 14pt 外・見た目の縦の真ん中（安全な範囲の中）。画面の端より外なら端の 2pt 内側
+    /// - `up`: 見た目の上 `min(maxUp, 14)` pt 外・横の真ん中（上へ広げた幅が 4pt 以上のときだけ）
+    /// - `band`: 状態バーの帯の中（安全な範囲の上端の 6pt 上）・横の真ん中
+    /// 行は `measured cornerPoint …`
+    private func probeCornerPoints(_ app: XCUIApplication, name: String, element: () -> XCUIElement,
+                                   isOpen: @escaping () -> Bool, afterMiss: () -> Void = {},
+                                   state: () -> String = { "" },
+                                   reopen: () -> Bool) -> [String: Bool] {
+        var results: [String: Bool] = [:]
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let target = element()
+        guard target.waitForExistence(timeout: 5) else { return results }
+        let hit = target.frame
+        let value = target.value as? String ?? ""
+        func number(_ key: String) -> Double? {
+            value.split(separator: " ").first { $0.hasPrefix("\(key)=") }.flatMap { Double($0.dropFirst(key.count + 1)) }
+        }
+        let safeTop = CGFloat(number("safeTop") ?? -1)
+        let maxUp = CGFloat(number("maxUp") ?? 0)
+        let visual = CGRect(x: hit.maxX - 44, y: hit.maxY - 44, width: 44, height: 44)
+        let head = "measured cornerPoint name=\(name) hit=\(hit) visual=\(visual) value=\(value)"
+        print(head)
+        XCTContext.runActivity(named: head) { _ in }
+        var points: [(String, CGPoint)] = [("left", CGPoint(x: max(visual.minX - 14, 2), y: visual.midY))]
+        if maxUp >= 4 { points.append(("up", CGPoint(x: visual.midX, y: visual.minY - min(maxUp, 14) + 1))) }
+        if safeTop > 8 { points.append(("band", CGPoint(x: visual.midX, y: safeTop - 6))) }
+        for (label, point) in points {
+            guard isOpen() || reopen() else {
+                XCTContext.runActivity(named: "measured cornerPoint name=\(name) point=\(label) 開き直せない") { _ in }
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.6)
+            origin.withOffset(CGVector(dx: point.x, dy: point.y)).tap()
+            let closed = XCTWaiter().wait(for: [expectation(for: NSPredicate { _, _ in !isOpen() }, evaluatedWith: NSObject())],
+                                          timeout: 2.5) == .completed
+            results[label] = closed
+            let line = "measured cornerPoint name=\(name) point=\(label) at=(\(point.x), \(point.y)) closed=\(closed) state=\(state())"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+            if !closed { afterMiss() }
+        }
+        return results
+    }
+
+    /// **現像の ×**（左上・追加の点検 5）。見た目 44pt のまま、当たりを角の側へ 60pt 四方まで広げた（上は安全な範囲の中まで）。
+    /// 見本の旅で必ず出るので、出なければ落とす
+    func testCornerTapAreaDevelopClose() {
+        let app = launchTrunk(["-JPPreviewDevelop", "YES", "-JPPreviewLayoutProbe", "YES"] + Self.freshDevelop)
+        defer { app.terminate() }
+        let card = app.buttons["home.develop"].firstMatch
+        let keep = app.buttons["develop.keep"].firstMatch
+        let close = app.buttons["develop.close"].firstMatch
+        func openDevelop() -> Bool {
+            guard card.waitForExistence(timeout: 25), card.isHittable else { return false }
+            card.tap()
+            return keep.waitForExistence(timeout: 10)
+        }
+        guard expect(openDevelop(), "現像の払う画面", app) else { return }
+        Thread.sleep(forTimeInterval: 1.5)
+        guard expect(close.exists, "現像の ×", app) else { return }
+        let results = probeCornerPoints(app, name: "develop.close", element: { close },
+                                        isOpen: { keep.exists }, reopen: openDevelop)
+        XCTAssertEqual(results["left"], true, "現像の × の当たりが左へ広がっていない（見た目の 14pt 外・安全な範囲の中で閉じない）")
+        // 当たりの上端は安全な範囲の中（状態バーの帯へ広げない）
+        let safe = (close.value as? String ?? "").split(separator: " ").first { $0.hasPrefix("safeTop=") }
+            .flatMap { Double($0.dropFirst(8)) } ?? -1
+        if close.exists, safe > 0 {
+            XCTAssertGreaterThanOrEqual(Double(close.frame.minY), safe - 0.5, "現像の × の当たりが状態バーの帯へ広がっている（\(close.frame)）")
+        }
+    }
+
+    /// **状態バーの帯で触れが取れるか**（事実取りだけ・合否なし・2026-11-14）。`-JPPreviewCornerNoClamp YES` で当たりを上へ止めずに
+    /// 60pt 四方まで広げ、写真を大きく見るの × の、帯の中の点（`band`）と帯の外の点（`up`・`left`）を押して記録する。
+    /// 帯の中だけ閉じなければ「帯が触れを取る」と言える（`CornerTapArea` の注記に書く数）
+    func testCornerTapAreaStatusBand() {
+        let app = launchTrunk(["-JPPreviewViewerProbe", "YES", "-JPPreviewLayoutProbe", "YES", "-JPPreviewCornerNoClamp", "YES"])
+        defer { app.terminate() }
+        let hero = app.buttons["detail.hero"].firstMatch
+        let viewerClose = app.buttons["viewer.close"].firstMatch
+        func openViewer() -> Bool {
+            if !hero.exists {
+                let photo = app.buttons["feed.photo"].firstMatch
+                var pushes = 0
+                while !(photo.waitForExistence(timeout: 2) && photo.isHittable), pushes < 8 {
+                    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                        .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)))
+                    Thread.sleep(forTimeInterval: 1)
+                    pushes += 1
+                }
+                guard photo.exists, photo.isHittable else { return false }
+                photo.tap()
+                guard hero.waitForExistence(timeout: 10) else { return false }
+            }
+            guard hero.isHittable else { return false }
+            hero.tap()
+            return viewerClose.waitForExistence(timeout: 10)
+        }
+        guard openViewer() else { return }
+        Thread.sleep(forTimeInterval: 1)
+        let probe = app.descendants(matching: .any)["viewer.chrome.probe"].firstMatch
+        _ = probeCornerPoints(app, name: "viewer.close.noClamp", element: { viewerClose },
+                              isOpen: { viewerClose.exists && !hero.isHittable },
+                              afterMiss: {
+                                  if probe.exists, (probe.value as? String) == "hidden" {
+                                      app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
+                                      Thread.sleep(forTimeInterval: 0.6)
+                                  }
+                              },
+                              state: { "closeExists=\(viewerClose.exists) closeHittable=\(viewerClose.exists && viewerClose.isHittable) heroHittable=\(hero.exists && hero.isHittable) chrome=\(probe.exists ? (probe.value as? String ?? "") : "none")" },
+                              reopen: openViewer)
+    }
+
+    /// **大きいシートの「閉じる」（上のバーの中・`SheetCloseButton`）**（追加の点検 5）。バーの中は UIKit が当たりを決めるので、
+    /// 見た目の外をどこまで押せるかを**測るだけ**（メッセージの受信箱のシート）
+    func testCornerTapAreaSheetClose() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewDM", "YES"]
+        app.launch()
+        defer { app.terminate() }
+        agreeToTerms(app)
+        let bubble = app.buttons["header.messages"].firstMatch
+        let inbox = app.descendants(matching: .any)["dm.inbox"].firstMatch
+        func openInbox() -> Bool {
+            guard bubble.waitForExistence(timeout: 20), bubble.isHittable else { return false }
+            bubble.tap()
+            return inbox.waitForExistence(timeout: 15)
+        }
+        guard openInbox() else { return }
+        Thread.sleep(forTimeInterval: 1.5)
+        let close = app.navigationBars.buttons["閉じる"].firstMatch
+        guard close.waitForExistence(timeout: 5) else {
+            XCTContext.runActivity(named: "measured cornerHit name=sheet.close バーの閉じるが無い") { _ in }
+            return
+        }
+        XCTContext.runActivity(named: "measured cornerHit name=sheet.close frame=\(close.frame) bar=\(app.navigationBars.firstMatch.frame)") { _ in }
+        _ = probeCornerHit(app, name: "sheet.close", element: { app.navigationBars.buttons["閉じる"].firstMatch },
+                           corner: "topLeading", reaches: [44, 52, 59.5, 70],
+                           isOpen: { inbox.exists }, reopen: openInbox)
+    }
+
+    /// **すれちがいの束の上限を測る**（`PassViewerTypeLimit`・追加の点検 4）。文字は AX5 にして、上限を差し替えて
+    /// （`-JPPreviewPassTypeLimit`）開き、× と下のボタンが画面の中で押せるかを段ごとに記録する。**合否は付けない**（測るだけ・
+    /// 決めた上限は `testCapturesPassViewerLargestText` が確かめる）。名指しした回だけ流す
+    func testMeasuresPassViewerTypeLimits() {
+        for limit in ["xxxl", "ax1", "ax2", "ax3", "ax4", "ax5"] {
+            let app = XCUIApplication()
+            app.launchArguments += ["-legal.consent.version", "0"]
+            app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+            app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+            app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+            app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+            app.launchArguments += ["-JPPreviewPass", "YES", "-JPPreviewPassTypeLimit", limit]
+            app.launchArguments += Self.largestText
+            app.launch()
+            agreeToTerms(app)
+            let open = app.buttons["pass.home.open"].firstMatch
+            guard open.waitForExistence(timeout: 45) else { app.terminate(); continue }
+            scrollTo(open, in: app)
+            guard open.isHittable else { app.terminate(); continue }
+            open.tap()
+            let card = app.descendants(matching: .any)["pass.viewer.card"].firstMatch
+            guard card.waitForExistence(timeout: 10) else { app.terminate(); continue }
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "81z-大きい文字 AX5（すれちがいの束・上限 \(limit)）")
+            let window = app.windows.firstMatch.frame
+            var parts = ["window=\(window)", "card=\(card.frame)"]
+            for id in ["pass.viewer.close", "pass.viewer.thanks", "pass.viewer.file"] {
+                let b = app.buttons[id].firstMatch
+                parts.append("\(id)=\(b.exists ? "\(b.frame) inWindow=\(window.contains(b.frame)) hittable=\(b.isHittable)" : "none")")
+            }
+            let line = "measured passTypeLimit limit=\(limit) " + parts.joined(separator: " ")
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+            app.terminate()
+        }
+    }
+
+    /// **写真の編集（AX5）**（追加の点検 4）。画面まるごとの上限を外し、上のバー・下のタブ・横の帯・写真の上の字だけに残した
+    /// （`PhotoEditView.typeLimit`）。いちばん大きい文字でも、キャンセル・完了・タブが画面の中で押せて、写真の欄が潰れないか。
+    /// 見本の1枚を選んだ投稿画面から開く。出なければ撮らずに抜ける
+    func testCapturesPhotoEditLargestText() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewUploadSample", "YES"]
+        app.launchArguments += Self.largestText
+        app.launch()
+        defer { app.terminate() }
+        agreeToTerms(app)
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
+        tabBar.buttons.element(boundBy: 2).tap()
+        let toPhoto = app.buttons["post.choice.photo"].firstMatch
+        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
+        toPhoto.tap()
+        let editButton = app.buttons["upload.editButton"].firstMatch
+        guard editButton.waitForExistence(timeout: 20) else { return }
+        scrollTo(editButton, in: app)
+        guard editButton.isHittable else { return }
+        let before = "frame=\(editButton.frame) enabled=\(editButton.isEnabled) hittable=\(editButton.isHittable)"
+        editButton.tap()
+        let done = app.buttons["photoEdit.done"].firstMatch
+        guard done.waitForExistence(timeout: 10) else {
+            // run 1289 で開かなかった（run 1278 では開いた）。何が出ていたかを残す（推定で直さない）
+            shoot(app, "45w-大きい文字 AX5（写真を編集を押した後・開かなかった）")
+            let after = editButton.exists ? "frame=\(editButton.frame) enabled=\(editButton.isEnabled)" : "none"
+            let line = "measured photoEditOpenMiss before=\(before) after=\(after) sheets=\(app.sheets.count) alerts=\(app.alerts.count)"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+            return XCTFail("写真を編集を押しても編集の画面が開かない（\(before)）")
+        }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "45x-大きい文字 AX5（写真の編集・フィルム）")
+        let window = app.windows.firstMatch.frame
+        let photo = app.descendants(matching: .any)["photoEdit.photo"].firstMatch
+        var parts = ["window=\(window)", "photo=\(photo.exists ? "\(photo.frame)" : "none")"]
+        for id in ["photoEdit.cancel", "photoEdit.done", "photoEdit.original"] {
+            // 「元の写真」はボタンではない（押さえる間だけの操作・`DragGesture`）ので、種類を問わず探す（run 1278）
+            let b = app.descendants(matching: .any).matching(identifier: id).firstMatch
+            parts.append("\(id)=\(b.exists ? "\(b.frame) hittable=\(b.isHittable)" : "none")")
+            XCTAssertTrue(b.exists && b.isHittable && window.contains(b.frame), "AX5 の写真の編集で \(id) が画面の中で押せない（\(b.frame)）")
+        }
+        let line = "measured photoEditAX5 " + parts.joined(separator: " ")
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        // 写真が主役のまま（欄が潰れない）。道具の段が伸びても、写真の欄は画面の高さの 3 分の 1 以上
+        XCTAssertTrue(photo.exists && photo.frame.height >= window.height / 3, "AX5 で写真の欄が潰れた（\(photo.frame)）")
+        // 調整のタブ（強さ・値・0に戻すの上限を外した段）
+        let adjust = app.buttons["調整"].firstMatch
+        if adjust.exists, adjust.isHittable {
+            adjust.tap()
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "45y-大きい文字 AX5（写真の編集・調整）")
+            let reset = app.buttons.matching(NSPredicate(format: "label ENDSWITH %@", "を0に戻す")).firstMatch
+            XCTAssertTrue(reset.exists && window.contains(reset.frame), "AX5 の調整で「0に戻す」が画面の外（\(reset.frame)）")
+        }
+    }
+
+    /// **写真の詳細の撮影情報の升（AX5）**（追加の点検 4）。上限（xxxLarge）を外し、アクセシビリティの大きさでは2列ずつに
+    /// 積む（`PhotoMetaLine.settingsRows`）。升が2列以下で、どれも画面の幅に入っているか。撮影情報の無い写真なら撮らずに抜ける
+    func testCapturesDetailExifLargestText() {
+        let app = launchTrunk(Self.largestText)
+        defer { app.terminate() }
+        let photo = app.buttons["feed.photo"].firstMatch
+        var pushes = 0
+        while !(photo.waitForExistence(timeout: 2) && photo.isHittable), pushes < 8 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)))
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard photo.exists, photo.isHittable else { return }
+        photo.tap()
+        let toggle = app.buttons["detail.exif.toggle"].firstMatch
+        var downs = 0
+        while !(toggle.exists && toggle.isHittable), downs < 10 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 0.8)
+            downs += 1
+        }
+        guard toggle.exists, toggle.isHittable else { return }
+        toggle.tap()
+        Thread.sleep(forTimeInterval: 1)
+        let cells = app.descendants(matching: .any).matching(identifier: "detail.exif.cell")
+        guard cells.firstMatch.waitForExistence(timeout: 5) else { return }
+        // 升が画面に入るまで少し送る
+        if cells.count > 0, cells.element(boundBy: cells.count - 1).frame.maxY > app.windows.firstMatch.frame.maxY - 100 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        shoot(app, "20x-大きい文字 AX5（写真の詳細・撮影情報の升）")
+        let window = app.windows.firstMatch.frame
+        let frames = (0..<cells.count).map { cells.element(boundBy: $0).frame }
+        let line = "measured detailExifAX5 count=\(frames.count) frames=\(frames)"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        let columns = Set(frames.map { Int($0.minX.rounded()) }).count
+        XCTAssertLessThanOrEqual(columns, 2, "AX5 なのに撮影情報の升が \(columns) 列に並んでいる（\(frames)）")
+        for f in frames {
+            XCTAssertTrue(f.minX >= window.minX - 0.5 && f.maxX <= window.maxX + 0.5, "撮影情報の升が画面の幅からはみ出す（\(f)）")
+            XCTAssertGreaterThanOrEqual(f.width, window.width / 2 - 40, "撮影情報の升が狭すぎる（\(f)）")
+        }
+    }
+
+    /// **ストーリーの「…」のシートと削除の確認（AX5）**（追加の点検 4）。上限（AX1）を外し、入りきらない大きさでは中だけ送る
+    /// （`StoryViewerView.menuSheet`・`deleteConfirm`）。見本の「写真にしたストーリー」（`-JPPreviewKeptStory`）で開く。
+    /// 🔴 **確認のボタンは押さない**。出なければ撮らずに抜ける。出たのに項目が画面の外・押せなければ落とす
+    func testCapturesStoryMenuLargestText() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewKeptStory", "YES"]
+        app.launchArguments += Self.largestText
+        app.launch()
+        defer { app.terminate() }
+        agreeToTerms(app)
+        let photo = app.buttons["feed.photo"].firstMatch
+        var pushes = 0
+        while !(photo.waitForExistence(timeout: 2) && photo.isHittable), pushes < 8 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)))
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+        }
+        guard photo.exists, photo.isHittable else { return }
+        photo.tap()
+        let row = app.buttons["photo.storySource"].firstMatch
+        var downs = 0
+        while !(row.exists && row.isHittable), downs < 10 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 0.8)
+            downs += 1
+        }
+        guard row.exists, row.isHittable else { return }
+        row.tap()
+        let more = app.buttons["story.viewer.more"].firstMatch
+        guard more.waitForExistence(timeout: 10), more.isHittable else { return }
+        more.tap()
+        let delete = app.buttons["story.menu.delete"].firstMatch
+        guard delete.waitForExistence(timeout: 5) else { return XCTFail("AX5 で「…」を押しても削除の項目が出ない") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "20n-大きい文字 AX5（ストーリーの「…」）")
+        let window = app.windows.firstMatch.frame
+        var swipes = 0
+        while !(delete.isHittable && window.contains(delete.frame)), swipes < 4 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 0.8)
+            swipes += 1
+        }
+        let line = "measured storyMenuAX5 delete=\(delete.frame) hittable=\(delete.isHittable) swipes=\(swipes) window=\(window)"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        XCTAssertTrue(delete.isHittable && window.contains(delete.frame), "AX5 で「…」の削除が画面の中で押せない（\(delete.frame)）")
+        guard delete.isHittable else { return }
+        delete.tap()
+        let withPhoto = app.buttons["story.delete.withPhoto"].firstMatch
+        guard withPhoto.waitForExistence(timeout: 5) else { return XCTFail("AX5 で削除の確認が出ない") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "20o-大きい文字 AX5（ストーリーの削除の確認）")
+        let storyOnly = app.buttons["story.delete.storyOnly"].firstMatch
+        var confirmSwipes = 0
+        while !(storyOnly.isHittable && window.contains(storyOnly.frame)), confirmSwipes < 4 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 0.8)
+            confirmSwipes += 1
+        }
+        let line2 = "measured storyDeleteAX5 withPhoto=\(withPhoto.frame) storyOnly=\(storyOnly.frame) swipes=\(confirmSwipes)"
+        print(line2)
+        XCTContext.runActivity(named: line2) { _ in }
+        XCTAssertTrue(storyOnly.isHittable && window.contains(storyOnly.frame), "AX5 で削除の確認の「ストーリーだけ削除」が押せない（\(storyOnly.frame)）")
     }
 }

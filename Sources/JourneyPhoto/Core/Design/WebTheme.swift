@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 /// 画面の見た目の決まりごと。
 ///
@@ -36,17 +39,22 @@ enum WebTheme {
     /// **v2 の text-2（#B8B8B8・黒の上 10.6:1）。黒地・札の上だけ**——写真の上は `muted2`（透過）
     static let text2 = rgb(BrandPalette.text2)
     /// **v2 の text-3（#9A9A9A・黒の上 7.46:1）。黒地・札の上だけ**——写真の上は `faint`（透過）
-    static let text3 = rgb(BrandPalette.text3)
+    /// 「コントラストを上げる」がオンなら text-2（`BrandPalette.IncreasedContrast`）
+    static let text3 = contrastAware(normal: (BrandPalette.text3, 1), increased: (BrandPalette.IncreasedContrast.text3, 1))
     /// 未選択のチップの字（chip-text #D4D4D4・白 82%）。送るシートの行動の名前（札 #541）
     static let chipText = rgb(BrandPalette.chipText)
     /// 入力欄のプレースホルダ。**35% → 50%**（35% は入力欄の上で 3.0 しか無く、
     /// 文字の線 4.5 に届かなかった）
-    static let placeholder = Color.white.opacity(0.5)
+    /// 「コントラストを上げる」がオンなら白 62%（`BrandPalette.IncreasedContrast`）
+    static let placeholder = contrastAware(normal: (0xFFFFFF, BrandPalette.IncreasedContrast.normalPlaceholderOpacity),
+                                           increased: (0xFFFFFF, BrandPalette.IncreasedContrast.placeholderOpacity))
 
     /// 境目（装飾の髪線）。**部品の縁には使わない**（黒の上で 1.27）
     static let border = Color.white.opacity(0.12)
     /// **v2 の区切り線（白 8%）。** 札の縁・札の中の行の間・画面の節の間
-    static let hairline = Color.white.opacity(0.08)
+    /// 「コントラストを上げる」がオンなら白 20%（`BrandPalette.IncreasedContrast`）
+    static let hairline = contrastAware(normal: (0xFFFFFF, BrandPalette.IncreasedContrast.normalHairlineOpacity),
+                                        increased: (0xFFFFFF, BrandPalette.IncreasedContrast.hairlineOpacity))
     /// **v2 の線（白 14%）。** 線のボタン（副ボタン・「もう一度」）の縁だけ。
     /// 押せることは字で分かるので、縁は 3:1 を要しない（入力欄の縁は `outline`）
     static let line = Color.white.opacity(0.14)
@@ -112,6 +120,28 @@ enum WebTheme {
     static let success = rgb(BrandPalette.success)
     /// 地図の現在地だけ
     static let location = rgb(BrandPalette.location)
+
+    /// **端末の「コントラストを上げる」に付いてくる色**（2026-11-14・`BrandPalette.IncreasedContrast`）。
+    ///
+    /// 画面の部品は `Color` のまま使い、描くときの環境（SwiftUI の `colorSchemeContrast` は UIKit の
+    /// `accessibilityContrast` の特性と同じもの）で `normal` と `increased` を選ぶ。`Color` の型を保つので、
+    /// 使う所（数百か所）は書き換えない。Linux の模型では `normal` だけ
+    nonisolated private static func contrastAware(normal: (hex: UInt32, alpha: Double),
+                                                  increased: (hex: UInt32, alpha: Double)) -> Color {
+        #if os(iOS)
+        return Color(uiColor: UIColor { traits in
+            let pick = traits.accessibilityContrast == .high ? increased : normal
+            return UIColor(red: CGFloat((pick.hex >> 16) & 0xFF) / 255,
+                           green: CGFloat((pick.hex >> 8) & 0xFF) / 255,
+                           blue: CGFloat(pick.hex & 0xFF) / 255,
+                           alpha: CGFloat(pick.alpha))
+        })
+        #else
+        return Color(red: Double((normal.hex >> 16) & 0xFF) / 255,
+                     green: Double((normal.hex >> 8) & 0xFF) / 255,
+                     blue: Double(normal.hex & 0xFF) / 255).opacity(normal.alpha)
+        #endif
+    }
 
     private static func rgb(_ hex: UInt32) -> Color {
         Color(red: Double((hex >> 16) & 0xFF) / 255,

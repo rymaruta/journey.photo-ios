@@ -511,9 +511,11 @@ struct StoriesRow: View {
         Text(name)
             // 本文の最小は 12pt（CLAUDE.md。板 27 は 10 だが、決まりを優先）。
             // **眉ラベル（11）扱いにはしない**——名前は人を見分ける本文なので 12（.caption）。
-            // 輪の幅（64）は決まっているので、大きい文字は xxLarge で止める（1行で切れる）
+            // 輪の幅（64）は決まっているので、大きい文字は xxLarge で止める（1行で切れる）。
+            // 2026-11-14: 下の札と同じく大きくできない帯なので、長押しで名前を大きく見せる（Large Content Viewer）
             .font(JPFont.caption)
             .dynamicTypeSize(...StoryViewerView.chromeTypeLimit)
+            .accessibilityShowsLargeContentViewer()
             .foregroundStyle(color)
             .lineLimit(1)
             .frame(maxWidth: StoryRingMetrics.size)

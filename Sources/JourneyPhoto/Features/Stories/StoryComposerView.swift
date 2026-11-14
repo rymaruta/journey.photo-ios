@@ -361,7 +361,9 @@ struct StoryComposerView: View {
             Color.black.ignoresSafeArea()
             // 写真が0枚なら写真を選ぶ段。全部外したときもここへ戻る
             // 写真の上・黒い面の上の飾りは文字の大きさに付いてくるが、xxLarge で止める
-            // （`StoryViewerView.chromeTypeLimit`。広さが決まっている）。シートは止めない
+            // （`StoryViewerView.chromeTypeLimit`。広さが決まっている）。シートは止めない。
+            // 2026-11-14: 写真の上の帯と、写真の枠を測って打つため高さを変えられない足元の帯だけ上限を残す（押せる字には
+            // 長押しで大きく見せる仕組みを付ける・`StoryViewerView.chromeTypeLimit` の注記）
             if shots.isEmpty {
                 pickStage
                     .dynamicTypeSize(...StoryViewerView.chromeTypeLimit)
@@ -1025,7 +1027,8 @@ struct StoryComposerView: View {
                             .font(.body.weight(.semibold))
                             .foregroundStyle(.white)
                             .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                            .contentShape(Rectangle())
+                            // 角の物は当たりを角の側へ 60pt 四方まで広げる（見た目はそのまま・`CornerTapArea`・2026-11-14）
+                            .cornerTapArea(.topLeading)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(Labels.Common.close)
@@ -1535,6 +1538,8 @@ struct StoryComposerView: View {
                         .foregroundStyle(.white)
                         .frame(width: 44, height: 44)
                         .jpGlass(in: Circle())
+                        // 角の物は当たりを角の側へ 60pt 四方まで広げる（見た目はそのまま・`CornerTapArea`・2026-11-14）
+                        .cornerTapArea(.topLeading)
                 }
                 .buttonStyle(.plain)
                 .disabled(leave == .wait)
