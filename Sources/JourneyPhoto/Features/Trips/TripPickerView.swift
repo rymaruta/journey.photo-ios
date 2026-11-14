@@ -127,7 +127,8 @@ struct TripPickerView: View {
             }
             // 詳細がまだの索引だけの行も、読み込み中の札として払える（空白の札で止めない）
             cardFrame(TripPicker.cardFace(spot, detailTried: model.detailTried.contains(spot.spotId)))
-                .overlay(alignment: .topLeading) { stamp(L("行きたい", "Want to go"), icon: "heart.fill").opacity(stampOpacity(1)) }
+                // 行きたい＝旗（2026-11-14 判断・#593。いいねのハートと紛れないよう旗にそろえる）
+                .overlay(alignment: .topLeading) { stamp(L("行きたい", "Want to go"), icon: "flag.fill").opacity(stampOpacity(1)) }
                 .overlay(alignment: .topTrailing) { stamp(L("見送る", "Pass"), icon: "xmark").opacity(stampOpacity(-1)) }
                 // 回してから動かす（逆だと、動く前の位置を中心に回って札が下へ沈む）
                 .rotationEffect(.degrees(dragX / 24))
@@ -297,9 +298,9 @@ struct TripPickerView: View {
             .opacity(model.decisions.isEmpty ? 0.4 : 1)
             .accessibilityLabel(L("ひとつ戻す", "Undo"))
 
-            // 行きたい（写真のある画面の主ボタン＝白の塗り＋墨）
+            // 行きたい（写真のある画面の主ボタン＝白の塗り＋墨）。印は旗（2026-11-14 判断・#593。いいねのハートと紛れない）
             Button { choose(.want) } label: {
-                Label(L("行きたい", "Want to go"), systemImage: "heart.fill")
+                Label(L("行きたい", "Want to go"), systemImage: "flag.fill")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(WebTheme.accentText)
                     .frame(maxWidth: .infinity, minHeight: 52)

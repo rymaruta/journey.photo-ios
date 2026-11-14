@@ -1158,7 +1158,8 @@ struct PhotoMapView: View {
                                    photosKnown: model.photosKnown)
         } label: {
             HStack(spacing: JPSpace.xs) {
-                Image(systemName: "heart.fill")
+                // 行きたい＝旗（2026-11-14 判断・#593。いいねのハートと紛れないよう旗にそろえる。行きたい場所の一覧と同じ塗りの旗）
+                Image(systemName: "flag.fill")
                     .font(.footnote)
                     .accessibilityHidden(true)
                 Text(MapWishlistLink.title(count: wishlist.spotIds.count))
