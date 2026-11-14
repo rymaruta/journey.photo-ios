@@ -292,4 +292,12 @@ final class PassWiringTests: XCTestCase {
         XCTAssertLessThan(empty.lowerBound, emptyState.lowerBound)
         XCTAssertLessThan(branch.lowerBound, stats.lowerBound, "カードが 0 枚でも数を出している")
     }
+    /// 見本の帳を消すのは、帳を人に合わせる（`use`）より前。後だと読み込んだ見本の帳で一度画面を作る（2026-11-13）
+    func testAppDiscardsPreviewSeedBeforeUsingPerson() throws {
+        let app = try source("App/JourneyPhotoApp.swift")
+        let discard = try XCTUnwrap(app.range(of: "PassStore.shared.discardPreviewSeed(seeding: PreviewSession.passSample)"),
+                                    "起動で前の見本の帳を消していない")
+        let use = try XCTUnwrap(app.range(of: "PassStore.shared.use(userId: auth.userId)"))
+        XCTAssertLessThan(discard.lowerBound, use.lowerBound)
+    }
 }

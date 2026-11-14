@@ -54,7 +54,7 @@ struct TripDayMapView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { SheetCloseButton() }
+            ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
         }
         .onDisappear { directionsTask?.cancel() }
     }

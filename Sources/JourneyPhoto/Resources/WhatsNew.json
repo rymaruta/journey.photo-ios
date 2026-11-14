@@ -2,6 +2,66 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.87",
+      "date": "2026-11-14",
+      "items": [
+        {
+          "symbol": "house",
+          "title": { "ja": "ホームは1本の並びに", "en": "Home is one feed" },
+          "detail": { "ja": "ホームの写真は切り替えのタブをやめて、1本の並びになりました。上にフォロー中の人の新しい写真、その下に選ばれた写真やいいねの多い写真が続き、新しく載った写真も間に混ざります。", "en": "Home no longer has tabs to switch. New photos from people you follow come first, followed by featured and popular photos, with newly posted photos mixed in." },
+          "destination": "home"
+        },
+        {
+          "symbol": "magnifyingglass",
+          "title": { "ja": "探すの文字入力が軽く", "en": "Faster typing in Search" },
+          "detail": { "ja": "探すで1文字ずつ打っても、引っかからずに入力できるようにしました。", "en": "Typing in Search no longer stutters as you enter each character." },
+          "destination": "search"
+        },
+        {
+          "symbol": "hare",
+          "title": { "ja": "アプリ全体を軽く", "en": "A lighter app overall" },
+          "detail": { "ja": "画面を行き来したときの余計な描き直しを減らして、アプリ全体の動きを軽くしました。", "en": "Moving between screens does less unnecessary redrawing, so the whole app feels lighter." }
+        },
+        {
+          "symbol": "hand.draw",
+          "title": { "ja": "写真の詳細は下に引いて戻る", "en": "Pull down to leave a photo" },
+          "detail": { "ja": "写真の詳細で、画面を下に引いて離すと、前の画面に戻ります。", "en": "On a photo's page, pull down and let go to go back." }
+        },
+        {
+          "symbol": "square.grid.2x2",
+          "title": { "ja": "マイページのタブに絵を添えて", "en": "My Page tabs with icons" },
+          "detail": { "ja": "マイページと人のページのタブが、絵と字で何の一覧か分かる形になりました。", "en": "Tabs on My Page and profiles now show an icon with their name." },
+          "destination": "mypage"
+        },
+        {
+          "symbol": "square.and.arrow.up",
+          "title": { "ja": "共有カードの帯で写真を大きく", "en": "Bigger photos on band share cards" },
+          "detail": { "ja": "共有カードの帯の形で、撮影情報が無い写真は、その分だけ写真を大きく見せます。", "en": "On the band share card, photos without shooting details get the extra space and show larger." }
+        },
+        {
+          "symbol": "xmark",
+          "title": { "ja": "閉じるは左上にそろえて", "en": "Close is always top left" },
+          "detail": { "ja": "下から出る画面の「閉じる」を左上にそろえました。右上には決める操作だけを置きます。", "en": "Close on sheets is now always at the top left. The top right is kept for the action that confirms." }
+        }
+      ]
+    },
+    {
+      "version": "1.1.86",
+      "date": "2026-11-14",
+      "items": [
+        {
+          "symbol": "tram",
+          "title": { "ja": "移動の行から Apple のマップへ", "en": "Open Apple Maps from a travel row" },
+          "detail": { "ja": "旅行プランで場所と場所の間の行を押すと、Apple のマップで経路が開きます。近ければ徒歩、それより遠ければ電車やバスの経路です（無いときは車）。右の i から詳しく見られます。", "en": "In a trip plan, tap the row between two places to open the route in Apple Maps: walking when it's close, otherwise transit (or driving when there is none). Tap the i on the right for details." }
+        },
+        {
+          "symbol": "textformat.size",
+          "title": { "ja": "大きい文字でも読みやすく", "en": "Easier to read with larger text" },
+          "detail": { "ja": "文字を大きくしているときは、観光スポットや写真の詳細のボタンを縦に並べて、字が切れないようにしました。マイページの長い名前も折り返して全部出ます。", "en": "With larger text, the buttons on spot and photo pages now stack so their labels aren't cut off, and long names on My Page wrap in full." }
+        }
+      ]
+    },
+    {
       "version": "1.1.85",
       "date": "2026-11-13",
       "items": [

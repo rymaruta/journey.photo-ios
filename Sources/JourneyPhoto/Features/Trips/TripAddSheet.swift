@@ -50,7 +50,7 @@ struct TripAddSheet: View {
         }
         .webScreen()
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { SheetCloseButton().disabled(plans.busy != nil) }
+            ToolbarItem(placement: .cancellationAction) { SheetCloseButton().disabled(plans.busy != nil) }
         }
         .interactiveDismissDisabled(plans.busy != nil)
         .task {

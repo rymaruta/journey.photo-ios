@@ -645,4 +645,51 @@ final class PassStoreTests: XCTestCase {
         XCTAssertFalse(line.contains("大津市"), "場所を3つ以上並べた: \(line)")
         XCTAssertTrue(PassBook.bundleLine([card(1, day: 16, owner: "a", place: nil)]).contains("1"))
     }
+    // MARK: - 見本の帳を次の起動に残さない（2026-11-13・PR #589 の testCapturesPassBookStatus）
+
+    /// 見本を入れた帳は起動し直しても残る（落ちた形）。見本なしの次の起動が消すと、空の帳（オフ・0 枚）から始まる。
+    /// 見本を入れ直す起動では消さない。消すのは見本を入れた人の帳だけ
+    func testPreviewSeedIsDiscardedByNextLaunchWithoutSample() async throws {
+        // 前の起動（`testCapturesPass`）: 見本を入れる
+        let seeded = PassStore(root: root, defaults: defaults, calendar: calendar, schedule: recorder())
+        seeded.use(userId: "me")
+        seeded.seedPreview(photos: [try photo("c1", owner: "a"), try photo("c2", owner: "b")], now: at(16, 12))
+        XCTAssertTrue(seeded.settings.enabled)
+        XCTAssertNil(seeded.settings.cardPhotoId, "見本は乗車券を選ばない（帳の頭の行が「乗車券を選ぶまで」になる元）")
+
+        // 別の人の帳は残る
+        let other = PassStore(root: root, defaults: defaults, calendar: calendar, schedule: recorder())
+        other.use(userId: "you")
+        other.update { $0.enabled = true; $0.cardPhotoId = "mine" }
+
+        // 見本を入れ直す起動では消さない
+        let again = PassStore(root: root, defaults: defaults, calendar: calendar, schedule: recorder())
+        XCTAssertFalse(again.discardPreviewSeed(seeding: true))
+        again.use(userId: "me")
+        XCTAssertTrue(again.settings.enabled, "見本を入れる起動で前の帳を消した")
+        XCTAssertFalse(again.encounters.isEmpty)
+
+        // 次の起動（`testCapturesPassBookStatus`）: 起動の最初に前の人を読み終えていても、見本なしなら消して空から
+        let next = PassStore(root: root, defaults: defaults, calendar: calendar, schedule: recorder())
+        next.use(userId: "me")
+        XCTAssertTrue(next.settings.enabled, "見本の帳が端末に残っていない（落ちた形を再現できていない）")
+        XCTAssertTrue(next.discardPreviewSeed(seeding: false), "見本なしの起動が、前の起動の見本の帳を消さない")
+        next.use(userId: "me")
+        XCTAssertFalse(next.settings.enabled, "見本の帳のオンが残った（帳の頭の行が「オフです」にならない）")
+        XCTAssertTrue(next.encounters.isEmpty, "見本のカードが残った（ホームに「届きました」の帯が出る）")
+        XCTAssertEqual(PassBookStatus.resolve(.init(enabled: next.settings.enabled,
+                                                     ticketChosen: next.settings.cardPhotoId != nil,
+                                                     bluetoothPoweredOff: false, bluetoothDenied: false,
+                                                     mode: .always, distanceReasonExists: false, awayToday: nil,
+                                                     delivery: .instant)), .off)
+        // 1回消したら印も消える（同じ人がその後に入れた帳は消さない）
+        XCTAssertFalse(next.discardPreviewSeed(seeding: false))
+
+        // ファイルからも消えている。別の人の帳は残る
+        let reread = PassStore(root: root, defaults: defaults, calendar: calendar, schedule: recorder())
+        reread.use(userId: "me")
+        XCTAssertFalse(reread.settings.enabled)
+        reread.use(userId: "you")
+        XCTAssertTrue(reread.settings.enabled, "見本を入れていない人の帳まで消した")
+    }
 }

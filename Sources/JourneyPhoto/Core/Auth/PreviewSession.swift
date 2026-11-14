@@ -132,9 +132,10 @@ enum PreviewSession {
         #endif
     }
 
-    /// UI テストでホームの札の行の位置の数を見えない要素に出す（Debug のみ・2026-10-31 #426）。
-    /// `-JPPreviewFeedProbe YES`。留まったまま替えたときに札の行が動く件を、推定でなく実際の数で見るため
-    /// （`GalleryView` の `home.feed.probe`・`ScreenshotTests.testSwipesHomeFeedTabs`）。Release では必ず false
+    /// UI テストでホームの1本の並びの数（読んだページ・並びの数・続きの目印・新着の最初の札）を見えない要素に出す
+    /// （Debug のみ・2026-10-31 #426 で札の行の位置を見るために足し、札 #595 で1本の並びの数に替えた）。
+    /// `-JPPreviewFeedProbe YES`（`GalleryView` の `home.feed.probe`・`ScreenshotTests.testScrollsHomeSingleFeed`・
+    /// `revealNewestFeedTile`）。Release では必ず false
     static let feedProbeKey = "JPPreviewFeedProbe"
 
     static var feedProbe: Bool {
@@ -150,6 +151,17 @@ enum PreviewSession {
     /// 主要画面の body の評価回数を、推定でなく実際の数で見るため。Release では必ず false（記録も要素も出ない）
     /// UI テストの事実取りだけ: ホームの写真の札の「手に取って運ぶ」の身振りを付けない（`-JPPreviewNoLift YES`・Debug のみ・
     /// 2026-11-12 run 1171 で、ホームを払っても一覧が動かなかった件を、身振りの有り無しで比べるため）
+    /// UI テストの事実取りだけ: マイページの札の行・中身の横の払いを、どの指の操作が受けたか（UIKit のパンの始まり・終わりと
+    /// 移動量・速さ、留まった札の払い、横に送る札の行の送りの位置、選んだ札の替わり）を見えない要素 `mypage.tabs.probe` に出す
+    /// （`-JPPreviewTabSwipeProbe YES`・Debug のみ・2026-11-13 #187 Mac run 1227・`ProfileTabSwipeLog`）。Release では必ず false
+    static var tabSwipeProbe: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "JPPreviewTabSwipeProbe")
+        #else
+        return false
+        #endif
+    }
+
     /// UI テストの事実取りだけ: 写真を大きく見る画面の上下の情報を出しているかを、見えない要素 `viewer.chrome.probe` の値
     /// （shown / hidden）に出す（`-JPPreviewViewerProbe YES`・Debug のみ）。2026-11-12 run 1193: 1回押した後の絵では ✕ と下の
     /// 情報が消えていたのに、UI テストからは `viewer.close`・`viewer.caption` が在るままに見えた（`accessibilityHidden` では
@@ -157,6 +169,29 @@ enum PreviewSession {
     static var viewerProbe: Bool {
         #if DEBUG
         return UserDefaults.standard.bool(forKey: "JPPreviewViewerProbe")
+        #else
+        return false
+        #endif
+    }
+
+    /// UI テストの事実取りだけ: 写真の詳細の「下に引いて戻る」（札 #592）で、写真を引いた量と、その間に画面の器
+    /// （シートで開いたときはシートそのもの）が下がった量を、見えない要素 `detail.pull.probe` の値に出す
+    /// （`-JPPreviewPullProbe YES`・Debug のみ・`DetailPullProbe`）。ストーリーの「写真を見る」のシートの根で、
+    /// シートの「下へ引いて閉じる」と写真を引く動きが二重になるかを、推定でなく値で見る。Release では必ず false
+    static var pullProbe: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "JPPreviewPullProbe")
+        #else
+        return false
+        #endif
+    }
+
+    /// UI テストの事実取りだけ: 並びの寸法（字の要る幅と札の幅・名前の行の張り出し・安全な範囲の上端）を、見えない要素
+    /// （`LayoutProbe`）の値に出す（`-JPPreviewLayoutProbe YES`・Debug のみ・2026-11-13 デザインの点検の確かめ）。
+    /// 字が切れたか・当たりが重なるかは画面の木から取れないので、推定でなく数で見る。Release では必ず false
+    static var layoutProbe: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "JPPreviewLayoutProbe")
         #else
         return false
         #endif

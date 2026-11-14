@@ -568,7 +568,10 @@ struct TrunkPartSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            // 閉じるは左上のシートの「閉じる」（2026-11-13 owner 承認・#187。前は右上の白の字だけ）。眉ラベルはその右
+            HStack(spacing: JPSpace.s) {
+                SheetCloseButton(onContent: true)
+                    .accessibilityIdentifier("trunk.partSheet.close")
                 HStack(spacing: 6) {
                     TrunkRarityMark(rarity: part.rarity, size: 9)
                     Text(TrunkGachaText.eyebrow(part))
@@ -576,15 +579,6 @@ struct TrunkPartSheet: View {
                         .foregroundStyle(WebTheme.accent)
                 }
                 Spacer()
-                Button { dismiss() } label: {
-                    Text(Labels.Common.close)
-                        .font(.body)
-                        .foregroundStyle(WebTheme.text)
-                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("trunk.partSheet.close")
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)

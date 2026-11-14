@@ -55,5 +55,24 @@ final class DMSpotCardBoxTests: XCTestCase {
                        "名前2行・出典ありの札が、枠にちょうど入ること")
         XCTAssertGreaterThan(box.height, DMSpotCard.photoHeight + 44)
     }
+
+    /// **名前が1行・出典なしの札は、余りを写真に回して枠いっぱいに詰まる**（2026-11-13 デザインの点検:
+    /// 余りをボタンの上の `Spacer` に置いていたので、名前とボタンの間が約1行分空いた）。
+    /// 伸びる写真の札は、枠の大きさを渡すとその高さまで伸び（＝空きが写真の中に入る）、枠の大きさは替わらない
+    func testOneLineCardStretchesThePhotoNotTheGap() {
+        let box = size(DMSpotCardBox { Color.clear })
+        let oneLine = VStack(alignment: .leading, spacing: 0) {
+            DMSpotCardPhotoPlaceholder(grows: true)
+            DMSpotCardText(name: "兼六園", region: "石川")
+            DMSpotCardWishLabel(wanted: false)
+        }.frame(width: DMSpotCard.width)
+        let host = UIHostingController(rootView: oneLine)
+        let fitted = host.sizeThatFits(in: box)
+        XCTAssertEqual(fitted.height, box.height, accuracy: 0.5, "1行の札が枠の高さまで伸びない（どこかに空きが残る）")
+        // 伸びない写真（枠の見本）は 130 のまま
+        XCTAssertEqual(size(DMSpotCardPhotoPlaceholder()).height, DMSpotCard.photoHeight, accuracy: 0.5)
+        XCTAssertEqual(size(DMSpotCardBox { oneLine }), box, "伸びる写真で枠の大きさが替わった")
+        print("dmSpotCard.box height=\(box.height) oneLineFitted=\(fitted.height)")
+    }
 }
 #endif

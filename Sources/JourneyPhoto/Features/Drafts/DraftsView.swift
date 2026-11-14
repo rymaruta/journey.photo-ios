@@ -901,13 +901,14 @@ struct DraftsAboutSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                HStack {
+                // 閉じるは見出しの左のシートの「閉じる」（2026-11-13 owner 承認・#187。前は右端）
+                HStack(spacing: JPSpace.s) {
+                    SheetCloseButton(onContent: true)
                     Text(DraftsText.aboutTitle)
                         .font(JPFont.cardTitle)
                         .foregroundStyle(WebTheme.text)
                         .accessibilityAddTraits(.isHeader)
                     Spacer(minLength: 0)
-                    SheetCloseButton()
                 }
                 .padding(.bottom, JPSpace.s)
                 ForEach(Array(DraftsText.facts(count: count, megabytes: megabytes).enumerated()), id: \.offset) { index, fact in

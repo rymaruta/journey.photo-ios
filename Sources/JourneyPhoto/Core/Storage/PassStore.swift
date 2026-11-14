@@ -553,6 +553,34 @@ final class PassStore: ObservableObject {
         settings.setDestination(custom: true, text: "フランス")
         if settings.note.isEmpty { settings.note = "霧の朝が好きです" }
         save()
+        // 見本を入れた人を覚える（次に見本なしで起動したら `discardPreviewSeed` が帳ごと消す）
+        if let userId { defaults.set(userId, forKey: Self.previewSeedKey) }
+    }
+
+    /// 見本のカードを入れた人の ID の鍵（`seedPreview` が書き、`discardPreviewSeed` が消す）
+    static let previewSeedKey = "journey-photo-pass-preview-seed"
+
+    /// **前の起動が見本を入れた帳を、見本なしの起動で消す**（Debug の UI テストのため・`PreviewSession.passSample`）。
+    /// 消したら true。今回も見本を入れる起動（`seeding`）では何もしない。
+    ///
+    /// 2026-11-13 判断（PR #589 の Mac の全部の回・job 132072880099）: 見本の帳は端末のファイル
+    /// （`Application Support/pass/<人>.json`）に残り、アプリを起動し直しても消えない。直前の `testCapturesPass` が
+    /// 入れた「オン・乗車券はまだ選んでいない」（`settings.enabled = true`・`cardPhotoId` なし）を、次の
+    /// `testCapturesPassBookStatus` が読み、帳の頭の行が「オフです」でなく「オンです · 乗車券を選ぶまで…」になって落ちた。
+    /// 片付けを見本を入れる側の試験（5件）に持たせると、途中で落ちた回・新しく足した試験で漏れる。後の試験に
+    /// 引数を足させる形も、足していない試験（ホームの切り替えなど）には帳の束が残る。**見本を入れた印を端末に
+    /// 残し、見本なしの次の起動が必ず消す**形なら、試験の順番・途中で落ちたかに関係なく、後の試験はいつも空の帳から始まる
+    @discardableResult
+    func discardPreviewSeed(seeding: Bool) -> Bool {
+        guard !seeding, let id = defaults.string(forKey: Self.previewSeedKey) else { return false }
+        defaults.removeObject(forKey: Self.previewSeedKey)
+        Self.removeData(for: id, root: root, defaults: defaults, fileManager: fileManager)
+        // 読み込み済みなら空の帳に読み直す（`switchTo` は同じ人だと何もしないので、いったん外す）
+        if userId == id {
+            userId = nil
+            switchTo(id)
+        }
+        return true
     }
 
     // MARK: - 読み書き

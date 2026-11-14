@@ -113,20 +113,18 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
 
     // MARK: - ホーム
 
-    /// 字のタブ: 選んだタブは真鍮の字と 2 の下線、ほかは text-3。白の塗りの切り替えに戻さない
-    func testHomeFeedTabsAreBrassTextTabs() throws {
+    /// 札 #595（2026-11-13 owner 決定）: ホームは**タブの無い1本の並び**。切り替えの札・横に払う入れ物を戻さない。
+    /// 段の見出しは板の決まり（眉ラベルは真鍮・黒地の上／題は明朝）の共通の部品（`JPSectionHeading`）
+    func testHomeHasNoFeedTabs() throws {
         let gallery = try source("Features/Gallery/GalleryView.swift")
-        // #426: マイページと同じ札の部品（真鍮の字と下線・区切り線・読み上げの「選択中」は部品が持つ）
-        let picker = slice(gallery, from: "private func feedPicker(followingHasNew: Bool, stuck: Bool) -> some View",
-                           to: "private var feedSelection: Binding<HomeFeed>")
-        XCTAssertTrue(picker.contains("ProfileTabBar(tabs: HomeFeed.allCases"), "ホームだけ自前の札に戻っている")
-        XCTAssertEqual(HomeFeed.latest.tabTitle, HomeFeed.latest.label, "UI テストは「新着」「フォロー中」を字で探す")
-        let bar = try source("Features/Profile/ProfileTabBar.swift")
-        XCTAssertTrue(bar.contains("selected ? WebTheme.accent : WebTheme.text3"), "選んだ札が真鍮の字でない")
-        XCTAssertTrue(bar.contains(".accessibilityAddTraits(selected ? .isSelected : [])"),
-                      "選んだことを読み上げで伝えていない（色だけ）")
-        XCTAssertFalse(picker.contains("WebTheme.accentText"), "白の塗りの切り替え（墨の字）に戻っている")
-        XCTAssertFalse(picker.contains("in: Capsule()"), "丸い切り替えに戻っている")
+        XCTAssertFalse(gallery.contains("ProfileTabBar("), "ホームに切り替えの札が戻っている")
+        XCTAssertFalse(gallery.contains("ProfileTabPager("), "ホームに横に払う入れ物が戻っている")
+        XCTAssertFalse(gallery.contains("home.feed.pinned"), "留まる札の行が戻っている")
+        XCTAssertTrue(gallery.contains("JPSectionHeading(eyebrow: \"FOLLOWING\""),
+                      "フォロー中の人の新しい写真の段が板の見出しの型でない")
+        let heading = try source("Features/Common/SectionHeading.swift")
+        XCTAssertTrue(heading.contains("JPEyebrowLine(eyebrow, spoken: spoken)"), "眉が共通の眉ラベルでない")
+        XCTAssertTrue(heading.contains(".font(JPFont.cardTitle)"), "題が明朝の型でない")
     }
 
     /// 読み込み中・空・失敗は共通の部品。空の一手の道しるべ（`home.emptyAction`）を落とさない
@@ -135,11 +133,9 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
         let loading = slice(gallery, from: "case .loading:", to: "case .failed")
         XCTAssertTrue(loading.contains("JPLoadingState(kind: .grid)"), "読み込み中が骨格でない")
         XCTAssertFalse(loading.contains("ProgressView"))
-        let empty = slice(gallery, from: "private func feedEmptyState(_ page: HomeFeed) -> some View",
-                          to: "private func emptyTitle(_ page: HomeFeed)")
-        XCTAssertTrue(empty.contains("ErrorBanner(title: L(\"フォロー中の人を読み込めませんでした\""),
-                      "フォロー中を読めなかった回が失敗の形でない")
-        XCTAssertTrue(empty.contains("EmptyState(title: emptyTitle(page), message: emptyMessage(page),"))
+        let empty = slice(gallery, from: "private var feedEmptyState: some View",
+                          to: "private func suggestedPeople(_ userId: String)")
+        XCTAssertTrue(empty.contains("EmptyState(title: nil, message: Labels.Gallery.empty,"))
         XCTAssertTrue(empty.contains("actionIdentifier: \"home.emptyAction\""), "UI テスト（10c）の道しるべが無い")
         XCTAssertFalse(empty.contains("Image(systemName:"), "空の状態に自前の印を置いている（共通の部品の外）")
         let common = try source("Features/Common/ErrorBanner.swift")

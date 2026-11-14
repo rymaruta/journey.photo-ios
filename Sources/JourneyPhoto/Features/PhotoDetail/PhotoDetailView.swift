@@ -23,6 +23,15 @@ struct PhotoDetailView: View {
     /// この画面の赤字（`actionError`・`model.errorMessage`）が見えない**
     @EnvironmentObject private var toasts: ToastCenter
     @Environment(\.dismiss) private var dismiss
+    /// 積まれた画面か（下へ引いて戻るのは、戻る先があるときだけ・札 #592）
+    @Environment(\.isPresented) private var isPresented
+    /// 「視差効果を減らす」: 下へ引いている間に写真を縮めない・戻すばねを弾ませない（札 #592）
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 写真を下へ引いている量（札 #592・`PhotoDetailPull`）の入れ物。**画面が出たときに1回だけ作る**
+    /// （`@State` の初期値だと、格子のマスが行き先を作るたびに箱が割り当てられる・`PhotoDetailPullHolder`）。
+    /// 入れ物は何も知らせないので、引いている間もこの画面の `body` は描き直さない（見張るのは `DetailPullFollow` だけ）
+    @StateObject private var pullHolder = PhotoDetailPullHolder()
+    private var pull: PhotoDetailPullDrag { pullHolder.drag }
     @StateObject private var model: PhotoDetailViewModel
     /// 保存（しおり）を送っている最中の写真。**写真ごとに持つ**（2026-10-09）——1つの印だと、
     /// 束の隣へ送った後の保存が、前の1枚の送信中は黙って無視されていた（いいねと同じ直し方・
@@ -280,11 +289,15 @@ struct PhotoDetailView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
-                            imageButton(hero)
+                            // 上で写真を下に引くと、写真が指に付いて縮み、離すと前の画面へ（札 #592・`PhotoDetailPull`）。
+                            // 下へ動く写真が説明の上に重なるよう前に出す
+                            DetailPullFollow(drag: pull, part: .photo, reduceMotion: reduceMotion,
+                                             content: imageButton(hero).background { pullCatcher })
+                                .zIndex(1)
                             // **v2（2026-10-14・板 PhotoDetail）: 題は写真の下の黒地に置く**（以前は写真の裾に
                             // 重ねていた）。写真の上に残すのは撮影地・撮影スポットの行だけ（`photoFoot`）
-                            details(proxy, hero: hero)
-                                .padding(.top, JPSpace.l)
+                            DetailPullFollow(drag: pull, part: .rest, reduceMotion: reduceMotion,
+                                             content: details(proxy, hero: hero).padding(.top, JPSpace.l))
                         }
                         .padding(.bottom, 32)
                     }
@@ -306,7 +319,9 @@ struct PhotoDetailView: View {
         // 途中にあると、長い説明の写真では入力欄まで辿り着く前に
         // 書く気が失せる。`safeAreaInset` はスクロールの底の余白も
         // 足してくれるので、最後のコメントが入力欄の下に隠れない
-        .safeAreaInset(edge: .bottom) { composer }
+        .safeAreaInset(edge: .bottom) {
+            DetailPullFollow(drag: pull, part: .rest, reduceMotion: reduceMotion, content: composer)
+        }
         .navigationBarTitleDisplayMode(.inline)
         // **上のバーの地を消す**（板 02: 戻る・「…」は写真の上のガラスの丸）。
         //
@@ -408,6 +423,7 @@ struct PhotoDetailView: View {
         .onDisappear {
             frontSettle?.cancel()
             frontSettle = nil
+            pullReset()
             front.disappear()
             isOnScreen = false
         }
@@ -576,6 +592,43 @@ struct PhotoDetailView: View {
         }
         // 未ログインで押したいいね・保存から「ログインする」（`SignInPrompt`）
         .signInPrompt(ask: $signInAsk, open: $signInOpen)
+    }
+
+    /// 写真を下に引いて前の画面へ戻る（2026-11-13 owner 決定・札 #592）。判定と量は `PhotoDetailPull`、
+    /// 指の受け方（縦の送りに UIKit のパンを足す理由）は `DetailPullCatcher` の注記。
+    ///
+    /// **引かせないとき**: 戻る先が無い（積まれていない）・コメントを打っている最中（下へ払う指はキーボードを
+    /// しまいたい指で、書きかけを残したまま画面を閉じない）・戻ると決めて閉じている最中。
+    /// 大きく見る画面（写真だけ表示・つまんで拡大）は全画面で上に重なるので、その指はここへ来ない
+    private var pullCatcher: some View {
+        DetailPullCatcher(
+            isEnabled: isPresented && !commentFieldFocused,
+            shouldBegin: { [pull] dx, dy, atTop in
+                !pull.closing && PhotoDetailPull.starts(dx: dx, dy: dy, atTop: atTop)
+            },
+            onChange: { [pull] dx, dy in
+                pull.translation = CGSize(width: dx, height: dy)
+            },
+            onEnd: { dy, velocityY in
+                if PhotoDetailPull.closes(dy: dy, velocityY: velocityY) {
+                    // 写真は引いた所に残したまま閉じる（戻してから閉じると一瞬跳ねる）
+                    pull.closing = true
+                    dismiss()
+                } else {
+                    pullReset()
+                }
+            },
+            onCancel: { pullReset() }
+        )
+    }
+
+    /// 引いた写真を元の位置へ戻す。**「視差効果を減らす」なら弾ませない**（人のストーリーの戻し方 `StoryReelView` と同じ値）
+    private func pullReset() {
+        pull.closing = false
+        guard pull.translation != .zero else { return }
+        withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(response: 0.3, dampingFraction: 0.85)) {
+            pull.translation = .zero
+        }
     }
 
     /// 押すと大きく見る（隣の写真へも送れる）。
@@ -1174,8 +1227,7 @@ struct PhotoDetailView: View {
 
     /// 作者の顔の写真だけ（枠と丸めは呼ぶ側・`StoryAvatar`）
     private func authorFace(_ ownerId: String) -> some View {
-        RemoteImage(url: UserProfile.profileAssetURL(userId: ownerId, suffix: nil, cacheBust: nil),
-                    placeholderSymbol: "person.crop.circle.fill")
+        FaceImage(url: UserProfile.profileAssetURL(userId: ownerId, suffix: nil, cacheBust: nil))
     }
 
     private func followButton(_ userId: String, following isFollowing: Bool) -> some View {
@@ -2213,16 +2265,9 @@ struct PhotoDetailView: View {
     /// コメントした人の顔（v2 の板: 32pt の丸）。退会した人は人の形の印だけ（プロフィールを引かない）
     @ViewBuilder
     private func commentAvatar(_ comment: PhotoComment, size: CGFloat = PhotoDetailView.commentAvatarSize) -> some View {
-        Group {
-            if comment.isFromDeletedUser {
-                Image(systemName: "person.crop.circle.fill")
-                    .resizable()
-                    .foregroundStyle(WebTheme.text3)
-            } else {
-                RemoteImage(url: UserProfile.profileAssetURL(userId: comment.uid, suffix: nil, cacheBust: nil),
-                            placeholderSymbol: "person.crop.circle.fill")
-            }
-        }
+        // 退会した人は URL を渡さない（顔写真の無い人と同じ人の影・`FaceImage`）
+        FaceImage(url: comment.isFromDeletedUser ? nil
+                  : UserProfile.profileAssetURL(userId: comment.uid, suffix: nil, cacheBust: nil))
         .frame(width: size, height: size)
         .clipShape(Circle())
         .accessibilityHidden(true)

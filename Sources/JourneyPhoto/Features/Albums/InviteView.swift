@@ -83,7 +83,7 @@ struct InviteView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button(Labels.Common.close) { dismiss() }
+                SheetCloseButton(action: { dismiss() })
             }
         }
         .onAppear {

@@ -340,8 +340,7 @@ struct StoriesRow: View {
 
     /// 自分の顔（無ければ人の印）
     private var myFace: some View {
-        RemoteImage(url: auth.userId.flatMap { UserProfile.profileAssetURL(userId: $0, suffix: nil, cacheBust: nil) },
-                    placeholderSymbol: "person.crop.circle.fill")
+        FaceImage(url: auth.userId.flatMap { UserProfile.profileAssetURL(userId: $0, suffix: nil, cacheBust: nil) })
     }
 
     /// 「＋」の白い丸（22・墨の「＋」・黒 3 の縁。板の `.plus`）。

@@ -327,7 +327,7 @@ struct StoryComposerView: View {
             // 長引いても出られるよう、ここにも閉じる口を置く（失うものは無い）
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(Labels.Common.close) { dismiss() }
+                    SheetCloseButton(action: { dismiss() })
                 }
             }
         case .signIn:
@@ -337,7 +337,7 @@ struct StoryComposerView: View {
                 .webScreen()
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button(Labels.Common.close) { dismiss() }
+                        SheetCloseButton(action: { dismiss() })
                     }
                 }
         case .compose:

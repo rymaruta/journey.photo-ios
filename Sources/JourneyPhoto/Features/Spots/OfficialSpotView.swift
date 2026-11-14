@@ -447,10 +447,16 @@ struct OfficialSpotView: View {
     private var actions: some View {
         // v2 の板 SpotDetail: 同じ幅の札を 8 のすき間で並べる（札は `SpotDetailParts.actionLabel`）
         VStack(spacing: JPSpace.xs) {
-            HStack(spacing: JPSpace.xs) {
+            // 名前が入らない字の大きさでは縦に積む（`ActionTilesLayout`・写真の詳細「次の旅へ」と同じ）
+            ActionTilesLayout() {
                 ForEach(SpotScreen.officialActions(hasCoords: spot.coords != nil), id: \.self) { action in
                     actionButton(action)
                 }
+            }
+            // UI テストのときだけ: 名前が札に入るかを値で出す（`ActionRowFitProbe`）
+            .background {
+                ActionRowFitProbe(identifier: "spot.official.fit",
+                                  titles: SpotScreen.officialActions(hasCoords: spot.coords != nil).map(Self.actionTitle))
             }
             if SpotScreen.officialMapRow(hasCoords: spot.coords != nil) {
                 actionButton(.map)
@@ -458,6 +464,16 @@ struct OfficialSpotView: View {
         }
         .padding(.horizontal, JPSpace.m)
         .tripAddSheet($tripAdd)
+    }
+
+    /// 札の名前（`actionButton` の札と同じ字・字が入るかを測る `ActionRowFitProbe` に渡す）
+    private static func actionTitle(_ action: SpotScreen.OfficialAction) -> String {
+        switch action {
+        case .wish: return L("行きたい", "Want to go")
+        case .trip: return L("旅行プランに入れる", "Add to trip")
+        case .map: return L("地図で見る", "View on map")
+        case .directions: return L("経路", "Directions")
+        }
     }
 
     @ViewBuilder

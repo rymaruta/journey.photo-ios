@@ -70,14 +70,11 @@ struct InspiredPickerView: View {
         .webScreen()
         .navigationTitle(L("元の写真を選ぶ", "Choose the original"))
         .navigationBarTitleDisplayMode(.inline)
-        // 板: シートは右上の「閉じる」。黒地の上の文字ボタンなので真鍮（2026-11-12 判断・前は系統の色のまま）
+        // 閉じるは左上のシートの「閉じる」（2026-11-13 owner 承認・#187。前は右上の真鍮の字）
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { dismiss() } label: {
-                    Text(L("閉じる", "Close"))
-                        .foregroundStyle(WebTheme.accent)
-                }
-                .accessibilityIdentifier("inspiredPicker.close")
+            ToolbarItem(placement: .cancellationAction) {
+                SheetCloseButton()
+                    .accessibilityIdentifier("inspiredPicker.close")
             }
         }
         // 選んでいる1枚を、選ぶ画面の下でも外せる（前は投稿の画面の行 → 外す だけ）

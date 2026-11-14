@@ -177,24 +177,21 @@ final class ScreenWiringTests: XCTestCase {
         }
     }
 
-    /// ホーム: 切り替えの下には選んだフィードの中身だけ（2026-10-11）。
-    /// 「撮影地を探す／写真から探す」の札は消し、おすすめの横並びは「おすすめ」のときだけ
-    func testHomeShowsSelectedFeedRightBelowPicker() throws {
+    /// ホーム: 「撮影地を探す／写真から探す」の札は消したまま（2026-10-11）。札 #595 で切り替えも無くなり、
+    /// 上の札の下は1本の並び（`feedSection`）だけ。横並びは1か所
+    func testHomeShowsTheFeedRightBelowTheTopCards() throws {
         let gallery = try source("Features/Gallery/GalleryView.swift")
-        XCTAssertFalse(gallery.contains("discoveryBridge"), "切り替えの下に「撮影地を探す」の札が戻っている")
+        XCTAssertFalse(gallery.contains("discoveryBridge"), "並びの上に「撮影地を探す」の札が戻っている")
         XCTAssertFalse(gallery.contains("home.exploreMap"))
-        // 横並びを置くのは1か所（定義と、絞った中の1回）
-        XCTAssertEqual(count("featuredSections(", in: gallery), 2, "横並びを絞らずに置いている所がある")
-        // #417 ⑧: 切り替えは写真の一覧の見出し（Section の header）。中身は `feedSection` の先頭から。
-        // #426: 中身はフィードごとの札を横に並べる入れ物（`ProfileTabPager`）の中
-        XCTAssertTrue(gallery.contains("VStack(spacing: Self.feedSpacing) {\n                        feedSection(page, rows: pageRows(page, selected: photos))\n                    }"),
-                      "切り替えの下に中身以外が挟まっている")
+        // 横並びを置くのは1か所（定義と、並びの中の1回）
+        XCTAssertEqual(count("featuredSections(", in: gallery), 2, "横並びを2か所に置いている")
         let lines = gallery.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
-        guard let section = lines.firstIndex(of: "private func feedSection(_ page: HomeFeed, rows: HomeFeedPageMemo.Rows) -> some View {") else {
-            return XCTFail("切り替えの下の中身が無い")
+        guard let top = lines.firstIndex(of: "HomeTopCardView(themePhotos: dropped.visible(model.allPhotosForTheme),"),
+              let section = lines[top...].firstIndex(of: "feedSection(rows, featured: featured)") else {
+            return XCTFail("上の札の下に1本の並びが無い")
         }
-        XCTAssertEqual(lines[section + 1], "if page.showsFeatured {", "切り替えのすぐ下に別のものが挟まっている")
-        XCTAssertEqual(lines[section + 2], "featuredSections(page)")
+        XCTAssertFalse(lines[top..<section].contains { $0.hasPrefix("feedPicker(") || $0.hasPrefix("ProfileTab") },
+                       "上の札と並びの間に切り替えが挟まっている")
     }
 
     /// ホームの上段札: 消した自分の写真だけ落とす（全部の gone は回帰するので使わない・2026-10-12）

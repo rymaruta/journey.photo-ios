@@ -111,7 +111,11 @@ enum SignatureShareCardRenderer {
             // 参考デザイン: 真鍮色の外枠、上部ブランド帯、大きな写真、
             // 下部に撮影者・撮影地・輪郭地図、その下に3列の撮影情報。
             // 下の段の位置は ShareCardMap.Layout に1か所で持つ（地図の枠の計算とテストが同じ数を使う）
-            let layout = ShareCardMap.Layout(ratio: ratio)
+            // 撮影情報が1つも無ければ、下の段（区切り線・間・撮影情報の行）の分だけ帯を縮めて写真を伸ばす（2026-11-13・owner 承認）
+            let exif = exifValues(credit)
+            let camera = exif.camera, lens = exif.lens, exposure = exif.exposure
+            let filled = [!camera.isEmpty, !lens.isEmpty, !exposure.isEmpty]
+            let layout = ShareCardMap.Layout(ratio: ratio, hasShotInfo: filled.contains(true))
             let photoRect = layout.photoRect
             let scale = max(photoRect.width / photo.size.width,
                             photoRect.height / photo.size.height)
@@ -245,7 +249,7 @@ enum SignatureShareCardRenderer {
                 // 2行の塊をアバターの縦の中心に置く
                 drawPlaceLines(placeLines,
                                at: CGPoint(x: L.placeX, y: layout.rowCenterY - L.placeHeight / 2),
-                               maxWidth: credit.coords == nil ? L.placeWidthWithoutMap : L.placeWidthWithMap,
+                               maxWidth: layout.placeWidth(hasMap: credit.coords != nil),
                                color: .white)
             }
             if let coordinate = credit.coords {
@@ -256,13 +260,9 @@ enum SignatureShareCardRenderer {
                                               in: layout.mapRect, color: brass, context: cg)
             }
 
-            let exif = exifValues(credit)
-            let camera = exif.camera, lens = exif.lens, exposure = exif.exposure
-            let filled = [!camera.isEmpty, !lens.isEmpty, !exposure.isEmpty]
-
             // 区切り線（地図があるときは地図の手前で止める）。撮影情報が1つも無ければ、下の段ごと描かない
-            // （2026-11-12 判断: 段の位置は変えない。撮影者の段は帯の開始から・地図は帯の高さいっぱいの板の決まり）
-            if filled.contains(true) {
+            // （2026-11-13: そのときは帯もその分低い・`ShareCardMap.Layout.hasShotInfo`）
+            if layout.hasShotInfo {
                 let separatorY = layout.separatorY
                 cg.setStrokeColor(lineColor)
                 cg.setLineWidth(L.lineWidth)

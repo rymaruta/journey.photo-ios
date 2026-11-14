@@ -250,8 +250,12 @@ enum TripTravel {
     static let walkFirstKm = 1.5
 
     /// 聞く手段（先に出す順・最大2つ）。**公共交通が使えない（`transitAvailable == false`）ときは車と歩きだけ**
+    ///
+    /// **2026-11-12 判断（owner「何線に乗ればいいかはできる？」）: 近い区間（1.5km 以内）は歩きと電車など**
+    /// （前は歩きと車）。1.5km の車の数分は旅の計画で使われず、歩くか乗るかを決めるのは歩きと電車などの比べ。
+    /// 聞く数は区間ごとに2つのまま（聞きすぎない）
     static func modes(for leg: Leg, transitAvailable: Bool) -> [Mode] {
-        if leg.kilometers <= walkFirstKm { return [.walking, .automobile] }
+        if leg.kilometers <= walkFirstKm { return transitAvailable ? [.walking, .transit] : [.walking, .automobile] }
         return transitAvailable ? [.automobile, .transit] : [.automobile, .walking]
     }
 
@@ -409,11 +413,50 @@ enum TripTravel {
         return c?.url
     }
 
-    /// 区間のシートで開く手段。**電車などが返った区間は電車など**（どの電車・バスかを地図のアプリで見る）、
-    /// 無ければ先に出した手段。何も返らなければ距離で決めた先の手段
-    static func openMode(_ estimates: [Estimate], modes: [Mode]) -> Mode {
-        if estimates.contains(where: { $0.mode == .transit }) { return .transit }
-        return estimates.first?.mode ?? modes.first ?? .automobile
+    /// 歩きで開く長さ（分）。Apple の見込みで歩きがこれ以内なら、歩きの経路で開く
+    static let walkOpenMinutes = 15
+    /// 見込みがまだ無い（聞いている・圏外・聞きすぎで止めた）ときに歩きで開く、まっすぐの距離（km）
+    static let walkOpenKm = 1.0
+
+    /// 区間の行・シートから Apple のマップを開く手段（2026-11-12 判断・owner「何線に乗ればいいかはできる？」）。
+    ///
+    /// **何線に乗るか・乗り換え・時刻は、Apple のマップの公共交通の経路が出す**（アプリの中では出せない:
+    /// `MKDirectionsTransportType.transit` は Apple の文書で「到着時刻の見込みにだけ対応」。経路 `calculate` では使えない）。
+    /// だから既定は電車など。ただし次のときは別の手段で開く:
+    /// 1. 歩きの見込みが 15 分以内 → 歩き（乗るより早いか同じくらい。地図のアプリでも歩きを勧めるのと同じ）
+    /// 2. 電車などの見込みが返った → 電車など
+    /// 3. 聞き終えて電車などが返らなかった（路線が無い）→ 返った車、無ければ返った歩き
+    /// 4. 見込みがまだ無く、まっすぐ 1km 以内 → 歩き
+    /// 5. それ以外 → 電車など
+    static func mapsMode(_ estimates: [Estimate], leg: Leg, settled: Bool) -> Mode {
+        func seconds(_ mode: Mode) -> Int? { estimates.first { $0.mode == mode }?.seconds }
+        if let walk = seconds(.walking), walk <= walkOpenMinutes * 60 { return .walking }
+        if seconds(.transit) != nil { return .transit }
+        if settled {
+            if seconds(.automobile) != nil { return .automobile }
+            if seconds(.walking) != nil { return .walking }
+        }
+        if estimates.isEmpty, leg.kilometers <= walkOpenKm { return .walking }
+        return .transit
+    }
+
+    /// 行に出す順。**開く手段を先頭に**（押す前に、何で開くかが字の並びで分かる・2026-11-12 判断）。
+    /// ほかは聞いた順のまま。日の「間に合わない」の数え方（`dayTravel`）はこの順を使わない
+    static func ordered(_ estimates: [Estimate], first mode: Mode) -> [Estimate] {
+        estimates.filter { $0.mode == mode } + estimates.filter { $0.mode != mode }
+    }
+
+    /// 区間の行を押すと何が起きるか（読み上げのヒント）
+    static func mapsHint(_ mode: Mode) -> String {
+        switch mode {
+        case .transit:
+            return L("Apple のマップで、電車などの経路を開きます。何線に乗るか、乗り換え、時刻が出ます",
+                     "Opens transit directions in Apple Maps, with lines, transfers and times.")
+        case .walking:
+            return L("Apple のマップで、歩きの経路を開きます", "Opens walking directions in Apple Maps.")
+        case .automobile:
+            return L("Apple のマップで、車の経路を開きます", "Opens driving directions in Apple Maps.")
+        }
     }
 
     // MARK: - 言葉

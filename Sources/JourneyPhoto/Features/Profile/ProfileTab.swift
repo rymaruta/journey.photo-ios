@@ -33,7 +33,8 @@ enum ProfileTab: String, CaseIterable, Identifiable {
         switch self {
         case .posts: return "square.grid.2x2"  // 板 05c: 2×2 の格子
         case .trips: return "book.closed"
-        case .wishlist: return "heart"
+        // 2026-11-13（#187・案 B）: ハートから旗へ。ハートはいいねの印で意味が重なる。写真の詳細の「行きたい」も旗
+        case .wishlist: return "flag"
         case .map: return "map"
         case .favorites: return "bookmark"
         }
@@ -67,11 +68,29 @@ protocol PagedTab: Hashable {
     var tabTitle: String { get }
     /// 札の目印（UI テスト・`ScreenshotTests`）。**位置で探させない**
     var tabIdentifier: String { get }
+    /// 札の印（SF Symbols の線の形の名前）。札の行「絵と字」（`ProfileTabBar.iconColumns`）だけが使う。無ければ nil
+    var tabSymbol: String? { get }
+    /// 1行に入らないときの2行の名前（折る所に改行）。無ければ nil（1行のまま）
+    var tabTitleWrapped: String? { get }
+}
+
+extension PagedTab {
+    var tabSymbol: String? { nil }
+    var tabTitleWrapped: String? { nil }
 }
 
 extension ProfileTab: PagedTab {
     var tabTitle: String { label }
     var tabIdentifier: String { "profile.tab.\(rawValue)" }
+    var tabSymbol: String? { systemImage }
+    /// 2026-11-13（#187・案 B）: 狭い幅・大きい字で「行きたい／場所」「旅の／記録」と言葉の切れ目で折る
+    var tabTitleWrapped: String? {
+        switch self {
+        case .trips: return L("旅の\n記録", "Trips")
+        case .wishlist: return L("行きたい\n場所", "Want to\ngo")
+        case .posts, .map, .favorites: return nil
+        }
+    }
 }
 
 extension PagedTab {

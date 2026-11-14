@@ -314,6 +314,21 @@ struct StoryViewerView: View {
                 content(for: story)
             }
         }
+        // UI テストのときだけ（`PreviewSession.feedProbe`）: いま出しているストーリーを見えない要素に出す
+        // （2026-11-14 Mac の回 1246・`testCapturesSharedPhotoStory` で「写真を見る」が出なかった件。どの人の何本目を
+        // 出していたかを、推定でなく値で見るため）。ふだんは何も足さない
+        .overlay(alignment: .bottomLeading) {
+            if PreviewSession.feedProbe {
+                Text(".")
+                    .font(.caption2)
+                    .foregroundStyle(Color.clear)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("story.viewer.probe")
+                    .accessibilityValue("story=\(current?.id ?? "-") index=\(index)/\(visible.count)"
+                        + " user=\(current?.userId ?? "-") shared=\(current?.sharedPhotoId ?? "-")"
+                        + " ids=\(visible.map(\.id).joined(separator: ","))")
+            }
+        }
         // 曲（板の「♪」）。**鳴らしていなかった**——曲名を文字で出すだけだった
         .onAppear {
             // 開いている間は場を返さない（動画の音を切らない）。返すのは閉じたとき
@@ -1178,8 +1193,7 @@ struct StoryViewerView: View {
     private func authorLabel(for story: Story) -> some View {
         HStack(spacing: 10) {
             if let userId = story.userId {
-                RemoteImage(url: UserProfile.profileAssetURL(userId: userId, suffix: nil, cacheBust: nil),
-                            placeholderSymbol: "person.crop.circle.fill")
+                FaceImage(url: UserProfile.profileAssetURL(userId: userId, suffix: nil, cacheBust: nil))
                     .frame(width: 34, height: 34)
                     .clipShape(Circle())
             }
@@ -1725,8 +1739,7 @@ struct StoryViewerView: View {
                 .frame(width: StoryViewerMetrics.menuAvatar, height: StoryViewerMetrics.menuAvatar)
                 .clipShape(Circle())
             } else if let userId = story.userId {
-                RemoteImage(url: UserProfile.profileAssetURL(userId: userId, suffix: nil, cacheBust: nil),
-                            placeholderSymbol: "person.crop.circle.fill")
+                FaceImage(url: UserProfile.profileAssetURL(userId: userId, suffix: nil, cacheBust: nil))
                     .frame(width: StoryViewerMetrics.menuAvatar, height: StoryViewerMetrics.menuAvatar)
                     .clipShape(Circle())
             }
@@ -2221,8 +2234,7 @@ struct StoryViewerView: View {
     private var viewerFaces: some View {
         HStack(spacing: -8) {
             ForEach(Array(viewers.prefix(3))) { viewer in
-                RemoteImage(url: UserProfile.profileAssetURL(userId: viewer.userId, suffix: nil, cacheBust: nil),
-                            placeholderSymbol: "person.crop.circle.fill")
+                FaceImage(url: UserProfile.profileAssetURL(userId: viewer.userId, suffix: nil, cacheBust: nil))
                     .frame(width: 26, height: 26)
                     .clipShape(Circle())
                     .overlay(Circle().strokeBorder(Color.black, lineWidth: 2))

@@ -232,7 +232,7 @@ struct TrunkPrivacyPreview: View {
     private var seen: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                RemoteImage(url: profile?.avatarURL(cacheBust: userId.map { ProfileImageVersions.shared.token(for: $0) }))
+                FaceImage(url: profile?.avatarURL(cacheBust: userId.map { ProfileImageVersions.shared.token(for: $0) }))
                     .frame(width: 40, height: 40)
                     .background(WebTheme.card)
                     .clipShape(Circle())

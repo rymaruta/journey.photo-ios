@@ -74,6 +74,30 @@ final class ProfileTabPagerTests: XCTestCase {
         XCTAssertTrue(pager.contains("enabled: !swipeBlocked.contains(selection), follow: dragBox,"))
     }
 
+    /// 🔴 2026-11-14（#187 案 B・Mac run 1233 の記録 `pan[row] receive -> no(hscroll)`）: とても大きい字で札の行が
+    /// 横に送る並びに替わっても、札の行の上の払いで札が替わる。札の行の払いは横の送りに指を渡さず
+    /// （`yieldsToHorizontalScrollers: false`）、横の送りはこちらが「始めない」と決まってから動く。
+    /// 中身の払い（ホームの PICKS などの列）は今までどおり列に渡す。Mac では
+    /// `ScreenshotTests.testPinsMyPageTabsAtLargeTextAX3`・`AX5` の右への払いが「投稿」に戻ることで見る
+    func testRowSwipeKeepsTheFingerOnAScrollingTabRow() throws {
+        let pager = try source("Sources/JourneyPhoto/Features/Profile/ProfileTabPager.swift")
+        let swipe = String(pager[pager.range(of: "struct ProfileTabSwipe")!.lowerBound...])
+        XCTAssertTrue(swipe.contains("var yieldsToHorizontalScrollers: Bool = true"), "既定（中身）は横の列に渡す")
+        XCTAssertTrue(swipe.contains("if handlers?.yieldsToHorizontalScrollers == false {"),
+                      "札の行の払いが、札の行の横の送りの上の指を受けない")
+        XCTAssertTrue(swipe.contains("|| gestureRecognizer === pan && waitsForRow(otherGestureRecognizer)"),
+                      "札の行の横の送りが、札の払いの判定を待たない（指を取り合う）")
+        XCTAssertTrue(swipe.contains("scroll.panGestureRecognizer === other, scroll.isDescendant(of: host)"))
+        // マイページ・人のページの札の行は渡さない。中身の入れ物（`ProfileTabPager`）は渡す（既定）
+        for path in ["Sources/JourneyPhoto/Features/Profile/MyPageView.swift",
+                     "Sources/JourneyPhoto/Features/Profile/UserProfileView.swift"] {
+            let view = try source(path)
+            XCTAssertTrue(view.contains("probeTag: \"row\", yieldsToHorizontalScrollers: false))"), "\(path) の札の行が横の送りに指を渡す")
+        }
+        XCTAssertFalse(pager.contains("follow: dragBox,\n                                  extendsUp: swipeExtendsUp,\n                                  willShow: { next in prepare(next) }, yieldsToHorizontalScrollers: false"),
+                       "中身の払いまで横の列に指を渡さなくなった")
+    }
+
     /// 🔴 2026-10-28 確かめ役の見直し: 払っている間に入れ物の `body`（全部の札の `page()`）を作り直さない。
     /// 横の量は見張らない箱に置き、小さな子だけが読む。隣の札は未作成のときだけ足す。途中で離れたら残さない
     func testDragDoesNotRebuildEveryPage() throws {

@@ -86,7 +86,8 @@ final class PhotoScreensV2Tests: XCTestCase {
         XCTAssertFalse(heading.contains("WebTheme.faint"), "黒地の日時が写真の上の透過の灰のまま")
         // 題を写真に重ねる負の余白は無い（v2 は写真の下）
         XCTAssertFalse(view.contains("heroOverlap"))
-        XCTAssertTrue(view.contains("details(proxy, hero: hero)\n                                .padding(.top, JPSpace.l)"))
+        // 2026-11-13（札 #592）: 下へ引いて戻るときに薄れる子（`DetailPullFollow`）へ包んだ。題の上の余白は同じ
+        XCTAssertTrue(view.contains("content: details(proxy, hero: hero).padding(.top, JPSpace.l)"))
         // 説明は本文 15 の text-2
         let paragraphs = member("private var paragraphs", in: view)
         XCTAssertTrue(paragraphs.contains(".font(JPFont.body)"))
@@ -143,17 +144,16 @@ final class PhotoScreensV2Tests: XCTestCase {
         XCTAssertEqual(PhotoDetailView.nearbyColumns, 4)
     }
 
-    /// 行き先の段: 眉ラベル（真鍮・黒地）と、幅を分け合う 48 の札。印は真鍮、字は白
+    /// 行き先の段: 眉ラベル（真鍮・黒地）と、観光スポットの頁と同じ行動の札（2026-11-13 点検で 48 の横の札から替えた）
     func testTripSectionBrassOnBlackAndTall() throws {
         let section = try source("Features/PhotoDetail/PhotoTripSection.swift")
         XCTAssertTrue(section.contains("JPEyebrowLine(L(\"NEXT TRIP\\u{2002}次の旅へ\""))
-        XCTAssertTrue(section.contains(".foregroundStyle(WebTheme.accent)"))
-        XCTAssertTrue(section.contains("selected ? WebTheme.accent : WebTheme.line"), "選んだ状態を縁で伝えていない")
-        XCTAssertTrue(section.contains(".frame(maxWidth: .infinity, minHeight: Self.goHeight)"))
+        XCTAssertTrue(section.contains(".foregroundStyle(WebTheme.accent)"), "「いつ」の太陽が真鍮でない")
+        XCTAssertEqual(section.components(separatedBy: "Parts.actionLabel(").count - 1, 3,
+                       "行きたい・旅行プランに入れる・経路が観光スポットの頁と同じ札でない")
+        XCTAssertTrue(section.contains("filled: wanted)"), "選んだ状態を塗りで伝えていない")
         XCTAssertFalse(section.contains("WebTheme.muted2"), "黒地の「いつ」が写真の上の灰のまま")
-        XCTAssertGreaterThanOrEqual(PhotoTripSection.goHeight, WebTheme.minTapTarget)
-        XCTAssertEqual(PhotoTripSection.goHeight, 48)
-        XCTAssertEqual(PhotoTripSection.goRadius, 14)
+        // 札の高さ（64・押せる 44 以上）は `DesignAudit1113Tests`（@MainActor の部品の値を読む）
     }
 
     // MARK: - 全画面
@@ -189,9 +189,9 @@ final class PhotoScreensV2Tests: XCTestCase {
         XCTAssertGreaterThanOrEqual(JPHeight.field, WebTheme.minTapTarget)
         XCTAssertFalse(sheet.contains("JPRadioRow("), "通報の理由が共通の右の白い丸のまま")
         XCTAssertTrue(sheet.contains(".jpPillButton(JPPillStyle.main(onPhoto: false))"))
-        // 閉じるはガラスの丸 44
+        // 閉じるは見出しの左のシートの「閉じる」（ガラス・当たり 44。2026-11-13 owner 承認・#187。前は右のガラスの丸の ×）
         let header = member("private var header", in: sheet)
-        XCTAssertTrue(header.contains(".frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)"))
+        XCTAssertTrue(header.contains("SheetCloseButton(onContent: true)"))
         // 通報する写真の札は写真の詳細から渡す
         let detail = try source("Features/PhotoDetail/PhotoDetailView.swift")
         XCTAssertTrue(detail.contains("ReportSheet(photoId: current.id, ownerId: ownerId, subject: reportSubject)"))

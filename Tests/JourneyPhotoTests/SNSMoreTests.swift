@@ -67,15 +67,22 @@ final class SNSMoreTests: XCTestCase {
         XCTAssertTrue(SuggestedPeople.showsSeeFeed(followedHere: ["A"]))
     }
 
-    /// ホームの「フォロー中」が空のとき、「写真や人を探す」の前に「おすすめの人」を出す（並べる人がいれば）
-    func testFollowingEmptyShowsSuggestedPeople() throws {
+    /// 札 #595: 「フォロー中」の札が無くなったので、**誰もフォローしていないログイン中の人には、1本の並びの中**
+    /// （ひと回りと季節の段の後ろ）に「おすすめの人」を出す（並べる人がいれば）。フォローしたら頭へ送り、上の段にその人の写真
+    func testFollowingNobodyShowsSuggestedPeopleInTheFeed() throws {
         let gallery = try source("Sources/JourneyPhoto/Features/Gallery/GalleryView.swift")
-        let start = try XCTUnwrap(gallery.range(of: "private func feedEmptyState(_ page: HomeFeed) -> some View {"))
-        let body = String(gallery[start.upperBound...].prefix(1800))
+        let start = try XCTUnwrap(gallery.range(of: "private func feedSection(_ rows: HomeFeedPageMemo.Rows, featured: [FeaturedGroups.Group]) -> some View {"))
+        let body = String(gallery[start.upperBound...].prefix(4000))
+        let shelf = try XCTUnwrap(body.range(of: "HomeSpotShelfView("))
         let suggested = try XCTUnwrap(body.range(of: "HomeSuggestedPeopleView("))
-        let search = try XCTUnwrap(body.range(of: "L(\"写真や人を探す\""))
-        XCTAssertLessThan(suggested.lowerBound, search.lowerBound, "おすすめの人が先")
-        XCTAssertTrue(body.contains("page == .following, let userId = auth.userId, !suggestedPeople(userId).isEmpty"))
+        let rest = try XCTUnwrap(body.range(of: "HomeMosaic(groups: rows.rest"))
+        XCTAssertLessThan(shelf.lowerBound, suggested.lowerBound, "写真より先におすすめの人を出している")
+        XCTAssertLessThan(suggested.lowerBound, rest.lowerBound)
+        XCTAssertTrue(body.contains("if !isEmpty, let userId = auth.userId, model.following(for: userId).isEmpty,"),
+                      "フォローしている人にもおすすめの人を出している")
+        let after = try XCTUnwrap(gallery.range(of: "private func showFollowingAfterSuggested("))
+        XCTAssertTrue(String(gallery[after.upperBound...].prefix(800)).contains("scrollToTopRequests &+= 1"),
+                      "フォローしても上の段（フォロー中の人の新しい写真）へ送らない")
     }
 
     /// UI テストの見本の通信: `-JPPreviewFollowNone` で誰もフォローしていないことにし、フォローは受けたことにする

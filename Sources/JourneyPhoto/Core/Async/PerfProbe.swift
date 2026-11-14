@@ -30,6 +30,8 @@ final class PerfRecorder: @unchecked Sendable {
         case home
         case myPage
         case photoDetail
+        /// 探す（`SearchView`・2026-11-13 札 #590「探すの検索が重い」）
+        case search
     }
 
     struct SelectionEntry: Equatable, Sendable {
@@ -58,7 +60,8 @@ final class PerfRecorder: @unchecked Sendable {
 
     let isEnabled: Bool
     private let clock: () -> TimeInterval
-    private let origin: TimeInterval
+    /// 0ms の時刻（`PerfTimeline` も同じ起点にする・2026-11-13 札 #594）
+    let origin: TimeInterval
     private let lock = NSLock()
     private var selections: [SelectionEntry] = []
     private var droppedSelections = 0
@@ -76,6 +79,11 @@ final class PerfRecorder: @unchecked Sendable {
     private var hitCounts: [String: Int] = [:]
     /// 止まっている最中のメインスレッドの積み（`PerfMainSampler` が撮る）。止まった時刻と突き合わせて「何をしていたか」を見る
     private var samples: [PerfSample] = []
+    /// 探すの語ごとの記録（`searchBody(query:)`・2026-11-13 札 #590）。語が替わるたびに1つ足す
+    private var searchWindows: [SearchWindow] = []
+    private var droppedSearchWindows = 0
+    /// 撮影スポットを語で当てた（`SearchView.spotHits`）回数・合計・最大（起動から通して）
+    private var spotHitsTotal = SearchWindow.SpotHits()
 
     /// - Parameter clock: 秒を返す時計（試験で差し替える）。作った時点を 0ms とする
     init(enabled: Bool, clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
@@ -137,6 +145,11 @@ final class PerfRecorder: @unchecked Sendable {
         guard isEnabled else { return }
         lock.lock()
         defer { lock.unlock() }
+        // 探すの語ごとの記録にも、刻みの間隔（最大）と 100ms を超えた回数を足す（札 #590）
+        if let last = stall.lastTimestamp, !searchWindows.isEmpty, droppedSearchWindows == 0 {
+            let gap = Int(((timestamp - last) * 1000).rounded())
+            searchWindows[searchWindows.count - 1].addFrameGap(gap, thresholdMs: stall.thresholdMs)
+        }
         // 刻みが戻ってきた時刻（`task=` と同じ時計）から長さを引くと、止まり始めた時刻になる。
         // どの処理の最中に止まったかを、`task=`・`sel=` の時刻と突き合わせて見られる
         guard let gapMs = stall.ingest(timestamp) else { return }
@@ -201,6 +214,8 @@ final class PerfRecorder: @unchecked Sendable {
         guard isEnabled else { return }
         let now = elapsedMs()
         let key = name()
+        // 段ごとの回数は通しの記録にも足す（`PerfTimeline`・2026-11-13 札 #594。こちらの枠が尽きても数える）
+        PerfTimeline.shared.count(key)
         lock.lock()
         defer { lock.unlock() }
         guard hitCounts[key] != nil || hitCounts.count < 32 else { return }
@@ -231,12 +246,72 @@ final class PerfRecorder: @unchecked Sendable {
         }
     }
 
+    // MARK: - 探す（2026-11-13 札 #590「探すの検索が重い」）
+
+    /// 探すの `body` を1回評価した（`let _ = PerfRecorder.shared.searchBody(query: query)`・body の頭で呼ぶ）。
+    /// `bodyHit(.search)` と同じ数え方に加えて、**語ごとの記録**（`srch=`）に足す: 前の評価と語が違えば新しい語の記録を始める。
+    /// 1字打つと、その字の語の記録に body の回数・撮影スポットを当てた回数と時間・刻みの間隔の最大が貯まる。
+    /// 最初の語の記録を始めるときに、止まっている最中の積みの見本を空にする（起動の停止で枠を使い切らないように）
+    func searchBody(query: String) {
+        guard isEnabled else { return }
+        bodyHit(.search)
+        let now = elapsedMs()
+        lock.lock()
+        defer { lock.unlock() }
+        if searchWindows.last?.query != query {
+            if searchWindows.isEmpty, droppedSearchWindows == 0 { samples = [] }
+            if searchWindows.count < Self.searchWindowCap {
+                searchWindows.append(SearchWindow(query: query, startMs: now))
+            } else {
+                droppedSearchWindows += 1
+                // 枠を使い切ったら、最後の記録を使い回さない（数が混ざる）。数えるのは止める
+                return
+            }
+        }
+        searchWindows[searchWindows.count - 1].bodies += 1
+    }
+
+    /// 撮影スポットを語で当てる（`SearchView.spotHits`）時間を測って足す。**無効のときは測らずにそのまま返す**
+    func searchSpotHits<T>(_ body: () -> T) -> T {
+        guard isEnabled else { return body() }
+        let start = clock()
+        let result = body()
+        let ms = (clock() - start) * 1000
+        lock.lock()
+        defer { lock.unlock() }
+        spotHitsTotal.add(ms)
+        if !searchWindows.isEmpty, droppedSearchWindows == 0 {
+            searchWindows[searchWindows.count - 1].spotHits.add(ms)
+        }
+        return result
+    }
+
+    /// 探すの `officialSpots` が書き換わった（`.onChange(of: officialSpots)`）回数と、その中で束ね直した時間を、
+    /// 今の語の記録に足す（`c<回数>/<合計>ms`・2026-11-14 札 #590）。×で消した直後の 3.4 秒の止まり（回 1235）が、
+    /// 撮影スポットの書き換え（発見の札の表紙の詳細を重ねた）の後に起きたかを数字で見る。**無効のときは測らずにそのまま走る**
+    func searchSpotsChanged(_ body: () -> Void) {
+        guard isEnabled else { return body() }
+        let start = clock()
+        body()
+        let ms = (clock() - start) * 1000
+        lock.lock()
+        defer { lock.unlock() }
+        if !searchWindows.isEmpty, droppedSearchWindows == 0 {
+            searchWindows[searchWindows.count - 1].spotsChanged.add(ms)
+        }
+    }
+
+    /// 語ごとの記録の上限（3回 ×「京」「京都」「（空）」「富」「富士」「富士山」「（空）」= 21 と、開いたときの空の分）
+    static let searchWindowCap = 32
+
     // MARK: - body
 
     /// `body` を1回評価した。**評価ごとに1足す**（`let _ = PerfRecorder.shared.bodyHit(.home)`）。
     /// 最初の 2 回は出来事にも残す（`body.home#1`）
     func bodyHit(_ screen: BodyScreen) {
         guard isEnabled else { return }
+        // 段ごとの回数は通しの記録にも足す（`PerfTimeline`・2026-11-13 札 #594）
+        PerfTimeline.shared.count("body.\(screen.rawValue)")
         let now = elapsedMs()
         lock.lock()
         defer { lock.unlock() }
@@ -286,6 +361,9 @@ final class PerfRecorder: @unchecked Sendable {
             + " | ev=[\((events.map { "+\($0.ms) \($0.name)" } + (droppedEvents > 0 ? ["+\(droppedEvents)dropped"] : [])).joined(separator: ";"))]"
             // さらに後ろ（2026-11-07）: 止まっている最中のメインスレッドの積み。`+撮った ms 段^段^…`（浅い方＝いま実行中の処理が先）
             + " | samples=[\(samples.map { "+\($0.ms) " + $0.frames.joined(separator: "^") }.joined(separator: ";"))]"
+            // さらに後ろ（2026-11-13 札 #590）: 撮影スポットを語で当てた 回数/合計/最大（起動から通して）と、探すの語ごとの記録
+            + " | spot=\(spotHitsTotal.count)/\(spotHitsTotal.totalMs)ms/\(spotHitsTotal.maxMs)ms"
+            + " | srch=[\((searchWindows.map(\.summary) + (droppedSearchWindows > 0 ? ["+\(droppedSearchWindows)dropped"] : [])).joined(separator: ";"))]"
     }
 }
 
@@ -318,6 +396,57 @@ struct StallMeter: Equatable {
     /// 次の刻みを「最初の1回」にする（裏から戻った直後の長い空きを数えない）
     mutating func reset() {
         lastTimestamp = nil
+    }
+}
+
+/// 探すの語 1 つ分の記録（2026-11-13 札 #590）。語が画面の `body` に初めて来た時刻から、次の語が来るまで。
+/// 形は `+1234ms 京都 b3 h9/3012ms/400ms g450ms s2 c1/80ms`（始めた ms・語・body の回数・撮影スポットを当てた 回数/合計/最大・
+/// 刻みの間隔の最大・100ms を超えた回数・`officialSpots` が書き換わった回数/束ね直した合計（2026-11-14 に足した））。空の語は `(空)`。語の中の `;` `|` `[` `]` と空白は `_` に替える
+struct SearchWindow: Equatable {
+    /// 回数・合計・最大（ms・整数に丸めて出す）
+    struct SpotHits: Equatable {
+        var count = 0
+        private var total = 0.0
+        private var max = 0.0
+        var totalMs: Int { Int(total.rounded()) }
+        var maxMs: Int { Int(max.rounded()) }
+
+        mutating func add(_ ms: Double) {
+            count += 1
+            total += ms
+            max = Swift.max(max, ms)
+        }
+    }
+
+    let query: String
+    let startMs: Int
+    var bodies = 0
+    var spotHits = SpotHits()
+    /// `officialSpots` が書き換わった回数・その中の時間（`searchSpotsChanged`・2026-11-14）
+    var spotsChanged = SpotHits()
+    /// 刻みの間隔の最大（ms）と、閾値を超えた回数
+    private(set) var maxGapMs = 0
+    private(set) var stalls = 0
+
+    init(query: String, startMs: Int) {
+        self.query = query
+        self.startMs = startMs
+    }
+
+    mutating func addFrameGap(_ gapMs: Int, thresholdMs: Double) {
+        maxGapMs = max(maxGapMs, gapMs)
+        if Double(gapMs) > thresholdMs { stalls += 1 }
+    }
+
+    /// 値に出す語（区切りの字と空白を `_` に）
+    static func label(_ query: String) -> String {
+        guard !query.isEmpty else { return "(空)" }
+        return String(query.map { ";|[]".contains($0) || $0.isWhitespace ? "_" : $0 })
+    }
+
+    var summary: String {
+        "+\(startMs)ms \(Self.label(query)) b\(bodies) h\(spotHits.count)/\(spotHits.totalMs)ms/\(spotHits.maxMs)ms"
+            + " g\(maxGapMs)ms s\(stalls) c\(spotsChanged.count)/\(spotsChanged.totalMs)ms"
     }
 }
 

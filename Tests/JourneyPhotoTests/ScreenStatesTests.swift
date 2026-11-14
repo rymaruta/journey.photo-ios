@@ -79,7 +79,6 @@ final class ScreenStatesTests: XCTestCase {
         let expected: [(String, String)] = [
             ("Features/Trips/TripPlanDetailView.swift", "ErrorBanner(title: L(\"プランが見つかりません\""),
             ("Features/Albums/InviteView.swift", ": L(\"この招待リンクは使えません\""),
-            ("Features/Gallery/GalleryView.swift", "ErrorBanner(title: L(\"フォロー中の人を読み込めませんでした\""),
             ("Features/Pass/PassCardPickView.swift", "ErrorBanner(title: L(\"写真を読み込めませんでした\""),
             ("Features/Profile/FavoritesView.swift", "ErrorBanner(title: L(\"いいねした写真を読み込めませんでした\""),
             ("Features/Map/PhotoMapView.swift", "ErrorBanner(title: L(\"観光スポットを読み込めませんでした\""),

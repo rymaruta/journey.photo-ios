@@ -61,8 +61,22 @@ struct VisitedMapEntryCard: View {
         .accessibilityLabel(VisitedMapText.entryAccessibility(record.visitedCount))
         .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("profile.visitedMap")
-        .task(id: auth.userId) { record = VisitedPrefectureStore().load(for: auth.userId) }
-        .onAppear { record = VisitedPrefectureStore().load(for: auth.userId) }
+        .task(id: auth.userId) { record = Self.load(for: auth.userId) }
+        .onAppear { record = Self.load(for: auth.userId) }
+    }
+
+    /// 札に出す記録。ふだんは端末の記録（`VisitedPrefectureStore`）。
+    ///
+    /// 2026-11-13 判断: UI テストの見本（`-JPPreviewVisitedMap YES`・Debug のみ・`PreviewSession.visitedMapSeed`）では、
+    /// 行った県の画面と同じ見本の 31 県を出す。run 1203 の絵で、画面は見本で 31/47 なのに、札は端末の記録（空）を読んで
+    /// 0/47 だった。見本は端末に書かない（画面の `seedForPreview` と同じ）。Release では見本は必ず nil なので製品の動きは変わらない
+    nonisolated static func load(for userId: String?, store: VisitedPrefectureStore = VisitedPrefectureStore()) -> VisitedPrefectures {
+        if let seed = PreviewSession.visitedMapSeed {
+            var record = seed
+            record.settleOnOpen()
+            return record
+        }
+        return store.load(for: userId)
     }
 }
 
