@@ -211,6 +211,16 @@ final class CriticalFlowTests: XCTestCase {
         toPhoto.tap()
         let thumb = app.buttons["upload.thumb.0"].firstMatch
         XCTAssertTrue(thumb.waitForExistence(timeout: 20), "見本の1枚が投稿画面に入らない")
+        // 2026-11-14（#188）: 「投稿する」は下の帯の主ボタン（板の投稿画面）。キーボードが出る前に、画面の下の方に
+        // 幅いっぱい・高さ 44 以上で在るかを見る（右上の字に戻ると落ちる）
+        let bottomSubmit = app.buttons["upload.submit"].firstMatch
+        XCTAssertTrue(bottomSubmit.waitForExistence(timeout: 5), "下の「投稿する」が無い")
+        let screen = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(bottomSubmit.frame.minY, screen.height * 0.8,
+                             "「投稿する」が下に無い（frame \(bottomSubmit.frame)・画面 \(screen)）")
+        XCTAssertGreaterThan(bottomSubmit.frame.width, screen.width * 0.8, "「投稿する」が幅いっぱいでない（\(bottomSubmit.frame)）")
+        XCTAssertGreaterThanOrEqual(bottomSubmit.frame.height, 44, "「投稿する」の的が 44pt 未満")
+        XCTAssertTrue(bottomSubmit.label.contains("投稿する"), "「投稿する」の字が違う（\(bottomSubmit.label)）")
 
         let title = "JP\(Int(Date().timeIntervalSince1970) % 1_000_000)"
         let titleField = app.textFields["upload.title"].firstMatch
@@ -254,6 +264,51 @@ final class CriticalFlowTests: XCTestCase {
             add(note)
         }
         XCTAssertTrue(posted.exists, "投稿した「\(title)」がマイページに並ばない")
+    }
+
+    /// 2026-11-14（#188・点検「直すべき 1」）: 書きかけ（見本の1枚を選んだ）の投稿画面を下へ払うと、跳ね返るだけでなく
+    /// 左上の「キャンセル」と同じ閉じる確認が出る。画面は閉じない（書きかけが消えない）
+    func testSwipeDownOnUploadDraftAsksBeforeClosing() {
+        let app = launch(["-JPPreviewUploadSample", "YES"])
+        tab(app, 2)
+        let toPhoto = app.buttons["post.choice.photo"].firstMatch
+        XCTAssertTrue(toPhoto.waitForExistence(timeout: 10), "投稿の2択が出ない")
+        toPhoto.tap()
+        let thumb = app.buttons["upload.thumb.0"].firstMatch
+        XCTAssertTrue(thumb.waitForExistence(timeout: 20), "見本の1枚が投稿画面に入らない")
+        Thread.sleep(forTimeInterval: 1)
+
+        // 上のバー（題「新規投稿」の辺り）から下へ大きく払う
+        let bar = app.navigationBars.firstMatch
+        let from = bar.exists
+            ? bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            : app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12))
+        let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95))
+        from.press(forDuration: 0.1, thenDragTo: to)
+
+        let stop = app.buttons["投稿をやめる"].firstMatch
+        let asked = stop.waitForExistence(timeout: 5)
+        if !asked {
+            // 推定で直さないための記録: 払ったあとの姿（画面が残ったか・どの確かめが出たか・バーの位置）
+            let line = "[swipeProbe] uploadOpen=\(thumb.exists) sheets=\(app.sheets.count) alerts=\(app.alerts.count)"
+                + " buttons=\(app.sheets.firstMatch.buttons.allElementsBoundByIndex.map(\.label))"
+                + " bar=\(bar.exists ? "\(bar.frame)" : "none")"
+            print(line)
+            let note = XCTAttachment(string: line)
+            note.name = "swipeProbe"
+            note.lifetime = .keepAlways
+            add(note)
+        }
+        XCTAssertTrue(asked, "書きかけの投稿画面を下へ払っても閉じる確認が出ない")
+        XCTAssertTrue(app.buttons["下書きに保存"].firstMatch.exists, "閉じる確認が「キャンセル」と違う（下書きに保存が無い）")
+        XCTAssertTrue(thumb.exists, "払っただけで書きかけの投稿画面が閉じた")
+        // 「書き続ける」で確かめを閉じると、書きかけのまま画面に戻る
+        let keep = app.buttons["書き続ける"].firstMatch
+        if keep.exists {
+            keep.tap()
+            XCTAssertTrue(stop.waitForNonExistence(timeout: 5), "「書き続ける」で確かめが閉じない")
+            XCTAssertTrue(thumb.exists, "「書き続ける」なのに書きかけが消えた")
+        }
     }
 
     // MARK: - 4. ログアウト → ログイン

@@ -136,7 +136,7 @@ struct ReportSheet: View {
         // **送っている間は閉じさせない。** 閉じた瞬間に呼び出し側の後始末
         // （ストーリーの `afterReport`）が走り、まだ記録されていない通報を
         // 見落とす。そのあと送信が成立しても後始末は二度と呼ばれない
-        .interactiveDismissDisabled(isWorking)
+        .sheetSwipeGuard(.busy(isWorking))
         .safeAreaInset(edge: .bottom) { footer }
         .background(Self.sheetBackground)
         .presentationBackground(Self.sheetBackground)

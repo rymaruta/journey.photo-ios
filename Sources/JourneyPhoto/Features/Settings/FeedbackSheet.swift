@@ -62,7 +62,7 @@ struct FeedbackSheet: View {
             }
             .scrollDismissesKeyboard(.interactively)
         }
-        .interactiveDismissDisabled(isSending)
+        .sheetSwipeGuard(.busy(isSending))
         .safeAreaInset(edge: .bottom) { footer }
         .background(WebTheme.sheet)
         .presentationBackground(WebTheme.sheet)

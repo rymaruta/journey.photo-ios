@@ -29,8 +29,11 @@ extension View {
             // 🔴 **シートの中に積まれた画面では、下へ払うとシートごと閉じる。** 戻るを
             // 隠しても止まるのは左端から払う戻るだけで、旅行プラン（メニューのシート）・
             // 親しい友達（投稿のシート）は払うだけで下書きが確かめもなく消えていた。
-            // シートの外では何もしない
-            .interactiveDismissDisabled(leave != .now)
+            // シートの外では何もしない。2026-11-14（#188）: 払ったら跳ね返るだけでなく、
+            // 自前の戻るを押したときと同じ確かめを出す（`sheetSwipeGuard`）
+            .sheetSwipeGuard(SheetSwipe.from(leave)) {
+                if leave == .confirm { isPresented.wrappedValue = true }
+            }
             .toolbar {
                 if leave != .now {
                     ToolbarItem(placement: .topBarLeading) {
@@ -68,8 +71,8 @@ extension View {
 ///
 /// 上の `unsavedLeaveGuard` は**積み重ねた画面の戻る**の形（標準の戻るを隠して
 /// 自前の戻るに差し替える）で、シートの ✕ には合わない。シートでは戻るを
-/// 差し替えるのではなく、**下へ払って閉じるのを止め**（`interactiveDismissDisabled`）、
-/// ✕ は呼び手が `.confirm` のときに `isPresented` を立てる。
+/// 差し替えるのではなく、**下へ払って閉じるのを止め**（`sheetSwipeGuard`）、払われたら ✕ と同じく
+/// `isPresented` を立てる。✕ は呼び手が `.confirm` のときに `isPresented` を立てる。
 /// 判断（`UnsavedLeave`）と「保存／捨てる（破壊的）／キャンセル」の並びは同じもの
 /// ——**2つ目の仕組みは作らない**。
 ///
@@ -91,9 +94,12 @@ extension View {
                            onSecondary: (() -> Void)? = nil,
                            onDiscard: @escaping () -> Void) -> some View {
         self
-            // 下へ払っても**跳ね返るだけ**で確認は出ない（SwiftUI には払われたことを知る口が
-            // 無い）。失うものは無く、✕ から確かめられる
-            .interactiveDismissDisabled(leave != .now)
+            // 2026-11-14（#188・点検「直すべき 1」）: 下へ払ったら、✕ を押したときと同じ確かめを出す。
+            // 前は跳ね返るだけで何も言わなかった（SwiftUI には払われたことを知る口が無いので、
+            // UIKit の知らせを `sheetSwipeGuard` が受ける）。送っている最中（`.wait`）は今までどおり止めるだけ
+            .sheetSwipeGuard(SheetSwipe.from(leave)) {
+                if leave == .confirm { isPresented.wrappedValue = true }
+            }
             .confirmationDialog(title, isPresented: isPresented, titleVisibility: .visible) {
                 if canSave {
                     Button(saveTitle, action: onSave)

@@ -125,7 +125,7 @@ struct DeleteAccountView: View {
         .navigationBarTitleDisplayMode(.inline)
         // 消している最中は戻らせない（戻って開き直すと、2本目の退会が走る。`ProfileEditView` と同じ）
         .navigationBarBackButtonHidden(isWorking)
-        .interactiveDismissDisabled(isWorking)
+        .sheetSwipeGuard(.busy(isWorking))
         // 画面を閉じたら 410 の知らせを受け直す（残ったアカウントはアラートが拾う）
         .onDisappear { auth.setDeletingFromScreen(false) }
     }

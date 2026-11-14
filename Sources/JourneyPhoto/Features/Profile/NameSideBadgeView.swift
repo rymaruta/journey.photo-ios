@@ -156,7 +156,7 @@ struct NameSideBadgeView: View {
         }
         .presentationBackground(NameSideChoice.sheetBackground)
         .presentationDragIndicator(.visible)
-        .interactiveDismissDisabled(saving)
+        .sheetSwipeGuard(.busy(saving))
         .fullScreenCover(item: $viewing) { badge in
             MedalViewerView(badge: badge, ownerName: profile.name)
         }

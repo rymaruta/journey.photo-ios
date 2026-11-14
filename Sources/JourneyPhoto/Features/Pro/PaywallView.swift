@@ -63,7 +63,7 @@ struct PaywallView: View {
             }
         }
         .background { Color.black.ignoresSafeArea() }
-        .interactiveDismissDisabled(busy)
+        .sheetSwipeGuard(.busy(busy))
         .task {
             await store.loadProducts()
             await loadHero()

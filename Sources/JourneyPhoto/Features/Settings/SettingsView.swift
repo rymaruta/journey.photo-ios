@@ -224,7 +224,7 @@ struct SettingsView: View {
                 .ignoresSafeArea()
         }
         .navigationBarBackButtonHidden(isSigningOut)
-        .interactiveDismissDisabled(isSigningOut)
+        .sheetSwipeGuard(.busy(isSigningOut))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }

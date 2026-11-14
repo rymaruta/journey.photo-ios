@@ -43,7 +43,7 @@ struct TripCreateView: View {
                         }
                 }
         }
-        .interactiveDismissDisabled(model.saving)
+        .sheetSwipeGuard(.busy(model.saving))
         // 全画面の板の上では、アプリの下の知らせ（`RootView`）が隠れるので、ここにも置く
         .overlay(alignment: .bottom) {
             ToastOverlay().padding(.bottom, 84)
