@@ -173,6 +173,56 @@ final class HomeFeedTests: XCTestCase {
         XCTAssertEqual(ids(fresh), ["a22", "a21", "b11", "b10", "c9"], "新しい順・1人2つまで・5つまで、になっていない")
     }
 
+    /// 🔴 確かめ役の指摘④: 「おすすめの人」で新しくフォローした人の写真は、**覚え（前に上に出した所）より古くても**上に出す。
+    /// 出さないと、フォローして頭へ送っても上に何も出ない（押して何も起きない）
+    func testNewlyFollowedPeopleShowRegardlessOfTheSeenMark() throws {
+        let photos = [try photo("old", at: "2026-09-01T00:00:00Z", user: "newcomer"),
+                      try photo("friendOld", at: "2026-09-02T00:00:00Z", user: "friend")]
+        let seen = "2026-10-01T00:00:00Z"
+        XCTAssertTrue(HomeFeed.followingFresh(photos, viewerId: "me", followingIds: ["newcomer", "friend"], seen: seen).isEmpty,
+                      "前提: 覚えより古い写真は上に出ない")
+        let fresh = HomeFeed.followingFresh(photos, viewerId: "me", followingIds: ["newcomer", "friend"], seen: seen,
+                                            alwaysNew: ["newcomer"])
+        XCTAssertEqual(ids(fresh), ["old"], "新しくフォローした人の写真が上に出ない（前からの人の古い写真は出さない）")
+    }
+
+    /// 🔴 確かめ役の指摘③: 見ている間（画面の頭にいない間）は、上の段に写真が**現れない・増えない**（下がずれない）。
+    /// 頭にいるとき・引き下げ（`capture`）・新しくフォローしたとき（`addFollowees`）だけ足す
+    func testFollowingSectionDoesNotGrowWhileScrolledAway() throws {
+        let suite = "HomeFeedTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = FollowingSeenStore(defaults: defaults)
+        let a = try photo("a", at: "2026-10-01", user: "f")
+        let b = try photo("b", at: "2026-10-02", user: "f")
+        var baseline = FollowingBaseline()
+        baseline.capture(viewer: "me", store: store)
+        XCTAssertEqual(ids(baseline.visible([a])), ["a"], "まだ決めていないのに候補を出さない")
+
+        // フォロー一覧が遅れて着いた（最初は空）・下へ送っている間に増えた → 出さない
+        baseline.settle(candidates: [], atHead: false)
+        baseline.settle(candidates: ["a"], atHead: false)
+        XCTAssertTrue(baseline.visible([a]).isEmpty, "下へ送っている間に上の段が現れた（下がずれる）")
+        // 頭に戻った → 出す
+        baseline.settle(candidates: ["a"], atHead: true)
+        XCTAssertEqual(ids(baseline.visible([a])), ["a"])
+        // 送っている間に1枚増えた → 増やさない（減るのはよい: ブロックで落ちた分は出さない）
+        baseline.settle(candidates: ["b", "a"], atHead: false)
+        XCTAssertEqual(ids(baseline.visible([b, a])), ["a"], "下へ送っている間に上の段が増えた")
+        XCTAssertTrue(baseline.visible([b]).isEmpty)
+        // 引き下げ → 候補をそのまま
+        baseline.capture(viewer: "me", store: store)
+        XCTAssertEqual(ids(baseline.visible([b, a])), ["b", "a"])
+        // 新しくフォローした → 決め直す（頭へ送る）
+        baseline.settle(candidates: ["b", "a"], atHead: false)
+        baseline.addFollowees(["n"])
+        XCTAssertEqual(baseline.followees, ["n"])
+        let n = try photo("n", at: "2026-09-01", user: "n")
+        XCTAssertEqual(ids(baseline.visible([n, b, a])), ["n", "b", "a"], "フォローした人の写真が上に出ない")
+        baseline.capture(viewer: "me", store: store)
+        XCTAssertTrue(baseline.followees.isEmpty, "引き下げの後も、新しくフォローした扱いが残る")
+    }
+
     /// 1. の上限で数えるのは投稿（束）。束の写真はまとめて返す
     func testFollowingFreshKeepsPostsWhole() throws {
         let photos = [try photo("p1", at: "2026-10-01", user: "friend", group: "g"),

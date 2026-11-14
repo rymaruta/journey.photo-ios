@@ -675,14 +675,13 @@ final class HomeFeedPagingTests: XCTestCase {
         XCTAssertEqual(shown(model), ["p1", "p2", "p3", "p4"])
     }
 
-    /// 時計を差し替えたホーム（1ページ目 p1・p2、続きあり）を作って読む
-    private func loadedWithClock(_ now: @escaping () -> Date) async -> GalleryViewModel {
+    /// 読み終えたホーム（1ページ目 p1・p2、続きあり）
+    private func loadedHome() async -> GalleryViewModel {
         prepare()
         StubProtocol.respond(path: "/feed?cursor=c1", status: 200, body: page(["p3", "p4"], next: nil))
         StubProtocol.respond(path: "/feed", status: 200, body: page(["p1", "p2"], next: "c1"))
         StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: snapshotBody)
         let model = makeModel()
-        model.clock = now
         await model.load()
         XCTAssertEqual(shown(model), ["p1", "p2"])
         return model
@@ -696,32 +695,30 @@ final class HomeFeedPagingTests: XCTestCase {
         StubProtocol.respond(path: "/app/data/photos.json", status: 200, body: snapshotBody)
     }
 
-    /// 🔴 読み直し（force なしの load）は、1ページ目を読んでから60秒以内なら `/feed` を読まない
-    func testPlainReloadWithinTheFreshnessKeepsTheFirstPage() async {
-        var now = Date(timeIntervalSince1970: 1_000_000)
-        let model = await loadedWithClock { now }
+    /// 🔴 札 #595 の確かめ役: **強制でない読み直し**（限定公開の期限切れ・口の入れ替え・ブロックの後・詳細から戻った）は、
+    /// 時間が経っていても `/feed` の1ページ目を読み直さない。読み直すと4つめごとに混ぜる新着が入れ替わり、見ている並びがずれる。
+    /// 新しくするのは引き下げだけ（前は「新着」を選んでいる間、60秒過ぎたら読み直していた）
+    func testPlainReloadNeverRereadsTheFirstPage() async {
+        let model = await loadedHome()
         publishNewPhoto()
-        now += 30
         await model.load()
-        XCTAssertEqual(feedCursors, [], "60秒以内なのに読み直した")
+        await model.load()
+        XCTAssertEqual(feedCursors, [], "強制でない読み直しで1ページ目を読み直した（混ぜる新着がずれる）")
         XCTAssertEqual(shown(model), ["p1", "p2"])
-    }
-
-    /// 詳細から戻った・ブロックの後の読み直し（force なしの load）でも、古ければ読み直す
-    func testPlainReloadRereadsAStaleFirstPage() async {
-        var now = Date(timeIntervalSince1970: 1_000_000)
-        let model = await loadedWithClock { now }
-        publishNewPhoto()
-        now += 61
-        await model.load()
-        XCTAssertEqual(feedCursors, [nil], "古い1ページ目のまま読み直しを終えた")
-        XCTAssertEqual(shown(model), ["p0", "p1"])
+        XCTAssertTrue(model.hasMorePages, "読んだページの続きの札を捨てた")
+        // 時間で読み直す決まり（60秒で古いとする `firstPageIsStale`）を戻さない。読み直すのは引き下げとまだ試していない回だけ
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try? String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Gallery/GalleryViewModel.swift"),
+                                 encoding: .utf8)
+        XCTAssertTrue(source?.contains("let readsFirstPage = feedPages != nil && (force || pageSource == .untried)\n") == true,
+                      "強制でない読み直しでも1ページ目を読む条件が入っている")
+        XCTAssertFalse(source?.contains("firstPageIsStale") == true, "時間で1ページ目を読み直す決まりが戻っている")
     }
 
     /// 引き下げたら、時間に関係なく1ページ目から読み直す（新しく載った写真が混ざる）
     func testRefreshRereadsTheFirstPageRightAway() async {
-        let now = Date(timeIntervalSince1970: 1_000_000)
-        let model = await loadedWithClock { now }
+        let model = await loadedHome()
         publishNewPhoto()
         await model.load(force: true)
         XCTAssertEqual(feedCursors, [nil], "引き下げで /feed を読み直さない")
@@ -731,8 +728,7 @@ final class HomeFeedPagingTests: XCTestCase {
     /// 🔴 札 #595: ページで出していても、引き下げたら全件も取り直す。全件は1本の並びのいいね順・フォロー中の人の新しい写真の元
     /// （前は「新着」の間だけ全件の取り直しを省いていた・#448。1本の並びではいつもページを持つので、省くと全件が古いまま残る）
     func testRefreshAlsoRereadsTheSnapshot() async {
-        let now = Date(timeIntervalSince1970: 1_000_000)
-        let model = await loadedWithClock { now }
+        let model = await loadedHome()
         XCTAssertEqual(Set(model.recommendedPhotos.map(\.id)), ["s1", "s2"])
         StubProtocol.reset()
         StubProtocol.respond(path: "/feed", status: 200, body: page(["p1", "p2"], next: "c1"))
@@ -746,14 +742,12 @@ final class HomeFeedPagingTests: XCTestCase {
         XCTAssertEqual(shown(model), ["p1", "p2"])
     }
 
-    /// 下まで送った一覧は、古くても1ページ目に縮めない（引き下げで新しくする）
-    func testDeepListIsNotShrunkWhenStale() async {
-        var now = Date(timeIntervalSince1970: 1_000_000)
-        let model = await loadedWithClock { now }
+    /// 下まで送った一覧は、読み直しで1ページ目に縮めない（引き下げで新しくする）
+    func testDeepListIsNotShrunkByAPlainReload() async {
+        let model = await loadedHome()
         await model.loadNextPage()
         XCTAssertEqual(shown(model), ["p1", "p2", "p3", "p4"])
         publishNewPhoto()
-        now += 120
         await model.load()
         XCTAssertEqual(feedCursors, [], "下まで送った一覧を読み直して縮めた")
         XCTAssertEqual(shown(model), ["p1", "p2", "p3", "p4"])

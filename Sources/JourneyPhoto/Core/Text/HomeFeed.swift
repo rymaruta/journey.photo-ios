@@ -55,14 +55,17 @@ enum HomeFeed {
     /// - 未ログイン・フォロー 0 なら空
     /// - フォロー中の人の写真（`GalleryScope.following`・下書きを除く）のうち、自分の写真を除き、
     ///   **投稿日（`createdAt`）が `seen` より新しいもの**。`seen` が nil（まだ1度も上に出していない）なら全部が新しい
+    /// - `alwaysNew` の人（この場で新しくフォローした人・「おすすめの人」から）の写真は、覚え（`seen`）に関係なく新しいとする。
+    ///   覚えより古い写真しか無い人をフォローして頭へ送っても、上に何も出ない（押して何も起きない）を作らない
     /// - 新しい順。1人 `followingPerPerson` 投稿まで、全体で `followingMax` 投稿まで。投稿の写真はまとめて返す
     /// - ブロック・通報は呼ぶ側が先に落とす
     static func followingFresh(_ photos: [Photo], viewerId: String?, followingIds: Set<String>,
-                               seen: String?) -> [Photo] {
+                               seen: String?, alwaysNew: Set<String> = []) -> [Photo] {
         guard let viewerId, !followingIds.isEmpty else { return [] }
         let theirs = GalleryScope.following.photos(photos, viewerId: viewerId, followingIds: followingIds)
             .filter { ($0.userId ?? $0.uploadedBy) != viewerId }
             .filter { photo in
+                if let owner = photo.userId ?? photo.uploadedBy, alwaysNew.contains(owner) { return true }
                 guard let seen else { return true }
                 guard let created = photo.createdAt else { return false }
                 return created > seen

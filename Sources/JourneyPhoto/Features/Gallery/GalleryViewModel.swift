@@ -118,11 +118,12 @@ final class GalleryViewModel: ObservableObject {
         if force { runningForced.insert(mine) }
         defer { runningForced.remove(mine) }
         loadedEpoch = await gallery.restrictedEpoch
-        // 引き下げ・まだ試していない回・1ページ目が古い回（`firstPageIsStale`）だけ1ページ目から読む
-        // （2026-11-13 #595: 1本の並びはいつも新着を混ぜるので、前の「新着を選んだときだけ」の条件は外した）。
-        // それ以外の読み直し（force なし）は、読んだページを持ったまま仕上げだけ掛け直す（下まで送った一覧を縮めない）
-        let readsFirstPage = feedPages != nil
-            && (force || pageSource == .untried || firstPageIsStale)
+        // **1ページ目から読むのは、引き下げ（force）と、まだ試していない回だけ**（2026-11-13 #595 の確かめ役）。
+        // 1本の並びはいつも新着を4つめごとに混ぜるので、強制でない読み直し（限定公開の期限切れ・口の入れ替え
+        // `restrictedChanges`・ブロックの後 `reloadHidden`・詳細から戻った）で1ページ目を読み直すと、混ぜる新着が
+        // 入れ替わって見ている並びがずれる。前は「新着」を選んでいる間だけ、60秒過ぎたら読み直していた
+        // が、その決まりは外した。強制でない回は、読んだページを持ったまま仕上げだけ掛け直す
+        let readsFirstPage = feedPages != nil && (force || pageSource == .untried)
         // 2026-11-13 判断（#595）: 「新着をページで出している間は全件を取り直さない」近道（#448）は外した。
         // 前は「新着」の札を選んでいる間だけ効いていたが、1本の並びはいつもページを持つので、近道が残ると
         // 引き下げ・ブロックの後の読み直しでも全件（選ばれた写真→いいね順・フォロー中の人の新しい写真の元）が古いまま残る。
@@ -317,26 +318,6 @@ final class GalleryViewModel: ObservableObject {
         state = .loaded(filtered())
     }
 
-    /// 1ページ目を読み終えた時刻。nil は「古いことにした」
-    private var firstPageReadAt: Date?
-    /// 今の時刻（試験が進める）
-    var clock: () -> Date = Date.init
-    /// 1ページ目をこれより前に読んでいたら、読み込みのときに読み直す
-    static let firstPageFreshness: TimeInterval = 60
-
-    /// 手元の1ページ目が古いか。
-    ///
-    /// **2026-10-03 判断:** 「新着」は「新着」を見ている間しか読まないので、おすすめで引き下げた・
-    /// 詳細から戻った・ブロックの後の読み直しのあとも、前に読んだ1ページ目が出続けていた。
-    /// 読んでから60秒（全件の控え `PublicGalleryService.cacheLifetime` と同じ）を過ぎたら古いとする。
-    /// **読み直すのは2ページ目以降をまだ読んでいないときだけ**——下まで送った一覧を1ページに
-    /// 縮めると、見ていた場所が消える（そちらは引き下げで新しくする）
-    var firstPageIsStale: Bool {
-        guard pageSource == .pages, loadedPageCount <= 1, pendingPage == nil else { return false }
-        guard let readAt = firstPageReadAt else { return true }
-        return clock().timeIntervalSince(readAt) >= Self.firstPageFreshness
-    }
-
     /// 1ページ目から読み直す。読めたらその回の番号（`pageSerial`）を返す
     private func reloadPages(force: Bool, loadsRestricted: Bool) async -> Int? {
         guard let feedPages else { return nil }
@@ -369,7 +350,6 @@ final class GalleryViewModel: ObservableObject {
             pageSource = .pages
             pageFailed = false
             loadedPageCount = 1
-            firstPageReadAt = clock()
             await representPages(loadsRestricted: loadsRestricted)
             return serial == pageSerial
         case .failure(let error):
@@ -510,7 +490,6 @@ final class GalleryViewModel: ObservableObject {
         pendingPage = nil
         pageWriteDeferred = false
         firstPageTask = nil
-        firstPageReadAt = nil
     }
 
     /// 人が替わった回数。**替わる前に読み始めた回の答えを書かない**ために使う
@@ -884,12 +863,14 @@ final class GalleryViewModel: ObservableObject {
 
     /// 1. フォロー中の人の新しい写真（`HomeFeed.followingFresh`）。ブロック・通報は `hidden`（画面の写し）で落とす。
     /// `seen` は画面が覚えている「上に出した所」（`FollowingSeenStore`）。描くたびに全件をなめない
-    func followingFresh(viewerId: String?, seen: String?, hiding hidden: ModerationSnapshot) -> [Photo] {
+    func followingFresh(viewerId: String?, seen: String?, alwaysNew: Set<String> = [],
+                        hiding hidden: ModerationSnapshot) -> [Photo] {
         let following = following(for: viewerId)
         let key = FollowingFreshKey(allRevision: allRevision, viewerId: viewerId, following: following,
-                                    hidden: hidden, seen: seen)
+                                    hidden: hidden, seen: seen, alwaysNew: alwaysNew)
         return followingFreshMemo.value(for: key) {
-            HomeFeed.followingFresh(hidden.visible(all), viewerId: viewerId, followingIds: following, seen: seen)
+            HomeFeed.followingFresh(hidden.visible(all), viewerId: viewerId, followingIds: following, seen: seen,
+                                    alwaysNew: alwaysNew)
         }
     }
 
@@ -899,6 +880,7 @@ final class GalleryViewModel: ObservableObject {
         let following: Set<String>
         let hidden: ModerationSnapshot
         let seen: String?
+        let alwaysNew: Set<String>
     }
 
     private let followingFreshMemo = DerivedMemo<FollowingFreshKey, [Photo]>()

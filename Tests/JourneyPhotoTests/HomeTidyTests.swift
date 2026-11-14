@@ -332,8 +332,11 @@ final class HomeTidyTests: XCTestCase {
         XCTAssertEqual(gallery.components(separatedBy: "followingBaseline.capture(viewer:").count - 1, 2,
                        "人が決まったとき・引き下げのときに基準を読み直していない")
         XCTAssertTrue(gallery.contains(".onChange(of: rows.following.map(\\.id), initial: true)"), "上の段を出しても覚えない")
-        XCTAssertTrue(gallery.contains("model.followingNewest(viewerId: userId, hiding: dropped)"),
-                      "ブロック・通報を落とした写しで決めていない")
-        XCTAssertTrue(gallery.contains("model.followingFresh(viewerId: userId, seen: followingBaseline.seen, hiding: dropped)"))
+        XCTAssertTrue(gallery.contains("markFollowingShown(fresh)"), "上に出した分ではなく、候補の全部で覚えている")
+        XCTAssertTrue(gallery.contains("alwaysNew: followingBaseline.followees, hiding: dropped)"),
+                      "ブロック・通報を落とした写しで決めていない・新しくフォローした人を覚えに関係なく出していない")
+        XCTAssertTrue(gallery.contains("followingBaseline.settle(candidates: key.candidates, atHead: key.atHead)"),
+                      "上に出す分を、頭にいるときだけ決め直していない")
+        XCTAssertTrue(gallery.contains("followingBaseline.addFollowees(followed)"), "おすすめの人でフォローした人の写真が上に出ない")
     }
 }

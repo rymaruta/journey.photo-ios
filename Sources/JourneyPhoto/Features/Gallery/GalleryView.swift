@@ -515,26 +515,38 @@ struct GalleryView: View {
                 proxy.scrollTo(Self.feedTopID, anchor: .top)
             }
         }
-        // 1. を出した（新しく届いた分も）→ 上に出した所を覚える（次に並べ直すときは、それより新しい分だけを上に出す）
+        // 1. の候補が変わった・画面の頭へ戻った → 頭にいれば（またはまだ決めていなければ）上に出す分を決め直す。
+        // 下へ送っている間は控えのまま（上に写真が現れても増えても、下の写真がずれない）
+        .onChange(of: FollowingSettleKey(candidates: followingCandidates.map(\.id), atHead: !topCardsAway),
+                  initial: true) { _, key in
+            followingBaseline.settle(candidates: key.candidates, atHead: key.atHead)
+        }
+        // 1. を出した（頭で新しく足した分も）→ 上に出した所を覚える（次に並べ直すときは、それより新しい分だけを上に出す）
         .onChange(of: rows.following.map(\.id), initial: true) { _, shown in
             guard !shown.isEmpty else { return }
-            markFollowingShown()
+            markFollowingShown(fresh)
         }
         }
     }
 
     private static let feedTopID = "home-feed-top"
 
-    /// 1. フォロー中の人の新しい写真（`HomeFeed.followingFresh`）。基準は画面が持つ（`followingBaseline`）
-    private var followingFresh: [Photo] {
+    /// 1. の候補（`HomeFeed.followingFresh`）。基準（覚え・新しくフォローした人）は画面が持つ（`followingBaseline`）
+    private var followingCandidates: [Photo] {
         guard let userId = auth.userId, followingBaseline.viewer == userId else { return [] }
-        return model.followingFresh(viewerId: userId, seen: followingBaseline.seen, hiding: dropped)
+        return model.followingFresh(viewerId: userId, seen: followingBaseline.seen,
+                                    alwaysNew: followingBaseline.followees, hiding: dropped)
     }
 
-    /// 上に出したフォロー中の人の写真の、いちばん新しい投稿日を覚える（並べる基準 `followingBaseline` は替えない）
-    private func markFollowingShown() {
-        guard let userId = auth.userId,
-              let newest = model.followingNewest(viewerId: userId, hiding: dropped) else { return }
+    /// 1. の段に出す写真。**控え（上に出した id）にある分だけ**——見ている間に上に写真が現れたり増えたりして
+    /// 下がずれないように（`FollowingBaseline.visible`）
+    private var followingFresh: [Photo] {
+        followingBaseline.visible(followingCandidates)
+    }
+
+    /// 上に出した写真の、いちばん新しい投稿日を覚える（並べる基準 `followingBaseline` は替えない）
+    private func markFollowingShown(_ shown: [Photo]) {
+        guard let userId = auth.userId, let newest = shown.compactMap(\.createdAt).max() else { return }
         followingSeenStore.mark(newest, for: userId)
     }
 
@@ -657,6 +669,8 @@ struct GalleryView: View {
         let fetched = await fetchFollowing()
         guard auth.userId == userId else { return }
         model.refreshFollowing(fetched ?? model.followingIds.union(followed), viewerId: userId, ticket: ticket)
+        // 新しくフォローした人の写真は、覚え（前に上に出した所）に関係なく上に出す。頭へ送るので、上に出す分も決め直す
+        followingBaseline.addFollowees(followed)
         scrollToTopRequests &+= 1
     }
 
@@ -757,15 +771,52 @@ private struct PassResolveKey: Equatable {
     let hidden: Int
 }
 
-/// フォロー中の人の新しい写真を並べる基準（`FollowingSeenStore` の値を、決まったときにだけ写す・札 #595）
+/// フォロー中の人の新しい写真を並べる基準（札 #595）。
+///
+/// - `seen`: `FollowingSeenStore` の値を、人が決まったとき・引き下げたときにだけ写す（見ている間に上の段が消えない）
+/// - `shown`: 上に出した写真の id の控え。**次に引き下げるまで、控えに無い写真は上に足さない**——ただし画面の頭に
+///   いるときは足す（`settle`）。見ている間に上の段が現れたり増えたりして、下の写真がずれないように（確かめ役の指摘）
+/// - `followees`: 「おすすめの人」でこの場で新しくフォローした人。その人の写真は覚えに関係なく上に出す
 struct FollowingBaseline: Equatable {
     /// 誰の基準か（nil なら未ログイン・まだ読んでいない）
     private(set) var viewer: String?
     /// 上に出した所（nil なら1度も出していない＝全部が新しい）
     private(set) var seen: String?
+    /// 上に出した写真の id（nil ならまだ決めていない＝次の候補をそのまま出す）
+    private(set) var shown: Set<String>?
+    /// この場で新しくフォローした人
+    private(set) var followees: Set<String> = []
 
+    /// 人が決まった・引き下げた: 覚えを読み直し、控えを捨てる（次の候補をそのまま上に出す）
     mutating func capture(viewer: String?, store: FollowingSeenStore) {
         self.viewer = viewer
         seen = store.seen(for: viewer)
+        shown = nil
+        followees = []
     }
+
+    /// 「おすすめの人」で新しくフォローした（頭へ送るので、上に出す分も決め直す）
+    mutating func addFollowees(_ ids: Set<String>) {
+        followees.formUnion(ids)
+        shown = nil
+    }
+
+    /// 候補が変わった・頭へ戻った。**頭にいるか、まだ決めていなければ**控えを候補にする。下へ送っている間は替えない
+    mutating func settle(candidates: [String], atHead: Bool) {
+        guard shown == nil || atHead else { return }
+        let next = Set(candidates)
+        if shown != next { shown = next }
+    }
+
+    /// 上の段に出す写真（控えにある分だけ・まだ決めていなければ候補のまま）
+    func visible(_ candidates: [Photo]) -> [Photo] {
+        guard let shown else { return candidates }
+        return candidates.filter { shown.contains($0.id) }
+    }
+}
+
+/// 1. の控えを決め直す合図（候補の id と、画面の頭にいるか）
+private struct FollowingSettleKey: Equatable {
+    let candidates: [String]
+    let atHead: Bool
 }
