@@ -2,6 +2,22 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.93",
+      "date": "2026-11-15",
+      "items": [
+        {
+          "symbol": "checkmark.shield",
+          "title": { "ja": "投稿したあとに落ちないように", "en": "No more crashes after posting" },
+          "detail": { "ja": "題を打ったまま「投稿する」を押すと、投稿が終わったあとにアプリが落ちることがありました。直しました。", "en": "The app could crash after posting if you tapped Post while still typing a title. This is fixed." }
+        },
+        {
+          "symbol": "hand.tap",
+          "title": { "ja": "撮影地の候補を押しやすく", "en": "Easier-to-tap location suggestions" },
+          "detail": { "ja": "撮影地を打つと出る候補の行の、押せる所を縦に広げました。字の少し上や下を押しても選べます。", "en": "Location suggestions that appear as you type now have taller tap areas, so tapping just above or below the text still picks them." }
+        }
+      ]
+    },
+    {
       "version": "1.1.92",
       "date": "2026-11-15",
       "items": [

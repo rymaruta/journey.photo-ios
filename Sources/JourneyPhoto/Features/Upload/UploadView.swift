@@ -1248,7 +1248,10 @@ struct UploadView: View {
 
     /// 選んだ写真ごとの欄。**題・説明・撮影地は1枚ずつ**（Web と同じ）。
     private var detailSection: some View {
-        ForEach($model.items) { $item in
+        // 🔴 欄の窓は id で引く（`photoBinding`・2026-11-15・札 #616）。並びの番号で引く窓（`ForEach` に `$model.items` を渡す形）は、
+        // 題を打ったまま投稿して写真が並びから外れると、欄の字の確定で外れた番号を読んで落ちた
+        ForEach(model.items) { item in
+            let photo = model.photoBinding(item)
             VStack(alignment: .leading, spacing: 14) {
                 if model.items.count > 1 {
                     JPSectionTitle(L("\(indexOf(item)) 枚目", "Photo \(indexOf(item))"))
@@ -1258,14 +1261,14 @@ struct UploadView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     // 見出しと枠はタイトル・説明と同じ形（`JPFieldTitle`・`jpFieldBox`・2026-10-21）
                     JPFieldTitle(L("撮影地", "Place"))
-                    PlaceSearchField(location: $item.location, coords: $item.pickedCoords,
+                    PlaceSearchField(location: photo.location, coords: photo.pickedCoords,
                                      near: item.prepared.coords, offersSpots: true,
-                                     pickedSpot: $item.pickedSpot, boxed: true)
+                                     pickedSpot: photo.pickedSpot, boxed: true)
                         // 🔴 撮影地の長さを止める(2026-11-07)。サーバーは 200 で黙って切る(`PostLimits.location`)ので、
                         // 画面の字と保存された字が食い違っていた。題・説明と同じ止め方
                         .onChange(of: item.location) { old, value in
                             let kept = PostLimits.limited(old: old, new: value, limit: PostLimits.location)
-                            if kept != value { item.location = kept }
+                            if kept != value { photo.wrappedValue.location = kept }
                         }
                     // 投稿が撮影地の作例になることを一言（実際に並ぶときだけ・`UploadDetails.showsSampleNote`）
                     if UploadDetails.showsSampleNote(location: item.location, published: model.published,
@@ -1293,13 +1296,13 @@ struct UploadView: View {
                 // 前は投稿が「タイトル」「説明文」、編集が「題」「説明」で、同じ欄が2つの名前だった）
                 JPField(L("題", "Title")) {
                     JPTextField(L("例: 高屋神社の雲海", "e.g. Sea of clouds at Takaya"),
-                              text: $item.title)
+                              text: photo.title)
                         .focused($focusedField, equals: .title(item.id))
                         // UI テストが名指しで打つ（`CriticalFlowTests`・2026-10-22）
                         .accessibilityIdentifier("upload.title")
                         .onChange(of: item.title) { old, value in
                             let kept = PostLimits.limited(old: old, new: value, limit: PostLimits.title)
-                            if kept != value { item.title = kept }
+                            if kept != value { photo.wrappedValue.title = kept }
                         }
                 }
                 // 送り先（`form` の `scrollTo`）
@@ -1307,12 +1310,12 @@ struct UploadView: View {
                 count(item.title, limit: PostLimits.title)
                 JPField(L("説明", "Description"), multiline: true) {
                     JPTextField(L("どんな写真ですか", "What is this photo about?"),
-                              text: $item.caption, axis: .vertical)
+                              text: photo.caption, axis: .vertical)
                         .lineLimit(3...8)
                         .focused($focusedField, equals: .caption(item.id))
                         .onChange(of: item.caption) { old, value in
                             let kept = PostLimits.limited(old: old, new: value, limit: PostLimits.description)
-                            if kept != value { item.caption = kept }
+                            if kept != value { photo.wrappedValue.caption = kept }
                         }
                 }
                 .id(UploadFieldFocus.caption(item.id))
