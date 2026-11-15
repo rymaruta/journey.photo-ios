@@ -156,7 +156,7 @@ struct HomeFeedTile: View {
                 place: HomeTileText.place(photo.location),
                 byline: byline,
                 multiple: siblings.count > 1 ? L("複数枚の投稿", "Multiple photos") : nil,
-                firstPost: isFirstPost ? HomeTileText.firstPost : nil))
+                firstPost: isFirstPost ? HomeTileText.firstPost : nil)))
             // **実機の絵の道しるべ。** 「一覧の1枚目」を位置で探すと、
             // 今日のテーマの「参加する」に当たって**ログイン画面を
             // 『写真の詳細』として撮って**いた（run 49 の絵で判明）

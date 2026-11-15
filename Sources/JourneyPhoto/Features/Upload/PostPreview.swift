@@ -194,7 +194,16 @@ enum PostPreview {
         return try? JSONSerialization.jsonObject(with: data)
     }
 
-    /// ホームのページの札。**本物のホームと同じ並べ方（`HomeFeed.arrange`）を通す。**
+    /// ホームのページの札。**本物のホームと同じ並べ方（`HomeFeedPageMemo.make`＝`HomeFeed.arrange` の後に
+    /// `HomeFreshMix.mix`）を通す。**
+    ///
+    /// 2026-11-15 判断（1.1.92 の統合・札 #409 と #537）: #409 は `HomeFeed.arrange` だけを通していたが、#537 で本物のホームは
+    /// 並べた後に 72 時間以内の投稿を 2・5・8 番目へ混ぜる（`HomeFreshMix.mix`）ようになった。同じ入力で数えると
+    /// （`PostPreviewTests` の入力）、まとめた投稿はプレビューが4番目・本物が2番目、別々の3つはプレビューが 4・8・12 番目・
+    /// 本物が 2・5・6 番目で食い違った。並べ方を2か所に写さず、本物の `HomeFeedPageMemo.make` をそのまま呼ぶ。
+    /// `now` は今回の投稿の `createdAt` を作った時刻（本物では全件を読んだ時刻 `freshClock`）
+    ///
+    /// 以下は #409 の判断（4番目の話は混ぜる前のもの。今は投稿した直後の写真は新しい投稿として2番目に出る）:
     ///
     /// 2026-11-15 判断（札 #409・確かめ役の指摘）: 模型は今回の投稿を先頭の大きい札に置いていたが、本物と食い違わないことを
     /// 優先した。本物では、自分の写真は「フォロー中の新しい写真」に入らず（`followingFresh` が自分を除く）、いいね 0 なので
@@ -206,12 +215,16 @@ enum PostPreview {
     /// 「それぞれ別の投稿」を選んだときは、選んだ枚数ぶんの札が新着の並びで1つずつ入る（4番目・8番目…）。札を1枚に減らして
     /// 見せると「まとまって出る」と読めてしまうので減らさない。「1つの投稿にまとめる」は1枚の札（右上に複数枚の印）。
     /// 非公開はホームに出ないので、今回の投稿は入れない（ページの頭に「ホームには出ません」）
-    static func homeGroups(preview: [Photo], published: Bool, neighbors: [Photo], viewerId: String?) -> [PhotoGroups.Group] {
+    static func homeGroups(preview: [Photo], published: Bool, neighbors: [Photo], viewerId: String?,
+                           now: Date) -> [PhotoGroups.Group] {
         let others = neighbors.filter { !isPreview($0) }
         let recommended = HomeFeed.recommended(GalleryScope.all.photos(others, viewerId: viewerId, followingIds: []))
         let latest = (showsOnHome(published: published) ? preview : []) + GallerySort.new.apply(others)
-        let arranged = HomeFeed.arrange(following: [], recommended: recommended, latest: latest, latestHasMore: false)
-        let groups = PhotoGroups.group(arranged.main)
+        // ブロック・通報は呼ぶ側が `neighbors` から落としてある（`PostPreviewSheet.load`）ので、ここでは何も落とさない
+        let rows = HomeFeedPageMemo.make(HomeFeedPageMemo.Input(following: [], recommended: recommended, latest: latest,
+                                                                latestHasMore: false, excluding: [], now: now),
+                                         hidden: ModerationSnapshot())
+        let groups = rows.lead + rows.rest
         let lastPreview = groups.lastIndex { isPreview($0.cover) } ?? -1
         return Array(groups.prefix(max(homeTileLimit, lastPreview + 1)))
     }

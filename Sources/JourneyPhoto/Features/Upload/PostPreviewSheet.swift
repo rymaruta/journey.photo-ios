@@ -29,6 +29,8 @@ struct PostPreviewSheet: View {
     @State private var page: PostPreview.Page = .detail
     /// 投稿したあとの写真の行。nil は一時ファイルを書いている間（読み込み中）
     @State private var photos: [Photo]?
+    /// 今回の投稿の `createdAt` を作った時刻。ホームの並びの「新しい投稿」もこの時刻で数える（`PostPreview.homeGroups`）
+    @State private var clock = Date()
     /// ホームのほかの人の写真（公開の一覧）。nil は読み込み中
     @State private var neighbors: [Photo]?
     /// マイページの自分の写真。nil は読み込み中
@@ -186,14 +188,14 @@ struct PostPreviewSheet: View {
 
     private func homeGroups(_ photos: [Photo]) -> [PhotoGroups.Group] {
         PostPreview.homeGroups(preview: photos, published: model.published, neighbors: neighbors ?? [],
-                               viewerId: auth.userId)
+                               viewerId: auth.userId, now: clock)
     }
 
     private func myGrid(_ photos: [Photo]) -> [Photo] {
         PostPreview.myGrid(preview: photos, mine: mine ?? [], pinned: pinned)
     }
 
-    /// ホーム: 本物のホームと同じ並べ方（`PostPreview.homeGroups`・`HomeFeed.arrange`）で、今回の投稿の札に白 2pt の枠と
+    /// ホーム: 本物のホームと同じ並べ方（`PostPreview.homeGroups`・`HomeFeedPageMemo.make`）で、今回の投稿の札に白 2pt の枠と
     /// 「あなたの投稿」（ホームと同じ `HomeMosaic`）。非公開なら札は出ず、頭に「ホームには出ません」、ほかの札は 50% に沈める
     private func homePage(_ photos: [Photo]) -> some View {
         let published = model.published
@@ -276,10 +278,12 @@ struct PostPreviewSheet: View {
         let profile = try? await environment.profiles.publicProfile(userId: userId)
         guard !Task.isCancelled else { return }
         pinned = profile?.pinnedPhotoIds ?? []
+        let made = Date()
+        clock = made
         photos = PostPreview.photos(items, userId: userId, displayName: AuthorName.real(profile),
                                     published: model.published, audience: model.audience,
                                     grouped: model.groupsForSubmit, category: model.category,
-                                    tags: TagInput.parse(model.tagsText), song: model.song, now: Date())
+                                    tags: TagInput.parse(model.tagsText), song: model.song, now: made)
         async let feed = try? environment.gallery.fetchPhotos()
         async let own = ProfileImageFromPhoto.myPhotos(environment: environment)
         let (feedPhotos, ownPhotos) = await (feed, own)

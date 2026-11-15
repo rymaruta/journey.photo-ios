@@ -103,29 +103,45 @@ final class PostPreviewTests: XCTestCase {
 
     // MARK: - ホーム
 
-    /// 本物のホームと同じ並べ方（`HomeFeed.arrange`）。今回の投稿は新着の先頭なので、いいね順 3 つの後の4番目に出る
-    /// （先頭の大きい札ではない・2026-11-15 確かめ役の指摘）。まとめた投稿は1枚の札
+    /// 本物のホームと同じ並べ方（`HomeFeedPageMemo.make`＝`HomeFeed.arrange` の後に `HomeFreshMix.mix`）。今回の投稿は
+    /// 72 時間以内の投稿でいちばん新しいので、混ぜる枠の最初（2番目）に出る。まとめた投稿は1枚の札。
+    ///
+    /// 2026-11-15（1.1.92 の統合・#409 と #537）: 混ぜる前の並べ方（`HomeFeed.arrange` だけ）では、この入力で4番目
+    /// （`HomeFeed.latestEvery - 1`）だった。本物のホームは #537 で混ぜるようになったので、混ぜないと食い違う
     func testHomeUsesTheRealArrangement() {
         let neighbors = (0..<10).map { other("n\($0)", likes: 10 - $0) }
-        let groups = PostPreview.homeGroups(preview: photos(count: 3, grouped: true), published: true,
-                                            neighbors: neighbors, viewerId: me)
+        let preview = photos(count: 3, grouped: true)
+        let groups = PostPreview.homeGroups(preview: preview, published: true, neighbors: neighbors, viewerId: me, now: now)
         let index = groups.firstIndex { PostPreview.isPreview($0.cover) }
-        XCTAssertEqual(index, HomeFeed.latestEvery - 1, "今回の投稿が本物の新着の位置（4番目）に無い")
+        XCTAssertEqual(index, 1, "今回の投稿が本物のホームの位置（新しい投稿の枠の2番目）に無い: \(groups.map(\.id))")
         XCTAssertEqual(groups[index ?? 0].count, 3, "まとめた投稿が1枚の札（3枚の束）になっていない")
-        XCTAssertEqual(groups.prefix(3).map(\.id), ["n0", "n1", "n2"], "前の3つがいいね順でない")
+        XCTAssertEqual(groups.map(\.id).filter { !$0.hasPrefix(PostPreview.idPrefix) }.prefix(3), ["n0", "n1", "n2"],
+                       "ほかの札がいいね順でない")
         XCTAssertEqual(groups.filter { PostPreview.isPreview($0.cover) }.count, 1)
         XCTAssertGreaterThanOrEqual(groups.count, PostPreview.homeTileLimit)
+        // 本物のホームの並べ方（同じ材料を `HomeFeedPageMemo.make` に通したもの）と札の順が同じ
+        let latest = preview + GallerySort.new.apply(neighbors)
+        let real = HomeFeedPageMemo.make(HomeFeedPageMemo.Input(following: [], recommended: HomeFeed.recommended(neighbors),
+                                                                latest: latest, latestHasMore: false, excluding: [],
+                                                                now: now),
+                                         hidden: ModerationSnapshot())
+        XCTAssertEqual(groups.map(\.id), Array((real.lead + real.rest).map(\.id).prefix(groups.count)),
+                       "プレビューのホームが本物のホームと違う並び")
     }
 
-    /// 「それぞれ別の投稿」は選んだ枚数ぶんの札で、新着の並びで1つずつ入る（4番目・8番目…）。札は全部見せる
+    /// 「それぞれ別の投稿」は選んだ枚数ぶんの札。新しい投稿は新しい順に 2・5 番目の枠へ入り、3つめは並べた位置
+    /// （混ぜる枠より前に来た）6番目に出る（`HomeFreshMix.mix` の決まり3）。札は全部見せる
     func testSeparatePostsEachGetALatestSlot() {
         let neighbors = (0..<20).map { other("n\($0)", likes: 30 - $0) }
         let groups = PostPreview.homeGroups(preview: photos(count: 3, grouped: false), published: true,
-                                            neighbors: neighbors, viewerId: me)
+                                            neighbors: neighbors, viewerId: me, now: now)
         let slots = groups.indices.filter { PostPreview.isPreview(groups[$0].cover) }
-        XCTAssertEqual(slots, [3, 7, 11], "別々の投稿が新着の位置に1つずつ入っていない")
+        XCTAssertEqual(slots, [1, 4, 5], "別々の投稿が本物のホームの位置に無い: \(groups.map(\.id))")
+        // 新しい順（選んだ順に1秒ずつ新しい＝最後に選んだものが先）
+        XCTAssertEqual(slots.map { groups[$0].id }, ["\(PostPreview.idPrefix)2", "\(PostPreview.idPrefix)1",
+                                                     "\(PostPreview.idPrefix)0"])
         XCTAssertTrue(slots.allSatisfy { groups[$0].count == 1 })
-        XCTAssertEqual(groups.count, 12, "最後の投稿の札まで並べていない")
+        XCTAssertGreaterThanOrEqual(groups.count, PostPreview.homeTileLimit)
     }
 
     /// 非公開はホームに出ない（今回の投稿の札は無く、ほかの人の札だけ）
@@ -133,7 +149,7 @@ final class PostPreviewTests: XCTestCase {
         XCTAssertFalse(PostPreview.showsOnHome(published: false))
         XCTAssertTrue(PostPreview.showsOnHome(published: true))
         let groups = PostPreview.homeGroups(preview: photos(count: 2, published: false), published: false,
-                                            neighbors: [other("n0")], viewerId: me)
+                                            neighbors: [other("n0")], viewerId: me, now: now)
         XCTAssertEqual(groups.map(\.id), ["n0"])
     }
 

@@ -91,12 +91,15 @@ final class UploadPreviewTests: XCTestCase {
         // ページの中は読み上げから外してあるので、ページのまとめの言葉（題を含む）で見る
         XCTAssertTrue(wait(detail, "label CONTAINS '\(title)'", timeout: 15),
                       "詳細のページに打った題「\(title)」が出ない（\(detail.label)）")
-        // 左へ払ってホームへ（払いで替わる）。今回の投稿は本物のホームと同じ並べ方で、新着の位置（4枚目）
+        // 左へ払ってホームへ（払いで替わる）。今回の投稿は本物のホームと同じ並べ方（並べた後に新しい投稿を
+        // 2・5・8 番目へ混ぜる・札 #537）で、いちばん新しい投稿なので2枚目（1.1.92 の統合で #409 と #537 を合わせた）
         swipePage(app, left: true)
         XCTAssertTrue(waitSelected(app, "home"), "左へ払ってもホームのページにならない")
         let home = app.descendants(matching: .any)["postPreview.page.home"].firstMatch
         XCTAssertTrue(wait(home, "label CONTAINS 'あなたの投稿'", timeout: 15), "ホームのページに今回の投稿が無い（\(home.label)）")
         print("[uploadPreviewHome] \(home.label)")
+        XCTAssertTrue(home.label.contains("上から2枚目"),
+                      "今回の投稿が本物のホームと同じ位置（2枚目）に無い（\(home.label)）")
         let submit = app.buttons["postPreview.submit"].firstMatch
         XCTAssertTrue(submit.waitForExistence(timeout: 5), "プレビューの中に「投稿する」が無い")
         XCTAssertGreaterThanOrEqual(submit.frame.height, 44, "プレビューの「投稿する」の的が 44pt 未満")
