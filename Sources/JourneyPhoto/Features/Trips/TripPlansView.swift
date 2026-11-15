@@ -503,6 +503,11 @@ final class TripPlansModel: ObservableObject {
     /// 開いていた（別の端末で作った分が手元に無いときも同じ）。
     /// 増えた中から**題が同じもの**を、その中で**いちばん新しいもの**を採る
     static func created(in list: [TripPlan], before: Set<String>, title: String) -> TripPlan? {
+        createdNonisolated(in: list, before: before, title: title)
+    }
+
+    /// `created` と同じ（主の actor の外から呼ぶ・`TripAIJobs.pick`）
+    nonisolated static func createdNonisolated(in list: [TripPlan], before: Set<String>, title: String) -> TripPlan? {
         let fresh = list.filter { !before.contains($0.planId) }
         let sameTitle = fresh.filter { $0.title == title }
         let pool = sameTitle.isEmpty ? fresh : sameTitle

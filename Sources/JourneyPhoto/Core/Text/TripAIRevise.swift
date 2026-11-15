@@ -17,6 +17,12 @@ enum TripAIRevise {
     ///   - before: 今の日程
     ///   - aiDays: AI が選んだ観光スポットの ID（日ごと・並びのまま）
     ///   - sent: AI に今の日程として渡した観光スポットの ID
+    /// AI に今の日程として渡した場所。**実際に渡した候補（20件まで）に入った場所だけ**。
+    /// 21か所目から後は渡していないので、元の日に残す（棚に回さない・確かめ役の指摘 2026-11-15）
+    static func sentIds(current: [[OfficialSpot]], candidates: [OfficialSpot]) -> Set<String> {
+        Set(current.flatMap { $0 }.map(\.spotId)).intersection(candidates.map(\.spotId))
+    }
+
     static func merge(before: [TripDay], aiDays: [[String]], sent: Set<String>) -> (days: [TripDay], dropped: [Dropped]) {
         var memo: [String: String] = [:]
         for day in before {

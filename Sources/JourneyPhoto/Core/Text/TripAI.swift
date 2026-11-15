@@ -242,11 +242,13 @@ struct TripAIPlan: Codable, Equatable {
     }
 
     /// 日ごとの観光スポット（AI の並びのまま。空の日は詰める）
-    func dayLists(_ candidates: [OfficialSpot]) -> [[OfficialSpot]] {
+    /// - Parameter keepEmpty: 空の日を詰めない（直すとき。i 番目が元の i 日目と同じ日になるように・確かめ役の指摘 2026-11-15）
+    func dayLists(_ candidates: [OfficialSpot], keepEmpty: Bool = false) -> [[OfficialSpot]] {
         var out: [[OfficialSpot]] = Array(repeating: [], count: max(days, 1))
-        for s in stops where (1...candidates.count).contains(s.n) {
+        for s in stops where (1...max(candidates.count, 1)).contains(s.n) && s.n <= candidates.count {
             out[min(max(s.day, 1), out.count) - 1].append(candidates[s.n - 1])
         }
+        if keepEmpty { return out }
         let filled = out.filter { !$0.isEmpty }
         return filled.isEmpty ? [[]] : filled
     }

@@ -1462,7 +1462,7 @@ struct TripPlanDetailView: View {
         // AI に渡していない項目（撮影地・台帳に無い場所）は元の日に残し、選ばれなかった場所は「外しました　戻す」へ。
         // 日の数と日付は元を下回らない（`TripAIRevise.merge`・確かめ役の指摘 2026-11-15）
         let before = days
-        let sent = Set(current.flatMap { $0 }.map(\.spotId))
+        let sent = TripAIRevise.sentIds(current: current, candidates: result.candidates)
         let merged = TripAIRevise.merge(before: before, aiDays: result.days.map { $0.map(\.spotId) }, sent: sent)
         aiHistory.append(before)
         apply(merged.days, said: L("日程を直しました", "Plan updated"))

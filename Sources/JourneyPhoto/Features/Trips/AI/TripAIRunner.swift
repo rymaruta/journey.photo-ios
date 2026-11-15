@@ -53,8 +53,13 @@ final class TripAIRunner: ObservableObject {
     private var startedAt = Date()
     let onDevice: Bool
 
-    init(onDevice: Bool = TripAIDevice.isAvailable) {
+    /// 試験だけが差し替える AI の答え（頼み・候補・日数・今の日程 → 答え）。nil ならサーバーか端末の AI
+    typealias Planner = (String, [OfficialSpot], Int?, [TripAIPlan.Stop]) async throws -> TripAIPlan
+    private let planner: Planner?
+
+    init(onDevice: Bool = TripAIDevice.isAvailable, planner: Planner? = nil) {
         self.onDevice = onDevice
+        self.planner = planner
     }
 
     func setUsage(_ u: TripAIService.Usage?) { usage = u }
@@ -137,6 +142,9 @@ final class TripAIRunner: ObservableObject {
         var mode: TripAIResult.Mode = .ai
         if isUsedUp {
             mode = .usedUp
+        } else if let planner {
+            plan = try? await planner(request, candidates, fixedDays, current)
+            if plan == nil { mode = .silent }
         } else if offline && !onDevice {
             mode = .offline
         } else if onDevice {
@@ -191,7 +199,9 @@ final class TripAIRunner: ObservableObject {
         }
         step = .measuring
         // 1日目から順に、移動の目安を測り終えた日を出す（全部そろうまで白紙にしない・owner 2026-11-15）
-        let lists = chosen.dayLists(candidates)
+        // 直すとき（今の日程がある）は空の日を詰めない。日の番号をそのまま返し、元の日付と場所の組を崩さない
+        let revising = !current.isEmpty
+        let lists = chosen.dayLists(candidates, keepEmpty: revising)
         expectedDays = lists.count
         var keptDays: [[OfficialSpot]] = []
         var removedAll: [TripAIRouteCheck.Removed] = []
@@ -208,7 +218,7 @@ final class TripAIRunner: ObservableObject {
         let first = String(format: "%.2f", firstDaySeconds ?? -1)
         let all = String(format: "%.2f", allDaysSeconds ?? -1)
         print("measured [trip-ai-time] engine=\(engine) firstDay=\(first)s all=\(all)s days=\(lists.count)")
-        let trimmed = (days: keptDays.filter { !$0.isEmpty }, removed: removedAll)
+        let trimmed = (days: revising ? keptDays : keptDays.filter { !$0.isEmpty }, removed: removedAll)
         let reason = checked?.reasonChecked(against: candidates)
             ?? L("AI を使わずに、地域でまとめて近い順に並べました。", "Planned without AI: grouped by area, nearest first.")
         step = .done

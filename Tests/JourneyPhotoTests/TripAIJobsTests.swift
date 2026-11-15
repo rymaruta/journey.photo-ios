@@ -18,6 +18,8 @@ final class TripAIJobsTests: XCTestCase {
         var gate: CheckedContinuation<Void, Never>?
         var holdSave = false
         var saveStarted: CheckedContinuation<Void, Never>?
+        /// 作ったプランを、この作業が作ったと確かに言えるか
+        var certain = true
     }
 
     private func spot(_ id: String) throws -> OfficialSpot {
@@ -42,7 +44,7 @@ final class TripAIJobsTests: XCTestCase {
                         box.saveStarted = nil
                     }
                 }
-                return .success("plan-\(box.saves)")
+                return .success(TripAISaved(planId: "plan-\(box.saves)", certain: box.certain))
             },
             remove: { id in box.removed.append(id) },
             offline: { box.offline },
@@ -133,7 +135,50 @@ final class TripAIJobsTests: XCTestCase {
         XCTAssertNotEqual(job.state, .saved(planId: "plan-1"))
     }
 
+    @MainActor
+    func testStopDoesNotRemoveAPlanItCannotBeSureItMade() async throws {
+        let (jobs, _) = fresh()
+        let box = Box()
+        box.holdSave = true
+        box.certain = false
+        let job = jobs.start(ask(), owner: "me", usage: nil, backend: try backend(box), runner: TripAIRunner(onDevice: false))
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in box.saveStarted = c }
+        jobs.cancel(job)
+        box.gate?.resume()
+        await jobs.settled(job)
+        XCTAssertEqual(box.removed, [], "作ったと確かに言えないプランは消さない（別の作業のプランかもしれない）")
+        XCTAssertNil(jobs.banner)
+        XCTAssertFalse(jobs.unseen.contains("plan-1"))
+    }
+
+    func testPickIsCertainOnlyWithOneNewPlanOfThatTitle() {
+        func plan(_ id: String, _ title: String, _ at: String) -> TripPlan {
+            TripPlan(planId: id, title: title, startDate: nil, endDate: nil, days: [], createdAt: at, updatedAt: at)
+        }
+        let old = plan("old", "金沢の旅", "2026-11-01")
+        let one = TripAICreated.pick(in: [plan("new", "金沢の旅", "2026-11-15"), old], before: ["old"], title: "金沢の旅")
+        XCTAssertEqual(one, TripAISaved(planId: "new", certain: true))
+        // 別の作業が同じ題で同時に作った: いちばん新しいものを採るが、確かとは言わない
+        let two = TripAICreated.pick(in: [plan("n1", "金沢の旅", "2026-11-15T01"), plan("n2", "金沢の旅", "2026-11-15T02"), old],
+                                     before: ["old"], title: "金沢の旅")
+        XCTAssertEqual(two, TripAISaved(planId: "n2", certain: false))
+    }
+
     // MARK: - 人が替わった・ログアウト
+
+    @MainActor
+    func testOtherPersonBeforeSaveDoesNotSave() async throws {
+        let (jobs, _) = fresh()
+        let box = Box()
+        box.current = false
+        let job = jobs.start(ask(), owner: "me", usage: nil, backend: try backend(box), runner: TripAIRunner(onDevice: false))
+        await jobs.settled(job)
+        XCTAssertEqual(box.builds, 1)
+        XCTAssertEqual(box.saves, 0, "保存に入る前に今の人か確かめる")
+        XCTAssertNil(jobs.banner)
+        XCTAssertTrue(jobs.unseen.isEmpty)
+    }
+
 
     @MainActor
     func testOtherPersonAtSaveTimeKeepsNothing() async throws {
@@ -236,6 +281,46 @@ final class TripAIJobsTests: XCTestCase {
         XCTAssertTrue(views.contains("Circle().fill(b.failed ? WebTheme.danger : WebTheme.foreground)"), "ガラスの上の点は白")
         XCTAssertTrue(views.contains("if !isFailed {"), "作れなかったときに同じ言葉を2回出す")
         XCTAssertTrue(views.contains("if job.state == .building, !job.saving {"), "保存に入ったら「やめる」を隠す")
+    }
+
+    // MARK: - 直すときの日の番号と、渡した場所（確かめ役の見直し 2026-11-15）
+
+    @MainActor
+    func testReviseKeepsDayNumbersWithEmptyDays() async throws {
+        let a = try spot("a"), b = try spot("b"), c = try spot("c")
+        // AI は 1日目を空にし、2日目に c、3日目に a と b を置いた
+        let runner = TripAIRunner(onDevice: false) { _, _, _, _ in
+            TripAIPlan(title: "", days: 3, stops: [.init(n: 3, day: 2), .init(n: 1, day: 3), .init(n: 2, day: 3)], reason: "r")
+        }
+        let built = await runner.revise(request: "ゆっくり", current: [[a], [b], [c]], candidates: [], index: [], offline: false,
+                                        service: TripAIService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                                                              tokenProvider: NoToken())),
+                                        title: "金沢の旅") { _, _ in 10 }
+        let result = try XCTUnwrap(built)
+        XCTAssertEqual(result.days.map { (d: [OfficialSpot]) in d.map { $0.spotId } }, [[], ["c"], ["a", "b"]], "空の日を詰めない（日の番号のまま）")
+        let before = [TripDay(date: "2026-12-01", items: [.spot(spotId: "a", note: nil)]),
+                      TripDay(date: "2026-12-02", items: [.spot(spotId: "b", note: nil)]),
+                      TripDay(date: "2026-12-03", items: [.spot(spotId: "c", note: nil)])]
+        let merged = TripAIRevise.merge(before: before, aiDays: result.days.map { (d: [OfficialSpot]) in d.map { $0.spotId } }, sent: ["a", "b", "c"])
+        XCTAssertEqual(merged.days[1], TripDay(date: "2026-12-02", items: [.spot(spotId: "c", note: nil)]),
+                       "2日目の場所が 2日目の日付に入る")
+    }
+
+    func testOnlyCandidatesSentToAIAreTreatedAsSent() throws {
+        let rows = try (1...22).map { try spot("s\($0)") }
+        let current = [Array(rows.prefix(12)), Array(rows.suffix(10))]
+        let sent = TripAIRevise.sentIds(current: current, candidates: Array(rows.prefix(20)))
+        XCTAssertEqual(sent.count, 20)
+        XCTAssertFalse(sent.contains("s21"), "21か所目から後は AI に渡していない")
+        let before = current.map { (d: [OfficialSpot]) in TripDay(items: d.map { TripItem.spot(spotId: $0.spotId, note: nil) }) }
+        let merged = TripAIRevise.merge(before: before, aiDays: [rows.prefix(12).map { $0.spotId }, rows[12..<20].map { $0.spotId }], sent: sent)
+        XCTAssertTrue(merged.dropped.isEmpty, "渡していない場所を棚に回さない")
+        XCTAssertTrue(merged.days[1].items.contains(.spot(spotId: "s22", note: nil)))
+    }
+
+    private struct NoToken: TokenProviding {
+        func idToken() async throws -> String? { nil }
+        func accountGone(idToken: String) async {}
     }
 
     // MARK: - 字数

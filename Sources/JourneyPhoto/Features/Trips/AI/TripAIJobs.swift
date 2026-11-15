@@ -33,7 +33,7 @@ final class TripAIJobs: ObservableObject {
     struct Backend {
         var build: @MainActor (TripAIRunner, TripAIAsk, _ offline: Bool) async -> TripAIResult?
         /// 保存する。作ったプランの ID か、失敗
-        var save: @MainActor (_ title: String, _ days: [TripDay]) async -> Result<String, Failure>
+        var save: @MainActor (_ title: String, _ days: [TripDay]) async -> Result<TripAISaved, Failure>
         /// 作ったプランを消す（保存の途中で「やめる」が押された回）
         var remove: @MainActor (_ planId: String) async -> Void
         var offline: @MainActor () -> Bool
@@ -198,10 +198,12 @@ final class TripAIJobs: ObservableObject {
         case .failure(let failure):
             guard !job.cancelled, backend.isCurrent() else { return }
             return fail(job, failure)
-        case .success(let planId):
-            // 🔴 保存の間に「やめる」が押された・人が替わった: 作ったプランを消し、帯も点も出さない
+        case .success(let made):
+            let planId = made.planId
+            // 🔴 保存の間に「やめる」が押された・人が替わった: 帯も点も出さない。作ったプランは、
+            // この作業が作ったと確かに言えるときだけ消す（言えなければ、別の作業のプランを消さないよう残す）
             guard !job.cancelled, backend.isCurrent() else {
-                await backend.remove(planId)
+                if made.certain { await backend.remove(planId) }
                 return
             }
             TripAINotes.shared.set(planId, TripAINote(reason: result.reason, mode: result.mode,
@@ -262,10 +264,10 @@ extension TripAIJobs.Backend {
                 }
                 do {
                     let list = try await environment.trips.create(title: title, days: days, startDate: nil, endDate: nil)
-                    guard let made = TripPlansModel.created(in: list.plans, before: before, title: title) else {
+                    guard let made = TripAICreated.pick(in: list.plans, before: before, title: title) else {
                         return .failure(.save(L("旅行プランを保存できませんでした", "Couldn't save the trip")))
                     }
-                    return .success(made.planId)
+                    return .success(made)
                 } catch {
                     return .failure(connectivity.isOffline ? .offline
                                     : .save((error as? LocalizedError)?.errorDescription ?? L("旅行プランを保存できませんでした", "Couldn't save the trip")))
@@ -298,5 +300,24 @@ enum TripAIJobText {
         case .save:
             return L("「\(title)」を保存できませんでした", "Couldn't save “\(title)”")
         }
+    }
+}
+
+/// 保存できたプラン。`certain` は「この作業が作った」と確かに言えるか
+/// （サーバーの作る口は ID を返さず一覧を返す。増えた中に同じ題が1つだけのときだけ true）
+struct TripAISaved: Equatable {
+    let planId: String
+    let certain: Bool
+}
+
+/// 作る前の一覧と作ったあとの一覧から、作ったプランを選ぶ（確かめ役の指摘 2026-11-15）。
+/// 増えた中に同じ題が1つだけなら確か。同じ題が2つ以上（別の作業が同じ題で作った）か、同じ題が無いときは
+/// いちばん新しいものを採るが、確かとは言わない（「やめる」で消さない）
+enum TripAICreated {
+    static func pick(in list: [TripPlan], before: Set<String>, title: String) -> TripAISaved? {
+        let fresh = list.filter { !before.contains($0.planId) }
+        let same = fresh.filter { $0.title == title }
+        guard let made = TripPlansModel.createdNonisolated(in: list, before: before, title: title) else { return nil }
+        return TripAISaved(planId: made.planId, certain: same.count == 1)
     }
 }
