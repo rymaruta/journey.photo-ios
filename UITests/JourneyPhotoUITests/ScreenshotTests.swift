@@ -7000,8 +7000,12 @@ final class ScreenshotTests: XCTestCase {
         let freshCount = Int(fields["freshMain"] ?? "") ?? 0
         let tiles = (fields["freshTiles"] ?? "").split(separator: ",").compactMap { Int($0) }
         XCTAssertGreaterThan(freshCount, 0, "見本の新しい投稿が並びに1つも無い: \(value)")
-        let expected = Array([1, 4, 7].prefix(min(3, freshCount)))
-        XCTAssertEqual(Array(tiles.prefix(expected.count)), expected, "新しい投稿が 2・5・8 番目に来ない: \(value)")
+        // 2026-11-15（run 1338 の数 `freshMain=3 freshTiles=1,2,4`）: 新しい投稿がいいねを持っていて、今までの並びで既に
+        // 先頭にいるときは、そこに出て枠を使わない（`HomeFreshMix` の決まり3・Web と同じ）。なので「1・4・7 ちょうど」ではなく、
+        // **新しい投稿（3つまで）が全部 1画面目（先頭 10）に入り、2 番目（0 から 1）が新しい投稿**であることを見る。
+        // 枠の位置そのものは単体テスト（`HomeFreshMixTests`）が決まった入力で縛る
+        XCTAssertGreaterThanOrEqual(tiles.filter { $0 < 10 }.count, min(3, freshCount), "新しい投稿が1画面目に入らない: \(value)")
+        XCTAssertTrue(tiles.contains(1) || tiles == [0], "2 番目が新しい投稿でない: \(value)")
 
         // 今週のお題の札は上の札の横並びの中。見えるところまで左へめくる
         let participants = app.buttons["home.theme.participants"].firstMatch
