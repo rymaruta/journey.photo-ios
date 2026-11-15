@@ -33,7 +33,8 @@ struct StoryComposerView: View {
     @State private var showSaveChoice = false
     /// 下書きの一覧から開いた下書き（`DraftLibrary.Entry.id`）。尋ねずに戻す
     private let openDraft: String?
-    /// 開いたらカメラを先頭に出す（札 #500・ホームの輪の「＋」とアイコン長押しの「ストーリーを撮る」）。
+    /// 開いたらカメラを先頭に出す（札 #500・アイコン長押しの「ストーリーを撮る」）。2026-11-15（札 #627）から
+    /// ホームの輪の「＋」はこれを使わず、写真と動画の一覧（先頭のマスがカメラ）から開く。
     /// 写真選びの段を飛ばして撮れる。撮らずに閉じれば写真選びの段に戻る。下書きの続き・送れなかった残りの問いが
     /// あるときは出さない（先に答えてもらう）
     private let startsWithCamera: Bool
@@ -73,6 +74,8 @@ struct StoryComposerView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var toasts: ToastCenter
     @Environment(\.dismiss) private var dismiss
+    /// 写真を許可していない人の「設定で写真へのアクセスを許可」（札 #627）
+    @Environment(\.openURL) private var openURL
 
     /// ライブラリから選んだもの。**まとめて選べる**（モック4-5）
     /// ——1枚ずつしか選べないと、10枚出すのに10回開くことになる
@@ -197,6 +200,14 @@ struct StoryComposerView: View {
     /// 埋め込みの写真選び（写真が0枚のとき）で選んでいるもの。**「次へ」まで読み込まない**
     /// （`pickerItems` は変わった瞬間に読み込むので別に持つ）
     @State private var librarySelection: [PhotosPickerItem] = []
+    /// 最近の写真と動画の一覧（札 #627・写真が0枚のとき、許可があれば埋め込みの写真選びの代わりに出す）
+    @StateObject private var libraryFeed = StoryLibraryFeed()
+    /// 一覧の「選択」を入れている（印を付けて「次へ（N枚）」で進む）
+    @State private var librarySelecting = false
+    /// 一覧で印を付けたマス（選んだ順）
+    @State private var libraryMarked: [String] = []
+    /// 一覧で読み込んでいるマス（丸を出す）
+    @State private var loadingAssetId: String?
     /// 「誰に見せる？」のシート
     @State private var showAudience = false
     /// 撮影スポットの索引（静的な JSON・一度だけ読む）。**取れなかった回は空**＝候補を出さないだけ
@@ -1000,8 +1011,11 @@ struct StoryComposerView: View {
 
     // MARK: - 写真を選ぶ段
 
-    /// 写真が0枚のとき。**開いてすぐ最近の写真の格子**（iOS 17 の埋め込みの写真選び）。
-    /// 写真ライブラリの許可は求めない（`photoLibrary` を渡さない形は、選んだものだけを受け取る）。
+    /// 写真が0枚のとき。**開いてすぐ最近の写真と動画の一覧**。
+    ///
+    /// 2026-11-15 判断（札 #627・owner「ストーリーを追加押すとカメラ起動しちゃう！」）: 今のインスタと同じ形。
+    /// 写真の許可があれば自前の一覧（`StoryLibraryGrid`・先頭のマスはカメラ・押せばそのまま作る段へ）。
+    /// 許可が無ければ前の埋め込みの写真選び（許可が要らない）と、許可を増やす1行。決まりは `StoryLibraryRules.content`。
     /// 開いたときの問い（送れなかった・続きから）は前のまま、この上に先に出る
     private var pickStage: some View {
         VStack(spacing: 0) {
@@ -1028,7 +1042,10 @@ struct StoryComposerView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(Labels.Common.close)
                     Spacer()
-                    if CameraPicker.isAvailable {
+                    if case .grid = libraryFeed.content {
+                        // 一覧のときはカメラは先頭のマス。右上はアルバム（検索・古い写真・何枚かまとめて）と「選択」
+                        libraryHeaderButtons
+                    } else if CameraPicker.isAvailable {
                         // 撮って入れる（前のカメラの流れ。撮ったら `accept` で並びに入り、仕上げる段へ）
                         Button { showCamera = true } label: {
                             Image(systemName: "camera")
@@ -1065,20 +1082,167 @@ struct StoryComposerView: View {
             // **元の形のまま受け取る（`.current`）**。既定（`.automatic`）だと、写真を JPEG などに
             // 作り直し終えるまで選択が知らされず、その間は丸だけが出る。大きな写真・iCloud の写真ほど長い。
             // 読み込みは `Data` で受けて画像にするので、HEIC のままで困らない
-            PhotosPicker(selection: $librarySelection,
-                         maxSelectionCount: StoryQueue.maxShots,
-                         selectionBehavior: .continuousAndOrdered,
-                         matching: .any(of: [.images, .videos]),
-                         preferredItemEncoding: .current) {
-                Text(L("写真を選ぶ", "Choose photos"))
-            }
-            .photosPickerStyle(.inline)
-            .photosPickerDisabledCapabilities(.selectionActions)
-            .photosPickerAccessoryVisibility(.hidden, edges: .all)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            switch libraryFeed.content {
+            case .grid(let limited):
+                if limited { limitedAccessRow }
+                StoryLibraryGrid(items: libraryFeed.items, loaded: libraryFeed.loaded,
+                                 selecting: librarySelecting, marked: libraryMarked,
+                                 loadingId: loadingAssetId, loading: loadingPicks > 0,
+                                 onCamera: { showCamera = true },
+                                 onTap: tapLibraryItem)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                libraryFooter
+            case .systemPicker(let offer):
+                if let offer { accessOfferRow(offer) }
+                PhotosPicker(selection: $librarySelection,
+                             maxSelectionCount: StoryQueue.maxShots,
+                             selectionBehavior: .continuousAndOrdered,
+                             matching: .any(of: [.images, .videos]),
+                             preferredItemEncoding: .current) {
+                    Text(L("写真を選ぶ", "Choose photos"))
+                }
+                .photosPickerStyle(.inline)
+                .photosPickerDisabledCapabilities(.selectionActions)
+                .photosPickerAccessoryVisibility(.hidden, edges: .all)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            pickFooter
+                pickFooter
+            }
         }
+        // 許可の段は開くたび・設定から戻ったたびに読み直す（設定で許可を変えて戻ってきた人に、そのまま一覧を出す）
+        .onAppear { libraryFeed.refresh() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { libraryFeed.refresh() }
+        }
+        // 埋め込みの写真選びで付けた印は、一覧に替わったら持ち越さない（見えない印の写真が、撮った1枚の前に入る）
+        .onChange(of: libraryFeed.content) { _, content in
+            if case .grid = content { librarySelection = [] }
+        }
+    }
+
+    // MARK: - 最近の写真と動画の一覧（札 #627）
+
+    /// 一覧のときの右上。アルバム（PHPicker・検索とアルバムつき・一部だけ許可でも全部から選べる）と「選択」
+    private var libraryHeaderButtons: some View {
+        HStack(spacing: 0) {
+            Button { showLibrary = true } label: {
+                Image(systemName: "photo.on.rectangle")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(loadingPicks > 0 || librarySelecting)
+            .opacity(loadingPicks > 0 || librarySelecting ? 0.4 : 1)
+            .accessibilityLabel(L("アルバムから選ぶ", "Choose from albums"))
+            .accessibilityIdentifier("story.library.albums")
+            Button {
+                librarySelecting.toggle()
+                if !librarySelecting { libraryMarked = [] }
+            } label: {
+                Text(librarySelecting ? Labels.Common.cancel : L("選択", "Select"))
+                    .font(JPFont.footnote.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(loadingPicks > 0)
+            .accessibilityHint(librarySelecting ? ""
+                : L("何枚かに印を付けて、まとめてストーリーにします", "Mark several to post them together"))
+            .accessibilityIdentifier("story.library.select")
+        }
+    }
+
+    /// 一部だけ許可した人の1行（左に説明、右に真鍮の「写真を増やす」）
+    private var limitedAccessRow: some View {
+        HStack(spacing: 8) {
+            Text(StoryLibraryRules.limitedNote)
+                .font(JPFont.footnote)
+                .foregroundStyle(WebTheme.text2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                Task { await libraryFeed.addAllowedPhotos() }
+            } label: {
+                Text(StoryLibraryRules.limitedAction)
+                    .font(JPFont.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.accent)
+                    .frame(minHeight: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("story.library.addAllowed")
+        }
+        .padding(.horizontal, 16)
+    }
+
+    /// 許可の無い人の1行（埋め込みの写真選びの上・押すと許可のダイアログか設定）
+    private func accessOfferRow(_ offer: StoryLibraryRules.AccessOffer) -> some View {
+        Button {
+            switch offer {
+            case .ask:
+                Task { await libraryFeed.requestAccess() }
+            case .openSettings:
+                if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "square.grid.3x3")
+                    .font(.footnote.weight(.semibold))
+                Text(StoryLibraryRules.offerTitle(offer))
+                    .font(JPFont.footnote.weight(.semibold))
+                    .multilineTextAlignment(.leading)
+            }
+            .foregroundStyle(WebTheme.accent)
+            .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget, alignment: .leading)
+            .padding(.horizontal, 16)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(StoryLibraryRules.offerHint(offer))
+        .accessibilityIdentifier("story.library.allow")
+    }
+
+    /// マスを押した。ふだんは**そのまま読み込んで作る段へ**（「＋ → 選ぶ」の2回）。「選択」の間は印を付ける・外す
+    private func tapLibraryItem(_ item: StoryLibraryRules.Item) {
+        switch StoryLibraryRules.tapAction(selecting: librarySelecting,
+                                           isMarked: libraryMarked.contains(item.id),
+                                           markedCount: libraryMarked.count, loading: loadingPicks > 0) {
+        case .open:
+            Task { await loadLibraryItems([item]) }
+        case .toggle:
+            libraryMarked = StoryLibraryRules.toggled(libraryMarked, id: item.id)
+        case .ignore:
+            break
+        }
+    }
+
+    /// 一覧のときの下（知らせと、「選択」の間だけ白い「次へ（N枚）」）
+    private var libraryFooter: some View {
+        let next = StorySimpleRules.nextButton(selected: libraryMarked.count, loading: loadingPicks > 0)
+        let shown = message != nil || librarySelecting
+        return VStack(spacing: 10) {
+            if let message {
+                Text(message).font(JPFont.footnote).foregroundStyle(WebTheme.text2)
+            }
+            if librarySelecting {
+                nextPill(next) {
+                    // 選んだ順に読む。読み終えたら「選択」を下ろす（全部外して戻ったときに前の印を残さない）
+                    let picked = libraryMarked.compactMap { id in libraryFeed.items.first { $0.id == id } }
+                    Task {
+                        await loadLibraryItems(picked)
+                        librarySelecting = false
+                        libraryMarked = []
+                    }
+                }
+                .accessibilityIdentifier("story.library.next")
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, shown ? 10 : 0)
+        .padding(.bottom, shown ? 8 : 0)
     }
 
     /// 写真を選ぶ段のカメラを押せるか（印が上限まで付いていれば押せない）
@@ -1093,30 +1257,35 @@ struct StoryComposerView: View {
             if let message {
                 Text(message).font(JPFont.footnote).foregroundStyle(WebTheme.text2)
             }
-            Button {
+            nextPill(next) {
                 // 読み込みは前の `load`（読めたものから並びに入り、1枚入ると仕上げる段に移る）
                 let items = librarySelection
                 Task { await load(items) }
-            } label: {
-                Group {
-                    if loadingPicks > 0 {
-                        ProgressView().tint(WebTheme.accentText)
-                    } else {
-                        Text(next.title)
-                    }
-                }
-                // v2: 写真のある画面の主ボタン（白・50・`JPPillStyle.main(onPhoto: true)`）
-                .jpPillButton(.main(onPhoto: true))
-                .opacity(next.enabled || loadingPicks > 0 ? 1 : 0.5)
-                .accessibilityLabel(next.title)
-                .accessibilityValue(loadingPicks > 0 ? L("写真を読み込んでいます", "Loading photos") : "")
             }
-            .buttonStyle(.plain)
-            .disabled(!next.enabled)
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)
         .padding(.bottom, 8)
+    }
+
+    /// 写真を選ぶ段の白い「次へ（N枚）」（埋め込みの写真選びと一覧の「選択」で同じ1つ・札 #627）
+    private func nextPill(_ next: StorySimpleRules.NextButton, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Group {
+                if loadingPicks > 0 {
+                    ProgressView().tint(WebTheme.accentText)
+                } else {
+                    Text(next.title)
+                }
+            }
+            // v2: 写真のある画面の主ボタン（白・50・`JPPillStyle.main(onPhoto: true)`）
+            .jpPillButton(.main(onPhoto: true))
+            .opacity(next.enabled || loadingPicks > 0 ? 1 : 0.5)
+            .accessibilityLabel(next.title)
+            .accessibilityValue(loadingPicks > 0 ? L("写真を読み込んでいます", "Loading photos") : "")
+        }
+        .buttonStyle(.plain)
+        .disabled(!next.enabled)
     }
 
     // MARK: - 道具（写真の下の4つ）
@@ -2096,6 +2265,30 @@ struct StoryComposerView: View {
     /// ——何枚か読めた回に「読み込めませんでした」だけ出すと、
     /// 並んでいるものが見えているのに失敗したように読める。
     private func load(_ items: [PhotosPickerItem]) async {
+        await loadPicks(items, isVideo: { StoryVideoPipeline.isVideo($0) },
+                        importVideo: { try await StoryVideoPipeline.importClip(from: $0) },
+                        readPhoto: { try await $0.loadTransferable(type: Data.self) })
+        // **選び終えたら空にする。** 残すと、次に同じ写真を選んでも
+        // `onChange` が動かない（同じ値なので知らせが来ない）
+        pickerItems = []
+    }
+
+    /// 一覧（`StoryLibraryGrid`）で選んだマスを順に足す（札 #627）。写真選び（`load`）と同じ道——
+    /// 1件ごとの上限時間・動画の断りの理由・「n枚を読み込めませんでした」。読んでいるマスに丸を出す
+    private func loadLibraryItems(_ items: [StoryLibraryRules.Item]) async {
+        await loadPicks(items, isVideo: { $0.isVideo },
+                        importVideo: { try await StoryVideoPipeline.importAsset(id: $0.id) },
+                        readPhoto: { await PhotoLibrary.imageData(for: $0.id) },
+                        willRead: { loadingAssetId = $0.id })
+        loadingAssetId = nil
+    }
+
+    /// 選ばれたぶんを、選んだ順のまま1件ずつ足す（写真と動画が混ざってもよい）。写真は `readPicks` を通す。
+    /// 写真選びの1件（`PhotosPickerItem`）でも一覧のマス（`StoryLibraryRules.Item`）でも同じ決まりで読む
+    private func loadPicks<Item>(_ items: [Item], isVideo: (Item) -> Bool,
+                                 importVideo: @escaping (Item) async throws -> StoryVideoPipeline.Imported,
+                                 readPhoto: @escaping (Item) async throws -> Data?,
+                                 willRead: (Item) -> Void = { _ in }) async {
         guard !items.isEmpty else { return }
         loadingPicks += 1
         defer { loadingPicks -= 1 }
@@ -2104,15 +2297,15 @@ struct StoryComposerView: View {
         var failed = 0
         // 動画の読み込みの断り（60秒超え・読めない）。**写真と同じ一言にせず理由を言う**（札 #500）
         var videoProblem: StoryVideoRules.Problem?
-        // 選んだ順のまま1件ずつ足す(写真と動画が混ざってもよい)。写真は `readPicks` を通す
         for item in items {
-            if StoryVideoPipeline.isVideo(item) {
+            willRead(item)
+            if isVideo(item) {
                 // 写真と同じ上限時間(`StorySimpleRules.pickLoadTimeout`)。iCloud から落ちてこない動画で
                 // 読み込み中が解けず、「シェアする」・「＋」が止まったままにならないように
                 let result: Result<StoryVideoPipeline.Imported, Error>? = await AsyncTimeout.firstWithin(
                     seconds: StorySimpleRules.pickLoadTimeout
                 ) { () async -> Result<StoryVideoPipeline.Imported, Error>? in
-                    do { return .success(try await StoryVideoPipeline.importClip(from: item)) }
+                    do { return .success(try await importVideo(item)) }
                     catch { return .failure(error) }
                 }
                 switch result {
@@ -2126,9 +2319,7 @@ struct StoryComposerView: View {
                     videoProblem = .importTimedOut
                 }
             } else {
-                failed += await StorySimpleRules.readPicks([item], read: { item in
-                    try await item.loadTransferable(type: Data.self)
-                }, accept: { data in
+                failed += await StorySimpleRules.readPicks([item], read: readPhoto, accept: { data in
                     await accept(data)
                 })
             }
@@ -2140,9 +2331,6 @@ struct StoryComposerView: View {
                 ? L("写真を読み込めませんでした", "Couldn't load the photos")
                 : L("\(failed)枚を読み込めませんでした", "Couldn't load \(failed) of them")
         }
-        // **選び終えたら空にする。** 残すと、次に同じ写真を選んでも
-        // `onChange` が動かない（同じ値なので知らせが来ない）
-        pickerItems = []
     }
 
     /// カメラで撮った1枚。**写真を選ぶ段で印を付けていた写真があれば、先にそれを読み込む**

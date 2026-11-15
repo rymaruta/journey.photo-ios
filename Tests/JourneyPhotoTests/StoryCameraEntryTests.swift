@@ -234,12 +234,21 @@ final class StoryCameraEntryTests: XCTestCase {
         XCTAssertFalse(block.contains("select("), "アイコン長押しの受け口がタブを切り替えている")
     }
 
-    /// 作る画面の入口は2つ（`RootView`・`StoriesRow`）。どちらも全画面のまま、カメラ先頭の旗を渡す
-    func testComposerEntriesPassTheCameraFirstFlag() throws {
-        XCTAssertTrue(try read("Sources/JourneyPhoto/Features/Stories/StoriesRow.swift")
-            .contains("StoryComposerView(startsWithCamera: StoryCameraView.isAvailable)"))
-        XCTAssertTrue(try read("Sources/JourneyPhoto/App/RootView.swift")
-            .contains("StoryComposerView(openDraft: openStoryDraftId, startsWithCamera: storyStartsWithCamera)"))
+    /// 作る画面の入口。**カメラを先頭に開くのはアイコン長押しの「ストーリーを撮る」だけ**（`RootView` の旗）。
+    /// 2026-11-15（札 #627）: ホームの輪の「＋」とハイライトの「ストーリーを作る」は写真と動画の一覧から開く
+    func testOnlyTheShortcutOpensTheCameraFirst() throws {
+        let row = try read("Sources/JourneyPhoto/Features/Stories/StoriesRow.swift")
+        XCTAssertTrue(row.contains("NavigationStack { StoryComposerView() }"), "「＋」の入口が見つからない")
+        XCTAssertFalse(row.contains("startsWithCamera"), "「＋」でカメラが先に開く（owner「カメラ起動しちゃう！」）")
+        let highlight = try read("Sources/JourneyPhoto/Features/Profile/HighlightEditorView.swift")
+        XCTAssertFalse(highlight.contains("startsWithCamera"), "ハイライトの「ストーリーを作る」でカメラが先に開く")
+        let root = try read("Sources/JourneyPhoto/App/RootView.swift")
+        XCTAssertTrue(root.contains("StoryComposerView(openDraft: openStoryDraftId, startsWithCamera: storyStartsWithCamera)"))
+        // 旗を立てるのはアイコン長押しの受け口（`StoryShortcutOpener` の open）だけ
+        let shortcut = try XCTUnwrap(root.range(of: ".modifier(StoryShortcutOpener("))
+        let flagSet = try XCTUnwrap(root.range(of: "storyStartsWithCamera = StoryCameraView.isAvailable"))
+        XCTAssertGreaterThan(flagSet.lowerBound, shortcut.lowerBound, "長押し以外でカメラ先頭の旗を立てている")
+        XCTAssertEqual(root.components(separatedBy: "storyStartsWithCamera = StoryCameraView.isAvailable").count, 2)
     }
 
     // MARK: - 札 #500 の直し(カメラ)

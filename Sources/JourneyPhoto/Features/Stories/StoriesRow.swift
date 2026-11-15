@@ -191,8 +191,10 @@ struct StoriesRow: View {
         .fullScreenCover(isPresented: $showComposer, onDismiss: {
             Task { await reload() }
         }) {
-            NavigationStack { // 入口は全部「＋」(ストーリーを追加)なので、カメラを先頭に開く(札 #500・A 案)。カメラが無い端末は写真選びから
-            StoryComposerView(startsWithCamera: StoryCameraView.isAvailable) }
+            // 2026-11-15 判断（札 #627・owner「ストーリーを追加押すとカメラ起動しちゃう！」）: 「＋」は**写真と動画の一覧**を
+            // 先に開く（今のインスタと同じ・一覧の最初のマスがカメラ）。前は札 #500 の A 案でカメラを先頭に開いていた。
+            // カメラを先頭に開くのは、アイコン長押しの「ストーリーを撮る」（`RootView`）だけ
+            NavigationStack { StoryComposerView() }
         }
         // ②「1年前」の「ストーリーに出す」: その写真と文字を入れて作る画面を開く（カメラは出さない）。送り始めたら輪は消える
         .fullScreenCover(item: $composerSeed, onDismiss: {
