@@ -2,6 +2,35 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.92",
+      "date": "2026-11-15",
+      "items": [
+        {
+          "symbol": "eye",
+          "title": { "ja": "投稿する前に見え方をプレビュー", "en": "Preview your post before you share it" },
+          "detail": { "ja": "投稿の画面の下の「プレビュー」を押すと、投稿したあとに写真の詳細、ホーム、マイページでどう見えるかを確かめられます。左右に払うとページが替わります。", "en": "Tap Preview at the bottom of the post screen to see how your post will look in the photo details, on Home, and on My page. Swipe left or right to switch pages." }
+        },
+        {
+          "symbol": "qrcode",
+          "destination": "mypage",
+          "title": { "ja": "プロフィールのリンクを送れる", "en": "Send a link to a profile" },
+          "detail": { "ja": "プロフィールの QR の画面に「リンクをコピー」と「共有」が付きました。他の人のページでも、右上の ⋯ の「プロフィールを共有」から送れます。", "en": "The profile QR code screen now has Copy link and Share. On someone else's page, use Share profile in the ⋯ menu at the top right." }
+        },
+        {
+          "symbol": "sparkles",
+          "destination": "home",
+          "title": { "ja": "ホームに新しい投稿が混ざる", "en": "New posts show up on Home" },
+          "detail": { "ja": "ホームのおすすめの並びに、3日以内に載った新しい投稿が上のほうに混ざります。その人のはじめての投稿には「はじめての投稿」の印が付きます。", "en": "Posts shared in the last 3 days now appear near the top of Home. Someone's very first post gets a First post badge." }
+        },
+        {
+          "symbol": "calendar",
+          "destination": "home",
+          "title": { "ja": "今週のお題", "en": "This week's theme" },
+          "detail": { "ja": "ホームの上の札に、週ごとに替わるお題が出ます。季節に合った観光スポットや景色のお題で、「参加する」を押すとお題のタグを入れて投稿できます。みんなの参加も札に並びます。", "en": "A theme that changes every week appears in the cards at the top of Home. Tap Join to post with the theme's tag, and see everyone's posts in the card." }
+        }
+      ]
+    },
+    {
       "version": "1.1.91",
       "date": "2026-11-14",
       "items": [
