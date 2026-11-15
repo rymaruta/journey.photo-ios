@@ -156,11 +156,16 @@ if [ "$mode" != "build" ] && command -v xcrun >/dev/null 2>&1; then
                 same="$(xcrun simctl list devices booted 2>/dev/null | grep -cF "$DEVICE (" || true)"
                 echo "measured [sim] $mode アプリが立ち上がった $(( $(date +%s) - started ))s（起動している同じ名前の機種 ${same} 台）" \
                     | tee -a "$LOG"
-                # **単体テストの頭の 150秒、テストを載せるアプリの主スレッドを見本に取る**（札 #610・2026-11-15）。
-                # `APIClientThrottleRetryTests` で、試験の本体の後に主スレッドが 18.4秒止まった（run 1348）。何が止めて
-                # いるかを `Tools/main-thread-sample.py` で数える（関数の名前と秒だけ。番地・置き場は出さない）
+                # **`SAMPLE_MAIN_THREAD=1` のときだけ、単体テストの頭の 150秒、テストを載せるアプリの主スレッドを見本に取る**
+                # （札 #610・2026-11-15）。`Tools/main-thread-sample.py` で関数の名前と秒だけを出す（番地・置き場は出さない）。
+                # 調べた結果（run 1348〜1363）: 単体テストの頭の数十秒に、主スレッドが 4〜39秒止まる回がある。止まっている間、
+                # 主スレッドは XCTest の記録の書き出し（`-[XCTestLog testCaseDidFinish:]` → `write`）で待っていた（run 1362 で
+                # 1か所 3.30秒）。止まった秒は、Actions のログに行が届くのが遅れた秒とほぼ同じ（例: run 1348 は 18.4秒止まり、
+                # 届くのが 18〜19秒遅れ。止まらなかった回は 0〜3秒）。書き出す量は毎回 16KB ほどで同じ。受け取る側
+                # （xcodebuild）が読まずにいるのかどうかと、その理由は確かめていない。毎回は取らない（見本を取る間、台が重くなる）
                 pid="$(pgrep -f "JourneyPhoto.app/JourneyPhoto" | head -1 || true)"
-                if [ "$mode" = "unit" ] && [ -n "$pid" ] && command -v sample >/dev/null 2>&1; then
+                if [ "${SAMPLE_MAIN_THREAD:-}" = "1" ] && [ "$mode" = "unit" ] && [ -n "$pid" ] \
+                    && command -v sample >/dev/null 2>&1; then
                     (
                         out="$(mktemp)"
                         status=0
