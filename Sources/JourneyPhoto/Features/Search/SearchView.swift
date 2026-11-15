@@ -86,6 +86,8 @@ struct SearchView: View {
     /// 端末の AI が読んでいる最中（「読み取っています」を出す）
     @State private var isReadingSentence = false
     @State private var readingTask: Task<Void, Never>?
+    /// UI テストのときだけ: 0件の外し方の動きの記録（`PreviewSession.searchReadingProbe`・回 1383 の調べ）
+    @State private var relaxProbe = ""
 
     var body: some View {
         // 探すの重さの記録（UI テストのときだけ・2026-11-13 札 #590）: body の評価回数を、いまの語ごとに数える
@@ -213,6 +215,7 @@ struct SearchView: View {
         // `.first`）も、前面に戻ったときも同じ所。2026-11-12 確かめ役: ここにも `.task` で読んでいて、初めての表示で2回読んでいた
         // 文で探して重ねた条件が0件と決まったら、1つ外して見せる（札 #623・2026-11-15 判断）
         .onChange(of: needsRelaxing) { _, needed in
+            if PreviewSession.searchReadingProbe { relaxProbe += " onChange(needed=\(needed))" }
             if needed { relaxIfZeroHit() }
         }
         .onChange(of: query) { _, newValue in
@@ -452,6 +455,15 @@ struct SearchView: View {
         }
         current.dropped = kind
         reading = current
+        if PreviewSession.searchReadingProbe {
+            let counts = [SearchSentence.Chip.Kind.season, .dayPart, .text].map { k -> String in
+                let next = SearchSentence.removing(k, query: query, filter: model.timeFilter)
+                return "\(k.rawValue):\(resultCount(query: next.query, filter: next.filter))"
+            }
+            relaxProbe += " relax(query=\(query) season=\(model.timeFilter.season?.rawValue ?? "-")"
+                + " dayPart=\(model.timeFilter.dayPart?.rawValue ?? "-") counts=\(counts.joined(separator: ","))"
+                + " index=\(spotSearchIndex != nil) spots=\(officialSpots.count) kind=\(kind?.rawValue ?? "nil"))"
+        }
         guard let kind else { return }
         let next = SearchSentence.removing(kind, query: query, filter: model.timeFilter)
         model.set(timeFilter: next.filter)
@@ -524,6 +536,16 @@ struct SearchView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("search.reading.note")
                 }
+            }
+            if PreviewSession.searchReadingProbe {
+                Text(".")
+                    .font(.caption2)
+                    .foregroundStyle(Color.clear)
+                    .accessibilityIdentifier("search.reading.probe")
+                    .accessibilityValue("needs=\(needsRelaxing) zero=\(zeroHitOnTop) tried=\(reading?.relaxTried ?? false)"
+                                        + " busy=\(isReadingSentence) pending=\(spotHitsResult.pending)"
+                                        + " photos=\(model.shown.count) spotsHit=\(spotHits.count) loaded=\(model.hasLoaded)"
+                                        + " log=\(relaxProbe)")
             }
             // どちらで読んでも端末の中だけ（外へは送らない）
             Label(L("この iPhone の中で読み取りました", "Read on this iPhone"), systemImage: "iphone")

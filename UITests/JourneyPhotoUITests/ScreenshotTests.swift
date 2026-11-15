@@ -3050,6 +3050,8 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPOnDeviceAI", "off"]
+        // 0件の外し方の動きを見えない要素に出す（回 1383 で外さなかった理由を数で取る）
+        app.launchArguments += ["-JPSearchReadingProbe", "YES"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -3073,6 +3075,8 @@ final class ScreenshotTests: XCTestCase {
         // 撮影スポットの索引と写真の絵が描かれるのを待つ（0件と決まれば、1つ外した形に替わる）
         Thread.sleep(forTimeInterval: 5)
         shoot(app, "11v-探す（文で探す、京都 紅葉 夜）")
+        let probe = app.descendants(matching: .any)["search.reading.probe"].firstMatch
+        print("measured [search-relax] probe=\(probe.exists ? (probe.value as? String ?? "-") : "missing")")
 
         // 2026-11-15 判断: 3つ重ねて0件なら、1つ外していちばん多く残る形を自動で見せる。外した札は薄く残り、1行で言う。
         // 押すと元の3つに戻る（本番のデータでは秋と夜の両方の案内がある京都の観光スポットが無く、0件だった・回 1381）

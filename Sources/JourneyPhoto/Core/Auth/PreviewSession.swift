@@ -152,6 +152,18 @@ enum PreviewSession {
     /// `revealNewestFeedTile`）。Release では必ず false
     static let feedProbeKey = "JPPreviewFeedProbe"
 
+    /// UI テストで、探すの「文で探す」の0件の外し方の動き（`SearchView.relaxProbe`）を見えない要素 `search.reading.probe` に出す
+    /// （Debug のみ・2026-11-15 札 #623。回 1383 で0件のまま外さなかった理由を数で取る）
+    static let searchReadingProbeKey = "JPSearchReadingProbe"
+
+    static var searchReadingProbe: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: searchReadingProbeKey)
+        #else
+        return false
+        #endif
+    }
+
     static var feedProbe: Bool {
         #if DEBUG
         return UserDefaults.standard.bool(forKey: feedProbeKey)
