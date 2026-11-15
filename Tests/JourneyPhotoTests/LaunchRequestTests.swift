@@ -139,10 +139,76 @@ final class SchedulingProbe: @unchecked Sendable {
     }
 }
 
+/// **組の間ずっと、主スレッドが止まった時を記録する**（札 #610・2026-11-15 判断）。
+/// run 1345 で、XCTest の数えた1件の秒（2.351秒）と、setUp から tearDown までの秒（0.116秒）が合わなかった
+/// ＝待ちは試験の本体の外。XCTest は setUp・試験・tearDown の出入りを主スレッドで回すので、主スレッドが
+/// 0.3秒以上止まった時を、組の頭からの秒で `measured [throttle-main]` の行に出す
+final class MainThreadWatch: @unchecked Sendable {
+    private let lock = NSLock()
+    private var running = true
+    private var stalls: [String] = []
+    let started = Date()
+
+    init() {
+        let thread = Thread { [self] in
+            while self.isRunning {
+                let semaphore = DispatchSemaphore(value: 0)
+                let t0 = Date()
+                DispatchQueue.main.async { semaphore.signal() }
+                _ = semaphore.wait(timeout: .now() + 120)
+                let waited = Date().timeIntervalSince(t0)
+                if waited >= 0.3 { self.note(at: t0.timeIntervalSince(self.started), waited: waited) }
+                Thread.sleep(forTimeInterval: 0.02)
+            }
+        }
+        thread.start()
+    }
+
+    private var isRunning: Bool { lock.lock(); defer { lock.unlock() }; return running }
+
+    private func note(at: Double, waited: Double) {
+        lock.lock(); defer { lock.unlock() }
+        stalls.append(String(format: "%.2f+%.2f", at, waited))
+    }
+
+    /// 組の頭からの秒
+    func now() -> Double { Date().timeIntervalSince(started) }
+
+    func finish() -> String {
+        lock.lock(); running = false; defer { lock.unlock() }
+        return "measured [throttle-main] 組の頭から " + String(format: "%.2f", Date().timeIntervalSince(started))
+            + "s 主スレッドが止まった時（頭からの秒+止まった秒）=[\(stalls.joined(separator: " "))]"
+    }
+}
+
 final class APIClientThrottleRetryTests: XCTestCase {
 
+    nonisolated(unsafe) private static var watch: MainThreadWatch?
     private var session: URLSession!
     private var probe: SchedulingProbe!
+    /// この1件の出入りの時刻（組の頭からの秒）
+    private var entered = 0.0
+    private var setUpAt = 0.0
+
+    override class func setUp() {
+        super.setUp()
+        watch = MainThreadWatch()
+    }
+
+    override class func tearDown() {
+        if let watch { print(watch.finish()) }
+        watch = nil
+        super.tearDown()
+    }
+
+    /// XCTest が1件を始めてから終えるまで（setUp・tearDown の外も含む）を、組の頭からの秒で出す
+    override func invokeTest() {
+        entered = Self.watch?.now() ?? 0
+        super.invokeTest()
+        let left = Self.watch?.now() ?? 0
+        print("measured [throttle-invoke] \(name) in=" + String(format: "%.3f", entered)
+              + " out=" + String(format: "%.3f", left) + " took=" + String(format: "%.3f", left - entered))
+    }
 
     /// 待った秒数を覚えるだけ（実際には待たない）
     private final class Pauses: @unchecked Sendable {
@@ -154,6 +220,7 @@ final class APIClientThrottleRetryTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        setUpAt = Self.watch?.now() ?? 0
         probe = SchedulingProbe()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubProtocol.self]
@@ -163,7 +230,8 @@ final class APIClientThrottleRetryTests: XCTestCase {
     }
 
     override func tearDown() {
-        print(probe.finish(name))
+        print(probe.finish(name) + " setUpAt=" + String(format: "%.3f", setUpAt)
+              + " tearDownAt=" + String(format: "%.3f", Self.watch?.now() ?? 0))
         StubProtocol.reset()
         super.tearDown()
     }
