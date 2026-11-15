@@ -3084,7 +3084,10 @@ final class ScreenshotTests: XCTestCase {
         if let dropped = droppedIDs.map({ app.buttons[$0].firstMatch }).first(where: { $0.exists }) {
             let note = app.staticTexts["search.reading.note"].firstMatch
             XCTAssertTrue(note.exists && note.label.contains("当てはまる所は無いので"), "外したことを1行で言っていない")
-            XCTAssertFalse(app.buttons["search.emptyMap"].firstMatch.exists, "1つ外しても0件のまま")
+            // 結果が出ている: 観光スポットの節か、写真の格子（`search.emptyMap` は写真が0件なら観光スポットがあっても出るので見ない・回 1385）
+            let spots = app.descendants(matching: .any)["search.spots"].firstMatch
+            let probeText = app.descendants(matching: .any)["search.reading.probe"].firstMatch.value as? String ?? ""
+            XCTAssertTrue(spots.exists || probeText.contains("zero=false"), "1つ外しても0件のまま: \(probeText)")
             dropped.tap()
             XCTAssertTrue(dropped.waitForNonExistence(timeout: 5), "薄い札を押しても戻らない")
             Thread.sleep(forTimeInterval: 2)
