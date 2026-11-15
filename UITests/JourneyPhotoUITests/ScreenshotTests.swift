@@ -3816,21 +3816,86 @@ final class ScreenshotTests: XCTestCase {
             note.lifetime = .keepAlways
             add(note)
 
-            // 札を押すと、今のログイン画面（シート）。押す回数は1回
+            // 札を押すと、今のログイン画面（シート）が**登録の側**で開く（札 #630）。押す回数は1回
             let first = app.buttons["home.signUpBenefit.post"].firstMatch
             if first.isHittable {
                 first.tap()
                 let form = app.descendants(matching: .any)["signin.form"].firstMatch
                 XCTAssertTrue(form.waitForExistence(timeout: 10), "札を押してもログイン画面が開かない\(tag)")
+                assertSignInSide(app, signUp: true, "札を押した先\(tag)")
                 if tag.isEmpty {
                     Thread.sleep(forTimeInterval: 2)
-                    shoot(app, "68b-札を押した先（今のログイン画面）")
+                    shoot(app, "68b-札を押した先（今のログイン画面の登録の側）")
+                }
+                // 閉じて「ログイン」を押すと、ログインの側で開く
+                if closeSignInSheet(app), action.isHittable {
+                    let login = app.buttons["home.signUpBenefits.signIn"].firstMatch
+                    XCTAssertTrue(login.exists, "段の「ログイン」が無い\(tag)")
+                    if login.isHittable {
+                        XCTAssertGreaterThanOrEqual(login.frame.height, 44, "段の「ログイン」が 44pt 未満\(tag)")
+                        login.tap()
+                        XCTAssertTrue(form.waitForExistence(timeout: 10), "「ログイン」を押してもログイン画面が開かない\(tag)")
+                        assertSignInSide(app, signUp: false, "段の「ログイン」を押した先\(tag)")
+                    }
                 }
             } else {
                 XCTFail("札が押せる所に出ない\(tag)（\(first.frame)）")
             }
             app.terminate()
         }
+    }
+
+    /// ログイン画面がどちらの側で開いたか（主ボタンの字で見る。画面は変えていないので、今の字そのもの）
+    private func assertSignInSide(_ app: XCUIApplication, signUp: Bool, _ step: String) {
+        let submit = app.buttons["signin.submit"].firstMatch
+        XCTAssertTrue(submit.waitForExistence(timeout: 10), "ログイン画面の主ボタンが無い（\(step)）")
+        let expected = signUp ? "登録する" : "ログイン"
+        let label = submit.label
+        print("[signin-side] \(step) submit=\(label)")
+        XCTAssertEqual(label, expected, "\(step): \(signUp ? "登録" : "ログイン")の側で開いていない（主ボタン「\(label)」）")
+    }
+
+    /// ログイン画面のシートを左上の「閉じる」で閉じる。閉じられたら true
+    @discardableResult
+    private func closeSignInSheet(_ app: XCUIApplication) -> Bool {
+        let close = app.buttons["閉じる"].firstMatch
+        guard close.waitForExistence(timeout: 5) else { return false }
+        close.tap()
+        return app.descendants(matching: .any)["signin.form"].firstMatch.waitForNonExistence(timeout: 10)
+    }
+
+    /// **ログインのお願いに新規登録**（札 #630・2026-11-15）。未ログインでホームの写真のいいねを押すと、確認に
+    /// 「新規登録」「ログインする」「キャンセル」が出る。「新規登録」は今のログイン画面を登録の側で、「ログインする」は
+    /// ログインの側で開く（どちらも押す回数 1回）。確認の絵を撮る（`69-ログインのお願い`）
+    func testSignInAskOffersSignUp() {
+        let app = launchSignedOutHome([])
+        guard app.tabBars.firstMatch.waitForExistence(timeout: 30) else { return unreached(app, "タブ") }
+        let like = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'いいね '")).firstMatch
+        guard like.waitForExistence(timeout: 30) else { return unreached(app, "ホームのいいね") }
+        guard like.isHittable else { return unreached(app, "ホームのいいね（押せる所）") }
+
+        like.tap()
+        let alert = app.alerts.firstMatch
+        XCTAssertTrue(alert.waitForExistence(timeout: 10), "未ログインでいいねを押しても確認が出ない")
+        let titles = alert.buttons.allElementsBoundByIndex.map(\.label)
+        print("[signin-ask] buttons=\(titles)")
+        XCTAssertEqual(titles.first, "新規登録", "確認の先頭（主）が新規登録でない: \(titles)")
+        XCTAssertTrue(titles.contains("ログインする"), "確認にログインが無い: \(titles)")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "69-ログインのお願い（いいねの確認・未ログイン）")
+        alert.buttons["新規登録"].tap()
+        let form = app.descendants(matching: .any)["signin.form"].firstMatch
+        XCTAssertTrue(form.waitForExistence(timeout: 10), "「新規登録」を押してもログイン画面が開かない")
+        assertSignInSide(app, signUp: true, "確認の「新規登録」")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "69b-ログインのお願いの新規登録（今のログイン画面の登録の側）")
+
+        guard closeSignInSheet(app), like.waitForExistence(timeout: 10), like.isHittable else { return }
+        like.tap()
+        XCTAssertTrue(alert.waitForExistence(timeout: 10), "2回目の確認が出ない")
+        alert.buttons["ログインする"].tap()
+        XCTAssertTrue(form.waitForExistence(timeout: 10), "「ログインする」を押してもログイン画面が開かない")
+        assertSignInSide(app, signUp: false, "確認の「ログインする」")
     }
 
     /// 並びを指で `dy` だけ動かす（正なら下へ引く）。1回で動かすのは画面の 40% まで
@@ -3903,11 +3968,14 @@ final class ScreenshotTests: XCTestCase {
         guard pause.waitForExistence(timeout: 10) else { return }
         shoot(app, "66c-撮影スポットを払う（5枚で挟む札・未ログイン）")
 
+        // 未ログインは「新規登録して見る」が主、「ログインして見る」は下の文字のボタン（札 #630）
+        XCTAssertTrue(app.buttons["tripPicker.pause.secondary"].firstMatch.exists, "挟む札に「ログインして見る」が無い")
         let action = app.buttons["tripPicker.pause.action"].firstMatch
         guard action.waitForExistence(timeout: 5), action.isHittable else { return }
         action.tap()
         Thread.sleep(forTimeInterval: 2)
-        shoot(app, "66d-撮影スポットを払う（ログインの板）")
+        assertSignInSide(app, signUp: true, "挟む札の「新規登録して見る」")
+        shoot(app, "66d-撮影スポットを払う（ログインの板の登録の側）")
     }
 
     /// ホームの上の札の出典の行の幅（渡された幅・全文の要る幅）と札の背を書き出す（`home.topCard.probe`・2026-11-14）。

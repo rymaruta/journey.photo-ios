@@ -36,6 +36,13 @@ struct SignInView: View {
     /// いま打っている欄。**右下のキーで次の欄へ進め、最後の欄で送る**（2026-11-14 判断・`AuthFieldFlow`）
     @FocusState private var focusedField: AuthFieldFlow.Field?
 
+    /// - Parameter entry: 開いたときの側。お願いの「新規登録」から来たら登録の側で開く（札 #630・2026-11-15）。
+    ///   **画面の見た目と流れは変えない**——今の「アカウントを作る」を押した後と同じ状態から始めるだけ
+    init(reason: String?, entry: SignInEntry = .signIn) {
+        self.reason = reason
+        _mode = State(initialValue: entry == .signUp ? .signUp : .signIn)
+    }
+
     enum Mode {
         case signIn
         case signUp

@@ -129,10 +129,15 @@ enum SpotSwipe {
             : L("ログインすると、行きたい場所として地図に並びます", "Sign in to see them on your map.")
     }
 
-    /// 挟む札・足元の主な操作の名前
+    /// 挟む札・足元の主な操作の名前。
+    /// 未ログインは「新規登録して見る」を主にする（札 #630・2026-11-15 判断。本番の会員は約7人で、払う画面に来る人の
+    /// 多くはまだ登録していない。Web の `/swipe` と同じ字）。ログインは下の文字のボタン（`loginTitle`）
     static func actionTitle(signedIn: Bool) -> String {
-        signedIn ? L("旅行プランにする", "Make a trip") : L("ログインして見る", "Sign in to see")
+        signedIn ? L("旅行プランにする", "Make a trip") : L("新規登録して見る", "Sign up to see")
     }
+
+    /// 挟む札の、未ログインのときだけ出すログインの文字のボタン（Web の `/swipe` と同じ字）
+    static var loginTitle: String { L("ログインして見る", "Log in to see") }
 
     /// 足元のボタン。未ログインは「地図で見る」（押すとログイン）、ログイン中は「旅行プランにする」
     static func footerAction(signedIn: Bool) -> String {

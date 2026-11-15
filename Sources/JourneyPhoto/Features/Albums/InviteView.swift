@@ -36,6 +36,9 @@ struct InviteView: View {
     /// 読み込みの失敗が**押し直せば直りうる**ものか（圏外・5xx）。
     /// 失効した招待（4xx）に「もう一度試す」を出しても何も変わらない
     @State private var canRetry = false
+    /// 未ログインの「新規登録」「ログイン」から開くログイン画面（札 #630）
+    @State private var signInAsk: SignInRequest?
+    @State private var signInOpen: SignInRequest?
 
     /// 既に参加しているか（端末が覚えている分）。
     private var alreadyJoined: Bool {
@@ -186,6 +189,8 @@ struct InviteView: View {
             .padding(.bottom, JPSpace.screenEnd)
         }
         .safeAreaInset(edge: .bottom) { joinBar(preview) }
+        // 未ログインの「新規登録」「ログイン」から今のログイン画面（ログインできたら閉じて、参加のボタンが出る）
+        .signInPrompt(ask: $signInAsk, open: $signInOpen)
         .webScreen()
     }
 
@@ -225,6 +230,9 @@ struct InviteView: View {
             .clipped()
     }
 
+    /// 未ログインの参加の帯の一行（ログイン画面の上にも出す）
+    nonisolated static var signInReason: String { L("参加するにはログインしてください", "Sign in to join") }
+
     /// 板 v2 Invite: 組み絵の高さ 380・右の列の幅（2fr:1fr の 1fr ≒ 390 の 1/3）
     nonisolated static let mosaicHeight: CGFloat = 380
     nonisolated static let mosaicSideWidth: CGFloat = 128
@@ -235,9 +243,12 @@ struct InviteView: View {
     private func joinBar(_ preview: AlbumService.InvitePreview) -> some View {
         VStack(spacing: 10) {
             if auth.userId == nil {
-                Text(L("参加するにはログインしてください", "Sign in to join"))
+                Text(Self.signInReason)
                     .font(JPFont.body)
                     .foregroundStyle(WebTheme.text2)
+                // 2026-11-15（札 #630）: 一行だけで先へ進む口が無かった。招待された人の多くはまだ登録していないので、
+                // 新規登録を主（写真のある画面なので白）、ログインを線のボタンで並べる
+                SignInAskButtons(reason: Self.signInReason, onPhoto: true, identifier: "invite") { signInOpen = $0 }
             } else if alreadyJoined {
                 Text(L("参加しています。投稿画面でこのアルバムを選べます。",
                        "You're in. Choose this album when you post."))

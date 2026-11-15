@@ -59,7 +59,7 @@ struct SpotSwipeView: View {
                 }
         }
         .sheet(item: $signIn) { request in
-            SignInSheet(reason: request.reason)
+            SignInSheet(reason: request.reason, entry: request.entry)
         }
         .fullScreenCover(isPresented: $showCreate, onDismiss: {
             guard let planId = pendingPlanId else { return }
@@ -97,21 +97,31 @@ struct SpotSwipeView: View {
         guard SpotSwipe.showsPause(decisions: model.decisions.count, wants: wants, continuedAt: continuedAt) else {
             return nil
         }
+        // 未ログインだけ、下に「ログインして見る」の文字のボタンを添える
+        let login: (() -> Void)? = signedIn ? nil : { signInFromFooter() }
         return TripPickerPause(title: SpotSwipe.pauseTitle(wants: wants),
                                line: SpotSwipe.pauseLine(signedIn: signedIn),
                                actionTitle: SpotSwipe.actionTitle(signedIn: signedIn),
                                action: mainAction,
-                               onContinue: { continuedAt = model.decisions.count })
+                               onContinue: { continuedAt = model.decisions.count },
+                               // 未ログインは主ボタンが「新規登録して見る」。ログインは下の文字のボタン（札 #630）
+                               secondaryTitle: signedIn ? nil : SpotSwipe.loginTitle,
+                               secondaryAction: login)
     }
 
-    /// 未ログインはログインの板、ログイン中は旅行プランにする流れ
+    /// 未ログインはログインの板を**登録の側**で（札 #630）、ログイン中は旅行プランにする流れ
     private func mainAction() {
         if signedIn {
             pendingPlanId = nil
             showCreate = true
         } else {
-            signIn = SignInRequest(reason: SpotSwipe.signInReason)
+            signIn = SignInRequest(reason: SpotSwipe.signInReason, entry: .signUp)
         }
+    }
+
+    /// 足元の「地図で見る」（未ログイン）。ログインの側で開く
+    private func signInFromFooter() {
+        signIn = SignInRequest(reason: SpotSwipe.signInReason)
     }
 
     /// 足元: 「行きたい n か所」と「地図で見る」／「旅行プランにする」（黒地の上の文字ボタンなので真鍮）
@@ -121,7 +131,8 @@ struct SpotSwipeView: View {
                 .font(JPFont.footnote.monospacedDigit())
                 .foregroundStyle(WebTheme.text2)
             Spacer(minLength: 0)
-            Button(action: mainAction) {
+            // 足元の「地図で見る」は今までどおりログインの側（Web の `/swipe` の足元と同じ）。登録の側は挟む札の主ボタン
+            Button(action: { signedIn ? mainAction() : signInFromFooter() }) {
                 HStack(spacing: JPSpace.xxs) {
                     Text(SpotSwipe.footerAction(signedIn: signedIn))
                     Image(systemName: "chevron.right").accessibilityHidden(true)

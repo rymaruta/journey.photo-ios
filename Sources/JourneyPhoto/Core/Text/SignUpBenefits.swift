@@ -4,7 +4,7 @@ import Foundation
 ///
 /// 2026-11-15 判断（owner「アカウント登録画面は何も変えたくない」→ 案C）: 札はログインと登録の画面（`SignInView`）
 /// には出さない。**ログインしていない人のホームの並びの途中に、札4枚の段を1回だけ出す**（`HomeSignUpBenefitsView`）。
-/// 札を押すと今の `SignInSheet`（中身は今のログイン画面のまま）が開く。押す回数は増えない（1回でログイン画面）。
+/// 札を押すと今の `SignInSheet`（中身は今のログイン画面のまま）が登録の側で開く（札 #630）。押す回数は増えない（1回で登録の画面）。
 /// マイページの手前に札の画面をはさむ案は、ログインまでの押す回数が1回増えるので取らない。
 ///
 /// 4枚は輪の順（載せる → 行きたい場所 → 旅行プランを仲間と → 話す）。Web のトップと写真の頁の案内
@@ -51,9 +51,8 @@ enum SignUpBenefit: String, CaseIterable, Identifiable {
 
     /// 段の眉ラベル（黒地の上なので真鍮）
     static var heading: String { L("登録するとできること", "What you can do with an account") }
-    /// 札の下の線のボタン（押した先は今のログイン画面。登録はその画面の「アカウントを作る」）
-    static var action: String { L("ログイン、新規登録", "Sign in or sign up") }
-    /// 線のボタンから開くときの一言（どの札でもない）
+    /// 札の下の「新規登録」と「ログイン」から開くときの一言（どの札でもない）。
+    /// ボタンの字は `SignInPrompt.signUpLabel` と `loginLabel`（ほかのお願いと同じ・札 #630）
     static var actionReason: String {
         L("ログインすると、写真を載せたり旅行プランを作ったりできます", "Sign in to post photos and plan trips.")
     }

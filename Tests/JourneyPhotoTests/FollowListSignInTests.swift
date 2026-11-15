@@ -40,13 +40,15 @@ final class FollowListSignInTests: XCTestCase {
         XCTAssertTrue(view.contains("if needsSignIn {\n            signInPrompt"),
                       "案内が一覧に出ていない（赤い文より先に見る）")
         // 共通のシート（閉じるボタン・ログインできたら閉じる）を使う。裸の `SignInView` を出さない
-        XCTAssertTrue(view.contains("SignInSheet(reason: Self.signInLine(current))"))
+        XCTAssertTrue(view.contains("SignInSheet(reason: request.reason, entry: request.entry)"))
         XCTAssertFalse(view.contains("SignInView("), "閉じる口の無いログイン画面をシートに出している")
         XCTAssertFalse(view.contains(".onChange(of: auth.userId)"), "閉じる仕組みは SignInSheet が持つ（写しを作らない）")
-        XCTAssertTrue(view.contains("showSignIn = true"))
         let prompt = view.components(separatedBy: "private var signInPrompt: some View {").last?
             .components(separatedBy: "/// 「フォロワー N").first ?? ""
-        XCTAssertTrue(prompt.contains(#"Text(L("ログイン", "Sign in"))"#))
+        // 2026-11-15（札 #630）: 新規登録（主・真鍮の塗り）とログイン（線）を並べる共通の部品
+        XCTAssertTrue(prompt.contains("SignInAskButtons(reason: Self.signInLine(current), onPhoto: false,"),
+                      "新規登録が並んでいない")
+        XCTAssertTrue(prompt.contains("{ signInOpen = $0 }"))
         XCTAssertTrue(prompt.contains(".foregroundStyle(WebTheme.muted2)"))
         XCTAssertFalse(prompt.contains("danger"), "エラーではないので赤にしない")
     }

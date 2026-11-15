@@ -70,7 +70,8 @@ struct FollowListView: View {
     /// 一覧の読み込みが「ログインしていない」で断られた。**失敗（赤）ではなく案内として出す**
     @State private var needsSignIn = false
     /// 案内の「ログイン」から開くログイン画面
-    @State private var showSignIn = false
+    /// 開くログイン画面（新規登録の側か、ログインの側か・札 #630）
+    @State private var signInOpen: SignInRequest?
     /// ブロックした人を落とす写し。**前面が確定したときだけ取る**——描くたびに
     /// `hidden.blockedUserIds` で絞ると、行から開いた人のページでブロックした瞬間に
     /// 行（`NavigationLink`）が消えてページが閉じる（`ModerationSnapshot.users` の注記）
@@ -144,8 +145,8 @@ struct FollowListView: View {
         .refreshable { await load() }
         // ログイン画面のシート（`SignInSheet`: 閉じるボタン・ログインできたら閉じる、を持つ共通の部品）。
         // 閉じたら読み直す——同じ人で入り直したときは `.task(id: auth.userId)` が走り直さない
-        .sheet(isPresented: $showSignIn, onDismiss: { Task { await load() } }) {
-            SignInSheet(reason: Self.signInLine(current))
+        .sheet(item: $signInOpen, onDismiss: { Task { await load() } }) { request in
+            SignInSheet(reason: request.reason, entry: request.entry)
         }
         // **戻ってきたらボタンの状態だけ読み直す。** 人のプロフィールでフォローを
         // 変えて戻ると、一覧のボタンが古いままだった（`.task(id:)` は走り直さない）
@@ -187,21 +188,16 @@ struct FollowListView: View {
     }
 
     /// 未ログインの案内（2026-10-11）。文はふつうの色、ボタンは写真の無い画面の主ボタン
-    /// （真鍮の塗り＋墨・`JPPillStyle.accent`・CLAUDE.md の owner の好み）
+    /// （真鍮の塗り＋墨・`JPPillStyle.accent`・CLAUDE.md の owner の好み）。
+    /// 2026-11-15（札 #630）: 主ボタンを「新規登録」にし、「ログイン」を線のボタンで下に並べる（`SignInAskButtons`）
     private var signInPrompt: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(Self.signInLine(current))
                 .font(.subheadline)
                 .foregroundStyle(WebTheme.muted2)
-            Button {
-                showSignIn = true
-            } label: {
-                Text(L("ログイン", "Sign in"))
-                    .jpPillButton(.accent)
-            }
-            // 行の中のボタンは borderless（行全体が当たりにならないように）
-            .buttonStyle(.borderless)
-            .accessibilityIdentifier("followList.signIn")
+            SignInAskButtons(reason: Self.signInLine(current), onPhoto: false,
+                             identifier: "followList") { signInOpen = $0 }
+                // 行の中のボタンは素の形（`.plain`）。行全体が当たりにならず、2つを別々に押せる
         }
         .padding(.vertical, 8)
     }

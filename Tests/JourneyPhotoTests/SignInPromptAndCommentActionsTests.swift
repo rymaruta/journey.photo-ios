@@ -27,6 +27,103 @@ final class SignInPromptTests: XCTestCase {
     }
 }
 
+/// ログインのお願いに新規登録も出す（札 #630・2026-11-15 owner「会員登録もそこに出したい」）。
+/// お願いの「新規登録」は今のログイン画面（`SignInView`）を**登録の側**で開く。画面そのものは変えない。
+/// 画面の部品は Linux で動かせないので、決まりは値で、配線は元のコードを読んで確かめる
+/// （押した先は `ScreenshotTests.testSignInAskOffersSignUp`・`testCapturesHomeSignUpBenefits`）
+final class SignInAskSignUpTests: XCTestCase {
+
+    private func source(_ path: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let text = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/" + path),
+                              encoding: .utf8)
+        return text.components(separatedBy: "\n")
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+    }
+
+    /// 字は Web の「登録するとできること」の2つ（`SIGNUP_BENEFITS_SIGNUP`・`SIGNUP_BENEFITS_LOGIN`）と同じ
+    func testLabelsMatchWeb() {
+        XCTAssertEqual(SignInPrompt.signUpLabel, "新規登録")
+        XCTAssertEqual(SignInPrompt.loginLabel, "ログイン")
+    }
+
+    /// 何も言わなければログインの側（今までどおり）。登録の側は名指ししたときだけ
+    func testRequestDefaultsToSignInSide() {
+        XCTAssertEqual(SignInRequest(reason: "x").entry, .signIn)
+        XCTAssertEqual(SignInRequest(reason: "x", entry: .signUp).entry, .signUp)
+        XCTAssertEqual(SignInPrompt.request(SignInPrompt.like, userId: nil, isResolving: false)?.entry, .signIn)
+    }
+
+    /// 確認（いいね・保存・2回叩く）: 「新規登録」を先（主）に、押したら登録の側でシートを開く
+    func testAlertOffersSignUpFirst() throws {
+        let prompt = try source("Features/Auth/SignInPrompt.swift")
+        let alert = prompt.components(separatedBy: "presenting: ask) { request in").last?
+            .components(separatedBy: "} message:").first ?? ""
+        let signUp = alert.range(of: "Button(SignInPrompt.signUpLabel) { open = SignInRequest(reason: request.reason, entry: .signUp) }")
+        let signIn = alert.range(of: "Button(SignInPrompt.actionLabel) { open = request }")
+        XCTAssertNotNil(signUp, "確認に新規登録が無い（または登録の側で開かない）")
+        XCTAssertNotNil(signIn, "確認にログインが無い")
+        if let signUp, let signIn { XCTAssertLessThan(signUp.lowerBound, signIn.lowerBound, "新規登録が先（主）でない") }
+        XCTAssertTrue(prompt.contains("SignInSheet(reason: request.reason, entry: request.entry)"), "開く側をシートに渡していない")
+        XCTAssertTrue(prompt.contains("SignInView(reason: reason, entry: entry)"), "開く側をログイン画面に渡していない")
+    }
+
+    /// ログイン画面は**開いたときの側を選ぶだけ**。登録の側は今の「アカウントを作る」を押した後と同じ `.signUp`
+    func testSignInViewStartsOnRequestedSide() throws {
+        let view = try source("Features/Auth/SignInView.swift")
+        XCTAssertTrue(view.contains("init(reason: String?, entry: SignInEntry = .signIn) {\n        self.reason = reason\n        _mode = State(initialValue: entry == .signUp ? .signUp : .signIn)\n    }"))
+        XCTAssertTrue(view.contains("mode = mode == .signIn ? .signUp : .signIn"), "「アカウントを作る」の切り替えが変わった")
+        XCTAssertTrue(view.contains(#"L("アカウントを作る", "Create an account")"#), "ログイン画面の字を変えている")
+    }
+
+    /// 並べる部品: 新規登録が主ボタン（写真の有無で白か真鍮・`JPPillStyle.main`）、ログインは線のボタン。新規登録が先
+    func testAskButtonsPutSignUpFirst() throws {
+        let prompt = try source("Features/Auth/SignInPrompt.swift")
+        let buttons = prompt.components(separatedBy: "struct SignInAskButtons: View {").last ?? ""
+        let signUp = buttons.range(of: "Text(SignInPrompt.signUpLabel).jpPillButton(.main(onPhoto: onPhoto))")
+        let signIn = buttons.range(of: "Text(SignInPrompt.loginLabel).jpPillButton(.outline)")
+        XCTAssertNotNil(signUp)
+        XCTAssertNotNil(signIn)
+        if let signUp, let signIn { XCTAssertLessThan(signUp.lowerBound, signIn.lowerBound) }
+        XCTAssertTrue(buttons.contains("open(SignInRequest(reason: reason, entry: .signUp))"))
+    }
+
+    /// 行の中のお願い（コメントの欄の代わりの1行・招待の参加の帯）にも新規登録がある
+    func testInlineAsksOfferSignUp() throws {
+        let detail = try source("Features/PhotoDetail/PhotoDetailView.swift")
+        XCTAssertTrue(detail.contains(#"commentSignInLink(SignInPrompt.signUpLabel, entry: .signUp, identifier: "photoDetail.comment.signUp")"#),
+                      "コメントの1行に新規登録が無い")
+        XCTAssertTrue(detail.contains("signInOpen = SignInRequest(reason: SignInPrompt.comment, entry: entry)"))
+        let invite = try source("Features/Albums/InviteView.swift")
+        XCTAssertTrue(invite.contains(#"SignInAskButtons(reason: Self.signInReason, onPhoto: true, identifier: "invite") { signInOpen = $0 }"#),
+                      "招待の帯に新規登録が無い（一行だけの行き止まり）")
+        XCTAssertTrue(invite.contains(".signInPrompt(ask: $signInAsk, open: $signInOpen)"))
+        XCTAssertEqual(InviteView.signInReason, "参加するにはログインしてください")
+    }
+
+    /// 撮影スポットを払う画面の挟む札: 主ボタンは登録の側、下の文字のボタンと足元の「地図で見る」はログインの側
+    func testSpotSwipePauseOpensSignUp() throws {
+        let view = try source("Features/Trips/SpotSwipeView.swift")
+        let main = view.components(separatedBy: "private func mainAction() {").last?
+            .components(separatedBy: "\n    }\n").first ?? ""
+        XCTAssertTrue(main.contains("signIn = SignInRequest(reason: SpotSwipe.signInReason, entry: .signUp)"))
+        XCTAssertTrue(view.contains("secondaryTitle: signedIn ? nil : SpotSwipe.loginTitle"))
+        XCTAssertTrue(view.contains("let login: (() -> Void)? = signedIn ? nil : { signInFromFooter() }"))
+        XCTAssertTrue(view.contains("signedIn ? mainAction() : signInFromFooter()"))
+        XCTAssertTrue(view.contains("SignInSheet(reason: request.reason, entry: request.entry)"))
+    }
+
+    /// 中黒で区切らない・「捨てる」を使わない（owner の好み）
+    func testWording() {
+        for text in [SignInPrompt.signUpLabel, SignInPrompt.loginLabel, SpotSwipe.actionTitle(signedIn: false),
+                     SpotSwipe.loginTitle, InviteView.signInReason] {
+            XCTAssertFalse(text.contains("・") || text.contains("·") || text.contains("捨て"), text)
+        }
+    }
+}
+
 final class CommentActionsTests: XCTestCase {
 
     /// 人の写真の、人のコメント: 通報とブロック
@@ -114,7 +211,8 @@ final class UsabilityWiringTests: XCTestCase {
                        "保存の断りが赤字だけに戻っている")
         XCTAssertTrue(detail.contains(".signInPrompt(ask: $signInAsk, open: $signInOpen)"))
         XCTAssertTrue(detail.contains("SignInPrompt.showsCommentLine("))
-        XCTAssertTrue(detail.contains("signInOpen = SignInRequest(reason: SignInPrompt.comment)"))
+        // 2026-11-15（札 #630）: コメントの1行は「新規登録」と「ログイン」の2つ（開く側を渡す）
+        XCTAssertTrue(detail.contains("signInOpen = SignInRequest(reason: SignInPrompt.comment, entry: entry)"))
         XCTAssertTrue(detail.contains("signInResolving: auth.isResolving"))
         XCTAssertTrue(detail.contains("PhotoDetailRules.commentActions("))
         XCTAssertTrue(detail.contains("ReportSheet(photoId: current.id, ownerId: ownerId, comment: .init(comment))"))
