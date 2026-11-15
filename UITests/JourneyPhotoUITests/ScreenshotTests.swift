@@ -1755,6 +1755,127 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "120b-プロフィールの QR（読み取る）")
     }
 
+    /// プロフィールのリンクの共有（2026-11-15・札 #545 段1）: QR の画面の「リンクをコピー」「共有」（線のボタン2つ・44pt）と、
+    /// 人の頁の ⋯ の「プロフィールを共有」。コピーは知らせまで確かめる。共有は iPhone の共有の画面を撮る。
+    /// 人の頁は ホームの写真 → 作者 で開く（人のトランクの試験と同じ道）。作者が自分なら、その頁の「フォロワー」→ 一覧の最初の人。
+    /// 作者の行・フォロワーが出ない（写真の並び・フォローの関係次第）なら、人の頁の分は撮らずに抜ける（事実は添付に出す）
+    func testCapturesProfileShare() {
+        func launch(localBackend: Bool) -> XCUIApplication {
+            let app = XCUIApplication()
+            app.launchArguments += ["-legal.consent.version", "0"]
+            app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+            app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+            app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+            app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+            app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+            // QR の中身（GET /user/qr）は見本の通信で答える（`testCapturesProfileQR` と同じ）。
+            // 見本の通信はフォロワーの一覧に答えない（run 1347:「見本の通信では使えない口です」）ので、人の頁の分では使わない
+            if localBackend { app.launchArguments += ["-JPPreviewLocalBackend", "YES"] }
+            app.launch()
+            let agree = app.buttons["legal.agree"]
+            if agree.waitForExistence(timeout: 30) { agree.tap() }
+            return app
+        }
+        // 1. 自分: マイページ → QR の印 → 「リンクをコピー」「共有」
+        var app = launch(localBackend: true)
+        var tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return XCTFail("下の札が出ない") }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return }
+        let entry = app.buttons["mypage.qr"].firstMatch
+        guard entry.waitForExistence(timeout: 5) else { return XCTFail("マイページの名前の横に QR の印が無い") }
+        entry.tap()
+        guard app.descendants(matching: .any)["profileQR.code"].firstMatch.waitForExistence(timeout: 10) else {
+            let reasons = app.descendants(matching: .any).matching(identifier: "profileQR.failureReason")
+                .allElementsBoundByIndex.map(\.label)
+            return XCTFail("QR の画面に自分の QR が出ない（理由: \(reasons)）")
+        }
+        let copy = app.buttons["profileQR.copyLink"].firstMatch
+        let share = app.buttons["profileQR.share"].firstMatch
+        guard copy.waitForExistence(timeout: 5) else { return XCTFail("QR の画面に「リンクをコピー」が無い") }
+        guard share.waitForExistence(timeout: 5) else { return XCTFail("QR の画面に「共有」が無い") }
+        for (button, name) in [(copy, "リンクをコピー"), (share, "共有")] {
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "「\(name)」が 44pt 未満: \(button.frame)")
+            XCTAssertTrue(button.isHittable, "「\(name)」が押せない: \(button.frame)")
+        }
+        // 画面の中に収まっている（下の「QR コードを更新」も押せる）
+        let renew = app.buttons["profileQR.renew"].firstMatch
+        XCTAssertTrue(renew.waitForExistence(timeout: 5) && renew.isHittable, "「QR コードを更新」が画面の外: \(renew.frame)")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "121-プロフィールの QR（リンクをコピー、共有）")
+        copy.tap()
+        let toast = app.descendants(matching: .any)["toast"].firstMatch
+        guard toast.waitForExistence(timeout: 5) else { return XCTFail("リンクをコピーしたのに知らせが出ない") }
+        XCTAssertTrue(toast.label.contains("リンクをコピーしました") || app.staticTexts["リンクをコピーしました"].exists,
+                      "知らせの言葉が違う: \(toast.label)")
+        shoot(app, "121a-プロフィールの QR（リンクをコピーした）")
+        Thread.sleep(forTimeInterval: 3) // 知らせが消えるのを待つ（共有の画面の絵に重ねない）
+        share.tap()
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "121b-プロフィールの QR（共有の画面）")
+
+        // 2. 他人: ホームの写真 → 作者 → ⋯ → 「プロフィールを共有」
+        app.terminate()
+        app = launch(localBackend: false)
+        tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20) else { return XCTFail("タブが出ない") }
+        let firstPhoto = app.buttons["feed.photo"].firstMatch
+        var pushes = 0
+        while !(firstPhoto.waitForExistence(timeout: 2) && firstPhoto.isHittable), pushes < 8 {
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            pushes += 1
+        }
+        guard firstPhoto.exists, firstPhoto.isHittable else { return }
+        firstPhoto.tap()
+        let toAuthor = app.buttons["photo.author"].firstMatch
+        var authorPushes = 0
+        while toAuthor.waitForExistence(timeout: 5), !toAuthor.isHittable, authorPushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            authorPushes += 1
+        }
+        guard toAuthor.exists, toAuthor.isHittable else { return }
+        toAuthor.tap()
+        // ホームの最初の写真は見本の利用者自身の写真のことがある（run 1342: 開いたのは自分の頁で、上のバーは「戻る」だけ）。
+        // 自分の頁なら、数の札「フォロワー」→ 一覧の最初の人 で他人の頁へ進む
+        let more = app.buttons["userProfile.more"].firstMatch
+        if !more.waitForExistence(timeout: 8) {
+            let followers = app.descendants(matching: .any)["profile.count.followers"].firstMatch
+            if followers.waitForExistence(timeout: 5), followers.isHittable {
+                followers.tap()
+                let person = app.buttons["followList.person"].firstMatch
+                if person.waitForExistence(timeout: 10), person.isHittable { person.tap() }
+            }
+        }
+        guard more.waitForExistence(timeout: 15) else {
+            // 作者が自分（見本の利用者）なら ⋯ は無い。撮らずに抜ける。事実を取る（2026-11-15・run 1337 で ⋯ が見つからなかった）:
+            // 上のバーの押せるものの名前と目印、自分の頁の印（編集）の有無
+            let bar = app.navigationBars.buttons.allElementsBoundByIndex.map { "\($0.identifier)|\($0.label)" }
+            let ownPage = app.buttons["mypage.edit"].exists || app.buttons["プロフィールを編集"].exists
+            let note = "人の頁に ⋯ が無い。上のバー: \(bar)・自分の頁の印: \(ownPage)"
+            let attachment = XCTAttachment(string: note)
+            attachment.name = "121c-人の頁の事実"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            print("[ProfileShare] \(note)")
+            shoot(app, "121c-人の頁（⋯ が見つからない）")
+            return
+        }
+        more.tap()
+        let shareProfile = app.buttons["userProfile.share"].firstMatch
+        let byLabel = app.buttons["プロフィールを共有"].firstMatch
+        guard shareProfile.waitForExistence(timeout: 5) || byLabel.waitForExistence(timeout: 2) else {
+            return XCTFail("人の頁の ⋯ に「プロフィールを共有」が無い")
+        }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "121c-人の頁の ⋯（プロフィールを共有）")
+        (shareProfile.exists ? shareProfile : byLabel).tap()
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "121d-人の頁（共有の画面）")
+    }
+
     /// **名前の横のバッジの入口**（2026-11-12 owner 案 A「メダル案 A だな」）: メダルを持っていて名前の横に何も
     /// 飾っていない人だけ、名前の横に点線の丸（見た目 22・当たり 44）。押すと名前の横の画面（選ぶ画面）。
     /// 並びは 名前 → 印 → 丸 → QR → 編集。**長い名前・大きい文字でも1行に収める**（名前を「…」で切り、ほかは縮めない）。

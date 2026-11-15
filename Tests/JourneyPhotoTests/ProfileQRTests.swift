@@ -503,4 +503,32 @@ final class ProfileQRTests: XCTestCase {
         XCTAssertFalse(PreviewBackend.isPassLookup(URL(string: "https://other.example/qr/abc")!, base: api))
         XCTAssertFalse(PreviewBackend.isPassLookup(URL(string: "https://api.example.test/user/qr")!, base: api))
     }
+
+    // MARK: - リンクの共有（2026-11-15・札 #545 段1）
+
+    /// 他人の頁の ⋯ から渡すのは、だれでも開ける公開プロフィールの URL。読み取ると同じ人に戻る
+    func testShareLinkForOthersIsThePublicProfile() throws {
+        let url = try XCTUnwrap(ProfileShareLink.url(userId: uid, viewerId: "me-0001", blocked: [], base: base))
+        XCTAssertEqual(url.absoluteString, "https://journey-photo.com/users?id=\(uid)")
+        XCTAssertEqual(ProfileQR.userId(from: url.absoluteString, base: base), uid)
+        // ログインしていなくても渡せる（リンクだけ）
+        XCTAssertNotNil(ProfileShareLink.url(userId: uid, viewerId: nil, blocked: [], base: base))
+    }
+
+    /// 自分の頁（自分のリンクは QR の画面から、更新できる合図で渡す）・ブロックした人・URL に入れられない id には出さない
+    func testShareLinkIsHiddenForSelfBlockedAndUnsafeIds() {
+        XCTAssertNil(ProfileShareLink.url(userId: uid, viewerId: uid, blocked: [], base: base))
+        XCTAssertNil(ProfileShareLink.url(userId: uid, viewerId: "me-0001", blocked: [uid], base: base))
+        XCTAssertNil(ProfileShareLink.url(userId: "a/b", viewerId: "me-0001", blocked: [], base: base))
+        XCTAssertNil(ProfileShareLink.url(userId: "", viewerId: nil, blocked: [], base: base))
+    }
+
+    /// ボタンの言葉（中黒で区切らない・「捨てる」を使わない）
+    func testShareLabels() {
+        for text in [ProfileShareLink.copyLabel, ProfileShareLink.shareLabel, ProfileShareLink.copied,
+                     ProfileShareLink.shareProfileLabel] {
+            XCTAssertFalse(text.isEmpty)
+            XCTAssertFalse(text.contains("・") || text.contains("·"), text)
+        }
+    }
 }

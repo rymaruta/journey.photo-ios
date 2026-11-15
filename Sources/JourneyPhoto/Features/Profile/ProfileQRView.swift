@@ -158,6 +158,11 @@ struct ProfileQRView: View {
                 .foregroundStyle(WebTheme.text2)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+            // 会えない相手には QR の代わりにリンクを渡す（2026-11-15・札 #545 段1・案の資料 3 の模型どおり線のボタン2つ）。
+            // 中身は今の QR と同じ URL（`ProfileShareLink` の注記）。QR が出ているときだけ
+            if case .ready(let url) = code {
+                shareRow(url)
+            }
             // QR の下に「QR コードを更新」（2026-11-12 owner 承認・札 #545）。止めたい人だけが押す1行で、
             // 主ボタンにはしない（既定は何もしなくても使える）。QR が出ているときだけ出す
             if source.canRenew, case .ready = code {
@@ -190,6 +195,33 @@ struct ProfileQRView: View {
         guard case .ready(let shown) = code else { return await loadCode() }
         guard let url = try? await source.code(for: profile.userId), url != shown else { return }
         withAnimation(.easeInOut(duration: 0.25)) { code = .ready(url) }
+    }
+
+    /// 「リンクをコピー」と「共有」（2026-11-15・札 #545 段1）。字だけ（案の資料 3 の模型どおり。run 1337 の絵で、印つきは
+    /// iPhone 17 Pro Max でも「リンクをコピー」が縁に付いて窮屈だった）。写真の無い画面の主役は QR なので、主ボタン（真鍮の塗り）は
+    /// 置かず、線の副ボタン（44・白 14% の縁・`JPPillStyle.outline`）を2つ並べる。大きい文字で並びきらなければ縦に積む
+    /// （板 DesignSystem 06）。共有はリンクだけ（画像は渡さない）
+    private func shareRow(_ url: URL) -> some View {
+        let copy = Button {
+            UIPasteboard.general.string = url.absoluteString
+            toasts.show(ProfileShareLink.copied)
+        } label: {
+            Text(ProfileShareLink.copyLabel)
+                .jpPillButton(.outline)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("profileQR.copyLink")
+        let share = ShareLink(item: url, preview: SharePreview(ProfileShareLink.previewTitle(profile.name))) {
+            Text(ProfileShareLink.shareLabel)
+                .jpPillButton(.outline)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("profileQR.share")
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: JPSpace.s) { copy; share }
+            VStack(spacing: JPSpace.s) { copy; share }
+        }
+        .frame(maxWidth: ProfileQRText.codeSide)
     }
 
     /// 「QR コードを更新」（資料 第10章の模型: 回る矢印と下線の文字・地の色は付けない・押せる高さ 44pt）

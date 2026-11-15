@@ -73,6 +73,10 @@ struct UserProfileView: View {
         ProfileLine.canAct(viewerId: auth.userId, userId: userId, blocked: hidden.blockedUserIds)
     }
     private var isBlocked: Bool { hidden.blockedUserIds.contains(userId) }
+    /// ⋯ の「プロフィールを共有」に渡すリンク（自分の頁・ブロックした人は nil・`ProfileShareLink`）
+    private var shareURL: URL? {
+        ProfileShareLink.url(userId: userId, viewerId: auth.userId, blocked: hidden.blockedUserIds)
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -287,22 +291,34 @@ struct UserProfileView: View {
             Color.clear.frame(width: 1, height: 1)
                 .accessibilityHidden(true)
         }
-        if canAct {
+        if canAct || shareURL != nil {
             ToolbarItem(placement: .topBarTrailing) {
-                // 通報(2026-11-07・審査 1.2): サーバーに人を通報する口は無いので、ストーリーの返信と同じく
-                // 問い合わせの宛先へのメールで送る(`ModerationService.profileReportURL`)
                 Menu {
-                    Button { reportProfile() } label: {
-                        Label(L("通報する", "Report"), systemImage: "flag")
+                    // プロフィールのリンクを共有（2026-11-15・札 #545 段1）。リンクだけ（画像は渡さない・`ProfileShareLink`）。
+                    // 自分の頁・ブロックした人には出さない。ログインしていなくても渡せる
+                    if let shareURL {
+                        ShareLink(item: shareURL, preview: SharePreview(ProfileShareLink.previewTitle(model.shownName ?? Labels.Navigation.profile))) {
+                            Label(ProfileShareLink.shareProfileLabel, systemImage: "square.and.arrow.up")
+                        }
+                        .accessibilityIdentifier("userProfile.share")
                     }
-                    Button(role: .destructive) { showBlockConfirm = true } label: {
-                        Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
+                    // 通報(2026-11-07・審査 1.2): サーバーに人を通報する口は無いので、ストーリーの返信と同じく
+                    // 問い合わせの宛先へのメールで送る(`ModerationService.profileReportURL`)
+                    if canAct {
+                        Button { reportProfile() } label: {
+                            Label(L("通報する", "Report"), systemImage: "flag")
+                        }
+                        Button(role: .destructive) { showBlockConfirm = true } label: {
+                            Label(L("この人をブロック", "Block this person"), systemImage: "hand.raised")
+                        }
                     }
                 } label: {
                     Image(systemName: "ellipsis")
                         .webToolbarIcon()
                         .accessibilityLabel(L("この人の操作", "More actions"))
                 }
+                // 画面写真の試験が ⋯ を探す目印（2026-11-15・run 1337 で読み上げの名前では見つからなかった）
+                .accessibilityIdentifier("userProfile.more")
             }
         }
     }
