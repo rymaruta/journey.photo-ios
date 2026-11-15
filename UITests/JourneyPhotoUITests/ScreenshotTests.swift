@@ -7080,6 +7080,86 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(gap >= 0 && gap < 240, "深く送ってから替えても頭から出ない（札の行と格子の1枚目の間 \(gap)）")
     }
 
+    /// **ホームの新しい投稿・はじめての投稿・今週のお題の参加**（札 #537 案1・案2・2026-11-15 に1本の並びへ載せ替え）。
+    /// 本番の公開一覧には 72 時間以内の投稿・今週のお題の写真が無い日が多いので、見本（`-JPPreviewSNSLoop`・
+    /// `PreviewSNSLoopSample`）で公開一覧の新しい3枚を端末の中だけ書き替えて撮る。
+    /// 新しい投稿が並びの 2・5・8 番目に来たかは、絵ではなく数（`home.feed.probe` の `freshTiles`）で見る。
+    /// 🔴 はじめての投稿の印・みんなの参加の行が出ない・枠に来ないときは**落とす**（黙って通らない）
+    func testCapturesSNSLoopSample() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewSNSLoop", "YES"]
+        app.launchArguments += ["-JPPreviewFeedProbe", "YES"]
+        app.launch()
+        defer { app.terminate() }
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let photo = app.buttons["feed.photo"].firstMatch
+        guard photo.waitForExistence(timeout: 30) else {
+            unreached(app, "ホームの写真", probes: ["home.feed.probe"])
+            return
+        }
+
+        // 新しい投稿の枠（数で見る）。見本の3枚はどれも 72 時間以内。フォロー中の人の写真は上の段へ行くので、
+        // 並びに残った新しい投稿の数（`freshMain`）だけ 2・5・8 番目（0 から 1・4・7）を見る
+        let probe = app.descendants(matching: .any)["home.feed.probe"].firstMatch
+        XCTAssertTrue(probe.waitForExistence(timeout: 10), "並びの数の要素が無い")
+        let value = (probe.value as? String) ?? ""
+        print("[snsLoopProbe] \(value)")
+        XCTContext.runActivity(named: "[snsLoopProbe] \(value)") { _ in }
+        var fields: [String: String] = [:]
+        for pair in value.split(separator: " ") {
+            let kv = pair.split(separator: "=", maxSplits: 1)
+            if kv.count == 2 { fields[String(kv[0])] = String(kv[1]) }
+        }
+        let freshCount = Int(fields["freshMain"] ?? "") ?? 0
+        let tiles = (fields["freshTiles"] ?? "").split(separator: ",").compactMap { Int($0) }
+        XCTAssertGreaterThan(freshCount, 0, "見本の新しい投稿が並びに1つも無い: \(value)")
+        // 2026-11-15（run 1338 の数 `freshMain=3 freshTiles=1,2,4`）: 新しい投稿がいいねを持っていて、今までの並びで既に
+        // 先頭にいるときは、そこに出て枠を使わない（`HomeFreshMix` の決まり3・Web と同じ）。なので「1・4・7 ちょうど」ではなく、
+        // **新しい投稿（3つまで）が全部 1画面目（先頭 10）に入り、2 番目（0 から 1）が新しい投稿**であることを見る。
+        // 枠の位置そのものは単体テスト（`HomeFreshMixTests`）が決まった入力で縛る
+        XCTAssertGreaterThanOrEqual(tiles.filter { $0 < 10 }.count, min(3, freshCount), "新しい投稿が1画面目に入らない: \(value)")
+        XCTAssertTrue(tiles.contains(1) || tiles == [0], "2 番目が新しい投稿でない: \(value)")
+
+        // 今週のお題の札は上の札の横並びの中。見えるところまで左へめくる
+        let participants = app.buttons["home.theme.participants"].firstMatch
+        guard participants.waitForExistence(timeout: 20) else {
+            unreached(app, "今週のお題のみんなの参加", probes: ["home.theme.participants"])
+            return
+        }
+        for _ in 0..<4 where participants.exists && !participants.isHittable {
+            let row = participants.frame.midY
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            origin.withOffset(CGVector(dx: app.frame.width * 0.85, dy: row))
+                .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: app.frame.width * 0.15, dy: row)))
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertTrue(participants.isHittable, "今週のお題の札までめくれない")
+        XCTAssertTrue(participants.label.contains("今週"), "みんなの参加の読み上げが無い: \(participants.label)")
+        shoot(app, "10n-ホーム（今週のお題とみんなの参加）")
+
+        // はじめての投稿の印は札の読み上げに入る（見本の1枚目）。2番目の枠にあるので、少しずつ送って画面に入れる
+        let firstPost = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "はじめての投稿")).firstMatch
+        guard firstPost.waitForExistence(timeout: 10) else {
+            unreached(app, "はじめての投稿の札")
+            return
+        }
+        for _ in 0..<6 where firstPost.exists && !firstPost.isHittable {
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+            start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)))
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertTrue(firstPost.isHittable, "はじめての投稿の札まで送れない")
+        shoot(app, "10o-ホーム（新しい投稿とはじめての投稿の印）")
+    }
+
     /// **ホームはタブの無い1本の並び**（札 #595・2026-11-13 owner 決定）。前の `testSwipesHomeFeedTabs`
     /// （札の行・中身を払って「おすすめ・フォロー中・新着」を替える・留まる札の行）を置き換えた。
     /// 切り替えの札が無い・下へ送ると写真が続き、読めた新着を使い切ったら続きのページを読む（読んだページの数が増える）・
