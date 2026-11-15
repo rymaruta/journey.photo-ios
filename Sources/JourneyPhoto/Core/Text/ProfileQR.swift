@@ -140,3 +140,26 @@ enum ProfileQRSources {
     /// アプリが使う中身の作り手（更新できる合図・2026-11-12 owner 承認）。API の口は画面の環境から渡す
     static func current(api: APIClient) -> any ProfileQRSource { ServerProfileQRSource(api: api) }
 }
+
+/// プロフィールのリンクを共有する（札 #545 の段1・2026-11-15）。**リンクだけを渡す**（CLAUDE.md「他人の写真は、その人のもの」:
+/// 持ち主の所へ人を連れて行くだけのものは残してよい）。画像は渡さない。
+///
+/// - 自分のリンク: QR の画面の「リンクをコピー」「共有」。中身は**今の QR と同じ URL**（`ProfileQRSource.code`・取り替えられる合図）。
+///   2026-11-15 判断: 公開プロフィールの URL ではなく合図にする——「QR コードを更新」の確かめが「今の QR コードとリンクは
+///   使えなくなります」と言っているので、更新すると渡したリンクも一緒に止まる（LINE と同じ）
+/// - 他人のリンク: 人の頁の ⋯ の「プロフィールを共有」。中身は公開プロフィールの URL（`ProfileQR.url`・だれでも開ける
+///   `/users?id=<id>`）。人の合図はその人だけが持つので、他人は取り替えられる形では渡せない
+enum ProfileShareLink {
+    /// 人の頁の ⋯ に「プロフィールを共有」を出すときの URL。**自分の頁・ブロックした人・URL に入れられない id は nil**
+    /// （自分のリンクは QR の画面から渡す・ブロックした人へは人を連れて行かない）。ログインしていなくても渡せる
+    static func url(userId: String, viewerId: String?, blocked: Set<String>,
+                    base: URL = AppConfig.siteBaseURL) -> URL? {
+        guard userId != viewerId, !blocked.contains(userId) else { return nil }
+        return ProfileQR.url(userId: userId, base: base)
+    }
+
+    static var copyLabel: String { L("リンクをコピー", "Copy link") }
+    static var shareLabel: String { L("共有", "Share") }
+    static var copied: String { L("リンクをコピーしました", "Link copied") }
+    static var shareProfileLabel: String { L("プロフィールを共有", "Share profile") }
+}
