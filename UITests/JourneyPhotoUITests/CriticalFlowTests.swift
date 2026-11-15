@@ -220,7 +220,14 @@ final class CriticalFlowTests: XCTestCase {
         let screen = app.windows.firstMatch.frame
         XCTAssertGreaterThan(bottomSubmit.frame.minY, screen.height * 0.8,
                              "「投稿する」が下に無い（frame \(bottomSubmit.frame)・画面 \(screen)）")
-        XCTAssertGreaterThan(bottomSubmit.frame.width, screen.width * 0.8, "「投稿する」が幅いっぱいでない（\(bottomSubmit.frame)）")
+        // 2026-11-15（札 #409・案A）: 主ボタンの左に線の副ボタン「プレビュー」。帯の2つで幅いっぱい、主ボタンが広い方
+        let preview = app.buttons["upload.preview"].firstMatch
+        XCTAssertTrue(preview.waitForExistence(timeout: 5), "下の帯に「プレビュー」が無い")
+        let barWidth = max(preview.frame.maxX, bottomSubmit.frame.maxX) - min(preview.frame.minX, bottomSubmit.frame.minX)
+        XCTAssertGreaterThan(barWidth, screen.width * 0.8,
+                             "下の帯が幅いっぱいでない（投稿 \(bottomSubmit.frame)・プレビュー \(preview.frame)）")
+        XCTAssertGreaterThan(bottomSubmit.frame.width, preview.frame.width,
+                             "「投稿する」が「プレビュー」より狭い（\(bottomSubmit.frame)・\(preview.frame)）")
         XCTAssertGreaterThanOrEqual(bottomSubmit.frame.height, 44, "「投稿する」の的が 44pt 未満")
         XCTAssertTrue(bottomSubmit.label.contains("投稿する"), "「投稿する」の字が違う（\(bottomSubmit.label)）")
 

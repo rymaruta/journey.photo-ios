@@ -98,7 +98,7 @@ final class GalleryViewModel: ObservableObject {
     /// - Parameter force: 控えを無視して取り直す（引き下げ更新）。**ページは1ページ目から読み直す**
     ///
     /// **`photos.json`（全件）と `/feed` の1ページ目を同時に読む**（2026-10-03）。
-    /// 全件は、選ばれた写真→いいね順・フォロー中の新しい写真・今日のテーマのために今までどおり読む。
+    /// 全件は、選ばれた写真→いいね順・フォロー中の新しい写真・今週のお題のために今までどおり読む。
     /// **1本の並びは全件が要るので、1ページ目だけが先に着いても全件の答えが出るまで書かない**
     /// （`snapshotWritten`・先に新着だけを出すと、全件が着いたときに上が入れ替わる）。
     /// `/feed` が使えない（道が無い 404・500・圏外・壊れた答え）回は全件の並びに戻る
@@ -158,7 +158,15 @@ final class GalleryViewModel: ObservableObject {
         defer { PerfSignpost.end(processInterval) }
         switch result {
         case .success(let photos):
-            all = sorted(photos)
+            // UI テストだけ: 新しい投稿・はじめての投稿・今週のお題の参加の見本（札 #537・Release では何もしない）
+            if PreviewSession.snsLoopSample {
+                all = sorted(PreviewSNSLoopSample.stamp(photos))
+                pagedPhotos = PreviewSNSLoopSample.restamp(pagedPhotos)
+            } else {
+                all = sorted(photos)
+            }
+            // 新しい投稿を数える「今」は、全件を読んだ時刻（`HomeFeedPageMemo.Input.now`・札 #537 案1）
+            freshClock = Date()
             state = .loaded(filtered())
         case .failure(let error):
             // 全件が読めなくても、ページで出している「新着」は出し続ける
@@ -474,7 +482,8 @@ final class GalleryViewModel: ObservableObject {
         let presented = await gallery.presentFeed(raw, reachedEnd: nextCursor == nil,
                                                   loadsRestricted: loadsRestricted)
         guard serial == presentSerial, pageSource == .pages else { return }
-        pagedPhotos = presented
+        // UI テストだけ: 全件と同じ見本を新着のページにも掛ける（同じ写真が2つの姿で並ばないように・札 #537）
+        pagedPhotos = PreviewSession.snsLoopSample ? PreviewSNSLoopSample.restamp(presented) : presented
     }
 
     private func clearPages() {
@@ -553,11 +562,28 @@ final class GalleryViewModel: ObservableObject {
         return all.containsImageURL(url)
     }
 
-    /// 今日のテーマの背景に使う公開写真（絞り込みの影響を受けない全件）。
+    /// おすすめに新しい投稿（72 時間以内）を混ぜるときの「今」（札 #537 案1・`HomeFeedPageMemo.Input.now`）。
+    /// **全件を読んだときだけ進める。** 描くたびの時刻にすると、見ている間に 72 時間を越えた投稿の分だけ並びが動く
+    private(set) var freshClock = Date()
+
+    /// **はじめての投稿**の写真の id（ホームの札の印・`HomeFreshMix.firstPostPhotoIds`・札 #537 案1）。
+    /// 元は今週のお題と同じ全件（公開の一覧）。**描くたびに作らない**——全件を書き換えたとき・時が替わったときだけ数え直す
+    /// （72 時間を過ぎた印が、開いたままのアプリに残り続けないように）
+    func firstPostIds(now: Date = Date()) -> Set<String> {
+        let hour = Int(now.timeIntervalSince1970 / 3600)
+        if let cached = firstPostCache, cached.revision == allRevision, cached.hour == hour { return cached.ids }
+        let ids = HomeFreshMix.firstPostPhotoIds(all, now: now)
+        firstPostCache = (allRevision, hour, ids)
+        return ids
+    }
+
+    private var firstPostCache: (revision: Int, hour: Int, ids: Set<String>)?
+
+    /// 今週のお題の背景とみんなの参加に使う公開写真（絞り込みの影響を受けない全件）。
     /// **2026-10-03 判断:** 日付で全件から選ぶので `photos.json` の全件のまま（ページにしない）
     var allPhotosForTheme: [Photo] { all }
 
-    /// フォロー中の人のいちばん新しい投稿日（「フォロー中」の真鍮の点・`HomeFollowingNews`・#417 ⑨）。元は今日のテーマと同じ全件。
+    /// フォロー中の人のいちばん新しい投稿日（「フォロー中」の真鍮の点・`HomeFollowingNews`・#417 ⑨）。元は今週のお題と同じ全件。
     ///
     /// 外した「みんなの新しい写真」の段（2026-10-21 の `freshGroups`）と同じ考えのまま使い回す:
     /// - **フォロー一覧は今の人のものだけ使う**（人が替わった直後に前の人のフォロー先で点を出さない）
@@ -596,7 +622,7 @@ final class GalleryViewModel: ObservableObject {
 
     private var suggestedPeopleCache: (key: FollowingNewsKey, people: [SuggestedPeople.Person])?
 
-    /// 自分の写真。**今日のテーマに参加したかの判定に使う。**
+    /// 自分の写真。**今週のお題に参加したかの判定に使う。**
     ///
     /// 公開一覧（静的 JSON）ではなく**API から読む**——投稿したばかりの
     /// 写真は再ビルドまで公開一覧に載らないので、公開一覧だけを見ると
@@ -642,7 +668,7 @@ final class GalleryViewModel: ObservableObject {
     private var justPosted: PostedPhotos.Pending?
 
     /// 投稿画面を閉じた（`TabRouter.lastPosted`）。保存の応答の行を**読み直しの前に**自分の写真へ足す
-    /// （今日のテーマの札が、索引の遅れで「参加する」のまま残らないように）。人が替わっていたら何もしない
+    /// （今週のお題の札が、索引の遅れで「参加する」のまま残らないように）。人が替わっていたら何もしない
     /// 控えは次の読み直しが終わったら手放し、`keepSeconds` を過ぎたら使わない（`PostedPhotos.Pending`）
     func showPosted(_ posted: [Photo], viewerId: String?, at now: Date = Date()) {
         guard let viewerId, !posted.isEmpty, myPhotosWanted == nil || myPhotosWanted == viewerId else { return }

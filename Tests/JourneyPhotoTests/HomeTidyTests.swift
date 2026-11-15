@@ -137,11 +137,11 @@ final class HomeTidyTests: XCTestCase {
         XCTAssertEqual(TopCardCredit(photo: photo).spoken, photo.credit)
     }
 
-    /// 今日のテーマ: 「参加する」は題の右（見た目 36・当たり 44）・説明は1行・背は隣の札と同じ 116
+    /// 今週のお題（#537 案2・前は今日のテーマ）: 「参加する」は題の右（見た目 36・当たり 44）・説明は1行・背は隣の札と同じ 116
     func testThemeJoinSitsRightOfTheTitle() throws {
-        let theme = try source("Features/Gallery/DailyThemeCard.swift")
+        let theme = try source("Features/Gallery/WeeklyThemeCard.swift")
         let body = slice(theme, from: "var body: some View", to: ".background(alignment: .trailing)")
-        assertInOrder(["JPEyebrowLine(\"TODAY'S THEME\"", "HStack(alignment: .center", "Text(theme.title)",
+        assertInOrder(["JPEyebrowLine(\"THIS WEEK\"", "HStack(alignment: .center", "Text(theme.title)",
                        ".lineLimit(1)", "joinControl", "Text(theme.prompt)", ".lineLimit(1)",
                        "minHeight: HomeTopCardView.cardHeight"], in: body, "題の右に「参加する」")
         let join = slice(theme, from: "private var joinControl: some View", to: "static let joinInset")
@@ -151,7 +151,7 @@ final class HomeTidyTests: XCTestCase {
         XCTAssertFalse(theme.contains("JPHeight.secondaryButton"), "幅いっぱいの 44 の帯に戻っている")
         XCTAssertEqual(JPOutlineSize.inline.height, 36)
         XCTAssertEqual(JPOutlineSize.inline.height + JPOutlineSize.inline.tapSlack * 2, WebTheme.minTapTarget)
-        XCTAssertEqual(DailyThemeCard.joinInset, 14)
+        XCTAssertEqual(WeeklyThemeCard.joinInset, 14)
     }
 
     // MARK: - ④ 季節の段は1本の並びの中・写真の大1→2→2 の後ろ（札 #595 で「おすすめ」の札は無くなった）

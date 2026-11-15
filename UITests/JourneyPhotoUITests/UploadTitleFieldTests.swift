@@ -75,7 +75,7 @@ final class UploadTitleFieldTests: XCTestCase {
         let window = app.windows.firstMatch.frame
         let top = scroll.exists ? scroll.frame.minY : window.minY
         var limit = keyboard.exists ? keyboard.frame.minY : window.maxY
-        if submit.frame.minY > window.midY { limit = min(limit, submit.frame.minY - 12) }
+        if submit.frame.minY > window.midY { limit = min(limit, barTop(app, submit) - 12) }
         XCTAssertEqual((title.value as? String) ?? "", Self.typedTitle, "[\(tag)] 打った字が欄に入っていない")
         XCTAssertTrue(waitForFocus(title, timeout: 1), "[\(tag)] 打った後に題の欄の焦点が外れた")
         XCTAssertLessThanOrEqual(field.maxY, limit + 0.5,
@@ -116,13 +116,21 @@ final class UploadTitleFieldTests: XCTestCase {
     private func scrollAboveSubmitBar(_ app: XCUIApplication, _ element: XCUIElement, submit: XCUIElement,
                                       limit: Int = 8) {
         var pushes = 0
-        while element.exists, submit.exists, element.frame.maxY > submit.frame.minY - 12, pushes < limit {
+        while element.exists, submit.exists, element.frame.maxY > barTop(app, submit) - 12, pushes < limit {
             let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
             let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
             from.press(forDuration: 0.05, thenDragTo: to)
             Thread.sleep(forTimeInterval: 1)
             pushes += 1
         }
+    }
+
+    /// 下の帯の上端（2026-11-15 札 #409: 主ボタンの左か上に「プレビュー」が並ぶ。大きい文字では上に積むので、
+    /// 帯の上端は2つのボタンの上の方）
+    private func barTop(_ app: XCUIApplication, _ submit: XCUIElement) -> CGFloat {
+        let preview = app.buttons["upload.preview"].firstMatch
+        guard preview.exists, preview.frame.minY > app.windows.firstMatch.frame.midY else { return submit.frame.minY }
+        return min(submit.frame.minY, preview.frame.minY)
     }
 
     /// 欄そのものの焦点（非公開の属性なので在るときだけ読む。読めない環境ではキーボードが出ているか）

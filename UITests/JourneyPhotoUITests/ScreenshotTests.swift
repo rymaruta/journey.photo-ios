@@ -1755,6 +1755,127 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "120b-プロフィールの QR（読み取る）")
     }
 
+    /// プロフィールのリンクの共有（2026-11-15・札 #545 段1）: QR の画面の「リンクをコピー」「共有」（線のボタン2つ・44pt）と、
+    /// 人の頁の ⋯ の「プロフィールを共有」。コピーは知らせまで確かめる。共有は iPhone の共有の画面を撮る。
+    /// 人の頁は ホームの写真 → 作者 で開く（人のトランクの試験と同じ道）。作者が自分なら、その頁の「フォロワー」→ 一覧の最初の人。
+    /// 作者の行・フォロワーが出ない（写真の並び・フォローの関係次第）なら、人の頁の分は撮らずに抜ける（事実は添付に出す）
+    func testCapturesProfileShare() {
+        func launch(localBackend: Bool) -> XCUIApplication {
+            let app = XCUIApplication()
+            app.launchArguments += ["-legal.consent.version", "0"]
+            app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+            app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+            app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+            app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+            app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+            // QR の中身（GET /user/qr）は見本の通信で答える（`testCapturesProfileQR` と同じ）。
+            // 見本の通信はフォロワーの一覧に答えない（run 1347:「見本の通信では使えない口です」）ので、人の頁の分では使わない
+            if localBackend { app.launchArguments += ["-JPPreviewLocalBackend", "YES"] }
+            app.launch()
+            let agree = app.buttons["legal.agree"]
+            if agree.waitForExistence(timeout: 30) { agree.tap() }
+            return app
+        }
+        // 1. 自分: マイページ → QR の印 → 「リンクをコピー」「共有」
+        var app = launch(localBackend: true)
+        var tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return XCTFail("下の札が出ない") }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return }
+        let entry = app.buttons["mypage.qr"].firstMatch
+        guard entry.waitForExistence(timeout: 5) else { return XCTFail("マイページの名前の横に QR の印が無い") }
+        entry.tap()
+        guard app.descendants(matching: .any)["profileQR.code"].firstMatch.waitForExistence(timeout: 10) else {
+            let reasons = app.descendants(matching: .any).matching(identifier: "profileQR.failureReason")
+                .allElementsBoundByIndex.map(\.label)
+            return XCTFail("QR の画面に自分の QR が出ない（理由: \(reasons)）")
+        }
+        let copy = app.buttons["profileQR.copyLink"].firstMatch
+        let share = app.buttons["profileQR.share"].firstMatch
+        guard copy.waitForExistence(timeout: 5) else { return XCTFail("QR の画面に「リンクをコピー」が無い") }
+        guard share.waitForExistence(timeout: 5) else { return XCTFail("QR の画面に「共有」が無い") }
+        for (button, name) in [(copy, "リンクをコピー"), (share, "共有")] {
+            XCTAssertGreaterThanOrEqual(button.frame.height, 44, "「\(name)」が 44pt 未満: \(button.frame)")
+            XCTAssertTrue(button.isHittable, "「\(name)」が押せない: \(button.frame)")
+        }
+        // 画面の中に収まっている（下の「QR コードを更新」も押せる）
+        let renew = app.buttons["profileQR.renew"].firstMatch
+        XCTAssertTrue(renew.waitForExistence(timeout: 5) && renew.isHittable, "「QR コードを更新」が画面の外: \(renew.frame)")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "121-プロフィールの QR（リンクをコピー、共有）")
+        copy.tap()
+        let toast = app.descendants(matching: .any)["toast"].firstMatch
+        guard toast.waitForExistence(timeout: 5) else { return XCTFail("リンクをコピーしたのに知らせが出ない") }
+        XCTAssertTrue(toast.label.contains("リンクをコピーしました") || app.staticTexts["リンクをコピーしました"].exists,
+                      "知らせの言葉が違う: \(toast.label)")
+        shoot(app, "121a-プロフィールの QR（リンクをコピーした）")
+        Thread.sleep(forTimeInterval: 3) // 知らせが消えるのを待つ（共有の画面の絵に重ねない）
+        share.tap()
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "121b-プロフィールの QR（共有の画面）")
+
+        // 2. 他人: ホームの写真 → 作者 → ⋯ → 「プロフィールを共有」
+        app.terminate()
+        app = launch(localBackend: false)
+        tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20) else { return XCTFail("タブが出ない") }
+        let firstPhoto = app.buttons["feed.photo"].firstMatch
+        var pushes = 0
+        while !(firstPhoto.waitForExistence(timeout: 2) && firstPhoto.isHittable), pushes < 8 {
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            pushes += 1
+        }
+        guard firstPhoto.exists, firstPhoto.isHittable else { return }
+        firstPhoto.tap()
+        let toAuthor = app.buttons["photo.author"].firstMatch
+        var authorPushes = 0
+        while toAuthor.waitForExistence(timeout: 5), !toAuthor.isHittable, authorPushes < 3 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            authorPushes += 1
+        }
+        guard toAuthor.exists, toAuthor.isHittable else { return }
+        toAuthor.tap()
+        // ホームの最初の写真は見本の利用者自身の写真のことがある（run 1342: 開いたのは自分の頁で、上のバーは「戻る」だけ）。
+        // 自分の頁なら、数の札「フォロワー」→ 一覧の最初の人 で他人の頁へ進む
+        let more = app.buttons["userProfile.more"].firstMatch
+        if !more.waitForExistence(timeout: 8) {
+            let followers = app.descendants(matching: .any)["profile.count.followers"].firstMatch
+            if followers.waitForExistence(timeout: 5), followers.isHittable {
+                followers.tap()
+                let person = app.buttons["followList.person"].firstMatch
+                if person.waitForExistence(timeout: 10), person.isHittable { person.tap() }
+            }
+        }
+        guard more.waitForExistence(timeout: 15) else {
+            // 作者が自分（見本の利用者）なら ⋯ は無い。撮らずに抜ける。事実を取る（2026-11-15・run 1337 で ⋯ が見つからなかった）:
+            // 上のバーの押せるものの名前と目印、自分の頁の印（編集）の有無
+            let bar = app.navigationBars.buttons.allElementsBoundByIndex.map { "\($0.identifier)|\($0.label)" }
+            let ownPage = app.buttons["mypage.edit"].exists || app.buttons["プロフィールを編集"].exists
+            let note = "人の頁に ⋯ が無い。上のバー: \(bar)・自分の頁の印: \(ownPage)"
+            let attachment = XCTAttachment(string: note)
+            attachment.name = "121c-人の頁の事実"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            print("[ProfileShare] \(note)")
+            shoot(app, "121c-人の頁（⋯ が見つからない）")
+            return
+        }
+        more.tap()
+        let shareProfile = app.buttons["userProfile.share"].firstMatch
+        let byLabel = app.buttons["プロフィールを共有"].firstMatch
+        guard shareProfile.waitForExistence(timeout: 5) || byLabel.waitForExistence(timeout: 2) else {
+            return XCTFail("人の頁の ⋯ に「プロフィールを共有」が無い")
+        }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "121c-人の頁の ⋯（プロフィールを共有）")
+        (shareProfile.exists ? shareProfile : byLabel).tap()
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "121d-人の頁（共有の画面）")
+    }
+
     /// **名前の横のバッジの入口**（2026-11-12 owner 案 A「メダル案 A だな」）: メダルを持っていて名前の横に何も
     /// 飾っていない人だけ、名前の横に点線の丸（見た目 22・当たり 44）。押すと名前の横の画面（選ぶ画面）。
     /// 並びは 名前 → 印 → 丸 → QR → 編集。**長い名前・大きい文字でも1行に収める**（名前を「…」で切り、ほかは縮めない）。
@@ -6957,6 +7078,86 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(first.waitForExistence(timeout: 5), "投稿へ戻ったら格子が消えた")
         let gap = first.frame.minY - posts.frame.maxY
         XCTAssertTrue(gap >= 0 && gap < 240, "深く送ってから替えても頭から出ない（札の行と格子の1枚目の間 \(gap)）")
+    }
+
+    /// **ホームの新しい投稿・はじめての投稿・今週のお題の参加**（札 #537 案1・案2・2026-11-15 に1本の並びへ載せ替え）。
+    /// 本番の公開一覧には 72 時間以内の投稿・今週のお題の写真が無い日が多いので、見本（`-JPPreviewSNSLoop`・
+    /// `PreviewSNSLoopSample`）で公開一覧の新しい3枚を端末の中だけ書き替えて撮る。
+    /// 新しい投稿が並びの 2・5・8 番目に来たかは、絵ではなく数（`home.feed.probe` の `freshTiles`）で見る。
+    /// 🔴 はじめての投稿の印・みんなの参加の行が出ない・枠に来ないときは**落とす**（黙って通らない）
+    func testCapturesSNSLoopSample() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewSNSLoop", "YES"]
+        app.launchArguments += ["-JPPreviewFeedProbe", "YES"]
+        app.launch()
+        defer { app.terminate() }
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let photo = app.buttons["feed.photo"].firstMatch
+        guard photo.waitForExistence(timeout: 30) else {
+            unreached(app, "ホームの写真", probes: ["home.feed.probe"])
+            return
+        }
+
+        // 新しい投稿の枠（数で見る）。見本の3枚はどれも 72 時間以内。フォロー中の人の写真は上の段へ行くので、
+        // 並びに残った新しい投稿の数（`freshMain`）だけ 2・5・8 番目（0 から 1・4・7）を見る
+        let probe = app.descendants(matching: .any)["home.feed.probe"].firstMatch
+        XCTAssertTrue(probe.waitForExistence(timeout: 10), "並びの数の要素が無い")
+        let value = (probe.value as? String) ?? ""
+        print("[snsLoopProbe] \(value)")
+        XCTContext.runActivity(named: "[snsLoopProbe] \(value)") { _ in }
+        var fields: [String: String] = [:]
+        for pair in value.split(separator: " ") {
+            let kv = pair.split(separator: "=", maxSplits: 1)
+            if kv.count == 2 { fields[String(kv[0])] = String(kv[1]) }
+        }
+        let freshCount = Int(fields["freshMain"] ?? "") ?? 0
+        let tiles = (fields["freshTiles"] ?? "").split(separator: ",").compactMap { Int($0) }
+        XCTAssertGreaterThan(freshCount, 0, "見本の新しい投稿が並びに1つも無い: \(value)")
+        // 2026-11-15（run 1338 の数 `freshMain=3 freshTiles=1,2,4`）: 新しい投稿がいいねを持っていて、今までの並びで既に
+        // 先頭にいるときは、そこに出て枠を使わない（`HomeFreshMix` の決まり3・Web と同じ）。なので「1・4・7 ちょうど」ではなく、
+        // **新しい投稿（3つまで）が全部 1画面目（先頭 10）に入り、2 番目（0 から 1）が新しい投稿**であることを見る。
+        // 枠の位置そのものは単体テスト（`HomeFreshMixTests`）が決まった入力で縛る
+        XCTAssertGreaterThanOrEqual(tiles.filter { $0 < 10 }.count, min(3, freshCount), "新しい投稿が1画面目に入らない: \(value)")
+        XCTAssertTrue(tiles.contains(1) || tiles == [0], "2 番目が新しい投稿でない: \(value)")
+
+        // 今週のお題の札は上の札の横並びの中。見えるところまで左へめくる
+        let participants = app.buttons["home.theme.participants"].firstMatch
+        guard participants.waitForExistence(timeout: 20) else {
+            unreached(app, "今週のお題のみんなの参加", probes: ["home.theme.participants"])
+            return
+        }
+        for _ in 0..<4 where participants.exists && !participants.isHittable {
+            let row = participants.frame.midY
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            origin.withOffset(CGVector(dx: app.frame.width * 0.85, dy: row))
+                .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: app.frame.width * 0.15, dy: row)))
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertTrue(participants.isHittable, "今週のお題の札までめくれない")
+        XCTAssertTrue(participants.label.contains("今週"), "みんなの参加の読み上げが無い: \(participants.label)")
+        shoot(app, "10n-ホーム（今週のお題とみんなの参加）")
+
+        // はじめての投稿の印は札の読み上げに入る（見本の1枚目）。2番目の枠にあるので、少しずつ送って画面に入れる
+        let firstPost = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "はじめての投稿")).firstMatch
+        guard firstPost.waitForExistence(timeout: 10) else {
+            unreached(app, "はじめての投稿の札")
+            return
+        }
+        for _ in 0..<6 where firstPost.exists && !firstPost.isHittable {
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))
+            start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)))
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertTrue(firstPost.isHittable, "はじめての投稿の札まで送れない")
+        shoot(app, "10o-ホーム（新しい投稿とはじめての投稿の印）")
     }
 
     /// **ホームはタブの無い1本の並び**（札 #595・2026-11-13 owner 決定）。前の `testSwipesHomeFeedTabs`

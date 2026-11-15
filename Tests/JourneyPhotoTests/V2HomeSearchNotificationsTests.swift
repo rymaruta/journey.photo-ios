@@ -155,12 +155,12 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
         XCTAssertTrue(card.contains(".jpCardFace()"), "札の地（surface-1・白 8% の縁・角 16）が無い")
         XCTAssertFalse(card.contains(".opacity(0.35)"), "写真を薄く敷く v1 の形に戻っている")
         XCTAssertFalse(card.contains("WebTheme.surface"), "札の地が v1 の白 7% のまま")
-        let theme = try source("Features/Gallery/DailyThemeCard.swift")
-        XCTAssertTrue(theme.contains("JPEyebrowLine(\"TODAY'S THEME\""), "今日のテーマの眉が v2 でない")
+        let theme = try source("Features/Gallery/WeeklyThemeCard.swift")
+        XCTAssertTrue(theme.contains("JPEyebrowLine(\"THIS WEEK\""), "今週のお題の眉が v2 でない")
         // #417 ③: 「参加する」は題の右の小ボタン（見た目 36・当たり 44）。色は写真のある画面の主ボタン（白）のまま
         XCTAssertTrue(theme.contains("fill: JPPillStyle.main(onPhoto: true).fill"),
                       "「参加する」が写真のある画面の主ボタン（白）でない")
-        XCTAssertTrue(theme.contains(".jpCardFace()"), "今日のテーマの札の地が共通の札でない")
+        XCTAssertTrue(theme.contains(".jpCardFace()"), "今週のお題の札の地が共通の札でない")
     }
 
     /// ホームの写真: 写真の上は白だけ（真鍮を置かない）。いいねのハートも白
@@ -218,6 +218,19 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
         // 「いいね＝作者に届く」を説明の一行で読ませる（板の付箋）。保存（自分だけ）の行は 2026-11-12 に ≡ から外した
         // （マイページの保存のタブと同じ所）
         XCTAssertTrue(view.contains("作者に届きます"))
+    }
+
+    /// 運営者だけの行（Web の /admin を Safari で開く）は、押すと何が起きるか分かる名前（2026-11-15 判断）。
+    /// 前は「管理」だけで、何をする所か・アプリの外へ出ることが分からなかった
+    func testAdminMenuRowSaysWhatItOpens() throws {
+        XCTAssertEqual(SiteMenuText.admin, "写真の管理（Web）")
+        let menu = try source("Features/Common/SiteMenuView.swift")
+        let view = slice(menu, from: "struct SiteMenuView", to: "struct SiteMenuRow")
+        let admin = slice(view, from: "if auth.isAdmin {", to: "Labels.Navigation.logout")
+        assertInOrder(["appendingPathComponent(\"admin\")", "SiteMenuPlainRow(title: SiteMenuText.admin)",
+                       ".accessibilityIdentifier(\"menu.admin\")"],
+                      in: admin, "管理者の行（/admin を開く → 名前 → 道しるべ）")
+        XCTAssertFalse(menu.contains("L(\"管理\", \"Admin\")"), "何をする所か分からない「管理」の名前が残っている")
     }
 
     // MARK: - 探す
@@ -341,7 +354,7 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
     /// 第2段で触った画面は本文 12 未満の字を作らない（眉の 11 は `jpEyebrow` / `JPEyebrowLine` だけ）
     func testNoTextBelowTwelveInTouchedScreens() throws {
         let paths = ["Features/Gallery/GalleryView.swift", "Features/Gallery/HomeTopCardView.swift",
-                     "Features/Gallery/DailyThemeCard.swift", "Features/Gallery/HomeSpotShelfView.swift",
+                     "Features/Gallery/WeeklyThemeCard.swift", "Features/Gallery/HomeSpotShelfView.swift",
                      "Features/Gallery/CollectionPhotosScreen.swift", "Features/Common/SiteMenuView.swift",
                      "Features/Common/SectionHeading.swift", "Features/Common/PillChip.swift",
                      "Features/Search/SearchView.swift", "Features/Notifications/NotificationsView.swift"]
