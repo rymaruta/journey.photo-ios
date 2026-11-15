@@ -220,6 +220,19 @@ final class V2HomeSearchNotificationsTests: XCTestCase {
         XCTAssertTrue(view.contains("作者に届きます"))
     }
 
+    /// 運営者だけの行（Web の /admin を Safari で開く）は、押すと何が起きるか分かる名前（2026-11-15 判断）。
+    /// 前は「管理」だけで、何をする所か・アプリの外へ出ることが分からなかった
+    func testAdminMenuRowSaysWhatItOpens() throws {
+        XCTAssertEqual(SiteMenuText.admin, "写真の管理（Web）")
+        let menu = try source("Features/Common/SiteMenuView.swift")
+        let view = slice(menu, from: "struct SiteMenuView", to: "struct SiteMenuRow")
+        let admin = slice(view, from: "if auth.isAdmin {", to: "Labels.Navigation.logout")
+        assertInOrder(["appendingPathComponent(\"admin\")", "SiteMenuPlainRow(title: SiteMenuText.admin)",
+                       ".accessibilityIdentifier(\"menu.admin\")"],
+                      in: admin, "管理者の行（/admin を開く → 名前 → 道しるべ）")
+        XCTAssertFalse(menu.contains("L(\"管理\", \"Admin\")"), "何をする所か分からない「管理」の名前が残っている")
+    }
+
     // MARK: - 探す
 
     /// 探す: 大見出し（明朝）・節の見出しは共通の部品・欄は v2 の地・道しるべはそのまま

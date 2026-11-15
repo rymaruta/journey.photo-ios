@@ -7,7 +7,7 @@ import SwiftUI
 /// もう1つ積むと、戻る先が2通りになる。札に無い場所（いいねした写真・
 /// 共同アルバム・設定）はこの中で開く。
 ///
-/// 「保存した写真」は板 35 の一覧（`SavedPhotosView`）。「管理」は**管理者のときだけ**
+/// 「保存した写真」は板 35 の一覧（`SavedPhotosView`）。「写真の管理（Web）」は**管理者のときだけ**
 /// （ID トークンの群・Web と同じ判定）で、アプリに管理の画面は作らず**サイトの
 /// /admin をブラウザで開く**（管理の口は Web にしか無い）。
 ///
@@ -122,9 +122,10 @@ struct SiteMenuView: View {
                         Button {
                             openURL(AppConfig.siteBaseURL.appendingPathComponent("admin"))
                         } label: {
-                            SiteMenuPlainRow(title: L("管理", "Admin"))
+                            SiteMenuPlainRow(title: SiteMenuText.admin)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("menu.admin")
                     }
                     // **ログアウトはログイン中だけ。** 設定の最下部と同じ手順
                     // （通知の宛先を外してから抜ける・`SettingsView.logoutSection`）
@@ -238,6 +239,15 @@ struct SiteMenuView: View {
     private static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
     }
+}
+
+/// メニューの文言（試験で名前を確かめるため、ここに置く）
+enum SiteMenuText {
+    /// 運営者だけに出る行の名前。押すと Safari で Web の /admin（写真の管理）を開く。
+    /// **2026-11-15 判断（owner 承認「たのむ」）:** 前は「管理」だけで、何をする所か・アプリの外へ出ることが
+    /// 分からなかった。押すと何が起きるかを名前で言う。メニューのほかの行に外へ出る印は無い
+    /// （規約のリンクも下線だけ）ので、印は足さず、板どおり › のまま「（Web）」で外へ出ることを示す
+    static var admin: String { L("写真の管理（Web）", "Manage photos (Web)") }
 }
 
 /// 「見る」の行（v2 の板 SiteMenu の `.mi`）: 72 の高さ・左に 40 の角 12 の印の札（#161617）・
