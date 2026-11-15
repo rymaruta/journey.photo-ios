@@ -102,7 +102,8 @@ final class TabSwitchUnifyTests: XCTestCase {
     /// 画面の外でも `onAppear` が走り、作り直すたびにまた読んで、送らなくても全部のページを読んでいた
     func testNextPageMarkerIsLazy() throws {
         let gallery = try source("Features/Gallery/GalleryView.swift")
-        XCTAssertTrue(gallery.contains("HomeMosaic(groups: rows.rest, onReport: { reportTarget = $0 }, footer: footer(rows))"),
+        // #537（2026-11-15）: 後ろに、はじめての投稿の印（`firstPostIds:`）を渡す引数が続く
+        XCTAssertTrue(gallery.contains("HomeMosaic(groups: rows.rest, onReport: { reportTarget = $0 }, footer: footer(rows),"),
                       "続きの目印が写真の一覧の遅れて作る並びの中に無い")
         XCTAssertTrue(gallery.contains("rows.truncated || model.hasMorePages ? AnyView(pageFooter) : nil"),
                       "並びを切った所（読めた新着を使い切った所）に目印を置いていない")

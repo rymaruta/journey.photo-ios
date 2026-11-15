@@ -21,6 +21,8 @@ struct HomeMosaic: View {
     /// 並びの最後の段に置くもの（「新着」の続きを読む目印・#426）。**この遅れて作る並びの中に置く**——画面に
     /// 入ったときだけ作られるので、目印の `onAppear` が下まで送ったときだけ走る
     var footer: AnyView? = nil
+    /// **はじめての投稿**の写真の id（札に印を出す・`HomeFreshMix.firstPostPhotoIds`・札 #537 案1）
+    var firstPostIds: Set<String> = []
 
     /// 段どうし・段の中の隙間（板: 4px）
     private let gap: CGFloat = JPSpace.xxs
@@ -66,7 +68,8 @@ struct HomeMosaic: View {
     @ViewBuilder
     private func tile(_ photo: Photo, byCover: [String: PhotoGroups.Group], large: Bool) -> some View {
         let group = byCover[photo.id]
-        HomeFeedTile(photo: photo, siblings: group?.photos ?? [photo], large: large, onReport: onReport)
+        HomeFeedTile(photo: photo, siblings: group?.photos ?? [photo], large: large,
+                     isFirstPost: firstPostIds.contains(photo.id), onReport: onReport)
     }
 }
 
@@ -78,6 +81,8 @@ struct HomeFeedTile: View {
     var siblings: [Photo] = []
     /// 大きい段（16:9・撮影地 22pt・投稿した時期も出す）か、2枚の段（1:1・18pt）か
     var large = false
+    /// その人の**はじめての投稿**か（72 時間だけ・`HomeFreshMix.firstPostPhotoIds`）。左上に印を出す
+    var isFirstPost = false
     var onReport: (Photo) -> Void = { _ in }
 
     /// **札そのものが見る store はログインだけ**（「…」を出すか・2026-10-28 判断・重さの直し）。
@@ -124,6 +129,7 @@ struct HomeFeedTile: View {
                         }
                     }
                     .overlay(alignment: .bottomLeading) { caption }
+                    .overlay(alignment: .topLeading) { firstPostMark }
                     .overlay(alignment: .topTrailing) {
                         // 「…」の丸と重ならないよう、印はその左
                         multipleMark.padding(.trailing, showsMore ? 44 : 0)
@@ -139,7 +145,8 @@ struct HomeFeedTile: View {
                 base: photo.accessibilityText,
                 place: HomeTileText.place(photo.location),
                 byline: byline,
-                multiple: siblings.count > 1 ? L("複数枚の投稿", "Multiple photos") : nil))
+                multiple: siblings.count > 1 ? L("複数枚の投稿", "Multiple photos") : nil,
+                firstPost: isFirstPost ? HomeTileText.firstPost : nil))
             // **実機の絵の道しるべ。** 「一覧の1枚目」を位置で探すと、
             // 今日のテーマの「参加する」に当たって**ログイン画面を
             // 『写真の詳細』として撮って**いた（run 49 の絵で判明）
@@ -279,6 +286,30 @@ struct HomeFeedTile: View {
                            startPoint: .top, endPoint: .bottom)
                 .frame(height: 56)
                 .allowsHitTesting(false)
+        }
+    }
+
+    /// **はじめての投稿**の印（札 #537 案1・2026-11-15 判断）。初めて載せた人の1枚に、見る人が気づいて反応を返せるように。
+    ///
+    /// 形はデザインの板（XN38・DesignSystem「ガラス（写真、地図の上）: 黒 55%＋ぼかし 18＋白 10% の縁」）の
+    /// **ガラスの札**（`jpGlass`）。写真の上なので字は**白だけ**（板「写真の上には白しか置かない」・真鍮は沈む）。
+    /// 字は 12pt の太字（本文系の最小・板の Caption）、高さ 24、左上の角から 8（右上の「…」・複数枚の印と同じ間）。
+    /// 押すものではない（押す回数は増えない）。読み上げは札の1つの読み上げに入れる（`HomeTileText.readout`）。
+    /// Web の `HomeMosaic.tsx` の `home-first-post` と同じ言葉と形
+    @ViewBuilder
+    private var firstPostMark: some View {
+        if isFirstPost {
+            Text(HomeTileText.firstPost)
+                .font(JPFont.caption.weight(.semibold))
+                .foregroundStyle(Color.white)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, HomeTileText.firstPostInset)
+                .frame(height: HomeTileText.firstPostHeight)
+                .jpGlass(in: Capsule())
+                .padding(JPSpace.xs)
+                // 読み上げは札の1つの読み上げに入れてある（UI テストも札の読み上げで探す）
+                .accessibilityHidden(true)
         }
     }
 
@@ -479,10 +510,18 @@ enum HomeTileText {
         return head.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// 読み上げ（題 → 撮影地 → 撮った人 → 複数枚）。題が無い写真は
+    /// はじめての投稿の印の文（札 #537 案1・Web と同じ）
+    static var firstPost: String { L("はじめての投稿", "First post") }
+    /// 印の高さと字の左右（Web の `home-first-post` と同じ 24 と 8）
+    nonisolated static let firstPostHeight: CGFloat = 24
+    nonisolated static let firstPostInset: CGFloat = JPSpace.xs
+
+    /// 読み上げ（題 → はじめての投稿 → 撮影地 → 撮った人 → 複数枚）。題が無い写真は
     /// `base` が既に撮影地を含む（「パリ, フランス の写真」）ので二度読まない
-    static func readout(base: String, place: String, byline: String, multiple: String?) -> String {
+    static func readout(base: String, place: String, byline: String, multiple: String?,
+                        firstPost: String? = nil) -> String {
         var parts = [base]
+        if let firstPost, !firstPost.isEmpty { parts.append(firstPost) }
         if !place.isEmpty, !base.contains(place) { parts.append(place) }
         if !byline.isEmpty { parts.append(byline) }
         if let multiple, !multiple.isEmpty { parts.append(multiple) }

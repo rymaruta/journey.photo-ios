@@ -132,6 +132,20 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで、ホームの新しい投稿・はじめての投稿・今週のお題の参加を見本で出す（Debug のみ・札 #537・2026-11-11）。
+    /// `-JPPreviewSNSLoop YES`。本番の公開一覧では 72 時間以内の投稿・今週のお題のタグの写真が無い日が多く、
+    /// 絵が撮れない。公開一覧のいちばん新しい3枚の投稿日・お題のタグ・1枚の持ち主を**端末の中だけ**で書き替える
+    /// （`PreviewSNSLoopSample`）。サーバーには何も送らない。Release では必ず false
+    static let snsLoopSampleKey = "JPPreviewSNSLoop"
+
+    static var snsLoopSample: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: snsLoopSampleKey)
+        #else
+        return false
+        #endif
+    }
+
     /// UI テストでホームの1本の並びの数（読んだページ・並びの数・続きの目印・新着の最初の札）を見えない要素に出す
     /// （Debug のみ・2026-10-31 #426 で札の行の位置を見るために足し、札 #595 で1本の並びの数に替えた）。
     /// `-JPPreviewFeedProbe YES`（`GalleryView` の `home.feed.probe`・`ScreenshotTests.testScrollsHomeSingleFeed`・

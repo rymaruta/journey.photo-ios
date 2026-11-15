@@ -167,7 +167,7 @@ struct GalleryView: View {
             // （取り消しで一律に飛ばすと、`.task` が走り直さなければ人が入らないまま残る）
             if following == nil && Task.isCancelled { return }
             model.use(viewerId: userId, following: following, ticket: ticket)
-            // 今日のテーマに参加したかの判定に要る（API から読む）
+            // 今週のお題に参加したかの判定に要る（API から読む）
             await model.loadMyPhotos(environment.photos, viewerId: userId)
         }
         .refreshable { await refreshAll() }
@@ -181,7 +181,7 @@ struct GalleryView: View {
             case .nothing: break
             }
         }
-        // **下の「投稿」を閉じたら自分の写真を読み直す。** 今日のテーマの札から投稿しても、
+        // **下の「投稿」を閉じたら自分の写真を読み直す。** 今週のお題の札から投稿しても、
         // シートは `RootView` にあるので `.task(id:)` は走らず、札が「参加する」のまま残った
         //
         // 🔴 **画面に出ている間だけ**（`MyPageView` と同じ）。旅の一冊などを上に積んだまま
@@ -374,7 +374,7 @@ struct GalleryView: View {
             await environment.gallery.setHidden(hidden.snapshot)
             await model.load()
         }
-        // 自分の写真も読み直す。消した・非公開にした写真の札（1年前・旅の一冊・今日のテーマ）が
+        // 自分の写真も読み直す。消した・非公開にした写真の札（1年前・旅の一冊・今週のお題）が
         // 残り、押すと 404 だった（写真を消す・非公開にすると `revision` が進む）。
         // 書いた直後はサーバーの索引が古い答えを返しうるので、その回は次に読み直すまで
         // 札に残りうる（印で絞る形は回帰が出たのでやめた。2026-09-30 判断）
@@ -433,6 +433,7 @@ struct GalleryView: View {
             + " more=\(rows.truncated || model.hasMorePages) firstLatest=\(rows.firstLatestTile ?? -1)"
             + " newestOther=\(HomeFeedPageMemo.newestOtherTile(rows, latest: latest, viewerId: auth.userId) ?? -1)"
             + " top=\(String(format: "%.2f", Double(feedProbeTop))) topCardsAway=\(topCardsAway)"
+            + " " + HomeFeedPageMemo.freshProbe(rows, now: model.freshClock)
     }
 
     /// UI テストのときだけ: 中身の上端（`FeedTopProbe`）
@@ -451,7 +452,8 @@ struct GalleryView: View {
         let featured = featuredGroups(excluding: Set(fresh.map(\.id)))
         let rows = pageMemo.rows(HomeFeedPageMemo.Input(
             following: fresh, recommended: model.recommendedPhotos, latest: photos,
-            latestHasMore: model.hasMorePages, excluding: Set(featured.flatMap { $0.photos.map(\.id) })),
+            latestHasMore: model.hasMorePages, excluding: Set(featured.flatMap { $0.photos.map(\.id) }),
+            now: model.freshClock),
             hidden: dropped)
         return ScrollViewReader { proxy in
         ScrollView {
@@ -476,7 +478,7 @@ struct GalleryView: View {
                 PassHomeSlot(cards: passBundle, now: passNow) { passDeck = PassDeck(cards: passBundle) }
                 StoriesRow(reloadToken: tabRouter.postSheetsClosed &+ storiesRefresh,
                            myPhotos: model.myPhotos.filter { !dropped.deleted.contains($0.id) })
-                // **今日のテーマ**（モック1）。通信はしない——日付から決まる。
+                // **今週のお題**（札 #537 案2・前は今日のテーマ）。通信はしない——日付から決まる。
                 // 整理案 01c で1枚目の写真の後ろの細い帯にしたが、owner の
                 // 「前の方が好きだった」で先頭の大きな札に戻した（2026-09-26）
                 // 背景の写真もブロック／通報を落とした並びから（読み直しが終わるまで
@@ -584,13 +586,16 @@ struct GalleryView: View {
     /// 「おすすめの人」も、読めなかった回には出さない（フォローしている人に「まず、写真の好きな人を」と言わない）
     @ViewBuilder
     private func feedSection(_ rows: HomeFeedPageMemo.Rows, featured: [FeaturedGroups.Group]) -> some View {
+        // はじめての投稿の印（札 #537 案1・`HomeFreshMix.firstPostPhotoIds`）。元は公開の全件。
+        // 印は並びの位置を変えないので、時が替わったら外す（控えは1時間ごとに数え直す）
+        let firstPosts = model.firstPostIds()
         if !rows.following.isEmpty {
             VStack(alignment: .leading, spacing: JPSpace.s) {
                 // 眉は真鍮（黒地の上の合図）・題は明朝（板の節の見出し・PICKS と同じ型）
                 JPSectionHeading(eyebrow: "FOLLOWING", spoken: L("フォロー中", "Following"),
                                  title: L("フォロー中の人の新しい写真", "New from people you follow"))
                     .padding(.horizontal, JPSpace.gutter)
-                HomeMosaic(groups: rows.following, onReport: { reportTarget = $0 })
+                HomeMosaic(groups: rows.following, onReport: { reportTarget = $0 }, firstPostIds: firstPosts)
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("home.following")
@@ -603,7 +608,7 @@ struct GalleryView: View {
             feedEmptyState
         }
         HomeMosaic(groups: rows.lead, onReport: { reportTarget = $0 },
-                   footer: rows.rest.isEmpty ? footer(rows) : nil)
+                   footer: rows.rest.isEmpty ? footer(rows) : nil, firstPostIds: firstPosts)
         // 写真が0枚の日は段を出さない——空の知らせのすぐ下に作例の段が並ぶと、空なのか分からなくなる
         if !isEmpty, let seasonShelf {
             HomeSpotShelfView(shelf: seasonShelf.shelf, spots: seasonShelf.spots,
@@ -623,7 +628,8 @@ struct GalleryView: View {
             }
         }
         if !rows.rest.isEmpty {
-            HomeMosaic(groups: rows.rest, onReport: { reportTarget = $0 }, footer: footer(rows))
+            HomeMosaic(groups: rows.rest, onReport: { reportTarget = $0 }, footer: footer(rows),
+                       firstPostIds: firstPosts)
         }
     }
 
@@ -712,7 +718,7 @@ struct GalleryView: View {
             // 待っている間に人が替わっていたら捨てる
             guard auth.userId == userId else { return }
             model.refreshFollowing(following, viewerId: userId, ticket: ticket)
-            // 今日のテーマの「参加済み」も取り直す（`.task(id:)` は人が替わらないと走らない）
+            // 今週のお題の「参加済み」も取り直す（`.task(id:)` は人が替わらないと走らない）
             await model.loadMyPhotos(environment.photos, viewerId: userId)
         }
     }
@@ -735,6 +741,10 @@ final class HomeFeedPageMemo {
         let latest: [Photo]
         let latestHasMore: Bool
         let excluding: Set<String>
+        /// 新しい投稿（72 時間以内）を数える「今」（札 #537 案1・`HomeFreshMix.mix`）。**全件を読んだ時刻**
+        /// （`GalleryViewModel.freshClock`）を渡す——描くたびの時刻にすると、見ている間に 72 時間を越えた投稿の分だけ
+        /// 並びが動く。nil（既定）は混ぜない（並べ方だけを見る試験の入力）
+        var now: Date? = nil
     }
 
     struct Rows: Equatable {
@@ -778,12 +788,26 @@ final class HomeFeedPageMemo {
         return (rows.following + rows.lead + rows.rest).firstIndex { owner($0.cover) == author }
     }
 
+    /// UI テストのときだけ（`home.feed.probe`）: 2.・3. の並び（1. を除く）で、72 時間以内の投稿の札が上から何枚目か
+    /// （0 から・`freshTiles=1,4,7`）と、その数（`freshMain`）。新しい投稿が 2・5・8 番目に来たかを数で見る（札 #537 案1）
+    static func freshProbe(_ rows: Rows, now: Date) -> String {
+        let main = rows.lead + rows.rest
+        let tiles = main.indices.filter { index in main[index].photos.contains { HomeFreshMix.isFresh($0, now: now) } }
+        return "freshMain=\(tiles.count) freshTiles=\(tiles.prefix(HomeFreshMix.span).map(String.init).joined(separator: ","))"
+    }
+
     static func make(_ input: Input, hidden: ModerationSnapshot) -> Rows {
         let arranged = HomeFeed.arrange(following: hidden.visible(input.following),
                                         recommended: hidden.visible(input.recommended),
                                         latest: hidden.visible(input.latest),
                                         latestHasMore: input.latestHasMore, excluding: input.excluding)
-        let main = PhotoGroups.group(arranged.main)
+        // 2026-11-15 判断（札 #537 案1）: 新しい投稿（72 時間以内）を、並びの先頭 10 枠の 2・5・8 番目に混ぜる。
+        // 混ぜるのは**ブロック・通報を落として並べた後**（落とした写真の分だけ枠がずれないように・Web の `useGallery` と同じ順）。
+        // 新着の「4つめごとに1つ」（`HomeFeed.latestEvery`）は載った時期を問わないので、載せる人が少ない今は
+        // 新着の枠にも数週間前の写真が来る。72 時間以内の投稿だけは1画面目に必ず届くようにする。
+        // 1.（フォロー中の人の新しい写真）は並びの上に別に出るので混ぜない。数と中身は変えない（並びだけ）
+        let mixed = input.now.map { HomeFreshMix.mix(arranged.main, now: $0) } ?? arranged.main
+        let main = PhotoGroups.group(mixed)
         let split = HomeFeed.splitForSeasonShelf(main)
         let following = PhotoGroups.group(arranged.following)
         let firstLatest = main.firstIndex { arranged.fromLatest.contains($0.cover.id) }.map { following.count + $0 }
