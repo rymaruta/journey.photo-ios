@@ -23,6 +23,9 @@ struct PostPreviewSheet: View {
     @EnvironmentObject private var hidden: ModerationStore
     @Environment(\.dismiss) private var dismiss
 
+    /// 札の行の字の上限（大きくできない帯・長押しで大きく見せる。`PhotoEditView.typeLimit` と同じ段）
+    static let tabTypeLimit = DynamicTypeSize.xxxLarge
+
     @State private var page: PostPreview.Page = .detail
     /// 投稿したあとの写真の行。nil は一時ファイルを書いている間（読み込み中）
     @State private var photos: [Photo]?
@@ -35,11 +38,22 @@ struct PostPreviewSheet: View {
         NavigationStack {
             VStack(spacing: 0) {
                 ProfileTabBar(tabs: PostPreview.Page.allCases, selection: $page)
+                    // 札の行は大きくできない帯。字は上限で止め、長押しで大きく見せる（写真の編集の帯と同じ・
+                    // 2026-11-15 Mac run 1341 の絵: AX5 で「詳細」「ホーム」「マイページ」が「…」に切れていた）
+                    .dynamicTypeSize(...Self.tabTypeLimit)
+                    .accessibilityShowsLargeContentViewer()
                 audienceRow
                 GeometryReader { geo in
-                    ProfileTabPager(tabs: PostPreview.Page.allCases, selection: $page) { option in
-                        pageFrame(option, size: geo.size)
+                    // 🔴 **縦の送りの中に置く**（送らない）。左右の払いは祖先の `UIScrollView` にパンを足す作り
+                    // （`ProfileSwipePanHost.attach`: いちばん近い祖先の `UIScrollView` を探し、無ければ付けない）。
+                    // 送りの外に置いた回（Mac run 1341）は、ページの上を払っても札が替わらなかった
+                    ScrollView {
+                        ProfileTabPager(tabs: PostPreview.Page.allCases, selection: $page) { option in
+                            pageFrame(option, size: geo.size)
+                        }
                     }
+                    .scrollDisabled(true)
+                    .overlay(alignment: .topLeading) { ProfileTabSwipeProbeView(selection: page.rawValue) }
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) { submitBar }

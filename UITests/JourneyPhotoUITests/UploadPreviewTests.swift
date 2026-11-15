@@ -3,7 +3,7 @@ import XCTest
 /// **投稿の前のプレビュー**（札 #409・案A・2026-11-15）。投稿の画面の下の帯の「プレビュー」から、投稿したあとの
 /// 「詳細」「ホーム」「マイページ」を左右に払って見て、そのまま投稿できるか。
 ///
-/// - 絵: 標準の文字・大きい文字（AX5）・英語・非公開（ホームのページに「ホームには出ません」）
+/// - 絵: 標準の文字・大きい文字（AX5）・非公開（ホームのページに「ホームには出ません」）
 /// - 帯の2つのボタンが横に収まるか、収まらなければ縦に積んでいるかを数で確かめる（`[uploadPreviewBar]` の行）
 /// - プレビューの中の「投稿する」で上がり、共有カードが出る
 ///
@@ -32,15 +32,9 @@ final class UploadPreviewTests: XCTestCase {
         capture(extra: Self.largeText, tag: "大きい文字", expectStacked: true)
     }
 
-    /// 英語: 「Preview」「Post」が横に収まるか（収まらなければ縦に積む）
-    func testCapturesUploadPreviewEnglish() {
-        capture(extra: [], tag: "英語", expectStacked: nil, english: true)
-    }
-
-    /// 英語と大きい文字
-    func testCapturesUploadPreviewEnglishLargeText() {
-        capture(extra: Self.largeText, tag: "英語と大きい文字", expectStacked: true, english: true)
-    }
+    // 英語の回は置かない（2026-11-15 Mac run 1341）: アプリは日本語に固定で（`Locale.preferredAppLanguage` が "ja"）、
+    // `-AppleLanguages (en)` で起動しても帯の字は「プレビュー」「投稿する」のままだった。英語の字が画面に出る日が来たら、
+    // 帯は `ViewThatFits` が横に入らなければ縦に積む（`UploadView.submitBar`）
 
     /// 非公開: ホームのページに「ホームには出ません」、マイページは「非公開」の札
     func testCapturesUploadPreviewPrivate() {
@@ -90,8 +84,8 @@ final class UploadPreviewTests: XCTestCase {
 
     // MARK: - 流れ
 
-    private func capture(extra: [String], tag: String, expectStacked: Bool?, english: Bool = false) {
-        guard let app = openUpload(extra: extra, english: english) else {
+    private func capture(extra: [String], tag: String, expectStacked: Bool?) {
+        guard let app = openUpload(extra: extra) else {
             return fail(nil, "[\(tag)] 投稿の画面（見本の1枚）まで行けない")
         }
         let preview = app.buttons["upload.preview"].firstMatch
@@ -139,17 +133,18 @@ final class UploadPreviewTests: XCTestCase {
 
     // MARK: - 道具
 
-    private func openUpload(extra: [String], english: Bool = false) -> XCUIApplication? {
+    private func openUpload(extra: [String]) -> XCUIApplication? {
         let app = XCUIApplication()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
-        app.launchArguments += english ? ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
-                                       : ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewUploadSample", "YES"]
         app.launchArguments += ["-\(Self.postedCardHabitKey)", "0"]
+        // 左右の払いの記録（`ProfileTabSwipeLog`・Debug のみ）。払っても替わらなかった回に値で残す
+        app.launchArguments += ["-JPPreviewTabSwipeProbe", "YES"]
         app.launchArguments += extra
         app.launch()
         let agree = app.buttons["legal.agree"]
@@ -203,7 +198,9 @@ final class UploadPreviewTests: XCTestCase {
         let row = app.buttons["upload.audience"].firstMatch
         let details = app.buttons["upload.details"].firstMatch
         var pushes = 0
-        while !(row.exists && row.isHittable), pushes < 8 {
+        // `isHittable` は下の帯の裏でも真を返す（回 1341: 帯の裏の行を押して「プレビュー」が開いた）。帯の上端より上に出るまで送る
+        func aboveBar() -> Bool { row.exists && row.isHittable && row.frame.maxY < barTop(app) - 12 }
+        while !aboveBar(), pushes < 10 {
             if details.exists, details.isHittable, !row.exists {
                 details.tap()
                 Thread.sleep(forTimeInterval: 1)
@@ -216,13 +213,19 @@ final class UploadPreviewTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
             pushes += 1
         }
-        guard row.exists, row.isHittable else { return false }
+        guard aboveBar() else { return false }
         row.tap()
         let item = app.buttons.matching(NSPredicate(format: "label == '非公開'")).firstMatch
         guard item.waitForExistence(timeout: 5) else { return false }
         item.tap()
         Thread.sleep(forTimeInterval: 1)
         return true
+    }
+
+    /// 下の帯の上端（「プレビュー」と「投稿する」の上の方）
+    private func barTop(_ app: XCUIApplication) -> CGFloat {
+        [app.buttons["upload.preview"].firstMatch, app.buttons["upload.submit"].firstMatch]
+            .filter(\.exists).map(\.frame.minY).min() ?? app.windows.firstMatch.frame.maxY
     }
 
     private func tapTab(_ app: XCUIApplication, _ name: String) {
@@ -241,7 +244,15 @@ final class UploadPreviewTests: XCTestCase {
     }
 
     private func waitSelected(_ app: XCUIApplication, _ name: String) -> Bool {
-        wait(app.buttons["postPreview.tab.\(name)"].firstMatch, "isSelected == true", timeout: 5)
+        let ok = wait(app.buttons["postPreview.tab.\(name)"].firstMatch, "isSelected == true", timeout: 5)
+        if !ok {
+            // 払い・押しの記録（`mypage.tabs.probe` の値）を残す
+            let probe = app.descendants(matching: .any)["mypage.tabs.probe"].firstMatch
+            let text = "[uploadPreviewSwipe] want=\(name) probe=\(probe.exists ? "\(probe.value ?? "nil")" : "none")"
+            print(text)
+            XCTContext.runActivity(named: text) { _ in }
+        }
+        return ok
     }
 
     private func wait(_ element: XCUIElement, _ predicate: String, timeout: TimeInterval) -> Bool {

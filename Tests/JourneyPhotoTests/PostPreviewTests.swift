@@ -184,6 +184,11 @@ final class PostPreviewTests: XCTestCase {
         XCTAssertTrue(sheet.contains("PhotoDetailView(photo: first, fromPublicFeed: false, context: photos, postPreview: true)"))
         XCTAssertTrue(sheet.contains("HomeMosaic(groups: groups"))
         XCTAssertTrue(sheet.contains("MyPageGridCell(photo: photo"))
+        // 左右の払いは祖先の縦の送りにパンを足す作り（`ProfileSwipePanHost.attach`）。送りの外に置くと払っても替わらない
+        // （Mac run 1341）
+        XCTAssertTrue(sheet.contains("ScrollView {\n                        ProfileTabPager(tabs: PostPreview.Page.allCases"),
+                      "ページの入れ物が縦の送りの中に無い（払っても札が替わらない）")
+        XCTAssertTrue(sheet.contains(".scrollDisabled(true)"))
         let myPage = try source("Sources/JourneyPhoto/Features/Profile/MyPageView.swift")
         XCTAssertTrue(myPage.contains("MyPageGridCell(photo: photo, multiple: multiple, pinned: model.isPinned(photo.id))"),
                       "マイページがプレビューと同じ格子の部品を使っていない")
