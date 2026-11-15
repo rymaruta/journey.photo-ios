@@ -2,6 +2,27 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.94",
+      "date": "2026-11-15",
+      "items": [
+        {
+          "symbol": "bell.badge",
+          "title": { "ja": "返信やメンションの通知が届く", "en": "Notifications for replies and mentions" },
+          "detail": { "ja": "コメントに返信が付いたときや、ストーリーでメンションされたときにも通知が届くようになりました。", "en": "You now get a notification when someone replies to your comment or mentions you in a story." }
+        },
+        {
+          "symbol": "mappin.and.ellipse",
+          "title": { "ja": "見頃のお知らせから、その場所が開く", "en": "Season notifications open the spot" },
+          "detail": { "ja": "行きたい場所の見頃のお知らせを押すと、その観光スポットの頁が開きます。何か所かまとめて届いたときは、マイページの「行きたい場所」が開きます。", "en": "Tapping a best-season notification for a place you want to go now opens that spot's page. If it covers several places, Want to go on My page opens." }
+        },
+        {
+          "symbol": "person.badge.plus",
+          "title": { "ja": "登録するとできることがホームに出る", "en": "See what an account lets you do on Home" },
+          "detail": { "ja": "ログインしていないときのホームに、登録するとできることを4枚のカードで出します。押すとログインと新規登録の画面が開きます。", "en": "When you're not signed in, Home shows four cards about what you can do with an account. Tap one to sign in or sign up." }
+        }
+      ]
+    },
+    {
       "version": "1.1.93",
       "date": "2026-11-15",
       "items": [
