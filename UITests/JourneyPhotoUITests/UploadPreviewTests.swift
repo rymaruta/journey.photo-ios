@@ -169,8 +169,7 @@ final class UploadPreviewTests: XCTestCase {
     private func openPreview(_ app: XCUIApplication) -> Bool {
         let preview = app.buttons["upload.preview"].firstMatch
         guard preview.waitForExistence(timeout: 10), wait(preview, "enabled == true", timeout: 20) else { return false }
-        // キーボードが出ていれば、帯はその上。押せるまで待つ
-        if !preview.isHittable { app.swipeDown() }
+        // キーボードが出ていても、帯はその上に乗る
         preview.tap()
         return app.descendants(matching: .any)["postPreview.page.detail"].firstMatch.waitForExistence(timeout: 15)
     }
@@ -195,9 +194,7 @@ final class UploadPreviewTests: XCTestCase {
             }
         }
         field.typeText(text)
-        // キーボードをしまう（帯を見える所へ）
-        let done = app.toolbars.buttons.matching(NSPredicate(format: "label == '完了' OR label == 'Done'")).firstMatch
-        if done.exists, done.isHittable { done.tap() } else { app.swipeDown() }
+        // キーボードはしまわない（下の帯はキーボードの上に乗る）。下へ払うと閉じる確かめが出るので払わない
         Thread.sleep(forTimeInterval: 1)
     }
 
@@ -210,6 +207,7 @@ final class UploadPreviewTests: XCTestCase {
             if details.exists, details.isHittable, !row.exists {
                 details.tap()
                 Thread.sleep(forTimeInterval: 1)
+                pushes += 1
                 continue
             }
             let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
