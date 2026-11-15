@@ -21,6 +21,8 @@ struct GalleryView: View {
     @State private var showPassBook = false
     /// 行った県の地図（「新しくなったこと」の行き先・札 #519）
     @State private var showVisitedMap = false
+    /// 見頃のお知らせから開く観光スポットの頁（`HomeScreenRequest.officialSpot`・2026-11-15 札 #618）
+    @State private var requestedSpot: RequestedSpot?
     /// 「新しくなったこと」から頼まれた画面を、シートが閉じきるまで待って積む
     @State private var homeScreenWait: Task<Void, Never>?
     /// すれちがいの「いま」。**時計で待たない**（ロック中に 18 時を越えると古いまま残る）——前面に来た・
@@ -240,6 +242,9 @@ struct GalleryView: View {
         }
         .navigationDestination(isPresented: $showPassBook) { PassBookView() }
         .navigationDestination(isPresented: $showVisitedMap) { VisitedMapScreen() }
+        .navigationDestination(item: $requestedSpot) { opened in
+            OfficialSpotView(spot: opened.spot, spots: opened.spots, photos: dropped.visible(model.allPhotosForTheme))
+        }
         // 「新しくなったこと」の項目 → ホームに積む（札 #519）。ホームがまだ出ていなかった回は出たときに受け取る
         .onChange(of: tabRouter.homeScreenRequests) { _, _ in openRequestedScreen() }
         .onAppear { openRequestedScreen() }
@@ -316,6 +321,16 @@ struct GalleryView: View {
             switch screen {
             case .passBook: showPassBook = true
             case .visitedMap: showVisitedMap = true
+            case .officialSpot(let slug):
+                // 索引から引く（60秒の控えがあればそれ）。**引けなければ「行きたい場所」へ**
+                // （圏外・消えたスポットで、押しても何も起きないに落とさない）
+                let spots = (try? await environment.spots.fetchIndex()) ?? []
+                guard !Task.isCancelled else { return }
+                if let spot = spots.first(where: { $0.slug == slug }) {
+                    requestedSpot = RequestedSpot(spot: spot, spots: spots)
+                } else {
+                    tabRouter.openMyPage(tab: .wishlist)
+                }
             }
         }
     }
@@ -627,6 +642,13 @@ struct GalleryView: View {
                 Task { await showFollowingAfterSuggested(followed, userId: userId) }
             }
         }
+        if SignUpBenefit.showsOnHome(userId: auth.userId, isResolving: auth.isResolving, feedIsEmpty: isEmpty) {
+            // 札 #618 の案1（2026-11-15 判断・案C）: ログインしていない人に「登録するとできること」の札4枚を1回だけ。
+            // ひと回り（1画面目）と季節の段の後ろ（写真が主役）。押した先は今のログイン画面（`SignInSheet`）のまま。
+            // 絵の地は、この後ろに並ぶ写真から（同じ写真を上の段と続けて見せない）
+            HomeSignUpBenefitsView(photos: Array((rows.rest.isEmpty ? rows.lead : rows.rest)
+                .map(\.cover).prefix(HomeSignUpBenefitsLayout.photoCount)))
+        }
         if !rows.rest.isEmpty {
             HomeMosaic(groups: rows.rest, onReport: { reportTarget = $0 }, footer: footer(rows),
                        firstPostIds: firstPosts)
@@ -887,4 +909,15 @@ private struct FeedTopProbe: ViewModifier {
 private struct FollowingSettleKey: Equatable {
     let candidates: [String]
     let atHead: Bool
+}
+
+/// ホームに積む観光スポットの頁（見頃のお知らせから・2026-11-15 札 #618）。積む口（`navigationDestination(item:)`）は
+/// `Hashable` を求めるので、綴りで同じものとみなす
+struct RequestedSpot: Hashable {
+    let spot: OfficialSpot
+    /// 「近くの観光スポット」を引く索引（`OfficialSpotView.spots`）
+    let spots: [OfficialSpot]
+
+    static func == (a: RequestedSpot, b: RequestedSpot) -> Bool { a.spot.slug == b.spot.slug }
+    func hash(into hasher: inout Hasher) { hasher.combine(spot.slug) }
 }

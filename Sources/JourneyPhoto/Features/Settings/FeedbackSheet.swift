@@ -205,6 +205,9 @@ struct FeedbackSheet: View {
         switch contents {
         case .feedback:
             return L("前回送れなかったときの記録を添える", "Attach a note about the last time sending failed")
+        case .signOut:
+            // ログアウトした時と道（札 #617・`ExitTrail.keepSignOut`）
+            return L("ログアウトしたときの記録を添える", "Attach a note about when you were signed out")
         case .both:
             return L("前回の不具合の記録を添える", "Attach notes about the last problems")
         case .exit, .none:

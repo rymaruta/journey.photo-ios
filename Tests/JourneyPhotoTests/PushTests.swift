@@ -79,6 +79,8 @@ final class PushServiceTests: XCTestCase {
         let body = try XCTUnwrap(StubProtocol.lastBody)
         let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
         XCTAssertEqual(json["token"] as? String, String(repeating: "a", count: 64))
+        // 文言の段（2026-11-15 札 #618）。送らないとサーバーはコメントへの返信・メンションをこの端末に送らない
+        XCTAssertEqual(json["pushKeys"] as? Int, 2)
     }
 
     /// **ログアウトの前に外す。** あとだと認証が通らず、外せないまま

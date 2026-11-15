@@ -19,6 +19,15 @@ enum IdTokenClaims {
         return sub
     }
 
+    /// `auth_time`（パスワードで入った時刻。トークンを更新しても変わらない）。読めなければ nil。
+    /// **ログアウトの記録に「入ってから何日」を出すためだけ**に使う（`ExitTrail.keepSignOut`・札 #617）
+    static func authTime(fromJWT token: String) -> Date? {
+        let value = payload(of: token)?["auth_time"]
+        // iOS は NSNumber（Double で読める）、Linux の試験は Int で返る
+        guard let seconds = (value as? Double) ?? (value as? Int).map(Double.init) else { return nil }
+        return Date(timeIntervalSince1970: seconds)
+    }
+
     private static func payload(of token: String) -> [String: Any]? {
         let parts = token.split(separator: ".")
         guard parts.count >= 2 else { return nil }

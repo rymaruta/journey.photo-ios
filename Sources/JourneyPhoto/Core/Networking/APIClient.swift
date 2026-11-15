@@ -27,6 +27,10 @@ protocol TokenProviding: Sendable {
     /// 取り直しても通らなかった（またはそもそも取り直せなかった）。ログアウトに倒す
     func sessionExpired() async
 
+    /// 上と同じ。**どの道で切れたか**（`expiredRefresh`・`expiredRetry`）と口の形を添える（札 #617）。
+    /// 既定は `sessionExpired()` に渡すだけ（試験の差し替えはそのまま）
+    func sessionExpired(because cause: ExitTrail.SignOutCause, detail: String?) async
+
     /// サーバーが「この人は退会済み」（410・`APIError.isAccountGone`）と答えた。
     /// `idToken` は**その要求に付けた**鍵——退会の途中の扱い（`AuthStore.noteDeletionPending`）は、
     /// 鍵の人がいまログイン中の人と同じときだけ入る（人が替わったあとに届いた古い 410 を除く）
@@ -38,6 +42,7 @@ extension TokenProviding {
     /// 呼び手に返る（取り直しを見る試験だけが自分で持つ）
     func refreshedIdToken() async throws -> String? { nil }
     func sessionExpired() async {}
+    func sessionExpired(because cause: ExitTrail.SignOutCause, detail: String?) async { await sessionExpired() }
     func accountGone(idToken: String) async {}
 }
 
@@ -203,8 +208,10 @@ actor APIClient {
         guard case .failure(let error) = first else { return try first.get() }
         guard (error as? APIError)?.isAuthExpired == true else { throw error }
 
+        // 期限切れの記録に添える口の形（id の入った区切りは伏せる・`ExitTrail.pathShape`）
+        let shape = "\(method.rawValue)\(ExitTrail.pathShape(path))"
         guard let fresh = try await tokenProvider.refreshedIdToken() else {
-            await tokenProvider.sessionExpired()
+            await tokenProvider.sessionExpired(because: .expiredRefresh, detail: shape)
             throw error
         }
         // 🔴 **取り直した鍵が別の人のものなら送り直さない。** 期限切れでログアウトし、
@@ -215,7 +222,7 @@ actor APIClient {
         guard Self.isSamePerson(token, fresh) else { throw error }
         let second = await attempt(request, bearer: fresh)
         if case .failure(let retryError) = second, (retryError as? APIError)?.isAuthExpired == true {
-            await tokenProvider.sessionExpired()
+            await tokenProvider.sessionExpired(because: .expiredRetry, detail: shape)
         }
         return try second.get()
     }

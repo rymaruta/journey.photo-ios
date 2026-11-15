@@ -124,9 +124,13 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
-        // 見頃のお知らせ（端末の中で予約したもの）はお知らせ画面の出来事ではない——開くだけにする
+        // 見頃のお知らせ（端末の中で予約したもの）はお知らせ画面の出来事ではない。
+        // 2026-11-15 札 #618: 開くだけだったのを、名前を出したスポットの頁（何か所かなら「行きたい場所」）へ
         let kind = response.notification.request.content.userInfo["kind"] as? String
-        if kind == SeasonReminder.kind { return }
+        if let destination = SeasonReminder.destination(response.notification.request.content.userInfo) {
+            await MainActor.run { TabRouter.shared.openSeasonReminder(destination) }
+            return
+        }
         // すれちがいの束（端末の中で予約したもの）: ホームへ行って束を開く
         if kind == PassBundleNotifier.kind {
             await MainActor.run {

@@ -229,7 +229,10 @@ struct MyPageView: View {
             model.showPosted(tabRouter.lastPosted, for: auth.userId)
             Task { await model.load(for: auth.userId) }
         }
+        // 外から札を指して開かれた（見頃のお知らせ →「行きたい場所」・2026-11-15 札 #618）
+        .onChange(of: tabRouter.myPageRequests) { _, _ in takeRequestedTab() }
         .onAppear {
+            takeRequestedTab()
             refreshDraftCount()
             switch front.appear() {
             case .first:
@@ -1436,6 +1439,13 @@ struct MyPageView: View {
 
     /// 端末の下書きの件数と、枠の長押しに出す先頭5件を読み直す（前の版の1件を新しい形に移し、期限の過ぎたものを
     /// 消してから・`prepare` は1回）。呼ぶのは下書きが変わった・画面に戻った・人が替わったときだけ
+    /// 外から指された札を開く（`TabRouter.openMyPage(tab:)`）。受け取るのは1回だけ。自分の札に無いものは開かない
+    private func takeRequestedTab() {
+        guard let requested = tabRouter.takePendingMyPageTab(),
+              ProfileTab.tabs(isMe: true).contains(requested) else { return }
+        tab = requested
+    }
+
     private func refreshDraftCount() {
         guard let userId = auth.userId else {
             draftCount = 0
