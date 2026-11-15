@@ -77,7 +77,32 @@ def main():
     busy = [kv for kv in deepest.items() if kv[1] * interval >= 1000]
     for label, count in sorted(busy, key=lambda kv: -kv[1])[:15]:
         print(f"measured [main-sample] 全体 {count * interval / 1000:7.2f}s {label}")
+    print_tree(body, total, interval)
     return 0
+
+
+def print_tree(body, total, interval, minimum=3.0, limit=160):
+    """主スレッドの呼び出しの木を、3秒以上の枝だけ出す（2026-11-15・run 1361）。
+
+    上の「全体」は待ち（mach_msg・ランループ）を外して数えるので、**主スレッドが何かを待って止まっている**
+    （計算していない）ときは何も出ない。run 1361 で主スレッドが 16.21秒止まったのに、アプリの関数は
+    どれも 6秒未満だった。待っている所も含めて木で見る。いつも積みの底にある枝（数が全体と同じ）は畳む
+    """
+    printed = 0
+    for line in body:
+        m = LINE.match(line)
+        if not m:
+            continue
+        count = int(m.group("count"))
+        if count * interval / 1000 < minimum or count >= total:
+            continue
+        depth = len(m.group("indent")) // 2
+        symbol = re.sub(r"\s+\+\s+\d+$", "", m.group("symbol")).strip()[:110]
+        print(f"measured [main-tree] {'.' * min(depth, 60)} {count * interval / 1000:6.2f}s {symbol} ({m.group('module')})")
+        printed += 1
+        if printed >= limit:
+            print("measured [main-tree] （ここで打ち切り）")
+            break
 
 
 if __name__ == "__main__":
