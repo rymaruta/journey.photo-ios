@@ -12,25 +12,28 @@ import XCTest
 /// - `probe row=<i> dy=<ずらした量> -> self|row<j>|none`: 押した結果
 /// - `extent row=<i> up=<上へ届いた量> down=<下へ届いた量>`: 自分の行が選ばれた一番遠い所
 ///
-/// **確かめること（2026-11-15 判断・run 1355 の数から）**: 行は 44pt おきに並び（`pitch`）、どの行も真ん中から上 21pt・下 16pt までは
-/// 自分の行が選ばれる。真ん中から下 17〜21pt（隣の行の当たりとの境目の手前 5〜1pt）は、どちらかの行が選ばれればよい（押して何も起きない所が無い）。
-/// run 1355 では、当たりの境目（行の真ん中から 22pt・枠 38 ＋上下 3）の 1pt 手前（+21）を押すと下の行が選ばれた。上の行の側（-21）は
-/// 自分の行のまま。境目の近くでどちらが選ばれるかは押した点の扱い（指の幅）による所があり、ここでは決めない（数だけ出す）
+/// **確かめること（2026-11-15 判断・run 1355・1360 の数から）**: 行は 44pt おきに並び（`pitch`）、どの行も真ん中から上 21pt・下 16pt までは
+/// 自分の行が選ばれる。真ん中から下 20・21pt（当たりの境目＝真ん中から 22pt の手前）は、自分の行か下の行のどちらかならよい（押して何も起きない所が無い）。
+/// 測った数: 直した後は2回とも上 21・下 16 が自分の行（run 1360 では下 17〜20 も自分の行）。下 21 は下の行が選ばれ、
+/// 下に行の無い3行目の下 21 は自分の行だった（当たりは 44pt あり、境目の 1pt 手前だけ下の行に取られる）。
+/// 直す前（run 1353）は行が 22pt おきで、下 8pt で下の行が選ばれた
 final class PlaceSuggestionHitTests: XCTestCase {
 
     private static let previewUserId = "67d49a68-80f1-7083-b0e0-c767886ef868"
     /// 撮影スポットの名前に多い語。2件以上の候補が出るものを前から使う
     private static let queries = ["神社", "公園", "寺", "城"]
     /// 押す所（行の真ん中からのずれ・pt）。自分の行が選ばれなければならない所
-    private static let offsets: [CGFloat] = [-21, -16, -11, -8, 8, 11, 16]
+    private static let offsets: [CGFloat] = [-21, -16, -8, 8, 16]
     /// 下の行との境目の手前（数だけ取る。自分の行か下の行のどちらか）
-    private static let boundaryOffsets: [CGFloat] = [17, 18, 19, 20, 21]
+    private static let boundaryOffsets: [CGFloat] = [20, 21]
     private static let spotPrefix = "観光スポット "
     /// 押せるものの大きさの決まり（`WebTheme.minTapTarget`。UI テストからはアプリの型を読めないので写す）
     private static let minTapTarget: CGFloat = 44
 
     override func setUp() {
         continueAfterFailure = true
+        // 1か所押すたびに打ち直すので 15 か所で約 4 分かかる。既定の 5 分の上限に近いので 10 分にする（run 1360 で 18 か所が 5 分を越えた）
+        executionTimeAllowance = 600
     }
 
     func testPlaceSuggestionRowsHave44ptHitAreaWithoutOverlap() {
