@@ -11,14 +11,23 @@ import XCTest
 /// - `frames`: 候補の行の読み上げの枠と行の間隔
 /// - `probe row=<i> dy=<ずらした量> -> self|row<j>|none`: 押した結果
 /// - `extent row=<i> up=<上へ届いた量> down=<下へ届いた量>`: 自分の行が選ばれた一番遠い所
+///
+/// **確かめること（2026-11-15 判断・run 1355 の数から）**: 行は 44pt おきに並び（`pitch`）、どの行も真ん中から上 21pt・下 16pt までは
+/// 自分の行が選ばれる。真ん中から下 17〜21pt（隣の行の当たりとの境目の手前 5〜1pt）は、どちらかの行が選ばれればよい（押して何も起きない所が無い）。
+/// run 1355 では、当たりの境目（行の真ん中から 22pt・枠 38 ＋上下 3）の 1pt 手前（+21）を押すと下の行が選ばれた。上の行の側（-21）は
+/// 自分の行のまま。境目の近くでどちらが選ばれるかは押した点の扱い（指の幅）による所があり、ここでは決めない（数だけ出す）
 final class PlaceSuggestionHitTests: XCTestCase {
 
     private static let previewUserId = "67d49a68-80f1-7083-b0e0-c767886ef868"
     /// 撮影スポットの名前に多い語。2件以上の候補が出るものを前から使う
     private static let queries = ["神社", "公園", "寺", "城"]
-    /// 押す所（行の真ん中からのずれ・pt）。44pt の当たりなら ±21 まで自分の行
-    private static let offsets: [CGFloat] = [-21, -16, -11, -8, 8, 11, 16, 21]
+    /// 押す所（行の真ん中からのずれ・pt）。自分の行が選ばれなければならない所
+    private static let offsets: [CGFloat] = [-21, -16, -11, -8, 8, 11, 16]
+    /// 下の行との境目の手前（数だけ取る。自分の行か下の行のどちらか）
+    private static let boundaryOffsets: [CGFloat] = [17, 18, 19, 20, 21]
     private static let spotPrefix = "観光スポット "
+    /// 押せるものの大きさの決まり（`WebTheme.minTapTarget`。UI テストからはアプリの型を読めないので写す）
+    private static let minTapTarget: CGFloat = 44
 
     override func setUp() {
         continueAfterFailure = true
@@ -41,34 +50,38 @@ final class PlaceSuggestionHitTests: XCTestCase {
         // 1行目と2行目を、真ん中から上下にずらして押す
         var extents: [Int: (up: CGFloat, down: CGFloat)] = [0: (0, 0), 1: (0, 0)]
         var results: [String: String] = [:]
-        for index in 0..<2 {
-            for dy in Self.offsets {
-                rows = candidates(app)
-                guard rows.count >= 2 else { break }
-                let names = rows.map(\.name)
-                let target = rows[index].frame
-                let point = app.coordinate(withNormalizedOffset: .zero)
-                    .withOffset(CGVector(dx: target.minX + min(40, target.width / 2), dy: target.midY + dy))
-                point.tap()
-                Thread.sleep(forTimeInterval: 0.8)
-                let value = (field.value as? String) ?? ""
-                let result: String
-                if let picked = names.firstIndex(of: value) {
-                    result = picked == index ? "self" : "row\(picked)"
-                } else {
-                    result = "none"
-                }
-                results["\(index)|\(Int(dy))"] = result
-                log("probe row=\(index) dy=\(Int(dy)) -> \(result) value=\(value)")
-                if result == "self" {
-                    var e = extents[index] ?? (0, 0)
-                    if dy < 0 { e.up = max(e.up, -dy) } else { e.down = max(e.down, dy) }
-                    extents[index] = e
-                }
-                if value != query {
-                    // 選ばれたら、打ち直して候補を出し直す
-                    guard retype(app, field, query) else { return XCTFail("打ち直しても候補が出ない（\(query)）") }
-                }
+        // 3行目があれば、その下 21（下に撮影スポットの候補の行が無い所）も数だけ取る
+        let lastIndex = rows.count >= 3 ? 2 : nil
+        var plan: [(index: Int, dy: CGFloat)] = (0..<2).flatMap { index in
+            (Self.offsets + Self.boundaryOffsets).map { (index, $0) }
+        }
+        if let lastIndex { plan.append((lastIndex, 21)) }
+        for (index, dy) in plan {
+            rows = candidates(app)
+            guard rows.count > index else { break }
+            let names = rows.map(\.name)
+            let target = rows[index].frame
+            let point = app.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: target.minX + min(40, target.width / 2), dy: target.midY + dy))
+            point.tap()
+            Thread.sleep(forTimeInterval: 0.8)
+            let value = (field.value as? String) ?? ""
+            let result: String
+            if let picked = names.firstIndex(of: value) {
+                result = picked == index ? "self" : "row\(picked)"
+            } else {
+                result = "none"
+            }
+            results["\(index)|\(Int(dy))"] = result
+            log("probe row=\(index) dy=\(Int(dy)) -> \(result) value=\(value)")
+            if result == "self" {
+                var e = extents[index] ?? (0, 0)
+                if dy < 0 { e.up = max(e.up, -dy) } else { e.down = max(e.down, dy) }
+                extents[index] = e
+            }
+            if value != query {
+                // 選ばれたら、打ち直して候補を出し直す
+                guard retype(app, field, query) else { return XCTFail("打ち直しても候補が出ない（\(query)）") }
             }
         }
         for index in 0..<2 {
@@ -76,11 +89,20 @@ final class PlaceSuggestionHitTests: XCTestCase {
             log("extent row=\(index) up=\(Int(e.up)) down=\(Int(e.down)) height>=\(Int(e.up + e.down))")
         }
 
-        // 当たりは 44pt（真ん中から上下 21 まで自分の行）。隣の行の当たりを奪わない（2行目の上 21 は2行目・1行目の下 21 は1行目）
+        // 行は 44pt おきに並ぶ（直す前は 22pt おき）
+        let pitch = rows.count >= 2 ? rows[1].frame.midY - rows[0].frame.midY : 0
+        XCTAssertGreaterThanOrEqual(pitch, Self.minTapTarget - 0.5, "候補の行の間隔が \(pitch)pt（44pt おきに並ばない）")
+        // 真ん中から上 21・下 16 までは自分の行。2行目の上 21 は1行目の真ん中から下 23 なので、1行目の当たりが2行目へはみ出していない
         for index in 0..<2 {
             for dy in Self.offsets {
                 XCTAssertEqual(results["\(index)|\(Int(dy))"], "self",
                                "候補の \(index + 1) 行目の真ん中から \(Int(dy))pt の所を押すと \(results["\(index)|\(Int(dy))"] ?? "-") が選ばれる（当たりが 44pt 無い・重なる）")
+            }
+            // 境目の手前は、自分の行か下の行（押して何も起きない所が無い）
+            for dy in Self.boundaryOffsets {
+                let result = results["\(index)|\(Int(dy))"]
+                XCTAssertTrue(result == "self" || result == "row\(index + 1)",
+                              "候補の \(index + 1) 行目の真ん中から \(Int(dy))pt の所を押すと \(result ?? "-")（自分の行か下の行のはず）")
             }
         }
     }
