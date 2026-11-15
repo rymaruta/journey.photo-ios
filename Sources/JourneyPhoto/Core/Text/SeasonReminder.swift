@@ -23,6 +23,30 @@ enum SeasonReminder {
         let season: String
         let title: String
         let body: String
+        /// 知らせに名前を出したスポットの綴り（`OfficialSpot.slug`・名前と同じ順）。押した先を決める（`destination`）
+        var slugs: [String] = []
+    }
+
+    /// 押した先（2026-11-15 札 #618）。前は押してもアプリが開くだけだった
+    enum Destination: Equatable {
+        /// 1か所だけの知らせ: そのスポットの頁
+        case spot(slug: String)
+        /// 何か所かの知らせ・綴りの無い知らせ（前の版が予約したもの）: マイページの「行きたい場所」
+        case wishlist
+    }
+
+    /// 通知の中身に入れる、押した先の鍵
+    static let slugsKey = "slugs"
+
+    /// 押した通知の中身から行き先を決める。この知らせでなければ nil（ほかの道に任せる）。
+    /// 2026-11-15 判断: **名前を出したのが1か所ならその頁、2か所以上なら「行きたい場所」**
+    /// （知らせの文に名前が出ているものへ連れて行く。何か所かのときに1つ目だけを開くと、ほかが見えない）。
+    /// 綴りがパスに入れない形（`PathID`）なら「行きたい場所」に倒す
+    static func destination(_ userInfo: [AnyHashable: Any]) -> Destination? {
+        guard userInfo["kind"] as? String == kind else { return nil }
+        let slugs = (userInfo[slugsKey] as? [String] ?? []).filter { !$0.isEmpty }
+        if slugs.count == 1, let slug = slugs.first, PathID.isSafe(slug) { return .spot(slug: slug) }
+        return .wishlist
     }
 
     /// 通知の識別子。**1つだけ**（入れ替えるたびに前の予約を消す）
@@ -59,12 +83,12 @@ enum SeasonReminder {
     static func plan(now: Date, spots: [OfficialSpot], wishlist: Set<String>, calendar: Calendar) -> Plan? {
         let next = nextSeasonStart(after: now, calendar: calendar)
         let season = SpotBodyText.season(ofMonth: next.month)
-        let names = spots
+        let picked = spots
             .filter { !$0.isDraft && wishlist.contains(SavedSpotKey.official($0.slug)) }
             // 種類で見る（索引だけの行でも答えられる・`OfficialSpot.seasonKeys`）
             .filter { spot in spot.hasSeason(season) }
             .sorted { $0.spotId < $1.spotId }
-            .map(\.name)
+        let names = picked.map(\.name)
         guard let first = names.first else { return nil }
         let label = TripLight.seasonLabel(season)
         let body = names.count == 1
@@ -87,7 +111,8 @@ enum SeasonReminder {
         fireAt.day = 1
         fireAt.hour = hour
         return Plan(fireAt: fireAt, season: season,
-                    title: L("\(label)の観光スポット", "\(label) photo spots"), body: body)
+                    title: L("\(label)の観光スポット", "\(label) photo spots"), body: body,
+                    slugs: picked.map(\.slug))
     }
 }
 

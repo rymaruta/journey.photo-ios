@@ -4,6 +4,8 @@ import Combine
 /// ホームの札に積む画面（「新しくなったこと」の行き先・札 #519）
 enum HomeScreenRequest: Equatable, Sendable {
     case passBook, visitedMap
+    /// 観光スポットの頁（見頃のお知らせを押した・`SeasonReminder.destination`・2026-11-15 札 #618）
+    case officialSpot(slug: String)
 }
 
 /// 下の札を外から切り替える道（見出しの「探す」→ 探す、メニュー → 各札）。
@@ -19,6 +21,28 @@ final class TabRouter: ObservableObject {
     @Published private(set) var myPageRequests = 0
 
     func openMyPage() { myPageRequests += 1 }
+
+    /// マイページで開く札（見頃のお知らせから「行きたい場所」・2026-11-15 札 #618）。マイページが受け取ったら消す
+    private(set) var pendingMyPageTab: ProfileTab?
+
+    /// マイページへ移り、その札を開く
+    func openMyPage(tab: ProfileTab) {
+        pendingMyPageTab = tab
+        openMyPage()
+    }
+
+    func takePendingMyPageTab() -> ProfileTab? {
+        defer { pendingMyPageTab = nil }
+        return pendingMyPageTab
+    }
+
+    /// 見頃のお知らせを押した（`AppDelegate`）。1か所ならホームにその頁を積み、何か所かなら「行きたい場所」
+    func openSeasonReminder(_ destination: SeasonReminder.Destination) {
+        switch destination {
+        case .spot(let slug): openOnHome(.officialSpot(slug: slug))
+        case .wishlist: openMyPage(tab: .wishlist)
+        }
+    }
 
     /// 見出しの「探す」（どのタブにも・2026-10-21）とメニューの「撮影地マップ」から
     @Published private(set) var searchRequests = 0

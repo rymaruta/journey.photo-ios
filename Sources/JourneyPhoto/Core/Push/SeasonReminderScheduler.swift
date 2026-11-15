@@ -51,7 +51,8 @@ final class SeasonReminderScheduler {
         content.title = wanted.title
         content.body = wanted.body
         content.sound = .default
-        content.userInfo = ["kind": SeasonReminder.kind, "season": wanted.season]
+        // 押した先の綴り（`SeasonReminder.destination`・2026-11-15 札 #618）
+        content.userInfo = ["kind": SeasonReminder.kind, "season": wanted.season, SeasonReminder.slugsKey: wanted.slugs]
         let trigger = UNCalendarNotificationTrigger(dateMatching: wanted.fireAt, repeats: false)
         do {
             try await add(UNNotificationRequest(identifier: SeasonReminder.identifier, content: content, trigger: trigger))

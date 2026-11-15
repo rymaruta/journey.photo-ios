@@ -51,8 +51,11 @@ struct TripShareService {
 
     func send(planId: String, text: String) async throws -> TripChatMessage {
         if TripPlanFixture.isOn { return await TripShareFixtureStore.shared.send(planId: planId, text: text) }
-        return try await api.authorized(.post, "/trip-share/\(encoded(planId))/chat", body: SendBody(text: text),
-                                        as: TripChatSent.self).message
+        let sent = try await api.authorized(.post, "/trip-share/\(encoded(planId))/chat", body: SendBody(text: text),
+                                            as: TripChatSent.self).message
+        // 旅の仲間への連絡も、返事が来る理由（通知の説明の合図・2026-11-15 札 #618）
+        PushPrimerStore.reachedOut()
+        return sent
     }
 
     /// 会話の1通を通報する（2026-11-14・札 #597・審査ガイドライン 1.2）。サーバーの `POST /trip-share/{planId}/report`。

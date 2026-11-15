@@ -189,4 +189,79 @@ final class SeasonReminderTests: XCTestCase {
         XCTAssertTrue(source.contains("has \\(withArticle(label.lowercased())) guide."), "英語の文が冠詞の関数を通らない")
         XCTAssertFalse(source.contains("has a \\(label"), "冠詞を a に決め打ちしている")
     }
+
+    // MARK: - 押した先（2026-11-15 札 #618。前は押してもアプリが開くだけ）
+
+    /// 名前を出したスポットの綴りを、名前と同じ順で予約に入れる
+    @MainActor
+    func testPlanCarriesSlugsIntoTheRequest() async throws {
+        let a = try spot("sp_a", name: "銀山温泉", seasons: ["winter"])
+        let b = try spot("sp_b", name: "蔵王", seasons: ["winter"])
+        let plan = try XCTUnwrap(SeasonReminder.plan(now: date(2026, 9, 30), spots: [b, a],
+                                                     wishlist: [SavedSpotKey.official("sp_a"), SavedSpotKey.official("sp_b")],
+                                                     calendar: calendar))
+        XCTAssertEqual(plan.slugs, ["sp_a", "sp_b"])
+        var added: [UNNotificationRequest] = []
+        let scheduler = SeasonReminderScheduler(add: { added.append($0) }, removePending: { _ in })
+        await scheduler.reschedule(plan, allowed: true)
+        let info = try XCTUnwrap(added.first?.content.userInfo)
+        XCTAssertEqual(info[SeasonReminder.slugsKey] as? [String], ["sp_a", "sp_b"])
+        XCTAssertEqual(SeasonReminder.destination(info), .wishlist, "何か所かなら「行きたい場所」")
+    }
+
+    func testOneSpotOpensThatSpotsPage() {
+        let info: [AnyHashable: Any] = ["kind": SeasonReminder.kind, "season": "winter", SeasonReminder.slugsKey: ["ginzan-onsen"]]
+        XCTAssertEqual(SeasonReminder.destination(info), .spot(slug: "ginzan-onsen"))
+    }
+
+    /// 前の版が予約した知らせ（綴りが無い）も、開くだけにしない
+    func testOlderReminderWithoutSlugsOpensWishlist() {
+        XCTAssertEqual(SeasonReminder.destination(["kind": SeasonReminder.kind, "season": "winter"]), .wishlist)
+    }
+
+    /// パスに入れない綴りは頁にしない（「行きたい場所」へ倒す）。ほかの知らせは扱わない
+    func testUnsafeSlugAndOtherNotifications() {
+        XCTAssertEqual(SeasonReminder.destination(["kind": SeasonReminder.kind, SeasonReminder.slugsKey: ["../x"]]), .wishlist)
+        XCTAssertNil(SeasonReminder.destination(["type": "like", "photoId": "p1"]))
+        XCTAssertNil(SeasonReminder.destination(["kind": PassBundleNotifier.kind]))
+    }
+
+    /// 押した先: 1か所はホームにその頁、何か所かはマイページの「行きたい場所」
+    @MainActor
+    func testRouterOpensSpotOnHomeOrWishlistOnMyPage() async {
+        let router = TabRouter()
+        let home = router.homeScreenRequests
+        router.openSeasonReminder(.spot(slug: "ginzan-onsen"))
+        XCTAssertEqual(router.homeScreenRequests, home + 1)
+        XCTAssertEqual(router.takePendingHomeScreen(), .officialSpot(slug: "ginzan-onsen"))
+        let myPage = router.myPageRequests
+        router.openSeasonReminder(.wishlist)
+        XCTAssertEqual(router.myPageRequests, myPage + 1)
+        XCTAssertEqual(router.takePendingMyPageTab(), .wishlist)
+        XCTAssertNil(router.takePendingMyPageTab(), "受け取るのは1回だけ")
+    }
+
+    /// 押したときの道（`AppDelegate`）が、開くだけで返していないこと
+    func testAppDelegateRoutesTheReminder() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/App/AppDelegate.swift"), encoding: .utf8)
+        XCTAssertTrue(source.contains("SeasonReminder.destination(response.notification.request.content.userInfo)"))
+        XCTAssertFalse(source.contains("if kind == SeasonReminder.kind { return }"), "押しても開くだけに戻っている")
+    }
+
+    /// ホームは頁を積み、引けなければ「行きたい場所」へ。マイページは指された札を開く（冷えた起動も）
+    func testScreensTakeTheRequest() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let read = { (path: String) in try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/" + path), encoding: .utf8) }
+        let gallery = try read("Features/Gallery/GalleryView.swift")
+        XCTAssertTrue(gallery.contains("case .officialSpot(let slug):"))
+        XCTAssertTrue(gallery.contains("requestedSpot = RequestedSpot(spot: spot, spots: spots)"))
+        XCTAssertTrue(gallery.contains("tabRouter.openMyPage(tab: .wishlist)"), "引けないと押しても何も起きない")
+        XCTAssertTrue(gallery.contains(".navigationDestination(item: $requestedSpot)"))
+        let myPage = try read("Features/Profile/MyPageView.swift")
+        XCTAssertTrue(myPage.contains(".onChange(of: tabRouter.myPageRequests) { _, _ in takeRequestedTab() }"))
+        XCTAssertTrue(myPage.contains("takeRequestedTab()\n            refreshDraftCount()"), "出たときに受け取らない（冷えた起動）")
+        let rootView = try read("App/RootView.swift")
+        XCTAssertTrue(rootView.contains("if tabRouter.pendingMyPageTab != nil { select(.mypage, at: \"myPageRequests\") }"))
+    }
 }

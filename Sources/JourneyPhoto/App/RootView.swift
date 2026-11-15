@@ -62,6 +62,10 @@ struct RootView: View {
     @ObservedObject private var pushPrimer = PushPrimerStore.shared
     @EnvironmentObject private var push: PushCenter
     @State private var showPushPrimer = false
+    /// 通知の説明を出した場面（見出しと項目が変わる・2026-11-15 札 #618）
+    @State private var pushPrimerMoment: PushPrimerMoment = .firstPost
+    /// 初めてのフォロー・コメント・メッセージのあと、ほかの画面が閉じるのを待っている（1本だけ）
+    @State private var reachOutPrimerWait: Task<Void, Never>?
     /// 旅のトランク: 投稿のお礼に届いたラベル（`TrunkArrivals`・2026-10-17）。出している束
     @ObservedObject private var trunkArrivals = TrunkArrivals.shared
     @State private var trunkBatch: TrunkArrivals.Batch?
@@ -428,9 +432,10 @@ struct RootView: View {
     private var tabsWithPushPrimer: some View {
         tabsWithReviewPrompt
             .onChange(of: pushPrimer.requests) { _, _ in offerPushPrimerWhenIdle() }
+            .onChange(of: pushPrimer.reachOutRequests) { _, _ in offerReachOutPrimerWhenIdle() }
             // 画面写真の試験だけ: 起動のときに1回出す（`PreviewSession.opensPushPrimer`・Debug のみ）
             .task { await offerPreviewPushPrimer() }
-            .sheet(isPresented: $showPushPrimer) { PushPrimerView() }
+            .sheet(isPresented: $showPushPrimer) { PushPrimerView(moment: pushPrimerMoment) }
     }
 
     /// 届いた画面に、旅のトランクの「はじめての硬貨」の案内（2026-10-18 owner 承認）を足したもの。
@@ -823,6 +828,34 @@ struct RootView: View {
             await push.refreshAuthorization()
             guard !ModalProbe.isPresenting(),
                   pushPrimer.consume(signedIn: auth.userId != nil, permission: push.permission) else { return }
+            pushPrimerMoment = .firstPost
+            showPushPrimer = true
+        }
+    }
+
+    /// 初めてのフォロー・コメント・メッセージが送れた（`PushPrimerStore.noteReachedOut`・2026-11-15 札 #618）。
+    ///
+    /// 2026-11-15 判断: **会話・コメントの画面（シート）の上には割り込まない。** 送った直後に続けて書く人の
+    /// 手を止めないよう、ほかの画面が閉じきり、投稿のあとの案内も出ていないときに出す。閉じるまで待つのは
+    /// 最長10分（`PostModalGate.reachOutWaitLimit`）。待ちきれなければ出さず、覚えもしない——次に送ったときに
+    /// もう一度確かめる。出すのは今と同じく端末で1回だけ（`consume`）、許可をまだ聞いていない人にだけ
+    private func offerReachOutPrimerWhenIdle() {
+        guard reachOutPrimerWait == nil, !pushPrimer.alreadyOffered else { return }
+        reachOutPrimerWait = Task { @MainActor in
+            defer { reachOutPrimerWait = nil }
+            // 押したボタンの動き（フォロー中への切り替え・送った吹き出し）を見せてから
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            let started = Date()
+            while !Task.isCancelled {
+                if PostModalGate.reachOutPrimerMayShow(postModalSnapshot()), !ModalProbe.isTransitioning() { break }
+                guard Date().timeIntervalSince(started) < PostModalGate.reachOutWaitLimit else { return }
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+            guard !Task.isCancelled, !showPushPrimer else { return }
+            await push.refreshAuthorization()
+            guard PostModalGate.reachOutPrimerMayShow(postModalSnapshot()),
+                  pushPrimer.consume(signedIn: auth.userId != nil, permission: push.permission) else { return }
+            pushPrimerMoment = .reachOut
             showPushPrimer = true
         }
     }
@@ -835,6 +868,7 @@ struct RootView: View {
             if !ModalProbe.isPresenting() { break }
         }
         guard !ModalProbe.isPresenting() else { return }
+        pushPrimerMoment = PreviewSession.pushPrimerMoment
         showPushPrimer = true
     }
 
@@ -1485,6 +1519,10 @@ struct RootView: View {
         // メニューの「マイページ」が押されたら、マイページの札へ移る
         .onChange(of: tabRouter.myPageRequests) { _, _ in
             select(.mypage, at: "myPageRequests")
+        }
+        // 冷えた起動で見頃のお知らせを押した回（画面が出る前の合図は届かない）。札を指されていればマイページへ
+        .onAppear {
+            if tabRouter.pendingMyPageTab != nil { select(.mypage, at: "myPageRequests") }
         }
         // 見出しの「探す」→ 探すの札へ（探すの札の上で押したら、探す口に字を打てるようにする・`SearchView`）
         .onChange(of: tabRouter.searchRequests) { _, _ in

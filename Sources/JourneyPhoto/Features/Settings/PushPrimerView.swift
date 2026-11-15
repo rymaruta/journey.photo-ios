@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// 通知を受け取るかの、アプリの中の短い説明（2026-10-11）。**初めての投稿が上がったとき**に1回だけ
+/// 通知を受け取るかの、アプリの中の短い説明（2026-10-11）。**初めての投稿が上がったとき**か、
+/// **初めてのフォロー・コメント・メッセージの送信のあと**（2026-11-15 札 #618）のどちらかで、端末で1回だけ
 /// （決まりは `PushPrimer`・出す頃合いは `PushPrimerStore`・出すのは `RootView`）。
 ///
 /// 先に「なぜ通知か」を言ってから、「オンにする」でシステムのダイアログへ進む
@@ -14,6 +15,9 @@ import SwiftUI
 /// 項目の字は本文 15、注記は 12 の text-3。見出しは明朝 22（板は 24。段の 22 に寄せた・半分の高さのシートに収める）。
 /// 「あとで」の当たり 48 はそのまま（UI テストの決まり）
 struct PushPrimerView: View {
+
+    /// 出した場面（2026-11-15 札 #618）。見出しと項目を場面に合わせる。形・ボタン・色は場面で変えない
+    var moment: PushPrimerMoment = .firstPost
 
     @EnvironmentObject private var push: PushCenter
     @EnvironmentObject private var environment: AppEnvironment
@@ -30,16 +34,15 @@ struct PushPrimerView: View {
                     Text("NOTIFICATIONS")
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
-                    // 2026-10-11: owner が承認した言い方（問いの形で、何が届くかを先に言う）
-                    Text(L("いいね、コメントが届いたらお知らせしますか？",
-                           "Want a heads-up when you get likes and comments?"))
+                    Text(PushPrimerPoint.title(moment))
                         .font(JPFont.cardTitle)
                         .foregroundStyle(WebTheme.text)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.isHeader)
+                        .accessibilityIdentifier("push.primer.title")
                 }
                 VStack(alignment: .leading, spacing: JPSpace.m) {
-                    ForEach(PushPrimerPoint.shown(isPro: isPro)) { item in
+                    ForEach(PushPrimerPoint.shown(isPro: isPro, moment: moment)) { item in
                         point(item.systemImage, item.text)
                     }
                 }
@@ -141,13 +144,42 @@ struct PushPrimerPoint: Identifiable, Equatable {
         loaded ?? known
     }
 
-    static func shown(isPro: Bool) -> [PushPrimerPoint] {
-        var points = [
-            PushPrimerPoint(systemImage: "heart",
-                            text: L("いいね、コメント、フォローが届いたとき", "When you get likes, comments and follows")),
-            PushPrimerPoint(systemImage: "bubble.left",
-                            text: L("ストーリーに返信が来たとき", "When someone replies to your story")),
-        ]
+    /// 見出し（問いの形で、何が届くかを先に言う）
+    static func title(_ moment: PushPrimerMoment) -> String {
+        switch moment {
+        // 2026-10-11: owner が承認した言い方
+        case .firstPost:
+            return L("いいね、コメントが届いたらお知らせしますか？",
+                     "Want a heads-up when you get likes and comments?")
+        // 2026-11-15 判断（札 #618 案2 の模型の言い方）: フォロー・コメント・メッセージを送った直後なので、返事を先に言う
+        case .reachOut:
+            return L("返事や反応が来たら、お知らせしますか？",
+                     "Want a heads-up when people reply or react?")
+        }
+    }
+
+    static func shown(isPro: Bool, moment: PushPrimerMoment = .firstPost) -> [PushPrimerPoint] {
+        var points: [PushPrimerPoint]
+        switch moment {
+        case .firstPost:
+            points = [
+                PushPrimerPoint(systemImage: "heart",
+                                text: L("いいね、コメント、フォローが届いたとき", "When you get likes, comments and follows")),
+                PushPrimerPoint(systemImage: "bubble.left",
+                                text: L("ストーリーに返信が来たとき", "When someone replies to your story")),
+            ]
+        case .reachOut:
+            // 届くものを先に（コメントへの返信・メンションは段 2 の鍵で届く・`PushService.pushKeys`）
+            points = [
+                PushPrimerPoint(systemImage: "bubble.left",
+                                text: L("コメントへの返信、メンションが届いたとき",
+                                        "When someone replies to your comment or mentions you")),
+                PushPrimerPoint(systemImage: "paperplane",
+                                text: L("メッセージが届いたとき", "When you get a message")),
+                PushPrimerPoint(systemImage: "heart",
+                                text: L("いいね、コメント、フォローが届いたとき", "When you get likes, comments and follows")),
+            ]
+        }
         if isPro {
             points.append(PushPrimerPoint(systemImage: "sunrise",
                                           text: L("Pro: 行きたい場所が明日の朝に晴れそうなとき（前の晩に）",

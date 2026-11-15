@@ -2157,6 +2157,33 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertEqual(closed, .completed, "「あとで」で説明が閉じない")
     }
 
+    /// **通知の説明（初めてのフォロー・コメント・メッセージのあと）**（2026-11-15 札 #618・`PushPrimerMoment.reachOut`）。
+    /// 起動の鍵（`-JPPreviewPushPrimer`・`-JPPreviewPushPrimerMoment reachOut`・Debug のみ）で起動のときに出す。
+    /// 出なければ撮らずに抜ける。**出たのに見出しが返事の言い方でない・「あとで」が無い・44pt 未満なら落とす**
+    func testCapturesPushPrimerReachOut() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewPushPrimer", "YES", "-JPPreviewPushPrimerMoment", "reachOut"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let allow = app.buttons["push.primer.allow"].firstMatch
+        guard allow.waitForExistence(timeout: 20) else { return }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "02d-通知の説明_返事")
+        let title = app.staticTexts["push.primer.title"].firstMatch
+        XCTAssertTrue(title.exists && title.label.contains("返事や反応"), "見出しが返事の言い方でない: \(title.label)")
+        let later = app.buttons["push.primer.later"].firstMatch
+        XCTAssertTrue(later.exists, "「あとで」が無い（断る口が無い）")
+        XCTAssertGreaterThanOrEqual(allow.frame.height, 44, "「オンにする」が 44pt 未満")
+        XCTAssertGreaterThanOrEqual(later.frame.height, 44, "「あとで」が 44pt 未満")
+    }
+
     /// **すれちがい**（板「10 すれちがい」・きっぷは案C・2026-10-16）: ホームの「カードが届きました」の札 →
     /// 束を開く（表）→ 写真を押して全面 → 閉じる → 下を押して裏返す（裏）→「帳に入れる」→ すれちがい帳。起動の鍵（`-JPPreviewPass`・Debug のみ）で、公開一覧の
     /// 写真から見本のカードを7枚入れる（シミュレータには Bluetooth が無く、本物のカードは届かない）。
