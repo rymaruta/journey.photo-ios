@@ -19,14 +19,15 @@ FILE = re.compile(r"([A-Za-z0-9_+\-]+\.(?:swift|m|mm|c|cpp)):(\d+)")
 
 
 def main_thread_lines(lines):
-    """主スレッドの塊の行（`com.apple.main-thread` の見出しから、次のスレッドの見出しまで）"""
+    """主スレッドの塊の行（`Main Thread` の見出しから、次のスレッドの見出しまで）"""
     out, inside, total = [], False, 0
     for line in lines:
         head = THREAD.match(line)
         if head:
             if inside:
                 break
-            if "com.apple.main-thread" in line:
+            # 見出しは「Thread_<番号>: Main Thread   DispatchQueue_…」（run 1354）か「… com.apple.main-thread …」
+            if "Main Thread" in line or "com.apple.main-thread" in line:
                 inside, total = True, int(head.group(1))
             continue
         if inside:
