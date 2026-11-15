@@ -171,15 +171,18 @@ final class TripAITests: XCTestCase {
         XCTAssertEqual(TripAIText.monthDay("2026-12-01"), L("12月1日", "12/1"))
         XCTAssertTrue(TripAIText.remainingLine(remaining: 3, resetsOn: "2026-12-01").contains("3"))
         XCTAssertTrue(TripAIText.nextReset(now: Date(timeIntervalSince1970: 1_795_000_000)).hasSuffix("-01"))
-        XCTAssertEqual(TripAIText.defaultTitle(prefecture: "石川県", days: 2), L("石川の2日", "2 days in 石川"))
+        XCTAssertEqual(TripAIText.defaultTitle(place: "金沢", days: 2), L("金沢の旅", "金沢 trip"))
+        XCTAssertEqual(TripAIText.defaultTitle(place: "金沢", days: 1), L("金沢の日帰り", "金沢 day trip"))
     }
 
-    /// 画面の文に「・」「·」の区切りと「撮りどき」を使わない（CLAUDE.md の言葉の決まり）
+    /// 画面の文に「・」「·」の区切りと「撮りどき」「捨てる」を使わない（CLAUDE.md の言葉の決まり）
     func testWordingRules() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        for file in ["Core/Text/TripAI.swift", "Features/Trips/AI/TripAIComposer.swift", "Features/Trips/AI/TripAICard.swift"] {
+        for file in ["Core/Text/TripAI.swift", "Core/Text/TripAIAsk.swift", "Features/Trips/AI/TripAIViews.swift",
+                     "Features/Trips/AI/TripAICard.swift", "Features/Trips/AI/TripAIJobs.swift", "Features/Trips/AI/TripAIRunner.swift"] {
             let src = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/" + file), encoding: .utf8)
             let shown = src.components(separatedBy: "L(\"").dropFirst().map { $0.components(separatedBy: "\"").first ?? "" }
+            XCTAssertFalse(shown.isEmpty, file)
             for text in shown {
                 XCTAssertFalse(text.contains("・") || text.contains("·"), "\(file): \(text)")
                 XCTAssertFalse(text.contains("撮りどき") || text.contains("捨てる"), "\(file): \(text)")
@@ -187,42 +190,112 @@ final class TripAITests: XCTestCase {
         }
     }
 
-    // MARK: - 組む手順（見本のサーバー）
+    // MARK: - 頼む札（行き先・日数・好み）
+
+    func testAskReadsSlotsAndLeavesMissingOnesEmpty() throws {
+        let rows = try ledger()
+        let a = TripAIAsk.reading("来月、金沢に1泊2日。紅葉", spots: rows)
+        XCTAssertEqual(a.place, "金沢")
+        XCTAssertEqual(a.prefectures, ["石川県"])
+        XCTAssertEqual(a.days, 2)
+        XCTAssertEqual(a.preference, "紅葉")
+        XCTAssertTrue(a.isComplete)
+        // 読めなかった札は空（光らせて選ばせる）。この回は AI を呼ばない
+        let b = TripAIAsk.reading("どこか静かなところ", spots: rows)
+        XCTAssertFalse(b.hasPlace)
+        XCTAssertNil(b.days)
+        XCTAssertFalse(b.isComplete)
+        XCTAssertEqual(TripAIAsk.daysLabel(1), L("日帰り", "Day trip"))
+        XCTAssertEqual(TripAIAsk.daysLabel(2), L("1泊2日", "2 days"))
+        var c = a
+        c.extra = "ゆっくり"
+        XCTAssertEqual(c.requestText, L("金沢、1泊2日、紅葉、ゆっくり", "金沢、2 days、紅葉、ゆっくり"))
+    }
+
+    // MARK: - 一覧の札（決まった手順・AI は使わない）
+
+    func testSuggestionsComeFromWishlistPrefectureWithThreeOrMore() throws {
+        let rows = try ledger()
+        let wished: Set<String> = ["sp_kenrokuen", "sp_kanazawa-castle", "sp_higashi-chaya", "sp_owakudani"]
+        let november = Date(timeIntervalSince1970: 1_794_700_000)   // 2026-11
+        let cards = TripAISuggestion.make(spots: rows, wishlist: wished, now: november)
+        let first = try XCTUnwrap(cards.first)
+        XCTAssertEqual(first.kind, .wishlist)
+        XCTAssertEqual(first.ask.prefectures, ["石川県"])
+        XCTAssertEqual(first.ask.place, "金沢", "半分以上が同じ市なら市の名前")
+        XCTAssertEqual(Set(first.ask.mustSpotIds), ["sp_kenrokuen", "sp_kanazawa-castle", "sp_higashi-chaya"])
+        XCTAssertFalse(first.title.contains("・"))
+        // 神奈川は1か所だけなので札にしない
+        XCTAssertFalse(cards.contains { $0.ask.prefectures == ["神奈川県"] && $0.kind == .wishlist })
+        XCTAssertLessThanOrEqual(cards.count, 2)
+        XCTAssertTrue(TripAISuggestion.make(spots: rows, wishlist: [], now: november).allSatisfy { $0.kind == .season })
+    }
+
+    // MARK: - 替える（AI を使わない）
+
+    func testSwapOffersNearestUnusedCandidates() throws {
+        let rows = try ledger()
+        let ken = try XCTUnwrap(rows.first { $0.slug == "kenrokuen" })
+        let pool = rows.filter { $0.region?.prefecture == "石川県" }
+        let choices = TripAISwap.choices(for: ken, candidates: pool, used: ["sp_kenrokuen", "sp_kanazawa-castle"])
+        XCTAssertEqual(choices.first?.slug, "higashi-chaya", "いちばん近い残り")
+        XCTAssertFalse(choices.contains { $0.slug == "kanazawa-castle" }, "日程に入っている所は出さない")
+        XCTAssertLessThanOrEqual(choices.count, 3)
+    }
+
+    // MARK: - 組む手順（見本のサーバー・1日目から順に出す）
 
     @MainActor
-    func testComposerUsesServerFixtureAndKeepsCandidateNumbers() async throws {
+    func testRunnerFillsDaysInOrderAndLogsTimes() async throws {
         UserDefaults.standard.set(true, forKey: TripAIFixture.key)
-        defer { UserDefaults.standard.removeObject(forKey: TripAIFixture.key) }
-        let model = TripAIComposerModel(onDevice: false)
-        model.text = "来月、金沢に1泊2日。紅葉"
-        let service = TripAIService(api: Self.api())
-        let result = try await XCTUnwrapAsync(await model.send(index: try ledger(), wishlist: [], offline: false, service: service) { _, _ in 10 })
-        XCTAssertEqual(result.title, TripAIText.defaultTitle(prefecture: "石川県", days: 2))
+        UserDefaults.standard.set(0.0, forKey: TripAIFixture.delayKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: TripAIFixture.key)
+            UserDefaults.standard.removeObject(forKey: TripAIFixture.delayKey)
+        }
+        let runner = TripAIRunner(onDevice: false)
+        let ask = TripAIAsk.reading("金沢に1泊2日", spots: try ledger())
+        let index = try ledger()
+        let built = await runner.build(ask, index: index, wishlist: [], offline: false,
+                                       service: TripAIService(api: Self.api())) { _, _ in 10 }
+        let result = try XCTUnwrap(built)
+        XCTAssertEqual(result.mode, .ai)
         XCTAssertEqual(result.days.count, 2)
-        XCTAssertNil(result.fallbackNote)
-        XCTAssertFalse(result.reason.isEmpty)
-        XCTAssertEqual(model.phase, .idle)
+        XCTAssertEqual(runner.readyDays.count, 2, "できた日を1日目から出している")
+        XCTAssertNotNil(runner.firstDaySeconds)
+        XCTAssertNotNil(runner.allDaysSeconds)
+        XCTAssertLessThanOrEqual(runner.firstDaySeconds ?? 99, runner.allDaysSeconds ?? 0)
+        XCTAssertEqual(runner.step, .done)
+        XCTAssertFalse(result.candidates.isEmpty)
     }
 
     @MainActor
-    func testComposerOfflineWithoutDeviceAIPlansWithoutAI() async throws {
-        let model = TripAIComposerModel(onDevice: false)
-        model.text = "金沢で日帰り"
-        let service = TripAIService(api: Self.api())
-        let result = try await XCTUnwrapAsync(await model.send(index: try ledger(), wishlist: [], offline: true, service: service) { _, _ in 10 })
-        XCTAssertNotNil(result.fallbackNote)
-        XCTAssertEqual(result.days.count, 1)
-        XCTAssertEqual(result.reason, "")
+    func testRunnerWithoutAIWhenUsedUpOrSilent() async throws {
+        let rows = try ledger()
+        let ask = TripAIAsk.reading("金沢で日帰り", spots: rows)
+        // 使い切った: AI を呼ばずに AI なしで組む（行き止まりにしない）
+        let used = TripAIRunner(onDevice: false)
+        used.setUsage(.init(tier: "free", used: 30, limit: 30, remaining: 0, resetsOn: "2026-12-01", countsDevice: true))
+        let b1 = await used.build(ask, index: rows, wishlist: [], offline: false, service: TripAIService(api: Self.api())) { _, _ in 10 }
+        let r1 = try XCTUnwrap(b1)
+        XCTAssertEqual(r1.mode, .usedUp)
+        XCTAssertEqual(r1.days.count, 1)
+        XCTAssertFalse(r1.reason.isEmpty, "AI なしの1文を出す")
+        // 圏外で端末の AI も無い: AI なし
+        let off = TripAIRunner(onDevice: false)
+        let b2 = await off.build(ask, index: rows, wishlist: [], offline: true, service: TripAIService(api: Self.api())) { _, _ in 10 }
+        let r2 = try XCTUnwrap(b2)
+        XCTAssertEqual(r2.mode, .offline)
+        // 行き先の無い頼みは組まない（回数に数えない）
+        let none = TripAIRunner(onDevice: false)
+        let b3 = await none.build(TripAIAsk.reading("どこか静かなところ", spots: rows), index: rows, wishlist: [], offline: false,
+                                  service: TripAIService(api: Self.api())) { _, _ in nil }
+        XCTAssertNil(b3)
     }
 
-    @MainActor
-    func testComposerUnreadableDestinationIsNotSent() async throws {
-        let model = TripAIComposerModel(onDevice: false)
-        model.text = "どこか静かなところ"
-        let service = TripAIService(api: Self.api())
-        let result = await model.send(index: try ledger(), wishlist: [], offline: false, service: service) { _, _ in nil }
-        XCTAssertNil(result)
-        if case .unreadable = model.phase {} else { XCTFail("読めなかったのに \(model.phase)") }
+    func testFailureLines() {
+        XCTAssertTrue(TripAIJobText.failureLine(.offline, title: "金沢の旅").contains("電波"))
+        XCTAssertFalse(TripAIJobText.failureLine(.save("x"), title: "金沢の旅").contains("・"))
     }
 
     // MARK: - Pro の案内

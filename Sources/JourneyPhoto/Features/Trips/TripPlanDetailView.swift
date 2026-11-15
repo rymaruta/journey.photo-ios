@@ -35,10 +35,14 @@ struct TripPlanDetailView: View {
     @ObservedObject private var travel = TravelEstimator.shared
     /// 画面の外でプランが書き換わった知らせ（「旅行プランに入れる」のシート）
     @ObservedObject private var outsideChanges = TripPlanChanges.shared
-    /// AI で作ったプランの「並べた理由」「外しました　戻す」（札 #621・アプリを開いている間だけ）
+    /// AI で作ったプラン（札 #621）: 並べた理由・押すだけの直し・替える・元に戻す（アプリを開いている間だけ）
     @ObservedObject private var aiNotes = TripAINotes.shared
-    @StateObject private var aiComposer = TripAIComposerModel()
-    @EnvironmentObject private var toasts: ToastCenter
+    @StateObject private var aiRunner = TripAIRunner()
+    /// AI の直しと替えるの前の日程（「元に戻す」で1つずつ戻す。画面を出たら消える）
+    @State private var aiHistory: [[TripDay]] = []
+    @State private var aiWorking = false
+    @State private var aiShowPro = false
+    @State private var aiSwap: TripAISwapTarget?
     @Environment(\.scenePhase) private var scenePhase
 
     /// 自動保存で送れていない事情（圏外・断られた・別の端末の変更）。送れたら消す
@@ -355,6 +359,18 @@ struct TripPlanDetailView: View {
             Text(shareError ?? "")
         }
         .task(id: plan?.share?.memberIds ?? []) { await loadShare() }
+        .onAppear { adoptAINote() }
+        .sheet(item: $aiSwap) { target in
+            let note = aiNotes.note(planId)
+            let used = Set(days.flatMap(\.items).compactMap { item -> String? in
+                if case .spot(let id, _) = item { return id }
+                return nil
+            })
+            TripAISwapSheet(spot: target.spot,
+                            choices: TripAISwap.choices(for: target.spot, candidates: note?.candidates ?? [], used: used),
+                            pick: { swapAI(target, to: $0) })
+        }
+        .fullScreenCover(isPresented: $aiShowPro) { PaywallView(origin: .tripAI) }
         .alert(L("削除できませんでした", "Couldn't delete"),
                isPresented: Binding(get: { deleteError != nil },
                                     set: { if !$0 { deleteError = nil } })) {
@@ -756,10 +772,12 @@ struct TripPlanDetailView: View {
                 header(plan)
 
                 if let note = aiNotes.note(planId) {
-                    TripAICard(note: note, composer: aiComposer,
-                               restore: { restoreAI($0) },
-                               revise: { text in Task { await reviseAI(text, title: plan.title) } })
-                        .onAppear { announceAICreated(plan) }
+                    TripAICard(note: note, usage: aiRunner.usage, working: aiWorking, canUndo: !aiHistory.isEmpty,
+                               online: !connectivity.isOffline,
+                               tweak: { request in Task { await reviseAI(request, title: plan.title) } },
+                               redo: { Task { await reviseAI(L("整えて", "Tidy up"), title: plan.title) } },
+                               undo: undoAI,
+                               openPro: { aiShowPro = true })
                 }
 
                 // 送れていない直し（圏外・断られた・別の端末の変更）。日付の下・日程の上に残す。
@@ -1170,6 +1188,7 @@ struct TripPlanDetailView: View {
         // - 読み上げの人は ≡ を上下にスワイプで上へ・下へ、操作で「N日目へ」「外す」（`TripPlanEdit.accessibilityMoves`）
         return HStack(spacing: 0) {
             itemLink(item, name: name, number: number, season: season, chip: chip)
+            aiSwapButton(di, ii, item, name: name)
             itemMenu(di, ii, item, name: name)
             dragHandle(di, ii, item, name: name)
         }
@@ -1373,60 +1392,80 @@ struct TripPlanDetailView: View {
 
     // MARK: - AI で作ったプラン（札 #621）
 
-    /// 作った直後に1回だけ「〜を作りました　元に戻す」。元に戻すはプランを消して一覧へ戻る（確かめのダイアログは出さない）
-    private func announceAICreated(_ plan: TripPlan) {
-        guard aiNotes.note(planId)?.fresh == true else { return }
-        aiNotes.markSeen(planId)
-        let title = plan.title
-        let model = model
-        let environment = environment
-        let planId = planId
-        let dismiss = dismiss
-        toasts.show(L("「\(title)」を作りました", "Created “\(title)”"), actionTitle: L("元に戻す", "Undo")) {
-            Task { @MainActor in
-                if await model.remove(planId, environment: environment) { dismiss() }
-            }
+    /// 開いたとき: まだ見ていない印を消し、移動が無理で外した場所を日の下の「外しました　戻す」へ移す
+    private func adoptAINote() {
+        TripAIJobs.shared.markSeen(planId)
+        for r in aiNotes.takeRemoved(planId) {
+            removedSeq += 1
+            removedShelf.append(TripPlanEdit.Removed(id: removedSeq, day: r.day, index: Int.max,
+                                                     item: TripDraft.place(spot: r.spot).item))
         }
     }
 
-    /// 「外しました　戻す」: 外した日のいちばん後ろに戻す
-    private func restoreAI(_ removed: TripAIRouteCheck.Removed) {
-        var next = days
-        guard !next.isEmpty else { return }
-        let d = min(removed.day, next.count - 1)
-        next[d].items.append(TripDraft.place(spot: removed.spot).item)
-        apply(next, said: L("\(removed.spot.name)を戻しました", "Put back \(removed.spot.name)"))
-        aiNotes.restored(planId, removed)
+    /// 「替える」（AI を使わない）。候補の残りから近い順に3つ
+    @ViewBuilder
+    private func aiSwapButton(_ di: Int, _ ii: Int, _ item: TripItem, name: String) -> some View {
+        if let note = aiNotes.note(planId), !note.candidates.isEmpty, case .spot(let id, _) = item,
+           let spot = index.first(where: { $0.spotId == id }) ?? note.candidates.first(where: { $0.spotId == id }) {
+            Button {
+                aiSwap = TripAISwapTarget(day: di, item: ii, spot: spot)
+            } label: {
+                Text(L("替える", "Swap"))
+                    .jpOutlineButton(.inline)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("「\(name)」を近くの別の所に替える", "Swap \(name) for a nearby place"))
+            .accessibilityIdentifier("tripAI.swap")
+        }
     }
 
-    /// 「直したいことを書く」: 今の日程と頼みを AI に渡して並べ直す。メモは同じ場所に残す。「元に戻す」で前の日程へ
+    private func swapAI(_ target: TripAISwapTarget, to spot: OfficialSpot) {
+        guard days.indices.contains(target.day), days[target.day].items.indices.contains(target.item) else { return }
+        aiHistory.append(days)
+        var next = days
+        next[target.day].items[target.item] = TripDraft.place(spot: spot).item
+        apply(next, said: L("\(target.spot.name)を\(spot.name)に替えました", "Swapped \(target.spot.name) for \(spot.name)"))
+    }
+
+    private func undoAI() {
+        guard let last = aiHistory.popLast() else { return }
+        apply(last, said: L("前の日程に戻しました", "Restored the previous plan"))
+    }
+
+    /// 押すだけの直し・書いて直す・AI でやり直す。今の日程と頼みを AI に渡して並べ直す。メモは同じ場所に残す
     private func reviseAI(_ request: String, title: String) async {
+        guard !aiWorking, let note = aiNotes.note(planId) else { return }
+        aiWorking = true
+        defer { aiWorking = false }
+        if aiRunner.usage == nil { await aiRunner.loadUsage(service: environment.tripAI) }
+        let lookup = Dictionary((index + note.candidates).map { ($0.spotId, $0) }, uniquingKeysWith: { a, _ in a })
         let current: [[OfficialSpot]] = days.map { day in
             day.items.compactMap { item in
-                if case .spot(let id, _) = item { return index.first { $0.spotId == id } }
+                if case .spot(let id, _) = item { return lookup[id] }
                 return nil
             }
         }
-        guard let result = await aiComposer.revise(request: request, current: current, index: index,
-                                                   wishlist: wishlist.spotIds, offline: connectivity.isOffline,
-                                                   service: environment.tripAI, title: title) else { return }
+        guard let result = await aiRunner.revise(request: request, current: current, candidates: note.candidates, index: index,
+                                                 offline: connectivity.isOffline, service: environment.tripAI, title: title)
+        else { return }
+        if result.mode == .usedUp { aiShowPro = aiRunner.usage?.tier == "free" }
+        guard result.mode == .ai else {
+            aiNotes.set(planId, TripAINote(reason: note.reason, mode: result.mode, removed: [], candidates: note.candidates))
+            return
+        }
         let before = days
         var notes: [String: String] = [:]
         for day in before {
-            for item in day.items { if case .spot(let id, let note?) = item { notes[id] = note } }
+            for item in day.items { if case .spot(let id, let memo?) = item { notes[id] = memo } }
         }
         let next: [TripDay] = result.days.enumerated().map { i, day in
             TripDay(date: before.indices.contains(i) ? before[i].date : nil,
-                    items: day.map { place in
-                        if case .spot(let id, _) = place.item { return .spot(spotId: id, note: notes[id]) }
-                        return place.item
-                    })
+                    items: day.map { .spot(spotId: $0.spotId, note: notes[$0.spotId]) })
         }
+        aiHistory.append(before)
         apply(next, said: L("日程を直しました", "Plan updated"))
-        aiNotes.set(planId, TripAINote(reason: result.reason, removed: result.removed, fallbackNote: result.fallbackNote, fresh: false))
-        toasts.show(L("日程を直しました", "Plan updated"), actionTitle: L("元に戻す", "Undo")) {
-            days = before
-        }
+        aiNotes.set(planId, TripAINote(reason: result.reason, mode: .ai, removed: result.removed, candidates: note.candidates))
+        adoptAINote()
     }
 
     /// 並べ替え・移動を映し、結果を読み上げる（目で追えない人に、項目がどこへ行ったかを伝える）
@@ -1780,4 +1819,13 @@ private final class TripBackgroundWindow {
         UIApplication.shared.endBackgroundTask(id)
         id = .invalid
     }
+}
+
+
+/// 「替える」の対象（札 #621）
+struct TripAISwapTarget: Identifiable {
+    let day: Int
+    let item: Int
+    let spot: OfficialSpot
+    var id: String { "\(day)-\(item)-\(spot.spotId)" }
 }

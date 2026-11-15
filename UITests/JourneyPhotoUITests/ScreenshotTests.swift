@@ -3662,32 +3662,114 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "64d-旅行プランを作る・下書き（時間帯の順・日の出と日の入り）")
     }
 
-    // MARK: - AI で旅行プランを作る（2026-11-15 札 #621）
+    // MARK: - AI で旅行プランを作る（2026-11-15 札 #621・待たせない作り）
 
-    /// **「どこへ、何日？」の欄 → 例のチップを押す → 日程の画面（並べた理由の札）**。押す回数は2回（作る・チップ）。
-    /// 見本のプラン（`-JPTripPlanFixture`）と見本の AI（`-JPTripAIFixture`・サーバーへは送らない・今月の残り 3 回）。
-    /// シミュレーターでは端末の AI が使えない（run 1380 で `modelNotReady`）ので、サーバーの AI の道を通る。
-    /// 出なければ撮らずに抜ける
-    func testCapturesTripAI() {
-        let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripAIFixture", "YES"])
-        guard openTripsRow(app, "trips.plans") else { return }
-        let create = app.buttons["trips.create"].firstMatch
-        guard create.waitForExistence(timeout: 15), create.isHittable else { return unreached(app, "trips.create") }
-        create.tap()
-        let field = app.descendants(matching: .any)["tripAI.field"].firstMatch
-        guard field.waitForExistence(timeout: 15) else { return unreached(app, "tripAI.field") }
-        // 残りの帯（見本は残り 3 回）と行きたい場所の一覧が描かれるのを待つ
-        Thread.sleep(forTimeInterval: 2)
-        shoot(app, "65x-旅行プランを作る（どこへ、何日？）")
+    /// 一覧の「AI で作る」の札を押す（無ければ「自分で頼む」→「この内容で作る」）。押した回数を返す。出なければ nil
+    private func startTripAI(_ app: XCUIApplication, shootList: Bool) -> Int? {
+        guard openTripsRow(app, "trips.plans") else { return nil }
+        let card = app.buttons["tripAI.suggestion"].firstMatch
+        let ask = app.buttons["tripAI.ask"].firstMatch
+        guard ask.waitForExistence(timeout: 20) else { unreached(app, "tripAI.ask"); return nil }
+        // 札の写真（詳細）が描かれるのを待つ
+        Thread.sleep(forTimeInterval: 3)
+        if shootList { shoot(app, "65w-旅行プラン（AI で作るの札）") }
+        if card.exists, card.isHittable {
+            card.tap()
+            return 1
+        }
+        ask.tap()
+        let go = app.buttons["tripAI.askStart"].firstMatch
+        guard go.waitForExistence(timeout: 10) else { unreached(app, "tripAI.askStart"); return nil }
+        var taps = 2
+        for _ in 0..<2 {
+            let choice = app.buttons["tripAI.choice"].firstMatch
+            if choice.exists, choice.isHittable { choice.tap(); taps += 1 }
+        }
+        go.tap()
+        return taps
+    }
 
-        let chip = app.buttons["秋の京都"].firstMatch
-        guard chip.waitForExistence(timeout: 5), chip.isHittable else { return unreached(app, "例のチップ「秋の京都」") }
-        chip.tap()
+    /// **押したらすぐ日程の画面（1日目から埋まる・まだの日は骨組み）→ 保存して日程の画面へ**。
+    /// 見本のプラン（`-JPTripPlanFixture`）と見本の AI（`-JPTripAIFixture`・サーバーへは送らない・答えまで 6 秒）。
+    /// シミュレーターでは端末の AI が使えない（run 1380 で `modelNotReady`）ので、サーバーの AI の道を通る。出なければ撮らずに抜ける
+    func testCapturesTripAIBuilding() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripAIFixture", "YES", "-JPTripAIFixtureDelay", "6"])
+        guard let taps = startTripAI(app, shootList: true) else { return }
+        let line = "TRIPAI taps-to-plan=\(taps)"
+        print(line); XCTContext.runActivity(named: line) { _ in }
+        let status = app.descendants(matching: .any)["tripAI.status"].firstMatch
+        guard status.waitForExistence(timeout: 10) else { return unreached(app, "tripAI.status") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "65x-AI で作っている日程（骨組み）")
         let card = app.descendants(matching: .any)["tripAI.card"].firstMatch
-        guard card.waitForExistence(timeout: 40) else { return unreached(app, "tripAI.card") }
-        // 「〜を作りました　元に戻す」の知らせと写真が描かれるのを待つ
+        guard card.waitForExistence(timeout: 60) else { return unreached(app, "tripAI.card") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "65y-AI で作った日程（並べた理由・替える）")
+        let swap = app.buttons["tripAI.swap"].firstMatch
+        if swap.waitForExistence(timeout: 5), swap.isHittable {
+            swap.tap()
+            if app.buttons["tripAI.swapChoice"].firstMatch.waitForExistence(timeout: 5) {
+                Thread.sleep(forTimeInterval: 1.5)
+                shoot(app, "65z-AI の日程で1か所を替える")
+            }
+        }
+    }
+
+    /// **画面を離れても作り続け、できたら上の帯で知らせる → 押すとその日程が開く**。一覧に真鍮の点（まだ見ていない）
+    func testCapturesTripAIBanner() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripAIFixture", "YES", "-JPTripAIFixtureDelay", "4"])
+        guard startTripAI(app, shootList: false) != nil else { return }
+        let status = app.descendants(matching: .any)["tripAI.status"].firstMatch
+        guard status.waitForExistence(timeout: 10) else { return unreached(app, "tripAI.status") }
+        // すぐ戻る（作るのは続く）
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let banner = app.buttons["tripAI.banner"].firstMatch
+        guard banner.waitForExistence(timeout: 60) else { return unreached(app, "tripAI.banner") }
+        shoot(app, "65u-AI の旅行プランができた知らせ（上の帯）")
+        if app.descendants(matching: .any)["trips.unseen"].firstMatch.waitForExistence(timeout: 5) {
+            shoot(app, "65v-旅行プラン（まだ見ていない点）")
+        }
+        guard banner.isHittable else { return unreached(app, "banner.isHittable") }
+        banner.tap()
+        guard app.descendants(matching: .any)["tripAI.card"].firstMatch.waitForExistence(timeout: 20) else {
+            return unreached(app, "帯から開いた日程")
+        }
         Thread.sleep(forTimeInterval: 1.5)
-        shoot(app, "65y-AI で作った旅行プラン（並べた理由）")
+        shoot(app, "65t-帯から開いた AI の日程")
+    }
+
+    /// **今月の回数を使い切った（AI なしで組む・帯から Pro の案内）と、圏外で作れなかった（もう一度）**
+    func testCapturesTripAIStates() {
+        do {
+            let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripAIFixture", "YES", "-JPTripAIFixtureMode", "usedUp"])
+            defer { app.terminate() }
+            if startTripAI(app, shootList: false) != nil {
+                let band = app.buttons["tripAI.band.usedUp"].firstMatch
+                if band.waitForExistence(timeout: 60) {
+                    Thread.sleep(forTimeInterval: 1.5)
+                    shoot(app, "65s-AI の回数を使い切った（AI なしで組んだ）")
+                    band.tap()
+                    if app.descendants(matching: .any)["paywall.benefit.ai"].firstMatch.waitForExistence(timeout: 10) {
+                        Thread.sleep(forTimeInterval: 1)
+                        shoot(app, "65r-使い切った帯から開いた Pro の案内（AI が先頭）")
+                    }
+                } else {
+                    unreached(app, "tripAI.band.usedUp")
+                }
+            }
+        }
+        do {
+            let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripAIFixture", "YES", "-JPTripAIFixtureMode", "offline"])
+            defer { app.terminate() }
+            if startTripAI(app, shootList: false) != nil {
+                if app.descendants(matching: .any)["tripAI.failed"].firstMatch.waitForExistence(timeout: 60) {
+                    Thread.sleep(forTimeInterval: 1)
+                    shoot(app, "65q-AI の旅行プランを作れなかった（圏外・もう一度）")
+                } else {
+                    unreached(app, "tripAI.failed")
+                }
+            }
+        }
     }
 
     // MARK: - ホームの旅行プランの札の「⋯」（2026-11-12）

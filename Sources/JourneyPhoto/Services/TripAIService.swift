@@ -100,6 +100,10 @@ struct TripAIService {
 /// UI テストの見本（`-JPTripAIFixture YES`・Debug のときだけ）。サーバーへは送らず、候補の上から日に割った答えを返す
 enum TripAIFixture {
     static let key = "JPTripAIFixture"
+    /// 見本の状態（`usedUp` 今月の回数を使い切った・`silent` AI が答えない）。無ければふつう
+    static let modeKey = "JPTripAIFixtureMode"
+    /// AI が答えるまでの見本の待ち（秒・既定 2.5。1日目が出る前の骨組みを撮るため）
+    static let delayKey = "JPTripAIFixtureDelay"
 
     static var isOn: Bool {
         #if DEBUG
@@ -109,15 +113,27 @@ enum TripAIFixture {
         #endif
     }
 
+    static var mode: String {
+        #if DEBUG
+        return isOn ? (UserDefaults.standard.string(forKey: modeKey) ?? "") : ""
+        #else
+        return ""
+        #endif
+    }
+
     static var usage: TripAIService.Usage? {
         guard isOn else { return nil }
-        return .init(tier: "free", used: 27, limit: TripAILimits.free, remaining: 3, resetsOn: TripAIText.nextReset(), countsDevice: true)
+        let left = mode == "usedUp" ? 0 : 3
+        return .init(tier: "free", used: TripAILimits.free - left, limit: TripAILimits.free, remaining: left,
+                     resetsOn: TripAIText.nextReset(), countsDevice: true)
     }
 
     static func plan(candidates: [OfficialSpot], days: Int?) async throws -> (TripAIPlan, TripAIService.Usage) {
-        try await Task.sleep(nanoseconds: 600_000_000)
+        let delay = UserDefaults.standard.object(forKey: delayKey) == nil ? 2.5 : UserDefaults.standard.double(forKey: delayKey)
+        try await Task.sleep(nanoseconds: UInt64(max(delay, 0) * 1_000_000_000))
+        if mode == "usedUp" { throw TripAIService.Failure.limit }
+        if mode == "silent" { throw TripAIService.Failure.unavailable }
         var plan = TripAIFallback.plan(candidates: candidates, days: days ?? 2, title: "")
-        // 題は空（行き先から作る題を使う）。押した例のチップの行き先に合わせるため
         plan.reason = L("秋の案内がある所を入れ、朝に向く所を先にしました。", "Picked places with autumn notes, morning spots first.")
         return (plan, usage ?? .init(tier: "free", used: 1, limit: TripAILimits.free, remaining: 29, resetsOn: TripAIText.nextReset(), countsDevice: true))
     }

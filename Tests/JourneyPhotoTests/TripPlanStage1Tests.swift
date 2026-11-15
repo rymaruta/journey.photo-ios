@@ -119,7 +119,9 @@ final class TripPlanStage1Tests: XCTestCase {
     func testListHasOneCreateButton() throws {
         let list = try source("Features/Trips/TripPlansView.swift")
         XCTAssertTrue(list.contains("TripCreateView(plans: model)"))
-        XCTAssertTrue(list.contains("\"trips.create\""))
+        // 2026-11-15（札 #621）: 作る流れの口「＋ 自分で選んで作る」は `TripAIEntrySection` の中（目印は同じ）
+        XCTAssertTrue(try source("Features/Trips/AI/TripAIViews.swift").contains("\"trips.create\""))
+        XCTAssertTrue(list.contains("TripAIEntrySection("))
         XCTAssertFalse(list.contains("TextField(L(\"例: 冬のフィンランド\""), "空のプランを作る題の欄が残っている")
         XCTAssertFalse(list.contains("TripPickerView("), "写真から選ぶは作る流れのタブへ移した")
         XCTAssertFalse(FileManager.default.fileExists(

@@ -91,7 +91,7 @@ enum TripAIDestination {
 
     /// 文を助詞で切る（「河口湖で1泊」→「河口湖」）
     static func chunks(_ text: String) -> [String] {
-        let separators = ["、", "。", "，", ",", "・", " ", "　", "に", "で", "を", "と", "へ", "の", "が", "は", "も", "や",
+        let separators = ["、", "。", "，", ",", "\u{30FB}", " ", "　", "に", "で", "を", "と", "へ", "の", "が", "は", "も", "や",
                           "から", "まで", "だけ", "かけて", "見える"]
         var parts = [text]
         for sep in separators.sorted(by: { $0.count > $1.count }) {
@@ -282,17 +282,12 @@ enum TripAIText {
         "新潟", "富山", "石川", "福井", "山梨", "長野", "岐阜", "静岡", "愛知", "三重", "滋賀", "京都", "大阪", "兵庫", "奈良", "和歌山",
         "鳥取", "島根", "岡山", "広島", "山口", "徳島", "香川", "愛媛", "高知", "福岡", "佐賀", "長崎", "熊本", "大分", "宮崎", "鹿児島", "沖縄"]
 
-    /// 例のチップ（押すとそのまま送る）
-    static var examples: [String] {
-        [L("今週末の日帰り", "Day trip this weekend"), L("行きたい場所で2日", "2 days from my saved places"), L("秋の京都", "Kyoto in autumn")]
-    }
+    static var placeholder: String { L("ひとこと足す（なくてよい）", "Add a note (optional)") }
 
-    static var placeholder: String { L("例: 来月、金沢に1泊2日。紅葉", "e.g. Kanazawa, 2 days next month, autumn leaves") }
-
-    /// 題が無いときの題（行き先の県と日数）
-    static func defaultTitle(prefecture: String?, days: Int) -> String {
-        let place = prefecture.map(TripAIDestination.prefectureShort) ?? L("旅", "Trip")
-        return days <= 1 ? L("\(place)の日帰り", "\(place) day trip") : L("\(place)の\(days)日", "\(days) days in \(place)")
+    /// 題が無いときの題（「金沢の旅」「石川の日帰り」）
+    static func defaultTitle(place: String, days: Int) -> String {
+        let p = place.isEmpty ? L("旅", "Trip") : place
+        return days <= 1 ? L("\(p)の日帰り", "\(p) day trip") : L("\(p)の旅", "\(p) trip")
     }
 
     /// 上限・残りの帯の文（日本時間の翌月1日に戻る）

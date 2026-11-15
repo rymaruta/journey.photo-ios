@@ -27,16 +27,22 @@ struct TripPlansView: View {
     @State private var createdPlanId: String?
     /// 自分の旅の一冊（帰着済みの札の「旅の一冊を見る」・板 TripPlans F30）。読めなければ空（札に出さないだけ）
     @State private var myTrips: [TripBook.Trip] = []
+    // AI で作る（札 #621）。札は決まった手順で出す（AI は使わない）
+    @ObservedObject private var aiJobs = TripAIJobs.shared
+    @ObservedObject private var planChanges = TripPlanChanges.shared
+    @State private var aiIndex: [OfficialSpot] = []
+    @State private var aiSuggestions: [TripAISuggestion] = []
+    @State private var aiUsage: TripAIService.Usage?
+    @State private var showAsk = false
+    @State private var aiJob: TripAIJobs.Job?
+    @State private var showAIJob = false
 
     var body: some View {
         Group {
             if auth.isResolving {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if auth.userId == nil {
-                // 2026-11-15（札 #621・owner「登録してもらう入口に」）: ログインの画面は変えず、理由の1行で
-                // 「ログインすると何ができるか」を言う（押す回数は増やさない）
-                SignInView(reason: L("ログインすると、ひとこと書くだけで AI が旅行プランを作ります",
-                                     "Sign in and AI plans your trip from one line."))
+                SignInView(reason: L("旅行プランを作るにはログインしてください", "Sign in to plan a trip."))
             } else {
                 content
             }
@@ -78,8 +84,15 @@ struct TripPlansView: View {
                 }
 
                 // 作る口は、一覧が取れていなくても出す——新しく作るのに一覧は要らない。
-                // **主ボタンは1つ**（2026-11-10 札 #521: 題から・写真から・地図からの3つの作りを1つの流れに）
-                createButton
+                // 2026-11-15（札 #621・owner が採った磨き直しの案）: いちばん上に「AI で作る」の札（押すと1回で日程）と
+                // 「自分で頼む」。今の作る流れは「＋ 自分で選んで作る」の1行に下げる（入口の数は増やさない）
+                TripAIEntrySection(suggestions: aiSuggestions, usage: aiUsage,
+                                   start: startAI,
+                                   ask: { showAsk = true },
+                                   pickYourself: {
+                                       createdPlanId = nil
+                                       showCreate = true
+                                   })
 
                 planList
             }
@@ -89,6 +102,18 @@ struct TripPlansView: View {
         }
         .task { await model.load(environment: environment) }
         .task(id: auth.userId) { await loadMyTrips() }
+        .task(id: auth.userId) { await loadAI() }
+        // 画面の外で AI のプランができた（保存した）ら一覧を取り直す
+        .onChange(of: planChanges.revision) { _, _ in Task { await model.load(environment: environment) } }
+        .navigationDestination(isPresented: $showAIJob) {
+            if let job = aiJob { TripAIBuildingView(job: job, plans: model) }
+        }
+        .sheet(isPresented: $showAsk) {
+            TripAIAskSheet(ask: aiSuggestions.first?.ask ?? TripAIAsk(place: "", prefectures: [], cities: [], days: nil, preference: nil),
+                           placeChoices: placeChoices, onDevice: TripAIDevice.isAvailable,
+                           start: startAIAfterSheet,
+                           index: aiIndex)
+        }
         .refreshable { await model.load(environment: environment) }
         // 一覧が取れたら、プランが無くなった旅の途中のもの（保存を止めたあとにプランを消した）を片づける
         .onChange(of: model.status == .loaded ? model.plans.map(\.planId) : nil) { _, ids in
@@ -118,19 +143,55 @@ struct TripPlansView: View {
         }
     }
 
-    /// 「旅行プランを作る」（写真の無い画面の主ボタン＝真鍮の塗り＋墨・1画面に1つ）
-    private var createButton: some View {
-        Button {
-            createdPlanId = nil
-            showCreate = true
-        } label: {
-            Label(L("旅行プランを作る", "Plan a trip"), systemImage: "plus")
-                .jpPillButton(.main(onPhoto: false))
+    // MARK: - AI で作る（札 #621）
+
+    /// 台帳と今月の回数を読み、札を作る（AI は使わない）
+    private func loadAI() async {
+        guard auth.userId != nil else { return }
+        let fetched = try? await environment.spots.fetchIndex()
+        if let fetched { aiIndex = fetched }
+        let base = TripAISuggestion.make(spots: aiIndex, wishlist: wishlist.spotIds)
+        // 札の写真は詳細から（索引だけの行は写真を持たない）
+        let needed = base.flatMap(\.photoSpots)
+        var detailed: [OfficialSpot] = []
+        if !needed.isEmpty { detailed = await environment.spots.withDetails(needed, for: needed) }
+        let lookup = Dictionary(detailed.map { ($0.spotId, $0) }, uniquingKeysWith: { a, _ in a })
+        aiSuggestions = base.map { s in
+            TripAISuggestion(kind: s.kind, ask: s.ask, title: s.title, subtitle: s.subtitle,
+                             photoSpots: s.photoSpots.map { lookup[$0.spotId] ?? $0 })
         }
-        .buttonStyle(.plain)
-        .accessibilityHint(L("行きたい場所をまとめて選び、日付を入れると、日ごとに並べた下書きができます",
-                             "Pick places, set dates, and get a day-by-day draft."))
-        .accessibilityIdentifier("trips.create")
+        guard !connectivity.isOffline else { return }
+        let usage = try? await environment.tripAI.status()
+        aiUsage = usage
+    }
+
+    /// 「自分で頼む」から。シートが閉じ切ってから積む（閉じている途中に積むと捨てられる）
+    private func startAIAfterSheet(_ ask: TripAIAsk) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            startAI(ask)
+        }
+    }
+
+    /// 押したらすぐ日程の画面を開き、1日目から埋める（待つ画面は出さない・owner 2026-11-15）
+    private func startAI(_ ask: TripAIAsk) {
+        let connectivity = connectivity
+        aiJob = aiJobs.start(ask, environment: environment, index: aiIndex, wishlist: wishlist.spotIds,
+                             usage: aiUsage, offline: { connectivity.isOffline })
+        showAIJob = true
+    }
+
+    /// 「自分で頼む」の行き先の札（行きたい場所の多い県から、足りなければ台帳の多い県）
+    private var placeChoices: [(label: String, prefecture: String)] {
+        let wished = TripAIDestination.suggestions(wishlist: aiIndex.filter { wishlist.spotIds.contains($0.spotId) })
+        var prefs = wished
+        if prefs.count < 6 {
+            let ranked = TripAISuggestion.groupsByPrefecture(aiIndex.filter { ($0.region?.country ?? "").isEmpty }).map(\.prefecture)
+            for p in ranked {
+                if prefs.count < 6, !p.isEmpty, !prefs.contains(p) { prefs.append(p) }
+            }
+        }
+        return prefs.map { (TripAIDestination.prefectureShort($0), $0) }
     }
 
     /// 自分の旅の一冊（マイページの「旅の記録」と同じ棚・`TripBook.shelfTrips`）
@@ -187,8 +248,8 @@ struct TripPlansView: View {
             if model.plans.isEmpty {
                 // 空の状態（v2 Components 06: 明朝の見出し → どうすれば埋まるか）
                 EmptyState(title: L("旅行プランはまだありません", "No trips yet"),
-                           message: L("「旅行プランを作る」で行きたい場所をまとめて選ぶと、日ごとに並べた下書きができます。",
-                                      "Tap Plan a trip, pick places, and get a day-by-day draft."))
+                           message: L("上の札を押すと、AI が日ごとの日程を作ります。自分で選んで作ることもできます。",
+                                      "Tap a card above and AI makes a day-by-day plan. You can also pick places yourself."))
                     .padding(.top, JPSpace.xl)
             } else {
                 LazyVStack(spacing: 10) {
@@ -239,6 +300,15 @@ struct TripPlansView: View {
             TripPlanDetailView(planId: plan.planId, model: model)
         } label: {
             card(plan, face: book == nil)
+                // AI で作って、まだ見ていない（真鍮の点・板 Components 03 の未読の点 8）
+                .overlay(alignment: .topTrailing) {
+                    if aiJobs.unseen.contains(plan.planId) {
+                        Circle().fill(WebTheme.accent).frame(width: 8, height: 8)
+                            .padding(10)
+                            .accessibilityLabel(L("まだ見ていない", "New"))
+                            .accessibilityIdentifier("trips.unseen")
+                    }
+                }
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("trips.plan")

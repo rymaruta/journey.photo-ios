@@ -20,7 +20,6 @@ struct TripCreateView: View {
     let onSaved: (String) -> Void
 
     @StateObject private var model: TripCreateModel
-    @EnvironmentObject private var environment: AppEnvironment
     @State private var showDates: Bool
     @State private var showDraft = false
 
@@ -36,14 +35,7 @@ struct TripCreateView: View {
 
     var body: some View {
         NavigationStack {
-            TripCreatePickStep(model: model, next: { showDates = true }, onAI: { result in
-                // AI で組んだ日程をそのまま保存し、日程の画面を開く（下書きの段を挟まない・札 #621）
-                model.adoptAI(result)
-                guard let planId = await model.save(plans: plans, environment: environment) else { return }
-                TripAINotes.shared.set(planId, TripAINote(reason: result.reason, removed: result.removed,
-                                                          fallbackNote: result.fallbackNote, fresh: true))
-                onSaved(planId)
-            })
+            TripCreatePickStep(model: model, next: { showDates = true })
                 .navigationDestination(isPresented: $showDates) {
                     TripCreateDatesStep(model: model, next: { showDraft = true })
                         .navigationDestination(isPresented: $showDraft) {
@@ -101,8 +93,6 @@ final class TripCreateModel: ObservableObject {
     /// 選ぶ・外す。上限（`TripPicker.pickMax`）を越えては選ばない。選べたか外せたら true
     @discardableResult
     func toggle(_ place: TripDraft.Place) -> Bool {
-        // 手で選び直したら、AI の並びはやめて今の割り振りに戻す
-        aiDays = nil
         if selected.contains(place.id) {
             remove(place.id)
             return true
@@ -142,21 +132,7 @@ final class TripCreateModel: ObservableObject {
         undated ? dayCount : TripPicker.dayCount(start: start, end: end ?? start)
     }
 
-    var days: [[TripDraft.Place]] { aiDays ?? TripDraft.plan(picked, dayCount: plannedDayCount) }
-
-    /// AI で組んだ日程（札 #621）。あれば今の割り振り（`TripDraft.plan`）の代わりにこの並びで保存する
-    @Published private(set) var aiDays: [[TripDraft.Place]]?
-
-    /// AI で組んだ結果を入れる（日付は決めない・題は AI の題）。選んでいた場所は置き換える
-    func adoptAI(_ result: TripAIResult) {
-        let places = result.days.flatMap { $0 }
-        for p in places { known[p.id] = p }
-        selected = places.map(\.id)
-        aiDays = result.days
-        title = result.title
-        undated = true
-        dayCount = max(result.days.count, 1)
-    }
+    var days: [[TripDraft.Place]] { TripDraft.plan(picked, dayCount: plannedDayCount) }
     var suggestedTitle: String { TripPicker.defaultTitle(TripPicker.grouped(picked)) }
 
     /// 日付の段の「下書きを見る」を押せるか
@@ -206,13 +182,8 @@ struct TripCreatePickStep: View {
 
     @ObservedObject var model: TripCreateModel
     let next: () -> Void
-    /// AI で組めた（札 #621）。呼び手が保存して日程の画面を開く
-    var onAI: ((TripAIResult) async -> Void)? = nil
 
     @EnvironmentObject private var environment: AppEnvironment
-    @EnvironmentObject private var connectivity: Connectivity
-    @StateObject private var ai = TripAIComposerModel()
-    @State private var showPro = false
     @EnvironmentObject private var wishlist: WishlistStore
     @EnvironmentObject private var hidden: ModerationStore
     @EnvironmentObject private var toasts: ToastCenter
@@ -229,15 +200,9 @@ struct TripCreatePickStep: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if onAI != nil {
-                aiComposer
-                    .padding(.horizontal, JPSpace.gutter)
-                    .padding(.top, JPSpace.xs)
-                    .padding(.bottom, JPSpace.m)
-            }
             VStack(alignment: .leading, spacing: JPSpace.s) {
-                Text(onAI != nil ? L("自分で選んで作る", "Or pick places yourself") : L("行き先を選ぶ", "Choose places"))
-                    .font(onAI != nil ? JPFont.rowTitle : JPFont.screenTitle)
+                Text(L("行き先を選ぶ", "Choose places"))
+                    .font(JPFont.screenTitle)
                     .foregroundStyle(WebTheme.foreground)
                     .accessibilityAddTraits(.isHeader)
                 TripCreateTabs(tab: $model.tab, wishlistCount: loaded ? choices.count : nil)
@@ -273,10 +238,6 @@ struct TripCreatePickStep: View {
             .accessibilityIdentifier("tripCreate.next")
             .jpBottomBar()
         }
-        .fullScreenCover(isPresented: $showPro) { PaywallView(origin: .tripAI) }
-        .task {
-            if onAI != nil, !connectivity.isOffline { await ai.loadUsage(service: environment.tripAI) }
-        }
         .task {
             guard !loaded else { return }
             let fetchedIndex = try? await environment.spots.fetchIndex()
@@ -285,29 +246,6 @@ struct TripCreatePickStep: View {
             if let fetchedPhotos { places = DerivedSpot.allMergedBySlug(in: hidden.snapshot.visible(fetchedPhotos)) }
             failed = fetchedIndex == nil || fetchedPhotos == nil
             loaded = true
-        }
-    }
-
-    /// 「どこへ、何日？」（札 #621）。送る → 組む → 呼び手が保存して日程の画面へ
-    private var aiComposer: some View {
-        VStack(alignment: .leading, spacing: JPSpace.xs) {
-            TripAIComposerView(model: ai, send: sendAI, openPro: { showPro = true })
-            if let error = model.error {
-                Text(error)
-                    .font(JPFont.footnote)
-                    .foregroundStyle(WebTheme.danger)
-            }
-        }
-    }
-
-    private func sendAI() {
-        guard let onAI, ai.phase != .working, !model.saving else { return }
-        Task {
-            // 台帳がまだなら読む（開いてすぐ送った回）
-            if index.isEmpty, let fetched = try? await environment.spots.fetchIndex() { index = fetched }
-            guard let result = await ai.send(index: index, wishlist: Set(wishlist.spotIds),
-                                             offline: connectivity.isOffline, service: environment.tripAI) else { return }
-            await onAI(result)
         }
     }
 
