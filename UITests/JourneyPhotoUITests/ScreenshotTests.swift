@@ -9939,6 +9939,15 @@ final class ScreenshotTests: XCTestCase {
         if place.exists, place.isHittable {
             place.tap()
             place.typeText("Kanazawa")
+        } else {
+            // 札 #616（2026-11-15）: 大きい文字では撮影地の欄が見つからず、題に焦点が残ったまま投稿していた（run 1364・1365）。
+            // 推定で直さないための記録: そのときの入力欄の並び（識別子と枠）・撮影スポットに結ぶ札・キーボード
+            let fields = app.textFields.allElementsBoundByIndex.prefix(8)
+                .map { "\($0.identifier.isEmpty ? "-" : $0.identifier)@\($0.frame)" }
+            let autoSpot = app.descendants(matching: .any)["upload.autoSpot"].firstMatch
+            print("[uploadFieldProbe] place.missing exists=\(place.exists) fields=\(fields)"
+                  + " autoSpot=\(autoSpot.exists ? "\(autoSpot.frame)" : "none")"
+                  + " keyboard=\(app.keyboards.firstMatch.exists)")
         }
         let submit = app.buttons["upload.submit"].firstMatch
         scrollUntilHittable(app, submit)
