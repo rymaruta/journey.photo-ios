@@ -3887,6 +3887,10 @@ final class ScreenshotTests: XCTestCase {
         let form = app.descendants(matching: .any)["signin.form"].firstMatch
         XCTAssertTrue(form.waitForExistence(timeout: 10), "「新規登録」を押してもログイン画面が開かない")
         assertSignInSide(app, signUp: true, "確認の「新規登録」")
+        // 登録の側の上の一言は登録の文（確かめ役の指摘 1・2026-11-15。「〜にはログインしてください」を出さない）
+        XCTAssertTrue(app.staticTexts["登録すると、いいねできます"].firstMatch.waitForExistence(timeout: 5),
+                      "登録の側の上の一言が登録の文でない")
+        XCTAssertFalse(app.staticTexts["いいねするにはログインしてください"].firstMatch.exists, "登録の欄の上にログインの文が出ている")
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "69b-ログインのお願いの新規登録（今のログイン画面の登録の側）")
 
@@ -3975,6 +3979,8 @@ final class ScreenshotTests: XCTestCase {
         action.tap()
         Thread.sleep(forTimeInterval: 2)
         assertSignInSide(app, signUp: true, "挟む札の「新規登録して見る」")
+        XCTAssertTrue(app.staticTexts["登録すると、選んだ場所を地図と旅行プランで見られます"].firstMatch.waitForExistence(timeout: 5),
+                      "登録の側の上の一言が登録の文でない（払う画面）")
         shoot(app, "66d-撮影スポットを払う（ログインの板の登録の側）")
     }
 

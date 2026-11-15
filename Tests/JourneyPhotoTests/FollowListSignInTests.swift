@@ -46,7 +46,7 @@ final class FollowListSignInTests: XCTestCase {
         let prompt = view.components(separatedBy: "private var signInPrompt: some View {").last?
             .components(separatedBy: "/// 「フォロワー N").first ?? ""
         // 2026-11-15（札 #630）: 新規登録（主・真鍮の塗り）とログイン（線）を並べる共通の部品
-        XCTAssertTrue(prompt.contains("SignInAskButtons(reason: Self.signInLine(current), onPhoto: false,"),
+        XCTAssertTrue(prompt.contains("SignInAskButtons(reason: Self.signInLine(current), signUpReason: Self.signUpLine(current), onPhoto: false,"),
                       "新規登録が並んでいない")
         XCTAssertTrue(prompt.contains("{ signInOpen = $0 }"))
         XCTAssertTrue(prompt.contains(".foregroundStyle(WebTheme.muted2)"))

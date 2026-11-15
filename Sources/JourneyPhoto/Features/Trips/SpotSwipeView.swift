@@ -115,7 +115,7 @@ struct SpotSwipeView: View {
             pendingPlanId = nil
             showCreate = true
         } else {
-            signIn = SignInRequest(reason: SpotSwipe.signInReason, entry: .signUp)
+            signIn = SignInRequest(reason: SpotSwipe.signUpReason, entry: .signUp)
         }
     }
 

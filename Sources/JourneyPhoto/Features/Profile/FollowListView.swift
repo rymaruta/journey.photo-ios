@@ -187,6 +187,14 @@ struct FollowListView: View {
         }
     }
 
+    /// 「新規登録」から開くときの一言（登録の欄の上に出す・札 #630）
+    nonisolated static func signUpLine(_ kind: Kind) -> String {
+        switch kind {
+        case .followers: return L("登録すると、フォロワーを見られます", "Sign up to see followers")
+        case .following: return L("登録すると、フォロー中の人を見られます", "Sign up to see who they follow")
+        }
+    }
+
     /// 未ログインの案内（2026-10-11）。文はふつうの色、ボタンは写真の無い画面の主ボタン
     /// （真鍮の塗り＋墨・`JPPillStyle.accent`・CLAUDE.md の owner の好み）。
     /// 2026-11-15（札 #630）: 主ボタンを「新規登録」にし、「ログイン」を線のボタンで下に並べる（`SignInAskButtons`）
@@ -195,9 +203,10 @@ struct FollowListView: View {
             Text(Self.signInLine(current))
                 .font(.subheadline)
                 .foregroundStyle(WebTheme.muted2)
-            SignInAskButtons(reason: Self.signInLine(current), onPhoto: false,
+            SignInAskButtons(reason: Self.signInLine(current), signUpReason: Self.signUpLine(current), onPhoto: false,
                              identifier: "followList") { signInOpen = $0 }
-                // 行の中のボタンは素の形（`.plain`）。行全体が当たりにならず、2つを別々に押せる
+                // 縦の送り（`ScrollView` の中の `LazyVStack`・2026-10-31 #426）の中なので、`List` の行のように
+                // 行全体が当たりになることは無い。2つのボタンはそれぞれの形で押せる
         }
         .padding(.vertical, 8)
     }

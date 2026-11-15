@@ -36,7 +36,7 @@ struct HomeSignUpBenefitsView: View {
             LazyVGrid(columns: columns, alignment: .leading, spacing: HomeSignUpBenefitsLayout.gap) {
                 ForEach(Array(SignUpBenefit.allCases.enumerated()), id: \.element.id) { index, benefit in
                     Button {
-                        signInOpen = SignInRequest(reason: benefit.signInReason, entry: .signUp)
+                        signInOpen = SignInRequest(reason: benefit.signUpReason, entry: .signUp)
                     } label: {
                         card(benefit, photo: index < photos.count ? photos[index] : nil)
                     }
@@ -48,7 +48,7 @@ struct HomeSignUpBenefitsView: View {
             }
             HStack(spacing: JPSpace.m) {
                 Button {
-                    signInOpen = SignInRequest(reason: SignUpBenefit.actionReason, entry: .signUp)
+                    signInOpen = SignInRequest(reason: SignUpBenefit.signUpActionReason, entry: .signUp)
                 } label: {
                     Text(SignInPrompt.signUpLabel).jpOutlineButton(.regular)
                 }

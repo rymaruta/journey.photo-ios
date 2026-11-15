@@ -1852,7 +1852,7 @@ struct PhotoDetailView: View {
         // 🔴 **未ログインは「ログインする」を出す**（2026-10-11）。以前は赤字だけで、
         // ログインする手段がその場に無かった（`SignInPrompt`）。確認中は黙る
         guard auth.userId != nil else {
-            signInAsk = SignInPrompt.request(SignInPrompt.like, userId: auth.userId, isResolving: auth.isResolving)
+            signInAsk = SignInPrompt.request(SignInPrompt.like, signUpReason: SignInPrompt.likeSignUp, userId: auth.userId, isResolving: auth.isResolving)
             return nil
         }
         // **届かなかった回は控えに書かない**（押す前のハートのまま）。
@@ -2398,7 +2398,8 @@ struct PhotoDetailView: View {
 
     private func commentSignInLink(_ title: String, entry: SignInEntry, identifier: String) -> some View {
         Button {
-            signInOpen = SignInRequest(reason: SignInPrompt.comment, entry: entry)
+            // 登録の側は登録の一言（「登録すると、コメントできます」）
+            signInOpen = SignInRequest(reason: entry == .signUp ? SignInPrompt.commentSignUp : SignInPrompt.comment, entry: entry)
         } label: {
             Text(title)
                 .font(.footnote.weight(.semibold))
@@ -2687,7 +2688,7 @@ struct PhotoDetailView: View {
         // **未ログインは送らずに「ログインする」を出す**（いいねと同じ扱い・`SignInPrompt`）。
         // 以前は赤字だけで、ログインする手段がその場に無かった（2026-10-11）
         guard auth.userId != nil else {
-            signInAsk = SignInPrompt.request(SignInPrompt.save, userId: auth.userId, isResolving: auth.isResolving)
+            signInAsk = SignInPrompt.request(SignInPrompt.save, signUpReason: SignInPrompt.saveSignUp, userId: auth.userId, isResolving: auth.isResolving)
             return
         }
         savingBookmarks.insert(id)

@@ -30,7 +30,8 @@ final class SignUpBenefitsTests: XCTestCase {
     /// 中黒で区切らない（owner の好み・2026-11-12）。「撮りどき」「捨てる」も画面の文に使わない
     func testWordingHasNoMiddleDots() {
         let texts = SignUpBenefit.allCases.flatMap { [$0.title, $0.signInReason] }
-            + [SignUpBenefit.heading, SignUpBenefit.actionReason, SignInPrompt.signUpLabel, SignInPrompt.loginLabel]
+            + [SignUpBenefit.heading, SignUpBenefit.actionReason, SignUpBenefit.signUpActionReason, SignInPrompt.signUpLabel, SignInPrompt.loginLabel]
+            + SignUpBenefit.allCases.map(\.signUpReason)
         for text in texts {
             XCTAssertFalse(text.contains("・") || text.contains("·"), "中黒で区切っている: \(text)")
             XCTAssertFalse(text.contains("撮りどき") || text.contains("捨て"), text)
@@ -82,9 +83,9 @@ final class SignUpBenefitsTests: XCTestCase {
     /// 札と「新規登録」は登録の側、「ログイン」はログインの側で開く（札 #630・Web の段と同じ2つ）
     func testCardsOpenTheExistingSignInSheet() throws {
         let view = try source("Features/Gallery/HomeSignUpBenefitsView.swift")
-        XCTAssertTrue(view.contains("signInOpen = SignInRequest(reason: benefit.signInReason, entry: .signUp)"),
+        XCTAssertTrue(view.contains("signInOpen = SignInRequest(reason: benefit.signUpReason, entry: .signUp)"),
                       "札が登録の側で開かない")
-        XCTAssertTrue(view.contains("signInOpen = SignInRequest(reason: SignUpBenefit.actionReason, entry: .signUp)"),
+        XCTAssertTrue(view.contains("signInOpen = SignInRequest(reason: SignUpBenefit.signUpActionReason, entry: .signUp)"),
                       "「新規登録」が登録の側で開かない")
         XCTAssertTrue(view.contains("signInOpen = SignInRequest(reason: SignUpBenefit.actionReason)\n"),
                       "「ログイン」が無い")

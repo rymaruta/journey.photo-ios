@@ -137,7 +137,7 @@ enum SpotSwipe {
     }
 
     /// 挟む札の、未ログインのときだけ出すログインの文字のボタン（Web の `/swipe` と同じ字）
-    static var loginTitle: String { L("ログインして見る", "Log in to see") }
+    static var loginTitle: String { L("ログインして見る", "Sign in to see") }
 
     /// 足元のボタン。未ログインは「地図で見る」（押すとログイン）、ログイン中は「旅行プランにする」
     static func footerAction(signedIn: Bool) -> String {
@@ -147,6 +147,11 @@ enum SpotSwipe {
     /// 足元の数「行きたい 3 か所」
     static func footerCount(_ count: Int) -> String {
         L("行きたい \(count) か所", count == 1 ? "1 place saved" : "\(count) places saved")
+    }
+
+    /// 「新規登録して見る」から登録の側で開くときの一言（札 #630）
+    static var signUpReason: String {
+        L("登録すると、選んだ場所を地図と旅行プランで見られます", "Sign up to see your places on a map and in a trip.")
     }
 
     /// ログインの画面の上に出す一言

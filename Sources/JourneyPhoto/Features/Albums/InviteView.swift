@@ -232,6 +232,8 @@ struct InviteView: View {
 
     /// 未ログインの参加の帯の一行（ログイン画面の上にも出す）
     nonisolated static var signInReason: String { L("参加するにはログインしてください", "Sign in to join") }
+    /// 「新規登録」から開くときの一言（登録の欄の上に出す・札 #630）
+    nonisolated static var signUpReason: String { L("登録すると、このアルバムに参加できます", "Sign up to join this album") }
 
     /// 板 v2 Invite: 組み絵の高さ 380・右の列の幅（2fr:1fr の 1fr ≒ 390 の 1/3）
     nonisolated static let mosaicHeight: CGFloat = 380
@@ -248,7 +250,7 @@ struct InviteView: View {
                     .foregroundStyle(WebTheme.text2)
                 // 2026-11-15（札 #630）: 一行だけで先へ進む口が無かった。招待された人の多くはまだ登録していないので、
                 // 新規登録を主（写真のある画面なので白）、ログインを線のボタンで並べる
-                SignInAskButtons(reason: Self.signInReason, onPhoto: true, identifier: "invite") { signInOpen = $0 }
+                SignInAskButtons(reason: Self.signInReason, signUpReason: Self.signUpReason, onPhoto: true, identifier: "invite") { signInOpen = $0 }
             } else if alreadyJoined {
                 Text(L("参加しています。投稿画面でこのアルバムを選べます。",
                        "You're in. Choose this album when you post."))
