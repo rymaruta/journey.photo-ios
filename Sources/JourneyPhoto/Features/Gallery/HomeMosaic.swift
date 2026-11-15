@@ -21,6 +21,8 @@ struct HomeMosaic: View {
     /// 並びの最後の段に置くもの（「新着」の続きを読む目印・#426）。**この遅れて作る並びの中に置く**——画面に
     /// 入ったときだけ作られるので、目印の `onAppear` が下まで送ったときだけ走る
     var footer: AnyView? = nil
+    /// 「あなたの投稿」の枠と札を付ける写真の id（投稿の前のプレビューだけ・札 #409）。ふだんは空
+    var marked: Set<String> = []
 
     /// 段どうし・段の中の隙間（板: 4px）
     private let gap: CGFloat = JPSpace.xxs
@@ -58,7 +60,8 @@ struct HomeMosaic: View {
         }
         // 長押しで運べることの、はじめての1回だけの案内（1枚目の写真の上に重ねる・並びの高さは変えない）
         .overlay(alignment: .top) {
-            if !groups.isEmpty { PhotoLiftIntro().padding(.top, JPSpace.s) }
+            // 投稿の前のプレビュー（`marked` が在る）では出さない（一度だけの案内をプレビューで使い切らない）
+            if !groups.isEmpty, marked.isEmpty { PhotoLiftIntro().padding(.top, JPSpace.s) }
         }
         .padding(.horizontal, Self.edge)
     }
@@ -66,7 +69,8 @@ struct HomeMosaic: View {
     @ViewBuilder
     private func tile(_ photo: Photo, byCover: [String: PhotoGroups.Group], large: Bool) -> some View {
         let group = byCover[photo.id]
-        HomeFeedTile(photo: photo, siblings: group?.photos ?? [photo], large: large, onReport: onReport)
+        HomeFeedTile(photo: photo, siblings: group?.photos ?? [photo], large: large, onReport: onReport,
+                     marksAsYours: marked.contains(photo.id))
     }
 }
 
@@ -79,6 +83,9 @@ struct HomeFeedTile: View {
     /// 大きい段（16:9・撮影地 22pt・投稿した時期も出す）か、2枚の段（1:1・18pt）か
     var large = false
     var onReport: (Photo) -> Void = { _ in }
+    /// 投稿の前のプレビューで、今回の投稿の札に白 2pt の枠と「あなたの投稿」の札を付ける（札 #409・模型どおり）。
+    /// 写真の上なので白。**プレビューの中だけの印**で、ふだんのホームでは付かない
+    var marksAsYours = false
 
     /// **札そのものが見る store はログインだけ**（「…」を出すか・2026-10-28 判断・重さの直し）。
     /// いいね（`FavoritesStore`・`LikeCountStore`）とブロック（`ModerationStore`）は、それを使う小さな部品
@@ -127,6 +134,9 @@ struct HomeFeedTile: View {
                     .overlay(alignment: .topTrailing) {
                         // 「…」の丸と重ならないよう、印はその左
                         multipleMark.padding(.trailing, showsMore ? 44 : 0)
+                    }
+                    .overlay(alignment: .topLeading) {
+                        if marksAsYours { yoursMark }
                     }
                     // v2: 角 14（`HomeMosaic.corner`）。下の暗がりも同じ角で切る
                     .clipShape(RoundedRectangle(cornerRadius: HomeMosaic.corner))
@@ -187,6 +197,23 @@ struct HomeFeedTile: View {
         .simultaneousGesture(liftGesture, including: !PhotoLift.homeGestureEnabled || auth.userId == nil || PreviewSession.noLift
                                  ? .subviews : .all)
         .sensoryFeedback(.impact(weight: .medium), trigger: lifted) { _, new in new }
+    }
+
+    /// 「あなたの投稿」の枠と札（`marksAsYours`）。札は左上・黒 60% の地に白の 12pt（マイページの「非公開」の札と同じ形）
+    private var yoursMark: some View {
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: HomeMosaic.corner)
+                .strokeBorder(Color.white, lineWidth: CGFloat(PostPreview.yoursFrameWidth))
+            Text(PostPreview.yoursTag)
+                .font(JPFont.caption.weight(.semibold))
+                .foregroundStyle(Color.white)
+                .padding(.horizontal, JPSpace.xs)
+                .padding(.vertical, 3)
+                .background(Color.black.opacity(0.6), in: Capsule())
+                .padding(JPSpace.xs)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private var liftGesture: some Gesture {
