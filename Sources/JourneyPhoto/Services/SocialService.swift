@@ -205,10 +205,13 @@ struct SocialService {
             /// 返信のときだけ送る（無い＝ふつうのコメント・古いサーバーは読まない）
             let replyTo: String?
         }
-        return try await api.authorized(
+        let posted = try await api.authorized(
             .post, "/photos/\(encoded(photoId))/comments",
             body: Body(text: text, replyTo: replyTo.flatMap { PathID.isSafe($0) ? $0 : nil }), as: PostedComment.self
         ).comment
+        // 返事が来る理由ができた: 通知の説明の合図（初めての1回だけ出る・`PushPrimerStore`・2026-11-15 札 #618）
+        PushPrimerStore.reachedOut()
+        return posted
     }
 
     /// コメントを消す。
@@ -246,7 +249,10 @@ struct SocialService {
     }
 
     func follow(userId: String) async throws -> FollowResult {
-        try await api.authorized(.post, "/users/\(encoded(userId))/follow", as: FollowResult.self)
+        let result = try await api.authorized(.post, "/users/\(encoded(userId))/follow", as: FollowResult.self)
+        // フォローの返し・相手の反応が来る理由ができた（通知の説明の合図・2026-11-15 札 #618）
+        if result.following { PushPrimerStore.reachedOut() }
+        return result
     }
 
     func unfollow(userId: String) async throws -> FollowResult {

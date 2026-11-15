@@ -174,4 +174,100 @@ final class PushPrimerTests: XCTestCase {
         XCTAssertEqual(LightAlertPushNotice.openSettings.hint, "設定アプリを開きます")
         XCTAssertEqual(LightAlertPushNotice.turnOn.hint, "通知の許可を求めます")
     }
+
+    // MARK: - 初めてのフォロー・コメント・メッセージのあと（2026-11-15 札 #618 案2）
+
+    private func source(_ path: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources/JourneyPhoto")
+        return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+    }
+
+    /// 🔴 投稿しない人にも聞く。ただし**端末で1回だけ**（投稿の場面と同じ印）。評価のお願いの待ちには触らない
+    func testReachOutAsksOnceSharingTheSameMark() async {
+        let store = PushPrimerStore(defaults: defaults, isPreview: { false })
+        store.noteReachedOut()
+        XCTAssertEqual(store.reachOutRequests, 1)
+        XCTAssertEqual(store.requests, 0, "投稿の合図と混ぜている")
+        XCTAssertFalse(store.isDeciding, "フォローで評価のお願いの待ちを立てている")
+        XCTAssertTrue(store.consume(signedIn: true, permission: .notDetermined))
+        store.noteReachedOut()
+        XCTAssertEqual(store.reachOutRequests, 1, "出したあともフォロー・コメントのたびに合図している")
+        store.notePosted()
+        XCTAssertEqual(store.requests, 0, "フォローのあとで出したのに、投稿でもう一度出そうとしている")
+    }
+
+    /// 投稿のあとで出した端末では、フォロー・コメント・メッセージでは出さない（逆の順）
+    func testReachOutSkipsWhenAlreadyOfferedAfterPost() async {
+        let store = PushPrimerStore(defaults: defaults, isPreview: { false })
+        store.notePosted()
+        XCTAssertTrue(store.consume(signedIn: true, permission: .notDetermined))
+        store.noteReachedOut()
+        XCTAssertEqual(store.reachOutRequests, 0)
+        // 画面写真の入り方では合図しない（巡回の絵を覆わない）
+        let preview = PushPrimerStore(defaults: UserDefaults(suiteName: "PushPrimerTests.p.\(UUID().uuidString)")!,
+                                      isPreview: { true })
+        preview.noteReachedOut()
+        XCTAssertEqual(preview.reachOutRequests, 0)
+    }
+
+    /// 断られた人・許可済みの人には出さない（今と同じ決まり。OS はもう聞かない）
+    func testReachOutFollowsTheSamePermissionRule() async {
+        let store = PushPrimerStore(defaults: defaults, isPreview: { false })
+        store.noteReachedOut()
+        XCTAssertFalse(store.consume(signedIn: true, permission: .denied))
+        XCTAssertFalse(store.consume(signedIn: true, permission: .allowed))
+        XCTAssertFalse(store.alreadyOffered, "出していないのに覚えた")
+    }
+
+    /// 会話・コメントのシートの上や、投稿のあとの案内と重ねない。裏にいる間も出さない
+    func testReachOutWaitsForOtherScreens() async {
+        XCTAssertTrue(PostModalGate.reachOutPrimerMayShow(PostModalSnapshot()))
+        for blocked in [PostModalSnapshot(modalPresenting: true), PostModalSnapshot(pushPrimerDeciding: true),
+                        PostModalSnapshot(pushPrimerShowing: true), PostModalSnapshot(reviewDeciding: true),
+                        PostModalSnapshot(trunkShowing: true), PostModalSnapshot(launchNoticesDeciding: true),
+                        PostModalSnapshot(sceneActive: false), PostModalSnapshot(coverOfferBusy: true),
+                        PostModalSnapshot(extrasShowing: true)] {
+            XCTAssertFalse(PostModalGate.reachOutPrimerMayShow(blocked), "\(blocked) の上に出している")
+        }
+        XCTAssertLessThanOrEqual(PostModalGate.reachOutWaitLimit, 600)
+    }
+
+    /// 見出しと項目は場面に合わせる（返信・メンション・メッセージが先）。投稿の場面は owner の承認した言い方のまま
+    func testReachOutCopy() async {
+        XCTAssertEqual(PushPrimerPoint.title(.firstPost), "いいね、コメントが届いたらお知らせしますか？")
+        XCTAssertEqual(PushPrimerPoint.title(.reachOut), "返事や反応が来たら、お知らせしますか？")
+        XCTAssertEqual(PushPrimerPoint.shown(isPro: false, moment: .reachOut).map(\.systemImage),
+                       ["bubble.left", "paperplane", "heart"])
+        XCTAssertEqual(PushPrimerPoint.shown(isPro: true, moment: .reachOut).last?.systemImage, "sunrise")
+        for text in PushPrimerPoint.shown(isPro: true, moment: .reachOut).map(\.text) + [PushPrimerPoint.title(.reachOut)] {
+            XCTAssertFalse(text.contains("・") || text.contains("·"), "中黒で区切っている: \(text)")
+        }
+    }
+
+    /// 合図はフォロー・コメント・メッセージ（DM と旅の仲間）の送る口が、**送れたあとに**出す
+    func testReachOutIsSignalledAfterSending() async throws {
+        let social = try source("Services/SocialService.swift")
+        XCTAssertTrue(social.contains("if result.following { PushPrimerStore.reachedOut() }"), "フォローで合図していない")
+        let comment = try XCTUnwrap(social.range(of: "func postComment("))
+        let follow = try XCTUnwrap(social.range(of: "func follow(userId:"))
+        XCTAssertTrue(social[comment.upperBound..<follow.lowerBound].contains("PushPrimerStore.reachedOut()"),
+                      "コメントで合図していない")
+        XCTAssertTrue(try source("Services/DMService.swift").contains("PushPrimerStore.reachedOut()"), "メッセージで合図していない")
+        XCTAssertTrue(try source("Services/TripShareService.swift").contains("PushPrimerStore.reachedOut()"))
+        let root = try source("App/RootView.swift")
+        XCTAssertTrue(root.contains(".onChange(of: pushPrimer.reachOutRequests) { _, _ in offerReachOutPrimerWhenIdle() }"))
+        XCTAssertTrue(root.contains("PostModalGate.reachOutPrimerMayShow(postModalSnapshot())"))
+    }
+
+    /// 合図は主スレッドへ渡ってから数える（送る口は主スレッドでないことがある）
+    func testStaticEntryReachesTheSharedStore() async throws {
+        let before = PushPrimerStore.shared.reachOutRequests
+        let offered = PushPrimerStore.shared.alreadyOffered
+        PushPrimerStore.reachedOut()
+        for _ in 0..<20 where PushPrimerStore.shared.reachOutRequests == before { await Task.yield() }
+        if !offered && PreviewSession.userId == nil {
+            XCTAssertEqual(PushPrimerStore.shared.reachOutRequests, before + 1)
+        }
+    }
 }

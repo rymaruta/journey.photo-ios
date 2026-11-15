@@ -49,6 +49,23 @@ final class PushPrimerStore: ObservableObject {
         requests += 1
     }
 
+    /// 初めてのフォロー・コメント・メッセージの送信の合図（2026-11-15 札 #618・`PushPrimerMoment.reachOut`）。
+    /// **投稿の合図（`requests`）とは別に数える**——投稿のあとの評価のお願いの待ち（`isDeciding`）には関わらない。
+    /// 出すのは `RootView` が、ほかの画面（会話・コメントのシートなど）が閉じてから
+    @Published private(set) var reachOutRequests = 0
+
+    /// フォロー・コメント・メッセージが送れた（`SocialService`・`DMService`・`TripShareService`）。
+    /// **まだ出していない端末でだけ**合図する（出したあとは何回送っても何もしない）
+    func noteReachedOut() {
+        guard !isPreview(), !alreadyOffered else { return }
+        reachOutRequests += 1
+    }
+
+    /// 画面を持たない層（送る口）から呼ぶ入口。主スレッドへ渡すだけ
+    nonisolated static func reachedOut() {
+        Task { @MainActor in shared.noteReachedOut() }
+    }
+
     /// 出すかどうか決め終えた（出した・出さなかった・待ちきれなかった、のどれでも呼ぶ）
     func finishDeciding() {
         isDeciding = false

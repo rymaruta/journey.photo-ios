@@ -72,6 +72,17 @@ enum PostModalGate {
         !s.modalPresenting && !s.coverOfferBusy && !s.extrasShowing
     }
 
+    /// 初めてのフォロー・コメント・メッセージのあとの通知の説明を出してよいか（2026-11-15 札 #618）。
+    /// 前面に出ていて、ほかの画面（会話・コメントのシート・投稿のあとの案内）が出ていない・決めていないとき
+    static func reachOutPrimerMayShow(_ s: PostModalSnapshot) -> Bool {
+        s.sceneActive && !s.modalPresenting && !s.pushPrimerDeciding && !s.pushPrimerShowing && !s.reviewDeciding
+            && !s.trunkPending && !s.trunkShowing && !s.launchNoticesDeciding && !s.welcomeShowing
+            && !s.coverOfferBusy && !s.extrasShowing
+    }
+
+    /// 上の説明を、ほかの画面が閉じるまで待てる長さ（秒）。過ぎたら出さず、次に送ったときにもう一度
+    static let reachOutWaitLimit: TimeInterval = 600
+
     /// アイコン・カバーのお礼を出してよいか（はじめての硬貨の案内のあと・#304）
     static func rewardMayShow(_ s: PostModalSnapshot) -> Bool {
         welcomeMayShow(s) && !s.welcomePending

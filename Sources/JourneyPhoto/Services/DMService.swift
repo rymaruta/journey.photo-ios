@@ -78,11 +78,14 @@ struct DMService {
     /// `photoId` が nil なら欄ごと送らない（今までと同じ本文）
     func send(_ id: String, text: String, clientId: String, photoId: String? = nil) async throws -> DMSendResult {
         struct Body: Encodable { let text: String; let id: String; let photoId: String? }
-        return try await refusing {
+        let sent = try await refusing {
             try await api.authorized(.post, "/dm/\(encoded(id))/messages",
                                      body: Body(text: text, id: clientId, photoId: photoId),
                                      as: DMSendResult.self)
         }
+        // 返事が来る理由ができた（通知の説明の合図・初めての1回だけ・2026-11-15 札 #618）
+        PushPrimerStore.reachedOut()
+        return sent
     }
 
     /// 自分が送った1通を取り消す（2026-11-12・owner「DM 送信取り消し必要だわ」・期限なし）。

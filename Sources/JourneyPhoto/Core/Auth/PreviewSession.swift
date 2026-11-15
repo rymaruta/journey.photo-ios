@@ -345,6 +345,18 @@ enum PreviewSession {
         #endif
     }
 
+    /// 起動のときに出す説明の場面（Debug のみ）。`-JPPreviewPushPrimerMoment reachOut` で初めてのフォロー・コメント・
+    /// メッセージのあとの見出しと項目（2026-11-15 札 #618）。無ければ初めての投稿のあと。Release では必ず `.firstPost`
+    static let pushPrimerMomentKey = "JPPreviewPushPrimerMoment"
+
+    static var pushPrimerMoment: PushPrimerMoment {
+        #if DEBUG
+        return UserDefaults.standard.string(forKey: pushPrimerMomentKey) == "reachOut" ? .reachOut : .firstPost
+        #else
+        return .firstPost
+        #endif
+    }
+
     static var opensPushPrimer: Bool {
         #if DEBUG
         guard userId != nil else { return false }

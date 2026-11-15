@@ -296,7 +296,7 @@ final class ScreenWiringTests: XCTestCase {
         XCTAssertTrue(root.contains("pushPrimer.consume(signedIn: auth.userId != nil, permission: push.permission)"),
                       "許可の状態を見ずに説明を出している")
         XCTAssertTrue(root.contains("await push.refreshAuthorization()"), "出す直前に許可を読み直していない")
-        XCTAssertTrue(root.contains(".sheet(isPresented: $showPushPrimer) { PushPrimerView() }"))
+        XCTAssertTrue(root.contains(".sheet(isPresented: $showPushPrimer) { PushPrimerView(moment: pushPrimerMoment) }"))
         // 評価のお願いと重ねない（2026-10-11）: 説明が決め終わるまで待ち、出ている・出した回は頼まない
         XCTAssertTrue(root.contains("defer { pushPrimer.finishDeciding() }"), "説明を決め終えても評価の待ちを解いていない")
         // 2026-10-17: 待ち方と条件は `PostModalGate` に寄せた（条件そのものは TrunkReviewFixesTests が振る舞いで見る）

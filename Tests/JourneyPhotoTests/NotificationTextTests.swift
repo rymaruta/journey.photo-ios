@@ -430,7 +430,9 @@ final class NotificationPushStringsTests: XCTestCase {
     func testServerKeysExistInBothLanguagesWithOneArgument() throws {
         let ja = try strings("ja"), en = try strings("en")
         let sent = ["NOTIF_LIKE", "NOTIF_COMMENT", "NOTIF_FOLLOW", "NOTIF_STORY_REPLY", "NOTIF_BADGE",
-                    "NOTIF_INSPIRED", "NOTIF_DM", "NOTIF_STORY_MENTION"]
+                    "NOTIF_INSPIRED", "NOTIF_DM", "NOTIF_STORY_MENTION",
+                    // 段 2（`PushService.pushKeys`）。この鍵を持つから、登録で段 2 を名乗る（2026-11-15 札 #618）
+                    "NOTIF_COMMENT_REPLY", "NOTIF_STORY_SHARE"]
         for key in sent {
             for (lang, table) in [("ja", ja), ("en", en)] {
                 let text = try XCTUnwrap(table[key], "\(key) が \(lang).lproj に無い")
