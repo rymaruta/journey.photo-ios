@@ -46,7 +46,12 @@ def main():
         return 0
     body, total = main_thread_lines(lines)
     if not body:
-        print("measured [main-sample] 主スレッドの塊が見つからない")
+        # 取れなかった理由を見るため、行の数とスレッドの見出しの数・名前の種類だけ出す（番地・置き場は出さない）
+        heads = [l for l in lines if THREAD.match(l)]
+        kinds = sorted({re.sub(r"[0-9a-fA-Fx]{6,}", "#", l.split("Thread_", 1)[-1]).strip()[:60] for l in heads})[:8]
+        first = [re.sub(r"(/[^ ]*)|0x[0-9a-fA-F]+|[0-9A-F]{8}-[0-9A-F-]{27}", "…", l).strip()[:80] for l in lines[:6]]
+        print(f"measured [main-sample] 主スレッドの塊が見つからない（行 {len(lines)}・スレッドの見出し {len(heads)}）"
+              f" 見出し={kinds} 頭={first}")
         return 0
     ours, deepest = {}, {}
     for line in body:

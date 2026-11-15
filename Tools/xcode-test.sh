@@ -163,7 +163,14 @@ if [ "$mode" != "build" ] && command -v xcrun >/dev/null 2>&1; then
                 if [ "$mode" = "unit" ] && [ -n "$pid" ] && command -v sample >/dev/null 2>&1; then
                     (
                         out="$(mktemp)"
-                        sample "$pid" 150 10 -mayDie -file "$out" >/dev/null 2>&1 || true
+                        status=0
+                        sample "$pid" 150 10 -mayDie -file "$out" >/dev/null 2>"$out.err" || status=$?
+                        echo "measured [main-sample] sample の終わり ${status}・出力 $(wc -c < "$out" 2>/dev/null || echo 0) バイト・"\
+"エラーの行 $(wc -l < "$out.err" 2>/dev/null || echo 0)" | tee -a "$LOG"
+                        # エラーの頭の1行（置き場・番号は伏せる）
+                        head -1 "$out.err" 2>/dev/null | sed -E 's#/[^ ]*#…#g; s/[0-9]+/#/g' | cut -c1-120 \
+                            | sed 's/^/measured [main-sample] エラー: /' | tee -a "$LOG"
+                        rm -f "$out.err"
                         python3 Tools/main-thread-sample.py "$out" 10 | tee -a "$LOG"
                         rm -f "$out"
                     ) </dev/null &
