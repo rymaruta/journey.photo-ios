@@ -642,6 +642,13 @@ struct GalleryView: View {
                 Task { await showFollowingAfterSuggested(followed, userId: userId) }
             }
         }
+        if SignUpBenefit.showsOnHome(userId: auth.userId, isResolving: auth.isResolving, feedIsEmpty: isEmpty) {
+            // 札 #618 の案1（2026-11-15 判断・案C）: ログインしていない人に「登録するとできること」の札4枚を1回だけ。
+            // ひと回り（1画面目）と季節の段の後ろ（写真が主役）。押した先は今のログイン画面（`SignInSheet`）のまま。
+            // 絵の地は、この後ろに並ぶ写真から（同じ写真を上の段と続けて見せない）
+            HomeSignUpBenefitsView(photos: Array((rows.rest.isEmpty ? rows.lead : rows.rest)
+                .map(\.cover).prefix(HomeSignUpBenefitsLayout.photoCount)))
+        }
         if !rows.rest.isEmpty {
             HomeMosaic(groups: rows.rest, onReport: { reportTarget = $0 }, footer: footer(rows),
                        firstPostIds: firstPosts)
