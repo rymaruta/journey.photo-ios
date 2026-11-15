@@ -98,6 +98,31 @@ enum UploadDetails {
     /// 当て推量に頼り切らない——出なかった回は `libraryOpenSteps` で立て直せる
     static let autoOpenDelayNanoseconds: UInt64 = 900_000_000
 
+    /// 題・説明・タグの候補（端末の AI・札 #622）を作り始めるまで待つ時間。撮影地は写真の位置から少し遅れて入り、
+    /// 打って直すこともあるので、入り終わってから1回だけ作る（待つ間に撮影地が変われば取り消して待ち直す）
+    static let suggestDelayNanoseconds: UInt64 = 800_000_000
+
+    /// 候補の札の並びの行（写真ごとに「題の候補の数」と「説明の候補の有無」の2行）。`UploadView` が変わりを見る
+    static func suggestLayoutRows(id: UUID, titles: Int, caption: Bool) -> [String] {
+        ["\(id.uuidString)|title|\(titles)", "\(id.uuidString)|caption|\(caption)"]
+    }
+
+    /// 候補の札が変わったときに、打っている欄へ送り直すか（#622・#607）。**打っている欄より下の札だけが変わったときは
+    /// 送らない**——題の欄の下の題の候補・説明の欄の下の説明の候補は、打っている欄を動かさない（送ると、打ち始めの
+    /// 1字で欄が下の端へ跳ねる）。ほかの写真の札や、説明を打っている写真の題の候補は、欄を動かす
+    static func suggestMovesFocusedField(old: [String], new: [String], focused: UploadFieldFocus) -> Bool {
+        let changed = Set(new).symmetricDifference(Set(old)).map { row -> String in
+            let parts = row.split(separator: "|")
+            return parts.count >= 2 ? "\(parts[0])|\(parts[1])" : row
+        }
+        let below: Set<String>
+        switch focused {
+        case .title(let id): below = ["\(id.uuidString)|title", "\(id.uuidString)|caption"]
+        case .caption(let id): below = ["\(id.uuidString)|caption"]
+        }
+        return changed.contains { !below.contains($0) }
+    }
+
     /// 「ライブラリから選ぶ」を押したときに `showLibrary` に入れる値の順。
     /// **立ったままなら一度下ろしてから立てる**（true に true を入れても変化にならず、開かない）
     static func libraryOpenSteps(isPresented: Bool) -> [Bool] {

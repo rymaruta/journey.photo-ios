@@ -3037,8 +3037,15 @@ final class ScreenshotTests: XCTestCase {
         guard evening.waitForExistence(timeout: 5) else { return unreached(app, "時間帯の札（search.dayPart.evening）が無い") }
         // 札 #531（run 1308 の絵）: 「秋」を押すと結果の並びが出て、季節と時間帯の札の段は画面の上へ送られている
         // （札は在るが押せない）。短い引きで上へ戻してから押す（上限あり）
+        //
+        // 札 #623（run 1387 の要素の木）: 結果を縦に送る枠の上端は y=284.7 で、その上（233.7〜277.7）は貼り付いた種類の
+        // チップの段。季節と時間帯の段が y=251.7〜295.7 と半分以上その下に隠れていても、前の条件
+        // （下端 < 高さ×0.3 = 286.8）では引かずに止まり、続けて横に送る指（「冬」の中心 y=273.7）が種類の段に当たって
+        // 段が動かなかった。隠れているかは、縦に送る枠（「夕」を含む枠でいちばん高いもの）の上端と段の上端で見る
+        let contentTop = app.scrollViews.containing(.button, identifier: "search.dayPart.evening")
+            .allElementsBoundByIndex.map(\.frame).max { $0.height < $1.height }?.minY ?? app.frame.height * 0.3
         var pulls = 0
-        while !evening.isHittable, evening.frame.maxY < app.frame.height * 0.3, pulls < 6 {
+        while !evening.isHittable, evening.frame.minY < contentTop, pulls < 6 {
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
                 .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)),
                        withVelocity: .slow, thenHoldForDuration: 0.3)
@@ -3056,11 +3063,100 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
         }
         guard evening.isHittable else {
-            return unreached(app, "時間帯の「夕」を押せる所へ戻せない（\(pulls) 回引いた・枠 \(evening.frame)・enabled=\(evening.isEnabled)）")
+            return unreached(app, "時間帯の「夕」を押せる所へ戻せない（\(pulls) 回引いた・枠 \(evening.frame)・縦に送る枠の上端 \(contentTop)・enabled=\(evening.isEnabled)）")
         }
         evening.tap()
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "11d-探す（季節と時間帯で絞る・秋の夕方）")
+    }
+
+    /// **文で探す**（札 #623 の案2・2026-11-15 判断）。「京都 紅葉 夜」と打って「検索」を押すと、
+    /// 字の語「京都」と季節「秋」と時間帯「夜」の札が「こう読みました」に出て、季節と時間帯のチップも選んだ状態になる。
+    /// 札を押すと外れる。「雨でも撮れる所」は絞らず、そのことを1行で言う。
+    ///
+    /// 端末の AI は切って（`-JPOnDeviceAI off`）言葉の表で読む——Mac のシミュレーターで AI が動くかは
+    /// `SearchSentenceDeviceEvalTests` が別に書き出す。絵の中身を毎回同じにするため
+    func testCapturesSearchSentence() {
+        let app = XCUIApplication()
+        // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPOnDeviceAI", "off"]
+        // 0件の外し方の動きを見えない要素に出す（回 1383 で外さなかった理由を数で取る）
+        app.launchArguments += ["-JPSearchReadingProbe", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 1 else { return unreached(app, "tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 1") }
+        tabBar.buttons.element(boundBy: 1).tap()
+
+        let field = app.textFields["search.field"].firstMatch
+        guard field.waitForExistence(timeout: 20) else { return unreached(app, "search.field.waitForExistence(timeout: 20)") }
+        field.tap()
+        guard waitForKeyboardFocus(field) else { return unreached(app, "探すの欄に焦点が来ない") }
+        field.typeText("京都 紅葉 夜\n")
+
+        let dayPart = app.buttons["search.reading.dayPart"].firstMatch
+        guard dayPart.waitForExistence(timeout: 10) || app.buttons["search.reading.dayPart.dropped"].firstMatch.exists else {
+            return unreached(app, "「こう読みました」の時間帯の札が出ない",
+                             probes: ["search.reading.text", "search.reading.season", "search.reading.season.dropped",
+                                      "search.reading.busy"])
+        }
+        // 撮影スポットの索引と写真の絵が描かれるのを待つ（0件と決まれば、1つ外した形に替わる）
+        Thread.sleep(forTimeInterval: 5)
+        shoot(app, "11v-探す（文で探す、京都 紅葉 夜）")
+        let probe = app.descendants(matching: .any)["search.reading.probe"].firstMatch
+        print("measured [search-relax] probe=\(probe.exists ? (probe.value as? String ?? "-") : "missing")")
+
+        // 2026-11-15 判断: 3つ重ねて0件なら、1つ外していちばん多く残る形を自動で見せる。外した札は薄く残り、1行で言う。
+        // 押すと元の3つに戻る（本番のデータでは秋と夜の両方の案内がある京都の観光スポットが無く、0件だった・回 1381）
+        let droppedIDs = ["search.reading.season.dropped", "search.reading.dayPart.dropped", "search.reading.text.dropped"]
+        if let dropped = droppedIDs.map({ app.buttons[$0].firstMatch }).first(where: { $0.exists }) {
+            let note = app.staticTexts["search.reading.note"].firstMatch
+            XCTAssertTrue(note.exists && note.label.contains("当てはまる所は無いので"), "外したことを1行で言っていない")
+            // 結果が出ている: 観光スポットの節か、写真の格子（`search.emptyMap` は写真が0件なら観光スポットがあっても出るので見ない・回 1385）
+            let spots = app.descendants(matching: .any)["search.spots"].firstMatch
+            let probeText = app.descendants(matching: .any)["search.reading.probe"].firstMatch.value as? String ?? ""
+            XCTAssertTrue(spots.exists || probeText.contains("zero=false"), "1つ外しても0件のまま: \(probeText)")
+            dropped.tap()
+            XCTAssertTrue(dropped.waitForNonExistence(timeout: 5), "薄い札を押しても戻らない")
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "11y-探す（文で探す、外した札を戻した）")
+        }
+        // 元の3つ（京都、秋、夜）がそろっている。季節と時間帯のチップ（今ある絞り込み）も選んだ状態
+        let season = app.buttons["search.reading.season"].firstMatch
+        guard season.waitForExistence(timeout: 5) else { return unreached(app, "季節の札が無い") }
+        XCTAssertTrue(app.buttons["search.reading.text"].firstMatch.exists, "字の語「京都」の札が無い")
+        XCTAssertTrue(dayPart.exists, "時間帯「夜」の札が無い")
+        XCTAssertEqual(field.value as? String, "京都", "欄が字の語「京都」になっていない")
+        XCTAssertTrue(app.buttons["search.season.autumn"].firstMatch.isSelected, "季節のチップ「秋」が選ばれていない")
+        XCTAssertTrue(app.buttons["search.dayPart.night"].firstMatch.isSelected, "時間帯のチップ「夜」が選ばれていない")
+
+        // 札を押すと外れる（季節の札が消え、季節のチップも外れる。ほかの札は残る）
+        season.tap()
+        XCTAssertTrue(season.waitForNonExistence(timeout: 5), "季節の札を押しても外れない")
+        XCTAssertFalse(app.buttons["search.season.autumn"].firstMatch.isSelected, "季節の札を外しても「秋」のチップが残る")
+        XCTAssertTrue(dayPart.exists, "季節を外したら時間帯の札まで消えた")
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "11w-探す（文で探す、季節の札を外した）")
+
+        // 欄の無い条件（雨）は絞らず、1行で言う
+        let clear = app.buttons["search.clear"].firstMatch
+        if clear.exists, clear.isHittable { clear.tap() }
+        let clearTimes = app.buttons["search.clearTimeFilters"].firstMatch
+        if clearTimes.exists, clearTimes.isHittable { clearTimes.tap() }
+        field.tap()
+        guard waitForKeyboardFocus(field) else { return unreached(app, "探すの欄に2回目の焦点が来ない") }
+        field.typeText("雨でも撮れる所\n")
+        let note = app.staticTexts["search.reading.note"].firstMatch
+        guard note.waitForExistence(timeout: 10) else { return unreached(app, "「雨」の1行が出ない") }
+        XCTAssertTrue(note.label.contains("雨の日に向くか"), "1行が雨のことを言っていない: \(note.label)")
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "11x-探す（文で探す、雨は絞らない）")
     }
 
     /// **探すの「機材から探す」の札3枚**（2026-10-30 owner 採用・#419）。発見の顔のいちばん下の段なので、

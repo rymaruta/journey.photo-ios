@@ -2,6 +2,23 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.95",
+      "date": "2026-11-15",
+      "items": [
+        {
+          "symbol": "sparkles",
+          "title": { "ja": "投稿するときに AI が候補を出す", "en": "AI suggestions when you post" },
+          "detail": { "ja": "投稿の画面で、題や説明やタグの候補を端末の AI が出します。押すと欄に入ります。Apple Intelligence が使える iPhone だけで、写真は外に送りません。", "en": "On the post screen, the on-device AI suggests a title, description and tags. Tap one to fill it in. Only on iPhones with Apple Intelligence, and your photo never leaves the device." }
+        },
+        {
+          "symbol": "text.magnifyingglass",
+          "title": { "ja": "文で探せる", "en": "Search with a sentence" },
+          "detail": { "ja": "探すで「京都 紅葉 夜」のように打つと、季節や時間帯で絞り込みます。見つからないときは条件を1つ外して見せます。", "en": "Type something like \"Kyoto autumn night\" in Search to narrow by season and time of day. If nothing matches, one condition is dropped to show results." },
+          "destination": "search"
+        }
+      ]
+    },
+    {
       "version": "1.1.94",
       "date": "2026-11-15",
       "items": [
