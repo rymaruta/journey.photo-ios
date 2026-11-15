@@ -33,7 +33,10 @@ struct TripPlansView: View {
             if auth.isResolving {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if auth.userId == nil {
-                SignInView(reason: L("旅行プランを作るにはログインしてください", "Sign in to plan a trip."))
+                // 2026-11-15（札 #621・owner「登録してもらう入口に」）: ログインの画面は変えず、理由の1行で
+                // 「ログインすると何ができるか」を言う（押す回数は増やさない）
+                SignInView(reason: L("ログインすると、ひとこと書くだけで AI が旅行プランを作ります",
+                                     "Sign in and AI plans your trip from one line."))
             } else {
                 content
             }

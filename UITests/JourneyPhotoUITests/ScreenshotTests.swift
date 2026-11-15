@@ -3662,6 +3662,34 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "64d-旅行プランを作る・下書き（時間帯の順・日の出と日の入り）")
     }
 
+    // MARK: - AI で旅行プランを作る（2026-11-15 札 #621）
+
+    /// **「どこへ、何日？」の欄 → 例のチップを押す → 日程の画面（並べた理由の札）**。押す回数は2回（作る・チップ）。
+    /// 見本のプラン（`-JPTripPlanFixture`）と見本の AI（`-JPTripAIFixture`・サーバーへは送らない・今月の残り 3 回）。
+    /// シミュレーターでは端末の AI が使えない（run 1380 で `modelNotReady`）ので、サーバーの AI の道を通る。
+    /// 出なければ撮らずに抜ける
+    func testCapturesTripAI() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripAIFixture", "YES"])
+        guard openTripsRow(app, "trips.plans") else { return }
+        let create = app.buttons["trips.create"].firstMatch
+        guard create.waitForExistence(timeout: 15), create.isHittable else { return unreached(app, "trips.create") }
+        create.tap()
+        let field = app.descendants(matching: .any)["tripAI.field"].firstMatch
+        guard field.waitForExistence(timeout: 15) else { return unreached(app, "tripAI.field") }
+        // 残りの帯（見本は残り 3 回）と行きたい場所の一覧が描かれるのを待つ
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "65x-旅行プランを作る（どこへ、何日？）")
+
+        let chip = app.buttons["秋の京都"].firstMatch
+        guard chip.waitForExistence(timeout: 5), chip.isHittable else { return unreached(app, "例のチップ「秋の京都」") }
+        chip.tap()
+        let card = app.descendants(matching: .any)["tripAI.card"].firstMatch
+        guard card.waitForExistence(timeout: 40) else { return unreached(app, "tripAI.card") }
+        // 「〜を作りました　元に戻す」の知らせと写真が描かれるのを待つ
+        Thread.sleep(forTimeInterval: 1.5)
+        shoot(app, "65y-AI で作った旅行プラン（並べた理由）")
+    }
+
     // MARK: - ホームの旅行プランの札の「⋯」（2026-11-12）
 
     /// **ホームの上の札（出発が近い旅行プラン）の「⋯」と、削除の「元に戻す」**（owner「削除するときは旅行プランの

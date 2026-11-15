@@ -17,6 +17,8 @@ enum ProIcon: String, CaseIterable {
     case medal
     /// 旅のトランク（取っ手と2本の革帯の鞄・2026-10-18）
     case trunk
+    /// AI で旅行プランを作る（4つ角の光と、点をつなぐ道・2026-11-15 札 #621）
+    case ai
 
     /// 24 の升目の線を `side` の大きさに
     @MainActor
@@ -90,6 +92,18 @@ enum ProIcon: String, CaseIterable {
                 path.addLine(to: p(8, 20))
                 path.move(to: p(16, 7.5))
                 path.addLine(to: p(16, 20))
+            case .ai:
+                // M8 3 Q8 8 13 8 Q8 8 8 13 Q8 8 3 8 Q8 8 8 3Z（4つ角の光）・M5 19.5 h4 a3 3 0 0 0 0-6 h4 a3 3 0 0 1 0 6 h2（道）
+                path.move(to: p(8, 3))
+                path.addQuadCurve(to: p(13, 8), control: p(8, 8))
+                path.addQuadCurve(to: p(8, 13), control: p(8, 8))
+                path.addQuadCurve(to: p(3, 8), control: p(8, 8))
+                path.addQuadCurve(to: p(8, 3), control: p(8, 8))
+                path.move(to: p(4, 20))
+                path.addLine(to: p(14, 20))
+                path.addArc(center: p(14, 17.5), radius: 2.5 * k, startAngle: .degrees(90), endAngle: .degrees(-90), clockwise: true)
+                path.addLine(to: p(13, 15))
+                path.addEllipse(in: circle(19, 9.5, 1.5))
             }
         }
     }
