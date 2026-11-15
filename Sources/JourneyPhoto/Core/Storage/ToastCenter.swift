@@ -19,9 +19,13 @@ final class ToastCenter: ObservableObject {
         /// 押せる一手（1.1.83「カードにする」）。無ければ知らせだけ
         var actionTitle: String? = nil
         var action: (() -> Void)? = nil
+        /// 2つ目の一手（札 #630: ログインしていない人の知らせの「ログイン」。1つ目は「新規登録」）。1つ目が無ければ出さない
+        var secondaryTitle: String? = nil
+        var secondaryAction: (() -> Void)? = nil
 
         static func == (lhs: Message, rhs: Message) -> Bool {
             lhs.id == rhs.id && lhs.text == rhs.text && lhs.kind == rhs.kind && lhs.actionTitle == rhs.actionTitle
+                && lhs.secondaryTitle == rhs.secondaryTitle
         }
 
         /// `info`: 成功でも失敗でもない案内（届く時期など・2026-10-09）
@@ -53,11 +57,21 @@ final class ToastCenter: ObservableObject {
     /// 押せる一手（`actionTitle`・`action`）を付けて出す（1.1.83「カードにする」）。どちらも無ければ知らせだけ。
     /// 1.1.84 のまとめ: 「取り消す」（`undo`・トランク）と同じ部品に両方を残す。こちらで出すと前の「取り消す」は消える
     func show(_ text: String, kind: Message.Kind = .success, actionTitle: String? = nil, action: (() -> Void)? = nil) {
+        show(text, kind: kind, actionTitle: actionTitle, action: action, secondaryTitle: nil, secondaryAction: nil)
+    }
+
+    /// 2つの一手を付けて出す（札 #630: 「新規登録」と「ログイン」）。2つ目は1つ目と一緒のときだけ出す。
+    /// 別の口にしてあるのは、上の口を後ろの閉じ括弧（trailing closure）で呼ぶ所が2つ目の一手に結び付かないため
+    func show(_ text: String, kind: Message.Kind, actionTitle: String?, action: (() -> Void)?,
+              secondaryTitle: String?, secondaryAction: (() -> Void)?) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // 空の知らせは出さない（何も伝えない帯が画面を覆う）
         guard !trimmed.isEmpty else { return }
+        let hasFirst = actionTitle != nil && action != nil
+        let hasSecond = hasFirst && secondaryTitle != nil && secondaryAction != nil
         current = Message(id: UUID(), text: trimmed, kind: kind,
-                          actionTitle: action == nil ? nil : actionTitle, action: actionTitle == nil ? nil : action)
+                          actionTitle: hasFirst ? actionTitle : nil, action: hasFirst ? action : nil,
+                          secondaryTitle: hasSecond ? secondaryTitle : nil, secondaryAction: hasSecond ? secondaryAction : nil)
         undo = nil
         scheduleHide(current?.action == nil ? Self.duration : Self.actionDuration)
     }

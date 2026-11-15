@@ -109,6 +109,8 @@ struct RootView: View {
     /// 下書きの一覧から開く下書き（投稿・ストーリー・2026-10-29・#400）。画面を閉じたら忘れる
     @State private var openPostDraftId: String?
     @State private var openStoryDraftId: String?
+    /// ログインしていない人が通知を押したときの知らせの「新規登録」「ログイン」から開くログイン画面（札 #630）
+    @State private var notificationsSignIn: SignInRequest?
     /// 下書きを開くのを待っている（待っている間は次の依頼を受けない・二重に開かない）
     @State private var openingDraft = false
     /// 待っている間に来た次の依頼（最後の1つ）。前のが終わったら開く（黙って捨てない・2回目の見直し）
@@ -317,8 +319,13 @@ struct RootView: View {
                 // 閉じた回に「ログインしてください」と出ていた。何分も後にも言わない
                 if auth.userId == nil {
                     if waited <= Self.activityHintLimit {
-                        toasts.show(L("お知らせを見るにはログインしてください",
-                                      "Sign in to see your notifications"))
+                        // 2026-11-15（札 #630）: 知らせだけでは先へ進めなかった。「新規登録」（登録の側）と
+                        // 「ログイン」を添える（押す回数 1回）
+                        toasts.show(SignInPrompt.notifications, kind: .info,
+                                    actionTitle: SignInPrompt.signUpLabel,
+                                    action: { notificationsSignIn = SignInRequest(reason: SignInPrompt.notificationsSignUp, entry: .signUp) },
+                                    secondaryTitle: SignInPrompt.loginLabel,
+                                    secondaryAction: { notificationsSignIn = SignInRequest(reason: SignInPrompt.notifications) })
                     }
                 } else {
                     // 待っている間にログインした: 押した通知が誰あてか分からないので
@@ -436,6 +443,10 @@ struct RootView: View {
             // 画面写真の試験だけ: 起動のときに1回出す（`PreviewSession.opensPushPrimer`・Debug のみ）
             .task { await offerPreviewPushPrimer() }
             .sheet(isPresented: $showPushPrimer) { PushPrimerView(moment: pushPrimerMoment) }
+            // 通知を押したがログインしていない回の知らせから開く、今のログイン画面（札 #630）
+            .sheet(item: $notificationsSignIn) { request in
+                SignInSheet(reason: request.reason, entry: request.entry)
+            }
     }
 
     /// 届いた画面に、旅のトランクの「はじめての硬貨」の案内（2026-10-18 owner 承認）を足したもの。

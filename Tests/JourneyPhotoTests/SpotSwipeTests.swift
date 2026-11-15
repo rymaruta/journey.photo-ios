@@ -114,7 +114,9 @@ final class SpotSwipeTests: XCTestCase {
         let lines = SpotSwipe.pauseTitle(wants: 12).components(separatedBy: "\n")
         XCTAssertEqual(lines.count, 2)
         XCTAssertTrue(lines.allSatisfy { $0.count >= 4 })
-        XCTAssertEqual(SpotSwipe.actionTitle(signedIn: false), "ログインして見る")
+        // 未ログインは新規登録が主、ログインは下の文字のボタン（札 #630・Web の `/swipe` と同じ字）
+        XCTAssertEqual(SpotSwipe.actionTitle(signedIn: false), "新規登録して見る")
+        XCTAssertEqual(SpotSwipe.loginTitle, "ログインして見る")
         XCTAssertEqual(SpotSwipe.actionTitle(signedIn: true), "旅行プランにする")
         XCTAssertEqual(SpotSwipe.footerAction(signedIn: false), "地図で見る")
         XCTAssertEqual(SpotSwipe.footerCount(2), "行きたい 2 か所")

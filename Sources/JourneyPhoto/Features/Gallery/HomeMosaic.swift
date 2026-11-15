@@ -484,7 +484,7 @@ struct HomeTileLikeButton: View {
         case .send: break
         case .ignore: return
         case .askToSignIn:
-            signInAsk = SignInPrompt.request(SignInPrompt.like, userId: auth.userId, isResolving: auth.isResolving)
+            signInAsk = SignInPrompt.request(SignInPrompt.like, signUpReason: SignInPrompt.likeSignUp, userId: auth.userId, isResolving: auth.isResolving)
             return
         }
         let photoId = photo.id
