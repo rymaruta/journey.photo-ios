@@ -1,0 +1,204 @@
+import XCTest
+
+/// **撮影地の欄（`PlaceSearchField`）の候補の行の当たりが 44pt あり、隣の行と重ならないか**（2026-11-15・人間工学の点検）。
+///
+/// 候補の行は字（12pt）の行で、当たりは縦に 22pt しかなかった（決まりは 44pt。見た目は大きくせず当たりだけ広げる）。
+/// 見本の1枚の投稿画面（`-JPPreviewUploadSample`・端末の中の通信）で撮影地の欄に「神社」などと打ち、撮影スポットの候補を出して、
+/// **行の真ん中から上下にずらした所を実際に押し**、どの行が選ばれたか（欄に入った名前）で当たりの広さを測る。
+/// 読み上げの枠（`frame`）は当たり（`contentShape`）と一致するとは限らないので、押して確かめる。
+///
+/// 数は `PLACEHIT …` の行でログに出す（Mac の `xcodebuild-full.log`）:
+/// - `frames`: 候補の行の読み上げの枠と行の間隔
+/// - `probe row=<i> dy=<ずらした量> -> self|row<j>|none`: 押した結果
+/// - `extent row=<i> up=<上へ届いた量> down=<下へ届いた量>`: 自分の行が選ばれた一番遠い所
+final class PlaceSuggestionHitTests: XCTestCase {
+
+    private static let previewUserId = "67d49a68-80f1-7083-b0e0-c767886ef868"
+    /// 撮影スポットの名前に多い語。2件以上の候補が出るものを前から使う
+    private static let queries = ["神社", "公園", "寺", "城"]
+    /// 押す所（行の真ん中からのずれ・pt）。44pt の当たりなら ±21 まで自分の行
+    private static let offsets: [CGFloat] = [-21, -16, -11, -8, 8, 11, 16, 21]
+    private static let spotPrefix = "観光スポット "
+
+    override func setUp() {
+        continueAfterFailure = true
+    }
+
+    func testPlaceSuggestionRowsHave44ptHitAreaWithoutOverlap() {
+        guard let app = openUpload() else { return XCTFail("投稿の画面（見本の1枚）まで行けない") }
+        let field = app.textFields["upload.place"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "撮影地の欄が無い")
+        raise(field, in: app)
+
+        guard let query = showCandidates(app, field) else {
+            return XCTFail("撮影地の欄に打っても撮影スポットの候補が2件以上出ない（\(Self.queries)）")
+        }
+        var rows = candidates(app)
+        logFrames(app, rows, field)
+        let keyboardTop = app.keyboards.firstMatch.exists ? app.keyboards.firstMatch.frame.minY : .greatestFiniteMagnitude
+        XCTAssertLessThan(rows[1].frame.maxY, keyboardTop, "候補の2行目がキーボードの裏にある（押せない）")
+
+        // 1行目と2行目を、真ん中から上下にずらして押す
+        var extents: [Int: (up: CGFloat, down: CGFloat)] = [0: (0, 0), 1: (0, 0)]
+        var results: [String: String] = [:]
+        for index in 0..<2 {
+            for dy in Self.offsets {
+                rows = candidates(app)
+                guard rows.count >= 2 else { break }
+                let names = rows.map(\.name)
+                let target = rows[index].frame
+                let point = app.coordinate(withNormalizedOffset: .zero)
+                    .withOffset(CGVector(dx: target.minX + min(40, target.width / 2), dy: target.midY + dy))
+                point.tap()
+                Thread.sleep(forTimeInterval: 0.8)
+                let value = (field.value as? String) ?? ""
+                let result: String
+                if let picked = names.firstIndex(of: value) {
+                    result = picked == index ? "self" : "row\(picked)"
+                } else {
+                    result = "none"
+                }
+                results["\(index)|\(Int(dy))"] = result
+                log("probe row=\(index) dy=\(Int(dy)) -> \(result) value=\(value)")
+                if result == "self" {
+                    var e = extents[index] ?? (0, 0)
+                    if dy < 0 { e.up = max(e.up, -dy) } else { e.down = max(e.down, dy) }
+                    extents[index] = e
+                }
+                if value != query {
+                    // 選ばれたら、打ち直して候補を出し直す
+                    guard retype(app, field, query) else { return XCTFail("打ち直しても候補が出ない（\(query)）") }
+                }
+            }
+        }
+        for index in 0..<2 {
+            let e = extents[index] ?? (0, 0)
+            log("extent row=\(index) up=\(Int(e.up)) down=\(Int(e.down)) height>=\(Int(e.up + e.down))")
+        }
+
+        // 当たりは 44pt（真ん中から上下 21 まで自分の行）。隣の行の当たりを奪わない（2行目の上 21 は2行目・1行目の下 21 は1行目）
+        for index in 0..<2 {
+            for dy in Self.offsets {
+                XCTAssertEqual(results["\(index)|\(Int(dy))"], "self",
+                               "候補の \(index + 1) 行目の真ん中から \(Int(dy))pt の所を押すと \(results["\(index)|\(Int(dy))"] ?? "-") が選ばれる（当たりが 44pt 無い・重なる）")
+            }
+        }
+    }
+
+    // MARK: - 道具
+
+    private struct Row {
+        let name: String
+        let frame: CGRect
+    }
+
+    /// 撮影スポットの候補の行（上から）。名前は読み上げの「観光スポット <名前>、<地域>」から取る
+    private func candidates(_ app: XCUIApplication) -> [Row] {
+        let buttons = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", Self.spotPrefix))
+        return buttons.allElementsBoundByIndex.compactMap { button -> Row? in
+            guard button.exists else { return nil }
+            let rest = button.label.dropFirst(Self.spotPrefix.count)
+            let name = rest.split(separator: "、", maxSplits: 1).first.map(String.init) ?? String(rest)
+            return Row(name: name, frame: button.frame)
+        }
+        .sorted { $0.frame.minY < $1.frame.minY }
+    }
+
+    /// 候補が2件以上出るまで、語を替えて打つ。出た語を返す
+    private func showCandidates(_ app: XCUIApplication, _ field: XCUIElement) -> String? {
+        for query in Self.queries where retype(app, field, query) {
+            return query
+        }
+        return nil
+    }
+
+    /// 欄を空にして `query` を打ち、候補が2件以上出るまで待つ
+    private func retype(_ app: XCUIApplication, _ field: XCUIElement, _ query: String) -> Bool {
+        guard waitForFocus(field) else { return false }
+        let current = (field.value as? String) ?? ""
+        if !current.isEmpty {
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 2))
+        }
+        field.typeText(query)
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline {
+            if candidates(app).count >= 2 {
+                // キーボード・候補の並びが落ち着くまで
+                Thread.sleep(forTimeInterval: 1)
+                return candidates(app).count >= 2
+            }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        return false
+    }
+
+    private func logFrames(_ app: XCUIApplication, _ rows: [Row], _ field: XCUIElement) {
+        let pitches = zip(rows, rows.dropFirst()).map { Int(($1.frame.midY - $0.frame.midY).rounded()) }
+        log("frames field=\(field.frame) keyboard=\(app.keyboards.firstMatch.exists ? "\(app.keyboards.firstMatch.frame)" : "none")"
+            + " rows=\(rows.map { "\($0.name)@\($0.frame)" }) pitch=\(pitches)")
+    }
+
+    /// 欄を画面の上の方へ送る（下に候補の行が3つ出る場所を空ける）
+    private func raise(_ field: XCUIElement, in app: XCUIApplication) {
+        let window = app.windows.firstMatch.frame
+        var pushes = 0
+        while field.exists, field.frame.minY > window.height * 0.3, pushes < 6 {
+            let before = field.frame.minY
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            Thread.sleep(forTimeInterval: 1)
+            pushes += 1
+            if abs(field.frame.minY - before) < 1 { break }
+        }
+        log("raised field=\(field.frame) window=\(window)")
+    }
+
+    private func openUpload() -> XCUIApplication? {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewUploadSample", "YES"]
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 60) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return nil }
+        tabBar.buttons.element(boundBy: 2).tap()
+        let toPhoto = app.buttons["post.choice.photo"].firstMatch
+        guard toPhoto.waitForExistence(timeout: 10), toPhoto.isHittable else { return nil }
+        toPhoto.tap()
+        guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 60) else { return nil }
+        // 写真の位置から撮影地を引く・撮影スポットの索引を読む間を待つ
+        Thread.sleep(forTimeInterval: 3)
+        return app
+    }
+
+    /// 欄そのものの焦点（非公開の属性なので在るときだけ読む。読めない環境ではキーボードが出ているか）
+    private func waitForFocus(_ field: XCUIElement, timeout: TimeInterval = 8) -> Bool {
+        let app = XCUIApplication()
+        func focused() -> Bool {
+            if field.responds(to: NSSelectorFromString("hasKeyboardFocus")) {
+                return (field.value(forKey: "hasKeyboardFocus") as? Bool) == true
+            }
+            return app.keyboards.firstMatch.exists
+        }
+        // 右の端を押す（真ん中を押すと字の途中に入り、消す字が残る）
+        func tapEnd() { field.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap() }
+        if !focused(), field.isHittable { tapEnd() }
+        let deadline = Date().addingTimeInterval(timeout)
+        while !focused(), Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.5)
+            if !focused(), field.isHittable { tapEnd() }
+        }
+        return focused()
+    }
+
+    private func log(_ line: String) {
+        print("PLACEHIT \(line)")
+    }
+}
