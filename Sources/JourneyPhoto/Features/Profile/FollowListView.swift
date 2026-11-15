@@ -254,6 +254,8 @@ struct FollowListView: View {
                 // 縦の送りの中では字が色付きのリンクにならないよう、見た目は行のまま（`List` のときと同じ）
                 NavigationLink { UserProfileView(userId: user.id) } label: { person(user) }
                     .buttonStyle(.plain)
+                    // 画面写真の試験が人の頁へ進む目印（2026-11-15・札 #545）
+                    .accessibilityIdentifier("followList.person")
                 followButton(user)
             }
         }

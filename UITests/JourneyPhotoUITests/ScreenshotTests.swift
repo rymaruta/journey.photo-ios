@@ -1757,8 +1757,8 @@ final class ScreenshotTests: XCTestCase {
 
     /// プロフィールのリンクの共有（2026-11-15・札 #545 段1）: QR の画面の「リンクをコピー」「共有」（線のボタン2つ・44pt）と、
     /// 人の頁の ⋯ の「プロフィールを共有」。コピーは知らせまで確かめる。共有は iPhone の共有の画面を撮る。
-    /// 人の頁は ホームの写真 → 作者 で開く（人のトランクの試験と同じ道）。作者の行が出ない（写真の並び次第）・作者が自分なら、
-    /// 人の頁の分は撮らずに抜ける
+    /// 人の頁は ホームの写真 → 作者 で開く（人のトランクの試験と同じ道）。作者が自分なら、その頁の「フォロワー」→ 一覧の最初の人。
+    /// 作者の行・フォロワーが出ない（写真の並び・フォローの関係次第）なら、人の頁の分は撮らずに抜ける（事実は添付に出す）
     func testCapturesProfileShare() {
         func launch() -> XCUIApplication {
             let app = XCUIApplication()
@@ -1837,7 +1837,17 @@ final class ScreenshotTests: XCTestCase {
         }
         guard toAuthor.exists, toAuthor.isHittable else { return }
         toAuthor.tap()
+        // ホームの最初の写真は見本の利用者自身の写真のことがある（run 1342: 開いたのは自分の頁で、上のバーは「戻る」だけ）。
+        // 自分の頁なら、数の札「フォロワー」→ 一覧の最初の人 で他人の頁へ進む
         let more = app.buttons["userProfile.more"].firstMatch
+        if !more.waitForExistence(timeout: 8) {
+            let followers = app.descendants(matching: .any)["profile.count.followers"].firstMatch
+            if followers.waitForExistence(timeout: 5), followers.isHittable {
+                followers.tap()
+                let person = app.buttons["followList.person"].firstMatch
+                if person.waitForExistence(timeout: 10), person.isHittable { person.tap() }
+            }
+        }
         guard more.waitForExistence(timeout: 15) else {
             // 作者が自分（見本の利用者）なら ⋯ は無い。撮らずに抜ける。事実を取る（2026-11-15・run 1337 で ⋯ が見つからなかった）:
             // 上のバーの押せるものの名前と目印、自分の頁の印（編集）の有無
