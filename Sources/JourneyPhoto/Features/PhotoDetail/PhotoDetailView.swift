@@ -11,6 +11,10 @@ struct PhotoDetailView: View {
     var context: [Photo] = []
     /// 開いたら送るコメント（コメントへの返信の知らせから・札 #541）。最初の1枚でだけ、読み終えたら1回だけ
     var focusCommentId: String?
+    /// 投稿の前のプレビュー（札 #409・`PostPreviewSheet`）。**この画面と同じ部品で、投稿したあとの見え方だけを描く**
+    /// （写真・題・枚数・公開範囲とカテゴリの札・説明・作者・いいね等の列・撮影情報・タグ・曲）。まだサーバーに無い写真なので、
+    /// コメント・近くの写真・撮影スポットの読み込みと、入力欄・「…」・下へ引いて戻る指は付けない。読むのは作者の名前だけ
+    var postPreview: Bool = false
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
@@ -222,11 +226,13 @@ struct PhotoDetailView: View {
     /// コメント・いいねを受け付けるか（下書きは受け付けない・`PhotoDetailRules.acceptsReactions`）
     private var acceptsReactions: Bool { PhotoDetailRules.acceptsReactions(published: shown.published) }
 
-    init(photo: Photo, fromPublicFeed: Bool = true, context: [Photo] = [], focusCommentId: String? = nil) {
+    init(photo: Photo, fromPublicFeed: Bool = true, context: [Photo] = [], focusCommentId: String? = nil,
+         postPreview: Bool = false) {
         self.photo = photo
         self.fromPublicFeed = fromPublicFeed
         self.context = context
         self.focusCommentId = focusCommentId
+        self.postPreview = postPreview
         _current = State(initialValue: photo)
         // `AppEnvironment` は init で受け取れない（EnvironmentObject は body 以降）
         _model = StateObject(wrappedValue: PhotoDetailViewModel(
@@ -279,6 +285,55 @@ struct PhotoDetailView: View {
     // 型検査が現実的な時間で終わらなくなることがある
     // （"unable to type-check this expression in reasonable time"）。
     var body: some View {
+        if postPreview {
+            previewBody
+        } else {
+            screenBody
+        }
+    }
+
+    /// 投稿の前のプレビューの中身（`postPreview`・札 #409）。並びと部品は下の `screenBody` と同じ
+    /// （写真 `imageButton` → 題 `heading` → 札 `chips` → 説明 → 作者 → 操作の列 → 撮影情報・タグ・曲）。
+    /// 写真から地図・大きく見る画面へは行かない（押す指はシートの側で止めている・`PostPreviewSheet`）
+    private var previewBody: some View {
+        let hero = heroLineup
+        return ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    imageButton(hero)
+                    VStack(alignment: .leading, spacing: 16) {
+                        Group {
+                            heading(hero)
+                            chips
+                            paragraphs
+                            authorRow
+                        }
+                        socialBar(proxy)
+                        Group {
+                            if let exif = shown.exif {
+                                ExifRow(exif: exif)
+                            }
+                            if let tags = shown.tags, !tags.isEmpty {
+                                TagRow(tags: tags)
+                            }
+                            if let song = shown.song {
+                                SongRow(song: song)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, JPSpace.gutter)
+                    .padding(.top, JPSpace.l)
+                }
+                .padding(.bottom, 32)
+            }
+            .ignoresSafeArea(edges: .top)
+        }
+        // 作者の名前と @ユーザー名（自分のプロフィール）。ほかの読み込みはしない
+        .task(id: ownerId ?? "") { await model.loadOwner(ownerId, profiles: environment.profiles) }
+    }
+
+    @ViewBuilder
+    private var screenBody: some View {
         // UI テストのときだけ: body の評価を数える（`PerfRecorder`・札 #435 / #429。無効なら何もしない）
         let _ = PerfRecorder.shared.bodyHit(.photoDetail)
         // 2026-10-28 判断: **上の束は描くたびに1回だけ作る**（`HeroLineup`）。写真・点・題の下の1行が
@@ -2409,7 +2464,8 @@ struct PhotoDetailView: View {
     /// この近くの撮影スポットを引く（`PhotoTrip.nearbySpot`・2026-10-16）。`loadTripSpot` と同じ読み方で、
     /// 鍵は `PhotoTrip.nearbySpotKey`。読めなかった回は覚えない（次の `.task` で読み直す）
     private func loadNearbySpot() async {
-        guard let key = nearbySpotKey else { return }
+        // 投稿の前のプレビューでは読まない（まだサーバーに無い写真・`postPreview`）
+        guard !postPreview, let key = nearbySpotKey else { return }
         let stillHere = { !Task.isCancelled && nearbySpotKey == key }
         if nearbySpotLoaded?.spotId != key {
             guard let rows = await environment.spots.fetchIndexRows(), stillHere() else { return }
@@ -2444,6 +2500,8 @@ struct PhotoDetailView: View {
 
     /// 表を読む。本人の写真では、外した写真の先（表に無い）を決まりで求め直し、札に出す名前を引く
     private func loadPhotoLinks() async {
+        // 投稿の前のプレビューでは読まない（`postPreview`）
+        guard !postPreview else { return }
         let photo = shown
         let links = await environment.spots.fetchPhotoLinks()
         guard !Task.isCancelled, shown.id == photo.id else { return }

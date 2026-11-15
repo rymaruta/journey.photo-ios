@@ -1449,23 +1449,39 @@ struct MyPageView: View {
         draftRecent = shown.recent
     }
 
-    /// 一覧の1枚。**非公開の写真は一目で分かるようにする**
-    /// ——公開したつもりの写真が出ていない、がいちばん困る。
-    ///
-    /// v2（板 MyPage・2026-10-14）: 縦長 4:5。ピン留めと複数枚は右上の白い印（影つき・写真の上は白だけ）、
-    /// 非公開は写真を 55% に沈めて左下に「非公開」の札（黒 60%・12pt）。**印は読み上げない**
-    /// （格子の1枚の値として読む）。
-    ///
-    /// 2026-10-29 判断（owner・#400）: 札は「下書き」から**「非公開」**に替えた。「下書き」は端末の書きかけ
-    /// （`DraftsView`）だけを呼ぶ——投稿の画面でも同じものを「非公開」と呼んでいる
     private func gridCell(_ photo: Photo, multiple: Bool) -> some View {
+        MyPageGridCell(photo: photo, multiple: multiple, pinned: model.isPinned(photo.id))
+    }
+}
+
+/// マイページの格子の1枚（`MyPageView.gridCell` から出した・2026-11-15 札 #409）。投稿の前のプレビューの
+/// マイページのページも**この部品で描く**（写しを作らない）。
+///
+/// **非公開の写真は一目で分かるようにする**
+/// ——公開したつもりの写真が出ていない、がいちばん困る。
+///
+/// v2（板 MyPage・2026-10-14）: 縦長 4:5。ピン留めと複数枚は右上の白い印（影つき・写真の上は白だけ）、
+/// 非公開は写真を 55% に沈めて左下に「非公開」の札（黒 60%・12pt）。**印は読み上げない**
+/// （格子の1枚の値として読む）。
+///
+/// 2026-10-29 判断（owner・#400）: 札は「下書き」から**「非公開」**に替えた。「下書き」は端末の書きかけ
+/// （`DraftsView`）だけを呼ぶ——投稿の画面でも同じものを「非公開」と呼んでいる
+struct MyPageGridCell: View {
+
+    let photo: Photo
+    /// 同じ投稿の兄弟が並びに居るか（右上の複数枚の印）
+    let multiple: Bool
+    /// 先頭にピン留めしているか（右上のピンの印）
+    var pinned = false
+
+    var body: some View {
         let draft = photo.published == false
         return PhotoFrame(photo: photo, aspect: ProfileV2.gridAspect, corner: 0)
             .opacity(draft ? 0.55 : 1)
             .background(WebTheme.card)
             .overlay(alignment: .topTrailing) {
                 HStack(spacing: JPSpace.xxs) {
-                    if model.isPinned(photo.id) {
+                    if pinned {
                         Image(systemName: "pin.fill")
                     }
                     if multiple {

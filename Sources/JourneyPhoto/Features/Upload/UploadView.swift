@@ -52,6 +52,13 @@ struct UploadView: View {
     @State private var showsDetails = false
     /// 写真を選ぶ画面を自動で開いたか（一度だけ・`UploadDetails.autoOpensLibrary`）
     @State private var offeredLibrary = false
+    /// 投稿の前のプレビューを開いているか（札 #409・下の帯の「プレビュー」）
+    @State private var showPreview = false
+    /// プレビューの中で「投稿する」を押した。**シートが閉じきってから送る**（送り終わりの共有カードは
+    /// この画面のシートなので、プレビューが開いたままだと出せない）
+    @State private var postAfterPreview = false
+    /// アクセシビリティの大きさでは帯の2つのボタンを縦に積む（`PostPreview.stacksBar`）
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// 編集画面の行き先（写真の id）
     private struct EditTarget: Identifiable { let id: UUID }
@@ -778,6 +785,14 @@ struct UploadView: View {
             }
             askedRestore = true
         }
+        // 投稿の前のプレビュー（札 #409・案A）。閉じれば書きかけのまま戻る。中で「投稿する」を押した回だけ、閉じてから送る
+        .sheet(isPresented: $showPreview, onDismiss: {
+            guard postAfterPreview else { return }
+            postAfterPreview = false
+            Task { await model.submit() }
+        }) {
+            PostPreviewSheet(model: model) { postAfterPreview = true }
+        }
         .sheet(isPresented: $showSongPicker) {
             NavigationStack {
                 SongPickerView { song in model.song = song }
@@ -840,48 +855,37 @@ struct UploadView: View {
                       photoLibrary: .shared())
     }
 
-    /// 下の帯の主ボタン（板の投稿画面: 幅いっぱい・白・「3枚を投稿する」・`UploadSubmitBar`）。
-    /// 送信中は輪を前に足して何枚目かを出す。押せない間は薄めて理由を下に1行
+    /// 下の帯（板の投稿画面: 白の主ボタン「3枚を投稿する」・`UploadSubmitBar`）。
+    /// 送信中は輪を前に足して何枚目かを出す。押せない間は薄めて理由を下に1行。
+    ///
+    /// 2026-11-15（札 #409・案A）: 主ボタンの左に線の副ボタン「プレビュー」（44・`jpOutlineButton(.regular)`）。
+    /// 主は1画面に1つのまま（Components 01）。投稿の押す回数は今と同じ 1 回、見え方を見るのは 1 回、見てから投稿で 2 回。
+    /// 読み込み中・送っている間・写真が無い間はプレビューも押せない（主ボタンと同じ 32% に薄める・理由は下の1行）。
+    /// **アクセシビリティの大きさでは縦に積む**（DesignSystem 06）。それより小さくても1行に入らなければ（英語の
+    /// 「Post 3 photos」など）`ViewThatFits` が縦に替える。積むときは上にプレビュー、下（親指の側）に主ボタン
     private var submitBar: some View {
+        let loading = model.isLoadingPicked || model.preparingCaptures > 0 || model.isRestoringDraft
         let reason = UploadSubmitBar.blockedReason(hasPhotos: !model.items.isEmpty,
-                                                   loading: model.isLoadingPicked || model.preparingCaptures > 0
-                                                       || model.isRestoringDraft,
+                                                   loading: loading,
                                                    working: model.isWorking)
         return VStack(spacing: JPSpace.xs) {
-            Button {
-                Task { await model.submit() }
-            } label: {
-                HStack(spacing: JPSpace.xs) {
-                    if let export = model.exportProgress {
-                        // 送り始める前の書き出し（「0/N」のまま止まって見えないように）
-                        ProgressView().tint(WebTheme.accentText)
-                        Text(export.label)
-                            .font(JPFont.mono(15, relativeTo: .callout))
-                    } else if model.isWorking {
-                        // **何枚目かを出す。** 5枚選んだときに、進んでいるのか
-                        // 止まっているのかが分からないのがいちばん不安
-                        ProgressView().tint(WebTheme.accentText)
-                        Text(UploadSubmitBar.sendingTitle)
-                        if model.items.count > 1 {
-                            Text("\(model.uploadingIndex)/\(model.items.count)")
-                                .font(JPFont.mono(15, relativeTo: .callout))
-                        }
-                    } else {
-                        if model.isLoadingPicked { ProgressView().tint(WebTheme.accentText) }
-                        Text(UploadSubmitBar.title(count: model.items.count))
+            if PostPreview.stacksBar(accessibilitySize: dynamicTypeSize.isAccessibilitySize) {
+                VStack(spacing: JPSpace.xs) {
+                    previewButton(loading: loading, fullWidth: true)
+                    postButton
+                }
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: JPSpace.xs) {
+                        previewButton(loading: loading, fullWidth: false)
+                        postButton
+                    }
+                    VStack(spacing: JPSpace.xs) {
+                        previewButton(loading: loading, fullWidth: true)
+                        postButton
                     }
                 }
-                .jpPillButton(.primary)
             }
-            .buttonStyle(.plain)
-            .opacity(model.canSubmit || model.isWorking ? 1 : UploadSubmitBar.disabledOpacity)
-            .disabled(!model.canSubmit)
-            .accessibilityLabel(model.exportProgress?.accessibilityLabel ?? (model.isWorking
-                                ? L("送信中 \(model.uploadingIndex) / \(model.items.count) 枚目",
-                                    "Sending \(model.uploadingIndex) of \(model.items.count)")
-                                : UploadSubmitBar.title(count: model.items.count)))
-            // UI テストが名指しで押す（`CriticalFlowTests`・2026-10-22）
-            .accessibilityIdentifier("upload.submit")
             if let reason {
                 Text(reason)
                     .font(JPFont.footnote)
@@ -890,6 +894,60 @@ struct UploadView: View {
             }
         }
         .jpBottomBar()
+    }
+
+    /// 帯の副ボタン「プレビュー」（札 #409）。目の印と字・線の 44。押すと投稿したあとの見え方のシート
+    private func previewButton(loading: Bool, fullWidth: Bool) -> some View {
+        let enabled = PostPreview.canOpen(hasPhotos: !model.items.isEmpty, loading: loading, working: model.isWorking)
+        return Button {
+            showPreview = true
+        } label: {
+            Label(PostPreview.buttonTitle, systemImage: PostPreview.buttonSymbol)
+                .fixedSize(horizontal: !fullWidth, vertical: false)
+                .jpOutlineButton(.regular, fullWidth: fullWidth)
+        }
+        .buttonStyle(.plain)
+        .opacity(enabled ? 1 : UploadSubmitBar.disabledOpacity)
+        .disabled(!enabled)
+        .accessibilityIdentifier("upload.preview")
+    }
+
+    /// 帯の主ボタン「3枚を投稿する」（送信中は輪と何枚目か）
+    private var postButton: some View {
+        Button {
+            Task { await model.submit() }
+        } label: {
+            HStack(spacing: JPSpace.xs) {
+                if let export = model.exportProgress {
+                    // 送り始める前の書き出し（「0/N」のまま止まって見えないように）
+                    ProgressView().tint(WebTheme.accentText)
+                    Text(export.label)
+                        .font(JPFont.mono(15, relativeTo: .callout))
+                } else if model.isWorking {
+                    // **何枚目かを出す。** 5枚選んだときに、進んでいるのか
+                    // 止まっているのかが分からないのがいちばん不安
+                    ProgressView().tint(WebTheme.accentText)
+                    Text(UploadSubmitBar.sendingTitle)
+                    if model.items.count > 1 {
+                        Text("\(model.uploadingIndex)/\(model.items.count)")
+                            .font(JPFont.mono(15, relativeTo: .callout))
+                    }
+                } else {
+                    if model.isLoadingPicked { ProgressView().tint(WebTheme.accentText) }
+                    Text(UploadSubmitBar.title(count: model.items.count))
+                }
+            }
+            .jpPillButton(.primary)
+        }
+        .buttonStyle(.plain)
+        .opacity(model.canSubmit || model.isWorking ? 1 : UploadSubmitBar.disabledOpacity)
+        .disabled(!model.canSubmit)
+        .accessibilityLabel(model.exportProgress?.accessibilityLabel ?? (model.isWorking
+                            ? L("送信中 \(model.uploadingIndex) / \(model.items.count) 枚目",
+                                "Sending \(model.uploadingIndex) of \(model.items.count)")
+                            : UploadSubmitBar.title(count: model.items.count)))
+        // UI テストが名指しで押す（`CriticalFlowTests`・2026-10-22）
+        .accessibilityIdentifier("upload.submit")
     }
 
     /// 選んだ写真の帯（v2 の板: 84×104・角丸12、右上に外す丸、左上に番号、最後に「追加」）。
@@ -1161,13 +1219,8 @@ struct UploadView: View {
             }
             .padding(3)
             .background(WebTheme.surface, in: RoundedRectangle(cornerRadius: 12))
-            Text(model.groupsAsOnePost
-                 ? L("一覧では1枚のカードにまとまり、左右に送れます（題と説明は1枚ずつ書きます）",
-                     "Shown as one card you can swipe (each photo keeps its own title)")
-                 : L("それぞれ別の投稿として並びます", "Shown as separate posts"))
-                .font(.caption)
-                .foregroundStyle(WebTheme.text3)
-                .padding(.horizontal, 4)
+            // 2026-11-15（札 #409・案A）: 切り替えの下の説明の1行（「一覧では1枚のカードにまとまり…」）は消した。
+            // どう並ぶかは下の帯の「プレビュー」で見れば分かる（入口を1つ足す代わりに、説明を1つ減らす）
         }
     }
 
@@ -1619,6 +1672,8 @@ struct UploadView: View {
                        value: model.published ? model.audience.label : L("非公開", "Private"))
         }
         .buttonStyle(JPRowButtonStyle())
+        // UI テストが非公開を選ぶ目印（`UploadPreviewTests`・札 #409）
+        .accessibilityIdentifier("upload.audience")
     }
 
     /// メニューの1項目（選んでいるものに印）

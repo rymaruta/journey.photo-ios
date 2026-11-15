@@ -233,6 +233,9 @@ final class DecodedImageMemory<Image> {
     }
 
     func removeAll() { cache.removeAllObjects() }
+
+    /// その URL の控えを捨てる（投稿の前のプレビューの一時ファイル・閉じたら捨てる・札 #409）
+    func remove(_ url: URL) { cache.removeObject(forKey: url.absoluteString as NSString) }
 }
 
 /// 縮めて読む画素数（画面を持たない計算）。
