@@ -512,4 +512,15 @@ extension SearchSentence {
         }
         return best([.season, .dayPart]) ?? best([.text])
     }
+
+    /// 0件と決まったときに1回だけ呼ぶ: 外し方を選び（`relaxation`）、**選んでから**「見た」の印を立てる。
+    /// 返す読み取りは `dropped` に外したもの（外さなければ nil）を持つ
+    static func relax(_ reading: Reading, query: String, filter: ShootingTime.Filter,
+                      count: (String, ShootingTime.Filter) -> Int) -> (Reading, Chip.Kind?) {
+        let kind = relaxation(for: reading, query: query, filter: filter, count: count)
+        var next = reading
+        next.relaxTried = true
+        if kind != nil { next.dropped = kind }
+        return (next, kind)
+    }
 }

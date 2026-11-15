@@ -448,12 +448,12 @@ struct SearchView: View {
     /// 重ねて0件になったら、1つ外していちばん多く残る形を見せる（`SearchSentence.relaxation`・2026-11-15 判断）。
     /// 0件と決まった（写真も観光スポットも読み終えて0件）ときに1回だけ
     private func relaxIfZeroHit() {
-        guard var current = reading, !current.relaxTried else { return }
-        current.relaxTried = true
-        let kind = SearchSentence.relaxation(for: current, query: query, filter: model.timeFilter) { q, f in
+        guard let before = reading, !before.relaxTried else { return }
+        // 🔴 回 1384 の記録: 先に `relaxTried` を立ててから `relaxation` を呼び、そこで弾かれて（数は 季節 5、時間帯 36、
+        // 地名 55）外さなかった。外し方を選ぶのと印を立てるのを `SearchSentence.relax` 1つにまとめた
+        let (current, kind) = SearchSentence.relax(before, query: query, filter: model.timeFilter) { q, f in
             resultCount(query: q, filter: f)
         }
-        current.dropped = kind
         reading = current
         if PreviewSession.searchReadingProbe {
             let counts = [SearchSentence.Chip.Kind.season, .dayPart, .text].map { k -> String in

@@ -218,6 +218,24 @@ final class SearchSentenceTests: XCTestCase {
                      "戻したあとにまた外した")
     }
 
+    /// 画面が呼ぶ口（`relax`）で、「京都 紅葉 夜」が1件以上になる外し方を選び、印を立てる。2回目は外さない。
+    /// 回 1384 の記録: 印を先に立ててから選んでいて、数（季節 5、時間帯 36、地名 55）があっても外さなかった
+    func testRelaxPicksBeforeMarkingTried() throws {
+        let count = Self.count(Self.items)
+        let r = SearchSentence.readByTable("京都 紅葉 夜")
+        let filter = SearchSentence.filter(applying: r, to: .init())
+        let (relaxed, kind) = SearchSentence.relax(r, query: "京都", filter: filter, count: count)
+        XCTAssertEqual(kind, .season, "0件のまま外さなかった")
+        XCTAssertEqual(relaxed.dropped, .season)
+        XCTAssertTrue(relaxed.relaxTried)
+        let next = SearchSentence.removing(try XCTUnwrap(kind), query: "京都", filter: filter)
+        XCTAssertGreaterThanOrEqual(count(next.query, next.filter), 1)
+        // 2回目（戻した後など）は外さない
+        var back = relaxed
+        back.dropped = nil
+        XCTAssertNil(SearchSentence.relax(back, query: "京都", filter: filter, count: count).1)
+    }
+
     /// 2つのときは「両方」。時間帯は「夕」ではなく「夕方」と言う
     func testTwoConditionNoteSaysBoth() {
         var r = SearchSentence.readByTable("秋の夕日")
