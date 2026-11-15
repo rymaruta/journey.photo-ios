@@ -1760,7 +1760,7 @@ final class ScreenshotTests: XCTestCase {
     /// 人の頁は ホームの写真 → 作者 で開く（人のトランクの試験と同じ道）。作者が自分なら、その頁の「フォロワー」→ 一覧の最初の人。
     /// 作者の行・フォロワーが出ない（写真の並び・フォローの関係次第）なら、人の頁の分は撮らずに抜ける（事実は添付に出す）
     func testCapturesProfileShare() {
-        func launch() -> XCUIApplication {
+        func launch(localBackend: Bool) -> XCUIApplication {
             let app = XCUIApplication()
             app.launchArguments += ["-legal.consent.version", "0"]
             app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -1768,15 +1768,16 @@ final class ScreenshotTests: XCTestCase {
             app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
             app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
             app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
-            // QR の中身（GET /user/qr）は見本の通信で答える（`testCapturesProfileQR` と同じ）
-            app.launchArguments += ["-JPPreviewLocalBackend", "YES"]
+            // QR の中身（GET /user/qr）は見本の通信で答える（`testCapturesProfileQR` と同じ）。
+            // 見本の通信はフォロワーの一覧に答えない（run 1347:「見本の通信では使えない口です」）ので、人の頁の分では使わない
+            if localBackend { app.launchArguments += ["-JPPreviewLocalBackend", "YES"] }
             app.launch()
             let agree = app.buttons["legal.agree"]
             if agree.waitForExistence(timeout: 30) { agree.tap() }
             return app
         }
         // 1. 自分: マイページ → QR の印 → 「リンクをコピー」「共有」
-        var app = launch()
+        var app = launch(localBackend: true)
         var tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return XCTFail("下の札が出ない") }
         tabBar.buttons.element(boundBy: 4).tap()
@@ -1815,7 +1816,7 @@ final class ScreenshotTests: XCTestCase {
 
         // 2. 他人: ホームの写真 → 作者 → ⋯ → 「プロフィールを共有」
         app.terminate()
-        app = launch()
+        app = launch(localBackend: false)
         tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20) else { return XCTFail("タブが出ない") }
         let firstPhoto = app.buttons["feed.photo"].firstMatch
