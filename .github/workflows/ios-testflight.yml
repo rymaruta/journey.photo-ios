@@ -504,6 +504,10 @@ jobs:
           # （伏せ先から拾い直す小細工も2回外した）。**xcodebuild を直に
           # 叩いて、出力をそのままログに出す**のが結局いちばん短い。
           # （この3つは `Tools/xcode-test.sh` の中に書いてある）
+          #
+          # **組むあいだに、シミュレーターを裏で起動しておく**（札 #610・2026-11-15）。xcodebuild はテストを
+          # 始めてから起動するので、単体テストの段の頭で待っていた。数と理由は `Tools/sim-boot.sh` の頭
+          DEVICE="$(python3 Tools/pick-simulator.py)" bash Tools/sim-boot.sh start
           DEVICE="$(python3 Tools/pick-simulator.py)" bash Tools/xcode-test.sh build
 
       # TestFlight配信時はPRで検証済みの単体テストを繰り返さない。
