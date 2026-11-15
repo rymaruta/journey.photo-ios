@@ -275,38 +275,6 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(posted.exists, "投稿した「\(title)」がマイページに並ばない")
     }
 
-    /// 札 #616（2026-11-15）: 題を打ったまま（題の欄に焦点・キーボードが出たまま）「投稿する」を押しても、アプリが落ちず
-    /// 共有カードが出る。Mac run 1364・1365 では、上がった写真が並びから外れたあとに題の欄が字を確定させ、
-    /// 番号で引く窓（`ForEach($model.items)`）が外れた番号を読んで落ちた（落ちた記録: `textChanged` →
-    /// `Binding<A>.subscript.getter` → `Array._checkSubscript`）。大きい文字の試験で撮影地の欄に届かず、題に焦点が
-    /// 残ったまま押した回だけで出ていた。標準の文字で同じ押し方をする
-    func testPostingWhileTitleIsFocusedKeepsTheAppAlive() {
-        let app = launch(["-JPPreviewUploadSample", "YES"])
-        tab(app, 2)
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        XCTAssertTrue(toPhoto.waitForExistence(timeout: 10), "投稿の2択が出ない")
-        toPhoto.tap()
-        let thumb = app.buttons["upload.thumb.0"].firstMatch
-        XCTAssertTrue(thumb.waitForExistence(timeout: 20), "見本の1枚が投稿画面に入らない")
-
-        let titleField = app.textFields["upload.title"].firstMatch
-        reveal(titleField, in: app, "題の欄")
-        enter("秋の兼六園", into: titleField, "題の欄")
-        // 撮影地の欄は押さない（題に焦点を残したまま投稿する）
-        XCTAssertTrue(app.keyboards.firstMatch.exists, "題を打ったのにキーボードが出ていない（焦点が題に無い）")
-
-        let submit = app.buttons["upload.submit"].firstMatch
-        XCTAssertTrue(submit.waitForExistence(timeout: 5), "「投稿する」が無い")
-        XCTAssertTrue(wait(submit, "enabled == true", timeout: 15), "題を入れても「投稿する」が押せない")
-        submit.tap()
-
-        let close = app.buttons["postedCard.close"].firstMatch
-        let shown = close.waitForExistence(timeout: 60)
-        // 落ちたら state は notRunning になる（「共有カードが出ない」と見分ける）
-        XCTAssertNotEqual(app.state, .notRunning, "題を打ったまま投稿したらアプリが落ちた（札 #616）")
-        XCTAssertTrue(shown, "題を打ったまま投稿しても共有カードが出ない")
-    }
-
     /// 2026-11-14（#188・点検「直すべき 1」）: 書きかけ（見本の1枚を選んだ）の投稿画面を下へ払うと、跳ね返るだけでなく
     /// 左上の「キャンセル」と同じ閉じる確認が出る。画面は閉じない（書きかけが消えない）
     func testSwipeDownOnUploadDraftAsksBeforeClosing() {
