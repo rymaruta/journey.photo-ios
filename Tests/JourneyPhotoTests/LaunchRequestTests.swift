@@ -81,9 +81,68 @@ final class RequestLimiterTests: XCTestCase {
 
 // MARK: - 503・429 の再試行
 
+/// **試験の間、仕事の割り振りがどれだけ遅れたかを測る**（札 #610・2026-11-14 判断）。
+/// Mac の単体テストで、この組のふだん 0.1秒の試験が、ときどき1本だけ 30〜43秒かかった（run 1330・1334。
+/// 組は単体テストの2番目で、テストを載せるアプリが立ち上がった直後に流れる）。どこで待っているかを数で見るため、
+/// 試験の外のスレッドから 50ms ごとに、Swift の仕事の列（`Task.detached`）と主スレッドへ小さな仕事を出し、
+/// 着くまでの遅れの最大を `measured [throttle]` の行に出す。試験の中の段の時刻（`step`）も出す
+final class SchedulingProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var running = true
+    private var poolMax = 0.0, mainMax = 0.0, poolSlowAt = 0.0, mainSlowAt = 0.0, samples = 0
+    private var steps: [String] = []
+    let started = Date()
+
+    init() {
+        let thread = Thread { [self] in
+            while self.isRunning {
+                let pool = Self.latency { done in Task.detached { done() } }
+                let main = Self.latency { done in DispatchQueue.main.async { done() } }
+                self.record(pool: pool, main: main)
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+        }
+        thread.start()
+    }
+
+    private var isRunning: Bool { lock.lock(); defer { lock.unlock() }; return running }
+
+    /// 仕事を出してから着くまでの秒（60秒で打ち切り）
+    private static func latency(_ submit: (@escaping @Sendable () -> Void) -> Void) -> Double {
+        let semaphore = DispatchSemaphore(value: 0)
+        let t0 = Date()
+        submit { semaphore.signal() }
+        _ = semaphore.wait(timeout: .now() + 60)
+        return Date().timeIntervalSince(t0)
+    }
+
+    private func record(pool: Double, main: Double) {
+        lock.lock(); defer { lock.unlock() }
+        samples += 1
+        let at = Date().timeIntervalSince(started)
+        if pool > poolMax { poolMax = pool; poolSlowAt = at }
+        if main > mainMax { mainMax = main; mainSlowAt = at }
+    }
+
+    func step(_ name: String) {
+        lock.lock(); defer { lock.unlock() }
+        steps.append(name + "=" + String(format: "%.3f", Date().timeIntervalSince(started)))
+    }
+
+    /// 止めて1行にする（秒）
+    func finish(_ test: String) -> String {
+        lock.lock(); running = false; defer { lock.unlock() }
+        return "measured [throttle] \(test) total=" + String(format: "%.3f", Date().timeIntervalSince(started))
+            + " poolMax=" + String(format: "%.3f", poolMax) + "@" + String(format: "%.2f", poolSlowAt)
+            + " mainMax=" + String(format: "%.3f", mainMax) + "@" + String(format: "%.2f", mainSlowAt)
+            + " samples=\(samples) steps=[\(steps.joined(separator: " "))]"
+    }
+}
+
 final class APIClientThrottleRetryTests: XCTestCase {
 
     private var session: URLSession!
+    private var probe: SchedulingProbe!
 
     /// 待った秒数を覚えるだけ（実際には待たない）
     private final class Pauses: @unchecked Sendable {
@@ -95,13 +154,16 @@ final class APIClientThrottleRetryTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        probe = SchedulingProbe()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubProtocol.self]
         session = URLSession(configuration: config)
         StubProtocol.reset()
+        probe.step("setUp")
     }
 
     override func tearDown() {
+        print(probe.finish(name))
         StubProtocol.reset()
         super.tearDown()
     }
@@ -234,14 +296,19 @@ final class APIClientThrottleRetryTests: XCTestCase {
         let tasks = (0..<4).map { _ in
             Task { try await api.authorized(.get, "/user/profile", as: Payload.self) }
         }
+        probe.step("tasks")
         await hold.untilWaiting(2)
+        probe.step("waiting")
         try? await Task.sleep(nanoseconds: 100_000_000)
+        probe.step("slept")
         let arrived = await hold.arrived
         XCTAssertEqual(arrived, 2, "上限(2)を超えて同時に通信へ入った")
         XCTAssertEqual(StubProtocol.requestCount, 0, "止めている間に通信が出た")
 
         await hold.open()
+        probe.step("opened")
         for task in tasks { _ = try await task.value }
+        probe.step("done")
         let total = await hold.arrived
         XCTAssertEqual(total, 4, "待たされた要求が最後まで通っていない")
         XCTAssertEqual(StubProtocol.requestCount, 4)
@@ -255,6 +322,7 @@ final class APIClientThrottleRetryTests: XCTestCase {
         let api = client(limit: 1, pauseGate: pauseGate)
         let first = Task { try await api.authorized(.get, "/user/profile", as: Payload.self) }
         await pauseGate.untilWaiting(1)
+        probe.step("waiting")
 
         let done = DoneFlag()
         let second = Task { () -> Payload in
@@ -265,9 +333,11 @@ final class APIClientThrottleRetryTests: XCTestCase {
         let deadline = Date().addingTimeInterval(2)
         while !done.value, Date() < deadline { try? await Task.sleep(nanoseconds: 5_000_000) }
         let passedWhileWaiting = done.value
+        probe.step("second")
         await pauseGate.open()
         let secondValue = try await second.value
         let firstValue = try await first.value
+        probe.step("done")
         XCTAssertEqual(secondValue, Payload(ok: true))
         XCTAssertEqual(firstValue, Payload(ok: true))
         XCTAssertTrue(passedWhileWaiting, "再試行の待ちの間、枠を握ったままになっている")
@@ -281,10 +351,13 @@ final class APIClientThrottleRetryTests: XCTestCase {
         let api = client(limit: 1, pauseGate: pauseGate)
         let first = Task { try await api.authorized(.get, "/user/profile", as: Payload.self) }
         await pauseGate.untilWaiting(1)
+        probe.step("waiting")
         first.cancel()
         await pauseGate.open()
+        probe.step("opened")
         do {
             _ = try await first.value
+            probe.step("value")
             XCTFail("取り消したのに成功した")
         } catch is CancellationError {
         } catch {
@@ -292,8 +365,10 @@ final class APIClientThrottleRetryTests: XCTestCase {
         }
         XCTAssertEqual(StubProtocol.requestCount, 1, "取り消されたのに送り直した")
 
+        probe.step("cancelled")
         StubProtocol.respond(status: 200, body: #"{"ok":true}"#)
         let next = try await api.authorized(.get, "/user/profile", as: Payload.self)
+        probe.step("next")
         XCTAssertEqual(next, Payload(ok: true), "枠が返っていない")
     }
 
@@ -311,6 +386,7 @@ final class APIClientThrottleRetryTests: XCTestCase {
         })
         let read = Task { try await api.authorized(.get, "/user/profile", as: Payload.self) }
         await hold.untilWaiting(1)
+        probe.step("waiting")
 
         let done = DoneFlag()
         let write = Task { () -> Void in
@@ -320,9 +396,11 @@ final class APIClientThrottleRetryTests: XCTestCase {
         let deadline = Date().addingTimeInterval(2)
         while !done.value, Date() < deadline { try? await Task.sleep(nanoseconds: 5_000_000) }
         let passed = done.value
+        probe.step("write")
         await hold.open()
         _ = try await read.value
         try await write.value
+        probe.step("done")
         XCTAssertTrue(passed, "書く要求が読む要求の列に詰まった")
     }
 
@@ -356,12 +434,17 @@ final class APIClientThrottleRetryTests: XCTestCase {
         let a = make(), b = make()
         let tasks = (0..<2).map { _ in Task { try await a.authorized(.get, "/user/profile", as: Payload.self) } }
             + (0..<2).map { _ in Task { try await b.authorized(.get, "/user/profile", as: Payload.self) } }
+        probe.step("tasks")
         await hold.untilWaiting(2)
+        probe.step("waiting")
         try? await Task.sleep(nanoseconds: 100_000_000)
+        probe.step("slept")
         let arrived = await hold.arrived
         XCTAssertEqual(arrived, 2, "別の APIClient が別枠で出している")
         await hold.open()
+        probe.step("opened")
         for task in tasks { _ = try await task.value }
+        probe.step("done")
     }
 
     /// 本番の配線(`AppEnvironment`・`APIClient.app()`)は共通の絞りを渡す。外すと画面ごとの実体が別枠になる

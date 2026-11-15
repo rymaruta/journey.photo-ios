@@ -133,18 +133,24 @@ mkdir -p "$(dirname "$LOG")"
 # 組む段と、xcrun の無い所（Linux の検査の偽の xcodebuild）では見ない
 watcher=""
 if [ "$mode" != "build" ] && command -v xcrun >/dev/null 2>&1; then
+    # 組む段で裏の起動を始めていれば、その結果（`Tools/sim-boot.sh`・2026-11-15）
+    bash Tools/sim-boot.sh report | tee -a "$LOG" || true
     (
         started=$(date +%s); booted=""; launched=""; limit=1800
         if xcrun simctl list devices booted 2>/dev/null | grep -qF "$DEVICE ("; then
             booted=1; echo "measured [sim] $mode 始めから起動済み" | tee -a "$LOG"
         fi
         while [ $(( $(date +%s) - started )) -lt $limit ]; do
-            elapsed=$(( $(date +%s) - started ))
+            # 秒は**見えた後で**数える（起動の最中は simctl の問い合わせ自体が数十秒〜数分返らない・run 1333）
             if [ -z "$booted" ] && xcrun simctl list devices booted 2>/dev/null | grep -qF "$DEVICE ("; then
-                booted=1; echo "measured [sim] $mode 起動 ${elapsed}s" | tee -a "$LOG"
+                booted=1; echo "measured [sim] $mode 起動 $(( $(date +%s) - started ))s" | tee -a "$LOG"
             fi
             if [ -z "$launched" ] && pgrep -f "JourneyPhoto.app/JourneyPhoto" >/dev/null 2>&1; then
-                launched=1; echo "measured [sim] $mode アプリが立ち上がった ${elapsed}s" | tee -a "$LOG"
+                launched=1
+                # 起動している同じ名前の機種の数（2台なら、裏で起動した1台と xcodebuild の使う1台が別）
+                same="$(xcrun simctl list devices booted 2>/dev/null | grep -cF "$DEVICE (" || true)"
+                echo "measured [sim] $mode アプリが立ち上がった $(( $(date +%s) - started ))s（起動している同じ名前の機種 ${same} 台）" \
+                    | tee -a "$LOG"
             fi
             if [ -n "$booted" ] && [ -n "$launched" ]; then break; fi
             sleep 1
