@@ -371,15 +371,6 @@ jobs:
       - name: 配信用アプリをビルドキャッシュのキーを生成
         run: echo "CACHE_KEY=xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}" >> "$GITHUB_ENV"
 
-      # **シミュレーターを裏で起動しておく**（札 #610・2026-11-15）。xcodebuild はテストを始めてから起動するので、
-      # 単体テストの段の頭で待っていた（数と理由は `Tools/sim-boot.sh` の頭）。
-      # 🔴 **組む段の中で起動しない。** run 1336 で組む段の頭に置いたら、起動の間 xcodebuild の立ち上がりが
-      # 92秒止まり（CoreSimulator の問い合わせが返らない）、組む段が 359秒 → 747秒に延びて、テストで縮んだ分を
-      # 打ち消した。xcodebuild も simctl も使わない、下のキャッシュの復元（80〜210秒）のあいだに起動する
-      - name: シミュレーターを裏で起動
-        if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.sharded != 'true' }}
-        run: bash Tools/sim-boot.sh start
-
       # 🔴 **控えは main の回だけが書く・枝は読むだけ**（2026-10-17 判断）。
       # 控えは1つ約7GB（run 461 の実測 7111MB）で、GitHub の置き場は10GBまで——**2つ目を書くと
       # 前のが追い出される**。しかも控えは枝ごとに区切られ、別の枝からは main の分しか読めない。
@@ -513,8 +504,6 @@ jobs:
           # （伏せ先から拾い直す小細工も2回外した）。**xcodebuild を直に
           # 叩いて、出力をそのままログに出す**のが結局いちばん短い。
           # （この3つは `Tools/xcode-test.sh` の中に書いてある）
-          # 裏の起動（下の「シミュレーターを裏で起動」）が組む前に終わったか
-          bash Tools/sim-boot.sh report
           DEVICE="$(python3 Tools/pick-simulator.py)" bash Tools/xcode-test.sh build
 
       # TestFlight配信時はPRで検証済みの単体テストを繰り返さない。

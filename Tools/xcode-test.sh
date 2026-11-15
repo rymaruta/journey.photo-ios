@@ -131,10 +131,15 @@ mkdir -p "$(dirname "$LOG")"
 # （run 931・1197・1329・1330）。シミュレーターが起動した時と、テストを載せるアプリが立ち上がった時を
 # 1秒ごとに見て `measured [sim] …` の行に秒だけ出す（端末の識別子・置き場は出さない）。
 # 組む段と、xcrun の無い所（Linux の検査の偽の xcodebuild）では見ない
+#
+# **2026-11-15 判断（札 #610）: シミュレーターを先に裏で起動する形は入れなかった。** 単体と UI の段の頭の待ちは
+# 縮んだ（単体と UI の段の合計 1120〜1225秒 → 764〜796秒）が、起動の間とその後に同じ台のほかの段が遅れ、
+# build の job の全体は縮まなかった（起動しない run 1334・1335: 1849・1759秒 / 起動した run 1336・1339: 1762・1990秒）。
+#   - run 1336（組む段の頭で起動）: xcodebuild の立ち上がりが 92秒止まり、組む段が 747秒（ほかの回は 359〜570秒）
+#   - run 1339（キャッシュの復元の前に起動）: 復元が 423秒（ほかの回は 88〜173秒）、組む段が 613秒
+# 試すときは、この job の全体の秒で比べる（段ごとの秒だけでは、ほかの段に移った分が見えない）
 watcher=""
 if [ "$mode" != "build" ] && command -v xcrun >/dev/null 2>&1; then
-    # 組む段で裏の起動を始めていれば、その結果（`Tools/sim-boot.sh`・2026-11-15）
-    bash Tools/sim-boot.sh report | tee -a "$LOG" || true
     (
         started=$(date +%s); booted=""; launched=""; limit=1800
         if xcrun simctl list devices booted 2>/dev/null | grep -qF "$DEVICE ("; then
