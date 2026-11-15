@@ -225,6 +225,7 @@ Xcode のテストになる。
 バグ探しで「サーバーに無い」と誤報した。本番には 9/25 から出ている）。
 流す前に `git -C ../photo-gallery checkout origin/develop` でそろえるか、
 `PHOTO_GALLERY=<最新の photo-gallery>` を渡す。
+2026-11-15 から、環境「フルネットワーク」の起動の手順が、隣の `photo-gallery` を develop の最新（突き合わせに要る `api-user`・`lib/utils`・`.github/workflows` だけ・約12MB）にそろえる。長いセッションの途中では `git -C ../photo-gallery fetch --depth 1 origin develop && git -C ../photo-gallery reset --hard origin/develop` でそろえ直す。
 
 ## サーバーの口は機能ごとのスタックに足す（2026-11-12・札 #552）
 
