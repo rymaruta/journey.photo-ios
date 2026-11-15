@@ -54,7 +54,7 @@ enum DevelopTrips {
     /// 札の2行目「金沢の旅、3日、42枚」（地名が無ければ期間）
     static func cardLine(_ trip: LibraryTrip, name: String?) -> String {
         // 2026-11-12 確かめ役: 中黒で区切らない（読点で並べる）
-        "\(DeviceTrips.title(of: trip, name: name))、\(TripBook.daysLabel(LibraryTrips.calendarDays(trip)))"
+        "\(DeviceTrips.tripTitle(of: trip, name: name))、\(TripBook.daysLabel(LibraryTrips.calendarDays(trip)))"
             + "、" + PhotoMapViewModel.photoCountLabel(trip.shots.count)
     }
 

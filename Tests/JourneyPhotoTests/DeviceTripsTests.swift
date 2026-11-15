@@ -211,7 +211,12 @@ final class DeviceTripsTests: XCTestCase {
         let trip = try XCTUnwrap(LibraryTrips.find(library(), timeZone: tokyo).first)
         XCTAssertEqual(DeviceTrips.title(of: trip, name: nil), LibraryTrips.periodText(trip))
         XCTAssertEqual(DeviceTrips.title(of: trip, name: " "), LibraryTrips.periodText(trip))
-        XCTAssertTrue(DeviceTrips.title(of: trip, name: "京都市").contains("京都市"))
+        // 旅の記録の棚の中は場所の名前だけ（2026-11-15）。外（ホームの札・払う画面）は「の旅」を付ける
+        XCTAssertEqual(DeviceTrips.title(of: trip, name: "京都市"), "京都市")
+        XCTAssertEqual(DeviceTrips.spokenTitle(of: trip, name: "京都市"), "旅、京都市")
+        XCTAssertEqual(DeviceTrips.tripTitle(of: trip, name: "京都市"), "京都市の旅")
+        XCTAssertEqual(DeviceTrips.tripTitle(of: trip, name: nil), LibraryTrips.periodText(trip))
+        XCTAssertTrue(DevelopTrips.cardLine(trip, name: "京都市").hasPrefix("京都市の旅、"))
         XCTAssertEqual(DeviceTripText.line(trip, name: nil), LibraryTrips.countText(trip))
         XCTAssertTrue(DeviceTripText.line(trip, name: "京都市").hasPrefix(LibraryTrips.periodText(trip)))
     }

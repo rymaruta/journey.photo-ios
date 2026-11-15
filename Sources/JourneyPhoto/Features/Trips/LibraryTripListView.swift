@@ -202,7 +202,7 @@ struct LibraryTripListView: View {
         return NavigationLink {
             LibraryTripPickView(trip: trip, title: name ?? period, model: model, onDone: onDone)
         } label: {
-            LibraryTripCard(trip: trip, title: DeviceTrips.title(of: trip, name: name),
+            LibraryTripCard(trip: trip, title: DeviceTrips.tripTitle(of: trip, name: name),
                             period: name == nil ? nil : period, postedDays: postedDays, lead: lead)
         }
         .buttonStyle(.plain)
