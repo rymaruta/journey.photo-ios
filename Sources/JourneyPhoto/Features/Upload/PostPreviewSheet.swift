@@ -33,6 +33,10 @@ struct PostPreviewSheet: View {
     @State private var neighbors: [Photo]?
     /// マイページの自分の写真。nil は読み込み中
     @State private var mine: [Photo]?
+    /// 自分のピン留め（マイページの格子の先頭・`PhotoPinning.pinnedFirst`）
+    @State private var pinned: [String] = []
+    /// この回の一時ファイルの置き場（開くたびに別の場所・`PostPreview.directory`）
+    @State private var directory = PostPreview.directory()
 
     var body: some View {
         NavigationStack {
@@ -53,7 +57,19 @@ struct PostPreviewSheet: View {
                         }
                     }
                     .scrollDisabled(true)
-                    .overlay(alignment: .topLeading) { ProfileTabSwipeProbeView(selection: page.rawValue) }
+                    .overlay(alignment: .topLeading) {
+                        ProfileTabSwipeProbeView(selection: page.rawValue)
+                        // UI テストだけ（`-JPPreviewTabSwipeProbe`・Debug）: この回の一時ファイルの置き場。開き直すたびに
+                        // 別の場所（＝縮めた絵の控えの鍵が別）になっているかを、試験が値で確かめる
+                        if PreviewSession.tabSwipeProbe {
+                            Text(".")
+                                .font(.caption2)
+                                .foregroundStyle(Color.clear)
+                                .allowsHitTesting(false)
+                                .accessibilityIdentifier("postPreview.probe")
+                                .accessibilityValue(directory.lastPathComponent)
+                        }
+                    }
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) { submitBar }
@@ -116,6 +132,10 @@ struct PostPreviewSheet: View {
         let inner = CGSize(width: size.width, height: outer.height / scale)
         return pageContent(option)
             .frame(width: inner.width, height: inner.height, alignment: .top)
+            // 🔴 **中は読み上げからも外す**（2026-11-15 確かめ役の指摘）。押す指は `allowsHitTesting` で止まるが、
+            // VoiceOver の操作（保存・送る・ストーリーで紹介・いいね）は中の本物の部品に届いてしまう。
+            // 何が見えるかは、ページのまとめの言葉（`PostPreview.pageSummary`）で言う
+            .accessibilityHidden(true)
             .background(Color.black)
             .allowsHitTesting(false)
             .scaleEffect(scale, anchor: .topLeading)
@@ -127,7 +147,8 @@ struct PostPreviewSheet: View {
             .frame(maxWidth: .infinity)
             .padding(.top, JPSpace.xxs)
             .frame(height: size.height, alignment: .top)
-            .accessibilityElement(children: .contain)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(summary(option))
             .accessibilityIdentifier("postPreview.page.\(option.rawValue)")
     }
 
@@ -150,12 +171,33 @@ struct PostPreviewSheet: View {
         }
     }
 
-    /// ホーム: 今回の投稿の札が先頭（白 2pt の枠と「あなたの投稿」）、後ろにほかの人の札（ホームと同じ `HomeMosaic`）。
-    /// 非公開なら札は出ず、頭に「ホームには出ません」、ほかの札は 50% に沈める
+    /// ページのまとめの読み上げ（`PostPreview.pageSummary`）
+    private func summary(_ option: PostPreview.Page) -> String {
+        guard let photos, let first = photos.first else { return PostPreview.loadingSpoken }
+        let position: Int?
+        switch option {
+        case .detail: position = nil
+        case .home: position = homeGroups(photos).firstIndex { PostPreview.isPreview($0.cover) }.map { $0 + 1 }
+        case .myPage: position = myGrid(photos).firstIndex { PostPreview.isPreview($0) }.map { $0 + 1 }
+        }
+        return PostPreview.pageSummary(option, title: first.displayTitle, location: first.location ?? "",
+                                       published: model.published, position: position)
+    }
+
+    private func homeGroups(_ photos: [Photo]) -> [PhotoGroups.Group] {
+        PostPreview.homeGroups(preview: photos, published: model.published, neighbors: neighbors ?? [],
+                               viewerId: auth.userId)
+    }
+
+    private func myGrid(_ photos: [Photo]) -> [Photo] {
+        PostPreview.myGrid(preview: photos, mine: mine ?? [], pinned: pinned)
+    }
+
+    /// ホーム: 本物のホームと同じ並べ方（`PostPreview.homeGroups`・`HomeFeed.arrange`）で、今回の投稿の札に白 2pt の枠と
+    /// 「あなたの投稿」（ホームと同じ `HomeMosaic`）。非公開なら札は出ず、頭に「ホームには出ません」、ほかの札は 50% に沈める
     private func homePage(_ photos: [Photo]) -> some View {
         let published = model.published
-        let groups = PostPreview.homeGroups(preview: photos, published: published,
-                                            neighbors: neighbors ?? [], me: auth.userId)
+        let groups = homeGroups(photos)
         return ScrollView {
             VStack(spacing: 0) {
                 if !PostPreview.showsOnHome(published: published) {
@@ -170,9 +212,9 @@ struct PostPreviewSheet: View {
         }
     }
 
-    /// マイページ: 投稿の札の行と、3列 4:5 の格子（マイページと同じ `MyPageGridCell`）。今回の投稿が先頭で、白 2pt の枠
+    /// マイページ: 投稿の札の行と、3列 4:5 の格子（マイページと同じ `MyPageGridCell`）。ピン留めの後ろに今回の投稿、白 2pt の枠
     private func myPage(_ photos: [Photo]) -> some View {
-        let grid = PostPreview.myGrid(preview: photos, mine: mine ?? [])
+        let grid = myGrid(photos)
         let multiple = PhotoGroups.multiPhotoIds(grid)
         let previewIds = Set(photos.map(\.id))
         return ScrollView {
@@ -180,7 +222,8 @@ struct PostPreviewSheet: View {
                 ProfileTabBar(tabs: ProfileTab.tabs(isMe: true), selection: .constant(.posts), iconColumns: true)
                 LazyVGrid(columns: ProfileV2.gridItems, spacing: ProfileV2.gridSpacing) {
                     ForEach(grid) { photo in
-                        MyPageGridCell(photo: photo, multiple: multiple.contains(photo.id))
+                        MyPageGridCell(photo: photo, multiple: multiple.contains(photo.id),
+                                       pinned: pinned.contains(photo.id))
                             .overlay {
                                 if previewIds.contains(photo.id) {
                                     Rectangle().strokeBorder(Color.white,
@@ -199,13 +242,16 @@ struct PostPreviewSheet: View {
     /// 画像を一時ファイルに書いて写真の行を作り、ほかの札を読む（読めなくてもプレビューは出す）
     private func prepare() async {
         guard let userId = auth.userId else { return }
-        let directory = PostPreview.directory()
+        let directory = directory
         let sources = model.items.map { item in
             (data: item.prepared.data, thumbnail: item.prepared.thumbnail, title: item.title, caption: item.caption,
-             location: item.location, takenOn: item.prepared.takenOn, color: item.prepared.dominantColor)
+             location: item.location, takenOn: item.prepared.takenOn, color: item.prepared.dominantColor,
+             exif: item.prepared.exif)
         }
+        // 書くのは画面の外の仕事（大きい写真）。書き終えた時点で閉じていたら、書いたものを消す（下の `isCancelled`）
         let items: [PostPreview.Item] = await Task.detached(priority: .userInitiated) {
-            try? FileManager.default.removeItem(at: directory)
+            // 前の回の残り（落ちた・消し損ねた）もまとめて消してから書く
+            try? FileManager.default.removeItem(at: PostPreview.root())
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             return sources.enumerated().compactMap { index, source in
                 let body = directory.appendingPathComponent("\(index).jpg")
@@ -221,15 +267,19 @@ struct PostPreviewSheet: View {
                                         imageURL: body, thumbnailURL: thumbURL,
                                         pixelWidth: size.width > 0 ? Double(size.width) : nil,
                                         pixelHeight: size.height > 0 ? Double(size.height) : nil,
-                                        takenOn: source.takenOn, dominantColor: source.color)
+                                        takenOn: source.takenOn, dominantColor: source.color, exif: source.exif)
             }
         }.value
-        guard !Task.isCancelled else { return }
+        // 2026-11-15（確かめ役の指摘）: 書いている間に閉じた回は、`onDisappear` の片付けが書く前に走って、
+        // 書いたファイルが残っていた。書き終えた所でもう一度片付ける
+        guard !Task.isCancelled else { removeFiles(); return }
         let profile = try? await environment.profiles.publicProfile(userId: userId)
+        guard !Task.isCancelled else { return }
+        pinned = profile?.pinnedPhotoIds ?? []
         photos = PostPreview.photos(items, userId: userId, displayName: AuthorName.real(profile),
                                     published: model.published, audience: model.audience,
                                     grouped: model.groupsForSubmit, category: model.category,
-                                    tags: TagInput.parse(model.tagsText), now: Date())
+                                    tags: TagInput.parse(model.tagsText), song: model.song, now: Date())
         async let feed = try? environment.gallery.fetchPhotos()
         async let own = ProfileImageFromPhoto.myPhotos(environment: environment)
         let (feedPhotos, ownPhotos) = await (feed, own)
@@ -238,8 +288,9 @@ struct PostPreviewSheet: View {
         mine = ownPhotos ?? []
     }
 
-    /// 一時ファイルを消す（端末に投稿前の写真を残さない）
+    /// この回の一時ファイルと、その URL の縮めた絵の控えを消す（端末に投稿前の写真を残さない・次に開いた回に前の写真を出さない）
     private func removeFiles() {
-        try? FileManager.default.removeItem(at: PostPreview.directory())
+        for url in PostPreview.fileURLs(photos ?? []) { DownsampledRemoteImage.memory.remove(url) }
+        try? FileManager.default.removeItem(at: directory)
     }
 }

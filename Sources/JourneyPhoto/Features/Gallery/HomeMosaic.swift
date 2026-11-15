@@ -145,11 +145,11 @@ struct HomeFeedTile: View {
             .buttonStyle(.plain)
             // 絵の上の文字（撮影地・撮った人・複数枚の印）も読む。題だけにすると、
             // 題のある写真では**画面に出ている撮影地と名前が読まれない**
-            .accessibilityLabel(HomeTileText.readout(
+            .accessibilityLabel(PostPreview.spokenTile(yours: marksAsYours, HomeTileText.readout(
                 base: photo.accessibilityText,
                 place: HomeTileText.place(photo.location),
                 byline: byline,
-                multiple: siblings.count > 1 ? L("複数枚の投稿", "Multiple photos") : nil))
+                multiple: siblings.count > 1 ? L("複数枚の投稿", "Multiple photos") : nil)))
             // **実機の絵の道しるべ。** 「一覧の1枚目」を位置で探すと、
             // 今日のテーマの「参加する」に当たって**ログイン画面を
             // 『写真の詳細』として撮って**いた（run 49 の絵で判明）

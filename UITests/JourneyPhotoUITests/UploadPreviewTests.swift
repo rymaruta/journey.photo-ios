@@ -46,13 +46,35 @@ final class UploadPreviewTests: XCTestCase {
         XCTAssertTrue(audience.label.contains("非公開"), "公開範囲の1行が非公開でない（\(audience.label)）")
         shoot(app, "409d-投稿のプレビュー（非公開、詳細）")
         tapTab(app, "home")
-        let hidden = app.descendants(matching: .any)["postPreview.homeHidden"].firstMatch
-        XCTAssertTrue(hidden.waitForExistence(timeout: 10), "非公開なのにホームのページに「ホームには出ません」が無い")
+        // ページの中は読み上げから外してある。まとめの言葉で「ホームには出ません」と言う
+        let home = app.descendants(matching: .any)["postPreview.page.home"].firstMatch
+        XCTAssertTrue(wait(home, "label CONTAINS 'ホームには出ません'", timeout: 10),
+                      "非公開なのにホームのページが「ホームには出ません」と言わない（\(home.label)）")
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "409e-投稿のプレビュー（非公開、ホーム）")
         tapTab(app, "myPage")
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "409f-投稿のプレビュー（非公開、マイページ）")
+    }
+
+    /// 閉じて開き直すと、画像の置き場が替わる（縮めた絵の控えの鍵が替わり、前の写真が出ない・2026-11-15 確かめ役の指摘）。
+    /// 見本は1枚の絵しか無いので、絵が替わったことは画面では見分けられない。置き場の値で確かめ、2回目のマイページも撮る
+    func testReopenedPreviewUsesNewFiles() {
+        guard let app = openUpload(extra: []) else { return fail(nil, "投稿の画面（見本の1枚）まで行けない") }
+        guard openPreview(app) else { return fail(app, "「プレビュー」を押してもシートが出ない") }
+        let probe = app.descendants(matching: .any)["postPreview.probe"].firstMatch
+        XCTAssertTrue(probe.waitForExistence(timeout: 10), "置き場の記録が無い")
+        let first = (probe.value as? String) ?? ""
+        closePreview(app)
+        guard openPreview(app) else { return fail(app, "2回目に「プレビュー」を押してもシートが出ない") }
+        XCTAssertTrue(probe.waitForExistence(timeout: 10), "2回目に置き場の記録が無い")
+        let second = (probe.value as? String) ?? ""
+        print("[uploadPreviewReopen] first=\(first) second=\(second)")
+        XCTAssertFalse(first.isEmpty)
+        XCTAssertNotEqual(first, second, "開き直しても同じ置き場（前の写真の控えが出る）")
+        tapTab(app, "myPage")
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "409g-投稿のプレビュー（開き直し、マイページ）")
     }
 
     // MARK: - 投稿まで
@@ -66,11 +88,15 @@ final class UploadPreviewTests: XCTestCase {
         // 詳細のページに打った題が出る（入力中のものを使う）
         let detail = app.descendants(matching: .any)["postPreview.page.detail"].firstMatch
         XCTAssertTrue(detail.waitForExistence(timeout: 10), "詳細のページが無い")
-        let typed = app.staticTexts.matching(NSPredicate(format: "label == %@", title)).firstMatch
-        XCTAssertTrue(typed.waitForExistence(timeout: 15), "詳細のページに打った題「\(title)」が出ない")
-        // 左へ払ってホームへ（払いで替わる）
+        // ページの中は読み上げから外してあるので、ページのまとめの言葉（題を含む）で見る
+        XCTAssertTrue(wait(detail, "label CONTAINS '\(title)'", timeout: 15),
+                      "詳細のページに打った題「\(title)」が出ない（\(detail.label)）")
+        // 左へ払ってホームへ（払いで替わる）。今回の投稿は本物のホームと同じ並べ方で、新着の位置（4枚目）
         swipePage(app, left: true)
         XCTAssertTrue(waitSelected(app, "home"), "左へ払ってもホームのページにならない")
+        let home = app.descendants(matching: .any)["postPreview.page.home"].firstMatch
+        XCTAssertTrue(wait(home, "label CONTAINS 'あなたの投稿'", timeout: 15), "ホームのページに今回の投稿が無い（\(home.label)）")
+        print("[uploadPreviewHome] \(home.label)")
         let submit = app.buttons["postPreview.submit"].firstMatch
         XCTAssertTrue(submit.waitForExistence(timeout: 5), "プレビューの中に「投稿する」が無い")
         XCTAssertGreaterThanOrEqual(submit.frame.height, 44, "プレビューの「投稿する」の的が 44pt 未満")
@@ -124,11 +150,17 @@ final class UploadPreviewTests: XCTestCase {
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "409c2-投稿のプレビュー（\(tag)、マイページ）")
         // 閉じれば書きかけのまま投稿の画面へ戻る
+        closePreview(app)
+    }
+
+    private func closePreview(_ app: XCUIApplication) {
         let close = app.navigationBars.buttons.matching(NSPredicate(format: "label == '閉じる' OR label == 'Close'")).firstMatch
-        XCTAssertTrue(close.waitForExistence(timeout: 5), "[\(tag)] プレビューに「閉じる」が無い")
+        XCTAssertTrue(close.waitForExistence(timeout: 5), "プレビューに「閉じる」が無い")
         close.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["postPreview.page.detail"].firstMatch.waitForNonExistence(timeout: 10),
+                      "閉じてもプレビューが残る")
         XCTAssertTrue(app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 10),
-                      "[\(tag)] 閉じても書きかけの投稿の画面に戻らない")
+                      "閉じても書きかけの投稿の画面に戻らない")
     }
 
     // MARK: - 道具
