@@ -156,15 +156,26 @@ final class SpotRegionMapTests: XCTestCase {
             .enumerated().map { i, p in try! spot("s\(i)", prefecture: p.0, lat: p.1, lng: p.2) }
     }
 
-    /// 地図の枠を 1pt ごとに押して、区分ごとに当たった点を数える（＝押せる広さ pt²）
+    /// 地図の枠を 1pt ごとに押して、区分ごとに当たった点を数える（＝押せる広さ pt²）。
+    ///
+    /// **行ごとに同時に数える**（札 #610・2026-11-14 判断）。Mac の単体テストで、これを4回使う
+    /// `testEveryRegionIsAtLeast44x44` が 35.5秒（run 1332）〜43.3秒（run 1329）で、単体テストで1件の最長だった。
+    /// 当たりの計算（`SpotRegionMap.area(at:)`・`PrefectureMapGeometry.prefecture(at:)`）は値の型だけを読むので、
+    /// 行ごとに別の数え先へ書いて最後に足せば、数は1つずつ順に数えたのと同じ
     private func hitAreas(_ hit: (CGPoint) -> String?, size: CGSize) -> [String: Int] {
-        var counts: [String: Int] = [:]
-        for y in 0..<Int(size.height) {
-            for x in 0..<Int(size.width) {
-                if let area = hit(CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)) { counts[area, default: 0] += 1 }
+        let rows = Int(size.height), columns = Int(size.width)
+        var perRow = [[String: Int]](repeating: [:], count: rows)
+        perRow.withUnsafeMutableBufferPointer { buffer in
+            let out = buffer
+            DispatchQueue.concurrentPerform(iterations: rows) { y in
+                var counts: [String: Int] = [:]
+                for x in 0..<columns {
+                    if let area = hit(CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)) { counts[area, default: 0] += 1 }
+                }
+                out[y] = counts
             }
         }
-        return counts
+        return perRow.reduce(into: [:]) { total, row in total.merge(row, uniquingKeysWith: +) }
     }
 
     /// 🔴 **どの地方も 44×44（1936pt²）以上押せる**。前（線の内側と 16pt の寄せ）は四国 648・近畿 882・中国 1135・中部 1551 で
