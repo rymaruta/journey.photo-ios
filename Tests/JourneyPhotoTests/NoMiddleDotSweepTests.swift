@@ -31,6 +31,8 @@ final class NoMiddleDotSweepTests: XCTestCase {
         "ShareCardMap.swift|（）()、，,・ 　/",            // 利用者の書いた地名を切る字
         "ShareCardText.swift|・",                       // 利用者の書いた題を折り返す字
         "TripPlanFixture.swift|金沢・福井の旅",            // 見本の利用者の題（利用者の書いた文の見本）
+        "PostSuggest.swift|・",                         // 端末の AI の答えから中黒を「、」に直す字（#622）
+        "PostSuggest.swift|·",                         // 同上
         "TripShareService.swift|金沢・福井の旅",
     ]
 

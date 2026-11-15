@@ -782,6 +782,83 @@ final class UploadViewModel: ObservableObject {
     /// 送るときに使う撮影スポットの索引（`submit` が読む・`PlaceCoordsRule`）
     private(set) var spotIndexForSubmit: [OfficialSpot] = []
 
+    // MARK: - 題・説明・タグの候補（端末の AI・札 #622・2026-11-15 判断）
+
+    /// 写真ごとの候補（整えたあと）。**欄には入れない**——画面が札として出し、押したときだけ入る
+    @Published private(set) var postSuggestions: [UUID: PostSuggest.Result] = [:]
+    /// 候補を作った材料の鍵（写真ごと。同じ材料で作り直さない）
+    private var postSuggestKeys: [UUID: String] = [:]
+    /// 候補を作る口（試験は差し替える）。端末の AI が使えない機種・OS では nil を返す（`PostSuggester.live`）
+    var runPostSuggest: PostSuggester.Run = PostSuggester.live
+    /// 写真の中身（Vision の分類）は写真ごとに1回だけ見る（撮影地が変わっても写真は同じ）
+    private var postSuggestLabels: [UUID: [String]] = [:]
+
+    /// 端末の AI が使えるか（使えなければ候補の仕組みを何も動かさない＝今と同じ見え方）
+    var suggestsPosts: Bool { OnDeviceAI.isAvailable }
+
+    /// 候補の材料（端末の中にあるものだけ: 撮影地・結んだ観光スポットと台帳の季節と時間帯・撮った日時）
+    func postSuggestInput(for item: PendingPhoto) -> PostSuggest.Input {
+        var input = PostSuggest.Input()
+        input.place = item.location
+        // 結んだ観光スポット: 本人が候補から選んだもの、なければ自動で結ぶ札がオンのもの
+        var spotId: String?
+        if let picked = item.pickedSpot {
+            input.spotName = picked.name
+            spotId = picked.spotId
+        } else if let row = autoSpotRow(for: item), row.on {
+            input.spotName = row.name
+            spotId = row.spotId
+        }
+        if let spotId, let spot = spotIndexForSubmit.first(where: { $0.spotId == spotId }) {
+            input.spotSeasons = spot.seasonKinds?.value ?? spot.seasonalGuide?.value.map(\.season) ?? []
+            input.spotTimes = spot.timeKinds?.value ?? spot.timeOfDayGuide?.value.map(\.time) ?? []
+        }
+        input.takenOn = item.prepared.takenOn
+        input.takenHour = PostSuggest.hour(fromExif: item.prepared.exif?.dateTimeOriginal)
+        input.labels = postSuggestLabels[item.id] ?? []
+        return input
+    }
+
+    /// 候補を作り直す鍵（画面の `.task(id:)` が見る）。使えない機種では nil（何も動かさない）
+    func postSuggestKey(for item: PendingPhoto) -> String? {
+        guard suggestsPosts else { return nil }
+        return item.id.uuidString + "|" + PostSuggest.key(postSuggestInput(for: item))
+    }
+
+    /// 1枚の候補を作る（材料が変わったときだけ）。失敗しても何も出さないだけ（投稿は止めない）
+    func loadPostSuggestion(for id: UUID) async {
+        guard suggestsPosts, let item = items.first(where: { $0.id == id }) else { return }
+        let key = PostSuggest.key(postSuggestInput(for: item))
+        guard postSuggestKeys[id] != key else { return }
+        postSuggestKeys[id] = key
+        // 写真の中身（Vision の分類）は写真ごとに1回だけ。試験の切り替え（`-JPOnDeviceAI`）の回は写真を読まない
+        if postSuggestLabels[id] == nil {
+            postSuggestLabels[id] = OnDeviceAI.mode == nil
+                ? await PostSuggester.labels(for: item.prepared.thumbnail ?? item.prepared.data) : []
+        }
+        var filled = postSuggestInput(for: item)
+        filled.labels = postSuggestLabels[id] ?? []
+        let result = await runPostSuggest(filled, nil)
+        // 待っている間に材料が変わった・写真が外れた回は捨てる（新しい回が作り直す）
+        guard postSuggestKeys[id] == key, items.contains(where: { $0.id == id }) else { return }
+        postSuggestions[id] = result
+    }
+
+    /// 題の欄の下に出す候補（欄が空のときだけ）
+    func titleSuggestions(for item: PendingPhoto) -> [String] {
+        PostSuggest.showsTitles(postSuggestions[item.id], title: item.title)
+    }
+
+    /// 説明の欄の下に出す候補（欄が空のときだけ）
+    func captionSuggestion(for item: PendingPhoto) -> String? {
+        PostSuggest.showsCaption(postSuggestions[item.id], caption: item.caption)
+    }
+
+    /// タグの候補（まとめて付くので、並んだ写真の候補を合わせて3つまで）
+    var suggestedTags: [String] {
+        PostSuggest.tags(items.map { postSuggestions[$0.id] })
+    }
+
     init(uploads: UploadService, albums: AlbumService, photos: PhotoService, discovery: DiscoveryService) {
         self.uploads = uploads
         self.albumService = albums

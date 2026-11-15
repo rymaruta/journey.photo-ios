@@ -39,6 +39,9 @@ final class PlaceTermWordingTests: XCTestCase {
         return try files.flatMap { try japaneseStrings(in: $0) }
     }
 
+    /// 古い呼び名を画面に出すのではなく、直すために書いた字
+    static let allowedOldName: Set<String> = ["PostSuggest.swift: 撮影スポット"]
+
     /// 公式の頁・一覧の古い呼び名「撮影スポット」が、画面の文（コードの文字列）に戻ってこない（1.1.84 で替えた）
     func testOldOfficialSpotNameIsGone() throws {
         let files = FileManager.default.enumerator(at: sourcesRoot, includingPropertiesForKeys: nil)!
@@ -47,7 +50,10 @@ final class PlaceTermWordingTests: XCTestCase {
         for file in files {
             let text = try String(contentsOf: file, encoding: .utf8)
             for literal in NoMiddleDotSweepTests.literals(text) where literal.contains("撮影スポット") {
-                left.append("\(file.lastPathComponent): \(literal)")
+                let key = "\(file.lastPathComponent): \(literal)"
+                // 古い呼び名を直す側の字（端末の AI の答えの「撮影スポット」を「観光スポット」に替える・#622）
+                if Self.allowedOldName.contains(key) { continue }
+                left.append(key)
             }
         }
         XCTAssertEqual(left, [], "「撮影スポット」は「観光スポット」に替えた")

@@ -8,6 +8,9 @@ import SwiftUI
 struct TagField: View {
 
     @Binding var tagsText: String
+    /// 端末の AI のタグの候補（投稿の画面だけ・札 #622・2026-11-15 判断）。**先頭に並べ、真鍮のきらめきの印を付ける。**
+    /// 札は増やさない（決まった選択肢の並べ替えだけ）。押すと今までどおり足す／外す。空なら今の並びのまま
+    var suggested: [String] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -15,7 +18,8 @@ struct TagField: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             FlowLayout(spacing: FormChip.spacing, lineSpacing: FormChip.lineSpacing) {
-                ForEach(TagInput.suggest(TagChoices.all, current: tagsText), id: \.self) { tag in
+                ForEach(TagInput.suggest(PostSuggest.orderedChoices(suggested: suggested), current: tagsText),
+                        id: \.self) { tag in
                     chip(tag)
                 }
             }
@@ -29,6 +33,7 @@ struct TagField: View {
 
     private func chip(_ tag: String) -> some View {
         let chosen = TagInput.has(tagsText, tag: tag)
+        let isIdea = !chosen && suggested.contains(tag)
         return Button {
             // **打ちかけの欠片を落としてから足す。** 落とさないと
             // `さく` と打って `桜` を押したときに `"さく, 桜"` になり、
@@ -36,17 +41,27 @@ struct TagField: View {
             tagsText = TagInput.toggle(
                 TagInput.dropFragment(TagChoices.all, current: tagsText), tag: tag)
         } label: {
-            Text(tag)
-                .font(.caption)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                // **選んでいるものは白の塗りに墨の字**（白＝選択）。以前は
-                // AccentColor の 20% で、黒地の上ではほとんど見分けがつかなかった
-                .foregroundStyle(chosen ? WebTheme.accentText : WebTheme.muted)
-                .formChipFace(fill: chosen ? WebTheme.accentBackground : WebTheme.surface)
+            HStack(spacing: 3) {
+                // AI の候補の印（選ぶ前だけ。選んだら白の塗りに墨の字で「選んだ」だけを見せる）
+                if isIdea {
+                    Image(systemName: "sparkles")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(WebTheme.accent)
+                        .accessibilityHidden(true)
+                }
+                Text(tag)
+            }
+            .font(.caption)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            // **選んでいるものは白の塗りに墨の字**（白＝選択）。以前は
+            // AccentColor の 20% で、黒地の上ではほとんど見分けがつかなかった
+            .foregroundStyle(chosen ? WebTheme.accentText : WebTheme.muted)
+            .formChipFace(fill: chosen ? WebTheme.accentBackground : WebTheme.surface)
         }
         .buttonStyle(.borderless)
         .accessibilityAddTraits(chosen ? .isSelected : [])
+        .accessibilityLabel(isIdea ? L("\(tag)、AI の候補", "\(tag), AI suggestion") : tag)
     }
 }
 
