@@ -3037,8 +3037,15 @@ final class ScreenshotTests: XCTestCase {
         guard evening.waitForExistence(timeout: 5) else { return unreached(app, "時間帯の札（search.dayPart.evening）が無い") }
         // 札 #531（run 1308 の絵）: 「秋」を押すと結果の並びが出て、季節と時間帯の札の段は画面の上へ送られている
         // （札は在るが押せない）。短い引きで上へ戻してから押す（上限あり）
+        //
+        // 札 #623（run 1387 の要素の木）: 結果を縦に送る枠の上端は y=284.7 で、その上（233.7〜277.7）は貼り付いた種類の
+        // チップの段。季節と時間帯の段が y=251.7〜295.7 と半分以上その下に隠れていても、前の条件
+        // （下端 < 高さ×0.3 = 286.8）では引かずに止まり、続けて横に送る指（「冬」の中心 y=273.7）が種類の段に当たって
+        // 段が動かなかった。隠れているかは、縦に送る枠（「夕」を含む枠でいちばん高いもの）の上端と段の上端で見る
+        let contentTop = app.scrollViews.containing(.button, identifier: "search.dayPart.evening")
+            .allElementsBoundByIndex.map(\.frame).max { $0.height < $1.height }?.minY ?? app.frame.height * 0.3
         var pulls = 0
-        while !evening.isHittable, evening.frame.maxY < app.frame.height * 0.3, pulls < 6 {
+        while !evening.isHittable, evening.frame.minY < contentTop, pulls < 6 {
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
                 .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)),
                        withVelocity: .slow, thenHoldForDuration: 0.3)
@@ -3056,7 +3063,7 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
         }
         guard evening.isHittable else {
-            return unreached(app, "時間帯の「夕」を押せる所へ戻せない（\(pulls) 回引いた・枠 \(evening.frame)・enabled=\(evening.isEnabled)）")
+            return unreached(app, "時間帯の「夕」を押せる所へ戻せない（\(pulls) 回引いた・枠 \(evening.frame)・縦に送る枠の上端 \(contentTop)・enabled=\(evening.isEnabled)）")
         }
         evening.tap()
         Thread.sleep(forTimeInterval: 3)
