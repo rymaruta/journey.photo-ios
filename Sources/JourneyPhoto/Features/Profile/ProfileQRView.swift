@@ -197,7 +197,8 @@ struct ProfileQRView: View {
         withAnimation(.easeInOut(duration: 0.25)) { code = .ready(url) }
     }
 
-    /// 「リンクをコピー」と「共有」（2026-11-15・札 #545 段1）。写真の無い画面の主役は QR なので、主ボタン（真鍮の塗り）は
+    /// 「リンクをコピー」と「共有」（2026-11-15・札 #545 段1）。字だけ（案の資料 3 の模型どおり。run 1337 の絵で、印つきは
+    /// iPhone 17 Pro Max でも「リンクをコピー」が縁に付いて窮屈だった）。写真の無い画面の主役は QR なので、主ボタン（真鍮の塗り）は
     /// 置かず、線の副ボタン（44・白 14% の縁・`JPPillStyle.outline`）を2つ並べる。大きい文字で並びきらなければ縦に積む
     /// （板 DesignSystem 06）。共有はリンクだけ（画像は渡さない）
     private func shareRow(_ url: URL) -> some View {
@@ -205,13 +206,13 @@ struct ProfileQRView: View {
             UIPasteboard.general.string = url.absoluteString
             toasts.show(ProfileShareLink.copied)
         } label: {
-            Label(ProfileShareLink.copyLabel, systemImage: "link")
+            Text(ProfileShareLink.copyLabel)
                 .jpPillButton(.outline)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("profileQR.copyLink")
-        let share = ShareLink(item: url, preview: SharePreview(ProfileQRText.codeLabel(profile.name))) {
-            Label(ProfileShareLink.shareLabel, systemImage: "square.and.arrow.up")
+        let share = ShareLink(item: url, preview: SharePreview(ProfileShareLink.previewTitle(profile.name))) {
+            Text(ProfileShareLink.shareLabel)
                 .jpPillButton(.outline)
         }
         .buttonStyle(.plain)

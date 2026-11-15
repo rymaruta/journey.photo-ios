@@ -1837,10 +1837,19 @@ final class ScreenshotTests: XCTestCase {
         }
         guard toAuthor.exists, toAuthor.isHittable else { return }
         toAuthor.tap()
-        let more = app.buttons["この人の操作"].firstMatch
+        let more = app.buttons["userProfile.more"].firstMatch
         guard more.waitForExistence(timeout: 15) else {
-            // 作者が自分（見本の利用者）なら ⋯ は無い。撮らずに抜ける
-            XCTContext.runActivity(named: "人の頁に ⋯ が無い（作者が自分か、読み込めていない）") { _ in }
+            // 作者が自分（見本の利用者）なら ⋯ は無い。撮らずに抜ける。事実を取る（2026-11-15・run 1337 で ⋯ が見つからなかった）:
+            // 上のバーの押せるものの名前と目印、自分の頁の印（編集）の有無
+            let bar = app.navigationBars.buttons.allElementsBoundByIndex.map { "\($0.identifier)|\($0.label)" }
+            let ownPage = app.buttons["mypage.edit"].exists || app.buttons["プロフィールを編集"].exists
+            let note = "人の頁に ⋯ が無い。上のバー: \(bar)・自分の頁の印: \(ownPage)"
+            let attachment = XCTAttachment(string: note)
+            attachment.name = "121c-人の頁の事実"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            print("[ProfileShare] \(note)")
+            shoot(app, "121c-人の頁（⋯ が見つからない）")
             return
         }
         more.tap()

@@ -162,4 +162,6 @@ enum ProfileShareLink {
     static var shareLabel: String { L("共有", "Share") }
     static var copied: String { L("リンクをコピーしました", "Link copied") }
     static var shareProfileLabel: String { L("プロフィールを共有", "Share profile") }
+    /// 共有の画面の上に出る題（渡すのはリンクなので「QR」とは書かない）
+    static func previewTitle(_ name: String) -> String { L("\(name) のプロフィール", "\(name)'s profile") }
 }
