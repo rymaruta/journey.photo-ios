@@ -90,14 +90,11 @@ struct PlaceSearchField: View {
                     suggestions = []
                     onPick?(spot.name)
                 } label: {
-                    // 当たりは地名の候補（下）と同じ形: 行の幅いっぱい・縦は外へ 3pt
+                    // 当たりは地名の候補（下）と同じ形（`PlaceSuggestionRow`）
                     Label(spot.regionLabel.map { "\(spot.name)\u{2002}\($0)" } ?? spot.name,
                           systemImage: "mappin.and.ellipse")
                         .font(.caption)
-                        .padding(.vertical, 3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .padding(.vertical, -3)
+                        .modifier(PlaceSuggestionRow())
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel(L("観光スポット \(spot.name)\(spot.regionLabel.map { "、" + $0 } ?? "")",
@@ -118,16 +115,10 @@ struct PlaceSearchField: View {
                     spotSuggestions = []
                     onPick?(place.label)
                 } label: {
-                    // **当たりを行の幅いっぱいに**（字の上だけだった）。縦は候補の間
-                    // （投稿画面の 6pt）の半分まで——外へ広げて同じだけ詰めるので
-                    // 並びは変わらない。44pt には届かない: 候補は縦に 22pt おきに並び、
-                    // それ以上広げると隣の候補の押し下げを奪う
+                    // **当たりを行の幅いっぱい・縦 44pt に**（`PlaceSuggestionRow`）
                     Label(place.label, systemImage: "mappin.circle")
                         .font(.caption)
-                        .padding(.vertical, 3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .padding(.vertical, -3)
+                        .modifier(PlaceSuggestionRow())
                 }
                 .buttonStyle(.borderless)
             }
@@ -213,5 +204,27 @@ struct PlaceSearchField: View {
         spotAliases = await environment.spots.fetchAliases()
         guard focused, location != pickedLabel else { return }
         suggestSpots(for: location)
+    }
+}
+
+/// 撮影地の候補の1行の当たり（2026-11-15 判断・人間工学の点検）。
+///
+/// 前は字の行（12pt）を上下 3pt 広げただけで、当たりは縦 22pt・候補は 22pt おきに並んでいた（決まりは 44pt）。
+/// 字と印の大きさはそのまま、**行の当たりを縦 44pt（`WebTheme.minTapTarget`）・幅いっぱい**にする。
+/// 当たりを広げたまま、並べる高さだけ上下 `outset` ずつ詰める: 置き場（投稿画面・ストーリーの撮影地）は
+/// 行の間が 6pt の縦の並びなので、隣の行の当たりとちょうど接して重ならず、行は 44pt おきに並ぶ
+/// （写真の編集はフォームの1行ずつなので、行の高さ 44 の中に当たりが収まる）。
+/// `PlaceSuggestionHitTests` が、行の真ん中から上下 21pt を押して自分の行が選ばれるかを見る
+struct PlaceSuggestionRow: ViewModifier {
+    /// 当たりの縦の大きさ
+    static let hitHeight: CGFloat = WebTheme.minTapTarget
+    /// 並べる高さを上下で詰める量（置き場の行の間 6pt の半分）
+    static let outset: CGFloat = 3
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, minHeight: Self.hitHeight, alignment: .leading)
+            .contentShape(Rectangle())
+            .padding(.vertical, -Self.outset)
     }
 }
