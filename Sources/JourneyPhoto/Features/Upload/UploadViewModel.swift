@@ -413,6 +413,25 @@ final class UploadViewModel: ObservableObject {
             }
         }
     }
+
+    /// 投稿の欄（撮影地・題・説明）が書く、写真1枚への窓。**並びの番号でなく id で引く**（2026-11-15 判断・札 #616）。
+    ///
+    /// 前は `ForEach($model.items)` の窓（番号で引く）を欄に渡していた。題を打って確定しないまま（キーボードが
+    /// 出たまま）「投稿する」を押すと、上がった写真が `items` から外れたあとに欄が字を確定させて窓を読み、
+    /// 外れた番号を引いて落ちていた（Mac run 1364・1365 の落ちた記録: `PlatformTextFieldCoordinator.textChanged`
+    /// → `Binding<A>.subscript.getter` → `Array._checkSubscript`。どちらも題の欄に焦点があるまま投稿した回）。
+    /// 外れた写真は最後に描いた値を返し、書き込みは捨てる（`StoryComposerView.typingBinding` と同じ形）
+    func photoBinding(_ shown: PendingPhoto) -> Binding<PendingPhoto> {
+        let id = shown.id
+        return Binding(
+            get: { [weak self] in self?.items.first { $0.id == id } ?? shown },
+            set: { [weak self] value in
+                guard let self, let index = self.items.firstIndex(where: { $0.id == id }) else { return }
+                self.items[index] = value
+            }
+        )
+    }
+
     /// 編集の元の一時ファイル。画面を閉じたら（`deinit`）全部消す
     let editSources = PhotoEditSources()
 
