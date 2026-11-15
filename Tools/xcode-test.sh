@@ -152,10 +152,22 @@ if [ "$mode" != "build" ] && command -v xcrun >/dev/null 2>&1; then
             fi
             if [ -z "$launched" ] && pgrep -f "JourneyPhoto.app/JourneyPhoto" >/dev/null 2>&1; then
                 launched=1
-                # 起動している同じ名前の機種の数（2台なら、裏で起動した1台と xcodebuild の使う1台が別）
+                # 起動している同じ名前の機種の数（2台以上なら、どれでテストしているかが分からない）
                 same="$(xcrun simctl list devices booted 2>/dev/null | grep -cF "$DEVICE (" || true)"
                 echo "measured [sim] $mode アプリが立ち上がった $(( $(date +%s) - started ))s（起動している同じ名前の機種 ${same} 台）" \
                     | tee -a "$LOG"
+                # **単体テストの頭の 150秒、テストを載せるアプリの主スレッドを見本に取る**（札 #610・2026-11-15）。
+                # `APIClientThrottleRetryTests` で、試験の本体の後に主スレッドが 18.4秒止まった（run 1348）。何が止めて
+                # いるかを `Tools/main-thread-sample.py` で数える（関数の名前と秒だけ。番地・置き場は出さない）
+                pid="$(pgrep -f "JourneyPhoto.app/JourneyPhoto" | head -1 || true)"
+                if [ "$mode" = "unit" ] && [ -n "$pid" ] && command -v sample >/dev/null 2>&1; then
+                    (
+                        out="$(mktemp)"
+                        sample "$pid" 150 10 -mayDie -file "$out" >/dev/null 2>&1 || true
+                        python3 Tools/main-thread-sample.py "$out" 10 | tee -a "$LOG"
+                        rm -f "$out"
+                    ) </dev/null &
+                fi
             fi
             if [ -n "$booted" ] && [ -n "$launched" ]; then break; fi
             sleep 1
