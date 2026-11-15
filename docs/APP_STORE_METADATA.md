@@ -1,137 +1,311 @@
-# App Store の掲載情報（下書き）
+# App Store の掲載情報（1.1.91 で申請する分）
 
-App Store Connect に貼る文面。**owner が読んで直す前提の下書き**で、
-数字（写真の枚数など）は出すときに確かめ直すこと。
+App Store Connect に貼る文面。**2026-11-15 に 1.1.91（main a65201d、`testflight/1.1.91`）の中身で書き直した**（札 #604）。
+貼る順と押す所は App Store の Artifact（https://claude.ai/artifact/DViFKiSAyfKaQiW1ayZ1TT）にも絵で置いてある。
+
+- 配信中は 1.0.87（2026-10-11）。掲載名「Journey Photo — 旅の写真」、年齢 4+、カテゴリは写真/ビデオと旅行（iTunes の公開情報）
+- 書き方の決まり: アプリの芯（旅も SNS も連絡も、これ一本）の輪の順（見つける → 計画する → 撮る → 載せる → 話す）。
+  中黒で区切らない（箇条の頭は「–」、文の中は「、」）。「撮りどき」「捨てる」は使わない。公式の頁は「観光スポット」
+- **アプリに無い機能を書かない。** 書いた機能はすべて a65201d のコードと `WhatsNew.json`（1.1.72〜1.1.91）で在ることを確かめた。
+  機能を外したら、ここからも外す
+- 字数は Python の `len()`（文字数）で数えた。上限を超えていない
+- **名前、サブタイトル、キーワード、画面写真は、新しい版を審査に出すときしか変えられない。** 宣伝文はいつでも変えられる
 
 ---
 
 ## 基本
 
-**2026-10-07 に見せ方を変えた**（案の文書「Journey Photo App Store の見せ方の改善案」）。
-題に「撮影スポット」を入れ、説明を旅の流れ（探す → 撮る前 → 計画 → 残す → つながる）の順に
-並べ直した。App Store で「撮影スポット」と検索すると、上位8件は評価 0〜9件のアプリだけで、
-Journey Photo は出てこなかった（iTunes の検索の口・country=jp で見た）。
-**題・副題・キーワード・スクリーンショットは、新しい版を審査に出すときしか変えられない。**
-宣伝文はいつでも変えられる。
+| 項目 | 値 | 決めた理由 |
+|---|---|---|
+| App 名（30字以内） | `Journey Photo 旅の写真と観光スポット`（25字） | 推奨。SNS の面（みんなの旅の写真）と検索の入口（観光スポット）を名前の中で両立。今の掲載名「Journey Photo — 旅の写真」から続いて見える。**最後は owner が決める**（商標の確認も） |
+| App 名（英語） | `Journey Photo: Travel Spots`（27字） | 英語で探す人の語（travel、spots）を入れる |
+| サブタイトル（30字以内） | `旅を見つけて、撮って、みんなと話す`（17字） | 芯の輪（見つける、撮る、話す）をそのまま言う。名前に無い「話す」で連絡の面を出す |
+| サブタイトル（英語） | `Find, shoot and share trips`（27字） | |
+| ホーム画面の名前 | `Journey Photo`（変えない） | `APP_DISPLAY_NAME` |
+| Bundle ID | `com.journeyphoto.JourneyPhoto` | |
+| プライマリ言語 | 日本語（英語も入れる） | |
+| カテゴリ | 主: 写真/ビデオ、第2: ソーシャルネットワーキング | 推奨。使い方の中心が投稿、ストーリー、メッセージになった。旅行の検索語は名前とキーワードで取れる。迷うなら今のまま（第2: 旅行）でも審査には響かない |
+| 年齢区分 | 質問票の結果に従う（`docs/APP_REVIEW.md` の答え）。UGC とメッセージは「あり」 | |
+| 価格 | 無料（App 内課金: Journey Photo Pro 月額 500円、年額 5,000円） | |
+| サポート URL | `https://journey-photo.com/privacy` | 末尾の「お問い合わせ」にメールがある。`/support` と `/contact` は 404（2026-11-15 に確かめた） |
+| マーケティング URL | `https://journey-photo.com` | |
+| プライバシーポリシー URL | `https://journey-photo.com/privacy` | 2026-11-15 版でアプリ 1.1.91 の取り方に合わせた（journey.photo-web #650） |
+| 利用規約（EULA の欄か説明文） | `https://journey-photo.com/terms` | 定期購入の審査 3.1.2 で要る。説明文の末尾にも入れた |
+| 著作権 | `2026 Journey Photo` | |
 
-| 項目 | 値 |
-|---|---|
-| App 名（30字以内） | Journey Photo 撮影スポット図鑑（22字。端末のホーム画面の名前 `Journey Photo` は変えない） |
-| サブタイトル（30字以内） | 桜・紅葉・絶景の撮り方と光の時刻（16字） |
-| Bundle ID | `com.journeyphoto.JourneyPhoto` |
-| プライマリ言語 | 日本語 |
-| カテゴリ | 写真/ビデオ（第2カテゴリ: 旅行） |
-| 年齢制限 | 12+（ユーザー生成コンテンツあり）※2026-10-07 の公開中の表示は 4+。App Store Connect の回答を確かめること |
-| 価格 | 無料 |
-| サポート URL | https://journey-photo.com/privacy（問い合わせ先が載る。`/terms` には載っていない） |
-| マーケティング URL | https://journey-photo.com |
-| プライバシーポリシー URL | https://journey-photo.com/privacy |
-| 著作権 | 2026 Journey Photo |
+**名前、サブタイトル、キーワードで同じ語を二度使わない。** App Store は3つを合わせて検索に使う。
 
-**題・副題・キーワードで同じ語を二度使わない。** App Store は3つを合わせて検索に使うので、
-重ねると枠の無駄になる。
+## プロモーション用テキスト（170字以内、審査なしで変えられる）
 
-## プロモーション用テキスト（170字以内）
+日本語（106字）:
 
-> 全国約1,000か所の撮影スポットを、作例写真と撮り方のこつで。日の出・日の入り、ゴールデンアワーの時刻と太陽の方角もスポットごとにわかります。
+```
+旅の一瞬を、誰かの次の旅へ。みんなの写真から次の行き先を見つけて、旅行プランにまとめ、撮った写真を載せて、ストーリーやメッセージで話せます。観光スポットは約3,900か所、日本の47都道府県と海外60の国と地域。
+```
+
+英語（164字）:
+
+```
+Find your next trip in everyone's photos, plan it, post your shots, and talk in stories and messages. About 3,900 spots in Japan and 60 other countries and regions.
+```
 
 ## 説明（4000字以内）
 
-**撮影情報の書き方（2026-09-26・owner 決定）**: カメラの機種・レンズ・撮影日は
-**公開している**（アプリが `ExifFields` として送り、写真ページの「撮影情報」に出る）。
-取り除いているのは**ファイルに埋め込まれた EXIF / GPS**で、機種などは別の欄で送る。
-
-**アプリに無い機能を書かない。** 説明に書いた機能が見つからないと差し戻される。
-下の文の機能は、2026-10-07 の main（a023948）で画面の作りを確かめた:
-色の分け方は `ColorFamilies`、機材の分け方は `GearGroups`、経路は `SpotDirections`
-（Apple のマップを開く）、旅の一冊は `TripBookView`、旅の写真からまとめては
-`LibraryTripFlowView`、アルバムは `AlbumsView`・`InviteView`、今日の一問は `DailyQuizView`。
-機能を外したら、ここからも外すこと（「年表」は 2026-09 に外した）。
+日本語（約2,400字）:
 
 ```
-「ここで撮りたい」から、旅先を決めるアプリです。
-全国約1,000か所の撮影スポットに、作例写真・見どころ・撮り方のこつ・ゴールデンアワーの時刻をまとめました。
-桜・紅葉・夕焼け・滝・夜景、季節と時間帯から探せます。見るだけならログイン不要。
+旅先で出会った一瞬を載せて、みんなの写真から次の行き先を見つける。旅の計画も、写真の投稿も、仲間との連絡も、Journey Photo ひとつで。
+見るだけなら、ログインは要りません。
 
-■ 撮影スポットを探す
-・全国約1,000か所の撮影スポット図鑑。作例写真には作者と出典を表示しています
-・「秋」「夕」など、季節と時間帯で絞り込み
-・ホームには、いま見頃の撮影スポットが並びます
-・地図で、旅先の近くの撮影地と写真を探せます
-・色から探す（空・海、桜・花、夕日など）、機材から探す（広角・標準・望遠）
-・毎日の楽しみに、今日の一問「この写真はどこ？」と今日のテーマ
+■ みんなの写真から見つける
+– ホームは1本の並び。フォロー中の人の新しい写真、選ばれた写真、いいねの多い写真が続きます
+– 観光スポットは約3,900か所。日本の47都道府県で約2,200か所、海外60の国と地域で約1,700か所
+– 地方と県から一覧に。日本地図から地方を選ぶことも、名前で絞ることもできます
+– 作例写真には、作者と出典を表示しています
+– 日の出と日の入り、ゴールデンアワーとブルーアワーの時刻、太陽の方角
+– ホームの札で観光スポットを1枚ずつ払って、行きたい場所へ。頁には今月の「行きたい」の数が出ます
+– 撮影地マップで、旅先の近くの写真を探せます
+– 毎日の今日の一問「この写真はどこ？」
 
-■ 撮る前に
-・撮影スポットごとに、日の出・日の入り、ゴールデンアワー・ブルーアワーの時刻と太陽の方角
-・スポットまでの経路を、Apple のマップでそのまま
+■ 旅行プランを立てる
+– 観光スポットや行きたい場所から、日付を選んでそのまま入れられます
+– 場所を足す画面で探して、押すだけで日程へ
+– ≡ を持って運ぶと、順番や日を入れ替えられます
+– 場所と場所の間に移動の目安。押すと Apple のマップで経路が開きます
+– 招待リンクで仲間を誘って、日程を一緒に直し、プランの中で話せます
+– メッセージで送り合った写真や観光スポットから、プランの下書きも作れます
 
-■ 旅の計画
-・気になる撮影スポットを「行きたい」に保存して、地図で一覧
-・保存した場所を、近い順の旅行プランに
+■ 撮る、載せる
+– 旅の写真も、日常の好きな一枚も、気軽に投稿できます
+– 作例を重ねて撮るカメラと、作例つきの構図の一覧
+– 投稿したあとも色を編集でき、編集中は元の写真と見比べられます。下書きはいくつでも残せます
+– 投稿したら、すぐ SNS に載せられるカード。額装、フィルム、縦書きなどの形から選べます
+– 見せたい写真は、プロフィールの先頭にピン留め
+– 写真ファイルに埋め込まれた位置情報は端末の中で取り除いてから送り、撮影地は約1kmに丸めて保存します
 
-■ 撮った写真を残す
-・旅の写真からまとめて投稿。端末の写真から旅を見つけ、日ごとに選べます
-・旅の一冊。表紙・ルート図・日ごとのページで、旅を一冊の読み物に
-・アルバム。招待リンクで、旅の仲間と一緒に写真を集められます
-・カメラやライブラリから投稿。投稿したあとも写真の色を編集できます
-・カメラの機種・レンズ・撮影日などの撮影情報を、写真ページに表示
-・写真ファイルに埋め込まれた位置情報は端末の中で取り除いてから送り、撮影地の座標は約1kmに丸めて保存します
-・一度読み込んだ一覧と写真は、電波が無いところでも表示できます
+■ ストーリー
+– 写真と、60秒までの動画。ホームの「＋」で、カメラがすぐ開きます
+– ズーム、フラッシュ、タイマー、動画の切り取り、フィルター、手描き
+– 曲の札（30秒の試聴）、投票、場所の札
+– 顔の輪から開いて、絵文字ですぐ反応。返信はメッセージに残ります
+– ハイライトで残したり、親しい友達だけに見せたりできます
 
-■ 写真でつながる
-・いいね・コメント・フォロー・保存
-・24時間で消えるストーリーに撮影スポットを付けて、見る人をその場所へ
+■ 話す
+– いいね、コメント（返信もできます）、フォロー、保存
+– フォローしている人と、1対1のメッセージ
+– 写真や観光スポットを送れます。届いた観光スポットは、すぐ行きたい場所に
+– 相手が承認するまでは文字3通までで、リンクは送れません
+– 送ったメッセージは取り消せます。会話からその場で通報、ブロックもできます
+– プロフィールの QR コードで、会った人とすぐつながれます
+
+■ 旅を残す
+– 写真へのアクセスを許可すると、過去の旅が一冊ずつマイページの棚に並びます。調べるのは端末の中だけで、写真も位置もどこにも送りません
+– ホームの「まだ載せていない旅」から、旅の写真を1枚ずつ払って選べます
+– 旅の一冊と、招待リンクで仲間と写真を集める共同アルバム
+– 行った県を日本地図に塗って、回数を記録（あなただけの記録です）
+– 自分の旅の1枚を、搭乗券や切手の形にしてストーリーへ
+
+■ 旅のトランクと、とおまわり号
+– 公開で投稿すると硬貨がもらえ、カプセルの機械に入れるとトランクの部品が出てきます。硬貨と部品は購入できません
+– キャンピングカー「とおまわり号」に家具を置いて、額に自分の写真を飾れます
+
+■ すれちがい乗車券（任意、初期設定はオフ）
+– オンにした人だけ、近くにいる Journey Photo の利用者と、選んだ公開写真1枚とひとことを Bluetooth で交換します。位置や連絡先は送りません
+– カードはその場で届きます。夕方にまとめて受け取ることもできます
+
+■ Journey Photo Pro（任意、自動更新の定期購入）
+– 光と天気の知らせ：行きたい場所が「明日の朝、晴れて朝焼け」なら前の晩に
+– 電波なしで使える旅：地図、作例、光の時刻を端末に
+– Pro マークと Pro 限定の章
+– 特別な乗車券：真鍮、漆、革などの券面
+– 旅のトランクをもっと：特別なトランク6型、ラベルの図柄の作り直し月3回、手持ち150枚（無料は30枚）
+– 月額500円、年額5,000円。無料の試用はありません
+– お支払いは購入の確定時に Apple ID に請求されます。期間が終わる24時間前までに解約しない限り、自動で更新されます。解約と管理は App Store のアカウント設定から行えます。ファミリー共有には対応していません
+– 作例を重ねて撮るカメラは、Pro でなくても使えます
+利用規約: https://journey-photo.com/terms
+プライバシーポリシー: https://journey-photo.com/privacy
 
 ■ 安心して使うために
-・アカウントを作らなくても、ギャラリー・検索・地図・撮影スポットを使えます。投稿・いいね・コメント・フォロー・保存には、メールアドレスでの登録が必要です
-・不適切な投稿は写真ごとに通報でき、相手をブロックできます。ブロックは設定からいつでも解除できます
-・アカウントはアプリ内から削除できます
+– アカウントが無くても、写真、検索、地図、観光スポットを見られます。投稿、いいね、コメント、フォロー、メッセージには、メールアドレスでの登録が必要です
+– 写真、コメント、ストーリー、メッセージ、旅行プランの会話、プロフィールは通報でき、相手をブロックできます。ブロックは設定からいつでも解除できます
+– 検索エンジンにプロフィールを出さない設定があります
+– アカウントはアプリ内から削除できます
+– 設定の「意見を送る」から、運営に声を届けられます
 ```
 
-## キーワード（100字以内・カンマ区切り）
+英語（約3,950字）:
 
-> フォトスポット,写真スポット,ゴールデンアワー,マジックアワー,ブルーアワー,日の出,夕日,夕焼け,星空,夜景,滝,カメラ,一眼,ミラーレス,旅行,観光,映え,風景,地図,名所
+```
+Share moments from your trips, and find your next destination in everyone's photos. Plan trips, post photos and keep in touch with your travel friends, all in Journey Photo. No account is needed to browse.
 
-88字。題・副題にある語（撮影スポット・図鑑・桜・紅葉・絶景・撮り方・光・時刻）は入れていない。
-**他社のアプリ名は入れない**（審査で落とされる）。「写真 共有」のような大きい語も入れない。
+FIND IDEAS IN EVERYONE'S PHOTOS
+- Home is one feed: new photos from people you follow, then featured and popular photos
+- About 3,900 sightseeing spots: about 2,200 across all 47 prefectures of Japan and about 1,700 in 60 other countries and regions
+- Browse by region and prefecture, or pick a region on a map of Japan
+- Sample photos credit the photographer and source
+- Sunrise, sunset, golden hour and blue hour times, and the sun's direction
+- Swipe through spots on Home and save them to "Want to go"
+- Find photos near your destination on the photo map
 
-## 「このバージョンの新機能」（1.0.68）
+PLAN TRIPS
+- Add spots on the day you choose, or search and add places
+- Drag the ≡ handle to reorder places or move them to another day
+- Travel times between places; tap to open the route in Apple Maps
+- Invite friends with a link to edit the plan together and chat inside it
 
-> 撮影地を共有すると、その場所の写真がまとまった Web のページのリンクが付くようになりました（公開の写真がある場所）。
-> そのほか、表示や動作の細かな改善を行いました。
+SHOOT AND POST
+- Post travel shots or any everyday photo you love
+- A camera that overlays sample compositions, plus a guide to compositions
+- Edit colors after posting and compare with the original. Keep as many drafts as you like
+- Share cards right after you post, with Mat, Film, Vertical and more
+- Pin photos to the top of your profile
+- Location data in the photo file is removed on your device before upload; a photo's place is stored rounded to about 1 km
 
-1.0.67 からの違いは2つ（#167・#168）。評価のお願い（#168）は、新機能としては書かない。
+STORIES
+- Photos and videos up to 60 seconds. Tap + on Home to open the camera
+- Zoom, flash, timer, trimming, filters and drawing
+- Song stickers (30-second previews), polls and place stickers
+- React with an emoji; replies stay in Messages
+- Highlights and Close friends
 
-## スクリーンショット（最低3枚）
+TALK
+- Likes, comments with replies, follows and saves
+- Chat one to one with people you follow
+- Send photos and spots, and save a spot you receive to "Want to go"
+- Until someone accepts, you can send up to 3 text messages, without links
+- Unsend messages. Report or block from a conversation
+- Connect in person with your profile QR code
 
-検索結果に出るのは最初の3枚。そこで「日本の撮影スポット」「光の時刻」「季節」を伝える。
-各枚の上に明朝の見出しを置き、下に画面を置く（黒地・真鍮の眉ラベル。作る前にデザインの板を読む）。
-2026-10-07 時点の公開中の6枚は、1枚目がフランスとラーメンの写真で、撮影スポットが伝わらない。
+KEEP YOUR TRIPS
+- Allow photo access and your past trips line up as books on My Page. Photos are checked only on your device and never sent anywhere
+- Trip books and shared albums
+- Color in the prefectures you have visited on a map of Japan (only you can see it)
+- Turn one of your own trip photos into a boarding pass or stamp for your story
 
-1. 撮影スポットの詳細（日本の絶景。例: 鍋ヶ滝）— 「日本中の『撮りたい』が、ここに。」
-2. 光の時刻（日の出・ゴールデンアワー・太陽の方角）— 「いちばん美しい時刻がわかる」
-3. ホームの「いまの季節のスポット」（例: 江の島）— 「いま見頃の場所が、毎日届く」
-4. 地図（日本の地図に撮影スポットのピン）— 「旅先の近くの撮影地を地図で」
-5. 行きたい場所と旅行プラン — 「保存して、そのまま旅の計画に」
-6. 旅の一冊 — 「撮った旅を、一冊の読み物に」
+TRAVEL TRUNK AND DETOUR
+- Earn coins by posting publicly and get trunk parts from the capsule machine. Coins and parts cannot be bought
+- Decorate Detour, your camper, with furniture and your own photos
 
-写真は作者・出典の表示があるものだけ使う。
+PASS (OPTIONAL, OFF BY DEFAULT)
+- Only if you turn it on, your phone swaps a ticket card with nearby Journey Photo users over Bluetooth: one public photo you chose and a short note. No location or contacts are sent
 
-**人の顔・他人の投稿・他社のロゴ（飲み物の看板など）を入れない。**
-権利の確認を求められることがある。
+JOURNEY PHOTO PRO (OPTIONAL, AUTO-RENEWABLE SUBSCRIPTION)
+- Light and weather alerts for places you want to go
+- Offline trips
+- A Pro mark and Pro-only chapters
+- Special Pass ticket designs
+- More from your Travel trunk: 6 special trunks, 3 label redesigns a month, room for 150 labels (30 for free)
+- 500 yen per month or 5,000 yen per year. No free trial. Payment is charged to your Apple ID at confirmation of purchase and renews automatically unless canceled at least 24 hours before the end of the period. Manage or cancel in your App Store account settings. Family Sharing is not supported
+- The composition-overlay camera is free for everyone
+Terms of Use: https://journey-photo.com/terms
+Privacy Policy: https://journey-photo.com/privacy
 
-**寸法は枠ごとに厳密**（1ピクセル違っても弾かれる）:
+FEEL SAFE
+- Browse without an account. Posting, likes, comments, follows and messages need an email sign-up
+- Report photos, comments, stories, messages, trip plan chats and profiles, and block people. Unblock anytime in Settings
+- Hide your profile from search engines
+- Delete your account in the app
+```
 
-| 枠 | 受け付ける寸法（縦） |
-|---|---|
-| 6.9インチ | 1290×2796 / 1320×2868（Pro Max・Plus で撮ったもの） |
-| 6.5インチ | 1242×2688 / 1284×2778 |
+## キーワード（100字以内、カンマ区切り、空白なし）
 
-無印・Pro の iPhone（1179×2556）で撮ったものは、どちらの枠にもそのままでは
-入らない。縦横の比がほぼ同じなので、1284×2778 に拡大すれば 6.5インチ枠に
-入る（2026-09-26 に初回提出で実際にそうした）。
+名前とサブタイトルにある語（Journey、Photo、旅、写真、観光、スポット、見つけ、撮って、みんな、話す）は入れない。
+他社のアプリ名や商標（インスタなど）は入れない（審査 2.3.7）。
+
+日本語（99字）:
+
+```
+旅行,旅行プラン,しおり,絶景,撮影,撮影地,フォトスポット,桜,紅葉,夜景,星空,夕日,ゴールデンアワー,カメラ,風景,映え,地図,共有,ストーリー,メッセージ,DM,行った県,おでかけ,海外旅行
+```
+
+英語（98字。journey、photo、travel、spots、find、shoot、share、trips は名前とサブタイトルにある）:
+
+```
+japan,sightseeing,golden hour,sunrise,sunset,sakura,autumn,landscape,camera,map,itinerary,story,dm
+```
+
+## このバージョンの最新情報（1.0.87 の人が読む）
+
+日本語:
+
+```
+秋からの大きな更新です。旅の写真の SNS として、たくさんの機能が加わりました。
+
+– 画面のデザインを新しくしました。黒と白に真鍮の差し色で、写真がいちばん引き立ちます
+– ホームは1本の並びに。フォロー中の人の新しい写真から順に続きます
+– 観光スポットは約3,900か所に。日本の47都道府県と、海外60の国と地域。地方と県から一覧に、日本地図からも探せます
+– メッセージ：フォローしている人と1対1でやりとりできます。写真や観光スポットも送れて、送信の取り消しもできます
+– ストーリー：60秒までの動画、ズーム、フラッシュ、タイマー、切り取り、フィルター、手描き、曲の札、投票。顔の輪から開いて、絵文字ですぐ反応
+– 旅行プラン：観光スポットから日付を選んで入れる、探して足す、≡ で並べ替え。場所の間の移動の目安を押すと Apple のマップで経路が開きます。招待リンクで仲間と一緒に直して、プランの中で話せます
+– 写真へのアクセスを許可すると、過去の旅が一冊ずつマイページの棚に並びます。写真は端末の中で調べるだけで、どこにも送りません
+– 行った県を日本地図に塗って、回数を記録できます
+– 投稿したらすぐ SNS に載せられるカード。額装、フィルム、縦書きなどの形から選べます
+– コメントへの返信、プロフィールのピン留め、QR コード、おすすめの人
+– 旅のトランクと、キャンピングカー「とおまわり号」の中に入れるように
+– すれちがい乗車券（初期設定はオフ）：オンにした人だけ、近くの人と公開写真1枚を交換。カードはその場で届きます
+– Pro に、特別な乗車券と旅のトランクの特典が加わりました。作例を重ねて撮るカメラは、Pro でなくても使えます
+– 設定に「意見を送る」と「検索エンジンにプロフィールを表示しない」
+– 電波が無いときも見やすく、大きい文字でも読みやすく、動きを軽くしました。細かな使いやすさも見直しています
+```
+
+英語:
+
+```
+A big update since the fall, with many new ways to share travel photos.
+
+- A refreshed look: black and white with a brass accent, so your photos stand out
+- Home is now one feed, starting with new photos from people you follow
+- About 3,900 sightseeing spots, across all 47 prefectures of Japan and 60 other countries and regions
+- Messages: chat one to one with people you follow. Send photos and spots, and unsend messages
+- Stories: videos up to 60 seconds, zoom, flash, timer, trimming, filters, drawing, song stickers and polls
+- Trip plans: add spots on the day you choose, search and add places, and reorder with the ≡ handle. Tap the travel time to open the route in Apple Maps. Invite friends with a link to edit together and chat inside the plan
+- Allow photo access and your past trips line up as books on My Page. Photos are checked only on your device
+- Color in the prefectures you have visited on a map of Japan
+- Share cards right after you post, with Mat, Film, Vertical and more
+- Replies to comments, pinned photos, a profile QR code and suggested people
+- Your Travel trunk, and you can step inside Detour, your camper
+- Pass (off by default): swap one public photo with people nearby, only if you turn it on
+- Pro now includes special Pass tickets and Travel trunk extras. The composition-overlay camera is free for everyone
+- "Send feedback" and "Hide my profile from search engines" in Settings
+- Better offline screens, easier reading with larger text, a lighter app, and many small fixes
+```
+
+## 画面写真
+
+**今の Apple の決まり（2026-11-15 に developer.apple.com の「Screenshot specifications」で確かめた）:**
+iPhone だけのアプリ（`TARGETED_DEVICE_FAMILY: "1"`）は、**6.9インチ**（iPhone with Dynamic Island の大きい画面）の1組を出せば足りる。
+出さないときだけ 6.5インチが要る。1枚から10枚、PNG か JPEG（透過なし）。
+
+| 枠 | 受け付ける寸法（縦） | 機種 |
+|---|---|---|
+| 6.9インチ | **1320×2868**、1290×2796、1260×2736 | 17 Pro Max、16 Pro Max、Air など |
+| 6.5インチ | 1284×2778、1242×2688 | 6.9 を出せば要らない |
+
+CI の `ScreenshotTests` は iPhone 17 Pro Max（1320×2868）で撮るので、原寸ならそのまま 6.9インチ枠に入る。
+
+### 並び（2026-11-15 に決めた。芯の輪の順。検索結果に出るのは最初の3枚）
+
+| 順 | 画面 | 材料（`ScreenshotTests` の絵の名前） | 上に置く見出し |
+|---|---|---|---|
+| 1 | ホーム（みんなの写真の1本の並び） | `10-ホーム` | みんなの写真から、次の旅へ |
+| 2 | 観光スポットの頁（作例と光の時刻） | `70-ストア・撮影スポット（鍋ヶ滝）` | 行きたい場所が、きっと見つかる |
+| 3 | 旅行プラン（日程と移動の目安） | `66c-旅行プラン（仲間と共有・日程）` | 仲間と一緒に、旅を組み立てる |
+| 4 | 投稿（写真の編集の入口） | `42-投稿（写真の編集の入口）` | 撮った一枚を、すぐ載せる |
+| 5 | ストーリー（曲の札） | `62a-ストーリーの曲の札` | 24時間のストーリーで、旅の今を |
+| 6 | メッセージ（会話） | `86m4-メッセージ（会話）` | 旅の仲間と、そのまま話せる |
+| 7 | 写真の詳細 | `20-写真の詳細` | 一枚の向こうの場所まで |
+| 審査用 | Pro の案内 | `81-Pro の案内` | （課金の審査に出す。並びには入れない） |
+
+**写真の権利。** ホームと写真の詳細には、本番の公開写真（他の利用者の写真）が写る。**他の利用者の写真は、その人のもの**なので、
+そのまま宣伝に使わない。出す絵は、owner 本人の写真か審査用アカウントの写真、観光スポットの作例（作者と出典の表示つき）だけが
+写るように撮り直す。人の顔、他社のロゴも入れない。
+
+**原寸を CI で撮れない。** `ios-testflight.yml` の `storeShots: true` は公開リポジトリでは最初の段で止める作り（#451）で、
+2026-11-15 に非公開の S3 に原寸を置く形へ変えようとしたが、守りの段を外す変更なので止めた（owner の判断待ち）。
+いま取れるのは、絞った回（`submit=false`、`screens`）が非公開の S3 に置く**幅700の JPEG（見るため）**だけ。
+決め方は `docs/APP_REVIEW.md` の「owner にお願いすること」。
 
 ## レビュー用の追記
 
-`docs/APP_REVIEW.md` を見ること。Notes に貼る文面と、審査用アカウントの
-用意の仕方が書いてある。
+`docs/APP_REVIEW.md` を見ること。審査メモの文面、審査用アカウントの作り方、ガイドライン別の対応、
+App のプライバシーの答え、年齢区分の答えが書いてある。
