@@ -39,6 +39,8 @@ enum AccountLocalData {
         SavedPhotosStore(defaults: defaults).removeData(for: userId)
         ModerationStore(defaults: defaults).removeData(for: userId)
         WishlistStore(defaults: defaults).removeData(for: userId)
+        // AI で作った旅行プランの「まだ見ていない」印（札 #621）
+        TripAIUnseen.removeData(for: userId, defaults: defaults)
         JoinedAlbumsStore(defaults: defaults).removeData(for: userId)
         SeenStoriesStore(defaults: defaults).removeData(for: userId)
         RecentSongsStore(defaults: defaults).removeData(for: userId)

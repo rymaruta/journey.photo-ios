@@ -119,12 +119,16 @@
           右へ払った・頁で「行きたい」を押した撮影スポットと、端末ごとのでたらめな番号を送り、撮影スポットごとの月の数を数える。
           **本人と結びつけない**（ログイン中も利用者の ID を送らない）ので Linked は false。数えて公開するのは撮影スポットの人気
           （アプリの機能）で、広告にも解析にも使わない。端末の番号は上の DeviceID（Linked）の申告に含まれる種類
+          2026-11-15（札 #621）: AI で旅行プランを作った**月の回数**を、利用者ごとに数えて上限を守る
+          （photo-gallery `api-user/src/tripAi.ts` の `aiuse#<利用者>#<年月>`）。本人と結びつくので Linked を true にした
+          （1つの種類で1つでも結びつけば true）。書いた文はサーバーに残さない（読んで答えるだけ・Bedrock の記録もしていない）ので、
+          「その他のユーザーコンテンツ」の申告は増やさない
         -->
         <dict>
             <key>NSPrivacyCollectedDataType</key>
             <string>NSPrivacyCollectedDataTypeProductInteraction</string>
             <key>NSPrivacyCollectedDataTypeLinked</key>
-            <false/>
+            <true/>
             <key>NSPrivacyCollectedDataTypeTracking</key>
             <false/>
             <key>NSPrivacyCollectedDataTypePurposes</key>

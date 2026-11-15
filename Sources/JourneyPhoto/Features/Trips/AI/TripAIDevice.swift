@@ -54,7 +54,7 @@ enum TripAIDevice {
 
     /// AI に渡す文（サーバーの `userMessage` と同じ形）
     static func message(request: String, days: Int?, candidates: [OfficialSpot], current: [TripAIPlan.Stop]) -> String {
-        var lines = ["頼み: \(request)"]
+        var lines = ["頼み: \(TripAILimits.clipped(request))"]
         if let days { lines.append("日数: \(days)") }
         if !current.isEmpty { lines.append("今の日程: " + current.map { "\($0.day)日目:\($0.n)" }.joined(separator: " ")) }
         lines.append("候補:")

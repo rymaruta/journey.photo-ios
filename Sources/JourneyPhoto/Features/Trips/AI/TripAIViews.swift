@@ -125,6 +125,8 @@ struct TripAIAskSheet: View {
                     if let editing { chooser(editing) }
                     HStack(spacing: JPSpace.xs) {
                         JPTextField(TripAIText.placeholder, text: $ask.extra)
+                            // 打った時点で 200 字に切る（`TripAILimits.maxRequest`）
+                            .onChange(of: ask.extra) { _, new in ask.extra = TripAILimits.clipped(new) }
                             .submitLabel(.done)
                             .onSubmit(readExtra)
                             .accessibilityIdentifier("tripAI.extra")
@@ -269,10 +271,13 @@ struct TripAIBuildingView: View {
                         .font(JPFont.screenTitle)
                         .foregroundStyle(WebTheme.foreground)
                         .accessibilityAddTraits(.isHeader)
-                    Text(statusLine)
-                        .font(JPFont.footnote)
-                        .foregroundStyle(WebTheme.text2)
-                        .accessibilityIdentifier("tripAI.status")
+                    // 作れなかったときは下の札が言うので、ここでは言わない（同じ言葉を2回出さない）
+                    if !isFailed {
+                        Text(statusLine)
+                            .font(JPFont.footnote)
+                            .foregroundStyle(WebTheme.text2)
+                            .accessibilityIdentifier("tripAI.status")
+                    }
                 }
                 if case .failed(let failure) = job.state {
                     ErrorBanner(title: L("作れませんでした", "Couldn't make it"),
@@ -291,7 +296,8 @@ struct TripAIBuildingView: View {
         .navigationTitle(L("旅行プラン", "Trip plans"))
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
-            if job.state == .building {
+            // 保存に入ったら「やめる」を隠す（保存したプランを残さないため・止められた回は消す）
+            if job.state == .building, !job.saving {
                 Button {
                     TripAIJobs.shared.cancel(job)
                     dismiss()
@@ -303,6 +309,11 @@ struct TripAIBuildingView: View {
                 .jpBottomBar()
             }
         }
+    }
+
+    private var isFailed: Bool {
+        if case .failed = job.state { return true }
+        return false
     }
 
     /// 何をしているかの一言（実際の手順どおり）
@@ -379,6 +390,11 @@ struct TripAIBuildingView: View {
 
 // MARK: - 上の帯（できた・作れなかった）
 
+enum TripAIBannerLayout {
+    /// 上の札（ナビゲーションバー 44 と少しの間）の下に出す。戻るのガラスの丸をふさがない（65u で 8 秒かぶさっていた）
+    static let belowNavigationBar: CGFloat = 52
+}
+
 /// アプリのいちばん上の帯（板 Components 06 の知らせの形: ガラス・上から 0.24 秒）。通知の許可は求めない
 struct TripAIBannerView: View {
     @ObservedObject var jobs = TripAIJobs.shared
@@ -387,7 +403,8 @@ struct TripAIBannerView: View {
         if let b = jobs.banner {
             Button { jobs.tapBanner() } label: {
                 HStack(spacing: JPSpace.xs) {
-                    Circle().fill(b.failed ? WebTheme.danger : WebTheme.accent).frame(width: 8, height: 8)
+                    // ガラスの地の上なので白（真鍮は黒地の上だけ・2026-10-02 の地図の札と同じ決まり）。失敗は危険の色
+                    Circle().fill(b.failed ? WebTheme.danger : WebTheme.foreground).frame(width: 8, height: 8)
                         .accessibilityHidden(true)
                     Text(b.text)
                         .font(JPFont.footnote.weight(.semibold))

@@ -102,9 +102,17 @@ struct TripPlansView: View {
         }
         .task { await model.load(environment: environment) }
         .task(id: auth.userId) { await loadMyTrips() }
-        .task(id: auth.userId) { await loadAI() }
-        // 画面の外で AI のプランができた（保存した）ら一覧を取り直す
-        .onChange(of: planChanges.revision) { _, _ in Task { await model.load(environment: environment) } }
+        .task(id: auth.userId) {
+            aiJobs.use(userId: auth.userId)
+            await loadAI()
+        }
+        // 画面の外で AI のプランができた（保存した）ら、一覧と今月の残りの回数を取り直す
+        .onChange(of: planChanges.revision) { _, _ in
+            Task {
+                await model.load(environment: environment)
+                await reloadUsage()
+            }
+        }
         .navigationDestination(isPresented: $showAIJob) {
             if let job = aiJob { TripAIBuildingView(job: job, plans: model) }
         }
@@ -160,9 +168,13 @@ struct TripPlansView: View {
             TripAISuggestion(kind: s.kind, ask: s.ask, title: s.title, subtitle: s.subtitle,
                              photoSpots: s.photoSpots.map { lookup[$0.spotId] ?? $0 })
         }
-        guard !connectivity.isOffline else { return }
+        await reloadUsage()
+    }
+
+    private func reloadUsage() async {
+        guard auth.userId != nil, !connectivity.isOffline else { return }
         let usage = try? await environment.tripAI.status()
-        aiUsage = usage
+        if let usage { aiUsage = usage }
     }
 
     /// 「自分で頼む」から。シートが閉じ切ってから積む（閉じている途中に積むと捨てられる）
@@ -175,9 +187,11 @@ struct TripPlansView: View {
 
     /// 押したらすぐ日程の画面を開き、1日目から埋める（待つ画面は出さない・owner 2026-11-15）
     private func startAI(_ ask: TripAIAsk) {
-        let connectivity = connectivity
-        aiJob = aiJobs.start(ask, environment: environment, index: aiIndex, wishlist: wishlist.spotIds,
-                             usage: aiUsage, offline: { connectivity.isOffline })
+        guard let owner = auth.userId else { return }
+        let backend = TripAIJobs.Backend.live(environment: environment, auth: auth, owner: owner, index: aiIndex,
+                                              wishlist: wishlist.spotIds, connectivity: connectivity)
+        // 同じ頼みが動いていれば、新しく作らずその作業を開く（`TripAIJobs.start`）
+        aiJob = aiJobs.start(ask, owner: owner, usage: aiUsage, backend: backend)
         showAIJob = true
     }
 

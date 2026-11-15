@@ -22,6 +22,8 @@ final class TripAINotes: ObservableObject {
     @Published private(set) var notes: [String: TripAINote] = [:]
 
     func set(_ planId: String, _ note: TripAINote) { notes[planId] = note }
+    /// ログアウト・退会（次の人に前の人の候補と理由を残さない）
+    func removeAll() { notes = [:] }
     func note(_ planId: String) -> TripAINote? { notes[planId] }
     /// 外した場所を日の下の棚へ移した（2度移さない）
     func takeRemoved(_ planId: String) -> [TripAIRouteCheck.Removed] {
@@ -52,9 +54,12 @@ struct TripAICard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JPSpace.s) {
             HStack(alignment: .firstTextBaseline) {
-                Text(L("並べた理由", "Why this order"))
-                    .font(JPFont.eyebrow)
-                    .foregroundStyle(WebTheme.accent)
+                // 理由が空なら見出しも出さない
+                if !note.reason.isEmpty {
+                    Text(L("並べた理由", "Why this order"))
+                        .font(JPFont.eyebrow)
+                        .foregroundStyle(WebTheme.accent)
+                }
                 Spacer(minLength: 0)
                 if canUndo {
                     Button(action: undo) {
@@ -68,11 +73,13 @@ struct TripAICard: View {
                     .accessibilityIdentifier("tripAI.undo")
                 }
             }
-            Text(note.reason)
-                .font(JPFont.body)
-                .foregroundStyle(WebTheme.text)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("tripAI.reason")
+            if !note.reason.isEmpty {
+                Text(note.reason)
+                    .font(JPFont.body)
+                    .foregroundStyle(WebTheme.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("tripAI.reason")
+            }
 
             band
 
@@ -170,6 +177,8 @@ struct TripAICard: View {
     private var writeField: some View {
         HStack(spacing: JPSpace.xs) {
             JPTextField(L("直したいことを書く", "What to change"), text: $text)
+                // 打った時点で 200 字に切る（サーバーの上限と同じ・`TripAILimits.maxRequest`）
+                .onChange(of: text) { _, new in text = TripAILimits.clipped(new) }
                 .submitLabel(.send)
                 .onSubmit(submit)
                 .accessibilityIdentifier("tripAI.revise")

@@ -1520,7 +1520,9 @@ struct RootView: View {
         }
         // AI で作った旅行プランの知らせ（札 #621・アプリの上の帯。通知の許可は求めない）。押すとその日程が開く
         .overlay(alignment: .top) {
-            TripAIBannerView().animation(.easeOut(duration: 0.24), value: tripAIJobs.banner)
+            // 上の札（戻るのガラスの丸・題）をふさがないよう、その下に出す
+            TripAIBannerView().padding(.top, TripAIBannerLayout.belowNavigationBar)
+                .animation(.easeOut(duration: 0.24), value: tripAIJobs.banner)
         }
         .sheet(isPresented: Binding(get: { tripAIJobs.openPlanId != nil },
                                     set: { if !$0 { tripAIJobs.openPlanId = nil } })) {

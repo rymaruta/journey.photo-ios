@@ -1186,11 +1186,15 @@ struct TripPlanDetailView: View {
         // - 運ぶのは ≡ だけ。行のほかの所を押すと今どおり撮影スポットが開く（押した所と運ぶ所が混ざらない）
         // - 外すは今どおり「…」の中（誤って押しやすい × を行に置かない）
         // - 読み上げの人は ≡ を上下にスワイプで上へ・下へ、操作で「N日目へ」「外す」（`TripPlanEdit.accessibilityMoves`）
-        return HStack(spacing: 0) {
-            itemLink(item, name: name, number: number, season: season, chip: chip)
+        // 右の印は今どおり「…」と ≡ の2つ。AI で作ったプランの「替える」は名前の下（番号の丸の右・36）に置く
+        // （2026-11-15 確かめ役の指摘「右に3つが混み合う」。押す回数は替える1回のまま）
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 0) {
+                itemLink(item, name: name, number: number, season: season, chip: chip)
+                itemMenu(di, ii, item, name: name)
+                dragHandle(di, ii, item, name: name)
+            }
             aiSwapButton(di, ii, item, name: name)
-            itemMenu(di, ii, item, name: name)
-            dragHandle(di, ii, item, name: name)
         }
         .overlay(alignment: .top) { dropLine(DropSpot(day: di, item: ii)) }
         .dropDestination(for: String.self) { items, _ in
@@ -1414,6 +1418,8 @@ struct TripPlanDetailView: View {
                     .jpOutlineButton(.inline)
             }
             .buttonStyle(.plain)
+            // 番号の丸の右（名前の頭）にそろえる。AI のプランでないときは何も出さない（余白も作らない）
+            .padding(.leading, TripStyle.stopNumberSide + JPSpace.s)
             .accessibilityLabel(L("「\(name)」を近くの別の所に替える", "Swap \(name) for a nearby place"))
             .accessibilityIdentifier("tripAI.swap")
         }
@@ -1453,17 +1459,17 @@ struct TripPlanDetailView: View {
             aiNotes.set(planId, TripAINote(reason: note.reason, mode: result.mode, removed: [], candidates: note.candidates))
             return
         }
+        // AI に渡していない項目（撮影地・台帳に無い場所）は元の日に残し、選ばれなかった場所は「外しました　戻す」へ。
+        // 日の数と日付は元を下回らない（`TripAIRevise.merge`・確かめ役の指摘 2026-11-15）
         let before = days
-        var notes: [String: String] = [:]
-        for day in before {
-            for item in day.items { if case .spot(let id, let memo?) = item { notes[id] = memo } }
-        }
-        let next: [TripDay] = result.days.enumerated().map { i, day in
-            TripDay(date: before.indices.contains(i) ? before[i].date : nil,
-                    items: day.map { .spot(spotId: $0.spotId, note: notes[$0.spotId]) })
-        }
+        let sent = Set(current.flatMap { $0 }.map(\.spotId))
+        let merged = TripAIRevise.merge(before: before, aiDays: result.days.map { $0.map(\.spotId) }, sent: sent)
         aiHistory.append(before)
-        apply(next, said: L("日程を直しました", "Plan updated"))
+        apply(merged.days, said: L("日程を直しました", "Plan updated"))
+        for d in merged.dropped {
+            removedSeq += 1
+            removedShelf.append(TripPlanEdit.Removed(id: removedSeq, day: d.day, index: d.index, item: d.item))
+        }
         aiNotes.set(planId, TripAINote(reason: result.reason, mode: .ai, removed: result.removed, candidates: note.candidates))
         adoptAINote()
     }

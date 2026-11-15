@@ -386,6 +386,8 @@ final class AuthStore: ObservableObject {
         // 縮めて展開した絵の控え（`DownsampledRemoteImage.memory`・2026-10-28）も同じ理由で空にする
         // （限定写真・下書きの絵がメモリに残り、次の人の格子に出うる）
         DownsampledRemoteImage.memory.removeAll()
+        // AI で作っている旅行プランを止め、知らせ・開く先・控え（候補と理由）を次の人に残さない（札 #621）
+        TripAIJobs.shared.signOut()
         state = .signedOut
         isAdmin = false
         errorMessage = nil

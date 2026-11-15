@@ -26,6 +26,10 @@ enum TripAILimits {
     static let maxDays = 7
     /// 頼みの文の長さの上限（サーバーの `TRIP_AI_MAX_REQUEST`）
     static let maxRequest = 200
+    /// 頼みの文を上限の字数に切る（入力の時点で切る。送る前にも同じく切る）
+    static func clipped(_ text: String) -> String {
+        text.count > maxRequest ? String(text.prefix(maxRequest)) : text
+    }
     /// 1日の移動がこれを超えたら遠い所から外す（案「1日の移動が4時間を超えたら」）
     static let maxTravelMinutesPerDay = 240
 }
