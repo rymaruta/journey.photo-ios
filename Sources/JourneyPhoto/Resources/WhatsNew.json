@@ -2,6 +2,18 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.96",
+      "date": "2026-11-15",
+      "items": [
+        {
+          "symbol": "photo.on.rectangle",
+          "title": { "ja": "ストーリーの＋で、写真の一覧が先に開く", "en": "Story + opens your photos first" },
+          "detail": { "ja": "ストーリーの＋を押すと、最近の写真と動画が並びます。押すとそのまま作る画面へ進みます。一覧の最初のマスがカメラです。すぐ撮りたいときは、アイコンを長押しして「ストーリーを撮る」を選びます。", "en": "Tap + on Stories to see your recent photos and videos. Tap one to start editing. The first square is the camera. To shoot right away, long-press the app icon and choose Shoot a story." },
+          "destination": "home"
+        }
+      ]
+    },
+    {
       "version": "1.1.95",
       "date": "2026-11-15",
       "items": [
