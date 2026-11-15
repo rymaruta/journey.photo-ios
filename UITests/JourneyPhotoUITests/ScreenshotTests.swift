@@ -3645,11 +3645,25 @@ final class ScreenshotTests: XCTestCase {
             guard block.exists else {
                 return unreached(app, "登録するとできること\(tag)", probes: ["home.signUpBenefits", "home.spotShelf"])
             }
-            // 下のボタンまで見える所へ少し送る（撮る絵に札4枚とボタンを入れる）
+            // 段の頭から下のボタンまでを画面に入れる（撮る絵に札4枚とボタンを入れる）。
+            // run 1373 の大きい文字の回: 送りすぎて段の頭が画面の上（y=-200）に出て、並びが遅れて作る仕組みのため
+            // 先頭の札が画面の木から消えていた。段の頭が時計の下（上から 120）に来るよう、差の分だけ指で引く
             let action = app.buttons["home.signUpBenefits.action"].firstMatch
-            var backs = 0
-            while action.exists && !action.isHittable && backs < 3 { app.swipeUp(velocity: .slow); backs += 1 }
-            Thread.sleep(forTimeInterval: 3)
+            let window0 = app.windows.firstMatch.frame
+            for _ in 0..<4 {
+                let top = block.frame.minY
+                let wanted = window0.minY + 120
+                let bottom = action.exists ? action.frame.maxY : block.frame.maxY
+                let dy: CGFloat
+                if top < wanted - 4 {
+                    dy = wanted - top                    // 下へ引く（段を下げる）
+                } else if bottom > window0.maxY - 110 && top - (bottom - (window0.maxY - 110)) >= wanted {
+                    dy = -(bottom - (window0.maxY - 110)) // 上へ送る（ボタンをタブの上へ）
+                } else { break }
+                dragFeed(app, by: dy)
+                Thread.sleep(forTimeInterval: 1)
+            }
+            Thread.sleep(forTimeInterval: 2)
             shoot(app, "68-ホームの登録するとできること（未ログイン\(tag)）")
 
             let ids = ["post", "wantToGo", "tripPlan", "message"]
@@ -3694,6 +3708,16 @@ final class ScreenshotTests: XCTestCase {
             }
             app.terminate()
         }
+    }
+
+    /// 並びを指で `dy` だけ動かす（正なら下へ引く）。1回で動かすのは画面の 40% まで
+    private func dragFeed(_ app: XCUIApplication, by dy: CGFloat) {
+        let window = app.windows.firstMatch
+        let height = window.frame.height
+        let step = max(-height * 0.4, min(height * 0.4, dy))
+        let start = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: step > 0 ? 0.35 : 0.75))
+        let end = start.withOffset(CGVector(dx: 0, dy: step))
+        start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.3)
     }
 
     /// 未ログインでホームを開く（一巡と同じ本番の写真・日本語）。`-JPPreviewUserId` を渡さない
