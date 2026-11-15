@@ -99,7 +99,9 @@ final class EaseOfUseFollowupTests: XCTestCase {
     /// 🔴 探す画面が言葉を覚え（右下の「検索」・欄を離れたとき）、欄が空なら段を出す
     func testSearchViewWiresRecentSearches() throws {
         let view = try source("Sources/JourneyPhoto/Features/Search/SearchView.swift")
-        XCTAssertTrue(view.contains(".onSubmit { rememberQuery() }"), "右下の「検索」で言葉を覚えない")
+        // 2026-11-15（札 #623）: 「検索」は文の読み取り（`readSentence`）も呼ぶので、1行の形から「onSubmit の中で覚える」に
+        let submit = try XCTUnwrap(view.range(of: ".onSubmit {"), "右下の「検索」で何もしない")
+        XCTAssertTrue(view[submit.upperBound...].prefix(200).contains("rememberQuery()"), "右下の「検索」で言葉を覚えない")
         XCTAssertTrue(view.contains(".onChange(of: fieldFocused) { _, focused in if !focused { rememberQuery() } }"),
                       "欄を離れたときに言葉を覚えない")
         XCTAssertTrue(view.contains("if showsRecentSearches {"), "最近の検索の段を出さない")

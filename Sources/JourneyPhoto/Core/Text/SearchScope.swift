@@ -41,11 +41,13 @@ enum SearchScope: String, CaseIterable, Identifiable {
         self == .tags ? "" : query
     }
 
-    /// 検索欄の案内。人を探しているときは人向けに
+    /// 検索欄の案内。人を探しているときは人向けに。
+    /// 2026-11-15 判断（札 #623）: 文で探せる（「京都 紅葉 夜」→ 京都、秋、夜）と分かる例にした。
+    /// 前は「写真を検索（題、説明、タグなど）」で、文を打てることが見て分からなかった
     var prompt: String {
         switch self {
         case .people: return L("人を検索（名前）", "Search people")
-        default: return L("写真を検索（題、説明、タグなど）", "Search photos")
+        default: return L("例: 京都 紅葉 夜", "e.g. Kyoto autumn night")
         }
     }
 

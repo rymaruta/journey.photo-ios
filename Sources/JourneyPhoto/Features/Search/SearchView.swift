@@ -80,6 +80,14 @@ struct SearchView: View {
     @State private var quiz: DailyQuiz?
     /// 今日の一問に答えたか（札の2行目を変える）
     @State private var quizAnswered = false
+    /// 文で探したときの読み取り（「京都 紅葉 夜」→ 字「京都」＋秋＋夜・札 #623・`SearchSentence`）。
+    /// 欄の字を打ち替えたら捨てる（`SearchSentence.keepsReading`）
+    @State private var reading: SearchSentence.Reading?
+    /// 端末の AI が読んでいる最中（「読み取っています」を出す）
+    @State private var isReadingSentence = false
+    @State private var readingTask: Task<Void, Never>?
+    /// UI テストのときだけ: 0件の外し方の動きの記録（`PreviewSession.searchReadingProbe`・回 1383 の調べ）
+    @State private var relaxProbe = ""
 
     var body: some View {
         // 探すの重さの記録（UI テストのときだけ・2026-11-13 札 #590）: body の評価回数を、いまの語ごとに数える
@@ -118,6 +126,10 @@ struct SearchView: View {
                 // 頭の印（下の「探す」をもう一度押したら、ここへ戻す・`TabRouter.searchFocusRequests`）
                 Color.clear.frame(height: 0).id(Self.resultsTopID)
                 VStack(alignment: .leading, spacing: isDiscovering ? JPSpace.section : 20) {
+                    // 文で探したら、どう読んだかを結果のいちばん上に（札 #623・押すと外れる）
+                    if isReadingSentence || SearchSentence.showsReading(reading, query: query, filter: model.timeFilter) {
+                        readingSection
+                    }
                     // 欄が空の間は、前に探した言葉を上に（押すとその言葉で探す・2026-11-14 判断）
                     if showsRecentSearches {
                         RecentSearchesSection(words: recentWords,
@@ -201,7 +213,16 @@ struct SearchView: View {
         }
         // 今日の一問（取れなかった日は段を出さない）は `applyFrontModeration` が読む——初めて出たとき（`front.appear()` の
         // `.first`）も、前面に戻ったときも同じ所。2026-11-12 確かめ役: ここにも `.task` で読んでいて、初めての表示で2回読んでいた
+        // 文で探して重ねた条件が0件と決まったら、1つ外して見せる（札 #623・2026-11-15 判断）
+        .onChange(of: needsRelaxing) { _, needed in
+            if PreviewSession.searchReadingProbe { relaxProbe += " onChange(needed=\(needed))" }
+            if needed { relaxIfZeroHit() }
+        }
         .onChange(of: query) { _, newValue in
+            // 読み取りで入れた字のままでなければ、読み取りを捨てる（打ち直した・×で消した）
+            if let current = reading, !SearchSentence.keepsReading(current, afterQueryChange: newValue) {
+                reading = nil
+            }
             Task { await model.search(newValue, environment: environment) }
         }
         // 発見の「撮影スポット」の段の札は、索引が変わったとき（届いた・詳細を重ねた）だけ束ね直す
@@ -367,6 +388,8 @@ struct SearchView: View {
     private func rememberQuery() {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        // 文を読み替えて欄に入れた語（「京都」）は覚えない。覚えるのは打った文（`readSentence`）
+        if let reading, reading.text == trimmed { return }
         recentWords = RecentSearchesStore().remember(trimmed, userId: auth.userId)
     }
 
@@ -375,6 +398,161 @@ struct SearchView: View {
         query = word
         fieldFocused = false
         recentWords = RecentSearchesStore().remember(word, userId: auth.userId)
+        readSentence(word)
+    }
+
+    /// 打った文を今の絞り込みに読み替える（札 #623・2026-11-15 判断）。**1語だけの語は読まない**
+    /// （今の字の検索のまま・`SearchSentence.looksLikeSentence`）。端末の AI か言葉の表で読み、外へは何も送らない。
+    /// 読んでいる間に欄を打ち替えたら、その読み取りは使わない
+    private func readSentence(_ raw: String) {
+        readingTask?.cancel()
+        let sentence = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard SearchSentence.looksLikeSentence(sentence) else {
+            isReadingSentence = false
+            return
+        }
+        isReadingSentence = true
+        readingTask = Task { @MainActor in
+            let result = await SearchSentenceReader.live(sentence)
+            guard !Task.isCancelled else { return }
+            isReadingSentence = false
+            guard query.trimmingCharacters(in: .whitespacesAndNewlines) == sentence, result.changesSearch else { return }
+            reading = result
+            model.apply(reading: result)
+            query = result.text ?? ""
+        }
+    }
+
+    /// 「こう読みました」の札を外す。字の語は欄から消し、季節・時間帯はそのチップを外す
+    private func removeReading(_ chip: SearchSentence.Chip) {
+        switch chip.kind {
+        case .text:
+            // 先に読み取りから字を外す（欄を空にしても、季節・時間帯の札は残す）
+            reading?.text = nil
+            query = ""
+        case .season: model.select(season: model.timeFilter.season)
+        case .dayPart: model.select(dayPart: model.timeFilter.dayPart)
+        }
+    }
+
+    /// 0件で自動で外した札を戻す（元の条件に戻る。もう一度は自動で外さない）
+    private func restoreReading(_ chip: SearchSentence.Chip) {
+        guard var current = reading else { return }
+        let back = SearchSentence.restoring(chip.kind, reading: current, query: query, filter: model.timeFilter)
+        current.dropped = nil
+        reading = current
+        model.set(timeFilter: back.filter)
+        query = back.query
+    }
+
+    /// 重ねて0件になったら、1つ外していちばん多く残る形を見せる（`SearchSentence.relaxation`・2026-11-15 判断）。
+    /// 0件と決まった（写真も観光スポットも読み終えて0件）ときに1回だけ
+    private func relaxIfZeroHit() {
+        guard let before = reading, !before.relaxTried else { return }
+        // 🔴 回 1384 の記録: 先に `relaxTried` を立ててから `relaxation` を呼び、そこで弾かれて（数は 季節 5、時間帯 36、
+        // 地名 55）外さなかった。外し方を選ぶのと印を立てるのを `SearchSentence.relax` 1つにまとめた
+        let (current, kind) = SearchSentence.relax(before, query: query, filter: model.timeFilter) { q, f in
+            resultCount(query: q, filter: f)
+        }
+        reading = current
+        if PreviewSession.searchReadingProbe {
+            let counts = [SearchSentence.Chip.Kind.season, .dayPart, .text].map { k -> String in
+                let next = SearchSentence.removing(k, query: query, filter: model.timeFilter)
+                return "\(k.rawValue):\(resultCount(query: next.query, filter: next.filter))"
+            }
+            relaxProbe += " relax(query=\(query) season=\(model.timeFilter.season?.rawValue ?? "-")"
+                + " dayPart=\(model.timeFilter.dayPart?.rawValue ?? "-") counts=\(counts.joined(separator: ","))"
+                + " index=\(spotSearchIndex != nil) spots=\(officialSpots.count) kind=\(kind?.rawValue ?? "nil"))"
+        }
+        guard let kind else { return }
+        let next = SearchSentence.removing(kind, query: query, filter: model.timeFilter)
+        model.set(timeFilter: next.filter)
+        query = next.query
+    }
+
+    /// 語と季節・時間帯を替えたときの写真と観光スポットの数（画面の結果と同じ当て方）
+    private func resultCount(query q: String, filter f: ShootingTime.Filter) -> Int {
+        let photos = model.scope.showsPhotos ? model.count(query: q, filter: f) : 0
+        guard model.scope.showsSpots else { return photos }
+        let published = officialSpots.filter { !$0.isDraft }
+        let trimmed = q.trimmingCharacters(in: .whitespacesAndNewlines)
+        let matched: [OfficialSpot]
+        if trimmed.isEmpty {
+            matched = published
+        } else if let index = spotSearchIndex {
+            matched = index.matchPositions(query: trimmed).map { index.spots[$0] }.filter { !$0.isDraft }
+        } else {
+            matched = []
+        }
+        return photos + ShootingTime.spots(matched, filter: f).count
+    }
+
+    /// 「こう読みました」の段（札 #623 の案2の模型どおり: 眉 → 外せる札 → 欄の無い条件の1行 → この iPhone の中で読んだ）
+    private var readingSection: some View {
+        VStack(alignment: .leading, spacing: JPSpace.s) {
+            JPEyebrowLine(L("こう読みました", "Read as"))
+            if isReadingSentence {
+                HStack(spacing: JPSpace.xs) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(WebTheme.text3)
+                    Text(L("読み取っています", "Reading your search"))
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text2)
+                }
+                .frame(minHeight: PillChip.height)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("search.reading.busy")
+            } else if let reading {
+                let chips = SearchSentence.chips(for: reading, query: query, filter: model.timeFilter)
+                if !chips.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(chips) { chip in
+                                if chip.isDropped {
+                                    // 0件で自動で外した札: 薄く残し、押すと戻る（2026-11-15 判断）
+                                    PillChip(title: chip.label, selected: false) {
+                                        restoreReading(chip)
+                                    }
+                                    .opacity(0.5)
+                                    .accessibilityLabel(chip.spoken)
+                                    .accessibilityIdentifier("search.reading.\(chip.kind.rawValue).dropped")
+                                } else {
+                                    PillChip(title: chip.label, selected: true, removable: true) {
+                                        removeReading(chip)
+                                    }
+                                    .accessibilityLabel(chip.spoken)
+                                    .accessibilityIdentifier("search.reading.\(chip.kind.rawValue)")
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, -PillChip.tapSlack)
+                }
+                if let note = SearchSentence.note(for: reading, chips: chips) {
+                    Text(note)
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("search.reading.note")
+                }
+            }
+            if PreviewSession.searchReadingProbe {
+                Text(".")
+                    .font(.caption2)
+                    .foregroundStyle(Color.clear)
+                    .accessibilityIdentifier("search.reading.probe")
+                    .accessibilityValue("needs=\(needsRelaxing) zero=\(zeroHitOnTop) tried=\(reading?.relaxTried ?? false)"
+                                        + " busy=\(isReadingSentence) pending=\(spotHitsResult.pending)"
+                                        + " photos=\(model.shown.count) spotsHit=\(spotHits.count) loaded=\(model.hasLoaded)"
+                                        + " log=\(relaxProbe)")
+            }
+            // どちらで読んでも端末の中だけ（外へは送らない）
+            Label(L("この iPhone の中で読み取りました", "Read on this iPhone"), systemImage: "iphone")
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text3)
+        }
+        .padding(.horizontal, JPSpace.gutter)
     }
 
     /// 何も打たず、種類もカテゴリも選んでいない＝「発見」の顔
@@ -402,7 +580,11 @@ struct SearchView: View {
                 .accessibilityIdentifier("search.field")
                 // 探した言葉を覚える: 右下の「検索」か、言葉を残したまま欄を離れた（結果を開いた・払った）とき
                 .submitLabel(.search)
-                .onSubmit { rememberQuery() }
+                // 文で探す（札 #623）: 「検索」で、打った文を季節・時間帯のチップと字の語に読み替える
+                .onSubmit {
+                    rememberQuery()
+                    readSentence(query)
+                }
                 .onChange(of: fieldFocused) { _, focused in if !focused { rememberQuery() } }
                 // 人が替わったら、その人の言葉を読み直す（前の人の言葉を並べない）
                 .onChange(of: auth.userId) { _, id in recentWords = RecentSearchesStore().words(userId: id) }
@@ -1255,6 +1437,12 @@ struct SearchView: View {
         return place.isEmpty ? head : "\(head)\u{2002}\(place)"
     }
 
+    /// 文の読み取りを重ねて0件と決まったか（まだ外し方を見ていない間だけ）
+    private var needsRelaxing: Bool {
+        guard let reading, !reading.relaxTried, !isReadingSentence else { return false }
+        return zeroHitOnTop
+    }
+
     /// 0件の文を絞り込みの上（チップのすぐ下）に出すか（`zeroHitOnTop(...)`）
     private var zeroHitOnTop: Bool {
         Self.zeroHitOnTop(discovering: isDiscovering, showsPhotos: model.scope.showsPhotos,
@@ -1483,9 +1671,9 @@ final class SearchViewModel: ObservableObject {
     }
 
     /// `shown` の絞り方（並べ替えの前まで）
-    private func filtered(query: String) -> [Photo] {
+    private func filtered(query: String, filter: ShootingTime.Filter? = nil) -> [Photo] {
         // 季節・時間帯はカテゴリと同じく、語と種類で絞った上にかける（「秋の京都」）
-        let base = ShootingTime.photos(scope.photos(allPhotos, query: query, texts: searchTexts), filter: timeFilter)
+        let base = ShootingTime.photos(scope.photos(allPhotos, query: query, texts: searchTexts), filter: filter ?? timeFilter)
         guard let category else { return base }
         let key = CategoryChoices.key(category)
         return base.filter { CategoryChoices.key($0.category ?? "") == key }
@@ -1544,6 +1732,28 @@ final class SearchViewModel: ObservableObject {
     /// 時間帯を選ぶ。押し直したら外す
     func select(dayPart: ShootingTime.DayPart?) {
         timeFilter.dayPart = (dayPart == timeFilter.dayPart) ? nil : dayPart
+        refreshTagChips()
+    }
+
+    /// 文で探したときの読み取りを、季節・時間帯のチップに入れる（札 #623・`SearchSentence.filter(applying:to:)`）。
+    /// 押し直しで外す `select` と違い、**読めた軸を選んだ状態にする**（もう選んでいても外さない）
+    func apply(reading: SearchSentence.Reading) {
+        let next = SearchSentence.filter(applying: reading, to: timeFilter)
+        guard next != timeFilter else { return }
+        timeFilter = next
+        refreshTagChips()
+    }
+
+    /// 語と季節・時間帯を替えたら何枚になるか（文で探して0件のときの外し方を選ぶ・`SearchSentence.relaxation`）。
+    /// 種類とカテゴリは今のまま
+    func count(query: String, filter: ShootingTime.Filter) -> Int {
+        filtered(query: query, filter: filter).count
+    }
+
+    /// 季節・時間帯をそのまま置く（0件で1つ外す・戻す。`SearchSentence.removing` / `restoring`）
+    func set(timeFilter next: ShootingTime.Filter) {
+        guard next != timeFilter else { return }
+        timeFilter = next
         refreshTagChips()
     }
 

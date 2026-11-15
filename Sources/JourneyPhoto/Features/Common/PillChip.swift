@@ -22,6 +22,9 @@ struct PillChip: View {
     /// 件数を字で添える（旅のトランクの部品箱の「4/12」・2026-10-17）。`count` より先に見る
     var countText: String?
     let selected: Bool
+    /// 押すと外れる札（探すの「こう読みました」・札 #623・2026-11-15 判断）。選んだ見た目のまま、
+    /// チェックの代わりに右に × を置く（押す前に「外れる」と分かる形）
+    var removable = false
     let action: () -> Void
 
     /// 見た目の札の高さ（板の chip 34。土台の `JPHeight` に無いのでここに持つ）
@@ -29,11 +32,13 @@ struct PillChip: View {
     /// 札の上下に足す押せるだけの余白（34＋5＋5＝44）
     nonisolated static let tapSlack: CGFloat = (WebTheme.minTapTarget - height) / 2
 
-    init(title: String, count: Int? = nil, countText: String? = nil, selected: Bool, action: @escaping () -> Void) {
+    init(title: String, count: Int? = nil, countText: String? = nil, selected: Bool,
+         removable: Bool = false, action: @escaping () -> Void) {
         self.title = title
         self.count = count
         self.countText = countText
         self.selected = selected
+        self.removable = removable
         self.action = action
     }
 
@@ -41,10 +46,12 @@ struct PillChip: View {
         Button(action: action) {
             HStack(spacing: JPSpace.xxs) {
                 if selected {
-                    // 選んだ印（板: 白の塗り＋チェック）。色だけに頼らない
-                    Image(systemName: "checkmark")
-                        .font(.caption2.weight(.bold))
-                        .accessibilityHidden(true)
+                    // 選んだ印（板: 白の塗り＋チェック）。色だけに頼らない。外せる札はチェックの代わりに右の × で見せる
+                    if !removable {
+                        Image(systemName: "checkmark")
+                            .font(.caption2.weight(.bold))
+                            .accessibilityHidden(true)
+                    }
                 }
                 Text(title)
                     .font(JPFont.footnote.weight(selected ? .semibold : .regular))
@@ -54,6 +61,11 @@ struct PillChip: View {
                         .font(JPFont.number(JPTypeScale.footnote, weight: .regular, relativeTo: .footnote))
                         // 選んだ札の上は墨のまま（白の上の灰は沈みすぎる）
                         .foregroundStyle(selected ? WebTheme.accentText : WebTheme.text3)
+                }
+                if removable {
+                    Image(systemName: "xmark")
+                        .font(.caption2.weight(.bold))
+                        .accessibilityHidden(true)
                 }
             }
             .padding(.horizontal, 14)
