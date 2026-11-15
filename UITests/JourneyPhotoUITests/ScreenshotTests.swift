@@ -3625,6 +3625,91 @@ final class ScreenshotTests: XCTestCase {
         return true
     }
 
+    /// **ホームの「登録するとできること」**（札 #618 の案1・2026-11-15 判断で案C・`HomeSignUpBenefitsView`）。**未ログイン**で、
+    /// ホームを送って段を出し、標準の字と大きい字で撮る。札4枚の順・重なり・押せる大きさ・画面の幅に収まるかを値で確かめ、
+    /// 札を押すと今のログイン画面（`signin.form`）が開くことを確かめる。寸法はログと添付に出す（`[home-signup-benefits]`）。
+    /// 小さい画面（SE）の機種は CI に無いので、札が画面の端 16 の内に収まり、押せる大きさ（44）を保つかを値で見る
+    func testCapturesHomeSignUpBenefits() {
+        executionTimeAllowance = 600
+        for (extra, tag) in [([String](), ""), (Self.largeText, "・大きい文字")] {
+            let app = launchSignedOutHome(extra)
+            let block = app.descendants(matching: .any)["home.signUpBenefits"].firstMatch
+            guard app.tabBars.firstMatch.waitForExistence(timeout: 30) else { return unreached(app, "タブ\(tag)") }
+            // 写真の並びが届くのを待ってから送る（段はひと回りと季節の段の後ろ）
+            Thread.sleep(forTimeInterval: 4)
+            var pushes = 0
+            while !(block.exists && block.isHittable) && pushes < 14 {
+                app.swipeUp(velocity: .slow)
+                pushes += 1
+            }
+            guard block.exists else {
+                return unreached(app, "登録するとできること\(tag)", probes: ["home.signUpBenefits", "home.spotShelf"])
+            }
+            // 下のボタンまで見える所へ少し送る（撮る絵に札4枚とボタンを入れる）
+            let action = app.buttons["home.signUpBenefits.action"].firstMatch
+            var backs = 0
+            while action.exists && !action.isHittable && backs < 3 { app.swipeUp(velocity: .slow); backs += 1 }
+            Thread.sleep(forTimeInterval: 3)
+            shoot(app, "68-ホームの登録するとできること（未ログイン\(tag)）")
+
+            let ids = ["post", "wantToGo", "tripPlan", "message"]
+            var frames: [(String, CGRect)] = []
+            for id in ids {
+                let card = app.buttons["home.signUpBenefit.\(id)"].firstMatch
+                XCTAssertTrue(card.exists, "札 \(id) が無い\(tag)")
+                if card.exists { frames.append((id, card.frame)) }
+            }
+            let order = frames.sorted { a, b in
+                abs(a.1.minY - b.1.minY) > 4 ? a.1.minY < b.1.minY : a.1.minX < b.1.minX
+            }.map(\.0)
+            XCTAssertEqual(order, ids, "札の並びが輪の順でない\(tag)")
+            let window = app.windows.firstMatch.frame
+            for (id, frame) in frames {
+                XCTAssertGreaterThanOrEqual(frame.height, 44, "札 \(id) が 44pt 未満\(tag)")
+                XCTAssertGreaterThanOrEqual(frame.minX, window.minX + 15, "札 \(id) が左へはみ出す\(tag)")
+                XCTAssertLessThanOrEqual(frame.maxX, window.maxX - 15, "札 \(id) が右へはみ出す\(tag)")
+            }
+            assertNoOverlap(frames, "登録するとできること\(tag)")
+            XCTAssertGreaterThanOrEqual(action.frame.height, 44, "ログイン、新規登録のボタンが 44pt 未満\(tag)")
+            let line = "[home-signup-benefits]\(tag) window=\(window) block=\(block.frame) cards=\(frames.map { "\($0.0)=\($0.1)" }) action=\(action.frame) pushes=\(pushes)"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+            let note = XCTAttachment(string: line)
+            note.name = "68-登録するとできること（寸法\(tag)）"
+            note.lifetime = .keepAlways
+            add(note)
+
+            // 札を押すと、今のログイン画面（シート）。押す回数は1回
+            let first = app.buttons["home.signUpBenefit.post"].firstMatch
+            if first.isHittable {
+                first.tap()
+                let form = app.descendants(matching: .any)["signin.form"].firstMatch
+                XCTAssertTrue(form.waitForExistence(timeout: 10), "札を押してもログイン画面が開かない\(tag)")
+                if tag.isEmpty {
+                    Thread.sleep(forTimeInterval: 2)
+                    shoot(app, "68b-札を押した先（今のログイン画面）")
+                }
+            } else {
+                XCTFail("札が押せる所に出ない\(tag)（\(first.frame)）")
+            }
+            app.terminate()
+        }
+    }
+
+    /// 未ログインでホームを開く（一巡と同じ本番の写真・日本語）。`-JPPreviewUserId` を渡さない
+    private func launchSignedOutHome(_ extra: [String]) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += extra
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        return app
+    }
+
     /// **撮影スポットを払う**（2026-11-11 owner の要望の①・`SpotSwipeView`）。**未ログイン**で、ホームの上の札の
     /// 1枚目から開く → 1枚目を「行きたい」・4枚を「見送る」→ 山に挟む札 → 「ログインして見る」でログインの板。
     /// 「行きたい」は未ログインなので端末の共有の鍵に入るだけ（サーバーへは送らない）。出なければ撮らずに抜ける
