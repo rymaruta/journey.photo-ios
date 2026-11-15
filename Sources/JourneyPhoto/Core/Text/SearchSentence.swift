@@ -30,6 +30,13 @@ enum SearchSentence {
         var unsupported: [Unsupported] = []
         /// 字で探さなかった語（字の検索は1語だけなので、2つ目からは使わない・`note` で言う）
         var unused: [String] = []
+        /// 重ねて0件だったので自動で外した条件（`relaxation`）。札は薄く残し、押せば戻る
+        var dropped: Chip.Kind?
+        /// 0件のときの外し方をもう見たか（**1回だけ**。戻した後にまた外さない）
+        var relaxTried = false
+
+        /// いま欄に入っているはずの字（自動で字の語を外した間は空）
+        var appliedText: String? { dropped == .text ? nil : text }
 
         /// 季節・時間帯・欄の無い条件のどれかを読めた＝**文として読んだ**。
         /// 語だけの文（「京都」「富士山 湖」「New York」「zzzz-no-photo-result」）は今の字の検索のまま
@@ -370,35 +377,74 @@ extension SearchSentence.Reading {
 
 extension SearchSentence {
 
-    /// 読み取りを見せる札1つ。**押すと外れる**（字の語は欄から消え、季節・時間帯はチップが外れる）
+    /// 読み取りを見せる札1つ。**押すと外れる**（字の語は欄から消え、季節・時間帯はチップが外れる）。
+    /// 0件で自動で外した札（`isDropped`）は薄く残し、押すと戻る
     struct Chip: Equatable, Identifiable {
         enum Kind: String { case text, season, dayPart }
         let kind: Kind
         let label: String
-        /// 読み上げ（「季節 秋 を外す」）
+        /// 1行の文に入れる言い方（時間帯は「夕」ではなく「夕方」）
+        let phrase: String
+        /// 読み上げ（「季節 秋 を外す」「季節 秋 を戻す」）
         let spoken: String
+        var isDropped = false
         var id: String { kind.rawValue }
     }
 
-    /// 今の画面の状態で、まだ効いている読み取りだけを札にする。**外した札・手で替えた絞り込みは出さない**
-    /// （「秋」を外したあとに「春」を押したら、「秋」の札は出さない）
+    /// 今の画面の状態で、まだ効いている読み取りと、自動で外した読み取りを札にする。
+    /// **手で外した札・手で替えた絞り込みは出さない**（「秋」を外したあとに「春」を押したら、「秋」の札は出さない）
     static func chips(for reading: Reading, query: String, filter: ShootingTime.Filter) -> [Chip] {
         var chips: [Chip] = []
-        if let text = reading.text, query.trimmingCharacters(in: .whitespacesAndNewlines) == text {
-            chips.append(Chip(kind: .text, label: text, spoken: L("\(text) を外す", "Remove \(text)")))
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let text = reading.text {
+            if reading.dropped == .text, q.isEmpty {
+                chips.append(Chip(kind: .text, label: text, phrase: text,
+                                  spoken: L("\(text) を戻す", "Add back \(text)"), isDropped: true))
+            } else if reading.dropped != .text, q == text {
+                chips.append(Chip(kind: .text, label: text, phrase: text, spoken: L("\(text) を外す", "Remove \(text)")))
+            }
         }
-        if let season = reading.season, filter.season == season {
-            chips.append(Chip(kind: .season, label: season.label,
-                              spoken: L("季節 \(season.label) を外す", "Remove season: \(season.label)")))
+        if let season = reading.season {
+            if reading.dropped == .season, filter.season == nil {
+                chips.append(Chip(kind: .season, label: season.label, phrase: season.label,
+                                  spoken: L("季節 \(season.label) を戻す", "Add back season: \(season.label)"), isDropped: true))
+            } else if reading.dropped != .season, filter.season == season {
+                chips.append(Chip(kind: .season, label: season.label, phrase: season.label,
+                                  spoken: L("季節 \(season.label) を外す", "Remove season: \(season.label)")))
+            }
         }
-        if let part = reading.dayPart, filter.dayPart == part {
-            chips.append(Chip(kind: .dayPart, label: part.label,
-                              spoken: L("時間帯 \(part.label) を外す", "Remove time of day: \(part.label)")))
+        if let part = reading.dayPart {
+            if reading.dropped == .dayPart, filter.dayPart == nil {
+                chips.append(Chip(kind: .dayPart, label: part.label, phrase: part.phrase,
+                                  spoken: L("時間帯 \(part.label) を戻す", "Add back time of day: \(part.label)"), isDropped: true))
+            } else if reading.dropped != .dayPart, filter.dayPart == part {
+                chips.append(Chip(kind: .dayPart, label: part.label, phrase: part.phrase,
+                                  spoken: L("時間帯 \(part.label) を外す", "Remove time of day: \(part.label)")))
+            }
         }
         return chips
     }
 
-    /// 「こう読みました」の段を出すか: 効いている札があるか、欄の無い条件などの1行があり欄が読み取りのままのとき
+    /// 段の1行。**自動で外したときはそのこと**（「秋と夜の両方に当てはまる所は無いので、夜で探しました」）を先に。
+    /// ほかは欄の無い条件・使わなかった語（`Reading.note`）
+    static func note(for reading: Reading, chips: [Chip]) -> String? {
+        if chips.contains(where: \.isDropped) {
+            let all = chips.map(\.phrase)
+            let kept = chips.filter { !$0.isDropped }.map(\.phrase)
+            if !kept.isEmpty, all.count >= 2 {
+                let keptText = kept.joined(separator: L("と", " and "))
+                if all.count == 2 {
+                    return L("\(all[0])と\(all[1])の両方に当てはまる所は無いので、\(keptText)で探しました",
+                             "Nothing matches both \(all[0]) and \(all[1]), so this shows \(keptText)")
+                }
+                return L("\(all.joined(separator: "、"))のすべてに当てはまる所は無いので、\(keptText)で探しました",
+                         "Nothing matches all of \(all.joined(separator: ", ")), so this shows \(keptText)")
+            }
+        }
+        return reading.note
+    }
+
+    /// 「こう読みました」の段を出すか: 札があるか、1行があり欄が読み取りのままのとき
     static func showsReading(_ reading: Reading?, query: String, filter: ShootingTime.Filter) -> Bool {
         guard let reading, reading.changesSearch else { return false }
         if !chips(for: reading, query: query, filter: filter).isEmpty { return true }
@@ -407,7 +453,7 @@ extension SearchSentence {
 
     /// 欄の字が替わったら読み取りを捨てるか（読み取りで入れた字のままなら残す）
     static func keepsReading(_ reading: Reading, afterQueryChange query: String) -> Bool {
-        query.trimmingCharacters(in: .whitespacesAndNewlines) == (reading.text ?? "")
+        query.trimmingCharacters(in: .whitespacesAndNewlines) == (reading.appliedText ?? "")
     }
 
     /// 読み取りを今の季節・時間帯に重ねる。**読めなかった軸は今の選択を残す**
@@ -417,5 +463,53 @@ extension SearchSentence {
         if let season = reading.season { next.season = season }
         if let part = reading.dayPart { next.dayPart = part }
         return next
+    }
+
+    // MARK: - 重ねて0件のとき（2026-11-15 判断）
+
+    /// 1つ外したときの欄の字と季節・時間帯
+    static func removing(_ kind: Chip.Kind, query: String, filter: ShootingTime.Filter) -> (query: String, filter: ShootingTime.Filter) {
+        var q = query, f = filter
+        switch kind {
+        case .text: q = ""
+        case .season: f.season = nil
+        case .dayPart: f.dayPart = nil
+        }
+        return (q, f)
+    }
+
+    /// 戻したときの欄の字と季節・時間帯
+    static func restoring(_ kind: Chip.Kind, reading: Reading, query: String,
+                          filter: ShootingTime.Filter) -> (query: String, filter: ShootingTime.Filter) {
+        var q = query, f = filter
+        switch kind {
+        case .text: q = reading.text ?? query
+        case .season: f.season = reading.season ?? f.season
+        case .dayPart: f.dayPart = reading.dayPart ?? f.dayPart
+        }
+        return (q, f)
+    }
+
+    /// 読み取った条件を重ねて0件だったとき、**どれを1つ外すか**。
+    ///
+    /// 2026-11-15 判断（札 #623）: 案の例の「京都 紅葉 夜」そのものが0件で（秋と夜の両方の案内がある京都の観光スポットが無い）、
+    /// 使った人が「使えない」と感じる。効いている札が2つ以上あるとき、1つずつ外した件数を数え（`count`＝写真と観光スポットの数）、
+    /// **いちばん多く残る外し方**を選ぶ。**地名（字の語）は最後**——季節か時間帯を外して1件以上になるなら、地名は外さない。
+    /// 同じ数なら季節 → 時間帯の順。どれを外しても0件なら nil（今の0件の画面のまま）
+    static func relaxation(for reading: Reading, query: String, filter: ShootingTime.Filter,
+                           count: (String, ShootingTime.Filter) -> Int) -> Chip.Kind? {
+        guard !reading.relaxTried, reading.dropped == nil else { return nil }
+        let active = chips(for: reading, query: query, filter: filter).filter { !$0.isDropped }.map(\.kind)
+        guard active.count >= 2 else { return nil }
+        func best(_ kinds: [Chip.Kind]) -> Chip.Kind? {
+            var pick: (kind: Chip.Kind, n: Int)?
+            for kind in kinds where active.contains(kind) {
+                let next = removing(kind, query: query, filter: filter)
+                let n = count(next.query, next.filter)
+                if n > 0, n > (pick?.n ?? 0) { pick = (kind, n) }
+            }
+            return pick?.kind
+        }
+        return best([.season, .dayPart]) ?? best([.text])
     }
 }

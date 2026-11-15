@@ -3064,26 +3064,42 @@ final class ScreenshotTests: XCTestCase {
         guard waitForKeyboardFocus(field) else { return unreached(app, "探すの欄に焦点が来ない") }
         field.typeText("京都 紅葉 夜\n")
 
-        let season = app.buttons["search.reading.season"].firstMatch
-        guard season.waitForExistence(timeout: 10) else {
-            return unreached(app, "「こう読みました」の季節の札が出ない",
-                             probes: ["search.reading.text", "search.reading.dayPart", "search.reading.busy"])
+        let dayPart = app.buttons["search.reading.dayPart"].firstMatch
+        guard dayPart.waitForExistence(timeout: 10) || app.buttons["search.reading.dayPart.dropped"].firstMatch.exists else {
+            return unreached(app, "「こう読みました」の時間帯の札が出ない",
+                             probes: ["search.reading.text", "search.reading.season", "search.reading.season.dropped",
+                                      "search.reading.busy"])
         }
+        // 撮影スポットの索引と写真の絵が描かれるのを待つ（0件と決まれば、1つ外した形に替わる）
+        Thread.sleep(forTimeInterval: 5)
+        shoot(app, "11v-探す（文で探す、京都 紅葉 夜）")
+
+        // 2026-11-15 判断: 3つ重ねて0件なら、1つ外していちばん多く残る形を自動で見せる。外した札は薄く残り、1行で言う。
+        // 押すと元の3つに戻る（本番のデータでは秋と夜の両方の案内がある京都の観光スポットが無く、0件だった・回 1381）
+        let droppedIDs = ["search.reading.season.dropped", "search.reading.dayPart.dropped", "search.reading.text.dropped"]
+        if let dropped = droppedIDs.map({ app.buttons[$0].firstMatch }).first(where: { $0.exists }) {
+            let note = app.staticTexts["search.reading.note"].firstMatch
+            XCTAssertTrue(note.exists && note.label.contains("当てはまる所は無いので"), "外したことを1行で言っていない")
+            XCTAssertFalse(app.buttons["search.emptyMap"].firstMatch.exists, "1つ外しても0件のまま")
+            dropped.tap()
+            XCTAssertTrue(dropped.waitForNonExistence(timeout: 5), "薄い札を押しても戻らない")
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, "11y-探す（文で探す、外した札を戻した）")
+        }
+        // 元の3つ（京都、秋、夜）がそろっている。季節と時間帯のチップ（今ある絞り込み）も選んだ状態
+        let season = app.buttons["search.reading.season"].firstMatch
+        guard season.waitForExistence(timeout: 5) else { return unreached(app, "季節の札が無い") }
         XCTAssertTrue(app.buttons["search.reading.text"].firstMatch.exists, "字の語「京都」の札が無い")
-        XCTAssertTrue(app.buttons["search.reading.dayPart"].firstMatch.exists, "時間帯「夜」の札が無い")
+        XCTAssertTrue(dayPart.exists, "時間帯「夜」の札が無い")
         XCTAssertEqual(field.value as? String, "京都", "欄が字の語「京都」になっていない")
-        // 季節と時間帯のチップ（今ある絞り込み）が選んだ状態になっている
         XCTAssertTrue(app.buttons["search.season.autumn"].firstMatch.isSelected, "季節のチップ「秋」が選ばれていない")
         XCTAssertTrue(app.buttons["search.dayPart.night"].firstMatch.isSelected, "時間帯のチップ「夜」が選ばれていない")
-        // 撮影スポットの索引と写真の絵が描かれるのを待つ
-        Thread.sleep(forTimeInterval: 4)
-        shoot(app, "11v-探す（文で探す、京都 紅葉 夜）")
 
         // 札を押すと外れる（季節の札が消え、季節のチップも外れる。ほかの札は残る）
         season.tap()
         XCTAssertTrue(season.waitForNonExistence(timeout: 5), "季節の札を押しても外れない")
         XCTAssertFalse(app.buttons["search.season.autumn"].firstMatch.isSelected, "季節の札を外しても「秋」のチップが残る")
-        XCTAssertTrue(app.buttons["search.reading.dayPart"].firstMatch.exists, "季節を外したら時間帯の札まで消えた")
+        XCTAssertTrue(dayPart.exists, "季節を外したら時間帯の札まで消えた")
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "11w-探す（文で探す、季節の札を外した）")
 

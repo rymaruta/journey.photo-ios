@@ -159,6 +159,103 @@ final class SearchSentenceTests: XCTestCase {
                        .init(season: .autumn, dayPart: .night))
     }
 
+    // MARK: - 重ねて0件のとき（2026-11-15 判断）
+
+    /// 写真と観光スポットの見本（撮影地、季節、時間帯）。京都に「秋の夜」は無い
+    private struct Item { let place: String; let seasons: Set<ShootingTime.Season>; let parts: Set<ShootingTime.DayPart> }
+    private static let items: [Item] = [
+        Item(place: "京都", seasons: [.autumn], parts: [.day]),
+        Item(place: "京都", seasons: [.spring], parts: [.night]),
+        Item(place: "京都", seasons: [], parts: [.night]),
+        Item(place: "大阪", seasons: [.autumn], parts: [.night]),
+    ]
+
+    private static func count(_ items: [Item]) -> (String, ShootingTime.Filter) -> Int {
+        { q, f in
+            items.filter { item in
+                (q.isEmpty || item.place.contains(q))
+                    && (f.season.map { item.seasons.contains($0) } ?? true)
+                    && (f.dayPart.map { item.parts.contains($0) } ?? true)
+            }.count
+        }
+    }
+
+    /// 「京都 紅葉 夜」は3つ重ねると0件。1つずつ外して、いちばん多く残る「秋を外す」（京都の夜 2件）を選ぶ。
+    /// 戻すと元の3つに戻る
+    func testZeroHitDropsTheConditionThatLeavesTheMostAndCanBeRestored() throws {
+        let count = Self.count(Self.items)
+        var r = SearchSentence.readByTable("京都 紅葉 夜")
+        let query = try XCTUnwrap(r.text)
+        let filter = SearchSentence.filter(applying: r, to: .init())
+        XCTAssertEqual(count(query, filter), 0, "見本が0件になっていない")
+
+        let kind = try XCTUnwrap(SearchSentence.relaxation(for: r, query: query, filter: filter, count: count),
+                                 "0件のまま外し方を選ばなかった")
+        XCTAssertEqual(kind, .season)
+        let relaxed = SearchSentence.removing(kind, query: query, filter: filter)
+        XCTAssertGreaterThanOrEqual(count(relaxed.query, relaxed.filter), 1, "外しても0件")
+        XCTAssertEqual(relaxed.query, "京都")
+        XCTAssertEqual(relaxed.filter, .init(season: nil, dayPart: .night))
+
+        // 外した札は薄く残り（`isDropped`）、1行で言う
+        r.relaxTried = true
+        r.dropped = kind
+        XCTAssertTrue(SearchSentence.keepsReading(r, afterQueryChange: relaxed.query))
+        let chips = SearchSentence.chips(for: r, query: relaxed.query, filter: relaxed.filter)
+        XCTAssertEqual(chips.map(\.kind), [.text, .season, .dayPart])
+        XCTAssertEqual(chips.map(\.isDropped), [false, true, false])
+        XCTAssertEqual(SearchSentence.note(for: r, chips: chips),
+                       L("京都、秋、夜のすべてに当てはまる所は無いので、京都と夜で探しました",
+                         "Nothing matches all of 京都, 秋, 夜, so this shows 京都 and 夜"))
+
+        // 戻すと元の条件（京都、秋、夜）に戻る。もう一度は自動で外さない
+        let back = SearchSentence.restoring(kind, reading: r, query: relaxed.query, filter: relaxed.filter)
+        XCTAssertEqual(back.query, query)
+        XCTAssertEqual(back.filter, filter)
+        r.dropped = nil
+        XCTAssertEqual(SearchSentence.chips(for: r, query: back.query, filter: back.filter).map(\.isDropped), [false, false, false])
+        XCTAssertNil(SearchSentence.relaxation(for: r, query: back.query, filter: back.filter, count: count),
+                     "戻したあとにまた外した")
+    }
+
+    /// 2つのときは「両方」。時間帯は「夕」ではなく「夕方」と言う
+    func testTwoConditionNoteSaysBoth() {
+        var r = SearchSentence.readByTable("秋の夕日")
+        r.dropped = .season
+        let chips = SearchSentence.chips(for: r, query: "", filter: .init(season: nil, dayPart: .evening))
+        XCTAssertEqual(SearchSentence.note(for: r, chips: chips),
+                       L("秋と夕方の両方に当てはまる所は無いので、夕方で探しました",
+                         "Nothing matches both 秋 and 夕方, so this shows 夕方"))
+    }
+
+    /// 地名は外す候補の最後: 地名を外すほうが多く残っても、季節か時間帯を外して1件以上なら地名は外さない。
+    /// 季節も時間帯も外して0件のときだけ地名を外す
+    func testPlaceIsDroppedLast() {
+        let r = SearchSentence.readByTable("京都 紅葉 夜")
+        let filter = SearchSentence.filter(applying: r, to: .init())
+        var many = Self.items
+        for _ in 0..<5 { many.append(Item(place: "奈良", seasons: [.autumn], parts: [.night])) }
+        XCTAssertEqual(SearchSentence.relaxation(for: r, query: "京都", filter: filter, count: Self.count(many)), .season)
+
+        let onlyOtherPlaces = [Item(place: "大阪", seasons: [.autumn], parts: [.night])]
+        XCTAssertEqual(SearchSentence.relaxation(for: r, query: "京都", filter: filter, count: Self.count(onlyOtherPlaces)), .text)
+        // どれを外しても0件なら外さない
+        XCTAssertNil(SearchSentence.relaxation(for: r, query: "京都", filter: filter, count: { _, _ in 0 }))
+    }
+
+    /// 札が1つだけなら外さない（外すと何も絞らない）。外し方を見たあとは外さない
+    func testNoRelaxationWithOneConditionOrAfterTrying() {
+        let one = SearchSentence.readByTable("紅葉 滝")
+        XCTAssertNil(SearchSentence.relaxation(for: SearchSentence.readByTable("紅葉"), query: "",
+                                               filter: .init(season: .autumn, dayPart: nil), count: { _, _ in 9 }))
+        var tried = one
+        tried.relaxTried = true
+        XCTAssertNil(SearchSentence.relaxation(for: tried, query: "滝", filter: .init(season: .autumn, dayPart: nil),
+                                               count: { _, _ in 9 }))
+        XCTAssertEqual(SearchSentence.relaxation(for: one, query: "滝", filter: .init(season: .autumn, dayPart: nil),
+                                                 count: { q, _ in q.isEmpty ? 0 : 3 }), .season)
+    }
+
     // MARK: - 画面につないであるか
 
     private func searchViewSource() throws -> String {
@@ -176,6 +273,9 @@ final class SearchSentenceTests: XCTestCase {
         XCTAssertTrue(after.contains("readSentence(query)"), "「検索」で文を読んでいない")
         let pick = try XCTUnwrap(source.range(of: "private func pickRecent(_ word: String) {"))
         XCTAssertTrue(source[pick.upperBound...].prefix(300).contains("readSentence(word)"), "最近の検索から選んだ文を読んでいない")
+        // 0件と決まったら1つ外す。外した札は押すと戻る
+        XCTAssertTrue(source.contains(".onChange(of: needsRelaxing)"), "0件のときに外し方を見ていない")
+        XCTAssertTrue(source.contains("restoreReading(chip)"), "外した札を押しても戻らない")
         // 読むのは端末の中だけ（`SearchSentenceReader.live`）
         XCTAssertTrue(source.contains("await SearchSentenceReader.live(sentence)"))
     }

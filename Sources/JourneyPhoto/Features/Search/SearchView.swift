@@ -211,6 +211,10 @@ struct SearchView: View {
         }
         // 今日の一問（取れなかった日は段を出さない）は `applyFrontModeration` が読む——初めて出たとき（`front.appear()` の
         // `.first`）も、前面に戻ったときも同じ所。2026-11-12 確かめ役: ここにも `.task` で読んでいて、初めての表示で2回読んでいた
+        // 文で探して重ねた条件が0件と決まったら、1つ外して見せる（札 #623・2026-11-15 判断）
+        .onChange(of: needsRelaxing) { _, needed in
+            if needed { relaxIfZeroHit() }
+        }
         .onChange(of: query) { _, newValue in
             // 読み取りで入れた字のままでなければ、読み取りを捨てる（打ち直した・×で消した）
             if let current = reading, !SearchSentence.keepsReading(current, afterQueryChange: newValue) {
@@ -428,6 +432,49 @@ struct SearchView: View {
         }
     }
 
+    /// 0件で自動で外した札を戻す（元の条件に戻る。もう一度は自動で外さない）
+    private func restoreReading(_ chip: SearchSentence.Chip) {
+        guard var current = reading else { return }
+        let back = SearchSentence.restoring(chip.kind, reading: current, query: query, filter: model.timeFilter)
+        current.dropped = nil
+        reading = current
+        model.set(timeFilter: back.filter)
+        query = back.query
+    }
+
+    /// 重ねて0件になったら、1つ外していちばん多く残る形を見せる（`SearchSentence.relaxation`・2026-11-15 判断）。
+    /// 0件と決まった（写真も観光スポットも読み終えて0件）ときに1回だけ
+    private func relaxIfZeroHit() {
+        guard var current = reading, !current.relaxTried else { return }
+        current.relaxTried = true
+        let kind = SearchSentence.relaxation(for: current, query: query, filter: model.timeFilter) { q, f in
+            resultCount(query: q, filter: f)
+        }
+        current.dropped = kind
+        reading = current
+        guard let kind else { return }
+        let next = SearchSentence.removing(kind, query: query, filter: model.timeFilter)
+        model.set(timeFilter: next.filter)
+        query = next.query
+    }
+
+    /// 語と季節・時間帯を替えたときの写真と観光スポットの数（画面の結果と同じ当て方）
+    private func resultCount(query q: String, filter f: ShootingTime.Filter) -> Int {
+        let photos = model.scope.showsPhotos ? model.count(query: q, filter: f) : 0
+        guard model.scope.showsSpots else { return photos }
+        let published = officialSpots.filter { !$0.isDraft }
+        let trimmed = q.trimmingCharacters(in: .whitespacesAndNewlines)
+        let matched: [OfficialSpot]
+        if trimmed.isEmpty {
+            matched = published
+        } else if let index = spotSearchIndex {
+            matched = index.matchPositions(query: trimmed).map { index.spots[$0] }.filter { !$0.isDraft }
+        } else {
+            matched = []
+        }
+        return photos + ShootingTime.spots(matched, filter: f).count
+    }
+
     /// 「こう読みました」の段（札 #623 の案2の模型どおり: 眉 → 外せる札 → 欄の無い条件の1行 → この iPhone の中で読んだ）
     private var readingSection: some View {
         VStack(alignment: .leading, spacing: JPSpace.s) {
@@ -450,17 +497,27 @@ struct SearchView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(chips) { chip in
-                                PillChip(title: chip.label, selected: true, removable: true) {
-                                    removeReading(chip)
+                                if chip.isDropped {
+                                    // 0件で自動で外した札: 薄く残し、押すと戻る（2026-11-15 判断）
+                                    PillChip(title: chip.label, selected: false) {
+                                        restoreReading(chip)
+                                    }
+                                    .opacity(0.5)
+                                    .accessibilityLabel(chip.spoken)
+                                    .accessibilityIdentifier("search.reading.\(chip.kind.rawValue).dropped")
+                                } else {
+                                    PillChip(title: chip.label, selected: true, removable: true) {
+                                        removeReading(chip)
+                                    }
+                                    .accessibilityLabel(chip.spoken)
+                                    .accessibilityIdentifier("search.reading.\(chip.kind.rawValue)")
                                 }
-                                .accessibilityLabel(chip.spoken)
-                                .accessibilityIdentifier("search.reading.\(chip.kind.rawValue)")
                             }
                         }
                     }
                     .padding(.vertical, -PillChip.tapSlack)
                 }
-                if let note = reading.note {
+                if let note = SearchSentence.note(for: reading, chips: chips) {
                     Text(note)
                         .font(JPFont.footnote)
                         .foregroundStyle(WebTheme.text2)
@@ -1358,6 +1415,12 @@ struct SearchView: View {
         return place.isEmpty ? head : "\(head)\u{2002}\(place)"
     }
 
+    /// 文の読み取りを重ねて0件と決まったか（まだ外し方を見ていない間だけ）
+    private var needsRelaxing: Bool {
+        guard let reading, !reading.relaxTried, !isReadingSentence else { return false }
+        return zeroHitOnTop
+    }
+
     /// 0件の文を絞り込みの上（チップのすぐ下）に出すか（`zeroHitOnTop(...)`）
     private var zeroHitOnTop: Bool {
         Self.zeroHitOnTop(discovering: isDiscovering, showsPhotos: model.scope.showsPhotos,
@@ -1586,9 +1649,9 @@ final class SearchViewModel: ObservableObject {
     }
 
     /// `shown` の絞り方（並べ替えの前まで）
-    private func filtered(query: String) -> [Photo] {
+    private func filtered(query: String, filter: ShootingTime.Filter? = nil) -> [Photo] {
         // 季節・時間帯はカテゴリと同じく、語と種類で絞った上にかける（「秋の京都」）
-        let base = ShootingTime.photos(scope.photos(allPhotos, query: query, texts: searchTexts), filter: timeFilter)
+        let base = ShootingTime.photos(scope.photos(allPhotos, query: query, texts: searchTexts), filter: filter ?? timeFilter)
         guard let category else { return base }
         let key = CategoryChoices.key(category)
         return base.filter { CategoryChoices.key($0.category ?? "") == key }
@@ -1654,6 +1717,19 @@ final class SearchViewModel: ObservableObject {
     /// 押し直しで外す `select` と違い、**読めた軸を選んだ状態にする**（もう選んでいても外さない）
     func apply(reading: SearchSentence.Reading) {
         let next = SearchSentence.filter(applying: reading, to: timeFilter)
+        guard next != timeFilter else { return }
+        timeFilter = next
+        refreshTagChips()
+    }
+
+    /// 語と季節・時間帯を替えたら何枚になるか（文で探して0件のときの外し方を選ぶ・`SearchSentence.relaxation`）。
+    /// 種類とカテゴリは今のまま
+    func count(query: String, filter: ShootingTime.Filter) -> Int {
+        filtered(query: query, filter: filter).count
+    }
+
+    /// 季節・時間帯をそのまま置く（0件で1つ外す・戻す。`SearchSentence.removing` / `restoring`）
+    func set(timeFilter next: ShootingTime.Filter) {
         guard next != timeFilter else { return }
         timeFilter = next
         refreshTagChips()
