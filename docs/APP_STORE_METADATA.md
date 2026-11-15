@@ -37,25 +37,35 @@ App Store Connect に貼る文面。**2026-11-15 に 1.1.91（main a65201d、`te
 
 ## プロモーション用テキスト（170字以内、審査なしで変えられる）
 
+2026-11-15（札 #621・owner「登録してもらう入口に」）: AI の旅行プランを先頭に置いた。
+
 日本語（106字）:
 
 ```
-旅の一瞬を、誰かの次の旅へ。みんなの写真から次の行き先を見つけて、旅行プランにまとめ、撮った写真を載せて、ストーリーやメッセージで話せます。観光スポットは約3,900か所、日本の47都道府県と海外60の国と地域。
+「来月、金沢に1泊2日。紅葉」と書くだけで、AI が観光スポットから旅行プランを組みます。みんなの写真から次の行き先を見つけて、撮った写真を載せ、ストーリーやメッセージで話せます。観光スポットは約3,900か所。
 ```
 
-英語（164字）:
+英語（153字）:
 
 ```
-Find your next trip in everyone's photos, plan it, post your shots, and talk in stories and messages. About 3,900 spots in Japan and 60 other countries and regions.
+Write one line like "Kanazawa, 2 days, autumn leaves" and AI plans your trip from real spots. Find places in everyone's photos, post your shots and chat.
 ```
 
 ## 説明（4000字以内）
 
-日本語（約2,400字）:
+日本語（約2,715字）:
 
 ```
 旅先で出会った一瞬を載せて、みんなの写真から次の行き先を見つける。旅の計画も、写真の投稿も、仲間との連絡も、Journey Photo ひとつで。
 見るだけなら、ログインは要りません。
+
+■ AI で旅行プランを作る
+– 「来月、金沢に1泊2日。紅葉」のように書くだけで、観光スポットから日ごとの日程ができます
+– AI は台帳の観光スポットと行きたい場所から選んで並べ、並べた理由を1行添えます。無い場所は作りません
+– 移動が無理な順は Apple のマップの目安で外し、「戻す」で戻せます
+– 「直したいことを書く」で、日程をそのまま直せます
+– 対応する iPhone では端末の中の AI（Apple Intelligence）で組み、文を送りません。それ以外の iPhone では、日本にあるサーバー（Amazon Bedrock、東京）で読みます
+– ログインすると月30回まで無料。Pro なら月300回
 
 ■ みんなの写真から見つける
 – ホームは1本の並び。フォロー中の人の新しい写真、選ばれた写真、いいねの多い写真が続きます
@@ -114,6 +124,7 @@ Find your next trip in everyone's photos, plan it, post your shots, and talk in 
 – カードはその場で届きます。夕方にまとめて受け取ることもできます
 
 ■ Journey Photo Pro（任意、自動更新の定期購入）
+– AI で旅行プランを作る：月300回まで（無料は月30回）
 – 光と天気の知らせ：行きたい場所が「明日の朝、晴れて朝焼け」なら前の晩に
 – 電波なしで使える旅：地図、作例、光の時刻を端末に
 – Pro マークと Pro 限定の章
@@ -133,19 +144,22 @@ Find your next trip in everyone's photos, plan it, post your shots, and talk in 
 – 設定の「意見を送る」から、運営に声を届けられます
 ```
 
-英語（約3,950字）:
+英語（約3,940字。2026-11-15 に AI の節を足し、細かい5行を外して4000字に収めた）:
 
 ```
 Share moments from your trips, and find your next destination in everyone's photos. Plan trips, post photos and keep in touch with your travel friends, all in Journey Photo. No account is needed to browse.
+
+PLAN TRIPS WITH AI
+- Write one line like "Kanazawa, 2 days, autumn" and get a day-by-day plan from real spots. AI never makes places up
+- Runs on device with Apple Intelligence where supported; otherwise on our server in Tokyo (Amazon Bedrock)
+- 30 plans a month free with an account, 300 with Pro
 
 FIND IDEAS IN EVERYONE'S PHOTOS
 - Home is one feed: new photos from people you follow, then featured and popular photos
 - About 3,900 sightseeing spots: about 2,200 across all 47 prefectures of Japan and about 1,700 in 60 other countries and regions
 - Browse by region and prefecture, or pick a region on a map of Japan
 - Sample photos credit the photographer and source
-- Sunrise, sunset, golden hour and blue hour times, and the sun's direction
 - Swipe through spots on Home and save them to "Want to go"
-- Find photos near your destination on the photo map
 
 PLAN TRIPS
 - Add spots on the day you choose, or search and add places
@@ -158,12 +172,10 @@ SHOOT AND POST
 - A camera that overlays sample compositions, plus a guide to compositions
 - Edit colors after posting and compare with the original. Keep as many drafts as you like
 - Share cards right after you post, with Mat, Film, Vertical and more
-- Pin photos to the top of your profile
 - Location data in the photo file is removed on your device before upload; a photo's place is stored rounded to about 1 km
 
 STORIES
 - Photos and videos up to 60 seconds. Tap + on Home to open the camera
-- Zoom, flash, timer, trimming, filters and drawing
 - Song stickers (30-second previews), polls and place stickers
 - React with an emoji; replies stay in Messages
 - Highlights and Close friends
@@ -174,13 +186,11 @@ TALK
 - Send photos and spots, and save a spot you receive to "Want to go"
 - Until someone accepts, you can send up to 3 text messages, without links
 - Unsend messages. Report or block from a conversation
-- Connect in person with your profile QR code
 
 KEEP YOUR TRIPS
 - Allow photo access and your past trips line up as books on My Page. Photos are checked only on your device and never sent anywhere
 - Trip books and shared albums
 - Color in the prefectures you have visited on a map of Japan (only you can see it)
-- Turn one of your own trip photos into a boarding pass or stamp for your story
 
 TRAVEL TRUNK AND DETOUR
 - Earn coins by posting publicly and get trunk parts from the capsule machine. Coins and parts cannot be bought
@@ -190,6 +200,7 @@ PASS (OPTIONAL, OFF BY DEFAULT)
 - Only if you turn it on, your phone swaps a ticket card with nearby Journey Photo users over Bluetooth: one public photo you chose and a short note. No location or contacts are sent
 
 JOURNEY PHOTO PRO (OPTIONAL, AUTO-RENEWABLE SUBSCRIPTION)
+- AI trip plans: 300 a month (30 for free)
 - Light and weather alerts for places you want to go
 - Offline trips
 - A Pro mark and Pro-only chapters

@@ -35,6 +35,10 @@ struct TripPlanDetailView: View {
     @ObservedObject private var travel = TravelEstimator.shared
     /// 画面の外でプランが書き換わった知らせ（「旅行プランに入れる」のシート）
     @ObservedObject private var outsideChanges = TripPlanChanges.shared
+    /// AI で作ったプランの「並べた理由」「外しました　戻す」（札 #621・アプリを開いている間だけ）
+    @ObservedObject private var aiNotes = TripAINotes.shared
+    @StateObject private var aiComposer = TripAIComposerModel()
+    @EnvironmentObject private var toasts: ToastCenter
     @Environment(\.scenePhase) private var scenePhase
 
     /// 自動保存で送れていない事情（圏外・断られた・別の端末の変更）。送れたら消す
@@ -751,6 +755,13 @@ struct TripPlanDetailView: View {
             VStack(alignment: .leading, spacing: 14) {
                 header(plan)
 
+                if let note = aiNotes.note(planId) {
+                    TripAICard(note: note, composer: aiComposer,
+                               restore: { restoreAI($0) },
+                               revise: { text in Task { await reviseAI(text, title: plan.title) } })
+                        .onAppear { announceAICreated(plan) }
+                }
+
                 // 送れていない直し（圏外・断られた・別の端末の変更）。日付の下・日程の上に残す。
                 // UI テストの見本のときだけ、自動保存が送った回数を**見えない要素**に重ねる（`TripPlanFixture`・Debug のみ）
                 VStack(alignment: .leading, spacing: JPSpace.xs) {
@@ -1358,6 +1369,64 @@ struct TripPlanDetailView: View {
         // 行の身元は位置なので、並べ替えのあと読み上げの焦点は同じ位置に残る。
         // 位置を値として読ませ、動かした結果は `apply` が読み上げる
         .accessibilityValue(L("\(di + 1) 日目、\(ii + 1) 番目", "Day \(di + 1), item \(ii + 1)"))
+    }
+
+    // MARK: - AI で作ったプラン（札 #621）
+
+    /// 作った直後に1回だけ「〜を作りました　元に戻す」。元に戻すはプランを消して一覧へ戻る（確かめのダイアログは出さない）
+    private func announceAICreated(_ plan: TripPlan) {
+        guard aiNotes.note(planId)?.fresh == true else { return }
+        aiNotes.markSeen(planId)
+        let title = plan.title
+        let model = model
+        let environment = environment
+        let planId = planId
+        let dismiss = dismiss
+        toasts.show(L("「\(title)」を作りました", "Created “\(title)”"), actionTitle: L("元に戻す", "Undo")) {
+            Task { @MainActor in
+                if await model.remove(planId, environment: environment) { dismiss() }
+            }
+        }
+    }
+
+    /// 「外しました　戻す」: 外した日のいちばん後ろに戻す
+    private func restoreAI(_ removed: TripAIRouteCheck.Removed) {
+        var next = days
+        guard !next.isEmpty else { return }
+        let d = min(removed.day, next.count - 1)
+        next[d].items.append(TripDraft.place(spot: removed.spot).item)
+        apply(next, said: L("\(removed.spot.name)を戻しました", "Put back \(removed.spot.name)"))
+        aiNotes.restored(planId, removed)
+    }
+
+    /// 「直したいことを書く」: 今の日程と頼みを AI に渡して並べ直す。メモは同じ場所に残す。「元に戻す」で前の日程へ
+    private func reviseAI(_ request: String, title: String) async {
+        let current: [[OfficialSpot]] = days.map { day in
+            day.items.compactMap { item in
+                if case .spot(let id, _) = item { return index.first { $0.spotId == id } }
+                return nil
+            }
+        }
+        guard let result = await aiComposer.revise(request: request, current: current, index: index,
+                                                   wishlist: wishlist.spotIds, offline: connectivity.isOffline,
+                                                   service: environment.tripAI, title: title) else { return }
+        let before = days
+        var notes: [String: String] = [:]
+        for day in before {
+            for item in day.items { if case .spot(let id, let note?) = item { notes[id] = note } }
+        }
+        let next: [TripDay] = result.days.enumerated().map { i, day in
+            TripDay(date: before.indices.contains(i) ? before[i].date : nil,
+                    items: day.map { place in
+                        if case .spot(let id, _) = place.item { return .spot(spotId: id, note: notes[id]) }
+                        return place.item
+                    })
+        }
+        apply(next, said: L("日程を直しました", "Plan updated"))
+        aiNotes.set(planId, TripAINote(reason: result.reason, removed: result.removed, fallbackNote: result.fallbackNote, fresh: false))
+        toasts.show(L("日程を直しました", "Plan updated"), actionTitle: L("元に戻す", "Undo")) {
+            days = before
+        }
     }
 
     /// 並べ替え・移動を映し、結果を読み上げる（目で追えない人に、項目がどこへ行ったかを伝える）
