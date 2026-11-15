@@ -4445,6 +4445,26 @@ final class ScreenshotTests: XCTestCase {
     /// 旅行プランを仲間と共有（2026-11-12・札 #553・資料「SNS をもっと SNS に」2b）。見本は金沢のプランを「あお」と共有した形
     /// （`-JPTripShareFixture`）: 題・日付の下に「2人」と顔の段・「仲間を誘う」・「日程 | 会話」、あおが足した場所に
     /// 「あお が足しました」。会話に切り替えると吹き出しと「日程に足しました」の札・入力欄。誘うとリンクのシート
+    /// 旅の記録のタブの棚と、開いた旅の一冊の表紙の題（2026-11-15 owner「毎回『の旅』が入るけど、分かるからいらない」）。
+    /// 題は場所の名前だけ。読み上げは「旅、金沢」のように旅だと分かる形（`TripBook.spokenTitle`）
+    func testCapturesTripShelfTitles() {
+        let app = launchTrunk([])
+        // 棚のいちばん新しい一冊を開く（`openTripsRow` は行を押すところまで）
+        guard openTripsRow(app, "trips.book") else { return }
+        guard app.descendants(matching: .any)["trips.stats"].firstMatch.waitForExistence(timeout: 15) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "30b-旅の一冊の表紙（題）")
+        // 戻って棚を撮る
+        let back = app.navigationBars.buttons["BackButton"].firstMatch
+        guard back.waitForExistence(timeout: 5) else { return }
+        back.tap()
+        let first = app.descendants(matching: .any).matching(identifier: "trips.book").firstMatch
+        guard first.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "30a-旅の記録の棚（題）")
+        XCTAssertTrue(first.label.contains("旅、"), "旅の記録の一冊の読み上げに「旅、」が無い: \(first.label)")
+    }
+
     func testCapturesTripShare() {
         let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripShareFixture", "YES"])
         guard openTripsRow(app, "trips.plans") else { return }

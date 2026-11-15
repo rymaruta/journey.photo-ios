@@ -12,12 +12,36 @@ extension TripBook {
 
     // MARK: - 題
 
-    /// 背表紙・表紙の題（板「金沢の旅」）。撮影地が無ければ「旅の記録」
+    /// 旅の記録の中の題（棚の札・行・一冊の表紙）。**場所の名前だけ**（「金沢」）。
+    /// 撮影地が無ければ**期間**（「2026.09.12 — 09.14」）。
+    ///
+    /// 2026-11-15 判断（owner「毎回『の旅』が入るけど、分かるからいらない」）: 旅の記録のタブ・旅の一冊の中は
+    /// 旅だと分かっているので「の旅」を付けない。撮影地の無い旅を「旅の記録」と呼ぶと、タブの名前と同じ言葉が
+    /// 重なって中身が分からない——端末の旅（`DeviceTrips.title`）と同じく期間を題にし、下の1行から期間を落とす
+    /// （`titleIsPeriod`）。旅の記録の外（共有・ホームの札）は文脈が無いので `tripTitle` で「の旅」を付ける
     static func title(of trip: Trip) -> String {
         // 題は画面に出す形（郵便番号・国を落とす・`LocationMatch.display`・2026-10-11）
         let place = LocationMatch.display(trip.place)
+        guard !place.isEmpty else { return dateRange(from: trip.start, to: trip.end) }
+        return place
+    }
+
+    /// 題が期間か（撮影地が無い）。そのときは題の下の1行に期間を重ねて出さない
+    static func titleIsPeriod(_ trip: Trip) -> Bool {
+        LocationMatch.display(trip.place).isEmpty
+    }
+
+    /// 旅の記録の外で使う題（共有の題・共有の文・ホームの札・共有の絵）。文脈が無いと何のことか
+    /// 分からないので「金沢の旅」。撮影地が無ければ「旅の記録」（期間は隣に別に出る）
+    static func tripTitle(of trip: Trip) -> String {
+        let place = LocationMatch.display(trip.place)
         guard !place.isEmpty else { return L("旅の記録", "A trip") }
         return L("\(place)の旅", "Trip to \(place)")
+    }
+
+    /// 読み上げの題（「旅、金沢」）。画面の題から「の旅」を落としたので、読み上げで旅だと分かるようにする
+    static func spokenTitle(of trip: Trip) -> String {
+        L("旅、\(title(of: trip))", "Trip, \(title(of: trip))")
     }
 
     // MARK: - 期間
@@ -207,7 +231,7 @@ extension TripBook {
     /// 画面で別物）。推測で URL を作ると**開けないリンクを配る**
     static func shareText(of trip: Trip) -> String {
         let count = PhotoMapViewModel.photoCountLabel(trip.photos.count)
-        return "\(title(of: trip))\n\(dateRange(from: trip.start, to: trip.end))\u{2002}\(daysLabel(trip.days))\u{2002}\(count)"
+        return "\(tripTitle(of: trip))\n\(dateRange(from: trip.start, to: trip.end))\u{2002}\(daysLabel(trip.days))\u{2002}\(count)"
     }
 
     // MARK: - 下回り

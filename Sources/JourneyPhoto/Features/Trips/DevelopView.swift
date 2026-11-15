@@ -67,7 +67,7 @@ struct DevelopView: View {
 
     private var index: Int { DevelopTrips.nextIndex(frames, decisions: decisions) }
     private var kept: [String] { DevelopTrips.kept(frames, decisions: decisions) }
-    private var title: String { DeviceTrips.title(of: trip, name: name) }
+    private var title: String { DeviceTrips.tripTitle(of: trip, name: name) }
     /// 圏外（払うのは端末の中だけで最後までできる。投稿だけ通信できる所で）
     private var offline: Bool { connectivity.isOffline || PreviewSession.developOffline }
     /// 一部の写真だけ許可（見つかった分で払う。追加の許可は今の「写真を選び直す」と同じ口）

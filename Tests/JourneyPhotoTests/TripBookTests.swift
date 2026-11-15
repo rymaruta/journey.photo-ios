@@ -290,15 +290,58 @@ final class TripBookFactsTests: XCTestCase {
 
     // MARK: 題
 
-    /// 板「金沢の旅」。撮影地があれば題の中に入る
-    func testTitleUsesThePlace() throws {
+    /// 旅の記録の中の題は**場所の名前だけ**（2026-11-15 owner「毎回『の旅』が入るけど、分かるからいらない」）
+    func testTitleIsJustThePlace() throws {
         let trip = try XCTUnwrap(TripBook.trips(from: [
             try photo("a", date: "2026-09-12", place: "金沢"),
             try photo("b", date: "2026-09-13", place: "金沢"),
         ]).first)
-        let title = TripBook.title(of: trip)
-        XCTAssertTrue(title.contains("金沢"))
-        XCTAssertNotEqual(title, "金沢", "撮影地だけを題にしている（板は「金沢の旅」）")
+        XCTAssertEqual(TripBook.title(of: trip), "金沢", "旅の記録の中の題に「の旅」が付いている")
+        XCTAssertFalse(TripBook.titleIsPeriod(trip))
+        XCTAssertEqual(TripBook.spokenTitle(of: trip), "旅、金沢", "読み上げで旅だと分からない")
+        // 旅の記録の外（共有・ホームの札）は文脈が無いので「の旅」を残す
+        XCTAssertEqual(TripBook.tripTitle(of: trip), "金沢の旅")
+    }
+
+    /// 撮影地の無い旅は「旅の記録」と呼ばない（タブの名前と重なって中身が分からない）。題は期間で、
+    /// 下の1行・表紙の1行には期間を重ねない
+    func testTitleWithoutPlaceIsThePeriod() throws {
+        let trip = try XCTUnwrap(TripBook.trips(from: [
+            try photo("a", date: "2026-09-12"), try photo("b", date: "2026-09-14"),
+        ]).first)
+        XCTAssertEqual(TripBook.title(of: trip), "2026.09.12 — 09.14")
+        XCTAssertTrue(TripBook.titleIsPeriod(trip))
+        XCTAssertEqual(TripStyle.coverDateLine(trip), "3日間", "題の期間を下の1行で繰り返している")
+        XCTAssertFalse(TripStyle.tripLine(trip).contains("2026.09.12"), "題の期間を下の1行で繰り返している")
+        XCTAssertTrue(TripStyle.tripLine(trip).hasPrefix("3日間"))
+        // 旅の記録の外は「旅の記録」のまま（期間は隣に別に出る）
+        XCTAssertEqual(TripBook.tripTitle(of: trip), "旅の記録")
+    }
+
+    /// 撮影地のある旅の下の1行は今までどおり期間から
+    func testTripLineKeepsThePeriodWhenTitleIsThePlace() throws {
+        let trip = try XCTUnwrap(TripBook.trips(from: [
+            try photo("a", date: "2026-09-12", place: "金沢"),
+            try photo("b", date: "2026-09-14", place: "金沢"),
+        ]).first)
+        XCTAssertEqual(TripStyle.coverDateLine(trip), "2026.09.12 — 09.14\u{2002}3日間")
+        XCTAssertTrue(TripStyle.tripLine(trip).hasPrefix("2026.09.12 — 09.14"))
+    }
+
+    /// 旅の記録の外（共有シートの題・ホームの札）は文脈が無いので「の旅」の付いた題を使う（2026-11-15）
+    func testOutsideTheRecordKeepsTheTripWord() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        func source(_ path: String) throws -> String {
+            try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/\(path)"), encoding: .utf8)
+        }
+        let book = try source("Features/Trips/TripBookView.swift")
+        XCTAssertTrue(book.contains("SharePreview(TripBook.tripTitle(of: book))"), "共有シートの題から「の旅」が落ちた")
+        let home = try source("Features/Gallery/HomeTopCardView.swift")
+        XCTAssertFalse(home.contains("TripBook.title(of:"), "ホームの札が旅の記録の中の題（「の旅」なし）を使っている")
+        XCTAssertFalse(home.contains("DeviceTrips.title(of:"), "ホームの札が旅の記録の中の題（「の旅」なし）を使っている")
+        XCTAssertTrue(home.contains("TripBook.tripTitle(of: trip)"))
+        XCTAssertTrue(home.contains("DeviceTrips.tripTitle(of: trip, name: name)"))
     }
 
     /// 題は画面に出す形（住所のままにしない・同じ画面の写真の行と揃える・2026-10-11 レビュー）
@@ -401,7 +444,8 @@ final class TripBookFactsTests: XCTestCase {
             try photo("b", date: "2026-09-14", place: "金沢"),
         ]).first)
         let text = TripBook.shareText(of: trip)
-        XCTAssertTrue(text.hasPrefix(TripBook.title(of: trip)))
+        // 共有は旅の記録の外で読まれるので「の旅」を付ける（2026-11-15）
+        XCTAssertTrue(text.hasPrefix("金沢の旅\n"))
         XCTAssertTrue(text.contains("2026.09.12 — 09.14"))
         XCTAssertFalse(text.contains("http"))
     }

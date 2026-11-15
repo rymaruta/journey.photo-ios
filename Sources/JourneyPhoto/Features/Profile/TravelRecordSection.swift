@@ -89,8 +89,9 @@ struct ProfileTripsLine: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel(L("旅 \(TripBook.title(of: latest))、\(Self.facts(latest))",
-                                      "Trip \(TripBook.title(of: latest)), \(Self.facts(latest))"))
+                // 題は場所の名前だけ（2026-11-15）。読み上げは「旅、金沢、2日間 22枚」
+                .accessibilityLabel(L("\(TripBook.spokenTitle(of: latest))、\(Self.facts(latest))",
+                                      "\(TripBook.spokenTitle(of: latest)), \(Self.facts(latest))"))
                 .accessibilityIdentifier("profile.trip")
             }
             if shelf.trips.count > 1 {

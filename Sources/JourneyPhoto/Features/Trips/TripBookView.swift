@@ -111,7 +111,7 @@ struct TripBookView: View {
     private var shareButton: some View {
         if let cardURL {
             // 共有シートに題を出す（ファイル名を出さない）
-            ShareLink(item: cardURL, preview: SharePreview(TripBook.title(of: book))) { shareLabel }
+            ShareLink(item: cardURL, preview: SharePreview(TripBook.tripTitle(of: book))) { shareLabel }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("trips.share")
         } else {
@@ -216,7 +216,8 @@ struct TripBookView: View {
                     .font(JPFont.photoTitle)
                     .foregroundStyle(WebTheme.foreground)
                     .shadow(color: Color.black.opacity(0.5), radius: 7, y: 2)
-                Text("\(TripBook.dateRange(from: book.start, to: book.end))\u{2002}\(TripBook.daysLabel(book.days))")
+                // 題が期間（撮影地の無い旅）なら期間を重ねない（`TripStyle.coverDateLine`）
+                Text(TripStyle.coverDateLine(book))
                     .font(JPFont.mono(13, relativeTo: .footnote))
                     .foregroundStyle(WebTheme.muted)
                 // 撮影日の無い写真だけの旅（投稿した日でまとめた）。写真の上なので白の札

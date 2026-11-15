@@ -234,7 +234,7 @@ struct HomeTopCardView: View {
         if let saved = developStore.progress(trip.id, for: auth.userId), !saved.decisions.isEmpty {
             let done = min(frames.count, DevelopTrips.nextIndex(frames, decisions: saved.decisions))
             return DevelopTrips.resumePrefix(done: done, total: frames.count)
-                + DeviceTrips.title(of: trip, name: name)
+                + DeviceTrips.tripTitle(of: trip, name: name)
         }
         return DevelopTrips.cardLine(trip, name: name)
     }
@@ -377,7 +377,7 @@ struct HomeTopCardView: View {
             } label: {
                 card(eyebrow: "TRIP BOOK", eyebrowLabel: L("旅の一冊", "Trip book"),
                      title: L("旅の一冊ができました", "Your trip book is ready"),
-                     line: "\(TripBook.title(of: trip))\u{2002}\(TripBook.daysLabel(trip.days))\u{2002}"
+                     line: "\(TripBook.tripTitle(of: trip))\u{2002}\(TripBook.daysLabel(trip.days))\u{2002}"
                         + PhotoMapViewModel.photoCountLabel(trip.photos.count),
                      detail: nil,
                      backdrop: trip.cover, inCarousel: inCarousel)
