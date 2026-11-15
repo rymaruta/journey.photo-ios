@@ -135,7 +135,8 @@ struct HighlightEditorView: View {
                 Task { await load() }
             }) {
                 NavigationStack {
-                    StoryComposerView(startsWithCamera: StoryCameraView.isAvailable, keepsInArchive: true)
+                    // 2026-11-15（札 #627）: ホームの「＋」と同じく写真と動画の一覧から（カメラは一覧の最初のマス）
+                    StoryComposerView(keepsInArchive: true)
                 }
             }
             .task { await load() }

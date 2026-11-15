@@ -44,6 +44,17 @@ enum StoryVideoPipeline {
         #endif
     }
 
+    /// 写真ライブラリの動画（ストーリーの一覧のマス・`PHAsset.localIdentifier`・札 #627）を一時フォルダに写して確かめる。
+    /// 写真選びの1件（`importClip`）と同じく、**写す前に長さを確かめ**（長すぎる動画を写さない）、写した後に大きさを確かめる。
+    /// 写真アプリで編集した動画は編集後のもの（`.fullSizeVideo`）を使う。iCloud にしか無い動画も落とす
+    static func importAsset(id: String) async throws -> Imported {
+        #if canImport(Darwin)
+        return try await importAssetDarwin(id: id)
+        #else
+        throw StoryVideoRules.Problem.importFailed
+        #endif
+    }
+
     /// カメラで撮った動画（`StoryCameraView` が撮った一時ファイル）を確かめる
     static func importRecorded(at url: URL) async throws -> Imported {
         #if canImport(Darwin)
@@ -113,6 +124,7 @@ final class StoryVideoTempHolder: ObservableObject {
 
 #if canImport(Darwin)
 import AVFoundation
+import Photos
 import CoreTransferable
 import UniformTypeIdentifiers
 
@@ -139,6 +151,35 @@ struct StoryMovieFile: Transferable {
 }
 
 extension StoryVideoPipeline {
+
+    /// 写真ライブラリの動画を写す（`importAsset` の本体）
+    fileprivate static func importAssetDarwin(id: String) async throws -> Imported {
+        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject,
+              asset.mediaType == .video else { throw StoryVideoRules.Problem.importFailed }
+        // 写す前に長さで断る（10 分・`StoryVideoRules.maxSourceSeconds`）
+        if let problem = StoryVideoRules.importProblem(durationSec: asset.duration) { throw problem }
+        let resources = PHAssetResource.assetResources(for: asset)
+        guard let resource = resources.first(where: { $0.type == .fullSizeVideo })
+                ?? resources.first(where: { $0.type == .video }) else {
+            throw StoryVideoRules.Problem.importFailed
+        }
+        let ext = (resource.originalFilename as NSString).pathExtension
+        let copy = temporaryURL(ext: ext.isEmpty ? "mov" : ext)
+        let options = PHAssetResourceRequestOptions()
+        options.isNetworkAccessAllowed = true
+        do {
+            try await PHAssetResourceManager.default().writeData(for: resource, toFile: copy, options: options)
+        } catch {
+            try? FileManager.default.removeItem(at: copy)
+            throw StoryVideoRules.Problem.importFailed
+        }
+        let bytes = (try? copy.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        if let problem = StoryVideoRules.importProblem(durationSec: asset.duration, bytes: bytes) {
+            try? FileManager.default.removeItem(at: copy)
+            throw problem
+        }
+        return try await prepare(fileAt: copy)
+    }
 
     /// 長さ・向き・大きさを読み、表紙の1コマを作る。断るときは写したファイルも消す
     fileprivate static func prepare(fileAt url: URL) async throws -> Imported {

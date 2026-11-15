@@ -59,8 +59,14 @@ open class PHAsset: PHObject {
     open var location: CLLocation? { nil }
     open var pixelWidth: Int { 0 }
     open var pixelHeight: Int { 0 }
+    /// 動画の長さ（秒）。写真は 0（ストーリーの一覧の長さの印・札 #627）
+    open var duration: TimeInterval { 0 }
 
     open class func fetchAssets(with mediaType: PHAssetMediaType, options: PHFetchOptions?) -> PHFetchResult<PHAsset> {
+        PHFetchResult()
+    }
+    /// 種類を絞らずに取り出す（絞るのは `options.predicate`・ストーリーの一覧の写真と動画・札 #627）
+    open class func fetchAssets(with options: PHFetchOptions?) -> PHFetchResult<PHAsset> {
         PHFetchResult()
     }
     open class func fetchAssets(withLocalIdentifiers identifiers: [String],

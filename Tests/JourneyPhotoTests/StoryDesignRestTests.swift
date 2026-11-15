@@ -252,7 +252,8 @@ final class StoryDesignRestTests: XCTestCase {
     /// 作る画面を閉じたら、ほかの入口と同じく `postSheetClosed`（ホームの輪の読み直し）
     func testHighlightMakeStoryKeepsInArchive() throws {
         let editor = try repo("Sources/JourneyPhoto/Features/Profile/HighlightEditorView.swift")
-        XCTAssertTrue(editor.contains("StoryComposerView(startsWithCamera: StoryCameraView.isAvailable, keepsInArchive: true)"))
+        // 2026-11-15（札 #627）: カメラ先頭はやめ、写真と動画の一覧から（ホームの「＋」と同じ）
+        XCTAssertTrue(editor.contains("StoryComposerView(keepsInArchive: true)"))
         let cover = try XCTUnwrap(editor.components(separatedBy: ".fullScreenCover(isPresented: $showComposer").dropFirst().first)
         XCTAssertTrue(String(cover.prefix(400)).contains("TabRouter.shared.postSheetClosed()"))
         let composer = try repo("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
