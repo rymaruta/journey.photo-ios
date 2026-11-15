@@ -663,6 +663,16 @@ struct UploadView: View {
             // UI テスト（回 1324・`UploadTitleFieldTests`）で「秋の兼六園」と打つと、題の欄より上で増えたのはこの札だけ
             // （標準の文字 高さ 71pt → 欄 y=359→460、大きい文字 716pt → 欄 y=176→922 でキーボード（y=655）の裏）。
             // 札が出た・消えた・名前や入り切りで高さが変わったときに、打っている欄を見える所（キーボードと下の帯の上）へ送る
+            // 題・説明の候補の札（#622）が出た・消えたときも同じく送る（題を打っている写真の題の候補だけなら送らない）
+            .onChange(of: suggestLayoutKey) { old, new in
+                guard let field = focusedField,
+                      UploadDetails.suggestMovesFocusedField(old: old, new: new, focused: field) else { return }
+                DispatchQueue.main.async {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+                        proxy.scrollTo(field, anchor: .bottom)
+                    }
+                }
+            }
             .onChange(of: autoSpotLayoutKey) { _, _ in
                 guard let field = focusedField else { return }
                 // 札を描いた後の回に送る（札の高さが決まってから欄の位置を求めさせる）
@@ -1308,6 +1318,12 @@ struct UploadView: View {
                 // 送り先（`form` の `scrollTo`）
                 .id(UploadFieldFocus.title(item.id))
                 count(item.title, limit: PostLimits.title)
+                // 端末の AI の題の候補（札 #622・2026-11-15 判断）。欄が空のときだけ出し、押したときだけ入れる。
+                // 使えない機種・OS では候補が無いので、何も出ない（今と同じ見え方）
+                let titleIdeas = model.titleSuggestions(for: item)
+                if !titleIdeas.isEmpty && !model.isWorking {
+                    PostSuggestChips(kind: .title, candidates: titleIdeas) { photo.wrappedValue.title = $0 }
+                }
                 JPField(L("説明", "Description"), multiline: true) {
                     JPTextField(L("どんな写真ですか", "What is this photo about?"),
                               text: photo.caption, axis: .vertical)
@@ -1320,7 +1336,27 @@ struct UploadView: View {
                 }
                 .id(UploadFieldFocus.caption(item.id))
                 count(item.caption, limit: PostLimits.description)
+                if let captionIdea = model.captionSuggestion(for: item), !model.isWorking {
+                    PostSuggestChips(kind: .caption, candidates: [captionIdea]) { photo.wrappedValue.caption = $0 }
+                }
             }
+            // 候補を作る（撮影地・観光スポットが変わったら作り直す）。打っている間の撮影地の字で毎回作らないよう、
+            // 少し待ってから（待っている間に変われば前の回は取り消される）。使えない機種では鍵が nil で何もしない
+            .task(id: model.postSuggestKey(for: item)) {
+                guard model.postSuggestKey(for: item) != nil else { return }
+                try? await Task.sleep(nanoseconds: UploadDetails.suggestDelayNanoseconds)
+                guard !Task.isCancelled else { return }
+                await model.loadPostSuggestion(for: item.id)
+            }
+        }
+    }
+
+    /// 題・説明の候補の札（#622）の並び（`UploadDetails.suggestLayoutRows`）。候補は後から届くので、
+    /// 説明を打っている間に上の題の候補が出ると、打っている欄が下へ押される（#607 と同じ）
+    private var suggestLayoutKey: [String] {
+        model.items.flatMap { item in
+            UploadDetails.suggestLayoutRows(id: item.id, titles: model.titleSuggestions(for: item).count,
+                                            caption: model.captionSuggestion(for: item) != nil)
         }
     }
 
@@ -1691,7 +1727,8 @@ struct UploadView: View {
 
     /// タグ（まとめて同じものが付く）
     private var tagsAndCategory: some View {
-        TagField(tagsText: $model.tagsText)
+        // 端末の AI のタグの候補を先頭に並べる（札 #622。札は増やさない・使えない機種では今の並びのまま）
+        TagField(tagsText: $model.tagsText, suggested: model.suggestedTags)
             .disabled(model.isWorking)
     }
 
