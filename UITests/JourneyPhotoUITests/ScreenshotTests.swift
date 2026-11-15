@@ -3036,6 +3036,72 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "11d-探す（季節と時間帯で絞る・秋の夕方）")
     }
 
+    /// **文で探す**（札 #623 の案2・2026-11-15 判断）。「京都 紅葉 夜」と打って「検索」を押すと、
+    /// 字の語「京都」と季節「秋」と時間帯「夜」の札が「こう読みました」に出て、季節と時間帯のチップも選んだ状態になる。
+    /// 札を押すと外れる。「雨でも撮れる所」は絞らず、そのことを1行で言う。
+    ///
+    /// 端末の AI は切って（`-JPOnDeviceAI off`）言葉の表で読む——Mac のシミュレーターで AI が動くかは
+    /// `SearchSentenceDeviceEvalTests` が別に書き出す。絵の中身を毎回同じにするため
+    func testCapturesSearchSentence() {
+        let app = XCUIApplication()
+        // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPOnDeviceAI", "off"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 1 else { return unreached(app, "tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 1") }
+        tabBar.buttons.element(boundBy: 1).tap()
+
+        let field = app.textFields["search.field"].firstMatch
+        guard field.waitForExistence(timeout: 20) else { return unreached(app, "search.field.waitForExistence(timeout: 20)") }
+        field.tap()
+        guard waitForKeyboardFocus(field) else { return unreached(app, "探すの欄に焦点が来ない") }
+        field.typeText("京都 紅葉 夜\n")
+
+        let season = app.buttons["search.reading.season"].firstMatch
+        guard season.waitForExistence(timeout: 10) else {
+            return unreached(app, "「こう読みました」の季節の札が出ない",
+                             probes: ["search.reading.text", "search.reading.dayPart", "search.reading.busy"])
+        }
+        XCTAssertTrue(app.buttons["search.reading.text"].firstMatch.exists, "字の語「京都」の札が無い")
+        XCTAssertTrue(app.buttons["search.reading.dayPart"].firstMatch.exists, "時間帯「夜」の札が無い")
+        XCTAssertEqual(field.value as? String, "京都", "欄が字の語「京都」になっていない")
+        // 季節と時間帯のチップ（今ある絞り込み）が選んだ状態になっている
+        XCTAssertTrue(app.buttons["search.season.autumn"].firstMatch.isSelected, "季節のチップ「秋」が選ばれていない")
+        XCTAssertTrue(app.buttons["search.dayPart.night"].firstMatch.isSelected, "時間帯のチップ「夜」が選ばれていない")
+        // 撮影スポットの索引と写真の絵が描かれるのを待つ
+        Thread.sleep(forTimeInterval: 4)
+        shoot(app, "11v-探す（文で探す、京都 紅葉 夜）")
+
+        // 札を押すと外れる（季節の札が消え、季節のチップも外れる。ほかの札は残る）
+        season.tap()
+        XCTAssertTrue(season.waitForNonExistence(timeout: 5), "季節の札を押しても外れない")
+        XCTAssertFalse(app.buttons["search.season.autumn"].firstMatch.isSelected, "季節の札を外しても「秋」のチップが残る")
+        XCTAssertTrue(app.buttons["search.reading.dayPart"].firstMatch.exists, "季節を外したら時間帯の札まで消えた")
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "11w-探す（文で探す、季節の札を外した）")
+
+        // 欄の無い条件（雨）は絞らず、1行で言う
+        let clear = app.buttons["search.clear"].firstMatch
+        if clear.exists, clear.isHittable { clear.tap() }
+        let clearTimes = app.buttons["search.clearTimeFilters"].firstMatch
+        if clearTimes.exists, clearTimes.isHittable { clearTimes.tap() }
+        field.tap()
+        guard waitForKeyboardFocus(field) else { return unreached(app, "探すの欄に2回目の焦点が来ない") }
+        field.typeText("雨でも撮れる所\n")
+        let note = app.staticTexts["search.reading.note"].firstMatch
+        guard note.waitForExistence(timeout: 10) else { return unreached(app, "「雨」の1行が出ない") }
+        XCTAssertTrue(note.label.contains("雨の日に向くか"), "1行が雨のことを言っていない: \(note.label)")
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "11x-探す（文で探す、雨は絞らない）")
+    }
+
     /// **探すの「機材から探す」の札3枚**（2026-10-30 owner 採用・#419）。発見の顔のいちばん下の段なので、
     /// 札（`search.gear.wide` など）が押せる所まで少しずつ送ってから撮る。色の丸の段も同じ絵に入ることが多い。
     /// **別の試験にしてある**（一巡の「11-探す」は上のままの絵）。出なければ落とす（札 #531・前は撮らずに抜けて黙って緑だった）
