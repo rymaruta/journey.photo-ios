@@ -78,6 +78,8 @@ final class AuthStore: ObservableObject {
     /// サインアウト・退会で空にする通信の控え。`APIClient`（既定の設定）と
     /// `AsyncImage` はどちらも `URLCache.shared` を使う（試験で差し替える）
     var responseCache: URLCache = .shared
+    /// ログアウトした時と道を残す置き場（`ExitTrail.keepSignOut`・札 #617。試験で差し替える）
+    var trailDefaults: UserDefaults = .standard
 
     /// UI テストの見本の通信（`-JPPreviewLocalBackend`）のときだけ見本の認証（`PreviewBackend.authGateway`・Debug のみ）
     init(gateway: AuthStoreGateway = PreviewBackend.authGateway ?? .live) {
@@ -87,8 +89,12 @@ final class AuthStore: ObservableObject {
         // ログインの期限切れ（`AuthGateway.idToken`）を受けてログアウトに倒す
         expiryObserver = NotificationCenter.default.addObserver(
             forName: .authSessionExpired, object: nil, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in await self?.expireSession() }
+        ) { [weak self] note in
+            // どの道で切れたか（`AuthGateway.announceSessionExpired`）。添えられていなければトークンの道
+            let raw = note.userInfo?[AuthGateway.sessionExpiredCauseKey] as? String
+            let cause = raw.flatMap(ExitTrail.SignOutCause.init(rawValue:)) ?? .expiredToken
+            let detail = note.userInfo?[AuthGateway.sessionExpiredDetailKey] as? String
+            Task { @MainActor in await self?.expireSession(cause: cause, detail: detail) }
         }
         deletionObserver = NotificationCenter.default.addObserver(
             forName: .accountDeletionPending, object: nil, queue: .main
@@ -180,11 +186,15 @@ final class AuthStore: ObservableObject {
     /// 知らせが同時に何通も届く。`userId` を見るだけだと、1本目がログアウトを待って
     /// いる間（まだ `.signedIn`）に2本目も通り、ログアウトが並んで走っていた。
     /// 印は**最初の await より前に**立てる（MainActor の上なので、ここまでは割り込まれない）
-    func expireSession() async {
+    ///
+    /// - Parameters:
+    ///   - cause: どの道で切れたか（端末の中の記録だけに使う・`ExitTrail.keepSignOut`・札 #617）
+    ///   - detail: エラーの種類・口の形（人の情報は入れない）
+    func expireSession(cause: ExitTrail.SignOutCause = .expiredToken, detail: String? = nil) async {
         guard userId != nil, !isExpiring else { return }
         isExpiring = true
         defer { isExpiring = false }
-        await signOut(byExpiry: true)
+        await signOut(byExpiry: true, cause: cause, detail: detail)
         errorMessage = L("ログインの期限が切れました。もう一度ログインしてください。",
                          "Your session has expired. Please sign in again.")
     }
@@ -221,13 +231,21 @@ final class AuthStore: ObservableObject {
         // 「ログイン中」と答えるが、本人はログアウトを押している。もう一度消してみて、
         // 消えても消えなくても未ログインとして始める。**消せない回が上限に達したら諦めて、
         // 印の無かった頃と同じく Amplify の答えに従う**（閉じ込めない・同じ注記）
+        // 起動のときに鍵束が開いておらず、Amplify の設定を後に回した回は、開くのを待ってから確かめる
+        // （`AuthGateway.configure` の「2026-11-15 判断」・札 #617）。待つ間は確認中（`.unknown`）のまま
+        await gateway.prepare()
         if gateway.latch.isSet, !gateway.latch.giveUpIfExhausted() {
             _ = await gateway.signOut()
+            ExitTrail.keepSignOut(.launchLatch, defaults: trailDefaults)
             state = .signedOut
             isAdmin = false
             return
         }
         guard await gateway.isSignedIn() else {
+            // **前の起動ではログイン中だったのに「ログインしていない」**と答えた回だけ残す（ふだんの未ログインは数えない）
+            if ExitTrail.session(defaults: trailDefaults)?.signedIn == true {
+                ExitTrail.keepSignOut(.launchNotSignedIn, defaults: trailDefaults)
+            }
             state = .signedOut
             isAdmin = false
             return
@@ -238,7 +256,7 @@ final class AuthStore: ObservableObject {
         // **ID が取れなかった回も見る**——見ないと、期限切れなのに「本当に
         // ログアウトしたか分からない」扱いになり、通知の宛先を外さない
         if await gateway.isSessionExpired() {
-            await signOut(byExpiry: true)
+            await signOut(byExpiry: true, cause: .expiredLaunch)
             errorMessage = L("ログインの期限が切れました。もう一度ログインしてください。",
                              "Your session has expired. Please sign in again.")
             return
@@ -247,6 +265,7 @@ final class AuthStore: ObservableObject {
             state = .signedIn(userId: id)
             await refreshAdmin()
         } else {
+            ExitTrail.keepSignOut(.launchNoUserId, defaults: trailDefaults)
             isSignedOutUncertain = true
             state = .signedOut
             isAdmin = false
@@ -254,9 +273,15 @@ final class AuthStore: ObservableObject {
     }
 
     /// ID トークンから管理者かを読み直す。**取れなければ管理を出さない**
+    ///
+    /// ログイン中になったことと、入った時刻（`auth_time`）も端末の記録に控える（`ExitTrail.noteSignedIn`・札 #617）。
+    /// トークンが取れない回（圏外）は、前に控えた時刻を残す
     private func refreshAdmin() async {
         let token = try? await AuthGateway.idToken()
         isAdmin = token.map { IdTokenClaims.isAdmin(jwt: $0) } ?? false
+        let authTime = token.flatMap(IdTokenClaims.authTime(fromJWT:))
+            ?? ExitTrail.session(defaults: trailDefaults)?.authTime
+        ExitTrail.noteSignedIn(authTime: authTime, defaults: trailDefaults)
     }
 
     /// 直近の失敗の種類。**文言でも綴りでもなく、型で分岐する。**
@@ -319,11 +344,15 @@ final class AuthStore: ObservableObject {
         return Task {
             defer { isSigningOut = false }
             await releaseDevice()
-            await signOut()
+            await signOut(cause: .user)
         }
     }
 
-    func signOut(byExpiry: Bool = false) async {
+    /// - Parameters:
+    ///   - cause: どの道でログアウトしたか（端末の中の記録だけに使う・`ExitTrail.keepSignOut`・札 #617）
+    ///   - detail: エラーの種類・口の形（人の情報は入れない）
+    func signOut(byExpiry: Bool = false, cause: ExitTrail.SignOutCause = .user, detail: String? = nil) async {
+        ExitTrail.keepSignOut(cause, detail: detail, defaults: trailDefaults)
         isSignedOutUncertain = false
         signedOutByExpiry = byExpiry
         // 端末から消せなくても**画面はログアウトの扱いにする**（ここで止めると、押したのに
@@ -377,6 +406,7 @@ final class AuthStore: ObservableObject {
             // 消えている。下のサインアウトへ進む
         }
         _ = await gateway.signOut()
+        ExitTrail.keepSignOut(.accountDeleted, defaults: trailDefaults)
         settleSignedOut()
     }
 
@@ -426,7 +456,7 @@ final class AuthStore: ObservableObject {
         // 見分けないと、正しいパスワードを何度打っても「違います」と出る
         if lastFailure == .notAuthorized {
             if await gateway.isSessionExpired() {
-                await expireSession()
+                await expireSession(cause: .expiredPassword)
             } else {
                 errorMessage = L("いまのパスワードが違います", "Your current password is incorrect")
             }
@@ -528,6 +558,9 @@ struct AuthStoreGateway: Sendable {
     var isSessionExpired: @Sendable () async -> Bool
     var signOut: @Sendable () async -> SignOutOutcome
     var deleteUser: @Sendable () async throws -> Void
+    /// 起動の確かめの前に済ませること（鍵束が開くのを待って Amplify を設定する・`AuthGateway.configureWhenKeychainOpens`）。
+    /// 試験の口は何もしない
+    var prepare: @Sendable () async -> Void = {}
     /// 前のログアウトで端末の中のログインを消せなかった印（`SignOutLatch`）。
     /// 本番の `signOut`（`AuthGateway.signOut`）が同じ印を進め・外す
     var latch: SignOutLatch = SignOutLatch()
@@ -541,7 +574,8 @@ struct AuthStoreGateway: Sendable {
         currentUsername: { try await AuthGateway.currentUsername() },
         isSessionExpired: { await AuthGateway.isSessionExpired() },
         signOut: { await AuthGateway.signOut() },
-        deleteUser: { try await AuthGateway.deleteUser() }
+        deleteUser: { try await AuthGateway.deleteUser() },
+        prepare: { await AuthGateway.configureWhenKeychainOpens() }
     )
 }
 

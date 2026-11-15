@@ -15,6 +15,7 @@ import Foundation
 /// - MetricKit の知らせ（前回までのクラッシュ・前面での終わり方の回数）も、短い1行にしてここに残す（`MetricKitReceiver`）
 /// - 「意見を送る」が送り直しても届かない理由で断られた回も、**種類・HTTP の状態・版・時刻だけ**の1行で残す
 ///   （`keepFeedbackFailure`・`FeedbackOutbox.deliver`。本文は入れない・2026-11-14 判断・1.1.91）
+/// - ログアウトした時と道も、**道の名前・エラーの種類・日数・版・時刻だけ**で残す（`keepSignOut`・札 #617・2026-11-15）
 enum ExitTrail {
 
     /// いまの足跡（段ごとに書き換える）
@@ -42,7 +43,8 @@ enum ExitTrail {
     /// 段の名前の長さの上限（決まった名前しか渡さないが、念のため）
     static let stepMax = 60
 
-    private static let lock = NSLock()
+    /// 置き場を読み書きする鍵（ログアウトの記録 `ExitTrail+SignOut` も同じ鍵を使う）
+    static let lock = NSLock()
 
     // MARK: - 書く
 
@@ -104,6 +106,9 @@ enum ExitTrail {
         defaults.removeObject(forKey: recordKey)
         defaults.removeObject(forKey: metricKey)
         defaults.removeObject(forKey: feedbackKey)
+        // ログアウトの記録も送ったら消す（ログイン中かの控え `sessionKey` は記録ではないので残す）
+        defaults.removeObject(forKey: signOutKey)
+        defaults.removeObject(forKey: signOutCountsKey)
     }
 
     // MARK: - 読む
@@ -126,35 +131,43 @@ enum ExitTrail {
         case exit
         /// 意見を送って断られた記録だけ
         case feedback
-        /// どちらも
+        /// ログアウトした記録だけ（札 #617）
+        case signOut
+        /// 2つ以上
         case both
     }
 
     static func contents(defaults: UserDefaults = .standard) -> Contents? {
         let exit = record(defaults: defaults) != nil || !(metric(defaults: defaults) ?? "").isEmpty
         let feedback = !(feedbackFailure(defaults: defaults) ?? "").isEmpty
-        switch (exit, feedback) {
-        case (true, true): return .both
-        case (true, false): return .exit
-        case (false, true): return .feedback
-        case (false, false): return nil
+        let signOut = !signOutLines(defaults: defaults).isEmpty
+        switch [exit, feedback, signOut].filter({ $0 }).count {
+        case 0: return nil
+        case 1: return exit ? .exit : (feedback ? .feedback : .signOut)
+        default: return .both
         }
     }
 
     /// 意見に添える文（無ければ nil）。**`limit` 文字（UTF-16）に収める**（意見の本文の上限の残り）
     static func attachment(defaults: UserDefaults = .standard, limit: Int) -> String? {
         summary(record: record(defaults: defaults), metric: metric(defaults: defaults),
-                feedback: feedbackFailure(defaults: defaults), limit: limit)
+                feedback: feedbackFailure(defaults: defaults),
+                signOut: signOutSummary(lines: signOutLines(defaults: defaults), counts: signOutCounts(defaults: defaults)),
+                limit: limit)
     }
 
     /// 添える文の形（試験で見る）。例:
     /// `[終了の記録] 1.1.87 (3) 2026-11-14T10:00:00Z step=story.open n=2 i=0 mem=812MB` と、MetricKit の1行
     /// 意見が断られた回は `[意見の送信] 1.1.91 (1) 2026-11-14T10:00:00Z kind=server status=403`
-    static func summary(record: Record?, metric: String?, feedback: String? = nil, limit: Int) -> String? {
+    /// ログアウトした回は `signOutSummary` の行（`[ログアウト] …`・札 #617）
+    static func summary(record: Record?, metric: String?, feedback: String? = nil, signOut: String? = nil,
+                        limit: Int) -> String? {
         var lines: [String] = []
         if let record {
             lines.append("[終了の記録] \(record.version) \(iso.string(from: record.at)) step=\(record.step) mem=\(record.memMB)MB")
         }
+        // ログアウトの記録は MetricKit の長い行より前に置く（上限で後ろから切れるため・札 #617）
+        if let signOut, !signOut.isEmpty { lines.append(signOut) }
         if let metric, !metric.isEmpty { lines.append("[MetricKit] \(metric)") }
         if let feedback, !feedback.isEmpty { lines.append("[意見の送信] \(feedback)") }
         guard !lines.isEmpty, limit > 0 else { return nil }
@@ -175,6 +188,12 @@ enum ExitTrail {
         let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
         return "\(short) (\(build))"
+    }
+
+    /// 時刻の書き方（`ExitTrail+SignOut` も同じ形で書く）
+    static func isoString(_ date: Date) -> String {
+        lock.lock(); defer { lock.unlock() }
+        return iso.string(from: date)
     }
 
     private static let iso: ISO8601DateFormatter = {

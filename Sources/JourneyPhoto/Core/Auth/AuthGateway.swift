@@ -36,9 +36,40 @@ enum AuthGateway {
         guard isConfigured else { throw NotConfigured() }
     }
 
+    /// 起動したときに鍵束がまだ開いておらず、設定を後に回した（`configureWhenKeychainOpens`）
+    static var waitsForKeychain = false
+
     /// アプリ起動時に一度だけ呼ぶ。
-    static func configure() throws {
+    ///
+    /// 🔴 **鍵束（キーチェーン）がまだ開いていない起動では、Amplify を設定しない（2026-11-15 判断・札 #617）。**
+    /// Amplify は設定のときに1回だけログインの控えを鍵束から読み、読めなければ「ログインしていない」で始めて
+    /// そのプロセスの間は読み直さない（`KeychainProbe` の注記・amplify-swift 2.63.0 のソースで確かめた）。
+    /// 鍵を開ける前に裏で起こされた起動のまま利用者が開くと、控えは残っているのにログイン画面が出ていた。
+    /// 開いていなければ設定を後に回し、`AuthStore.restore` が開くのを待ってから設定する（その間は確認中のまま）
+    static func configure(keychainLocked: () -> Bool = KeychainProbe.isLocked) throws {
         guard !isConfigured else { return }
+        if keychainLocked() {
+            waitsForKeychain = true
+            return
+        }
+        try configureAmplify()
+    }
+
+    /// 起動のときに後に回した設定を、鍵束が開いてから済ませる（`AuthStore.restore` の最初）。
+    /// 後に回していなければ何もしない。設定に失敗した回は、今までの「設定に失敗した起動」と同じ扱い（Amplify を呼ばない）
+    @MainActor
+    static func configureWhenKeychainOpens(keychainLocked: () -> Bool = KeychainProbe.isLocked,
+                                           pause: () async -> Void = { try? await Task.sleep(nanoseconds: 2_000_000_000) },
+                                           configure: () throws -> Void = configureAmplify) async {
+        guard waitsForKeychain, !isConfigured else { return }
+        while keychainLocked() { await pause() }
+        waitsForKeychain = false
+        // 待った回を数える（鍵を開ける前は端末の控え（UserDefaults）にも書けないことがあるので、開いてから書く）
+        ExitTrail.keepSignOut(.keychainWait)
+        try? configure()
+    }
+
+    static func configureAmplify() throws {
         let plugin: JSONValue = [
             "CognitoUserPool": [
                 "Default": [
@@ -72,7 +103,8 @@ enum AuthGateway {
 
     /// API Gateway に送る **ID トークン**。未ログインなら nil。
     ///
-    /// 🔴 **ログインの期限切れを「ログアウト」に倒す。** 更新トークン（既定30日）が
+    /// 🔴 **ログインの期限切れを「ログアウト」に倒す。** 更新トークン（本番は **5 日**。2026-11-15 に
+    /// `describe-user-pool-client` で確かめた。staging は 30 日）が
     /// 切れても Amplify は `isSignedIn == true` を返し、トークンだけ
     /// `sessionExpired` で落ちる。そのまま投げると画面は「読み込めませんでした」
     /// を出し続け、ログイン中の見た目のまま何もできなくなっていた
@@ -96,7 +128,7 @@ enum AuthGateway {
             return tokens.idToken
         case .failure(let error):
             guard AuthFailure(error) == .notAuthorized else { throw tokenFailure(error) }
-            await announceSessionExpired()
+            await announceSessionExpired(cause: .expiredToken, detail: ExitTrail.errorKind(error))
             return nil
         }
     }
@@ -122,10 +154,17 @@ enum AuthGateway {
         return error
     }
 
+    /// 期限切れの知らせ。**どの道で切れたか**を添える（`ExitTrail.keepSignOut`・札 #617）
     @MainActor
-    static func announceSessionExpired() {
-        NotificationCenter.default.post(name: .authSessionExpired, object: nil)
+    static func announceSessionExpired(cause: ExitTrail.SignOutCause, detail: String? = nil) {
+        var info: [String: String] = [sessionExpiredCauseKey: cause.rawValue]
+        if let detail { info[sessionExpiredDetailKey] = detail }
+        NotificationCenter.default.post(name: .authSessionExpired, object: nil, userInfo: info)
     }
+
+    /// `authSessionExpired` の知らせに添える道（`ExitTrail.SignOutCause` の名前）と、その細かい種類
+    static let sessionExpiredCauseKey = "cause"
+    static let sessionExpiredDetailKey = "detail"
 
     /// サーバーに 401 を返された後の取り直し（`APIClient.send`）。**1本にまとめる**
     /// ——画面の口が一斉に 401 になっても、Cognito に頼むのは1回（`TokenRefresher`）
@@ -356,7 +395,12 @@ struct CognitoTokenProvider: TokenProviding {
 
     /// 取り直しても 401。`AuthStore` が受けてログアウトに倒す
     func sessionExpired() async {
-        await AuthGateway.announceSessionExpired()
+        await AuthGateway.announceSessionExpired(cause: .expiredRefresh)
+    }
+
+    /// 同じ知らせに、どの道で切れたか（取り直せなかった・取り直しても 401）と口の形を添える
+    func sessionExpired(because cause: ExitTrail.SignOutCause, detail: String?) async {
+        await AuthGateway.announceSessionExpired(cause: cause, detail: detail)
     }
 
     /// 退会済みの 410。送った鍵の人（`sub`）を添えて知らせる。読めない鍵は知らせない
