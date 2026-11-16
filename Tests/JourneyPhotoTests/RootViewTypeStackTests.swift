@@ -20,7 +20,7 @@ final class RootViewTypeStackTests: XCTestCase {
     /// 段を全部並べている（名前が重ならない）
     func testSegmentsAreListed() async {
         let segments = RootView.typeSegments()
-        XCTAssertEqual(segments.count, 13)
+        XCTAssertEqual(segments.count, 14)
         XCTAssertEqual(Set(segments.map(\.name)).count, segments.count)
     }
 
