@@ -968,13 +968,42 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 10), "ピンを押し直しても札が開かない")
         Thread.sleep(forTimeInterval: 1.5)
         XCTAssertTrue(card.exists, "ピンを押して開いた札が、すぐ閉じた")
+        // 札の名前がボタンに付いていない（入れ物にして読み上げの「閉じる」を足した後も、行きたいが名前で見つかる）
+        XCTAssertTrue(wish.waitForExistence(timeout: 5), "読み上げの閉じるを足したら、札の「行きたい」の名前が消えた")
+
+        // 地図を2回たたいて寄せても札は閉じない（1回目で閉じる予約、2回目で取り消す）
+        empty.doubleTap()
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(card.exists, "地図を2回たたいて寄せたら札が閉じた")
 
         // 指で地図を動かすと「このエリアを検索」が出る
         empty.tap()
+        XCTAssertTrue(card.waitForNonExistence(timeout: 5), "寄せた後に地図を押しても札が閉じない")
         let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55))
         from.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)))
         XCTAssertTrue(app.buttons["map.searchArea"].firstMatch.waitForExistence(timeout: 5),
                       "地図を動かしても「このエリアを検索」が出ない")
+
+        // Apple の地点の札も × が無く、地図を押せば閉じる。地点が画面に無い回は数だけ残す（地図の中身は Apple 次第）
+        Thread.sleep(forTimeInterval: 2)
+        let window = app.windows.firstMatch.frame
+        let features = app.otherElements.matching(identifier: "VKPointFeature").allElementsBoundByIndex
+            .filter { $0.isHittable && $0.frame.minY > window.minY + 220 && $0.frame.maxY < window.maxY - 260 }
+        print("measured mapPlaceFeatures count=\(features.count) frames=\(features.prefix(5).map(\.frame))")
+        if let feature = features.first {
+            feature.tap()
+            let placeCard = app.descendants(matching: .any).matching(identifier: "map.placeCard").firstMatch
+            if placeCard.waitForExistence(timeout: 8) {
+                XCTAssertFalse(placeCard.buttons["閉じる"].exists, "地点の札に × が残っている")
+                let away = app.coordinate(withNormalizedOffset: .zero)
+                    .withOffset(CGVector(dx: window.midX,
+                                         dy: feature.frame.midY > window.midY ? feature.frame.midY - 140 : feature.frame.midY + 140))
+                away.tap()
+                XCTAssertTrue(placeCard.waitForNonExistence(timeout: 5), "地図を押しても地点の札が閉じない")
+            } else {
+                print("measured mapPlaceCard notShown afterTap=\(feature.frame)")
+            }
+        }
     }
 
     /// A10: 探すの範囲のチップは字を打ってから出る。明朝の「探す」は字を打つと畳む。

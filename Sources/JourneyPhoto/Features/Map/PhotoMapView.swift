@@ -115,6 +115,8 @@ struct PhotoMapView: View {
     @State private var spotSelectTicks = 0
     /// 指で地図を動かしたか（最後に「このエリアを検索」を押してから・2026-11-16 判断 A9・`MapAreaButton`）
     @State private var movedSinceAreaSearch = false
+    /// 地図を押して札を閉じる予約（2回たたいて寄せたときは取り消す・`MapCardDismiss.Pending`）
+    @State private var pendingCardClose = MapCardDismiss.Pending()
 
     var body: some View {
         // UI テストのときだけ: body の評価を数える（`PerfTimeline`・札 #594 の下調べ。無効なら何もしない）
@@ -528,11 +530,16 @@ struct PhotoMapView: View {
     private var mapArea: some View {
         // 2026-11-16 判断（使い勝手の見直し A7）: 地図の空いている所を押したら札を閉じる（札の × をやめた・`MapCardDismiss`）。
         // **同時の合図**にして、地図を動かす指・地点を選ぶ指・ピンのボタンは今までどおり効かせる
+        // 2回たたいて寄せる操作では閉じない: 1回目では閉じる予約だけをして、2回目が来たら取り消す（`MapCardDismiss.Pending`）
         MapReader { proxy in
             mapCanvas
                 .simultaneousGesture(
                     SpatialTapGesture(coordinateSpace: .named(Self.mapSpace))
                         .onEnded { value in closeCardsIfMapTapped(at: value.location, proxy: proxy) }
+                )
+                .simultaneousGesture(
+                    SpatialTapGesture(count: 2, coordinateSpace: .named(Self.mapSpace))
+                        .onEnded { _ in pendingCardClose.cancel() }
                 )
         }
         .coordinateSpace(.named(Self.mapSpace))
@@ -630,16 +637,32 @@ struct PhotoMapView: View {
 
     /// 地図を押したら、写真のピンと観光スポットの札を下げる。**ピンの上を押したときは下げない**
     /// （ピンのボタンが札を開き直す合図と同時に届く・`MapCardDismiss`）
+    ///
+    /// Apple の地点の札も閉じる。地点を押すと地図の選び（`PlaceSelectableMap`）が別の地点に替わるので、
+    /// **閉じるのは少し待ってから**、その間に札が替わっていなければ（`MapCardDismiss.Snapshot`）。
+    /// 2回たたいて寄せたときは、2回目で予約を取り消す
     private func closeCardsIfMapTapped(at point: CGPoint, proxy: MapProxy) {
-        guard selected != nil || selectedOfficial != nil else { return }
+        guard selected != nil || selectedOfficial != nil || chosenPlace != nil else { return }
         let space = NamedCoordinateSpace.named(Self.mapSpace)
         var coordinates = model.pinLayout.pins.map(\.coordinate)
         coordinates += model.pinLayout.clusters.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
         coordinates += model.officialPins.map { CLLocationCoordinate2D(latitude: $0.coords.lat, longitude: $0.coords.lng) }
         let points = coordinates.compactMap { proxy.convert($0, to: space) }
         guard MapCardDismiss.closes(tap: point, pinPoints: points) else { return }
-        selected = nil
-        selectedOfficial = nil
+        let before = cardSnapshot
+        let ticket = pendingCardClose.schedule()
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: MapCardDismiss.closeDelayNanoseconds)
+            guard pendingCardClose.isCurrent(ticket), cardSnapshot == before else { return }
+            selected = nil
+            selectedOfficial = nil
+            chosenPlace = nil
+        }
+    }
+
+    /// いま出している札（閉じる予約の間に替わったかを見る）
+    private var cardSnapshot: MapCardDismiss.Snapshot {
+        MapCardDismiss.Snapshot(pin: selected?.id, official: selectedOfficial?.id, place: chosenPlace?.id)
     }
 
     /// **地点を押せるのは iOS 18 以降。** 17 では今まで通りの地図
@@ -1423,29 +1446,15 @@ struct PhotoMapView: View {
         // 札を1つの入れ物にしてから名前を付ける（2026-11-16 Mac run 1419・1423 の画面の木: 入れ物でないと、札の名前が
         // 中のボタン全部に付き、`map.officialCard.wish` などの名前が消えていた）。カメラの部屋の札と同じ形
         .accessibilityElement(children: .contain)
+        // 読み上げでは × の代わりに「閉じる」の操作（2本指でこする）で閉じる。入れ物にした後ろに付ける
+        // （入れ物にする前に付けた run 1419 では、札の名前が中のボタンにも付いた）
+        .accessibilityAction(.escape) { selected = nil }
         .accessibilityIdentifier("map.pinCard")
     }
 
     /// 札のボタンの高さ。主（経路）と線（撮影スポットを見る・場所の詳細）が横に並ぶので 44 にそろえる
     /// （2026-10-14 判断: v2 は主 50・副 44 だが、地図の上の札は地図を広く残したい。板 MapPlace も 46）
     nonisolated static let cardButtonHeight: CGFloat = JPHeight.secondaryButton
-    /// 札の「閉じる」の丸の見た目（板 MapPlace の 36・白 8%）。当たりは 44
-    nonisolated static let cardCloseSize: CGFloat = JPHeight.inlineButton
-
-    /// 札の右上の「閉じる」（v2 の板 MapPlace: 36 の丸・白 8% の地・白の ×）。当たりは 44
-    private func cardCloseButton(_ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: "xmark")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(WebTheme.foreground)
-                .frame(width: Self.cardCloseSize, height: Self.cardCloseSize)
-                .background(Color.white.opacity(0.08), in: Circle())
-                .webTappable()
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Labels.Common.close)
-    }
-
     /// 押した撮影スポット（台帳）の札。地点の札（`placeCard`）と同じ並び:
     ///
     ///     ◎ 高屋神社                                 ✕
@@ -1555,6 +1564,9 @@ struct PhotoMapView: View {
         // 札を1つの入れ物にしてから名前を付ける（2026-11-16 Mac run 1419・1423 の画面の木: 入れ物でないと、札の名前が
         // 中のボタン全部に付き、`map.officialCard.wish` などの名前が消えていた）。カメラの部屋の札と同じ形
         .accessibilityElement(children: .contain)
+        // 読み上げでは × の代わりに「閉じる」の操作（2本指でこする）で閉じる。入れ物にした後ろに付ける
+        // （入れ物にする前に付けた run 1419 では、札の名前が中のボタンにも付いた）
+        .accessibilityAction(.escape) { selectedOfficial = nil }
         .accessibilityIdentifier("map.officialCard")
     }
 
@@ -1574,7 +1586,7 @@ struct PhotoMapView: View {
             }
             Text(title)
                 .lineLimit(1)
-                // 大きな文字でも1行に（13pt × 0.85 ≈ 11pt までは縮めない: 本文の最小 12 を守る下限）
+                // 大きな文字でも1行に。縮めるのは 0.93 まで（13pt × 0.93 ≈ 12pt: 本文の最小 12 を守る下限）
                 .minimumScaleFactor(0.93)
         }
         .font(.footnote.weight(.semibold))
@@ -1649,7 +1661,7 @@ struct PhotoMapView: View {
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(2)
                 Spacer()
-                cardCloseButton { chosenPlace = nil }
+                // 2026-11-16 判断（A7・確かめ役の指摘）: ほかの2つの札とそろえて × をやめ、地図を押せば閉じる（`MapCardDismiss`）
             }
 
             placeInfo(place)
@@ -1683,6 +1695,8 @@ struct PhotoMapView: View {
             placePhotos(photos, spot: spot)
         }
         .modifier(MapCardStyle())
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(.escape) { chosenPlace = nil }
         .accessibilityIdentifier("map.placeCard")
     }
 

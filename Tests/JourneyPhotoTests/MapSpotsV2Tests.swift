@@ -171,16 +171,21 @@ final class MapSpotsV2Tests: XCTestCase {
 
     // MARK: - 地図の上の札（ピン・撮影スポット・地点）
 
-    /// 3枚の札は同じ形（ガラス・角 24・内側 16）、閉じるは 36 の丸（当たり 44）、
+    /// 3枚の札は同じ形（ガラス・角 24・内側 16）。2026-11-16 から × は無く、地図を押すか読み上げの「閉じる」で閉じる。
     /// 主（経路・白）と線（撮影スポットを見る・場所の詳細）は共通のカプセルで 44 にそろえる
     func testMapCardsShareTheV2Parts() throws {
         XCTAssertEqual(PhotoMapView.cardButtonHeight, 44)
-        XCTAssertEqual(PhotoMapView.cardCloseSize, 36)
         let text = try source(map)
         XCTAssertEqual(count(".modifier(MapCardStyle())", in: text), 3, "札の地が1つの形を通っていない")
         // 2026-11-16（使い勝手の見直し A7）: 写真のピンと観光スポットの札は × をやめ、地図を押して閉じる（`MapCardDismiss`）。
-        // × が残るのは Apple の地点の札だけ。観光スポットの札の下の段は「行きたい | 経路 | 観光スポットを見る」（`cardActionFace`）
-        XCTAssertEqual(count("cardCloseButton {", in: text), 1)
+        // 確かめ役の指摘（2026-11-16）で Apple の地点の札もそろえた。観光スポットの札の下の段は「行きたい | 経路 | 観光スポットを見る」
+        XCTAssertFalse(text.contains("cardCloseButton"), "札に × が残っている")
+        // 読み上げでは × の代わりに「閉じる」の操作。入れ物（.contain）にした後ろに付ける（前だと中のボタンの名前が消えた・run 1419）
+        for (ident, clear) in [("map.pinCard", "selected = nil"), ("map.officialCard", "selectedOfficial = nil"),
+                               ("map.placeCard", "chosenPlace = nil")] {
+            assertInOrder([".accessibilityElement(children: .contain)", ".accessibilityAction(.escape) { \(clear) }",
+                           ".accessibilityIdentifier(\"\(ident)\")"], in: text, "\(ident) の読み上げの閉じる")
+        }
         XCTAssertEqual(count(".jpPillButton(.primary, height: Self.cardButtonHeight)", in: text), 1)
         XCTAssertEqual(count(".jpPillButton(.outline, height: Self.cardButtonHeight)", in: text), 1)
         XCTAssertEqual(count("cardActionFace(", in: text), 4, "観光スポットの札の3つが同じ顔を通っていない")
@@ -188,10 +193,6 @@ final class MapSpotsV2Tests: XCTestCase {
         let card = segment(text, from: "struct MapCardStyle: ViewModifier {")
         assertInOrder([".padding(JPSpace.m)", ".jpGlass(in: RoundedRectangle(cornerRadius: JPRadius.xl)"],
                       in: card, "札の地")
-        let close = segment(text, from: "private func cardCloseButton(")
-        assertInOrder([".frame(width: Self.cardCloseSize, height: Self.cardCloseSize)",
-                       ".background(Color.white.opacity(0.08), in: Circle())", ".webTappable()",
-                       ".accessibilityLabel(Labels.Common.close)"], in: close, "札の閉じる")
         // 「観光スポットを見る」は1行に収める（`PlaceTermWordingTests` と同じ決まり）。札の顔は 13pt なので縮めても 12pt まで
         assertInOrder(["cardActionFace(L(\"観光スポットを見る\"", "fitsText: true", "private func cardActionFace(",
                        ".lineLimit(1)", ".minimumScaleFactor(0.93)", ".font(.footnote.weight(.semibold))"],

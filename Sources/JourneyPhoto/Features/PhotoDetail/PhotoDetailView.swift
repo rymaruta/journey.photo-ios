@@ -405,6 +405,8 @@ struct PhotoDetailView: View {
         // 起きなければ・印が後なら、今までどおり読み直すだけで害は無い
         .task(id: PhotoDetailRules.reloadKey(userId: auth.userId, photoId: current.id, published: shown.published)) {
             model.setUser(auth.userId)
+            // 写真・人が替わったら、前の読みで続き（いいね・保存）を決めない。読み終えたら下で今の人を入れる
+            reactionsReadyFor = nil
             let plan = PhotoDetailRules.rereadPlan(current.id, contentFor: model.commentsPhotoId,
                                                    viewerClosedAt: viewerClosedAt, now: Date())
             if plan.syncFromStores { showStoredLike() }
@@ -751,14 +753,18 @@ struct PhotoDetailView: View {
     private func doubleTapLike(_ item: Photo) async {
         // 束を払っている途中で、叩いた写真がもう今の1枚でなければ何もしない（隣の写真に付けない）
         guard item.id == current.id else { return }
-        let action = DoubleTapLike.action(isZoomed: false, alreadyLiked: model.liked,
+        // いいねの状態が**今の1枚の分**でなければ（まだ読んでいない）、何もしない。ハートも出さない
+        // ——何も送らないのに付いたように見せない（確かめ役の指摘・2026-11-16）
+        let liked = PhotoDetailRules.likedForDoubleTap(modelPhotoId: model.photoId, currentId: current.id,
+                                                       liked: model.liked)
+        if auth.userId != nil, liked == nil { return }
+        let action = DoubleTapLike.action(isZoomed: false, alreadyLiked: liked ?? false,
                                           signedIn: auth.userId != nil, acceptsLike: acceptsReactions,
                                           signInResolving: auth.isResolving)
         switch action {
         case .like:
             showHeartBurst()
-            // 下のハートと同じ道（端末の控えとホームの数にも渡す）。答えの前に外れていたら何もしない
-            guard model.photoId == current.id, !model.liked else { return }
+            // 下のハートと同じ道（端末の控えとホームの数にも渡す）
             _ = await toggleLikeHere()
         case .burstOnly:
             showHeartBurst()
@@ -3290,6 +3296,12 @@ enum PhotoDetailRules {
     /// 気に入った人をその場でフォローする道が無かった。押したら登録の側でログインの画面を開き、ログインできたら
     /// そのままフォローする（`SignInFollowUp`）。起動直後のログインの確認中（`signInResolving`）は出さない
     /// ——ログイン済みの人に一瞬「フォロー」が出て、押すとログインの画面が開く
+    /// 2回たたいたときに使う「いいね済みか」。**いいねの状態が今の1枚の分のときだけ**値を返す（2026-11-16 A1）。
+    /// 束を払った直後など、まだ前の写真の値のときは nil（何も送らず、ハートも出さない）
+    static func likedForDoubleTap(modelPhotoId: String?, currentId: String, liked: Bool) -> Bool? {
+        modelPhotoId == currentId ? liked : nil
+    }
+
     static func showsFollow(isMine: Bool, signedIn: Bool, signInResolving: Bool = false, isFollowing: Bool?,
                             lookupFailed: Bool, ownerBlocked: Bool) -> Bool {
         guard !isMine, !ownerBlocked else { return false }

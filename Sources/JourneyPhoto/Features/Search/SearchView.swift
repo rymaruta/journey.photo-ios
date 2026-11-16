@@ -185,7 +185,7 @@ struct SearchView: View {
                             }
                             // 2026-11-16 判断（A10）: 0件の間は種類のチップも畳む（キーボードの上に「見つかりませんでした」と
                             // 「地図で撮影地を探す」だけを置く）。選んでいる種類があれば外せるよう残す
-                            if Self.showsTimeChips(zeroHit: zeroHit, timeFilterEmpty: model.category == nil) {
+                            if Self.showsCategoryChips(zeroHit: zeroHit, categoryChosen: model.category != nil) {
                                 categoryChips
                             }
                         }
@@ -1492,6 +1492,11 @@ struct SearchView: View {
 
     /// 季節・時間帯のチップを出すか。**0件の間は畳む**（チップの列が0件の文をキーボードの裏へ押し下げていた）。
     /// ただし季節・時間帯を選んでいる間は残す（外す手立てを消さない）
+    /// 種類のチップを出すか（2026-11-16 判断 A10）。季節・時間帯と同じく**0件の間は畳み**、選んでいる種類があれば外せるよう残す
+    nonisolated static func showsCategoryChips(zeroHit: Bool, categoryChosen: Bool) -> Bool {
+        !zeroHit || categoryChosen
+    }
+
     nonisolated static func showsTimeChips(zeroHit: Bool, timeFilterEmpty: Bool) -> Bool {
         !zeroHit || !timeFilterEmpty
     }
