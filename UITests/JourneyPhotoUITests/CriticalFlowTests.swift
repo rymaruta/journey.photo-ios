@@ -835,7 +835,12 @@ final class CriticalFlowTests: XCTestCase {
         openFirstFeedPhoto(app)
         let like = app.buttons["photo.like"].firstMatch
         let hero = app.buttons["detail.hero"].firstMatch
-        XCTAssertTrue(hero.waitForExistence(timeout: 10), "写真の詳細の写真が無い")
+        // 調べ（2026-11-16 run 1419 で `buttons["detail.hero"]` が見つからなかった）: 同じ名前の要素の種類と枠を失敗の文に出す
+        let anyHero = app.descendants(matching: .any).matching(identifier: "detail.hero")
+        _ = anyHero.firstMatch.waitForExistence(timeout: 10)
+        let heroProbe = anyHero.allElementsBoundByIndex.map { "type=\($0.elementType.rawValue) frame=\($0.frame) label=\($0.label)" }
+        print("measured detailHero \(heroProbe)")
+        XCTAssertTrue(hero.waitForExistence(timeout: 5), "写真の詳細の写真が Button として無い（同じ名前の要素: \(heroProbe)）")
         print("measured detailBar likeMinY=\(like.frame.minY) heroMaxY=\(hero.frame.maxY)")
         XCTAssertTrue(like.isHittable, "送らないといいねに届かない（操作の段が写真の下に無い）")
         XCTAssertLessThan(abs(like.frame.minY - hero.frame.maxY), 24,
@@ -931,7 +936,14 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 10), "ピンを押しても観光スポットの札が出ない")
         XCTAssertFalse(card.buttons["閉じる"].exists, "札に × が残っている")
         let wish = app.buttons["map.officialCard.wish"].firstMatch
-        XCTAssertTrue(wish.waitForExistence(timeout: 5) && wish.isHittable, "札に「行きたい」が無い")
+        // 調べ（2026-11-16 run 1419 で見つからないか押せなかった）: 有無・押せるか・枠と札の枠・同じ名前の要素を失敗の文に出す
+        let wishExists = wish.waitForExistence(timeout: 5)
+        let anyWish = app.descendants(matching: .any).matching(identifier: "map.officialCard.wish").allElementsBoundByIndex
+            .map { "type=\($0.elementType.rawValue) frame=\($0.frame)" }
+        let wishProbe = "exists=\(wishExists) hittable=\(wishExists && wish.isHittable) frame=\(wish.frame) card=\(card.frame) "
+            + "window=\(app.windows.firstMatch.frame) any=\(anyWish) cardButtons=\(card.buttons.allElementsBoundByIndex.map { "\($0.identifier)|\($0.label)|\($0.frame)" })"
+        print("measured mapCardWish \(wishProbe)")
+        XCTAssertTrue(wishExists && wish.isHittable, "札に「行きたい」が無いか押せない（\(wishProbe)）")
         XCTAssertTrue(app.buttons["map.officialCard.directions"].firstMatch.exists, "札に「経路」が無い")
         XCTAssertTrue(app.buttons["map.officialCard.open"].firstMatch.exists, "札に「スポットを見る」が無い")
         print("measured mapCard wish=\(wish.frame) directions=\(app.buttons["map.officialCard.directions"].firstMatch.frame) open=\(app.buttons["map.officialCard.open"].firstMatch.frame)")
