@@ -1420,6 +1420,9 @@ struct PhotoMapView: View {
             // 2026-11-16 判断（使い勝手の見直し A7）: 右上の × はやめ、地図を押せば閉じる（`MapCardDismiss`）
         }
         .modifier(MapCardStyle())
+        // 札を1つの入れ物にしてから名前を付ける（2026-11-16 Mac run 1419・1423 の画面の木: 入れ物でないと、札の名前が
+        // 中のボタン全部に付き、`map.officialCard.wish` などの名前が消えていた）。カメラの部屋の札と同じ形
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("map.pinCard")
     }
 
@@ -1549,6 +1552,9 @@ struct PhotoMapView: View {
             }
         }
         .modifier(MapCardStyle())
+        // 札を1つの入れ物にしてから名前を付ける（2026-11-16 Mac run 1419・1423 の画面の木: 入れ物でないと、札の名前が
+        // 中のボタン全部に付き、`map.officialCard.wish` などの名前が消えていた）。カメラの部屋の札と同じ形
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("map.officialCard")
     }
 
