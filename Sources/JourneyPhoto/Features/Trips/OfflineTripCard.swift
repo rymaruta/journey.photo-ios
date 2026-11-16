@@ -20,7 +20,8 @@ struct OfflineTripCard: View {
     /// **Pro でない人の札（`.free`・閉じられない「PRO」の案内）だけを下に**出す。日程を先に見せるため。
     /// 保存前・保存中・保存済みなど Pro の人の札は今どおり上（保存の進み具合や圏外の前の確かめは先に見えてほしい）
     var slot: Slot = .top
-    /// Pro か（読めなければ nil）。上と下の2枚で1つを持つ（日程の画面が持つ）。**読みに行くのは上の1枚だけ**
+    /// Pro か（読めなければ nil）。**読みに行くのは日程の画面**（札を置かない間も読む・`TripPlanDetailView.offlineSlot`）。
+    /// 札は案内から戻ったときに確かめ直して書き戻す
     @Binding var isPro: Bool?
 
     enum Slot { case top, bottom }
@@ -34,10 +35,13 @@ struct OfflineTripCard: View {
     @State private var accessError: String?
 
     private var status: OfflineSaveStatus { offline.status(plan.planId) }
-    private var change: OfflineTripPrint.Change {
-        offline.manifest(plan.planId).map { $0.print.change(to: OfflineTripPrint(plan)) } ?? .none
+    private var phase: OfflineSaveStatus.Phase { Self.phase(plan: plan, offline: offline, isPro: isPro) }
+
+    /// 札の姿（日程の画面も、札を並びに置くかを決めるのに使う）
+    static func phase(plan: TripPlan, offline: OfflineTripStore, isPro: Bool?) -> OfflineSaveStatus.Phase {
+        let change = offline.manifest(plan.planId).map { $0.print.change(to: OfflineTripPrint(plan)) } ?? .none
+        return offline.status(plan.planId).phase(isPro: isPro, change: change)
     }
-    private var phase: OfflineSaveStatus.Phase { status.phase(isPro: isPro, change: change) }
 
     /// この場所にこの姿の札を出すか（`slot`）。`.hidden` はどちらにも出さない
     nonisolated static func shows(_ phase: OfflineSaveStatus.Phase, in slot: Slot) -> Bool {
@@ -49,20 +53,12 @@ struct OfflineTripCard: View {
     }
 
     var body: some View {
+        // 日程の画面は、この場所に出す姿のときだけ札を並びに置く（`TripPlanDetailView.offlineSlot`）。
+        // 高さ 0 の札を並びに置くと、その分だけ縦の間隔 14 が余分に空いていた（2026-11-16 確かめ役の指摘）。
+        // 🔴 Pro かどうかを読む `.task` は日程の画面が持つ（札を置かない間も走る。2026-10-16 の
+        // 「中身が空で .task が走らず札が出ない」を繰り返さない）
         Group {
-            if Self.shows(phase, in: slot) {
-                if case .free = phase { freeCard } else { card }
-            } else {
-                // 🔴 **EmptyView にしない**（2026-10-16 判断）。最初は Pro かどうか読めていない（nil）ので
-                // `.hidden` になり、中身が EmptyView だけだと下の `.task` が走らず、`isPro` が nil のまま
-                // 札がいつまでも出なかった（StoriesRow の 1.1.5 と同じ形）。高さ 0 の見えない1枚を置く
-                StoriesRow.loadingAnchor
-            }
-        }
-        .task {
-            // Pro かどうかはサーバーが決める（読めなければ nil）。上の1枚だけが読む（2枚で2回読まない）
-            guard slot == .top else { return }
-            isPro = (try? await environment.profiles.myProfile())?.isPro
+            if case .free = phase { freeCard } else { card }
         }
         .fullScreenCover(isPresented: $showPaywall) { PaywallView() }
         .onChange(of: showPaywall) { _, shown in

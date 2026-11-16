@@ -781,6 +781,8 @@ struct TripPlanDetailView: View {
         }
         // 移動の見込みを聞く（開いているプランの区間だけ・同じ区間は控え）
         .task(id: layout.key) { requestTravel(layout.all) }
+        // 電波なしの札の「Pro か」（サーバーが決める・読めなければ nil）。札を置かない間も読む（`offlineSlot`）
+        .task { offlinePro = (try? await environment.profiles.myProfile())?.isPro }
     }
 
     /// 日程の画面の中身（`ScrollViewReader` の中・今日の日まで送るため proxy を受ける）
@@ -808,8 +810,7 @@ struct TripPlanDetailView: View {
 
                 // 電波なしで使えるようにする（板 72・日付の下）。比べるのはサーバーの姿のプラン。
                 // 2026-11-16 判断（A6）: ここに出すのは Pro の人の札だけ。Pro でない人の「PRO」の案内は最後の日の下
-                OfflineTripCard(plan: plan, index: index, places: places, sourcesReady: gotIndex && gotPhotos,
-                                slot: .top, isPro: $offlinePro)
+                offlineSlot(plan, .top)
 
                 if let error = model.errorMessage {
                     Text(error)
@@ -845,8 +846,7 @@ struct TripPlanDetailView: View {
                             .foregroundStyle(WebTheme.text3)
                     }
                     // Pro でない人の「電波なしで使えるようにする PRO」（2026-11-16 判断・A6: 日付と1日目の間から、最後の日の下へ）
-                    OfflineTripCard(plan: plan, index: index, places: places, sourcesReady: gotIndex && gotPhotos,
-                                    slot: .bottom, isPro: $offlinePro)
+                    offlineSlot(plan, .bottom)
                     deleteCard(plan)
                 }
             }
@@ -868,6 +868,16 @@ struct TripPlanDetailView: View {
             // 並びが組み上がってから送る（読めた直後のコマでは、まだ下の日の高さが決まっていない）
             try? await Task.sleep(nanoseconds: 120_000_000)
             proxy.scrollTo(Self.dayAnchor(index), anchor: .top)
+        }
+    }
+
+    /// 電波なしの札（上か下）。**この場所に出す姿のときだけ並びに置く**（出さない側に高さ 0 の札を置くと、縦の間隔 14 が
+    /// 余分に空く）。Pro かどうかは画面が読む（`offlinePro`・`editor` の `.task`）
+    @ViewBuilder
+    private func offlineSlot(_ plan: TripPlan, _ slot: OfflineTripCard.Slot) -> some View {
+        if OfflineTripCard.shows(OfflineTripCard.phase(plan: plan, offline: offline, isPro: offlinePro), in: slot) {
+            OfflineTripCard(plan: plan, index: index, places: places, sourcesReady: gotIndex && gotPhotos,
+                            slot: slot, isPro: $offlinePro)
         }
     }
 
@@ -910,7 +920,7 @@ struct TripPlanDetailView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(field.map { "\($0.label)、\($0.value)" } ?? L("日付を入れる", "Set dates"))
+        .accessibilityLabel(field.map { $0.label + L("、", ", ") + $0.value } ?? L("日付を入れる", "Set dates"))
         .accessibilityHint(L("押すと暦が開きます", "Opens the calendar"))
         .accessibilityIdentifier("tripPlan.dates")
     }

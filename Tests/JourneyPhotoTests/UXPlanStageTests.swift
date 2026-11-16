@@ -213,6 +213,12 @@ final class UXPlanStageTests: XCTestCase {
         XCTAssertNil(TripDraft.periodField(start: nil, end: nil))
         XCTAssertNil(TripDraft.periodField(start: "2026-02-30", end: nil), "実在しない日は出さない")
         XCTAssertEqual(TripDraft.periodField(start: nil, end: "2026-12-17")?.value, L("〜 12月17日（木）", "〜 Dec 17 (Thu)"))
+        // 「出発だけ」は日帰りと言わない（帰着はまだ入れていないだけ・確かめ役の指摘）
+        let startOnly = TripDraft.periodField(start: "2026-12-16", end: nil)
+        XCTAssertEqual(startOnly?.value, L("12月16日（水）〜", "Dec 16 (Wed)〜"))
+        XCTAssertEqual(startOnly?.label, L("日付", "Dates"), "出発だけのプランに泊数（日帰り）を出している")
+        // 作る流れの1行（`rangeLine`）は今どおり、帰着が無ければ日帰り（作る流れで出発だけ押した姿）
+        XCTAssertNotNil(TripDraft.rangeLine(start: "2026-12-16", end: nil))
         XCTAssertEqual(TripDraft.periodField(start: "2026-12-17", end: "2026-12-16")?.value,
                        L("12月17日（木）〜 12月16日（水）", "Dec 17 (Thu)〜 Dec 16 (Wed)"))
         XCTAssertEqual(TripDraft.periodField(start: "2026-12-17", end: "2026-12-16")?.label, L("日付", "Dates"))
@@ -239,6 +245,21 @@ final class UXPlanStageTests: XCTestCase {
         XCTAssertEqual(dayTrip.end, "2026-12-16"); XCTAssertTrue(dayTrip.closes, "同じ日をもう一度で日帰り")
     }
 
+    /// 開いた時に「出発だけ」入っていたプラン（Web で作った）: 最初の押しは出発の選び直し。1回で知らない期間を入れて閉じない
+    func testDatesSheetRestartsAStartOnlyPlan() {
+        XCTAssertTrue(TripPlanDatesSheet.restartsOnFirstTap(start: "2026-12-16", end: nil))
+        XCTAssertFalse(TripPlanDatesSheet.restartsOnFirstTap(start: nil, end: nil))
+        XCTAssertFalse(TripPlanDatesSheet.restartsOnFirstTap(start: "2026-12-16", end: "2026-12-17"))
+        let first = TripPlanDatesSheet.tapped(start: "2026-12-16", end: nil, day: "2026-12-20", restart: true)
+        XCTAssertEqual(first.start, "2026-12-20"); XCTAssertNil(first.end)
+        XCTAssertFalse(first.closes, "最初の1回で帰着が入って閉じた")
+        let second = TripPlanDatesSheet.tapped(start: first.start, end: first.end, day: "2026-12-21")
+        XCTAssertEqual(second.end, "2026-12-21"); XCTAssertTrue(second.closes)
+        let create = try? source("Features/Trips/TripCreateView.swift")
+        XCTAssertTrue(create?.contains("_restart = State(initialValue: Self.restartsOnFirstTap(start: start, end: end))") ?? false)
+        XCTAssertTrue(create?.contains("Self.tapped(start: start, end: end, day: day, restart: restart)") ?? false)
+    }
+
     /// 欄1つ（端末の日付ピッカー2つをやめた）→ 作る流れと同じ暦と近くの休み → 決めた値は start・end へ（自動で保存）
     func testDateFieldOpensTheSameCalendar() throws {
         let detail = try source("Features/Trips/TripPlanDetailView.swift")
@@ -249,7 +270,8 @@ final class UXPlanStageTests: XCTestCase {
                       in: header, "日付の欄 → 誘う → 仲間の段 → 暦のシート")
         let field = slice(detail, from: "private func dateField()", to: "private func inviteButton(")
         assertInOrder(["TripDraft.periodField(start: start, end: end)", "editingDates = true",
-                       "TripStyle.dateFieldHeight", "\"tripPlan.dates\""], in: field, "日付の欄")
+                       "TripStyle.dateFieldHeight", "$0.label + L(\"、\", \", \") + $0.value", "\"tripPlan.dates\""],
+                      in: field, "日付の欄（英語の読み上げは「, 」で区切る）")
         let create = try source("Features/Trips/TripCreateView.swift")
         let sheet = slice(create, from: "struct TripPlanDatesSheet: View {", to: "// MARK: - ③ 下書き")
         assertInOrder(["TripHolidayChips(pairs: pairs, start: start, end: end)", "TripCalendar(month: $month",
@@ -275,10 +297,16 @@ final class UXPlanStageTests: XCTestCase {
     func testPlanShowsDaysFirst() throws {
         let detail = try source("Features/Trips/TripPlanDetailView.swift")
         let editor = slice(detail, from: "private func editor(_ plan: TripPlan)", to: "nonisolated static func dayAnchor")
-        assertInOrder(["header(plan)", "TripAICard(", "slot: .top, isPro: $offlinePro", "ForEach(Array(days.enumerated())",
-                       "addDayButton", "slot: .bottom, isPro: $offlinePro", "deleteCard(plan)"], in: editor, "日程を先に")
+        assertInOrder(["header(plan)", "TripAICard(", "offlineSlot(plan, .top)", "ForEach(Array(days.enumerated())",
+                       "addDayButton", "offlineSlot(plan, .bottom)", "deleteCard(plan)"], in: editor, "日程を先に")
+        // 出さない側は並びに何も置かない（高さ 0 の札で縦の間隔 14 が余分に空かない・確かめ役の指摘）
+        let slot = slice(detail, from: "private func offlineSlot(", to: "nonisolated static func dayAnchor")
+        assertInOrder(["if OfflineTripCard.shows(OfflineTripCard.phase(plan: plan, offline: offline, isPro: offlinePro), in: slot) {",
+                       "OfflineTripCard(plan: plan"], in: slot, "出す姿のときだけ置く")
+        XCTAssertFalse(slot.contains("} else {"), "出さない側に見えない札を置いている")
+        // Pro かどうかは画面が1回だけ読む（2枚で2回読まない・札を置かない間も読む）
+        XCTAssertEqual(detail.components(separatedBy: "environment.profiles.myProfile()").count - 1, 1)
         let card = try source("Features/Trips/OfflineTripCard.swift")
-        XCTAssertTrue(card.contains("guard slot == .top else { return }"), "下の1枚も Pro かを読みに行く（2回読む）")
         XCTAssertTrue(card.contains("@Binding var isPro: Bool?"))
     }
 
@@ -306,8 +334,15 @@ final class UXPlanStageTests: XCTestCase {
         XCTAssertEqual(empty.eyebrow, L("押すだけで直す", "Quick changes"))
         XCTAssertEqual(empty.text, TripAITweak.allCases.map(\.title).joined(separator: L("、", ", ")))
 
+        XCTAssertEqual(TripAICard.foldedSpoken(reason: "朝に向く所を先に"),
+                       L("並べた理由、朝に向く所を先に", "Why this order, 朝に向く所を先に"))
         let card = try source("Features/Trips/AI/TripAICard.swift")
         XCTAssertTrue(card.contains("@State private var open = false"), "はじめから開いている")
+        // 子を畳む（.ignore）とボタンの印が落ち、UI テストが Button として見つけられない（Mac run 1420）
+        let foldedButton = slice(card, from: "Button { open = true }", to: "\"tripAI.folded\"")
+        assertInOrder([".accessibilityElement(children: .ignore)", ".accessibilityAddTraits(.isButton)"],
+                      in: foldedButton, "畳んだ行のボタンの印")
+        XCTAssertFalse(foldedButton.contains("、\\("), "読み上げの区切りが日本語の「、」のまま")
         XCTAssertTrue(card.contains("if open { openCard } else { foldedCard }"))
         let fold = slice(card, from: "private var foldedCard: some View {", to: "private var openCard: some View {")
         assertInOrder([".lineLimit(1)", "chevron.down", "WebTheme.minTapTarget", "JPRadius.field", "\"tripAI.folded\"", "band"],

@@ -63,6 +63,12 @@ struct TripAICard: View {
         return (L("並べた理由", "Why this order"), trimmed)
     }
 
+    /// 畳んだ行の読み上げ（眉と1行。区切りは日本語「、」・英語「, 」）
+    nonisolated static func foldedSpoken(reason: String) -> String {
+        let line = foldedLine(reason: reason)
+        return line.eyebrow + L("、", ", ") + line.text
+    }
+
     var body: some View {
         if open { openCard } else { foldedCard }
     }
@@ -98,7 +104,10 @@ struct TripAICard: View {
             }
             .buttonStyle(.plain)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(line.eyebrow)、\(line.text)")
+            .accessibilityLabel(Self.foldedSpoken(reason: note.reason))
+            // 子を畳む（`.ignore`）とボタンの印が落ちる（Mac run 1420 で `tripAI.folded` が Button として見つからなかった。
+            // 同じ件の手本: DMSpotCard の run 1096・PhotoDetailView の run 1322）。印を付け直す
+            .accessibilityAddTraits(.isButton)
             .accessibilityHint(L("押すと開きます", "Opens the details"))
             .accessibilityIdentifier("tripAI.folded")
             band

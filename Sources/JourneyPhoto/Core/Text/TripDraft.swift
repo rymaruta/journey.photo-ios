@@ -214,7 +214,9 @@ enum TripDraft {
     /// Web で作った「片方だけ」「帰着が出発より前」のプランも、入っている日付をそのまま見せる（開いただけで書き換えない）
     static func periodField(start: String?, end: String?) -> (label: String, value: String)? {
         let head = L("日付", "Dates")
-        if let parts = rangeParts(start: start, end: end) {
+        // 泊数を出すのは出発と帰着の両方があるときだけ（Web で作った「出発だけ」のプランを「日帰り」と言わない。
+        // 帰着が無いのは日帰りと決めたのではなく、まだ入れていないだけ）
+        if start != nil, end != nil, let parts = rangeParts(start: start, end: end) {
             return ("\(head)\u{3000}\(parts.stay)", parts.dates)
         }
         let s = TripPlanText.date(fromYMD: start).map(fullMonthDay)

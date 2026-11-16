@@ -3716,6 +3716,8 @@ final class ScreenshotTests: XCTestCase {
             } else {
                 unreached(app, "tripAI.fold")
             }
+        } else {
+            unreached(app, "tripAI.folded")
         }
         let swap = app.buttons["tripAI.swap"].firstMatch
         if swap.waitForExistence(timeout: 5), swap.isHittable {
