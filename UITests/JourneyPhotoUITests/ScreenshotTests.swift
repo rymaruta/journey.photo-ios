@@ -10255,6 +10255,9 @@ final class ScreenshotTests: XCTestCase {
                         + " / probe=\(String(describing: app.descendants(matching: .any)["dm.probe"].firstMatch.value))"
                         + " / staticTexts=\(app.staticTexts.allElementsBoundByIndex.suffix(8).map(\.label))") { _ in }
                     XCTAssertTrue(gone, "取り消した吹き出しが会話に残っている")
+                    // 読み直しで取り消した通が戻っていない（画面の外に戻っても気づけるように・run 1430 は readded=1 でも gone=true だった）
+                    let probeValue = String(describing: app.descendants(matching: .any)["dm.probe"].firstMatch.value)
+                    XCTAssertTrue(probeValue.contains("readded=0"), "読み直しで取り消した通が戻った（\(probeValue)）")
                     XCTAssertTrue(String(describing: field.value).contains(mineText), "取り消した文が入力欄に戻らない")
                 }
             }

@@ -178,6 +178,33 @@ final class UXQuickWinsTalkPostTests: XCTestCase {
         XCTAssertEqual(DMText.acceptedNotice, L("承認しました。受信箱に移りました", "Accepted. Moved to your inbox."))
     }
 
+    /// 見本の通信（UI テストの DM）で取り消した通は、会話を読み直しても戻ってこない（2026-11-16・86m5b が4回中2回落ちた件。
+    /// run 1430 の記録で、取り消した `preview-dm-0-2` が読み直しで戻っていた: `readded=1 count=10`）
+    func testPreviewDMUnsentMessageDoesNotComeBack() async throws {
+        let store = PreviewBackend.Store()
+        let id = DMRules.conversationId("me", PreviewBackend.dmPeers[0].id)
+        func call(_ method: String, _ route: [String], _ body: [String: Any]? = nil) async -> PreviewBackend.Reply {
+            await PreviewBackend.reply(method: method, route: route,
+                                       body: body.flatMap { try? JSONSerialization.data(withJSONObject: $0) },
+                                       userId: "me", store: store, dm: true, publicFeed: { [] }, publicLikes: { _ in nil })
+        }
+        let before = try JSONDecoder.api.decode(DMConversation.self, from: await call("GET", ["dm", id]).body)
+        XCTAssertTrue(before.items.contains { $0.id == "preview-dm-0-2" })
+        XCTAssertFalse(before.full)
+        let unsend = await call("POST", ["dm", id, "messages"], ["unsend": "preview-dm-0-2"])
+        XCTAssertEqual(unsend.status, 200)
+        let after = try JSONDecoder.api.decode(DMConversation.self, from: await call("GET", ["dm", id]).body)
+        XCTAssertFalse(after.items.contains { $0.id == "preview-dm-0-2" }, "取り消した通が読み直しで戻ってくる")
+        XCTAssertTrue(after.full, "全部を返したのに full が無い（画面が差分として足してしまう）")
+        XCTAssertEqual(after.items.count, before.items.count - 1)
+        // 画面の読み直しの扱い（`refreshSince`）: full なら置き換える
+        var log = DMThreadLog()
+        log.replace(with: before.items)
+        _ = log.unsend("preview-dm-0-2")
+        log.replace(with: after.items)
+        XCTAssertFalse(log.messages.contains { $0.id == "preview-dm-0-2" })
+    }
+
     // MARK: - A11 投稿を書く画面
 
     func testStatusFromPhoto() async throws {
