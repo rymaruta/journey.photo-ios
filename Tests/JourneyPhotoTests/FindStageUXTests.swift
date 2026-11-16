@@ -48,6 +48,27 @@ final class FindStageUXTests: XCTestCase {
         XCTAssertGreaterThan(MapCardDismiss.closeDelayNanoseconds, 300_000_000)
     }
 
+    /// 🔴 **2回目の押しは予約し直さない**（Mac run 1436: 2回押しの取り消しの後に2回目の1回押しが届き、閉じていた）。
+    /// 間をあけた押しは、また予約する
+    func testSecondTapOfADoubleTapDoesNotReschedule() async {
+        var pending = MapCardDismiss.Pending()
+        let t0 = Date(timeIntervalSince1970: 1000)
+        let first = pending.tap(at: t0)
+        XCTAssertNotNil(first)
+        pending.cancel()   // 2回押しの合図が先に届いた
+        XCTAssertNil(pending.tap(at: t0.addingTimeInterval(0.2)), "2回目の押しで閉じる予約をし直した")
+        XCTAssertFalse(pending.isCurrent(first!))
+        // 2回押しの合図が後から届いても、先に届いても、閉じる予約は残らない
+        var other = MapCardDismiss.Pending()
+        let a = other.tap(at: t0)!
+        XCTAssertNil(other.tap(at: t0.addingTimeInterval(0.25)))
+        XCTAssertFalse(other.isCurrent(a), "2回目の押しで1回目の予約が残った")
+        // 間をあけた押しは、また予約する
+        let later = other.tap(at: t0.addingTimeInterval(2))
+        XCTAssertNotNil(later)
+        XCTAssertTrue(other.isCurrent(later!))
+    }
+
     /// 待つ間に札が替わったら（別の Apple の地点を押した）閉じない
     func testSnapshotDetectsANewCard() async {
         let before = MapCardDismiss.Snapshot(pin: nil, official: nil, place: "a")

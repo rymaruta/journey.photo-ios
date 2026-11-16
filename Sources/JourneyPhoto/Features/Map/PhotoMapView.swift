@@ -670,7 +670,8 @@ struct PhotoMapView: View {
         let points = coordinates.compactMap { proxy.convert($0, to: space) }
         guard MapCardDismiss.closes(tap: point, pinPoints: points) else { return }
         let before = cardSnapshot
-        let ticket = pendingCardClose.schedule()
+        // 2回目の押し（2回たたいて寄せる）なら予約しない（`MapCardDismiss.Pending.tap`）
+        guard let ticket = pendingCardClose.tap(at: Date()) else { return }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: MapCardDismiss.closeDelayNanoseconds)
             guard pendingCardClose.isCurrent(ticket), cardSnapshot == before else { return }

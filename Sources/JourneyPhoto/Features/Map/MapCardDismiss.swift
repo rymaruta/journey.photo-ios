@@ -37,9 +37,26 @@ enum MapCardDismiss {
         var place: String?
     }
 
-    /// 閉じる予約。新しく予約するか取り消すと、前の予約は効かなくなる
+    /// 2回たたいたとみなす間（1回目から2回目まで）
+    static let doubleTapWindow: TimeInterval = 0.4
+
+    /// 閉じる予約。新しく予約するか取り消すと、前の予約は効かなくなる。
+    ///
+    /// 🔴 **2回目の押しは予約し直さず取り消す**（Mac run 1436 の数: 2回たたくと、1回押しの合図が2回・2回押しの合図が1回届き、
+    /// 2回押しの取り消しの**後に**2回目の1回押しが新しく予約して、札が閉じていた）。前の押しから `doubleTapWindow` 以内なら取り消す
     struct Pending {
         private var current = 0
+        private var lastTap: Date?
+
+        /// 地図を1回押した。予約したらその番号、2回目の押しなら取り消して nil
+        mutating func tap(at now: Date) -> Int? {
+            defer { lastTap = now }
+            if let lastTap, now.timeIntervalSince(lastTap) < MapCardDismiss.doubleTapWindow {
+                cancel()
+                return nil
+            }
+            return schedule()
+        }
 
         mutating func schedule() -> Int {
             current += 1
