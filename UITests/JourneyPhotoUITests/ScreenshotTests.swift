@@ -10242,7 +10242,13 @@ final class ScreenshotTests: XCTestCase {
                     let gone = !app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", mineText))
                         .allElementsBoundByIndex.contains { $0.frame.minY < field.frame.minY }
                     shoot(app, gone ? "86m5b-メッセージ（取り消した文が欄に戻る）" : "86m5b-メッセージ（取り消した吹き出しが残る）")
-                    XCTContext.runActivity(named: "86m5b の状態: gone=\(gone) / field.value=\(String(describing: field.value))") { _ in }
+                    // 2026-11-16（run 1421 で gone=false・run 1415 では true）: 残った吹き出しの位置・知らせの字・会話の見張りを残す（推定で直さない）
+                    let left = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", mineText)).allElementsBoundByIndex
+                        .map { "\($0.frame)" }.joined(separator: ";")
+                    XCTContext.runActivity(named: "86m5b の状態: gone=\(gone) / field.value=\(String(describing: field.value))"
+                        + " / field.frame=\(field.frame) / left=\(left)"
+                        + " / probe=\(String(describing: app.descendants(matching: .any)["dm.probe"].firstMatch.value))"
+                        + " / staticTexts=\(app.staticTexts.allElementsBoundByIndex.suffix(8).map(\.label))") { _ in }
                     XCTAssertTrue(gone, "取り消した吹き出しが会話に残っている")
                     XCTAssertTrue(String(describing: field.value).contains(mineText), "取り消した文が入力欄に戻らない")
                 }

@@ -102,6 +102,29 @@ final class UXQuickWinsTalkPostTests: XCTestCase {
         XCTAssertTrue(page.contains("messagesUnread: messagesUnread"), "マイページに受信箱の未読が届いていない")
     }
 
+    /// マイページは、親から渡す閉じた処理が新しくなっただけでは描き直さない。未読の値が変わったら描き直す
+    /// （`MyPageView+Equatable`・ホームの `GalleryView+Equatable` と同じ形）
+    func testMyPageComparesOnlyWhatItDraws() async throws {
+        XCTAssertEqual(MyPageViewInputs(unread: 2, messagesUnread: false), MyPageViewInputs(unread: 2, messagesUnread: false))
+        XCTAssertNotEqual(MyPageViewInputs(unread: 2, messagesUnread: false), MyPageViewInputs(unread: 3, messagesUnread: false))
+        XCTAssertNotEqual(MyPageViewInputs(unread: 2, messagesUnread: false), MyPageViewInputs(unread: 2, messagesUnread: true))
+        let equatable = try source("Features/Profile/MyPageView+Equatable.swift")
+        XCTAssertTrue(equatable.contains("lhs.drawnInputs == rhs.drawnInputs"), "== が描く値で比べていない")
+        XCTAssertTrue(equatable.contains("MyPageViewInputs(unread: unread, messagesUnread: messagesUnread)"))
+        // 親から渡す値が増えたら、ここも見直す（比べ忘れると、その値が変わっても描き直さない）
+        let file = try source("Features/Profile/MyPageView.swift")
+        guard let head = file.range(of: "struct MyPageView: View {") else { return XCTFail("MyPageView が無い") }
+        let page = file[head.upperBound...].components(separatedBy: "\n}\n").first ?? ""
+        let passed = page.components(separatedBy: "\n").filter { line in
+            (line.hasPrefix("    var ") || line.hasPrefix("    let ")) && !line.contains("{") || line.hasPrefix("    var ") && line.contains("= {")
+        }.map { $0.trimmingCharacters(in: .whitespaces) }
+        XCTAssertEqual(passed, ["var unread = 0", "var onOpenNotifications: () -> Void = {}", "var messagesUnread = false"],
+                       "MyPageView が親から受け取る値が変わった。MyPageViewInputs も見直す")
+        let root = try source("App/RootView.swift")
+        let call = slice(root, from: "MyPageView(unread: unread", to: ".perfMark(\"tab.mypage.appear\")")
+        XCTAssertTrue(call.contains(".equatable()"), "RootView が MyPageView を .equatable() で包んでいない")
+    }
+
     // MARK: - A8 承認したら、そのまま会話へ
 
     func testRequestBandHidesOnceAcceptedHere() async throws {
