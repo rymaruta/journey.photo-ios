@@ -134,6 +134,8 @@ targets:
       configs:
         Debug:
           CODE_SIGN_ENTITLEMENTS: Sources/JourneyPhoto/JourneyPhoto.Debug.entitlements
+          # 再現の試し（札・1.1.99 の起動で落ちる件）: 模擬機のメインスレッドを実機と同じ 1MB にする
+          OTHER_LDFLAGS: "$(inherited) -Wl,-stack_size,0x100000"
         Release:
           CODE_SIGN_ENTITLEMENTS: Sources/JourneyPhoto/JourneyPhoto.Release.entitlements
 
