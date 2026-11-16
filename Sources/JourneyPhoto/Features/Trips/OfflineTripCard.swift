@@ -16,10 +16,17 @@ struct OfflineTripCard: View {
     let places: [DerivedSpot.Place]
     /// 日程の画面が、プランの名前を引く材料を読めたか（読めないうちは保存させない——名前が鍵のままになる）
     let sourcesReady: Bool
+    /// 置く場所（2026-11-16 判断・使い勝手の見直し A6）。日程の画面は上（日付の下）と下（最後の日の下）に1枚ずつ置き、
+    /// **Pro でない人の札（`.free`・閉じられない「PRO」の案内）だけを下に**出す。日程を先に見せるため。
+    /// 保存前・保存中・保存済みなど Pro の人の札は今どおり上（保存の進み具合や圏外の前の確かめは先に見えてほしい）
+    var slot: Slot = .top
+    /// Pro か（読めなければ nil）。上と下の2枚で1つを持つ（日程の画面が持つ）。**読みに行くのは上の1枚だけ**
+    @Binding var isPro: Bool?
+
+    enum Slot { case top, bottom }
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var offline: OfflineTripStore
-    @State private var isPro: Bool?
     @State private var confirmingDelete = false
     @State private var showPaywall = false
     @State private var preparing = false
@@ -32,22 +39,29 @@ struct OfflineTripCard: View {
     }
     private var phase: OfflineSaveStatus.Phase { status.phase(isPro: isPro, change: change) }
 
+    /// この場所にこの姿の札を出すか（`slot`）。`.hidden` はどちらにも出さない
+    nonisolated static func shows(_ phase: OfflineSaveStatus.Phase, in slot: Slot) -> Bool {
+        switch phase {
+        case .hidden: return false
+        case .free: return slot == .bottom
+        default: return slot == .top
+        }
+    }
+
     var body: some View {
         Group {
-            switch phase {
-            case .hidden:
+            if Self.shows(phase, in: slot) {
+                if case .free = phase { freeCard } else { card }
+            } else {
                 // 🔴 **EmptyView にしない**（2026-10-16 判断）。最初は Pro かどうか読めていない（nil）ので
                 // `.hidden` になり、中身が EmptyView だけだと下の `.task` が走らず、`isPro` が nil のまま
                 // 札がいつまでも出なかった（StoriesRow の 1.1.5 と同じ形）。高さ 0 の見えない1枚を置く
                 StoriesRow.loadingAnchor
-            case .free:
-                freeCard
-            default:
-                card
             }
         }
         .task {
-            // Pro かどうかはサーバーが決める（読めなければ nil）
+            // Pro かどうかはサーバーが決める（読めなければ nil）。上の1枚だけが読む（2枚で2回読まない）
+            guard slot == .top else { return }
             isPro = (try? await environment.profiles.myProfile())?.isPro
         }
         .fullScreenCover(isPresented: $showPaywall) { PaywallView() }

@@ -334,8 +334,15 @@ struct HomeTopCardView: View {
         switch choice {
         case .departure(let plan, let daysUntil):
             NavigationLink {
-                TripPlansView()
-                    .onAppear { reloadPlansOnReturn = true }
+                // 出発の当日は、一覧を挟まずにそのプランの今日の日程（2026-11-16 判断・使い勝手の見直し A2・
+                // 押す回数 札 → 一覧 → プラン → 送る（2＋送る）→ 1）。出発の前の日までは今どおり一覧
+                if Self.opensPlan(daysUntil: daysUntil) {
+                    TripPlanOpenView(planId: plan.planId, opensToday: true)
+                        .onAppear { reloadPlansOnReturn = true }
+                } else {
+                    TripPlansView()
+                        .onAppear { reloadPlansOnReturn = true }
+                }
             } label: {
                 card(eyebrow: "TRIP PLAN", eyebrowLabel: L("旅行プラン", "Trip plan"),
                      title: planTitle(plan),
@@ -351,18 +358,24 @@ struct HomeTopCardView: View {
                 choose(item, plan)
             }
         case .onTrip(let plan, let dayNumber):
-            Button {
-                MissionRouter.shared.post()
+            // 2026-11-16 判断（使い勝手の見直し A2）: 札を押すと今日の日程（今日の日まで送った姿）。
+            // 前は札が投稿の画面を開き、日程は メニュー → 旅行プラン → プラン → 送る（3＋送る）だった → 1。
+            // 投稿の入口は札の右の「＋」（36 の丸・当たり 44）だけに残す（押す回数は今どおり 1）
+            NavigationLink {
+                TripPlanOpenView(planId: plan.planId, opensToday: true)
+                    .onAppear { reloadPlansOnReturn = true }
             } label: {
                 card(eyebrow: "ON TRIP", eyebrowLabel: L("旅の最中", "On a trip"),
                      title: planTitle(plan),
-                     line: L("\(dayNumber)日目\u{2002}写真を投稿する", "Day \(dayNumber)\u{2002}Post a photo"),
+                     line: Self.onTripLine(dayNumber: dayNumber),
                      detail: tripLight(plan),
                      backdrop: nil,
-                     // 押すと投稿画面が開く（別の画面へ進む「›」ではない）
-                     trailingSymbol: "plus", detailTruncation: .tail, reservesMenu: true, inCarousel: inCarousel)
+                     // 右は「＋」を重ねるので印を置かない（字が「＋」の下に潜らない幅だけ空ける）
+                     trailingSymbol: nil, detailTruncation: .tail, reservesMenu: true, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
+            .accessibilityHint(L("今日の日程を開きます", "Opens today's plan"))
+            .overlay(alignment: .bottomTrailing) { onTripPostButton(inCarousel: inCarousel) }
             .tripCardMenu(menuItems(for: plan), label: HomeTripCardMenu.menuLabel, inCarousel: inCarousel) { item in
                 choose(item, plan)
             }
@@ -482,7 +495,7 @@ struct HomeTopCardView: View {
     private func card(eyebrow: String, eyebrowLabel: String, title: String, line: String,
                       detail: String?, credit: TopCardCredit? = nil, backdrop: Photo?, backdropURL: URL? = nil,
                       film: [String] = [],
-                      trailingSymbol: String = "chevron.right", detailTruncation: Text.TruncationMode = .middle,
+                      trailingSymbol: String? = "chevron.right", detailTruncation: Text.TruncationMode = .middle,
                       reservesMenu: Bool = false, inCarousel: Bool) -> some View {
         // 札の面は探すの「今日の一問」の段と同じ部品（`TopCardFace`・2026-11-12 に切り出した）。
         // ①現像前の旅の札は左の写真の代わりにフィルムの3コマ（`film`・札 #543。1.1.84 のまとめで面に移した）。
@@ -491,6 +504,38 @@ struct HomeTopCardView: View {
                     credit: credit, backdrop: backdrop, backdropURL: backdropURL, film: film, trailingSymbol: trailingSymbol,
                     detailTruncation: detailTruncation, reservesMenu: reservesMenu, inCarousel: inCarousel)
     }
+
+    /// 出発の札を押すと、そのプランを直に開くか（出発の当日だけ・2026-11-16 判断・A2）。前の日までは一覧
+    nonisolated static func opensPlan(daysUntil: Int) -> Bool { daysUntil == 0 }
+
+    /// 旅の最中の札の2行目（「2日目　今日の日程」）。札を押すと日程が開く（2026-11-16 判断・A2。前は「写真を投稿する」）
+    nonisolated static func onTripLine(dayNumber: Int) -> String {
+        L("\(dayNumber)日目\u{2002}今日の日程", "Day \(dayNumber)\u{2002}Today's plan")
+    }
+
+    /// 旅の最中の札の右の「＋」（投稿の入口・2026-11-16 判断・A2・模型: 36 の丸・白 12% の地・当たり 44）。
+    /// 札の右下に重ねる（右上は「⋯」の当たり 44）。丸の右端と下端は札の端から 12（札の右の余白とそろえる）
+    private func onTripPostButton(inCarousel: Bool) -> some View {
+        Button {
+            MissionRouter.shared.post()
+        } label: {
+            Image(systemName: "plus")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(WebTheme.foreground)
+                .frame(width: Self.postCircle, height: Self.postCircle)
+                .background(Color.white.opacity(0.12), in: Circle())
+                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("写真を投稿する", "Post a photo"))
+        .accessibilityIdentifier("home.onTrip.post")
+        .padding(.trailing, (inCarousel ? 0 : JPSpace.gutter) + JPSpace.xs)
+        .padding(.bottom, JPSpace.xs)
+    }
+
+    /// 「＋」の丸（模型 A2 の 36）
+    nonisolated static let postCircle: CGFloat = 36
 
     /// 旅行プランの札で、右上の「⋯」の当たり（44）に眉と題が潜らないよう空ける幅
     /// （当たり 44 から、札の右の余白 12・「›」の列・その間 8 で既に空いている分を除いた分）

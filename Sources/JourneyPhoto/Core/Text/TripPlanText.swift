@@ -57,6 +57,17 @@ enum TripPlanText {
         return ymd(shifted)
     }
 
+    /// 日程の中の「今日」の日（0 から・2026-11-16 判断・使い勝手の見直し A2）。旅の日にホームの札から開くと、
+    /// この日まで送り、見出しを「今日」にして札の縁を真鍮にする。
+    ///
+    /// 今日は**端末の時刻帯の暦の日**（`ymd(pickedIn:)`）、各日の日付は `dayDate`（UTC の暦の `YYYY-MM-DD`）で比べる
+    /// （`HomeTopCard.today` と同じ決まり）。日本の朝 0〜9 時は UTC ではまだ前の日なので、UTC で今日を数えると
+    /// 1日前の日を「今日」と言ってしまう。日付の無いプラン・旅の前と後は nil
+    static func todayIndex(days: [TripDay], start: String?, end: String?, now: Date, in zone: TimeZone) -> Int? {
+        let today = ymd(pickedIn: zone, now)
+        return days.indices.first { dayDate(index: $0, day: days[$0], start: start, end: end) == today }
+    }
+
     /// 日付の計算は**グレゴリオ暦・UTC で固定**する。端末の暦（和暦など）や
     /// 時差で1日ずれない（Web の `photoDate.ts` が同じ理由で閲覧者のゾーンに寄せない）
     static let calendar: Calendar = {

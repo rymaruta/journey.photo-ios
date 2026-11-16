@@ -29,26 +29,48 @@ struct TripShareStrip: View {
     let chatUnread: Bool
     let onShareWithPeer: () -> Void
     let onInvite: () -> Void
+    /// 「仲間を誘う」をこの段に出すか。**日程の画面では出さない**（2026-11-16 判断・使い勝手の見直し A6:
+    /// 「日付」の欄と同じ行の右へ移した・`TripPlanDetailView.inviteButton`）。会話の画面では今どおりここ
+    var showsInvite = true
+
+    /// 段に出すものがあるか（無ければ日程の画面は段ごと置かない。空の段で余白だけ空けない）
+    static func hasContent(plan: TripPlan, peer: TripSharePeer?, showsInvite: Bool) -> Bool {
+        showsInvite || plan.share != nil || peer != nil
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: JPSpace.s) {
             if let peer, !(plan.share?.memberIds.contains(peer.id) ?? false) {
                 peerCard(peer)
             }
-            HStack(spacing: JPSpace.s) {
-                if let share = plan.share {
-                    Text(TripShareText.memberCount(share.memberIds.count))
-                        .font(JPFont.footnote.monospacedDigit())
-                        .foregroundStyle(WebTheme.text2)
-                    faces(share.memberIds)
-                } else if let peer, plan.share == nil {
-                    Text(TripShareText.shareNote)
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.text3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityHidden(peer.id.isEmpty)
-                }
-                Spacer(minLength: 0)
+            if showsInvite || plan.share != nil || (peer != nil && plan.share == nil) {
+                row
+            }
+            if plan.share != nil {
+                tabPicker
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("tripShare.strip")
+    }
+
+    /// 人数と顔（共有したプラン）・共有の説明（DM の相手）・誘う
+    private var row: some View {
+        HStack(spacing: JPSpace.s) {
+            if let share = plan.share {
+                Text(TripShareText.memberCount(share.memberIds.count))
+                    .font(JPFont.footnote.monospacedDigit())
+                    .foregroundStyle(WebTheme.text2)
+                faces(share.memberIds)
+            } else if let peer, plan.share == nil {
+                Text(TripShareText.shareNote)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityHidden(peer.id.isEmpty)
+            }
+            Spacer(minLength: 0)
+            if showsInvite {
                 Button(action: onInvite) {
                     Label(TripShareText.invite, systemImage: "person.badge.plus")
                         .font(JPFont.footnote.weight(.semibold))
@@ -58,12 +80,7 @@ struct TripShareStrip: View {
                 .disabled(working)
                 .accessibilityIdentifier("tripShare.invite")
             }
-            if plan.share != nil {
-                tabPicker
-            }
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("tripShare.strip")
     }
 
     private func peerCard(_ peer: TripSharePeer) -> some View {
@@ -524,16 +541,20 @@ struct TripInboxRow: View {
     private var unread: Bool { item.unread > 0 }
 }
 
-/// 受信箱からプランの会話を開く（プランの一覧を読んでから詳細を出す）
-struct TripShareOpenView: View {
+/// プランの一覧を読んでから詳細を出す。受信箱からプランの会話を開く（`startTab: .chat`）・
+/// ホームの旅の札から今日の日程を開く（`opensToday`・2026-11-16 判断・使い勝手の見直し A2）
+struct TripPlanOpenView: View {
     let planId: String
+    var startTab: TripShareText.Tab = .days
+    /// 開いたら今日の日まで送る（旅の日・`TripPlanDetailView.opensToday`）
+    var opensToday = false
     @StateObject private var model = TripPlansModel()
     @EnvironmentObject private var environment: AppEnvironment
 
     var body: some View {
         Group {
             if model.plan(planId) != nil {
-                TripPlanDetailView(planId: planId, model: model, startTab: .chat)
+                TripPlanDetailView(planId: planId, model: model, startTab: startTab, opensToday: opensToday)
             } else if model.status == .failed {
                 ErrorBanner(title: Labels.Common.loadFailed, message: L("通信を確かめて、もう一度お試しください。", "Check your connection and try again.")) {
                     Task { await model.load(environment: environment) }

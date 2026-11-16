@@ -103,7 +103,9 @@ enum TripPlanFixture {
                 TripDay(items: [.spot(spotId: "sp_2f29aa9f9a28", note: nil)]),   // サンパウロ美術館
             ],
             createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z")
-        guard soon else { return [kanazawa, hakodate, brazil] }
+        var base = [kanazawa, hakodate, brazil]
+        if onTrip { base.insert(onTripPlan(), at: 0) }
+        guard soon else { return base }
         // 出発が2日後（ホームの上の札は出発の7日前から出る・`HomeTopCard.departureWindowDays`）
         let soonStart = TripPlanText.calendar.date(byAdding: .day, value: 2, to: today) ?? today
         let soonEnd = TripPlanText.calendar.date(byAdding: .day, value: 1, to: soonStart) ?? soonStart
@@ -111,7 +113,41 @@ enum TripPlanFixture {
                                 startDate: TripPlanText.ymd(soonStart), endDate: TripPlanText.ymd(soonEnd),
                                 days: [TripDay(items: [.location(slug: "鎌倉", note: nil)]), TripDay()],
                                 createdAt: "2026-11-12T00:00:00Z", updatedAt: "2026-11-12T00:00:00Z")
-        return [kamakura, kanazawa, hakodate, brazil]
+        return [kamakura] + base
+    }
+
+    static let onTripKey = "JPTripPlanFixtureOnTrip"
+
+    /// 旅の途中の見本を先頭に足す（`-JPTripPlanFixtureOnTrip YES`・2026-11-16 使い勝手の見直し A2）。
+    /// 昨日出発・明日帰着の3日の旅で、**今日は2日目**（ホームの札「旅の最中 2日目」→ 押すと今日の日まで送った日程）
+    static var onTrip: Bool {
+        #if DEBUG
+        return isOn && UserDefaults.standard.bool(forKey: onTripKey)
+        #else
+        return false
+        #endif
+    }
+
+    /// 旅の途中の見本。今日は**端末の時刻帯の今日**（`HomeTopCard.today` と同じ・日本の朝に1日ずれない）
+    static func onTripPlan(now: Date = Date(), zone: TimeZone = .current) -> TripPlan {
+        let today = TripPlanText.date(fromYMD: TripPlanText.ymd(pickedIn: zone, now)) ?? now
+        let start = TripPlanText.calendar.date(byAdding: .day, value: -1, to: today) ?? today
+        let end = TripPlanText.calendar.date(byAdding: .day, value: 1, to: today) ?? today
+        return TripPlan(
+            planId: "fixture-ontrip", title: "金沢、福井の旅",
+            startDate: TripPlanText.ymd(start), endDate: TripPlanText.ymd(end),
+            days: [
+                TripDay(items: [
+                    .spot(spotId: "sp_64ff5284da9e", note: nil),   // ひがし茶屋街
+                    .spot(spotId: "sp_346663d421dc", note: nil),   // 金沢城公園
+                ]),
+                TripDay(items: [
+                    .spot(spotId: "sp_55aafc4eff86", note: nil),   // 越前海岸 呼鳥門
+                    .spot(spotId: "sp_6cfe84e90826", note: nil),   // 越前岬
+                ]),
+                TripDay(items: [.spot(spotId: "sp_4e69d634a874", note: nil)]),   // 千里浜なぎさドライブウェイ
+            ],
+            createdAt: "2026-11-16T00:00:00Z", updatedAt: "2026-11-16T00:00:00Z")
     }
 }
 

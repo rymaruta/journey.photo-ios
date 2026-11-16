@@ -250,7 +250,7 @@ final class TripsDesignTests: XCTestCase {
     func testPlanDaysFollowTheBoard() throws {
         let detail = try source("Features/Trips/TripPlanDetailView.swift")
         let day = section("private func daySection(", in: detail)
-        assertInOrder(["JPEyebrowLine(dayHeading(di, day))", "itemRow(di, ii, item, number:", "addRow(di,"],
+        assertInOrder(["JPEyebrowLine(dayHeading(di, day, today: isToday))", "itemRow(di, ii, item, number:", "addRow(di,"],
                       in: day, "日の見出し → 項目 → 追加")
         XCTAssertFalse(day.contains("WebTheme.surface"), "日の札で囲んでいる（v2 は区切り線の行）")
         // 行の中身は作る流れの下書きと同じ部品（`TripStopLabel`・2026-11-10 札 #521）

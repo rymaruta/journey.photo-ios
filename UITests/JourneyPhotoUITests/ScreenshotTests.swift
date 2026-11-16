@@ -3772,6 +3772,68 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    // MARK: - 使い勝手の見直し「計画する」（2026-11-16・A2・A5・A6）
+
+    /// **旅の日のホームの札 → 今日の日程**（A2）: 見本の「金沢、福井の旅」（昨日出発・今日は2日目・`-JPTripPlanFixtureOnTrip`）。
+    /// 札の右下に「＋」（投稿の入口・当たり 44）、札を1回押すと今日の日まで送った日程（見出し「今日」・縁が真鍮の札）。
+    /// 出なければ撮らずに抜ける
+    func testCapturesOnTripCardOpensToday() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripPlanFixtureOnTrip", "YES"])
+        let post = app.buttons["home.onTrip.post"].firstMatch
+        guard post.waitForExistence(timeout: 30) else {
+            note(app, "旅の最中の札", "30 秒で札の「＋」が出ない")
+            return
+        }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "67a-ホーム（旅の最中の札と＋）")
+        XCTAssertGreaterThanOrEqual(post.frame.width, 44, "「＋」の当たりが 44pt 未満")
+        XCTAssertGreaterThanOrEqual(post.frame.height, 44, "「＋」の当たりが 44pt 未満")
+        let card = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "旅の最中")).firstMatch
+        guard card.waitForExistence(timeout: 5), card.isHittable else {
+            note(app, "旅の最中の札", "札が押せない")
+            return
+        }
+        card.tap()
+        let today = app.descendants(matching: .any)["tripPlan.today"].firstMatch
+        guard today.waitForExistence(timeout: 20) else {
+            note(app, "今日の日程", "札から開いた日程に今日の札が無い")
+            return
+        }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "67b-今日の日程（ホームの札から1回）")
+        XCTAssertTrue(today.frame.minY < app.frame.height * 0.6, "今日の日まで送られていない: \(today.frame)")
+    }
+
+    /// **日程の画面の「日付」の欄と暦のシート**（A5）・誘うは欄の右・無料の人の PRO の札は最後の日の下（A6）
+    func testCapturesTripPlanDateField() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+        guard openTripsRow(app, "trips.plans") else { return }
+        let plan = app.descendants(matching: .any).matching(identifier: "trips.plan")
+            .matching(NSPredicate(format: "label CONTAINS %@", "金沢")).firstMatch
+        guard plan.waitForExistence(timeout: 10) else { return }
+        plan.tap()
+        let field = app.buttons["tripPlan.dates"].firstMatch
+        guard field.waitForExistence(timeout: 15) else {
+            note(app, "日付の欄", "日程の画面に「日付」の欄が無い")
+            return
+        }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "67c-旅行プランの日程（日付の欄と誘う）")
+        XCTAssertGreaterThanOrEqual(field.frame.height, 52, "日付の欄が 52pt 未満")
+        let invite = app.buttons["tripShare.invite"].firstMatch
+        if invite.exists {
+            XCTAssertEqual(invite.frame.midY, field.frame.midY, accuracy: 2, "誘うが日付の欄と同じ行に無い")
+        }
+        field.tap()
+        let done = app.buttons["tripPlan.dates.done"].firstMatch
+        guard done.waitForExistence(timeout: 10) else {
+            note(app, "日付のシート", "欄を押してもシートが開かない")
+            return
+        }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "67d-日付のシート（暦と近くの休み）")
+    }
+
     // MARK: - ホームの旅行プランの札の「⋯」（2026-11-12）
 
     /// **ホームの上の札（出発が近い旅行プラン）の「⋯」と、削除の「元に戻す」**（owner「削除するときは旅行プランの
