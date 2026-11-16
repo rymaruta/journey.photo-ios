@@ -23,7 +23,7 @@ final class TripBookCardTests: XCTestCase {
     func testLinesMatchTheBookScreen() throws {
         let t = trip(photos: [try photo("a", location: "兼六園"), try photo("b", location: "兼六園"), try photo("c", location: "ひがし茶屋街")])
         let lines = TripBookCard.lines(of: t, distance: 12.4)
-        XCTAssertEqual(lines.title, TripBook.title(of: t))
+        XCTAssertEqual(lines.title, TripBook.tripTitle(of: t))
         XCTAssertEqual(lines.period, "\(TripBook.dateRange(from: t.start, to: t.end))\u{2002}\(TripBook.daysLabel(t.days))")
         XCTAssertEqual(lines.stats, L("3枚\u{2002}撮影地 2\u{2002}移動（直線）12 km", "3 photos · 2 places · 12 km (straight line)"))
         // 数えられない距離は載せない

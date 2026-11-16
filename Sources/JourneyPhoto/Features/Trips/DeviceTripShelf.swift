@@ -144,6 +144,8 @@ struct DeviceTripRow: View {
                     .font(JPFont.rowTitle)
                     .foregroundStyle(WebTheme.text)
                     .lineLimit(2)
+                    // 題は場所の名前だけ（2026-11-15）。読み上げは「旅、金沢市」
+                    .accessibilityLabel(DeviceTrips.spokenTitle(of: trip, name: name))
                 Text(DeviceTripText.line(trip, name: name))
                     .font(JPFont.meta)
                     .foregroundStyle(WebTheme.text3)

@@ -2,6 +2,18 @@
   "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
     {
+      "version": "1.1.97",
+      "date": "2026-11-15",
+      "items": [
+        {
+          "symbol": "person.badge.plus",
+          "title": { "ja": "お願いから1回で新規登録へ", "en": "Sign up in one tap" },
+          "detail": { "ja": "いいねや保存などでログインを求められたとき、その場の「新規登録」から1回で登録の画面へ進めます。", "en": "When you're asked to sign in, for example to like or save a photo, tap Sign up to go straight to creating an account." },
+          "destination": "home"
+        }
+      ]
+    },
+    {
       "version": "1.1.96",
       "date": "2026-11-15",
       "items": [

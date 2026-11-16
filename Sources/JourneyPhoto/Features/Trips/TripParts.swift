@@ -73,9 +73,17 @@ enum TripStyle {
         !photos.isEmpty && photos.allSatisfy { ($0.date ?? "").trimmingCharacters(in: .whitespaces).isEmpty }
     }
 
-    /// 一覧の行・表紙の札の下の1行（「2026.09.12 — 09.14 · 3日間 · 24枚」）
+    /// 一覧の行・表紙の札の下の1行（「2026.09.12 — 09.14　3日間　24枚」）。
+    /// 題が期間のとき（撮影地の無い旅・`TripBook.titleIsPeriod`）は期間を重ねず「3日間　24枚」
     nonisolated static func tripLine(_ trip: TripBook.Trip) -> String {
-        "\(TripBook.dateRange(from: trip.start, to: trip.end))\u{2002}\(TripBook.daysLabel(trip.days))\u{2002}\(PhotoMapViewModel.photoCountLabel(trip.photos.count))"
+        "\(coverDateLine(trip))\u{2002}\(PhotoMapViewModel.photoCountLabel(trip.photos.count))"
+    }
+
+    /// 旅の一冊の表紙の題の下の1行（「2026.09.12 — 09.14　3日間」）。題が期間なら「3日間」だけ
+    nonisolated static func coverDateLine(_ trip: TripBook.Trip) -> String {
+        let days = TripBook.daysLabel(trip.days)
+        guard !TripBook.titleIsPeriod(trip) else { return days }
+        return "\(TripBook.dateRange(from: trip.start, to: trip.end))\u{2002}\(days)"
     }
 
     /// 一冊のページの写真の下の1行（板「07:12 · 24mm · f/8」）。**持っているものだけを繋ぐ**。

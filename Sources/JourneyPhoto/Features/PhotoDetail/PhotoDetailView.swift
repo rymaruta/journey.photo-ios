@@ -1852,7 +1852,7 @@ struct PhotoDetailView: View {
         // 🔴 **未ログインは「ログインする」を出す**（2026-10-11）。以前は赤字だけで、
         // ログインする手段がその場に無かった（`SignInPrompt`）。確認中は黙る
         guard auth.userId != nil else {
-            signInAsk = SignInPrompt.request(SignInPrompt.like, userId: auth.userId, isResolving: auth.isResolving)
+            signInAsk = SignInPrompt.request(SignInPrompt.like, signUpReason: SignInPrompt.likeSignUp, userId: auth.userId, isResolving: auth.isResolving)
             return nil
         }
         // **届かなかった回は控えに書かない**（押す前のハートのまま）。
@@ -2382,24 +2382,35 @@ struct PhotoDetailView: View {
     }
 
     /// 未ログインの人に、コメントの欄の代わりに出す1行（2026-10-11）。
-    /// 「ログインする」は黒地の上のリンクなので真鍮（owner の好み・`CLAUDE.md`）
+    /// 「新規登録」「ログイン」は黒地の上のリンクなので真鍮（owner の好み・`CLAUDE.md`）。
+    /// 2026-11-15（札 #630）: 「新規登録」を先に足した。押したら今のログイン画面を登録の側で開く（押す回数 1回）
     private var commentSignInLine: some View {
         HStack(spacing: 8) {
             Text(SignInPrompt.commentLine)
                 .font(.footnote)
                 .foregroundStyle(WebTheme.muted2)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
-            Button {
-                signInOpen = SignInRequest(reason: SignInPrompt.comment)
-            } label: {
-                Text(SignInPrompt.actionLabel)
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(WebTheme.accent)
-                    .frame(minHeight: WebTheme.minTapTarget)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+            commentSignInLink(SignInPrompt.signUpLabel, entry: .signUp, identifier: "photoDetail.comment.signUp")
+            commentSignInLink(SignInPrompt.loginLabel, entry: .signIn, identifier: "photoDetail.comment.signIn")
         }
+    }
+
+    private func commentSignInLink(_ title: String, entry: SignInEntry, identifier: String) -> some View {
+        Button {
+            // 登録の側は登録の一言（「登録すると、コメントできます」）
+            signInOpen = SignInRequest(reason: entry == .signUp ? SignInPrompt.commentSignUp : SignInPrompt.comment, entry: entry)
+        } label: {
+            Text(title)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(WebTheme.accent)
+                .lineLimit(1)
+                .fixedSize()
+                .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
     }
 
     /// 元の写真の要約を読む（`InspiredBy`）。**読んだ写真・元の写真を覚え**、送った先の写真では使わない。
@@ -2677,7 +2688,7 @@ struct PhotoDetailView: View {
         // **未ログインは送らずに「ログインする」を出す**（いいねと同じ扱い・`SignInPrompt`）。
         // 以前は赤字だけで、ログインする手段がその場に無かった（2026-10-11）
         guard auth.userId != nil else {
-            signInAsk = SignInPrompt.request(SignInPrompt.save, userId: auth.userId, isResolving: auth.isResolving)
+            signInAsk = SignInPrompt.request(SignInPrompt.save, signUpReason: SignInPrompt.saveSignUp, userId: auth.userId, isResolving: auth.isResolving)
             return
         }
         savingBookmarks.insert(id)

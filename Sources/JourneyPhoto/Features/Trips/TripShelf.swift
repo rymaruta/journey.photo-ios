@@ -31,6 +31,8 @@ struct TripShelf: View {
                     .font(JPFont.display(24, relativeTo: .title2))
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(2)
+                    // 題は場所の名前だけ（2026-11-15）。読み上げは「旅、金沢」
+                    .accessibilityLabel(TripBook.spokenTitle(of: trip))
                 Text(TripStyle.tripLine(trip))
                     .font(JPFont.mono(13, relativeTo: .footnote))
                     .foregroundStyle(WebTheme.muted)
@@ -84,6 +86,7 @@ struct TripShelfRow: View {
                     .font(JPFont.rowTitle)
                     .foregroundStyle(WebTheme.text)
                     .lineLimit(2)
+                    .accessibilityLabel(TripBook.spokenTitle(of: trip))
                 Text(TripStyle.tripLine(trip))
                     .font(JPFont.meta)
                     .foregroundStyle(WebTheme.text3)

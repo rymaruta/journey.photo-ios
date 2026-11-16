@@ -8,6 +8,10 @@ import SwiftUI
 ///
 /// 色: 黒地の上なので眉ラベルは真鍮。絵は写真の地なので印は白だけ。下のボタンは線のボタン（写真の並びの中で
 /// 控えめに。主ボタンにしない）。中黒で区切らない。押せるものは 44pt 以上。
+///
+/// 2026-11-15（札 #630）: 札と下の「新規登録」は**登録の側**で開く（「登録するとできること」なので）。下の1つだった
+/// 「ログイン、新規登録」（ログインの側で開き、登録はもう1回押す）を、Web の段（`SignUpBenefits.tsx`）と同じ
+/// 「新規登録」（線のボタン）と「ログイン」（文字のボタン）の2つに分けた。どちらも押す回数 1回
 struct HomeSignUpBenefitsView: View {
 
     /// 札の絵の地に敷く写真（並びの写真。読めなければ地の色のまま）
@@ -32,7 +36,7 @@ struct HomeSignUpBenefitsView: View {
             LazyVGrid(columns: columns, alignment: .leading, spacing: HomeSignUpBenefitsLayout.gap) {
                 ForEach(Array(SignUpBenefit.allCases.enumerated()), id: \.element.id) { index, benefit in
                     Button {
-                        signInOpen = SignInRequest(reason: benefit.signInReason)
+                        signInOpen = SignInRequest(reason: benefit.signUpReason, entry: .signUp)
                     } label: {
                         card(benefit, photo: index < photos.count ? photos[index] : nil)
                     }
@@ -42,13 +46,26 @@ struct HomeSignUpBenefitsView: View {
                     .accessibilityIdentifier("home.signUpBenefit.\(benefit.rawValue)")
                 }
             }
-            Button {
-                signInOpen = SignInRequest(reason: SignUpBenefit.actionReason)
-            } label: {
-                Text(SignUpBenefit.action).jpPillButton(.outline)
+            HStack(spacing: JPSpace.m) {
+                Button {
+                    signInOpen = SignInRequest(reason: SignUpBenefit.signUpActionReason, entry: .signUp)
+                } label: {
+                    Text(SignInPrompt.signUpLabel).jpOutlineButton(.regular)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("home.signUpBenefits.action")
+                Button {
+                    signInOpen = SignInRequest(reason: SignUpBenefit.actionReason)
+                } label: {
+                    Text(SignInPrompt.loginLabel)
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text2)
+                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("home.signUpBenefits.signIn")
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("home.signUpBenefits.action")
         }
         .padding(.horizontal, JPSpace.gutter)
         .frame(maxWidth: .infinity, alignment: .leading)

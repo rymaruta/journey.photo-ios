@@ -408,6 +408,18 @@ struct TripPickerView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("tripPicker.pause.continue")
+                if let title = pause.secondaryTitle, let action = pause.secondaryAction {
+                    // 主ボタンと線のボタンの下の、控えめな文字のボタン（ログイン。当たりは 44）
+                    Button(action: action) {
+                        Text(title)
+                            .font(JPFont.footnote)
+                            .foregroundStyle(WebTheme.text2)
+                            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("tripPicker.pause.secondary")
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
@@ -544,4 +556,7 @@ struct TripPickerPause {
     let action: () -> Void
     /// 払った・「続けて払う」を押した（呼び手が次に挟むまでの数を数え直す）
     let onContinue: () -> Void
+    /// 下に添える文字のボタン（未ログインの「ログインして見る」・札 #630）。無ければ出さない
+    var secondaryTitle: String? = nil
+    var secondaryAction: (() -> Void)? = nil
 }

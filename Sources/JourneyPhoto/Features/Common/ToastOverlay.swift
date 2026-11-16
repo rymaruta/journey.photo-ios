@@ -43,6 +43,20 @@ struct ToastOverlay: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("toast.action")
+                    // 2つ目の一手（札 #630: 「新規登録」の隣の「ログイン」）。下線なし・ふつうの太さで控えめに。当たり 44
+                    if let second = message.secondaryTitle, let secondAction = message.secondaryAction {
+                        Button {
+                            toasts.dismiss()
+                            secondAction()
+                        } label: {
+                            Text(second)
+                                .font(.subheadline)
+                                .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("toast.secondaryAction")
+                    }
                 }
             }
             .foregroundStyle(WebTheme.foreground)

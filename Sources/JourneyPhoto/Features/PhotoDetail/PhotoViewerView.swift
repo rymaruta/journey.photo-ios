@@ -437,7 +437,7 @@ struct PhotoViewerView: View {
             showBurst()
         case .askToSignIn:
             // **ハートは出さない**（何も送っていないのに付いたように見えた）。ログインを促す
-            signInAsk = SignInRequest(reason: SignInPrompt.like)
+            signInAsk = SignInRequest(reason: SignInPrompt.like, signUpReason: SignInPrompt.likeSignUp)
         case .ignore:
             break
         }

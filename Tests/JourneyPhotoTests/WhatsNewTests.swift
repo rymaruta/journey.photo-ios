@@ -115,9 +115,9 @@ final class WhatsNewTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let all = WhatsNew.decode(data)
-        XCTAssertEqual(all.map(\.version), ["1.1.96", "1.1.95", "1.1.94", "1.1.93", "1.1.92", "1.1.91", "1.1.90", "1.1.87", "1.1.86", "1.1.85", "1.1.84", "1.1.83", "1.1.82", "1.1.81", "1.1.80", "1.1.79", "1.1.78", "1.1.77", "1.1.76", "1.1.75", "1.1.74", "1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14", "1.0.82", "1.0.73", "1.0.67"])
-        // 1.1.96 は `testVersion1196`、1.1.95 は `testVersion1195`、1.1.94 は `testVersion1194`、1.1.93 は `testVersion1193`、1.1.92 は `testVersion1192`、1.1.91 は `testVersion1191`、1.1.90 は `testVersion1190`、1.1.87 は `testVersion1187`、1.1.86 は `testVersion1186`、1.1.85 は `testVersion1185`、1.1.84 は `testVersion1184OneItemPerChapter`、1.1.83 は `testVersion1183OthersPhotos`、1.1.82・1.1.81・1.1.80・1.1.79・1.1.78・1.1.77・1.1.76・1.1.75・1.1.74・1.1.72 の中身は `testVersion1172SummarizesChangesSince1087` で見る。以下は 1.1.18 以前の項目
-        let releases = Array(all.dropFirst(22))
+        XCTAssertEqual(all.map(\.version), ["1.1.97", "1.1.96", "1.1.95", "1.1.94", "1.1.93", "1.1.92", "1.1.91", "1.1.90", "1.1.87", "1.1.86", "1.1.85", "1.1.84", "1.1.83", "1.1.82", "1.1.81", "1.1.80", "1.1.79", "1.1.78", "1.1.77", "1.1.76", "1.1.75", "1.1.74", "1.1.72", "1.1.18", "1.1.16", "1.1.15", "1.1.14", "1.0.82", "1.0.73", "1.0.67"])
+        // 1.1.97 は `testVersion1197`、1.1.96 は `testVersion1196`、1.1.95 は `testVersion1195`、1.1.94 は `testVersion1194`、1.1.93 は `testVersion1193`、1.1.92 は `testVersion1192`、1.1.91 は `testVersion1191`、1.1.90 は `testVersion1190`、1.1.87 は `testVersion1187`、1.1.86 は `testVersion1186`、1.1.85 は `testVersion1185`、1.1.84 は `testVersion1184OneItemPerChapter`、1.1.83 は `testVersion1183OthersPhotos`、1.1.82・1.1.81・1.1.80・1.1.79・1.1.78・1.1.77・1.1.76・1.1.75・1.1.74・1.1.72 の中身は `testVersion1172SummarizesChangesSince1087` で見る。以下は 1.1.18 以前の項目
+        let releases = Array(all.dropFirst(23))
         // 版に重複が無い（履歴の区切りと「見た版」の比べ方が版で1つに決まる前提）
         let versions = releases.map(\.version)
         XCTAssertEqual(Set(versions).count, versions.count, "WhatsNew.json の版が重複している")
@@ -268,7 +268,7 @@ final class WhatsNewTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         // 1.1.72 より前の分だけで見る（1.1.96 は `testVersion1196`、1.1.95 は `testVersion1195`、1.1.94 は `testVersion1194`、1.1.93 は `testVersion1193`、1.1.92 は `testVersion1192`、1.1.91 は `testVersion1191`、1.1.90 は `testVersion1190`、1.1.87 は `testVersion1187`、1.1.86 は `testVersion1186`、1.1.85 は `testVersion1185`、1.1.84 は `testVersion1184OneItemPerChapter`、1.1.83 は `testVersion1183OthersPhotos`、1.1.82・1.1.81・1.1.80・1.1.79・1.1.78・1.1.77・1.1.76・1.1.75・1.1.74・1.1.72 は `testVersion1172SummarizesChangesSince1087`）
-        let releases = Array(WhatsNew.decode(data).dropFirst(22))
+        let releases = Array(WhatsNew.decode(data).dropFirst(23))
         XCTAssertEqual(releases.first?.version, "1.1.18")
         XCTAssertEqual(releases.first?.items.count, 2)
         XCTAssertEqual(releases[1].items.count, 3)
@@ -308,11 +308,33 @@ final class WhatsNewTests: XCTestCase {
     /// 1.1.96（2026-11-15）: ストーリーの「＋」で写真と動画の一覧が先に開く（札 #627・`StoryLibraryGrid`）。
     /// 一覧の最初のマスがカメラ。すぐ撮りたい人はアイコン長押しの「ストーリーを撮る」（`StoryShortcut`）。
     /// 項目は1つ、行き先はホーム（ストーリーの輪がある所）。中黒、禁止語なし
-    func testVersion1196() async throws {
+    /// 1.1.97（2026-11-15・札 #630）: ログインのお願いから1回で新規登録へ。「・」で区切らない
+    func testVersion1197() async throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
         let v = try XCTUnwrap(WhatsNew.decode(data).first)
+        XCTAssertEqual(v.version, "1.1.97")
+        XCTAssertEqual(v.date, WhatsNew.Day(year: 2026, month: 11, day: 15))
+        XCTAssertEqual(v.items.map(\.title.ja), ["お願いから1回で新規登録へ"])
+        XCTAssertEqual(v.items.map(\.destination), [.home])
+        XCTAssertTrue(v.items[0].detail.ja.contains("「新規登録」から1回で登録の画面"), v.items[0].detail.ja)
+        XCTAssertTrue(v.items[0].detail.en.contains("Sign up"), v.items[0].detail.en)
+        for item in v.items {
+            for text in [item.title.ja, item.detail.ja] {
+                for word in ["撮りどき", "捨て", "・", "·", "撮影スポット"] {
+                    XCTAssertFalse(text.contains(word), "\(item.title.ja): \(word)")
+                }
+            }
+            XCTAssertFalse(item.title.en.contains("·") || item.detail.en.contains("·"), item.title.ja)
+        }
+    }
+
+    func testVersion1196() async throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
+        let v = try XCTUnwrap(WhatsNew.decode(data).first { $0.version == "1.1.96" })
         XCTAssertEqual(v.version, "1.1.96")
         XCTAssertEqual(v.date, WhatsNew.Day(year: 2026, month: 11, day: 15))
         XCTAssertEqual(v.items.map(\.title.ja), ["ストーリーの＋で、写真の一覧が先に開く"])
@@ -710,8 +732,8 @@ final class WhatsNewTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/WhatsNew.json"))
-        // 1.1.96・1.1.95・1.1.94・1.1.93・1.1.92・1.1.91・1.1.90・1.1.87・1.1.86・1.1.85・1.1.84・1.1.83 はそれぞれの試験で見る。ここは 1.1.82 から
-        let all = Array(WhatsNew.decode(data).dropFirst(12))
+        // 1.1.97・1.1.96・1.1.95・1.1.94・1.1.93・1.1.92・1.1.91・1.1.90・1.1.87・1.1.86・1.1.85・1.1.84・1.1.83 はそれぞれの試験で見る。ここは 1.1.82 から
+        let all = Array(WhatsNew.decode(data).dropFirst(13))
         // 1.1.82（2026-11-11・札 #541・#524・#526・#521）: DM の新しい見た目・写真をストーリーで紹介・コメントに返信・
         // 探すの撮影スポットの地図（おすすめの新しい投稿・今週のお題 #537 は #540 が分かるまで次の版へ）・録画は押し続けない・トランクが軽く・日をまたぐ移動の目安・検索エンジンに出さない
         let v1182 = try XCTUnwrap(all.first)

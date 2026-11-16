@@ -228,12 +228,26 @@ enum DeviceTrips {
         }.prefix(limit))
     }
 
-    /// 棚の題（地名が引けたら「金沢市の旅」、引けなければ期間）
+    /// 旅の記録の棚の題（地名が引けたら「金沢市」、引けなければ期間）。
+    /// 2026-11-15 判断: 旅の記録の中は旅だと分かるので「の旅」を付けない（`TripBook.title` と同じ）
     static func title(of trip: LibraryTrip, name: String?) -> String {
+        if let name, !name.trimmingCharacters(in: .whitespaces).isEmpty {
+            return name
+        }
+        return LibraryTrips.periodText(trip)
+    }
+
+    /// 旅の記録の外で使う題（ホームの札・払う画面・投稿の流れの旅の一覧）。「金沢市の旅」、引けなければ期間
+    static func tripTitle(of trip: LibraryTrip, name: String?) -> String {
         if let name, !name.trimmingCharacters(in: .whitespaces).isEmpty {
             return L("\(name)の旅", "Trip to \(name)")
         }
         return LibraryTrips.periodText(trip)
+    }
+
+    /// 読み上げの題（「旅、金沢市」）
+    static func spokenTitle(of trip: LibraryTrip, name: String?) -> String {
+        L("旅、\(title(of: trip, name: name))", "Trip, \(title(of: trip, name: name))")
     }
 
     /// 端末の一冊は共有しない（上の「見える範囲」）

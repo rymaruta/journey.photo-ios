@@ -30,7 +30,8 @@ final class SignUpBenefitsTests: XCTestCase {
     /// 中黒で区切らない（owner の好み・2026-11-12）。「撮りどき」「捨てる」も画面の文に使わない
     func testWordingHasNoMiddleDots() {
         let texts = SignUpBenefit.allCases.flatMap { [$0.title, $0.signInReason] }
-            + [SignUpBenefit.heading, SignUpBenefit.action, SignUpBenefit.actionReason]
+            + [SignUpBenefit.heading, SignUpBenefit.actionReason, SignUpBenefit.signUpActionReason, SignInPrompt.signUpLabel, SignInPrompt.loginLabel]
+            + SignUpBenefit.allCases.map(\.signUpReason)
         for text in texts {
             XCTAssertFalse(text.contains("・") || text.contains("·"), "中黒で区切っている: \(text)")
             XCTAssertFalse(text.contains("撮りどき") || text.contains("捨て"), text)
@@ -71,18 +72,25 @@ final class SignUpBenefitsTests: XCTestCase {
                       "写真の上の印が白でない")
         XCTAssertTrue(view.contains(".background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.m))"))
         XCTAssertTrue(view.contains(".font(JPFont.footnote.weight(.semibold))"), "名前が本文系 12 を割る")
-        XCTAssertTrue(view.contains("Text(SignUpBenefit.action).jpPillButton(.outline)"), "下のボタンが線のボタン（44）でない")
+        XCTAssertTrue(view.contains("Text(SignInPrompt.signUpLabel).jpOutlineButton(.regular)"), "下の新規登録が線のボタン（44）でない")
         XCTAssertFalse(view.contains("WebTheme.accentFill"), "写真の並びの中に真鍮の主ボタンを置いている")
         XCTAssertTrue(view.contains("typeSize.isAccessibilitySize ? 1 : HomeSignUpBenefitsLayout.columns"))
     }
 
     // MARK: - 配線
 
-    /// 札を押すと今のログイン画面（`SignInSheet`）。確かめは挟まない（押す回数 1回）
+    /// 札を押すと今のログイン画面（`SignInSheet`）。確かめは挟まない（押す回数 1回）。
+    /// 札と「新規登録」は登録の側、「ログイン」はログインの側で開く（札 #630・Web の段と同じ2つ）
     func testCardsOpenTheExistingSignInSheet() throws {
         let view = try source("Features/Gallery/HomeSignUpBenefitsView.swift")
-        XCTAssertTrue(view.contains("signInOpen = SignInRequest(reason: benefit.signInReason)"))
-        XCTAssertTrue(view.contains("signInOpen = SignInRequest(reason: SignUpBenefit.actionReason)"))
+        XCTAssertTrue(view.contains("signInOpen = SignInRequest(reason: benefit.signUpReason, entry: .signUp)"),
+                      "札が登録の側で開かない")
+        XCTAssertTrue(view.contains("signInOpen = SignInRequest(reason: SignUpBenefit.signUpActionReason, entry: .signUp)"),
+                      "「新規登録」が登録の側で開かない")
+        XCTAssertTrue(view.contains("signInOpen = SignInRequest(reason: SignUpBenefit.actionReason)\n"),
+                      "「ログイン」が無い")
+        XCTAssertTrue(view.contains("Text(SignInPrompt.loginLabel)"))
+        XCTAssertFalse(view.contains("ログイン、新規登録"), "1つのボタンに2つを詰めている（登録はもう1回押すことになる）")
         XCTAssertTrue(view.contains(".signInPrompt(ask: $signInAsk, open: $signInOpen)"))
         XCTAssertFalse(view.contains("signInAsk = "), "確かめの窓を挟むと押す回数が増える")
         XCTAssertFalse(view.contains("SignInView("), "ログイン画面を作り直している")
