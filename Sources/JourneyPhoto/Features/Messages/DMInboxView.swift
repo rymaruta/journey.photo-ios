@@ -67,7 +67,7 @@ struct DMInboxView: View {
                     DMConversationView(conversationId: id, startingWith: peer)
                 }
             case .trip(let planId):
-                TripShareOpenView(planId: planId)
+                TripPlanOpenView(planId: planId, startTab: .chat)
             }
         }
         .toolbar {

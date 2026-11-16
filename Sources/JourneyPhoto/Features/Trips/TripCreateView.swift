@@ -482,39 +482,10 @@ struct TripCreateDatesStep: View {
     /// 休みの組（2026-11-12 資料 2a）。押すと出発と帰着の2日がまとめて入る。
     /// 選んでいる組は真鍮の字と縁（owner の好み「選んでいるもの＝真鍮」）、ほかは outline の縁に白の字。
     /// 見出しは「近くの休み」だけ（説明文に頼らない・2026-11-12 確かめ役の指摘。祝日を含む組もあるので「週末」と言わない）
-    @ViewBuilder
     private var holidayPairs: some View {
-        if !pairs.isEmpty {
-            VStack(alignment: .leading, spacing: JPSpace.xxs) {
-                Text(Self.holidayHeading)
-                    .jpEyebrow()
-                    .foregroundStyle(WebTheme.accent)
-                    .accessibilityAddTraits(.isHeader)
-                HStack(spacing: JPSpace.xs) {
-                    ForEach(pairs) { pair in
-                        let on = model.start == pair.start && model.end == pair.end
-                        Button {
-                            model.choose(pair)
-                            month = Self.initialMonth(pair.start)
-                        } label: {
-                            Text(pair.label)
-                                .font(JPFont.footnote.weight(.semibold).monospacedDigit())
-                                .foregroundStyle(on ? WebTheme.accent : WebTheme.foreground)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                                .padding(.horizontal, JPSpace.s)
-                                .frame(minHeight: WebTheme.minTapTarget)
-                                .overlay(Capsule().strokeBorder(on ? WebTheme.accent : WebTheme.outline,
-                                                                lineWidth: JPStroke.hairline))
-                                .contentShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(TripHolidays.spoken(pair))
-                        .accessibilityAddTraits(on ? .isSelected : [])
-                        .accessibilityIdentifier("tripCreate.holiday.\(pair.start)")
-                    }
-                }
-            }
+        TripHolidayChips(pairs: pairs, start: model.start, end: model.end) { pair in
+            model.choose(pair)
+            month = Self.initialMonth(pair.start)
         }
     }
 
@@ -570,8 +541,11 @@ struct TripCalendar: View {
     @Binding var month: (year: Int, month: Int)
     let start: String?
     let end: String?
-    /// 今日（`YYYY-MM-DD`）。これより前は押せない
+    /// 今日（`YYYY-MM-DD`）。これより前は押せない（`allowsPast` のときを除く）
     let today: String
+    /// 今日より前の日も押せる（2026-11-16 判断: 日程の画面の「日付」のシート。帰ってきた旅や Web で作った過去の
+    /// プランの日付を直せるように——前の端末の日付ピッカーも過去を選べた。作る流れは今どおり今日から）
+    var allowsPast = false
     let tap: (String) -> Void
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
@@ -641,7 +615,7 @@ struct TripCalendar: View {
     private func cell(_ day: String) -> some View {
         let isEnd = day == start || day == (end ?? start)
         let inside = start.map { s in day > s && day < (end ?? s) } ?? false
-        let past = day < today
+        let past = !allowsPast && day < today
         let number = Int(day.suffix(2)) ?? 0
         return Button { tap(day) } label: {
             Text("\(number)")
@@ -666,6 +640,184 @@ struct TripCalendar: View {
         .accessibilityLabel(TakenDay.label(day) ?? day)
         .accessibilityAddTraits(isEnd || inside ? .isSelected : [])
         .accessibilityIdentifier("tripCreate.day.\(day)")
+    }
+}
+
+/// 休みの組のチップ（2026-11-12 資料 2a）。押すと出発と帰着の2日がまとめて入る。
+/// 選んでいる組は真鍮の字と縁（owner の好み「選んでいるもの＝真鍮」）、ほかは outline の縁に白の字。
+/// 見出しは「近くの休み」だけ（説明文に頼らない・2026-11-12 確かめ役の指摘。祝日を含む組もあるので「週末」と言わない）。
+/// 作る流れの「いつ行く？」と、日程の画面の「日付」のシート（`TripPlanDatesSheet`）が同じものを使う（2026-11-16）
+struct TripHolidayChips: View {
+    let pairs: [TripHolidays.Pair]
+    let start: String?
+    let end: String?
+    let choose: (TripHolidays.Pair) -> Void
+
+    var body: some View {
+        if !pairs.isEmpty {
+            VStack(alignment: .leading, spacing: JPSpace.xxs) {
+                Text(TripCreateDatesStep.holidayHeading)
+                    .jpEyebrow()
+                    .foregroundStyle(WebTheme.accent)
+                    .accessibilityAddTraits(.isHeader)
+                HStack(spacing: JPSpace.xs) {
+                    ForEach(pairs) { pair in
+                        let on = start == pair.start && end == pair.end
+                        Button {
+                            choose(pair)
+                        } label: {
+                            Text(pair.label)
+                                .font(JPFont.footnote.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(on ? WebTheme.accent : WebTheme.foreground)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                                .padding(.horizontal, JPSpace.s)
+                                .frame(minHeight: WebTheme.minTapTarget)
+                                .overlay(Capsule().strokeBorder(on ? WebTheme.accent : WebTheme.outline,
+                                                                lineWidth: JPStroke.hairline))
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(TripHolidays.spoken(pair))
+                        .accessibilityAddTraits(on ? .isSelected : [])
+                        .accessibilityIdentifier("tripCreate.holiday.\(pair.start)")
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 日程の画面の「日付」のシート（2026-11-16 判断・使い勝手の見直し A5）。作る流れの「いつ行く？」と同じ暦と近くの休み。
+///
+/// - 出発の日 → 帰着の日と2回押すと、**そのまま入れて閉じる**（休みのチップなら1回）。押す回数は欄を入れて 3（休み 2）。
+///   前は出発と帰着の2つの欄で、端末の日付の選び方を2回開いていた（約9回）
+/// - 1日だけ（日帰り）は、出発の日を押してから「決める」（同じ日をもう一度押しても日帰りで閉じる）
+/// - 日付のあるプランは「日付を外す」で日付の無いプランに戻せる（前の欄の × と同じ。片方だけ外す道は無くした）
+/// - 今日より前の日も押せる（`TripCalendar.allowsPast`）
+/// - 決めた値は画面の `start`・`end` に入り、ほかの直しと同じく自動で保存する（共有したプランは仲間の変更に重ね直す）
+struct TripPlanDatesSheet: View {
+    let initialStart: String?
+    let initialEnd: String?
+    let apply: (_ start: String?, _ end: String?) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var start: String?
+    @State private var end: String?
+    @State private var month: (year: Int, month: Int)
+    @State private var pairs: [TripHolidays.Pair] = []
+    /// 決めて閉じている途中（2回目の押しで閉じるまでの一瞬に、もう一度押しても2度入れない）
+    @State private var closing = false
+    /// 次の押しは出発の選び直し（開いた時の日付が「出発だけ」・`restartsOnFirstTap`）
+    @State private var restart: Bool
+
+    init(start: String?, end: String?, apply: @escaping (_ start: String?, _ end: String?) -> Void) {
+        initialStart = start
+        initialEnd = end
+        self.apply = apply
+        _restart = State(initialValue: Self.restartsOnFirstTap(start: start, end: end))
+        _start = State(initialValue: start)
+        _end = State(initialValue: end)
+        _month = State(initialValue: TripCreateDatesStep.initialMonth(start ?? end))
+    }
+
+    /// 押した日のあと、どうなるか（`TripDraft.tap` の続き）。出発と帰着がそろったら閉じる。
+    /// `restart`: 開いた時に入っていた「出発だけ」の日付は、自分で今選んだ出発ではない（Web で作ったプランなど）。
+    /// そのまま帰着の押しとして数えると、最初の1回で知らない期間が入って閉じてしまうので、最初の押しは出発の選び直しにする
+    nonisolated static func tapped(start: String?, end: String?, day: String,
+                                   restart: Bool = false) -> (start: String?, end: String?, closes: Bool) {
+        if restart { return (day, nil, false) }
+        let next = TripDraft.tap(start: start, end: end, day: day)
+        return (next.start, next.end, next.start != nil && next.end != nil)
+    }
+
+    /// 開いた時に入っている日付が「出発だけ」なら、最初の押しは出発の選び直し（`tapped` の `restart`）
+    nonisolated static func restartsOnFirstTap(start: String?, end: String?) -> Bool {
+        start != nil && end == nil
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: JPSpace.m) {
+                    TripHolidayChips(pairs: pairs, start: start, end: end) { pair in
+                        start = pair.start
+                        end = pair.end
+                        month = TripCreateDatesStep.initialMonth(pair.start)
+                        finish(pair.start, pair.end)
+                    }
+                    TripCalendar(month: $month, start: start, end: end,
+                                 today: TripPlanText.ymd(pickedIn: .current, Date()), allowsPast: true) { day in
+                        let next = Self.tapped(start: start, end: end, day: day, restart: restart)
+                        restart = false
+                        start = next.start
+                        end = next.end
+                        if next.closes { finish(next.start, next.end) }
+                    }
+                    if initialStart != nil || initialEnd != nil {
+                        Button {
+                            finish(nil, nil)
+                        } label: {
+                            Text(L("日付を外す", "Remove dates"))
+                                .font(JPFont.body)
+                                .foregroundStyle(WebTheme.text2)
+                                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("tripPlan.dates.clear")
+                    }
+                }
+                .padding(.horizontal, JPSpace.gutter)
+                .padding(.top, JPSpace.xs)
+                .padding(.bottom, JPSpace.l)
+            }
+            .webScreen()
+            .navigationTitle(L("日付", "Dates"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
+                // 選んでいる期間（「12月16日（水）〜 17日（木）」・模型の右上の小さい字）
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 1) {
+                        Text(L("日付", "Dates")).font(JPFont.bodyEmphasis).foregroundStyle(WebTheme.foreground)
+                        Text(TripDraft.rangeLine(start: start, end: end) ?? L("出発の日を押してください", "Tap the day you leave"))
+                            .font(JPFont.caption.monospacedDigit())
+                            .foregroundStyle(WebTheme.text3)
+                            .lineLimit(1)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                // 1日だけの旅（出発だけ押した）を決める。写真の無い画面の主ボタンは真鍮の塗りに墨（owner の好み・
+                // 2026-11-16 判断: 模型は白の主ボタンだったが、CLAUDE.md の owner の好みを先にする）
+                Button {
+                    finish(start, end ?? start)
+                } label: {
+                    Text(L("決める", "Done")).jpPillButton(.main(onPhoto: false))
+                }
+                .buttonStyle(.plain)
+                .disabled(start == nil || closing)
+                .opacity(start == nil ? TripStyle.disabledOpacity : 1)
+                .accessibilityIdentifier("tripPlan.dates.done")
+                .jpBottomBar()
+            }
+        }
+        .onAppear {
+            if pairs.isEmpty { pairs = TripHolidays.pairs(from: TripPlanText.ymd(pickedIn: .current, Date())) }
+        }
+    }
+
+    /// 入れて閉じる。選んだ日が見えるよう、閉じるのを少し待つ
+    private func finish(_ s: String?, _ e: String?) {
+        guard !closing else { return }
+        closing = true
+        apply(s, e)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            dismiss()
+        }
     }
 }
 

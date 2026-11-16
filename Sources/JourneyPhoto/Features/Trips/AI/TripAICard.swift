@@ -48,10 +48,75 @@ struct TripAICard: View {
 
     @State private var writing = false
     @State private var text = ""
+    /// 開いているか（2026-11-16 判断・使い勝手の見直し A6）。**はじめは1行に畳む**——開いた札は理由の数行と
+    /// 直しのチップで日程を1画面ぶん下へ押していた（最初に見える場所 約1.5か所）。押すと開き、もう一度押すと畳む
+    @State private var open = false
 
     private var usedUp: Bool { note.mode == .usedUp || (usage?.remaining ?? 1) <= 0 }
 
+    /// 畳んだ行の眉と1行（理由が空のプランは、押すだけの直しの名前を並べる）
+    nonisolated static func foldedLine(reason: String) -> (eyebrow: String, text: String) {
+        let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return (L("押すだけで直す", "Quick changes"), TripAITweak.allCases.map(\.title).joined(separator: L("、", ", ")))
+        }
+        return (L("並べた理由", "Why this order"), trimmed)
+    }
+
+    /// 畳んだ行の読み上げ（眉と1行。区切りは日本語「、」・英語「, 」）
+    nonisolated static func foldedSpoken(reason: String) -> String {
+        let line = foldedLine(reason: reason)
+        return line.eyebrow + L("、", ", ") + line.text
+    }
+
     var body: some View {
+        if open { openCard } else { foldedCard }
+    }
+
+    /// 畳んだ姿（模型 A6: 高さ 44・札の面・角 12。真鍮の眉「並べた理由」→ 13 の text-2 の1行 → 下向きの印）。
+    /// AI なしで組んだ回の帯（つながったら整える・やり直す）は押せる一手なので、畳んでも下に残す
+    private var foldedCard: some View {
+        let line = Self.foldedLine(reason: note.reason)
+        return VStack(alignment: .leading, spacing: JPSpace.xs) {
+            Button { open = true } label: {
+                HStack(spacing: 10) {
+                    Text(line.eyebrow)
+                        .font(JPFont.eyebrow)
+                        .foregroundStyle(WebTheme.accent)
+                        .fixedSize()
+                    Text(line.text)
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text2)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 0)
+                    if working { ProgressView().tint(WebTheme.text2) }
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(WebTheme.text3)
+                        .accessibilityHidden(true)
+                }
+                .padding(.horizontal, 14)
+                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget, alignment: .leading)
+                .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.field))
+                .overlay(RoundedRectangle(cornerRadius: JPRadius.field).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Self.foldedSpoken(reason: note.reason))
+            // 子を畳む（`.ignore`）とボタンの印が落ちる（Mac run 1420 で `tripAI.folded` が Button として見つからなかった。
+            // 同じ件の手本: DMSpotCard の run 1096・PhotoDetailView の run 1322）。印を付け直す
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint(L("押すと開きます", "Opens the details"))
+            .accessibilityIdentifier("tripAI.folded")
+            band
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("tripAI.card")
+    }
+
+    private var openCard: some View {
         VStack(alignment: .leading, spacing: JPSpace.s) {
             HStack(alignment: .firstTextBaseline) {
                 // 理由が空なら見出しも出さない
@@ -61,6 +126,16 @@ struct TripAICard: View {
                         .foregroundStyle(WebTheme.accent)
                 }
                 Spacer(minLength: 0)
+                // 畳む（開いた札の右上・当たり 44）
+                Button { open = false; writing = false } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(WebTheme.text3)
+                        .webTappable()
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(L("畳む", "Collapse"))
+                .accessibilityIdentifier("tripAI.fold")
                 if canUndo {
                     Button(action: undo) {
                         Label(L("元に戻す", "Undo"), systemImage: "arrow.uturn.backward")

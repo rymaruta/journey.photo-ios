@@ -22,6 +22,9 @@ struct TripPlanDetailView: View {
     var sharePeer: TripSharePeer? = nil
     /// 開いたときの「日程 | 会話」（受信箱・プッシュから開いたときは会話）
     var startTab: TripShareText.Tab = .days
+    /// 開いたら今日の日まで送る（2026-11-16 判断・使い勝手の見直し A2: 旅の日にホームの札を押した）。
+    /// 今日の日は見出しを「今日」にして札の縁を真鍮にする（これはどこから開いても）
+    var opensToday = false
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
@@ -59,6 +62,12 @@ struct TripPlanDetailView: View {
     @State private var legTarget: LegTarget?
     /// 季節の一文・時刻帯のために詳細を重ねた（索引だけの行の文は詳細にある）
     @State private var detailsKey = ""
+    /// 「日付」のシート（2026-11-16 判断・使い勝手の見直し A5）
+    @State private var editingDates = false
+    /// 今日の日まで送ったか（開いたときの1回だけ。あとで日程が変わっても送り直さない）
+    @State private var scrolledToToday = false
+    /// 電波なしの札の「Pro か」（上と下の2枚で1つ・`OfflineTripCard.slot`）
+    @State private var offlinePro: Bool?
 
     private struct DropSpot: Equatable { let day: Int; let item: Int? }
     private struct LegTarget: Identifiable {
@@ -767,10 +776,22 @@ struct TripPlanDetailView: View {
     private func editor(_ plan: TripPlan) -> some View {
         // 区間の材料は描くたびに1回だけ（日の節へ渡す）
         let layout = travelLayout()
-        return ScrollView {
+        return ScrollViewReader { proxy in
+            editorScroll(plan, layout: layout, today: todayIndex, proxy: proxy)
+        }
+        // 移動の見込みを聞く（開いているプランの区間だけ・同じ区間は控え）
+        .task(id: layout.key) { requestTravel(layout.all) }
+        // 電波なしの札の「Pro か」（サーバーが決める・読めなければ nil）。札を置かない間も読む（`offlineSlot`）
+        .task { offlinePro = (try? await environment.profiles.myProfile())?.isPro }
+    }
+
+    /// 日程の画面の中身（`ScrollViewReader` の中・今日の日まで送るため proxy を受ける）
+    private func editorScroll(_ plan: TripPlan, layout: TravelLayout, today: Int?, proxy: ScrollViewProxy) -> some View {
+        ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header(plan)
 
+                // AI の札は1行に畳んで出す（2026-11-16 判断・A6・`TripAICard.open`）
                 if let note = aiNotes.note(planId) {
                     TripAICard(note: note, usage: aiRunner.usage, working: aiWorking, canUndo: !aiHistory.isEmpty,
                                online: !connectivity.isOffline,
@@ -787,8 +808,9 @@ struct TripPlanDetailView: View {
                 }
                 .overlay(alignment: .topLeading) { fixtureSendsLabel }
 
-                // 電波なしで使えるようにする（板 72・日付の下）。比べるのはサーバーの姿のプラン
-                OfflineTripCard(plan: plan, index: index, places: places, sourcesReady: gotIndex && gotPhotos)
+                // 電波なしで使えるようにする（板 72・日付の下）。比べるのはサーバーの姿のプラン。
+                // 2026-11-16 判断（A6）: ここに出すのは Pro の人の札だけ。Pro でない人の「PRO」の案内は最後の日の下
+                offlineSlot(plan, .top)
 
                 if let error = model.errorMessage {
                     Text(error)
@@ -804,92 +826,129 @@ struct TripPlanDetailView: View {
                 // 通し番号（1日目 1・2、2日目 3 …・板 TripPlanDays）。圏外の画面・地図の画像の点と同じ数え方
                 let numbers = TripStyle.stopNumbers(days.map(\.items.count))
                 ForEach(Array(days.enumerated()), id: \.offset) { di, day in
-                    daySection(di, day, numbers: numbers.indices.contains(di) ? numbers[di] : [], layout: layout)
+                    daySection(di, day, numbers: numbers.indices.contains(di) ? numbers[di] : [], layout: layout,
+                               isToday: di == today)
                         .padding(.top, di == 0 ? 0 : JPSpace.xs)
+                        .id(Self.dayAnchor(di))
                 }
 
                 addDayButton
-                // 出どころ（移動の見込みを1つでも出したとき・日程のいちばん下）
-                if layout.all.contains(where: { !estimates(for: $0).isEmpty }) {
-                    Text(TripTravel.sourceNote)
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.text3)
-                } else if travel.throttled {
-                    Text(TripTravel.throttledNote)
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.text3)
+                // 日程の下（Group は並びの間隔を変えない。ViewBuilder の子は 10 までなのでまとめる）
+                Group {
+                    // 出どころ（移動の見込みを1つでも出したとき・日程のいちばん下）
+                    if layout.all.contains(where: { !estimates(for: $0).isEmpty }) {
+                        Text(TripTravel.sourceNote)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text3)
+                    } else if travel.throttled {
+                        Text(TripTravel.throttledNote)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text3)
+                    }
+                    // Pro でない人の「電波なしで使えるようにする PRO」（2026-11-16 判断・A6: 日付と1日目の間から、最後の日の下へ）
+                    offlineSlot(plan, .bottom)
+                    deleteCard(plan)
                 }
-                deleteCard(plan)
             }
             .padding(.horizontal, JPSpace.gutter)
             .padding(.top, JPSpace.xs)
             .padding(.bottom, JPSpace.screenEnd)
         }
-        // 移動の見込みを聞く（開いているプランの区間だけ・同じ区間は控え）
-        .task(id: layout.key) { requestTravel(layout.all) }
-    }
-
-    // MARK: - 出発・帰着
-
-    /// 日付の欄。**端末の日付ピッカー**で選ぶ（Web は `type="date"`。文字で打たせない）。
-    /// 空にもできる（Web も空を許す）
-    private func dateField(_ title: String, value: Binding<String?>, fallback: String?,
-                           isStart: Bool) -> some View {
-        // v2 の板 TripPlanDays の `.dt`: 52 の箱の中に、上に 12 の名前・下に日付（surface-2・白 8% の縁・角 12）
-        VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .font(JPFont.caption)
-                .foregroundStyle(WebTheme.text3)
-                .accessibilityHidden(true)
-            HStack(spacing: JPSpace.xxs) {
-                if value.wrappedValue != nil {
-                    DatePicker(title, selection: pickerBinding(value, isStart: isStart), displayedComponents: .date)
-                        .labelsHidden()
-                    Spacer(minLength: 0)
-                    Button {
-                        value.wrappedValue = nil
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(WebTheme.text3)
-                            .webTappable()
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(L("\(title)の日付を消す", "Clear \(title)"))
-                } else {
-                    Button {
-                        // 入れる日は**もう片方の日付**、無ければ今日
-                        value.wrappedValue = fallback ?? TripPlanText.ymd(pickedIn: .current, Date())
-                    } label: {
-                        Text(L("日付を入れる", "Set date"))
-                            .font(JPFont.body)
-                            .foregroundStyle(WebTheme.text2)
-                            .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget, alignment: .leading)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(L("\(title)の日付を入れる", "Set \(title) date"))
-                }
-            }
+        // 旅の日にホームの札から開いた: 今日の日まで送る（日程が読めて、今日の日があるときの1回だけ・A2）
+        .onChange(of: today, initial: true) { _, index in
+            scrollToToday(index, proxy: proxy)
         }
-        .padding(.horizontal, JPSpace.s)
-        .padding(.top, 6)
-        .frame(maxWidth: .infinity, minHeight: TripStyle.dateFieldHeight, alignment: .leading)
-        .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))
-        .overlay(RoundedRectangle(cornerRadius: JPRadius.field).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
     }
 
-    /// `YYYY-MM-DD` ⇔ ピッカーの日。**端末のゾーンのその日**で読み書きする
-    /// 選んだときだけ前後を揃える（`TripPlanText.ordered`）。**開いたときの値には
-    /// 触らない**——Web で作った「帰着が出発より前」のプランを開いただけで書き換えない
-    private func pickerBinding(_ value: Binding<String?>, isStart: Bool) -> Binding<Date> {
-        Binding(
-            get: { TripPlanText.pickerDate(fromYMD: value.wrappedValue, in: .current) ?? Date() },
-            set: {
-                value.wrappedValue = TripPlanText.ymd(pickedIn: .current, $0)
-                let fixed = TripPlanText.ordered(start: start, end: end, movedStart: isStart)
-                if fixed.start != start { start = fixed.start }
-                if fixed.end != end { end = fixed.end }
+    /// 今日の日まで送る（開いたときの1回だけ・`opensToday` のときだけ）
+    private func scrollToToday(_ index: Int?, proxy: ScrollViewProxy) {
+        guard opensToday, !scrolledToToday, let index else { return }
+        scrolledToToday = true
+        Task { @MainActor in
+            // 並びが組み上がってから送る（読めた直後のコマでは、まだ下の日の高さが決まっていない）
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            proxy.scrollTo(Self.dayAnchor(index), anchor: .top)
+        }
+    }
+
+    /// 電波なしの札（上か下）。**この場所に出す姿のときだけ並びに置く**（出さない側に高さ 0 の札を置くと、縦の間隔 14 が
+    /// 余分に空く）。Pro かどうかは画面が読む（`offlinePro`・`editor` の `.task`）
+    @ViewBuilder
+    private func offlineSlot(_ plan: TripPlan, _ slot: OfflineTripCard.Slot) -> some View {
+        if OfflineTripCard.shows(OfflineTripCard.phase(plan: plan, offline: offline, isPro: offlinePro), in: slot) {
+            OfflineTripCard(plan: plan, index: index, places: places, sourcesReady: gotIndex && gotPhotos,
+                            slot: slot, isPro: $offlinePro)
+        }
+    }
+
+    /// 日の節の目印（今日の日まで送る `scrollTo` の先）
+    nonisolated static func dayAnchor(_ di: Int) -> String { "tripPlan.day.\(di)" }
+
+    /// 今日の日（0 から）。日付の無いプラン・旅の前と後は nil（`TripPlanText.todayIndex`・端末の時刻帯の今日）
+    private var todayIndex: Int? {
+        TripPlanText.todayIndex(days: days, start: start, end: end, now: Date(), in: .current)
+    }
+
+    // MARK: - 日付
+
+    /// 「日付」の欄（2026-11-16 判断・使い勝手の見直し A5）。**出発と帰着の2つの欄を1つにした。**
+    /// 押すと作る流れと同じ暦と近くの休みがシートで開く（`TripPlanDatesSheet`）。押す回数は 欄 → 出発 → 帰着 の 3
+    /// （休みのチップなら 2）。前は2つの欄で端末の日付の選び方を2回開いていた（約9回）。
+    /// 板 TripPlanDays の `.dt`（52 の箱・上に 12 の名前・下に 15 の日付・surface-2・白 8% の縁・角 12）はそのまま。
+    /// 上の小さい字に泊数を添える（「日付　1 泊 2 日」・模型 A5）。日付の無いプランは「日付を入れる」。
+    /// **開いただけでは日付を書き換えない**（Web で作った「帰着が出発より前」のプランもそのまま見せる・`periodField`）
+    private func dateField() -> some View {
+        let field = TripDraft.periodField(start: start, end: end)
+        return Button {
+            editingDates = true
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(field?.label ?? L("日付", "Dates"))
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+                    .lineLimit(1)
+                Text(field?.value ?? L("日付を入れる", "Set dates"))
+                    .font(field == nil ? JPFont.body : JPFont.number(JPTypeScale.body, weight: .regular))
+                    .foregroundStyle(field == nil ? WebTheme.text2 : WebTheme.foreground)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
-        )
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, minHeight: TripStyle.dateFieldHeight, alignment: .leading)
+            .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: JPRadius.field))
+            .overlay(RoundedRectangle(cornerRadius: JPRadius.field).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(field.map { $0.label + L("、", ", ") + $0.value } ?? L("日付を入れる", "Set dates"))
+        .accessibilityHint(L("押すと暦が開きます", "Opens the calendar"))
+        .accessibilityIdentifier("tripPlan.dates")
+    }
+
+    /// 「仲間を誘う」（2026-11-16 判断・A6: 仲間の段から「日付」の欄と同じ行の右へ）。高さは欄と同じ 52・角 12・
+    /// 白 14% の線。幅を取らないよう字は「誘う」（読み上げは「仲間を誘う」・模型 A6）。圏外の間は出さない（送れない）
+    private func inviteButton(_ plan: TripPlan) -> some View {
+        Button {
+            Task { await invite(plan) }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "person.badge.plus")
+                    .font(.footnote.weight(.semibold))
+                    .accessibilityHidden(true)
+                Text(L("誘う", "Invite"))
+                    .font(JPFont.footnote.weight(.semibold))
+                    .fixedSize()
+            }
+            .foregroundStyle(WebTheme.foreground)
+            .padding(.horizontal, 14)
+            .frame(minHeight: TripStyle.dateFieldHeight)
+            .overlay(RoundedRectangle(cornerRadius: JPRadius.field).strokeBorder(WebTheme.line, lineWidth: JPStroke.hairline))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(shareWorking)
+        .accessibilityLabel(TripShareText.invite)
+        .accessibilityIdentifier("tripShare.invite")
     }
 
     // MARK: - 日ごと
@@ -913,17 +972,23 @@ struct TripPlanDetailView: View {
         return TakenDay.label(date)
     }
 
-    /// 日の見出し（v2 の板 TripPlanDays: 真鍮の眉「1日目 · 12月24日」と右へ消える線）
-    private func dayHeading(_ di: Int, _ day: TripDay) -> String {
+    /// 日の見出し（v2 の板 TripPlanDays: 真鍮の眉「1日目　12月24日」と右へ消える線）
+    private func dayHeading(_ di: Int, _ day: TripDay, today: Bool = false) -> String {
+        Self.dayHeadingText(di, date: TripPlanText.dayDate(index: di, day: day, start: start, end: end), today: today)
+    }
+
+    /// 見出しの字。今日の日は頭に「今日」（2026-11-16 判断・A2: 「今日　2 日目　12月17日」・模型 A2 の眉）
+    nonisolated static func dayHeadingText(_ di: Int, date: String?, today: Bool) -> String {
         var head = L("\(di + 1) 日目", "Day \(di + 1)")
-        if let date = TripPlanText.dayDate(index: di, day: day, start: start, end: end),
-           let label = TakenDay.label(date) {
-            head += L("\u{2002}\(label)", "\u{2002}\(label)")
+        if today { head = L("今日\u{2002}", "Today\u{2002}") + head }
+        if let label = TakenDay.label(date) {
+            head += "\u{2002}\(label)"
         }
         return head
     }
 
-    private func daySection(_ di: Int, _ day: TripDay, numbers: [Int], layout: TravelLayout) -> some View {
+    private func daySection(_ di: Int, _ day: TripDay, numbers: [Int], layout: TravelLayout,
+                            isToday: Bool = false) -> some View {
         let ymd = TripPlanText.dayDate(index: di, day: day, start: start, end: end)
         let resolved = day.items.map { TripDraft.place(for: $0, index: index, places: places) }
         let sun = TripDraft.sun(ymd: ymd, spots: daySpots(day))
@@ -931,7 +996,7 @@ struct TripPlanDetailView: View {
         let estimatesByLeg = legs.map { estimates(for: $0) }
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
-                JPEyebrowLine(dayHeading(di, day))
+                JPEyebrowLine(dayHeading(di, day, today: isToday))
                     .padding(.trailing, JPSpace.xs)
                 // 地図で見る。**地図に置ける場所がある日だけ**（押しても空の地図を出さない）
                 let stops = TripDayMap.stops(of: day, index: index, places: places, startNumber: numbers.first ?? 1)
@@ -967,6 +1032,8 @@ struct TripPlanDetailView: View {
                 .accessibilityIdentifier("tripPlan.dayMenu")
             }
 
+            // 今日の日は、日の出の行から追加の行までを札で囲む（`TripTodayFrame`・2026-11-16 判断・A2）
+            VStack(alignment: .leading, spacing: 0) {
             // 日の出・日の入り（端末の計算）・同じ時間帯の重なり・間に合わないとき（計算した数だけ）
             VStack(alignment: .leading, spacing: JPSpace.xxs) {
                 if let sun, let line = TripSunText.line(sun) {
@@ -1040,6 +1107,8 @@ struct TripPlanDetailView: View {
                         drop(items.first, toDay: di, toItem: nil)
                     } isTargeted: { setDropTarget($0, DropSpot(day: di, item: nil)) }
             }
+            }
+            .modifier(TripTodayFrame(on: isToday))
         }
     }
 
@@ -1573,26 +1642,37 @@ struct TripPlanDetailView: View {
                 .foregroundStyle(WebTheme.foreground)
                 .accessibilityAddTraits(.isHeader)
 
+            // 「日付」の欄と、その右に「誘う」（2026-11-16 判断・A5・A6）。誘うは圏外の間は出さない（送れない）
             HStack(spacing: JPSpace.xs) {
-                dateField(L("出発", "From"), value: $start, fallback: end, isStart: true)
-                dateField(L("帰着", "To"), value: $end, fallback: start, isStart: false)
+                dateField()
+                if !isOffline { inviteButton(plan) }
             }
 
-            // 仲間（共有する・誘う・「日程 | 会話」・2026-11-12）。圏外の間は出さない（送れない）
+            // 仲間（共有する・人数と顔・「日程 | 会話」・2026-11-12）。圏外の間は出さない（送れない）。
+            // 誘うは上の行へ移したので、出すものが無いプラン（共有していない・DM の相手もいない）は段ごと置かない
             shareSection(plan)
+        }
+        .sheet(isPresented: $editingDates) {
+            TripPlanDatesSheet(start: start, end: end) { s, e in
+                start = s
+                end = e
+            }
         }
     }
 
     @ViewBuilder
     private func shareSection(_ plan: TripPlan) -> some View {
-        if !isOffline { shareStrip(plan) }
+        if !isOffline, TripShareStrip.hasContent(plan: plan, peer: sharePeer, showsInvite: false) {
+            shareStrip(plan, showsInvite: false)
+        }
     }
 
-    private func shareStrip(_ plan: TripPlan) -> TripShareStrip {
+    private func shareStrip(_ plan: TripPlan, showsInvite: Bool = true) -> TripShareStrip {
         TripShareStrip(plan: plan, members: members, peer: sharePeer, working: shareWorking,
                        tab: tab, chatUnread: chatUnread,
                        onShareWithPeer: { Task { await share(with: sharePeer) } },
-                       onInvite: { Task { await invite(plan) } })
+                       onInvite: { Task { await invite(plan) } },
+                       showsInvite: showsInvite)
     }
 
     /// 会話の画面（題・仲間の段・切り替えは日程と同じ所に置き、下に会話と入力欄）
@@ -1827,6 +1907,33 @@ private final class TripBackgroundWindow {
     }
 }
 
+
+/// 今日の日の札（2026-11-16 判断・使い勝手の見直し A2・模型 A2）: 地は札の面 #0E0E0F、縁は真鍮 55%、角 16、
+/// 内側 14（下は 6）。**板 TripPlanDays は日を札で囲まない**（区切り線の行）。今日の日だけ囲むのは、旅の日に開いたとき
+/// 「今日はここ」が見て分かるため（真鍮は黒い地の上。色だけで伝えず、見出しの「今日」の字でも伝える）
+struct TripTodayFrame: ViewModifier {
+    let on: Bool
+    /// 縁の濃さ（真鍮 55%）
+    static let borderOpacity = 0.55
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if on {
+            content
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+                .padding(.bottom, 6)
+                .background(WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))
+                .overlay(RoundedRectangle(cornerRadius: JPRadius.l)
+                    .strokeBorder(WebTheme.accent.opacity(Self.borderOpacity), lineWidth: JPStroke.hairline))
+                .padding(.top, JPSpace.xs)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("tripPlan.today")
+        } else {
+            content
+        }
+    }
+}
 
 /// 「替える」の対象（札 #621）
 struct TripAISwapTarget: Identifiable {

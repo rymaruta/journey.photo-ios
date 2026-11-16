@@ -260,11 +260,16 @@ final class StoryV2RingsFixTests: XCTestCase {
     /// 同じ形の2か所: 旅の「電波なしで使えるようにする」の札（Pro かどうか読む前は中身が空だった）と、
     /// プロフィールのハイライト（読み終わる前は中身が空）。どちらも見えない1枚を置いて `.task` を走らせる
     func testOtherLoadersKeepAnAnchor() throws {
+        // 2026-11-16（A6・確かめ役の指摘）: 電波なしの札は上と下の2か所に置き、出さない側は並びに置かない
+        // （高さ 0 の札で縦の間隔が余分に空いた）。**Pro かどうかを読む `.task` は日程の画面が持つ**ので、
+        // 札を置かない間（読み込み中の `.hidden` を含む）も読みが走る
+        let detail = try source("Features/Trips/TripPlanDetailView.swift")
+        XCTAssertTrue(detail.contains(".task { offlinePro = (try? await environment.profiles.myProfile())?.isPro }"),
+                      "Pro かどうかを読む .task が、札を置かない間も走る場所に無い")
         let card = try source("Features/Trips/OfflineTripCard.swift")
         let cardBody = slice(card, from: "var body: some View {", to: ".fullScreenCover(isPresented: $showPaywall)")
-        assertInOrder(["case .hidden:", "StoriesRow.loadingAnchor", ".task {", "myProfile()"],
-                      in: cardBody, "旅の札の読み込み")
-        XCTAssertFalse(cardBody.contains("EmptyView()"), "中身が EmptyView だけになり .task が走らない")
+        XCTAssertFalse(cardBody.contains("myProfile()"), "札が自分で読むと、置かない間は読みが走らない")
+        XCTAssertFalse(cardBody.contains("EmptyView()"), "中身が EmptyView だけになる")
         let highlights = try source("Features/Profile/HighlightsRow.swift")
         let hBody = slice(highlights, from: "var body: some View {", to: ".sheet(isPresented: $showEditor")
         assertInOrder(["if ProfileSections.showsHighlights(", "} else {", "StoriesRow.loadingAnchor",
