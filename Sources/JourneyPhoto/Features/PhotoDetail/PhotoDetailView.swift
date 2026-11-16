@@ -662,9 +662,6 @@ struct PhotoDetailView: View {
         // 未ログインで押したいいね・保存から「ログインする」（`SignInPrompt`）
         // 2026-11-16 判断（A4）: ログインできたら、押したいいね・保存・フォローを最後まで済ませる
         .signInPrompt(ask: $signInAsk, open: $signInOpen, onSignedIn: { afterSignIn = $0 })
-        // フォローの続きは、ログインした人のフォローの状態が分かってから（`SignInFollowUp.step`）
-        .onChange(of: isFollowing) { _, _ in Task { await runAfterSignIn() } }
-        .onChange(of: followLookupFailed) { _, _ in Task { await runAfterSignIn() } }
     }
 
     /// 写真を下に引いて前の画面へ戻る（2026-11-13 owner 決定・札 #592）。判定と量は `PhotoDetailPull`、
@@ -963,6 +960,10 @@ struct PhotoDetailView: View {
         }
         // v2 の板: 画面の端は 16（`JPSpace.gutter`・以前は 20）
         .padding(.horizontal, JPSpace.gutter)
+        // フォローの続き（2026-11-16 A4）は、ログインした人のフォローの状態が分かってから（`SignInFollowUp.step`）。
+        // **`screenBody` の鎖に足さない**: 足すと Xcode の型検査が時間内に終わらずビルドが落ちた（2026-11-16 Mac run 1418）
+        .onChange(of: isFollowing) { _, _ in Task { await runAfterSignIn() } }
+        .onChange(of: followLookupFailed) { _, _ in Task { await runAfterSignIn() } }
     }
 
     /// 題のかたまり（v2 の板 PhotoDetail）: 題 → 複数枚の枚数表示。**写真の下の黒地**なので影は付けず、
