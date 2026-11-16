@@ -2831,6 +2831,15 @@ extension View {
     ///
     /// 深さは `StoryViewTypeDepthTests` が Mac で塊ごとに測る（上限を超えたら落ちる）
     func storyTypeBoundary() -> AnyView { AnyView(self) }
+
+    /// **型の境目**（`storyTypeBoundary` と同じもの・ストーリー以外の画面で使う名前）。
+    ///
+    /// 2026-11-16 判断: TestFlight 1.1.99 が実機（iOS 27.2.1）の起動で落ちた。落ちた記録は「Thread stack size exceeded」で、
+    /// `RootView.tabsBase.getter` の `__swift_instantiateConcreteTypeFromMangledNameV2` から上がすべて型の名前の解読の
+    /// 再帰だった（札 #596 と同じ形）。起動の画面（`RootView`）は修飾子の段（`tabsBase` → … → `tabsWithFoundingGift`）が
+    /// 12 段つながり、`some View` の段に分けても型の名前は全部入れ子になる。段の頭で切る。
+    /// 測るのは `RootViewTypeStackTests`（名前から組み立て直すスタックの量）
+    func viewTypeBoundary() -> AnyView { AnyView(self) }
 }
 
 /// 画面の型の深さを測る（札 #596・`StoryViewTypeDepthTests`）

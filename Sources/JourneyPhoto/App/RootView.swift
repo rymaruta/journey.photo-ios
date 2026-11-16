@@ -406,6 +406,7 @@ struct RootView: View {
     /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
     private var tabsWithFoundingGift: some View {
         tabsWithProfileExtras
+            .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
             .fullScreenCover(isPresented: Binding(get: { foundingGiftName != nil },
                                                   set: { if !$0 { foundingGiftName = nil } })) {
                 FoundingGiftView(name: foundingGiftName ?? "") {
@@ -440,6 +441,7 @@ struct RootView: View {
     /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
     private var tabsWithPushPrimer: some View {
         tabsWithReviewPrompt
+            .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
             .onChange(of: pushPrimer.requests) { _, _ in offerPushPrimerWhenIdle() }
             .onChange(of: pushPrimer.reachOutRequests) { _, _ in offerReachOutPrimerWhenIdle() }
             // 画面写真の試験だけ: 起動のときに1回出す（`PreviewSession.opensPushPrimer`・Debug のみ）
@@ -455,6 +457,7 @@ struct RootView: View {
     /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
     private var tabsWithTrunkWelcome: some View {
         tabsWithTrunkArrival
+            .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
             // 開いたとき（人が替わったときも）に一度だけ呼ぶ。入口の口が後から読めたら、そのときにも確かめる
             .task(id: auth.userId) { await claimTrunkWelcome() }
             .onChange(of: trunkAvailability.isAvailable) { _, available in
@@ -492,6 +495,7 @@ struct RootView: View {
     /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
     private var tabsWithProfileExtras: some View {
         tabsWithTrunkWelcome
+            .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
             .onChange(of: coverOffers.postRequests) { _, _ in decideFirstPostOffer() }
             .onChange(of: coverOffers.requests) { _, _ in offerCoverWhenIdle() }
             .onChange(of: profileReward.requests) { _, _ in offerRewardWhenIdle() }
@@ -747,6 +751,7 @@ struct RootView: View {
     /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
     private var tabsWithTrunkArrival: some View {
         tabsWithPushPrimer
+            .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
             .onChange(of: trunkArrivals.requests) { _, _ in offerTrunkArrivalWhenIdle() }
             // 一部だけ上がった回は投稿の画面が開いたまま。閉じたら出し直す（待ちきれずに残った束も）
             .onChange(of: tabRouter.postSheetsClosed) { _, _ in
@@ -889,12 +894,14 @@ struct RootView: View {
     /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
     private var tabsWithReviewPrompt: some View {
         tabsWithMessages
+            .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
             .onChange(of: reviewPrompt.requests) { _, _ in askForReviewWhenIdle() }
     }
 
     /// メッセージの受信箱（2026-11-10 札 #505）。**修飾子の列を伸ばさない**ために分けてある（run 343 と同じ理由）
     private var tabsWithMessages: some View {
         tabsWithWhatsNew
+            .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
             // 見出しの吹き出し → 受信箱
             .onChange(of: tabRouter.messagesRequests) { _, _ in
                 showMenu = false
@@ -1009,6 +1016,7 @@ struct RootView: View {
     /// **`tabs` の修飾子の列に足さない**——長すぎて Xcode の型検査が時間切れになった（run 343）
     private var tabsWithWhatsNew: some View {
         tabs
+            .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
         // 「新しくなったこと」の項目 → ホームの札へ
         .onChange(of: tabRouter.homeRequests) { _, _ in
             showMenu = false
@@ -1056,6 +1064,7 @@ struct RootView: View {
     /// 1つの式を短くした。`tabsBase` → `tabsWithPostChoice` → `tabsWithPostSheets` → `tabs`）
     private var tabs: some View {
         tabsWithPostSheets
+            .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
             .task(id: auth.userId) { await offerInterruptedUpload() }
             .alert(L("送れなかった投稿があります", "Posts didn\u{2019}t finish sending"),
                    isPresented: Binding(get: { interruptedUpload != nil },
@@ -1110,6 +1119,7 @@ struct RootView: View {
     /// 投稿の画面（旅の写真・投稿・ストーリー）
     private var tabsWithPostSheets: some View {
         tabsWithPostChoice
+            .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
             // **閉じきってから投稿画面を開く**（onDismiss）。閉じている途中に次を出すと出ないことがある
             .fullScreenCover(isPresented: $showTripImport, onDismiss: {
                 importTrip = nil
@@ -1220,6 +1230,7 @@ struct RootView: View {
     /// 投稿の選択（下の「投稿」）と、構図を重ねて撮る（作例なし）
     private var tabsWithPostChoice: some View {
         tabsBase
+            .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
             // 今日のテーマの「参加する」から来たときのタグ。
             // **投稿画面を閉じたら忘れる**（次の投稿に引きずらない）
             .onChange(of: showPhotoUpload) { _, shown in
@@ -1383,7 +1394,8 @@ struct RootView: View {
         selection = tab
     }
 
-    private var tabsBase: some View {
+    /// 下の札（`TabView` と5つの札の中身）。上の修飾子（`tabsBase`）とは型の境目で切る（1.1.99 の起動で落ちた件）
+    private var tabBar: some View {
         // **同じ札をもう一度押したことを拾う。** `$selection` のままだと
         // 値が変わらないので何も届かない。本物の TabView は選ばれている札を
         // 押しても setter を呼ぶので、そこで比べる
@@ -1446,6 +1458,13 @@ struct RootView: View {
             .tabItem { Label(Labels.Navigation.mypage, systemImage: "person") }
             .tag(Tab.mypage)
         }
+    }
+
+    /// 下の札（`tabBar`）と、その上の修飾子の前半（札の色・未読の数え直し・お知らせの行き先）。
+    /// 1.1.99 の起動で落ちた件で `tabsBase` から分けた（1つの型の入れ子を浅くする）
+    private var tabsUnread: some View {
+        tabBar
+            .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
         // **選んでいるタブは真鍮**（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29））。
         // 中身には各タブの `.tint(WebTheme.foreground)`（白）で配り直す——真鍮を中身の
         // 既定の押せる色にまで広げない（`.borderedProminent` の白地の注記と同じ理由）。
@@ -1505,6 +1524,12 @@ struct RootView: View {
             guard router.arrivals > 0 else { return }
             await refreshUnread(keepOnFailure: true)
         }
+    }
+
+    /// 下の札（`tabsUnread`）と、その上の修飾子の後半（投稿の入口・ミニプレイヤー・知らせ・札へ移る合図）
+    private var tabsBase: some View {
+        tabsUnread
+            .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
         // **中央の「投稿」はタブではなく入口。** 選ばれたら2択を出して、
         // タブは元へ戻す（空の画面を見せない）
         .onChange(of: selection) { previous, tab in
@@ -1576,5 +1601,31 @@ struct RootView: View {
             pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .theme, pending: pendingTripPhotos)
             showPhotoUpload = true
         }
+    }
+}
+
+extension RootView {
+    /// **起動の画面の、修飾子の段ごとの具体的な型**（1.1.99 の起動で落ちた件・`RootViewTypeStackTests`）。
+    /// 段の関数は呼ばない（環境の物を読まない）。型だけから取る。名前から型を組み立て直すときの
+    /// スタックの量と、型の名前の入れ子の深さを、テストが段ごとに測る
+    static func typeSegments() -> [(name: String, type: Any.Type)] {
+        func t<A, R>(_ f: (A) -> R) -> Any.Type { R.self }
+        return [
+            ("body", RootView.Body.self),
+            ("tabsWithFoundingGift", t { (v: RootView) in v.tabsWithFoundingGift }),
+            ("tabsWithProfileExtras", t { (v: RootView) in v.tabsWithProfileExtras }),
+            ("tabsWithTrunkWelcome", t { (v: RootView) in v.tabsWithTrunkWelcome }),
+            ("tabsWithTrunkArrival", t { (v: RootView) in v.tabsWithTrunkArrival }),
+            ("tabsWithPushPrimer", t { (v: RootView) in v.tabsWithPushPrimer }),
+            ("tabsWithReviewPrompt", t { (v: RootView) in v.tabsWithReviewPrompt }),
+            ("tabsWithMessages", t { (v: RootView) in v.tabsWithMessages }),
+            ("tabsWithWhatsNew", t { (v: RootView) in v.tabsWithWhatsNew }),
+            ("tabs", t { (v: RootView) in v.tabs }),
+            ("tabsWithPostSheets", t { (v: RootView) in v.tabsWithPostSheets }),
+            ("tabsWithPostChoice", t { (v: RootView) in v.tabsWithPostChoice }),
+            ("tabsBase", t { (v: RootView) in v.tabsBase }),
+            ("tabsUnread", t { (v: RootView) in v.tabsUnread }),
+            ("tabBar", t { (v: RootView) in v.tabBar }),
+        ]
     }
 }
