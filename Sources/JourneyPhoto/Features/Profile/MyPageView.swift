@@ -548,7 +548,8 @@ struct MyPageView: View {
     /// 2つの中身（押した先・読み上げ・未読の点）は見出しと同じもの（`AppHeaderInbox`）
     private var topButtons: some View {
         HStack(spacing: AppHeaderGlassInbox.gap) {
-            AppHeaderGlassInbox(unread: unread, messagesUnread: messagesUnread,
+            // 点はカバー写真の上なら白、黒地なら真鍮（`AppHeaderGlassInbox.dotColor`・2026-11-16 判断）
+            AppHeaderGlassInbox(unread: unread, messagesUnread: messagesUnread, onPhoto: hasCover,
                                 onOpenNotifications: onOpenNotifications)
             settingsButton
         }

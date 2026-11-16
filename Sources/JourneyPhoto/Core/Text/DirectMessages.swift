@@ -259,9 +259,11 @@ struct DMThreadLog: Equatable {
 /// 承認したら、そのまま会話を開いて書く欄にキーボードを出す（一覧からは 承認 → 送る の2回）
 enum DMAcceptArrival {
     /// 上の帯（「〜さんからのリクエストです。返信すると承認したことになり…」と承認／削除）を出すか。
-    /// この画面で承認した（`acceptedHere`）なら、読み直しがまだ `request` を返しても出さない
-    static func showsRequestBand(state: DMEntryState?, acceptedHere: Bool) -> Bool {
-        !acceptedHere && state == .request
+    /// この画面で承認した（`acceptedHere`）なら、読み直しがまだ `request` を返しても出さない。
+    /// **一覧の「承認」から開いた（`openedAfterAccept`）回も出さない**——開いた直後は `acceptedHere` がまだ立っておらず
+    /// （会話を読み終えてから立てる）、一覧が渡した古い `request` のまま帯が一瞬出てから消える
+    static func showsRequestBand(state: DMEntryState?, acceptedHere: Bool, openedAfterAccept: Bool = false) -> Bool {
+        !acceptedHere && !openedAfterAccept && state == .request
     }
 
     /// 一覧の「承認」から開いた回に、読み終えた時点で欄にキーボードを出すか。**一度だけ**（戻ってきた回・

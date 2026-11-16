@@ -140,11 +140,13 @@ enum AppHeaderInbox {
 
 /// マイページの表紙の右上のガラスの丸（吹き出し・ベル）。2026-11-16 判断（A3・模型 MBEk の A3）:
 /// 歯車（`MyPageView.settingsButton`）と同じ 44pt のガラスの丸（黒55%＋ぼかし＋白10%の縁・`jpGlass`）、
-/// 印は歯車と同じ 18pt medium の白、丸の間 8pt。未読は真鍮の点（`BrassDot`・8pt に黒 2pt の縁）を丸の右上から 8pt 内側に。
+/// 印は歯車と同じ 18pt medium の白、丸の間 8pt。未読の点（8pt に黒 2pt の縁。黒地は真鍮・カバー写真の上は白・`dotColor`）を丸の右上から 8pt 内側に。
 /// 板 MyPage は右上に歯車だけ——ほかのタブの見出しと同じ入口を1回で届く所に足すため、板から足した
 struct AppHeaderGlassInbox: View {
     let unread: Int
     var messagesUnread = false
+    /// 丸の後ろがカバー写真か（ガラスの地に写真が透ける）。点の色を替える（`dotColor`）
+    var onPhoto = false
     let onOpenNotifications: () -> Void
 
     var body: some View {
@@ -168,6 +170,23 @@ struct AppHeaderGlassInbox: View {
 
     /// 丸と丸の間（模型: gap 8）。歯車との間も同じ
     static let gap: CGFloat = JPSpace.xs
+    /// 未読の点の色（2026-11-16 判断）。**カバー写真の上（ガラスの地に写真が透ける）は白、カバーが無い人（黒地）は真鍮。**
+    /// 真鍮は黒い地の上だけ（写真の上では読めない）——CLAUDE.md の「写真の上に直に置くものは白」「ガラス越しに地図が透ける地は白
+    /// （2026-10-02・地図の札のリンク）」と同じ理由。黒 2pt の縁はどちらも同じ（`BrassDot` と同じ形）
+    static func dotColor(onPhoto: Bool) -> Color {
+        switch dotTone(onPhoto: onPhoto) {
+        case .white: return Color.white
+        case .brass: return WebTheme.accent
+        }
+    }
+
+    /// 点の色の種類（試験が Linux でも比べられるように、色そのものではなく種類で決める）
+    enum DotTone: Equatable { case brass, white }
+
+    static func dotTone(onPhoto: Bool) -> DotTone {
+        onPhoto ? .white : .brass
+    }
+
     /// 点を丸の右上の角から内へ寄せる量（模型: 12pt の点（縁込み）を上・右 6pt＝8pt の点の中心が 12pt 内側）
     static let dotInset: CGFloat = 8
 
@@ -179,7 +198,8 @@ struct AppHeaderGlassInbox: View {
             .jpGlass(in: Circle())
             .overlay(alignment: .topTrailing) {
                 if dot {
-                    BrassDot()
+                    Circle().fill(Self.dotColor(onPhoto: onPhoto)).frame(width: DMLook.dot, height: DMLook.dot)
+                        .overlay(Circle().strokeBorder(WebTheme.background, lineWidth: 2).padding(-2))
                         .offset(x: -Self.dotInset, y: Self.dotInset)
                         .accessibilityHidden(true)
                 }

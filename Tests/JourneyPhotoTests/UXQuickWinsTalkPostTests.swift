@@ -73,7 +73,16 @@ final class UXQuickWinsTalkPostTests: XCTestCase {
         XCTAssertTrue(glass.contains("circle(AppHeaderInbox.messagesSymbol, dot: messagesUnread)"))
         XCTAssertTrue(glass.contains("circle(AppHeaderInbox.bellSymbol, dot: unread > 0)"))
         // 未読は真鍮の点、丸は歯車と同じガラス 44
-        XCTAssertTrue(glass.contains("BrassDot()"))
+        // 点の色（2026-11-16 判断）: カバー写真の上は白、黒地は真鍮。縁は黒 2pt
+        XCTAssertEqual(AppHeaderGlassInbox.dotTone(onPhoto: true), .white, "写真の上の点が真鍮（読めない）")
+        XCTAssertEqual(AppHeaderGlassInbox.dotTone(onPhoto: false), .brass, "黒地の点が真鍮でない")
+        let tone = slice(header, from: "static func dotColor(onPhoto: Bool) -> Color {", to: "/// 点の色の種類")
+        XCTAssertTrue(tone.contains("case .white: return Color.white"))
+        XCTAssertTrue(tone.contains("case .brass: return WebTheme.accent"))
+        XCTAssertTrue(glass.contains("Self.dotColor(onPhoto: onPhoto)"))
+        XCTAssertTrue(glass.contains(".strokeBorder(WebTheme.background, lineWidth: 2)"))
+        let page = try source("Features/Profile/MyPageView.swift")
+        XCTAssertTrue(page.contains("onPhoto: hasCover,"), "マイページがカバーの有無を点に渡していない")
         XCTAssertTrue(glass.contains(".jpGlass(in: Circle())"))
         XCTAssertTrue(glass.contains(".frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)"))
         XCTAssertEqual(AppHeaderGlassInbox.gap, 8)
@@ -101,6 +110,17 @@ final class UXQuickWinsTalkPostTests: XCTestCase {
                        "承認したのに、読み直しが古い request を返して帯が戻る")
         XCTAssertFalse(DMAcceptArrival.showsRequestBand(state: .inbox, acceptedHere: false))
         XCTAssertFalse(DMAcceptArrival.showsRequestBand(state: nil, acceptedHere: false))
+    }
+
+    /// 一覧の「承認」から開いた直後（会話を読み終える前・`acceptedHere` はまだ false）も帯を出さない
+    func testRequestBandHiddenRightAfterOpeningFromListAccept() async throws {
+        XCTAssertFalse(DMAcceptArrival.showsRequestBand(state: .request, acceptedHere: false, openedAfterAccept: true),
+                       "一覧で承認して開いた直後に、古い request のまま帯が出る")
+        XCTAssertTrue(DMAcceptArrival.showsRequestBand(state: .request, acceptedHere: false, openedAfterAccept: false))
+        let view = try source("Features/Messages/DMConversationView.swift")
+        let band = slice(view, from: "private var isIncomingRequest: Bool {", to: "\n    }\n")
+        XCTAssertTrue(band.contains("openedAfterAccept: openedAfterAccept"), "会話の画面が「一覧から承認して開いた」を帯に渡していない")
+        XCTAssertTrue(band.contains("acceptedHere: acceptedHere"))
     }
 
     func testFocusOnlyOnceAfterLoad() async throws {

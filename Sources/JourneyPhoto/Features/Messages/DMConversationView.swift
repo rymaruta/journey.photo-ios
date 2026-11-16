@@ -130,7 +130,8 @@ struct DMConversationView: View {
 
     /// 相手からのリクエスト（自分が受け取った・まだ承認していない）
     private var isIncomingRequest: Bool {
-        DMAcceptArrival.showsRequestBand(state: meta?.state ?? seed?.state, acceptedHere: acceptedHere || openedAfterAccept)
+        DMAcceptArrival.showsRequestBand(state: meta?.state ?? seed?.state, acceptedHere: acceptedHere,
+                                         openedAfterAccept: openedAfterAccept)
     }
     /// 旅行プランの入口（帯・長押しの「旅行プランに入れる」・索引の読み込み）を出すか。
     /// **承認前のリクエストには出さない**（2026-11-12 確かめ役の指摘・まだ話していない相手の写真や文を集めない）
