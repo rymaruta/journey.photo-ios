@@ -34,7 +34,7 @@ struct TripShareStrip: View {
     var showsInvite = true
 
     /// 段に出すものがあるか（無ければ日程の画面は段ごと置かない。空の段で余白だけ空けない）
-    static func hasContent(plan: TripPlan, peer: TripSharePeer?, showsInvite: Bool) -> Bool {
+    nonisolated static func hasContent(plan: TripPlan, peer: TripSharePeer?, showsInvite: Bool) -> Bool {
         showsInvite || plan.share != nil || peer != nil
     }
 

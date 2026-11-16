@@ -776,8 +776,15 @@ struct TripPlanDetailView: View {
     private func editor(_ plan: TripPlan) -> some View {
         // 区間の材料は描くたびに1回だけ（日の節へ渡す）
         let layout = travelLayout()
-        let today = todayIndex
         return ScrollViewReader { proxy in
+            editorScroll(plan, layout: layout, today: todayIndex, proxy: proxy)
+        }
+        // 移動の見込みを聞く（開いているプランの区間だけ・同じ区間は控え）
+        .task(id: layout.key) { requestTravel(layout.all) }
+    }
+
+    /// 日程の画面の中身（`ScrollViewReader` の中・今日の日まで送るため proxy を受ける）
+    private func editorScroll(_ plan: TripPlan, layout: TravelLayout, today: Int?, proxy: ScrollViewProxy) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header(plan)
@@ -825,20 +832,23 @@ struct TripPlanDetailView: View {
                 }
 
                 addDayButton
-                // 出どころ（移動の見込みを1つでも出したとき・日程のいちばん下）
-                if layout.all.contains(where: { !estimates(for: $0).isEmpty }) {
-                    Text(TripTravel.sourceNote)
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.text3)
-                } else if travel.throttled {
-                    Text(TripTravel.throttledNote)
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.text3)
+                // 日程の下（Group は並びの間隔を変えない。ViewBuilder の子は 10 までなのでまとめる）
+                Group {
+                    // 出どころ（移動の見込みを1つでも出したとき・日程のいちばん下）
+                    if layout.all.contains(where: { !estimates(for: $0).isEmpty }) {
+                        Text(TripTravel.sourceNote)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text3)
+                    } else if travel.throttled {
+                        Text(TripTravel.throttledNote)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text3)
+                    }
+                    // Pro でない人の「電波なしで使えるようにする PRO」（2026-11-16 判断・A6: 日付と1日目の間から、最後の日の下へ）
+                    OfflineTripCard(plan: plan, index: index, places: places, sourcesReady: gotIndex && gotPhotos,
+                                    slot: .bottom, isPro: $offlinePro)
+                    deleteCard(plan)
                 }
-                // Pro でない人の「電波なしで使えるようにする PRO」（2026-11-16 判断・A6: 日付と1日目の間から、最後の日の下へ）
-                OfflineTripCard(plan: plan, index: index, places: places, sourcesReady: gotIndex && gotPhotos,
-                                slot: .bottom, isPro: $offlinePro)
-                deleteCard(plan)
             }
             .padding(.horizontal, JPSpace.gutter)
             .padding(.top, JPSpace.xs)
@@ -846,17 +856,19 @@ struct TripPlanDetailView: View {
         }
         // 旅の日にホームの札から開いた: 今日の日まで送る（日程が読めて、今日の日があるときの1回だけ・A2）
         .onChange(of: today, initial: true) { _, index in
-            guard opensToday, !scrolledToToday, let index else { return }
-            scrolledToToday = true
-            Task { @MainActor in
-                // 並びが組み上がってから送る（読めた直後のコマでは、まだ下の日の高さが決まっていない）
-                try? await Task.sleep(nanoseconds: 120_000_000)
-                proxy.scrollTo(Self.dayAnchor(index), anchor: .top)
-            }
+            scrollToToday(index, proxy: proxy)
         }
+    }
+
+    /// 今日の日まで送る（開いたときの1回だけ・`opensToday` のときだけ）
+    private func scrollToToday(_ index: Int?, proxy: ScrollViewProxy) {
+        guard opensToday, !scrolledToToday, let index else { return }
+        scrolledToToday = true
+        Task { @MainActor in
+            // 並びが組み上がってから送る（読めた直後のコマでは、まだ下の日の高さが決まっていない）
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            proxy.scrollTo(Self.dayAnchor(index), anchor: .top)
         }
-        // 移動の見込みを聞く（開いているプランの区間だけ・同じ区間は控え）
-        .task(id: layout.key) { requestTravel(layout.all) }
     }
 
     /// 日の節の目印（今日の日まで送る `scrollTo` の先）

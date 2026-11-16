@@ -3705,6 +3705,18 @@ final class ScreenshotTests: XCTestCase {
         guard card.waitForExistence(timeout: 60) else { return unreached(app, "tripAI.card") }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "65y-AI で作った日程（並べた理由・替える）")
+        // 並べた理由ははじめ1行に畳んである（2026-11-16 A6）。押して開いた姿も撮る
+        let folded = app.buttons["tripAI.folded"].firstMatch
+        if folded.waitForExistence(timeout: 5), folded.isHittable {
+            folded.tap()
+            if app.buttons["tripAI.fold"].firstMatch.waitForExistence(timeout: 5) {
+                Thread.sleep(forTimeInterval: 1)
+                shoot(app, "65y2-AI の並べた理由を開いた")
+                app.buttons["tripAI.fold"].firstMatch.tap()
+            } else {
+                unreached(app, "tripAI.fold")
+            }
+        }
         let swap = app.buttons["tripAI.swap"].firstMatch
         if swap.waitForExistence(timeout: 5), swap.isHittable {
             swap.tap()

@@ -262,7 +262,8 @@ final class StoryV2RingsFixTests: XCTestCase {
     func testOtherLoadersKeepAnAnchor() throws {
         let card = try source("Features/Trips/OfflineTripCard.swift")
         let cardBody = slice(card, from: "var body: some View {", to: ".fullScreenCover(isPresented: $showPaywall)")
-        assertInOrder(["case .hidden:", "StoriesRow.loadingAnchor", ".task {", "myProfile()"],
+        // 2026-11-16（A6）: 上と下の2か所に置く札になり、出さない場所（読み込み中の `.hidden` を含む）は見えない1枚
+        assertInOrder(["if Self.shows(phase, in: slot) {", "} else {", "StoriesRow.loadingAnchor", ".task {", "myProfile()"],
                       in: cardBody, "旅の札の読み込み")
         XCTAssertFalse(cardBody.contains("EmptyView()"), "中身が EmptyView だけになり .task が走らない")
         let highlights = try source("Features/Profile/HighlightsRow.swift")
