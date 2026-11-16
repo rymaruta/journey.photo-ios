@@ -1458,8 +1458,9 @@ struct RootView: View {
         }
     }
 
-    /// 下の札（`tabBar`）と、その上の修飾子
-    private var tabsBase: some View {
+    /// 下の札（`tabBar`）と、その上の修飾子の前半（札の色・未読の数え直し・お知らせの行き先）。
+    /// 1.1.99 の起動で落ちた件で `tabsBase` から分けた（1つの型の入れ子を浅くする）
+    private var tabsUnread: some View {
         tabBar
             .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
         // **選んでいるタブは真鍮**（owner「デザインの箇所は白より真鍮色が好き」（2026-09-29））。
@@ -1521,6 +1522,12 @@ struct RootView: View {
             guard router.arrivals > 0 else { return }
             await refreshUnread(keepOnFailure: true)
         }
+    }
+
+    /// 下の札（`tabsUnread`）と、その上の修飾子の後半（投稿の入口・ミニプレイヤー・知らせ・札へ移る合図）
+    private var tabsBase: some View {
+        tabsUnread
+            .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
         // **中央の「投稿」はタブではなく入口。** 選ばれたら2択を出して、
         // タブは元へ戻す（空の画面を見せない）
         .onChange(of: selection) { previous, tab in
@@ -1615,6 +1622,7 @@ extension RootView {
             ("tabsWithPostSheets", t { (v: RootView) in v.tabsWithPostSheets }),
             ("tabsWithPostChoice", t { (v: RootView) in v.tabsWithPostChoice }),
             ("tabsBase", t { (v: RootView) in v.tabsBase }),
+            ("tabsUnread", t { (v: RootView) in v.tabsUnread }),
             ("tabBar", t { (v: RootView) in v.tabBar }),
         ]
     }
