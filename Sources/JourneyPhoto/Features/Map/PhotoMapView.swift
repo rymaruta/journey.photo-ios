@@ -117,6 +117,9 @@ struct PhotoMapView: View {
     @State private var movedSinceAreaSearch = false
     /// 地図を押して札を閉じる予約（2回たたいて寄せたときは取り消す・`MapCardDismiss.Pending`）
     @State private var pendingCardClose = MapCardDismiss.Pending()
+    /// UI テストのときだけ読む数（地図を押した合図の回数・2026-11-16 run 1429 の調べ・`map.cardCloseProbe`）
+    @State private var cardCloseProbe = ""
+    @State private var cardCloseCounts = (single: 0, double: 0, closed: 0)
 
     var body: some View {
         // UI テストのときだけ: body の評価を数える（`PerfTimeline`・札 #594 の下調べ。無効なら何もしない）
@@ -535,11 +538,17 @@ struct PhotoMapView: View {
             mapCanvas
                 .simultaneousGesture(
                     SpatialTapGesture(coordinateSpace: .named(Self.mapSpace))
-                        .onEnded { value in closeCardsIfMapTapped(at: value.location, proxy: proxy) }
+                        .onEnded { value in
+                            noteCardCloseProbe(single: 1)
+                            closeCardsIfMapTapped(at: value.location, proxy: proxy)
+                        }
                 )
                 .simultaneousGesture(
                     SpatialTapGesture(count: 2, coordinateSpace: .named(Self.mapSpace))
-                        .onEnded { _ in pendingCardClose.cancel() }
+                        .onEnded { _ in
+                            noteCardCloseProbe(double: 1)
+                            pendingCardClose.cancel()
+                        }
                 )
         }
         .coordinateSpace(.named(Self.mapSpace))
@@ -552,6 +561,17 @@ struct PhotoMapView: View {
         .overlay(alignment: .top) { statusLine }
         // UI テストのときだけ（電波なしの絵・`PreviewSession.forcesOffline`・Debug のみ）: いま出している帯・札の種類を
         // 見えない要素 `map.stateProbe` に出す（2026-11-12・run 1117 で帯が出なかった訳を記録で調べる）
+        .overlay(alignment: .topLeading) {
+            if PreviewSession.userId != nil {
+                Text(" ")
+                    .font(.caption2)
+                    .foregroundStyle(Color.clear)
+                    .frame(width: 1, height: 1)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("map.cardCloseProbe")
+                    .accessibilityValue(cardCloseProbe)
+            }
+        }
         .overlay(alignment: .bottomLeading) {
             if PreviewSession.forcesOffline {
                 Text(" ")
@@ -654,10 +674,20 @@ struct PhotoMapView: View {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: MapCardDismiss.closeDelayNanoseconds)
             guard pendingCardClose.isCurrent(ticket), cardSnapshot == before else { return }
+            noteCardCloseProbe(closed: 1)
             selected = nil
             selectedOfficial = nil
             chosenPlace = nil
         }
+    }
+
+    /// UI テストのときだけ: 地図を押した合図の回数を見えない要素に出す（Debug・見本の利用者で起動したときだけ）
+    private func noteCardCloseProbe(single: Int = 0, double: Int = 0, closed: Int = 0) {
+        guard PreviewSession.userId != nil else { return }
+        cardCloseCounts.single += single
+        cardCloseCounts.double += double
+        cardCloseCounts.closed += closed
+        cardCloseProbe = "single=\(cardCloseCounts.single) double=\(cardCloseCounts.double) closed=\(cardCloseCounts.closed)"
     }
 
     /// いま出している札（閉じる予約の間に替わったかを見る）

@@ -972,9 +972,13 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(wish.waitForExistence(timeout: 5), "読み上げの閉じるを足したら、札の「行きたい」の名前が消えた")
 
         // 地図を2回たたいて寄せても札は閉じない（1回目で閉じる予約、2回目で取り消す）
+        let probe = app.descendants(matching: .any).matching(identifier: "map.cardCloseProbe").firstMatch
+        let probeBefore = (probe.value as? String) ?? "(なし)"
         empty.doubleTap()
         Thread.sleep(forTimeInterval: 1.5)
-        XCTAssertTrue(card.exists, "地図を2回たたいて寄せたら札が閉じた")
+        let probeAfter = (probe.value as? String) ?? "(なし)"
+        print("measured mapDoubleTap before=\(probeBefore) after=\(probeAfter) cardExists=\(card.exists)")
+        XCTAssertTrue(card.exists, "地図を2回たたいて寄せたら札が閉じた（地図を押した合図の数 前: \(probeBefore) 後: \(probeAfter)）")
 
         // 指で地図を動かすと「このエリアを検索」が出る
         empty.tap()
