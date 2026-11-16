@@ -298,7 +298,9 @@ final class StoryDrawingTests: XCTestCase {
         XCTAssertTrue(store.save(
             shots: [StoryDraftStore.ShotInput(imageData: Data([1, 2, 3]), fileName: "s.jpg", contentType: "image/jpeg",
                                               coords: nil, overlays: [], drawing: drawn)],
-            caption: "", location: "", song: nil, durationSec: 5, savedAt: "2026-11-09T10:00:00.000Z"))
+            // 保存の時刻は今（2026-11-16）。前は決まった日（2026-11-09T10:00Z）で、7日（`DraftLibrary.storyLifetime`）を過ぎた
+            // 2026-11-16T10:00Z から、複製の前の `prepare` が期限切れとして消し、複製が nil になっていた（Mac run 1432・1433）
+            caption: "", location: "", song: nil, durationSec: 5, savedAt: UploadDraftStore.savedAtString(Date())))
         let lib = DraftLibrary(defaults: suite, directory: dir)
         let copy = try XCTUnwrap(lib.duplicate(id, kind: .story, for: "a"))
         lib.remove(id, for: "a")

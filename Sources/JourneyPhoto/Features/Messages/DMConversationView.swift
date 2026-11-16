@@ -30,6 +30,9 @@ struct DMConversationView: View {
     /// 会話を始める相手（プロフィール・新しいメッセージから）。**これがあるときだけ** 404 を空の会話として開く——
     /// 受信箱から開いた会話の 404 は今までどおり「表示できません」（消した・ブロックの関係）
     var startingWith: DMPeerSeed? = nil
+    /// リクエストの一覧で「承認」を押して開いた（2026-11-16 判断・使い勝手の見直し A8）。開いたら帯を出さず、
+    /// 読み終えたら書く欄にキーボードを出して「承認しました」を知らせる（`DMAcceptArrival`）
+    var openedAfterAccept = false
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
@@ -78,12 +81,22 @@ struct DMConversationView: View {
     /// 引用札の見せ方に使う時刻。**開いている間に期限が来たら進めて描き直す**（「タップで見る」を残さない）
     @State private var cardClock = Date()
     @FocusState private var fieldFocused: Bool
+    /// この画面で承認した（帯の「承認」・一覧の「承認」から開いた）。**読み直しが古い `request` を返しても帯を戻さない**
+    /// （承認の応答は通っている。一覧から開いた回は会話を読むのが承認の直後になる）
+    @State private var acceptedHere = false
+    /// 「承認しました」の知らせ（出すたびに id を替える・`DMActionToast.duration` で消す）
+    @State private var acceptedNotice: UUID?
+    /// 一覧の「承認」から開いた回の、欄へのキーボードと知らせを済ませたか（戻ってきた回にまた出さない）
+    @State private var acceptArrivalDone = false
     /// まだ会話が無い（`startingWith` で開き、`GET` が 404 `notFound` だった）。1通目が通って会話を読めたら false
     @State private var isNew = false
     /// まだ会話を読めていない間に送れた通数（承認前の残りを、読めるまで手元で数える）
     @State private var newSent = 0
     /// UI テストのときだけ（`-JPPreviewDM`）: 送った・断られた・断りの文が消えた回数を見えない要素に出す（`dm.probe`）
     @State private var probe = (sends: 0, refusals: 0, errorCleared: 0)
+    /// 同じく UI テストのときだけ（2026-11-16・86m5b の事実取り）: 読み直しの回数、取り消した通、読み直しで戻ってきた取り消した通の数、
+    /// 取り消しの結果、いまの通の数
+    @State private var unsendProbe = (polls: 0, unsent: [String](), readded: 0, outcome: "-")
     /// この会話から旅行プランを作る（2026-11-12・資料 2a の段①と段②・`DMTripViews.swift`）
     @StateObject private var trip = DMTripModel()
     @StateObject private var tripPlans = TripPlansModel()
@@ -119,7 +132,10 @@ struct DMConversationView: View {
     }
 
     /// 相手からのリクエスト（自分が受け取った・まだ承認していない）
-    private var isIncomingRequest: Bool { (meta?.state ?? seed?.state) == .request }
+    private var isIncomingRequest: Bool {
+        DMAcceptArrival.showsRequestBand(state: meta?.state ?? seed?.state, acceptedHere: acceptedHere,
+                                         openedAfterAccept: openedAfterAccept)
+    }
     /// 旅行プランの入口（帯・長押しの「旅行プランに入れる」・索引の読み込み）を出すか。
     /// **承認前のリクエストには出さない**（2026-11-12 確かめ役の指摘・まだ話していない相手の写真や文を集めない）
     private var tripOffered: Bool { !isIncomingRequest }
@@ -169,13 +185,28 @@ struct DMConversationView: View {
                 footer
             }
         }
+        // 承認した直後の知らせ（上に出す。下は書く欄とキーボード・2026-11-16 判断 A8・模型 MBEk の A8）
+        .overlay(alignment: .top) {
+            if let acceptedNotice {
+                DMActionToast(text: DMText.acceptedNotice)
+                    .padding(.top, JPSpace.xs)
+                    .transition(.opacity)
+                    .accessibilityIdentifier("dm.acceptedNotice")
+                    .task(id: acceptedNotice) {
+                        try? await Task.sleep(for: DMActionToast.duration)
+                        if !Task.isCancelled, self.acceptedNotice == acceptedNotice { self.acceptedNotice = nil }
+                    }
+            }
+        }
         .overlay(alignment: .bottomTrailing) {
             if PreviewSession.dm {
                 Text(".")
                     .font(.caption2)
                     .foregroundStyle(Color.clear)
                     .accessibilityIdentifier("dm.probe")
-                    .accessibilityValue("sends=\(probe.sends) refusals=\(probe.refusals) errorCleared=\(probe.errorCleared)")
+                    .accessibilityValue("sends=\(probe.sends) refusals=\(probe.refusals) errorCleared=\(probe.errorCleared)"
+                                        + " polls=\(unsendProbe.polls) unsent=\(unsendProbe.unsent.joined(separator: "+"))"
+                                        + " readded=\(unsendProbe.readded) outcome=\(unsendProbe.outcome) count=\(log.messages.count)")
             }
         }
         .webScreen()
@@ -224,7 +255,15 @@ struct DMConversationView: View {
         .task(id: "\(tripOffered && log.messages.contains(where: \.hasPhoto))#\(connectivity.isOffline)") {
             if tripOffered, log.messages.contains(where: \.hasPhoto) { await trip.load(environment: environment) }
         }
-        .task(id: conversationId) { await load() }
+        .task(id: conversationId) {
+            await load()
+            // 一覧の「承認」から開いた: 読めたら欄にキーボードと知らせ（一度だけ・2026-11-16 判断 A8）
+            if DMAcceptArrival.focusesOnOpen(openedAfterAccept: openedAfterAccept, done: acceptArrivalDone,
+                                             loaded: phase == .loaded) {
+                acceptArrivalDone = true
+                arriveAccepted()
+            }
+        }
         // 開いている間だけ読み直す（前面・電波あり）
         .task(id: "\(conversationId)#\(scenePhase == .active)") { await poll() }
         // 引用札の期限が来たら描き直す（`since` の読み直しでは古い通の札は届き直さない・2026-11-10 再確認の指摘）
@@ -776,9 +815,9 @@ struct DMConversationView: View {
             } else if let note = DMText.requestNote(name: peerName, remaining: remaining) {
                 noteRow(note, error: false)
                     .accessibilityIdentifier("dm.requestNote")
-            } else if isIncomingRequest {
-                noteRow(L("返信すると承認されます", "Replying accepts the request"), error: false)
             }
+            // 2026-11-16 判断（A8）: 受け取ったリクエストの「返信すると承認されます」は欄の上に出さない。
+            // 同じことを上の帯（`requestBand`）が言っていて、2回出ていた
             HStack(alignment: .bottom, spacing: 6) {
                 // 欄は surface-2 に outline の縁（黒地 3.66:1・部品の縁 3:1 以上）。断られたら縁も赤（色だけにしない: 上に印と文）
                 JPTextField(L("メッセージ", "Message"), text: $draft, axis: .vertical)
@@ -931,6 +970,7 @@ struct DMConversationView: View {
         } catch {
             return
         }
+        if PreviewSession.dm { unsendProbe.polls += 1 }
         guard !fetched.unchanged else { return }
         let hadPeer = Set(log.messages.filter { !$0.mine }.map(\.id))
         meta = fetched
@@ -939,6 +979,10 @@ struct DMConversationView: View {
             log.replace(with: fetched.items)
         } else {
             log.merge(fetched.items)
+        }
+        if PreviewSession.dm {
+            let back = fetched.items.filter { unsendProbe.unsent.contains($0.id) && log.messages.map(\.id).contains($0.id) }
+            unsendProbe.readded += back.count
         }
         if fetched.items.contains(where: { !$0.mine && !hadPeer.contains($0.id) }) {
             await markRead()
@@ -1038,6 +1082,10 @@ struct DMConversationView: View {
         } catch {
             failure = error
         }
+        if PreviewSession.dm {
+            unsendProbe.unsent.append(removed.id)
+            unsendProbe.outcome = "\(DMUnsend.outcome(of: failure))"
+        }
         switch DMUnsend.outcome(of: failure) {
         case .gone:
             // 受信箱の抜粋（最後の一言）はサーバーが直した。控えも読み直す
@@ -1072,8 +1120,21 @@ struct DMConversationView: View {
                                            deleted: meta.deleted, state: .inbox, canSend: meta.canSend,
                                            requestRemaining: meta.requestRemaining, t: meta.t, items: meta.items)
             }
+            // 2026-11-16 判断（A8）: 承認したらそのまま書ける（欄を押させない）
+            arriveAccepted()
         } catch {
             actionError = (error as? LocalizedError)?.errorDescription ?? L("承認できませんでした", "Couldn't accept")
+        }
+    }
+
+    /// 承認した: 帯を下ろし、書く欄にキーボードを出して「承認しました」を知らせる（2026-11-16 判断・A8）
+    private func arriveAccepted() {
+        acceptedHere = true
+        acceptedNotice = UUID()
+        // 帯が消えて欄が描き直されてから当てる（同じ描画の中で当てると、無効だった欄に当たらないことがある）
+        Task { @MainActor in
+            await Task.yield()
+            if canSend { fieldFocused = true }
         }
     }
 

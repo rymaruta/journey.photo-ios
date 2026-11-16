@@ -185,7 +185,7 @@ final class ProfileV2DesignTests: XCTestCase {
         let avatarRow = try slice(header, from: "HStack(alignment: .bottom, spacing: MyPageHeaderLayout.avatarStatsGap)",
                                   to: "\n            }\n            VStack(alignment: .leading, spacing: JPSpace.xxs)")
         let face = try XCTUnwrap(avatarRow.range(of: "avatar(profile"), "顔の段に顔が無い")
-        let stats = try XCTUnwrap(avatarRow.range(of: "stats\n"), "数が顔の段に無い（BGM の下へ戻っている）")
+        let stats = try XCTUnwrap(avatarRow.range(of: "\n                stats"), "数が顔の段に無い（BGM の下へ戻っている）")
         XCTAssertLessThan(face.lowerBound, stats.lowerBound, "数が顔の右でない")
         // 名前の段: 名前 → 右端に「編集」
         let nameRow = try slice(header, from: "HStack(alignment: .center, spacing: MyPageHeaderLayout.nameEditGap)",
@@ -222,13 +222,14 @@ final class ProfileV2DesignTests: XCTestCase {
     }
 
     /// 顔の段の寸法（板: 顔と数の間 16・列の間 8・名前と編集の間 12）。カバーが無い人は
-    /// 顔の段が右上の設定の丸と同じ高さなので、数の右に丸の幅（44）を空ける
+    /// 2026-11-16（A3）から、右上の丸の並び（吹き出し・ベル・歯車）の下から見出しを始める（数の右は空けない）
     func testMyPageHeaderLayoutMetrics() {
         XCTAssertEqual(MyPageHeaderLayout.avatarStatsGap, 16)
         XCTAssertEqual(MyPageHeaderLayout.statColumnGap, 8)
         XCTAssertEqual(MyPageHeaderLayout.nameEditGap, 12)
-        XCTAssertEqual(MyPageHeaderLayout.statsTrailingReserve(coverBand: true), 0)
-        XCTAssertEqual(MyPageHeaderLayout.statsTrailingReserve(coverBand: false), WebTheme.minTapTarget)
+        XCTAssertEqual(MyPageHeaderLayout.topReserve(coverBand: true), 0)
+        XCTAssertGreaterThanOrEqual(MyPageHeaderLayout.topReserve(coverBand: false), WebTheme.minTapTarget,
+                                    "カバーが無い人の顔の段が右上の丸に重なる")
     }
 
     /// 旅の記録の眉ラベルは土台の部品（同じ形を画面に書かない）

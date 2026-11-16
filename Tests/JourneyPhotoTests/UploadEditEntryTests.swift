@@ -44,17 +44,18 @@ final class UploadEditEntryTests: XCTestCase {
                        .edited(L("調整", "Adjusted")))
     }
 
-    // MARK: - 「写真を編集」で開く写真
+    // MARK: - 帯の下の「色を編集」は無くした（2026-11-16 判断・使い勝手の見直し A11）
 
-    func testButtonOpensFirstEditablePhoto() {
-        XCTAssertEqual(UploadEditEntry.buttonTarget(editable: [true, true, true]), 0)
-        XCTAssertEqual(UploadEditEntry.buttonTarget(editable: [false, true, true]), 1,
-                       "1枚目が開けなければ、開ける写真の最初")
-    }
-
-    func testButtonHiddenWithoutEditablePhoto() {
-        XCTAssertNil(UploadEditEntry.buttonTarget(editable: []), "写真が無い")
-        XCTAssertNil(UploadEditEntry.buttonTarget(editable: [false, false]), "開ける写真が無い")
+    /// 編集の入口は写真の札の「編集」1つ。帯の下のボタン（`upload.editButton`）を戻さない
+    func testOnlyThumbTagOpensEditor() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto/Features/Upload/UploadView.swift")
+        let upload = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertFalse(upload.contains("\"upload.editButton\""), "帯の下の「色を編集」が戻った（入口が2つ重なる）")
+        XCTAssertFalse(upload.contains("private var editButton"), "帯の下の「色を編集」が戻った")
+        XCTAssertTrue(upload.contains("openEditor(item.id)"), "写真の札から編集を開けない")
+        XCTAssertTrue(upload.contains("UploadEditEntry.thumbTag(badge: item.editBadge, canEdit: canEdit)"))
     }
 
     // MARK: - 一度だけの案内
