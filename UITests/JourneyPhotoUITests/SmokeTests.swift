@@ -37,7 +37,7 @@ final class SmokeTests: XCTestCase {
         agree.tap()
 
         let tabBar = app.tabBars.firstMatch
-        XCTAssertTrue(tabBar.waitForExistence(timeout: 20), "タブが出ない")
+        XCTAssertTrue(tabBar.waitForExistence(timeout: 20), "タブが出ない state=\(app.state.rawValue)（1=notRunning 4=foreground）")
 
         // **数を決め打つ。** `0..<count` を回すだけだと、`count` が 0 でも
         // ループが1周も回らずに緑になる（何も触っていないのに合格）
