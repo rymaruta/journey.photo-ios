@@ -991,6 +991,8 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewUploadSample", "YES"]
+        // 2026-11-16（A11）: 「最近使った撮影地」を2つ入れておく（位置の無い見本の写真に候補のチップが出る）
+        app.launchArguments += ["-journey-photo-recent-places:\(Self.previewUserId)", "(\"鍋ヶ滝\", \"白石城\")"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -1048,6 +1050,44 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// 42a・42a2（2026-11-16・使い勝手の見直し A11）: 見本の1枚は位置が無いので、撮影地の欄の下に
+    /// 「写真に位置情報が無いので、入れてください」と候補のチップ（最近使った撮影地・起動の引数で2つ入れてある）。
+    /// チップを1回押すと撮影地に入る（前は欄を押して字を打つ＝2回＋字）。数は文で残す（推定で直さない）
+    private func capturePlaceChips(_ app: XCUIApplication) {
+        let status = app.descendants(matching: .any)["upload.place.status"].firstMatch
+        let chip = app.buttons["upload.place.chip"].firstMatch
+        for _ in 0..<2 where !(chip.exists && chip.isHittable) {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        let line = "measured placeChips status=\(status.exists) label=\(status.exists ? status.label : "-") "
+            + "chips=\(app.buttons.matching(identifier: "upload.place.chip").count) "
+            + "chipFrame=\(chip.exists ? String(describing: chip.frame) : "-")"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        XCTAssertTrue(status.exists, "位置の無い写真なのに、撮影地の欄の下の一言が出ない")
+        guard chip.exists, chip.isHittable else { return XCTFail("候補のチップが出ない・押せない") }
+        XCTAssertGreaterThanOrEqual(chip.frame.height, 44, "チップの当たりが 44pt 未満")
+        shoot(app, "42a-投稿（撮影地の一言と候補のチップ）")
+        chip.tap()
+        let field = app.descendants(matching: .any)["upload.place"].firstMatch
+        let deadline = Date().addingTimeInterval(5)
+        var value = ""
+        while Date() < deadline {
+            value = (field.value as? String) ?? ""
+            if value.contains("鍋ヶ滝") || value.contains("白石城") { break }
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+        let after = "measured placeChipPicked value=\(value) chipsLeft=\(app.buttons.matching(identifier: "upload.place.chip").count)"
+        print(after)
+        XCTContext.runActivity(named: after) { _ in }
+        XCTAssertTrue(value.contains("鍋ヶ滝") || value.contains("白石城"), "チップを押しても撮影地に入らない（\(value)）")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "42a2-投稿（候補のチップを押した）")
+        app.swipeDown()
+        Thread.sleep(forTimeInterval: 1)
+    }
+
     /// 42b・42c: 「撮影地の位置を付ける」のオンとオフ（2026-10-18）。撮ったらオンに戻す
     private func captureLocationToggle(_ app: XCUIApplication) {
         let toggle = app.switches["upload.attachLocation"].firstMatch
@@ -1091,10 +1131,11 @@ final class ScreenshotTests: XCTestCase {
     private func captureUploadScreens(_ app: XCUIApplication, thumb: XCUIElement) {
         // 帯のサムネと「写真を編集」が出たら撮る（読み込みに数秒かかる）
         guard thumb.waitForExistence(timeout: 15) else { return }
-        let editButton = app.buttons["upload.editButton"].firstMatch
-        guard editButton.waitForExistence(timeout: 5) else { return }
+        // 2026-11-16（A11）: 帯の下の「色を編集」は無くした。入口は写真の札の「編集」1つ（`upload.thumb.0`）
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "42-投稿（写真の編集の入口）")
+        // 2026-11-16（A11）: 位置の無い写真の撮影地の一言と候補のチップ → 押すと撮影地に入る
+        capturePlaceChips(app)
 
         // 2026-10-18: 「撮影地の位置を付ける」の切り替え（撮影地の欄の上）。オンとオフの両方を撮り、
         // **オンに戻す**（選んだ値は人ごとに端末に残る・あとの絵をオフのまま撮らない）。出なければ撮らない
@@ -10096,7 +10137,21 @@ final class ScreenshotTests: XCTestCase {
                     if app.descendants(matching: .any)["dm.requestBand"].firstMatch.waitForExistence(timeout: 10) {
                         Thread.sleep(forTimeInterval: 2)
                         shoot(app, "86m3-メッセージ（リクエストの会話）")
+                        // 2026-11-16（A8）: 帯の「承認」→ 帯が消え、書く欄にキーボード（欄を押させない）
+                        let bandAccept = app.buttons["dm.band.accept"].firstMatch
+                        if bandAccept.isHittable {
+                            bandAccept.tap()
+                            checkAcceptedConversation(app, tag: "86m3a-メッセージ（帯で承認したら、そのまま書ける）")
+                        }
                     }
+                    app.navigationBars.buttons.element(boundBy: 0).tap()
+                    Thread.sleep(forTimeInterval: 1)
+                }
+                // 2026-11-16（A8）: 一覧の「承認」→ そのまま会話を開いて書く欄にキーボード（前は知らせの「メッセージを見る」を押した）
+                let listAccept = app.buttons["dm.request.accept"].firstMatch
+                if listAccept.waitForExistence(timeout: 5), listAccept.isHittable {
+                    listAccept.tap()
+                    checkAcceptedConversation(app, tag: "86m3b-メッセージ（一覧で承認したら、そのまま書ける）")
                     app.navigationBars.buttons.element(boundBy: 0).tap()
                     Thread.sleep(forTimeInterval: 1)
                 }
@@ -10195,6 +10250,22 @@ final class ScreenshotTests: XCTestCase {
                 shoot(app, "86m7-メッセージ（相手が退会）")
             }
         }
+    }
+
+    /// 承認した直後の会話（2026-11-16・使い勝手の見直し A8）: 帯が消え、書く欄にキーボード、上に「承認しました」。
+    /// 数は文で残す（推定で直さない）
+    private func checkAcceptedConversation(_ app: XCUIApplication, tag: String) {
+        let keyboard = app.keyboards.firstMatch.waitForExistence(timeout: 8)
+        let notice = app.descendants(matching: .any)["dm.acceptedNotice"].firstMatch.exists
+        let band = app.descendants(matching: .any)["dm.requestBand"].firstMatch.exists
+        let field = app.descendants(matching: .any)["dm.field"].firstMatch
+        let focused = (field.value(forKey: "hasKeyboardFocus") as? Bool) ?? false
+        let line = "measured dmAccepted \(tag) keyboard=\(keyboard) focused=\(focused) notice=\(notice) band=\(band)"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        shoot(app, tag)
+        XCTAssertTrue(keyboard, "承認したのに書く欄にキーボードが出ない")
+        XCTAssertFalse(band, "承認したのにリクエストの帯が残っている")
     }
 
     // MARK: - 資料「SNS をもっと SNS に」（1.1.83・2026-11-12）
@@ -11510,7 +11581,8 @@ final class ScreenshotTests: XCTestCase {
         let toPhoto = app.buttons["post.choice.photo"].firstMatch
         guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
         toPhoto.tap()
-        let editButton = app.buttons["upload.editButton"].firstMatch
+        // 2026-11-16（A11）: 帯の下の「色を編集」は無くした。写真の札（`upload.thumb.0`）から開く
+        let editButton = app.buttons["upload.thumb.0"].firstMatch
         guard editButton.waitForExistence(timeout: 20) else { return }
         scrollTo(editButton, in: app)
         guard editButton.isHittable else { return }

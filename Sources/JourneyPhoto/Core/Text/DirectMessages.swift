@@ -253,10 +253,31 @@ struct DMThreadLog: Equatable {
 
 // MARK: - 画面の言葉
 
+/// リクエストを承認したあとの会話の画面の決まり（2026-11-16 判断・使い勝手の見直し A8）。
+///
+/// 前は一覧で「承認」→ 知らせの「メッセージを見る」→ 欄を押す → 送る、の4回（受信箱から数えると5回）。
+/// 承認したら、そのまま会話を開いて書く欄にキーボードを出す（一覧からは 承認 → 送る の2回）
+enum DMAcceptArrival {
+    /// 上の帯（「〜さんからのリクエストです。返信すると承認したことになり…」と承認／削除）を出すか。
+    /// この画面で承認した（`acceptedHere`）なら、読み直しがまだ `request` を返しても出さない
+    static func showsRequestBand(state: DMEntryState?, acceptedHere: Bool) -> Bool {
+        !acceptedHere && state == .request
+    }
+
+    /// 一覧の「承認」から開いた回に、読み終えた時点で欄にキーボードを出すか。**一度だけ**（戻ってきた回・
+    /// 読み直しで出し直さない）。読めなかった（失敗・見られない）回は出さない
+    static func focusesOnOpen(openedAfterAccept: Bool, done: Bool, loaded: Bool) -> Bool {
+        openedAfterAccept && !done && loaded
+    }
+}
+
 enum DMText {
 
     static var title: String { L("メッセージ", "Messages") }
     static var requestsTitle: String { L("リクエスト", "Requests") }
+    /// 承認した直後の知らせ（2026-11-16 判断・使い勝手の見直し A8）。リクエストの一覧で押しても、会話の帯で押しても、
+    /// **会話の画面で**書く欄にキーボードを出したうえで出す（前は一覧の下に「メッセージを見る ›」付きで出し、もう1回押させていた）
+    static var acceptedNotice: String { L("承認しました。受信箱に移りました", "Accepted. Moved to your inbox.") }
     /// 会話を始める入口（2026-11-10）: 受信箱の見出しの鉛筆と、そこから開く一覧の題
     static var newMessageTitle: String { L("新しいメッセージ", "New message") }
     /// プロフィールの「メッセージ」ボタン

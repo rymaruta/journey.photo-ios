@@ -341,7 +341,7 @@ final class StoryV2DesignTests: XCTestCase {
         let segment = member("private func segment(", in: upload)
         XCTAssertTrue(segment.contains("selected ? Self.segmentSelectedFill : Color.clear"))
         XCTAssertFalse(segment.contains("WebTheme.accentBackground"))
-        for id in ["upload.thumb.\\(index)", "upload.editButton", "upload.details", "upload.inspired"] {
+        for id in ["upload.thumb.\\(index)", "upload.details", "upload.inspired"] {
             XCTAssertTrue(upload.contains("accessibilityIdentifier(\"\(id)\")"), "\(id) が消えた")
         }
     }

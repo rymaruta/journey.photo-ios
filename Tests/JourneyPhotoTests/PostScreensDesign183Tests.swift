@@ -88,8 +88,9 @@ final class PostScreensDesign183Tests: XCTestCase {
     // MARK: - 02 新規投稿
 
     func testUploadWordingAndFixedSizes() async throws {
-        XCTAssertEqual(UploadEditEntry.buttonTitle, "色を編集")
         let upload = try source("Features/Upload/UploadView.swift")
+        // 2026-11-16（A11）: 帯の下の「色を編集」は無くした（入口は写真の札の「編集」1つ）
+        XCTAssertFalse(upload.contains("色を編集"), "帯の下の「色を編集」が戻った")
         XCTAssertFalse(upload.contains("写真を押すと、色や明るさを編集できます"), "帯の下の一言が残っている")
         XCTAssertFalse(upload.contains("L(\"写真を編集\", \"Edit photo\")"), "写真の詳細の「写真を編集」と同じ名前のまま")
         // 帯の札の字と印は caption の段に追従（固定 12・10 をやめた）

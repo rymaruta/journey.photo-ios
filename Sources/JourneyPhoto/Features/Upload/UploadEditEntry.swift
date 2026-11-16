@@ -8,9 +8,8 @@ import Foundation
 /// 写真を選んだ直後に一度だけの案内。どれを出すかをここで決める
 enum UploadEditEntry {
 
-    /// 帯の下のボタンの名前（2026-11-12 判断・案「投稿まわりのデザイン」02）。**「写真を編集」と書かない**——
-    /// 写真の詳細の「写真を編集」（題・説明を直す画面）と同じ名前で別の画面が開いていた。開くのは色の画面
-    static var buttonTitle: String { L("色を編集", "Edit color") }
+    // 2026-11-16 判断（使い勝手の見直し A11）: 帯の下の「色を編集」のボタン（`buttonTitle`・`buttonTarget`）は無くした。
+    // 入口は帯のサムネの札「編集」1つ（同じ画面を開く入口が2つ重なっていた）
 
     /// 帯のサムネの左下の札。**一本の札**にする——未編集なら「編集」、編集済みなら今の札
     /// （プリセット名か「調整」・`PhotoEditBadge`）。同じ位置に2枚重ねない
@@ -37,12 +36,6 @@ enum UploadEditEntry {
     static func thumbTag(badge: String?, canEdit: Bool) -> ThumbTag {
         if let badge, !badge.isEmpty { return .edited(badge) }
         return canEdit ? .edit : .none
-    }
-
-    /// 帯の下の「写真を編集」で開く写真の位置。**開ける写真のうち最初の1枚。**
-    /// 1枚も開けなければ nil（ボタンを出さない）。写真が無いときも nil
-    static func buttonTarget(editable: [Bool]) -> Int? {
-        editable.firstIndex(of: true)
     }
 
     /// 「写真を押すと編集できます」の案内を出すか。**一度出したら二度と出さない**

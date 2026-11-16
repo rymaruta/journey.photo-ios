@@ -595,6 +595,19 @@ final class UploadViewModel: ObservableObject {
     @Published private(set) var attachesLocation = UploadLocationPreference.defaultValue
     /// 選んだ値の置き場（試験は差し替える）
     var locationPreference = UploadLocationPreference()
+    /// 最近使った撮影地の置き場（試験は差し替える・2026-11-16 判断 A11）
+    var recentPlaces = RecentSearchesStore.places()
+
+    /// 投稿を書く画面の撮影地の候補に出す、最近使った撮影地（新しい順）
+    func recentPlaceNames() -> [String] {
+        recentPlaces.words(userId: locationOwner ?? draftOwner)
+    }
+
+    /// 上がった写真の撮影地を覚える。古い順に覚えて、先頭の写真の撮影地がいちばん新しくなるようにする
+    func rememberPlaces(_ places: [String], userId: String?) {
+        guard let userId, !userId.isEmpty else { return }
+        for place in places.reversed() { recentPlaces.remember(place, userId: userId) }
+    }
     /// 選んだ値の持ち主（ログインしている人）。画面が `auth.userId` を入れる（`useLocationOwner`）
     private(set) var locationOwner: String?
     /// この画面で持ち主が一度でも決まったか（最初に決まったときだけ、待たせていた地名を引き始める）
@@ -1969,6 +1982,9 @@ final class UploadViewModel: ObservableObject {
         // **上がったぶんだけ待ち行列から外す。** 残したままだと、やり直しで
         // 同じ写真をもう一度上げる（枚数の枠を食う）
         let postedKeys = items.filter { done.contains($0.id) }.map(\.pickerItem)
+        // 上がった写真の撮影地を「最近使った撮影地」に覚える（次の投稿で、撮影地が入らなかった写真の候補に出す・
+        // 2026-11-16 判断 A11・`UploadPlaceStatus.chips`）。端末の中だけ・アカウントごと
+        rememberPlaces(items.filter { done.contains($0.id) }.map(\.location), userId: savedPhotoOwner ?? draftOwner)
         items.removeAll { done.contains($0.id) }
         // 🔴 **ライブラリの選択からも外す。** 残すと、残った1枚を外す・「追加」で
         // 選び足す、のどちらでも選び直しの差分が投稿済みの写真を「新しく選ばれた」

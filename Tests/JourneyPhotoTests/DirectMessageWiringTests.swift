@@ -41,14 +41,18 @@ final class DirectMessageWiringTests: XCTestCase {
     /// 入口: 見出しのベルの左に吹き出し（`bubble.left`・紙飛行機ではない・owner 指示）。点は受信箱の未読だけ
     func testHeaderHasMessagesLeftOfTheBell() async throws {
         let header = try source("Features/Common/AppHeader.swift")
-        XCTAssertTrue(header.contains(#"Image(systemName: "bubble.left")"#))
+        // 2026-11-16（A3）: 絵・読み上げ・行き先はマイページと分け合う（`AppHeaderInbox`）
+        XCTAssertEqual(AppHeaderInbox.messagesSymbol, "bubble.left")
+        XCTAssertEqual(AppHeaderInbox.bellSymbol, "bell")
+        XCTAssertTrue(header.contains("Image(systemName: AppHeaderInbox.messagesSymbol)"))
         XCTAssertFalse(header.contains("paperplane"), "入口の絵が紙飛行機")
         XCTAssertTrue(header.contains("TabRouter.shared.openMessages()"))
+        XCTAssertTrue(header.contains("AppHeaderInbox.openMessages()"))
         XCTAssertTrue(header.contains("if messagesUnread { headerDot }"))
         // 見出しの「探す」は 2026-11-12 に外した（下のタブと同じ所・案 第10章）。吹き出しが右の並びの先頭
         XCTAssertFalse(header.contains(#""header.search""#), "見出しの探すが戻った")
         let bubble = try XCTUnwrap(index(of: #""header.messages""#, in: header))
-        let bell = try XCTUnwrap(index(of: #"Image(systemName: "bell")"#, in: header))
+        let bell = try XCTUnwrap(index(of: "Image(systemName: AppHeaderInbox.bellSymbol)", in: header))
         XCTAssertLessThan(bubble, bell, "吹き出しがベルの左に無い")
         // 点は真鍮の共通の部品（黒地の上の合図）
         let dot = slice(header, from: "private var headerDot", to: "\n    }\n")
@@ -59,7 +63,8 @@ final class DirectMessageWiringTests: XCTestCase {
     func testRootWiresInboxAndPush() async throws {
         let root = try source("App/RootView.swift")
         XCTAssertTrue(root.contains("messages.hasUnread(hiding: hidden.blockedUserIds)"))
-        XCTAssertEqual(root.components(separatedBy: "messagesUnread: messagesUnread").count - 1, 3, "タブごとに点の値が違う")
+        // 2026-11-16（A3）: マイページの表紙の吹き出しにも同じ値を配る（ホーム・探す・マップ・マイページの4つ）
+        XCTAssertEqual(root.components(separatedBy: "messagesUnread: messagesUnread").count - 1, 4, "タブごとに点の値が違う")
         XCTAssertTrue(root.contains(".onChange(of: tabRouter.messagesRequests)"))
         XCTAssertTrue(root.contains(".onChange(of: router.conversationRequests)"))
         XCTAssertTrue(root.contains("DMInboxView(openConversation: $messagesTarget)"))
@@ -185,7 +190,7 @@ final class DirectMessageWiringTests: XCTestCase {
         let view = try source("Features/Messages/DMConversationView.swift")
         for part in ["JPLoadingState(kind: .bubbles)", "会話を読み込めませんでした", "ブロック中です", "ブロックを解除",
                      "この会話は表示できません", "受信箱にもどる", "このユーザーは退会したため、メッセージを送れません。",
-                     "圏外です。つながると送れます", "もう一度送る", "返信すると承認されます",
+                     "圏外です。つながると送れます", "もう一度送る", "返信すると承認したことになり",
                      "DMText.requestNote(name: peerName, remaining: remaining)"] {
             XCTAssertTrue(view.contains(part), part)
         }
@@ -196,7 +201,9 @@ final class DirectMessageWiringTests: XCTestCase {
             XCTAssertTrue(inbox.contains(part), part)
         }
         let requests = try source("Features/Messages/DMRequestsView.swift")
-        for part in ["リクエストはありません", "承認しました。受信箱に移りました", "リクエストを削除しました",
+        // 2026-11-16（A8）: 承認の知らせは会話の画面が出す（`DMText.acceptedNotice`）。一覧は承認したら会話を積む
+        XCTAssertTrue(view.contains("DMActionToast(text: DMText.acceptedNotice)"))
+        for part in ["リクエストはありません", "route = Route(id: request.id, accepted: true)", "リクエストを削除しました",
                      "environment.dm.declineAll()", "environment.dm.accept(", "environment.dm.decline("] {
             XCTAssertTrue(requests.contains(part), part)
         }

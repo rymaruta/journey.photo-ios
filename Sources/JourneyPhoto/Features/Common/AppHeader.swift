@@ -63,9 +63,9 @@ struct AppHeaderItems: ToolbarContent {
                 // メッセージ（2026-11-10 札 #505・owner 承認「ベル（お知らせ）の左に吹き出し」）。絵は `bubble.left`
                 // （紙飛行機ではない・owner 指示）。点は受信箱の未読だけ（リクエストでは出さない・画面案 A）
                 Button {
-                    TabRouter.shared.openMessages()
+                    AppHeaderInbox.openMessages()
                 } label: {
-                    Image(systemName: "bubble.left")
+                    Image(systemName: AppHeaderInbox.messagesSymbol)
                         .webToolbarIcon()
                         .overlay(alignment: .topTrailing) {
                             if messagesUnread { headerDot }
@@ -73,10 +73,10 @@ struct AppHeaderItems: ToolbarContent {
                         .appHeaderHitArea()
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(messagesUnread ? L("メッセージ（未読あり）", "Messages, unread") : L("メッセージ", "Messages"))
+                .accessibilityLabel(AppHeaderInbox.messagesLabel(unread: messagesUnread))
                 .accessibilityIdentifier("header.messages")
                 Button(action: onOpenNotifications) {
-                    Image(systemName: "bell")
+                    Image(systemName: AppHeaderInbox.bellSymbol)
                         .webToolbarIcon()
                         .overlay(alignment: .topTrailing) {
                             // 未読があることだけ伝える（数は開けば分かる）
@@ -86,7 +86,7 @@ struct AppHeaderItems: ToolbarContent {
                 }
                 .buttonStyle(.plain)
                 // v2（Main の板の aria-label）: 未読の点は色の合図なので、読み上げでも「未読あり」と言う
-                .accessibilityLabel(unread > 0 ? L("お知らせ（未読あり）", "Activity, unread") : L("お知らせ", "Activity"))
+                .accessibilityLabel(AppHeaderInbox.bellLabel(unread: unread > 0))
                 .accessibilityIdentifier("header.notifications")
                 Button {
                     TabRouter.shared.openMenu()
@@ -110,6 +110,81 @@ extension AppHeaderItems {
     private var headerDot: some View {
         BrassDot()
             .offset(x: WebTheme.toolbarBadgeOffset.x, y: WebTheme.toolbarBadgeOffset.y)
+    }
+}
+
+/// 吹き出し（メッセージ）とベル（お知らせ）の、絵・読み上げ・押したときの行き先（見出しとマイページで同じ）。
+///
+/// 2026-11-16 判断（使い勝手の見直し A3・owner「使い勝手にフォーカスして最高の UI にしたい」）: マイページは上の帯を
+/// 隠しているので、DM もお知らせも1回で届かず、未読の点も見えなかった。マイページの表紙の右上（歯車の左）に
+/// 同じ2つを置く（`AppHeaderGlassInbox`）。**ここを1つにして、見出しと写しを作らない**
+enum AppHeaderInbox {
+    /// 吹き出し（紙飛行機ではない・owner 指示・札 #505）
+    static let messagesSymbol = "bubble.left"
+    static let bellSymbol = "bell"
+
+    /// 未読の点は色の合図なので、読み上げでも「未読あり」と言う（Main の板の aria-label）
+    static func messagesLabel(unread: Bool) -> String {
+        unread ? L("メッセージ（未読あり）", "Messages, unread") : L("メッセージ", "Messages")
+    }
+
+    static func bellLabel(unread: Bool) -> String {
+        unread ? L("お知らせ（未読あり）", "Activity, unread") : L("お知らせ", "Activity")
+    }
+
+    /// 受信箱を開く（`RootView` の `tabRouter.messagesRequests` が受ける。どのタブからでも同じ画面）
+    @MainActor static func openMessages() {
+        TabRouter.shared.openMessages()
+    }
+}
+
+/// マイページの表紙の右上のガラスの丸（吹き出し・ベル）。2026-11-16 判断（A3・模型 MBEk の A3）:
+/// 歯車（`MyPageView.settingsButton`）と同じ 44pt のガラスの丸（黒55%＋ぼかし＋白10%の縁・`jpGlass`）、
+/// 印は歯車と同じ 18pt medium の白、丸の間 8pt。未読は真鍮の点（`BrassDot`・8pt に黒 2pt の縁）を丸の右上から 8pt 内側に。
+/// 板 MyPage は右上に歯車だけ——ほかのタブの見出しと同じ入口を1回で届く所に足すため、板から足した
+struct AppHeaderGlassInbox: View {
+    let unread: Int
+    var messagesUnread = false
+    let onOpenNotifications: () -> Void
+
+    var body: some View {
+        HStack(spacing: AppHeaderGlassInbox.gap) {
+            Button {
+                AppHeaderInbox.openMessages()
+            } label: {
+                circle(AppHeaderInbox.messagesSymbol, dot: messagesUnread)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(AppHeaderInbox.messagesLabel(unread: messagesUnread))
+            .accessibilityIdentifier("mypage.messages")
+            Button(action: onOpenNotifications) {
+                circle(AppHeaderInbox.bellSymbol, dot: unread > 0)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(AppHeaderInbox.bellLabel(unread: unread > 0))
+            .accessibilityIdentifier("mypage.notifications")
+        }
+    }
+
+    /// 丸と丸の間（模型: gap 8）。歯車との間も同じ
+    static let gap: CGFloat = JPSpace.xs
+    /// 点を丸の右上の角から内へ寄せる量（模型: 12pt の点（縁込み）を上・右 6pt＝8pt の点の中心が 12pt 内側）
+    static let dotInset: CGFloat = 8
+
+    private func circle(_ symbol: String, dot: Bool) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 18, weight: .medium))
+            .foregroundStyle(Color.white)
+            .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+            .jpGlass(in: Circle())
+            .overlay(alignment: .topTrailing) {
+                if dot {
+                    BrassDot()
+                        .offset(x: -Self.dotInset, y: Self.dotInset)
+                        .accessibilityHidden(true)
+                }
+            }
+            .contentShape(Circle())
     }
 }
 

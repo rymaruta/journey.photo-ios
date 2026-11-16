@@ -34,6 +34,12 @@ struct PlaceSearchField: View {
     /// 候補を選んだ（撮影スポット・地名のどちらも）。選んだ名前を渡す。ストーリーの撮影地は**押したら決めて閉じる**
     /// （2026-11-14 判断: 前は字を最後まで打って「決める」を押していた）。nil の画面（投稿・写真の編集）は欄に入れるだけ
     var onPick: ((String) -> Void)? = nil
+    /// 欄の外の候補のチップで選んだもの（投稿を書く画面・2026-11-16 判断 A11・`UploadPlaceStatus.Chip`）。
+    /// 入ったら欄の候補と**同じ道**で入れて（`pick(spot:)`・`pick(name:)`）、nil に戻す。
+    /// 欄の外で `location` だけ書き換えると、選んだ地名の印（`pickedLabel`）が無いので座標を捨てる
+    var externalPick: Binding<UploadPlaceStatus.Chip?>? = nil
+    /// 増えたら欄に字を打てるようにする（「変える」・2026-11-16 判断 A11）
+    var focusRequests = 0
 
     @EnvironmentObject private var environment: AppEnvironment
     @State private var suggestions: [DiscoveryService.Place] = []
@@ -71,24 +77,20 @@ struct PlaceSearchField: View {
                     Task { await loadSpotsAndSuggest() }
                 }
                 .onAppear { if autoFocus { focused = true } }
+                .onChange(of: focusRequests) { _, _ in focused = true }
+                .onChange(of: externalPick?.wrappedValue) { _, chip in
+                    guard let chip else { return }
+                    externalPick?.wrappedValue = nil
+                    switch chip {
+                    case .spot(let spot): pick(spot: spot)
+                    case .recent(let name): pick(name: name)
+                    }
+                }
 
             // 撮影スポット（公開済み）の候補。名前と座標を入れ、投稿画面では紐付け（`pickedSpot`）も入れる
             ForEach(spotSuggestions) { spot in
                 Button {
-                    pickedLabel = spot.name
-                    // 🔴 **位置のある写真は、写真の座標のまま。** スポットの座標（約1kmに丸めた値・
-                    // 3km 先のこともある）で撮った位置を置き換えて「正確」として送っていた。
-                    // スポットの座標を使うのは位置の無い写真だけ（`UploadViewModel.append` と同じ決まり）
-                    // 位置のある写真では**前に選んだ地名の座標も捨てる**（残すと名前はスポット、
-                    // 座標は前の地名のまま「正確」として送られた）。近いスポットは写真の座標そのもの・
-                    // 遠いスポットはスポットの座標（2026-10-07・`coordsAfterPicking`）
-                    coords = PlaceSpotSuggestions.coordsAfterPicking(spot, photoPosition: near)
-                    // 紐付けも入れる（**`location` より先に**——あとにすると `schedule` が書き換えと読んで外す）
-                    pickedSpot?.wrappedValue = UploadSpotTarget(spot)
-                    location = spot.name
-                    spotSuggestions = []
-                    suggestions = []
-                    onPick?(spot.name)
+                    pick(spot: spot)
                 } label: {
                     // 当たりは地名の候補（下）と同じ形（`PlaceSuggestionRow`）
                     Label(spot.regionLabel.map { "\(spot.name)\u{2002}\($0)" } ?? spot.name,
@@ -127,6 +129,36 @@ struct PlaceSearchField: View {
                 Text(L("探しています…", "Searching…")).font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// 撮影スポットを選ぶ（欄の候補・欄の外のチップのどちらも）
+    private func pick(spot: OfficialSpot) {
+        pickedLabel = spot.name
+        // 🔴 **位置のある写真は、写真の座標のまま。** スポットの座標（約1kmに丸めた値・
+        // 3km 先のこともある）で撮った位置を置き換えて「正確」として送っていた。
+        // スポットの座標を使うのは位置の無い写真だけ（`UploadViewModel.append` と同じ決まり）
+        // 位置のある写真では**前に選んだ地名の座標も捨てる**（残すと名前はスポット、
+        // 座標は前の地名のまま「正確」として送られた）。近いスポットは写真の座標そのもの・
+        // 遠いスポットはスポットの座標（2026-10-07・`coordsAfterPicking`）
+        coords = PlaceSpotSuggestions.coordsAfterPicking(spot, photoPosition: near)
+        // 紐付けも入れる（**`location` より先に**——あとにすると `schedule` が書き換えと読んで外す）
+        pickedSpot?.wrappedValue = UploadSpotTarget(spot)
+        location = spot.name
+        spotSuggestions = []
+        suggestions = []
+        onPick?(spot.name)
+    }
+
+    /// 最近使った撮影地を選ぶ（欄の外のチップ・2026-11-16 判断 A11）。名前だけ（座標は持たない——前に選んだ場所の
+    /// 座標を、別の写真に「正確」として付けない。書いた地名と同じ扱いで、サーバーが地名からおおよその位置を引く）
+    private func pick(name: String) {
+        pickedLabel = name
+        coords = nil
+        pickedSpot?.wrappedValue = nil
+        location = name
+        spotSuggestions = []
+        suggestions = []
+        onPick?(name)
     }
 
     /// 撮影地を打つ欄。投稿画面（`boxed`）はタイトル・説明と同じ枠に入れる
