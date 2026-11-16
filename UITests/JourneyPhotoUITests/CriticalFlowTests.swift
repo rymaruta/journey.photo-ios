@@ -1,4 +1,5 @@
 import XCTest
+import CoreLocation
 
 /// **利用者の大事な流れを、画面を押して確かめる**（2026-10-22）。
 ///
@@ -823,6 +824,172 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(remove.waitForExistence(timeout: 5), "最近の言葉に消す印が無い")
         remove.tap()
         XCTAssertTrue(recent.waitForNonExistence(timeout: 5), "消す印を押しても最近の言葉が残る")
+    }
+
+    // MARK: - 4c. 見つける（使い勝手の見直し 2026-11-16 A1・A4・A7・A9・A10）
+
+    /// A1: **操作の段は写真のすぐ下**（送らずに押せる）。写真を2回たたくといいね（大きく見る画面は開かない）、
+    /// 1回押すと今までどおり大きく見る
+    func testDetailActionBarUnderPhotoAndDoubleTapLikes() {
+        let app = launch()
+        openFirstFeedPhoto(app)
+        let like = app.buttons["photo.like"].firstMatch
+        let hero = app.buttons["detail.hero"].firstMatch
+        XCTAssertTrue(hero.waitForExistence(timeout: 10), "写真の詳細の写真が無い")
+        print("measured detailBar likeMinY=\(like.frame.minY) heroMaxY=\(hero.frame.maxY)")
+        XCTAssertTrue(like.isHittable, "送らないといいねに届かない（操作の段が写真の下に無い）")
+        XCTAssertLessThan(abs(like.frame.minY - hero.frame.maxY), 24,
+                          "いいねの段が写真のすぐ下に無い（写真の下端 \(hero.frame.maxY)・いいね \(like.frame.minY)）")
+        // いいね済みなら一度外してから（2回たたくのは付けるだけ・外さない）
+        _ = wait(like, "value != ''", timeout: 10)
+        if like.isSelected {
+            like.tap()
+            XCTAssertTrue(wait(like, "selected == false"), "いいねを外せない")
+        }
+        hero.doubleTap()
+        XCTAssertTrue(wait(like, "selected == true", timeout: 10), "写真を2回たたいても、いいねが付かない")
+        XCTAssertFalse(app.buttons["viewer.close"].firstMatch.waitForExistence(timeout: 2),
+                       "2回たたいたら大きく見る画面が開いた")
+        // もう一度2回たたいても外れない
+        hero.doubleTap()
+        Thread.sleep(forTimeInterval: 2)
+        XCTAssertTrue(like.isSelected, "2回たたき直したら、いいねが外れた")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "A1-写真の詳細（操作の段が写真の下）"
+        shot.lifetime = .keepAlways
+        add(shot)
+        // 1回押すと大きく見る
+        hero.tap()
+        XCTAssertTrue(app.buttons["viewer.close"].firstMatch.waitForExistence(timeout: 10), "1回押しても大きく見る画面が開かない")
+    }
+
+    /// A4: **ログインしていなくてもフォローが出る。** いいねを押すと登録の側でログインの画面が開き、
+    /// ログインできたら押したいいねまで済む（押し直さない）
+    func testSignedOutLikeFinishesAfterSignIn() {
+        let app = launch()
+        _ = signOutToForm(app)
+        openFirstFeedPhoto(app)
+        XCTAssertTrue(app.buttons["photo.follow"].firstMatch.waitForExistence(timeout: 10),
+                      "ログインしていない人の写真の詳細にフォローが無い")
+        let like = app.buttons["photo.like"].firstMatch
+        XCTAssertFalse(like.isSelected, "ログインしていないのにいいね済み")
+        like.tap()
+        XCTAssertTrue(app.staticTexts["登録すると、いいねできます"].firstMatch.waitForExistence(timeout: 10),
+                      "いいねを押しても登録の側のログインの画面が開かない")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "A4-いいねから登録の画面"
+        shot.lifetime = .keepAlways
+        add(shot)
+        let back = app.buttons["ログインに戻る"].firstMatch
+        XCTAssertTrue(back.waitForExistence(timeout: 5), "登録の画面に「ログインに戻る」が無い")
+        back.tap()
+        let email = app.textFields["signin.email"].firstMatch
+        XCTAssertTrue(email.waitForExistence(timeout: 5), "メールアドレスの欄が無い")
+        enter(Self.previewEmail, into: email, "メールアドレスの欄")
+        let password = app.secureTextFields["signin.password"].firstMatch
+        XCTAssertTrue(password.waitForExistence(timeout: 5), "パスワードの欄が無い")
+        enter(Self.previewPassword, into: password, "パスワードの欄")
+        let submit = app.buttons["signin.submit"].firstMatch
+        XCTAssertTrue(wait(submit, "enabled == true", timeout: 5), "入れてもログインが押せない")
+        submit.tap()
+        XCTAssertTrue(app.staticTexts["登録すると、いいねできます"].firstMatch.waitForNonExistence(timeout: 30),
+                      "ログインしてもログインの画面が閉じない")
+        XCTAssertTrue(wait(like, "selected == true", timeout: 20), "ログインしても、押したいいねが済んでいない（押し直しが要る）")
+    }
+
+    /// A7・A9: マップの3つ目の札は「撮影地」。「このエリアを検索」は地図を動かした後だけ。
+    /// 観光スポットの札に「行きたい」があり、押すと入る。札の × は無く、地図を押すと閉じる
+    func testMapSpotCardWishAndTapMapToClose() {
+        if #available(iOS 16.4, *) {
+            XCUIDevice.shared.location = XCUILocation(location: CLLocation(latitude: 33.17, longitude: 131.18))
+        }
+        let app = launch()
+        // ログインしていない人で見る（行きたい場所は端末に残るだけ・見本の通信は保存の口を持たない）
+        _ = signOutToForm(app)
+        tab(app, 3)
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        if springboard.alerts.firstMatch.waitForExistence(timeout: 5) {
+            let alert = springboard.alerts.firstMatch
+            let allow = ["アプリの使用中は許可", "Allow While Using App", "1度だけ許可", "Allow Once"]
+                .map { alert.buttons[$0] }.first { $0.exists }
+            (allow ?? alert.buttons.element(boundBy: 0)).tap()
+        }
+        let listTab = app.buttons["map.mode.list"].firstMatch
+        XCTAssertTrue(listTab.waitForExistence(timeout: 20), "マップの切り替えが無い")
+        XCTAssertEqual(listTab.label, "撮影地", "3つ目の札が「撮影地」でない")
+        Thread.sleep(forTimeInterval: 3)
+        XCTAssertFalse(app.buttons["map.searchArea"].firstMatch.exists, "地図を動かす前から「このエリアを検索」が出ている")
+
+        let field = app.textFields["map.search"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "マップの探す欄が無い")
+        enter("鍋ヶ滝\n", into: field, "マップの探す欄")
+        let pin = app.buttons["鍋ヶ滝"].firstMatch
+        XCTAssertTrue(pin.waitForExistence(timeout: 20), "「鍋ヶ滝」と打っても観光スポットのピンが出ない")
+        Thread.sleep(forTimeInterval: 2)
+        pin.tap()
+        let card = app.descendants(matching: .any).matching(identifier: "map.officialCard").firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 10), "ピンを押しても観光スポットの札が出ない")
+        XCTAssertFalse(card.buttons["閉じる"].exists, "札に × が残っている")
+        let wish = app.buttons["map.officialCard.wish"].firstMatch
+        XCTAssertTrue(wish.waitForExistence(timeout: 5) && wish.isHittable, "札に「行きたい」が無い")
+        XCTAssertTrue(app.buttons["map.officialCard.directions"].firstMatch.exists, "札に「経路」が無い")
+        XCTAssertTrue(app.buttons["map.officialCard.open"].firstMatch.exists, "札に「スポットを見る」が無い")
+        print("measured mapCard wish=\(wish.frame) directions=\(app.buttons["map.officialCard.directions"].firstMatch.frame) open=\(app.buttons["map.officialCard.open"].firstMatch.frame)")
+        XCTAssertGreaterThanOrEqual(wish.frame.height, 44, "「行きたい」の当たりが 44pt 未満")
+        let wantedBefore = wish.isSelected
+        wish.tap()
+        XCTAssertTrue(wait(wish, "selected == %@", [!wantedBefore], timeout: 10), "「行きたい」を押しても入らない")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "A7-地図の観光スポットの札（行きたい）"
+        shot.lifetime = .keepAlways
+        add(shot)
+        wish.tap()
+        XCTAssertTrue(wait(wish, "selected == %@", [wantedBefore], timeout: 10), "もう一度押しても「行きたい」が戻らない")
+
+        // 地図の空いている所（ピンの上 150pt）を押すと札が閉じる
+        let empty = app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: pin.frame.midX, dy: max(pin.frame.midY - 150, 260)))
+        empty.tap()
+        XCTAssertTrue(card.waitForNonExistence(timeout: 5), "地図を押しても札が閉じない")
+        // ピンを押し直すと、また開く（押したそばから閉じない）
+        pin.tap()
+        XCTAssertTrue(card.waitForExistence(timeout: 10), "ピンを押し直しても札が開かない")
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(card.exists, "ピンを押して開いた札が、すぐ閉じた")
+
+        // 指で地図を動かすと「このエリアを検索」が出る
+        empty.tap()
+        let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55))
+        from.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)))
+        XCTAssertTrue(app.buttons["map.searchArea"].firstMatch.waitForExistence(timeout: 5),
+                      "地図を動かしても「このエリアを検索」が出ない")
+    }
+
+    /// A10: 探すの範囲のチップは字を打ってから出る。明朝の「探す」は字を打つと畳む。
+    /// 0件はキーボードの上に「見つかりませんでした」と「地図で撮影地を探す」
+    func testSearchHeaderAndZeroHit() {
+        let app = launch()
+        tab(app, 1)
+        let field = app.textFields["search.field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 20), "探すの欄が無い")
+        let title = app.staticTexts["search.title"].firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 5), "頭にいる間は明朝の「探す」を出す")
+        XCTAssertFalse(app.buttons["search.scope.people"].firstMatch.exists, "字を打つ前から範囲のチップが出ている")
+        enter("zzzz-no-photo-result", into: field, "探すの欄")
+        let toMap = app.buttons["search.emptyMap"].firstMatch
+        XCTAssertTrue(toMap.waitForExistence(timeout: 20), "0件でも「地図で撮影地を探す」が出ない")
+        XCTAssertTrue(app.buttons["search.scope.people"].firstMatch.waitForExistence(timeout: 5), "字を打っても範囲のチップが出ない")
+        XCTAssertTrue(title.waitForNonExistence(timeout: 5), "字を打っても明朝の「探す」が残る")
+        let keyboard = app.keyboards.firstMatch
+        if keyboard.exists {
+            print("measured searchZeroHit mapMaxY=\(toMap.frame.maxY) keyboardMinY=\(keyboard.frame.minY)")
+            XCTAssertLessThan(toMap.frame.maxY, keyboard.frame.minY, "「地図で撮影地を探す」がキーボードの裏にある")
+        }
+        XCTAssertGreaterThanOrEqual(toMap.frame.height, 44, "「地図で撮影地を探す」の当たりが 44pt 未満")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "A10-探す（0件）"
+        shot.lifetime = .keepAlways
+        add(shot)
     }
 
     // MARK: - 5. キャンピングカー

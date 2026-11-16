@@ -194,6 +194,12 @@ struct PhotoDetailView: View {
     /// 未ログインで押したいいね・保存の「ログインする」の確認と、ログイン画面（`SignInPrompt`）
     @State private var signInAsk: SignInRequest?
     @State private var signInOpen: SignInRequest?
+    /// ログインできたら済ませる続き（いいね・保存・フォロー・2026-11-16 判断 A4・`SignInFollowUp`）
+    @State private var afterSignIn: SignInFollowUp?
+    /// いいね・保存の状態を**誰の分として**読み終えたか（続きを読み終える前に送らない・`SignInFollowUp.step`）
+    @State private var reactionsReadyFor: String?
+    /// 写真を2回たたいたときの白いハート（2026-11-16 判断 A1）。出した回の番号（消すのは自分が出した分だけ）
+    @State private var heartBurst = 0
     @State private var isFollowWorking = false
     /// 大きく見る画面から、**この画面の1枚**のいいねを送っている間の向き（`ViewerLike`）。
     /// 隣の写真と同じく先に灯す——この画面の1枚は答えが来るまで値が替わらない
@@ -302,13 +308,14 @@ struct PhotoDetailView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     imageButton(hero)
                     VStack(alignment: .leading, spacing: 16) {
+                        // 2026-11-16 判断（A1）: 操作の段を写真のすぐ下へ（画面の詳細と同じ並び・`details` の注記）
+                        socialBar(proxy)
                         Group {
                             heading(hero)
+                            authorRow
                             chips
                             paragraphs
-                            authorRow
                         }
-                        socialBar(proxy)
                         Group {
                             if let exif = shown.exif {
                                 ExifRow(exif: exif)
@@ -322,7 +329,6 @@ struct PhotoDetailView: View {
                         }
                     }
                     .padding(.horizontal, JPSpace.gutter)
-                    .padding(.top, JPSpace.l)
                 }
                 .padding(.bottom, 32)
             }
@@ -352,7 +358,7 @@ struct PhotoDetailView: View {
                             // **v2（2026-10-14・板 PhotoDetail）: 題は写真の下の黒地に置く**（以前は写真の裾に
                             // 重ねていた）。写真の上に残すのは撮影地・撮影スポットの行だけ（`photoFoot`）
                             DetailPullFollow(drag: pull, part: .rest, reduceMotion: reduceMotion,
-                                             content: details(proxy, hero: hero).padding(.top, JPSpace.l))
+                                             content: details(proxy, hero: hero))
                         }
                         .padding(.bottom, 32)
                     }
@@ -402,11 +408,19 @@ struct PhotoDetailView: View {
             let plan = PhotoDetailRules.rereadPlan(current.id, contentFor: model.commentsPhotoId,
                                                    viewerClosedAt: viewerClosedAt, now: Date())
             if plan.syncFromStores { showStoredLike() }
-            guard plan.read else { return }
+            guard plan.read else {
+                reactionsReadyFor = auth.userId
+                await runAfterSignIn()
+                return
+            }
             // 前の1枚の「ブロックしました」・保存の失敗を持ち越さない
             actionNotice = nil
             actionError = nil
             await model.load(gate: likeCounts)
+            guard !Task.isCancelled else { return }
+            // ログインしたあとの続き（いいね・保存）は、今の人のハートを読み終えてから（外す向きに化けさせない）
+            reactionsReadyFor = auth.userId
+            await runAfterSignIn()
         }
         // 🔴 **ホームで押した答えが、開いた後に届いたら入れ直す。** ♥を押した直後
         // （答えの前）に開くと、`.task` の時点の数とハートのまま固まっていた。
@@ -646,7 +660,11 @@ struct PhotoDetailView: View {
             Task { await block(comment.uid) }
         }
         // 未ログインで押したいいね・保存から「ログインする」（`SignInPrompt`）
-        .signInPrompt(ask: $signInAsk, open: $signInOpen)
+        // 2026-11-16 判断（A4）: ログインできたら、押したいいね・保存・フォローを最後まで済ませる
+        .signInPrompt(ask: $signInAsk, open: $signInOpen, onSignedIn: { afterSignIn = $0 })
+        // フォローの続きは、ログインした人のフォローの状態が分かってから（`SignInFollowUp.step`）
+        .onChange(of: isFollowing) { _, _ in Task { await runAfterSignIn() } }
+        .onChange(of: followLookupFailed) { _, _ in Task { await runAfterSignIn() } }
     }
 
     /// 写真を下に引いて前の画面へ戻る（2026-11-13 owner 決定・札 #592）。判定と量は `PhotoDetailPull`、
@@ -708,9 +726,92 @@ struct PhotoDetailView: View {
                 .allowsHitTesting(false)
             photoFoot(hero)
         }
+        // 2回たたいたときの白いハート（2026-11-16 判断 A1・案の模型: 写真の中央に 80pt の白）。
+        // 写真の上なので白だけ。押す指は受けない
+        .overlay {
+            if heartBurst > 0 {
+                Image(systemName: "heart.fill")
+                    .font(.system(size: Self.burstHeartSize))
+                    .foregroundStyle(Color.white)
+                    .shadow(color: .black.opacity(0.5), radius: 8, y: 4)
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.4).combined(with: .opacity))
+                    .id(heartBurst)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
         .frame(maxWidth: .infinity)
         .frame(height: Self.heroHeight)
         .clipped()
+    }
+
+    /// 2回たたいたときのハートの大きさ（案の模型 A1 の 80pt）
+    nonisolated static let burstHeartSize: CGFloat = 80
+
+    /// 写真を2回たたいた（2026-11-16 判断 A1）。**付けるだけで外さない**——いいね済みならハートだけ
+    /// （`DoubleTapLike` の決まり・大きく見る画面と同じ）。ログインしていなければ登録の側でログインの画面を開き、
+    /// ログインできたらいいねまで済ませる（A4・`SignInFollowUp`）
+    private func doubleTapLike(_ item: Photo) async {
+        // 束を払っている途中で、叩いた写真がもう今の1枚でなければ何もしない（隣の写真に付けない）
+        guard item.id == current.id else { return }
+        let action = DoubleTapLike.action(isZoomed: false, alreadyLiked: model.liked,
+                                          signedIn: auth.userId != nil, acceptsLike: acceptsReactions,
+                                          signInResolving: auth.isResolving)
+        switch action {
+        case .like:
+            showHeartBurst()
+            // 下のハートと同じ道（端末の控えとホームの数にも渡す）。答えの前に外れていたら何もしない
+            guard model.photoId == current.id, !model.liked else { return }
+            _ = await toggleLikeHere()
+        case .burstOnly:
+            showHeartBurst()
+        case .askToSignIn:
+            // ハートは出さない（何も送っていないのに付いたように見える・`DoubleTapLike` の注記）
+            signInOpen = SignInPrompt.direct(signUpReason: SignInPrompt.likeSignUp, followUp: .like(photoId: current.id),
+                                             userId: auth.userId, isResolving: auth.isResolving)
+        case .resetZoom, .ignore:
+            break
+        }
+    }
+
+    /// 白いハートを一瞬（約0.7秒）。続けて叩かれたとき、あとから出たハートまで一緒に消さない
+    private func showHeartBurst() {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.6)) { heartBurst += 1 }
+        let shown = heartBurst
+        Task {
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            if heartBurst == shown {
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { heartBurst = 0 }
+            }
+        }
+    }
+
+    /// ログインできたあと、押した操作の続きを済ませる（2026-11-16 判断 A4）。
+    /// 読み終わる前は待ち、もう済んでいれば忘れる（`SignInFollowUp.step`）
+    private func runAfterSignIn() async {
+        guard let followUp = afterSignIn else { return }
+        let step = SignInFollowUp.step(followUp, me: auth.userId, currentPhotoId: current.id,
+                                       reactionsReadyFor: model.photoId == current.id ? reactionsReadyFor : nil,
+                                       liked: model.liked, saved: savedPhotos.contains(current.id),
+                                       ownerId: ownerId, isFollowing: isFollowing,
+                                       followLookupFailed: followLookupFailed)
+        switch step {
+        case .wait:
+            return
+        case .drop:
+            afterSignIn = nil
+        case .run:
+            afterSignIn = nil
+            switch followUp {
+            case .like:
+                showHeartBurst()
+                _ = await toggleLikeHere()
+            case .save:
+                await toggleSave()
+            case .follow(let userId):
+                await toggleFollow(userId, follow: true)
+            }
+        }
     }
 
     /// 写真の裾に乗るもの（v2 の板 PhotoDetail）: 束のページの点と、撮影地・撮影スポットの行。
@@ -762,6 +863,8 @@ struct PhotoDetailView: View {
         // 画面の `@GestureState` に置くと、指が動くたびに写真の詳細の全体が描き直されていた）
         PinchToMapHero(item: item, height: Self.heroHeight,
                        onOpen: { showViewer = true },
+                       // 2026-11-16 判断（A1）: 写真を2回たたいてもいいね（大きく見る画面の中と同じ決まり・`DoubleTapLike`）
+                       onDoubleTap: { Task { await doubleTapLike(item) } },
                        onOpenMap: { pinchOpensMap = true }) {
             // **縮めて読む部品（`DownsampledRemoteImage`）には替えない**（2026-10-31 判断・札 #429 アプリ 2）。
             // 枠（画面の幅 × 520pt・3倍の画面）を覆うには長い辺 1,792〜2,048px が要り、元の画像（1,920px）と
@@ -805,15 +908,18 @@ struct PhotoDetailView: View {
         PhotoMetaLine.groupPosition(hero.index + 1, of: hero.photos.count)
     }
 
-    /// **板 02 の順。** 実装にだけある要素（公開範囲の印・カテゴリ・説明・曲・
-    /// コメント一覧）は消さずに、読む流れの近いところへ差し込む。
+    /// **板 02 の順を、2026-11-16 に並べ替えた**（使い勝手の見直し A1・2026-11-16 判断）。
+    /// 板 PhotoDetail は「題 → 説明 → 作者 → いいねの段」だが、説明が2行あると操作の段が画面の下に沈み、
+    /// いいね・保存・コメントまで送らないと届かなかった（いいね 1＋送る）。**操作の段を写真のすぐ下へ**上げ、
+    /// 作者を題の次に置く（案の模型 A1）。板と変わる所なので、板の PhotoDetail の並びも直す。
+    /// 実装にだけある要素（公開範囲の印・カテゴリ・説明・曲・コメント一覧）は消さずに、読む流れの近いところへ差し込む。
     ///
-    ///     撮影スポットの行（撮影地）          ← 題の上
+    ///     撮影スポットの行（撮影地）          ← 写真の裾
+    ///     いいね・コメント・保存・共有         ← 写真のすぐ下（高さ 44・下に白 8% の線）
     ///     題（明朝）
     ///     1/3枚（複数枚の場合のみ）
-    ///     ［公開範囲の印・カテゴリ］ 説明     ← 題の近く
     ///     作者 ＋ フォロー
-    ///     いいね・コメント・保存・共有
+    ///     ［公開範囲の印・カテゴリ］ 説明
     ///     撮影情報（開け閉め）
     ///     #タグ
     ///     曲
@@ -821,20 +927,21 @@ struct PhotoDetailView: View {
     ///     コメント（N）                      ← 下
     private func details(_ proxy: ScrollViewProxy, hero: HeroLineup) -> some View {
         VStack(alignment: .leading, spacing: 16) {
+            // 2026-11-16 判断（A1）: 操作の段を写真のすぐ下へ（上の注記）
+            socialBar(proxy)
             // **`Group` で束ねる。** `VStack` の中身は10個までで、
             // 印を足したところで溢れた（`extra argument in call`）
             Group {
                 heading(hero)
                 // 自動の結びの「外す」（撮った本人だけ・案の板 PhotoIOS: 題と日時のすぐ下）
                 spotAutoNotice
+                authorRow
                 chips
                 paragraphs
-                authorRow
                 inspiredRow
                 inspiredProbe
                 storySourceRow
             }
-            socialBar(proxy)
             tripSection
             Group {
                 if let exif = shown.exif {
@@ -1296,6 +1403,7 @@ struct PhotoDetailView: View {
 
                 // 取れなかった回も「フォロー」で出す（押されたら取り直してから送る）
                 if PhotoDetailRules.showsFollow(isMine: isMine, signedIn: auth.userId != nil,
+                                                signInResolving: auth.isResolving,
                                                 isFollowing: isFollowing, lookupFailed: followLookupFailed,
                                                 ownerBlocked: hidden.blockedUserIds.contains(ownerId)) {
                     followButton(ownerId, following: isFollowing ?? false)
@@ -1311,6 +1419,12 @@ struct PhotoDetailView: View {
 
     private func followButton(_ userId: String, following isFollowing: Bool) -> some View {
         Button {
+            // ログインしていなければ登録の側で開き、ログインできたらフォローまで済ませる（2026-11-16 判断 A4）
+            if auth.userId == nil {
+                signInOpen = SignInPrompt.direct(signUpReason: SignInPrompt.followSignUp, followUp: .follow(userId: userId),
+                                                 userId: auth.userId, isResolving: auth.isResolving)
+                return
+            }
             // 外すときだけ確認を挟む（`unfollowConfirmation`）
             if isFollowing { showUnfollowConfirm = true } else { Task { await toggleFollow(userId, follow: true) } }
         } label: {
@@ -1321,6 +1435,8 @@ struct PhotoDetailView: View {
         .buttonStyle(.plain)
         .disabled(isFollowWorking)
         .opacity(isFollowWorking ? 0.6 : 1)  // 人のページと同じ薄さ
+        // UI テストが押す所（ログインしていなくても出る・2026-11-16 A4）
+        .accessibilityIdentifier("photo.follow")
         .unfollowConfirmation(isPresented: $showUnfollowConfirm) {
             // **向きは押した時点で決める**（人のページと同じ）。確認が出ている間に取り直しが
             // 走って姿が変わっても、「外す」を選んだのに follow を送らない
@@ -1852,7 +1968,9 @@ struct PhotoDetailView: View {
         // 🔴 **未ログインは「ログインする」を出す**（2026-10-11）。以前は赤字だけで、
         // ログインする手段がその場に無かった（`SignInPrompt`）。確認中は黙る
         guard auth.userId != nil else {
-            signInAsk = SignInPrompt.request(SignInPrompt.like, signUpReason: SignInPrompt.likeSignUp, userId: auth.userId, isResolving: auth.isResolving)
+            // 2026-11-16 判断（A4）: 確かめを挟まずに登録の側で開き、ログインできたらいいねまで済ませる
+            signInOpen = SignInPrompt.direct(signUpReason: SignInPrompt.likeSignUp, followUp: .like(photoId: current.id),
+                                             userId: auth.userId, isResolving: auth.isResolving)
             return nil
         }
         // **届かなかった回は控えに書かない**（押す前のハートのまま）。
@@ -2688,7 +2806,9 @@ struct PhotoDetailView: View {
         // **未ログインは送らずに「ログインする」を出す**（いいねと同じ扱い・`SignInPrompt`）。
         // 以前は赤字だけで、ログインする手段がその場に無かった（2026-10-11）
         guard auth.userId != nil else {
-            signInAsk = SignInPrompt.request(SignInPrompt.save, signUpReason: SignInPrompt.saveSignUp, userId: auth.userId, isResolving: auth.isResolving)
+            // 2026-11-16 判断（A4）: 確かめを挟まずに登録の側で開き、ログインできたら保存まで済ませる
+            signInOpen = SignInPrompt.direct(signUpReason: SignInPrompt.saveSignUp, followUp: .save(photoId: id),
+                                             userId: auth.userId, isResolving: auth.isResolving)
             return
         }
         savingBookmarks.insert(id)
@@ -3164,9 +3284,15 @@ enum PhotoDetailRules {
         return ownerId == me
     }
 
-    static func showsFollow(isMine: Bool, signedIn: Bool, isFollowing: Bool?,
+    ///
+    /// **2026-11-16 判断（使い勝手の見直し A4）: ログインしていない人にも「フォロー」を出す。** 以前はボタン自体が無く、
+    /// 気に入った人をその場でフォローする道が無かった。押したら登録の側でログインの画面を開き、ログインできたら
+    /// そのままフォローする（`SignInFollowUp`）。起動直後のログインの確認中（`signInResolving`）は出さない
+    /// ——ログイン済みの人に一瞬「フォロー」が出て、押すとログインの画面が開く
+    static func showsFollow(isMine: Bool, signedIn: Bool, signInResolving: Bool = false, isFollowing: Bool?,
                             lookupFailed: Bool, ownerBlocked: Bool) -> Bool {
-        guard !isMine, signedIn, !ownerBlocked else { return false }
+        guard !isMine, !ownerBlocked else { return false }
+        guard signedIn else { return !signInResolving }
         return isFollowing != nil || lookupFailed
     }
 

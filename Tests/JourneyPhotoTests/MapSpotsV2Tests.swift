@@ -178,9 +178,12 @@ final class MapSpotsV2Tests: XCTestCase {
         XCTAssertEqual(PhotoMapView.cardCloseSize, 36)
         let text = try source(map)
         XCTAssertEqual(count(".modifier(MapCardStyle())", in: text), 3, "札の地が1つの形を通っていない")
-        XCTAssertEqual(count("cardCloseButton {", in: text), 3)
-        XCTAssertEqual(count(".jpPillButton(.primary, height: Self.cardButtonHeight)", in: text), 2)
-        XCTAssertEqual(count(".jpPillButton(.outline, height: Self.cardButtonHeight)", in: text), 2)
+        // 2026-11-16（使い勝手の見直し A7）: 写真のピンと観光スポットの札は × をやめ、地図を押して閉じる（`MapCardDismiss`）。
+        // × が残るのは Apple の地点の札だけ。観光スポットの札の下の段は「行きたい | 経路 | 観光スポットを見る」（`cardActionFace`）
+        XCTAssertEqual(count("cardCloseButton {", in: text), 1)
+        XCTAssertEqual(count(".jpPillButton(.primary, height: Self.cardButtonHeight)", in: text), 1)
+        XCTAssertEqual(count(".jpPillButton(.outline, height: Self.cardButtonHeight)", in: text), 1)
+        XCTAssertEqual(count("cardActionFace(", in: text), 4, "観光スポットの札の3つが同じ顔を通っていない")
         XCTAssertFalse(text.contains("cornerRadius: 18"), "v1 の角 18 の札が残っている")
         let card = segment(text, from: "struct MapCardStyle: ViewModifier {")
         assertInOrder([".padding(JPSpace.m)", ".jpGlass(in: RoundedRectangle(cornerRadius: JPRadius.xl)"],
@@ -189,9 +192,10 @@ final class MapSpotsV2Tests: XCTestCase {
         assertInOrder([".frame(width: Self.cardCloseSize, height: Self.cardCloseSize)",
                        ".background(Color.white.opacity(0.08), in: Circle())", ".webTappable()",
                        ".accessibilityLabel(Labels.Common.close)"], in: close, "札の閉じる")
-        // 「撮影スポットを見る」は1行に収めて 0.8 まで縮める（`PlaceTermWordingTests` と同じ決まり）
-        assertInOrder(["L(\"観光スポットを見る\"", ".lineLimit(1)", ".minimumScaleFactor(0.8)",
-                       ".jpPillButton(.outline"], in: text, "観光スポットを見る")
+        // 「観光スポットを見る」は1行に収める（`PlaceTermWordingTests` と同じ決まり）。札の顔は 13pt なので縮めても 12pt まで
+        assertInOrder(["cardActionFace(L(\"観光スポットを見る\"", "fitsText: true", "private func cardActionFace(",
+                       ".lineLimit(1)", ".minimumScaleFactor(0.93)", ".font(.footnote.weight(.semibold))"],
+                      in: text, "観光スポットを見る")
     }
 
     /// **札はガラス（地図が透ける）なので真鍮を置かない**（CLAUDE.md の owner の決まり）。

@@ -109,6 +109,19 @@ enum ProfileLine {
         return viewerId != userId && !blocked.contains(userId)
     }
 
+    /// ログインしていない人に「フォローする」を出すか（2026-11-16 判断・使い勝手の見直し A4）。
+    /// 押すと登録の側でログインの画面を開き、ログインできたらそのままフォローする（`SignInFollowUp`）。
+    /// **起動直後のログインの確認中は出さない**（ログイン済みの人に一瞬出て、押すとログインの画面が開く）
+    /// ログインしたあとにフォローを済ませた知らせ（2026-11-16 A4）。名前が分からなければ名前を言わない
+    static func followedNotice(name: String?) -> String {
+        guard let name, !name.isEmpty else { return L("フォローしました", "Followed") }
+        return L("\(name) さんをフォローしました", "Followed \(name)")
+    }
+
+    static func showsSignedOutFollow(viewerId: String?, resolving: Bool, userId: String, blocked: Set<String>) -> Bool {
+        viewerId == nil && !resolving && !userId.isEmpty && !blocked.contains(userId)
+    }
+
     /// ハイライトの列を作り直す鍵。**見られるかはフォローの状態で変わる**
     /// （本人とフォロワーだけ）ので、フォローを変えたら読み直す。
     /// `HighlightsRow` は `userId` が変わったときしか読み直さない
