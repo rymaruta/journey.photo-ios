@@ -10238,6 +10238,11 @@ final class ScreenshotTests: XCTestCase {
                     shoot(app, "86m5a-メッセージ（長押しの送信を取り消す）")
                     unsend.tap()
                     Thread.sleep(forTimeInterval: 1.5)
+                    // 2026-11-16: run 1421 は吹き出しが残り、run 1426 は押したあと 60 秒アプリが待ち状態にならず画面が読めなかった。
+                    // 画面を読む前に、主スレッドの積みのファイルを読む（固まっていても読める・推定で直さない）
+                    Self.logMainSamples(samplePath, label: "86m5b の取り消しの直後")
+                    Thread.sleep(forTimeInterval: 3)
+                    Self.logMainSamples(samplePath, label: "86m5b の取り消しの 3 秒後")
                     let field = app.descendants(matching: .any)["dm.field"].firstMatch
                     let gone = !app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", mineText))
                         .allElementsBoundByIndex.contains { $0.frame.minY < field.frame.minY }
