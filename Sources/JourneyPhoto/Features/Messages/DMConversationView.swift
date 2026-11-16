@@ -84,6 +84,9 @@ struct DMConversationView: View {
     @State private var newSent = 0
     /// UI テストのときだけ（`-JPPreviewDM`）: 送った・断られた・断りの文が消えた回数を見えない要素に出す（`dm.probe`）
     @State private var probe = (sends: 0, refusals: 0, errorCleared: 0)
+    /// 同じく UI テストのときだけ（2026-11-16・86m5b の事実取り）: 読み直しの回数、取り消した通、読み直しで戻ってきた取り消した通の数、
+    /// 取り消しの結果、いまの通の数
+    @State private var unsendProbe = (polls: 0, unsent: [String](), readded: 0, outcome: "-")
     /// この会話から旅行プランを作る（2026-11-12・資料 2a の段①と段②・`DMTripViews.swift`）
     @StateObject private var trip = DMTripModel()
     @StateObject private var tripPlans = TripPlansModel()
@@ -175,7 +178,9 @@ struct DMConversationView: View {
                     .font(.caption2)
                     .foregroundStyle(Color.clear)
                     .accessibilityIdentifier("dm.probe")
-                    .accessibilityValue("sends=\(probe.sends) refusals=\(probe.refusals) errorCleared=\(probe.errorCleared)")
+                    .accessibilityValue("sends=\(probe.sends) refusals=\(probe.refusals) errorCleared=\(probe.errorCleared)"
+                                        + " polls=\(unsendProbe.polls) unsent=\(unsendProbe.unsent.joined(separator: "+"))"
+                                        + " readded=\(unsendProbe.readded) outcome=\(unsendProbe.outcome) count=\(log.messages.count)")
             }
         }
         .webScreen()
@@ -931,6 +936,7 @@ struct DMConversationView: View {
         } catch {
             return
         }
+        if PreviewSession.dm { unsendProbe.polls += 1 }
         guard !fetched.unchanged else { return }
         let hadPeer = Set(log.messages.filter { !$0.mine }.map(\.id))
         meta = fetched
@@ -939,6 +945,10 @@ struct DMConversationView: View {
             log.replace(with: fetched.items)
         } else {
             log.merge(fetched.items)
+        }
+        if PreviewSession.dm {
+            let back = fetched.items.filter { unsendProbe.unsent.contains($0.id) && log.messages.map(\.id).contains($0.id) }
+            unsendProbe.readded += back.count
         }
         if fetched.items.contains(where: { !$0.mine && !hadPeer.contains($0.id) }) {
             await markRead()
@@ -1037,6 +1047,10 @@ struct DMConversationView: View {
             try await environment.dm.unsend(conversationId, messageId: removed.id)
         } catch {
             failure = error
+        }
+        if PreviewSession.dm {
+            unsendProbe.unsent.append(removed.id)
+            unsendProbe.outcome = "\(DMUnsend.outcome(of: failure))"
         }
         switch DMUnsend.outcome(of: failure) {
         case .gone:

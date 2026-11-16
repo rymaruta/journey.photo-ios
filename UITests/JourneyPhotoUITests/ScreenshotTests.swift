@@ -10167,11 +10167,17 @@ final class ScreenshotTests: XCTestCase {
                     shoot(app, "86m5a-メッセージ（長押しの送信を取り消す）")
                     unsend.tap()
                     Thread.sleep(forTimeInterval: 1.5)
+                    // 2026-11-16: 86m5b の事実取り。画面を読む前に主スレッドの処理の記録を読む（固まっていても読める）
+                    Self.logMainSamples(samplePath, label: "86m5b の取り消しの直後")
                     let field = app.descendants(matching: .any)["dm.field"].firstMatch
                     let gone = !app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", mineText))
                         .allElementsBoundByIndex.contains { $0.frame.minY < field.frame.minY }
                     shoot(app, gone ? "86m5b-メッセージ（取り消した文が欄に戻る）" : "86m5b-メッセージ（取り消した吹き出しが残る）")
-                    XCTContext.runActivity(named: "86m5b の状態: gone=\(gone) / field.value=\(String(describing: field.value))") { _ in }
+                    let left = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", mineText)).allElementsBoundByIndex
+                        .map { "\($0.frame)" }.joined(separator: ";")
+                    XCTContext.runActivity(named: "86m5b の状態: gone=\(gone) / field.value=\(String(describing: field.value))"
+                        + " / field.frame=\(field.frame) / left=\(left)"
+                        + " / probe=\(String(describing: app.descendants(matching: .any)["dm.probe"].firstMatch.value))") { _ in }
                     XCTAssertTrue(gone, "取り消した吹き出しが会話に残っている")
                     XCTAssertTrue(String(describing: field.value).contains(mineText), "取り消した文が入力欄に戻らない")
                 }
