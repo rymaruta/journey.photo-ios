@@ -1576,3 +1576,27 @@ struct RootView: View {
         }
     }
 }
+
+extension RootView {
+    /// **起動の画面の、修飾子の段ごとの具体的な型**（1.1.99 の起動で落ちた件・`RootViewTypeStackTests`）。
+    /// 段の関数は呼ばない（環境の物を読まない）。型だけから取る。名前から型を組み立て直すときの
+    /// スタックの量と、型の名前の入れ子の深さを、テストが段ごとに測る
+    static func typeSegments() -> [(name: String, type: Any.Type)] {
+        func t<A, R>(_ f: (A) -> R) -> Any.Type { R.self }
+        return [
+            ("body", RootView.Body.self),
+            ("tabsWithFoundingGift", t { (v: RootView) in v.tabsWithFoundingGift }),
+            ("tabsWithProfileExtras", t { (v: RootView) in v.tabsWithProfileExtras }),
+            ("tabsWithTrunkWelcome", t { (v: RootView) in v.tabsWithTrunkWelcome }),
+            ("tabsWithTrunkArrival", t { (v: RootView) in v.tabsWithTrunkArrival }),
+            ("tabsWithPushPrimer", t { (v: RootView) in v.tabsWithPushPrimer }),
+            ("tabsWithReviewPrompt", t { (v: RootView) in v.tabsWithReviewPrompt }),
+            ("tabsWithMessages", t { (v: RootView) in v.tabsWithMessages }),
+            ("tabsWithWhatsNew", t { (v: RootView) in v.tabsWithWhatsNew }),
+            ("tabs", t { (v: RootView) in v.tabs }),
+            ("tabsWithPostSheets", t { (v: RootView) in v.tabsWithPostSheets }),
+            ("tabsWithPostChoice", t { (v: RootView) in v.tabsWithPostChoice }),
+            ("tabsBase", t { (v: RootView) in v.tabsBase }),
+        ]
+    }
+}
