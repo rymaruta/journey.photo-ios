@@ -4,6 +4,8 @@ import Combine
 /// ホームの札に積む画面（「新しくなったこと」の行き先・札 #519）
 enum HomeScreenRequest: Equatable, Sendable {
     case passBook, visitedMap
+    /// 旅行プランの一覧（「新しくなったこと」1.1.99 の「AI で旅行プラン」・札 #621）
+    case tripPlans
     /// 観光スポットの頁（見頃のお知らせを押した・`SeasonReminder.destination`・2026-11-15 札 #618）
     case officialSpot(slug: String)
 }

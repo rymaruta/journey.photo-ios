@@ -56,6 +56,8 @@ struct RootView: View {
     @State private var pendingThemeTag: String?
     @ObservedObject private var missions = MissionRouter.shared
     @ObservedObject private var tabRouter = TabRouter.shared
+    /// AI で作った旅行プランの知らせと、帯から開く日程（札 #621）
+    @ObservedObject private var tripAIJobs = TripAIJobs.shared
     /// App Store の評価をお願いする頃合い（`ReviewPromptStore`・2026-10-07）
     @ObservedObject private var reviewPrompt = ReviewPromptStore.shared
     /// 通知の説明を出す頃合い（`PushPrimerStore`・2026-10-11）
@@ -1526,6 +1528,18 @@ struct RootView: View {
         // 短い知らせ（Web の `Toast`）。ミニプレイヤーより上に出す
         .overlay(alignment: .bottom) {
             ToastOverlay().padding(.bottom, 116)
+        }
+        // AI で作った旅行プランの知らせ（札 #621・アプリの上の帯。通知の許可は求めない）。押すとその日程が開く
+        .overlay(alignment: .top) {
+            // 上の札（戻るのガラスの丸・題）をふさがないよう、その下に出す
+            TripAIBannerView().padding(.top, TripAIBannerLayout.belowNavigationBar)
+                .animation(.easeOut(duration: 0.24), value: tripAIJobs.banner)
+        }
+        .sheet(isPresented: Binding(get: { tripAIJobs.openPlanId != nil },
+                                    set: { if !$0 { tripAIJobs.openPlanId = nil } })) {
+            if let planId = tripAIJobs.openPlanId {
+                NavigationStack { TripAIOpenView(planId: planId) }
+            }
         }
         // メニューの「マイページ」が押されたら、マイページの札へ移る
         .onChange(of: tabRouter.myPageRequests) { _, _ in

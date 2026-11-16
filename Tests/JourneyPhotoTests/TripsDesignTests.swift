@@ -229,10 +229,12 @@ final class TripsDesignTests: XCTestCase {
 
     func testPlansListFollowsTheBoard() throws {
         let plans = try source("Features/Trips/TripPlansView.swift")
-        // 2026-11-10（札 #521）: 作る口は「旅行プランを作る」の主ボタン1つ（写真の無い画面＝真鍮の塗り＋墨）
-        let create = section("private var createButton: some View {", in: plans)
-        assertInOrder(["showCreate = true", "L(\"旅行プランを作る\"", ".jpPillButton(.main(onPhoto: false))"],
-                      in: create, "作る口")
+        // 2026-11-15（札 #621・owner が採った磨き直しの案）: いちばん上に「AI で作る」の札と「自分で頼む」。
+        // 今の作る流れは「＋ 自分で選んで作る」の1行（`TripAIEntrySection`）に下げた。主ボタンは画面に置かない
+        assertInOrder(["TripAIEntrySection(", "pickYourself:", "showCreate = true"], in: plans, "作る口")
+        let entry = try source("Features/Trips/AI/TripAIViews.swift")
+        assertInOrder(["JPEyebrowLine(L(\"AI で作る\"", "L(\"自分で頼む\"", "L(\"自分で選んで作る\"", "\"trips.create\""],
+                      in: entry, "AI の札 → 自分で頼む → 自分で選んで作る")
         XCTAssertTrue(plans.contains("ErrorBanner(title: L(\"旅行プランを読み込めませんでした\""), "読めなかったのは状態の部品")
         XCTAssertTrue(plans.contains("EmptyState(title: L(\"旅行プランはまだありません\""))
         XCTAssertTrue(plans.contains("JPLoadingState(kind: .rows)"))
@@ -240,9 +242,9 @@ final class TripsDesignTests: XCTestCase {
         assertInOrder(["TripStyle.departureEyebrow(", ".jpEyebrow()", "WebTheme.accent", "JPFont.rowTitle",
                        "TripStyle.planLine("], in: card, "プランの札")
         XCTAssertFalse(plans.contains("WebTheme.surface,"), "白 7% の古い札の地が残っている")
-        for id in ["\"trips.create\"", "\"trips.plan\""] {
-            XCTAssertTrue(plans.contains(id), "画面写真で探す名前 \(id)")
-        }
+        XCTAssertTrue(plans.contains("\"trips.plan\""), "画面写真で探す名前 trips.plan")
+        // 「＋ 自分で選んで作る」の目印は札 #621 から `TripAIEntrySection` の中
+        XCTAssertTrue(try source("Features/Trips/AI/TripAIViews.swift").contains("\"trips.create\""), "画面写真で探す名前 trips.create")
     }
 
     func testPlanDaysFollowTheBoard() throws {

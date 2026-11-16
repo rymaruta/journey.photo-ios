@@ -21,6 +21,8 @@ struct GalleryView: View {
     @State private var showPassBook = false
     /// 行った県の地図（「新しくなったこと」の行き先・札 #519）
     @State private var showVisitedMap = false
+    /// 旅行プランの一覧（「新しくなったこと」から・札 #621）
+    @State private var showTripPlans = false
     /// 見頃のお知らせから開く観光スポットの頁（`HomeScreenRequest.officialSpot`・2026-11-15 札 #618）
     @State private var requestedSpot: RequestedSpot?
     /// 「新しくなったこと」から頼まれた画面を、シートが閉じきるまで待って積む
@@ -242,6 +244,7 @@ struct GalleryView: View {
         }
         .navigationDestination(isPresented: $showPassBook) { PassBookView() }
         .navigationDestination(isPresented: $showVisitedMap) { VisitedMapScreen() }
+        .navigationDestination(isPresented: $showTripPlans) { TripPlansView() }
         .navigationDestination(item: $requestedSpot) { opened in
             OfficialSpotView(spot: opened.spot, spots: opened.spots, photos: dropped.visible(model.allPhotosForTheme))
         }
@@ -321,6 +324,7 @@ struct GalleryView: View {
             switch screen {
             case .passBook: showPassBook = true
             case .visitedMap: showVisitedMap = true
+            case .tripPlans: showTripPlans = true
             case .officialSpot(let slug):
                 // 索引から引く（60秒の控えがあればそれ）。**引けなければ「行きたい場所」へ**
                 // （圏外・消えたスポットで、押しても何も起きないに落とさない）

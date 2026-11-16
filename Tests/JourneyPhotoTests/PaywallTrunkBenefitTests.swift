@@ -13,16 +13,16 @@ final class PaywallTrunkBenefitTests: XCTestCase {
 
     // MARK: - 並び
 
-    /// ふだんの並び: トランクは特別な乗車券の次（いちばん下）。5つ
+    /// ふだんの並び: トランクは特別な乗車券の次（いちばん下）。6つ（2026-11-15 札 #621: AI の旅行プランを先頭に）
     func testDefaultOrderPutsTrunkAfterPassTicket() {
-        XCTAssertEqual(ProBenefit.all.map(\.icon), [.light, .offline, .chapter, .card, .trunk])
+        XCTAssertEqual(ProBenefit.all.map(\.icon), [.ai, .light, .offline, .chapter, .card, .trunk])
         XCTAssertEqual(ProBenefit.ordered(for: .general), ProBenefit.all)
     }
 
     /// トランクから開いたとき: トランクがいちばん上、残りはふだんの順のまま
     func testTrunkOriginPutsTrunkFirst() {
         let order = ProBenefit.ordered(for: .trunk).map(\.icon)
-        XCTAssertEqual(order, [.trunk, .light, .offline, .chapter, .card])
+        XCTAssertEqual(order, [.trunk, .ai, .light, .offline, .chapter, .card])
         XCTAssertEqual(Set(order), Set(ProBenefit.all.map(\.icon)), "並べ替えで利点が増えた・減った")
         XCTAssertEqual(PaywallOrigin.trunk.leadingBenefit, .trunk)
         XCTAssertNil(PaywallOrigin.general.leadingBenefit)

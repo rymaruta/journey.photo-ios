@@ -19,6 +19,8 @@ enum WhatsNew {
         /// すれちがい帳・行った県の地図（2026-11-10・札 #519）。ホームの札に替えて、その画面を積む。
         /// 積んだあとも下の札は「ホーム」のまま。マイページの積み重ねには触らない
         case passBook, visitedMap
+        /// 旅行プランの一覧（2026-11-16・1.1.99 の「AI で旅行プラン」・札 #621）。ホームに積む
+        case tripPlans
     }
 
     /// 押したときの動き（画面は描くだけ・Linux で試せるように値で返す）
@@ -45,6 +47,9 @@ enum WhatsNew {
         case .visitedMap:
             screen = .visitedMap
             reason = L("行った県の記録を見るにはログインしてください", "Sign in to see your visited prefectures")
+        case .tripPlans:
+            screen = .tripPlans
+            reason = L("旅行プランを見るにはログインしてください", "Sign in to see your trip plans")
         }
         switch HomeLikeGate.decide(userId: userId, isResolving: isResolving) {
         case .send: return .home(screen)
@@ -62,6 +67,7 @@ enum WhatsNew {
         case .mypage: return L("マイページを開きます", "Opens My Page")
         case .passBook: return L("すれちがい帳を開きます", "Opens the Pass book")
         case .visitedMap: return L("行った県の地図を開きます", "Opens the visited prefectures map")
+        case .tripPlans: return L("旅行プランを開きます", "Opens your trip plans")
         }
     }
 

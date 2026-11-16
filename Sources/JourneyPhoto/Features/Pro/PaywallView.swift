@@ -362,6 +362,12 @@ struct ProBenefit: Identifiable, Equatable {
 
     static var all: [ProBenefit] {
         [
+            // 2026-11-15（札 #621・owner 承認）: AI で旅行プランを作る。登録と Pro の入口にするので先頭に置く。
+            // 回数は `TripAILimits`（サーバーの `tripAiConfig.ts` と同じ値）
+            ProBenefit(icon: .ai,
+                       title: L("AI で旅行プランを作る", "Plan trips with AI"),
+                       body: L("ひとこと書けば、観光スポットから日程を組む。月\(TripAILimits.pro)回",
+                               "Write one line and get a day-by-day plan. \(TripAILimits.pro) a month")),
             ProBenefit(icon: .light,
                        title: L("光と天気の知らせ", "Light & weather alerts"),
                        body: L("行きたい場所が「明日の朝、晴れて朝焼け」なら前の晩に",
@@ -421,12 +427,15 @@ enum PaywallOrigin: Equatable {
     case general
     /// 旅のトランク（作り直す・特別なトランク・手持ちの上限）
     case trunk
+    /// AI で旅行プランを作る（回数を使い切った帯から・札 #621）
+    case tripAI
 
     /// いちばん上に出す利点。nil ならふだんの並び
     var leadingBenefit: ProIcon? {
         switch self {
         case .general: return nil
         case .trunk: return .trunk
+        case .tripAI: return .ai
         }
     }
 }

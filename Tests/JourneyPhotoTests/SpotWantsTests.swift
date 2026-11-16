@@ -87,13 +87,17 @@ final class SpotWantsTests: XCTestCase {
         XCTAssertTrue(spot.contains("guard !spot.isDraft else { wantEntry = nil; return }"), "下書きには出さない")
     }
 
-    /// 端末の番号と「行きたい」を送ることを、アプリのプライバシーの申告に載せている（本人と結びつけない）
-    func testPrivacyManifestDeclaresUnlinkedProductInteraction() throws {
+    /// 端末の番号と「行きたい」を送ることを、アプリのプライバシーの申告に載せている。
+    /// 「行きたい」の数そのものは本人と結びつけない（利用者の ID を送らない・上の試験）。
+    /// 2026-11-15（札 #621）から、同じ「製品の操作」に **AI で旅行プランを作った月の回数（本人ごと）** が加わったので、
+    /// 種類としての Linked は true（1つの種類で1つでも結びつけば true・Apple の決まり）
+    func testPrivacyManifestDeclaresProductInteraction() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let text = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Resources/PrivacyInfo.xcprivacy"), encoding: .utf8)
         let range = try XCTUnwrap(text.range(of: "<string>NSPrivacyCollectedDataTypeProductInteraction</string>"))
         let after = String(text[range.upperBound...].prefix(200))
-        XCTAssertTrue(after.contains("<key>NSPrivacyCollectedDataTypeLinked</key>\n            <false/>"), "本人と結びつけない（Linked は false）")
+        XCTAssertTrue(after.contains("<key>NSPrivacyCollectedDataTypeLinked</key>\n            <true/>"), "AI の回数は本人ごとなので Linked は true")
+        XCTAssertTrue(text.contains("aiuse#"), "結びつける理由（AI の月の回数）を注記している")
     }
 
     func testRightSwipeAndSpotPageSendWants() throws {
