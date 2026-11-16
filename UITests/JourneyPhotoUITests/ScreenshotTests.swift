@@ -10317,8 +10317,10 @@ final class ScreenshotTests: XCTestCase {
                     // 2026-11-16: run 1421 は吹き出しが残り、run 1426 は押したあと 60 秒アプリが待ち状態にならず画面が読めなかった。
                     // 画面を読む前に、主スレッドの積みのファイルを読む（固まっていても読める・推定で直さない）
                     Self.logMainSamples(samplePath, label: "86m5b の取り消しの直後")
+                    Self.logStallDetail(samplePath, label: "86m5b の取り消しの直後")
                     Thread.sleep(forTimeInterval: 3)
                     Self.logMainSamples(samplePath, label: "86m5b の取り消しの 3 秒後")
+                    Self.logStallDetail(samplePath, label: "86m5b の取り消しの 3 秒後")
                     let field = app.descendants(matching: .any)["dm.field"].firstMatch
                     let gone = !app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", mineText))
                         .allElementsBoundByIndex.contains { $0.frame.minY < field.frame.minY }
@@ -10688,6 +10690,31 @@ final class ScreenshotTests: XCTestCase {
         for line in lines.suffix(4) {
             XCTContext.runActivity(named: "主スレッドの積み（\(label)）最後: \(String(line.prefix(900)))") { _ in }
         }
+    }
+
+    /// 止まりの中身（2026-11-16・統合の枝の run 1439）。主スレッドの返事が遅い行に出る段を、**このアプリの段に限らず**
+    /// 多い順に 30 まで（SwiftUI の配置のどこで回っているか）と、遅い行の全文を 2 行（最初と真ん中）。
+    /// 会話の画面が書く回数のファイル（`.dm`・`DMStallProbe`）の最後の 6 行も出す。どれも画面の木は読まない
+    static func logStallDetail(_ path: String, label: String) {
+        let text = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+        let lines = text.split(separator: "\n").map(String.init)
+        let slow = lines.filter { line in
+            guard let ping = line.components(separatedBy: "ping=").dropFirst().first?.split(separator: " ").first else { return false }
+            return ping == "pending" || (Int(ping) ?? 0) >= 200
+        }
+        var counts: [String: Int] = [:]
+        for line in slow {
+            let frames = (line.components(separatedBy: " | ").dropFirst().first ?? "").components(separatedBy: " ; ")
+            for frame in Set(frames) { counts[String(frame.prefix(160)), default: 0] += 1 }
+        }
+        for (i, item) in counts.sorted(by: { $0.value > $1.value }).prefix(30).enumerated() {
+            print("STALL \(label) 段 \(i + 1): \(item.value)x \(item.key)")
+        }
+        for line in [slow.first, slow.isEmpty ? nil : slow[slow.count / 2]].compactMap({ $0 }) {
+            print("STALL \(label) 全文: \(String(line.prefix(6000)))")
+        }
+        let dm = ((try? String(contentsOfFile: path + ".dm", encoding: .utf8)) ?? "読めない").split(separator: "\n").suffix(6)
+        for line in dm { print("STALL \(label) 会話の回数: \(line)") }
     }
 
     /// 受信箱の行を名前で開き、会話が出るまで待つ（出なければ false）

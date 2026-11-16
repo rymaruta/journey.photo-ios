@@ -155,6 +155,7 @@ struct DMConversationView: View {
     private var iBlockedPeer: Bool { peerId.map { hidden.blockedUserIds.contains($0) } ?? false }
 
     var body: some View {
+        let _ = DMStallProbe.note("body")   // UI テストのときだけ（86m5b の止まりの事実取り・2026-11-16）
         VStack(spacing: 0) {
             if connectivity.isOffline && phase != .unavailable {
                 DMOfflineStrip(text: L("圏外です。つながると送れます", "You're offline. You can send once you reconnect."))
@@ -284,6 +285,7 @@ struct DMConversationView: View {
             if !offline, phase == .failed { Task { await load() } }
         }
         .onChange(of: draft) { old, new in
+            DMStallProbe.note("draft")
             let kept = PostLimits.limited(old: old, new: new, limit: DMRules.textMax)
             if kept != new { draft = kept }
             if new == restoredDraft { return }
@@ -484,10 +486,12 @@ struct DMConversationView: View {
             .scrollDismissesKeyboard(.interactively)
             // 吹き出しの最大幅（会話の幅の 78%）のために幅を読む
             .onGeometryChange(for: CGFloat.self) { proxy in proxy.size.width } action: { width in
+                DMStallProbe.note("width", value: "\(width)")
                 threadWidth = width
             }
             .onAppear { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
             .onChange(of: log.messages.count + log.outgoing.count) { _, _ in
+                DMStallProbe.note("scrollTo")
                 withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
             }
         }
@@ -1067,6 +1071,7 @@ struct DMConversationView: View {
     /// 消えた → そのまま。断られた（ブロックの関係など）→ 1通と欄を戻して赤の一言。分からない（時間切れ）→ 1通は戻すが
     /// 戻した文は欄に残す（サーバーで消えていたら次の読み直しで消え、文は失わない）
     private func unsend(_ message: DMMessage) async {
+        DMStallProbe.note("unsend")
         guard let removed = log.unsend(message.id) else { return }
         actionError = nil
         let before = draft
@@ -1374,6 +1379,40 @@ private struct DMUnsendMenu<Menu: View>: ViewModifier {
             content.contextMenu { menu() }
         } else {
             content
+        }
+    }
+}
+
+/// 会話の画面が止まったときに、画面の木を読まずに「何が何回起きたか」を取る（UI テストのときだけ・2026-11-16）。
+///
+/// 統合の枝の Mac run 1439（と run 1426）で、送信の取り消しのあと主スレッドが約 60 秒 SwiftUI の配置の中にいて
+/// （`ping=pending`・遅い行 29 → 214）、UI テストは画面を読めずに止まった。その間に、この画面の body・幅の変化・
+/// 下への送り・下書きの変化が何回起きたかを、主スレッドの積みのファイル（`-JPMainSampleFile`）の隣（`.dm`）に書く。
+/// 書くのは 0.2 秒に1回まで（回数は毎回数える）。ふだん（`-JPMainSampleFile` が無い）は何もしない
+@MainActor
+enum DMStallProbe {
+    private static let path: String? = UserDefaults.standard.string(forKey: "JPMainSampleFile").map { $0 + ".dm" }
+    private static var counts: [String: Int] = [:]
+    private static var lastValues: [String: String] = [:]
+    private static var lastWrite = Date.distantPast
+
+    static func note(_ key: String, value: String? = nil) {
+        guard let path else { return }
+        counts[key, default: 0] += 1
+        if let value { lastValues[key] = value }
+        let now = Date()
+        guard now.timeIntervalSince(lastWrite) >= 0.2 else { return }
+        lastWrite = now
+        let line = counts.keys.sorted().map { "\($0)=\(counts[$0] ?? 0)" + (lastValues[$0].map { "(\($0))" } ?? "") }
+            .joined(separator: " ")
+        let stamp = String(format: "%.1f", now.timeIntervalSince1970.truncatingRemainder(dividingBy: 100_000))
+        let text = "t=\(stamp) \(line)\n"
+        if let handle = FileHandle(forWritingAtPath: path) {
+            handle.seekToEndOfFile()
+            handle.write(Data(text.utf8))
+            try? handle.close()
+        } else {
+            FileManager.default.createFile(atPath: path, contents: Data(text.utf8))
         }
     }
 }
