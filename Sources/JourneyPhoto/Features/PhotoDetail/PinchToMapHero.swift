@@ -26,10 +26,10 @@ struct PinchToMapHero<Content: View>: View {
     private var hasPlace: Bool { item.coords != nil }
 
     var body: some View {
-        // 2026-11-16 判断（A1）: `Button` をやめて2回押しと1回押しを並べる。`Button` のままだと1回目で
-        // 大きく見る画面が開き、2回目が届かない。**2回押しを先に付ける**——こうすると1回押しは
-        // 2回押しが成り立たなかったときだけ届く（`PhotoViewerView` の写真と同じ）
-        Group {
+        // 2026-11-16 判断（A1）: 2回押しをボタンより先に受ける（`highPriorityGesture`）。1回押しの大きく見るは、
+        // 2回押しが成り立たなかったときだけ届く。**`Button` のままにする**——`onTapGesture` に替えた回（Mac run 1419）は、
+        // 写真が読み上げの木で名前の無い `Other` になり、`detail.hero` のボタンが消えた（UI テスト・読み上げが写真を押せない）
+        Button(action: onOpen) {
             // 🔴 **写真は重ね（overlay）に置く。** 引き伸ばした写真（fill）を直に
             // `.frame(maxWidth: .infinity)` で包むと、横長の写真では包みの幅が
             // 写真の幅（画面より広い）になり、`.clipped()` は見た目を切るだけなので
@@ -52,13 +52,9 @@ struct PinchToMapHero<Content: View>: View {
                 .contentShape(Rectangle())
                 .accessibilityLabel(item.accessibilityText)
         }
-        .onTapGesture(count: 2, perform: onDoubleTap)
-        .onTapGesture(perform: onOpen)
-        // 読み上げでは今までどおりボタン（UI テストも `buttons["detail.hero"]` で探す）。
-        // 既定の操作は大きく見る、2回押しのいいねは名前の付いた操作で届ける
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction(.default, onOpen)
+        .buttonStyle(.plain)
+        .highPriorityGesture(TapGesture(count: 2).onEnded(onDoubleTap))
+        // 2回押しのいいねは、読み上げでは名前の付いた操作で届ける
         .accessibilityAction(named: L("いいね", "Like"), onDoubleTap)
         .accessibilityHint(L("拡大して見る", "Opens the photo full screen"))
         // UI テストがつまむ所（つまむと地図の絵）

@@ -1420,8 +1420,6 @@ struct PhotoMapView: View {
             // 2026-11-16 判断（使い勝手の見直し A7）: 右上の × はやめ、地図を押せば閉じる（`MapCardDismiss`）
         }
         .modifier(MapCardStyle())
-        // 読み上げでは × の代わりに「閉じる」（2本指でこする）で閉じる（2026-11-16 A7）
-        .accessibilityAction(.escape) { selected = nil }
         .accessibilityIdentifier("map.pinCard")
     }
 
@@ -1551,8 +1549,6 @@ struct PhotoMapView: View {
             }
         }
         .modifier(MapCardStyle())
-        // 読み上げでは × の代わりに「閉じる」（2本指でこする）で閉じる
-        .accessibilityAction(.escape) { selectedOfficial = nil }
         .accessibilityIdentifier("map.officialCard")
     }
 
