@@ -181,6 +181,7 @@ struct WhatsNewView: View {
             case .mypage: router.openMyPage()
             case .passBook: router.openOnHome(.passBook)
             case .visitedMap: router.openOnHome(.visitedMap)
+            case .tripPlans: router.openOnHome(.tripPlans)
             }
         case .home(let screen):
             dismiss()

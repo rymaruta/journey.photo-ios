@@ -1,6 +1,18 @@
 {
-  "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
+  "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap / tripPlans（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
   "releases": [
+    {
+      "version": "1.1.99",
+      "date": "2026-11-16",
+      "items": [
+        {
+          "symbol": "sparkles",
+          "title": { "ja": "AI で旅行プラン", "en": "Trip plans with AI" },
+          "detail": { "ja": "旅行プランの一覧で、行き先の札を押すだけで AI が日程を組みます。作っている間もアプリをそのまま使えて、できたら上にお知らせが出ます。", "en": "In Trip plans, tap a destination card and AI puts together your days. Keep using the app while it works. You'll see a notice at the top when it's ready." },
+          "destination": "tripPlans"
+        }
+      ]
+    },
     {
       "version": "1.1.97",
       "date": "2026-11-15",
