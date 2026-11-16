@@ -8071,14 +8071,30 @@ final class ScreenshotTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(edit.frame.maxX, width - 16 - 2, "\(suffix): 「編集」が右端にない")
             XCTAssertGreaterThanOrEqual(edit.frame.height, 44, "\(suffix): 「編集」の当たりが 44pt 未満")
             XCTAssertEqual(edit.label, "プロフィールを編集", "\(suffix): 読み上げが変わった")
-            // 額縁も無い回: 顔の段が右上の設定の丸と同じ高さ。数は丸の下に潜らない
+            // 2026-11-16（A3）: 右上は 吹き出し・ベル・歯車 の順に 44pt のガラスの丸（数は文で残す）
+            let bubble = app.buttons["mypage.messages"].firstMatch
+            let bell = app.buttons["mypage.notifications"].firstMatch
+            let gear = app.buttons["設定"].firstMatch
+            let line = "measured myPageTopButtons \(suffix) bubble=\(bubble.exists ? String(describing: bubble.frame) : "-") "
+                + "bell=\(bell.exists ? String(describing: bell.frame) : "-") gear=\(gear.exists ? String(describing: gear.frame) : "-") "
+                + "stats=\(stats.frame)"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+            XCTAssertTrue(bubble.exists && bell.exists, "\(suffix): マイページに吹き出しとベルが無い")
+            if bubble.exists, bell.exists, gear.exists {
+                XCTAssertLessThan(bubble.frame.maxX, bell.frame.minX + 1, "\(suffix): 吹き出しがベルの左に無い")
+                XCTAssertLessThan(bell.frame.maxX, gear.frame.minX + 1, "\(suffix): ベルが歯車の左に無い")
+                XCTAssertLessThan(abs(bubble.frame.midY - gear.frame.midY), 2, "\(suffix): 丸の高さがそろっていない")
+                XCTAssertGreaterThanOrEqual(bubble.frame.height, 44, "\(suffix): 吹き出しの当たりが 44pt 未満")
+                XCTAssertGreaterThanOrEqual(bell.frame.width, 44, "\(suffix): ベルの当たりが 44pt 未満")
+            }
+            // 額縁も無い回: 2026-11-16（A3）から顔の段は右上の丸の並びの下から（数が丸に潜らない）
             if extra.contains("-JPPreviewBareHeader") {
                 XCTAssertFalse(app.descendants(matching: .any)["mypage.coverFrame"].firstMatch.exists,
                                "\(suffix): 額縁が出ている")
-                let gear = app.buttons["設定"].firstMatch
                 if gear.exists {
-                    XCTAssertLessThanOrEqual(stats.frame.maxX, gear.frame.minX + 1,
-                                             "\(suffix): 数が設定の丸の下に潜っている（\(stats.frame.maxX) / \(gear.frame.minX)）")
+                    XCTAssertGreaterThanOrEqual(stats.frame.minY, gear.frame.maxY - 1,
+                                                "\(suffix): 数が右上の丸に重なっている（\(stats.frame.minY) / \(gear.frame.maxY)）")
                 }
             }
             shoot(app, "108-マイページ（見出しの並び・\(suffix)）")
