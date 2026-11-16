@@ -435,7 +435,7 @@ struct TripAIBannerView: View {
     }
 }
 
-/// 帯から開く日程（一覧を読んでから詳細を出す。`TripShareOpenView` と同じ形・日程のタブ）
+/// 帯から開く日程（一覧を読んでから詳細を出す。`TripPlanOpenView` と同じ形・日程のタブ）
 struct TripAIOpenView: View {
     let planId: String
     @StateObject private var model = TripPlansModel()

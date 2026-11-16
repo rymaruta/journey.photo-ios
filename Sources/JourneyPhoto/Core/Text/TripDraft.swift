@@ -184,8 +184,15 @@ enum TripDraft {
         return (start, day)
     }
 
-    /// 選んだ期間の1行（「12月24日（木）〜 25日（金）· 1 泊 2 日」）。帰着が無ければ出発の1日
+    /// 選んだ期間の1行（「12月24日（木）〜 25日（金）　1 泊 2 日」）。帰着が無ければ出発の1日
     static func rangeLine(start: String?, end: String?) -> String? {
+        guard let parts = rangeParts(start: start, end: end) else { return nil }
+        return "\(parts.dates)\u{2002}\(parts.stay)"
+    }
+
+    /// 期間を「日付」と「泊数」に分けたもの（`rangeLine` と、日程の画面の「日付」の欄が使う）。
+    /// 帰着が無ければ出発の1日。帰着が出発より前・読めない日付は nil
+    static func rangeParts(start: String?, end: String?) -> (dates: String, stay: String)? {
         guard let s = start, let sd = TripPlanText.date(fromYMD: s) else { return nil }
         let e = end ?? s
         guard let ed = TripPlanText.date(fromYMD: e), ed >= sd,
@@ -195,11 +202,36 @@ enum TripDraft {
         let c1 = TripPlanText.calendar.dateComponents([.year, .month, .day], from: sd)
         let c2 = TripPlanText.calendar.dateComponents([.year, .month, .day], from: ed)
         let first = monthDay(c1.month ?? 0, c1.day ?? 0, weekday(sd))
-        guard days > 1 else { return "\(first)\u{2002}\(stay)" }
+        guard days > 1 else { return (first, stay) }
         let second = c1.month == c2.month && c1.year == c2.year
             ? L("\(c2.day ?? 0)日（\(weekday(ed))）", "\(c2.day ?? 0) (\(weekday(ed)))")
             : monthDay(c2.month ?? 0, c2.day ?? 0, weekday(ed))
-        return "\(first)〜 \(second)\u{2002}\(stay)"
+        return ("\(first)〜 \(second)", stay)
+    }
+
+    /// 日程の画面の「日付」の欄（2026-11-16 判断・使い勝手の見直し A5: 出発と帰着の2つの欄を1つにした）。
+    /// 上の小さい字（`label`）は「日付」と泊数、下の字（`value`）は期間。**日付の無いプランは nil**（欄は「日付を入れる」）。
+    /// Web で作った「片方だけ」「帰着が出発より前」のプランも、入っている日付をそのまま見せる（開いただけで書き換えない）
+    static func periodField(start: String?, end: String?) -> (label: String, value: String)? {
+        let head = L("日付", "Dates")
+        // 泊数を出すのは出発と帰着の両方があるときだけ（Web で作った「出発だけ」のプランを「日帰り」と言わない。
+        // 帰着が無いのは日帰りと決めたのではなく、まだ入れていないだけ）
+        if start != nil, end != nil, let parts = rangeParts(start: start, end: end) {
+            return ("\(head)\u{3000}\(parts.stay)", parts.dates)
+        }
+        let s = TripPlanText.date(fromYMD: start).map(fullMonthDay)
+        let e = TripPlanText.date(fromYMD: end).map(fullMonthDay)
+        switch (s, e) {
+        case let (s?, e?): return (head, "\(s)〜 \(e)")
+        case let (s?, nil): return (head, "\(s)〜")
+        case let (nil, e?): return (head, "〜 \(e)")
+        default: return nil
+        }
+    }
+
+    private static func fullMonthDay(_ date: Date) -> String {
+        let c = TripPlanText.calendar.dateComponents([.month, .day], from: date)
+        return monthDay(c.month ?? 0, c.day ?? 0, weekday(date))
     }
 
     private static func monthDay(_ m: Int, _ d: Int, _ w: String) -> String {

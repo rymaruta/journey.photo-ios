@@ -16,12 +16,17 @@ struct TopCardFace: View {
     /// ①現像前の旅の札（2026-11-12 札 #543）: 左の写真の代わりに置く、色を抜いたフィルムの3コマ（端末の写真の id）。
     /// 空なら写真（`backdrop`・`backdropURL`）を置く
     var film: [String] = []
-    var trailingSymbol: String = "chevron.right"
+    /// 右の印。nil は印を置かず、その幅（`trailingReserve`）だけ空ける——札の上に別の押せる物を重ねるとき
+    /// （旅の最中の札の右の「＋」・2026-11-16 判断・使い勝手の見直し A2）
+    var trailingSymbol: String? = "chevron.right"
     var detailTruncation: Text.TruncationMode = .middle
     /// 旅行プランの札（右上に「⋯」を重ねる・`tripCardMenu`）。眉と題をその下に潜らせない（`HomeTopCardView.menuReserve`）
     var reservesMenu: Bool = false
     /// 横にめくる並びの中か（外の余白を持たず、並びの高さいっぱいに伸びる）
     var inCarousel: Bool = false
+
+    /// 右の印を置かないときに空ける幅（上に重ねる「＋」の丸 36。右の余白 12 と合わせて当たり 44 が字に重ならない）
+    nonisolated static let trailingReserve: CGFloat = 36
 
     var body: some View {
         // **v2（2026-10-14・Main の板「上の札を写真つきの横長カードに」）**:
@@ -69,10 +74,14 @@ struct TopCardFace: View {
                     }
                 }
                 Spacer(minLength: 0)
-                Image(systemName: trailingSymbol)
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(WebTheme.text2)
-                    .accessibilityHidden(true)
+                if let trailingSymbol {
+                    Image(systemName: trailingSymbol)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(WebTheme.text2)
+                        .accessibilityHidden(true)
+                } else {
+                    Color.clear.frame(width: Self.trailingReserve, height: 1).accessibilityHidden(true)
+                }
             }
             .padding(.leading, JPSpace.m)
             .padding(.trailing, JPSpace.s)
