@@ -26,12 +26,24 @@ struct SignInRequest: Identifiable, Equatable {
     /// **呼ぶ側が渡す**（2026-11-15 確かめ役の指摘: ログインの文「〜にはログインしてください」を登録の欄の上に出していた）。
     /// 無ければ一般の一言（`SignInPrompt.signUpGeneric`）
     var signUpReason: String? = nil
+    /// ログインできたら済ませる続き（いいね・保存・フォロー・2026-11-16 判断 A4・`SignInFollowUp`）。
+    /// 無ければ今までどおり、ログインしたら閉じるだけ
+    var followUp: SignInFollowUp? = nil
 }
 
 /// ログイン画面（`SignInView`）を開いたときの側。画面は1つで、上の一言と欄はそのまま
 enum SignInEntry: Equatable {
     case signIn
     case signUp
+}
+
+/// ログインの画面が覚えている続きを、ログインできた瞬間に渡すか（2026-11-16 判断 A4）
+enum SignInFollowUpHandOver {
+    /// ログインできた（`userId` が入った）ときだけ渡す。ログアウトの向きでは渡さない
+    static func take(_ waiting: SignInFollowUp?, userId: String?) -> SignInFollowUp? {
+        guard userId != nil else { return nil }
+        return waiting
+    }
 }
 
 /// 断りの文と、促すかどうか（画面を持たない計算だけ）
@@ -53,6 +65,8 @@ enum SignInPrompt {
     static var likeSignUp: String { L("登録すると、いいねできます", "Sign up to like photos") }
     static var saveSignUp: String { L("登録すると、写真を保存できます", "Sign up to save photos") }
     static var commentSignUp: String { L("登録すると、コメントできます", "Sign up to comment") }
+    /// フォロー（2026-11-16 判断 A4: ログインしていなくても「フォローする」を出し、押したら登録の側で開く）
+    static var followSignUp: String { L("登録すると、フォローできます", "Sign up to follow people") }
     static var notificationsSignUp: String { L("登録すると、お知らせを見られます", "Sign up to see your notifications") }
     /// どの操作でもないとき
     static var signUpGeneric: String {
@@ -70,7 +84,16 @@ enum SignInPrompt {
 
     /// 確認の「新規登録」から開く頼み（登録の側・登録の一言）
     static func signUpRequest(from request: SignInRequest) -> SignInRequest {
-        SignInRequest(reason: request.signUpReason ?? signUpGeneric, entry: .signUp)
+        SignInRequest(reason: request.signUpReason ?? signUpGeneric, entry: .signUp, followUp: request.followUp)
+    }
+
+    /// 押した操作から**すぐ登録の側で開く**頼み（2026-11-16 判断 A4）。確かめの「ログインしてください」を挟まない
+    /// ——開いた画面に「ログインに戻る」があるので、登録済みの人も1回で入れる（押す回数 2 → 1）。
+    /// 起動直後の確認中は開かない（ログイン済みの人にも出る・`request` と同じ）
+    static func direct(signUpReason: String, followUp: SignInFollowUp, userId: String?,
+                       isResolving: Bool) -> SignInRequest? {
+        HomeLikeGate.decide(userId: userId, isResolving: isResolving) == .askToSignIn
+            ? SignInRequest(reason: signUpReason, entry: .signUp, followUp: followUp) : nil
     }
 
     /// コメントの欄の代わりに「ログインするとコメントできます」を出すか
@@ -113,9 +136,24 @@ struct SignInPromptPresenter: ViewModifier {
 
     @Binding var ask: SignInRequest?
     @Binding var open: SignInRequest?
+    /// ログインできたら、開いた頼みの続き（`SignInRequest.followUp`）を渡す（2026-11-16 判断 A4）
+    var onSignedIn: ((SignInFollowUp) -> Void)? = nil
+
+    @EnvironmentObject private var auth: AuthStore
+    /// いま開いているログインの画面の続き。閉じたらログインしていないぶんは忘れる
+    @State private var waiting: SignInFollowUp?
 
     func body(content: Content) -> some View {
         content
+            .onChange(of: open?.id) { _, _ in
+                if let open { waiting = open.followUp }
+            }
+            // **ログインできた瞬間に渡す**（ログインの画面は自分で閉じる・`SignInSheet`）
+            .onChange(of: auth.userId) { _, userId in
+                guard let followUp = SignInFollowUpHandOver.take(waiting, userId: userId) else { return }
+                waiting = nil
+                onSignedIn?(followUp)
+            }
             .alert(Labels.Common.signInRequired,
                    isPresented: Binding(get: { ask != nil }, set: { if !$0 { ask = nil } }),
                    presenting: ask) { request in
@@ -126,7 +164,10 @@ struct SignInPromptPresenter: ViewModifier {
             } message: { request in
                 Text(request.reason)
             }
-            .sheet(item: $open) { request in
+            .sheet(item: $open, onDismiss: {
+                // ログインせずに閉じたら、続きは忘れる（次に別の人がログインしたときに勝手に送らない）
+                if auth.userId == nil { waiting = nil }
+            }) { request in
                 SignInSheet(reason: request.reason, entry: request.entry)
             }
     }
@@ -134,8 +175,9 @@ struct SignInPromptPresenter: ViewModifier {
 
 extension View {
     /// 未ログインで押した操作から、ログイン画面へ進む口（`SignInPromptPresenter`）
-    func signInPrompt(ask: Binding<SignInRequest?>, open: Binding<SignInRequest?>) -> some View {
-        modifier(SignInPromptPresenter(ask: ask, open: open))
+    func signInPrompt(ask: Binding<SignInRequest?>, open: Binding<SignInRequest?>,
+                      onSignedIn: ((SignInFollowUp) -> Void)? = nil) -> some View {
+        modifier(SignInPromptPresenter(ask: ask, open: open, onSignedIn: onSignedIn))
     }
 }
 

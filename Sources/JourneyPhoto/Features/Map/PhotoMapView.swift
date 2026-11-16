@@ -35,6 +35,8 @@ struct PhotoMapView: View {
     @EnvironmentObject private var connectivity: Connectivity
     /// 「行きたい」の鍵（地図の下の「行きたい場所 · 旅行プランを作る」・2026-11-12）
     @EnvironmentObject private var wishlist: WishlistStore
+    /// 札の「行きたい」が送れなかったときの知らせ（`WishlistSync.notice`）
+    @EnvironmentObject private var toasts: ToastCenter
     /// ブロック／通報があったが、まだピンから落としていない。
     /// **見ている最中には絞らない**（`FavoritesView` の `photos` の注記）——
     /// 押した元の `NavigationLink` が消えると、開いている詳細がその場で閉じ、
@@ -111,6 +113,13 @@ struct PhotoMapView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// 撮影スポットのピンを選び直した回数（触覚の合図の引き金）
     @State private var spotSelectTicks = 0
+    /// 指で地図を動かしたか（最後に「このエリアを検索」を押してから・2026-11-16 判断 A9・`MapAreaButton`）
+    @State private var movedSinceAreaSearch = false
+    /// 地図を押して札を閉じる予約（2回たたいて寄せたときは取り消す・`MapCardDismiss.Pending`）
+    @State private var pendingCardClose = MapCardDismiss.Pending()
+    /// UI テストのときだけ読む数（地図を押した合図の回数・2026-11-16 run 1429 の調べ・`map.cardCloseProbe`）
+    @State private var cardCloseProbe = ""
+    @State private var cardCloseCounts = (single: 0, double: 0, closed: 0)
 
     var body: some View {
         // UI テストのときだけ: body の評価を数える（`PerfTimeline`・札 #594 の下調べ。無効なら何もしない）
@@ -123,6 +132,10 @@ struct PhotoMapView: View {
                 categoryChips
             }
             modePicker
+            // 2026-11-16 判断（使い勝手の見直し A9）: 種類のチップで観光スポットのピンを隠しているときは1行で知らせる
+            if model.mode == .map, model.categoryHidesSpotsHere {
+                categoryHidesSpotsNote
+            }
             switch model.mode {
             case .map: mapArea
             case .spots: spotsArea
@@ -458,7 +471,46 @@ struct PhotoMapView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    /// 「地図 / スポット / リスト」。地図は `shown` から、スポットは撮影スポットの台帳から、
+    /// 種類のチップで観光スポットを隠している知らせ（2026-11-16 判断 A9・案の模型: 高さ 36・真鍮の淡い地に真鍮の字、
+    /// 右に白の「すべてに戻す」）。黒地の上（地図の上の段）なので真鍮が読める
+    private var categoryHidesSpotsNote: some View {
+        HStack(spacing: JPSpace.xs) {
+            Text(Self.categoryHidesSpotsLine(model.category.map { Labels.Category.name($0) }))
+                .font(JPFont.footnote)
+                .foregroundStyle(WebTheme.accent)
+                .lineLimit(1)
+                .minimumScaleFactor(0.93)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                model.select(category: nil)
+            } label: {
+                Text(L("すべてに戻す", "Show all"))
+                    .font(JPFont.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.foreground)
+                    // 見た目は 36 の帯の中、当たりは 44（上下に 4 はみ出す）
+                    .frame(minHeight: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.vertical, -(WebTheme.minTapTarget - Self.categoryNoteHeight) / 2)
+            .accessibilityIdentifier("map.categoryHidesSpots.all")
+        }
+        .padding(.horizontal, JPSpace.m)
+        .frame(height: Self.categoryNoteHeight)
+        .background(WebTheme.accentSoft)
+        .accessibilityIdentifier("map.categoryHidesSpots")
+    }
+
+    /// 知らせの帯の高さ（案の模型 A9 の 36）
+    nonisolated static let categoryNoteHeight: CGFloat = 36
+
+    /// 知らせの字。選んだ種類の名前で言う（名前が無ければ「種類」）。帯は1行なので短く
+    nonisolated static func categoryHidesSpotsLine(_ category: String?) -> String {
+        let name = category ?? L("種類", "category")
+        return L("「\(name)」で絞っている間は、観光スポットを出しません", "Spots are hidden while “\(name)” is selected")
+    }
+
+    /// 「地図 / スポット / 撮影地」。地図は `shown` から、スポットは撮影スポットの台帳から、
     /// リストは両方を都道府県ごとにまとめて描く（`RegionList`）。
     ///
     /// **2026-10-31 判断（#426・owner「同じような機能のある画面に水平展開」）: マイページ・ホームと同じ下線の札**
@@ -479,7 +531,27 @@ struct PhotoMapView: View {
     // MARK: - 地図
 
     private var mapArea: some View {
-        mapCanvas
+        // 2026-11-16 判断（使い勝手の見直し A7）: 地図の空いている所を押したら札を閉じる（札の × をやめた・`MapCardDismiss`）。
+        // **同時の合図**にして、地図を動かす指・地点を選ぶ指・ピンのボタンは今までどおり効かせる
+        // 2回たたいて寄せる操作では閉じない: 1回目では閉じる予約だけをして、2回目が来たら取り消す（`MapCardDismiss.Pending`）
+        MapReader { proxy in
+            mapCanvas
+                .simultaneousGesture(
+                    SpatialTapGesture(coordinateSpace: .named(Self.mapSpace))
+                        .onEnded { value in
+                            noteCardCloseProbe(single: 1)
+                            closeCardsIfMapTapped(at: value.location, proxy: proxy)
+                        }
+                )
+                .simultaneousGesture(
+                    SpatialTapGesture(count: 2, coordinateSpace: .named(Self.mapSpace))
+                        .onEnded { _ in
+                            noteCardCloseProbe(double: 1)
+                            pendingCardClose.cancel()
+                        }
+                )
+        }
+        .coordinateSpace(.named(Self.mapSpace))
         // 方位磁針・現在地・拡大縮小を**1本の列にまとめる**（`mapControls`）
         .mapScope(mapScope)
         // 2026-11-12 判断（第2章）: 読み込み中は**ピンの形の灰**（今は何も出ず、ピンが無いだけの地図だった）
@@ -489,6 +561,17 @@ struct PhotoMapView: View {
         .overlay(alignment: .top) { statusLine }
         // UI テストのときだけ（電波なしの絵・`PreviewSession.forcesOffline`・Debug のみ）: いま出している帯・札の種類を
         // 見えない要素 `map.stateProbe` に出す（2026-11-12・run 1117 で帯が出なかった訳を記録で調べる）
+        .overlay(alignment: .topLeading) {
+            if PreviewSession.userId != nil {
+                Text(" ")
+                    .font(.caption2)
+                    .foregroundStyle(Color.clear)
+                    .frame(width: 1, height: 1)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("map.cardCloseProbe")
+                    .accessibilityValue(cardCloseProbe)
+            }
+        }
         .overlay(alignment: .bottomLeading) {
             if PreviewSession.forcesOffline {
                 Text(" ")
@@ -567,6 +650,50 @@ struct PhotoMapView: View {
                 selectedOfficial = nil
             }
         }
+    }
+
+    /// 地図を押した所の座標を測る名前（`MapCardDismiss`）
+    private static let mapSpace = "photoMap.canvas"
+
+    /// 地図を押したら、写真のピンと観光スポットの札を下げる。**ピンの上を押したときは下げない**
+    /// （ピンのボタンが札を開き直す合図と同時に届く・`MapCardDismiss`）
+    ///
+    /// Apple の地点の札も閉じる。地点を押すと地図の選び（`PlaceSelectableMap`）が別の地点に替わるので、
+    /// **閉じるのは少し待ってから**、その間に札が替わっていなければ（`MapCardDismiss.Snapshot`）。
+    /// 2回たたいて寄せたときは、2回目で予約を取り消す
+    private func closeCardsIfMapTapped(at point: CGPoint, proxy: MapProxy) {
+        guard selected != nil || selectedOfficial != nil || chosenPlace != nil else { return }
+        let space = NamedCoordinateSpace.named(Self.mapSpace)
+        var coordinates = model.pinLayout.pins.map(\.coordinate)
+        coordinates += model.pinLayout.clusters.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+        coordinates += model.officialPins.map { CLLocationCoordinate2D(latitude: $0.coords.lat, longitude: $0.coords.lng) }
+        let points = coordinates.compactMap { proxy.convert($0, to: space) }
+        guard MapCardDismiss.closes(tap: point, pinPoints: points) else { return }
+        let before = cardSnapshot
+        // 2回目の押し（2回たたいて寄せる）なら予約しない（`MapCardDismiss.Pending.tap`）
+        guard let ticket = pendingCardClose.tap(at: Date()) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: MapCardDismiss.closeDelayNanoseconds)
+            guard pendingCardClose.isCurrent(ticket), cardSnapshot == before else { return }
+            noteCardCloseProbe(closed: 1)
+            selected = nil
+            selectedOfficial = nil
+            chosenPlace = nil
+        }
+    }
+
+    /// UI テストのときだけ: 地図を押した合図の回数を見えない要素に出す（Debug・見本の利用者で起動したときだけ）
+    private func noteCardCloseProbe(single: Int = 0, double: Int = 0, closed: Int = 0) {
+        guard PreviewSession.userId != nil else { return }
+        cardCloseCounts.single += single
+        cardCloseCounts.double += double
+        cardCloseCounts.closed += closed
+        cardCloseProbe = "single=\(cardCloseCounts.single) double=\(cardCloseCounts.double) closed=\(cardCloseCounts.closed)"
+    }
+
+    /// いま出している札（閉じる予約の間に替わったかを見る）
+    private var cardSnapshot: MapCardDismiss.Snapshot {
+        MapCardDismiss.Snapshot(pin: selected?.id, official: selectedOfficial?.id, place: chosenPlace?.id)
     }
 
     /// **地点を押せるのは iOS 18 以降。** 17 では今まで通りの地図
@@ -733,6 +860,10 @@ struct PhotoMapView: View {
         if camera.positionedByUser {
             queryFraming.userMovedCamera()
             framedToPhotos = true
+            // 「このエリアを検索」を出す（2026-11-16 判断 A9・`MapAreaButton`）
+            if !movedSinceAreaSearch {
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { movedSinceAreaSearch = true }
+            }
         }
     }
 
@@ -838,7 +969,7 @@ struct PhotoMapView: View {
         // 地図は画面に戻るたびに読み直す（`.task`）ので、案内はそれを言う
         switch Self.emptyBanner(loadFailed: model.loadFailed, photosEmpty: model.photos.isEmpty,
                                 filtering: model.isFiltering,
-                                categoryHidesSpots: model.categoryHidesMatchingSpots) {
+                                categoryHidesSpots: model.categoryHidesMatchingSpots && !model.categoryHidesSpotsHere) {
         case .failed: return Self.loadFailedText
         case .categoryHidesSpots: return Self.categoryHidesSpotsBannerText
         case .noResults: return L("見つかりませんでした", "No results")
@@ -851,7 +982,7 @@ struct PhotoMapView: View {
         guard model.hasNothingToShow else { return nil }
         return Self.emptyBanner(loadFailed: model.loadFailed, photosEmpty: model.photos.isEmpty,
                                 filtering: model.isFiltering,
-                                categoryHidesSpots: model.categoryHidesMatchingSpots)
+                                categoryHidesSpots: model.categoryHidesMatchingSpots && !model.categoryHidesSpotsHere)
     }
 
     /// 地図の上に出す帯（2026-11-12・第2章と確かめ役の指摘）
@@ -1039,12 +1170,14 @@ struct PhotoMapView: View {
         }
     }
 
-    /// 「このエリアを検索」。適用中は**数えた結果**と解除の口に変わる
+    /// 「このエリアを検索」。適用中は**数えた結果**と解除の口に変わる。
+    /// 2026-11-16 判断（使い勝手の見直し A9）: 開いたばかりの地図では出さず、**指で地図を動かした後だけ**出す（`MapAreaButton`）
     @ViewBuilder
     private var areaControl: some View {
         if model.areaFrame != nil {
             Button {
                 model.clearArea()
+                movedSinceAreaSearch = false
             } label: {
                 HStack(spacing: 6) {
                     Text(PhotoMapViewModel.areaCountLabel(photos: model.shown.count, places: model.pins.count))
@@ -1059,9 +1192,10 @@ struct PhotoMapView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(L("範囲の絞り込みを解除", "Clear area filter"))
-        } else {
+        } else if MapAreaButton.shows(areaApplied: false, movedByUser: movedSinceAreaSearch) {
             Button {
                 model.applyArea()
+                movedSinceAreaSearch = false
             } label: {
                 // v2 の板 Map: ガラスの丸に 13pt の太字と回る矢印（押すと読み直す合図）
                 HStack(spacing: 6) {
@@ -1077,6 +1211,8 @@ struct PhotoMapView: View {
             .buttonStyle(.plain)
             // 範囲がまだ届いていない間は押せない（何も起きないボタンにしない）
             .disabled(!model.canSearchArea)
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+            .accessibilityIdentifier("map.searchArea")
         }
     }
 
@@ -1335,32 +1471,21 @@ struct PhotoMapView: View {
                 }
             }
             Spacer()
-            cardCloseButton { selected = nil }
+            // 2026-11-16 判断（使い勝手の見直し A7）: 右上の × はやめ、地図を押せば閉じる（`MapCardDismiss`）
         }
         .modifier(MapCardStyle())
+        // 札を1つの入れ物にしてから名前を付ける（2026-11-16 Mac run 1419・1423 の画面の木: 入れ物でないと、札の名前が
+        // 中のボタン全部に付き、`map.officialCard.wish` などの名前が消えていた）。カメラの部屋の札と同じ形
+        .accessibilityElement(children: .contain)
+        // 読み上げでは × の代わりに「閉じる」の操作（2本指でこする）で閉じる。入れ物にした後ろに付ける
+        // （入れ物にする前に付けた run 1419 では、札の名前が中のボタンにも付いた）
+        .accessibilityAction(.escape) { selected = nil }
         .accessibilityIdentifier("map.pinCard")
     }
 
     /// 札のボタンの高さ。主（経路）と線（撮影スポットを見る・場所の詳細）が横に並ぶので 44 にそろえる
     /// （2026-10-14 判断: v2 は主 50・副 44 だが、地図の上の札は地図を広く残したい。板 MapPlace も 46）
     nonisolated static let cardButtonHeight: CGFloat = JPHeight.secondaryButton
-    /// 札の「閉じる」の丸の見た目（板 MapPlace の 36・白 8%）。当たりは 44
-    nonisolated static let cardCloseSize: CGFloat = JPHeight.inlineButton
-
-    /// 札の右上の「閉じる」（v2 の板 MapPlace: 36 の丸・白 8% の地・白の ×）。当たりは 44
-    private func cardCloseButton(_ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: "xmark")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(WebTheme.foreground)
-                .frame(width: Self.cardCloseSize, height: Self.cardCloseSize)
-                .background(Color.white.opacity(0.08), in: Circle())
-                .webTappable()
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Labels.Common.close)
-    }
-
     /// 押した撮影スポット（台帳）の札。地点の札（`placeCard`）と同じ並び:
     ///
     ///     ◎ 高屋神社                                 ✕
@@ -1421,35 +1546,45 @@ struct PhotoMapView: View {
                     }
                 }
                 Spacer()
-                cardCloseButton { selectedOfficial = nil }
+                // 2026-11-16 判断（使い勝手の見直し A7）: 右上の × はやめ、地図を押せば閉じる（`MapCardDismiss`）
             }
 
+            // 2026-11-16 判断（使い勝手の見直し A7・案の模型）: 下の段は**同じ幅の3つ**「行きたい | 経路 | スポットを見る」。
+            // 行きたい場所に入れるのに ピン → 観光スポットを見る → 行きたい の3回だったのを、ピン → 行きたい の2回にする。
+            // 3つとも白 7% の地に白の字（高さ 44・角 12・すき間 8）。行きたい場所に入っていれば白の塗りに墨（形の印も旗の塗り）
             HStack(spacing: JPSpace.xs) {
+                let wishKey = SavedSpotKey.official(pin.slug)
+                let wanted = wishlist.contains(wishKey)
+                Button {
+                    Task { await toggleWish(pin) }
+                } label: {
+                    // 行きたい＝旗（2026-11-14 判断・#593。いいねのハートと紛れないよう旗にそろえる）
+                    cardActionFace(L("行きたい", "Want to go"), systemImage: wanted ? "flag.fill" : "flag",
+                                   filled: wanted, busy: wishlist.isSending(wishKey))
+                }
+                .buttonStyle(.plain)
+                .disabled(wishlist.isSending(wishKey))
+                .accessibilityValue(wanted ? L("行きたい場所に入っています", "Saved") : "")
+                .accessibilityAddTraits(wanted ? .isSelected : [])
+                .accessibilityIdentifier("map.officialCard.wish")
                 // **地点の札の「経路」と同じ挙動**（Apple の地図で経路を出す）。
                 // 同じ語で片方だけ「地点を表示」にしない
                 Button {
                     openDirections(to: pin)
                 } label: {
-                    // 札の主ボタン（v2 の板 MapPlace: 白の塗りに墨。札はガラスの地なので白・owner の決まり）。
-                    // 隣の線のボタンと字（15 semibold）・高さ（44）をそろえる
-                    Label(L("経路", "Directions"), systemImage: "arrow.triangle.turn.up.right.diamond")
-                        .font(JPFont.bodyEmphasis)
-                        .jpPillButton(.primary, height: Self.cardButtonHeight)
+                    cardActionFace(L("経路", "Directions"), systemImage: "arrow.triangle.turn.up.right.diamond")
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("map.officialCard.directions")
                 if let spot = model.officialSpot(for: pin) {
                     NavigationLink {
                         OfficialSpotView(spot: spot, spots: model.officialSpots, photos: model.photos,
                                          photosKnown: model.photosKnown)
                     } label: {
-                        // 2026-10-11 判断: 呼び名を「撮影スポットを見る」に延ばしたので、幅 375pt で「経路」と
-                        // 並ぶとはみ出しうる。隣の「経路」と形をそろえてアイコンは残し、1行に収めて縮める。
-                        // 縮めるのは 0.8 まで（15pt × 0.8 = 12pt。板の本文の最小）
-                        // 線のボタン（v2 の副ボタン・白 14% の縁）。枠の中ぜんぶが当たり（`jpPillButton` の contentShape）
-                        Label(L("観光スポットを見る", "See photo spot"), systemImage: "mappin.and.ellipse")
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                            .jpPillButton(.outline, height: Self.cardButtonHeight)
+                        // 案の模型は幅に入らないので「スポットを見る」と縮めていたが、行き先の名前は「観光スポットを見る」の
+                        // 決まり（2026-10-11 owner 承認・`PlaceTermWordingTests`）を守る。**この札だけ字の幅を取り**
+                        // （`fitsText`）、残りを「行きたい」「経路」が同じ幅で分ける。1行に収め、縮めても 12pt まで
+                        cardActionFace(L("観光スポットを見る", "See photo spot"), systemImage: nil, fitsText: true)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("map.officialCard.open")
@@ -1457,7 +1592,54 @@ struct PhotoMapView: View {
             }
         }
         .modifier(MapCardStyle())
+        // 札を1つの入れ物にしてから名前を付ける（2026-11-16 Mac run 1419・1423 の画面の木: 入れ物でないと、札の名前が
+        // 中のボタン全部に付き、`map.officialCard.wish` などの名前が消えていた）。カメラの部屋の札と同じ形
+        .accessibilityElement(children: .contain)
+        // 読み上げでは × の代わりに「閉じる」の操作（2本指でこする）で閉じる。入れ物にした後ろに付ける
+        // （入れ物にする前に付けた run 1419 では、札の名前が中のボタンにも付いた）
+        .accessibilityAction(.escape) { selectedOfficial = nil }
         .accessibilityIdentifier("map.officialCard")
+    }
+
+    /// 撮影スポットの札の下の段のボタンの顔（2026-11-16 判断 A7・案の模型: 同じ幅・高さ 44・角 12・白 7% の地に白の字 13 太字。
+    /// 入れてあるもの（行きたい場所）は白の塗りに墨）。札はガラスの地（地図が透ける）なので真鍮は使わない（CLAUDE.md）
+    /// - Parameter fitsText: 字の幅だけ取る（長い名前の札）。ほかの札は残りを同じ幅で分ける
+    private func cardActionFace(_ title: String, systemImage: String?, filled: Bool = false,
+                                busy: Bool = false, fitsText: Bool = false) -> some View {
+        HStack(spacing: 5) {
+            if busy {
+                ProgressView().controlSize(.mini)
+                    .tint(filled ? WebTheme.accentText : WebTheme.foreground)
+            } else if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.footnote.weight(.semibold))
+                    .accessibilityHidden(true)
+            }
+            Text(title)
+                .lineLimit(1)
+                // 大きな文字でも1行に。縮めるのは 0.93 まで（13pt × 0.93 ≈ 12pt: 本文の最小 12 を守る下限）
+                .minimumScaleFactor(0.93)
+        }
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(filled ? WebTheme.accentText : WebTheme.foreground)
+        .padding(.horizontal, fitsText ? JPSpace.s : 0)
+        .frame(maxWidth: fitsText ? nil : .infinity, minHeight: Self.cardButtonHeight)
+        .fixedSize(horizontal: fitsText, vertical: false)
+        .background(filled ? WebTheme.accentBackground : WebTheme.surface,
+                    in: RoundedRectangle(cornerRadius: JPRadius.field))
+        .contentShape(RoundedRectangle(cornerRadius: JPRadius.field))
+    }
+
+    /// 札の「行きたい」。ログイン中はサーバーへ送り、送れなければ戻して知らせる（`WishlistSync`・撮影スポットの画面と同じ）。
+    /// 入れたときは、みんなの「行きたい」にも数える（下書きのスポットは数えない・`OfficialSpotView` と同じ）
+    private func toggleWish(_ pin: OfficialPins.Pin) async {
+        let outcome = await WishlistSync.toggle(SavedSpotKey.official(pin.slug), store: wishlist,
+                                                service: environment.savedSpots)
+        if let notice = WishlistSync.notice(for: outcome) { toasts.show(notice.text, kind: notice.kind) }
+        if SpotWants.counts(outcome), !pin.isDraft {
+            SpotWantSender.want(pin.slug, service: environment.spotWants)
+            SpotWantSender.flush(service: environment.spotWants)
+        }
     }
 
     /// 撮影スポットへの経路を Apple の地図で開く。`placeCard` と同じ
@@ -1510,7 +1692,7 @@ struct PhotoMapView: View {
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(2)
                 Spacer()
-                cardCloseButton { chosenPlace = nil }
+                // 2026-11-16 判断（A7・確かめ役の指摘）: ほかの2つの札とそろえて × をやめ、地図を押せば閉じる（`MapCardDismiss`）
             }
 
             placeInfo(place)
@@ -1544,6 +1726,8 @@ struct PhotoMapView: View {
             placePhotos(photos, spot: spot)
         }
         .modifier(MapCardStyle())
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(.escape) { chosenPlace = nil }
         .accessibilityIdentifier("map.placeCard")
     }
 

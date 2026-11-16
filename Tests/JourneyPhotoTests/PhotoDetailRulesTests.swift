@@ -133,8 +133,18 @@ final class PhotoDetailRulesTests: XCTestCase {
                                                     lookupFailed: false, ownerBlocked: false))
         XCTAssertFalse(PhotoDetailRules.showsFollow(isMine: true, signedIn: true, isFollowing: false,
                                                     lookupFailed: false, ownerBlocked: false))
-        XCTAssertFalse(PhotoDetailRules.showsFollow(isMine: false, signedIn: false, isFollowing: false,
-                                                    lookupFailed: false, ownerBlocked: false))
+    }
+
+    /// 2026-11-16 判断（使い勝手の見直し A4）: **ログインしていなくても「フォロー」を出す**（押すと登録の側で開き、
+    /// ログインできたらフォローまで済ませる）。起動直後のログインの確認中だけは出さない（ログイン済みの人に一瞬出る）
+    func testFollowButtonIsShownWhenSignedOut() async {
+        XCTAssertTrue(PhotoDetailRules.showsFollow(isMine: false, signedIn: false, isFollowing: false,
+                                                   lookupFailed: false, ownerBlocked: false),
+                      "ログインしていない人にフォローのボタンが無い")
+        XCTAssertFalse(PhotoDetailRules.showsFollow(isMine: false, signedIn: false, signInResolving: true,
+                                                    isFollowing: false, lookupFailed: false, ownerBlocked: false))
+        XCTAssertFalse(PhotoDetailRules.showsFollow(isMine: false, signedIn: false, isFollowing: nil,
+                                                    lookupFailed: false, ownerBlocked: true))
     }
 
     /// 🔴 **ブロック・削除の答えは、押した1枚を押した人がまだ見ているときだけ書く**（2026-10-17）。
