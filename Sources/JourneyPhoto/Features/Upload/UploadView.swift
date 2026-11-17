@@ -66,6 +66,14 @@ struct UploadView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// 打っている題・説明の欄（写真ごと）。上に札が差し込まれたとき、その欄へ送り直す（`UploadFieldFocus`・#607）
     @FocusState private var focusedField: UploadFieldFocus?
+    /// 撮影地の候補のチップで選んだもの（写真ごと。欄が受け取って同じ道で入れ、nil に戻す・2026-11-16 判断 A11）
+    @State private var placeChipPicks: [UUID: UploadPlaceStatus.Chip] = [:]
+    /// 「変える」で欄に字を打てるようにする合図（写真ごとの回数）
+    @State private var placeFocusRequests: [UUID: Int] = [:]
+    /// 近くの観光スポットのチップに使う索引（チップを出す写真があるときだけ読む。読めなければ最近使った撮影地だけ）
+    @State private var chipSpotIndex: [OfficialSpot]?
+    /// 最近使った撮影地（開いたとき・人が替わったときに読む）
+    @State private var recentPlaceNames: [String] = []
 
     /// 最初から入れておくタグ（今日のテーマの「参加する」から来たとき）。
     /// **入れるだけで、消せる**——決めつけない
@@ -168,6 +176,7 @@ struct UploadView: View {
             if model.draftOwner != id { model.draftOwner = nil }
             // 「撮影地の位置を付ける」も次の人の値に替える（前の人の値を使わない・2026-10-18）
             model.useLocationOwner(id)
+            recentPlaceNames = model.recentPlaceNames()
         }
         // 書きかけがある間は、下へ払っても閉じず、**左上の「キャンセル」と同じ閉じる確認を出す**
         // （2026-11-14・#188・点検「直すべき 1」。前は跳ね返るだけで何も言わなかった）。送っている間は止めるだけ
@@ -584,11 +593,11 @@ struct UploadView: View {
                 draftsEntryRow
             }
         } else {
+            // 2026-11-16 判断（使い勝手の見直し A11）: 帯の下の色の編集のボタンはやめ、編集の入口は写真の札の「編集」1つ
+            // （同じ画面を開く入口が2つ重なっていた。札は常に見える・`UploadEditEntry.thumbTag`。写真を選んだ直後は
+            // 一度だけ「写真を押すと編集できます」・`editHint`）
             strip
         }
-        // 帯のすぐ下に「色を編集」（押せる合図がサムネだけだと気づかれなかった）。
-        // 2026-11-12 判断: 下の「写真を押すと、色や明るさを…」の一言は外した（ボタンと帯の札の「編集」で分かる）
-        editButton
     }
 
     /// 写真がまだ無いときの「写真を選ぶ」「撮る」（案 02 の 120×150・真鍮の点線と字＝「追加」と同じ扱い）
@@ -638,9 +647,10 @@ struct UploadView: View {
                     } else if model.items.count > 1 {
                         groupChoice
                     }
-                    // 撮影地の欄のすぐ上（2026-10-18 判断）。**写真を選ぶ前から出す**——撮影地は読み込んだ瞬間に
-                    // 写真の位置から引き始めるので、選んでから出しても遅い（Web の切り替えと同じ）
-                    locationToggle
+                    // 「地図に位置を載せる」の1行（2026-11-16 判断・A11）。写真があるときは1枚目の撮影地の欄の下
+                    // （`detailSection`）。**写真を選ぶ前もここに出す**——撮影地は読み込んだ瞬間に写真の位置から
+                    // 引き始めるので、選んでから出しても遅い（2026-10-18 の決まり・Web の切り替えと同じ）
+                    if model.items.isEmpty { locationToggle }
                     detailSection
                     inspiredCard
                     rowsCard
@@ -687,6 +697,11 @@ struct UploadView: View {
         .task(id: joined.entries) { await model.loadAlbums(joined: joined.entries) }
         // 撮影スポットの自動の候補の索引（撮影地・題・説明のどれかが入ってから1回だけ・#425）
         .task(id: model.wantsAutoSpotIndex) { await model.loadAutoSpotIndexIfNeeded() }
+        // 撮影地の候補のチップの近くの観光スポット（チップを出す写真に位置の手がかりがあるときだけ・1回・2026-11-16 判断 A11）
+        .task(id: wantsChipSpots) {
+            guard wantsChipSpots, chipSpotIndex == nil else { return }
+            chipSpotIndex = (try? await environment.spots.fetchIndex()) ?? []
+        }
         // 画面写真の試験だけ: 公開一覧の1枚を元の写真に選んだ状態にする（`PreviewSession.showsInspiredSample`・
         // Debug のみ。画面の状態だけで、控えにもサーバーにも書かない）
         .task {
@@ -730,6 +745,8 @@ struct UploadView: View {
             // 「撮影地の位置を付ける」の持ち主（人ごとの値・2026-10-18）。**写真を並べるより先に**——
             // 旅の写真・撮った1枚は下で並べた瞬間に撮影地を引き始める（`UploadViewModel.startPlaceLookup`）
             model.useLocationOwner(auth.userId)
+            // 撮影地の候補のチップの「最近使った撮影地」（2026-11-16 判断 A11）
+            recentPlaceNames = model.recentPlaceNames()
             // 投稿で「アルバムが無い」と分かったら、端末の控えからも外す
             model.onAlbumGone = { [joined] id in joined.forget(id: id) }
             // 撮影地が写真の近くのスポットを指すかを見る索引（送るときだけ読む・`PlaceCoordsRule`）。
@@ -1036,39 +1053,6 @@ struct UploadView: View {
         .accessibilityIdentifier("upload.editHint")
     }
 
-    /// 帯の下の「色を編集」（黒地の上の副ボタン・真鍮の文字）。開ける写真のうち最初の1枚を開く。
-    /// 2026-11-12 判断（案 02）: 「写真を編集」から改めた——写真の詳細の「写真を編集」（題・説明を直す画面）と
-    /// 名前がぶつかる。開くのは色の画面なので、EditPhoto の板と同じ「色を編集」
-    /// 開ける写真が無ければ出さない（`UploadEditEntry.buttonTarget`）
-    @ViewBuilder
-    private var editButton: some View {
-        let editable = model.items.map { model.editLockReason(for: $0.id) == nil }
-        if let index = UploadEditEntry.buttonTarget(editable: editable), model.items.indices.contains(index) {
-            let id = model.items[index].id
-            Button { openEditor(id) } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 14, weight: .semibold))
-                        .accessibilityHidden(true)
-                    Text(UploadEditEntry.buttonTitle)
-                        .font(.subheadline.weight(.semibold))
-                }
-                .foregroundStyle(WebTheme.accent)
-                .padding(.horizontal, 16)
-                .frame(minHeight: WebTheme.minTapTarget)
-                .background(WebTheme.raised, in: Capsule())
-                .overlay(Capsule().strokeBorder(WebTheme.border, lineWidth: 1))
-                .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(UploadEditEntry.buttonTitle)
-            .accessibilityHint(model.items.count > 1
-                               ? L("\(index + 1)枚目の色や明るさを編集します", "Adjusts the color and light of photo \(index + 1)")
-                               : L("色や明るさを編集します", "Adjusts the color and light"))
-            .accessibilityIdentifier("upload.editButton")
-        }
-    }
-
     /// 帯の1枚。**押すと編集画面**（写真ごと）。左下に一本の札（未編集は「編集」・編集済みは今の札）
     private func thumb(_ item: PendingPhoto, index: Int) -> some View {
         let canEdit = model.editLockReason(for: item.id) == nil
@@ -1253,6 +1237,22 @@ struct UploadView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
+    /// 近くの観光スポットのチップを作る索引が要るか（チップを出す写真があって、近くを探す位置があるとき）
+    private var wantsChipSpots: Bool {
+        model.items.contains { item in
+            placeStatusOf(item).showsChips
+                && UploadPlaceStatus.chipCenter(own: item.prepared.coords, others: model.items.map(\.prepared.coords),
+                                                attaches: model.attachesLocation) != nil
+        }
+    }
+
+    /// その写真の撮影地の状態（`UploadPlaceStatus.of`）
+    private func placeStatusOf(_ item: PendingPhoto) -> UploadPlaceStatus {
+        UploadPlaceStatus.of(location: item.location, photoPlaceName: item.photoPlaceName,
+                             photoHasCoords: item.prepared.coords != nil,
+                             attaches: model.attachesLocation, clearedByUser: item.locationClearedByUser)
+    }
+
     /// 選んだセグメントの面（v2 の `#2C2C2E`）。土台の面の段 `surface8`
     private static let segmentSelectedFill = WebTheme.surface8
 
@@ -1273,7 +1273,10 @@ struct UploadView: View {
                     JPFieldTitle(L("撮影地", "Place"))
                     PlaceSearchField(location: photo.location, coords: photo.pickedCoords,
                                      near: item.prepared.coords, offersSpots: true,
-                                     pickedSpot: photo.pickedSpot, boxed: true)
+                                     pickedSpot: photo.pickedSpot, boxed: true,
+                                     externalPick: Binding(get: { placeChipPicks[item.id] },
+                                                           set: { placeChipPicks[item.id] = $0 }),
+                                     focusRequests: placeFocusRequests[item.id] ?? 0)
                         // 🔴 撮影地の長さを止める(2026-11-07)。サーバーは 200 で黙って切る(`PostLimits.location`)ので、
                         // 画面の字と保存された字が食い違っていた。題・説明と同じ止め方
                         .onChange(of: item.location) { old, value in
@@ -1297,6 +1300,10 @@ struct UploadView: View {
                         .padding(.horizontal, 4)
                         .accessibilityIdentifier("upload.sampleNote")
                     }
+                    // 撮影地が入ったか・入らなかったかの一言と、候補のチップ（2026-11-16 判断・A11）
+                    placeStatus(item)
+                    // 「地図に位置を載せる」の1行は1枚目の欄の下だけ（投稿の全部の写真に効く・2026-11-16 判断 A11）
+                    if item.id == model.items.first?.id { locationToggle }
                     // 撮影スポットに結ぶ切り替え（撮影地の欄の下・板 UploadIOS・Web の `upload-auto-spot`）
                     if let row = model.autoSpotRow(for: item) {
                         autoSpotToggle(row, itemId: item.id)
@@ -1664,32 +1671,116 @@ struct UploadView: View {
         album.title.isEmpty ? L("無題のアルバム", "Untitled album") : album.title
     }
 
-    /// 「撮影地の位置を付ける」（2026-10-18 判断・`UploadViewModel.attachesLocation`）。投稿の全部の写真に効く。
+    /// 「地図に位置を載せる（約1kmに丸める）」の1行（2026-10-18 判断・`UploadViewModel.attachesLocation`）。投稿の全部の写真に効く。
     /// 人ごとに端末に覚える（`UploadLocationPreference`）。軌道は「SNS にも載せる」と同じ暗い真鍮
-    /// （板: Toggle のオン＝accent-deep。黒地の上）
+    /// （板: Toggle のオン＝accent-deep。黒地の上）。
+    ///
+    /// 2026-11-16 判断（使い勝手の見直し A11・模型 MBEk の A11）: 撮影地の欄の上の3行の札（名前と2行の説明）をやめ、
+    /// 欄の下の1行に縮めた。**切り替えと既定（オン）はそのまま**（プライバシーにかかわるので既定は変えない）。
+    /// 写真の位置から撮影地を入れたかは欄の下の一言（`UploadPlaceStatus`）が言う。長い説明は読み上げの説明に残す
     private var locationToggle: some View {
-        JPCard {
-            Toggle(isOn: Binding(get: { model.attachesLocation },
-                                 set: { model.setAttachesLocation($0) })) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(UploadDetails.uploadLocationToggleTitle)
-                        .font(.callout)
-                        .foregroundStyle(WebTheme.text)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(UploadDetails.uploadLocationToggleNote(attaches: model.attachesLocation))
-                        .font(.caption)
-                        .foregroundStyle(WebTheme.text3)
-                        .fixedSize(horizontal: false, vertical: true)
+        Toggle(isOn: Binding(get: { model.attachesLocation },
+                             set: { model.setAttachesLocation($0) })) {
+            Text(UploadDetails.uploadLocationLineTitle)
+                .font(JPFont.footnote)
+                .foregroundStyle(WebTheme.text2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .tint(WebTheme.accentDeep)
+        // 送っている間は変えさせない（送る中身は1枚ずつ作り直すので、途中で変わると写真ごとに割れる）
+        .disabled(model.isWorking)
+        .padding(.horizontal, 4)
+        .frame(minHeight: WebTheme.minTapTarget)
+        .accessibilityHint(UploadDetails.uploadLocationToggleNote(attaches: model.attachesLocation))
+        .accessibilityIdentifier("upload.attachLocation")
+    }
+
+    /// 撮影地の欄の下の一言（真鍮 12）と「変える」、候補のチップ（2026-11-16 判断・A11・`UploadPlaceStatus`）
+    @ViewBuilder
+    private func placeStatus(_ item: PendingPhoto) -> some View {
+        let status = placeStatusOf(item)
+        if let line = status.line {
+            HStack(alignment: .firstTextBaseline, spacing: JPSpace.s) {
+                // 黒地の上の合図なので真鍮（板: 真鍮＝合図と手がかり）
+                Text(line)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.accent)
+                    .fixedSize(horizontal: false, vertical: true)
+                if status.offersChange {
+                    Button {
+                        // 欄を空にして候補を出し、字を打てるようにする（空にしたので写真の座標も送らない・`locationClearedByUser`）
+                        model.photoBinding(item).wrappedValue.location = ""
+                        placeFocusRequests[item.id, default: 0] += 1
+                    } label: {
+                        Text(UploadPlaceStatus.changeTitle)
+                            .font(JPFont.caption.weight(.semibold))
+                            .foregroundStyle(WebTheme.text)
+                            .underline()
+                            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    // 当たりの 44 は保ったまま、一言の行の高さを広げない
+                    .padding(.vertical, -UploadPlaceChipLayout.changeOverhang)
+                    .disabled(model.isWorking)
+                    .accessibilityLabel(L("撮影地を変える", "Change the place"))
+                    .accessibilityIdentifier("upload.place.change")
                 }
             }
-            .tint(WebTheme.accentDeep)
-            // 送っている間は変えさせない（送る中身は1枚ずつ作り直すので、途中で変わると写真ごとに割れる）
-            .disabled(model.isWorking)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .frame(minHeight: WebTheme.minTapTarget)
-            .accessibilityIdentifier("upload.attachLocation")
+            .padding(.horizontal, 4)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("upload.place.status")
         }
+        if status.showsChips {
+            let chips = placeChips(for: item)
+            if !chips.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: JPSpace.xs) {
+                        ForEach(chips) { chip in placeChip(chip, itemId: item.id) }
+                    }
+                }
+                .accessibilityIdentifier("upload.place.chips")
+            }
+        }
+    }
+
+    /// その写真のチップ（近くの観光スポット → 最近使った撮影地・`UploadPlaceStatus.chips`）
+    private func placeChips(for item: PendingPhoto) -> [UploadPlaceStatus.Chip] {
+        let center = UploadPlaceStatus.chipCenter(own: item.prepared.coords,
+                                                  others: model.items.map(\.prepared.coords),
+                                                  attaches: model.attachesLocation)
+        var near: [OfficialSpot] = []
+        if let center, let index = chipSpotIndex {
+            near = PlaceSpotSuggestions.suggestions(query: "", near: center, index: index)
+        }
+        return UploadPlaceStatus.chips(nearSpots: near, recent: recentPlaceNames)
+    }
+
+    /// 候補のチップ1つ（模型: 高さ 36・白 14%・字 13。最近使った撮影地は頭に「最近」）。当たりは 44
+    private func placeChip(_ chip: UploadPlaceStatus.Chip, itemId: UUID) -> some View {
+        Button {
+            placeChipPicks[itemId] = chip
+        } label: {
+            HStack(spacing: 6) {
+                if case .recent = chip {
+                    Text(L("最近", "Recent"))
+                        .foregroundStyle(WebTheme.text3)
+                }
+                Text(chip.name)
+                    .foregroundStyle(WebTheme.text)
+                    .lineLimit(1)
+            }
+            .font(JPFont.footnote)
+            .padding(.horizontal, JPSpace.s)
+            .frame(height: UploadPlaceChipLayout.height)
+            .background(Color.white.opacity(UploadPlaceChipLayout.fillOpacity), in: Capsule())
+            .frame(minHeight: WebTheme.minTapTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(model.isWorking)
+        .accessibilityLabel(UploadPlaceChipLayout.label(chip))
+        .accessibilityIdentifier("upload.place.chip")
     }
 
     /// 公開範囲（板: 1行。全体・フォロワー・親しい友達・非公開の4択）
@@ -1791,6 +1882,24 @@ struct UploadView: View {
 /// 押せる範囲を 14 はみ出させると、帯の間（10）を越えて隣の写真に 4 重なり、隣の写真の左上を
 /// 押したつもりで1つ前の写真が外れた（2026-10-01 の既知の残り）。見た目（丸の位置と大きさ）は
 /// 変えない——押せる範囲（見えない）を、丸が収まる範囲で寄せるだけ。44 も保つ
+/// 撮影地の候補のチップと「変える」の寸法（2026-11-16 判断・A11・模型 MBEk の A11: 高さ 36・白 14%・字 13）
+enum UploadPlaceChipLayout {
+    /// 見た目の高さ（当たりは 44）
+    static let height: CGFloat = 36
+    /// 地の白の濃さ（黒地の上）
+    static let fillOpacity: Double = 0.14
+    /// 「変える」の当たり（44）が一言の行（12pt の字・約 16pt）から上下にはみ出す量。行の高さは広げない
+    static let changeOverhang: CGFloat = (WebTheme.minTapTarget - 16) / 2
+
+    /// 読み上げ（何が入るかを言う）
+    static func label(_ chip: UploadPlaceStatus.Chip) -> String {
+        switch chip {
+        case .spot(let spot): return L("観光スポット \(spot.name) を撮影地に入れる", "Use the spot \(spot.name) as the place")
+        case .recent(let name): return L("最近使った撮影地 \(name) を入れる", "Use your recent place \(name)")
+        }
+    }
+}
+
 enum UploadStripLayout {
     /// 写真と写真の間（v2 の板 gap 8。v1 は 10）
     static let spacing: CGFloat = 8

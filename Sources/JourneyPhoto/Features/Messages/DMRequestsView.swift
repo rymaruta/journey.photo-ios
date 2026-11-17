@@ -4,7 +4,9 @@ import SwiftUI
 ///
 /// - 札ごとに 承認（主・白）／削除（副・線）。「…」から通報・ブロック
 /// - 送り主の通数（最大 3）と「ストーリーへの返信」を札に出す（会話を読んで数える・`RequestFacts`）
-/// - 承認した直後は札が消え、下に「承認しました。受信箱に移りました ›メッセージを見る」。削除は「リクエストを削除しました」だけ
+/// - 承認したら、**そのまま会話を開いて書く欄にキーボード**（2026-11-16 判断・使い勝手の見直し A8。前は札が消えて
+///   下に「承認しました。受信箱に移りました ›メッセージを見る」が出て、もう1回押してから欄を押していた）。
+///   知らせ（`DMText.acceptedNotice`）は会話の画面が出す。削除は「リクエストを削除しました」だけ
 /// - まとめて削除は右上の「…」から（確認つき）
 struct DMRequestsView: View {
 
@@ -14,7 +16,8 @@ struct DMRequestsView: View {
     @EnvironmentObject private var connectivity: Connectivity
     @EnvironmentObject private var store: DMInboxStore
 
-    @State private var route: String?
+    /// 積む会話。`accepted` は「承認」を押して開いた回（会話の画面で欄にキーボードを出し、知らせを出す）
+    @State private var route: Route?
     /// 札ごとに読んだ事実（通数・ストーリーへの返信か）
     @State private var facts: [String: RequestFacts] = [:]
     /// 操作中の札（二度押しで重ねない）
@@ -36,8 +39,11 @@ struct DMRequestsView: View {
     struct ToastState: Equatable {
         let id = UUID()
         let text: String
-        /// 「メッセージを見る」で開く会話（削除の知らせは nil）
-        let conversationId: String?
+    }
+
+    struct Route: Hashable {
+        let id: String
+        var accepted = false
     }
 
     private var requests: [DMThread] {
@@ -64,14 +70,12 @@ struct DMRequestsView: View {
                     }
                 }
             }
-            .navigationDestination(item: $route) { id in
-                DMConversationView(conversationId: id)
+            .navigationDestination(item: $route) { route in
+                DMConversationView(conversationId: route.id, openedAfterAccept: route.accepted)
             }
             .overlay(alignment: .bottom) {
                 if let toast {
-                    DMActionToast(text: toast.text,
-                                  actionTitle: toast.conversationId == nil ? nil : L("メッセージを見る", "View message"),
-                                  action: toast.conversationId.map(openAction))
+                    DMActionToast(text: toast.text)
                         .task(id: toast.id) {
                             try? await Task.sleep(for: DMActionToast.duration)
                             if !Task.isCancelled, self.toast?.id == toast.id { self.toast = nil }
@@ -160,7 +164,7 @@ struct DMRequestsView: View {
         let busy = working.contains(request.id)
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: JPSpace.s) {
-                Button { route = request.id } label: {
+                Button { route = Route(id: request.id) } label: {
                     HStack(spacing: JPSpace.s) {
                         DMAvatar(userId: request.peerId, deleted: request.isDeleted, size: DMLook.requestAvatar)
                         VStack(alignment: .leading, spacing: 2) {
@@ -193,7 +197,7 @@ struct DMRequestsView: View {
                 .accessibilityLabel(L("その他の操作（ブロック、通報）", "More (block, report)"))
                 .accessibilityIdentifier("dm.request.more")
             }
-            Button { route = request.id } label: {
+            Button { route = Route(id: request.id) } label: {
                 Text(request.excerpt)
                     .jpSystemFont(14)
                     .foregroundStyle(WebTheme.text)
@@ -253,11 +257,6 @@ struct DMRequestsView: View {
 
     // MARK: - 操作
 
-    /// 知らせの「メッセージを見る」: 知らせを閉じて会話を積む
-    private func openAction(_ id: String) -> () -> Void {
-        { toast = nil; route = id }
-    }
-
     /// 札の通数と「ストーリーへの返信」を、会話を読んで数える（既読にはしない——既読は `PUT …/read` だけ）
     private func loadFacts(_ request: DMThread) async {
         guard facts[request.id] == nil,
@@ -273,8 +272,9 @@ struct DMRequestsView: View {
         do {
             try await environment.dm.accept(request.id)
             store.apply { $0.accepting(request.id) }
-            toast = ToastState(text: L("承認しました。受信箱に移りました", "Accepted. Moved to your inbox."),
-                               conversationId: request.id)
+            // 2026-11-16 判断（A8）: そのまま会話へ。欄にキーボードと「承認しました」は会話の画面が出す
+            toast = nil
+            route = Route(id: request.id, accepted: true)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("承認できませんでした", "Couldn't accept")
         }
@@ -287,7 +287,7 @@ struct DMRequestsView: View {
         do {
             try await environment.dm.decline(request.id)
             store.apply { $0.removing(request.id) }
-            toast = ToastState(text: L("リクエストを削除しました", "Request deleted"), conversationId: nil)
+            toast = ToastState(text: L("リクエストを削除しました", "Request deleted"))
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? L("削除できませんでした", "Couldn't delete")
         }
@@ -299,7 +299,7 @@ struct DMRequestsView: View {
         do {
             _ = try await environment.dm.declineAll()
             store.apply { inbox in DMInbox(rebuilding: inbox.items.filter { !ids.contains($0.id) }) }
-            toast = ToastState(text: L("リクエストをすべて削除しました", "All requests deleted"), conversationId: nil)
+            toast = ToastState(text: L("リクエストをすべて削除しました", "All requests deleted"))
             // サーバーの側で残った分（読んだあとに届いた分）を映す
             await store.refresh(service: environment.dm, owner: auth.userId)
         } catch {

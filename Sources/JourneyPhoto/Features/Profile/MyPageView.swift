@@ -3,6 +3,12 @@ import SwiftUI
 /// 自分のページ。ログインしていなければログイン画面を出す。
 struct MyPageView: View {
 
+    /// お知らせの未読の数と、受信箱の未読（ほかのタブの見出しと同じ値・`RootView` が配る）。
+    /// 2026-11-16 判断（使い勝手の見直し A3）: 表紙の右上に吹き出しとベルを置く（`AppHeaderGlassInbox`）
+    var unread = 0
+    var onOpenNotifications: () -> Void = {}
+    var messagesUnread = false
+
     // 起動直後の停止の切り分け（UI テストのときだけ・`PerfRecorder.event`・2026-11-07 札 #435 / #429）: 作られた時刻
     private let perfInitStart: Void = PerfRecorder.shared.event("MyPageView.init>")
 
@@ -417,7 +423,7 @@ struct MyPageView: View {
                     ZStack(alignment: .topTrailing) {
                         // **丸を先に置く**（読み上げで見出しの途中に「設定」が挟まらない）。
                         // 見た目は前に出す
-                        settingsButton
+                        topButtons
                             .padding(.top, hasCover ? topInset : 0)
                             .zIndex(1)
                         if let profile = model.profile {
@@ -536,6 +542,19 @@ struct MyPageView: View {
         refreshSavedIds()
     }
 
+    /// 右上の丸の並び: 吹き出し・ベル・歯車（2026-11-16 判断・使い勝手の見直し A3）。
+    /// 上のバーを出さないので、ほかのタブの見出しにある吹き出しとベルがマイページだけ1回で届かなかった（2回）。
+    /// 板 MyPage は歯車だけ。歯車の位置・形は変えず、その左に同じガラスの丸を2つ足す。
+    /// 2つの中身（押した先・読み上げ・未読の点）は見出しと同じもの（`AppHeaderInbox`）
+    private var topButtons: some View {
+        HStack(spacing: AppHeaderGlassInbox.gap) {
+            // 点はカバー写真の上なら白、黒地なら真鍮（`AppHeaderGlassInbox.dotColor`・2026-11-16 判断）
+            AppHeaderGlassInbox(unread: unread, messagesUnread: messagesUnread, onPhoto: hasCover,
+                                onOpenNotifications: onOpenNotifications)
+            settingsButton
+        }
+    }
+
     /// 右上の設定（板: 44pt のガラスの丸）。**上のバーを出さないので、ここが入口**
     private var settingsButton: some View {
         NavigationLink { SettingsView() } label: {
@@ -566,10 +585,8 @@ struct MyPageView: View {
                     // **板どおり黒の縁**（写真の上でも丸が割れない）。
                     // 本人の色の輪（`themeColor`）は板に無いので出さない（人のページも同じ）
                     .coverCutout(bandShown)
+                // 2026-11-16（A3）: カバーが無い人も数の右を空けない（見出しを右上の丸の下から始める・`MyPageHeaderLayout.topReserve`）
                 stats
-                    // カバーが無い人は顔の段が右上の設定の丸と同じ高さに来る。丸の幅だけ右を空けて、
-                    // 「フォロー中」を丸の下に潜らせない
-                    .padding(.trailing, MyPageHeaderLayout.statsTrailingReserve(coverBand: bandShown))
             }
             VStack(alignment: .leading, spacing: JPSpace.xxs) {
                 HStack(alignment: .center, spacing: MyPageHeaderLayout.nameEditGap) {
@@ -600,8 +617,9 @@ struct MyPageView: View {
         }
         .padding(.horizontal, ProfileV2.gutter)
         // カバーがあればアイコンを下端に重ねる（`ProfileCover.height` の帯に 88pt の丸を 44pt）。
-        // 無ければ右上の設定の丸の高さから（板 MyPageNoCover・丸と並ぶ）
-        .padding(.top, bandShown ? -ProfileCover.avatarOverlap : 0)
+        // 無ければ右上の丸の並びの下から（2026-11-16 判断・A3。板 MyPageNoCover は設定の丸と同じ高さに並べていたが、
+        // 丸が3つになり数の列が狭くなるので下へ。`MyPageHeaderLayout.topReserve`）
+        .padding(.top, bandShown ? -ProfileCover.avatarOverlap : MyPageHeaderLayout.topReserve(coverBand: false))
     }
 
     /// 自分の顔。**ストーリーがあれば輪を描き、押すと自分のストーリーから**（2026-10-22・`StoryAvatar`）
@@ -1973,9 +1991,12 @@ enum MyPageHeaderLayout {
     /// 名前の段の右端のボタンの字（読み上げは「プロフィールを編集」のまま）
     static var editTitle: String { L("編集", "Edit") }
 
-    /// 数の並びの右に空ける幅。**カバーが無い人だけ**、顔の段が右上の設定の丸（44pt）と
-    /// 同じ高さに来るので、丸の幅だけ空ける。カバー（額縁を含む）がある人は丸が帯の上にあるので 0
-    static func statsTrailingReserve(coverBand: Bool) -> CGFloat {
-        coverBand ? 0 : WebTheme.minTapTarget
+    /// 見出しの上に空ける高さ。**カバーが無い人だけ**、右上の丸の並び（44pt）の下から始める（2026-11-16 判断・A3）。
+    /// カバー（額縁を含む）がある人は丸が帯の上にあるので 0（帯の下端に顔を重ねる並びのまま）。
+    /// 前（`statsTrailingReserve`）は、カバーが無い人の顔の段が右上の設定の丸と同じ高さに来るので、数の右に丸の幅（44）を
+    /// 空けていた。丸が3つ（吹き出し・ベル・歯車＝148pt）になると、顔 72 の人で数の列が約 125pt（1列 約 36pt）しか残らない。
+    /// 数を縮めて詰めるより、見出しを丸の下から始める
+    static func topReserve(coverBand: Bool) -> CGFloat {
+        coverBand ? 0 : WebTheme.minTapTarget + JPSpace.xs
     }
 }

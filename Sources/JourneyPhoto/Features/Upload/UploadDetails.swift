@@ -55,6 +55,13 @@ enum UploadDetails {
     /// ストーリーの「誰に見せる？」は下の一言が別なので、名前に入れたまま（`locationToggleTitle`）
     static var uploadLocationToggleTitle: String { L("撮影地の位置を付ける", "Attach the place's location") }
 
+    /// 投稿の画面の撮影地の欄の下の1行（2026-11-16 判断・使い勝手の見直し A11・模型 MBEk の A11）。3行の札
+    /// （`uploadLocationToggleTitle` と2行の `uploadLocationToggleNote`）を1行に縮めた。何が送られるか（約1kmに丸める）は
+    /// 1行の中に残す。オンで写真の位置から撮影地を入れたかは欄の下の一言（`UploadPlaceStatus`）が言う
+    static var uploadLocationLineTitle: String {
+        L("地図に位置を載せる（約1kmに丸める）", "Put the location on the map (rounded to about 1 km)")
+    }
+
     /// 投稿の画面の切り替えの下の一言。オンは「約1kmに丸めて地図に載せます」、オフは前のまま。
     /// オンも言い切らない——書き換えた撮影地には写真の位置を付けないことがある（2026-10-18 の決まり・`PlaceCoordsRule`）
     static func uploadLocationToggleNote(attaches: Bool) -> String {
@@ -127,5 +134,104 @@ enum UploadDetails {
     /// **立ったままなら一度下ろしてから立てる**（true に true を入れても変化にならず、開かない）
     static func libraryOpenSteps(isPresented: Bool) -> [Bool] {
         isPresented ? [false, true] : [true]
+    }
+}
+
+/// 撮影地の欄の下の一言と候補のチップ（2026-11-16 判断・使い勝手の見直し A11・模型 MBEk の A11）。
+///
+/// 前は、撮影地が写真の位置から入ったのか、入らなかったのかが画面から分からなかった。位置の無い写真は
+/// 撮影地を押して字を打つしかなかった（2回＋字）。欄の下に一言で状態を言い、入らなかったときは候補を押すだけ（1回）にする。
+/// 板 Upload には無い段（模型の寸法: 一言は 12 の真鍮、チップは高さ 36・白 14%・字 13）
+enum UploadPlaceStatus: Equatable {
+    /// 写真の位置から引いた地名のまま（「写真の位置から入れました　変える」）
+    case fromPhoto
+    /// 写真に位置が無く、欄が空（「写真に位置情報が無いので、入れてください」と候補）
+    case needsPlace
+    /// 写真に位置はあるが入れない回（「地図に位置を載せる」がオフ・本人が空にした・「変える」を押した）。一言なしで候補だけ
+    case choose
+    /// 何も出さない（本人が書いた・候補から選んだ・写真の位置から引いている途中）
+    case none
+
+    /// - Parameters:
+    ///   - location: 欄の字
+    ///   - photoPlaceName: 写真の位置から自動で入れた地名（`PendingPhoto.photoPlaceName`）
+    ///   - photoHasCoords: 写真に位置があるか（`prepared.coords`）
+    ///   - attaches: 「地図に位置を載せる」（`UploadViewModel.attachesLocation`）。オフなら写真の位置から入れない
+    ///   - clearedByUser: 入っていた撮影地を本人が空にした（`PendingPhoto.locationClearedByUser`）
+    static func of(location: String, photoPlaceName: String?, photoHasCoords: Bool,
+                   attaches: Bool, clearedByUser: Bool) -> UploadPlaceStatus {
+        let now = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !now.isEmpty {
+            let auto = photoPlaceName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return !auto.isEmpty && now == auto ? .fromPhoto : .none
+        }
+        if !photoHasCoords { return .needsPlace }
+        // 位置のある写真で空: 入れない回（オフ・空にした）は候補だけ。オンで引いている途中は出さない
+        // （数秒で地名が入る。チップを出してすぐ消すと、押そうとした所が動く）
+        return !attaches || clearedByUser ? .choose : .none
+    }
+
+    /// 欄の下の一言。出さないなら nil
+    var line: String? {
+        switch self {
+        case .fromPhoto: return L("写真の位置から入れました", "Filled in from the photo's location")
+        case .needsPlace: return L("写真に位置情報が無いので、入れてください", "This photo has no location. Please add the place.")
+        case .choose, .none: return nil
+        }
+    }
+
+    /// 一言の右の「変える」（押すと欄を空にして候補を出し、欄に字を打てるようにする）
+    var offersChange: Bool { self == .fromPhoto }
+    static var changeTitle: String { L("変える", "Change") }
+
+    /// 候補のチップを出すか
+    var showsChips: Bool { self == .needsPlace || self == .choose }
+
+    /// チップの1つ
+    enum Chip: Equatable, Identifiable {
+        /// 写真の近くの観光スポット
+        case spot(OfficialSpot)
+        /// 最近使った撮影地（この端末で投稿した撮影地・`RecentSearchesStore.places`）
+        case recent(String)
+
+        var id: String {
+            switch self {
+            case .spot(let spot): return "spot:\(spot.spotId)"
+            case .recent(let name): return "recent:\(name)"
+            }
+        }
+        var name: String {
+            switch self {
+            case .spot(let spot): return spot.name
+            case .recent(let name): return name
+            }
+        }
+    }
+
+    /// 並べる数（模型: 3つ。字が大きいときは横に送れる）
+    static let chipLimit = 3
+
+    /// チップの並び。**近くの観光スポットが先**（撮った場所に近い順・`PlaceSpotSuggestions`）、残りに最近使った撮影地。
+    /// 同じ名前は1つ（観光スポットを残す）。合わせて `chipLimit` まで
+    static func chips(nearSpots: [OfficialSpot], recent: [String], limit: Int = chipLimit) -> [Chip] {
+        var out: [Chip] = []
+        var names = Set<String>()
+        for spot in nearSpots where names.insert(MapSearch.fold(spot.name)).inserted {
+            out.append(.spot(spot))
+        }
+        for name in recent {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, names.insert(MapSearch.fold(trimmed)).inserted else { continue }
+            out.append(.recent(trimmed))
+        }
+        return Array(out.prefix(limit))
+    }
+
+    /// 近くの観光スポットを探す位置。この写真の位置、無ければ同じ投稿のほかの写真の位置（同じ旅で撮った1枚）。
+    /// 🔴 **「地図に位置を載せる」がオフなら使わない**（オフは「写真の位置を使わない」。端末の中で引くだけでも、
+    /// 写真の位置から選んだ候補を見せない・`UploadViewModel.attachesLocation` の注記と同じ線）
+    static func chipCenter(own: Photo.Coords?, others: [Photo.Coords?], attaches: Bool) -> Photo.Coords? {
+        guard attaches else { return nil }
+        return own ?? others.lazy.compactMap { $0 }.first
     }
 }

@@ -147,6 +147,10 @@ enum PreviewBackend {
             if on { saved.insert(id, at: 0) }
         }
         fileprivate var savedIds: [String] { saved }
+        /// 送信を取り消した通（`POST /dm/{id}/messages {unsend}`・2026-11-16）。会話を読むときに外す（`dmReply` の `unsent`）
+        private var unsentDM: Set<String> = []
+        fileprivate func unsendDM(_ id: String) { unsentDM.insert(id) }
+        fileprivate var unsentDMIds: Set<String> { unsentDM }
         fileprivate func comments(_ id: String) -> [[String: Any]] { comments[id] ?? [] }
         fileprivate func addComment(_ id: String, _ c: [String: Any]) { comments[id, default: []].insert(c, at: 0) }
         fileprivate func removeComment(_ id: String, _ cid: String) {
@@ -219,9 +223,16 @@ enum PreviewBackend {
         }
 
         // メッセージ（`-JPPreviewDM` のときだけ・2026-11-10 札 #505）
+        if dm, parts.first == "dm" {
+            // 送信の取り消しを覚える（会話を読み直したときに戻ってこないように・2026-11-16）
+            if method == "POST", parts.count == 3, parts[2] == "messages", let id = json["unsend"] as? String {
+                store.with { $0.unsendDM(id) }
+            }
+        }
         if dm, parts.first == "dm",
            let answer = dmReply(method: method, parts: parts, json: json, me: uid, now: now,
-                                samplePhoto: method == "GET" && parts.count == 2 ? dmSamplePhoto(await publicFeed()) : nil) {
+                                samplePhoto: method == "GET" && parts.count == 2 ? dmSamplePhoto(await publicFeed()) : nil,
+                                unsent: store.with { $0.unsentDMIds }) {
             return answer
         }
 
@@ -435,8 +446,13 @@ enum PreviewBackend {
     }
 
     /// `/dm` の答え。知らない口は nil（ふだんの 503 へ）
+    ///
+    /// `unsent` は取り消した通（2026-11-16・DM の取り消しの UI テスト 86m5b が4回中2回落ちた件）。見本の会話は毎回全部を返す
+    /// （`since` を見ない）ので、前は取り消した通も返し、画面の読み直し（`DMConversationView.refreshSince` の `log.merge`）が
+    /// 消した吹き出しを戻していた（記録: run 1430 の `dm.probe` で `unsent=preview-dm-0-2 readded=1 count=10`）。
+    /// 外したときは本物と同じく `full: true`（差分ではなく全部・画面は置き換える）を付ける
     static func dmReply(method: String, parts: [String], json: [String: Any], me: String, now: Date,
-                        samplePhoto: [String: Any]? = nil) -> Reply? {
+                        samplePhoto: [String: Any]? = nil, unsent: Set<String> = []) -> Reply? {
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         func ago(_ minutes: Double) -> String { iso.string(from: now.addingTimeInterval(-minutes * 60)) }
@@ -528,6 +544,13 @@ enum PreviewBackend {
                 items.append(msg(9, mine: false, "https://journey-photo.com/spots/kenrokuen", 11))
                 items.append(msg(10, mine: false, "雪吊り、見に行かない？", 10.5))
                 answer["items"] = items
+            }
+            if let items = answer["items"] as? [[String: Any]] {
+                let kept = items.filter { !unsent.contains(($0["id"] as? String) ?? "") }
+                if kept.count != items.count {
+                    answer["items"] = kept
+                    answer["full"] = true
+                }
             }
             return Reply.json(answer)
         case ("POST", 3) where parts[2] == "messages" && json["unsend"] != nil:

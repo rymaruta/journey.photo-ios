@@ -991,6 +991,8 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewUploadSample", "YES"]
+        // 2026-11-16（A11）: 「最近使った撮影地」を2つ入れておく（位置の無い見本の写真に候補のチップが出る）
+        app.launchArguments += ["-journey-photo-recent-places:\(Self.previewUserId)", "(\"鍋ヶ滝\", \"白石城\")"]
         app.launch()
 
         let agree = app.buttons["legal.agree"]
@@ -1048,6 +1050,44 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// 42a・42a2（2026-11-16・使い勝手の見直し A11）: 見本の1枚は位置が無いので、撮影地の欄の下に
+    /// 「写真に位置情報が無いので、入れてください」と候補のチップ（最近使った撮影地・起動の引数で2つ入れてある）。
+    /// チップを1回押すと撮影地に入る（前は欄を押して字を打つ＝2回＋字）。数は文で残す（推定で直さない）
+    private func capturePlaceChips(_ app: XCUIApplication) {
+        let status = app.descendants(matching: .any)["upload.place.status"].firstMatch
+        let chip = app.buttons["upload.place.chip"].firstMatch
+        for _ in 0..<2 where !(chip.exists && chip.isHittable) {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        let line = "measured placeChips status=\(status.exists) label=\(status.exists ? status.label : "-") "
+            + "chips=\(app.buttons.matching(identifier: "upload.place.chip").count) "
+            + "chipFrame=\(chip.exists ? String(describing: chip.frame) : "-")"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        XCTAssertTrue(status.exists, "位置の無い写真なのに、撮影地の欄の下の一言が出ない")
+        guard chip.exists, chip.isHittable else { return XCTFail("候補のチップが出ない・押せない") }
+        XCTAssertGreaterThanOrEqual(chip.frame.height, 44, "チップの当たりが 44pt 未満")
+        shoot(app, "42a-投稿（撮影地の一言と候補のチップ）")
+        chip.tap()
+        let field = app.descendants(matching: .any)["upload.place"].firstMatch
+        let deadline = Date().addingTimeInterval(5)
+        var value = ""
+        while Date() < deadline {
+            value = (field.value as? String) ?? ""
+            if value.contains("鍋ヶ滝") || value.contains("白石城") { break }
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+        let after = "measured placeChipPicked value=\(value) chipsLeft=\(app.buttons.matching(identifier: "upload.place.chip").count)"
+        print(after)
+        XCTContext.runActivity(named: after) { _ in }
+        XCTAssertTrue(value.contains("鍋ヶ滝") || value.contains("白石城"), "チップを押しても撮影地に入らない（\(value)）")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "42a2-投稿（候補のチップを押した）")
+        app.swipeDown()
+        Thread.sleep(forTimeInterval: 1)
+    }
+
     /// 42b・42c: 「撮影地の位置を付ける」のオンとオフ（2026-10-18）。撮ったらオンに戻す
     private func captureLocationToggle(_ app: XCUIApplication) {
         let toggle = app.switches["upload.attachLocation"].firstMatch
@@ -1091,10 +1131,11 @@ final class ScreenshotTests: XCTestCase {
     private func captureUploadScreens(_ app: XCUIApplication, thumb: XCUIElement) {
         // 帯のサムネと「写真を編集」が出たら撮る（読み込みに数秒かかる）
         guard thumb.waitForExistence(timeout: 15) else { return }
-        let editButton = app.buttons["upload.editButton"].firstMatch
-        guard editButton.waitForExistence(timeout: 5) else { return }
+        // 2026-11-16（A11）: 帯の下の「色を編集」は無くした。入口は写真の札の「編集」1つ（`upload.thumb.0`）
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "42-投稿（写真の編集の入口）")
+        // 2026-11-16（A11）: 位置の無い写真の撮影地の一言と候補のチップ → 押すと撮影地に入る
+        capturePlaceChips(app)
 
         // 2026-10-18: 「撮影地の位置を付ける」の切り替え（撮影地の欄の上）。オンとオフの両方を撮り、
         // **オンに戻す**（選んだ値は人ごとに端末に残る・あとの絵をオフのまま撮らない）。出なければ撮らない
@@ -8106,14 +8147,30 @@ final class ScreenshotTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(edit.frame.maxX, width - 16 - 2, "\(suffix): 「編集」が右端にない")
             XCTAssertGreaterThanOrEqual(edit.frame.height, 44, "\(suffix): 「編集」の当たりが 44pt 未満")
             XCTAssertEqual(edit.label, "プロフィールを編集", "\(suffix): 読み上げが変わった")
-            // 額縁も無い回: 顔の段が右上の設定の丸と同じ高さ。数は丸の下に潜らない
+            // 2026-11-16（A3）: 右上は 吹き出し・ベル・歯車 の順に 44pt のガラスの丸（数は文で残す）
+            let bubble = app.buttons["mypage.messages"].firstMatch
+            let bell = app.buttons["mypage.notifications"].firstMatch
+            let gear = app.buttons["設定"].firstMatch
+            let line = "measured myPageTopButtons \(suffix) bubble=\(bubble.exists ? String(describing: bubble.frame) : "-") "
+                + "bell=\(bell.exists ? String(describing: bell.frame) : "-") gear=\(gear.exists ? String(describing: gear.frame) : "-") "
+                + "stats=\(stats.frame)"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+            XCTAssertTrue(bubble.exists && bell.exists, "\(suffix): マイページに吹き出しとベルが無い")
+            if bubble.exists, bell.exists, gear.exists {
+                XCTAssertLessThan(bubble.frame.maxX, bell.frame.minX + 1, "\(suffix): 吹き出しがベルの左に無い")
+                XCTAssertLessThan(bell.frame.maxX, gear.frame.minX + 1, "\(suffix): ベルが歯車の左に無い")
+                XCTAssertLessThan(abs(bubble.frame.midY - gear.frame.midY), 2, "\(suffix): 丸の高さがそろっていない")
+                XCTAssertGreaterThanOrEqual(bubble.frame.height, 44, "\(suffix): 吹き出しの当たりが 44pt 未満")
+                XCTAssertGreaterThanOrEqual(bell.frame.width, 44, "\(suffix): ベルの当たりが 44pt 未満")
+            }
+            // 額縁も無い回: 2026-11-16（A3）から顔の段は右上の丸の並びの下から（数が丸に潜らない）
             if extra.contains("-JPPreviewBareHeader") {
                 XCTAssertFalse(app.descendants(matching: .any)["mypage.coverFrame"].firstMatch.exists,
                                "\(suffix): 額縁が出ている")
-                let gear = app.buttons["設定"].firstMatch
                 if gear.exists {
-                    XCTAssertLessThanOrEqual(stats.frame.maxX, gear.frame.minX + 1,
-                                             "\(suffix): 数が設定の丸の下に潜っている（\(stats.frame.maxX) / \(gear.frame.minX)）")
+                    XCTAssertGreaterThanOrEqual(stats.frame.minY, gear.frame.maxY - 1,
+                                                "\(suffix): 数が右上の丸に重なっている（\(stats.frame.minY) / \(gear.frame.maxY)）")
                 }
             }
             shoot(app, "108-マイページ（見出しの並び・\(suffix)）")
@@ -10172,7 +10229,21 @@ final class ScreenshotTests: XCTestCase {
                     if app.descendants(matching: .any)["dm.requestBand"].firstMatch.waitForExistence(timeout: 10) {
                         Thread.sleep(forTimeInterval: 2)
                         shoot(app, "86m3-メッセージ（リクエストの会話）")
+                        // 2026-11-16（A8）: 帯の「承認」→ 帯が消え、書く欄にキーボード（欄を押させない）
+                        let bandAccept = app.buttons["dm.band.accept"].firstMatch
+                        if bandAccept.isHittable {
+                            bandAccept.tap()
+                            checkAcceptedConversation(app, tag: "86m3a-メッセージ（帯で承認したら、そのまま書ける）")
+                        }
                     }
+                    app.navigationBars.buttons.element(boundBy: 0).tap()
+                    Thread.sleep(forTimeInterval: 1)
+                }
+                // 2026-11-16（A8）: 一覧の「承認」→ そのまま会話を開いて書く欄にキーボード（前は知らせの「メッセージを見る」を押した）
+                let listAccept = app.buttons["dm.request.accept"].firstMatch
+                if listAccept.waitForExistence(timeout: 5), listAccept.isHittable {
+                    listAccept.tap()
+                    checkAcceptedConversation(app, tag: "86m3b-メッセージ（一覧で承認したら、そのまま書ける）")
                     app.navigationBars.buttons.element(boundBy: 0).tap()
                     Thread.sleep(forTimeInterval: 1)
                 }
@@ -10243,12 +10314,26 @@ final class ScreenshotTests: XCTestCase {
                     shoot(app, "86m5a-メッセージ（長押しの送信を取り消す）")
                     unsend.tap()
                     Thread.sleep(forTimeInterval: 1.5)
+                    // 2026-11-16: run 1421 は吹き出しが残り、run 1426 は押したあと 60 秒アプリが待ち状態にならず画面が読めなかった。
+                    // 画面を読む前に、主スレッドの積みのファイルを読む（固まっていても読める・推定で直さない）
+                    Self.logMainSamples(samplePath, label: "86m5b の取り消しの直後")
+                    Thread.sleep(forTimeInterval: 3)
+                    Self.logMainSamples(samplePath, label: "86m5b の取り消しの 3 秒後")
                     let field = app.descendants(matching: .any)["dm.field"].firstMatch
                     let gone = !app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", mineText))
                         .allElementsBoundByIndex.contains { $0.frame.minY < field.frame.minY }
                     shoot(app, gone ? "86m5b-メッセージ（取り消した文が欄に戻る）" : "86m5b-メッセージ（取り消した吹き出しが残る）")
-                    XCTContext.runActivity(named: "86m5b の状態: gone=\(gone) / field.value=\(String(describing: field.value))") { _ in }
+                    // 2026-11-16（run 1421 で gone=false・run 1415 では true）: 残った吹き出しの位置・知らせの字・会話の見張りを残す（推定で直さない）
+                    let left = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", mineText)).allElementsBoundByIndex
+                        .map { "\($0.frame)" }.joined(separator: ";")
+                    XCTContext.runActivity(named: "86m5b の状態: gone=\(gone) / field.value=\(String(describing: field.value))"
+                        + " / field.frame=\(field.frame) / left=\(left)"
+                        + " / probe=\(String(describing: app.descendants(matching: .any)["dm.probe"].firstMatch.value))"
+                        + " / staticTexts=\(app.staticTexts.allElementsBoundByIndex.suffix(8).map(\.label))") { _ in }
                     XCTAssertTrue(gone, "取り消した吹き出しが会話に残っている")
+                    // 読み直しで取り消した通が戻っていない（画面の外に戻っても気づけるように・run 1430 は readded=1 でも gone=true だった）
+                    let probeValue = String(describing: app.descendants(matching: .any)["dm.probe"].firstMatch.value)
+                    XCTAssertTrue(probeValue.contains("readded=0"), "読み直しで取り消した通が戻った（\(probeValue)）")
                     XCTAssertTrue(String(describing: field.value).contains(mineText), "取り消した文が入力欄に戻らない")
                 }
             }
@@ -10271,6 +10356,22 @@ final class ScreenshotTests: XCTestCase {
                 shoot(app, "86m7-メッセージ（相手が退会）")
             }
         }
+    }
+
+    /// 承認した直後の会話（2026-11-16・使い勝手の見直し A8）: 帯が消え、書く欄にキーボード、上に「承認しました」。
+    /// 数は文で残す（推定で直さない）
+    private func checkAcceptedConversation(_ app: XCUIApplication, tag: String) {
+        let keyboard = app.keyboards.firstMatch.waitForExistence(timeout: 8)
+        let notice = app.descendants(matching: .any)["dm.acceptedNotice"].firstMatch.exists
+        let band = app.descendants(matching: .any)["dm.requestBand"].firstMatch.exists
+        let field = app.descendants(matching: .any)["dm.field"].firstMatch
+        let focused = (field.value(forKey: "hasKeyboardFocus") as? Bool) ?? false
+        let line = "measured dmAccepted \(tag) keyboard=\(keyboard) focused=\(focused) notice=\(notice) band=\(band)"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+        shoot(app, tag)
+        XCTAssertTrue(keyboard, "承認したのに書く欄にキーボードが出ない")
+        XCTAssertFalse(band, "承認したのにリクエストの帯が残っている")
     }
 
     // MARK: - 資料「SNS をもっと SNS に」（1.1.83・2026-11-12）
@@ -11586,7 +11687,8 @@ final class ScreenshotTests: XCTestCase {
         let toPhoto = app.buttons["post.choice.photo"].firstMatch
         guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
         toPhoto.tap()
-        let editButton = app.buttons["upload.editButton"].firstMatch
+        // 2026-11-16（A11）: 帯の下の「色を編集」は無くした。写真の札（`upload.thumb.0`）から開く
+        let editButton = app.buttons["upload.thumb.0"].firstMatch
         guard editButton.waitForExistence(timeout: 20) else { return }
         scrollTo(editButton, in: app)
         guard editButton.isHittable else { return }

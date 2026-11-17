@@ -1449,7 +1449,11 @@ struct RootView: View {
             .tag(Tab.map)
 
             NavigationStack {
-                MyPageView()
+                // 表紙の右上の吹き出しとベル（2026-11-16 判断・A3）。値はほかのタブの見出しと同じもの
+                MyPageView(unread: unread, onOpenNotifications: { openNotificationsFromBell() },
+                           messagesUnread: messagesUnread)
+                    // 親が描き直されただけでは描き直さない（未読の値が変わったときだけ・`MyPageView+Equatable`）
+                    .equatable()
                     .perfMark("tab.mypage.appear")
             }
             .tint(WebTheme.foreground)

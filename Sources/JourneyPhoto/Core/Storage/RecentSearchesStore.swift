@@ -19,21 +19,45 @@ struct RecentSearchesStore {
     static let maxLength = 60
 
     private let defaults: UserDefaults
+    /// 鍵の元（探すの言葉か、投稿の撮影地か）
+    private let baseKey: String
 
     init(defaults: UserDefaults = .standard) {
+        self.init(defaults: defaults, baseKey: Self.sharedKey)
+    }
+
+    private init(defaults: UserDefaults, baseKey: String) {
         self.defaults = defaults
+        self.baseKey = baseKey
     }
 
     static let sharedKey = "journey-photo-recent-searches"
+    /// 投稿で使った撮影地の鍵の元（`places`）
+    static let placesKey = "journey-photo-recent-places"
+
+    /// **最近使った撮影地**（2026-11-16 判断・使い勝手の見直し A11）。投稿を書く画面で、撮影地が入らなかった写真に
+    /// 候補のチップとして出す（`UploadPlaceStatus.chips`）。覚える決まりは探すの言葉と同じ（端末の中だけ・アカウントごと・
+    /// 新しい順に5つ・同じ名前は1つ）。覚えるのは**投稿できた写真の撮影地**だけ（`UploadViewModel` の送り終わり）
+    static func places(defaults: UserDefaults = .standard) -> RecentSearchesStore {
+        RecentSearchesStore(defaults: defaults, baseKey: placesKey)
+    }
 
     static func key(for userId: String?) -> String {
-        guard let userId, !userId.isEmpty else { return sharedKey }
-        return "\(sharedKey):\(userId)"
+        key(base: sharedKey, userId: userId)
+    }
+
+    static func key(base: String, userId: String?) -> String {
+        guard let userId, !userId.isEmpty else { return base }
+        return "\(base):\(userId)"
+    }
+
+    private func key(for userId: String?) -> String {
+        Self.key(base: baseKey, userId: userId)
     }
 
     /// 新しい順。読めない・壊れているときは空
     func words(userId: String?) -> [String] {
-        let stored = defaults.stringArray(forKey: Self.key(for: userId)) ?? []
+        let stored = defaults.stringArray(forKey: key(for: userId)) ?? []
         return Array(stored.prefix(Self.limit))
     }
 
@@ -55,19 +79,19 @@ struct RecentSearchesStore {
 
     /// 全部消す
     func removeAll(userId: String?) {
-        defaults.removeObject(forKey: Self.key(for: userId))
+        defaults.removeObject(forKey: key(for: userId))
     }
 
     /// 退会した人の控えを消す（`AccountLocalData`）
     func removeData(for userId: String) {
-        defaults.removeObject(forKey: Self.key(for: userId))
+        defaults.removeObject(forKey: key(for: userId))
     }
 
     private func save(_ words: [String], userId: String?) {
         if words.isEmpty {
-            defaults.removeObject(forKey: Self.key(for: userId))
+            defaults.removeObject(forKey: key(for: userId))
         } else {
-            defaults.set(words, forKey: Self.key(for: userId))
+            defaults.set(words, forKey: key(for: userId))
         }
     }
 
