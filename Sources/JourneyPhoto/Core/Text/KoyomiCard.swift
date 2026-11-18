@@ -94,47 +94,35 @@ enum KoyomiCard {
     /// 写真の上の余白の最小（2026-11-18 判断・まとめ役。owner「上の余白がないのでバランス悪い」）
     static let photoTopMinimum: CGFloat = 96
 
-    /// 「上の余白＝左右の余白」で写真がこれより小さくなる（最小 96 だけで置いたときの高さに対する割合）なら、上の余白は 96 にとどめる
-    static let balancedShrinkLimit: CGFloat = 0.6
-
-    /// 写真の上に取る余白。**写真の左右の余白と同じ大きさで、最小 96。**
-    /// 左右の余白の無い（幅いっぱいの）写真は、ストーリーでは上 14% の帯（字を置かない所）の下から始める
-    static func topMargin(photoWidth w: CGFloat, in frame: Frame, balanced: Bool = true) -> CGFloat {
+    /// 写真の上に取る余白。
+    /// - ストーリー: **写真の左右の余白と同じ大きさで、最小 96**。幅いっぱいの写真は上 14% の帯（字を置かない所）の下から
+    /// - 投稿（4:5・1:1）: **96 に固定**（2026-11-18 判断・まとめ役）。左右にそろえると写真が縮み続け、4:5 の縦長が
+    ///   409 幅まで小さくなって主役でなくなった（run 1519 の絵）
+    static func topMargin(photoWidth w: CGFloat, in frame: Frame) -> CGFloat {
+        guard frame == .story else { return photoTopMinimum }
         let side = max(0, (width - w) / 2)
-        if side < 0.5, frame == .story { return frame.textTop }
-        return balanced ? max(side, photoTopMinimum) : photoTopMinimum
+        if side < 0.5 { return frame.textTop }
+        return max(side, photoTopMinimum)
     }
 
     /// 写真（幅 ÷ 高さ = `aspect`）を切らずに置く。
-    /// - 幅の上限 1080、高さの上限は「字の下端の線 − 段 340 − 間 64」。超えるなら高さを上限にして幅を縮め、左右の真ん中
-    /// - 写真＋間＋段をひとまとまりにして上下の真ん中。段の下端が線を越えるなら上げる
-    /// - **写真の上に必ず余白を取る**（`topMargin`・2026-11-18 判断）。真ん中にそろえると足りないときは塊を下げ、
-    ///   それでも下の線を越えるなら写真を縮める（前は写真の上端を 0 まで上げてよく、縦長は絵の上の端に付いていた）
-    /// - **2026-11-18 判断（担当）:** 上の余白を左右の余白と同じにすると、写真を縮めるほど左右の余白が増え、上の余白も増える。
-    ///   投稿の 1:1（高さ 1080）では写真が 1 辺 100〜300px まで縮む（縦長 85×114・正方形 142×142）。
-    ///   そこで、そうして縮んだ写真が「上の余白 96 だけで置いた高さ」の 60%（`balancedShrinkLimit`）を下回るときは、上の余白を 96 にとどめる
+    /// - 幅の上限 1080、高さの上限は「字の下端の線 − 段 340 − 間 64 − 上の余白」。超えるなら高さを上限にして幅を縮め、左右の真ん中
+    /// - **写真の上に必ず余白を取る**（`topMargin`・2026-11-18 判断。前は写真の上端を 0 まで上げてよく、縦長は絵の上の端に付いていた）
+    /// - ストーリー: 写真＋間＋段の塊を上下の真ん中に。上の余白が足りなければ塊を下げ、それでも下の線を越えるなら写真を縮める
+    /// - 投稿: 塊は上から詰めて置き（写真の上端 96）、余りは字の段の下に回す
     /// - 段の上端が上の線より上なら下げる
     static func place(aspect: CGFloat, in frame: Frame) -> Placement {
         let a = aspect.isFinite && aspect > 0 ? aspect : 1
         let maxH = max(1, frame.textBottom - blockHeight - gap)
-        let start = min(width / a, maxH)
-        // 上の余白を取って、段の下端が線を越えない一番大きい高さ（0.5px 刻み。上の余白は幅で変わるので順に見る）
-        func fittedHeight(balanced: Bool) -> CGFloat {
-            var h = start
-            while h > 1, topMargin(photoWidth: min(width, h * a), in: frame, balanced: balanced) + h + gap + blockHeight
-                > frame.textBottom + 0.001 {
-                h -= 0.5
-            }
-            return h
+        var h = min(width / a, maxH)
+        // 上の余白を取って、段の下端が線を越えない一番大きい高さ（0.5px 刻み。ストーリーの上の余白は幅で変わるので順に見る）
+        while h > 1, topMargin(photoWidth: min(width, h * a), in: frame) + h + gap + blockHeight > frame.textBottom + 0.001 {
+            h -= 0.5
         }
-        let loose = fittedHeight(balanced: false)
-        let strict = fittedHeight(balanced: true)
-        let balanced = strict >= loose * balancedShrinkLimit
-        let h = balanced ? strict : loose
         let w = min(width, h * a)
         let group = h + gap + blockHeight
-        var y = min((frame.height - group) / 2, frame.textBottom - group)
-        y = max(y, topMargin(photoWidth: w, in: frame, balanced: balanced))
+        let top = topMargin(photoWidth: w, in: frame)
+        var y = frame == .story ? max(min((frame.height - group) / 2, frame.textBottom - group), top) : top
         if y + h + gap < frame.textTop { y = frame.textTop - h - gap }
         return Placement(photo: CGRect(x: (width - w) / 2, y: y, width: w, height: h), blockTop: y + h + gap)
     }
