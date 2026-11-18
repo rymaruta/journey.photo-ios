@@ -468,7 +468,9 @@ enum TravelStory {
                                 hemisphereCountry: country,
                                 // 市までの地名が長いときは県まで（海外は国）を出す（`KoyomiCard.Column.fallback`）
                                 placeFallback: choice.placeLevel == .city
-                                    ? placeText(facts.location, level: .prefecture) : nil)
+                                    ? placeText(facts.location, level: .prefecture) : nil,
+                                // 日付を切ったときの英字（日本は都道府県の英名・場所を出さないなら出さない）
+                                regionLatin: choice.placeLevel == .none ? nil : KoyomiCard.prefectureLatin(facts.location))
     }
 
     // MARK: - 写真の色の文字

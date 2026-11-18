@@ -15,6 +15,14 @@ enum KoyomiCard {
     static let width: CGFloat = 1080
     /// 字の段の高さと、写真との間
     static let blockHeight: CGFloat = 340
+
+    /// その字の段の高さ（2026-11-18 確かめ役: 日付を切った国内の写真で、線の下が空のまま 190px 残った）。
+    /// 列も意味の一文も無ければ線まで（線から下を詰める）、意味の一文が無ければ意味の行の上まで
+    static func blockHeight(for texts: Texts) -> CGFloat {
+        if texts.columns.isEmpty && texts.meaning == nil { return ruleY + 1 }
+        if texts.meaning == nil { return meaningY }
+        return blockHeight
+    }
     static let gap: CGFloat = 64
     /// 字の段の左端と幅（左右 72 の格子）
     static let left: CGFloat = 72
@@ -109,9 +117,13 @@ enum KoyomiCard {
     /// - 幅の上限 1080、高さの上限は「字の下端の線 − 段 340 − 間 64 − 上の余白」。超えるなら高さを上限にして幅を縮め、左右の真ん中
     /// - **写真の上に必ず余白を取る**（`topMargin`・2026-11-18 判断。前は写真の上端を 0 まで上げてよく、縦長は絵の上の端に付いていた）
     /// - ストーリー: 写真＋間＋段の塊を上下の真ん中に。上の余白が足りなければ塊を下げ、それでも下の線を越えるなら写真を縮める
-    /// - 投稿: 塊は上から詰めて置き（写真の上端 96）、余りは字の段の下に回す
+    /// - 投稿: 写真の上端は 96 以上。余りがあれば塊を上下の真ん中に
     /// - 段の上端が上の線より上なら下げる
-    static func place(aspect: CGFloat, in frame: Frame) -> Placement {
+    /// - **2026-11-18 確かめ役:** 投稿も、上 96 を最小にしたうえで余りがあれば塊を上下の真ん中に置く
+    ///   （横に長い写真で下に大きな空きが残った）。縦長 3:4 は余りが無いので上 96 のまま（589 幅）
+    /// - `block`: 字の段の高さ（`blockHeight(for:)`。列の無い段は低い）
+    static func place(aspect: CGFloat, in frame: Frame, block: CGFloat = blockHeight) -> Placement {
+        let blockHeight = block
         let a = aspect.isFinite && aspect > 0 ? aspect : 1
         let maxH = max(1, frame.textBottom - blockHeight - gap)
         var h = min(width / a, maxH)
@@ -122,7 +134,7 @@ enum KoyomiCard {
         let w = min(width, h * a)
         let group = h + gap + blockHeight
         let top = topMargin(photoWidth: w, in: frame)
-        var y = frame == .story ? max(min((frame.height - group) / 2, frame.textBottom - group), top) : top
+        var y = max(min((frame.height - group) / 2, frame.textBottom - group), top)
         if y + h + gap < frame.textTop { y = frame.textTop - h - gap }
         return Placement(photo: CGRect(x: (width - w) / 2, y: y, width: w, height: h), blockTop: y + h + gap)
     }
@@ -174,8 +186,10 @@ enum KoyomiCard {
     ///   列は DATE だけ（国の英字が作れないときだけ COUNTRY）
     /// - `place`: 列に出す撮影地（呼ぶ側が細かさを決める）。`country`: 絵に出す撮影地の国（海外のとき）。
     ///   `hemisphereCountry`: 南半球かを見分ける国（絵には出さない・既定は `country`）
+    /// - `regionLatin`: 日本の都道府県の英名（ISHIKAWA）。節気を出さないときの英字（国の英字が無いとき・2026-11-18 確かめ役）
     static func texts(takenDay: Date?, showsDate: Bool, latitude: Double?, place: String?,
-                      country: String?, hemisphereCountry: String?? = nil, placeFallback: String? = nil) -> Texts {
+                      country: String?, hemisphereCountry: String?? = nil, placeFallback: String? = nil,
+                      regionLatin: String? = nil) -> Texts {
         let date = showsDate ? takenDay.map(dateText) : nil
         let south = isSouthern(latitude: latitude, country: hemisphereCountry ?? country)
         let placeValue = place.flatMap(clean).map(withoutDistrict)
@@ -192,12 +206,13 @@ enum KoyomiCard {
         let countryValue = country.flatMap(clean)
         let heading = placeValue ?? countryValue ?? TravelStory.onTheRoad
         func same(_ a: String, _ b: String) -> Bool { a.caseInsensitiveCompare(b) == .orderedSame }
-        // 英字は国の英名。大きな名前と同じ（「Australia」を大きく出した）なら出さない
-        let latin = countryValue.flatMap(countryLatin).flatMap { same($0, heading) ? nil : $0 }
+        // 英字は国の英名（日本は都道府県の英名）。大きな名前と同じ（「Australia」を大きく出した）なら出さない
+        let latin = (countryValue.flatMap(countryLatin) ?? regionLatin.flatMap(clean)?.uppercased())
+            .flatMap { same($0, heading) ? nil : $0 }
         var columns: [Column] = []
         if let date { columns.append(Column(key: "DATE", value: date, serif: false)) }
         // 国の英字が作れない（和名の北半球の国など）ときだけ、国を列に出す
-        if let countryValue, latin == nil, !same(countryValue, heading) {
+        if let countryValue, countryLatin(countryValue) == nil, !same(countryValue, heading) {
             columns.append(Column(key: "COUNTRY", value: countryValue, serif: true))
         }
         let headingFallback = (fallback ?? countryValue).flatMap { same($0, heading) ? nil : $0 }
@@ -220,7 +235,23 @@ enum KoyomiCard {
         let place = credit.place ?? LocationMatch.shareCardPlace(credit.location)
         return texts(takenDay: credit.takenDay, showsDate: credit.showsDate, latitude: credit.coords?.latitude,
                      place: place?.secondary ?? place?.primary, country: country(of: place),
-                     placeFallback: place?.secondary == nil ? nil : place?.primary)
+                     placeFallback: place?.secondary == nil ? nil : place?.primary,
+                     regionLatin: prefectureLatin(place?.primary) ?? prefectureLatin(credit.location))
+    }
+
+    /// 都道府県の英名（大文字・`ShareCardMap.englishPrefectures`）。日本の都道府県と分からなければ nil
+    static func prefectureLatin(_ text: String?) -> String? {
+        guard let pref = ShareCardMap.prefectureName(in: text), let index = RegionList.prefectures.firstIndex(of: pref),
+              ShareCardMap.englishPrefectures.indices.contains(index) else { return nil }
+        return ShareCardMap.englishPrefectures[index].uppercased()
+    }
+
+    /// 国とみなせる名前か（2026-11-18 確かめ役: 手で打った「金沢, 石川」の「石川」を国として COUNTRY の列に出していた）。
+    /// 南半球の国の表にあるものか、ラテン文字の1語（France・Italy）だけ
+    static func isCountryName(_ name: String) -> Bool {
+        if southernCountry(name) != nil { return true }
+        return !name.isEmpty && !name.contains(" ")
+            && name.unicodeScalars.allSatisfy { CharacterSet.letters.contains($0) && $0.isASCII || $0 == "-" }
     }
 
     /// 共有カードの撮影地の2行（`LocationMatch.shareCardPlace`）から国。海外は1行目が国（「Australia」「オーストラリア」）。
@@ -233,9 +264,8 @@ enum KoyomiCard {
         if ShareCardMap.englishPrefectures.contains(where: { $0.caseInsensitiveCompare(primary) == .orderedSame }) {
             return nil
         }
-        // 2行目がある（海外の「国／地名」）か、南半球の国の表にある1語だけを国とみなす
-        if place.secondary != nil || southernCountry(primary) != nil { return primary }
-        return nil
+        // 南半球の国の表にあるものか、ラテン文字の1語だけを国とみなす（`isCountryName`）
+        return isCountryName(primary) ? primary : nil
     }
 
     /// 「2026.10.10」（撮った日は UTC 0 時で持つ暦の日なので UTC で書く）
@@ -297,7 +327,7 @@ enum KoyomiCard {
               ShareCardMap.prefectureName(in: location) == nil else { return nil }
         // 1つの欠片は国とは限らない（「山中湖」）。南半球の国の表にあるものだけ国とみなす
         if parts.count == 1 { return southernCountry(last).map { _ in last } }
-        return last
+        return isCountryName(last) ? last : nil
     }
 
     // MARK: - 字の明暗（地の色の上の白の濃さ）

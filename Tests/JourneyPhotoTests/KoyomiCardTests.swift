@@ -51,8 +51,10 @@ final class KoyomiCardTests: XCTestCase {
                     // ストーリー: 上の余白＝左右の余白（以上）
                     XCTAssertGreaterThanOrEqual(p.minY, side - 0.01, label)
                 } else {
-                    // 投稿: 上の余白は 96 に固定（塊は上から詰める・2026-11-18 まとめ役）
-                    XCTAssertEqual(p.minY, K.photoTopMinimum, accuracy: 0.01, label)
+                    // 投稿: 上の余白は 96 以上。余りが無ければ 96、あれば塊を上下の真ん中に（`testPostCentersWhenThereIsRoom`）
+                    let groupBottom = p.maxY + K.gap + K.blockHeight
+                    let centered = abs(p.minY - (frame.height - groupBottom)) < 1
+                    XCTAssertTrue(abs(p.minY - K.photoTopMinimum) < 0.01 || centered, label)
                 }
                 if frame == .story, side < 0.5 {
                     XCTAssertGreaterThanOrEqual(p.minY, K.Frame.story.textTop - 0.01, label)
@@ -190,7 +192,7 @@ final class KoyomiCardTests: XCTestCase {
                 XCTAssertEqual(Set(shown).count, shown.count, "\(place ?? "-") \(country ?? "-") \(shown)")
             }
         }
-        // 英字の作れない国は列に出す（名前・英字のどこにも国が無くならないように）
+        // 英字の作れない国は列に出す（呼ぶ側が国とみなした名前だけが来る・`isCountryName`）
         let unknown = K.texts(takenDay: Self.october10, showsDate: true, latitude: -1, place: "ある町", country: "ガラパゴスの国")
         XCTAssertNil(unknown.latin)
         XCTAssertEqual(unknown.columns.map(\.key), ["DATE", "COUNTRY"])
@@ -353,6 +355,78 @@ final class KoyomiCardTests: XCTestCase {
         XCTAssertTrue(sheet.contains("ShareCardDateChoice.showsToggle(style: style, credit: credit)"))
         XCTAssertTrue(sheet.contains("\"signatureShare.date\""))
         XCTAssertTrue(sheet.contains("ShareCardDateChoice.save(newValue)"))
+    }
+
+    // MARK: - 確かめ役の見直し（2026-11-18）
+
+    /// 日付を切った国内の写真: 英字に都道府県の英名、列が空なら段を線まで詰め、塊を上下の真ん中に置き直す
+    func testDateOffDomesticKeepsRegionLatinAndTightBlock() {
+        let credit = ShareCardDateChoice.credit(
+            Self.credit("兼六園, 兼六町, 金沢市, 石川県, 920-0936, 日本", lat: 36.56, lng: 136.66), showsDate: false)
+        let t = K.texts(for: credit)
+        XCTAssertEqual(t.heading, "金沢市")
+        XCTAssertEqual(t.latin, "ISHIKAWA")
+        XCTAssertTrue(t.columns.isEmpty)
+        XCTAssertNil(t.meaning)
+        XCTAssertEqual(K.blockHeight(for: t), K.ruleY + 1)
+        // 段が低いぶん、塊（写真＋間＋段）が上下の真ん中に来る（ストーリーは前から真ん中）
+        for frame in [K.Frame.post(.portrait), .story] {
+            let block = K.blockHeight(for: t)
+            let p = K.place(aspect: 1.5, in: frame, block: block)
+            let groupTop = p.photo.minY, groupBottom = p.blockTop + block
+            XCTAssertEqual(groupTop, frame.height - groupBottom, accuracy: 1, "\(frame) \(p)")
+        }
+        // ストーリーでも、日付を出さないなら英字は県の英名（場所を出さないなら出さない）
+        var choice = TravelStory.Choice()
+        choice.dateLevel = .none
+        let facts = TravelStory.Facts(location: "兼六園, 兼六町, 金沢市, 石川県, 920-0936, 日本",
+                                      takenDay: Self.october10, name: "旅灯", latitude: 36.56)
+        XCTAssertEqual(TravelStory.koyomi(facts, choice: choice).latin, "ISHIKAWA")
+        choice.placeLevel = .none
+        XCTAssertNil(TravelStory.koyomi(facts, choice: choice).latin)
+        // 節気を出すときの段は前のまま 340
+        XCTAssertEqual(K.blockHeight(for: K.texts(for: Self.credit("石川県（金沢市）", lat: 36.5))), 340)
+    }
+
+    /// 投稿で横に長い写真: 上 96 を最小にして、余りがあれば塊を上下の真ん中に（下に大きな空きを残さない）。
+    /// 縦長 3:4 は余りが無いので上 96・589 幅のまま
+    func testPostCentersWhenThereIsRoom() {
+        for aspect in [CGFloat(3), 1.5, 4] {
+            let frame = K.Frame.post(.portrait)
+            let p = K.place(aspect: aspect, in: frame)
+            let groupBottom = p.blockTop + K.blockHeight
+            XCTAssertGreaterThanOrEqual(p.photo.minY, 96 - 0.01)
+            XCTAssertEqual(p.photo.minY, frame.height - groupBottom, accuracy: 1, "\(aspect) \(p)")
+        }
+        let portrait = K.place(aspect: 0.75, in: .post(.portrait)).photo
+        XCTAssertEqual(portrait.minY, 96, accuracy: 0.01)
+        XCTAssertEqual(portrait.width, 589, accuracy: 1)
+    }
+
+    /// 手で打った「金沢, 石川」を国とみなさない（COUNTRY の列を出さない）。国は南半球の国の表かラテン文字の1語だけ
+    func testHandTypedPlaceIsNotACountry() {
+        for raw in ["金沢, 石川", "パリ, フランス", "Kanazawa, Ishikawa Pref"] {
+            let credit = ShareCardDateChoice.credit(Self.credit(raw, lat: 36.5), showsDate: false)
+            let t = K.texts(for: credit)
+            XCTAssertFalse(t.columns.contains { $0.key == "COUNTRY" }, "\(raw) \(t.columns)")
+        }
+        XCTAssertFalse(K.isCountryName("石川"))
+        XCTAssertFalse(K.isCountryName("Ishikawa Pref"))
+        XCTAssertTrue(K.isCountryName("France"))
+        XCTAssertTrue(K.isCountryName("New Zealand"))
+        XCTAssertTrue(K.isCountryName("オーストラリア"))
+        XCTAssertNil(K.country(of: "金沢, 石川"))
+        XCTAssertEqual(K.country(of: "Paris, France"), "France")
+    }
+
+    /// 日付の入切を替えたら、日付を描く型の見本を作り直す（作りを文字で見る）
+    func testDateToggleRefreshesThumbnails() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sheet = try String(contentsOf: root.appendingPathComponent(
+            "Sources/JourneyPhoto/Features/Common/SignatureShareCardSheet.swift"), encoding: .utf8)
+        XCTAssertTrue(sheet.contains("where ShareCardDateChoice.drawsDate(option) {\n                    thumbnails.removeValue(forKey: option.rawValue)"))
+        XCTAssertTrue(sheet.contains(".task(id: showsDate) {"))
     }
 
     /// 日本の「〇〇郡〇〇町」は郡を落とす（列が詰まらないように）
