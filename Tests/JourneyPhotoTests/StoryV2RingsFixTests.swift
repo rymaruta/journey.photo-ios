@@ -237,7 +237,8 @@ final class StoryV2RingsFixTests: XCTestCase {
         XCTAssertTrue(StoriesRow.showsRings(settled: false, hasRings: false, uploading: true))
         XCTAssertTrue(StoriesRow.showsRings(settled: true, hasRings: false, uploading: false))
         let row = try source("Features/Stories/StoriesRow.swift")
-        XCTAssertTrue(row.contains("Self.showsRings(settled: model.settled, hasRings: !model.stories.isEmpty, uploading: uploads.isBusy)"))
+        // 2026-11-18（案 B2）: 写真の投稿を裏で送っている間も、自分の輪を出す
+        XCTAssertTrue(row.contains("Self.showsRings(settled: model.settled, hasRings: !model.stories.isEmpty,\n                                uploading: uploads.isBusy || posts.isBusy)"))
         // 取れなかった回も「終わった」にする（圏外で投稿の入口が出なくならない）
         let load = slice(row, from: "func load(environment:", to: "let fetched = try? await")
         XCTAssertTrue(load.contains("defer { settled = true }"))

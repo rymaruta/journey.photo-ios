@@ -38,6 +38,19 @@ final class StoryComposerPresentationTests: XCTestCase {
                 case (nil, _?): modifier = "fullScreenCover"
                 default: modifier = "none"
                 }
+                // 投稿の入口（`CreateFlowView`・2026-11-18 案 B1）の中の作る画面は、入口ごと `RootView` が覆いで出す。
+                // 入口の出し方（`CreateFlowView(` の直前の修飾子）で数える
+                if modifier == "none", text.contains("struct CreateFlowView: View") {
+                    let rootText = try source(Self.root.appendingPathComponent("App/RootView.swift"))
+                    let flow = try XCTUnwrap(rootText.range(of: "CreateFlowView("))
+                    let head = rootText[rootText.startIndex..<flow.lowerBound]
+                    let sheet = head.range(of: ".sheet(", options: .backwards)?.lowerBound
+                    let cover = head.range(of: ".fullScreenCover(", options: .backwards)?.lowerBound
+                    let viaFlow = (cover != nil && (sheet == nil || cover! > sheet!)) ? "fullScreenCover" : "sheet"
+                    out.append((url.lastPathComponent, viaFlow))
+                    searchFrom = call.upperBound
+                    continue
+                }
                 out.append((url.lastPathComponent, modifier))
                 searchFrom = call.upperBound
             }

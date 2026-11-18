@@ -274,33 +274,31 @@ final class StoryV2DesignTests: XCTestCase {
         XCTAssertTrue(view.contains(".accessibilityAddTraits(picked ? .isSelected : [])"), "読み上げの「選択中」が消えた")
     }
 
-    // MARK: - 投稿の2択（v2 PostSheet）
+    // MARK: - 投稿の入口（2026-11-18 案 B1。前の v2 PostSheet の選ぶシートは owner の採用でやめた）
 
+    /// 下の「投稿」はすぐ写真の一覧。見出しの行・下の切り替えは案 B1 の模型の寸法。前の道しるべ（40 系）は引き継ぐ
     @MainActor
-    func testPostSheetRows() async throws {
-        XCTAssertEqual(PostSheet.tileSize, 52)
-        XCTAssertEqual(PostSheet.tileRadius, JPRadius.l)
-        let sheet = try source("Features/Upload/PostSheet.swift")
-        XCTAssertTrue(sheet.contains(".font(JPFont.screenTitle)"), "見出しが明朝 26 でない")
-        XCTAssertTrue(sheet.contains(".font(JPFont.rowTitle)"), "行の題が明朝 18 でない")
-        XCTAssertTrue(sheet.contains(".presentationBackground(WebTheme.sheet)"))
-        // 画面写真の道しるべ（40 系）
-        XCTAssertTrue(sheet.contains(".accessibilityIdentifier(\"post.choice.\\(Self.identifier(kind))\")"))
-        for kind in ["photo", "story", "trip", "composition"] {
-            XCTAssertTrue(sheet.contains("case .\(kind): return \"\(kind)\""))
-        }
-        // owner の決まり: 札に敷くのは自分の写真（v2 の板の印だけの札より優先）
-        XCTAssertTrue(sheet.contains("PostSheetThumbs.pick(fromMine: mine, count: 4)"))
-        // 2026-10-17 判断（owner）: 構図を重ねて撮るは全員無料。題の横の「PRO」の合図は出さない。
-        // 写真の無い札の構図の印だけ真鍮（黒地の上）のまま
-        XCTAssertFalse(sheet.contains("\"PRO\""), "投稿のシートに PRO の合図が残っている")
-        XCTAssertFalse(sheet.contains("Pro の機能"), "投稿のシートに Pro の読み上げが残っている")
-        // 2026-11-12: カメラの2つは1段の札に（構図の印だけ真鍮）
-        XCTAssertTrue(sheet.contains("kind: .composition, accentIcon: true)"))
-        let onBlack = PostSheet.iconColor(hasPhoto: false, accent: true)
-        let onPhoto = PostSheet.iconColor(hasPhoto: true, accent: true)
-        XCTAssertEqual(onBlack, WebTheme.accent)
-        XCTAssertEqual(onPhoto, WebTheme.foreground, "写真の上に真鍮を置いた")
+    func testCreateFlowHeaderAndSwitcher() async throws {
+        let parts = try source("Features/Common/LibraryPickParts.swift")
+        let headerStart = try XCTUnwrap(parts.range(of: "struct LibraryPickHeader: View {"))
+        let header = String(parts[headerStart.lowerBound...].prefix(4000))
+        XCTAssertTrue(header.contains(".font(.headline)"), "題が SF 600 17 でない")
+        XCTAssertTrue(header.contains(".jpGlass(in: Circle())"), "閉じるがガラスの丸でない")
+        XCTAssertEqual(CreateFlowRules.capsuleWidth, 220)
+        XCTAssertEqual(CreateFlowRules.capsuleHeight, 48)
+        XCTAssertTrue(parts.contains("Capsule().fill(WebTheme.surface8)"), "選んでいる側が #2C2C2E でない")
+        XCTAssertEqual(CreateFlowRules.segmentIdentifier(.post), "post.choice.photo")
+        XCTAssertEqual(CreateFlowRules.segmentIdentifier(.story), "post.choice.story")
+        // 2026-10-17 判断（owner）: 構図を重ねて撮るは全員無料。PRO の合図は出さない。構図の印は真鍮（黒い札の上）
+        let grid = try source("Features/Common/LibraryGrid.swift")
+        XCTAssertFalse(grid.contains("\"PRO\""), "一覧に PRO の合図が出ている")
+        let cellStart = try XCTUnwrap(grid.range(of: "private func compositionCell("))
+        let cell = String(grid[cellStart.lowerBound...].prefix(1200))
+        XCTAssertTrue(cell.contains(".foregroundStyle(WebTheme.accent)"), "構図の印が真鍮でない")
+        // 写真の上の印は白（真鍮を写真の上に置かない）
+        let markStart = try XCTUnwrap(grid.range(of: "private func markCircle("))
+        let mark = String(grid[markStart.lowerBound...].prefix(700))
+        XCTAssertFalse(mark.contains("WebTheme.accent)") || mark.contains("WebTheme.accent,"), "写真の上に真鍮を置いた")
     }
 
     // MARK: - 曲を選ぶ（v2 SongPicker）
@@ -475,7 +473,7 @@ final class StoryV2DesignTests: XCTestCase {
     /// 一段浮かせた面（#1A1A1C）は1つの値（画面ごとに書かない）
     func testRaisedTileIsShared() throws {
         XCTAssertEqual(RaisedTile.hex, 0x1A1A1C)
-        for path in ["Features/Upload/PostSheet.swift", "Features/Common/MiniPlayerBar.swift",
+        for path in ["Features/Common/LibraryGrid.swift", "Features/Common/MiniPlayerBar.swift",
                      "Features/Stories/StoryRepliesSheet.swift"] {
             let text = try source(path)
             XCTAssertTrue(text.contains("RaisedTile.fill"), "\(path) が共通の面を使っていない")
@@ -487,7 +485,7 @@ final class StoryV2DesignTests: XCTestCase {
     func testNoSystemRed() throws {
         for path in ["Features/Stories/StoriesRow.swift", "Features/Stories/StoryViewerView.swift",
                      "Features/Stories/StoryRepliesSheet.swift", "Features/Stories/StoryInsightsView.swift",
-                     "Features/Stories/StoryComposerView.swift", "Features/Upload/PostSheet.swift",
+                     "Features/Stories/StoryComposerView.swift", "Features/Common/LibraryPickParts.swift",
                      "Features/Upload/UploadView.swift", "Features/Upload/SongPickerView.swift",
                      "Features/Spots/ComposeGuideView.swift", "Features/Spots/CompositionPicker.swift",
                      "Features/Social/CloseFriendsView.swift"] {

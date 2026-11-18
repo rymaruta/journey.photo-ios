@@ -178,7 +178,7 @@ final class PerfTimelineTests: XCTestCase {
         XCTAssertTrue(recorder.contains("PerfTimeline.shared.count(\"body.\\(screen.rawValue)\")"), "bodyHit が通しの記録に数えていない")
         for (path, key) in [("Sources/JourneyPhoto/Features/Map/PhotoMapView.swift", "body.map"),
                             ("Sources/JourneyPhoto/Features/Messages/DMInboxView.swift", "body.dmInbox"),
-                            ("Sources/JourneyPhoto/Features/Upload/PostSheet.swift", "body.postSheet"),
+                            ("Sources/JourneyPhoto/Features/Common/LibraryPickParts.swift", "body.createFlow"),
                             ("Sources/JourneyPhoto/Features/Upload/UploadView.swift", "body.upload")] {
             XCTAssertTrue(try read(path).contains("PerfTimeline.shared.count(\"\(key)\")"), "\(path) の body を数えていない")
         }

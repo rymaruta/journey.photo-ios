@@ -209,9 +209,8 @@ final class CriticalFlowTests: XCTestCase {
         // 札 #435（2026-11-14）: 起動直後にマイページを押した回の selection の履歴を、通った回も残す（冷えた起動の比べる元）
         notePerfProbe(app, label: "mypageShown")
         tab(app, 2)
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        XCTAssertTrue(toPhoto.waitForExistence(timeout: 10), "投稿の2択が出ない")
-        toPhoto.tap()
+        // 2026-11-18（案 B1）: 下の「投稿」で写真の一覧が開き、見本の1枚（`-JPPreviewUploadSample`）はそのまま欄の段に入る
+        // （前の選ぶシートの「写真を投稿」を押す手は無くなった）
         let thumb = app.buttons["upload.thumb.0"].firstMatch
         XCTAssertTrue(thumb.waitForExistence(timeout: 20), "見本の1枚が投稿画面に入らない")
         // 2026-11-14（#188）: 「投稿する」は下の帯の主ボタン（板の投稿画面）。キーボードが出る前に、画面の下の方に
@@ -244,13 +243,16 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(submit.waitForExistence(timeout: 5), "「投稿する」が無い")
         XCTAssertTrue(wait(submit, "enabled == true", timeout: 15), "題と撮影地を入れても「投稿する」が押せない")
         submit.tap()
-        // 1.1.83（資料「SNS をもっと SNS に」①）: 全体に公開の投稿は、上がると共有カードの画面が出る（`PostedShareCard`）。
-        // 「閉じる」で投稿画面ごと閉じる
-        let close = app.buttons["postedCard.close"].firstMatch
-        XCTAssertTrue(close.waitForExistence(timeout: 60), "投稿しても共有カードが出ない（上がっていない）")
-        close.tap()
-        // カードを閉じると投稿画面も閉じる（`didPostAll`）
-        XCTAssertTrue(thumb.waitForNonExistence(timeout: 30), "カードを閉じても投稿画面が閉じない")
+        // 2026-11-18（案 B2・owner 採用）: 「投稿する」で画面がすぐ閉じ、裏の係（`PostUploadCenter`）が送る。
+        // 上がったら知らせ「投稿しました　カードにする」（共有カードは画面いっぱいに出さない・1.1.83 の決めを置き換えた）
+        // run 1465: 知らせの入れ物（`toast`）の label は空で、字は子の StaticText「投稿しました」（要素の木で確かめた）。
+        // 字そのものを、押した直後から見る（知らせは6秒で消える）
+        let postedText = app.staticTexts["投稿しました"].firstMatch
+        let toastShown = postedText.waitForExistence(timeout: 60)
+        print("[postedToast] shown=\(toastShown) uploadOpen=\(thumb.exists) card=\(app.buttons["toast.action"].exists)")
+        XCTAssertTrue(toastShown, "裏で送っても「投稿しました」が出ない（上がっていない）")
+        XCTAssertTrue(thumb.waitForNonExistence(timeout: 15), "「投稿する」で投稿の画面が閉じない（送り終えるのを待っている）")
+        XCTAssertFalse(app.buttons["postedCard.close"].exists, "共有カードを画面いっぱいに出した")
 
         // 本体が空なら見本の答え手が 400 で断り、投稿画面は閉じない（`PreviewBackend.PreviewTransfer`）——上で落ちる
         let posted = app.descendants(matching: .any)
@@ -280,10 +282,12 @@ final class CriticalFlowTests: XCTestCase {
     /// 左上の「キャンセル」と同じ閉じる確認が出る。画面は閉じない（書きかけが消えない）
     func testSwipeDownOnUploadDraftAsksBeforeClosing() {
         let app = launch(["-JPPreviewUploadSample", "YES"])
-        tab(app, 2)
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        XCTAssertTrue(toPhoto.waitForExistence(timeout: 10), "投稿の2択が出ない")
-        toPhoto.tap()
+        // 2026-11-18（案 B1）: 下の「投稿」は画面いっぱいの覆い（払って閉じない）になったので、払って閉じるシートの投稿画面は
+        // 今週のお題の「参加する」から開く（`RootView.uploadSheet`・シートのまま）。見本の1枚がそのまま入る
+        tab(app, 0)
+        let join = app.buttons["参加する"].firstMatch
+        XCTAssertTrue(join.waitForExistence(timeout: 20), "ホームに今週のお題の「参加する」が無い")
+        join.tap()
         let thumb = app.buttons["upload.thumb.0"].firstMatch
         XCTAssertTrue(thumb.waitForExistence(timeout: 20), "見本の1枚が投稿画面に入らない")
         Thread.sleep(forTimeInterval: 1)
@@ -325,15 +329,14 @@ final class CriticalFlowTests: XCTestCase {
     // 回らないと、払って閉じても `isPresented` が戻らず onDismiss も走らず、**同じ所から開き直せない**。
     // 3種のシート（投稿・意見・名前の横）で「払って閉じる → 開き直せる」を見る。各段の値は `swipeLog` に残す
 
-    /// 投稿画面: 見本の1枚を外して書きかけを無くし、払うと閉じる。もう一度「投稿」から開ける
-    func testSwipeClosesEmptyUploadAndReopens() {
+    /// 投稿画面: 見本の1枚を外して書きかけを無くすと写真の一覧に戻り、閉じる。もう一度「投稿」から開ける
+    func testClosingEmptyUploadReturnsAndReopens() {
         let app = launch(["-JPPreviewUploadSample", "YES"])
         var log: [String] = []
         defer { attachSwipeLog(log, "upload") }
         tab(app, 2)
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        XCTAssertTrue(toPhoto.waitForExistence(timeout: 10), "投稿の2択が出ない")
-        toPhoto.tap()
+        // 2026-11-18（案 B1）: 下の「投稿」で写真の一覧が開き、見本の1枚（`-JPPreviewUploadSample`）はそのまま欄の段に入る
+        // （前の選ぶシートの「写真を投稿」を押す手は無くなった）
         let thumb = app.buttons["upload.thumb.0"].firstMatch
         XCTAssertTrue(thumb.waitForExistence(timeout: 20), "見本の1枚が投稿画面に入らない")
         let remove = app.buttons["1枚目を外す"].firstMatch
@@ -344,23 +347,24 @@ final class CriticalFlowTests: XCTestCase {
         log.append("外した後: thumb=\(thumb.exists) submit=\(submit.exists ? "\(submit.isEnabled)" : "none")"
                    + " reason=\(app.staticTexts["upload.submitReason"].firstMatch.exists)")
 
-        swipeSheetDown(app, log: &log, "投稿")
+        // 2026-11-18（案 B1）: 投稿の入口は画面いっぱいの覆い（払って閉じるシートではない）。写真を全部外すと
+        // **写真の一覧の段に戻り**、左上のガラスの丸の「閉じる」で確認なしに閉じる（書きかけが無い）
+        let close = app.buttons["post.library.close"].firstMatch
+        let backToLibrary = close.waitForExistence(timeout: 10)
+        log.append("外した後: library=\(backToLibrary) switcher=\(app.buttons["post.choice.story"].firstMatch.exists)")
+        XCTAssertTrue(backToLibrary, "写真を全部外しても一覧の段に戻らない")
+        close.tap()
         let stop = app.buttons["投稿をやめる"].firstMatch
-        log.append("払った後: dialog=\(stop.exists) submit=\(submit.exists) bar=\(app.navigationBars.firstMatch.exists)")
+        log.append("閉じた後: dialog=\(stop.exists) close=\(close.exists)")
         XCTAssertFalse(stop.exists, "書きかけが無いのに閉じる確認が出た")
-        XCTAssertTrue(submit.waitForNonExistence(timeout: 10), "書きかけの無い投稿画面を払っても閉じない")
+        XCTAssertTrue(close.waitForNonExistence(timeout: 10), "書きかけの無い投稿の入口を閉じられない")
 
-        // 開き直す（`isPresented` が戻っていないと、押しても開かない）
+        // 開き直す（`isPresented` が戻っていないと、押しても開かない）。見本の1枚がまた入る
         tab(app, 2)
-        let again = app.buttons["post.choice.photo"].firstMatch
-        let choiceShown = again.waitForExistence(timeout: 10)
-        log.append("開き直し: choice=\(choiceShown)")
-        XCTAssertTrue(choiceShown, "払って閉じたあと、投稿の2択が出ない")
-        again.tap()
         let reopened = app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 20)
             || submit.waitForExistence(timeout: 5)
         log.append("開き直し: upload=\(reopened)")
-        XCTAssertTrue(reopened, "払って閉じた投稿画面を、同じ所から開き直せない")
+        XCTAssertTrue(reopened, "閉じた投稿の入口を、同じ所から開き直せない")
     }
 
     /// 意見を送るシート（送っている最中だけ止めるシート）: 払うと閉じ、設定の行から開き直せる
@@ -420,10 +424,11 @@ final class CriticalFlowTests: XCTestCase {
         let app = launch(["-JPPreviewUploadSample", "YES"])
         var log: [String] = []
         defer { attachSwipeLog(log, "stacked") }
-        tab(app, 2)
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        guard toPhoto.waitForExistence(timeout: 10) else { log.append("投稿の2択が出ない"); return }
-        toPhoto.tap()
+        // 2026-11-18（案 B1）: 払って閉じるシートの投稿画面は、今週のお題の「参加する」から開く（下の「投稿」は覆い）
+        tab(app, 0)
+        let join = app.buttons["参加する"].firstMatch
+        guard join.waitForExistence(timeout: 20) else { log.append("参加するが無い"); return }
+        join.tap()
         let thumb = app.buttons["upload.thumb.0"].firstMatch
         guard thumb.waitForExistence(timeout: 20) else { log.append("見本の1枚が入らない"); return }
         let details = app.buttons["upload.details"].firstMatch
@@ -563,9 +568,8 @@ final class CriticalFlowTests: XCTestCase {
     /// どの段も**出なければ落とす**（この組の決まり）
     private func postAndShare(_ app: XCUIApplication, shares: Int, tag: String) {
         tab(app, 2)
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        XCTAssertTrue(toPhoto.waitForExistence(timeout: 10), "投稿の2択が出ない")
-        toPhoto.tap()
+        // 2026-11-18（案 B1）: 下の「投稿」で写真の一覧が開き、見本の1枚（`-JPPreviewUploadSample`）はそのまま欄の段に入る
+        // （前の選ぶシートの「写真を投稿」を押す手は無くなった）
         let thumb = app.buttons["upload.thumb.0"].firstMatch
         // 実寸の HEIC は作って整えるのに数秒かかる
         XCTAssertTrue(thumb.waitForExistence(timeout: 60), "見本の1枚が投稿画面に入らない")
@@ -580,7 +584,19 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(submit.waitForExistence(timeout: 5), "「投稿する」が無い")
         XCTAssertTrue(wait(submit, "enabled == true", timeout: 30), "題と撮影地を入れても「投稿する」が押せない")
         submit.tap()
-        storyCrashStep(app, "\(tag).upload.submitted")
+        // 2026-11-18（案 B2）: 画面はすぐ閉じ、上がったら知らせの「カードにする」から共有カードを開く。
+        // 知らせは6秒で消えるので、押した直後から待つ。run 1472: 押した直後の記録（`storyCrashStep`・要素の木を全部書く）に
+        // 7秒かかり（押した t=59.55s、記録の終わり t=66.56s）、その間に見本の送信が終わって（10:55:57 の記録で uploading=false）
+        // 知らせが消えていた。run 1477: 見つけてから記録して押すと、記録の7秒（11:38:07 → 11:38:15）で消えていた。
+        // **見つけたらすぐ押し、記録はそのあと**。run 1511: 在るのを見た（t=47.59s）あと、押す前に投稿の画面が開いているかを
+        // 見ていて（t=51.19s）、押した t=52.72s には知らせが消えていた。投稿の画面を見るのも押したあとにする
+        let makeCard = app.buttons["toast.action"].firstMatch
+        let card = makeCard.waitForExistence(timeout: 90)
+        if card { makeCard.tap() }
+        let uploadOpen = thumb.exists
+        storyCrashStep(app, "\(tag).upload.submitted toast card=\(card) uploadOpen=\(uploadOpen)")
+        XCTAssertTrue(card, "裏で送っても「カードにする」の知らせが出ない")
+        XCTAssertFalse(uploadOpen, "「投稿する」で投稿の画面が閉じない")
 
         let toStory = app.buttons["postedCard.story"].firstMatch
         XCTAssertTrue(toStory.waitForExistence(timeout: 90), "投稿しても共有カード（ストーリーに載せる）が出ない")
@@ -603,7 +619,7 @@ final class CriticalFlowTests: XCTestCase {
         let close = app.buttons["postedCard.close"].firstMatch
         XCTAssertTrue(close.waitForExistence(timeout: 15), "作る画面を閉じたあとにカードの「閉じる」が無い")
         close.tap()
-        XCTAssertTrue(thumb.waitForNonExistence(timeout: 30), "カードを閉じても投稿画面が閉じない")
+        XCTAssertTrue(close.waitForNonExistence(timeout: 30), "カードの「閉じる」で閉じない")
         storyCrashStep(app, "\(tag).postedCard.closed")
         // 裏の送信（`StoryUploadCenter`）が済むまで待つ（輪が「送信中」から「あなたのストーリー」に替わる・`StoriesRow`）
         tab(app, 0)

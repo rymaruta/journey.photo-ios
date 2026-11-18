@@ -40,9 +40,10 @@ final class ErgonomicsRestTests: XCTestCase {
         XCTAssertTrue(submit.contains("Self.submitHaptic(posted: done.count, failed: failures.count, cancelled: cancelled)"))
         XCTAssertTrue(submit.contains("postSucceededTicks += 1"))
         XCTAssertTrue(submit.contains("postFailedTicks += 1"))
-        let view = try source("Features/Upload/UploadView.swift")
-        XCTAssertTrue(view.contains(".sensoryFeedback(.success, trigger: model.postSucceededTicks)"))
-        XCTAssertTrue(view.contains(".sensoryFeedback(.error, trigger: model.postFailedTicks)"))
+        // 2026-11-18（案 B2）: 投稿は画面を閉じて裏で送るので、触覚はホームの自分の輪（裏の係の回数）で鳴らす
+        let row = try source("Features/Stories/StoriesRow.swift")
+        XCTAssertTrue(row.contains(".sensoryFeedback(.success, trigger: posts.finished)"))
+        XCTAssertTrue(row.contains(".sensoryFeedback(.error, trigger: posts.failures)"))
     }
 
     /// 2026-11-14（追加の点検・HIG Playing haptics）: **いいねには触覚を付けない**（いちばん回数の多い操作。触覚は投稿の完了と失敗だけ）

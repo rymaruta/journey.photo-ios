@@ -261,6 +261,34 @@ struct PendingPhoto: Identifiable {
         return PlaceCoordsRule.coordsForPickedSpot(spot.coords, photo: attachesPhotoLocation ? prepared.coords : nil)
     }
 
+    /// 1組だけ書いた撮影地・題・説明を写す（2026-11-18・案 B3・`UploadSharedFields`）。
+    ///
+    /// 撮影地は**写した元の扱いのまま**写す: 元が写真の位置から自動で入れた地名なら、この写真でも自動の地名として扱い
+    /// （この写真の座標を送る・`PlaceCoordsRule` の (a)）、元が候補から選んだ場所なら選んだ座標とスポットも写す。
+    /// 元で空にした印も写す（空にした撮影地の座標は送らない）
+    mutating func copySharedFields(from source: PendingPhoto) {
+        title = source.title
+        caption = source.caption
+        let sourceAuto = source.photoPlaceName.map { $0 == source.location } ?? false
+        restorePlace(location: source.location,
+                     photoPlaceName: sourceAuto && !source.location.isEmpty ? source.location : nil,
+                     clearedByUser: source.locationClearedByUser)
+        pickedSpot = source.pickedSpot
+        pickedCoords = Self.sharedPickedCoords(from: source, to: prepared.coords)
+    }
+
+    /// 写す先の「選んだ場所の座標」（2026-11-18 確かめ役の指摘）。🔴 **写す元の写真の位置を、ほかの写真に載せない**:
+    /// - 元が撮影スポットを選んだ: 写す先の写真ごとに作り直す（スポットの近くならその写真の位置、遠ければスポットの位置・`PlaceCoordsRule`）
+    /// - 元の座標が元の写真の位置と同じ（写真の近くのスポットを選んだが、下書き・控えから戻してスポットが分からない）: 写さない
+    /// - それ以外（地名の候補を選んだ）: その地名の座標をそのまま写す（写真の位置ではない）
+    static func sharedPickedCoords(from source: PendingPhoto, to photo: Photo.Coords?) -> Photo.Coords? {
+        if let spot = source.pickedSpot {
+            return PlaceCoordsRule.coordsForPickedSpot(spot.coords, photo: photo)
+        }
+        guard let picked = source.pickedCoords, picked != source.prepared.coords else { return nil }
+        return picked
+    }
+
     /// 「撮影地の位置を付ける」をオフにしたときに、写真の位置から自動で入れた撮影地を外す（2026-10-18 判断）。
     /// **自動で入れた地名を一字も変えていないときだけ**（本人が直した・候補から選んだ・スポットの名前は残す）。
     /// 外したのは本人の「空にした」操作ではないので、空にした印は立てない（オンに戻すと引き直せる）
@@ -546,8 +574,43 @@ final class UploadViewModel: ObservableObject {
     /// 変わらない——写真1枚＝1ページがこのサイトの検索での面積なので、
     /// 1行にまとめると出せるページが減る。束ねるのは見せ方だけ。
     ///
-    /// 既定は**まとめない**（今までと同じ）。2枚以上選んだときだけ選べる
-    @Published var groupsAsOnePost = false
+    /// 2026-11-18 判断（案 B3「何枚かの投稿」・owner 採用）: **既定は「1つの投稿」**（前はまとめない）。
+    /// 撮影地・題・説明は1組だけ書き、送るときに全部の写真に写す（`UploadSharedFields`）。2枚以上選んだときだけ選べる。
+    /// 「それぞれ別の投稿」にした人は前と同じく写真ごとに書く
+    @Published var groupsAsOnePost = true {
+        didSet {
+            // 別々で写真ごとに書いてから「1つの投稿」に戻した: 書いた値を畳んで隠さない（`hasOwnText`）
+            if groupsAsOnePost, !oldValue, UploadSharedFields.hasOwnText(items) { writesPerPhoto = true }
+        }
+    }
+
+    /// 「写真ごとに書く ›」を開いている（1つの投稿でも、写真ごとに撮影地・題・説明を書く）
+    @Published var writesPerPhoto = false
+
+    /// 撮影地・題・説明を1組だけにしているか（`UploadSharedFields.sharesFields`）
+    var sharesFields: Bool {
+        // 2026-11-18（確かめ役の指摘）: 旅の写真からの投稿は1組に畳まない（何か所も回った旅が、全部1枚目の撮影地になる）
+        UploadSharedFields.sharesFields(grouping: groupsAsOnePost && !fromTripImport, count: items.count, perPhoto: writesPerPhoto,
+                                        ownText: UploadSharedFields.hasOwnText(items))
+    }
+
+    /// 「写真ごとに書く ›」を開く。**先頭の値を全部の写真に写してから開く**（1組で書いた値が、開いた先でも同じに見える）
+    func openPerPhotoFields() {
+        guard !writesPerPhoto, !isWorking else { return }
+        applySharedFields()
+        writesPerPhoto = true
+    }
+
+    /// 先頭の写真の撮影地・題・説明を、ほかの写真に写す（1組だけ書く間・送る直前と「写真ごとに書く」を開くとき）。
+    /// 写した写真の撮影地の引き直しは止める（送っている途中に、写真の位置から引いた地名で上書きしない）
+    func applySharedFields() {
+        guard let first = items.first, items.count > 1 else { return }
+        for index in items.indices.dropFirst() {
+            placeTasks[items[index].id]?.cancel()
+            placeTasks[items[index].id] = nil
+            items[index].copySharedFields(from: first)
+        }
+    }
 
     /// この回の束の印。**送り始めるときに1つだけ作る**
     private(set) var groupId: String?
@@ -695,7 +758,12 @@ final class UploadViewModel: ObservableObject {
     /// 編集した写真を書き出している間の進み（送り始める前・`exportAllEdited`）。書き出していなければ nil
     @Published private(set) var exportProgress: UploadEditRules.ExportProgress?
     /// 何枚目を上げているか（`0` は上げていない）。画面の「3 / 5 枚目」に使う
-    @Published private(set) var uploadingIndex = 0
+    @Published private(set) var uploadingIndex = 0 {
+        didSet { if uploadingIndex != oldValue { onProgress?(uploadingIndex) } }
+    }
+    /// 何枚目を送り始めたか（`uploadingIndex`）を、画面の外の係（`PostUploadCenter`）へ知らせる口。
+    /// 画面を閉じて裏で送っている間も、ホームの自分の輪が進み具合を出す（2026-11-18・案 B2）
+    var onProgress: ((Int) -> Void)?
     @Published var errorMessage: String?
     /// **投稿が終わった回数・送れなかった回数**（画面がこれで触覚を1回だけ鳴らす・`UploadView`）。
     ///
@@ -729,6 +797,15 @@ final class UploadViewModel: ObservableObject {
     private(set) var placeTasks: [UUID: Task<Void, Never>] = [:]
     /// 途中でやめた。**残りを上げ始めない**
     private var cancelled = false
+
+    /// 🔴 **送っている人が投稿の持ち主のままか**（裏の係 `PostUploadCenter` が渡す・2026-11-18 確かめ役の指摘）。
+    /// 鍵は送るたびに今ログインしている人のものを取る（`AuthGateway.idToken()`）ので、送っている途中に人が替わると、
+    /// 残りの写真が別の人の名前で上がる。**1枚ごとに見て、違えば止める**（写真と文は持ったまま・ストーリーの係と同じ）。nil なら見ない
+    var ownerStillSignedIn: (() -> Bool)?
+    /// 直近の送信を、持ち主でなくなったので止めた
+    private(set) var stoppedForOwner = false
+    /// 直近の失敗が「もう一度」では直らず、投稿の画面で直す要るもの（選んだアルバムが消えた）
+    private(set) var failureNeedsEditing = false
     /// 読み込み中の仕事。**選び直しが重ならないように、前のを捨てる**
     private var loadTask: Task<Void, Never>?
     /// 読めなかったライブラリの写真の印。**それだけでは読み直さない**——
@@ -1337,6 +1414,8 @@ final class UploadViewModel: ObservableObject {
         inspired = draft.inspired
         selectedAlbumId = draft.selectedAlbumId
         groupsAsOnePost = draft.groupsAsOnePost
+        // 写真ごとに書いた下書き: 1組に畳まない（畳むと書いた値が見えず、送るときに先頭の値で上書きされる・案 B3）
+        writesPerPhoto = UploadSharedFields.hasOwnText(items)
         // スポットから開いた回は尋ねない（`UploadDraftRules.asksRestore`）ので、ここで上書きはしない
         // 途中まで送った束の印を引き継ぐ（新しい印にすると投稿が2つに割れる）
         if let savedGroup = draft.groupId { groupId = savedGroup }
@@ -1660,6 +1739,14 @@ final class UploadViewModel: ObservableObject {
         discardStaged(photoId)
         // 元の写真を載せる1枚を外したら、次の写真に引き継ぐ
         inspiredCarrier.removed(photoId)
+        // 🔴 1組だけ書いている間に**先頭の写真を外したら、書いた撮影地・題・説明を次の写真へ移してから外す**
+        // （欄は先頭の写真のもの。そのまま外すと書いた値が消える・2026-11-18 確かめ役の指摘）
+        if sharesFields, items.count > 1, items.first?.id == photoId {
+            let lead = items[0]
+            placeTasks[items[1].id]?.cancel()
+            placeTasks[items[1].id] = nil
+            items[1].copySharedFields(from: lead)
+        }
         let removed = items.first { $0.id == photoId }
         items.removeAll { $0.id == photoId }
         forgetStoredCopies(of: photoId)
@@ -1731,6 +1818,14 @@ final class UploadViewModel: ObservableObject {
         unreadable = plan.unreadable
         let added = plan.load
         let dropped = zip(items, diff.keep).filter { !$0.1 }.map { $0.0.id }
+        // 🔴 1組だけ書いている間に**選択から先頭の写真を外したら、書いた撮影地・題・説明を残る先頭へ移してから外す**
+        // （帯の × の `remove` と同じ。欄は先頭の写真のもの・2026-11-18 確かめ役の指摘）
+        if sharesFields, let lead = items.first, dropped.contains(lead.id),
+           let next = items.firstIndex(where: { !dropped.contains($0.id) }) {
+            placeTasks[items[next].id]?.cancel()
+            placeTasks[items[next].id] = nil
+            items[next].copySharedFields(from: lead)
+        }
         for id in dropped {
             placeTasks[id]?.cancel()
             placeTasks[id] = nil
@@ -1825,6 +1920,59 @@ final class UploadViewModel: ObservableObject {
         loadTask = Task { [weak self] in await self?.loadPicked(picked, retryingUnreadable: true) }
     }
 
+    /// 写真の一覧（`LibraryGrid`）のマスの中身を読む口（端末の写真ライブラリの1枚）。試験でだけ差し替える
+    var readLibraryAsset: (String) async -> Data? = { await PhotoLibrary.imageData(for: $0) }
+
+    /// 写真の一覧（`LibraryGrid`・2026-11-18 判断・案 B1）で選んだ写真を、選んだ順に読み込んで並べる。
+    ///
+    /// 読み方の決まりは OS の写真選び（`loadPicked`）と同じ: **1枚ごとに上限時間**（`pickedLoadTimeout`）、
+    /// 読めた分だけ受け、読めなかった枚数は黙らずに言う。整えるのは画面の処理の外（`prepareOffMain`）。
+    /// 一度に扱うのは `maxSelection` まで（並んでいる写真と合わせて）。送っている間・読み込み中は受けない
+    func loadLibraryAssets(_ ids: [String]) async {
+        guard !ids.isEmpty, !isWorking, !isLoadingPicked else { return }
+        let room = max(0, Self.maxSelection - items.count)
+        let wanted = Array(ids.prefix(room))
+        guard !wanted.isEmpty else { return }
+        pickGeneration += 1
+        let generation = pickGeneration
+        isLoadingPicked = true
+        errorMessage = nil
+        songFailuresShown = 0
+        didPostAll = false
+        defer { if generation == pickGeneration { isLoadingPicked = false } }
+        var failed = 0
+        let read = readLibraryAsset
+        for id in wanted {
+            // nil は時間切れ（`firstWithin`）、`.some(nil)` は読めなかった
+            let outcome: Data?? = await AsyncTimeout.firstWithin(seconds: pickedLoadTimeout) { () async -> Data?? in
+                .some(await read(id))
+            }
+            // 読んでいる間に OS の写真選びで選び直された・閉じた
+            guard generation == pickGeneration else { return }
+            guard let data = outcome ?? nil else {
+                failed += 1
+                continue
+            }
+            let result = await Self.prepareOffMain(data, with: prepareData, keep: keepEditSource)
+            guard generation == pickGeneration else {
+                if case .success(let (_, url)) = result, let url { try? FileManager.default.removeItem(at: url) }
+                return
+            }
+            switch result {
+            case .success(let (prepared, source)):
+                append(prepared, editSource: source)
+            case .failure:
+                failed += 1
+            }
+        }
+        if failed > 0 {
+            // **黙って減らさない**（`loadPicked` と同じ言い方）
+            errorMessage = items.isEmpty
+                ? L("写真を読み込めませんでした", "Couldn't load the photos")
+                : L("\(failed) 枚は読み込めませんでした", "\(failed) photo(s) couldn't be loaded")
+        }
+    }
+
     /// 1枚を待ち行列に足し、撮影地を引き始める。試験から呼ぶので private にしない
     func append(_ prepared: ImagePreparer.Prepared, pickerItem: PhotosPickerItem? = nil, editSource: URL? = nil) {
         var photo = PendingPhoto(prepared: prepared)
@@ -1866,6 +2014,8 @@ final class UploadViewModel: ObservableObject {
         errorMessage = nil
         resendFrom = nil
         cancelled = false
+        stoppedForOwner = false
+        failureNeedsEditing = false
         songFailuresShown = 0
         // 🔴 **送っている途中でアプリを離れても、少しのあいだ続けさせてもらう。**
         // 無いと裏に回った数秒後に止められ、戻ったときには通信が切れて失敗になる。
@@ -1911,6 +2061,9 @@ final class UploadViewModel: ObservableObject {
         // 知らせも無く消えた。上がった1枚ずつ控えから外れ（`markDraft(.posted)`）、全部上がれば消える。
         // 残っていたら次の起動で知らせ、投稿の画面の「続きから」で戻せる（届いたか分からない写真は戻さない）
         // 控えは投稿ごとの別の枠に書く（ほかの枠には触らない）。書けたら、この画面の書きかけは控えに移ったので消す
+        // 2026-11-18（案 B3）: 欄が1組のとき、先頭の撮影地・題・説明を全部の写真に写してから控えに書いて送る
+        // （控え・やり直しにも同じ値が残る。サーバーは1枚ずつの行のまま）
+        if sharesFields { applySharedFields() }
         if await writeJournal(now: Date()) { discardAutoDraft() }
         // カードに使う1枚（まだ控えていなければ、この送信の先頭）。やり直しで先頭がもう控えてあれば選ばない
         cardLeadId = sharable.isEmpty ? queue.first : nil
@@ -1924,6 +2077,13 @@ final class UploadViewModel: ObservableObject {
         for (offset, id) in queue.enumerated() {
             // **1枚ごとに見る。** 5枚選んで2枚目でやめたとき、残りを上げ始めない
             if cancelled { break }
+            // 🔴 **持ち主のままか、1枚ごとに見る**（別の人の名前で上げない・`ownerStillSignedIn`）
+            if let ownerStillSignedIn, !ownerStillSignedIn() {
+                stoppedForOwner = true
+                failures.append(L("ログインしている人が替わったため、送るのを止めました",
+                                  "Sending stopped because a different account signed in."))
+                break
+            }
             uploadingIndex = offset + 1
             // **送る直前に引き直す。** 送信中も欄は生きているので、
             // 始めたときの写しで送ると、直した題が古い値で上がる
@@ -1959,8 +2119,16 @@ final class UploadViewModel: ObservableObject {
                 // **外すのは送った宛先**（`AlbumGone` が持つ）。送信中も行き先は選び直せるので、
                 // 今の `selectedAlbumId` を読むと、選び直した生きているアルバムを外していた
                 failedIds.append(item.id)
+                if error is OwnerChanged {
+                    stoppedForOwner = true
+                    failures.append(L("ログインしている人が替わったため、送るのを止めました",
+                                      "Sending stopped because a different account signed in."))
+                    break
+                }
                 if let gone = error as? AlbumGone {
                     albumGone(gone.albumId)
+                    // 「もう一度」では直らない（行き先を選び直す）。裏の係は投稿の画面で直すよう案内する
+                    failureNeedsEditing = true
                     failures.append(L("選んだアルバムが見つかりませんでした。消された可能性があります。行き先を選び直してください",
                                       "The album you chose wasn't found. It may have been deleted. Choose another destination."))
                     break
@@ -2159,6 +2327,10 @@ final class UploadViewModel: ObservableObject {
         // 作っていたので、画像を書き出して置くまで（数秒）の間に直した題・説明・撮影地は
         // **古い値のまま保存され、保存のあと行ごと消えて黙って失われた**。
         // 画像から決まる値（代表色）だけは置いた絵のものを引き継ぐ
+        // 🔴 **保存を送る直前にも、持ち主のままかを見る**（2026-11-18 確かめ役の指摘）。1枚ごとの確かめは本体を置く前で、
+        // 置いている間（数秒〜）に人が替わると、保存の鍵（`AuthGateway.idToken()`）は新しい人のものになり、
+        // 前の人の写真と文が新しい人の名前で上がる。違えば止める。置いた本体は `staged` に残す（持ち主に戻ればその鍵で保存する）
+        if let ownerStillSignedIn, !ownerStillSignedIn() { throw OwnerChanged() }
         let placedColor = draft.dominantColor
         draft = makeDraft(for: items.first(where: { $0.id == item.id }) ?? item)
         draft.dominantColor = placedColor
@@ -2255,6 +2427,8 @@ final class UploadViewModel: ObservableObject {
 
     /// 保存がアルバムの 404 で断られた。`albumId` は**その保存で送った宛先**
     private struct AlbumGone: Error { let albumId: String }
+    /// 本体を置いている間に、ログインしている人が替わった（保存を送らずに止める・`ownerStillSignedIn`）
+    private struct OwnerChanged: Error {}
 
     private func albumGone(_ albumId: String) {
         albums.removeAll { $0.id == albumId }

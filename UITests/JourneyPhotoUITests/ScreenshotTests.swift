@@ -961,6 +961,7 @@ final class ScreenshotTests: XCTestCase {
         if tabBar.buttons.count > 2 {
             tabBar.buttons.element(boundBy: 2).tap()
             Thread.sleep(forTimeInterval: 2)
+            // 名前は App Store の絵の書き出し（`Tools/export-screenshots.sh`）の鍵なのでそのまま。2026-11-18 から中身は写真の一覧（案 B1）
             shoot(app, "40-投稿の2択")
             let toStory = app.buttons["post.choice.story"].firstMatch
             if toStory.waitForExistence(timeout: 5), toStory.isHittable {
@@ -1000,9 +1001,8 @@ final class ScreenshotTests: XCTestCase {
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
         tabBar.buttons.element(boundBy: 2).tap()
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
-        toPhoto.tap()
+        // 2026-11-18（案 B1）: 下の「投稿」で写真の一覧が開き、見本の1枚（`-JPPreviewUploadSample`）はそのまま欄の段に入る
+        // （前の選ぶシートの「写真を投稿」を押す手は無くなった）
 
         // 見本の1枚が帯に入れば、選ぶ画面を通らない
         let thumb = app.buttons["upload.thumb.0"].firstMatch
@@ -1249,9 +1249,8 @@ final class ScreenshotTests: XCTestCase {
         }
         guard tabBar.exists, tabBar.buttons.count > 2 else { return unreached(app, "tabBar.exists, tabBar.buttons.count > 2") }
         tabBar.buttons.element(boundBy: 2).tap()
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return unreached(app, "toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable") }
-        toPhoto.tap()
+        // 2026-11-18（案 B1）: 下の「投稿」で写真の一覧が開き、見本の1枚（`-JPPreviewUploadSample`）はそのまま欄の段に入る
+        // （前の選ぶシートの「写真を投稿」を押す手は無くなった）
         let inspired = app.buttons["upload.inspired"].firstMatch
         guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 15),
               inspired.waitForExistence(timeout: 10) else { return unreached(app, "app.buttons[\"upload.thumb.0\"].firstMatch.waitForExistence(timeout: 15), inspired.waitForExistence(timeout: 10)") }
@@ -1404,9 +1403,8 @@ final class ScreenshotTests: XCTestCase {
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return unreached(app, "tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2") }
         tabBar.buttons.element(boundBy: 2).tap()
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return unreached(app, "toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable") }
-        toPhoto.tap()
+        // 2026-11-18（案 B1）: 下の「投稿」で写真の一覧が開き、見本の1枚（`-JPPreviewUploadSample`）はそのまま欄の段に入る
+        // （前の選ぶシートの「写真を投稿」を押す手は無くなった）
         guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 15) else { return unreached(app, "app.buttons[\"upload.thumb.0\"].firstMatch.waitForExistence(timeout: 15)") }
 
         let place = app.textFields["upload.place"].firstMatch
@@ -10262,8 +10260,8 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "107f-下書きの一覧（空・元に戻す）")
     }
 
-    /// **投稿のシートの「下書き n ›」**（2026-11-12・1.1.83 案「投稿まわりのデザイン」01）: 下書きの見本
-    /// （`-JPPreviewDrafts YES`）で起動し、下の「投稿」→ カメラの2つが1段の4行と下書きの行 → 押して下書きの一覧。
+    /// **投稿の入口の「下書き n」**（2026-11-18 案 B1。前は投稿のシートの「下書き n ›」）: 下書きの見本
+    /// （`-JPPreviewDrafts YES`）で起動し、下の「投稿」→ 写真の一覧の上の「下書き」のチップ → 押して下書きの一覧。
     /// 出なければ撮らずに抜ける（この試験の決まり）
     func testCapturesPostSheetDrafts() {
         let app = launchTrunk(["-JPPreviewDrafts", "YES"])
@@ -10273,12 +10271,12 @@ final class ScreenshotTests: XCTestCase {
         let drafts = app.buttons["post.choice.drafts"].firstMatch
         guard drafts.waitForExistence(timeout: 8) else { return }
         Thread.sleep(forTimeInterval: 1.5)
-        shoot(app, "40c-投稿の選択（カメラの段と下書きの行）")
+        shoot(app, "40c-投稿の入口（下書きのチップ）")
         guard drafts.isHittable else { return }
         drafts.tap()
         guard app.descendants(matching: .any)["drafts.list"].firstMatch.waitForExistence(timeout: 10) else { return }
         Thread.sleep(forTimeInterval: 2)
-        shoot(app, "107g-下書きの一覧（投稿のシートから）")
+        shoot(app, "107g-下書きの一覧（投稿の入口のチップから）")
     }
 
     /// **メッセージ（DM・第1段・札 #505・2026-11-10）**。見本の通信（`-JPPreviewLocalBackend`）に `-JPPreviewDM` を足すと、
@@ -10635,9 +10633,8 @@ final class ScreenshotTests: XCTestCase {
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return nil }
         tabBar.buttons.element(boundBy: 2).tap()
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return nil }
-        toPhoto.tap()
+        // 2026-11-18（案 B1）: 下の「投稿」で写真の一覧が開き、見本の1枚（`-JPPreviewUploadSample`）はそのまま欄の段に入る
+        // （前の選ぶシートの「写真を投稿」を押す手は無くなった）
         guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 20) else { return nil }
         let title = app.textFields["upload.title"].firstMatch
         scrollUntilHittable(app, title)
@@ -10681,14 +10678,26 @@ final class ScreenshotTests: XCTestCase {
                                        timeout: 15)
         guard enabled == .completed else { return nil }
         submit.tap()
-        // 2026-11-14（#599 の見直し）: 送っている間の下の主ボタン（輪＋「投稿しています」）が、系統に薄くされて
-        // いないかを絵で見る。見本の通信は速いので、押した直後に撮る（間に合わなかった回は字で分かる）
-        let sendingLabel = submit.exists ? submit.label : "none"
-        // 2026-11-14 判断（統合 1.1.90）: 共有カードの試験が2本（標準・大きい文字）でこの道を通るので、絵の名前を分ける
-        // （同じ名前だと置き場で標準の 120d が大きい文字の絵で上書きされる）
-        shoot(app, extraArguments.isEmpty ? "120d-投稿（送信中の主ボタン）" : "120d2-投稿（送信中の主ボタン・大きい文字）")
-        print("[sendingShot] label=\(sendingLabel) enabled=\(submit.exists ? "\(submit.isEnabled)" : "none")"
-              + " frame=\(submit.exists ? "\(submit.frame)" : "none")")
+        // 2026-11-18（案 B2・owner 採用）: 「投稿する」で画面がすぐ閉じ、ホームの自分の輪が満ちていく（裏の係が送る）。
+        // 押した直後の絵（送信中の輪・投稿の画面が閉じたか）を撮る。絵の名前は標準と大きい文字で分ける
+        let tapped = Date()
+        _ = submit.waitForNonExistence(timeout: 10)
+        // 上がったら知らせ「投稿しました　カードにする」。押すと共有カード。
+        // run 1511 の絵: 120d（閉じた直後）にはもう知らせが出ていたが、120d と記録のあとに知らせを見つけ、
+        // もう1枚撮ってから押す間に6秒の知らせが消え、120e はホームのまま（カードも知らせも無い）だった。
+        // run 1531（大きい文字）: 押した t=92.12s、閉じたのを見た t=94.52s、120d2 を撮り終えた t=98.57s（絵には知らせが写る）、
+        // 知らせを待ち始めた最初の見回り t=99.63s にはもう無かった（撮る4秒で6秒の知らせを使い切る）。
+        // **閉じた時点で知らせがもう出ていれば、撮らずにすぐ押す。** まだ送っている間だけ 120d を撮る
+        let makeCard = app.buttons["toast.action"].firstMatch
+        let closedAt = Date().timeIntervalSince(tapped)
+        let upAtClose = makeCard.exists
+        if !upAtClose {
+            shoot(app, extraArguments.isEmpty ? "120d-投稿（送信中・画面を閉じた後）" : "120d2-投稿（送信中・画面を閉じた後・大きい文字）")
+        }
+        let found = upAtClose || makeCard.waitForExistence(timeout: 60)
+        if found { makeCard.tap() }
+        print("[sendingShot] uploadOpen=\(submit.exists) closed=\(String(format: "%.2f", closedAt))"
+              + " toastAtClose=\(upAtClose) toast=\(found) tappedAt=\(String(format: "%.2f", Date().timeIntervalSince(tapped)))")
         let header = app.descendants(matching: .any)["postedCard.header"].firstMatch
         let shown = header.waitForExistence(timeout: 60)
         // カードの絵ができるまで待つ（「カードを共有」が押せるようになる）
@@ -11818,9 +11827,8 @@ final class ScreenshotTests: XCTestCase {
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
         tabBar.buttons.element(boundBy: 2).tap()
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
-        toPhoto.tap()
+        // 2026-11-18（案 B1）: 下の「投稿」で写真の一覧が開き、見本の1枚（`-JPPreviewUploadSample`）はそのまま欄の段に入る
+        // （前の選ぶシートの「写真を投稿」を押す手は無くなった）
         // 2026-11-16（A11）: 帯の下の「色を編集」は無くした。写真の札（`upload.thumb.0`）から開く
         let editButton = app.buttons["upload.thumb.0"].firstMatch
         guard editButton.waitForExistence(timeout: 20) else { return }

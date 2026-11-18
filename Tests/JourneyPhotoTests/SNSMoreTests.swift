@@ -267,8 +267,10 @@ final class SNSMoreTests: XCTestCase {
         XCTAssertTrue(opened)
         toasts.show("x")
         XCTAssertNil(toasts.current?.actionTitle, "一手の無い知らせに一手を残さない")
-        let upload = try source("Sources/JourneyPhoto/Features/Upload/UploadView.swift")
-        XCTAssertTrue(upload.contains("PostedCardOffer.shared.offer(quiet)"))
+        // 2026-11-18（案 B2）: 知らせは裏で送る係が出す（画面はもう閉じている）
+        let center = try source("Sources/JourneyPhoto/Core/Storage/PostUploadCenter.swift")
+        XCTAssertTrue(center.contains("if let card = model.quietPostedCard { PostedCardOffer.shared.offer(card) }"))
+        XCTAssertTrue(center.contains("toasts.show(PostedCardHabit.quietText, kind: .success, actionTitle: PostedCardHabit.quietAction) {\n                    PostedCardOffer.shared.present()"))
         let root = try source("Sources/JourneyPhoto/App/RootView.swift")
         XCTAssertTrue(root.contains(".sheet(item: $postedCardOffer.presented) { card in\n                PostedShareCardSheet(card: card)"))
         let sheet = try source("Sources/JourneyPhoto/Features/Common/SignatureShareCardSheet.swift")
@@ -291,13 +293,15 @@ final class SNSMoreTests: XCTestCase {
 
     // MARK: - ① 投稿したら共有カード
 
-    /// 投稿画面の「SNS にも載せる」の行は無くし、投稿のあとにカードの画面を出す
-    func testUploadShowsTheCardInsteadOfTheToggle() throws {
+    /// 投稿画面の「SNS にも載せる」の行は無くした。カードは 2026-11-18（案 B2・owner 採用）から**知らせの「カードにする」から**
+    /// （1.1.83 の「毎回画面いっぱいに出す」を置き換えた。画面は「投稿する」で閉じて裏で送る）
+    func testUploadOffersTheCardFromTheNotice() throws {
         let upload = try source("Sources/JourneyPhoto/Features/Upload/UploadView.swift")
         XCTAssertFalse(upload.contains("threadsRow"), "切り替えの行は無くした")
         XCTAssertFalse(upload.contains("L(\"SNS にも載せる\""), "切り替えの言葉も残さない")
-        XCTAssertTrue(upload.contains(".sheet(item: $model.postedCard, onDismiss: { dismiss() }) { card in\n            PostedShareCardSheet(card: card)"))
-        XCTAssertTrue(upload.contains("if model.postedCard == nil { dismiss() }"))
+        XCTAssertFalse(upload.contains(".sheet(item: $model.postedCard"), "送ったあと共有カードを画面いっぱいに出している")
+        let center = try source("Sources/JourneyPhoto/Core/Storage/PostUploadCenter.swift")
+        XCTAssertTrue(center.contains("model.showsCardSheet = { false }"), "裏で送る投稿でカードの画面を出す設定のまま")
     }
 
     /// カードに焼き込む名前と情報。プロフィールが読めなくても写真の名前で作る・位置は約50kmに丸める

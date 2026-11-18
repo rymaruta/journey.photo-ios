@@ -245,10 +245,14 @@ struct PostPreviewSheet: View {
     private func prepare() async {
         guard let userId = auth.userId else { return }
         let directory = directory
+        // 1組だけ書いている間（案 B3）は、送るときと同じく先頭の撮影地・題・説明を全部の写真に見せる
+        let lead = model.items.first
+        let shares = model.sharesFields
         let sources = model.items.map { item in
-            (data: item.prepared.data, thumbnail: item.prepared.thumbnail, title: item.title, caption: item.caption,
-             location: item.location, takenOn: item.prepared.takenOn, color: item.prepared.dominantColor,
-             exif: item.prepared.exif)
+            let fields = shares ? (lead ?? item) : item
+            return (data: item.prepared.data, thumbnail: item.prepared.thumbnail, title: fields.title, caption: fields.caption,
+                    location: fields.location, takenOn: item.prepared.takenOn, color: item.prepared.dominantColor,
+                    exif: item.prepared.exif)
         }
         // 書くのは画面の外の仕事（大きい写真）。書き終えた時点で閉じていたら、書いたものを消す（下の `isCancelled`）
         let items: [PostPreview.Item] = await Task.detached(priority: .userInitiated) {

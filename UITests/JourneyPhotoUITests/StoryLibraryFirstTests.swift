@@ -93,7 +93,8 @@ final class StoryLibraryFirstTests: XCTestCase {
         // カメラが最初のマス（左上）。次のマスは同じ行の右
         XCTAssertLessThan(camera.frame.minX, firstItem.frame.minX, "カメラのマスが先頭でない")
         XCTAssertEqual(camera.frame.minY, firstItem.frame.minY, accuracy: 1, "カメラのマスと最初の写真が同じ行に無い")
-        XCTAssertGreaterThan(camera.frame.height, camera.frame.width, "マスが縦長でない")
+        // 2026-11-18（案 B1・owner 採用）: 投稿と共通の一覧にして、模型どおり正方形・4列（前は縦長 2:3・3列）
+        XCTAssertEqual(camera.frame.height, camera.frame.width, accuracy: 1, "マスが正方形でない")
         XCTAssertGreaterThanOrEqual(camera.frame.width, 44, "マスの的が 44pt 未満")
         XCTAssertFalse(app.buttons["story.library.allow"].firstMatch.exists, "許可した後も許可の1行が残る")
         XCTAssertTrue(app.buttons["story.library.select"].firstMatch.exists, "右上の「選択」が無い")
