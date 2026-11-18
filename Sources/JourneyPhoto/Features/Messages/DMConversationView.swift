@@ -1416,8 +1416,8 @@ enum DMStallProbe {
 
     /// 配置の回数（`DMStallLayoutProbe`）。提案と答えの大きさを残し、0.2 秒の間引きで書く（止まりの中でも書ける）
     static func layout(_ key: String, proposal: ProposedViewSize, size: CGSize) {
-        func f(_ v: Double?) -> String { v.map { String(format: "%.0f", $0) } ?? "nil" }
-        note(key, value: "p=\(f(proposal.width))x\(f(proposal.height)) s=\(f(Double(size.width)))x\(f(Double(size.height)))")
+        func f<T: BinaryFloatingPoint>(_ v: T?) -> String { v.map { String(format: "%.0f", Double($0)) } ?? "nil" }
+        note(key, value: "p=\(f(proposal.width))x\(f(proposal.height)) s=\(f(size.width))x\(f(size.height))")
     }
 
     /// `force` は回数の少ない出来事（取り消し・結果・読み直し・下への送り）。0.2 秒の間引きをせずに書く
