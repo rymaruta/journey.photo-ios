@@ -10330,8 +10330,10 @@ final class ScreenshotTests: XCTestCase {
                         .map { "\($0.frame)" }.joined(separator: ";")
                     XCTContext.runActivity(named: "86m5b の状態: gone=\(gone) / field.value=\(String(describing: field.value))"
                         + " / field.frame=\(field.frame) / left=\(left)"
-                        + " / probe=\(String(describing: app.descendants(matching: .any)["dm.probe"].firstMatch.value))"
-                        + " / staticTexts=\(app.staticTexts.allElementsBoundByIndex.suffix(8).map(\.label))") { _ in }
+                        + " / probe=\(String(describing: app.descendants(matching: .any)["dm.probe"].firstMatch.value))") { _ in }
+                    // 判定のあとの会話の回数（取り消しの結果・読み直しが判定のあとに来ていないか）。staticTexts を並べ直す読み取りは
+                    // 画面の木が変わる途中で落ちた（run 1447 の 10334 行）ので外した
+                    Self.logStallDetail(samplePath, label: "86m5b の判定のあと")
                     XCTAssertTrue(gone, "取り消した吹き出しが会話に残っている")
                     // 読み直しで取り消した通が戻っていない（画面の外に戻っても気づけるように・run 1430 は readded=1 でも gone=true だった）
                     let probeValue = String(describing: app.descendants(matching: .any)["dm.probe"].firstMatch.value)
@@ -10713,7 +10715,7 @@ final class ScreenshotTests: XCTestCase {
         for line in [slow.first, slow.isEmpty ? nil : slow[slow.count / 2]].compactMap({ $0 }) {
             print("STALL \(label) 全文: \(String(line.prefix(6000)))")
         }
-        let dm = ((try? String(contentsOfFile: path + ".dm", encoding: .utf8)) ?? "読めない").split(separator: "\n").suffix(6)
+        let dm = ((try? String(contentsOfFile: path + ".dm", encoding: .utf8)) ?? "読めない").split(separator: "\n").suffix(12)
         for line in dm { print("STALL \(label) 会話の回数: \(line)") }
     }
 

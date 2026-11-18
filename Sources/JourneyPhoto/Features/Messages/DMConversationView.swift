@@ -155,7 +155,7 @@ struct DMConversationView: View {
     private var iBlockedPeer: Bool { peerId.map { hidden.blockedUserIds.contains($0) } ?? false }
 
     var body: some View {
-        let _ = DMStallProbe.note("body")   // UI テストのときだけ（86m5b の止まりの事実取り・2026-11-16）
+        let _ = DMStallProbe.note("body", value: "n=\(log.messages.count)")   // UI テストのときだけ（86m5b の止まりの事実取り・2026-11-16）
         VStack(spacing: 0) {
             if connectivity.isOffline && phase != .unavailable {
                 DMOfflineStrip(text: L("圏外です。つながると送れます", "You're offline. You can send once you reconnect."))
@@ -491,7 +491,7 @@ struct DMConversationView: View {
             }
             .onAppear { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
             .onChange(of: log.messages.count + log.outgoing.count) { _, _ in
-                DMStallProbe.note("scrollTo")
+                DMStallProbe.note("scrollTo", value: "n=\(log.messages.count)", force: true)
                 withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
             }
         }
@@ -975,6 +975,8 @@ struct DMConversationView: View {
             return
         }
         if PreviewSession.dm { unsendProbe.polls += 1 }
+        DMStallProbe.note("poll", value: "unchanged=\(fetched.unchanged) full=\(fetched.full) items=\(fetched.items.count) n=\(log.messages.count)",
+                          force: true)
         guard !fetched.unchanged else { return }
         let hadPeer = Set(log.messages.filter { !$0.mine }.map(\.id))
         meta = fetched
@@ -1071,8 +1073,12 @@ struct DMConversationView: View {
     /// 消えた → そのまま。断られた（ブロックの関係など）→ 1通と欄を戻して赤の一言。分からない（時間切れ）→ 1通は戻すが
     /// 戻した文は欄に残す（サーバーで消えていたら次の読み直しで消え、文は失わない）
     private func unsend(_ message: DMMessage) async {
-        DMStallProbe.note("unsend")
-        guard let removed = log.unsend(message.id) else { return }
+        DMStallProbe.note("unsend", value: message.id, force: true)
+        guard let removed = log.unsend(message.id) else {
+            DMStallProbe.note("unsendMiss", value: message.id, force: true)
+            return
+        }
+        DMStallProbe.note("removed", value: "n=\(log.messages.count)", force: true)
         actionError = nil
         let before = draft
         let returned = DMUnsend.returnedText(removed, canSend: canSend).map { DMUnsend.draft(current: draft, returning: $0) }
@@ -1091,6 +1097,8 @@ struct DMConversationView: View {
             unsendProbe.unsent.append(removed.id)
             unsendProbe.outcome = "\(DMUnsend.outcome(of: failure))"
         }
+        DMStallProbe.note("outcome", value: "\(DMUnsend.outcome(of: failure)) n=\(log.messages.count) err=\(failure.map { String(describing: $0).prefix(120) } ?? "-")",
+                          force: true)
         switch DMUnsend.outcome(of: failure) {
         case .gone:
             // 受信箱の抜粋（最後の一言）はサーバーが直した。控えも読み直す
@@ -1396,12 +1404,13 @@ enum DMStallProbe {
     private static var lastValues: [String: String] = [:]
     private static var lastWrite = Date.distantPast
 
-    static func note(_ key: String, value: String? = nil) {
+    /// `force` は回数の少ない出来事（取り消し・結果・読み直し・下への送り）。0.2 秒の間引きをせずに書く
+    static func note(_ key: String, value: String? = nil, force: Bool = false) {
         guard let path else { return }
         counts[key, default: 0] += 1
         if let value { lastValues[key] = value }
         let now = Date()
-        guard now.timeIntervalSince(lastWrite) >= 0.2 else { return }
+        guard force || now.timeIntervalSince(lastWrite) >= 0.2 else { return }
         lastWrite = now
         let line = counts.keys.sorted().map { "\($0)=\(counts[$0] ?? 0)" + (lastValues[$0].map { "(\($0))" } ?? "") }
             .joined(separator: " ")
