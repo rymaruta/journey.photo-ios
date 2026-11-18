@@ -181,9 +181,11 @@ final class CreateFlowTests: XCTestCase {
             try? await Task.sleep(nanoseconds: 100_000_000)
             return id == "a" ? Data([1]) : Data([2])
         }
-        async let first: Void = model.loadLibraryAssets(["a"])
-        async let second: Void = model.loadLibraryAssets(["b"])
-        _ = await (first, second)
+        // 1枚目を押して読み込み中になってから、2枚目を押す（押す順を決める・`async let` は始まる順が決まらない）
+        let first = Task { await model.loadLibraryAssets(["a"]) }
+        while !model.isLoadingPicked { await Task.yield() }
+        await model.loadLibraryAssets(["b"])
+        await first.value
         XCTAssertEqual(model.items.map { $0.prepared.data }, [Data([1])],
                        "読み込み中に押した別のマスが、先に押したマスを押しのけた・一緒に並んだ")
     }

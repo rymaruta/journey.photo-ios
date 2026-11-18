@@ -10569,14 +10569,17 @@ final class ScreenshotTests: XCTestCase {
                                        timeout: 15)
         guard enabled == .completed else { return nil }
         submit.tap()
-        // 2026-11-14（#599 の見直し）: 送っている間の下の主ボタン（輪＋「投稿しています」）が、系統に薄くされて
-        // いないかを絵で見る。見本の通信は速いので、押した直後に撮る（間に合わなかった回は字で分かる）
-        let sendingLabel = submit.exists ? submit.label : "none"
-        // 2026-11-14 判断（統合 1.1.90）: 共有カードの試験が2本（標準・大きい文字）でこの道を通るので、絵の名前を分ける
-        // （同じ名前だと置き場で標準の 120d が大きい文字の絵で上書きされる）
-        shoot(app, extraArguments.isEmpty ? "120d-投稿（送信中の主ボタン）" : "120d2-投稿（送信中の主ボタン・大きい文字）")
-        print("[sendingShot] label=\(sendingLabel) enabled=\(submit.exists ? "\(submit.isEnabled)" : "none")"
-              + " frame=\(submit.exists ? "\(submit.frame)" : "none")")
+        // 2026-11-18（案 B2・owner 採用）: 「投稿する」で画面がすぐ閉じ、ホームの自分の輪が満ちていく（裏の係が送る）。
+        // 押した直後の絵（送信中の輪・投稿の画面が閉じたか）を撮る。絵の名前は標準と大きい文字で分ける
+        _ = submit.waitForNonExistence(timeout: 10)
+        shoot(app, extraArguments.isEmpty ? "120d-投稿（送信中・画面を閉じた後）" : "120d2-投稿（送信中・画面を閉じた後・大きい文字）")
+        print("[sendingShot] uploadOpen=\(submit.exists) ring=\(app.descendants(matching: .any)["stories.uploading"].firstMatch.exists)")
+        // 上がったら知らせ「投稿しました　カードにする」。押すと共有カード
+        let makeCard = app.buttons["toast.action"].firstMatch
+        if makeCard.waitForExistence(timeout: 60) {
+            shoot(app, extraArguments.isEmpty ? "120d3-投稿（投稿しました　カードにする）" : "120d4-投稿（知らせ・大きい文字）")
+            makeCard.tap()
+        }
         let header = app.descendants(matching: .any)["postedCard.header"].firstMatch
         let shown = header.waitForExistence(timeout: 60)
         // カードの絵ができるまで待つ（「カードを共有」が押せるようになる）

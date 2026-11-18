@@ -745,7 +745,12 @@ final class UploadViewModel: ObservableObject {
     /// 編集した写真を書き出している間の進み（送り始める前・`exportAllEdited`）。書き出していなければ nil
     @Published private(set) var exportProgress: UploadEditRules.ExportProgress?
     /// 何枚目を上げているか（`0` は上げていない）。画面の「3 / 5 枚目」に使う
-    @Published private(set) var uploadingIndex = 0
+    @Published private(set) var uploadingIndex = 0 {
+        didSet { if uploadingIndex != oldValue { onProgress?(uploadingIndex) } }
+    }
+    /// 何枚目を送り始めたか（`uploadingIndex`）を、画面の外の係（`PostUploadCenter`）へ知らせる口。
+    /// 画面を閉じて裏で送っている間も、ホームの自分の輪が進み具合を出す（2026-11-18・案 B2）
+    var onProgress: ((Int) -> Void)?
     @Published var errorMessage: String?
     /// **投稿が終わった回数・送れなかった回数**（画面がこれで触覚を1回だけ鳴らす・`UploadView`）。
     ///

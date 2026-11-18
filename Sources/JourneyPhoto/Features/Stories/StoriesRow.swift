@@ -29,6 +29,11 @@ struct StoriesRow: View {
     /// 裏で送っているストーリー（板 27「投稿した直後」）
     @ObservedObject private var uploads = StoryUploadCenter.shared
     @State private var showUploadFailure = false
+    /// 裏で送っている投稿（写真・2026-11-18 案 B2）。同じ自分の輪が進み具合を出す
+    @ObservedObject private var posts = PostUploadCenter.shared
+    @State private var showPostFailure = false
+    /// 送れなかった投稿を開き直す（「投稿の画面で直す」）
+    @State private var editingPost: EditingPost?
     /// 輪の列の幅（見えている輪の数を出す・`StoryPlayback.visibleRingCount`）
     @State private var rowWidth: CGFloat = 0
 
@@ -63,7 +68,8 @@ struct StoriesRow: View {
             // **読み込み中は輪の列を出さない**（板 Main の `showRings: !loading`）。ただし既に持っている
             // 輪・送っている輪があれば出したまま（読み直しのたびに列を消すとちらつく・`showsRings`）
             if auth.userId != nil,
-               Self.showsRings(settled: model.settled, hasRings: !model.stories.isEmpty, uploading: uploads.isBusy) {
+               Self.showsRings(settled: model.settled, hasRings: !model.stories.isEmpty,
+                                uploading: uploads.isBusy || posts.isBusy) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: StoryRingMetrics.spacing) {
                         // **1人＝1つの輪。自分は先頭、未読 → 既読の順**（板 27・v2 StoryRings）
@@ -72,7 +78,7 @@ struct StoriesRow: View {
                             me: auth.userId,
                             isUnseen: { seen.hasUnseen(model.siblings(of: $0)) })
                         // **送っている間・失敗した残りがある間は、自分の輪がそれを示す**（板 27）
-                        if uploads.isBusy {
+                        if uploads.isBusy || posts.isBusy {
                             uploadRing(ordered.mine)
                         } else if ordered.mine == nil && ordered.others.isEmpty && model.loaded {
                             // **フォロー中の輪が無いとき**（v2 StoryRings の4つ目）。丸1つだけ置くと
@@ -149,6 +155,30 @@ struct StoriesRow: View {
         }
         // 投稿が全部届いたときの触覚（札 #500・成功）。送っている間に画面を閉じてもここで鳴る
         .sensoryFeedback(.success, trigger: uploads.finished)
+        // 写真の投稿も同じ（案 B2: 画面を閉じて裏で送る。上がったら触覚と「投稿しました」の知らせ）
+        .sensoryFeedback(.success, trigger: posts.finished)
+        .sensoryFeedback(.error, trigger: posts.failures)
+        .onChange(of: posts.finished) { _, _ in
+            guard opened == nil else { return }
+            Task { await reload() }
+        }
+        // 送れなかった投稿（写真と文は係が持っている）。もう一度送るか、投稿の画面で開き直して直す
+        .confirmationDialog(PostUploadOutcome.failedText, isPresented: $showPostFailure, titleVisibility: .visible) {
+            Button(L("もう一度送る", "Try again")) { posts.retry() }
+            Button(L("投稿の画面で直す", "Open the post")) {
+                if let model = posts.takeForEditing() { editingPost = EditingPost(model: model) }
+            }
+            Button(Labels.Common.cancel, role: .cancel) {}
+        } message: {
+            if case .failed(let message) = posts.phase {
+                Text(message)
+            }
+        }
+        .sheet(item: $editingPost) { editing in
+            NavigationStack {
+                UploadView(resuming: editing.model, onSaved: { TabRouter.shared.notePosted($0) })
+            }
+        }
         // 途中で止まったとき。**出たぶんは残し、残りを送り直すかやめるかを選ばせる**
         .confirmationDialog(L("ストーリーを送れませんでした", "Couldn't send your story"),
                             isPresented: $showUploadFailure, titleVisibility: .visible) {
@@ -412,15 +442,16 @@ struct StoriesRow: View {
     /// 失敗したら輪を赤くし、名前を「送れませんでした」に。押すと送り直すかやめるかを選ぶ
     @ViewBuilder
     private func uploadRing(_ mine: Story?) -> some View {
-        let failed: Bool = { if case .failed = uploads.phase { return true }; return false }()
-        let progress: Double = {
-            if case .sending(let done, let total) = uploads.phase, total > 0 {
-                return max(0.08, Double(done) / Double(total))
-            }
-            return 1
-        }()
+        // ストーリーと写真の投稿のどちらを送っていても同じ輪（`UploadRing`・2026-11-18 案 B2）
+        let ring = UploadRing.of(story: uploads.phase, post: posts.phase)
+        let failed = ring.failed != nil
+        let progress = ring.progress
         Button {
-            if failed { showUploadFailure = true }
+            switch ring.failed {
+            case .story?: showUploadFailure = true
+            case .post?: showPostFailure = true
+            case nil: break
+            }
         } label: {
             VStack(spacing: StoryRingMetrics.nameSpacing) {
                 ZStack {
@@ -452,8 +483,9 @@ struct StoriesRow: View {
                     }
                 }
                 .frame(width: StoryRingMetrics.size, height: StoryRingMetrics.size)
-                ringName(failed ? L("送れませんでした", "Failed") : L("送信中…", "Sending…"),
-                         color: failed ? WebTheme.danger : WebTheme.text2)
+                ringName(UploadRing.name(ring),
+                         // 案 B2 の模型: 送っている間の名前は真鍮（黒地の上の合図）。止まったら危険の色
+                         color: failed ? WebTheme.danger : WebTheme.accent)
             }
             .frame(width: StoryRingMetrics.size)
         }
@@ -464,6 +496,18 @@ struct StoriesRow: View {
     }
 
     private var uploadAccessibilityLabel: String {
+        // 写真の投稿を送っている・止まった（ストーリーが静かなとき）
+        if !uploads.isBusy {
+            switch posts.phase {
+            case .sending(let done, let total):
+                return L("投稿を送信中（\(total)枚中\(done)枚）", "Sending your post (\(done) of \(total))")
+            case .failed:
+                return L("投稿を送れませんでした。押すと送り直すか、投稿の画面で直すかを選べます",
+                         "Couldn't send your post. Tap to retry or open it.")
+            case .idle:
+                break
+            }
+        }
         switch uploads.phase {
         case .sending(let done, let total):
             return L("ストーリーを送信中（\(total)本中\(done)本）", "Sending your story (\(done) of \(total))")
@@ -673,4 +717,10 @@ final class StoriesViewModel: ObservableObject {
         }
         return fetched
     }
+}
+
+/// 送れなかった投稿を開き直す画面に渡すもの（`sheet(item:)` の印）
+struct EditingPost: Identifiable {
+    let id = UUID()
+    let model: UploadViewModel
 }

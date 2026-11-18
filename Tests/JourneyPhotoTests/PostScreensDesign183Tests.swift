@@ -147,7 +147,7 @@ final class PostScreensDesign183Tests: XCTestCase {
                        "alertLine(UploadSummary.offlineNote)", "offlineCanSaveDraft",
                        "saveDraftAndClose(update: closeChoice == .update)",
                        "alertLine(error)",
-                       "model.resendFrom", "!connectivity.isOffline", "await model.submit()"], in: block, "知らせの並び")
+                       "model.resendFrom", "!connectivity.isOffline", "sendInBackground()"], in: block, "知らせの並び")
         XCTAssertFalse(block.contains("toasts.show"), "失敗・圏外をトーストにしている")
         let line = slice(upload, from: "private func alertLine(", to: "private func saveDraftAndClose(")
         XCTAssertTrue(line.contains(".font(JPFont.footnote)"))

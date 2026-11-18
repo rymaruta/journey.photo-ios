@@ -1202,7 +1202,10 @@ struct RootView: View {
         guard !Task.isCancelled, auth.userId == userId, !showPhotoUpload, !ModalProbe.isPresenting() else { return }
         checkedInterruptedFor = userId
         // 送信の控え（`journey-photo-upload-draft:send:<userId>:<ID>`）を古い順に数える
-        interruptedUpload = UploadDraftRules.interruptedNotice(UploadDraftStore().journals(for: userId))
+        // 裏の係が送っている・持っている投稿の控えは数えない（2026-11-18 案 B2）
+        let held = PostUploadCenter.shared.heldJournalIds
+        interruptedUpload = UploadDraftRules.interruptedNotice(
+            UploadDraftStore().journals(for: userId).filter { !held.contains($0.id) })
     }
 
     /// 知らせに答えた。戻せない控え（届いたか分からない写真だけ）は片づけ、「古いものを片づける」なら

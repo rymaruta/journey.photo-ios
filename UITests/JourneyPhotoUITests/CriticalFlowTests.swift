@@ -242,13 +242,12 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(submit.waitForExistence(timeout: 5), "「投稿する」が無い")
         XCTAssertTrue(wait(submit, "enabled == true", timeout: 15), "題と撮影地を入れても「投稿する」が押せない")
         submit.tap()
-        // 1.1.83（資料「SNS をもっと SNS に」①）: 全体に公開の投稿は、上がると共有カードの画面が出る（`PostedShareCard`）。
-        // 「閉じる」で投稿画面ごと閉じる
-        let close = app.buttons["postedCard.close"].firstMatch
-        XCTAssertTrue(close.waitForExistence(timeout: 60), "投稿しても共有カードが出ない（上がっていない）")
-        close.tap()
-        // カードを閉じると投稿画面も閉じる（`didPostAll`）
-        XCTAssertTrue(thumb.waitForNonExistence(timeout: 30), "カードを閉じても投稿画面が閉じない")
+        // 2026-11-18（案 B2・owner 採用）: 「投稿する」で画面がすぐ閉じ、裏の係（`PostUploadCenter`）が送る。
+        // 上がったら知らせ「投稿しました　カードにする」（共有カードは画面いっぱいに出さない・1.1.83 の決めを置き換えた）
+        XCTAssertTrue(thumb.waitForNonExistence(timeout: 15), "「投稿する」で投稿の画面が閉じない（送り終えるのを待っている）")
+        let postedToast = app.descendants(matching: .any)["toast"].firstMatch
+        XCTAssertTrue(wait(postedToast, "label CONTAINS '投稿しました'", timeout: 60), "裏で送っても「投稿しました」が出ない（上がっていない）")
+        XCTAssertFalse(app.buttons["postedCard.close"].exists, "共有カードを画面いっぱいに出した")
 
         // 本体が空なら見本の答え手が 400 で断り、投稿画面は閉じない（`PreviewBackend.PreviewTransfer`）——上で落ちる
         let posted = app.descendants(matching: .any)
@@ -576,6 +575,11 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(wait(submit, "enabled == true", timeout: 30), "題と撮影地を入れても「投稿する」が押せない")
         submit.tap()
         storyCrashStep(app, "\(tag).upload.submitted")
+        // 2026-11-18（案 B2）: 画面はすぐ閉じ、上がったら知らせの「カードにする」から共有カードを開く
+        XCTAssertTrue(thumb.waitForNonExistence(timeout: 15), "「投稿する」で投稿の画面が閉じない")
+        let makeCard = app.buttons["toast.action"].firstMatch
+        XCTAssertTrue(makeCard.waitForExistence(timeout: 90), "裏で送っても「カードにする」の知らせが出ない")
+        makeCard.tap()
 
         let toStory = app.buttons["postedCard.story"].firstMatch
         XCTAssertTrue(toStory.waitForExistence(timeout: 90), "投稿しても共有カード（ストーリーに載せる）が出ない")
@@ -598,7 +602,7 @@ final class CriticalFlowTests: XCTestCase {
         let close = app.buttons["postedCard.close"].firstMatch
         XCTAssertTrue(close.waitForExistence(timeout: 15), "作る画面を閉じたあとにカードの「閉じる」が無い")
         close.tap()
-        XCTAssertTrue(thumb.waitForNonExistence(timeout: 30), "カードを閉じても投稿画面が閉じない")
+        XCTAssertTrue(close.waitForNonExistence(timeout: 30), "カードの「閉じる」で閉じない")
         storyCrashStep(app, "\(tag).postedCard.closed")
         // 裏の送信（`StoryUploadCenter`）が済むまで待つ（輪が「送信中」から「あなたのストーリー」に替わる・`StoriesRow`）
         tab(app, 0)

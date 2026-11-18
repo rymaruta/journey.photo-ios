@@ -104,11 +104,11 @@ final class UploadPreviewTests: XCTestCase {
         XCTAssertTrue(submit.waitForExistence(timeout: 5), "プレビューの中に「投稿する」が無い")
         XCTAssertGreaterThanOrEqual(submit.frame.height, 44, "プレビューの「投稿する」の的が 44pt 未満")
         submit.tap()
-        let close = app.buttons["postedCard.close"].firstMatch
-        XCTAssertTrue(close.waitForExistence(timeout: 60), "プレビューから投稿しても共有カードが出ない（上がっていない）")
-        close.tap()
+        // 2026-11-18（案 B2）: プレビューから投稿しても、画面はすぐ閉じて裏で送る。上がったら「投稿しました　カードにする」
         XCTAssertTrue(app.buttons["upload.thumb.0"].firstMatch.waitForNonExistence(timeout: 30),
-                      "カードを閉じても投稿の画面が閉じない")
+                      "プレビューから投稿しても投稿の画面が閉じない")
+        XCTAssertTrue(app.buttons["toast.action"].firstMatch.waitForExistence(timeout: 60),
+                      "プレビューから投稿しても「カードにする」の知らせが出ない（上がっていない）")
     }
 
     // MARK: - 流れ

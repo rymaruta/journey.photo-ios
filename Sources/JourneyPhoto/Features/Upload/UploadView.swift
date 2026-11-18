@@ -118,8 +118,12 @@ struct UploadView: View {
          initialCapture: CameraCapture? = nil,
          resumeJournal: String? = nil,
          openDraft: String? = nil,
+         resuming: UploadViewModel? = nil,
          onSaved: ((Photo) -> Void)? = nil) {
         self.resumeJournal = resumeJournal
+        // 送れなかった投稿を開き直した（ホームの輪の「投稿の画面で直す」・案 B2）: 開いたときの問いは出さない
+        // （自分の送信の控えを「送れなかった投稿があります」と尋ねて、同じ写真を二重に並べない）
+        _askedRestore = State(initialValue: resuming != nil)
         self.openDraft = openDraft
         // 画面写真の試験だけ: 見本の1枚を選んだ状態で開く（`PreviewSession.opensUploadSample`・Debug のみ。
         // 鍵の無いときは nil で、ふだんの投稿画面は変わらない）
@@ -134,6 +138,8 @@ struct UploadView: View {
         let api = APIClient.app()
         // （`StateObject` の引数は最初の1回だけ評価される。毎回の init でモデルを作らない）
         _model = StateObject(wrappedValue: {
+            // 送れなかった投稿を開き直した: 係が持っていた画面のモデル（写真と文）をそのまま使う
+            if let resuming { return resuming }
             let model = UploadViewModel(
                 // 見本の通信（UI テスト）では本体も端末の中の答え手へ（`UploadService.app`・ふだんは背景の転送）
                 uploads: UploadService.app(api: api),
@@ -233,7 +239,10 @@ struct UploadView: View {
             // 送れなかった投稿（控え・古い順に1件）→ アプリが途中で終了した書きかけ → 本人の下書き
             let autoStore = UploadDraftStore(slot: .auto)
             let hasAuto = auth.userId.flatMap { autoStore.draft(for: $0) } != nil
-            let journalIds = auth.userId.map { id in model.drafts?.journals(for: id).map(\.id) ?? [] } ?? []
+            // 裏の係が送っている・送れずに持っている投稿の控えは尋ねない（二重に送らない・2026-11-18 案 B2）
+            let journalIds = PostUploadCenter.askable(
+                auth.userId.map { id in model.drafts?.journals(for: id).map(\.id) ?? [] } ?? [],
+                held: PostUploadCenter.shared.heldJournalIds)
             // 本人の下書きは尋ねない（何件にもなるので一覧から選ぶ・`UploadDraftRules.openAction` の注記）
             let action = UploadDraftRules.openAction(journalIds: journalIds, hasAutoDraft: hasAuto,
                                                      hasSavedDraft: false,
@@ -383,39 +392,21 @@ struct UploadView: View {
                 }
             }
         }
-        // **上がった時点で知らせる。** × や下に払って閉じる時点で知らせると、
-        // 一部だけ上がった・曲だけ付かなかったまま下に払って閉じた回が漏れる
-        .onChange(of: model.postedToSpot) { _, n in
-            if n > 0 { onPosted?(n) }
-        }
-        // 投稿が終わった・送れなかったことを触覚で1回だけ（2026-11-14 判断・`UploadViewModel.submitHaptic`）
-        .sensoryFeedback(.success, trigger: model.postSucceededTicks)
-        .sensoryFeedback(.error, trigger: model.postFailedTicks)
-        .onChange(of: model.didPostAll) { _, posted in
-            // **全部上がったときだけ閉じる。** 「待ち行列が空」で見ると、
-            // 選び直しの読み込み中（一度空にする）にも閉じてしまい、
-            // 打った文字ごと消える
-            if posted {
-                onPosted?(model.postedToSpot)
-                // カードの画面を出さない回（`PostedCardHabit`）は「カードにする」付きの知らせだけ（押すといちばん外の画面が開く）
-                if let quiet = model.quietPostedCard {
-                    PostedCardOffer.shared.offer(quiet)
-                    toasts.show(PostedCardHabit.quietText, kind: .success, actionTitle: PostedCardHabit.quietAction) {
-                        PostedCardOffer.shared.present()
-                    }
-                }
-                // 共有カードを出す回は、カードの画面を閉じてから閉じる（`postedCard`・1.1.83 資料①）
-                if model.postedCard == nil { dismiss() }
-            }
-        }
-        .sheet(item: $model.postedCard, onDismiss: { dismiss() }) { card in
-            PostedShareCardSheet(card: card)
-        }
+        // 2026-11-18 判断（案 B2「投稿を送る」・owner 採用）: 「投稿する」で画面を閉じ、裏の係（`PostUploadCenter`）が送る。
+        // 上がった知らせ（「投稿しました　カードにする」）・失敗の知らせ・触覚・観光スポットの頁への枚数・共有カードは係が出す。
+        // 前は送り終えるまでこの画面で待ち、送ったあと共有カードを毎回画面いっぱいに出していた（1.1.83 の決めを置き換えた）
     }
 
     /// 閉じようとしたときの扱い（左上の「キャンセル」と下へ払うで同じ・`UploadDraftRules.leave`）
     private var leave: UnsavedLeave {
         UploadDraftRules.leave(hasDraft: model.hasDraft, isWorking: model.isWorking)
+    }
+
+    /// 「投稿する」（下の帯・プレビューの中・「n枚目からもう一度」）。**裏の係に渡して、すぐ閉じる**（2026-11-18・案 B2）。
+    /// 渡せない（読み込み中・写真が無い・もう送っている）ときは閉じない。写真と文は係が持ち、失敗しても消さない
+    private func sendInBackground() {
+        guard PostUploadCenter.shared.start(model, onPosted: onPosted) else { return }
+        dismiss()
     }
 
     /// 左上の「キャンセル」と、書きかけのまま下へ払ったとき（`sheetSwipeGuard`）の同じ手。
@@ -1020,7 +1011,7 @@ struct UploadView: View {
         .sheet(isPresented: $showPreview, onDismiss: {
             guard postAfterPreview else { return }
             postAfterPreview = false
-            Task { await model.submit() }
+            sendInBackground()
         }) {
             PostPreviewSheet(model: model) { postAfterPreview = true }
         }
@@ -1126,7 +1117,7 @@ struct UploadView: View {
     /// 帯の主ボタン「3枚を投稿する」（送信中は輪と何枚目か）
     private var postButton: some View {
         Button {
-            Task { await model.submit() }
+            sendInBackground()
         } label: {
             HStack(spacing: JPSpace.xs) {
                 if let export = model.exportProgress {
@@ -2066,7 +2057,7 @@ struct UploadView: View {
         }
         // 送れなかった写真があれば、そこから送り直す口（「2枚目からもう一度」）。圏外の間は出さない（押しても届かない）
         if let from = model.resendFrom, !model.items.isEmpty, !model.isWorking, !connectivity.isOffline {
-            Button { Task { await model.submit() } } label: {
+            Button { sendInBackground() } label: {
                 Text(UploadSummary.resendTitle(from: from)).jpPillButton(.outline)
             }
             .buttonStyle(.plain)

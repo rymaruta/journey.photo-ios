@@ -134,6 +134,19 @@ final class CreateFlowLibraryTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1)
             shoot(app, "40j-何枚かの投稿（写真ごとに書く）")
         }
+
+        // 6. 「投稿する」→ 画面がすぐ閉じ、ホームの自分の輪が満ちていく（案 B2）→「投稿しました　カードにする」
+        let submit = app.buttons["upload.submit"].firstMatch
+        guard submit.waitForExistence(timeout: 5) else { return unreached(app, "「投稿する」が無い") }
+        submit.tap()
+        guard submit.waitForNonExistence(timeout: 15) else { return unreached(app, "「投稿する」で画面が閉じない（送り終えるのを待っている）") }
+        let ring = app.descendants(matching: .any)["stories.uploading"].firstMatch
+        let ringShown = ring.waitForExistence(timeout: 3)
+        note("送信中の輪", "ring=\(ringShown) label=\(ringShown ? ring.label : "none")")
+        shoot(app, "40k-投稿（送信中・ホームの輪）")
+        let makeCard = app.buttons["toast.action"].firstMatch
+        XCTAssertTrue(makeCard.waitForExistence(timeout: 90), "裏で送っても「投稿しました　カードにする」が出ない")
+        shoot(app, "40l-投稿（投稿しました　カードにする）")
     }
 
     /// 写真の許可の札（SpringBoard）で「すべて許可」を押す（`StoryLibraryFirstTests` と同じ言葉）
