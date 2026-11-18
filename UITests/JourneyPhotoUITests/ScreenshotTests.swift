@@ -10571,16 +10571,24 @@ final class ScreenshotTests: XCTestCase {
         submit.tap()
         // 2026-11-18（案 B2・owner 採用）: 「投稿する」で画面がすぐ閉じ、ホームの自分の輪が満ちていく（裏の係が送る）。
         // 押した直後の絵（送信中の輪・投稿の画面が閉じたか）を撮る。絵の名前は標準と大きい文字で分ける
+        let tapped = Date()
         _ = submit.waitForNonExistence(timeout: 10)
-        shoot(app, extraArguments.isEmpty ? "120d-投稿（送信中・画面を閉じた後）" : "120d2-投稿（送信中・画面を閉じた後・大きい文字）")
         // 上がったら知らせ「投稿しました　カードにする」。押すと共有カード。
         // run 1511 の絵: 120d（閉じた直後）にはもう知らせが出ていたが、120d と記録のあとに知らせを見つけ、
         // もう1枚撮ってから押す間に6秒の知らせが消え、120e はホームのまま（カードも知らせも無い）だった。
-        // **見つけたらすぐ押す。記録は押したあと**（知らせの絵は、出ていれば 120d に写る）
+        // run 1531（大きい文字）: 押した t=92.12s、閉じたのを見た t=94.52s、120d2 を撮り終えた t=98.57s（絵には知らせが写る）、
+        // 知らせを待ち始めた最初の見回り t=99.63s にはもう無かった（撮る4秒で6秒の知らせを使い切る）。
+        // **閉じた時点で知らせがもう出ていれば、撮らずにすぐ押す。** まだ送っている間だけ 120d を撮る
         let makeCard = app.buttons["toast.action"].firstMatch
-        let found = makeCard.waitForExistence(timeout: 60)
+        let closedAt = Date().timeIntervalSince(tapped)
+        let upAtClose = makeCard.exists
+        if !upAtClose {
+            shoot(app, extraArguments.isEmpty ? "120d-投稿（送信中・画面を閉じた後）" : "120d2-投稿（送信中・画面を閉じた後・大きい文字）")
+        }
+        let found = upAtClose || makeCard.waitForExistence(timeout: 60)
         if found { makeCard.tap() }
-        print("[sendingShot] uploadOpen=\(submit.exists) toast=\(found)")
+        print("[sendingShot] uploadOpen=\(submit.exists) closed=\(String(format: "%.2f", closedAt))"
+              + " toastAtClose=\(upAtClose) toast=\(found) tappedAt=\(String(format: "%.2f", Date().timeIntervalSince(tapped)))")
         let header = app.descendants(matching: .any)["postedCard.header"].firstMatch
         let shown = header.waitForExistence(timeout: 60)
         // カードの絵ができるまで待つ（「カードを共有」が押せるようになる）
