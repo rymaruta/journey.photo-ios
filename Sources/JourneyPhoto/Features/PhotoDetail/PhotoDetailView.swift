@@ -1476,6 +1476,8 @@ struct PhotoDetailView: View {
         commentFocusDone = true
         guard let id = decision else { return }
         withAnimation { proxy.scrollTo(PhotoDetailRules.commentAnchor(id), anchor: PhotoDetailRules.arrivalAnchor) }
+        // 事実取りの印（`PreviewSession.arrivalScrollOnly`・UI テストだけ）: 送るだけで止める
+        if PreviewSession.arrivalScrollOnly { return }
         if let target = PhotoDetailRules.replyTargetOnArrival(id, comments: shown, viewerId: auth.userId,
                                                               acceptsComments: acceptsReactions) {
             model.replyingTo = target
