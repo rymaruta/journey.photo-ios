@@ -177,6 +177,29 @@ final class PhotoColorCardTests: XCTestCase {
         }
     }
 
+    /// 無彩色はクロマ（RGB の最大−最小）で見る: ほぼ黒の RGB(30,27,25) は無彩色、色のある暗い写真は無彩色にしない
+    func testAchromaticIsJudgedByChroma() {
+        let nearBlack = C.tone(pixels: Self.solid(C.RGB(30, 27, 25)))
+        XCTAssertEqual(nearBlack.ink.red, nearBlack.ink.blue, "ほぼ黒の写真の字に色が付いた: \(nearBlack.ink)")
+        XCTAssertEqual(nearBlack.ground.red, nearBlack.ground.blue, "ほぼ黒の写真の地に色が付いた: \(nearBlack.ground)")
+        // 夜の青い写真・暗い赤茶の写真（暗いが色がある）
+        for (name, c) in [("夜の青", C.RGB(20, 30, 70)), ("暗い赤茶", C.RGB(70, 30, 20))] {
+            let tone = C.tone(pixels: Self.solid(c))
+            XCTAssertGreaterThan(C.chroma(tone.ink), 12, "\(name) の字が無彩色になった: \(tone.ink)")
+            XCTAssertEqual(C.hsl(tone.ink).h, C.hsl(c).h, accuracy: 0.02, name)
+            XCTAssertGreaterThanOrEqual(tone.contrast, 7, name)
+        }
+    }
+
+    /// 字の元の色は、暗い影より写真の色を選ぶ（クロマ ×（1 − L））。半分が茶色の影、半分が空色の写真で、字は空色の色相
+    func testInkPrefersPhotoColorOverDarkShadow() {
+        let shadow = C.RGB(35, 25, 20), sky = C.RGB(120, 140, 170)
+        XCTAssertGreaterThan(C.hsl(shadow).s * (1 - C.hsl(shadow).l), C.hsl(sky).s * (1 - C.hsl(sky).l),
+                             "彩度の点数で影が勝つ例になっていない")
+        let tone = C.tone(pixels: Self.solid(shadow, count: 2048) + Self.solid(sky, count: 2048))
+        XCTAssertEqual(C.hsl(tone.ink).h, C.hsl(sky).h, accuracy: 0.02, "字が影の色相になった: \(tone.ink)")
+    }
+
     /// 明暗の比が足りなければ字を暗くする（はじめの L が明るすぎて 7 に届かない色でも 7 以上にする）
     func testInkIsDarkenedUntilSevenToOne() {
         let ground = C.tone(pixels: Self.solid(C.RGB(0, 255, 0))).ground

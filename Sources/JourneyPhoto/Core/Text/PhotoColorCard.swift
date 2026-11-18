@@ -187,26 +187,35 @@ enum PhotoColorCard {
     static let inkSaturation: ClosedRange<Double> = 0.25...0.5
     /// 字と地の明暗の比の下限。下回れば字の L を 0.01 ずつ下げる（0.05 まで）
     static let minimumContrast = 7.0
-    /// **2026-11-18 判断:** 字の元の色の彩度がこれ未満（白黒・灰色の写真）なら字も無彩色にする。
-    /// 模型の「彩度を 0.25 以上」のままだと、色相 0（赤）の字になり、写真に無い色が出る
-    static let achromaticSaturation = 0.08
+    /// **2026-11-18 判断:** 色の鮮やかさ（クロマ＝RGB の最大−最小、0〜255）がこれ未満の色は無彩色とみなす。
+    /// 字の元の色がそうなら字も無彩色、地の元の色がそうなら地も無彩色にする。
+    /// 模型の「彩度を 0.25 以上」のままだと、色相 0（赤）の字になり、写真に無い色が出る。
+    /// HSL の彩度で見ないのは、暗い色では彩度が大きく出るため（RGB(30,27,25) は彩度 0.09 だがクロマ 5 で、ほぼ黒）
+    static let achromaticChroma = 12.0
+
+    /// クロマ（RGB の最大−最小、0〜255）
+    static func chroma(_ c: RGB) -> Double { max(c.red, c.green, c.blue) - min(c.red, c.green, c.blue) }
+
+    /// 字の元の色を選ぶ点数「クロマ ×（1 − L）」（暗くて色のある色ほど大きい）。
+    /// **2026-11-18 判断:** 模型は「HSL の彩度 ×（1 − L）」だが、暗い影（RGB(35,25,20)・彩度 0.27）が
+    /// 空色（RGB(120,140,170)・彩度 0.24）より大きく出て、写真の色ではなく影の茶色が字になる。クロマなら空色が勝つ
+    static func inkScore(_ c: RGB) -> Double { chroma(c) / 255 * (1 - hsl(c).l) }
 
     /// 地と字の色（模型の `makeTone`）。
     /// - 地: いちばん多い色の色相で、彩度を 0.3 まで、L 0.9 の淡い色
-    /// - 字: 「彩度 ×（1 − L）」がいちばん大きい色（暗くて色のある色）の色相で、彩度 0.25〜0.5、L 0.17。
+    /// - 字: 「クロマ ×（1 − L）」がいちばん大きい色（暗くて色のある色）の色相で、彩度 0.25〜0.5、L 0.17。
     ///   字と地の明暗の比が 7 未満なら L を下げる
     static func tone(_ palette: [Swatch]) -> Tone {
         guard let main = palette.max(by: { $0.share < $1.share }) else {
             return tone([Swatch(color: RGB(128, 128, 128), share: 1)])
         }
         let (h, s, _) = hsl(main.color)
-        let ground = rgb(h: h, s: min(s, groundMaxSaturation), l: groundLightness).rounded
-        let deep = palette.max(by: { a, b in
-            let A = hsl(a.color), B = hsl(b.color)
-            return A.s * (1 - A.l) < B.s * (1 - B.l)
-        }) ?? main
+        let groundS = chroma(main.color) < achromaticChroma ? 0 : min(s, groundMaxSaturation)
+        let ground = rgb(h: h, s: groundS, l: groundLightness).rounded
+        let deep = palette.max(by: { inkScore($0.color) < inkScore($1.color) }) ?? main
         let (h2, s2, _) = hsl(deep.color)
-        let inkS = s2 < achromaticSaturation ? 0 : min(max(s2, inkSaturation.lowerBound), inkSaturation.upperBound)
+        let inkS = chroma(deep.color) < achromaticChroma
+            ? 0 : min(max(s2, inkSaturation.lowerBound), inkSaturation.upperBound)
         return Tone(ground: ground, ink: ink(h: h2, s: inkS, l: inkLightness, on: ground))
     }
 
