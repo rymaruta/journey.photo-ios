@@ -10756,13 +10756,13 @@ final class ScreenshotTests: XCTestCase {
     func testCapturesDirectMessagesRepeat3() { testCapturesDirectMessages() }
 
     func testDMUnsendStallRepeat() {
-        executionTimeAllowance = 1800   // 20 回まで（1 回およそ 1 分）。30 分を超えないよう、26 分を過ぎたら次の回を始めない
+        executionTimeAllowance = 1200   // CI の上限は 20 分（run 1526 は 17 回目で打ち切り）。12 回まで、17 分を過ぎたら次の回を始めない
         let started = Date()
         let samplePath = Self.mainSamplePath("dmrepeat")
         var stalls = 0
         var tried = 0
-        for round in 1...20 {
-            if Date().timeIntervalSince(started) > 26 * 60 { print("REPEAT \(round) 時間の上限が近いので打ち切り"); break }
+        for round in 1...12 {
+            if Date().timeIntervalSince(started) > 17 * 60 { print("REPEAT \(round) 時間の上限が近いので打ち切り"); break }
             let app = XCUIApplication()
             app.launchArguments += ["-JPPreviewPerfProbe", "YES", "-JPMainSampleFile", samplePath]
             app.launchArguments += ["-legal.consent.version", "0"]
