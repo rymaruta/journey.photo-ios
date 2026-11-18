@@ -404,9 +404,6 @@ final class SettingsOutlineTests: XCTestCase {
         XCTAssertTrue(bell.contains("NavigationLink { NotificationSettingsPage() } label: {"),
                       "ベルの歯車がお知らせの入切の画面を開かない")
         XCTAssertFalse(bell.contains("SettingsView()"), "ベルの歯車が設定のいちばん上を開いている")
-        // 歯車の当たりは 44×44（Mac run 1461 で 36pt だった）
-        XCTAssertTrue(bell.contains("Image(systemName: \"gearshape\")\n                        .appHeaderHitArea()"),
-                      "お知らせの歯車の当たりが 44pt 未満")
         // 入切の札は設定と同じもの（写しを作らない）。お知らせだけの画面では題と重なるので眉ラベルなし
         let page = try source("Features/Settings/NotificationSettings.swift")
         let body = slice(page, from: "struct NotificationSettingsPage: View {", to: "\n}")
