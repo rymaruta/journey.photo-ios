@@ -10731,8 +10731,12 @@ final class ScreenshotTests: XCTestCase {
         for line in [slow.first, slow.isEmpty ? nil : slow[slow.count / 2]].compactMap({ $0 }) {
             print("STALL \(label) 全文: \(String(line.prefix(6000)))")
         }
-        let dm = ((try? String(contentsOfFile: path + ".dm", encoding: .utf8)) ?? "読めない").split(separator: "\n").suffix(12)
-        for line in dm { print("STALL \(label) 会話の回数: \(line)") }
+        // 取り消しの少し前から: 最初の 30 行と最後の 15 行（止まりの中で配置の回数が増え続けるかを見る・2026-11-18 一時の枝）
+        let all = ((try? String(contentsOfFile: path + ".dm", encoding: .utf8)) ?? "読めない").split(separator: "\n")
+        let start = max(0, (all.lastIndex { !$0.contains("unsend=") } ?? 0) - 4)
+        let tail = Array(all[start...])
+        let shown = tail.count <= 45 ? tail : Array(tail.prefix(30)) + ["…（\(tail.count - 45) 行を略）"] + Array(tail.suffix(15))
+        for line in shown { print("STALL \(label) 会話の回数: \(line)") }
     }
 
     /// 受信箱の行を名前で開き、会話が出るまで待つ（出なければ false）

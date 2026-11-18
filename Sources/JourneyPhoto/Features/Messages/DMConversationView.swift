@@ -284,8 +284,11 @@ struct DMConversationView: View {
         .onChange(of: connectivity.isOffline) { _, offline in
             if !offline, phase == .failed { Task { await load() } }
         }
+        .onChange(of: fieldFocused) { _, focused in
+            DMStallProbe.note("focus", value: "\(focused)", force: true)
+        }
         .onChange(of: draft) { old, new in
-            DMStallProbe.note("draft")
+            DMStallProbe.note("draft", value: "\(new.count)", force: true)
             let kept = PostLimits.limited(old: old, new: new, limit: DMRules.textMax)
             if kept != new { draft = kept }
             if new == restoredDraft { return }
@@ -462,6 +465,7 @@ struct DMConversationView: View {
                             DMBubble(text: text, mine: message.mine, time: time,
                                      joinsPrevious: DMText.joinsPrevious(current: message, previous: previous),
                                      maxWidth: DMLook.bubbleMaxWidth(container: threadWidth))
+                                .stallLayoutProbe("row")
                                 .contextMenu { bubbleMenu(message, text: text) }
                                 .id(message.id)
                         } else if let time {
@@ -482,6 +486,7 @@ struct DMConversationView: View {
                 .padding(.horizontal, JPSpace.gutter)
                 .padding(.top, JPSpace.xxs)
                 .padding(.bottom, JPSpace.s)
+                .stallLayoutProbe("stack")
             }
             .scrollDismissesKeyboard(.interactively)
             // 吹き出しの最大幅（会話の幅の 78%）のために幅を読む
@@ -496,6 +501,10 @@ struct DMConversationView: View {
             }
         }
         .frame(maxHeight: .infinity)
+        .stallLayoutProbe("scroll")
+        .onGeometryChange(for: CGFloat.self) { proxy in proxy.size.height } action: { height in
+            DMStallProbe.note("height", value: "\(height)", force: true)
+        }
         .accessibilityIdentifier("dm.conversation")
     }
 
@@ -829,6 +838,7 @@ struct DMConversationView: View {
                     .font(JPFont.body)
                     .foregroundStyle(WebTheme.text)
                     .focused($fieldFocused)
+                    .stallLayoutProbe("field")
                     .padding(.horizontal, JPSpace.m)
                     .padding(.vertical, 11)
                     .frame(minHeight: DMLook.fieldHeight)
@@ -1404,6 +1414,12 @@ enum DMStallProbe {
     private static var lastValues: [String: String] = [:]
     private static var lastWrite = Date.distantPast
 
+    /// 配置の回数（`DMStallLayoutProbe`）。提案と答えの大きさを残し、0.2 秒の間引きで書く（止まりの中でも書ける）
+    static func layout(_ key: String, proposal: ProposedViewSize, size: CGSize) {
+        func f(_ v: Double?) -> String { v.map { String(format: "%.0f", $0) } ?? "nil" }
+        note(key, value: "p=\(f(proposal.width))x\(f(proposal.height)) s=\(f(Double(size.width)))x\(f(Double(size.height)))")
+    }
+
     /// `force` は回数の少ない出来事（取り消し・結果・読み直し・下への送り）。0.2 秒の間引きをせずに書く
     static func note(_ key: String, value: String? = nil, force: Bool = false) {
         guard let path else { return }
@@ -1423,5 +1439,26 @@ enum DMStallProbe {
         } else {
             FileManager.default.createFile(atPath: path, contents: Data(text.utf8))
         }
+    }
+}
+
+/// 一時の枝だけ（マージしない・2026-11-18）: run 1470 の止まりは主スレッドが SwiftUI の配置の中から 60 秒戻らず、
+/// このアプリの段が積みに出なかった。どの部分の配置が回り続けているかを数えるため、中身をそのまま通す配置で包む
+struct DMStallLayoutProbe: Layout {
+    let name: String
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let size = subviews.first?.sizeThatFits(proposal) ?? CGSize(width: 0, height: 0)
+        MainActor.assumeIsolated { DMStallProbe.layout(name + ".fit", proposal: proposal, size: size) }
+        return size
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        MainActor.assumeIsolated { DMStallProbe.layout(name + ".place", proposal: proposal, size: bounds.size) }
+        for subview in subviews { subview.place(at: bounds.origin, proposal: ProposedViewSize(bounds.size)) }
+    }
+}
+
+extension View {
+    func stallLayoutProbe(_ name: String) -> some View {
+        DMStallLayoutProbe(name: name) { self }
     }
 }
