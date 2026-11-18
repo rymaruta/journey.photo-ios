@@ -56,6 +56,8 @@ enum SignatureShareCardRenderer {
         var place: LocationMatch.ShareCardPlace? = nil
         /// 撮った日（`TripBook.day(of:)`・その日の UTC 0 時）。暦の型の日付と二十四節気。分からなければ nil
         var takenDay: Date? = nil
+        /// 撮った日を絵に出すか（共有画面の「日付」の入切・`ShareCardDateChoice`）。切ると暦は日付も節気も出さない
+        var showsDate: Bool = true
 
         var placeLines: [String] {
             (place ?? LocationMatch.shareCardPlace(location))?.lines ?? []

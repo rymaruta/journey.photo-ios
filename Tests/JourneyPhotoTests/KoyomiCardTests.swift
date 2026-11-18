@@ -260,6 +260,65 @@ final class KoyomiCardTests: XCTestCase {
         XCTAssertEqual(K.country(of: LocationMatch.shareCardPlace("オーストラリア")), "オーストラリア")
     }
 
+    // MARK: - 共有画面の「日付」の入切（2026-11-18 判断・`ShareCardDateChoice`）
+
+    /// 既定は出す・切った値を覚える
+    func testDateChoiceDefaultsToShownAndIsRemembered() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "KoyomiCardTests.date"))
+        defaults.removePersistentDomain(forName: "KoyomiCardTests.date")
+        XCTAssertTrue(ShareCardDateChoice.load(defaults: defaults))
+        ShareCardDateChoice.save(false, defaults: defaults)
+        XCTAssertFalse(ShareCardDateChoice.load(defaults: defaults))
+        ShareCardDateChoice.save(true, defaults: defaults)
+        XCTAssertTrue(ShareCardDateChoice.load(defaults: defaults))
+        defaults.removePersistentDomain(forName: "KoyomiCardTests.date")
+    }
+
+    /// 入切を出すのは、日付を描く型（暦）で撮った日のある写真のときだけ
+    func testDateToggleOnlyForDatedStyles() {
+        let dated = Self.credit("兼六園, 兼六町, 金沢市, 石川県, 920-0936, 日本", lat: 36.56)
+        var undated = dated
+        undated.takenDay = nil
+        XCTAssertEqual(SignatureShareCardRenderer.Style.allCases.filter(ShareCardDateChoice.drawsDate), [.koyomi])
+        XCTAssertTrue(ShareCardDateChoice.showsToggle(style: .koyomi, credit: dated))
+        XCTAssertFalse(ShareCardDateChoice.showsToggle(style: .koyomi, credit: undated))
+        for style in SignatureShareCardRenderer.Style.allCases where style != .koyomi {
+            XCTAssertFalse(ShareCardDateChoice.showsToggle(style: style, credit: dated), style.rawValue)
+        }
+        XCTAssertFalse(ShareCardDateChoice.label.contains("撮りどき"))
+    }
+
+    /// 切ったら、暦は日付も節気も出さない（撮った日が外に出ない）
+    func testDateOffHidesDateAndSolarTerm() {
+        let credit = ShareCardDateChoice.credit(
+            Self.credit("兼六園, 兼六町, 金沢市, 石川県, 920-0936, 日本", lat: 36.56, lng: 136.66), showsDate: false)
+        XCTAssertFalse(credit.showsDate)
+        let t = K.texts(for: credit)
+        XCTAssertFalse(t.isSolarTerm)
+        XCTAssertNil(t.meaning)
+        let all = ([t.heading, t.latin ?? ""] + t.columns.flatMap { [$0.key, $0.value] }).joined()
+        XCTAssertFalse(all.contains("2026"), all)
+        XCTAssertFalse(all.contains("DATE"), all)
+        XCTAssertFalse(all.contains("SOLAR TERM"), all)
+        for term in SolarTerm.all { XCTAssertFalse(all.contains(term.name) || all.contains(term.latin), term.name) }
+        // 入れたまま（既定）なら節気
+        XCTAssertTrue(K.texts(for: ShareCardDateChoice.credit(credit, showsDate: true)).isSolarTerm)
+    }
+
+    /// 共有画面は入切を写した中身で描き、入切を出す（画面は Linux で描けないので、作りを文字で見る）
+    func testShareSheetDrawsWithTheDateChoice() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sheet = try String(contentsOf: root.appendingPathComponent(
+            "Sources/JourneyPhoto/Features/Common/SignatureShareCardSheet.swift"), encoding: .utf8)
+        XCTAssertTrue(sheet.contains("SignatureShareCardRenderer.render(photoData, credit: drawnCredit,"))
+        XCTAssertFalse(sheet.contains("SignatureShareCardRenderer.render(photoData, credit: credit,"),
+                       "入切を写さない中身で描いている")
+        XCTAssertTrue(sheet.contains("ShareCardDateChoice.showsToggle(style: style, credit: credit)"))
+        XCTAssertTrue(sheet.contains("\"signatureShare.date\""))
+        XCTAssertTrue(sheet.contains("ShareCardDateChoice.save(newValue)"))
+    }
+
     /// 日本の「〇〇郡〇〇町」は郡を落とす（列が詰まらないように）
     func testDistrictIsDropped() {
         XCTAssertEqual(K.withoutDistrict("東牟婁郡那智勝浦町"), "那智勝浦町")

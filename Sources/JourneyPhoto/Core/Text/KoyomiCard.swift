@@ -202,7 +202,7 @@ enum KoyomiCard {
     /// 無ければ大きい単位。緯度は約 50km に丸めた概略（`approximateShareCoordinate`）で、南半球かの見分けには足りる
     static func texts(for credit: SignatureShareCardRenderer.Credit) -> Texts {
         let place = credit.place ?? LocationMatch.shareCardPlace(credit.location)
-        return texts(takenDay: credit.takenDay, showsDate: true, latitude: credit.coords?.latitude,
+        return texts(takenDay: credit.takenDay, showsDate: credit.showsDate, latitude: credit.coords?.latitude,
                      place: place?.secondary ?? place?.primary, country: country(of: place),
                      placeFallback: place?.secondary == nil ? nil : place?.primary)
     }
