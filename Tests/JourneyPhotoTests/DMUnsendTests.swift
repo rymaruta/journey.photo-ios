@@ -97,6 +97,38 @@ final class DMUnsendTests: XCTestCase {
         XCTAssertEqual(log.messages.map(\.id), ["a-0000001", "b-0000002", "c-0000003"], "元の位置に戻らない")
     }
 
+    /// 2026-11-18（Mac run 1536）: 取り消しを押す前に送った読み直しの答え（取り消した1通を含む古い差分）が、
+    /// 外したあとに届いても1通を戻さない。ほかの新着は重ねる。消えていなかった（`restore`）ときだけ戻る
+    func testStalePollAfterUnsendDoesNotBringTheMessageBack() async {
+        let a = message("a-0000001", mine: false, t: "2026-11-12T00:00:01.000Z")
+        let b = message("b-0000002", t: "2026-11-12T00:00:02.000Z")
+        let c = message("c-0000003", mine: false, t: "2026-11-12T00:00:03.000Z")
+        var log = DMThreadLog(messages: [a, b])
+        let removed = try! XCTUnwrap(log.unsend("b-0000002"))
+        // 押す前に送った差分の答え（b を含む）と、その間に届いた新着 c
+        log.merge([a, b, c])
+        XCTAssertEqual(log.messages.map(\.id), ["a-0000001", "c-0000003"], "古い読み直しの答えで取り消した1通が戻った")
+        // 全部を読み直した答えが古くても戻さない
+        log.replace(with: [a, b, c])
+        XCTAssertEqual(log.messages.map(\.id), ["a-0000001", "c-0000003"], "古い全部の答えで取り消した1通が戻った")
+        // サーバーが消していなかった: 戻すと、以後の読み直しにも出る
+        log.restore(removed)
+        XCTAssertEqual(log.messages.map(\.id), ["a-0000001", "b-0000002", "c-0000003"])
+        log.merge([b])
+        XCTAssertEqual(log.messages.map(\.id), ["a-0000001", "b-0000002", "c-0000003"], "戻した1通が重なった")
+    }
+
+    /// 見張り（UI テストのときだけの `readded`）は押した時点から数える（答えを待つ間に届いた読み直しで戻っても数える）
+    func testUnsendProbeCountsFromThePress() async throws {
+        let view = try source("Features/Messages/DMConversationView.swift")
+        let action = slice(view, from: "private func unsend(_ message: DMMessage) async {", to: "private func accept() async")
+        guard let remember = action.range(of: "unsendProbe.unsent.append(removed.id)"),
+              let call = action.range(of: "environment.dm.unsend(conversationId, messageId: removed.id)") else {
+            return XCTFail("見張りに取り消した id を覚えていない")
+        }
+        XCTAssertLessThan(remember.lowerBound, call.lowerBound, "見張りが答えを待ってから数え始めている")
+    }
+
     /// 相手の画面: `full` の応答で置き換えると、取り消された1通が消える（差分の重ねでは残る）
     func testFullReplaceDropsTheUnsentMessage() async {
         var log = DMThreadLog(messages: [
@@ -180,6 +212,26 @@ final class DMUnsendTests: XCTestCase {
         let kept = DMThread(id: "c", peerId: "p", name: "A", t: "2026-11-12T00:00:00.000Z", excerpt: "やあ", unread: 0,
                             state: .inbox, lastMine: true)
         XCTAssertEqual(DMText.excerpt(kept, language: "ja"), "あなた: やあ")
+    }
+
+    // MARK: - 下へ送るときの動き（2026-11-18 判断・取り消しのあとに約 60 秒固まった件）
+
+    /// 通が増えたときだけ動きを付ける。減ったとき（取り消し）と変わらないときは付けない
+    func testBottomScrollAnimatesOnlyWhenTheCountGrows() {
+        XCTAssertTrue(DMBottomScroll.animates(from: 9, to: 10), "送った・届いたときに動きが無い")
+        XCTAssertFalse(DMBottomScroll.animates(from: 10, to: 9), "取り消しで減ったときに動きつきで送っている")
+        XCTAssertFalse(DMBottomScroll.animates(from: 10, to: 10))
+    }
+
+    /// 会話の下への送りが、通の数の前と後で動きを決めている（動きつきの送りを無条件に戻すと落ちる）
+    func testThreadScrollUsesTheCountRule() throws {
+        let view = try source("Features/Messages/DMConversationView.swift")
+        let hook = slice(view, from: ".onChange(of: log.messages.count + log.outgoing.count) { old, new in", to: "\n            }\n")
+        XCTAssertTrue(hook.contains("if DMBottomScroll.animates(from: old, to: new) {"), "通の数で動きを分けていない")
+        let animated = hook.components(separatedBy: "withAnimation(").count - 1
+        XCTAssertEqual(animated, 1, "動きつきの送りが分けた側の外にもある")
+        let plain = hook.components(separatedBy: "proxy.scrollTo(Self.bottomId, anchor: .bottom)").count - 1
+        XCTAssertEqual(plain, 2, "減ったときに動き無しで送っていない")
     }
 
     // MARK: - 画面の配線（Linux では SwiftUI を描けないので、元のファイルを読む）
