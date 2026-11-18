@@ -1,5 +1,8 @@
 import XCTest
 @testable import JourneyPhoto
+// 選択の印（`PhotosPickerItem`）は SwiftUI と PhotosUI の両方が要る（`Tools/check-cross-imports.py`）
+import SwiftUI
+import PhotosUI
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -193,6 +196,33 @@ final class UploadSharedFieldsTests: XCTestCase {
         XCTAssertEqual(m.items[0].caption, "朝五時")
         XCTAssertEqual(m.items[0].location, "高屋神社")
         XCTAssertTrue(m.sharesFields)
+    }
+
+    /// 🔴 OS の写真選びで先頭の写真の印を外しても、1組で書いた題・説明・撮影地は消えない（帯の × と同じ・`loadPicked` の外す道）
+    func testUnselectingTheLeadInThePickerKeepsTheSharedText() async {
+        let m = model()
+        m.loadPickedData = { _ in nil }
+        let a = PhotosPickerItem(itemIdentifier: "a")
+        let b = PhotosPickerItem(itemIdentifier: "b")
+        let c = PhotosPickerItem(itemIdentifier: "c")
+        var photos = [photo(1), photo(2), photo(3)]
+        photos[0].pickerItem = a
+        photos[1].pickerItem = b
+        photos[2].pickerItem = c
+        m.items = photos
+        m.items[0].title = "雲海"
+        m.items[0].caption = "朝五時"
+        m.items[0].location = "高屋神社"
+        XCTAssertTrue(m.sharesFields, "前提: 1組で書いている")
+        m.pickerItems = [a, b, c]
+        m.pickerItems = [b, c]
+        for _ in 0..<500 where m.items.count != 2 {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(m.items.count, 2)
+        XCTAssertEqual(m.items.first?.title, "雲海", "写真選びで先頭の印を外したら1組で書いた題が消えた")
+        XCTAssertEqual(m.items.first?.caption, "朝五時")
+        XCTAssertEqual(m.items.first?.location, "高屋神社")
     }
 
     /// 🔴 写す元の写真の位置を、ほかの写真に載せない（位置の切り替えがオフでも載る道があった）

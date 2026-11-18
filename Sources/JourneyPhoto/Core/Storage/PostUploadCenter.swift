@@ -38,6 +38,8 @@ final class PostUploadCenter: ObservableObject {
         let ownerId: String?
         /// 送っている途中で持ち主でなくなった（終わったら黙って手放す・控えは持ち主の枠に残る）
         fileprivate(set) var abandoned = false
+        /// 本人が「送信をやめる」を押した（終わったら失敗ではなく「送信をやめました」にする）
+        fileprivate(set) var cancelledByUser = false
 
         fileprivate init(model: UploadViewModel, onPosted: ((Int) -> Void)?) {
             self.model = model
@@ -66,6 +68,8 @@ final class PostUploadCenter: ObservableObject {
         case failed(String)
         /// 送れなかった。「もう一度」では直らない（選んだアルバムが消えた）ので、投稿の画面で直すよう案内する
         case failedNeedsEditing(String)
+        /// 本人が「送信をやめる」でやめた（失敗ではない。触覚は鳴らさない・写真と文は持ったまま）
+        case cancelled
     }
 
     @Published private(set) var jobs: [Job] = []
@@ -145,6 +149,7 @@ final class PostUploadCenter: ObservableObject {
               // 🔴 持ち主でない人の「もう一度」では送らない（持ち主の分からない投稿も）
               ownedByCurrentUser(job.ownerId) else { return }
         job.failure = nil
+        job.cancelledByUser = false
         job.total = job.model.items.count
         job.done = 0
         job.sending = true
@@ -180,7 +185,10 @@ final class PostUploadCenter: ObservableObject {
     /// 送っている投稿をやめる（輪の「送信をやめる」）。いま送っている1枚は最後まで通し、残りは上げ始めない。
     /// 写真と文は持ったまま（送れなかった投稿として残り、「もう一度送る」「投稿の画面で直す」を選べる）
     func cancelSending() {
-        for job in jobs where job.sending { job.model.cancel() }
+        for job in jobs where job.sending {
+            job.cancelledByUser = true
+            job.model.cancel()
+        }
     }
 
     /// 知らせの「直す」: 投稿の画面で開き直す（ホームの輪が受けて開く）
@@ -220,6 +228,18 @@ final class PostUploadCenter: ObservableObject {
         }
         // 観光スポットの頁へ「並んだ枚数」（一部だけ上がった回も知らせる・前の画面の `postedToSpot` と同じ）
         if model.postedToSpot > 0 { job.onPosted?(model.postedToSpot) }
+        // 🔴 本人が「送信をやめる」でやめた（2026-11-18 確かめ役の指摘）: 失敗の知らせと触覚を出さない（`failures` を増やさない）。
+        // 知らせは「送信をやめました」。輪は送れなかった投稿として残す（写真と文は持ったまま。「もう一度送る」「投稿の画面で直す」）。
+        // やめる前に全部上がっていた回は、ふつうに「投稿しました」
+        let cancelledByUser = job.cancelledByUser
+        job.cancelledByUser = false
+        if cancelledByUser, !model.items.isEmpty {
+            job.failure = PostUploadOutcome.cancelledText
+            job.done = 0
+            recompute()
+            notice(.cancelled, job: job)
+            return
+        }
         switch PostUploadOutcome.of(didPostAll: model.didPostAll, remaining: model.items.count,
                                     message: model.errorMessage, needsEditing: model.failureNeedsEditing) {
         case .posted:
@@ -276,6 +296,8 @@ final class PostUploadCenter: ObservableObject {
             toasts.show(PostUploadOutcome.failedText, kind: .failure, actionTitle: PostUploadOutcome.retryAction) { [weak self] in
                 self?.retry(id)
             }
+        case .cancelled:
+            toasts.show(PostUploadOutcome.cancelledText, kind: .info)
         case .failedNeedsEditing(let message):
             // 「もう一度」は出さない（同じ理由でまた落ちる）。投稿の画面で行き先を選び直す
             let id = job.id
@@ -304,6 +326,8 @@ enum PostUploadOutcome: Equatable {
     static var retryAction: String { L("もう一度", "Try again") }
     /// 投稿の画面で直す一手（輪の「投稿の画面で直す」と同じ行き先・知らせは短く）
     static var editAction: String { L("直す", "Fix") }
+    /// 本人が「送信をやめる」でやめたときの知らせ（失敗の言葉にしない）
+    static var cancelledText: String { L("送信をやめました", "Stopped sending") }
 
     /// - `didPostAll`: 全部上がり、言うことも無い
     /// - 写真が残っていない（`remaining == 0`）が一言ある: 上がったが知らせる（曲が付かなかった・前に投稿済み）

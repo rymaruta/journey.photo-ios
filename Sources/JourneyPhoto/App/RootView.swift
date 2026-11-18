@@ -92,6 +92,11 @@ struct RootView: View {
     @ObservedObject private var coverOffers = CoverOfferStore.shared
     /// 投稿のあとの知らせの「カードにする」で開くカード（1.1.83・`PostedCardHabit`）
     @ObservedObject private var postedCardOffer = PostedCardOffer.shared
+    /// 裏で送っている投稿（案 B2）。知らせの「直す」・輪の「投稿の画面で直す」を**どのタブにいても**ここで受けて開く
+    /// （2026-11-18 確かめ役の指摘: ホームの輪だけが受けていて、ほかのタブで「直す」を押しても開かなかった）
+    @ObservedObject private var postUploads = PostUploadCenter.shared
+    /// 送れなかった投稿を開き直す画面
+    @State private var editingPost: EditingPost?
     @ObservedObject private var profileReward = ProfileReward.shared
     /// 出している差し出し（板 51・51b）
     @State private var coverOffer: CoverOfferStore.Offer?
@@ -514,6 +519,17 @@ struct RootView: View {
             .task(id: auth.userId) { await claimProfileExtras() }
             .sheet(item: $postedCardOffer.presented) { card in
                 PostedShareCardSheet(card: card)
+            }
+            // 知らせの「直す」（アルバムが消えた回）・輪の「投稿の画面で直す」: 投稿の画面で開き直す
+            .onChange(of: postUploads.editRequest) { _, id in
+                guard let id else { return }
+                postUploads.clearEditRequest()
+                if let model = postUploads.takeForEditing(id) { editingPost = EditingPost(model: model) }
+            }
+            .sheet(item: $editingPost) { editing in
+                NavigationStack {
+                    UploadView(resuming: editing.model, onSaved: { TabRouter.shared.notePosted($0) })
+                }
             }
             .sheet(item: $coverOffer, onDismiss: {
                 // 閉じたら、待っていたお礼・届いた画面を出し直す

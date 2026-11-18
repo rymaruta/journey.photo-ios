@@ -34,8 +34,6 @@ struct StoriesRow: View {
     @State private var showPostFailure = false
     /// 写真の投稿を送っている間に輪を押した（「送信をやめる」）
     @State private var showPostSending = false
-    /// 送れなかった投稿を開き直す（「投稿の画面で直す」）
-    @State private var editingPost: EditingPost?
     /// 輪の列の幅（見えている輪の数を出す・`StoryPlayback.visibleRingCount`）
     @State private var rowWidth: CGFloat = 0
 
@@ -170,8 +168,9 @@ struct StoriesRow: View {
             if posts.canRetry(posts.failedJob) {
                 Button(L("もう一度送る", "Try again")) { posts.retry() }
             }
+            // 開くのはアプリの根（`RootView`）。どのタブにいても同じ口で開く（知らせの「直す」と同じ）
             Button(L("投稿の画面で直す", "Open the post")) {
-                if let model = posts.takeForEditing() { editingPost = EditingPost(model: model) }
+                if let job = posts.failedJob { posts.requestEditing(job.id) }
             }
             Button(Labels.Common.cancel, role: .cancel) {}
         } message: {
@@ -188,17 +187,6 @@ struct StoriesRow: View {
         } message: {
             Text(L("いま送っている1枚のあと、残りは送りません。写真と文は残ります",
                    "The photo being sent now will finish. The rest won't be sent. Your photos and text are kept."))
-        }
-        // 知らせの「直す」（アルバムが消えた回）: 投稿の画面で開き直す
-        .onChange(of: posts.editRequest) { _, id in
-            guard let id else { return }
-            posts.clearEditRequest()
-            if let model = posts.takeForEditing(id) { editingPost = EditingPost(model: model) }
-        }
-        .sheet(item: $editingPost) { editing in
-            NavigationStack {
-                UploadView(resuming: editing.model, onSaved: { TabRouter.shared.notePosted($0) })
-            }
         }
         // 途中で止まったとき。**出たぶんは残し、残りを送り直すかやめるかを選ばせる**
         .confirmationDialog(L("ストーリーを送れませんでした", "Couldn't send your story"),

@@ -246,6 +246,58 @@ final class PostUploadCenterTests: XCTestCase {
         XCTAssertTrue(center.jobs.isEmpty)
     }
 
+    /// 🔴 本体を置いている間に人が替わったら、保存を送らない（保存の鍵は新しい人のもの）。置いた本体は残し、
+    /// 持ち主に戻ったら同じ鍵で保存する（本体を置き直さない・二重にしない）
+    func testOwnerChangeWhilePlacingTheBodyStopsBeforeSave() async {
+        scriptSuccess()
+        let m = model(titles: ["雲海"])
+        // 1回目（本体を置く前の1枚ごとの確かめ）は持ち主、2回目（保存の直前）は別の人
+        var checks = 0
+        var ownerBack = false
+        m.ownerStillSignedIn = {
+            checks += 1
+            return checks == 1 || ownerBack
+        }
+        await m.submit()
+        let puts = ScriptedProtocol.calls.filter { $0.path == "/put" }.count
+        XCTAssertGreaterThan(puts, 0, "本体を置いていない")
+        XCTAssertEqual(ScriptedProtocol.calls.filter { $0.path == "/upload/save" }.count, 0,
+                       "本体を置いている間に人が替わったのに、保存を送った（別の人の名前で上がる）")
+        XCTAssertTrue(m.stoppedForOwner)
+        XCTAssertEqual(m.items.map(\.title), ["雲海"], "止めた写真と題が消えた")
+        // 持ち主に戻った: 置いた本体の鍵で保存する（置き直さない）
+        ownerBack = true
+        await m.submit()
+        XCTAssertEqual(ScriptedProtocol.calls.filter { $0.path == "/put" }.count, puts, "置いた本体を捨てて置き直した")
+        XCTAssertEqual(ScriptedProtocol.calls.filter { $0.path == "/upload/save" }.count, 1)
+        XCTAssertFalse(m.stoppedForOwner)
+    }
+
+    /// 🔴 「送信をやめる」は失敗ではない: 知らせは「送信をやめました」、失敗の触覚（`failures`）は鳴らさない。
+    /// 輪は送れなかった投稿として残す（写真と文を持ったまま・「もう一度送る」で送れる）
+    func testStoppingIsNotReportedAsAFailure() async {
+        scriptSuccess()
+        let center = PostUploadCenter()
+        var notices: [PostUploadCenter.Notice] = []
+        center.onNotice = { notice, _ in notices.append(notice) }
+        let m = model(titles: ["雲海", "鳥居"])
+        // 1枚目が上がった直後に輪の「送信をやめる」
+        m.onSaved = { _ in center.cancelSending() }
+        XCTAssertTrue(center.start(m))
+        await waitUntilSettled(center)
+        XCTAssertEqual(notices, [.cancelled], "やめたのに失敗の知らせを出した")
+        XCTAssertEqual(center.failures, 0, "やめたのに失敗の触覚を鳴らした")
+        XCTAssertEqual(center.failedJob?.failure, PostUploadOutcome.cancelledText)
+        XCTAssertEqual(center.failedJob?.model.items.map(\.title), ["鳥居"], "やめた残りの写真と題が消えた")
+        XCTAssertEqual(center.phase, .failed(message: PostUploadOutcome.cancelledText), "輪が送れなかった投稿として残らない")
+        // もう一度送れば、ふつうに上がる（やめた印は残らない）
+        m.onSaved = nil
+        center.retry()
+        await waitUntilSettled(center)
+        guard case .posted? = notices.last else { return XCTFail("もう一度送っても上がらない: \(notices)") }
+        XCTAssertTrue(center.jobs.isEmpty)
+    }
+
     /// 持ち主の分からない投稿は受けない（別の人の「もう一度」で上がる穴をふさぐ）。いまの人でない投稿も受けない
     func testRefusesPostsWithoutTheCurrentOwner() async {
         let center = PostUploadCenter()
@@ -364,7 +416,15 @@ final class PostUploadCenterTests: XCTestCase {
         let row = try source("Features/Stories/StoriesRow.swift")
         XCTAssertTrue(row.contains("if uploads.isBusy || posts.isBusy {\n                            uploadRing(ordered.mine)"))
         XCTAssertTrue(row.contains("let ring = UploadRing.of(story: uploads.phase, post: posts.phase)"))
-        XCTAssertTrue(row.contains("UploadView(resuming: editing.model, onSaved: { TabRouter.shared.notePosted($0) })"))
+        XCTAssertTrue(row.contains("if let job = posts.failedJob { posts.requestEditing(job.id) }"),
+                      "輪の「投稿の画面で直す」がアプリの根の口を通らない")
+        // 🔴 「直す」はアプリの根（`RootView`）で受けて開く——どのタブにいても開く（2026-11-18 確かめ役の指摘:
+        // ホームの輪だけが受けていて、ほかのタブで知らせの「直す」を押しても開かなかった）
+        XCTAssertFalse(row.contains("posts.editRequest"), "「直す」をホームの輪だけで受けている（ほかのタブで開かない）")
+        let root = try source("App/RootView.swift")
+        XCTAssertTrue(root.contains(".onChange(of: postUploads.editRequest) { _, id in"), "「直す」をアプリの根で受けていない")
+        XCTAssertTrue(root.contains("if let model = postUploads.takeForEditing(id) { editingPost = EditingPost(model: model) }"))
+        XCTAssertTrue(root.contains("UploadView(resuming: editing.model, onSaved: { TabRouter.shared.notePosted($0) })"))
         // 知らせの口と人の入れ替わり（アプリの起動時）
         let app = try source("App/JourneyPhotoApp.swift")
         XCTAssertTrue(app.contains("PostUploadCenter.shared.configure(toasts: toasts, currentUserId: { auth.userId })"))

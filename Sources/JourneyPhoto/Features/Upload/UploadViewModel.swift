@@ -1818,6 +1818,14 @@ final class UploadViewModel: ObservableObject {
         unreadable = plan.unreadable
         let added = plan.load
         let dropped = zip(items, diff.keep).filter { !$0.1 }.map { $0.0.id }
+        // 🔴 1組だけ書いている間に**選択から先頭の写真を外したら、書いた撮影地・題・説明を残る先頭へ移してから外す**
+        // （帯の × の `remove` と同じ。欄は先頭の写真のもの・2026-11-18 確かめ役の指摘）
+        if sharesFields, let lead = items.first, dropped.contains(lead.id),
+           let next = items.firstIndex(where: { !dropped.contains($0.id) }) {
+            placeTasks[items[next].id]?.cancel()
+            placeTasks[items[next].id] = nil
+            items[next].copySharedFields(from: lead)
+        }
         for id in dropped {
             placeTasks[id]?.cancel()
             placeTasks[id] = nil
@@ -2111,6 +2119,12 @@ final class UploadViewModel: ObservableObject {
                 // **外すのは送った宛先**（`AlbumGone` が持つ）。送信中も行き先は選び直せるので、
                 // 今の `selectedAlbumId` を読むと、選び直した生きているアルバムを外していた
                 failedIds.append(item.id)
+                if error is OwnerChanged {
+                    stoppedForOwner = true
+                    failures.append(L("ログインしている人が替わったため、送るのを止めました",
+                                      "Sending stopped because a different account signed in."))
+                    break
+                }
                 if let gone = error as? AlbumGone {
                     albumGone(gone.albumId)
                     // 「もう一度」では直らない（行き先を選び直す）。裏の係は投稿の画面で直すよう案内する
@@ -2313,6 +2327,10 @@ final class UploadViewModel: ObservableObject {
         // 作っていたので、画像を書き出して置くまで（数秒）の間に直した題・説明・撮影地は
         // **古い値のまま保存され、保存のあと行ごと消えて黙って失われた**。
         // 画像から決まる値（代表色）だけは置いた絵のものを引き継ぐ
+        // 🔴 **保存を送る直前にも、持ち主のままかを見る**（2026-11-18 確かめ役の指摘）。1枚ごとの確かめは本体を置く前で、
+        // 置いている間（数秒〜）に人が替わると、保存の鍵（`AuthGateway.idToken()`）は新しい人のものになり、
+        // 前の人の写真と文が新しい人の名前で上がる。違えば止める。置いた本体は `staged` に残す（持ち主に戻ればその鍵で保存する）
+        if let ownerStillSignedIn, !ownerStillSignedIn() { throw OwnerChanged() }
         let placedColor = draft.dominantColor
         draft = makeDraft(for: items.first(where: { $0.id == item.id }) ?? item)
         draft.dominantColor = placedColor
@@ -2409,6 +2427,8 @@ final class UploadViewModel: ObservableObject {
 
     /// 保存がアルバムの 404 で断られた。`albumId` は**その保存で送った宛先**
     private struct AlbumGone: Error { let albumId: String }
+    /// 本体を置いている間に、ログインしている人が替わった（保存を送らずに止める・`ownerStillSignedIn`）
+    private struct OwnerChanged: Error {}
 
     private func albumGone(_ albumId: String) {
         albums.removeAll { $0.id == albumId }
