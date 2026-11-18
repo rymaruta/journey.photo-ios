@@ -13,23 +13,48 @@ final class KoyomiCardTests: XCTestCase {
         [("ストーリー", .story), ("投稿4:5", .post(.portrait)), ("投稿1:1", .post(.square)), ("投稿9:16", .post(.story))]
     }
 
-    /// 模型（仕様の「結果の例」）の写真の枠
-    func testPhotoSizesMatchTheMockup() {
+    /// 写真の大きさ（2026-11-18: 写真の上に余白を取るように替えた後の値。横長は模型のまま）
+    func testPhotoSizes() {
         func size(_ aspect: CGFloat, _ frame: K.Frame) -> (Int, Int) {
             let p = K.place(aspect: aspect, in: frame).photo
             return (Int(p.width.rounded()), Int(p.height.rounded()))
         }
-        XCTAssert(size(3.0 / 4.0, .story) == (849, 1132))
         XCTAssert(size(3.0 / 2.0, .story) == (1080, 720))
-        XCTAssert(size(1, .story) == (1080, 1080))
-        XCTAssert(size(3.0 / 4.0, .post(.portrait)) == (661, 881))
         XCTAssert(size(3.0 / 2.0, .post(.portrait)) == (1080, 720))
-        XCTAssert(size(1, .post(.portrait)) == (881, 881))
+        print("measured [koyomi-size] story 3:4=\(size(0.75, .story)) 3:2=\(size(1.5, .story)) 1:1=\(size(1, .story)) "
+              + "post4x5 3:4=\(size(0.75, .post(.portrait))) 3:2=\(size(1.5, .post(.portrait))) 1:1=\(size(1, .post(.portrait))) "
+              + "post1x1 3:4=\(size(0.75, .post(.square))) 3:2=\(size(1.5, .post(.square))) 1:1=\(size(1, .post(.square)))")
         XCTAssertEqual(K.Frame.story.textBottom, 1536, accuracy: 0.001)
         XCTAssertEqual(K.Frame.post(.portrait).textBottom, 1285.2, accuracy: 0.001)
         XCTAssertEqual(K.Frame.post(.portrait).textTop, 64.8, accuracy: 0.001)
         XCTAssertEqual(K.Frame.post(.square).height, 1080)
         XCTAssertEqual(K.Frame.post(.story), .story)
+    }
+
+    /// 写真の上の余白は、写真の左右の余白以上で 96 以上（ストーリーの幅いっぱいの写真は上 14% の帯の下から）。
+    /// 2026-11-18 owner「上の余白がないのでバランス悪い」（前は縦長の写真の上端が 0 だった）
+    func testPhotoHasATopMarginAtLeastItsSideMargin() {
+        for (frameName, frame) in Self.frames {
+            for (name, aspect) in Self.aspects {
+                let p = K.place(aspect: aspect, in: frame).photo
+                let side = (K.width - p.width) / 2
+                let label = "\(frameName) \(name) \(p)"
+                XCTAssertGreaterThanOrEqual(p.minY, K.photoTopMinimum - 0.01, label)
+                // 上の余白＝左右の余白は、ストーリーと投稿 4:5（owner が指摘した絵）では必ず。
+                // 投稿 1:1 は写真が小さくなりすぎる形（縦長・正方形・横長）だけ 96 にとどめる（`balancedShrinkLimit`）
+                if frame != .post(.square) || name == "パノラマ4:1" {
+                    XCTAssertGreaterThanOrEqual(p.minY, side - 0.01, label)
+                }
+                if frame == .story, side < 0.5 {
+                    XCTAssertGreaterThanOrEqual(p.minY, K.Frame.story.textTop - 0.01, label)
+                }
+                // 写真＋間＋段の塊は、下の線を越えない範囲で上下の真ん中（上の余白が取れない分だけ写真が縮む）
+                // 写真は大きさを保つ: 幅か高さが 400px 以上（小さな切手のようにしない）
+                XCTAssertGreaterThanOrEqual(max(p.width, p.height), 400, label)
+                let groupBottom = p.maxY + K.gap + K.blockHeight
+                XCTAssertLessThanOrEqual(groupBottom, frame.textBottom + 0.01, label)
+            }
+        }
     }
 
     /// 写真を切らない（枠の縦横比が写真と同じ）・絵の中・左右の真ん中・字の段と重ならない
