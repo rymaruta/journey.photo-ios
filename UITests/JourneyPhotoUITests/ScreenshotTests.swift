@@ -10752,6 +10752,7 @@ final class ScreenshotTests: XCTestCase {
     /// 下へ払ってキーボードを下ろす → 自分の吹き出しを長押し → 取り消す）で押す。押したあとは画面の木を読まず、
     /// 主スレッドの積みのファイル（起動のたびに作り直される）と会話の回数（`.dm`）だけで判定し、次の回へ進む
     func testDMUnsendStallRepeat() {
+        executionTimeAllowance = 1200   // 10 回（1 回およそ 1 分）。既定の 5 分では 5 回目で打ち切られた（run 1507）
         let samplePath = Self.mainSamplePath("dmrepeat")
         var stalls = 0
         var tried = 0
