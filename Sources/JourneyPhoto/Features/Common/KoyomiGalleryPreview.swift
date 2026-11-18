@@ -20,12 +20,15 @@ struct KoyomiGalleryPreview: View {
 
     enum Shape: String, CaseIterable {
         case portrait, landscape, square
+        /// 横に長い 3:1（見本の1枚だけ・`combos` の後ろ）
+        case wide
         /// 幅 ÷ 高さ
         var aspect: CGFloat {
             switch self {
             case .portrait: return 3.0 / 4.0
             case .landscape: return 3.0 / 2.0
             case .square: return 1
+            case .wide: return 3
             }
         }
     }
@@ -38,14 +41,18 @@ struct KoyomiGalleryPreview: View {
         let shape: Shape
         let target: Target
         let sample: Sample
-        var name: String { "\(target.rawValue)-\(shape.rawValue)-\(sample.rawValue)" }
+        var showsDate = true
+        var name: String { "\(target.rawValue)-\(shape.rawValue)-\(sample.rawValue)\(showsDate ? "" : "-nodate")" }
     }
 
     static let combos: [Combo] = Target.allCases.flatMap { target in
-        Shape.allCases.map { Combo(shape: $0, target: target, sample: .kenrokuen) }
+        [Shape.portrait, .landscape, .square].map { Combo(shape: $0, target: target, sample: .kenrokuen) }
     } + [Combo(shape: .portrait, target: .story, sample: .sydney),
          Combo(shape: .landscape, target: .post4x5, sample: .sydney),
-         Combo(shape: .portrait, target: .post4x5, sample: .long)]
+         Combo(shape: .portrait, target: .post4x5, sample: .long),
+         // 2026-11-18 確かめ役: 日付を切った国内の写真・横に長い 3:1 の写真
+         Combo(shape: .portrait, target: .post4x5, sample: .kenrokuen, showsDate: false),
+         Combo(shape: .wide, target: .post4x5, sample: .kenrokuen)]
 
     static let takenDay = TripBook.utcCalendar.date(from: DateComponents(year: 2026, month: 10, day: 10))
 
@@ -95,6 +102,7 @@ struct KoyomiGalleryPreview: View {
                 verified: false, proStyle: nil, early: false, badge: nil,
                 place: LocationMatch.shareCardPlace(location))
             credit.takenDay = takenDay
+            credit.showsDate = combo.showsDate
             return await SignatureShareCardRenderer.render(photo, credit: credit,
                                                            ratio: combo.target == .post4x5 ? .portrait : .square,
                                                            style: .koyomi)

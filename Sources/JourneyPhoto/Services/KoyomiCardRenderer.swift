@@ -29,7 +29,7 @@ enum KoyomiCardRenderer {
             return UIColor(red: mix(ground.red), green: mix(ground.green), blue: mix(ground.blue), alpha: 1)
         }
         let aspect = photo.size.height > 0 ? photo.size.width / photo.size.height : 1
-        let placement = K.place(aspect: aspect, in: frame)
+        let placement = K.place(aspect: aspect, in: frame, block: K.blockHeight(for: texts))
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true

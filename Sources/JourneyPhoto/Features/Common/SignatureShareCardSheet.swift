@@ -175,7 +175,13 @@ struct SignatureShareCardSheet: View {
             .onChange(of: styleRaw) { _, newValue in
                 UserDefaults.standard.set(newValue, forKey: Self.styleDefaultsKey)
             }
-            .onChange(of: showsDate) { _, newValue in ShareCardDateChoice.save(newValue) }
+            .onChange(of: showsDate) { _, newValue in
+                ShareCardDateChoice.save(newValue)
+                // 日付を描く型の見本は作り直す（2026-11-18 確かめ役: 入切を替えても見本が古いままだった）
+                for option in ShareCardStyleChoice.order where ShareCardDateChoice.drawsDate(option) {
+                    thumbnails.removeValue(forKey: option.rawValue)
+                }
+            }
             .task(id: "\(ratio.rawValue)-\(styleRaw)-\(showsDate)-\(retryCount)") {
                 let selectedRatio = ratio
                 let selectedStyle = style
@@ -208,7 +214,7 @@ struct SignatureShareCardSheet: View {
                 output = result
                 preparing = false
             }
-            .task {
+            .task(id: showsDate) {
                 // 見本は 4:5・顔なしで。先に今のプレビューを作らせ（最大 3 秒待つ）、見本は後ろで1つずつ（144×180 に縮めて持つ）
                 for _ in 0..<30 where preparing {
                     try? await Task.sleep(nanoseconds: 100_000_000)
