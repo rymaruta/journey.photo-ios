@@ -13,7 +13,9 @@ struct LibraryPickHeader: View {
     let onClose: () -> Void
     /// 「選択」を入れているか（入れている間は「キャンセル」と出し、字を真鍮にする）
     let selecting: Bool
-    let onToggleSelect: () -> Void
+    /// 「選択」。nil なら出さない（許可が無い段は埋め込みの写真選びが印を付ける・run 1465 の絵で、押しても何も起きない
+    /// 「選択」が出ていた）
+    let onToggleSelect: (() -> Void)?
     /// アルバム（PHPicker・検索と古い写真）。nil なら出さない（許可の無い段は埋め込みの写真選びがその役）
     var onAlbums: (() -> Void)? = nil
     /// 読み込み中は「選択」「アルバム」を押せない
@@ -59,6 +61,7 @@ struct LibraryPickHeader: View {
                     .accessibilityLabel(L("アルバムから選ぶ", "Choose from albums"))
                     .accessibilityIdentifier("\(idPrefix).albums")
                 }
+                if let onToggleSelect {
                 Button(action: onToggleSelect) {
                     Text(selecting ? Labels.Common.cancel : L("選択", "Select"))
                         .font(JPFont.footnote.weight(.semibold))
@@ -72,6 +75,7 @@ struct LibraryPickHeader: View {
                 .disabled(busy)
                 .accessibilityHint(selecting ? "" : selectHint)
                 .accessibilityIdentifier("\(idPrefix).select")
+                }
             }
         }
         .frame(minHeight: CreateFlowRules.headerHeight)

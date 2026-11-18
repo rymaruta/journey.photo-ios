@@ -39,6 +39,8 @@ final class CreateFlowTests: XCTestCase {
                       "マスを押しても読み込まない")
         // 0.9 秒待って OS の写真選びを開く道は無い
         XCTAssertFalse(upload.contains("autoOpenDelay"))
+        // 許可が無い段（埋め込みの写真選び）では「選択」を出さない（run 1465 の絵で押しても何も起きない「選択」が出ていた）
+        XCTAssertTrue(upload.contains("onToggleSelect: libraryGridShown ? {"), "許可が無い段にも「選択」を出している")
     }
 
     // MARK: - 切り替え

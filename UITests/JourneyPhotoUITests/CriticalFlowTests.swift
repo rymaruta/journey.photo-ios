@@ -244,9 +244,13 @@ final class CriticalFlowTests: XCTestCase {
         submit.tap()
         // 2026-11-18（案 B2・owner 採用）: 「投稿する」で画面がすぐ閉じ、裏の係（`PostUploadCenter`）が送る。
         // 上がったら知らせ「投稿しました　カードにする」（共有カードは画面いっぱいに出さない・1.1.83 の決めを置き換えた）
+        // run 1465: 知らせの入れ物（`toast`）の label は空で、字は子の StaticText「投稿しました」（要素の木で確かめた）。
+        // 字そのものを、押した直後から見る（知らせは6秒で消える）
+        let postedText = app.staticTexts["投稿しました"].firstMatch
+        let posted = postedText.waitForExistence(timeout: 60)
+        print("[postedToast] shown=\(posted) uploadOpen=\(thumb.exists) card=\(app.buttons["toast.action"].exists)")
+        XCTAssertTrue(posted, "裏で送っても「投稿しました」が出ない（上がっていない）")
         XCTAssertTrue(thumb.waitForNonExistence(timeout: 15), "「投稿する」で投稿の画面が閉じない（送り終えるのを待っている）")
-        let postedToast = app.descendants(matching: .any)["toast"].firstMatch
-        XCTAssertTrue(wait(postedToast, "label CONTAINS '投稿しました'", timeout: 60), "裏で送っても「投稿しました」が出ない（上がっていない）")
         XCTAssertFalse(app.buttons["postedCard.close"].exists, "共有カードを画面いっぱいに出した")
 
         // 本体が空なら見本の答え手が 400 で断り、投稿画面は閉じない（`PreviewBackend.PreviewTransfer`）——上で落ちる
@@ -576,9 +580,12 @@ final class CriticalFlowTests: XCTestCase {
         submit.tap()
         storyCrashStep(app, "\(tag).upload.submitted")
         // 2026-11-18（案 B2）: 画面はすぐ閉じ、上がったら知らせの「カードにする」から共有カードを開く
-        XCTAssertTrue(thumb.waitForNonExistence(timeout: 15), "「投稿する」で投稿の画面が閉じない")
+        // 知らせは6秒で消えるので、押した直後から待つ（run 1465 は画面が閉じるのを待ってから探して見つからなかった）
         let makeCard = app.buttons["toast.action"].firstMatch
-        XCTAssertTrue(makeCard.waitForExistence(timeout: 90), "裏で送っても「カードにする」の知らせが出ない")
+        let card = makeCard.waitForExistence(timeout: 90)
+        storyCrashStep(app, "\(tag).toast card=\(card) uploadOpen=\(thumb.exists)")
+        XCTAssertTrue(card, "裏で送っても「カードにする」の知らせが出ない")
+        XCTAssertFalse(thumb.exists, "「投稿する」で投稿の画面が閉じない")
         makeCard.tap()
 
         let toStory = app.buttons["postedCard.story"].firstMatch

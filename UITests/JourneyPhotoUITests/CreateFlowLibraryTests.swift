@@ -139,13 +139,29 @@ final class CreateFlowLibraryTests: XCTestCase {
         let submit = app.buttons["upload.submit"].firstMatch
         guard submit.waitForExistence(timeout: 5) else { return unreached(app, "「投稿する」が無い") }
         submit.tap()
-        guard submit.waitForNonExistence(timeout: 15) else { return unreached(app, "「投稿する」で画面が閉じない（送り終えるのを待っている）") }
+        // run 1465: 3秒の輪の待ちと絵のあとに「カードにする」を待つと見つからなかった（その回の要素の木には一度出ていた）。
+        // 見本の通信は速く、知らせ（6秒）が待つ前に消えていたかを確かめるため、押した直後から 0.25 秒ごとに見て時刻を残す
         let ring = app.descendants(matching: .any)["stories.uploading"].firstMatch
-        let ringShown = ring.waitForExistence(timeout: 3)
-        note("送信中の輪", "ring=\(ringShown) label=\(ringShown ? ring.label : "none")")
-        shoot(app, "40k-投稿（送信中・ホームの輪）")
         let makeCard = app.buttons["toast.action"].firstMatch
-        XCTAssertTrue(makeCard.waitForExistence(timeout: 90), "裏で送っても「投稿しました　カードにする」が出ない")
+        let tapped = Date()
+        var closedAt: Double?
+        var ringAt: Double?
+        var cardAt: Double?
+        while Date().timeIntervalSince(tapped) < 90, cardAt == nil {
+            let t = Date().timeIntervalSince(tapped)
+            if closedAt == nil, !submit.exists { closedAt = t }
+            if ringAt == nil, ring.exists {
+                ringAt = t
+                shoot(app, "40k-投稿（送信中・ホームの輪）")
+            }
+            if makeCard.exists { cardAt = t }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        note("送ったあとの時刻", "closed=\(closedAt.map { String(format: "%.2f", $0) } ?? "none")"
+             + " ring=\(ringAt.map { String(format: "%.2f", $0) } ?? "none")"
+             + " card=\(cardAt.map { String(format: "%.2f", $0) } ?? "none")")
+        XCTAssertNotNil(closedAt, "「投稿する」で画面が閉じない（送り終えるのを待っている）")
+        XCTAssertNotNil(cardAt, "裏で送っても「投稿しました　カードにする」が出ない")
         shoot(app, "40l-投稿（投稿しました　カードにする）")
     }
 

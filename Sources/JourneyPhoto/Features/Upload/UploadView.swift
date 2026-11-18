@@ -750,10 +750,11 @@ struct UploadView: View {
             LibraryPickHeader(title: CreateFlowRules.title(.post),
                               onClose: { attemptClose() },
                               selecting: librarySelecting,
-                              onToggleSelect: {
+                              // 許可が無い段（埋め込みの写真選び）では「選択」を出さない（写真選びが印を付ける）
+                              onToggleSelect: libraryGridShown ? {
                                   librarySelecting.toggle()
                                   if !librarySelecting { libraryMarked = [] }
-                              },
+                              } : nil,
                               onAlbums: libraryGridShown ? { openLibrary() } : nil,
                               busy: model.isLoadingPicked,
                               idPrefix: "post.library",
