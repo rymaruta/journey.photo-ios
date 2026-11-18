@@ -44,6 +44,12 @@ description: 機能や直しを「作る → 別の担当が確かめる → 直
 - **推定で直さない（CLAUDE.md・絶対）。** 失敗や不具合は、数字・記録・再現で原因を確かめてから直す。
   分からなければ値を出す仕組みを足して取る。原因が言えないうちは push せず「分からない」と報告する。
 - 各直しにテストを付け、**直しを戻すとテストが落ちる**ことを確かめる。
+- **Mac は確かめのために流す。直ったか試すために流さない**（2026-11-18 owner「テスト落ちすぎ」・その日 40 回中 24 回落ちた）。
+  流す前に `/verify` と手元の単体テストを通す。
+- **Mac のテストの前に、必ずビルドだけの回を通す**（コンパイルだけ・テストなし・十数分）:
+  `gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight.yml/dispatches -f ref=<枝> -f 'inputs[screens]=build'`
+  → `bash Tools/wait-mac-run.sh <sha7> build`（run_in_background）。落ちたら job の要約のエラーの行を読んで直す。
+- **同じ枝でテストの回が2回続けて落ちたら、3回目を流さない。** 落ちた値（テスト名・期待と実際）とログの行を添えて報告する。
 - Mac の確認（`/mac-check`）は**変えた画面の絵だけ撮る**（`inputs[screens]=<画面の名前の一部>`・
   絵の要らない直しは `none`）。全部は main に入る前に PR の検証が回す。
 - 手元の確かめは `/verify`。push まで。**PR は作らない・main / develop に merge しない**（頼まれたときだけ）。
