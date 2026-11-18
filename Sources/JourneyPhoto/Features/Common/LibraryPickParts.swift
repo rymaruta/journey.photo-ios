@@ -290,7 +290,6 @@ final class CreateFlow: ObservableObject {
         return chosen
     }
 
-    /// 中の画面が一覧の段を出した・離れた
     /// 一覧の上のチップの行の場所（画面の座標）。ここで始まった指は払いに数えない
     private(set) var chipsFrame: CGRect?
 
@@ -308,8 +307,15 @@ final class CreateFlow: ObservableObject {
         if probeLog.count > 24 { probeLog.removeFirst(probeLog.count - 24) }
     }
 
-    func noteLibrary(_ shown: Bool) {
-        noteProbe("note:\(shown ? 1 : 0)")
+    /// 中の画面が一覧の段を出した・離れた。**今の切り替えの画面（`mode`）からの知らせだけを受ける。**
+    /// run 1511 の値: ストーリーから投稿に替えると、投稿の「一覧」（note:1）のあとに離れた側の「一覧でない」
+    /// （note:0）が届き、切り替えが消えていた（`log=…,select:post,note:1,note:0`）。送り手を記録に残す（`note:<mode>:<0|1>`）
+    func noteLibrary(_ shown: Bool, from sender: CreateFlowRules.Mode) {
+        guard sender == mode else {
+            noteProbe("skip:\(sender.rawValue):\(shown ? 1 : 0)")
+            return
+        }
+        noteProbe("note:\(sender.rawValue):\(shown ? 1 : 0)")
         if libraryShown != shown { libraryShown = shown }
         if !shown { used = true }
     }

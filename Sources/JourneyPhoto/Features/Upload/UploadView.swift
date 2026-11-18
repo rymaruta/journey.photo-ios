@@ -172,7 +172,7 @@ struct UploadView: View {
         // 一覧の段は自分の見出しの行（ガラスの丸の「閉じる」・題・選択）を持つので、上のバーは隠す
         .toolbar(libraryStage && auth.userId != nil ? .hidden : .visible, for: .navigationBar)
         // 投稿の入口の中なら、一覧を見ている間を知らせる（下の「投稿 | ストーリー」を出す・払って替える）
-        .onChange(of: libraryShownForFlow) { _, shown in createFlow?.noteLibrary(shown) }
+        .onChange(of: libraryShownForFlow) { _, shown in createFlow?.noteLibrary(shown, from: .post) }
         // カメラと OS の写真選び（「アルバム」・帯の「追加」）は一覧の段と欄の段の両方から開くので、外側に付ける
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { capture in
@@ -197,7 +197,7 @@ struct UploadView: View {
         // 開いたときの支度（下書き・送れなかった投稿の問い・最初から入れる写真）。**一覧の段でも欄の段でも走るよう、
         // 画面の外側に付ける**（2026-11-18・案 B1。欄だけに付けると、写真の一覧から始まる回に問いが出ない）
         .onAppear {
-            createFlow?.noteLibrary(libraryShownForFlow)
+            createFlow?.noteLibrary(libraryShownForFlow, from: .post)
             // 「撮影地の位置を付ける」の持ち主（人ごとの値・2026-10-18）。**写真を並べるより先に**——
             // 旅の写真・撮った1枚は下で並べた瞬間に撮影地を引き始める（`UploadViewModel.startPlaceLookup`）
             model.useLocationOwner(auth.userId)

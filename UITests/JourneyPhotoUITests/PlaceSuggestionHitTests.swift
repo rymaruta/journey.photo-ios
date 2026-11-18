@@ -166,17 +166,29 @@ final class PlaceSuggestionHitTests: XCTestCase {
     /// 欄を画面の上の方へ送る（下に候補の行が3つ出る場所を空ける）
     private func raise(_ field: XCUIElement, in app: XCUIApplication) {
         let window = app.windows.firstMatch.frame
+        let start = field.frame
         var pushes = 0
-        while field.exists, field.frame.minY > window.height * 0.3, pushes < 6 {
+        // run 1511（2026-11-18・案 B1 で投稿の画面が全画面になった後）: 1回の送り（画面の 20%）で欄が y=85 まで上がり、
+        // 上のバーの裏に入って押せず（`isHittable` が偽のまま 4 語×8 秒）、語を打てずに落ちた。
+        // run 1360 では送ったあと y=205 で押せていた。送りを 10% に細かくし、上がりすぎたら少し戻す
+        while field.exists, field.frame.minY > window.height * 0.3, pushes < 12 {
             let before = field.frame.minY
             let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
-            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             from.press(forDuration: 0.05, thenDragTo: to)
             Thread.sleep(forTimeInterval: 1)
             pushes += 1
             if abs(field.frame.minY - before) < 1 { break }
         }
-        log("raised field=\(field.frame) window=\(window)")
+        var backs = 0
+        while field.exists, !field.isHittable, backs < 3 {
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.58))
+            from.press(forDuration: 0.05, thenDragTo: to)
+            Thread.sleep(forTimeInterval: 1)
+            backs += 1
+        }
+        log("raised start=\(start) field=\(field.frame) hittable=\(field.isHittable) pushes=\(pushes) backs=\(backs) window=\(window)")
     }
 
     private func openUpload() -> XCUIApplication? {

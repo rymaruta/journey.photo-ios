@@ -84,9 +84,9 @@ final class CreateFlowTests: XCTestCase {
         XCTAssertTrue(parts.contains("guard flow.libraryShown,"), "欄を書いている段でも払って替わる")
         // 中の画面が一覧を離れたら知らせる（投稿は欄の段・ストーリーは作る段）
         let upload = try read("Sources/JourneyPhoto/Features/Upload/UploadView.swift")
-        XCTAssertTrue(upload.contains(".onChange(of: libraryShownForFlow) { _, shown in createFlow?.noteLibrary(shown) }"))
+        XCTAssertTrue(upload.contains(".onChange(of: libraryShownForFlow) { _, shown in createFlow?.noteLibrary(shown, from: .post) }"))
         let story = try read("Sources/JourneyPhoto/Features/Stories/StoryComposerView.swift")
-        XCTAssertTrue(story.contains(".onDisappear { createFlow?.noteLibrary(false) }"))
+        XCTAssertTrue(story.contains(".onDisappear { createFlow?.noteLibrary(false, from: .story) }"))
     }
 
     /// 題・字・道しるべ（前の選ぶシートの `post.choice.photo` / `post.choice.story` を切り替えが引き継ぐ）
@@ -125,9 +125,27 @@ final class CreateFlowTests: XCTestCase {
         XCTAssertEqual(flow.takeChosen(), .trip)
         XCTAssertNil(flow.takeChosen(), "同じ入口を2回開く")
         XCTAssertFalse(flow.used)
-        flow.noteLibrary(false)
+        flow.noteLibrary(false, from: .story)
         XCTAssertFalse(flow.libraryShown)
         XCTAssertTrue(flow.used, "写真を選んだのに、閉じたあとマイページ・ホームを読み直さない")
+    }
+
+    /// run 1511 の値: ストーリーから投稿に替えると、投稿の「一覧」のあとに、離れたストーリーの画面の
+    /// 「一覧でない」が届いて切り替えが消えた（`select:post,note:1,note:0`）。今の画面からの知らせだけを受ける
+    @MainActor
+    func testLeftScreenCannotHideTheSwitcher() async {
+        let flow = CreateFlow(mode: .story)
+        flow.noteLibrary(true, from: .story)
+        // 投稿に替えた（`select`）→ 投稿の画面が一覧を出す → 離れたストーリーの画面の onDisappear
+        flow.mode = .post
+        flow.libraryShown = true
+        flow.noteLibrary(true, from: .post)
+        flow.noteLibrary(false, from: .story)
+        XCTAssertTrue(flow.libraryShown, "離れたストーリーの画面の知らせで、投稿の切り替えが消える")
+        XCTAssertFalse(flow.used, "替えただけなのに、作り始めたことにされる")
+        // 今の画面（投稿）が欄の段へ進んだら、切り替えは消える
+        flow.noteLibrary(false, from: .post)
+        XCTAssertFalse(flow.libraryShown)
     }
 
     // MARK: - 一覧で選んだ写真を読む

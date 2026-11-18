@@ -10573,13 +10573,14 @@ final class ScreenshotTests: XCTestCase {
         // 押した直後の絵（送信中の輪・投稿の画面が閉じたか）を撮る。絵の名前は標準と大きい文字で分ける
         _ = submit.waitForNonExistence(timeout: 10)
         shoot(app, extraArguments.isEmpty ? "120d-投稿（送信中・画面を閉じた後）" : "120d2-投稿（送信中・画面を閉じた後・大きい文字）")
-        print("[sendingShot] uploadOpen=\(submit.exists) ring=\(app.descendants(matching: .any)["stories.uploading"].firstMatch.exists)")
-        // 上がったら知らせ「投稿しました　カードにする」。押すと共有カード
+        // 上がったら知らせ「投稿しました　カードにする」。押すと共有カード。
+        // run 1511 の絵: 120d（閉じた直後）にはもう知らせが出ていたが、120d と記録のあとに知らせを見つけ、
+        // もう1枚撮ってから押す間に6秒の知らせが消え、120e はホームのまま（カードも知らせも無い）だった。
+        // **見つけたらすぐ押す。記録は押したあと**（知らせの絵は、出ていれば 120d に写る）
         let makeCard = app.buttons["toast.action"].firstMatch
-        if makeCard.waitForExistence(timeout: 60) {
-            shoot(app, extraArguments.isEmpty ? "120d3-投稿（投稿しました　カードにする）" : "120d4-投稿（知らせ・大きい文字）")
-            makeCard.tap()
-        }
+        let found = makeCard.waitForExistence(timeout: 60)
+        if found { makeCard.tap() }
+        print("[sendingShot] uploadOpen=\(submit.exists) toast=\(found)")
         let header = app.descendants(matching: .any)["postedCard.header"].firstMatch
         let shown = header.waitForExistence(timeout: 60)
         // カードの絵ができるまで待つ（「カードを共有」が押せるようになる）

@@ -98,8 +98,12 @@ final class CreateFlowLibraryTests: XCTestCase {
         // 推定で直さず、知らせの順を数で残す（`createflow.probe`）
         Thread.sleep(forTimeInterval: 1.5)
         let probe = app.descendants(matching: .any)["createflow.probe"].firstMatch
-        note("切り替えの順（投稿に戻した後）", "switcher=\(toStory.exists) probe=\((probe.value as? String) ?? "none")")
+        let backLog = (probe.value as? String) ?? "none"
+        note("切り替えの順（投稿に戻した後）", "switcher=\(toStory.exists) probe=\(backLog)")
         XCTAssertTrue(toStory.exists && toPost.exists, "ストーリーから投稿に戻したら、下の「投稿 | ストーリー」が消えた")
+        // 知らせに送り手（どの切り替えの画面か）が付いて記録される（run 1511 は送り手の無い `note:0` が最後に届いた）
+        XCTAssertTrue(backLog.contains("select:post") && backLog.contains("note:post:1"),
+                      "投稿に戻したあと、投稿の画面からの「一覧」の知らせが記録に無い: \(backLog)")
 
         // 4. 1枚押す → そのまま欄の段（投稿 → 写真 の2回）
         items.element(boundBy: 0).tap()
@@ -158,14 +162,16 @@ final class CreateFlowLibraryTests: XCTestCase {
         var closedAt: Double?
         var ringAt: Double?
         var cardAt: Double?
-        while Date().timeIntervalSince(tapped) < 90, cardAt == nil {
+        // run 1511: 押した 0.15 秒後の1回目の見回りで「投稿する」がまだ在り、同じ回で輪と知らせも見つかって
+        // （ring=0.00 card=0.00）見回りが終わり、閉じた時刻を取り逃がしていた。閉じた時刻と知らせの両方がそろうまで見る
+        while Date().timeIntervalSince(tapped) < 90, cardAt == nil || closedAt == nil {
             let t = Date().timeIntervalSince(tapped)
             if closedAt == nil, !submit.exists { closedAt = t }
             if ringAt == nil, ring.exists {
                 ringAt = t
                 shoot(app, "40k-投稿（送信中・ホームの輪）")
             }
-            if makeCard.exists { cardAt = t }
+            if cardAt == nil, makeCard.exists { cardAt = t }
             Thread.sleep(forTimeInterval: 0.25)
         }
         note("送ったあとの時刻", "closed=\(closedAt.map { String(format: "%.2f", $0) } ?? "none")"

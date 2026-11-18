@@ -1094,9 +1094,9 @@ struct StoryComposerView: View {
         // 投稿の入口の中なら、一覧を見ている間を知らせる（下の「投稿 | ストーリー」を出す・払って替える・2026-11-18 案 B1）
         .onAppear {
             libraryFeed.refresh()
-            createFlow?.noteLibrary(true)
+            createFlow?.noteLibrary(true, from: .story)
         }
-        .onDisappear { createFlow?.noteLibrary(false) }
+        .onDisappear { createFlow?.noteLibrary(false, from: .story) }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { libraryFeed.refresh() }
         }
