@@ -5673,6 +5673,14 @@ final class ScreenshotTests: XCTestCase {
         gear.tap()
         let push = app.descendants(matching: .any)["settings.push"].firstMatch
         guard push.waitForExistence(timeout: 10) else { return XCTFail("設定が開かない") }
+        // 2026-11-18 判断（案 B7）: お知らせの節がいちばん上（Pro の節より上）。数は文で残す
+        let proRow = app.buttons["settings.pro"].firstMatch
+        let order = "measured settingsTop push=\(push.frame) pro=\(proRow.exists ? String(describing: proRow.frame) : "-")"
+        print(order)
+        XCTContext.runActivity(named: order) { _ in }
+        if proRow.exists {
+            XCTAssertLessThan(push.frame.minY, proRow.frame.minY, "お知らせの入切が Pro の節より下にある")
+        }
         // 2026-11-12（案 第10章）: 「旅の道具」の節は ≡ メニューへ移した。設定に残っていないこと
         for id in ["settings.trunk", "settings.camper", "settings.passBook", "settings.albums", "settings.plans"] {
             XCTAssertFalse(app.buttons[id].firstMatch.exists, "設定に \(id) が残っている（≡ へ移した）")
@@ -5771,6 +5779,30 @@ final class ScreenshotTests: XCTestCase {
         help.tap()
         Thread.sleep(forTimeInterval: 4)
         shoot(app, "102i-使い方（アプリの中の Safari）")
+    }
+
+    /// **お知らせ（ベル）の歯車 → お知らせの入切だけの画面**（2026-11-18 判断・案 B7）。前は設定のいちばん上（Pro の節）が開いた。
+    /// 開いた画面に入切があり、Pro の行（設定のいちばん上の画面にだけある）が無いことを確かめる
+    func testCapturesNotificationSettingsFromBell() {
+        let app = launchTrunk([])
+        let bell = app.buttons["header.notifications"].firstMatch
+        guard bell.waitForExistence(timeout: 20) else { return XCTFail("見出しのお知らせが無い") }
+        bell.tap()
+        let gear = app.buttons["notifications.settings"].firstMatch
+        guard gear.waitForExistence(timeout: 15) else { return XCTFail("お知らせに歯車が無い") }
+        // 歯車の当たりは数だけ残す（run 1461・1464 で高さ 36.0。この枝より前からの形で、label を 44 に広げても 36 のままだった。
+        // 原因を確かめてから別に直す）
+        let gearLine = "measured notificationsGear frame=\(gear.frame)"
+        print(gearLine)
+        XCTContext.runActivity(named: gearLine) { _ in }
+        gear.tap()
+        let push = app.descendants(matching: .any)["settings.push"].firstMatch
+        guard push.waitForExistence(timeout: 10) else { return XCTFail("歯車でお知らせの入切が開かない") }
+        XCTAssertFalse(app.buttons["settings.pro"].firstMatch.exists, "歯車で設定のいちばん上（Pro の節）が開いた")
+        XCTAssertFalse(app.buttons["settings.deleteAccount"].firstMatch.exists, "歯車で設定の全部が開いた")
+        XCTAssertGreaterThanOrEqual(push.frame.height, 44, "お知らせの入切が 44pt 未満")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "102j-お知らせの設定（ベルの歯車から）")
     }
 
     /// **旅のトランク**（Pro の見本）: トランク → 手に取って回す → 手持ち（選んだ）→ 作り直し →
@@ -8147,30 +8179,14 @@ final class ScreenshotTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(edit.frame.maxX, width - 16 - 2, "\(suffix): 「編集」が右端にない")
             XCTAssertGreaterThanOrEqual(edit.frame.height, 44, "\(suffix): 「編集」の当たりが 44pt 未満")
             XCTAssertEqual(edit.label, "プロフィールを編集", "\(suffix): 読み上げが変わった")
-            // 2026-11-16（A3）: 右上は 吹き出し・ベル・歯車 の順に 44pt のガラスの丸（数は文で残す）
-            let bubble = app.buttons["mypage.messages"].firstMatch
-            let bell = app.buttons["mypage.notifications"].firstMatch
-            let gear = app.buttons["設定"].firstMatch
-            let line = "measured myPageTopButtons \(suffix) bubble=\(bubble.exists ? String(describing: bubble.frame) : "-") "
-                + "bell=\(bell.exists ? String(describing: bell.frame) : "-") gear=\(gear.exists ? String(describing: gear.frame) : "-") "
-                + "stats=\(stats.frame)"
-            print(line)
-            XCTContext.runActivity(named: line) { _ in }
-            XCTAssertTrue(bubble.exists && bell.exists, "\(suffix): マイページに吹き出しとベルが無い")
-            if bubble.exists, bell.exists, gear.exists {
-                XCTAssertLessThan(bubble.frame.maxX, bell.frame.minX + 1, "\(suffix): 吹き出しがベルの左に無い")
-                XCTAssertLessThan(bell.frame.maxX, gear.frame.minX + 1, "\(suffix): ベルが歯車の左に無い")
-                XCTAssertLessThan(abs(bubble.frame.midY - gear.frame.midY), 2, "\(suffix): 丸の高さがそろっていない")
-                XCTAssertGreaterThanOrEqual(bubble.frame.height, 44, "\(suffix): 吹き出しの当たりが 44pt 未満")
-                XCTAssertGreaterThanOrEqual(bell.frame.width, 44, "\(suffix): ベルの当たりが 44pt 未満")
-            }
-            // 額縁も無い回: 2026-11-16（A3）から顔の段は右上の丸の並びの下から（数が丸に潜らない）
+            // 額縁も無い回: 顔の段が右上の設定の丸と同じ高さ。数は丸の下に潜らない
             if extra.contains("-JPPreviewBareHeader") {
                 XCTAssertFalse(app.descendants(matching: .any)["mypage.coverFrame"].firstMatch.exists,
                                "\(suffix): 額縁が出ている")
+                let gear = app.buttons["設定"].firstMatch
                 if gear.exists {
-                    XCTAssertGreaterThanOrEqual(stats.frame.minY, gear.frame.maxY - 1,
-                                                "\(suffix): 数が右上の丸に重なっている（\(stats.frame.minY) / \(gear.frame.maxY)）")
+                    XCTAssertLessThanOrEqual(stats.frame.maxX, gear.frame.minX + 1,
+                                             "\(suffix): 数が設定の丸の下に潜っている（\(stats.frame.maxX) / \(gear.frame.minX)）")
                 }
             }
             shoot(app, "108-マイページ（見出しの並び・\(suffix)）")

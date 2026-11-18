@@ -7,6 +7,8 @@ import UIKit
 /// 2. 「前の晩に知らせる」の入切: プロフィールの `lightAlert`（既定 受け取る）を部分更新で送る
 ///
 /// **Pro でなければ、どちらを押しても Pro の案内**（入切は動かさない）。
+/// 2026-11-18 判断（案 B7）: **Pro でない人には入切をオフに見せる**（`LightAlertToggleRule.shownOn`）。
+/// 前は既定の「受け取る」のままオンに見え、押すと Pro の案内が出た——オンなのに何も届かない形だった
 /// プロフィールが読めていない（圏外など）ときは、一覧を開く行だけ出す（Pro かは一覧が 403 で知る）。
 ///
 /// 2026-10-09 判断: 設定の板（Settings）ではこの入切は「お知らせ」の節にある（種類ごとの入切が並ぶ節）。
@@ -83,6 +85,8 @@ struct LightAlertSettingsRows: View {
                               "If a wishlist place looks set for a clear, glowing sunrise, we\u{2019}ll tell you the evening before."),
                     isOn: binding)
             .disabled(isSaving)
+            // Pro でない人は押すと Pro の案内（オフに見せる・押す前に何が起きるか言う）
+            .accessibilityHint(knownNotPro ? L("Pro の案内を開きます", "Opens the Pro page") : "")
             .accessibilityIdentifier("settings.lightAlert")
         // 🔴 **通知が届かない端末では、オンに見えて何も来なかった**（既定がオン・2026-10-11）。
         // 板 Settings の「通知が切られています」の行と同じ形で、押すと直せる所へ進む
@@ -134,7 +138,7 @@ struct LightAlertSettingsRows: View {
 
     /// 押された瞬間だけ受ける（`SettingsView.pushBinding` と同じ理由——画面から戻したときに送り直さない）
     private var binding: Binding<Bool> {
-        Binding(get: { wants }, set: { on in
+        Binding(get: { LightAlertToggleRule.shownOn(wants: wants, knownNotPro: knownNotPro) }, set: { on in
             guard !isSaving else { return }
             guard !knownNotPro else {
                 openPaywall()
@@ -160,6 +164,16 @@ struct LightAlertSettingsRows: View {
     private func openPaywall() {
         deliveredAtPaywall = store.deliveredRevision
         showPaywall = true
+    }
+}
+
+/// 「前の晩に知らせる」の入切の見え方（2026-11-18 判断・案 B7）
+enum LightAlertToggleRule {
+    /// オンに見せるか。**Pro でないと分かっている人には、届かないのでオンに見せない**
+    /// （プロフィールの `lightAlert` の既定は「受け取る」なので、そのまま映すとオンに見えた）。
+    /// プロフィールの値は変えない（Pro になったら、前に選んだ値のまま届く）
+    static func shownOn(wants: Bool, knownNotPro: Bool) -> Bool {
+        wants && !knownNotPro
     }
 }
 
