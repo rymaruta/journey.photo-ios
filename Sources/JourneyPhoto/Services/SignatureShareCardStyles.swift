@@ -189,7 +189,7 @@ extension SignatureShareCardRenderer {
             }
 
             // 右: 地図
-            if let coordinate = credit.coords {
+            if let coordinate = credit.mapCoordinate {
                 let placeText = (credit.placeLines + [credit.location ?? ""]).joined(separator: ", ")
                 CountryOutline.drawAtLocation(pin: coordinate, place: placeText,
                                               in: layout.mapRect, color: brass, context: cg)
@@ -224,7 +224,7 @@ extension SignatureShareCardRenderer {
                             taglineSize: 24, addressColor: .white)
 
             // 右: 地図。上は写真の上（黒 69% から）なので白で描く（2026-11-14・真鍮は黒地の上だけ）
-            if let coordinate = credit.coords {
+            if let coordinate = credit.mapCoordinate {
                 let placeText = (credit.placeLines + [credit.location ?? ""]).joined(separator: ", ")
                 CountryOutline.drawAtLocation(pin: coordinate, place: placeText,
                                               in: layout.mapRect, color: .white, context: cg)

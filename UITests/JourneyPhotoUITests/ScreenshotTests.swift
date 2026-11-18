@@ -11851,7 +11851,8 @@ final class ScreenshotTests: XCTestCase {
 
     /// **共有カードの書き出し画像**（2026-11-14 owner「SNS に載せる、はちゃんとデザイン壊れてないか厳しく確認して」）。
     /// 見本の画面（`-JPPreviewShareCards YES`・`ShareCardGalleryPreview`）で、12 の型 × 3つの比 × ふつう／長い中身の
-    /// 書き出し画像を1枚ずつ撮る（画像の所だけ）。数で測る点検は単体テスト `ShareCardAuditTests`。出なければ撮らずに抜ける
+    /// 書き出し画像を1枚ずつ撮る（画像の所だけ）。数で測る点検は単体テスト `ShareCardAuditTests`。出なければ撮らずに抜ける。
+    /// 2026-11-19: 最後に、座標の無い写真（「金沢市, 石川県」・県の代表点の地図）を地図を描く5つの型 × 3つの比で撮る
     func testCapturesShareCardDesigns() {
         let app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
@@ -11862,7 +11863,7 @@ final class ScreenshotTests: XCTestCase {
         let next = app.buttons["shareCardGallery.next"].firstMatch
         guard label.waitForExistence(timeout: 30) else { return }
         var index = 0
-        while index < 80 {
+        while index < 100 {
             let ready = NSPredicate(format: "label BEGINSWITH %@ AND label ENDSWITH %@", "\(index) ", "ready")
             let done = XCTNSPredicateExpectation(predicate: ready, object: label)
             guard XCTWaiter().wait(for: [done], timeout: 30) == .completed, card.exists else { break }
