@@ -45,12 +45,15 @@ enum PhotoColorCard {
         let textTop: CGFloat
         /// 字の段の下端がこれを越えない（ストーリーは下 20% の返信欄の上、投稿は下から短い辺の 6%）
         let textBottom: CGFloat
-        /// 写真の上端はこれより下（投稿は 72・模型の `tm`。ストーリーは 0）
+        /// 写真の上の余白の下限（`photoTopMinimum`・108）
         let photoTop: CGFloat
+        /// 写真の上の余白を、左右の余白と同じだけ取るか（ストーリー）。投稿は縦に余りが無いので下限だけ
+        var matchesSides = false
 
         /// ストーリー（1080×1920）
         static let story = Frame(height: 1920, textTop: 1920 * ShareCardSafeArea.storyTopFraction,
-                                 textBottom: 1920 * (1 - ShareCardSafeArea.storyBottomFraction), photoTop: 0)
+                                 textBottom: 1920 * (1 - ShareCardSafeArea.storyBottomFraction),
+                                 photoTop: PhotoColorCard.photoTopMinimum, matchesSides: true)
 
         /// 投稿の比。9:16 はストーリーと同じ線（字の段は 4:5 のフィードの切り取りの内側にも入る・試験で見る）。
         /// 1:1 は模型に無いので 4:5 と同じ決め方（短い辺の 6%・2026-11-18 判断）
@@ -58,7 +61,7 @@ enum PhotoColorCard {
             if ratio == .story { return story }
             let height = (PhotoColorCard.width / CGFloat(ratio.rawValue)).rounded()
             let edge = min(PhotoColorCard.width, height) * ShareCardSafeArea.edgeFraction
-            return Frame(height: height, textTop: edge, textBottom: height - edge, photoTop: 72)
+            return Frame(height: height, textTop: edge, textBottom: height - edge, photoTop: PhotoColorCard.photoTopMinimum)
         }
     }
 
@@ -69,22 +72,34 @@ enum PhotoColorCard {
         let text: CGRect
     }
 
+    /// 写真の上の余白の下限。左右の余白の下限（(1080 − 864) ÷ 2）と同じ 108。
+    /// **2026-11-18 判断（owner が暦に「写真の上に余白が無くてバランスが悪い」）:** 前は投稿 72（模型の `tm`）、
+    /// ストーリー 0 で、ストーリーの縦長 9:16 の写真は絵の上の端に付き、投稿の縦長は上 72・左右 158 だった
+    static let photoTopMinimum: CGFloat = 108
+
+    /// 写真の上の余白。ストーリーは左右の余白と同じ（下限 108・展示の壁のように上と左右をそろえる）、投稿は 108
+    static func topMargin(photoWidth w: CGFloat, in frame: Frame) -> CGFloat {
+        frame.matchesSides ? max(frame.photoTop, (width - w) / 2) : frame.photoTop
+    }
+
     /// 写真（幅 ÷ 高さ = `aspect`）を切らずに置く（模型の `lay`）。
-    /// - 幅の上限 864、高さの上限は「字の下端の線 − 段 140 − 間 56 − 写真の上の余白」。超えるなら高さを上限にして幅を縮め、左右の真ん中
-    /// - 写真＋間＋段をひとまとまりにして上下の真ん中。段の下端が線を越えるなら上げる（写真の上端は余白まで）
+    /// - 幅の上限 864。高さは、上の余白（`topMargin`）＋写真＋間 56＋段 140 が字の下端の線に収まるいちばん大きい値
+    ///   （0.5px 刻み。ストーリーの上の余白は写真の幅で変わるので順に見る）。左右の真ん中
+    /// - 写真＋間＋段をひとまとまりにして上下の真ん中。段の下端が線を越えるなら上げる（写真の上端は上の余白まで）
     /// - 段の上端が上の線より上なら下げる
     static func place(aspect: CGFloat, in frame: Frame) -> Placement {
         let a = aspect.isFinite && aspect > 0 ? aspect : 1
-        var w = photoMaxWidth, h = photoMaxWidth / a
-        let maxH = max(1, frame.textBottom - blockHeight - gap - frame.photoTop)
-        if h > maxH {
-            h = maxH
-            w = h * a
+        var h = photoMaxWidth / a
+        while h > 1, topMargin(photoWidth: min(photoMaxWidth, h * a), in: frame) + h + gap + blockHeight
+                > frame.textBottom + 0.001 {
+            h -= 0.5
         }
+        let w = min(photoMaxWidth, h * a)
+        let top = topMargin(photoWidth: w, in: frame)
         let group = h + gap + blockHeight
         var y = (frame.height - group) / 2
         if y + group > frame.textBottom { y = frame.textBottom - group }
-        if y < frame.photoTop { y = frame.photoTop }
+        if y < top { y = top }
         if y + h + gap < frame.textTop { y = frame.textTop - h - gap }
         let photo = CGRect(x: (width - w) / 2, y: y, width: w, height: h)
         let textWidth = max(w, textMinWidth)

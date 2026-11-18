@@ -32,7 +32,9 @@ final class PhotoColorCardTests: XCTestCase {
         XCTAssertEqual(box(3.0 / 4.0, .story), [864, 1152, 188, 1396])
         XCTAssertEqual(box(3.0 / 2.0, .story), [864, 576, 574, 1206])
         XCTAssertEqual(box(1, .story), [864, 864, 430, 1350])
-        XCTAssertEqual(box(3.0 / 4.0, .post(.portrait)), [763, 1017, 72, 1145])
+        XCTAssertEqual(box(9.0 / 16.0, .story), [626, 1113, 227, 1396])
+        XCTAssertEqual(box(3.0 / 4.0, .post(.portrait)), [736, 981, 108, 1145])
+        XCTAssertEqual(box(3.0 / 4.0, .post(.square)), [533, 711, 108, 875])
         XCTAssertEqual(box(3.0 / 2.0, .post(.portrait)), [864, 576, 289, 921])
         XCTAssertEqual(box(1, .post(.portrait)), [864, 864, 145, 1065])
         XCTAssertEqual(C.Frame.story.textTop, 268.8, accuracy: 0.001)
@@ -81,6 +83,21 @@ final class PhotoColorCardTests: XCTestCase {
         // ストーリーの線はインスタの上 14%・下 20%
         XCTAssertEqual(C.Frame.story.textTop, 1920 * 0.14, accuracy: 0.001)
         XCTAssertEqual(C.Frame.story.textBottom, 1920 * 0.80, accuracy: 0.001)
+    }
+
+    /// 写真の上に余白（2026-11-18 owner が暦に「写真の上に余白が無くてバランスが悪い」）:
+    /// どの形・置き場でも 108 以上（左右の余白の下限と同じ）。ストーリーは左右の余白以上
+    func testPhotoHasATopMargin() {
+        for (frameName, frame, _) in Self.frames {
+            for (name, aspect) in Self.aspects {
+                let p = C.place(aspect: aspect, in: frame).photo
+                let label = "\(frameName) \(name) photo=\(p)"
+                XCTAssertGreaterThanOrEqual(p.minY, 108 - 0.001, label)
+                if frame == .story {
+                    XCTAssertGreaterThanOrEqual(p.minY, p.minX - 0.001, "\(label) 上の余白が左右より狭い")
+                }
+            }
+        }
     }
 
     /// 細い縦長の写真でも、字の段は 600 の幅を持つ（撮影地が入る）
