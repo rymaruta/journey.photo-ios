@@ -436,6 +436,25 @@ enum TravelStory {
                          foot: foot)
     }
 
+    /// 写真に重ねる搭乗券の**小さな半券**の字（2026-11-18 判断・owner「写真が主役であることを考慮してほしい。比率考えた方がいい」。
+    /// 案の頁「共有の絵の新しい案」の推奨 1）。残すのは JOURNEY PASS（描く側の決まった字）・場所・日付・DAY だけ。
+    /// 外したもの: 場面の眉（TO・NOW・FROM）・大きなラテン文字の地名・PASSENGER（載せる本人の名前はインスタに出る）・
+    /// ただいまの PHOTOS と DISTANCE・大きなバーコード。全部を 11pt 以上で残すと券が絵の 20% を超え、写真より目立つ。
+    /// ステッカー（`pass`）は今のまま
+    struct PassStubTexts: Equatable {
+        /// 場所（明朝）。出さない・分からないは「旅の途中」（券面の `local` と同じ）
+        let place: String
+        /// 日付。出さないを選んだら nil（行に字を置かない）
+        let date: String?
+        /// 何日目（券面の DAY と同じ数）。分からなければ出さない
+        let day: Int?
+    }
+
+    static func passStub(_ facts: Facts, choice: Choice, texts: Texts) -> PassStubTexts {
+        let full = pass(facts, choice: choice, texts: texts)
+        return PassStubTexts(place: full.local, date: texts.date, day: full.day)
+    }
+
     /// 切手の下の右（明朝）。旅の何日目か、分からなければ出さない
     static func stampCaption(_ texts: Texts) -> String? { dayLabel(texts.tripDay) }
 
@@ -466,9 +485,7 @@ enum TravelStory {
             CGRect(x: 0, y: topSafe, width: canvas.width, height: canvas.height - topSafe - bottomSafe)
         }
 
-        // 搭乗券
-        static let passInset = u(6)
-        static let passBottom = u(25)
+        // 搭乗券（ステッカーの券面）
         static let passStickerWidth = u(84)
         static let passStickerAngle: CGFloat = -4
         static let passCorner = u(3)
@@ -477,10 +494,70 @@ enum TravelStory {
         static let passBodyHeight = u(37)
         static let passStubHeight = u(17)
         static var passHeight: CGFloat { passBodyHeight + passStubHeight }
-        /// 写真に重ねたときの券の枠
-        static var passRect: CGRect {
-            CGRect(x: passInset, y: canvas.height - passBottom - passHeight,
-                   width: canvas.width - passInset * 2, height: passHeight)
+
+        // 写真に重ねる搭乗券（2026-11-18 判断・案の頁「共有の絵の新しい案」の推奨 1「写真をいちばん大きく、小さな半券を添える」）。
+        // 写真は切らずに、9:16 に置ける最大の大きさ（幅か高さがいっぱい）。地は同じ写真をぼかしたもの
+        // （`SharedPhotoStoryBackdrop`）。半券は写真の下に入れば重ねずに下へ、入らない（縦長）ときは写真の左下の隅に重ねる。
+        // 前は写真を絵いっぱいに敷いて切り（横長 3:2 は幅の 37.5% しか見えない）、券が絵の 26.7% を取っていた
+
+        /// 半券の大きさ。模型は 470 × 220。DAY を日付の行に足すため幅を 50 足した（絵の 5.5%・目安の 8% 以下。
+        /// 字はインスタの 393pt 幅で JOURNEY PASS 11.3pt・日付と DAY 13.1pt・場所 21.8pt）
+        static let passStubSize = CGSize(width: 520, height: 220)
+        /// 半券の字の大きさ（画素）。1080 の絵がインスタで 393pt 幅に出ると ×0.364。
+        /// 眉（JOURNEY PASS・DAY）31 → 11.3pt、日付と DAY の数 36 → 13.1pt、場所 60 → 21.8pt（長い名前は 0.6 倍の 36 まで縮む）
+        static let passStubEyebrowSize: CGFloat = 31
+        static let passStubValueSize: CGFloat = 36
+        static let passStubPlaceSize: CGFloat = 60
+        static let passStubCorner: CGFloat = 18
+        static let passStubNotch: CGFloat = 16
+        /// 写真と半券の間（写真の下に置くとき）
+        static let passStubGap: CGFloat = 40
+        /// 縦長で写真に重ねるとき、半券が写真の下端から上へ入る長さの上限（模型の 100）
+        static let passStubOverlap: CGFloat = 100
+        /// 半券の左の端（字の余白の決まり 64.8 = 短い辺の 6%）と、写真の左端からの内側
+        static let passStubMinX: CGFloat = u(6)
+        static let passStubInset: CGFloat = 40
+
+        /// 写真と半券の置き場所
+        struct PassPlacement: Equatable {
+            /// 写真の枠（写真と同じ縦横比・絵からはみ出さない＝切らない）
+            let photo: CGRect
+            /// 半券の枠
+            let stub: CGRect
+            /// 半券が写真に重なっているか
+            var overlaps: Bool { photo.intersects(stub) }
+        }
+
+        /// 写真を収める（切らない）枠と半券の枠。写真の形だけで決まる（Linux の試験で見る）
+        static func passPlacement(imageSize: CGSize) -> PassPlacement {
+            let aspect = imageSize.width > 0 && imageSize.height > 0 ? imageSize.width / imageSize.height : 1
+            // 写真を収める: 幅いっぱい、高すぎれば高さいっぱい（scale = min）
+            var width = canvas.width
+            var height = width / aspect
+            if height > canvas.height {
+                height = canvas.height
+                width = height * aspect
+            }
+            let x = (canvas.width - width) / 2
+            let stub = passStubSize
+            let block = height + passStubGap + stub.height
+            // 写真と半券の塊を縦の真ん中に。下の送る欄に掛かるなら上へ寄せる
+            var top = (canvas.height - block) / 2
+            if top + block > safeRect.maxY { top = safeRect.maxY - block }
+            let photoY: CGFloat
+            let stubY: CGFloat
+            if top >= 0, top + height + passStubGap >= safeRect.minY {
+                // 写真の下に入る（横長・正方形）: 重ねない
+                photoY = top
+                stubY = top + height + passStubGap
+            } else {
+                // 入らない（縦長）: 半券は隠れない所の下端、写真はその隅に少しだけ掛かる所まで下げる
+                stubY = safeRect.maxY - stub.height
+                photoY = max(0, min((canvas.height - height) / 2, stubY + passStubOverlap - height))
+            }
+            let stubX = max(passStubMinX, x + passStubInset)
+            return PassPlacement(photo: CGRect(x: x, y: photoY, width: width, height: height),
+                                 stub: CGRect(x: stubX, y: stubY, width: stub.width, height: stub.height))
         }
 
         // 切手と消印

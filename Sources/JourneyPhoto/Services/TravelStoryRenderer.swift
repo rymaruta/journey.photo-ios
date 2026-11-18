@@ -34,8 +34,8 @@ enum TravelStoryRenderer {
         let sticker = choice.effectiveMode == .sticker
         switch choice.kind {
         case .pass:
-            let pass = TravelStory.pass(facts, choice: choice, texts: texts)
-            return sticker ? passSticker(pass) : passOnPhoto(lead, pass: pass)
+            if sticker { return passSticker(TravelStory.pass(facts, choice: choice, texts: texts)) }
+            return passOnPhoto(lead, stub: TravelStory.passStub(facts, choice: choice, texts: texts))
         case .stamp:
             return sticker ? stampSticker(lead, texts: texts) : stampOnPaper(lead, texts: texts)
         case .film:
@@ -179,12 +179,6 @@ extension TravelStoryRenderer {
         SignatureShareCardRenderer.drawPhotoFill(image, in: rect, context: cg)
     }
 
-    /// 縦の黒のぼかし（`SignatureShareCardRenderer.drawShade` と同じ）
-    static func shade(_ cg: CGContext, from y0: CGFloat, to y1: CGFloat, alpha0: CGFloat, alpha1: CGFloat) {
-        SignatureShareCardRenderer.drawShade(cg, from: y0, to: y1,
-                                             stops: [(0, alpha0), (1, alpha1)])
-    }
-
     /// 回して描く（中心で回す）
     static func rotated(_ cg: CGContext, around center: CGPoint, degrees: CGFloat, _ draw: () -> Void) {
         cg.saveGState()
@@ -197,12 +191,97 @@ extension TravelStoryRenderer {
 
     // MARK: - 1 搭乗券（本体と半券。間はミシン目と両端の切り欠き・紙の粒）
 
-    static func passOnPhoto(_ photo: UIImage, pass: TravelStory.PassTexts) -> Output {
+    /// 写真に重ねる回（2026-11-18 判断・owner「写真が主役であることを考慮してほしい」）。
+    /// 写真は**切らずに**収め（`Layout.passPlacement`）、地は同じ写真をぼかして暗くしたもの（`SharedPhotoStoryBackdrop`）、
+    /// 小さな半券（場所・日付・DAY）を写真の下か左下の隅に添える。前は写真を絵いっぱいに敷いて切っていた（`fill`）
+    static func passOnPhoto(_ photo: UIImage, stub: TravelStory.PassStubTexts) -> Output {
         jpeg { cg in
-            fill(photo, in: CGRect(origin: .zero, size: Layout.canvas), cg)
-            // 下 62% を黒 66% へ（模型の .shade-b）
-            shade(cg, from: Layout.canvas.height * 0.38, to: Layout.canvas.height, alpha0: 0, alpha1: 0.66)
-            drawPass(pass, in: Layout.passRect, cg)
+            let full = CGRect(origin: .zero, size: Layout.canvas)
+            let place = Layout.passPlacement(imageSize: photo.size)
+            SharedPhotoStoryCard.drawBackdrop(photo, card: place.photo, in: full, context: cg)
+            // 写真の周りの薄い影（模型 box-shadow 0 0 6cqw 黒 35%）で地から浮かせる
+            cg.saveGState()
+            cg.setShadow(offset: .zero, blur: u(6), color: UIColor.black.withAlphaComponent(0.35).cgColor)
+            cg.setFillColor(UIColor.black.cgColor)
+            cg.fill(place.photo)
+            cg.restoreGState()
+            // 枠は写真と同じ縦横比なので、そのまま描けば切れない
+            photo.draw(in: place.photo)
+            drawPassStub(stub, in: place.stub, cg)
+        }
+    }
+
+    /// 半券の形。角丸の四角から、左右の真ん中を半円で抜く（模型の切り欠き）
+    static func passStubShape(_ rect: CGRect) -> CGPath {
+        let path = CGMutablePath()
+        path.addRoundedRect(in: rect, cornerWidth: Layout.passStubCorner, cornerHeight: Layout.passStubCorner)
+        let n = Layout.passStubNotch
+        path.addEllipse(in: CGRect(x: rect.minX - n, y: rect.midY - n, width: n * 2, height: n * 2))
+        path.addEllipse(in: CGRect(x: rect.maxX - n, y: rect.midY - n, width: n * 2, height: n * 2))
+        return path
+    }
+
+    /// 小さな半券（模型 470 × 220 の寸法を 1080 幅の画素のまま。幅だけ DAY の分 520 に）。
+    /// 左に JOURNEY PASS・場所（明朝）・日付と DAY、右に縦のミシン目と飾りのバーコード
+    static func drawPassStub(_ stub: TravelStory.PassStubTexts, in rect: CGRect, _ cg: CGContext) {
+        let shape = passStubShape(rect)
+        // 影（模型 drop-shadow 0 12 28 黒 45%）
+        cg.saveGState()
+        cg.setShadow(offset: CGSize(width: 0, height: 12), blur: 28, color: UIColor.black.withAlphaComponent(0.45).cgColor)
+        cg.addPath(shape)
+        cg.setFillColor(paper.cgColor)
+        cg.fillPath(using: .evenOdd)
+        cg.restoreGState()
+        cg.saveGState()
+        cg.addPath(shape)
+        cg.clip(using: .evenOdd)
+        grain(cg, in: rect, seed: 11)
+        cg.restoreGState()
+
+        let left = rect.minX + 40
+        let perfX = rect.maxX - 92
+        let column = perfX - 8 - left
+        // 上: JOURNEY PASS（眉・墨 62%）。字の大きさとインスタでの pt は `Layout.passStubEyebrowSize` の注記
+        let eyebrow = sans(Layout.passStubEyebrowSize, .heavy)
+        text("JOURNEY PASS", font: eyebrow, color: ink.withAlphaComponent(0.62), kern: 0.2,
+             at: CGPoint(x: left, y: rect.minY + 30), maxWidth: column)
+        // 真ん中: 場所（明朝。長ければ 0.6 倍まで縮める）
+        text(stub.place, font: mincho(Layout.passStubPlaceSize), color: ink, at: CGPoint(x: left, y: rect.minY + 66), maxWidth: column)
+        // 下: 日付と、右に DAY（眉の DAY と数）
+        let value = sans(Layout.passStubValueSize, .bold, digits: true)
+        let rowY = rect.minY + 150
+        if let date = stub.date {
+            text(date, font: value, color: ink, at: CGPoint(x: left, y: rowY), maxWidth: column)
+        }
+        if let day = stub.day {
+            let number = "\(day)"
+            let numberWidth = (number as NSString).size(withAttributes: [.font: value]).width
+            let numberX = left + column - numberWidth
+            text(number, font: value, color: ink, at: CGPoint(x: numberX, y: rowY))
+            let key = sans(Layout.passStubEyebrowSize, .bold)
+            let keyText = "DAY"
+            let keyWidth = (keyText as NSString).size(withAttributes: [.font: key, .kern: key.pointSize * 0.18]).width
+            // 眉の DAY は数と下をそろえる
+            text(keyText, font: key, color: ink.withAlphaComponent(0.62), kern: 0.18,
+                 at: CGPoint(x: numberX - 10 - keyWidth, y: rowY + value.ascender - key.ascender))
+        }
+        // ミシン目（縦の点の列）
+        cg.setFillColor(UIColor.black.withAlphaComponent(0.34).cgColor)
+        var y = rect.minY + 22
+        while y < rect.maxY - 22 {
+            cg.fillEllipse(in: CGRect(x: perfX, y: y + 7, width: 4, height: 4))
+            y += 18
+        }
+        // 飾りのバーコード（縦に積む横線）
+        cg.setFillColor(ink.cgColor)
+        let bar = CGRect(x: rect.maxX - 66, y: rect.minY + 40, width: 34, height: rect.height - 80)
+        var by = bar.minY
+        while by < bar.maxY {
+            for (start, end) in [(0.0, 4.0), (9.0, 16.0)] {
+                let y0 = by + CGFloat(start), y1 = min(bar.maxY, by + CGFloat(end))
+                if y1 > y0 { cg.fill(CGRect(x: bar.minX, y: y0, width: bar.width, height: y1 - y0)) }
+            }
+            by += 20
         }
     }
 

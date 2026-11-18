@@ -11877,4 +11877,34 @@ final class ScreenshotTests: XCTestCase {
         }
         XCTAssertGreaterThanOrEqual(index, 1, "共有カードの見本が出ない")
     }
+
+    /// **旅をストーリーにの搭乗券（写真に重ねる）を写真の形ごとに**（2026-11-18 owner「横長の写真の時見切れちゃう」
+    /// 「写真が主役であることを考慮してほしい」）。見本の画面（`-JPPreviewTravelPass YES`）で、アプリに入っている見本の写真を
+    /// 縦長 3:4・9:16・正方形・横長 3:2・16:9 に切って書き出した絵を1枚ずつ撮る。見本の利用者や他人の写真は使わない。
+    /// 寸法の点検は単体テスト（`TravelStoryTests` の `testPassPhotoIsNeverCropped…` など）。出なければ落とす
+    func testCapturesTravelStoryPassShapes() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewTravelPass", "YES"]
+        app.launch()
+        let label = app.staticTexts["shareCardGallery.label"].firstMatch
+        let card = app.images["shareCardGallery.card"].firstMatch
+        let next = app.buttons["shareCardGallery.next"].firstMatch
+        XCTAssertTrue(label.waitForExistence(timeout: 30), "搭乗券の見本の画面が出ない")
+        var shots = 0
+        for index in 0..<10 {
+            let ready = NSPredicate(format: "label BEGINSWITH %@ AND label ENDSWITH %@", "\(index) ", "ready")
+            let done = XCTNSPredicateExpectation(predicate: ready, object: label)
+            guard XCTWaiter().wait(for: [done], timeout: 30) == .completed, card.exists else { break }
+            let name = label.label.split(separator: " ").dropFirst().first.map(String.init) ?? "\(index)"
+            let shot = XCTAttachment(screenshot: card.screenshot())
+            shot.name = String(format: "131-旅をストーリーに（%02d %@）", index, name)
+            shot.lifetime = .keepAlways
+            add(shot)
+            shots += 1
+            guard next.isEnabled else { break }
+            next.tap()
+        }
+        XCTAssertEqual(shots, 5, "搭乗券の見本が写真の形の数だけ出ない")
+    }
 }

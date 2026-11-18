@@ -414,7 +414,6 @@ final class TravelStoryTests: XCTestCase {
         let safe = Lay.safeRect
         XCTAssertEqual(safe.minY, 1920 * 0.11, accuracy: 0.5)
         XCTAssertEqual(safe.maxY, 1920 * 0.88, accuracy: 0.5)
-        XCTAssertTrue(safe.contains(Lay.passRect), "搭乗券が送る欄に掛かる: \(Lay.passRect)")
         let stamp = Lay.rotatedBounds(Lay.stampRect, degrees: Lay.stampAngle)
         XCTAssertTrue(safe.contains(stamp), "切手が上の帯か下の欄に掛かる: \(stamp)")
         // 消印（切手の右上に掛ける）も上の帯に掛けない
@@ -433,7 +432,108 @@ final class TravelStoryTests: XCTestCase {
         XCTAssertEqual(Lay.u(100), Lay.canvas.width, "1cqw は幅の 1%")
         XCTAssertEqual(Lay.canvas.width / Lay.canvas.height, 9.0 / 16.0, accuracy: 0.0001, "比率は 9:16 に決め打ち")
         XCTAssertEqual(Lay.filmFrameHeight / Lay.filmFrameWidth, 0.75, accuracy: 0.0001, "コマは 4:3")
-        XCTAssertEqual(Lay.passRect.minX, Lay.u(6))
-        XCTAssertEqual(Lay.canvas.height - Lay.passRect.maxY, Lay.u(25))
+    }
+
+    // MARK: - 写真に重ねる搭乗券（2026-11-18・写真を切らずに収め、小さな半券を添える）
+
+    /// 縦長・横長・正方形・細長い写真の形（幅 / 高さ）
+    static let photoShapes: [(name: String, size: CGSize)] = [
+        ("縦長 9:16", CGSize(width: 1080, height: 1920)), ("縦長 3:4", CGSize(width: 3024, height: 4032)),
+        ("縦長 4:5", CGSize(width: 1080, height: 1350)), ("縦長 2:3", CGSize(width: 4000, height: 6000)),
+        ("正方形", CGSize(width: 2000, height: 2000)), ("横長 4:3", CGSize(width: 4032, height: 3024)),
+        ("横長 3:2", CGSize(width: 6000, height: 4000)), ("横長 16:9", CGSize(width: 1920, height: 1080)),
+        ("横長 2:1", CGSize(width: 4000, height: 2000)), ("縦長 1:3", CGSize(width: 1000, height: 3000)),
+        ("横長 3:1", CGSize(width: 3000, height: 1000)),
+    ]
+
+    /// 写真が切れない: 写真の枠が絵の中に収まり、縦横比は元のまま、幅か高さがいっぱい（置ける最大）
+    func testPassPhotoIsNeverCroppedAndAsLargeAsItFits() {
+        typealias Lay = TravelStory.Layout
+        let canvas = CGRect(origin: .zero, size: Lay.canvas)
+        for shape in Self.photoShapes {
+            let photo = Lay.passPlacement(imageSize: shape.size).photo
+            XCTAssertTrue(canvas.insetBy(dx: -0.01, dy: -0.01).contains(photo), "\(shape.name): 写真が絵からはみ出す（切れる）: \(photo)")
+            XCTAssertEqual(photo.width / photo.height, shape.size.width / shape.size.height, accuracy: 0.0001,
+                           "\(shape.name): 縦横比が変わった")
+            let fullWidth = abs(photo.width - canvas.width) < 0.01
+            let fullHeight = abs(photo.height - canvas.height) < 0.01
+            XCTAssertTrue(fullWidth || fullHeight, "\(shape.name): 幅も高さもいっぱいでない（置ける最大でない）: \(photo)")
+        }
+    }
+
+    /// 半券の大きさ: 絵の 8% 以下。ふだんの形（9:16 から 2:1 まで）では写真の 1/5 以下
+    func testPassStubIsSmallNextToThePhoto() {
+        typealias Lay = TravelStory.Layout
+        let canvasArea = Lay.canvas.width * Lay.canvas.height
+        for shape in Self.photoShapes {
+            let place = Lay.passPlacement(imageSize: shape.size)
+            let stubArea = place.stub.width * place.stub.height
+            XCTAssertLessThanOrEqual(stubArea / canvasArea, 0.08, "\(shape.name): 半券が絵の 8% を超える")
+            let aspect = shape.size.width / shape.size.height
+            guard aspect >= 9.0 / 16.0 - 0.001, aspect <= 2.0 + 0.001 else { continue }
+            XCTAssertLessThanOrEqual(stubArea, place.photo.width * place.photo.height / 5,
+                                     "\(shape.name): 半券が写真の 1/5 を超える")
+        }
+    }
+
+    /// 半券は写真の真ん中（縦横とも真ん中の半分）に重ならない。写真の下に入る形では写真に重ねない。
+    /// 重ねる形（縦長）は左下の隅で、隠すのは写真の 10% まで
+    func testPassStubKeepsOffTheMiddleOfThePhoto() {
+        typealias Lay = TravelStory.Layout
+        for shape in Self.photoShapes {
+            let place = Lay.passPlacement(imageSize: shape.size)
+            let photo = place.photo
+            let middle = photo.insetBy(dx: photo.width / 4, dy: photo.height / 4)
+            XCTAssertFalse(place.stub.intersects(middle), "\(shape.name): 半券が写真の真ん中に掛かる: \(place.stub) / \(middle)")
+            let aspect = shape.size.width / shape.size.height
+            if aspect >= 0.8 {
+                XCTAssertFalse(place.overlaps, "\(shape.name): 下に入るのに写真に重ねている")
+                XCTAssertGreaterThanOrEqual(place.stub.minY, photo.maxY + Lay.passStubGap - 0.01, "\(shape.name): 半券が写真の下にない")
+            } else {
+                XCTAssertLessThan(place.stub.midX, photo.midX, "\(shape.name): 重ねる半券が左にない")
+                XCTAssertGreaterThan(place.stub.midY, photo.midY, "\(shape.name): 重ねる半券が下にない")
+                let covered = place.stub.intersection(photo)
+                XCTAssertLessThanOrEqual(covered.width * covered.height / (photo.width * photo.height), 0.10,
+                                         "\(shape.name): 半券が写真の 10% を超えて隠す")
+            }
+        }
+    }
+
+    /// 半券はインスタの上の帯・下の送る欄に隠れない。写真の真ん中も隠れない所にある
+    func testPassStubAndPhotoMiddleSitInsideTheSafeArea() {
+        typealias Lay = TravelStory.Layout
+        for shape in Self.photoShapes {
+            let place = Lay.passPlacement(imageSize: shape.size)
+            XCTAssertTrue(Lay.safeRect.insetBy(dx: -0.01, dy: -0.01).contains(place.stub), "\(shape.name): 半券が隠れる: \(place.stub)")
+            XCTAssertGreaterThanOrEqual(place.stub.minX, Lay.u(6) - 0.01, "\(shape.name): 半券が絵の端に寄りすぎ")
+            XCTAssertTrue(Lay.safeRect.contains(CGPoint(x: place.photo.midX, y: place.photo.midY)),
+                          "\(shape.name): 写真の真ん中が隠れる")
+        }
+    }
+
+    /// 半券の字はインスタ（393pt 幅）で読める大きさ: 眉 11pt 以上、ほかは 12pt 以上（場所は縮めた 0.6 倍でも）
+    func testPassStubTextIsReadableOnInstagram() {
+        typealias Lay = TravelStory.Layout
+        let toPoints: CGFloat = 393 / Lay.canvas.width
+        XCTAssertGreaterThanOrEqual(Lay.passStubEyebrowSize * toPoints, 11)
+        XCTAssertGreaterThanOrEqual(Lay.passStubValueSize * toPoints, 12)
+        XCTAssertGreaterThanOrEqual(Lay.passStubPlaceSize * 0.6 * toPoints, 12)
+    }
+
+    /// 半券に残す字: 場所・日付・DAY（券面と同じ数）。日付を出さないを選んだら日付は無し
+    func testPassStubKeepsPlaceDateAndDay() {
+        let facts = TravelStory.Facts(location: "輪島市, 石川県, 日本", takenDay: nil, name: "mika")
+        var choice = TravelStory.Choice()
+        choice.kind = .pass
+        choice.phase = .now
+        let texts = TravelStory.Texts(place: "石川県", placeLatin: "ISHIKAWA", date: "2026.11.11",
+                                      postmark: "26.11.11", tripDay: 3)
+        XCTAssertEqual(TravelStory.passStub(facts, choice: choice, texts: texts),
+                       TravelStory.PassStubTexts(place: "石川県", date: "2026.11.11", day: 3))
+        let bare = TravelStory.Texts(place: nil, placeLatin: nil, date: nil, postmark: nil, tripDay: nil)
+        XCTAssertEqual(TravelStory.passStub(facts, choice: choice, texts: bare),
+                       TravelStory.PassStubTexts(place: TravelStory.onTheRoad, date: nil, day: nil))
+        choice.phase = .go
+        XCTAssertEqual(TravelStory.passStub(facts, choice: choice, texts: texts).day, 1)
     }
 }

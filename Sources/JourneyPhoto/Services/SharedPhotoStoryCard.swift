@@ -296,7 +296,7 @@ enum SharedPhotoStoryBackdrop {
 
 extension SharedPhotoStoryCard {
     /// 地を描く（`SharedPhotoStoryBackdrop`）: ぼかした写真 → 札の後ろの光 → 帯ごとの黒 → 四隅の黒
-    fileprivate static func drawBackdrop(_ image: UIImage, card: CGRect, in full: CGRect, context cg: CGContext) {
+    static func drawBackdrop(_ image: UIImage, card: CGRect, in full: CGRect, context cg: CGContext) {
         typealias B = SharedPhotoStoryBackdrop
         let spread = full.insetBy(dx: -80, dy: -80)
         #if os(Linux)
