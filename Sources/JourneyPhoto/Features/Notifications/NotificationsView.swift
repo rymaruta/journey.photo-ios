@@ -470,6 +470,7 @@ private struct NotificationRow: View {
                     (Text(line.who).bold().foregroundStyle(WebTheme.text)
                         + Text(line.rest).foregroundStyle(WebTheme.text2))
                         .font(JPFont.body)
+                        .lineLimit(line.lineLimit)
                     if let first = entry.firstReaction {
                         Text(first.note)
                             .font(JPFont.caption)
@@ -759,8 +760,9 @@ final class NotificationsViewModel: ObservableObject {
         // 紹介（`storyshare`）は紹介された自分の写真、返信（`commentreply`）はコメントの付いた写真（札 #541）
         case .like, .comment, .inspired, .storyshare, .commentreply:
             guard let id = notification.photoId else { return .none }
-            // 返信は**そのコメントの位置へ**（`commentId`・札 #541）
-            let commentId = notification.kind == .commentreply ? notification.commentId : nil
+            // 返信・コメントは**そのコメントの位置へ**送り、返信の欄を開く（`commentId`・札 #541、コメントは
+            // 2026-11-18 の案 B4 から）。`commentId` の無い古いコメントの知らせは今までどおり写真の頭
+            let commentId = notification.kind == .commentreply || notification.kind == .comment ? notification.commentId : nil
             if let photo = feed.first(where: { $0.id == id }) {
                 return commentId.map { .comment(photo, fromPublicFeed: true, commentId: $0) } ?? .photo(photo, fromPublicFeed: true)
             }

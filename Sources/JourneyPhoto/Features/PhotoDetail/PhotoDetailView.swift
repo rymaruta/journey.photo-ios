@@ -1,5 +1,8 @@
 import SwiftUI
 import CoreLocation
+#if os(iOS)
+import UIKit
+#endif
 
 struct PhotoDetailView: View {
 
@@ -79,7 +82,6 @@ struct PhotoDetailView: View {
     @State private var sendFacesLoading = false
     /// 知らせから来たコメントへ送り終えたか・いま印を付けているコメント（2秒だけ地を明るく）
     @State private var commentFocusDone = false
-    @State private var highlightedComment: String?
     /// 写真を DM で送っている相手（二度押しで2通送らない）
     @State private var sendingPhotoTo: String?
     @State private var showViewer = false
@@ -1584,20 +1586,45 @@ struct PhotoDetailView: View {
                                         profile: model.owner, photoDisplayName: target.displayName))))
     }
 
-    /// 知らせから来たコメントへ送る（`PhotoDetailRules.commentToFocus`）。送ったら2秒だけ印を付ける
+    /// 知らせから来たコメントへ送り、**そのコメントへの返信を書ける状態で開く**（`PhotoDetailRules.commentToFocus`・
+    /// `replyTargetOnArrival`）。2026-11-18 判断（案 B4、owner 採用）: 前は送ったあと2秒だけ地を白くしていたが、
+    /// 光らせるのはやめ、「〇〇さんに返信中 ×」を付けてキーボードを出す（「返信」を押したときと同じ仕組み）。
+    /// 返せないコメント（ログアウト中・受け付けない写真・退会した人）は送るだけ。
+    /// 送る位置は画面の上から 3 割（`arrivalAnchor`）。着いたあとキーボードが出て見える高さが下から縮むので、上寄りに置く
+    /// （キーボードと入力欄より上に出ていることは UI テスト `testCommentNoticeOpensReply` が数で確かめる）
     private func focusComment(_ loadedIds: [String], proxy: ScrollViewProxy) {
+        let shown = dropped.comments(model.comments)
         guard let decision = PhotoDetailRules.commentToFocus(focusCommentId, done: commentFocusDone,
                                                        showingFirstPhoto: current.id == photo.id,
-                                                       loaded: dropped.comments(model.comments).map(\.id),
+                                                       loaded: shown.map(\.id),
                                                        finishedLoading: !loadedIds.isEmpty || model.commentsUnavailable)
         else { return }
         commentFocusDone = true
         guard let id = decision else { return }
-        withAnimation { proxy.scrollTo(PhotoDetailRules.commentAnchor(id), anchor: .center) }
-        highlightedComment = id
+        withAnimation { proxy.scrollTo(PhotoDetailRules.commentAnchor(id), anchor: PhotoDetailRules.arrivalAnchor) }
+        // 事実取りの印（`PreviewSession.arrivalScrollOnly`・UI テストだけ）: 送るだけで止める
+        if PreviewSession.arrivalScrollOnly { return }
+        if let target = PhotoDetailRules.replyTargetOnArrival(id, comments: shown, viewerId: auth.userId,
+                                                              acceptsComments: acceptsReactions) {
+            model.replyingTo = target
+            commentFieldFocused = true
+            scrollAboveKeyboard(to: id, proxy: proxy)
+        }
+    }
+
+    /// キーボードが出終わったら、もう一度そのコメントへ送る（下端をキーボードと入力欄のすぐ上に）。
+    ///
+    /// 2026-11-18 の数（Mac の回 1462・1466、iPhone の画面 440×956）: 着いたコメントは一覧の終わりの近くにあるので、
+    /// 上から 3 割へは送れず、送れる端で止まる（送るだけの回: 写真が −156 まで上がって止まり、コメントは y=772）。
+    /// そのあとキーボード（上端 y=655）と入力欄の帯（上端 y=529）が出ても、送った位置はそのままで、
+    /// コメント（y=736〜754）がキーボードの裏に入っていた。キーボードが出て見える高さが縮んだ後なら、送れる端も上がる。
+    /// キーボードが出ない（外付けのキーボード）ときは 3 秒で待つのをやめる
+    private func scrollAboveKeyboard(to id: String, proxy: ScrollViewProxy) {
+        let wait = KeyboardShowWait()
+        wait.start { proxy.scrollTo(PhotoDetailRules.commentAnchor(id), anchor: .bottom) }
         Task {
-            try? await Task.sleep(for: .seconds(2))
-            if highlightedComment == id { highlightedComment = nil }
+            try? await Task.sleep(for: .seconds(3))
+            wait.cancel()
         }
     }
 
@@ -2442,9 +2469,6 @@ struct PhotoDetailView: View {
                 .padding(.vertical, entry.isReply ? JPSpace.xs : JPSpace.s)
                 // 返信は顔 32 と間 12 のぶん下げる（相手の本文の頭に揃える）
                 .padding(.leading, entry.isReply ? Self.commentAvatarSize + JPSpace.s : 0)
-                // 返信の知らせから来たコメントは、2秒だけ地を白 8% に（広い面なので白・Web と同じ）
-                .background(highlightedComment == comment.id ? Color.white.opacity(0.08) : Color.clear)
-                .animation(.easeOut(duration: 0.5), value: highlightedComment)
                 .id(PhotoDetailRules.commentAnchor(comment.id))
                 .overlay(alignment: .top) {
                     // 返信の上には線を引かない（相手と1つの会話に見せる）
@@ -3165,6 +3189,37 @@ struct FlowLayout: Layout {
     }
 }
 
+/// キーボードが出終わった合図を1回だけ待つ（`PhotoDetailView.scrollAboveKeyboard`・2026-11-18 案 B4）
+@MainActor
+final class KeyboardShowWait {
+    /// UIKit の `UIResponder.keyboardDidShowNotification`（Linux の模型では同じ名前の文字）
+    static var didShow: Notification.Name {
+        #if os(iOS)
+        UIResponder.keyboardDidShowNotification
+        #else
+        Notification.Name("UIKeyboardDidShowNotification")
+        #endif
+    }
+
+    private var token: NSObjectProtocol?
+
+    func start(center: NotificationCenter = .default, _ action: @escaping @MainActor () -> Void) {
+        // 受ける列は指定しない（UIKit はキーボードの合図を主の列で出すので、その場で動く）
+        token = center.addObserver(forName: Self.didShow, object: nil, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.token != nil else { return }
+                self.cancel(center: center)
+                withAnimation { action() }
+            }
+        }
+    }
+
+    func cancel(center: NotificationCenter = .default) {
+        if let token { center.removeObserver(token) }
+        token = nil
+    }
+}
+
 /// 詳細画面の判断のうち、画面を建てずに確かめられるもの
 enum PhotoDetailRules {
 
@@ -3182,6 +3237,20 @@ enum PhotoDetailRules {
                                loaded: [String], finishedLoading: Bool) -> String?? {
         guard let target, !done, showingFirstPhoto, finishedLoading else { return nil }
         return .some(loaded.contains(target) ? target : nil)
+    }
+
+    /// 知らせから来たコメントへ送る位置（画面の上から 3 割・2026-11-18 案 B4）。着いたらキーボードが出て、
+    /// 見える高さが下から縮むので上寄りに置く（`testCommentNoticeOpensReply` が位置を数で確かめる）
+    static let arrivalAnchor = UnitPoint(x: 0.5, y: 0.3)
+
+    /// 知らせから来たコメントに着いたとき、返信の欄を開く相手（2026-11-18・案 B4、owner 採用）。
+    /// 「返信」が出るコメント（`CommentThreads.canReply`）だけ。見つからない・返せないコメントは nil（送るだけ）
+    static func replyTargetOnArrival(_ id: String, comments: [PhotoComment], viewerId: String?,
+                                     acceptsComments: Bool) -> PhotoComment? {
+        guard let comment = comments.first(where: { $0.id == id }),
+              CommentThreads.canReply(to: comment, viewerId: viewerId, acceptsComments: acceptsComments)
+        else { return nil }
+        return comment
     }
 
     /// コメント・いいねを受け付ける写真か。**下書き（`published == false`）は受け付けない**

@@ -9892,6 +9892,95 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertFalse(replying.exists, "送ったのに「返信中」が残っている")
     }
 
+    /// **コメントの知らせから、そのコメントへの返信へ**（2026-11-18 案 B4、owner 採用）。見本の通信でコメントを1件書く
+    /// （`-JPPreviewCommentNotice` で、お知らせに「写真へのコメント」として本文とコメントの id つきで返る）。ホームへ戻って
+    /// ベル → 本文の1行（63g）→ 行を押すと、写真の詳細がそのコメントの位置で「〇〇さんに返信中」とキーボードを出して開く（63h）。
+    /// コメントの行が入力欄より上に見えていることを数で確かめる。**写真やお知らせが開けなければ撮らずに抜ける**
+    func testCommentNoticeOpensReply() {
+        commentNoticeFlow(scrollOnly: false)
+    }
+
+    /// 事実取り（2026-11-18・回 1462）: 知らせから来たとき**送るだけ**（返信の欄・キーボードを出さない
+    /// `-JPPreviewArrivalScrollOnly`）で、コメントがどこに来るかを測る。回 1462 では返信の欄とキーボードを出した後、
+    /// コメントが写真の頭のままの位置（y=736）にあった。送る処理が効いていないのか、キーボードで戻ったのかを分ける。
+    /// 測るだけで落とさない
+    func testCommentNoticeScrollProbe() {
+        commentNoticeFlow(scrollOnly: true)
+    }
+
+    private func commentNoticeFlow(scrollOnly: Bool) {
+        let extra = ["-JPPreviewCommentNotice", "YES"] + (scrollOnly ? ["-JPPreviewArrivalScrollOnly", "YES"] : [])
+        guard let app = launchSNSPreview(sharedStory: false, extra: extra),
+              openFirstLatestPhoto(app) else { return }
+        let body = "稜線の色がきれいですね"
+        let field = app.textFields["photo.commentField"].firstMatch
+        let fieldAny = field.exists ? field : app.descendants(matching: .any)["photo.commentField"].firstMatch
+        guard fieldAny.waitForExistence(timeout: 15), fieldAny.isHittable else {
+            shoot(app, "63g-コメントの知らせ（欄が無い）")
+            return
+        }
+        fieldAny.tap()
+        fieldAny.typeText(body)
+        let send = app.buttons["photo.commentSend"].firstMatch
+        guard send.waitForExistence(timeout: 5) else { return }
+        send.tap()
+        Thread.sleep(forTimeInterval: 2)
+        // ホームへ戻ってベルを開く
+        let back = app.navigationBars.buttons["BackButton"].firstMatch
+        guard back.waitForExistence(timeout: 5) else { return XCTFail("写真の詳細から戻れない") }
+        back.tap()
+        let bell = app.buttons["header.notifications"].firstMatch
+        guard bell.waitForExistence(timeout: 15), bell.isHittable else { return XCTFail("ホームのベルが押せない") }
+        bell.tap()
+        let row = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "がコメントしました：「\(body)」")).firstMatch
+        let rowShown = row.waitForExistence(timeout: 20)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, rowShown ? "63g-コメントの知らせ（本文の1行）" : "63g-コメントの知らせ（本文の行が出ない）")
+        guard rowShown else { return XCTFail("お知らせにコメントの本文の1行が出ない") }
+        row.tap()
+        if scrollOnly {
+            let comment = app.staticTexts.matching(NSPredicate(format: "label == %@", body)).firstMatch
+            _ = comment.waitForExistence(timeout: 15)
+            for wait in [0.5, 1.5, 3.0] {
+                Thread.sleep(forTimeInterval: wait)
+                let hero = app.buttons["detail.hero"].firstMatch
+                XCTContext.runActivity(named: "measured commentNoticeScrollOnly after+\(wait)s"
+                    + " comment=\(comment.exists ? String(describing: comment.frame) : "-")"
+                    + " hero=\(hero.exists ? String(describing: hero.frame) : "-")"
+                    + " keyboard=\(app.keyboards.firstMatch.exists)"
+                    + " window=\(app.windows.firstMatch.frame)") { _ in }
+            }
+            shoot(app, "63h2-コメントの知らせから（送るだけ・事実取り）")
+            return
+        }
+        // 着いたら「〇〇さんに返信中」とキーボード（光らせない）
+        let replying = app.descendants(matching: .any)["photo.commentReplying"].firstMatch
+        let replyingShown = replying.waitForExistence(timeout: 15)
+        let early = app.staticTexts.matching(NSPredicate(format: "label == %@", body)).firstMatch
+        XCTContext.runActivity(named: "measured commentNotice early comment=\(early.exists ? String(describing: early.frame) : "-")"
+            + " keyboard=\(app.keyboards.firstMatch.exists)") { _ in }
+        let keyboardShown = app.keyboards.firstMatch.waitForExistence(timeout: 5)
+        Thread.sleep(forTimeInterval: 1.5)
+        let comment = app.staticTexts.matching(NSPredicate(format: "label == %@", body)).firstMatch
+        let fieldNow = app.descendants(matching: .any)["photo.commentField"].firstMatch
+        XCTContext.runActivity(named: "measured commentNotice replying=\(replyingShown) keyboard=\(keyboardShown)"
+            + " comment=\(comment.exists ? String(describing: comment.frame) : "-")"
+            + " field=\(fieldNow.exists ? String(describing: fieldNow.frame) : "-")"
+            + " keyboardFrame=\(app.keyboards.firstMatch.exists ? String(describing: app.keyboards.firstMatch.frame) : "-")"
+            + " window=\(app.windows.firstMatch.frame)") { _ in }
+        shoot(app, replyingShown ? "63h-コメントの知らせから返信中" : "63h-コメントの知らせから（返信中が出ない）")
+        XCTAssertTrue(replyingShown, "知らせから来たのに「〇〇さんに返信中」が出ない")
+        XCTAssertTrue(keyboardShown, "知らせから来たのにキーボードが出ない")
+        XCTAssertTrue(comment.exists, "知らせのコメントが写真の詳細に無い")
+        if comment.exists, fieldNow.exists {
+            // 入力欄の帯の上端（「返信中」の行が出ていればその上端）
+            let composerTop = replying.exists ? min(replying.frame.minY, fieldNow.frame.minY) : fieldNow.frame.minY
+            XCTAssertGreaterThanOrEqual(comment.frame.minY, 0, "コメントが画面の上に外れている")
+            XCTAssertLessThanOrEqual(comment.frame.maxY, composerTop,
+                                     "コメントが入力欄（キーボードの上）の裏に入っている")
+        }
+    }
+
     /// **ストーリーで紹介された写真を見る**（札 #541 の ①・案の模型 1-E）。見本の通信の `-JPPreviewSharedStory` で、
     /// 新着の1人目の2本目のストーリーに紹介の写真を付ける（`PreviewBackend.previewStories`）。作者の顔の輪から開き、
     /// 2本目へ送って「写真を見る」（63e）→ 写真の詳細（63f）を撮る。**出なければ撮らずに抜ける**
