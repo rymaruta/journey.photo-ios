@@ -30,11 +30,16 @@ final class ShareCardAuditTests: XCTestCase {
     static let kyoto = CLLocationCoordinate2D(latitude: 35.0, longitude: 135.5)
     static let paris = CLLocationCoordinate2D(latitude: 49.0, longitude: 2.5)
 
+    /// 暦の型の撮った日（2026-11-18・節気がいちばん長い字の「啓蟄」KEICHITSU の日。ほかの型は使わない）。
+    /// 撮った日の無い中身（長い・絵文字・中身なし）では、暦は撮影地を大きく出す形になる
+    static let koyomiDay = TripBook.utcCalendar.date(from: DateComponents(year: 2026, month: 3, day: 10))!
+
     static let contents: [Content] = [
         Content(name: "ふつう", credit: R.Credit(
             name: "旅灯", username: "tabi_akari", location: "京都府（京都市東山区）", coords: kyoto,
             camera: "Sony α7 IV", lens: "FE 24-70mm F2.8 GM II", exposure: "1/250s", aperture: "f/8", iso: 100,
-            verified: true, proStyle: nil, early: false, badge: nil), allowsTruncation: false),
+            verified: true, proStyle: nil, early: false, badge: nil,
+            takenDay: ShareCardAuditTests.koyomiDay), allowsTruncation: false),
         Content(name: "長い", credit: R.Credit(
             name: "写真と旅とコーヒーを愛する週末フォトグラファー山田太郎", username: "weekend_photographer_yamada_taro",
             location: "和歌山県（東牟婁郡那智勝浦町）", coords: kyoto,
@@ -44,7 +49,8 @@ final class ShareCardAuditTests: XCTestCase {
         Content(name: "英語", credit: R.Credit(
             name: "Emily Carter", username: "emily.travels", location: "Saint-Germain-en-Laye, Île-de-France, France",
             coords: paris, camera: "FUJIFILM X100VI", lens: "23mm F2", exposure: "1/500s", aperture: "f/5.6", iso: 160,
-            verified: false, proStyle: nil, early: false, badge: nil), allowsTruncation: false),
+            verified: false, proStyle: nil, early: false, badge: nil,
+            takenDay: ShareCardAuditTests.koyomiDay), allowsTruncation: false),
         Content(name: "絵文字", credit: R.Credit(
             name: "🌸さくら🌸旅人📷", username: "sakura_tabi", location: "東京都（台東区）", coords: nil,
             camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil,
@@ -443,7 +449,7 @@ final class ShareCardAuditTests: XCTestCase {
 
     /// 全部の型が下の試験に並んでいるか（型を足したら試験も足す）
     func testEveryStyleHasAnAudit() {
-        XCTAssertEqual(R.Style.allCases.count, 10)
+        XCTAssertEqual(R.Style.allCases.count, 11)
     }
 
     func testBandPortrait() async throws { try await audit(.band, .portrait) }
@@ -476,5 +482,8 @@ final class ShareCardAuditTests: XCTestCase {
     func testTanzakuPortrait() async throws { try await audit(.tanzaku, .portrait) }
     func testTanzakuStory() async throws { try await audit(.tanzaku, .story) }
     func testTanzakuSquare() async throws { try await audit(.tanzaku, .square) }
+    func testKoyomiPortrait() async throws { try await audit(.koyomi, .portrait) }
+    func testKoyomiStory() async throws { try await audit(.koyomi, .story) }
+    func testKoyomiSquare() async throws { try await audit(.koyomi, .square) }
 }
 #endif

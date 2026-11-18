@@ -40,13 +40,21 @@ struct SignatureShareCardSheet: View {
     @State private var styleRaw = UserDefaults.standard.string(forKey: SignatureShareCardSheet.styleDefaultsKey)
         ?? SignatureShareCardRenderer.Style.band.rawValue
     private var style: SignatureShareCardRenderer.Style {
-        SignatureShareCardRenderer.Style(rawValue: styleRaw) ?? .band
+        ShareCardStyleChoice.style(rawValue: styleRaw, for: credit)
     }
 
-    /// 作った画像の置き場所の鍵（比率と型の組）
+    /// 撮った日を絵に出すか（「日付」の入切・`ShareCardDateChoice`）。型をまたいで覚える
+    @State private var showsDate = ShareCardDateChoice.load()
+    /// 描くときの中身（入切を写したもの）
+    private var drawnCredit: SignatureShareCardRenderer.Credit {
+        ShareCardDateChoice.credit(credit, showsDate: showsDate)
+    }
+
+    /// 作った画像の置き場所の鍵（比率と型と日付の入切の組）
     private struct CardKey: Hashable {
         let ratio: SignatureShareCardRenderer.Ratio
         let style: SignatureShareCardRenderer.Style
+        var showsDate = true
     }
     @State private var output: Data?
     // 同じ共有画面内で比率を戻したときはJPEGの再生成を避ける。
@@ -71,7 +79,7 @@ struct SignatureShareCardSheet: View {
                 ScrollViewReader { reader in
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(alignment: .top, spacing: JPSpace.xs) {
-                            ForEach(ShareCardStyleChoice.order, id: \.rawValue) { option in
+                            ForEach(ShareCardStyleChoice.order(for: credit), id: \.rawValue) { option in
                                 ShareCardStyleTile(title: ShareCardStyleChoice.title(option),
                                                    image: thumbnails[option.rawValue],
                                                    selected: style == option) {
@@ -84,7 +92,7 @@ struct SignatureShareCardSheet: View {
                         .padding(.horizontal)
                     }
                     // 前に選んだ型が並びの外（後ろの方）にあっても、開いたときに見えるようにする
-                    .onAppear { reader.scrollTo(styleRaw, anchor: .center) }
+                    .onAppear { reader.scrollTo(style.rawValue, anchor: .center) }
                 }
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel(L("共有画像の型", "Share image style"))
@@ -97,6 +105,13 @@ struct SignatureShareCardSheet: View {
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
+
+                // 日付を描く型（暦）を選んでいるときだけ、日付の入切を1つ（2026-11-18 判断・`ShareCardDateChoice`）
+                if ShareCardDateChoice.showsToggle(style: style, credit: credit) {
+                    JPToggleRow(title: ShareCardDateChoice.label, isOn: $showsDate)
+                        .padding(.horizontal)
+                        .accessibilityIdentifier("signatureShare.date")
+                }
 
                 Group {
                     if let output, let image = UIImage(data: output) {
@@ -115,7 +130,8 @@ struct SignatureShareCardSheet: View {
                             Text(L("画像を生成できませんでした", "Could not create image"))
                             Text(L("別の比率を選ぶか、もう一度お試しください", "Choose another ratio or try again"))
                             Button(L("再試行", "Try again")) {
-                                renderedByKey.removeValue(forKey: CardKey(ratio: ratio, style: style))
+                                renderedByKey.removeValue(forKey: CardKey(ratio: ratio, style: style,
+                                    showsDate: ShareCardDateChoice.drawsDate(style) ? showsDate : true))
                                 retryCount += 1
                             }
                                 .accessibilityIdentifier("signatureShare.retry")
@@ -159,10 +175,19 @@ struct SignatureShareCardSheet: View {
             .onChange(of: styleRaw) { _, newValue in
                 UserDefaults.standard.set(newValue, forKey: Self.styleDefaultsKey)
             }
-            .task(id: "\(ratio.rawValue)-\(styleRaw)-\(retryCount)") {
+            .onChange(of: showsDate) { _, newValue in
+                ShareCardDateChoice.save(newValue)
+                // 日付を描く型の見本は作り直す（2026-11-18 確かめ役: 入切を替えても見本が古いままだった）
+                for option in ShareCardStyleChoice.order where ShareCardDateChoice.drawsDate(option) {
+                    thumbnails.removeValue(forKey: option.rawValue)
+                }
+            }
+            .task(id: "\(ratio.rawValue)-\(styleRaw)-\(showsDate)-\(retryCount)") {
                 let selectedRatio = ratio
                 let selectedStyle = style
-                let key = CardKey(ratio: selectedRatio, style: selectedStyle)
+                // 日付を描かない型では入切で描き直さない（鍵をそろえる）
+                let dated = ShareCardDateChoice.drawsDate(selectedStyle) ? showsDate : true
+                let key = CardKey(ratio: selectedRatio, style: selectedStyle, showsDate: dated)
                 if let cached = renderedByKey[key] {
                     output = cached
                     preparing = false
@@ -182,21 +207,21 @@ struct SignatureShareCardSheet: View {
                         avatarData = data
                     }
                 }
-                let result = await SignatureShareCardRenderer.render(photoData, credit: credit,
+                let result = await SignatureShareCardRenderer.render(photoData, credit: drawnCredit,
                     ratio: selectedRatio, style: selectedStyle, avatarData: avatarData)
                 guard !Task.isCancelled else { return }
                 if let result { renderedByKey[key] = result }
                 output = result
                 preparing = false
             }
-            .task {
+            .task(id: showsDate) {
                 // 見本は 4:5・顔なしで。先に今のプレビューを作らせ（最大 3 秒待つ）、見本は後ろで1つずつ（144×180 に縮めて持つ）
                 for _ in 0..<30 where preparing {
                     try? await Task.sleep(nanoseconds: 100_000_000)
                 }
-                for option in ShareCardStyleChoice.order where thumbnails[option.rawValue] == nil {
+                for option in ShareCardStyleChoice.order(for: credit) where thumbnails[option.rawValue] == nil {
                     if Task.isCancelled { return }
-                    guard let data = await SignatureShareCardRenderer.render(photoData, credit: credit,
+                    guard let data = await SignatureShareCardRenderer.render(photoData, credit: drawnCredit,
                                                                              ratio: .portrait, style: option),
                           let image = UIImage(data: data)?.preparingThumbnail(of: ShareCardStyleTile.pixelSize)
                     else { continue }
@@ -323,10 +348,24 @@ enum PostedShareCardText {
     static var title: String { L("カードにして、ほかの SNS にも", "Turn it into a card for other social apps") }
 }
 
-/// 共有画像の型の並びと名前（2026-11-14・試験で見る）。名前は短く（チップに1語）
+/// 共有画像の型の並びと名前（2026-11-14・試験で見る）。名前は短く（チップに1語）。
+/// 2026-11-18: 暦（`KoyomiCard`）を後ろに足した（前からの並びは変えない）
 enum ShareCardStyleChoice {
     static let order: [SignatureShareCardRenderer.Style] = [.band, .fade, .cover, .label, .printed, .ticket, .cinema,
-                                                            .mat, .film, .tanzaku]
+                                                            .mat, .film, .tanzaku, .koyomi]
+
+    /// その写真で選べる型。**撮った日の分からない写真では暦を外す**（日付も節気も出せない・2026-11-18 判断）
+    static func order(for credit: SignatureShareCardRenderer.Credit) -> [SignatureShareCardRenderer.Style] {
+        order.filter { $0 != .koyomi || credit.takenDay != nil }
+    }
+
+    /// 前に選んだ型が、この写真で選べなければ既定の帯
+    static func style(rawValue: String, for credit: SignatureShareCardRenderer.Credit) -> SignatureShareCardRenderer.Style {
+        guard let style = SignatureShareCardRenderer.Style(rawValue: rawValue), order(for: credit).contains(style) else {
+            return .band
+        }
+        return style
+    }
 
     static func title(_ style: SignatureShareCardRenderer.Style) -> String {
         switch style {
@@ -340,8 +379,50 @@ enum ShareCardStyleChoice {
         case .mat: return L("額装", "Mat")
         case .film: return L("フィルム", "Film")
         case .tanzaku: return L("縦書き", "Vertical")
+        case .koyomi: return L("暦", "Almanac")
         }
     }
+}
+
+/// 共有画像の「日付」の入切（2026-11-18 判断・まとめ役）。
+///
+/// 写真の詳細はわざと撮影日を出していない（`PhotoDetailView` の撮影情報）。暦の型は撮った日（と、日付の手がかりになる
+/// 二十四節気）を描くので、撮った日が外に出る道がここで初めてできる。そこで:
+/// - **既定は出す**（暦の型の主役なので。設定を入口にしない）
+/// - **日付を描く型を選んでいて、撮った日のある写真のときだけ**、プレビューの近くに入切を1つ出す（押す回数1・
+///   ストーリーの `TravelStory.DateLevel` と同じ考え方）
+/// - 切ったら暦は日付も節気も出さない（`KoyomiCard.texts` の「日付を出さない」の決まり）
+/// - 入切は型をまたいで端末に覚える（後から足す日付を描く型も `drawsDate` に足せば同じ入切を使う）
+enum ShareCardDateChoice {
+    static let defaultsKey = "signatureShare.showsDate"
+
+    /// 日付を描く型
+    static func drawsDate(_ style: SignatureShareCardRenderer.Style) -> Bool {
+        style == .koyomi
+    }
+
+    /// 入切を出すか（日付を描く型で、撮った日のある写真）
+    static func showsToggle(style: SignatureShareCardRenderer.Style, credit: SignatureShareCardRenderer.Credit) -> Bool {
+        drawsDate(style) && credit.takenDay != nil
+    }
+
+    /// 覚えた入切（初めては出す）
+    static func load(defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: defaultsKey) == nil ? true : defaults.bool(forKey: defaultsKey)
+    }
+
+    static func save(_ showsDate: Bool, defaults: UserDefaults = .standard) {
+        defaults.set(showsDate, forKey: defaultsKey)
+    }
+
+    /// 描くときに渡す中身（入切を写す）
+    static func credit(_ credit: SignatureShareCardRenderer.Credit, showsDate: Bool) -> SignatureShareCardRenderer.Credit {
+        var copy = credit
+        copy.showsDate = showsDate
+        return copy
+    }
+
+    static var label: String { L("日付", "Date") }
 }
 
 /// 共有画像の型の小さな見本（2026-11-14 判断）。自分の写真で作った 4:5 の見本と名前。

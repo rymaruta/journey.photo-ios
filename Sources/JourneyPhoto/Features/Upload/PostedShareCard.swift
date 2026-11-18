@@ -117,7 +117,9 @@ enum PostedShareCardCredit {
             proStyle: me?.shownProMark,
             early: me?.showsEarlyMark ?? false,
             badge: me?.shownBadge,
-            place: LocationMatch.shareCardPlace(photo.location))
+            place: LocationMatch.shareCardPlace(photo.location),
+            // 暦の型の日付と二十四節気（撮った日の分からない写真では暦を出さない）
+            takenDay: TripBook.hasTakenDay(photo) ? TripBook.day(of: photo) : nil)
     }
 }
 

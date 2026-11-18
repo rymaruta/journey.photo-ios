@@ -16,11 +16,13 @@ enum TravelStory {
 
     // MARK: - 選ぶもの
 
-    /// 型。**並びは章の触れる模型どおり**（搭乗券・切手と消印・フィルムの帯）。はじめは推奨 1 の切手と消印
+    /// 型。**並びは章の触れる模型どおり**（搭乗券・切手と消印・フィルムの帯）。はじめは推奨 1 の切手と消印。
+    /// 2026-11-18: 暦（差し色・`KoyomiCard`）を後ろに足した（前からの並びは変えない）
     enum Kind: String, CaseIterable, Identifiable {
         case pass
         case stamp
         case film
+        case koyomi
 
         var id: String { rawValue }
 
@@ -29,20 +31,26 @@ enum TravelStory {
             case .pass: return L("搭乗券", "Boarding pass")
             case .stamp: return L("切手と消印", "Stamp & postmark")
             case .film: return L("フィルムの帯", "Film strip")
+            case .koyomi: return L("暦", "Almanac")
             }
         }
 
-        /// ステッカー（透明の地）にできるか。フィルムの帯は3枚を並べる型なので写真に重ねるだけ（章の模型）
-        var supportsSticker: Bool { self != .film }
+        /// ステッカー（透明の地）にできるか。フィルムの帯は3枚を並べる型なので写真に重ねるだけ（章の模型）。
+        /// 暦は写真の色の地に写真と字を置く1枚の絵なので、透明の地にしない
+        var supportsSticker: Bool { self != .film && self != .koyomi }
 
         /// 旅のどこ（行ってきます・今ここ・ただいま）を選ぶか。搭乗券だけ（章の模型）
         var usesPhase: Bool { self == .pass }
     }
 
+    /// 選べる型。**撮った日の分からない写真では暦を外す**（節気も日付も出せない・2026-11-18 判断）
+    static func kinds(for facts: Facts) -> [Kind] {
+        Kind.allCases.filter { $0 != .koyomi || facts.takenDay != nil }
+    }
+
     /// 描いて置いておく型: 今の型と両隣（払った先だけ。2026-11-12・確かめ役「置き場を今の選び＋両隣に」）。
     /// 先頭が今の型（先に描く）
-    static func nearby(_ kind: Kind) -> [Kind] {
-        let all = Kind.allCases
+    static func nearby(_ kind: Kind, in all: [Kind] = Kind.allCases) -> [Kind] {
         guard let index = all.firstIndex(of: kind) else { return [kind] }
         return [kind] + [index - 1, index + 1].filter(all.indices.contains).map { all[$0] }
     }
@@ -194,13 +202,16 @@ enum TravelStory {
         let name: String
         /// 旅の一冊から開いたときだけ
         var trip: TripFacts? = nil
+        /// 先頭の写真の緯度（暦の南半球の見分けだけに使う・絵には描かない）。無ければ nil
+        var latitude: Double? = nil
     }
 
     /// 写真1枚（写真の詳細の ⋯ → ストーリーに）の事実
     static func facts(of photo: Photo, name: String) -> Facts {
         Facts(location: photo.location,
               takenDay: TripBook.hasTakenDay(photo) ? TripBook.day(of: photo) : nil,
-              name: name)
+              name: name,
+              latitude: photo.coords?.lat)
     }
 
     /// 旅の一冊（「ストーリーに」）の事実。`lead` は絵に載せる先頭の1枚（呼ぶ側は旅の最後の、配ってよい1枚を渡す）。
@@ -214,7 +225,8 @@ enum TravelStory {
                      trip: TripFacts(photoCount: trip.photos.count,
                                      distanceKm: TripBook.showsDistance(distance) ? distance : nil,
                                      days: trip.days,
-                                     leadDay: leadDay))
+                                     leadDay: leadDay),
+                     latitude: lead.coords?.lat)
     }
 
     /// 画面に渡す写真の URL と事実（写真の詳細・旅の一冊の両方の入口から作る）
@@ -434,6 +446,29 @@ enum TravelStory {
                          local: texts.place ?? onTheRoad,
                          day: day,
                          foot: foot)
+    }
+
+    // MARK: - 暦の文字
+
+    /// 暦（差し色）の字。**選んだ細かさを守る**: 場所は `Texts.place`（県まで・市まで・出さない）、
+    /// 日付を出さないなら節気も出さない（節気は日付の手がかり）。場所を出さないなら国も出さない
+    /// （南半球かの見分けには撮影地の国を使うが、絵には描かない）
+    ///
+    /// **2026-11-18 判断（確かめ役の指摘・直さない）:** 場所を「出さない」にしても、南半球の写真では節気が出ないので、
+    /// 見る人が「南半球で撮った」と推し量れる。漏れるのは南半球かどうか（地球の半分）だけで、国・地名・座標は出ない。
+    /// 南半球でも節気を出すと季節が逆の言葉（立冬に夏の写真）になるので、こちらを取った
+    static func koyomi(_ facts: Facts, choice: Choice) -> KoyomiCard.Texts {
+        let texts = texts(facts, choice: choice)
+        let country = KoyomiCard.country(of: facts.location)
+        return KoyomiCard.texts(takenDay: facts.takenDay, showsDate: choice.dateLevel != .none,
+                                latitude: facts.latitude, place: texts.place,
+                                country: choice.placeLevel == .none ? nil : country,
+                                hemisphereCountry: country,
+                                // 市までの地名が長いときは県まで（海外は国）を出す（`KoyomiCard.Column.fallback`）
+                                placeFallback: choice.placeLevel == .city
+                                    ? placeText(facts.location, level: .prefecture) : nil,
+                                // 日付を切ったときの英字（日本は都道府県の英名・場所を出さないなら出さない）
+                                regionLatin: choice.placeLevel == .none ? nil : KoyomiCard.prefectureLatin(facts.location))
     }
 
     /// 切手の下の右（明朝）。旅の何日目か、分からなければ出さない
