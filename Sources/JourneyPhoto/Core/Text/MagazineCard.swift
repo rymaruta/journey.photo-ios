@@ -131,9 +131,19 @@ enum MagazineCard {
     /// 見出しとみなす字の大きさ（点検 `ShareCardAuditTests.headlineFontSize` と同じ 48）
     static let headlineSize: CGFloat = 48
 
-    /// 届かせる明暗の比。見出し（題と Vol. の番号）は 7:1、ほかは 4.5:1
-    static func targetContrast(fontSize: CGFloat) -> Double {
+    /// 守る明暗の比。見出し（題と Vol. の番号）は 7:1、ほかは 4.5:1
+    static func requiredContrast(fontSize: CGFloat) -> Double {
         fontSize >= headlineSize ? 7 : ShareCardSafeArea.minimumTextContrast
+    }
+
+    /// 影を重ねるときに狙う比の余り（5%）。**2026-11-18 判断（Mac run 1552 の点検の数）:** 守る比ちょうど（4.5）で止めると、
+    /// 書き出しの JPEG を読み直した点検では白い写真の上の撮影の値（f/8・1/250s）が 4.50 を僅かに下回った
+    /// （描きながら測る地は JPEG にする前の画素なので、圧縮のにじみの分だけ点検の値が低い）
+    static let contrastMargin: Double = 1.05
+
+    /// 影を重ねて届かせる明暗の比（守る比 × 余り）
+    static func targetContrast(fontSize: CGFloat) -> Double {
+        requiredContrast(fontSize: fontSize) * contrastMargin
     }
 
     /// 灰（0〜1）の字と、相対輝度 `background` の地の明暗の比

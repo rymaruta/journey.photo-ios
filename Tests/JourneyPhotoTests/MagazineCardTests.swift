@@ -383,8 +383,11 @@ final class MagazineCardTests: XCTestCase {
     // MARK: - 字の読みやすさ
 
     func testShadowTargetsAndSchedule() {
-        XCTAssertEqual(M.targetContrast(fontSize: 60), 7)
-        XCTAssertEqual(M.targetContrast(fontSize: 36), 4.5)
+        XCTAssertEqual(M.requiredContrast(fontSize: 60), 7)
+        XCTAssertEqual(M.requiredContrast(fontSize: 36), 4.5)
+        // 狙う比は守る比より 5% 上（JPEG のにじみの分・Mac run 1552 で 4.50 を僅かに下回った）
+        XCTAssertEqual(M.targetContrast(fontSize: 36), 4.5 * 1.05, accuracy: 0.0001)
+        XCTAssertGreaterThan(M.targetContrast(fontSize: 60), 7)
         XCTAssertEqual(M.Shadow.blur(size: 84, pass: 0), 84 * 0.26, accuracy: 0.001)
         XCTAssertEqual(M.Shadow.blur(size: 84, pass: 3), 84 * 0.14, accuracy: 0.001)
         XCTAssertEqual(M.Shadow.blur(size: 84, pass: 7), max(6, 84 * 0.07), accuracy: 0.001)
@@ -552,7 +555,7 @@ final class MagazineCardRenderTests: XCTestCase {
             item.color.getRed(&gray, green: &green, blue: &blue, alpha: &alpha)
             let ratio = M.contrast(ink: Double(gray), background: best)
             print("measured [magazine-contrast] \(item.text) size=\(item.fontSize) ratio=\(String(format: "%.2f", ratio))")
-            XCTAssertGreaterThanOrEqual(ratio, M.targetContrast(fontSize: item.fontSize) - 0.05, item.text)
+            XCTAssertGreaterThanOrEqual(ratio, M.requiredContrast(fontSize: item.fontSize), item.text)
         }
     }
 }
