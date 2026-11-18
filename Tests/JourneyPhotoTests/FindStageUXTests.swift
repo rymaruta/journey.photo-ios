@@ -107,11 +107,11 @@ final class FindStageUXTests: XCTestCase {
 
     // MARK: A9 マップ
 
-    /// 3つ目の札は写真の撮影地の一覧なので「撮影地」（場所の呼び名の決まり）。識別子は変えない
-    func testListModeIsCalledShootingPlaces() async {
-        XCTAssertEqual(PhotoMapViewModel.Mode.list.label, "撮影地")
+    /// 3つ目の札は「リスト」のまま（2026-11-18 owner「ここは一旦変えない」。「撮影地」への改名の案は取りやめ）
+    func testListModeKeepsItsName() async {
+        XCTAssertEqual(PhotoMapViewModel.Mode.list.label, "リスト")
         XCTAssertEqual(PhotoMapViewModel.Mode.list.tabIdentifier, "map.mode.list")
-        XCTAssertEqual(PhotoMapViewModel.Mode.allCases.map(\.label), ["地図", "スポット", "撮影地"])
+        XCTAssertEqual(PhotoMapViewModel.Mode.allCases.map(\.label), ["地図", "スポット", "リスト"])
     }
 
     /// 「このエリアを検索」は指で地図を動かした後だけ。絞っている間は解除の口として出し続ける

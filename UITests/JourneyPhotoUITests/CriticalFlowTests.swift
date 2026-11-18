@@ -826,11 +826,11 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(recent.waitForNonExistence(timeout: 5), "消す印を押しても最近の言葉が残る")
     }
 
-    // MARK: - 4c. 見つける（使い勝手の見直し 2026-11-16 A1・A4・A7・A9・A10）
+    // MARK: - 4c. 見つける（使い勝手の見直し 2026-11-16 A1・A4・A7・A9・A10。A1 は 2026-11-18 に2回たたくいいねだけ）
 
-    /// A1: **操作の段は写真のすぐ下**（送らずに押せる）。写真を2回たたくといいね（大きく見る画面は開かない）、
-    /// 1回押すと今までどおり大きく見る
-    func testDetailActionBarUnderPhotoAndDoubleTapLikes() {
+    /// A1: 写真を2回たたくといいね（大きく見る画面は開かない）、1回押すと今までどおり大きく見る。
+    /// （2026-11-18 owner の判断で、操作の段を写真のすぐ下へ移す案は取りやめ。並びは板どおり）
+    func testDetailDoubleTapLikes() {
         let app = launch()
         openFirstFeedPhoto(app)
         let like = app.buttons["photo.like"].firstMatch
@@ -841,15 +841,20 @@ final class CriticalFlowTests: XCTestCase {
         let heroProbe = anyHero.allElementsBoundByIndex.map { "type=\($0.elementType.rawValue) frame=\($0.frame) label=\($0.label)" }
         print("measured detailHero \(heroProbe)")
         XCTAssertTrue(hero.waitForExistence(timeout: 5), "写真の詳細の写真が Button として無い（同じ名前の要素: \(heroProbe)）")
-        print("measured detailBar likeMinY=\(like.frame.minY) heroMaxY=\(hero.frame.maxY)")
-        XCTAssertTrue(like.isHittable, "送らないといいねに届かない（操作の段が写真の下に無い）")
-        XCTAssertLessThan(abs(like.frame.minY - hero.frame.maxY), 24,
-                          "いいねの段が写真のすぐ下に無い（写真の下端 \(hero.frame.maxY)・いいね \(like.frame.minY)）")
-        // いいね済みなら一度外してから（2回たたくのは付けるだけ・外さない）
+        // いいね済みなら一度外してから（2回たたくのは付けるだけ・外さない）。段は題・作者の下なので送って押し、写真まで戻す
         _ = wait(like, "value != ''", timeout: 10)
         if like.isSelected {
+            reveal(like, in: app, "いいね")
             like.tap()
             XCTAssertTrue(wait(like, "selected == false"), "いいねを外せない")
+            var backs = 0
+            while !hero.isHittable, backs < 6 {
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+                    .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)))
+                Thread.sleep(forTimeInterval: 1)
+                backs += 1
+            }
+            XCTAssertTrue(hero.isHittable, "写真まで戻せない")
         }
         hero.doubleTap()
         XCTAssertTrue(wait(like, "selected == true", timeout: 10), "写真を2回たたいても、いいねが付かない")
@@ -860,7 +865,7 @@ final class CriticalFlowTests: XCTestCase {
         Thread.sleep(forTimeInterval: 2)
         XCTAssertTrue(like.isSelected, "2回たたき直したら、いいねが外れた")
         let shot = XCTAttachment(screenshot: app.screenshot())
-        shot.name = "A1-写真の詳細（操作の段が写真の下）"
+        shot.name = "A1-写真の詳細（2回たたいていいね）"
         shot.lifetime = .keepAlways
         add(shot)
         // 1回押すと大きく見る
@@ -902,7 +907,7 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(wait(like, "selected == true", timeout: 20), "ログインしても、押したいいねが済んでいない（押し直しが要る）")
     }
 
-    /// A7・A9: マップの3つ目の札は「撮影地」。「このエリアを検索」は地図を動かした後だけ。
+    /// A7・A9: マップの3つ目の札は「リスト」のまま（2026-11-18 owner）。「このエリアを検索」は地図を動かした後だけ。
     /// 観光スポットの札に「行きたい」があり、押すと入る。札の × は無く、地図を押すと閉じる
     func testMapSpotCardWishAndTapMapToClose() {
         if #available(iOS 16.4, *) {
@@ -921,7 +926,7 @@ final class CriticalFlowTests: XCTestCase {
         }
         let listTab = app.buttons["map.mode.list"].firstMatch
         XCTAssertTrue(listTab.waitForExistence(timeout: 20), "マップの切り替えが無い")
-        XCTAssertEqual(listTab.label, "撮影地", "3つ目の札が「撮影地」でない")
+        XCTAssertEqual(listTab.label, "リスト", "3つ目の札が「リスト」でない")
         Thread.sleep(forTimeInterval: 3)
         XCTAssertFalse(app.buttons["map.searchArea"].firstMatch.exists, "地図を動かす前から「このエリアを検索」が出ている")
 
@@ -973,12 +978,35 @@ final class CriticalFlowTests: XCTestCase {
 
         // 地図を2回たたいて寄せても札は閉じない（1回目で閉じる予約、2回目で取り消す）
         let probe = app.descendants(matching: .any).matching(identifier: "map.cardCloseProbe").firstMatch
-        let probeBefore = (probe.value as? String) ?? "(なし)"
-        empty.doubleTap()
-        Thread.sleep(forTimeInterval: 1.5)
-        let probeAfter = (probe.value as? String) ?? "(なし)"
-        print("measured mapDoubleTap before=\(probeBefore) after=\(probeAfter) cardExists=\(card.exists)")
-        XCTAssertTrue(card.exists, "地図を2回たたいて寄せたら札が閉じた（地図を押した合図の数 前: \(probeBefore) 後: \(probeAfter)）")
+        // 🔴 **iOS が2回押しと認めた回だけで確かめる**（2026-11-18 run 1454: シミュレーターの2回たたきが、iOS の2回押しに
+        // ならなかった——2回押しの合図 double が増えず、1回押しが2回届いた。iOS から見て2回の別々の押しなので、札が閉じるのは
+        // 決まりどおり）。認められなかった回は札を開き直して、3回までたたき直す。gapMs は2回の押しの合図の間（ms）
+        func doubles(_ value: String) -> Int {
+            guard let range = value.range(of: #"double=(\d+)"#, options: .regularExpression) else { return -1 }
+            return Int(value[range].dropFirst("double=".count)) ?? -1
+        }
+        var recognized = false
+        var attempts: [String] = []
+        for attempt in 1...3 {
+            if !card.exists {
+                pin.tap()
+                XCTAssertTrue(card.waitForExistence(timeout: 10), "ピンを押し直しても札が開かない（たたき直し \(attempt) 回目）")
+                Thread.sleep(forTimeInterval: 1.5)
+            }
+            let probeBefore = (probe.value as? String) ?? "(なし)"
+            empty.doubleTap()
+            Thread.sleep(forTimeInterval: 1.5)
+            let probeAfter = (probe.value as? String) ?? "(なし)"
+            let line = "attempt=\(attempt) before=\(probeBefore) after=\(probeAfter) cardExists=\(card.exists)"
+            attempts.append(line)
+            print("measured mapDoubleTap \(line)")
+            if doubles(probeAfter) > doubles(probeBefore) {
+                recognized = true
+                XCTAssertTrue(card.exists, "地図を2回たたいて寄せたら札が閉じた（\(line)）")
+                break
+            }
+        }
+        XCTAssertTrue(recognized, "シミュレーターの2回たたきが、3回とも iOS の2回押しにならなかった（\(attempts)）")
 
         // 指で地図を動かすと「このエリアを検索」が出る
         empty.tap()

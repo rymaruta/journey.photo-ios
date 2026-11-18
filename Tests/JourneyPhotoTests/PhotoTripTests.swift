@@ -320,10 +320,9 @@ final class PhotoTripTests: XCTestCase {
         // 撮影地の行の下・題の上（v2: 写真の裾 `photoFoot` に撮影地 → 撮影スポットの順。題は写真の下）
         let foot = try XCTUnwrap(view.components(separatedBy: "private func photoFoot(_ hero: HeroLineup) -> some View {").dropFirst().first)
         XCTAssertTrue(foot.prefix(300).contains("placeRow\n            spotGuideRow"))
-        // 3・4. いいね・コメント・保存・共有の段の下に「行き先」の段。
-        // 2026-11-16（使い勝手の見直し A1）: 操作の段は写真のすぐ下へ上げ、題・作者・説明の塊の後に「行き先」
-        XCTAssertTrue(view.contains("socialBar(proxy)\n            // **`Group` で束ねる。**"), "操作の段が写真のすぐ下に無い")
-        XCTAssertTrue(view.contains("storySourceRow\n            }\n            tripSection"))
+        // 3・4. いいね・コメント・保存・共有の段の下に「行き先」の段
+        // （2026-11-18 owner の判断で、段を写真のすぐ下へ移す案 A1 は取りやめ。板どおりの並び）
+        XCTAssertTrue(view.contains("socialBar(proxy)\n            tripSection"))
         XCTAssertTrue(view.contains("PhotoTrip.sectionDestination(photo: shown, stage: tripStage)"))
         XCTAssertTrue(view.contains(".id(shown.id)"), "写真を送っても前の写真の経路の仕事が残る")
         XCTAssertTrue(view.contains("tripSpot.flatMap { PhotoTrip.whenLine(spot: $0, now: Date()) }"),
