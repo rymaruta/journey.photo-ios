@@ -154,6 +154,11 @@ struct DMThreadLog: Equatable {
     private(set) var messages: [DMMessage] = []
     /// まだサーバーの答えが無い・送れなかった1通（古い順）
     private(set) var outgoing: [DMOutgoing] = []
+    /// 取り消しを押した通の id（答えを待っている間も、消えたあとも）。読み直しの答えに入っていても重ねない。
+    ///
+    /// 2026-11-18 判断（Mac run 1536）: 取り消しを押す前に送った差分の読み直しが、外したあとに届いて
+    /// 1通を戻していた（`poll ... items=10 n=9` の直後に一覧が 9 → 10 通）。戻すのは `restore`（消えていなかった）だけ
+    private(set) var withdrawn: Set<String> = []
 
     init(messages: [DMMessage] = [], outgoing: [DMOutgoing] = []) {
         self.messages = []
@@ -164,6 +169,7 @@ struct DMThreadLog: Equatable {
     /// 読めた分を重ねる。**同じ id は1つにする**（`since` の読み直し・送った応答と読み直しが重なっても1通）。
     /// 並びは時刻の順（同じ時刻は来た順のまま）。重ねた1通が控えにあれば控えから外す
     mutating func merge(_ incoming: [DMMessage]) {
+        let incoming = incoming.filter { !withdrawn.contains($0.id) }
         guard !incoming.isEmpty else { return }
         var byId: [String: Int] = [:]
         for (i, m) in messages.enumerated() { byId[m.id] = i }
@@ -227,11 +233,13 @@ struct DMThreadLog: Equatable {
     /// **自分の通だけ**（相手の通・無い id は nil で何もしない）
     mutating func unsend(_ id: String) -> DMMessage? {
         guard let i = messages.firstIndex(where: { $0.id == id }), messages[i].mine else { return nil }
+        withdrawn.insert(id)
         return messages.remove(at: i)
     }
 
     /// 取り消しに失敗した1通を元の位置へ戻す（時刻の順に並ぶ・`merge` と同じ）
     mutating func restore(_ message: DMMessage) {
+        withdrawn.remove(message.id)
         merge([message])
     }
 

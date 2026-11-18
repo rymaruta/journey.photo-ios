@@ -1090,6 +1090,8 @@ struct DMConversationView: View {
             return
         }
         DMStallProbe.note("removed", value: "n=\(log.messages.count)", force: true)
+        // 見張り（UI テストのときだけ）: 押した時点から数える。答えを待つ間に届いた読み直しで戻っても `readded` に出る
+        if PreviewSession.dm { unsendProbe.unsent.append(removed.id) }
         actionError = nil
         let before = draft
         let returned = DMUnsend.returnedText(removed, canSend: canSend).map { DMUnsend.draft(current: draft, returning: $0) }
@@ -1104,10 +1106,7 @@ struct DMConversationView: View {
         } catch {
             failure = error
         }
-        if PreviewSession.dm {
-            unsendProbe.unsent.append(removed.id)
-            unsendProbe.outcome = "\(DMUnsend.outcome(of: failure))"
-        }
+        if PreviewSession.dm { unsendProbe.outcome = "\(DMUnsend.outcome(of: failure))" }
         DMStallProbe.note("outcome", value: "\(DMUnsend.outcome(of: failure)) n=\(log.messages.count) err=\(failure.map { String(describing: $0).prefix(120) } ?? "-")",
                           force: true)
         switch DMUnsend.outcome(of: failure) {
