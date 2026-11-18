@@ -495,7 +495,7 @@ struct DMConversationView: View {
             .onAppear { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
             .onChange(of: log.messages.count + log.outgoing.count) { _, _ in
                 DMStallProbe.note("scrollTo", value: "n=\(log.messages.count)", force: true)
-                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
+                proxy.scrollTo(Self.bottomId, anchor: .bottom)   // 一時の枝 c（マージしない）: 動きを外す
             }
         }
         .frame(maxHeight: .infinity)
