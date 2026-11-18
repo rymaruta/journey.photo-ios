@@ -10,6 +10,9 @@
 # `codemagic-cli-tools`（Codemagic が公開している CLI・pip で入る）が作る。
 # Codemagic の設定（`codemagic.yaml`）も残してあるので、どちらでも回せる。
 name: TestFlight
+# ビルドだけの回（screens=build）は一覧で見分けられる名前にする（`Tools/wait-mac-run.sh` もこの名前で見分ける）。
+# 他の回は今までどおり「TestFlight」。workflow_call で呼ばれた回は呼んだ側の名前になる（ここは効かない）
+run-name: ${{ inputs.screens == 'build' && 'ビルドだけ' || 'TestFlight' }}
 
 on:
   workflow_call:
@@ -56,8 +59,12 @@ on:
       # テストを飛ばさず全部回す（main に入る前に必ず一度は全部が回る）。
       # 上げる回（submit=true）で tests=true なら配信差分に応じたUIテスト＋SmokeTestsを実行する。
       # 上げる回でテストを流すかどうかは、今までどおり `tests` で決まる
+      # 2026-11-18 判断（owner の依頼）: `build` はビルドだけの回（下の job `build-only`）。アプリ本体・単体テスト・
+      # UI テストのターゲットを build-for-testing で組むだけ。テストを流さない・シミュレーターを起動しない・
+      # 署名・配信・版の印は付けない（submit の値は見ない）。担当が Mac を「直ったか試す場所」に使い、
+      # 1日 40 回中 24 回落ちた（うち3回はビルドの失敗）ので、テストの回の前にコンパイルだけ短く確かめる
       screens:
-        description: "UIテスト範囲：auto=差分から選択、none=起動確認、all=全件"
+        description: "UIテスト範囲：auto=差分から選択、none=起動確認、all=全件、build=ビルドだけ（テストしない）"
         type: string
         default: "auto"
       # 2026-10-31 判断（#429）: 全部の回（submit=false・screens 空）は、UI テストを別々の Mac 3台に分けて
@@ -77,7 +84,8 @@ on:
 # 回ごとの組にして待たせない。
 # GitHub の決まりで、待てるのは1本だけ——3本目を流すと、待っていた2本目は取り消される
 concurrency:
-  group: testflight-${{ inputs.submit && 'upload' || github.run_id }}
+  # ビルドだけの回（screens=build）は submit が既定の true のままでも上げないので、上げる回の組に入れない
+  group: testflight-${{ inputs.submit && inputs.screens != 'build' && 'upload' || github.run_id }}
   cancel-in-progress: false
 
 # **渡していない権限は漏らせない**（photo-gallery の IAM-3 と同じ方針）。
@@ -90,6 +98,8 @@ env:
 
 jobs:
   build:
+    # ビルドだけの回（screens=build）は下の `build-only` が組む。この job は丸ごと飛ばす
+    if: ${{ inputs.screens != 'build' }}
     # **版の印（`testflight/<版>`）を押すのに書き込みが要る。**
     # 既定は上の `permissions` のとおり読み取りだけ。ここだけ開ける。
     # `id-token: write` は画面写真を非公開の S3 に置く役割に OIDC で入るため（`Tools/upload-shots.sh`・2026-11-12）
@@ -827,6 +837,86 @@ jobs:
           key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
 
   # ===========================================================================================
+  # 🔴 **ビルドだけの回**（`screens=build`・2026-11-18 判断・owner の依頼）
+  #
+  # owner は Mac を持たず、Linux の環境では Xcode でコンパイルできない。担当が Mac の回を「直ったか試す場所」に使い、
+  # 2026-11-18 は 40 回中 24 回落ちた（うち3回はビルドの失敗）。テストの回（30分前後）を流す前に、コンパイルだけを
+  # 短く確かめる。中身は `Tools/xcode-test.sh build`（build-for-testing）だけ:
+  # アプリ本体・単体テスト（JourneyPhotoTests）・UI テスト（JourneyPhotoUITests）のターゲットを全部組む。
+  # - テストを流さない・シミュレーターを起動しない（build-for-testing は行き先を決めるだけで起動しない）
+  # - 署名・配信・版の印（testflight/<版>）・控えの書き込み・画面写真は無い（submit の値は見ない）
+  # - 「全部のテストが通った」の印は付かない（PR の検証は、この回をテスト済みと数えない）
+  # - 落ちたら `file:line: error:` の行を job の要約と注釈に並べる（`Tools/compile-errors.py`）
+  # 時間の数（2026-11-18）: run 1498（この job の最初の回・控え有り）で job 全体 10分20秒 = 控えから戻す 2分10秒・
+  # 組む 7分45秒。前の run 1487 の `build` の job では戻す 3分41秒・組む 8分40秒。遅い方でも 13分前後なので上限は 20分。
+  # 控えが外れて依存から組み直す回（Xcode の版が替わった直後など）は 50分を超えて上限に当たる（run #8）。そのときはテストの回で組む
+  # ===========================================================================================
+  build-only:
+    name: ビルドだけ（コンパイルの確認）
+    if: ${{ inputs.screens == 'build' }}
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Xcodeを選択
+        run: bash Tools/select-xcode.sh
+
+      - name: Xcodeのバージョンを確認
+        run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
+
+      # 控えの鍵と path は `build` の job の「前回の作りかけを控えから戻す」と同じ（違うと当たらない）。読むだけ
+      - name: 配信用アプリをビルドキャッシュのキーを生成
+        run: echo "CACHE_KEY=xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-${{ hashFiles('project.yml', 'Package.swift') }}" >> "$GITHUB_ENV"
+
+      - name: 配信用アプリをビルドキャッシュを復元
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/SourcePackages
+            ~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.dSYM
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.app
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xctest
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xcresult
+            !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ env.CACHE_KEY }}
+            xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
+
+      - name: Xcodeプロジェクトを生成
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          else
+            echo "xcodegen はインストール済みのため再インストールしません"
+          fi
+          xcodegen generate
+
+      - name: コンパイルだけ（アプリ・単体テスト・UI テストを build-for-testing）
+        id: compile
+        run: |
+          set -euo pipefail
+          mkdir -p build/logs
+          started=$(date +%s)
+          XCODE_LOG=build/logs/xcodebuild-build.log bash Tools/xcode-test.sh build
+          {
+            echo "### ビルドだけ: 通りました（組むのに $(( $(date +%s) - started ))秒）"
+            echo "組んだもの（テストは流していません）:"
+            find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 8 \
+                 \( -name 'JourneyPhoto.app' -o -name '*.xctest' -o -name 'JourneyPhotoUITests-Runner.app' \) \
+                 -path '*Debug-iphonesimulator*' 2>/dev/null | sed 's#.*/Debug-iphonesimulator/#- #' | sort -u
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: コンパイルのエラーを要約に並べる
+        if: ${{ failure() && steps.compile.outcome == 'failure' }}
+        run: |
+          python3 Tools/compile-errors.py build/logs/xcodebuild-build.log >> "$GITHUB_STEP_SUMMARY"
+          python3 Tools/compile-errors.py build/logs/xcodebuild-build.log --annotate
+
+  # ===========================================================================================
   # 🔴 **全部の回は、テストを別々の Mac に分けて同時に流す**（2026-10-31 判断・#429）
   #
   # run 778（41187923424）の実測: 全部の回 128 分 = 控え 2 分・組む 6 分・単体 8 分・UI 109 分（1台で1本ずつ）。
@@ -853,6 +943,8 @@ jobs:
   # `--sharded` を呼んで、決め方を1か所にする（2026-10-31・見直しの指摘）
   shard-plan:
     name: UIテストの分割実行を判定
+    # ビルドだけの回は分けて流すものが無い（ここが飛ぶと、続く test-build・pre・ui・finish も飛ぶ）
+    if: ${{ inputs.screens != 'build' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
