@@ -31,7 +31,14 @@ final class KoyomiCardTests: XCTestCase {
         XCTAssertEqual(K.Frame.post(.story), .story)
     }
 
-    /// 写真の上の余白は、写真の左右の余白以上で 96 以上（ストーリーの幅いっぱいの写真は上 14% の帯の下から）。
+    /// 投稿の縦長 3:4 は写真が主役の大きさ（幅 560 以上・2026-11-18 まとめ役。上の余白を左右にそろえたら 409 幅になった）
+    func testPostPortraitPhotoStaysLarge() {
+        let p = K.place(aspect: 0.75, in: .post(.portrait)).photo
+        XCTAssertGreaterThanOrEqual(p.width, 560, "\(p)")
+        XCTAssertEqual(p.minY, 96, accuracy: 0.01)
+    }
+
+    /// 写真の上の余白は 96 以上。ストーリーは写真の左右の余白以上（幅いっぱいの写真は上 14% の帯の下から）、投稿は 96。
     /// 2026-11-18 owner「上の余白がないのでバランス悪い」（前は縦長の写真の上端が 0 だった）
     func testPhotoHasATopMarginAtLeastItsSideMargin() {
         for (frameName, frame) in Self.frames {
@@ -40,10 +47,12 @@ final class KoyomiCardTests: XCTestCase {
                 let side = (K.width - p.width) / 2
                 let label = "\(frameName) \(name) \(p)"
                 XCTAssertGreaterThanOrEqual(p.minY, K.photoTopMinimum - 0.01, label)
-                // 上の余白＝左右の余白は、ストーリーと投稿 4:5（owner が指摘した絵）では必ず。
-                // 投稿 1:1 は写真が小さくなりすぎる形（縦長・正方形・横長）だけ 96 にとどめる（`balancedShrinkLimit`）
-                if frame != .post(.square) || name == "パノラマ4:1" {
+                if frame == .story {
+                    // ストーリー: 上の余白＝左右の余白（以上）
                     XCTAssertGreaterThanOrEqual(p.minY, side - 0.01, label)
+                } else {
+                    // 投稿: 上の余白は 96 に固定（塊は上から詰める・2026-11-18 まとめ役）
+                    XCTAssertEqual(p.minY, K.photoTopMinimum, accuracy: 0.01, label)
                 }
                 if frame == .story, side < 0.5 {
                     XCTAssertGreaterThanOrEqual(p.minY, K.Frame.story.textTop - 0.01, label)
