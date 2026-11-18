@@ -78,7 +78,7 @@ final class ShareCardNewLayoutsTests: XCTestCase {
         }
     }
 
-    /// 型の並び: 10・重ならない・既定の帯が先頭（既定は変えない）。名前は1語で「・」を使わない
+    /// 型の並び: 11・重ならない・既定の帯が先頭（既定は変えない）。名前は1語で「・」を使わない
     func testStyleChoiceOrder() {
         let order = ShareCardStyleChoice.order
         XCTAssertEqual(order.count, R.Style.allCases.count)
@@ -86,8 +86,10 @@ final class ShareCardNewLayoutsTests: XCTestCase {
         XCTAssertEqual(order.first, .band)
         XCTAssertEqual(Array(order[4..<7]), [.printed, .ticket, .cinema])
         // 2026-11-14: 次の3つ（額装・フィルム・縦書き）は後ろに足す（前からの並びは変えない）
-        XCTAssertEqual(Array(order.suffix(3)), [.mat, .film, .tanzaku])
-        XCTAssertEqual(order.count, 10)
+        XCTAssertEqual(Array(order[7..<10]), [.mat, .film, .tanzaku])
+        // 2026-11-18: 暦と写真の色をいちばん後ろに足した
+        XCTAssertEqual(Array(order.suffix(2)), [.koyomi, .photoColor])
+        XCTAssertEqual(order.count, 12)
         for style in order {
             let title = ShareCardStyleChoice.title(style)
             XCTAssertFalse(title.isEmpty)

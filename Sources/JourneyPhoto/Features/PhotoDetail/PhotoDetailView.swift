@@ -1565,7 +1565,9 @@ struct PhotoDetailView: View {
             early: model.owner?.showsEarlyMark ?? false,
             badge: model.owner?.shownBadge,
             // 撮影地は「大きい単位／（小さい単位）」の2行（2026-11-04 owner）
-            place: LocationMatch.shareCardPlace(target.location))
+            place: LocationMatch.shareCardPlace(target.location),
+            // 日付を描く型（暦・写真の色）の撮った日。撮った日の分からない写真では暦を出さない
+            takenDay: TripBook.hasTakenDay(target) ? TripBook.day(of: target) : nil)
         actionNotice = nil
         signatureBundle = SignatureBundle(
             photoData: raw,

@@ -8,6 +8,21 @@ description: 枝を Mac の CI（本物の Xcode でビルド・テスト・画�
 この環境（Linux）では本物の Xcode でコンパイルできない。最初の本物の確認は
 `ios-testflight.yml` の `submit=false`（TestFlight には出さない）。
 
+## 流す前に（2026-11-18 owner「テスト落ちすぎ」）
+
+- **Mac は確かめのために流す。直ったか試すために流さない。** 流す前に `/verify` と手元の単体テストを通す。
+  2026-11-18 は担当が Mac を試す場所に使い、40 回中 24 回落ちた（うち3回はビルドの失敗）
+- **テストの回の前に、必ずビルドだけの回を通す**（`screens=build`）。アプリ・単体テスト・UI テストの
+  ターゲットを組むだけ（テストを流さない・シミュレーターを起動しない・署名も配信もしない・`submit` は見ない）。
+  控えが当たれば十数分。落ちたら job の要約に `file:line: error:` の行が並ぶ
+  ```bash
+  gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight.yml/dispatches \
+    -f ref=<枝> -f 'inputs[screens]=build'
+  bash Tools/wait-mac-run.sh <sha7> build     # run_in_background で待つ（2つ目の build でビルドだけの回を見る）
+  gh run view <run id> --repo rymaruta/journey.photo-ios   # 落ちたら要約のエラーの行を読む
+  ```
+- **同じ枝でテストの回が2回続けて落ちたら、3回目を流さない。** 落ちた値（テスト名・期待と実際）とログの行を添えて報告する
+
 ## 流す
 
 ```bash
@@ -34,7 +49,7 @@ gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight
   緑なら PR をマージしてよい。毎回30分以内
 - 全部を流す（`screens=all`）のは、原因の分からない不具合を調べる時だけ
 
-待つのは `bash Tools/wait-mac-run.sh <sha7>` を **Bash の run_in_background（timeout 7200000）** で。
+待つのは `bash Tools/wait-mac-run.sh <sha7>`（テストの回。ビルドだけの回は `… <sha7> build`）を **Bash の run_in_background（timeout 7200000）** で。
 `sleep` を繋いで待たない（止められる）。終わると通知が来る。
 
 ## 緑なら
