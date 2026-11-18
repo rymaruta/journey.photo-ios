@@ -64,7 +64,9 @@ struct NotificationsView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink { NotificationSettingsPage() } label: {
+                    // 当たりを 44×44 に（2026-11-18・Mac run 1461 で歯車の当たりが 36pt だった。見出しの3つと同じ直し）
                     Image(systemName: "gearshape")
+                        .appHeaderHitArea()
                 }
                 .accessibilityLabel(L("通知の設定", "Notification settings"))
                 .accessibilityIdentifier("notifications.settings")
