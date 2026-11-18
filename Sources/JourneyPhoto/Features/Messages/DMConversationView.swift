@@ -1088,11 +1088,8 @@ struct DMConversationView: View {
         actionError = nil
         let before = draft
         let returned = DMUnsend.returnedText(removed, canSend: canSend).map { DMUnsend.draft(current: draft, returning: $0) }
-        if let returned {
-            restoredDraft = returned
-            draft = returned
-            fieldFocused = true
-        }
+        // 一時の枝 b（マージしない）: 取り消しで文を欄に戻して入力の印を置く所を外す
+        _ = returned
         var failure: Error?
         do {
             try await environment.dm.unsend(conversationId, messageId: removed.id)
