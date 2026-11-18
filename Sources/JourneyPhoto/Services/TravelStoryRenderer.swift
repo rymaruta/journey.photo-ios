@@ -45,6 +45,11 @@ enum TravelStoryRenderer {
             return Output(data: KoyomiCardRenderer.render(photo: lead, texts: TravelStory.koyomi(facts, choice: choice),
                                                           frame: .story),
                           isSticker: false)
+        case .magazine:
+            // 雑誌（`MagazineCardRenderer`）。ステッカーにはしない（`Kind.supportsSticker`）
+            return MagazineCardRenderer.render(photo: lead, texts: TravelStory.magazine(facts, choice: choice),
+                                               frame: .story)
+                .map { Output(data: $0, isSticker: false) }
         }
     }
     #endif

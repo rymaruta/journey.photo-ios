@@ -22,6 +22,14 @@ struct PhotoService {
         try Self.kept(try await api.authorized(.get, "/user/photos", as: LenientPhotoList.self), from: "/user/photos")
     }
 
+    /// 自分の写真の**全件**（数を数える用・雑誌の Vol. の番号 `MagazineCard.volume`・2026-11-18）。
+    /// `GET /user/photos` はサーバーが索引を最後まで読んで全件を返す（`listMyPhotos`・ページに分けない）。
+    /// **1行でも読めなかったら nil**（数が合わない一覧で番号を出さない）
+    func completeMyPhotos() async throws -> [Photo]? {
+        let list = try await api.authorized(.get, "/user/photos", as: LenientPhotoList.self)
+        return list.dropped == 0 ? list.photos : nil
+    }
+
     /// 公開範囲を絞った写真のうち、**自分に見えるぶん**。`GET /feed/restricted`。
     ///
     /// これらは静的サイトの一覧（`app/data/photos.json`）に載らないので、

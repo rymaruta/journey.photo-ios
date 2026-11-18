@@ -35,6 +35,9 @@ enum SignatureShareCardRenderer {
         case tanzaku
         /// 写真の色の一色の地に写真を切らずに置き、下に二十四節気（2026-11-18 owner「暦 差し色採用」・`KoyomiCard`）
         case koyomi
+        /// 写真を切らずに置き（切れる量 8% 以下なら全面）、題・撮影地と日付・撮影の値・Vol. を余白に
+        /// （2026-11-18 owner 採用・`MagazineCard`）。今の「表紙」（`cover`）とは別の型
+        case magazine
     }
 
     struct Credit {
@@ -58,6 +61,12 @@ enum SignatureShareCardRenderer {
         var takenDay: Date? = nil
         /// 撮った日を絵に出すか（共有画面の「日付」の入切・`ShareCardDateChoice`）。切ると暦は日付も節気も出さない
         var showsDate: Bool = true
+        /// 投稿の題（雑誌の型の題・2026-11-18）。無ければ撮影地を題にする
+        var title: String? = nil
+        /// 写真の id（雑誌の型の Vol. の番号を数えるため・絵には描かない）
+        var photoId: String? = nil
+        /// 自分の何番目の投稿か（雑誌の型の「Vol.」・`MagazineCard.volume`）。分からなければ nil（出さない）
+        var volume: Int? = nil
 
         var placeLines: [String] {
             (place ?? LocationMatch.shareCardPlace(location))?.lines ?? []
@@ -115,6 +124,8 @@ enum SignatureShareCardRenderer {
         case .tanzaku: return renderTanzaku(photo: photo, credit: credit, ratio: ratio)
         case .koyomi: return KoyomiCardRenderer.render(photo: photo, texts: KoyomiCard.texts(for: credit),
                                                        frame: .post(ratio))
+        case .magazine: return MagazineCardRenderer.render(photo: photo, texts: MagazineCard.texts(for: credit),
+                                                           frame: .post(ratio))
         case .band: break   // 帯の型
         }
         typealias L = ShareCardMap.Layout

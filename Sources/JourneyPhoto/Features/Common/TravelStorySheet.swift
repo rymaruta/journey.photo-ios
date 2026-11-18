@@ -24,6 +24,11 @@ struct TravelStorySheet: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var toasts: ToastCenter
+    /// 自分の写真の一覧（雑誌の Vol. の番号を数える・`MagazineVolume`）
+    @EnvironmentObject private var environment: AppEnvironment
+    /// 雑誌の Vol. の番号。読み終えるまで雑誌は描かない。分からなければ nil（「Vol.」を出さない）
+    @State private var volume: Int?
+    @State private var volumeLoaded = false
 
     @State private var choice: TravelStory.Choice
     @State private var leadData: Data?
@@ -100,8 +105,14 @@ struct TravelStorySheet: View {
                 }
             }
             .task(id: loadAttempt) { await loadPhotos() }
+            .task {
+                // 雑誌の Vol. の番号（自分の写真の一覧を全部読んで数える）
+                guard !volumeLoaded else { return }
+                volume = await MagazineVolume.load(photoId: facts.photoId, justPosted: nil, photos: environment.photos)
+                volumeLoaded = true
+            }
             // 今の型を先に、両隣を後から描く（払ったときに待たせない）
-            .task(id: "\(choice.renderKey)#\(leadData?.count ?? 0)#\(filmData?.count ?? 0)#\(renderAttempt)") {
+            .task(id: "\(choice.renderKey)#\(leadData?.count ?? 0)#\(filmData?.count ?? 0)#\(renderAttempt)#\(volumeLoaded)") {
                 await renderVisible()
             }
             .onChange(of: choice) { _, newValue in TravelStory.save(newValue) }
@@ -170,7 +181,7 @@ struct TravelStorySheet: View {
 
     @ViewBuilder
     private func slide(_ kind: TravelStory.Kind) -> some View {
-        let key = choice.with(kind: kind).renderKey
+        let key = renderKey(choice.with(kind: kind))
         let sticker = choice.with(kind: kind).effectiveMode == .sticker
         ZStack {
             if sticker { StickerChecker() } else { WebTheme.sheet }
@@ -314,7 +325,19 @@ struct TravelStorySheet: View {
 
     // MARK: - 渡す
 
-    private var currentOutput: TravelStoryRenderer.Output? { outputs[choice.renderKey]?.output }
+    private var currentOutput: TravelStoryRenderer.Output? { outputs[renderKey(choice)]?.output }
+
+    /// 絵を控える鍵。雑誌は Vol. の番号も入れる（読み終える前の絵を使い回さない）
+    private func renderKey(_ each: TravelStory.Choice) -> String {
+        each.kind == .magazine ? each.renderKey + "|v" + (volume.map { String($0) } ?? "-") : each.renderKey
+    }
+
+    /// 描くときの事実（Vol. の番号を写したもの）
+    private var drawnFacts: TravelStory.Facts {
+        var drawn = facts
+        drawn.volume = volume
+        return drawn
+    }
 
     /// 写真に重ねる絵は共有シートへ、ステッカーはクリップボードへ（理由は型の注記）
     private var primaryButton: some View {
@@ -370,13 +393,15 @@ struct TravelStorySheet: View {
     /// 選びが替わって task が取り消されたら、まだ始めていない描画は始めず、走っている描画（detached）にも取り消しを伝える
     private func renderVisible() async {
         let wanted = TravelStory.nearby(choice.kind, in: kinds).map { choice.with(kind: $0) }
-        let keys = Set(wanted.map(\.renderKey))
+        let keys = Set(wanted.map(renderKey))
         outputs = outputs.filter { keys.contains($0.key) }
         guard let leadData else { return }
         for each in wanted {
             guard !Task.isCancelled else { return }
-            let key = each.renderKey
+            let key = renderKey(each)
             guard outputs[key] == nil, !failedKeys.contains(key) else { continue }
+            // 雑誌は Vol. の番号を読み終えてから（読み終えたら描き直しの task が来る）
+            if each.kind == .magazine, !volumeLoaded { continue }
             let photos: [Data]
             if each.kind == .film {
                 guard let filmData else { continue }   // 読み終えたら描き直しの task が来る
@@ -384,7 +409,7 @@ struct TravelStorySheet: View {
             } else {
                 photos = [leadData]
             }
-            let facts = facts
+            let facts = drawnFacts
             let job = Task.detached(priority: .userInitiated) { () -> Rendered? in
                 guard !Task.isCancelled,
                       let output = TravelStoryRenderer.render(photos, facts: facts, choice: each) else { return nil }

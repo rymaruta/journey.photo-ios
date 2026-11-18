@@ -315,10 +315,11 @@ final class KoyomiCardTests: XCTestCase {
         let dated = Self.credit("兼六園, 兼六町, 金沢市, 石川県, 920-0936, 日本", lat: 36.56)
         var undated = dated
         undated.takenDay = nil
-        XCTAssertEqual(SignatureShareCardRenderer.Style.allCases.filter(ShareCardDateChoice.drawsDate), [.koyomi])
+        // 2026-11-18: 雑誌も日付を描く（`MagazineCardTests`）
+        XCTAssertEqual(SignatureShareCardRenderer.Style.allCases.filter(ShareCardDateChoice.drawsDate), [.koyomi, .magazine])
         XCTAssertTrue(ShareCardDateChoice.showsToggle(style: .koyomi, credit: dated))
         XCTAssertFalse(ShareCardDateChoice.showsToggle(style: .koyomi, credit: undated))
-        for style in SignatureShareCardRenderer.Style.allCases where style != .koyomi {
+        for style in SignatureShareCardRenderer.Style.allCases where !ShareCardDateChoice.drawsDate(style) {
             XCTAssertFalse(ShareCardDateChoice.showsToggle(style: style, credit: dated), style.rawValue)
         }
         XCTAssertFalse(ShareCardDateChoice.label.contains("撮りどき"))
@@ -424,7 +425,8 @@ final class KoyomiCardTests: XCTestCase {
         let sheet = try String(contentsOf: root.appendingPathComponent(
             "Sources/JourneyPhoto/Features/Common/SignatureShareCardSheet.swift"), encoding: .utf8)
         XCTAssertTrue(sheet.contains("where ShareCardDateChoice.drawsDate(option) {\n                    thumbnails.removeValue(forKey: option.rawValue)"))
-        XCTAssertTrue(sheet.contains(".task(id: showsDate) {"))
+        // 2026-11-18: 雑誌の Vol. の番号を読み終えたときも見本を作り直す（`MagazineCardTests`）
+        XCTAssertTrue(sheet.contains(".task(id: \"\\(showsDate)-\\(volumeLoaded)\") {"))
     }
 
     /// 日本の「〇〇郡〇〇町」は郡を落とす（列が詰まらないように）
@@ -440,7 +442,8 @@ final class KoyomiCardTests: XCTestCase {
     // MARK: - 並び（今ある形は変えない・撮った日が無ければ外す）
 
     func testPostOrderAddsKoyomiAtTheEnd() {
-        XCTAssertEqual(ShareCardStyleChoice.order.last, .koyomi)
+        // 2026-11-18: 雑誌を暦の後ろに足した
+        XCTAssertEqual(Array(ShareCardStyleChoice.order.suffix(2)), [.koyomi, .magazine])
         XCTAssertEqual(Array(ShareCardStyleChoice.order.prefix(10)),
                        [.band, .fade, .cover, .label, .printed, .ticket, .cinema, .mat, .film, .tanzaku])
         XCTAssertEqual(ShareCardStyleChoice.title(.koyomi), L("暦", "Almanac"))
@@ -455,15 +458,16 @@ final class KoyomiCardTests: XCTestCase {
     }
 
     func testStoryKindsAddKoyomiAtTheEnd() {
-        XCTAssertEqual(TravelStory.Kind.allCases, [.pass, .stamp, .film, .koyomi])
+        // 2026-11-18: 雑誌を暦の後ろに足した（撮った日が無くても選べる）
+        XCTAssertEqual(TravelStory.Kind.allCases, [.pass, .stamp, .film, .koyomi, .magazine])
         XCTAssertFalse(TravelStory.Kind.koyomi.supportsSticker)
         XCTAssertFalse(TravelStory.Kind.koyomi.usesPhase)
         let dated = TravelStory.Facts(location: "石川県", takenDay: Self.october10, name: "旅灯")
         let undated = TravelStory.Facts(location: "石川県", takenDay: nil, name: "旅灯")
-        XCTAssertEqual(TravelStory.kinds(for: dated), [.pass, .stamp, .film, .koyomi])
-        XCTAssertEqual(TravelStory.kinds(for: undated), [.pass, .stamp, .film])
-        XCTAssertEqual(TravelStory.nearby(.film, in: TravelStory.kinds(for: undated)), [.film, .stamp])
-        XCTAssertEqual(TravelStory.nearby(.koyomi), [.koyomi, .film])
+        XCTAssertEqual(TravelStory.kinds(for: dated), [.pass, .stamp, .film, .koyomi, .magazine])
+        XCTAssertEqual(TravelStory.kinds(for: undated), [.pass, .stamp, .film, .magazine])
+        XCTAssertEqual(TravelStory.nearby(.film, in: TravelStory.kinds(for: undated)), [.film, .stamp, .magazine])
+        XCTAssertEqual(TravelStory.nearby(.koyomi), [.koyomi, .film, .magazine])
         // ステッカーを選んでいても、暦は写真に重ねる絵（1枚の JPEG）
         var choice = TravelStory.Choice()
         choice.mode = .sticker

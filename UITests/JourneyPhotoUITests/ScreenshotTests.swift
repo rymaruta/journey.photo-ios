@@ -11909,4 +11909,36 @@ final class ScreenshotTests: XCTestCase {
         }
         XCTAssertGreaterThanOrEqual(index, 1, "暦の見本が出ない")
     }
+
+    /// **雑誌の書き出し画像**（2026-11-18 owner 採用）。見本の画面（`-JPPreviewMagazine YES`・`MagazineGalleryPreview`）で、
+    /// 写真の形（縦長 3:4・横長 3:2・正方形）× 置き場（ストーリー・投稿 4:5・1:1）と、全面に敷く形・長い題・字の少ない見本を
+    /// 1枚ずつ撮る（画像の所だけ）。数で測る点検は単体テスト `ShareCardAuditTests.testMagazine…`・`MagazineCardTests`。
+    /// 出なければ撮らずに抜ける
+    func testCapturesMagazineShareCards() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewMagazine", "YES"]
+        app.launch()
+        let label = app.staticTexts["magazineGallery.label"].firstMatch
+        let card = app.images["magazineGallery.card"].firstMatch
+        let next = app.buttons["magazineGallery.next"].firstMatch
+        guard label.waitForExistence(timeout: 30) else { return }
+        var index = 0
+        while index < 20 {
+            let ready = NSPredicate(format: "label BEGINSWITH %@ AND label ENDSWITH %@", "\(index) ", "ready")
+            let done = XCTNSPredicateExpectation(predicate: ready, object: label)
+            guard XCTWaiter().wait(for: [done], timeout: 30) == .completed, card.exists else { break }
+            let parts = label.label.split(separator: " ").map(String.init)
+            let name = parts.count > 2 ? "\(parts[1]) \(parts[2])" : "\(index)"
+            print("measured [magazine] \(label.label)")
+            let shot = XCTAttachment(screenshot: card.screenshot())
+            shot.name = String(format: "132-雑誌（%02d %@）", index, name)
+            shot.lifetime = .keepAlways
+            add(shot)
+            guard next.isEnabled else { break }
+            next.tap()
+            index += 1
+        }
+        XCTAssertGreaterThanOrEqual(index, 1, "雑誌の見本が出ない")
+    }
 }
