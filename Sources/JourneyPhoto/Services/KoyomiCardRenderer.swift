@@ -68,7 +68,10 @@ enum KoyomiCardRenderer {
             line(column.key, font: sans(K.eyebrowSize, .medium), color: ink(K.Ink.eyebrow), kern: K.eyebrowKern,
                  x: x, y: top + K.eyebrowY, maxWidth: K.columnWidth)
             if column.serif {
-                fitted(column.value, serif: true, size: K.valueSize, minimum: K.valueMinimumSize, color: .white,
+                // 最小の字でも入らなければ、短い字（大きい単位）に替える（`KoyomiCard.Column.fallback`）
+                let value = column.fallback.map { fits(column.value, size: K.valueMinimumSize, maxWidth: K.columnWidth)
+                    ? column.value : $0 } ?? column.value
+                fitted(value, serif: true, size: K.valueSize, minimum: K.valueMinimumSize, color: .white,
                        x: x, y: top + K.valueY, maxWidth: K.columnWidth)
             } else {
                 fitted(column.value, serif: false, size: K.valueSize, minimum: K.valueMinimumSize, color: .white,
@@ -101,6 +104,11 @@ enum KoyomiCardRenderer {
         guard !units.isEmpty else { return true }
         var glyphs = [CGGlyph](repeating: 0, count: units.count)
         return CTFontGetGlyphsForCharacters(font as CTFont, &units, &glyphs, units.count)
+    }
+
+    /// 明朝のその大きさで幅に入るか
+    static func fits(_ value: String, size: CGFloat, maxWidth: CGFloat) -> Bool {
+        (value as NSString).size(withAttributes: [.font: mincho(size, for: value)]).width <= maxWidth
     }
 
     /// 幅に入るまで縮めて1行（下限まで縮めても入らなければ末尾を切り詰める）

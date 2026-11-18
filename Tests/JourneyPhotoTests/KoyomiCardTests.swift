@@ -194,6 +194,17 @@ final class KoyomiCardTests: XCTestCase {
             camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil,
             verified: false, proStyle: nil, early: false, badge: nil)
         sydney.takenDay = Self.october10
+        // 海外の小さい地名には、入らないときの代わりに国を持たせる（日本は県）
+        var paris = SignatureShareCardRenderer.Credit(
+            name: "Emily", username: nil, location: "Saint-Germain-en-Laye, Île-de-France, France",
+            coords: CLLocationCoordinate2D(latitude: 49, longitude: 2.5),
+            camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil,
+            verified: false, proStyle: nil, early: false, badge: nil)
+        paris.takenDay = Self.october10
+        let pt = K.texts(for: paris).columns.first { $0.key == "PLACE" }
+        XCTAssertEqual(pt?.value, "Saint-Germain-en-Laye")
+        XCTAssertEqual(pt?.fallback, "France")
+        XCTAssertEqual(t.columns.first { $0.key == "PLACE" }?.fallback, "石川県")
         let s = K.texts(for: sydney)
         XCTAssertFalse(s.isSolarTerm)
         XCTAssertEqual(s.latin, "AUSTRALIA")
@@ -241,6 +252,10 @@ final class KoyomiCardTests: XCTestCase {
         let pref = TravelStory.koyomi(facts, choice: choice)
         XCTAssertEqual(pref.heading, "寒露")
         XCTAssertEqual(pref.columns.map(\.value), ["2026.10.10", "石川県", "17 / 24"])
+        XCTAssertNil(pref.columns[1].fallback)
+        choice.placeLevel = .city
+        XCTAssertEqual(TravelStory.koyomi(facts, choice: choice).columns[1].fallback, "石川県")
+        choice.placeLevel = .prefecture
         choice.dateLevel = .none
         let noDate = TravelStory.koyomi(facts, choice: choice)
         XCTAssertFalse(noDate.isSolarTerm)

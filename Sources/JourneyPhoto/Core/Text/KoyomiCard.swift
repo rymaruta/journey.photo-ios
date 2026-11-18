@@ -113,6 +113,10 @@ enum KoyomiCard {
         let value: String
         /// 撮影地は明朝、ほかは SF の等幅数字
         let serif: Bool
+        /// 最小の字（30px）でも幅 300 に入らないときに代わりに出す、短い字（撮影地の大きい単位）。
+        /// 2026-11-18 判断（Mac run 1483 の点検で「Saint-Germain-en-Laye」が 30px で幅 300 に入らず「Saint-Germain-en…」と切れた）:
+        /// 地名を途中で切るより、一つ大きい単位（国・県）を丸ごと出す。それも入らなければ末尾を切り詰める
+        var fallback: String? = nil
     }
 
     struct Texts: Equatable {
@@ -136,15 +140,16 @@ enum KoyomiCard {
     /// - `place`: 列に出す撮影地（呼ぶ側が細かさを決める）。`country`: 絵に出す撮影地の国（海外のとき）。
     ///   `hemisphereCountry`: 南半球かを見分ける国（絵には出さない・既定は `country`）
     static func texts(takenDay: Date?, showsDate: Bool, latitude: Double?, place: String?,
-                      country: String?, hemisphereCountry: String?? = nil) -> Texts {
+                      country: String?, hemisphereCountry: String?? = nil, placeFallback: String? = nil) -> Texts {
         let date = showsDate ? takenDay.map(dateText) : nil
         let south = isSouthern(latitude: latitude, country: hemisphereCountry ?? country)
         let placeValue = place.flatMap(clean)
+        let fallback = placeFallback.flatMap(clean).flatMap { $0 == placeValue ? nil : $0 }
         if let takenDay, showsDate, !south {
             let term = SolarTerm.term(onDay: takenDay)
             var columns: [Column] = []
             if let date { columns.append(Column(key: "DATE", value: date, serif: false)) }
-            if let placeValue { columns.append(Column(key: "PLACE", value: placeValue, serif: true)) }
+            if let placeValue { columns.append(Column(key: "PLACE", value: placeValue, serif: true, fallback: fallback)) }
             columns.append(Column(key: "SOLAR TERM", value: "\(term.number) / 24", serif: false))
             return Texts(heading: term.name, isSolarTerm: true, latin: term.latin, columns: columns,
                          meaning: term.meaning)
@@ -152,7 +157,7 @@ enum KoyomiCard {
         let countryValue = country.flatMap(clean)
         var columns: [Column] = []
         if let date { columns.append(Column(key: "DATE", value: date, serif: false)) }
-        if let placeValue { columns.append(Column(key: "PLACE", value: placeValue, serif: true)) }
+        if let placeValue { columns.append(Column(key: "PLACE", value: placeValue, serif: true, fallback: fallback)) }
         // 撮影地が国そのもの（「オーストラリア」だけ）なら、同じ字を2列に並べない
         if let countryValue, countryValue != placeValue {
             columns.append(Column(key: "COUNTRY", value: countryValue, serif: true))
@@ -166,7 +171,8 @@ enum KoyomiCard {
     static func texts(for credit: SignatureShareCardRenderer.Credit) -> Texts {
         let place = credit.place ?? LocationMatch.shareCardPlace(credit.location)
         return texts(takenDay: credit.takenDay, showsDate: true, latitude: credit.coords?.latitude,
-                     place: place?.secondary ?? place?.primary, country: country(of: credit.location))
+                     place: place?.secondary ?? place?.primary, country: country(of: credit.location),
+                     placeFallback: place?.secondary == nil ? nil : place?.primary)
     }
 
     /// 「2026.10.10」（撮った日は UTC 0 時で持つ暦の日なので UTC で書く）

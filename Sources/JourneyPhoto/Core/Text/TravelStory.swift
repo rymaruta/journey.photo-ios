@@ -459,7 +459,10 @@ enum TravelStory {
         return KoyomiCard.texts(takenDay: facts.takenDay, showsDate: choice.dateLevel != .none,
                                 latitude: facts.latitude, place: texts.place,
                                 country: choice.placeLevel == .none ? nil : country,
-                                hemisphereCountry: country)
+                                hemisphereCountry: country,
+                                // 市までの地名が長いときは県まで（海外は国）を出す（`KoyomiCard.Column.fallback`）
+                                placeFallback: choice.placeLevel == .city
+                                    ? placeText(facts.location, level: .prefecture) : nil)
     }
 
     /// 切手の下の右（明朝）。旅の何日目か、分からなければ出さない
