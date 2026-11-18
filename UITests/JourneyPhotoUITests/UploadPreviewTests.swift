@@ -187,9 +187,8 @@ final class UploadPreviewTests: XCTestCase {
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return nil }
         tabBar.buttons.element(boundBy: 2).tap()
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        guard toPhoto.waitForExistence(timeout: 10), toPhoto.isHittable else { return nil }
-        toPhoto.tap()
+        // 2026-11-18（案 B1）: 下の「投稿」で写真の一覧が開き、見本の1枚（`-JPPreviewUploadSample`）はそのまま欄の段に入る
+        // （前の選ぶシートの「写真を投稿」を押す手は無くなった）
         guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 60) else { return nil }
         // 写真の位置から撮影地を引く・撮影スポットの索引を読む間を待つ
         Thread.sleep(forTimeInterval: 3)

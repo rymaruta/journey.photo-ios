@@ -66,15 +66,25 @@ final class UploadDetailsTests: XCTestCase {
         XCTAssertTrue(UploadDetails.sampleNote.contains("2"))
     }
 
-    // MARK: - 写真を選ぶ画面を自動で開く
+    // MARK: - 写真の一覧の段（2026-11-18 案 B1。前は 0.9 秒待って OS の写真選びを自動で開いた）
 
-    func testLibraryOpensOnceOnlyWhenEmpty() {
-        XCTAssertTrue(UploadDetails.autoOpensLibrary(hasPhotos: false, alreadyOffered: false, isWorking: false))
-        XCTAssertFalse(UploadDetails.autoOpensLibrary(hasPhotos: true, alreadyOffered: false, isWorking: false),
-                       "旅の写真から来た回（もう並んでいる）は開かない")
-        XCTAssertFalse(UploadDetails.autoOpensLibrary(hasPhotos: false, alreadyOffered: true, isWorking: false),
-                       "選ぶ画面をやめた・戻ってきた回にまた開かない")
-        XCTAssertFalse(UploadDetails.autoOpensLibrary(hasPhotos: false, alreadyOffered: false, isWorking: true))
+    func testLibraryStageShowsOnlyWhenEmptyAndSettled() {
+        XCTAssertTrue(UploadDetails.showsLibraryStage(hasPhotos: false, restoring: false, preparingCaptures: 0,
+                                                      isWorking: false, awaitingInitial: false))
+        XCTAssertFalse(UploadDetails.showsLibraryStage(hasPhotos: true, restoring: false, preparingCaptures: 0,
+                                                       isWorking: false, awaitingInitial: false),
+                       "写真を選んだのに一覧のまま")
+        XCTAssertFalse(UploadDetails.showsLibraryStage(hasPhotos: false, restoring: true, preparingCaptures: 0,
+                                                       isWorking: false, awaitingInitial: false),
+                       "下書きを戻している途中に一覧が一瞬出る")
+        XCTAssertFalse(UploadDetails.showsLibraryStage(hasPhotos: false, restoring: false, preparingCaptures: 1,
+                                                       isWorking: false, awaitingInitial: false),
+                       "撮った1枚を整えている途中に一覧に戻る")
+        XCTAssertFalse(UploadDetails.showsLibraryStage(hasPhotos: false, restoring: false, preparingCaptures: 0,
+                                                       isWorking: true, awaitingInitial: false))
+        XCTAssertFalse(UploadDetails.showsLibraryStage(hasPhotos: false, restoring: false, preparingCaptures: 0,
+                                                       isWorking: false, awaitingInitial: true),
+                       "旅の写真・撮った1枚を入れる前に一覧が出る")
     }
 
     // MARK: - 画面の配線（Linux では描けないので文で確かめる）
@@ -114,21 +124,23 @@ final class UploadDetailsTests: XCTestCase {
         XCTAssertTrue(body.prefix(2500).contains("UploadDetails.showsSampleNote("), "作例の一言が撮影地の下に無い")
     }
 
-    /// 開いたら写真を選ぶ画面へ（決まりを通してから開く）
-    func testFormOpensTheLibraryThroughTheRule() throws {
+    /// 開いたら写真の一覧の段（決まりを通す）。**0.9 秒待って OS の写真選びを開く道は無い**（押す回数が1回減る）
+    func testFormStartsWithTheLibraryStage() throws {
         let source = try uploadViewSource()
-        XCTAssertTrue(source.contains("UploadDetails.autoOpensLibrary("), "自動で開く決まりを通していない")
-        XCTAssertTrue(source.contains("offeredLibrary = true\n            showLibrary = true\n        }"),
-                      "開いたときにだけ印を付ける（待っている間に閉じた回に印だけ残さない）")
-        let task = try XCTUnwrap(source.range(of: "UploadDetails.autoOpenDelayNanoseconds"))
-        let mark = try XCTUnwrap(source.range(of: "offeredLibrary = true"))
-        XCTAssertLessThan(task.lowerBound, mark.lowerBound, "待つ前に印を付けている")
+        XCTAssertTrue(source.contains("UploadDetails.showsLibraryStage("), "一覧の段の決まりを通していない")
+        XCTAssertTrue(source.contains("} else if libraryStage {\n                libraryStageView\n            } else {\n                form"),
+                      "写真が無い間に欄が出る")
+        XCTAssertFalse(source.contains("autoOpenDelay"), "開いてから待って OS の写真選びを開く道が残っている")
+        XCTAssertFalse(source.contains("offeredLibrary"), "自動で開いた印が残っている")
+        // 「アルバム」「追加」は OS の写真選び（立て直しを通す）
         XCTAssertTrue(source.contains("Button { openLibrary() }"), "「ライブラリから選ぶ」が立て直しを通っていない")
-    }
-
-    /// 自動で開くまでの待ちはシートの出る時間（約0.5秒）より長め
-    func testAutoOpenWaitsLongerThanTheSheetAnimation() {
-        XCTAssertGreaterThanOrEqual(UploadDetails.autoOpenDelayNanoseconds, 800_000_000)
+        XCTAssertTrue(source.contains("onAlbums: libraryGridShown ? { openLibrary() } : nil,"))
+        // 開いたときの支度（問い・最初から入れる写真）は一覧の段でも走る（画面の外側の onAppear）
+        let outer = try XCTUnwrap(source.range(of: ".onChange(of: libraryShownForFlow)"))
+        let setup = try XCTUnwrap(source.range(of: "model.applyInitialPhotos(initialPhotos, startPrivate: startPrivate)"))
+        let form = try XCTUnwrap(source.range(of: "    private var form: some View {"))
+        XCTAssertLessThan(outer.lowerBound, setup.lowerBound)
+        XCTAssertLessThan(setup.lowerBound, form.lowerBound, "開いたときの支度が欄にだけ付いている（一覧の段で問いが出ない）")
     }
 
     /// 🔴 立ったままの印は一度下ろしてから立てる（true に true では開かない）

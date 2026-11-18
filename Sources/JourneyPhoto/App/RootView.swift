@@ -41,10 +41,12 @@ struct RootView: View {
     @State private var mapStackId = 0
     @State private var unread = 0
     @Environment(\.scenePhase) private var scenePhase
-    /// 投稿の「＋」から開くもの
+    /// 投稿の「＋」から開くもの（写真の一覧・案 B1・2026-11-18）
     @State private var showPostChoice = false
-    /// 投稿の選択。シートが閉じきった後に次の画面を開く
-    @State private var pendingPostChoice: PostSheet.Kind?
+    /// 投稿の入口の状態（いまの切り替え・選んだ入口）。開くたびに作り直す
+    @State private var createFlow = CreateFlow()
+    /// 投稿の選択。入口が閉じきった後に次の画面を開く
+    @State private var pendingPostChoice: PostEntry?
     @State private var showPhotoUpload = false
     /// 「送れなかった投稿があります」（送っている途中でアプリが終了した・起動のあと一度だけ・2026-10-16）
     @State private var interruptedUpload: UploadDraftRules.InterruptedNotice?
@@ -1247,8 +1249,10 @@ struct RootView: View {
                     openPostDraftId = nil
                 }
             }
-            .sheet(isPresented: $showPostChoice, onDismiss: postChoiceDismissed) {
-                PostSheet(drafts: PostSheet.draftCount(userId: auth.userId)) { kind in pendingPostChoice = kind }
+            // 2026-11-18 判断（案 B1・owner 採用）: 下の「投稿」は**すぐ写真の一覧**（前の選ぶシート #187 はやめた）。
+            // 一覧・欄・作る画面を1つの画面いっぱいの覆いで出す（下の「投稿 | ストーリー」で入れ替える）
+            .fullScreenCover(isPresented: $showPostChoice, onDismiss: createFlowDismissed) {
+                CreateFlowView(flow: createFlow)
             }
             // 構図を重ねて撮る（作例なし）。「投稿」で撮った1枚を受け、**閉じきってから**投稿画面を開く
             .composeGuidePresenter(composeLauncher, spotName: nil,
@@ -1341,7 +1345,21 @@ struct RootView: View {
         }
     }
 
-    /// 投稿の選択シートが閉じきってから、次の画面を開く。
+    /// 投稿の入口（写真の一覧）が閉じきった。写真・ストーリーを出した回はマイページ・ホームに知らせ
+    /// （`postSheetClosed`）、一覧の上・中の入口（旅の写真から・構図・下書き）が押されていれば、それを開く
+    private func createFlowDismissed() {
+        if createFlow.used { tabRouter.postSheetClosed() }
+        if let entry = createFlow.takeChosen() { pendingPostChoice = entry }
+        postChoiceDismissed()
+    }
+
+    /// 投稿の入口を開く（下の「投稿」・空の画面の一手）。開くたびに状態を作り直す
+    private func openCreateFlow(_ mode: CreateFlowRules.Mode) {
+        createFlow = CreateFlow(mode: mode)
+        showPostChoice = true
+    }
+
+    /// 入口・下書きの一覧が閉じきってから、次の画面を開く。
     /// 先に次の sheet / fullScreenCover を立てると、iOS が遷移を取りこぼすことがある。
     private func postChoiceDismissed() {
         if let kind = pendingPostChoice {
@@ -1352,12 +1370,13 @@ struct RootView: View {
     }
 
     /// 投稿の選択で選ばれたもの
-    private func choosePost(_ kind: PostSheet.Kind) {
+    private func choosePost(_ kind: PostEntry) {
         switch kind {
         case .photo:
-            pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .photo, pending: pendingTripPhotos)
-            showPhotoUpload = true
-        case .story: showStoryComposer = true
+            // 2026-11-18（案 B1）: 写真を投稿は**写真の一覧から**（前は投稿の画面が 0.9 秒待って OS の写真選びを開いた）
+            pendingTripPhotos = []
+            openCreateFlow(.post)
+        case .story: openCreateFlow(.story)
         case .trip:
             pendingTripPhotos = []
             showTripImport = true
@@ -1439,7 +1458,7 @@ struct RootView: View {
                 PhotoMapView(unread: unread,
                              onOpenNotifications: { openNotificationsFromBell() },
                              messagesUnread: messagesUnread,
-                             onPost: { showPostChoice = true })
+                             onPost: { openCreateFlow(.post) })
                     .perfMark("tab.map.appear")
             }
             // 積み重ねを根まで戻すときだけ替わる（`TabRouter.resetsMapStack`）
@@ -1538,7 +1557,7 @@ struct RootView: View {
             PerfRecorder.shared.recordSelection(site: "onChange", from: previous, to: tab)
             if tab == .post {
                 select(previous == .post ? .home : previous, at: "post.revert")
-                showPostChoice = true
+                openCreateFlow(.post)
             }
         }
         // **どの画面からでも投稿できるようにする。** Web も同じ理由で

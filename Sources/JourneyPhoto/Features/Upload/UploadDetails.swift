@@ -90,20 +90,19 @@ enum UploadDetails {
                 "The photo's location isn't sent, and the place isn't filled in for you. Only places you choose go on the map (a rough location may come from a place name you type).")
     }
 
-    /// 投稿画面を開いたときに、写真を選ぶ画面を**自動で一度だけ**開くか。
+    /// 投稿画面を、欄の代わりに**写真の一覧の段**（`LibraryGrid`）で出すか（2026-11-18 判断・案 B1「投稿の入口」・owner 採用）。
     ///
-    /// 「追加」→「ライブラリから選ぶ」の2手を省く。開かないのは:
-    /// - もう写真がある（旅の写真から来た・読み込み中）
-    /// - 一度開いた（閉じてから戻ってきた回・選ぶ画面をやめた回に、また開かない）
+    /// 前（2026-10-03〜）は、開いて 0.9 秒待ってから OS の写真選びを自動で開いていた（シートが出きる前に重ねると
+    /// 出ないことがあるための待ち）。いまは写真がまだ無い間、この画面そのものが写真の一覧。待ちも、閉じた選ぶ画面に
+    /// 戻ってくる道も無い。一覧の段にしないのは:
+    /// - もう写真がある（選んだ・旅の写真から来た）
+    /// - 下書き・送れなかった投稿を戻している途中、撮った1枚を整えている途中（一瞬だけ一覧が出て消えないように）
     /// - 送っている間
-    /// カメラは「追加」に残る（選ぶ画面をやめれば帯の「追加」から撮れる）
-    static func autoOpensLibrary(hasPhotos: Bool, alreadyOffered: Bool, isWorking: Bool) -> Bool {
-        !hasPhotos && !alreadyOffered && !isWorking
+    /// - 開いた直後で、最初から入れる写真・下書きをまだ入れていない
+    static func showsLibraryStage(hasPhotos: Bool, restoring: Bool, preparingCaptures: Int, isWorking: Bool,
+                                  awaitingInitial: Bool) -> Bool {
+        !hasPhotos && !restoring && preparingCaptures == 0 && !isWorking && !awaitingInitial
     }
-
-    /// 自動で開くまで待つ時間。シート（投稿画面）が下から出きる時間（約0.5秒）より長めに取る。
-    /// 当て推量に頼り切らない——出なかった回は `libraryOpenSteps` で立て直せる
-    static let autoOpenDelayNanoseconds: UInt64 = 900_000_000
 
     /// 題・説明・タグの候補（端末の AI・札 #622）を作り始めるまで待つ時間。撮影地は写真の位置から少し遅れて入り、
     /// 打って直すこともあるので、入り終わってから1回だけ作る（待つ間に撮影地が変われば取り消して待ち直す）

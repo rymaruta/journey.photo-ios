@@ -236,11 +236,14 @@ final class UXDeadEndsTests: XCTestCase {
 
     // MARK: - 6. カメラで撮る
 
-    func testPostSheetOffersCameraThroughExistingFlow() async throws {
-        let sheet = try source("Features/Upload/PostSheet.swift")
-        XCTAssertTrue(sheet.contains("if CameraPicker.isAvailable {"), "カメラの無い端末にも出している")
-        XCTAssertTrue(sheet.contains("kind: .camera"))
-        XCTAssertEqual(PostSheet.cameraTitle, "カメラで撮る")
+    /// 2026-11-18（案 B1）: 撮るのは写真の一覧の先頭のマス（前の選ぶシートの「カメラで撮る」）。カメラの無い端末では押せない形
+    func testLibraryOffersCameraThroughExistingFlow() async throws {
+        let upload = try source("Features/Upload/UploadView.swift")
+        XCTAssertTrue(upload.contains("cameraAvailable: CameraPicker.isAvailable,"), "カメラの無い端末でも押せる")
+        XCTAssertTrue(upload.contains("onCamera: { showCamera = true },"), "カメラのマスが投稿の画面のカメラを開かない")
+        // 撮った1枚は帯の「追加」→ カメラと同じ道（`accept(capture:)`）
+        XCTAssertTrue(upload.contains("CameraPicker { capture in\n                model.accept(capture: capture)"))
+        // 空の画面の「カメラで撮る」（`TabRouter.openPost(.camera)`）は前のまま
         let root = try source("App/RootView.swift")
         XCTAssertTrue(root.contains("case .camera:\n            pendingCapture = nil\n            showPostCamera = true"))
         // 撮った1枚は構図を重ねて撮ったあとと同じ道（閉じきってから投稿画面へ・`UploadView.initialCapture`）

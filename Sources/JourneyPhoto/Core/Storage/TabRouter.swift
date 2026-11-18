@@ -118,14 +118,14 @@ final class TabRouter: ObservableObject {
     /// 回数で伝えるのは上と同じ理由
     @Published private(set) var postRequests = 0
     /// 開く投稿の種類。`RootView` が受け取ったら消す（`takePendingPost`）
-    private(set) var pendingPost: PostSheet.Kind?
+    private(set) var pendingPost: PostEntry?
 
-    func openPost(_ kind: PostSheet.Kind) {
+    func openPost(_ kind: PostEntry) {
         pendingPost = kind
         postRequests += 1
     }
 
-    func takePendingPost() -> PostSheet.Kind? {
+    func takePendingPost() -> PostEntry? {
         defer { pendingPost = nil }
         return pendingPost
     }

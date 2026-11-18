@@ -119,10 +119,11 @@ final class ComposeGuideLauncherTests: XCTestCase {
         XCTAssertTrue(overlay.contains("@ObservedObject var level: LevelMotion"), "線の子の View が傾きを見ていない")
     }
 
-    /// 投稿のシートの4つ目「構図を重ねて撮る」は、Pro の確かめを通らずに作例なしで開く（2026-10-17 判断: 全員無料）
-    func testPostSheetEntryOpensWithoutTheProCheck() throws {
-        let sheet = try source("Sources/JourneyPhoto/Features/Upload/PostSheet.swift")
-        XCTAssertTrue(sheet.contains("kind: .composition"))
+    /// 写真の一覧の「構図」のマス（2026-11-18 案 B1。前は投稿のシートの4つ目）は、Pro の確かめを通らずに作例なしで開く
+    /// （2026-10-17 判断: 全員無料）
+    func testLibraryCompositionEntryOpensWithoutTheProCheck() throws {
+        let upload = try source("Sources/JourneyPhoto/Features/Upload/UploadView.swift")
+        XCTAssertTrue(upload.contains("{ chooseFlowEntry(.composition) }"))
         let root = try source("Sources/JourneyPhoto/App/RootView.swift")
         XCTAssertTrue(root.contains("case .composition:"))
         XCTAssertTrue(root.contains("composeLauncher.open(make: { ComposeGuide.Launch(sample: nil, samples: []) })"),
@@ -130,9 +131,11 @@ final class ComposeGuideLauncherTests: XCTestCase {
         XCTAssertTrue(root.contains(".composeGuidePresenter(composeLauncher, spotName: nil,"))
         XCTAssertTrue(root.contains("onPost: { capture in pendingCapture = capture }"))
         XCTAssertTrue(root.contains("initialCapture: pendingCapture"), "撮った1枚を投稿画面へ渡していない")
-        // 投稿のシートが閉じきってから開く（閉じている途中に全画面を重ねない）
-        XCTAssertTrue(root.contains(".sheet(isPresented: $showPostChoice, onDismiss: postChoiceDismissed)"),
-                      "投稿選択シートの閉じ完了ハンドラーを通していない")
+        // 投稿の入口が閉じきってから開く（閉じている途中に全画面を重ねない）
+        XCTAssertTrue(root.contains(".fullScreenCover(isPresented: $showPostChoice, onDismiss: createFlowDismissed)"),
+                      "投稿の入口の閉じ完了ハンドラーを通していない")
+        XCTAssertTrue(root.contains("if let entry = createFlow.takeChosen() { pendingPostChoice = entry }"),
+                      "一覧で選んだ入口を閉じたあとに渡していない")
         XCTAssertTrue(root.contains("private func postChoiceDismissed()"),
                       "投稿選択シートを閉じた後の処理がない")
         XCTAssertTrue(root.contains("if let kind = pendingPostChoice"),

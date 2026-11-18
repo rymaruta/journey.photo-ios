@@ -1825,6 +1825,59 @@ final class UploadViewModel: ObservableObject {
         loadTask = Task { [weak self] in await self?.loadPicked(picked, retryingUnreadable: true) }
     }
 
+    /// 写真の一覧（`LibraryGrid`）のマスの中身を読む口（端末の写真ライブラリの1枚）。試験でだけ差し替える
+    var readLibraryAsset: (String) async -> Data? = { await PhotoLibrary.imageData(for: $0) }
+
+    /// 写真の一覧（`LibraryGrid`・2026-11-18 判断・案 B1）で選んだ写真を、選んだ順に読み込んで並べる。
+    ///
+    /// 読み方の決まりは OS の写真選び（`loadPicked`）と同じ: **1枚ごとに上限時間**（`pickedLoadTimeout`）、
+    /// 読めた分だけ受け、読めなかった枚数は黙らずに言う。整えるのは画面の処理の外（`prepareOffMain`）。
+    /// 一度に扱うのは `maxSelection` まで（並んでいる写真と合わせて）。送っている間・読み込み中は受けない
+    func loadLibraryAssets(_ ids: [String]) async {
+        guard !ids.isEmpty, !isWorking, !isLoadingPicked else { return }
+        let room = max(0, Self.maxSelection - items.count)
+        let wanted = Array(ids.prefix(room))
+        guard !wanted.isEmpty else { return }
+        pickGeneration += 1
+        let generation = pickGeneration
+        isLoadingPicked = true
+        errorMessage = nil
+        songFailuresShown = 0
+        didPostAll = false
+        defer { if generation == pickGeneration { isLoadingPicked = false } }
+        var failed = 0
+        let read = readLibraryAsset
+        for id in wanted {
+            // nil は時間切れ（`firstWithin`）、`.some(nil)` は読めなかった
+            let outcome: Data?? = await AsyncTimeout.firstWithin(seconds: pickedLoadTimeout) { () async -> Data?? in
+                .some(await read(id))
+            }
+            // 読んでいる間に OS の写真選びで選び直された・閉じた
+            guard generation == pickGeneration else { return }
+            guard let data = outcome ?? nil else {
+                failed += 1
+                continue
+            }
+            let result = await Self.prepareOffMain(data, with: prepareData, keep: keepEditSource)
+            guard generation == pickGeneration else {
+                if case .success(let (_, url)) = result, let url { try? FileManager.default.removeItem(at: url) }
+                return
+            }
+            switch result {
+            case .success(let (prepared, source)):
+                append(prepared, editSource: source)
+            case .failure:
+                failed += 1
+            }
+        }
+        if failed > 0 {
+            // **黙って減らさない**（`loadPicked` と同じ言い方）
+            errorMessage = items.isEmpty
+                ? L("写真を読み込めませんでした", "Couldn't load the photos")
+                : L("\(failed) 枚は読み込めませんでした", "\(failed) photo(s) couldn't be loaded")
+        }
+    }
+
     /// 1枚を待ち行列に足し、撮影地を引き始める。試験から呼ぶので private にしない
     func append(_ prepared: ImagePreparer.Prepared, pickerItem: PhotosPickerItem? = nil, editSource: URL? = nil) {
         var photo = PendingPhoto(prepared: prepared)
