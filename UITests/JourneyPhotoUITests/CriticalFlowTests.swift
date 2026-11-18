@@ -578,12 +578,13 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(submit.waitForExistence(timeout: 5), "「投稿する」が無い")
         XCTAssertTrue(wait(submit, "enabled == true", timeout: 30), "題と撮影地を入れても「投稿する」が押せない")
         submit.tap()
-        storyCrashStep(app, "\(tag).upload.submitted")
-        // 2026-11-18（案 B2）: 画面はすぐ閉じ、上がったら知らせの「カードにする」から共有カードを開く
-        // 知らせは6秒で消えるので、押した直後から待つ（run 1465 は画面が閉じるのを待ってから探して見つからなかった）
+        // 2026-11-18（案 B2）: 画面はすぐ閉じ、上がったら知らせの「カードにする」から共有カードを開く。
+        // 知らせは6秒で消えるので、押した直後から待つ。run 1472: 押した直後の記録（`storyCrashStep`・要素の木を全部書く）に
+        // 7秒かかり（押した t=59.55s、記録の終わり t=66.56s）、その間に見本の送信が終わって（10:55:57 の記録で uploading=false）
+        // 知らせが消えていた。記録は知らせを見つけてから残す
         let makeCard = app.buttons["toast.action"].firstMatch
         let card = makeCard.waitForExistence(timeout: 90)
-        storyCrashStep(app, "\(tag).toast card=\(card) uploadOpen=\(thumb.exists)")
+        storyCrashStep(app, "\(tag).upload.submitted toast card=\(card) uploadOpen=\(thumb.exists)")
         XCTAssertTrue(card, "裏で送っても「カードにする」の知らせが出ない")
         XCTAssertFalse(thumb.exists, "「投稿する」で投稿の画面が閉じない")
         makeCard.tap()
