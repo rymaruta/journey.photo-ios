@@ -39,7 +39,7 @@ final class ShareCardAuditTests: XCTestCase {
             name: "旅灯", username: "tabi_akari", location: "京都府（京都市東山区）", coords: kyoto,
             camera: "Sony α7 IV", lens: "FE 24-70mm F2.8 GM II", exposure: "1/250s", aperture: "f/8", iso: 100,
             verified: true, proStyle: nil, early: false, badge: nil,
-            takenDay: Self.koyomiDay), allowsTruncation: false),
+            takenDay: ShareCardAuditTests.koyomiDay), allowsTruncation: false),
         Content(name: "長い", credit: R.Credit(
             name: "写真と旅とコーヒーを愛する週末フォトグラファー山田太郎", username: "weekend_photographer_yamada_taro",
             location: "和歌山県（東牟婁郡那智勝浦町）", coords: kyoto,
@@ -50,7 +50,7 @@ final class ShareCardAuditTests: XCTestCase {
             name: "Emily Carter", username: "emily.travels", location: "Saint-Germain-en-Laye, Île-de-France, France",
             coords: paris, camera: "FUJIFILM X100VI", lens: "23mm F2", exposure: "1/500s", aperture: "f/5.6", iso: 160,
             verified: false, proStyle: nil, early: false, badge: nil,
-            takenDay: Self.koyomiDay), allowsTruncation: false),
+            takenDay: ShareCardAuditTests.koyomiDay), allowsTruncation: false),
         Content(name: "絵文字", credit: R.Credit(
             name: "🌸さくら🌸旅人📷", username: "sakura_tabi", location: "東京都（台東区）", coords: nil,
             camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil,
