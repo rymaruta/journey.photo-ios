@@ -299,9 +299,10 @@ enum PerfMainTrace {
                           "_os_log_impl_mirror_to_stderr", "_os_trace_writev"]
 
     /// 1 行（改行なし）。`frames` は浅い方から
-    static func line(ms: Int, timelineMs: Int, wall: String? = nil, pingMs: Int?, frames: [String]) -> String {
-        let head = Array(frames.prefix(headFrames))
-        let deep = frames.dropFirst(headFrames)
+    static func line(ms: Int, timelineMs: Int, wall: String? = nil, pingMs: Int?, frames: [String],
+                     head headCount: Int = headFrames) -> String {
+        let head = Array(frames.prefix(headCount))
+        let deep = frames.dropFirst(headCount)
         let marked = deep.filter { frame in markers.contains { frame.contains($0) } }.prefix(markerFrames)
         let app = deep.filter { $0.hasPrefix("JourneyPhoto") }.prefix(appFrames)
         let rest = Array(marked) + Array(app)

@@ -10720,19 +10720,31 @@ final class ScreenshotTests: XCTestCase {
             guard let ping = line.components(separatedBy: "ping=").dropFirst().first?.split(separator: " ").first else { return false }
             return ping == "pending" || (Int(ping) ?? 0) >= 200
         }
+        // 一時の枝（2026-11-18）: 積みは全部の段で書く。最後に続いている遅い行（今の止まり）だけで数え、全文を 6 行出す
+        var episode: [String] = []
+        for line in lines.reversed() {
+            guard slow.contains(line) else { break }
+            episode.insert(line, at: 0)
+        }
+        print("STALL \(label) 今の止まり: 遅い行が続いて \(episode.count) 行（全部で 遅い \(slow.count) / \(lines.count)）")
         var counts: [String: Int] = [:]
-        for line in slow {
+        for line in episode {
             let frames = (line.components(separatedBy: " | ").dropFirst().first ?? "").components(separatedBy: " ; ")
             for frame in Set(frames) { counts[String(frame.prefix(160)), default: 0] += 1 }
         }
-        for (i, item) in counts.sorted(by: { $0.value > $1.value }).prefix(30).enumerated() {
+        for (i, item) in counts.sorted(by: { $0.value > $1.value }).prefix(60).enumerated() {
             print("STALL \(label) 段 \(i + 1): \(item.value)x \(item.key)")
         }
-        for line in [slow.first, slow.isEmpty ? nil : slow[slow.count / 2]].compactMap({ $0 }) {
-            print("STALL \(label) 全文: \(String(line.prefix(6000)))")
+        let picks = episode.isEmpty ? [] : (0..<6).map { episode[min(episode.count - 1, $0 * episode.count / 6)] }
+        for line in picks {
+            print("STALL \(label) 全文: \(String(line.prefix(20000)))")
         }
-        let dm = ((try? String(contentsOfFile: path + ".dm", encoding: .utf8)) ?? "読めない").split(separator: "\n").suffix(12)
-        for line in dm { print("STALL \(label) 会話の回数: \(line)") }
+        // 取り消しの少し前から: 最初の 30 行と最後の 15 行（止まりの中で配置の回数が増え続けるかを見る・2026-11-18 一時の枝）
+        let all = ((try? String(contentsOfFile: path + ".dm", encoding: .utf8)) ?? "読めない").split(separator: "\n")
+        let start = max(0, (all.lastIndex { !$0.contains("unsend=") } ?? 0) - 4)
+        let tail = Array(all[start...])
+        let shown = tail.count <= 45 ? tail : Array(tail.prefix(30)) + ["…（\(tail.count - 45) 行を略）"] + Array(tail.suffix(15))
+        for line in shown { print("STALL \(label) 会話の回数: \(line)") }
     }
 
     /// 受信箱の行を名前で開き、会話が出るまで待つ（出なければ false）

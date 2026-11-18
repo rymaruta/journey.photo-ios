@@ -82,8 +82,8 @@ import Darwin
 // MARK: - メインスレッドの積み(スタック)の見本（2026-11-07・札 #435 / #429）
 
 /// 信号の受け手が書く置き場。**信号の受け手の中では確保も鍵も使えない**ので、先に確保しておく
-private let perfSampleCapacity = 48
-nonisolated(unsafe) private let perfSampleBuffer = UnsafeMutablePointer<UnsafeMutableRawPointer?>.allocate(capacity: 48)
+private let perfSampleCapacity = 160
+nonisolated(unsafe) private let perfSampleBuffer = UnsafeMutablePointer<UnsafeMutableRawPointer?>.allocate(capacity: 160)
 nonisolated(unsafe) private var perfSampleDepth: Int32 = 0
 
 /// `SIGUSR1` を受けたスレッド（メインスレッド）が、自分の積みを置き場に書く
@@ -178,7 +178,8 @@ final class PerfMainSampler: @unchecked Sendable {
             let line = PerfMainTrace.line(ms: Int((sent - origin) * 1000),
                                           timelineMs: Int(((sent - PerfRecorder.shared.origin) * 1000).rounded()),
                                           wall: sentWall,
-                                          pingMs: ping, frames: captureFrames() ?? []) + "\n"
+                                          pingMs: ping, frames: captureFrames() ?? [],
+                                          head: 160) + "\n"   // 一時の枝（マージしない）: DM の止まりの積みを全部残す
             handle.write(Data(line.utf8))
             lines += 1
             if answered { Thread.sleep(forTimeInterval: 0.3) }

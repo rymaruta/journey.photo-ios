@@ -284,8 +284,11 @@ struct DMConversationView: View {
         .onChange(of: connectivity.isOffline) { _, offline in
             if !offline, phase == .failed { Task { await load() } }
         }
+        .onChange(of: fieldFocused) { _, focused in
+            DMStallProbe.note("focus", value: "\(focused)", force: true)
+        }
         .onChange(of: draft) { old, new in
-            DMStallProbe.note("draft")
+            DMStallProbe.note("draft", value: "\(new.count)", force: true)
             let kept = PostLimits.limited(old: old, new: new, limit: DMRules.textMax)
             if kept != new { draft = kept }
             if new == restoredDraft { return }
@@ -496,6 +499,9 @@ struct DMConversationView: View {
             }
         }
         .frame(maxHeight: .infinity)
+        .onGeometryChange(for: CGFloat.self) { proxy in proxy.size.height } action: { height in
+            DMStallProbe.note("height", value: "\(height)", force: true)
+        }
         .accessibilityIdentifier("dm.conversation")
     }
 
