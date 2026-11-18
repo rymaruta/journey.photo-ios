@@ -27,6 +27,8 @@ struct LibraryPickHeader: View {
 
     var body: some View {
         ZStack {
+            // 2026-11-18 判断（owner 採用の模型 B1 どおり）: 題は SF 600 17（`.headline`）。板の決まり（見出しは明朝）とは
+            // ずれるが、owner が採った模型の寸法を正とした（`CreateFlowRules.headerHeight` の注記）
             Text(title)
                 .font(.headline)
                 .foregroundStyle(WebTheme.text)
@@ -144,6 +146,8 @@ struct LibraryEntryChips: View {
     let entries: [CreateFlowRules.Entry]
     let onTrip: () -> Void
     let onDrafts: () -> Void
+    /// 投稿の入口の中なら、チップの行の場所を知らせる（行の横の送りで投稿とストーリーを替えない・`CreateFlowRules.swiped`）
+    @Environment(\.createFlow) private var createFlow
 
     var body: some View {
         if !entries.isEmpty {
@@ -154,6 +158,14 @@ struct LibraryEntryChips: View {
                     }
                 }
                 .padding(.horizontal, 16)
+            }
+            .background {
+                GeometryReader { geometry in
+                    Color.clear
+                        .onAppear { createFlow?.noteChipsFrame(geometry.frame(in: .global)) }
+                        .onChange(of: geometry.frame(in: .global)) { _, frame in createFlow?.noteChipsFrame(frame) }
+                        .onDisappear { createFlow?.noteChipsFrame(nil) }
+                }
             }
             .padding(.bottom, 6)
         }
@@ -279,7 +291,25 @@ final class CreateFlow: ObservableObject {
     }
 
     /// 中の画面が一覧の段を出した・離れた
+    /// 一覧の上のチップの行の場所（画面の座標）。ここで始まった指は払いに数えない
+    private(set) var chipsFrame: CGRect?
+
+    func noteChipsFrame(_ frame: CGRect?) {
+        chipsFrame = frame
+    }
+
+    /// UI テストだけ: 一覧を見ているかの知らせの順（`createflow.probe`・`PreviewSession.createFlowProbe`）。
+    /// ストーリーから投稿に替えたときに切り替えが消えるか（替えた直後の「一覧」と、前の画面が離れた「一覧でない」の順）を数で見る
+    private(set) var probeLog: [String] = []
+
+    func noteProbe(_ entry: String) {
+        guard PreviewSession.createFlowProbe else { return }
+        probeLog.append(entry)
+        if probeLog.count > 24 { probeLog.removeFirst(probeLog.count - 24) }
+    }
+
     func noteLibrary(_ shown: Bool) {
+        noteProbe("note:\(shown ? 1 : 0)")
         if libraryShown != shown { libraryShown = shown }
         if !shown { used = true }
     }
@@ -328,21 +358,36 @@ struct CreateFlowView: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        // 一覧を左右に払っても替わる（一覧の段だけ。作る段では中の指の操作だけを通す）
+        // 一覧を左右に払っても替わる（一覧の段だけ。作る段では中の指の操作だけを通す）。
+        // 上のチップの行で始まった指は数えない（横に送っただけで替わらないように）
         .simultaneousGesture(
-            DragGesture(minimumDistance: 20)
+            DragGesture(minimumDistance: 20, coordinateSpace: .global)
                 .onEnded { value in
                     guard flow.libraryShown,
-                          let next = CreateFlowRules.swiped(from: flow.mode, dx: value.translation.width,
-                                                            dy: value.translation.height) else { return }
+                          let next = CreateFlowRules.swiped(
+                            from: flow.mode, dx: value.translation.width, dy: value.translation.height,
+                            startsInChips: flow.chipsFrame?.contains(value.startLocation) ?? false) else { return }
                     select(next)
                 },
             including: flow.libraryShown ? .all : .subviews
         )
+        // UI テストだけ: 切り替えの段と、一覧を見ているかの知らせの順（`PreviewSession.createFlowProbe`）
+        .overlay(alignment: .topLeading) {
+            if PreviewSession.createFlowProbe {
+                Text(".")
+                    .font(.caption2)
+                    .foregroundStyle(Color.clear)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("createflow.probe")
+                    .accessibilityValue("mode=\(flow.mode.rawValue) libraryShown=\(flow.libraryShown)"
+                                        + " log=\(flow.probeLog.joined(separator: ","))")
+            }
+        }
     }
 
     private func select(_ mode: CreateFlowRules.Mode) {
         guard mode != flow.mode else { return }
+        flow.noteProbe("select:\(mode.rawValue)")
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
             flow.mode = mode
             // 替えた先も一覧から始まる（中の画面が離れたら知らせ直す）

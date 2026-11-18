@@ -56,6 +56,24 @@ final class CreateFlowTests: XCTestCase {
         XCTAssertEqual(CreateFlowRules.swipeDistance, 40, "模型の 40pt と違う")
     }
 
+    /// 一覧の上のチップの行で始まった指は払いに数えない（チップを横に送っただけで投稿とストーリーが替わらない）
+    func testSwipeStartingOnTheChipsDoesNotSwitch() throws {
+        XCTAssertNil(CreateFlowRules.swiped(from: .post, dx: -80, dy: 0, startsInChips: true), "チップの行の送りで替わった")
+        XCTAssertEqual(CreateFlowRules.swiped(from: .post, dx: -80, dy: 0, startsInChips: false), .story)
+        let parts = try read("Sources/JourneyPhoto/Features/Common/LibraryPickParts.swift")
+        XCTAssertTrue(parts.contains("startsInChips: flow.chipsFrame?.contains(value.startLocation) ?? false"))
+        XCTAssertTrue(parts.contains("DragGesture(minimumDistance: 20, coordinateSpace: .global)"), "指の位置とチップの場所の座標がそろっていない")
+        XCTAssertTrue(parts.contains(".onAppear { createFlow?.noteChipsFrame(geometry.frame(in: .global)) }"))
+    }
+
+    /// 一覧の段の題（SF 600 17）と格子（4列・正方形）は、owner が採った模型どおり。板とずれることを書いておく
+    func testMockupDecisionsAreNoted() throws {
+        let rules = try read("Sources/JourneyPhoto/Core/Text/StoryLibraryRules.swift")
+        XCTAssertEqual(rules.components(separatedBy: "2026-11-18 判断（owner 採用の模型 B1 どおり）").count - 1, 2)
+        let parts = try read("Sources/JourneyPhoto/Features/Common/LibraryPickParts.swift")
+        XCTAssertTrue(parts.contains("2026-11-18 判断（owner 採用の模型 B1 どおり）: 題は SF 600 17"))
+    }
+
     /// 切り替えは一覧を見ている間だけ（欄を書く・作る段で払っても書きかけを失わない）
     func testSwitcherOnlyWhileTheLibraryIsShown() throws {
         XCTAssertTrue(CreateFlowRules.showsSwitcher(libraryShown: true))

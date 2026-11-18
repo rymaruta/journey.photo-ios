@@ -65,7 +65,11 @@ enum CreateFlowRules {
 
     /// 一覧を払ったときの行き先。**横に 40pt 以上、かつ縦より横に大きく動いたときだけ**（縦の送りを奪わない）。
     /// 左へ払う（dx < 0）とストーリー、右へ払うと投稿。同じなら nil（替えない）
-    static func swiped(from mode: Mode, dx: CGFloat, dy: CGFloat) -> Mode? {
+    ///
+    /// 🔴 **一覧の上のチップの行で始まった指は数えない**（`startsInChips`・2026-11-18 確かめ役の指摘）。チップの行は横に送れるので、
+    /// 送っただけで投稿とストーリーが替わってしまう
+    static func swiped(from mode: Mode, dx: CGFloat, dy: CGFloat, startsInChips: Bool = false) -> Mode? {
+        guard !startsInChips else { return nil }
         guard abs(dx) >= swipeDistance, abs(dx) > abs(dy) else { return nil }
         let next: Mode = dx < 0 ? .story : .post
         return next == mode ? nil : next
@@ -79,7 +83,9 @@ enum CreateFlowRules {
     static let capsuleInset: CGFloat = 4
     /// カプセルの下の余白（画面の下の端から。模型の 34 は家の印の帯を含むので、安全域の上は 8）
     static let capsuleBottomGap: CGFloat = 8
-    /// 上の見出しの行の高さ（閉じる・選択の 44 に合わせる）
+    /// 上の見出しの行の高さ（閉じる・選択の 44 に合わせる）。
+    /// 2026-11-18 判断（owner 採用の模型 B1 どおり）: 一覧の段の題は **SF 600 17**（`.headline`）。板の決まり（見出しは明朝）とは
+    /// ずれるが、owner が採った模型の寸法を正とした（シートのナビの題と同じ段）
     static let headerHeight: CGFloat = 44
 
     /// 印の上限（投稿は1回に扱う枚数・ストーリーは並べられる本数）

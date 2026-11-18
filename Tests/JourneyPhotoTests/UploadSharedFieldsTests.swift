@@ -177,6 +177,58 @@ final class UploadSharedFieldsTests: XCTestCase {
         XCTAssertNotNil(m.errorMessage)
     }
 
+    // MARK: - 確かめ役の指摘（2026-11-18）
+
+    /// 🔴 1組で書いた題・説明・撮影地は、先頭の写真を外しても消えない（次の写真へ移してから外す）
+    func testRemovingTheLeadKeepsTheSharedText() async {
+        let m = model()
+        m.items = [photo(1), photo(2), photo(3)]
+        m.items[0].title = "雲海"
+        m.items[0].caption = "朝五時"
+        m.items[0].location = "高屋神社"
+        let lead = m.items[0].id
+        m.remove(lead)
+        XCTAssertEqual(m.items.count, 2)
+        XCTAssertEqual(m.items[0].title, "雲海", "先頭を外したら1組で書いた題が消えた")
+        XCTAssertEqual(m.items[0].caption, "朝五時")
+        XCTAssertEqual(m.items[0].location, "高屋神社")
+        XCTAssertTrue(m.sharesFields)
+    }
+
+    /// 🔴 写す元の写真の位置を、ほかの写真に載せない（位置の切り替えがオフでも載る道があった）
+    func testLeadPhotosOwnCoordsAreNeverCopied() async {
+        let leadSpot = Photo.Coords(lat: 34.10, lng: 133.60)
+        // 写真の近くの撮影スポットを選んだが、下書き・控えから戻してスポットが分からない（座標は元の写真の位置と同じ）
+        var lead = photo(1, coords: leadSpot)
+        lead.location = "高屋神社"
+        lead.pickedCoords = leadSpot
+        var other = photo(2, coords: Photo.Coords(lat: 35.0, lng: 135.0))
+        other.copySharedFields(from: lead)
+        XCTAssertNil(other.pickedCoords, "1枚目の写真の位置を2枚目に写した")
+        XCTAssertNil(other.coordsToSend(spots: [], attachesPhotoLocation: false), "位置の切り替えがオフでも1枚目の位置が載る")
+        // 撮影スポットを選んでいたら、写す先の写真ごとに作り直す（遠い写真はスポットの位置・写真の位置は使わない）
+        lead.pickedSpot = UploadSpotTarget(spotId: "sp_takaya", name: "高屋神社", coords: Photo.Coords(lat: 34.15, lng: 133.68))
+        var far = photo(3, coords: Photo.Coords(lat: 35.0, lng: 135.0))
+        far.copySharedFields(from: lead)
+        XCTAssertEqual(far.pickedCoords, Photo.Coords(lat: 34.15, lng: 133.68), "遠い写真にスポットの位置が付かない")
+        XCTAssertNotEqual(far.pickedCoords, leadSpot)
+        // 地名の候補を選んだ（写真の位置ではない）ならそのまま写す
+        var named = photo(4, coords: leadSpot)
+        named.pickedCoords = Photo.Coords(lat: 33.0, lng: 131.0)
+        var target = photo(5)
+        target.copySharedFields(from: named)
+        XCTAssertEqual(target.pickedCoords, Photo.Coords(lat: 33.0, lng: 131.0))
+    }
+
+    /// 旅の写真からの投稿は1組に畳まない（何か所も回った旅が全部1枚目の撮影地になる）
+    func testTripImportKeepsPerPhotoFields() async {
+        let m = model()
+        m.applyInitialPhotos([photo(1).prepared, photo(2).prepared], startPrivate: true)
+        XCTAssertTrue(m.fromTripImport)
+        XCTAssertEqual(m.items.count, 2)
+        XCTAssertFalse(m.sharesFields, "旅の写真からの投稿を1組に畳んだ")
+    }
+
     // MARK: - 画面
 
     func testScreenShowsOneSetAndFoldedLink() async throws {

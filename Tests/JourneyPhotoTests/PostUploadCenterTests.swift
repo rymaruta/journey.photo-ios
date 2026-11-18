@@ -213,6 +213,109 @@ final class PostUploadCenterTests: XCTestCase {
         XCTAssertTrue(center.jobs.isEmpty, "別の人に前の人の投稿を持たせた")
     }
 
+    // MARK: - 人が替わったら（2026-11-18 確かめ役の指摘）
+
+    /// 🔴 送っている途中で人が替わったら、残りの写真を別の人の名前で上げない。1枚ごとに持ち主と比べて止め、
+    /// 写真と文は持ったまま送れなかった投稿にする。別の人の「もう一度」では送らない。持ち主に戻れば送れる
+    func testOwnerChangeMidSendStopsAndKeepsTheRest() async {
+        scriptSuccess()
+        let center = PostUploadCenter()
+        var notices: [PostUploadCenter.Notice] = []
+        center.onNotice = { notice, _ in notices.append(notice) }
+        var current: String? = "a"
+        center.currentUserId = { current }
+        let m = model(titles: ["雲海", "鳥居"])
+        // 1枚目が上がった直後に別の人がログインした
+        m.onSaved = { _ in current = "b" }
+        XCTAssertTrue(center.start(m))
+        await waitUntilSettled(center)
+        XCTAssertEqual(ScriptedProtocol.calls.filter { $0.path == "/upload/save" }.count, 1,
+                       "人が替わったあとも残りの写真を送った（別の人の名前で上がる）")
+        XCTAssertTrue(m.stoppedForOwner)
+        XCTAssertEqual(center.failedJob?.model.items.map(\.title), ["鳥居"], "止めた残りの写真と題が消えた")
+        XCTAssertTrue(notices.isEmpty, "別の人に前の人の投稿の知らせを出した: \(notices)")
+        // 別の人の「もう一度」では送らない
+        m.onSaved = nil
+        center.retry()
+        XCTAssertFalse(center.jobs.first?.sending ?? true, "別の人の「もう一度」で送り始めた")
+        // 持ち主に戻れば送れる
+        current = "a"
+        center.retry()
+        await waitUntilSettled(center)
+        XCTAssertEqual(ScriptedProtocol.calls.filter { $0.path == "/upload/save" }.count, 2)
+        XCTAssertTrue(center.jobs.isEmpty)
+    }
+
+    /// 持ち主の分からない投稿は受けない（別の人の「もう一度」で上がる穴をふさぐ）。いまの人でない投稿も受けない
+    func testRefusesPostsWithoutTheCurrentOwner() async {
+        let center = PostUploadCenter()
+        center.currentUserId = { "a" }
+        let noOwner = model()
+        noOwner.draftOwner = nil
+        XCTAssertFalse(center.start(noOwner), "持ち主の分からない投稿を受けた")
+        let other = model()
+        other.draftOwner = "b"
+        XCTAssertFalse(center.start(other), "いまの人でない人の投稿を受けた")
+        XCTAssertTrue(center.jobs.isEmpty)
+    }
+
+    /// 送っている最中に別の人が入った（`userChanged`）: 止めて手放す
+    func testUserChangedWhileSendingStopsAndDrops() async {
+        scriptSuccess()
+        let center = PostUploadCenter()
+        center.onNotice = { _, _ in }
+        var current: String? = "a"
+        center.currentUserId = { current }
+        let m = model(titles: ["雲海", "鳥居", "滝"])
+        m.onSaved = { [weak center] _ in
+            current = "b"
+            center?.userChanged(to: "b")
+        }
+        XCTAssertTrue(center.start(m))
+        await waitUntilSettled(center)
+        XCTAssertEqual(ScriptedProtocol.calls.filter { $0.path == "/upload/save" }.count, 1, "人が替わっても残りを送った")
+        XCTAssertTrue(center.jobs.isEmpty, "別の人に前の人の投稿を持たせた")
+    }
+
+    /// 輪の「送信をやめる」: いまの1枚のあと残りを送らず、写真と文は持ったまま
+    func testCancelSendingKeepsTheRest() async {
+        scriptSuccess()
+        let center = PostUploadCenter()
+        center.onNotice = { _, _ in }
+        let m = model(titles: ["雲海", "鳥居"])
+        m.onSaved = { [weak center] _ in center?.cancelSending() }
+        XCTAssertTrue(center.start(m))
+        await waitUntilSettled(center)
+        XCTAssertEqual(ScriptedProtocol.calls.filter { $0.path == "/upload/save" }.count, 1, "やめたのに残りを送った")
+        XCTAssertEqual(center.failedJob?.model.items.map(\.title), ["鳥居"], "やめた残りの写真と題が消えた")
+    }
+
+    /// アルバムが消えた失敗は「もう一度」では直らない。知らせは「直す」（投稿の画面へ）、輪も「もう一度送る」を出さない
+    func testAlbumGoneAsksToEditInsteadOfRetry() async {
+        ScriptedProtocol.reset()
+        ScriptedProtocol.script = [
+            .init(match: "/upload/presigned-url", status: 200, body: """
+            {"presignedUrl":"https://s3.example.test/put?sig=1","key":"uploads/u1/abc.jpg",
+             "publicUrl":"https://cdn.example.test/uploads/u1/abc.jpg","photoId":"p1","contentType":"image/jpeg"}
+            """),
+            .init(match: "/put", status: 200, body: ""),
+            .init(match: "/upload/save", status: 404, body: #"{"error":"album not found"}"#),
+        ]
+        let center = PostUploadCenter()
+        var notices: [PostUploadCenter.Notice] = []
+        center.onNotice = { notice, _ in notices.append(notice) }
+        let m = model(titles: ["雲海"])
+        m.selectedAlbumId = "al_gone"
+        XCTAssertTrue(center.start(m))
+        await waitUntilSettled(center)
+        guard case .failedNeedsEditing? = notices.last else { return XCTFail("「直す」の知らせでない: \(notices)") }
+        XCTAssertFalse(center.canRetry(center.failedJob), "アルバムが消えた回に「もう一度送る」を出す")
+        center.requestEditing(center.failedJob!.id)
+        XCTAssertNotNil(center.editRequest)
+        XCTAssertEqual(PostUploadOutcome.of(didPostAll: false, remaining: 1, message: "x", needsEditing: true),
+                       .failedNeedsEditing("x"))
+    }
+
     // MARK: - 決まり
 
     func testOutcomeRules() async {
@@ -253,7 +356,8 @@ final class PostUploadCenterTests: XCTestCase {
     /// 「投稿する」は係に渡してすぐ閉じる。画面で送り終えるのを待つ道・共有カードを画面いっぱいに出す道は無い
     func testUploadScreenHandsOffAndCloses() async throws {
         let view = try source("Features/Upload/UploadView.swift")
-        XCTAssertTrue(view.contains("guard PostUploadCenter.shared.start(model, onPosted: onPosted) else { return }\n        dismiss()"))
+        XCTAssertTrue(view.contains("guard PostUploadCenter.shared.start(model, onPosted: onPosted) else {"))
+        XCTAssertTrue(view.contains("            return\n        }\n        dismiss()"), "渡したらすぐ閉じていない")
         XCTAssertFalse(view.contains("await model.submit()"), "画面の中で送り終えるのを待っている")
         XCTAssertFalse(view.contains(".sheet(item: $model.postedCard"), "送ったあと共有カードを画面いっぱいに出している")
         // ホームの自分の輪が進み具合を出し、止まったら直せる
@@ -263,7 +367,7 @@ final class PostUploadCenterTests: XCTestCase {
         XCTAssertTrue(row.contains("UploadView(resuming: editing.model, onSaved: { TabRouter.shared.notePosted($0) })"))
         // 知らせの口と人の入れ替わり（アプリの起動時）
         let app = try source("App/JourneyPhotoApp.swift")
-        XCTAssertTrue(app.contains("PostUploadCenter.shared.configure(toasts: toasts)"))
+        XCTAssertTrue(app.contains("PostUploadCenter.shared.configure(toasts: toasts, currentUserId: { auth.userId })"))
         XCTAssertTrue(app.contains("PostUploadCenter.shared.userChanged(to: auth.userId)"))
     }
 }

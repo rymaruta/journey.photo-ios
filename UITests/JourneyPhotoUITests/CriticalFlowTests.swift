@@ -281,9 +281,12 @@ final class CriticalFlowTests: XCTestCase {
     /// 左上の「キャンセル」と同じ閉じる確認が出る。画面は閉じない（書きかけが消えない）
     func testSwipeDownOnUploadDraftAsksBeforeClosing() {
         let app = launch(["-JPPreviewUploadSample", "YES"])
-        tab(app, 2)
-        // 2026-11-18（案 B1）: 下の「投稿」で写真の一覧が開き、見本の1枚（`-JPPreviewUploadSample`）はそのまま欄の段に入る
-        // （前の選ぶシートの「写真を投稿」を押す手は無くなった）
+        // 2026-11-18（案 B1）: 下の「投稿」は画面いっぱいの覆い（払って閉じない）になったので、払って閉じるシートの投稿画面は
+        // 今週のお題の「参加する」から開く（`RootView.uploadSheet`・シートのまま）。見本の1枚がそのまま入る
+        tab(app, 0)
+        let join = app.buttons["参加する"].firstMatch
+        XCTAssertTrue(join.waitForExistence(timeout: 20), "ホームに今週のお題の「参加する」が無い")
+        join.tap()
         let thumb = app.buttons["upload.thumb.0"].firstMatch
         XCTAssertTrue(thumb.waitForExistence(timeout: 20), "見本の1枚が投稿画面に入らない")
         Thread.sleep(forTimeInterval: 1)
@@ -420,9 +423,11 @@ final class CriticalFlowTests: XCTestCase {
         let app = launch(["-JPPreviewUploadSample", "YES"])
         var log: [String] = []
         defer { attachSwipeLog(log, "stacked") }
-        tab(app, 2)
-        // 2026-11-18（案 B1）: 下の「投稿」で写真の一覧が開き、見本の1枚（`-JPPreviewUploadSample`）はそのまま欄の段に入る
-        // （前の選ぶシートの「写真を投稿」を押す手は無くなった）
+        // 2026-11-18（案 B1）: 払って閉じるシートの投稿画面は、今週のお題の「参加する」から開く（下の「投稿」は覆い）
+        tab(app, 0)
+        let join = app.buttons["参加する"].firstMatch
+        guard join.waitForExistence(timeout: 20) else { log.append("参加するが無い"); return }
+        join.tap()
         let thumb = app.buttons["upload.thumb.0"].firstMatch
         guard thumb.waitForExistence(timeout: 20) else { log.append("見本の1枚が入らない"); return }
         let details = app.buttons["upload.details"].firstMatch

@@ -32,6 +32,8 @@ struct StoriesRow: View {
     /// 裏で送っている投稿（写真・2026-11-18 案 B2）。同じ自分の輪が進み具合を出す
     @ObservedObject private var posts = PostUploadCenter.shared
     @State private var showPostFailure = false
+    /// 写真の投稿を送っている間に輪を押した（「送信をやめる」）
+    @State private var showPostSending = false
     /// 送れなかった投稿を開き直す（「投稿の画面で直す」）
     @State private var editingPost: EditingPost?
     /// 輪の列の幅（見えている輪の数を出す・`StoryPlayback.visibleRingCount`）
@@ -164,7 +166,10 @@ struct StoriesRow: View {
         }
         // 送れなかった投稿（写真と文は係が持っている）。もう一度送るか、投稿の画面で開き直して直す
         .confirmationDialog(PostUploadOutcome.failedText, isPresented: $showPostFailure, titleVisibility: .visible) {
-            Button(L("もう一度送る", "Try again")) { posts.retry() }
+            // アルバムが消えた回は「もう一度」では直らない（行き先を選び直す）ので出さない
+            if posts.canRetry(posts.failedJob) {
+                Button(L("もう一度送る", "Try again")) { posts.retry() }
+            }
             Button(L("投稿の画面で直す", "Open the post")) {
                 if let model = posts.takeForEditing() { editingPost = EditingPost(model: model) }
             }
@@ -173,6 +178,22 @@ struct StoriesRow: View {
             if case .failed(let message) = posts.phase {
                 Text(message)
             }
+        }
+        // 送っている間に輪を押した: やめる口（2026-11-18・前は投稿の画面の「やめる」。画面を閉じて送るので輪に移した）。
+        // いま送っている1枚は最後まで通し、残りは上げ始めない。写真と文は持ったまま（送れなかった投稿として残る）
+        .confirmationDialog(L("投稿を送っています", "Sending your post"), isPresented: $showPostSending,
+                            titleVisibility: .visible) {
+            Button(L("送信をやめる", "Stop sending"), role: .destructive) { posts.cancelSending() }
+            Button(Labels.Common.cancel, role: .cancel) {}
+        } message: {
+            Text(L("いま送っている1枚のあと、残りは送りません。写真と文は残ります",
+                   "The photo being sent now will finish. The rest won't be sent. Your photos and text are kept."))
+        }
+        // 知らせの「直す」（アルバムが消えた回）: 投稿の画面で開き直す
+        .onChange(of: posts.editRequest) { _, id in
+            guard let id else { return }
+            posts.clearEditRequest()
+            if let model = posts.takeForEditing(id) { editingPost = EditingPost(model: model) }
         }
         .sheet(item: $editingPost) { editing in
             NavigationStack {
@@ -446,11 +467,14 @@ struct StoriesRow: View {
         let ring = UploadRing.of(story: uploads.phase, post: posts.phase)
         let failed = ring.failed != nil
         let progress = ring.progress
+        let postSending: Bool = { if case .sending = posts.phase { return true }; return false }()
         Button {
             switch ring.failed {
             case .story?: showUploadFailure = true
             case .post?: showPostFailure = true
-            case nil: break
+            case nil:
+                // 写真の投稿を送っている間は、やめる口を出す（ストーリーは今まで通り押せない）
+                if postSending { showPostSending = true }
             }
         } label: {
             VStack(spacing: StoryRingMetrics.nameSpacing) {
@@ -490,7 +514,7 @@ struct StoriesRow: View {
             .frame(width: StoryRingMetrics.size)
         }
         .buttonStyle(.plain)
-        .disabled(!failed)
+        .disabled(!failed && !postSending)
         .accessibilityLabel(uploadAccessibilityLabel)
         .accessibilityIdentifier("stories.uploading")
     }
@@ -500,7 +524,8 @@ struct StoriesRow: View {
         if !uploads.isBusy {
             switch posts.phase {
             case .sending(let done, let total):
-                return L("投稿を送信中（\(total)枚中\(done)枚）", "Sending your post (\(done) of \(total))")
+                return L("投稿を送信中（\(total)枚中\(done)枚）。押すと送信をやめられます",
+                         "Sending your post (\(done) of \(total)). Tap to stop sending.")
             case .failed:
                 return L("投稿を送れませんでした。押すと送り直すか、投稿の画面で直すかを選べます",
                          "Couldn't send your post. Tap to retry or open it.")

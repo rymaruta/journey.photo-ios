@@ -33,6 +33,8 @@ final class CreateFlowLibraryTests: XCTestCase {
         app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewDrafts", "YES"]
+        // 切り替えの段と「一覧を見ているか」の知らせの順（`createflow.probe`・2026-11-18 確かめ役の指摘の事実取り）
+        app.launchArguments += ["-JPCreateFlowProbe", "YES"]
         app.launchArguments += ["-story.captionHintShown", "YES"]
         app.launch()
         let agree = app.buttons["legal.agree"]
@@ -81,6 +83,9 @@ final class CreateFlowLibraryTests: XCTestCase {
         let storyCamera = app.buttons["story.library.camera"].firstMatch
         guard storyCamera.waitForExistence(timeout: 15) else { return unreached(app, "「ストーリー」に替えても一覧が出ない") }
         XCTAssertTrue(app.staticTexts["新しいストーリー"].firstMatch.exists, "題が「新しいストーリー」でない")
+        let storyProbe = app.descendants(matching: .any)["createflow.probe"].firstMatch
+        note("切り替えの順（ストーリーに替えた後）", "switcher=\(toPost.exists) probe=\((storyProbe.value as? String) ?? "none")")
+        XCTAssertTrue(toPost.exists, "ストーリーに替えたら、下の「投稿 | ストーリー」が消えた")
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "40f-投稿の入口（ストーリーに替えた）")
         let storyFirst = app.buttons.matching(identifier: "story.library.item").firstMatch
@@ -89,6 +94,12 @@ final class CreateFlowLibraryTests: XCTestCase {
             .press(forDuration: 0.05, thenDragTo: storyFirst.coordinate(withNormalizedOffset: CGVector(dx: 3.5, dy: 0.5)))
         guard camera.waitForExistence(timeout: 10) else { return unreached(app, "右へ払っても投稿に戻らない") }
         XCTAssertTrue(app.staticTexts["新規投稿"].firstMatch.exists, "題が「新規投稿」に戻らない")
+        // 🔴 ストーリーから投稿に戻したあとも、下の切り替えが残っているか（前の画面が離れた知らせで消えないか）。
+        // 推定で直さず、知らせの順を数で残す（`createflow.probe`）
+        Thread.sleep(forTimeInterval: 1.5)
+        let probe = app.descendants(matching: .any)["createflow.probe"].firstMatch
+        note("切り替えの順（投稿に戻した後）", "switcher=\(toStory.exists) probe=\((probe.value as? String) ?? "none")")
+        XCTAssertTrue(toStory.exists && toPost.exists, "ストーリーから投稿に戻したら、下の「投稿 | ストーリー」が消えた")
 
         // 4. 1枚押す → そのまま欄の段（投稿 → 写真 の2回）
         items.element(boundBy: 0).tap()

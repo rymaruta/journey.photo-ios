@@ -313,7 +313,7 @@ struct JourneyPhotoApp: App {
                     let auth = auth
                     let drafts = storyDrafts
                     // 写真の投稿を裏で送る係の知らせの口（「投稿しました　カードにする」「送れませんでした　もう一度」・案 B2）
-                    PostUploadCenter.shared.configure(toasts: toasts)
+                    PostUploadCenter.shared.configure(toasts: toasts, currentUserId: { auth.userId })
                     StoryUploadCenter.shared.configure(
                         currentUserId: { auth.userId },
                         send: { job, record in

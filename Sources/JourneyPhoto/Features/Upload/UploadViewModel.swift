@@ -273,8 +273,20 @@ struct PendingPhoto: Identifiable {
         restorePlace(location: source.location,
                      photoPlaceName: sourceAuto && !source.location.isEmpty ? source.location : nil,
                      clearedByUser: source.locationClearedByUser)
-        pickedCoords = source.pickedCoords
         pickedSpot = source.pickedSpot
+        pickedCoords = Self.sharedPickedCoords(from: source, to: prepared.coords)
+    }
+
+    /// 写す先の「選んだ場所の座標」（2026-11-18 確かめ役の指摘）。🔴 **写す元の写真の位置を、ほかの写真に載せない**:
+    /// - 元が撮影スポットを選んだ: 写す先の写真ごとに作り直す（スポットの近くならその写真の位置、遠ければスポットの位置・`PlaceCoordsRule`）
+    /// - 元の座標が元の写真の位置と同じ（写真の近くのスポットを選んだが、下書き・控えから戻してスポットが分からない）: 写さない
+    /// - それ以外（地名の候補を選んだ）: その地名の座標をそのまま写す（写真の位置ではない）
+    static func sharedPickedCoords(from source: PendingPhoto, to photo: Photo.Coords?) -> Photo.Coords? {
+        if let spot = source.pickedSpot {
+            return PlaceCoordsRule.coordsForPickedSpot(spot.coords, photo: photo)
+        }
+        guard let picked = source.pickedCoords, picked != source.prepared.coords else { return nil }
+        return picked
     }
 
     /// 「撮影地の位置を付ける」をオフにしたときに、写真の位置から自動で入れた撮影地を外す（2026-10-18 判断）。
@@ -577,7 +589,8 @@ final class UploadViewModel: ObservableObject {
 
     /// 撮影地・題・説明を1組だけにしているか（`UploadSharedFields.sharesFields`）
     var sharesFields: Bool {
-        UploadSharedFields.sharesFields(grouping: groupsForSubmit, count: items.count, perPhoto: writesPerPhoto,
+        // 2026-11-18（確かめ役の指摘）: 旅の写真からの投稿は1組に畳まない（何か所も回った旅が、全部1枚目の撮影地になる）
+        UploadSharedFields.sharesFields(grouping: groupsAsOnePost && !fromTripImport, count: items.count, perPhoto: writesPerPhoto,
                                         ownText: UploadSharedFields.hasOwnText(items))
     }
 
@@ -784,6 +797,15 @@ final class UploadViewModel: ObservableObject {
     private(set) var placeTasks: [UUID: Task<Void, Never>] = [:]
     /// 途中でやめた。**残りを上げ始めない**
     private var cancelled = false
+
+    /// 🔴 **送っている人が投稿の持ち主のままか**（裏の係 `PostUploadCenter` が渡す・2026-11-18 確かめ役の指摘）。
+    /// 鍵は送るたびに今ログインしている人のものを取る（`AuthGateway.idToken()`）ので、送っている途中に人が替わると、
+    /// 残りの写真が別の人の名前で上がる。**1枚ごとに見て、違えば止める**（写真と文は持ったまま・ストーリーの係と同じ）。nil なら見ない
+    var ownerStillSignedIn: (() -> Bool)?
+    /// 直近の送信を、持ち主でなくなったので止めた
+    private(set) var stoppedForOwner = false
+    /// 直近の失敗が「もう一度」では直らず、投稿の画面で直す要るもの（選んだアルバムが消えた）
+    private(set) var failureNeedsEditing = false
     /// 読み込み中の仕事。**選び直しが重ならないように、前のを捨てる**
     private var loadTask: Task<Void, Never>?
     /// 読めなかったライブラリの写真の印。**それだけでは読み直さない**——
@@ -1717,6 +1739,14 @@ final class UploadViewModel: ObservableObject {
         discardStaged(photoId)
         // 元の写真を載せる1枚を外したら、次の写真に引き継ぐ
         inspiredCarrier.removed(photoId)
+        // 🔴 1組だけ書いている間に**先頭の写真を外したら、書いた撮影地・題・説明を次の写真へ移してから外す**
+        // （欄は先頭の写真のもの。そのまま外すと書いた値が消える・2026-11-18 確かめ役の指摘）
+        if sharesFields, items.count > 1, items.first?.id == photoId {
+            let lead = items[0]
+            placeTasks[items[1].id]?.cancel()
+            placeTasks[items[1].id] = nil
+            items[1].copySharedFields(from: lead)
+        }
         let removed = items.first { $0.id == photoId }
         items.removeAll { $0.id == photoId }
         forgetStoredCopies(of: photoId)
@@ -1976,6 +2006,8 @@ final class UploadViewModel: ObservableObject {
         errorMessage = nil
         resendFrom = nil
         cancelled = false
+        stoppedForOwner = false
+        failureNeedsEditing = false
         songFailuresShown = 0
         // 🔴 **送っている途中でアプリを離れても、少しのあいだ続けさせてもらう。**
         // 無いと裏に回った数秒後に止められ、戻ったときには通信が切れて失敗になる。
@@ -2037,6 +2069,13 @@ final class UploadViewModel: ObservableObject {
         for (offset, id) in queue.enumerated() {
             // **1枚ごとに見る。** 5枚選んで2枚目でやめたとき、残りを上げ始めない
             if cancelled { break }
+            // 🔴 **持ち主のままか、1枚ごとに見る**（別の人の名前で上げない・`ownerStillSignedIn`）
+            if let ownerStillSignedIn, !ownerStillSignedIn() {
+                stoppedForOwner = true
+                failures.append(L("ログインしている人が替わったため、送るのを止めました",
+                                  "Sending stopped because a different account signed in."))
+                break
+            }
             uploadingIndex = offset + 1
             // **送る直前に引き直す。** 送信中も欄は生きているので、
             // 始めたときの写しで送ると、直した題が古い値で上がる
@@ -2074,6 +2113,8 @@ final class UploadViewModel: ObservableObject {
                 failedIds.append(item.id)
                 if let gone = error as? AlbumGone {
                     albumGone(gone.albumId)
+                    // 「もう一度」では直らない（行き先を選び直す）。裏の係は投稿の画面で直すよう案内する
+                    failureNeedsEditing = true
                     failures.append(L("選んだアルバムが見つかりませんでした。消された可能性があります。行き先を選び直してください",
                                       "The album you chose wasn't found. It may have been deleted. Choose another destination."))
                     break

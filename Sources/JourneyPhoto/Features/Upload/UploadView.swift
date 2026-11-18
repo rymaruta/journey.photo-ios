@@ -405,7 +405,14 @@ struct UploadView: View {
     /// 「投稿する」（下の帯・プレビューの中・「n枚目からもう一度」）。**裏の係に渡して、すぐ閉じる**（2026-11-18・案 B2）。
     /// 渡せない（読み込み中・写真が無い・もう送っている）ときは閉じない。写真と文は係が持ち、失敗しても消さない
     private func sendInBackground() {
-        guard PostUploadCenter.shared.start(model, onPosted: onPosted) else { return }
+        guard PostUploadCenter.shared.start(model, onPosted: onPosted) else {
+            // 送れる形なのに受けなかった: 持ち主がいまの人でない（途中でログインし直した）。黙って止まらない
+            if model.canSubmit {
+                model.errorMessage = L("ログインしている人が替わりました。この投稿は前の人のものなので送れません",
+                                       "A different account is signed in. This post belongs to the previous account.")
+            }
+            return
+        }
         dismiss()
     }
 

@@ -164,6 +164,19 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで、投稿の入口の切り替えの段と「一覧を見ているか」の知らせの順を見えない要素 `createflow.probe` に出す
+    /// （Debug のみ・2026-11-18 確かめ役の指摘: ストーリーから投稿に替えたときに切り替えが消えるかを、推定でなく順で取る）。
+    /// `-JPCreateFlowProbe YES`。Release では必ず false
+    static let createFlowProbeKey = "JPCreateFlowProbe"
+
+    static var createFlowProbe: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: createFlowProbeKey)
+        #else
+        return false
+        #endif
+    }
+
     static var feedProbe: Bool {
         #if DEBUG
         return UserDefaults.standard.bool(forKey: feedProbeKey)

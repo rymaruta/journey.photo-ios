@@ -34,8 +34,10 @@ final class PostUploadCenter: ObservableObject {
         fileprivate(set) var failure: String?
         /// 観光スポットの頁へ「並んだ枚数」を知らせる（スポットから開いた投稿だけ）
         fileprivate let onPosted: ((Int) -> Void)?
-        /// 誰の投稿か（人が替わったら持たない）
+        /// 誰の投稿か（人が替わったら持たない）。**持ち主の分からない投稿は受けない**（`start`）
         let ownerId: String?
+        /// 送っている途中で持ち主でなくなった（終わったら黙って手放す・控えは持ち主の枠に残る）
+        fileprivate(set) var abandoned = false
 
         fileprivate init(model: UploadViewModel, onPosted: ((Int) -> Void)?) {
             self.model = model
@@ -62,6 +64,8 @@ final class PostUploadCenter: ObservableObject {
         case postedWithNote(String)
         /// 送れなかった（「もう一度」で送り直す）
         case failed(String)
+        /// 送れなかった。「もう一度」では直らない（選んだアルバムが消えた）ので、投稿の画面で直すよう案内する
+        case failedNeedsEditing(String)
     }
 
     @Published private(set) var jobs: [Job] = []
@@ -70,11 +74,15 @@ final class PostUploadCenter: ObservableObject {
     @Published private(set) var finished = 0
     /// **送れなかった回数**（失敗の触覚を1回鳴らす合図・前の投稿画面の `postFailedTicks` の役）
     @Published private(set) var failures = 0
+    /// 知らせの「直す」で、投稿の画面で開き直してほしい投稿（ホームの輪 `StoriesRow` が受けて開く）
+    @Published private(set) var editRequest: UUID?
 
     /// 知らせを出す口（アプリが起動時に渡す・`configure`）
     private weak var toasts: ToastCenter?
     /// 試験で知らせを受ける口（渡されていれば `toasts` より先に呼ぶ）
     var onNotice: ((Notice, UUID) -> Void)?
+    /// 🔴 **いまログインしている人**（アプリが起動時に渡す・試験は差し替える）。送る前・1枚ごと・「もう一度」で持ち主と比べる
+    var currentUserId: (() -> String?)?
 
     /// 送っている・送れずに持っている投稿があるか（輪が「送信中…」「送れませんでした」を出す）
     var isBusy: Bool { !jobs.isEmpty }
@@ -93,18 +101,30 @@ final class PostUploadCenter: ObservableObject {
 
     init() {}
 
-    /// 起動時に知らせの口を渡す
-    func configure(toasts: ToastCenter) {
+    /// 起動時に知らせの口と、いまログインしている人を読む口を渡す
+    func configure(toasts: ToastCenter, currentUserId: @escaping () -> String?) {
         self.toasts = toasts
+        self.currentUserId = currentUserId
+    }
+
+    /// 持ち主がいまログインしている人か。**持ち主の分からない投稿は送らない**（別の人の「もう一度」で上がらないように）
+    private func ownedByCurrentUser(_ ownerId: String?) -> Bool {
+        guard let ownerId, !ownerId.isEmpty else { return false }
+        guard let currentUserId else { return true }
+        return currentUserId() == ownerId
     }
 
     /// 送り始める。**画面はこれが true を返したら閉じる**（返さなければ閉じない・送れる形でない）。
     /// 共有カードは画面いっぱいに出さず、知らせの「カードにする」から開く（`showsCardSheet` を切る）
     @discardableResult
     func start(_ model: UploadViewModel, onPosted: ((Int) -> Void)? = nil) -> Bool {
-        guard model.canSubmit, !jobs.contains(where: { $0.model === model }) else { return false }
+        guard model.canSubmit, !jobs.contains(where: { $0.model === model }),
+              ownedByCurrentUser(model.draftOwner) else { return false }
         model.showsCardSheet = { false }
         let job = Job(model: model, onPosted: onPosted)
+        // 🔴 1枚ごとに持ち主のままかを見る（途中で人が替わったら、残りを別の人の名前で上げない）
+        let owner = job.ownerId
+        model.ownerStillSignedIn = { [weak self] in self?.ownedByCurrentUser(owner) ?? false }
         model.onProgress = { [weak self, weak job] index in
             guard let self, let job else { return }
             job.done = PostUploadProgress.done(uploadingIndex: index, total: job.total)
@@ -121,7 +141,9 @@ final class PostUploadCenter: ObservableObject {
     /// 送れなかった投稿をもう一度送る（知らせの「もう一度」・輪の「もう一度送る」）。同じ鍵で送り直す
     func retry(_ jobId: UUID? = nil) {
         guard let job = jobs.first(where: { jobId == nil ? ($0.failure != nil && !$0.sending) : $0.id == jobId }),
-              job.failure != nil, !job.sending, job.model.canSubmit else { return }
+              job.failure != nil, !job.sending, job.model.canSubmit,
+              // 🔴 持ち主でない人の「もう一度」では送らない（持ち主の分からない投稿も）
+              ownedByCurrentUser(job.ownerId) else { return }
         job.failure = nil
         job.total = job.model.items.count
         job.done = 0
@@ -142,21 +164,64 @@ final class PostUploadCenter: ObservableObject {
     }
 
     /// ログインしている人が変わった。**投稿した本人でなくなったら、持っている投稿を手放す**
-    /// （送信の控えは本人の端末の枠に残る——同じ人が入り直せば「送れなかった投稿があります」から戻せる）
+    /// （送信の控えは本人の端末の枠に残る——同じ人が入り直せば「送れなかった投稿があります」から戻せる）。
+    /// 🔴 **送っている最中の投稿も止める**（いま送っている1枚のあと、残りを上げ始めない・2026-11-18 確かめ役の指摘）。
+    /// 止まったら黙って手放す（`run`）
     func userChanged(to userId: String?) {
         let before = jobs.count
-        jobs.removeAll { !$0.sending && $0.ownerId != nil && $0.ownerId != userId }
+        for job in jobs where job.sending && job.ownerId != userId {
+            job.abandoned = true
+            job.model.cancel()
+        }
+        jobs.removeAll { !$0.sending && $0.ownerId != userId }
         if jobs.count != before { recompute() }
+    }
+
+    /// 送っている投稿をやめる（輪の「送信をやめる」）。いま送っている1枚は最後まで通し、残りは上げ始めない。
+    /// 写真と文は持ったまま（送れなかった投稿として残り、「もう一度送る」「投稿の画面で直す」を選べる）
+    func cancelSending() {
+        for job in jobs where job.sending { job.model.cancel() }
+    }
+
+    /// 知らせの「直す」: 投稿の画面で開き直す（ホームの輪が受けて開く）
+    func requestEditing(_ jobId: UUID) {
+        editRequest = jobId
+    }
+
+    /// 受けた「直す」を片づける
+    func clearEditRequest() {
+        editRequest = nil
+    }
+
+    /// 送れずに持っている投稿が「もう一度」で直るか（アルバムが消えた回は直らない）
+    func canRetry(_ job: Job?) -> Bool {
+        guard let job else { return false }
+        return !job.model.failureNeedsEditing
     }
 
     private func run(_ job: Job) async {
         await job.model.submit()
         job.sending = false
         let model = job.model
+        // 人が替わったと知らされた（`userChanged`）投稿は手放す（控えは持ち主の枠に残る）
+        if job.abandoned {
+            model.onProgress = nil
+            jobs.removeAll { $0 === job }
+            recompute()
+            return
+        }
+        // 🔴 送っている途中で持ち主でなくなって止めた（`ownerStillSignedIn`）: **写真と文を持ったまま、送れなかった投稿にする**。
+        // 別の人には知らせない（「もう一度」も持ち主でなければ送らない・`retry`）
+        if model.stoppedForOwner {
+            job.failure = model.errorMessage ?? PostUploadOutcome.failedText
+            job.done = 0
+            recompute()
+            return
+        }
         // 観光スポットの頁へ「並んだ枚数」（一部だけ上がった回も知らせる・前の画面の `postedToSpot` と同じ）
         if model.postedToSpot > 0 { job.onPosted?(model.postedToSpot) }
         switch PostUploadOutcome.of(didPostAll: model.didPostAll, remaining: model.items.count,
-                                    message: model.errorMessage) {
+                                    message: model.errorMessage, needsEditing: model.failureNeedsEditing) {
         case .posted:
             finish(job)
             if let card = model.quietPostedCard { PostedCardOffer.shared.offer(card) }
@@ -170,6 +235,12 @@ final class PostUploadCenter: ObservableObject {
             failures += 1
             recompute()
             notice(.failed(message), job: job)
+        case .failedNeedsEditing(let message):
+            job.failure = message
+            job.done = 0
+            failures += 1
+            recompute()
+            notice(.failedNeedsEditing(message), job: job)
         }
     }
 
@@ -205,6 +276,12 @@ final class PostUploadCenter: ObservableObject {
             toasts.show(PostUploadOutcome.failedText, kind: .failure, actionTitle: PostUploadOutcome.retryAction) { [weak self] in
                 self?.retry(id)
             }
+        case .failedNeedsEditing(let message):
+            // 「もう一度」は出さない（同じ理由でまた落ちる）。投稿の画面で行き先を選び直す
+            let id = job.id
+            toasts.show(message, kind: .failure, actionTitle: PostUploadOutcome.editAction) { [weak self] in
+                self?.requestEditing(id)
+            }
         }
     }
 
@@ -219,21 +296,26 @@ enum PostUploadOutcome: Equatable {
     case posted
     case postedWithNote(String)
     case failed(String)
+    /// 「もう一度」では直らない失敗（選んだアルバムが消えた）。投稿の画面で直す
+    case failedNeedsEditing(String)
 
     /// 失敗の知らせの言葉（案 B2「送れませんでした　もう一度」）
     static var failedText: String { L("送れませんでした", "Couldn\u{2019}t post") }
     static var retryAction: String { L("もう一度", "Try again") }
+    /// 投稿の画面で直す一手（輪の「投稿の画面で直す」と同じ行き先・知らせは短く）
+    static var editAction: String { L("直す", "Fix") }
 
     /// - `didPostAll`: 全部上がり、言うことも無い
     /// - 写真が残っていない（`remaining == 0`）が一言ある: 上がったが知らせる（曲が付かなかった・前に投稿済み）
     /// - 写真が残っている: 送れなかった（写真と文は持ったまま）
-    static func of(didPostAll: Bool, remaining: Int, message: String?) -> PostUploadOutcome {
+    static func of(didPostAll: Bool, remaining: Int, message: String?, needsEditing: Bool = false) -> PostUploadOutcome {
         if didPostAll { return .posted }
         if remaining == 0 {
             if let message, !message.isEmpty { return .postedWithNote(message) }
             return .posted
         }
-        return .failed(message ?? L("投稿できませんでした", "Couldn\u{2019}t post"))
+        let text = message ?? L("投稿できませんでした", "Couldn\u{2019}t post")
+        return needsEditing ? .failedNeedsEditing(text) : .failed(text)
     }
 }
 
