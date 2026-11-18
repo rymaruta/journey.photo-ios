@@ -973,12 +973,35 @@ final class CriticalFlowTests: XCTestCase {
 
         // 地図を2回たたいて寄せても札は閉じない（1回目で閉じる予約、2回目で取り消す）
         let probe = app.descendants(matching: .any).matching(identifier: "map.cardCloseProbe").firstMatch
-        let probeBefore = (probe.value as? String) ?? "(なし)"
-        empty.doubleTap()
-        Thread.sleep(forTimeInterval: 1.5)
-        let probeAfter = (probe.value as? String) ?? "(なし)"
-        print("measured mapDoubleTap before=\(probeBefore) after=\(probeAfter) cardExists=\(card.exists)")
-        XCTAssertTrue(card.exists, "地図を2回たたいて寄せたら札が閉じた（地図を押した合図の数 前: \(probeBefore) 後: \(probeAfter)）")
+        // 🔴 **iOS が2回押しと認めた回だけで確かめる**（2026-11-18 run 1454: シミュレーターの2回たたきが、iOS の2回押しに
+        // ならなかった——2回押しの合図 double が増えず、1回押しが2回届いた。iOS から見て2回の別々の押しなので、札が閉じるのは
+        // 決まりどおり）。認められなかった回は札を開き直して、3回までたたき直す。gapMs は2回の押しの合図の間（ms）
+        func doubles(_ value: String) -> Int {
+            guard let range = value.range(of: #"double=(\d+)"#, options: .regularExpression) else { return -1 }
+            return Int(value[range].dropFirst("double=".count)) ?? -1
+        }
+        var recognized = false
+        var attempts: [String] = []
+        for attempt in 1...3 {
+            if !card.exists {
+                pin.tap()
+                XCTAssertTrue(card.waitForExistence(timeout: 10), "ピンを押し直しても札が開かない（たたき直し \(attempt) 回目）")
+                Thread.sleep(forTimeInterval: 1.5)
+            }
+            let probeBefore = (probe.value as? String) ?? "(なし)"
+            empty.doubleTap()
+            Thread.sleep(forTimeInterval: 1.5)
+            let probeAfter = (probe.value as? String) ?? "(なし)"
+            let line = "attempt=\(attempt) before=\(probeBefore) after=\(probeAfter) cardExists=\(card.exists)"
+            attempts.append(line)
+            print("measured mapDoubleTap \(line)")
+            if doubles(probeAfter) > doubles(probeBefore) {
+                recognized = true
+                XCTAssertTrue(card.exists, "地図を2回たたいて寄せたら札が閉じた（\(line)）")
+                break
+            }
+        }
+        XCTAssertTrue(recognized, "シミュレーターの2回たたきが、3回とも iOS の2回押しにならなかった（\(attempts)）")
 
         // 指で地図を動かすと「このエリアを検索」が出る
         empty.tap()

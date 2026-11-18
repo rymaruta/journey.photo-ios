@@ -120,6 +120,9 @@ struct PhotoMapView: View {
     /// UI テストのときだけ読む数（地図を押した合図の回数・2026-11-16 run 1429 の調べ・`map.cardCloseProbe`）
     @State private var cardCloseProbe = ""
     @State private var cardCloseCounts = (single: 0, double: 0, closed: 0)
+    /// 前の1回押しの合図が届いた時刻（UI テストのときだけ・2回の押しの間を ms で出す・run 1454 の調べ）
+    @State private var lastSingleProbeAt: Date?
+    @State private var singleGapMs = -1
 
     var body: some View {
         // UI テストのときだけ: body の評価を数える（`PerfTimeline`・札 #594 の下調べ。無効なら何もしない）
@@ -688,7 +691,13 @@ struct PhotoMapView: View {
         cardCloseCounts.single += single
         cardCloseCounts.double += double
         cardCloseCounts.closed += closed
-        cardCloseProbe = "single=\(cardCloseCounts.single) double=\(cardCloseCounts.double) closed=\(cardCloseCounts.closed)"
+        if single > 0 {
+            let now = Date()
+            if let lastSingleProbeAt { singleGapMs = Int(now.timeIntervalSince(lastSingleProbeAt) * 1000) }
+            lastSingleProbeAt = now
+        }
+        cardCloseProbe = "single=\(cardCloseCounts.single) double=\(cardCloseCounts.double) closed=\(cardCloseCounts.closed) "
+            + "gapMs=\(singleGapMs)"
     }
 
     /// いま出している札（閉じる予約の間に替わったかを見る）
