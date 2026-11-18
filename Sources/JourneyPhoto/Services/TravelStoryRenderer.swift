@@ -40,6 +40,11 @@ enum TravelStoryRenderer {
             return sticker ? stampSticker(lead, texts: texts) : stampOnPaper(lead, texts: texts)
         case .film:
             return film(Array(images.prefix(3)), texts: texts)
+        case .koyomi:
+            // 暦（差し色・`KoyomiCardRenderer`）。ステッカーにはしない（`Kind.supportsSticker`）
+            return Output(data: KoyomiCardRenderer.render(photo: lead, texts: TravelStory.koyomi(facts, choice: choice),
+                                                          frame: .story),
+                          isSticker: false)
         case .photoColor:
             // 写真の色（`PhotoColorCardRenderer`）。ステッカーにはしない（`Kind.supportsSticker`）
             return Output(data: PhotoColorCardRenderer.render(photo: lead,

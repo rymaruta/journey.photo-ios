@@ -285,13 +285,13 @@ enum PhotoColorCard {
     /// **2026-11-18 判断: 撮影地の字は、選んだ細かさのいちばん細かい地名。** 模型は観光スポットの名前（神戸北野異人館街）だが、
     /// 共有の絵は「選んだ細かさより細かい場所を出さない」（`TravelStory.placeText`・`LocationMatch.shareCardDisplay`）ので、
     /// 投稿は共有カードの撮影地の2行（`LocationMatch.shareCardPlace`）の小さい単位を大きく、大きい単位を下の段に出す。
-    /// 日付は撮った日（分からなければ出さない）
+    /// 日付は撮った日（分からない・共有画面の「日付」を切った（`Credit.showsDate`・`ShareCardDateChoice`）なら出さない）
     static func texts(for credit: SignatureShareCardRenderer.Credit) -> Texts {
         let place = credit.place ?? LocationMatch.shareCardPlace(credit.location)
         let small = place?.secondary.flatMap(clean)
         let large = place.flatMap { clean($0.primary) }
         return Texts(place: small ?? large, region: small == nil ? nil : large,
-                     date: credit.takenDay.map(dateText))
+                     date: credit.showsDate ? credit.takenDay.map(dateText) : nil)
     }
 
     /// 「2026.10.10」（撮った日は UTC 0 時で持つ暦の日なので UTC で書く）

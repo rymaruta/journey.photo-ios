@@ -118,7 +118,7 @@ enum PostedShareCardCredit {
             early: me?.showsEarlyMark ?? false,
             badge: me?.shownBadge,
             place: LocationMatch.shareCardPlace(photo.location),
-            // 暦の型の日付と二十四節気（撮った日の分からない写真では暦を出さない）
+            // 日付を描く型（暦・写真の色）の撮った日。撮った日の分からない写真では暦を出さない
             takenDay: TripBook.hasTakenDay(photo) ? TripBook.day(of: photo) : nil)
     }
 }

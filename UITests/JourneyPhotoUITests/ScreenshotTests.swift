@@ -11850,7 +11850,7 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// **共有カードの書き出し画像**（2026-11-14 owner「SNS に載せる、はちゃんとデザイン壊れてないか厳しく確認して」）。
-    /// 見本の画面（`-JPPreviewShareCards YES`・`ShareCardGalleryPreview`）で、11 の型 × 3つの比 × ふつう／長い中身の
+    /// 見本の画面（`-JPPreviewShareCards YES`・`ShareCardGalleryPreview`）で、12 の型 × 3つの比 × ふつう／長い中身の
     /// 書き出し画像を1枚ずつ撮る（画像の所だけ）。数で測る点検は単体テスト `ShareCardAuditTests`。出なければ撮らずに抜ける
     func testCapturesShareCardDesigns() {
         let app = XCUIApplication()
@@ -11876,6 +11876,38 @@ final class ScreenshotTests: XCTestCase {
             index += 1
         }
         XCTAssertGreaterThanOrEqual(index, 1, "共有カードの見本が出ない")
+    }
+
+    /// **暦（差し色）の書き出し画像**（2026-11-18 owner「暦 差し色採用」）。見本の画面（`-JPPreviewKoyomi YES`・
+    /// `KoyomiGalleryPreview`）で、写真の形（縦長 3:4・横長 3:2・正方形）× 置き場（ストーリー・投稿 4:5・1:1）と、
+    /// 南半球・長い撮影地の見本を1枚ずつ撮る（画像の所だけ）。数で測る点検は単体テスト `ShareCardAuditTests.testKoyomi…`・
+    /// `KoyomiCardTests`。出なければ撮らずに抜ける
+    func testCapturesKoyomiShareCards() {
+        let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewKoyomi", "YES"]
+        app.launch()
+        let label = app.staticTexts["koyomiGallery.label"].firstMatch
+        let card = app.images["koyomiGallery.card"].firstMatch
+        let next = app.buttons["koyomiGallery.next"].firstMatch
+        guard label.waitForExistence(timeout: 30) else { return }
+        var index = 0
+        while index < 20 {
+            let ready = NSPredicate(format: "label BEGINSWITH %@ AND label ENDSWITH %@", "\(index) ", "ready")
+            let done = XCTNSPredicateExpectation(predicate: ready, object: label)
+            guard XCTWaiter().wait(for: [done], timeout: 30) == .completed, card.exists else { break }
+            let parts = label.label.split(separator: " ").map(String.init)
+            let name = parts.count > 2 ? "\(parts[1]) \(parts[2])" : "\(index)"
+            print("measured [koyomi] \(label.label)")
+            let shot = XCTAttachment(screenshot: card.screenshot())
+            shot.name = String(format: "131-暦（%02d %@）", index, name)
+            shot.lifetime = .keepAlways
+            add(shot)
+            guard next.isEnabled else { break }
+            next.tap()
+            index += 1
+        }
+        XCTAssertGreaterThanOrEqual(index, 1, "暦の見本が出ない")
     }
 
     /// **写真の色の書き出し画像**（2026-11-18 owner 採用）。見本の画面（`-JPPreviewPhotoColor YES`・

@@ -33,6 +33,8 @@ enum SignatureShareCardRenderer {
         case film
         /// 写真の右の黒い列に、撮影地を明朝の縦書きで（2026-11-14・`ShareCardMap.TanzakuLayout`）
         case tanzaku
+        /// 写真の色の一色の地に写真を切らずに置き、下に二十四節気（2026-11-18 owner「暦 差し色採用」・`KoyomiCard`）
+        case koyomi
         /// 写真から取った淡い色の地に写真を切らずに置き、濃い色の字で撮影地と日付（2026-11-18 owner 採用・`PhotoColorCard`）
         case photoColor
     }
@@ -54,8 +56,10 @@ enum SignatureShareCardRenderer {
         /// 撮影地の2行（大きい単位／（小さい単位））。無ければ `location` から分ける
         /// （`LocationMatch.shareCardPlace`・2026-11-04 owner）
         var place: LocationMatch.ShareCardPlace? = nil
-        /// 撮った日（`TripBook.day(of:)`・その日の UTC 0 時）。暦の型の日付と二十四節気。分からなければ nil
+        /// 撮った日（`TripBook.day(of:)`・その日の UTC 0 時）。日付を描く型（暦・写真の色）の日付と、暦の二十四節気。分からなければ nil
         var takenDay: Date? = nil
+        /// 撮った日を絵に出すか（共有画面の「日付」の入切・`ShareCardDateChoice`）。切ると暦は日付も節気も、写真の色は日付を出さない
+        var showsDate: Bool = true
 
         var placeLines: [String] {
             (place ?? LocationMatch.shareCardPlace(location))?.lines ?? []
@@ -111,6 +115,8 @@ enum SignatureShareCardRenderer {
         case .mat: return renderMat(photo: photo, credit: credit, ratio: ratio)
         case .film: return renderFilm(photo: photo, credit: credit, ratio: ratio)
         case .tanzaku: return renderTanzaku(photo: photo, credit: credit, ratio: ratio)
+        case .koyomi: return KoyomiCardRenderer.render(photo: photo, texts: KoyomiCard.texts(for: credit),
+                                                       frame: .post(ratio))
         case .photoColor: return PhotoColorCardRenderer.render(photo: photo, texts: PhotoColorCard.texts(for: credit),
                                                                frame: .post(ratio))
         case .band: break   // 帯の型

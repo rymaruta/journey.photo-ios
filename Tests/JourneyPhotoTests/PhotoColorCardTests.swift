@@ -242,6 +242,10 @@ final class PhotoColorCardTests: XCTestCase {
         XCTAssertEqual(C.texts(for: Self.credit(location: "山中湖", takenDay: Self.day)),
                        C.Texts(place: "山中湖", region: nil, date: "2026.10.10"))
         XCTAssertEqual(C.texts(for: Self.credit(location: nil, takenDay: nil)), C.Texts(place: nil, region: nil, date: nil))
+        // 共有画面の「日付」を切ったら（`ShareCardDateChoice`）、日付を出さない。場所はそのまま
+        let off = ShareCardDateChoice.credit(Self.credit(location: Self.kenrokuen, takenDay: Self.day), showsDate: false)
+        XCTAssertEqual(C.texts(for: off), C.Texts(place: "金沢市", region: "石川県", date: nil))
+        XCTAssertTrue(ShareCardDateChoice.drawsDate(.photoColor), "写真の色で日付の入切が出ない")
         let texts = C.texts(for: Self.credit(location: Self.kenrokuen, takenDay: Self.day))
         XCTAssertFalse([texts.place, texts.region].compactMap { $0 }.contains { $0.contains("兼六園") }, "スポットの名前が出た")
     }
@@ -306,6 +310,10 @@ final class PhotoColorCardTests: XCTestCase {
     /// 投稿の型の並びのいちばん後ろ・ストーリーの型のいちばん後ろに足した（前からの並びは変えない）。ステッカーにはしない
     func testAddedAtTheEnd() {
         XCTAssertEqual(ShareCardStyleChoice.order.last, .photoColor)
+        // 暦の後ろ。写真の色は撮った日が無くても選べる（日付を出さないだけ）
+        XCTAssertEqual(Array(ShareCardStyleChoice.order.suffix(2)), [.koyomi, .photoColor])
+        XCTAssertTrue(ShareCardStyleChoice.order(for: Self.credit(location: nil, takenDay: nil)).contains(.photoColor))
+        XCTAssertTrue(TravelStory.kinds(for: Self.facts(day: nil)).contains(.photoColor))
         XCTAssertEqual(ShareCardStyleChoice.title(.photoColor), L("写真の色", "Photo color"))
         XCTAssertEqual(TravelStory.Kind.allCases.last, .photoColor)
         XCTAssertEqual(TravelStory.Kind.photoColor.name, L("写真の色", "Photo color"))

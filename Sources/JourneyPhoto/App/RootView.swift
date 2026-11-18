@@ -177,6 +177,9 @@ struct RootView: View {
             if ShareCardGalleryPreview.isRequested {
                 // UI テストのときだけ: 共有カードの書き出し画像を全部の型 × 比で出す（`-JPPreviewShareCards YES`・2026-11-14）
                 ShareCardGalleryPreview()
+            } else if KoyomiGalleryPreview.isRequested {
+                // UI テストのときだけ: 暦（差し色）の書き出し画像を写真の形 × 置き場で出す（`-JPPreviewKoyomi YES`・2026-11-18）
+                KoyomiGalleryPreview()
             } else if PhotoColorGalleryPreview.isRequested {
                 // UI テストのときだけ: 写真の色の書き出し画像を写真の形 × 置き場で出す（`-JPPreviewPhotoColor YES`・2026-11-18）
                 PhotoColorGalleryPreview()

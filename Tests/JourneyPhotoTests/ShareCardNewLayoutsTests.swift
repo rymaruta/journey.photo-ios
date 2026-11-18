@@ -87,9 +87,9 @@ final class ShareCardNewLayoutsTests: XCTestCase {
         XCTAssertEqual(Array(order[4..<7]), [.printed, .ticket, .cinema])
         // 2026-11-14: 次の3つ（額装・フィルム・縦書き）は後ろに足す（前からの並びは変えない）
         XCTAssertEqual(Array(order[7..<10]), [.mat, .film, .tanzaku])
-        // 2026-11-18: 写真の色をいちばん後ろに足した
-        XCTAssertEqual(order.last, .photoColor)
-        XCTAssertEqual(order.count, 11)
+        // 2026-11-18: 暦と写真の色をいちばん後ろに足した
+        XCTAssertEqual(Array(order.suffix(2)), [.koyomi, .photoColor])
+        XCTAssertEqual(order.count, 12)
         for style in order {
             let title = ShareCardStyleChoice.title(style)
             XCTAssertFalse(title.isEmpty)
