@@ -59,3 +59,6 @@ final class MapETAProbeTests: XCTestCase {
         }
     }
 }
+
+// わざと落とす（使い捨ての枝）
+let buildOnlyFailProbeUI = undefinedSymbolForBuildOnlyProbe

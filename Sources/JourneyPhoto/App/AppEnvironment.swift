@@ -104,3 +104,6 @@ final class AppEnvironment: ObservableObject {
         self.feedback = FeedbackService(api: api)
     }
 }
+
+// わざと落とす（ビルドだけの回の要約を確かめる・使い捨ての枝）
+let buildOnlyFailProbe: Int = "文字列"
