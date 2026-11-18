@@ -182,6 +182,26 @@ final class DMUnsendTests: XCTestCase {
         XCTAssertEqual(DMText.excerpt(kept, language: "ja"), "あなた: やあ")
     }
 
+    // MARK: - 下へ送るときの動き（2026-11-18 判断・取り消しのあとに約 60 秒固まった件）
+
+    /// 通が増えたときだけ動きを付ける。減ったとき（取り消し）と変わらないときは付けない
+    func testBottomScrollAnimatesOnlyWhenTheCountGrows() {
+        XCTAssertTrue(DMBottomScroll.animates(from: 9, to: 10), "送った・届いたときに動きが無い")
+        XCTAssertFalse(DMBottomScroll.animates(from: 10, to: 9), "取り消しで減ったときに動きつきで送っている")
+        XCTAssertFalse(DMBottomScroll.animates(from: 10, to: 10))
+    }
+
+    /// 会話の下への送りが、通の数の前と後で動きを決めている（動きつきの送りを無条件に戻すと落ちる）
+    func testThreadScrollUsesTheCountRule() throws {
+        let view = try source("Features/Messages/DMConversationView.swift")
+        let hook = slice(view, from: ".onChange(of: log.messages.count + log.outgoing.count) { old, new in", to: "\n            }\n")
+        XCTAssertTrue(hook.contains("if DMBottomScroll.animates(from: old, to: new) {"), "通の数で動きを分けていない")
+        let animated = hook.components(separatedBy: "withAnimation(").count - 1
+        XCTAssertEqual(animated, 1, "動きつきの送りが分けた側の外にもある")
+        let plain = hook.components(separatedBy: "proxy.scrollTo(Self.bottomId, anchor: .bottom)").count - 1
+        XCTAssertEqual(plain, 2, "減ったときに動き無しで送っていない")
+    }
+
     // MARK: - 画面の配線（Linux では SwiftUI を描けないので、元のファイルを読む）
 
     private func source(_ path: String) throws -> String {
