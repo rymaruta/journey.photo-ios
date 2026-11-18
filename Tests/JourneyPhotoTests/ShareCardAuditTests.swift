@@ -30,7 +30,7 @@ final class ShareCardAuditTests: XCTestCase {
     static let kyoto = CLLocationCoordinate2D(latitude: 35.0, longitude: 135.5)
     static let paris = CLLocationCoordinate2D(latitude: 49.0, longitude: 2.5)
 
-    /// 暦の型の撮った日（2026-11-18・節気がいちばん長い字の「啓蟄」KEICHITSU の日。ほかの型は使わない）。
+    /// 日付を描く型（暦・写真の色）の撮った日（2026-11-18・節気がいちばん長い字の「啓蟄」KEICHITSU の日。ほかの型は使わない）。
     /// 撮った日の無い中身（長い・絵文字・中身なし）では、暦は撮影地を大きく出す形になる
     static let koyomiDay = TripBook.utcCalendar.date(from: DateComponents(year: 2026, month: 3, day: 10))!
 
@@ -449,7 +449,7 @@ final class ShareCardAuditTests: XCTestCase {
 
     /// 全部の型が下の試験に並んでいるか（型を足したら試験も足す）
     func testEveryStyleHasAnAudit() {
-        XCTAssertEqual(R.Style.allCases.count, 11)
+        XCTAssertEqual(R.Style.allCases.count, 12)
     }
 
     func testBandPortrait() async throws { try await audit(.band, .portrait) }
@@ -485,5 +485,8 @@ final class ShareCardAuditTests: XCTestCase {
     func testKoyomiPortrait() async throws { try await audit(.koyomi, .portrait) }
     func testKoyomiStory() async throws { try await audit(.koyomi, .story) }
     func testKoyomiSquare() async throws { try await audit(.koyomi, .square) }
+    func testPhotoColorPortrait() async throws { try await audit(.photoColor, .portrait) }
+    func testPhotoColorStory() async throws { try await audit(.photoColor, .story) }
+    func testPhotoColorSquare() async throws { try await audit(.photoColor, .square) }
 }
 #endif

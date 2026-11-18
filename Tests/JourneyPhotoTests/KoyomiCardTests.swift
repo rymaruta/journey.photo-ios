@@ -310,15 +310,17 @@ final class KoyomiCardTests: XCTestCase {
         defaults.removePersistentDomain(forName: "KoyomiCardTests.date")
     }
 
-    /// 入切を出すのは、日付を描く型（暦）で撮った日のある写真のときだけ
+    /// 入切を出すのは、日付を描く型（暦・写真の色）で撮った日のある写真のときだけ
     func testDateToggleOnlyForDatedStyles() {
         let dated = Self.credit("兼六園, 兼六町, 金沢市, 石川県, 920-0936, 日本", lat: 36.56)
         var undated = dated
         undated.takenDay = nil
-        XCTAssertEqual(SignatureShareCardRenderer.Style.allCases.filter(ShareCardDateChoice.drawsDate), [.koyomi])
+        XCTAssertEqual(SignatureShareCardRenderer.Style.allCases.filter(ShareCardDateChoice.drawsDate), [.koyomi, .photoColor])
         XCTAssertTrue(ShareCardDateChoice.showsToggle(style: .koyomi, credit: dated))
         XCTAssertFalse(ShareCardDateChoice.showsToggle(style: .koyomi, credit: undated))
-        for style in SignatureShareCardRenderer.Style.allCases where style != .koyomi {
+        XCTAssertTrue(ShareCardDateChoice.showsToggle(style: .photoColor, credit: dated))
+        XCTAssertFalse(ShareCardDateChoice.showsToggle(style: .photoColor, credit: undated))
+        for style in SignatureShareCardRenderer.Style.allCases where style != .koyomi && style != .photoColor {
             XCTAssertFalse(ShareCardDateChoice.showsToggle(style: style, credit: dated), style.rawValue)
         }
         XCTAssertFalse(ShareCardDateChoice.label.contains("撮りどき"))
@@ -440,7 +442,8 @@ final class KoyomiCardTests: XCTestCase {
     // MARK: - 並び（今ある形は変えない・撮った日が無ければ外す）
 
     func testPostOrderAddsKoyomiAtTheEnd() {
-        XCTAssertEqual(ShareCardStyleChoice.order.last, .koyomi)
+        // 2026-11-18: 写真の色を暦の後ろに足した（暦は後ろから2つ目）
+        XCTAssertEqual(Array(ShareCardStyleChoice.order.suffix(2)), [.koyomi, .photoColor])
         XCTAssertEqual(Array(ShareCardStyleChoice.order.prefix(10)),
                        [.band, .fade, .cover, .label, .printed, .ticket, .cinema, .mat, .film, .tanzaku])
         XCTAssertEqual(ShareCardStyleChoice.title(.koyomi), L("暦", "Almanac"))
@@ -448,6 +451,8 @@ final class KoyomiCardTests: XCTestCase {
             name: "J", username: nil, location: nil, coords: nil, camera: nil, lens: nil, exposure: nil,
             aperture: nil, iso: nil, verified: false, proStyle: nil, early: false, badge: nil)
         XCTAssertFalse(ShareCardStyleChoice.order(for: credit).contains(.koyomi))
+        // 写真の色は撮った日が無くても選べる（日付を出さないだけ）
+        XCTAssertTrue(ShareCardStyleChoice.order(for: credit).contains(.photoColor))
         XCTAssertEqual(ShareCardStyleChoice.style(rawValue: "koyomi", for: credit), .band)
         credit.takenDay = Self.october10
         XCTAssertTrue(ShareCardStyleChoice.order(for: credit).contains(.koyomi))
@@ -455,15 +460,16 @@ final class KoyomiCardTests: XCTestCase {
     }
 
     func testStoryKindsAddKoyomiAtTheEnd() {
-        XCTAssertEqual(TravelStory.Kind.allCases, [.pass, .stamp, .film, .koyomi])
+        XCTAssertEqual(TravelStory.Kind.allCases, [.pass, .stamp, .film, .koyomi, .photoColor])
         XCTAssertFalse(TravelStory.Kind.koyomi.supportsSticker)
         XCTAssertFalse(TravelStory.Kind.koyomi.usesPhase)
         let dated = TravelStory.Facts(location: "石川県", takenDay: Self.october10, name: "旅灯")
         let undated = TravelStory.Facts(location: "石川県", takenDay: nil, name: "旅灯")
-        XCTAssertEqual(TravelStory.kinds(for: dated), [.pass, .stamp, .film, .koyomi])
-        XCTAssertEqual(TravelStory.kinds(for: undated), [.pass, .stamp, .film])
-        XCTAssertEqual(TravelStory.nearby(.film, in: TravelStory.kinds(for: undated)), [.film, .stamp])
-        XCTAssertEqual(TravelStory.nearby(.koyomi), [.koyomi, .film])
+        XCTAssertEqual(TravelStory.kinds(for: dated), [.pass, .stamp, .film, .koyomi, .photoColor])
+        // 写真の色は撮った日が無くても選べる（暦だけ外す）
+        XCTAssertEqual(TravelStory.kinds(for: undated), [.pass, .stamp, .film, .photoColor])
+        XCTAssertEqual(TravelStory.nearby(.film, in: TravelStory.kinds(for: undated)), [.film, .stamp, .photoColor])
+        XCTAssertEqual(TravelStory.nearby(.koyomi), [.koyomi, .film, .photoColor])
         // ステッカーを選んでいても、暦は写真に重ねる絵（1枚の JPEG）
         var choice = TravelStory.Choice()
         choice.mode = .sticker

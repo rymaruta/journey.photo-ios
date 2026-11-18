@@ -45,6 +45,12 @@ enum TravelStoryRenderer {
             return Output(data: KoyomiCardRenderer.render(photo: lead, texts: TravelStory.koyomi(facts, choice: choice),
                                                           frame: .story),
                           isSticker: false)
+        case .photoColor:
+            // 写真の色（`PhotoColorCardRenderer`）。ステッカーにはしない（`Kind.supportsSticker`）
+            return Output(data: PhotoColorCardRenderer.render(photo: lead,
+                                                              texts: TravelStory.photoColor(facts, choice: choice, now: now),
+                                                              frame: .story),
+                          isSticker: false)
         }
     }
     #endif
