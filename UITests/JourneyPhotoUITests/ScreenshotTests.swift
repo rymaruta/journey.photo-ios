@@ -10752,11 +10752,13 @@ final class ScreenshotTests: XCTestCase {
     /// 下へ払ってキーボードを下ろす → 自分の吹き出しを長押し → 取り消す）で押す。押したあとは画面の木を読まず、
     /// 主スレッドの積みのファイル（起動のたびに作り直される）と会話の回数（`.dm`）だけで判定し、次の回へ進む
     func testDMUnsendStallRepeat() {
-        executionTimeAllowance = 1200   // 10 回（1 回およそ 1 分）。既定の 5 分では 5 回目で打ち切られた（run 1507）
+        executionTimeAllowance = 1800   // 20 回まで（1 回およそ 1 分）。30 分を超えないよう、26 分を過ぎたら次の回を始めない
+        let started = Date()
         let samplePath = Self.mainSamplePath("dmrepeat")
         var stalls = 0
         var tried = 0
-        for round in 1...10 {
+        for round in 1...20 {
+            if Date().timeIntervalSince(started) > 26 * 60 { print("REPEAT \(round) 時間の上限が近いので打ち切り"); break }
             let app = XCUIApplication()
             app.launchArguments += ["-JPPreviewPerfProbe", "YES", "-JPMainSampleFile", samplePath]
             app.launchArguments += ["-legal.consent.version", "0"]
