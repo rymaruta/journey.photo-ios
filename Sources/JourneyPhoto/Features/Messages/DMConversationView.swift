@@ -495,7 +495,7 @@ struct DMConversationView: View {
             .onAppear { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
             .onChange(of: log.messages.count + log.outgoing.count) { _, _ in
                 DMStallProbe.note("scrollTo", value: "n=\(log.messages.count)", force: true)
-                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
+                proxy.scrollTo(Self.bottomId, anchor: .bottom)   // 一時の枝 c（マージしない）: 動きを外す
             }
         }
         .frame(maxHeight: .infinity)
@@ -1088,11 +1088,8 @@ struct DMConversationView: View {
         actionError = nil
         let before = draft
         let returned = DMUnsend.returnedText(removed, canSend: canSend).map { DMUnsend.draft(current: draft, returning: $0) }
-        if let returned {
-            restoredDraft = returned
-            draft = returned
-            fieldFocused = true
-        }
+        // 一時の枝 b（マージしない）: 取り消しで文を欄に戻して入力の印を置く所を外す
+        _ = returned
         var failure: Error?
         do {
             try await environment.dm.unsend(conversationId, messageId: removed.id)
