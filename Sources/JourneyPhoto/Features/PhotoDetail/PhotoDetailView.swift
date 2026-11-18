@@ -308,14 +308,13 @@ struct PhotoDetailView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     imageButton(hero)
                     VStack(alignment: .leading, spacing: 16) {
-                        // 2026-11-16 判断（A1）: 操作の段を写真のすぐ下へ（画面の詳細と同じ並び・`details` の注記）
-                        socialBar(proxy)
                         Group {
                             heading(hero)
-                            authorRow
                             chips
                             paragraphs
+                            authorRow
                         }
+                        socialBar(proxy)
                         Group {
                             if let exif = shown.exif {
                                 ExifRow(exif: exif)
@@ -329,6 +328,7 @@ struct PhotoDetailView: View {
                         }
                     }
                     .padding(.horizontal, JPSpace.gutter)
+                    .padding(.top, JPSpace.l)
                 }
                 .padding(.bottom, 32)
             }
@@ -358,7 +358,7 @@ struct PhotoDetailView: View {
                             // **v2（2026-10-14・板 PhotoDetail）: 題は写真の下の黒地に置く**（以前は写真の裾に
                             // 重ねていた）。写真の上に残すのは撮影地・撮影スポットの行だけ（`photoFoot`）
                             DetailPullFollow(drag: pull, part: .rest, reduceMotion: reduceMotion,
-                                             content: details(proxy, hero: hero))
+                                             content: details(proxy, hero: hero).padding(.top, JPSpace.l))
                         }
                         .padding(.bottom, 32)
                     }
@@ -911,18 +911,17 @@ struct PhotoDetailView: View {
         PhotoMetaLine.groupPosition(hero.index + 1, of: hero.photos.count)
     }
 
-    /// **板 02 の順を、2026-11-16 に並べ替えた**（使い勝手の見直し A1・2026-11-16 判断）。
-    /// 板 PhotoDetail は「題 → 説明 → 作者 → いいねの段」だが、説明が2行あると操作の段が画面の下に沈み、
-    /// いいね・保存・コメントまで送らないと届かなかった（いいね 1＋送る）。**操作の段を写真のすぐ下へ**上げ、
-    /// 作者を題の次に置く（案の模型 A1）。板と変わる所なので、板の PhotoDetail の並びも直す。
-    /// 実装にだけある要素（公開範囲の印・カテゴリ・説明・曲・コメント一覧）は消さずに、読む流れの近いところへ差し込む。
+    /// **板 02 の順。** 実装にだけある要素（公開範囲の印・カテゴリ・説明・曲・
+    /// コメント一覧）は消さずに、読む流れの近いところへ差し込む。
+    /// （2026-11-16 の使い勝手の見直し A1 で操作の段を写真のすぐ下へ移す案は、2026-11-18 owner の判断で取りやめ。
+    /// 残したのは写真を2回たたいていいね（`doubleTapLike`）だけ）
     ///
-    ///     撮影スポットの行（撮影地）          ← 写真の裾
-    ///     いいね・コメント・保存・共有         ← 写真のすぐ下（高さ 44・下に白 8% の線）
+    ///     撮影スポットの行（撮影地）          ← 題の上
     ///     題（明朝）
     ///     1/3枚（複数枚の場合のみ）
+    ///     ［公開範囲の印・カテゴリ］ 説明     ← 題の近く
     ///     作者 ＋ フォロー
-    ///     ［公開範囲の印・カテゴリ］ 説明
+    ///     いいね・コメント・保存・共有
     ///     撮影情報（開け閉め）
     ///     #タグ
     ///     曲
@@ -930,21 +929,20 @@ struct PhotoDetailView: View {
     ///     コメント（N）                      ← 下
     private func details(_ proxy: ScrollViewProxy, hero: HeroLineup) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            // 2026-11-16 判断（A1）: 操作の段を写真のすぐ下へ（上の注記）
-            socialBar(proxy)
             // **`Group` で束ねる。** `VStack` の中身は10個までで、
             // 印を足したところで溢れた（`extra argument in call`）
             Group {
                 heading(hero)
                 // 自動の結びの「外す」（撮った本人だけ・案の板 PhotoIOS: 題と日時のすぐ下）
                 spotAutoNotice
-                authorRow
                 chips
                 paragraphs
+                authorRow
                 inspiredRow
                 inspiredProbe
                 storySourceRow
             }
+            socialBar(proxy)
             tripSection
             Group {
                 if let exif = shown.exif {

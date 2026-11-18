@@ -11,7 +11,7 @@ final class PhotoMapViewModel: ObservableObject {
 
     /// 2026-10-31（#426）: マイページと同じ下線の札（`PagedTab`・`ProfileTabBar`）。目印は今までの `map.mode.<名前>`
     enum Mode: String, CaseIterable, Identifiable, PagedTab {
-        /// 板 04c 案A の並び: 地図 / スポット / 撮影地（2026-11-16 に「リスト」から改名・下の `label`）
+        /// 板 04c 案A の並び: 地図 / スポット / リスト
         case map, spots, list
         var id: String { rawValue }
         var tabTitle: String { label }
@@ -20,10 +20,8 @@ final class PhotoMapViewModel: ObservableObject {
             switch self {
             case .map: return L("地図", "Map")
             case .spots: return L("スポット", "Spots")
-            // 2026-11-16 判断（使い勝手の見直し A9）: 「リスト」→「撮影地」。中身は写真の撮影地を県ごとに並べた一覧で、
-            // 「リスト」では何の一覧か分からなかった（場所の呼び名の決まり: 写真が撮られた所は「撮影地」）。
-            // 識別子（`map.mode.list`）と内部の名前は変えない
-            case .list: return L("撮影地", "Places")
+            // 2026-11-16 の使い勝手の見直し A9 で「撮影地」に改める案は、2026-11-18 owner の判断で「一旦変えない」
+            case .list: return L("リスト", "List")
             }
         }
     }
