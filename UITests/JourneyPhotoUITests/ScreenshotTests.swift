@@ -11912,7 +11912,7 @@ final class ScreenshotTests: XCTestCase {
 
     /// **写真の色の書き出し画像**（2026-11-18 owner 採用）。見本の画面（`-JPPreviewPhotoColor YES`・
     /// `PhotoColorGalleryPreview`）で、写真の形（縦長 3:4・横長 3:2・正方形）× 置き場（ストーリー・投稿 4:5・1:1）と、
-    /// 白い写真・黒い写真・撮影地の長い見本を1枚ずつ撮る（画像の所だけ）。数で測る点検は単体テスト
+    /// 白い写真・黒い写真・撮影地の長い見本・ストーリーの縦長 9:16 を1枚ずつ撮る（画像の所だけ）。数で測る点検は単体テスト
     /// `ShareCardAuditTests.testPhotoColor…`・`PhotoColorCardTests`。出なければ撮らずに抜ける
     func testCapturesPhotoColorShareCards() {
         let app = XCUIApplication()

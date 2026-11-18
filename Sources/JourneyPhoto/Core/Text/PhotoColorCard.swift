@@ -18,9 +18,11 @@ enum PhotoColorCard {
     /// 字の段の高さと、写真との間
     static let blockHeight: CGFloat = 140
     static let gap: CGFloat = 56
-    /// 字の段の幅の下限。**2026-11-18 判断:** 模型は字の幅＝写真の幅だが、とても細い縦長の写真（幅 600 未満）では
-    /// 撮影地が入らなくなるので、そのときは 600 を真ん中に置く
-    static let textMinWidth: CGFloat = 600
+    /// 字の段の幅の下限。模型は字の幅＝写真の幅。とても細い縦長の写真では撮影地が入らなくなるので、
+    /// そのときだけ 480 を真ん中に置く。
+    /// **2026-11-18 判断:** はじめ 600 にしたが、投稿 1:1 の縦長 3:4（写真の幅 533）で字の段が写真の左右から
+    /// 約 33px ずつはみ出し、字の端が写真の端にそろわなかった（Mac run 1542 の絵）。480 なら、1:1 の縦長 3:4 と、ストーリー・4:5 の縦長 9:16 まで写真の幅
+    static let textMinWidth: CGFloat = 480
 
     /// 撮影地（明朝 Bold 56px・字間 0.04em）。段の上端から y −6。入らなければ 36 まで縮める
     static let placeY: CGFloat = -6
@@ -68,7 +70,7 @@ enum PhotoColorCard {
     /// 写真の枠と字の段
     struct Placement: Equatable {
         let photo: CGRect
-        /// 字の段（左右は写真の左端と右端・`textMinWidth` より狭ければ真ん中に 600）
+        /// 字の段（左右は写真の左端と右端・`textMinWidth` より狭ければ真ん中に 480）
         let text: CGRect
     }
 

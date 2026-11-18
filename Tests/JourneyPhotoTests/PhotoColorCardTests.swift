@@ -100,11 +100,32 @@ final class PhotoColorCardTests: XCTestCase {
         }
     }
 
-    /// 細い縦長の写真でも、字の段は 600 の幅を持つ（撮影地が入る）
+    /// 細い縦長の写真でも、字の段は 480 の幅を持つ（撮影地が入る）
     func testNarrowPhotoKeepsATextColumn() {
+        XCTAssertEqual(C.textMinWidth, 480)
         let p = C.place(aspect: 0.1, in: .story)
-        XCTAssertEqual(p.text.width, C.textMinWidth, accuracy: 0.001)
+        XCTAssertEqual(p.text.width, 480, accuracy: 0.001)
         XCTAssertEqual(p.text.midX, C.width / 2, accuracy: 0.001)
+    }
+
+    /// 字の段の左右は写真の左右にそろう（投稿 1:1 の縦長 3:4・写真の幅 533 でも。Mac run 1542 で 600 のときはみ出した）。
+    /// 縦長 3:4 まではどの置き場でも、9:16 もストーリー・4:5 では写真の幅（1:1 の 9:16 は写真の幅 400 なので 480 を真ん中に）
+    func testTextColumnMatchesThePhotoWidth() {
+        for (frameName, frame, _) in Self.frames {
+            for (name, aspect) in [("縦長3:4", 3.0 / 4.0), ("縦長9:16", 9.0 / 16.0), ("正方形", 1.0), ("横長3:2", 1.5)]
+            where !(frame == .post(.square) && name == "縦長9:16") {
+                let p = C.place(aspect: CGFloat(aspect), in: frame)
+                let label = "\(frameName) \(name) photo=\(p.photo) text=\(p.text)"
+                XCTAssertEqual(p.text.minX, p.photo.minX, accuracy: 0.001, label)
+                XCTAssertEqual(p.text.maxX, p.photo.maxX, accuracy: 0.001, label)
+            }
+        }
+        let square = C.place(aspect: 0.75, in: .post(.square))
+        XCTAssertEqual(square.photo.width, 533, accuracy: 1)
+        XCTAssertEqual(square.text.width, square.photo.width, accuracy: 0.001)
+        let tall = C.place(aspect: 9.0 / 16.0, in: .post(.square))
+        XCTAssertEqual(tall.text.width, 480, accuracy: 0.001)
+        XCTAssertEqual(tall.text.midX, C.width / 2, accuracy: 0.001)
     }
 
     /// 字の大きさ: 撮影地 56（縮めても 36）、下の段 34（縮めても 33＝インスタで 12pt）。どれも 33px 以上

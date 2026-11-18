@@ -5,7 +5,7 @@ import UIKit
 /// 見本の画面（Debug のみ・`-JPPreviewPhotoColor YES`・2026-11-18）。
 ///
 /// 写真はアプリに入っている見本の1枚（`PreviewUploadSample.assetName`・利用者の写真ではない）を、その形に真ん中で切って使う。
-/// ほかに、白い写真・黒い写真（明暗の比の端）と、撮影地の長い見本。字は見本の中身（兼六園・2026-10-10）。
+/// ほかに、白い写真・黒い写真（明暗の比の端）と、撮影地の長い見本、ストーリーの縦長 9:16。字は見本の中身（兼六園・2026-10-10）。
 /// ログインも通信も要らない。Release では出ない
 struct PhotoColorGalleryPreview: View {
     static let launchKey = "JPPreviewPhotoColor"
@@ -19,13 +19,14 @@ struct PhotoColorGalleryPreview: View {
     }
 
     enum Shape: String, CaseIterable {
-        case portrait, landscape, square
-        /// 幅 ÷ 高さ
+        case portrait, landscape, square, tall
+        /// 幅 ÷ 高さ（tall は縦長 9:16・ストーリーの見本だけ）
         var aspect: CGFloat {
             switch self {
             case .portrait: return 3.0 / 4.0
             case .landscape: return 3.0 / 2.0
             case .square: return 1
+            case .tall: return 9.0 / 16.0
             }
         }
     }
@@ -43,11 +44,13 @@ struct PhotoColorGalleryPreview: View {
     }
 
     static let combos: [Combo] = Target.allCases.flatMap { target in
-        Shape.allCases.map { Combo(shape: $0, target: target, sample: .kenrokuen) }
+        [Shape.portrait, .landscape, .square].map { Combo(shape: $0, target: target, sample: .kenrokuen) }
     } + [Combo(shape: .landscape, target: .story, sample: .white),
          Combo(shape: .portrait, target: .post4x5, sample: .black),
          Combo(shape: .portrait, target: .story, sample: .long),
-         Combo(shape: .square, target: .post4x5, sample: .long)]
+         Combo(shape: .square, target: .post4x5, sample: .long),
+         // 縦長 9:16 のストーリー（上の余白を左右とそろえて写真を縮める形・2026-11-18）
+         Combo(shape: .tall, target: .story, sample: .kenrokuen)]
 
     static let takenDay = TripBook.utcCalendar.date(from: DateComponents(year: 2026, month: 10, day: 10))
 
