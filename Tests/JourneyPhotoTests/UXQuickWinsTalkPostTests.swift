@@ -6,7 +6,7 @@ import FoundationNetworking
 
 /// 使い勝手の見直し 2026-11-16 の「すぐ作る」案のうち A3・A8・A11（owner「使い勝手にフォーカスして最高の UI にしたい」）。
 ///
-/// - A3 マイページの表紙の右上に、ほかのタブと同じ吹き出しとベル（DM・お知らせ 2回 → 1回）
+/// - A3 マイページの表紙の右上に吹き出しとベル（1.1.101）→ 2026-11-18 owner 判断で外した（右上は歯車だけ）
 /// - A8 リクエストを承認したら、そのまま会話を開いて書く欄にキーボード（一覧から 承認 → メッセージを見る → 欄 → 送る の4回 → 承認 → 送る の2回）
 /// - A11 投稿を書く画面: 編集の入口は写真の札1つ、「地図に位置を載せる」は欄の下の1行、撮影地の状態の一言と候補のチップ
 ///
@@ -47,82 +47,40 @@ final class UXQuickWinsTalkPostTests: XCTestCase {
         return defaults
     }
 
-    // MARK: - A3 マイページの吹き出しとベル
+    // MARK: - A3 マイページの吹き出しとベル（2026-11-18 owner 判断で外した）
 
-    /// 表紙の右上は 吹き出し → ベル → 歯車 の順。歯車はそのまま、左に足す
-    func testMyPageTopButtonsOrder() async throws {
+    /// 2026-11-18 owner「マイページにそれは入れなくていいと思う」: 表紙の右上は歯車だけ（板 MyPage どおり）。
+    /// 吹き出しとベルの丸の並びに戻さない
+    func testMyPageTopRightIsGearOnly() async throws {
         let page = try source("Features/Profile/MyPageView.swift")
-        let top = slice(page, from: "private var topButtons: some View {", to: "private var settingsButton")
-        XCTAssertTrue(top.contains("HStack(spacing: AppHeaderGlassInbox.gap)"))
-        let inbox = try XCTUnwrap(top.range(of: "AppHeaderGlassInbox(")?.lowerBound, "吹き出しとベルが無い")
-        let gear = try XCTUnwrap(top.range(of: "settingsButton")?.lowerBound, "歯車が無い")
-        XCTAssertLessThan(inbox, gear, "吹き出しとベルが歯車の左に無い")
-        // 表紙の上に置くのはこの並び（歯車だけを置く形に戻さない）
-        XCTAssertTrue(page.contains("topButtons\n                            .padding(.top, hasCover ? topInset : 0)"))
-        XCTAssertFalse(page.contains("settingsButton\n                            .padding(.top, hasCover ? topInset : 0)"))
-    }
-
-    /// 中身（押した先・読み上げ・未読の点）は見出しと同じもの。写しを作らない
-    func testMyPageInboxSharesTheHeader() async throws {
+        XCTAssertTrue(page.contains("settingsButton\n                            .padding(.top, hasCover ? topInset : 0)"),
+                      "表紙の右上に歯車だけを置いていない")
+        XCTAssertFalse(page.contains("AppHeaderGlassInbox"), "マイページに吹き出しとベルが戻っている")
+        XCTAssertFalse(page.contains("topButtons"), "マイページの右上が丸の並びに戻っている")
+        XCTAssertFalse(page.contains("onOpenNotifications"), "マイページがベルの処理を受け取っている")
         let header = try source("Features/Common/AppHeader.swift")
-        let glass = slice(header, from: "struct AppHeaderGlassInbox: View {", to: "\nextension View {")
-        XCTAssertTrue(glass.contains("AppHeaderInbox.openMessages()"), "吹き出しが受信箱を開かない")
-        XCTAssertTrue(glass.contains("Button(action: onOpenNotifications)"), "ベルがお知らせを開かない")
-        XCTAssertTrue(glass.contains("AppHeaderInbox.messagesLabel(unread: messagesUnread)"))
-        XCTAssertTrue(glass.contains("AppHeaderInbox.bellLabel(unread: unread > 0)"))
-        XCTAssertTrue(glass.contains("circle(AppHeaderInbox.messagesSymbol, dot: messagesUnread)"))
-        XCTAssertTrue(glass.contains("circle(AppHeaderInbox.bellSymbol, dot: unread > 0)"))
-        // 未読は真鍮の点、丸は歯車と同じガラス 44
-        // 点の色（2026-11-16 判断）: カバー写真の上は白、黒地は真鍮。縁は黒 2pt
-        XCTAssertEqual(AppHeaderGlassInbox.dotTone(onPhoto: true), .white, "写真の上の点が真鍮（読めない）")
-        XCTAssertEqual(AppHeaderGlassInbox.dotTone(onPhoto: false), .brass, "黒地の点が真鍮でない")
-        let tone = slice(header, from: "static func dotColor(onPhoto: Bool) -> Color {", to: "/// 点の色の種類")
-        XCTAssertTrue(tone.contains("case .white: return Color.white"))
-        XCTAssertTrue(tone.contains("case .brass: return WebTheme.accent"))
-        XCTAssertTrue(glass.contains("Self.dotColor(onPhoto: onPhoto)"))
-        XCTAssertTrue(glass.contains(".strokeBorder(WebTheme.background, lineWidth: 2)"))
-        let page = try source("Features/Profile/MyPageView.swift")
-        XCTAssertTrue(page.contains("onPhoto: hasCover,"), "マイページがカバーの有無を点に渡していない")
-        XCTAssertTrue(glass.contains(".jpGlass(in: Circle())"))
-        XCTAssertTrue(glass.contains(".frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)"))
-        XCTAssertEqual(AppHeaderGlassInbox.gap, 8)
-        // 見出しの読み上げも同じ口から
-        XCTAssertTrue(header.contains(".accessibilityLabel(AppHeaderInbox.messagesLabel(unread: messagesUnread))"))
-        XCTAssertTrue(header.contains(".accessibilityLabel(AppHeaderInbox.bellLabel(unread: unread > 0))"))
-        XCTAssertEqual(AppHeaderInbox.messagesLabel(unread: true), L("メッセージ（未読あり）", "Messages, unread"))
-        XCTAssertEqual(AppHeaderInbox.bellLabel(unread: false), L("お知らせ", "Activity"))
+        XCTAssertFalse(header.contains("struct AppHeaderGlassInbox"), "マイページ用のガラスの丸が残っている")
     }
 
-    /// 値はほかのタブと同じものを配る（未読の数・受信箱の未読・ベルを押したとき）
-    func testRootPassesUnreadToMyPage() async throws {
+    /// マイページは親から値を受け取らない（未読・ベルの処理を渡さない）。比べる値が無いので `.equatable()` も付けない
+    func testRootPassesNothingToMyPage() async throws {
         let root = try source("App/RootView.swift")
-        let page = slice(root, from: "MyPageView(", to: ".perfMark(\"tab.mypage.appear\")")
-        XCTAssertTrue(page.contains("unread: unread, onOpenNotifications: { openNotificationsFromBell() },"),
-                      "マイページにお知らせの未読とベルの処理が届いていない")
-        XCTAssertTrue(page.contains("messagesUnread: messagesUnread"), "マイページに受信箱の未読が届いていない")
-    }
-
-    /// マイページは、親から渡す閉じた処理が新しくなっただけでは描き直さない。未読の値が変わったら描き直す
-    /// （`MyPageView+Equatable`・ホームの `GalleryView+Equatable` と同じ形）
-    func testMyPageComparesOnlyWhatItDraws() async throws {
-        XCTAssertEqual(MyPageViewInputs(unread: 2, messagesUnread: false), MyPageViewInputs(unread: 2, messagesUnread: false))
-        XCTAssertNotEqual(MyPageViewInputs(unread: 2, messagesUnread: false), MyPageViewInputs(unread: 3, messagesUnread: false))
-        XCTAssertNotEqual(MyPageViewInputs(unread: 2, messagesUnread: false), MyPageViewInputs(unread: 2, messagesUnread: true))
-        let equatable = try source("Features/Profile/MyPageView+Equatable.swift")
-        XCTAssertTrue(equatable.contains("lhs.drawnInputs == rhs.drawnInputs"), "== が描く値で比べていない")
-        XCTAssertTrue(equatable.contains("MyPageViewInputs(unread: unread, messagesUnread: messagesUnread)"))
-        // 親から渡す値が増えたら、ここも見直す（比べ忘れると、その値が変わっても描き直さない）
+        let call = slice(root, from: "NavigationStack {\n                MyPageView", to: ".perfMark(\"tab.mypage.appear\")")
+        XCTAssertEqual(call.trimmingCharacters(in: .whitespacesAndNewlines), "()",
+                       "RootView がマイページに値を渡している・.equatable() で包んでいる")
         let file = try source("Features/Profile/MyPageView.swift")
         guard let head = file.range(of: "struct MyPageView: View {") else { return XCTFail("MyPageView が無い") }
         let page = file[head.upperBound...].components(separatedBy: "\n}\n").first ?? ""
         let passed = page.components(separatedBy: "\n").filter { line in
             (line.hasPrefix("    var ") || line.hasPrefix("    let ")) && !line.contains("{") || line.hasPrefix("    var ") && line.contains("= {")
-        }.map { $0.trimmingCharacters(in: .whitespaces) }
-        XCTAssertEqual(passed, ["var unread = 0", "var onOpenNotifications: () -> Void = {}", "var messagesUnread = false"],
-                       "MyPageView が親から受け取る値が変わった。MyPageViewInputs も見直す")
-        let root = try source("App/RootView.swift")
-        let call = slice(root, from: "MyPageView(unread: unread", to: ".perfMark(\"tab.mypage.appear\")")
-        XCTAssertTrue(call.contains(".equatable()"), "RootView が MyPageView を .equatable() で包んでいない")
+        }
+        XCTAssertEqual(passed, [], "MyPageView が親から値を受け取っている")
+        // 見出し（ほかのタブ）の吹き出しとベルは今までどおり同じ口（`AppHeaderInbox`）
+        let header = try source("Features/Common/AppHeader.swift")
+        XCTAssertTrue(header.contains(".accessibilityLabel(AppHeaderInbox.messagesLabel(unread: messagesUnread))"))
+        XCTAssertTrue(header.contains(".accessibilityLabel(AppHeaderInbox.bellLabel(unread: unread > 0))"))
+        XCTAssertEqual(AppHeaderInbox.messagesLabel(unread: true), L("メッセージ（未読あり）", "Messages, unread"))
+        XCTAssertEqual(AppHeaderInbox.bellLabel(unread: false), L("お知らせ", "Activity"))
     }
 
     // MARK: - A8 承認したら、そのまま会話へ
