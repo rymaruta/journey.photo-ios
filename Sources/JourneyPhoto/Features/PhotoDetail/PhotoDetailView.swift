@@ -1445,7 +1445,7 @@ struct PhotoDetailView: View {
             badge: model.owner?.shownBadge,
             // 撮影地は「大きい単位／（小さい単位）」の2行（2026-11-04 owner）
             place: LocationMatch.shareCardPlace(target.location),
-            // 暦の型の日付と二十四節気（撮った日の分からない写真では暦を出さない）
+            // 日付を描く型（暦・写真の色・雑誌）の撮った日。撮った日の分からない写真では暦を出さない
             takenDay: TripBook.hasTakenDay(target) ? TripBook.day(of: target) : nil,
             // 雑誌の型の題と Vol. の番号を数える写真（2026-11-18）
             title: target.title?.resolved(),

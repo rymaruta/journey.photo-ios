@@ -17,12 +17,13 @@ enum TravelStory {
     // MARK: - 選ぶもの
 
     /// 型。**並びは章の触れる模型どおり**（搭乗券・切手と消印・フィルムの帯）。はじめは推奨 1 の切手と消印。
-    /// 2026-11-18: 暦（差し色・`KoyomiCard`）を後ろに足した（前からの並びは変えない）。続けて雑誌（`MagazineCard`）を後ろに足した
+    /// 2026-11-18: 暦（差し色・`KoyomiCard`）と写真の色（`PhotoColorCard`）を後ろに足した（前からの並びは変えない）。続けて雑誌（`MagazineCard`）を後ろに足した
     enum Kind: String, CaseIterable, Identifiable {
         case pass
         case stamp
         case film
         case koyomi
+        case photoColor
         case magazine
 
         var id: String { rawValue }
@@ -33,13 +34,14 @@ enum TravelStory {
             case .stamp: return L("切手と消印", "Stamp & postmark")
             case .film: return L("フィルムの帯", "Film strip")
             case .koyomi: return L("暦", "Almanac")
+            case .photoColor: return L("写真の色", "Photo color")
             case .magazine: return L("雑誌", "Magazine")
             }
         }
 
         /// ステッカー（透明の地）にできるか。フィルムの帯は3枚を並べる型なので写真に重ねるだけ（章の模型）。
-        /// 暦は写真の色の地に写真と字を置く1枚の絵なので、透明の地にしない。雑誌も写真とぼかした地の1枚の絵
-        var supportsSticker: Bool { self != .film && self != .koyomi && self != .magazine }
+        /// 暦と写真の色は、写真の色の地に写真と字を置く1枚の絵なので、透明の地にしない。雑誌も写真とぼかした地の1枚の絵
+        var supportsSticker: Bool { self != .film && self != .koyomi && self != .photoColor && self != .magazine }
 
         /// 旅のどこ（行ってきます・今ここ・ただいま）を選ぶか。搭乗券だけ（章の模型）
         var usesPhase: Bool { self == .pass }
@@ -495,6 +497,18 @@ enum TravelStory {
                                     ? placeText(facts.location, level: .prefecture) : nil,
                                 // 日付を切ったときの英字（日本は都道府県の英名・場所を出さないなら出さない）
                                 regionLatin: choice.placeLevel == .none ? nil : KoyomiCard.prefectureLatin(facts.location))
+    }
+
+    // MARK: - 写真の色の文字
+
+    /// 写真の色（`PhotoColorCard`）の字。**選んだ細かさを守る**: 撮影地は `Texts.place`（県まで・市まで・出さない）、
+    /// 市までのときだけ下の段に県（海外は国）を添える。日付は `Texts.date`（出さないなら出さない）
+    static func photoColor(_ facts: Facts, choice: Choice, now: Date = Date(),
+                           timeZone: TimeZone = .current) -> PhotoColorCard.Texts {
+        let base = texts(facts, choice: choice, now: now, timeZone: timeZone)
+        let region = choice.placeLevel == .city
+            ? placeText(facts.location, level: .prefecture).flatMap { $0 == base.place ? nil : $0 } : nil
+        return PhotoColorCard.Texts(place: base.place, region: base.place == nil ? nil : region, date: base.date)
     }
 
     // MARK: - 雑誌の文字

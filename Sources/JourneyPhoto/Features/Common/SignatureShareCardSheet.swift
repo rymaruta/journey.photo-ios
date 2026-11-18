@@ -381,7 +381,7 @@ enum PostedShareCardText {
 /// 2026-11-18: 暦（`KoyomiCard`）を後ろに足した（前からの並びは変えない）。続けて雑誌（`MagazineCard`）を後ろに足した
 enum ShareCardStyleChoice {
     static let order: [SignatureShareCardRenderer.Style] = [.band, .fade, .cover, .label, .printed, .ticket, .cinema,
-                                                            .mat, .film, .tanzaku, .koyomi, .magazine]
+                                                            .mat, .film, .tanzaku, .koyomi, .photoColor, .magazine]
 
     /// その写真で選べる型。**撮った日の分からない写真では暦を外す**（日付も節気も出せない・2026-11-18 判断）
     static func order(for credit: SignatureShareCardRenderer.Credit) -> [SignatureShareCardRenderer.Style] {
@@ -409,6 +409,7 @@ enum ShareCardStyleChoice {
         case .film: return L("フィルム", "Film")
         case .tanzaku: return L("縦書き", "Vertical")
         case .koyomi: return L("暦", "Almanac")
+        case .photoColor: return L("写真の色", "Photo color")
         case .magazine: return L("雑誌", "Magazine")
         }
     }
@@ -426,9 +427,9 @@ enum ShareCardStyleChoice {
 enum ShareCardDateChoice {
     static let defaultsKey = "signatureShare.showsDate"
 
-    /// 日付を描く型（暦・雑誌）
+    /// 日付を描く型（暦・写真の色・雑誌。2026-11-18: 写真の色と雑誌も同じ入切を使う）
     static func drawsDate(_ style: SignatureShareCardRenderer.Style) -> Bool {
-        style == .koyomi || style == .magazine
+        style == .koyomi || style == .photoColor || style == .magazine
     }
 
     /// 入切を出すか（日付を描く型で、撮った日のある写真）

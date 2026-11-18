@@ -16,8 +16,23 @@ extension SignatureShareCardRenderer {
 
     /// 写真の平均の色（sRGB 0〜255）。16×16 に縮めて平均する
     static func averageColor(_ photo: UIImage) -> (red: Double, green: Double, blue: Double) {
-        guard let image = photo.cgImage else { return (0, 0, 0) }
         let side = 16
+        let buffer = samplePixels(photo, side: side)
+        guard !buffer.isEmpty else { return (0, 0, 0) }
+        var red = 0.0, green = 0.0, blue = 0.0
+        for index in stride(from: 0, to: buffer.count, by: 4) {
+            red += Double(buffer[index])
+            green += Double(buffer[index + 1])
+            blue += Double(buffer[index + 2])
+        }
+        let count = Double(side * side)
+        return (red / count, green / count, blue / count)
+    }
+
+    /// 写真を `side`×`side` に縮めた画素（R G B 詰め物の4バイトずつ・sRGB）。描けなければ空。
+    /// 平均の色（額装）と、写真の色の5色（`PhotoColorCardRenderer`・2026-11-18）で使う
+    static func samplePixels(_ photo: UIImage, side: Int) -> [UInt8] {
+        guard let image = photo.cgImage, side > 0 else { return [] }
         var buffer = [UInt8](repeating: 0, count: side * side * 4)
         let drawn = buffer.withUnsafeMutableBytes { raw -> Bool in
             guard let context = CGContext(data: raw.baseAddress, width: side, height: side, bitsPerComponent: 8,
@@ -27,15 +42,7 @@ extension SignatureShareCardRenderer {
             context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
             return true
         }
-        guard drawn else { return (0, 0, 0) }
-        var red = 0.0, green = 0.0, blue = 0.0
-        for index in stride(from: 0, to: buffer.count, by: 4) {
-            red += Double(buffer[index])
-            green += Double(buffer[index + 1])
-            blue += Double(buffer[index + 2])
-        }
-        let count = Double(side * side)
-        return (red / count, green / count, blue / count)
+        return drawn ? buffer : []
     }
 
     /// 明朝の1行を真ん中にそろえて描く（幅に入るまで縮める・`drawFittedSerif` と同じ縮め方）

@@ -35,6 +35,8 @@ enum SignatureShareCardRenderer {
         case tanzaku
         /// 写真の色の一色の地に写真を切らずに置き、下に二十四節気（2026-11-18 owner「暦 差し色採用」・`KoyomiCard`）
         case koyomi
+        /// 写真から取った淡い色の地に写真を切らずに置き、濃い色の字で撮影地と日付（2026-11-18 owner 採用・`PhotoColorCard`）
+        case photoColor
         /// 写真を切らずに置き（切れる量 8% 以下なら全面）、題・撮影地と日付・撮影の値・Vol. を余白に
         /// （2026-11-18 owner 採用・`MagazineCard`）。今の「表紙」（`cover`）とは別の型
         case magazine
@@ -57,9 +59,9 @@ enum SignatureShareCardRenderer {
         /// 撮影地の2行（大きい単位／（小さい単位））。無ければ `location` から分ける
         /// （`LocationMatch.shareCardPlace`・2026-11-04 owner）
         var place: LocationMatch.ShareCardPlace? = nil
-        /// 撮った日（`TripBook.day(of:)`・その日の UTC 0 時）。暦の型の日付と二十四節気。分からなければ nil
+        /// 撮った日（`TripBook.day(of:)`・その日の UTC 0 時）。日付を描く型（暦・写真の色）の日付と、暦の二十四節気。分からなければ nil
         var takenDay: Date? = nil
-        /// 撮った日を絵に出すか（共有画面の「日付」の入切・`ShareCardDateChoice`）。切ると暦は日付も節気も出さない
+        /// 撮った日を絵に出すか（共有画面の「日付」の入切・`ShareCardDateChoice`）。切ると暦は日付も節気も、写真の色は日付を出さない
         var showsDate: Bool = true
         /// 投稿の題（雑誌の型の題・2026-11-18）。無ければ撮影地を題にする
         var title: String? = nil
@@ -124,6 +126,8 @@ enum SignatureShareCardRenderer {
         case .tanzaku: return renderTanzaku(photo: photo, credit: credit, ratio: ratio)
         case .koyomi: return KoyomiCardRenderer.render(photo: photo, texts: KoyomiCard.texts(for: credit),
                                                        frame: .post(ratio))
+        case .photoColor: return PhotoColorCardRenderer.render(photo: photo, texts: PhotoColorCard.texts(for: credit),
+                                                               frame: .post(ratio))
         case .magazine: return MagazineCardRenderer.render(photo: photo, texts: MagazineCard.texts(for: credit),
                                                            frame: .post(ratio))
         case .band: break   // 帯の型
