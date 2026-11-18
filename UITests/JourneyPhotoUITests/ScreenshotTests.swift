@@ -10751,6 +10751,10 @@ final class ScreenshotTests: XCTestCase {
     /// 毎回アプリを起動し直し（見本の会話を元に戻す）、元のテストと同じ順（URL を送って断られる → 戻る → 開き直す →
     /// 下へ払ってキーボードを下ろす → 自分の吹き出しを長押し → 取り消す）で押す。押したあとは画面の木を読まず、
     /// 主スレッドの積みのファイル（起動のたびに作り直される）と会話の回数（`.dm`）だけで判定し、次の回へ進む
+    /// 一時の枝（マージしない）: ふつうの DM のテストを 1 本の回で 3 回続けて流す（直しの確かめ・2026-11-18）
+    func testCapturesDirectMessagesRepeat2() { testCapturesDirectMessages() }
+    func testCapturesDirectMessagesRepeat3() { testCapturesDirectMessages() }
+
     func testDMUnsendStallRepeat() {
         executionTimeAllowance = 1800   // 20 回まで（1 回およそ 1 分）。30 分を超えないよう、26 分を過ぎたら次の回を始めない
         let started = Date()
