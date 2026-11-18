@@ -97,6 +97,38 @@ final class DMUnsendTests: XCTestCase {
         XCTAssertEqual(log.messages.map(\.id), ["a-0000001", "b-0000002", "c-0000003"], "元の位置に戻らない")
     }
 
+    /// 2026-11-18（Mac run 1536）: 取り消しを押す前に送った読み直しの答え（取り消した1通を含む古い差分）が、
+    /// 外したあとに届いても1通を戻さない。ほかの新着は重ねる。消えていなかった（`restore`）ときだけ戻る
+    func testStalePollAfterUnsendDoesNotBringTheMessageBack() async {
+        let a = message("a-0000001", mine: false, t: "2026-11-12T00:00:01.000Z")
+        let b = message("b-0000002", t: "2026-11-12T00:00:02.000Z")
+        let c = message("c-0000003", mine: false, t: "2026-11-12T00:00:03.000Z")
+        var log = DMThreadLog(messages: [a, b])
+        let removed = try! XCTUnwrap(log.unsend("b-0000002"))
+        // 押す前に送った差分の答え（b を含む）と、その間に届いた新着 c
+        log.merge([a, b, c])
+        XCTAssertEqual(log.messages.map(\.id), ["a-0000001", "c-0000003"], "古い読み直しの答えで取り消した1通が戻った")
+        // 全部を読み直した答えが古くても戻さない
+        log.replace(with: [a, b, c])
+        XCTAssertEqual(log.messages.map(\.id), ["a-0000001", "c-0000003"], "古い全部の答えで取り消した1通が戻った")
+        // サーバーが消していなかった: 戻すと、以後の読み直しにも出る
+        log.restore(removed)
+        XCTAssertEqual(log.messages.map(\.id), ["a-0000001", "b-0000002", "c-0000003"])
+        log.merge([b])
+        XCTAssertEqual(log.messages.map(\.id), ["a-0000001", "b-0000002", "c-0000003"], "戻した1通が重なった")
+    }
+
+    /// 見張り（UI テストのときだけの `readded`）は押した時点から数える（答えを待つ間に届いた読み直しで戻っても数える）
+    func testUnsendProbeCountsFromThePress() async throws {
+        let view = try source("Features/Messages/DMConversationView.swift")
+        let action = slice(view, from: "private func unsend(_ message: DMMessage) async {", to: "private func accept() async")
+        guard let remember = action.range(of: "unsendProbe.unsent.append(removed.id)"),
+              let call = action.range(of: "environment.dm.unsend(conversationId, messageId: removed.id)") else {
+            return XCTFail("見張りに取り消した id を覚えていない")
+        }
+        XCTAssertLessThan(remember.lowerBound, call.lowerBound, "見張りが答えを待ってから数え始めている")
+    }
+
     /// 相手の画面: `full` の応答で置き換えると、取り消された1通が消える（差分の重ねでは残る）
     func testFullReplaceDropsTheUnsentMessage() async {
         var log = DMThreadLog(messages: [
