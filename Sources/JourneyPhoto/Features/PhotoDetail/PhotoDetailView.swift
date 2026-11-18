@@ -1,5 +1,8 @@
 import SwiftUI
 import CoreLocation
+#if os(iOS)
+import UIKit
+#endif
 
 struct PhotoDetailView: View {
 
@@ -1482,6 +1485,23 @@ struct PhotoDetailView: View {
                                                               acceptsComments: acceptsReactions) {
             model.replyingTo = target
             commentFieldFocused = true
+            scrollAboveKeyboard(to: id, proxy: proxy)
+        }
+    }
+
+    /// キーボードが出終わったら、もう一度そのコメントへ送る（下端をキーボードと入力欄のすぐ上に）。
+    ///
+    /// 2026-11-18 の数（Mac の回 1462・1466、iPhone の画面 440×956）: 着いたコメントは一覧の終わりの近くにあるので、
+    /// 上から 3 割へは送れず、送れる端で止まる（送るだけの回: 写真が −156 まで上がって止まり、コメントは y=772）。
+    /// そのあとキーボード（上端 y=655）と入力欄の帯（上端 y=529）が出ても、送った位置はそのままで、
+    /// コメント（y=736〜754）がキーボードの裏に入っていた。キーボードが出て見える高さが縮んだ後なら、送れる端も上がる。
+    /// キーボードが出ない（外付けのキーボード）ときは 3 秒で待つのをやめる
+    private func scrollAboveKeyboard(to id: String, proxy: ScrollViewProxy) {
+        let wait = KeyboardShowWait()
+        wait.start { proxy.scrollTo(PhotoDetailRules.commentAnchor(id), anchor: .bottom) }
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            wait.cancel()
         }
     }
 
@@ -3039,6 +3059,37 @@ struct FlowLayout: Layout {
             rowHeight = max(rowHeight, size.height)
         }
         return (origins, CGSize(width: widest, height: y + rowHeight))
+    }
+}
+
+/// キーボードが出終わった合図を1回だけ待つ（`PhotoDetailView.scrollAboveKeyboard`・2026-11-18 案 B4）
+@MainActor
+final class KeyboardShowWait {
+    /// UIKit の `UIResponder.keyboardDidShowNotification`（Linux の模型では同じ名前の文字）
+    static var didShow: Notification.Name {
+        #if os(iOS)
+        UIResponder.keyboardDidShowNotification
+        #else
+        Notification.Name("UIKeyboardDidShowNotification")
+        #endif
+    }
+
+    private var token: NSObjectProtocol?
+
+    func start(center: NotificationCenter = .default, _ action: @escaping @MainActor () -> Void) {
+        // 受ける列は指定しない（UIKit はキーボードの合図を主の列で出すので、その場で動く）
+        token = center.addObserver(forName: Self.didShow, object: nil, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.token != nil else { return }
+                self.cancel(center: center)
+                withAnimation { action() }
+            }
+        }
+    }
+
+    func cancel(center: NotificationCenter = .default) {
+        if let token { center.removeObserver(token) }
+        token = nil
     }
 }
 

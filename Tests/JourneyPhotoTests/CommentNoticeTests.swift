@@ -89,6 +89,23 @@ final class CommentNoticeTests: XCTestCase {
                      "無いコメントに返信の欄を開いている")
     }
 
+    /// キーボードが出終わったら1回だけ送り直す。やめた後・2回目の合図では動かない（回 1462・1466 の数）
+    func testKeyboardShowWaitRunsOnce() async {
+        let center = NotificationCenter()
+        var runs = 0
+        let wait = KeyboardShowWait()
+        wait.start(center: center) { runs += 1 }
+        center.post(name: KeyboardShowWait.didShow, object: nil)
+        center.post(name: KeyboardShowWait.didShow, object: nil)
+        XCTAssertEqual(runs, 1, "キーボードの合図で1回だけ送り直す")
+
+        let cancelled = KeyboardShowWait()
+        cancelled.start(center: center) { runs += 1 }
+        cancelled.cancel(center: center)
+        center.post(name: KeyboardShowWait.didShow, object: nil)
+        XCTAssertEqual(runs, 1, "待つのをやめた後に送り直している")
+    }
+
     // MARK: - 見本の通信（UI テスト `testCommentNoticeOpensReply` が使う）
 
     func testPreviewBackendReturnsCommentNotices() async throws {
