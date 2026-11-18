@@ -116,7 +116,8 @@ final class UploadDetailsTests: XCTestCase {
     /// 撮影地は題・説明より先（いちばん多い道は 写真 → 撮影地 → 投稿）
     func testPlaceComesBeforeTitle() throws {
         let source = try uploadViewSource()
-        let start = try XCTUnwrap(source.range(of: "private var detailSection: some View {"))
+        // 2026-11-18（案 B3）: 欄は `detailFields`（1組だけのときも写真ごとのときも同じ欄）
+        let start = try XCTUnwrap(source.range(of: "private func detailFields(_ shown: [PendingPhoto]) -> some View {"))
         let body = source[start.upperBound...]
         let place = try XCTUnwrap(body.range(of: "PlaceSearchField("))
         let title = try XCTUnwrap(body.range(of: "JPField(L(\"題\""))

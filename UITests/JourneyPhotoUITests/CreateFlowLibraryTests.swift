@@ -6,8 +6,8 @@ import XCTest
 /// 1. 許可の前（埋め込みの写真選びと「すべての写真をここに並べる」の1行・下に「投稿 | ストーリー」）
 /// 2. 許可した後の一覧（4列・正方形・先頭がカメラ）
 /// 3. 「ストーリー」に替える → 左から右へ払って投稿に戻す
-/// 4. 「選択」で2枚に印 →「次へ（2枚）」
-/// 5. 1枚押した後の欄の段（押す回数: 投稿 → 写真 の2回で欄に届く）
+/// 4. 1枚押した後の欄の段（押す回数: 投稿 → 写真 の2回で欄に届く）→ 外すと一覧に戻る
+/// 5. 「選択」で2枚に印 →「次へ（2枚）」→ 1つの投稿で欄は1組（案 B3）→「写真ごとに書く ›」
 /// を撮る。案の模型（https://claude.ai/artifact/MBEkPZ71qmZ8d3F9uWNec8 の B1）と比べる絵。
 ///
 /// 🔴 **写真の許可は終わったら元に戻す**（`resetAuthorizationStatus`・`StoryLibraryFirstTests` と同じ理由）
@@ -90,7 +90,21 @@ final class CreateFlowLibraryTests: XCTestCase {
         guard camera.waitForExistence(timeout: 10) else { return unreached(app, "右へ払っても投稿に戻らない") }
         XCTAssertTrue(app.staticTexts["新規投稿"].firstMatch.exists, "題が「新規投稿」に戻らない")
 
-        // 4. 「選択」で2枚に印 →「次へ（2枚）」
+        // 4. 1枚押す → そのまま欄の段（投稿 → 写真 の2回）
+        items.element(boundBy: 0).tap()
+        let thumb = app.buttons["upload.thumb.0"].firstMatch
+        guard thumb.waitForExistence(timeout: 30) else { return unreached(app, "マスを押しても欄の段に進まない") }
+        XCTAssertFalse(toStory.exists, "欄の段に切り替えが残っている（払うと書きかけを失う）")
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "40h-投稿の入口（1枚押して欄の段）")
+
+        // 写真を外すと一覧の段に戻る
+        let remove = app.buttons["1枚目を外す"].firstMatch
+        guard remove.waitForExistence(timeout: 5) else { return unreached(app, "1枚目を外す丸が無い") }
+        remove.tap()
+        guard camera.waitForExistence(timeout: 10) else { return unreached(app, "写真を外しても一覧の段に戻らない") }
+
+        // 5. 「選択」で2枚に印 →「次へ（2枚）」→ 1つの投稿（欄は1組・案 B3）
         let select = app.buttons["post.library.select"].firstMatch
         guard select.waitForExistence(timeout: 5) else { return unreached(app, "右上の「選択」が無い") }
         select.tap()
@@ -102,15 +116,24 @@ final class CreateFlowLibraryTests: XCTestCase {
         XCTAssertTrue(next.label.contains("2枚"), "「次へ（2枚）」でない（\(next.label)）")
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "40g-投稿の入口（選択で2枚）")
-        select.tap()   // 「キャンセル」で印を外す
-
-        // 5. 1枚押す → そのまま欄の段（投稿 → 写真 の2回）
-        items.element(boundBy: 0).tap()
-        let thumb = app.buttons["upload.thumb.0"].firstMatch
-        guard thumb.waitForExistence(timeout: 30) else { return unreached(app, "マスを押しても欄の段に進まない") }
-        XCTAssertFalse(toStory.exists, "欄の段に切り替えが残っている（払うと書きかけを失う）")
-        Thread.sleep(forTimeInterval: 3)
-        shoot(app, "40h-投稿の入口（1枚押して欄の段）")
+        next.tap()
+        guard app.buttons["upload.thumb.1"].firstMatch.waitForExistence(timeout: 30) else {
+            return unreached(app, "「次へ（2枚）」で2枚の欄の段に進まない")
+        }
+        let perPhoto = app.buttons["upload.perPhoto"].firstMatch
+        XCTAssertTrue(perPhoto.waitForExistence(timeout: 5), "1つの投稿なのに「写真ごとに書く」が無い（欄が写真の数だけ出ている）")
+        XCTAssertEqual(app.textFields.matching(identifier: "upload.title").count, 1, "1つの投稿なのに題の欄が1組でない")
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "40i-何枚かの投稿（1つの投稿・欄は1組）")
+        // 「写真ごとに書く ›」で写真ごとの欄（題の欄が2つ）
+        app.swipeUp()
+        if perPhoto.isHittable {
+            perPhoto.tap()
+            XCTAssertTrue(app.textFields.matching(identifier: "upload.title").element(boundBy: 1).waitForExistence(timeout: 5),
+                          "「写真ごとに書く」を開いても2枚目の欄が出ない")
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "40j-何枚かの投稿（写真ごとに書く）")
+        }
     }
 
     /// 写真の許可の札（SpringBoard）で「すべて許可」を押す（`StoryLibraryFirstTests` と同じ言葉）

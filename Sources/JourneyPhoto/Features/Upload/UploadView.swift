@@ -929,8 +929,8 @@ struct UploadView: View {
                     // **知らせは上に。** 下の主ボタンの帯に隠れない所（送れなかった理由は書いた所の近くで読む）
                     topBlock
                     if let spot = model.spot { spotBanner(spot) }
-                    photosBlock
-                    // 旅の流れでは切り替えを出さない（いつもまとめる）。代わりに一言
+                    // 旅の流れでは切り替えを出さない（いつもまとめる）。代わりに一言。
+                    // 2026-11-18（案 B3）: 切り替えは写真の上（模型の順: 切り替え → 写真 → 欄）
                     if let note = UploadGrouping.tripNote(fromTrip: model.fromTripImport, count: model.items.count) {
                         Text(note)
                             .font(.caption)
@@ -939,6 +939,7 @@ struct UploadView: View {
                     } else if model.items.count > 1 {
                         groupChoice
                     }
+                    photosBlock
                     // 「地図に位置を載せる」の1行（2026-11-16 判断・A11）。写真があるときは1枚目の撮影地の欄の下
                     // （`detailSection`）。**写真を選ぶ前もここに出す**——撮影地は読み込んだ瞬間に写真の位置から
                     // 引き始めるので、選んでから出しても遅い（2026-10-18 の決まり・Web の切り替えと同じ）
@@ -1387,11 +1388,12 @@ struct UploadView: View {
     private var groupChoice: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 0) {
-                segment(L("1つの投稿にまとめる", "Post as one"), selected: model.groupsAsOnePost) {
-                    model.groupsAsOnePost = true
-                }
+                // 2026-11-18（案 B3）: 模型どおり左が「それぞれ別の投稿」、右が「1つの投稿」（既定）
                 segment(L("それぞれ別の投稿", "Separate posts"), selected: !model.groupsAsOnePost) {
                     model.groupsAsOnePost = false
+                }
+                segment(L("1つの投稿", "One post"), selected: model.groupsAsOnePost) {
+                    model.groupsAsOnePost = true
                 }
             }
             .padding(3)
@@ -1440,13 +1442,50 @@ struct UploadView: View {
     private static let segmentSelectedFill = WebTheme.surface8
 
     /// 選んだ写真ごとの欄。**題・説明・撮影地は1枚ずつ**（Web と同じ）。
+    @ViewBuilder
     private var detailSection: some View {
+        // 2026-11-18 判断（案 B3「何枚かの投稿」・owner 採用）: 1つの投稿では撮影地・題・説明を**1組だけ**（先頭の写真の欄）。
+        // 送るときに全部の写真に写す（`UploadViewModel.applySharedFields`）。写真ごとに書くのは畳んだ「写真ごとに書く ›」から
+        detailFields(model.sharesFields ? Array(model.items.prefix(1)) : model.items)
+        if model.sharesFields {
+            perPhotoLink
+        }
+    }
+
+    /// 「写真ごとに書く ›」（案 B3: 上下に髪線・高さ 44・13pt の text-2・右に ›）。押すと先頭の値を写してから写真ごとの欄を出す
+    private var perPhotoLink: some View {
+        Button { model.openPerPhotoFields() } label: {
+            HStack(spacing: JPSpace.xs) {
+                Text(L("写真ごとに書く", "Write for each photo"))
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.text2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.text3)
+                    .accessibilityHidden(true)
+            }
+            .frame(minHeight: WebTheme.minTapTarget)
+            .overlay(alignment: .top) { Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline) }
+            .overlay(alignment: .bottom) { Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline) }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(model.isWorking)
+        .accessibilityHint(L("撮影地、題、説明を写真ごとに書きます。いまの値はどの写真にも入っています",
+                             "Write the place, title and description per photo. Each starts with what you wrote."))
+        .accessibilityIdentifier("upload.perPhoto")
+    }
+
+    /// 写真ごとの欄（撮影地・題・説明）。1組だけのときは先頭の写真の欄だけを渡す
+    private func detailFields(_ shown: [PendingPhoto]) -> some View {
         // 🔴 欄の窓は id で引く（`photoBinding`・2026-11-15・札 #616）。並びの番号で引く窓（`ForEach` に `$model.items` を渡す形）は、
         // 題を打ったまま投稿して写真が並びから外れると、欄の字の確定で外れた番号を読んで落ちた
-        ForEach(model.items) { item in
+        ForEach(shown) { item in
             let photo = model.photoBinding(item)
             VStack(alignment: .leading, spacing: 14) {
-                if model.items.count > 1 {
+                // 何枚目かの見出しは写真ごとに書くときだけ（1組のときは全部の写真の欄）
+                if model.items.count > 1 && !model.sharesFields {
                     JPSectionTitle(L("\(indexOf(item)) 枚目", "Photo \(indexOf(item))"))
                 }
                 // 2026-10-03 判断: **撮影地を題・説明より先に**（いちばん多い道は 写真 → 撮影地 → 投稿。

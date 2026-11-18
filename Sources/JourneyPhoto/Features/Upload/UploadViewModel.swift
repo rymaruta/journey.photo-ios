@@ -261,6 +261,22 @@ struct PendingPhoto: Identifiable {
         return PlaceCoordsRule.coordsForPickedSpot(spot.coords, photo: attachesPhotoLocation ? prepared.coords : nil)
     }
 
+    /// 1組だけ書いた撮影地・題・説明を写す（2026-11-18・案 B3・`UploadSharedFields`）。
+    ///
+    /// 撮影地は**写した元の扱いのまま**写す: 元が写真の位置から自動で入れた地名なら、この写真でも自動の地名として扱い
+    /// （この写真の座標を送る・`PlaceCoordsRule` の (a)）、元が候補から選んだ場所なら選んだ座標とスポットも写す。
+    /// 元で空にした印も写す（空にした撮影地の座標は送らない）
+    mutating func copySharedFields(from source: PendingPhoto) {
+        title = source.title
+        caption = source.caption
+        let sourceAuto = source.photoPlaceName.map { $0 == source.location } ?? false
+        restorePlace(location: source.location,
+                     photoPlaceName: sourceAuto && !source.location.isEmpty ? source.location : nil,
+                     clearedByUser: source.locationClearedByUser)
+        pickedCoords = source.pickedCoords
+        pickedSpot = source.pickedSpot
+    }
+
     /// 「撮影地の位置を付ける」をオフにしたときに、写真の位置から自動で入れた撮影地を外す（2026-10-18 判断）。
     /// **自動で入れた地名を一字も変えていないときだけ**（本人が直した・候補から選んだ・スポットの名前は残す）。
     /// 外したのは本人の「空にした」操作ではないので、空にした印は立てない（オンに戻すと引き直せる）
@@ -546,8 +562,42 @@ final class UploadViewModel: ObservableObject {
     /// 変わらない——写真1枚＝1ページがこのサイトの検索での面積なので、
     /// 1行にまとめると出せるページが減る。束ねるのは見せ方だけ。
     ///
-    /// 既定は**まとめない**（今までと同じ）。2枚以上選んだときだけ選べる
-    @Published var groupsAsOnePost = false
+    /// 2026-11-18 判断（案 B3「何枚かの投稿」・owner 採用）: **既定は「1つの投稿」**（前はまとめない）。
+    /// 撮影地・題・説明は1組だけ書き、送るときに全部の写真に写す（`UploadSharedFields`）。2枚以上選んだときだけ選べる。
+    /// 「それぞれ別の投稿」にした人は前と同じく写真ごとに書く
+    @Published var groupsAsOnePost = true {
+        didSet {
+            // 別々で写真ごとに書いてから「1つの投稿」に戻した: 書いた値を畳んで隠さない（`hasOwnText`）
+            if groupsAsOnePost, !oldValue, UploadSharedFields.hasOwnText(items) { writesPerPhoto = true }
+        }
+    }
+
+    /// 「写真ごとに書く ›」を開いている（1つの投稿でも、写真ごとに撮影地・題・説明を書く）
+    @Published var writesPerPhoto = false
+
+    /// 撮影地・題・説明を1組だけにしているか（`UploadSharedFields.sharesFields`）
+    var sharesFields: Bool {
+        UploadSharedFields.sharesFields(grouping: groupsForSubmit, count: items.count, perPhoto: writesPerPhoto,
+                                        ownText: UploadSharedFields.hasOwnText(items))
+    }
+
+    /// 「写真ごとに書く ›」を開く。**先頭の値を全部の写真に写してから開く**（1組で書いた値が、開いた先でも同じに見える）
+    func openPerPhotoFields() {
+        guard !writesPerPhoto, !isWorking else { return }
+        applySharedFields()
+        writesPerPhoto = true
+    }
+
+    /// 先頭の写真の撮影地・題・説明を、ほかの写真に写す（1組だけ書く間・送る直前と「写真ごとに書く」を開くとき）。
+    /// 写した写真の撮影地の引き直しは止める（送っている途中に、写真の位置から引いた地名で上書きしない）
+    func applySharedFields() {
+        guard let first = items.first, items.count > 1 else { return }
+        for index in items.indices.dropFirst() {
+            placeTasks[items[index].id]?.cancel()
+            placeTasks[items[index].id] = nil
+            items[index].copySharedFields(from: first)
+        }
+    }
 
     /// この回の束の印。**送り始めるときに1つだけ作る**
     private(set) var groupId: String?
@@ -1337,6 +1387,8 @@ final class UploadViewModel: ObservableObject {
         inspired = draft.inspired
         selectedAlbumId = draft.selectedAlbumId
         groupsAsOnePost = draft.groupsAsOnePost
+        // 写真ごとに書いた下書き: 1組に畳まない（畳むと書いた値が見えず、送るときに先頭の値で上書きされる・案 B3）
+        writesPerPhoto = UploadSharedFields.hasOwnText(items)
         // スポットから開いた回は尋ねない（`UploadDraftRules.asksRestore`）ので、ここで上書きはしない
         // 途中まで送った束の印を引き継ぐ（新しい印にすると投稿が2つに割れる）
         if let savedGroup = draft.groupId { groupId = savedGroup }
@@ -1964,6 +2016,9 @@ final class UploadViewModel: ObservableObject {
         // 知らせも無く消えた。上がった1枚ずつ控えから外れ（`markDraft(.posted)`）、全部上がれば消える。
         // 残っていたら次の起動で知らせ、投稿の画面の「続きから」で戻せる（届いたか分からない写真は戻さない）
         // 控えは投稿ごとの別の枠に書く（ほかの枠には触らない）。書けたら、この画面の書きかけは控えに移ったので消す
+        // 2026-11-18（案 B3）: 欄が1組のとき、先頭の撮影地・題・説明を全部の写真に写してから控えに書いて送る
+        // （控え・やり直しにも同じ値が残る。サーバーは1枚ずつの行のまま）
+        if sharesFields { applySharedFields() }
         if await writeJournal(now: Date()) { discardAutoDraft() }
         // カードに使う1枚（まだ控えていなければ、この送信の先頭）。やり直しで先頭がもう控えてあれば選ばない
         cardLeadId = sharable.isEmpty ? queue.first : nil
