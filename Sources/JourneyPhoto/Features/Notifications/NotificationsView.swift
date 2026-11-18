@@ -58,12 +58,12 @@ struct NotificationsView: View {
         // 2026-11-13 デザインの点検: 表示の形を決めておらず、シートの中で標準の大きい見出し（34 のゴシックの太字）が
         // 出ていた。同じくシートで開くメッセージの一覧（`DMInboxView`）と同じ形
         .navigationBarTitleDisplayMode(.inline)
-        // **通知の設定**（板 15 の右上の歯車）。行き先は設定の画面——
-        // プッシュ通知の入／切はそこにある。閉じる口は `RootView` が
-        // 左に置いているので、右に置いてぶつからない
+        // **通知の設定**（板 15 の右上の歯車）。閉じる口は `RootView` が
+        // 左に置いているので、右に置いてぶつからない。
+        // 2026-11-18 判断（案 B7）: 行き先は設定のいちばん上ではなく、お知らせの入切だけの画面（`NotificationSettingsPage`）
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink { SettingsView() } label: {
+                NavigationLink { NotificationSettingsPage() } label: {
                     Image(systemName: "gearshape")
                 }
                 .accessibilityLabel(L("通知の設定", "Notification settings"))

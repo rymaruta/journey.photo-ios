@@ -5673,6 +5673,14 @@ final class ScreenshotTests: XCTestCase {
         gear.tap()
         let push = app.descendants(matching: .any)["settings.push"].firstMatch
         guard push.waitForExistence(timeout: 10) else { return XCTFail("設定が開かない") }
+        // 2026-11-18 判断（案 B7）: お知らせの節がいちばん上（Pro の節より上）。数は文で残す
+        let proRow = app.buttons["settings.pro"].firstMatch
+        let order = "measured settingsTop push=\(push.frame) pro=\(proRow.exists ? String(describing: proRow.frame) : "-")"
+        print(order)
+        XCTContext.runActivity(named: order) { _ in }
+        if proRow.exists {
+            XCTAssertLessThan(push.frame.minY, proRow.frame.minY, "お知らせの入切が Pro の節より下にある")
+        }
         // 2026-11-12（案 第10章）: 「旅の道具」の節は ≡ メニューへ移した。設定に残っていないこと
         for id in ["settings.trunk", "settings.camper", "settings.passBook", "settings.albums", "settings.plans"] {
             XCTAssertFalse(app.buttons[id].firstMatch.exists, "設定に \(id) が残っている（≡ へ移した）")
@@ -5771,6 +5779,26 @@ final class ScreenshotTests: XCTestCase {
         help.tap()
         Thread.sleep(forTimeInterval: 4)
         shoot(app, "102i-使い方（アプリの中の Safari）")
+    }
+
+    /// **お知らせ（ベル）の歯車 → お知らせの入切だけの画面**（2026-11-18 判断・案 B7）。前は設定のいちばん上（Pro の節）が開いた。
+    /// 開いた画面に入切があり、Pro の行（設定のいちばん上の画面にだけある）が無いことを確かめる
+    func testCapturesNotificationSettingsFromBell() {
+        let app = launchTrunk([])
+        let bell = app.buttons["header.notifications"].firstMatch
+        guard bell.waitForExistence(timeout: 20) else { return XCTFail("見出しのお知らせが無い") }
+        bell.tap()
+        let gear = app.buttons["notifications.settings"].firstMatch
+        guard gear.waitForExistence(timeout: 15) else { return XCTFail("お知らせに歯車が無い") }
+        XCTAssertGreaterThanOrEqual(gear.frame.height, 44, "お知らせの歯車の当たりが 44pt 未満")
+        gear.tap()
+        let push = app.descendants(matching: .any)["settings.push"].firstMatch
+        guard push.waitForExistence(timeout: 10) else { return XCTFail("歯車でお知らせの入切が開かない") }
+        XCTAssertFalse(app.buttons["settings.pro"].firstMatch.exists, "歯車で設定のいちばん上（Pro の節）が開いた")
+        XCTAssertFalse(app.buttons["settings.deleteAccount"].firstMatch.exists, "歯車で設定の全部が開いた")
+        XCTAssertGreaterThanOrEqual(push.frame.height, 44, "お知らせの入切が 44pt 未満")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "102j-お知らせの設定（ベルの歯車から）")
     }
 
     /// **旅のトランク**（Pro の見本）: トランク → 手に取って回す → 手持ち（選んだ）→ 作り直し →

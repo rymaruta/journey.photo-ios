@@ -54,7 +54,8 @@ final class SettingsOutlineTests: XCTestCase {
 
     /// 行の目印が置かれているファイル（設定の画面と、設定に札を出す部品）
     private func settingsSources() throws -> String {
-        try ["Features/Settings/SettingsView.swift", "Features/Settings/TrunkPrivacySection.swift",
+        try ["Features/Settings/SettingsView.swift", "Features/Settings/NotificationSettings.swift",
+             "Features/Settings/TrunkPrivacySection.swift",
              "Features/Pro/ProSettingsSection.swift", "Features/Pro/LightAlertSettingsRows.swift",
              "Features/Trips/OfflineSavedView.swift",
              "Features/Settings/SearchHiddenSettingRow.swift"].map(source).joined(separator: "\n")
@@ -71,7 +72,9 @@ final class SettingsOutlineTests: XCTestCase {
     func testOutlineOrder() {
         // 2026-11-12: 「旅の道具」の節は ≡ メニューへ（設定はオン・オフと決まりだけ）
         XCTAssertEqual(SettingsOutline.Part.allCases,
-                       [.pro, .notifications, .privacy, .photos, .help, .account, .danger])
+                       [.notifications, .pro, .privacy, .photos, .help, .account, .danger])
+        // 2026-11-18 判断（案 B7）: お知らせがいちばん上
+        XCTAssertEqual(SettingsOutline.Part.allCases.first, .notifications)
         XCTAssertEqual(SettingsOutline.Part.allCases.last, .danger)
         XCTAssertNil(SettingsOutline.Part.danger.title, "危ない操作の札に眉ラベルを付けている")
         XCTAssertEqual(SettingsOutline.Part.privacy.items,
@@ -189,7 +192,8 @@ final class SettingsOutlineTests: XCTestCase {
     func testScreenFollowsTheOutline() throws {
         let view = try source("Features/Settings/SettingsView.swift")
         let list = slice(view, from: "private var list: some View {", to: "Text(versionLine)")
-        assertInOrder(["ProSettingsSection(profile: myProfile)", "notificationsSection",
+        assertInOrder(["PushSettingsGroup(title: SettingsOutline.Part.notifications.title)",
+                       "ProSettingsSection(profile: myProfile)",
                        "privacySection", "photosSection", "helpSection", "accountSection", "logoutSection",
                        "deleteSection"], in: list, "設定の節の順")
         XCTAssertFalse(list.contains("tripToolsSection"), "「旅の道具」の節が設定に戻った（≡ へ移した）")
@@ -390,5 +394,37 @@ final class SettingsOutlineTests: XCTestCase {
         assertInOrder(["URLCache.shared.removeAllCachedResponses()",
                        "SettingsActionLabel(title: L(\"控えを空にする\", \"Clear cache\"), color: WebTheme.accent)"],
                       in: storage, "データとストレージ")
+    }
+
+    // MARK: - お知らせ（2026-11-18 判断・案 B7）
+
+    /// お知らせ（ベル）の画面の歯車は、設定のいちばん上ではなくお知らせの入切だけの画面を開く
+    func testBellGearOpensNotificationSettings() throws {
+        let bell = try source("Features/Notifications/NotificationsView.swift")
+        XCTAssertTrue(bell.contains("NavigationLink { NotificationSettingsPage() } label: {"),
+                      "ベルの歯車がお知らせの入切の画面を開かない")
+        XCTAssertFalse(bell.contains("SettingsView()"), "ベルの歯車が設定のいちばん上を開いている")
+        // 入切の札は設定と同じもの（写しを作らない）。お知らせだけの画面では題と重なるので眉ラベルなし
+        let page = try source("Features/Settings/NotificationSettings.swift")
+        let body = slice(page, from: "struct NotificationSettingsPage: View {", to: "\n}")
+        XCTAssertTrue(body.contains("PushSettingsGroup(title: nil)"))
+        XCTAssertTrue(body.contains("SettingsPage("), "設定の下の画面と同じ入れ物でない")
+        let view = try source("Features/Settings/SettingsView.swift")
+        XCTAssertFalse(view.contains("JPToggleRow(title: L(\"プッシュ通知を受け取る\""), "設定に入切の写しがある")
+        XCTAssertEqual(page.components(separatedBy: "JPToggleRow(title: L(\"プッシュ通知を受け取る\"").count, 2)
+    }
+
+    /// Pro でない人には「前の晩に知らせる」をオンに見せない（既定は受け取るでも、届かない）
+    func testLightAlertLooksOffWhenNotPro() throws {
+        XCTAssertFalse(LightAlertToggleRule.shownOn(wants: true, knownNotPro: true), "Pro でない人にオンに見える")
+        XCTAssertTrue(LightAlertToggleRule.shownOn(wants: true, knownNotPro: false))
+        XCTAssertFalse(LightAlertToggleRule.shownOn(wants: false, knownNotPro: false))
+        XCTAssertFalse(LightAlertToggleRule.shownOn(wants: false, knownNotPro: true))
+        let rows = try source("Features/Pro/LightAlertSettingsRows.swift")
+        let binding = slice(rows, from: "private var binding: Binding<Bool> {", to: "private func openPaywall()")
+        XCTAssertTrue(binding.contains("get: { LightAlertToggleRule.shownOn(wants: wants, knownNotPro: knownNotPro) }"),
+                      "入切がプロフィールの値をそのまま映している")
+        // 押したら今までどおり Pro の案内（値は送らない）
+        assertInOrder(["guard !knownNotPro else {", "openPaywall()", "return"], in: binding, "Pro でない人が押した")
     }
 }
