@@ -247,9 +247,9 @@ final class CriticalFlowTests: XCTestCase {
         // run 1465: 知らせの入れ物（`toast`）の label は空で、字は子の StaticText「投稿しました」（要素の木で確かめた）。
         // 字そのものを、押した直後から見る（知らせは6秒で消える）
         let postedText = app.staticTexts["投稿しました"].firstMatch
-        let posted = postedText.waitForExistence(timeout: 60)
-        print("[postedToast] shown=\(posted) uploadOpen=\(thumb.exists) card=\(app.buttons["toast.action"].exists)")
-        XCTAssertTrue(posted, "裏で送っても「投稿しました」が出ない（上がっていない）")
+        let toastShown = postedText.waitForExistence(timeout: 60)
+        print("[postedToast] shown=\(toastShown) uploadOpen=\(thumb.exists) card=\(app.buttons["toast.action"].exists)")
+        XCTAssertTrue(toastShown, "裏で送っても「投稿しました」が出ない（上がっていない）")
         XCTAssertTrue(thumb.waitForNonExistence(timeout: 15), "「投稿する」で投稿の画面が閉じない（送り終えるのを待っている）")
         XCTAssertFalse(app.buttons["postedCard.close"].exists, "共有カードを画面いっぱいに出した")
 
