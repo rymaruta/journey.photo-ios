@@ -50,10 +50,12 @@ struct ShareCardGalleryPreview: View {
                 exposure: "1/4000s", aperture: "f/2.8", iso: 12800,
                 verified: true, proStyle: .plate, early: true, badge: nil)
         }
+        // 暦の型の撮った日（2026-11-18）。長い中身は撮った日なし（暦は撮影地を大きく出す形）
         return SignatureShareCardRenderer.Credit(
             name: "旅灯", username: "tabi_akari", location: "京都府（京都市東山区）", coords: kyoto,
             camera: "Sony α7 IV", lens: "FE 24-70mm F2.8 GM II", exposure: "1/250s", aperture: "f/8", iso: 100,
-            verified: true, proStyle: nil, early: false, badge: nil)
+            verified: true, proStyle: nil, early: false, badge: nil,
+            takenDay: TripBook.utcCalendar.date(from: DateComponents(year: 2026, month: 10, day: 10)))
     }
 
     @State private var index = 0

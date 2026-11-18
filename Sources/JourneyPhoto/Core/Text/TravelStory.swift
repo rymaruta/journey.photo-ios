@@ -16,11 +16,13 @@ enum TravelStory {
 
     // MARK: - 選ぶもの
 
-    /// 型。**並びは章の触れる模型どおり**（搭乗券・切手と消印・フィルムの帯）。はじめは推奨 1 の切手と消印
+    /// 型。**並びは章の触れる模型どおり**（搭乗券・切手と消印・フィルムの帯）。はじめは推奨 1 の切手と消印。
+    /// 2026-11-18: 写真の色（`PhotoColorCard`）を後ろに足した（前からの並びは変えない）
     enum Kind: String, CaseIterable, Identifiable {
         case pass
         case stamp
         case film
+        case photoColor
 
         var id: String { rawValue }
 
@@ -29,11 +31,13 @@ enum TravelStory {
             case .pass: return L("搭乗券", "Boarding pass")
             case .stamp: return L("切手と消印", "Stamp & postmark")
             case .film: return L("フィルムの帯", "Film strip")
+            case .photoColor: return L("写真の色", "Photo color")
             }
         }
 
-        /// ステッカー（透明の地）にできるか。フィルムの帯は3枚を並べる型なので写真に重ねるだけ（章の模型）
-        var supportsSticker: Bool { self != .film }
+        /// ステッカー（透明の地）にできるか。フィルムの帯は3枚を並べる型なので写真に重ねるだけ（章の模型）。
+        /// 写真の色は写真の色の地に写真と字を置く1枚の絵なので、透明の地にしない
+        var supportsSticker: Bool { self != .film && self != .photoColor }
 
         /// 旅のどこ（行ってきます・今ここ・ただいま）を選ぶか。搭乗券だけ（章の模型）
         var usesPhase: Bool { self == .pass }
@@ -434,6 +438,18 @@ enum TravelStory {
                          local: texts.place ?? onTheRoad,
                          day: day,
                          foot: foot)
+    }
+
+    // MARK: - 写真の色の文字
+
+    /// 写真の色（`PhotoColorCard`）の字。**選んだ細かさを守る**: 撮影地は `Texts.place`（県まで・市まで・出さない）、
+    /// 市までのときだけ下の段に県（海外は国）を添える。日付は `Texts.date`（出さないなら出さない）
+    static func photoColor(_ facts: Facts, choice: Choice, now: Date = Date(),
+                           timeZone: TimeZone = .current) -> PhotoColorCard.Texts {
+        let base = texts(facts, choice: choice, now: now, timeZone: timeZone)
+        let region = choice.placeLevel == .city
+            ? placeText(facts.location, level: .prefecture).flatMap { $0 == base.place ? nil : $0 } : nil
+        return PhotoColorCard.Texts(place: base.place, region: base.place == nil ? nil : region, date: base.date)
     }
 
     /// 切手の下の右（明朝）。旅の何日目か、分からなければ出さない

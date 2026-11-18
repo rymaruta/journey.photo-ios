@@ -40,6 +40,12 @@ enum TravelStoryRenderer {
             return sticker ? stampSticker(lead, texts: texts) : stampOnPaper(lead, texts: texts)
         case .film:
             return film(Array(images.prefix(3)), texts: texts)
+        case .photoColor:
+            // 写真の色（`PhotoColorCardRenderer`）。ステッカーにはしない（`Kind.supportsSticker`）
+            return Output(data: PhotoColorCardRenderer.render(photo: lead,
+                                                              texts: TravelStory.photoColor(facts, choice: choice, now: now),
+                                                              frame: .story),
+                          isSticker: false)
         }
     }
     #endif

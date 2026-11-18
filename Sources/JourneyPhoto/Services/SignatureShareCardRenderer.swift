@@ -33,6 +33,8 @@ enum SignatureShareCardRenderer {
         case film
         /// 写真の右の黒い列に、撮影地を明朝の縦書きで（2026-11-14・`ShareCardMap.TanzakuLayout`）
         case tanzaku
+        /// 写真から取った淡い色の地に写真を切らずに置き、濃い色の字で撮影地と日付（2026-11-18 owner 採用・`PhotoColorCard`）
+        case photoColor
     }
 
     struct Credit {
@@ -52,6 +54,8 @@ enum SignatureShareCardRenderer {
         /// 撮影地の2行（大きい単位／（小さい単位））。無ければ `location` から分ける
         /// （`LocationMatch.shareCardPlace`・2026-11-04 owner）
         var place: LocationMatch.ShareCardPlace? = nil
+        /// 撮った日（`TripBook.day(of:)`・その日の UTC 0 時）。暦の型の日付と二十四節気。分からなければ nil
+        var takenDay: Date? = nil
 
         var placeLines: [String] {
             (place ?? LocationMatch.shareCardPlace(location))?.lines ?? []
@@ -107,6 +111,8 @@ enum SignatureShareCardRenderer {
         case .mat: return renderMat(photo: photo, credit: credit, ratio: ratio)
         case .film: return renderFilm(photo: photo, credit: credit, ratio: ratio)
         case .tanzaku: return renderTanzaku(photo: photo, credit: credit, ratio: ratio)
+        case .photoColor: return PhotoColorCardRenderer.render(photo: photo, texts: PhotoColorCard.texts(for: credit),
+                                                               frame: .post(ratio))
         case .band: break   // 帯の型
         }
         typealias L = ShareCardMap.Layout

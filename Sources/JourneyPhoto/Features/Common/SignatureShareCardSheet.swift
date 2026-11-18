@@ -326,7 +326,7 @@ enum PostedShareCardText {
 /// 共有画像の型の並びと名前（2026-11-14・試験で見る）。名前は短く（チップに1語）
 enum ShareCardStyleChoice {
     static let order: [SignatureShareCardRenderer.Style] = [.band, .fade, .cover, .label, .printed, .ticket, .cinema,
-                                                            .mat, .film, .tanzaku]
+                                                            .mat, .film, .tanzaku, .photoColor]
 
     static func title(_ style: SignatureShareCardRenderer.Style) -> String {
         switch style {
@@ -340,6 +340,7 @@ enum ShareCardStyleChoice {
         case .mat: return L("額装", "Mat")
         case .film: return L("フィルム", "Film")
         case .tanzaku: return L("縦書き", "Vertical")
+        case .photoColor: return L("写真の色", "Photo color")
         }
     }
 }
