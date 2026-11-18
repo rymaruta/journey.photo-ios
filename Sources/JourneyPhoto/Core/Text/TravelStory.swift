@@ -453,6 +453,10 @@ enum TravelStory {
     /// 暦（差し色）の字。**選んだ細かさを守る**: 場所は `Texts.place`（県まで・市まで・出さない）、
     /// 日付を出さないなら節気も出さない（節気は日付の手がかり）。場所を出さないなら国も出さない
     /// （南半球かの見分けには撮影地の国を使うが、絵には描かない）
+    ///
+    /// **2026-11-18 判断（確かめ役の指摘・直さない）:** 場所を「出さない」にしても、南半球の写真では節気が出ないので、
+    /// 見る人が「南半球で撮った」と推し量れる。漏れるのは南半球かどうか（地球の半分）だけで、国・地名・座標は出ない。
+    /// 南半球でも節気を出すと季節が逆の言葉（立冬に夏の写真）になるので、こちらを取った
     static func koyomi(_ facts: Facts, choice: Choice) -> KoyomiCard.Texts {
         let texts = texts(facts, choice: choice)
         let country = KoyomiCard.country(of: facts.location)

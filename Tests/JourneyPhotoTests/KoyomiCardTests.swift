@@ -73,11 +73,17 @@ final class KoyomiCardTests: XCTestCase {
         // 3列は幅 300 で、隣の列と重ならず右端 1008 を越えない
         for (index, x) in K.columnX.enumerated() {
             XCTAssertLessThanOrEqual(x + K.columnWidth, index + 1 < K.columnX.count ? K.columnX[index + 1] : K.right)
+            // 値は幅 276 まで。隣の列の値との間は最低 24px（2026-11-18 確かめ役）
+            if index + 1 < K.columnX.count {
+                XCTAssertGreaterThanOrEqual(K.columnX[index + 1] - (x + K.valueWidth), K.columnGapMinimum)
+            }
         }
+        XCTAssertLessThanOrEqual(K.columnX.last! + K.valueWidth, K.right)
+        XCTAssertEqual(K.columnGapMinimum, 24)
         // 字の大きさ（インスタで 1080px = 393pt）。眉 30px は 11pt 以上、本文 34px は 12pt 以上（板の最小）
         XCTAssertGreaterThanOrEqual(K.eyebrowSize * 393 / 1080, 10.9)
         XCTAssertGreaterThanOrEqual(K.meaningSize * 393 / 1080, 12)
-        XCTAssertGreaterThanOrEqual(K.valueMinimumSize * 393 / 1080, 10.9)
+        XCTAssertGreaterThanOrEqual(K.valueMinimumSize * 393 / 1080, 12)
     }
 
     /// 地の色（額装と同じ暗い色）と白の字は 7:1 以上。薄めた白（英字 72%・眉 65%・意味 75%）も 4.5:1 以上
@@ -112,15 +118,14 @@ final class KoyomiCardTests: XCTestCase {
         XCTAssertEqual(paris.heading, "寒露")
     }
 
-    /// 南半球では節気を出さない（座標の緯度、座標が無ければ撮影地の国）。名前の所に撮影地、英字は国名、3列目は COUNTRY
+    /// 南半球では節気を出さない（座標の緯度、座標が無ければ撮影地の国）。大きな名前に撮影地、英字は国の英名、列は DATE だけ
     func testSouthernHemisphereNeverShowsASolarTerm() {
         let byLatitude = K.texts(takenDay: Self.october10, showsDate: true, latitude: -33.86, place: "シドニー",
                                  country: "オーストラリア")
         XCTAssertFalse(byLatitude.isSolarTerm)
         XCTAssertEqual(byLatitude.heading, "シドニー")
         XCTAssertEqual(byLatitude.latin, "AUSTRALIA")
-        XCTAssertEqual(byLatitude.columns.map(\.key), ["DATE", "PLACE", "COUNTRY"])
-        XCTAssertEqual(byLatitude.columns.last?.value, "オーストラリア")
+        XCTAssertEqual(byLatitude.columns.map(\.key), ["DATE"])
         XCTAssertNil(byLatitude.meaning)
         let byCountry = K.texts(takenDay: Self.october10, showsDate: true, latitude: nil, place: "Queenstown",
                                 country: "New Zealand")
@@ -136,12 +141,37 @@ final class KoyomiCardTests: XCTestCase {
         }
     }
 
+    /// 節気を出さないとき、同じ地名を2度出さない（名前・英字・列の値に同じ字が無い。大文字小文字を問わない）
+    func testNoPlaceNameAppearsTwice() {
+        let cases: [(String?, String?, Double?)] = [
+            ("シドニー", "オーストラリア", -33.9), ("Sydney", "Australia", -33.9), ("Australia", "Australia", -33.9),
+            ("オーストラリア", "オーストラリア", nil), (nil, "Australia", -33.9), ("京都市", nil, 35),
+            ("ケープタウン", "南アフリカ", nil), ("Lima", "ペルー", nil), ("ある町", "ガラパゴスの国", -1),
+        ]
+        for (place, country, latitude) in cases {
+            for takenDay in [Self.october10, nil] as [Date?] {
+                let t = K.texts(takenDay: takenDay, showsDate: true, latitude: latitude, place: place, country: country)
+                XCTAssertFalse(t.isSolarTerm && latitude.map { $0 < 0 } == true)
+                let shown = ([t.heading] + [t.latin].compactMap { $0 } + t.columns.map(\.value)).map { $0.lowercased() }
+                XCTAssertEqual(Set(shown).count, shown.count, "\(place ?? "-") \(country ?? "-") \(shown)")
+            }
+        }
+        // 英字の作れない国は列に出す（名前・英字のどこにも国が無くならないように）
+        let unknown = K.texts(takenDay: Self.october10, showsDate: true, latitude: -1, place: "ある町", country: "ガラパゴスの国")
+        XCTAssertNil(unknown.latin)
+        XCTAssertEqual(unknown.columns.map(\.key), ["DATE", "COUNTRY"])
+        // 国だけのとき: 大きな名前が国で、英字は和名なら英名、英名なら出さない
+        XCTAssertEqual(K.texts(takenDay: nil, showsDate: true, latitude: nil, place: nil, country: "オーストラリア").latin,
+                       "AUSTRALIA")
+        XCTAssertNil(K.texts(takenDay: nil, showsDate: true, latitude: nil, place: nil, country: "Australia").latin)
+    }
+
     /// 撮った日が無い・日付を出さないなら、節気も出さない（節気は日付の手がかり）
     func testNoDateMeansNoSolarTerm() {
         let none = K.texts(takenDay: nil, showsDate: true, latitude: 35, place: "京都市", country: nil)
         XCTAssertFalse(none.isSolarTerm)
         XCTAssertEqual(none.heading, "京都市")
-        XCTAssertEqual(none.columns.map(\.key), ["PLACE"])
+        XCTAssertTrue(none.columns.isEmpty)
         let hidden = K.texts(takenDay: Self.october10, showsDate: false, latitude: 35, place: "京都市", country: nil)
         XCTAssertFalse(hidden.isSolarTerm)
         XCTAssertFalse(hidden.columns.contains { $0.key == "DATE" })
@@ -177,38 +207,67 @@ final class KoyomiCardTests: XCTestCase {
         XCTAssertFalse(K.isSouthern(latitude: nil, country: nil))
     }
 
-    /// 投稿の共有カードの字（撮影地の列は小さい単位・南半球は概略の緯度で見分ける）
-    func testCreditTexts() {
+    /// 本番と同じ形の共有カード（`PostedShareCardCredit.make`・`PhotoDetailView.prepareThreads` と同じ:
+    /// location は `shareCardDisplay(raw)`、place は `shareCardPlace(raw)`、座標は約 50km に丸めた概略）
+    static func credit(_ raw: String, lat: Double?, lng: Double = 0) -> SignatureShareCardRenderer.Credit {
         var credit = SignatureShareCardRenderer.Credit(
-            name: "旅灯", username: "tabi_akari", location: "石川県（金沢市）",
-            coords: CLLocationCoordinate2D(latitude: 36.5, longitude: 136.5),
+            name: "旅灯", username: "tabi_akari", location: LocationMatch.shareCardDisplay(raw),
+            coords: SignatureShareCardRenderer.approximateShareCoordinate(lat.map { Photo.Coords(lat: $0, lng: lng) }),
             camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil,
-            verified: false, proStyle: nil, early: false, badge: nil)
-        credit.takenDay = Self.october10
-        let t = K.texts(for: credit)
-        XCTAssertEqual(t.heading, "寒露")
-        XCTAssertEqual(t.columns.map(\.value), ["2026.10.10", "金沢市", "17 / 24"])
-        var sydney = SignatureShareCardRenderer.Credit(
-            name: "Emily", username: nil, location: "Sydney, New South Wales, Australia",
-            coords: SignatureShareCardRenderer.approximateShareCoordinate(Photo.Coords(lat: -33.86, lng: 151.2)),
-            camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil,
-            verified: false, proStyle: nil, early: false, badge: nil)
-        sydney.takenDay = Self.october10
-        // 海外の小さい地名には、入らないときの代わりに国を持たせる（日本は県）
-        var paris = SignatureShareCardRenderer.Credit(
-            name: "Emily", username: nil, location: "Saint-Germain-en-Laye, Île-de-France, France",
-            coords: CLLocationCoordinate2D(latitude: 49, longitude: 2.5),
-            camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil,
-            verified: false, proStyle: nil, early: false, badge: nil)
-        paris.takenDay = Self.october10
-        let pt = K.texts(for: paris).columns.first { $0.key == "PLACE" }
+            verified: false, proStyle: nil, early: false, badge: nil,
+            place: LocationMatch.shareCardPlace(raw))
+        credit.takenDay = october10
+        return credit
+    }
+
+    /// 投稿の共有カードの字（撮影地の列は小さい単位・南半球は概略の緯度、座標が無ければ撮影地の国で見分ける）
+    func testCreditTexts() {
+        let kanazawa = K.texts(for: Self.credit("兼六園, 兼六町, 金沢市, 石川県, 920-0936, 日本", lat: 36.56, lng: 136.66))
+        XCTAssertEqual(kanazawa.heading, "寒露")
+        XCTAssertEqual(kanazawa.columns.map(\.value), ["2026.10.10", "金沢市", "17 / 24"])
+        XCTAssertEqual(kanazawa.columns[1].fallback, "石川県")
+
+        // 座標の無いシドニー（英文・和文）: 国を撮影地の2行から取り、南半球と見なす（節気を出さない）
+        let raws = ["Sydney, New South Wales, Australia", "シドニー, ニューサウスウェールズ州, オーストラリア"]
+        for raw in raws {
+            let credit = Self.credit(raw, lat: nil)
+            XCTAssertFalse(credit.location?.isEmpty ?? true)
+            let t = K.texts(for: credit)
+            XCTAssertFalse(t.isSolarTerm, raw)
+            XCTAssertEqual(t.latin, "AUSTRALIA", raw)
+            let all = ([t.heading, t.latin ?? ""] + t.columns.map(\.value)).joined()
+            XCTAssertFalse(all.contains(")"), "\(raw) \(all)")
+            XCTAssertFalse(all.contains("）"), "\(raw) \(all)")
+            for term in SolarTerm.all { XCTAssertFalse(all.contains(term.name), "\(raw) \(term.name)") }
+        }
+        XCTAssertEqual(K.texts(for: Self.credit(raws[0], lat: nil)).heading, "Sydney")
+        XCTAssertEqual(K.texts(for: Self.credit(raws[1], lat: nil)).heading, "シドニー")
+        // 座標のあるシドニーも同じ
+        XCTAssertFalse(K.texts(for: Self.credit(raws[0], lat: -33.86, lng: 151.2)).isSolarTerm)
+        // 本番の location の形（括弧つき）のままでは国が取れないことの確かめ（前の作りの誤り）
+        XCTAssertNotEqual(K.country(of: LocationMatch.shareCardDisplay(raws[0])), "Australia")
+
+        // 北半球の海外は節気。撮影地の列の代わりに国（長い地名は入らないとき）
+        let paris = K.texts(for: Self.credit("Saint-Germain-en-Laye, Île-de-France, France", lat: 48.9, lng: 2.1))
+        XCTAssertTrue(paris.isSolarTerm)
+        let pt = paris.columns.first { $0.key == "PLACE" }
         XCTAssertEqual(pt?.value, "Saint-Germain-en-Laye")
         XCTAssertEqual(pt?.fallback, "France")
-        XCTAssertEqual(t.columns.first { $0.key == "PLACE" }?.fallback, "石川県")
-        let s = K.texts(for: sydney)
-        XCTAssertFalse(s.isSolarTerm)
-        XCTAssertEqual(s.latin, "AUSTRALIA")
-        XCTAssertEqual(s.columns.last?.key, "COUNTRY")
+        // 日本の撮影地は国にしない
+        XCTAssertNil(K.country(of: LocationMatch.shareCardPlace("山中湖村, 山梨県, 日本")))
+        XCTAssertNil(K.country(of: LocationMatch.shareCardPlace("Kyoto, Kyoto Prefecture, Japan")))
+        XCTAssertNil(K.country(of: LocationMatch.shareCardPlace("山中湖")))
+        XCTAssertEqual(K.country(of: LocationMatch.shareCardPlace("オーストラリア")), "オーストラリア")
+    }
+
+    /// 日本の「〇〇郡〇〇町」は郡を落とす（列が詰まらないように）
+    func testDistrictIsDropped() {
+        XCTAssertEqual(K.withoutDistrict("東牟婁郡那智勝浦町"), "那智勝浦町")
+        XCTAssertEqual(K.withoutDistrict("南都留郡山中湖村"), "山中湖村")
+        XCTAssertEqual(K.withoutDistrict("金沢市"), "金沢市")
+        XCTAssertEqual(K.withoutDistrict("郡山市"), "郡山市")
+        let t = K.texts(for: Self.credit("那智の滝, 那智山, 東牟婁郡那智勝浦町, 和歌山県, 649-5301, 日本", lat: 33.67, lng: 135.89))
+        XCTAssertEqual(t.columns.first { $0.key == "PLACE" }?.value, "那智勝浦町")
     }
 
     // MARK: - 並び（今ある形は変えない・撮った日が無ければ外す）

@@ -53,7 +53,11 @@ enum KoyomiCardRenderer {
                               x: K.left, y: top + K.latinY, maxWidth: K.contentWidth, align: .right)
         }
         let headingWidth = K.right - K.headingX - (latinWidth > 0 ? latinWidth + K.headingLatinGap : 0)
-        fitted(texts.heading, serif: true, size: K.headingSize, minimum: K.headingMinimumSize, color: .white,
+        // 撮影地を大きく出すとき、最小の字でも入らなければ一つ大きい単位（`Texts.headingFallback`）
+        let heading = texts.headingFallback.map {
+            fits(texts.heading, size: K.headingMinimumSize, maxWidth: headingWidth) ? texts.heading : $0
+        } ?? texts.heading
+        fitted(heading, serif: true, size: K.headingSize, minimum: K.headingMinimumSize, color: .white,
                x: K.headingX, y: top + K.headingY, maxWidth: headingWidth)
 
         // 細い線（飾り）
@@ -69,13 +73,13 @@ enum KoyomiCardRenderer {
                  x: x, y: top + K.eyebrowY, maxWidth: K.columnWidth)
             if column.serif {
                 // 最小の字でも入らなければ、短い字（大きい単位）に替える（`KoyomiCard.Column.fallback`）
-                let value = column.fallback.map { fits(column.value, size: K.valueMinimumSize, maxWidth: K.columnWidth)
+                let value = column.fallback.map { fits(column.value, size: K.valueMinimumSize, maxWidth: K.valueWidth)
                     ? column.value : $0 } ?? column.value
                 fitted(value, serif: true, size: K.valueSize, minimum: K.valueMinimumSize, color: .white,
-                       x: x, y: top + K.valueY, maxWidth: K.columnWidth)
+                       x: x, y: top + K.valueY, maxWidth: K.valueWidth)
             } else {
                 fitted(column.value, serif: false, size: K.valueSize, minimum: K.valueMinimumSize, color: .white,
-                       x: x, y: top + K.valueY, maxWidth: K.columnWidth)
+                       x: x, y: top + K.valueY, maxWidth: K.valueWidth)
             }
         }
 

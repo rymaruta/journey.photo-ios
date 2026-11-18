@@ -38,13 +38,18 @@ enum KoyomiCard {
     /// 3列（各幅 300・左端 72、384、696）
     static let columnX: [CGFloat] = [72, 384, 696]
     static let columnWidth: CGFloat = 300
+    /// 値を描く幅の上限。**2026-11-18 判断（確かめ役）:** 幅 300 いっぱいに描くと、長い撮影地（東牟婁郡那智勝浦町）が
+    /// 隣の列の値（17 / 24）と 12px まで詰まった（run 1491 の絵）。列の間を最低 24px 空ける
+    static let valueWidth: CGFloat = 276
+    static let columnGapMinimum: CGFloat = 24
     static let eyebrowY: CGFloat = 180
     static let eyebrowSize: CGFloat = 30
     static let eyebrowKern: CGFloat = 0.24
     static let valueY: CGFloat = 226
     static let valueSize: CGFloat = 36
-    /// 撮影地（明朝）が長いときの最小（入らなければ末尾を切り詰める）
-    static let valueMinimumSize: CGFloat = 30
+    /// 撮影地（明朝）が長いときの最小。33px はインスタで 12pt（板の本文の最小）。
+    /// 入らなければ一つ大きい単位（`Column.fallback`）、それも入らなければ末尾を切り詰める（2026-11-18 判断・確かめ役）
+    static let valueMinimumSize: CGFloat = 33
     /// 意味の一文（SF 400 34px・白 75%）
     static let meaningY: CGFloat = 292
     static let meaningSize: CGFloat = 34
@@ -113,7 +118,7 @@ enum KoyomiCard {
         let value: String
         /// 撮影地は明朝、ほかは SF の等幅数字
         let serif: Bool
-        /// 最小の字（30px）でも幅 300 に入らないときに代わりに出す、短い字（撮影地の大きい単位）。
+        /// 最小の字（33px）でも幅 276 に入らないときに代わりに出す、短い字（撮影地の大きい単位）。
         /// 2026-11-18 判断（Mac run 1483 の点検で「Saint-Germain-en-Laye」が 30px で幅 300 に入らず「Saint-Germain-en…」と切れた）:
         /// 地名を途中で切るより、一つ大きい単位（国・県）を丸ごと出す。それも入らなければ末尾を切り詰める
         var fallback: String? = nil
@@ -122,6 +127,8 @@ enum KoyomiCard {
     struct Texts: Equatable {
         /// 大きな明朝（節気の名前。節気を出さないときは撮影地）
         let heading: String
+        /// 大きな名前が最小の字でも入らないときの、一つ大きい単位（節気を出さないときだけ）
+        var headingFallback: String? = nil
         /// 名前が節気か（意味の一文と SOLAR TERM の列がある）
         let isSolarTerm: Bool
         /// 右の英字（節気の読み・南半球では国名）
@@ -130,21 +137,33 @@ enum KoyomiCard {
         let columns: [Column]
         /// 節気の意味の一文
         let meaning: String?
+
+        init(heading: String, isSolarTerm: Bool, latin: String?, columns: [Column], meaning: String?,
+             headingFallback: String? = nil) {
+            self.heading = heading
+            self.isSolarTerm = isSolarTerm
+            self.latin = latin
+            self.columns = columns
+            self.meaning = meaning
+            self.headingFallback = headingFallback
+        }
     }
 
     /// 絵に載せる字。
     /// - `takenDay`: 撮った日（UTC 0 時で持つ暦の日）。無い・日付を出さない（`showsDate == false`）なら節気も出さない
     ///   （節気は日付の手がかりなので、日付を伏せた人の絵に出さない）
     /// - 南半球（緯度が 0 より小さい、座標が無ければ撮影地の国が南半球の国）なら節気を出さない。
-    ///   名前の所に撮影地、英字は国名、3列目は COUNTRY
+    ///   **同じ地名を2度出さない**（2026-11-18 判断・確かめ役。run 1491 のシドニーの絵で「Australia」が名前・英字・列に3回出た）:
+    ///   大きな名前＝出してよい中でいちばん細かい地名、英字＝国の英名（大きな名前と同じなら出さない）、
+    ///   列は DATE だけ（国の英字が作れないときだけ COUNTRY）
     /// - `place`: 列に出す撮影地（呼ぶ側が細かさを決める）。`country`: 絵に出す撮影地の国（海外のとき）。
     ///   `hemisphereCountry`: 南半球かを見分ける国（絵には出さない・既定は `country`）
     static func texts(takenDay: Date?, showsDate: Bool, latitude: Double?, place: String?,
                       country: String?, hemisphereCountry: String?? = nil, placeFallback: String? = nil) -> Texts {
         let date = showsDate ? takenDay.map(dateText) : nil
         let south = isSouthern(latitude: latitude, country: hemisphereCountry ?? country)
-        let placeValue = place.flatMap(clean)
-        let fallback = placeFallback.flatMap(clean).flatMap { $0 == placeValue ? nil : $0 }
+        let placeValue = place.flatMap(clean).map(withoutDistrict)
+        let fallback = placeFallback.flatMap(clean).map(withoutDistrict).flatMap { $0 == placeValue ? nil : $0 }
         if let takenDay, showsDate, !south {
             let term = SolarTerm.term(onDay: takenDay)
             var columns: [Column] = []
@@ -155,15 +174,28 @@ enum KoyomiCard {
                          meaning: term.meaning)
         }
         let countryValue = country.flatMap(clean)
+        let heading = placeValue ?? countryValue ?? TravelStory.onTheRoad
+        func same(_ a: String, _ b: String) -> Bool { a.caseInsensitiveCompare(b) == .orderedSame }
+        // 英字は国の英名。大きな名前と同じ（「Australia」を大きく出した）なら出さない
+        let latin = countryValue.flatMap(countryLatin).flatMap { same($0, heading) ? nil : $0 }
         var columns: [Column] = []
         if let date { columns.append(Column(key: "DATE", value: date, serif: false)) }
-        if let placeValue { columns.append(Column(key: "PLACE", value: placeValue, serif: true, fallback: fallback)) }
-        // 撮影地が国そのもの（「オーストラリア」だけ）なら、同じ字を2列に並べない
-        if let countryValue, countryValue != placeValue {
+        // 国の英字が作れない（和名の北半球の国など）ときだけ、国を列に出す
+        if let countryValue, latin == nil, !same(countryValue, heading) {
             columns.append(Column(key: "COUNTRY", value: countryValue, serif: true))
         }
-        return Texts(heading: placeValue ?? countryValue ?? TravelStory.onTheRoad, isSolarTerm: false,
-                     latin: countryValue.flatMap(countryLatin), columns: columns, meaning: nil)
+        let headingFallback = (fallback ?? countryValue).flatMap { same($0, heading) ? nil : $0 }
+        return Texts(heading: heading, isSolarTerm: false, latin: latin, columns: columns, meaning: nil,
+                     headingFallback: headingFallback)
+    }
+
+    /// 日本の「〇〇郡〇〇町」「〇〇郡〇〇村」は郡を落とす（町村の名だけで場所が分かる・2026-11-18 判断・確かめ役）
+    static func withoutDistrict(_ value: String) -> String {
+        guard let gun = value.range(of: "郡", options: .backwards), let tail = value.last, "町村".contains(tail) else {
+            return value
+        }
+        let rest = String(value[gun.upperBound...])
+        return rest.count >= 2 ? rest : value
     }
 
     /// 投稿の共有カード（`SignatureShareCardRenderer.Credit`）の字。撮影地の列は小さい単位（市区町村・海外の地名）、
@@ -171,8 +203,23 @@ enum KoyomiCard {
     static func texts(for credit: SignatureShareCardRenderer.Credit) -> Texts {
         let place = credit.place ?? LocationMatch.shareCardPlace(credit.location)
         return texts(takenDay: credit.takenDay, showsDate: true, latitude: credit.coords?.latitude,
-                     place: place?.secondary ?? place?.primary, country: country(of: credit.location),
+                     place: place?.secondary ?? place?.primary, country: country(of: place),
                      placeFallback: place?.secondary == nil ? nil : place?.primary)
+    }
+
+    /// 共有カードの撮影地の2行（`LocationMatch.shareCardPlace`）から国。海外は1行目が国（「Australia」「オーストラリア」）。
+    /// **`credit.location` からは取らない**（2026-11-18 確かめ役: 本番の `location` は `shareCardDisplay` の
+    /// 「Sydney (New South Wales, Australia)」の形で、区切りで分けると最後が「Australia)」になり、南半球の国と見なせず節気が出た）。
+    /// 1行目が都道府県・英文の県・国と分からない1語（「山中湖」）なら nil
+    static func country(of place: LocationMatch.ShareCardPlace?) -> String? {
+        guard let place, let primary = clean(place.primary) else { return nil }
+        if RegionList.prefectures.contains(primary) || LocationMatch.isJapan(primary) { return nil }
+        if ShareCardMap.englishPrefectures.contains(where: { $0.caseInsensitiveCompare(primary) == .orderedSame }) {
+            return nil
+        }
+        // 2行目がある（海外の「国／地名」）か、南半球の国の表にある1語だけを国とみなす
+        if place.secondary != nil || southernCountry(primary) != nil { return primary }
+        return nil
     }
 
     /// 「2026.10.10」（撮った日は UTC 0 時で持つ暦の日なので UTC で書く）

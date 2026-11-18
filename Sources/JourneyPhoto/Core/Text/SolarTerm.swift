@@ -20,7 +20,8 @@ enum SolarTerm {
         let number: Int
         /// 漢字の名前（寒露）。暦の字なので英語の画面でも漢字のまま
         let name: String
-        /// 読みのラテン文字（KANRO）
+        /// 読みのラテン文字（KANRO）。長音はヘボン式の長音符（Ō・Ū）で書く。
+        /// 2026-11-18 判断（確かめ役）: 長音符を付けないと小暑と処暑がどちらも SHOSHO になり見分けられない（小暑 SHŌSHO、処暑 SHOSHO）
         let latin: String
         /// 意味の一文（露が冷たく感じられるころ）
         let meaning: String
@@ -39,22 +40,22 @@ enum SolarTerm {
             ("清明", "SEIMEI", L("草木が清らかに明るく芽吹くころ", "Pure and bright")),
             ("穀雨", "KOKUU", L("穀物をうるおす春の雨が降るころ", "Rain for the grain")),
             ("立夏", "RIKKA", L("夏のはじまり", "The start of summer")),
-            ("小満", "SHOMAN", L("草木が育ち、満ちはじめるころ", "Plants begin to flourish")),
-            ("芒種", "BOSHU", L("稲や麦の種をまくころ", "Time to sow the grain")),
+            ("小満", "SHŌMAN", L("草木が育ち、満ちはじめるころ", "Plants begin to flourish")),
+            ("芒種", "BŌSHU", L("稲や麦の種をまくころ", "Time to sow the grain")),
             ("夏至", "GESHI", L("一年で昼がいちばん長いころ", "The summer solstice")),
-            ("小暑", "SHOSHO", L("暑さが本格的になりはじめるころ", "The heat begins")),
+            ("小暑", "SHŌSHO", L("暑さが本格的になりはじめるころ", "The heat begins")),
             ("大暑", "TAISHO", L("一年でいちばん暑いころ", "The height of summer")),
-            ("立秋", "RISSHU", L("秋のはじまり", "The start of autumn")),
+            ("立秋", "RISSHŪ", L("秋のはじまり", "The start of autumn")),
             ("処暑", "SHOSHO", L("暑さがおさまるころ", "The heat eases")),
             ("白露", "HAKURO", L("草に白い露が宿るころ", "White dew on the grass")),
-            ("秋分", "SHUBUN", L("昼と夜の長さがほぼ同じになるころ", "The autumn equinox")),
+            ("秋分", "SHŪBUN", L("昼と夜の長さがほぼ同じになるころ", "The autumn equinox")),
             ("寒露", "KANRO", L("露が冷たく感じられるころ", "The dew turns cold")),
-            ("霜降", "SOKO", L("霜が降りはじめるころ", "The first frost")),
-            ("立冬", "RITTO", L("冬のはじまり", "The start of winter")),
-            ("小雪", "SHOSETSU", L("わずかに雪が降りはじめるころ", "The first light snow")),
+            ("霜降", "SŌKŌ", L("霜が降りはじめるころ", "The first frost")),
+            ("立冬", "RITTŌ", L("冬のはじまり", "The start of winter")),
+            ("小雪", "SHŌSETSU", L("わずかに雪が降りはじめるころ", "The first light snow")),
             ("大雪", "TAISETSU", L("雪が本格的に降るころ", "Heavy snow")),
-            ("冬至", "TOJI", L("一年で昼がいちばん短いころ", "The winter solstice")),
-            ("小寒", "SHOKAN", L("寒さが厳しくなりはじめるころ", "The cold begins")),
+            ("冬至", "TŌJI", L("一年で昼がいちばん短いころ", "The winter solstice")),
+            ("小寒", "SHŌKAN", L("寒さが厳しくなりはじめるころ", "The cold begins")),
             ("大寒", "DAIKAN", L("一年でいちばん寒いころ", "The depth of winter")),
         ]
         return rows.enumerated().map { Term(number: $0.offset + 1, name: $0.element.0, latin: $0.element.1,

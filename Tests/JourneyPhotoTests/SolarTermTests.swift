@@ -60,6 +60,12 @@ final class SolarTermTests: XCTestCase {
         XCTAssertEqual(all.first { $0.name == "処暑" }?.number, 14)
         XCTAssertEqual(all.first { $0.name == "立冬" }?.number, 19)
         XCTAssertEqual(Set(all.map(\.name)).count, 24)
+        // 英字も24個すべて違う（小暑 SHŌSHO と処暑 SHOSHO を長音符で見分ける・2026-11-18 確かめ役）
+        XCTAssertEqual(Set(all.map(\.latin)).count, 24)
+        XCTAssertEqual(all.first { $0.name == "小暑" }?.latin, "SHŌSHO")
+        XCTAssertEqual(all.first { $0.name == "処暑" }?.latin, "SHOSHO")
+        XCTAssertEqual(all.first { $0.name == "立冬" }?.latin, "RITTŌ")
+        XCTAssertEqual(all.first { $0.name == "冬至" }?.latin, "TŌJI")
         for term in all {
             XCTAssertFalse(term.meaning.contains("・"), term.name)
             XCTAssertFalse(term.latin.isEmpty)
