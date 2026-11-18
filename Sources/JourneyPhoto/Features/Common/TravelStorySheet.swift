@@ -59,11 +59,14 @@ struct TravelStorySheet: View {
         self.filmURLs = filmURLs.isEmpty ? [leadURL] : filmURLs
         self.facts = facts
         self.header = header
-        _choice = State(initialValue: TravelStory.load(phase: phase))
+        // 前に選んだ型が、この写真で選べなければ（撮った日の分からない写真の暦）はじめの切手と消印
+        var loaded = TravelStory.load(phase: phase)
+        if !TravelStory.kinds(for: facts).contains(loaded.kind) { loaded.kind = .stamp }
+        _choice = State(initialValue: loaded)
         _leadData = State(initialValue: leadData)
     }
 
-    private var kinds: [TravelStory.Kind] { TravelStory.Kind.allCases }
+    private var kinds: [TravelStory.Kind] { TravelStory.kinds(for: facts) }
     private var index: Int { kinds.firstIndex(of: choice.kind) ?? 0 }
 
     var body: some View {
@@ -366,7 +369,7 @@ struct TravelStorySheet: View {
     /// （場所・日付を替えるたびに増えていかない・`TravelStory.nearby`）。
     /// 選びが替わって task が取り消されたら、まだ始めていない描画は始めず、走っている描画（detached）にも取り消しを伝える
     private func renderVisible() async {
-        let wanted = TravelStory.nearby(choice.kind).map { choice.with(kind: $0) }
+        let wanted = TravelStory.nearby(choice.kind, in: kinds).map { choice.with(kind: $0) }
         let keys = Set(wanted.map(\.renderKey))
         outputs = outputs.filter { keys.contains($0.key) }
         guard let leadData else { return }

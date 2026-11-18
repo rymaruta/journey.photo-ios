@@ -40,7 +40,7 @@ struct SignatureShareCardSheet: View {
     @State private var styleRaw = UserDefaults.standard.string(forKey: SignatureShareCardSheet.styleDefaultsKey)
         ?? SignatureShareCardRenderer.Style.band.rawValue
     private var style: SignatureShareCardRenderer.Style {
-        SignatureShareCardRenderer.Style(rawValue: styleRaw) ?? .band
+        ShareCardStyleChoice.style(rawValue: styleRaw, for: credit)
     }
 
     /// 作った画像の置き場所の鍵（比率と型の組）
@@ -71,7 +71,7 @@ struct SignatureShareCardSheet: View {
                 ScrollViewReader { reader in
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(alignment: .top, spacing: JPSpace.xs) {
-                            ForEach(ShareCardStyleChoice.order, id: \.rawValue) { option in
+                            ForEach(ShareCardStyleChoice.order(for: credit), id: \.rawValue) { option in
                                 ShareCardStyleTile(title: ShareCardStyleChoice.title(option),
                                                    image: thumbnails[option.rawValue],
                                                    selected: style == option) {
@@ -84,7 +84,7 @@ struct SignatureShareCardSheet: View {
                         .padding(.horizontal)
                     }
                     // 前に選んだ型が並びの外（後ろの方）にあっても、開いたときに見えるようにする
-                    .onAppear { reader.scrollTo(styleRaw, anchor: .center) }
+                    .onAppear { reader.scrollTo(style.rawValue, anchor: .center) }
                 }
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel(L("共有画像の型", "Share image style"))
@@ -194,7 +194,7 @@ struct SignatureShareCardSheet: View {
                 for _ in 0..<30 where preparing {
                     try? await Task.sleep(nanoseconds: 100_000_000)
                 }
-                for option in ShareCardStyleChoice.order where thumbnails[option.rawValue] == nil {
+                for option in ShareCardStyleChoice.order(for: credit) where thumbnails[option.rawValue] == nil {
                     if Task.isCancelled { return }
                     guard let data = await SignatureShareCardRenderer.render(photoData, credit: credit,
                                                                              ratio: .portrait, style: option),
@@ -323,10 +323,24 @@ enum PostedShareCardText {
     static var title: String { L("カードにして、ほかの SNS にも", "Turn it into a card for other social apps") }
 }
 
-/// 共有画像の型の並びと名前（2026-11-14・試験で見る）。名前は短く（チップに1語）
+/// 共有画像の型の並びと名前（2026-11-14・試験で見る）。名前は短く（チップに1語）。
+/// 2026-11-18: 暦（`KoyomiCard`）を後ろに足した（前からの並びは変えない）
 enum ShareCardStyleChoice {
     static let order: [SignatureShareCardRenderer.Style] = [.band, .fade, .cover, .label, .printed, .ticket, .cinema,
-                                                            .mat, .film, .tanzaku]
+                                                            .mat, .film, .tanzaku, .koyomi]
+
+    /// その写真で選べる型。**撮った日の分からない写真では暦を外す**（日付も節気も出せない・2026-11-18 判断）
+    static func order(for credit: SignatureShareCardRenderer.Credit) -> [SignatureShareCardRenderer.Style] {
+        order.filter { $0 != .koyomi || credit.takenDay != nil }
+    }
+
+    /// 前に選んだ型が、この写真で選べなければ既定の帯
+    static func style(rawValue: String, for credit: SignatureShareCardRenderer.Credit) -> SignatureShareCardRenderer.Style {
+        guard let style = SignatureShareCardRenderer.Style(rawValue: rawValue), order(for: credit).contains(style) else {
+            return .band
+        }
+        return style
+    }
 
     static func title(_ style: SignatureShareCardRenderer.Style) -> String {
         switch style {
@@ -340,6 +354,7 @@ enum ShareCardStyleChoice {
         case .mat: return L("額装", "Mat")
         case .film: return L("フィルム", "Film")
         case .tanzaku: return L("縦書き", "Vertical")
+        case .koyomi: return L("暦", "Almanac")
         }
     }
 }
