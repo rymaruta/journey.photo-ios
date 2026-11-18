@@ -162,7 +162,7 @@ final class PerfMainSampler: @unchecked Sendable {
         wall.timeZone = TimeZone(identifier: "UTC")
         wall.dateFormat = "HH:mm:ss.SSS"
         var lines = 0
-        while lines < 1500 {
+        while lines < 6000 {   // 一時の枝（マージしない）: 10 回くり返す試験のため長く書く
             let sent = ProcessInfo.processInfo.systemUptime
             let sentWall = wall.string(from: Date())
             let reply = DispatchSemaphore(value: 0)

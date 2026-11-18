@@ -10747,6 +10747,108 @@ final class ScreenshotTests: XCTestCase {
         for line in shown { print("STALL \(label) 会話の回数: \(line)") }
     }
 
+    /// 一時の枝（マージしない・2026-11-18）: DM の取り消しのあとの止まりを、1本の回で 10 回試して割合を取る。
+    /// 毎回アプリを起動し直し（見本の会話を元に戻す）、元のテストと同じ順（URL を送って断られる → 戻る → 開き直す →
+    /// 下へ払ってキーボードを下ろす → 自分の吹き出しを長押し → 取り消す）で押す。押したあとは画面の木を読まず、
+    /// 主スレッドの積みのファイル（起動のたびに作り直される）と会話の回数（`.dm`）だけで判定し、次の回へ進む
+    func testDMUnsendStallRepeat() {
+        let samplePath = Self.mainSamplePath("dmrepeat")
+        var stalls = 0
+        var tried = 0
+        for round in 1...10 {
+            let app = XCUIApplication()
+            app.launchArguments += ["-JPPreviewPerfProbe", "YES", "-JPMainSampleFile", samplePath]
+            app.launchArguments += ["-legal.consent.version", "0"]
+            app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+            app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+            app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+            app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+            app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+            app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewDM", "YES"]
+            app.launch()
+            let agree = app.buttons["legal.agree"]
+            if agree.waitForExistence(timeout: 30) { agree.tap() }
+            let header = app.buttons["header.messages"].firstMatch
+            guard header.waitForExistence(timeout: 30) else { print("REPEAT \(round) 見出しの吹き出しが出ない"); app.terminate(); continue }
+            header.tap()
+            guard app.descendants(matching: .any)["dm.inbox"].firstMatch.waitForExistence(timeout: 15),
+                  openThread(app, named: "夕焼けの人") else { print("REPEAT \(round) 会話が開かない"); app.terminate(); continue }
+            let field = app.descendants(matching: .any)["dm.field"].firstMatch
+            if field.waitForExistence(timeout: 5), field.isHittable {
+                field.tap()
+                field.typeText("ここで撮りました https://example.com/spot")
+                let send = app.buttons["dm.send"].firstMatch
+                if send.isHittable { send.tap() }
+                _ = app.descendants(matching: .any)["dm.fieldError"].firstMatch.waitForExistence(timeout: 10)
+            }
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+            Thread.sleep(forTimeInterval: 1)
+            guard openThread(app, named: "夕焼けの人") else { print("REPEAT \(round) 開き直せない"); app.terminate(); continue }
+            let mineText = "ありがとうございます。伊豆の海沿いです。"
+            let bubble = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", mineText)).firstMatch
+            let thread = app.descendants(matching: .any)["dm.conversation"].firstMatch
+            var swipes = 0
+            while bubble.waitForExistence(timeout: 5), !bubble.isHittable, swipes < 4 {
+                thread.swipeDown()
+                swipes += 1
+                Thread.sleep(forTimeInterval: 0.5)
+            }
+            guard bubble.exists, bubble.isHittable else { print("REPEAT \(round) 吹き出しに届かない swipes=\(swipes)"); app.terminate(); continue }
+            bubble.press(forDuration: 1.0)
+            let unsend = app.buttons["dm.unsend"].firstMatch
+            guard unsend.waitForExistence(timeout: 5) else { print("REPEAT \(round) 取り消しが出ない"); app.terminate(); continue }
+            Thread.sleep(forTimeInterval: 1)
+            let dmBefore = Self.dmProbeLines(samplePath).count
+            let sampleBefore = ((try? String(contentsOfFile: samplePath, encoding: .utf8)) ?? "").split(separator: "\n").count
+            tried += 1
+            unsend.tap()   // 止まると、ここで 60 秒「待ち状態にならない」を待ってから進む
+            Thread.sleep(forTimeInterval: 4)
+            let run = Self.longestSlowRun(samplePath, from: sampleBefore)
+            let stalled = run.lines >= 10
+            if stalled { stalls += 1 }
+            let after = Array(Self.dmProbeLines(samplePath).dropFirst(max(0, dmBefore - 1)))
+            func last(_ key: String, _ line: String?) -> String {
+                guard let line, let range = line.range(of: " \(key)=") else { return "-" }
+                return String(line[range.upperBound...].prefix { $0 != " " })
+            }
+            print("REPEAT \(round) 止まり=\(stalled) 遅い行の続き=\(run.lines)（\(run.seconds) 秒） swipes=\(swipes)"
+                + " 前: focus=\(last("focus", after.first)) height=\(last("height", after.first)) draft=\(last("draft", after.first))"
+                + " 後: focus=\(last("focus", after.last)) height=\(last("height", after.last)) draft=\(last("draft", after.last))"
+                + " outcome=\(last("outcome", after.last)) scrollTo=\(last("scrollTo", after.last)) 行=\(after.count)")
+            if stalled {
+                for line in after.suffix(6) { print("REPEAT \(round) 会話の回数: \(line)") }
+                Self.logStallDetail(samplePath, label: "REPEAT \(round)")
+            }
+            app.terminate()
+        }
+        print("REPEAT 合計: 止まり \(stalls) / 試した \(tried)")
+        XCTContext.runActivity(named: "REPEAT 合計: 止まり \(stalls) / 試した \(tried)") { _ in }
+    }
+
+    /// 会話の回数のファイル（`.dm`）の行
+    static func dmProbeLines(_ path: String) -> [String] {
+        ((try? String(contentsOfFile: path + ".dm", encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+    }
+
+    /// 主スレッドの積みのファイルの `start` 行目より後で、遅い行（pending か 200ms 以上）がいちばん長く続いた行数と、その間の秒数（ms= の差）
+    static func longestSlowRun(_ path: String, from start: Int) -> (lines: Int, seconds: String) {
+        let lines = ((try? String(contentsOfFile: path, encoding: .utf8)) ?? "").split(separator: "\n").dropFirst(start).map(String.init)
+        func ms(_ line: String) -> Int { Int(line.components(separatedBy: "ms=").dropFirst().first?.split(separator: " ").first ?? "") ?? 0 }
+        var best = (count: 0, from: 0, to: 0)
+        var current = (count: 0, from: 0)
+        for line in lines {
+            let ping = line.components(separatedBy: "ping=").dropFirst().first?.split(separator: " ").first.map(String.init) ?? ""
+            if ping == "pending" || (Int(ping) ?? 0) >= 200 {
+                if current.count == 0 { current.from = ms(line) }
+                current.count += 1
+                if current.count > best.count { best = (current.count, current.from, ms(line)) }
+            } else {
+                current.count = 0
+            }
+        }
+        return (best.count, String(format: "%.1f", Double(best.to - best.from) / 1000))
+    }
+
     /// 受信箱の行を名前で開き、会話が出るまで待つ（出なければ false）
     private func openThread(_ app: XCUIApplication, named name: String) -> Bool {
         let row = app.buttons.matching(NSPredicate(format: "identifier == 'dm.thread' AND label CONTAINS %@", name)).firstMatch
