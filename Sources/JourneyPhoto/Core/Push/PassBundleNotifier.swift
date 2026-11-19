@@ -68,6 +68,9 @@ enum PassBundleNotifier {
                 dateMatching: calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date),
                 repeats: false)
             : nil
+        // 前に積んだ取り消しが終わってから入れる（同じ識別子を消したあとに入れ直す順を崩さない・#647）
+        await PendingNotificationRemoval.drained()
+        guard !PendingNotificationRemoval.disabled else { return }
         do {
             try await UNUserNotificationCenter.current()
                 .add(UNNotificationRequest(identifier: identifier, content: content, trigger: trigger))
@@ -78,22 +81,22 @@ enum PassBundleNotifier {
 
     /// まだ鳴っていない、すぐ届く形の知らせを消す（束を開いた——古い枚数で後から鳴らさない）
     static func cancelPendingInstant(calendar: Calendar = .current, now: Date = Date()) {
-        UNUserNotificationCenter.current().removePendingNotificationRequests(
-            withIdentifiers: days(calendar: calendar, now: now).map(instantIdentifier(day:)))
+        // 主スレッドで消さない（`PendingNotificationRemoval`・#647）
+        PendingNotificationRemoval.remove(days(calendar: calendar, now: now).map(instantIdentifier(day:)))
     }
 
     /// 夕方の束の予約だけを消す（「すぐ」に替えた——まだ届いていなかった分は、その場で届いた扱いにする）
     static func cancelEvening(calendar: Calendar = .current, now: Date = Date()) {
-        UNUserNotificationCenter.current().removePendingNotificationRequests(
-            withIdentifiers: days(calendar: calendar, now: now).map(identifier(day:)))
+        // 主スレッドで消さない（`PendingNotificationRemoval`・#647）
+        PendingNotificationRemoval.remove(days(calendar: calendar, now: now).map(identifier(day:)))
     }
 
     /// 予約を全部消す（オフにした・人が替わった・退会）。**今日と次の日の分**を消す
     /// （予約は届く日ごとなので、それより先の日の予約は作られない）。すぐ届く形の分も
     static func cancelAll(calendar: Calendar = .current, now: Date = Date()) {
         let days = days(calendar: calendar, now: now)
-        UNUserNotificationCenter.current().removePendingNotificationRequests(
-            withIdentifiers: days.map(identifier(day:)) + days.map(instantIdentifier(day:)))
+        // 主スレッドで消さない（`PendingNotificationRemoval`・#647）
+        PendingNotificationRemoval.remove(days.map(identifier(day:)) + days.map(instantIdentifier(day:)))
     }
 
     private static func days(calendar: Calendar, now: Date) -> [String] {

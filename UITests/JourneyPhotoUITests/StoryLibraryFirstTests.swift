@@ -23,9 +23,9 @@ final class StoryLibraryFirstTests: XCTestCase {
     override func setUp() {
         continueAfterFailure = true
         // 前の回が許可を残していても、許可の前から始める
-        XCUIApplication().resetAuthorizationStatus(for: .photos)
+        XCUIApplication.jp().resetAuthorizationStatus(for: .photos)
         addTeardownBlock {
-            XCUIApplication().resetAuthorizationStatus(for: .photos)
+            XCUIApplication.jp().resetAuthorizationStatus(for: .photos)
         }
     }
 
@@ -40,7 +40,7 @@ final class StoryLibraryFirstTests: XCTestCase {
     // MARK: - 流れ
 
     private func run(extra: [String], tag: String) {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]

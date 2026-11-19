@@ -39,7 +39,7 @@ final class StoryPickerTests: XCTestCase {
 
     /// 一巡と同じ立ち上げ方で、投稿の2択 →「ストーリー」まで。開けなければ nil
     private func openComposer() -> XCUIApplication? {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
@@ -263,7 +263,7 @@ final class StoryPickerTests: XCTestCase {
     /// 「誰に見せる？」のシートの「撮影地の位置を付ける」（2026-10-18・投稿と同じ人ごとの覚え）。
     /// 出なければ撮らずに抜ける（この試験の決まり）。切り替えは押さない（値は人ごとに端末に残る）
     private func captureAudienceSheet(tag: String) {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         // 言葉ではなく印で探す（英語の端末でも見つかる）
         let audience = app.buttons["story.audience"].firstMatch
         guard audience.waitForExistence(timeout: 5), audience.isHittable else { return }

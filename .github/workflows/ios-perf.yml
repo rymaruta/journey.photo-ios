@@ -34,7 +34,8 @@ jobs:
   build:
     name: 重さの記録用ビルドを準備
     if: ${{ github.event_name == 'workflow_dispatch' || vars.IOS_PERF_ENABLED == 'true' }}
-    runs-on: macos-15
+    # 2026-11-19（#647）: macos-15 → xcode-27（TestFlight の回と同じ台。理由は ios-testflight.yml の `build` の job）
+    runs-on: xcode-27
     timeout-minutes: 90
     outputs:
       xcode: ${{ steps.xcode.outputs.version }}
@@ -119,7 +120,7 @@ jobs:
   perf:
     name: 重さを測って記録する
     needs: build
-    runs-on: macos-15
+    runs-on: xcode-27
     # PerformanceTests は約 9〜15 分。1本ごとの上限は `Tools/xcode-test.sh`（300 秒）
     timeout-minutes: 60
     steps:

@@ -153,6 +153,7 @@ final class PushCenter: ObservableObject {
          defaults: UserDefaults = .standard,
          releaseDevice: @escaping @MainActor () -> Void = { UIApplication.shared.unregisterForRemoteNotifications() },
          readAuthorization: @escaping () async -> Bool = {
+             guard !PendingNotificationRemoval.disabled else { return false }
              let settings = await UNUserNotificationCenter.current().notificationSettings()
              return settings.authorizationStatus == .authorized
                  || settings.authorizationStatus == .provisional
@@ -463,9 +464,14 @@ final class PushCenter: ObservableObject {
     /// （ログアウトの口と、期限切れ・切り替えを拾う `use` の両方から——片方だけだと
     /// 期限切れの後に前の人の通知の本文が通知センターに残った）
     func clearPreviousUserTraces() async {
-        let center = UNUserNotificationCenter.current()
-        try? await center.setBadgeCount(0)
-        center.removeAllDeliveredNotifications()
+        // 🔴 **通知の窓口は主スレッドの外で呼ぶ**（`setBadge` の注記・#647）。UI テストのときは触らない
+        if !PendingNotificationRemoval.disabled {
+            await Task.detached(priority: .utility) {
+                let center = UNUserNotificationCenter.current()
+                try? await center.setBadgeCount(0)
+                center.removeAllDeliveredNotifications()
+            }.value
+        }
         // 端末の中で予約した見頃のお知らせも消す（前の人の行きたい場所の名前で鳴らさない）。
         // **スケジューラーを通す**——直接消すと覚えている中身が残り、次の人の同じ中身を入れ直さなかった
         await SeasonReminderScheduler.shared.reschedule(nil, allowed: false)
@@ -480,16 +486,28 @@ final class PushCenter: ObservableObject {
 
     /// アイコンの数字を置く（`AppBadge.count` で数えた値）
     func setBadge(_ count: Int) async {
-        try? await UNUserNotificationCenter.current().setBadgeCount(max(0, count))
+        // 🔴 **主スレッドの外で呼ぶ**（2026-11-19・#647）。`await` で呼んでも、`setBadgeCount` は入口で通知の窓口の列を
+        // 同期で待つ（`-[UNUserNotificationServiceConnection setBadgeCount:…]` の `_dispatch_sync_f_slow`）。
+        // iOS 27.2 のシミュレーターでは窓口の最初の呼び出しが 44〜85秒かかり、その間ここが主スレッドを止めた
+        // （run 1596: 主スレッドの記録の遅い行 192 のうち 171 行、受信箱を開く押す操作が 57140ms）
+        let value = max(0, count)
+        guard !PendingNotificationRemoval.disabled else { return }
+        await Task.detached(priority: .utility) {
+            try? await UNUserNotificationCenter.current().setBadgeCount(value)
+        }.value
     }
 
     /// 読んだ会話のメッセージの通知を、通知センターから消す（`AppBadge.deliveredIds`）
     func removeDelivered(conversationId: String) async {
-        let center = UNUserNotificationCenter.current()
-        let delivered = await center.deliveredNotifications()
-        let ids = AppBadge.deliveredIds(delivered.map { ($0.request.identifier, $0.request.content.userInfo) },
-                                        conversationId: conversationId)
-        if !ids.isEmpty { center.removeDeliveredNotifications(withIdentifiers: ids) }
+        // 🔴 **通知の窓口は主スレッドの外で呼ぶ**（`setBadge` の注記・#647）
+        guard !PendingNotificationRemoval.disabled else { return }
+        await Task.detached(priority: .utility) {
+            let center = UNUserNotificationCenter.current()
+            let delivered = await center.deliveredNotifications()
+            let ids = AppBadge.deliveredIds(delivered.map { ($0.request.identifier, $0.request.content.userInfo) },
+                                            conversationId: conversationId)
+            if !ids.isEmpty { center.removeDeliveredNotifications(withIdentifiers: ids) }
+        }.value
     }
 
     private func setEnabled(_ value: Bool) {

@@ -12,15 +12,23 @@ final class SeasonReminderScheduler {
     static let shared = SeasonReminderScheduler()
 
     private let add: (UNNotificationRequest) async throws -> Void
-    private let removePending: ([String]) -> Void
+    private let removePending: ([String]) async -> Void
     /// 最後に入れた中身（同じなら入れ直さない）。nil は「入れていない」
     private(set) var scheduled: SeasonReminder.Plan?
     /// 最後に積んだ入れ替え。**入れ替えは1本ずつ順に**——重なると、古い回の後始末が新しい回の予約を消し、
     /// 消えたのに「入れてある」と覚えて二度と入れ直さなかった（5c79dfd のレビュー）
     private var tail: Task<Void, Never>?
 
-    init(add: @escaping (UNNotificationRequest) async throws -> Void = { try await UNUserNotificationCenter.current().add($0) },
-         removePending: @escaping ([String]) -> Void = { UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: $0) }) {
+    init(add: @escaping (UNNotificationRequest) async throws -> Void = { request in
+             guard !PendingNotificationRemoval.disabled else { return }
+             try await UNUserNotificationCenter.current().add(request)
+         },
+         removePending: @escaping ([String]) async -> Void = { ids in
+             // 🔴 **主スレッドで消さない**（2026-11-19・#647）。iOS 27.2 のシミュレーターで、起動の直後のここが
+             // 主スレッドを 44316.8ms 止めていた（run 1592）。列で消し、消し終わるのを待ってから `add` に進む
+             PendingNotificationRemoval.remove(ids)
+             await PendingNotificationRemoval.drained()
+         }) {
         self.add = add
         self.removePending = removePending
     }
@@ -40,12 +48,12 @@ final class SeasonReminderScheduler {
         guard allowed, let wanted = plan else {
             // **入れない回は毎回消す**（安い）。覚えている中身はメモリだけなので、起動し直したあと
             // 「前に入れていない」と思い込んで、ログアウト・通知オフの前に入れた予約を残していた
-            removePending([SeasonReminder.identifier])
+            await removePending([SeasonReminder.identifier])
             scheduled = nil
             return
         }
         guard wanted != scheduled else { return }
-        removePending([SeasonReminder.identifier])
+        await removePending([SeasonReminder.identifier])
         scheduled = nil
         let content = UNMutableNotificationContent()
         content.title = wanted.title
