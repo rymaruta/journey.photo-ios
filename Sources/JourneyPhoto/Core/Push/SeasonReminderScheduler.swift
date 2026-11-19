@@ -19,7 +19,10 @@ final class SeasonReminderScheduler {
     /// 消えたのに「入れてある」と覚えて二度と入れ直さなかった（5c79dfd のレビュー）
     private var tail: Task<Void, Never>?
 
-    init(add: @escaping (UNNotificationRequest) async throws -> Void = { try await UNUserNotificationCenter.current().add($0) },
+    init(add: @escaping (UNNotificationRequest) async throws -> Void = { request in
+             guard !PendingNotificationRemoval.disabled else { return }
+             try await UNUserNotificationCenter.current().add(request)
+         },
          removePending: @escaping ([String]) async -> Void = { ids in
              // 🔴 **主スレッドで消さない**（2026-11-19・#647）。iOS 27.2 のシミュレーターで、起動の直後のここが
              // 主スレッドを 44316.8ms 止めていた（run 1592）。列で消し、消し終わるのを待ってから `add` に進む

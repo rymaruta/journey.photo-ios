@@ -29,6 +29,8 @@ enum PushPermission: Equatable {
 
     /// システムの許可を読む（`PushCenter` の既定）
     static func system() async -> PushPermission {
+        // UI テストのときは窓口に触らない（`PendingNotificationRemoval.disabled`・#647）
+        guard !PendingNotificationRemoval.disabled else { return .notDetermined }
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         return PushPermission(settings.authorizationStatus)
     }

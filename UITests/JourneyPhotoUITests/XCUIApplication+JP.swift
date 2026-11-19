@@ -13,6 +13,10 @@ extension XCUIApplication {
     static func jp() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["OS_ACTIVITY_DT_MODE"] = "NO"
+        // システムの通知の窓口に触らせない（`PendingNotificationRemoval.disabled`）。iOS 27.2 のシミュレーターで
+        // 窓口の最初の呼び出しが 44〜120秒戻らず、DM の試験のあとでアプリを終わらせる操作が 71〜216秒戻らない回があった
+        // （run 1594、1597）。UI テストは通知の許可を出さないので、確かめる画面は変わらない
+        app.launchArguments += ["-JPNoSystemNotifications", "YES"]
         return app
     }
 }

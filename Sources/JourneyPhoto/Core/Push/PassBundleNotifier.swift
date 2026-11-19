@@ -70,6 +70,7 @@ enum PassBundleNotifier {
             : nil
         // 前に積んだ取り消しが終わってから入れる（同じ識別子を消したあとに入れ直す順を崩さない・#647）
         await PendingNotificationRemoval.drained()
+        guard !PendingNotificationRemoval.disabled else { return }
         do {
             try await UNUserNotificationCenter.current()
                 .add(UNNotificationRequest(identifier: identifier, content: content, trigger: trigger))
