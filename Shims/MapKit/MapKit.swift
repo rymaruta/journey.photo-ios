@@ -25,6 +25,18 @@ public struct Map: View {
     public var body: Never { fatalError("模型") }
 }
 
+/// 地図の座標と画面の座標を行き来する（本物と同じ形・iOS 17）。`MapReader` の中で受け取る
+public struct MapProxy {
+    public func convert(_ coordinate: CLLocationCoordinate2D, to space: NamedCoordinateSpace) -> CGPoint? { nil }
+    public func convert(_ point: CGPoint, from space: NamedCoordinateSpace) -> CLLocationCoordinate2D? { nil }
+}
+
+/// 中の地図の `MapProxy` を渡す（本物と同じ形・iOS 17）
+public struct MapReader<Content: View>: View {
+    public init(@ViewBuilder content: @escaping (MapProxy) -> Content) {}
+    public var body: Never { fatalError("模型") }
+}
+
 /// 地図がどこを見ているか。
 public struct MapCameraPosition {
     public static let automatic = MapCameraPosition()

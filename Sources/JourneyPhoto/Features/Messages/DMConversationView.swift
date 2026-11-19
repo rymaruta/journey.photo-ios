@@ -487,8 +487,13 @@ struct DMConversationView: View {
                 threadWidth = width
             }
             .onAppear { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
-            .onChange(of: log.messages.count + log.outgoing.count) { _, _ in
-                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
+            .onChange(of: log.messages.count + log.outgoing.count) { old, new in
+                // 通が減ったとき（送信の取り消し）は動きを付けずに送る（`DMBottomScroll`・2026-11-18 判断）
+                if DMBottomScroll.animates(from: old, to: new) {
+                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
+                } else {
+                    proxy.scrollTo(Self.bottomId, anchor: .bottom)
+                }
             }
         }
         .frame(maxHeight: .infinity)
@@ -1068,6 +1073,8 @@ struct DMConversationView: View {
     /// 戻した文は欄に残す（サーバーで消えていたら次の読み直しで消え、文は失わない）
     private func unsend(_ message: DMMessage) async {
         guard let removed = log.unsend(message.id) else { return }
+        // 見張り（UI テストのときだけ）: 押した時点から数える。答えを待つ間に届いた読み直しで戻っても `readded` に出る
+        if PreviewSession.dm { unsendProbe.unsent.append(removed.id) }
         actionError = nil
         let before = draft
         let returned = DMUnsend.returnedText(removed, canSend: canSend).map { DMUnsend.draft(current: draft, returning: $0) }
@@ -1082,10 +1089,7 @@ struct DMConversationView: View {
         } catch {
             failure = error
         }
-        if PreviewSession.dm {
-            unsendProbe.unsent.append(removed.id)
-            unsendProbe.outcome = "\(DMUnsend.outcome(of: failure))"
-        }
+        if PreviewSession.dm { unsendProbe.outcome = "\(DMUnsend.outcome(of: failure))" }
         switch DMUnsend.outcome(of: failure) {
         case .gone:
             // 受信箱の抜粋（最後の一言）はサーバーが直した。控えも読み直す
@@ -1376,4 +1380,15 @@ private struct DMUnsendMenu<Menu: View>: ViewModifier {
             content
         }
     }
+}
+
+/// 会話の下へ送るときに動きを付けるか（2026-11-18 判断・送信の取り消しのあとに画面が約 60 秒固まった件）。
+///
+/// 取り消しで1通外れた直後に、動きつきで下へ送ると、同じ処理で欄に文を戻して入力の印を置くのでキーボードが上がり、
+/// 会話の一覧（`LazyVStack`）の配置が終わらなくなることがあった。主スレッドは 1 回の描画の中から戻らず、
+/// 積みは `GraphHost.flushTransactions` → `LazyVStack` の配置の繰り返しだけ（Mac の UI テストで、取り消しを
+/// くり返して数えた: 動きつきのまま 29 回中 5 回止まり、動きを外すと 22 回中 0 回）。
+/// 通が増えたとき（送った・届いた）は今までどおり動きを付ける
+enum DMBottomScroll {
+    static func animates(from old: Int, to new: Int) -> Bool { new > old }
 }

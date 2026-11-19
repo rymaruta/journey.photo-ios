@@ -164,6 +164,19 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで、投稿の入口の切り替えの段と「一覧を見ているか」の知らせの順を見えない要素 `createflow.probe` に出す
+    /// （Debug のみ・2026-11-18 確かめ役の指摘: ストーリーから投稿に替えたときに切り替えが消えるかを、推定でなく順で取る）。
+    /// `-JPCreateFlowProbe YES`。Release では必ず false
+    static let createFlowProbeKey = "JPCreateFlowProbe"
+
+    static var createFlowProbe: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: createFlowProbeKey)
+        #else
+        return false
+        #endif
+    }
+
     static var feedProbe: Bool {
         #if DEBUG
         return UserDefaults.standard.bool(forKey: feedProbeKey)
@@ -790,6 +803,35 @@ enum PreviewSession {
         #if DEBUG
         guard localBackend else { return false }
         return UserDefaults.standard.bool(forKey: followNoneKey)
+        #else
+        return false
+        #endif
+    }
+
+    /// 見本の通信（`localBackend`）で、お知らせ（`GET /user/notifications`）に**この端末で書いたコメント**を
+    /// 写真へのコメントの知らせとして返す（2026-11-18 案 B4・本文の1行と、押すとそのコメントで返信の欄が開くことを
+    /// UI テストで確かめる）。Release では必ず false
+    static let commentNoticeKey = "JPPreviewCommentNotice"
+
+    static var commentNotice: Bool {
+        #if DEBUG
+        guard localBackend else { return false }
+        return UserDefaults.standard.bool(forKey: commentNoticeKey)
+        #else
+        return false
+        #endif
+    }
+
+    /// 事実取り（2026-11-18・案 B4、Mac の回 1462）: 知らせから来たコメントへ**送るだけ**にして、返信の欄とキーボードを
+    /// 出さない。回 1462 で、着いた後のコメントが送られずに写真の頭のまま（y=736・キーボードの裏）だった。
+    /// 送る処理そのものが効いていないのか、キーボードを出したことで戻ったのかを分けて測るための印
+    /// （`testCommentNoticeScrollProbe`）。Release では必ず false
+    static let arrivalScrollOnlyKey = "JPPreviewArrivalScrollOnly"
+
+    static var arrivalScrollOnly: Bool {
+        #if DEBUG
+        guard localBackend else { return false }
+        return UserDefaults.standard.bool(forKey: arrivalScrollOnlyKey)
         #else
         return false
         #endif

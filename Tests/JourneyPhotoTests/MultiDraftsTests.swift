@@ -419,8 +419,9 @@ final class MultiDraftsTests: XCTestCase {
                     Text(L("下書き", "Draft"))
                         .font(JPFont.caption.weight(.semibold))
             """), "非公開の写真に「下書き」の札が残っている")
-        let sheet = try source("Features/Upload/PostSheet.swift")
-        XCTAssertTrue(sheet.contains("CountBadge(count: drafts)"), "「投稿する」のシートに件数バッジが無い")
+        // 2026-11-18（案 B1）: 「投稿する」のシートはやめ、件数は写真の一覧の上のチップ（真鍮のバッジ）
+        let parts = try source("Features/Common/LibraryPickParts.swift")
+        XCTAssertTrue(parts.contains("CountBadge(count: count)"), "写真の一覧の上の「下書き」に件数バッジが無い")
         let upload = try source("Features/Upload/UploadView.swift")
         XCTAssertTrue(upload.contains("draftsEntryRow"), "投稿の作成画面に「下書き n ›」が無い")
         XCTAssertTrue(upload.contains("hasSavedDraft: false"), "開いたときに本人の下書きを尋ねている（自動の書きかけだけに残す）")

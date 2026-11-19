@@ -50,3 +50,44 @@ enum UploadGrouping {
         groupId?.trimmingCharacters(in: .whitespaces).hasPrefix(tripPrefix) ?? false
     }
 }
+
+/// **何枚かの投稿は、撮影地・題・説明を1組だけ書く**（2026-11-18 owner 採用・案 B3「何枚かの投稿」）。
+///
+/// 既定を「1つの投稿」にし、欄は1組だけ出す。送るときに先頭の写真の値を**全部の写真に写す**
+/// （サーバーは前と同じく1枚ずつの行。写真1枚＝1ページのまま・`UploadViewModel.groupsAsOnePost` の注記）。
+/// 写真ごとに違う値を書きたい人は、畳んだ「写真ごとに書く ›」を開く。「それぞれ別の投稿」の切り替えは残す。
+///
+/// | 3枚 | 押す回数 | 欄 |
+/// |---|---|---|
+/// | 前（それぞれ別の投稿が既定） | 9 | 3組 |
+/// | いま（1つの投稿が既定） | 8 | 1組 |
+enum UploadSharedFields {
+
+    /// 3枚の投稿の押す回数（上の表・案 B3）
+    static let tapsBefore = 9
+    static let tapsShared = 8
+
+    /// 欄を1組だけにするか（まとめる・2枚以上・「写真ごとに書く」を開いていない）。
+    /// 🔴 **2枚目より後に本人が書いた値があれば1組にしない**（`hasOwnText`）——畳んで隠すと、送るときに先頭の値で
+    /// 上書きされて消える。ふつうの操作では起きない（下書きを戻す・切り替えるときに開く）が、どの道から来ても消さない
+    static func sharesFields(grouping: Bool, count: Int, perPhoto: Bool, ownText: Bool = false) -> Bool {
+        grouping && count > 1 && !perPhoto && !ownText
+    }
+
+    /// 🔴 **2枚目より後に、本人が書いた値があるか。** あれば欄を1組に畳まない（「写真ごとに書く」を開いたままにする）——
+    /// 畳むと書いた値が見えないまま、送るときに先頭の値で上書きされて消える。
+    /// 写真の位置から自動で入れた撮影地（`photoPlaceName` のまま）は本人が書いた値に数えない
+    static func hasOwnText(_ items: [PendingPhoto]) -> Bool {
+        guard let first = items.first else { return false }
+        return items.dropFirst().contains { item in
+            let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let caption = item.caption.trimmingCharacters(in: .whitespacesAndNewlines)
+            let place = item.location.trimmingCharacters(in: .whitespacesAndNewlines)
+            let auto = item.photoPlaceName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let ownTitle = !title.isEmpty && item.title != first.title
+            let ownCaption = !caption.isEmpty && item.caption != first.caption
+            let ownPlace = !place.isEmpty && place != auto && item.location != first.location
+            return ownTitle || ownCaption || ownPlace
+        }
+    }
+}

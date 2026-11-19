@@ -373,10 +373,10 @@ final class SNSShareReplyTests: XCTestCase {
         }
         XCTAssertEqual(opened.id, "p2")
         XCTAssertEqual(commentId, "c9")
-        // ふつうのコメントの知らせは今までどおり写真へ
+        // コメントの知らせも、コメントの id を持てばその位置へ（2026-11-18 案 B4・`CommentNoticeTests`）。持たない古い行は写真へ
         let plain = try JSONDecoder.api.decode(AppNotification.self,
-                                               from: Data(#"{"type":"comment","photoId":"p2","commentId":"c9"}"#.utf8))
-        guard case .photo = model.destination(for: plain) else { return XCTFail("コメントの知らせの行き先が変わった") }
+                                               from: Data(#"{"type":"comment","photoId":"p2"}"#.utf8))
+        guard case .photo = model.destination(for: plain) else { return XCTFail("コメントの id の無い知らせの行き先が変わった") }
 
         // 手元に無い（範囲を絞った人の写真）→ 押せる。押したら取り直して引き当てる
         model.setFeedForTesting([])

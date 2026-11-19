@@ -298,11 +298,13 @@ final class UsabilityWiringTests: XCTestCase {
     /// 写真の詳細: いいね・保存から「ログインする」、コメントの欄の代わりの1行、コメントの「…」
     func testPhotoDetailWiring() throws {
         let detail = try source("Features/PhotoDetail/PhotoDetailView.swift")
-        XCTAssertTrue(detail.contains("SignInPrompt.request(SignInPrompt.like, signUpReason: SignInPrompt.likeSignUp, userId: auth.userId, isResolving: auth.isResolving)"))
-        XCTAssertTrue(detail.contains("SignInPrompt.request(SignInPrompt.save, signUpReason: SignInPrompt.saveSignUp, userId: auth.userId, isResolving: auth.isResolving)"))
+        // 2026-11-16（使い勝手の見直し A4）: 確かめを挟まずに登録の側で開き、ログインできたら押した操作まで済ませる
+        XCTAssertTrue(detail.contains("signInOpen = SignInPrompt.direct(signUpReason: SignInPrompt.likeSignUp, followUp: .like(photoId: current.id),"))
+        XCTAssertTrue(detail.contains("signInOpen = SignInPrompt.direct(signUpReason: SignInPrompt.saveSignUp, followUp: .save(photoId: id),"))
+        XCTAssertTrue(detail.contains("signInOpen = SignInPrompt.direct(signUpReason: SignInPrompt.followSignUp, followUp: .follow(userId: userId),"))
         XCTAssertFalse(detail.contains(#"actionError = L("保存するにはログインしてください""#),
                        "保存の断りが赤字だけに戻っている")
-        XCTAssertTrue(detail.contains(".signInPrompt(ask: $signInAsk, open: $signInOpen)"))
+        XCTAssertTrue(detail.contains(".signInPrompt(ask: $signInAsk, open: $signInOpen, onSignedIn: { afterSignIn = $0 })"))
         XCTAssertTrue(detail.contains("SignInPrompt.showsCommentLine("))
         // 2026-11-15（札 #630）: コメントの1行は「新規登録」と「ログイン」の2つ（開く側を渡す）
         XCTAssertTrue(detail.contains("signInOpen = SignInRequest(reason: entry == .signUp ? SignInPrompt.commentSignUp : SignInPrompt.comment, entry: entry)"))

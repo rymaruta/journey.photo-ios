@@ -146,7 +146,8 @@ final class SheetSwipeGuardTests: XCTestCase {
         let bar = slice(upload, from: "private var submitBar: some View {", to: "/// 選んだ写真の帯")
         XCTAssertTrue(bar.contains(".jpPillButton(.primary)"), "主ボタンが白（写真のある画面の主）でない")
         XCTAssertTrue(bar.contains(".jpBottomBar()"), "板の下の帯（黒 55%＋ぼかし）でない")
-        XCTAssertTrue(bar.contains("Task { await model.submit() }"))
+        // 2026-11-18（案 B2）: 押したら裏の係に渡して閉じる
+        XCTAssertTrue(bar.contains("sendInBackground()"))
         XCTAssertTrue(bar.contains(".disabled(!model.canSubmit)"))
         XCTAssertTrue(bar.contains(".accessibilityIdentifier(\"upload.submit\")"), "UI テストが押す名前が無い")
         XCTAssertTrue(bar.contains("UploadSubmitBar.title(count: model.items.count)"))

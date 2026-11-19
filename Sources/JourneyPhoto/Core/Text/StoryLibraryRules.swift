@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
 
 /// ストーリーの「＋」で先に開く**最近の写真と動画の一覧**の決まり（札 #627・2026-11-15 判断）。
 ///
@@ -17,7 +20,10 @@ import Foundation
 /// - 一部だけ許可: 許された写真の一覧と、1行の「写真を増やす」
 /// - まだ聞いていない・許可していない: 今の写真選び（PHPicker・許可が要らない）と、1行の「すべての写真をここに並べる」
 ///
-/// 画面（`StoryLibraryGrid`・`StoryComposerView`）から**判断だけ**を出して試せるようにしたもの
+/// 画面（`LibraryGrid`・`StoryComposerView`・`UploadView`）から**判断だけ**を出して試せるようにしたもの。
+///
+/// 2026-11-18 判断（案 B1「投稿の入口」・owner 採用）: **投稿の入口も同じ一覧にした。** 名前はストーリーのまま
+/// （1.1.96 で作った決まり）だが、ここの決まりは投稿とストーリーで共通（印の上限だけ `limit` で渡す）
 enum StoryLibraryRules {
 
     // MARK: - 許可の段で出し方を決める
@@ -79,12 +85,25 @@ enum StoryLibraryRules {
     /// 数万枚を1つの格子に載せない（下まで指で送る人はいない・格子の行を作る数を抑える）
     static let maxItems = 3000
 
-    /// 列の数。**板の決まり: 格子は3列、アクセシビリティの大きさでは2列**（DesignSystem「格子は 3 列→2 列」）
-    static func columns(accessibilitySize: Bool) -> Int { accessibilitySize ? 2 : 3 }
+    /// 列の数。**2026-11-18 判断（owner 採用の模型 B1 どおり）: 4列、アクセシビリティの大きさでは3列。**
+    /// 板の決まり（DesignSystem「格子は 3 列→2 列」）とはずれるが、owner が採った模型の寸法を正とした。
+    /// 前は板の「格子は3列→2列」で3列だったが、投稿とストーリーで同じ一覧にしたとき、模型の4列にそろえた
+    /// （写真を選ぶ一覧は見比べる場所なので、1画面に並ぶ数を増やす。今のインスタも4列）
+    static func columns(accessibilitySize: Bool) -> Int { accessibilitySize ? 3 : 4 }
 
-    /// マスの縦横比（幅 ÷ 高さ）。**作る画面の写真の枠（およそ 390×610・0.64）に近い 2:3**——
-    /// マスで見た切り取りが、作る画面に入ったときとほぼ同じになる
-    static let cellAspect: Double = 2.0 / 3.0
+    /// マスの縦横比（幅 ÷ 高さ）。**2026-11-18 判断（owner 採用の模型 B1 どおり）: 正方形**（393pt 幅で 95×95）。
+    /// 前（1.1.96）はストーリーの作る画面の枠に近い 2:3 だったが、投稿の写真は縦横いろいろなので正方形にそろえた
+    static let cellAspect: Double = 1.0
+
+    /// カメラのマスの印の大きさ（案 B1: 30pt の白い印）
+    static let cameraIconSize: CGFloat = 30
+
+    /// 印を付けたマスの濃さ（案 B1: 75%）
+    static let markedOpacity: Double = 0.75
+
+    /// 「構図を重ねて撮る」のマスの名前（読み上げは長い方・マスの字は短い方）
+    static var compositionTitle: String { L("構図を重ねて撮る", "Composition guide") }
+    static var compositionShortTitle: String { L("構図", "Guide") }
 
     /// 一覧の1件（端末の写真ライブラリの1枚・1本）
     struct Item: Equatable, Identifiable {
@@ -144,21 +163,23 @@ enum StoryLibraryRules {
     }
 
     /// マスを押したときにすること。**読み込み中は何もしない**（2本の読み込みが混ざって並ぶ・`loadingPicks` の決まり）
-    static func tapAction(selecting: Bool, isMarked: Bool, markedCount: Int, loading: Bool) -> TapAction {
+    /// `limit` は印の上限（ストーリーは `StoryQueue.maxShots`、投稿は `UploadViewModel.maxSelection`）
+    static func tapAction(selecting: Bool, isMarked: Bool, markedCount: Int, loading: Bool,
+                          limit: Int = StoryQueue.maxShots) -> TapAction {
         guard !loading else { return .ignore }
         guard selecting else { return .open }
         if isMarked { return .toggle }
-        return markedCount < StoryQueue.maxShots ? .toggle : .ignore
+        return markedCount < limit ? .toggle : .ignore
     }
 
     /// 印を付ける・外した後の並び（**選んだ順**＝出る順。外したら詰める）
-    static func toggled(_ marked: [String], id: String) -> [String] {
+    static func toggled(_ marked: [String], id: String, limit: Int = StoryQueue.maxShots) -> [String] {
         if let index = marked.firstIndex(of: id) {
             var next = marked
             next.remove(at: index)
             return next
         }
-        guard marked.count < StoryQueue.maxShots else { return marked }
+        guard marked.count < limit else { return marked }
         return marked + [id]
     }
 

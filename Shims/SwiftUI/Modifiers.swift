@@ -545,6 +545,15 @@ public struct TapGesture: Gesture {
     public func onEnded(_ action: @escaping () -> Void) -> TapGesture { self }
 }
 
+/// 押した位置が読める押し（本物と同じ形・iOS 16）。地図の空いている所を押して札を閉じる（2026-11-16 A7）
+public struct SpatialTapGesture: Gesture {
+    public struct Value {
+        public var location: CGPoint { CGPoint(x: 0, y: 0) }
+    }
+    public init(count: Int = 1, coordinateSpace: NamedCoordinateSpace = .local) {}
+    public func onEnded(_ action: @escaping (Value) -> Void) -> SpatialTapGesture { self }
+}
+
 /// 長押し（本物と同じ形）。`sequenced(before:)` で「長押ししてから引く」にする（再生器・2026-10-28）
 public struct LongPressGesture: Gesture {
     public init(minimumDuration: Double = 0.5, maximumDistance: CGFloat = 10) {}
