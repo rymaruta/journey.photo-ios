@@ -5,7 +5,7 @@
 #     bash Tools/select-xcode.sh            # 入っている中でいちばん新しい Xcode
 #     bash Tools/select-xcode.sh 26.3.0     # この版（組んだ台と同じ版）。無ければ、いちばん新しいものにして警告
 #
-# 選び方は `ios-testflight.yml` の「Xcode を選ぶ（iOS 26 SDK が要る）」と同じ——版は `Xcode_26.3.0.app` の
+# 選び方は `ios-testflight.yml` の「Xcodeを選択（iOS 27 SDK）」と同じ——版は `Xcode_26.3.0.app` の
 # 名前から読む（`xcodebuild -version` を20回叩くと1つが落ちて段ごと死んだ・run 69）。
 # 組んだ台と流す台で Xcode が違うと、組んだ品が動かないことがある（ランナーの像の入れ替わりの間に起こりうる）。
 # だから組んだ台の版を受け取り、同じ版を選ぶ。

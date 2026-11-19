@@ -184,5 +184,5 @@ Swift の止まり（`fatalError`・配列の範囲外・`!` で nil）は `EXC_
 | ビルドを足したのに招待メールが来ない | **ビルドを足す前に出た招待が残っている**。グループ → テスター → 自分の行 →**「招待を再送信」**（2026-09-24 に実際にこれで解決） |
 | iPhone の TestFlight に出ない | **「メディアと購入」**のアカウントが招待したアドレスと同じか（設定 → 自分の名前 → メディアと購入）。**TestFlight が見るのは iCloud ではなくこちら** |
 | 普段の Apple アカウントと開発者アカウントが別 | **iPhone のアカウントは切り替えない。** 開発者側の「ユーザとアクセス」で普段のアドレスを招待（役割は App Manager か 管理者）→ 内部グループに入れる |
-| `Validation failed (409) SDK version issue` | **iOS 26 SDK（Xcode 26）以上でないと受け取られない**（2026-09 時点の Apple の要件）。ワークフローは入っている Xcode の最新を自動で選ぶ（`Xcode を選ぶ` の段） |
+| `Validation failed (409) SDK version issue` | **2027年4月から iOS 27 SDK（Xcode 27）以上でないと受け取られない**（ITMS-90725・2026-11-19 の警告。その前は iOS 26 SDK）。Xcode 27 が入っている台は `xcode-27` だけなので、Mac の job はその台で動かす（#647）。ワークフローは入っている Xcode の最新を自動で選ぶ（`Xcodeを選択（iOS 27 SDK）` の段） |
 | 上がっているのに実行が赤い（`missing required Beta App Information`） | `app-store-connect publish` の **`--testflight` は「外部テストの審査に出す」**。内部テストには要らない。外部に配るときだけ `betaReview: true`（先に「テスト情報」を埋める） |
