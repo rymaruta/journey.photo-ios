@@ -55,6 +55,13 @@ final class AccountSwitchTests: XCTestCase {
 @MainActor
 final class AccountLocalDataTests: XCTestCase {
 
+    // 一時の枝 claude/xcode27-ald-time だけ: setUp と本体の間の時間を見る（#647）
+    override func setUp() async throws {
+        ALDTimer.reset("setUp.async.enter \(name)")
+        try await super.setUp()
+        ALDTimer.mark("setUp.async.exit")
+    }
+
     private func suite() -> UserDefaults {
         UserDefaults(suiteName: UUID().uuidString)!
     }
@@ -67,8 +74,11 @@ final class AccountLocalDataTests: XCTestCase {
 
     /// 🔴 **退会した人の控えは全部消え、同じ端末の別の人の控えは残る。**
     func testRemovesOnlyThatPersonsData() async throws {
+        ALDTimer.mark("only.body.start")
         let defaults = suite()
+        ALDTimer.mark("only.suite()")
         let dir = try directory()
+        ALDTimer.mark("only.directory()")
         for id in ["gone", "stays"] {
             let likes = FavoritesStore(defaults: defaults); likes.use(userId: id); likes.set("p", favorite: true)
             let saves = SavedPhotosStore(defaults: defaults); saves.use(userId: id); saves.set("p", saved: true)
@@ -92,7 +102,9 @@ final class AccountLocalDataTests: XCTestCase {
             PendingVerificationStore(defaults: defaults).remember(email: "\(id)@example.test", username: "uuid-\(id)")
         }
 
+        ALDTimer.mark("only.setup.loop")
         AccountLocalData.remove(userId: "gone", username: "uuid-gone", defaults: defaults, draftDirectory: dir)
+        ALDTimer.mark("only.remove.return")
 
         func check(_ id: String, present: Bool, file: StaticString = #filePath, line: UInt = #line) {
             let says = present ? "消えてはいけない（別の人の控え）" : "退会したのに残っている"
@@ -135,13 +147,18 @@ final class AccountLocalDataTests: XCTestCase {
     /// 🔴 初期ユーザー章の全画面の控え(出した回数・終えた印)も、退会した人の分だけ消える
     /// (`FoundingGiftGate.shownKey` / `doneKey`・2026-11-07)。消す行を外すと、ここで残って落ちる
     func testRemovesFoundingGiftMarksOfThatPersonOnly() async throws {
+        ALDTimer.mark("gift.body.start")
         let defaults = suite()
+        ALDTimer.mark("gift.suite()")
         let dir = try directory()
+        ALDTimer.mark("gift.directory()")
         for id in ["gone", "stays"] {
             defaults.set(2, forKey: FoundingGiftGate.shownKey(id))
             defaults.set(true, forKey: FoundingGiftGate.doneKey(id))
         }
+        ALDTimer.mark("gift.defaults.set")
         AccountLocalData.remove(userId: "gone", username: nil, defaults: defaults, draftDirectory: dir)
+        ALDTimer.mark("gift.remove.return")
         XCTAssertNil(defaults.object(forKey: FoundingGiftGate.shownKey("gone")), "退会した人の出した回数が残っている")
         XCTAssertNil(defaults.object(forKey: FoundingGiftGate.doneKey("gone")), "退会した人の終えた印が残っている")
         XCTAssertNotNil(defaults.object(forKey: FoundingGiftGate.shownKey("stays")), "別の人の控えまで消した")

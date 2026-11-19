@@ -44,8 +44,9 @@ echo "シミュレータ: $DEVICE"
 # 長いテストを足して上限に当たったら、ここの数ではなく、そのテストの `executionTimeAllowance` を
 # 実測の2〜3倍で付ける（既定を上げると、詰まった1本を待つ時間が全部のテストで延びる）。
 # `Tools/check-config.py` が、この数・渡し方・全部撮る1本の指定を見張る
-UNIT_TIME_ALLOWANCE=60
-UNIT_TIME_MAXIMUM=60
+# 一時の枝 claude/xcode27-ald-time だけ: 時間を最後まで取るため 180 秒（#647）
+UNIT_TIME_ALLOWANCE=180
+UNIT_TIME_MAXIMUM=180
 UI_TIME_ALLOWANCE=300
 UI_TIME_MAXIMUM=1200
 
