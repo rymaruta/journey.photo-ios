@@ -31,6 +31,14 @@ struct LegalLinksView: View {
                     }
                     .buttonStyle(JPRowButtonStyle())
                     .accessibilityIdentifier("legal.source.\(source.id)")
+                    // 決まりの本文（CC BY 4.0）。説明のすぐ下に、別に押せる行で（行の中にリンクを入れ子にしない）
+                    if let license = source.license {
+                        Link(destination: license.url) {
+                            LegalLicenseRow(label: license.label)
+                        }
+                        .buttonStyle(JPRowButtonStyle())
+                        .accessibilityIdentifier("legal.license.\(source.id)")
+                    }
                 }
             }
         }
@@ -65,6 +73,30 @@ struct LegalLinkRow: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 13)
         .frame(minHeight: 54)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(L("ブラウザで開きます", "Opens in the browser"))
+    }
+}
+
+/// 出典の行の下の、決まりの本文へのリンク（真鍮の 12pt・下線・当たりは 44pt）
+struct LegalLicenseRow: View {
+    let label: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(WebTheme.accent)
+                .underline()
+            Image(systemName: "arrow.up.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(WebTheme.accent)
+                .accessibilityHidden(true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 44)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityHint(L("ブラウザで開きます", "Opens in the browser"))

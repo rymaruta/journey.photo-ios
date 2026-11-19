@@ -17,18 +17,30 @@ enum DataSources {
         let detail: String
         /// 出典の頁
         let url: URL
+        /// 決まりの本文（CC BY 4.0 など）。あれば行の下に押せるリンクとして出す
+        var license: License? = nil
     }
+
+    struct License: Equatable {
+        let label: String
+        let url: URL
+    }
+
+    /// CC BY 4.0 の本文（日本語の頁）
+    static let ccBy4 = License(label: L("CC BY 4.0 の本文", "CC BY 4.0 license"),
+                               url: URL(string: "https://creativecommons.org/licenses/by/4.0/deed.ja")!)
 
     static let all: [Source] = [
         Source(id: "ksj",
                title: L("国土数値情報（国土交通省）", "National Land Numerical Information (MLIT)"),
-               detail: L("市区町村役場の位置: 国土数値情報（市町村役場等及び公的集会施設データ）国土交通省、CC BY 4.0 を加工して作成",
-                         "Municipal office locations: adapted from National Land Numerical Information (Municipal Offices and Public Meeting Facilities), MLIT, CC BY 4.0"),
-               url: URL(string: "https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P05-2022.html")!),
+               detail: L("市区町村役場の位置: 「国土数値情報（市町村役場等及び公的集会施設データ）」（国土交通省）を加工して作成（CC BY 4.0）",
+                         "Municipal office locations: adapted from \"National Land Numerical Information (Municipal Offices and Public Meeting Facilities)\" (MLIT) (CC BY 4.0)"),
+               url: URL(string: "https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P05-2022.html")!,
+               license: ccBy4),
         Source(id: "soumu",
                title: L("総務省「全国地方公共団体コード」", "MIC Local Government Codes"),
-               detail: L("市区町村の名前と都道府県: 総務省「全国地方公共団体コード」（令和6年1月1日現在）、公共データ利用規約（第1.0版）を加工して作成",
-                         "Municipality names and prefectures: adapted from the Local Government Codes (as of January 1, 2024), Ministry of Internal Affairs and Communications, Public Data License 1.0"),
+               detail: L("市区町村の名前と都道府県: 「全国地方公共団体コード」（総務省、令和6年1月1日現在）を加工して作成（公共データ利用規約 第1.0版）",
+                         "Municipality names and prefectures: adapted from \"Local Government Codes\" (Ministry of Internal Affairs and Communications, as of January 1, 2024) (Public Data License 1.0)"),
                url: URL(string: "https://www.soumu.go.jp/denshijiti/code.html")!),
         Source(id: "naturalEarth",
                title: "Natural Earth",

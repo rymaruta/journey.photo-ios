@@ -634,6 +634,20 @@ enum ShareCardMap {
         return pieces.lazy.compactMap { prefecture(english: $0) }.first
     }
 
+    /// 共有カードの地図の県（**ピンと塗りの両方がこれで決める**・2026-11-19 確かめ役の指摘）。
+    /// `prefectureName(in:)` で取れなければ、区切りの無い和文の住所（「東京都新宿区西新宿2-8-1」「石川県金沢市 兼六園」）から
+    /// 47都道府県の正式名を探す（`RegionList.prefecture(inText:)`・いちばん前のもの。海外の「〜県」は47の名前に無いので拾わない）。
+    /// 前はピン（`SignatureShareCardRenderer.shareMapPoint`）だけが後者も見て、塗りは前者だけだったので、
+    /// 区切りの無い住所ではピンを打つのに県を塗らなかった
+    static func cardPrefecture(in text: String?) -> String? {
+        prefectureName(in: text) ?? RegionList.prefecture(inText: text)
+    }
+
+    /// 地図で塗る県の形（`CountryOutline.drawAtLocation` が使う）。県は `cardPrefecture(in:)`、形は `prefectureShape`
+    static func fillShape(place: String?, among prefectures: [Shape], latitude: Double, longitude: Double) -> Shape? {
+        prefectureShape(named: cardPrefecture(in: place), among: prefectures, latitude: latitude, longitude: longitude)
+    }
+
     /// 英語の県名（JIS の順・RegionList.prefectures と同じ並び）
     static let englishPrefectures = [
         "Hokkaido", "Aomori", "Iwate", "Miyagi", "Akita", "Yamagata", "Fukushima",

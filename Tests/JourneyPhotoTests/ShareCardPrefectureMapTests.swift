@@ -81,6 +81,54 @@ final class ShareCardPrefectureMapTests: XCTestCase {
         try assertPin(try credit(location: "金沢市, 石川県").mapCoordinate, at: try city("金沢市", "石川県"), "金沢市, 石川県")
     }
 
+    /// 投稿の共有カード（`Credit.mapCoordinate`）は市まで引く（`cityLevel: true`）。Linux でも見張れるよう、
+    /// 同梱の表を読まずに小さな表を渡す（点はわざと本物と違う値にして、表から来たと分かるようにする）
+    func testCreditPinsTheCityWithAGivenTable() throws {
+        let table = [MunicipalOffices.Entry(prefecture: "石川県", name: "金沢市", coords: Photo.Coords(lat: 36.111, lng: 136.222)),
+                     MunicipalOffices.Entry(prefecture: "東京都", name: "府中市", coords: Photo.Coords(lat: 35.111, lng: 139.222)),
+                     MunicipalOffices.Entry(prefecture: "広島県", name: "府中市", coords: Photo.Coords(lat: 34.111, lng: 133.222))]
+        try assertPin(try credit(location: "金沢市, 石川県").mapCoordinate(offices: table),
+                      at: Photo.Coords(lat: 36.111, lng: 136.222), "金沢市, 石川県")
+        try assertPin(try credit(location: "府中市, 広島県").mapCoordinate(offices: table),
+                      at: Photo.Coords(lat: 34.111, lng: 133.222), "府中市, 広島県")
+        // 表に無い市は県庁
+        try assertPin(try credit(location: "加賀市, 石川県").mapCoordinate(offices: table),
+                      at: try office("石川県"), "加賀市, 石川県")
+        // 座標のある写真は表を見ない
+        let withCoords = try credit(location: "金沢市, 石川県", coords: (36.5621, 136.6625)).mapCoordinate(offices: table)
+        XCTAssertEqual(withCoords?.latitude, 36.5)
+        XCTAssertEqual(withCoords?.longitude, 136.5)
+    }
+
+    /// ピンと塗りは同じ引き方で県を決める（`ShareCardMap.cardPrefecture`・2026-11-19 確かめ役の指摘）。
+    /// 区切りの無い住所でも、ピンを打った県が塗られる
+    func testPinAndFillUseTheSamePrefecture() throws {
+        let prefectures = try Self.shapes("japan-prefectures")
+        let cases: [(String, String)] = [
+            ("東京都新宿区西新宿2-8-1", "東京都"),
+            ("石川県金沢市 兼六園", "石川県"),
+            ("京都府京都市東山区", "京都府"),
+            ("金沢市, 石川県", "石川県"),
+            ("Kyoto, Kyoto Prefecture, Japan", "京都府"),
+        ]
+        for (raw, prefecture) in cases {
+            let c = try credit(location: raw)
+            let pin = try XCTUnwrap(c.mapCoordinate(offices: Self.offices), raw)
+            // 描く側と同じ文字（`drawAtLocation` に渡す placeText）
+            let placeText = (c.placeLines + [c.location ?? ""]).joined(separator: ", ")
+            XCTAssertEqual(ShareCardMap.cardPrefecture(in: placeText), prefecture, raw)
+            XCTAssertEqual(ShareCardMap.fillShape(place: placeText, among: prefectures,
+                                                  latitude: pin.latitude, longitude: pin.longitude)?.n, prefecture, raw)
+        }
+        // 海外の「〜県」は塗らない
+        XCTAssertNil(ShareCardMap.cardPrefecture(in: "イヴリーヌ県（フランス）"))
+        // 描く側がこの関数を使っている
+        let renderer = try String(contentsOf: Self.root.appendingPathComponent("Sources/JourneyPhoto/Services/SignatureShareCardRenderer.swift"),
+                                  encoding: .utf8)
+        XCTAssertTrue(renderer.contains("ShareCardMap.fillShape(place: place, among: prefectures,"))
+        XCTAssertTrue(renderer.contains("let prefecture = ShareCardMap.cardPrefecture(in: text)"))
+    }
+
     /// 同じ名前の市区町村は県と組み合わせて引く。県が分からず名前が重なるときは引かない
     func testSameNamedMunicipalitiesNeedThePrefecture() throws {
         let fuchuTokyo = try city("府中市", "東京都"), fuchuHiroshima = try city("府中市", "広島県")

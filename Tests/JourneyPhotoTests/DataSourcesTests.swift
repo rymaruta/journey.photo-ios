@@ -11,12 +11,18 @@ final class DataSourcesTests: XCTestCase {
         XCTAssertEqual(DataSources.all.map(\.id), ["ksj", "soumu", "naturalEarth"])
         let ksj = DataSources.all[0]
         XCTAssertEqual(ksj.title, "国土数値情報（国土交通省）")
+        // 加工したのはデータ（規約ではない）と読める形（2026-11-19 確かめ役の指摘）
         XCTAssertEqual(ksj.detail,
-                       "市区町村役場の位置: 国土数値情報（市町村役場等及び公的集会施設データ）国土交通省、CC BY 4.0 を加工して作成")
+                       "市区町村役場の位置: 「国土数値情報（市町村役場等及び公的集会施設データ）」（国土交通省）を加工して作成（CC BY 4.0）")
         XCTAssertEqual(ksj.url.host, "nlftp.mlit.go.jp")
+        // CC BY 4.0 の本文へのリンク（押せる形・`LegalLicenseRow`）
+        XCTAssertEqual(ksj.license?.url.absoluteString, "https://creativecommons.org/licenses/by/4.0/deed.ja")
+        XCTAssertEqual(ksj.license?.label, "CC BY 4.0 の本文")
         let soumu = DataSources.all[1]
         XCTAssertEqual(soumu.title, "総務省「全国地方公共団体コード」")
-        XCTAssertTrue(soumu.detail.contains("公共データ利用規約（第1.0版）を加工して作成"), soumu.detail)
+        XCTAssertEqual(soumu.detail,
+                       "市区町村の名前と都道府県: 「全国地方公共団体コード」（総務省、令和6年1月1日現在）を加工して作成（公共データ利用規約 第1.0版）")
+        XCTAssertNil(soumu.license)
         XCTAssertEqual(soumu.url.absoluteString, "https://www.soumu.go.jp/denshijiti/code.html")
         let ne = DataSources.all[2]
         XCTAssertEqual(ne.title, "Natural Earth")
@@ -49,6 +55,11 @@ final class DataSourcesTests: XCTestCase {
         XCTAssertTrue(view.contains(".foregroundStyle(WebTheme.accent)"), "リンクの字は真鍮")
         XCTAssertTrue(view.contains(".font(.caption)"), "説明は 12pt（caption）")
         XCTAssertTrue(view.contains(".frame(minHeight: 54)"), "行は 44pt 以上")
+        // 決まりの本文は出典の行とは別に押せるリンク（行の中に入れ子にしない）。当たりは 44pt
+        XCTAssertTrue(view.contains("if let license = source.license {"))
+        XCTAssertTrue(view.contains("Link(destination: license.url)"))
+        XCTAssertTrue(view.contains(".accessibilityIdentifier(\"legal.license.\\(source.id)\")"))
+        XCTAssertTrue(view.contains(".frame(minHeight: 44)"), "決まりの本文のリンクの当たりは 44pt")
         let terms = try XCTUnwrap(view.range(of: "legal.terms"))
         let sources = try XCTUnwrap(view.range(of: "SettingsGroup(L(\"データの出典\""))
         XCTAssertLessThan(terms.lowerBound, sources.lowerBound, "規約が上、出典が下")

@@ -5801,7 +5801,8 @@ final class ScreenshotTests: XCTestCase {
         }
         guard legal.isHittable else { return XCTFail("「利用規約、プライバシーポリシー」の行に届かない") }
         legal.tap()
-        for id in ["legal.terms", "legal.privacy", "legal.source.ksj", "legal.source.soumu", "legal.source.naturalEarth"] {
+        for id in ["legal.terms", "legal.privacy", "legal.source.ksj", "legal.license.ksj", "legal.source.soumu",
+                   "legal.source.naturalEarth"] {
             let row = app.descendants(matching: .any)[id].firstMatch
             guard row.waitForExistence(timeout: 10) else { return XCTFail("利用規約の画面に \(id) が無い") }
             XCTAssertGreaterThanOrEqual(row.frame.height, 44, "\(id) が 44pt 未満")

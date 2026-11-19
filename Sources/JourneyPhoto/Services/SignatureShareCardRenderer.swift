@@ -69,9 +69,12 @@ enum SignatureShareCardRenderer {
         /// 座標のある写真は今までどおり約50km単位に丸めた `coords`。座標の無い写真は、カードに出す撮影地の文字から
         /// 市区町村か都道府県の代表点（`shareMapPoint`）。
         /// 投稿の共有カードには場所の細かさの選びが無く、撮影地の2行目（市区町村）をいつも出すので、市まで引く
-        var mapCoordinate: CLLocationCoordinate2D? {
+        var mapCoordinate: CLLocationCoordinate2D? { mapCoordinate(offices: MunicipalOffices.bundled) }
+
+        /// `mapCoordinate` の中身。表を渡せるのは試験のため（Linux の `swift test` には同梱の表が無い）
+        func mapCoordinate(offices: [MunicipalOffices.Entry]) -> CLLocationCoordinate2D? {
             coords ?? SignatureShareCardRenderer.shareMapPoint(place: place ?? LocationMatch.shareCardPlace(location),
-                                                               location: location, cityLevel: true)
+                                                               location: location, cityLevel: true, offices: offices)
         }
     }
 
@@ -79,9 +82,9 @@ enum SignatureShareCardRenderer {
     /// 「金沢市, 石川県なら金沢市にピン」）。
     ///
     /// 2026-11-19 判断:
-    /// - 県は**カードに出す撮影地の文字**（2行の `place` と `location`）から `ShareCardMap.prefectureName(in:)` で引く
+    /// - 県は**カードに出す撮影地の文字**（2行の `place` と `location`）から `ShareCardMap.cardPrefecture(in:)` で引く
     ///   （地図の塗る県と同じ引き方・和文の「金沢市, 石川県」も英文の "Kanazawa, Ishikawa Prefecture, Japan" も取れる）。
-    ///   取れなければ `RegionList.prefecture(inText:)`（区切りの無い和文の住所）
+    ///   （取れなければ区切りの無い和文の住所から。地図の塗る県と同じ引き方）
     /// - 市区町村は、カードに出す撮影地の2行目（`place.secondary`。県が1行目に無い形では1行目）。
     ///   `cityLevel`（市まで出す選び）のときだけ、その市区町村の代表点＝役所・役場の位置（`MunicipalOffices`・同梱の表）。
     ///   同じ名前の市区町村は県と組み合わせて引き、県が分からず名前が重なるときは引かない。英語の市名（"Kanazawa"）は表に無いので県まで
@@ -96,9 +99,8 @@ enum SignatureShareCardRenderer {
                               offices: [MunicipalOffices.Entry] = MunicipalOffices.bundled) -> CLLocationCoordinate2D? {
         let text = ((place?.lines ?? []) + [location ?? ""]).filter { !$0.isEmpty }.joined(separator: ", ")
         guard !text.isEmpty else { return nil }
-        // 区切りの無い住所（「東京都新宿区西新宿2-8-1」「石川県金沢市 兼六園」）は欠片が県名と一致しないので、
-        // 47都道府県の正式名を文字の中から探す（いちばん前のもの・海外の「〜県」は47の名前に無いので拾わない）
-        let prefecture = ShareCardMap.prefectureName(in: text) ?? RegionList.prefecture(inText: text)
+        // 県は塗りと同じ引き方（`ShareCardMap.cardPrefecture`・区切りの無い和文の住所も取る）
+        let prefecture = ShareCardMap.cardPrefecture(in: text)
         if cityLevel, let place {
             let city = RegionList.prefectures.contains(place.primary) ? place.secondary : (place.secondary ?? place.primary)
             if let city, let office = MunicipalOffices.office(named: city, prefecture: prefecture, among: offices) {
@@ -575,9 +577,8 @@ enum SignatureShareCardRenderer {
             }
             // 日本だけ、撮影地の文字の県を塗る（海外は国の輪郭だけ）
             let prefecture = shape.n == "Japan"
-                ? ShareCardMap.prefectureShape(named: ShareCardMap.prefectureName(in: place),
-                                               among: prefectures,
-                                               latitude: pin.latitude, longitude: pin.longitude)
+                ? ShareCardMap.fillShape(place: place, among: prefectures,
+                                         latitude: pin.latitude, longitude: pin.longitude)
                 : nil
             draw(shape, prefecture: prefecture, pin: pin, in: rect, color: color, context: context)
         }
