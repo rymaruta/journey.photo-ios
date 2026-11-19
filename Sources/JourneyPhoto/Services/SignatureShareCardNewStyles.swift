@@ -183,7 +183,7 @@ extension SignatureShareCardRenderer {
             drawWordmarkRight(right: T.contentRight, centerY: layout.stubTop + 16, size: 28, color: .white)
             draw(ShareCardMap.Layout.siteAddress, at: CGPoint(x: T.contentRight - T.rightColumnWidth, y: layout.stubTop + 38),
                  maxWidth: T.rightColumnWidth, size: 18, color: brass, alignment: .right)
-            if let coordinate = credit.coords {
+            if let coordinate = credit.mapCoordinate {
                 let placeText = (credit.placeLines + [credit.location ?? ""]).joined(separator: ", ")
                 CountryOutline.drawAtLocation(pin: coordinate, place: placeText, in: layout.mapRect,
                                               color: brass, context: cg)

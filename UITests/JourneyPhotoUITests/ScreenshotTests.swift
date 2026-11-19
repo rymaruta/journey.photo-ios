@@ -5779,6 +5779,46 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "102i-使い方（アプリの中の Safari）")
     }
 
+    /// **データの出典**（2026-11-19・`LegalLinksView`・`DataSources`）: 設定 → 利用規約、プライバシーポリシー の下の
+    /// 「データの出典」に、国土数値情報・総務省のコード・Natural Earth の3行。行は必ずある——無ければ落とす。押せる行が 44pt 未満なら落とす
+    func testCapturesSettingsDataSources() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES"])
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return XCTFail("下の札が出ない") }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return }
+        let gear = app.buttons["設定"].firstMatch
+        guard gear.waitForExistence(timeout: 5) else { return XCTFail("設定の丸が無い") }
+        scrollTo(gear, in: app)
+        gear.tap()
+        let legal = app.buttons["settings.legal"].firstMatch
+        guard legal.waitForExistence(timeout: 10) else { return XCTFail("設定に「利用規約、プライバシーポリシー」の行が無い") }
+        var swipes = 0
+        while !legal.isHittable || legal.frame.maxY > app.windows.firstMatch.frame.maxY - 60, swipes < 10 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            swipes += 1
+        }
+        guard legal.isHittable else { return XCTFail("「利用規約、プライバシーポリシー」の行に届かない") }
+        legal.tap()
+        for id in ["legal.terms", "legal.privacy", "legal.source.ksj", "legal.license.ksj", "legal.source.soumu",
+                   "legal.source.naturalEarth"] {
+            let row = app.descendants(matching: .any)[id].firstMatch
+            guard row.waitForExistence(timeout: 10) else { return XCTFail("利用規約の画面に \(id) が無い") }
+            // 小数の誤差は許す（run 44448033816: CC BY 4.0 の行は minHeight 44 で、測った高さが 43.99999999999994。
+            // 画面の位置の引き算の丸めで、44pt 未満の当たりではない）
+            XCTAssertGreaterThanOrEqual(row.frame.height, 44 - 0.01, "\(id) が 44pt 未満（\(row.frame.height)）")
+        }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "102k-利用規約とデータの出典")
+        let last = app.descendants(matching: .any)["legal.source.naturalEarth"].firstMatch
+        if !last.isHittable || last.frame.maxY > app.windows.firstMatch.frame.maxY - 20 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "102l-データの出典（下）")
+        }
+    }
+
     /// **お知らせ（ベル）の歯車 → お知らせの入切だけの画面**（2026-11-18 判断・案 B7）。前は設定のいちばん上（Pro の節）が開いた。
     /// 開いた画面に入切があり、Pro の行（設定のいちばん上の画面にだけある）が無いことを確かめる
     func testCapturesNotificationSettingsFromBell() {
@@ -11993,7 +12033,8 @@ final class ScreenshotTests: XCTestCase {
 
     /// **共有カードの書き出し画像**（2026-11-14 owner「SNS に載せる、はちゃんとデザイン壊れてないか厳しく確認して」）。
     /// 見本の画面（`-JPPreviewShareCards YES`・`ShareCardGalleryPreview`）で、12 の型 × 3つの比 × ふつう／長い中身の
-    /// 書き出し画像を1枚ずつ撮る（画像の所だけ）。数で測る点検は単体テスト `ShareCardAuditTests`。出なければ撮らずに抜ける
+    /// 書き出し画像を1枚ずつ撮る（画像の所だけ）。数で測る点検は単体テスト `ShareCardAuditTests`。出なければ撮らずに抜ける。
+    /// 2026-11-19: 最後に、座標の無い写真（「金沢市, 石川県」・金沢市役所の位置にピン）を地図を描く5つの型 × 3つの比で撮る
     func testCapturesShareCardDesigns() {
         let app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
@@ -12004,7 +12045,7 @@ final class ScreenshotTests: XCTestCase {
         let next = app.buttons["shareCardGallery.next"].firstMatch
         guard label.waitForExistence(timeout: 30) else { return }
         var index = 0
-        while index < 80 {
+        while index < 100 {
             let ready = NSPredicate(format: "label BEGINSWITH %@ AND label ENDSWITH %@", "\(index) ", "ready")
             let done = XCTNSPredicateExpectation(predicate: ready, object: label)
             guard XCTWaiter().wait(for: [done], timeout: 30) == .completed, card.exists else { break }

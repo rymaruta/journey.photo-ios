@@ -73,6 +73,51 @@ enum SignatureShareCardRenderer {
         var placeLines: [String] {
             (place ?? LocationMatch.shareCardPlace(location))?.lines ?? []
         }
+
+        /// 地図を描く型（帯・溶かす・ラベル・表紙・切符）がピンを打つ点。無ければ地図を出さない。
+        /// 座標のある写真は今までどおり約50km単位に丸めた `coords`。座標の無い写真は、カードに出す撮影地の文字から
+        /// 市区町村か都道府県の代表点（`shareMapPoint`）。
+        /// 投稿の共有カードには場所の細かさの選びが無く、撮影地の2行目（市区町村）をいつも出すので、市まで引く
+        var mapCoordinate: CLLocationCoordinate2D? { mapCoordinate(offices: MunicipalOffices.bundled) }
+
+        /// `mapCoordinate` の中身。表を渡せるのは試験のため（Linux の `swift test` には同梱の表が無い）
+        func mapCoordinate(offices: [MunicipalOffices.Entry]) -> CLLocationCoordinate2D? {
+            coords ?? SignatureShareCardRenderer.shareMapPoint(place: place ?? LocationMatch.shareCardPlace(location),
+                                                               location: location, cityLevel: true, offices: offices)
+        }
+    }
+
+    /// 座標の無い写真の地図の点（2026-11-19 owner「位置情報が無い写真でも、撮影地の名前（県など）が分かるなら地図を出してほしい」
+    /// 「金沢市, 石川県なら金沢市にピン」）。
+    ///
+    /// 2026-11-19 判断:
+    /// - 県は**カードに出す撮影地の文字**（2行の `place` と `location`）から `ShareCardMap.cardPrefecture(in:)` で引く
+    ///   （地図の塗る県と同じ引き方・和文の「金沢市, 石川県」も英文の "Kanazawa, Ishikawa Prefecture, Japan" も取れる）。
+    ///   （取れなければ区切りの無い和文の住所から。地図の塗る県と同じ引き方）
+    /// - 市区町村は、カードに出す撮影地の2行目（`place.secondary`。県が1行目に無い形では1行目）。
+    ///   `cityLevel`（市まで出す選び）のときだけ、その市区町村の代表点＝役所・役場の位置（`MunicipalOffices`・同梱の表）。
+    ///   同じ名前の市区町村は県と組み合わせて引き、県が分からず名前が重なるときは引かない。英語の市名（"Kanazawa"）は表に無いので県まで
+    /// - 市区町村が引けなければ県の代表点＝都道府県庁のおおよその位置（`PassExchange.prefectureOffices` の表を使い回す）。
+    ///   北海道のような広い県でも代表点1つ
+    /// - **代表点はぼかさない**（座標のある写真の `approximateShareCoordinate` を通さない）。役所・県庁の位置はそれ自体が
+    ///   その市・県を表す粗い点で、写真を撮った所ではない。約50kmに丸めると、小さい市では隣の市や海の上に動き、
+    ///   県の境の近くの市では隣の県に入って塗る県と食い違う
+    /// - 選んだ細かさより細かい場所は出さない（県までなら県の代表点・市までなら市の代表点）
+    /// - 海外・県も市も分からない・撮影地が無い（出さない）ときは nil（地図を出さない）
+    static func shareMapPoint(place: LocationMatch.ShareCardPlace?, location: String?, cityLevel: Bool,
+                              offices: [MunicipalOffices.Entry] = MunicipalOffices.bundled) -> CLLocationCoordinate2D? {
+        let text = ((place?.lines ?? []) + [location ?? ""]).filter { !$0.isEmpty }.joined(separator: ", ")
+        guard !text.isEmpty else { return nil }
+        // 県は塗りと同じ引き方（`ShareCardMap.cardPrefecture`・区切りの無い和文の住所も取る）
+        let prefecture = ShareCardMap.cardPrefecture(in: text)
+        if cityLevel, let place {
+            let city = RegionList.prefectures.contains(place.primary) ? place.secondary : (place.secondary ?? place.primary)
+            if let city, let office = MunicipalOffices.office(named: city, prefecture: prefecture, among: offices) {
+                return CLLocationCoordinate2D(latitude: office.lat, longitude: office.lng)
+            }
+        }
+        guard let prefecture, let office = PassExchange.prefectureOffices[prefecture] else { return nil }
+        return CLLocationCoordinate2D(latitude: office.lat, longitude: office.lng)
     }
 
     /// SNSでは撮影地点をそのまま描かず、約50km単位の概略ピンにする。
@@ -301,10 +346,10 @@ enum SignatureShareCardRenderer {
                 // 2行の塊をアバターの縦の中心に置く
                 drawPlaceLines(placeLines,
                                at: CGPoint(x: L.placeX, y: layout.rowCenterY - L.placeHeight / 2),
-                               maxWidth: layout.placeWidth(hasMap: credit.coords != nil),
+                               maxWidth: layout.placeWidth(hasMap: credit.mapCoordinate != nil),
                                color: .white)
             }
-            if let coordinate = credit.coords {
+            if let coordinate = credit.mapCoordinate {
                 // 地図8（2026-11-04 owner 採用）: 264×296。帯が黒 70% になる所から撮影情報の 8 上まで。
                 // 塗る県は、撮影地の1行目（県）と元の文字の両方から引く（英語の "Kyoto" も表で和文へ）
                 let placeText = (placeLines + [credit.location ?? ""]).joined(separator: ", ")
@@ -319,7 +364,7 @@ enum SignatureShareCardRenderer {
                 cg.setStrokeColor(lineColor)
                 cg.setLineWidth(L.lineWidth)
                 cg.move(to: CGPoint(x: L.contentLeft, y: separatorY + L.lineWidth / 2))
-                cg.addLine(to: CGPoint(x: layout.separatorEndX(hasMap: credit.coords != nil),
+                cg.addLine(to: CGPoint(x: layout.separatorEndX(hasMap: credit.mapCoordinate != nil),
                                        y: separatorY + L.lineWidth / 2))
                 cg.strokePath()
             }
@@ -543,9 +588,8 @@ enum SignatureShareCardRenderer {
             }
             // 日本だけ、撮影地の文字の県を塗る（海外は国の輪郭だけ）
             let prefecture = shape.n == "Japan"
-                ? ShareCardMap.prefectureShape(named: ShareCardMap.prefectureName(in: place),
-                                               among: prefectures,
-                                               latitude: pin.latitude, longitude: pin.longitude)
+                ? ShareCardMap.fillShape(place: place, among: prefectures,
+                                         latitude: pin.latitude, longitude: pin.longitude)
                 : nil
             draw(shape, prefecture: prefecture, pin: pin, in: rect, color: color, context: context)
         }
@@ -701,7 +745,7 @@ enum SignatureShareCardRenderer {
                                   addressColor: .white)
 
             // 右: 地図。写真の上（黒 49〜88%）なので白で描く（2026-11-14・真鍮は黒地の上だけ）
-            if let coordinate = credit.coords {
+            if let coordinate = credit.mapCoordinate {
                 let placeText = (credit.placeLines + [credit.location ?? ""]).joined(separator: ", ")
                 CountryOutline.drawAtLocation(pin: coordinate, place: placeText,
                                               in: layout.mapRect, color: .white, context: cg)

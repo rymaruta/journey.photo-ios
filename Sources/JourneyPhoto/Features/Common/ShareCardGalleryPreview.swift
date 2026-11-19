@@ -31,17 +31,31 @@ struct ShareCardGalleryPreview: View {
         }
     }
 
-    /// 中身の見本（ふつう・長い名前と撮影地と機材）
-    enum Sample: String, CaseIterable { case normal, long }
+    /// 中身の見本（ふつう・長い名前と撮影地と機材・座標の無い写真）。
+    /// `nocoords` は座標が無く撮影地の文字が「金沢市, 石川県」の写真（2026-11-19: 金沢市の代表点に地図を出す・
+    /// `Credit.mapCoordinate`）。地図を描く型だけ撮る。前からの組み合わせの番号を変えないよう最後に足す
+    enum Sample: String, CaseIterable { case normal, long, nocoords }
+
+    /// 地図を描く型（`Credit.mapCoordinate` を読む型）
+    static let mapStyles: [SignatureShareCardRenderer.Style] = [.band, .fade, .label, .cover, .ticket]
 
     static let combos: [Combo] = Sample.allCases.flatMap { content in
-        ShareCardStyleChoice.order.flatMap { style in
+        ShareCardStyleChoice.order.filter { content != .nocoords || mapStyles.contains($0) }.flatMap { style in
             [SignatureShareCardRenderer.Ratio.portrait, .story, .square].map { Combo(style: style, ratio: $0, content: content) }
         }
     }
 
     static func credit(_ content: Sample) -> SignatureShareCardRenderer.Credit {
         let kyoto = CLLocationCoordinate2D(latitude: 35.0, longitude: 135.5)
+        if content == .nocoords {
+            // 本番と同じ組み立て（`PostedShareCardCredit.make`: location は shareCardDisplay、place は shareCardPlace）
+            let raw = "金沢市, 石川県"
+            return SignatureShareCardRenderer.Credit(
+                name: "旅灯", username: "tabi_akari", location: LocationMatch.shareCardDisplay(raw), coords: nil,
+                camera: "Sony α7 IV", lens: "FE 24-70mm F2.8 GM II", exposure: "1/250s", aperture: "f/8", iso: 100,
+                verified: true, proStyle: nil, early: false, badge: nil,
+                place: LocationMatch.shareCardPlace(raw))
+        }
         if content == .long {
             return SignatureShareCardRenderer.Credit(
                 name: "写真と旅とコーヒーを愛する週末フォトグラファー山田太郎", username: "weekend_photographer_yamada_taro",
