@@ -153,7 +153,7 @@ final class PushCenter: ObservableObject {
          defaults: UserDefaults = .standard,
          releaseDevice: @escaping @MainActor () -> Void = { UIApplication.shared.unregisterForRemoteNotifications() },
          readAuthorization: @escaping () async -> Bool = {
-             let settings = await UNUserNotificationCenter.current().notificationSettings()
+             let settings = await UNTrace.async("PushCenter.readAuthorization.notificationSettings") { await UNUserNotificationCenter.current().notificationSettings() }
              return settings.authorizationStatus == .authorized
                  || settings.authorizationStatus == .provisional
          },
@@ -464,8 +464,8 @@ final class PushCenter: ObservableObject {
     /// 期限切れの後に前の人の通知の本文が通知センターに残った）
     func clearPreviousUserTraces() async {
         let center = UNUserNotificationCenter.current()
-        try? await center.setBadgeCount(0)
-        center.removeAllDeliveredNotifications()
+        try? await UNTrace.async("PushCenter.clearPreviousUserTraces.setBadgeCount") { try await center.setBadgeCount(0) }
+        UNTrace.sync("PushCenter.clearPreviousUserTraces.removeAllDelivered") { center.removeAllDeliveredNotifications() }
         // 端末の中で予約した見頃のお知らせも消す（前の人の行きたい場所の名前で鳴らさない）。
         // **スケジューラーを通す**——直接消すと覚えている中身が残り、次の人の同じ中身を入れ直さなかった
         await SeasonReminderScheduler.shared.reschedule(nil, allowed: false)
@@ -480,16 +480,16 @@ final class PushCenter: ObservableObject {
 
     /// アイコンの数字を置く（`AppBadge.count` で数えた値）
     func setBadge(_ count: Int) async {
-        try? await UNUserNotificationCenter.current().setBadgeCount(max(0, count))
+        try? await UNTrace.async("PushCenter.setBadge.setBadgeCount") { try await UNUserNotificationCenter.current().setBadgeCount(max(0, count)) }
     }
 
     /// 読んだ会話のメッセージの通知を、通知センターから消す（`AppBadge.deliveredIds`）
     func removeDelivered(conversationId: String) async {
         let center = UNUserNotificationCenter.current()
-        let delivered = await center.deliveredNotifications()
+        let delivered = await UNTrace.async("PushCenter.removeDelivered.deliveredNotifications") { await center.deliveredNotifications() }
         let ids = AppBadge.deliveredIds(delivered.map { ($0.request.identifier, $0.request.content.userInfo) },
                                         conversationId: conversationId)
-        if !ids.isEmpty { center.removeDeliveredNotifications(withIdentifiers: ids) }
+        if !ids.isEmpty { UNTrace.sync("PushCenter.removeDelivered.removeDelivered") { center.removeDeliveredNotifications(withIdentifiers: ids) } }
     }
 
     private func setEnabled(_ value: Bool) {

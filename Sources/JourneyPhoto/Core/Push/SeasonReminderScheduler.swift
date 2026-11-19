@@ -19,8 +19,8 @@ final class SeasonReminderScheduler {
     /// 消えたのに「入れてある」と覚えて二度と入れ直さなかった（5c79dfd のレビュー）
     private var tail: Task<Void, Never>?
 
-    init(add: @escaping (UNNotificationRequest) async throws -> Void = { try await UNUserNotificationCenter.current().add($0) },
-         removePending: @escaping ([String]) -> Void = { UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: $0) }) {
+    init(add: @escaping (UNNotificationRequest) async throws -> Void = { req in try await UNTrace.async("SeasonReminderScheduler.add") { try await UNUserNotificationCenter.current().add(req) } },
+         removePending: @escaping ([String]) -> Void = { ids in UNTrace.sync("SeasonReminderScheduler.removePending") { UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids) } }) {
         self.add = add
         self.removePending = removePending
     }

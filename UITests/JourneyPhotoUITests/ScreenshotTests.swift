@@ -10329,6 +10329,9 @@ final class ScreenshotTests: XCTestCase {
         // 止まっている所を取るため、主スレッドの積みを 0.3 秒ごとにファイルへ書かせる（`PerfMainSampler`・Debug のみ）
         let samplePath = Self.mainSamplePath("dm")
         app.launchArguments += ["-JPPreviewPerfProbe", "YES", "-JPMainSampleFile", samplePath]
+        // 一時の枝 claude/xcode27-dm-time だけ: 通知の窓口を呼んだ時間（`UNTrace`）と、問い合わせの時間・要素の数（#647）
+        let unPath = Self.mainSamplePath("dm-un")
+        app.launchArguments += ["-JPUNTraceFile", unPath]
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -10340,6 +10343,7 @@ final class ScreenshotTests: XCTestCase {
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
         guard app.tabBars.firstMatch.waitForExistence(timeout: 20) else { return }
+        Self.logDMTrace(app, samplePath, unPath, label: "T1 タブが出たあと")
 
         // 見出しの吹き出し（未読の点つき）。帯の寸法も文で残す
         let bubble = app.buttons["header.messages"].firstMatch
@@ -10347,10 +10351,17 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 2)
         shootHeaderBand(app, tab: "86m-メッセージ（見出しの吹き出し）")
         XCTAssertGreaterThanOrEqual(bubble.frame.height, 44, "吹き出しの当たりが 44pt 未満")
+        Self.logDMTrace(app, samplePath, unPath, label: "T2 吹き出しを押す前")
+        let tapStart = Date()
         bubble.tap()
+        print("XCTQ T3 吹き出しの tap: ms=\(Int(Date().timeIntervalSince(tapStart) * 1000))")
 
         let inbox = app.descendants(matching: .any)["dm.inbox"].firstMatch
-        guard inbox.waitForExistence(timeout: 15) else {
+        let inboxStart = Date()
+        let inboxFound = inbox.waitForExistence(timeout: 15)
+        print("XCTQ T4 受信箱の waitForExistence: found=\(inboxFound) ms=\(Int(Date().timeIntervalSince(inboxStart) * 1000))")
+        Self.logDMTrace(app, samplePath, unPath, label: "T5 受信箱のあと")
+        guard inboxFound else {
             shoot(app, "86m1-メッセージ（受信箱が出ない）")
             return
         }
@@ -10398,8 +10409,15 @@ final class ScreenshotTests: XCTestCase {
         // 会話（ストーリーへの返信から始まった・未読あり）→ URL を送って断られる
         if openThread(app, named: "夕焼けの人") {
             shoot(app, "86m4-メッセージ（会話）")
+            Self.logDMTrace(app, samplePath, unPath, label: "T6 夕焼けの人の会話")
             let field = app.descendants(matching: .any)["dm.field"].firstMatch
-            if field.waitForExistence(timeout: 5), field.isHittable {
+            let fieldStart = Date()
+            let fieldFound = field.waitForExistence(timeout: 5)
+            print("XCTQ T7 dm.field の waitForExistence: found=\(fieldFound) ms=\(Int(Date().timeIntervalSince(fieldStart) * 1000))")
+            let hitStart = Date()
+            let fieldHittable = fieldFound && field.isHittable
+            print("XCTQ T8 dm.field の isHittable: \(fieldHittable) ms=\(Int(Date().timeIntervalSince(hitStart) * 1000))")
+            if fieldHittable {
                 field.tap()
                 field.typeText("ここで撮りました https://example.com/spot")
                 let send = app.buttons["dm.send"].firstMatch
@@ -10851,6 +10869,30 @@ final class ScreenshotTests: XCTestCase {
     /// 止まりの中身（2026-11-16・統合の枝の run 1439）。主スレッドの返事が遅い行に出る段を、**このアプリの段に限らず**
     /// 多い順に 30 まで（SwiftUI の配置のどこで回っているか）と、遅い行の全文を 2 行（最初と真ん中）。
     /// 会話の画面が書く回数のファイル（`.dm`・`DMStallProbe`）の最後の 6 行も出す。どれも画面の木は読まない
+    nonisolated(unsafe) static var dmTracePrinted = 0
+
+    /// 一時の枝 claude/xcode27-dm-time だけ: 主スレッドの記録・通知の窓口の記録・要素の数と、それを数える問い合わせの時間（#647）
+    static func logDMTrace(_ app: XCUIApplication, _ samplePath: String, _ unPath: String, label: String) {
+        logMainSamples(samplePath, label: label)
+        logStallDetail(samplePath, label: label)
+        // 前回から増えた行のうち、主スレッドの返事が遅い行（pending・200ms 以上）を、時刻とこのアプリの段の上位3つで
+        let lines = ((try? String(contentsOfFile: samplePath, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init)
+        for line in lines.dropFirst(dmTracePrinted) {
+            guard let ping = line.components(separatedBy: "ping=").dropFirst().first?.split(separator: " ").first,
+                  ping == "pending" || (Int(ping) ?? 0) >= 200 else { continue }
+            let wall = line.components(separatedBy: "wall=").dropFirst().first?.split(separator: " ").first ?? "?"
+            let frames = (line.components(separatedBy: " | ").dropFirst().first ?? "").components(separatedBy: " ; ")
+                .filter { $0.hasPrefix("JourneyPhoto") }.prefix(3).map { String($0.prefix(140)) }
+            print("SLOW \(label): wall=\(wall) ping=\(ping) \(frames.joined(separator: " <- "))")
+        }
+        dmTracePrinted = lines.count
+        let un = (try? String(contentsOfFile: unPath, encoding: .utf8)) ?? "読めない"
+        for line in un.split(separator: "\n") { print("UNTRACE \(label): \(line)") }
+        let started = Date()
+        let count = app.descendants(matching: .any).count
+        print("XCTQ \(label): elements=\(count) ms=\(Int(Date().timeIntervalSince(started) * 1000))")
+    }
+
     static func logStallDetail(_ path: String, label: String) {
         let text = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
         let lines = text.split(separator: "\n").map(String.init)

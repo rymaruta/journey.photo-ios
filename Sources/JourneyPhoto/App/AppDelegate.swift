@@ -24,7 +24,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                      didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // **押したときの行き先のために、自分を受け手にしておく。**
         // 許可を取るのは設定画面（`PushCenter.enable`）——起動時に聞かない
-        UNUserNotificationCenter.current().delegate = self
+        UNTrace.sync("AppDelegate.delegate=self") { UNUserNotificationCenter.current().delegate = self }
         // **クラッシュ・ハング・起動時間の診断を受け取って端末のログに出す**（2026-11-07・`MetricKitReceiver`）。
         // OS は起動の早い時期に登録した購読者へ届けるので、ここで登録する。サーバーには送らない
         MetricKitReceiver.shared.start()

@@ -29,7 +29,7 @@ enum PushPermission: Equatable {
 
     /// システムの許可を読む（`PushCenter` の既定）
     static func system() async -> PushPermission {
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        let settings = await UNTrace.async("PushPermission.system.notificationSettings") { await UNUserNotificationCenter.current().notificationSettings() }
         return PushPermission(settings.authorizationStatus)
     }
 }
