@@ -5773,6 +5773,43 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "102i-使い方（アプリの中の Safari）")
     }
 
+    /// **データの出典**（2026-11-19・`LegalLinksView`・`DataSources`）: 設定 → 利用規約、プライバシーポリシー の下の
+    /// 「データの出典」に、国土数値情報・総務省のコード・Natural Earth の3行。行は必ずある——無ければ落とす。押せる行が 44pt 未満なら落とす
+    func testCapturesSettingsDataSources() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES"])
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return XCTFail("下の札が出ない") }
+        tabBar.buttons.element(boundBy: 4).tap()
+        guard app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 15) else { return }
+        let gear = app.buttons["設定"].firstMatch
+        guard gear.waitForExistence(timeout: 5) else { return XCTFail("設定の丸が無い") }
+        scrollTo(gear, in: app)
+        gear.tap()
+        let legal = app.buttons["settings.legal"].firstMatch
+        guard legal.waitForExistence(timeout: 10) else { return XCTFail("設定に「利用規約、プライバシーポリシー」の行が無い") }
+        var swipes = 0
+        while !legal.isHittable || legal.frame.maxY > app.windows.firstMatch.frame.maxY - 60, swipes < 10 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            swipes += 1
+        }
+        guard legal.isHittable else { return XCTFail("「利用規約、プライバシーポリシー」の行に届かない") }
+        legal.tap()
+        for id in ["legal.terms", "legal.privacy", "legal.source.ksj", "legal.source.soumu", "legal.source.naturalEarth"] {
+            let row = app.descendants(matching: .any)[id].firstMatch
+            guard row.waitForExistence(timeout: 10) else { return XCTFail("利用規約の画面に \(id) が無い") }
+            XCTAssertGreaterThanOrEqual(row.frame.height, 44, "\(id) が 44pt 未満")
+        }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "102j-利用規約とデータの出典")
+        let last = app.descendants(matching: .any)["legal.source.naturalEarth"].firstMatch
+        if !last.isHittable || last.frame.maxY > app.windows.firstMatch.frame.maxY - 20 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "102k-データの出典（下）")
+        }
+    }
+
     /// **旅のトランク**（Pro の見本）: トランク → 手に取って回す → 手持ち（選んだ）→ 作り直し →
     /// 型 → 特別なトランク。出なければ撮らずに抜ける。**出たのに押せる所が 44pt 未満なら落とす**
     func testCapturesTrunk() {
