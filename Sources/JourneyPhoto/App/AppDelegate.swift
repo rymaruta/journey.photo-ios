@@ -22,6 +22,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        // 一時の枝 claude/xcode27-dm-time だけ: UI テストが `-JPStdioFile <path>` を渡したら、標準出力と標準エラーをファイルへ（#647）。
+        // 書いた量を数え、詰まりを外したときに画面の問い合わせの時間が変わるかを見る
+        if let path = UserDefaults.standard.string(forKey: "JPStdioFile"), !path.isEmpty {
+            _ = freopen(path, "a", stderr)
+            _ = freopen(path, "a", stdout)
+        }
         // **押したときの行き先のために、自分を受け手にしておく。**
         // 許可を取るのは設定画面（`PushCenter.enable`）——起動時に聞かない
         UNTrace.sync("AppDelegate.delegate=self") { UNUserNotificationCenter.current().delegate = self }

@@ -10332,6 +10332,9 @@ final class ScreenshotTests: XCTestCase {
         // 一時の枝 claude/xcode27-dm-time だけ: 通知の窓口を呼んだ時間（`UNTrace`）と、問い合わせの時間・要素の数（#647）
         let unPath = Self.mainSamplePath("dm-un")
         app.launchArguments += ["-JPUNTraceFile", unPath]
+        let stdioPath = Self.mainSamplePath("dm-stdio")
+        app.launchArguments += ["-JPStdioFile", stdioPath]
+        Self.dmStdioPath = stdioPath
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -10870,6 +10873,7 @@ final class ScreenshotTests: XCTestCase {
     /// 多い順に 30 まで（SwiftUI の配置のどこで回っているか）と、遅い行の全文を 2 行（最初と真ん中）。
     /// 会話の画面が書く回数のファイル（`.dm`・`DMStallProbe`）の最後の 6 行も出す。どれも画面の木は読まない
     nonisolated(unsafe) static var dmTracePrinted = 0
+    nonisolated(unsafe) static var dmStdioPath = ""
 
     /// 一時の枝 claude/xcode27-dm-time だけ: 主スレッドの記録・通知の窓口の記録・要素の数と、それを数える問い合わせの時間（#647）
     static func logDMTrace(_ app: XCUIApplication, _ samplePath: String, _ unPath: String, label: String) {
@@ -10888,6 +10892,16 @@ final class ScreenshotTests: XCTestCase {
         dmTracePrinted = lines.count
         let un = (try? String(contentsOfFile: unPath, encoding: .utf8)) ?? "読めない"
         for line in un.split(separator: "\n") { print("UNTRACE \(label): \(line)") }
+        // アプリが標準出力・標準エラーに書いた量（ファイルへ向けた分）と、多い行の上位5つ
+        let stdio = (try? String(contentsOfFile: dmStdioPath, encoding: .utf8)) ?? ""
+        let stdioLines = stdio.split(separator: "\n")
+        print("STDIO \(label): bytes=\(stdio.utf8.count) lines=\(stdioLines.count)")
+        var kinds: [String: Int] = [:]
+        for line in stdioLines {
+            let body = line.components(separatedBy: "] ").dropFirst().joined(separator: "] ")
+            kinds[String((body.isEmpty ? String(line) : body).prefix(60)), default: 0] += 1
+        }
+        for (kind, n) in kinds.sorted(by: { $0.value > $1.value }).prefix(5) { print("STDIO \(label): \(n)x \(kind)") }
         let started = Date()
         let count = app.descendants(matching: .any).count
         print("XCTQ \(label): elements=\(count) ms=\(Int(Date().timeIntervalSince(started) * 1000))")

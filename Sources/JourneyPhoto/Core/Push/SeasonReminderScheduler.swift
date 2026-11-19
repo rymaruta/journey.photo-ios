@@ -12,7 +12,7 @@ final class SeasonReminderScheduler {
     static let shared = SeasonReminderScheduler()
 
     private let add: (UNNotificationRequest) async throws -> Void
-    private let removePending: ([String]) -> Void
+    private let removePending: ([String]) async -> Void
     /// 最後に入れた中身（同じなら入れ直さない）。nil は「入れていない」
     private(set) var scheduled: SeasonReminder.Plan?
     /// 最後に積んだ入れ替え。**入れ替えは1本ずつ順に**——重なると、古い回の後始末が新しい回の予約を消し、
@@ -20,7 +20,12 @@ final class SeasonReminderScheduler {
     private var tail: Task<Void, Never>?
 
     init(add: @escaping (UNNotificationRequest) async throws -> Void = { req in try await UNTrace.async("SeasonReminderScheduler.add") { try await UNUserNotificationCenter.current().add(req) } },
-         removePending: @escaping ([String]) -> Void = { ids in UNTrace.sync("SeasonReminderScheduler.removePending") { UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids) } }) {
+         removePending: @escaping ([String]) async -> Void = { ids in
+             // 一時の枝: 主スレッドの外で消し、消し終わるのを待ってから add に進む（#647）
+             await Task.detached(priority: .utility) {
+                 UNTrace.sync("SeasonReminderScheduler.removePending") { UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids) }
+             }.value
+         }) {
         self.add = add
         self.removePending = removePending
     }
@@ -40,12 +45,12 @@ final class SeasonReminderScheduler {
         guard allowed, let wanted = plan else {
             // **入れない回は毎回消す**（安い）。覚えている中身はメモリだけなので、起動し直したあと
             // 「前に入れていない」と思い込んで、ログアウト・通知オフの前に入れた予約を残していた
-            removePending([SeasonReminder.identifier])
+            await removePending([SeasonReminder.identifier])
             scheduled = nil
             return
         }
         guard wanted != scheduled else { return }
-        removePending([SeasonReminder.identifier])
+        await removePending([SeasonReminder.identifier])
         scheduled = nil
         let content = UNMutableNotificationContent()
         content.title = wanted.title
