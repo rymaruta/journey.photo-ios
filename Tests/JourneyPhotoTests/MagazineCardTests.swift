@@ -142,6 +142,13 @@ final class MagazineCardTests: XCTestCase {
         // ストーリーの返信欄（下 10%）に写真も置かない
         XCTAssertEqual(M.Frame.story.photoFloor, 1920 * 0.9, accuracy: 0.001)
         XCTAssertEqual(M.Frame.post(.story), .story)
+        // 投稿も写真の下に左右と同じ 72 を残す（Mac run 1557 の絵で、正方形の写真が下の端に付いていた）
+        XCTAssertEqual(M.Frame.post(.portrait).photoFloor, 1350 - 72, accuracy: 0.001)
+        XCTAssertEqual(M.Frame.post(.square).photoFloor, 1080 - 72, accuracy: 0.001)
+        for aspect in [CGFloat(0.75), 0.5, 1.5] {   // 全面に敷かない形
+            let l = M.layout(aspect: aspect, in: .post(.square), head: M.Head(titleSize: 76, titleLines: 1, hasSub: true))
+            XCTAssertLessThanOrEqual(l.photo.maxY, 1080 - 72 + 0.001, "\(aspect)")
+        }
     }
 
     /// 全面のときの題の置き場: 下の端なら撮影地の行の下端が字の下端

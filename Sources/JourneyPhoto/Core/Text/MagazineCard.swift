@@ -107,8 +107,12 @@ enum MagazineCard {
     enum Backdrop {
         static let overscan: CGFloat = 1.15
         static let dim: Double = 0.32
-        /// 縮める幅の段（18 → 72 幅に縮めて広げる・模型の `softCopy`）
-        static let steps: [CGFloat] = [18, 72]
+        /// ぼかしの強さ（地の幅に対するガウスのぼかしの σ の割合）と、ぼかす前に縮める割合。
+        /// **2026-11-18 判断（Mac run 1557 の絵）:** 模型の「18 → 72 幅に縮めて広げる」を写したら、余白が 18 の格子の
+        /// モザイクになった（縦長 3:4 のストーリー・1:1 の投稿の左右）。縮めて広げるのをやめ、4 分の 1 の大きさで
+        /// ガウスのぼかしをかけてから広げる（広げ方に依らずなめらか）。σ は地の幅の 3%（模型の 18 幅の粗さに近い）
+        static let sigmaFraction: CGFloat = 0.03
+        static let workScale: CGFloat = 0.25
     }
 
     // MARK: - 字の影（面を暗くしない）
@@ -172,8 +176,10 @@ enum MagazineCard {
         static func post(_ ratio: SignatureShareCardRenderer.Ratio) -> Frame {
             if ratio == .story { return story }
             let height = (MagazineCard.width / CGFloat(ratio.rawValue)).rounded()
+            // **2026-11-18 判断（Mac run 1557 の絵）:** 写真の床を絵の下端にすると、撮影の値を上に回した形（1:1・4:5 の正方形の写真）で
+            // 写真が下の端に付き、左右だけ余白がある崩れた形になった。投稿も下に左右と同じ 72 を残す
             return Frame(height: height, textTop: MagazineCard.margin, textBottom: height - MagazineCard.margin,
-                         photoFloor: height, isStory: false)
+                         photoFloor: height - MagazineCard.margin, isStory: false)
         }
 
         /// 絵の幅 ÷ 高さ

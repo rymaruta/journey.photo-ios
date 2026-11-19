@@ -1,6 +1,7 @@
 #if !os(Linux)
 import UIKit
 import CoreText
+import CoreImage
 
 /// 共有の絵「雑誌」を描く（寸法・置き方・字の中身は `MagazineCard`）。ストーリーと投稿の両方から呼ぶ。
 ///
@@ -91,9 +92,9 @@ enum MagazineCardRenderer {
         UIColor.black.setFill()
         cg.fill(canvas)
         if !layout.full {
-            if let soft = softened(photo) {
-                let scale = max(M.width / photo.size.width, frame.height / photo.size.height) * M.Backdrop.overscan
-                let w = photo.size.width * scale, h = photo.size.height * scale
+            let scale = max(M.width / photo.size.width, frame.height / photo.size.height) * M.Backdrop.overscan
+            let w = photo.size.width * scale, h = photo.size.height * scale
+            if let soft = softened(photo, size: CGSize(width: w, height: h)) {
                 UIImage(cgImage: soft).draw(in: CGRect(x: (M.width - w) / 2, y: (frame.height - h) / 2, width: w, height: h))
             }
             UIColor(white: 0, alpha: CGFloat(M.Backdrop.dim)).setFill()
@@ -377,21 +378,25 @@ enum MagazineCardRenderer {
         return values
     }
 
-    /// ぼかした写真（縮めて広げる・模型の `softCopy`。18 → 72 幅）
-    static func softened(_ photo: UIImage) -> CGImage? {
-        var current = photo
-        for step in M.Backdrop.steps {
-            let source = current
-            let size = CGSize(width: step, height: max(2, (step * source.size.height / source.size.width).rounded()))
-            let format = UIGraphicsImageRendererFormat()
-            format.scale = 1
-            format.opaque = true
-            current = UIGraphicsImageRenderer(size: size, format: format).image { context in
-                context.cgContext.interpolationQuality = .high
-                source.draw(in: CGRect(origin: .zero, size: size))
-            }
+    /// ぼかした写真。地の大きさ（`size`）の 4 分の 1 に縮め、ガウスのぼかし（σ = 地の幅の 3%）をかける（端は伸ばして暗くしない）
+    static func softened(_ photo: UIImage, size: CGSize) -> CGImage? {
+        let small = CGSize(width: max(2, (size.width * M.Backdrop.workScale).rounded()),
+                           height: max(2, (size.height * M.Backdrop.workScale).rounded()))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let base = UIGraphicsImageRenderer(size: small, format: format).image { _ in
+            photo.draw(in: CGRect(origin: .zero, size: small))
         }
-        return current.cgImage
+        guard let cg = base.cgImage else { return nil }
+        let input = CIImage(cgImage: cg)
+        let blurred = input.clampedToExtent()
+            .applyingGaussianBlur(sigma: Double(small.width * M.Backdrop.sigmaFraction))
+            .cropped(to: input.extent)
+        return blurContext.createCGImage(blurred, from: input.extent)
     }
+
+    /// ぼかしに使う CoreImage の描き手（作るのが重いので1つを使い回す）
+    static let blurContext = CIContext()
 }
 #endif
