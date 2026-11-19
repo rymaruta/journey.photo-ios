@@ -526,8 +526,10 @@ final class UploadLocalDraftTests: XCTestCase {
         XCTAssertTrue(view.contains("model.discardDraft()"))
         XCTAssertTrue(view.contains("if model.draftOwner != id { model.draftOwner = nil }"),
                       "人が替わっても前の人の書きかけを次の人の下書きに保存できる")
-        XCTAssertTrue(view.contains("guard !showRestore, !showRestoreAuto, askingJournal == nil, !model.isRestoringDraft else { return }"),
-                      "問いの最中に写真を選ぶ画面を重ねて開く")
+        // 2026-11-18（案 B1）: 写真を選ぶ画面を自動で開く道は無くした（写真が無い間は画面そのものが一覧）。
+        // 問いの最中に OS の写真選びを重ねて開くことは無い
+        XCTAssertFalse(view.contains("autoOpenDelay"), "問いの最中に写真を選ぶ画面を重ねて開く道が残っている")
+        XCTAssertFalse(view.contains("showLibrary = true\n        }\n        // 写真を選んだ直後"), "開いたときに写真選びを自動で開いている")
         XCTAssertTrue(view.contains("|| initialTag != nil || initialSpot != nil"),
                       "テーマ・スポットから開いた回にも下書きを尋ねる（タグ・紐付けを上書きする）")
         XCTAssertTrue(view.contains("model.isWorking || model.isRestoringDraft"),

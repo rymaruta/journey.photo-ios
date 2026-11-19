@@ -312,6 +312,8 @@ struct JourneyPhotoApp: App {
                     let stories = environment.stories
                     let auth = auth
                     let drafts = storyDrafts
+                    // 写真の投稿を裏で送る係の知らせの口（「投稿しました　カードにする」「送れませんでした　もう一度」・案 B2）
+                    PostUploadCenter.shared.configure(toasts: toasts, currentUserId: { auth.userId })
                     StoryUploadCenter.shared.configure(
                         currentUserId: { auth.userId },
                         send: { job, record in
@@ -334,6 +336,8 @@ struct JourneyPhotoApp: App {
                     // 別の人が入ったときは、その人の ID で `userChanged` が捨てる
                     if auth.userId == nil, auth.signedOutByExpiry { return }
                     StoryUploadCenter.shared.userChanged(to: auth.userId)
+                    // 写真の投稿も同じ（裏で送る係・2026-11-18 案 B2）。別の人が入ったら持っている投稿を手放す
+                    PostUploadCenter.shared.userChanged(to: auth.userId)
                     discardOrphanTransfers()
                     // 意見箱: 起動し直した直後（ログインの確かめが済んだ時）にも、送れていない下書きを1回送る
                     // （2026-11-11 確かめ役の指摘。前面に戻る・電波が戻るだけだと、閉じて開き直した回に送らない）

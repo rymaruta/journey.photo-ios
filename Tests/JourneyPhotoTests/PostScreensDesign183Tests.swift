@@ -43,40 +43,34 @@ final class PostScreensDesign183Tests: XCTestCase {
 
     // MARK: - 01 投稿シート
 
-    /// カメラの2つの入口を1段に並べて、行を5本から4本に（シートの高さも1行ぶん詰まる）
-    func testPostSheetPutsBothCamerasInOneRow() async throws {
-        let sheet = try source("Features/Upload/PostSheet.swift")
-        let body = slice(sheet, from: "var body: some View {", to: ".padding(.horizontal, JPSpace.l)")
-        // 行は 写真を投稿 → カメラの段 → ストーリー → 旅 の順。カメラの段はカメラのある端末だけ
-        assertInOrder(["kind: .photo", "if CameraPicker.isAvailable {", "cameraSplit", "kind: .story", "kind: .trip"],
-                      in: body, "投稿シートの並び")
-        XCTAssertEqual(body.components(separatedBy: "choice(").count - 1, 3, "大きな行が3本でない（カメラの段と合わせて4本）")
-        let split = slice(sheet, from: "private var cameraSplit: some View {", to: "private func cameraTile(")
-        assertInOrder(["kind: .camera, accentIcon: false", "kind: .composition, accentIcon: true"], in: split,
-                      "カメラの段（カメラ → 構図）")
-        // 前の5本の高さ（572）より詰まる。カメラの無い端末は段ごと、下書きの無い人は下書きの行ぶん詰める
-        let four = PostSheet.sheetHeight(hasCamera: true, hasDrafts: false)
-        XCTAssertLessThan(four, 572)
-        XCTAssertLessThan(PostSheet.sheetHeight(hasCamera: false, hasDrafts: false), four)
-        XCTAssertGreaterThan(PostSheet.sheetHeight(hasCamera: true, hasDrafts: true), four)
-        // 札は板の 56 以上（押せる 44 を満たす）・地は一段浮かせた面（surface-3）
-        XCTAssertGreaterThanOrEqual(PostSheet.cameraTileHeight, WebTheme.minTapTarget)
-        XCTAssertTrue(sheet.contains(".background(Self.tileFill, in: RoundedRectangle(cornerRadius: Self.tileRadius))"))
+    /// 2026-11-18（案 B1・owner 採用）: 選ぶシートはやめ、カメラの2つの入口は**写真の一覧の先頭のマス**へ移した
+    /// （カメラ → 構図 → 写真）。構図のマスは投稿の入口の中で、カメラのある端末だけ。地は一段浮かせた面（surface-3）
+    func testCreateFlowPutsCameraAndCompositionFirst() async throws {
+        let grid = try source("Features/Common/LibraryGrid.swift")
+        let body = slice(grid, from: "LazyVGrid(columns: columns", to: "if loaded && items.isEmpty")
+        assertInOrder(["cameraCell", "if let onComposition { compositionCell(onComposition) }", "ForEach(items)"],
+                      in: body, "一覧の先頭（カメラ → 構図 → 写真）")
+        XCTAssertTrue(grid.contains("RaisedTile.fill"), "カメラのマスの地が一段浮かせた面でない")
+        let upload = try source("Features/Upload/UploadView.swift")
+        XCTAssertTrue(upload.contains("onComposition: createFlow != nil && CameraPicker.isAvailable\n                                ? { chooseFlowEntry(.composition) } : nil,"),
+                      "構図のマスが投稿の入口の中だけ・カメラのある端末だけになっていない")
+        XCTAssertNil(try? source("Features/Upload/PostSheet.swift"), "前の選ぶシートが残っている")
     }
 
-    /// 下書きがあれば、シートの下から直に一覧へ（投稿 → 下書き → 1件 の3回）
-    func testPostSheetOpensDraftsDirectly() async throws {
-        let sheet = try source("Features/Upload/PostSheet.swift")
-        XCTAssertTrue(sheet.contains("if drafts > 0 {\n                draftsLine\n            }"), "下書きの行が件数のあるときだけでない")
-        let line = slice(sheet, from: "private var draftsLine: some View {", to: "@MainActor static func iconColor")
-        XCTAssertTrue(line.contains("onSelect(.drafts)"))
-        XCTAssertTrue(line.contains("CountBadge(count: drafts)"), "件数が真鍮のバッジでない")
-        XCTAssertTrue(line.contains(".accessibilityIdentifier(\"post.choice.drafts\")"))
-        // 行の右の件数バッジは外した（下の行に1つにまとめた）
-        XCTAssertFalse(sheet.contains("drafts: postDrafts"))
-        XCTAssertFalse(sheet.contains("drafts: storyDrafts"))
+    /// 下書きがあれば、一覧の上のチップから直に一覧へ（投稿 → 下書き → 1件 の3回のまま）
+    func testLibraryDraftsChipOpensDraftsDirectly() async throws {
+        XCTAssertEqual(CreateFlowRules.entries(inCreateFlow: true, drafts: 0), [.trip])
+        XCTAssertEqual(CreateFlowRules.entries(inCreateFlow: true, drafts: 2), [.trip, .drafts(2)])
+        XCTAssertEqual(CreateFlowRules.entries(inCreateFlow: false, drafts: 1), [.drafts(1)],
+                       "テーマ・観光スポットから開いた投稿の画面に「旅の写真から」が出る")
+        let parts = try source("Features/Common/LibraryPickParts.swift")
+        let chip = slice(parts, from: "case .drafts(let count):", to: "private func chipLabel(")
+        XCTAssertTrue(chip.contains(".accessibilityIdentifier(\"post.choice.drafts\")"))
+        XCTAssertTrue(parts.contains("CountBadge(count: count)"), "件数が真鍮のバッジでない")
+        let upload = try source("Features/Upload/UploadView.swift")
+        XCTAssertTrue(upload.contains("onDrafts: { openDraftList(tidying: false) })"), "チップから下書きの一覧を開いていない")
         let root = try source("App/RootView.swift")
-        XCTAssertTrue(root.contains("case .drafts:\n            showPostDrafts = true"), "シートの「下書き」で一覧を開いていない")
+        XCTAssertTrue(root.contains("case .drafts:\n            showPostDrafts = true"), "空の画面の「下書き」で一覧を開いていない")
         // 1件を選ぶと、一覧を閉じてからマイページと同じ道で開く
         let drafts = slice(root, from: ".sheet(isPresented: $showPostDrafts", to: "// 「カメラで撮る」")
         assertInOrder(["onOpen: { entry in", "showPostDrafts = false", "tabRouter.openDraft(entry)"], in: drafts,
@@ -153,7 +147,7 @@ final class PostScreensDesign183Tests: XCTestCase {
                        "alertLine(UploadSummary.offlineNote)", "offlineCanSaveDraft",
                        "saveDraftAndClose(update: closeChoice == .update)",
                        "alertLine(error)",
-                       "model.resendFrom", "!connectivity.isOffline", "await model.submit()"], in: block, "知らせの並び")
+                       "model.resendFrom", "!connectivity.isOffline", "sendInBackground()"], in: block, "知らせの並び")
         XCTAssertFalse(block.contains("toasts.show"), "失敗・圏外をトーストにしている")
         let line = slice(upload, from: "private func alertLine(", to: "private func saveDraftAndClose(")
         XCTAssertTrue(line.contains(".font(JPFont.footnote)"))
@@ -173,18 +167,15 @@ final class PostScreensDesign183Tests: XCTestCase {
 
     // MARK: - 確かめ役の直し（2026-11-12）
 
-    /// 「構図を重ねて撮る」は 390〜402 幅で1行に入らない。1字落ちにせず、言葉の切れ目の2行の形を並べる
-    func testCompositionTitleWrapsAtWordBreak() async throws {
-        XCTAssertEqual(PostSheet.compositionTitle, "構図を重ねて撮る")
-        XCTAssertEqual(PostSheet.compositionTitleWrapped, "構図を重ねて\n撮る")
-        XCTAssertEqual(PostSheet.compositionTitleWrapped.replacingOccurrences(of: "\n", with: ""), PostSheet.compositionTitle)
-        let sheet = try source("Features/Upload/PostSheet.swift")
-        let tile = slice(sheet, from: "private func cameraTile(", to: "private var draftsLine")
-        assertInOrder(["ViewThatFits(in: .horizontal) {", "Text(title)", ".lineLimit(1)", ".fixedSize()",
-                       "Text(wrapped ?? title)"], in: tile, "カメラの札の題")
-        XCTAssertTrue(sheet.contains("wrapped: Self.compositionTitleWrapped"))
-        // 読み上げは折り目の無い題
-        XCTAssertTrue(tile.contains(".accessibilityLabel(title)"))
+    /// 「構図を重ねて撮る」のマスは4列のマスに入る短い名前「構図」、読み上げは長い名前（2026-11-18・案 B1）
+    func testCompositionCellNames() async throws {
+        XCTAssertEqual(StoryLibraryRules.compositionTitle, "構図を重ねて撮る")
+        XCTAssertEqual(StoryLibraryRules.compositionShortTitle, "構図")
+        let grid = try source("Features/Common/LibraryGrid.swift")
+        let cell = slice(grid, from: "private func compositionCell(", to: "private func tile<")
+        XCTAssertTrue(cell.contains("Text(StoryLibraryRules.compositionShortTitle)"))
+        XCTAssertTrue(cell.contains(".accessibilityLabel(StoryLibraryRules.compositionTitle)"), "読み上げが短い名前のまま")
+        XCTAssertTrue(cell.contains(".accessibilityIdentifier(\"post.choice.composition\")"), "前の入口の道しるべを引き継いでいない")
     }
 
     /// 撮影地の位置のオンの一言は言い切らない（2026-10-18 の決まり・`PlaceCoordsRule`）
@@ -210,10 +201,8 @@ final class PostScreensDesign183Tests: XCTestCase {
     /// 下書きの件数は呼び手が開く前に数えて渡す（出てから数え直すと高さが跳ねる）。旅の札の「投稿済み n日」
     func testDraftCountIsPassedAndPostedChip() async throws {
         let root = try source("App/RootView.swift")
-        XCTAssertTrue(root.contains("PostSheet(drafts: PostSheet.draftCount(userId: auth.userId)) { kind in pendingPostChoice = kind }"))
-        let sheet = try source("Features/Upload/PostSheet.swift")
-        XCTAssertFalse(sheet.contains(".onAppear"), "シートが出てから件数を数え直している")
-        XCTAssertFalse(sheet.contains("@State private var drafts"))
+        // 2026-11-18（案 B1）: 下の「投稿」は写真の一覧（選ぶシートの高さの跳ねは、シートごと無くなった）
+        XCTAssertTrue(root.contains(".fullScreenCover(isPresented: $showPostChoice, onDismiss: createFlowDismissed) {\n                CreateFlowView(flow: createFlow)"))
         let list = try source("Features/Trips/LibraryTripListView.swift")
         let card = slice(list, from: "struct LibraryTripCard: View {", to: "\n}\n")
         assertInOrder(["if postedDays > 0 {", "L(\"投稿済み \\(postedDays)日\"", ".foregroundStyle(WebTheme.foreground)",

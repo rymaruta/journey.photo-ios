@@ -104,11 +104,11 @@ final class UploadPreviewTests: XCTestCase {
         XCTAssertTrue(submit.waitForExistence(timeout: 5), "プレビューの中に「投稿する」が無い")
         XCTAssertGreaterThanOrEqual(submit.frame.height, 44, "プレビューの「投稿する」の的が 44pt 未満")
         submit.tap()
-        let close = app.buttons["postedCard.close"].firstMatch
-        XCTAssertTrue(close.waitForExistence(timeout: 60), "プレビューから投稿しても共有カードが出ない（上がっていない）")
-        close.tap()
+        // 2026-11-18（案 B2）: プレビューから投稿しても、画面はすぐ閉じて裏で送る。上がったら「投稿しました　カードにする」
         XCTAssertTrue(app.buttons["upload.thumb.0"].firstMatch.waitForNonExistence(timeout: 30),
-                      "カードを閉じても投稿の画面が閉じない")
+                      "プレビューから投稿しても投稿の画面が閉じない")
+        XCTAssertTrue(app.buttons["toast.action"].firstMatch.waitForExistence(timeout: 60),
+                      "プレビューから投稿しても「カードにする」の知らせが出ない（上がっていない）")
     }
 
     // MARK: - 流れ
@@ -187,9 +187,8 @@ final class UploadPreviewTests: XCTestCase {
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return nil }
         tabBar.buttons.element(boundBy: 2).tap()
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        guard toPhoto.waitForExistence(timeout: 10), toPhoto.isHittable else { return nil }
-        toPhoto.tap()
+        // 2026-11-18（案 B1）: 下の「投稿」で写真の一覧が開き、見本の1枚（`-JPPreviewUploadSample`）はそのまま欄の段に入る
+        // （前の選ぶシートの「写真を投稿」を押す手は無くなった）
         guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 60) else { return nil }
         // 写真の位置から撮影地を引く・撮影スポットの索引を読む間を待つ
         Thread.sleep(forTimeInterval: 3)

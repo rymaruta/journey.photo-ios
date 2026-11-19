@@ -961,6 +961,7 @@ final class ScreenshotTests: XCTestCase {
         if tabBar.buttons.count > 2 {
             tabBar.buttons.element(boundBy: 2).tap()
             Thread.sleep(forTimeInterval: 2)
+            // 名前は App Store の絵の書き出し（`Tools/export-screenshots.sh`）の鍵なのでそのまま。2026-11-18 から中身は写真の一覧（案 B1）
             shoot(app, "40-投稿の2択")
             let toStory = app.buttons["post.choice.story"].firstMatch
             if toStory.waitForExistence(timeout: 5), toStory.isHittable {
@@ -1000,9 +1001,8 @@ final class ScreenshotTests: XCTestCase {
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
         tabBar.buttons.element(boundBy: 2).tap()
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
-        toPhoto.tap()
+        // 2026-11-18（案 B1）: 下の「投稿」で写真の一覧が開き、見本の1枚（`-JPPreviewUploadSample`）はそのまま欄の段に入る
+        // （前の選ぶシートの「写真を投稿」を押す手は無くなった）
 
         // 見本の1枚が帯に入れば、選ぶ画面を通らない
         let thumb = app.buttons["upload.thumb.0"].firstMatch
@@ -1249,9 +1249,8 @@ final class ScreenshotTests: XCTestCase {
         }
         guard tabBar.exists, tabBar.buttons.count > 2 else { return unreached(app, "tabBar.exists, tabBar.buttons.count > 2") }
         tabBar.buttons.element(boundBy: 2).tap()
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return unreached(app, "toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable") }
-        toPhoto.tap()
+        // 2026-11-18（案 B1）: 下の「投稿」で写真の一覧が開き、見本の1枚（`-JPPreviewUploadSample`）はそのまま欄の段に入る
+        // （前の選ぶシートの「写真を投稿」を押す手は無くなった）
         let inspired = app.buttons["upload.inspired"].firstMatch
         guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 15),
               inspired.waitForExistence(timeout: 10) else { return unreached(app, "app.buttons[\"upload.thumb.0\"].firstMatch.waitForExistence(timeout: 15), inspired.waitForExistence(timeout: 10)") }
@@ -1404,9 +1403,8 @@ final class ScreenshotTests: XCTestCase {
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return unreached(app, "tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2") }
         tabBar.buttons.element(boundBy: 2).tap()
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return unreached(app, "toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable") }
-        toPhoto.tap()
+        // 2026-11-18（案 B1）: 下の「投稿」で写真の一覧が開き、見本の1枚（`-JPPreviewUploadSample`）はそのまま欄の段に入る
+        // （前の選ぶシートの「写真を投稿」を押す手は無くなった）
         guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 15) else { return unreached(app, "app.buttons[\"upload.thumb.0\"].firstMatch.waitForExistence(timeout: 15)") }
 
         let place = app.textFields["upload.place"].firstMatch
@@ -5673,6 +5671,14 @@ final class ScreenshotTests: XCTestCase {
         gear.tap()
         let push = app.descendants(matching: .any)["settings.push"].firstMatch
         guard push.waitForExistence(timeout: 10) else { return XCTFail("設定が開かない") }
+        // 2026-11-18 判断（案 B7）: お知らせの節がいちばん上（Pro の節より上）。数は文で残す
+        let proRow = app.buttons["settings.pro"].firstMatch
+        let order = "measured settingsTop push=\(push.frame) pro=\(proRow.exists ? String(describing: proRow.frame) : "-")"
+        print(order)
+        XCTContext.runActivity(named: order) { _ in }
+        if proRow.exists {
+            XCTAssertLessThan(push.frame.minY, proRow.frame.minY, "お知らせの入切が Pro の節より下にある")
+        }
         // 2026-11-12（案 第10章）: 「旅の道具」の節は ≡ メニューへ移した。設定に残っていないこと
         for id in ["settings.trunk", "settings.camper", "settings.passBook", "settings.albums", "settings.plans"] {
             XCTAssertFalse(app.buttons[id].firstMatch.exists, "設定に \(id) が残っている（≡ へ移した）")
@@ -5771,6 +5777,30 @@ final class ScreenshotTests: XCTestCase {
         help.tap()
         Thread.sleep(forTimeInterval: 4)
         shoot(app, "102i-使い方（アプリの中の Safari）")
+    }
+
+    /// **お知らせ（ベル）の歯車 → お知らせの入切だけの画面**（2026-11-18 判断・案 B7）。前は設定のいちばん上（Pro の節）が開いた。
+    /// 開いた画面に入切があり、Pro の行（設定のいちばん上の画面にだけある）が無いことを確かめる
+    func testCapturesNotificationSettingsFromBell() {
+        let app = launchTrunk([])
+        let bell = app.buttons["header.notifications"].firstMatch
+        guard bell.waitForExistence(timeout: 20) else { return XCTFail("見出しのお知らせが無い") }
+        bell.tap()
+        let gear = app.buttons["notifications.settings"].firstMatch
+        guard gear.waitForExistence(timeout: 15) else { return XCTFail("お知らせに歯車が無い") }
+        // 歯車の当たりは数だけ残す（run 1461・1464 で高さ 36.0。この枝より前からの形で、label を 44 に広げても 36 のままだった。
+        // 原因を確かめてから別に直す）
+        let gearLine = "measured notificationsGear frame=\(gear.frame)"
+        print(gearLine)
+        XCTContext.runActivity(named: gearLine) { _ in }
+        gear.tap()
+        let push = app.descendants(matching: .any)["settings.push"].firstMatch
+        guard push.waitForExistence(timeout: 10) else { return XCTFail("歯車でお知らせの入切が開かない") }
+        XCTAssertFalse(app.buttons["settings.pro"].firstMatch.exists, "歯車で設定のいちばん上（Pro の節）が開いた")
+        XCTAssertFalse(app.buttons["settings.deleteAccount"].firstMatch.exists, "歯車で設定の全部が開いた")
+        XCTAssertGreaterThanOrEqual(push.frame.height, 44, "お知らせの入切が 44pt 未満")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "102j-お知らせの設定（ベルの歯車から）")
     }
 
     /// **旅のトランク**（Pro の見本）: トランク → 手に取って回す → 手持ち（選んだ）→ 作り直し →
@@ -8147,30 +8177,14 @@ final class ScreenshotTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(edit.frame.maxX, width - 16 - 2, "\(suffix): 「編集」が右端にない")
             XCTAssertGreaterThanOrEqual(edit.frame.height, 44, "\(suffix): 「編集」の当たりが 44pt 未満")
             XCTAssertEqual(edit.label, "プロフィールを編集", "\(suffix): 読み上げが変わった")
-            // 2026-11-16（A3）: 右上は 吹き出し・ベル・歯車 の順に 44pt のガラスの丸（数は文で残す）
-            let bubble = app.buttons["mypage.messages"].firstMatch
-            let bell = app.buttons["mypage.notifications"].firstMatch
-            let gear = app.buttons["設定"].firstMatch
-            let line = "measured myPageTopButtons \(suffix) bubble=\(bubble.exists ? String(describing: bubble.frame) : "-") "
-                + "bell=\(bell.exists ? String(describing: bell.frame) : "-") gear=\(gear.exists ? String(describing: gear.frame) : "-") "
-                + "stats=\(stats.frame)"
-            print(line)
-            XCTContext.runActivity(named: line) { _ in }
-            XCTAssertTrue(bubble.exists && bell.exists, "\(suffix): マイページに吹き出しとベルが無い")
-            if bubble.exists, bell.exists, gear.exists {
-                XCTAssertLessThan(bubble.frame.maxX, bell.frame.minX + 1, "\(suffix): 吹き出しがベルの左に無い")
-                XCTAssertLessThan(bell.frame.maxX, gear.frame.minX + 1, "\(suffix): ベルが歯車の左に無い")
-                XCTAssertLessThan(abs(bubble.frame.midY - gear.frame.midY), 2, "\(suffix): 丸の高さがそろっていない")
-                XCTAssertGreaterThanOrEqual(bubble.frame.height, 44, "\(suffix): 吹き出しの当たりが 44pt 未満")
-                XCTAssertGreaterThanOrEqual(bell.frame.width, 44, "\(suffix): ベルの当たりが 44pt 未満")
-            }
-            // 額縁も無い回: 2026-11-16（A3）から顔の段は右上の丸の並びの下から（数が丸に潜らない）
+            // 額縁も無い回: 顔の段が右上の設定の丸と同じ高さ。数は丸の下に潜らない
             if extra.contains("-JPPreviewBareHeader") {
                 XCTAssertFalse(app.descendants(matching: .any)["mypage.coverFrame"].firstMatch.exists,
                                "\(suffix): 額縁が出ている")
+                let gear = app.buttons["設定"].firstMatch
                 if gear.exists {
-                    XCTAssertGreaterThanOrEqual(stats.frame.minY, gear.frame.maxY - 1,
-                                                "\(suffix): 数が右上の丸に重なっている（\(stats.frame.minY) / \(gear.frame.maxY)）")
+                    XCTAssertLessThanOrEqual(stats.frame.maxX, gear.frame.minX + 1,
+                                             "\(suffix): 数が設定の丸の下に潜っている（\(stats.frame.maxX) / \(gear.frame.minX)）")
                 }
             }
             shoot(app, "108-マイページ（見出しの並び・\(suffix)）")
@@ -9876,6 +9890,95 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertFalse(replying.exists, "送ったのに「返信中」が残っている")
     }
 
+    /// **コメントの知らせから、そのコメントへの返信へ**（2026-11-18 案 B4、owner 採用）。見本の通信でコメントを1件書く
+    /// （`-JPPreviewCommentNotice` で、お知らせに「写真へのコメント」として本文とコメントの id つきで返る）。ホームへ戻って
+    /// ベル → 本文の1行（63g）→ 行を押すと、写真の詳細がそのコメントの位置で「〇〇さんに返信中」とキーボードを出して開く（63h）。
+    /// コメントの行が入力欄より上に見えていることを数で確かめる。**写真やお知らせが開けなければ撮らずに抜ける**
+    func testCommentNoticeOpensReply() {
+        commentNoticeFlow(scrollOnly: false)
+    }
+
+    /// 事実取り（2026-11-18・回 1462）: 知らせから来たとき**送るだけ**（返信の欄・キーボードを出さない
+    /// `-JPPreviewArrivalScrollOnly`）で、コメントがどこに来るかを測る。回 1462 では返信の欄とキーボードを出した後、
+    /// コメントが写真の頭のままの位置（y=736）にあった。送る処理が効いていないのか、キーボードで戻ったのかを分ける。
+    /// 測るだけで落とさない
+    func testCommentNoticeScrollProbe() {
+        commentNoticeFlow(scrollOnly: true)
+    }
+
+    private func commentNoticeFlow(scrollOnly: Bool) {
+        let extra = ["-JPPreviewCommentNotice", "YES"] + (scrollOnly ? ["-JPPreviewArrivalScrollOnly", "YES"] : [])
+        guard let app = launchSNSPreview(sharedStory: false, extra: extra),
+              openFirstLatestPhoto(app) else { return }
+        let body = "稜線の色がきれいですね"
+        let field = app.textFields["photo.commentField"].firstMatch
+        let fieldAny = field.exists ? field : app.descendants(matching: .any)["photo.commentField"].firstMatch
+        guard fieldAny.waitForExistence(timeout: 15), fieldAny.isHittable else {
+            shoot(app, "63g-コメントの知らせ（欄が無い）")
+            return
+        }
+        fieldAny.tap()
+        fieldAny.typeText(body)
+        let send = app.buttons["photo.commentSend"].firstMatch
+        guard send.waitForExistence(timeout: 5) else { return }
+        send.tap()
+        Thread.sleep(forTimeInterval: 2)
+        // ホームへ戻ってベルを開く
+        let back = app.navigationBars.buttons["BackButton"].firstMatch
+        guard back.waitForExistence(timeout: 5) else { return XCTFail("写真の詳細から戻れない") }
+        back.tap()
+        let bell = app.buttons["header.notifications"].firstMatch
+        guard bell.waitForExistence(timeout: 15), bell.isHittable else { return XCTFail("ホームのベルが押せない") }
+        bell.tap()
+        let row = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "がコメントしました：「\(body)」")).firstMatch
+        let rowShown = row.waitForExistence(timeout: 20)
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, rowShown ? "63g-コメントの知らせ（本文の1行）" : "63g-コメントの知らせ（本文の行が出ない）")
+        guard rowShown else { return XCTFail("お知らせにコメントの本文の1行が出ない") }
+        row.tap()
+        if scrollOnly {
+            let comment = app.staticTexts.matching(NSPredicate(format: "label == %@", body)).firstMatch
+            _ = comment.waitForExistence(timeout: 15)
+            for wait in [0.5, 1.5, 3.0] {
+                Thread.sleep(forTimeInterval: wait)
+                let hero = app.buttons["detail.hero"].firstMatch
+                XCTContext.runActivity(named: "measured commentNoticeScrollOnly after+\(wait)s"
+                    + " comment=\(comment.exists ? String(describing: comment.frame) : "-")"
+                    + " hero=\(hero.exists ? String(describing: hero.frame) : "-")"
+                    + " keyboard=\(app.keyboards.firstMatch.exists)"
+                    + " window=\(app.windows.firstMatch.frame)") { _ in }
+            }
+            shoot(app, "63h2-コメントの知らせから（送るだけ・事実取り）")
+            return
+        }
+        // 着いたら「〇〇さんに返信中」とキーボード（光らせない）
+        let replying = app.descendants(matching: .any)["photo.commentReplying"].firstMatch
+        let replyingShown = replying.waitForExistence(timeout: 15)
+        let early = app.staticTexts.matching(NSPredicate(format: "label == %@", body)).firstMatch
+        XCTContext.runActivity(named: "measured commentNotice early comment=\(early.exists ? String(describing: early.frame) : "-")"
+            + " keyboard=\(app.keyboards.firstMatch.exists)") { _ in }
+        let keyboardShown = app.keyboards.firstMatch.waitForExistence(timeout: 5)
+        Thread.sleep(forTimeInterval: 1.5)
+        let comment = app.staticTexts.matching(NSPredicate(format: "label == %@", body)).firstMatch
+        let fieldNow = app.descendants(matching: .any)["photo.commentField"].firstMatch
+        XCTContext.runActivity(named: "measured commentNotice replying=\(replyingShown) keyboard=\(keyboardShown)"
+            + " comment=\(comment.exists ? String(describing: comment.frame) : "-")"
+            + " field=\(fieldNow.exists ? String(describing: fieldNow.frame) : "-")"
+            + " keyboardFrame=\(app.keyboards.firstMatch.exists ? String(describing: app.keyboards.firstMatch.frame) : "-")"
+            + " window=\(app.windows.firstMatch.frame)") { _ in }
+        shoot(app, replyingShown ? "63h-コメントの知らせから返信中" : "63h-コメントの知らせから（返信中が出ない）")
+        XCTAssertTrue(replyingShown, "知らせから来たのに「〇〇さんに返信中」が出ない")
+        XCTAssertTrue(keyboardShown, "知らせから来たのにキーボードが出ない")
+        XCTAssertTrue(comment.exists, "知らせのコメントが写真の詳細に無い")
+        if comment.exists, fieldNow.exists {
+            // 入力欄の帯の上端（「返信中」の行が出ていればその上端）
+            let composerTop = replying.exists ? min(replying.frame.minY, fieldNow.frame.minY) : fieldNow.frame.minY
+            XCTAssertGreaterThanOrEqual(comment.frame.minY, 0, "コメントが画面の上に外れている")
+            XCTAssertLessThanOrEqual(comment.frame.maxY, composerTop,
+                                     "コメントが入力欄（キーボードの上）の裏に入っている")
+        }
+    }
+
     /// **ストーリーで紹介された写真を見る**（札 #541 の ①・案の模型 1-E）。見本の通信の `-JPPreviewSharedStory` で、
     /// 新着の1人目の2本目のストーリーに紹介の写真を付ける（`PreviewBackend.previewStories`）。作者の顔の輪から開き、
     /// 2本目へ送って「写真を見る」（63e）→ 写真の詳細（63f）を撮る。**出なければ撮らずに抜ける**
@@ -10157,8 +10260,8 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "107f-下書きの一覧（空・元に戻す）")
     }
 
-    /// **投稿のシートの「下書き n ›」**（2026-11-12・1.1.83 案「投稿まわりのデザイン」01）: 下書きの見本
-    /// （`-JPPreviewDrafts YES`）で起動し、下の「投稿」→ カメラの2つが1段の4行と下書きの行 → 押して下書きの一覧。
+    /// **投稿の入口の「下書き n」**（2026-11-18 案 B1。前は投稿のシートの「下書き n ›」）: 下書きの見本
+    /// （`-JPPreviewDrafts YES`）で起動し、下の「投稿」→ 写真の一覧の上の「下書き」のチップ → 押して下書きの一覧。
     /// 出なければ撮らずに抜ける（この試験の決まり）
     func testCapturesPostSheetDrafts() {
         let app = launchTrunk(["-JPPreviewDrafts", "YES"])
@@ -10168,12 +10271,12 @@ final class ScreenshotTests: XCTestCase {
         let drafts = app.buttons["post.choice.drafts"].firstMatch
         guard drafts.waitForExistence(timeout: 8) else { return }
         Thread.sleep(forTimeInterval: 1.5)
-        shoot(app, "40c-投稿の選択（カメラの段と下書きの行）")
+        shoot(app, "40c-投稿の入口（下書きのチップ）")
         guard drafts.isHittable else { return }
         drafts.tap()
         guard app.descendants(matching: .any)["drafts.list"].firstMatch.waitForExistence(timeout: 10) else { return }
         Thread.sleep(forTimeInterval: 2)
-        shoot(app, "107g-下書きの一覧（投稿のシートから）")
+        shoot(app, "107g-下書きの一覧（投稿の入口のチップから）")
     }
 
     /// **メッセージ（DM・第1段・札 #505・2026-11-10）**。見本の通信（`-JPPreviewLocalBackend`）に `-JPPreviewDM` を足すと、
@@ -10317,8 +10420,10 @@ final class ScreenshotTests: XCTestCase {
                     // 2026-11-16: run 1421 は吹き出しが残り、run 1426 は押したあと 60 秒アプリが待ち状態にならず画面が読めなかった。
                     // 画面を読む前に、主スレッドの積みのファイルを読む（固まっていても読める・推定で直さない）
                     Self.logMainSamples(samplePath, label: "86m5b の取り消しの直後")
+                    Self.logStallDetail(samplePath, label: "86m5b の取り消しの直後")
                     Thread.sleep(forTimeInterval: 3)
                     Self.logMainSamples(samplePath, label: "86m5b の取り消しの 3 秒後")
+                    Self.logStallDetail(samplePath, label: "86m5b の取り消しの 3 秒後")
                     let field = app.descendants(matching: .any)["dm.field"].firstMatch
                     let gone = !app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", mineText))
                         .allElementsBoundByIndex.contains { $0.frame.minY < field.frame.minY }
@@ -10328,8 +10433,10 @@ final class ScreenshotTests: XCTestCase {
                         .map { "\($0.frame)" }.joined(separator: ";")
                     XCTContext.runActivity(named: "86m5b の状態: gone=\(gone) / field.value=\(String(describing: field.value))"
                         + " / field.frame=\(field.frame) / left=\(left)"
-                        + " / probe=\(String(describing: app.descendants(matching: .any)["dm.probe"].firstMatch.value))"
-                        + " / staticTexts=\(app.staticTexts.allElementsBoundByIndex.suffix(8).map(\.label))") { _ in }
+                        + " / probe=\(String(describing: app.descendants(matching: .any)["dm.probe"].firstMatch.value))") { _ in }
+                    // 判定のあとの会話の回数（取り消しの結果・読み直しが判定のあとに来ていないか）。staticTexts を並べ直す読み取りは
+                    // 画面の木が変わる途中で落ちた（run 1447 の 10334 行）ので外した
+                    Self.logStallDetail(samplePath, label: "86m5b の判定のあと")
                     XCTAssertTrue(gone, "取り消した吹き出しが会話に残っている")
                     // 読み直しで取り消した通が戻っていない（画面の外に戻っても気づけるように・run 1430 は readded=1 でも gone=true だった）
                     let probeValue = String(describing: app.descendants(matching: .any)["dm.probe"].firstMatch.value)
@@ -10526,9 +10633,8 @@ final class ScreenshotTests: XCTestCase {
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return nil }
         tabBar.buttons.element(boundBy: 2).tap()
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return nil }
-        toPhoto.tap()
+        // 2026-11-18（案 B1）: 下の「投稿」で写真の一覧が開き、見本の1枚（`-JPPreviewUploadSample`）はそのまま欄の段に入る
+        // （前の選ぶシートの「写真を投稿」を押す手は無くなった）
         guard app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 20) else { return nil }
         let title = app.textFields["upload.title"].firstMatch
         scrollUntilHittable(app, title)
@@ -10572,14 +10678,26 @@ final class ScreenshotTests: XCTestCase {
                                        timeout: 15)
         guard enabled == .completed else { return nil }
         submit.tap()
-        // 2026-11-14（#599 の見直し）: 送っている間の下の主ボタン（輪＋「投稿しています」）が、系統に薄くされて
-        // いないかを絵で見る。見本の通信は速いので、押した直後に撮る（間に合わなかった回は字で分かる）
-        let sendingLabel = submit.exists ? submit.label : "none"
-        // 2026-11-14 判断（統合 1.1.90）: 共有カードの試験が2本（標準・大きい文字）でこの道を通るので、絵の名前を分ける
-        // （同じ名前だと置き場で標準の 120d が大きい文字の絵で上書きされる）
-        shoot(app, extraArguments.isEmpty ? "120d-投稿（送信中の主ボタン）" : "120d2-投稿（送信中の主ボタン・大きい文字）")
-        print("[sendingShot] label=\(sendingLabel) enabled=\(submit.exists ? "\(submit.isEnabled)" : "none")"
-              + " frame=\(submit.exists ? "\(submit.frame)" : "none")")
+        // 2026-11-18（案 B2・owner 採用）: 「投稿する」で画面がすぐ閉じ、ホームの自分の輪が満ちていく（裏の係が送る）。
+        // 押した直後の絵（送信中の輪・投稿の画面が閉じたか）を撮る。絵の名前は標準と大きい文字で分ける
+        let tapped = Date()
+        _ = submit.waitForNonExistence(timeout: 10)
+        // 上がったら知らせ「投稿しました　カードにする」。押すと共有カード。
+        // run 1511 の絵: 120d（閉じた直後）にはもう知らせが出ていたが、120d と記録のあとに知らせを見つけ、
+        // もう1枚撮ってから押す間に6秒の知らせが消え、120e はホームのまま（カードも知らせも無い）だった。
+        // run 1531（大きい文字）: 押した t=92.12s、閉じたのを見た t=94.52s、120d2 を撮り終えた t=98.57s（絵には知らせが写る）、
+        // 知らせを待ち始めた最初の見回り t=99.63s にはもう無かった（撮る4秒で6秒の知らせを使い切る）。
+        // **閉じた時点で知らせがもう出ていれば、撮らずにすぐ押す。** まだ送っている間だけ 120d を撮る
+        let makeCard = app.buttons["toast.action"].firstMatch
+        let closedAt = Date().timeIntervalSince(tapped)
+        let upAtClose = makeCard.exists
+        if !upAtClose {
+            shoot(app, extraArguments.isEmpty ? "120d-投稿（送信中・画面を閉じた後）" : "120d2-投稿（送信中・画面を閉じた後・大きい文字）")
+        }
+        let found = upAtClose || makeCard.waitForExistence(timeout: 60)
+        if found { makeCard.tap() }
+        print("[sendingShot] uploadOpen=\(submit.exists) closed=\(String(format: "%.2f", closedAt))"
+              + " toastAtClose=\(upAtClose) toast=\(found) tappedAt=\(String(format: "%.2f", Date().timeIntervalSince(tapped)))")
         let header = app.descendants(matching: .any)["postedCard.header"].firstMatch
         let shown = header.waitForExistence(timeout: 60)
         // カードの絵ができるまで待つ（「カードを共有」が押せるようになる）
@@ -10688,6 +10806,31 @@ final class ScreenshotTests: XCTestCase {
         for line in lines.suffix(4) {
             XCTContext.runActivity(named: "主スレッドの積み（\(label)）最後: \(String(line.prefix(900)))") { _ in }
         }
+    }
+
+    /// 止まりの中身（2026-11-16・統合の枝の run 1439）。主スレッドの返事が遅い行に出る段を、**このアプリの段に限らず**
+    /// 多い順に 30 まで（SwiftUI の配置のどこで回っているか）と、遅い行の全文を 2 行（最初と真ん中）。
+    /// 会話の画面が書く回数のファイル（`.dm`・`DMStallProbe`）の最後の 6 行も出す。どれも画面の木は読まない
+    static func logStallDetail(_ path: String, label: String) {
+        let text = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+        let lines = text.split(separator: "\n").map(String.init)
+        let slow = lines.filter { line in
+            guard let ping = line.components(separatedBy: "ping=").dropFirst().first?.split(separator: " ").first else { return false }
+            return ping == "pending" || (Int(ping) ?? 0) >= 200
+        }
+        var counts: [String: Int] = [:]
+        for line in slow {
+            let frames = (line.components(separatedBy: " | ").dropFirst().first ?? "").components(separatedBy: " ; ")
+            for frame in Set(frames) { counts[String(frame.prefix(160)), default: 0] += 1 }
+        }
+        for (i, item) in counts.sorted(by: { $0.value > $1.value }).prefix(30).enumerated() {
+            print("STALL \(label) 段 \(i + 1): \(item.value)x \(item.key)")
+        }
+        for line in [slow.first, slow.isEmpty ? nil : slow[slow.count / 2]].compactMap({ $0 }) {
+            print("STALL \(label) 全文: \(String(line.prefix(6000)))")
+        }
+        let dm = ((try? String(contentsOfFile: path + ".dm", encoding: .utf8)) ?? "読めない").split(separator: "\n").suffix(12)
+        for line in dm { print("STALL \(label) 会話の回数: \(line)") }
     }
 
     /// 受信箱の行を名前で開き、会話が出るまで待つ（出なければ false）
@@ -11684,9 +11827,8 @@ final class ScreenshotTests: XCTestCase {
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 2 else { return }
         tabBar.buttons.element(boundBy: 2).tap()
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        guard toPhoto.waitForExistence(timeout: 5), toPhoto.isHittable else { return }
-        toPhoto.tap()
+        // 2026-11-18（案 B1）: 下の「投稿」で写真の一覧が開き、見本の1枚（`-JPPreviewUploadSample`）はそのまま欄の段に入る
+        // （前の選ぶシートの「写真を投稿」を押す手は無くなった）
         // 2026-11-16（A11）: 帯の下の「色を編集」は無くした。写真の札（`upload.thumb.0`）から開く
         let editButton = app.buttons["upload.thumb.0"].firstMatch
         guard editButton.waitForExistence(timeout: 20) else { return }

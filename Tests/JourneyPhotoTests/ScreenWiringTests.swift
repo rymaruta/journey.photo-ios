@@ -334,7 +334,8 @@ final class ScreenWiringTests: XCTestCase {
                        "案内の地をボタンに付けると、実機で上の角が丸く抜ける（2026-10-16）")
         XCTAssertFalse(notice.contains("RoundedRectangle(cornerRadius: 12)"),
                        "案内の地を角丸にすると、角の外側が札の地のまま残り文字が塗りの外に出る")
-        let settings = try source("Features/Settings/SettingsView.swift")
+        // 2026-11-18: 入切は設定とお知らせの設定で同じ札（`PushSettingsGroup`）
+        let settings = try source("Features/Settings/NotificationSettings.swift")
         XCTAssertTrue(settings.contains(".onChange(of: push.isEnabled)"),
                       "ほかの所で「受け取る」にしても設定のトグルが「切」のまま残る")
         // 起動したときには聞かない（設定の「受け取る」・説明・「前の晩に知らせる」の行の3か所だけ）

@@ -43,18 +43,20 @@ final class StoryLibraryFirstTests: XCTestCase {
 
     // MARK: - 並べ方
 
-    /// 板: 格子は3列、アクセシビリティの大きさでは2列。マスは作る画面の写真の枠に近い縦長
-    func testGridFollowsTheBoard() {
-        XCTAssertEqual(StoryLibraryRules.columns(accessibilitySize: false), 3)
-        XCTAssertEqual(StoryLibraryRules.columns(accessibilitySize: true), 2)
-        XCTAssertLessThan(StoryLibraryRules.cellAspect, 1, "マスが縦長でない（作る画面の枠と切り取りが違って見える）")
-        XCTAssertEqual(StoryLibraryRules.cellAspect, 390.0 / 610.0, accuracy: 0.05)
+    /// 2026-11-18（案 B1・owner 採用）: 投稿とストーリーで同じ一覧。模型どおり4列・正方形のマス
+    /// （アクセシビリティの大きさでは3列）。前は板の3列と作る画面の枠に近い縦長（2:3）
+    func testGridFollowsTheMockup() {
+        XCTAssertEqual(StoryLibraryRules.columns(accessibilitySize: false), 4)
+        XCTAssertEqual(StoryLibraryRules.columns(accessibilitySize: true), 3)
+        XCTAssertEqual(StoryLibraryRules.cellAspect, 1.0, "マスが正方形でない（模型の 95×95）")
+        XCTAssertEqual(StoryLibraryRules.cameraIconSize, 30)
+        XCTAssertEqual(StoryLibraryRules.markedOpacity, 0.75)
         XCTAssertGreaterThanOrEqual(StoryLibraryRules.maxItems, 1000)
     }
 
     /// 写真と動画の両方を新しい順に取る（種類を絞らない口・並べ替えは作った日の新しい順）
     func testFeedFetchesPhotosAndVideosNewestFirst() throws {
-        let source = try read("Sources/JourneyPhoto/Features/Stories/StoryLibraryGrid.swift")
+        let source = try read("Sources/JourneyPhoto/Features/Common/LibraryGrid.swift")
         XCTAssertTrue(source.contains("PHAsset.fetchAssets(with: options)"), "種類を絞る口だと写真か動画の片方しか並ばない")
         XCTAssertTrue(source.contains("\"mediaType == %d || mediaType == %d\""))
         XCTAssertTrue(source.contains("PHAssetMediaType.image.rawValue, PHAssetMediaType.video.rawValue"))
@@ -129,7 +131,7 @@ final class StoryLibraryFirstTests: XCTestCase {
 
     /// 一覧の最初のマスがカメラで、押すと今のカメラ（`showCamera`）。マスを押すと一覧の読み込みへ
     func testComposerWiresTheGrid() throws {
-        let grid = try read("Sources/JourneyPhoto/Features/Stories/StoryLibraryGrid.swift")
+        let grid = try read("Sources/JourneyPhoto/Features/Common/LibraryGrid.swift")
         let body = try XCTUnwrap(grid.range(of: "LazyVGrid(columns: columns"))
         let after = String(grid[body.lowerBound...].prefix(200))
         XCTAssertLessThan(try XCTUnwrap(after.range(of: "cameraCell")).lowerBound,

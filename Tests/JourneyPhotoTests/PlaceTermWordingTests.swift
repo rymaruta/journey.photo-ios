@@ -105,7 +105,15 @@ final class PlaceTermWordingTests: XCTestCase {
     /// 延ばした「撮影スポットを見る」は横に並ぶボタンなので、幅 375pt ではみ出さないよう
     /// **1行に収めて縮める。縮めるのは 0.8 まで**（15pt × 0.8 = 12pt。板の本文の最小・2026-10-11 のレビュー）
     func testLongSpotButtonsFitOnOneLine() throws {
-        for path in ["Features/Map/PhotoMapView.swift", "Features/Gallery/DailyQuizView.swift"] {
+        // 2026-11-16（使い勝手の見直し A7）: 地図の札は「行きたい | 経路 | 観光スポットを見る」の3つに替え、顔は 13pt の
+        // `cardActionFace`（1行・0.93 まで＝12pt）。字の幅を取る札にした（`fitsText`）
+        let map = try String(contentsOf: sourcesRoot.appendingPathComponent("Features/Map/PhotoMapView.swift"), encoding: .utf8)
+        XCTAssertTrue(map.contains(#"cardActionFace(L("観光スポットを見る", "See photo spot"), systemImage: nil, fitsText: true)"#))
+        let faceStart = try XCTUnwrap(map.range(of: "private func cardActionFace(")).lowerBound
+        let face = String(map[faceStart...].prefix(1400))
+        XCTAssertTrue(face.contains(".lineLimit(1)") && face.contains(".minimumScaleFactor(0.93)")
+                      && face.contains(".font(.footnote.weight(.semibold))"), "地図の札の「観光スポットを見る」が折り返すか 12pt より小さく縮む")
+        for path in ["Features/Gallery/DailyQuizView.swift"] {
             let text = try String(contentsOf: sourcesRoot.appendingPathComponent(path), encoding: .utf8)
             guard let start = text.range(of: #"L("観光スポットを見る""#) else {
                 XCTFail("\(path) に「観光スポットを見る」が無い"); continue

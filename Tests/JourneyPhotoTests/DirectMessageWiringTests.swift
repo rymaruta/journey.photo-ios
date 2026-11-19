@@ -41,7 +41,7 @@ final class DirectMessageWiringTests: XCTestCase {
     /// 入口: 見出しのベルの左に吹き出し（`bubble.left`・紙飛行機ではない・owner 指示）。点は受信箱の未読だけ
     func testHeaderHasMessagesLeftOfTheBell() async throws {
         let header = try source("Features/Common/AppHeader.swift")
-        // 2026-11-16（A3）: 絵・読み上げ・行き先はマイページと分け合う（`AppHeaderInbox`）
+        // 絵・読み上げ・行き先は `AppHeaderInbox` の1か所（2026-11-16）
         XCTAssertEqual(AppHeaderInbox.messagesSymbol, "bubble.left")
         XCTAssertEqual(AppHeaderInbox.bellSymbol, "bell")
         XCTAssertTrue(header.contains("Image(systemName: AppHeaderInbox.messagesSymbol)"))
@@ -63,8 +63,8 @@ final class DirectMessageWiringTests: XCTestCase {
     func testRootWiresInboxAndPush() async throws {
         let root = try source("App/RootView.swift")
         XCTAssertTrue(root.contains("messages.hasUnread(hiding: hidden.blockedUserIds)"))
-        // 2026-11-16（A3）: マイページの表紙の吹き出しにも同じ値を配る（ホーム・探す・マップ・マイページの4つ）
-        XCTAssertEqual(root.components(separatedBy: "messagesUnread: messagesUnread").count - 1, 4, "タブごとに点の値が違う")
+        // 2026-11-18 owner 判断でマイページの表紙の吹き出しを外した（ホーム・探す・マップの3つの見出し）
+        XCTAssertEqual(root.components(separatedBy: "messagesUnread: messagesUnread").count - 1, 3, "タブごとに点の値が違う")
         XCTAssertTrue(root.contains(".onChange(of: tabRouter.messagesRequests)"))
         XCTAssertTrue(root.contains(".onChange(of: router.conversationRequests)"))
         XCTAssertTrue(root.contains("DMInboxView(openConversation: $messagesTarget)"))
