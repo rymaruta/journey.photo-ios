@@ -357,7 +357,9 @@ final class TravelStoryTests: XCTestCase {
         // 2026-11-18: 暦と写真の色をフィルムの帯の後ろに足した
         XCTAssertEqual(TravelStory.nearby(.film), [.film, .stamp, .koyomi])
         XCTAssertEqual(TravelStory.nearby(.koyomi), [.koyomi, .film, .photoColor])
-        XCTAssertEqual(TravelStory.nearby(.photoColor), [.photoColor, .koyomi])
+        // 続けて雑誌を写真の色の後ろに足した
+        XCTAssertEqual(TravelStory.nearby(.photoColor), [.photoColor, .koyomi, .magazine])
+        XCTAssertEqual(TravelStory.nearby(.magazine), [.magazine, .photoColor])
         let sheet = try? source("Sources/JourneyPhoto/Features/Common/TravelStorySheet.swift")
         XCTAssertTrue(sheet?.contains("outputs = outputs.filter { keys.contains($0.key) }") == true, "置き場を絞っていない")
         XCTAssertTrue(sheet?.contains("onCancel: { job.cancel() }") == true, "取り消した描画を止めていない")

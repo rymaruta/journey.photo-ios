@@ -17,13 +17,14 @@ enum TravelStory {
     // MARK: - 選ぶもの
 
     /// 型。**並びは章の触れる模型どおり**（搭乗券・切手と消印・フィルムの帯）。はじめは推奨 1 の切手と消印。
-    /// 2026-11-18: 暦（差し色・`KoyomiCard`）と写真の色（`PhotoColorCard`）を後ろに足した（前からの並びは変えない）
+    /// 2026-11-18: 暦（差し色・`KoyomiCard`）と写真の色（`PhotoColorCard`）を後ろに足した（前からの並びは変えない）。続けて雑誌（`MagazineCard`）を後ろに足した
     enum Kind: String, CaseIterable, Identifiable {
         case pass
         case stamp
         case film
         case koyomi
         case photoColor
+        case magazine
 
         var id: String { rawValue }
 
@@ -34,12 +35,13 @@ enum TravelStory {
             case .film: return L("フィルムの帯", "Film strip")
             case .koyomi: return L("暦", "Almanac")
             case .photoColor: return L("写真の色", "Photo color")
+            case .magazine: return L("雑誌", "Magazine")
             }
         }
 
         /// ステッカー（透明の地）にできるか。フィルムの帯は3枚を並べる型なので写真に重ねるだけ（章の模型）。
-        /// 暦と写真の色は、写真の色の地に写真と字を置く1枚の絵なので、透明の地にしない
-        var supportsSticker: Bool { self != .film && self != .koyomi && self != .photoColor }
+        /// 暦と写真の色は、写真の色の地に写真と字を置く1枚の絵なので、透明の地にしない。雑誌も写真とぼかした地の1枚の絵
+        var supportsSticker: Bool { self != .film && self != .koyomi && self != .photoColor && self != .magazine }
 
         /// 旅のどこ（行ってきます・今ここ・ただいま）を選ぶか。搭乗券だけ（章の模型）
         var usesPhase: Bool { self == .pass }
@@ -206,6 +208,28 @@ enum TravelStory {
         var trip: TripFacts? = nil
         /// 先頭の写真の緯度（暦の南半球の見分けだけに使う・絵には描かない）。無ければ nil
         var latitude: Double? = nil
+        /// 先頭の写真の題と撮影の値（雑誌の型・2026-11-18）。無ければ nil
+        var title: String? = nil
+        var camera: String? = nil
+        var aperture: String? = nil
+        var exposure: String? = nil
+        var iso: Int? = nil
+        /// 先頭の写真の id（雑誌の型の Vol. の番号を数えるため・絵には描かない）
+        var photoId: String? = nil
+        /// 自分の何番目の投稿か（雑誌の「Vol.」・画面が読み終えてから入れる・`MagazineCard.volume`）。分からなければ nil
+        var volume: Int? = nil
+
+        /// 雑誌の題と撮影の値を写真から写す
+        func withMagazine(of photo: Photo) -> Facts {
+            var next = self
+            next.title = photo.title?.resolved()
+            next.camera = photo.exif?.camera
+            next.aperture = photo.exif?.aperture
+            next.exposure = photo.exif?.exposure
+            next.iso = photo.exif?.iso
+            next.photoId = photo.id
+            return next
+        }
     }
 
     /// 写真1枚（写真の詳細の ⋯ → ストーリーに）の事実
@@ -214,6 +238,7 @@ enum TravelStory {
               takenDay: TripBook.hasTakenDay(photo) ? TripBook.day(of: photo) : nil,
               name: name,
               latitude: photo.coords?.lat)
+            .withMagazine(of: photo)
     }
 
     /// 旅の一冊（「ストーリーに」）の事実。`lead` は絵に載せる先頭の1枚（呼ぶ側は旅の最後の、配ってよい1枚を渡す）。
@@ -229,6 +254,7 @@ enum TravelStory {
                                      days: trip.days,
                                      leadDay: leadDay),
                      latitude: lead.coords?.lat)
+            .withMagazine(of: lead)
     }
 
     /// 画面に渡す写真の URL と事実（写真の詳細・旅の一冊の両方の入口から作る）
@@ -483,6 +509,33 @@ enum TravelStory {
         let region = choice.placeLevel == .city
             ? placeText(facts.location, level: .prefecture).flatMap { $0 == base.place ? nil : $0 } : nil
         return PhotoColorCard.Texts(place: base.place, region: base.place == nil ? nil : region, date: base.date)
+    }
+
+    // MARK: - 雑誌の文字
+
+    /// 雑誌（`MagazineCard`）の字。**選んだ細かさを守る**: 撮影地は「県まで」＝県（海外は国）、「市まで」＝県と市
+    /// （県は市より粗いので足してよい）、「出さない」＝出さない（題が無いときに撮影地を題にするのも同じ細かさ）。
+    /// 日付は「出さない」以外なら撮った日（「今日」も日付で書く・雑誌の号の日付なので）
+    static func magazine(_ facts: Facts, choice: Choice) -> MagazineCard.Texts {
+        let region = placeText(facts.location, level: .prefecture)
+        var place: String?
+        switch choice.placeLevel {
+        case .none: place = nil
+        case .prefecture: place = region
+        case .city:
+            let city = placeText(facts.location, level: .city)
+            if let region, let city, city != region {
+                place = LocationMatch.hasJapaneseScript(region) ? "\(region) \(city)" : "\(city), \(region)"
+            } else {
+                place = city ?? region
+            }
+        }
+        // **撮影地を「出さない」なら題も出さない**（題に地名が入りやすい・2026-11-19 まとめ役の判断）。題の所は帯だけ
+        return MagazineCard.texts(title: choice.placeLevel == .none ? nil : facts.title, place: place,
+                                  placeFallback: choice.placeLevel == .city ? region : nil,
+                                  takenDay: facts.takenDay, showsDate: choice.dateLevel != .none,
+                                  camera: facts.camera, aperture: facts.aperture, exposure: facts.exposure,
+                                  iso: facts.iso, volume: facts.volume)
     }
 
     /// 切手の下の右（明朝）。旅の何日目か、分からなければ出さない

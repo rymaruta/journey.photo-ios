@@ -65,18 +65,21 @@ struct KoyomiGalleryPreview: View {
     }
 
     /// 見本の写真を、形の縦横比に真ん中で切った JPEG
-    static func photo(_ shape: Shape) -> Data? {
+    static func photo(_ shape: Shape) -> Data? { photo(aspect: shape.aspect) }
+
+    /// 見本の写真を、縦横比（幅 ÷ 高さ）に真ん中で切った JPEG（雑誌の見本 `MagazineGalleryPreview` も使う）
+    static func photo(aspect: CGFloat) -> Data? {
         #if os(Linux)
         return nil   // Linux の SDK 模型には画像の切り抜きが無い（見本は Mac の UI テストだけで使う）
         #else
         guard let image = UIImage(named: PreviewUploadSample.assetName), let cg = image.cgImage else { return nil }
         let w = CGFloat(cg.width), h = CGFloat(cg.height)
         let crop: CGRect
-        if w / h > shape.aspect {
-            let cw = h * shape.aspect
+        if w / h > aspect {
+            let cw = h * aspect
             crop = CGRect(x: (w - cw) / 2, y: 0, width: cw, height: h)
         } else {
-            let ch = w / shape.aspect
+            let ch = w / aspect
             crop = CGRect(x: 0, y: (h - ch) / 2, width: w, height: ch)
         }
         guard let cut = cg.cropping(to: crop.integral) else { return nil }

@@ -39,18 +39,22 @@ final class ShareCardAuditTests: XCTestCase {
             name: "旅灯", username: "tabi_akari", location: "京都府（京都市東山区）", coords: kyoto,
             camera: "Sony α7 IV", lens: "FE 24-70mm F2.8 GM II", exposure: "1/250s", aperture: "f/8", iso: 100,
             verified: true, proStyle: nil, early: false, badge: nil,
-            takenDay: ShareCardAuditTests.koyomiDay), allowsTruncation: false),
+            takenDay: ShareCardAuditTests.koyomiDay,
+            // 雑誌の型の題と Vol.（2026-11-18・ほかの型は使わない）
+            title: "清水の舞台から望む紅葉の東山", volume: 12), allowsTruncation: false),
         Content(name: "長い", credit: R.Credit(
             name: "写真と旅とコーヒーを愛する週末フォトグラファー山田太郎", username: "weekend_photographer_yamada_taro",
             location: "和歌山県（東牟婁郡那智勝浦町）", coords: kyoto,
             camera: "Hasselblad X2D II 100C Earth Explorer", lens: "XCD 2,8-4/35-100E Zoom Lens Ultra Wide",
             exposure: "1/4000s", aperture: "f/2.8", iso: 12800,
-            verified: true, proStyle: .plate, early: true, badge: nil), allowsTruncation: true),
+            verified: true, proStyle: .plate, early: true, badge: nil,
+            title: "朝霧の向こうにゆっくりと浮かび上がる那智の大滝と青岸渡寺の三重塔、そして熊野の深い森と遠い海の光",
+            volume: 12345), allowsTruncation: true),
         Content(name: "英語", credit: R.Credit(
             name: "Emily Carter", username: "emily.travels", location: "Saint-Germain-en-Laye, Île-de-France, France",
             coords: paris, camera: "FUJIFILM X100VI", lens: "23mm F2", exposure: "1/500s", aperture: "f/5.6", iso: 160,
             verified: false, proStyle: nil, early: false, badge: nil,
-            takenDay: ShareCardAuditTests.koyomiDay), allowsTruncation: false),
+            takenDay: ShareCardAuditTests.koyomiDay, volume: 3), allowsTruncation: false),
         Content(name: "絵文字", credit: R.Credit(
             name: "🌸さくら🌸旅人📷", username: "sakura_tabi", location: "東京都（台東区）", coords: nil,
             camera: nil, lens: nil, exposure: nil, aperture: nil, iso: nil,
@@ -68,12 +72,16 @@ final class ShareCardAuditTests: XCTestCase {
         switch kind {
         case "パノラマ": size = CGSize(width: 4000, height: 1000)
         case "縦長": size = CGSize(width: 1000, height: 2400)
+        // 雑誌の型の全面に敷く形を試す写真（2026-11-18・切れる量 8% 以下になる比）
+        case "白4:5", "空4:5": size = CGSize(width: 1080, height: 1350)
+        case "白1:1": size = CGSize(width: 1200, height: 1200)
+        case "空9:16": size = CGSize(width: 1080, height: 1920)
         default: size = CGSize(width: 1600, height: 1200)
         }
         return UIGraphicsImageRenderer(size: size).jpegData(withCompressionQuality: 0.95) { context in
             let cg = context.cgContext
             switch kind {
-            case "白": UIColor.white.setFill(); cg.fill(CGRect(origin: .zero, size: size))
+            case "白", "白4:5", "白1:1": UIColor.white.setFill(); cg.fill(CGRect(origin: .zero, size: size))
             case "黒": UIColor.black.setFill(); cg.fill(CGRect(origin: .zero, size: size))
             default:
                 // 明るい空 → 白い雲 → 明るい地面（明るい写真の典型。字の下が明るくなりやすい）
@@ -91,6 +99,10 @@ final class ShareCardAuditTests: XCTestCase {
     /// 試す写真（5種）。中身は毎回同じなので、全部の試験で1回だけ作る（札 #610・2026-11-14 判断）
     static let photos: [String: Data] = Dictionary(uniqueKeysWithValues:
         ["白", "黒", "パノラマ", "縦長", "空"].map { ($0, photo($0)) })
+
+    /// 雑誌の型だけで足す写真（全面に敷く形・2026-11-18）。ほかの型の試験の数は変えない
+    static let fullBleedPhotos = ["白4:5", "空4:5", "白1:1", "空9:16"]
+    static let extraPhotos: [String: Data] = Dictionary(uniqueKeysWithValues: fullBleedPhotos.map { ($0, photo($0)) })
 
     // MARK: - 測る
 
@@ -299,13 +311,13 @@ final class ShareCardAuditTests: XCTestCase {
 
     /// 1つの型 × 比を、全部の中身 × 写真で測る。Xcode の試験は1本 1 分で打ち切られる
     /// （run 1287: 全部を1本にしたら 164 件目で止まった）ので、型 × 比ごとに1本にする
-    func audit(_ style: R.Style, _ ratio: R.Ratio) async throws {
+    func audit(_ style: R.Style, _ ratio: R.Ratio, extraPhotos: [String] = []) async throws {
         var cases: [(String, R.Credit, Bool, String)] = []
         for content in Self.contents {
             for photo in ["白", "黒"] { cases.append((content.name, content.credit, content.allowsTruncation, photo)) }
         }
         let typical = Self.contents[0]
-        for photo in ["パノラマ", "縦長", "空"] { cases.append((typical.name, typical.credit, false, photo)) }
+        for photo in ["パノラマ", "縦長", "空"] + extraPhotos { cases.append((typical.name, typical.credit, false, photo)) }
         let clock = ContinuousClock()
         let started = clock.now
         let measured = try await Self.measureAll(cases.map { ($0.1, $0.3) }, ratio: ratio, style: style)
@@ -393,7 +405,7 @@ final class ShareCardAuditTests: XCTestCase {
             func start(_ index: Int) {
                 let (credit, photoName) = jobs[index]
                 group.addTask {
-                    let photo = try XCTUnwrap(Self.photos[photoName])
+                    let photo = try XCTUnwrap(Self.photos[photoName] ?? Self.extraPhotos[photoName])
                     return (index, try await Self.measure(photo, credit: credit, ratio: ratio, style: style).0)
                 }
             }
@@ -449,7 +461,7 @@ final class ShareCardAuditTests: XCTestCase {
 
     /// 全部の型が下の試験に並んでいるか（型を足したら試験も足す）
     func testEveryStyleHasAnAudit() {
-        XCTAssertEqual(R.Style.allCases.count, 12)
+        XCTAssertEqual(R.Style.allCases.count, 13)
     }
 
     func testBandPortrait() async throws { try await audit(.band, .portrait) }
@@ -488,5 +500,9 @@ final class ShareCardAuditTests: XCTestCase {
     func testPhotoColorPortrait() async throws { try await audit(.photoColor, .portrait) }
     func testPhotoColorStory() async throws { try await audit(.photoColor, .story) }
     func testPhotoColorSquare() async throws { try await audit(.photoColor, .square) }
+    // 雑誌（2026-11-18）。全面に敷く形（4:5・1:1・9:16 の写真）も白い写真と空の写真で測る
+    func testMagazinePortrait() async throws { try await audit(.magazine, .portrait, extraPhotos: Self.fullBleedPhotos) }
+    func testMagazineStory() async throws { try await audit(.magazine, .story, extraPhotos: Self.fullBleedPhotos) }
+    func testMagazineSquare() async throws { try await audit(.magazine, .square, extraPhotos: Self.fullBleedPhotos) }
 }
 #endif

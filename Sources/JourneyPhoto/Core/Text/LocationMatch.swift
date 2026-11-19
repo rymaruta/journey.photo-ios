@@ -392,7 +392,8 @@ extension LocationMatch {
         part.hasSuffix(" District") || part.hasSuffix("-gun") || part.hasSuffix(" County")
     }
 
-    private static func hasJapaneseScript(_ text: String) -> Bool {
+    /// 和文の字（かな・漢字）が入るか（雑誌の撮影地の並び `MagazineCard.placeLine` も使う）
+    static func hasJapaneseScript(_ text: String) -> Bool {
         text.unicodeScalars.contains { s in
             (0x3040...0x30FF).contains(s.value) || (0x4E00...0x9FFF).contains(s.value)
                 || (0x3400...0x4DBF).contains(s.value)

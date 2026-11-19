@@ -24,10 +24,15 @@ struct SignatureShareCardSheet: View {
         let storyTitle: String
         /// 閉じたとき（そこで共有したか・`PostedCardHabit`）
         var onFinish: ((Bool) -> Void)? = nil
+        /// 保存できた写真（雑誌の Vol. の番号を数えるとき、まだ自分の一覧に無ければ足す・`MagazineCard.volume`）
+        var photo: Photo? = nil
     }
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var toasts: ToastCenter
+    /// 自分の写真の一覧（雑誌の Vol. の番号を数える・`MagazineVolume`）
+    @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var auth: AuthStore
     /// 「ストーリーに載せる」で開く作る画面（写真の詳細の「送る」と同じ `StoryComposerView(sharing:)`）
     @State private var storySeed: StoryShareSeed?
     @State private var preparingStory = false
@@ -45,9 +50,19 @@ struct SignatureShareCardSheet: View {
 
     /// 撮った日を絵に出すか（「日付」の入切・`ShareCardDateChoice`）。型をまたいで覚える
     @State private var showsDate = ShareCardDateChoice.load()
-    /// 描くときの中身（入切を写したもの）
-    private var drawnCredit: SignatureShareCardRenderer.Credit {
+    /// 雑誌の Vol. の番号（自分の何番目の投稿か）。読み終えるまで雑誌は描かない（番号が後から足されて絵が変わらないように）。
+    /// 分からなければ nil のまま（「Vol.」を出さない）
+    @State private var volume: Int?
+    @State private var volumeLoaded = false
+    /// 見本の中身（入切だけを写す。Vol. の番号は付けない）
+    private var thumbnailCredit: SignatureShareCardRenderer.Credit {
         ShareCardDateChoice.credit(credit, showsDate: showsDate)
+    }
+    /// 描くときの中身（入切と Vol. を写したもの）
+    private var drawnCredit: SignatureShareCardRenderer.Credit {
+        var drawn = ShareCardDateChoice.credit(credit, showsDate: showsDate)
+        drawn.volume = volume
+        return drawn
     }
 
     /// 作った画像の置き場所の鍵（比率と型と日付の入切の組）
@@ -55,6 +70,8 @@ struct SignatureShareCardSheet: View {
         let ratio: SignatureShareCardRenderer.Ratio
         let style: SignatureShareCardRenderer.Style
         var showsDate = true
+        /// 雑誌の Vol. の番号（雑誌のときだけ・ほかの型は nil にそろえる）
+        var volume: Int? = nil
     }
     @State private var output: Data?
     // 同じ共有画面内で比率を戻したときはJPEGの再生成を避ける。
@@ -106,7 +123,7 @@ struct SignatureShareCardSheet: View {
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
 
-                // 日付を描く型（暦）を選んでいるときだけ、日付の入切を1つ（2026-11-18 判断・`ShareCardDateChoice`）
+                // 日付を描く型（暦・雑誌）を選んでいるときだけ、日付の入切を1つ（2026-11-18 判断・`ShareCardDateChoice`）
                 if ShareCardDateChoice.showsToggle(style: style, credit: credit) {
                     JPToggleRow(title: ShareCardDateChoice.label, isOn: $showsDate)
                         .padding(.horizontal)
@@ -131,7 +148,8 @@ struct SignatureShareCardSheet: View {
                             Text(L("別の比率を選ぶか、もう一度お試しください", "Choose another ratio or try again"))
                             Button(L("再試行", "Try again")) {
                                 renderedByKey.removeValue(forKey: CardKey(ratio: ratio, style: style,
-                                    showsDate: ShareCardDateChoice.drawsDate(style) ? showsDate : true))
+                                    showsDate: ShareCardDateChoice.drawsDate(style) ? showsDate : true,
+                                    volume: style == .magazine ? volume : nil))
                                 retryCount += 1
                             }
                                 .accessibilityIdentifier("signatureShare.retry")
@@ -182,12 +200,28 @@ struct SignatureShareCardSheet: View {
                     thumbnails.removeValue(forKey: option.rawValue)
                 }
             }
-            .task(id: "\(ratio.rawValue)-\(styleRaw)-\(showsDate)-\(retryCount)") {
+            .task(id: style == .magazine) {
+                // 雑誌の Vol. の番号。**雑誌を選んだときだけ**自分の写真の一覧を読む（2026-11-19 まとめ役の判断・
+                // 読んだ一覧はアプリを使っている間だけ覚える `MagazineVolume.Memo`）。上限の時間を過ぎたら出さない
+                guard style == .magazine, !volumeLoaded else { return }
+                volume = await MagazineVolume.load(photoId: credit.photoId, justPosted: posted?.photo,
+                                                   owner: auth.userId, photos: environment.photos)
+                volumeLoaded = true
+            }
+            // 番号を読み終えたことで描き直すのは雑誌のときだけ（ほかの型は描き直さない）
+            .task(id: "\(ratio.rawValue)-\(styleRaw)-\(showsDate)-\(retryCount)" + (style == .magazine ? "-\(volumeLoaded)" : "")) {
                 let selectedRatio = ratio
                 let selectedStyle = style
+                // 雑誌は Vol. の番号を読み終えてから描く（読み終えたら task がもう一度来る）
+                if selectedStyle == .magazine, !volumeLoaded {
+                    preparing = true
+                    output = nil
+                    return
+                }
                 // 日付を描かない型では入切で描き直さない（鍵をそろえる）
                 let dated = ShareCardDateChoice.drawsDate(selectedStyle) ? showsDate : true
-                let key = CardKey(ratio: selectedRatio, style: selectedStyle, showsDate: dated)
+                let key = CardKey(ratio: selectedRatio, style: selectedStyle, showsDate: dated,
+                                  volume: selectedStyle == .magazine ? volume : nil)
                 if let cached = renderedByKey[key] {
                     output = cached
                     preparing = false
@@ -221,7 +255,8 @@ struct SignatureShareCardSheet: View {
                 }
                 for option in ShareCardStyleChoice.order(for: credit) where thumbnails[option.rawValue] == nil {
                     if Task.isCancelled { return }
-                    guard let data = await SignatureShareCardRenderer.render(photoData, credit: drawnCredit,
+                    // 見本は Vol. の番号なしで描く（番号のために一覧を読まない・2026-11-19 まとめ役の判断）
+                    guard let data = await SignatureShareCardRenderer.render(photoData, credit: thumbnailCredit,
                                                                              ratio: .portrait, style: option),
                           let image = UIImage(data: data)?.preparingThumbnail(of: ShareCardStyleTile.pixelSize)
                     else { continue }
@@ -349,10 +384,10 @@ enum PostedShareCardText {
 }
 
 /// 共有画像の型の並びと名前（2026-11-14・試験で見る）。名前は短く（チップに1語）。
-/// 2026-11-18: 暦（`KoyomiCard`）を後ろに足した（前からの並びは変えない）
+/// 2026-11-18: 暦（`KoyomiCard`）を後ろに足した（前からの並びは変えない）。続けて雑誌（`MagazineCard`）を後ろに足した
 enum ShareCardStyleChoice {
     static let order: [SignatureShareCardRenderer.Style] = [.band, .fade, .cover, .label, .printed, .ticket, .cinema,
-                                                            .mat, .film, .tanzaku, .koyomi, .photoColor]
+                                                            .mat, .film, .tanzaku, .koyomi, .photoColor, .magazine]
 
     /// その写真で選べる型。**撮った日の分からない写真では暦を外す**（日付も節気も出せない・2026-11-18 判断）
     static func order(for credit: SignatureShareCardRenderer.Credit) -> [SignatureShareCardRenderer.Style] {
@@ -381,6 +416,7 @@ enum ShareCardStyleChoice {
         case .tanzaku: return L("縦書き", "Vertical")
         case .koyomi: return L("暦", "Almanac")
         case .photoColor: return L("写真の色", "Photo color")
+        case .magazine: return L("雑誌", "Magazine")
         }
     }
 }
@@ -397,9 +433,9 @@ enum ShareCardStyleChoice {
 enum ShareCardDateChoice {
     static let defaultsKey = "signatureShare.showsDate"
 
-    /// 日付を描く型（暦・写真の色。2026-11-18: 写真の色も同じ入切を使う）
+    /// 日付を描く型（暦・写真の色・雑誌。2026-11-18: 写真の色と雑誌も同じ入切を使う）
     static func drawsDate(_ style: SignatureShareCardRenderer.Style) -> Bool {
-        style == .koyomi || style == .photoColor
+        style == .koyomi || style == .photoColor || style == .magazine
     }
 
     /// 入切を出すか（日付を描く型で、撮った日のある写真）
