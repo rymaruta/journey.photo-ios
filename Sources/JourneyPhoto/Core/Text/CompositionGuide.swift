@@ -403,7 +403,11 @@ enum CompositionGuide {
             let shape = v == 0 ? pts : pts.map { ($0.0, 1 - $0.1) }
             return [closed(shape)] + shape.map { point($0.0, $0.1) }
         case .radial:
-            let origins = [(0.5, 0.5), (1.0 / 3, 1.0 / 3), (2.0 / 3, 1.0 / 3), (1.0 / 3, 2.0 / 3), (2.0 / 3, 2.0 / 3)]
+            // 型を書き、1/3・2/3 を先に名前に置く。型の無い組の配列のままだと、Xcode 27.2（Swift 6.4.2）が
+            // 「型の確かめが時間内に終わらない」で止まった（#647・run 1574）。値は前と同じ
+            let third = 1.0 / 3, twoThirds = 2.0 / 3
+            let origins: [(Double, Double)] = [(0.5, 0.5), (third, third), (twoThirds, third),
+                                               (third, twoThirds), (twoThirds, twoThirds)]
             let o = origins[v]
             let ox = o.0 * r, oy = o.1
             let rays = (0..<8).map { i -> GuideMark in
@@ -419,7 +423,10 @@ enum CompositionGuide {
             return [GuideMark(.roundedRect(GuideRect(x: inset, y: inset, width: 1 - inset * 2, height: 1 - inset * 2),
                                            corner: 0.05))]
         case .negativeSpace:
-            let spots = [(2.0 / 3, 2.0 / 3), (1.0 / 3, 2.0 / 3), (2.0 / 3, 1.0 / 3), (1.0 / 3, 1.0 / 3)]
+            // 上の `.radial` と同じ理由で、型を書いて分ける（#647）。値は前と同じ
+            let third = 1.0 / 3, twoThirds = 2.0 / 3
+            let spots: [(Double, Double)] = [(twoThirds, twoThirds), (third, twoThirds),
+                                             (twoThirds, third), (third, third)]
             let c = spots[v]
             let side = min(r, 1) * 0.12
             let w = side / r, h = side
