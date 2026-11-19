@@ -67,31 +67,45 @@ enum SignatureShareCardRenderer {
 
         /// 地図を描く型（帯・溶かす・ラベル・表紙・切符）がピンを打つ点。無ければ地図を出さない。
         /// 座標のある写真は今までどおり約50km単位に丸めた `coords`。座標の無い写真は、カードに出す撮影地の文字から
-        /// 都道府県が分かれば、その県の代表点（`prefectureMapCoordinate`）
+        /// 市区町村か都道府県の代表点（`shareMapPoint`）。
+        /// 投稿の共有カードには場所の細かさの選びが無く、撮影地の2行目（市区町村）をいつも出すので、市まで引く
         var mapCoordinate: CLLocationCoordinate2D? {
-            coords ?? SignatureShareCardRenderer.prefectureMapCoordinate(placeLines: placeLines, location: location)
+            coords ?? SignatureShareCardRenderer.shareMapPoint(place: place ?? LocationMatch.shareCardPlace(location),
+                                                               location: location, cityLevel: true)
         }
     }
 
-    /// 座標の無い写真の地図の点（2026-11-19 owner「位置情報が無い写真でも、撮影地の名前（県など）が分かるなら地図を出してほしい」）。
+    /// 座標の無い写真の地図の点（2026-11-19 owner「位置情報が無い写真でも、撮影地の名前（県など）が分かるなら地図を出してほしい」
+    /// 「金沢市, 石川県なら金沢市にピン」）。
     ///
     /// 2026-11-19 判断:
-    /// - 県は**カードに出す撮影地の文字**（2行の `placeLines` と `location`）から `ShareCardMap.prefectureName(in:)` で引く
-    ///   （地図の塗る県と同じ引き方・和文の「金沢市, 石川県」も英文の "Kanazawa, Ishikawa" も取れる）。
+    /// - 県は**カードに出す撮影地の文字**（2行の `place` と `location`）から `ShareCardMap.prefectureName(in:)` で引く
+    ///   （地図の塗る県と同じ引き方・和文の「金沢市, 石川県」も英文の "Kanazawa, Ishikawa Prefecture, Japan" も取れる）。
     ///   取れなければ `RegionList.prefecture(inText:)`（区切りの無い和文の住所）
-    /// - 点は県の代表点＝都道府県庁のおおよその位置（`PassExchange.prefectureOffices` の表を使い回す。
-    ///   新しい表は足さない。どの県庁も、地図が日本を描き（輪郭の中か、海岸から 0.15° 以内・`shapeForDisplay`）
-    ///   その県を塗れる（`prefectureShape`）点であることを
-    ///   `ShareCardMapTests.testPrefectureOfficesLieInsideTheirPrefecture` で見張る）。市が分かっても市の座標は引かない（ネットに問い合わせない）。
-    ///   北海道のような広い県でも代表点1つ。県より細かい場所は出さないので、共有で選んだ細かさを超えない
-    /// - 海外・県が分からない・撮影地が無い（出さない）ときは nil（地図を出さない）
-    static func prefectureMapCoordinate(placeLines: [String], location: String?) -> CLLocationCoordinate2D? {
-        let text = (placeLines + [location ?? ""]).filter { !$0.isEmpty }.joined(separator: ", ")
+    /// - 市区町村は、カードに出す撮影地の2行目（`place.secondary`。県が1行目に無い形では1行目）。
+    ///   `cityLevel`（市まで出す選び）のときだけ、その市区町村の代表点＝役所・役場の位置（`MunicipalOffices`・同梱の表）。
+    ///   同じ名前の市区町村は県と組み合わせて引き、県が分からず名前が重なるときは引かない。英語の市名（"Kanazawa"）は表に無いので県まで
+    /// - 市区町村が引けなければ県の代表点＝都道府県庁のおおよその位置（`PassExchange.prefectureOffices` の表を使い回す）。
+    ///   北海道のような広い県でも代表点1つ
+    /// - **代表点はぼかさない**（座標のある写真の `approximateShareCoordinate` を通さない）。役所・県庁の位置はそれ自体が
+    ///   その市・県を表す粗い点で、写真を撮った所ではない。約50kmに丸めると、小さい市では隣の市や海の上に動き、
+    ///   県の境の近くの市では隣の県に入って塗る県と食い違う
+    /// - 選んだ細かさより細かい場所は出さない（県までなら県の代表点・市までなら市の代表点）
+    /// - 海外・県も市も分からない・撮影地が無い（出さない）ときは nil（地図を出さない）
+    static func shareMapPoint(place: LocationMatch.ShareCardPlace?, location: String?, cityLevel: Bool,
+                              offices: [MunicipalOffices.Entry] = MunicipalOffices.bundled) -> CLLocationCoordinate2D? {
+        let text = ((place?.lines ?? []) + [location ?? ""]).filter { !$0.isEmpty }.joined(separator: ", ")
+        guard !text.isEmpty else { return nil }
         // 区切りの無い住所（「東京都新宿区西新宿2-8-1」「石川県金沢市 兼六園」）は欠片が県名と一致しないので、
         // 47都道府県の正式名を文字の中から探す（いちばん前のもの・海外の「〜県」は47の名前に無いので拾わない）
-        guard !text.isEmpty,
-              let prefecture = ShareCardMap.prefectureName(in: text) ?? RegionList.prefecture(inText: text),
-              let office = PassExchange.prefectureOffices[prefecture] else { return nil }
+        let prefecture = ShareCardMap.prefectureName(in: text) ?? RegionList.prefecture(inText: text)
+        if cityLevel, let place {
+            let city = RegionList.prefectures.contains(place.primary) ? place.secondary : (place.secondary ?? place.primary)
+            if let city, let office = MunicipalOffices.office(named: city, prefecture: prefecture, among: offices) {
+                return CLLocationCoordinate2D(latitude: office.lat, longitude: office.lng)
+            }
+        }
+        guard let prefecture, let office = PassExchange.prefectureOffices[prefecture] else { return nil }
         return CLLocationCoordinate2D(latitude: office.lat, longitude: office.lng)
     }
 

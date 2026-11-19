@@ -32,7 +32,7 @@ struct ShareCardGalleryPreview: View {
     }
 
     /// 中身の見本（ふつう・長い名前と撮影地と機材・座標の無い写真）。
-    /// `nocoords` は座標が無く撮影地の文字が「金沢市, 石川県」の写真（2026-11-19: 県の代表点に地図を出す・
+    /// `nocoords` は座標が無く撮影地の文字が「金沢市, 石川県」の写真（2026-11-19: 金沢市の代表点に地図を出す・
     /// `Credit.mapCoordinate`）。地図を描く型だけ撮る。前からの組み合わせの番号を変えないよう最後に足す
     enum Sample: String, CaseIterable { case normal, long, nocoords }
 
