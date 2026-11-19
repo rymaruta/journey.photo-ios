@@ -169,7 +169,7 @@ final class UploadPreviewTests: XCTestCase {
     // MARK: - 道具
 
     private func openUpload(extra: [String]) -> XCUIApplication? {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]

@@ -192,7 +192,7 @@ final class PlaceSuggestionHitTests: XCTestCase {
     }
 
     private func openUpload() -> XCUIApplication? {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -216,7 +216,7 @@ final class PlaceSuggestionHitTests: XCTestCase {
 
     /// 欄そのものの焦点（非公開の属性なので在るときだけ読む。読めない環境ではキーボードが出ているか）
     private func waitForFocus(_ field: XCUIElement, timeout: TimeInterval = 8) -> Bool {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         func focused() -> Bool {
             if field.responds(to: NSSelectorFromString("hasKeyboardFocus")) {
                 return (field.value(forKey: "hasKeyboardFocus") as? Bool) == true

@@ -18,14 +18,14 @@ final class CreateFlowLibraryTests: XCTestCase {
 
     override func setUp() {
         continueAfterFailure = true
-        XCUIApplication().resetAuthorizationStatus(for: .photos)
+        XCUIApplication.jp().resetAuthorizationStatus(for: .photos)
         addTeardownBlock {
-            XCUIApplication().resetAuthorizationStatus(for: .photos)
+            XCUIApplication.jp().resetAuthorizationStatus(for: .photos)
         }
     }
 
     func testPostTabOpensLibraryFirst() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]

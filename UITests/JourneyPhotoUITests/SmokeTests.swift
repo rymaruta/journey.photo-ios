@@ -21,7 +21,7 @@ final class SmokeTests: XCTestCase {
     }
 
     func testLaunchesAndEveryTabDraws() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         // **毎回まっさらから。** 同意の記録が残っていると初回の道を通らない
         app.launchArguments += ["-legal.consent.version", "0"]
         // 起動直後の動きの記録（失敗したら終わりにログと添付へ残す・札 #435・`PerfProbeSupport`）
@@ -73,7 +73,7 @@ final class SmokeTests: XCTestCase {
     /// 閉じるボタンを付け忘れ、「開いたら閉じられない」になった（2026-09-25）。
     /// ログインしていなくても同じシートが出る（中身がログインの案内になるだけ）
     func testNotificationsSheetCloses() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         // 起動直後の動きの記録（失敗したら終わりにログと添付へ残す・札 #435・`PerfProbeSupport`）
         enablePerfProbe(app)
@@ -102,7 +102,7 @@ final class SmokeTests: XCTestCase {
     /// 🔴 run 432: 箱を 28 角にして外へ当たりを広げた作りでは、ここを押しても開かなかった。
     /// 横（隣の絵との間）を押したときの結果は、決まりにせず記録だけ残す（システム次第のため）
     func testHeaderIconHitAreaReachesBeyondTheDrawnBox() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         // 起動直後の動きの記録（失敗したら終わりにログと添付へ残す・札 #435・`PerfProbeSupport`）
         enablePerfProbe(app)
@@ -144,7 +144,7 @@ final class SmokeTests: XCTestCase {
     /// 見出しの「メニュー（≡）」でメニューが出て、「設定」へ進める（板 01d・2026-09-26）。
     /// 2026-11-12（案 第10章）: 「撮影地マップ」の行はタブと重なるので外した——メニューに残っていないことも見る
     func testHeaderMenuOpensAndRoutesToSettings() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         // 起動直後の動きの記録（失敗したら終わりにログと添付へ残す・札 #435・`PerfProbeSupport`）
         enablePerfProbe(app)

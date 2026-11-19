@@ -121,7 +121,7 @@ final class MedalViewerTests: XCTestCase {
     }
 
     private func launch() -> XCUIApplication {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         // 一巡（`ScreenshotTests`）と同じ立ち上げ方
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]

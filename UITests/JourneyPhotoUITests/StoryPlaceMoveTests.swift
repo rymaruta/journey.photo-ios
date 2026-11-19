@@ -51,7 +51,7 @@ final class StoryPlaceMoveTests: XCTestCase {
     }
 
     private func launch() -> XCUIApplication? {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]

@@ -489,7 +489,7 @@ final class ScreenshotTests: XCTestCase {
     /// （画面に入力欄はこの1つだけ）。
     /// 焦点を奪う札（位置の許可）が遅れて出ていれば、ここで答える
     private func waitForKeyboardFocus(_ field: XCUIElement, timeout: TimeInterval = 6) -> Bool {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         func hasFocus() -> Bool {
             if field.responds(to: NSSelectorFromString("hasKeyboardFocus")),
                (field.value(forKey: "hasKeyboardFocus") as? Bool) == true {
@@ -549,7 +549,7 @@ final class ScreenshotTests: XCTestCase {
         // 2026-10-18 判断: この1本だけ時間の上限を 1200秒に上げる（実測 362〜462秒の約2.6倍）。
         // ほかの UI テストの既定は 300秒（`Tools/xcode-test.sh` の注記・上限の頭打ちも 1200秒）
         executionTimeAllowance = 1200
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         // **写真の出どころだけ本番に向ける。** テストは Debug＝staging 設定で
         // 走るが、staging には写真が1枚も無い（本番の写真はコピーしない方針）。
@@ -984,7 +984,7 @@ final class ScreenshotTests: XCTestCase {
     /// 1枚も撮れていなかった。見本が入らなかった回だけ、前の道（ライブラリから1枚選ぶ）を試す。
     /// どちらでも**出なければ撮らない**（この試験の決まり）
     func testCapturesUploadEditEntry() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -1184,7 +1184,7 @@ final class ScreenshotTests: XCTestCase {
     /// 写真の詳細の行（20e）・元の写真へ（20f）・元の写真を選んだ投稿の欄（45d）を撮る。
     /// 見本は画面の状態だけ（サーバー・端末の控えには書かない）。**出なければ落とす**（札 #531）
     func testCapturesInspiredBy() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -1271,7 +1271,7 @@ final class ScreenshotTests: XCTestCase {
     /// 押して開いたストーリーの「写真にしました ›」（20l）、「…」→ 削除の2つから選ぶ確認（20m）を撮る。
     /// 🔴 **確認のボタンは押さない**（見本のストーリーで本番の写真を消しにいかない）。出なければ撮らずに抜ける
     func testCapturesKeptStoryRelation() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -1336,7 +1336,7 @@ final class ScreenshotTests: XCTestCase {
     /// 🔴 **「違う場所なので外す」は押さない**（本番の写真の行に外した印を書いてしまう）。
     /// 自動で結ばれた写真が無い・表が読めない回は**落とす**（札 #531）
     func testCapturesSpotAutoNotice() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -1389,7 +1389,7 @@ final class ScreenshotTests: XCTestCase {
     /// 見本の1枚（位置なし）の撮影地に「蔵王キツネ村」と打ち、撮影地の欄の下に切り替えが出たら撮る（45e）。
     /// 候補の索引（`spot-match.json`）は本番を読む。**投稿は押さない**。切り替えが出ない回は落とす（札 #531）
     func testCapturesUploadSpotAutoToggle() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
@@ -1439,7 +1439,7 @@ final class ScreenshotTests: XCTestCase {
     /// 鍵なしログインで自分の写真が出ない回・「…」に「編集」が無い回は**撮らずに抜ける**（この試験の決まり）。
     /// 「色を編集」は押さない——押すと公開中の画像を読みに行き、鍵の要らない GET でも撮る絵が通信次第になる
     func testCapturesEditPhotoRecolorEntry() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -1506,7 +1506,7 @@ final class ScreenshotTests: XCTestCase {
     /// 回も緑のまま抜けていた（何も守っていない）。**途中で欠けたら XCTFail で落とす**。プロフィールを読み終えるのを
     /// 固定の3秒で待っていたのもやめ、⋯ を開いて行が出るのを待つ（出なければ閉じて開き直す・合わせて 30 秒まで）
     func testCapturesPhotoMenuPin() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -1564,7 +1564,7 @@ final class ScreenshotTests: XCTestCase {
     /// 型を払って選ぶ1枚（はじめは切手と消印）と、払った次の型（フィルムの帯）、ステッカーの形を撮る。
     /// 見本の利用者の写真が全体に公開でない・読めないなど、出なければ撮らない（この試験の決まり）
     func testCapturesTravelStory() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -1656,7 +1656,7 @@ final class ScreenshotTests: XCTestCase {
     /// （`-whatsNew.seenVersion 0.0.1`）。どちらも UserDefaults の引数の領域で、端末には書かない。
     /// 出たら撮って、主ボタン「はじめる」で閉じられることも見る。出なければ落とす（札 #531・前は撮らずに抜けて黙って緑だった）
     func testCapturesWhatsNew() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "1"]
         app.launchArguments += ["-whatsNew.seenVersion", "0.0.1"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -1679,7 +1679,7 @@ final class ScreenshotTests: XCTestCase {
     /// **意見を送る**（2026-11-11 札 #546・`FeedbackSheet`）。設定の「意見を送る」の行から開き、
     /// 開いた姿（欄にすぐ書ける・任意の2つは控えめ）と、書いたあと（「送る」が押せる）を撮る。**送りはしない**
     func testCapturesFeedbackSheet() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -1729,7 +1729,7 @@ final class ScreenshotTests: XCTestCase {
     /// 「QR コードを更新」→ 確かめ → 新しい QR と知らせも撮る（見本の通信 `PreviewBackend` が合図を替える）。
     /// シミュレータにはカメラが無いので、読み取るは「この端末ではカメラを使えません」の状態を撮る
     func testCapturesProfileQR() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -1800,7 +1800,7 @@ final class ScreenshotTests: XCTestCase {
     /// 作者の行・フォロワーが出ない（写真の並び・フォローの関係次第）なら、人の頁の分は撮らずに抜ける（事実は添付に出す）
     func testCapturesProfileShare() {
         func launch(localBackend: Bool) -> XCUIApplication {
-            let app = XCUIApplication()
+            let app = XCUIApplication.jp()
             app.launchArguments += ["-legal.consent.version", "0"]
             app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
             app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -1996,7 +1996,7 @@ final class ScreenshotTests: XCTestCase {
     }
 
     func testCapturesWhatsNewHistory() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -2056,7 +2056,7 @@ final class ScreenshotTests: XCTestCase {
     /// （2026-10-10・run 387 で 82・81 が撮れなかった理由）。82 は「PRO 限定」の眉ラベルで見つける。
     /// Pro の案内（81）は `testCapturesProPaywall` で撮る。**何も買わない**。出なければ撮らない（この試験の決まり）
     func testCapturesProScreens() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -2166,7 +2166,7 @@ final class ScreenshotTests: XCTestCase {
     /// 出なければ撮らずに抜ける（この試験の決まり）。**出たのに「通知を受け取る」「あとで」が無い・44pt 未満・
     /// 「あとで」で閉じなければ落とす**。「通知を受け取る」は押さない（シミュレータに許可を残さない）
     func testCapturesPushPrimer() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
@@ -2200,7 +2200,7 @@ final class ScreenshotTests: XCTestCase {
     /// 起動の鍵（`-JPPreviewPushPrimer`・`-JPPreviewPushPrimerMoment reachOut`・Debug のみ）で起動のときに出す。
     /// 出なければ撮らずに抜ける。**出たのに見出しが返事の言い方でない・「あとで」が無い・44pt 未満なら落とす**
     func testCapturesPushPrimerReachOut() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
@@ -2230,7 +2230,7 @@ final class ScreenshotTests: XCTestCase {
     /// **札が出なければ落とす**（ほかの試験の「出なければ抜ける」とは違う・2026-10-16 の読み直し）。
     /// 束が開かない・閉じる／ありがとう／帳に入れるが 44pt 未満・帳が開かなければ落とす
     func testCapturesPass() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
@@ -2308,7 +2308,7 @@ final class ScreenshotTests: XCTestCase {
     /// 3. ‹ を押す → 「1 / N 枚」・‹ はまた押せない
     /// 4. きっぷの上で素早く短く払う → 「2 / N 枚」（払う操作は残っている）
     func testPassViewerPager() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
@@ -2428,7 +2428,7 @@ final class ScreenshotTests: XCTestCase {
     /// 「新しくなったこと」が出なければ撮らずに抜ける。**出たのに帳が積まれない・下の札がホームでない・頭の行が
     /// オフと言わない・主ボタンが無い／44pt 未満・説明が出なければ落とす**（仕様の「確かめていない」2つをここで見る）
     func testCapturesPassBookStatus() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         // 更新した人として起動する（規約に同意済み・前に見た版が古い。`testCapturesWhatsNew` と同じ）
         app.launchArguments += ["-legal.consent.version", "1"]
         app.launchArguments += ["-whatsNew.seenVersion", "0.0.1"]
@@ -2532,7 +2532,7 @@ final class ScreenshotTests: XCTestCase {
     /// （`measured tripActions` の行）。**入らなければ落とす**。画面が出なければ撮らずに抜ける（この試験の決まり）
     func testCapturesTripActionsLargeText() {
         for (category, tag) in [("UICTContentSizeCategoryXL", "XL"), ("UICTContentSizeCategoryAccessibilityXL", "AXL")] {
-            let app = XCUIApplication()
+            let app = XCUIApplication.jp()
             app.launchArguments += ["-legal.consent.version", "0"]
             app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
             app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
@@ -2601,7 +2601,7 @@ final class ScreenshotTests: XCTestCase {
     /// 先頭から 3 件までの撮影スポットで探し、ヒントのある所が無ければ撮らずに抜ける。
     /// **出たのに 44pt 未満・押しても構図一覧が出なければ落とす**
     func testCapturesSpotCompositionLink() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
@@ -2653,7 +2653,7 @@ final class ScreenshotTests: XCTestCase {
     /// `stopAtSettings` なら、すれちがいの設定を開いたところで返す（2つ目は乗車券の行）
     private func openPassPick(pro: Bool = false, extra: [String] = [],
                               stopAtSettings: Bool = false) -> (XCUIApplication, XCUIElement)? {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -2853,7 +2853,7 @@ final class ScreenshotTests: XCTestCase {
     /// （作例なしなのに上の札がある・構図の行が無い・選んだ構図にならない）。
     /// 終わったら三分割に戻す（構図は端末に覚えるので、あとの試験の絵に残さない）
     func testCapturesCompositionGuide() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
@@ -2939,7 +2939,7 @@ final class ScreenshotTests: XCTestCase {
     /// （Debug のみ・見本の利用者で入っているときだけ・`PreviewSession.opensPaywall`）でマイページを
     /// 開いたときに1度だけ出す。**主ボタン（購入）は押さない**。出なければ落とす（札 #531・前は撮らずに抜けて黙って緑だった）
     func testCapturesProPaywall() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -2977,7 +2977,7 @@ final class ScreenshotTests: XCTestCase {
     /// 空の姿（`empty`）を1枚ずつ。出なければ撮らない（この試験の決まり）
     func testCapturesLightForecast() {
         for (mode, name) in [("sample", "84-光と天気の知らせ"), ("empty", "84b-光と天気の知らせ（空）")] {
-            let app = XCUIApplication()
+            let app = XCUIApplication.jp()
             app.launchArguments += ["-legal.consent.version", "0"]
             app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
             app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -3042,7 +3042,7 @@ final class ScreenshotTests: XCTestCase {
     /// 札は名指しで探す（`search.season.autumn`・`search.dayPart.evening`）。段が画面の下にあれば少しずつ送る。
     /// **別の試験にしてある**（一巡の「11-探す」の絵に絞った状態を持ち越さない）。出なければ落とす（札 #531・前は撮らずに抜けて黙って緑だった）
     func testCapturesSearchSeasonTimeFilter() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -3116,7 +3116,7 @@ final class ScreenshotTests: XCTestCase {
     /// 端末の AI は切って（`-JPOnDeviceAI off`）言葉の表で読む——Mac のシミュレーターで AI が動くかは
     /// `SearchSentenceDeviceEvalTests` が別に書き出す。絵の中身を毎回同じにするため
     func testCapturesSearchSentence() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -3202,7 +3202,7 @@ final class ScreenshotTests: XCTestCase {
     /// 札（`search.gear.wide` など）が押せる所まで少しずつ送ってから撮る。色の丸の段も同じ絵に入ることが多い。
     /// **別の試験にしてある**（一巡の「11-探す」は上のままの絵）。出なければ落とす（札 #531・前は撮らずに抜けて黙って緑だった）
     func testCapturesSearchGearCards() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -3254,7 +3254,7 @@ final class ScreenshotTests: XCTestCase {
     /// 帯の有無は道しるべ（`home.offline.band`・`search.offline.retry`・`map.stateBand`）で数え、ログに出す。
     /// **別の試験にしてある**（一巡の絵に電波なしを混ぜない）。出なければ撮らない（この試験の決まり）
     func testCapturesStatesOfflineBandsAndTagGrid() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -3337,7 +3337,7 @@ final class ScreenshotTests: XCTestCase {
     /// 高さはログに `spotIndex.height before=… after=…` で出す。**別の試験にしてある**（一巡の「11-探す」は上のまま）。
     /// 段が出なければ撮らない（この試験の決まり）——ただし段が出て高さが違えば落とす
     func testCapturesSearchSpotIndex() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -3442,7 +3442,7 @@ final class ScreenshotTests: XCTestCase {
     ///
     /// 高さはログに `spotMap.height photos=… map=…`。段が出なければ撮らない（この試験の決まり）
     func testCapturesSearchSpotMap() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -3529,7 +3529,7 @@ final class ScreenshotTests: XCTestCase {
     /// 直しを戻す（件数のいちばん多い地方を選んでおく）と、1 で地方のチップが選ばれ、2 で一言が無く「すべて見る」が出て落ちる。
     /// 段が出なければ撮らない（この試験の決まり）
     func testSearchSpotMapStartsWithNothingSelected() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -3601,7 +3601,7 @@ final class ScreenshotTests: XCTestCase {
     ///
     /// **別の試験にしてある**（一巡の絵に「入れた控え」を混ぜない）。出なければ落とす（札 #531・前は撮らずに抜けて黙って緑だった）
     func testCapturesWishlistMap() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -4139,7 +4139,7 @@ final class ScreenshotTests: XCTestCase {
 
     /// 未ログインでホームを開く（一巡と同じ本番の写真・日本語）。`-JPPreviewUserId` を渡さない
     private func launchSignedOutHome(_ extra: [String]) -> XCUIApplication {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -4155,7 +4155,7 @@ final class ScreenshotTests: XCTestCase {
     /// 1枚目から開く → 1枚目を「行きたい」・4枚を「見送る」→ 山に挟む札 → 「ログインして見る」でログインの板。
     /// 「行きたい」は未ログインなので端末の共有の鍵に入るだけ（サーバーへは送らない）。出なければ撮らずに抜ける
     func testCapturesSpotSwipe() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）。**`-JPPreviewUserId` を渡さない**＝未ログイン
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -4798,7 +4798,7 @@ final class ScreenshotTests: XCTestCase {
     /// 後光のある初期ユーザーと、段のあるメダル（都道府県 · 銀）を撮る。**保存は押さない**。
     /// 出なければ落とす（札 #531・前は撮らずに抜けて黙って緑だった）
     func testCapturesNameSideBadge() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -4840,7 +4840,7 @@ final class ScreenshotTests: XCTestCase {
     /// 本人のプロフィールにだけ Pro を重ねる。持ち物は 83 と同じ見本。**保存は押さない**。
     /// 出なければ落とす（札 #531・前は撮らずに抜けて黙って緑だった）
     func testCapturesProNameSide() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -4909,7 +4909,7 @@ final class ScreenshotTests: XCTestCase {
     /// 🔴 **浮き彫りを貼り終えた印を待ってから撮る**（run 427: 強さを変えた直後に撮り、2 と 0 が同じ絵だった）。
     /// 硬貨の読み上げの値が「pose-<番号>-ready」になるまで待つ。来なければ落とす（札 #531）
     func testCapturesMedalRelief() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -4961,7 +4961,7 @@ final class ScreenshotTests: XCTestCase {
     /// `-JPPreviewVisitedMap YES`（Debug のみ・`PreviewSession.visitedMapSeed`）で、1〜5 回の段が並んだ見本の記録を入れる。
     /// **出なければ撮らずに抜ける**（札が見つからない・地図が出ない）。サーバーには何も送らない
     func testCapturesVisitedMap() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -5108,7 +5108,7 @@ final class ScreenshotTests: XCTestCase {
 
     /// 旅のトランクの見本で起動する（`-JPPreviewTrunk`・Debug のみ。サーバーには何も送らない）
     private func launchTrunk(_ extra: [String]) -> XCUIApplication {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
@@ -6054,7 +6054,7 @@ final class ScreenshotTests: XCTestCase {
     /// 現在地（パリ）を渡してマップを開き、「近くの写真」が出なければ撮らずに抜ける（現在地が取れない回がある）。
     /// 出たのに範囲のチップ・閉じるが無い・44pt 未満なら落とす
     func testCapturesNearbyPhotos() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
@@ -7139,7 +7139,7 @@ final class ScreenshotTests: XCTestCase {
     /// プロフィールのトランクの段 → 人のトランク（ラベルを選ぶ・地名の無いラベル）→ 回す → ふたを開ける。
     /// 作者の行が出ない（写真の並び次第）なら撮らずに抜ける。**プロフィールが出たのに段が無ければ落とす**。押せる所は 44pt 以上
     func testCapturesTheirTrunk() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         // 人のページの見出し（公開プロフィール）は本番から読む（staging にこの人は居ない・一巡と同じ）
@@ -7259,7 +7259,7 @@ final class ScreenshotTests: XCTestCase {
 
     /// 起動（見本の利用者・`-JPPreviewNoCover` でカバーが無い姿）してマイページを開く
     private func launchProfileLooks(_ extra: [String] = []) -> XCUIApplication {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -7293,7 +7293,7 @@ final class ScreenshotTests: XCTestCase {
     /// 曲の行が 44pt 未満なら落とす
     func testCapturesMyPageSongAndCountries() {
         for (lang, locale, suffix) in [("ja", "ja_JP", "日本語"), ("en", "en_US", "英語")] {
-            let app = XCUIApplication()
+            let app = XCUIApplication.jp()
             app.launchArguments += ["-legal.consent.version", "0"]
             app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
             app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -7335,7 +7335,7 @@ final class ScreenshotTests: XCTestCase {
     /// 格子の上で縦に送れることも続けて見る（払いが写真の押しや縦のスクロールを奪わない）。
     /// 写真が出なければ撮らない（この試験の決まり）。払って替わらなければ落とす
     func testSwipesMyPageGridQuickly() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -7403,7 +7403,7 @@ final class ScreenshotTests: XCTestCase {
     /// 押して試聴が進んだとき（⏸ と満ちていく輪）を1枚ずつ撮る。曲の行が出なければ撮らない（この試験の決まり）。
     /// 枠の中の行が 44pt 未満なら落とす
     func testCapturesMyPageBgmRing() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -7438,7 +7438,7 @@ final class ScreenshotTests: XCTestCase {
     /// 左の端へ寄った所を1枚撮る（2026-10-28 owner 実機で動かせなかった: 長押しが要る形だった）。
     /// 曲の行・再生器・段が出なければ撮らない（この試験の決まり）。左の端へ寄らなければ落とす
     func testCapturesMiniPlayerDrag() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -7567,7 +7567,7 @@ final class ScreenshotTests: XCTestCase {
     /// `MiniPlayerBackdrop`: 上から白 40%・模様 30%・黒 30%）。最初の置き場所（右下）が黒、真ん中が模様、
     /// いちばん上が白。曲の行・再生器が出なければ落とす（札 #531・前は撮らずに抜けて黙って緑だった）
     func testCapturesMiniPlayerSeeThrough() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -7614,7 +7614,7 @@ final class ScreenshotTests: XCTestCase {
     /// 札の行を左へ払うと「旅の記録」、右へ払うと「投稿」に戻る。戻ったとき「投稿」の格子が残っている
     /// （作り直さない）ことも見る。札が出なければ撮らない（この試験の決まり）。払って切り替わらなければ落とす
     func testSwipesMyPageTabs() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -7709,7 +7709,7 @@ final class ScreenshotTests: XCTestCase {
     /// 新しい投稿が並びの 2・5・8 番目に来たかは、絵ではなく数（`home.feed.probe` の `freshTiles`）で見る。
     /// 🔴 はじめての投稿の印・みんなの参加の行が出ない・枠に来ないときは**落とす**（黙って通らない）
     func testCapturesSNSLoopSample() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -7800,7 +7800,7 @@ final class ScreenshotTests: XCTestCase {
     }
 
     private func scrollsHomeSingleFeed(noLift: Bool) {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         if noLift { app.launchArguments += ["-JPPreviewNoLift", "YES"] }
         XCTContext.runActivity(named: "ホームの1本の並びを送る: noLift=\(noLift)") { _ in }
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -9504,7 +9504,7 @@ final class ScreenshotTests: XCTestCase {
     /// 「ありがとう」を押した後（「送りました」・見本の束ではサーバーに送らない）も見る。
     /// 札が出なければ撮らずに抜ける。**出たのにボタンが画面の外・44pt 未満・押せなければ落とす**
     func testCapturesPassViewerLargeText() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
@@ -9599,7 +9599,7 @@ final class ScreenshotTests: XCTestCase {
     /// **サポーター証**（既定の文字と、大きい文字）: 見本の利用者がサポーターのときだけ。行が無ければ落とす（札 #531）
     func testCapturesSupporterCard() {
         for (extra, name) in [([String](), "88-サポーター証"), (Self.largeText, "88x-大きい文字（サポーター証）")] {
-            let app = XCUIApplication()
+            let app = XCUIApplication.jp()
             app.launchArguments += ["-legal.consent.version", "0"]
             app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
             app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -9648,7 +9648,7 @@ final class ScreenshotTests: XCTestCase {
     /// ホームの輪（自分の輪の「＋」）→ 写真の詳細の作者の顔の輪 → 人のページの顔の輪 → 輪を押して開く →
     /// 返信欄に入って入力欄の上の絵文字の列、の順に撮る。**出なければ撮らずに抜ける**
     func testCapturesStoryRingsOnFaces() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -9742,7 +9742,7 @@ final class ScreenshotTests: XCTestCase {
 
     /// 見本の通信で起動する（ストーリー・紹介の見本つき）。開けなければ nil
     private func launchSNSPreview(sharedStory: Bool, extra: [String] = []) -> XCUIApplication? {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -10087,7 +10087,7 @@ final class ScreenshotTests: XCTestCase {
     /// ストーリー作成を開く（`PreviewStorySample`・Debug のみ）。曲の札を押すたびに A→F と替わるのを1枚ずつ撮る。
     /// 覚えた形は起動の引数で A に戻す（引数の値が端末の覚えより先に読まれる）。**出なければ撮らずに抜ける**
     func testCapturesStorySongStickerStyles() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
@@ -10324,7 +10324,7 @@ final class ScreenshotTests: XCTestCase {
     /// 見出しの吹き出し → 受信箱 → リクエスト → リクエストの会話 → 会話（URL を断られた）→ 3通の上限 → 退会、の順に撮る。
     /// **出なければ撮らずに抜ける**
     func testCapturesDirectMessages() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         // 2026-11-12（run 1164）: 会話を下へ払った直後から主スレッドが戻らず、画面の木も取れずに 5 分で落ちた。
         // 止まっている所を取るため、主スレッドの積みを 0.3 秒ごとにファイルへ書かせる（`PerfMainSampler`・Debug のみ）
         let samplePath = Self.mainSamplePath("dm")
@@ -10528,7 +10528,7 @@ final class ScreenshotTests: XCTestCase {
     /// 1本の並びの中（写真のひと回りと季節の段の後ろ）に出る。送って並び（120a）→ 1人をフォローして
     /// 「フォロー中の写真を見る」が出た所（120b）→ 押して並びの頭へ戻った所（120c）を撮る。**出なければ撮らずに抜ける**
     func testCapturesSuggestedPeople() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -10564,7 +10564,7 @@ final class ScreenshotTests: XCTestCase {
     /// （`PreviewBackend.dmReply`）。会話の札（120c）→ 札から撮影スポットの頁 → 右上の「送る」シート（120d）を撮る。
     /// **出なければ撮らずに抜ける**
     func testCapturesSpotSend() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -10656,7 +10656,7 @@ final class ScreenshotTests: XCTestCase {
     /// 見本の1枚を選んだ投稿画面から見本の通信に投稿し、共有カードの画面（「カードを共有」が押せるまで）を開く。
     /// 出なければ nil（撮らずに抜ける）。カードが出ないのは失敗（`XCTAssertTrue`）
     private func postToSharedCard(extraArguments: [String]) -> XCUIApplication? {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -10754,7 +10754,7 @@ final class ScreenshotTests: XCTestCase {
     /// 見本の会話「夕焼けの人」には公開の新着の1枚目を送った通がある（撮影地つきなら帯が出る）。
     /// 帯 → 下書き → 日付（休みの組を押す）と、吹き出しの長押しのメニューを撮る。**出なければ撮らずに抜ける**
     func testCapturesDirectMessageTripPlan() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -10890,7 +10890,7 @@ final class ScreenshotTests: XCTestCase {
     /// 受信箱の鉛筆 → 新しいメッセージ → まだ会話の無い人 → 1通目の前の画面、と
     /// ホームの新着の1枚目 → 作者のページ（フォロー中なので「メッセージ」）→ 会話、の順に撮る。**出なければ撮らずに抜ける**
     func testCapturesDirectMessageStart() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -11782,7 +11782,7 @@ final class ScreenshotTests: XCTestCase {
     /// **大きいシートの「閉じる」（上のバーの中・`SheetCloseButton`）**（追加の点検 5）。バーの中は UIKit が当たりを決めるので、
     /// 見た目の外をどこまで押せるかを**測るだけ**（メッセージの受信箱のシート）
     func testCornerTapAreaSheetClose() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
@@ -11817,7 +11817,7 @@ final class ScreenshotTests: XCTestCase {
     /// 決めた上限は `testCapturesPassViewerLargestText` が確かめる）。名指しした回だけ流す
     func testMeasuresPassViewerTypeLimits() {
         for limit in ["xxxl", "ax1", "ax2", "ax3", "ax4", "ax5"] {
-            let app = XCUIApplication()
+            let app = XCUIApplication.jp()
             app.launchArguments += ["-legal.consent.version", "0"]
             app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
             app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
@@ -11853,7 +11853,7 @@ final class ScreenshotTests: XCTestCase {
     /// （`PhotoEditView.typeLimit`）。いちばん大きい文字でも、キャンセル・完了・タブが画面の中で押せて、写真の欄が潰れないか。
     /// 見本の1枚を選んだ投稿画面から開く。出なければ撮らずに抜ける
     func testCapturesPhotoEditLargestText() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
@@ -11963,7 +11963,7 @@ final class ScreenshotTests: XCTestCase {
     /// （`StoryViewerView.menuSheet`・`deleteConfirm`）。見本の「写真にしたストーリー」（`-JPPreviewKeptStory`）で開く。
     /// 🔴 **確認のボタンは押さない**。出なければ撮らずに抜ける。出たのに項目が画面の外・押せなければ落とす
     func testCapturesStoryMenuLargestText() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -12036,7 +12036,7 @@ final class ScreenshotTests: XCTestCase {
     /// 書き出し画像を1枚ずつ撮る（画像の所だけ）。数で測る点検は単体テスト `ShareCardAuditTests`。出なければ撮らずに抜ける。
     /// 2026-11-19: 最後に、座標の無い写真（「金沢市, 石川県」・金沢市役所の位置にピン）を地図を描く5つの型 × 3つの比で撮る
     func testCapturesShareCardDesigns() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewShareCards", "YES"]
         app.launch()
@@ -12066,7 +12066,7 @@ final class ScreenshotTests: XCTestCase {
     /// 南半球・長い撮影地の見本を1枚ずつ撮る（画像の所だけ）。数で測る点検は単体テスト `ShareCardAuditTests.testKoyomi…`・
     /// `KoyomiCardTests`。出なければ撮らずに抜ける
     func testCapturesKoyomiShareCards() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewKoyomi", "YES"]
         app.launch()
@@ -12098,7 +12098,7 @@ final class ScreenshotTests: XCTestCase {
     /// 白い写真・黒い写真・撮影地の長い見本・ストーリーの縦長 9:16 を1枚ずつ撮る（画像の所だけ）。数で測る点検は単体テスト
     /// `ShareCardAuditTests.testPhotoColor…`・`PhotoColorCardTests`。出なければ撮らずに抜ける
     func testCapturesPhotoColorShareCards() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewPhotoColor", "YES"]
         app.launch()
@@ -12130,7 +12130,7 @@ final class ScreenshotTests: XCTestCase {
     /// 1枚ずつ撮る（画像の所だけ）。数で測る点検は単体テスト `ShareCardAuditTests.testMagazine…`・`MagazineCardTests`。
     /// 出なければ撮らずに抜ける
     func testCapturesMagazineShareCards() {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launchArguments += ["-JPPreviewMagazine", "YES"]
         app.launch()

@@ -35,7 +35,7 @@ final class CriticalFlowTests: XCTestCase {
 
     /// 見本の利用者・見本の通信で起動し、同意を済ませてタブまで出す
     private func launch(_ extra: [String] = []) -> XCUIApplication {
-        let app = XCUIApplication()
+        let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         // 公開のいいね数を読む口（読むだけ。書く口は `PreviewBackend` が端末の中で答える）
