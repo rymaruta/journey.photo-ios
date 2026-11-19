@@ -162,6 +162,9 @@ targets:
         #  テスト側には何も無かった）。中身を持たせる理由は無いので、
         # Xcode に自動生成させる
         GENERATE_INFOPLIST_FILE: YES
+        # 束の頭で通知の予約を消す呼び出しを1回だけ済ませる見張り役（`NotificationCenterWarmup.swift`・#647）。
+        # iOS 27.2 のシミュレーターで、プロセスで最初の1回が 44〜85秒戻らず、最初に通ったテストが上限 60秒を超えた
+        INFOPLIST_KEY_NSPrincipalClass: JPNotificationCenterWarmup
         # **リテラルで書く。** XcodeGen は既定で `$(JP_BUNDLE_ID).tests`
         # を置くが、この的には `configFiles` が無く `$(JP_BUNDLE_ID)` は
         # 空なので、識別子が `.tests` だけになって束を入れられない

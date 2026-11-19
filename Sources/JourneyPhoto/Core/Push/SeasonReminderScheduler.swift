@@ -12,7 +12,7 @@ final class SeasonReminderScheduler {
     static let shared = SeasonReminderScheduler()
 
     private let add: (UNNotificationRequest) async throws -> Void
-    private let removePending: ([String]) -> Void
+    private let removePending: ([String]) async -> Void
     /// 最後に入れた中身（同じなら入れ直さない）。nil は「入れていない」
     private(set) var scheduled: SeasonReminder.Plan?
     /// 最後に積んだ入れ替え。**入れ替えは1本ずつ順に**——重なると、古い回の後始末が新しい回の予約を消し、
@@ -20,7 +20,16 @@ final class SeasonReminderScheduler {
     private var tail: Task<Void, Never>?
 
     init(add: @escaping (UNNotificationRequest) async throws -> Void = { try await UNUserNotificationCenter.current().add($0) },
-         removePending: @escaping ([String]) -> Void = { UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: $0) }) {
+         removePending: @escaping ([String]) async -> Void = { ids in
+             // 🔴 **主スレッドで呼ばない**（2026-11-19・#647）。iOS 27.2 のシミュレーターで、プロセスで最初の
+             // `removePendingNotificationRequests` が 44〜85秒戻らなかった（run 1588 で 84377ms、1589 で 44095ms。
+             // 2回目からは 1ms 未満）。起動の直後にここが主スレッドを止め、主スレッドの記録で 184 行（約55秒）を占めて、
+             // DM の画面の試験が 5分の上限を超えた（run 1587。iOS 26.2 の run 1585 では 0 行）。
+             // 主スレッドの外で消し、**消し終わるのを待ってから** `add` に進む（入れ替えの順は変えない）
+             await Task.detached(priority: .utility) {
+                 UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
+             }.value
+         }) {
         self.add = add
         self.removePending = removePending
     }
@@ -40,12 +49,12 @@ final class SeasonReminderScheduler {
         guard allowed, let wanted = plan else {
             // **入れない回は毎回消す**（安い）。覚えている中身はメモリだけなので、起動し直したあと
             // 「前に入れていない」と思い込んで、ログアウト・通知オフの前に入れた予約を残していた
-            removePending([SeasonReminder.identifier])
+            await removePending([SeasonReminder.identifier])
             scheduled = nil
             return
         }
         guard wanted != scheduled else { return }
-        removePending([SeasonReminder.identifier])
+        await removePending([SeasonReminder.identifier])
         scheduled = nil
         let content = UNMutableNotificationContent()
         content.title = wanted.title
