@@ -342,4 +342,46 @@ final class CompositionGuideTests: XCTestCase {
         defaults.set("removed-kind", forKey: "journey-photo-composition-last")
         XCTAssertEqual(prefs.lastKind, .thirds)
     }
+
+    // MARK: - 放射・余白の線（Xcode 27 で型の確かめが終わらなかった式を分けた・#647）
+
+    /// 分ける前の式（`[(0.5, 0.5), (1.0 / 3, 1.0 / 3), …]`）と同じ値で線が引かれること。
+    /// 期待の値は、分ける前の `rawMarks` の `.radial` をそのまま写した
+    func testRadialMarksMatchOriginalFormula() {
+        let origins: [(Double, Double)] = [(0.5, 0.5), (1.0 / 3, 1.0 / 3), (2.0 / 3, 1.0 / 3),
+                                           (1.0 / 3, 2.0 / 3), (2.0 / 3, 2.0 / 3)]
+        for aspect in [portrait, 1.0, landscape, 9.0 / 16] {
+            for v in 0..<CompositionKind.radial.variantCount {
+                let o = origins[v]
+                var expected: [GuideMark] = (0..<8).map { i in
+                    let a = Double(i) * .pi / 4
+                    let end = CompositionGuide.rayExit(fromX: o.0 * aspect, y: o.1, dx: cos(a), dy: sin(a), aspect: aspect)
+                    return GuideMark(.segment(GuidePoint(x: o.0, y: o.1), GuidePoint(x: end.0 / aspect, y: end.1)),
+                                     dashed: true)
+                }
+                expected.append(GuideMark(.point(GuidePoint(x: o.0, y: o.1))))
+                XCTAssertEqual(CompositionGuide.marks(.radial, variant: v, aspect: aspect), expected,
+                               "radial variant \(v) aspect \(aspect)")
+            }
+        }
+    }
+
+    /// 分ける前の式（`[(2.0 / 3, 2.0 / 3), (1.0 / 3, 2.0 / 3), …]`）と同じ値で枠が置かれること
+    func testNegativeSpaceMarksMatchOriginalFormula() {
+        let spots: [(Double, Double)] = [(2.0 / 3, 2.0 / 3), (1.0 / 3, 2.0 / 3), (2.0 / 3, 1.0 / 3), (1.0 / 3, 1.0 / 3)]
+        for aspect in [portrait, 1.0, landscape, 9.0 / 16] {
+            for v in 0..<CompositionKind.negativeSpace.variantCount {
+                let c = spots[v]
+                let side = min(aspect, 1) * 0.12
+                let w = side / aspect, h = side
+                let expected = [
+                    GuideMark(.roundedRect(GuideRect(x: c.0 - w / 2, y: c.1 - h / 2, width: w, height: h), corner: 0),
+                              dashed: true),
+                    GuideMark(.point(GuidePoint(x: c.0, y: c.1)))
+                ]
+                XCTAssertEqual(CompositionGuide.marks(.negativeSpace, variant: v, aspect: aspect), expected,
+                               "negativeSpace variant \(v) aspect \(aspect)")
+            }
+        }
+    }
 }

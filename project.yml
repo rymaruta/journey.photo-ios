@@ -25,6 +25,14 @@ packages:
   Amplify:
     url: https://github.com/aws-amplify/amplify-swift
     from: 2.27.0
+  # 🔴 Amplify の下の aws-crt-swift を 0.64.3 に留める（#646・2026-11-19）。
+  # 0.64.5 で `CBORType` に `.bigInteger`・`.bigDecimal` が足され、smithy-swift 0.242.0 の `switch` が
+  # 「switch must be exhaustive」で組めない（run 1572、控えが無く依存を解き直した回）。控えが当たる回は
+  # 古い版が戻るので見えないが、控えが外れると落ちる。どのターゲットにも足さない（版を縛るためだけ）。
+  # smithy-swift が新しい aws-crt-swift に合った版を出したら外す
+  AwsCrtSwift:
+    url: https://github.com/awslabs/aws-crt-swift
+    exactVersion: 0.64.3
 
 targets:
   JourneyPhoto:
