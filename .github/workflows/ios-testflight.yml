@@ -855,7 +855,8 @@ jobs:
     name: ビルドだけ（コンパイルの確認）
     if: ${{ inputs.screens == 'build' }}
     runs-on: macos-15
-    timeout-minutes: 20
+    # 控えなしで依存から組むので、一時の枝だけ上限を 60分にする
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
 
@@ -881,10 +882,8 @@ jobs:
             !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Products/**/*.xcresult
             !~/Library/Developer/Xcode/DerivedData/JourneyPhoto-*/Build/Intermediates.noindex/ArchiveIntermediates
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
-          restore-keys: |
-            ${{ env.CACHE_KEY }}
-            xcode-deps-${{ runner.os }}-${{ env.XCODE_BUILD }}-
+          # 一時の枝 claude/xcode27-prep-nocache だけ: どの控えにも当たらない鍵で、依存を解き直して組む（#646）
+          key: nocache-probe-${{ github.run_id }}
 
       - name: Xcodeプロジェクトを生成
         run: |
