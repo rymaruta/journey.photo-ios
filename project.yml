@@ -24,7 +24,11 @@ configs:
 packages:
   Amplify:
     url: https://github.com/aws-amplify/amplify-swift
-    from: 2.27.0
+    exactVersion: 2.63.0
+  # 試しの枝だけ: Xcode 26 の回（run 1570）と同じ版に留める。0.64.5 は CBORType に場合が増え、smithy-swift 0.242.0 が組めない
+  AwsCrtSwift:
+    url: https://github.com/awslabs/aws-crt-swift
+    exactVersion: 0.64.3
 
 targets:
   JourneyPhoto:
