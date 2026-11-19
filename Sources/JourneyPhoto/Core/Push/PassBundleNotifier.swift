@@ -92,8 +92,12 @@ enum PassBundleNotifier {
     /// （予約は届く日ごとなので、それより先の日の予約は作られない）。すぐ届く形の分も
     static func cancelAll(calendar: Calendar = .current, now: Date = Date()) {
         let days = days(calendar: calendar, now: now)
-        UNUserNotificationCenter.current().removePendingNotificationRequests(
+        ALDTimer.mark("cancelAll.days")
+        let center = UNUserNotificationCenter.current()
+        ALDTimer.mark("cancelAll.UNUserNotificationCenter.current()")
+        center.removePendingNotificationRequests(
             withIdentifiers: days.map(identifier(day:)) + days.map(instantIdentifier(day:)))
+        ALDTimer.mark("cancelAll.removePendingNotificationRequests")
     }
 
     private static func days(calendar: Calendar, now: Date) -> [String] {

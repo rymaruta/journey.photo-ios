@@ -83,12 +83,18 @@ final class PassStore: ObservableObject {
     static func removeData(for userId: String, root: URL? = nil, defaults: UserDefaults = .standard,
                            fileManager: FileManager = .default) {
         guard !userId.isEmpty else { return }
+        ALDTimer.mark("pass.enter")
         let base = root ?? defaultRoot(fileManager)
+        ALDTimer.mark("pass.defaultRoot")
         let file = base.appendingPathComponent(OfflineTripStore.hex(userId) + ".json")
         try? fileManager.removeItem(at: file)
+        ALDTimer.mark("pass.removeItem(file)")
         try? fileManager.removeItem(at: file.appendingPathExtension("corrupt"))   // 退避した壊れた帳も消す
+        ALDTimer.mark("pass.removeItem(corrupt)")
         if defaults.string(forKey: lastUserKey) == userId { defaults.removeObject(forKey: lastUserKey) }
+        ALDTimer.mark("pass.defaults")
         PassBundleNotifier.cancelAll()
+        ALDTimer.mark("pass.cancelAll.return")
     }
 
     // MARK: - 人の切り替え
