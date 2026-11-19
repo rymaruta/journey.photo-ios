@@ -347,13 +347,12 @@ final class PhotoColorCardTests: XCTestCase {
 
     /// 投稿の型の並びのいちばん後ろ・ストーリーの型のいちばん後ろに足した（前からの並びは変えない）。ステッカーにはしない
     func testAddedAtTheEnd() {
-        XCTAssertEqual(ShareCardStyleChoice.order.last, .photoColor)
-        // 暦の後ろ。写真の色は撮った日が無くても選べる（日付を出さないだけ）
-        XCTAssertEqual(Array(ShareCardStyleChoice.order.suffix(2)), [.koyomi, .photoColor])
+        // 暦の後ろ（2026-11-18: その後ろに雑誌を足した）。写真の色は撮った日が無くても選べる（日付を出さないだけ）
+        XCTAssertEqual(Array(ShareCardStyleChoice.order.suffix(3)), [.koyomi, .photoColor, .magazine])
         XCTAssertTrue(ShareCardStyleChoice.order(for: Self.credit(location: nil, takenDay: nil)).contains(.photoColor))
         XCTAssertTrue(TravelStory.kinds(for: Self.facts(day: nil)).contains(.photoColor))
         XCTAssertEqual(ShareCardStyleChoice.title(.photoColor), L("写真の色", "Photo color"))
-        XCTAssertEqual(TravelStory.Kind.allCases.last, .photoColor)
+        XCTAssertEqual(Array(TravelStory.Kind.allCases.suffix(2)), [.photoColor, .magazine])
         XCTAssertEqual(TravelStory.Kind.photoColor.name, L("写真の色", "Photo color"))
         XCTAssertFalse(TravelStory.Kind.photoColor.supportsSticker)
         var choice = Self.choice(place: .city, date: .date)

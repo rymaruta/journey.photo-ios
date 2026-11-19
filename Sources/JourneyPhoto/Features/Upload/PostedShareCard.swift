@@ -61,7 +61,8 @@ struct PostedShareCardSheet: View {
                                                       storyTitle: SharedPhotoStoryCard.titleLine(
                                                         title: card.photo.title?.resolved(),
                                                         location: LocationMatch.shareCardDisplay(card.photo.location)),
-                                                      onFinish: { PostedCardHabit.noteFinished(shared: $0) }))
+                                                      onFinish: { PostedCardHabit.noteFinished(shared: $0) },
+                                                      photo: card.photo))
             } else {
                 VStack(spacing: 12) {
                     ProgressView()
@@ -118,8 +119,11 @@ enum PostedShareCardCredit {
             early: me?.showsEarlyMark ?? false,
             badge: me?.shownBadge,
             place: LocationMatch.shareCardPlace(photo.location),
-            // 日付を描く型（暦・写真の色）の撮った日。撮った日の分からない写真では暦を出さない
-            takenDay: TripBook.hasTakenDay(photo) ? TripBook.day(of: photo) : nil)
+            // 日付を描く型（暦・写真の色・雑誌）の撮った日。撮った日の分からない写真では暦を出さない
+            takenDay: TripBook.hasTakenDay(photo) ? TripBook.day(of: photo) : nil,
+            // 雑誌の型の題と Vol. の番号を数える写真（2026-11-18）
+            title: photo.title?.resolved(),
+            photoId: photo.id)
     }
 }
 

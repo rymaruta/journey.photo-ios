@@ -51,6 +51,11 @@ enum TravelStoryRenderer {
                                                               texts: TravelStory.photoColor(facts, choice: choice, now: now),
                                                               frame: .story),
                           isSticker: false)
+        case .magazine:
+            // 雑誌（`MagazineCardRenderer`）。ステッカーにはしない（`Kind.supportsSticker`）
+            return MagazineCardRenderer.render(photo: lead, texts: TravelStory.magazine(facts, choice: choice),
+                                               frame: .story)
+                .map { Output(data: $0, isSticker: false) }
         }
     }
     #endif
