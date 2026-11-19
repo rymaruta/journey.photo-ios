@@ -10332,9 +10332,8 @@ final class ScreenshotTests: XCTestCase {
         // 一時の枝 claude/xcode27-dm-time だけ: 通知の窓口を呼んだ時間（`UNTrace`）と、問い合わせの時間・要素の数（#647）
         let unPath = Self.mainSamplePath("dm-un")
         app.launchArguments += ["-JPUNTraceFile", unPath]
-        let stdioPath = Self.mainSamplePath("dm-stdio")
-        app.launchArguments += ["-JPStdioFile", stdioPath]
-        Self.dmStdioPath = stdioPath
+        // 一時の枝: ログを標準エラーに写さない（run 1592 で、画面読み取りのスレッドが `_os_log_impl_mirror_to_stderr` → `writev` で止まった。#647）
+        app.launchEnvironment["OS_ACTIVITY_DT_MODE"] = "NO"
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
         app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
@@ -10956,6 +10955,8 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewDM", "YES"]
         // 新着の札を探す目印（`revealNewestFeedTile`・札 #595）
         app.launchArguments += ["-JPPreviewFeedProbe", "YES"]
+        // 一時の枝: ログを標準エラーに写さない（#647）
+        app.launchEnvironment["OS_ACTIVITY_DT_MODE"] = "NO"
         app.launch()
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 30) { agree.tap() }
