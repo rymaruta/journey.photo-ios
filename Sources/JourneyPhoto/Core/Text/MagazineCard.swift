@@ -441,6 +441,8 @@ enum MagazineCard {
     /// - **分からないときは nil**（「Vol.」を出さない）: 一覧が無い（読めない・圏外）、写真が一覧に無い、
     ///   どれかの投稿に `createdAt` が無い（順が決められない）
     /// - `justPosted`: 投稿したばかりで、まだ一覧（利用者の索引・結果整合）に無い写真（`PostedPhotos` と同じ考え）
+    /// - **下書きを後で公開すると番号がずれる**（並びは作った時刻 `createdAt` で、公開した時刻ではない）。直さない
+    ///   （2026-11-19 まとめ役の判断）。サーバーの `firstPublishedAt` は配らない欄なので、返すかは owner の判断待ちの札
     static func volume(of photoId: String?, among mine: [Photo]?, justPosted: Photo? = nil) -> Int? {
         guard let photoId, !photoId.isEmpty, var all = mine else { return nil }
         if let justPosted, justPosted.id == photoId, !all.contains(where: { $0.id == photoId }) {

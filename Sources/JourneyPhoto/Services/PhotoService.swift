@@ -79,6 +79,8 @@ struct PhotoService {
             "/photos/\(encoded(photoId))",
             body: patch
         )
+        // 公開を替えると Vol. の数え方が変わる（`MagazineVolume`・2026-11-19）
+        MagazineVolume.forget()
         return TrunkDealt.read(data)
     }
 
@@ -222,6 +224,8 @@ struct PhotoService {
     /// `withStory`（2026-11-11 判断・`api-user/src/storyKeptDelete.ts`）: ストーリーから作った写真は、
     /// 元のストーリーも一緒に消す（true）／写真だけ消す（false）を選んで送る。nil は今までの動き
     func delete(photoId: String, withStory: Bool? = nil) async throws {
+        // 消すと Vol. の番号が繰り上がる（`MagazineVolume`・2026-11-19）。消せなかった回も捨てて読み直させる
+        defer { MagazineVolume.forget() }
         do {
             try await api.authorizedVoid(
                 .delete,

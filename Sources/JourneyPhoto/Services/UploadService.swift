@@ -158,6 +158,8 @@ struct UploadService {
         let result: SaveResponse = try await api.authorized(
             .post, "/upload/save", body: body, as: SaveResponse.self
         )
+        // 投稿すると Vol. の数え方が変わる（`MagazineVolume`・2026-11-19）
+        MagazineVolume.forget()
         return Saved(photo: result.photo, label: result.label, labelSkipped: result.labelSkipped, coin: result.coin,
                      camperAdded: result.camperAdded)
     }

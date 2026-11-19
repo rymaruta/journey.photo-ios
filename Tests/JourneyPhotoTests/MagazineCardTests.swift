@@ -309,9 +309,13 @@ final class MagazineCardTests: XCTestCase {
         XCTAssertNil(hidden.place)
         XCTAssertNil(hidden.placeFallback)
         facts.title = "緑に包まれた水面の静寂"
+        // 撮影地を出さないなら題も出さない（題に地名が入りやすい・2026-11-19 まとめ役の判断）。題の所は帯だけ
         let titled = TravelStory.magazine(facts, choice: choice)
-        XCTAssertEqual(titled.title, "緑に包まれた水面の静寂")
+        XCTAssertNil(titled.title)
         XCTAssertNil(titled.place)
+        choice.placeLevel = .prefecture
+        XCTAssertEqual(TravelStory.magazine(facts, choice: choice).title, "緑に包まれた水面の静寂")
+        XCTAssertEqual(TravelStory.magazine(facts, choice: choice).place, "石川県")
         choice.placeLevel = .city
         XCTAssertEqual(TravelStory.magazine(facts, choice: choice).place, "石川県 金沢市")
         XCTAssertEqual(TravelStory.magazine(facts, choice: choice).placeFallback, "石川県")
@@ -387,6 +391,40 @@ final class MagazineCardTests: XCTestCase {
         XCTAssertEqual(M.volume(of: "new", among: mine + [posted], justPosted: posted), 2)
     }
 
+    // MARK: - 読んだ数え方を覚える（アプリを使っている間だけ・利用者ごと）
+
+    func testMemoKeepsOneOwnerAndForgets() throws {
+        let memo = MagazineVolume.Memo()
+        let mine = [try Self.photo("a", created: "2026-11-01T00:00:00.000Z")]
+        XCTAssertNil(memo.list(for: "me"))
+        memo.keep(mine, for: "me")
+        XCTAssertEqual(memo.list(for: "me")?.map(\.id), ["a"])
+        // 別の人には使わず、手放す（利用者が替わった）
+        XCTAssertNil(memo.list(for: "other"))
+        XCTAssertNil(memo.list(for: "me"))
+        memo.keep(mine, for: "me")
+        memo.forget()
+        XCTAssertNil(memo.list(for: "me"))
+    }
+
+    /// 覚えた一覧があれば読みに行かずに数える。無ければ読み（ここは鍵が無いので読めない）、番号は出さない
+    func testLoadUsesTheMemoAndGivesNilWhenItCannotRead() async throws {
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!, tokenProvider: StubTokenProvider(token: nil))
+        let memo = MagazineVolume.Memo()
+        let mine = [try Self.photo("b", created: "2026-11-02T00:00:00.000Z"),
+                    try Self.photo("a", created: "2026-11-01T00:00:00.000Z")]
+        memo.keep(mine, for: "me")
+        let known = await MagazineVolume.load(photoId: "b", justPosted: nil, owner: "me", photos: PhotoService(api: api),
+                                              memo: memo)
+        XCTAssertEqual(known, 2)
+        let unknown = await MagazineVolume.load(photoId: "b", justPosted: nil, owner: "other",
+                                                photos: PhotoService(api: api), memo: memo)
+        XCTAssertNil(unknown)
+        let signedOut = await MagazineVolume.load(photoId: "b", justPosted: nil, owner: nil,
+                                                  photos: PhotoService(api: api), memo: memo)
+        XCTAssertNil(signedOut)
+    }
+
     // MARK: - 字の読みやすさ
 
     func testShadowTargetsAndSchedule() {
@@ -433,9 +471,26 @@ final class MagazineCardTests: XCTestCase {
         XCTAssertTrue(sheet.contains("drawn.volume = volume"))
         XCTAssertTrue(sheet.contains("if selectedStyle == .magazine, !volumeLoaded"))
         XCTAssertTrue(sheet.contains("MagazineVolume.load(photoId: credit.photoId, justPosted: posted?.photo"))
+        // 一覧を読むのは雑誌を選んだときだけ・番号で描き直すのも雑誌だけ・見本は番号なし（2026-11-19）
+        XCTAssertTrue(sheet.contains(".task(id: style == .magazine) {"))
+        XCTAssertTrue(sheet.contains("guard style == .magazine, !volumeLoaded else { return }"))
+        XCTAssertTrue(sheet.contains("(style == .magazine ? \"-\\(volumeLoaded)\" : \"\")"))
+        XCTAssertFalse(sheet.contains("\\(retryCount)-\\(volumeLoaded)\""), "ほかの型も番号で描き直している")
+        XCTAssertTrue(sheet.contains("credit: thumbnailCredit,"))
+        XCTAssertTrue(sheet.contains(".task(id: showsDate) {"))
         let story = try source("Sources/JourneyPhoto/Features/Common/TravelStorySheet.swift")
         XCTAssertTrue(story.contains("if each.kind == .magazine, !volumeLoaded { continue }"))
         XCTAssertTrue(story.contains("let facts = drawnFacts"))
+        XCTAssertTrue(story.contains("guard needsVolume, !volumeLoaded else { return }"))
+        XCTAssertTrue(story.contains("(needsVolume ? \"#\\(volumeLoaded)\" : \"\")"))
+        XCTAssertTrue(story.contains("TravelStory.nearby(choice.kind, in: kinds).contains(.magazine)"))
+        // 覚えた数え方は、投稿・削除・公開の切り替え・ログアウトで捨てる
+        for path in ["Sources/JourneyPhoto/Services/UploadService.swift", "Sources/JourneyPhoto/Services/PhotoService.swift",
+                     "Sources/JourneyPhoto/Core/Auth/AuthStore.swift"] {
+            XCTAssertTrue(try source(path).contains("MagazineVolume.forget()"), path)
+        }
+        XCTAssertEqual(try source("Sources/JourneyPhoto/Services/PhotoService.swift")
+            .components(separatedBy: "MagazineVolume.forget()").count - 1, 2, "削除と公開の切り替えの両方")
         let detail = try source("Sources/JourneyPhoto/Features/PhotoDetail/PhotoDetailView.swift")
         XCTAssertTrue(detail.contains("photoId: target.id)"))
         let posted = try source("Sources/JourneyPhoto/Features/Upload/PostedShareCard.swift")

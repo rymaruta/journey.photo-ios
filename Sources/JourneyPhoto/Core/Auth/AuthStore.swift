@@ -353,6 +353,8 @@ final class AuthStore: ObservableObject {
     ///   - detail: エラーの種類・口の形（人の情報は入れない）
     func signOut(byExpiry: Bool = false, cause: ExitTrail.SignOutCause = .user, detail: String? = nil) async {
         ExitTrail.keepSignOut(cause, detail: detail, defaults: trailDefaults)
+        // 雑誌の Vol. の番号のために覚えた自分の写真の一覧を手放す（`MagazineVolume`・2026-11-19）
+        MagazineVolume.forget()
         isSignedOutUncertain = false
         signedOutByExpiry = byExpiry
         // 端末から消せなくても**画面はログアウトの扱いにする**（ここで止めると、押したのに

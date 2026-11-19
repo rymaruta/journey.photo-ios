@@ -26,6 +26,7 @@ struct TravelStorySheet: View {
     @EnvironmentObject private var toasts: ToastCenter
     /// 自分の写真の一覧（雑誌の Vol. の番号を数える・`MagazineVolume`）
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var auth: AuthStore
     /// 雑誌の Vol. の番号。読み終えるまで雑誌は描かない。分からなければ nil（「Vol.」を出さない）
     @State private var volume: Int?
     @State private var volumeLoaded = false
@@ -105,14 +106,16 @@ struct TravelStorySheet: View {
                 }
             }
             .task(id: loadAttempt) { await loadPhotos() }
-            .task {
-                // 雑誌の Vol. の番号（自分の写真の一覧を全部読んで数える）
-                guard !volumeLoaded else { return }
-                volume = await MagazineVolume.load(photoId: facts.photoId, justPosted: nil, photos: environment.photos)
+            .task(id: needsVolume) {
+                // 雑誌の Vol. の番号。**今の型か両隣が雑誌のときだけ**自分の写真の一覧を読む（2026-11-19 まとめ役の判断）
+                guard needsVolume, !volumeLoaded else { return }
+                volume = await MagazineVolume.load(photoId: facts.photoId, justPosted: nil, owner: auth.userId,
+                                                   photos: environment.photos)
                 volumeLoaded = true
             }
-            // 今の型を先に、両隣を後から描く（払ったときに待たせない）
-            .task(id: "\(choice.renderKey)#\(leadData?.count ?? 0)#\(filmData?.count ?? 0)#\(renderAttempt)#\(volumeLoaded)") {
+            // 今の型を先に、両隣を後から描く（払ったときに待たせない）。番号を読み終えたことで描き直すのは雑誌を描くときだけ
+            .task(id: "\(choice.renderKey)#\(leadData?.count ?? 0)#\(filmData?.count ?? 0)#\(renderAttempt)"
+                  + (needsVolume ? "#\(volumeLoaded)" : "")) {
                 await renderVisible()
             }
             .onChange(of: choice) { _, newValue in TravelStory.save(newValue) }
@@ -330,6 +333,11 @@ struct TravelStorySheet: View {
     /// 絵を控える鍵。雑誌は Vol. の番号も入れる（読み終える前の絵を使い回さない）
     private func renderKey(_ each: TravelStory.Choice) -> String {
         each.kind == .magazine ? each.renderKey + "|v" + (volume.map { String($0) } ?? "-") : each.renderKey
+    }
+
+    /// 雑誌を描くか（今の型か両隣が雑誌・`TravelStory.nearby` と同じ範囲）
+    private var needsVolume: Bool {
+        TravelStory.nearby(choice.kind, in: kinds).contains(.magazine)
     }
 
     /// 描くときの事実（Vol. の番号を写したもの）

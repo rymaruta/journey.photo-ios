@@ -428,8 +428,7 @@ final class KoyomiCardTests: XCTestCase {
         let sheet = try String(contentsOf: root.appendingPathComponent(
             "Sources/JourneyPhoto/Features/Common/SignatureShareCardSheet.swift"), encoding: .utf8)
         XCTAssertTrue(sheet.contains("where ShareCardDateChoice.drawsDate(option) {\n                    thumbnails.removeValue(forKey: option.rawValue)"))
-        // 2026-11-18: 雑誌の Vol. の番号を読み終えたときも見本を作り直す（`MagazineCardTests`）
-        XCTAssertTrue(sheet.contains(".task(id: \"\\(showsDate)-\\(volumeLoaded)\") {"))
+        XCTAssertTrue(sheet.contains(".task(id: showsDate) {"))
     }
 
     /// 日本の「〇〇郡〇〇町」は郡を落とす（列が詰まらないように）

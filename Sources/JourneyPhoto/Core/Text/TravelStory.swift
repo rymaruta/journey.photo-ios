@@ -530,7 +530,8 @@ enum TravelStory {
                 place = city ?? region
             }
         }
-        return MagazineCard.texts(title: facts.title, place: place,
+        // **撮影地を「出さない」なら題も出さない**（題に地名が入りやすい・2026-11-19 まとめ役の判断）。題の所は帯だけ
+        return MagazineCard.texts(title: choice.placeLevel == .none ? nil : facts.title, place: place,
                                   placeFallback: choice.placeLevel == .city ? region : nil,
                                   takenDay: facts.takenDay, showsDate: choice.dateLevel != .none,
                                   camera: facts.camera, aperture: facts.aperture, exposure: facts.exposure,

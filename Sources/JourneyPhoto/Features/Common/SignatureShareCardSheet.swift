@@ -32,6 +32,7 @@ struct SignatureShareCardSheet: View {
     @EnvironmentObject private var toasts: ToastCenter
     /// 自分の写真の一覧（雑誌の Vol. の番号を数える・`MagazineVolume`）
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var auth: AuthStore
     /// 「ストーリーに載せる」で開く作る画面（写真の詳細の「送る」と同じ `StoryComposerView(sharing:)`）
     @State private var storySeed: StoryShareSeed?
     @State private var preparingStory = false
@@ -53,6 +54,10 @@ struct SignatureShareCardSheet: View {
     /// 分からなければ nil のまま（「Vol.」を出さない）
     @State private var volume: Int?
     @State private var volumeLoaded = false
+    /// 見本の中身（入切だけを写す。Vol. の番号は付けない）
+    private var thumbnailCredit: SignatureShareCardRenderer.Credit {
+        ShareCardDateChoice.credit(credit, showsDate: showsDate)
+    }
     /// 描くときの中身（入切と Vol. を写したもの）
     private var drawnCredit: SignatureShareCardRenderer.Credit {
         var drawn = ShareCardDateChoice.credit(credit, showsDate: showsDate)
@@ -195,14 +200,16 @@ struct SignatureShareCardSheet: View {
                     thumbnails.removeValue(forKey: option.rawValue)
                 }
             }
-            .task {
-                // 雑誌の Vol. の番号（自分の写真の一覧を全部読んで数える・上限の時間を過ぎたら出さない）
-                guard !volumeLoaded else { return }
+            .task(id: style == .magazine) {
+                // 雑誌の Vol. の番号。**雑誌を選んだときだけ**自分の写真の一覧を読む（2026-11-19 まとめ役の判断・
+                // 読んだ一覧はアプリを使っている間だけ覚える `MagazineVolume.Memo`）。上限の時間を過ぎたら出さない
+                guard style == .magazine, !volumeLoaded else { return }
                 volume = await MagazineVolume.load(photoId: credit.photoId, justPosted: posted?.photo,
-                                                   photos: environment.photos)
+                                                   owner: auth.userId, photos: environment.photos)
                 volumeLoaded = true
             }
-            .task(id: "\(ratio.rawValue)-\(styleRaw)-\(showsDate)-\(retryCount)-\(volumeLoaded)") {
+            // 番号を読み終えたことで描き直すのは雑誌のときだけ（ほかの型は描き直さない）
+            .task(id: "\(ratio.rawValue)-\(styleRaw)-\(showsDate)-\(retryCount)" + (style == .magazine ? "-\(volumeLoaded)" : "")) {
                 let selectedRatio = ratio
                 let selectedStyle = style
                 // 雑誌は Vol. の番号を読み終えてから描く（読み終えたら task がもう一度来る）
@@ -241,16 +248,15 @@ struct SignatureShareCardSheet: View {
                 output = result
                 preparing = false
             }
-            .task(id: "\(showsDate)-\(volumeLoaded)") {
+            .task(id: showsDate) {
                 // 見本は 4:5・顔なしで。先に今のプレビューを作らせ（最大 3 秒待つ）、見本は後ろで1つずつ（144×180 に縮めて持つ）
                 for _ in 0..<30 where preparing {
                     try? await Task.sleep(nanoseconds: 100_000_000)
                 }
                 for option in ShareCardStyleChoice.order(for: credit) where thumbnails[option.rawValue] == nil {
                     if Task.isCancelled { return }
-                    // 雑誌の見本は Vol. の番号を読み終えてから（読み終えたら task がもう一度来る）
-                    if option == .magazine, !volumeLoaded { continue }
-                    guard let data = await SignatureShareCardRenderer.render(photoData, credit: drawnCredit,
+                    // 見本は Vol. の番号なしで描く（番号のために一覧を読まない・2026-11-19 まとめ役の判断）
+                    guard let data = await SignatureShareCardRenderer.render(photoData, credit: thumbnailCredit,
                                                                              ratio: .portrait, style: option),
                           let image = UIImage(data: data)?.preparingThumbnail(of: ShareCardStyleTile.pixelSize)
                     else { continue }
