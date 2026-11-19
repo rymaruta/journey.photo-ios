@@ -5805,7 +5805,9 @@ final class ScreenshotTests: XCTestCase {
                    "legal.source.naturalEarth"] {
             let row = app.descendants(matching: .any)[id].firstMatch
             guard row.waitForExistence(timeout: 10) else { return XCTFail("利用規約の画面に \(id) が無い") }
-            XCTAssertGreaterThanOrEqual(row.frame.height, 44, "\(id) が 44pt 未満")
+            // 小数の誤差は許す（run 44448033816: CC BY 4.0 の行は minHeight 44 で、測った高さが 43.99999999999994。
+            // 画面の位置の引き算の丸めで、44pt 未満の当たりではない）
+            XCTAssertGreaterThanOrEqual(row.frame.height, 44 - 0.01, "\(id) が 44pt 未満（\(row.frame.height)）")
         }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "102k-利用規約とデータの出典")
