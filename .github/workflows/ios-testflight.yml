@@ -535,7 +535,8 @@ jobs:
       # （`Tools/export-screenshots.sh` が読む）。絞った回は `どこまで流すかを決める` の一覧だけ
       - name: UI テスト（画面の絵）
         id: ui
-        if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.sharded != 'true' }}
+        # 一時の枝 claude/xcode27-move-ui だけ: 単体が落ちても UI テストを流す（iOS 27.2 で単体の1本が時間切れになるため・#647）
+        if: ${{ !cancelled() && steps.unit.outcome != 'skipped' && (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.sharded != 'true' }}
         run: bash Tools/xcode-test.sh ui build/ios/test/Test.xcresult /tmp/ui-only-testing.txt
 
       # 🔴 **「PR の検証」が「このコミットは Mac でテスト済み」と数える印**（2026-10-17）。
