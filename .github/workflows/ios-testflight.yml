@@ -854,13 +854,32 @@ jobs:
   build-only:
     name: ビルドだけ（コンパイルの確認）
     if: ${{ inputs.screens == 'build' }}
-    runs-on: macos-15
-    timeout-minutes: 20
+    # 一時の枝 claude/xcode27-probe だけ: Xcode 27 の台で組めるかを試す（main には入れない）。
+    # 控えが外れて依存から組み直すので、上限を 60分にしてある
+    runs-on: xcode-27
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
 
+      - name: 台の中身を書き出す（試しの枝だけ）
+        run: |
+          set +e
+          sw_vers
+          ls /Applications | grep Xcode
+          xcodebuild -showsdks
+          xcrun simctl list runtimes
+          xcrun simctl list devices available | grep -i iphone
+
       - name: Xcodeを選択
         run: bash Tools/select-xcode.sh
+
+      - name: 選んだ Xcode と SDK と機種
+        run: |
+          set +e
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i iphone
+          swift --version
+          python3 Tools/pick-simulator.py
 
       - name: Xcodeのバージョンを確認
         run: echo "XCODE_BUILD=$(xcodebuild -version | tr '\n' '-' | tr -d ' ')" >> "$GITHUB_ENV"
@@ -915,6 +934,23 @@ jobs:
         run: |
           python3 Tools/compile-errors.py build/logs/xcodebuild-build.log >> "$GITHUB_STEP_SUMMARY"
           python3 Tools/compile-errors.py build/logs/xcodebuild-build.log --annotate
+
+      - name: 警告とエラーを数える（試しの枝だけ）
+        if: ${{ always() }}
+        run: |
+          set +e
+          log=build/logs/xcodebuild-build.log
+          echo "errors: $(grep -E ': error: ' $log | sort -u | wc -l)"
+          echo "warnings: $(grep -E ': warning: ' $log | sort -u | wc -l)"
+          grep -E ': warning: ' $log | sed -E 's/^.*: warning: //' | sort | uniq -c | sort -rn | head -60
+
+      - name: ログを持ち帰る（試しの枝だけ）
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: xcode27-probe-logs
+          path: build/logs/
+          retention-days: 3
 
   # ===========================================================================================
   # 🔴 **全部の回は、テストを別々の Mac に分けて同時に流す**（2026-10-31 判断・#429）
