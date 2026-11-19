@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import UIKit
 
 struct UploadView: View {
 
@@ -50,8 +51,23 @@ struct UploadView: View {
     /// 「詳しい設定」（公開範囲・曲・アルバム・SNS・カテゴリ）を開いているか。**畳んで始める**
     /// （2026-10-03 判断・`UploadDetails`）。畳んでいても今の値は行の右に出る
     @State private var showsDetails = false
-    /// 写真を選ぶ画面を自動で開いたか（一度だけ・`UploadDetails.autoOpensLibrary`）
-    @State private var offeredLibrary = false
+    /// 写真の一覧の段（2026-11-18 判断・案 B1）。写真がまだ無い間は、欄の代わりに写真の一覧を出す
+    /// （前は開いて 0.9 秒待ってから OS の写真選びを開いていた・`UploadDetails.showsLibraryStage`）。
+    /// 一覧は投稿の写真だけ（動画は並べない）
+    @StateObject private var libraryFeed = LibraryFeed(includesVideos: false)
+    /// 一覧の「選択」（何枚かに印を付けて「次へ（N枚）」）
+    @State private var librarySelecting = false
+    @State private var libraryMarked: [String] = []
+    /// 一覧で押して読み込んでいる1枚（そのマスに丸を出す）
+    @State private var loadingAssetId: String?
+    /// 許可の無い人の埋め込みの写真選びで選んだもの（「次へ（N枚）」で読み込む）
+    @State private var systemPicks: [PhotosPickerItem] = []
+    /// 下書き・送れなかった投稿を戻している途中（戻し始める前の一瞬に一覧が出ないように）
+    @State private var openingRestore = false
+    /// 投稿の入口（下の「投稿」）の中で開いたか。中なら一覧に「旅の写真から」「構図」の入口を出す
+    @Environment(\.createFlow) private var createFlow
+    /// 写真を許可していない人の「設定で写真へのアクセスを許可」
+    @Environment(\.openURL) private var openURL
     /// 投稿の前のプレビューを開いているか（札 #409・下の帯の「プレビュー」）
     @State private var showPreview = false
     /// プレビューの中で「投稿する」を押した。**シートが閉じきってから送る**（送り終わりの共有カードは
@@ -102,8 +118,12 @@ struct UploadView: View {
          initialCapture: CameraCapture? = nil,
          resumeJournal: String? = nil,
          openDraft: String? = nil,
+         resuming: UploadViewModel? = nil,
          onSaved: ((Photo) -> Void)? = nil) {
         self.resumeJournal = resumeJournal
+        // 送れなかった投稿を開き直した（ホームの輪の「投稿の画面で直す」・案 B2）: 開いたときの問いは出さない
+        // （自分の送信の控えを「送れなかった投稿があります」と尋ねて、同じ写真を二重に並べない）
+        _askedRestore = State(initialValue: resuming != nil)
         self.openDraft = openDraft
         // 画面写真の試験だけ: 見本の1枚を選んだ状態で開く（`PreviewSession.opensUploadSample`・Debug のみ。
         // 鍵の無いときは nil で、ふだんの投稿画面は変わらない）
@@ -118,6 +138,8 @@ struct UploadView: View {
         let api = APIClient.app()
         // （`StateObject` の引数は最初の1回だけ評価される。毎回の init でモデルを作らない）
         _model = StateObject(wrappedValue: {
+            // 送れなかった投稿を開き直した: 係が持っていた画面のモデル（写真と文）をそのまま使う
+            if let resuming { return resuming }
             let model = UploadViewModel(
                 // 見本の通信（UI テスト）では本体も端末の中の答え手へ（`UploadService.app`・ふだんは背景の転送）
                 uploads: UploadService.app(api: api),
@@ -139,12 +161,116 @@ struct UploadView: View {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if auth.userId == nil {
                 SignInView(reason: L("写真を投稿するにはログインしてください", "Sign in to post a photo"))
+            } else if libraryStage {
+                libraryStageView
             } else {
                 form
             }
         }
         .navigationTitle(L("新規投稿", "New post"))
         .navigationBarTitleDisplayMode(.inline)
+        // 一覧の段は自分の見出しの行（ガラスの丸の「閉じる」・題・選択）を持つので、上のバーは隠す
+        .toolbar(libraryStage && auth.userId != nil ? .hidden : .visible, for: .navigationBar)
+        // 投稿の入口の中なら、一覧を見ている間を知らせる（下の「投稿 | ストーリー」を出す・払って替える）
+        .onChange(of: libraryShownForFlow) { _, shown in createFlow?.noteLibrary(shown, from: .post) }
+        // カメラと OS の写真選び（「アルバム」・帯の「追加」）は一覧の段と欄の段の両方から開くので、外側に付ける
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPicker { capture in
+                model.accept(capture: capture)
+            }
+            .ignoresSafeArea()
+        }
+        // **まとめて選べる**（Web の投稿画面と同じ）。一度に扱う数は
+        // `maxSelection` まで——1枚ずつ題と説明を書く画面なので、
+        // 多すぎるとどれを書いているか見失う
+        // **元の形のまま受け取る（`.current`）**（2026-10-16・ストーリーの埋め込みの写真選びと同じ理由）。
+        // 既定（`.automatic`）だと写真を JPEG などに作り直し終えるまで選択が知らされず、大きな写真・
+        // iCloud の写真ほど長く待たされる。読み込みは `Data` で受けて `ImagePreparer` が整えるので HEIC のままで困らない
+        .photosPicker(isPresented: $showLibrary,
+                      selection: $model.pickerItems,
+                      maxSelectionCount: UploadViewModel.maxSelection,
+                      matching: .images,
+                      preferredItemEncoding: .current,
+                      // **前の選択に印を付けて開く。** 無いと毎回まっさらで開き、
+                      // 「追加」が選び直しになる（前の写真と打った題が消える）
+                      photoLibrary: .shared())
+        // 開いたときの支度（下書き・送れなかった投稿の問い・最初から入れる写真）。**一覧の段でも欄の段でも走るよう、
+        // 画面の外側に付ける**（2026-11-18・案 B1。欄だけに付けると、写真の一覧から始まる回に問いが出ない）
+        .onAppear {
+            createFlow?.noteLibrary(libraryShownForFlow, from: .post)
+            // 「撮影地の位置を付ける」の持ち主（人ごとの値・2026-10-18）。**写真を並べるより先に**——
+            // 旅の写真・撮った1枚は下で並べた瞬間に撮影地を引き始める（`UploadViewModel.startPlaceLookup`）
+            model.useLocationOwner(auth.userId)
+            // 撮影地の候補のチップの「最近使った撮影地」（2026-11-16 判断 A11）
+            recentPlaceNames = model.recentPlaceNames()
+            // 投稿で「アルバムが無い」と分かったら、端末の控えからも外す
+            model.onAlbumGone = { [joined] id in joined.forget(id: id) }
+            // 撮影地が写真の近くのスポットを指すかを見る索引（送るときだけ読む・`PlaceCoordsRule`）。
+            // **索引の行だけ**（区分の詳細を待つと、遅い通信で2秒の待ちを過ぎて座標を落とす）
+            model.fetchSpotIndex = { [spots = environment.spots] in await spots.fetchIndexRows() }
+            // 撮影スポットの自動の候補を選ぶ索引（Web と同じ `spot-match.json`・2026-10-31 #425）
+            model.fetchSpotMatchIndex = { [spots = environment.spots] in await spots.fetchMatchIndex() }
+            // **今日のテーマから来たときだけ、一度だけ。** 既に何か打っていれば触らない。
+            // 選択画面などから戻ると onAppear はまた呼ばれるので、印が無いと
+            // 利用者が空にしたタグがまた入る（印は model が持つ・送ったあとの reset で下ろす）
+            model.initialTag = initialTag
+            model.applyInitialTag()
+            // 旅の写真と「非公開で始める」も一度だけ（印は model が持つ）
+            model.applyInitialPhotos(initialPhotos, startPrivate: startPrivate)
+            // **一度だけ入れる**（外したあとに戻さない）
+            if let initialSpot, !appliedInitialSpot {
+                appliedInitialSpot = true
+                model.spot = initialSpot
+            }
+            // 撮った1枚も一度だけ（外したあとに戻さない）
+            if let initialCapture, !appliedInitialCapture {
+                appliedInitialCapture = true
+                model.accept(capture: initialCapture)
+            }
+            // 端末の下書き（人ごと・2026-10-11）。開いたときに一度だけ尋ねる
+            // 持ち主は**開いたときの人に決める**（途中で人が替わったら、下の onChange が外す）
+            // 2026-10-29（#400）: この画面の下書きは**新しい1件**（保存するまで記録は無い）。
+            // 一覧から開いた回はその1件（下の `openEntry`）
+            if model.drafts == nil { model.drafts = UploadDraftStore(slot: .entry(UUID().uuidString)) }
+            if !askedRestore { model.draftOwner = auth.userId }
+            refreshDraftCount()
+            let opensWithContent = !initialPhotos.isEmpty || initialCapture != nil
+                || initialTag != nil || initialSpot != nil || openDraft != nil
+            // 送れなかった投稿（控え・古い順に1件）→ アプリが途中で終了した書きかけ → 本人の下書き
+            let autoStore = UploadDraftStore(slot: .auto)
+            let hasAuto = auth.userId.flatMap { autoStore.draft(for: $0) } != nil
+            // 裏の係が送っている・送れずに持っている投稿の控えは尋ねない（二重に送らない・2026-11-18 案 B2）
+            let journalIds = PostUploadCenter.askable(
+                auth.userId.map { id in model.drafts?.journals(for: id).map(\.id) ?? [] } ?? [],
+                held: PostUploadCenter.shared.heldJournalIds)
+            // 本人の下書きは尋ねない（何件にもなるので一覧から選ぶ・`UploadDraftRules.openAction` の注記）
+            let action = UploadDraftRules.openAction(journalIds: journalIds, hasAutoDraft: hasAuto,
+                                                     hasSavedDraft: false,
+                                                     opensWithContent: opensWithContent, alreadyAsked: askedRestore,
+                                                     resumeJournal: resumeJournal)
+            // 🔴 尋ねていない書きかけには触らない（`ownsAutoSlot`）。触らない回は書きかけの枠を渡さない
+            // （送信の控えは投稿ごとの別の枠なので、この回も必ず書く）
+            if !askedRestore, UploadDraftRules.ownsAutoSlot(hasAutoDraft: hasAuto, action: action) {
+                model.autoDrafts = autoStore
+            }
+            switch action {
+            case .resumeJournal(let id): restoreDraft(from: .send(id))
+            case .askJournal(let id): askingJournal = id
+            case .askAuto: showRestoreAuto = true
+            case .askSaved: showRestore = true
+            case .none: break
+            }
+            // 一覧から開いた下書き（一度だけ）
+            if let openDraft, !askedRestore {
+                if openDraft == DraftLibrary.autoPostId {
+                    if model.autoDrafts == nil { model.autoDrafts = autoStore }
+                    restoreDraft(from: .auto)
+                } else {
+                    openEntry(openDraft)
+                }
+            }
+            askedRestore = true
+        }
         // **閉じる口を置く。** シートで出しているので、下に払う以外の
         // 出口が無いと戻れないと思う人が出る
         // 2026-11-14（#188・点検「直すべき 2」）: 「投稿する」は**下の主ボタン**（`submitBar`・板の投稿画面
@@ -216,10 +342,8 @@ struct UploadView: View {
             NavigationStack {
                 DraftsView(presentation: .sheet, tidying: tidyingDrafts,
                            onOpen: { entry in openFromList(entry) },
-                           onChoosePhotos: {
-                               showDrafts = false
-                               openLibraryAfterRestorePrompt()
-                           })
+                           // 写真がまだ無ければ、閉じた所が写真の一覧（2026-11-18・案 B1）
+                           onChoosePhotos: { showDrafts = false })
             }
         }
         // 開いたときに一度だけ。黙って戻すと、新しく投稿しに来た人が前の写真に驚く（ストーリーと同じ）
@@ -227,7 +351,6 @@ struct UploadView: View {
             Button(L("続ける", "Continue")) { restoreDraft() }
             Button(L("下書きを削除", "Delete draft"), role: .destructive) {
                 model.discardDraft()
-                openLibraryAfterRestorePrompt()
             }
         } message: {
             Text(L("この端末に保存した下書きがあります。続きから編集できます。",
@@ -239,7 +362,6 @@ struct UploadView: View {
             Button(L("続きから", "Continue")) { restoreDraft(from: .auto) }
             Button(L("削除", "Delete"), role: .destructive) {
                 model.discardAutoDraft()
-                openLibraryAfterRestorePrompt()
             }
         } message: {
             Text(L("前回、投稿の途中でアプリが終了しました。続きから編集できます。",
@@ -252,10 +374,9 @@ struct UploadView: View {
             Button(L("続きから", "Continue")) { restoreDraft(from: .send(id)) }
             Button(L("削除", "Delete"), role: .destructive) {
                 if let owner = model.draftOwner { model.drafts?.sibling(.send(id)).clear(for: owner) }
-                openLibraryAfterRestorePrompt()
             }
             // 「あとで」は控えに触らない（次に開いたとき・次の起動でまた尋ねる。起動時の知らせと同じ形）
-            Button(L("あとで", "Later"), role: .cancel) { openLibraryAfterRestorePrompt() }
+            Button(L("あとで", "Later"), role: .cancel) { }
         } message: { _ in
             Text(L("送り終える前にアプリが終了した投稿です。続きから送り直せます。",
                    "This post didn\u{2019}t finish sending before the app closed. You can send it again."))
@@ -271,39 +392,28 @@ struct UploadView: View {
                 }
             }
         }
-        // **上がった時点で知らせる。** × や下に払って閉じる時点で知らせると、
-        // 一部だけ上がった・曲だけ付かなかったまま下に払って閉じた回が漏れる
-        .onChange(of: model.postedToSpot) { _, n in
-            if n > 0 { onPosted?(n) }
-        }
-        // 投稿が終わった・送れなかったことを触覚で1回だけ（2026-11-14 判断・`UploadViewModel.submitHaptic`）
-        .sensoryFeedback(.success, trigger: model.postSucceededTicks)
-        .sensoryFeedback(.error, trigger: model.postFailedTicks)
-        .onChange(of: model.didPostAll) { _, posted in
-            // **全部上がったときだけ閉じる。** 「待ち行列が空」で見ると、
-            // 選び直しの読み込み中（一度空にする）にも閉じてしまい、
-            // 打った文字ごと消える
-            if posted {
-                onPosted?(model.postedToSpot)
-                // カードの画面を出さない回（`PostedCardHabit`）は「カードにする」付きの知らせだけ（押すといちばん外の画面が開く）
-                if let quiet = model.quietPostedCard {
-                    PostedCardOffer.shared.offer(quiet)
-                    toasts.show(PostedCardHabit.quietText, kind: .success, actionTitle: PostedCardHabit.quietAction) {
-                        PostedCardOffer.shared.present()
-                    }
-                }
-                // 共有カードを出す回は、カードの画面を閉じてから閉じる（`postedCard`・1.1.83 資料①）
-                if model.postedCard == nil { dismiss() }
-            }
-        }
-        .sheet(item: $model.postedCard, onDismiss: { dismiss() }) { card in
-            PostedShareCardSheet(card: card)
-        }
+        // 2026-11-18 判断（案 B2「投稿を送る」・owner 採用）: 「投稿する」で画面を閉じ、裏の係（`PostUploadCenter`）が送る。
+        // 上がった知らせ（「投稿しました　カードにする」）・失敗の知らせ・触覚・観光スポットの頁への枚数・共有カードは係が出す。
+        // 前は送り終えるまでこの画面で待ち、送ったあと共有カードを毎回画面いっぱいに出していた（1.1.83 の決めを置き換えた）
     }
 
     /// 閉じようとしたときの扱い（左上の「キャンセル」と下へ払うで同じ・`UploadDraftRules.leave`）
     private var leave: UnsavedLeave {
         UploadDraftRules.leave(hasDraft: model.hasDraft, isWorking: model.isWorking)
+    }
+
+    /// 「投稿する」（下の帯・プレビューの中・「n枚目からもう一度」）。**裏の係に渡して、すぐ閉じる**（2026-11-18・案 B2）。
+    /// 渡せない（読み込み中・写真が無い・もう送っている）ときは閉じない。写真と文は係が持ち、失敗しても消さない
+    private func sendInBackground() {
+        guard PostUploadCenter.shared.start(model, onPosted: onPosted) else {
+            // 送れる形なのに受けなかった: 持ち主がいまの人でない（途中でログインし直した）。黙って止まらない
+            if model.canSubmit {
+                model.errorMessage = L("ログインしている人が替わりました。この投稿は前の人のものなので送れません",
+                                       "A different account is signed in. This post belongs to the previous account.")
+            }
+            return
+        }
+        dismiss()
     }
 
     /// 左上の「キャンセル」と、書きかけのまま下へ払ったとき（`sheetSwipeGuard`）の同じ手。
@@ -457,7 +567,9 @@ struct UploadView: View {
 
     /// 一覧から選んだ下書きを開く。**戻せなくても下書きは消さない**（一覧に残り、そこで削除を選べる）
     private func openEntry(_ id: String) {
+        openingRestore = true
         Task {
+            defer { openingRestore = false }
             guard await model.openEntry(id) else {
                 if model.errorMessage == nil {
                     model.errorMessage = L("下書きの写真を読み込めませんでした", "Couldn't load the draft's photos")
@@ -469,7 +581,9 @@ struct UploadView: View {
 
     /// 「続ける」。画像が読めなければ何も戻さず、そう言う（選ぶ画面を開く）
     private func restoreDraft(from slot: UploadDraftStore.Slot = .saved) {
+        openingRestore = true
         Task {
+            defer { openingRestore = false }
             guard await model.restoreDraft(from: slot) else {
                 // 戻せる写真が無かった（届いたか分からない写真だけだった）ときは、モデルがもう知らせている
                 if model.errorMessage == nil {
@@ -483,22 +597,9 @@ struct UploadView: View {
                     }
                     model.errorMessage = L("下書きの写真を読み込めませんでした", "Couldn't load the draft's photos")
                 }
-                openLibraryAfterRestorePrompt()
+                // 戻せなければ、写真の一覧の段に戻る（前は 0.9 秒待って OS の写真選びを開いた・2026-11-18 案 B1）
                 return
             }
-        }
-    }
-
-    /// 問いに答えたあと、写真がまだ無ければ選ぶ画面を開く（自動で開くのは問いの間は待っている・`form` の task）
-    private func openLibraryAfterRestorePrompt() {
-        guard !offeredLibrary, model.items.isEmpty else { return }
-        Task {
-            // 問いが閉じきってから開く（閉じる途中に重ねると出ないことがある）。**開くときにだけ印を付ける**
-            // （`form` の task と同じ——待っている間に閉じた回に印だけ残さない）
-            try? await Task.sleep(nanoseconds: UploadDetails.autoOpenDelayNanoseconds)
-            guard !offeredLibrary, model.items.isEmpty else { return }
-            offeredLibrary = true
-            openLibrary()
         }
     }
 
@@ -630,6 +731,196 @@ struct UploadView: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: - 写真の一覧の段（2026-11-18 判断・案 B1「投稿の入口」・owner 採用）
+
+    /// 写真の一覧の段を出すか（`UploadDetails.showsLibraryStage`）。写真がまだ無く、戻している・撮った1枚を整えている・
+    /// 送っている・最初から入れる写真を待っている間でなければ、欄の代わりに一覧
+    private var libraryStage: Bool {
+        UploadDetails.showsLibraryStage(
+            hasPhotos: !model.items.isEmpty,
+            restoring: model.isRestoringDraft || openingRestore,
+            preparingCaptures: model.preparingCaptures,
+            isWorking: model.isWorking,
+            awaitingInitial: !askedRestore && (!initialPhotos.isEmpty || initialCapture != nil
+                                               || openDraft != nil || resumeJournal != nil))
+    }
+
+    /// 投稿の入口に「一覧を見ている」と知らせる値（ログインの画面も一覧と同じに扱う——どちらの切り替えでもログインが要る）
+    private var libraryShownForFlow: Bool {
+        auth.userId == nil || libraryStage
+    }
+
+    /// 一覧の段。上に見出しの行（閉じる・新規投稿・アルバム・選択）、入口のチップ（旅の写真から・下書き）、
+    /// 許可の段に合わせて一覧か埋め込みの写真選び、下に知らせと「次へ（N枚）」
+    private var libraryStageView: some View {
+        VStack(spacing: 0) {
+            LibraryPickHeader(title: CreateFlowRules.title(.post),
+                              onClose: { attemptClose() },
+                              selecting: librarySelecting,
+                              // 許可が無い段（埋め込みの写真選び）では「選択」を出さない（写真選びが印を付ける）
+                              onToggleSelect: libraryGridShown ? {
+                                  librarySelecting.toggle()
+                                  if !librarySelecting { libraryMarked = [] }
+                              } : nil,
+                              onAlbums: libraryGridShown ? { openLibrary() } : nil,
+                              busy: model.isLoadingPicked,
+                              idPrefix: "post.library",
+                              selectHint: L("何枚かに印を付けて、まとめて投稿します", "Mark several to post them together"))
+            if let spot = model.spot {
+                spotBanner(spot)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+            }
+            LibraryEntryChips(entries: CreateFlowRules.entries(inCreateFlow: createFlow != nil, drafts: draftCount),
+                              onTrip: { chooseFlowEntry(.trip) },
+                              onDrafts: { openDraftList(tidying: false) })
+            switch libraryFeed.content {
+            case .grid(let limited):
+                if limited {
+                    LibraryAccessRows.limited(idPrefix: "post.library") {
+                        Task { await libraryFeed.addAllowedPhotos() }
+                    }
+                }
+                LibraryGrid(items: libraryFeed.items, loaded: libraryFeed.loaded,
+                            selecting: librarySelecting, marked: libraryMarked,
+                            loadingId: loadingAssetId, loading: model.isLoadingPicked,
+                            idPrefix: "post.library",
+                            cameraHint: L("撮った1枚から、そのまま投稿します。", "Take a photo and post it right away."),
+                            cameraAvailable: CameraPicker.isAvailable,
+                            onCamera: { showCamera = true },
+                            onComposition: createFlow != nil && CameraPicker.isAvailable
+                                ? { chooseFlowEntry(.composition) } : nil,
+                            onTap: tapLibraryItem)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .systemPicker(let offer):
+                if let offer {
+                    LibraryAccessRows.offer(offer, idPrefix: "post.library",
+                                            onAsk: { Task { await libraryFeed.requestAccess() } },
+                                            onSettings: {
+                                                if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                                            })
+                }
+                // 許可の無い人は前の写真選び（許可が要らない・埋め込み）。選んだ順に「次へ（N枚）」で読み込む
+                PhotosPicker(selection: $systemPicks,
+                             maxSelectionCount: UploadViewModel.maxSelection,
+                             selectionBehavior: .continuousAndOrdered,
+                             matching: .images,
+                             preferredItemEncoding: .current) {
+                    Text(L("写真を選ぶ", "Choose photos"))
+                }
+                .photosPickerStyle(.inline)
+                .photosPickerDisabledCapabilities(.selectionActions)
+                .photosPickerAccessoryVisibility(.hidden, edges: .all)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            libraryFooter
+        }
+        .background { WebTheme.background.ignoresSafeArea() }
+        // 許可の段は開くたび・設定から戻ったたびに読み直す
+        .onAppear { libraryFeed.refresh() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { libraryFeed.refresh() }
+        }
+        // 埋め込みの写真選びで付けた印は、一覧に替わったら持ち越さない
+        .onChange(of: libraryFeed.content) { _, content in
+            if case .grid = content { systemPicks = [] }
+        }
+    }
+
+    /// 一覧（自前の格子）を出している段か（許可が「すべて」か「一部」）
+    private var libraryGridShown: Bool {
+        if case .grid = libraryFeed.content { return true }
+        return false
+    }
+
+    /// 一覧の段の下（知らせと、「選択」の間・埋め込みの写真選びで選んだときの白い「次へ（N枚）」）
+    @ViewBuilder
+    private var libraryFooter: some View {
+        let picked = libraryGridShown ? libraryMarked.count : systemPicks.count
+        let showsNext = libraryGridShown ? librarySelecting : !systemPicks.isEmpty
+        let next = StorySimpleRules.nextButton(selected: picked, loading: model.isLoadingPicked)
+        let message = model.errorMessage
+        // OS の写真選び（アルバム・埋め込み）から読んでいる間は、どのマスにも丸が出ないので下に出す
+        let loadingElsewhere = model.isLoadingPicked && loadingAssetId == nil && !showsNext
+        if message != nil || showsNext || loadingElsewhere {
+            VStack(spacing: 10) {
+                if let message {
+                    alertLine(message)
+                }
+                if loadingElsewhere {
+                    HStack(spacing: 8) {
+                        ProgressView().tint(WebTheme.foreground)
+                        Text(L("写真を読み込んでいます", "Loading photos"))
+                            .font(JPFont.footnote)
+                            .foregroundStyle(WebTheme.text2)
+                    }
+                    .frame(minHeight: WebTheme.minTapTarget)
+                }
+                if showsNext {
+                    Button {
+                        if libraryGridShown {
+                            // 選んだ順に読む。読み終えたら「選択」を下ろす
+                            let ids = libraryMarked
+                            Task {
+                                await model.loadLibraryAssets(ids)
+                                librarySelecting = false
+                                libraryMarked = []
+                            }
+                        } else {
+                            // 埋め込みの写真選びの分は、今の読み込みの道（`pickerItems`）へ渡す
+                            model.pickerItems = systemPicks
+                            systemPicks = []
+                        }
+                    } label: {
+                        Group {
+                            if model.isLoadingPicked {
+                                ProgressView().tint(WebTheme.accentText)
+                            } else {
+                                Text(next.title)
+                            }
+                        }
+                        // 写真のある画面の主ボタン（白・50）
+                        .jpPillButton(.main(onPhoto: true))
+                        .opacity(next.enabled || model.isLoadingPicked ? 1 : 0.5)
+                        .accessibilityLabel(next.title)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!next.enabled)
+                    .accessibilityIdentifier("post.library.next")
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
+        }
+    }
+
+    /// マスを押した。ふだんは**そのまま読み込んで欄の段へ**（投稿 → 写真 → 投稿する）。「選択」の間は印を付ける・外す
+    private func tapLibraryItem(_ item: StoryLibraryRules.Item) {
+        switch StoryLibraryRules.tapAction(selecting: librarySelecting,
+                                           isMarked: libraryMarked.contains(item.id),
+                                           markedCount: libraryMarked.count, loading: model.isLoadingPicked,
+                                           limit: UploadViewModel.maxSelection) {
+        case .open:
+            loadingAssetId = item.id
+            Task {
+                await model.loadLibraryAssets([item.id])
+                loadingAssetId = nil
+            }
+        case .toggle:
+            libraryMarked = StoryLibraryRules.toggled(libraryMarked, id: item.id, limit: UploadViewModel.maxSelection)
+        case .ignore:
+            break
+        }
+    }
+
+    /// 一覧の上・中の入口（旅の写真から・構図）。投稿の入口を閉じてから、呼び手（`RootView`）が開く
+    private func chooseFlowEntry(_ entry: PostEntry) {
+        createFlow?.choose(entry)
+        model.closeWithoutDraft()
+        dismiss()
+    }
+
     private var form: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -637,8 +928,8 @@ struct UploadView: View {
                     // **知らせは上に。** 下の主ボタンの帯に隠れない所（送れなかった理由は書いた所の近くで読む）
                     topBlock
                     if let spot = model.spot { spotBanner(spot) }
-                    photosBlock
-                    // 旅の流れでは切り替えを出さない（いつもまとめる）。代わりに一言
+                    // 旅の流れでは切り替えを出さない（いつもまとめる）。代わりに一言。
+                    // 2026-11-18（案 B3）: 切り替えは写真の上（模型の順: 切り替え → 写真 → 欄）
                     if let note = UploadGrouping.tripNote(fromTrip: model.fromTripImport, count: model.items.count) {
                         Text(note)
                             .font(.caption)
@@ -647,6 +938,7 @@ struct UploadView: View {
                     } else if model.items.count > 1 {
                         groupChoice
                     }
+                    photosBlock
                     // 「地図に位置を載せる」の1行（2026-11-16 判断・A11）。写真があるときは1枚目の撮影地の欄の下
                     // （`detailSection`）。**写真を選ぶ前もここに出す**——撮影地は読み込んだ瞬間に写真の位置から
                     // 引き始めるので、選んでから出しても遅い（2026-10-18 の決まり・Web の切り替えと同じ）
@@ -711,26 +1003,8 @@ struct UploadView: View {
                   model.inspired == nil else { return }
             model.inspired = InspiredBy.Pick(photo: sample)
         }
-        // 2026-10-03 判断: **開いたらすぐ写真を選ぶ画面へ**（「追加」→「ライブラリから選ぶ」の2手を省く）。
-        // 一度だけ。旅の写真から来た回（もう並んでいる）は開かない。カメラは帯の「追加」に残る
-        .task {
-            // シートが出きってから開く（出ている途中に重ねると出ないことがある）。待つのは長めに
-            // （`UploadDetails.autoOpenDelay`）。それでも出なかった回は「ライブラリから選ぶ」が
-            // 立て直す（`openLibrary`）
-            try? await Task.sleep(nanoseconds: UploadDetails.autoOpenDelayNanoseconds)
-            guard !Task.isCancelled else { return }
-            // 「下書きを続けますか？」に答えている間は開かない（答えたあとに開く・`openLibraryAfterRestorePrompt`）
-            guard !showRestore, !showRestoreAuto, askingJournal == nil, !model.isRestoringDraft else { return }
-            // 下書きの一覧から開いた回は開かない（下書きの写真を戻している・#400）
-            guard openDraft == nil else { return }
-            let hasPhotos = !model.items.isEmpty || model.isLoadingPicked || !initialPhotos.isEmpty
-                || initialCapture != nil
-            guard UploadDetails.autoOpensLibrary(hasPhotos: hasPhotos, alreadyOffered: offeredLibrary,
-                                                 isWorking: model.isWorking) else { return }
-            // **開いたときにだけ印を付ける。** 待っている間に閉じた回は印を付けない（次に開いたらまた開く）
-            offeredLibrary = true
-            showLibrary = true
-        }
+        // 2026-11-18 判断（案 B1・owner 採用）: **開いて 0.9 秒待ってから OS の写真選びを開くのはやめた。**
+        // 写真がまだ無い間は、この画面そのものが写真の一覧（`libraryStage`）。押す回数が1回減り、待ちも無い
         // 写真を選んだ直後（0枚 → 1枚以上）に、一度だけ案内を出す（旅の写真から来た回も同じ）
         .onChange(of: model.items.isEmpty) { _, empty in
             if !empty { offerEditHint() }
@@ -741,82 +1015,11 @@ struct UploadView: View {
             try? await Task.sleep(nanoseconds: UInt64(UploadEditEntry.hintSeconds * 1_000_000_000))
             hideEditHint()
         }
-        .onAppear {
-            // 「撮影地の位置を付ける」の持ち主（人ごとの値・2026-10-18）。**写真を並べるより先に**——
-            // 旅の写真・撮った1枚は下で並べた瞬間に撮影地を引き始める（`UploadViewModel.startPlaceLookup`）
-            model.useLocationOwner(auth.userId)
-            // 撮影地の候補のチップの「最近使った撮影地」（2026-11-16 判断 A11）
-            recentPlaceNames = model.recentPlaceNames()
-            // 投稿で「アルバムが無い」と分かったら、端末の控えからも外す
-            model.onAlbumGone = { [joined] id in joined.forget(id: id) }
-            // 撮影地が写真の近くのスポットを指すかを見る索引（送るときだけ読む・`PlaceCoordsRule`）。
-            // **索引の行だけ**（区分の詳細を待つと、遅い通信で2秒の待ちを過ぎて座標を落とす）
-            model.fetchSpotIndex = { [spots = environment.spots] in await spots.fetchIndexRows() }
-            // 撮影スポットの自動の候補を選ぶ索引（Web と同じ `spot-match.json`・2026-10-31 #425）
-            model.fetchSpotMatchIndex = { [spots = environment.spots] in await spots.fetchMatchIndex() }
-            // **今日のテーマから来たときだけ、一度だけ。** 既に何か打っていれば触らない。
-            // 選択画面などから戻ると onAppear はまた呼ばれるので、印が無いと
-            // 利用者が空にしたタグがまた入る（印は model が持つ・送ったあとの reset で下ろす）
-            model.initialTag = initialTag
-            model.applyInitialTag()
-            // 旅の写真と「非公開で始める」も一度だけ（印は model が持つ）
-            model.applyInitialPhotos(initialPhotos, startPrivate: startPrivate)
-            // **一度だけ入れる**（外したあとに戻さない）
-            if let initialSpot, !appliedInitialSpot {
-                appliedInitialSpot = true
-                model.spot = initialSpot
-            }
-            // 撮った1枚も一度だけ（外したあとに戻さない）
-            if let initialCapture, !appliedInitialCapture {
-                appliedInitialCapture = true
-                model.accept(capture: initialCapture)
-            }
-            // 端末の下書き（人ごと・2026-10-11）。開いたときに一度だけ尋ねる
-            // 持ち主は**開いたときの人に決める**（途中で人が替わったら、下の onChange が外す）
-            // 2026-10-29（#400）: この画面の下書きは**新しい1件**（保存するまで記録は無い）。
-            // 一覧から開いた回はその1件（下の `openEntry`）
-            if model.drafts == nil { model.drafts = UploadDraftStore(slot: .entry(UUID().uuidString)) }
-            if !askedRestore { model.draftOwner = auth.userId }
-            refreshDraftCount()
-            let opensWithContent = !initialPhotos.isEmpty || initialCapture != nil
-                || initialTag != nil || initialSpot != nil || openDraft != nil
-            // 送れなかった投稿（控え・古い順に1件）→ アプリが途中で終了した書きかけ → 本人の下書き
-            let autoStore = UploadDraftStore(slot: .auto)
-            let hasAuto = auth.userId.flatMap { autoStore.draft(for: $0) } != nil
-            let journalIds = auth.userId.map { id in model.drafts?.journals(for: id).map(\.id) ?? [] } ?? []
-            // 本人の下書きは尋ねない（何件にもなるので一覧から選ぶ・`UploadDraftRules.openAction` の注記）
-            let action = UploadDraftRules.openAction(journalIds: journalIds, hasAutoDraft: hasAuto,
-                                                     hasSavedDraft: false,
-                                                     opensWithContent: opensWithContent, alreadyAsked: askedRestore,
-                                                     resumeJournal: resumeJournal)
-            // 🔴 尋ねていない書きかけには触らない（`ownsAutoSlot`）。触らない回は書きかけの枠を渡さない
-            // （送信の控えは投稿ごとの別の枠なので、この回も必ず書く）
-            if !askedRestore, UploadDraftRules.ownsAutoSlot(hasAutoDraft: hasAuto, action: action) {
-                model.autoDrafts = autoStore
-            }
-            switch action {
-            case .resumeJournal(let id): restoreDraft(from: .send(id))
-            case .askJournal(let id): askingJournal = id
-            case .askAuto: showRestoreAuto = true
-            case .askSaved: showRestore = true
-            case .none: break
-            }
-            // 一覧から開いた下書き（一度だけ）
-            if let openDraft, !askedRestore {
-                if openDraft == DraftLibrary.autoPostId {
-                    if model.autoDrafts == nil { model.autoDrafts = autoStore }
-                    restoreDraft(from: .auto)
-                } else {
-                    openEntry(openDraft)
-                }
-            }
-            askedRestore = true
-        }
         // 投稿の前のプレビュー（札 #409・案A）。閉じれば書きかけのまま戻る。中で「投稿する」を押した回だけ、閉じてから送る
         .sheet(isPresented: $showPreview, onDismiss: {
             guard postAfterPreview else { return }
             postAfterPreview = false
-            Task { await model.submit() }
+            sendInBackground()
         }) {
             PostPreviewSheet(model: model) { postAfterPreview = true }
         }
@@ -860,26 +1063,6 @@ struct UploadView: View {
         } message: {
             Text(editLockMessage ?? "")
         }
-        .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker { capture in
-                model.accept(capture: capture)
-            }
-            .ignoresSafeArea()
-        }
-        // **まとめて選べる**（Web の投稿画面と同じ）。一度に扱う数は
-        // `maxSelection` まで——1枚ずつ題と説明を書く画面なので、
-        // 多すぎるとどれを書いているか見失う
-        // **元の形のまま受け取る（`.current`）**（2026-10-16・ストーリーの埋め込みの写真選びと同じ理由）。
-        // 既定（`.automatic`）だと写真を JPEG などに作り直し終えるまで選択が知らされず、大きな写真・
-        // iCloud の写真ほど長く待たされる。読み込みは `Data` で受けて `ImagePreparer` が整えるので HEIC のままで困らない
-        .photosPicker(isPresented: $showLibrary,
-                      selection: $model.pickerItems,
-                      maxSelectionCount: UploadViewModel.maxSelection,
-                      matching: .images,
-                      preferredItemEncoding: .current,
-                      // **前の選択に印を付けて開く。** 無いと毎回まっさらで開き、
-                      // 「追加」が選び直しになる（前の写真と打った題が消える）
-                      photoLibrary: .shared())
     }
 
     /// 下の帯（板の投稿画面: 白の主ボタン「3枚を投稿する」・`UploadSubmitBar`）。
@@ -942,7 +1125,7 @@ struct UploadView: View {
     /// 帯の主ボタン「3枚を投稿する」（送信中は輪と何枚目か）
     private var postButton: some View {
         Button {
-            Task { await model.submit() }
+            sendInBackground()
         } label: {
             HStack(spacing: JPSpace.xs) {
                 if let export = model.exportProgress {
@@ -1204,11 +1387,12 @@ struct UploadView: View {
     private var groupChoice: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 0) {
-                segment(L("1つの投稿にまとめる", "Post as one"), selected: model.groupsAsOnePost) {
-                    model.groupsAsOnePost = true
-                }
+                // 2026-11-18（案 B3）: 模型どおり左が「それぞれ別の投稿」、右が「1つの投稿」（既定）
                 segment(L("それぞれ別の投稿", "Separate posts"), selected: !model.groupsAsOnePost) {
                     model.groupsAsOnePost = false
+                }
+                segment(L("1つの投稿", "One post"), selected: model.groupsAsOnePost) {
+                    model.groupsAsOnePost = true
                 }
             }
             .padding(3)
@@ -1257,13 +1441,50 @@ struct UploadView: View {
     private static let segmentSelectedFill = WebTheme.surface8
 
     /// 選んだ写真ごとの欄。**題・説明・撮影地は1枚ずつ**（Web と同じ）。
+    @ViewBuilder
     private var detailSection: some View {
+        // 2026-11-18 判断（案 B3「何枚かの投稿」・owner 採用）: 1つの投稿では撮影地・題・説明を**1組だけ**（先頭の写真の欄）。
+        // 送るときに全部の写真に写す（`UploadViewModel.applySharedFields`）。写真ごとに書くのは畳んだ「写真ごとに書く ›」から
+        detailFields(model.sharesFields ? Array(model.items.prefix(1)) : model.items)
+        if model.sharesFields {
+            perPhotoLink
+        }
+    }
+
+    /// 「写真ごとに書く ›」（案 B3: 上下に髪線・高さ 44・13pt の text-2・右に ›）。押すと先頭の値を写してから写真ごとの欄を出す
+    private var perPhotoLink: some View {
+        Button { model.openPerPhotoFields() } label: {
+            HStack(spacing: JPSpace.xs) {
+                Text(L("写真ごとに書く", "Write for each photo"))
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.text2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.text3)
+                    .accessibilityHidden(true)
+            }
+            .frame(minHeight: WebTheme.minTapTarget)
+            .overlay(alignment: .top) { Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline) }
+            .overlay(alignment: .bottom) { Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline) }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(model.isWorking)
+        .accessibilityHint(L("撮影地、題、説明を写真ごとに書きます。いまの値はどの写真にも入っています",
+                             "Write the place, title and description per photo. Each starts with what you wrote."))
+        .accessibilityIdentifier("upload.perPhoto")
+    }
+
+    /// 写真ごとの欄（撮影地・題・説明）。1組だけのときは先頭の写真の欄だけを渡す
+    private func detailFields(_ shown: [PendingPhoto]) -> some View {
         // 🔴 欄の窓は id で引く（`photoBinding`・2026-11-15・札 #616）。並びの番号で引く窓（`ForEach` に `$model.items` を渡す形）は、
         // 題を打ったまま投稿して写真が並びから外れると、欄の字の確定で外れた番号を読んで落ちた
-        ForEach(model.items) { item in
+        ForEach(shown) { item in
             let photo = model.photoBinding(item)
             VStack(alignment: .leading, spacing: 14) {
-                if model.items.count > 1 {
+                // 何枚目かの見出しは写真ごとに書くときだけ（1組のときは全部の写真の欄）
+                if model.items.count > 1 && !model.sharesFields {
                     JPSectionTitle(L("\(indexOf(item)) 枚目", "Photo \(indexOf(item))"))
                 }
                 // 2026-10-03 判断: **撮影地を題・説明より先に**（いちばん多い道は 写真 → 撮影地 → 投稿。
@@ -1844,7 +2065,7 @@ struct UploadView: View {
         }
         // 送れなかった写真があれば、そこから送り直す口（「2枚目からもう一度」）。圏外の間は出さない（押しても届かない）
         if let from = model.resendFrom, !model.items.isEmpty, !model.isWorking, !connectivity.isOffline {
-            Button { Task { await model.submit() } } label: {
+            Button { sendInBackground() } label: {
                 Text(UploadSummary.resendTitle(from: from)).jpPillButton(.outline)
             }
             .buttonStyle(.plain)

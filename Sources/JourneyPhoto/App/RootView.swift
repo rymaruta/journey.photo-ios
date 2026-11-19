@@ -41,10 +41,12 @@ struct RootView: View {
     @State private var mapStackId = 0
     @State private var unread = 0
     @Environment(\.scenePhase) private var scenePhase
-    /// 投稿の「＋」から開くもの
+    /// 投稿の「＋」から開くもの（写真の一覧・案 B1・2026-11-18）
     @State private var showPostChoice = false
-    /// 投稿の選択。シートが閉じきった後に次の画面を開く
-    @State private var pendingPostChoice: PostSheet.Kind?
+    /// 投稿の入口の状態（いまの切り替え・選んだ入口）。開くたびに作り直す
+    @State private var createFlow = CreateFlow()
+    /// 投稿の選択。入口が閉じきった後に次の画面を開く
+    @State private var pendingPostChoice: PostEntry?
     @State private var showPhotoUpload = false
     /// 「送れなかった投稿があります」（送っている途中でアプリが終了した・起動のあと一度だけ・2026-10-16）
     @State private var interruptedUpload: UploadDraftRules.InterruptedNotice?
@@ -90,6 +92,11 @@ struct RootView: View {
     @ObservedObject private var coverOffers = CoverOfferStore.shared
     /// 投稿のあとの知らせの「カードにする」で開くカード（1.1.83・`PostedCardHabit`）
     @ObservedObject private var postedCardOffer = PostedCardOffer.shared
+    /// 裏で送っている投稿（案 B2）。知らせの「直す」・輪の「投稿の画面で直す」を**どのタブにいても**ここで受けて開く
+    /// （2026-11-18 確かめ役の指摘: ホームの輪だけが受けていて、ほかのタブで「直す」を押しても開かなかった）
+    @ObservedObject private var postUploads = PostUploadCenter.shared
+    /// 送れなかった投稿を開き直す画面
+    @State private var editingPost: EditingPost?
     @ObservedObject private var profileReward = ProfileReward.shared
     /// 出している差し出し（板 51・51b）
     @State private var coverOffer: CoverOfferStore.Offer?
@@ -518,6 +525,17 @@ struct RootView: View {
             .task(id: auth.userId) { await claimProfileExtras() }
             .sheet(item: $postedCardOffer.presented) { card in
                 PostedShareCardSheet(card: card)
+            }
+            // 知らせの「直す」（アルバムが消えた回）・輪の「投稿の画面で直す」: 投稿の画面で開き直す
+            .onChange(of: postUploads.editRequest) { _, id in
+                guard let id else { return }
+                postUploads.clearEditRequest()
+                if let model = postUploads.takeForEditing(id) { editingPost = EditingPost(model: model) }
+            }
+            .sheet(item: $editingPost) { editing in
+                NavigationStack {
+                    UploadView(resuming: editing.model, onSaved: { TabRouter.shared.notePosted($0) })
+                }
             }
             .sheet(item: $coverOffer, onDismiss: {
                 // 閉じたら、待っていたお礼・届いた画面を出し直す
@@ -1206,7 +1224,10 @@ struct RootView: View {
         guard !Task.isCancelled, auth.userId == userId, !showPhotoUpload, !ModalProbe.isPresenting() else { return }
         checkedInterruptedFor = userId
         // 送信の控え（`journey-photo-upload-draft:send:<userId>:<ID>`）を古い順に数える
-        interruptedUpload = UploadDraftRules.interruptedNotice(UploadDraftStore().journals(for: userId))
+        // 裏の係が送っている・持っている投稿の控えは数えない（2026-11-18 案 B2）
+        let held = PostUploadCenter.shared.heldJournalIds
+        interruptedUpload = UploadDraftRules.interruptedNotice(
+            UploadDraftStore().journals(for: userId).filter { !held.contains($0.id) })
     }
 
     /// 知らせに答えた。戻せない控え（届いたか分からない写真だけ）は片づけ、「古いものを片づける」なら
@@ -1253,8 +1274,10 @@ struct RootView: View {
                     openPostDraftId = nil
                 }
             }
-            .sheet(isPresented: $showPostChoice, onDismiss: postChoiceDismissed) {
-                PostSheet(drafts: PostSheet.draftCount(userId: auth.userId)) { kind in pendingPostChoice = kind }
+            // 2026-11-18 判断（案 B1・owner 採用）: 下の「投稿」は**すぐ写真の一覧**（前の選ぶシート #187 はやめた）。
+            // 一覧・欄・作る画面を1つの画面いっぱいの覆いで出す（下の「投稿 | ストーリー」で入れ替える）
+            .fullScreenCover(isPresented: $showPostChoice, onDismiss: createFlowDismissed) {
+                CreateFlowView(flow: createFlow)
             }
             // 構図を重ねて撮る（作例なし）。「投稿」で撮った1枚を受け、**閉じきってから**投稿画面を開く
             .composeGuidePresenter(composeLauncher, spotName: nil,
@@ -1347,7 +1370,21 @@ struct RootView: View {
         }
     }
 
-    /// 投稿の選択シートが閉じきってから、次の画面を開く。
+    /// 投稿の入口（写真の一覧）が閉じきった。写真・ストーリーを出した回はマイページ・ホームに知らせ
+    /// （`postSheetClosed`）、一覧の上・中の入口（旅の写真から・構図・下書き）が押されていれば、それを開く
+    private func createFlowDismissed() {
+        if createFlow.used { tabRouter.postSheetClosed() }
+        if let entry = createFlow.takeChosen() { pendingPostChoice = entry }
+        postChoiceDismissed()
+    }
+
+    /// 投稿の入口を開く（下の「投稿」・空の画面の一手）。開くたびに状態を作り直す
+    private func openCreateFlow(_ mode: CreateFlowRules.Mode) {
+        createFlow = CreateFlow(mode: mode)
+        showPostChoice = true
+    }
+
+    /// 入口・下書きの一覧が閉じきってから、次の画面を開く。
     /// 先に次の sheet / fullScreenCover を立てると、iOS が遷移を取りこぼすことがある。
     private func postChoiceDismissed() {
         if let kind = pendingPostChoice {
@@ -1358,12 +1395,13 @@ struct RootView: View {
     }
 
     /// 投稿の選択で選ばれたもの
-    private func choosePost(_ kind: PostSheet.Kind) {
+    private func choosePost(_ kind: PostEntry) {
         switch kind {
         case .photo:
-            pendingTripPhotos = TripImportHandoff.photosForUpload(opener: .photo, pending: pendingTripPhotos)
-            showPhotoUpload = true
-        case .story: showStoryComposer = true
+            // 2026-11-18（案 B1）: 写真を投稿は**写真の一覧から**（前は投稿の画面が 0.9 秒待って OS の写真選びを開いた）
+            pendingTripPhotos = []
+            openCreateFlow(.post)
+        case .story: openCreateFlow(.story)
         case .trip:
             pendingTripPhotos = []
             showTripImport = true
@@ -1445,7 +1483,7 @@ struct RootView: View {
                 PhotoMapView(unread: unread,
                              onOpenNotifications: { openNotificationsFromBell() },
                              messagesUnread: messagesUnread,
-                             onPost: { showPostChoice = true })
+                             onPost: { openCreateFlow(.post) })
                     .perfMark("tab.map.appear")
             }
             // 積み重ねを根まで戻すときだけ替わる（`TabRouter.resetsMapStack`）
@@ -1455,11 +1493,7 @@ struct RootView: View {
             .tag(Tab.map)
 
             NavigationStack {
-                // 表紙の右上の吹き出しとベル（2026-11-16 判断・A3）。値はほかのタブの見出しと同じもの
-                MyPageView(unread: unread, onOpenNotifications: { openNotificationsFromBell() },
-                           messagesUnread: messagesUnread)
-                    // 親が描き直されただけでは描き直さない（未読の値が変わったときだけ・`MyPageView+Equatable`）
-                    .equatable()
+                MyPageView()
                     .perfMark("tab.mypage.appear")
             }
             .tint(WebTheme.foreground)
@@ -1544,7 +1578,7 @@ struct RootView: View {
             PerfRecorder.shared.recordSelection(site: "onChange", from: previous, to: tab)
             if tab == .post {
                 select(previous == .post ? .home : previous, at: "post.revert")
-                showPostChoice = true
+                openCreateFlow(.post)
             }
         }
         // **どの画面からでも投稿できるようにする。** Web も同じ理由で

@@ -9,6 +9,7 @@ import FoundationNetworking
 struct SettingsView: View {
 
     @EnvironmentObject private var auth: AuthStore
+    /// ログアウトで宛先を外す（`push.signingOut`）。入切は `PushSettingsGroup`
     @EnvironmentObject private var push: PushCenter
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var pass: PassStore
@@ -17,10 +18,6 @@ struct SettingsView: View {
     @ObservedObject private var trunkEntry = TrunkEntryStore.shared
     /// 自分のプロフィール（Pro の節の中身・第2段階）。読めなければ nil
     @State private var myProfile: UserProfile?
-    @State private var wantsPush = false
-    @State private var showDeniedHint = false
-    /// 切り替えている最中。二度押しで登録と解除が交差しないようにする
-    @State private var isApplying = false
     /// ログアウトの最中。宛先を外し終えるまで（最大20秒）二度押させず、進み具合を見せる
     /// （`DeleteAccountView.isWorking` と同じ形）
     /// 印は `AuthStore` の共有のもの（メニューから押した分とも1本にまとめる）
@@ -66,30 +63,6 @@ struct SettingsView: View {
                 guard let userId = auth.userId, trunkAvailability.isAvailable else { return }
                 await trunkPrivacy.load(userId: userId, service: environment.trunk, pass: pass.settings)
             }
-            .task {
-                await push.refreshAuthorization()
-                // **本人の意思で見る。** 「預けられたか」で見ると、
-                // シミュレータや圏外では必ず false になり、画面に入り直す
-                // たびにオフへ戻る。端末の許可だけで見ると、オフにしたのに
-                // 復活する（OS の許可は残る）
-                wantsPush = push.isEnabled && push.isAuthorized
-            }
-            // **iOS の設定で許可を変えて戻ったら合わせ直す。** 開いたまま通知を切って戻ると、
-            // 前面に戻ったときの読み直しで `isAuthorized` は倒れるのに、トグルが「入」のまま残った。
-            // 切り替えの最中（`isApplying`）は `apply` が決めるので触らない。
-            // 案内どおり許可して戻ったら、「許可されていません」の案内も下ろす
-            .onChange(of: push.isAuthorized) { _, authorized in
-                guard !isApplying else { return }
-                wantsPush = push.isEnabled && authorized
-                if authorized { showDeniedHint = false }
-            }
-            // **ほかの所から「受け取る」にしたときも合わせる**（Pro の「前の晩に知らせる」の
-            // 「通知がオフのため届きません」を押した・2026-10-11）。端末の許可が前から
-            // あると `isAuthorized` は変わらず、上だけではトグルが「切」のまま残る
-            .onChange(of: push.isEnabled) { _, enabled in
-                guard !isApplying else { return }
-                wantsPush = enabled && push.isAuthorized
-            }
     }
 
     private func loadMyProfile() async {
@@ -97,24 +70,6 @@ struct SettingsView: View {
         let profiles = environment.profiles
         let fresh = try? await profiles.myProfile()
         if let fresh { myProfile = fresh }
-    }
-
-    /// 受け取る／受け取らないを切り替える。
-    /// 押されたあとの本体（門は呼ぶ側で閉じてある）。
-    private func apply(on: Bool) async {
-        showDeniedHint = false
-        defer { isApplying = false }
-        if on {
-            // **許可されたかだけで決める。** 宛先を預け終えたかで見ると、
-            // APNs のトークンは少し遅れて届くので**必ず false になる**
-            // ——押した直後に自分でオフへ戻る
-            let granted = await push.enable()
-            wantsPush = granted
-            showDeniedHint = !granted
-        } else {
-            await push.disable()
-            wantsPush = false
-        }
     }
 
     /// 端末に溜まっている画像の控え。**見えないものは消せない**ので数を出す
@@ -127,23 +82,6 @@ struct SettingsView: View {
         return formatter.string(fromByteCount: Int64(bytes))
     }
 
-    /// 受け取る／受け取らないの切り替え。
-    ///
-    /// **`onChange` で拾わない。** 画面側から `wantsPush` を戻したときにも
-    /// 発火し、**許可した直後に自分でオフへ戻す**（`enable()` の返りは APNs の
-    /// トークンより先に来る）。押された瞬間だけを受ける形にする
-    private var pushBinding: Binding<Bool> {
-        Binding(get: { wantsPush },
-                set: { on in
-                    // **門は同期で閉じる。** `Task` の中で立てると、連打の
-                    // 2発目が来る時点ではまだ開いている
-                    guard !isApplying else { return }
-                    isApplying = true
-                    wantsPush = on
-                    Task { await apply(on: on) }
-                })
-    }
-
     /// **並びはアーティファクト 43 の「設定」**（2026-09-26）。左寄せの明朝の
     /// 大見出し、節ごとに角丸の札、行の説明は行の中の2行目、最下部に等幅の版。
     ///
@@ -153,8 +91,8 @@ struct SettingsView: View {
     ///
     /// **2026-10-18 判断（owner「設定の項目多くなってるのでわかりやすいように整理して」「キャンピングカーなどの入口は
     /// 基本的に設定の中に入れたい」）**: 使う目的ごとの少ない節に並べ直した。並びの決まりは `SettingsOutline`（テストで見張る）。
-    /// 1. Pro（板 43 のとおりいちばん上・`ProSettingsSection` はそのまま）
-    /// 2. お知らせ（プッシュ通知の入切）
+    /// 1. お知らせ（プッシュ通知の入切・`PushSettingsGroup`）。2026-11-18 判断（案 B7）で Pro の上へ
+    /// 2. Pro（板 43 ではいちばん上・`ProSettingsSection` はそのまま）
     /// 3. 公開範囲とプライバシー（ブロックした人・親しい友達・すれちがい乗車券・トランクを見せる）。**長い「トランクを見せる」の見本は
     ///    下の画面へ**（`SettingsTrunkPrivacyPage`）——いちばん上の画面の半分を占めていた
     /// 4. 写真と撮影（構図一覧・データとストレージ）。写真の控えは下の画面へ（`SettingsStoragePage`）
@@ -177,9 +115,10 @@ struct SettingsView: View {
                     .padding(.horizontal, JPSpace.xxs)
                     .accessibilityAddTraits(.isHeader)
                 if auth.userId != nil {
-                    // 板 43 の並び: Pro がいちばん上
+                    // 2026-11-18 判断（案 B7・owner「まかせる」）: お知らせをいちばん上に（板 43・Settings は Pro が先）。
+                    // 設定を開く人がいちばん多く探すのは通知の入切で、Pro の6行の下に埋もれていた
+                    PushSettingsGroup(title: SettingsOutline.Part.notifications.title)
                     ProSettingsSection(profile: myProfile)
-                    notificationsSection
                     privacySection
                 }
                 photosSection
@@ -235,30 +174,6 @@ struct SettingsView: View {
         SettingsGroup(title) { content() }
     }
 
-    private var notificationsSection: some View {
-        section(SettingsOutline.Part.notifications.title) {
-            JPToggleRow(title: L("プッシュ通知を受け取る", "Push notifications"),
-                        detail: L("いいね、コメント、フォロー、ストーリーへの返信を、アプリを開いていなくても受け取れます。",
-                                  "Get likes, comments, follows and story replies even when the app is closed."),
-                        isOn: pushBinding)
-                .disabled(isApplying)
-                .accessibilityIdentifier("settings.push")
-            if showDeniedHint {
-                // **端末の許可は取り消せない。** 断られたあとは設定アプリへ
-                // 行ってもらうしかない——黙って戻るだけだと「押しても何も
-                // 起きない」に見える
-                JPCardDivider()
-                note(L("この端末で通知が許可されていません。iPhone の「設定 → 通知 → Journey Photo」から許可してください。",
-                       "Notifications are off for this device. Allow them in Settings → Notifications → Journey Photo."),
-                     color: WebTheme.text3)
-            }
-            if let message = push.errorMessage {
-                JPCardDivider()
-                note(message, color: WebTheme.danger)
-            }
-        }
-    }
-
     /// すれちがい乗車券（板 PassSettings の戻り先が設定・2026-10-16）。2026-11-12 から「公開範囲とプライバシー」の1行
     /// （近くにいた人に届く機能なので。すれちがい帳は ≡ メニューの「すれちがい乗車券」から）
     private var passRow: some View {
@@ -271,16 +186,6 @@ struct SettingsView: View {
         }
         .buttonStyle(JPRowButtonStyle())
         .accessibilityIdentifier("settings.pass")
-    }
-
-    /// 札の中の注記（行ではない1文）
-    private func note(_ text: String, color: Color) -> some View {
-        Text(text)
-            .font(JPFont.caption)
-            .foregroundStyle(color)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 14)
-            .padding(.vertical, JPSpace.s)
     }
 
     /// 公開範囲とプライバシー（2026-10-18 判断: 人に見せるもの・見せない人だけを集める。2026-11-12 にすれちがい乗車券を足した）。
@@ -443,7 +348,8 @@ enum SettingsOutline {
 
     enum Part: String, CaseIterable {
         /// 2026-11-12: 「旅の道具」（`tripTools`）は ≡ メニューへ移した（`SiteMenuView`）
-        case pro, notifications, privacy, photos, help, account, danger
+        /// 2026-11-18 判断（案 B7）: お知らせを Pro の上に（板 Settings は Pro が先）
+        case notifications, pro, privacy, photos, help, account, danger
 
         /// 眉ラベル（危ない操作の札は見出しなし）
         var title: String? {

@@ -94,8 +94,12 @@ struct AppNotification: Decodable, Identifiable, Equatable {
     /// `storyreply` だけ: 文字の返信がメッセージの**ふつうの受信箱**に入った会話。**この行はベルに出さない**
     /// （受信箱と二重になる・`NotificationsView.shown`）。リクエストの棚に入った回は付かない（ベルが唯一の知らせ）
     let dmConvId: String?
-    /// `commentreply` だけ: 返信のコメントの id（押すとそのコメントの位置へ・札 #541）。形の崩れた値は捨てる
+    /// `commentreply`: 返信のコメントの id（札 #541）。`comment`（2026-11-18 から・案 B4）: 付いたコメントの id。
+    /// どちらも押すとそのコメントの位置で返信の欄を開く。形の崩れた値は捨てる
     let commentId: String?
+    /// `comment` だけ（2026-11-18 から・案 B4）: コメントの本文の抜粋（サーバーが 80 字で切る・`commentExcerpt.ts`）。
+    /// 行に「：「…」」で出す。空・空白だけは nil（古い行・消されたコメントは持たない）
+    let commentText: String?
 
     /// メッセージの受信箱に出すので、ベルには出さない行か
     var isInMessages: Bool { kind == .storyreply && dmConvId != nil }
@@ -112,6 +116,7 @@ struct AppNotification: Decodable, Identifiable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case type, photoId, photoSrc, byName, byId, atLocation, targetUserId, t, deleted, key, tier, sourcePhotoId
         case replyKind, dmConvId, commentId
+        case commentText = "text"
     }
 
     init(from decoder: Decoder) throws {
@@ -137,6 +142,9 @@ struct AppNotification: Decodable, Identifiable, Equatable {
         self.dmConvId = conv.flatMap { PathID.isSafe($0) ? $0 : nil }
         let comment = try? container.decodeIfPresent(String.self, forKey: .commentId)
         self.commentId = comment.flatMap { PathID.isSafe($0) ? $0 : nil }
+        let text = (try? container.decodeIfPresent(String.self, forKey: .commentText))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        self.commentText = (text?.isEmpty ?? true) ? nil : text
     }
 
     // 画面の文言は `NotificationText.line(for:)`（まとめ表示と一緒に決めるため）

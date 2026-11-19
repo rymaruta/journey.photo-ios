@@ -2,10 +2,9 @@ import Foundation
 
 /// お知らせの1行に出す文言・経過時間・まとめ方（板 15）。
 ///
-/// **サーバーが返していないものはここで作らない。** コメントの本文・
-/// ストーリー返信の本文は `api-user/src/comments.ts` / `storyReplies.ts` が
-/// 通知に焼き込んでいない（`Notif` 型に項目が無い）ので、板の
-/// 「：「[コメント本文]」」は出さない。
+/// **サーバーが返していないものはここで作らない。** 写真へのコメントの本文は
+/// 2026-11-18 から抜粋（`text`）が届くので、板の「：「[コメント本文]」」を出す（案 B4）。
+/// 抜粋を持たない古い行と、ストーリー返信の本文（`storyReplies.ts` が焼き込んでいない）は出さない。
 enum NotificationText {
 
     /// 画面の1行。いいねは同じ写真のぶんを1行にまとめるので、
@@ -28,6 +27,8 @@ enum NotificationText {
         let who: String
         let rest: String
         var plain: String { who + rest }
+        /// 行の段数の上限。コメントの本文を出す行だけ 3 段で切る（抜粋は 80 字まで届く・案 B4）
+        var lineLimit: Int? = nil
     }
 
     // MARK: - 未読
@@ -118,7 +119,7 @@ enum NotificationText {
         let row = entry.lead
         if row.kind == .badge { return badgeLine(row) }
         let who = self.who(row)
-        let rest: String
+        var rest: String
         switch row.kind {
         case .like:
             if entry.others > 0 {
@@ -128,7 +129,13 @@ enum NotificationText {
             } else {
                 rest = L(" があなたの写真にいいねしました", " liked your photo")
             }
-        case .comment: rest = L(" がコメントしました", " commented on your photo")
+        case .comment:
+            rest = L(" がコメントしました", " commented on your photo")
+            // 本文の1行（板 Notifications「霧の人 がコメントしました：「稜線の色がきれいですね」」・案 B4）
+            if let text = row.commentText {
+                rest += L("：「\(text)」", ": “\(text)”")
+                return Line(who: who, rest: rest, lineLimit: 3)
+            }
         case .follow: rest = L(" があなたをフォローしました", " followed you")
         case .storyreply: rest = L(" がストーリーに返信しました", " replied to your story")
         // 文言は Web の `NotificationsBell` と同じ（プッシュの `NOTIF_INSPIRED` とも同じ）

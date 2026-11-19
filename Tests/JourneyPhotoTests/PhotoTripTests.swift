@@ -321,6 +321,7 @@ final class PhotoTripTests: XCTestCase {
         let foot = try XCTUnwrap(view.components(separatedBy: "private func photoFoot(_ hero: HeroLineup) -> some View {").dropFirst().first)
         XCTAssertTrue(foot.prefix(300).contains("placeRow\n            spotGuideRow"))
         // 3・4. いいね・コメント・保存・共有の段の下に「行き先」の段
+        // （2026-11-18 owner の判断で、段を写真のすぐ下へ移す案 A1 は取りやめ。板どおりの並び）
         XCTAssertTrue(view.contains("socialBar(proxy)\n            tripSection"))
         XCTAssertTrue(view.contains("PhotoTrip.sectionDestination(photo: shown, stage: tripStage)"))
         XCTAssertTrue(view.contains(".id(shown.id)"), "写真を送っても前の写真の経路の仕事が残る")

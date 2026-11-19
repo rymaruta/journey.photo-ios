@@ -58,12 +58,12 @@ struct NotificationsView: View {
         // 2026-11-13 デザインの点検: 表示の形を決めておらず、シートの中で標準の大きい見出し（34 のゴシックの太字）が
         // 出ていた。同じくシートで開くメッセージの一覧（`DMInboxView`）と同じ形
         .navigationBarTitleDisplayMode(.inline)
-        // **通知の設定**（板 15 の右上の歯車）。行き先は設定の画面——
-        // プッシュ通知の入／切はそこにある。閉じる口は `RootView` が
-        // 左に置いているので、右に置いてぶつからない
+        // **通知の設定**（板 15 の右上の歯車）。閉じる口は `RootView` が
+        // 左に置いているので、右に置いてぶつからない。
+        // 2026-11-18 判断（案 B7）: 行き先は設定のいちばん上ではなく、お知らせの入切だけの画面（`NotificationSettingsPage`）
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink { SettingsView() } label: {
+                NavigationLink { NotificationSettingsPage() } label: {
                     Image(systemName: "gearshape")
                 }
                 .accessibilityLabel(L("通知の設定", "Notification settings"))
@@ -470,6 +470,7 @@ private struct NotificationRow: View {
                     (Text(line.who).bold().foregroundStyle(WebTheme.text)
                         + Text(line.rest).foregroundStyle(WebTheme.text2))
                         .font(JPFont.body)
+                        .lineLimit(line.lineLimit)
                     if let first = entry.firstReaction {
                         Text(first.note)
                             .font(JPFont.caption)
@@ -759,8 +760,9 @@ final class NotificationsViewModel: ObservableObject {
         // 紹介（`storyshare`）は紹介された自分の写真、返信（`commentreply`）はコメントの付いた写真（札 #541）
         case .like, .comment, .inspired, .storyshare, .commentreply:
             guard let id = notification.photoId else { return .none }
-            // 返信は**そのコメントの位置へ**（`commentId`・札 #541）
-            let commentId = notification.kind == .commentreply ? notification.commentId : nil
+            // 返信・コメントは**そのコメントの位置へ**送り、返信の欄を開く（`commentId`・札 #541、コメントは
+            // 2026-11-18 の案 B4 から）。`commentId` の無い古いコメントの知らせは今までどおり写真の頭
+            let commentId = notification.kind == .commentreply || notification.kind == .comment ? notification.commentId : nil
             if let photo = feed.first(where: { $0.id == id }) {
                 return commentId.map { .comment(photo, fromPublicFeed: true, commentId: $0) } ?? .photo(photo, fromPublicFeed: true)
             }

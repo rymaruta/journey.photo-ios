@@ -662,13 +662,15 @@ final class PerformanceTests: XCTestCase {
         began = Date()
         XCTAssertGreaterThan(tabs.buttons.count, 2, "投稿のタブが無い")
         tabs.buttons.element(boundBy: 2).tap()
-        let toPhoto = app.buttons["post.choice.photo"].firstMatch
-        XCTAssertTrue(toPhoto.waitForExistence(timeout: 10), "投稿の札が出ない")
+        // 2026-11-18（案 B1）: 下の「投稿」で写真の一覧（選ぶシートは無くなった）。見本の1枚はそのまま欄の段に入るので、
+        // 7 は入口の覆いが出るまで（左上の閉じるか欄の写真）、8 は欄の写真が出るまで
+        let entryShown = app.buttons["post.library.close"].firstMatch.waitForExistence(timeout: 10)
+            || app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 10)
+        XCTAssertTrue(entryShown, "投稿の入口が出ない")
         Thread.sleep(forTimeInterval: 1)
         finish("postSheetOpen")
 
         // 8. 投稿の画面を開く（見本の 1 枚を選んだ状態）。閉じずに終える
-        toPhoto.tap()
         XCTAssertTrue(app.buttons["upload.thumb.0"].firstMatch.waitForExistence(timeout: 20), "投稿の画面が出ない")
         Thread.sleep(forTimeInterval: 2)
         finish("composeOpen")

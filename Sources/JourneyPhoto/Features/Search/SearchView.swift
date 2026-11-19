@@ -88,6 +88,8 @@ struct SearchView: View {
     @State private var readingTask: Task<Void, Never>?
     /// UI テストのときだけ: 0件の外し方の動きの記録（`PreviewSession.searchReadingProbe`・回 1383 の調べ）
     @State private var relaxProbe = ""
+    /// 結果を下へ送ったか（明朝の「探す」を畳む・2026-11-16 判断 A10・`SearchHeader`）
+    @State private var scrolledDown = false
 
     var body: some View {
         // 探すの重さの記録（UI テストのときだけ・2026-11-13 札 #590）: body の評価回数を、いまの語ごとに数える
@@ -109,14 +111,29 @@ struct SearchView: View {
                 }
                 // v2（2026-10-14・Search の板）: 大見出し「探す」を明朝で置く。板は 30 だが字の段に無いので
                 // いちばん近い Display の 32（`JPFont.photoTitle`・タグの写真の題と同じ段）
-                Text(Labels.Navigation.searchTab)
-                    .font(JPFont.photoTitle)
-                    .foregroundStyle(WebTheme.text)
-                    .accessibilityAddTraits(.isHeader)
-                    .padding(.horizontal, JPSpace.gutter)
+                // 2026-11-16 判断（使い勝手の見直し A10）: **下へ送ったら・字を打ったら畳む**（`SearchHeader.showsTitle`）。
+                // 最初の画面に見える中身を約 80pt 増やす。何も打たずに頭にいる間は今までどおり出す
+                if SearchHeader.showsTitle(scrolledDown: scrolledDown, query: query) {
+                    Text(Labels.Navigation.searchTab)
+                        .font(JPFont.photoTitle)
+                        .foregroundStyle(WebTheme.text)
+                        .accessibilityAddTraits(.isHeader)
+                        .accessibilityIdentifier("search.title")
+                        .padding(.horizontal, JPSpace.gutter)
+                        .transition(.opacity)
+                }
                 searchField
-                scopeChips
+                // 2026-11-16 判断（A10）: 範囲のチップ（すべて・写真・人・タグ・撮影地）は**字を打ってから**出す。
+                // 打つ前に押しても効く中身が無い。選んでいる範囲があれば、外せるように残す（`SearchHeader.showsScopeChips`）
+                if SearchHeader.showsScopeChips(query: query, scopeIsAll: model.scope == .all) {
+                    scopeChips
+                        .transition(.opacity)
+                }
             }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.2),
+                       value: SearchHeader.showsTitle(scrolledDown: scrolledDown, query: query))
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.2),
+                       value: SearchHeader.showsScopeChips(query: query, scopeIsAll: model.scope == .all))
             .padding(.top, JPSpace.xs)
             .padding(.bottom, JPSpace.s)
             .background(WebTheme.background)
@@ -125,6 +142,11 @@ struct SearchView: View {
             ScrollView {
                 // 頭の印（下の「探す」をもう一度押したら、ここへ戻す・`TabRouter.searchFocusRequests`）
                 Color.clear.frame(height: 0).id(Self.resultsTopID)
+                    // 下へ送ったかを測る（明朝の「探す」を畳む・`SearchHeader.scrolledDown`）
+                    .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .scrollView).minY }) { top in
+                        let next = SearchHeader.scrolledDown(top: top, was: scrolledDown)
+                        if next != scrolledDown { scrolledDown = next }
+                    }
                 VStack(alignment: .leading, spacing: isDiscovering ? JPSpace.section : 20) {
                     // 文で探したら、どう読んだかを結果のいちばん上に（札 #623・押すと外れる）
                     if isReadingSentence || SearchSentence.showsReading(reading, query: query, filter: model.timeFilter) {
@@ -161,10 +183,14 @@ struct SearchView: View {
                             if Self.showsTimeChips(zeroHit: zeroHit, timeFilterEmpty: model.timeFilter.isEmpty) {
                                 shootingTimeChips
                             }
-                            categoryChips
+                            // 2026-11-16 判断（A10）: 0件の間は種類のチップも畳む（キーボードの上に「見つかりませんでした」と
+                            // 「地図で撮影地を探す」だけを置く）。選んでいる種類があれば外せるよう残す
+                            if Self.showsCategoryChips(zeroHit: zeroHit, categoryChosen: model.category != nil) {
+                                categoryChips
+                            }
                         }
-                        // 撮影地ではタグのチップを出さない（押しても枚数と結果が合わない）
-                        if model.scope.showsTagChips {
+                        // 撮影地ではタグのチップを出さない（押しても枚数と結果が合わない）。0件の間は畳む（A10）
+                        if model.scope.showsTagChips, !zeroHit {
                             tagChips
                         }
                     }
@@ -617,6 +643,8 @@ struct SearchView: View {
                     PillChip(title: scope.label, selected: model.scope == scope) {
                         model.select(scope: scope)
                     }
+                    // UI テストが「字を打つ前は出ない」を見る所（2026-11-16 A10）
+                    .accessibilityIdentifier("search.scope.\(scope.rawValue)")
                 }
             }
             .padding(.horizontal, 16)
@@ -1464,6 +1492,11 @@ struct SearchView: View {
 
     /// 季節・時間帯のチップを出すか。**0件の間は畳む**（チップの列が0件の文をキーボードの裏へ押し下げていた）。
     /// ただし季節・時間帯を選んでいる間は残す（外す手立てを消さない）
+    /// 種類のチップを出すか（2026-11-16 判断 A10）。季節・時間帯と同じく**0件の間は畳み**、選んでいる種類があれば外せるよう残す
+    nonisolated static func showsCategoryChips(zeroHit: Bool, categoryChosen: Bool) -> Bool {
+        !zeroHit || categoryChosen
+    }
+
     nonisolated static func showsTimeChips(zeroHit: Bool, timeFilterEmpty: Bool) -> Bool {
         !zeroHit || !timeFilterEmpty
     }
@@ -1527,24 +1560,28 @@ struct SearchView: View {
     private var emptyPhotoResults: some View {
             // **「読み込めなかった」と「見つからなかった」を分ける。**
             // 0件なら検索語を捨てさせず、地図で同じ目的を続けられる出口を出す。
-            VStack(spacing: 12) {
-                Text(model.loadFailed && model.everything.isEmpty
+            VStack(spacing: 18) {
+                let failed = model.loadFailed && model.everything.isEmpty
+                Text(failed
                      ? L("写真を読み込めませんでした。引き下げて読み直せます", "Couldn't load photos. Pull to retry")
                      // 上に撮影スポットが当たっているとき・まだ分からないとき（索引を作っている最中）は
                      // 「写真は」と言う（全部0件に読ませない・2026-11-13 札 #590）
                      : (spotHitsResult.isEmpty ? L("見つかりませんでした", "No results")
                         : L("写真は見つかりませんでした", "No photos found")))
-                    .font(JPFont.body)
-                    .foregroundStyle(WebTheme.text2)
-                if !(model.loadFailed && model.everything.isEmpty) {
-                    // 打った語を地図へ持っていく（地図で打ち直させない。タグの語は除く）
+                    // 2026-11-16 判断（A10・案の模型）: 0件の見出しは明朝 20（空の部品 `EmptyState` と同じ段）。読み込めなかった文は本文のまま
+                    .font(failed ? JPFont.body : JPFont.stateTitle)
+                    .foregroundStyle(failed ? WebTheme.text2 : WebTheme.text)
+                    .multilineTextAlignment(.center)
+                if !failed {
+                    // 打った語を地図へ持っていく（地図で打ち直させない。タグの語は除く）。
+                    // 2026-11-16 判断（A10・案の模型）: 0件の画面の一手なので**主ボタン**（写真の無い画面＝真鍮の塗りに墨・高さ 50）
                     Button { tabRouter.openMap(query: model.scope.mapQuery(for: query)) } label: {
                         Label(L("地図で撮影地を探す", "Explore shooting places on the map"), systemImage: "map")
-                            .font(JPFont.bodyEmphasis)
-                            .foregroundStyle(WebTheme.accent)
-                            .frame(minHeight: WebTheme.minTapTarget)
-                            // `.plain` は字と絵の上だけが当たる——44 の帯ぜんぶを押せるように
-                            .contentShape(Rectangle())
+                            .jpCapsuleFace(font: .callout.weight(.semibold), text: WebTheme.accentText,
+                                           fill: JPPillStyle.accent.fill, border: Color.clear, fullWidth: false,
+                                           minHeight: JPHeight.primaryButton, textInset: JPSpace.l)
+                            // `.plain` は字と絵の上だけが当たる——塗りの全体を押せるように
+                            .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("search.emptyMap")

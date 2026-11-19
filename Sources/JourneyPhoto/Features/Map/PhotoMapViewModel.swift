@@ -20,6 +20,7 @@ final class PhotoMapViewModel: ObservableObject {
             switch self {
             case .map: return L("地図", "Map")
             case .spots: return L("スポット", "Spots")
+            // 2026-11-16 の使い勝手の見直し A9 で「撮影地」に改める案は、2026-11-18 owner の判断で「一旦変えない」
             case .list: return L("リスト", "List")
             }
         }
@@ -211,6 +212,15 @@ final class PhotoMapViewModel: ObservableObject {
         return !OfficialSpotIndex.matches(officialSpots, query: query, limit: 1, aliases: spotAliases).isEmpty
     }
 
+    /// **種類のチップで、この範囲の観光スポットのピンを隠しているか**（2026-11-16 判断・使い勝手の見直し A9）。
+    /// 地図の上に1行で知らせ、「すべてに戻す」を添える。黙ると「この辺りに観光スポットは無い」と読める。
+    /// 隠しているピンが無い（引いている・範囲に無い）ときは言わない
+    @Published private(set) var categoryHidesSpotsHere = false
+
+    nonisolated static func categoryHidesSpots(category: String?, wouldShow: Int) -> Bool {
+        category != nil && wouldShow > 0
+    }
+
     /// 絞り直す。条件が変わったときにだけ呼ぶ
     private func refresh() {
         refreshCount += 1
@@ -238,8 +248,13 @@ final class PhotoMapViewModel: ObservableObject {
     /// 対応表を作ると嘘の対応が混ざる。以前は写真のピンだけ絞れ、「風景」を選んでも
     /// スポットのピンは全部残り、そのカテゴリのスポットに見えていた
     private func refreshOfficialPins() {
-        let next = category != nil ? [] : OfficialPins.visible(officialSpots, frame: areaFrame ?? visibleFrame,
-                                                               query: query, aliases: spotAliases)
+        // 2026-11-16 判断（使い勝手の見直し A9）: カテゴリが無ければ出ていたピンがあるかも数える（1行で知らせる・
+        // `categoryHidesSpotsHere`）。数えるのは今までカテゴリ無しで毎回していたのと同じ計算
+        let unfiltered = OfficialPins.visible(officialSpots, frame: areaFrame ?? visibleFrame,
+                                              query: query, aliases: spotAliases)
+        let next = category != nil ? [] : unfiltered
+        let hides = Self.categoryHidesSpots(category: category, wouldShow: unfiltered.count)
+        if hides != categoryHidesSpotsHere { categoryHidesSpotsHere = hides }
         requestPinDetails(next)
         guard OfficialPins.changed(officialPins, next) else { return }
         officialPins = next

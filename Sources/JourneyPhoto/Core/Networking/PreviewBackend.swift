@@ -156,6 +156,17 @@ enum PreviewBackend {
         fileprivate func removeComment(_ id: String, _ cid: String) {
             comments[id]?.removeAll { ($0["id"] as? String) == cid }
         }
+        /// この端末で書いたコメントを、写真の持ち主へのコメントの知らせの形（`comments.ts` の `postComment`・案 B4）で。
+        /// 新しい順（書いた順の逆）。写真の絵は持たない（小窓は出ない）
+        fileprivate func commentNotices() -> [[String: Any]] {
+            comments.flatMap { photoId, rows in
+                rows.map { c -> [String: Any] in
+                    ["type": "comment", "photoId": photoId, "photoSrc": "", "byName": c["name"] ?? "",
+                     "byId": "preview-commenter", "commentId": c["id"] ?? "", "text": c["text"] ?? "", "t": c["t"] ?? ""]
+                }
+            }
+            .sorted { ($0["commentId"] as? String ?? "").localizedStandardCompare($1["commentId"] as? String ?? "") == .orderedDescending }
+        }
         /// プロフィールの QR の合図（`GET /user/qr`・`POST /user/qr/rotate`・2026-11-12 札 #545）。更新のたびに数を進める
         private var qrGeneration = 1
         fileprivate func qrToken() -> String { PreviewBackend.qrToken(qrGeneration) }
@@ -199,6 +210,7 @@ enum PreviewBackend {
                       stories: Bool = false,
                       dm: Bool = false,
                       followNone: Bool = false,
+                      commentNotice: Bool = false,
                       publicFeed: () async -> [[String: Any]] = { [] },
                       publicLikes: (String) async -> Int?) async -> Reply {
         let json = body.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any] ?? [:]
@@ -289,6 +301,14 @@ enum PreviewBackend {
             return .json(["comment": comment])
         case ("DELETE", let p) where p.count == 4 && p[0] == "photos" && p[2] == "comments":
             store.with { $0.removeComment(p[1], p[3]) }
+            return .json([:])
+
+        // お知らせ（`-JPPreviewCommentNotice` のときだけ・2026-11-18 案 B4）。この端末で書いたコメントを、
+        // 写真の持ち主へのコメントの知らせ（`commentId`・本文の抜粋 `text`）として返す。既読化は受けたことにするだけ
+        case ("GET", let p) where commentNotice && p == ["user", "notifications"]:
+            let items = store.with { $0.commentNotices() }
+            return .json(["items": items, "unread": items.count])
+        case ("PUT", let p) where commentNotice && p == ["user", "notifications"]:
             return .json([:])
 
         // 投稿（置き場をもらう → 本体を置く → 1行作る）
@@ -698,6 +718,7 @@ final class PreviewBackendProtocol: URLProtocol {
                 stories: PreviewSession.stories,
                 dm: PreviewSession.dm,
                 followNone: PreviewSession.followNone,
+                commentNotice: PreviewSession.commentNotice,
                 publicFeed: { await PreviewBackend.readPublicFeed() },
                 publicLikes: { await PreviewBackend.readPublicLikes($0) })
             home.perform { self?.deliver(reply, url: url) }

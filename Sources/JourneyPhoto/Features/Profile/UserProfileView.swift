@@ -32,6 +32,10 @@ struct UserProfileView: View {
     @State private var mailUnavailable = false
     @Environment(\.openURL) private var openURL
     @State private var showUnfollowConfirm = false
+    /// ログインしていない人の「フォローする」から開くログインの画面と、ログインできたら済ませる続き（2026-11-16 判断 A4）
+    @State private var signInAsk: SignInRequest?
+    @State private var signInOpen: SignInRequest?
+    @State private var afterSignIn: SignInFollowUp?
     @State private var tab: ProfileTab = .posts
     /// 札の行の上端（スクロールの見えている枠から）と高さ。替えたとき頭から見せるか・最低の高さに使う（2026-10-24）
     /// 札の行の上端の控え（見張らない箱。送るたびに画面全体を作り直さない・`ProfileTabRowSpot`）
@@ -162,7 +166,13 @@ struct UserProfileView: View {
         // 逆向きに送っていた（前の人が誰をフォローしているかも見えた）
         .task(id: "\(userId)|\(auth.userId ?? "")") {
             await model.load(userId: userId, environment: environment, viewerId: auth.userId)
+            await runAfterSignIn()
         }
+        // 2026-11-16 判断（A4）: ログインしていない人の「フォローする」→ 登録の側でログインの画面 → ログインできたらフォロー
+        .signInPrompt(ask: $signInAsk, open: $signInOpen, onSignedIn: { followUp in
+            afterSignIn = followUp
+            Task { await runAfterSignIn() }
+        })
         // トランクは写真の一覧と別に読む（遅くても見出し・格子を待たせない）
         .task(id: "trunk|\(userId)|\(auth.userId ?? "")") { await loadTrunk() }
     }
@@ -478,6 +488,10 @@ struct UserProfileView: View {
                         followButton
                         if showsMessageButton { messageButton }
                     }
+                } else if ProfileLine.showsSignedOutFollow(viewerId: auth.userId, resolving: auth.isResolving,
+                                                           userId: userId, blocked: hidden.blockedUserIds) {
+                    // 2026-11-16 判断（使い勝手の見直し A4）: ログインしていなくても「フォローする」を出す
+                    followButton
                 }
             }
             VStack(alignment: .leading, spacing: JPSpace.xxs) {
@@ -594,6 +608,30 @@ struct UserProfileView: View {
         .accessibilityIdentifier("profile.message")
     }
 
+    /// ログインできたあと、「フォローする」の続きを済ませる（2026-11-16 判断 A4）。
+    /// ログインした人のフォローの状態を読み終えるまで待ち、もうフォロー中・自分のページなら忘れる
+    private func runAfterSignIn() async {
+        guard case .follow(let target)? = afterSignIn else { return }
+        let step = SignInFollowUp.followStep(
+            userId: target, me: auth.userId, shownUserId: userId,
+            isFollowing: model.followReadFor == auth.userId && auth.userId != nil ? model.isFollowing : nil,
+            lookupFailed: model.followReadFor == auth.userId && model.followUnknown)
+        switch step {
+        case .wait:
+            return
+        case .drop:
+            afterSignIn = nil
+        case .run:
+            afterSignIn = nil
+            await model.toggleFollow(userId: userId, environment: environment, follow: true)
+            if model.isFollowing {
+                // 押してからログインまで間が空くので、済んだことを一言で知らせる（案の模型 A4）
+                toasts.show(ProfileLine.followedNotice(name: model.shownName))
+            }
+            await StoryRingDirectory.shared.refresh(environment: environment, auth: auth)
+        }
+    }
+
     /// 「フォローする」（白 94% に墨）／「フォロー中 ▾」（線）。板 v2 UserProfile の見出しのボタン
     /// （`ProfileFollowButtonLabel`・見た目 40・当たり 44）。形で分ける——色だけで状態を言わない。
     ///
@@ -602,6 +640,13 @@ struct UserProfileView: View {
     /// **ただの白い帯**になる（run 60 の実機の絵で2か所そうだった）
     private var followButton: some View {
         Button {
+            // ログインしていなければ登録の側で開き、ログインできたらフォローまで済ませる（2026-11-16 判断 A4）
+            if auth.userId == nil {
+                signInOpen = SignInPrompt.direct(signUpReason: SignInPrompt.followSignUp,
+                                                 followUp: .follow(userId: userId),
+                                                 userId: auth.userId, isResolving: auth.isResolving)
+                return
+            }
             // 外すときだけ確認を挟む（`unfollowConfirmation`）
             if model.isFollowing {
                 showUnfollowConfirm = true
@@ -646,7 +691,9 @@ final class UserProfileViewModel: ObservableObject {
     /// 自分のフォロー一覧が取れず、**フォロー中かどうか分からない**。ボタンは「フォローする」で
     /// 出すが、押されたら送る前に取り直す（`toggleFollow`）——分からないまま送ると、
     /// フォロー中の人に follow を送り直していた（写真の詳細の `followLookupFailed` と同じ形）
-    private var followUnknown = false
+    private(set) var followUnknown = false
+    /// フォローの状態を**誰の分として**読み終えたか（ログインしたあとの続きを、読む前に送らない・2026-11-16 A4）
+    private(set) var followReadFor: String?
     /// 写真の数を言えるか。**配列の長さを直接出さない**（読み込み中・失敗で 0 になる）
     @Published private(set) var photoCount: ProfileLine.PhotoCount = .pending
     @Published private(set) var isLoading = false
@@ -769,6 +816,7 @@ final class UserProfileViewModel: ObservableObject {
                 } else {
                     followUnknown = true
                 }
+                followReadFor = viewerId
             }
         }
         // **その人の写真は公開 JSON から絞る。** 「ある人の公開写真」を返す
