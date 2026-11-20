@@ -148,7 +148,7 @@ final class AskEngineTests: XCTestCase {
         XCTAssertTrue(calls.reserves.isEmpty)
 
         for reason in [AskLimitReason.day, .month, .global, .userCost] {
-            setup = Setup(); setup.reserveError = AskService.Failure.limit(reason)
+            setup = Setup(); setup.reserveError = AskService.Failure.limit(reason, nil)
             calls = Calls(); (e, d) = engine()
             await e.start("近くで夕日がきれいな所", backend: try backend(setup, calls: calls, defaults: d))
             let a = try XCTUnwrap(e.thread.first?.answer)
@@ -196,9 +196,9 @@ final class AskEngineTests: XCTestCase {
         XCTAssertTrue(first.sources.allSatisfy { $0.region?.prefecture == "香川県" })
         XCTAssertEqual(e.thread.first?.answer.engine, .server)
         // 送る形: 現在地、行きたい場所、旅行プランの欄を持たない
-        let body = try JSONEncoder().encode(TripAIService.Candidate(first.sources[0]))
+        let body = try JSONEncoder().encode(AskService.Source(first.sources[0]))
         let keys = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any]).keys.sorted()
-        XCTAssertEqual(keys, ["area", "category", "name", "seasons", "times"])
+        XCTAssertEqual(keys, ["area", "category", "kind", "name", "note", "seasons", "times"])
     }
 
     /// 使い方の質問は、AI が無くても使い方の頁の3行で答える。引けない質問は「AI でないと答えられません」
@@ -293,7 +293,7 @@ final class TripAIReserveTests: XCTestCase {
         do {
             _ = try await TripAIService(api: api).reserve(via: .device)
             XCTFail("使い切ったのに取れた")
-        } catch AskService.Failure.limit(let reason) {
+        } catch AskService.Failure.limit(let reason, _) {
             XCTAssertEqual(reason, .day)
         }
         let kinds = Kinds()

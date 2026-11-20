@@ -71,7 +71,7 @@ struct TripAIService {
     /// 取れなければ `AskService.Failure.limit`
     func reserve(via: AskService.Via) async throws -> AskUsage {
         if TripAIFixture.isOn {
-            if mode == "usedUp" { throw AskService.Failure.limit(.day) }
+            if mode == "usedUp" { throw AskService.Failure.limit(.day, nil) }
             return try AskFixture.reserve(kind: .trip, via: via)
         }
         return try await AskService(api: api).reserve(kind: .trip, via: via)

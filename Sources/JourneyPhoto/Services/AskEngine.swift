@@ -139,12 +139,16 @@ final class AskEngine: ObservableObject {
         do {
             usage = try await backend.reserve(.ask, onDevice ? .device : .server)
             self.usage = usage
-        } catch AskService.Failure.limit(let reason) {
+        } catch AskService.Failure.limit(let reason, let quota) {
+            if let quota { self.usage = quota }
             var a = await tableAnswer(question, library: library, backend: backend, note: nil, state: .answered)
             a.limit = reason
             return a
         } catch AskService.Failure.signedOut {
             return await tableAnswer(question, library: library, backend: backend, note: AskText.signedOutLine, state: .answered)
+        } catch AskService.Failure.proOnly {
+            // 端末の AI が無い iPhone の無料の人（サーバーの 403 `proOnly`）。回数は使っていない
+            return await tableAnswer(question, library: library, backend: backend, note: AskText.noDeviceAILine, state: .answered)
         } catch {
             let offline = backend.offline()
             return await tableAnswer(question, library: library, backend: backend,
@@ -168,13 +172,19 @@ final class AskEngine: ObservableObject {
         do {
             let turns = thread.suffix(AskService.historyTurns).map { AskService.Turn(question: $0.question, answer: $0.answer.text) }
             let reply = try await backend.serverAsk(question, Array(turns), picks.map(\.spot))
+            if let quota = reply.quota { self.usage = quota }
+            // サーバーが断った（呼ぶ前の断り・AI の断り・答えの前の見張り）。アプリの断りの1行にそろえ、札も出さない
+            if reply.refused { return .refused(care: AskGuard.needsCare(question)) }
             let sources: [AskAnswer.Source] = picks.isEmpty ? [] : [.init(kind: .spots, label: L("観光スポットの台帳", "Tourist spot list"))]
             return await aiAnswer(question, text: reply.answer, general: reply.general, picks: picks, photoIds: [],
                                   sources: sources, engine: .server, library: library, backend: backend)
-        } catch AskService.Failure.limit(let reason) {
+        } catch AskService.Failure.limit(let reason, let quota) {
+            if let quota { self.usage = quota }
             var a = await tableAnswer(question, library: library, backend: backend, note: nil, state: .answered)
             a.limit = reason
             return a
+        } catch AskService.Failure.proOnly {
+            return await tableAnswer(question, library: library, backend: backend, note: AskText.noDeviceAILine, state: .answered)
         } catch {
             return await tableAnswer(question, library: library, backend: backend, note: AskText.silentLine, state: .answered)
         }
