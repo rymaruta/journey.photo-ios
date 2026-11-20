@@ -145,7 +145,7 @@ struct VisitedQuickBar: View {
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text("\(count)")
+                Text(VisitedPrefectures.countText(count))
                     .font(JPFont.number(JPTypeScale.figureMedium, weight: .semibold, relativeTo: .title3))
                     .foregroundStyle(WebTheme.foreground)
                     .scaleEffect(bump)

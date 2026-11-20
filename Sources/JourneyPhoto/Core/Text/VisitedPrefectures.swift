@@ -15,8 +15,9 @@ struct VisitedPrefectures: Equatable {
 
     /// 内部の上限（札の「＋」はここで止まる）。数え間違いを直せるよう、9 で止めない
     nonisolated static let maxCount = 99
-    /// 画面に出す数字の上限。これ以上は「9+」
-    nonisolated static let displayCap = 8
+    /// 地図に出す数字の上限。これ以上は「3+」（2026-11-20 owner 判断「地図での表示も4回とかは消したい」。
+    /// 色の段 `level(forCount:)` と同じ 3 で止め、凡例の「3+ 回」とそろえる。前は 8 で、9 以上を「9+」と出していた）
+    nonisolated static let displayCap = 2
 
     /// 県の正式名 → 行った日（"yyyy-MM-dd"・古い順）。**空の県は持たない**
     private(set) var visits: [String: [String]] = [:]
@@ -68,10 +69,10 @@ struct VisitedPrefectures: Equatable {
     /// 色の段（提案書 第2版・2026-11-09 模様なし）: 0 回（未）／1 回・2 回・3 回以上＝真鍮の濃淡（色だけで分ける・`VisitedMapStyle.fills`）
     nonisolated static func level(forCount count: Int) -> Int { min(max(count, 0), 3) }
 
-    /// 地図・札・マスに出す数字。1〜8、9 以上は「9+」。0 は空
+    /// 地図に出す数字。1、2、3 以上は「3+」。0 は空（2026-11-20 owner 判断）
     nonisolated static func countText(_ count: Int) -> String {
         if count <= 0 { return "" }
-        return count > displayCap ? "9+" : String(count)
+        return count > displayCap ? "\(displayCap + 1)+" : String(count)
     }
 
     // MARK: - 写真の候補
