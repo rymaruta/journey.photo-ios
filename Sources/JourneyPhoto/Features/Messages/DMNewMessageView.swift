@@ -99,9 +99,6 @@ struct DMNewMessageView: View {
             }
             .scrollDismissesKeyboard(.interactively)
         }
-        .safeAreaInset(edge: .bottom) {
-            if multi, phase == .loaded { footer }
-        }
         .webScreen()
         .navigationTitle(GroupPick.title(mode))
         .navigationBarTitleDisplayMode(.inline)
@@ -112,6 +109,11 @@ struct DMNewMessageView: View {
         // 50人の外を探す（打ち終わるのを 0.3 秒待つ・語が変わったら前の検索は取り消す）
         .task(id: query) { await searchBeyond(query) }
         .accessibilityIdentifier("dm.new")
+        // 主ボタンは画面の札（`dm.new`）の外に置く。中に置くと札の印が主ボタンの印（`group.pick.go`）を上書きし、
+        // UI テストが主ボタンを見つけられなかった（Mac run 1627・画面写真には出ている・2026-11-20）
+        .safeAreaInset(edge: .bottom) {
+            if multi, phase == .loaded { footer }
+        }
     }
 
     @ViewBuilder
