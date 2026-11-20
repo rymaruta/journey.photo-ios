@@ -29,15 +29,17 @@ final class AskQueryTests: XCTestCase {
 
     /// 見本の字は4つを回し、季節で替える。頭は「AI に聞いてみる: 」
     func testPromptRotation() {
-        XCTAssertEqual(AskQuery.prompt(index: 0, month: 11), "AI に聞いてみる: 近くで夕日がきれいな所")
-        XCTAssertEqual(AskQuery.prompt(index: 1, month: 11), "AI に聞いてみる: 今週末、紅葉が見頃の所")
-        XCTAssertEqual(AskQuery.prompt(index: 1, month: 1), "AI に聞いてみる: 雪景色がきれいな所")
+        XCTAssertEqual(AskQuery.prompt(index: 0, month: 11), "AI に聞いてみる: 近くで夕日がきれいな所は？")
+        XCTAssertEqual(AskQuery.prompt(index: 1, month: 11), "AI に聞いてみる: 今週末、紅葉が見頃の所は？")
+        XCTAssertEqual(AskQuery.prompt(index: 1, month: 1), "AI に聞いてみる: 雪景色がきれいな所は？")
         XCTAssertEqual(AskQuery.prompt(index: 4, month: 11), AskQuery.prompt(index: 0, month: 11), "4つで一回り")
         XCTAssertEqual(AskQuery.rotateSeconds, 4)
         XCTAssertEqual(AskQuery.fieldLabel, "AI に聞く、または探す")
         for m in 1...12 {
             for p in AskQuery.examples(month: m) {
                 XCTAssertFalse(p.contains("・") || p.contains("撮りどき") || p.contains("撮影スポット"), p)
+                // 見本をそのまま打てば AI の答えになる（「〜所」だけでは今の検索になってしまう）
+                XCTAssertEqual(AskQuery.form(p), .ask, "見本が頼みの形になっていない: \(p)")
             }
         }
         XCTAssertEqual(AskQuery.clipped(String(repeating: "あ", count: 300)).count, 200)
@@ -88,6 +90,13 @@ final class AskUsageTests: XCTestCase {
         }
         // 天気と光はまだ作っていないので約束しない
         XCTAssertFalse(AskLimitText.proPitch.contains("天気"))
+        // 旅行プランの AI も同じ形で言い分ける（無料 1日5回かつ月30回）
+        let tripDay = AskLimitText.band(reason: .day, usage: nil, answeredByTable: false, kind: .trip, isPro: false)
+        XCTAssertEqual(tripDay.title, "今日の旅行プランの AI は5回使いました。明日また使えます")
+        XCTAssertNotNil(tripDay.proLine)
+        XCTAssertEqual(AskLimitText.band(reason: .month, usage: nil, answeredByTable: false, kind: .trip, isPro: true).title.hasPrefix("今月の旅行プランの AI は300回使いました"), true)
+        XCTAssertNil(AskLimitText.band(reason: .day, usage: nil, answeredByTable: false, kind: .trip, isPro: true).proLine)
+        XCTAssertEqual(AskLimitText.band(reason: .global, usage: nil, answeredByTable: false, kind: .trip).title, "いまはサーバーの AI を休んでいます")
     }
 
     func testReasonFrom429Body() {

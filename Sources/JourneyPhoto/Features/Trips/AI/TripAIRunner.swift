@@ -13,6 +13,8 @@ struct TripAIResult {
         case silent
         /// 端末の AI が無い iPhone の無料の人（サーバーの AI は Pro だけ・札 #652。AI なしで組んだ）
         case proOnly
+        /// サーバーで回数を取れなかった（429 の `reason`: 今日の分、今月の分、1人の止め、全体の止め・札 #652）
+        case limited(AskLimitReason)
     }
     let title: String
     let days: [[OfficialSpot]]
@@ -143,9 +145,9 @@ final class TripAIRunner: ObservableObject {
         var plan: TripAIPlan?
         var mode: TripAIResult.Mode = .ai
         // サーバーで組んでよいか（端末の AI が無い iPhone の Pro と管理者だけ・札 #652）
-        var serverOK = false
+        var server = ServerUse.allowed
         if planner == nil, !isUsedUp, !offline, !onDevice {
-            serverOK = await mayUseServer(service: service)
+            server = await mayUseServer(service: service)
         }
         if isUsedUp {
             mode = .usedUp
@@ -163,9 +165,9 @@ final class TripAIRunner: ObservableObject {
                 let left = try await service.reserve(via: .device)
                 reserved = true
                 setRemaining(left)
-            } catch AskService.Failure.limit {
-                markUsedUp()
-                mode = .usedUp
+            } catch AskService.Failure.limit(let reason, _) {
+                if reason == .day || reason == .month { markUsedUp() }
+                mode = .limited(reason)
             } catch {
                 mode = .offline
             }
@@ -178,7 +180,10 @@ final class TripAIRunner: ObservableObject {
                     mode = .silent
                 }
             }
-        } else if !serverOK {
+        } else if server == .unknown {
+            // 2026-11-20 判断: Pro かどうかが読めなかった（status の失敗）。「Pro だけ」とは言わず、AI なしで組んだ理由を言う
+            mode = .silent
+        } else if server == .proOnly {
             // 2026-11-20（札 #652・owner 承認）: 端末の AI が無い iPhone の**無料の人はサーバーで組まない**
             // （サーバーの AI は Pro だけ。アプリ全体の AI の請求を月500円までに収める）。AI なしで組み、帯で Pro を案内する
             mode = .proOnly
@@ -190,6 +195,11 @@ final class TripAIRunner: ObservableObject {
             } catch TripAIService.Failure.limit {
                 markUsedUp()
                 mode = .usedUp
+            } catch AskService.Failure.limit(let reason, _) {
+                if reason == .day || reason == .month { markUsedUp() }
+                mode = .limited(reason)
+            } catch AskService.Failure.proOnly {
+                mode = .proOnly
             } catch TripAIService.Failure.unavailable where offline {
                 mode = .offline
             } catch {
@@ -240,11 +250,13 @@ final class TripAIRunner: ObservableObject {
                             reason: reason, removed: trimmed.removed, mode: mode, candidates: candidates)
     }
 
+    enum ServerUse: Equatable { case allowed, proOnly, unknown }
+
     /// サーバーで組んでよいか（Pro と管理者だけ）。回数がまだ分からなければ一度だけ読む。読めなければ組まない（費用を守る側）
-    private func mayUseServer(service: TripAIService) async -> Bool {
+    private func mayUseServer(service: TripAIService) async -> ServerUse {
         if usage == nil { usage = try? await service.status() }
-        guard let tier = usage?.tier else { return false }
-        return tier == "pro" || tier == "admin"
+        guard let tier = usage?.tier else { return .unknown }
+        return tier == "pro" || tier == "admin" ? .allowed : .proOnly
     }
 
     /// 取れた回の残り（月の数）を、今の回数の表示に写す

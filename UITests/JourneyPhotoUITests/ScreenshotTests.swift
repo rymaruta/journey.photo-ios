@@ -3120,6 +3120,9 @@ final class ScreenshotTests: XCTestCase {
             app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
             app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
             app.launchArguments += ["-JPAskFixture", "YES"]
+            // ログインした画面を撮る（ログインしていないと AI を使わず言葉の表で答えるので、答えと帯の絵にならない）
+            app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+            app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
             if !mode.isEmpty { app.launchArguments += ["-JPAskFixtureMode", mode] }
             app.launch()
             let agree = app.buttons["legal.agree"]

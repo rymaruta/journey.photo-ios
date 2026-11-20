@@ -96,14 +96,28 @@ struct TripAIService {
     }
 
     private func call<T: Decodable>(_ body: Request, as type: T.Type) async throws -> T {
+        let sink = APIErrorBody()
         do {
-            return try await api.authorized(.post, "/user/trip-ai", body: body, as: type)
+            return try await APIClient.$errorBodySink.withValue(sink) {
+                try await api.authorized(.post, "/user/trip-ai", body: body, as: type)
+            }
         } catch let error as APIError {
             switch error {
             case .notAuthenticated: throw Failure.signedOut
             case .unreachable: throw Failure.unavailable
-            case .server(let status, _) where status == 429: throw Failure.limit
-            case .server(let status, _) where status == 422: throw Failure.unreadable
+            case .server(let status, _) where status == 429:
+                // 札 #652: 本文の `reason`（今日の分、今月の分、1人の止め、全体の止め）があれば帯の文を言い分ける
+                if AskService.reasonText(from: sink.data) != nil {
+                    throw AskService.Failure.limit(AskService.reason(from: sink.data), AskService.quota(from: sink.data))
+                }
+                throw Failure.limit
+            case .server(let status, _) where status == 422 || status == 403:
+                // 無料の人の plan は 422 `pro_only`（札 #652・サーバーの担当のコメント）
+                if APIClient.errorCode(from: sink.data) == "pro_only" || AskService.reasonText(from: sink.data) == "proOnly" {
+                    throw AskService.Failure.proOnly
+                }
+                if status == 403 { throw error }
+                throw Failure.unreadable
             case .server(let status, _) where status == 502 || status == 503 || status == 504: throw Failure.unavailable
             default: throw error
             }

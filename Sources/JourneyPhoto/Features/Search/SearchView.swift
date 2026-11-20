@@ -97,8 +97,6 @@ struct SearchView: View {
     @StateObject private var askLocation = CurrentLocation()
     @EnvironmentObject private var wishlist: WishlistStore
     @State private var askTask: Task<Void, Never>?
-    /// 欄の見本の字の何番目か（4秒ごとに進む。動きを減らす設定では 0 のまま）
-    @State private var promptIndex = 0
     /// 初めて探すを開いたときだけ、欄の縁を一度真鍮に光らせる（端末に覚える）
     @State private var fieldGlow = false
 
@@ -268,6 +266,11 @@ struct SearchView: View {
         .onChange(of: needsRelaxing) { _, needed in
             if PreviewSession.searchReadingProbe { relaxProbe += " onChange(needed=\(needed))" }
             if needed { relaxIfZeroHit() }
+        }
+        // 人が替わったら、前の人の会話、残りの回数、札を手放す（札 #652）
+        .onChange(of: auth.userId) { _, _ in
+            askTask?.cancel()
+            ask.reset()
         }
         .onChange(of: query) { _, newValue in
             // 読み取りで入れた字のままでなければ、読み取りを捨てる（打ち直した・×で消した）
@@ -559,11 +562,9 @@ struct SearchView: View {
     /// 欄の縁を光らせたかの鍵（端末に覚える）
     static let askGlowKey = "journey-photo-ask-glow-shown"
 
-    /// 欄の見本の字。人を探すときは人向けのまま、それ以外は「AI に聞いてみる: 」と見本（4秒ごとに入れ替え）
+    /// 欄の見本の字。人を探すときは人向けの字を欄に、それ以外は欄の字を空にして `AskRotatingPrompt` を重ねる
     private var fieldPrompt: String {
-        guard model.scope != .people else { return model.scope.prompt }
-        let month = Calendar(identifier: .gregorian).component(.month, from: Date())
-        return AskQuery.prompt(index: reduceMotion ? 0 : promptIndex, month: month)
+        model.scope == .people ? model.scope.prompt : ""
     }
 
 
@@ -741,6 +742,12 @@ struct SearchView: View {
                 .foregroundStyle(model.scope == .people ? WebTheme.text3 : WebTheme.accent)
                 .accessibilityHidden(true)
             JPTextField(fieldPrompt, text: $query)
+                // 見本の字（4秒ごとに入れ替え）。入れ替えで探すの画面全体を描き直さないよう、小さな View に分けた
+                .overlay(alignment: .leading) {
+                    if query.isEmpty, model.scope != .people {
+                        AskRotatingPrompt()
+                    }
+                }
                 .focused($fieldFocused)
                 .textFieldStyle(.plain)
                 // 板の 16（`.callout`）
@@ -785,15 +792,6 @@ struct SearchView: View {
         .shadow(color: WebTheme.accent.opacity(fieldGlow ? 0.25 : 0), radius: 4)
         .padding(.horizontal, JPSpace.gutter)
         .onAppear { glowOnceIfFirst() }
-        // 見本の字を4秒ごとに入れ替える（打っている間、人を探している間、動きを減らす設定では止める）
-        .task(id: query.isEmpty && model.scope != .people && !reduceMotion) {
-            guard query.isEmpty, model.scope != .people, !reduceMotion else { return }
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: AskQuery.rotateSeconds * 1_000_000_000)
-                if Task.isCancelled { return }
-                promptIndex += 1
-            }
-        }
     }
 
     /// 種類（板 11 の「すべて／写真／人／タグ／撮影地」）。

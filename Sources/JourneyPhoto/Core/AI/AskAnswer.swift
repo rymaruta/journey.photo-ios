@@ -77,8 +77,8 @@ struct AskAnswer: Equatable, Codable {
         case .device:
             return L("この iPhone の中で答えました", "Answered on this iPhone")
         case .server:
-            return L("サーバー（東京）で答えました。送ったのは打った文と、引いた観光スポットの行だけです",
-                     "Answered on our server in Tokyo. Only your words and the spot rows were sent.")
+            return L("サーバー（東京）で答えました。送ったのは、打った文と直前の2往復、引いた観光スポットの行と使い方の頁の抜き書きだけです",
+                     "Answered on our server in Tokyo. Only your words, the last two exchanges, the spot rows and help excerpts were sent.")
         case .table:
             return L("この iPhone の中で言葉を読み、観光スポットから選びました", "Read your words on this iPhone and picked from the spots")
         case .refused:

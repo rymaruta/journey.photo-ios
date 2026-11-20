@@ -187,6 +187,12 @@ struct TripAICard: View {
         case .silent:
             bandRow(icon: "exclamationmark.circle", title: L("AI が答えなかったので、AI なしで組みました", "AI didn't answer, so this was planned without AI"),
                     sub: L("AI でやり直す", "Try AI again"), action: redo, id: "tripAI.band.silent")
+        case .limited(let reason):
+            // 札 #652: 429 の理由で言い分ける（今日の分、今月の分、1人の止め、全体の止め・`AskLimitText.band`）
+            let isPro = usage?.tier == "pro" || usage?.tier == "admin"
+            let b = AskLimitText.band(reason: reason, usage: nil, answeredByTable: false, kind: .trip, isPro: isPro)
+            bandRow(icon: "sparkles", title: b.title + (b.detail.isEmpty ? "" : "\n" + b.detail), sub: b.proLine,
+                    action: b.proLine == nil ? nil : openPro, id: "tripAI.band.limited")
         case .proOnly:
             // 2026-11-20（札 #652）: 端末の AI が無い iPhone の無料の人。サーバーの AI は Pro だけ
             bandRow(icon: "iphone", title: L("この iPhone では AI で組めないため、AI なしで組みました", "AI isn't available on this iPhone, so this was planned without AI"),

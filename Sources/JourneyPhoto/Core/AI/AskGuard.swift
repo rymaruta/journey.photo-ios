@@ -63,12 +63,13 @@ enum AskGuard {
         "(使って|つかって)(いる|る)(ai|モデル|言語|サービス|サーバ|クラウド|データベース|フレームワーク|ライブラリ)",
         "(どの|どこの|何の|なんの)(ai|モデル|llm|クラウド|サーバ|データベース)",
         "(ai|モデル|llm)の?(名前|種類|正体)",
-        "ソースコード|プログラムを?(見せ|教え)|コードを?(見せ|教え|書いて)",
+        "ソースコード|プログラムを?(見せ|教え)|(?<![ァ-ヶー])コードを?(見せ|教え|書いて)",
         "サーバ(ー)?(は|の場所|はどこ|の設定|の構成|の住所|の名前)|データベース|エンドポイント|インフラ",
         "(?<![a-z0-9])(api|lambda|dynamo(db)?|cognito|bedrock|aws|s3|cloudformation|amplify|apns|graphql)(?![a-z0-9])",
         "設定ファイル|環境変数|内部の(名前|文書|資料|設定)",
         // 鍵と認証
-        "(鍵|かぎ|キー|トークン|パスワード|シークレット|秘密鍵|認証情報)を?(教え|見せ|出し|ちょうだい|ください|知りたい)",
+        // 片仮名の語の一部（「スキー」「ドレスコード」）には当てない
+        "(鍵|かぎ|(?<![ァ-ヶー])キー|(?<![ァ-ヶー])トークン|パスワード|シークレット|秘密鍵|認証情報)を?(教え|見せ|出し|ちょうだい|ください|知りたい)",
         "(api|アクセス|秘密|シークレット) ?(キー|鍵)",
         // AI への指示文と指示の書き換え
         "指示文|システムの?指示|システムプロンプト|プロンプト|(最初|前|上|これまで|今まで)の(指示|命令|ルール|決まり)|指示を(忘れ|無視|破)|命令を(忘れ|無視)|ルールを(忘れ|無視|破)|制限を(外|解除|無視)|開発者モード|脱獄",
@@ -92,7 +93,10 @@ enum AskGuard {
         "(?<![a-z0-9])(api|secret|private|access) ?keys?(?![a-z0-9])|(tell|show|give|share|reveal|leak|print|what is|what's|whats) (me )?(the |your |an? )?(api |secret |access |private )?(keys?|passwords?|credentials?|tokens?|secrets?)(?![a-z0-9])",
         "system prompt|(?<![a-z0-9])prompts?(?![a-z0-9])|(your|the|system|hidden|initial|original|previous|above) instructions|ignore (all|any|the|previous|prior|above|your)|disregard (all|any|the|previous|your)|forget (all|your|previous|the) (rules|instructions)|developer mode|jailbreak",
         "(?<![a-z0-9])admin|administrator|moderator tools|root access",
-        "(someone|somebody|other users?|another user|his|her|their)(\'|’)?s? (private|dms?|direct messages?|messages|location|email|phone|address|wishlist|trips?)|where is [a-z0-9_.@ ]+ (now|right now)|where does [a-z0-9_.@ ]+ live",
+        // 人の非公開の物（「her trip to kyoto」のような旅の相談は巻き込まない）
+        "(someone|somebody|other users?|another user)(\'|’)?s? (private|dms?|direct messages?|messages|location|email|phone|address|wishlist|trips?)"
+            + "|(his|her|their) (private|dms?|direct messages?|messages|location|email|phone number|home address)"
+            + "|where is @?[a-z0-9_.]+ (right )?now|where does @?[a-z0-9_.]+ live",
         "(summari[sz]e|show|read|open|leak) (me )?(my |his |her |their |the |[a-z0-9_.@]+(\'|’)s )?(dms?|direct messages?|messages|conversations?)(?![a-z0-9])",
         "vulnerabilit|exploit|hack (into|the app|this app|the server|an account|accounts)|hacking|security (hole|flaw|weakness)|sql injection|prompt injection|privilege escalation|bypass (the|your) (filter|rules|restrictions|limits)",
     ]
@@ -158,7 +162,7 @@ enum AskGuard {
         "[A-Za-z0-9+/_=-]{32,}",
         // 内部の名前（表の行の鍵の頭、サービス、作りの名前）
         "(?<![A-Za-z0-9])[a-z]{2,}#[A-Za-z0-9<]",
-        "(?i)amazonaws|execute-api|cloudfront\\.net|(?<![A-Za-z0-9])lambda(?![A-Za-z0-9])|dynamodb|cognito|bedrock|cloudformation|serverless\\.|api-user|photo-gallery|(?<![A-Za-z0-9])journeyphoto(?![A-Za-z0-9])|(?<![A-Za-z0-9])nova[- ]lite(?![A-Za-z0-9])|claude|foundation ?models|systemlanguagemodel|languagemodelsession",
+        "(?i)amazonaws|execute-api|cloudfront\\.net|(?<![A-Za-z0-9])lambda(?![A-Za-z0-9])|dynamodb|cognito|bedrock|cloudformation|serverless\\.|api-user|photo-gallery|(?<![A-Za-z0-9])journeyphoto(?![A-Za-z0-9])|(?<![A-Za-z0-9])nova[- ]lite(?![A-Za-z0-9])|anthropic|(?<![A-Za-z0-9])claude[ -]?(ai|opus|sonnet|haiku|\\d)|foundation ?models|systemlanguagemodel|languagemodelsession",
         "(?<![A-Za-z0-9])[A-Z][A-Z0-9]{1,}_[A-Z0-9_]{2,}(?![A-Za-z0-9])",
         "(?i)\\.(swift|ts|tsx|js|json|yml|yaml|env|plist)(?![A-Za-z0-9])",
         // メールアドレス
@@ -194,7 +198,10 @@ enum AskGuard {
         let pattern = "(?<![A-Za-z0-9])[a-z]{2,}[A-Z][A-Za-z0-9]{2,}(?![A-Za-z0-9])"
         var searchRange = text.startIndex..<text.endIndex
         while let r = text.range(of: pattern, options: .regularExpression, range: searchRange) {
-            if !allowed.contains(text[r].lowercased()) { return true }
+            let word = String(text[r])
+            // 製品の名前の形（iMovie、iPhone、eSIM）は通す。内部の識別子は小文字が2字以上続いてから大文字になる
+            let product = word.range(of: "^[ie][A-Z][A-Za-z0-9]*$", options: .regularExpression) != nil
+            if !product, !allowed.contains(word.lowercased()) { return true }
             searchRange = r.upperBound..<text.endIndex
         }
         return false

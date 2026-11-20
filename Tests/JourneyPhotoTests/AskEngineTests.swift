@@ -90,7 +90,7 @@ final class AskEngineTests: XCTestCase {
         XCTAssertEqual(e.thread.first?.answer.text, AskGuard.refusal)
     }
 
-    /// 端末の AI が使える iPhone: 先にサーバーで1回取ってから端末の AI。答えはアプリの部品（札、写真、旅行プランにする）
+    /// 端末の AI が使える iPhone: 答えを出す直前にサーバーで1回取る（2026-11-20 判断）。答えはアプリの部品（札、写真、旅行プランにする）
     func testDeviceRouteReservesFirstAndShowsAppParts() async throws {
         let calls = Calls()
         let (e, d) = engine()
@@ -154,7 +154,8 @@ final class AskEngineTests: XCTestCase {
             let a = try XCTUnwrap(e.thread.first?.answer)
             XCTAssertEqual(a.limit, reason)
             XCTAssertEqual(a.engine, .table)
-            XCTAssertEqual(calls.deviceAsks, 0, "上限なのに端末の AI を呼んだ")
+            XCTAssertFalse(a.usedAI, "上限なのに AI の答えを出した")
+            XCTAssertTrue(a.text.isEmpty || !a.text.contains("屋島がおすすめ"), "上限なのに AI の文を出した")
             XCTAssertFalse(a.spotIds.isEmpty, "答えは言葉の表で出し続ける")
         }
     }
@@ -168,6 +169,38 @@ final class AskEngineTests: XCTestCase {
         await e.start("おすすめの観光スポット教えて", backend: try backend(setup, calls: calls, defaults: d))
         XCTAssertEqual(e.thread.first?.answer.engine, .table)
         XCTAssertEqual(e.thread.first?.answer.note, AskText.silentLine)
+        XCTAssertTrue(calls.reserves.isEmpty, "端末の AI が答えなかった回を数えた（0円の回は数えない）")
+    }
+
+    /// 人が替わったら、会話、残りの回数、札の中身を手放す
+    func testResetDropsUsageAndCards() async throws {
+        let calls = Calls()
+        let (e, d) = engine()
+        await e.start("近くで夕日がきれいな所", backend: try backend(Setup(), calls: calls, defaults: d))
+        XCTAssertNotNil(e.usage)
+        XCTAssertFalse(e.spotsById.isEmpty)
+        e.reset()
+        XCTAssertTrue(e.thread.isEmpty)
+        XCTAssertNil(e.usage)
+        XCTAssertTrue(e.spotsById.isEmpty)
+        XCTAssertTrue(e.photosById.isEmpty)
+    }
+
+    /// 控えに残すのは AI で答えた回と断った回だけ。ログインしていない回の答えは残さず、入ったあとは AI で答え直す
+    func testOnlyAIAndRefusedAnswersAreKept() async throws {
+        var setup = Setup()
+        setup.signedIn = false
+        let calls = Calls()
+        let (e, d) = engine()
+        await e.start("おすすめの観光スポット教えて", backend: try backend(setup, calls: calls, defaults: d))
+        XCTAssertEqual(e.thread.first?.answer.engine, .table)
+        setup.signedIn = true
+        e.reset()
+        await e.start("おすすめの観光スポット教えて", backend: try backend(setup, calls: calls, defaults: d))
+        XCTAssertEqual(calls.reserves.count, 1, "言葉の表の答えを控えから出して、AI で答え直さなかった")
+        XCTAssertEqual(e.thread.first?.answer.engine, .device)
+        XCTAssertEqual(AskEngine.keepable([AskExchange(question: "a", answer: AskAnswer(engine: .refused)),
+                                           AskExchange(question: "b", answer: AskAnswer(engine: .table))]).count, 1)
     }
 
     /// 端末の AI が無い iPhone: 無料（serverAllowed=false）は言葉の表、Pro だけサーバーの AI。
@@ -263,6 +296,16 @@ final class TripAIReserveTests: XCTestCase {
         let built = await runner.build(ask, index: rows, wishlist: [], offline: false, service: TripAIService(api: api)) { _, _ in 10 }
         XCTAssertEqual(built?.mode, .proOnly)
         XCTAssertFalse(built?.days.isEmpty ?? true, "AI なしで組んで行き止まりにしない")
+    }
+
+    /// Pro かどうか読めない（status の失敗）ときは「Pro だけ」と言わず、AI なしで組んだ理由（.silent）
+    func testUnknownTierIsNotProOnly() async throws {
+        let rows = try AskSamples.ledger()
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!, tokenProvider: NoToken())
+        let runner = TripAIRunner(onDevice: false)
+        let built = await runner.build(TripAIAsk.reading("香川で日帰り", spots: rows), index: rows, wishlist: [], offline: false,
+                                       service: TripAIService(api: api)) { _, _ in 10 }
+        XCTAssertEqual(built?.mode, .silent)
     }
 
     /// 見本の Pro は今までどおりサーバーで組む

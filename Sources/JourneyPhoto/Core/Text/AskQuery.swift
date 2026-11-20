@@ -123,16 +123,18 @@ enum AskQuery {
     static func examples(month: Int) -> [String] {
         let seasonal: String
         switch month {
-        case 12, 1, 2: seasonal = L("雪景色がきれいな所", "Places with beautiful snow views")
-        case 3, 4, 5: seasonal = L("今週末、桜が見頃の所", "Cherry blossoms in bloom this weekend")
-        case 6, 7, 8: seasonal = L("夏に涼しく撮れる所", "Cool places to shoot in summer")
-        default: seasonal = L("今週末、紅葉が見頃の所", "Autumn leaves at their best this weekend")
+        case 12, 1, 2: seasonal = L("雪景色がきれいな所は？", "Where can I see beautiful snow?")
+        case 3, 4, 5: seasonal = L("今週末、桜が見頃の所は？", "Where are cherry blossoms at their best this weekend?")
+        case 6, 7, 8: seasonal = L("夏に涼しく撮れる所は？", "Where can I shoot somewhere cool in summer?")
+        default: seasonal = L("今週末、紅葉が見頃の所は？", "Where are autumn leaves at their best this weekend?")
         }
+        // 2026-11-20 判断: 見本はそのまま打っても AI の答えになる頼みの形にする（「〜所」だけでは今の検索になる）。
+        // `AskQueryTests` が全部の月の見本を `form == .ask` で見張る
         return [
-            L("近くで夕日がきれいな所", "Nearby places with great sunsets"),
+            L("近くで夕日がきれいな所は？", "Where are nearby places with great sunsets?"),
             seasonal,
-            L("おすすめの観光スポット", "Recommended tourist spots"),
-            L("金沢に1泊2日の旅行プラン", "A 2-day trip plan for Kanazawa"),
+            L("おすすめの観光スポットを教えて", "Recommend some tourist spots"),
+            L("金沢に1泊2日の旅行プランを作って", "Make a 2-day trip plan for Kanazawa"),
         ]
     }
 

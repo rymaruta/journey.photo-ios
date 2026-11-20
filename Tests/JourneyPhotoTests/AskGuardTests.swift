@@ -106,6 +106,10 @@ final class AskGuardTests: XCTestCase {
         "Life hacks for travel photos",
         "Where is Kenrokuen?",
         "ドレスコードのあるレストラン",
+        "初心者でもスキーを教えてもらえる所",
+        "旅館のドレスコードを教えて",
+        "where is the best place to see sakura now?",
+        "best spots for her trip to kyoto",
     ]
 
     func testDeclinesBeforeAskingInJapaneseEnglishAndParaphrases() {
@@ -162,6 +166,8 @@ final class AskGuardTests: XCTestCase {
             "arn:aws:lambda:ap-northeast-1:123456789012:function:x",
             "表の行は aiuse#u1#2026-11 です",
             "裏では Bedrock の Nova Lite を使っています",
+            "私は Claude AI です",
+            "seasonKeys を見ています",
             "設定は TRIP_AI_MODEL_ID にあります",
             "tripAiConfig を読んでください",
             "api-user/src/tripAi.ts に書いてあります",
@@ -191,6 +197,8 @@ final class AskGuardTests: XCTestCase {
             "詳しくは https://journey-photo.com/spots/kenrokuen を見てください。",
             "兼六園は 8km 先です。1泊2日なら、1日目に兼六園、2日目にひがし茶屋街。",
             "Kenrokuen is one of the three great gardens of Japan.",
+            "Claude Monet の睡蓮のような、やわらかい光の庭です。",
+            "iMovie で動画にまとめられます。",
         ]
         for text in fine {
             XCTAssertFalse(AskGuard.leaks(text), "ふつうの答えを止めた: \(text)")

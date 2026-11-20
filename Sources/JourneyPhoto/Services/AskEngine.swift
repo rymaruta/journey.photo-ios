@@ -7,7 +7,8 @@ import Combine
 /// 1. **先に断る**（`AskGuard.declinesBeforeAsking`）。AI を呼ばず、回数も使わない
 /// 2. 同じ日の同じ頼みは、端末の控え（`AskHistoryStore`）の答えを出す。回数を使わない
 /// 3. 言葉の表で読み（`SearchSentence.readByTable`）、頼みの中身（`AskQuery.intent`）と選ぶ条件を作る
-/// 4. **答える前にサーバーで1回取る**（`AskService.reserve`）。ログインしていない、圏外、取れない（429）ときは AI を使わない
+/// 4. **サーバーで1回取る**（`AskService.reserve`）。端末の AI は答えを出す直前に取る（答えなかった回は数えない・2026-11-20 判断）。
+///    サーバーの AI は呼ぶ前に取る。ログインしていない、圏外、取れない（429）ときは AI の答えを出さない
 /// 5. 端末の AI が使える iPhone → 端末の AI（道具で台帳などを引く・`AskDevice`）。
 ///    使えない iPhone → `serverAllowed`（Pro で止めに達していない）ならサーバーの AI、それ以外は言葉の表
 /// 6. 答えは見張り（`AskGuard.screened`）を通してから出す
@@ -52,9 +53,13 @@ final class AskEngine: ObservableObject {
     /// 最初の問い（探すの欄に入っている文）
     var firstQuestion: String? { thread.first?.question ?? pending }
 
+    /// 会話を閉じる。**残りの回数と札の中身も手放す**（人が替わったときに前の人の物を残さない）
     func reset() {
         thread = []
         pending = nil
+        usage = nil
+        spotsById = [:]
+        photosById = [:]
     }
 
     /// 新しく頼む前に、**すぐに**答えの形（読み込み中）にする。前の会話は閉じる。返すのは頼んだ文（空なら nil）。
@@ -113,7 +118,14 @@ final class AskEngine: ObservableObject {
         if let library { remember(library: library, thread: [exchange]) }
         thread.append(exchange)
         pending = nil
-        history.remember(thread, userId: backend.userId())
+        let kept = Self.keepable(thread)
+        if !kept.isEmpty { history.remember(kept, userId: backend.userId()) }
+    }
+
+    /// 控えに残す往復（2026-11-20 判断）: **AI で答えた回と断った回だけ**。圏外、ログインしていない、上限、AI が答えない回の
+    /// 言葉の表の答えは残さない（同じ日に開き直したとき、AI で答え直せるように）。頭から続く分だけ
+    static func keepable(_ thread: [AskExchange]) -> [AskExchange] {
+        Array(thread.prefix { $0.answer.usedAI || $0.answer.engine == .refused })
     }
 
     // MARK: - 1問に答える
@@ -135,34 +147,29 @@ final class AskEngine: ObservableObject {
             return await tableAnswer(question, library: library, backend: backend, note: AskText.offlineLine, state: .offline)
         }
         let onDevice = backend.deviceAI()
-        let usage: AskUsage
-        do {
-            usage = try await backend.reserve(.ask, onDevice ? .device : .server)
-            self.usage = usage
-        } catch AskService.Failure.limit(let reason, let quota) {
-            if let quota { self.usage = quota }
-            var a = await tableAnswer(question, library: library, backend: backend, note: nil, state: .answered)
-            a.limit = reason
-            return a
-        } catch AskService.Failure.signedOut {
-            return await tableAnswer(question, library: library, backend: backend, note: AskText.signedOutLine, state: .answered)
-        } catch AskService.Failure.proOnly {
-            // 端末の AI が無い iPhone の無料の人（サーバーの 403 `proOnly`）。回数は使っていない
-            return await tableAnswer(question, library: library, backend: backend, note: AskText.noDeviceAILine, state: .answered)
-        } catch {
-            let offline = backend.offline()
-            return await tableAnswer(question, library: library, backend: backend,
-                                     note: offline ? AskText.offlineLine : AskText.silentLine, state: offline ? .offline : .answered)
-        }
 
-        // 5. どの AI で答えるか
+        // 5a. 端末の AI（0円）。2026-11-20 判断: **答えを画面に出す直前に1回取る**（reserve via device）。
+        // AI が答えなかった、時間切れ、欄を打ち替えて取り消した回は数えない（Artifact「数えない回」）。取れなければ答えを出さない
         if onDevice {
-            guard let result = await backend.deviceAsk(question, thread, library) else {
+            let result = await backend.deviceAsk(question, thread, library)
+            if Task.isCancelled { return AskAnswer(engine: .table) }
+            guard let result else {
                 return await tableAnswer(question, library: library, backend: backend, note: AskText.silentLine, state: .answered)
+            }
+            if let fallback = await reserveOrFallback(.device, question: question, library: library, backend: backend) {
+                return fallback
             }
             return await aiAnswer(question, text: result.text, general: result.general, picks: result.picks,
                                   photoIds: result.photoIds, sources: result.sources, engine: .device,
                                   library: library, backend: backend)
+        }
+
+        // 5b. サーバーの AI（費用がかかる）。先に1回取る（取った回は次の ask が使う・二重に数えない）
+        if let fallback = await reserveOrFallback(.server, question: question, library: library, backend: backend) {
+            return fallback
+        }
+        guard let usage = self.usage else {
+            return await tableAnswer(question, library: library, backend: backend, note: AskText.silentLine, state: .answered)
         }
         guard usage.serverAllowed else {
             return await tableAnswer(question, library: library, backend: backend, note: AskText.noDeviceAILine, state: .answered)
@@ -187,6 +194,29 @@ final class AskEngine: ObservableObject {
             return await tableAnswer(question, library: library, backend: backend, note: AskText.noDeviceAILine, state: .answered)
         } catch {
             return await tableAnswer(question, library: library, backend: backend, note: AskText.silentLine, state: .answered)
+        }
+    }
+
+    /// 回数を1回取る。取れたら nil（`usage` を更新）。取れなければ、言葉の表の答え（上限なら帯）
+    private func reserveOrFallback(_ via: AskService.Via, question: String, library: AskLibrary,
+                                   backend: Backend) async -> AskAnswer? {
+        do {
+            usage = try await backend.reserve(.ask, via)
+            return nil
+        } catch AskService.Failure.limit(let reason, let quota) {
+            if let quota { usage = quota }
+            var a = await tableAnswer(question, library: library, backend: backend, note: nil, state: .answered)
+            a.limit = reason
+            return a
+        } catch AskService.Failure.signedOut {
+            return await tableAnswer(question, library: library, backend: backend, note: AskText.signedOutLine, state: .answered)
+        } catch AskService.Failure.proOnly {
+            // 端末の AI が無い iPhone の無料の人（サーバーの 403 `proOnly`）。回数は使っていない
+            return await tableAnswer(question, library: library, backend: backend, note: AskText.noDeviceAILine, state: .answered)
+        } catch {
+            let offline = backend.offline()
+            return await tableAnswer(question, library: library, backend: backend,
+                                     note: offline ? AskText.offlineLine : AskText.silentLine, state: offline ? .offline : .answered)
         }
     }
 

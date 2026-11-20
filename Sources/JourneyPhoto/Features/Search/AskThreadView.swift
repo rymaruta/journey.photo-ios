@@ -98,7 +98,8 @@ struct AskThreadView: View {
     private func answerView(_ exchange: AskExchange, isLatest: Bool) -> some View {
         let a = exchange.answer
         VStack(alignment: .leading, spacing: JPSpace.s) {
-            if let reason = a.limit { limitBand(reason) }
+            // 使い切った帯は、いちばん新しい答えにだけ1本
+            if isLatest, let reason = a.limit { limitBand(reason) }
             if a.engine == .refused {
                 textCard(a.text, general: false, sources: [])
                     .accessibilityIdentifier("search.ask.refusal")
@@ -569,5 +570,33 @@ private struct AskPinsMap: View {
                 OfficialSpotView(spot: opened, spots: officialSpots, photos: photos, photosKnown: photosKnown)
             }
         }
+    }
+}
+
+/// 探すの欄の見本の字（「AI に聞いてみる: …」・札 #652）。**4秒ごとに入れ替え、薄く消えて出る**。
+/// 動きを減らす設定では最初の見本で止める。入れ替えで探すの画面全体を描き直さないよう、この View だけが数を持つ。
+/// 字は押しても入らない（欄の見本の字と同じ）。読み上げは欄の名前「AI に聞く、または探す」だけ（ここは読まない）
+struct AskRotatingPrompt: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var index = 0
+
+    var body: some View {
+        let month = Calendar(identifier: .gregorian).component(.month, from: Date())
+        Text(AskQuery.prompt(index: reduceMotion ? 0 : index, month: month))
+            .font(.callout)
+            .foregroundStyle(WebTheme.placeholder)
+            .lineLimit(1)
+            .id(reduceMotion ? 0 : index)
+            .transition(.opacity)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .task(id: reduceMotion) {
+                guard !reduceMotion else { return }
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: AskQuery.rotateSeconds * 1_000_000_000)
+                    if Task.isCancelled { return }
+                    withAnimation(.easeInOut(duration: 0.35)) { index += 1 }
+                }
+            }
     }
 }

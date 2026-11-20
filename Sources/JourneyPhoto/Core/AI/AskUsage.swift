@@ -46,6 +46,9 @@ enum AskLimits {
     static let freeMonth = 10
     static let proDay = 20
     static let proMonth = 300
+    /// 旅行プランの AI の1日の数（月はサーバーの `TRIP_AI_LIMITS` と同じ `TripAILimits`）
+    static let tripFreeDay = 5
+    static let tripProDay = 20
 }
 
 /// 取れなかった理由（429 の `reason`）
@@ -63,23 +66,31 @@ enum AskLimitText {
         let proLine: String?
     }
 
-    /// 使い切った・休んでいるときの帯。`answeredByTable` は言葉の表で答えを出し続けたか
-    static func band(reason: AskLimitReason, usage: AskUsage?, answeredByTable: Bool) -> Band {
-        let isPro = usage?.isPro ?? false
-        let fallback = answeredByTable ? L("言葉で読んで探しました。", "Searched by reading your words.") : ""
+    /// 使い切った・休んでいるときの帯。`answeredByTable` は言葉の表で答えを出し続けたか。
+    /// 旅行プランの AI（`kind: .trip`）も同じ形で言い分ける。`isPro` は回数が無いときの Pro かどうか
+    static func band(reason: AskLimitReason, usage: AskUsage?, answeredByTable: Bool,
+                     kind: AskService.Kind = .ask, isPro knownPro: Bool? = nil) -> Band {
+        let isPro = usage?.isPro ?? knownPro ?? false
+        let trip = kind == .trip
+        let fallback = answeredByTable ? L("言葉で読んで探しました。", "Searched by reading your words.")
+            : (trip ? L("AI なしで組みました。", "Planned without AI.") : "")
+        let what = trip ? L("旅行プランの AI ", "trip-plan AI") : L(" AI ", "AI")
+        let pitch = trip ? L("Pro なら1日\(AskLimits.tripProDay)回、月\(TripAILimits.pro)回", "With Pro: \(AskLimits.tripProDay) a day, \(TripAILimits.pro) a month") : proPitch
         switch reason {
         case .day:
-            let limit = usage?.day.limit ?? (isPro ? AskLimits.proDay : AskLimits.freeDay)
-            return Band(title: L("今日の AI は\(limit)回使いました。明日また使えます", "You've used today's \(limit) AI answers. More tomorrow."),
+            let limit = usage?.day.limit ?? (trip ? (isPro ? AskLimits.tripProDay : AskLimits.tripFreeDay)
+                                                  : (isPro ? AskLimits.proDay : AskLimits.freeDay))
+            return Band(title: L("今日の\(what)は\(limit)回使いました。明日また使えます", "You've used today's \(limit) \(what) uses. More tomorrow."),
                         detail: fallback,
-                        proLine: isPro ? nil : proPitch)
+                        proLine: isPro ? nil : pitch)
         case .month:
-            let limit = usage?.month.limit ?? (isPro ? AskLimits.proMonth : AskLimits.freeMonth)
+            let limit = usage?.month.limit ?? (trip ? (isPro ? TripAILimits.pro : TripAILimits.free)
+                                                    : (isPro ? AskLimits.proMonth : AskLimits.freeMonth))
             let when = (usage?.month.resetsOn).flatMap(TripAIText.monthDay) ?? TripAIText.monthDay(TripAIText.nextReset()) ?? ""
             let back = when.isEmpty ? "" : L("\(when)に戻ります", "Resets \(when).")
-            return Band(title: L("今月の AI は\(limit)回使いました。\(back)", "You've used this month's \(limit) AI answers. \(back)"),
+            return Band(title: L("今月の\(what)は\(limit)回使いました。\(back)", "You've used this month's \(limit) \(what) uses. \(back)"),
                         detail: fallback,
-                        proLine: isPro ? nil : proPitch)
+                        proLine: isPro ? nil : pitch)
         case .userCost:
             return Band(title: L("今月はサーバーの AI を休んでいます", "Server AI is paused for you this month"),
                         detail: fallback + L("回数は使っていません", "This didn't use a count."),
