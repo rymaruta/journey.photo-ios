@@ -4008,6 +4008,56 @@ final class ScreenshotTests: XCTestCase {
         return app.descendants(matching: .any)["tripPlan.fixtureSends"].firstMatch.waitForExistence(timeout: 15)
     }
 
+    // MARK: - 旅行プランを組み直す（札 #667・案のページの案1）
+
+    /// 見本のプランを開き、「雨なら」を押して組み直した案が出るまで進める。案が出たら true。
+    /// 見本の AI（`-JPTripAIFixture`・サーバーへは送らない）は必ず変わる案を返す（日を入れ替え、候補を1つ足す）
+    private func openTripReplanProposal(_ app: XCUIApplication) -> Bool {
+        guard openFixturePlan(app) else { return false }
+        // 観光スポットの名前（台帳）が読めてから押す（読めないと組み直す場所が無い）
+        guard app.staticTexts["ひがし茶屋街"].firstMatch.waitForExistence(timeout: 30) else { return false }
+        let rain = app.buttons["tripReplan.chip.rain"].firstMatch
+        guard rain.waitForExistence(timeout: 10), rain.isHittable else { return false }
+        rain.tap()
+        return app.descendants(matching: .any)["tripReplan.preview"].firstMatch.waitForExistence(timeout: 30)
+    }
+
+    /// **プランを開く →「雨なら」→ 案を見る →「この案にする」**（札 #667）。押す回数はチップと「この案にする」の 2 回。
+    /// 案を見ている間は日程が変わらない（「今」に戻すと元の並び）。置き換えたら「元に戻す」で戻る
+    func testTripReplanRainThenAccept() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripAIFixture", "YES", "-JPTripAIFixtureDelay", "1"])
+        guard openTripReplanProposal(app) else { return unreached(app, "組み直した案", probes: ["tripReplan.bar", "tripReplan.notice"]) }
+        XCTAssertTrue(app.descendants(matching: .any)["tripReplan.changedRow"].firstMatch.exists, "入れ替えた行に印が無い")
+        // 「今」に切り替えると、元の並び（入れ替えの印は出ない）
+        let before = app.buttons["tripReplan.showBefore"].firstMatch
+        XCTAssertTrue(before.waitForExistence(timeout: 5))
+        before.tap()
+        XCTAssertFalse(app.descendants(matching: .any)["tripReplan.changedRow"].firstMatch.waitForExistence(timeout: 2),
+                       "「今」に入れ替えの印が出ている")
+        app.buttons["tripReplan.showAfter"].firstMatch.tap()
+        let accept = app.buttons["tripReplan.accept"].firstMatch
+        XCTAssertTrue(accept.waitForExistence(timeout: 5) && accept.isHittable, "「この案にする」が押せない")
+        accept.tap()
+        XCTAssertTrue(waitGone(app.descendants(matching: .any)["tripReplan.preview"].firstMatch, timeout: 5), "置き換えても案が残っている")
+        let undo = app.buttons["tripReplan.undoApplied"].firstMatch
+        XCTAssertTrue(undo.waitForExistence(timeout: 5), "置き換えたあとに「元に戻す」が無い")
+        undo.tap()
+        XCTAssertTrue(waitGone(undo, timeout: 5), "元に戻したのに「元に戻す」が残っている")
+    }
+
+    /// 組み直した案（「今 | 組み直した案」・入れ替えた所に真鍮の点・下に「元に戻す」「この案にする」）。出なければ落とす
+    func testCapturesTripReplan() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripAIFixture", "YES", "-JPTripAIFixtureDelay", "1"])
+        guard openTripReplanProposal(app) else { return unreached(app, "組み直した案", probes: ["tripReplan.bar", "tripReplan.notice"]) }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "65p-旅行プランを組み直した案（雨なら）")
+    }
+
+    private func waitGone(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+        XCTWaiter().wait(for: [expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: element)],
+                         timeout: timeout) == .completed
+    }
+
     /// 送った回数（見本のときだけ画面に出す `tripPlan.fixtureSends` の値）。ログにも残す
     private func fixtureSends(_ app: XCUIApplication, _ when: String) -> String? {
         let label = app.descendants(matching: .any)["tripPlan.fixtureSends"].firstMatch

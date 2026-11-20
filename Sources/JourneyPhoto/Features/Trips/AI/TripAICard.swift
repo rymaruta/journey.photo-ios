@@ -34,25 +34,23 @@ final class TripAINotes: ObservableObject {
 }
 
 /// 日程の画面の上の札（板 Components 05 の札と案内の帯・TripPlanDays の地）。
-/// 並べた理由 → AI なしで組んだ理由の帯 → 押すだけの直し（ゆっくり、雨でも、朝を早く、書いて直す）
+/// 並べた理由 → AI なしで組んだ理由の帯。
+///
+/// 2026-11-20 判断（札 #667）: 押すだけの直し（ゆっくり、雨でも、朝を早く、書いて直す）は、どのプランにも出る
+/// 日程の上の「組み直す」（`TripReplanBar`）にまとめた。ここから外し、入口を1つにする（同じ画面にチップの列を2つ置かない）
 struct TripAICard: View {
     let note: TripAINote
     let usage: TripAIService.Usage?
     let working: Bool
     let canUndo: Bool
     let online: Bool
-    let tweak: (String) -> Void
     let redo: () -> Void
     let undo: () -> Void
     let openPro: () -> Void
-
-    @State private var writing = false
-    @State private var text = ""
     /// 開いているか（2026-11-16 判断・使い勝手の見直し A6）。**はじめは1行に畳む**——開いた札は理由の数行と
     /// 直しのチップで日程を1画面ぶん下へ押していた（最初に見える場所 約1.5か所）。押すと開き、もう一度押すと畳む
     @State private var open = false
 
-    private var usedUp: Bool { note.mode == .usedUp || (usage?.remaining ?? 1) <= 0 }
 
     /// 畳んだ行の眉と1行（理由が空のプランは、押すだけの直しの名前を並べる）
     nonisolated static func foldedLine(reason: String) -> (eyebrow: String, text: String) {
@@ -127,7 +125,7 @@ struct TripAICard: View {
                 }
                 Spacer(minLength: 0)
                 // 畳む（開いた札の右上・当たり 44）
-                Button { open = false; writing = false } label: {
+                Button { open = false } label: {
                     Image(systemName: "chevron.up")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(WebTheme.text3)
@@ -157,9 +155,6 @@ struct TripAICard: View {
             }
 
             band
-
-            tweaks
-            if writing { writeField }
         }
         .padding(JPSpace.m)
         .jpCardFace()
@@ -224,75 +219,6 @@ struct TripAICard: View {
         .buttonStyle(.plain)
         .disabled(action == nil || working)
         .accessibilityIdentifier(id)
-    }
-
-    /// 押すだけの直し（AI を1回使う）。使い切ったら PRO の印を付け、押すと Pro の案内
-    private var tweaks: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: JPSpace.xs) {
-                ForEach(TripAITweak.allCases) { t in
-                    chip(t.title, id: "tripAI.tweak.\(t.rawValue)") { usedUp ? openPro() : tweak(t.request) }
-                }
-                chip(L("書いて直す", "Write a change"), id: "tripAI.tweak.write") {
-                    if usedUp { openPro() } else { writing.toggle() }
-                }
-            }
-        }
-        .disabled(working)
-        .opacity(working ? TripStyle.disabledOpacity : 1)
-    }
-
-    private func chip(_ title: String, id: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Text(title)
-                if usedUp {
-                    Text("PRO")
-                        .font(JPFont.eyebrow)
-                        .foregroundStyle(WebTheme.accent)
-                        .padding(.horizontal, 4)
-                        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(WebTheme.accent, lineWidth: 1))
-                }
-            }
-            .jpOutlineButton(.inline)
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(id)
-    }
-
-    private var writeField: some View {
-        HStack(spacing: JPSpace.xs) {
-            JPTextField(L("直したいことを書く", "What to change"), text: $text)
-                // 打った時点で 200 字に切る（サーバーの上限と同じ・`TripAILimits.maxRequest`）
-                .onChange(of: text) { _, new in text = TripAILimits.clipped(new) }
-                .submitLabel(.send)
-                .onSubmit(submit)
-                .accessibilityIdentifier("tripAI.revise")
-            Button(action: submit) {
-                Image(systemName: "arrow.up").font(.body.weight(.semibold))
-                    .frame(width: 36, height: 36)
-                    .foregroundStyle(WebTheme.accentText)
-                    .background(WebTheme.accentFill, in: Circle())
-                    .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(working || text.trimmingCharacters(in: .whitespaces).isEmpty)
-            .accessibilityLabel(L("直す", "Change"))
-        }
-        .padding(.leading, 14)
-        .padding(.trailing, 2)
-        .frame(minHeight: 48)
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(WebTheme.outline, lineWidth: 1))
-    }
-
-    private func submit() {
-        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty, !working else { return }
-        text = ""
-        writing = false
-        tweak(t)
     }
 }
 
