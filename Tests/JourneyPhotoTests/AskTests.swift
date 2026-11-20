@@ -198,6 +198,20 @@ final class AskLibraryTests: XCTestCase {
         XCTAssertEqual(AskLibrary.phrase(relaxed), "沖縄で冬に向く所")
     }
 
+    /// 読み取りの札に頼みの言い回しのかけら（「観光スポット教」）を出さない。おすすめは国内の所を先に（run 1608 の絵）
+    func testKeywordFragmentsAndDomesticFirst() throws {
+        XCTAssertNil(AskLibrary.keywordWord("観光スポット教"))
+        XCTAssertEqual(AskLibrary.keywordWord("滝"), "滝")
+        let rows = try AskSamples.ledger()
+        let q = AskLibrary.query(reading: SearchSentence.readByTable("おすすめの観光スポット教えて"),
+                                 intent: AskQuery.intent("おすすめの観光スポット教えて", reading: SearchSentence.readByTable("おすすめの観光スポット教えて")),
+                                 sentence: "おすすめの観光スポット教えて", spots: rows)
+        XCTAssertNil(q.keyword)
+        let abroad = try JSONDecoder.api.decode(OfficialSpot.self, from: Data(#"{"spotId":"sp_x","slug":"x","name":"ペリト・モレノ氷河","stage":"published","region":{"country":"アルゼンチン","prefecture":"サンタクルス州"}}"#.utf8))
+        let picks = AskLibrary(spots: [abroad] + rows, photos: []).pickSpots(.init())
+        XCTAssertEqual(picks.last?.spot.name, "ペリト・モレノ氷河", "海外の所が国内より先に並んだ")
+    }
+
     /// AI に渡す行は台帳と写真の文をデータとして囲む。写真は題と撮影地だけ（URL や作者の情報は渡さない）
     func testLinesAreFenced() throws {
         let rows = try AskSamples.ledger()

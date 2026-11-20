@@ -887,7 +887,8 @@ final class CriticalFlowTests: XCTestCase {
         tab(app, 1)
         let field = app.textFields["search.field"].firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 20), "探すの欄が無い")
-        enter("おすすめの観光スポット教えて\n", into: field, "探すの欄")
+        // 前の試験と同じ頼みだと、同じ日の控え（回数を使わない）から答えて帯が出ない（run 1608）。毎回ちがう頼みにする
+        enter("金沢でおすすめの観光スポットを教えて \(Int(Date().timeIntervalSince1970) % 100000)\n", into: field, "探すの欄")
         let band = app.buttons["search.ask.band"].firstMatch
         XCTAssertTrue(band.waitForExistence(timeout: 30), "使い切っても帯が出ない")
         XCTAssertTrue(band.label.contains("今日の AI は3回使いました"), "帯の文が違う: \(band.label)")

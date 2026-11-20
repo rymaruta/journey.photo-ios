@@ -3138,7 +3138,8 @@ final class ScreenshotTests: XCTestCase {
             }
             field.tap()
             guard waitForKeyboardFocus(field) else { return unreached(app, "探すの欄に焦点が来ない") }
-            field.typeText((mode.isEmpty ? "香川で夕日がきれいな所を教えて" : "おすすめの観光スポット教えて") + "\n")
+            // 使い切った絵は、ほかの試験と重ならない頼みにする（同じ日の同じ頼みは控えから出し、帯が出ない・run 1608）
+            field.typeText((mode.isEmpty ? "香川で夕日がきれいな所を教えて" : "京都で紅葉がきれいな所は？") + "\n")
             let answer = app.descendants(matching: .any)["search.ask.answer"].firstMatch
             guard answer.waitForExistence(timeout: 30) else {
                 return unreached(app, "search.ask.answer", probes: ["search.ask.loading", "search.ask.thread"])

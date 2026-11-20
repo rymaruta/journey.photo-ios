@@ -106,10 +106,16 @@ struct AskThreadView: View {
             } else {
                 if !a.chips.isEmpty { chipsRow(a.chips) }
                 if isLatest, let usage = engine.usage, a.usedAI {
-                    Label(usage.remainingLine, systemImage: "sparkle")
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.text3)
-                        .accessibilityIdentifier("search.ask.usage")
+                    // 印は飾り。読み上げと UI テストは字だけを読む（run 1608: Label のままだと「スパークルの星」と読んだ）
+                    HStack(spacing: 6) {
+                        Image(systemName: "sparkle").accessibilityHidden(true)
+                        Text(usage.remainingLine)
+                    }
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(usage.remainingLine)
+                    .accessibilityIdentifier("search.ask.usage")
                 }
                 switch a.state {
                 case .empty:
@@ -132,11 +138,15 @@ struct AskThreadView: View {
                         .accessibilityIdentifier("search.ask.note")
                 }
                 if !a.engineLine.isEmpty {
-                    Label(a.engineLine, systemImage: a.engine == .server ? "cloud" : "iphone")
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.text3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("search.ask.engine")
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: a.engine == .server ? "cloud" : "iphone").accessibilityHidden(true)
+                        Text(a.engineLine).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(a.engineLine)
+                    .accessibilityIdentifier("search.ask.engine")
                 }
             }
         }

@@ -70,10 +70,23 @@ struct AskLibrary {
         let words = ([reading.text].compactMap { $0 } + reading.unused).filter { w in
             q.place.map { !$0.contains(w) && !w.contains($0) } ?? true
         }
-        q.keyword = words.first { w in
+        q.keyword = words.compactMap(Self.keywordWord).first { w in
             RegionList.prefecture(named: w) == nil && !TripAIText.prefectures.contains(w) && !AskQuery.nearWords.contains(w)
         }
         return q
+    }
+
+    /// 頼みの言い回しのかけら（「観光スポット教えて」→「観光スポット教」）を語から落とす。残りが言い回しの語なら nil
+    /// （run 1608 の絵で、読み取りの札に「観光スポット教」が出ていた）
+    static func keywordWord(_ raw: String) -> String? {
+        var w = raw
+        for tail in ["教えて", "教え", "教", "作って", "作", "探して", "探", "調べて", "調", "組んで", "組"] where w.hasSuffix(tail) {
+            w = String(w.dropLast(tail.count))
+            break
+        }
+        let fillers: Set<String> = ["観光スポット", "スポット", "観光", "観光地", "所", "場所", "おすすめ", "オススメ", "旅行プラン", "プラン"]
+        guard !w.isEmpty, !fillers.contains(w), !SearchSentence.fillerWords.contains(w) else { return nil }
+        return w
     }
 
     /// 条件で選ぶ。近さで探すときは現在地から `nearKm` の中を近い順、それ以外は写真のある所を先に台帳の順
@@ -98,7 +111,10 @@ struct AskLibrary {
                 .sorted { ($0.distanceKm ?? .infinity) < ($1.distanceKm ?? .infinity) }
         } else {
             // 写真のある所を先に（札の顔が空にならない）。並びは崩さない
-            picks = picks.filter { $0.spot.hasPhoto } + picks.filter { !$0.spot.hasPhoto }
+            // 2026-11-20 判断（run 1608 の絵で「おすすめ」が海外の所から並んだ）: 国内（`country` が空）を先に、その中で写真のある所を先に
+            let domestic: (Pick) -> Bool = { ($0.spot.region?.country ?? "").isEmpty }
+            let order: (Pick) -> Int = { (domestic($0) ? 0 : 2) + ($0.spot.hasPhoto ? 0 : 1) }
+            picks = picks.enumerated().sorted { (order($0.element), $0.offset) < (order($1.element), $1.offset) }.map(\.element)
         }
         return Array(picks.prefix(limit))
     }
