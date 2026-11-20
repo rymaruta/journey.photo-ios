@@ -54,6 +54,13 @@ final class ToastCenter: ObservableObject {
 
     private var hideTask: Task<Void, Never>?
 
+    /// 知らせで覆ってはいけない所の上端（画面全体の座標・`ToastPlacement`）。地図の札のように、画面の下に押せる物を並べた
+    /// 画面が出している間だけ置く。nil ならいつもの所（タブの上）
+    ///
+    /// 2026-11-20（run 1604・1608 の `testMapSpotCardWishAndTapMapToClose`）: 地図の札の「行きたい」（y 779〜823）の上に、
+    /// 押したあとの知らせ（下から 116 の所・2行で約 780〜840）が重なり、もう一度押すと知らせを閉じるだけで「行きたい」が戻らなかった
+    @Published var keepClearAbove: CGFloat?
+
     /// 押せる一手（`actionTitle`・`action`）を付けて出す（1.1.83「カードにする」）。どちらも無ければ知らせだけ。
     /// 1.1.84 のまとめ: 「取り消す」（`undo`・トランク）と同じ部品に両方を残す。こちらで出すと前の「取り消す」は消える
     func show(_ text: String, kind: Message.Kind = .success, actionTitle: String? = nil, action: (() -> Void)? = nil) {
@@ -110,5 +117,16 @@ final class ToastCenter: ObservableObject {
         guard let undo else { return }
         dismiss()
         if !(await undo.run()) { show(undo.failure, kind: .failure) }
+    }
+}
+
+/// 知らせを出す高さ（下からの余白）。いつもはタブの上（116）。覆ってはいけない所があれば、その上端より 8 上に出す
+enum ToastPlacement {
+    static let base: CGFloat = 116
+    static let gap: CGFloat = 8
+
+    static func bottomPadding(containerMaxY: CGFloat, keepClearAbove: CGFloat?) -> CGFloat {
+        guard let top = keepClearAbove, top.isFinite, top > 0, top < containerMaxY else { return base }
+        return max(base, containerMaxY - top + gap)
     }
 }
