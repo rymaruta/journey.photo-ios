@@ -173,7 +173,9 @@ struct AskSpotCarousel: View {
                     .scrollTargetLayout()
                 }
                 .scrollTargetBehavior(.viewAligned)
-                .contentMargins(.horizontal, JPSpace.gutter, for: .scrollContent)
+                // 回 1619 の絵 11z2: contentMargins では1枚目の札の左が約 6pt（模型は 16）に寄った。
+                // 横に送って止まる位置（viewAligned）も含めて、安全域の余白で 16 にそろえる
+                .safeAreaPadding(.horizontal, JPSpace.gutter)
                 // 札の並びは画面の端まで（左右の余白の分だけ外へ出す）
                 .padding(.horizontal, -JPSpace.gutter)
                 .onChange(of: scrollTarget) { _, target in

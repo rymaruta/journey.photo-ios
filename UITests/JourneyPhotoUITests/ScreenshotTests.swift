@@ -3130,6 +3130,15 @@ final class ScreenshotTests: XCTestCase {
                 app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"]
             }
             app.launch()
+            // 回 1619: 使い切った絵のあと、次の起動が前のアプリを閉じられず（Terminate が 71 秒返らず）「Failed to terminate」で落ちた
+            // （run 1610 の明示の terminate と同じ形）。答えと地図を出したまま閉じさせない: 回の終わりに欄を消して答えを閉じ、
+            // ホームへ下げてから次を起動する
+            defer {
+                let clear = app.buttons["search.clear"].firstMatch
+                if clear.exists, clear.isHittable { clear.tap() }
+                XCUIDevice.shared.press(.home)
+                Thread.sleep(forTimeInterval: 1)
+            }
             let agree = app.buttons["legal.agree"]
             if agree.waitForExistence(timeout: 30) { agree.tap() }
             let tabBar = app.tabBars.firstMatch
