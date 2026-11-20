@@ -144,7 +144,8 @@ final class VisitedPrefecturesTests: XCTestCase {
     func testLevelsAndCountText() {
         XCTAssertEqual((0...6).map(VisitedPrefectures.level(forCount:)), [0, 1, 2, 3, 3, 3, 3])
         XCTAssertEqual(VisitedPrefectures.level(forCount: -3), 0)
-        XCTAssertEqual([0, 1, 8, 9, 10, 99].map(VisitedPrefectures.countText), ["", "1", "8", "9+", "9+", "9+"])
+        // 2026-11-20 owner 判断: 地図の数は 3 以上を「3+」にまとめる（4 回、9+ などを出さない）
+        XCTAssertEqual([0, 1, 2, 3, 4, 8, 9, 99].map(VisitedPrefectures.countText), ["", "1", "2", "3+", "3+", "3+", "3+", "3+"])
     }
 
     /// 2026-11-10（札 #510）: 同じ日の2回目もそのまま記録する（確かめは無い）
@@ -451,5 +452,16 @@ final class VisitedPrefecturesTests: XCTestCase {
                 XCTAssertFalse(code.contains(forbidden), "\(path) が \(forbidden) に触れている（報酬・公開と結ばない）")
             }
         }
+    }
+
+    /// 2026-11-20 owner「3回の時点で3＋でいいよ、意味は3回以上」: 字は「3+ 回」、読み上げは「3 回以上」
+    func testThreeOrMoreReadsAsThreePlus() {
+        XCTAssertEqual(VisitedMapText.visitCount(2), "2 回")
+        XCTAssertEqual(VisitedMapText.visitCount(3), "3+ 回")
+        XCTAssertEqual(VisitedMapText.visitCount(7), "3+ 回")
+        XCTAssertEqual(VisitedMapText.visitCountSpoken(3), "3 回以上")
+        XCTAssertEqual(VisitedMapText.prefectureAccessibility("東京都", count: 5, isCandidate: false), "東京都、3 回以上")
+        XCTAssertEqual(VisitedMapText.recorded("東京都", count: 4), "東京都を記録しました（3+ 回）")
+        XCTAssertFalse(VisitedMapText.changeAnnouncement("東京都", count: 9, visited: 3).contains("9"))
     }
 }

@@ -340,4 +340,12 @@ final class VisitedMapWiringTests: XCTestCase {
             XCTAssertFalse(text.contains("Color.red"), "\(path) に系統の赤")
         }
     }
+
+    /// 凡例の「3 回以上」の段は「3+ 回」と短く書き、読み上げは「3 回以上」と読む（2026-11-20 owner 判断）
+    func testLegendThreePlusIsShortButReadsInWords() throws {
+        let text = try source("Core/Text/VisitedMapText.swift")
+        XCTAssertTrue(text.contains("static var legendThreePlus: String { L(\"3+ 回\""), "凡例の 3 回以上の段が「3+ 回」でない")
+        let screen = try source("Features/Profile/VisitedMapScreen.swift")
+        XCTAssertTrue(screen.contains("凡例: 0 回、1 回、2 回、3 回以上"), "凡例の読み上げが「3 回以上」でない")
+    }
 }

@@ -53,7 +53,7 @@ final class VisitedMapModelTests: XCTestCase {
         for _ in 0..<5 { m.tap("京都府") }
         XCTAssertEqual(m.record.count("京都府"), 7, "続けて押した数だけ足す")
         XCTAssertEqual(m.quickBar?.prefecture, "京都府")
-        XCTAssertEqual(m.announcement, "京都府、7 回、1 回足しました")
+        XCTAssertEqual(m.announcement, "京都府、3 回以上、1 回足しました", "3 回以上は「3 回以上」と読む（2026-11-20 owner 判断）")
         // 札の ＋ も同じ日に確かめずに足す
         m.add("京都府")
         XCTAssertEqual(m.record.count("京都府"), 8)
@@ -72,7 +72,7 @@ final class VisitedMapModelTests: XCTestCase {
         XCTAssertEqual(m.record.count("長野県"), 3, "長押しでは足さない")
         XCTAssertEqual(m.quickBar?.prefecture, "長野県")
         XCTAssertEqual(m.lightTick, ticks, "長押しは記録を変えない")
-        XCTAssertEqual(m.announcement, "長野県、3 回")
+        XCTAssertEqual(m.announcement, "長野県、3 回以上")
         m.quickRemove()
         XCTAssertEqual(m.record.count("長野県"), 2, "［−］1 回で 1 回減る（確かめは出さない）")
         XCTAssertNil(m.toast)

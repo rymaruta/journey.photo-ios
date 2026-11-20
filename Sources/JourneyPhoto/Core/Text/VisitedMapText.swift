@@ -44,7 +44,7 @@ enum VisitedMapText {
 
     /// 「東京都、5 回」「東京都、未」「東京都、写真の候補」
     static func prefectureAccessibility(_ name: String, count: Int, isCandidate: Bool) -> String {
-        if count > 0 { return L("\(name)、\(count) 回", "\(name), \(count) \(count == 1 ? "time" : "times")") }
+        if count > 0 { return L("\(name)、\(visitCountSpoken(count))", "\(name), \(visitCountSpoken(count))") }
         if isCandidate { return L("\(name)、写真の候補", "\(name), suggested from photos") }
         return L("\(name)、未", "\(name), not yet")
     }
@@ -52,7 +52,7 @@ enum VisitedMapText {
     /// 数が変わったあとの読み上げ「東京都、6 回。行った県 31」
     static func changeAnnouncement(_ name: String, count: Int, visited: Int) -> String {
         if count == 0 { return L("\(name)の記録を外しました。行った県 \(visited)", "Removed \(name). Visited \(visited)") }
-        return L("\(name)、\(count) 回。行った県 \(visited)", "\(name), \(count). Visited \(visited)")
+        return L("\(name)、\(visitCountSpoken(count))。行った県 \(visited)", "\(name), \(visitCountSpoken(count)). Visited \(visited)")
     }
 
     /// 県の読み上げの操作（案 A・2026-11-10）。既定の操作は「1 回足す」、ほかに「1 回減らす」「詳しく」
@@ -73,18 +73,27 @@ enum VisitedMapText {
 
     /// 帯から足したあとの読み上げ「東京都、3 回、1 回足しました」
     static func quickAdded(_ name: String, count: Int) -> String {
-        L("\(name)、\(count) 回、1 回足しました", "\(name), \(count), added one")
+        L("\(name)、\(visitCountSpoken(count))、1 回足しました", "\(name), \(visitCountSpoken(count)), added one")
     }
 
     /// 帯から減らしたあとの読み上げ「東京都、2 回、1 回減らしました」（0 回は「未」）
     static func quickRemoved(_ name: String, count: Int) -> String {
         count == 0 ? L("\(name)、未、1 回減らしました", "\(name), not yet, removed one")
-                   : L("\(name)、\(count) 回、1 回減らしました", "\(name), \(count), removed one")
+                   : L("\(name)、\(visitCountSpoken(count))、1 回減らしました", "\(name), \(visitCountSpoken(count)), removed one")
     }
 
     // MARK: - 札（県）
 
-    static func visitCount(_ n: Int) -> String { L("\(n) 回", n == 1 ? "1 time" : "\(n) times") }
+    /// 回数の字。3 回以上は「3+ 回」（2026-11-20 owner「3回の時点で3＋でいいよ、意味は3回以上」）
+    static func visitCount(_ n: Int) -> String {
+        n > VisitedPrefectures.displayCap ? L("\(VisitedPrefectures.countText(n)) 回", "\(VisitedPrefectures.countText(n)) times")
+                                         : L("\(n) 回", n == 1 ? "1 time" : "\(n) times")
+    }
+    /// 回数の読み上げ。3 回以上は「3 回以上」と読む（「3 たす」と読ませない）
+    static func visitCountSpoken(_ n: Int) -> String {
+        n > VisitedPrefectures.displayCap ? L("\(VisitedPrefectures.displayCap + 1) 回以上", "\(VisitedPrefectures.displayCap + 1) or more times")
+                                         : visitCount(n)
+    }
 
     static var recentDates: String { L("最近の日付", "Recent dates") }
     static var noDates: String { L("まだ記録がありません", "No record yet") }
@@ -107,12 +116,12 @@ enum VisitedMapText {
     static var recordCandidateAction: String { L("記録する", "Record") }
 
     static func recorded(_ name: String, count: Int) -> String {
-        L("\(name)を記録しました（\(count) 回）", "Recorded \(name) (\(count))")
+        L("\(name)を記録しました（\(visitCount(count))）", "Recorded \(name) (\(visitCount(count)))")
     }
 
     static func reduced(_ name: String, count: Int) -> String {
         count == 0 ? L("\(name)の記録を外しました", "Cleared \(name)")
-                   : L("\(name)を 1 回減らしました（\(count) 回）", "Removed one for \(name) (\(count))")
+                   : L("\(name)を 1 回減らしました（\(visitCount(count))）", "Removed one for \(name) (\(visitCount(count)))")
     }
 
     static var recordedAllToast: String { L("47県を記録しました", "Recorded all 47") }
@@ -139,7 +148,9 @@ enum VisitedMapText {
     static var legendNone: String { L("未", "Not yet") }
     static var legendCandidate: String { L("写真の候補", "Suggested") }
     static var legendZero: String { L("0 回", "0×") }
-    static var legendThreePlus: String { L("3 回以上", "3+") }
+    /// 凡例の「3 回以上」の段。2026-11-20 owner 判断: 字を短く「3+ 回」と書く（ほかの段の「1 回」「2 回」と単位をそろえる）。
+    /// 読み上げは凡例全体の `accessibilityLabel` が「3 回以上」と読む（「3 たす」と読ませない）
+    static var legendThreePlus: String { L("3+ 回", "3+") }
     static func legendTimes(_ n: Int) -> String { L("\(n) 回", "\(n)×") }
 
     // MARK: - 状態

@@ -103,7 +103,7 @@ struct VisitedPrefectureCard: View {
             stepButton(systemName: "minus", label: VisitedMapText.removeVisit, enabled: count > 0,
                        id: "visitedMap.card.minus") { model.remove(prefecture) }
             VStack(spacing: 0) {
-                Text(count > 0 ? String(count) : "–")
+                Text(count > 0 ? VisitedPrefectures.countText(count) : "–")
                     .font(JPFont.figureLarge)
                     .foregroundStyle(WebTheme.foreground)
                 Text(count > 0 ? L("回", count == 1 ? "time" : "times") : VisitedMapText.legendNone)
@@ -112,7 +112,7 @@ struct VisitedPrefectureCard: View {
             }
             .frame(minWidth: 72)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(count > 0 ? VisitedMapText.visitCount(count) : VisitedMapText.legendNone)
+            .accessibilityLabel(count > 0 ? VisitedMapText.visitCountSpoken(count) : VisitedMapText.legendNone)
             stepButton(systemName: "plus", label: VisitedMapText.addVisit,
                        enabled: count < VisitedPrefectures.maxCount,
                        id: "visitedMap.card.plus") { model.add(prefecture) }
