@@ -66,7 +66,21 @@ struct TripAIService {
         return try await call(Request(action: "status"), as: UsageBody.self).usage
     }
 
-    /// 端末の AI で組めた回を数える（無料の人だけ。上限なら `.limit`）
+    /// 組む前に1回取る（札 #652・2026-11-20 owner 承認）。**端末の AI の回も、無料も Pro も同じ上限で数える**
+    /// （旅行プランの AI: 無料 1日5回かつ月30回、Pro 1日20回かつ月300回）。口は「AI に頼む」と同じ `reserve`（`kind: "trip"`）。
+    /// 取れなければ `AskService.Failure.limit`
+    func reserve(via: AskService.Via) async throws -> AskUsage {
+        if TripAIFixture.isOn {
+            if mode == "usedUp" { throw AskService.Failure.limit(.day) }
+            return try AskFixture.reserve(kind: .trip, via: via)
+        }
+        return try await AskService(api: api).reserve(kind: .trip, via: via)
+    }
+
+    private var mode: String { TripAIFixture.mode }
+
+    /// 端末の AI で組めた回を数える（無料の人だけ。上限なら `.limit`）。
+    /// 2026-11-20（札 #652）から組む前の `reserve` で数える。古いサーバーの口として残す（アプリからは呼ばない）
     func countDeviceUse() async throws -> Usage {
         if let fixture = TripAIFixture.usage { return fixture }
         return try await call(Request(action: "count"), as: UsageBody.self).usage
@@ -121,10 +135,14 @@ enum TripAIFixture {
         #endif
     }
 
+    /// 見本の回数。2026-11-20（札 #652）: サーバーの AI で組むのは Pro だけになったので、見本はふだん Pro
+    /// （端末の AI の無いシミュレーターでも AI で組んだ形を撮る）。`usedUp` と `free` は無料の人
     static var usage: TripAIService.Usage? {
         guard isOn else { return nil }
         let left = mode == "usedUp" ? 0 : 3
-        return .init(tier: "free", used: TripAILimits.free - left, limit: TripAILimits.free, remaining: left,
+        let free = mode == "usedUp" || mode == "free"
+        let limit = free ? TripAILimits.free : TripAILimits.pro
+        return .init(tier: free ? "free" : "pro", used: limit - left, limit: limit, remaining: left,
                      resetsOn: TripAIText.nextReset(), countsDevice: true)
     }
 

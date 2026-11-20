@@ -187,6 +187,11 @@ struct TripAICard: View {
         case .silent:
             bandRow(icon: "exclamationmark.circle", title: L("AI が答えなかったので、AI なしで組みました", "AI didn't answer, so this was planned without AI"),
                     sub: L("AI でやり直す", "Try AI again"), action: redo, id: "tripAI.band.silent")
+        case .proOnly:
+            // 2026-11-20（札 #652）: 端末の AI が無い iPhone の無料の人。サーバーの AI は Pro だけ
+            bandRow(icon: "iphone", title: L("この iPhone では AI で組めないため、AI なしで組みました", "AI isn't available on this iPhone, so this was planned without AI"),
+                    sub: L("Pro ならサーバーの AI で組めます", "With Pro, our server's AI can plan it"),
+                    action: openPro, id: "tripAI.band.proOnly")
         }
     }
 

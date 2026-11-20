@@ -283,19 +283,27 @@ final class SearchSentenceTests: XCTestCase {
             "Sources/JourneyPhoto/Features/Search/SearchView.swift"), encoding: .utf8)
     }
 
-    /// 「検索」で文を読む（押す回数 0 回で季節と時間帯に入る）。最近の検索から選んだ文も読む
+    /// 「検索」で文を読む（押す回数 0 回で季節と時間帯に入る）。最近の検索から選んだ文も読む。
+    /// 2026-11-20（札 #652）: 送った字は `submit` が分ける。頼みと質問の形は AI の答え（`startAsk`）、
+    /// それ以外は今までどおり文を読む（`readSentence`）。語を並べた文は**言葉の表だけ**で読む（回数を数えずに AI を使わない）
     func testSearchViewReadsTheSentenceOnSubmitAndOnRecentPick() throws {
         let source = try searchViewSource()
         let submit = try XCTUnwrap(source.range(of: ".onSubmit {"))
         let after = source[submit.upperBound...].prefix(200)
-        XCTAssertTrue(after.contains("readSentence(query)"), "「検索」で文を読んでいない")
+        XCTAssertTrue(after.contains("submit(query)"), "「検索」で文を読んでいない")
         let pick = try XCTUnwrap(source.range(of: "private func pickRecent(_ word: String) {"))
-        XCTAssertTrue(source[pick.upperBound...].prefix(300).contains("readSentence(word)"), "最近の検索から選んだ文を読んでいない")
+        XCTAssertTrue(source[pick.upperBound...].prefix(300).contains("submit(word)"), "最近の検索から選んだ文を読んでいない")
+        let route = try XCTUnwrap(source.range(of: "private func submit(_ raw: String) {"))
+        let body = source[route.upperBound...].prefix(300)
+        XCTAssertTrue(body.contains("AskQuery.form(raw, scope: model.scope) == .ask"))
+        XCTAssertTrue(body.contains("startAsk(raw)"))
+        XCTAssertTrue(body.contains("readSentence(raw)"))
         // 0件と決まったら1つ外す。外した札は押すと戻る
         XCTAssertTrue(source.contains(".onChange(of: needsRelaxing)"), "0件のときに外し方を見ていない")
         XCTAssertTrue(source.contains("restoreReading(chip)"), "外した札を押しても戻らない")
-        // 読むのは端末の中だけ（`SearchSentenceReader.live`）
-        XCTAssertTrue(source.contains("await SearchSentenceReader.live(sentence)"))
+        // 読むのは端末の中だけ、言葉の表だけ（端末の AI で読むと回数を数えずに AI を使う）
+        XCTAssertTrue(source.contains("let result = SearchSentence.readByTable(sentence)"))
+        XCTAssertFalse(source.contains("SearchSentenceReader.live("), "語の文を端末の AI で読んでいる（回数を数えていない）")
     }
 
     /// 端末の AI は投稿の候補（#622）と同じ判定を通す（写しを作らない）

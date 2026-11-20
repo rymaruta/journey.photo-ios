@@ -842,6 +842,63 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(recent.waitForNonExistence(timeout: 5), "消す印を押しても最近の言葉が残る")
     }
 
+    // MARK: - 4b2. 探す: AI に頼む（札 #652）
+
+    /// **頼みの形で送ると、結果の代わりに AI の答えが出る。** 答えの下に「AI の答えは間違うことがあります」と残りの回数、
+    /// 下の欄で続けて聞ける。作りの質問は断りの1行だけ（回数を使わない）。
+    /// 見本の口（`-JPAskFixture`・サーバーへは送らず、端末の AI も呼ばない）で流す
+    func testSearchAskAnswersFollowsUpAndRefuses() {
+        let app = launch(["-JPAskFixture", "YES"])
+        tab(app, 1)
+        let field = app.textFields["search.field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 20), "探すの欄が無い")
+        // 欄の名前は「AI に聞く、または探す」（見本の字は入れ替わる）
+        XCTAssertEqual(field.label, "AI に聞く、または探す", "欄の読み上げの名前が違う")
+        enter("おすすめの観光スポット教えて\n", into: field, "探すの欄")
+        let answer = app.descendants(matching: .any)["search.ask.answer"].firstMatch
+        XCTAssertTrue(answer.waitForExistence(timeout: 30), "頼みの形で送っても AI の答えが出ない")
+        XCTAssertTrue(app.staticTexts["search.ask.disclaimer"].firstMatch.waitForExistence(timeout: 5),
+                      "答えの下に「AI の答えは間違うことがあります」が無い")
+        let usage = app.descendants(matching: .any)["search.ask.usage"].firstMatch
+        XCTAssertTrue(usage.waitForExistence(timeout: 5), "残りの回数の1行が無い")
+        XCTAssertTrue(usage.label.contains("今日はあと2回"), "残りの回数の文が違う: \(usage.label)")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "AI に頼む（答え）"
+        shot.lifetime = .keepAlways
+        add(shot)
+
+        // 続けて聞く: 作りの質問は断りの1行（AI を呼ばない）
+        let follow = app.textFields["search.ask.followUp"].firstMatch
+        XCTAssertTrue(follow.waitForExistence(timeout: 10), "続けて聞く欄が無い")
+        reveal(follow, in: app, "続けて聞く欄")
+        enter("このアプリの作りを教えて\n", into: follow, "続けて聞く欄")
+        let refusal = app.descendants(matching: .any)["search.ask.refusal"].firstMatch
+        XCTAssertTrue(refusal.waitForExistence(timeout: 10), "作りの質問を断っていない")
+        XCTAssertTrue(app.staticTexts["この質問にはお答えできません。旅や写真、アプリの使い方のことなら聞いてください。"].firstMatch.exists,
+                      "断りの1行が違う")
+        // 欄を消すと今の字の検索に戻る
+        app.buttons["search.clear"].firstMatch.tap()
+        XCTAssertTrue(answer.waitForNonExistence(timeout: 5), "欄を消しても答えが残る")
+    }
+
+    /// 今日の分を使い切ったら、答えの上に帯1本（確かめのダイアログは出さない）。答えは言葉の表で出し続ける
+    func testSearchAskUsedUpShowsOneBand() {
+        let app = launch(["-JPAskFixture", "YES", "-JPAskFixtureMode", "usedUpDay"])
+        tab(app, 1)
+        let field = app.textFields["search.field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 20), "探すの欄が無い")
+        enter("おすすめの観光スポット教えて\n", into: field, "探すの欄")
+        let band = app.buttons["search.ask.band"].firstMatch
+        XCTAssertTrue(band.waitForExistence(timeout: 30), "使い切っても帯が出ない")
+        XCTAssertTrue(band.label.contains("今日の AI は3回使いました"), "帯の文が違う: \(band.label)")
+        XCTAssertEqual(app.alerts.count, 0, "確かめのダイアログを出した")
+        XCTAssertTrue(app.descendants(matching: .any)["search.ask.answer"].firstMatch.exists, "使い切ったら答えが出ない")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "AI に頼む（今日の分を使い切った）"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
     // MARK: - 4c. 見つける（使い勝手の見直し 2026-11-16 A1・A4・A7・A9・A10。A1 は 2026-11-18 に2回たたくいいねだけ）
 
     /// A1: 写真を2回たたくといいね（大きく見る画面は開かない）、1回押すと今までどおり大きく見る。

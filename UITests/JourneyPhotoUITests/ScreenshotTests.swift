@@ -3109,6 +3109,64 @@ final class ScreenshotTests: XCTestCase {
         shoot(app, "11d-探す（季節と時間帯で絞る・秋の夕方）")
     }
 
+    /// **AI に頼む**（札 #652・案 A・2026-11-20 owner 承認）。欄の左は真鍮の ✦、見本の字は「AI に聞いてみる: …」。
+    /// 頼みの形で送ると結果の代わりに答え（観光スポットの札、地図のピン、みんなの写真、旅行プランにする）。
+    /// 作りの質問は断りの1行。今日の分を使い切ったら帯1本。見本の口（`-JPAskFixture`）で、サーバーへは送らない
+    func testCapturesSearchAsk() {
+        for mode in ["", "usedUpDay"] {
+            let app = XCUIApplication.jp()
+            app.launchArguments += ["-legal.consent.version", "0"]
+            app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+            app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+            app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+            app.launchArguments += ["-JPAskFixture", "YES"]
+            if !mode.isEmpty { app.launchArguments += ["-JPAskFixtureMode", mode] }
+            app.launch()
+            let agree = app.buttons["legal.agree"]
+            if agree.waitForExistence(timeout: 30) { agree.tap() }
+            let tabBar = app.tabBars.firstMatch
+            guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 1 else { return unreached(app, "tabBar") }
+            tabBar.buttons.element(boundBy: 1).tap()
+            let field = app.textFields["search.field"].firstMatch
+            guard field.waitForExistence(timeout: 20) else { return unreached(app, "search.field") }
+            if mode.isEmpty {
+                Thread.sleep(forTimeInterval: 2)
+                shoot(app, "11z1-探す（AI に聞ける欄）")
+            }
+            field.tap()
+            guard waitForKeyboardFocus(field) else { return unreached(app, "探すの欄に焦点が来ない") }
+            field.typeText((mode.isEmpty ? "香川で夕日がきれいな所を教えて" : "おすすめの観光スポット教えて") + "\n")
+            let answer = app.descendants(matching: .any)["search.ask.answer"].firstMatch
+            guard answer.waitForExistence(timeout: 30) else {
+                return unreached(app, "search.ask.answer", probes: ["search.ask.loading", "search.ask.thread"])
+            }
+            // 札の写真と地図が描かれるのを待つ
+            Thread.sleep(forTimeInterval: 4)
+            if !mode.isEmpty {
+                shoot(app, "11z4-探す（AI に頼む、今日の分を使い切った）")
+                app.terminate()
+                continue
+            }
+            shoot(app, "11z2-探す（AI に頼む、答え）")
+            let follow = app.textFields["search.ask.followUp"].firstMatch
+            guard follow.waitForExistence(timeout: 10) else { return unreached(app, "search.ask.followUp") }
+            var pushes = 0
+            while !follow.isHittable, pushes < 8 {
+                app.swipeUp()
+                pushes += 1
+            }
+            follow.tap()
+            guard waitForKeyboardFocus(follow) else { return unreached(app, "続けて聞く欄に焦点が来ない") }
+            follow.typeText("このアプリの作りを教えて\n")
+            guard app.descendants(matching: .any)["search.ask.refusal"].firstMatch.waitForExistence(timeout: 10) else {
+                return unreached(app, "search.ask.refusal")
+            }
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "11z3-探す（AI に頼む、作りの質問は断る）")
+            app.terminate()
+        }
+    }
+
     /// **文で探す**（札 #623 の案2・2026-11-15 判断）。「京都 紅葉 夜」と打って「検索」を押すと、
     /// 字の語「京都」と季節「秋」と時間帯「夜」の札が「こう読みました」に出て、季節と時間帯のチップも選んだ状態になる。
     /// 札を押すと外れる。「雨でも撮れる所」は絞らず、そのことを1行で言う。

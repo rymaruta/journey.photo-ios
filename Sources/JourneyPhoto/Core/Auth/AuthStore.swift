@@ -355,6 +355,8 @@ final class AuthStore: ObservableObject {
         ExitTrail.keepSignOut(cause, detail: detail, defaults: trailDefaults)
         // 雑誌の Vol. の番号のために覚えた自分の写真の一覧を手放す（`MagazineVolume`・2026-11-19）
         MagazineVolume.forget()
+        // 探すの「AI に頼む」の履歴（答えの控えと、最近の検索に混ぜた頼みの文）はログアウトで消す（札 #652・2026-11-20 owner 承認）
+        AskHistoryStore().forgetOnSignOut(userId: userId)
         isSignedOutUncertain = false
         signedOutByExpiry = byExpiry
         // 端末から消せなくても**画面はログアウトの扱いにする**（ここで止めると、押したのに

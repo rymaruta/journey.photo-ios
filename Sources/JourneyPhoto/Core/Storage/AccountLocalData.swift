@@ -46,6 +46,8 @@ enum AccountLocalData {
         RecentSongsStore(defaults: defaults).removeData(for: userId)
         // 探すの「最近の検索」（2026-11-14）
         RecentSearchesStore(defaults: defaults).removeData(for: userId)
+        // 探すの「AI に頼む」の答えの控え（2026-11-20・札 #652）
+        AskHistoryStore(defaults: defaults).removeAll(userId: userId)
         // 投稿の撮影地の候補に出す「最近使った撮影地」（2026-11-16・A11）
         RecentSearchesStore.places(defaults: defaults).removeData(for: userId)
         StoryDraftStore(defaults: defaults, directory: draftDirectory).removeData(for: userId)
