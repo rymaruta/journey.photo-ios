@@ -34,6 +34,7 @@ final class NoMiddleDotSweepTests: XCTestCase {
         "PostSuggest.swift|・",                         // 端末の AI の答えから中黒を「、」に直す字（#622）
         "PostSuggest.swift|·",                         // 同上
         "TripShareService.swift|金沢・福井の旅",
+        "AskAnswer.swift|-・•*●○◆■▪︎–—",              // AI の答えの箇条の頭の印を読む字（札 #663・区切りではない）
     ]
 
     private var sources: URL {

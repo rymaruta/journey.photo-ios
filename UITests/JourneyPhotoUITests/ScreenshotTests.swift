@@ -653,7 +653,8 @@ final class ScreenshotTests: XCTestCase {
                 let field = app.textFields["search.field"].firstMatch
                 if field.exists, field.isHittable {
                     field.tap()
-                    field.typeText("zzzz-no-photo-result")
+                    // 2026-11-20（札 #662）: 打っている間は結果を変えない。キーボードの「検索」で探す（押すとキーボードも閉じる）
+                    field.typeText("zzzz-no-photo-result\n")
                     Thread.sleep(forTimeInterval: 2)
                     if app.buttons["search.emptyMap"].firstMatch.exists {
                         shoot(app, "11b-探す（0件から地図へ）")
@@ -662,8 +663,7 @@ final class ScreenshotTests: XCTestCase {
                     // 出たままだとタブの帯を覆い、「マップ」を押してもキーボードに当たり（13 が探す画面の
                     // まま）、右下の「マイページ」は🎤（音声入力）キーに当たって「Enable Dictation?」の札が
                     // 開いた。以降の操作が全部札に当たり、15・20・21・30・31・60・41 が黙って欠けていた。
-                    // 焦点のあるうちに改行で確定する（焦点の無い `typeText` は失敗として記録される）
-                    field.typeText("\n")
+                    // 「検索」（上の改行）で閉じた。焦点の無い `typeText` は失敗として記録されるので、ここでは打たない
                     // 消すボタンは入力欄の外にある自前のボタン（`search.clear`）。OS の「Clear text」は無い。
                     // 見つからなくても落とさない（この試験の決まり: 出なければ撮らないだけ）
                     let clear = app.buttons["search.clear"].firstMatch
@@ -3113,7 +3113,9 @@ final class ScreenshotTests: XCTestCase {
     /// 頼みの形で送ると結果の代わりに答え（観光スポットの札、地図のピン、みんなの写真、旅行プランにする）。
     /// 作りの質問は断りの1行。今日の分を使い切ったら帯1本。見本の口（`-JPAskFixture`）で、サーバーへは送らない
     func testCapturesSearchAsk() {
-        for mode in ["", "usedUpDay"] {
+        // "bullets": 端末の AI が「- 名前: 説明」の箇条で答えた形（札 #663）。文は1〜2文、理由は札の名前の下、札に無い名前は出さない
+        // "large": 同じ箇条の答えを大きな字（アクセシビリティの L）で。札の幅が 86% に広がり、崩れないかを見る（案A）
+        for mode in ["", "usedUpDay", "bullets", "large"] {
             let app = XCUIApplication.jp()
             app.launchArguments += ["-legal.consent.version", "0"]
             app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -3123,7 +3125,10 @@ final class ScreenshotTests: XCTestCase {
             // ログインした画面を撮る（ログインしていないと AI を使わず言葉の表で答えるので、答えと帯の絵にならない）
             app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
             app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
-            if !mode.isEmpty { app.launchArguments += ["-JPAskFixtureMode", mode] }
+            if !mode.isEmpty { app.launchArguments += ["-JPAskFixtureMode", mode == "large" ? "bullets" : mode] }
+            if mode == "large" {
+                app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"]
+            }
             app.launch()
             let agree = app.buttons["legal.agree"]
             if agree.waitForExistence(timeout: 30) { agree.tap() }
@@ -3139,15 +3144,42 @@ final class ScreenshotTests: XCTestCase {
             field.tap()
             guard waitForKeyboardFocus(field) else { return unreached(app, "探すの欄に焦点が来ない") }
             // 使い切った絵は、ほかの試験と重ならない頼みにする（同じ日の同じ頼みは控えから出し、帯が出ない・run 1608）
-            field.typeText((mode.isEmpty ? "香川で夕日がきれいな所を教えて" : "京都で紅葉がきれいな所は？") + "\n")
+            // 同じ日の同じ頼みは控えから出す（AI を呼ばない）ので、大きな字の回は文を少し変える
+            let ask = mode == "usedUpDay" ? "京都で紅葉がきれいな所は？"
+                : (mode == "bullets" ? "香川でおすすめの観光スポットを教えて"
+                   : (mode == "large" ? "香川のおすすめの観光スポットを教えて" : "香川で夕日がきれいな所を教えて"))
+            field.typeText(ask)
+            // AI に頼むのは欄の右の送信のボタンだけ（札 #662）。押す前の絵（送信のボタン）を撮ってから押す
+            let send = app.buttons["search.send"].firstMatch
+            guard send.waitForExistence(timeout: 5) else { return unreached(app, "search.send") }
+            if mode.isEmpty {
+                Thread.sleep(forTimeInterval: 1)
+                shoot(app, "11z0-探す（AI に送る前・送信のボタン）")
+            }
+            send.tap()
             let answer = app.descendants(matching: .any)["search.ask.answer"].firstMatch
             guard answer.waitForExistence(timeout: 30) else {
                 return unreached(app, "search.ask.answer", probes: ["search.ask.loading", "search.ask.thread"])
             }
             // 札の写真と地図が描かれるのを待つ
             Thread.sleep(forTimeInterval: 4)
-            if !mode.isEmpty {
+            if mode == "usedUpDay" {
                 shoot(app, "11z4-探す（AI に頼む、今日の分を使い切った）")
+                continue
+            }
+            if mode == "bullets" {
+                shoot(app, "11z5-探す（AI に頼む、箇条書きの答えを札に振り分けた）")
+                // 札を横に送ると、地図のピンが大きくなる（案A）。送った後の絵も撮る
+                let card = app.descendants(matching: .any)["search.ask.card"].firstMatch
+                if card.waitForExistence(timeout: 5) {
+                    card.swipeLeft()
+                    Thread.sleep(forTimeInterval: 1.5)
+                    shoot(app, "11z7-探す（AI に頼む、札を横に送った）")
+                }
+                continue
+            }
+            if mode == "large" {
+                shoot(app, "11z6-探す（AI に頼む、大きな字）")
                 continue
             }
             shoot(app, "11z2-探す（AI に頼む、答え）")
@@ -3160,7 +3192,10 @@ final class ScreenshotTests: XCTestCase {
             }
             follow.tap()
             guard waitForKeyboardFocus(follow) else { return unreached(app, "続けて聞く欄に焦点が来ない") }
-            follow.typeText("このアプリの作りを教えて\n")
+            follow.typeText("このアプリの作りを教えて")
+            let followSend = app.buttons["search.ask.send"].firstMatch
+            guard followSend.waitForExistence(timeout: 5) else { return unreached(app, "search.ask.send") }
+            followSend.tap()
             guard app.descendants(matching: .any)["search.ask.refusal"].firstMatch.waitForExistence(timeout: 10) else {
                 return unreached(app, "search.ask.refusal")
             }

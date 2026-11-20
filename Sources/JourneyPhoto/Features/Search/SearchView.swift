@@ -28,6 +28,9 @@ struct SearchView: View {
     /// 引き下げ・「もう一度試す」の読み直しの最中
     @State private var isReloading = false
     @State private var query = ""
+    /// 送った字（2026-11-20 判断・札 #662・`SearchSubmit`）。**結果と答えはこの字で出す。** 欄の字（`query`）を打っている間は
+    /// 変えない（人を探すときだけ打つたびに追う）。送信のボタン、キーボードの「検索」、最近の語、タグのチップで入れ替わる
+    @State private var searched = ""
     /// 探す口に焦点があるか。**探すの札の上で見出しの「探す」を押したら、ここに字を打てるようにする**
     /// （2026-10-21・見出しの3つをどのタブにも置いたので、探すの札では押しても何も起きなかった）
     @FocusState private var fieldFocused: Bool
@@ -132,6 +135,14 @@ struct SearchView: View {
                         .transition(.opacity)
                 }
                 searchField
+                // 2026-11-20 判断（札 #662）: 途中の字（「おすすめの」）では AI に送れない。何をすれば送れるかを欄の下に1行だけ
+                if SearchSubmit.showsKeepTyping(text: query, scope: model.scope) {
+                    Text(AskQuery.keepTypingLine)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
+                        .padding(.horizontal, JPSpace.gutter)
+                        .accessibilityIdentifier("search.keepTyping")
+                }
                 // 2026-11-16 判断（A10）: 範囲のチップ（すべて・写真・人・タグ・撮影地）は**字を打ってから**出す。
                 // 打つ前に押しても効く中身が無い。選んでいる範囲があれば、外せるように残す（`SearchHeader.showsScopeChips`）
                 if SearchHeader.showsScopeChips(query: query, scopeIsAll: model.scope == .all) {
@@ -167,7 +178,7 @@ struct SearchView: View {
                     }
                     if !askShown {
                     // 文で探したら、どう読んだかを結果のいちばん上に（札 #623・押すと外れる）
-                    if isReadingSentence || SearchSentence.showsReading(reading, query: query, filter: model.timeFilter) {
+                    if isReadingSentence || SearchSentence.showsReading(reading, query: searched, filter: model.timeFilter) {
                         readingSection
                     }
                     // 欄が空の間は、前に探した言葉を上に（押すとその言葉で探す・2026-11-14 判断）
@@ -272,15 +283,15 @@ struct SearchView: View {
             askTask?.cancel()
             ask.reset()
         }
+        // 2026-11-20 判断（札 #662）: 打っている間は結果も答えも変えない。欄を空にしたときと「人」のときだけ（`SearchSubmit`）
         .onChange(of: query) { _, newValue in
-            // 読み取りで入れた字のままでなければ、読み取りを捨てる（打ち直した・×で消した）
+            apply(SearchSubmit.plan(.typed, text: newValue, scope: model.scope, searched: searched))
+        }
+        // 結果は送った字で探す（写真は手元で絞り、人は 300ms 待ってから探す）
+        .onChange(of: searched) { _, newValue in
+            // 読み取りで入れた字のままでなければ、読み取りを捨てる（打ち直して送った・×で消した）
             if let current = reading, !SearchSentence.keepsReading(current, afterQueryChange: newValue) {
                 reading = nil
-            }
-            // 頼んだ文から打ち替えた・×で消したら、答えを閉じて今の字の検索に戻る（答えは端末の控えに残る）
-            if ask.isActive, newValue.trimmingCharacters(in: .whitespacesAndNewlines) != ask.firstQuestion {
-                askTask?.cancel()
-                ask.reset()
             }
             Task { await model.search(newValue, environment: environment) }
         }
@@ -302,9 +313,9 @@ struct SearchView: View {
         // body の中で作ると、索引・別名が届いた字で画面が止まる）。作り直している間は前の索引で当てる。
         // 発見の表紙・季節の案内の詳細を重ねたとき・画面に戻ったときは、材料が同じなので作り直さない（確かめ役の指摘）
         .task(id: SearchSpotHits.IndexNeed(generation: spotMaterialGeneration,
-                                           needed: !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)) {
+                                           needed: !searched.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)) {
             let need = SearchSpotHits.IndexNeed(generation: spotMaterialGeneration,
-                                                needed: !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                                needed: !searched.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             guard SearchSpotHits.shouldBuild(need, builtGeneration: spotSearchIndexGeneration,
                                              hasSpots: !officialSpots.isEmpty) else { return }
             let spots = officialSpots, aliases = spotAliases
@@ -325,7 +336,7 @@ struct SearchView: View {
         // 索引は語が入ったときに取る（取れなければ節を出さないだけ・写真の検索はそのまま）
         // **語が変わるたびに見直す**（取れていなければ取り直す・取れたら何もしない。
         // `fetchIndex` は控えを持ち、404 は60秒覚えるので叩きすぎない）
-        .task(id: SpotIndexNeed(query: query, filter: model.timeFilter)) {
+        .task(id: SpotIndexNeed(query: searched, filter: model.timeFilter)) {
             // 撮影スポットの索引は語が入ったとき・季節／時間帯を選んだときに要る。
             // 発見の顔でも1度は取る（「季節・時間帯から探す」は季節の案内を持つ撮影地だけでも出す。
             // `fetchIndex` は控えを持つので叩きすぎない）
@@ -333,7 +344,7 @@ struct SearchView: View {
                 await loadSpotIndex(force: false)
             }
             // 別名は語で当てるときだけ要る（季節・時間帯だけで絞っているときは取らない）
-            guard !query.isEmpty else { return }
+            guard !searched.isEmpty else { return }
             // 別名は控えがあれば通信しない（取れなかった回は1分叩き直さない）
             // 🔴 **詳細を開いている間は入れ替えない。** 別名で当たる行が前に割り込み、開いた
             // スポットの行が最初の5件から押し出されると、開いている画面がその場で閉じる
@@ -375,7 +386,7 @@ struct SearchView: View {
             }
             // 🔴 詳細を開いている間に届いた別名は捨てている（`.task(id: query)` の注記）。
             // 同じ語のまま戻ると `.task(id:)` は走らないので、ここで取り直す
-            if !query.isEmpty, spotAliases.isEmpty {
+            if !searched.isEmpty, spotAliases.isEmpty {
                 Task {
                     let fetched = await environment.spots.fetchAliases()
                     if front.isConfirmed { spotAliases = fetched }
@@ -433,48 +444,80 @@ struct SearchView: View {
         Task {
             await environment.gallery.setHidden(hidden.snapshot)
             await model.reloadPhotos(environment: environment, hidden: hidden.snapshot)
-            await model.search(query, environment: environment)
+            await model.search(searched, environment: environment)
         }
     }
 
     /// 最近の検索を出すか: 欄が空で、言葉が1つ以上あり、「発見」の顔か欄を押しているとき
     /// （カテゴリだけで絞っている間は結果の上に割り込ませない）
     private var showsRecentSearches: Bool {
-        RecentSearchesStore.shows(query: query, words: recentWords, discovering: isDiscovering, focused: fieldFocused)
+        RecentSearchesStore.shows(query: searched, words: recentWords, discovering: isDiscovering, focused: fieldFocused)
     }
 
-    /// 欄の言葉を最近の検索に覚える（空・覚えている言葉のままなら並びを上げるだけ）
-    private func rememberQuery() {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// 送った言葉を最近の検索に覚える（空・覚えている言葉のままなら並びを上げるだけ）。
+    /// 送っていない欄の字は覚えない（2026-11-20 札 #662: 打ちかけで欄を離れた字を残さない）
+    private func rememberQuery(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         // 文を読み替えて欄に入れた語（「京都」）は覚えない。覚えるのは打った文（`readSentence`）
         if let reading, reading.text == trimmed { return }
         recentWords = RecentSearchesStore().remember(trimmed, userId: auth.userId)
     }
 
-    /// 最近の言葉を押した: その言葉で探し（`query` の `onChange` が探す）、いちばん上へ上げる
+    /// 最近の言葉を押した: 送ったのと同じ（すぐ結果）で、いちばん上へ上げる。
+    /// 2026-11-20 判断（札 #662）: **押すだけで回数を減らさない。** 今日答えた控えがある頼みだけ答えを出し（控えから・AI は呼ばない）、
+    /// 控えが無ければ言葉の検索だけにする
     private func pickRecent(_ word: String) {
         query = word
         fieldFocused = false
         recentWords = RecentSearchesStore().remember(word, userId: auth.userId)
-        submit(word)
+        let cached = ask.hasToday(word, userId: auth.userId)
+        apply(SearchSubmit.plan(.recent(cachedToday: cached), text: word, scope: model.scope, searched: searched))
     }
 
-    /// 送った字を、頼みと質問の形なら AI の答えに、それ以外は今の字の検索（語を並べた文なら言葉の表の読み取り）に回す
-    /// （札 #652・`AskQuery.form`）。欄は1つのまま
-    private func submit(_ raw: String) {
-        if AskQuery.form(raw, scope: model.scope) == .ask {
-            startAsk(raw)
-        } else {
-            readSentence(raw)
+    /// キーボードの「検索」: 言葉の検索（言葉の表の読み取り）とキーボードを閉じるだけ。**AI は呼ばない**（札 #662）
+    private func submitFromKeyboard() {
+        rememberQuery(query)
+        fieldFocused = false
+        apply(SearchSubmit.plan(.keyboard, text: query, scope: model.scope, searched: searched))
+    }
+
+    /// 欄の右の送信のボタン: AI に頼む（途中の字では呼ばない・`AskQuery.sendsToAI`）
+    private func submitFromSendButton() {
+        let plan = SearchSubmit.plan(.sendButton, text: query, scope: model.scope, searched: searched)
+        guard plan != .none else { return }
+        rememberQuery(query)
+        fieldFocused = false
+        apply(plan)
+    }
+
+    /// `SearchSubmit` の決めたことを画面に当てる（送った字、答えを閉じる、言葉の表で読む、AI に頼む）
+    private func apply(_ plan: SearchSubmit.Plan) {
+        if plan.closesAnswer, ask.isActive {
+            askTask?.cancel()
+            ask.reset()
         }
+        if let next = plan.searched {
+            if plan.asks {
+                startAsk(next)
+            } else {
+                searched = next
+                if plan.readsSentence { readSentence(next) }
+            }
+        }
+    }
+
+    /// 欄の字と送った字をそろえる（読み取りの字を入れた・札を外した・タグを選んだ）
+    private func setSearched(_ text: String) {
+        query = text
+        searched = text
     }
 
     // MARK: - AI に頼む（札 #652）
 
-    /// 欄の字が頼んだ文のままの間だけ、答えを出す
+    /// 送った字が頼んだ文のままの間だけ、答えを出す（打ち替えている間は残す・札 #662）
     private var askShown: Bool {
-        ask.isActive && query.trimmingCharacters(in: .whitespacesAndNewlines) == ask.firstQuestion
+        ask.isActive && searched.trimmingCharacters(in: .whitespacesAndNewlines) == ask.firstQuestion
     }
 
     private func startAsk(_ raw: String) {
@@ -482,9 +525,10 @@ struct SearchView: View {
         isReadingSentence = false
         reading = nil
         askTask?.cancel()
-        // 先に答えの形（読み込み中）にしてから欄の字をそろえる（字が替わっても `onChange(of: query)` が答えを閉じない）
+        // 先に答えの形（読み込み中）にしてから欄の字と送った字をそろえる
         guard let text = ask.prepare(raw) else { return }
         if query != text { query = text }
+        searched = text
         let backend = askBackend
         askTask = Task { await ask.start(text, backend: backend) }
     }
@@ -585,10 +629,10 @@ struct SearchView: View {
             let result = SearchSentence.readByTable(sentence)
             guard !Task.isCancelled else { return }
             isReadingSentence = false
-            guard query.trimmingCharacters(in: .whitespacesAndNewlines) == sentence, result.changesSearch else { return }
+            guard searched.trimmingCharacters(in: .whitespacesAndNewlines) == sentence, result.changesSearch else { return }
             reading = result
             model.apply(reading: result)
-            query = result.text ?? ""
+            setSearched(result.text ?? "")
         }
     }
 
@@ -598,7 +642,7 @@ struct SearchView: View {
         case .text:
             // 先に読み取りから字を外す（欄を空にしても、季節・時間帯の札は残す）
             reading?.text = nil
-            query = ""
+            setSearched("")
         case .season: model.select(season: model.timeFilter.season)
         case .dayPart: model.select(dayPart: model.timeFilter.dayPart)
         }
@@ -607,11 +651,11 @@ struct SearchView: View {
     /// 0件で自動で外した札を戻す（元の条件に戻る。もう一度は自動で外さない）
     private func restoreReading(_ chip: SearchSentence.Chip) {
         guard var current = reading else { return }
-        let back = SearchSentence.restoring(chip.kind, reading: current, query: query, filter: model.timeFilter)
+        let back = SearchSentence.restoring(chip.kind, reading: current, query: searched, filter: model.timeFilter)
         current.dropped = nil
         reading = current
         model.set(timeFilter: back.filter)
-        query = back.query
+        setSearched(back.query)
     }
 
     /// 重ねて0件になったら、1つ外していちばん多く残る形を見せる（`SearchSentence.relaxation`・2026-11-15 判断）。
@@ -620,23 +664,23 @@ struct SearchView: View {
         guard let before = reading, !before.relaxTried else { return }
         // 🔴 回 1384 の記録: 先に `relaxTried` を立ててから `relaxation` を呼び、そこで弾かれて（数は 季節 5、時間帯 36、
         // 地名 55）外さなかった。外し方を選ぶのと印を立てるのを `SearchSentence.relax` 1つにまとめた
-        let (current, kind) = SearchSentence.relax(before, query: query, filter: model.timeFilter) { q, f in
+        let (current, kind) = SearchSentence.relax(before, query: searched, filter: model.timeFilter) { q, f in
             resultCount(query: q, filter: f)
         }
         reading = current
         if PreviewSession.searchReadingProbe {
             let counts = [SearchSentence.Chip.Kind.season, .dayPart, .text].map { k -> String in
-                let next = SearchSentence.removing(k, query: query, filter: model.timeFilter)
+                let next = SearchSentence.removing(k, query: searched, filter: model.timeFilter)
                 return "\(k.rawValue):\(resultCount(query: next.query, filter: next.filter))"
             }
-            relaxProbe += " relax(query=\(query) season=\(model.timeFilter.season?.rawValue ?? "-")"
+            relaxProbe += " relax(query=\(searched) season=\(model.timeFilter.season?.rawValue ?? "-")"
                 + " dayPart=\(model.timeFilter.dayPart?.rawValue ?? "-") counts=\(counts.joined(separator: ","))"
                 + " index=\(spotSearchIndex != nil) spots=\(officialSpots.count) kind=\(kind?.rawValue ?? "nil"))"
         }
         guard let kind else { return }
-        let next = SearchSentence.removing(kind, query: query, filter: model.timeFilter)
+        let next = SearchSentence.removing(kind, query: searched, filter: model.timeFilter)
         model.set(timeFilter: next.filter)
-        query = next.query
+        setSearched(next.query)
     }
 
     /// 語と季節・時間帯を替えたときの写真と観光スポットの数（画面の結果と同じ当て方）
@@ -673,7 +717,7 @@ struct SearchView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("search.reading.busy")
             } else if let reading {
-                let chips = SearchSentence.chips(for: reading, query: query, filter: model.timeFilter)
+                let chips = SearchSentence.chips(for: reading, query: searched, filter: model.timeFilter)
                 if !chips.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
@@ -726,7 +770,7 @@ struct SearchView: View {
 
     /// 何も打たず、種類もカテゴリも選んでいない＝「発見」の顔
     private var isDiscovering: Bool {
-        query.isEmpty && model.category == nil && model.scope == .all && model.timeFilter.isEmpty
+        searched.isEmpty && model.category == nil && model.scope == .all && model.timeFilter.isEmpty
     }
 
     // MARK: - 探す口
@@ -755,22 +799,20 @@ struct SearchView: View {
                 .foregroundStyle(WebTheme.foreground)
                 // 実機の絵の道しるべ（`ScreenshotTests` が「11b」で探している名前。付いていなかった）
                 .accessibilityIdentifier("search.field")
-                // 探した言葉を覚える: 右下の「検索」か、言葉を残したまま欄を離れた（結果を開いた・払った）とき
+                // 2026-11-20 判断（札 #662）: キーボードの「検索」は**言葉の検索だけ**（打った文を季節・時間帯のチップと字の語に
+                // 読み替える・札 #623）。AI は呼ばない。AI に頼むのは右の送信のボタンだけ
                 .submitLabel(.search)
-                // 文で探す（札 #623）: 「検索」で、打った文を季節・時間帯のチップと字の語に読み替える
-                .onSubmit {
-                    rememberQuery()
-                    submit(query)
-                }
+                .onSubmit { submitFromKeyboard() }
                 // 欄の名前（読み上げ）。見本の字は入れ替わるので、名前は1つに決める
                 .accessibilityLabel(model.scope == .people ? model.scope.prompt : AskQuery.fieldLabel)
-                .onChange(of: fieldFocused) { _, focused in if !focused { rememberQuery() } }
+                .onChange(of: fieldFocused) { _, focused in if !focused { rememberQuery(searched) } }
                 // 人が替わったら、その人の言葉を読み直す（前の人の言葉を並べない）
                 .onChange(of: auth.userId) { _, id in recentWords = RecentSearchesStore().words(userId: id) }
                 .onAppear { recentWords = RecentSearchesStore().words(userId: auth.userId) }
             if !query.isEmpty {
                 Button {
                     query = ""
+                    apply(SearchSubmit.plan(.cleared, text: "", scope: model.scope, searched: searched))
                 } label: {
                     // 押せる幅は 44pt（地図の探す口の「×」と同じ）
                     Image(systemName: "xmark.circle.fill")
@@ -780,6 +822,13 @@ struct SearchView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("消す", "Clear"))
                 .accessibilityIdentifier("search.clear")
+            }
+            // 2026-11-20 判断（札 #662）: 欄の右に AI に送るボタン（頼みと質問の形のときだけ・途中の字では押せない）
+            if SearchSubmit.showsSendButton(text: query, scope: model.scope) {
+                AskSendButton(enabled: SearchSubmit.sendEnabled(text: query, scope: model.scope)) {
+                    submitFromSendButton()
+                }
+                .accessibilityIdentifier("search.send")
             }
         }
         // 地・縁・高さは撮影スポットの一覧の探す欄と同じ（`jpSearchBoxFace`・札 #524 で切り出した）
@@ -802,6 +851,10 @@ struct SearchView: View {
                 ForEach(SearchScope.allCases) { scope in
                     PillChip(title: scope.label, selected: model.scope == scope) {
                         model.select(scope: scope)
+                        // 「人」は打つたびに探す。打ちかけの字があれば、その字ですぐ探す（札 #662）
+                        if scope == .people {
+                            apply(SearchSubmit.plan(.peopleScope, text: query, scope: scope, searched: searched))
+                        }
                     }
                     // UI テストが「字を打つ前は出ない」を見る所（2026-11-16 A10）
                     .accessibilityIdentifier("search.scope.\(scope.rawValue)")
@@ -879,13 +932,14 @@ struct SearchView: View {
             HStack(spacing: 8) {
                 // 0枚のチップは出さない。**ただし選んでいるものは残す**——カテゴリで
                 // 0 になったとき、押して外す手立てが消える
-                ForEach(model.tagChips.filter { $0.count > 0 || TagChoices.key(query) == TagChoices.key($0.tag) },
+                ForEach(model.tagChips.filter { $0.count > 0 || TagChoices.key(searched) == TagChoices.key($0.tag) },
                         id: \.tag) { item in
                     // v2（2026-10-14・Search の板の県のチップ）: 共通のチップに、枚数を灰の等幅で添える。
                     // 以前はここだけ自前の大きい札（42 前後）で、枚数も同じ字の色だった
                     PillChip(title: item.tag, count: item.count,
-                             selected: TagChoices.key(query) == TagChoices.key(item.tag)) {
-                        query = TagChoices.key(query) == TagChoices.key(item.tag) ? "" : item.tag
+                             selected: TagChoices.key(searched) == TagChoices.key(item.tag)) {
+                        // タグのチップは送ったのと同じ（すぐ結果・札 #662）
+                        setSearched(TagChoices.key(searched) == TagChoices.key(item.tag) ? "" : item.tag)
                     }
                 }
             }
@@ -1398,7 +1452,7 @@ struct SearchView: View {
         isReloading = true
         defer { isReloading = false }
         await model.reloadPhotos(environment: environment, force: true, hidden: hidden.snapshot)
-        await model.search(query, environment: environment)
+        await model.search(searched, environment: environment)
         // 撮影スポットの索引も、取れていなければ取り直す（`.task(id:)` は
         // 語・絞り込みが変わらないと走らないので、引き下げても節が出ないままだった）。
         // 発見の顔の「季節・時間帯から探す」も索引を使うので、語が無くても取る。force は付けない——取り損ねた回
@@ -1408,7 +1462,7 @@ struct SearchView: View {
         }
         // 別名も同じ（詳細を開いている間に届いた回は捨てているので、ここで取り直す）
         // 引き下げの途中で詳細を開いたら入れ替えない（`.task(id: query)` の 🔴）
-        if !query.isEmpty, spotAliases.isEmpty {
+        if !searched.isEmpty, spotAliases.isEmpty {
             let fetched = await environment.spots.fetchAliases()
             if isOnScreen { spotAliases = fetched }
         }
@@ -1456,7 +1510,7 @@ struct SearchView: View {
         if model.scope.showsPhotos {
             spotResults
             photoResults
-        } else if users.isEmpty, Self.showsPeopleNoHit(query: query, searching: model.isSearching,
+        } else if users.isEmpty, Self.showsPeopleNoHit(query: searched, searching: model.isSearching,
                                                        failed: model.usersFailed, tooShort: model.peopleQueryTooShort) {
             // 2026-11-14 判断（前回の点検の「空と0件の形をそろえる」の残り）: 人の0件も空の部品（印・明朝 20 の見出し・
             // 説明・一手）にする。前は灰の本文「見つかりませんでした」だけで、写真の0件（地図への出口）と形が割れていた。
@@ -1469,7 +1523,7 @@ struct SearchView: View {
             }
         } else if users.isEmpty {
             // 人だけを探しているとき。**打つ前と見つからなかったを分ける**
-            Text(query.isEmpty
+            Text(searched.isEmpty
                  ? L("名前を入れると人を探せます", "Type a name to find people")
                  : (model.isSearching ? L("探しています…", "Searching…")
                     // **「読み込めなかった」と「見つからなかった」を分ける**（写真と同じ言い方）
@@ -1487,7 +1541,7 @@ struct SearchView: View {
                 // 引き下げを知らない人にも出口を（2026-10-02 の調査）
                 // 探している間は押せない（`isSearching`。語ごとの回の番号で古い答えも捨てている）
                 RetryButton(isBusy: model.isSearching) {
-                    Task { await model.search(query, environment: environment) }
+                    Task { await model.search(searched, environment: environment) }
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
@@ -1497,7 +1551,7 @@ struct SearchView: View {
 
     /// 人を読み込めなかった回の「もう一度試す」を出すか
     private var peopleRetryShown: Bool {
-        !query.isEmpty && !model.isSearching && model.usersFailed
+        !searched.isEmpty && !model.isSearching && model.usersFailed
     }
 
     /// 語に当たる撮影スポット（名前・読み・英語名・別名・都道府県・市区町村）。地図の検索と同じ当て方に、別名を足したもの
@@ -1518,14 +1572,14 @@ struct SearchView: View {
     private var spotHitsResult: SearchSpotHits.Hits {
         // 呼ばれた回数と時間を語ごとに数える（UI テストのときだけ・2026-11-13 札 #590）
         PerfRecorder.shared.searchSpotHits { () -> SearchSpotHits.Hits in
-            spotHitsMemo.hits(spots: officialSpots, index: spotSearchIndex, query: query,
+            spotHitsMemo.hits(spots: officialSpots, index: spotSearchIndex, query: searched,
                               filter: model.timeFilter, showsSpots: model.scope.showsSpots)
         }
     }
 
     /// 撮影スポットの節を開いた鍵（語と絞り込みが変わったら畳む）
     private var spotsExpandKey: String {
-        "\(query)|\(model.timeFilter.season?.rawValue ?? "")|\(model.timeFilter.dayPart?.rawValue ?? "")"
+        "\(searched)|\(model.timeFilter.season?.rawValue ?? "")|\(model.timeFilter.dayPart?.rawValue ?? "")"
     }
 
     /// **撮影スポットの節**（写真の件数とは混ぜない）。最初は5件、押すと全部
@@ -1673,7 +1727,7 @@ struct SearchView: View {
         // **件数と並び替えは結果の上**（提案の絵）
         HStack {
             // 撮影スポットの節が上に出るので、ここは「写真」と名乗る（スポットまで0件に読ませない）
-            Text(query.isEmpty
+            Text(searched.isEmpty
                  ? L("検索結果: \(model.shown.count) 件", "\(model.shown.count) results")
                  : L("写真: \(model.shown.count) 件", "Photos: \(model.shown.count)"))
                 .font(JPFont.footnote.monospacedDigit())
@@ -1735,7 +1789,7 @@ struct SearchView: View {
                 if !failed {
                     // 打った語を地図へ持っていく（地図で打ち直させない。タグの語は除く）。
                     // 2026-11-16 判断（A10・案の模型）: 0件の画面の一手なので**主ボタン**（写真の無い画面＝真鍮の塗りに墨・高さ 50）
-                    Button { tabRouter.openMap(query: model.scope.mapQuery(for: query)) } label: {
+                    Button { tabRouter.openMap(query: model.scope.mapQuery(for: searched)) } label: {
                         Label(L("地図で撮影地を探す", "Explore shooting places on the map"), systemImage: "map")
                             .jpCapsuleFace(font: .callout.weight(.semibold), text: WebTheme.accentText,
                                            fill: JPPillStyle.accent.fill, border: Color.clear, fullWidth: false,

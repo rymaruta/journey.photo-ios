@@ -242,11 +242,23 @@ enum AskFixture {
             return .init(text: page.lines.joined(separator: "\n"), general: false, picks: [], photoIds: [],
                          sources: [.init(kind: .help, label: L("使い方の頁「\(page.title)」", "Help: \(page.title)"))])
         }
+        if intent.spots, mode == "bullets" {
+            // 1.1.107 の実機で出た形（札 #663）: 長い前置きと「- 名前: 説明」の箇条。札に無い名前（「架空の岬」）も混ぜる
+            let picks = library.pickSpots(query)
+            var lines = [L("観光スポットの情報から、合う所を選びました。どこも案内に見どころがあります。季節を変えると、ほかの所も出ます。ゆっくり選んでください。",
+                           "Picked matching spots from the guides. Each has highlights in its notes. Try another season to see more.")]
+            for p in picks.prefix(3) {
+                lines.append("- \(p.spot.name): " + L("案内にある景色を、朝の光で撮れます。", "You can shoot the view in its notes in morning light."))
+            }
+            lines.append("- " + L("架空の岬: 台帳に無い所です。", "Imaginary Cape: not in the list."))
+            return .init(text: lines.joined(separator: "\n"), general: false, picks: picks, photoIds: [],
+                         sources: [.init(kind: .spots, label: AskText.spotsSource)])
+        }
         if intent.spots {
             let picks = library.pickSpots(query)
             return .init(text: L("観光スポットの案内から、合う所を選びました。", "Picked matching spots from the guides."),
                          general: false, picks: picks, photoIds: [],
-                         sources: [.init(kind: .spots, label: L("観光スポットの台帳", "Tourist spot list"))])
+                         sources: [.init(kind: .spots, label: AskText.spotsSource)])
         }
         return .init(text: L("太陽は画面の端に置き、明るさを少し下げると、空の色が残ります。", "Keep the sun near the edge and lower the exposure a little to keep the sky's color."),
                      general: true, picks: [], photoIds: [], sources: [])

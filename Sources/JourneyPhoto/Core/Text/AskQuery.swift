@@ -150,6 +150,44 @@ enum AskQuery {
     /// 打った文の長さの上限（サーバーの `TRIP_AI_MAX_REQUEST` と同じ 200 字）
     static let maxLength = 200
 
+    // MARK: - 途中の字では AI を呼ばない（2026-11-20 判断・札 #662）
+
+    /// 2026-11-20 判断（owner「文字打つだけでAI使われると結構すぐ上限きてしんどい」）: 打っている途中の字
+    /// （「おすすめの」「京都で」）は、送信のボタンを押しても AI を呼ばない。回数も使わない。
+    /// 1.1.107 の実機で「おすすめの」が「おすすめ」を印に頼みと読まれ、途中の字で1回使っていた。
+    ///
+    /// 決め方: 終わりが助詞（の、を、で、に、と、が）で、その前が短い（6字まで）語のかけら。
+    /// 前が「いい」「ある」「見たい」のような言い切り（い、る、た、う、か、す、ね、よ で終わる）なら続きを待たない（「どこがいいの」）。
+    /// 終わりの「は」は質問の形（「桜の名所は」）にもなるので、前が4字までで、場所の言葉も季節や県も読めないときだけ
+    static let continuingParticles: [Character] = ["の", "を", "で", "に", "と", "が"]
+    static let predicateEnds: Set<Character> = ["い", "る", "た", "う", "か", "す", "ね", "よ"]
+
+    static func isUnfinished(_ raw: String) -> Bool {
+        let text = SearchSentence.fold(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let last = text.last else { return false }
+        let stem = String(text.dropLast()).trimmingCharacters(in: .whitespaces)
+        guard let stemLast = stem.last else { return true }
+        if continuingParticles.contains(last) {
+            return stem.count <= 6 && !predicateEnds.contains(stemLast)
+        }
+        if last == "は" {
+            guard stem.count <= 4, !predicateEnds.contains(stemLast) else { return false }
+            let reading = SearchSentence.readByTable(stem)
+            let hasContent = spotWords.contains { stem.contains($0) } || reading.season != nil || reading.dayPart != nil
+                || RegionList.prefecture(named: stem) != nil || RegionList.prefectures.contains(stem)
+            return !hasContent
+        }
+        return false
+    }
+
+    /// 送信のボタンで AI に送れるか（頼みと質問の形で、途中の字でない）。人を探すときは送らない
+    static func sendsToAI(_ raw: String, scope: SearchScope = .all) -> Bool {
+        form(raw, scope: scope) == .ask && !isUnfinished(raw)
+    }
+
+    /// 途中の字のときに欄の下に出す1行
+    static var keepTypingLine: String { L("続けて打つと AI に聞けます", "Keep typing to ask AI") }
+
     static func clipped(_ text: String) -> String {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return t.count > maxLength ? String(t.prefix(maxLength)) : t

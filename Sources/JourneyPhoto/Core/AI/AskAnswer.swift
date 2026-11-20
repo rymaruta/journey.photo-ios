@@ -50,6 +50,9 @@ struct AskAnswer: Equatable, Codable {
     var general = false
     /// 札に出す観光スポット（`spotId`・アプリが選んだ順）
     var spotIds: [String] = []
+    /// 観光スポットごとの AI の理由（`spotId` → 1行・札の名前の下に出す）。AI の答えの「- 名前: 説明」の行を札に振り分けたもの
+    /// （`AskAnswerShape`・札 #663）。前の版の控えには無いので nil を許す
+    var reasons: [String: String]? = nil
     /// 観光スポットごとの現在地からの距離（km・近さで探したときだけ）
     var distances: [String: Double] = [:]
     /// みんなの写真（`Photo.id`・公開の写真だけ。押すと持ち主の写真の詳細へ）
@@ -96,7 +99,17 @@ struct AskAnswer: Equatable, Codable {
 enum AskText {
     static var disclaimer: String { L("AI の答えは間違うことがあります", "AI answers can be wrong") }
     static var generalBadge: String { L("一般的な答え", "General answer") }
-    static var sourcesHead: String { L("引いたもの", "Looked up") }
+    /// 答えのもとの1行（「観光スポットの情報から」・2026-11-20 判断 札 #663）。「台帳」は中の言葉なので利用者に見せない。
+    /// 前の版の控え（label が「観光スポットの台帳」）も種類で言い替える
+    static func sourcesLine(_ sources: [AskAnswer.Source]) -> String {
+        var names: [String] = []
+        for s in sources {
+            let name = s.kind == .spots ? spotsSource : s.label
+            if !names.contains(name) { names.append(name) }
+        }
+        return L("\(names.joined(separator: "、"))から", "From \(names.joined(separator: ", "))")
+    }
+    static var spotsSource: String { L("観光スポットの情報", "tourist spot info") }
     static var followUp: String { L("続けて聞く", "Ask a follow-up") }
     static var makePlan: String { L("旅行プランにする", "Make a trip plan") }
     static var loading: String { L("答えを用意しています", "Preparing an answer") }
@@ -116,5 +129,163 @@ enum AskText {
     /// 「8km」（札の距離）
     static func distance(_ km: Double) -> String {
         km < 1 ? L("1km 未満", "< 1 km") : L("\(Int(km.rounded()))km", "\(Int(km.rounded())) km")
+    }
+}
+
+/// AI の答えの文を、短い文と札の理由に分ける（2026-11-20 判断・札 #663）。
+///
+/// owner「結果が見づらいな。。」（1.1.107 の実機）: 「おすすめの」と頼むと、答えの欄に「- 愛知県庁本庁舎: 秋や冬の朝に…」の行が
+/// 8行、ひとかたまりの文で出ていた。決まりは「答えは部品（札）で返す。文は短い1かたまりだけ」。
+/// - 文は**はじめの1〜2文、80字まで**。超えたら文の切れ目（。！？、なければ「、」）で切る
+/// - 「- 名前: 説明」（「・」「•」「*」、番号付きも）の行は、名前が札の観光スポットに合えば、その札の理由（1行）にする
+/// - **札に無い名前の行は出さない**（台帳に無い所を AI が作った恐れがある）
+/// - 端末の AI の答えにもサーバーの答えにも使う（サーバーは変えない）
+enum AskAnswerShape {
+
+    static let leadLimit = 80
+
+    // MARK: - 案A の頭の1〜2文（2026-11-20 owner 承認・Artifact「AI に頼む 答えの見た目」）
+
+    /// 明朝の大きさ。ふだんは 20pt、20pt で4行を超える長さ（約68字・390pt の画面で1行約17字）なら 18pt
+    static let leadLargeSize: Double = 20
+    static let leadSmallSize: Double = 18
+    static let leadLargeMaxChars = 68
+
+    static func leadPointSize(_ text: String, small: Bool = false) -> Double {
+        small || text.count > leadLargeMaxChars ? leadSmallSize : leadLargeSize
+    }
+
+    /// 観光スポットの札のある答えの、札の上の明朝の1〜2文。AI の答えは文（20pt か 18pt）、
+    /// AI を使わない答え（使い切った、圏外）は見出し（「冬の案内がある観光スポット（6か所）」）を 18pt で
+    static func leadLine(_ a: AskAnswer) -> (text: String, small: Bool)? {
+        if a.state == .offline {
+            return (L("前に見た観光スポット（\(a.spotIds.count)か所）", "Spots you've seen (\(a.spotIds.count))"), true)
+        }
+        if a.usedAI, !a.text.isEmpty { return (a.text, leadPointSize(a.text) < leadLargeSize) }
+        if let heading = a.heading, !heading.isEmpty { return (heading, true) }
+        if !a.text.isEmpty { return (a.text, true) }
+        return nil
+    }
+
+    struct Shaped: Equatable {
+        var lead: String
+        var reasons: [String: String]
+    }
+
+    static func shape(_ text: String, spots: [OfficialSpot]) -> Shaped {
+        var leadLines: [String] = []
+        var reasons: [String: String] = [:]
+        for raw in text.components(separatedBy: .newlines) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty else { continue }
+            if let item = listItem(line) {
+                if let spot = match(item.name, in: spots), reasons[spot.spotId] == nil, !item.reason.isEmpty {
+                    reasons[spot.spotId] = item.reason
+                }
+                continue
+            }
+            // 印の無い行でも「名前: 説明」で名前が札に合えば理由にする（AI が印を付け忘れた形）
+            if let pair = namePair(line), let spot = match(pair.name, in: spots) {
+                if reasons[spot.spotId] == nil, !pair.reason.isEmpty { reasons[spot.spotId] = pair.reason }
+                continue
+            }
+            // 箇条の印だけ付いた行（名前と説明に分かれない）は文に混ぜない
+            if hasListMark(line) { continue }
+            leadLines.append(line)
+        }
+        return Shaped(lead: lead(leadLines.joined()), reasons: reasons)
+    }
+
+    /// はじめの1〜2文（80字まで）
+    static func lead(_ text: String) -> String {
+        var t = stripMarkup(text).trimmingCharacters(in: .whitespacesAndNewlines)
+        // 「おすすめは次の通りです:」のように箇条へつなぐ終わりは句点にする
+        if t.hasSuffix(":") || t.hasSuffix("：") { t = String(t.dropLast()) + "。" }
+        guard !t.isEmpty else { return "" }
+        let sentences = splitSentences(t)
+        var out = sentences.first ?? t
+        if out.count > leadLimit { return cut(out) }
+        if sentences.count > 1, out.count + sentences[1].count <= leadLimit { out += sentences[1] }
+        return out
+    }
+
+    static func splitSentences(_ t: String) -> [String] {
+        var out: [String] = []
+        var cur = ""
+        for ch in t {
+            cur.append(ch)
+            if "。！？!?".contains(ch) {
+                out.append(cur.trimmingCharacters(in: .whitespaces))
+                cur = ""
+            }
+        }
+        let rest = cur.trimmingCharacters(in: .whitespaces)
+        if !rest.isEmpty { out.append(rest) }
+        return out
+    }
+
+    /// 1文が80字を超えたら、80字までの最後の「、」で切って「…」
+    static func cut(_ sentence: String) -> String {
+        let head = String(sentence.prefix(leadLimit))
+        if let comma = head.lastIndex(where: { $0 == "、" || $0 == "," }), head.distance(from: head.startIndex, to: comma) >= 10 {
+            return String(head[..<comma]) + "…"
+        }
+        return String(sentence.prefix(leadLimit - 1)) + "…"
+    }
+
+    /// 箇条の行（「- 名前: 説明」「・名前：説明」「1. 名前: 説明」）
+    static func listItem(_ line: String) -> (name: String, reason: String)? {
+        guard hasListMark(line) else { return nil }
+        return namePair(dropListMark(line))
+    }
+
+    static func hasListMark(_ line: String) -> Bool {
+        dropListMark(line) != line
+    }
+
+    static func dropListMark(_ line: String) -> String {
+        var t = Substring(line)
+        if let first = t.first, "-・•*●○◆■▪︎–—".contains(first) {
+            t = t.dropFirst()
+            // 「**名前**」の頭の「*」は印ではない
+            if first == "*", t.first == "*" { return line }
+        } else {
+            let digits = t.prefix { $0.isNumber }
+            guard !digits.isEmpty else { return line }
+            let after = t.dropFirst(digits.count)
+            guard let mark = after.first, ".)．、）".contains(mark) else { return line }
+            t = after.dropFirst()
+        }
+        return String(t).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// 「名前: 説明」（半角、全角のコロン）。名前は40字まで
+    static func namePair(_ line: String) -> (name: String, reason: String)? {
+        guard let colon = line.firstIndex(where: { $0 == ":" || $0 == "：" }) else { return nil }
+        let name = stripMarkup(String(line[..<colon])).trimmingCharacters(in: .whitespaces)
+        let reason = stripMarkup(String(line[line.index(after: colon)...])).trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty, name.count <= 40 else { return nil }
+        return (name, reason)
+    }
+
+    static func stripMarkup(_ text: String) -> String {
+        text.replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "「", with: "").replacingOccurrences(of: "」", with: "")
+    }
+
+    /// 名前を札の観光スポットに当てる（字の幅と空白をそろえて同じ、無ければ2字以上でどちらかがもう片方を含む）
+    static func match(_ name: String, in spots: [OfficialSpot]) -> OfficialSpot? {
+        let key = normalized(name)
+        guard key.count >= 2 else { return nil }
+        if let exact = spots.first(where: { normalized($0.name) == key }) { return exact }
+        let partial = spots.filter {
+            let n = normalized($0.name)
+            return n.count >= 2 && (n.contains(key) || key.contains(n))
+        }
+        return partial.max { normalized($0.name).count < normalized($1.name).count }
+    }
+
+    static func normalized(_ s: String) -> String {
+        SearchSentence.fold(stripMarkup(s)).lowercased().filter { !$0.isWhitespace }
     }
 }

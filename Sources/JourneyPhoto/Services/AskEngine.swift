@@ -103,6 +103,13 @@ final class AskEngine: ObservableObject {
         await ask(question, backend: backend)
     }
 
+    /// 今日すでに答えた控えがあるか（最近の語を押したとき、控えがあるときだけ答えを出す・AI は呼ばない・札 #662）
+    func hasToday(_ raw: String, userId: String?) -> Bool {
+        let question = AskQuery.clipped(raw)
+        guard !question.isEmpty else { return false }
+        return history.today(question, userId: userId) != nil
+    }
+
     /// 答えの下の欄で続けて聞く（続きも1回と数える）
     func followUp(_ raw: String, backend: Backend) async {
         let question = AskQuery.clipped(raw)
@@ -217,7 +224,7 @@ final class AskEngine: ObservableObject {
             if let quota = reply.quota { self.usage = quota }
             // サーバーが断った（呼ぶ前の断り・AI の断り・答えの前の見張り）。アプリの断りの1行にそろえ、札も出さない
             if reply.refused { return .refused(care: AskGuard.needsCare(question)) }
-            let sources: [AskAnswer.Source] = picks.isEmpty ? [] : [.init(kind: .spots, label: L("観光スポットの台帳", "Tourist spot list"))]
+            let sources: [AskAnswer.Source] = picks.isEmpty ? [] : [.init(kind: .spots, label: AskText.spotsSource)]
             return await aiAnswer(question, text: reply.answer, general: reply.general, picks: picks, photoIds: [],
                                   sources: sources, engine: .server, library: library, backend: backend)
         } catch AskService.Failure.limit(let reason, let quota) {
@@ -268,7 +275,10 @@ final class AskEngine: ObservableObject {
         // AI が台帳を引かなかったときも、観光スポットを探す頼みなら、アプリが選んだ札を出す
         let shown = !picks.isEmpty ? picks : (intent.spots ? library.pickSpots(query) : [])
         var answer = AskAnswer(engine: engine)
-        answer.text = screened.text
+        // 2026-11-20 判断（札 #663）: 文ははじめの1〜2文だけ。「- 名前: 説明」の行は札の理由に振り分け、札に無い名前の行は出さない
+        let shaped = AskAnswerShape.shape(screened.text, spots: shown.map(\.spot))
+        answer.text = shaped.lead
+        answer.reasons = shaped.reasons.isEmpty ? nil : shaped.reasons
         answer.general = general && shown.isEmpty && photoIds.isEmpty
         answer.sources = sources
         await fill(&answer, picks: shown, query: query, intent: intent, question: question,
