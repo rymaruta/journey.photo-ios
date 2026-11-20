@@ -889,8 +889,14 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 20), "探すの欄が無い")
         // 前の試験と同じ頼みだと、同じ日の控え（回数を使わない）から答えて帯が出ない（run 1608）。毎回ちがう頼みにする
         enter("金沢でおすすめの観光スポットを教えて \(Int(Date().timeIntervalSince1970) % 100000)\n", into: field, "探すの欄")
+        // 答えの欄が出るのを待ってから帯を見る（帯は答えの上に一緒に出る）。落ちたら段と経過（`search.ask.stage`）を出す
+        let answer = app.descendants(matching: .any)["search.ask.answer"].firstMatch
+        let stage = app.descendants(matching: .any)["search.ask.stage"].firstMatch
+        func stageText() -> String { stage.exists ? (stage.value as? String ?? "-") : "missing" }
+        XCTAssertTrue(answer.waitForExistence(timeout: 30), "使い切ったときに答えが出ない（段: \(stageText())）")
         let band = app.buttons["search.ask.band"].firstMatch
-        XCTAssertTrue(band.waitForExistence(timeout: 30), "使い切っても帯が出ない")
+        XCTAssertTrue(band.waitForExistence(timeout: 5), "使い切っても帯が出ない（段: \(stageText())）")
+        print("measured [ask-stage] \(stageText())")
         XCTAssertTrue(band.label.contains("今日の AI は3回使いました"), "帯の文が違う: \(band.label)")
         XCTAssertEqual(app.alerts.count, 0, "確かめのダイアログを出した")
         XCTAssertTrue(app.descendants(matching: .any)["search.ask.answer"].firstMatch.exists, "使い切ったら答えが出ない")

@@ -172,6 +172,42 @@ final class AskEngineTests: XCTestCase {
         XCTAssertTrue(calls.reserves.isEmpty, "端末の AI が答えなかった回を数えた（0円の回は数えない）")
     }
 
+    /// 2026-11-20 判断（run 1612）: 答えと「使い切った」帯は、案内の文（詳細・通信）を待たずに先に出す。案内の文はあとから札に差し込む
+    func testAnswerAndBandAppearBeforeDetails() async throws {
+        final class Gate: @unchecked Sendable {
+            var continuation: CheckedContinuation<Void, Never>?
+            var asked = false
+        }
+        let gate = Gate()
+        var setup = Setup()
+        setup.reserveError = AskService.Failure.limit(.day, nil)
+        let calls = Calls()
+        let (e, d) = engine()
+        var b = try backend(setup, calls: calls, defaults: d)
+        b.details = { spots in
+            gate.asked = true
+            await withCheckedContinuation { gate.continuation = $0 }
+            return spots.map { s in var t = s; t.summary = "詳細の案内"; return t }
+        }
+        let task = Task { await e.start("近くで夕日がきれいな所", backend: b) }
+        // 詳細を止めたまま、答えと帯が出るか（止めたまま答えを待つ作りなら、ここで出ない）
+        var shown = false
+        for _ in 0..<200 {
+            if let a = e.thread.first?.answer, a.limit == .day { shown = true; break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(shown, "案内の文を待ってから答えと帯を出している（段: \(e.stageLog)）")
+        XCTAssertTrue(e.stageLog.contains { $0.hasPrefix("band@") })
+        // 詳細はあとから届いて札に差し込まれる
+        for _ in 0..<200 where gate.continuation == nil { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertTrue(gate.asked)
+        XCTAssertNotEqual(e.spotsById["sp_yashima"]?.summary, "詳細の案内")
+        gate.continuation?.resume()
+        await task.value
+        XCTAssertEqual(e.spotsById["sp_yashima"]?.summary, "詳細の案内")
+        XCTAssertTrue(e.stageLog.last?.hasPrefix("detailsDone@") ?? false)
+    }
+
     /// 人が替わったら、会話、残りの回数、札の中身を手放す
     func testResetDropsUsageAndCards() async throws {
         let calls = Calls()

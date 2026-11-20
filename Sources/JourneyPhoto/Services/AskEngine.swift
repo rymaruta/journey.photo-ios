@@ -44,6 +44,20 @@ final class AskEngine: ObservableObject {
     @Published private(set) var photosById: [String: Photo] = [:]
 
     private let history: AskHistoryStore
+    /// 答えを出したあとに案内の文（詳細）を重ねる観光スポット（`fill` が積み、`loadPendingDetails` が読む）
+    private var pendingDetails: [OfficialSpot] = []
+
+    /// いまの段（UI テストのときだけ見える要素 `search.ask.stage` に出す・2026-11-20 run 1612 の帯の試験の調べ）。
+    /// 段の名前と、頼んでからの経過（ms）を並べる
+    @Published private(set) var stageLog: [String] = []
+    private var stageStarted = Date()
+
+    func mark(_ stage: String) {
+        if stage == "start" { stageStarted = Date(); stageLog = [] }
+        let ms = Int(Date().timeIntervalSince(stageStarted) * 1000)
+        stageLog.append("\(stage)@\(ms)")
+        if stageLog.count > 24 { stageLog.removeFirst(stageLog.count - 24) }
+    }
 
     init(history: AskHistoryStore = AskHistoryStore()) {
         self.history = history
@@ -58,6 +72,7 @@ final class AskEngine: ObservableObject {
         thread = []
         pending = nil
         usage = nil
+        pendingDetails = []
         spotsById = [:]
         photosById = [:]
     }
@@ -103,15 +118,33 @@ final class AskEngine: ObservableObject {
         let answer = await tableAnswer(phrase, library: library, backend: backend, note: nil, state: .answered)
         guard !Task.isCancelled else { return }
         append(AskExchange(question: phrase, answer: answer), library: library, backend: backend)
+        await loadPendingDetails(backend: backend)
     }
 
     private func ask(_ question: String, backend: Backend) async {
         pending = question
+        mark("start")
         let answer = await answer(question, backend: backend)
         // 欄を打ち替えて閉じた回（取り消し）は出さない
         guard !Task.isCancelled else { return }
         // 札の中身は `answer` の中で覚えた
         append(AskExchange(question: question, answer: answer), library: nil, backend: backend)
+        mark(answer.limit != nil ? "band" : "answered")
+        await loadPendingDetails(backend: backend)
+    }
+
+    /// 2026-11-20 判断（run 1612 の帯の試験）: **答えと「使い切った」帯は、観光スポットの案内の文（詳細・通信）を待たずに先に出す。**
+    /// 案内の文はあとから札に差し込む（利用者を通信待ちで待たせない）。前は答えを作る中で詳細を待っていて、遅い回線や
+    /// 遅い模擬機では答えも帯も出るまで 30 秒を超えた
+    private func loadPendingDetails(backend: Backend) async {
+        let needed = pendingDetails
+        pendingDetails = []
+        guard !needed.isEmpty else { return }
+        mark("detailsLoading")
+        let detailed = await backend.details(needed)
+        guard !Task.isCancelled else { return }
+        for spot in detailed where spotsById[spot.spotId] != nil { spotsById[spot.spotId] = spot }
+        mark("detailsDone")
     }
 
     private func append(_ exchange: AskExchange, library: AskLibrary?, backend: Backend) {
@@ -151,6 +184,7 @@ final class AskEngine: ObservableObject {
         // 5a. 端末の AI（0円）。2026-11-20 判断: **答えを画面に出す直前に1回取る**（reserve via device）。
         // AI が答えなかった、時間切れ、欄を打ち替えて取り消した回は数えない（Artifact「数えない回」）。取れなければ答えを出さない
         if onDevice {
+            mark("deviceAsking")
             let result = await backend.deviceAsk(question, thread, library)
             if Task.isCancelled { return AskAnswer(engine: .table) }
             guard let result else {
@@ -178,6 +212,7 @@ final class AskEngine: ObservableObject {
         let picks = intent.spots ? library.pickSpots(query) : []
         do {
             let turns = thread.suffix(AskService.historyTurns).map { AskService.Turn(question: $0.question, answer: $0.answer.text) }
+            mark("serverAsking")
             let reply = try await backend.serverAsk(question, Array(turns), picks.map(\.spot))
             if let quota = reply.quota { self.usage = quota }
             // サーバーが断った（呼ぶ前の断り・AI の断り・答えの前の見張り）。アプリの断りの1行にそろえ、札も出さない
@@ -200,6 +235,7 @@ final class AskEngine: ObservableObject {
     /// 回数を1回取る。取れたら nil（`usage` を更新）。取れなければ、言葉の表の答え（上限なら帯）
     private func reserveOrFallback(_ via: AskService.Via, question: String, library: AskLibrary,
                                    backend: Backend) async -> AskAnswer? {
+        mark("reserving")
         do {
             usage = try await backend.reserve(.ask, via)
             return nil
@@ -282,10 +318,9 @@ final class AskEngine: ObservableObject {
             rememberPhotos(library: library, ids: extraPhotoIds)
             return
         }
-        // 案内の文を重ねる（索引だけの行は文を持たない）
-        let detailed = await backend.details(picks.map(\.spot))
-        let byId = Dictionary(detailed.map { ($0.spotId, $0) }, uniquingKeysWith: { a, _ in a })
-        for p in picks { spotsById[p.spot.spotId] = byId[p.spot.spotId] ?? p.spot }
+        // 札は索引の行で先に出し、案内の文（詳細）は答えを出したあとに重ねる（`loadPendingDetails`・2026-11-20 判断）
+        for p in picks where spotsById[p.spot.spotId] == nil { spotsById[p.spot.spotId] = p.spot }
+        pendingDetails += picks.map(\.spot)
         answer.spotIds = picks.map(\.spot.spotId)
         for p in picks { if let km = p.distanceKm, query.near { answer.distances[p.spot.spotId] = km } }
         answer.heading = query.filter.spotsHeading(count: picks.count)

@@ -42,6 +42,14 @@ struct AskThreadView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: JPSpace.m) {
+            // UI テストのときだけ（見本の口 `-JPAskFixture`）: いまの段と経過（ms）。落ちた試験が失敗の文に出す（run 1612 の調べ）
+            if AskFixture.isOn {
+                Text(".")
+                    .font(.caption2)
+                    .foregroundStyle(Color.clear)
+                    .accessibilityIdentifier("search.ask.stage")
+                    .accessibilityValue(engine.stageLog.joined(separator: " "))
+            }
             ForEach(Array(engine.thread.enumerated()), id: \.element.id) { index, exchange in
                 if index > 0 { questionBubble(exchange.question) }
                 answerView(exchange, isLatest: index == engine.thread.count - 1)
