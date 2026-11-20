@@ -49,6 +49,15 @@ struct AskThreadView: View {
                     .foregroundStyle(Color.clear)
                     .accessibilityIdentifier("search.ask.stage")
                     .accessibilityValue(engine.stageLog.joined(separator: " "))
+                // 閉じる前の状態（回 1619、1626 の「Failed to terminate」の調べ・2026-11-20）: 答えの数、用意している問い、骨格、
+                // 地図を出しているか、続けて聞く欄に焦点があるか
+                Text(".")
+                    .font(.caption2)
+                    .foregroundStyle(Color.clear)
+                    .accessibilityIdentifier("search.ask.probe")
+                    .accessibilityValue("thread=\(engine.thread.count) pending=\(engine.pending != nil) skeleton=\(showSkeleton)"
+                                        + " maps=\(engine.thread.filter { $0.answer.state != .offline && !$0.answer.spotIds.isEmpty }.count)"
+                                        + " follow=\(followFocused) spotCount=\(engine.spotsById.count) photoCount=\(engine.photosById.count)")
             }
             ForEach(Array(engine.thread.enumerated()), id: \.element.id) { index, exchange in
                 if index > 0 { questionBubble(exchange.question) }
@@ -522,7 +531,8 @@ struct AskRotatingPrompt: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             .task(id: reduceMotion) {
-                guard !reduceMotion else { return }
+                // UI テストのときは入れ替えない（4秒ごとの動きが続き、アプリが静まらない・回 1619、1626 の閉じられない件の調べ）
+                guard !reduceMotion, !AskFixture.isOn, !PerfRecorder.shared.isEnabled else { return }
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: AskQuery.rotateSeconds * 1_000_000_000)
                     if Task.isCancelled { return }

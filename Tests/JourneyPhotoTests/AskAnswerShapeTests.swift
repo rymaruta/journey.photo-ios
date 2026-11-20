@@ -158,6 +158,17 @@ final class AskAnswerShapeTests: XCTestCase {
         XCTAssertTrue(AskSpotTags.labels(plain).isEmpty, "台帳に欄が無いのにチップを出す")
     }
 
+    /// 札の並びは、どの札も左から 16 に止まる（札の幅＋12 ごと。端を越えない）。ピンで送るときも左から 16（回 1619、1626 の絵で約 6pt だった）
+    func testCardSnapKeepsLeftGutter() {
+        let step: CGFloat = 268 + 12
+        XCTAssertEqual(AskCardSnap.snapped(0, step: step, maxOffset: 1000), 0)
+        XCTAssertEqual(AskCardSnap.snapped(150, step: step, maxOffset: 1000), 280)
+        XCTAssertEqual(AskCardSnap.snapped(130, step: step, maxOffset: 1000), 0)
+        XCTAssertEqual(AskCardSnap.snapped(900, step: step, maxOffset: 700), 700, "端を越えて送った")
+        // 札の左 = 割合 ×（並びの幅 − 札の幅）= 16
+        XCTAssertEqual(AskCardSnap.anchorX(container: 402, card: 268) * (402 - 268), 16, accuracy: 0.001)
+    }
+
     /// 前の版の控え（reasons の無い答え）も読める
     func testOldCachedAnswerDecodes() throws {
         let old = #"{"engine":"device","state":"answered","text":"屋島です。","general":false,"spotIds":["sp_yashima"],"distances":{},"photoIds":[],"sources":[],"chips":[],"offersPlan":true}"#

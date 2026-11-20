@@ -100,7 +100,8 @@ struct AskLoadingSkeleton: View {
         }
         .opacity(dim ? 0.55 : 1)
         .onAppear {
-            guard !reduceMotion else { return }
+            // UI テストのときは脈打たない（終わらない動きが残ると、アプリが静まらず閉じにくい・回 1619、1626 の調べ）
+            guard !reduceMotion, !AskFixture.isOn, !PerfRecorder.shared.isEnabled else { return }
             withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { dim = true }
         }
     }
@@ -139,6 +140,13 @@ struct AskSpotCarousel: View {
     @State private var current: String?
     /// ピンを押して送る先
     @State private var scrollTarget: String?
+    /// 札の並びの見えている幅（大きな字の札の幅と、ピンで送る先の位置に使う）
+    @State private var containerWidth: CGFloat = 0
+
+    /// 札1枚の幅（大きな字では見えている幅の 86%）
+    private var cardWidth: CGFloat {
+        dynamicType.isAccessibilitySize && containerWidth > 0 ? containerWidth * 0.86 : Self.cardWidth
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -158,9 +166,7 @@ struct AskSpotCarousel: View {
                             AskSpotCard(spot: spot, reason: reasons[spot.spotId] ?? AskLibrary.guide(for: spot, query: .init()),
                                         officialSpots: officialSpots, photos: photos, photosKnown: photosKnown)
                                 // 大きな字では札の幅を画面の 86% に広げる（模型の「確かめていないこと」の想定）
-                                .containerRelativeFrame(.horizontal) { w, _ in
-                                    dynamicType.isAccessibilitySize ? w * 0.86 : Self.cardWidth
-                                }
+                                .frame(width: cardWidth)
                                 .id(spot.spotId)
                                 // 前に出ている札: 左の余白（16）の所に、札の半分より近く来たもの
                                 .onGeometryChange(for: Bool.self, of: { geo in
@@ -170,18 +176,21 @@ struct AskSpotCarousel: View {
                                 }
                         }
                     }
-                    .scrollTargetLayout()
+                    // 回 1619・1626 の絵 11z2: contentMargins でも safeAreaPadding でも1枚目の札の左が約 6pt（模型は 16）だった。
+                    // 余白は並びの中に直に付ける（2026-11-20 判断）。止まる位置は `AskCardSnap` が札の幅＋12 ごとにそろえる
+                    .padding(.horizontal, JPSpace.gutter)
                 }
-                .scrollTargetBehavior(.viewAligned)
-                // 回 1619 の絵 11z2: contentMargins では1枚目の札の左が約 6pt（模型は 16）に寄った。
-                // 横に送って止まる位置（viewAligned）も含めて、安全域の余白で 16 にそろえる
-                .safeAreaPadding(.horizontal, JPSpace.gutter)
+                .scrollTargetBehavior(AskCardSnap(step: cardWidth + Self.gap))
                 // 札の並びは画面の端まで（左右の余白の分だけ外へ出す）
                 .padding(.horizontal, -JPSpace.gutter)
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width in
+                    if width != containerWidth { containerWidth = width }
+                }
                 .onChange(of: scrollTarget) { _, target in
                     guard let target else { return }
                     withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) {
-                        proxy.scrollTo(target, anchor: .leading)
+                        // 札の左を見えている所の左から 16 に置く（`scrollTo` の anchor は札と並びの同じ割合の点をそろえる）
+                        proxy.scrollTo(target, anchor: AskCardSnap.anchor(container: containerWidth, card: cardWidth))
                     }
                     current = target
                     scrollTarget = nil
@@ -203,6 +212,35 @@ struct AskSpotCarousel: View {
     private func index(of id: String?) -> Int? {
         guard let id else { return nil }
         return spots.firstIndex { $0.spotId == id }
+    }
+}
+
+/// 札の並びの止まる位置（札の幅＋すき間ごと）。並びの中の左の余白 16 の分は動かさないので、どの札も左から 16 に止まる
+struct AskCardSnap: ScrollTargetBehavior {
+    let step: CGFloat
+
+    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
+        target.rect.origin.x = Self.snapped(target.rect.minX, step: step,
+                                            maxOffset: context.contentSize.width - context.containerSize.width)
+    }
+
+    /// 止まる位置（いちばん近い札の頭。端を越えない）
+    nonisolated static func snapped(_ x: CGFloat, step: CGFloat, maxOffset: CGFloat) -> CGFloat {
+        guard step > 0 else { return x }
+        let upper = max(0, maxOffset)
+        return min(upper, max(0, (x / step).rounded() * step))
+    }
+
+    /// `scrollTo` の anchor（札の左が見えている所の左から 16 に来る割合）
+    nonisolated static func anchor(container: CGFloat, card: CGFloat) -> UnitPoint {
+        UnitPoint(x: anchorX(container: container, card: card), y: 0)
+    }
+
+    /// anchor の横の割合（札の左 = 割合 ×（並びの幅 − 札の幅）= 16）
+    nonisolated static func anchorX(container: CGFloat, card: CGFloat) -> CGFloat {
+        let room = container - card
+        guard room > 0 else { return 0 }
+        return min(1, JPSpace.gutter / room)
     }
 }
 
