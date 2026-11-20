@@ -8,6 +8,14 @@ enum DMRoute: Hashable {
     case start(DMPeerSeed)
     /// 旅行プランの会話（2026-11-12・札 #553）。プランの詳細を「会話」で開く
     case trip(String)
+    /// グループの会話（2026-11-20・札 #582）
+    case group(GroupOpen)
+}
+
+/// グループの会話を開く印（作った直後は、入れられなかった人の知らせを1回出す）
+struct GroupOpen: Hashable {
+    let groupId: String
+    var notice: String?
 }
 
 /// メッセージの受信箱（画面案「受信箱」・札 #505・2026-11-10）。ホームの見出しの吹き出しから、シートで開く。
@@ -36,6 +44,8 @@ struct DMInboxView: View {
     /// 「新しいメッセージ」のシート。選んだ人は閉じてから積む（シートが閉じる途中で積むと、積んだ画面が出ないことがある）
     @State private var showNewMessage = false
     @State private var picked: DMPeerSeed?
+    /// 「新しいメッセージ」で作ったグループ（シートが閉じてから積む）
+    @State private var pickedGroup: GroupReady?
     /// 空の受信箱の顔の列（フォロー中の人・読めなければ列を出さない）
     @State private var faces: [FollowUser] = []
     /// 旅行プランの会話（入っている共有プラン・2026-11-12）。読めなければ出さない（DM の一覧は止めない）
@@ -68,6 +78,8 @@ struct DMInboxView: View {
                 }
             case .trip(let planId):
                 TripPlanOpenView(planId: planId, startTab: .chat)
+            case .group(let open):
+                GroupConversationView(groupId: open.groupId, notice: open.notice, onLeft: { self.route = nil })
             }
         }
         .toolbar {
@@ -76,15 +88,25 @@ struct DMInboxView: View {
             }
         }
         .sheet(isPresented: $showNewMessage, onDismiss: {
+            if let ready = pickedGroup {
+                pickedGroup = nil
+                route = .group(GroupOpen(groupId: ready.groupId, notice: ready.notice))
+                Task { await store.refreshGroups(service: environment.groups, owner: auth.userId) }
+                return
+            }
             guard let peer = picked else { return }
             picked = nil
             route = .start(peer)
         }) {
             NavigationStack {
-                DMNewMessageView { peer in
+                // 2026-11-20 判断（札 #582）: グループの口があれば何人でも選べる（1人なら今の1対1・2人以上ならグループ）
+                DMNewMessageView(mode: GroupPick.startMode(groupsAvailable: store.groupsAvailable), onPick: { peer in
                     picked = peer
                     showNewMessage = false
-                }
+                }, onGroup: { ready in
+                    pickedGroup = ready
+                    showNewMessage = false
+                })
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
                 }
@@ -107,6 +129,9 @@ struct DMInboxView: View {
         // 旅行プランの会話の知らせ（`trip_<planId>`）はプランの会話へ
         if let planId = TripShareText.planId(fromConversation: id) {
             route = .trip(planId)
+        } else if let groupId = GroupText.groupId(fromConversation: id) {
+            // グループの会話の知らせ（`group_<groupId>`・2026-11-20 札 #582）
+            route = .group(GroupOpen(groupId: groupId))
         } else {
             route = .conversation(id)
         }
@@ -115,6 +140,8 @@ struct DMInboxView: View {
     private func reload() async {
         await store.refresh(service: environment.dm, owner: auth.userId)
         await reloadTrips()
+        // グループ（2026-11-20 札 #582）。口が無いサーバーでは読めず、一覧も入口も今のまま
+        await store.refreshGroups(service: environment.groups, owner: auth.userId)
     }
 
     private func reloadTrips() async {
@@ -137,8 +164,24 @@ struct DMInboxView: View {
         store.inbox.conversations.filter { !hidden.blockedUserIds.contains($0.peerId) }
     }
 
+    /// リクエストの棚の数（1対1のリクエストと、グループの招待）
     private var requestCount: Int {
-        store.inbox.requestTotal(hiding: hidden.blockedUserIds)
+        store.requestTotal(hiding: hidden.blockedUserIds)
+    }
+
+    /// グループの招待の数（リクエストの行の2行目に「招待 1件」）
+    private var inviteCount: Int {
+        requestCount - store.inbox.requestTotal(hiding: hidden.blockedUserIds)
+    }
+
+    /// 入っているグループ（口が無いサーバーでは空）
+    private var groups: [GroupThread] {
+        store.groupsAvailable ? store.groups.groups : []
+    }
+
+    /// 1対1・旅行プラン・グループを時刻の順に混ぜた一覧（2026-11-20 判断・案の画面 4。前は旅行プランを上にまとめていた）
+    private var items: [MessagesInboxItem] {
+        MessagesInboxItem.merged(dms: threads, trips: trips, groups: groups)
     }
 
     @ViewBuilder
@@ -171,13 +214,7 @@ struct DMInboxView: View {
                 if requestCount > 0 {
                     requestEntry
                 }
-                // 旅行プランの会話（DM の会話の上・2026-11-12）
-                ForEach(trips) { trip in
-                    Button { route = .trip(trip.planId) } label: { TripInboxRow(item: trip, me: auth.userId) }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("dm.trip")
-                }
-                if threads.isEmpty && requestCount == 0 && trips.isEmpty {
+                if items.isEmpty && requestCount == 0 {
                     // 2026-11-10 判断: 一手は「新しいメッセージ」（フォロー中の人から選ぶ）。ストーリーへの返信も残るが、
                     // 始め方の主はこちら
                     EmptyState(icon: "bubble.left.and.bubble.right", title: L("まだメッセージはありません", "No messages yet"),
@@ -200,21 +237,8 @@ struct DMInboxView: View {
                         .padding(.top, JPSpace.xl)
                     }
                 } else {
-                    ForEach(threads) { thread in
-                        HStack(spacing: JPSpace.s) {
-                            DMStoryFace(userId: thread.peerId, deleted: thread.isDeleted,
-                                        name: DMText.name(thread.name, deleted: thread.isDeleted),
-                                        size: DMLook.rowAvatar) {
-                                route = .conversation(thread.id)
-                            }
-                            Button {
-                                route = .conversation(thread.id)
-                            } label: {
-                                DMThreadRow(thread: thread)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("dm.thread")
-                        }
+                    ForEach(items) { item in
+                        itemRow(item)
                     }
                 }
             }
@@ -226,6 +250,36 @@ struct DMInboxView: View {
         }
         .refreshable { await reload() }
         .accessibilityIdentifier("dm.inbox")
+    }
+
+    /// 受信箱の1行（1対1・旅行プランの会話・グループ。どれも同じ高さ・未読は真鍮の点と太字）
+    @ViewBuilder
+    private func itemRow(_ item: MessagesInboxItem) -> some View {
+        switch item {
+        case .dm(let thread):
+            HStack(spacing: JPSpace.s) {
+                DMStoryFace(userId: thread.peerId, deleted: thread.isDeleted,
+                            name: DMText.name(thread.name, deleted: thread.isDeleted),
+                            size: DMLook.rowAvatar) {
+                    route = .conversation(thread.id)
+                }
+                Button {
+                    route = .conversation(thread.id)
+                } label: {
+                    DMThreadRow(thread: thread)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("dm.thread")
+            }
+        case .trip(let trip):
+            Button { route = .trip(trip.planId) } label: { TripInboxRow(item: trip, me: auth.userId) }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("dm.trip")
+        case .group(let group):
+            Button { route = .group(GroupOpen(groupId: group.id)) } label: { GroupThreadRow(thread: group) }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("dm.group")
+        }
     }
 
     /// 見出しの右の鉛筆（「新しいメッセージ」）。印は上のバーの印と同じ大きさ・当たり 44（`appHeaderHitArea`）
@@ -253,7 +307,9 @@ struct DMInboxView: View {
                     Text(DMText.requestsTitle)
                         .font(JPFont.body.weight(.semibold))
                         .foregroundStyle(WebTheme.text)
-                    Text(L("承認すると受信箱に移ります", "Accept to move them to your inbox"))
+                    Text(inviteCount > 0 && inviteCount == requestCount
+                         ? L("招待 \(inviteCount)件", inviteCount == 1 ? "1 invite" : "\(inviteCount) invites")
+                         : L("承認すると受信箱に移ります", "Accept to move them to your inbox"))
                         .jpSystemFont(14)
                         .foregroundStyle(WebTheme.text3)
                         .lineLimit(1)

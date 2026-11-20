@@ -400,8 +400,13 @@ public struct FocusState<Value>: DynamicProperty {
         get { box.value }
         nonmutating set { box.value = newValue }
     }
-    public var projectedValue: Binding<Value> { Binding(get: { box.value }, set: { box.value = $0 }) }
+    public var projectedValue: Binding { _FocusBinding(get: { box.value }, set: { box.value = $0 }) }
+    /// 本物の `FocusState<Value>.Binding`（欄の焦点を子の画面へ渡す型）。模型は `Binding<Value>` と同じ
+    public typealias Binding = _FocusBinding<Value>
 }
+
+/// `FocusState.Binding` の中身（入れ子の名前 `Binding` が外の `Binding` を隠すので、外で名前を付ける）
+public typealias _FocusBinding<V> = Binding<V>
 
 
 /// `@UIApplicationDelegateAdaptor` の模型。

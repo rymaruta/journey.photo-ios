@@ -16,6 +16,10 @@ struct ReportSheet: View {
     /// 旅行プランの会話の1通の通報（2026-11-14・札 #597・審査ガイドライン 1.2）。DM の会話の通報と同じ理由・同じ言葉で、
     /// どの通かを上に出す。送る口は `POST /trip-share/{planId}/report`（`photoId` は使わない）。ブロックの相手は `ownerId`（書いた人）
     var tripMessage: TripMessage? = nil
+    /// グループの会話の通報（2026-11-20・札 #582）。会話全体か、1通を名指し（`messageId`）。理由と言葉は DM と同じ。
+    /// 送る口は `POST /groups/{id}/report`（サーバーが直近20通を、誰の通かとグループの名前を付けて写す）。
+    /// ブロックの相手は `ownerId`（1通を名指ししたときは書いた人・会話全体なら無し）
+    var group: GroupReport? = nil
     /// コメントの通報（2026-10-11）。写真の通報の口に、誰のどのコメントかを補足に書いて送る
     /// （`ModerationService.commentReportNote`）。ブロックの相手はコメントを書いた人
     var comment: ModerationService.ReportedComment? = nil
@@ -46,8 +50,18 @@ struct ReportSheet: View {
         let text: String
     }
 
-    /// 会話（DM・旅行プラン）の通報か。理由の並び・ブロックの説明・送られる範囲の言葉をそろえる
-    private var isChatReport: Bool { conversation != nil || tripMessage != nil }
+    /// 通報するグループの会話（1通を名指しするときは、その通と書いた人）
+    struct GroupReport: Equatable {
+        let groupId: String
+        let messageId: String?
+        let authorName: String?
+        let text: String?
+    }
+
+    /// 会話（DM・旅行プラン・グループ）の通報か。理由の並び・ブロックの説明・送られる範囲の言葉をそろえる
+    private var isChatReport: Bool { conversation != nil || tripMessage != nil || group != nil }
+    /// 1通を名指しした通報か（送られる範囲の言葉を「このメッセージと…」にする）
+    private var isMessageReport: Bool { tripMessage != nil || group?.messageId != nil }
 
     /// 通報する写真の札の中身
     struct Subject: Equatable {
@@ -105,6 +119,14 @@ struct ReportSheet: View {
                                 .lineLimit(3)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .accessibilityIdentifier("report.tripMessage")
+                        }
+                        if let group, let author = group.authorName, let text = group.text {
+                            Text(L("\(author)さんのメッセージ：「\(text)」", "Message from \(author): \"\(text)\""))
+                                .font(.subheadline)
+                                .foregroundStyle(WebTheme.muted2)
+                                .lineLimit(3)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .accessibilityIdentifier("report.groupMessage")
                         }
                         if let comment {
                             // どのコメントを通報するか（押し間違いに気づけるように）
@@ -179,7 +201,7 @@ struct ReportSheet: View {
                 .disabled(isWorking)
             // v2 の板は明朝 24。字の段（32/26/22/20/18）に無いので、画面の題の 26 にそろえた
             Text(passNote != nil ? L("書かれた言葉を通報", "Report text")
-                 : comment == nil || conversation != nil ? L("通報", "Report") : L("コメントを通報", "Report comment"))
+                 : comment == nil || conversation != nil || group != nil ? L("通報", "Report") : L("コメントを通報", "Report comment"))
                 .font(JPFont.screenTitle)
                 .foregroundStyle(WebTheme.text)
                 .accessibilityAddTraits(.isHeader)
@@ -290,7 +312,7 @@ struct ReportSheet: View {
             .disabled(isWorking)
             if isChatReport {
                 // 送られる範囲と、相手に知らされないこと（画面案「通報」）
-                Text(tripMessage != nil
+                Text(isMessageReport
                      ? L("このメッセージと、会話の直近のやりとりが運営に届きます。相手には知らされません。",
                          "This message and the latest messages in the chat are sent to our team. They won't be told.")
                      : L("この会話の直近のやりとりが運営に届きます。相手には知らされません。",
@@ -329,6 +351,13 @@ struct ReportSheet: View {
                 // 会話の通報（2026-11-10 札 #505）。写真の印は付けない（会話の写しはサーバーが取る）
                 try await environment.dm.report(conversation.id, reason: dmReason.serverReason,
                                                  note: dmReason.note(adding: note))
+                await finishReport(blocker: blocker)
+                return
+            }
+            if let group {
+                // グループの会話の通報（2026-11-20 札 #582）。会話の写しはサーバーが取る
+                try await environment.groups.report(group.groupId, reason: dmReason.serverReason, messageId: group.messageId,
+                                                    note: dmReason.note(adding: note))
                 await finishReport(blocker: blocker)
                 return
             }

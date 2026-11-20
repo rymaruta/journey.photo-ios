@@ -29,6 +29,8 @@ struct DMRequestsView: View {
     @State private var reportTarget: DMThread?
     @State private var confirmDeleteAll = false
     @State private var errorMessage: String?
+    /// 開いたグループの招待（2026-11-20 札 #582）
+    @State private var inviteTarget: GroupInvite?
 
     struct RequestFacts: Equatable {
         /// 送り主からの通数
@@ -48,6 +50,12 @@ struct DMRequestsView: View {
 
     private var requests: [DMThread] {
         store.inbox.requests.filter { !hidden.blockedUserIds.contains($0.peerId) }
+    }
+
+    /// グループの招待（2026-11-20 札 #582）。口が無いサーバーでは空。ブロックした人からの招待は出さない
+    private var invites: [GroupInvite] {
+        guard store.groupsAvailable else { return [] }
+        return store.groups.invites.filter { !hidden.blockedUserIds.contains($0.invitedBy.id) }
     }
 
     var body: some View {
@@ -72,6 +80,9 @@ struct DMRequestsView: View {
             }
             .navigationDestination(item: $route) { route in
                 DMConversationView(conversationId: route.id, openedAfterAccept: route.accepted)
+            }
+            .navigationDestination(item: $inviteTarget) { invite in
+                GroupInviteView(invite: invite)
             }
             .overlay(alignment: .bottom) {
                 if let toast {
@@ -124,12 +135,24 @@ struct DMRequestsView: View {
                                                "You're offline. New messages will arrive when you reconnect."))
                             .padding(.horizontal, -JPSpace.gutter)
                     }
-                    if requests.isEmpty {
+                    if !invites.isEmpty {
+                        // グループの招待（参加するまで話は見えない・押すと招待の札）
+                        JPEyebrowLine(L("グループの招待", "Group invites"))
+                            .padding(.top, JPSpace.xs)
+                        ForEach(invites) { invite in
+                            inviteRow(invite)
+                        }
+                        if !requests.isEmpty {
+                            JPEyebrowLine(L("メッセージ", "Messages"))
+                                .padding(.top, JPSpace.m)
+                        }
+                    }
+                    if requests.isEmpty && invites.isEmpty {
                         EmptyState(icon: "person.2", title: L("リクエストはありません", "No requests"),
                                    message: L("承認前のメッセージは、ここに並びます。",
                                               "Messages from people you haven't accepted will show up here."))
                             .padding(.top, JPSpace.emptyTop)
-                    } else {
+                    } else if !requests.isEmpty {
                         Text(L("まだ承認していない人からのメッセージです。相手が送れるのは文字\(DMRules.requestLimit)通までで、リンクは送れません。承認するか返信すると、受信箱に移ります。",
                                "Messages from people you haven't accepted yet. They can send up to \(DMRules.requestLimit) text messages and no links. Accept or reply to move them to your inbox."))
                             .font(JPFont.caption)
@@ -153,7 +176,10 @@ struct DMRequestsView: View {
                 .padding(.horizontal, JPSpace.gutter)
                 .padding(.bottom, 96)
             }
-            .refreshable { await store.refresh(service: environment.dm, owner: auth.userId) }
+            .refreshable {
+                await store.refresh(service: environment.dm, owner: auth.userId)
+                await store.refreshGroups(service: environment.groups, owner: auth.userId)
+            }
             .accessibilityIdentifier("dm.requests")
         }
     }
@@ -253,6 +279,35 @@ struct DMRequestsView: View {
         .padding(.bottom, JPSpace.s)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("dm.request")
+    }
+
+    /// グループの招待の行（重ねた顔 52・名前・「〜さんがあなたを入れようとしています」・矢印）。押すと招待の札
+    private func inviteRow(_ invite: GroupInvite) -> some View {
+        Button { inviteTarget = invite } label: {
+            HStack(spacing: JPSpace.s) {
+                GroupFaces(faces: invite.info.faces, size: GroupLook.rowFaces)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(GroupText.title(invite.info))
+                        .font(JPFont.body.weight(.medium))
+                        .foregroundStyle(WebTheme.text)
+                        .lineLimit(1)
+                    Text(GroupText.invitedLine(by: invite.invitedBy.name))
+                        .jpSystemFont(14)
+                        .foregroundStyle(WebTheme.text3)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right")
+                    .font(JPFont.footnote.weight(.semibold))
+                    .foregroundStyle(WebTheme.text3)
+                    .accessibilityHidden(true)
+            }
+            .frame(minHeight: DMLook.rowHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("dm.groupInvite")
     }
 
     // MARK: - 操作

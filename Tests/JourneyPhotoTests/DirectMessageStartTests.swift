@@ -261,7 +261,7 @@ final class DirectMessageStartTests: XCTestCase {
         XCTAssertTrue(load.contains("isNew = true"))
         // 承認前の残りは、会話を読めるまで手元で数える
         XCTAssertTrue(view.contains("isNew ? max(0, DMRules.requestLimit - newSent) : meta?.requestRemaining"))
-        let composer = slice(view, from: "private var composer: some View {", to: "HStack(alignment: .bottom, spacing: 6)")
+        let composer = slice(view, from: "private var composer: some View {", to: "private var sendEnabled: Bool {")
         XCTAssertTrue(composer.contains("DMText.firstMessageNote(name: peerName)"))
         if let first = composer.range(of: "isNew && newSent == 0")?.lowerBound,
            let note = composer.range(of: "DMText.requestNote(name: peerName, remaining: remaining)")?.lowerBound {

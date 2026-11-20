@@ -112,7 +112,9 @@ final class DirectMessageWiringTests: XCTestCase {
         let enabled = slice(view, from: "private var sendEnabled: Bool {", to: "\n    }\n")
         XCTAssertTrue(enabled.contains("!log.isSending"), "送っている最中に送信を押せる（2通が同時に走る）")
         XCTAssertTrue(enabled.contains("!connectivity.isOffline"), "圏外で送信を押せる")
-        XCTAssertTrue(view.contains(".disabled(!sendEnabled)"))
+        // 送るの丸は共通の入力欄（`DMComposer`・2026-11-20 札 #582）
+        XCTAssertTrue(view.contains("sendEnabled: sendEnabled"))
+        XCTAssertTrue(try source("Features/Messages/DMParts.swift").contains(".disabled(!sendEnabled)"))
     }
 
     /// 10秒の読み直しは前面にいる間だけ（`.task(id:)` が前面の出入りで止まり、`poll` も前面でなければ回さない）
@@ -153,9 +155,12 @@ final class DirectMessageWiringTests: XCTestCase {
     func testPushConversationMustBelongToTheCurrentUser() async throws {
         let root = try source("App/RootView.swift")
         let take = slice(root, from: "private func takeConversationRequest()", to: "\n    }\n\n")
-        XCTAssertTrue(take.contains("guard let me = auth.userId, DMRules.peer(of: id, me: me) != nil else { return }"),
+        // 2026-11-20（札 #582）: グループの会話の知らせも開く。1対1は今までどおり今の人の会話だけ（`GroupText.opens`）
+        XCTAssertTrue(take.contains("guard let me = auth.userId, GroupText.opens(id, me: me) else { return }"),
                       "受信箱が出ている回に、前の人の会話を積む")
-        XCTAssertTrue(take.contains("DMRules.peer(of: id, me: owner) != nil"), "待った後に、前の人の会話を開く")
+        XCTAssertTrue(take.contains("GroupText.opens(id, me: owner)"), "待った後に、前の人の会話を開く")
+        XCTAssertFalse(GroupText.opens("someone_else", me: "me"))
+        XCTAssertTrue(GroupText.opens(DMRules.conversationId("me", "you"), me: "me"))
     }
 
     /// リクエストの札は画面に出た分だけ会話を読む（`LazyVStack`・最大50件を一度に読まない・レビュー指摘4）

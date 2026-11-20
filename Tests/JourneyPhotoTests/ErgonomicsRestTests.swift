@@ -61,7 +61,9 @@ final class ErgonomicsRestTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(DMLook.composerBottomGap, 12)
         let dm = try source("Features/Messages/DMConversationView.swift")
         XCTAssertFalse(dm.contains(".toolbar(.hidden, for: .tabBar)"), "会話の画面で下の札を隠している（HIG Tab bars）")
-        let composer = slice(dm, from: "private var composer: some View {", length: 4000)
+        // 入力欄は 1対1とグループで同じ部品（`DMComposer`・2026-11-20 札 #582）
+        XCTAssertTrue(dm.contains("DMComposer(draft: $draft"))
+        let composer = slice(try source("Features/Messages/DMParts.swift"), from: "struct DMComposer<Notes: View>: View {", length: 4000)
         XCTAssertTrue(composer.contains(".padding(.bottom, DMLook.composerBottomGap)"), "DM の入力欄の下が 12pt でない")
         let trip = try source("Features/Trips/TripShareViews.swift")
         let bar = slice(trip, from: "private var inputBar: some View {", length: 2500)

@@ -278,8 +278,11 @@ final class DirectMessageRedesignTests: XCTestCase {
             XCTAssertFalse(text.contains("Color.white.opacity(0.28)"), "\(name): 部品の縁が 3:1 に届かない白 28%")
             XCTAssertFalse(text.contains("Color.white.opacity(0.2), lineWidth"), "\(name): 入力欄の縁が白 20%")
         }
-        XCTAssertTrue(view.contains("sendEnabled ? WebTheme.accentFill : Color.white.opacity(0.16)"), "送るボタンが真鍮でない")
-        XCTAssertTrue(view.contains("fieldError != nil ? WebTheme.danger : WebTheme.outline"), "入力欄の縁が outline でない")
+        // 入力欄は 1対1とグループで同じ部品（`DMComposer`・2026-11-20 札 #582 で切り出した）
+        XCTAssertTrue(view.contains("DMComposer(draft: $draft"))
+        XCTAssertTrue(view.contains("hasError: fieldError != nil"))
+        XCTAssertTrue(parts.contains("sendEnabled ? WebTheme.accentFill : Color.white.opacity(0.16)"), "送るボタンが真鍮でない")
+        XCTAssertTrue(parts.contains("hasError ? WebTheme.danger : WebTheme.outline"), "入力欄の縁が outline でない")
         XCTAssertEqual(view.components(separatedBy: ".background(WebTheme.accentFill, in: Capsule())").count - 1, 1, "帯の承認")
         XCTAssertEqual(requests.components(separatedBy: ".background(WebTheme.accentFill, in: Capsule())").count - 1, 1, "札の承認")
         XCTAssertTrue(view.contains(Self.colorsEnum + ".fill(mine: mine)"))
@@ -327,7 +330,8 @@ final class DirectMessageRedesignTests: XCTestCase {
 
     /// 会話: 写真の札・ストーリーの写真 104×138・日付の線・リンク・写真だけの通は吹き出しを出さない
     func testConversationWiring() throws {
-        let view = try source("Features/Messages/DMConversationView.swift")
+        // 写真の札と写真を開く道は 1対1とグループで同じ部品（`DMPhotoCard`・`DMPhotoOpen`・2026-11-20 札 #582）
+        let view = try source("Features/Messages/DMConversationView.swift") + (try source("Features/Messages/DMParts.swift"))
         XCTAssertTrue(view.contains("if message.hasPhoto { photoCard(for: message) }"))
         // 1.1.83（資料⑤）: 撮影スポットの頁のリンクの通は札にし、吹き出しには残りの文だけ（`DMSpotShare.remainder`）
         XCTAssertTrue(view.contains("if let text = spotSlug == nil ? message.bubbleText"), "写真だけの通に吹き出しを出している")
@@ -337,7 +341,8 @@ final class DirectMessageRedesignTests: XCTestCase {
         XCTAssertTrue(view.contains("piece.link = link.url"))
         XCTAssertTrue(view.contains("PhotoDetailView(photo: openedPhoto, fromPublicFeed: openedPhotoIsPublic)"))
         XCTAssertTrue(view.contains(#".accessibilityIdentifier("dm.photoCard.live")"#))
-        XCTAssertTrue(view.contains("DMPhotoCardState.of(message, blocked: hidden.blockedUserIds)"), "ブロックした持ち主の写真を出す")
+        XCTAssertTrue(view.contains("DMPhotoCardState.of(message, blocked: blocked)")
+                      && view.contains("DMPhotoCard(message: message, blocked: hidden.blockedUserIds"), "ブロックした持ち主の写真を出す")
         XCTAssertTrue(view.contains(#"identifier: "dm.photoCard.unknown""#))
         // 写真を開く: 公開の一覧 → 絞った写真のうち自分に見えるぶん → 自分の写真
         XCTAssertTrue(view.contains("environment.photos.restrictedFeed()"), "フォロワー限定の写真を開けない")
