@@ -217,6 +217,12 @@ struct JourneyPhotoApp: App {
                 // `AppDelegate` の起動から居る1つ（`PassStore.shared`）を配る
                 .environmentObject(PassStore.shared)
                 .task { connectivity.start() }
+                // journey-photo.com のリンク（Universal Links・2026-11-20 札 #661 / #664）。iPhone のカメラで読んだ人の QR、
+                // メッセージや Safari で押した写真・観光スポットの頁をアプリで開く。受ける道は `AppLink` と
+                // サイトの apple-app-site-association の applinks（両方そろえる）。受けない URL は何もしない
+                .onOpenURL { url in _ = TabRouter.shared.openLink(url) }
+                // UI テストだけ: 起動したらこのリンクで開いたことにする（`PreviewSession.openURLAtLaunch`・Release では無い）
+                .task { if let url = PreviewSession.openURLAtLaunch { _ = TabRouter.shared.openLink(url) } }
                 // 意見箱: 電波が戻ったら、圏外で残した下書きを送る（2026-11-11 札 #546）。ログインの確認中は待つ
                 .onChange(of: connectivity.isOffline) { _, offline in
                     guard !offline, !auth.isResolving, !auth.isSignedOutUncertain else { return }

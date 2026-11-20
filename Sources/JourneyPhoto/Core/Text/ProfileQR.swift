@@ -16,7 +16,8 @@ import Foundation
 ///   引けない（更新された・退会した）ときは「この QR コードは使えません」
 ///
 /// 読み取りはアプリの中のカメラ。**journey-photo.com の人の URL だけ**をアプリの人の頁で開く（ほかの QR は開かない）。
-/// iPhone のカメラで読んだときにアプリが開く（Associated Domains・第2段）は作らない——Apple の設定が要る
+/// iPhone のカメラで読んだときは、Universal Links（`AppLink`・`JourneyPhotoApp` の onOpenURL・2026-11-20 札 #664）で
+/// アプリが開き、同じ `ProfileQRLink.parse` を通って人の頁へ行く
 enum ProfileQR {
 
     /// 公開プロフィールの URL（`https://journey-photo.com/users?id=<id>`）。id が URL に入れられない形なら nil

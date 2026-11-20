@@ -25,6 +25,10 @@ struct GalleryView: View {
     @State private var showTripPlans = false
     /// 見頃のお知らせから開く観光スポットの頁（`HomeScreenRequest.officialSpot`・2026-11-15 札 #618）
     @State private var requestedSpot: RequestedSpot?
+    /// journey-photo.com のリンクで開いた人の頁と写真（`AppLink`・2026-11-20 札 #661 / #664）
+    @State private var requestedPerson: ProfileQRView.OpenedPerson?
+    @State private var requestedPhoto: RequestedPhoto?
+    @EnvironmentObject private var toasts: ToastCenter
     /// 「新しくなったこと」から頼まれた画面を、シートが閉じきるまで待って積む
     @State private var homeScreenWait: Task<Void, Never>?
     /// すれちがいの「いま」。**時計で待たない**（ロック中に 18 時を越えると古いまま残る）——前面に来た・
@@ -248,6 +252,12 @@ struct GalleryView: View {
         .navigationDestination(item: $requestedSpot) { opened in
             OfficialSpotView(spot: opened.spot, spots: opened.spots, photos: dropped.visible(model.allPhotosForTheme))
         }
+        .navigationDestination(item: $requestedPerson) { person in
+            UserProfileView(userId: person.userId)
+        }
+        .navigationDestination(item: $requestedPhoto) { opened in
+            PhotoDetailView(photo: opened.photo, fromPublicFeed: opened.fromPublicFeed)
+        }
         // 「新しくなったこと」の項目 → ホームに積む（札 #519）。ホームがまだ出ていなかった回は出たときに受け取る
         .onChange(of: tabRouter.homeScreenRequests) { _, _ in openRequestedScreen() }
         .onAppear { openRequestedScreen() }
@@ -334,6 +344,35 @@ struct GalleryView: View {
                     requestedSpot = RequestedSpot(spot: spot, spots: spots)
                 } else {
                     tabRouter.openMyPage(tab: .wishlist)
+                }
+            case .person(let userId):
+                // 自分の QR・自分の頁のリンクはマイページ（アプリの中の QR の読み取りと同じ決まり・`ProfileQRScanResult`）
+                if userId == auth.userId { tabRouter.openMyPage() } else { requestedPerson = .init(userId: userId) }
+            case .profilePass(let pass):
+                // 更新できる QR の合図。アプリの中の QR の読み取りと同じ決まりで人に引く（`ProfileQRScanFlow`）
+                let source = ProfileQRSources.current(api: environment.api)
+                let outcome = await ProfileQRScanFlow.resolve(pass: pass, code: pass, myUserId: auth.userId,
+                                                              source: source, currentCode: { pass })
+                guard !Task.isCancelled else { return }
+                switch outcome {
+                case .open(let userId): requestedPerson = .init(userId: userId)
+                case .mine: tabRouter.openMyPage()
+                case .unusable: toasts.show(ProfileQRText.passNotValid, kind: .failure)
+                case .checkFailed: toasts.show(ProfileQRText.passCheckFailed, kind: .failure)
+                case .stale: break
+                }
+            case .photo(let id):
+                // 写真1枚の口は無いので、公開一覧と自分の写真から引き当てる。引けなければ一言（何も起きない、にしない）
+                let gallery = environment.gallery
+                let outcome = await AppLinkPhoto.find(id, mine: model.myPhotos) { force in
+                    try await gallery.fetchPhotos(force: force)
+                }
+                guard !Task.isCancelled else { return }
+                switch outcome {
+                case .found(let photo, let fromPublicFeed):
+                    requestedPhoto = RequestedPhoto(photo: photo, fromPublicFeed: fromPublicFeed)
+                case .missing: toasts.show(AppLinkText.photoMissing, kind: .failure)
+                case .failed: toasts.show(AppLinkText.photoCheckFailed, kind: .failure)
                 }
             }
         }
@@ -913,6 +952,15 @@ private struct FeedTopProbe: ViewModifier {
 private struct FollowingSettleKey: Equatable {
     let candidates: [String]
     let atHead: Bool
+}
+
+/// リンクで開いた写真（`/photo/<id>`・2026-11-20 札 #661）。綴りで同じものとみなす
+struct RequestedPhoto: Hashable {
+    let photo: Photo
+    let fromPublicFeed: Bool
+
+    static func == (a: RequestedPhoto, b: RequestedPhoto) -> Bool { a.photo.id == b.photo.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(photo.id) }
 }
 
 /// ホームに積む観光スポットの頁（見頃のお知らせから・2026-11-15 札 #618）。積む口（`navigationDestination(item:)`）は

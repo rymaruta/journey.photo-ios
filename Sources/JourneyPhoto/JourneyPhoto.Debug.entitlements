@@ -8,10 +8,23 @@
   サーバーの送り先（`deploy-api.yml` の `apnsHost`）と必ず揃えること
   ——ずれると APNs が 400 を返し、**サーバーが宛先を消す**。
   `Tools/check-config.py` が突き合わせている。
+
+  **`com.apple.developer.associated-domains` の `webcredentials:`（2026-11-20・札 #661）。**
+  Release と同じ中身にする（`Tools/check-config.py` が見張る）。ただし Debug のバンドル ID
+  （`com.journeyphoto.JourneyPhoto.staging`）はサイトの AASA に載せていないので、この構成では
+  結び付かず、候補もリンクも効かない（staging のアカウントは本番のサイトで保存したパスワードと別なので、載せない判断）。
+  同じにしておくのは、シミュレーターで組む Debug の回でもこの権限ごとビルドを確かめるため。
 -->
 <plist version="1.0">
 <dict>
     <key>aps-environment</key>
     <string>development</string>
+    <key>com.apple.developer.associated-domains</key>
+    <array>
+        <string>webcredentials:journey-photo.com</string>
+        <string>webcredentials:www.journey-photo.com</string>
+        <string>applinks:journey-photo.com</string>
+        <string>applinks:www.journey-photo.com</string>
+    </array>
 </dict>
 </plist>

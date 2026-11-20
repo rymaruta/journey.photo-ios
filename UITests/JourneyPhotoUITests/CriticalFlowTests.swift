@@ -811,6 +811,26 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(form.waitForNonExistence(timeout: 10), "ログインしたのにログイン画面が残っている")
     }
 
+    // MARK: - 4a. リンクでアプリが開く（人の QR）
+
+    /// **iPhone のカメラで人の QR（`/users?id=<id>`）を読んでアプリが開いたら、その人の頁が出る**（2026-11-20 札 #661 / #664）。
+    /// OS がリンクを渡した後ろ（`onOpenURL` → `TabRouter.openLink` → ホームに積む）を `-JPPreviewOpenURL` で通す
+    /// （シミュレーターの Debug はサイトの AASA に載っていないので、OS からは渡してもらえない）。
+    /// 人の頁の ⋯（`userProfile.more`）は、自分以外の人の頁なら読み込みを待たずに出る
+    func testProfileQRLinkOpensPersonPage() {
+        let app = launch(["-JPPreviewOpenURL", "https://journey-photo.com/users?id=uitest-linked-person"])
+        XCTAssertTrue(app.buttons["userProfile.more"].firstMatch.waitForExistence(timeout: 20),
+                      "人の QR の URL で開いたのに、その人の頁が出ない")
+    }
+
+    /// 自分の QR の URL で開いたら、人の頁ではなくマイページ（アプリの中の QR の読み取りと同じ決まり）
+    func testOwnProfileQRLinkOpensMyPage() {
+        let app = launch(["-JPPreviewOpenURL", "https://journey-photo.com/users?id=\(Self.previewUserId)"])
+        XCTAssertTrue(app.buttons["mypage.edit"].firstMatch.waitForExistence(timeout: 20),
+                      "自分の QR の URL で開いたのに、マイページが出ない")
+        XCTAssertFalse(app.buttons["userProfile.more"].exists, "自分の頁なのに人の頁の ⋯ が出ている")
+    }
+
     // MARK: - 4b. 探す: 最近の検索
 
     /// **前に探した言葉が欄の下に残り、押すとその言葉で探せる。1つずつ消せる**（2026-11-14 判断・`RecentSearchesStore`）

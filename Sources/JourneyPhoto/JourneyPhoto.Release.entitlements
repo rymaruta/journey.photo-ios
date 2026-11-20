@@ -8,10 +8,25 @@
   サーバーの送り先（`deploy-api.yml` の `apnsHost`）と必ず揃えること
   ——ずれると APNs が 400 を返し、**サーバーが宛先を消す**。
   `Tools/check-config.py` が突き合わせている。
+
+  **`com.apple.developer.associated-domains` の `webcredentials:`（2026-11-20・札 #661）。**
+  ログインの欄の上に、iPhone に保存した journey-photo.com のパスワードを候補として出すため。
+  サイトの `/.well-known/apple-app-site-association` の `webcredentials.apps` に
+  このアプリ（チーム ID + バンドル ID）が載っていて、はじめて結び付く。apex と www の両方で保存されうるので両方書く。
+  `Tools/check-config.py` が、Debug と Release で同じ中身か・AASA に載っているかを突き合わせる。
+  **`applinks:`（同じ日・札 #664 / #545 の段2）。** iPhone のカメラで読んだ人の QR、写真と観光スポットの頁の
+  リンクをアプリで開く。受けるのは `AppLink`（`JourneyPhotoApp` の onOpenURL）で、道は AASA の `applinks` と同じにする。
 -->
 <plist version="1.0">
 <dict>
     <key>aps-environment</key>
     <string>production</string>
+    <key>com.apple.developer.associated-domains</key>
+    <array>
+        <string>webcredentials:journey-photo.com</string>
+        <string>webcredentials:www.journey-photo.com</string>
+        <string>applinks:journey-photo.com</string>
+        <string>applinks:www.journey-photo.com</string>
+    </array>
 </dict>
 </plist>

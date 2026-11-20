@@ -8,6 +8,12 @@ enum HomeScreenRequest: Equatable, Sendable {
     case tripPlans
     /// 観光スポットの頁（見頃のお知らせを押した・`SeasonReminder.destination`・2026-11-15 札 #618）
     case officialSpot(slug: String)
+    /// 人の頁（journey-photo.com のリンク・iPhone のカメラで読んだ人の QR・`AppLink`・2026-11-20 札 #661 / #664）
+    case person(userId: String)
+    /// 更新できる QR の合図（`/qr?t=<合図>`）。サーバーで人に引いてから人の頁を積む
+    case profilePass(String)
+    /// 写真の頁（`/photo/<id>`）
+    case photo(id: String)
 }
 
 /// 下の札を外から切り替える道（見出しの「探す」→ 探す、メニュー → 各札）。
@@ -44,6 +50,16 @@ final class TabRouter: ObservableObject {
         case .spot(let slug): openOnHome(.officialSpot(slug: slug))
         case .wishlist: openMyPage(tab: .wishlist)
         }
+    }
+
+    /// journey-photo.com のリンクでアプリが開いた（`JourneyPhotoApp` の `onOpenURL`・2026-11-20 札 #661 / #664）。
+    /// 見頃のお知らせと同じ道でホームに積む（自分の人の頁なら、ホームが受け取るときにマイページへ）。
+    /// 受けない URL は何もしない（false）
+    @discardableResult
+    func openLink(_ url: URL, base: URL = AppConfig.siteBaseURL) -> Bool {
+        guard let link = AppLink.parse(url, base: base) else { return false }
+        openOnHome(link.homeScreen)
+        return true
     }
 
     /// 見出しの「探す」（どのタブにも・2026-10-21）とメニューの「撮影地マップ」から

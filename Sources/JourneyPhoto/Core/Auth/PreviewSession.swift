@@ -43,6 +43,25 @@ enum PreviewSession {
         #endif
     }
 
+    /// 起動したら、このリンクでアプリが開いたことにする（Debug のみ・UI テストだけ）。`-JPPreviewOpenURL <URL>`。
+    ///
+    /// 2026-11-20 札 #661 / #664: iPhone のカメラで人の QR を読んだときの道（`onOpenURL` → `TabRouter.openLink`）を
+    /// UI テストで通すため。シミュレーターの Debug（staging のバンドル ID）はサイトの AASA に載っていないので、
+    /// OS からリンクを渡してもらえない。**OS がリンクを渡した後ろ**（振り分けと画面を積む所）を本物の道で通す。
+    /// 見本の利用者で入っているときだけ。Release では必ず `nil`
+    static let openURLKey = "JPPreviewOpenURL"
+
+    static var openURLAtLaunch: URL? {
+        #if DEBUG
+        guard userId != nil,
+              let raw = UserDefaults.standard.string(forKey: openURLKey)?
+                .trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        return URL(string: raw)
+        #else
+        return nil
+        #endif
+    }
+
     /// UI テストで持たせるバッジ（Debug のみ）。`-JPPreviewBadges "prefectures:2,earlyUser:1"`。
     ///
     /// 鍵を持たない入り方では `GET /user/badges` が読めず、見本の利用者が持っているメダルも

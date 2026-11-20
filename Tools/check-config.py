@@ -866,6 +866,56 @@ if testflight_yml.exists():
 if "Tools/upload-shots.sh" not in (ROOT / ".github/actions/mac-test-part/action.yml").read_text(encoding="utf-8"):
     fail(".github/actions/mac-test-part/action.yml が画面写真を非公開の S3 に置いていません")
 
+# ---- 保存したパスワードの候補（webcredentials・2026-11-20・札 #661）--------------
+#
+# ログインの欄の上に、iPhone に保存した journey-photo.com のパスワードを出すには、
+# アプリの権限（`webcredentials:<ドメイン>`）と、そのドメインの AASA の
+# `webcredentials.apps`（チーム ID + バンドル ID）の**両方**が要る。片方だけだと
+# 何も起きない（エラーも出ない）ので、黙って候補が消える壊れ方になる。
+WEBCRED_DOMAINS = ["webcredentials:journey-photo.com", "webcredentials:www.journey-photo.com",
+                   # リンクをアプリで開く（Universal Links・同じ日・札 #664）。受けるのは `AppLink`
+                   "applinks:journey-photo.com", "applinks:www.journey-photo.com"]
+# チーム ID は project.yml に無い（署名は CI の鍵とプロファイルで決まる）。docs/RELEASE.md のチーム
+TEAM_ID = "5T76NZUL2L"
+_associated = {}
+for name in ("Debug", "Release"):
+    path = ROOT / f"Sources/JourneyPhoto/JourneyPhoto.{name}.entitlements"
+    try:
+        _associated[name] = plistlib.loads(path.read_bytes()).get(
+            "com.apple.developer.associated-domains") or []
+    except Exception:  # noqa: BLE001  読めないのは §11 が言う
+        continue
+    for domain in WEBCRED_DOMAINS:
+        if domain not in _associated[name]:
+            fail(f"{name} の entitlements に {domain} がありません"
+                 f"——保存したパスワードの候補か、リンクでアプリが開くのが効きません（札 #661 / #664）")
+if len(_associated) == 2 and _associated["Debug"] != _associated["Release"]:
+    fail("Debug と Release の associated-domains が違います（同じ中身にする・札 #661）")
+
+_release_bundle = re.search(r"^JP_BUNDLE_ID\s*=\s*(\S+)",
+                            (ROOT / "Config/Production.xcconfig").read_text(encoding="utf-8"), re.M)
+_aasa_path = WEB / "public" / ".well-known" / "apple-app-site-association"
+if not _release_bundle:
+    fail("Config/Production.xcconfig に JP_BUNDLE_ID がありません")
+elif not _aasa_path.exists():
+    # §10 と同じ理由で、**黙って飛ばさない**（CI と、隣が絞った写しのときは飛ぶ）
+    print("--  AASA の webcredentials との突き合わせは飛ばした（Web の public/.well-known が隣に無い）")
+else:
+    try:
+        _aasa = json.loads(_aasa_path.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001
+        fail(f"apple-app-site-association を JSON として読めません: {e}")
+        _aasa = {}
+    _app_id = f"{TEAM_ID}.{_release_bundle.group(1)}"
+    if _app_id not in ((_aasa.get("webcredentials") or {}).get("apps") or []):
+        fail(f"apple-app-site-association の webcredentials.apps に {_app_id} がありません"
+             f"——アプリの権限だけでは保存したパスワードの候補が出ません（札 #661）")
+    _link_apps = [a for d in ((_aasa.get("applinks") or {}).get("details") or [])
+                  for a in (d.get("appIDs") or [])]
+    if _app_id not in _link_apps:
+        fail(f"apple-app-site-association の applinks に {_app_id} がありません"
+             f"——リンクを押してもアプリが開きません（札 #664）")
+
 # ---- 結果 -----------------------------------------------------------------
 if errors:
     for message in errors:
