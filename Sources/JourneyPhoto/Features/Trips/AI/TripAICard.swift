@@ -42,29 +42,33 @@ struct TripAICard: View {
     let note: TripAINote
     let usage: TripAIService.Usage?
     let working: Bool
-    let canUndo: Bool
     let online: Bool
+    /// AI なしで組んだ理由の帯を出すか（組み直しの帯を出している間は出さない・帯を2本重ねない・札 #667）
+    var showsBand = true
     let redo: () -> Void
-    let undo: () -> Void
     let openPro: () -> Void
     /// 開いているか（2026-11-16 判断・使い勝手の見直し A6）。**はじめは1行に畳む**——開いた札は理由の数行と
     /// 直しのチップで日程を1画面ぶん下へ押していた（最初に見える場所 約1.5か所）。押すと開き、もう一度押すと畳む
     @State private var open = false
 
 
-    /// 畳んだ行の眉と1行（理由が空のプランは、押すだけの直しの名前を並べる）
-    nonisolated static func foldedLine(reason: String) -> (eyebrow: String, text: String) {
+    /// 畳んだ行の眉と1行。**理由が空なら行ごと出さない**（nil）。
+    /// 2026-11-20 判断（札 #667 の確かめ役）: 前は理由が空のとき札の中の押すだけの直しの名前を並べていたが、
+    /// その直しは日程の上の「組み直す」へ移したので、もう無いチップを案内していた
+    nonisolated static func foldedLine(reason: String) -> (eyebrow: String, text: String)? {
         let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            return (L("押すだけで直す", "Quick changes"), TripAITweak.allCases.map(\.title).joined(separator: L("、", ", ")))
-        }
+        guard !trimmed.isEmpty else { return nil }
         return (L("並べた理由", "Why this order"), trimmed)
     }
 
     /// 畳んだ行の読み上げ（眉と1行。区切りは日本語「、」・英語「, 」）
-    nonisolated static func foldedSpoken(reason: String) -> String {
-        let line = foldedLine(reason: reason)
-        return line.eyebrow + L("、", ", ") + line.text
+    nonisolated static func foldedSpoken(reason: String) -> String? {
+        foldedLine(reason: reason).map { $0.eyebrow + L("、", ", ") + $0.text }
+    }
+
+    /// 札に出す物があるか（理由か、AI なしで組んだ理由の帯）。無ければ画面は札を置かない
+    nonisolated static func hasContent(_ note: TripAINote) -> Bool {
+        foldedLine(reason: note.reason) != nil || note.mode != .ai
     }
 
     var body: some View {
@@ -74,8 +78,8 @@ struct TripAICard: View {
     /// 畳んだ姿（模型 A6: 高さ 44・札の面・角 12。真鍮の眉「並べた理由」→ 13 の text-2 の1行 → 下向きの印）。
     /// AI なしで組んだ回の帯（つながったら整える・やり直す）は押せる一手なので、畳んでも下に残す
     private var foldedCard: some View {
-        let line = Self.foldedLine(reason: note.reason)
         return VStack(alignment: .leading, spacing: JPSpace.xs) {
+            if let line = Self.foldedLine(reason: note.reason) {
             Button { open = true } label: {
                 HStack(spacing: 10) {
                     Text(line.eyebrow)
@@ -102,12 +106,13 @@ struct TripAICard: View {
             }
             .buttonStyle(.plain)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Self.foldedSpoken(reason: note.reason))
+            .accessibilityLabel(Self.foldedSpoken(reason: note.reason) ?? "")
             // 子を畳む（`.ignore`）とボタンの印が落ちる（Mac run 1420 で `tripAI.folded` が Button として見つからなかった。
             // 同じ件の手本: DMSpotCard の run 1096・PhotoDetailView の run 1322）。印を付け直す
             .accessibilityAddTraits(.isButton)
             .accessibilityHint(L("押すと開きます", "Opens the details"))
             .accessibilityIdentifier("tripAI.folded")
+            }
             band
         }
         .accessibilityElement(children: .contain)
@@ -134,17 +139,6 @@ struct TripAICard: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(L("畳む", "Collapse"))
                 .accessibilityIdentifier("tripAI.fold")
-                if canUndo {
-                    Button(action: undo) {
-                        Label(L("元に戻す", "Undo"), systemImage: "arrow.uturn.backward")
-                            .font(JPFont.footnote.weight(.semibold))
-                            .foregroundStyle(WebTheme.text)
-                            .frame(minHeight: WebTheme.minTapTarget)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("tripAI.undo")
-                }
             }
             if !note.reason.isEmpty {
                 Text(note.reason)
@@ -162,9 +156,14 @@ struct TripAICard: View {
         .accessibilityIdentifier("tripAI.card")
     }
 
-    /// AI なしで組んだ理由（真鍮 8% の案内の帯）
+    /// AI なしで組んだ理由（真鍮 8% の案内の帯）。組み直しの帯を出している間は出さない
     @ViewBuilder
     private var band: some View {
+        if showsBand { bandContent }
+    }
+
+    @ViewBuilder
+    private var bandContent: some View {
         switch note.mode {
         case .ai:
             EmptyView()

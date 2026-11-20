@@ -47,7 +47,11 @@ struct TripAIService {
         case signedOut
     }
 
-    private struct UsageBody: Decodable { let usage: Usage }
+    private struct UsageBody: Decodable {
+        let usage: Usage
+        /// 旅行プランの AI の今日と今月の数（status だけが返す・札 #652）。古いサーバーは返さない
+        var trip: AskUsage?
+    }
     private struct PlanBody: Decodable { let plan: TripAIPlan; let usage: Usage }
     private struct Request: Encodable {
         let action: String
@@ -62,8 +66,15 @@ struct TripAIService {
     init(api: APIClient) { self.api = api }
 
     func status() async throws -> Usage {
-        if let fixture = TripAIFixture.usage { return fixture }
-        return try await call(Request(action: "status"), as: UsageBody.self).usage
+        try await statusWithQuota().usage
+    }
+
+    /// 今月の数と、今日の数（`trip.day`）。2026-11-20 判断（札 #667 の確かめ役）: 1日の上限に当たっているかを、
+    /// AI を呼ぶ前に知るために読む
+    func statusWithQuota() async throws -> (usage: Usage, trip: AskUsage?) {
+        if let fixture = TripAIFixture.usage { return (fixture, nil) }
+        let body = try await call(Request(action: "status"), as: UsageBody.self)
+        return (body.usage, body.trip)
     }
 
     /// 組む前に1回取る（札 #652・2026-11-20 owner 承認）。**端末の AI の回も、無料も Pro も同じ上限で数える**

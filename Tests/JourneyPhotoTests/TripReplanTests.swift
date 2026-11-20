@@ -57,11 +57,69 @@ final class TripReplanTests: XCTestCase {
                                         reason: "雨の日は屋内の美術館を先にしました。")
 
     @MainActor
-    private func replan(_ runner: TripAIRunner, offline: Bool = false) async throws -> TripAIResult? {
+    private func replan(_ runner: TripAIRunner, offline: Bool = false,
+                        eta: @escaping TripAIRouteCheck.ETA = { _, _ in 10 }) async throws -> TripAIResult? {
         let rows = try rows()
         return await runner.revise(request: TripReplan.request(condition: TripAITweak.rain.request, start: "2026-12-24", end: "2026-12-25"),
                                    current: current(rows), candidates: [], index: rows, offline: offline,
-                                   service: TripAIService(api: Self.api()), title: "冬の金沢", countAfter: true) { _, _ in 10 }
+                                   service: TripAIService(api: Self.api()), title: "冬の金沢", countAfter: true, eta: eta)
+    }
+
+    private func quota(day: Int, month: Int) -> AskUsage {
+        AskUsage(tier: "free", kind: "trip", day: .init(used: 5 - day, limit: 5, remaining: day),
+                 month: .init(used: 30 - month, limit: 30, remaining: month, resetsOn: "2026-12-01"), serverAllowed: false)
+    }
+
+    /// 移動の見込みを測っている間に画面を閉じた（取り消した）回は数えない。回は測り終えた後、案を出す直前に取る
+    @MainActor
+    func testCancelWhileMeasuringIsNotCounted() async throws {
+        var reserved = 0
+        let runner = TripAIRunner(onDevice: true,
+                                  devicePlanner: { _, _ in self.rainAnswer },
+                                  reserver: { _ in reserved += 1; return self.quota(3) })
+        let task = Task { @MainActor in
+            try await self.replan(runner, eta: { _, _ in
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                return 10
+            })
+        }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        task.cancel()
+        let result = try await task.value
+        XCTAssertNil(result, "取り消した回は案を出さない")
+        XCTAssertEqual(reserved, 0, "取り消した回は回数を取らない")
+    }
+
+    /// 1日の上限（429 の day）は今日の分として覚え、月の残りを0にしない。次は呼ぶ前に止め、今日の分の文を出し続ける
+    @MainActor
+    func testDayLimitIsNotShownAsMonthAndStopsBeforeCalling() async throws {
+        var asked = 0
+        let runner = TripAIRunner(onDevice: true,
+                                  devicePlanner: { _, _ in asked += 1; return self.rainAnswer },
+                                  reserver: { _ in throw AskService.Failure.limit(.day, nil) })
+        runner.setUsage(.init(tier: "free", used: 3, limit: 30, remaining: 27, resetsOn: "2026-12-01", countsDevice: true))
+        let first0 = try await replan(runner)
+        let first = try XCTUnwrap(first0)
+        XCTAssertEqual(first.mode, .limited(.day))
+        XCTAssertFalse(runner.isUsedUp, "1日の上限で月の分を使い切った扱いにしない")
+        XCTAssertEqual(runner.usage?.remaining, 27)
+        XCTAssertTrue(runner.dayUsedUp)
+        let second0 = try await replan(runner)
+        let second = try XCTUnwrap(second0)
+        XCTAssertEqual(asked, 1, "今日の分を使い切ったら呼ぶ前に止める")
+        XCTAssertEqual(second.mode, .limited(.day))
+        let line = try XCTUnwrap(TripReplan.failureLine(second, isPro: false))
+        XCTAssertFalse(line.contains("今月の AI の回数を使い切りました"), line)
+
+        // 取れた回の今日の残りが0なら、次は呼ばない（status の trip.day を読んだときと同じ）
+        var asked2 = 0
+        let last = TripAIRunner(onDevice: true,
+                                devicePlanner: { _, _ in asked2 += 1; return self.rainAnswer },
+                                reserver: { _ in self.quota(day: 0, month: 20) })
+        _ = try await replan(last)
+        let r3 = try await replan(last)
+        XCTAssertEqual(asked2, 1)
+        XCTAssertEqual(r3?.mode, .limited(.day))
     }
 
     // MARK: - 回数（旅行プランの AI と同じ枠。端末の AI は案を出す直前に1回取る）
@@ -197,12 +255,18 @@ final class TripReplanTests: XCTestCase {
         XCTAssertEqual(proposal.after[0].date, "2026-12-24", "日付は変えない")
 
         // 「この案にする」→「元に戻す」
-        var history: [[TripDay]] = []
-        history.append(plan)
         let accepted = TripReplan.accept(proposal, current: plan)
         XCTAssertEqual(accepted, proposal.after)
-        XCTAssertEqual(TripReplan.undo(&history), plan, "元に戻すと置き換える前の日程")
-        XCTAssertNil(TripReplan.undo(&history))
+        let step = TripReplan.Step(before: plan, after: accepted)
+        XCTAssertEqual(TripReplan.undo(step, current: accepted), plan, "元に戻すと置き換える前の日程")
+
+        // 置き換えた後に仲間が場所を足していた: 元に戻しても仲間の変更は消さない
+        var later = accepted
+        later[1].items.append(.spot(spotId: "sp_daisetz", note: nil))
+        let undone = TripReplan.undo(step, current: later)
+        XCTAssertTrue(undone[1].items.contains(.spot(spotId: "sp_daisetz", note: nil)), "仲間が足した場所は残る")
+        XCTAssertTrue(undone.flatMap(\.items).contains(.spot(spotId: "sp_castle", note: nil)), "置き換えで外した場所は戻る")
+        XCTAssertFalse(undone.flatMap(\.items).contains(.spot(spotId: "sp_museum", note: nil)), "置き換えで足した場所は外れる")
 
         // 何も変わらない答えは案にしない
         let same = TripAIResult(title: "", days: [[rows[0], rows[1]], [rows[2]]], reason: "", removed: [], mode: .ai, candidates: rows)
@@ -251,5 +315,18 @@ final class TripReplanTests: XCTestCase {
         let card = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Trips/AI/TripAICard.swift"),
                               encoding: .utf8)
         XCTAssertFalse(card.contains("tripAI.tweak"), "押すだけの直しは組み直しの列の1つにまとめた（入口を2つにしない）")
+        XCTAssertFalse(card.contains("tripAI.undo"), "「元に戻す」は組み直しの列に1つだけ")
+        // 画面を閉じたら組み直しを取り消す
+        let disappear = try XCTUnwrap(detail.range(of: "// 組み直しは取り消す"))
+        XCTAssertTrue(detail[disappear.lowerBound...].prefix(120).contains("replanTask?.cancel()"))
+        // 帯を2本重ねない・組み直している間は「この案にする」を止める
+        XCTAssertTrue(detail.contains("showsBand: replanNotice == nil && replanWorking == nil"))
+        XCTAssertTrue(detail.contains("TripReplanActions(working: replanWorking != nil"))
+        let views = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Trips/AI/TripReplanViews.swift"),
+                               encoding: .utf8)
+        let actions = try XCTUnwrap(views.range(of: "struct TripReplanActions"))
+        let actionBody = String(views[actions.lowerBound...])
+        XCTAssertTrue(actionBody.contains("L(\"今のままにする\""), "案の側は「今のままにする」（置き換えたあとの「元に戻す」と分ける）")
+        XCTAssertTrue(actionBody.contains(".disabled(working)"))
     }
 }

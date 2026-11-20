@@ -44,9 +44,9 @@ struct TripPlanDetailView: View {
     @ObservedObject private var aiNotes = TripAINotes.shared
     @StateObject private var aiRunner = TripAIRunner()
     /// AI の組み直しと替えるの前の日程（「元に戻す」で1つずつ戻す。画面を出たら消える）
-    @State private var aiHistory: [[TripDay]] = []
-    /// `aiHistory` の1つずつに、そのとき「外しました　戻す」の棚へ足した控えの番号（戻すときに棚から外す）
-    @State private var aiHistoryShelf: [[Int]] = []
+    @State private var aiHistory: [TripReplan.Step] = []
+    /// 組み直しの手順（画面を閉じたら取り消す。取り消した回は回数に数えない・札 #667 の確かめ役）
+    @State private var replanTask: Task<Void, Never>?
     /// 組み直しの案（札 #667）。**「この案にする」まで日程は変えない**（`TripReplan.Proposal`）
     @State private var replan: TripReplan.Proposal?
     /// 案の「今 | 組み直した案」のどちらを見ているか
@@ -423,6 +423,9 @@ struct TripPlanDetailView: View {
         .onDisappear {
             // 離れるとき（撮影スポットを積む・戻る）は待たずに送る。「保存せずに戻る」の回は送らない
             if !discarding, isDirty, problem == nil { Task { _ = await flush() } }
+            // 組み直しは取り消す（取り消した回は回数に数えない・札 #667 の確かめ役）
+            replanTask?.cancel()
+            replanTask = nil
             frontSettle?.cancel()
             frontSettle = nil
             front.disappear()
@@ -804,12 +807,13 @@ struct TripPlanDetailView: View {
                 header(plan)
 
                 // AI の札は1行に畳んで出す（2026-11-16 判断・A6・`TripAICard.open`）。
-                // 2026-11-20 判断（札 #667）: 「元に戻す」は下の組み直しの列に1つだけ置く（札の中には出さない）
-                if let note = aiNotes.note(planId) {
-                    TripAICard(note: note, usage: aiRunner.usage, working: replanWorking != nil, canUndo: false,
+                // 2026-11-20 判断（札 #667）: 「元に戻す」は下の組み直しの列に1つだけ置く（札の中には出さない）。
+                // 組み直しの帯を出している間・組んでいる間は札の帯を出さない（帯を2本重ねない）
+                if let note = aiNotes.note(planId), TripAICard.hasContent(note) {
+                    TripAICard(note: note, usage: aiRunner.usage, working: replanWorking != nil,
                                online: !connectivity.isOffline,
-                               redo: { Task { await startReplan(label: L("整えて", "Tidy up"), request: "整えて", typed: false) } },
-                               undo: undoAI,
+                               showsBand: replanNotice == nil && replanWorking == nil,
+                               redo: { runReplan(label: L("整えて", "Tidy up"), request: "整えて", typed: false) },
                                openPro: { aiShowPro = true })
                 }
 
@@ -817,7 +821,7 @@ struct TripPlanDetailView: View {
                 if hasReplanSpots || replan != nil || !aiHistory.isEmpty {
                     TripReplanBar(working: replanWorking, proposed: replan?.label, notice: replanNotice,
                                   noticeOpensPro: replanNoticePro, canUndo: !aiHistory.isEmpty && replan == nil,
-                                  run: { label, request, typed in Task { await startReplan(label: label, request: request, typed: typed) } },
+                                  run: { label, request, typed in runReplan(label: label, request: request, typed: typed) },
                                   undo: undoAI,
                                   openPro: { aiShowPro = true })
                 }
@@ -885,7 +889,7 @@ struct TripPlanDetailView: View {
         // 組み直した案の「元に戻す」「この案にする」（案1の模型・下に固定する帯）
         .safeAreaInset(edge: .bottom) {
             if replan != nil {
-                TripReplanActions(discard: discardReplan, accept: acceptReplan)
+                TripReplanActions(working: replanWorking != nil, discard: discardReplan, accept: acceptReplan)
             }
         }
         // 旅の日にホームの札から開いた: 今日の日まで送る（日程が読めて、今日の日があるときの1回だけ・A2）
@@ -1530,19 +1534,26 @@ struct TripPlanDetailView: View {
 
     private func swapAI(_ target: TripAISwapTarget, to spot: OfficialSpot) {
         guard days.indices.contains(target.day), days[target.day].items.indices.contains(target.item) else { return }
-        aiHistory.append(days)
-        aiHistoryShelf.append([])
         var next = days
         next[target.day].items[target.item] = TripDraft.place(spot: spot).item
+        aiHistory.append(TripReplan.Step(before: days, after: next))
         apply(next, said: L("\(target.spot.name)を\(spot.name)に替えました", "Swapped \(target.spot.name) for \(spot.name)"))
     }
 
     private func undoAI() {
         guard let last = aiHistory.popLast() else { return }
         // 置き換えたときに棚へ回した場所は、戻すと日程に戻るので棚から外す（二重に「戻す」を出さない）
-        let added = Set(aiHistoryShelf.popLast() ?? [])
+        let added = Set(last.shelf)
         removedShelf.removeAll { added.contains($0.id) }
-        apply(last, said: L("前の日程に戻しました", "Restored the previous plan"))
+        // 置き換えた後に入った変更（仲間の変更など）は残し、置き換えで変えた分だけを戻す（`TripReplan.undo`）
+        apply(TripReplan.undo(last, current: days), said: L("前の日程に戻しました", "Restored the previous plan"))
+    }
+
+    /// 組み直しを始める（前の手順は取り消す。画面を閉じたら `onDisappear` で取り消す）
+    private func runReplan(label: String, request: String, typed: Bool) {
+        guard replanWorking == nil else { return }
+        replanTask?.cancel()
+        replanTask = Task { await startReplan(label: label, request: request, typed: typed) }
     }
 
     // MARK: - 組み直す（札 #667）
@@ -1602,15 +1613,15 @@ struct TripPlanDetailView: View {
     /// その上に案で変えた分だけを重ねる（`TripReplan.accept`）
     private func acceptReplan() {
         guard let proposal = replan else { return }
+        guard replanWorking == nil else { return }
         let next = TripReplan.accept(proposal, current: days)
-        aiHistory.append(days)
         var added: [Int] = []
         for d in proposal.dropped {
             removedSeq += 1
             removedShelf.append(TripPlanEdit.Removed(id: removedSeq, day: d.day, index: d.index, item: d.item))
             added.append(removedSeq)
         }
-        aiHistoryShelf.append(added)
+        aiHistory.append(TripReplan.Step(before: days, after: next, shelf: added))
         replan = nil
         apply(next, said: L("プランを入れ替えました", "Plan replaced"))
         toasts.show(L("プランを入れ替えました", "Plan replaced"))

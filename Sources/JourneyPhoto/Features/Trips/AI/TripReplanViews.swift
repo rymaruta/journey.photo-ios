@@ -222,15 +222,19 @@ struct TripReplanPreview: View {
     }
 }
 
-/// 案の下の帯（案1の模型: 線の「元に戻す」と、写真の無い画面の主ボタン「この案にする」＝真鍮の塗りに墨）
+/// 案の下の帯（案1の模型: 線のボタンと、写真の無い画面の主ボタン「この案にする」＝真鍮の塗りに墨）。
+/// 2026-11-20 判断（札 #667 の確かめ役）: 線のボタンは「今のままにする」（模型の「元に戻す」は、置き換えたあとの
+/// 「元に戻す」と同じ言葉で紛れる）。別の条件で組み直している間は「この案にする」を止める（古い案を選ばせない）
 struct TripReplanActions: View {
+    /// 別の条件で組み直している
+    let working: Bool
     let discard: () -> Void
     let accept: () -> Void
 
     var body: some View {
         HStack(spacing: JPSpace.s) {
             Button(action: discard) {
-                Text(L("元に戻す", "Undo")).jpPillButton(.outline, height: JPHeight.primaryButton)
+                Text(L("今のままにする", "Keep current")).jpPillButton(.outline, height: JPHeight.primaryButton)
             }
             .buttonStyle(.plain)
             .accessibilityHint(L("案をやめて、今の日程のままにします", "Keeps your current plan"))
@@ -239,6 +243,8 @@ struct TripReplanActions: View {
                 Text(L("この案にする", "Use this plan")).jpPillButton(.main(onPhoto: false))
             }
             .buttonStyle(.plain)
+            .disabled(working)
+            .opacity(working ? TripStyle.disabledOpacity : 1)
             .accessibilityIdentifier("tripReplan.accept")
         }
         .jpBottomBar()

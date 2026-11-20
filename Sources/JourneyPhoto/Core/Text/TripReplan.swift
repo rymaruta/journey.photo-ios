@@ -85,9 +85,20 @@ enum TripReplan {
             : TripShareText.rebase(base: proposal.before, mine: proposal.after, server: current)
     }
 
-    /// 「元に戻す」で戻す日程（置き換える前に控えた日程の最後）。控えが無ければ nil
-    static func undo(_ history: inout [[TripDay]]) -> [TripDay]? {
-        history.popLast()
+    /// 「元に戻す」の控え（置き換える前と、置き換えた直後の日程。棚へ回した場所の番号）
+    struct Step: Equatable {
+        let before: [TripDay]
+        let after: [TripDay]
+        /// そのとき「外しました　戻す」の棚へ足した控えの番号（戻すときに棚から外す）
+        var shelf: [Int] = []
+    }
+
+    /// 「元に戻す」で戻す日程。**置き換えた後に入った変更（共有したプランの仲間の変更など）は残す**:
+    /// 置き換えた直後（`after`）から今（`current`）までの変更の上に、置き換えで変えた分だけを戻す
+    /// （2026-11-20 判断・札 #667 の確かめ役: 前は置き換える前の日程をそのまま戻し、その後の仲間の変更を消した）
+    static func undo(_ step: Step, current: [TripDay]) -> [TripDay] {
+        current == step.after ? step.before
+            : TripShareText.rebase(base: step.after, mine: step.before, server: current)
     }
 
     // MARK: - 案にならなかった回の1行
