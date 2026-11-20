@@ -71,7 +71,13 @@ final class TripAIRunner: ObservableObject {
     typealias Reserver = (AskService.Via) async throws -> AskUsage
     private let reserver: Reserver?
 
-    init(onDevice: Bool = TripAIDevice.isAvailable, planner: Planner? = nil,
+    /// 見本の AI（`-JPTripAIFixture`・Debug の UI テストだけ）のときは端末の AI を使わず、見本の答え（サーバーの道）で組む。
+    /// 2026-11-20 判断（札 #667・Mac run 1621）: CI の模擬機は `availability=available supportsJa=true` を返すのに、
+    /// 答えは毎回 `ModelManagerError 1019` で落ちた（`measured [trip-ai]` の9件すべて）。端末の道に入って「AI が答えなかった」に
+    /// なり、見本の答えが使われなかった
+    nonisolated static var usesDeviceAI: Bool { TripAIDevice.isAvailable && !TripAIFixture.isOn }
+
+    init(onDevice: Bool = TripAIRunner.usesDeviceAI, planner: Planner? = nil,
          devicePlanner: DevicePlanner? = nil, reserver: Reserver? = nil) {
         self.onDevice = onDevice
         self.planner = planner
