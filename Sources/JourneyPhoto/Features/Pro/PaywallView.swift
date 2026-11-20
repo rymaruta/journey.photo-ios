@@ -364,10 +364,12 @@ struct ProBenefit: Identifiable, Equatable {
         [
             // 2026-11-15（札 #621・owner 承認）: AI で旅行プランを作る。登録と Pro の入口にするので先頭に置く。
             // 回数は `TripAILimits`（サーバーの `tripAiConfig.ts` と同じ値）
+            // 2026-11-20（札 #652・owner 承認）: 題を「AI に頼む、旅行プランを作る」に替えた（行は増やさない）。
+            // 数は `AskLimits`（AI に頼む）と `TripAILimits`（旅行プラン）。明日の天気と光はまだ作っていないので書かない
             ProBenefit(icon: .ai,
-                       title: L("AI で旅行プランを作る", "Plan trips with AI"),
-                       body: L("ひとこと書けば、観光スポットから日程を組む。月\(TripAILimits.pro)回",
-                               "Write one line and get a day-by-day plan. \(TripAILimits.pro) a month")),
+                       title: L("AI に頼む、旅行プランを作る", "Ask AI and plan trips"),
+                       body: L("探すで AI に聞くのは1日\(AskLimits.proDay)回、月\(AskLimits.proMonth)回。旅行プランは月\(TripAILimits.pro)回",
+                               "Ask AI in Search \(AskLimits.proDay) a day, \(AskLimits.proMonth) a month. Trip plans \(TripAILimits.pro) a month")),
             ProBenefit(icon: .light,
                        title: L("光と天気の知らせ", "Light & weather alerts"),
                        body: L("行きたい場所が「明日の朝、晴れて朝焼け」なら前の晩に",
@@ -429,13 +431,15 @@ enum PaywallOrigin: Equatable {
     case trunk
     /// AI で旅行プランを作る（回数を使い切った帯から・札 #621）
     case tripAI
+    /// AI に頼む（探すの答えの上の、回数を使い切った帯から・札 #652）
+    case ask
 
     /// いちばん上に出す利点。nil ならふだんの並び
     var leadingBenefit: ProIcon? {
         switch self {
         case .general: return nil
         case .trunk: return .trunk
-        case .tripAI: return .ai
+        case .tripAI, .ask: return .ai
         }
     }
 }

@@ -5,7 +5,8 @@ import SwiftUI
 /// 前は探した言葉が残らず、同じ地名を毎回打ち直していた。押す回数: 前「欄」→ 全部打つ、今「言葉」を1回押す。
 ///
 /// 見た目（デザインの板 Search と DesignSystem の決まり）:
-/// - 黒地の上の行。言葉は本文（白）、時計の印と × は text-3（合図ではないので真鍮にしない）
+/// - 黒地の上の行。言葉は本文（白）、時計の印と × は text-3（合図ではないので真鍮にしない）。
+///   AI に頼んだ文は印だけ真鍮の ✦（2026-11-20・札 #652。探すの欄の ✦ と同じ合図）
 /// - 行・×・「すべて消す」の当たりは 44pt
 /// - 見出しは小さい副文（段の見出し `JPSectionHeading` ほど大きくしない。発見の段より前に出しゃばらない）
 /// - 消すのは確かめずに消す（取り返しの付かない操作・費用・プライバシーではない。CLAUDE.md「聞くのは最小に」）
@@ -44,12 +45,15 @@ struct RecentSearchesSection: View {
     }
 
     private func row(_ word: String) -> some View {
-        HStack(spacing: JPSpace.s) {
+        // 2026-11-20（札 #652）: AI に頼んだ文も同じ一覧に混ぜ、印だけ真鍮の ✦ に替える（行は増やさない）。
+        // 押すと同じ日なら前の答えを出す（回数を使わない・`AskHistoryStore`）
+        let asked = AskQuery.form(word) == .ask
+        return HStack(spacing: JPSpace.s) {
             Button { onPick(word) } label: {
                 HStack(spacing: JPSpace.s) {
-                    Image(systemName: "clock.arrow.circlepath")
+                    Image(systemName: asked ? "sparkle" : "clock.arrow.circlepath")
                         .font(.subheadline)
-                        .foregroundStyle(WebTheme.text3)
+                        .foregroundStyle(asked ? WebTheme.accent : WebTheme.text3)
                         .accessibilityHidden(true)
                     Text(word)
                         .font(.subheadline)
@@ -61,7 +65,7 @@ struct RecentSearchesSection: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(L("\(word)で探す", "Search for \(word)"))
+            .accessibilityLabel(asked ? L("「\(word)」を AI に聞く", "Ask AI: \(word)") : L("\(word)で探す", "Search for \(word)"))
             .accessibilityIdentifier("search.recent.word")
 
             Button { onRemove(word) } label: {

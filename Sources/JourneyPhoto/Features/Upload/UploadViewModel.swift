@@ -882,6 +882,14 @@ final class UploadViewModel: ObservableObject {
     var runPostSuggest: PostSuggester.Run = PostSuggester.live
     /// 写真の中身（Vision の分類）は写真ごとに1回だけ見る（撮影地が変わっても写真は同じ）
     private var postSuggestLabels: [UUID: [String]] = [:]
+    /// 候補の回数（1日20回かつ月300回・端末の中だけで数える・札 #658）。試験は差し替える
+    var postSuggestQuota = PostSuggestQuota()
+    /// 見本の候補（`-JPOnDeviceAI sample`・画面写真の試験）の回も数えるか。ふだんは数えない（同じ模擬機で流し直すと
+    /// 上限に当たって絵が変わる）。上限の試験だけ true にする
+    var postSuggestQuotaCountsSample = false
+    private var postSuggestQuotaOn: Bool { OnDeviceAI.mode != .sample || postSuggestQuotaCountsSample }
+    /// 上限に達して候補を出さなかった（候補の場所に小さく1行。投稿は止めない）
+    @Published private(set) var postSuggestBlocked: PostSuggestQuota.Block?
 
     /// 端末の AI が使えるか（使えなければ候補の仕組みを何も動かさない＝今と同じ見え方）
     var suggestsPosts: Bool { OnDeviceAI.isAvailable }
@@ -920,6 +928,11 @@ final class UploadViewModel: ObservableObject {
         guard suggestsPosts, let item = items.first(where: { $0.id == id }) else { return }
         let key = PostSuggest.key(postSuggestInput(for: item))
         guard postSuggestKeys[id] != key else { return }
+        // 札 #658: 上限に達していたら AI を呼ばず、候補を出さない（ダイアログは出さない）
+        if postSuggestQuotaOn, let block = postSuggestQuota.blocked {
+            postSuggestBlocked = block
+            return
+        }
         postSuggestKeys[id] = key
         // 写真の中身（Vision の分類）は写真ごとに1回だけ。試験の切り替え（`-JPOnDeviceAI`）の回は写真を読まない
         if postSuggestLabels[id] == nil {
@@ -932,6 +945,14 @@ final class UploadViewModel: ObservableObject {
         // 待っている間に材料が変わった・写真が外れた回は捨てる（新しい回が作り直す）
         guard postSuggestKeys[id] == key, items.contains(where: { $0.id == id }) else { return }
         postSuggestions[id] = result
+        // 数えるのは候補を画面に出した回だけ（AI が答えなかった回は数えない）
+        if result != nil, postSuggestQuotaOn { postSuggestQuota.count() }
+    }
+
+    /// 題の候補の場所に出す1行（上限に達して、この写真に候補が無いとき）
+    func postSuggestLimitLine(for item: PendingPhoto) -> String? {
+        guard suggestsPosts, postSuggestions[item.id] == nil, let block = postSuggestBlocked else { return nil }
+        return PostSuggestQuota.line(block)
     }
 
     /// 題の欄の下に出す候補（欄が空のときだけ）

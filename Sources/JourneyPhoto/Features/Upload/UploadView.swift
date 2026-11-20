@@ -1551,6 +1551,12 @@ struct UploadView: View {
                 let titleIdeas = model.titleSuggestions(for: item)
                 if !titleIdeas.isEmpty && !model.isWorking {
                     PostSuggestChips(kind: .title, candidates: titleIdeas) { photo.wrappedValue.title = $0 }
+                } else if let line = model.postSuggestLimitLine(for: item), item.title.isEmpty {
+                    // 札 #658: 候補の上限（1日20回かつ月300回）。投稿は止めず、候補の場所に小さく1行だけ
+                    Text(line)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
+                        .accessibilityIdentifier("upload.suggest.usedUp")
                 }
                 JPField(L("説明", "Description"), multiline: true) {
                     JPTextField(L("どんな写真ですか", "What is this photo about?"),

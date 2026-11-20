@@ -172,8 +172,8 @@ final class ComposeGuideLauncherTests: XCTestCase {
     /// Pro の案内の利点から「作例を重ねて撮る」を外した（2026-10-17）。残りは3つで空にならない
     func testPaywallNoLongerSellsTheComposeGuide() {
         let titles = ProBenefit.all.map(\.title)
-        // 2026-11-15（札 #621）: AI で旅行プランを作るを先頭に足した
-        XCTAssertEqual(titles, ["AI で旅行プランを作る", "光と天気の知らせ", "電波なしで使える旅", "Pro マークと Pro 限定の章", "特別な乗車券", "旅のトランクをもっと"])
+        // 2026-11-15（札 #621）: AI で旅行プランを作るを先頭に足した。2026-11-20（札 #652）: 題を「AI に頼む、旅行プランを作る」に
+        XCTAssertEqual(titles, ["AI に頼む、旅行プランを作る", "光と天気の知らせ", "電波なしで使える旅", "Pro マークと Pro 限定の章", "特別な乗車券", "旅のトランクをもっと"])
         XCTAssertFalse(ProBenefit.all.contains { $0.title.contains("重ねて撮る") || $0.body.contains("重ねて") })
     }
 

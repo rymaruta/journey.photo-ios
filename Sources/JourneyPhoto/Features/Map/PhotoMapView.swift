@@ -1601,6 +1601,12 @@ struct PhotoMapView: View {
             }
         }
         .modifier(MapCardStyle())
+        // 札が出ている間、知らせ（「行きたい」に追加しました）を札の上に出す。札の「行きたい」を覆うと、もう一度押しても
+        // 知らせを閉じるだけで戻せなかった（run 1604・1608・`ToastCenter.keepClearAbove`）
+        .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY }) { top in
+            toasts.keepClearAbove = top
+        }
+        .onDisappear { toasts.keepClearAbove = nil }
         // 札を1つの入れ物にしてから名前を付ける（2026-11-16 Mac run 1419・1423 の画面の木: 入れ物でないと、札の名前が
         // 中のボタン全部に付き、`map.officialCard.wish` などの名前が消えていた）。カメラの部屋の札と同じ形
         .accessibilityElement(children: .contain)

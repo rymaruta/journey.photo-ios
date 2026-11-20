@@ -67,6 +67,10 @@ case "$mode" in
         for suite in ${UNIT_ONLY_TESTING:-JourneyPhotoTests}; do
             extra="$extra -only-testing:$suite"
         done
+        # 計測のための試し（端末の AI に10組を通す `OnDeviceAIProbeTests` など）は、名指しした回だけ走る
+        # （CLAUDE.md「計測は名指しした回だけ」・2026-11-20 run 1602 で 138秒かかり1本の上限 60秒を超えた）。
+        # 名指しは `inputs[screens]`（呼び手の env `SCREENS`）。xcodebuild は `TEST_RUNNER_` の頭を外してテストに渡す
+        export TEST_RUNNER_JP_SCREENS="${SCREENS:-}"
         extra="$extra -test-timeouts-enabled YES"
         extra="$extra -default-test-execution-time-allowance $UNIT_TIME_ALLOWANCE"
         extra="$extra -maximum-test-execution-time-allowance $UNIT_TIME_MAXIMUM"

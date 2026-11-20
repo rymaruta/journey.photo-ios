@@ -37,6 +37,8 @@ final class AppEnvironment: ObservableObject {
     let trips: TripPlanService
     /// AI で旅行プランを作る（`POST /user/trip-ai`・札 #621）
     let tripAI: TripAIService
+    /// AI に頼む（探すの欄・`POST /user/trip-ai` の `reserve` と `ask`・札 #652）
+    let ask: AskService
     /// 公開写真のページ（`GET /feed`・認証なし）。ホームの「新着」が読む（2026-10-03）
     let publicFeed: PublicFeedService
     /// Pro の購入をサーバーへ渡す口（`POST /user/purchases`・第2段階）
@@ -95,6 +97,7 @@ final class AppEnvironment: ObservableObject {
         self.discovery = DiscoveryService(api: api)
         self.trips = trips ?? TripPlanService(api: api)
         self.tripAI = TripAIService(api: api)
+        self.ask = AskService(api: api)
         self.publicFeed = PublicFeedService(api: api)
         self.purchases = PurchaseService(api: api)
         self.trunk = TrunkService(api: api)

@@ -1599,7 +1599,13 @@ struct RootView: View {
         }
         // 短い知らせ（Web の `Toast`）。ミニプレイヤーより上に出す
         .overlay(alignment: .bottom) {
-            ToastOverlay().padding(.bottom, 116)
+            // 画面の下に押せる物を並べた画面（地図の札）が出ている間は、その上に出す（`ToastPlacement`）
+            GeometryReader { geo in
+                ToastOverlay()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, ToastPlacement.bottomPadding(containerMaxY: geo.frame(in: .global).maxY,
+                                                                   keepClearAbove: toasts.keepClearAbove))
+            }
         }
         // AI で作った旅行プランの知らせ（札 #621・アプリの上の帯。通知の許可は求めない）。押すとその日程が開く
         .overlay(alignment: .top) {
