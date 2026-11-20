@@ -89,11 +89,9 @@ enum VisitedMapText {
         n > VisitedPrefectures.displayCap ? L("\(VisitedPrefectures.countText(n)) 回", "\(VisitedPrefectures.countText(n)) times")
                                          : L("\(n) 回", n == 1 ? "1 time" : "\(n) times")
     }
-    /// 回数の読み上げ。3 回以上は「3 回以上」と読む（「3 たす」と読ませない）
-    static func visitCountSpoken(_ n: Int) -> String {
-        n > VisitedPrefectures.displayCap ? L("\(VisitedPrefectures.displayCap + 1) 回以上", "\(VisitedPrefectures.displayCap + 1) or more times")
-                                         : visitCount(n)
-    }
+    /// 回数の読み上げは、3 回以上でも本当の数で読む（「東京都、7 回」）。2026-11-20 判断: 画面の字は「3+」にまとめるが、
+    /// 読み上げで数が変わらないと、押して足したこと（6 → 7）が耳では分からなくなるため
+    static func visitCountSpoken(_ n: Int) -> String { L("\(n) 回", n == 1 ? "1 time" : "\(n) times") }
 
     static var recentDates: String { L("最近の日付", "Recent dates") }
     static var noDates: String { L("まだ記録がありません", "No record yet") }

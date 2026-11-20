@@ -67,12 +67,12 @@ final class VisitedMapViewportTests: XCTestCase {
     // MARK: - 文言
 
     func testReadAloudForms() {
-        XCTAssertEqual(VisitedMapText.prefectureAccessibility("東京都", count: 5, isCandidate: false), "東京都、3 回以上")
+        XCTAssertEqual(VisitedMapText.prefectureAccessibility("東京都", count: 5, isCandidate: false), "東京都、5 回")
         XCTAssertEqual(VisitedMapText.prefectureAccessibility("東京都", count: 0, isCandidate: false), "東京都、未")
         XCTAssertEqual(VisitedMapText.prefectureAccessibility("東京都", count: 0, isCandidate: true), "東京都、写真の候補")
-        XCTAssertEqual(VisitedMapText.changeAnnouncement("東京都", count: 6, visited: 31), "東京都、3 回以上。行った県 31")
+        XCTAssertEqual(VisitedMapText.changeAnnouncement("東京都", count: 6, visited: 31), "東京都、6 回。行った県 31")
         // 押した県の帯から足し引きしたあと（案 A・2026-11-10）
-        XCTAssertEqual(VisitedMapText.quickAdded("東京都", count: 3), "東京都、3 回以上、1 回足しました")
+        XCTAssertEqual(VisitedMapText.quickAdded("東京都", count: 3), "東京都、3 回、1 回足しました")
         XCTAssertEqual(VisitedMapText.quickRemoved("東京都", count: 2), "東京都、2 回、1 回減らしました")
         XCTAssertEqual(VisitedMapText.quickRemoved("東京都", count: 0), "東京都、未、1 回減らしました")
         XCTAssertEqual(VisitedMapText.quickHint, "押す＝1 回足す、長押し＝見るだけ")

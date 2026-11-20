@@ -454,14 +454,14 @@ final class VisitedPrefecturesTests: XCTestCase {
         }
     }
 
-    /// 2026-11-20 owner「3回の時点で3＋でいいよ、意味は3回以上」: 字は「3+ 回」、読み上げは「3 回以上」
+    /// 2026-11-20 owner「3回の時点で3＋でいいよ、意味は3回以上」: 字は「3+ 回」、読み上げは本当の数
     func testThreeOrMoreReadsAsThreePlus() {
         XCTAssertEqual(VisitedMapText.visitCount(2), "2 回")
         XCTAssertEqual(VisitedMapText.visitCount(3), "3+ 回")
         XCTAssertEqual(VisitedMapText.visitCount(7), "3+ 回")
-        XCTAssertEqual(VisitedMapText.visitCountSpoken(3), "3 回以上")
-        XCTAssertEqual(VisitedMapText.prefectureAccessibility("東京都", count: 5, isCandidate: false), "東京都、3 回以上")
+        // 読み上げは本当の数で読む（押して足したことが耳で分かるように）
+        XCTAssertEqual(VisitedMapText.visitCountSpoken(7), "7 回")
+        XCTAssertEqual(VisitedMapText.prefectureAccessibility("東京都", count: 5, isCandidate: false), "東京都、5 回")
         XCTAssertEqual(VisitedMapText.recorded("東京都", count: 4), "東京都を記録しました（3+ 回）")
-        XCTAssertFalse(VisitedMapText.changeAnnouncement("東京都", count: 9, visited: 3).contains("9"))
     }
 }
