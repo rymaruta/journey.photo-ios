@@ -3148,7 +3148,6 @@ final class ScreenshotTests: XCTestCase {
             Thread.sleep(forTimeInterval: 4)
             if !mode.isEmpty {
                 shoot(app, "11z4-探す（AI に頼む、今日の分を使い切った）")
-                app.terminate()
                 continue
             }
             shoot(app, "11z2-探す（AI に頼む、答え）")
@@ -3167,7 +3166,8 @@ final class ScreenshotTests: XCTestCase {
             }
             Thread.sleep(forTimeInterval: 1)
             shoot(app, "11z3-探す（AI に頼む、作りの質問は断る）")
-            app.terminate()
+            // 閉じるのは次の起動に任せる（`launch()` が前のアプリを閉じる）。run 1610 では明示の terminate が
+            // 85 秒返らず「Failed to terminate」で落ちた
         }
     }
 
