@@ -529,6 +529,9 @@ jobs:
       - name: 単体テスト
         id: unit
         if: ${{ !inputs.submit && (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.sharded != 'true' }}
+        # 計測の試しを名指しで走らせる（`Tools/xcode-test.sh` が `TEST_RUNNER_JP_SCREENS` にして渡す）
+        env:
+          SCREENS: ${{ inputs.screens }}
         run: bash Tools/xcode-test.sh unit build/ios/test/Unit.xcresult
 
       # 画面の絵（`ScreenshotTests`）はここで撮る。結果の置き場は前と同じ `Test.xcresult`

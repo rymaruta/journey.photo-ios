@@ -18,6 +18,9 @@ import XCTest
 /// 失敗にはしない——使えないことが答え（「確かめられない」と報告する）
 final class OnDeviceAIProbeTests: XCTestCase {
 
+    /// 名指しの名前（`inputs[screens]=OnDeviceAIProbeTests`）
+    static let measureName = "OnDeviceAIProbeTests"
+
     private struct Case {
         let asset: String
         let input: PostSuggest.Input
@@ -49,7 +52,11 @@ final class OnDeviceAIProbeTests: XCTestCase {
         Case(asset: "composition-ai-goldenSpiral", input: .init(takenOn: "2026-09-14", takenHour: 17)),
     ]
 
-    func testJapaneseQualityOfOnDeviceSuggestions() async {
+    func testJapaneseQualityOfOnDeviceSuggestions() async throws {
+        // 計測のための試し。**名指しした回だけ走る**（`MeasureGate`・2026-11-20 run 1602 で 138秒かかり1本の上限を超えた）
+        guard MeasureGate.isNamed(Self.measureName) else {
+            throw XCTSkip(MeasureGate.skipReason(Self.measureName))
+        }
         let status = OnDeviceAI.systemStatus
         print("measured [onDeviceAI] status=\(status)")
 
