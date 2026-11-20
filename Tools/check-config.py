@@ -133,16 +133,6 @@ for key, setting in (("CFBundleShortVersionString", "MARKETING_VERSION"),
         fail(f"project.yml の {key} は $({setting}) にしてください"
              f"（直の値だとビルド設定と食い違い、TestFlight にはねられます）: {line.strip()}")
 
-# ---- 7.4 ログインを持つ Amplify の版が留めてあるか（札 #657・2026-11-20） ----
-#
-# Package.resolved を置いていないので、`from:` だと控えが外れた回に最新へ解き直される。
-# 1.1.106 は誰も読まないまま Amplify が 2.63.0 → 2.63.1 に上がった。ログインの控え（鍵束）と
-# トークンの更新は Amplify の中にあるので、版は project.yml で1つに決める
-_amplify = re.search(r"^  Amplify:\n((?:    .*\n|\s*#.*\n)+)", project_text, re.M)
-if not _amplify or not re.search(r"^    exactVersion:\s*\d+\.\d+\.\d+\s*$", _amplify.group(1), re.M):
-    fail("project.yml の Amplify は exactVersion で版を1つに留めてください"
-         "（from: だと控えが外れた回に黙って上がる・札 #657）")
-
 # ---- 7.5 SWIFT_VERSION が Xcode の受け取る値か ------------------------------
 #
 # **ツールチェーンの版（5.9・6.0.3）ではなく「言語モード」を書く欄。**

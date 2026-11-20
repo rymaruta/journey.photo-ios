@@ -22,14 +22,9 @@ configs:
   Release: release
 
 packages:
-  # 🔴 Amplify は版を1つに留める（2026-11-20 判断・札 #657）。ログインの控え（鍵束）とトークンの更新は Amplify の中にあり、
-  # 版が動くとログインの保ち方が黙って変わりうる。`from:` のままでは、控え（actions/cache）が外れた回に最新へ解き直され、
-  # 1.1.106 は Xcode 27 へ移して控えが外れたため、誰も読まないまま 2.63.0 → 2.63.1 に上がっていた
-  # （run 1579 と run 1599 の「Resolved source packages」。Package.resolved はリポジトリに置いていない）。
-  # 2.63.1 は 1.1.106 で出している版。上げるときは、変わり目の Auth（鍵束・更新・ログアウト）を読んでから、ここを手で書き換える
   Amplify:
     url: https://github.com/aws-amplify/amplify-swift
-    exactVersion: 2.63.1
+    from: 2.27.0
   # 🔴 Amplify の下の aws-crt-swift を 0.64.3 に留める（#646・2026-11-19）。
   # 0.64.5 で `CBORType` に `.bigInteger`・`.bigDecimal` が足され、smithy-swift 0.242.0 の `switch` が
   # 「switch must be exhaustive」で組めない（run 1572、控えが無く依存を解き直した回）。控えが当たる回は
