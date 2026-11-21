@@ -142,6 +142,10 @@ struct AskSpotCarousel: View {
     @State private var scrollTarget: String?
     /// 札の並びの見えている幅（大きな字の札の幅と、ピンで送る先の位置に使う）
     @State private var containerWidth: CGFloat = 0
+    /// 1枚目の札の画面の上の左端と幅（UI テストのときだけ `search.ask.cardProbe` に出す・回 1619〜1635 の約 6pt の調べ）
+    @State private var firstCardFrame: CGRect = .zero
+    /// 最初の位置へ1回だけ送り直したか
+    @State private var placedFirst = false
 
     /// 札1枚の幅（大きな字では見えている幅の 86%）
     private var cardWidth: CGFloat {
@@ -174,6 +178,9 @@ struct AskSpotCarousel: View {
                                 }) { front in
                                     if front, current != spot.spotId { current = spot.spotId }
                                 }
+                                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame in
+                                    if AskFixture.isOn, spot.spotId == spots.first?.spotId { firstCardFrame = frame }
+                                }
                         }
                     }
                     // 回 1619・1626 の絵 11z2: contentMargins でも safeAreaPadding でも1枚目の札の左が約 6pt（模型は 16）だった。
@@ -185,6 +192,12 @@ struct AskSpotCarousel: View {
                 .padding(.horizontal, -JPSpace.gutter)
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width in
                     if width != containerWidth { containerWidth = width }
+                    // 回 1619、1626、1635 の絵 11z2: 最初の画面だけ1枚目の札の左が約 6pt（送ったあと、大きな字では 16）。
+                    // 答えが積まれる間に並びの幅が替わり、その間の送りの位置が残ったと読んだ。幅が決まったら1回だけ、
+                    // 1枚目を左から 16 の所へ送り直す（動きなし）
+                    guard !placedFirst, width > 0, let first = spots.first?.spotId else { return }
+                    placedFirst = true
+                    proxy.scrollTo(first, anchor: AskCardSnap.anchor(container: width, card: cardWidth))
                 }
                 .onChange(of: scrollTarget) { _, target in
                     guard let target else { return }
@@ -195,6 +208,15 @@ struct AskSpotCarousel: View {
                     current = target
                     scrollTarget = nil
                 }
+            }
+            if AskFixture.isOn {
+                Text(".")
+                    .font(.caption2)
+                    .foregroundStyle(Color.clear)
+                    .accessibilityIdentifier("search.ask.cardProbe")
+                    .accessibilityValue(String(format: "firstX=%.1f firstW=%.1f firstH=%.1f container=%.1f card=%.1f",
+                                               firstCardFrame.minX, firstCardFrame.width, firstCardFrame.height,
+                                               containerWidth, cardWidth))
             }
             if showsMap, spots.contains(where: { $0.coords != nil }) {
                 AskPinsMap(spots: spots.filter { $0.coords != nil }, officialSpots: officialSpots, photos: photos,

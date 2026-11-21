@@ -3187,6 +3187,14 @@ final class ScreenshotTests: XCTestCase {
         note.name = "ask-end \(scene)"
         note.lifetime = .keepAlways
         add(note)
+        // 回 1635: キーボードが出たまま閉じると遅い（field 14.0 秒）か閉じられない（refusal）。焦点のある欄を外して
+        // キーボードを閉じ、消えたのを確かめてから閉じる（改行は、探すの欄では言葉の検索、続けて聞く欄では「完了」）
+        if app.keyboards.count > 0 {
+            app.typeText("\n")
+            let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 0"), object: app.keyboards)
+            let closed = XCTWaiter.wait(for: [gone], timeout: 5) == .completed
+            print("measured [ask-keyboard] scene=\(scene) closed=\(closed)")
+        }
         let started = Date()
         app.terminate()
         print("measured [ask-terminate] scene=\(scene) seconds=\(String(format: "%.1f", Date().timeIntervalSince(started)))")
@@ -3207,9 +3215,20 @@ final class ScreenshotTests: XCTestCase {
         finishSearchAsk(app, scene: "field")
     }
 
+    /// 1枚目の札の左が画面の左から 16±1（模型 `.car` の scroll-padding-left 16）。回 1619〜1635 は約 6pt だった
+    private func checkFirstCardGutter(_ app: XCUIApplication, scene: String) {
+        let probe = app.descendants(matching: .any)["search.ask.cardProbe"].firstMatch
+        let value = probe.exists ? (probe.value as? String ?? "-") : "missing"
+        print("measured [ask-card] scene=\(scene) \(value)")
+        let x = value.split(separator: " ").first { $0.hasPrefix("firstX=") }.flatMap { Double($0.dropFirst("firstX=".count)) }
+        XCTAssertNotNil(x, "1枚目の札の位置が読めない: \(value)")
+        if let x { XCTAssertEqual(x, 16, accuracy: 1, "1枚目の札の左が 16pt でない: \(value)") }
+    }
+
     /// 11z2 答え（案A: 明朝の1〜2文、観光スポットの情報から、写真の札を横に送る、地図、みんなの写真、旅行プランにする）
     func testCapturesSearchAskAnswer() {
         guard let app = launchSearchAsk(), askViaSendButton(app, "香川で夕日がきれいな所を教えて") else { return }
+        checkFirstCardGutter(app, scene: "answer")
         shoot(app, "11z2-探す（AI に頼む、答え）")
         finishSearchAsk(app, scene: "answer")
     }

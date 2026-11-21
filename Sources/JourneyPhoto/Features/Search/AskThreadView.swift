@@ -118,10 +118,11 @@ struct AskThreadView: View {
             // 使い切った帯は、いちばん新しい答えにだけ1本
             if isLatest, let reason = a.limit { limitBand(reason) }
             if a.engine == .refused {
-                // 案A（2026-11-20 owner 承認）: 断りは枠を外し、答えの1〜2文と同じ所に明朝 18。続けて聞く欄を選んだ状態にする
+                // 案A（2026-11-20 owner 承認）: 断りは枠を外し、答えの1〜2文と同じ所に明朝 18。
+                // 2026-11-20 判断（模型と違えた所）: 模型は「続けて聞く欄を選んだ状態」だが、**自動で選ばない。**
+                // キーボードが上がると断りの1行と札を覆う。打ち直したい人は欄を押せばすぐ打てる（押す回数は1回増えるが、見えないより分かりやすい）
                 AskLead(text: a.text, small: true)
                     .accessibilityIdentifier("search.ask.refusal")
-                    .onAppear { if isLatest { followFocused = true } }
             } else {
                 if !a.chips.isEmpty { chipsRow(a.chips) }
                 if isLatest, let usage = engine.usage, a.usedAI {
