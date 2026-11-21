@@ -58,6 +58,8 @@ struct AppHeaderItems: ToolbarContent {
         // 探すのタブで押すと、探す口に字を打てるようにする（`SearchView`）
         ToolbarItem(placement: .topBarTrailing) {
             HStack(spacing: 0) {
+                // 2026-11-21 判断（札 #675・案1）: 「✦ AI に頼む」をどのタブの帯にも（ホーム、探す、マップ）。押すと AI の画面
+                AskEntryButton()
                 // 2026-11-12 判断（デザインの案 第10章「どこに何を置くか」）: **見出しの「探す」は外した**（4 → 3つ）。
                 // 下のタブの「探す」と同じ所へ行くだけで、入口が2つあった。どのタブでも同じ3つ（メッセージ・お知らせ・メニュー）
                 // メッセージ（2026-11-10 札 #505・owner 承認「ベル（お知らせ）の左に吹き出し」）。絵は `bubble.left`
@@ -99,6 +101,65 @@ struct AppHeaderItems: ToolbarContent {
                 .accessibilityLabel(L("メニュー", "Menu"))
                 .accessibilityIdentifier("header.menu")
             }
+        }
+    }
+}
+
+/// 上の帯の「✦ AI に頼む」（札 #675・2026-11-21 判断・Artifact「AI に頼む 独立の案」の案1）。
+/// 字つきの小さな札（帯は黒地のガラスなので真鍮の字と印）。大きな字（アクセシビリティの大きさ）では帯に収まらないので ✦ だけにする。
+/// 読み上げはどちらも「AI に頼む」。当たりは 44pt
+struct AskEntryButton: View {
+    @Environment(\.dynamicTypeSize) private var dynamicType
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 初めての日に一度だけ光る（前は探すの欄の縁を光らせていた・案1 の「今の欄の光り方を移す」）
+    @State private var glow = false
+    /// 光らせたかの鍵（端末に覚える。#652 の欄の光と同じ鍵）
+    static let glowKey = "journey-photo-ask-glow-shown"
+
+    /// 字を出さず ✦ だけにするか（大きな字のとき）
+    nonisolated static func iconOnly(largeText: Bool) -> Bool { largeText }
+
+    var body: some View {
+        Button {
+            TabRouter.shared.openAsk()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 15, weight: .semibold))
+                    .accessibilityHidden(true)
+                if !Self.iconOnly(largeText: dynamicType >= .xxLarge) {
+                    Text(AskEntry.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            .foregroundStyle(WebTheme.accent)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .overlay(
+                Capsule()
+                    .strokeBorder(WebTheme.accent.opacity(glow ? 1 : 0), lineWidth: JPStroke.hairline)
+                    .shadow(color: WebTheme.accent.opacity(glow ? 0.45 : 0), radius: 5)
+            )
+            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(AskEntry.buttonLabel)
+        .accessibilityIdentifier("header.ask")
+        .onAppear { glowOnceIfFirst() }
+    }
+
+    /// 初めて見えたときだけ一度光らせる（1.6 秒・動きを減らす設定と UI テストでは光らせない）
+    private func glowOnceIfFirst() {
+        guard !UserDefaults.standard.bool(forKey: Self.glowKey) else { return }
+        UserDefaults.standard.set(true, forKey: Self.glowKey)
+        guard !reduceMotion, !AskFixture.isOn, !PerfRecorder.shared.isEnabled else { return }
+        withAnimation(.easeOut(duration: 0.55)) { glow = true }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            withAnimation(.easeOut(duration: 1.0)) { glow = false }
         }
     }
 }

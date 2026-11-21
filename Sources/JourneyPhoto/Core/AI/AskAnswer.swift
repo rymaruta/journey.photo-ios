@@ -95,6 +95,18 @@ struct AskAnswer: Equatable, Codable {
     }
 }
 
+/// 答えの種類ごとに部品を選ぶ所（札 #675・2026-11-21 判断）。いまは札を横に送る形（#663 の案A）だけ。
+/// 「1か所を大きく」「日ごとの流れ」「比べる」「手順」「写真の格子」「次に頼めること」は、別の担当が描く案の絵が決まったら
+/// ここに種類を足し、`AskThreadView.answerLayoutView` で部品を選ぶ
+enum AskAnswerLayout: Equatable {
+    /// 写真の札を横に送る並びと地図（`AskSpotCarousel`）
+    case spotCarousel
+
+    static func layout(for answer: AskAnswer) -> AskAnswerLayout {
+        .spotCarousel
+    }
+}
+
 /// 「AI の答えは間違うことがあります」（答えの下にいつも）
 enum AskText {
     static var disclaimer: String { L("AI の答えは間違うことがあります", "AI answers can be wrong") }

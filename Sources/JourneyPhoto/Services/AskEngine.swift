@@ -105,6 +105,18 @@ final class AskEngine: ObservableObject {
         await ask(question, backend: backend)
     }
 
+    /// 前に頼んだことを見せる（端末の控え `AskHistoryStore` から出すだけ。**AI は呼ばない、回数も使わない**・札 #675）
+    func showSaved(_ saved: [AskExchange], backend: Backend) async {
+        guard let first = saved.first else { return }
+        thread = []
+        pending = first.question
+        let library = await backend.library(false)
+        guard !Task.isCancelled else { return }
+        remember(library: library, thread: saved)
+        thread = saved
+        pending = nil
+    }
+
     /// 今日すでに答えた控えがあるか（最近の語を押したとき、控えがあるときだけ答えを出す・AI は呼ばない・札 #662）
     func hasToday(_ raw: String, userId: String?) -> Bool {
         let question = AskQuery.clipped(raw)

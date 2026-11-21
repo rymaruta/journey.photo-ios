@@ -93,15 +93,7 @@ struct SearchView: View {
     @State private var relaxProbe = ""
     /// 結果を下へ送ったか（明朝の「探す」を畳む・2026-11-16 判断 A10・`SearchHeader`）
     @State private var scrolledDown = false
-    // MARK: AI に頼む（札 #652・案 A・2026-11-20 owner 承認）
-    /// 頼みと質問の答え（`AskEngine`）。欄の字が頼んだ文のままの間だけ、結果の代わりに答えを出す
-    @StateObject private var ask = AskEngine()
-    /// 「近くで」の現在地（**初めて頼んだときだけ**iOS の許可を聞く。端末の外へ出さない）
-    @StateObject private var askLocation = CurrentLocation()
-    @EnvironmentObject private var wishlist: WishlistStore
-    @State private var askTask: Task<Void, Never>?
-    /// 初めて探すを開いたときだけ、欄の縁を一度真鍮に光らせる（端末に覚える）
-    @State private var fieldGlow = false
+    // 2026-11-21 判断（札 #675）: AI に頼むは別の画面（`AskScreen`）。探すの欄は探すだけで、AI を呼ばない
 
     var body: some View {
         // 探すの重さの記録（UI テストのときだけ・2026-11-13 札 #590）: body の評価回数を、いまの語ごとに数える
@@ -135,14 +127,6 @@ struct SearchView: View {
                         .transition(.opacity)
                 }
                 searchField
-                // 2026-11-20 判断（札 #662）: 途中の字（「おすすめの」）では AI に送れない。何をすれば送れるかを欄の下に1行だけ
-                if SearchSubmit.showsKeepTyping(text: query, scope: model.scope) {
-                    Text(AskQuery.keepTypingLine)
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.text3)
-                        .padding(.horizontal, JPSpace.gutter)
-                        .accessibilityIdentifier("search.keepTyping")
-                }
                 // 2026-11-16 判断（A10）: 範囲のチップ（すべて・写真・人・タグ・撮影地）は**字を打ってから**出す。
                 // 打つ前に押しても効く中身が無い。選んでいる範囲があれば、外せるように残す（`SearchHeader.showsScopeChips`）
                 if SearchHeader.showsScopeChips(query: query, scopeIsAll: model.scope == .all) {
@@ -168,15 +152,11 @@ struct SearchView: View {
                         if next != scrolledDown { scrolledDown = next }
                     }
                 VStack(alignment: .leading, spacing: isDiscovering ? JPSpace.section : 20) {
-                    // 頼みと質問の形で送ったら、結果の代わりに AI の答え（札 #652・答えの下に続けて積む）
-                    if askShown {
-                        AskThreadView(engine: ask, officialSpots: officialSpots, photos: model.everything,
-                                      photosKnown: SpotScreen.photosKnown(loadFailed: model.loadFailed || !model.hasLoaded,
-                                                                          photos: model.everything),
-                                      onFollowUp: { text in followUpAsk(text) },
-                                      onRelax: { exchange in relaxAsk(exchange) })
+                    // 2026-11-21 判断（札 #675）: 頼みの形の字を打ったときは、結果のいちばん上に「✦ AI に頼む」の1行。
+                    // 押すと AI の画面へ字を持って移る（押すまで AI は呼ばない）
+                    if SearchSubmit.showsAskRow(text: query, scope: model.scope) {
+                        askRow
                     }
-                    if !askShown {
                     // 文で探したら、どう読んだかを結果のいちばん上に（札 #623・押すと外れる）
                     if isReadingSentence || SearchSentence.showsReading(reading, query: searched, filter: model.timeFilter) {
                         readingSection
@@ -187,11 +167,11 @@ struct SearchView: View {
                                               onPick: { word in pickRecent(word) },
                                               onRemove: { word in
                                                   recentWords = RecentSearchesStore().remove(word, userId: auth.userId)
-                                                  ask.forget(word, userId: auth.userId)
+                                                  AskHistoryStore().remove(word, userId: auth.userId)
                                               },
                                               onRemoveAll: {
                                                   RecentSearchesStore().removeAll(userId: auth.userId)
-                                                  ask.forgetAll(userId: auth.userId)
+                                                  AskHistoryStore().removeAll(userId: auth.userId)
                                                   recentWords = []
                                               })
                     }
@@ -228,7 +208,6 @@ struct SearchView: View {
                         }
                     }
                     results
-                    }
                 }
                 .padding(.top, 8)
                 .padding(.bottom, 24)
@@ -278,12 +257,7 @@ struct SearchView: View {
             if PreviewSession.searchReadingProbe { relaxProbe += " onChange(needed=\(needed))" }
             if needed { relaxIfZeroHit() }
         }
-        // 人が替わったら、前の人の会話、残りの回数、札を手放す（札 #652）
-        .onChange(of: auth.userId) { _, _ in
-            askTask?.cancel()
-            ask.reset()
-        }
-        // 2026-11-20 判断（札 #662）: 打っている間は結果も答えも変えない。欄を空にしたときと「人」のときだけ（`SearchSubmit`）
+        // 2026-11-21 判断（札 #675）: 打つたびに探す（AI は呼ばない・`SearchSubmit`）
         .onChange(of: query) { _, newValue in
             apply(SearchSubmit.plan(.typed, text: newValue, scope: model.scope, searched: searched))
         }
@@ -464,47 +438,67 @@ struct SearchView: View {
         recentWords = RecentSearchesStore().remember(trimmed, userId: auth.userId)
     }
 
-    /// 最近の言葉を押した: 送ったのと同じ（すぐ結果）で、いちばん上へ上げる。
-    /// 2026-11-20 判断（札 #662）: **押すだけで回数を減らさない。** 今日答えた控えがある頼みだけ答えを出し（控えから・AI は呼ばない）、
-    /// 控えが無ければ言葉の検索だけにする
+    /// 最近の言葉を押した: その言葉で探し、語を並べた文なら言葉の表で読む（AI は呼ばない）。いちばん上へ上げる
     private func pickRecent(_ word: String) {
         query = word
         fieldFocused = false
         recentWords = RecentSearchesStore().remember(word, userId: auth.userId)
-        let cached = ask.hasToday(word, userId: auth.userId)
-        apply(SearchSubmit.plan(.recent(cachedToday: cached), text: word, scope: model.scope, searched: searched))
+        apply(SearchSubmit.plan(.recent, text: word, scope: model.scope, searched: searched))
     }
 
-    /// キーボードの「検索」: 言葉の検索（言葉の表の読み取り）とキーボードを閉じるだけ。**AI は呼ばない**（札 #662）
+    /// キーボードの「検索」: 語を並べた文を言葉の表で読む（「こう読みました」）とキーボードを閉じるだけ。**AI は呼ばない**
     private func submitFromKeyboard() {
         rememberQuery(query)
         fieldFocused = false
         apply(SearchSubmit.plan(.keyboard, text: query, scope: model.scope, searched: searched))
     }
 
-    /// 欄の右の送信のボタン: AI に頼む（途中の字では呼ばない・`AskQuery.sendsToAI`）
-    private func submitFromSendButton() {
-        let plan = SearchSubmit.plan(.sendButton, text: query, scope: model.scope, searched: searched)
-        guard plan != .none else { return }
-        rememberQuery(query)
-        fieldFocused = false
-        apply(plan)
+    /// `SearchSubmit` の決めたことを画面に当てる（探す字、言葉の表で読む）
+    private func apply(_ plan: SearchSubmit.Plan) {
+        guard let next = plan.searched else { return }
+        searched = next
+        if plan.readsSentence { readSentence(next) }
     }
 
-    /// `SearchSubmit` の決めたことを画面に当てる（送った字、答えを閉じる、言葉の表で読む、AI に頼む）
-    private func apply(_ plan: SearchSubmit.Plan) {
-        if plan.closesAnswer, ask.isActive {
-            askTask?.cancel()
-            ask.reset()
-        }
-        if let next = plan.searched {
-            if plan.asks {
-                startAsk(next)
-            } else {
-                searched = next
-                if plan.readsSentence { readSentence(next) }
+    /// 結果のいちばん上の「✦ AI に頼む」の1行（札 #675・案1 の模型 `.askrow`: 真鍮 8% の地、真鍮の字、角 12、高さ 52 以上）。
+    /// 押すと AI の画面へ、打った字を欄に入れた形で移る。押すまで AI は呼ばない
+    private var askRow: some View {
+        Button {
+            rememberQuery(query)
+            fieldFocused = false
+            TabRouter.shared.openAsk(text: query)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 18))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(AskEntry.askRowTitle)
+                        .font(JPFont.footnote.weight(.semibold))
+                    Text(AskEntry.askRowDetail(query.trimmingCharacters(in: .whitespacesAndNewlines)))
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.text2)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .accessibilityHidden(true)
             }
+            .foregroundStyle(WebTheme.accent)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+            .background(WebTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .padding(.horizontal, JPSpace.gutter)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(AskEntry.askRowTitle + L("、", ", ") + query)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("search.askRow")
     }
 
     /// 欄の字と送った字をそろえる（読み取りの字を入れた・札を外した・タグを選んだ）
@@ -513,105 +507,9 @@ struct SearchView: View {
         searched = text
     }
 
-    // MARK: - AI に頼む（札 #652）
-
-    /// 送った字が頼んだ文のままの間だけ、答えを出す（打ち替えている間は残す・札 #662）
-    private var askShown: Bool {
-        ask.isActive && searched.trimmingCharacters(in: .whitespacesAndNewlines) == ask.firstQuestion
-    }
-
-    private func startAsk(_ raw: String) {
-        readingTask?.cancel()
-        isReadingSentence = false
-        reading = nil
-        askTask?.cancel()
-        // 先に答えの形（読み込み中）にしてから欄の字と送った字をそろえる
-        guard let text = ask.prepare(raw) else { return }
-        if query != text { query = text }
-        searched = text
-        let backend = askBackend
-        askTask = Task { await ask.start(text, backend: backend) }
-    }
-
-    private func followUpAsk(_ text: String) {
-        let backend = askBackend
-        askTask = Task { await ask.followUp(text, backend: backend) }
-    }
-
-    private func relaxAsk(_ exchange: AskExchange) {
-        let backend = askBackend
-        askTask = Task { await ask.relax(exchange, backend: backend) }
-    }
-
-    /// 答えの外の口（台帳、公開の写真、行きたい場所、旅行プラン、現在地、回数、AI）
-    private var askBackend: AskEngine.Backend {
-        let env = environment, conn = connectivity, authStore = auth, wish = wishlist
-        let spots = officialSpots, photos = model.everything
-        return AskEngine.Backend(
-            signedIn: { authStore.userId != nil },
-            offline: { conn.isOffline },
-            deviceAI: { AskFixture.isOn ? AskFixture.deviceAI : OnDeviceAI.isAvailable },
-            library: { needsLocation in
-                // 台帳は探すの画面が読んだもの（索引を読む所は `loadSpotIndex` の1か所だけ・`SpotPrefectureIndexTests`）
-                let index = spots
-                let here = needsLocation ? await askHere() : nil
-                let wished = index.filter { wish.contains(SavedSpotKey.official($0.slug)) }
-                // 旅行プランは端末の AI の道具だけが読む（サーバーの AI には送らない）。ログイン中で電波があるときだけ
-                var trips: [TripPlan] = []
-                // 2026-11-20 判断（札 #662 の「Failed to terminate」の調べ）: 見本の口のときは、端末の AI（FoundationModels）の
-                // 使えるかの問い合わせ自体をしない。前は見本の口でも `OnDeviceAI.isAvailable` を先に見ていて、模擬機に無い
-                // AI の仕組みへ毎回つないでいた（閉じられなかったのは、どれも AI に頼んだあとのアプリ）
-                if !AskFixture.isOn, authStore.userId != nil, !conn.isOffline, OnDeviceAI.isAvailable {
-                    trips = (try? await env.trips.list()) ?? []
-                }
-                return AskLibrary(spots: index, photos: photos, wishlist: wished, trips: trips, here: here)
-            },
-            reserve: { kind, via in try await env.ask.reserve(kind: kind, via: via) },
-            serverAsk: { text, turns, sources in try await env.ask.ask(text: text, history: turns, sources: sources) },
-            deviceAsk: { text, history, library in
-                if AskFixture.isOn { return AskFixture.deviceResult(text, library: library) }
-                return await AskDevice.live(text, history: history, library: library)
-            },
-            details: { needed in await env.spots.withDetails(needed, for: needed) },
-            userId: { authStore.userId }
-        )
-    }
-
-    /// 現在地を1回取る（許可を聞いている間は待つ。断られた・取れないときは nil で、近さでは絞らない）
-    private func askHere() async -> Photo.Coords? {
-        if case .located(let lat, let lng) = askLocation.state { return .init(lat: lat, lng: lng) }
-        askLocation.locate(requestedByUser: true)
-        for _ in 0..<75 {
-            try? await Task.sleep(nanoseconds: 200_000_000)
-            if Task.isCancelled { return nil }
-            switch askLocation.state {
-            case .located(let lat, let lng): return .init(lat: lat, lng: lng)
-            case .denied, .failed: return nil
-            default: continue
-            }
-        }
-        return nil
-    }
-
-    /// 初めて探すを開いたときだけ、欄の縁を一度真鍮に光らせる（1.6 秒・動きを減らす設定では光らせない）
-    private func glowOnceIfFirst() {
-        let key = Self.askGlowKey
-        guard !UserDefaults.standard.bool(forKey: key) else { return }
-        UserDefaults.standard.set(true, forKey: key)
-        guard !reduceMotion else { return }
-        withAnimation(.easeOut(duration: 0.55)) { fieldGlow = true }
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 600_000_000)
-            withAnimation(.easeOut(duration: 1.0)) { fieldGlow = false }
-        }
-    }
-
-    /// 欄の縁を光らせたかの鍵（端末に覚える）
-    static let askGlowKey = "journey-photo-ask-glow-shown"
-
-    /// 欄の見本の字。人を探すときは人向けの字を欄に、それ以外は欄の字を空にして `AskRotatingPrompt` を重ねる
+    /// 欄の見本の字（2026-11-21 判断・札 #675: 探すだけの欄に戻したので、見本の字の入れ替えはやめた）
     private var fieldPrompt: String {
-        model.scope == .people ? model.scope.prompt : ""
+        model.scope.prompt
     }
 
 
@@ -782,19 +680,12 @@ struct SearchView: View {
     /// **並び替えの印は置かない**（板に無い）。並び替えは結果の上の札から
     private var searchField: some View {
         HStack(spacing: 10) {
-            // 2026-11-20（札 #652・owner 承認 案1）: 左の虫めがねを真鍮の ✦ に（探すは黒地なので真鍮の決まりの中）。
-            // 人を探すときは虫めがねに戻す
-            Image(systemName: model.scope == .people ? "magnifyingglass" : "sparkle")
+            // 2026-11-21 判断（札 #675）: 探すだけの欄に戻したので、左は虫めがね（✦ は上の帯の「AI に頼む」へ）
+            Image(systemName: "magnifyingglass")
                 .font(.system(size: 17))
-                .foregroundStyle(model.scope == .people ? WebTheme.text3 : WebTheme.accent)
+                .foregroundStyle(WebTheme.text3)
                 .accessibilityHidden(true)
             JPTextField(fieldPrompt, text: $query)
-                // 見本の字（4秒ごとに入れ替え）。入れ替えで探すの画面全体を描き直さないよう、小さな View に分けた
-                .overlay(alignment: .leading) {
-                    if query.isEmpty, model.scope != .people {
-                        AskRotatingPrompt()
-                    }
-                }
                 .focused($fieldFocused)
                 .textFieldStyle(.plain)
                 // 板の 16（`.callout`）
@@ -802,12 +693,10 @@ struct SearchView: View {
                 .foregroundStyle(WebTheme.foreground)
                 // 実機の絵の道しるべ（`ScreenshotTests` が「11b」で探している名前。付いていなかった）
                 .accessibilityIdentifier("search.field")
-                // 2026-11-20 判断（札 #662）: キーボードの「検索」は**言葉の検索だけ**（打った文を季節・時間帯のチップと字の語に
-                // 読み替える・札 #623）。AI は呼ばない。AI に頼むのは右の送信のボタンだけ
+                // キーボードの「検索」は語を並べた文を季節・時間帯のチップと字の語に読み替える（札 #623）。AI は呼ばない
                 .submitLabel(.search)
                 .onSubmit { submitFromKeyboard() }
-                // 欄の名前（読み上げ）。見本の字は入れ替わるので、名前は1つに決める
-                .accessibilityLabel(model.scope == .people ? model.scope.prompt : AskQuery.fieldLabel)
+                .accessibilityLabel(model.scope.prompt)
                 .onChange(of: fieldFocused) { _, focused in if !focused { rememberQuery(searched) } }
                 // 人が替わったら、その人の言葉を読み直す（前の人の言葉を並べない）
                 .onChange(of: auth.userId) { _, id in recentWords = RecentSearchesStore().words(userId: id) }
@@ -826,24 +715,10 @@ struct SearchView: View {
                 .accessibilityLabel(L("消す", "Clear"))
                 .accessibilityIdentifier("search.clear")
             }
-            // 2026-11-20 判断（札 #662）: 欄の右に AI に送るボタン（頼みと質問の形のときだけ・途中の字では押せない）
-            if SearchSubmit.showsSendButton(text: query, scope: model.scope) {
-                AskSendButton(enabled: SearchSubmit.sendEnabled(text: query, scope: model.scope)) {
-                    submitFromSendButton()
-                }
-                .accessibilityIdentifier("search.send")
-            }
         }
         // 地・縁・高さは撮影スポットの一覧の探す欄と同じ（`jpSearchBoxFace`・札 #524 で切り出した）
         .jpSearchBoxFace()
-        // 初めて開いたときだけ一度光る縁（板 Components 02 の入力欄のフォーカス: 真鍮の縁と外光）
-        .overlay(
-            RoundedRectangle(cornerRadius: JPRadius.field)
-                .strokeBorder(WebTheme.accent.opacity(fieldGlow ? 1 : 0), lineWidth: JPStroke.hairline)
-        )
-        .shadow(color: WebTheme.accent.opacity(fieldGlow ? 0.25 : 0), radius: 4)
         .padding(.horizontal, JPSpace.gutter)
-        .onAppear { glowOnceIfFirst() }
     }
 
     /// 種類（板 11 の「すべて／写真／人／タグ／撮影地」）。
@@ -854,10 +729,6 @@ struct SearchView: View {
                 ForEach(SearchScope.allCases) { scope in
                     PillChip(title: scope.label, selected: model.scope == scope) {
                         model.select(scope: scope)
-                        // 「人」は打つたびに探す。打ちかけの字があれば、その字ですぐ探す（札 #662）
-                        if scope == .people {
-                            apply(SearchSubmit.plan(.peopleScope, text: query, scope: scope, searched: searched))
-                        }
                     }
                     // UI テストが「字を打つ前は出ない」を見る所（2026-11-16 A10）
                     .accessibilityIdentifier("search.scope.\(scope.rawValue)")

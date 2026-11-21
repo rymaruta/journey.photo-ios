@@ -920,81 +920,91 @@ final class CriticalFlowTests: XCTestCase {
 
     // MARK: - 4b2. 探す: AI に頼む（札 #652）
 
-    /// **頼みの形で送ると、結果の代わりに AI の答えが出る。** 答えの下に「AI の答えは間違うことがあります」と残りの回数、
-    /// 下の欄で続けて聞ける。作りの質問は断りの1行だけ（回数を使わない）。
+    /// **ホーム → 上の帯の「✦ AI に頼む」→ 例の札を押す → 送る → 答え**（札 #675・2026-11-21 判断・案1）。
+    /// 例の札は欄に入れるだけで、送るのは送信のボタン。答えの上に残りの回数、続けて作りの質問を送ると断りの1行（回数を使わない）。
     /// 見本の口（`-JPAskFixture`・サーバーへは送らず、端末の AI も呼ばない）で流す
-    func testSearchAskAnswersFollowsUpAndRefuses() {
+    func testSearchAskOpensFromHomeAndAnswers() {
         let app = launch(["-JPAskFixture", "YES"])
-        tab(app, 1)
-        let field = app.textFields["search.field"].firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 20), "探すの欄が無い")
-        // 欄の名前は「AI に聞く、または探す」（見本の字は入れ替わる）
-        XCTAssertEqual(field.label, "AI に聞く、または探す", "欄の読み上げの名前が違う")
-        // 2026-11-20 判断（札 #662）: 途中の字（「おすすめの」）では送れない。欄の下に「続けて打つと AI に聞けます」
-        enter("おすすめの", into: field, "探すの欄")
-        let send = app.buttons["search.send"].firstMatch
-        XCTAssertTrue(send.waitForExistence(timeout: 5), "頼みの形の字なのに、欄の右に送信のボタンが無い")
-        XCTAssertFalse(send.isEnabled, "途中の字（おすすめの）で送信のボタンが押せる")
-        XCTAssertTrue(app.staticTexts["search.keepTyping"].firstMatch.exists, "途中の字で「続けて打つと AI に聞けます」が無い")
-        field.typeText("観光スポット教えて")
+        let entry = app.buttons["header.ask"].firstMatch
+        XCTAssertTrue(entry.waitForExistence(timeout: 20), "ホームの上の帯に「AI に頼む」が無い")
+        XCTAssertEqual(entry.label, "AI に頼む", "入口の読み上げが違う")
+        entry.tap()
+        let field = app.textFields["ask.field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "AI に頼むの画面が開かない")
+        let starter = app.buttons["ask.starter"].firstMatch
+        XCTAssertTrue(starter.waitForExistence(timeout: 5), "何も頼んでいない画面に例の札が無い")
+        starter.tap()
         let answer = app.descendants(matching: .any)["search.ask.answer"].firstMatch
-        // 打っただけでは答えを出さない（送信のボタンを押すまで）
-        XCTAssertFalse(answer.waitForExistence(timeout: 3), "送信のボタンを押す前に AI の答えが出た")
+        // 例の札は欄に入れるだけ（押しただけでは AI を呼ばない）
+        XCTAssertFalse(answer.waitForExistence(timeout: 2), "例の札を押しただけで答えが出た")
+        XCTAssertFalse((field.value as? String ?? "").isEmpty, "例の札を押しても欄に入らない")
+        let send = app.buttons["ask.send"].firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 5), "欄の右に送信のボタンが無い")
         XCTAssertEqual(send.label, "AI に送る", "送信のボタンの読み上げが違う")
-        XCTAssertTrue(send.isEnabled, "頼みの形の字で送信のボタンが押せない")
-        XCTAssertFalse(app.staticTexts["search.keepTyping"].firstMatch.exists, "送れる字でも「続けて打つと」が残る")
         send.tap()
         XCTAssertTrue(answer.waitForExistence(timeout: 30), "送信のボタンを押しても AI の答えが出ない")
-        XCTAssertTrue(app.staticTexts["search.ask.disclaimer"].firstMatch.waitForExistence(timeout: 5),
-                      "答えの下に「AI の答えは間違うことがあります」が無い")
-        let usage = app.descendants(matching: .any)["search.ask.usage"].firstMatch
-        XCTAssertTrue(usage.waitForExistence(timeout: 5), "残りの回数の1行が無い")
+        let usage = app.staticTexts["ask.usage"].firstMatch
+        XCTAssertTrue(usage.waitForExistence(timeout: 5), "残りの回数の行が無い")
         XCTAssertTrue(usage.label.contains("今日はあと2回"), "残りの回数の文が違う: \(usage.label)")
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "AI に頼む（答え）"
         shot.lifetime = .keepAlways
         add(shot)
-
         // 続けて聞く: 作りの質問は断りの1行（AI を呼ばない）
-        let follow = app.textFields["search.ask.followUp"].firstMatch
-        XCTAssertTrue(follow.waitForExistence(timeout: 10), "続けて聞く欄が無い")
-        reveal(follow, in: app, "続けて聞く欄")
-        enter("このアプリの作りを教えて", into: follow, "続けて聞く欄")
-        let followSend = app.buttons["search.ask.send"].firstMatch
-        XCTAssertTrue(followSend.waitForExistence(timeout: 5), "続けて聞く欄に送信のボタンが無い")
-        followSend.tap()
+        enter("このアプリの作りを教えて", into: field, "AI の欄")
+        send.tap()
         let refusal = app.descendants(matching: .any)["search.ask.refusal"].firstMatch
         XCTAssertTrue(refusal.waitForExistence(timeout: 10), "作りの質問を断っていない")
         XCTAssertTrue(app.staticTexts["この質問にはお答えできません。旅や写真、アプリの使い方のことなら聞いてください。"].firstMatch.exists,
                       "断りの1行が違う")
-        // 欄を消すと今の字の検索に戻る
-        app.buttons["search.clear"].firstMatch.tap()
-        XCTAssertTrue(answer.waitForNonExistence(timeout: 5), "欄を消しても答えが残る")
+        // 閉じると元の画面へ
+        app.buttons["ask.close"].firstMatch.tap()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5), "閉じても AI の画面が残る")
+    }
+
+    /// **探すで頼みの形を打つ → 結果の上に「✦ AI に頼む」の1行 → 押すと AI の画面に字を持って移る**（札 #675）。
+    /// 探すは打つたびに結果を出し、AI は呼ばない。AI の画面でも送るまでは答えを出さない
+    func testSearchAskRowCarriesTheWords() {
+        let app = launch(["-JPAskFixture", "YES"])
+        tab(app, 1)
+        let field = app.textFields["search.field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 20), "探すの欄が無い")
+        XCTAssertFalse(app.buttons["search.send"].firstMatch.exists, "探すの欄に送信のボタンが残っている")
+        let words = "近くで夕日がきれいな所は？"
+        enter(words, into: field, "探すの欄")
+        let row = app.buttons["search.askRow"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "頼みの形を打っても「AI に頼む」の1行が出ない")
+        XCTAssertFalse(app.descendants(matching: .any)["search.ask.answer"].firstMatch.exists, "探すで AI の答えが出た")
+        row.tap()
+        let askField = app.textFields["ask.field"].firstMatch
+        XCTAssertTrue(askField.waitForExistence(timeout: 10), "1行を押しても AI の画面が開かない")
+        XCTAssertEqual(askField.value as? String, words, "打った字を持って移らない")
+        XCTAssertFalse(app.descendants(matching: .any)["search.ask.answer"].firstMatch.waitForExistence(timeout: 2),
+                       "送る前に AI の答えが出た")
+        XCTAssertTrue(app.buttons["ask.send"].firstMatch.exists, "AI の画面に送信のボタンが無い")
     }
 
     /// 今日の分を使い切ったら、答えの上に帯1本（確かめのダイアログは出さない）。答えは言葉の表で出し続ける
     func testSearchAskUsedUpShowsOneBand() {
         let app = launch(["-JPAskFixture", "YES", "-JPAskFixtureMode", "usedUpDay"])
-        tab(app, 1)
-        let field = app.textFields["search.field"].firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 20), "探すの欄が無い")
+        let entry = app.buttons["header.ask"].firstMatch
+        XCTAssertTrue(entry.waitForExistence(timeout: 20), "上の帯に「AI に頼む」が無い")
+        entry.tap()
+        let field = app.textFields["ask.field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "AI に頼むの画面が開かない")
         // 前の試験と同じ頼みだと、同じ日の控え（回数を使わない）から答えて帯が出ない（run 1608）。毎回ちがう頼みにする
-        enter("金沢でおすすめの観光スポットを教えて \(Int(Date().timeIntervalSince1970) % 100000)", into: field, "探すの欄")
-        // AI に頼むのは欄の右の送信のボタンだけ（キーボードの「検索」は言葉の検索・札 #662）
-        let send = app.buttons["search.send"].firstMatch
+        enter("金沢でおすすめの観光スポットを教えて \(Int(Date().timeIntervalSince1970) % 100000)", into: field, "AI の欄")
+        let send = app.buttons["ask.send"].firstMatch
         XCTAssertTrue(send.waitForExistence(timeout: 5), "欄の右に送信のボタンが無い")
         send.tap()
-        // 答えの欄が出るのを待ってから帯を見る（帯は答えの上に一緒に出る）。落ちたら段と経過（`search.ask.stage`）を出す
         let answer = app.descendants(matching: .any)["search.ask.answer"].firstMatch
         let stage = app.descendants(matching: .any)["search.ask.stage"].firstMatch
         func stageText() -> String { stage.exists ? (stage.value as? String ?? "-") : "missing" }
         XCTAssertTrue(answer.waitForExistence(timeout: 30), "使い切ったときに答えが出ない（段: \(stageText())）")
         let band = app.buttons["search.ask.band"].firstMatch
         XCTAssertTrue(band.waitForExistence(timeout: 5), "使い切っても帯が出ない（段: \(stageText())）")
-        print("measured [ask-stage] \(stageText())")
         XCTAssertTrue(band.label.contains("今日の AI は3回使いました"), "帯の文が違う: \(band.label)")
         XCTAssertEqual(app.alerts.count, 0, "確かめのダイアログを出した")
-        XCTAssertTrue(app.descendants(matching: .any)["search.ask.answer"].firstMatch.exists, "使い切ったら答えが出ない")
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "AI に頼む（今日の分を使い切った）"
         shot.lifetime = .keepAlways
@@ -1223,10 +1233,8 @@ final class CriticalFlowTests: XCTestCase {
         let title = app.staticTexts["search.title"].firstMatch
         XCTAssertTrue(title.waitForExistence(timeout: 5), "頭にいる間は明朝の「探す」を出す")
         XCTAssertFalse(app.buttons["search.scope.people"].firstMatch.exists, "字を打つ前から範囲のチップが出ている")
-        // 2026-11-20 判断（札 #662）: 打っている間は結果を変えない。キーボードの「検索」で探す（キーボードは閉じる）
+        // 2026-11-21 判断（札 #675）: 探すは打つたびに結果を出す（AI を呼ばないので、送るまで待たない）
         enter("zzzz-no-photo-result", into: field, "探すの欄")
-        XCTAssertFalse(app.buttons["search.emptyMap"].firstMatch.waitForExistence(timeout: 2), "打っただけで結果が入れ替わった")
-        field.typeText("\n")
         let toMap = app.buttons["search.emptyMap"].firstMatch
         XCTAssertTrue(toMap.waitForExistence(timeout: 20), "0件でも「地図で撮影地を探す」が出ない")
         XCTAssertTrue(app.buttons["search.scope.people"].firstMatch.waitForExistence(timeout: 5), "字を打っても範囲のチップが出ない")

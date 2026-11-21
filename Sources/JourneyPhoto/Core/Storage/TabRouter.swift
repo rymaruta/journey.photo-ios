@@ -103,6 +103,20 @@ final class TabRouter: ObservableObject {
     @Published private(set) var messagesRequests = 0
     func openMessages() { messagesRequests += 1 }
 
+    /// 「AI に頼む」の画面（札 #675・2026-11-21 判断）。上の帯の「✦ AI に頼む」と、探すの結果の上の1行から開く。
+    /// **全画面は `RootView` が出す**（どのタブからでも同じ画面）。`text` は欄に入れる字（送るのは送信のボタン）
+    @Published private(set) var askRequests = 0
+    private(set) var pendingAskText: String?
+    func openAsk(text: String? = nil) {
+        pendingAskText = text
+        askRequests += 1
+    }
+    /// 開くときに字を受け取る（受け取ったら消す）
+    func takePendingAskText() -> String? {
+        defer { pendingAskText = nil }
+        return pendingAskText
+    }
+
     /// **地図の札の積み重ねを根まで戻すか**（2026-10-21・確かめ役の指摘）。
     /// 地図の札の中で詳細を積んだ所（人のページ → トランク）から「京都を地図で見る」を押すと、
     /// 語は根に戻るまで預かるだけ（`takePendingMapQuery`）で、地図の札はもう選ばれているので何も起きなかった。

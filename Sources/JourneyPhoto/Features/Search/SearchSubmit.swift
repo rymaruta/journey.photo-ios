@@ -1,16 +1,14 @@
 import Foundation
 
-/// 探すの欄の字を、いつ結果と AI の答えに渡すか（2026-11-20 判断・札 #662）。画面を持たない層（`SearchSubmitTests`）。
+/// 探すの欄の字を、いつ結果に渡すか（画面を持たない層・`SearchSubmitTests`）。
 ///
-/// owner「AIに聞く機能は、送信ボタン押すまで結果でてきて欲しくない」「文字打つだけでAI使われると結構すぐ上限きてしんどい」（2026-11-20）。
-/// - ✦ の欄（人を探す以外）は、**打っている間は結果を変えない**。今の画面（空なら最近の検索と発見、前に送った結果があればその結果）のまま
-/// - 結果に使う字は「送った字」（`searched`）。欄の字（`query`）とは別に持つ
-/// - **AI を呼ぶのは欄の右の送信のボタンだけ**。キーボードの「検索」は言葉の検索（言葉の表の読み取り）とキーボードを閉じるだけ
-///   （日本語のキーボードは変換を確定したあと同じ場所のキーが「検索」になり、確定のつもりで押すと送ってしまう）
-/// - 途中の字（「おすすめの」）はボタンを押しても AI を呼ばない（`AskQuery.isUnfinished`）
-/// - 打ち替えても前の結果と答えは残し、次に送ったときに入れ替える。欄を空にしたときだけ最初の画面に戻す
-/// - 「人」の切り替えでは、今のまま打つたびに探す
-/// - 最近の語、タグのチップは送ったのと同じ（すぐ結果）。最近の語は、今日答えた控えがあるときだけ答えを出す（AI は呼ばない）
+/// 2026-11-21 判断（札 #675・owner「検索窓は基本的に、観光スポットやユーザが投稿した写真に機能したら嬉しくて、
+/// AIに頼むは完全に独立して」）: **探すの欄は探すだけに戻す。** 打つたびに結果を出し（人は 0.3 秒待ってから・`SearchViewModel.search`）、
+/// AI は呼ばない。AI に頼むは別の画面（`AskScreen`）。#662 の「送信を押すまで結果を出さない」は AI の回数を守るための決まりで、
+/// 探すが AI を呼ばなくなったので要らない。
+/// - 頼みの形（`AskQuery.form == .ask`）を打ったときは、結果のいちばん上に「✦ AI に頼む」の1行（押すと AI の画面へ字を持って移る。
+///   押すまで AI は呼ばない）
+/// - キーボードの「検索」は、語を並べた文を言葉の表で読む（「こう読みました」・AI は使わない）とキーボードを閉じるだけ
 enum SearchSubmit {
 
     enum Trigger: Equatable {
@@ -20,23 +18,15 @@ enum SearchSubmit {
         case cleared
         /// キーボードの「検索」
         case keyboard
-        /// 欄の右の送信のボタン
-        case sendButton
-        /// 最近の語を押した。`cachedToday` は今日すでに答えた控えがあるか
-        case recent(cachedToday: Bool)
-        /// 「人」に切り替えた
-        case peopleScope
+        /// 最近の語を押した
+        case recent
     }
 
     struct Plan: Equatable {
-        /// 新しい送った字（nil は今のまま＝結果を変えない）
+        /// 新しい探す字（nil は今のまま）
         var searched: String?
-        /// AI の答えを始める（`AskEngine.start`。控えがあれば控えから出す）
-        var asks = false
         /// 言葉の表で読む（「こう読みました」・AI は呼ばない）
         var readsSentence = false
-        /// 出している答えを閉じる
-        var closesAnswer = false
 
         static let none = Plan()
     }
@@ -45,47 +35,72 @@ enum SearchSubmit {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         switch trigger {
         case .typed:
-            // 人は今のまま打つたびに探す
-            if scope == .people { return text == searched ? .none : Plan(searched: text) }
-            // 欄を空にした（× と同じ）: 最初の画面に戻す
-            if trimmed.isEmpty { return searched.isEmpty ? Plan(closesAnswer: true) : Plan(searched: "", closesAnswer: true) }
-            // 打っている間は結果も答えも変えない
-            return .none
-        case .cleared:
-            return Plan(searched: "", closesAnswer: true)
-        case .peopleScope:
+            // 打つたびに探す（2026-11-21 判断）
             return text == searched ? .none : Plan(searched: text)
-        case .keyboard:
-            // AI は呼ばない。言葉の検索に入れ替える（答えは閉じる）
+        case .cleared:
+            return Plan(searched: "")
+        case .keyboard, .recent:
             guard !trimmed.isEmpty else { return .none }
-            return Plan(searched: text, readsSentence: scope != .people, closesAnswer: true)
-        case .sendButton:
-            guard AskQuery.sendsToAI(text, scope: scope) else { return .none }
-            return Plan(searched: text, asks: true)
-        case .recent(let cachedToday):
-            guard !trimmed.isEmpty else { return .none }
-            if cachedToday, AskQuery.form(text, scope: scope) == .ask { return Plan(searched: text, asks: true) }
-            return Plan(searched: text, readsSentence: scope != .people, closesAnswer: true)
+            return Plan(searched: text, readsSentence: scope != .people)
         }
     }
 
-    /// 欄の右の送信のボタンを出すか（字があり、頼みと質問の形のときだけ）。
-    /// 2026-11-20 判断: 頼みの形でない字（「京都 紅葉」）にはボタンを出さない。言葉の検索はキーボードの「検索」で足りて、
-    /// 同じ場所に形の違う2つのボタン（AI に送る／探す）を出し分けると、押す前に何が起きるか分からなくなる
-    static func showsSendButton(text: String, scope: SearchScope) -> Bool {
+    /// 結果のいちばん上に「✦ AI に頼む」の1行を出すか（頼みの形の字のとき。人を探すときは出さない）
+    static func showsAskRow(text: String, scope: SearchScope) -> Bool {
         AskQuery.form(text, scope: scope) == .ask
     }
+}
 
-    /// 送信のボタンを押せるか（途中の字では押せない形で出す）
-    static func sendEnabled(text: String, scope: SearchScope) -> Bool {
-        AskQuery.sendsToAI(text, scope: scope)
-    }
+/// 「AI に頼む」の入口と画面の言葉と決まり（札 #675・2026-11-21 判断・画面を持たない層・`AskEntryTests`）
+enum AskEntry {
 
-    /// 欄の下の「続けて打つと AI に聞けます」を出すか
-    static func showsKeepTyping(text: String, scope: SearchScope) -> Bool {
-        showsSendButton(text: text, scope: scope) && !sendEnabled(text: text, scope: scope)
-    }
-
+    static var title: String { L("AI に頼む", "Ask AI") }
+    /// 入口のボタンの読み上げ（字を出さない形でも同じ名前）
+    static var buttonLabel: String { title }
+    static var fieldPrompt: String { L("AI に頼む", "Ask AI") }
     /// 送信のボタンの読み上げ
     static var sendLabel: String { L("AI に送る", "Send to AI") }
+    static var startersLead: String { L("旅のことを、何でも頼めます", "Ask anything about your trip") }
+    /// 探すの結果の上の1行の題
+    static var askRowTitle: String { L("AI に頼む", "Ask AI") }
+    static func askRowDetail(_ text: String) -> String { L("「\(text)」", "\"\(text)\"") }
+
+    /// 頼む先。旅行プランを作る頼みは旅行プランの AI（`TripAIAskSheet` → `TripAIJobs`）、それ以外は AI に頼む（`AskEngine`）
+    enum Route: Equatable { case ask, tripPlan }
+
+    static func route(_ text: String) -> Route {
+        let reading = SearchSentence.readByTable(text)
+        return AskQuery.intent(text, reading: reading).plan ? .tripPlan : .ask
+    }
+
+    /// 送信のボタンで送れるか。AI の画面では、打った字はどれも AI に頼む字（探すの語の形でもよい）。
+    /// 途中の字（「おすすめの」「京都で」）だけは送らない（#662 の決まり・回数を使わない）
+    static func sendEnabled(_ text: String) -> Bool {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.count >= 2 && !AskQuery.isUnfinished(t)
+    }
+
+    /// 欄の下に「続けて打つと AI に聞けます」を出すか
+    static func showsKeepTyping(_ text: String) -> Bool {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !t.isEmpty && AskQuery.isUnfinished(t)
+    }
+
+    /// 例の頼みの札（押すと欄に入るだけ）
+    struct Starter: Identifiable, Equatable {
+        var id: String { kind }
+        let kind: String
+        let text: String
+    }
+
+    /// 例は観光スポット、近くで、旅行プラン、使い方だけ（アプリの作りに触れる例は置かない・CLAUDE.md）
+    static func starters(month: Int) -> [Starter] {
+        let examples = AskQuery.examples(month: month)
+        return [
+            Starter(kind: L("観光スポットを探す", "Find spots"), text: examples[1]),
+            Starter(kind: L("近くで探す", "Nearby"), text: examples[0]),
+            Starter(kind: L("旅行プランを作る", "Make a trip plan"), text: examples[3]),
+            Starter(kind: L("使い方を聞く", "How to"), text: L("ストーリーに曲を付けるには", "How do I add music to a story?")),
+        ]
+    }
 }

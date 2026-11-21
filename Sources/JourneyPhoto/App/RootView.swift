@@ -17,6 +17,9 @@ struct RootView: View {
     @EnvironmentObject private var messages: DMInboxStore
     /// メッセージの受信箱（見出しの吹き出し・通知から）
     @State private var showMessages = false
+    /// 「AI に頼む」の画面（札 #675）と、開くときに欄に入れる字
+    @State private var showAsk = false
+    @State private var askPrefill: String?
     /// 通知から開く会話（受信箱が受け取って積む）
     @State private var messagesTarget: String?
     /// メッセージの通知を押したあと、ほかの画面が閉じるのを待つ仕事
@@ -920,9 +923,24 @@ struct RootView: View {
     /// 「新しくなったこと」に、評価のお願いを足したもの（2026-10-07）。
     /// **修飾子の列を伸ばさない**ために分けてある（`tabsWithWhatsNew` と同じ理由・run 343）
     private var tabsWithReviewPrompt: some View {
-        tabsWithMessages
+        tabsWithAsk
             .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
             .onChange(of: reviewPrompt.requests) { _, _ in askForReviewWhenIdle() }
+    }
+
+    /// 「AI に頼む」の画面（札 #675・2026-11-21 判断）。上の帯の「✦ AI に頼む」、探すの結果の上の1行から全画面で開く。
+    /// **修飾子の列を伸ばさない**ために分けてある（run 343 と同じ理由）
+    private var tabsWithAsk: some View {
+        tabsWithMessages
+            .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
+            .onChange(of: tabRouter.askRequests) { _, _ in
+                showMenu = false
+                askPrefill = tabRouter.takePendingAskText()
+                showAsk = true
+            }
+            .fullScreenCover(isPresented: $showAsk) {
+                AskScreen(prefill: askPrefill, onClose: { showAsk = false })
+            }
     }
 
     /// メッセージの受信箱（2026-11-10 札 #505）。**修飾子の列を伸ばさない**ために分けてある（run 343 と同じ理由）
@@ -1671,6 +1689,7 @@ extension RootView {
             ("tabsWithTrunkArrival", t { (v: RootView) in v.tabsWithTrunkArrival }),
             ("tabsWithPushPrimer", t { (v: RootView) in v.tabsWithPushPrimer }),
             ("tabsWithReviewPrompt", t { (v: RootView) in v.tabsWithReviewPrompt }),
+            ("tabsWithAsk", t { (v: RootView) in v.tabsWithAsk }),
             ("tabsWithMessages", t { (v: RootView) in v.tabsWithMessages }),
             ("tabsWithWhatsNew", t { (v: RootView) in v.tabsWithWhatsNew }),
             ("tabs", t { (v: RootView) in v.tabs }),

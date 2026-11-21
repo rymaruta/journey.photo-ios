@@ -20,6 +20,8 @@ struct AskThreadView: View {
     let photosKnown: Bool
     var onFollowUp: (String) -> Void
     var onRelax: (AskExchange) -> Void
+    /// 「AI に頼む」の画面の中（札 #675）。続けて聞く欄と残りの回数は画面の下と上に出すので、ここでは出さない
+    var inScreen = false
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
@@ -35,10 +37,6 @@ struct AskThreadView: View {
     @State private var showSkeleton = false
     // 旅行プランにする（札 #621 のシートへ）
     @State private var planAsk: TripAIAsk?
-    @State private var showPlanSheet = false
-    @State private var planJob: TripAIJobs.Job?
-    @State private var showPlanJob = false
-    @StateObject private var plans = TripPlansModel()
 
     var body: some View {
         VStack(alignment: .leading, spacing: JPSpace.m) {
@@ -67,13 +65,14 @@ struct AskThreadView: View {
                 if !engine.thread.isEmpty { questionBubble(pending) }
                 loading
             }
-            if engine.thread.contains(where: { $0.answer.usedAI }) {
+            // AI の画面の中では、下の欄の上に同じ1行がある（札 #675）
+            if !inScreen, engine.thread.contains(where: { $0.answer.usedAI }) {
                 Text(AskText.disclaimer)
                     .font(JPFont.caption)
                     .foregroundStyle(WebTheme.text3)
                     .accessibilityIdentifier("search.ask.disclaimer")
             }
-            if !engine.thread.isEmpty { followUpField }
+            if !engine.thread.isEmpty, !inScreen { followUpField }
             if AskFixture.isOn {
                 // 札の並びの調べ（回 1644）。0.5 秒ごとに自分だけ描き直す（`PerfProbeOverlay` と同じ作り）
                 TimelineView(.animation(minimumInterval: 0.5)) { _ in
@@ -98,15 +97,8 @@ struct AskThreadView: View {
             if !Task.isCancelled { showSkeleton = true }
         }
         .fullScreenCover(isPresented: $showPro) { PaywallView(origin: .ask) }
-        .sheet(isPresented: $showPlanSheet) {
-            if let planAsk {
-                TripAIAskSheet(ask: planAsk, placeChoices: placeChoices, onDevice: TripAIDevice.isAvailable,
-                               start: startPlanAfterSheet, index: officialSpots)
-            }
-        }
-        .navigationDestination(isPresented: $showPlanJob) {
-            if let planJob { TripAIBuildingView(job: planJob, plans: plans) }
-        }
+        // 旅行プランにする（シートと組み上げの画面は AI の画面と使い回す・`AskPlanFlow`・札 #675）
+        .modifier(AskPlanFlow(ask: $planAsk, index: officialSpots, placeChoices: AskPlanFlow.placeChoices(engine: engine)))
     }
 
     // MARK: - 1往復
@@ -138,7 +130,7 @@ struct AskThreadView: View {
                     .accessibilityIdentifier("search.ask.refusal")
             } else {
                 if !a.chips.isEmpty { chipsRow(a.chips) }
-                if isLatest, let usage = engine.usage, a.usedAI {
+                if isLatest, !inScreen, let usage = engine.usage, a.usedAI {
                     // 印は飾り。読み上げと UI テストは字だけを読む（run 1608: Label のままだと「スパークルの星」と読んだ）
                     HStack(spacing: 6) {
                         Image(systemName: "sparkle").accessibilityHidden(true)
@@ -312,7 +304,21 @@ struct AskThreadView: View {
     /// 札を送ると地図のピンが大きくなり、ピンを押すと札がその場所へ送られる
     private func spotSection(_ a: AskAnswer) -> some View {
         let spots = a.spotIds.compactMap { engine.spotsById[$0] }
-        return AskSpotCarousel(spots: spots, reasons: a.reasons ?? [:], showsMap: a.state != .offline,
+        // 2026-11-21 判断（札 #675）: 答えの種類ごとに部品を選ぶ所（`AskAnswerLayout`）。いまは札を横に送る形だけ。
+        // 「1か所を大きく」「日ごとの流れ」「比べる」「手順」「写真の格子」「次に頼めること」は、案の絵が決まったら種類を足す
+        return answerLayoutView(AskAnswerLayout.layout(for: a), a: a, spots: spots)
+    }
+
+    @ViewBuilder
+    private func answerLayoutView(_ layout: AskAnswerLayout, a: AskAnswer, spots: [OfficialSpot]) -> some View {
+        switch layout {
+        case .spotCarousel:
+            spotCarousel(a, spots: spots)
+        }
+    }
+
+    private func spotCarousel(_ a: AskAnswer, spots: [OfficialSpot]) -> some View {
+        AskSpotCarousel(spots: spots, reasons: a.reasons ?? [:], showsMap: a.state != .offline,
                                settled: !engine.detailsLoading,
                                officialSpots: officialSpots, photos: photos, photosKnown: photosKnown)
             // 回 1641: 名前だけを付けると中の要素の名前（`search.ask.cardProbe` など）が上書きされた。入れ物として組にする
@@ -372,27 +378,6 @@ struct AskThreadView: View {
             ask.place = TripAIDestination.prefectureShort(pref)
         }
         planAsk = ask
-        showPlanSheet = true
-    }
-
-    private var placeChoices: [(label: String, prefecture: String)] {
-        var prefs: [String] = []
-        for id in engine.thread.flatMap(\.answer.spotIds) {
-            if let p = engine.spotsById[id]?.region?.prefecture, !prefs.contains(p), prefs.count < 6 { prefs.append(p) }
-        }
-        return prefs.map { (TripAIDestination.prefectureShort($0), $0) }
-    }
-
-    /// シートが閉じ切ってから日程の画面を積む（閉じている途中に積むと捨てられる・`TripPlansView` と同じ）
-    private func startPlanAfterSheet(_ ask: TripAIAsk) {
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            guard let owner = auth.userId else { return }
-            let backend = TripAIJobs.Backend.live(environment: environment, auth: auth, owner: owner, index: officialSpots,
-                                                  wishlist: wishlist.spotIds, connectivity: connectivity)
-            planJob = TripAIJobs.shared.start(ask, owner: owner, usage: nil, backend: backend)
-            showPlanJob = true
-        }
     }
 
     // MARK: - 状態
@@ -535,35 +520,6 @@ struct AskPinsMap: View {
     }
 }
 
-/// 探すの欄の見本の字（「AI に聞いてみる: …」・札 #652）。**4秒ごとに入れ替え、薄く消えて出る**。
-/// 動きを減らす設定では最初の見本で止める。入れ替えで探すの画面全体を描き直さないよう、この View だけが数を持つ。
-/// 字は押しても入らない（欄の見本の字と同じ）。読み上げは欄の名前「AI に聞く、または探す」だけ（ここは読まない）
-struct AskRotatingPrompt: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var index = 0
-
-    var body: some View {
-        let month = Calendar(identifier: .gregorian).component(.month, from: Date())
-        Text(AskQuery.prompt(index: reduceMotion ? 0 : index, month: month))
-            .font(.callout)
-            .foregroundStyle(WebTheme.placeholder)
-            .lineLimit(1)
-            .id(reduceMotion ? 0 : index)
-            .transition(.opacity)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-            .task(id: reduceMotion) {
-                // UI テストのときは入れ替えない（4秒ごとの動きが続き、アプリが静まらない・回 1619、1626 の閉じられない件の調べ）
-                guard !reduceMotion, !AskFixture.isOn, !PerfRecorder.shared.isEnabled else { return }
-                while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: AskQuery.rotateSeconds * 1_000_000_000)
-                    if Task.isCancelled { return }
-                    withAnimation(.easeInOut(duration: 0.35)) { index += 1 }
-                }
-            }
-    }
-}
-
 /// AI に送るボタン（札 #662・2026-11-20 判断）。板 DM の送信（真鍮の塗り #B8955A に墨の上向きの矢印・写真の無い画面の主ボタン＝送信）を
 /// 欄の中に入る大きさ（見た目 36、当たり 44）にしたもの。探すの欄と、答えの下の「続けて聞く」の欄で使う。
 /// 押せないとき（途中の字）は DM の送れないときと同じ白 16% の地に白 50% の矢印（色だけにしない: 押せない印と、欄の下の1行）
@@ -583,6 +539,6 @@ struct AskSendButton: View {
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
-        .accessibilityLabel(SearchSubmit.sendLabel)
+        .accessibilityLabel(AskEntry.sendLabel)
     }
 }
