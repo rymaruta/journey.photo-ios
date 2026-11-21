@@ -95,20 +95,21 @@ struct AskScreen: View {
                     SheetCloseButton(action: close)
                         .accessibilityIdentifier("ask.close")
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 0) {
-                        if !listed.isEmpty, engine.isActive {
-                            Button { showConversations = true } label: {
-                                Image(systemName: "clock.arrow.circlepath")
-                                    .foregroundStyle(WebTheme.text)
-                                    .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                                    .contentShape(Rectangle())
+                // 2026-11-21 判断（回 1675 の絵）: 会話が無いときは置かない（空の項目でもガラスの丸が残った）
+                if engine.isActive {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        HStack(spacing: 0) {
+                            if !listed.isEmpty {
+                                Button { showConversations = true } label: {
+                                    Image(systemName: "clock.arrow.circlepath")
+                                        .foregroundStyle(WebTheme.text)
+                                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(AskEntry.conversationsTitle)
+                                .accessibilityIdentifier("ask.conversations")
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(AskEntry.conversationsTitle)
-                            .accessibilityIdentifier("ask.conversations")
-                        }
-                        if engine.isActive {
                             Button(action: newConversation) {
                                 Image(systemName: "square.and.pencil")
                                     .foregroundStyle(engine.pending == nil ? WebTheme.text : WebTheme.text3)
