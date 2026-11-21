@@ -319,9 +319,9 @@ final class GroupDMTests: XCTestCase {
         XCTAssertEqual(m.seatsLeft, 26)
         XCTAssertEqual(m.present, ["me", "ken", "mio", "sora"])
         XCTAssertEqual(created.notAdded, 1)
-        // 作る口は invitedNow を返さない: 招待中の人を数えて知らせる（2026-11-20 確かめ役の指摘）
-        XCTAssertEqual(GroupReady(change: created).invitedCount, 1)
-        XCTAssertEqual(GroupReady(change: created).notice, "1人に招待を送りました。参加するとここで話せます\n1人は入れられませんでした")
+        // 作るときに招待は生まれない（サーバー 3d01fa933）。入れられなかった人だけを知らせる
+        XCTAssertEqual(GroupReady(change: created).invitedCount, 0)
+        XCTAssertEqual(GroupReady(change: created).notice, "お互いにフォローしていない人は入れられませんでした")
         XCTAssertNil(created.detail.group.name)
 
         let added = try decode(GroupChange.self, """
@@ -356,13 +356,21 @@ final class GroupDMTests: XCTestCase {
     // MARK: - 確かめ役の指摘（2026-11-20）
 
     /// 全員が招待になった作り方でも、招待を送ったと分かる（会話の人数は自分だけ）
-    func testAllInvitedOnCreateIsAnnounced() throws {
+    func testInvitesAreAnnouncedOnlyWhenSentNow() throws {
         let created = try decode(GroupChange.self, """
         {"state":"member","group":{"groupId":"g1","name":null,"displayName":"グループ","faces":[],"memberCount":1},
          "isOwner":true,"muted":false,"membersMax":30,"members":[{"id":"me","name":"わたし","owner":true}],
          "invited":[{"id":"a","name":"a","invitedBy":"me"},{"id":"b","name":"b","invitedBy":"me"}],"notAdded":0}
         """)
-        XCTAssertEqual(GroupReady(change: created).notice, "2人に招待を送りました。参加するとここで話せます")
+        // 作るときに招待は生まれない（サーバー 3d01fa933・相互フォローの人だけ）。前から招待中の人を「送りました」と言わない
+        XCTAssertNil(GroupReady(change: created).notice, "前から招待中の人を今送ったと言っている")
+        let readded = try decode(GroupChange.self, """
+        {"state":"member","group":{"groupId":"g1","displayName":"x","faces":[],"memberCount":3},"members":[],"invited":[],
+         "added":[],"invitedNow":["a","b"],"notAdded":0}
+        """)
+        XCTAssertEqual(GroupReady(change: readded).notice, "2人に招待を送りました。参加するとここで話せます")
+        XCTAssertEqual(GroupText.refusal(status: 403, code: "notMutualFollow", fallback: "", language: "ja"),
+                       "招待した人と相互フォローになると参加できます")
         let plain = try decode(GroupChange.self, """
         {"state":"member","group":{"groupId":"g1","displayName":"x","faces":[],"memberCount":3},"members":[],"invited":[],"notAdded":0}
         """)
@@ -433,6 +441,74 @@ final class GroupDMTests: XCTestCase {
         let load = slice(detail, from: "private func load() async {", to: "private func apply(")
         XCTAssertTrue(load.contains("gone = true"))
         XCTAssertEqual(GroupText.name("zzz", in: [:], me: nil, language: "ja"), "メンバー")
+    }
+
+    // MARK: - 相互フォロー（2026-11-20 owner 判断「相互フォローじゃないと話せない方がいい」）
+
+    /// 自分がフォロー中（全員）: ken・mio・sora。フォロワー（全員そろっている）: ken・mio。sora は片方だけ
+    private var mutual: MutualFollow {
+        MutualFollow(following: ["ken", "mio", "sora"],
+                     followerList: [user("ken"), user("mio")], followerTotal: 2)
+    }
+
+    func testNonMutualCannotJoinAGroup() {
+        let ken = user("ken"), mio = user("mio"), sora = user("sora")
+        XCTAssertEqual(mutual.status(of: "ken"), .yes)
+        XCTAssertEqual(mutual.status(of: "sora"), .no)
+        // 1人目は今の1対1の決まりのまま（片方だけのフォローでも選べる）
+        XCTAssertFalse(GroupPick.blockedByMutual(sora, selected: [], mode: .start, mutual: mutual))
+        XCTAssertEqual(GroupPick.toggled([], sora, mode: .start, mutual: mutual).map(\.id), ["sora"])
+        XCTAssertEqual(GroupPick.outcome(selected: [sora], mode: .start), .oneToOne(DMStart.seed(sora)))
+        // 2人目からグループ: 相互でない人は選べない
+        XCTAssertTrue(GroupPick.blockedByMutual(sora, selected: [ken], mode: .start, mutual: mutual))
+        XCTAssertEqual(GroupPick.toggled([ken], sora, mode: .start, mutual: mutual).map(\.id), ["ken"], "相互でない人がグループに入った")
+        XCTAssertEqual(GroupPick.toggled([ken], mio, mode: .start, mutual: mutual).map(\.id), ["ken", "mio"])
+        // 相互でない1人目のままでは、2人目を選べない（その人が入れないグループになる）
+        XCTAssertTrue(GroupPick.blockedByMutual(ken, selected: [sora], mode: .start, mutual: mutual))
+        // 足す・1対1に足すは必ずグループ
+        XCTAssertTrue(GroupPick.blockedByMutual(sora, selected: [], mode: .add(present: [], seatsLeft: 5), mutual: mutual))
+        XCTAssertTrue(GroupPick.blockedByMutual(sora, selected: [], mode: .extend(peer: DMPeerSeed(id: "ken", name: "ken")),
+                                                mutual: mutual))
+        XCTAssertFalse(GroupPick.blockedByMutual(mio, selected: [], mode: .add(present: [], seatsLeft: 5), mutual: mutual))
+        // 今の1対1の形（グループの口が無い）では見ない
+        XCTAssertFalse(GroupPick.blockedByMutual(sora, selected: [ken], mode: .single, mutual: mutual))
+        XCTAssertEqual(GroupPick.mutualNotice(language: "ja"), "お互いにフォローしている人だけ、グループに入れられます")
+    }
+
+    /// 分からない人（フォロワーが50人を越えて一覧が欠けている・まだ読めていない）は選べる（サーバーが決める）
+    func testUnknownMutualIsNotBlocked() {
+        let partial = MutualFollow(following: ["ken", "sora"], followerList: [user("ken")], followerTotal: 120)
+        XCTAssertEqual(partial.status(of: "sora"), .unknown)
+        XCTAssertFalse(GroupPick.blockedByMutual(user("sora"), selected: [user("ken")], mode: .start, mutual: partial))
+        XCTAssertEqual(MutualFollow.unknownAll.status(of: "x"), .unknown)
+        // フォローしていない人は、フォロワーの一覧が欠けていても相互ではない
+        XCTAssertEqual(partial.status(of: "mio"), .no)
+    }
+
+    func testNotAddedWording() {
+        XCTAssertEqual(GroupText.notAddedNotice(2, language: "ja"), "お互いにフォローしていない人は入れられませんでした")
+        XCTAssertNil(GroupText.notAddedNotice(0, language: "ja"))
+    }
+
+    /// 1対1の「人を足す」は相手と相互フォローのときだけ。picker はフォロワーを読み、相互でない人を薄く・押すと1行
+    @MainActor
+    func testOneToOneAddPeopleNeedsMutual() async throws {
+        let conversation = try source("Features/Messages/DMConversationView.swift")
+        XCTAssertTrue(conversation.contains("mayAddPeople && peerId.map { store.mutual.status(of: $0) == .yes } == true"),
+                      "相互フォローでない相手に「人を足す」を出している")
+        XCTAssertTrue(conversation.contains("await store.refreshMutual(social: environment.social, owner: auth.userId)"))
+        let picker = try source("Features/Messages/DMNewMessageView.swift")
+        XCTAssertTrue(picker.contains("GroupPick.blockedByMutual(user, selected: selected, mode: mode, mutual: mutual)"))
+        XCTAssertTrue(picker.contains("environment.social.followers(userId: me)"))
+        XCTAssertTrue(picker.contains("DMNoteRow(text: GroupPick.mutualNotice(), error: false)"))
+        // 控え: 人が替わったら消す・新しいうちは読まない
+        let store = DMInboxStore()
+        store.use(owner: "me")
+        store.setMutual(mutual, owner: "me")
+        XCTAssertEqual(store.mutual.status(of: "ken"), .yes)
+        store.use(owner: "other")
+        XCTAssertEqual(store.mutual, .unknownAll, "前の人の相互フォローを次の人に使っている")
+        XCTAssertTrue(try source("Core/Text/GroupMessages.swift").contains("2026-11-20 owner 判断"))
     }
 
     /// 名前を外すときは欄を null で送る（欄が無いと「変えない」になる・サーバーの `"name" in body`）
