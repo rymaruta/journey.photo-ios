@@ -86,8 +86,10 @@ struct AskAnswer: Equatable, Codable {
         case .device:
             return L("この iPhone の中で答えました", "Answered on this iPhone")
         case .server:
-            return L("サーバー（東京）で答えました。送ったのは、打った文と直前の2往復、引いた観光スポットの行と使い方の頁の抜き書きだけです",
-                     "Answered on our server in Tokyo. Only your words, the last two exchanges, the spot rows and help excerpts were sent.")
+            // 2026-11-21 判断（owner「これってユーザに見えていいの？」）: 送り先は伝えるが、答えの作り（引いた行・使い方の頁・置き場の地域）は出さない
+            //（CLAUDE.md「AI はアプリの作りやセキュリティのことを答えない」と同じ考え）
+            return L("サーバーの AI で答えました。あなたの情報で送ったのは、打った文と直前のやりとりだけです",
+                     "Answered by our server AI. The only personal info sent was what you typed and the last few exchanges.")
         case .table:
             return L("この iPhone の中で言葉を読み、観光スポットから選びました", "Read your words on this iPhone and picked from the spots")
         case .refused:
@@ -103,7 +105,11 @@ struct AskAnswer: Equatable, Codable {
 
 /// 「AI の答えは間違うことがあります」（答えの下にいつも）
 enum AskText {
-    static var disclaimer: String { L("AI の答えは間違うことがあります", "AI answers can be wrong") }
+    /// 2026-11-21 判断（owner「注：AIは間違えることがあります。をオフィシャルっぽく」）: 公式の注意書きの言い方にし、確かめ先も添える
+    static var disclaimer: String {
+        L("※ AI による回答には誤りが含まれる場合があります。営業時間や料金などの重要な情報は、公式の情報でご確認ください。",
+          "AI-generated answers may contain errors. Please confirm important details such as hours and prices with official sources.")
+    }
     static var generalBadge: String { L("一般的な答え", "General answer") }
     /// 答えのもとの1行（「観光スポットの情報から」・2026-11-20 判断 札 #663）。「台帳」は中の言葉なので利用者に見せない。
     /// 前の版の控え（label が「観光スポットの台帳」）も種類で言い替える

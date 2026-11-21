@@ -394,4 +394,23 @@ final class AskFormTests: XCTestCase {
         XCTAssertEqual(new.kind, "cards")
         XCTAssertEqual(new.lead, "夕日なら屋島です。")
     }
+
+    /// 注意書きは公式の言い方で、確かめ先を添える（2026-11-21 owner）
+    func testDisclaimerIsOfficialWording() {
+        let text = AskText.disclaimer
+        XCTAssertTrue(text.hasPrefix("※"))
+        XCTAssertTrue(text.contains("誤りが含まれる場合があります"))
+        XCTAssertTrue(text.contains("公式の情報でご確認ください"))
+        XCTAssertFalse(text.contains("・"))
+        XCTAssertFalse(text.contains("間違う"))
+    }
+
+    /// どこで答えたかの1行に、答えの作り（引いた行・使い方の頁・置き場の地域）を出さない（2026-11-21 owner）
+    func testServerEngineLineHidesInternals() {
+        let line = AskAnswer(engine: .server, text: "x").engineLine
+        XCTAssertTrue(line.contains("サーバーの AI で答えました"))
+        for word in ["東京", "抜き書き", "使い方の頁", "観光スポットの行", "往復"] {
+            XCTAssertFalse(line.contains(word), word)
+        }
+    }
 }
