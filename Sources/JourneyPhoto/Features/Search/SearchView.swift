@@ -558,7 +558,10 @@ struct SearchView: View {
                 let wished = index.filter { wish.contains(SavedSpotKey.official($0.slug)) }
                 // 旅行プランは端末の AI の道具だけが読む（サーバーの AI には送らない）。ログイン中で電波があるときだけ
                 var trips: [TripPlan] = []
-                if authStore.userId != nil, !conn.isOffline, OnDeviceAI.isAvailable, !AskFixture.isOn {
+                // 2026-11-20 判断（札 #662 の「Failed to terminate」の調べ）: 見本の口のときは、端末の AI（FoundationModels）の
+                // 使えるかの問い合わせ自体をしない。前は見本の口でも `OnDeviceAI.isAvailable` を先に見ていて、模擬機に無い
+                // AI の仕組みへ毎回つないでいた（閉じられなかったのは、どれも AI に頼んだあとのアプリ）
+                if !AskFixture.isOn, authStore.userId != nil, !conn.isOffline, OnDeviceAI.isAvailable {
                     trips = (try? await env.trips.list()) ?? []
                 }
                 return AskLibrary(spots: index, photos: photos, wishlist: wished, trips: trips, here: here)
