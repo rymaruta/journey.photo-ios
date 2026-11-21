@@ -37,6 +37,10 @@ final class AskEngine: ObservableObject {
     @Published private(set) var thread: [AskExchange] = []
     /// 答えを用意している問い（読み込み中の骨格を出す）
     @Published private(set) var pending: String?
+    /// 用意している答えの種類（字から分かるとき。押した瞬間から形の骨格を出す・2026-11-21 判断 札 #675）。分からなければ nil
+    @Published private(set) var pendingKind: AskAnswerKind?
+    /// いま届いた答え（少しずつ出す: 頭の文が先、札と一手はあと）。控えから出した答えは入れない
+    @Published private(set) var freshId: String?
     @Published private(set) var usage: AskUsage?
     /// 札に出す観光スポット（`spotId` → 行。詳細を重ねたもの）
     @Published private(set) var spotsById: [String: OfficialSpot] = [:]
@@ -73,6 +77,8 @@ final class AskEngine: ObservableObject {
     func reset() {
         thread = []
         pending = nil
+        pendingKind = nil
+        freshId = nil
         usage = nil
         pendingDetails = []
         spotsById = [:]
@@ -87,6 +93,7 @@ final class AskEngine: ObservableObject {
         guard !question.isEmpty else { return nil }
         thread = []
         pending = question
+        pendingKind = AskAnswerKind.byWords(question)
         return question
     }
 
@@ -98,11 +105,26 @@ final class AskEngine: ObservableObject {
             let library = await backend.library(false)
             guard !Task.isCancelled else { return }
             remember(library: library, thread: cached)
+            freshId = nil
             thread = cached
             pending = nil
             return
         }
         await ask(question, backend: backend)
+    }
+
+    /// 前に頼んだことを見せる（端末の控え `AskHistoryStore` から出すだけ。**AI は呼ばない、回数も使わない**・札 #675）
+    func showSaved(_ saved: [AskExchange], backend: Backend) async {
+        guard let first = saved.first else { return }
+        thread = []
+        freshId = nil
+        pending = first.question
+        pendingKind = nil
+        let library = await backend.library(false)
+        guard !Task.isCancelled else { return }
+        remember(library: library, thread: saved)
+        thread = saved
+        pending = nil
     }
 
     /// 今日すでに答えた控えがあるか（最近の語を押したとき、控えがあるときだけ答えを出す・AI は呼ばない・札 #662）
@@ -123,6 +145,7 @@ final class AskEngine: ObservableObject {
     func relax(_ exchange: AskExchange, backend: Backend) async {
         guard let phrase = exchange.answer.relaxedQuery, pending == nil else { return }
         pending = phrase
+        pendingKind = .cards
         let library = await backend.library(false)
         let answer = await tableAnswer(phrase, library: library, backend: backend, note: nil, state: .answered)
         guard !Task.isCancelled else { return }
@@ -130,8 +153,75 @@ final class AskEngine: ObservableObject {
         await loadPendingDetails(backend: backend)
     }
 
+    // MARK: - 旅行プランの流れ（札 #675 の答えの形・版3「流れ（今の旅行プランの AI の答えをこの形に）」）
+
+    /// 旅行プランを作る頼みを、答えの流れとして待つ（流れの骨格を出す）。作るのは旅行プランの AI（`TripAIJobs`）で、
+    /// **回数は旅行プランの AI の枠**（`TripAIRunner` が取る。ここでは数えない）。返すのは頼んだ文（待てないときは nil）
+    @discardableResult
+    func beginPlan(_ raw: String) -> String? {
+        let question = AskQuery.clipped(raw)
+        guard !question.isEmpty, pending == nil else { return nil }
+        pending = question
+        pendingKind = .plan
+        mark("start")
+        return question
+    }
+
+    /// 旅行プランの AI ができた（保存まで終わった）。頭の文、日ごとの観光スポット、保存したプランを答えにする。
+    /// 理由の文は見張り（`AskGuard.screened`）を通し、台帳に無い場所らしい名前があれば決まり文に替える
+    func finishPlan(_ question: String, result: TripAIResult, planId: String?, onDevice: Bool, userId: String?) {
+        guard pending == question else { return }
+        if result.refused {
+            appendPlain(AskExchange(question: question, answer: .refused(care: false)), userId: userId)
+            return
+        }
+        let screened = AskGuard.screened(result.reason)
+        if screened.refused {
+            appendPlain(AskExchange(question: question, answer: .refused(care: false)), userId: userId)
+            return
+        }
+        let usedAI = result.mode == .ai
+        let days = result.days.filter { !$0.isEmpty }
+        let spots = days.flatMap { $0 }
+        for s in spots where spotsById[s.spotId] == nil { spotsById[s.spotId] = s }
+        var answer = AskAnswer(engine: usedAI ? (onDevice ? .device : .server) : .table)
+        answer.kind = .plan
+        let lead = AskPlanFlowText.lead(reason: screened.text, usedAI: usedAI, days: days.count)
+        answer.text = AskLeadCheck.hasUnknownPlace(lead, shown: spots, ledger: spots)
+            ? AskPlanFlowText.lead(reason: "", usedAI: false, days: days.count) : lead
+        answer.spotIds = spots.map(\.spotId)
+        answer.plan = AskPlanAnswer(title: result.title, planId: planId, days: days.map { $0.map(\.spotId) })
+        answer.note = AskPlanFlowText.modeNote(result.mode)
+        appendPlain(AskExchange(question: question, answer: answer), userId: userId)
+    }
+
+    /// 旅行プランを作れなかった（圏外、候補が無い、保存できない）。やり直しは答えの「もう一度」から
+    func failPlan(_ question: String, line: String, userId: String?) {
+        guard pending == question else { return }
+        var answer = AskAnswer(engine: .table, state: .failed, text: line)
+        answer.kind = .plan
+        appendPlain(AskExchange(question: question, answer: answer), userId: userId)
+    }
+
+    /// 旅行プランを待つのをやめる（画面を閉じた・人が替わった。作る仕事は旅行プランの AI が続け、できたら帯で知らせる）
+    func cancelPlan() {
+        guard pendingKind == .plan else { return }
+        pending = nil
+        pendingKind = nil
+    }
+
+    private func appendPlain(_ exchange: AskExchange, userId: String?) {
+        thread.append(exchange)
+        freshId = exchange.id
+        pending = nil
+        pendingKind = nil
+        let kept = Self.keepable(thread)
+        if !kept.isEmpty { history.remember(kept, userId: userId) }
+    }
+
     private func ask(_ question: String, backend: Backend) async {
         pending = question
+        pendingKind = AskAnswerKind.byWords(question)
         mark("start")
         let answer = await answer(question, backend: backend)
         // 欄を打ち替えて閉じた回（取り消し）は出さない
@@ -161,7 +251,9 @@ final class AskEngine: ObservableObject {
     private func append(_ exchange: AskExchange, library: AskLibrary?, backend: Backend) {
         if let library { remember(library: library, thread: [exchange]) }
         thread.append(exchange)
+        freshId = exchange.id
         pending = nil
+        pendingKind = nil
         let kept = Self.keepable(thread)
         if !kept.isEmpty { history.remember(kept, userId: backend.userId()) }
     }
@@ -206,7 +298,7 @@ final class AskEngine: ObservableObject {
             }
             return await aiAnswer(question, text: result.text, general: result.general, picks: result.picks,
                                   photoIds: result.photoIds, sources: result.sources, engine: .device,
-                                  library: library, backend: backend)
+                                  aiKind: result.kind, library: library, backend: backend)
         }
 
         // 5b. サーバーの AI（費用がかかる）。先に1回取る（取った回は次の ask が使う・二重に数えない）
@@ -229,8 +321,10 @@ final class AskEngine: ObservableObject {
             // サーバーが断った（呼ぶ前の断り・AI の断り・答えの前の見張り）。アプリの断りの1行にそろえ、札も出さない
             if reply.refused { return .refused(care: AskGuard.needsCare(question)) }
             let sources: [AskAnswer.Source] = picks.isEmpty ? [] : [.init(kind: .spots, label: AskText.spotsSource)]
-            return await aiAnswer(question, text: reply.answer, general: reply.general, picks: picks, photoIds: [],
-                                  sources: sources, engine: .server, library: library, backend: backend)
+            // 2026-11-21 判断: サーバーが種類と頭の文を返したら使う（今のサーバーは返さない。返す形はサーバーの担当に頼む）
+            let text = reply.lead.map { $0.isEmpty ? reply.answer : $0 + "\n" + reply.answer } ?? reply.answer
+            return await aiAnswer(question, text: text, general: reply.general, picks: picks, photoIds: [],
+                                  sources: sources, engine: .server, aiKind: reply.kind, library: library, backend: backend)
         } catch AskService.Failure.limit(let reason, let quota) {
             if let quota { self.usage = quota }
             var a = await tableAnswer(question, library: library, backend: backend, note: nil, state: .answered)
@@ -269,7 +363,7 @@ final class AskEngine: ObservableObject {
 
     /// AI の答えを部品にする。**文は見張りを通す**（漏れの形が混じれば断りの1行に替え、札も出さない）
     private func aiAnswer(_ question: String, text: String, general: Bool, picks: [AskLibrary.Pick], photoIds: [String],
-                          sources: [AskAnswer.Source], engine: AskAnswer.Engine,
+                          sources: [AskAnswer.Source], engine: AskAnswer.Engine, aiKind: String? = nil,
                           library: AskLibrary, backend: Backend) async -> AskAnswer {
         let screened = AskGuard.screened(text.trimmingCharacters(in: .whitespacesAndNewlines))
         if screened.refused { return .refused(care: false) }
@@ -281,8 +375,13 @@ final class AskEngine: ObservableObject {
         var answer = AskAnswer(engine: engine)
         // 2026-11-20 判断（札 #663）: 文ははじめの1〜2文だけ。「- 名前: 説明」の行は札の理由に振り分け、札に無い名前の行は出さない
         let shaped = AskAnswerShape.shape(screened.text, spots: shown.map(\.spot))
-        answer.text = shaped.lead
+        // 2026-11-21 判断（札 #675 の答えの形・版3）: 頭の文に台帳に無い場所らしい名前があれば決まり文に替える。
+        // 種類は AI が返したもの → 字から分かるもの → 札の有無。AI が札と言ったのに札が無ければ「形が読めなかった」（頭の文だけ）
+        answer.text = AskLeadCheck.safeLead(shaped.lead, shown: shown.map(\.spot), ledger: library.spots, season: query.season?.label)
         answer.reasons = shaped.reasons.isEmpty ? nil : shaped.reasons
+        let declared = AskAnswerKind.parse(aiKind)
+        answer.kind = AskFormCheck.kind(ai: declared, words: AskAnswerKind.byWords(question), spotCount: shown.count)
+        if AskFormCheck.unreadable(ai: declared, spotCount: shown.count) { answer.unreadable = true }
         answer.general = general && shown.isEmpty && photoIds.isEmpty
         answer.sources = sources
         await fill(&answer, picks: shown, query: query, intent: intent, question: question,
@@ -298,6 +397,7 @@ final class AskEngine: ObservableObject {
         let query = AskLibrary.query(reading: reading, intent: intent, sentence: question, spots: library.spots)
         var answer = AskAnswer(engine: .table, state: state)
         answer.note = note
+        answer.kind = intent.spots ? .cards : .text
         if !intent.spots {
             let pages = AskHelpPages.matching(question)
             if let page = pages.first {

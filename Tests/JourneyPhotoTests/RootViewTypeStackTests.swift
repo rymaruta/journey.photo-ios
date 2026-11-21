@@ -22,7 +22,7 @@ final class RootViewTypeStackTests: XCTestCase {
     /// 段を全部並べている（名前が重ならない）
     func testSegmentsAreListed() async {
         let segments = RootView.typeSegments()
-        XCTAssertEqual(segments.count, 15)
+        XCTAssertEqual(segments.count, 16)  // 2026-11-21 札 #675 で「AI に頼む」の段（tabsWithAsk）を足した
         XCTAssertEqual(Set(segments.map(\.name)).count, segments.count)
     }
 

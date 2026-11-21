@@ -21,6 +21,8 @@ enum AskDevice {
         let picks: [AskLibrary.Pick]
         let photoIds: [String]
         let sources: [AskAnswer.Source]
+        /// 答えの種類（`AskAnswerKind` の字）。AI が最初に返す欄（2026-11-21 判断・札 #675 の答えの形）。読めなければ nil
+        var kind: String? = nil
     }
 
     /// 待つ上限。過ぎたら言葉の表で答える
@@ -30,7 +32,9 @@ enum AskDevice {
     static func instructions(today: String) -> String {
         """
         あなたは日本の旅と写真のアプリの案内係です。今日は\(today)です。
-        利用者の質問に、日本語で答えます。答えの文（lead）ははじめの1〜2文、80字までにします。箇条書きにしません。
+        利用者の質問に、日本語で答えます。最初に答えの種類（kind）を決めます: 観光スポットをすすめるときは cards、
+        2つ以上を比べるときは compare、使い方の手順は steps、写真のことは photos、それ以外は text です。
+        答えの文（lead）ははじめの1〜2文、60字までにします。箇条書きにしません。次に聞けることは書きません。
         観光スポットをすすめるときは、必ず道具 findSpots で台帳から引き、引いた所だけを挙げます。台帳に無い場所を作りません。
         観光スポットごとの理由は lead に書かず、reasons に、道具が返した名前のまま1つずつ、1文で書きます。
         写真のことは findPhotos、利用者自身の行きたい場所は myWishlist、利用者自身の旅行プランは myTrips、
@@ -98,7 +102,7 @@ enum AskDevice {
                         let text = AskDevice.joined(lead: reply.lead, reasons: reply.reasons.map { ($0.spotName, $0.reason) })
                         let snap = collector.snapshot()
                         return Result(text: text, general: snap.sources.isEmpty,
-                                      picks: snap.picks, photoIds: snap.photoIds, sources: snap.sources)
+                                      picks: snap.picks, photoIds: snap.photoIds, sources: snap.sources, kind: reply.kind)
                     } catch {
                         // 中身（質問と答え）はログに残さない。種類だけ
                         print("[ask] device failed \(type(of: error))")
@@ -160,7 +164,11 @@ final class AskLibraryBox: @unchecked Sendable {
 @available(iOS 26.0, macOS 26.0, *)
 @Generable
 struct AskDeviceReply {
-    @Guide(description: "質問への答えの文。はじめの1〜2文、80字まで。箇条書きにしない。観光スポットの理由はここに書かない")
+    // 2026-11-21 判断（札 #675 の答えの形・版3）: 欄の順（種類 → 頭の文 → 理由）がそのまま決まる順。種類で形を選ぶ
+    @Guide(description: "答えの種類", .anyOf(AskAnswerKind.deviceChoices))
+    var kind: String
+
+    @Guide(description: "質問への答えの文。はじめの1〜2文、60字まで。箇条書きにしない。観光スポットの理由はここに書かない")
     var lead: String
 
     @Guide(description: "道具 findSpots が返した観光スポットごとの理由。0〜8個", .maximumCount(8))

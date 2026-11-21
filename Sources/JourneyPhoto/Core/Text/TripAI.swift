@@ -50,6 +50,10 @@ enum TripAIDays {
         if let g = groups(#"(\d+)\s*泊\s*(\d+)\s*日"#, t), let d = Int(g[1]) { return clamp(d) }
         if let g = groups(#"(\d+)\s*泊"#, t), let n = Int(g[0]) { return clamp(n + 1) }
         if let g = groups(#"(\d+)\s*日(?:間|で|かけ|、|。|$)"#, t), let d = Int(g[0]) { return clamp(d) }
+        // 「2日の旅行プランにして」（札 #675 の次に頼めること・回 1658）。「11月3日の旅」の日付は日数にしない
+        // 日付（「11月3日」「11月 3日」「11月3〜4日」「3日〜4日」）は日数にしない（確かめ役の指摘）
+        if let g = groups(#"(?<![月\d\s〜~～\-ー])(\d+)\s*日の(?:旅|プラン|日程|行程)"#, t), let d = Int(g[0]),
+           !isDate(t) { return clamp(d) }
         return nil
     }
 
@@ -61,6 +65,11 @@ enum TripAIDays {
     }
 
     private static func clamp(_ d: Int) -> Int { min(max(d, 1), TripAILimits.maxDays) }
+
+    /// 「11月 3日」「11月3〜4日」のように月の付いた日付がある
+    private static func isDate(_ t: String) -> Bool {
+        groups(#"(\d+)\s*月\s*\d+"#, t) != nil
+    }
 }
 
 // MARK: - 行き先

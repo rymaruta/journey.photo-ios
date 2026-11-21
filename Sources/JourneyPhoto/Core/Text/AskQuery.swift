@@ -99,7 +99,9 @@ enum AskQuery {
         intent.near = nearWords.contains { text.contains($0) }
         let planned = planWords.contains { text.contains($0) }
         intent.plan = planned && (text.contains("作") || text.contains("組") || text.contains("立て") || text.contains("plan")
-                                  || text.contains("泊") || text.contains("日帰り"))
+                                  || text.contains("泊") || text.contains("日帰り")
+                                  // 2026-11-21 判断（札 #675 の答えの形）: 「2日の旅行プランにして」（次に頼めること、版3の例）も旅行プランの頼み
+                                  || text.contains("プランにし") || text.contains("プランにす"))
         let spotish = spotWords.contains { text.contains($0) } || text.contains("おすすめ") || text.contains("オススメ")
         // 撮り方や持ち物の相談（「夕日を撮るコツは」）は、場所の言葉が無ければ観光スポットを探していない
         let advice = adviceWords.contains { text.contains($0) }

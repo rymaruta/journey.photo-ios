@@ -295,11 +295,12 @@ final class SearchSentenceTests: XCTestCase {
         let keyboard = try XCTUnwrap(source.range(of: "private func submitFromKeyboard() {"))
         XCTAssertTrue(source[keyboard.upperBound...].prefix(300).contains("SearchSubmit.plan(.keyboard"), "「検索」が決まりを通っていない")
         let pick = try XCTUnwrap(source.range(of: "private func pickRecent(_ word: String) {"))
-        XCTAssertTrue(source[pick.upperBound...].prefix(400).contains("SearchSubmit.plan(.recent(cachedToday: cached)"),
+        // 2026-11-21（札 #675）: 探すは AI を呼ばない。最近の語も言葉の表で読むだけ
+        XCTAssertTrue(source[pick.upperBound...].prefix(400).contains("SearchSubmit.plan(.recent, text: word"),
                       "最近の検索から選んだ文を読んでいない")
         let route = try XCTUnwrap(source.range(of: "private func apply(_ plan: SearchSubmit.Plan) {"))
-        let body = source[route.upperBound...].prefix(500)
-        XCTAssertTrue(body.contains("startAsk(next)"))
+        let body = source[route.upperBound...].prefix(300)
+        XCTAssertFalse(body.contains("startAsk"), "探すから AI に頼んでいる")
         XCTAssertTrue(body.contains("if plan.readsSentence { readSentence(next) }"))
         XCTAssertTrue(SearchSubmit.plan(.keyboard, text: "京都 紅葉 夜", scope: .all, searched: "").readsSentence)
         // 0件と決まったら1つ外す。外した札は押すと戻る

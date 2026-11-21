@@ -26,6 +26,8 @@ open class UIWindow {
     public var rootViewController: UIViewController?
     /// 安全な範囲の幅（本物と同じ・角の当たりを状態バーの下に止める `CornerTapArea` が上を読む）
     public var safeAreaInsets: UIEdgeInsets { UIEdgeInsets() }
+    /// 窓の大きさ（本物と同じ・帯の「✦ AI に頼む」が字を出せる幅か `AskEntryButton` が読む）
+    public var bounds: CGRect { .zero }
 }
 
 /// 4辺の幅（本物と同じ）
