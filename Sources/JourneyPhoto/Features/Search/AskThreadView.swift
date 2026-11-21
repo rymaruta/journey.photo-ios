@@ -74,8 +74,21 @@ struct AskThreadView: View {
                     .accessibilityIdentifier("search.ask.disclaimer")
             }
             if !engine.thread.isEmpty { followUpField }
+            if AskFixture.isOn {
+                // 札の並びの調べ（回 1644）。0.5 秒ごとに自分だけ描き直す（`PerfProbeOverlay` と同じ作り）
+                TimelineView(.animation(minimumInterval: 0.5)) { _ in
+                    Text(".")
+                        .font(.caption2)
+                        .foregroundStyle(Color.clear)
+                        .accessibilityIdentifier("search.ask.carouselStats")
+                        .accessibilityValue(AskCarouselStats.shared.summary())
+                }
+                .frame(width: 1, height: 1)
+            }
         }
         .padding(.horizontal, JPSpace.gutter)
+        // 札の左、並びの左、頭の文の左を同じ座標で測る（原点は答えの画面の左端・回 1644 の調べ）
+        .coordinateSpace(.named(AskCarouselStats.space))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("search.ask.thread")
         .task(id: engine.pending) {
@@ -152,6 +165,9 @@ struct AskThreadView: View {
                         if let lead = AskAnswerShape.leadLine(a) {
                             AskLead(text: lead.text, small: lead.small)
                                 .accessibilityIdentifier("search.ask.text")
+                                .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(AskCarouselStats.space)).minX }) { x in
+                                    AskCarouselStats.shared.position("lead", x)
+                                }
                         }
                         if !a.sources.isEmpty { sourcesLine(a.sources, count: a.spotIds.count) }
                         spotSection(a)
@@ -509,6 +525,8 @@ struct AskPinsMap: View {
                 }
             }
         }
+        // 地図のカメラの動き（タイルの読み込みや動きが続いているかの目安・UI テストのときだけ数える・回 1644 の調べ）
+        .onMapCameraChange(frequency: .continuous) { _ in AskCarouselStats.shared.hit(.mapCam) }
         .navigationDestination(isPresented: $showOpened) {
             if let opened {
                 OfficialSpotView(spot: opened, spots: officialSpots, photos: photos, photosKnown: photosKnown)

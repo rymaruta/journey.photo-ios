@@ -3181,6 +3181,7 @@ final class ScreenshotTests: XCTestCase {
         }
         let line = "scene=\(scene) state=\(app.state.rawValue) keyboard=\(app.keyboards.count)"
             + " ask=[\(value("search.ask.probe"))] stage=[\(value("search.ask.stage"))]"
+            + " carousel=[\(value("search.ask.carouselStats"))]"
             + " perf=[\(perfProbeValue(app) ?? "-")]"
         print("measured [ask-end] \(line)")
         let note = XCTAttachment(string: line)
@@ -3215,6 +3216,12 @@ final class ScreenshotTests: XCTestCase {
         finishSearchAsk(app, scene: "field")
     }
 
+    /// 札の並びの調べ（答えが出てから2秒後の1秒と、読んだ時の直前1秒の、body、onGeometryChange、送り、地図のカメラの回数・回 1644）
+    private func noteCarouselStats(_ app: XCUIApplication, scene: String) {
+        let e = app.descendants(matching: .any)["search.ask.carouselStats"].firstMatch
+        print("measured [ask-carousel] scene=\(scene) \(e.exists ? (e.value as? String ?? "-") : "missing")")
+    }
+
     /// 1枚目の札の左が画面の左から 16±1（模型 `.car` の scroll-padding-left 16）。回 1619〜1635 は約 6pt だった
     private func checkFirstCardGutter(_ app: XCUIApplication, scene: String) {
         let probe = app.descendants(matching: .any)["search.ask.cardProbe"].firstMatch
@@ -3228,6 +3235,7 @@ final class ScreenshotTests: XCTestCase {
     /// 11z2 答え（案A: 明朝の1〜2文、観光スポットの情報から、写真の札を横に送る、地図、みんなの写真、旅行プランにする）
     func testCapturesSearchAskAnswer() {
         guard let app = launchSearchAsk(), askViaSendButton(app, "香川で夕日がきれいな所を教えて") else { return }
+        noteCarouselStats(app, scene: "answer")
         checkFirstCardGutter(app, scene: "answer")
         shoot(app, "11z2-探す（AI に頼む、答え）")
         finishSearchAsk(app, scene: "answer")
@@ -3284,6 +3292,7 @@ final class ScreenshotTests: XCTestCase {
     func testCapturesSearchAskLargeText() {
         guard let app = launchSearchAsk(mode: "bullets", largeText: true),
               askViaSendButton(app, "香川のおすすめの観光スポットを教えて") else { return }
+        noteCarouselStats(app, scene: "largeText")
         shoot(app, "11z6-探す（AI に頼む、大きな字）")
         finishSearchAsk(app, scene: "largeText")
     }

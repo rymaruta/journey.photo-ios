@@ -85,6 +85,9 @@ struct DownsampledRemoteImage: View {
             }
         }
         .task(id: LoadKey(url: url, pixels: neededPixels, attempt: automaticRetries)) {
+            // 読み込み中の数（AI に頼むの UI テストのときだけ数える・回 1644 の調べ）
+            AskCarouselStats.shared.imageStarted()
+            defer { AskCarouselStats.shared.imageEnded() }
             await load()
         }
         // 別の写真に替わったら数え直す（前の写真の失敗で、次の写真の読み直しを使い切らない）

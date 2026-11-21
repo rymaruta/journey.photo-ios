@@ -114,6 +114,77 @@ struct AskLoadingSkeleton: View {
     }
 }
 
+/// 札の並びの調べ（UI テストのときだけ数える・回 1644 の「大きな字で閉じられない」「札の左の数字と絵が合わない」の調べ）。
+/// 並び（`AskSpotCarousel`）の body、onGeometryChange、送り（scrollTo）、地図のカメラの動き、画像の読み込みを時刻つきで数え、
+/// 札の左、並びの左、頭の文の左を、答えの画面の名前付きの座標（`space`）で持つ。描き直しを起こさないよう、状態ではなく参照で持つ
+final class AskCarouselStats: @unchecked Sendable {
+    static let shared = AskCarouselStats()
+    /// 答えの画面（`AskThreadView`）の名前付きの座標。原点は答えの画面の左端（左右の余白の外）
+    static let space = "askThread"
+
+    enum Kind: String, CaseIterable { case body, geo, scroll, mapCam }
+
+    private let lock = NSLock()
+    private var events: [Kind: [Date]] = [:]
+    private var appearedAt: Date?
+    private var imagesStarted = 0
+    private var imagesInFlight = 0
+    private var positions: [String: CGFloat] = [:]
+
+    var isOn: Bool { AskFixture.isOn }
+
+    func hit(_ kind: Kind) {
+        guard isOn else { return }
+        lock.lock(); defer { lock.unlock() }
+        var list = events[kind, default: []]
+        list.append(Date())
+        if list.count > 4000 { list.removeFirst(list.count - 4000) }
+        events[kind] = list
+    }
+
+    func appeared() {
+        guard isOn else { return }
+        lock.lock(); defer { lock.unlock() }
+        if appearedAt == nil { appearedAt = Date() }
+    }
+
+    func position(_ name: String, _ x: CGFloat) {
+        guard isOn else { return }
+        lock.lock(); defer { lock.unlock() }
+        positions[name] = x
+    }
+
+    func imageStarted() {
+        guard isOn else { return }
+        lock.lock(); defer { lock.unlock() }
+        imagesStarted += 1
+        imagesInFlight += 1
+    }
+
+    func imageEnded() {
+        guard isOn else { return }
+        lock.lock(); defer { lock.unlock() }
+        imagesInFlight -= 1
+    }
+
+    /// 「閉じる直前の1秒（読んだ時の直前1秒）」と「答えが出てから2秒後の1秒」の回数と、位置と画像の数
+    func summary(now: Date = Date()) -> String {
+        lock.lock(); defer { lock.unlock() }
+        func count(_ k: Kind, _ from: Date, _ to: Date) -> Int {
+            (events[k] ?? []).filter { $0 >= from && $0 < to }.count
+        }
+        let last = Kind.allCases.map { "\($0.rawValue)=\(count($0, now.addingTimeInterval(-1), now))" }.joined(separator: ",")
+        var at2 = "-"
+        if let a = appearedAt {
+            let from = a.addingTimeInterval(2), to = a.addingTimeInterval(3)
+            at2 = Kind.allCases.map { "\($0.rawValue)=\(count($0, from, to))" }.joined(separator: ",")
+        }
+        let total = Kind.allCases.map { "\($0.rawValue)=\(events[$0]?.count ?? 0)" }.joined(separator: ",")
+        let pos = positions.keys.sorted().map { "\($0)=" + String(format: "%.1f", positions[$0] ?? -1) }.joined(separator: ",")
+        return "last1s=[\(last)] at2s=[\(at2)] total=[\(total)] pos=[\(pos)] images=\(imagesInFlight)/\(imagesStarted)"
+    }
+}
+
 /// 写真の札を横に送る並びと地図（案A）
 struct AskSpotCarousel: View {
     let spots: [OfficialSpot]
@@ -163,6 +234,7 @@ struct AskSpotCarousel: View {
     }
 
     var body: some View {
+        let _ = AskCarouselStats.shared.hit(.body)
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 JPEyebrowLine(L("観光スポット", "Spots"))
@@ -186,13 +258,20 @@ struct AskSpotCarousel: View {
                                 .onGeometryChange(for: Bool.self, of: { geo in
                                     abs(geo.frame(in: .scrollView).minX - JPSpace.gutter) < geo.size.width / 2
                                 }) { front in
+                                    AskCarouselStats.shared.hit(.geo)
                                     if front, current != spot.spotId { current = spot.spotId }
                                 }
                                 .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame in
                                     guard AskFixture.isOn, spot.spotId == spots.first?.spotId else { return }
+                                    AskCarouselStats.shared.hit(.geo)
+                                    // 位置が変わらないなら書かない（描き直しの輪を作らない）
+                                    guard frame != firstCardFrame else { return }
                                     firstCardFrame = frame
                                     if firstXAtAppear == nil { firstXAtAppear = frame.minX }
                                     note("card")
+                                }
+                                .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(AskCarouselStats.space)).minX }) { x in
+                                    if spot.spotId == spots.first?.spotId { AskCarouselStats.shared.position("card", x) }
                                 }
                         }
                     }
@@ -204,10 +283,14 @@ struct AskSpotCarousel: View {
                 // 札の並びは画面の端まで（左右の余白の分だけ外へ出す）
                 .padding(.horizontal, -JPSpace.gutter)
                 .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame in
+                    AskCarouselStats.shared.hit(.geo)
                     if frame.width != containerWidth { containerWidth = frame.width }
-                    scrollFrameX = frame.minX
+                    if frame.minX != scrollFrameX { scrollFrameX = frame.minX }
                     note("width")
                     placeFirstIfSettled(proxy)
+                }
+                .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(AskCarouselStats.space)).minX }) { x in
+                    AskCarouselStats.shared.position("scroll", x)
                 }
                 // 回 1619〜1641 の絵 11z2、11z5: 答えが出た直後だけ1枚目の札の左が約 6pt（少しあとの絵、送ったあと、大きな字では 16）。
                 // 並べ直し（並びの幅が決まる、案内の文の詳細が届く）が終わってから1回だけ、1枚目を左から 16 へ送り直す（動きなし）。
@@ -219,6 +302,7 @@ struct AskSpotCarousel: View {
                 .onChange(of: spots) { _, _ in note("spots") }
                 .task {
                     guard AskFixture.isOn else { return }
+                    AskCarouselStats.shared.appeared()
                     appearedAt = Date()
                     try? await Task.sleep(nanoseconds: 500_000_000)
                     firstXAfterHalf = firstCardFrame.minX
@@ -226,6 +310,7 @@ struct AskSpotCarousel: View {
                 }
                 .onChange(of: scrollTarget) { _, target in
                     guard let target else { return }
+                    AskCarouselStats.shared.hit(.scroll)
                     withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) {
                         // 札の左を見えている所の左から 16 に置く（`scrollTo` の anchor は札と並びの同じ割合の点をそろえる）
                         proxy.scrollTo(target, anchor: AskCardSnap.anchor(container: containerWidth, card: cardWidth))
@@ -262,6 +347,7 @@ struct AskSpotCarousel: View {
     private func placeFirstIfSettled(_ proxy: ScrollViewProxy) {
         guard !placedFirst, settled, containerWidth > 0, let first = spots.first?.spotId else { return }
         placedFirst = true
+        AskCarouselStats.shared.hit(.scroll)
         proxy.scrollTo(first, anchor: AskCardSnap.anchor(container: containerWidth, card: cardWidth))
         note("placed")
     }
@@ -272,6 +358,7 @@ struct AskSpotCarousel: View {
         let ms = Int(Date().timeIntervalSince(appearedAt) * 1000)
         let entry = String(format: "%@ x=%.1f sv=%.1f w=%.0f", what, firstCardFrame.minX, scrollFrameX, containerWidth)
         if let last = cardLog.last, last.hasSuffix(entry) { return }
+        if cardLog.count >= 24 { return }
         cardLog.append("+\(ms) " + entry)
         if cardLog.count > 24 { cardLog.removeFirst(cardLog.count - 24) }
     }
