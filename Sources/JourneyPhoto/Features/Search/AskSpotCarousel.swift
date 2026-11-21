@@ -422,7 +422,11 @@ struct AskSpotCard: View {
                             .foregroundStyle(WebTheme.accent)
                     }
                 }
-                .frame(maxWidth: .infinity)
+                // 回 1650 の数字: 札の枠（268）も並びの左（16）も合っていたのに、絵では札の左が約 7pt だった。写真を高さ 190 で
+                // 埋めると横長の写真は幅が約 285 になり、`.frame(maxWidth: .infinity)` は大きい子を縮めないので、札の中身が
+                // 枠の左右へ約 9pt ずつはみ出していた（大きな字の札は幅 346 で写真より広く、はみ出さない）。
+                // minWidth: 0 で、写真の枠を札の幅に合わせる（みんなの写真の格子と同じ）
+                .frame(minWidth: 0, maxWidth: .infinity)
                 .frame(height: AskSpotCarousel.photoHeight)
                 .clipped()
                 .contentShape(Rectangle())
