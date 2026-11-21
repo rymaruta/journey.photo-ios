@@ -33,6 +33,10 @@ final class UITestCloseRulesTests: XCTestCase {
         XCTAssertTrue(base.contains("app.terminate()"))
         XCTAssertTrue(base.contains("app.wait(for: .notRunning, timeout: goneTimeout)"), "止まったことを確かめていない")
         XCTAssertTrue(base.contains("override func invokeTest()"), "いまの試験を覚えていない")
+        // `.notRunning` のあと、pid が消えるまで待ってから次へ（run 1700。pid が分からなければ今の形のまま）
+        XCTAssertTrue(base.contains("let pid = processID(of: app)"), "閉じる前に pid を覚えていない")
+        XCTAssertTrue(base.contains("let gone = waitGone(pid: pid, timeout: goneTimeout)"), "pid が消えるのを待っていない")
+        XCTAssertTrue(base.contains("app.responds(to: NSSelectorFromString(\"processID\"))"), "KVC の前に確かめていない（無いと落ちる）")
     }
 
     /// 「閉じられない」で落ちたら、本当に残っているかを見て決める（XCTExpectFailure にしない・残っていれば失敗のまま）

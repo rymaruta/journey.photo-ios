@@ -20,9 +20,11 @@
 set -u
 LOG="${1:-/tmp/xcodebuild-full.log}"
 TOOL="${HANG_SAMPLE_TOOL:-sample}"
-WAIT_FIRST="${HANG_SAMPLE_CHECKS:-5 15 30 45}"
+# 2026-11-21 判断（run 1700・札 #681）: グループの会話の画面の後のアプリだけ、閉じるのに 7〜9 秒かかった（ほかは 0.03〜1.2 秒）。
+# 閉じる途中の姿を取るため、2 秒の時点で残っていたら積みを取る（前は 15 秒）
+WAIT_FIRST="${HANG_SAMPLE_CHECKS:-2 5 15 30 45}"
 # 積みを取り始める秒（これより前の確かめでは状態だけ出す）
-SAMPLE_AT="${HANG_SAMPLE_AT:-15}"
+SAMPLE_AT="${HANG_SAMPLE_AT:-2}"
 # 残っているアプリを探す形（ps の command に当てる）
 APP_PATTERN="${HANG_SAMPLE_APP_PATTERN:-/JourneyPhoto.app/JourneyPhoto}"
 command -v "$TOOL" >/dev/null 2>&1 || exit 0
@@ -42,23 +44,26 @@ bounded() {
     return $status
 }
 
-state() { ps -o stat=,etime= -p "$1" 2>/dev/null | tr -s ' ' | sed 's/^ //'; }
+# 状態・経過・使っている記憶（RSS、KB）・スレッドの数の手がかり（閉じるのが遅いのは大きな記憶を返しているからか、を見る）
+state() { ps -o stat=,etime=,rss= -p "$1" 2>/dev/null | tr -s ' ' | sed 's/^ //'; }
 
 stack() {
     local pid="$1" out="/tmp/hang-$1.txt" err="/tmp/hang-$1.err"
-    bounded 20 "$TOOL" "$pid" 3 -mayDie -file "$out" >/dev/null 2>"$err"
+    bounded 10 "$TOOL" "$pid" 2 -mayDie -file "$out" >/dev/null 2>"$err"
     local status=$?
     if [ ! -s "$out" ]; then
         say "pid=$pid sample が取れない（終わりの値 ${status}）: $(head -c 300 "$err" 2>/dev/null | tr '\n' ' ')"
         if command -v xcrun >/dev/null 2>&1; then
-            bounded 30 xcrun lldb --batch -p "$pid" -o "thread backtrace all" -o "detach" >"$out" 2>"$err"
+            bounded 10 xcrun lldb --batch -p "$pid" -o "thread backtrace all" -o "detach" >"$out" 2>"$err"
             [ -s "$out" ] || say "pid=$pid lldb でも取れない: $(head -c 300 "$err" 2>/dev/null | tr '\n' ' ')"
         fi
     fi
     if [ -s "$out" ]; then
         # 主スレッドの積み（最初の 80 行）と、全部のスレッドの頭の行。lldb の形（thread #1）も読む
         awk '/com.apple.main-thread|^\* thread #1|^  thread #1/{on=1} on{print; n++} n>=80{exit}' "$out" | sed 's/^/measured [hang-sample] main /' | tee -a "$LOG"
-        grep -E '^ +[0-9]+ Thread_|^[ *] thread #' "$out" | head -40 | sed 's/^/measured [hang-sample] thread /' | tee -a "$LOG"
+        # 全部のスレッドの上の段（1つにつき 15 行、全部で 400 行まで。sample の形と lldb の形）
+        awk '/^ +[0-9]+ Thread_|^[ *] thread #/{on=1; blk=0} on && blk<15 && seen<400 {print; blk++; seen++}' "$out" \
+            | sed 's/^/measured [hang-sample] thread /' | tee -a "$LOG"
     fi
 }
 
@@ -86,7 +91,7 @@ watch_pid() {
         fi
         say "pid=$pid ${at}s の時点で残っている（状態 $(state "$pid")）"
         if [ "$sampled" = 0 ] && [ "$at" -ge "$SAMPLE_AT" ]; then
-            say "pid=$pid 閉じると言われて ${at} 秒たっても残っている。積みを取る"
+            say "pid=$pid 閉じると言われて ${at} 秒たっても残っている。積みを取る（全部のスレッド）"
             stack "$pid"
             sampled=1
         fi

@@ -64,10 +64,12 @@ class HangSampleTests(unittest.TestCase):
         self.append(f"2026-11-21T19:56:13.6699790Z     t =     0.94s         Terminate com.journeyphoto.JourneyPhoto.staging:{self.app.pid}")
         self.wait_for(f"measured [hang-sample] pid={self.app.pid} 閉じると言われた")
         self.wait_for(f"pid={self.app.pid} 1s の時点で残っている")
-        self.wait_for(f"pid={self.app.pid} 閉じると言われて 2 秒たっても残っている。積みを取る")
         self.wait_for("measured [hang-sample] main     + 2370 start")
         self.wait_for("VisitedMapModel.persist()")
         self.wait_for("measured [hang-sample] thread     2370 Thread_4385905")
+        # 全部のスレッドの上の段も出す（札 #681・閉じるのが遅いときの姿）
+        self.wait_for("measured [hang-sample] thread     +   2370 VisitedMapModel.persist()")
+        self.wait_for(f"pid={self.app.pid} 閉じると言われて 2 秒たっても残っている。積みを取る（全部のスレッド）")
 
     def test_app_that_already_exited_is_reported_as_gone(self):
         pid = self.app.pid

@@ -56,11 +56,31 @@ enum JPAppClose {
         case .notRunning, .unknown: return
         default: break
         }
+        // 閉じる前に pid を覚える（閉じたあとは 0 になる）
+        let pid = processID(of: app)
         let started = Date()
         app.terminate()
         let stopped = app.wait(for: .notRunning, timeout: goneTimeout)
         let ms = Int(Date().timeIntervalSince(started) * 1000)
-        print("measured [terminate] 試験の終わりに閉じた \(ms)ms stopped=\(stopped)")
+        // 2026-11-21 判断（run 1700・札 #681）: `.notRunning` になっても、本当のプロセスはまだ消えていないことがある
+        // （グループの会話の画面の後のアプリは 7 秒で `.notRunning`、見張りでは 9 秒で消えた）。その直後に次の試験が
+        // 起動すると、XCTest が新しいアプリを掴めず「does not have a process ID」で 200 秒止まった。
+        // pid が分かれば、それが消えるまで待ってから次へ進む。分からなければ今の形（`.notRunning` まで）のまま
+        guard let pid else {
+            print("measured [terminate] 試験の終わりに閉じた \(ms)ms stopped=\(stopped) pid=不明")
+            return
+        }
+        let gone = waitGone(pid: pid, timeout: goneTimeout)
+        let total = Int(Date().timeIntervalSince(started) * 1000)
+        print("measured [terminate] 試験の終わりに閉じた \(ms)ms stopped=\(stopped) pid=\(pid) 消えるまで \(total)ms gone=\(gone)")
+    }
+
+    /// アプリの pid（XCUIApplication の公にしていない値 `processID`）。持っていなければ nil（KVC で落とさないよう先に確かめる）
+    static func processID(of app: XCUIApplication) -> pid_t? {
+        guard app.responds(to: NSSelectorFromString("processID")),
+              let value = app.value(forKey: "processID") as? NSNumber else { return nil }
+        let pid = value.int32Value
+        return pid > 0 ? pid : nil
     }
 
     /// 「Failed to terminate com.journeyphoto.…:<pid>」の pid（この形でなければ nil）
