@@ -141,11 +141,14 @@ final class AskAnswerShapeTests: XCTestCase {
         var table = AskAnswer(engine: .table)
         table.spotIds = ["sp_a"]
         table.heading = "冬の案内がある観光スポット（6か所）"
-        XCTAssertEqual(AskAnswerShape.leadLine(table)?.text, "冬の案内がある観光スポット（6か所）")
+        // 2026-11-21 判断（札 #675 の答えの形・版3）: AI を使わずに札を選んだ答えの頭の文は決まり文
+        XCTAssertEqual(AskAnswerShape.leadLine(table)?.text, "合う所を1つ選びました。")
+        table.chips = ["香川", "冬"]
+        XCTAssertEqual(AskAnswerShape.leadLine(table)?.text, "冬に向く所を1つ選びました。")
         XCTAssertEqual(AskAnswerShape.leadLine(table)?.small, true)
         var offline = AskAnswer(engine: .table, state: .offline)
         offline.spotIds = ["a", "b", "c", "d", "e"]
-        XCTAssertEqual(AskAnswerShape.leadLine(offline)?.text, "前に見た観光スポット（5か所）")
+        XCTAssertEqual(AskAnswerShape.leadLine(offline)?.text, "合う所を5つ選びました。")
     }
 
     /// 札のチップは台帳に欄がある所だけ。季節を先に、時間帯は1つ、3つまで

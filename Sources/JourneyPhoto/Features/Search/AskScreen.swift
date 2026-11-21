@@ -8,7 +8,9 @@ import SwiftUI
 /// - 上: 閉じる、題「✦ AI に頼む」、残りの回数（頼んで分かってから）
 /// - 中: 会話（`AskThreadView` をそのまま使う。答えの案A、断り、使い切った帯、圏外）。何も頼んでいない間は例の札と、前に頼んだこと
 /// - 下: 欄と送信のボタン（#662 の決まり: AI を呼ぶのは送信のボタンだけ。途中の字では送らない。キーボードのキーは「完了」）
-/// - 旅行プランを作る頼み（`AskQuery.intent.plan`）は、旅行プランの AI のシート（`TripAIAskSheet`）へ渡す。回数は旅行プランの AI の枠
+/// - 旅行プランを作る頼み（`AskQuery.intent.plan`）は旅行プランの AI へ。回数は旅行プランの AI の枠。
+///   2026-11-21 判断（版3「流れ」）: 行き先と日数が字から読めたら、確かめのシートを出さずに作り始め、答えの流れとして会話に出す。
+///   読めないときだけ、旅行プランの AI のシート（`TripAIAskSheet`）で足りない札を選んでもらう
 /// - 回数の上限、サーバーで数える仕組み、断り、見張りは `AskEngine` のまま（変えない）
 struct AskScreen: View {
     /// 探すの結果の上の1行から来たときの字（欄に入れるだけ。送るのは送信のボタン）
@@ -33,12 +35,17 @@ struct AskScreen: View {
     @State private var planAsk: TripAIAsk?
     /// 前に頼んだこと（端末の控え・`AskHistoryStore`）
     @State private var history: [AskHistoryRow] = []
+    /// 会話の中で作っている旅行プラン（旅行プランの AI の仕事）と、その頼み
+    @State private var planJob: TripAIJobs.Job?
+    @State private var planQuestion: String?
+    /// 旅行プランの AI の残りの回数（流れの答えのあと、上の1行に出す）
+    @State private var planUsageLine: String?
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if let usage = engine.usage {
-                    Text(usage.remainingLine)
+                if let line = usageLine {
+                    Text(line)
                         .font(JPFont.caption.monospacedDigit())
                         .foregroundStyle(WebTheme.text3)
                         .frame(maxWidth: .infinity)
@@ -52,7 +59,12 @@ struct AskScreen: View {
                                           photosKnown: library.hasLoaded,
                                           onFollowUp: { text in send(text) },
                                           onRelax: { exchange in relax(exchange) },
-                                          inScreen: true)
+                                          inScreen: true,
+                                          onFill: { text in
+                                              // 次に頼めること: 欄に入れるだけ（送るのは送信のボタン・AI は呼ばない）
+                                              draft = text
+                                              focused = true
+                                          })
                         } else {
                             starters
                         }
@@ -85,6 +97,9 @@ struct AskScreen: View {
                 }
             }
             .modifier(AskPlanFlow(ask: $planAsk, index: officialSpots, placeChoices: placeChoices))
+            .background {
+                if let planJob { AskPlanJobWatch(job: planJob) { settle(planJob, $0) } }
+            }
         }
         .task { await load() }
         .onAppear {
@@ -93,6 +108,7 @@ struct AskScreen: View {
         }
         .onChange(of: auth.userId) { _, _ in
             task?.cancel()
+            stopWatchingPlan()
             engine.reset()
             history = AskHistoryRow.rows(AskHistoryStore().all(userId: auth.userId))
         }
@@ -218,8 +234,21 @@ struct AskScreen: View {
         draft = ""
         switch AskEntry.route(text) {
         case .tripPlan:
-            // 旅行プランの AI の頼みの札（行き先、日数、好み）に読み替えて開く。回数は「この内容で作る」で旅行プランの AI の枠から
-            planAsk = TripAIAsk.reading(text, spots: officialSpots)
+            let ask = TripAIAsk.reading(text, spots: officialSpots)
+            if ask.isComplete, let owner = auth.userId, planJob == nil {
+                // 2026-11-21 判断（版3「流れ」、確かめのダイアログを足さない）: 行き先と日数が読めたら、すぐ作り始めて会話に流れの骨格を出す。
+                // 回数は旅行プランの AI の枠（`TripAIRunner` が取る）。画面を閉じても作り続け、できたら上の帯で知らせる
+                guard let question = engine.beginPlan(text) else { return }
+                let backend = TripAIJobs.Backend.live(environment: environment, auth: auth, owner: owner, index: officialSpots,
+                                                      wishlist: wishlist.spotIds, connectivity: connectivity)
+                let job = TripAIJobs.shared.start(ask, owner: owner, usage: nil, backend: backend)
+                TripAIJobs.shared.watching = job.id
+                planQuestion = question
+                planJob = job
+            } else {
+                // 行き先か日数が読めない: 旅行プランの AI の頼みの札（行き先、日数、好み）に読み替えて開く。回数は「この内容で作る」で
+                planAsk = ask
+            }
         case .ask:
             let backend = backend
             if engine.isActive {
@@ -245,7 +274,46 @@ struct AskScreen: View {
 
     private func close() {
         task?.cancel()
+        stopWatchingPlan()
         onClose()
+    }
+
+    /// 上の1行（残りの回数）。旅行プランの流れの答えのあとは、旅行プランの AI の残り
+    private var usageLine: String? {
+        if engine.thread.last?.answer.kind == .plan || engine.pendingKind == .plan, let planUsageLine { return planUsageLine }
+        return engine.usage?.remainingLine
+    }
+
+    /// 旅行プランの AI の仕事が終わった（保存まで）か、作れなかった
+    private func settle(_ job: TripAIJobs.Job, _ state: TripAIJobs.State) {
+        guard let question = planQuestion, planJob?.id == job.id else { return }
+        switch state {
+        case .building:
+            return
+        case .saved(let planId):
+            if let result = job.result {
+                engine.finishPlan(question, result: result, planId: planId, onDevice: job.runner.onDevice, userId: auth.userId)
+            } else {
+                engine.failPlan(question, line: TripAIJobText.failureLine(.noCandidates, title: job.title), userId: auth.userId)
+            }
+            TripAIJobs.shared.markSeen(planId)
+        case .failed(let failure):
+            engine.failPlan(question, line: TripAIJobText.failureLine(failure, title: job.title), userId: auth.userId)
+        }
+        if let usage = job.runner.usage {
+            planUsageLine = TripAIText.remainingLine(remaining: usage.remaining, resetsOn: usage.resetsOn)
+        }
+        if TripAIJobs.shared.watching == job.id { TripAIJobs.shared.watching = nil }
+        planJob = nil
+        planQuestion = nil
+    }
+
+    /// 画面を閉じた・人が替わった: 待つのをやめる（仕事は旅行プランの AI が続け、できたら上の帯で知らせる）
+    private func stopWatchingPlan() {
+        if let job = planJob, TripAIJobs.shared.watching == job.id { TripAIJobs.shared.watching = nil }
+        planJob = nil
+        planQuestion = nil
+        engine.cancelPlan()
     }
 
     /// 観光スポットの索引と公開の写真（探すと同じ読み方。控えがあれば通信しない）
@@ -309,6 +377,19 @@ struct AskScreen: View {
             }
         }
         return nil
+    }
+}
+
+/// 旅行プランの AI の仕事の様子を見る（できた、作れなかった）。見えない部品
+struct AskPlanJobWatch: View {
+    @ObservedObject var job: TripAIJobs.Job
+    let onChange: (TripAIJobs.State) -> Void
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .onChange(of: job.state, initial: true) { _, state in onChange(state) }
+            .accessibilityHidden(true)
     }
 }
 

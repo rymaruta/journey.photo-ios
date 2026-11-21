@@ -58,8 +58,11 @@ struct AskOfflineBand: View {
     }
 }
 
-/// 読み込み中の骨格（模型 A: 文の2行 → 写真の札2枚 → 地図）。動きを減らす設定では脈打たない
+/// 読み込み中の骨格（版3「待ち時間」・2026-11-21 判断 札 #675）。押した直後から出す: 「✦ 答えを用意しています」と頭の文の2行。
+/// 字から答えの種類が分かるときは、その形の骨格を続けて出す（札は写真の札2枚、流れは日の見出しと番号の丸3つ）。
+/// 動きを減らす設定では脈打たない
 struct AskLoadingSkeleton: View {
+    var kind: AskAnswerKind? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dim = false
 
@@ -69,34 +72,18 @@ struct AskLoadingSkeleton: View {
                 .font(.system(size: 13))
                 .foregroundStyle(WebTheme.text2)
             VStack(alignment: .leading, spacing: 10) {
-                bone(height: 20)
-                // 2行目は幅 70%（390pt の画面で右に約 107pt あける）
-                bone(height: 20).padding(.trailing, 107)
+                bone(height: 20).padding(.trailing, 40)
+                // 2行目は幅 60%
+                bone(height: 20).padding(.trailing, 140)
             }
-            HStack(spacing: AskSpotCarousel.gap) {
-                ForEach(0..<2, id: \.self) { _ in
-                    VStack(alignment: .leading, spacing: 0) {
-                        bone(height: AskSpotCarousel.photoHeight, radius: 0)
-                        VStack(alignment: .leading, spacing: 8) {
-                            bone(height: 18).frame(width: AskSpotCarousel.bodyWidth * 0.6)
-                            bone(height: 12).frame(width: AskSpotCarousel.bodyWidth * 0.85)
-                            HStack {
-                                Spacer(minLength: 0)
-                                bone(height: 36, radius: 18).frame(width: AskSpotCarousel.bodyWidth * 0.4)
-                            }
-                        }
-                        .padding(12)
-                    }
-                    .frame(width: AskSpotCarousel.cardWidth)
-                    .clipShape(RoundedRectangle(cornerRadius: AskSpotCarousel.cardRadius))
-                    .overlay(RoundedRectangle(cornerRadius: AskSpotCarousel.cardRadius)
-                        .strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
-                }
+            switch kind {
+            case .cards?, .compare?:
+                cards
+            case .plan?:
+                plan
+            default:
+                EmptyView()
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.trailing, -JPSpace.gutter)
-            .clipped()
-            bone(height: AskSpotCarousel.mapHeight, radius: AskSpotCarousel.mapRadius)
         }
         .opacity(dim ? 0.55 : 1)
         .onAppear {
@@ -104,6 +91,48 @@ struct AskLoadingSkeleton: View {
             guard !reduceMotion, !AskFixture.isOn, !PerfRecorder.shared.isEnabled else { return }
             withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { dim = true }
         }
+    }
+
+    private var cards: some View {
+        HStack(spacing: AskSpotCarousel.gap) {
+            ForEach(0..<2, id: \.self) { _ in
+                VStack(alignment: .leading, spacing: 0) {
+                    bone(height: AskSpotCarousel.photoHeight, radius: 0)
+                    VStack(alignment: .leading, spacing: 8) {
+                        bone(height: 18).frame(width: AskSpotCarousel.bodyWidth * 0.6)
+                        bone(height: 13).frame(width: AskSpotCarousel.bodyWidth * 0.85)
+                    }
+                    .padding(12)
+                }
+                .frame(width: AskSpotCarousel.cardWidth)
+                .clipShape(RoundedRectangle(cornerRadius: AskSpotCarousel.cardRadius))
+                .overlay(RoundedRectangle(cornerRadius: AskSpotCarousel.cardRadius)
+                    .strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.trailing, -JPSpace.gutter)
+        .clipped()
+    }
+
+    /// 流れの骨格（日の見出し 70、番号の丸の縁 白の段 8、写真 44、名前と札の2本）
+    private var plan: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            bone(height: 13).frame(width: 70)
+            ForEach(0..<3, id: \.self) { _ in
+                HStack(spacing: 12) {
+                    Circle().strokeBorder(WebTheme.surface8, lineWidth: 1.4).frame(width: 24, height: 24)
+                    bone(height: 44, radius: 10).frame(width: 44)
+                    VStack(alignment: .leading, spacing: 6) {
+                        bone(height: 16).frame(width: 150)
+                        bone(height: 12).frame(width: 80)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: 56)
+            }
+        }
+        .accessibilityIdentifier("search.ask.planSkeleton")
     }
 
     private func bone(height: CGFloat, radius: CGFloat = 6) -> some View {

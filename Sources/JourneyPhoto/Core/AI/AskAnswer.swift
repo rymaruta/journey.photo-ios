@@ -70,6 +70,12 @@ struct AskAnswer: Equatable, Codable {
     var limit: AskLimitReason? = nil
     /// 空のときの言い替え（押すと条件を1つ外して、アプリが選び直す。AI は呼ばない）
     var relaxedQuery: String? = nil
+    /// 答えの種類（2026-11-21 判断・札 #675 の答えの形）。前の版の控えには無いので nil を許す（札の有無でアプリが決める）
+    var kind: AskAnswerKind? = nil
+    /// 形が読めなかった（AI が札と言ったのに台帳に戻る番号が無い）。頭の文だけにし、次に頼めることは決まった3つ
+    var unreadable: Bool? = nil
+    /// 旅行プランの答え（流れ）。旅行プランの AI が作って保存したもの
+    var plan: AskPlanAnswer? = nil
 
     /// AI を使った答えか（「AI の答えは間違うことがあります」を出す）
     var usedAI: Bool { engine == .device || engine == .server }
@@ -92,18 +98,6 @@ struct AskAnswer: Equatable, Codable {
     /// 断りの答え（回数を使わない・何も引かない）
     static func refused(care: Bool) -> AskAnswer {
         AskAnswer(engine: .refused, text: care ? AskGuard.refusal + "\n" + AskGuard.careLine : AskGuard.refusal)
-    }
-}
-
-/// 答えの種類ごとに部品を選ぶ所（札 #675・2026-11-21 判断）。いまは札を横に送る形（#663 の案A）だけ。
-/// 「1か所を大きく」「日ごとの流れ」「比べる」「手順」「写真の格子」「次に頼めること」は、別の担当が描く案の絵が決まったら
-/// ここに種類を足し、`AskThreadView.answerLayoutView` で部品を選ぶ
-enum AskAnswerLayout: Equatable {
-    /// 写真の札を横に送る並びと地図（`AskSpotCarousel`）
-    case spotCarousel
-
-    static func layout(for answer: AskAnswer) -> AskAnswerLayout {
-        .spotCarousel
     }
 }
 
@@ -170,8 +164,12 @@ enum AskAnswerShape {
     /// 観光スポットの札のある答えの、札の上の明朝の1〜2文。AI の答えは文（20pt か 18pt）、
     /// AI を使わない答え（使い切った、圏外）は見出し（「冬の案内がある観光スポット（6か所）」）を 18pt で
     static func leadLine(_ a: AskAnswer) -> (text: String, small: Bool)? {
-        if a.state == .offline {
-            return (L("前に見た観光スポット（\(a.spotIds.count)か所）", "Spots you've seen (\(a.spotIds.count))"), true)
+        // 2026-11-21 判断（札 #675 の答えの形・版3「圏外と使い切った」）: AI を使わずに札を選んだ答え（圏外、使い切った、
+        // ログインしていない）は、形はそのまま、頭の文はアプリの決まり文（「秋に向く所を2つ選びました。」）
+        if !a.usedAI, a.engine != .refused, !a.spotIds.isEmpty, a.kind != .plan {
+            let labels = ShootingTime.Season.allCases.map(\.label)
+            let season = a.chips.first { labels.contains($0) }
+            return (AskLeadCheck.pickedLine(count: a.spotIds.count, season: season), true)
         }
         if a.usedAI, !a.text.isEmpty { return (a.text, leadPointSize(a.text) < leadLargeSize) }
         if let heading = a.heading, !heading.isEmpty { return (heading, true) }

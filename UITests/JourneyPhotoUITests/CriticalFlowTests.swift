@@ -950,6 +950,17 @@ final class CriticalFlowTests: XCTestCase {
         shot.name = "AI に頼む（答え）"
         shot.lifetime = .keepAlways
         add(shot)
+        // 答えの形（札 #675・版3）: 一手と次に頼めることはアプリが出す。次に頼めることは欄に入るだけ（AI を呼ばない）
+        XCTAssertTrue(app.buttons["ask.act.share"].firstMatch.waitForExistence(timeout: 5), "答えの下に「仲間に送る」が無い")
+        let chip = app.buttons["ask.next"].firstMatch
+        XCTAssertTrue(chip.waitForExistence(timeout: 5), "答えの下に次に頼めることが無い")
+        let chipText = chip.label
+        if !chip.isHittable { app.swipeUp() }
+        chip.tap()
+        XCTAssertTrue(wait(field, "value == %@", [chipText], timeout: 5), "次に頼めることを押しても欄に入らない")
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "search.ask.answer").count, 1,
+                       "次に頼めることを押しただけで AI に頼んだ")
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: chipText.count + 2))
         // 続けて聞く: 作りの質問は断りの1行（AI を呼ばない）
         enter("このアプリの作りを教えて", into: field, "AI の欄")
         send.tap()
@@ -957,6 +968,9 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(refusal.waitForExistence(timeout: 10), "作りの質問を断っていない")
         XCTAssertTrue(app.staticTexts["この質問にはお答えできません。旅や写真、アプリの使い方のことなら聞いてください。"].firstMatch.exists,
                       "断りの1行が違う")
+        // 前の答えは「質問と中身の1行」に畳む。断りには一手も次に頼めることも出さない
+        XCTAssertTrue(app.buttons["ask.fold"].firstMatch.waitForExistence(timeout: 5), "前の答えを畳んでいない")
+        XCTAssertFalse(app.buttons["ask.next"].firstMatch.exists, "断りの答えに次に頼めることを出した")
         // 閉じると元の画面へ
         app.buttons["ask.close"].firstMatch.tap()
         XCTAssertTrue(field.waitForNonExistence(timeout: 5), "閉じても AI の画面が残る")

@@ -42,21 +42,29 @@ struct AskService {
         var refused: Bool = false
         /// 答えたあとの回数
         var quota: AskUsage? = nil
+        /// 答えの種類と頭の文（2026-11-21 判断・札 #675 の答えの形）。**今のサーバーは返さない**（返す形はサーバーの担当に別に頼む）。
+        /// 無ければ `answer` の文から頭の文を作り、札の有無でアプリが形を決める（今のまま）
+        var kind: String? = nil
+        var lead: String? = nil
 
-        init(answer: String, general: Bool, refused: Bool = false, quota: AskUsage? = nil) {
+        init(answer: String, general: Bool, refused: Bool = false, quota: AskUsage? = nil, kind: String? = nil, lead: String? = nil) {
             self.answer = answer
             self.general = general
             self.refused = refused
             self.quota = quota
+            self.kind = kind
+            self.lead = lead
         }
 
-        private enum CodingKeys: String, CodingKey { case answer, general, refused, quota }
+        private enum CodingKeys: String, CodingKey { case answer, general, refused, quota, kind, lead }
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             answer = try c.decode(String.self, forKey: .answer)
             general = (try? c.decode(Bool.self, forKey: .general)) ?? false
             refused = (try? c.decode(Bool.self, forKey: .refused)) ?? false
             quota = try? c.decode(AskUsage.self, forKey: .quota)
+            kind = try? c.decode(String.self, forKey: .kind)
+            lead = try? c.decode(String.self, forKey: .lead)
         }
     }
 
@@ -192,7 +200,8 @@ struct AskService {
 }
 
 /// UI テストの見本（`-JPAskFixture YES`・Debug のときだけ）。サーバーへは送らない。
-/// `-JPAskFixtureMode` で状態を替える: `usedUpDay`・`usedUpMonth`・`global`（取れない）、`pro`（Pro）、無ければ無料で今日あと2回
+/// `-JPAskFixtureMode` で状態を替える: `usedUpDay`・`usedUpMonth`・`global`（取れない）、`pro`（Pro）、無ければ無料で今日あと2回。
+/// `one` は1か所の答え（札1枚を広く）、`bullets` は箇条の答え（札 #663）
 enum AskFixture {
     static let key = "JPAskFixture"
     static let modeKey = "JPAskFixtureMode"
@@ -240,7 +249,7 @@ enum AskFixture {
         let query = AskLibrary.query(reading: reading, intent: intent, sentence: question, spots: library.spots)
         if intent.howTo, let page = AskHelpPages.matching(question).first {
             return .init(text: page.lines.joined(separator: "\n"), general: false, picks: [], photoIds: [],
-                         sources: [.init(kind: .help, label: L("使い方の頁「\(page.title)」", "Help: \(page.title)"))])
+                         sources: [.init(kind: .help, label: L("使い方の頁「\(page.title)」", "Help: \(page.title)"))], kind: "steps")
         }
         if intent.spots, mode == "bullets" {
             // 1.1.107 の実機で出た形（札 #663）: 長い前置きと「- 名前: 説明」の箇条。札に無い名前（「架空の岬」）も混ぜる
@@ -252,16 +261,23 @@ enum AskFixture {
             }
             lines.append("- " + L("架空の岬: 台帳に無い所です。", "Imaginary Cape: not in the list."))
             return .init(text: lines.joined(separator: "\n"), general: false, picks: picks, photoIds: [],
-                         sources: [.init(kind: .spots, label: AskText.spotsSource)])
+                         sources: [.init(kind: .spots, label: AskText.spotsSource)], kind: "cards")
+        }
+        if intent.spots, mode == "one" {
+            // 1か所の答え（札1枚を広く・札 #675 の答えの形）
+            let picks = Array(library.pickSpots(query).prefix(1))
+            return .init(text: L("秋の朝がいちばん向いています。人の少ない早い時間が静かに撮れます。", "Autumn mornings suit it best."),
+                         general: false, picks: picks, photoIds: [],
+                         sources: [.init(kind: .spots, label: AskText.spotsSource)], kind: "cards")
         }
         if intent.spots {
             let picks = library.pickSpots(query)
             return .init(text: L("観光スポットの案内から、合う所を選びました。", "Picked matching spots from the guides."),
                          general: false, picks: picks, photoIds: [],
-                         sources: [.init(kind: .spots, label: AskText.spotsSource)])
+                         sources: [.init(kind: .spots, label: AskText.spotsSource)], kind: "cards")
         }
         return .init(text: L("太陽は画面の端に置き、明るさを少し下げると、空の色が残ります。", "Keep the sun near the edge and lower the exposure a little to keep the sky's color."),
-                     general: true, picks: [], photoIds: [], sources: [])
+                     general: true, picks: [], photoIds: [], sources: [], kind: "text")
     }
 
     static var serverAnswer: AskService.ServerAnswer {

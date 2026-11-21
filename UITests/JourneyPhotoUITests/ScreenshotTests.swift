@@ -3116,7 +3116,7 @@ final class ScreenshotTests: XCTestCase {
     ///
     /// 2026-11-20 判断（回 1619〜1650）: 1つの試験では1回だけ起動し、アプリを閉じるのは次の試験の頭に任せる（自分で閉じると
     /// 返らないことがあった）。終わりにキーボードを閉じる
-    private func launchSearchAsk(mode: String = "", largeText: Bool = false, tabIndex: Int = 0) -> XCUIApplication? {
+    private func launchSearchAsk(mode: String = "", largeText: Bool = false, tabIndex: Int = 0, extra: [String] = []) -> XCUIApplication? {
         let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
         app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
@@ -3128,6 +3128,7 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
         if !mode.isEmpty { app.launchArguments += ["-JPAskFixtureMode", mode] }
         if largeText { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"] }
+        app.launchArguments += extra
         enablePerfProbe(app)
         app.launch()
         let agree = app.buttons["legal.agree"]
@@ -3259,6 +3260,66 @@ final class ScreenshotTests: XCTestCase {
         guard openAskScreen(app), askViaSendButton(app, "香川のおすすめの観光スポットを教えて") else { return }
         shoot(app, "11z6-AI に頼む（大きな字）")
         finishSearchAsk(app, scene: "largeText")
+    }
+
+    // MARK: 答えの形（札 #675・2026-11-21 判断・Artifact「AI に頼む 独立の案」版3「答えの形 磨いた推奨」）
+
+    /// 11z9 札1枚を広く（見どころ3つ、小さな地図）。11za 下へ送って一手（旅行プランにする、仲間に送る）と次に頼めること。
+    /// 11zb 仲間に送るのシート（送るのはリンクだけ）
+    func testCapturesSearchAskOne() {
+        guard let app = launchSearchAsk(mode: "one"), openAskScreen(app),
+              askViaSendButton(app, "京都で紅葉がきれいな所は？") else { return }
+        shoot(app, "11z9-AI に頼む（札1枚を広く）")
+        let chips = app.descendants(matching: .any)["ask.nextChips"].firstMatch
+        if chips.waitForExistence(timeout: 5), !chips.isHittable {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1.5)
+        }
+        shoot(app, "11za-AI に頼む（一手と次に頼めること）")
+        let share = app.buttons["ask.act.share"].firstMatch
+        guard share.waitForExistence(timeout: 5) else { return unreached(app, "ask.act.share") }
+        share.tap()
+        guard app.descendants(matching: .any)["ask.share.what"].firstMatch.waitForExistence(timeout: 10) else {
+            return unreached(app, "ask.share.what")
+        }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "11zb-AI に頼む（仲間に送る、リンクで送る）")
+        finishSearchAsk(app, scene: "one")
+    }
+
+    /// 11zc 旅行プランを作る頼み: 押した直後から流れの骨格。11zd 旅行プランの AI の答えを流れの形で（番号の線、移動の目安、
+    /// 仲間に送る、旅行プランを開く）。見本の旅行プランと見本の旅行プランの AI（サーバーへは送らない）
+    func testCapturesSearchAskPlan() {
+        guard let app = launchSearchAsk(extra: ["-JPTripPlanFixture", "YES", "-JPTripAIFixture", "YES", "-JPTripAIFixtureDelay", "4"]),
+              openAskScreen(app) else { return }
+        let field = app.textFields["ask.field"].firstMatch
+        field.tap()
+        guard waitForKeyboardFocus(field) else { return unreached(app, "AI の欄に焦点が来ない") }
+        field.typeText("京都で2日の旅行プランにして")
+        let send = app.buttons["ask.send"].firstMatch
+        guard send.waitForExistence(timeout: 5) else { return unreached(app, "ask.send") }
+        send.tap()
+        if app.descendants(matching: .any)["search.ask.loading"].firstMatch.waitForExistence(timeout: 5) {
+            Thread.sleep(forTimeInterval: 0.5)
+            shoot(app, "11zc-AI に頼む（旅行プランの流れの骨格）")
+        }
+        guard app.descendants(matching: .any)["search.ask.plan"].firstMatch.waitForExistence(timeout: 60) else {
+            return unreached(app, "search.ask.plan", probes: ["search.ask.probe", "search.ask.thread"])
+        }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "11zd-AI に頼む（旅行プランの流れ）")
+        finishSearchAsk(app, scene: "plan")
+    }
+
+    /// 11ze 続けて頼むと、前の答えは「質問と中身の1行」に畳む（押すと開く）
+    func testCapturesSearchAskFold() {
+        guard let app = launchSearchAsk(), openAskScreen(app),
+              askViaSendButton(app, "香川で夕日がきれいな所を教えて"),
+              askViaSendButton(app, "京都で紅葉がきれいな所は？", answerID: "ask.fold") else { return }
+        app.swipeDown()
+        Thread.sleep(forTimeInterval: 1.5)
+        shoot(app, "11ze-AI に頼む（前の答えを畳んだ）")
+        finishSearchAsk(app, scene: "fold")
     }
 
     /// **文で探す**（札 #623 の案2・2026-11-15 判断）。「京都 紅葉 夜」と打って「検索」を押すと、
