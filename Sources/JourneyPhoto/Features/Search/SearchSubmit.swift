@@ -64,6 +64,18 @@ enum AskEntry {
     static var planSignIn: String { L("旅行プランを作るにはログインしてください", "Sign in to make a trip plan") }
     static var planSignUp: String { L("登録すると、旅行プランを作れます", "Sign up to make trip plans") }
     static var startersLead: String { L("旅のことを、何でも頼めます", "Ask anything about your trip") }
+    /// 上の帯の「新しく頼む」（鉛筆と紙の印・札 #678）
+    static var newLabel: String { L("新しく頼む", "New request") }
+    /// 会話の一覧（Pro・札 #678）。「スレッド」という語は画面に出さない（2026-11-21 owner）
+    static var conversationsTitle: String { L("前の会話", "Earlier conversations") }
+    /// 無料の「新しく頼む」の確かめ（取り消せない操作なので1回だけ聞く）
+    static var freeNewConfirm: String {
+        L("無料プランでは会話を1つだけ残せます。新しく頼むと今の会話は消えます",
+          "The free plan keeps one conversation. Starting a new request deletes this one.")
+    }
+    /// 確かめと、何も頼んでいない画面の1行の Pro の案内（値段は書かない・`PaywallView` に任せる）
+    static var proKeepsConversations: String { L("Pro で会話を分けて残す", "Keep conversations with Pro") }
+    static var proConversationsLine: String { L("Pro なら、前の会話を分けて残せます", "With Pro, you can keep earlier conversations") }
     /// 探すの結果の上の1行の題
     static var askRowTitle: String { L("AI に頼む", "Ask AI") }
     static func askRowDetail(_ text: String) -> String { L("「\(text)」", "\"\(text)\"") }

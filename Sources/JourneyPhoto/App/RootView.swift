@@ -20,6 +20,8 @@ struct RootView: View {
     /// 「AI に頼む」の画面（札 #675）と、開くときに欄に入れる字
     @State private var showAsk = false
     @State private var askPrefill: String?
+    /// AI に頼むの会話（札 #678・2026-11-21 判断）。画面を閉じても手放さない（開き直すと続きが出る）。人が替わったら空にする
+    @StateObject private var askEngine = AskEngine()
     /// 通知から開く会話（受信箱が受け取って積む）
     @State private var messagesTarget: String?
     /// メッセージの通知を押したあと、ほかの画面が閉じるのを待つ仕事
@@ -940,8 +942,9 @@ struct RootView: View {
                 showAsk = true
             }
             .fullScreenCover(isPresented: $showAsk) {
-                AskScreen(prefill: askPrefill, onClose: { showAsk = false })
+                AskScreen(engine: askEngine, prefill: askPrefill, onClose: { showAsk = false })
             }
+            .onChange(of: auth.userId) { _, _ in askEngine.reset() }
     }
 
     /// メッセージの受信箱（2026-11-10 札 #505）。**修飾子の列を伸ばさない**ために分けてある（run 343 と同じ理由）

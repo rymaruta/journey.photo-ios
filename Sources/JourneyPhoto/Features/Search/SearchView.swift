@@ -167,11 +167,10 @@ struct SearchView: View {
                                               onPick: { word in pickRecent(word) },
                                               onRemove: { word in
                                                   recentWords = RecentSearchesStore().remove(word, userId: auth.userId)
-                                                  AskHistoryStore().remove(word, userId: auth.userId)
                                               },
+                                              // 2026-11-21 判断（札 #678）: 探すの言葉だけを消す。AI の会話は AI の画面で消す
                                               onRemoveAll: {
                                                   RecentSearchesStore().removeAll(userId: auth.userId)
-                                                  AskHistoryStore().removeAll(userId: auth.userId)
                                                   recentWords = []
                                               })
                     }
@@ -435,6 +434,8 @@ struct SearchView: View {
         guard !trimmed.isEmpty else { return }
         // 文を読み替えて欄に入れた語（「京都」）は覚えない。覚えるのは打った文（`readSentence`）
         if let reading, reading.text == trimmed { return }
+        // AI に頼む形の文は覚えない（「✦ AI に頼む」の1行で AI の画面へ渡す文。AI の履歴は AI の画面の中だけ・札 #678）
+        guard !RecentSearchesStore.isAsk(trimmed) else { return }
         recentWords = RecentSearchesStore().remember(trimmed, userId: auth.userId)
     }
 
@@ -699,8 +700,8 @@ struct SearchView: View {
                 .accessibilityLabel(model.scope.prompt)
                 .onChange(of: fieldFocused) { _, focused in if !focused { rememberQuery(searched) } }
                 // 人が替わったら、その人の言葉を読み直す（前の人の言葉を並べない）
-                .onChange(of: auth.userId) { _, id in recentWords = RecentSearchesStore().words(userId: id) }
-                .onAppear { recentWords = RecentSearchesStore().words(userId: auth.userId) }
+                .onChange(of: auth.userId) { _, id in recentWords = RecentSearchesStore().searchWords(userId: id) }
+                .onAppear { recentWords = RecentSearchesStore().searchWords(userId: auth.userId) }
             if !query.isEmpty {
                 Button {
                     query = ""

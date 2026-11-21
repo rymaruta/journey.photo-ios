@@ -112,7 +112,9 @@ final class SearchSubmitTests: XCTestCase {
             XCTAssertTrue(try source(file).contains("AppHeaderItems("), "\(file) に上の帯が無い")
         }
         let root = try source("Sources/JourneyPhoto/App/RootView.swift")
-        XCTAssertTrue(root.contains("AskScreen(prefill: askPrefill"), "AI の画面を全画面で開いていない")
+        XCTAssertTrue(root.contains("AskScreen(engine: askEngine, prefill: askPrefill"), "AI の画面を全画面で開いていない")
+        // 会話は画面の外で持つ（閉じて開き直しても続きが出る・札 #678）
+        XCTAssertTrue(root.contains("@StateObject private var askEngine = AskEngine()"), "会話を画面の外で持っていない")
         XCTAssertEqual(AskEntry.buttonLabel, "AI に頼む")
         XCTAssertTrue(AskEntryButton.iconOnly(largeText: true))
         XCTAssertFalse(AskEntryButton.iconOnly(largeText: false))
@@ -129,14 +131,6 @@ final class SearchSubmitTests: XCTestCase {
     }
 
     // MARK: - 前に頼んだことは控えから見せる（AI を呼ばない）
-
-    func testHistoryRowsNewestFirst() {
-        let a = AskExchange(question: "金沢のおすすめは？", answer: AskAnswer(engine: .device, text: "兼六園です。"))
-        let b = AskExchange(question: "京都で紅葉は？", answer: AskAnswer(engine: .device, text: "永観堂です。"))
-        let rows = AskHistoryRow.rows(["a": .init(day: "2026-11-19", thread: [a]), "b": .init(day: "2026-11-21", thread: [b]),
-                                       "c": .init(day: "2026-11-20", thread: [])])
-        XCTAssertEqual(rows.map(\.question), ["京都で紅葉は？", "金沢のおすすめは？"])
-    }
 
     @MainActor
     func testShowSavedUsesNoAIAndNoCount() async throws {

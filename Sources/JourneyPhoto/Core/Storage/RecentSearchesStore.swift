@@ -106,6 +106,28 @@ struct RecentSearchesStore {
         return Array(([trimmed] + rest).prefix(limit))
     }
 
+    /// AI に頼んだ文か（探すの最近の検索に入れない・出さない・札 #678・2026-11-21 owner「探すの方にまで AI で頼んだ履歴出てくるのいやだな」）。
+    /// 見分け方は**頼みと質問の形**（`AskQuery.form == .ask`）。#675 より前に探すの欄から AI に回した文は、この形のものだけだった
+    /// （#662「AI に回すのは頼みと質問の形だけ」）ので、古い混ざった履歴もこれで見分けられる。地名や語を並べたふつうの検索の言葉は
+    /// この形にならないので消えない。控えの答えがあるかでは見分けない（同じ言葉をふつうに探した人の履歴まで消すため）
+    static func isAsk(_ word: String) -> Bool {
+        AskQuery.form(word) == .ask
+    }
+
+    /// 探すの最近の検索に出す言葉（AI に頼んだ文を除く）
+    static func searchWords(_ words: [String]) -> [String] {
+        words.filter { !isAsk($0) }
+    }
+
+    /// 探すの最近の検索を読む。AI に頼んだ文が混ざっていたら、控えからも外す（古い履歴の掃除・ふつうの言葉は残す）
+    @discardableResult
+    func searchWords(userId: String?) -> [String] {
+        let stored = defaults.stringArray(forKey: key(for: userId)) ?? []
+        let kept = Self.searchWords(stored)
+        if kept.count != stored.count { save(kept, userId: userId) }
+        return Array(kept.prefix(Self.limit))
+    }
+
     /// 探す画面に出すか。**欄が空の間だけ**、言葉があり、「発見」の顔か欄を押しているとき
     /// （カテゴリだけで絞って結果を見ている間は、結果の上に割り込ませない）
     static func shows(query: String, words: [String], discovering: Bool, focused: Bool) -> Bool {
