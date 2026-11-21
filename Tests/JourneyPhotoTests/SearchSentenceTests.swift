@@ -284,20 +284,24 @@ final class SearchSentenceTests: XCTestCase {
     }
 
     /// 「検索」で文を読む（押す回数 0 回で季節と時間帯に入る）。最近の検索から選んだ文も読む。
-    /// 2026-11-20（札 #652）: 送った字は `submit` が分ける。頼みと質問の形は AI の答え（`startAsk`）、
-    /// それ以外は今までどおり文を読む（`readSentence`）。語を並べた文は**言葉の表だけ**で読む（回数を数えずに AI を使わない）
+    /// 2026-11-20（札 #652）: 頼みと質問の形は AI の答え（`startAsk`）、それ以外は文を読む（`readSentence`）。
+    /// 2026-11-20（札 #662）: 送り方ごとの決まりは `SearchSubmit`（`SearchSubmitTests`）。キーボードの「検索」は文を読むだけ（AI は呼ばない）、
+    /// AI は送信のボタンだけ、最近の語は今日の控えがあるときだけ答え。画面はその決まりを `apply` で当てる
     func testSearchViewReadsTheSentenceOnSubmitAndOnRecentPick() throws {
         let source = try searchViewSource()
         let submit = try XCTUnwrap(source.range(of: ".onSubmit {"))
         let after = source[submit.upperBound...].prefix(200)
-        XCTAssertTrue(after.contains("submit(query)"), "「検索」で文を読んでいない")
+        XCTAssertTrue(after.contains("submitFromKeyboard()"), "「検索」で文を読んでいない")
+        let keyboard = try XCTUnwrap(source.range(of: "private func submitFromKeyboard() {"))
+        XCTAssertTrue(source[keyboard.upperBound...].prefix(300).contains("SearchSubmit.plan(.keyboard"), "「検索」が決まりを通っていない")
         let pick = try XCTUnwrap(source.range(of: "private func pickRecent(_ word: String) {"))
-        XCTAssertTrue(source[pick.upperBound...].prefix(300).contains("submit(word)"), "最近の検索から選んだ文を読んでいない")
-        let route = try XCTUnwrap(source.range(of: "private func submit(_ raw: String) {"))
-        let body = source[route.upperBound...].prefix(300)
-        XCTAssertTrue(body.contains("AskQuery.form(raw, scope: model.scope) == .ask"))
-        XCTAssertTrue(body.contains("startAsk(raw)"))
-        XCTAssertTrue(body.contains("readSentence(raw)"))
+        XCTAssertTrue(source[pick.upperBound...].prefix(400).contains("SearchSubmit.plan(.recent(cachedToday: cached)"),
+                      "最近の検索から選んだ文を読んでいない")
+        let route = try XCTUnwrap(source.range(of: "private func apply(_ plan: SearchSubmit.Plan) {"))
+        let body = source[route.upperBound...].prefix(500)
+        XCTAssertTrue(body.contains("startAsk(next)"))
+        XCTAssertTrue(body.contains("if plan.readsSentence { readSentence(next) }"))
+        XCTAssertTrue(SearchSubmit.plan(.keyboard, text: "京都 紅葉 夜", scope: .all, searched: "").readsSentence)
         // 0件と決まったら1つ外す。外した札は押すと戻る
         XCTAssertTrue(source.contains(".onChange(of: needsRelaxing)"), "0件のときに外し方を見ていない")
         XCTAssertTrue(source.contains("restoreReading(chip)"), "外した札を押しても戻らない")

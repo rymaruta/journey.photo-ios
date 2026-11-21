@@ -539,7 +539,16 @@ jobs:
       - name: UI テスト（画面の絵）
         id: ui
         if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.sharded != 'true' }}
-        run: bash Tools/xcode-test.sh ui build/ios/test/Test.xcresult /tmp/ui-only-testing.txt
+        # 前のアプリを閉じられない（Failed to terminate）ときに、その場でアプリの積みを取る見張りを裏で動かす
+        # （2026-11-20・札 #662 の調べ。`Tools/hang-sample.sh`。テストの成否は変えない）
+        run: |
+          bash Tools/hang-sample.sh /tmp/xcodebuild-full.log &
+          watcher=$!
+          status=0
+          bash Tools/xcode-test.sh ui build/ios/test/Test.xcresult /tmp/ui-only-testing.txt || status=$?
+          sleep 20
+          kill "$watcher" 2>/dev/null || true
+          exit "$status"
 
       # 🔴 **「PR の検証」が「このコミットは Mac でテスト済み」と数える印**（2026-10-17）。
       # 単体と UI を**絞らずに全部**流して通った回だけ success になる。絞った回（screens）は

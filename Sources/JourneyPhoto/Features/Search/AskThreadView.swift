@@ -49,6 +49,15 @@ struct AskThreadView: View {
                     .foregroundStyle(Color.clear)
                     .accessibilityIdentifier("search.ask.stage")
                     .accessibilityValue(engine.stageLog.joined(separator: " "))
+                // 閉じる前の状態（回 1619、1626 の「Failed to terminate」の調べ・2026-11-20）: 答えの数、用意している問い、骨格、
+                // 地図を出しているか、続けて聞く欄に焦点があるか
+                Text(".")
+                    .font(.caption2)
+                    .foregroundStyle(Color.clear)
+                    .accessibilityIdentifier("search.ask.probe")
+                    .accessibilityValue("thread=\(engine.thread.count) pending=\(engine.pending != nil) skeleton=\(showSkeleton)"
+                                        + " maps=\(engine.thread.filter { $0.answer.state != .offline && !$0.answer.spotIds.isEmpty }.count)"
+                                        + " follow=\(followFocused) spotCount=\(engine.spotsById.count) photoCount=\(engine.photosById.count)")
             }
             ForEach(Array(engine.thread.enumerated()), id: \.element.id) { index, exchange in
                 if index > 0 { questionBubble(exchange.question) }
@@ -65,8 +74,21 @@ struct AskThreadView: View {
                     .accessibilityIdentifier("search.ask.disclaimer")
             }
             if !engine.thread.isEmpty { followUpField }
+            if AskFixture.isOn {
+                // 札の並びの調べ（回 1644）。0.5 秒ごとに自分だけ描き直す（`PerfProbeOverlay` と同じ作り）
+                TimelineView(.animation(minimumInterval: 0.5)) { _ in
+                    Text(".")
+                        .font(.caption2)
+                        .foregroundStyle(Color.clear)
+                        .accessibilityIdentifier("search.ask.carouselStats")
+                        .accessibilityValue(AskCarouselStats.shared.summary())
+                }
+                .frame(width: 1, height: 1)
+            }
         }
         .padding(.horizontal, JPSpace.gutter)
+        // 札の左、並びの左、頭の文の左を同じ座標で測る（原点は答えの画面の左端・回 1644 の調べ）
+        .coordinateSpace(.named(AskCarouselStats.space))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("search.ask.thread")
         .task(id: engine.pending) {
@@ -109,7 +131,10 @@ struct AskThreadView: View {
             // 使い切った帯は、いちばん新しい答えにだけ1本
             if isLatest, let reason = a.limit { limitBand(reason) }
             if a.engine == .refused {
-                textCard(a.text, general: false, sources: [])
+                // 案A（2026-11-20 owner 承認）: 断りは枠を外し、答えの1〜2文と同じ所に明朝 18。
+                // 2026-11-20 判断（模型と違えた所）: 模型は「続けて聞く欄を選んだ状態」だが、**自動で選ばない。**
+                // キーボードが上がると断りの1行と札を覆う。打ち直したい人は欄を押せばすぐ打てる（押す回数は1回増えるが、見えないより分かりやすい）
+                AskLead(text: a.text, small: true)
                     .accessibilityIdentifier("search.ask.refusal")
             } else {
                 if !a.chips.isEmpty { chipsRow(a.chips) }
@@ -133,12 +158,29 @@ struct AskThreadView: View {
                         onFollowUp(exchange.question)
                     }
                 default:
-                    if !a.text.isEmpty { textCard(a.text, general: a.general, sources: a.sources) }
-                    if !a.spotIds.isEmpty { spotSection(a) }
+                    // 案A（札 #663・2026-11-20 owner 承認「推奨いいね」・Artifact「AI に頼む 答えの見た目」）:
+                    // 圏外は上に電波なしの帯 → はじめの1〜2文を明朝 → 「観光スポットの情報から」→ 写真の札を横に送る → 地図
+                    if a.state == .offline { AskOfflineBand() }
+                    if !a.spotIds.isEmpty {
+                        if let lead = AskAnswerShape.leadLine(a) {
+                            AskLead(text: lead.text, small: lead.small)
+                                .accessibilityIdentifier("search.ask.text")
+                                .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(AskCarouselStats.space)).minX }) { x in
+                                    AskCarouselStats.shared.position("lead", x)
+                                }
+                        }
+                        if !a.sources.isEmpty { sourcesLine(a.sources, count: a.spotIds.count) }
+                        spotSection(a)
+                    } else {
+                        if !a.text.isEmpty { textCard(a.text, general: a.general) }
+                        // 答えのもとは1行だけ（「観光スポットの情報から」・2026-11-20 判断 札 #663）
+                        if !a.sources.isEmpty { sourcesLine(a.sources, count: nil) }
+                    }
                     if !a.photoIds.isEmpty { photoGrid(a.photoIds) }
                     if a.offersPlan, !a.spotIds.isEmpty, auth.userId != nil { planButton(exchange) }
                 }
-                if let note = a.note {
+                // 圏外の1行は上の帯が言う（案A）
+                if let note = a.note, a.state != .offline {
                     Text(note)
                         .font(JPFont.footnote)
                         .foregroundStyle(WebTheme.text2)
@@ -162,8 +204,8 @@ struct AskThreadView: View {
         .accessibilityIdentifier("search.ask.answer")
     }
 
-    /// 答えの文（札の中・一般的な答えの印・引いたもの）
-    private func textCard(_ text: String, general: Bool, sources: [AskAnswer.Source]) -> some View {
+    /// 答えの文（札の中・一般的な答えの印）。文ははじめの1〜2文だけ（`AskAnswerShape`・札 #663）
+    private func textCard(_ text: String, general: Bool) -> some View {
         VStack(alignment: .leading, spacing: JPSpace.xs) {
             if general {
                 Text(AskText.generalBadge)
@@ -179,26 +221,33 @@ struct AskThreadView: View {
                 .foregroundStyle(WebTheme.text)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("search.ask.text")
-            if !sources.isEmpty {
-                // 引いたもの（押しても頁は開かない。使い方の入口は設定の1か所だけ）
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(AskText.sourcesHead)
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.text3)
-                    ForEach(sources, id: \.self) { s in
-                        Label(s.label, systemImage: "sparkle")
-                            .font(JPFont.caption)
-                            .foregroundStyle(WebTheme.chipText)
-                    }
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("search.ask.sources")
-            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .jpCardFace()
+    }
+
+    /// 答えのもとの1行（押しても頁は開かない。使い方の入口は設定の1か所だけ）。2026-11-20 判断（札 #663）: 「引いたもの」の見出しと
+    /// 「観光スポットの台帳」の並びを「観光スポットの情報から」の1行にした（「台帳」は中の言葉）
+    private func sourcesLine(_ sources: [AskAnswer.Source], count: Int?) -> some View {
+        let line = AskText.sourcesLine(sources)
+        let spoken = count.map { line + L("、\($0)か所", ", \($0) spots") } ?? line
+        return HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "book").accessibilityHidden(true)
+            Text(line).fixedSize(horizontal: false, vertical: true)
+            if let count {
+                // 数字は SF の等幅数字（owner の好み）。区切りは余白（中黒を使わない）
+                Text(L("\(count)か所", "\(count) spots"))
+                    .font(JPFont.caption.monospacedDigit())
+                    .padding(.leading, 6)
+            }
+        }
+        .font(JPFont.caption)
+        .foregroundStyle(WebTheme.text3)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
+        .accessibilityIdentifier("search.ask.sources")
     }
 
     /// 読み取りの札（押せない字の札。見本の「現在地から 30km」「夕方」）
@@ -259,114 +308,16 @@ struct AskThreadView: View {
 
     // MARK: - 観光スポットの札と地図
 
+    /// 案A: 眉「観光スポット」と「1 / 8」→ 写真の大きな札を横に送る並び → 地図（圏外では出さない）。
+    /// 札を送ると地図のピンが大きくなり、ピンを押すと札がその場所へ送られる
     private func spotSection(_ a: AskAnswer) -> some View {
         let spots = a.spotIds.compactMap { engine.spotsById[$0] }
-        return VStack(alignment: .leading, spacing: JPSpace.xs) {
-            if let heading = a.heading { JPEyebrowLine(heading) }
-            if spots.contains(where: { $0.coords != nil }) { pinsMap(spots) }
-            JPCard {
-                ForEach(Array(spots.enumerated()), id: \.element.id) { i, spot in
-                    if i > 0 { JPCardDivider() }
-                    spotRow(spot, distance: a.distances[spot.spotId])
-                }
-            }
-        }
-        .accessibilityIdentifier("search.ask.spots")
-    }
-
-    private func spotRow(_ spot: OfficialSpot, distance: Double?) -> some View {
-        let key = SavedSpotKey.official(spot.slug)
-        let wanted = wishlist.contains(key)
-        return HStack(alignment: .top, spacing: 12) {
-            NavigationLink {
-                OfficialSpotView(spot: spot, spots: officialSpots, photos: photos, photosKnown: photosKnown)
-            } label: {
-                HStack(alignment: .top, spacing: 12) {
-                    // 板 Components 05 の場所の札: 写真 56、角 10、題は明朝
-                    ZStack {
-                        WebTheme.surface
-                        if let image = spot.photo {
-                            SpotThumbImage(image: image)
-                        } else {
-                            Image(systemName: "mappin.and.ellipse")
-                                .foregroundStyle(WebTheme.accent)
-                        }
-                    }
-                    .frame(width: 56, height: 56)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(spot.name)
-                            .font(JPFont.rowTitle)
-                            .foregroundStyle(WebTheme.text)
-                            .lineLimit(1)
-                        HStack(spacing: 8) {
-                            if let distance {
-                                // 数字は SF の等幅数字（`JPFont.mono`・owner の好み）
-                                Text(AskText.distance(distance))
-                                    .font(JPFont.mono(12, medium: true))
-                                    .foregroundStyle(WebTheme.text2)
-                            }
-                            if let area = spot.regionLabel {
-                                Text(area)
-                                    .font(JPFont.caption)
-                                    .foregroundStyle(WebTheme.text3)
-                                    .lineLimit(1)
-                            }
-                        }
-                        // 理由の1行は台帳の案内の文をそのまま（AI に書かせない）
-                        if let guide = AskLibrary.guide(for: spot, query: .init()) {
-                            Text(guide)
-                                .font(JPFont.footnote)
-                                .foregroundStyle(WebTheme.text2)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.leading)
-                        }
-                    }
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("search.ask.spot")
-            // 行動の札「行きたい」（白 8% の地、印だけ真鍮。保存済みは真鍮 16% の地と真鍮の字）
-            Button {
-                Task {
-                    let outcome = await WishlistSync.toggle(key, store: wishlist, service: environment.savedSpots)
-                    if let notice = WishlistSync.notice(for: outcome) { toasts.show(notice.text, kind: notice.kind) }
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: wanted ? "flag.fill" : "flag")
-                        .foregroundStyle(WebTheme.accent)
-                        .accessibilityHidden(true)
-                    Text(L("行きたい", "Want to go"))
-                        .font(JPFont.footnote.weight(.semibold))
-                        .foregroundStyle(wanted ? WebTheme.accent : WebTheme.text)
-                }
-                .padding(.horizontal, 10)
-                .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
-                .background(wanted ? WebTheme.accent.opacity(0.16) : WebTheme.surface, in: Capsule())
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(wishlist.isSending(key))
-            .accessibilityLabel(HomeSpotShelf.wishSpokenLabel(spot.name))
-            .accessibilityValue(HomeSpotShelf.wishSpokenValue(saved: wanted))
-            .accessibilityIdentifier("search.ask.wish")
-        }
-        .padding(.horizontal, JPSpace.m)
-        .padding(.vertical, 10)
-    }
-
-    /// 地図のピン（板 Components 03: 真鍮の縁の丸い写真・`SpotMapMarker`）。押すと観光スポットの頁へ
-    private func pinsMap(_ spots: [OfficialSpot]) -> some View {
-        AskPinsMap(spots: spots.filter { $0.coords != nil }, officialSpots: officialSpots, photos: photos, photosKnown: photosKnown)
-            .frame(height: 160)
-            .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
-            .overlay(RoundedRectangle(cornerRadius: JPRadius.m).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
-            .accessibilityIdentifier("search.ask.map")
+        return AskSpotCarousel(spots: spots, reasons: a.reasons ?? [:], showsMap: a.state != .offline,
+                               settled: !engine.detailsLoading,
+                               officialSpots: officialSpots, photos: photos, photosKnown: photosKnown)
+            // 回 1641: 名前だけを付けると中の要素の名前（`search.ask.cardProbe` など）が上書きされた。入れ物として組にする
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("search.ask.spots")
     }
 
     // MARK: - みんなの写真（持ち主の写真の詳細へ連れて行くだけ）
@@ -446,27 +397,14 @@ struct AskThreadView: View {
 
     // MARK: - 状態
 
-    /// 読み込み中（骨格は札と同じ形。0.3 秒より早ければ出さない）
+    /// 読み込み中（案A: 文の2行と写真の札の形と地図の骨格。0.3 秒より早ければ出さない）
     @ViewBuilder
     private var loading: some View {
         if showSkeleton {
-            VStack(alignment: .leading, spacing: JPSpace.s) {
-                Label(AskText.loading, systemImage: "sparkle")
-                    .font(JPFont.footnote)
-                    .foregroundStyle(WebTheme.text2)
-                ForEach(0..<3, id: \.self) { _ in
-                    HStack(spacing: 12) {
-                        RoundedRectangle(cornerRadius: 10).fill(WebTheme.surface4).frame(width: 56, height: 56)
-                        VStack(alignment: .leading, spacing: 6) {
-                            RoundedRectangle(cornerRadius: 6).fill(WebTheme.surface4).frame(width: 140, height: 14)
-                            RoundedRectangle(cornerRadius: 6).fill(WebTheme.surface4).frame(width: 90, height: 10)
-                        }
-                    }
-                }
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(AskText.loading)
-            .accessibilityIdentifier("search.ask.loading")
+            AskLoadingSkeleton()
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(AskText.loading)
+                .accessibilityIdentifier("search.ask.loading")
         }
     }
 
@@ -513,24 +451,17 @@ struct AskThreadView: View {
                 .textFieldStyle(.plain)
                 .font(.callout)
                 .foregroundStyle(WebTheme.foreground)
-                .submitLabel(.send)
-                .onSubmit { sendFollowUp() }
+                // 2026-11-20 判断（札 #662）: キーボードのキーでは AI を呼ばない（変換の確定のつもりで押して送ってしまう）。
+                // キーは「完了」でキーボードを閉じるだけ。送るのは右の送信のボタンだけ
+                .submitLabel(.done)
+                .onSubmit { followFocused = false }
                 .disabled(engine.pending != nil)
                 .accessibilityLabel(AskText.followUp)
                 .accessibilityIdentifier("search.ask.followUp")
             if !followUp.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Button { sendFollowUp() } label: {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(WebTheme.accentText)
-                        .frame(width: 36, height: 36)
-                        .background(WebTheme.accentFill, in: Circle())
-                        .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(L("送る", "Send"))
-                .accessibilityIdentifier("search.ask.send")
+                // 続きは頼みの形でなくても聞ける（「金沢では？」の前の会話がある）。途中の字（「京都で」）だけは送らない
+                AskSendButton(enabled: !AskQuery.isUnfinished(followUp)) { sendFollowUp() }
+                    .accessibilityIdentifier("search.ask.send")
             }
         }
         .jpSearchBoxFace()
@@ -538,7 +469,7 @@ struct AskThreadView: View {
 
     private func sendFollowUp() {
         let text = followUp.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, engine.pending == nil else { return }
+        guard !text.isEmpty, engine.pending == nil, !AskQuery.isUnfinished(text) else { return }
         followUp = ""
         followFocused = false
         onFollowUp(text)
@@ -546,11 +477,15 @@ struct AskThreadView: View {
 }
 
 /// 答えの地図（ピンを押すと観光スポットの頁へ）。地図は答えの場所が全部入る範囲（`.automatic`）
-private struct AskPinsMap: View {
+struct AskPinsMap: View {
     let spots: [OfficialSpot]
     let officialSpots: [OfficialSpot]
     let photos: [Photo]
     let photosKnown: Bool
+    /// 選んでいるピン（横に送った札の観光スポット・案A）。大きくする（`SpotMapMarker.selected`）
+    var current: String? = nil
+    /// ピンを押したとき。nil なら観光スポットの頁を開く。案A では札をその場所へ送る
+    var onPick: ((OfficialSpot) -> Void)? = nil
     @State private var camera: MapCameraPosition = .automatic
     @State private var opened: OfficialSpot?
     @State private var showOpened = false
@@ -571,18 +506,27 @@ private struct AskPinsMap: View {
             ForEach(pins) { pin in
                 Annotation(pin.spot.name, coordinate: pin.coordinate) {
                     Button {
-                        opened = pin.spot
-                        showOpened = true
+                        if let onPick {
+                            onPick(pin.spot)
+                        } else {
+                            opened = pin.spot
+                            showOpened = true
+                        }
                     } label: {
                         SpotMapMarker(photoURL: pin.spot.photo?.smallURL, fallbackURL: pin.spot.photo?.smallFallbackURL)
+                            .selected(current == pin.spot.spotId)
                             .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(pin.spot.name)
+                    .accessibilityAddTraits(current == pin.spot.spotId ? .isSelected : [])
+                    .accessibilityIdentifier("search.ask.pin")
                 }
             }
         }
+        // 地図のカメラの動き（タイルの読み込みや動きが続いているかの目安・UI テストのときだけ数える・回 1644 の調べ）
+        .onMapCameraChange(frequency: .continuous) { _ in AskCarouselStats.shared.hit(.mapCam) }
         .navigationDestination(isPresented: $showOpened) {
             if let opened {
                 OfficialSpotView(spot: opened, spots: officialSpots, photos: photos, photosKnown: photosKnown)
@@ -609,12 +553,36 @@ struct AskRotatingPrompt: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             .task(id: reduceMotion) {
-                guard !reduceMotion else { return }
+                // UI テストのときは入れ替えない（4秒ごとの動きが続き、アプリが静まらない・回 1619、1626 の閉じられない件の調べ）
+                guard !reduceMotion, !AskFixture.isOn, !PerfRecorder.shared.isEnabled else { return }
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: AskQuery.rotateSeconds * 1_000_000_000)
                     if Task.isCancelled { return }
                     withAnimation(.easeInOut(duration: 0.35)) { index += 1 }
                 }
             }
+    }
+}
+
+/// AI に送るボタン（札 #662・2026-11-20 判断）。板 DM の送信（真鍮の塗り #B8955A に墨の上向きの矢印・写真の無い画面の主ボタン＝送信）を
+/// 欄の中に入る大きさ（見た目 36、当たり 44）にしたもの。探すの欄と、答えの下の「続けて聞く」の欄で使う。
+/// 押せないとき（途中の字）は DM の送れないときと同じ白 16% の地に白 50% の矢印（色だけにしない: 押せない印と、欄の下の1行）
+struct AskSendButton: View {
+    let enabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "arrow.up")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(enabled ? WebTheme.accentText : Color.white.opacity(0.5))
+                .frame(width: 36, height: 36)
+                .background(enabled ? WebTheme.accentFill : Color.white.opacity(0.16), in: Circle())
+                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .accessibilityLabel(SearchSubmit.sendLabel)
     }
 }

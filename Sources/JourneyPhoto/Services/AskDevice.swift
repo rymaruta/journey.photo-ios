@@ -30,8 +30,9 @@ enum AskDevice {
     static func instructions(today: String) -> String {
         """
         あなたは日本の旅と写真のアプリの案内係です。今日は\(today)です。
-        利用者の質問に、日本語で短く（3〜6行）答えます。
-        観光スポットをすすめるときは、必ず道具 findSpots で台帳から引き、引いた所だけを名前で挙げます。台帳に無い場所を作りません。
+        利用者の質問に、日本語で答えます。答えの文（lead）ははじめの1〜2文、80字までにします。箇条書きにしません。
+        観光スポットをすすめるときは、必ず道具 findSpots で台帳から引き、引いた所だけを挙げます。台帳に無い場所を作りません。
+        観光スポットごとの理由は lead に書かず、reasons に、道具が返した名前のまま1つずつ、1文で書きます。
         写真のことは findPhotos、利用者自身の行きたい場所は myWishlist、利用者自身の旅行プランは myTrips、
         アプリの使い方は appHelp で引いて答えます。引けないことは、一般的な知識で短く答えます。
         季節の案内は春夏秋冬の4つだけで、週ごとの見頃は分かりません。分からないことは分からないと言います。
@@ -49,6 +50,18 @@ enum AskDevice {
         }
         lines.append("質問: " + AskGuard.dataBlock(question, limit: AskQuery.maxLength))
         return lines.joined(separator: "\n")
+    }
+
+    /// 決まった形の答えを、文と「- 名前: 理由」の行にそろえる（`AskAnswerShape.shape` が読む形）
+    static func joined(lead: String, reasons: [(name: String, reason: String)]) -> String {
+        var lines = [lead.trimmingCharacters(in: .whitespacesAndNewlines)]
+        for r in reasons {
+            let name = r.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let reason = r.reason.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, !reason.isEmpty else { continue }
+            lines.append("- \(name): \(reason)")
+        }
+        return lines.filter { !$0.isEmpty }.joined(separator: "\n")
     }
 
     static func todayText(_ date: Date = Date()) -> String {
@@ -75,10 +88,16 @@ enum AskDevice {
                         ]
                         let session = LanguageModelSession(model: SystemLanguageModel.default, tools: tools,
                                                            instructions: instructions(today: todayText()))
+                        // 2026-11-20 判断（札 #663）: 決まった形（はじめの1〜2文と、観光スポットごとの理由）で受ける。
+                        // 受けた形は「文＋- 名前: 理由」の行にそろえ、呼び手が `AskAnswerShape` で札に振り分ける
+                        // （サーバーの答えと同じ道。名前が札に合わない理由は出さない）
                         let response = try await session.respond(to: prompt(question, history: history),
+                                                                 generating: AskDeviceReply.self,
                                                                  options: GenerationOptions(temperature: 0.3))
+                        let reply = response.content
+                        let text = AskDevice.joined(lead: reply.lead, reasons: reply.reasons.map { ($0.spotName, $0.reason) })
                         let snap = collector.snapshot()
-                        return Result(text: response.content, general: snap.sources.isEmpty,
+                        return Result(text: text, general: snap.sources.isEmpty,
                                       picks: snap.picks, photoIds: snap.photoIds, sources: snap.sources)
                     } catch {
                         // 中身（質問と答え）はログに残さない。種類だけ
@@ -137,6 +156,28 @@ final class AskLibraryBox: @unchecked Sendable {
 }
 
 #if canImport(FoundationModels)
+/// 端末の AI の答えの形（2026-11-20 判断・札 #663）。文ははじめの1〜2文だけ、観光スポットの理由は名前ごとに分ける
+@available(iOS 26.0, macOS 26.0, *)
+@Generable
+struct AskDeviceReply {
+    @Guide(description: "質問への答えの文。はじめの1〜2文、80字まで。箇条書きにしない。観光スポットの理由はここに書かない")
+    var lead: String
+
+    @Guide(description: "道具 findSpots が返した観光スポットごとの理由。0〜8個", .maximumCount(8))
+    var reasons: [AskDeviceSpotReason]
+}
+
+/// 観光スポット1つの理由
+@available(iOS 26.0, macOS 26.0, *)
+@Generable
+struct AskDeviceSpotReason {
+    @Guide(description: "道具 findSpots が返した観光スポットの名前（字のまま）")
+    var spotName: String
+
+    @Guide(description: "その観光スポットをすすめる理由を1文、40字まで")
+    var reason: String
+}
+
 // MARK: - 道具（読むだけ。その人の権限の範囲だけ）
 
 /// 観光スポットの台帳を引く
@@ -171,7 +212,7 @@ struct AskSpotsTool: Tool {
         q.near = arguments.near && lib.here != nil
         var picks = lib.pickSpots(q)
         if picks.isEmpty, let relaxed = AskLibrary.relaxed(q) { picks = lib.pickSpots(relaxed) }
-        collector.add(picks: picks, source: .init(kind: .spots, label: L("観光スポットの台帳", "Tourist spot list")))
+        collector.add(picks: picks, source: .init(kind: .spots, label: AskText.spotsSource))
         return AskLibrary.spotLines(picks, query: q)
     }
 

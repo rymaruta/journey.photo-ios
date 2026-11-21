@@ -930,9 +930,21 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 20), "探すの欄が無い")
         // 欄の名前は「AI に聞く、または探す」（見本の字は入れ替わる）
         XCTAssertEqual(field.label, "AI に聞く、または探す", "欄の読み上げの名前が違う")
-        enter("おすすめの観光スポット教えて\n", into: field, "探すの欄")
+        // 2026-11-20 判断（札 #662）: 途中の字（「おすすめの」）では送れない。欄の下に「続けて打つと AI に聞けます」
+        enter("おすすめの", into: field, "探すの欄")
+        let send = app.buttons["search.send"].firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 5), "頼みの形の字なのに、欄の右に送信のボタンが無い")
+        XCTAssertFalse(send.isEnabled, "途中の字（おすすめの）で送信のボタンが押せる")
+        XCTAssertTrue(app.staticTexts["search.keepTyping"].firstMatch.exists, "途中の字で「続けて打つと AI に聞けます」が無い")
+        field.typeText("観光スポット教えて")
         let answer = app.descendants(matching: .any)["search.ask.answer"].firstMatch
-        XCTAssertTrue(answer.waitForExistence(timeout: 30), "頼みの形で送っても AI の答えが出ない")
+        // 打っただけでは答えを出さない（送信のボタンを押すまで）
+        XCTAssertFalse(answer.waitForExistence(timeout: 3), "送信のボタンを押す前に AI の答えが出た")
+        XCTAssertEqual(send.label, "AI に送る", "送信のボタンの読み上げが違う")
+        XCTAssertTrue(send.isEnabled, "頼みの形の字で送信のボタンが押せない")
+        XCTAssertFalse(app.staticTexts["search.keepTyping"].firstMatch.exists, "送れる字でも「続けて打つと」が残る")
+        send.tap()
+        XCTAssertTrue(answer.waitForExistence(timeout: 30), "送信のボタンを押しても AI の答えが出ない")
         XCTAssertTrue(app.staticTexts["search.ask.disclaimer"].firstMatch.waitForExistence(timeout: 5),
                       "答えの下に「AI の答えは間違うことがあります」が無い")
         let usage = app.descendants(matching: .any)["search.ask.usage"].firstMatch
@@ -947,7 +959,10 @@ final class CriticalFlowTests: XCTestCase {
         let follow = app.textFields["search.ask.followUp"].firstMatch
         XCTAssertTrue(follow.waitForExistence(timeout: 10), "続けて聞く欄が無い")
         reveal(follow, in: app, "続けて聞く欄")
-        enter("このアプリの作りを教えて\n", into: follow, "続けて聞く欄")
+        enter("このアプリの作りを教えて", into: follow, "続けて聞く欄")
+        let followSend = app.buttons["search.ask.send"].firstMatch
+        XCTAssertTrue(followSend.waitForExistence(timeout: 5), "続けて聞く欄に送信のボタンが無い")
+        followSend.tap()
         let refusal = app.descendants(matching: .any)["search.ask.refusal"].firstMatch
         XCTAssertTrue(refusal.waitForExistence(timeout: 10), "作りの質問を断っていない")
         XCTAssertTrue(app.staticTexts["この質問にはお答えできません。旅や写真、アプリの使い方のことなら聞いてください。"].firstMatch.exists,
@@ -964,7 +979,11 @@ final class CriticalFlowTests: XCTestCase {
         let field = app.textFields["search.field"].firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 20), "探すの欄が無い")
         // 前の試験と同じ頼みだと、同じ日の控え（回数を使わない）から答えて帯が出ない（run 1608）。毎回ちがう頼みにする
-        enter("金沢でおすすめの観光スポットを教えて \(Int(Date().timeIntervalSince1970) % 100000)\n", into: field, "探すの欄")
+        enter("金沢でおすすめの観光スポットを教えて \(Int(Date().timeIntervalSince1970) % 100000)", into: field, "探すの欄")
+        // AI に頼むのは欄の右の送信のボタンだけ（キーボードの「検索」は言葉の検索・札 #662）
+        let send = app.buttons["search.send"].firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 5), "欄の右に送信のボタンが無い")
+        send.tap()
         // 答えの欄が出るのを待ってから帯を見る（帯は答えの上に一緒に出る）。落ちたら段と経過（`search.ask.stage`）を出す
         let answer = app.descendants(matching: .any)["search.ask.answer"].firstMatch
         let stage = app.descendants(matching: .any)["search.ask.stage"].firstMatch
@@ -1204,7 +1223,10 @@ final class CriticalFlowTests: XCTestCase {
         let title = app.staticTexts["search.title"].firstMatch
         XCTAssertTrue(title.waitForExistence(timeout: 5), "頭にいる間は明朝の「探す」を出す")
         XCTAssertFalse(app.buttons["search.scope.people"].firstMatch.exists, "字を打つ前から範囲のチップが出ている")
+        // 2026-11-20 判断（札 #662）: 打っている間は結果を変えない。キーボードの「検索」で探す（キーボードは閉じる）
         enter("zzzz-no-photo-result", into: field, "探すの欄")
+        XCTAssertFalse(app.buttons["search.emptyMap"].firstMatch.waitForExistence(timeout: 2), "打っただけで結果が入れ替わった")
+        field.typeText("\n")
         let toMap = app.buttons["search.emptyMap"].firstMatch
         XCTAssertTrue(toMap.waitForExistence(timeout: 20), "0件でも「地図で撮影地を探す」が出ない")
         XCTAssertTrue(app.buttons["search.scope.people"].firstMatch.waitForExistence(timeout: 5), "字を打っても範囲のチップが出ない")

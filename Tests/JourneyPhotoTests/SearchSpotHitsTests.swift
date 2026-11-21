@@ -282,7 +282,7 @@ final class SearchSpotHitsTests: XCTestCase {
         XCTAssertTrue(search.contains("@State private var spotHitsMemo = SearchSpotHits()"))
         let hits = try XCTUnwrap(search.range(of: "private var spotHitsResult: SearchSpotHits.Hits {"))
         let body = search[hits.upperBound...].prefix(500)
-        XCTAssertTrue(body.contains("spotHitsMemo.hits(spots: officialSpots, index: spotSearchIndex, query: query,"), String(body))
+        XCTAssertTrue(body.contains("spotHitsMemo.hits(spots: officialSpots, index: spotSearchIndex, query: searched,"), String(body))
         XCTAssertFalse(body.contains("OfficialSpotIndex.matches("), "body の中で全件に直に当てている")
         XCTAssertFalse(body.contains("prepare("), "body の中で字をそろえている")
         let task = try XCTUnwrap(search.range(of: ".task(id: SearchSpotHits.IndexNeed(generation: spotMaterialGeneration,"))

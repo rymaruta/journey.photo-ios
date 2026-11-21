@@ -101,8 +101,11 @@ final class EaseOfUseFollowupTests: XCTestCase {
         let view = try source("Sources/JourneyPhoto/Features/Search/SearchView.swift")
         // 2026-11-15（札 #623）: 「検索」は文の読み取り（`readSentence`）も呼ぶので、1行の形から「onSubmit の中で覚える」に
         let submit = try XCTUnwrap(view.range(of: ".onSubmit {"), "右下の「検索」で何もしない")
-        XCTAssertTrue(view[submit.upperBound...].prefix(200).contains("rememberQuery()"), "右下の「検索」で言葉を覚えない")
-        XCTAssertTrue(view.contains(".onChange(of: fieldFocused) { _, focused in if !focused { rememberQuery() } }"),
+        // 2026-11-20（札 #662）: 「検索」は `submitFromKeyboard` が覚える。欄を離れたときは送った字（`searched`）だけ覚える
+        XCTAssertTrue(view[submit.upperBound...].prefix(200).contains("submitFromKeyboard()"), "右下の「検索」で何もしない")
+        let keyboard = try XCTUnwrap(view.range(of: "private func submitFromKeyboard() {"))
+        XCTAssertTrue(view[keyboard.upperBound...].prefix(200).contains("rememberQuery(query)"), "右下の「検索」で言葉を覚えない")
+        XCTAssertTrue(view.contains(".onChange(of: fieldFocused) { _, focused in if !focused { rememberQuery(searched) } }"),
                       "欄を離れたときに言葉を覚えない")
         XCTAssertTrue(view.contains("if showsRecentSearches {"), "最近の検索の段を出さない")
         XCTAssertTrue(view.contains("RecentSearchesSection(words: recentWords"))

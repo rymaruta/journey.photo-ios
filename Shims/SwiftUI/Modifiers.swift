@@ -653,7 +653,23 @@ extension Text {
 }
 
 /// `scrollTargetBehavior` に渡すもの（本物と同じ名前）
-public protocol ScrollTargetBehavior {}
+public struct ScrollTarget {
+    public var rect: CGRect
+    public var anchor: UnitPoint?
+    public init(rect: CGRect, anchor: UnitPoint? = nil) { self.rect = rect; self.anchor = anchor }
+}
+public struct ScrollTargetBehaviorContext {
+    public var originalTarget: ScrollTarget
+    public var contentSize: CGSize
+    public var containerSize: CGSize
+}
+public protocol ScrollTargetBehavior {
+    typealias TargetContext = ScrollTargetBehaviorContext
+    func updateTarget(_ target: inout ScrollTarget, context: TargetContext)
+}
+extension ViewAlignedScrollTargetBehavior {
+    public func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {}
+}
 public struct ViewAlignedScrollTargetBehavior: ScrollTargetBehavior { public init() {} }
 extension ScrollTargetBehavior where Self == ViewAlignedScrollTargetBehavior {
     public static var viewAligned: ViewAlignedScrollTargetBehavior { ViewAlignedScrollTargetBehavior() }
