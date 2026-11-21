@@ -150,38 +150,97 @@ struct AskSpotStack: View {
     }
 }
 
-/// 旅行プランの流れ（番号の線に観光スポットと移動の目安・版3「流れ」）。観光スポットを押すと頁が開く
+/// 旅行プランの流れ（番号の線に観光スポットと移動の目安・版3「流れ」）。観光スポットを押すと頁が開く。
+///
+/// 2026-11-21（札 #677・案A）: 場所の左に着く時刻（「9:00」・端末で計算する目安・`AskPlanFlowText.times`）。
+/// 日の見出しの右「出発 9:00」を押して時刻を選ぶ（押す、選ぶの2回）。変えた時刻は保存したプランならこの iPhone に覚える。
+/// 移動の目安の行は押すと Apple のマップでその2点の経路が開く（旅行プランの頁の区間の行と同じ開き方・`TripLegMaps`）
 struct AskPlanTimeline: View {
     let days: [[OfficialSpot]]
     let officialSpots: [OfficialSpot]
     let photos: [Photo]
     let photosKnown: Bool
+    /// 圏外（経路を開くときに名前で探し直さない）
+    var offline = false
+
+    /// 出発（日の番号 → 分）。**この画面の中だけ**（2026-11-21 判断・確かめ役の指摘: AI の答えの日と、保存した
+    /// 旅行プランの日はそろわないので、旅行プランの頁の覚え（出発の時刻の控え）と分ける。画面を出ると 9:00 に戻る）
+    @State private var localStarts: [Int: Int] = [:]
+    /// 時刻のチップを開いている日
+    @State private var openDay: Int?
+    /// 経路を探している区間（続けて押しても1回だけ開く）
+    @State private var opening: String?
+    @State private var openTask: Task<Void, Never>?
+    @ScaledMetric(relativeTo: .body) private var timeWidth: CGFloat = TripTimeStyle.columnWidth
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// 時刻の列を左に置くか（大きな字の設定では名前の上に置き、列を作らない）
+    private var timeInColumn: Bool { !typeSize.isAccessibilitySize }
+    /// 番号の丸の列より左の幅
+    private var inset: CGFloat { timeInColumn ? timeWidth + TripTimeStyle.columnGap : 0 }
 
     var body: some View {
         let numbered = Self.numbers(days)
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(days.enumerated()), id: \.offset) { d, spots in
-                JPEyebrowLine(AskPlanFlowText.dayTitle(d, spots: spots))
-                    .padding(.top, d > 0 ? 12 : 0)
-                    .padding(.bottom, 4)
-                ForEach(Array(spots.enumerated()), id: \.offset) { i, spot in
-                    node(spot, number: numbered[d][i], first: i == 0, end: i == spots.count - 1)
-                    if i < spots.count - 1, let minutes = AskPlanFlowText.moveMinutes(spot, spots[i + 1]) {
-                        Text(AskPlanFlowText.moveLine(minutes))
-                            .font(JPFont.caption.monospacedDigit())
-                            .foregroundStyle(WebTheme.text3)
-                            .padding(.leading, 36)
-                            .padding(.top, 2)
-                            .padding(.bottom, 6)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(alignment: .leading) { connector }
-                            .accessibilityIdentifier("search.ask.move")
-                    }
-                }
+                daySection(d, spots, numbers: numbered[d])
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("search.ask.plan")
+        .onDisappear { openTask?.cancel() }
+    }
+
+    @ViewBuilder
+    private func daySection(_ d: Int, _ spots: [OfficialSpot], numbers: [Int]) -> some View {
+        let start = startTime(d)
+        let day = AskPlanFlowText.times(spots, start: start)
+        let startOpen = Binding(get: { openDay == d }, set: { openDay = $0 ? d : nil })
+        // 大きな字の設定では、出発のボタンを見出しの下の行へ（旅行プランの頁と同じ・見出しが切れない）
+        if timeInColumn {
+            HStack(spacing: JPSpace.xs) {
+                JPEyebrowLine(AskPlanFlowText.dayTitle(d, spots: spots))
+                TripStartButton(start: start, open: startOpen, identifier: "search.ask.start")
+            }
+            .padding(.top, d > 0 ? 12 : 0)
+        } else {
+            JPEyebrowLine(AskPlanFlowText.dayTitle(d, spots: spots))
+                .padding(.top, d > 0 ? 12 : 0)
+            TripStartButton(start: start, open: startOpen, identifier: "search.ask.start")
+                .padding(.top, JPSpace.xxs)
+        }
+        if openDay == d {
+            TripStartChips(start: start) { m in
+                setStart(m, day: d)
+                openDay = nil
+            }
+            .padding(.bottom, 4)
+        }
+        if d == 0 {
+            TripTimeNote().padding(.bottom, 6)
+        }
+        ForEach(Array(spots.enumerated()), id: \.offset) { i, spot in
+            let row = day.rows.indices.contains(i) ? day.rows[i] : TripTimes.Row(arrive: nil)
+            if let wait = TripTimes.waitLine(row), let at = row.arrive {
+                minorRow(time: at - row.wait, text: wait, identifier: "search.ask.wait")
+            }
+            node(spot, number: numbers[i], row: row, first: i == 0, end: i == spots.count - 1)
+            if i < spots.count - 1, let text = AskPlanFlowText.moveText(spot, spots[i + 1]) {
+                moveRow(text, leg: AskPlanFlowText.leg(spot, spots[i + 1], numbers: (numbers[i], numbers[i + 1])))
+            }
+        }
+        if let end = day.end {
+            minorRow(time: end, text: L("ごろ 終わり", "done"), identifier: "search.ask.end", connector: false,
+                     spoken: TripTimes.endLine(end))
+        }
+    }
+
+    private func startTime(_ d: Int) -> Int {
+        localStarts[d] ?? TripTimes.defaultStart
+    }
+
+    private func setStart(_ m: Int, day d: Int) {
+        localStarts[d] = m
     }
 
     /// 通しの番号（1日目から続けて数える）
@@ -192,14 +251,108 @@ struct AskPlanTimeline: View {
 
     /// 番号の丸をつなぐ線（白 14%・幅 1）
     private var connector: some View {
-        Rectangle().fill(WebTheme.line).frame(width: JPStroke.hairline).padding(.leading, 11.5)
+        Rectangle().fill(WebTheme.line).frame(width: JPStroke.hairline).padding(.leading, inset + 11.5)
     }
 
-    private func node(_ spot: OfficialSpot, number: Int, first: Bool, end: Bool) -> some View {
+    /// 移動の目安の行。区間があれば押すと Apple のマップで経路（旅行プランの頁の区間の行と同じ・読み上げのヒントは `mapsHint`）。
+    /// 座標の無い場所との間は押せない形（印なし・ボタンにしない）。時刻の列には何も置かない（時刻と紛れない）
+    @ViewBuilder
+    private func moveRow(_ text: String, leg: TripTravel.Leg?) -> some View {
+        if let leg {
+            let mode = AskPlanFlowText.mapsMode(leg)
+            Button {
+                open(leg, mode: mode)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "map")
+                        .font(JPFont.caption)
+                        .accessibilityHidden(true)
+                    Text(text)
+                        .font(JPFont.caption.monospacedDigit())
+                    if opening == leg.id {
+                        ProgressView().tint(WebTheme.accent).accessibilityHidden(true)
+                    } else {
+                        Image(systemName: "arrow.up.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(WebTheme.accent)
+                            .accessibilityHidden(true)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(WebTheme.text3)
+                .padding(.leading, inset + 36)
+                .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget, alignment: .leading)
+                .background(alignment: .leading) { connector }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(opening != nil)
+            .accessibilityLabel(Self.spokenMove(leg, text: text))
+            .accessibilityHint(TripTravel.mapsHint(mode))
+            .accessibilityIdentifier("search.ask.move")
+        } else {
+            Text(text)
+                .font(JPFont.caption.monospacedDigit())
+                .foregroundStyle(WebTheme.text3)
+                .padding(.leading, inset + 36)
+                .padding(.top, 2)
+                .padding(.bottom, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(alignment: .leading) { connector }
+                .accessibilityIdentifier("search.ask.moveStatic")
+        }
+    }
+
+    /// 区間の読み上げ（「日比谷公園から東京タワー、移動の目安 約20分」）
+    nonisolated static func spokenMove(_ leg: TripTravel.Leg, text: String) -> String {
+        L("\(leg.from.name)から\(leg.to.name)、\(text)", "\(leg.from.name) to \(leg.to.name), \(text)")
+    }
+
+    private func open(_ leg: TripTravel.Leg, mode: TripTravel.Mode) {
+        guard opening == nil else { return }
+        opening = leg.id
+        let search = !offline
+        openTask = Task { @MainActor in
+            defer { opening = nil }
+            await TripLegMaps.open(leg, mode: mode, search: search)
+        }
+    }
+
+    /// あきの行・終わりの行（左に小さな時刻、右に字）
+    private func minorRow(time: Int, text: String, identifier: String, connector withLine: Bool = true,
+                          spoken: String? = nil) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: timeInColumn ? TripTimeStyle.columnGap : 6) {
+            if timeInColumn {
+                TripTimeText(minutes: time, minor: true)
+                    .frame(width: timeWidth, alignment: .trailing)
+                Color.clear.frame(width: 24, height: 1)
+            } else {
+                TripTimeText(minutes: time, minor: true)
+            }
+            Text(text)
+                .font(JPFont.caption)
+                .foregroundStyle(WebTheme.text2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 4)
+        .frame(minHeight: 26)
+        .background(alignment: .leading) { if withLine { connector } }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken ?? (TripTimes.spokenClock(time) + L("、", ", ") + text))
+        .accessibilityIdentifier(identifier)
+    }
+
+    private func node(_ spot: OfficialSpot, number: Int, row: TripTimes.Row, first: Bool, end: Bool) -> some View {
         NavigationLink {
             OfficialSpotView(spot: spot, spots: officialSpots, photos: photos, photosKnown: photosKnown)
         } label: {
             HStack(spacing: 12) {
+                if timeInColumn {
+                    TripTimeText(minutes: row.arrive)
+                        .frame(width: timeWidth, alignment: .trailing)
+                        .padding(.trailing, TripTimeStyle.columnGap - 12)
+                }
                 Text("\(number)")
                     .font(.system(size: 12, weight: .bold).monospacedDigit())
                     .foregroundStyle(WebTheme.accent)
@@ -214,12 +367,21 @@ struct AskPlanTimeline: View {
                 .frame(width: 44, height: 44)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 VStack(alignment: .leading, spacing: 3) {
+                    if !timeInColumn, row.arrive != nil {
+                        TripTimeText(minutes: row.arrive)
+                    }
                     Text(spot.name)
                         .font(JPFont.display(16, relativeTo: .body))
                         .foregroundStyle(WebTheme.text)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                     AskSpotTags(spot: spot)
+                    if let late = TripTimes.cautionLine(row) {
+                        Text(late)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.text2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 Spacer(minLength: 0)
             }
@@ -231,13 +393,20 @@ struct AskPlanTimeline: View {
                     Color.clear.frame(width: JPStroke.hairline, height: 24)
                     Rectangle().fill(end ? Color.clear : WebTheme.line).frame(width: JPStroke.hairline)
                 }
-                .padding(.leading, 11.5)
+                .padding(.leading, inset + 11.5)
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(L("\(number)番目 \(spot.name)", "Stop \(number), \(spot.name)"))
+        .accessibilityLabel(Self.spokenStop(number: number, name: spot.name, row: row))
         .accessibilityIdentifier("search.ask.planStop")
+    }
+
+    /// 読み上げ（「1番目、9時、日比谷公園」・朝の一言があれば添える）
+    nonisolated static func spokenStop(number: Int, name: String, row: TripTimes.Row) -> String {
+        var text = L("\(number)番目、", "Stop \(number), ") + TripTimes.spokenStop(row.arrive, name: name)
+        if let late = TripTimes.cautionLine(row) { text += L("。", ". ") + late }
+        return text
     }
 }
 

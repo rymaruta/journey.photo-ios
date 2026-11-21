@@ -242,6 +242,69 @@ final class TripPlanFixtureCounter: ObservableObject {
         let ms = liftedAt.map { Int(now.timeIntervalSince($0) * 1000) } ?? -1
         trail.append("\(event)@\(ms)")
         if trail.count > 24 { trail.removeFirst(trail.count - 24) }
+        clockTrail.append("\(event)@\(Self.clock(now))")
+        if clockTrail.count > 24 { clockTrail.removeFirst(clockTrail.count - 24) }
+        publishPerf()
+    }
+
+    // MARK: - 速さの数（札 #677・回 1672/1682。見本のときだけ。UI テストが値で読み、ログにも出す）
+    //
+    // 数えるだけの値は `@Published` にしない（描くたびに数えるので、知らせると描き直しが続く）。
+    // 見える値（`perfLine`）は、出来事の印と、主の糸が止まったのを見つけたときだけ更新する
+
+    /// 旅行プランの頁の body が呼ばれた回数・日の区切りを組んだ回数
+    var bodyCount = 0
+    var daySectionCount = 0
+    /// 着く時刻の計算（`dayTimes`）の回数と合計の時間（ナノ秒）
+    var timesCalls = 0
+    var timesNanos: UInt64 = 0
+    /// 主の糸が 120ms 以上止まった回（長さ ms と、止まりが終わった壁時計）。最後の 16 個
+    private(set) var stalls: [String] = []
+    private(set) var maxStallMs = 0
+    /// 出来事の印を壁時計（秒の下3桁.ms）で。UI テストの時計と並べて読む
+    private(set) var clockTrail: [String] = []
+    @Published private(set) var perfLine = ""
+    private var watchdog: Timer?
+    private var lastBeat = Date()
+
+    /// 壁時計を「秒の下3桁.ミリ秒」に（UI テストの側も同じ形で出す）
+    nonisolated static func clock(_ date: Date) -> String {
+        let t = date.timeIntervalSince1970
+        return String(format: "%07.3f", t.truncatingRemainder(dividingBy: 1000))
+    }
+
+    /// 主の糸の見張り（50ms ごとに打つ。打つ間が 120ms を超えたら、その間は主の糸が止まっていた）
+    func startWatchdog() {
+        guard watchdog == nil else { return }
+        lastBeat = Date()
+        let timer = Timer(timeInterval: 0.05, repeats: true) { _ in
+            MainActor.assumeIsolated { TripPlanFixtureCounter.shared.beat() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        watchdog = timer
+    }
+
+    private func beat() {
+        let now = Date()
+        let gap = Int(now.timeIntervalSince(lastBeat) * 1000) - 50
+        lastBeat = now
+        guard gap >= 120 else { return }
+        maxStallMs = max(maxStallMs, gap)
+        stalls.append("\(gap)ms@\(Self.clock(now))")
+        if stalls.count > 16 { stalls.removeFirst(stalls.count - 16) }
+        publishPerf()
+    }
+
+    func countTimes(_ began: DispatchTime) {
+        timesCalls += 1
+        timesNanos += DispatchTime.now().uptimeNanoseconds - began.uptimeNanoseconds
+    }
+
+    private func publishPerf() {
+        let line = "body=\(bodyCount) day=\(daySectionCount) times=\(timesCalls)/\(timesNanos / 1_000_000)ms "
+            + "stallMax=\(maxStallMs)ms stalls[\(stalls.joined(separator: " "))] clock[\(clockTrail.joined(separator: " "))]"
+        perfLine = line
+        NSLog("TRIPPERF \(line.replacingOccurrences(of: "%", with: "pct"))")
     }
 
     var trailLine: String { trail.joined(separator: " ") }

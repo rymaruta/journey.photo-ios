@@ -3323,6 +3323,46 @@ final class ScreenshotTests: XCTestCase {
         finishSearchAsk(app, scene: "plan")
     }
 
+    /// 11zf 旅行プランの流れの時刻（札 #677・案A）: 場所の左に着く時刻、上に「時刻は目安です」、「出発 9:00」を押して時刻を選ぶ。
+    /// 11zg 11:00 を選ぶと時刻がそろってずれる。移動の目安の行は押すと経路を開く（見本では地図のアプリへ出ず、開いた手段を数えに残す）。
+    /// 出なければ撮らずに抜ける。終わりに 9:00 へ戻す（覚えた時刻をほかの試験に残さない）
+    func testCapturesSearchAskPlanTimes() {
+        guard let app = launchSearchAsk(extra: ["-JPTripPlanFixture", "YES", "-JPTripAIFixture", "YES"]),
+              openAskScreen(app) else { return }
+        let field = app.textFields["ask.field"].firstMatch
+        field.tap()
+        guard waitForKeyboardFocus(field) else { return unreached(app, "AI の欄に焦点が来ない") }
+        field.typeText("東京で1日の旅行プランを作って")
+        let send = app.buttons["ask.send"].firstMatch
+        guard send.waitForExistence(timeout: 5) else { return unreached(app, "ask.send") }
+        send.tap()
+        guard app.descendants(matching: .any)["search.ask.plan"].firstMatch.waitForExistence(timeout: 60) else {
+            return unreached(app, "search.ask.plan", probes: ["search.ask.probe", "search.ask.thread"])
+        }
+        let note = app.staticTexts["trip.time.note"].firstMatch
+        XCTAssertTrue(note.waitForExistence(timeout: 5), "「時刻は目安です」の一行が無い")
+        let start = app.buttons["search.ask.start"].firstMatch
+        guard start.waitForExistence(timeout: 5) else { return unreached(app, "search.ask.start") }
+        let move = app.buttons["search.ask.move"].firstMatch
+        let moveLine = "ASKMOVE button=\(move.exists) hint=\(move.exists ? move.label : "-")"
+        print(moveLine)
+        XCTContext.runActivity(named: moveLine) { _ in }
+        start.tap()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "11zf-AI に頼む（旅行プランの時刻、出発を選ぶ）")
+        let eleven = app.buttons.matching(identifier: "trip.time.choice").matching(NSPredicate(format: "label == %@", "11時")).firstMatch
+        guard eleven.waitForExistence(timeout: 5) else { return unreached(app, "出発の時刻のチップ 11時") }
+        eleven.tap()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "11zg-AI に頼む（旅行プランの時刻、11時に出たとき）")
+        XCTAssertTrue(start.label.contains("11時"), "出発の時刻が変わらない: \(start.label)")
+        // 9:00 へ戻す
+        start.tap()
+        let nine = app.buttons.matching(identifier: "trip.time.choice").matching(NSPredicate(format: "label == %@", "9時")).firstMatch
+        if nine.waitForExistence(timeout: 5) { nine.tap() }
+        finishSearchAsk(app, scene: "planTimes")
+    }
+
     /// 11ze 続けて頼むと、前の答えは「質問と中身の1行」に畳む（押すと開く）
     func testCapturesSearchAskFold() {
         guard let app = launchSearchAsk(), openAskScreen(app),
@@ -4575,6 +4615,35 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// 65t 旅行プランの日程の時刻（札 #677・案A）: 場所の左に着く時刻、日の見出しの右「出発 9:00」を押して時刻を選ぶ。
+    /// 65u 11:00 を選ぶと時刻がそろってずれる。出なければ撮らずに抜ける。終わりに 9:00 へ戻す（この iPhone に覚えるため）
+    func testCapturesTripPlanTimes() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+        guard openFixturePlan(app) else { return }
+        // 移動の見込み（Apple のサーバー）と日の出・日の入りを待つ
+        Thread.sleep(forTimeInterval: 8)
+        let note = app.staticTexts["trip.time.note"].firstMatch
+        XCTAssertTrue(note.waitForExistence(timeout: 5), "「時刻は目安です」の一行が無い")
+        let start = app.buttons.matching(identifier: "trip.time.start").firstMatch
+        guard start.waitForExistence(timeout: 5), start.isHittable else { return unreached(app, "trip.time.start") }
+        let first = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "1\u{2002}9時、")).firstMatch
+        let firstLine = "TRIPTIME first=\(first.exists) start=\(start.label)"
+        print(firstLine)
+        XCTContext.runActivity(named: firstLine) { _ in }
+        start.tap()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "65t-旅行プランの日程（時刻、出発を選ぶ）")
+        let eleven = app.buttons.matching(identifier: "trip.time.choice").matching(NSPredicate(format: "label == %@", "11時")).firstMatch
+        guard eleven.waitForExistence(timeout: 5) else { return unreached(app, "出発の時刻のチップ 11時") }
+        eleven.tap()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "65u-旅行プランの日程（時刻、11時に出たとき）")
+        XCTAssertTrue(start.label.contains("11時"), "出発の時刻が変わらない: \(start.label)")
+        start.tap()
+        let nine = app.buttons.matching(identifier: "trip.time.choice").matching(NSPredicate(format: "label == %@", "9時")).firstMatch
+        if nine.waitForExistence(timeout: 5) { nine.tap() }
+    }
+
     /// **旅行プランの日程**（自動保存・運ぶ・移動の見込み・区間のシート）。
     /// 自動保存は**手を止めてから 2 秒待ってまとめて送る**——続けて 5 回直しても送るのは 1 回（数で確かめる）。
     /// 出なければ撮らずに抜ける
@@ -4586,6 +4655,7 @@ final class ScreenshotTests: XCTestCase {
         // 移動の見込み（Apple のサーバー）と日の出・日の入りを待つ
         Thread.sleep(forTimeInterval: 8)
         shoot(app, "65-旅行プランの日程（自動保存・移動の見込み）")
+        perfLine(app, "opened")
         XCTAssertEqual(fixtureSends(app, "open"), "0", "開いただけで送っている")
         // 日をまたぐ区間（2026-11-11 owner の実機「バスとか出てこないよ」）: 2 日目の最初の上に「前の日の千里浜…から」
         let crossDay = app.descendants(matching: .any).matching(identifier: "trip.leg")
@@ -4617,24 +4687,31 @@ final class ScreenshotTests: XCTestCase {
         if handles.count >= 4 {
             let from = handles.element(boundBy: 2)
             let to = handles.element(boundBy: 3)
-            var pushes = 0
-            while !(from.isHittable && to.isHittable), pushes < 3 {
-                app.swipeUp()
-                Thread.sleep(forTimeInterval: 1)
-                pushes += 1
-            }
-            _ = fixtureSends(app, "dragHittable-from\(from.isHittable)-to\(to.isHittable)")
-            if from.isHittable, to.isHittable {
+            // 🔴 **持ち手と行き先が、上の帯と下のタブの間に丸ごと見えているときだけ運ぶ**（回 1682・1689 の数）。
+            // `isHittable` は上の帯の下に隠れた持ち手（y 33）でも真で、押した点は帯に落ちて持ち上がらなかった（lift=0）。
+            // 行き先が下のタブに掛かっていた（y 865）回は、持ち上がったが落とせなかった（drop=0）。
+            // 旅行プランの時刻（札 #677）で行が増え、持ち手の位置が変わってこの形に当たるようになった
+            let placed = bringIntoBand(app, from, to)
+            _ = fixtureSends(app, "dragPlaced-\(placed) from[\(frameText(from))] to[\(frameText(to))]")
+            XCTAssertTrue(placed, "持ち手と行き先が、上の帯と下のタブの間に入らない")
+            if placed {
                 let before = order()
                 _ = fixtureSends(app, "orderBefore[\(before)]")
+                perfLine(app, "drag1-before from=\(frameText(from)) to=\(frameText(to))")
+                let press1 = Date()
                 from.press(forDuration: 1.2, thenDragTo: to)
+                perfLine(app, "drag1-pressed began=\(clock(press1)) took=\(ms(since: press1))ms from=\(frameText(from))")
                 Thread.sleep(forTimeInterval: 2)
                 var after = order()
                 _ = fixtureSends(app, "orderAfterPress[\(after)] drag[\(dragCounts(app))]")
                 if after == before {
                     let again = handles.element(boundBy: 2)
+                    _ = bringIntoBand(app, again, handles.element(boundBy: 3))
+                    perfLine(app, "drag2-before from=\(frameText(again)) to=\(frameText(handles.element(boundBy: 3)))")
+                    let press2 = Date()
                     again.press(forDuration: 1.2, thenDragTo: handles.element(boundBy: 3),
                                 withVelocity: .slow, thenHoldForDuration: 1.0)
+                    perfLine(app, "drag2-pressed began=\(clock(press2)) took=\(ms(since: press2))ms from=\(frameText(again))")
                     Thread.sleep(forTimeInterval: 2)
                     after = order()
                     _ = fixtureSends(app, "orderAfterHold[\(after)] drag[\(dragCounts(app))]")
@@ -4689,16 +4766,28 @@ final class ScreenshotTests: XCTestCase {
             let legLine = "TRIPLEG row label=\(leg.label) before[\(dragCounts(app))]"
             print(legLine)
             XCTContext.runActivity(named: legLine) { _ in }
+            perfLine(app, "leg-before")
             let tapped = Date()
             leg.tap()
+            // 押す操作が返るまで（XCUITest はアプリの手が空くのを待つ）。回 1672 は 7 秒かかった
+            perfLine(app, "leg-tapped began=\(clock(tapped)) took=\(ms(since: tapped))ms")
+            // 待つ 6 秒は押す操作が返ってから数える（回 1672 は押す操作が 7 秒返らず、待つ前に時間が尽きて一度も読まなかった。
+            // 回 1689 の数では時刻の計算は 1 回 約 2ms・頁を開いてから 42 回で 92ms、押す操作は 1.3 秒）
+            let returned = Date()
             // 名前で探し直す（最大で数秒）のを待つ。少しずつ読んで、段の印（LT=・LM=・LR=・LX=・開いた M:）をその都度残す（run 1208）
             var trail = dragCounts(app)
-            while !trail.contains("M:"), Date().timeIntervalSince(tapped) < 6 {
+            while !trail.contains("M:"), Date().timeIntervalSince(returned) < 6 {
                 Thread.sleep(forTimeInterval: 0.5)
                 trail = dragCounts(app)
                 let pollLine = String(format: "TRIPLEG poll t+%.1fs trail[%@]", Date().timeIntervalSince(tapped), trail)
                 print(pollLine)
                 XCTContext.runActivity(named: pollLine) { _ in }
+            }
+            perfLine(app, "leg-after")
+            if !trail.contains("M:") {
+                // 押す操作が遅く返った回でも、あとから LR・M: が来るかを見る（数を取るだけ。判定は下の通り）
+                Thread.sleep(forTimeInterval: 4)
+                perfLine(app, "leg-later trail[\(dragCounts(app))]")
             }
             let mapsLine = "TRIPLEG maps trail[\(trail)]"
             print(mapsLine)
@@ -4734,6 +4823,57 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// 運ぶ操作の数（見本のときだけ画面に出す `tripPlan.fixtureDrag`）と出来事の並び（`tripPlan.fixtureDragTrail`）
+    /// 2つの要素が、上の帯（ナビゲーションバー）と下のタブの間に丸ごと入るまで、ゆっくり動かして止める（勢いで流れない）。
+    /// 入ったら真。`swipeUp` は一度に大きく流れて、持ち手が帯の下やタブの上に止まることがある（回 1689）
+    private func bringIntoBand(_ app: XCUIApplication, _ a: XCUIElement, _ b: XCUIElement) -> Bool {
+        let window = app.windows.firstMatch.frame
+        func band() -> (top: CGFloat, bottom: CGFloat) {
+            let bar = app.navigationBars.firstMatch
+            let tabs = app.tabBars.firstMatch
+            return ((bar.exists ? bar.frame.maxY : window.minY) + 8, (tabs.exists ? tabs.frame.minY : window.maxY) - 8)
+        }
+        for _ in 0..<6 {
+            guard a.exists, b.exists else { return false }
+            let edge = band()
+            let top = min(a.frame.minY, b.frame.minY)
+            let bottom = max(a.frame.maxY, b.frame.maxY)
+            if top >= edge.top, bottom <= edge.bottom { return true }
+            // 2つの真ん中を帯の真ん中へ。1回に動かすのは帯の 4 割まで
+            let shift = (edge.top + edge.bottom) / 2 - (top + bottom) / 2
+            let step = max(-(edge.bottom - edge.top) * 0.4, min((edge.bottom - edge.top) * 0.4, shift))
+            let x = window.minX + window.width * 0.12
+            let y = (edge.top + edge.bottom) / 2 - step / 2
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let start = origin.withOffset(CGVector(dx: x, dy: y))
+            let end = origin.withOffset(CGVector(dx: x, dy: y + step))
+            start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.4)
+            Thread.sleep(forTimeInterval: 0.8)
+        }
+        let edge = band()
+        return a.frame.minY >= edge.top && b.frame.maxY <= edge.bottom && b.frame.minY >= edge.top && a.frame.maxY <= edge.bottom
+    }
+
+    /// 速さの数（札 #677・回 1672/1682）: アプリの描き直し・時刻の計算・主の糸の止まり・出来事の壁時計を1行に
+    private func perfLine(_ app: XCUIApplication, _ when: String) {
+        let value = (app.descendants(matching: .any)["tripPlan.fixturePerf"].firstMatch.value as? String) ?? "nil"
+        let line = "TRIPPERF when=\(when) now=\(clock(Date())) app[\(value)]"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+    }
+
+    /// アプリの側（`TripPlanFixtureCounter.clock`）と同じ形の壁時計（秒の下3桁.ms）
+    private func clock(_ date: Date) -> String {
+        String(format: "%07.3f", date.timeIntervalSince1970.truncatingRemainder(dividingBy: 1000))
+    }
+
+    private func ms(since date: Date) -> Int { Int(Date().timeIntervalSince(date) * 1000) }
+
+    private func frameText(_ e: XCUIElement) -> String {
+        guard e.exists else { return "missing" }
+        let f = e.frame
+        return "\(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height)) hit=\(e.isHittable)"
+    }
+
     private func dragCounts(_ app: XCUIApplication) -> String {
         let counts = (app.descendants(matching: .any)["tripPlan.fixtureDrag"].firstMatch.value as? String) ?? "nil"
         let trail = (app.descendants(matching: .any)["tripPlan.fixtureDragTrail"].firstMatch.value as? String) ?? "nil"
