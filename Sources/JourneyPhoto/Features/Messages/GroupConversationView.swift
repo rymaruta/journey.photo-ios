@@ -59,7 +59,7 @@ struct GroupConversationView: View {
     @State private var openingPhoto = false
     @State private var shownNotice: ShownNotice?
     /// UI テストのときだけ（`-JPPreviewGroups`）: 送った・読み直した回数といまの通の数を見えない要素に出す
-    @State private var probe = (sends: 0, loads: 0)
+    @State private var probe = (sends: 0, loads: 0, details: 0)
 
     struct ReportTarget: Identifiable, Equatable {
         let report: ReportSheet.GroupReport
@@ -140,7 +140,7 @@ struct GroupConversationView: View {
                     .font(.caption2)
                     .foregroundStyle(Color.clear)
                     .accessibilityIdentifier("group.probe")
-                    .accessibilityValue("sends=\(probe.sends) loads=\(probe.loads) count=\(log.messages.count)"
+                    .accessibilityValue("sends=\(probe.sends) loads=\(probe.loads) details=\(probe.details) count=\(log.messages.count)"
                                         + " members=\(shownInfo?.memberCount ?? 0) removed=\(removed)")
             }
         }
@@ -189,7 +189,7 @@ struct GroupConversationView: View {
         // この会話の知らせが前面で届いた: 待たずに読み直す
         .onChange(of: router.dmArrival) { _, arrival in
             guard arrival.conversationId == conversationKey, phase == .loaded else { return }
-            Task { await load(quiet: true) }
+            Task { await load(quiet: true, withDetail: false) }
         }
         .onChange(of: connectivity.isOffline) { _, offline in
             if !offline, phase == .failed { Task { await load() } }
@@ -324,16 +324,25 @@ struct GroupConversationView: View {
             }
             HStack(alignment: .bottom, spacing: GroupLook.senderGap) {
                 if row.showsSender {
+                    // 見た目は 28、当たりは 44（外へ 8 ずつ広げ、並びの幅は 28 のまま）
                     Button { profileTarget = message.from } label: {
                         DMAvatar(userId: message.from, size: GroupLook.senderAvatar)
+                            .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .padding(-GroupLook.senderHitSlack)
                     .accessibilityLabel(L("\(name) のプロフィール", "\(name)'s profile"))
                 } else {
                     Color.clear.frame(width: GroupLook.senderAvatar, height: 1)
                 }
                 VStack(alignment: .leading, spacing: 6) {
-                    if message.hasPhoto { photoCard(message) }
+                    if message.hasPhoto {
+                        // 相手の写真の札にも長押しの通報・ブロック（写真だけの通でも届く・2026-11-20 確かめ役の指摘）
+                        DMPhotoCard(message: message, blocked: hidden.blockedUserIds, opening: openingPhoto, menuEnabled: true,
+                                    onOpen: { quote in Task { await openPhoto(quote) } },
+                                    menu: { theirMenu(message, name: name, text: nil) })
+                    }
                     if let text = message.bubbleText {
                         DMBubble(text: text, mine: false, time: row.time, joinsPrevious: row.joinsPrevious,
                                  maxWidth: DMLook.bubbleMaxWidth(container: threadWidth - GroupLook.senderIndent))
@@ -350,8 +359,10 @@ struct GroupConversationView: View {
 
     /// 相手の文の長押し: コピー・通報・ブロック（言葉と印は DM・旅行プランの会話と同じ）
     @ViewBuilder
-    private func theirMenu(_ message: DMMessage, name: String, text: String) -> some View {
-        Button { UIPasteboard.general.string = text } label: { Label(L("コピー", "Copy"), systemImage: "doc.on.doc") }
+    private func theirMenu(_ message: DMMessage, name: String, text: String?) -> some View {
+        if let text {
+            Button { UIPasteboard.general.string = text } label: { Label(L("コピー", "Copy"), systemImage: "doc.on.doc") }
+        }
         Button {
             reportTarget = ReportTarget(report: .init(groupId: groupId, messageId: message.id, authorName: name, text: text),
                                         authorId: message.from)
@@ -454,12 +465,15 @@ struct GroupConversationView: View {
 
     // MARK: - 読む
 
-    private func load(quiet: Bool = false) async {
+    /// 読む。`withDetail` が偽（15 秒ごとの読み直し）なら会話だけを読み、メンバーが変わる1行が来たときだけ詳しい中身も読む
+    private func load(quiet: Bool = false, withDetail: Bool = true) async {
         if !quiet && phase != .loaded { phase = .loading }
-        async let fetchedDetail = try? environment.groups.detail(groupId)
         do {
             let page = try await environment.groups.messages(groupId)
-            let detail = await fetchedDetail
+            let fresh = page.messages.map(\.asDM)
+            let detail = withDetail || GroupRows.changesMembers(old: log.messages, new: fresh)
+                ? try? await environment.groups.detail(groupId) : nil
+            if PreviewSession.groups, detail != nil { probe.details += 1 }
             guard !Task.isCancelled else { return }
             if PreviewSession.groups { probe.loads += 1 }
             var known = names
@@ -473,7 +487,7 @@ struct GroupConversationView: View {
             names = known
             removed = page.state == .removed
             canSendHere = page.canSend
-            log.replace(with: page.messages.map(\.asDM))
+            log.replace(with: fresh)
             phase = .loaded
             // サーバーは読んだ位置を進めた。点と通知センターも合わせる
             store.applyGroups { $0.markingRead(groupId) }
@@ -493,7 +507,7 @@ struct GroupConversationView: View {
         while !Task.isCancelled {
             try? await Task.sleep(for: GroupRules.pollInterval)
             guard !Task.isCancelled, phase == .loaded, !connectivity.isOffline, !log.isSending else { continue }
-            await load(quiet: true)
+            await load(quiet: true, withDetail: false)
         }
     }
 

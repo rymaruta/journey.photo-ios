@@ -234,7 +234,7 @@ final class GroupDMTests: XCTestCase {
         XCTAssertEqual(GroupText.event(GroupEvent(type: "renamed", name: "金沢 秋の旅"), actor: "ken", names: names,
                                        me: Self.me, language: "ja"), "けんが名前を「金沢 秋の旅」にしました")
         XCTAssertEqual(GroupText.event(GroupEvent(type: "left"), actor: "zzz", names: names, me: Self.me, language: "ja"),
-                       "名前未設定さんが抜けました")
+                       "メンバーが抜けました", "引けない名前を「名前未設定さん」と言っている")
         for type in ["created", "added", "joined", "left", "removed", "renamed"] {
             let text = GroupText.event(GroupEvent(type: type, targets: ["ken"]), actor: "yu", names: names, me: nil, language: "ja")
             XCTAssertFalse(text.contains("・") || text.contains("·"), "中黒で区切っている: \(text)")
@@ -283,7 +283,9 @@ final class GroupDMTests: XCTestCase {
     func testStoreCountsGroupUnreadAndInvites() async throws {
         let store = DMInboxStore()
         let info = GroupInfo(groupId: "g1", name: nil, displayName: "けん、みお", faces: [], memberCount: 3)
-        let groups = GroupInbox(groups: [GroupThread(info: info, unread: 1, updatedAt: "x")],
+        let groups = GroupInbox(groups: [GroupThread(info: info, unread: 1,
+                                                     last: GroupLast(from: "ken", t: "x", excerpt: "やあ", fromName: "けん", mine: false),
+                                                     updatedAt: "x")],
                                 invites: [GroupInvite(info: GroupInfo(groupId: "g2", name: "週末", displayName: "週末", faces: [], memberCount: 3),
                                                       invitedBy: GroupFace(id: "blocked", name: "x"), invitedAt: "x"),
                                           GroupInvite(info: GroupInfo(groupId: "g3", name: "朝", displayName: "朝", faces: [], memberCount: 2),
@@ -317,7 +319,9 @@ final class GroupDMTests: XCTestCase {
         XCTAssertEqual(m.seatsLeft, 26)
         XCTAssertEqual(m.present, ["me", "ken", "mio", "sora"])
         XCTAssertEqual(created.notAdded, 1)
-        XCTAssertEqual(GroupReady(change: created).notice, "1人は入れられませんでした")
+        // 作る口は invitedNow を返さない: 招待中の人を数えて知らせる（2026-11-20 確かめ役の指摘）
+        XCTAssertEqual(GroupReady(change: created).invitedCount, 1)
+        XCTAssertEqual(GroupReady(change: created).notice, "1人に招待を送りました。参加するとここで話せます\n1人は入れられませんでした")
         XCTAssertNil(created.detail.group.name)
 
         let added = try decode(GroupChange.self, """
@@ -327,7 +331,7 @@ final class GroupDMTests: XCTestCase {
         XCTAssertEqual(added.added, ["sora"])
         XCTAssertEqual(added.invitedNow, ["hana"])
         XCTAssertEqual(added.detail.membership?.muted, true)
-        XCTAssertEqual(GroupReady(change: added).notice, "1人に招待を送りました。参加すると話せます")
+        XCTAssertEqual(GroupReady(change: added).notice, "1人に招待を送りました。参加するとここで話せます")
 
         let page = try decode(GroupMessagesPage.self, """
         {"state":"member","canSend":true,"seq":4,"messages":[
@@ -347,6 +351,88 @@ final class GroupDMTests: XCTestCase {
         XCTAssertEqual(DMPhotoCardState.of(dm[2], blocked: []), .live(DMPhotoQuote(id: "p1", state: "live", src: "https://x/p.jpg", ownerId: "ken")))
         XCTAssertEqual(DMPhotoCardState.of(dm[3], blocked: []), .gone)
         XCTAssertEqual(DMPhotoCardState.of(dm[2], blocked: ["ken"]), .gone, "ブロックした人の写真を出している")
+    }
+
+    // MARK: - 確かめ役の指摘（2026-11-20）
+
+    /// 全員が招待になった作り方でも、招待を送ったと分かる（会話の人数は自分だけ）
+    func testAllInvitedOnCreateIsAnnounced() throws {
+        let created = try decode(GroupChange.self, """
+        {"state":"member","group":{"groupId":"g1","name":null,"displayName":"グループ","faces":[],"memberCount":1},
+         "isOwner":true,"muted":false,"membersMax":30,"members":[{"id":"me","name":"わたし","owner":true}],
+         "invited":[{"id":"a","name":"a","invitedBy":"me"},{"id":"b","name":"b","invitedBy":"me"}],"notAdded":0}
+        """)
+        XCTAssertEqual(GroupReady(change: created).notice, "2人に招待を送りました。参加するとここで話せます")
+        let plain = try decode(GroupChange.self, """
+        {"state":"member","group":{"groupId":"g1","displayName":"x","faces":[],"memberCount":3},"members":[],"invited":[],"notAdded":0}
+        """)
+        XCTAssertNil(GroupReady(change: plain).notice)
+    }
+
+    /// ブロックした人の通だけが増えた（サーバーが最後の1通を隠した）グループに未読の点を出さない
+    func testHiddenLastIsNotUnread() throws {
+        let hidden = try decode(GroupThread.self, """
+        {"groupId":"g1","displayName":"x","faces":[],"memberCount":3,"state":"member","unread":2,"updatedAt":"2026-11-20T00:00:00.000Z"}
+        """)
+        XCTAssertFalse(hidden.showsUnread, "隠された通だけで未読の点が出る")
+        XCTAssertEqual(GroupInbox(groups: [hidden], invites: []).unreadGroups(), 0)
+        let shown = GroupThread(info: hidden.info, unread: 2,
+                                last: GroupLast(from: "a", t: "x", excerpt: "やあ", fromName: "a", mine: false), updatedAt: "x")
+        XCTAssertTrue(shown.showsUnread)
+    }
+
+    /// どちらの欄も無い 2xx は「口が無い」と同じ（入口を出さない）
+    @MainActor
+    func testEmptyBodyIsNotAGroupsRoute() async throws {
+        XCTAssertThrowsError(try decode(GroupInbox.self, "{}"))
+        XCTAssertThrowsError(try decode(GroupInbox.self, #"{"message":"ok"}"#))
+        XCTAssertNoThrow(try decode(GroupInbox.self, #"{"groups":[]}"#))
+        StubProtocol.reset()
+        defer { StubProtocol.reset() }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!, tokenProvider: StubTokenProvider(token: "t"),
+                            session: URLSession(configuration: config))
+        let store = DMInboxStore()
+        StubProtocol.respond(status: 200, body: "{}")
+        await store.refreshGroups(service: GroupService(api: api), owner: Self.me)
+        XCTAssertFalse(store.groupsAvailable, "中身の無い 200 で入口を出している")
+    }
+
+    /// 15 秒ごとの読み直しは会話だけ。メンバーが変わる1行が新しく来たときだけ詳しい中身を読む
+    func testDetailIsReloadedOnlyOnMemberEvents() throws {
+        let old = [msg("e1", from: "a", "2026-11-20T00:00:00.000Z", event: GroupEvent(type: "created")),
+                   msg("t1", from: "a", "2026-11-20T00:01:00.000Z")]
+        XCTAssertFalse(GroupRows.changesMembers(old: old, new: old + [msg("t2", from: "b", "2026-11-20T00:02:00.000Z")]))
+        XCTAssertFalse(GroupRows.changesMembers(old: old, new: old), "同じ1行で読み直している")
+        for type in ["added", "joined", "left", "removed", "renamed"] {
+            XCTAssertTrue(GroupRows.changesMembers(old: old, new: old + [msg("x", from: "a", "2026-11-20T00:03:00.000Z",
+                                                                         event: GroupEvent(type: type))]), type)
+        }
+        let view = try source("Features/Messages/GroupConversationView.swift")
+        let poll = slice(view, from: "private func poll() async {", to: "// MARK: - 送る")
+        XCTAssertTrue(poll.contains("await load(quiet: true, withDetail: false)"), "15 秒ごとに詳しい中身も読んでいる")
+        let load = slice(view, from: "private func load(quiet: Bool = false, withDetail: Bool = true) async {", to: "private func poll()")
+        XCTAssertTrue(load.contains("withDetail || GroupRows.changesMembers(old: log.messages, new: fresh)"))
+    }
+
+    /// 相手の顔の当たりは 44（見た目は 28）。相手の写真だけの通にも通報・ブロック。ブロックした相手の1対1に「人を足す」を出さない。
+    /// 開いている間に外されたら、詳しい画面を外された形にする
+    func testReviewWiring() throws {
+        XCTAssertEqual(GroupLook.senderAvatar + GroupLook.senderHitSlack * 2, WebTheme.minTapTarget)
+        let view = try source("Features/Messages/GroupConversationView.swift")
+        let face = slice(view, from: "Button { profileTarget = message.from } label: {", to: ".accessibilityLabel(")
+        XCTAssertTrue(face.contains(".frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)"), "顔の当たりが 28 のまま")
+        XCTAssertTrue(face.contains(".padding(-GroupLook.senderHitSlack)"), "当たりを広げた分で並びがずれる")
+        XCTAssertTrue(view.contains("menu: { theirMenu(message, name: name, text: nil) }"), "相手の写真の札から通報できない")
+        let conversation = try source("Features/Messages/DMConversationView.swift")
+        XCTAssertTrue(conversation.contains("!isDeletedPeer && !iBlockedPeer"), "ブロックした相手との1対1に「人を足す」を出している")
+        let detail = try source("Features/Messages/GroupDetailView.swift")
+        XCTAssertTrue(detail.contains("private var current: GroupMembership? { gone ? nil : (membership ?? seed) }"),
+                      "外されても操作を出している")
+        let load = slice(detail, from: "private func load() async {", to: "private func apply(")
+        XCTAssertTrue(load.contains("gone = true"))
+        XCTAssertEqual(GroupText.name("zzz", in: [:], me: nil, language: "ja"), "メンバー")
     }
 
     /// 名前を外すときは欄を null で送る（欄が無いと「変えない」になる・サーバーの `"name" in body`）

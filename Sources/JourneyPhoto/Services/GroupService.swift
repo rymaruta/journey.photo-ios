@@ -239,7 +239,9 @@ struct GroupThread: Decodable, Identifiable, Equatable {
 
     var id: String { info.groupId }
     var isRemoved: Bool { state == .removed }
-    var showsUnread: Bool { unread > 0 && !isRemoved }
+    /// 未読の点を出すか。**最後の1通が無い行（サーバーが隠した＝ブロックした人の通だけが増えた）は未読にしない**
+    /// （サーバーの `unread` は通し番号の差で、ブロックした人の通も数える・2026-11-20 確かめ役の指摘）
+    var showsUnread: Bool { unread > 0 && !isRemoved && last != nil }
 
     init(info: GroupInfo, state: State = .member, unread: Int = 0, last: GroupLast? = nil, updatedAt: String) {
         self.info = info
@@ -308,12 +310,16 @@ struct GroupInbox: Decodable, Equatable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        // **どちらの欄も無い 2xx は「口が無い」と同じ扱い**（間に入るものが 200 で別の中身を返した・入口を出さない）
+        guard c.contains(.groups) || c.contains(.invites) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "groups も invites も無い"))
+        }
         // 読めない1行のせいで一覧ごと落とさない
         groups = (try c.decodeIfPresent([Lenient<GroupThread>].self, forKey: .groups) ?? []).compactMap(\.value)
         invites = (try c.decodeIfPresent([Lenient<GroupInvite>].self, forKey: .invites) ?? []).compactMap(\.value)
     }
 
-    /// 未読のあるグループの数（外されたグループ・ブロックした人が最後に話したグループは数えない）
+    /// 未読のあるグループの数（外されたグループと、最後の1通が隠された＝ブロックした人の通だけのグループは数えない・`showsUnread`）
     func unreadGroups() -> Int { groups.filter(\.showsUnread).count }
 
     func markingRead(_ groupId: String) -> GroupInbox {

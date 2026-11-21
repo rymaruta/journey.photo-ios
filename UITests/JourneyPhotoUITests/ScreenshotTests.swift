@@ -11101,8 +11101,13 @@ final class ScreenshotTests: XCTestCase {
         // はじめから在るグループの会話（名前と顔・続けて送った通・時刻）→ 詳しい画面
         if group.waitForExistence(timeout: 10) {
             // 作ったグループが上に来るので、はじめから在るグループ（名前の無い・未読あり）を名前で探す
-            let seeded = app.buttons.matching(identifier: "dm.group").matching(NSPredicate(format: "label CONTAINS %@", "港の写真家")).firstMatch
-            (seeded.exists ? seeded : group).tap()
+            // 作ったグループも同じ2人の名前なので、名前ではなく最後の1通（見本の「兼六園は外せない」）で探す
+            let seeded = app.buttons.matching(identifier: "dm.group").matching(NSPredicate(format: "label CONTAINS %@", "兼六園")).firstMatch
+            guard seeded.waitForExistence(timeout: 10) else {
+                shoot(app, "86g4-グループ（はじめから在るグループが出ない）")
+                return
+            }
+            seeded.tap()
             if app.descendants(matching: .any)["group.conversation"].firstMatch.waitForExistence(timeout: 15) {
                 Thread.sleep(forTimeInterval: 2)
                 shoot(app, "86g4-グループ（会話）")

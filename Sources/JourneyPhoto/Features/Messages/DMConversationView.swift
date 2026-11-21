@@ -160,7 +160,8 @@ struct DMConversationView: View {
     /// 「人を足す」を出すか。**グループの口があるサーバーで、承認済みの会話だけ**（承認前のリクエスト・退会した相手・
     /// まだ会話が無い相手には出さない・2026-11-20 判断）
     private var canAddPeople: Bool {
-        store.groupsAvailable && peerId != nil && !isNew && !isDeletedPeer && meta?.state == .inbox && remaining == nil
+        store.groupsAvailable && peerId != nil && !isNew && !isDeletedPeer && !iBlockedPeer
+            && meta?.state == .inbox && remaining == nil
     }
 
     var body: some View {

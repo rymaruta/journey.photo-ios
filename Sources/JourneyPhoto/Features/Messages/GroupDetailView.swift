@@ -39,7 +39,10 @@ struct GroupDetailView: View {
     @State private var showReport = false
     @State private var profileTarget: String?
 
-    private var current: GroupMembership? { membership ?? seed }
+    /// 開いている間に外された・グループが無くなった（読み直しでメンバーでなくなった）。操作を出さない
+    @State private var gone = false
+
+    private var current: GroupMembership? { gone ? nil : (membership ?? seed) }
     private var group: GroupInfo? { current?.group ?? info }
 
     var body: some View {
@@ -77,6 +80,12 @@ struct GroupDetailView: View {
                 muteRow(current).profileListRow(divider: true)
                 reportRow.profileListRow(divider: true)
                 leaveRow.profileListRow(divider: true)
+            } else if gone {
+                // 外されたら操作を出さず、外された形にする（自分で戻れない・会話の画面は送れない形になる）
+                EmptyState(icon: nil, title: L("グループから外されました", "You were removed from this group"),
+                           message: L("外されるまでの話は会話の画面で読めます。", "You can still read the chat up to now."))
+                    .accessibilityIdentifier("group.detail.gone")
+                    .profileListRow()
             } else if failed {
                 ErrorBanner(title: Labels.Common.loadFailed, message: DMText.loadFailedMessage) {
                     Task { await load() }
@@ -307,12 +316,16 @@ struct GroupDetailView: View {
         do {
             let detail = try await environment.groups.detail(groupId)
             guard let m = detail.membership else {
-                // メンバーではなくなった（外された・抜けた）
-                failed = true
+                // メンバーではなくなった（外された）: 外された形に替える
+                gone = true
                 return
             }
             membership = m
             failed = false
+            gone = false
+        } catch let refused as DMService.Refused where refused.status == 404 {
+            // グループが無くなった・見られない
+            gone = true
         } catch {
             if current == nil { failed = true }
         }

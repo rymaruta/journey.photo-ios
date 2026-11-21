@@ -169,9 +169,14 @@ struct GroupReady: Equatable {
     var groupId: String { change.detail.group.groupId }
     var info: GroupInfo { change.detail.group }
     /// 開いた会話・詳しい画面の上に1回出す知らせ（入れられなかった人・招待になった人）。無ければ nil
+    /// 招待になった人の数。作る口は `invitedNow` を返さないので、詳しい中身の招待中の人を数える
+    var invitedCount: Int {
+        change.invitedNow.isEmpty ? (change.detail.membership?.invited.count ?? 0) : change.invitedNow.count
+    }
+
     var notice: String? {
-        [GroupText.notAddedNotice(change.notAdded), GroupText.invitedNotice(change.invitedNow.count)]
-            .compactMap { $0 }.first
+        let parts = [GroupText.invitedNotice(invitedCount), GroupText.notAddedNotice(change.notAdded)].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n")
     }
 }
 
@@ -215,6 +220,16 @@ enum GroupRows {
                             showsSender: !message.mine && samePrevious == nil,
                             time: time,
                             joinsPrevious: samePrevious.map { DMText.joinsPrevious(current: message, previous: $0, calendar: calendar) } ?? false)
+        }
+    }
+
+    /// 読み直しで、メンバーが変わる真ん中の1行（足した・参加した・抜けた・外した・名前を変えた）が新しく来たか。
+    /// 来たときだけ詳しい中身（人数・顔・名前）を読み直す（15 秒ごとの読み直しは会話だけ・2026-11-20 確かめ役の指摘）
+    static func changesMembers(old: [DMMessage], new: [DMMessage]) -> Bool {
+        let known = Set(old.map(\.id))
+        return new.contains { m in
+            guard let type = m.groupEvent?.type, !known.contains(m.id) else { return false }
+            return ["added", "joined", "left", "removed", "renamed"].contains(type)
         }
     }
 
@@ -321,11 +336,15 @@ enum GroupText {
         L("\(title(info))と話そう", "Say hi to \(title(info))", language: language)
     }
 
-    /// 人の名前（見つからなければ「名前未設定さん」・サーバーの `DEFAULT_NAME` と同じ語）
+    /// 人の名前（引けなければ中立の「メンバー」。名前を付けていない人と取り違えない・2026-11-20 確かめ役の指摘）
     static func name(_ id: String, in names: [String: String], me: String?, language: String = Locale.preferredAppLanguage) -> String {
         if let me, id == me { return L("あなた", "You", language: language) }
         let raw = names[id]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return raw.isEmpty ? L("名前未設定さん", "Unnamed", language: language) : raw
+        return raw.isEmpty ? unknownName(language: language) : raw
+    }
+
+    static func unknownName(language: String = Locale.preferredAppLanguage) -> String {
+        L("メンバー", "A member", language: language)
     }
 
     /// 会話の真ん中の1行（作った・足した・参加した・抜けた・外した・名前を変えた）。知らせは出さない種類
@@ -355,7 +374,7 @@ enum GroupText {
         func t(_ ja: String, _ en: String) -> String { L(ja, en, language: language) }
         if thread.isRemoved { return t("グループから外されました", "You were removed from the group") }
         guard let last = thread.last else { return "" }
-        let who = last.mine ? t("あなた", "You") : (last.fromName.isEmpty ? t("名前未設定さん", "Unnamed") : last.fromName)
+        let who = last.mine ? t("あなた", "You") : (last.fromName.isEmpty ? unknownName(language: language) : last.fromName)
         if let kind = last.event {
             switch kind {
             case "created": return t("\(who)がグループを作りました", "\(who) created the group")
@@ -383,7 +402,7 @@ enum GroupText {
     /// 招待になった人の知らせ（相手が足した人をフォローしていない・参加するまで話は見えない）
     static func invitedNotice(_ count: Int, language: String = Locale.preferredAppLanguage) -> String? {
         guard count > 0 else { return nil }
-        return L("\(count)人に招待を送りました。参加すると話せます", count == 1 ? "Invited 1 person. They can chat once they join."
+        return L("\(count)人に招待を送りました。参加するとここで話せます", count == 1 ? "Invited 1 person. They can chat once they join."
                  : "Invited \(count) people. They can chat once they join.", language: language)
     }
 

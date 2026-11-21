@@ -16,6 +16,8 @@ enum GroupLook {
     nonisolated static let senderAvatar: CGFloat = 28
     nonisolated static let senderGap: CGFloat = 6
     nonisolated static var senderIndent: CGFloat { senderAvatar + senderGap }
+    /// 顔の当たりを 44 に広げる分（見た目 28 の外へ 8 ずつ）
+    nonisolated static var senderHitSlack: CGFloat { (WebTheme.minTapTarget - senderAvatar) / 2 }
     /// 会話の真ん中の1行の最大幅（模型 240 を 390pt に戻した値）
     nonisolated static let eventMaxWidth: CGFloat = 300
     /// 選ぶ画面の印（丸 24・縁 2）と、選んだ人の札（高さ 32）
