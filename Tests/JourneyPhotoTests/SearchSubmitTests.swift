@@ -112,7 +112,9 @@ final class SearchSubmitTests: XCTestCase {
             XCTAssertTrue(try source(file).contains("AppHeaderItems("), "\(file) に上の帯が無い")
         }
         let root = try source("Sources/JourneyPhoto/App/RootView.swift")
-        XCTAssertTrue(root.contains("AskScreen(prefill: askPrefill"), "AI の画面を全画面で開いていない")
+        XCTAssertTrue(root.contains("AskScreen(engine: askEngine, prefill: askPrefill"), "AI の画面を全画面で開いていない")
+        // 会話は画面の外で持つ（閉じて開き直しても続きが出る・札 #678）
+        XCTAssertTrue(root.contains("@StateObject private var askEngine = AskEngine()"), "会話を画面の外で持っていない")
         XCTAssertEqual(AskEntry.buttonLabel, "AI に頼む")
         XCTAssertTrue(AskEntryButton.iconOnly(largeText: true))
         XCTAssertFalse(AskEntryButton.iconOnly(largeText: false))
@@ -128,15 +130,7 @@ final class SearchSubmitTests: XCTestCase {
         XCTAssertNil(router.takePendingAskText(), "字を2回渡した")
     }
 
-    // MARK: - 前に頼んだことは控えから見せる（AI を呼ばない）
-
-    func testHistoryRowsNewestFirst() {
-        let a = AskExchange(question: "金沢のおすすめは？", answer: AskAnswer(engine: .device, text: "兼六園です。"))
-        let b = AskExchange(question: "京都で紅葉は？", answer: AskAnswer(engine: .device, text: "永観堂です。"))
-        let rows = AskHistoryRow.rows(["a": .init(day: "2026-11-19", thread: [a]), "b": .init(day: "2026-11-21", thread: [b]),
-                                       "c": .init(day: "2026-11-20", thread: [])])
-        XCTAssertEqual(rows.map(\.question), ["京都で紅葉は？", "金沢のおすすめは？"])
-    }
+    // MARK: - 前の会話は控えから見せる（AI を呼ばない・札 #678）
 
     @MainActor
     func testShowSavedUsesNoAIAndNoCount() async throws {
@@ -157,7 +151,7 @@ final class SearchSubmitTests: XCTestCase {
         let engine = AskEngine(history: AskHistoryStore(defaults: UserDefaults(suiteName: "SearchSubmitTests.\(UUID().uuidString)")!))
         var answer = AskAnswer(engine: .device, text: "屋島がおすすめです。")
         answer.spotIds = ["sp_yashima"]
-        await engine.showSaved([AskExchange(question: "香川で夕日は？", answer: answer)], backend: backend)
+        await engine.open(.init(id: "c1", thread: [AskExchange(question: "香川で夕日は？", answer: answer)]), backend: backend)
         XCTAssertEqual(engine.thread.first?.question, "香川で夕日は？")
         XCTAssertNotNil(engine.spotsById["sp_yashima"], "控えの札の中身を読み直していない")
         XCTAssertEqual(c.reserves + c.deviceAsks + c.serverAsks, 0, "控えを見るだけで AI か回数を使った")

@@ -379,7 +379,7 @@ final class AskFormTests: XCTestCase {
         let e = engine()
         var a = AskAnswer(engine: .device, text: "屋島がおすすめです。")
         a.spotIds = ["sp_yashima"]
-        await e.showSaved([AskExchange(question: "香川で夕日は？", answer: a)], backend: backend(c, rows: rows, device: nil))
+        await e.open(.init(id: "c1", thread: [AskExchange(question: "香川で夕日は？", answer: a)]), backend: backend(c, rows: rows, device: nil))
         XCTAssertNil(e.freshId)
         XCTAssertEqual(c.reserves + c.deviceAsks + c.serverAsks, 0)
     }

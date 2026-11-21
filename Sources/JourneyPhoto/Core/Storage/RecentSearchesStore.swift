@@ -106,6 +106,22 @@ struct RecentSearchesStore {
         return Array(([trimmed] + rest).prefix(limit))
     }
 
+    /// 探すの最近の検索に出す言葉（札 #678・2026-11-21 owner「探すの方にまで AI で頼んだ履歴出てくるのいやだな」）。
+    /// `asked` は AI に頼んだ文（答えの控え `AskHistoryStore.all` の鍵）。**同じ文が控えにあるときだけ**外す。
+    /// 文の形（頼みや質問の形）では見分けない（「しだれ桜」「近くのカフェ」のようなふつうの検索の言葉まで消えた・確かめ役の指摘）
+    static func searchWords(_ words: [String], asked: Set<String>) -> [String] {
+        words.filter { !asked.contains(normalized($0)) }
+    }
+
+    /// 探すの最近の検索を読む。前の作りで混ざった AI の頼み（`asked` にある文）は控えからも外す（ふつうの言葉は残す）
+    @discardableResult
+    func searchWords(userId: String?, asked: Set<String>) -> [String] {
+        let stored = defaults.stringArray(forKey: key(for: userId)) ?? []
+        let kept = Self.searchWords(stored, asked: asked)
+        if kept.count != stored.count { save(kept, userId: userId) }
+        return Array(kept.prefix(Self.limit))
+    }
+
     /// 探す画面に出すか。**欄が空の間だけ**、言葉があり、「発見」の顔か欄を押しているとき
     /// （カテゴリだけで絞って結果を見ている間は、結果の上に割り込ませない）
     static func shows(query: String, words: [String], discovering: Bool, focused: Bool) -> Bool {
