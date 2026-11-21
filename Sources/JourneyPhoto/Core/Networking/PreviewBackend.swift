@@ -405,6 +405,15 @@ enum PreviewBackend {
         // 公開の新着の作者と、見本の会話の相手の一部をフォローしていることにする（`dmFollowing`）
         case ("GET", let p) where dm && p == ["user", "following"]:
             return .json(["userIds": dmFollowing(feed: await publicFeed(), me: uid).map { $0["id"] as? String ?? "" }])
+        // フォロワー（2026-11-20 相互フォローの決まり）: 見本の会話の相手3人だけが自分をフォローしている（相互）。
+        // 公開の新着の作者は片方だけのフォロー（グループの選ぶ画面で薄く出る）
+        case ("GET", let p) where dm && p.count == 3 && p[0] == "users" && p[1] == uid && p[2] == "followers":
+            let users = dmPeers.prefix(3).map { p -> [String: Any] in
+                var row: [String: Any] = ["id": p.id, "name": p.name]
+                if let u = p.username { row["username"] = u }
+                return row
+            }
+            return .json(["users": users, "total": users.count])
         case ("GET", let p) where dm && p.count == 3 && p[0] == "users" && p[1] == uid && p[2] == "following":
             let users = dmFollowing(feed: await publicFeed(), me: uid)
             return .json(["users": users, "total": users.count])

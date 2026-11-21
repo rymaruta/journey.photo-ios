@@ -160,6 +160,12 @@ struct DMConversationView: View {
     /// 「人を足す」を出すか。**グループの口があるサーバーで、承認済みの会話だけ**（承認前のリクエスト・退会した相手・
     /// まだ会話が無い相手には出さない・2026-11-20 判断）
     private var canAddPeople: Bool {
+        mayAddPeople && peerId.map { store.mutual.status(of: $0) == .yes } == true
+    }
+
+    /// 相互フォローを読む前の条件（読むかどうかもこれで決める）。2026-11-20 owner 判断: 相手と相互フォローでなければ
+    /// 「人を足す」を出さない（分からない間も出さない）
+    private var mayAddPeople: Bool {
         store.groupsAvailable && peerId != nil && !isNew && !isDeletedPeer && !iBlockedPeer
             && meta?.state == .inbox && remaining == nil
     }
@@ -287,6 +293,10 @@ struct DMConversationView: View {
         // 読めなかった回は、電波が戻ったら読み直す（id に圏外かどうかを入れる）
         .task(id: "\(tripOffered && log.messages.contains(where: \.hasPhoto))#\(connectivity.isOffline)") {
             if tripOffered, log.messages.contains(where: \.hasPhoto) { await trip.load(environment: environment) }
+        }
+        // 相互フォローを読む（「人を足す」を出すか。控えが新しければ読まない）
+        .task(id: "\(conversationId)#\(mayAddPeople)") {
+            if mayAddPeople { await store.refreshMutual(social: environment.social, owner: auth.userId) }
         }
         .task(id: conversationId) {
             await load()

@@ -63,6 +63,11 @@ struct DMNewMessageView: View {
     @State private var working = false
     @State private var workError: String?
 
+    /// 相互フォローか（2026-11-20 owner 判断「相互フォローじゃないと話せない方がいい」）。読めるまでは「分からない」
+    @State private var mutual: MutualFollow = .unknownAll
+    /// 相互でない人を押したときの1行
+    @State private var mutualHint = false
+
     private var multi: Bool { GroupPick.isMulti(mode) }
     private var excluded: Set<String> { GroupPick.excluded(mode) }
 
@@ -218,9 +223,16 @@ struct DMNewMessageView: View {
     private func multiRow(_ user: FollowUser) -> some View {
         let on = selected.contains { $0.id == user.id }
         let full = !on && !GroupPick.canSelectMore(count: selected.count, mode: mode)
+        // グループになる選び方で、相互フォローでない人は選べない形（薄く・印を押せない）。押すと理由を1行
+        let notMutual = !on && GroupPick.blockedByMutual(user, selected: selected, mode: mode, mutual: mutual)
         return Button {
-            selected = GroupPick.toggled(selected, user, mode: mode)
+            if notMutual {
+                mutualHint = true
+                return
+            }
+            selected = GroupPick.toggled(selected, user, mode: mode, mutual: mutual)
             workError = nil
+            mutualHint = false
         } label: {
             HStack(spacing: JPSpace.s) {
                 DMAvatar(userId: user.id, size: DMLook.pickerAvatar)
@@ -231,7 +243,7 @@ struct DMNewMessageView: View {
             }
             .frame(minHeight: JPHeight.tallRow)
             .contentShape(Rectangle())
-            .opacity(full ? DMLook.unreachableFaceOpacity : 1)
+            .opacity(full || notMutual ? DMLook.unreachableFaceOpacity : 1)
             .overlay(alignment: .bottom) {
                 Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
             }
@@ -239,7 +251,7 @@ struct DMNewMessageView: View {
         .buttonStyle(.plain)
         .disabled(full || working)
         .accessibilityLabel(user.displayName)
-        .accessibilityValue(on ? L("選択中", "Selected") : "")
+        .accessibilityValue(on ? L("選択中", "Selected") : notMutual ? GroupPick.mutualNotice() : "")
         .accessibilityAddTraits(on ? .isSelected : [])
         .accessibilityIdentifier("dm.new.person")
     }
@@ -277,6 +289,10 @@ struct DMNewMessageView: View {
                 DMNoteRow(text: workError, error: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("group.pick.error")
+            } else if mutualHint {
+                DMNoteRow(text: GroupPick.mutualNotice(), error: false)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("group.pick.mutual")
             } else if !selected.isEmpty && !GroupPick.canSelectMore(count: selected.count, mode: mode) {
                 Text(GroupText.fullNotice)
                     .font(JPFont.caption)
@@ -343,13 +359,20 @@ struct DMNewMessageView: View {
         if following.isEmpty { phase = .loading }
         async let list = environment.social.following(userId: me)
         async let ids = try? environment.social.myFollowingIds()
+        // 何人でも選べる形のときだけ、自分のフォロワーも読む（相互フォローを決める・呼び出しは1本だけ増える）
+        async let followers = multi ? try? environment.social.followers(userId: me) : nil
         do {
             let fetched = try await list
             let all = await ids
+            let followerList = await followers
             guard !Task.isCancelled, auth.userId == me else { return }
             following = fetched.users
             total = fetched.total
             followingIds = all.map(Set.init)
+            if let followerList {
+                mutual = MutualFollow(following: followingIds, followerList: followerList.users, followerTotal: followerList.total)
+                store.setMutual(mutual, owner: me)
+            }
             phase = .loaded
         } catch is CancellationError {
             // 画面を離れた。失敗と言わない

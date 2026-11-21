@@ -155,11 +155,74 @@ enum GroupPick {
         return out
     }
 
-    /// 選んだ札の並び（選んだ順）から1人を外す・足す
-    static func toggled(_ selected: [FollowUser], _ user: FollowUser, mode: Mode) -> [FollowUser] {
+    /// 選んだ札の並び（選んだ順）から1人を外す・足す。グループになる選び方では、相互フォローでない人は足さない
+    static func toggled(_ selected: [FollowUser], _ user: FollowUser, mode: Mode,
+                        mutual: MutualFollow = .unknownAll) -> [FollowUser] {
         if selected.contains(where: { $0.id == user.id }) { return selected.filter { $0.id != user.id } }
-        guard canSelectMore(count: selected.count, mode: mode) else { return selected }
+        guard canSelectMore(count: selected.count, mode: mode),
+              blockedByMutual(user, selected: selected, mode: mode, mutual: mutual) == false else { return selected }
         return selected + [user]
+    }
+
+    // MARK: 相互フォロー（2026-11-20 owner 判断「相互フォローじゃないと話せない方がいい」）
+
+    /// この人を選ぶとグループになるか（1人目は今の1対1の決まりのまま。2人目からグループ。足す・1対1に足すは必ずグループ）
+    static func makesGroup(adding count: Int, mode: Mode) -> Bool {
+        switch mode {
+        case .single: return false
+        case .start: return count >= 1
+        case .add, .extend: return true
+        }
+    }
+
+    /// 相互フォローでないために選べないか。**グループになる選び方だけ**で見る。2人目を選ぶときは、もう選んだ人も相互でなければ
+    /// 選べない（相互でない1人目のまま2人目を選ぶと、その人が入れないグループになる）。分からない人（`unknown`）は選べる
+    /// （サーバーが決め、入れなければ `notAdded` で知らせる）
+    static func blockedByMutual(_ user: FollowUser, selected: [FollowUser], mode: Mode, mutual: MutualFollow) -> Bool {
+        guard !selected.contains(where: { $0.id == user.id }), makesGroup(adding: selected.count, mode: mode) else { return false }
+        return ([user] + selected).contains { mutual.status(of: $0.id) == .no }
+    }
+
+    /// 選べない人を押したときの1行
+    static func mutualNotice(language: String = Locale.preferredAppLanguage) -> String {
+        L("お互いにフォローしている人だけ、グループに入れられます", "Only people who follow each other can be added to a group.",
+          language: language)
+    }
+}
+
+/// 相互フォローかどうか（2026-11-20 owner 判断）。**アプリが今持っている情報から決める**:
+/// 自分のフォロー中の全員の ID（`GET /user/following`）と、自分のフォロワーの一覧（`GET /users/{me}/followers`・名前つきで50人まで）。
+/// フォロワーが50人を越えて一覧が欠けている（`total` が一覧より多い）ときは、一覧に居ない人を「分からない」にする
+/// （選べない形にしない。サーバーが決め、入れなければ「お互いにフォローしていない人は入れられませんでした」）
+struct MutualFollow: Equatable {
+    enum Status: Equatable { case yes, no, unknown }
+
+    /// 自分がフォローしている人（全員）。nil は読めていない
+    let following: Set<String>?
+    /// 自分をフォローしている人（一覧に載った分）。nil は読めていない
+    let followers: Set<String>?
+    /// フォロワーの一覧が全員そろっているか
+    let followersComplete: Bool
+
+    static let unknownAll = MutualFollow(following: nil, followers: nil, followersComplete: false)
+
+    init(following: Set<String>?, followers: Set<String>?, followersComplete: Bool) {
+        self.following = following
+        self.followers = followers
+        self.followersComplete = followersComplete
+    }
+
+    /// フォロワーの一覧の答えから作る（`total` が一覧の人数以下なら全員そろっている）
+    init(following: Set<String>?, followerList: [FollowUser], followerTotal: Int) {
+        self.init(following: following, followers: Set(followerList.map(\.id)),
+                  followersComplete: followerTotal <= followerList.count)
+    }
+
+    func status(of id: String) -> Status {
+        if let following, !following.contains(id) { return .no }
+        guard let followers else { return .unknown }
+        if followers.contains(id) { return following == nil ? .unknown : .yes }
+        return followersComplete ? .no : .unknown
     }
 }
 
@@ -170,10 +233,9 @@ struct GroupReady: Equatable {
     var groupId: String { change.detail.group.groupId }
     var info: GroupInfo { change.detail.group }
     /// 開いた会話・詳しい画面の上に1回出す知らせ（入れられなかった人・招待になった人）。無ければ nil
-    /// 招待になった人の数。作る口は `invitedNow` を返さないので、詳しい中身の招待中の人を数える
-    var invitedCount: Int {
-        change.invitedNow.isEmpty ? (change.detail.membership?.invited.count ?? 0) : change.invitedNow.count
-    }
+    /// 今回招待になった人の数（`invitedNow`）。2026-11-20 owner 判断（相互フォローの人だけ）のサーバー 3d01fa933 から、
+    /// 招待が生まれるのは抜けた人・外された人を入れ直すときだけ（作るときは生まれない）。前から招待中の人は数えない
+    var invitedCount: Int { change.invitedNow.count }
 
     var notice: String? {
         let parts = [GroupText.invitedNotice(invitedCount), GroupText.notAddedNotice(change.notAdded)].compactMap { $0 }
@@ -396,8 +458,9 @@ enum GroupText {
     /// 入れられなかった人の知らせ（理由は言わない・サーバーも数だけ返す）。0人なら nil
     static func notAddedNotice(_ count: Int, language: String = Locale.preferredAppLanguage) -> String? {
         guard count > 0 else { return nil }
-        return L("\(count)人は入れられませんでした", count == 1 ? "1 person couldn't be added" : "\(count) people couldn't be added",
-                 language: language)
+        // 2026-11-20 owner 判断（相互フォローの人だけ）: 理由はサーバーが言わないが、ふつうは相互フォローでない人
+        return L("お互いにフォローしていない人は入れられませんでした",
+                 "People who don't follow each other couldn't be added.", language: language)
     }
 
     /// 招待になった人の知らせ（相手が足した人をフォローしていない・参加するまで話は見えない）
@@ -418,6 +481,9 @@ enum GroupText {
                      "You can be in up to 50 groups. Leave one you don't use.")
         case "dailyLimit":
             return t("今日はこれ以上できません。明日またお試しください", "You've reached today's limit. Please try again tomorrow.")
+        case "notMutualFollow":
+            // 2026-11-20 owner 判断: 参加するときに、招待した人と相互フォローでなければ断られる（サーバー 3d01fa933）
+            return t("招待した人と相互フォローになると参加できます", "You can join once you and the inviter follow each other.")
         case "notOwner":
             return t("人を外せるのは、グループを作った人だけです", "Only the person who created the group can remove people.")
         case "notFound":

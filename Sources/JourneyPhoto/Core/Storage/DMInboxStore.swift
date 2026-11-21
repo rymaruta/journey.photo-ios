@@ -24,6 +24,9 @@ final class DMInboxStore: ObservableObject {
     /// グループの口がこのサーバーに在るか。**今の人で一覧が1回でも読めたときだけ真**（本番にまだ口が無い間・
     /// 古いサーバーの 404・403・圏外では入口を出さず、今の1対1のまま・2026-11-20 判断）
     @Published private(set) var groupsAvailable = false
+    /// 相互フォローの控え（2026-11-20 owner 判断・1対1の「人を足す」を出すか）。読んでから 5 分は読み直さない
+    @Published private(set) var mutual: MutualFollow = .unknownAll
+    private var mutualAt: Date?
     @Published private(set) var phase: Phase = .loading
     /// 読み直している最中（「もう一度」を止める）
     @Published private(set) var isRefreshing = false
@@ -62,6 +65,24 @@ final class DMInboxStore: ObservableObject {
         }
     }
 
+    /// 相互フォローを読む（自分のフォロー中の全員の ID とフォロワーの一覧・2本）。新しい控えがあれば読まない
+    func refreshMutual(social: SocialService, owner: String?, maxAge: TimeInterval = 300, now: Date = Date()) async {
+        use(owner: owner)
+        guard let owner else { return }
+        if let at = mutualAt, now.timeIntervalSince(at) < maxAge { return }
+        async let ids = try? social.myFollowingIds()
+        async let followers = try? social.followers(userId: owner)
+        let (all, list) = await (ids, followers)
+        guard owner == self.owner, let all, let list else { return }
+        setMutual(MutualFollow(following: Set(all), followerList: list.users, followerTotal: list.total), owner: owner, now: now)
+    }
+
+    func setMutual(_ value: MutualFollow, owner: String?, now: Date = Date()) {
+        guard owner == self.owner else { return }
+        mutual = value
+        mutualAt = now
+    }
+
     /// 手元で変えたグループの一覧（読んだ・抜けた・参加した）。進んでいる読み込みの答えは捨てる
     func applyGroups(_ change: (GroupInbox) -> GroupInbox) {
         groups = change(groups)
@@ -80,6 +101,8 @@ final class DMInboxStore: ObservableObject {
         groups = .empty
         groupsAvailable = false
         groupGeneration += 1
+        mutual = .unknownAll
+        mutualAt = nil
     }
 
     /// 読み直す。**失敗しても読めていた一覧は残す**（圏外で戻っただけで点・行が消えない）
