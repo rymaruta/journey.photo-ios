@@ -3198,11 +3198,13 @@ final class ScreenshotTests: XCTestCase {
     func testCapturesSearchAskField() {
         guard let app = launchSearchAsk() else { return }
         // 帯の「✦ AI に頼む」とロゴが重ならないか（確かめ役の指摘・狭い iPhone は ✦ だけ・`AskEntryButton.labelMinWindowWidth`）
-        let logo = app.descendants(matching: .any)["Journey Photo"].firstMatch
+        // 回 1664: 「Journey Photo」の名前では帯（幅 440）全体が当たったので、ロゴの場所は「AI に頼む」の左端から測る。
+        // ロゴは絵 19 ＋ 間 8 ＋ 字（縮めて約120）で約147 要る（左の余白 16 を引く）
         let entry = app.buttons["header.ask"].firstMatch
-        if logo.waitForExistence(timeout: 20), entry.waitForExistence(timeout: 5) {
-            print("measured [header] window=\(app.windows.firstMatch.frame.width) logo=\(logo.frame) ask=\(entry.frame)")
-            XCTAssertLessThanOrEqual(logo.frame.maxX, entry.frame.minX + 1, "ロゴが「AI に頼む」に重なる")
+        if entry.waitForExistence(timeout: 20) {
+            let window = app.windows.firstMatch.frame.width
+            print("measured [header] window=\(window) ask=\(entry.frame) logoRoom=\(entry.frame.minX - 16)")
+            XCTAssertGreaterThanOrEqual(entry.frame.minX - 16, 147, "ロゴの場所が足りない（窓 \(window)）")
             Thread.sleep(forTimeInterval: 1)
             shoot(app, "11zf-ホーム（帯の ✦ AI に頼む、白）")
         }
