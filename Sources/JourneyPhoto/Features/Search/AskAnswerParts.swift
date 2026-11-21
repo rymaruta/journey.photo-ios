@@ -449,7 +449,8 @@ struct AskActFlow: ViewModifier {
         Group {
             switch SendSheetLayout.peopleRow(loaded: facesLoaded, people: faces, canSend: auth.userId != nil) {
             case .none:
-                SendSheet(title: L("仲間に送る", "Send to friends"), actions: actions)
+                // 送る相手がいない（フォローしていない・ログインしていない）ときも、何を送るかの1行は出す（回 1658 の絵）
+                SendSheet(title: L("仲間に送る", "Send to friends"), actions: actions, people: { what })
             case .placeholder:
                 SendSheet(title: L("仲間に送る", "Send to friends"), actions: actions, people: {
                     VStack(spacing: 10) {

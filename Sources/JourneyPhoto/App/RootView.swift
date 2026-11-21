@@ -935,7 +935,8 @@ struct RootView: View {
             .viewTypeBoundary()   // 型の境目（1.1.99 の起動で落ちた件・`viewTypeBoundary`）
             .onChange(of: tabRouter.askRequests) { _, _ in
                 showMenu = false
-                askPrefill = tabRouter.takePendingAskText()
+                // 字は覗くだけ。受け取って消すのは AI の画面（回 1658: 全画面の中身が古い askPrefill（nil）で作られ、字が欄に入らなかった）
+                askPrefill = tabRouter.pendingAskText
                 showAsk = true
             }
             .fullScreenCover(isPresented: $showAsk) {

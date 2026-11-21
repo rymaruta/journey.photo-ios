@@ -126,7 +126,8 @@ struct AskThreadView: View {
         HStack {
             Spacer(minLength: 64)
             Text(text)
-                .font(.system(size: 15))
+                // 15pt（字の大きさの設定に合わせて大きくなる）
+                .font(.subheadline)
                 .foregroundStyle(WebTheme.accentText)
                 .lineSpacing(3)
                 .padding(.horizontal, 14)

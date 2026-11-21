@@ -103,7 +103,9 @@ struct AskScreen: View {
         }
         .task { await load() }
         .onAppear {
-            if let prefill, draft.isEmpty { draft = AskQuery.clipped(prefill) }
+            // 探すの1行から来た字（回 1658: 渡した字が古い値で届かなかったので、道しるべ（`TabRouter`）からも受け取る）
+            let carried = TabRouter.shared.takePendingAskText()
+            if let text = prefill ?? carried, draft.isEmpty { draft = AskQuery.clipped(text) }
             history = AskHistoryRow.rows(AskHistoryStore().all(userId: auth.userId))
         }
         .onChange(of: auth.userId) { _, _ in

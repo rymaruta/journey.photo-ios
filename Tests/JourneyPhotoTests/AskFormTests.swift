@@ -174,6 +174,23 @@ final class AskFormTests: XCTestCase {
         XCTAssertTrue(thread.contains("if inScreen, !isLatest, !expanded.contains(exchange.id)"), "前の答えを畳んでいない")
     }
 
+    /// 「2日の旅行プランにして」は行き先と日数がそろい、シートを出さずに流れで作る（回 1658 で日数が読めずシートに倒れた）
+    func testTwoDayPlanWordsAreComplete() throws {
+        XCTAssertEqual(TripAIDays.parse("京都で2日の旅行プランにして"), 2)
+        XCTAssertEqual(TripAIDays.parse("香川で2日の旅行プランにして"), 2)
+        XCTAssertNil(TripAIDays.parse("11月3日の旅のおすすめは？"), "日付を日数と読んだ")
+        let spots = try AskSamples.ledger()
+        XCTAssertTrue(TripAIAsk.reading("香川で2日の旅行プランにして", spots: spots).isComplete)
+    }
+
+    /// 探すの1行から来た字は AI の画面が受け取る（回 1658: 全画面の中身が古い値で作られ、字が入らなかった）
+    func testAskScreenTakesCarriedWords() throws {
+        let screen = try source("Sources/JourneyPhoto/Features/Search/AskScreen.swift")
+        XCTAssertTrue(screen.contains("TabRouter.shared.takePendingAskText()"), "AI の画面が運ばれた字を受け取らない")
+        let root = try source("Sources/JourneyPhoto/App/RootView.swift")
+        XCTAssertFalse(root.contains("tabRouter.takePendingAskText()"), "全画面を開く前に字を受け取って消している")
+    }
+
     // MARK: - 流れ
 
     func testPlanFlowParts() throws {

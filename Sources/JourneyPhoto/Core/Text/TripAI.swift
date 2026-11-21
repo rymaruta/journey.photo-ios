@@ -50,6 +50,8 @@ enum TripAIDays {
         if let g = groups(#"(\d+)\s*泊\s*(\d+)\s*日"#, t), let d = Int(g[1]) { return clamp(d) }
         if let g = groups(#"(\d+)\s*泊"#, t), let n = Int(g[0]) { return clamp(n + 1) }
         if let g = groups(#"(\d+)\s*日(?:間|で|かけ|、|。|$)"#, t), let d = Int(g[0]) { return clamp(d) }
+        // 「2日の旅行プランにして」（札 #675 の次に頼めること・回 1658）。「11月3日の旅」の日付は日数にしない
+        if let g = groups(#"(?<![月\d])(\d+)\s*日の(?:旅|プラン|日程|行程)"#, t), let d = Int(g[0]) { return clamp(d) }
         return nil
     }
 

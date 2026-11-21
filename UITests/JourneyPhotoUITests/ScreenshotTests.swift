@@ -3267,8 +3267,9 @@ final class ScreenshotTests: XCTestCase {
     /// 11z9 札1枚を広く（見どころ3つ、小さな地図）。11za 下へ送って一手（旅行プランにする、仲間に送る）と次に頼めること。
     /// 11zb 仲間に送るのシート（送るのはリンクだけ）
     func testCapturesSearchAskOne() {
+        // 頼みはほかの試験と違えておく（同じ日の同じ頼みは控えから出て、11z4 の使い切った帯が出なかった・回 1658）
         guard let app = launchSearchAsk(mode: "one"), openAskScreen(app),
-              askViaSendButton(app, "京都で紅葉がきれいな所は？") else { return }
+              askViaSendButton(app, "京都で紅葉が見られる寺を教えて") else { return }
         shoot(app, "11z9-AI に頼む（札1枚を広く）")
         let chips = app.descendants(matching: .any)["ask.nextChips"].firstMatch
         if chips.waitForExistence(timeout: 5), !chips.isHittable {
@@ -3315,7 +3316,7 @@ final class ScreenshotTests: XCTestCase {
     func testCapturesSearchAskFold() {
         guard let app = launchSearchAsk(), openAskScreen(app),
               askViaSendButton(app, "香川で夕日がきれいな所を教えて"),
-              askViaSendButton(app, "京都で紅葉がきれいな所は？", answerID: "ask.fold") else { return }
+              askViaSendButton(app, "京都で紅葉の名所を教えて", answerID: "ask.fold") else { return }
         app.swipeDown()
         Thread.sleep(forTimeInterval: 1.5)
         shoot(app, "11ze-AI に頼む（前の答えを畳んだ）")
