@@ -120,6 +120,8 @@ struct AskSpotCarousel: View {
     /// AI の理由（`spotId` → 1行）。無い所は台帳の案内の文
     let reasons: [String: String]
     let showsMap: Bool
+    /// 並べ直しが終わったか（案内の文の詳細を読み終えた）。終わってから1枚目の位置を1回だけそろえる
+    var settled = true
     let officialSpots: [OfficialSpot]
     let photos: [Photo]
     let photosKnown: Bool
@@ -146,6 +148,14 @@ struct AskSpotCarousel: View {
     @State private var firstCardFrame: CGRect = .zero
     /// 最初の位置へ1回だけ送り直したか
     @State private var placedFirst = false
+    /// 札の並び（横に送る枠）の画面の上の左端
+    @State private var scrollFrameX: CGFloat = 0
+    /// 1枚目の札の位置が替わった記録（UI テストのときだけ・回 1641 の調べ）。「+経過ms 何が x=札の左 sv=枠の左」
+    @State private var cardLog: [String] = []
+    @State private var appearedAt = Date()
+    /// 答えが出た直後と 0.5 秒後の1枚目の札の左
+    @State private var firstXAtAppear: CGFloat?
+    @State private var firstXAfterHalf: CGFloat?
 
     /// 札1枚の幅（大きな字では見えている幅の 86%）
     private var cardWidth: CGFloat {
@@ -179,7 +189,10 @@ struct AskSpotCarousel: View {
                                     if front, current != spot.spotId { current = spot.spotId }
                                 }
                                 .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame in
-                                    if AskFixture.isOn, spot.spotId == spots.first?.spotId { firstCardFrame = frame }
+                                    guard AskFixture.isOn, spot.spotId == spots.first?.spotId else { return }
+                                    firstCardFrame = frame
+                                    if firstXAtAppear == nil { firstXAtAppear = frame.minX }
+                                    note("card")
                                 }
                         }
                     }
@@ -190,14 +203,26 @@ struct AskSpotCarousel: View {
                 .scrollTargetBehavior(AskCardSnap(step: cardWidth + Self.gap))
                 // 札の並びは画面の端まで（左右の余白の分だけ外へ出す）
                 .padding(.horizontal, -JPSpace.gutter)
-                .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width in
-                    if width != containerWidth { containerWidth = width }
-                    // 回 1619、1626、1635 の絵 11z2: 最初の画面だけ1枚目の札の左が約 6pt（送ったあと、大きな字では 16）。
-                    // 答えが積まれる間に並びの幅が替わり、その間の送りの位置が残ったと読んだ。幅が決まったら1回だけ、
-                    // 1枚目を左から 16 の所へ送り直す（動きなし）
-                    guard !placedFirst, width > 0, let first = spots.first?.spotId else { return }
-                    placedFirst = true
-                    proxy.scrollTo(first, anchor: AskCardSnap.anchor(container: width, card: cardWidth))
+                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame in
+                    if frame.width != containerWidth { containerWidth = frame.width }
+                    scrollFrameX = frame.minX
+                    note("width")
+                    placeFirstIfSettled(proxy)
+                }
+                // 回 1619〜1641 の絵 11z2、11z5: 答えが出た直後だけ1枚目の札の左が約 6pt（少しあとの絵、送ったあと、大きな字では 16）。
+                // 並べ直し（並びの幅が決まる、案内の文の詳細が届く）が終わってから1回だけ、1枚目を左から 16 へ送り直す（動きなし）。
+                // どの変化のあとにずれるかは `search.ask.cardProbe` の記録で見る
+                .onChange(of: settled) { _, _ in
+                    note("settled=\(settled)")
+                    placeFirstIfSettled(proxy)
+                }
+                .onChange(of: spots) { _, _ in note("spots") }
+                .task {
+                    guard AskFixture.isOn else { return }
+                    appearedAt = Date()
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    firstXAfterHalf = firstCardFrame.minX
+                    note("t500")
                 }
                 .onChange(of: scrollTarget) { _, target in
                     guard let target else { return }
@@ -214,9 +239,11 @@ struct AskSpotCarousel: View {
                     .font(.caption2)
                     .foregroundStyle(Color.clear)
                     .accessibilityIdentifier("search.ask.cardProbe")
-                    .accessibilityValue(String(format: "firstX=%.1f firstW=%.1f firstH=%.1f container=%.1f card=%.1f",
-                                               firstCardFrame.minX, firstCardFrame.width, firstCardFrame.height,
-                                               containerWidth, cardWidth))
+                    .accessibilityValue(String(format: "firstX=%.1f x0=%.1f x500=%.1f firstW=%.1f firstH=%.1f container=%.1f card=%.1f sv=%.1f",
+                                               firstCardFrame.minX, firstXAtAppear ?? -1, firstXAfterHalf ?? -1,
+                                               firstCardFrame.width, firstCardFrame.height, containerWidth, cardWidth,
+                                               scrollFrameX)
+                                        + " placed=\(placedFirst) settled=\(settled) log=[" + cardLog.joined(separator: ";") + "]")
             }
             if showsMap, spots.contains(where: { $0.coords != nil }) {
                 AskPinsMap(spots: spots.filter { $0.coords != nil }, officialSpots: officialSpots, photos: photos,
@@ -229,6 +256,24 @@ struct AskSpotCarousel: View {
                     .accessibilityIdentifier("search.ask.map")
             }
         }
+    }
+
+    /// 並べ直しが終わっていて（幅が決まり、詳細を読み終えた）、まだなら、1枚目を左から 16 へ1回だけ送り直す
+    private func placeFirstIfSettled(_ proxy: ScrollViewProxy) {
+        guard !placedFirst, settled, containerWidth > 0, let first = spots.first?.spotId else { return }
+        placedFirst = true
+        proxy.scrollTo(first, anchor: AskCardSnap.anchor(container: containerWidth, card: cardWidth))
+        note("placed")
+    }
+
+    /// 1枚目の札の位置の記録に1行足す（UI テストのときだけ・同じ値が続くときは足さない・24 行まで）
+    private func note(_ what: String) {
+        guard AskFixture.isOn else { return }
+        let ms = Int(Date().timeIntervalSince(appearedAt) * 1000)
+        let entry = String(format: "%@ x=%.1f sv=%.1f w=%.0f", what, firstCardFrame.minX, scrollFrameX, containerWidth)
+        if let last = cardLog.last, last.hasSuffix(entry) { return }
+        cardLog.append("+\(ms) " + entry)
+        if cardLog.count > 24 { cardLog.removeFirst(cardLog.count - 24) }
     }
 
     private func index(of id: String?) -> Int? {

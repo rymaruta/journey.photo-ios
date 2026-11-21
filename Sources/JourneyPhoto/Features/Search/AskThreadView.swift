@@ -297,7 +297,10 @@ struct AskThreadView: View {
     private func spotSection(_ a: AskAnswer) -> some View {
         let spots = a.spotIds.compactMap { engine.spotsById[$0] }
         return AskSpotCarousel(spots: spots, reasons: a.reasons ?? [:], showsMap: a.state != .offline,
+                               settled: !engine.detailsLoading,
                                officialSpots: officialSpots, photos: photos, photosKnown: photosKnown)
+            // 回 1641: 名前だけを付けると中の要素の名前（`search.ask.cardProbe` など）が上書きされた。入れ物として組にする
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("search.ask.spots")
     }
 

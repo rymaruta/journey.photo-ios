@@ -50,6 +50,8 @@ final class AskEngine: ObservableObject {
     /// いまの段（UI テストのときだけ見える要素 `search.ask.stage` に出す・2026-11-20 run 1612 の帯の試験の調べ）。
     /// 段の名前と、頼んでからの経過（ms）を並べる
     @Published private(set) var stageLog: [String] = []
+    /// 札に出す観光スポットの案内の文（詳細）を読んでいる最中か（札の並びは、読み終えてから1枚目の位置をそろえる・回 1641 の調べ）
+    @Published private(set) var detailsLoading = false
     private var stageStarted = Date()
 
     func mark(_ stage: String) {
@@ -148,6 +150,8 @@ final class AskEngine: ObservableObject {
         pendingDetails = []
         guard !needed.isEmpty else { return }
         mark("detailsLoading")
+        detailsLoading = true
+        defer { detailsLoading = false }
         let detailed = await backend.details(needed)
         guard !Task.isCancelled else { return }
         for spot in detailed where spotsById[spot.spotId] != nil { spotsById[spot.spotId] = spot }

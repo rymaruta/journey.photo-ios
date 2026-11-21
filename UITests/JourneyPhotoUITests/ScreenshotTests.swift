@@ -3269,6 +3269,7 @@ final class ScreenshotTests: XCTestCase {
     /// 11z7 札を横に送ると、地図のピンが大きくなる（案A）
     func testCapturesSearchAskBullets() {
         guard let app = launchSearchAsk(mode: "bullets"), askViaSendButton(app, "香川でおすすめの観光スポットを教えて") else { return }
+        checkFirstCardGutter(app, scene: "bullets")
         shoot(app, "11z5-探す（AI に頼む、箇条書きの答えを札に振り分けた）")
         let card = app.descendants(matching: .any)["search.ask.card"].firstMatch
         if card.waitForExistence(timeout: 5) {
