@@ -983,6 +983,8 @@ struct RootView: View {
 
     private func refreshMessages() async {
         await messages.refresh(service: environment.dm, owner: auth.userId)
+        // グループの一覧（未読の点・入口を出すか・2026-11-20 札 #582）。口が無いサーバーでは何も変わらない
+        await messages.refreshGroups(service: environment.groups, owner: auth.userId)
     }
 
     /// メッセージの通知を受け取る。受信箱が出ていればそこへ積み、ほかの画面が出ていれば閉じられるのを待つ
@@ -991,7 +993,7 @@ struct RootView: View {
         guard let id = router.takePendingConversation() else { return }
         // **今の人の会話でなければ開かない**（ログアウト・切り替えの前に届いた前の人の通知を、次の人で開かない）
         if showMessages {
-            guard let me = auth.userId, DMRules.peer(of: id, me: me) != nil else { return }
+            guard let me = auth.userId, GroupText.opens(id, me: me) else { return }
             messagesTarget = id
             return
         }
@@ -1008,7 +1010,7 @@ struct RootView: View {
                 && Date().timeIntervalSince(started) <= Self.activityWaitLimit
             // ログインしていない・人が替わった・待ちきれなかった回は開かない（吹き出しから見られる）
             guard !Task.isCancelled, let owner, auth.userId == owner, !ModalProbe.isPresenting(),
-                  DMRules.peer(of: id, me: owner) != nil else { return }
+                  GroupText.opens(id, me: owner) else { return }
             select(.home, at: "takeConversationRequest")
             messagesTarget = id
             showMessages = true

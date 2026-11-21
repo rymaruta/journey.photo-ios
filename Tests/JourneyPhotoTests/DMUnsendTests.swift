@@ -261,7 +261,10 @@ final class DMUnsendTests: XCTestCase {
         XCTAssertTrue(menu.contains("if message.mine { unsendButton(message) }"), "相手の吹き出しにも取り消しが出る")
         XCTAssertTrue(view.contains(".contextMenu { bubbleMenu(message, text: text) }"))
         XCTAssertTrue(view.contains("unsendMenu(storyCard(for: message), for: message)"), "ストーリーへの返信の札から取り消せない")
-        XCTAssertTrue(view.contains(".modifier(DMUnsendMenu(enabled: mine) { unsendButton(message) })"), "写真の札から取り消せない")
+        // 写真の札は 1対1とグループで同じ部品（`DMPhotoCard`・2026-11-20 札 #582）。長押しは自分の通にだけ付ける
+        XCTAssertTrue(view.contains("menuEnabled: message.mine") && view.contains("menu: { unsendButton(message) })"),
+                      "写真の札から取り消せない")
+        XCTAssertTrue(try source("Features/Messages/DMParts.swift").contains(".modifier(DMContextMenuIf(enabled: menuEnabled, menu: menu))"))
         let button = slice(view, from: "private func unsendButton(_ message: DMMessage)", to: "\n    }\n")
         XCTAssertTrue(button.contains("Task { await unsend(message) }"), "押してすぐ取り消さない（確かめを挟んでいる）")
         XCTAssertTrue(button.contains(#"L("送信を取り消す", "Unsend")"#))

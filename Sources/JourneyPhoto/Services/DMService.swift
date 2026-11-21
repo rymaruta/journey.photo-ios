@@ -45,6 +45,11 @@ struct DMService {
 
     /// 4xx の断りを `Refused` に包む。401 はログイン切れのまま返す（`TrunkService.refusing` と同じ）
     private func refusing<T>(_ call: () async throws -> T) async throws -> T {
+        try await Self.refusing(call)
+    }
+
+    /// 同じ包み方をグループの DM の口（`GroupService`・2026-11-20 札 #582）も使う（写しを作らない）
+    static func refusing<T>(_ call: () async throws -> T) async throws -> T {
         let errorBody = APIErrorBody()
         do {
             return try await APIClient.$errorBodySink.withValue(errorBody) { try await call() }
@@ -262,6 +267,9 @@ struct DMMessage: Decodable, Identifiable, Equatable {
     let photoOnly: Bool
     /// 読む人から見た写真の札（`dmPhotoQuote.ts`）。新しい方から20枚を越えた古い通は無い（＝分からない）
     let photo: DMPhotoQuote?
+    /// グループの会話の真ん中の1行（作った・足した…・2026-11-20 札 #582）。**1対1の会話では来ない**（DM の答えからは読まない）。
+    /// グループの通を DM の部品（`DMThreadLog`・吹き出し・写真の札）で描くために持つ（`GroupMessage.asDM`）
+    let groupEvent: GroupEvent?
 
     var isStoryReply: Bool { via == "story" || storyId != nil }
     /// 写真を送った通
@@ -274,7 +282,7 @@ struct DMMessage: Decodable, Identifiable, Equatable {
 
     init(id: String, from: String, mine: Bool, text: String, t: String, via: String? = nil,
          storyId: String? = nil, story: DMStoryQuote? = nil,
-         photoId: String? = nil, photoOnly: Bool = false, photo: DMPhotoQuote? = nil) {
+         photoId: String? = nil, photoOnly: Bool = false, photo: DMPhotoQuote? = nil, groupEvent: GroupEvent? = nil) {
         self.id = id
         self.from = from
         self.mine = mine
@@ -286,6 +294,7 @@ struct DMMessage: Decodable, Identifiable, Equatable {
         self.photoId = photoId
         self.photoOnly = photoOnly
         self.photo = photo
+        self.groupEvent = groupEvent
     }
 
     private enum CodingKeys: String, CodingKey { case id, from, mine, text, t, via, storyId, story, photoId, photoOnly, photo }
@@ -305,6 +314,7 @@ struct DMMessage: Decodable, Identifiable, Equatable {
         // 写真の無い通で `photoOnly` だけ来ても、文を消さない（何も出ない吹き出しを作らない）
         photoOnly = photoId != nil && (try? c.decodeIfPresent(Bool.self, forKey: .photoOnly)) == true
         photo = try? c.decodeIfPresent(DMPhotoQuote.self, forKey: .photo)
+        groupEvent = nil
     }
 }
 

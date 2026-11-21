@@ -49,6 +49,8 @@ final class AppEnvironment: ObservableObject {
     let camper: CamperService
     /// メッセージ（`/dm`・1対1・文字だけ・2026-11-10 札 #505）
     let dm: DMService
+    /// グループの DM（`/groups`・2026-11-20 札 #582）。本番に口が出るまでは一覧が読めず、入口は出ない
+    let groups: GroupService
     /// 旅行プランを仲間と使う口（`/trip-share`・2026-11-12 札 #553）
     let tripShare: TripShareService
     /// みんなの「行きたい」（2026-11-11・撮影スポットを払うの②）
@@ -103,6 +105,7 @@ final class AppEnvironment: ObservableObject {
         self.trunk = TrunkService(api: api)
         self.camper = CamperService(api: api)
         self.dm = DMService(api: api)
+        self.groups = GroupService(api: api)
         self.tripShare = TripShareService(api: api)
         self.feedback = FeedbackService(api: api)
     }

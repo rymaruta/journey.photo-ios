@@ -40,6 +40,10 @@ final class InputPlaceholderTests: XCTestCase {
             #"TextField(L("リンクか招待コード", "Link or invite code"), text: $inviteText)"#,
             #"TextField(L("名前", "Name"), text: $newTitle)"#,
         ],
+        // グループの名前（2026-11-20 札 #582・アルバムの名前を変えると同じ確かめの画面の欄）
+        "Features/Messages/GroupDetailView.swift": [
+            #"TextField(L("グループの名前", "Group name"), text: $renameText)"#,
+        ],
         "Features/Trips/TripPlanDetailView.swift": [
             #"TextField(L("例: 朝いちばんに行く", "e.g. Go first thing in the morning"), text: $noteText)"#,
         ],

@@ -11096,6 +11096,104 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertFalse(conversation.exists, "会話から開いたプロフィールの「メッセージ」で、同じ会話がもう1枚積まれた")
     }
 
+    /// **グループの DM（2026-11-20・札 #582・案「グループチャットを簡単に」の推奨 C）**。見本の通信に `-JPPreviewGroups` を足すと、
+    /// `/groups` も端末の中で答える（`PreviewBackend.groupReply`: 名前の無いグループ1つ・招待1つ）。
+    /// 受信箱（時刻の順に混ざる・重ねた顔）→ 新しいメッセージで2人選ぶ → 作った直後の空の会話 → 会話 → 詳しい画面 →
+    /// リクエストの招待 → 招待の札、の順に撮る。模型と突き合わせるための絵（**出なければ撮らずに抜ける**）
+    func testCapturesGroupDM() {
+        let app = XCUIApplication.jp()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewLocalBackend", "YES", "-JPPreviewDM", "YES", "-JPPreviewGroups", "YES"]
+        app.launch()
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        guard app.tabBars.firstMatch.waitForExistence(timeout: 20) else { return }
+        let bubble = app.buttons["header.messages"].firstMatch
+        guard bubble.waitForExistence(timeout: 20) else { return }
+        bubble.tap()
+        let group = app.buttons["dm.group"].firstMatch
+        guard group.waitForExistence(timeout: 20) else {
+            shoot(app, "86g1-グループ（受信箱にグループが出ない）")
+            return
+        }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "86g1-グループ（受信箱）")
+
+        // 新しいメッセージで2人選ぶ（印・選んだ人の札・主ボタン「3人で話す」）
+        let open = app.buttons["dm.new.open"].firstMatch
+        if open.waitForExistence(timeout: 10) {
+            open.tap()
+            let people = app.buttons.matching(identifier: "dm.new.person")
+            if people.firstMatch.waitForExistence(timeout: 15), people.count >= 2 {
+                people.element(boundBy: 0).tap()
+                people.element(boundBy: 1).tap()
+                Thread.sleep(forTimeInterval: 1)
+                shoot(app, "86g2-グループ（新しいメッセージで2人選んだ）")
+                let go = app.buttons["group.pick.go"].firstMatch
+                if go.isHittable {
+                    XCTAssertGreaterThanOrEqual(go.frame.height, 44, "主ボタンの当たりが 44pt 未満")
+                    go.tap()
+                    if app.buttons["group.starter"].firstMatch.waitForExistence(timeout: 15) {
+                        Thread.sleep(forTimeInterval: 2)
+                        shoot(app, "86g3-グループ（作った直後の空の会話）")
+                    }
+                    goBack(app)
+                    Thread.sleep(forTimeInterval: 1)
+                }
+            }
+        }
+
+        // はじめから在るグループの会話（名前と顔・続けて送った通・時刻）→ 詳しい画面
+        if group.waitForExistence(timeout: 10) {
+            // 作ったグループが上に来るので、はじめから在るグループ（名前の無い・未読あり）を名前で探す
+            // 作ったグループも同じ2人の名前なので、名前ではなく最後の1通（見本の「兼六園は外せない」）で探す
+            let seeded = app.buttons.matching(identifier: "dm.group").matching(NSPredicate(format: "label CONTAINS %@", "兼六園")).firstMatch
+            guard seeded.waitForExistence(timeout: 10) else {
+                shoot(app, "86g4-グループ（はじめから在るグループが出ない）")
+                return
+            }
+            seeded.tap()
+            if app.descendants(matching: .any)["group.conversation"].firstMatch.waitForExistence(timeout: 15) {
+                Thread.sleep(forTimeInterval: 2)
+                shoot(app, "86g4-グループ（会話）")
+                let info = app.buttons["group.info"].firstMatch
+                if info.waitForExistence(timeout: 5) {
+                    info.tap()
+                    if app.descendants(matching: .any)["group.detail"].firstMatch.waitForExistence(timeout: 10) {
+                        Thread.sleep(forTimeInterval: 2)
+                        shoot(app, "86g5-グループ（詳しい画面）")
+                    }
+                    goBack(app)
+                    Thread.sleep(forTimeInterval: 1)
+                }
+                goBack(app)
+                Thread.sleep(forTimeInterval: 1)
+            }
+        }
+
+        // リクエスト → グループの招待 → 招待の札（参加するまで話は見えない）
+        let entry = app.buttons["dm.requests.entry"].firstMatch
+        if entry.waitForExistence(timeout: 5), entry.isHittable {
+            entry.tap()
+            let invite = app.buttons["dm.groupInvite"].firstMatch
+            if invite.waitForExistence(timeout: 10) {
+                Thread.sleep(forTimeInterval: 1)
+                shoot(app, "86g6-グループ（リクエストの招待）")
+                invite.tap()
+                if app.buttons["group.invite.join"].firstMatch.waitForExistence(timeout: 10) {
+                    Thread.sleep(forTimeInterval: 1)
+                    shoot(app, "86g7-グループ（招待の札）")
+                    XCTAssertGreaterThanOrEqual(app.buttons["group.invite.join"].firstMatch.frame.height, 44, "「参加する」の当たりが 44pt 未満")
+                }
+            }
+        }
+    }
+
     /// 第6章の絵の試験の歯止め: 出るはずのものが出なければ**落とす**（黙って抜けない・2026-11-12 確かめ役）
     private func expect(_ ok: Bool, _ what: String, _ app: XCUIApplication) -> Bool {
         if !ok {

@@ -128,6 +128,82 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(app.buttons["photo.like"].firstMatch.waitForExistence(timeout: 15), "写真の詳細が開かない")
     }
 
+    // MARK: - グループの DM（2026-11-20・札 #582）
+
+    /// グループの DM: 新しいメッセージで2人選ぶ →「3人で話す」→ 空の会話の候補を押すと欄に入る → 送る →
+    /// 詳しい画面で人を足す → 4人になる → 抜ける → 受信箱に戻る。見本の通信（`-JPPreviewGroups`・`PreviewBackend.groupReply`）。
+    /// **どこかが出ない・押せないなら落とす**
+    func testGroupCreateSendAddLeave() {
+        let app = launch(["-JPPreviewDM", "YES", "-JPPreviewGroups", "YES"])
+        let bubble = app.buttons["header.messages"].firstMatch
+        XCTAssertTrue(bubble.waitForExistence(timeout: 20), "見出しの吹き出しが無い")
+        bubble.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["dm.inbox"].firstMatch.waitForExistence(timeout: 15), "受信箱が出ない")
+        // グループの一覧が読めると、受信箱にグループの行が出る（入口を出してよい合図）
+        XCTAssertTrue(app.buttons["dm.group"].firstMatch.waitForExistence(timeout: 15), "受信箱にグループが出ない")
+
+        // 新しいメッセージ → 2人選ぶ →「3人で話す」
+        let open = app.buttons["dm.new.open"].firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 10))
+        open.tap()
+        let people = app.buttons.matching(identifier: "dm.new.person")
+        XCTAssertTrue(people.firstMatch.waitForExistence(timeout: 15), "新しいメッセージの一覧が出ない")
+        XCTAssertGreaterThanOrEqual(people.count, 2, "選べる人が2人いない")
+        people.element(boundBy: 0).tap()
+        let go = app.buttons["group.pick.go"].firstMatch
+        XCTAssertTrue(go.waitForExistence(timeout: 5), "主ボタンが出ない")
+        XCTAssertTrue(wait(go, "label == %@", ["メッセージを送る"], timeout: 5), "1人で「メッセージを送る」にならない: \(go.label)")
+        people.element(boundBy: 1).tap()
+        XCTAssertTrue(wait(go, "label == %@", ["3人で話す"], timeout: 5), "2人で「3人で話す」にならない: \(go.label)")
+        go.tap()
+
+        // 作った直後の空の会話: 候補を押すと欄に入るだけ → 送る
+        let conversation = app.descendants(matching: .any)["group.conversation"].firstMatch
+        XCTAssertTrue(conversation.waitForExistence(timeout: 20), "グループの会話が開かない")
+        let starter = app.buttons["group.starter"].firstMatch
+        XCTAssertTrue(starter.waitForExistence(timeout: 10), "空の会話に一言の候補が出ない")
+        let probe = app.descendants(matching: .any)["group.probe"].firstMatch
+        XCTAssertTrue(probe.waitForExistence(timeout: 5))
+        let before = (probe.value as? String) ?? ""
+        starter.tap()
+        let field = app.descendants(matching: .any)["dm.field"].firstMatch
+        XCTAssertTrue(wait(field, "value CONTAINS %@", ["どこ行く"], timeout: 5), "候補を押しても欄に入らない: \(String(describing: field.value))")
+        XCTAssertEqual((probe.value as? String) ?? "", before, "候補を押しただけで送った・読み直した")
+        let send = app.buttons["dm.send"].firstMatch
+        XCTAssertTrue(wait(send, "isEnabled == true", timeout: 5), "送るが押せない")
+        send.tap()
+        XCTAssertTrue(wait(probe, "value CONTAINS %@", ["sends=1"], timeout: 10), "送っていない: \(String(describing: probe.value))")
+        XCTAssertTrue(wait(probe, "value CONTAINS %@", ["count=2"], timeout: 10), "送った1通が会話に出ない: \(String(describing: probe.value))")
+        XCTAssertFalse(app.buttons["dm.retry"].firstMatch.exists, "送れなかった")
+
+        // 詳しい画面 → 人を足す → 4人
+        let info = app.buttons["group.info"].firstMatch
+        XCTAssertTrue(info.waitForExistence(timeout: 5), "詳しい画面の入口が無い")
+        info.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["group.detail"].firstMatch.waitForExistence(timeout: 10), "詳しい画面が開かない")
+        let members = app.descendants(matching: .any).matching(identifier: "group.member")
+        XCTAssertTrue(wait(members.firstMatch, "exists == true", timeout: 10))
+        XCTAssertEqual(members.count, 3, "作ったグループが3人でない")
+        let add = app.buttons["group.add"].firstMatch
+        XCTAssertTrue(add.waitForExistence(timeout: 5), "人を足すが無い")
+        add.tap()
+        XCTAssertTrue(people.firstMatch.waitForExistence(timeout: 15), "人を足す一覧が出ない")
+        people.element(boundBy: 0).tap()
+        XCTAssertTrue(wait(go, "label == %@", ["1人を足す"], timeout: 5), "「1人を足す」にならない: \(go.label)")
+        go.tap()
+        XCTAssertTrue(wait(members.element(boundBy: 3), "exists == true", timeout: 15), "足した人が詳しい画面に出ない（\(members.count)人）")
+
+        // 抜ける（確かめを出す）→ 受信箱に戻る
+        let leave = app.buttons["group.leave"].firstMatch
+        reveal(leave, in: app, "グループを抜ける")
+        leave.tap()
+        let confirm = app.alerts.buttons["抜ける"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "抜ける確かめが出ない")
+        confirm.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["dm.inbox"].firstMatch.waitForExistence(timeout: 15), "抜けたあと受信箱に戻らない")
+        XCTAssertTrue(wait(conversation, "exists == false", timeout: 10), "抜けたグループの会話が残っている")
+    }
+
     // MARK: - 2. いいね・保存
 
     /// いいねを押すと♥が灯って数が1増え、もう一度で元に戻る。保存も押すと印が付き、もう一度で外れる

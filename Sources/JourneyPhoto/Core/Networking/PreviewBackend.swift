@@ -209,6 +209,7 @@ enum PreviewBackend {
                       store: Store = PreviewBackend.store,
                       stories: Bool = false,
                       dm: Bool = false,
+                      groups: Bool = false,
                       followNone: Bool = false,
                       commentNotice: Bool = false,
                       publicFeed: () async -> [[String: Any]] = { [] },
@@ -246,6 +247,16 @@ enum PreviewBackend {
                                 samplePhoto: method == "GET" && parts.count == 2 ? dmSamplePhoto(await publicFeed()) : nil,
                                 unsent: store.with { $0.unsentDMIds }) {
             return answer
+        }
+        // グループの DM（`-JPPreviewGroups` のときだけ・2026-11-20 札 #582）。名前は見本の相手とフォロー中の人から引く
+        if groups, parts.first == "groups" {
+            var names: [String: String] = [:]
+            for row in dmFollowing(feed: await publicFeed(), me: uid) {
+                if let id = row["id"] as? String, let name = row["name"] as? String { names[id] = name }
+            }
+            if let answer = groupReply(method: method, parts: parts, json: json, me: uid, now: now, names: names) {
+                return answer
+            }
         }
 
         switch (method, parts) {
@@ -717,6 +728,7 @@ final class PreviewBackendProtocol: URLProtocol {
                 body: body, userId: PreviewSession.userId,
                 stories: PreviewSession.stories,
                 dm: PreviewSession.dm,
+                groups: PreviewSession.groups,
                 followNone: PreviewSession.followNone,
                 commentNotice: PreviewSession.commentNotice,
                 publicFeed: { await PreviewBackend.readPublicFeed() },

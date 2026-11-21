@@ -850,6 +850,19 @@ enum PreviewSession {
         #endif
     }
 
+    /// 見本の通信（`dm`）に、グループの DM（`/groups`）の答えを足す（`PreviewBackend.groupReply`・2026-11-20 札 #582）。
+    /// **これが無いと `/groups` は 503**（グループの口の無いサーバーと同じ: 入口は出ず、今の1対1のまま）。Release では必ず false
+    static let groupsKey = "JPPreviewGroups"
+
+    static var groups: Bool {
+        #if DEBUG
+        guard dm else { return false }
+        return UserDefaults.standard.bool(forKey: groupsKey)
+        #else
+        return false
+        #endif
+    }
+
     /// UI テストでストーリー作成を**見本の写真と曲を付けた状態で**開く（Debug のみ）。`-JPPreviewStorySong YES`。
     /// 曲の札の6つの形（2026-10-28）を押して替えながら撮る。**入っている見本の利用者のときだけ**効く。
     /// Release では必ず false

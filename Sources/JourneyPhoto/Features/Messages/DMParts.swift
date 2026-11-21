@@ -322,3 +322,205 @@ enum DMBlockText {
           "You won't see each other's posts, stories, messages or notifications. They won't be told. Undo it in Settings › Blocked.")
     }
 }
+
+/// 送信欄（画面案: 欄 44・送る丸 44。案内・断りの文は欄の上）。**1対1とグループの会話で同じ部品**（2026-11-20・札 #582 で
+/// `DMConversationView` から切り出した。写しを作らない）。
+///
+/// - 欄は surface-2 に outline の縁（黒地 3.66:1・部品の縁 3:1 以上）。断られたら縁も赤（色だけにしない: 上に印と文）
+/// - 送れるときだけ真鍮の塗りに墨の矢印（7.11:1・板「写真の無い画面の主ボタン＝送信」・2026-11-11 案C）
+/// - 入力欄・送るの丸と、その下（下の札・画面の下端）の間は 12pt（`DMLook.composerBottomGap`）
+struct DMComposer<Notes: View>: View {
+    @Binding var draft: String
+    let focus: FocusState<Bool>.Binding
+    /// 欄に打てるか（送れない会話では欄ごと止める）
+    let canType: Bool
+    /// 送るの丸を押せるか（打てて・圏外でなく・空でなく・送っている最中でない）
+    let sendEnabled: Bool
+    /// 欄の上に断りの文が出ている（縁を赤に）
+    let hasError: Bool
+    /// 欄の読み上げ（「〜さんへのメッセージ」）
+    let fieldLabel: String
+    let onSend: () -> Void
+    @ViewBuilder let notes: () -> Notes
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JPSpace.xs) {
+            notes()
+            HStack(alignment: .bottom, spacing: 6) {
+                JPTextField(L("メッセージ", "Message"), text: $draft, axis: .vertical)
+                    .lineLimit(1...5)
+                    .font(JPFont.body)
+                    .foregroundStyle(WebTheme.text)
+                    .focused(focus)
+                    .padding(.horizontal, JPSpace.m)
+                    .padding(.vertical, 11)
+                    .frame(minHeight: DMLook.fieldHeight)
+                    .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: DMLook.fieldHeight / 2))
+                    .overlay(RoundedRectangle(cornerRadius: DMLook.fieldHeight / 2)
+                        .strokeBorder(hasError ? WebTheme.danger : WebTheme.outline, lineWidth: JPStroke.hairline))
+                    .disabled(!canType)
+                    .accessibilityLabel(fieldLabel)
+                    .accessibilityIdentifier("dm.field")
+                Button(action: onSend) {
+                    Image(systemName: "arrow.up")
+                        .font(JPFont.headline)
+                        .foregroundStyle(sendEnabled ? WebTheme.accentText : Color.white.opacity(0.5))
+                        .frame(width: DMLook.sendSize, height: DMLook.sendSize)
+                        .background(sendEnabled ? WebTheme.accentFill : Color.white.opacity(0.16), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!sendEnabled)
+                .accessibilityLabel(Labels.Common.send)
+                .accessibilityIdentifier("dm.send")
+            }
+        }
+        .padding(.horizontal, JPSpace.s)
+        .padding(.top, JPSpace.xs)
+        .padding(.bottom, DMLook.composerBottomGap)
+        .background(WebTheme.background, ignoresSafeAreaEdges: .bottom)
+        .overlay(alignment: .top) {
+            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+        }
+    }
+}
+
+/// 送った写真の札（2026-11-11・札 #541）。**1対1とグループの会話で同じ部品**（2026-11-20 に `DMConversationView` から切り出した）。
+/// 見られる写真は幅 220・4:5・角 14（縁も真鍮も載せない・写真が主役）で、下の黒地に題と撮影地。押すと写真の詳細。
+/// 見られない（消した・非公開・範囲の外・ブロック）は破線の枠と「写真は表示できません」。
+/// 中身が分からない（古い通・送った直後）は言い切らず「写真を送りました／届きました」（`DMPhotoCardState`）。
+/// **画像のファイルは渡さない**（札の縮小版を見せて、持ち主の写真の頁へ連れて行くだけ・CLAUDE.md「他人の写真は、その人のもの」）
+struct DMPhotoCard<Menu: View>: View {
+    let message: DMMessage
+    let blocked: Set<String>
+    /// 写真を探している最中（二度押しで重ねない）
+    let opening: Bool
+    /// 長押しのメニューを付けるか（1対1の自分の通の「送信を取り消す」）
+    var menuEnabled = false
+    let onOpen: (DMPhotoQuote) -> Void
+    @ViewBuilder var menu: () -> Menu
+
+    var body: some View {
+        let mine = message.mine
+        VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
+            switch DMPhotoCardState.of(message, blocked: blocked) {
+            case .live(let quote):
+                livePhoto(quote, mine: mine)
+            case .gone:
+                placeholder(L("写真は表示できません", "This photo isn't available"), identifier: "dm.photoCard.gone")
+            case .unknown, .none:
+                placeholder(DMText.photoOnlyText(mine: mine), identifier: "dm.photoCard.unknown")
+            }
+        }
+        .modifier(DMContextMenuIf(enabled: menuEnabled, menu: menu))
+        .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
+        .padding(.top, JPSpace.xxs)
+    }
+
+    @ViewBuilder
+    private func livePhoto(_ quote: DMPhotoQuote, mine: Bool) -> some View {
+        Button { onOpen(quote) } label: {
+            RemoteImage(url: quote.imageURL)
+                .frame(width: DMLook.photoWidth, height: DMLook.photoHeight)
+                .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
+                .contentShape(RoundedRectangle(cornerRadius: JPRadius.m))
+        }
+        .buttonStyle(.plain)
+        .disabled(opening)
+        .accessibilityLabel(DMText.photoSpoken(title: quote.title, location: quote.location, mine: mine))
+        .accessibilityHint(L("写真を開きます", "Opens the photo"))
+        .accessibilityIdentifier("dm.photoCard.live")
+        if quote.title != nil || quote.location != nil {
+            VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
+                if let title = quote.title {
+                    Text(title)
+                        .font(JPFont.footnote.weight(.semibold))
+                        .foregroundStyle(WebTheme.text)
+                        .lineLimit(2)
+                }
+                if let location = quote.location {
+                    Text(L("撮影地 \(location)", "Taken in \(location)"))
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
+                        .lineLimit(1)
+                }
+            }
+            .multilineTextAlignment(mine ? .trailing : .leading)
+            .frame(maxWidth: DMLook.photoWidth, alignment: mine ? .trailing : .leading)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// 写真の代わりの破線の枠（見られない・分からない）
+    private func placeholder(_ text: String, identifier: String) -> some View {
+        RoundedRectangle(cornerRadius: JPRadius.m)
+            .strokeBorder(WebTheme.outline, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+            .frame(width: DMLook.photoWidth, height: 88)
+            .overlay(
+                Label(text, systemImage: "photo")
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+            )
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier(identifier)
+    }
+}
+
+extension DMPhotoCard where Menu == EmptyView {
+    init(message: DMMessage, blocked: Set<String>, opening: Bool, onOpen: @escaping (DMPhotoQuote) -> Void) {
+        self.init(message: message, blocked: blocked, opening: opening, menuEnabled: false, onOpen: onOpen, menu: { EmptyView() })
+    }
+}
+
+/// 長押しのメニューを、付けてよいときだけ付ける（相手の札にはメニューを出さない・2026-11-12）
+struct DMContextMenuIf<Menu: View>: ViewModifier {
+    let enabled: Bool
+    @ViewBuilder let menu: () -> Menu
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.contextMenu { menu() }
+        } else {
+            content
+        }
+    }
+}
+
+/// 写真の札を押したときに写真を探す（1対1・グループで同じ）: 公開の一覧（`fetchPhotos`・控えを使う）→ 公開範囲を絞った写真のうち
+/// 自分に見えるぶん（`/feed/restricted`）→ 自分の写真、の順。**単体で写真を読む口は無い**ので、どれにも無ければ nil
+@MainActor
+enum DMPhotoOpen {
+    static var notFoundMessage: String { L("この写真はここから開けません", "This photo can't be opened from here") }
+
+    static func find(_ quote: DMPhotoQuote, environment: AppEnvironment, me: String?) async -> (photo: Photo, isPublic: Bool)? {
+        let feed = (try? await environment.gallery.fetchPhotos()) ?? []
+        if let found = feed.first(where: { $0.id == quote.id }) { return (found, true) }
+        // 公開範囲を絞った写真（フォロワー・親しい友達）は公開の一覧に無い。自分に見えるぶんを読む（2026-11-11 確かめ役の指摘）
+        let restricted = (try? await environment.photos.restrictedFeed()) ?? []
+        if let found = restricted.first(where: { $0.id == quote.id }) { return (found, false) }
+        let mine = me != nil && quote.ownerId == me
+        let own: Photo? = mine ? (try? await environment.photos.myPhoto(id: quote.id)) ?? nil : nil
+        if let own { return (own, false) }
+        return nil
+    }
+}
+
+/// 欄の上の1行（断りは赤の字＋印、案内は白 82%）。**色だけにしない**（印と文で伝える）
+struct DMNoteRow: View {
+    let text: String
+    let error: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: JPSpace.xs) {
+            Image(systemName: error ? "exclamationmark.circle" : "info.circle")
+                .font(JPFont.footnote)
+                .padding(.top, 1)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(JPFont.caption)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(error ? WebTheme.danger : WebTheme.muted)
+        .padding(.horizontal, JPSpace.xxs)
+        .accessibilityElement(children: .combine)
+    }
+}

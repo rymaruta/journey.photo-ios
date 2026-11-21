@@ -19,6 +19,11 @@ final class DMInboxStore: ObservableObject {
     }
 
     @Published private(set) var inbox: DMInbox = .empty
+    /// グループの一覧（2026-11-20 札 #582）。**`groupsAvailable` が偽の間は使わない**
+    @Published private(set) var groups: GroupInbox = .empty
+    /// グループの口がこのサーバーに在るか。**今の人で一覧が1回でも読めたときだけ真**（本番にまだ口が無い間・
+    /// 古いサーバーの 404・403・圏外では入口を出さず、今の1対1のまま・2026-11-20 判断）
+    @Published private(set) var groupsAvailable = false
     @Published private(set) var phase: Phase = .loading
     /// 読み直している最中（「もう一度」を止める）
     @Published private(set) var isRefreshing = false
@@ -26,14 +31,41 @@ final class DMInboxStore: ObservableObject {
     /// いまの控えが誰のものか
     private(set) var owner: String?
     private var generation = 0
+    private var groupGeneration = 0
     /// まだ一覧を読めていない間に手元で置いた変化（既読・削除・承認）。**読めた答えの上に重ねる**
     private var pendingChanges: [(DMInbox) -> DMInbox] = []
 
     init() {}
 
-    /// 吹き出しの点を出すか
+    /// 吹き出しの点を出すか（1対1の未読の会話か、未読のグループ）
     func hasUnread(hiding blocked: Set<String>) -> Bool {
-        inbox.unreadConversations(hiding: blocked) > 0
+        inbox.unreadConversations(hiding: blocked) > 0 || (groupsAvailable && groups.unreadGroups() > 0)
+    }
+
+    /// リクエストの棚の数（1対1のリクエストと、グループの招待）
+    func requestTotal(hiding blocked: Set<String>) -> Int {
+        inbox.requestTotal(hiding: blocked) + (groupsAvailable ? groups.invites.filter { !blocked.contains($0.invitedBy.id) }.count : 0)
+    }
+
+    /// グループの一覧を読み直す。**読めたらグループの入口を出す**。読めなければ前の一覧と入口をそのまま（圏外で消さない）
+    func refreshGroups(service: GroupService, owner: String?) async {
+        use(owner: owner)
+        guard owner != nil else { return }
+        let mine = groupGeneration
+        do {
+            let fetched = try await service.inbox()
+            guard mine == groupGeneration, owner == self.owner else { return }
+            groups = fetched
+            groupsAvailable = true
+        } catch {
+            // 口が無い（404・403）・圏外・混み合い: 入口は出さないまま（一度読めていれば残す）
+        }
+    }
+
+    /// 手元で変えたグループの一覧（読んだ・抜けた・参加した）。進んでいる読み込みの答えは捨てる
+    func applyGroups(_ change: (GroupInbox) -> GroupInbox) {
+        groups = change(groups)
+        groupGeneration += 1
     }
 
     /// 人が替わった。前の人の控えを捨てる
@@ -45,6 +77,9 @@ final class DMInboxStore: ObservableObject {
         phase = .loading
         isRefreshing = false
         pendingChanges = []
+        groups = .empty
+        groupsAvailable = false
+        groupGeneration += 1
     }
 
     /// 読み直す。**失敗しても読めていた一覧は残す**（圏外で戻っただけで点・行が消えない）
@@ -87,9 +122,13 @@ final class DMInboxStore: ObservableObject {
     }
 
     /// 試験・見本のため（画面を持たない試験で、控えを置いた状態から始める）
-    func setForTesting(_ inbox: DMInbox, owner: String?) {
+    func setForTesting(_ inbox: DMInbox, owner: String?, groups: GroupInbox? = nil) {
         self.owner = owner
         self.inbox = inbox
         phase = .loaded
+        if let groups {
+            self.groups = groups
+            groupsAvailable = true
+        }
     }
 }

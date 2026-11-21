@@ -108,6 +108,10 @@ struct DMConversationView: View {
     /// 作る流れで保存したプラン。**板が閉じ切ってから積む**（`SavedSpotsMapView` と同じ）
     @State private var pendingTripId: String?
     @State private var createdTripId: String?
+    /// 1対1に人を足す（2026-11-20・札 #582・案の推奨 C）: 選ぶ画面 → 相手と選んだ人でグループを作る → その会話を積む
+    @State private var showAddPeople = false
+    @State private var pickedGroup: GroupReady?
+    @State private var openedGroup: GroupOpen?
 
     /// 受信箱の行（読み込む前の見出しの名前に使う）
     private var seed: DMThread? { store.inbox.items.first { $0.id == conversationId } }
@@ -153,6 +157,12 @@ struct DMConversationView: View {
         })
     }
     private var iBlockedPeer: Bool { peerId.map { hidden.blockedUserIds.contains($0) } ?? false }
+    /// 「人を足す」を出すか。**グループの口があるサーバーで、承認済みの会話だけ**（承認前のリクエスト・退会した相手・
+    /// まだ会話が無い相手には出さない・2026-11-20 判断）
+    private var canAddPeople: Bool {
+        store.groupsAvailable && peerId != nil && !isNew && !isDeletedPeer && !iBlockedPeer
+            && meta?.state == .inbox && remaining == nil
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -227,6 +237,29 @@ struct DMConversationView: View {
         }
         .navigationDestination(item: $createdTripId) { planId in
             TripPlanDetailView(planId: planId, model: tripPlans, sharePeer: tripSharePeer)
+        }
+        .navigationDestination(item: $openedGroup) { open in
+            GroupConversationView(groupId: open.groupId, notice: open.notice, onLeft: { openedGroup = nil })
+        }
+        .sheet(isPresented: $showAddPeople, onDismiss: {
+            guard let ready = pickedGroup else { return }
+            pickedGroup = nil
+            openedGroup = GroupOpen(groupId: ready.groupId, notice: ready.notice)
+            Task { await store.refreshGroups(service: environment.groups, owner: auth.userId) }
+        }) {
+            NavigationStack {
+                if let peerId {
+                    DMNewMessageView(mode: .extend(peer: DMPeerSeed(id: peerId, name: peerName, username: username)),
+                                     onPick: { _ in },
+                                     onGroup: { ready in
+                                         pickedGroup = ready
+                                         showAddPeople = false
+                                     })
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { SheetCloseButton() }
+                    }
+                }
+            }
         }
         .fullScreenCover(isPresented: $showTrip, onDismiss: {
             guard let planId = pendingTripId else { return }
@@ -360,6 +393,11 @@ struct DMConversationView: View {
     /// 「…」: 相手のプロフィール／通報／ブロック／会話を削除（破壊的な2つは系統の赤）
     private var moreMenu: some View {
         Menu {
+            if canAddPeople {
+                // 1対1に人を足すとグループになる（この会話はそのまま残る・2026-11-20 判断）
+                Button { showAddPeople = true } label: { Label(L("人を足す", "Add people"), systemImage: "person.badge.plus") }
+                    .accessibilityIdentifier("dm.addPeople")
+            }
             if !isDeletedPeer {
                 Button { showProfile = true } label: { Label(L("相手のプロフィール", "View profile"), systemImage: "person") }
             }
@@ -663,102 +701,24 @@ struct DMConversationView: View {
 
     // MARK: - 送った写真（2026-11-11・札 #541）
 
-    /// 送った写真の札。見られる写真は幅 220・4:5・角 14（縁も真鍮も載せない・写真が主役）で、下の黒地に題と撮影地。
-    /// 押すと写真の詳細。見られない（消した・非公開・範囲の外・ブロック）は破線の枠と「写真は表示できません」。
-    /// 中身が分からない（古い通・送った直後）は言い切らず「写真を送りました／届きました」（`DMPhotoCardState`）
-    @ViewBuilder
+    /// 送った写真の札（`DMPhotoCard`・グループの会話と同じ部品）。自分の通にだけ「送信を取り消す」の長押し
     private func photoCard(for message: DMMessage) -> some View {
-        let mine = message.mine
-        VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
-            switch DMPhotoCardState.of(message, blocked: hidden.blockedUserIds) {
-            case .live(let quote):
-                livePhoto(quote, mine: mine)
-            case .gone:
-                photoPlaceholder(L("写真は表示できません", "This photo isn't available"), identifier: "dm.photoCard.gone")
-            case .unknown, .none:
-                photoPlaceholder(DMText.photoOnlyText(mine: mine), identifier: "dm.photoCard.unknown")
-            }
-        }
-        .modifier(DMUnsendMenu(enabled: mine) { unsendButton(message) })
-        .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
-        .padding(.top, JPSpace.xxs)
+        DMPhotoCard(message: message, blocked: hidden.blockedUserIds, opening: openingPhoto, menuEnabled: message.mine,
+                    onOpen: { quote in Task { await openPhoto(quote) } },
+                    menu: { unsendButton(message) })
     }
 
-    @ViewBuilder
-    private func livePhoto(_ quote: DMPhotoQuote, mine: Bool) -> some View {
-        Button { Task { await openPhoto(quote) } } label: {
-            RemoteImage(url: quote.imageURL)
-                .frame(width: DMLook.photoWidth, height: DMLook.photoHeight)
-                .clipShape(RoundedRectangle(cornerRadius: JPRadius.m))
-                .contentShape(RoundedRectangle(cornerRadius: JPRadius.m))
-        }
-        .buttonStyle(.plain)
-        .disabled(openingPhoto)
-        .accessibilityLabel(DMText.photoSpoken(title: quote.title, location: quote.location, mine: mine))
-        .accessibilityHint(L("写真を開きます", "Opens the photo"))
-        .accessibilityIdentifier("dm.photoCard.live")
-        if quote.title != nil || quote.location != nil {
-            VStack(alignment: mine ? .trailing : .leading, spacing: 2) {
-                if let title = quote.title {
-                    Text(title)
-                        .font(JPFont.footnote.weight(.semibold))
-                        .foregroundStyle(WebTheme.text)
-                        .lineLimit(2)
-                }
-                if let location = quote.location {
-                    Text(L("撮影地 \(location)", "Taken in \(location)"))
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.text3)
-                        .lineLimit(1)
-                }
-            }
-            .multilineTextAlignment(mine ? .trailing : .leading)
-            .frame(maxWidth: DMLook.photoWidth, alignment: mine ? .trailing : .leading)
-            .accessibilityHidden(true)
-        }
-    }
-
-    /// 写真の代わりの破線の枠（見られない・分からない）
-    private func photoPlaceholder(_ text: String, identifier: String) -> some View {
-        RoundedRectangle(cornerRadius: JPRadius.m)
-            .strokeBorder(WebTheme.outline, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-            .frame(width: DMLook.photoWidth, height: 88)
-            .overlay(
-                Label(text, systemImage: "photo")
-                    .font(JPFont.caption)
-                    .foregroundStyle(WebTheme.text3)
-            )
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier(identifier)
-    }
-
-    /// 写真の札を押した: 公開の一覧（`fetchPhotos`・控えを使う）→ 公開範囲を絞った写真のうち自分に見えるぶん（`/feed/restricted`）→
-    /// 自分の写真（自分が送った下書き以外の自分の写真）の順に探す。**単体で写真を読む口は無い**ので、どれにも無ければ開けないと言う
+    /// 写真の札を押した: 写真を探して詳細を積む（`DMPhotoOpen`）。どこにも無ければ開けないと言う
     private func openPhoto(_ quote: DMPhotoQuote) async {
         guard !openingPhoto else { return }
         openingPhoto = true
         defer { openingPhoto = false }
-        let feed = (try? await environment.gallery.fetchPhotos()) ?? []
-        if let found = feed.first(where: { $0.id == quote.id }) {
-            openedPhotoIsPublic = true
-            openedPhoto = found
-            return
+        if let found = await DMPhotoOpen.find(quote, environment: environment, me: auth.userId) {
+            openedPhotoIsPublic = found.isPublic
+            openedPhoto = found.photo
+        } else {
+            actionError = DMPhotoOpen.notFoundMessage
         }
-        // 公開範囲を絞った写真（フォロワー・親しい友達）は公開の一覧に無い。自分に見えるぶんを読む（2026-11-11 確かめ役の指摘）
-        let restricted = (try? await environment.photos.restrictedFeed()) ?? []
-        if let found = restricted.first(where: { $0.id == quote.id }) {
-            openedPhotoIsPublic = false
-            openedPhoto = found
-            return
-        }
-        let mine = auth.userId != nil && quote.ownerId == auth.userId
-        let own: Photo? = mine ? (try? await environment.photos.myPhoto(id: quote.id)) ?? nil : nil
-        if let own {
-            openedPhotoIsPublic = false
-            openedPhoto = own
-            return
-        }
-        actionError = L("この写真はここから開けません", "This photo can't be opened from here")
     }
 
     /// 「タップでストーリーを見る」: ストーリーの一覧（`GET /stories`）からその1本を探して開く（単体の口は無い）。
@@ -804,9 +764,13 @@ struct DMConversationView: View {
         }
     }
 
-    /// 送信欄（画面案: 欄 44・送る丸 44。承認前の残り・断りの文は欄の上）
+    /// 送信欄（画面案: 欄 44・送る丸 44。承認前の残り・断りの文は欄の上）。形はグループの会話と同じ部品（`DMComposer`）
     private var composer: some View {
-        VStack(alignment: .leading, spacing: JPSpace.xs) {
+        DMComposer(draft: $draft, focus: $fieldFocused, canType: canSend, sendEnabled: sendEnabled,
+                   hasError: fieldError != nil,
+                   fieldLabel: remaining == 0 ? L("承認されるまで送れません", "You can't send until they accept")
+                                              : L("\(peerName) さんへのメッセージ", "Message to \(peerName)"),
+                   onSend: { Task { await send() } }) {
             if let actionError {
                 noteRow(actionError, error: true)
             }
@@ -823,44 +787,6 @@ struct DMConversationView: View {
             }
             // 2026-11-16 判断（A8）: 受け取ったリクエストの「返信すると承認されます」は欄の上に出さない。
             // 同じことを上の帯（`requestBand`）が言っていて、2回出ていた
-            HStack(alignment: .bottom, spacing: 6) {
-                // 欄は surface-2 に outline の縁（黒地 3.66:1・部品の縁 3:1 以上）。断られたら縁も赤（色だけにしない: 上に印と文）
-                JPTextField(L("メッセージ", "Message"), text: $draft, axis: .vertical)
-                    .lineLimit(1...5)
-                    .font(JPFont.body)
-                    .foregroundStyle(WebTheme.text)
-                    .focused($fieldFocused)
-                    .padding(.horizontal, JPSpace.m)
-                    .padding(.vertical, 11)
-                    .frame(minHeight: DMLook.fieldHeight)
-                    .background(WebTheme.sheet, in: RoundedRectangle(cornerRadius: DMLook.fieldHeight / 2))
-                    .overlay(RoundedRectangle(cornerRadius: DMLook.fieldHeight / 2)
-                        .strokeBorder(fieldError != nil ? WebTheme.danger : WebTheme.outline, lineWidth: JPStroke.hairline))
-                    .disabled(!canSend)
-                    .accessibilityLabel(remaining == 0 ? L("承認されるまで送れません", "You can't send until they accept")
-                                                       : L("\(peerName) さんへのメッセージ", "Message to \(peerName)"))
-                    .accessibilityIdentifier("dm.field")
-                Button { Task { await send() } } label: {
-                    // 送れるときだけ真鍮の塗りに墨の矢印（7.11:1・板「写真の無い画面の主ボタン＝送信」・2026-11-11 案C）
-                    Image(systemName: "arrow.up")
-                        .font(JPFont.headline)
-                        .foregroundStyle(sendEnabled ? WebTheme.accentText : Color.white.opacity(0.5))
-                        .frame(width: DMLook.sendSize, height: DMLook.sendSize)
-                        .background(sendEnabled ? WebTheme.accentFill : Color.white.opacity(0.16), in: Circle())
-                }
-                .buttonStyle(.plain)
-                .disabled(!sendEnabled)
-                .accessibilityLabel(Labels.Common.send)
-                .accessibilityIdentifier("dm.send")
-            }
-        }
-        .padding(.horizontal, JPSpace.s)
-        .padding(.top, JPSpace.xs)
-        // 入力欄・送るの丸と、その下（下の札・画面の下端）の間は 12pt（`DMLook.composerBottomGap`）
-        .padding(.bottom, DMLook.composerBottomGap)
-        .background(WebTheme.background, ignoresSafeAreaEdges: .bottom)
-        .overlay(alignment: .top) {
-            Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
         }
     }
 
@@ -871,18 +797,7 @@ struct DMConversationView: View {
 
     /// 欄の上の1行（断りは赤の字＋印、案内は白 82%）。**色だけにしない**（印と文で伝える）
     private func noteRow(_ text: String, error: Bool) -> some View {
-        HStack(alignment: .top, spacing: JPSpace.xs) {
-            Image(systemName: error ? "exclamationmark.circle" : "info.circle")
-                .font(JPFont.footnote)
-                .padding(.top, 1)
-                .accessibilityHidden(true)
-            Text(text)
-                .font(JPFont.caption)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .foregroundStyle(error ? WebTheme.danger : WebTheme.muted)
-        .padding(.horizontal, JPSpace.xxs)
-        .accessibilityElement(children: .combine)
+        DMNoteRow(text: text, error: error)
     }
 
     // MARK: - 見られない
@@ -1365,20 +1280,6 @@ struct DMTimeLabel: View {
             .padding(.horizontal, JPSpace.xxs)
             .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
             .accessibilityHidden(true)
-    }
-}
-
-/// 自分の通の札（写真）にだけ「送信を取り消す」の長押しを付ける（相手の札にはメニューを出さない・2026-11-12）
-private struct DMUnsendMenu<Menu: View>: ViewModifier {
-    let enabled: Bool
-    @ViewBuilder let menu: () -> Menu
-
-    func body(content: Content) -> some View {
-        if enabled {
-            content.contextMenu { menu() }
-        } else {
-            content
-        }
     }
 }
 

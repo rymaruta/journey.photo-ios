@@ -263,6 +263,8 @@ final class NotificationRouter: ObservableObject {
         let type = userInfo["type"] as? String
         // 旅行プランの会話・共有の知らせ（`{type: "tripchat"|"tripshare", planId}`・2026-11-12）は `trip_<planId>`
         if let trip = TripShareText.conversationId(push: userInfo) { return trip }
+        // グループの会話の知らせ（`{type: "group", groupId}`・束は `aps.thread-id`・2026-11-20 札 #582）は `group_<groupId>`
+        if let group = GroupText.conversationId(push: userInfo) { return group }
         guard type == "dm" || type == "storyreply", let id = userInfo["convId"] as? String,
               id.contains("_"), PathID.isSafe(id) else { return nil }
         return id
