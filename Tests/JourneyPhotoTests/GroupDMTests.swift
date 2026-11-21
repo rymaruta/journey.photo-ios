@@ -246,6 +246,23 @@ final class GroupDMTests: XCTestCase {
         XCTAssertEqual(store.groups.groups.map(\.id), ["gnew"], "作ったグループが受信箱に出ない")
     }
 
+    /// 2026-11-21（バグ調べ）: 作った直後の会話は、作ったときの答えの名前を最初から見出しに出す（前は読み終えるまで「グループ」）
+    func testCreatedGroupOpensWithItsName() throws {
+        let info = GroupInfo(groupId: "gnew", name: nil, displayName: "けん、みお", faces: [GroupFace(id: "ken", name: "けん")], memberCount: 3)
+        let ready = GroupReady(change: GroupChange(detail: .member(GroupMembership(group: info, isOwner: true, muted: false,
+                                                                                    membersMax: 30, members: [], invited: [])),
+                                                   invitedNow: ["mio"]))
+        let open = GroupOpen.created(ready)
+        XCTAssertEqual(open.groupId, "gnew")
+        XCTAssertEqual(open.seed, info, "作ったときの見出しを渡していない")
+        XCTAssertEqual(open.notice, ready.notice)
+        for path in ["Features/Messages/DMInboxView.swift", "Features/Messages/DMConversationView.swift"] {
+            let view = try source(path)
+            XCTAssertTrue(view.contains("GroupOpen.created(ready)"), path)
+            XCTAssertTrue(view.contains("GroupConversationView(groupId: open.groupId, seed: open.seed"), path)
+        }
+    }
+
     func testRowsShowSenderOnceAndTimeAtTheEnd() {
         let rows = GroupRows.build([
             msg("e", from: "yu", "2026-11-20T00:00:00.000Z", event: GroupEvent(type: "created")),

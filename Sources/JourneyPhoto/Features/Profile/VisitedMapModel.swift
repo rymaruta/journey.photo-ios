@@ -36,6 +36,8 @@ final class VisitedMapModel: ObservableObject {
     struct Toast: Equatable {
         let id: Int
         let message: String
+        /// 読み上げの文（無ければ `message`）。回数は本当の数で読む（画面の字は「3+ 回」）
+        var spoken: String? = nil
         /// 「取り消す」を添えるか（上限の知らせには添えない）
         var offersUndo = true
     }
@@ -289,13 +291,14 @@ final class VisitedMapModel: ObservableObject {
             finish(message: nil, name: prefecture, keepsToast: false,
                    spoken: VisitedMapText.quickAdded(prefecture, count: record.count(prefecture)))
         } else {
-            finish(message: VisitedMapText.recorded(prefecture, count: record.count(prefecture)), name: prefecture)
+            finish(message: VisitedMapText.recorded(prefecture, count: record.count(prefecture)), name: prefecture,
+                   messageSpoken: VisitedMapText.recorded(prefecture, count: record.count(prefecture), spoken: true))
         }
     }
 
     /// 札の「−」: 1 回減らす（0 回で記録を外す）
     func remove(_ prefecture: String) {
-        apply(record.removeLast(prefecture)) { name, count in VisitedMapText.reduced(name, count: count) }
+        apply(record.removeLast(prefecture)) { name, count, spoken in VisitedMapText.reduced(name, count: count, spoken: spoken) }
     }
 
     /// 「47県ぜんぶ行った」（確認のあとで）
@@ -358,10 +361,11 @@ final class VisitedMapModel: ObservableObject {
     // MARK: - 内部
 
     /// 1 県の変更を記録の履歴・保存・トースト・読み上げ・祝いに結ぶ
-    private func apply(_ change: VisitedChange?, message: (String, Int) -> String) {
+    private func apply(_ change: VisitedChange?, message: (String, Int, Bool) -> String) {
         guard let change, let name = change.after.keys.first else { return }
         history.push(change)
-        finish(message: message(name, record.count(name)), name: name)
+        finish(message: message(name, record.count(name), false), name: name,
+               messageSpoken: message(name, record.count(name), true))
     }
 
     /// - celebrates: false なら、そろった周は「見せた」ことにだけして祝わない（「47県ぜんぶ行った」の一括は
@@ -369,7 +373,7 @@ final class VisitedMapModel: ObservableObject {
     /// - keepsToast: false なら、出ている「取り消す」の帯に手を付けない（帯から足し引きした回）
     /// - spoken: 読み上げを替える（帯から足し引きした回「東京都、3 回、1 回足しました」）
     private func finish(message: String?, name: String?, celebrates: Bool = true, keepsToast: Bool = true,
-                        spoken override: String? = nil) {
+                        spoken override: String? = nil, messageSpoken: String? = nil) {
         let celebrated = record.takeCelebration()
         let celebrating = celebrated != nil && celebrates
         if celebrating, let celebrated {
@@ -385,7 +389,7 @@ final class VisitedMapModel: ObservableObject {
         persist()
         if let message {
             toastCounter += 1
-            let current = Toast(id: toastCounter, message: message)
+            let current = Toast(id: toastCounter, message: message, spoken: messageSpoken)
             toast = current
             scheduleToastEnd(current.id)
         } else if keepsToast {

@@ -245,12 +245,12 @@ struct DMConversationView: View {
             TripPlanDetailView(planId: planId, model: tripPlans, sharePeer: tripSharePeer)
         }
         .navigationDestination(item: $openedGroup) { open in
-            GroupConversationView(groupId: open.groupId, notice: open.notice, onLeft: { openedGroup = nil })
+            GroupConversationView(groupId: open.groupId, seed: open.seed, notice: open.notice, onLeft: { openedGroup = nil })
         }
         .sheet(isPresented: $showAddPeople, onDismiss: {
             guard let ready = pickedGroup else { return }
             pickedGroup = nil
-            openedGroup = GroupOpen(groupId: ready.groupId, notice: ready.notice)
+            openedGroup = GroupOpen.created(ready)
             Task { await store.refreshGroups(service: environment.groups, owner: auth.userId) }
         }) {
             NavigationStack {

@@ -412,6 +412,8 @@ struct AskActFlow: ViewModifier {
 
     @State private var faces: [FollowUser] = []
     @State private var facesLoaded = false
+    /// 顔の一覧を読んだ人（人が替わったら捨てて読み直す・前の人のフォロー中の顔を出さない）
+    @State private var facesOwner: String?
     @State private var sendingTo: String?
     @State private var inviteLink: TripInviteLink?
     @State private var inviteError: String?
@@ -430,6 +432,12 @@ struct AskActFlow: ViewModifier {
             }
             .navigationDestination(isPresented: Binding(get: { openPlanId != nil }, set: { if !$0 { openPlanId = nil } })) {
                 if let openPlanId { TripPlanOpenView(planId: openPlanId) }
+            }
+            .onChange(of: auth.userId) { _, me in
+                guard Self.dropsFaces(owner: facesOwner, me: me) else { return }
+                faces = []
+                facesLoaded = false
+                facesOwner = nil
             }
     }
 
@@ -476,6 +484,13 @@ struct AskActFlow: ViewModifier {
 
     /// 送る相手（フォローしている人）。シートを開いてから読む（観光スポットの頁の `openSendSheet` と同じ）
     private func loadFaces() async {
+        // 2026-11-21 判断（バグ調べ）: 一度読んだ顔をシートを閉じても持ち続けていたので、画面を開いたまま人が替わると
+        // 前の人のフォロー中の顔が出ていた。読んだ人と今の人が違えば捨てて読み直す（安全側）
+        if Self.dropsFaces(owner: facesOwner, me: auth.userId) {
+            faces = []
+            facesLoaded = false
+            facesOwner = nil
+        }
         guard !facesLoaded, let me = auth.userId else { return }
         if messages.phase != .loaded {
             Task { await messages.refresh(service: environment.dm, owner: me) }
@@ -484,6 +499,12 @@ struct AskActFlow: ViewModifier {
         guard auth.userId == me else { return }
         if let fetched { faces = DMStart.candidates(fetched.users, me: me, blocked: hidden.blockedUserIds) }
         facesLoaded = true
+        facesOwner = me
+    }
+
+    /// 読んだ顔の一覧を捨てるか（読んだ人と今の人が違う。ログアウトした回も捨てる）
+    static func dropsFaces(owner: String?, me: String?) -> Bool {
+        owner != nil && owner != me
     }
 
     /// 顔を押したら、その人へ観光スポットの頁のリンクを1つずつ（`DMSpotShare`・DM では札の形で見える）

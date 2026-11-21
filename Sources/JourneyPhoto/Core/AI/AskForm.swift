@@ -312,10 +312,16 @@ enum AskPlanFlowText {
         return max(5, Int((Double(minutes) / 5).rounded()) * 5)
     }
 
-    static func moveLine(_ minutes: Int) -> String {
-        minutes >= 60
-            ? L("移動の目安 約\(minutes / 60)時間\(minutes % 60 == 0 ? "" : "\(minutes % 60)分")", "About \(minutes / 60)h \(minutes % 60)m to move")
-            : L("移動の目安 約\(minutes)分", "About \(minutes) min to move")
+    ///
+    /// 2026-11-21 判断（バグ調べ）: 英語でも、ちょうどの時間は分を付けない（前は「About 1h 0m」）。
+    /// `TripTravel.duration` は日本語の形（「約 1 時間」の空き）と丸め（10 分単位）が違うので使い回さず、英語の形だけそろえる
+    static func moveLine(_ minutes: Int, language: String = Locale.preferredAppLanguage) -> String {
+        let h = minutes / 60, m = minutes % 60
+        if minutes >= 60 {
+            return L("移動の目安 約\(h)時間\(m == 0 ? "" : "\(m)分")",
+                     m == 0 ? "About \(h)h to move" : "About \(h)h \(m)m to move", language: language)
+        }
+        return L("移動の目安 約\(minutes)分", "About \(minutes) min to move", language: language)
     }
 
     /// 頭の文（旅行プランの AI の理由の1文。AI を使わなかったときは決まり文）
