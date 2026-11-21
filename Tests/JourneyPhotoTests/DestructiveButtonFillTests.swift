@@ -43,7 +43,7 @@ final class DestructiveButtonFillTests: XCTestCase {
 
     /// 白の字と赤の塗りの字の線: 塗りは `dangerFill`（#C8323A）で白 5.29:1。15pt の副ボタン（大きな字ではない）でも 4.5:1 に届く。
     /// 危険の字の色 #F0565A の塗りは白 3.39:1 で、17pt の太字（大きな字・3:1）には届くが 15pt には届かない
-    func testFillContrast() {
+    func testFillContrast() async {
         XCTAssertEqual(BrandPalette.dangerFill, 0xC8323A)
         XCTAssertGreaterThanOrEqual(BrandPalette.contrast(0xFFFFFF, BrandPalette.dangerFill), 4.5,
                                     "白の字と赤の塗りが 4.5:1 に届かない")
@@ -54,7 +54,7 @@ final class DestructiveButtonFillTests: XCTestCase {
     }
 
     /// 消す形は赤の塗り・白の字・縁なし（線の形に戻らない）
-    func testDangerToneIsFilled() {
+    func testDangerToneIsFilled() async {
         XCTAssertEqual(JPOutlineTone.danger.fill, WebTheme.dangerFill, "消すボタンが赤の塗りでない")
         XCTAssertEqual(JPOutlineTone.danger.text, WebTheme.foreground, "消すボタンの字が白でない")
         XCTAssertEqual(JPOutlineTone.danger.border, Color.clear, "消すボタンに線が残っている")
@@ -65,7 +65,7 @@ final class DestructiveButtonFillTests: XCTestCase {
     }
 
     /// 確かめの札のボタンは 50・字は折り返す（大きな文字で「キャンセル」が切れない）
-    func testConfirmSize() {
+    func testConfirmSize() async {
         XCTAssertEqual(JPOutlineSize.confirm.height, 50)
         XCTAssertGreaterThanOrEqual(JPOutlineSize.confirm.height, WebTheme.minTapTarget)
         XCTAssertTrue(JPOutlineSize.confirm.wraps)
@@ -75,7 +75,7 @@ final class DestructiveButtonFillTests: XCTestCase {
     // MARK: - 部品
 
     /// 確かめの札: 問いは headline（17 semibold）の白、ボタンは「キャンセル｜削除する」、横に入らなければ縦に積んで消す側が上
-    func testDeleteConfirmComponent() throws {
+    func testDeleteConfirmComponent() async throws {
         let parts = try source("Core/Design/FormParts.swift")
         guard let start = parts.range(of: "struct JPDeleteConfirm: View {") else { return XCTFail("JPDeleteConfirm が無い") }
         let body = String(parts[start.upperBound...].prefix(6000))
@@ -99,7 +99,7 @@ final class DestructiveButtonFillTests: XCTestCase {
     }
 
     /// 消す形の古い作り（赤 16% の地・赤 50% の線・赤 40% の線）が戻っていない
-    func testNoOutlinedDestructiveButtons() throws {
+    func testNoOutlinedDestructiveButtons() async throws {
         for (path, text) in try allSources() {
             XCTAssertFalse(text.contains("tone: .strong"), "\(path): 確かめの古い形（赤 16% の地）")
             XCTAssertFalse(text.contains("strong: true, fill: true"), "\(path): 確かめの札を画面に書いている（JPDeleteConfirm を使う）")
@@ -109,7 +109,7 @@ final class DestructiveButtonFillTests: XCTestCase {
     }
 
     /// 旅行プランの3つの確かめが共通の札を通る。消す入口のボタン（DM・グループ・トランク）は消す形
-    func testConfirmsAndEntriesUseSharedParts() throws {
+    func testConfirmsAndEntriesUseSharedParts() async throws {
         let detail = try source("Features/Trips/TripPlanDetailView.swift")
         XCTAssertEqual(detail.components(separatedBy: "JPDeleteConfirm(").count - 1, 2, "日の削除とプランの削除")
         let offline = try source("Features/Trips/OfflineTripCard.swift")
