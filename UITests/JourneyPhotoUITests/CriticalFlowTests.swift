@@ -130,7 +130,7 @@ final class CriticalFlowTests: XCTestCase {
 
     // MARK: - グループの DM（2026-11-20・札 #582）
 
-    /// グループの DM: 新しいメッセージで2人選ぶ →「3人で話す」→ 空の会話の候補を押すと欄に入る → 送る →
+    /// グループの DM: 新しいメッセージで2人選ぶ →「グループで話す」→ 空の会話の候補を押すと欄に入る → 送る →
     /// 詳しい画面で人を足す → 4人になる → 抜ける → 受信箱に戻る。見本の通信（`-JPPreviewGroups`・`PreviewBackend.groupReply`）。
     /// **どこかが出ない・押せないなら落とす**
     func testGroupCreateSendAddLeave() {
@@ -142,7 +142,7 @@ final class CriticalFlowTests: XCTestCase {
         // グループの一覧が読めると、受信箱にグループの行が出る（入口を出してよい合図）
         XCTAssertTrue(app.buttons["dm.group"].firstMatch.waitForExistence(timeout: 15), "受信箱にグループが出ない")
 
-        // 新しいメッセージ → 2人選ぶ →「3人で話す」
+        // 新しいメッセージ → 2人選ぶ →「グループで話す」
         let open = app.buttons["dm.new.open"].firstMatch
         XCTAssertTrue(open.waitForExistence(timeout: 10))
         open.tap()
@@ -154,7 +154,7 @@ final class CriticalFlowTests: XCTestCase {
         XCTAssertTrue(go.waitForExistence(timeout: 5), "主ボタンが出ない")
         XCTAssertTrue(wait(go, "label == %@", ["メッセージを送る"], timeout: 5), "1人で「メッセージを送る」にならない: \(go.label)")
         people.element(boundBy: 1).tap()
-        XCTAssertTrue(wait(go, "label == %@", ["3人で話す"], timeout: 5), "2人で「3人で話す」にならない: \(go.label)")
+        XCTAssertTrue(wait(go, "label == %@", ["グループで話す"], timeout: 5), "2人で「グループで話す」にならない: \(go.label)")
         go.tap()
 
         // 作った直後の空の会話: 候補を押すと欄に入るだけ → 送る

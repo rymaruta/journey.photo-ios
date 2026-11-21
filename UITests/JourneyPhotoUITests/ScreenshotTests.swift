@@ -11124,7 +11124,7 @@ final class ScreenshotTests: XCTestCase {
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "86g1-グループ（受信箱）")
 
-        // 新しいメッセージで2人選ぶ（印・選んだ人の札・主ボタン「3人で話す」）
+        // 新しいメッセージで2人選ぶ（印・選んだ人の札・主ボタン「グループで話す」）
         let open = app.buttons["dm.new.open"].firstMatch
         if open.waitForExistence(timeout: 10) {
             open.tap()

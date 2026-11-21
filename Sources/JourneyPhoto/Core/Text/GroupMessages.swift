@@ -91,10 +91,11 @@ enum GroupPick {
         case .single:
             return nil
         case .start:
+            // 2026-11-20 owner「◯人で話す ではなく グループで話す の方がいい」。人数は選んだ人の札で見える
             return selected == 1 ? L("メッセージを送る", "Send a message", language: language)
-                                 : L("\(n)人で話す", "Chat with \(n)", language: language)
+                                 : L("グループで話す", "Start a group chat", language: language)
         case .extend:
-            return L("\(n)人で話す", "Chat with \(n)", language: language)
+            return L("グループで話す", "Start a group chat", language: language)
         case .add:
             return L("\(n)人を足す", n == 1 ? "Add 1 person" : "Add \(n) people", language: language)
         }

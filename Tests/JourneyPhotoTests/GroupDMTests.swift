@@ -27,12 +27,12 @@ final class GroupDMTests: XCTestCase {
         XCTAssertEqual(GroupPick.outcome(selected: [], mode: .start), .none)
         // 主ボタンは押すと何が起きるかを言う（自分を入れた人数）
         XCTAssertEqual(GroupPick.mainTitle(selected: 1, mode: .start, language: "ja"), "メッセージを送る")
-        XCTAssertEqual(GroupPick.mainTitle(selected: 2, mode: .start, language: "ja"), "3人で話す")
+        XCTAssertEqual(GroupPick.mainTitle(selected: 2, mode: .start, language: "ja"), "グループで話す")
         XCTAssertNil(GroupPick.mainTitle(selected: 0, mode: .start, language: "ja"))
         // 1対1に足す: 相手と選んだ人でグループ（相手は外せない・自分と相手で2人）
         let peer = DMPeerSeed(id: "yu", name: "ゆう")
         XCTAssertEqual(GroupPick.outcome(selected: [mio], mode: .extend(peer: peer)), .create(["yu", "mio"]))
-        XCTAssertEqual(GroupPick.mainTitle(selected: 1, mode: .extend(peer: peer), language: "ja"), "3人で話す")
+        XCTAssertEqual(GroupPick.mainTitle(selected: 1, mode: .extend(peer: peer), language: "ja"), "グループで話す")
         // グループに足す: もう居る人は足さない
         XCTAssertEqual(GroupPick.outcome(selected: [ken, mio], mode: .add(present: ["ken"], seatsLeft: 5)), .add(["mio"]))
         XCTAssertEqual(GroupPick.mainTitle(selected: 2, mode: .add(present: [], seatsLeft: 5), language: "ja"), "2人を足す")
@@ -59,7 +59,7 @@ final class GroupDMTests: XCTestCase {
         XCTAssertEqual(picked.count, 29, "30人目から先は選べない")
         XCTAssertFalse(GroupPick.canSelectMore(count: 29, mode: .start))
         XCTAssertTrue(GroupPick.canSelectMore(count: 28, mode: .start))
-        XCTAssertEqual(GroupPick.mainTitle(selected: 29, mode: .start, language: "ja"), "30人で話す")
+        XCTAssertEqual(GroupPick.mainTitle(selected: 29, mode: .start, language: "ja"), "グループで話す")
         // 外すのはいつでもできる
         XCTAssertEqual(GroupPick.toggled(picked, user("u0"), mode: .start).count, 28)
         // 上限を越えた選び方からは作らない
