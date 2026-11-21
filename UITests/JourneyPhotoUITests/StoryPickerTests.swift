@@ -9,7 +9,7 @@ import XCTest
 /// 写真を選ぶ画面（PHPicker）は別プロセスで、中が木（accessibility）に出ない回がある。
 /// **選ぶ所まで行けなかった回は落とさない**（撮れる所まで撮り、何が見えたかを書き残して抜ける）。
 /// 選べた後に押せないままなら落とす——それがこの試験の見張り。
-final class StoryPickerTests: XCTestCase {
+final class StoryPickerTests: JPUITestCase {
 
     override func setUp() {
         continueAfterFailure = true

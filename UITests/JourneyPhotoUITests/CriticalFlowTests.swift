@@ -19,7 +19,7 @@ import CoreLocation
 ///
 /// 手順は `ScreenshotTests` の private の道具と似ているが、あちらは「出なければ抜ける」、こちらは「出なければ落とす」で
 /// 決まりが逆なので使い回さない
-final class CriticalFlowTests: XCTestCase {
+final class CriticalFlowTests: JPUITestCase {
 
     /// 見本の利用者（`ScreenshotTests.previewUserId` と同じ・公開 API が誰にでも返している値で資格情報ではない）
     private static let previewUserId = "67d49a68-80f1-7083-b0e0-c767886ef868"

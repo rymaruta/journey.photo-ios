@@ -9,7 +9,7 @@ import XCTest
 /// Mac のシミュレーターは端末の AI を持たないことがあるので、絵の回は決まった候補（`-JPOnDeviceAI sample`・
 /// Debug のみ・AI は呼ばない）で見る。**AI の出来はここでは見ない**（`OnDeviceAIProbeTests` の数で見る）。
 /// 見本の1枚（`-JPPreviewUploadSample`）と端末の中の通信（`-JPPreviewLocalBackend`）で開く。出なければ落とす
-final class UploadSuggestTests: XCTestCase {
+final class UploadSuggestTests: JPUITestCase {
 
     private static let previewUserId = "67d49a68-80f1-7083-b0e0-c767886ef868"
     private static let largeText = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]

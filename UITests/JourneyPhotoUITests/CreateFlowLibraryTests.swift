@@ -11,7 +11,7 @@ import XCTest
 /// を撮る。案の模型（https://claude.ai/artifact/MBEkPZ71qmZ8d3F9uWNec8 の B1）と比べる絵。
 ///
 /// 🔴 **写真の許可は終わったら元に戻す**（`resetAuthorizationStatus`・`StoryLibraryFirstTests` と同じ理由）
-final class CreateFlowLibraryTests: XCTestCase {
+final class CreateFlowLibraryTests: JPUITestCase {
 
     /// 巡回（`ScreenshotTests`）と同じ、鍵を持たないログインの利用者
     private static let previewUserId = "67d49a68-80f1-7083-b0e0-c767886ef868"

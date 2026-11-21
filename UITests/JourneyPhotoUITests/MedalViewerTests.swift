@@ -20,7 +20,7 @@ import XCTest
 /// 見本の利用者は鍵を持たないので、持ち物は `-JPPreviewBadges`（Debug のみ・`PreviewSession.badges`）で渡す。
 /// **全画面まで行けなかった回は飛ばす（skip）**——通信の都合で開けないのを「直っていない」と取り違えない。
 /// 開けたのに × で戻れなければ落とす——それがこの試験の見張り。
-final class MedalViewerTests: XCTestCase {
+final class MedalViewerTests: JPUITestCase {
 
     enum Route: String { case shelf, nameSide }
     enum Close: String { case immediately, afterSpin, whileSpinning }

@@ -62,12 +62,26 @@ stack() {
     fi
 }
 
+# いまの時刻（ミリ秒）。perl が無ければ秒に 000 を足す
+now_ms() { perl -MTime::HiRes=time -e 'printf "%d\n", time*1000' 2>/dev/null || echo "$(date +%s)000"; }
+GONE_MARK="${HANG_SAMPLE_GONE_MARK:-/tmp/hang-sample-last-gone}"
+
 watch_pid() {
-    local pid="$1" waited=0 sampled=0
+    local pid="$1" waited=0 sampled=0 asked
+    asked=$(now_ms)
     for at in $WAIT_FIRST; do
-        sleep $((at - waited)); waited=$at
+        # 2026-11-21 判断（札 #681）: 消えるまでの時間を細かく出すため、最初の確かめまでは 0.2 秒ごとに見る
+        if [ "$waited" = 0 ]; then
+            local deadline=$((asked + at * 1000))
+            while [ "$(now_ms)" -lt "$deadline" ] && kill -0 "$pid" 2>/dev/null; do sleep 0.2; done
+        else
+            sleep $((at - waited))
+        fi
+        waited=$at
         if ! kill -0 "$pid" 2>/dev/null; then
-            say "pid=$pid ${at}s の時点で消えていた（アプリは閉じている）"
+            local gone; gone=$(now_ms)
+            echo "$gone" > "$GONE_MARK"
+            say "pid=$pid ${at}s の時点で消えていた（アプリは閉じている）。閉じると言われてから消えるまで $((gone - asked))ms"
             return
         fi
         say "pid=$pid ${at}s の時点で残っている（状態 $(state "$pid")）"
@@ -113,6 +127,13 @@ tail -n 0 -F "$LOG" 2>/dev/null | while IFS= read -r line; do
                 say "pid=$pid 主スレッドが返らない（idle にならない）。積みを取る（状態 $(state "$pid")）"
                 stack "$pid" &
             done
+            ;;
+        *"Launch com.journeyphoto."*)
+            # 次の起動まで: 前のアプリが消えてから、この起動を言われるまで（札 #681）
+            if [ -f "$GONE_MARK" ]; then
+                say "次の起動: 前のアプリが消えてから $(( $(now_ms) - $(cat "$GONE_MARK") ))ms"
+                rm -f "$GONE_MARK"
+            fi
             ;;
         *"Terminate com.journeyphoto."*)
             pid="${line##*:}"

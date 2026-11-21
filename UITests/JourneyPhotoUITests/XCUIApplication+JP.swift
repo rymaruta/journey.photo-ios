@@ -17,6 +17,8 @@ extension XCUIApplication {
         // 窓口の最初の呼び出しが 44〜120秒戻らず、DM の試験のあとでアプリを終わらせる操作が 71〜216秒戻らない回があった
         // （run 1594、1597）。UI テストは通知の許可を出さないので、確かめる画面は変わらない
         app.launchArguments += ["-JPNoSystemNotifications", "YES"]
+        // 自分の試験で起動したアプリは自分の試験の終わりに閉じる（次の試験の launch に閉じる仕事を残さない・札 #681）
+        JPUITestCase.running?.closeAtEnd(app)
         return app
     }
 }

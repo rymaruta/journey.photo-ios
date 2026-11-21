@@ -31,7 +31,8 @@ class HangSampleTests(unittest.TestCase):
             '    + 2370 start  (in dyld_sim)\\n    +   2370 VisitedMapModel.persist()  (in JourneyPhoto.debug.dylib)\\n" > "$out"\n')
         self.tool.chmod(0o755)
         self.app = subprocess.Popen(["sleep", "61.5"])
-        env = dict(os.environ, HANG_SAMPLE_TOOL=str(self.tool), HANG_SAMPLE_CHECKS="1 2", HANG_SAMPLE_AT="2",
+        self.gone_mark = d / "last-gone"
+        env = dict(os.environ, HANG_SAMPLE_GONE_MARK=str(self.gone_mark), HANG_SAMPLE_TOOL=str(self.tool), HANG_SAMPLE_CHECKS="1 2", HANG_SAMPLE_AT="2",
                    HANG_SAMPLE_APP_PATTERN="sleep 61.5")
         self.watcher = subprocess.Popen(["bash", str(SCRIPT), str(self.log)], env=env,
                                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
@@ -74,6 +75,10 @@ class HangSampleTests(unittest.TestCase):
         self.app.wait()
         self.append(f"    t =     0.26s         Terminate com.journeyphoto.JourneyPhoto.staging:{pid}")
         self.wait_for(f"pid={pid} 1s の時点で消えていた")
+        self.wait_for("閉じると言われてから消えるまで ")
+        # 次の起動まで（札 #681）
+        self.append("    t =     1.47s     Launch com.journeyphoto.JourneyPhoto.staging")
+        self.wait_for("measured [hang-sample] 次の起動: 前のアプリが消えてから ")
         log = self.log.read_text()
         self.assertNotIn(f"pid={pid} 閉じると言われて", log, "消えたアプリの積みを取りに行った")
 
