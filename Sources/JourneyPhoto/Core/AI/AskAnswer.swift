@@ -8,6 +8,8 @@ struct AskExchange: Identifiable, Equatable, Codable {
     var id: String = UUID().uuidString
     let question: String
     var answer: AskAnswer
+    /// 頼んだ時刻（AI に渡す直前のやりとりを今日のものだけにする・札 #678。前の版の控えには無い）
+    var askedAt: Date? = nil
 }
 
 struct AskAnswer: Equatable, Codable {

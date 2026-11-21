@@ -39,7 +39,7 @@ struct AskScreen: View {
     @State private var planAsk: TripAIAsk?
     /// 前に頼んだこと（端末の控え・`AskHistoryStore`）
     @State private var conversations = AskHistoryStore.Conversations()
-    /// 自分のプロフィールの Pro（読めていなければ nil・`AskConversationRule.isPro`）
+    /// 自分のプロフィールの Pro（読めていなければ nil・`AskConversationRule.plan`）
     @State private var profilePro: Bool?
     @State private var confirmNew = false
     @State private var showConversations = false
@@ -318,7 +318,7 @@ struct AskScreen: View {
             if ask.isComplete, let owner = auth.userId, planJob == nil {
                 // 2026-11-21 判断（版3「流れ」、確かめのダイアログを足さない）: 行き先と日数が読めたら、すぐ作り始めて会話に流れの骨格を出す。
                 // 回数は旅行プランの AI の枠（`TripAIRunner` が取る）。画面を閉じても作り続け、できたら上の帯で知らせる
-                guard let question = engine.beginPlan(text) else { return }
+                guard let question = engine.beginPlan(text, userId: owner) else { return }
                 let backend = TripAIJobs.Backend.live(environment: environment, auth: auth, owner: owner, index: officialSpots,
                                                       wishlist: wishlist.spotIds, connectivity: connectivity)
                 let job = TripAIJobs.shared.start(ask, owner: owner, usage: nil, backend: backend)
@@ -460,11 +460,11 @@ struct AskScreen: View {
 
     private var clearConfirmTitle: String { L("前の会話をすべて消しますか", "Clear all earlier conversations?") }
 
-    private var isPro: Bool { AskConversationRule.isPro(usage: engine.usage, profile: profilePro) }
+    private var plan: AskConversationRule.Plan { AskConversationRule.plan(usage: engine.usage, profile: profilePro) }
     /// 無料と分かっているとき（読めていない間は Pro の案内を出さない）
-    private var knownFree: Bool { engine.usage.map { !$0.isPro } ?? (profilePro == false) }
+    private var knownFree: Bool { plan == .free }
 
-    private var listed: [AskHistoryStore.Conversation] { AskConversationRule.listed(conversations, isPro: isPro) }
+    private var listed: [AskHistoryStore.Conversation] { AskConversationRule.listed(conversations, plan: plan) }
 
     private func reloadConversations() {
         conversations = AskHistoryStore().conversations(userId: auth.userId)
@@ -485,7 +485,7 @@ struct AskScreen: View {
 
     /// 上の帯の「新しく頼む」。無料で会話があるときだけ確かめる
     private func newConversation() {
-        if AskConversationRule.confirmsNew(isPro: isPro, hasConversation: engine.conversationId != nil) {
+        if AskConversationRule.confirmsNew(plan: plan, hasConversation: engine.conversationId != nil) {
             confirmNew = true
         } else {
             beginNew()
@@ -495,7 +495,7 @@ struct AskScreen: View {
     private func beginNew() {
         task?.cancel()
         stopWatchingPlan()
-        engine.startNew(keep: AskConversationRule.keepsOnNew(isPro: isPro), userId: auth.userId)
+        engine.startNew(keep: AskConversationRule.keepsOnNew(plan: plan), userId: auth.userId)
         draft = ""
         reloadConversations()
     }
@@ -528,7 +528,8 @@ struct AskScreen: View {
         task?.cancel()
         stopWatchingPlan()
         let typed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        engine.carriedDraft = interrupted ?? (typed.isEmpty ? nil : draft)
+        // 打ち始めていた字があればそれを優先して残す。無ければ取り消した頼み
+        engine.carriedDraft = typed.isEmpty ? interrupted : draft
         onClose()
     }
 
@@ -657,22 +658,29 @@ struct AskPlanJobWatch: View {
 /// - Pro が切れたら、一覧は出さず今の会話だけを見せる（控えは消さない。また Pro になれば戻る）
 enum AskConversationRule {
 
-    /// Pro かどうか。サーバーが数えた回数の返事（`AskUsage.tier`）があればそれ、無ければ自分のプロフィール（`UserProfile.isPro`）
-    static func isPro(usage: AskUsage?, profile: Bool?) -> Bool {
-        usage?.isPro ?? profile ?? false
+    /// Pro か、無料か、まだ分からないか
+    enum Plan: Equatable { case pro, free, unknown }
+
+    /// サーバーが数えた回数の返事（`AskUsage.tier`）と、自分のプロフィール（`UserProfile.isPro`）。**どちらかが Pro なら Pro**
+    /// （2026-11-21 確かめ役の指摘: Pro を買って戻っても、前に読んだ無料の回数の返事が勝って無料の扱いになっていた）。
+    /// どちらも読めていなければ「分からない」
+    static func plan(usage: AskUsage?, profile: Bool?) -> Plan {
+        if usage?.isPro == true || profile == true { return .pro }
+        if usage != nil || profile == false { return .free }
+        return .unknown
     }
 
     /// 一覧に出す前の会話（Pro だけ。今の会話は除く）
-    static func listed(_ list: AskHistoryStore.Conversations, isPro: Bool) -> [AskHistoryStore.Conversation] {
-        guard isPro else { return [] }
+    static func listed(_ list: AskHistoryStore.Conversations, plan: Plan) -> [AskHistoryStore.Conversation] {
+        guard plan == .pro else { return [] }
         return list.items.filter { $0.id != list.currentId }
     }
 
-    /// 「新しく頼む」で今の会話を残すか
-    static func keepsOnNew(isPro: Bool) -> Bool { isPro }
+    /// 「新しく頼む」で今の会話を残すか。**分からない間は残す**（Pro の人の会話を消さない側に倒す）
+    static func keepsOnNew(plan: Plan) -> Bool { plan != .free }
 
-    /// 「新しく頼む」の前に確かめるか（無料で、消える会話があるときだけ）
-    static func confirmsNew(isPro: Bool, hasConversation: Bool) -> Bool { !isPro && hasConversation }
+    /// 「新しく頼む」の前に確かめるか（無料と分かっていて、消える会話があるときだけ）
+    static func confirmsNew(plan: Plan, hasConversation: Bool) -> Bool { plan == .free && hasConversation }
 }
 
 /// 旅行プランを作る頼みのシートと、組み上げの画面（`AskThreadView` の「旅行プランにする」と AI の画面で使い回す・札 #675）

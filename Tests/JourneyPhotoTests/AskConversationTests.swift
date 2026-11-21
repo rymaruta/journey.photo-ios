@@ -24,7 +24,7 @@ final class AskConversationTests: XCTestCase {
         UserDefaults(suiteName: "AskConversationTests.\(UUID().uuidString)")!
     }
 
-    private func backend(_ calls: Calls, setup: Setup = Setup(), user: String = "u1") throws -> AskEngine.Backend {
+    private func backend(_ calls: Calls, setup: Setup = Setup(), user: String? = "u1", userBox: UserBox? = nil) throws -> AskEngine.Backend {
         let rows = try AskSamples.ledger()
         return AskEngine.Backend(
             signedIn: { true },
@@ -44,8 +44,11 @@ final class AskConversationTests: XCTestCase {
                 return AskDevice.Result(text: "\(text)への答えです。", general: false, picks: [], photoIds: [], sources: [])
             },
             details: { $0 },
-            userId: { user })
+            userId: { userBox?.id ?? user })
     }
+
+    /// 頼んでいる途中で人が替わる試験のため（答えを待つ間に替える）
+    final class UserBox { var id: String?; init(_ id: String?) { self.id = id } }
 
     // MARK: - 閉じて開き直す・アプリを落とす
 
@@ -112,7 +115,7 @@ final class AskConversationTests: XCTestCase {
     func testPlanFlowAnswerIsKept() async throws {
         let d = defaults()
         let engine = AskEngine(history: AskHistoryStore(defaults: d))
-        let q = try XCTUnwrap(engine.beginPlan("京都で2日の旅行プランにして"))
+        let q = try XCTUnwrap(engine.beginPlan("京都で2日の旅行プランにして", userId: "u1"))
         engine.failPlan(q, line: "作れませんでした。", userId: "u1")
         let kept = try XCTUnwrap(AskHistoryStore(defaults: d).conversations(userId: "u1").current?.thread.first)
         XCTAssertEqual(kept.answer.kind, .plan)
@@ -137,8 +140,8 @@ final class AskConversationTests: XCTestCase {
         let calls = Calls()
         let engine = AskEngine(history: AskHistoryStore(defaults: d))
         await engine.start("香川で夕日がきれいな所は？", backend: try backend(calls))
-        XCTAssertTrue(AskConversationRule.confirmsNew(isPro: false, hasConversation: true), "無料で消す前に確かめない")
-        engine.startNew(keep: AskConversationRule.keepsOnNew(isPro: false), userId: "u1")
+        XCTAssertTrue(AskConversationRule.confirmsNew(plan: .free, hasConversation: true), "無料で消す前に確かめない")
+        engine.startNew(keep: AskConversationRule.keepsOnNew(plan: .free), userId: "u1")
         XCTAssertFalse(engine.isActive)
         XCTAssertTrue(AskHistoryStore(defaults: d).conversations(userId: "u1").items.isEmpty, "無料で前の会話が残った")
         let reopened = AskEngine(history: AskHistoryStore(defaults: d))
@@ -154,17 +157,17 @@ final class AskConversationTests: XCTestCase {
         let engine = AskEngine(history: AskHistoryStore(defaults: d))
         await engine.start("香川で夕日がきれいな所は？", backend: try backend(calls))
         let a = try XCTUnwrap(engine.conversationId)
-        XCTAssertFalse(AskConversationRule.confirmsNew(isPro: true, hasConversation: true), "Pro で確かめを出した")
-        engine.startNew(keep: AskConversationRule.keepsOnNew(isPro: true), userId: "u1")
+        XCTAssertFalse(AskConversationRule.confirmsNew(plan: .pro, hasConversation: true), "Pro で確かめを出した")
+        engine.startNew(keep: AskConversationRule.keepsOnNew(plan: .pro), userId: "u1")
         var list = AskHistoryStore(defaults: d).conversations(userId: "u1")
         XCTAssertNil(list.currentId)
-        XCTAssertEqual(AskConversationRule.listed(list, isPro: true).map(\.id), [a], "Pro で前の会話が一覧に無い")
+        XCTAssertEqual(AskConversationRule.listed(list, plan: .pro).map(\.id), [a], "Pro で前の会話が一覧に無い")
 
         await engine.start("京都で紅葉は？", backend: try backend(calls))
         let b = try XCTUnwrap(engine.conversationId)
         XCTAssertNotEqual(a, b, "新しく頼んだのに同じ会話になった")
         list = AskHistoryStore(defaults: d).conversations(userId: "u1")
-        XCTAssertEqual(AskConversationRule.listed(list, isPro: true).map(\.id), [a], "一覧に今の会話を混ぜた")
+        XCTAssertEqual(AskConversationRule.listed(list, plan: .pro).map(\.id), [a], "一覧に今の会話を混ぜた")
 
         let used = calls.reserves + calls.deviceAsks
         let saved = try XCTUnwrap(list.items.first { $0.id == a })
@@ -185,21 +188,28 @@ final class AskConversationTests: XCTestCase {
         list.items = [.init(id: "b", thread: [AskExchange(question: "B", answer: AskAnswer(engine: .device, text: "b"))]),
                       .init(id: "a", thread: [AskExchange(question: "A", answer: AskAnswer(engine: .device, text: "a"))])]
         list.currentId = "b"
-        XCTAssertTrue(AskConversationRule.listed(list, isPro: false).isEmpty, "Pro でないのに前の会話の一覧を出した")
+        XCTAssertTrue(AskConversationRule.listed(list, plan: .free).isEmpty, "Pro でないのに前の会話の一覧を出した")
         XCTAssertEqual(list.current?.id, "b", "最後の1本が見えない")
-        XCTAssertEqual(AskConversationRule.listed(list, isPro: true).map(\.id), ["a"], "また Pro になっても一覧が戻らない")
+        XCTAssertEqual(AskConversationRule.listed(list, plan: .pro).map(\.id), ["a"], "また Pro になっても一覧が戻らない")
     }
 
-    /// Pro かどうか: サーバーの回数の返事があればそれ、無ければプロフィール。分からなければ無料
-    func testProDecision() async {
+    /// Pro かどうか: **どちらかが Pro なら Pro**（Pro を買って戻ったら、前の無料の回数の返事より新しいプロフィールが勝つ）。
+    /// どちらも読めていなければ「分からない」で、新しく頼んでも会話を消さない（確かめも出さない）
+    func testPlanDecision() async {
         let pro = AskUsage(tier: "pro", kind: "ask", day: .init(used: 1, limit: 20, remaining: 19),
                            month: .init(used: 1, limit: 300, remaining: 299), serverAllowed: true)
         let free = AskUsage(tier: "free", kind: "ask", day: .init(used: 1, limit: 3, remaining: 2),
                             month: .init(used: 1, limit: 10, remaining: 9), serverAllowed: false)
-        XCTAssertTrue(AskConversationRule.isPro(usage: pro, profile: false))
-        XCTAssertFalse(AskConversationRule.isPro(usage: free, profile: true), "サーバーが無料と言ったのに Pro の扱い（切れた）")
-        XCTAssertTrue(AskConversationRule.isPro(usage: nil, profile: true))
-        XCTAssertFalse(AskConversationRule.isPro(usage: nil, profile: nil))
+        XCTAssertEqual(AskConversationRule.plan(usage: pro, profile: false), .pro)
+        XCTAssertEqual(AskConversationRule.plan(usage: free, profile: true), .pro, "Pro を買って戻っても前の無料の返事が勝った")
+        XCTAssertEqual(AskConversationRule.plan(usage: nil, profile: true), .pro)
+        XCTAssertEqual(AskConversationRule.plan(usage: free, profile: nil), .free)
+        XCTAssertEqual(AskConversationRule.plan(usage: nil, profile: false), .free)
+        XCTAssertEqual(AskConversationRule.plan(usage: nil, profile: nil), .unknown)
+        XCTAssertTrue(AskConversationRule.keepsOnNew(plan: .unknown), "分からない間に新しく頼むと会話を消した")
+        XCTAssertFalse(AskConversationRule.confirmsNew(plan: .unknown, hasConversation: true))
+        XCTAssertTrue(AskConversationRule.listed(.init(items: [.init(id: "a", thread: [])], currentId: nil), plan: .unknown).isEmpty,
+                      "分からない間に前の会話の一覧を出した")
     }
 
     /// 残すのは `AskHistoryStore.limit` 件まで。古い順に落とす
@@ -227,11 +237,6 @@ final class AskConversationTests: XCTestCase {
         store.saveConversation(id: "x", thread: thread, userId: "u1")
         store.removeAll(userId: "u1")
         XCTAssertTrue(store.conversations(userId: "u1").items.isEmpty, "「すべて消す」で会話が残った")
-
-        store.saveConversation(id: "x", thread: thread, userId: "u1")
-        store.saveConversation(id: "y", thread: [AskExchange(question: "京都で紅葉は？", answer: AskAnswer(engine: .device))], userId: "u1")
-        store.remove("香川で夕日は？", userId: "u1")
-        XCTAssertEqual(store.conversations(userId: "u1").items.map(\.id), ["y"], "最近の検索の × でその会話が残った")
 
         store.saveConversation(id: "z", thread: thread, userId: "u9")
         AccountLocalData.remove(userId: "u9", username: nil, defaults: d,
@@ -277,23 +282,43 @@ final class AskConversationTests: XCTestCase {
 
     // MARK: - 探すの最近の検索に AI の頼みを出さない（2026-11-21 owner「探すの方にまで AI で頼んだ履歴出てくるのいやだな」）
 
-    /// 頼みと質問の形の文は出さない・覚えない。前から混ざっていた文は読むときに控えからも外す。ふつうの検索の言葉は残す
-    func testRecentSearchesHideAskSentences() async {
+    /// AI に頼んだ文（答えの控えに同じ文があるもの）だけを外す。前から混ざっていた文は読むときに控えからも外す。
+    /// **ふつうの検索の言葉は、頼みや質問に見える形でも消さない**（確かめ役の指摘）
+    func testRecentSearchesHideOnlyAskedSentences() async {
         let d = defaults()
-        XCTAssertTrue(RecentSearchesStore.isAsk("近くで夕日がきれいな所は？"))
-        XCTAssertTrue(RecentSearchesStore.isAsk("金沢でおすすめの観光スポットを教えて"))
-        XCTAssertFalse(RecentSearchesStore.isAsk("京都"), "ふつうの検索の言葉を AI の頼みとみなした")
-        XCTAssertFalse(RecentSearchesStore.isAsk("嵐山"), "ふつうの検索の言葉を AI の頼みとみなした")
-        // 前の作りで混ざった履歴（#675 より前は探すの欄から AI に頼んでいた）
-        d.set(["近くで夕日がきれいな所は？", "京都", "金沢でおすすめの観光スポットを教えて", "嵐山"], forKey: RecentSearchesStore.key(for: "u1"))
-        let store = RecentSearchesStore(defaults: d)
-        XCTAssertEqual(store.searchWords(userId: "u1"), ["京都", "嵐山"])
-        XCTAssertEqual(store.words(userId: "u1"), ["京都", "嵐山"], "古い AI の頼みを控えから外していない")
-        // 探すの「すべて消す」は探すの言葉だけ。AI の会話は残る
         let ask = AskHistoryStore(defaults: d)
+        ask.remember([AskExchange(question: "近くで夕日がきれいな所は？", answer: AskAnswer(engine: .device, text: "屋島"))], userId: "u1")
+        ask.remember([AskExchange(question: "金沢でおすすめの観光スポットを教えて", answer: AskAnswer(engine: .device, text: "兼六園"))], userId: "u1")
+        let plain = ["しだれ桜", "ぶどう狩り", "なんば", "なにわ", "いつくしま", "コツメカワウソ", "京都 おすすめ", "近くのカフェ"]
+        let asked = Set(ask.all(userId: "u1").keys)
+        XCTAssertEqual(RecentSearchesStore.searchWords(plain, asked: asked), plain, "ふつうの検索の言葉を消した")
+        // 前の作りで混ざった履歴
+        d.set(["近くで夕日がきれいな所は？", "しだれ桜", "金沢でおすすめの観光スポットを教えて", "近くのカフェ"], forKey: RecentSearchesStore.key(for: "u1"))
+        let store = RecentSearchesStore(defaults: d)
+        XCTAssertEqual(store.searchWords(userId: "u1", asked: asked), ["しだれ桜", "近くのカフェ"])
+        XCTAssertEqual(store.words(userId: "u1"), ["しだれ桜", "近くのカフェ"], "古い AI の頼みを控えから外していない")
+        // 探すの「すべて消す」は探すの言葉だけ。AI の会話は残る
         ask.saveConversation(id: "c", thread: [AskExchange(question: "香川で夕日は？", answer: AskAnswer(engine: .device))], userId: "u1")
         store.removeAll(userId: "u1")
-        XCTAssertEqual(ask.conversations(userId: "u1").items.map(\.id), ["c"], "探すの「すべて消す」で AI の会話まで消えた")
+        XCTAssertEqual(ask.conversations(userId: "u1").items.first?.id, "c", "探すの「すべて消す」で AI の会話まで消えた")
+        XCTAssertNotNil(ask.today("近くで夕日がきれいな所は？", userId: "u1"), "探すの「すべて消す」で AI の答えの控えまで消えた")
+        // 最近の検索に覚えないのは「✦ AI に頼む」の1行で渡した字だけ
+        XCTAssertTrue(SearchSubmit.handedToAsk(" 近くのカフェ ", handed: "近くのカフェ"))
+        XCTAssertFalse(SearchSubmit.handedToAsk("しだれ桜", handed: "近くのカフェ"))
+        // ログアウトで外すのも、答えの控えに同じ文がある言葉だけ
+        store.remember("しだれ桜", userId: "u1")
+        store.remember("近くで夕日がきれいな所は？", userId: "u1")
+        ask.forgetOnSignOut(userId: "u1")
+        XCTAssertEqual(store.words(userId: "u1"), ["しだれ桜"])
+    }
+
+    /// 探すの画面は、答えの控えで見分けた言葉を外して読む
+    func testSearchViewReadsRecentWithAskedSet() async throws {
+        let view = try String(contentsOfFile: #filePath.replacingOccurrences(of: "Tests/JourneyPhotoTests/AskConversationTests.swift",
+                                                                              with: "Sources/JourneyPhoto/Features/Search/SearchView.swift"))
+        XCTAssertTrue(view.contains("asked: Set(AskHistoryStore().all(userId: userId).keys)"))
+        XCTAssertFalse(view.contains("AskHistoryStore().removeAll"), "探すの「すべて消す」で AI の会話まで消している")
+        XCTAssertTrue(view.contains("handedToAsk = query"), "「✦ AI に頼む」で渡した字を最近の検索から外していない")
     }
 
     /// Pro の前の会話の一覧から、1つずつ・全部消せる（いま画面に出ている会話は残す）
@@ -310,5 +335,102 @@ final class AskConversationTests: XCTestCase {
         XCTAssertEqual(list.currentId, "c")
         store.removeConversations(keeping: nil, userId: "u1")
         XCTAssertTrue(store.conversations(userId: "u1").items.isEmpty)
+    }
+
+    // MARK: - 確かめ役の指摘（札 #678）
+
+    /// 会話を消したら、その頼みの答えの控え（同じ日の同じ頼み）も消す
+    func testRemovingConversationForgetsItsAnswers() async throws {
+        let d = defaults()
+        let calls = Calls()
+        let engine = AskEngine(history: AskHistoryStore(defaults: d))
+        await engine.start("香川で夕日がきれいな所は？", backend: try backend(calls))
+        XCTAssertNotNil(AskHistoryStore(defaults: d).today("香川で夕日がきれいな所は？", userId: "u1"))
+        engine.startNew(keep: false, userId: "u1")
+        XCTAssertNil(AskHistoryStore(defaults: d).today("香川で夕日がきれいな所は？", userId: "u1"), "会話を消しても答えの控えが残った")
+        let store = AskHistoryStore(defaults: d)
+        store.remember([AskExchange(question: "京都で紅葉は？", answer: AskAnswer(engine: .device))], userId: "u1")
+        store.saveConversation(id: "k", thread: [AskExchange(question: "京都で紅葉は？", answer: AskAnswer(engine: .device))], userId: "u1")
+        store.removeConversations(keeping: nil, userId: "u1")
+        XCTAssertNil(store.today("京都で紅葉は？", userId: "u1"), "すべて消すでも答えの控えが残った")
+    }
+
+    /// ログインしていない人の会話は端末に残さない（画面の中だけ）
+    func testSignedOutConversationIsNotStored() async throws {
+        let d = defaults()
+        let calls = Calls()
+        let engine = AskEngine(history: AskHistoryStore(defaults: d))
+        await engine.start("香川で夕日がきれいな所は？", backend: try backend(calls, user: nil))
+        XCTAssertTrue(engine.isActive, "画面の中でも会話を持っていない")
+        XCTAssertTrue(d.dictionaryRepresentation().keys.filter { $0.hasPrefix("journey-photo-ask") }.isEmpty,
+                      "ログインしていない人の会話を端末に残した")
+        XCTAssertTrue(AskHistoryStore(defaults: d).conversations(userId: nil).items.isEmpty)
+    }
+
+    /// 答えを待つ間に人が替わった・ログアウトで控えを消した: 届いた答えを前の人の鍵や消したあとに書かない
+    func testAnswerArrivingAfterSwitchOrSignOutIsNotStored() async throws {
+        let d = defaults()
+        let calls = Calls()
+        // 人が替わった（答えが届いたときの人は u2）
+        let box = UserBox("u1")
+        let engine = AskEngine(history: AskHistoryStore(defaults: d))
+        var b = try backend(calls, userBox: box)
+        let device = b.deviceAsk
+        b.deviceAsk = { text, history, library in box.id = "u2"; return await device(text, history, library) }
+        await engine.start("香川で夕日がきれいな所は？", backend: b)
+        XCTAssertTrue(AskHistoryStore(defaults: d).conversations(userId: "u2").items.isEmpty, "前の人の会話を次の人の鍵に書いた")
+        XCTAssertTrue(AskHistoryStore(defaults: d).conversations(userId: "u1").items.isEmpty)
+
+        // ログアウトで控えを消した（同じ人のまま答えが届く）
+        let engine2 = AskEngine(history: AskHistoryStore(defaults: d))
+        var b2 = try backend(calls)
+        let device2 = b2.deviceAsk
+        b2.deviceAsk = { text, history, library in
+            AskHistoryStore(defaults: d).forgetOnSignOut(userId: "u1")
+            return await device2(text, history, library)
+        }
+        await engine2.start("京都で紅葉がきれいな所は？", backend: b2)
+        XCTAssertTrue(AskHistoryStore(defaults: d).conversations(userId: "u1").items.isEmpty, "ログアウトで消したあとに会話を書いた")
+        XCTAssertNil(AskHistoryStore(defaults: d).today("京都で紅葉がきれいな所は？", userId: "u1"), "ログアウトで消したあとに答えを書いた")
+    }
+
+    /// 戻した会話から続けて聞くときも、同じ日の同じ頼みは控えの答えを出す（AI も回数も使わない）
+    func testFollowUpUsesSameDayAnswer() async throws {
+        let d = defaults()
+        let calls = Calls()
+        let first = AskEngine(history: AskHistoryStore(defaults: d))
+        await first.start("香川で夕日がきれいな所は？", backend: try backend(calls))
+        first.startNew(keep: true, userId: "u1")
+        await first.start("京都で紅葉は？", backend: try backend(calls))
+        let used = calls.reserves + calls.deviceAsks
+        await first.followUp("香川で夕日がきれいな所は？", backend: try backend(calls))
+        XCTAssertEqual(calls.reserves + calls.deviceAsks, used, "同じ日の同じ頼みで AI か回数を使った")
+        XCTAssertEqual(first.thread.last?.question, "香川で夕日がきれいな所は？")
+        XCTAssertEqual(first.thread.last?.answer.text, "香川で夕日がきれいな所は？への答えです。")
+    }
+
+    /// AI に渡す直前のやりとりは今日のものだけ（数日前の会話の続きを渡さない。画面には残す）
+    func testContextIsTodayOnly() async throws {
+        let d = defaults()
+        let calls = Calls()
+        var old = AskExchange(question: "金沢のおすすめは？", answer: AskAnswer(engine: .device, text: "兼六園です。"))
+        old.askedAt = Date().addingTimeInterval(-3 * 86_400)
+        let engine = AskEngine(history: AskHistoryStore(defaults: d))
+        await engine.open(.init(id: "old", thread: [old]), backend: try backend(calls))
+        await engine.followUp("冬なら？", backend: try backend(calls))
+        XCTAssertEqual(calls.deviceHistories.last, [], "数日前のやりとりを AI に渡した")
+        XCTAssertEqual(engine.thread.map(\.question), ["金沢のおすすめは？", "冬なら？"], "画面から前のやりとりが消えた")
+        await engine.followUp("雪の日は？", backend: try backend(calls))
+        XCTAssertEqual(calls.deviceHistories.last, ["冬なら？"], "今日のやりとりを AI に渡していない")
+    }
+
+    /// 1つの会話に残すのは新しい30往復まで
+    func testConversationKeepsNewest30Turns() async {
+        let store = AskHistoryStore(defaults: defaults())
+        let thread = (0..<35).map { AskExchange(question: "Q\($0)", answer: AskAnswer(engine: .device)) }
+        store.saveConversation(id: "c", thread: thread, userId: "u1")
+        let kept = store.conversations(userId: "u1").current?.thread ?? []
+        XCTAssertEqual(kept.count, AskHistoryStore.turnLimit)
+        XCTAssertEqual(kept.first?.question, "Q5")
     }
 }

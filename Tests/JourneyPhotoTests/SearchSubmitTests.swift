@@ -130,7 +130,7 @@ final class SearchSubmitTests: XCTestCase {
         XCTAssertNil(router.takePendingAskText(), "字を2回渡した")
     }
 
-    // MARK: - 前に頼んだことは控えから見せる（AI を呼ばない）
+    // MARK: - 前の会話は控えから見せる（AI を呼ばない・札 #678）
 
     @MainActor
     func testShowSavedUsesNoAIAndNoCount() async throws {
@@ -151,7 +151,7 @@ final class SearchSubmitTests: XCTestCase {
         let engine = AskEngine(history: AskHistoryStore(defaults: UserDefaults(suiteName: "SearchSubmitTests.\(UUID().uuidString)")!))
         var answer = AskAnswer(engine: .device, text: "屋島がおすすめです。")
         answer.spotIds = ["sp_yashima"]
-        await engine.showSaved([AskExchange(question: "香川で夕日は？", answer: answer)], backend: backend)
+        await engine.open(.init(id: "c1", thread: [AskExchange(question: "香川で夕日は？", answer: answer)]), backend: backend)
         XCTAssertEqual(engine.thread.first?.question, "香川で夕日は？")
         XCTAssertNotNil(engine.spotsById["sp_yashima"], "控えの札の中身を読み直していない")
         XCTAssertEqual(c.reserves + c.deviceAsks + c.serverAsks, 0, "控えを見るだけで AI か回数を使った")

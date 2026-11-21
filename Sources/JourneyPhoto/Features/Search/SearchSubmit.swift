@@ -52,6 +52,13 @@ enum SearchSubmit {
 }
 
 /// 「AI に頼む」の入口と画面の言葉と決まり（札 #675・2026-11-21 判断・画面を持たない層・`AskEntryTests`）
+extension SearchSubmit {
+    /// 探すの欄の字が「✦ AI に頼む」の1行で AI の画面へ渡した字と同じか（同じなら最近の検索に覚えない・札 #678）
+    static func handedToAsk(_ text: String, handed: String) -> Bool {
+        RecentSearchesStore.normalized(text) == RecentSearchesStore.normalized(handed)
+    }
+}
+
 enum AskEntry {
 
     static var title: String { L("AI に頼む", "Ask AI") }

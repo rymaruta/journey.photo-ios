@@ -36,6 +36,8 @@ struct SearchView: View {
     @FocusState private var fieldFocused: Bool
     /// 前に探した言葉（新しい順に5つまで・端末の中だけ。2026-11-14 判断・`RecentSearchesStore`）
     @State private var recentWords: [String] = []
+    /// 「✦ AI に頼む」の1行で AI の画面へ渡した字（最近の検索に覚えない・札 #678。キーボードで探し直したら外す）
+    @State private var handedToAsk: String?
     /// いまこの画面が出ているか。**詳細・人のページを上に積んでいる間は読み直さない**
     /// （`GalleryView` と同じ形）
     @State private var isOnScreen = false
@@ -432,11 +434,15 @@ struct SearchView: View {
     private func rememberQuery(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        if let handedToAsk, SearchSubmit.handedToAsk(trimmed, handed: handedToAsk) { return }
         // 文を読み替えて欄に入れた語（「京都」）は覚えない。覚えるのは打った文（`readSentence`）
         if let reading, reading.text == trimmed { return }
-        // AI に頼む形の文は覚えない（「✦ AI に頼む」の1行で AI の画面へ渡す文。AI の履歴は AI の画面の中だけ・札 #678）
-        guard !RecentSearchesStore.isAsk(trimmed) else { return }
         recentWords = RecentSearchesStore().remember(trimmed, userId: auth.userId)
+    }
+
+    /// 探すの最近の検索（AI に頼んだ文を除く・札 #678）。AI に頼んだ文は答えの控えにある文で見分ける
+    static func recentSearchWords(userId: String?) -> [String] {
+        RecentSearchesStore().searchWords(userId: userId, asked: Set(AskHistoryStore().all(userId: userId).keys))
     }
 
     /// 最近の言葉を押した: その言葉で探し、語を並べた文なら言葉の表で読む（AI は呼ばない）。いちばん上へ上げる
@@ -449,6 +455,7 @@ struct SearchView: View {
 
     /// キーボードの「検索」: 語を並べた文を言葉の表で読む（「こう読みました」）とキーボードを閉じるだけ。**AI は呼ばない**
     private func submitFromKeyboard() {
+        handedToAsk = nil
         rememberQuery(query)
         fieldFocused = false
         apply(SearchSubmit.plan(.keyboard, text: query, scope: model.scope, searched: searched))
@@ -465,7 +472,10 @@ struct SearchView: View {
     /// 押すと AI の画面へ、打った字を欄に入れた形で移る。押すまで AI は呼ばない
     private var askRow: some View {
         Button {
-            rememberQuery(query)
+            // 2026-11-21 判断（札 #678）: AI の画面へ渡した字は探すの最近の検索に覚えない（覚えていたら外す）。
+            // 最近の検索に覚えないのはこの1行を押したときだけ（文の形では見分けない）
+            handedToAsk = query
+            recentWords = RecentSearchesStore().remove(query, userId: auth.userId)
             fieldFocused = false
             TabRouter.shared.openAsk(text: query)
         } label: {
@@ -700,8 +710,8 @@ struct SearchView: View {
                 .accessibilityLabel(model.scope.prompt)
                 .onChange(of: fieldFocused) { _, focused in if !focused { rememberQuery(searched) } }
                 // 人が替わったら、その人の言葉を読み直す（前の人の言葉を並べない）
-                .onChange(of: auth.userId) { _, id in recentWords = RecentSearchesStore().searchWords(userId: id) }
-                .onAppear { recentWords = RecentSearchesStore().searchWords(userId: auth.userId) }
+                .onChange(of: auth.userId) { _, id in recentWords = Self.recentSearchWords(userId: id) }
+                .onAppear { recentWords = Self.recentSearchWords(userId: auth.userId) }
             if !query.isEmpty {
                 Button {
                     query = ""

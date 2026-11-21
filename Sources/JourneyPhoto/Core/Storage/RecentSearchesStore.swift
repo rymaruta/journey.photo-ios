@@ -106,24 +106,18 @@ struct RecentSearchesStore {
         return Array(([trimmed] + rest).prefix(limit))
     }
 
-    /// AI に頼んだ文か（探すの最近の検索に入れない・出さない・札 #678・2026-11-21 owner「探すの方にまで AI で頼んだ履歴出てくるのいやだな」）。
-    /// 見分け方は**頼みと質問の形**（`AskQuery.form == .ask`）。#675 より前に探すの欄から AI に回した文は、この形のものだけだった
-    /// （#662「AI に回すのは頼みと質問の形だけ」）ので、古い混ざった履歴もこれで見分けられる。地名や語を並べたふつうの検索の言葉は
-    /// この形にならないので消えない。控えの答えがあるかでは見分けない（同じ言葉をふつうに探した人の履歴まで消すため）
-    static func isAsk(_ word: String) -> Bool {
-        AskQuery.form(word) == .ask
+    /// 探すの最近の検索に出す言葉（札 #678・2026-11-21 owner「探すの方にまで AI で頼んだ履歴出てくるのいやだな」）。
+    /// `asked` は AI に頼んだ文（答えの控え `AskHistoryStore.all` の鍵）。**同じ文が控えにあるときだけ**外す。
+    /// 文の形（頼みや質問の形）では見分けない（「しだれ桜」「近くのカフェ」のようなふつうの検索の言葉まで消えた・確かめ役の指摘）
+    static func searchWords(_ words: [String], asked: Set<String>) -> [String] {
+        words.filter { !asked.contains(normalized($0)) }
     }
 
-    /// 探すの最近の検索に出す言葉（AI に頼んだ文を除く）
-    static func searchWords(_ words: [String]) -> [String] {
-        words.filter { !isAsk($0) }
-    }
-
-    /// 探すの最近の検索を読む。AI に頼んだ文が混ざっていたら、控えからも外す（古い履歴の掃除・ふつうの言葉は残す）
+    /// 探すの最近の検索を読む。前の作りで混ざった AI の頼み（`asked` にある文）は控えからも外す（ふつうの言葉は残す）
     @discardableResult
-    func searchWords(userId: String?) -> [String] {
+    func searchWords(userId: String?, asked: Set<String>) -> [String] {
         let stored = defaults.stringArray(forKey: key(for: userId)) ?? []
-        let kept = Self.searchWords(stored)
+        let kept = Self.searchWords(stored, asked: asked)
         if kept.count != stored.count { save(kept, userId: userId) }
         return Array(kept.prefix(Self.limit))
     }
