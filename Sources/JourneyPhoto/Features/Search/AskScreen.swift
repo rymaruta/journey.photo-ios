@@ -440,8 +440,7 @@ struct AskScreen: View {
                 }
             }
             .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(WebTheme.background)
+            .webScreen()
             .navigationTitle(AskEntry.conversationsTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
