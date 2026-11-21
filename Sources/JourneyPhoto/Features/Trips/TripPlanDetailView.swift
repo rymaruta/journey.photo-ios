@@ -1041,7 +1041,7 @@ struct TripPlanDetailView: View {
         // 着く時刻の目安（札 #677・案A・端末で計算・保存しない）。日付の無いプランは今日の日の入りで
         let start = starts.minutes(planId: planId, day: di)
         let times = dayTimes(day, resolved: resolved, numbers: numbers, legs: legs, estimates: estimatesByLeg,
-                             ymd: ymd, start: start)
+                             ymd: ymd, sun: sun, start: start)
         let showsTimes = !day.items.isEmpty
         let timesInColumn = !typeSize.isAccessibilitySize
         let timesInset: CGFloat = showsTimes && timesInColumn ? timeWidth + TripTimeStyle.columnGap : 0
@@ -1196,11 +1196,13 @@ struct TripPlanDetailView: View {
 
     /// その日の着く時刻の目安（札 #677）。滞在は観光スポットの種類から、移動は区間の見込み（`TripTimes.planMoves`）
     private func dayTimes(_ day: TripDay, resolved: [TripDraft.Place], numbers: [Int], legs: [TripTravel.Leg],
-                          estimates: [[TripTravel.Estimate]], ymd: String?, start: Int) -> TripTimes.Day {
+                          estimates: [[TripTravel.Estimate]], ymd: String?, sun: TripDraft.Sun?, start: Int) -> TripTimes.Day {
         guard !day.items.isEmpty else { return TripTimes.Day(rows: [], end: nil) }
-        let stops = day.items.enumerated().map { ii, item in
+        // 描くたびに呼ばれるので、撮影スポットは1回だけ引く（区間の見込みが届くたびに画面ごと描き直す）
+        let spots = day.items.map(spotFor)
+        let stops = day.items.indices.map { ii in
             TripTimes.Stop(name: resolved.indices.contains(ii) ? resolved[ii].name : "",
-                           stay: TripTimes.stayMinutes(for: spotFor(item)),
+                           stay: TripTimes.stayMinutes(for: spots[ii]),
                            times: resolved.indices.contains(ii) ? resolved[ii].times : [])
         }
         let long = legs.indices.map { i in
@@ -1210,7 +1212,8 @@ struct TripPlanDetailView: View {
         }
         let moves = TripTimes.planMoves(numbers: Array(numbers.prefix(day.items.count)), legs: legs,
                                         estimates: estimates, long: long)
-        let light = TripTimes.light(TripDraft.sun(ymd: ymd ?? TripTimes.todayYMD(), spots: daySpots(day)))
+        // 日付のある日は日の出の行と同じ計算を使い回す。日付の無いプランだけ今日で計算する
+        let light = TripTimes.light(ymd != nil ? sun : TripDraft.sun(ymd: TripTimes.todayYMD(), spots: spots.compactMap { $0 }))
         return TripTimes.schedule(start: start, stops: stops, moves: moves, light: light)
     }
 
