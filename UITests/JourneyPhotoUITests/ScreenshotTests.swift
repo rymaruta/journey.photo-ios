@@ -3280,9 +3280,9 @@ final class ScreenshotTests: XCTestCase {
         let share = app.buttons["ask.act.share"].firstMatch
         guard share.waitForExistence(timeout: 5) else { return unreached(app, "ask.act.share") }
         share.tap()
-        guard app.descendants(matching: .any)["ask.share.what"].firstMatch.waitForExistence(timeout: 10) else {
-            return unreached(app, "ask.share.what")
-        }
+        // 回 1658、1660 の要素の木: 1行は出ていたが、送るシートの入れ物の名前（`sendSheet`）が中の名前を上書きしていた。字で探す
+        let what = app.staticTexts.matching(NSPredicate(format: "label ENDSWITH %@", "をリンクで送ります")).firstMatch
+        guard what.waitForExistence(timeout: 10) else { return unreached(app, "仲間に送るの「リンクで送ります」の1行") }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "11zb-AI に頼む（仲間に送る、リンクで送る）")
         finishSearchAsk(app, scene: "one")
