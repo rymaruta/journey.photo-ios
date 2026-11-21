@@ -194,6 +194,17 @@ struct DMThreadLog: Equatable {
         merge(all)
     }
 
+    /// 全部を読み直した。ただし**読み始めたあとに一覧へ入った通は残す**（`known` は読み始めたときの id）。
+    ///
+    /// 2026-11-21 判断（グループの会話のバグ調べ）: 読み直しの答えは、読み始めた時点のサーバーの姿。
+    /// 待っている間に送れた自分の1通（`succeed`）や、別の読み直しで届いた通は答えに入っていないことがあり、
+    /// そのまま置き換えると、送った1通が次の読み直し（15 秒）まで消えていた
+    mutating func replace(with all: [DMMessage], keepingAddedSince known: Set<String>) {
+        let arrived = messages.filter { !known.contains($0.id) }
+        replace(with: all)
+        merge(arrived)
+    }
+
     /// 送り始める。**同じ鍵の1通がもう控えにあれば足さない**（押し直しで二重にしない）
     @discardableResult
     mutating func begin(text: String, clientId: String, at date: Date = Date()) -> Bool {

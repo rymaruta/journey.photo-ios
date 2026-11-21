@@ -199,6 +199,53 @@ final class GroupDMTests: XCTestCase {
         DMMessage(id: id, from: from, mine: mine, text: event == nil ? id : "", t: t, groupEvent: event)
     }
 
+    /// 2026-11-21（バグ調べ）: 読み直しの途中で送れた1通は、読み直しの答え（読み始めた時点の姿）に無くても消さない。
+    /// 前は全部を置き換えていて、送った吹き出しが次の読み直し（15 秒）まで消えていた
+    func testReloadStartedBeforeSendKeepsTheSentMessage() {
+        var log = DMThreadLog(messages: [msg("k1", from: "ken", "2026-11-20T00:01:00.000Z")])
+        // 読み直しを始める（このときの通を覚える）
+        let startedWith = Set(log.messages.map(\.id))
+        // 待っている間に自分の1通が送れた
+        XCTAssertTrue(log.begin(text: "やあ", clientId: "c1"))
+        log.succeed("c1", with: msg("c1", from: "me", mine: true, "2026-11-20T00:02:00.000Z"))
+        // 読み直しの答えは、送る前のサーバーの姿（c1 が無い）。サーバーで消えた k0 は落とす
+        log.replace(with: [msg("k1", from: "ken", "2026-11-20T00:01:00.000Z")], keepingAddedSince: startedWith)
+        XCTAssertEqual(log.messages.map(\.id), ["k1", "c1"], "読み直しの途中で送れた1通が消えた")
+        // 読み始める前から在った通は、答えに無ければ落とす（自分の側を消した・通報で消えた）
+        let again = Set(log.messages.map(\.id))
+        log.replace(with: [msg("c1", from: "me", mine: true, "2026-11-20T00:02:00.000Z")], keepingAddedSince: again)
+        XCTAssertEqual(log.messages.map(\.id), ["c1"])
+        // 会話の画面はこの置き換えを使う
+        let view = (try? source("Features/Messages/GroupConversationView.swift")) ?? ""
+        XCTAssertTrue(view.contains("log.replace(with: fresh, keepingAddedSince: startedWith)"))
+    }
+
+    /// 2026-11-21（バグ調べ）: 何も変えない「読んだ」（既に読んだ・まだ一覧に無いグループ）で、進んでいる一覧の読み直しを捨てない。
+    /// 前は作った直後のグループが受信箱に出なかった（会話の画面の読み直しが先に終わると、一覧の読み直しの答えを捨てていた）
+    @MainActor
+    func testNoOpMarkReadDoesNotDropTheInboxReload() async throws {
+        StubProtocol.reset()
+        defer { StubProtocol.reset() }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        // 一覧の読み直しを「飛んでいる途中」で止める（遅さは要求の手前で作る・`TestGate.swift`）
+        let gate = Gate()
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!,
+                            tokenProvider: GatedTokenProvider(token: "t", gate: gate),
+                            session: URLSession(configuration: config))
+        let store = DMInboxStore()
+        store.setForTesting(.empty, owner: Self.me, groups: .empty)
+        StubProtocol.respond(status: 200,
+                             body: #"{"groups":[{"groupId":"gnew","displayName":"けん、みお","memberCount":3,"updatedAt":"2026-11-21T00:00:00.000Z"}],"invites":[]}"#)
+        let reload = Task { await store.refreshGroups(service: GroupService(api: api), owner: Self.me) }
+        await gate.untilWaiting()
+        // 会話の画面が「読んだ」を置く（一覧にまだ無いので何も変わらない）
+        store.applyGroups { $0.markingRead("gnew") }
+        await gate.open()
+        await reload.value
+        XCTAssertEqual(store.groups.groups.map(\.id), ["gnew"], "作ったグループが受信箱に出ない")
+    }
+
     func testRowsShowSenderOnceAndTimeAtTheEnd() {
         let rows = GroupRows.build([
             msg("e", from: "yu", "2026-11-20T00:00:00.000Z", event: GroupEvent(type: "created")),
