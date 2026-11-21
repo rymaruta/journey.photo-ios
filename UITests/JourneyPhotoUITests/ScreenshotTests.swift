@@ -3115,8 +3115,8 @@ final class ScreenshotTests: XCTestCase {
     ///
     /// 2026-11-20 判断（回 1619、1626）: 1つの試験の中でアプリを起動し直すと、前のアプリを閉じられず（Terminate が 70 秒余り返らず）
     /// 「Failed to terminate」で落ちた（run 1610 の明示の terminate と同じ形）。**場面ごとに試験を分け、1つの試験では1回だけ起動する。**
-    /// 終わりに閉じる前の状態（`perf.probe` のメインスレッドの止まり、`search.ask.stage`、`search.ask.probe`）を `measured [ask-end]` に出し、
-    /// 自分で閉じて、かかった秒を `measured [ask-terminate]` に出す（閉じられない場面を突き止める）
+    /// 終わりに状態（`perf.probe` のメインスレッドの止まり、`search.ask.stage`、`search.ask.probe`）を `measured [ask-end]` に出し、
+    /// キーボードを閉じる。アプリを閉じるのは次の試験の頭に任せる（自分で閉じると返らないことがあった・回 1644、1650）
     private func launchSearchAsk(mode: String = "", largeText: Bool = false) -> XCUIApplication? {
         let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -3173,7 +3173,7 @@ final class ScreenshotTests: XCTestCase {
         return true
     }
 
-    /// 終わりに閉じる前の状態を出し、自分で閉じてかかった秒を出す
+    /// 終わりに状態を出し、キーボードを閉じる（閉じるのは次の試験の頭に任せる）
     private func finishSearchAsk(_ app: XCUIApplication, scene: String) {
         func value(_ id: String) -> String {
             let e = app.descendants(matching: .any)[id].firstMatch
@@ -3196,9 +3196,9 @@ final class ScreenshotTests: XCTestCase {
             let closed = XCTWaiter.wait(for: [gone], timeout: 5) == .completed
             print("measured [ask-keyboard] scene=\(scene) closed=\(closed)")
         }
-        let started = Date()
-        app.terminate()
-        print("measured [ask-terminate] scene=\(scene) seconds=\(String(format: "%.1f", Date().timeIntervalSince(started)))")
+        // 2026-11-20 判断（回 1619〜1650）: 自分で閉じない。閉じる処理だけが場面を選ばずに 70 秒余り返らないことがあった
+        // （1641 は無し、1644 は大きな字、1650 は答え。どれも描き直し、地図、画像、キーボードは落ち着いていた）。
+        // ほかの試験と同じく、次の試験の頭の起動に任せる（そこでは 0.05 秒で閉じている）
     }
 
     /// 11z1 欄（✦ と見本の字）、11z0 打ってから送る前（欄の右に送信のボタン・打っている間は結果を変えない）
