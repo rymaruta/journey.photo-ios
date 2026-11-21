@@ -138,6 +138,9 @@ struct SpotRegionMap: Identifiable {
     ///   単位の空間の点で持つ（地図の大きさが変わっても同じ所に来る）。重ならないことは `SpotRegionMapTests` が縛る
     /// - 九州・沖縄は「九州」と「沖縄」（左上の挿入図）の2枚。どちらも九州・沖縄を選ぶ（Web も沖縄県に別の札がある）
     /// - 中部と関東、中国と四国は近いので、関東は太平洋側、中国は日本海側へずらした
+    /// - 2026-11-21 判断（札 #643）: 奄美群島を沖縄県から鹿児島県へ移して挿入図の枠の北が 28.51° → 27.87° に縮み、
+    ///   沖縄の島が単位の空間で 47 上へ寄った。前の (158, 101) では札が久米島と尖閣の島に掛かるので、
+    ///   島に掛からない左上の海 (130, 75) へ動かした（久米島まで 3pt・尖閣まで 5pt・`SpotRegionMapTests` が縛る）
     static var japanLabels: [SpotMapLabel] { [
         SpotMapLabel(area: "北海道", text: L("北海道", "Hokkaido"), center: CGPoint(x: 805, y: 175)),
         SpotMapLabel(area: "東北", text: L("東北", "Tohoku"), center: CGPoint(x: 794, y: 483)),
@@ -147,7 +150,7 @@ struct SpotRegionMap: Identifiable {
         SpotMapLabel(area: "中国", text: L("中国", "Chugoku"), center: CGPoint(x: 200, y: 642)),
         SpotMapLabel(area: "四国", text: L("四国", "Shikoku"), center: CGPoint(x: 328, y: 939)),
         SpotMapLabel(area: "九州・沖縄", text: L("九州", "Kyushu"), center: CGPoint(x: 115, y: 1066)),
-        SpotMapLabel(area: "九州・沖縄", text: L("沖縄", "Okinawa"), center: CGPoint(x: 158, y: 101)),
+        SpotMapLabel(area: "九州・沖縄", text: L("沖縄", "Okinawa"), center: CGPoint(x: 130, y: 75)),
     ] }
 
     /// 日本の地方の寄せ（画面の pt）。段の中の地図（決めたときは幅 143・高さ 160。2026-11-12 に地図を段の高さ 212 へ

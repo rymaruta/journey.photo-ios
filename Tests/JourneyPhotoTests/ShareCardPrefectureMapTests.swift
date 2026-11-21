@@ -243,13 +243,43 @@ final class ShareCardPrefectureMapTests: XCTestCase {
                 farOff.append("\(entry.prefecture)\(entry.name)")
             }
         }
-        // 奄美群島の12市町村だけ。点は正しい（鹿児島県）が、同梱の県の輪郭（Natural Earth）が奄美群島を沖縄県の輪に
-        // 入れていて、鹿児島県の輪郭は北緯 29.44° まで（2026-11-19 測った）。このときピンは打ち、県は塗らない
-        // （`prefectureShape` が nil。座標のある奄美の写真の今の動きと同じ）
-        XCTAssertEqual(Set(farOff), Set(["鹿児島県奄美市", "鹿児島県大和村", "鹿児島県宇検村", "鹿児島県瀬戸内町",
-                                         "鹿児島県龍郷町", "鹿児島県喜界町", "鹿児島県徳之島町", "鹿児島県天城町",
-                                         "鹿児島県伊仙町", "鹿児島県和泊町", "鹿児島県知名町", "鹿児島県与論町"]),
-                       "県の輪郭から 1° 以上離れた市区町村の点")
+        // 2026-11-21（札 #643）: 奄美群島の12市町村も鹿児島県の輪郭に入った（前は Natural Earth が奄美群島を沖縄県の輪に
+        // 入れていて、ピンは打つが県を塗らなかった。`Tools/generate-japan-prefectures.py` の `move_amami_rings`）
+        XCTAssertEqual(farOff, [], "県の輪郭から 1° 以上離れた市区町村の点")
+    }
+
+    /// 奄美群島（鹿児島県）の島は鹿児島県の輪、沖縄本島・辺戸岬・石垣・伊平屋島・硫黄鳥島は沖縄県の輪に入る（札 #643）。
+    /// 奄美の写真で鹿児島県が塗られる（座標のある写真も、撮影地が奄美の市町村の写真も）
+    func testAmamiIslandsBelongToKagoshima() throws {
+        let prefectures = try Self.shapes("japan-prefectures")
+        func owners(_ lat: Double, _ lng: Double) -> [String] {
+            prefectures.filter { shape in
+                shape.r.contains { ShareCardMap.ringContains($0, longitude: lng, latitude: lat) }
+            }.map(\.n)
+        }
+        let kagoshima: [(String, Double, Double)] = [
+            ("奄美市名瀬", 28.377, 129.494), ("奄美大島", 28.30, 129.40), ("喜界島", 28.32, 129.97),
+            ("徳之島", 27.80, 128.95), ("沖永良部島", 27.40, 128.60), ("与論島", 27.045, 128.425),
+        ]
+        let okinawa: [(String, Double, Double)] = [
+            ("那覇", 26.212, 127.681), ("辺戸岬", 26.87, 128.26), ("石垣島", 24.40, 124.20),
+            // 緯度だけで切ると奄美に入る沖縄県の島（伊平屋島は北緯 27.01〜27.09°、硫黄鳥島は 27.85°）
+            ("伊平屋島", 27.04, 127.97), ("硫黄鳥島", 27.86, 128.236),
+        ]
+        for (name, lat, lng) in kagoshima {
+            XCTAssertEqual(owners(lat, lng), ["鹿児島県"], name)
+            XCTAssertEqual(ShareCardMap.prefectureShape(named: "鹿児島県", among: prefectures,
+                                                        latitude: lat, longitude: lng)?.n, "鹿児島県", "\(name) で鹿児島県が塗られない")
+        }
+        for (name, lat, lng) in okinawa {
+            XCTAssertEqual(owners(lat, lng), ["沖縄県"], name)
+            XCTAssertEqual(ShareCardMap.prefectureShape(named: "沖縄県", among: prefectures,
+                                                        latitude: lat, longitude: lng)?.n, "沖縄県", "\(name) で沖縄県が塗られない")
+        }
+        // 沖縄県の輪は北緯 27.9° より南（奄美の島が残っていない）
+        let okinawaShape = try XCTUnwrap(prefectures.first { $0.n == "沖縄県" })
+        let north = okinawaShape.r.joined().filter { $0.count == 2 }.map { $0[1] }.max() ?? .infinity
+        XCTAssertLessThan(north, 27.9, "沖縄県の輪に奄美群島が残っている")
     }
 
     /// 県の代表点は47県すべてにあり、どれも地図に日本が出て（輪郭の中か、海岸から 0.15° 以内・`CountryOutline.shapeForDisplay`

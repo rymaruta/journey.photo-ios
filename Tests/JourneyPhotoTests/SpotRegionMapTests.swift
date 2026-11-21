@@ -434,6 +434,24 @@ final class SpotRegionMapTests: XCTestCase {
         XCTAssertEqual(SpotRegionMap.labelWidth("Kanto"), 58)
     }
 
+    /// 「沖縄」の札は挿入図の島（沖縄本島・久米島・宮古・八重山・尖閣・大東）に掛からず、2pt 以上離れる。
+    /// 2026-11-21（札 #643）: 奄美群島を鹿児島県へ移して挿入図の島が上へ寄り、前の (158, 101) では久米島と尖閣に掛かった
+    func testOkinawaLabelDoesNotCoverInsetIslands() throws {
+        let g = try geometry()
+        let map = SpotRegionMap.japan(g)
+        let spots = try allRegions()
+        let areas = map.areas(SpotMapSource(spots: spots, japanGroups: SpotPrefectureIndex.groups(spots: spots)))
+        let size = CGSize(width: SearchSpotIndexSection.mapWidth(for: g), height: SearchSpotIndexSection.mapHeight)
+        let label = try XCTUnwrap(map.labelFrames(container: size, in: areas).first { $0.label.text == "沖縄" })
+        let okinawa = try XCTUnwrap(g.piece("沖縄県"))
+        let viewport = VisitedMapViewport()
+        let padded = label.frame.insetBy(dx: -2, dy: -2)
+        for polygon in okinawa.polygons {
+            let screen = polygon.map { viewport.screenPoint(forUnit: $0, content: g.size, container: size) }
+            XCTAssertFalse(screen.contains { padded.contains($0) }, "「沖縄」の札が挿入図の島に掛かる \(screen.first ?? .zero)")
+        }
+    }
+
     /// 🔴 札は**地図の上に描くだけ**で指を受けない（当たりは `area(at:)`・札の上から長押ししてもなぞれる）。
     /// 選んでいる・なぞっている地方の札は真鍮。札は読み上げから外す（地図が1つの要素）。見た目は Web の地方名の札
     func testLabelChipDrawsOnTheMap() throws {
