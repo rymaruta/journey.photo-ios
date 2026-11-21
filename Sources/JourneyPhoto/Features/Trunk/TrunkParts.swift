@@ -143,8 +143,8 @@ struct TrunkButtonFace: View {
             .minimumScaleFactor(0.8)
             .padding(.horizontal, typeSize.isAccessibilitySize ? 8 : 0)
             .jpCapsuleFace(font: main ? .callout.weight(.semibold) : JPOutlineSize.regular.font,
-                           text: main ? WebTheme.accentText : (kind == .danger ? WebTheme.danger : WebTheme.foreground),
-                           fill: kind == .main ? JPPillStyle.accent.fill : (kind == .mainOnPhoto ? JPPillStyle.primary.fill : Color.clear),
+                           text: main ? WebTheme.accentText : (kind == .danger ? JPOutlineTone.danger.text : WebTheme.foreground),
+                           fill: Self.fill(kind),
                            border: kind == .danger ? JPOutlineTone.danger.border : (main ? Color.clear : WebTheme.line),
                            fullWidth: true, minHeight: max(Self.height(kind), height ?? 0), textInset: nil)
             .contentShape(Capsule())
@@ -159,8 +159,18 @@ extension TrunkButtonFace {
         case mainOnPhoto
         /// 副ボタン（白 14% の線・白の字）
         case secondary
-        /// 危険の副ボタン（`WebTheme.danger` の字と線）
+        /// 消す副ボタン（赤の塗りに白の字・`JPOutlineTone.danger`。2026-11-21 判断・札 #679 で線から塗りに）
         case danger
+    }
+
+    /// 地（主は真鍮か白・消すは赤の塗り・副は無し）
+    @MainActor static func fill(_ kind: Kind) -> Color {
+        switch kind {
+        case .main: return JPPillStyle.accent.fill
+        case .mainOnPhoto: return JPPillStyle.primary.fill
+        case .danger: return JPOutlineTone.danger.fill
+        case .secondary: return Color.clear
+        }
     }
 
     /// 高さ（主 50・副 44）

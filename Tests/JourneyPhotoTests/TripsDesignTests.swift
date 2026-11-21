@@ -266,9 +266,11 @@ final class TripsDesignTests: XCTestCase {
         let date = section("private func dateField(", in: detail)
         XCTAssertTrue(date.contains("TripStyle.dateFieldHeight"))
         let delete = section("private func deleteCard(", in: detail)
-        assertInOrder([".foregroundStyle(WebTheme.danger)", "TripOutlineButton(title: leaving ? L(\"抜ける\", \"Leave\") : L(\"削除する\", \"Delete\"), strong: true"],
+        assertInOrder([".foregroundStyle(WebTheme.danger)", "JPDeleteConfirm(question:",
+                       "confirmTitle: leaving ? L(\"抜ける\", \"Leave\") : L(\"削除する\", \"Delete\")"],
                       in: delete, "削除は危険の色の行 → 確かめ（共有したプランの仲間は「抜ける」・2026-11-12）")
-        XCTAssertTrue(detail.contains("TripOutlineButton(title: L(\"削除する\", \"Remove\"), strong: true"), "日の削除の確かめ")
+        XCTAssertTrue(section("private func removeDayConfirm(", in: detail).contains("JPDeleteConfirm(question:"),
+                      "日の削除の確かめが共通の確かめの札でない（2026-11-21・札 #679）")
         XCTAssertFalse(detail.contains("Color.white.opacity(0.18)"), "v1 の白 18% の線が残っている")
         XCTAssertTrue(detail.contains("days: days,"), "場所を足すシートに今の日程を渡す（入った行・いっぱいの日を出す）")
     }
@@ -303,7 +305,7 @@ final class TripsDesignTests: XCTestCase {
                        "TripOutlineButton(title: L(\"端末から削除\", \"Remove from iPhone\"), danger: true)"],
                       in: saved, "プランが変わった知らせは真鍮 8% の帯")
         let confirm = section("private func deleteConfirm(", in: card)
-        XCTAssertTrue(confirm.contains("TripOutlineButton(title: L(\"削除する\", \"Remove\"), strong: true)"))
+        XCTAssertTrue(confirm.contains("JPDeleteConfirm(question: L(\"端末から削除しますか？\""), "端末から削除の確かめが共通の札でない")
         let primary = section("private func primaryButton(", in: card)
         XCTAssertTrue(primary.contains(".jpPillButton(.main(onPhoto: false))"), "写真の無い札の主ボタンは真鍮")
         XCTAssertFalse(card.contains("WebTheme.surface"))
@@ -313,7 +315,7 @@ final class TripsDesignTests: XCTestCase {
         assertInOrder(["TripStyle.progressTrackOpacity", "TripStyle.stalledProgressOpacity", "TripStyle.progressHeight"],
                       in: bar, "進みの線")
         let button = section("struct TripOutlineButton", in: parts)
-        XCTAssertTrue(button.contains(".jpOutlineButton(.regular, tone: strong ? .strong : danger ? .danger : .plain, fullWidth: fill)"),
+        XCTAssertTrue(button.contains(".jpOutlineButton(.regular, tone: danger ? .danger : .plain, fullWidth: fill)"),
                       "旅の線の小ボタンが土台の線の小ボタンでない")
         XCTAssertFalse(button.contains("strokeBorder("), "線の小ボタンの縁を画面に書き直している")
     }

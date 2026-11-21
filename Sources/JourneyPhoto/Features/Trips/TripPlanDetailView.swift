@@ -1263,19 +1263,12 @@ struct TripPlanDetailView: View {
 
     /// 日を消す前の札（プランの削除の札と同じ形・v2 の板 OfflineSaveStates 5 の確かめと同じ部品）
     private func removeDayConfirm(_ di: Int) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(L("\(di + 1) 日目と、その日の予定を削除しますか？", "Remove day \(di + 1) and its plans?"))
-                .font(JPFont.footnote)
-                .foregroundStyle(WebTheme.text2)
-            HStack(spacing: JPSpace.xs) {
-                TripOutlineButton(title: L("削除する", "Remove"), strong: true, fill: true) {
-                    guard let target = removingDay else { return }
-                    removeDay(di, confirmedOn: target.days)
-                }
-                TripOutlineButton(title: Labels.Common.cancel, fill: true) {
-                    removingDay = nil
-                }
-            }
+        JPDeleteConfirm(question: L("\(di + 1) 日目と、その日の予定を削除しますか？", "Remove day \(di + 1) and its plans?"),
+                        confirmTitle: L("削除する", "Remove"), identifier: "trip.day.remove") {
+            guard let target = removingDay else { return }
+            removeDay(di, confirmedOn: target.days)
+        } onCancel: {
+            removingDay = nil
         }
         .padding(.vertical, JPSpace.s)
     }
@@ -1913,37 +1906,28 @@ struct TripPlanDetailView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("tripPlan.delete")
 
             if confirmingDelete {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(leaving ? TripShareText.leaveConfirm
-                         : plan.share != nil ? L("仲間全員から、この旅行プランと会話を削除しますか？", "Delete this trip and its chat for everyone?")
-                         : L("この旅行プランを削除しますか？", "Delete this trip?"))
-                        .font(JPFont.footnote)
-                        .foregroundStyle(WebTheme.text2)
-                    HStack(spacing: JPSpace.xs) {
-                        TripOutlineButton(title: leaving ? L("抜ける", "Leave") : L("削除する", "Delete"), strong: true, fill: true) {
-                            confirmingDelete = false
-                            Task {
-                                if await model.remove(planId, environment: environment) {
-                                    dismiss()
-                                } else if canPresentAlert, noteTarget == nil {
-                                    // 出せるときだけ（ほかのアラート・ひとことの欄が開いていない時）。
-                                    // 出せない回は赤い行が残る（保存と違い、閉じてから出す控えは持たない）
-                                    deleteError = model.errorMessage
-                                        ?? L("もう一度お試しください", "Please try again.")
-                                }
-                            }
-                        }
-                        .disabled(model.busy != nil)
-                        .opacity(model.busy == nil ? 1 : 0.5)
-                        TripOutlineButton(title: Labels.Common.cancel, fill: true) {
-                            confirmingDelete = false
+                JPDeleteConfirm(question: leaving ? TripShareText.leaveConfirm
+                                : plan.share != nil ? L("仲間全員から、この旅行プランと会話を削除しますか？", "Delete this trip and its chat for everyone?")
+                                : L("この旅行プランを削除しますか？", "Delete this trip?"),
+                                confirmTitle: leaving ? L("抜ける", "Leave") : L("削除する", "Delete"),
+                                busy: model.busy != nil, identifier: "trip.delete") {
+                    confirmingDelete = false
+                    Task {
+                        if await model.remove(planId, environment: environment) {
+                            dismiss()
+                        } else if canPresentAlert, noteTarget == nil {
+                            // 出せるときだけ（ほかのアラート・ひとことの欄が開いていない時）。
+                            // 出せない回は赤い行が残る（保存と違い、閉じてから出す控えは持たない）
+                            deleteError = model.errorMessage
+                                ?? L("もう一度お試しください", "Please try again.")
                         }
                     }
+                } onCancel: {
+                    confirmingDelete = false
                 }
-                .padding(JPSpace.m)
-                .jpCardFace()
             }
         }
         .padding(.top, JPSpace.xs)
