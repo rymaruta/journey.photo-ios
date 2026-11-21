@@ -40,6 +40,8 @@ struct AskScreen: View {
     @State private var planQuestion: String?
     /// 旅行プランの AI の残りの回数（流れの答えのあと、上の1行に出す）
     @State private var planUsageLine: String?
+    /// ログインしていないときの旅行プランの頼み（今のログインの画面で案内する）
+    @State private var signIn: SignInRequest?
 
     var body: some View {
         NavigationStack {
@@ -100,6 +102,14 @@ struct AskScreen: View {
             .background {
                 if let planJob { AskPlanJobWatch(job: planJob) { settle(planJob, $0) } }
             }
+            .sheet(item: $signIn) { request in
+                SignInSheet(reason: request.reason, entry: request.entry)
+            }
+        }
+        // 2026-11-21 判断（確かめ役の指摘）: 全画面の AI の画面の上では、アプリの下の知らせ（`RootView`）が裏に隠れる。
+        // ここにも置く（`TripCreateView` と同じ）。下の欄と「AI の答えは間違うことがあります」の上に出す
+        .overlay(alignment: .bottom) {
+            ToastOverlay().padding(.bottom, AskScreen.toastBottomPadding)
         }
         .task { await load() }
         .onAppear {
@@ -232,6 +242,15 @@ struct AskScreen: View {
     private func send(_ raw: String) {
         let text = AskQuery.clipped(raw)
         guard AskEntry.sendEnabled(text), engine.pending == nil else { return }
+        // 2026-11-21 判断（確かめ役の指摘）: 旅行プランは保存するのでログインが要る。ログインしていなければ、シートを開いて
+        // 「この内容で作る」で黙って止まる前に、今のログインの画面で案内する（字は欄に残す）
+        if AskEntry.route(text) == .tripPlan,
+           let request = SignInPrompt.request(AskEntry.planSignIn, signUpReason: AskEntry.planSignUp,
+                                              userId: auth.userId, isResolving: auth.isResolving) {
+            focused = false
+            signIn = request
+            return
+        }
         focused = false
         draft = ""
         switch AskEntry.route(text) {
@@ -363,6 +382,9 @@ struct AskScreen: View {
             userId: { authStore.userId }
         )
     }
+
+    /// 知らせを下の欄（高さ 46、上下の余白、断りの1行）の上に出す
+    static let toastBottomPadding: CGFloat = 96
 
     /// 現在地を1回取る（許可を聞いている間は待つ。断られた・取れないときは nil で、近さでは絞らない）
     @MainActor

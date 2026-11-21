@@ -999,6 +999,32 @@ final class CriticalFlowTests: XCTestCase {
     }
 
     /// 今日の分を使い切ったら、答えの上に帯1本（確かめのダイアログは出さない）。答えは言葉の表で出し続ける
+    /// **ログインしていない人の旅行プランの頼み**（札 #675・確かめ役の指摘）: シートの「この内容で作る」で黙って止まらず、
+    /// 今のログインの画面で案内する。打った字は欄に残る。押しても AI は呼ばない
+    func testSearchAskTripPlanSignedOutShowsSignIn() {
+        let app = launch(["-JPAskFixture", "YES"])
+        _ = signOutToForm(app)
+        tab(app, 0)
+        let entry = app.buttons["header.ask"].firstMatch
+        XCTAssertTrue(entry.waitForExistence(timeout: 20), "上の帯に「AI に頼む」が無い")
+        entry.tap()
+        let field = app.textFields["ask.field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "AI に頼むの画面が開かない")
+        let words = "京都で2日の旅行プランにして"
+        enter(words, into: field, "AI の欄")
+        let send = app.buttons["ask.send"].firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 5), "欄の右に送信のボタンが無い")
+        send.tap()
+        XCTAssertTrue(app.staticTexts["旅行プランを作るにはログインしてください"].firstMatch.waitForExistence(timeout: 10),
+                      "ログインしていないのに旅行プランの頼みでログインの案内が出ない")
+        XCTAssertTrue(app.descendants(matching: .any)["signin.form"].firstMatch.exists, "ログインの画面が開かない")
+        XCTAssertFalse(app.descendants(matching: .any)["search.ask.loading"].firstMatch.exists, "ログインしていないのに旅行プランを作り始めた")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "AI に頼む（ログインしていない旅行プランの頼み）"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
     func testSearchAskUsedUpShowsOneBand() {
         let app = launch(["-JPAskFixture", "YES", "-JPAskFixtureMode", "usedUpDay"])
         let entry = app.buttons["header.ask"].firstMatch

@@ -74,8 +74,11 @@ final class AskFormTests: XCTestCase {
         XCTAssertEqual(AskLeadCheck.safeLead("架空滝が見頃です。", shown: shown, ledger: ledger, season: "秋"), "秋に向く所を1つ選びました。")
         XCTAssertEqual(AskLeadCheck.safeLead("池に映る紅葉で知られる寺です。", shown: shown, ledger: ledger, season: "秋"),
                        "池に映る紅葉で知られる寺です。")
-        // 札の無い答え（文だけ）は替えない（場所をすすめていない）
-        XCTAssertEqual(AskLeadCheck.safeLead("架空寺の話です。", shown: [], ledger: ledger, season: nil), "架空寺の話です。")
+        // 2026-11-21 判断（確かめ役の指摘）: 札の無い答え（文だけ、形が読めなかった）も台帳全体と照らす
+        XCTAssertEqual(AskLeadCheck.safeLead("架空寺の話です。", shown: [], ledger: ledger, season: nil), AskLeadCheck.unknownPlaceLine)
+        XCTAssertEqual(AskLeadCheck.safeLead("永観堂は紅葉の寺です。", shown: [], ledger: ledger, season: nil), "永観堂は紅葉の寺です。",
+                       "台帳にある名前の文を替えた")
+        XCTAssertEqual(AskLeadCheck.safeLead("太陽は画面の端に置きます。", shown: [], ledger: ledger, season: nil), "太陽は画面の端に置きます。")
     }
 
     // MARK: - 一手（アプリが決める・押しても AI は呼ばない）
@@ -163,9 +166,10 @@ final class AskFormTests: XCTestCase {
     // MARK: - 前の答えを畳む
 
     func testFoldSummary() throws {
-        XCTAssertEqual(AskFold.summary(answer(spots: ["a", "b"]), names: ["永観堂", "東福寺"]), "札2つ（永観堂、東福寺）")
-        XCTAssertEqual(AskFold.summary(answer(spots: ["a"]), names: ["永観堂"]), "札1つ（永観堂）")
-        XCTAssertEqual(AskFold.summary(answer(spots: ["a", "b", "c"]), names: ["永観堂", "東福寺", "清水寺"]), "札3つ（永観堂、東福寺ほか）")
+        // 2026-11-21 判断（確かめ役の指摘）: 「札」は中の言葉。「観光スポット」と言う
+        XCTAssertEqual(AskFold.summary(answer(spots: ["a", "b"]), names: ["永観堂", "東福寺"]), "観光スポット2つ（永観堂、東福寺）")
+        XCTAssertEqual(AskFold.summary(answer(spots: ["a"]), names: ["永観堂"]), "観光スポット1つ（永観堂）")
+        XCTAssertEqual(AskFold.summary(answer(spots: ["a", "b", "c"]), names: ["永観堂", "東福寺", "清水寺"]), "観光スポット3つ（永観堂、東福寺ほか）")
         XCTAssertEqual(AskFold.summary(.refused(care: false), names: []), "お答えできない質問")
         var plan = answer(spots: ["a", "b", "c"], kind: .plan)
         plan.plan = AskPlanAnswer(title: "京都の旅", planId: "p1", days: [["a", "b"], ["c"]])
@@ -179,6 +183,9 @@ final class AskFormTests: XCTestCase {
         XCTAssertEqual(TripAIDays.parse("京都で2日の旅行プランにして"), 2)
         XCTAssertEqual(TripAIDays.parse("香川で2日の旅行プランにして"), 2)
         XCTAssertNil(TripAIDays.parse("11月3日の旅のおすすめは？"), "日付を日数と読んだ")
+        XCTAssertNil(TripAIDays.parse("11月 3日の旅のおすすめは？"), "間に空白のある日付を日数と読んだ")
+        XCTAssertNil(TripAIDays.parse("11月3〜4日の旅のおすすめは？"), "日付の幅を日数と読んだ")
+        XCTAssertNil(TripAIDays.parse("3日〜4日の旅"), "日付の幅を日数と読んだ")
         let spots = try AskSamples.ledger()
         XCTAssertTrue(TripAIAsk.reading("香川で2日の旅行プランにして", spots: spots).isComplete)
     }
@@ -189,6 +196,53 @@ final class AskFormTests: XCTestCase {
         XCTAssertTrue(screen.contains("TabRouter.shared.takePendingAskText()"), "AI の画面が運ばれた字を受け取らない")
         let root = try source("Sources/JourneyPhoto/App/RootView.swift")
         XCTAssertFalse(root.contains("tabRouter.takePendingAskText()"), "全画面を開く前に字を受け取って消している")
+    }
+
+    // MARK: - 確かめ役の指摘（2026-11-21）
+
+    /// 全画面の AI の画面の上でも知らせが見える（アプリの下の知らせは裏に隠れる）。下の欄の上に1つだけ
+    func testAskScreenShowsToasts() throws {
+        let screen = try source("Sources/JourneyPhoto/Features/Search/AskScreen.swift")
+        XCTAssertEqual(screen.components(separatedBy: "ToastOverlay()").count - 1, 1, "AI の画面に知らせの置き場が無い（か2つある）")
+        XCTAssertTrue(screen.contains(".padding(.bottom, AskScreen.toastBottomPadding)"))
+        XCTAssertGreaterThanOrEqual(AskScreen.toastBottomPadding, 90, "知らせが下の欄に重なる")
+        // 答えの部品は自分で知らせの置き場を持たない（二重に出さない）
+        for file in ["Sources/JourneyPhoto/Features/Search/AskThreadView.swift", "Sources/JourneyPhoto/Features/Search/AskAnswerParts.swift"] {
+            XCTAssertFalse(try source(file).contains("ToastOverlay()"), "\(file) に知らせの置き場がある（二重に出る）")
+        }
+    }
+
+    /// ログインしていない人の旅行プランの頼みは、今のログインの画面で案内する（シートの「この内容で作る」で黙って止まらない）
+    func testTripPlanSignedOutAsksToSignIn() throws {
+        let screen = try source("Sources/JourneyPhoto/Features/Search/AskScreen.swift")
+        let send = try XCTUnwrap(screen.range(of: "private func send(_ raw: String) {"))
+        let body = String(screen[send.upperBound...].prefix(900))
+        let gate = try XCTUnwrap(body.range(of: "SignInPrompt.request(AskEntry.planSignIn"), "旅行プランの頼みでログインを確かめていない")
+        let clear = try XCTUnwrap(body.range(of: "draft = \"\""))
+        XCTAssertLessThan(gate.lowerBound, clear.lowerBound, "ログインを確かめる前に欄の字を消している")
+        XCTAssertTrue(screen.contains("SignInSheet(reason: request.reason, entry: request.entry)"), "ログインの画面を開いていない")
+        XCTAssertEqual(AskEntry.planSignIn, "旅行プランを作るにはログインしてください")
+        XCTAssertNotNil(SignInPrompt.request(AskEntry.planSignIn, signUpReason: AskEntry.planSignUp, userId: nil, isResolving: false))
+        XCTAssertNil(SignInPrompt.request(AskEntry.planSignIn, signUpReason: AskEntry.planSignUp, userId: "u1", isResolving: false))
+    }
+
+    /// 帯の「✦ AI に頼む」は白（ガラスの帯の下を写真が流れる。真鍮は黒地の上だけ）。狭い iPhone は ✦ だけ
+    func testHeaderAskEntryIsWhiteAndFitsNarrowPhones() throws {
+        let header = try source("Sources/JourneyPhoto/Features/Common/AppHeader.swift")
+        let button = try XCTUnwrap(header.range(of: "struct AskEntryButton"))
+        let body = String(header[button.upperBound...].prefix(4000))
+        XCTAssertTrue(body.contains(".foregroundStyle(AskEntryButton.tint)"))
+        XCTAssertFalse(body.contains(".foregroundStyle(WebTheme.accent)"), "帯の入口の字が真鍮")
+        XCTAssertTrue(AskEntryButton.iconOnly(largeText: false, windowWidth: 375), "iPhone SE（375pt）で字を出すとロゴが押される")
+        XCTAssertTrue(AskEntryButton.iconOnly(largeText: false, windowWidth: 390))
+        XCTAssertFalse(AskEntryButton.iconOnly(largeText: false, windowWidth: 402))
+        XCTAssertFalse(AskEntryButton.iconOnly(largeText: false, windowWidth: 440))
+        XCTAssertFalse(AskEntryButton.iconOnly(largeText: false, windowWidth: nil))
+        XCTAssertTrue(AskEntryButton.iconOnly(largeText: true, windowWidth: 440))
+        // 配置の計算: ✦ だけなら 375pt でもロゴ（縮めて約147）が入る
+        let trailing: CGFloat = 44 + 44 * 3
+        let margins: CGFloat = 16 * 2 + 16
+        XCTAssertGreaterThanOrEqual(375 - trailing - margins, 147)
     }
 
     // MARK: - 流れ

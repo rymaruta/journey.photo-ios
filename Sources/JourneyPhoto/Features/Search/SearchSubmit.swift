@@ -60,6 +60,9 @@ enum AskEntry {
     static var fieldPrompt: String { L("AI に頼む", "Ask AI") }
     /// 送信のボタンの読み上げ
     static var sendLabel: String { L("AI に送る", "Send to AI") }
+    /// ログインしていないときの旅行プランの頼み（今のログインの画面の上の一言）
+    static var planSignIn: String { L("旅行プランを作るにはログインしてください", "Sign in to make a trip plan") }
+    static var planSignUp: String { L("登録すると、旅行プランを作れます", "Sign up to make trip plans") }
     static var startersLead: String { L("旅のことを、何でも頼めます", "Ask anything about your trip") }
     /// 探すの結果の上の1行の題
     static var askRowTitle: String { L("AI に頼む", "Ask AI") }

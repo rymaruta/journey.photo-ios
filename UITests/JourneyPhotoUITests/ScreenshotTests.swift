@@ -3197,6 +3197,15 @@ final class ScreenshotTests: XCTestCase {
     /// 11z1 AI の画面（何も頼んでいない: 例の札）。11z0 探すに頼みの形を打ったとき（結果の上の「✦ AI に頼む」の1行）
     func testCapturesSearchAskField() {
         guard let app = launchSearchAsk() else { return }
+        // 帯の「✦ AI に頼む」とロゴが重ならないか（確かめ役の指摘・狭い iPhone は ✦ だけ・`AskEntryButton.labelMinWindowWidth`）
+        let logo = app.descendants(matching: .any)["Journey Photo"].firstMatch
+        let entry = app.buttons["header.ask"].firstMatch
+        if logo.waitForExistence(timeout: 20), entry.waitForExistence(timeout: 5) {
+            print("measured [header] window=\(app.windows.firstMatch.frame.width) logo=\(logo.frame) ask=\(entry.frame)")
+            XCTAssertLessThanOrEqual(logo.frame.maxX, entry.frame.minX + 1, "ロゴが「AI に頼む」に重なる")
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "11zf-ホーム（帯の ✦ AI に頼む、白）")
+        }
         guard openAskScreen(app) else { return }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "11z1-AI に頼む（何も頼んでいない、例の札）")

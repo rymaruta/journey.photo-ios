@@ -134,9 +134,16 @@ enum AskLeadCheck {
     }
 
     /// 出す頭の文。台帳に無い名前が混じれば決まり文
+    /// 2026-11-21 判断（確かめ役の指摘）: 札の無い答え（文だけ、形が読めなかった）も台帳全体と照らす。
+    /// 合わない名前があれば、札のある答えは「〜を2つ選びました。」、札の無い答えは `unknownPlaceLine`
     static func safeLead(_ lead: String, shown: [OfficialSpot], ledger: [OfficialSpot], season: String?) -> String {
-        guard !shown.isEmpty, hasUnknownPlace(lead, shown: shown, ledger: ledger) else { return lead }
-        return pickedLine(count: shown.count, season: season)
+        guard hasUnknownPlace(lead, shown: shown, ledger: ledger) else { return lead }
+        return shown.isEmpty ? unknownPlaceLine : pickedLine(count: shown.count, season: season)
+    }
+
+    /// 札の無い答えの頭の文に台帳に無い場所の名前があったとき
+    static var unknownPlaceLine: String {
+        L("観光スポットの情報に無い場所なので、ここでは答えられません。", "That place isn't in our spot info, so we can't answer here.")
     }
 
     /// 決まり文（「秋に向く所を2つ選びました。」・圏外と使い切ったときの頭の文と同じ形）
@@ -273,7 +280,8 @@ enum AskFold {
         if !names.isEmpty {
             let head = names.prefix(2).joined(separator: L("、", ", "))
             let more = names.count > 2 ? L("ほか", " and more") : ""
-            return L("札\(names.count)つ（\(head)\(more)）", "\(names.count) spots (\(head)\(more))")
+            // 2026-11-21 判断（確かめ役の指摘）: 「札」は中の言葉。呼び名は「観光スポット」
+            return L("観光スポット\(names.count)つ（\(head)\(more)）", "\(names.count) spots (\(head)\(more))")
         }
         let lead = AskAnswerShape.lead(answer.text)
         return lead.count > 28 ? String(lead.prefix(27)) + "…" : lead
