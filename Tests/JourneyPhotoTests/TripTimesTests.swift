@@ -116,6 +116,24 @@ final class TripTimesTests: XCTestCase {
         XCTAssertNil(TripTimes.lateMorningLine(ten.rows[0]))
     }
 
+    /// 回 1672 の絵: 朝と夕方の斜光の両方の案内がある金沢城公園を、10:20 に着くのに日の入りまで6時間待たせ、
+    /// 「朝の案内の場所ですが、着くのは16:45ごろ」と言っていた
+    func testPlaceWithEarlyAndLateGuidanceNeitherWaitsNorWarns() {
+        let light = TripTimes.Light(sunset: 16 * 60 + 41, goldenStart: 15 * 60 + 50)
+        let day = TripTimes.schedule(start: 9 * 60, stops: [stop("ひがし茶屋街"), stop("金沢城公園", times: ["morning", "goldenHour"])],
+                                     moves: [0, 20], light: light)
+        XCTAssertEqual(day.rows[1].arrive, 10 * 60 + 20, "朝にも向く場所を日の入りまで待たせた")
+        XCTAssertNil(TripTimes.waitLine(day.rows[1]))
+        let late = TripTimes.schedule(start: 12 * 60, stops: [stop("a", times: ["morning", "goldenHour"])], moves: [0], light: light)
+        XCTAssertNil(TripTimes.lateMorningLine(late.rows[0]), "夕方にも向く場所に朝の一言を出した")
+        let dayToo = TripTimes.schedule(start: 9 * 60, stops: [stop("a"), stop("b", times: ["day", "night"])], moves: [0, 10], light: light)
+        XCTAssertEqual(dayToo.rows[1].arrive, 10 * 60 + 10, "日中にも向く場所を日の入りまで待たせた")
+        // 斜光の始まりが分からない日は、日の入りに合わせない（斜光を逃す）
+        let noGolden = TripTimes.Light(sunset: 16 * 60 + 41, goldenStart: nil)
+        let g = TripTimes.schedule(start: 9 * 60, stops: [stop("a"), stop("屋島", times: ["goldenHour"])], moves: [0, 20], light: noGolden)
+        XCTAssertEqual(g.rows[1].arrive, 10 * 60 + 20)
+    }
+
     func testUnknownMoveStopsLaterTimes() {
         let day = TripTimes.schedule(start: 9 * 60, stops: [stop("a"), stop("b"), stop("c")], moves: [0, nil, 10], light: nil)
         XCTAssertEqual(day.rows.map(\.arrive), [540, nil, nil], "長い移動から先に作った時刻を重ねた")

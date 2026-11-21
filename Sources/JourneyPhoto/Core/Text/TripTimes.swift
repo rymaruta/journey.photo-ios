@@ -156,24 +156,31 @@ enum TripTimes {
         return Day(rows: rows, end: stops.isEmpty ? nil : t)
     }
 
-    /// 待つ先。日没後・夜は日の入り、夕方の斜光は斜光の始まり（無い日は日の入り）
+    /// 待つ先。日没後・夜は日の入り、夕方の斜光は斜光の始まり。
+    /// 2026-11-21 判断（回 1672 の絵: 朝と夕方の斜光の両方の案内がある金沢城公園を、10:20 に着くのに日の入りまで
+    /// 6時間待たせていた）: **朝・夜明け・日中の案内もある場所は待たせない**（着いた時刻でも向いている）。
+    /// 斜光の始まりが計算できない日は待たせない（日の入りに合わせると斜光を逃す）
     static func waitTarget(_ times: [String], light: Light?) -> (label: String, at: Int)? {
-        guard let light else { return nil }
+        guard let light, !times.contains(where: earlyTimes.contains) else { return nil }
         if times.contains("dusk") || times.contains("night"), let set = light.sunset {
             return (L("日の入り", "Sunset"), set)
         }
-        if times.contains("goldenHour"), let g = light.goldenStart ?? light.sunset {
-            return (light.goldenStart != nil ? (SpotBodyText.timeLabel("goldenHour") ?? "") : L("日の入り", "Sunset"), g)
+        if times.contains("goldenHour"), let g = light.goldenStart {
+            return (SpotBodyText.timeLabel("goldenHour") ?? "", g)
         }
         return nil
     }
 
-    /// 朝の場所なら、その時間帯の名前（夜明けを先に）
+    /// 朝の場所なら、その時間帯の名前（夜明けを先に）。**日中・夕方・夜の案内もある場所は言わない**（遅く着いても向いている）
     static func morningLabel(_ times: [String]) -> String? {
+        guard !times.contains(where: laterTimes.contains) else { return nil }
         if times.contains("dawn") { return SpotBodyText.timeLabel("dawn") }
         if times.contains("morning") { return SpotBodyText.timeLabel("morning") }
         return nil
     }
+
+    static let earlyTimes: Set<String> = ["dawn", "morning", "day"]
+    static let laterTimes: Set<String> = ["day", "goldenHour", "dusk", "night"]
 
     /// 日の出・日の入りの計算（`TripDraft.Sun`）を、その土地の時計の分にする
     static func light(_ sun: TripDraft.Sun?) -> Light? {
