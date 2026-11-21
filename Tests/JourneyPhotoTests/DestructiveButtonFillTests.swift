@@ -78,10 +78,12 @@ final class DestructiveButtonFillTests: XCTestCase {
     func testDeleteConfirmComponent() throws {
         let parts = try source("Core/Design/FormParts.swift")
         guard let start = parts.range(of: "struct JPDeleteConfirm: View {") else { return XCTFail("JPDeleteConfirm が無い") }
-        let body = String(parts[start.upperBound...].prefix(4000))
+        let body = String(parts[start.upperBound...].prefix(6000))
         XCTAssertTrue(body.contains(".font(JPFont.headline)"), "問いの字が 17pt でない")
         XCTAssertTrue(body.contains(".foregroundStyle(WebTheme.text)"), "問いの字が白でない")
         XCTAssertTrue(body.contains("ViewThatFits(in: .horizontal)"), "大きな文字で縦に積まない")
+        XCTAssertTrue(body.contains("if typeSize.isAccessibilitySize {\n                stacked"),
+                      "アクセシビリティの大きさで縦に積まない（run 1673 で「キャンセル」が2行に割れた）")
         let order = ["HStack(spacing: JPSpace.xs) {", "cancelButton", "confirmButton", "VStack(spacing: JPSpace.xs) {",
                      "confirmButton", "cancelButton"]
         var cursor = body.startIndex

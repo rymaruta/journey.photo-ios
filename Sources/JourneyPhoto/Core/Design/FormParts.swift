@@ -378,6 +378,8 @@ struct JPDeleteConfirm: View {
     let onConfirm: () -> Void
     let onCancel: () -> Void
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         let content = VStack(alignment: .leading, spacing: JPSpace.s) {
             VStack(alignment: .leading, spacing: JPSpace.xxs) {
@@ -394,14 +396,14 @@ struct JPDeleteConfirm: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: JPSpace.xs) {
-                    cancelButton
-                    confirmButton
-                }
-                VStack(spacing: JPSpace.xs) {
-                    confirmButton
-                    cancelButton
+            // アクセシビリティの大きさではいつも縦に積む（Mac の run 1673 の AX XL の絵で、横に並べた「キャンセル」が
+            // 「キャンセ／ル」と2行に割れていた。ViewThatFits だけでは並びの幅を広く見積もる画面がある）
+            if typeSize.isAccessibilitySize {
+                stacked
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    sideBySide
+                    stacked
                 }
             }
         }
@@ -412,6 +414,20 @@ struct JPDeleteConfirm: View {
                 .jpCardFace()
         } else {
             content
+        }
+    }
+
+    private var sideBySide: some View {
+        HStack(spacing: JPSpace.xs) {
+            cancelButton
+            confirmButton
+        }
+    }
+
+    private var stacked: some View {
+        VStack(spacing: JPSpace.xs) {
+            confirmButton
+            cancelButton
         }
     }
 
