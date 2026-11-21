@@ -96,9 +96,9 @@ final class TripTimesTests: XCTestCase {
 
     func testGoldenHourPlaceWaitsUntilGoldenStart() {
         let light = TripTimes.Light(sunset: 16 * 60 + 32, goldenStart: 15 * 60 + 40)
-        let day = TripTimes.schedule(start: 9 * 60, stops: [stop("a"), stop("屋島", times: ["goldenHour"])], moves: [0, 20], light: light)
+        let day = TripTimes.schedule(start: 12 * 60, stops: [stop("a"), stop("屋島", times: ["goldenHour"])], moves: [0, 20], light: light)
         XCTAssertEqual(day.rows[1].arrive, 15 * 60 + 40)
-        XCTAssertEqual(TripTimes.waitLine(day.rows[1]), "夕方の斜光 15:40 まで 5時間20分あき")
+        XCTAssertEqual(TripTimes.waitLine(day.rows[1]), "夕方の斜光 15:40 まで 2時間20分あき")
         // 日の光が分からない（座標・時刻帯が無い）ときは待たない
         let unknown = TripTimes.schedule(start: 9 * 60, stops: [stop("a"), stop("屋島", times: ["goldenHour"])], moves: [0, 20], light: nil)
         XCTAssertEqual(unknown.rows[1].arrive, 10 * 60 + 20)
@@ -134,6 +134,26 @@ final class TripTimesTests: XCTestCase {
         XCTAssertEqual(g.rows[1].arrive, 10 * 60 + 20)
     }
 
+    /// 確かめ役の指摘（2026-11-21）: 夜だけの場所の待ちに上限が無かった。4 時間を超えたら待たせず、日の入りだけ添える
+    func testLongWaitIsNotScheduled() {
+        let light = TripTimes.Light(sunset: 16 * 60 + 30, goldenStart: 15 * 60 + 40)
+        let day = TripTimes.schedule(start: 9 * 60, stops: [stop("a"), stop("夜景", times: ["night"])], moves: [0, 20], light: light)
+        XCTAssertEqual(day.rows[1].arrive, 10 * 60 + 20, "6時間待たせた")
+        XCTAssertEqual(day.rows[1].wait, 0)
+        XCTAssertEqual(TripTimes.cautionLine(day.rows[1]), "日の入りは 16:30")
+        XCTAssertNil(TripTimes.waitLine(day.rows[1]))
+        // 4 時間以内なら今までどおり待つ
+        let near = TripTimes.schedule(start: 12 * 60 + 30, stops: [stop("夜景", times: ["night"])], moves: [0], light: light)
+        XCTAssertEqual(near.rows[0].arrive, 16 * 60 + 30)
+        XCTAssertNil(TripTimes.cautionLine(near.rows[0]))
+        // 夕方の斜光
+        let g = TripTimes.schedule(start: 9 * 60, stops: [stop("屋島", times: ["goldenHour"])], moves: [0], light: light)
+        XCTAssertEqual(g.rows[0].arrive, 9 * 60)
+        XCTAssertEqual(TripTimes.cautionLine(g.rows[0]), "夕方の斜光は 15:40 から")
+        let parts = (try? source("Sources/JourneyPhoto/Features/Search/AskAnswerParts.swift")) ?? ""
+        XCTAssertTrue(parts.contains("TripTimes.cautionLine(row)"), "AI の画面に日の入りの一言が出ない")
+    }
+
     func testUnknownMoveStopsLaterTimes() {
         let day = TripTimes.schedule(start: 9 * 60, stops: [stop("a"), stop("b"), stop("c")], moves: [0, nil, 10], light: nil)
         XCTAssertEqual(day.rows.map(\.arrive), [540, nil, nil], "長い移動から先に作った時刻を重ねた")
@@ -146,6 +166,9 @@ final class TripTimesTests: XCTestCase {
         XCTAssertEqual(TripTimes.clock(9 * 60), "9:00")
         XCTAssertEqual(TripTimes.clock(16 * 60 + 5), "16:05")
         XCTAssertEqual(TripTimes.clock(24 * 60 + 30), "翌0:30")
+        XCTAssertEqual(TripTimes.clock(48 * 60 + 30), "翌々0:30", "2日またいでも「翌」が1回だけ")
+        XCTAssertEqual(TripTimes.clock(72 * 60 + 5), "+3日 0:05")
+        XCTAssertEqual(TripTimes.spokenClock(48 * 60), "翌々0時")
         XCTAssertEqual(TripTimes.spokenClock(9 * 60), "9時")
         XCTAssertEqual(TripTimes.spokenClock(9 * 60 + 30), "9時30分")
         XCTAssertEqual(TripTimes.spokenStop(9 * 60, name: "日比谷公園"), "9時、日比谷公園")
@@ -173,17 +196,45 @@ final class TripTimesTests: XCTestCase {
         let legs = TripTravel.legs(stops)
         XCTAssertEqual(legs.map(\.to.number), [3, 4])
         let apple = [TripTravel.Estimate(mode: .transit, seconds: 13 * 60 + 10)]
-        let moves = TripTimes.planMoves(numbers: [1, 2, 3, 4], legs: legs, estimates: [apple, []], long: [false, false])
+        let coords: [Photo.Coords?] = [a, nil, b, c]
+        let moves = TripTimes.planMoves(numbers: [1, 2, 3, 4], coords: coords, legs: legs, estimates: [apple, []],
+                                        long: [false, false])
         XCTAssertEqual(moves[0], 0, "1か所目は出発の時刻")
-        XCTAssertEqual(moves[1], 0, "座標の無い場所へは区間が無いので 0 分")
-        XCTAssertEqual(moves[2], 15, "Apple の見込み 13分10秒を5分の単位に切り上げ")
-        XCTAssertEqual(moves[3], TripTimes.roughMoveMinutes(b, c), "まだ返らない区間は AI の画面と同じ見積もり")
-        let long = TripTimes.planMoves(numbers: [1, 2, 3, 4], legs: legs, estimates: [apple, []], long: [false, true])
-        XCTAssertNil(long[3], "長い移動の区間で時刻を作った")
+        XCTAssertNil(moves[1], "座標の無い場所への移動を 0 分として続けた")
+        XCTAssertNil(moves[2], "座標の無い場所からの移動を分かる扱いにした")
+        XCTAssertEqual(moves[3], TripTimes.roughMoveMinutes(b, c), "まだ返らない近い区間は AI の画面と同じ見積もり")
+        let all = [TripTravel.Stop("日比谷公園", a, 1), TripTravel.Stop("東京タワー", b, 2), TripTravel.Stop("スカイツリー", c, 3)]
+        let legs2 = TripTravel.legs(all)
+        let m2 = TripTimes.planMoves(numbers: [1, 2, 3], coords: [a, b, c], legs: legs2, estimates: [apple, []], long: [false, false])
+        XCTAssertEqual(m2, [0, 15, TripTimes.roughMoveMinutes(b, c)], "Apple の見込み 13分10秒を5分の単位に切り上げ")
+        let long = TripTimes.planMoves(numbers: [1, 2, 3], coords: [a, b, c], legs: legs2, estimates: [apple, []], long: [false, true])
+        XCTAssertNil(long[2], "長い移動の区間で時刻を作った")
+        // 同じ座標は 0 分
+        XCTAssertEqual(TripTimes.planMoves(numbers: [1, 2], coords: [a, a], legs: [], estimates: [], long: []), [0, 0])
         // 前の日からの区間は数えない
         var cross = TripTravel.Leg(from: TripTravel.Endpoint(name: "前の日", coords: c, number: 0), to: legs[0].to)
         cross.crossesDay = true
-        XCTAssertEqual(TripTimes.planMoves(numbers: [3], legs: [cross], estimates: [[]], long: [false]), [0])
+        XCTAssertEqual(TripTimes.planMoves(numbers: [3], coords: [b], legs: [cross], estimates: [[]], long: [false]), [0])
+    }
+
+    /// 確かめ役の指摘（2026-11-21）: Apple の見込みが無い区間を 500km 未満まで時速 30km で積み、東京から京都で 16 時間になった。
+    /// 概算で積むのはまっすぐ 60km 以内だけ。遠い区間は nil（そこから先の時刻を出さない）。AI の画面も同じ
+    func testFarLegWithoutEstimateStopsTimes() throws {
+        let tokyo = Photo.Coords(lat: 35.681, lng: 139.767), kyoto = Photo.Coords(lat: 34.985, lng: 135.758)
+        let yokohama = Photo.Coords(lat: 35.444, lng: 139.638)
+        XCTAssertNil(TripTimes.scheduleMoveMinutes(tokyo, kyoto), "東京から京都を概算で積んだ")
+        XCTAssertNotNil(TripTimes.scheduleMoveMinutes(tokyo, yokohama), "近い区間（約 28km）まで止めた")
+        XCTAssertEqual(TripTimes.scheduleMoveMinutes(tokyo, tokyo), 0)
+        XCTAssertNil(TripTimes.scheduleMoveMinutes(tokyo, nil))
+        let legs = TripTravel.legs([TripTravel.Stop("東京駅", tokyo, 1), TripTravel.Stop("京都駅", kyoto, 2)])
+        let moves = TripTimes.planMoves(numbers: [1, 2], coords: [tokyo, kyoto], legs: legs, estimates: [[]], long: [false])
+        XCTAssertNil(moves[1], "見込みの無い遠い区間で時刻を作った")
+        let a = try spot("tokyo", name: "東京駅", category: "駅", lat: tokyo.lat, lng: tokyo.lng)
+        let b = try spot("kyoto", name: "京都駅", category: "駅", lat: kyoto.lat, lng: kyoto.lng)
+        let day = AskPlanFlowText.times([a, b], start: 9 * 60, ymd: "2026-12-21")
+        XCTAssertEqual(day.rows.map(\.arrive), [540, nil], "AI の画面で東京から京都の着く時刻を作った")
+        XCTAssertNil(AskPlanFlowText.moveMinutes(a, b), "遠い区間に移動の目安の数を出した")
+        XCTAssertEqual(AskPlanFlowText.moveText(a, b), "移動は経路で確かめる")
     }
 
     // MARK: - AI の画面の流れ
@@ -192,18 +243,22 @@ final class TripTimesTests: XCTestCase {
         let hibiya = try spot("hibiya", name: "日比谷公園", category: "公園", lat: 35.674, lng: 139.756)
         let tower = try spot("tower", name: "東京タワー", category: "展望台", lat: 35.659, lng: 139.745, times: ["night"])
         let move = try XCTUnwrap(AskPlanFlowText.moveMinutes(hibiya, tower))
-        let day = AskPlanFlowText.times([hibiya, tower], start: 9 * 60, ymd: "2026-12-21")
-        XCTAssertEqual(day.rows[0].arrive, 9 * 60)
+        let day = AskPlanFlowText.times([hibiya, tower], start: 12 * 60, ymd: "2026-12-21")
+        XCTAssertEqual(day.rows[0].arrive, 12 * 60)
         // 東京の 12月21日の日の入り（16:30 ごろ）まで待つ夜の場所
         let arrive = try XCTUnwrap(day.rows[1].arrive)
         XCTAssertGreaterThan(day.rows[1].wait, 0, "夜の場所が日の入りの前に着く時刻のまま")
         XCTAssertGreaterThanOrEqual(arrive, 16 * 60 + 20)
         XCTAssertLessThanOrEqual(arrive, 16 * 60 + 45)
-        XCTAssertEqual(arrive - day.rows[1].wait, 9 * 60 + 90 + move, "待つ前の着く時刻 = 出発 + 公園 90 分 + 移動の目安")
-        // 座標の無い場所の間は 0 分
+        XCTAssertEqual(arrive - day.rows[1].wait, 12 * 60 + 90 + move, "待つ前の着く時刻 = 出発 + 公園 90 分 + 移動の目安")
+        // 座標の無い場所との間は分からない（0 分として続けない）。同じ座標は 0 分
         let nowhere = try spot("x", name: "場所", category: nil, lat: nil, lng: nil)
         let d2 = AskPlanFlowText.times([hibiya, nowhere], start: 10 * 60, ymd: "2026-12-21")
-        XCTAssertEqual(d2.rows.map(\.arrive), [600, 690])
+        XCTAssertEqual(d2.rows.map(\.arrive), [600, nil])
+        XCTAssertNil(d2.end)
+        let twin = try spot("twin", name: "日比谷公園の噴水", category: "公園", lat: 35.674, lng: 139.756)
+        let d3 = AskPlanFlowText.times([hibiya, twin], start: 10 * 60, ymd: "2026-12-21")
+        XCTAssertEqual(d3.rows.map(\.arrive), [600, 690])
     }
 
     /// 区間の行は旅行プランの頁と同じ型の区間を持ち、同じ選び方で手段を決める（座標が無ければ押せない）
@@ -240,7 +295,8 @@ final class TripTimesTests: XCTestCase {
     func testTripPlanPageShowsTimes() throws {
         let page = try source("Sources/JourneyPhoto/Features/Trips/TripPlanDetailView.swift")
         XCTAssertTrue(page.contains("TripTimes.planMoves("))
-        XCTAssertTrue(page.contains("TripStartButton(start: start, open: startOpen)"))
+        XCTAssertTrue(page.contains("TripStartButton(start: startMinutes, open: startOpen)"))
+        XCTAssertTrue(page.contains("timeCaution: time.flatMap(TripTimes.cautionLine)"))
         XCTAssertTrue(page.contains("TripTimeNote()"))
         XCTAssertTrue(page.contains("time: showsTimes ? timeRow : nil"))
         // 区間の行は時刻の列のぶん右へ（縦の線を番号の丸にそろえる）
@@ -250,20 +306,107 @@ final class TripTimesTests: XCTestCase {
     // MARK: - 出発の時刻を覚える
 
     @MainActor
-    func testStartStoreRemembersPerPlanAndDay() async throws {
+    private func freshStore() throws -> (TripStartStore, UserDefaults, String) {
         let suite = "TripTimesTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        return (TripStartStore(defaults: defaults), defaults, suite)
+    }
+
+    private func day(_ ids: String...) -> TripDay {
+        TripDay(items: ids.map { .spot(spotId: $0, note: nil) })
+    }
+
+    @MainActor
+    func testStartStoreRemembersPerPlanAndDay() async throws {
+        let (store, defaults, suite) = try freshStore()
         defer { defaults.removePersistentDomain(forName: suite) }
-        let store = TripStartStore(defaults: defaults)
-        XCTAssertEqual(store.minutes(planId: "p1", day: 0), 540)
-        store.set(11 * 60, planId: "p1", day: 0)
-        XCTAssertEqual(store.minutes(planId: "p1", day: 0), 660)
-        XCTAssertEqual(store.minutes(planId: "p1", day: 1), 540, "ほかの日まで変わった")
-        XCTAssertEqual(store.minutes(planId: "p2", day: 0), 540, "ほかのプランまで変わった")
-        XCTAssertEqual(TripStartStore(defaults: defaults).minutes(planId: "p1", day: 0), 660, "この iPhone に覚えていない")
-        store.set(9 * 60, planId: "p1", day: 0)
+        XCTAssertEqual(store.minutes(planId: "p1", ymd: nil, day: 0), 540)
+        store.set(11 * 60, planId: "p1", ymd: nil, day: 0)
+        XCTAssertEqual(store.minutes(planId: "p1", ymd: nil, day: 0), 660)
+        XCTAssertEqual(store.minutes(planId: "p1", ymd: nil, day: 1), 540, "ほかの日まで変わった")
+        XCTAssertEqual(store.minutes(planId: "p2", ymd: nil, day: 0), 540, "ほかのプランまで変わった")
+        XCTAssertEqual(TripStartStore(defaults: defaults).minutes(planId: "p1", ymd: nil, day: 0), 660, "この iPhone に覚えていない")
+        store.set(9 * 60, planId: "p1", ymd: nil, day: 0)
         XCTAssertNil((defaults.dictionary(forKey: TripStartStore.defaultsKey) as? [String: Int])?["p1#0"], "既定の 9:00 を覚えた")
-        store.set(8 * 60, planId: nil, day: 0)
-        XCTAssertEqual(store.minutes(planId: nil, day: 0), 540, "保存していないプランの時刻を覚えた")
+        store.set(8 * 60, planId: nil, ymd: nil, day: 0)
+        XCTAssertEqual(store.minutes(planId: nil, ymd: nil, day: 0), 540, "保存していないプランの時刻を覚えた")
+        // 日付のある日は日付の鍵
+        store.set(7 * 60, planId: "p1", ymd: "2026-12-22", day: 1)
+        XCTAssertEqual(store.minutes(planId: "p1", ymd: "2026-12-22", day: 5), 420)
+        XCTAssertEqual(store.minutes(planId: "p1", ymd: nil, day: 1), 540)
+    }
+
+    /// 確かめ役の指摘（2026-11-21）: 日の番号に付けて覚えたので、日を消すと次の日に前の日の時刻が付いた
+    @MainActor
+    func testStartFollowsTheDayWhenADayIsRemoved() async throws {
+        let (store, defaults, suite) = try freshStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        // 日付の無いプラン: 1日目 7:00、2日目 11:00。1日目を消すと、残った日（前の2日目）は 11:00
+        let before = [day("a", "b"), day("c", "d")]
+        store.set(7 * 60, planId: "p", ymd: nil, day: 0)
+        store.set(11 * 60, planId: "p", ymd: nil, day: 1)
+        let after = try XCTUnwrap(TripPlanEdit.removeDay(before, at: 0, snapshot: before))
+        store.carry(from: TripStartKeys.slots(planId: "p", days: before, start: nil, end: nil),
+                    to: TripStartKeys.slots(planId: "p", days: after, start: nil, end: nil))
+        XCTAssertEqual(store.minutes(planId: "p", ymd: nil, day: 0), 660, "消した日の時刻が次の日に残った")
+        XCTAssertEqual(store.minutes(planId: "p", ymd: nil, day: 1), 540, "無くなった日の覚えが残った")
+        // 日付のあるプラン: 日付は前から順に付くので、消すと日付もずれる。中身で運ぶ
+        let dated = [day("a"), day("b"), day("c")]
+        store.set(8 * 60, planId: "q", ymd: "2026-12-22", day: 1)
+        let datedAfter = try XCTUnwrap(TripPlanEdit.removeDay(dated, at: 0, snapshot: dated))
+        store.carry(from: TripStartKeys.slots(planId: "q", days: dated, start: "2026-12-21", end: "2026-12-23"),
+                    to: TripStartKeys.slots(planId: "q", days: datedAfter, start: "2026-12-21", end: "2026-12-22"))
+        XCTAssertEqual(store.minutes(planId: "q", ymd: "2026-12-21", day: 0), 480, "b の日の 8:00 が b に付いていない")
+        XCTAssertEqual(store.minutes(planId: "q", ymd: "2026-12-22", day: 1), 540, "c の日に b の時刻が付いた")
+    }
+
+    /// 日を入れ替えた（組み直し・仲間の変更）ときも、場所の多く重なる日へ時刻が付いていく
+    @MainActor
+    func testStartFollowsTheDayWhenDaysAreSwapped() async throws {
+        let (store, defaults, suite) = try freshStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let before = [day("a", "b", "c"), day("d", "e")]
+        store.set(7 * 60, planId: "p", ymd: nil, day: 0)
+        let swapped = [day("d", "e", "x"), day("a", "c")]
+        store.carry(from: TripStartKeys.slots(planId: "p", days: before, start: nil, end: nil),
+                    to: TripStartKeys.slots(planId: "p", days: swapped, start: nil, end: nil))
+        XCTAssertEqual(store.minutes(planId: "p", ymd: nil, day: 1), 420, "入れ替えた日に時刻が付いていかない")
+        XCTAssertEqual(store.minutes(planId: "p", ymd: nil, day: 0), 540)
+        // 1か所を別の日へ運んだだけなら、日の時刻は動かない
+        let moved = [day("d", "e", "x"), day("a")]
+        let movedTo = [day("d", "e", "x", "a"), day()]
+        store.carry(from: TripStartKeys.slots(planId: "p", days: moved, start: nil, end: nil),
+                    to: TripStartKeys.slots(planId: "p", days: movedTo, start: nil, end: nil))
+        XCTAssertEqual(store.minutes(planId: "p", ymd: nil, day: 0), 540, "場所を1つ運んだだけで日の時刻が入れ替わった")
+        XCTAssertEqual(store.minutes(planId: "p", ymd: nil, day: 1), 420, "空になった日の時刻が消えた")
+        // 開いたばかり（前が空）は何もしない
+        let kept = TripStartKeys.carried(["p#0": 600], from: [], to: TripStartKeys.slots(planId: "p", days: [day("z")], start: nil, end: nil))
+        XCTAssertEqual(kept, ["p#0": 600])
+        // 頁が変わったときに運ぶ
+        let page = try source("Sources/JourneyPhoto/Features/Trips/TripPlanDetailView.swift")
+        XCTAssertTrue(page.contains(".onChange(of: startSlots) { old, now in starts.carry(from: old, to: now) }"))
+        XCTAssertTrue(page.contains("starts.minutes(planId: planId, ymd: ymd, day: di)"))
+    }
+
+    /// プランを消したとき・ログアウトで覚えを消す。AI の画面は覚えを共有しない
+    @MainActor
+    func testStartStoreIsForgottenAndNotSharedWithAsk() async throws {
+        let (store, defaults, suite) = try freshStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        store.set(7 * 60, planId: "p1", ymd: nil, day: 0)
+        store.set(8 * 60, planId: "p10", ymd: "2026-12-21", day: 0)
+        store.forget(planId: "p1")
+        XCTAssertEqual(store.minutes(planId: "p1", ymd: nil, day: 0), 540)
+        XCTAssertEqual(store.minutes(planId: "p10", ymd: "2026-12-21", day: 0), 480, "名前の似たほかのプランまで消した")
+        store.forgetAll()
+        XCTAssertEqual(store.minutes(planId: "p10", ymd: "2026-12-21", day: 0), 540)
+        XCTAssertNil(defaults.dictionary(forKey: TripStartStore.defaultsKey))
+        XCTAssertTrue(try source("Sources/JourneyPhoto/Core/Auth/AuthStore.swift").contains("TripStartStore.shared.forgetAll()"))
+        XCTAssertTrue(try source("Sources/JourneyPhoto/Services/TripPlanService.swift")
+            .contains("await TripStartStore.shared.forget(planId: planId)"))
+        let ask = try source("Sources/JourneyPhoto/Features/Search/AskAnswerParts.swift")
+        XCTAssertFalse(ask.contains("TripStartStore"), "AI の画面が旅行プランの頁の覚えを使っている")
+        // 大きな字では出発のボタンを見出しの下へ
+        XCTAssertTrue(ask.contains("if timeInColumn {\n            HStack(spacing: JPSpace.xs) {"))
     }
 }

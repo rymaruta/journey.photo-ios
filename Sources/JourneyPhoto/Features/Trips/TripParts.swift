@@ -240,7 +240,7 @@ struct TripStopLabel: View {
     /// 着く時刻の目安（分・札 #677）。`showsTime` のときだけ出す（作る流れの下書きは出さない）
     var time: Int? = nil
     var showsTime = false
-    /// 朝の場所に遅れて着く一言（`TripTimes.lateMorningLine`）
+    /// 朝の場所に遅れて着く一言・待たせなかった夜の場所の日の入り（`TripTimes.cautionLine`）
     var timeCaution: String? = nil
 
     @ScaledMetric(relativeTo: .body) private var timeWidth: CGFloat = TripTimeStyle.columnWidth

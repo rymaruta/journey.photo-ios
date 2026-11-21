@@ -160,13 +160,11 @@ struct AskPlanTimeline: View {
     let officialSpots: [OfficialSpot]
     let photos: [Photo]
     let photosKnown: Bool
-    /// 保存した旅行プラン（出発の時刻を覚える鍵）。無ければ覚えない（画面を出ると 9:00 に戻る）
-    var planId: String? = nil
     /// 圏外（経路を開くときに名前で探し直さない）
     var offline = false
 
-    @ObservedObject private var starts = TripStartStore.shared
-    /// 保存していないプランの出発（日の番号 → 分）
+    /// 出発（日の番号 → 分）。**この画面の中だけ**（2026-11-21 判断・確かめ役の指摘: AI の答えの日と、保存した
+    /// 旅行プランの日はそろわないので、旅行プランの頁の覚え（出発の時刻の控え）と分ける。画面を出ると 9:00 に戻る）
     @State private var localStarts: [Int: Int] = [:]
     /// 時刻のチップを開いている日
     @State private var openDay: Int?
@@ -197,12 +195,20 @@ struct AskPlanTimeline: View {
     private func daySection(_ d: Int, _ spots: [OfficialSpot], numbers: [Int]) -> some View {
         let start = startTime(d)
         let day = AskPlanFlowText.times(spots, start: start)
-        HStack(spacing: JPSpace.xs) {
+        let startOpen = Binding(get: { openDay == d }, set: { openDay = $0 ? d : nil })
+        // 大きな字の設定では、出発のボタンを見出しの下の行へ（旅行プランの頁と同じ・見出しが切れない）
+        if timeInColumn {
+            HStack(spacing: JPSpace.xs) {
+                JPEyebrowLine(AskPlanFlowText.dayTitle(d, spots: spots))
+                TripStartButton(start: start, open: startOpen, identifier: "search.ask.start")
+            }
+            .padding(.top, d > 0 ? 12 : 0)
+        } else {
             JPEyebrowLine(AskPlanFlowText.dayTitle(d, spots: spots))
-            TripStartButton(start: start, open: Binding(get: { openDay == d }, set: { openDay = $0 ? d : nil }),
-                            identifier: "search.ask.start")
+                .padding(.top, d > 0 ? 12 : 0)
+            TripStartButton(start: start, open: startOpen, identifier: "search.ask.start")
+                .padding(.top, JPSpace.xxs)
         }
-        .padding(.top, d > 0 ? 12 : 0)
         if openDay == d {
             TripStartChips(start: start) { m in
                 setStart(m, day: d)
@@ -219,8 +225,8 @@ struct AskPlanTimeline: View {
                 minorRow(time: at - row.wait, text: wait, identifier: "search.ask.wait")
             }
             node(spot, number: numbers[i], row: row, first: i == 0, end: i == spots.count - 1)
-            if i < spots.count - 1, let minutes = AskPlanFlowText.moveMinutes(spot, spots[i + 1]) {
-                moveRow(minutes, leg: AskPlanFlowText.leg(spot, spots[i + 1], numbers: (numbers[i], numbers[i + 1])))
+            if i < spots.count - 1, let text = AskPlanFlowText.moveText(spot, spots[i + 1]) {
+                moveRow(text, leg: AskPlanFlowText.leg(spot, spots[i + 1], numbers: (numbers[i], numbers[i + 1])))
             }
         }
         if let end = day.end {
@@ -230,12 +236,11 @@ struct AskPlanTimeline: View {
     }
 
     private func startTime(_ d: Int) -> Int {
-        if let planId, !planId.isEmpty { return starts.minutes(planId: planId, day: d) }
-        return localStarts[d] ?? TripTimes.defaultStart
+        localStarts[d] ?? TripTimes.defaultStart
     }
 
     private func setStart(_ m: Int, day d: Int) {
-        if let planId, !planId.isEmpty { starts.set(m, planId: planId, day: d) } else { localStarts[d] = m }
+        localStarts[d] = m
     }
 
     /// 通しの番号（1日目から続けて数える）
@@ -252,8 +257,7 @@ struct AskPlanTimeline: View {
     /// 移動の目安の行。区間があれば押すと Apple のマップで経路（旅行プランの頁の区間の行と同じ・読み上げのヒントは `mapsHint`）。
     /// 座標の無い場所との間は押せない形（印なし・ボタンにしない）。時刻の列には何も置かない（時刻と紛れない）
     @ViewBuilder
-    private func moveRow(_ minutes: Int, leg: TripTravel.Leg?) -> some View {
-        let text = AskPlanFlowText.moveLine(minutes)
+    private func moveRow(_ text: String, leg: TripTravel.Leg?) -> some View {
         if let leg {
             let mode = AskPlanFlowText.mapsMode(leg)
             Button {
@@ -372,7 +376,7 @@ struct AskPlanTimeline: View {
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                     AskSpotTags(spot: spot)
-                    if let late = TripTimes.lateMorningLine(row) {
+                    if let late = TripTimes.cautionLine(row) {
                         Text(late)
                             .font(JPFont.caption)
                             .foregroundStyle(WebTheme.text2)
@@ -401,7 +405,7 @@ struct AskPlanTimeline: View {
     /// 読み上げ（「1番目、9時、日比谷公園」・朝の一言があれば添える）
     nonisolated static func spokenStop(number: Int, name: String, row: TripTimes.Row) -> String {
         var text = L("\(number)番目、", "Stop \(number), ") + TripTimes.spokenStop(row.arrive, name: name)
-        if let late = TripTimes.lateMorningLine(row) { text += L("。", ". ") + late }
+        if let late = TripTimes.cautionLine(row) { text += L("。", ". ") + late }
         return text
     }
 }

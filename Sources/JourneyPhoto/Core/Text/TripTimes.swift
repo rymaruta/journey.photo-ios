@@ -22,6 +22,8 @@ enum TripTimes {
     static let morningLate = 10 * 60
     /// 分からない種類・撮影地・行きたい場所の滞在
     static let defaultStay = 60
+    /// 夜・夕方の場所で待たせる長さの上限（分）。超えたら待たせず、日の入りの時刻だけ添える
+    static let maxWait = 4 * 60
 
     // MARK: - 滞在の目安（観光スポットの種類から）
 
@@ -64,9 +66,16 @@ enum TripTimes {
         return max(5, Int((Double(minutes) / 5).rounded()) * 5)
     }
 
-    /// 時刻に使う移動。長い移動（`TripTravel.longKm` 以上）は nil（時刻を作らない）
-    static func scheduleMoveMinutes(_ a: Photo.Coords, _ b: Photo.Coords) -> Int? {
-        TripAICandidates.km(a, b) < TripTravel.longKm ? roughMoveMinutes(a, b) : nil
+    /// 概算（時速 30km）で時刻を積むのは、まっすぐ 60km 以内の区間だけ（2026-11-21 判断・札 #677 の確かめ役）。
+    /// 前は 500km 未満まで積み、東京から京都で 16 時間になった。遠い区間は新幹線・飛行機で、概算が大きく外れる
+    static let roughKm = 60.0
+
+    /// 時刻に使う移動（Apple の見込みが無いとき）。同じ座標は 0 分、座標が分からない・60km より遠いときは nil
+    /// （そこから先は時刻を出さない）
+    static func scheduleMoveMinutes(_ a: Photo.Coords?, _ b: Photo.Coords?) -> Int? {
+        guard let a, let b else { return nil }
+        if a == b { return 0 }
+        return TripAICandidates.km(a, b) <= roughKm ? roughMoveMinutes(a, b) : nil
     }
 
     /// Apple の見込み（秒）を5分の単位へ切り上げ
@@ -79,11 +88,18 @@ enum TripTimes {
     /// 旅行プランの頁の1日の移動（場所ごと・`schedule` の `moves`）。
     /// - その場所へ入る同じ日の区間があれば、Apple の見込み（先に出した手段）。まだ返らない・圏外は AI の画面と同じ見積もり
     /// - 長い移動の形で出ている区間は nil（そこから先は時刻を出さない）
-    /// - 区間の無い場所（座標が無い、前と同じ座標、1か所目）は 0 分。前の日からの区間は数えない（1か所目は出発の時刻）
-    static func planMoves(numbers: [Int], legs: [TripTravel.Leg], estimates: [[TripTravel.Estimate]],
-                          long: [Bool]) -> [Int?] {
+    /// - 見込みの無い区間は `scheduleMoveMinutes`（60km 以内だけ概算、遠ければ nil）
+    /// - 1か所目と、前と同じ座標の場所は 0 分。**座標の無い場所（とその次）は nil**（分からない移動を 0 分として続けない）。
+    ///   前の日からの区間は数えない（1か所目は出発の時刻）
+    static func planMoves(numbers: [Int], coords: [Photo.Coords?], legs: [TripTravel.Leg],
+                          estimates: [[TripTravel.Estimate]], long: [Bool]) -> [Int?] {
         numbers.enumerated().map { i, number -> Int? in
-            guard i > 0, let li = legs.firstIndex(where: { !$0.crossesDay && $0.to.number == number }) else { return 0 }
+            guard i > 0 else { return 0 }
+            let here = coords.indices.contains(i) ? coords[i] : nil
+            let before = coords.indices.contains(i - 1) ? coords[i - 1] : nil
+            guard let here, let before else { return nil }
+            if here == before { return 0 }
+            guard let li = legs.firstIndex(where: { !$0.crossesDay && $0.to.number == number }) else { return nil }
             if long.indices.contains(li), long[li] { return nil }
             if estimates.indices.contains(li), let seconds = estimates[li].first?.seconds { return minutes(seconds: seconds) }
             return scheduleMoveMinutes(legs[li].from.coords, legs[li].to.coords)
@@ -114,10 +130,13 @@ enum TripTimes {
         var waitFor: (label: String, at: Int)? = nil
         /// 朝の場所に遅れて着く（その時間帯の名前「朝」「夜明け」）
         var lateMorning: String? = nil
+        /// 待ちが長すぎて待たせなかった夜・夕方の場所の、日の入り（斜光の始まり）。「日の入りは 16:30」と添える
+        var notWaited: (label: String, at: Int)? = nil
 
         static func == (a: Row, b: Row) -> Bool {
             a.arrive == b.arrive && a.wait == b.wait && a.waitFor?.label == b.waitFor?.label
                 && a.waitFor?.at == b.waitFor?.at && a.lateMorning == b.lateMorning
+                && a.notWaited?.label == b.notWaited?.label && a.notWaited?.at == b.notWaited?.at
         }
     }
 
@@ -142,10 +161,15 @@ enum TripTimes {
             }
             var row = Row(arrive: at)
             // 夜・夕方の場所: 着くのが日の入り（斜光の始まり）より前なら、そこまで待つ
+            // 待ちが 4 時間を超えるときは待たせず、着いた時刻のまま日の入りだけ添える（確かめ役の指摘・2026-11-21）
             if let target = waitTarget(stop.times, light: light), at < target.at {
                 let until = ceil5(target.at)
-                row = Row(arrive: until, wait: until - at, waitFor: target)
-                at = until
+                if until - at > maxWait {
+                    row.notWaited = target
+                } else {
+                    row = Row(arrive: until, wait: until - at, waitFor: target)
+                    at = until
+                }
             }
             if let morning = morningLabel(stop.times), at > morningLate {
                 row.lateMorning = morning
@@ -207,20 +231,28 @@ enum TripTimes {
 
     // MARK: - 言葉
 
-    /// 「9:00」。日をまたいだら「翌0:30」
+    /// 「9:00」。日をまたいだら「翌0:30」、2日またいだら「翌々0:30」、3日からは「+3日 0:30」
     static func clock(_ minutes: Int) -> String {
-        let next = minutes >= 24 * 60
         let m = ((minutes % (24 * 60)) + 24 * 60) % (24 * 60)
-        let text = String(format: "%d:%02d", m / 60, m % 60)
-        return next ? L("翌", "+1 ") + text : text
+        return dayPrefix(minutes) + String(format: "%d:%02d", m / 60, m % 60)
+    }
+
+    /// 何日またいだかの頭（0 日は空）
+    static func dayPrefix(_ minutes: Int) -> String {
+        let days = max(0, minutes / (24 * 60))
+        switch days {
+        case 0: return ""
+        case 1: return L("翌", "+1 ")
+        case 2: return L("翌々", "+2 ")
+        default: return L("+\(days)日 ", "+\(days) ")
+        }
     }
 
     /// 読み上げの時刻（「9時」「9時30分」）
     static func spokenClock(_ minutes: Int) -> String {
-        let next = minutes >= 24 * 60
         let m = ((minutes % (24 * 60)) + 24 * 60) % (24 * 60)
         let h = m / 60, mm = m % 60
-        let ja = (next ? "翌" : "") + (mm == 0 ? "\(h)時" : "\(h)時\(mm)分")
+        let ja = dayPrefix(minutes) + (mm == 0 ? "\(h)時" : "\(h)時\(mm)分")
         return L(ja, clock(minutes))
     }
 
@@ -257,6 +289,20 @@ enum TripTimes {
                  "Best in the \(label.lowercased()), but you arrive around \(clock(at))")
     }
 
+    /// 待たせなかった夜・夕方の場所の一言（「日の入りは 16:30」「夕方の斜光は 15:40 から」）
+    static func notWaitedLine(_ row: Row) -> String? {
+        guard let target = row.notWaited else { return nil }
+        if target.label == L("日の入り", "Sunset") {
+            return L("日の入りは \(clock(target.at))", "Sunset at \(clock(target.at))")
+        }
+        return L("\(target.label)は \(clock(target.at)) から", "\(target.label) from \(clock(target.at))")
+    }
+
+    /// 場所の下に添える一言（朝の場所に遅れて着く、または待たせなかった夜・夕方の場所）
+    static func cautionLine(_ row: Row) -> String? {
+        lateMorningLine(row) ?? notWaitedLine(row)
+    }
+
     /// 終わりの一行（「17:30ごろ 終わり」）
     static func endLine(_ end: Int) -> String {
         L("\(clock(end))ごろ 終わり", "Done around \(clock(end))")
@@ -272,33 +318,128 @@ enum TripTimes {
     }
 }
 
-/// 変えた出発の時刻（この iPhone だけ・プランごと日ごと）。既定の 9:00 は覚えない（消す）
+/// 変えた出発の時刻（この iPhone だけ・旅行プランの頁だけ・プランごと日ごと）。既定の 9:00 は覚えない（消す）。
+///
+/// 2026-11-21 判断（札 #677 の確かめ役）: 前は日の番号に付けて覚え、日を消す・組み直し・仲間の変更で別の日にずれた。
+/// - 鍵は**日付のある日はその日の日付**（`<planId>@<YYYY-MM-DD>`）、日付の無い日は番号（`<planId>#<番号>`）
+/// - 日程が変わったら（日を消す・組み直し・元に戻す・仲間の変更・日付の変更）、**場所の重なりで前の日と今の日を対応させて**
+///   時刻を運ぶ（`carried`）。重なる日が無い日は、同じ鍵の前の日が残っていればその値、無ければ 9:00
+/// - AI の画面は保存したプランと日がそろわないので、ここを使わない（画面の中だけの値）
+/// - プランを消したとき・ログアウトで消す
 @MainActor
 final class TripStartStore: ObservableObject {
     static let shared = TripStartStore()
 
-    nonisolated static let defaultsKey = "tripStartTimes.v1"
+    nonisolated static let defaultsKey = "tripStartTimes.v2"
+    /// 日の番号だけで覚えていた前の版（読まずに消す）
+    nonisolated static let oldDefaultsKey = "tripStartTimes.v1"
 
-    /// "<planId>#<日の番号>" → 分
     @Published private(set) var starts: [String: Int]
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        defaults.removeObject(forKey: Self.oldDefaultsKey)
         self.starts = (defaults.dictionary(forKey: Self.defaultsKey) as? [String: Int]) ?? [:]
     }
 
-    nonisolated static func key(planId: String, day: Int) -> String { "\(planId)#\(day)" }
-
-    func minutes(planId: String?, day: Int) -> Int {
+    func minutes(planId: String?, ymd: String?, day: Int) -> Int {
         guard let planId, !planId.isEmpty else { return TripTimes.defaultStart }
-        return starts[Self.key(planId: planId, day: day)] ?? TripTimes.defaultStart
+        return starts[TripStartKeys.key(planId: planId, ymd: ymd, day: day)] ?? TripTimes.defaultStart
     }
 
-    func set(_ minutes: Int, planId: String?, day: Int) {
+    func set(_ minutes: Int, planId: String?, ymd: String?, day: Int) {
         guard let planId, !planId.isEmpty else { return }
-        let k = Self.key(planId: planId, day: day)
+        let k = TripStartKeys.key(planId: planId, ymd: ymd, day: day)
         if minutes == TripTimes.defaultStart { starts[k] = nil } else { starts[k] = minutes }
-        defaults.set(starts, forKey: Self.defaultsKey)
+        save()
+    }
+
+    /// 日程が変わったとき、時刻を今の日へ運ぶ
+    func carry(from old: [TripStartKeys.DaySlot], to new: [TripStartKeys.DaySlot]) {
+        let next = TripStartKeys.carried(starts, from: old, to: new)
+        guard next != starts else { return }
+        starts = next
+        save()
+    }
+
+    /// プランを消したとき
+    func forget(planId: String) {
+        let next = starts.filter { !TripStartKeys.belongs($0.key, to: planId) }
+        guard next != starts else { return }
+        starts = next
+        save()
+    }
+
+    /// ログアウト・退会（次の人に残さない）
+    func forgetAll() {
+        starts = [:]
+        defaults.removeObject(forKey: Self.defaultsKey)
+    }
+
+    private func save() { defaults.set(starts, forKey: Self.defaultsKey) }
+}
+
+/// 出発の時刻の覚えの鍵と、日程が変わったときの運び方（値だけの計算・`TripStartStore` が使う）
+enum TripStartKeys {
+    /// 日を見分ける鍵と、その日の場所（前の日程と対応させるため）
+    struct DaySlot: Equatable, Sendable {
+        let key: String
+        let items: [String]
+    }
+
+    static func key(planId: String, ymd: String?, day: Int) -> String {
+        if let ymd, !ymd.isEmpty { return "\(planId)@\(ymd)" }
+        return "\(planId)#\(day)"
+    }
+
+    /// 日程を日ごとの鍵と場所に（`TripPlanText.dayDate` の日付があれば日付の鍵）
+    static func slots(planId: String, days: [TripDay], start: String?, end: String?) -> [DaySlot] {
+        days.enumerated().map { i, day in
+            DaySlot(key: key(planId: planId, ymd: TripPlanText.dayDate(index: i, day: day, start: start, end: end), day: i),
+                    items: day.items.map { String(describing: $0) })
+        }
+    }
+
+    static func belongs(_ key: String, to planId: String) -> Bool {
+        key.hasPrefix(planId + "@") || key.hasPrefix(planId + "#")
+    }
+
+    /// 前の日程の時刻を今の日程へ運ぶ。前の日と今の日を、重なる場所の数が多い組から1対1で対応させる
+    /// （同じ数なら同じ鍵、近い番号を先に）。前が空（開いたばかり）なら何もしない
+    static func carried(_ starts: [String: Int], from old: [DaySlot], to new: [DaySlot]) -> [String: Int] {
+        guard !old.isEmpty, old != new else { return starts }
+        var pairs: [(n: Int, o: Int, overlap: Int, same: Bool)] = []
+        for (n, nd) in new.enumerated() {
+            let items = Set(nd.items)
+            for (o, od) in old.enumerated() {
+                let overlap = items.intersection(od.items).count
+                if overlap > 0 { pairs.append((n, o, overlap, nd.key == od.key)) }
+            }
+        }
+        pairs.sort {
+            if $0.overlap != $1.overlap { return $0.overlap > $1.overlap }
+            if $0.same != $1.same { return $0.same }
+            return abs($0.n - $0.o) < abs($1.n - $1.o)
+        }
+        var fromOld: [Int: Int] = [:]
+        var usedOld = Set<Int>()
+        for p in pairs where fromOld[p.n] == nil && !usedOld.contains(p.o) {
+            fromOld[p.n] = p.o
+            usedOld.insert(p.o)
+        }
+        // 場所の重ならない日（空の日など）は、同じ鍵の前の日が残っていればそのまま
+        for (n, nd) in new.enumerated() where fromOld[n] == nil {
+            if let o = old.firstIndex(where: { $0.key == nd.key }), !usedOld.contains(o) {
+                fromOld[n] = o
+                usedOld.insert(o)
+            }
+        }
+        var out = starts
+        for od in old { out[od.key] = nil }
+        for (n, nd) in new.enumerated() {
+            if let o = fromOld[n], let value = starts[old[o].key] { out[nd.key] = value }
+        }
+        return out
     }
 }

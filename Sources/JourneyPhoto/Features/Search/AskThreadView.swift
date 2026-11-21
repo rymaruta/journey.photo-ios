@@ -243,7 +243,7 @@ struct AskThreadView: View {
         case .planFlow:
             AskPlanTimeline(days: (a.plan?.days ?? []).map { $0.compactMap { engine.spotsById[$0] } }.filter { !$0.isEmpty },
                             officialSpots: officialSpots, photos: photos, photosKnown: photosKnown,
-                            planId: a.plan?.planId, offline: connectivity.isOffline)
+                            offline: connectivity.isOffline)
         case .leadOnly:
             // 文だけの答えでも、AI が引いた公開の写真があれば格子で見せる（押すと持ち主の写真の詳細へ）
             if !a.photoIds.isEmpty, a.engine != .refused { photoGrid(a.photoIds) }

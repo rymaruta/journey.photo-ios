@@ -500,6 +500,9 @@ struct TripPlanDetailView: View {
         .onChange(of: days) { _, now in
             if let target = removingDay, target.days != now { removingDay = nil }
         }
+        // 日程が変わったら（日を消す・組み直し・元に戻す・仲間の変更・日付の変更）、出発の時刻を今の日へ運ぶ
+        // （場所の重なりで日を対応させる・札 #677 の確かめ役。開いたばかりの読み込みは前が空なので何もしない）
+        .onChange(of: startSlots) { old, now in starts.carry(from: old, to: now) }
 
         // その日の場所を番号つきで地図に・前の場所からの経路（2026-09-30）。
         // **開いた時点の日程で出す**（保存していない並び替えも反映する）
@@ -1045,9 +1048,10 @@ struct TripPlanDetailView: View {
         let legs = layout.legs(di)
         let estimatesByLeg = legs.map { estimates(for: $0) }
         // 着く時刻の目安（札 #677・案A・端末で計算・保存しない）。日付の無いプランは今日の日の入りで
-        let start = starts.minutes(planId: planId, day: di)
+        // 鍵は日付のある日はその日の日付（日を消す・組み直しでずれない・`TripStartStore`）
+        let startMinutes = starts.minutes(planId: planId, ymd: ymd, day: di)
         let times = dayTimes(day, resolved: resolved, numbers: numbers, legs: legs, estimates: estimatesByLeg,
-                             ymd: ymd, sun: sun, start: start)
+                             ymd: ymd, sun: sun, startMinutes: startMinutes)
         let showsTimes = !day.items.isEmpty
         let timesInColumn = !typeSize.isAccessibilitySize
         let timesInset: CGFloat = showsTimes && timesInColumn ? timeWidth + TripTimeStyle.columnGap : 0
@@ -1058,7 +1062,7 @@ struct TripPlanDetailView: View {
                     .padding(.trailing, JPSpace.xs)
                 // 出発の時刻（日の見出しの右・押す、選ぶの2回）。大きな字の設定では下の行へ
                 if showsTimes && timesInColumn {
-                    TripStartButton(start: start, open: startOpen)
+                    TripStartButton(start: startMinutes, open: startOpen)
                         .padding(.trailing, JPSpace.xxs)
                 }
                 // 地図で見る。**地図に置ける場所がある日だけ**（押しても空の地図を出さない）
@@ -1100,11 +1104,11 @@ struct TripPlanDetailView: View {
             // 日の出・日の入り（端末の計算）・同じ時間帯の重なり・間に合わないとき（計算した数だけ）
             VStack(alignment: .leading, spacing: JPSpace.xxs) {
                 if showsTimes && !timesInColumn {
-                    TripStartButton(start: start, open: startOpen)
+                    TripStartButton(start: startMinutes, open: startOpen)
                 }
                 if showsTimes && openStartDay == di {
-                    TripStartChips(start: start) { m in
-                        starts.set(m, planId: planId, day: di)
+                    TripStartChips(start: startMinutes) { m in
+                        starts.set(m, planId: planId, ymd: ymd, day: di)
                         openStartDay = nil
                     }
                 }
@@ -1202,7 +1206,8 @@ struct TripPlanDetailView: View {
 
     /// その日の着く時刻の目安（札 #677）。滞在は観光スポットの種類から、移動は区間の見込み（`TripTimes.planMoves`）
     private func dayTimes(_ day: TripDay, resolved: [TripDraft.Place], numbers: [Int], legs: [TripTravel.Leg],
-                          estimates: [[TripTravel.Estimate]], ymd: String?, sun: TripDraft.Sun?, start: Int) -> TripTimes.Day {
+                          estimates: [[TripTravel.Estimate]], ymd: String?, sun: TripDraft.Sun?,
+                          startMinutes: Int) -> TripTimes.Day {
         guard !day.items.isEmpty else { return TripTimes.Day(rows: [], end: nil) }
         #if DEBUG
         let began = DispatchTime.now()
@@ -1220,14 +1225,20 @@ struct TripPlanDetailView: View {
                                    settled: travel.isSettled(legs[i], modes: TripTravel.modes(for: legs[i],
                                                                      transitAvailable: TravelEstimator.transitAvailable)))
         }
-        let moves = TripTimes.planMoves(numbers: Array(numbers.prefix(day.items.count)), legs: legs,
+        let coords = day.items.indices.map { resolved.indices.contains($0) ? resolved[$0].coords : nil }
+        let moves = TripTimes.planMoves(numbers: Array(numbers.prefix(day.items.count)), coords: coords, legs: legs,
                                         estimates: estimates, long: long)
         // 日付のある日は日の出の行と同じ計算を使い回す。日付の無いプランだけ今日で計算する
         let light = TripTimes.light(ymd != nil ? sun : TripDraft.sun(ymd: TripTimes.todayYMD(), spots: spots.compactMap { $0 }))
-        return TripTimes.schedule(start: start, stops: stops, moves: moves, light: light)
+        return TripTimes.schedule(start: startMinutes, stops: stops, moves: moves, light: light)
     }
 
     /// その日の撮影スポット（日程の順）
+    /// 出発の時刻を覚える日の鍵と場所（`TripStartStore.slots`）
+    private var startSlots: [TripStartKeys.DaySlot] {
+        TripStartKeys.slots(planId: planId, days: days, start: start, end: end)
+    }
+
     private func daySpots(_ day: TripDay) -> [OfficialSpot] {
         day.items.compactMap(spotFor)
     }
@@ -1784,7 +1795,7 @@ struct TripPlanDetailView: View {
         let byLeading: CGFloat = time == nil ? 36 : 36 + timeLeading
         return VStack(alignment: .leading, spacing: 2) {
             TripStopLabel(number: number, name: name, isSpot: isSpot, season: season, timeChip: chip, note: note,
-                          time: time?.arrive, showsTime: time != nil, timeCaution: time.flatMap(TripTimes.lateMorningLine))
+                          time: time?.arrive, showsTime: time != nil, timeCaution: time.flatMap(TripTimes.cautionLine))
             // 共有したプランで、ほかの仲間が足した場所（「あお が足しました」）
             if let by {
                 Text(by)
