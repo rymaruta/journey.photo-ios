@@ -4627,14 +4627,14 @@ final class ScreenshotTests: XCTestCase {
         if handles.count >= 4 {
             let from = handles.element(boundBy: 2)
             let to = handles.element(boundBy: 3)
-            var pushes = 0
-            while !(from.isHittable && to.isHittable), pushes < 3 {
-                app.swipeUp()
-                Thread.sleep(forTimeInterval: 1)
-                pushes += 1
-            }
-            _ = fixtureSends(app, "dragHittable-from\(from.isHittable)-to\(to.isHittable)")
-            if from.isHittable, to.isHittable {
+            // 🔴 **持ち手と行き先が、上の帯と下のタブの間に丸ごと見えているときだけ運ぶ**（回 1682・1689 の数）。
+            // `isHittable` は上の帯の下に隠れた持ち手（y 33）でも真で、押した点は帯に落ちて持ち上がらなかった（lift=0）。
+            // 行き先が下のタブに掛かっていた（y 865）回は、持ち上がったが落とせなかった（drop=0）。
+            // 旅行プランの時刻（札 #677）で行が増え、持ち手の位置が変わってこの形に当たるようになった
+            let placed = bringIntoBand(app, from, to)
+            _ = fixtureSends(app, "dragPlaced-\(placed) from[\(frameText(from))] to[\(frameText(to))]")
+            XCTAssertTrue(placed, "持ち手と行き先が、上の帯と下のタブの間に入らない")
+            if placed {
                 let before = order()
                 _ = fixtureSends(app, "orderBefore[\(before)]")
                 perfLine(app, "drag1-before from=\(frameText(from)) to=\(frameText(to))")
@@ -4646,6 +4646,7 @@ final class ScreenshotTests: XCTestCase {
                 _ = fixtureSends(app, "orderAfterPress[\(after)] drag[\(dragCounts(app))]")
                 if after == before {
                     let again = handles.element(boundBy: 2)
+                    _ = bringIntoBand(app, again, handles.element(boundBy: 3))
                     perfLine(app, "drag2-before from=\(frameText(again)) to=\(frameText(handles.element(boundBy: 3)))")
                     let press2 = Date()
                     again.press(forDuration: 1.2, thenDragTo: handles.element(boundBy: 3),
@@ -4710,9 +4711,12 @@ final class ScreenshotTests: XCTestCase {
             leg.tap()
             // 押す操作が返るまで（XCUITest はアプリの手が空くのを待つ）。回 1672 は 7 秒かかった
             perfLine(app, "leg-tapped began=\(clock(tapped)) took=\(ms(since: tapped))ms")
+            // 待つ 6 秒は押す操作が返ってから数える（回 1672 は押す操作が 7 秒返らず、待つ前に時間が尽きて一度も読まなかった。
+            // 回 1689 の数では時刻の計算は 1 回 約 2ms・頁を開いてから 42 回で 92ms、押す操作は 1.3 秒）
+            let returned = Date()
             // 名前で探し直す（最大で数秒）のを待つ。少しずつ読んで、段の印（LT=・LM=・LR=・LX=・開いた M:）をその都度残す（run 1208）
             var trail = dragCounts(app)
-            while !trail.contains("M:"), Date().timeIntervalSince(tapped) < 6 {
+            while !trail.contains("M:"), Date().timeIntervalSince(returned) < 6 {
                 Thread.sleep(forTimeInterval: 0.5)
                 trail = dragCounts(app)
                 let pollLine = String(format: "TRIPLEG poll t+%.1fs trail[%@]", Date().timeIntervalSince(tapped), trail)
@@ -4759,6 +4763,36 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// 運ぶ操作の数（見本のときだけ画面に出す `tripPlan.fixtureDrag`）と出来事の並び（`tripPlan.fixtureDragTrail`）
+    /// 2つの要素が、上の帯（ナビゲーションバー）と下のタブの間に丸ごと入るまで、ゆっくり動かして止める（勢いで流れない）。
+    /// 入ったら真。`swipeUp` は一度に大きく流れて、持ち手が帯の下やタブの上に止まることがある（回 1689）
+    private func bringIntoBand(_ app: XCUIApplication, _ a: XCUIElement, _ b: XCUIElement) -> Bool {
+        let window = app.windows.firstMatch.frame
+        func band() -> (top: CGFloat, bottom: CGFloat) {
+            let bar = app.navigationBars.firstMatch
+            let tabs = app.tabBars.firstMatch
+            return ((bar.exists ? bar.frame.maxY : window.minY) + 8, (tabs.exists ? tabs.frame.minY : window.maxY) - 8)
+        }
+        for _ in 0..<6 {
+            guard a.exists, b.exists else { return false }
+            let edge = band()
+            let top = min(a.frame.minY, b.frame.minY)
+            let bottom = max(a.frame.maxY, b.frame.maxY)
+            if top >= edge.top, bottom <= edge.bottom { return true }
+            // 2つの真ん中を帯の真ん中へ。1回に動かすのは帯の 4 割まで
+            let shift = (edge.top + edge.bottom) / 2 - (top + bottom) / 2
+            let step = max(-(edge.bottom - edge.top) * 0.4, min((edge.bottom - edge.top) * 0.4, shift))
+            let x = window.minX + window.width * 0.12
+            let y = (edge.top + edge.bottom) / 2 - step / 2
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            let start = origin.withOffset(CGVector(dx: x, dy: y))
+            let end = origin.withOffset(CGVector(dx: x, dy: y + step))
+            start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.4)
+            Thread.sleep(forTimeInterval: 0.8)
+        }
+        let edge = band()
+        return a.frame.minY >= edge.top && b.frame.maxY <= edge.bottom && b.frame.minY >= edge.top && a.frame.maxY <= edge.bottom
+    }
+
     /// 速さの数（札 #677・回 1672/1682）: アプリの描き直し・時刻の計算・主の糸の止まり・出来事の壁時計を1行に
     private func perfLine(_ app: XCUIApplication, _ when: String) {
         let value = (app.descendants(matching: .any)["tripPlan.fixturePerf"].firstMatch.value as? String) ?? "nil"
