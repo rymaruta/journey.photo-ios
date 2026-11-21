@@ -8,6 +8,7 @@ import SwiftUI
 /// 消す形は `JPOutlineTone.danger` 1つにまとめ、削除の確かめの札は `JPDeleteConfirm` 1つを通す。
 /// 新しく足した消すボタンが線の形に戻らないよう、ここで見張る。
 /// 系統の部品（確認のダイアログ・メニュー・スワイプ・`role: .destructive`）はこの試験の外（もう iOS のふつうの赤）
+@MainActor
 final class DestructiveButtonFillTests: XCTestCase {
 
     private var sourceRoot: URL {
@@ -53,7 +54,6 @@ final class DestructiveButtonFillTests: XCTestCase {
     }
 
     /// 消す形は赤の塗り・白の字・縁なし（線の形に戻らない）
-    @MainActor
     func testDangerToneIsFilled() {
         XCTAssertEqual(JPOutlineTone.danger.fill, WebTheme.dangerFill, "消すボタンが赤の塗りでない")
         XCTAssertEqual(JPOutlineTone.danger.text, WebTheme.foreground, "消すボタンの字が白でない")
