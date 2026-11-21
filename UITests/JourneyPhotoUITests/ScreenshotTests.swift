@@ -4169,7 +4169,8 @@ final class ScreenshotTests: XCTestCase {
     func testCapturesTripPlanDeleteConfirm() {
         for (category, tag) in [("UICTContentSizeCategoryL", "標準"), ("UICTContentSizeCategoryAccessibilityXL", "AXL")] {
             let app = launchTrunk(["-JPTripPlanFixture", "YES", "-UIPreferredContentSizeCategoryName", category])
-            defer { app.terminate() }
+            // 終わりに terminate しない（run 1681 で、確かめを全部通したあとの terminate が「Failed to terminate」で落ちた）。
+            // 次の回の launch() が前のアプリを閉じる
             guard openFixturePlan(app) else { return unreached(app, "見本のプラン（\(tag)）", probes: ["trips.plans"]) }
             Thread.sleep(forTimeInterval: 2)
 
