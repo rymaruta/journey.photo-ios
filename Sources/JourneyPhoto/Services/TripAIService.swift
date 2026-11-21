@@ -47,7 +47,11 @@ struct TripAIService {
         case signedOut
     }
 
-    private struct UsageBody: Decodable { let usage: Usage }
+    private struct UsageBody: Decodable {
+        let usage: Usage
+        /// 旅行プランの AI の今日と今月の数（status だけが返す・札 #652）。古いサーバーは返さない
+        var trip: AskUsage?
+    }
     private struct PlanBody: Decodable { let plan: TripAIPlan; let usage: Usage }
     private struct Request: Encodable {
         let action: String
@@ -62,8 +66,15 @@ struct TripAIService {
     init(api: APIClient) { self.api = api }
 
     func status() async throws -> Usage {
-        if let fixture = TripAIFixture.usage { return fixture }
-        return try await call(Request(action: "status"), as: UsageBody.self).usage
+        try await statusWithQuota().usage
+    }
+
+    /// 今月の数と、今日の数（`trip.day`）。2026-11-20 判断（札 #667 の確かめ役）: 1日の上限に当たっているかを、
+    /// AI を呼ぶ前に知るために読む
+    func statusWithQuota() async throws -> (usage: Usage, trip: AskUsage?) {
+        if let fixture = TripAIFixture.usage { return (fixture, nil) }
+        let body = try await call(Request(action: "status"), as: UsageBody.self)
+        return (body.usage, body.trip)
     }
 
     /// 組む前に1回取る（札 #652・2026-11-20 owner 承認）。**端末の AI の回も、無料も Pro も同じ上限で数える**
@@ -87,7 +98,7 @@ struct TripAIService {
     }
 
     func plan(request: String, days: Int?, candidates: [OfficialSpot], current: [TripAIPlan.Stop] = []) async throws -> (TripAIPlan, Usage) {
-        if TripAIFixture.isOn { return try await TripAIFixture.plan(candidates: candidates, days: days) }
+        if TripAIFixture.isOn { return try await TripAIFixture.plan(candidates: candidates, days: days, current: current) }
         let body = Request(action: "plan", request: String(request.prefix(TripAILimits.maxRequest)), days: days,
                            candidates: candidates.prefix(TripAILimits.maxCandidates).map(Candidate.init),
                            current: current.isEmpty ? nil : current)
@@ -160,11 +171,24 @@ enum TripAIFixture {
                      resetsOn: TripAIText.nextReset(), countsDevice: true)
     }
 
-    static func plan(candidates: [OfficialSpot], days: Int?) async throws -> (TripAIPlan, TripAIService.Usage) {
+    static func plan(candidates: [OfficialSpot], days: Int?, current: [TripAIPlan.Stop] = []) async throws -> (TripAIPlan, TripAIService.Usage) {
         let delay = UserDefaults.standard.object(forKey: delayKey) == nil ? 2.5 : UserDefaults.standard.double(forKey: delayKey)
         try await Task.sleep(nanoseconds: UInt64(max(delay, 0) * 1_000_000_000))
         if mode == "usedUp" { throw TripAIService.Failure.limit }
         if mode == "silent" { throw TripAIService.Failure.unavailable }
+        if !current.isEmpty {
+            // 組み直し（札 #667）の見本: 必ず変わる答え（日を入れ替え、まだ入っていない候補を1つ1日目の頭に足す）。
+            // 「今 | 組み直した案」の印と「この案にする」を撮るため
+            let d = max(days ?? 1, 1)
+            var stops = current.map { TripAIPlan.Stop(n: $0.n, day: d - $0.day + 1) }
+            let used = Set(current.map(\.n))
+            if let extra = candidates.indices.map({ $0 + 1 }).first(where: { !used.contains($0) }) {
+                stops.insert(.init(n: extra, day: 1), at: 0)
+            }
+            let plan = TripAIPlan(title: "", days: d, stops: stops,
+                                  reason: L("雨の日に向く所を先にし、日を入れ替えました。", "Rain-friendly places first; days swapped."))
+            return (plan, usage ?? .init(tier: "pro", used: 1, limit: TripAILimits.pro, remaining: 299, resetsOn: TripAIText.nextReset(), countsDevice: true))
+        }
         var plan = TripAIFallback.plan(candidates: candidates, days: days ?? 2, title: "")
         plan.reason = L("秋の案内がある所を入れ、朝に向く所を先にしました。", "Picked places with autumn notes, morning spots first.")
         return (plan, usage ?? .init(tier: "free", used: 1, limit: TripAILimits.free, remaining: 29, resetsOn: TripAIText.nextReset(), countsDevice: true))

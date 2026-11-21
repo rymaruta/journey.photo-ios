@@ -327,12 +327,14 @@ final class UXPlanStageTests: XCTestCase {
 
     /// 並べた理由は1行に畳む（押すと開く）。理由の無いプランは押すだけの直しの名前
     func testAIReasonFoldsToOneLine() throws {
-        let folded = TripAICard.foldedLine(reason: "  秋の案内がある所を入れ、朝に向く所を先に\n")
+        let folded = try XCTUnwrap(TripAICard.foldedLine(reason: "  秋の案内がある所を入れ、朝に向く所を先に\n"))
         XCTAssertEqual(folded.eyebrow, L("並べた理由", "Why this order"))
         XCTAssertEqual(folded.text, "秋の案内がある所を入れ、朝に向く所を先に")
-        let empty = TripAICard.foldedLine(reason: " ")
-        XCTAssertEqual(empty.eyebrow, L("押すだけで直す", "Quick changes"))
-        XCTAssertEqual(empty.text, TripAITweak.allCases.map(\.title).joined(separator: L("、", ", ")))
+        // 2026-11-20（札 #667）: 理由が空なら行ごと出さない（札の中の押すだけの直しは日程の上の「組み直す」へ移した）
+        XCTAssertNil(TripAICard.foldedLine(reason: " "))
+        let emptyNote = TripAINote(reason: "", mode: .ai, removed: [], candidates: [])
+        XCTAssertFalse(TripAICard.hasContent(emptyNote), "理由も帯も無い札は置かない")
+        XCTAssertTrue(TripAICard.hasContent(TripAINote(reason: "", mode: .silent, removed: [], candidates: [])))
 
         XCTAssertEqual(TripAICard.foldedSpoken(reason: "朝に向く所を先に"),
                        L("並べた理由、朝に向く所を先に", "Why this order, 朝に向く所を先に"))

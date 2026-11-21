@@ -150,23 +150,25 @@ enum TripAISwap {
     }
 }
 
-/// 日程の下の、押すだけの直し（AI を1回使う）
+/// 日程の上の、押すだけの組み直し（AI を1回使う・札 #667）。
+///
+/// 2026-11-20 判断（owner「1のAI使う案いいとおもう」・案のページの案1の模型が正）: チップは「雨なら」「もっとゆっくり」の2つ。
+/// ほかの言い方は「書いて頼む」の欄で打つ。前の「ゆっくり」「雨でも」「朝を早く」（AI で作ったプランの札の中だけ）は、
+/// どのプランにも出るこのチップにまとめた（入口を2つにしない）
 enum TripAITweak: String, CaseIterable, Identifiable {
-    case slow, rain, early
+    case rain, slow
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .slow: return L("ゆっくり", "Slower")
-        case .rain: return L("雨でも", "Rain-proof")
-        case .early: return L("朝を早く", "Early start")
+        case .rain: return L("雨なら", "If it rains")
+        case .slow: return L("もっとゆっくり", "Slower pace")
         }
     }
     /// AI に渡す頼み
     var request: String {
         switch self {
-        case .slow: return "ゆっくり回りたい。1日3か所まで"
-        case .rain: return "雨の日でも楽しめる屋内の所を優先"
-        case .early: return "朝に向く所を先にして、朝を早く始めたい"
+        case .rain: return "雨の日でも楽しめる屋内の所を優先し、雨に向かない所は外すか別の日へ"
+        case .slow: return "もっとゆっくり回りたい。1日3か所まで。入らない所は別の日へ"
         }
     }
 }

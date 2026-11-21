@@ -25,6 +25,9 @@ struct TripAIResult {
     let mode: Mode
     /// 候補（「替える」の残りの場所）
     let candidates: [OfficialSpot]
+    /// 答えの見張りで断った（題か理由に、鍵の形・内部の名前・URL などが混じった・`AskGuard.leaks`）。
+    /// 組み直し（札 #667）だけが立てる。立ったら案を出さず、断りの1行を出す
+    var refused = false
 }
 
 /// 組む手順（札 #621）。画面は持たない（待つ間の画面は `TripAIBuildView`）。
@@ -61,23 +64,46 @@ final class TripAIRunner: ObservableObject {
     /// 試験だけが差し替える AI の答え（頼み・候補・日数・今の日程 → 答え）。nil ならサーバーか端末の AI
     typealias Planner = (String, [OfficialSpot], Int?, [TripAIPlan.Stop]) async throws -> TripAIPlan
     private let planner: Planner?
+    /// 端末の AI（文・日数 → 答え）。nil なら `TripAIDevice.plan`。試験は数え方を確かめるために差し替える
+    typealias DevicePlanner = (String, Int?) async throws -> TripAIPlan
+    private let devicePlanner: DevicePlanner?
+    /// 回数を1回取る口。nil なら `TripAIService.reserve`。試験は「数えた回」を数えるために差し替える
+    typealias Reserver = (AskService.Via) async throws -> AskUsage
+    private let reserver: Reserver?
 
-    init(onDevice: Bool = TripAIDevice.isAvailable, planner: Planner? = nil) {
+    /// 見本の AI（`-JPTripAIFixture`・Debug の UI テストだけ）のときは端末の AI を使わず、見本の答え（サーバーの道）で組む。
+    /// 2026-11-20 判断（札 #667・Mac run 1621）: CI の模擬機は `availability=available supportsJa=true` を返すのに、
+    /// 答えは毎回 `ModelManagerError 1019` で落ちた（`measured [trip-ai]` の9件すべて）。端末の道に入って「AI が答えなかった」に
+    /// なり、見本の答えが使われなかった
+    nonisolated static var usesDeviceAI: Bool { TripAIDevice.isAvailable && !TripAIFixture.isOn }
+
+    init(onDevice: Bool = TripAIRunner.usesDeviceAI, planner: Planner? = nil,
+         devicePlanner: DevicePlanner? = nil, reserver: Reserver? = nil) {
         self.onDevice = onDevice
         self.planner = planner
+        self.devicePlanner = devicePlanner
+        self.reserver = reserver
     }
 
     func setUsage(_ u: TripAIService.Usage?) { usage = u }
 
-    /// 回数を使い切っているか（2026-11-20 から端末の AI の回も、無料も Pro も数える・札 #652）
+    /// 今日の分を使い切ったか（429 の `day`、または status・reserve の `trip.day.remaining` が0）。
+    /// 2026-11-20 判断（札 #667 の確かめ役）: **月の数（`usage`）とは別に覚える。** 前は1日の上限でも `markUsedUp` が
+    /// 月の残りを0にし、次から「今月の回数を使い切りました」と間違って出していた
+    @Published private(set) var dayUsedUp = false
+
+    func setDayUsedUp(_ v: Bool) { dayUsedUp = v }
+
+    /// 回数を使い切っているか（今月の分。2026-11-20 から端末の AI の回も、無料も Pro も数える・札 #652）
     var isUsedUp: Bool {
         guard let usage else { return false }
         return usage.remaining <= 0
     }
 
     func loadUsage(service: TripAIService) async {
-        let u = try? await service.status()
-        if let u { usage = u }
+        guard let got = try? await service.statusWithQuota() else { return }
+        usage = got.usage
+        if let day = got.trip?.day { dayUsedUp = day.remaining <= 0 }
     }
 
     /// 頼みから候補を集める（AI は使わない）。行き先が無い・候補が0なら空
@@ -112,8 +138,11 @@ final class TripAIRunner: ObservableObject {
     }
 
     /// 今の日程を頼みに合わせて直す（「ゆっくり」「雨でも」「書いて直す」）。候補は作ったときの候補（無ければ今の場所）
+    ///
+    /// - Parameter countAfter: 組み直しの案（札 #667）。端末の AI の回は**答えを画面に出す直前に1回取る**（答えなかった回・
+    ///   見張りで断った回・取り消した回は数えない）。答えの題と理由は見張りを通す。AI が使えなければ今の日程を案にしない
     func revise(request: String, current: [[OfficialSpot]], candidates known: [OfficialSpot], index: [OfficialSpot],
-                offline: Bool, service: TripAIService, title: String,
+                offline: Bool, service: TripAIService, title: String, countAfter: Bool = false,
                 eta: @escaping TripAIRouteCheck.ETA = TripAIRouteCheck.mapsETA) async -> TripAIResult? {
         let now = current.flatMap { $0 }
         guard !now.isEmpty else { return nil }
@@ -135,27 +164,61 @@ final class TripAIRunner: ObservableObject {
             for s in day { if let i = cands.firstIndex(where: { $0.spotId == s.spotId }) { stops.append(.init(n: i + 1, day: d + 1)) } }
         }
         return await run(request: request, candidates: cands, fixedDays: max(current.count, 1), current: stops,
-                         title0: title, offline: offline, service: service, eta: eta)
+                         title0: title, offline: offline, service: service, countAfter: countAfter, eta: eta)
     }
 
     private func run(request: String, candidates: [OfficialSpot], fixedDays: Int?, current: [TripAIPlan.Stop],
-                     title0: String, offline: Bool, service: TripAIService,
+                     title0: String, offline: Bool, service: TripAIService, countAfter: Bool = false,
                      eta: @escaping TripAIRouteCheck.ETA) async -> TripAIResult? {
         step = .ordering
         var plan: TripAIPlan?
         var mode: TripAIResult.Mode = .ai
+        var refused = false
         // サーバーで組んでよいか（端末の AI が無い iPhone の Pro と管理者だけ・札 #652）
         var server = ServerUse.allowed
-        if planner == nil, !isUsedUp, !offline, !onDevice {
+        if planner == nil, !isUsedUp, !dayUsedUp, !offline, !onDevice {
             server = await mayUseServer(service: service)
         }
+        // 端末の AI の回を、移動の見込みを測った後（案を出す直前）に取るか（組み直し・札 #667）
+        var reserveAtEnd = false
         if isUsedUp {
             mode = .usedUp
+        } else if dayUsedUp {
+            // 今日の分を使い切っている: 呼ぶ前に止める（月の分の文にしない）
+            mode = .limited(.day)
         } else if let planner {
             plan = try? await planner(request, candidates, fixedDays, current)
             if plan == nil { mode = .silent }
         } else if offline && !onDevice {
             mode = .offline
+        } else if onDevice && countAfter {
+            // 2026-11-20 判断（札 #667・組み直し）: 「AI に頼む」（`AskEngine` の 5a）と同じく、**答えを画面に出す直前に1回取る**。
+            // AI が答えなかった、形が崩れた、見張りで断った、画面を閉じて取り消した回は数えない。圏外は数えられないので AI を呼ばない
+            if offline {
+                mode = .offline
+            } else {
+                let message = TripAIDevice.message(request: request, days: fixedDays, candidates: candidates, current: current)
+                let made: TripAIPlan?
+                if let devicePlanner {
+                    made = try? await devicePlanner(message, fixedDays)
+                } else {
+                    made = try? await TripAIDevice.plan(message: message, days: fixedDays)
+                }
+                if Task.isCancelled { return nil }
+                if let made, made.sanitized(candidateCount: candidates.count, fixedDays: fixedDays) != nil {
+                    if TripReplan.leaks(made) {
+                        refused = true
+                        mode = .silent
+                    } else {
+                        // 回は、移動の見込みを測り終えて案を出す直前に取る（下の `reserveAtEnd`）。
+                        // 測っている間に画面を閉じた（取り消した）回は数えない
+                        plan = made
+                        reserveAtEnd = true
+                    }
+                } else {
+                    mode = .silent
+                }
+            }
         } else if onDevice {
             // 2026-11-20（札 #652・owner 承認）: **組む前にサーバーで1回取る**。端末の AI の回も、無料も Pro も同じ上限
             // （1日と月）で数える。前は組んだあとに無料の人だけ数えていた（Pro は数えず、1日の上限も無かった）。
@@ -166,7 +229,7 @@ final class TripAIRunner: ObservableObject {
                 reserved = true
                 setRemaining(left)
             } catch AskService.Failure.limit(let reason, _) {
-                if reason == .day || reason == .month { markUsedUp() }
+                noteLimit(reason)
                 mode = .limited(reason)
             } catch {
                 mode = .offline
@@ -196,7 +259,7 @@ final class TripAIRunner: ObservableObject {
                 markUsedUp()
                 mode = .usedUp
             } catch AskService.Failure.limit(let reason, _) {
-                if reason == .day || reason == .month { markUsedUp() }
+                noteLimit(reason)
                 mode = .limited(reason)
             } catch AskService.Failure.proOnly {
                 mode = .proOnly
@@ -208,6 +271,12 @@ final class TripAIRunner: ObservableObject {
         }
         // やめた（画面を閉じた）なら、ここで終わる。サーバーで作り終えていた回は数えられている（確かめていない所）
         if Task.isCancelled { return nil }
+        // 組み直し（札 #667）: サーバーの答えも見張りを通す（題と理由に漏れの形が混じったら案を出さない）
+        if countAfter, let made = plan, TripReplan.leaks(made) {
+            plan = nil
+            refused = true
+            mode = .silent
+        }
 
         let checked = plan?.sanitized(candidateCount: candidates.count, fixedDays: fixedDays)
         if plan != nil && checked == nil { mode = .silent }
@@ -245,9 +314,28 @@ final class TripAIRunner: ObservableObject {
         let trimmed = (days: revising ? keptDays : keptDays.filter { !$0.isEmpty }, removed: removedAll)
         let reason = checked?.reasonChecked(against: candidates)
             ?? L("AI を使わずに、地域でまとめて近い順に並べました。", "Planned without AI: grouped by area, nearest first.")
+        if reserveAtEnd {
+            // 2026-11-20 判断（札 #667 の確かめ役）: 端末の AI の回は**ここで取る**（案を出す直前）。取り消した回は数えない
+            if Task.isCancelled { return nil }
+            do {
+                let left: AskUsage
+                if let reserver {
+                    left = try await reserver(.device)
+                } else {
+                    left = try await service.reserve(via: .device)
+                }
+                setRemaining(left)
+            } catch AskService.Failure.limit(let reason, _) {
+                noteLimit(reason)
+                mode = .limited(reason)
+            } catch {
+                mode = .offline
+            }
+            if Task.isCancelled { return nil }
+        }
         step = .done
         return TripAIResult(title: chosen.title.isEmpty ? title0 : chosen.title, days: trimmed.days,
-                            reason: reason, removed: trimmed.removed, mode: mode, candidates: candidates)
+                            reason: reason, removed: trimmed.removed, mode: mode, candidates: candidates, refused: refused)
     }
 
     enum ServerUse: Equatable { case allowed, proOnly, unknown }
@@ -259,10 +347,20 @@ final class TripAIRunner: ObservableObject {
         return tier == "pro" || tier == "admin" ? .allowed : .proOnly
     }
 
-    /// 取れた回の残り（月の数）を、今の回数の表示に写す
+    /// 取れた回の残り（月の数）を、今の回数の表示に写す。今日の残りも覚える
     private func setRemaining(_ left: AskUsage) {
         usage = .init(tier: left.tier, used: left.month.used, limit: left.month.limit, remaining: left.month.remaining,
                       resetsOn: left.month.resetsOn ?? usage?.resetsOn ?? TripAIText.nextReset(), countsDevice: true)
+        dayUsedUp = left.day.remaining <= 0
+    }
+
+    /// 429 の理由を覚える。今日の分は `dayUsedUp`、今月の分だけ月の残りを0にする（1日の上限で月の文を出さない）
+    private func noteLimit(_ reason: AskLimitReason) {
+        switch reason {
+        case .day: dayUsedUp = true
+        case .month: markUsedUp()
+        default: break
+        }
     }
 
     private func markUsedUp() {
