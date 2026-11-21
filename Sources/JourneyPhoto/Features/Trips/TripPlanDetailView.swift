@@ -245,7 +245,10 @@ struct TripPlanDetailView: View {
     }
 
     var body: some View {
-        Group {
+        #if DEBUG
+        if TripPlanFixture.isOn { TripPlanFixtureCounter.shared.bodyCount += 1 }
+        #endif
+        return Group {
             if let manifest = offlineManifest {
                 ScrollView {
                     OfflineTripContent(manifest: manifest)
@@ -1033,6 +1036,9 @@ struct TripPlanDetailView: View {
 
     private func daySection(_ di: Int, _ day: TripDay, numbers: [Int], layout: TravelLayout,
                             isToday: Bool = false) -> some View {
+        #if DEBUG
+        if TripPlanFixture.isOn { TripPlanFixtureCounter.shared.daySectionCount += 1 }
+        #endif
         let ymd = TripPlanText.dayDate(index: di, day: day, start: start, end: end)
         let resolved = day.items.map { TripDraft.place(for: $0, index: index, places: places) }
         let sun = TripDraft.sun(ymd: ymd, spots: daySpots(day))
@@ -1198,6 +1204,10 @@ struct TripPlanDetailView: View {
     private func dayTimes(_ day: TripDay, resolved: [TripDraft.Place], numbers: [Int], legs: [TripTravel.Leg],
                           estimates: [[TripTravel.Estimate]], ymd: String?, sun: TripDraft.Sun?, start: Int) -> TripTimes.Day {
         guard !day.items.isEmpty else { return TripTimes.Day(rows: [], end: nil) }
+        #if DEBUG
+        let began = DispatchTime.now()
+        defer { if TripPlanFixture.isOn { TripPlanFixtureCounter.shared.countTimes(began) } }
+        #endif
         // 描くたびに呼ばれるので、撮影スポットは1回だけ引く（区間の見込みが届くたびに画面ごと描き直す）
         let spots = day.items.map(spotFor)
         let stops = day.items.indices.map { ii in
@@ -2041,8 +2051,11 @@ private struct TripPlanFixtureSendsLabel: View {
             Self.probe(id: "tripPlan.fixtureDrag", value: counter.dragLine)
             // 運ぶ操作の出来事の並び（UI テストが値で読む）
             Self.probe(id: "tripPlan.fixtureDragTrail", value: counter.trailLine)
+            // 速さの数（描き直しの回数・時刻の計算・主の糸の止まり・札 #677）
+            Self.probe(id: "tripPlan.fixturePerf", value: counter.perfLine)
         }
         .allowsHitTesting(false)
+        .onAppear { counter.startWatchdog() }
     }
 
     /// 見えない値の要素（字は透明・1pt）

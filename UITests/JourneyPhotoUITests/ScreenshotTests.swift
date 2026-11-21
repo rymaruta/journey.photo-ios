@@ -4595,6 +4595,7 @@ final class ScreenshotTests: XCTestCase {
         // 移動の見込み（Apple のサーバー）と日の出・日の入りを待つ
         Thread.sleep(forTimeInterval: 8)
         shoot(app, "65-旅行プランの日程（自動保存・移動の見込み）")
+        perfLine(app, "opened")
         XCTAssertEqual(fixtureSends(app, "open"), "0", "開いただけで送っている")
         // 日をまたぐ区間（2026-11-11 owner の実機「バスとか出てこないよ」）: 2 日目の最初の上に「前の日の千里浜…から」
         let crossDay = app.descendants(matching: .any).matching(identifier: "trip.leg")
@@ -4636,14 +4637,20 @@ final class ScreenshotTests: XCTestCase {
             if from.isHittable, to.isHittable {
                 let before = order()
                 _ = fixtureSends(app, "orderBefore[\(before)]")
+                perfLine(app, "drag1-before from=\(frameText(from)) to=\(frameText(to))")
+                let press1 = Date()
                 from.press(forDuration: 1.2, thenDragTo: to)
+                perfLine(app, "drag1-pressed began=\(clock(press1)) took=\(ms(since: press1))ms from=\(frameText(from))")
                 Thread.sleep(forTimeInterval: 2)
                 var after = order()
                 _ = fixtureSends(app, "orderAfterPress[\(after)] drag[\(dragCounts(app))]")
                 if after == before {
                     let again = handles.element(boundBy: 2)
+                    perfLine(app, "drag2-before from=\(frameText(again)) to=\(frameText(handles.element(boundBy: 3)))")
+                    let press2 = Date()
                     again.press(forDuration: 1.2, thenDragTo: handles.element(boundBy: 3),
                                 withVelocity: .slow, thenHoldForDuration: 1.0)
+                    perfLine(app, "drag2-pressed began=\(clock(press2)) took=\(ms(since: press2))ms from=\(frameText(again))")
                     Thread.sleep(forTimeInterval: 2)
                     after = order()
                     _ = fixtureSends(app, "orderAfterHold[\(after)] drag[\(dragCounts(app))]")
@@ -4698,8 +4705,11 @@ final class ScreenshotTests: XCTestCase {
             let legLine = "TRIPLEG row label=\(leg.label) before[\(dragCounts(app))]"
             print(legLine)
             XCTContext.runActivity(named: legLine) { _ in }
+            perfLine(app, "leg-before")
             let tapped = Date()
             leg.tap()
+            // 押す操作が返るまで（XCUITest はアプリの手が空くのを待つ）。回 1672 は 7 秒かかった
+            perfLine(app, "leg-tapped began=\(clock(tapped)) took=\(ms(since: tapped))ms")
             // 名前で探し直す（最大で数秒）のを待つ。少しずつ読んで、段の印（LT=・LM=・LR=・LX=・開いた M:）をその都度残す（run 1208）
             var trail = dragCounts(app)
             while !trail.contains("M:"), Date().timeIntervalSince(tapped) < 6 {
@@ -4708,6 +4718,12 @@ final class ScreenshotTests: XCTestCase {
                 let pollLine = String(format: "TRIPLEG poll t+%.1fs trail[%@]", Date().timeIntervalSince(tapped), trail)
                 print(pollLine)
                 XCTContext.runActivity(named: pollLine) { _ in }
+            }
+            perfLine(app, "leg-after")
+            if !trail.contains("M:") {
+                // 押す操作が遅く返った回でも、あとから LR・M: が来るかを見る（数を取るだけ。判定は下の通り）
+                Thread.sleep(forTimeInterval: 4)
+                perfLine(app, "leg-later trail[\(dragCounts(app))]")
             }
             let mapsLine = "TRIPLEG maps trail[\(trail)]"
             print(mapsLine)
@@ -4743,6 +4759,27 @@ final class ScreenshotTests: XCTestCase {
     }
 
     /// 運ぶ操作の数（見本のときだけ画面に出す `tripPlan.fixtureDrag`）と出来事の並び（`tripPlan.fixtureDragTrail`）
+    /// 速さの数（札 #677・回 1672/1682）: アプリの描き直し・時刻の計算・主の糸の止まり・出来事の壁時計を1行に
+    private func perfLine(_ app: XCUIApplication, _ when: String) {
+        let value = (app.descendants(matching: .any)["tripPlan.fixturePerf"].firstMatch.value as? String) ?? "nil"
+        let line = "TRIPPERF when=\(when) now=\(clock(Date())) app[\(value)]"
+        print(line)
+        XCTContext.runActivity(named: line) { _ in }
+    }
+
+    /// アプリの側（`TripPlanFixtureCounter.clock`）と同じ形の壁時計（秒の下3桁.ms）
+    private func clock(_ date: Date) -> String {
+        String(format: "%07.3f", date.timeIntervalSince1970.truncatingRemainder(dividingBy: 1000))
+    }
+
+    private func ms(since date: Date) -> Int { Int(Date().timeIntervalSince(date) * 1000) }
+
+    private func frameText(_ e: XCUIElement) -> String {
+        guard e.exists else { return "missing" }
+        let f = e.frame
+        return "\(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height)) hit=\(e.isHittable)"
+    }
+
     private func dragCounts(_ app: XCUIApplication) -> String {
         let counts = (app.descendants(matching: .any)["tripPlan.fixtureDrag"].firstMatch.value as? String) ?? "nil"
         let trail = (app.descendants(matching: .any)["tripPlan.fixtureDragTrail"].firstMatch.value as? String) ?? "nil"
