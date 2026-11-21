@@ -30,8 +30,9 @@ class HangSampleTests(unittest.TestCase):
             'printf "Call graph:\\n    2370 Thread_4385905   DispatchQueue_1: com.apple.main-thread  (serial)\\n'
             '    + 2370 start  (in dyld_sim)\\n    +   2370 VisitedMapModel.persist()  (in JourneyPhoto.debug.dylib)\\n" > "$out"\n')
         self.tool.chmod(0o755)
-        self.app = subprocess.Popen(["sleep", "60"])
-        env = dict(os.environ, HANG_SAMPLE_TOOL=str(self.tool), HANG_SAMPLE_CHECKS="1 2", HANG_SAMPLE_AT="2")
+        self.app = subprocess.Popen(["sleep", "61.5"])
+        env = dict(os.environ, HANG_SAMPLE_TOOL=str(self.tool), HANG_SAMPLE_CHECKS="1 2", HANG_SAMPLE_AT="2",
+                   HANG_SAMPLE_APP_PATTERN="sleep 61.5")
         self.watcher = subprocess.Popen(["bash", str(SCRIPT), str(self.log)], env=env,
                                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                         start_new_session=True)
@@ -83,6 +84,16 @@ class HangSampleTests(unittest.TestCase):
                     "com.journeyphoto.JourneyPhoto.staging:0")
         self.wait_for(f"XCTest が閉じられなかった pid={self.app.pid} はまだ残っている")
         self.assertNotIn("閉じると言われた", self.log.read_text(), "「Failed to terminate」を閉じる合図と取り違えた")
+
+    def test_idle_timeout_takes_the_stack_of_the_running_app(self):
+        # run 1691 の行そのもの（グループの詳しい画面を開いたあと、主スレッドが返らなかった）
+        self.append("    t =   127.43s         App event loop idle notification not received, will attempt to continue.")
+        self.wait_for(f"pid={self.app.pid} 主スレッドが返らない（idle にならない）。積みを取る")
+        self.wait_for("VisitedMapModel.persist()")
+        # 同じアプリは1回だけ
+        self.append("    t =   187.43s         App event loop idle notification not received, will attempt to continue.")
+        time.sleep(1)
+        self.assertEqual(self.log.read_text().count("主スレッドが返らない"), 1)
 
 
 if __name__ == "__main__":

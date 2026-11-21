@@ -23,6 +23,8 @@ TOOL="${HANG_SAMPLE_TOOL:-sample}"
 WAIT_FIRST="${HANG_SAMPLE_CHECKS:-5 15 30 45}"
 # 積みを取り始める秒（これより前の確かめでは状態だけ出す）
 SAMPLE_AT="${HANG_SAMPLE_AT:-15}"
+# 残っているアプリを探す形（ps の command に当てる）
+APP_PATTERN="${HANG_SAMPLE_APP_PATTERN:-/JourneyPhoto.app/JourneyPhoto}"
 command -v "$TOOL" >/dev/null 2>&1 || exit 0
 # 段のログ（job の出力）と、成果物の xcodebuild-full.log の両方に出す（読む側はどちらでも探せる）
 say() { echo "measured [hang-sample] $*" | tee -a "$LOG"; }
@@ -80,6 +82,7 @@ watch_pid() {
 say "見張りを始めた（${LOG}）"
 seen=" "
 failed=" "
+idle=" "
 # ログがまだ無ければ待つ
 for _ in $(seq 1 120); do [ -f "$LOG" ] && break; sleep 1; done
 tail -n 0 -F "$LOG" 2>/dev/null | while IFS= read -r line; do
@@ -97,8 +100,19 @@ tail -n 0 -F "$LOG" 2>/dev/null | while IFS= read -r line; do
             else
                 say "XCTest が閉じられなかった pid=$pid はもう無い（XCTest が消えたことに気づいていない）"
             fi
-            ps -axo pid,stat,etime,command 2>/dev/null | grep '/JourneyPhoto.app/JourneyPhoto' | grep -v grep \
+            ps -axo pid,stat,etime,command 2>/dev/null | grep -F -- "$APP_PATTERN" | grep -v grep \
                 | cut -c1-60 | sed 's/^/measured [hang-sample] ps /' | tee -a "$LOG"
+            ;;
+        *"App event loop idle notification not received"*)
+            # 2026-11-21 判断（run 1691）: グループの詳しい画面を開いたあと、アプリの主スレッドが4分ほど返らず
+            # （XCTest の「idle にならない」の行のあと、試験の時間切れ）。閉じる時ではなく、この行が出た時に積みを取る。
+            # 同じアプリは1回だけ取る
+            for pid in $(ps -axo pid=,command= 2>/dev/null | grep -F -- "$APP_PATTERN" | grep -v grep | awk '{print $1}'); do
+                case "$idle" in *" $pid "*) continue ;; esac
+                idle="$idle$pid "
+                say "pid=$pid 主スレッドが返らない（idle にならない）。積みを取る（状態 $(state "$pid")）"
+                stack "$pid" &
+            done
             ;;
         *"Terminate com.journeyphoto."*)
             pid="${line##*:}"
