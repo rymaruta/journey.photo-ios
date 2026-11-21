@@ -233,27 +233,17 @@ struct OfflineTripCard: View {
         }
     }
 
-    /// 5 削除の確かめ（札の中で開く）
+    /// 5 削除の確かめ（札の中で開く・旅行プランの削除と同じ `JPDeleteConfirm`。札はこの札そのものなので面は付けない）
     private func deleteConfirm(bytes: Int64) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            header(L("端末から削除しますか？", "Remove from this iPhone?"), icon: false)
-            Text(OfflineTripText.deleteBody(bytes: bytes))
-                .font(JPFont.footnote)
-                .lineSpacing(4)
-                .foregroundStyle(WebTheme.text2)
-                .fixedSize(horizontal: false, vertical: true)
-            // 板 5: 「削除する」は赤 16% の地・赤 50% の線・白の字。キャンセルは線
-            HStack(spacing: JPSpace.xs) {
-                TripOutlineButton(title: L("削除する", "Remove"), strong: true) {
-                    confirmingDelete = false
-                    offline.delete(plan.planId)
-                    UIAccessibility.post(notification: .announcement,
-                                         argument: L("端末から削除しました", "Removed from this iPhone"))
-                }
-                TripOutlineButton(title: Labels.Common.cancel) {
-                    confirmingDelete = false
-                }
-            }
+        JPDeleteConfirm(question: L("端末から削除しますか？", "Remove from this iPhone?"),
+                        detail: OfflineTripText.deleteBody(bytes: bytes),
+                        confirmTitle: L("削除する", "Remove"), carded: false, identifier: "offline.delete") {
+            confirmingDelete = false
+            offline.delete(plan.planId)
+            UIAccessibility.post(notification: .announcement,
+                                 argument: L("端末から削除しました", "Removed from this iPhone"))
+        } onCancel: {
+            confirmingDelete = false
         }
     }
 

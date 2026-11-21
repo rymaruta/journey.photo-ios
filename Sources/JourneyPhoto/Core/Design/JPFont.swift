@@ -51,6 +51,9 @@ enum JPFont {
     static let body = Font.subheadline
     /// ボタン・作者名（Callout · SF 600 · 15）
     static let bodyEmphasis = Font.subheadline.weight(.semibold)
+    /// 削除の確かめの札のボタン（Body · SF 600 · 17・文字の大きさに追従）。板の系統の確認の「削除する」と同じ 17
+    /// （2026-11-21 判断・札 #679・`JPOutlineSize.confirm`）
+    static let confirmButton = Font.body.weight(.semibold)
     /// 副文・文字ボタン（Footnote · 13）
     static let footnote = Font.footnote
     /// 注記（Caption · 12）。**本文系の最小**

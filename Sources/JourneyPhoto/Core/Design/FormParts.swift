@@ -165,10 +165,23 @@ enum JPOutlineSize: Equatable {
     case regular
     /// 行の中の小ボタン: 見た目 36・13pt semibold・当たり 44（板「行の中の小ボタン」・プロフィールを編集）
     case inline
+    /// 削除の確かめの札の2つのボタン（「削除する」と「キャンセル」）: 50・17pt semibold・字は折り返す。
+    ///
+    /// 2026-11-21 判断（owner「確認バナーはもう少し大きめに表示していいかも？」・札 #679）: 板の札の中の
+    /// 確かめは副ボタン 44・15pt だったが、消す前の最後の問いなので主ボタンと同じ 50 にし、字は板の
+    /// 系統の確認（Components「確認」・17pt）にそろえた。大きな文字では1行に切らず折り返す
+    case confirm
 
     var height: CGFloat {
-        self == .regular ? JPHeight.secondaryButton : JPHeight.inlineButton
+        switch self {
+        case .regular: return JPHeight.secondaryButton
+        case .inline: return JPHeight.inlineButton
+        case .confirm: return JPHeight.primaryButton
+        }
     }
+
+    /// 字を1行で切らずに折り返すか（確かめの札だけ・大きな文字で「キャンセル」が切れない）
+    var wraps: Bool { self == .confirm }
 
     /// 見た目の高さから 44 の当たりまでの上下の余白（片側）
     var tapSlack: CGFloat {
@@ -176,38 +189,38 @@ enum JPOutlineSize: Equatable {
     }
 
     @MainActor var font: Font {
-        self == .regular ? JPFont.bodyEmphasis : JPFont.footnote.weight(.semibold)
+        switch self {
+        case .regular: return JPFont.bodyEmphasis
+        case .inline: return JPFont.footnote.weight(.semibold)
+        case .confirm: return JPFont.confirmButton
+        }
     }
 }
 
-/// 線の小ボタンの色合い（板 Components 01: 線は白 14%・危険は #F0565A の字と 40% の縁）
+/// 線の小ボタンの色合い（板 Components 01: 線は白 14%）
+///
+/// **消す操作は赤の塗りに白の太字（2026-11-21 判断・owner「一般的な削除するの色にしたい」「水平展開お願い」・札 #679）。**
+/// 前は危険の線（赤の字・赤 40% の線）と、確かめの「削除する」（白の字・赤 16% の地・赤 50% の線）の2つに割れていて、
+/// どちらも iOS のふつうの「削除」（赤い面に白い字）に見えなかった。塗りは板の `dangerFill`（#C8323A・白で 5.29:1）——
+/// 板では「アカウント削除の確定だけ」の色だったのを、自前の消すボタン全部に広げた。危険の字の色 `danger`（#F0565A）の
+/// 塗りは白で 3.39:1 しかなく、15pt の副ボタンの字（大きな字ではない）では 4.5:1 に届かないので使わない。
+/// 系統の部品（確認のダイアログ・メニュー・スワイプ）は今のまま赤の字（`DestructiveButtonFillTests` が見張る）
 enum JPOutlineTone: Equatable {
     /// 白の字・白 14% の線（`WebTheme.line`）
     case plain
-    /// 赤の字・赤 40% の線（端末から削除）
+    /// 消す操作（端末から削除・会話を削除・確かめの「削除する」）: 赤の塗り（`dangerFill`）に白の字・縁なし
     case danger
-    /// 削除の確かめの「削除する」: 白の字・赤 16% の地・赤 50% の線
-    case strong
-
-    /// 危険の線の赤の濃さ（板 40%）と、確かめの「削除する」の地（16%）・線（50%）
-    nonisolated static let dangerLineOpacity = 0.4
-    nonisolated static let strongFillOpacity = 0.16
-    nonisolated static let strongLineOpacity = 0.5
 
     @MainActor var text: Color {
-        self == .danger ? WebTheme.danger : WebTheme.foreground
+        WebTheme.foreground
     }
 
     @MainActor var fill: Color {
-        self == .strong ? WebTheme.danger.opacity(Self.strongFillOpacity) : Color.clear
+        self == .danger ? WebTheme.dangerFill : Color.clear
     }
 
     @MainActor var border: Color {
-        switch self {
-        case .plain: return WebTheme.line
-        case .danger: return WebTheme.danger.opacity(Self.dangerLineOpacity)
-        case .strong: return WebTheme.danger.opacity(Self.strongLineOpacity)
-        }
+        self == .danger ? Color.clear : WebTheme.line
     }
 }
 
@@ -248,9 +261,10 @@ extension View {
     func jpOutlineButton(_ size: JPOutlineSize = .regular, tone: JPOutlineTone = .plain,
                          fullWidth: Bool = false) -> some View {
         let face = self.jpCapsuleFace(font: size.font, text: tone.text, fill: tone.fill, border: tone.border,
-                                      fullWidth: fullWidth, minHeight: size.height, textInset: JPSpace.m)
+                                      fullWidth: fullWidth, minHeight: size.height, textInset: JPSpace.m,
+                                      wraps: size.wraps)
         switch size {
-        case .regular:
+        case .regular, .confirm:
             face.contentShape(Capsule())
         case .inline:
             face
@@ -263,14 +277,18 @@ extension View {
     /// （`jpPillButton`）も線の小ボタン（`jpOutlineButton`）も同じ並びで組む（2026-10-14 判断）。
     ///
     /// - Parameter textInset: 字の左右の内側。nil なら内側なし・行も切らない（幅いっぱいのカプセルの元の形）。
-    ///   値があれば字は1行
+    ///   値があれば字は1行（`wraps` のときだけ折り返して、上下にも内側を取る）
     func jpCapsuleFace(font: Font, text: Color, fill: Color, border: Color,
-                         fullWidth: Bool, minHeight: CGFloat, textInset: CGFloat?) -> some View {
+                         fullWidth: Bool, minHeight: CGFloat, textInset: CGFloat?,
+                         wraps: Bool = false) -> some View {
         self
             .font(font)
             .foregroundStyle(text)
-            .lineLimit(textInset == nil ? nil : 1)
+            .lineLimit(textInset == nil || wraps ? nil : 1)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: wraps)
             .padding(.horizontal, textInset ?? 0)
+            .padding(.vertical, wraps ? JPSpace.xs : 0)
             .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: minHeight)
             .background(fill, in: Capsule())
             .overlay(Capsule().strokeBorder(border, lineWidth: JPStroke.hairline))
@@ -334,6 +352,101 @@ extension View {
         self
             .background(fill ?? WebTheme.card, in: RoundedRectangle(cornerRadius: JPRadius.l))
             .overlay(RoundedRectangle(cornerRadius: JPRadius.l).strokeBorder(WebTheme.hairline, lineWidth: JPStroke.hairline))
+    }
+}
+
+/// **削除の確かめの札**（画面の中に開く「〜を削除しますか？」と「キャンセル｜削除する」）。
+/// 旅行プランの日の削除・プランの削除・端末から削除の3か所が、ここ1つを通る（画面ごとに割らない・CLAUDE.md）。
+///
+/// 2026-11-21 判断（owner「削除する。キャンセルする。の確認バナーはもう少し大きめに」「一般的な削除するの色にしたい」・札 #679）:
+/// - 問いは 17pt semibold の白（板 Components「確認」の題と同じ。前は 13pt の灰色で、何を聞かれているか目に入りにくかった）
+/// - ボタンは 50・17pt semibold（`JPOutlineSize.confirm`）。「削除する」は赤の塗りに白の字（`JPOutlineTone.danger`）、
+///   キャンセルは白 14% の線に白の字
+/// - 並びは iOS の確認と板の系統の確認と同じ「キャンセル｜削除する」（消す側が右）。横に入らない大きな文字では縦に積み、
+///   消す側を上に置く（系統の確認の縦の並びと同じ）
+/// - 札の内側は 20（前は 16・`carded` のとき）
+struct JPDeleteConfirm: View {
+    let question: String
+    /// 問いの下の補足（消えるものの大きさなど）
+    var detail: String?
+    let confirmTitle: String
+    /// 自前の札の面（地と縁）を付けるか。もう札の中にある所（電波なしで使う札）は false
+    var carded = true
+    /// 送っている間は押せない（二度押しを受けない）
+    var busy = false
+    var identifier: String?
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        let content = VStack(alignment: .leading, spacing: JPSpace.s) {
+            VStack(alignment: .leading, spacing: JPSpace.xxs) {
+                Text(question)
+                    .font(JPFont.headline)
+                    .foregroundStyle(WebTheme.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+                if let detail {
+                    Text(detail)
+                        .font(JPFont.body)
+                        .lineSpacing(3)
+                        .foregroundStyle(WebTheme.text2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            // アクセシビリティの大きさではいつも縦に積む（Mac の run 1673 の AX XL の絵で、横に並べた「キャンセル」が
+            // 「キャンセ／ル」と2行に割れていた。ViewThatFits だけでは並びの幅を広く見積もる画面がある）
+            if typeSize.isAccessibilitySize {
+                stacked
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    sideBySide
+                    stacked
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        if carded {
+            content
+                .padding(JPSpace.l)
+                .jpCardFace()
+        } else {
+            content
+        }
+    }
+
+    private var sideBySide: some View {
+        HStack(spacing: JPSpace.xs) {
+            cancelButton
+            confirmButton
+        }
+    }
+
+    private var stacked: some View {
+        VStack(spacing: JPSpace.xs) {
+            confirmButton
+            cancelButton
+        }
+    }
+
+    private var confirmButton: some View {
+        Button(action: onConfirm) {
+            Text(confirmTitle).jpOutlineButton(.confirm, tone: .danger, fullWidth: true)
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+        .opacity(busy ? 0.5 : 1)
+        .accessibilityIdentifier(identifier.map { "\($0).confirm" } ?? "delete.confirm")
+    }
+
+    private var cancelButton: some View {
+        Button(action: onCancel) {
+            Text(Labels.Common.cancel).jpOutlineButton(.confirm, tone: .plain, fullWidth: true)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier.map { "\($0).cancel" } ?? "delete.cancel")
     }
 }
 

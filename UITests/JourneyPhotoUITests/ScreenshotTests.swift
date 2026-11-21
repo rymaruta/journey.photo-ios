@@ -4163,6 +4163,66 @@ final class ScreenshotTests: XCTestCase {
     // MARK: - 旅行プランの日程（見本のプラン・2026-11-10 札 #521）
 
     /// 見本のプラン（`-JPTripPlanFixture`・Debug のときだけ・サーバーへは送らない）で旅行プランの日程を開く。開けたら true
+    /// **削除の確かめの札**（2026-11-21 owner「確認バナーはもう少し大きめに」「一般的な削除するの色にしたい」・札 #679）。
+    /// 見本のプランで、日の削除（「…」→ この日を削除）とプランの削除（一番下の赤の行）の札を、ふつうの文字と
+    /// いちばん大きな文字（AX XL）で撮る。ボタンの高さ（44 以上）と、キャンセルで閉じることを見る。どこへも送らない
+    func testCapturesTripPlanDeleteConfirm() {
+        for (category, tag) in [("UICTContentSizeCategoryL", "標準"), ("UICTContentSizeCategoryAccessibilityXL", "AXL")] {
+            let app = launchTrunk(["-JPTripPlanFixture", "YES", "-UIPreferredContentSizeCategoryName", category])
+            // 終わりに terminate しない（run 1681 で、確かめを全部通したあとの terminate が「Failed to terminate」で落ちた）。
+            // 次の回の launch() が前のアプリを閉じる
+            guard openFixturePlan(app) else { return unreached(app, "見本のプラン（\(tag)）", probes: ["trips.plans"]) }
+            Thread.sleep(forTimeInterval: 2)
+
+            // 日の削除: 1 日目の「…」→ この日を削除 → 札（予定のある日は聞く）
+            let dayMenu = app.buttons.matching(identifier: "tripPlan.dayMenu").firstMatch
+            if dayMenu.waitForExistence(timeout: 10), dayMenu.isHittable {
+                dayMenu.tap()
+                let removeItem = app.buttons["この日を削除"].firstMatch
+                if removeItem.waitForExistence(timeout: 5) {
+                    removeItem.tap()
+                    let confirm = app.buttons["trip.day.remove.confirm"].firstMatch
+                    if confirm.waitForExistence(timeout: 5) {
+                        Thread.sleep(forTimeInterval: 1)
+                        shoot(app, "65g-旅行プランの日の削除の確かめ（\(tag)）")
+                        let line = "DELETECONFIRM day size=\(tag) confirm=\(confirm.frame) cancel=\(app.buttons["trip.day.remove.cancel"].firstMatch.frame)"
+                        print(line)
+                        XCTContext.runActivity(named: line) { _ in }
+                        XCTAssertGreaterThanOrEqual(confirm.frame.height, 44, "「削除する」が 44 より低い（\(tag)）")
+                        app.buttons["trip.day.remove.cancel"].firstMatch.tap()
+                        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: confirm)], timeout: 3), .completed, "キャンセルで札が閉じない（\(tag)）")
+                    } else {
+                        note(app, "日の削除の確かめ", "札が出ない（\(tag)）")
+                    }
+                }
+            }
+
+            // プランの削除: 一番下の赤の行 → 札
+            let row = app.buttons["tripPlan.delete"].firstMatch
+            var pushes = 0
+            while !(row.exists && row.isHittable), pushes < 10 {
+                app.swipeUp()
+                Thread.sleep(forTimeInterval: 0.8)
+                pushes += 1
+            }
+            guard row.exists, row.isHittable else { return unreached(app, "プランの削除の行（\(tag)）", probes: ["tripPlan.delete"]) }
+            row.tap()
+            let confirm = app.buttons["trip.delete.confirm"].firstMatch
+            guard confirm.waitForExistence(timeout: 5) else { return unreached(app, "プランの削除の確かめ（\(tag)）") }
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "65h-旅行プランの削除の確かめ（\(tag)）")
+            let cancel = app.buttons["trip.delete.cancel"].firstMatch
+            let line = "DELETECONFIRM plan size=\(tag) confirm=\(confirm.frame) cancel=\(cancel.frame)"
+            print(line)
+            XCTContext.runActivity(named: line) { _ in }
+            XCTAssertGreaterThanOrEqual(confirm.frame.height, 44, "「削除する」が 44 より低い（\(tag)）")
+            XCTAssertGreaterThanOrEqual(cancel.frame.height, 44, "キャンセルが 44 より低い（\(tag)）")
+            cancel.tap()
+            XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: confirm)], timeout: 3), .completed, "キャンセルで札が閉じない（\(tag)）")
+        }
+    }
+
     private func openFixturePlan(_ app: XCUIApplication) -> Bool {
         guard openTripsRow(app, "trips.plans") else { return false }
         let plan = app.descendants(matching: .any).matching(identifier: "trips.plan").firstMatch

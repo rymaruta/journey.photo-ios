@@ -184,20 +184,18 @@ struct TripStopNumber: View {
 }
 
 /// 線の小ボタン（板 `.bo`: 44・白 14% の線・15 の semibold）。**幅は中身に合わせる**
-/// （`fill` で札の幅いっぱい）。危ないもの（端末から削除）は赤の字に赤 40% の線。
-/// 形は土台の `jpOutlineButton`（2026-10-14 判断: 線の小ボタンを1つに寄せた）
+/// （`fill` で札の幅いっぱい）。消すもの（端末から削除）は赤の塗りに白の字（2026-11-21 判断・札 #679・`JPOutlineTone.danger`）。
+/// 削除の確かめの札は `JPDeleteConfirm`。形は土台の `jpOutlineButton`（2026-10-14 判断: 線の小ボタンを1つに寄せた）
 struct TripOutlineButton: View {
     let title: String
     var danger = false
-    /// 削除の確かめの「削除する」（赤 16% の地・赤 50% の線・白の字）
-    var strong = false
     var fill = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Text(title)
-                .jpOutlineButton(.regular, tone: strong ? .strong : danger ? .danger : .plain, fullWidth: fill)
+                .jpOutlineButton(.regular, tone: danger ? .danger : .plain, fullWidth: fill)
         }
         .buttonStyle(.plain)
     }
