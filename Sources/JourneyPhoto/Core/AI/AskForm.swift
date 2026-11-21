@@ -305,11 +305,37 @@ enum AskPlanFlowText {
     }
 
     /// 移動の目安（分）。座標の直線距離を、道のり 1.3 倍、時速 30km（町の中を車か電車）で見積もる。座標が無ければ nil
+    /// 2026-11-21 判断（札 #677）: 式は `TripTimes.roughMoveMinutes` と1つにした（旅行プランの頁の、見込みが返らない区間と同じ数）
     static func moveMinutes(_ a: OfficialSpot, _ b: OfficialSpot) -> Int? {
         guard let ca = a.coords, let cb = b.coords else { return nil }
-        let km = TripAICandidates.km(ca, cb) * 1.3
-        let minutes = Int((km / 30 * 60).rounded())
-        return max(5, Int((Double(minutes) / 5).rounded()) * 5)
+        return TripTimes.roughMoveMinutes(ca, cb)
+    }
+
+    /// 2つの場所の間の区間（旅行プランの頁の区間と同じ型・札 #677 の続き 2026-11-21 owner「押すとマップで経路見れると嬉しい」）。
+    /// どちらかに座標が無いか、同じ座標なら nil（押せない形で出す）
+    static func leg(_ a: OfficialSpot, _ b: OfficialSpot, numbers: (Int, Int)) -> TripTravel.Leg? {
+        let from = TripTravel.stop(name: a.name, coords: a.coords, number: numbers.0, spot: a)
+        let to = TripTravel.stop(name: b.name, coords: b.coords, number: numbers.1, spot: b)
+        return TripTravel.legs([from, to]).first
+    }
+
+    /// 区間を開く手段。AI の画面は Apple の見込みを聞かないので、旅行プランの頁で見込みがまだ無いときと同じ選び方
+    /// （`TripTravel.mapsMode`: まっすぐ 1km 以内は歩き、ほかは電車など）
+    static func mapsMode(_ leg: TripTravel.Leg) -> TripTravel.Mode {
+        TripTravel.mapsMode([], leg: leg, settled: false)
+    }
+
+    /// 1日の時刻（札 #677）。滞在は種類から、移動は `moveMinutes`（座標が無い区間は 0 分・長い移動から先は出さない）。
+    /// 日の入りはその日の最初の撮影スポットで、今日の暦（AI の答えのプランは日付を持たない）
+    static func times(_ spots: [OfficialSpot], start: Int, ymd: String = TripTimes.todayYMD()) -> TripTimes.Day {
+        let stops = spots.map { TripTimes.Stop(name: $0.name, stay: TripTimes.stayMinutes(for: $0), times: $0.timeKeys) }
+        var moves: [Int?] = [0]
+        for i in spots.indices.dropFirst() {
+            let a = spots[i - 1], b = spots[i]
+            if let ca = a.coords, let cb = b.coords { moves.append(TripTimes.scheduleMoveMinutes(ca, cb)) } else { moves.append(0) }
+        }
+        return TripTimes.schedule(start: start, stops: stops, moves: moves,
+                                  light: TripTimes.light(TripDraft.sun(ymd: ymd, spots: spots)))
     }
 
     static func moveLine(_ minutes: Int) -> String {

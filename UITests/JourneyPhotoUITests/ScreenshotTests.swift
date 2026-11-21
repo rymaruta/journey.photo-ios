@@ -3323,6 +3323,46 @@ final class ScreenshotTests: XCTestCase {
         finishSearchAsk(app, scene: "plan")
     }
 
+    /// 11zf 旅行プランの流れの時刻（札 #677・案A）: 場所の左に着く時刻、上に「時刻は目安です」、「出発 9:00」を押して時刻を選ぶ。
+    /// 11zg 11:00 を選ぶと時刻がそろってずれる。移動の目安の行は押すと経路を開く（見本では地図のアプリへ出ず、開いた手段を数えに残す）。
+    /// 出なければ撮らずに抜ける。終わりに 9:00 へ戻す（覚えた時刻をほかの試験に残さない）
+    func testCapturesSearchAskPlanTimes() {
+        guard let app = launchSearchAsk(extra: ["-JPTripPlanFixture", "YES", "-JPTripAIFixture", "YES"]),
+              openAskScreen(app) else { return }
+        let field = app.textFields["ask.field"].firstMatch
+        field.tap()
+        guard waitForKeyboardFocus(field) else { return unreached(app, "AI の欄に焦点が来ない") }
+        field.typeText("東京で1日の旅行プランを作って")
+        let send = app.buttons["ask.send"].firstMatch
+        guard send.waitForExistence(timeout: 5) else { return unreached(app, "ask.send") }
+        send.tap()
+        guard app.descendants(matching: .any)["search.ask.plan"].firstMatch.waitForExistence(timeout: 60) else {
+            return unreached(app, "search.ask.plan", probes: ["search.ask.probe", "search.ask.thread"])
+        }
+        let note = app.staticTexts["trip.time.note"].firstMatch
+        XCTAssertTrue(note.waitForExistence(timeout: 5), "「時刻は目安です」の一行が無い")
+        let start = app.buttons["search.ask.start"].firstMatch
+        guard start.waitForExistence(timeout: 5) else { return unreached(app, "search.ask.start") }
+        let move = app.buttons["search.ask.move"].firstMatch
+        let moveLine = "ASKMOVE button=\(move.exists) hint=\(move.exists ? move.label : "-")"
+        print(moveLine)
+        XCTContext.runActivity(named: moveLine) { _ in }
+        start.tap()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "11zf-AI に頼む（旅行プランの時刻、出発を選ぶ）")
+        let eleven = app.buttons.matching(identifier: "trip.time.choice").matching(NSPredicate(format: "label == %@", "11時")).firstMatch
+        guard eleven.waitForExistence(timeout: 5) else { return unreached(app, "出発の時刻のチップ 11時") }
+        eleven.tap()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "11zg-AI に頼む（旅行プランの時刻、11時に出たとき）")
+        XCTAssertTrue(start.label.contains("11時"), "出発の時刻が変わらない: \(start.label)")
+        // 9:00 へ戻す
+        start.tap()
+        let nine = app.buttons.matching(identifier: "trip.time.choice").matching(NSPredicate(format: "label == %@", "9時")).firstMatch
+        if nine.waitForExistence(timeout: 5) { nine.tap() }
+        finishSearchAsk(app, scene: "planTimes")
+    }
+
     /// 11ze 続けて頼むと、前の答えは「質問と中身の1行」に畳む（押すと開く）
     func testCapturesSearchAskFold() {
         guard let app = launchSearchAsk(), openAskScreen(app),
@@ -4513,6 +4553,35 @@ final class ScreenshotTests: XCTestCase {
             let height = card.components(separatedBy: "height=").last.flatMap { Double($0) } ?? 0
             XCTAssertEqual(height, 116, accuracy: 0.5, "札の背が 116 から変わった: \(card)")
         }
+    }
+
+    /// 65t 旅行プランの日程の時刻（札 #677・案A）: 場所の左に着く時刻、日の見出しの右「出発 9:00」を押して時刻を選ぶ。
+    /// 65u 11:00 を選ぶと時刻がそろってずれる。出なければ撮らずに抜ける。終わりに 9:00 へ戻す（この iPhone に覚えるため）
+    func testCapturesTripPlanTimes() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+        guard openFixturePlan(app) else { return }
+        // 移動の見込み（Apple のサーバー）と日の出・日の入りを待つ
+        Thread.sleep(forTimeInterval: 8)
+        let note = app.staticTexts["trip.time.note"].firstMatch
+        XCTAssertTrue(note.waitForExistence(timeout: 5), "「時刻は目安です」の一行が無い")
+        let start = app.buttons.matching(identifier: "trip.time.start").firstMatch
+        guard start.waitForExistence(timeout: 5), start.isHittable else { return unreached(app, "trip.time.start") }
+        let first = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "1\u{2002}9時、")).firstMatch
+        let firstLine = "TRIPTIME first=\(first.exists) start=\(start.label)"
+        print(firstLine)
+        XCTContext.runActivity(named: firstLine) { _ in }
+        start.tap()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "65t-旅行プランの日程（時刻、出発を選ぶ）")
+        let eleven = app.buttons.matching(identifier: "trip.time.choice").matching(NSPredicate(format: "label == %@", "11時")).firstMatch
+        guard eleven.waitForExistence(timeout: 5) else { return unreached(app, "出発の時刻のチップ 11時") }
+        eleven.tap()
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "65u-旅行プランの日程（時刻、11時に出たとき）")
+        XCTAssertTrue(start.label.contains("11時"), "出発の時刻が変わらない: \(start.label)")
+        start.tap()
+        let nine = app.buttons.matching(identifier: "trip.time.choice").matching(NSPredicate(format: "label == %@", "9時")).firstMatch
+        if nine.waitForExistence(timeout: 5) { nine.tap() }
     }
 
     /// **旅行プランの日程**（自動保存・運ぶ・移動の見込み・区間のシート）。

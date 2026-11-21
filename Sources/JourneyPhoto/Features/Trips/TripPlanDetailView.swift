@@ -80,6 +80,12 @@ struct TripPlanDetailView: View {
     @State private var scrolledToToday = false
     /// 電波なしの札の「Pro か」（上と下の2枚で1つ・`OfflineTripCard.slot`）
     @State private var offlinePro: Bool?
+    /// 変えた出発の時刻（この iPhone だけ・札 #677）
+    @ObservedObject private var starts = TripStartStore.shared
+    /// 出発の時刻のチップを開いている日
+    @State private var openStartDay: Int?
+    @ScaledMetric(relativeTo: .body) private var timeWidth: CGFloat = TripTimeStyle.columnWidth
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private struct DropSpot: Equatable { let day: Int; let item: Int? }
     private struct LegTarget: Identifiable {
@@ -1032,10 +1038,23 @@ struct TripPlanDetailView: View {
         let sun = TripDraft.sun(ymd: ymd, spots: daySpots(day))
         let legs = layout.legs(di)
         let estimatesByLeg = legs.map { estimates(for: $0) }
+        // 着く時刻の目安（札 #677・案A・端末で計算・保存しない）。日付の無いプランは今日の日の入りで
+        let start = starts.minutes(planId: planId, day: di)
+        let times = dayTimes(day, resolved: resolved, numbers: numbers, legs: legs, estimates: estimatesByLeg,
+                             ymd: ymd, start: start)
+        let showsTimes = !day.items.isEmpty
+        let timesInColumn = !typeSize.isAccessibilitySize
+        let timesInset: CGFloat = showsTimes && timesInColumn ? timeWidth + TripTimeStyle.columnGap : 0
+        let startOpen = Binding(get: { openStartDay == di }, set: { openStartDay = $0 ? di : nil })
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
                 JPEyebrowLine(dayHeading(di, day, today: isToday))
                     .padding(.trailing, JPSpace.xs)
+                // 出発の時刻（日の見出しの右・押す、選ぶの2回）。大きな字の設定では下の行へ
+                if showsTimes && timesInColumn {
+                    TripStartButton(start: start, open: startOpen)
+                        .padding(.trailing, JPSpace.xxs)
+                }
                 // 地図で見る。**地図に置ける場所がある日だけ**（押しても空の地図を出さない）
                 let stops = TripDayMap.stops(of: day, index: index, places: places, startNumber: numbers.first ?? 1)
                 if TripDayMap.hasPins(stops) {
@@ -1074,6 +1093,18 @@ struct TripPlanDetailView: View {
             VStack(alignment: .leading, spacing: 0) {
             // 日の出・日の入り（端末の計算）・同じ時間帯の重なり・間に合わないとき（計算した数だけ）
             VStack(alignment: .leading, spacing: JPSpace.xxs) {
+                if showsTimes && !timesInColumn {
+                    TripStartButton(start: start, open: startOpen)
+                }
+                if showsTimes && openStartDay == di {
+                    TripStartChips(start: start) { m in
+                        starts.set(m, planId: planId, day: di)
+                        openStartDay = nil
+                    }
+                }
+                if showsTimes {
+                    TripTimeNote()
+                }
                 if let sun, let line = TripSunText.line(sun) {
                     TripDayNote(text: line, symbol: "sun.max")
                 }
@@ -1120,12 +1151,25 @@ struct TripPlanDetailView: View {
                                fromTimes: numbers.firstIndex(of: leg.from.number)
                                    .flatMap { resolved.indices.contains($0) ? resolved[$0].times : nil } ?? [],
                                date: ymd)
+                        // 時刻の列のぶん右へ（区間の縦の線を番号の丸にそろえる。区間の行の左には時刻を置かない）
+                        .padding(.leading, timesInset)
                     } else if ii > 0 {
                         divider
                     }
+                    let timeRow = times.rows.indices.contains(ii) ? times.rows[ii] : TripTimes.Row(arrive: nil)
+                    // 夜・夕方の場所の前のあき（「日の入り 16:32 まで 1時間55分あき」）
+                    if showsTimes, let wait = TripTimes.waitLine(timeRow), let at = timeRow.arrive {
+                        TripTimeMinorRow(time: at - timeRow.wait, text: wait, inColumn: timesInColumn, width: timeWidth,
+                                         identifier: "trip.time.wait")
+                    }
                     itemRow(di, ii, item, number: number,
                             season: spotFor(item).flatMap { TripDraft.seasonLine($0, ymd: ymd) },
-                            chip: resolved.indices.contains(ii) ? TripDraft.timeChip(resolved[ii].times) : nil)
+                            chip: resolved.indices.contains(ii) ? TripDraft.timeChip(resolved[ii].times) : nil,
+                            time: showsTimes ? timeRow : nil)
+                    if showsTimes, ii == day.items.count - 1, let end = times.end {
+                        TripTimeMinorRow(time: end, text: L("ごろ 終わり", "done"), spoken: TripTimes.endLine(end),
+                                         inColumn: timesInColumn, width: timeWidth, identifier: "trip.time.end")
+                    }
                     // 場所が1か所だけ: 移動の目安が出ない理由を、その場所の下に1行で（2026-11-11）。
                     // 区切り線は日の最後の1本だけ（1行を線で挟まない・確かめ役の指摘）
                     if let single = layout.single, single.number == number {
@@ -1148,6 +1192,26 @@ struct TripPlanDetailView: View {
             }
             .modifier(TripTodayFrame(on: isToday))
         }
+    }
+
+    /// その日の着く時刻の目安（札 #677）。滞在は観光スポットの種類から、移動は区間の見込み（`TripTimes.planMoves`）
+    private func dayTimes(_ day: TripDay, resolved: [TripDraft.Place], numbers: [Int], legs: [TripTravel.Leg],
+                          estimates: [[TripTravel.Estimate]], ymd: String?, start: Int) -> TripTimes.Day {
+        guard !day.items.isEmpty else { return TripTimes.Day(rows: [], end: nil) }
+        let stops = day.items.enumerated().map { ii, item in
+            TripTimes.Stop(name: resolved.indices.contains(ii) ? resolved[ii].name : "",
+                           stay: TripTimes.stayMinutes(for: spotFor(item)),
+                           times: resolved.indices.contains(ii) ? resolved[ii].times : [])
+        }
+        let long = legs.indices.map { i in
+            TripTravel.showsAsLong(legs[i], estimates: estimates[i],
+                                   settled: travel.isSettled(legs[i], modes: TripTravel.modes(for: legs[i],
+                                                                     transitAvailable: TravelEstimator.transitAvailable)))
+        }
+        let moves = TripTimes.planMoves(numbers: Array(numbers.prefix(day.items.count)), legs: legs,
+                                        estimates: estimates, long: long)
+        let light = TripTimes.light(TripDraft.sun(ymd: ymd ?? TripTimes.todayYMD(), spots: daySpots(day)))
+        return TripTimes.schedule(start: start, stops: stops, moves: moves, light: light)
     }
 
     /// その日の撮影スポット（日程の順）
@@ -1285,7 +1349,7 @@ struct TripPlanDetailView: View {
     }
 
     private func itemRow(_ di: Int, _ ii: Int, _ item: TripItem, number: Int,
-                         season: String?, chip: String?) -> some View {
+                         season: String?, chip: String?, time: TripTimes.Row? = nil) -> some View {
         let name = TripPlanText.label(for: item, index: index, places: places)
         // 右の印は「…」と ≡ の2つ（2026-11-12 判断・1.1.85・札 #570・資料「みんなで埋める旅行プラン」の場面7）。
         // - 2026-11-11 は「…」1つにして、並べ替えは行を押さえて運ぶ形だった。**どこを掴めば動くかが見えなかった**ので、
@@ -1297,7 +1361,7 @@ struct TripPlanDetailView: View {
         // （2026-11-15 確かめ役の指摘「右に3つが混み合う」。押す回数は替える1回のまま）
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
-                itemLink(item, name: name, number: number, season: season, chip: chip)
+                itemLink(item, name: name, number: number, season: season, chip: chip, time: time)
                 itemMenu(di, ii, item, name: name)
                 dragHandle(di, ii, item, name: name)
             }
@@ -1526,7 +1590,7 @@ struct TripPlanDetailView: View {
             }
             .buttonStyle(.plain)
             // 番号の丸の右（名前の頭）にそろえる。AI のプランでないときは何も出さない（余白も作らない）
-            .padding(.leading, TripStyle.stopNumberSide + JPSpace.s)
+            .padding(.leading, TripStyle.stopNumberSide + JPSpace.s + timeLeading)
             .accessibilityLabel(L("「\(name)」を近くの別の所に替える", "Swap \(name) for a nearby place"))
             .accessibilityIdentifier("tripAI.swap")
         }
@@ -1673,47 +1737,55 @@ struct TripPlanDetailView: View {
 
     /// 名前を押すとその場所へ。**開ける先が無いものは行だけ**（押しても何も起きない札を作らない）
     @ViewBuilder
-    private func itemLink(_ item: TripItem, name: String, number: Int, season: String?, chip: String?) -> some View {
+    private func itemLink(_ item: TripItem, name: String, number: Int, season: String?, chip: String?,
+                          time: TripTimes.Row? = nil) -> some View {
         switch item {
         case .spot(let spotId, _):
             if let spot = index.first(where: { $0.spotId == spotId }) {
                 NavigationLink {
                     OfficialSpotView(spot: spot, spots: index, photos: photos, photosKnown: gotPhotos)
                 } label: {
-                    itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chip: chip, by: addedByText(item))
+                    itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chip: chip, by: addedByText(item), time: time)
                 }
                 .buttonStyle(.plain)
             } else {
-                itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chip: chip, by: addedByText(item))
+                itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chip: chip, by: addedByText(item), time: time)
             }
         case .location(let slug, _):
             if let place = places.first(where: { $0.slug == slug }) {
                 NavigationLink {
                     SpotDetailView(spot: place, photos: photos)
                 } label: {
-                    itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chip: nil, by: addedByText(item))
+                    itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chip: nil, by: addedByText(item), time: time)
                 }
                 .buttonStyle(.plain)
             } else {
-                itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chip: nil, by: addedByText(item))
+                itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chip: nil, by: addedByText(item), time: time)
             }
         }
     }
 
     /// 行の中身（v2 の板 TripPlanDays・F30: 番号の丸 → 名前 → 季節の一文と時間帯の札 → ひとこと・`TripStopLabel`）
     private func itemLabel(_ name: String, number: Int, isSpot: Bool, note: String?,
-                           season: String?, chip: String?, by: String? = nil) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            TripStopLabel(number: number, name: name, isSpot: isSpot, season: season, timeChip: chip, note: note)
+                           season: String?, chip: String?, by: String? = nil, time: TripTimes.Row? = nil) -> some View {
+        let byLeading: CGFloat = time == nil ? 36 : 36 + timeLeading
+        return VStack(alignment: .leading, spacing: 2) {
+            TripStopLabel(number: number, name: name, isSpot: isSpot, season: season, timeChip: chip, note: note,
+                          time: time?.arrive, showsTime: time != nil, timeCaution: time.flatMap(TripTimes.lateMorningLine))
             // 共有したプランで、ほかの仲間が足した場所（「あお が足しました」）
             if let by {
                 Text(by)
                     .font(JPFont.caption)
                     .foregroundStyle(WebTheme.text3)
-                    .padding(.leading, 36)
+                    .padding(.leading, byLeading)
                     .accessibilityIdentifier("tripPlan.addedBy")
             }
         }
+    }
+
+    /// 時刻の列のぶんの左の余白（大きな字の設定では列を作らないので 0・札 #677）
+    private var timeLeading: CGFloat {
+        typeSize.isAccessibilitySize ? 0 : timeWidth + TripTimeStyle.columnGap
     }
 
     private func addedByText(_ item: TripItem) -> String? {
