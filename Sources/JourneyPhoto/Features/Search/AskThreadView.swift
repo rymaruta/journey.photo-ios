@@ -4,7 +4,7 @@ import MapKit
 /// 「AI に頼む」の答え（札 #652・#663 の案A・#675 の答えの形）。
 ///
 /// 2026-11-21 判断（札 #675・Artifact「AI に頼む 独立の案」版3「答えの形 磨いた推奨」）: 答えの下はいつも
-/// **頭の文 → 形 → 一手 → 次に頼めること → どこで答えたか** の順。形は答えの種類ごとに選ぶ（`AskAnswerLayout`）:
+/// **頭の文 → 形 → 一手 → 次に頼めること** の順（どこで答えたかの1行は 2026-11-22 にやめた）。形は答えの種類ごとに選ぶ（`AskAnswerLayout`）:
 /// 札を横に送る（#663 の案A）、札を縦に積む（大きな字）、札1枚を広く、旅行プランの流れ、頭の文だけ。
 ///
 /// - 使い切った帯と圏外の帯は答えの上に1本だけ。確かめのダイアログは出さない
@@ -87,6 +87,12 @@ struct AskThreadView: View {
                     .font(JPFont.caption)
                     .foregroundStyle(WebTheme.text3)
                     .accessibilityIdentifier("search.ask.disclaimer")
+                if AskServerNotice.shows(deviceAI: OnDeviceAI.isAvailable, usage: engine.usage, profilePro: nil, thread: engine.thread) {
+                    Text(AskText.serverNotice)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
+                        .accessibilityIdentifier("search.ask.serverNotice")
+                }
             }
             if !engine.thread.isEmpty, !inScreen { followUpField }
             if AskFixture.isOn {
@@ -204,17 +210,7 @@ struct AskThreadView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("search.ask.note")
                 }
-                if !a.engineLine.isEmpty {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Image(systemName: a.engine == .server ? "cloud" : "iphone").accessibilityHidden(true)
-                        Text(a.engineLine).fixedSize(horizontal: false, vertical: true)
-                    }
-                    .font(JPFont.caption)
-                    .foregroundStyle(WebTheme.text3)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(a.engineLine)
-                    .accessibilityIdentifier("search.ask.engine")
-                }
+                // 2026-11-22 判断: 答えごとの「どこで答えたか」の1行は出さない（`AskText.serverNotice` を注意書きの所に1か所だけ）
             }
         }
         .accessibilityElement(children: .contain)

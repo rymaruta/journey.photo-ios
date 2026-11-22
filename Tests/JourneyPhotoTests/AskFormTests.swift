@@ -424,12 +424,67 @@ final class AskFormTests: XCTestCase {
         XCTAssertFalse(text.contains("間違う"))
     }
 
-    /// どこで答えたかの1行に、答えの作り（引いた行・使い方の頁・置き場の地域）を出さない（2026-11-21 owner）
-    func testServerEngineLineHidesInternals() {
-        let line = AskAnswer(engine: .server, text: "x").engineLine
-        XCTAssertTrue(line.contains("サーバーの AI で答えました"))
-        for word in ["東京", "抜き書き", "使い方の頁", "観光スポットの行", "往復"] {
-            XCTAssertFalse(line.contains(word), word)
+    /// 答えごとの「どこで答えたか」の1行は出さない（2026-11-22 owner「この文章出す意味ある？」）
+    func testAnswerShowsNoEngineLine() throws {
+        let thread = try source("Sources/JourneyPhoto/Features/Search/AskThreadView.swift")
+        let answer = try source("Sources/JourneyPhoto/Core/AI/AskAnswer.swift")
+        XCTAssertFalse(thread.contains("search.ask.engine\""), "答えの下の1行が残っている")
+        XCTAssertFalse(thread.contains("engineLine"))
+        XCTAssertFalse(answer.contains("var engineLine"))
+        for old in ["サーバーの AI で答えました", "この iPhone の中で答えました", "この iPhone の中で言葉を読み"] {
+            XCTAssertFalse(answer.contains(old), old)
+            XCTAssertFalse(thread.contains(old), old)
+        }
+    }
+
+    private func usage(serverAllowed: Bool) -> AskUsage {
+        AskUsage(tier: serverAllowed ? "pro" : "free", kind: "ask", day: .init(used: 1, limit: 20, remaining: 19),
+                 month: .init(used: 1, limit: 300, remaining: 299), serverAllowed: serverAllowed)
+    }
+
+    /// 送信の知らせはサーバーの AI を使う人にだけ出す（2026-11-22 判断）
+    func testServerNoticeOnlyOnServerPath() {
+        // 端末の AI が使える iPhone: Pro でも出さない（打った文はサーバーに送らない）
+        XCTAssertFalse(AskServerNotice.shows(deviceAI: true, usage: usage(serverAllowed: true), profilePro: true, thread: []))
+        // 端末の AI が無い iPhone: サーバーの AI を使える（Pro）ときだけ
+        XCTAssertTrue(AskServerNotice.shows(deviceAI: false, usage: usage(serverAllowed: true), profilePro: nil, thread: []))
+        XCTAssertFalse(AskServerNotice.shows(deviceAI: false, usage: usage(serverAllowed: false), profilePro: true, thread: []))
+        // 回数を読む前は Pro かどうかで決める（送る前に知らせる）
+        XCTAssertTrue(AskServerNotice.shows(deviceAI: false, usage: nil, profilePro: true, thread: []))
+        XCTAssertFalse(AskServerNotice.shows(deviceAI: false, usage: nil, profilePro: false, thread: []))
+        XCTAssertFalse(AskServerNotice.shows(deviceAI: false, usage: nil, profilePro: nil, thread: []))
+        // サーバーで答えた答えが会話にあれば出す
+        let served = AskExchange(question: "香川で夕日は？", answer: AskAnswer(engine: .server, text: "x"))
+        XCTAssertTrue(AskServerNotice.shows(deviceAI: true, usage: nil, profilePro: nil, thread: [served]))
+        let local = AskExchange(question: "香川で夕日は？", answer: AskAnswer(engine: .device, text: "x"))
+        XCTAssertFalse(AskServerNotice.shows(deviceAI: true, usage: nil, profilePro: nil, thread: [local]))
+    }
+
+    /// 送信の知らせは公式の言い方で、中の言葉（使っている AI、サービス、地域）を出さない（2026-11-22 owner）
+    func testServerNoticeIsOfficialAndHidesInternals() throws {
+        let text = AskText.serverNotice
+        XCTAssertTrue(text.hasPrefix("※"))
+        XCTAssertTrue(text.contains("当社のサーバーに送信します"))
+        XCTAssertTrue(text.hasSuffix("。"))
+        XCTAssertFalse(text.contains("・"))
+        XCTAssertFalse(text.contains("·"))
+        let words = ["AWS", "Bedrock", "Amazon", "Claude", "Anthropic", "Nova", "Haiku", "Sonnet", "Lambda",
+                     "東京", "Tokyo", "ap-northeast", "抜き書き", "使い方の頁", "観光スポットの行", "往復"]
+        for word in words { XCTAssertFalse(text.localizedCaseInsensitiveContains(word), word) }
+        // 英語の文も同じ（L の2つ目）
+        let src = try source("Sources/JourneyPhoto/Core/AI/AskAnswer.swift")
+        let start = try XCTUnwrap(src.range(of: "static var serverNotice: String {"))
+        let end = try XCTUnwrap(src.range(of: "}", range: start.upperBound..<src.endIndex))
+        let body = String(src[start.upperBound..<end.lowerBound])
+        XCTAssertTrue(body.contains("sent to our servers"))
+        for word in words { XCTAssertFalse(body.localizedCaseInsensitiveContains(word), word) }
+        // 注意書きと同じ大きさと色で、注意書きの所に出す
+        for path in ["Sources/JourneyPhoto/Features/Search/AskScreen.swift", "Sources/JourneyPhoto/Features/Search/AskThreadView.swift"] {
+            let view = try source(path)
+            let at = try XCTUnwrap(view.range(of: "Text(AskText.serverNotice)"), path)
+            let tail = String(view[at.upperBound...].prefix(160))
+            XCTAssertTrue(tail.contains("JPFont.caption"), path)
+            XCTAssertTrue(tail.contains("WebTheme.text3"), path)
         }
     }
 }
