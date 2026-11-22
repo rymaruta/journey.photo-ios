@@ -545,10 +545,12 @@ struct RootView: View {
                 // （ホームの輪も消え、次に投稿の画面を開くと「送れなかった投稿があります」と聞かれた）。待つ間、投稿は輪に残る
                 editPostWait?.cancel()
                 editPostWait = Task { @MainActor in
+                    let started = Date()
                     while !Task.isCancelled && (ModalProbe.isPresenting() || ModalProbe.isTransitioning()) {
                         try? await Task.sleep(nanoseconds: 300_000_000)
                     }
-                    guard !Task.isCancelled else { return }
+                    // 長く待ったら開かない（閉じたずっと後に突然出さない・お知らせと同じ `activityWaitLimit`）。投稿は輪に残る
+                    guard !Task.isCancelled, Date().timeIntervalSince(started) <= Self.activityWaitLimit else { return }
                     if let model = postUploads.takeForEditing(id) { editingPost = EditingPost(model: model) }
                 }
             }

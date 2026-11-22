@@ -616,6 +616,49 @@ final class DirectMessageMainActorTests: XCTestCase {
         XCTAssertEqual(store.inbox.items.first?.unread, 0, "読み直しの途中に置いた既読の印が消えた")
     }
 
+    /// 読み直しが失敗したら、途中に置いた既読の控えを捨てる（次の答えに古い既読を重ねて、その後に届いた未読を消さない・札 #694）
+    func testFailedRefreshDropsPendingChanges() async {
+        StubProtocol.reset()
+        defer { StubProtocol.reset() }
+        let store = DMInboxStore()
+        store.setForTesting(.empty, owner: "u1")
+        StubProtocol.respond(status: 400, body: #"{"error":"bad"}"#)
+        let gate = Gate(holds: 1)
+        let failing = Task { await store.refresh(service: service(gate: gate), owner: "u1") }
+        await gate.untilWaiting()
+        store.apply { $0.markingRead("a") }
+        await gate.open()
+        await failing.value
+        // そのあと「a」に新しい未読が届いて読み直す
+        StubProtocol.respond(status: 200, body: Self.inboxJSON("a", unread: 3))
+        await store.refresh(service: service(), owner: "u1")
+        XCTAssertEqual(store.inbox.items.first?.unread, 3, "失敗した回の既読を次の答えに重ね、新しい未読を消した")
+    }
+
+    /// グループの一覧の読み直しの途中に手元で変えても、読めた答えを捨てずに重ねる（札 #694 の確かめ役）
+    func testApplyGroupsDuringRefreshKeepsTheAnswer() async {
+        StubProtocol.reset()
+        defer { StubProtocol.reset() }
+        let answer = #"{"groups":[{"groupId":"g1","name":null,"displayName":"けん、みお","faces":[],"memberCount":3,"createdAt":"2026-11-20T00:00:00.000Z","state":"member","unread":2,"updatedAt":"2026-11-20T00:00:00.000Z"},{"groupId":"g2","name":null,"displayName":"新しいグループ","faces":[],"memberCount":3,"createdAt":"2026-11-20T00:00:00.000Z","state":"member","unread":0,"updatedAt":"2026-11-20T00:00:00.000Z"}],"invites":[]}"#
+        StubProtocol.respond(status: 200, body: answer)
+        let gate = Gate(holds: 1)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let groups = GroupService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                                 tokenProvider: StubTokenProvider(token: "t"),
+                                                 session: URLSession(configuration: config), retryPause: { _ in },
+                                                 beforeRequest: { _ in await gate.wait() }))
+        let store = DMInboxStore()
+        let task = Task { await store.refreshGroups(service: groups, owner: "u1") }
+        await gate.untilWaiting()
+        store.setForTesting(.empty, owner: "u1", groups: try! JSONDecoder.api.decode(GroupInbox.self, from: Data(#"{"groups":[{"groupId":"g1","name":null,"displayName":"けん、みお","faces":[],"memberCount":3,"createdAt":"2026-11-20T00:00:00.000Z","state":"member","unread":2,"updatedAt":"2026-11-20T00:00:00.000Z"}],"invites":[]}"#.utf8)))
+        store.applyGroups { $0.markingRead("g1") }
+        await gate.open()
+        await task.value
+        XCTAssertEqual(store.groups.groups.count, 2, "読み直しの答え（新しいグループ）を捨てた")
+        XCTAssertEqual(store.groups.groups.first { $0.id == "g1" }?.unread, 0, "途中に置いた既読が答えに重なっていない")
+    }
+
     /// グループの一覧の読み直しが2本重なっても、古い答えが新しい答えを上書きしない（札 #694）
     func testOlderGroupRefreshDoesNotOverwriteNewer() async {
         StubProtocol.reset()

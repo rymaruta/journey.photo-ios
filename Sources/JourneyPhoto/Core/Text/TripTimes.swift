@@ -436,7 +436,9 @@ enum TripStartKeys {
     static func slots(planId: String, days: [TripDay], start: String?, end: String?) -> [DaySlot] {
         days.enumerated().map { i, day in
             DaySlot(key: key(planId: planId, ymd: TripPlanText.dayDate(index: i, day: day, start: start, end: end), day: i),
-                    items: day.items.map { String(describing: $0) })
+                    items: day.items.map(TripShareText.itemKey))
+            // 2026-11-22 判断（札 #685 の確かめ役）: 場所の鍵は `s:<id>`・`l:<slug>`（ひとことを含めない）。日程を端末に覚えるので、
+            // `TripItem` の表示の形やひとことの書き換えで、覚えた日と重ならなくならないように
         }
     }
 
