@@ -26,7 +26,7 @@ final class AIServerConsent: ObservableObject {
     /// UI テストだけ: 同意のシートを出す形で始める（前の回の同意を消す・Debug のときだけ）
     nonisolated static let askKey = "JPAIConsentAsk"
 
-    static let shared = AIServerConsent(presenter: { await AIServerConsentPresenter.present($0) })
+    static let shared = AIServerConsent(presenter: { await AIServerConsentPresenter.present($0, handle: $1) })
 
     /// どこから聞くか（シートの頭の文を言い分ける・2026-11-22 確かめ役の指摘）。
     /// 送る前は「この iPhone では端末の中で AI を使えないため」、設定からは端末の AI のある iPhone でも開けるので一般の言い方
@@ -39,7 +39,7 @@ final class AIServerConsent: ObservableObject {
     @Published private(set) var acceptedVersion: Int
 
     /// シートを出して答えを待つ口。nil なら出せない（送らない側に倒す）。本物は `AIServerConsentPresenter.present`
-    var presenter: (@MainActor (Context) async -> Bool)?
+    var presenter: (@MainActor (Context, AIConsentSheetHandle) async -> Bool)?
 
     private let defaults: UserDefaults
     private let requiredVersion: Int
@@ -49,7 +49,7 @@ final class AIServerConsent: ObservableObject {
 
     init(defaults: UserDefaults = .standard, requiredVersion: Int = AIServerConsent.currentVersion,
          timeout: TimeInterval = AIServerConsent.answerTimeout,
-         presenter: (@MainActor (Context) async -> Bool)? = nil) {
+         presenter: (@MainActor (Context, AIConsentSheetHandle) async -> Bool)? = nil) {
         self.timeout = timeout
         if Self.uiTestAsks(defaults) { defaults.removeObject(forKey: Self.key) }
         self.defaults = defaults
@@ -63,7 +63,8 @@ final class AIServerConsent: ObservableObject {
     /// 送ってよいか（同意済みなら聞かずに true）。まだならシートを出し、「同意して続ける」で true（覚える）、「やめる」で false
     ///
     /// 待ちは必ず解ける: シートの返事か、上限（`timeout`）のどちらか早い方で返す（`AIConsentOnce`）。上限を過ぎてから
-    /// 「同意して続ける」が押されたら、同意は覚える（はっきり押したので。その回は送らない）
+    /// 「同意して続ける」が押されたら、同意は覚える（はっきり押したので。その回は送らない）。
+    /// 時間切れで返すときは、出ているシートも閉じる（`AIConsentSheetHandle`・2026-11-22 確かめ役の指摘: 残ると次の頼みで2枚目が重なる）
     func request(_ context: Context = .send) async -> Bool {
         if isAccepted { return true }
         if let pending { return await pending.value }
@@ -72,14 +73,17 @@ final class AIServerConsent: ObservableObject {
         let task = Task { @MainActor [weak self] () -> Bool in
             await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
                 let once = AIConsentOnce(continuation)
+                let handle = AIConsentSheetHandle()
                 Task { @MainActor in
-                    let ok = await presenter(context)
+                    let ok = await presenter(context, handle)
                     if ok { self?.accept() }
                     once.finish(ok)
                 }
                 Task { @MainActor in
                     try? await Task.sleep(nanoseconds: UInt64(max(limit, 0) * 1_000_000_000))
+                    guard !once.isDone else { return }
                     once.finish(false)
+                    handle.closeIfOpen()
                 }
             }
         }
@@ -197,5 +201,17 @@ final class AIConsentOnce: @unchecked Sendable {
     func finish(_ ok: Bool) {
         continuation?.resume(returning: ok)
         continuation = nil
+    }
+}
+
+/// 出ているシートを閉じる口（2026-11-22 確かめ役の指摘）。シートを出す側が `close` を入れ、ボタンや払って閉じたときは外す。
+/// ボタン以外の理由（時間切れ、出たか確かめられなかった）で返事を返すときに呼び、残ったシートの上に次のシートを重ねない
+final class AIConsentSheetHandle: @unchecked Sendable {
+    var close: (() -> Void)?
+    /// 閉じる（1回だけ）
+    func closeIfOpen() {
+        let c = close
+        close = nil
+        c?()
     }
 }

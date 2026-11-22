@@ -121,32 +121,38 @@ enum AIServerConsentPresenter {
         isBeingDismissed || !hasPresenter || presenterDismissing
     }
 
-    /// 最前面を探し直すか（出る途中、閉じる途中）
-    nonisolated static func mustSettle(isBeingPresented: Bool, isBeingDismissed: Bool) -> Bool {
-        isBeingPresented || isBeingDismissed
+    /// 最前面を探し直すか: 最前面が出る途中、閉じる途中、最前面より上に閉じる途中の画面がある（探すときに飛ばした）、
+    /// 最前面が動きの途中（`transitionCoordinator` がある）。2026-11-22 確かめ役の指摘: 頼みのシートが閉じる途中だと
+    /// 最前面はその下で止まり、すぐ出して UIKit に断られていた（利用者はシートを見ないまま「AI に送らなかった」になる）
+    nonisolated static func mustSettle(isBeingPresented: Bool, isBeingDismissed: Bool,
+                                       skippedDismissing: Bool = false, inTransition: Bool = false) -> Bool {
+        isBeingPresented || isBeingDismissed || skippedDismissing || inTransition
     }
 
-    static func present(_ context: AIServerConsent.Context) async -> Bool {
+    static func present(_ context: AIServerConsent.Context, handle: AIConsentSheetHandle) async -> Bool {
         #if canImport(Darwin)
-        var top = topController()
+        var found = topController()
         var tries = 0
-        while let t = top, mustSettle(isBeingPresented: t.isBeingPresented, isBeingDismissed: t.isBeingDismissed) {
+        while let f = found, mustSettle(isBeingPresented: f.top.isBeingPresented, isBeingDismissed: f.top.isBeingDismissed,
+                                        skippedDismissing: f.skippedDismissing, inTransition: f.top.transitionCoordinator != nil) {
             guard tries < settleTries else { return false }
             tries += 1
             try? await Task.sleep(nanoseconds: settleInterval)
-            top = topController()
+            found = topController()
         }
-        guard let top else { return false }
+        guard let top = found?.top else { return false }
         return await withCheckedContinuation { continuation in
             let once = AIConsentOnce(continuation)
             let delegate = DismissDelegate(once)
             let host = ConsentHost(rootView: AnyView(EmptyView()))
             host.keep = delegate
-            host.onGone = { once.finish(false) }
+            host.onGone = { handle.close = nil; once.finish(false) }
+            // 時間切れなど、ボタン以外の理由で返事を返したときに閉じる口（`AIServerConsent.request`）
+            handle.close = { [weak host] in host?.dismiss(animated: true) }
             host.rootView = AnyView(AIServerConsentSheet(
                 context: context,
-                onAgree: { [weak host] in host?.dismiss(animated: true); once.finish(true) },
-                onCancel: { [weak host] in host?.dismiss(animated: true); once.finish(false) }))
+                onAgree: { [weak host] in handle.close = nil; host?.dismiss(animated: true); once.finish(true) },
+                onCancel: { [weak host] in handle.close = nil; host?.dismiss(animated: true); once.finish(false) }))
             host.view.backgroundColor = UIColor(WebTheme.sheet)
             host.modalPresentationStyle = .pageSheet
             if let sheet = host.sheetPresentationController {
@@ -156,13 +162,17 @@ enum AIServerConsentPresenter {
             }
             host.presentationController?.delegate = delegate
             top.present(host, animated: true) { [weak host] in
-                if host?.presentingViewController == nil { once.finish(false) }
+                if host?.presentingViewController == nil { handle.closeIfOpen(); once.finish(false) }
             }
             // 出し損ねると UIKit は出し終わりを呼ばないことがある。1 秒後に出ていなければ「やめる」
             Task { @MainActor [weak host] in
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 guard !once.isDone else { return }
-                if host == nil || host?.presentingViewController == nil { once.finish(false) }
+                if host == nil || host?.presentingViewController == nil {
+                    // 遅れて出てきても残さない
+                    handle.closeIfOpen()
+                    once.finish(false)
+                }
             }
         }
         #else
@@ -201,13 +211,17 @@ enum AIServerConsentPresenter {
         }
     }
 
-    private static func topController() -> UIViewController? {
+    /// いちばん上の画面と、その上に閉じる途中の画面があって飛ばしたか
+    private static func topController() -> (top: UIViewController, skippedDismissing: Bool)? {
         for scene in UIApplication.shared.connectedScenes {
             guard let windowScene = scene as? UIWindowScene else { continue }
             for window in windowScene.windows where window.isKeyWindow {
-                var top = window.rootViewController
-                while let next = top?.presentedViewController, !next.isBeingDismissed { top = next }
-                return top
+                guard var top = window.rootViewController else { return nil }
+                while let next = top.presentedViewController {
+                    if next.isBeingDismissed { return (top, true) }
+                    top = next
+                }
+                return (top, false)
             }
         }
         return nil
