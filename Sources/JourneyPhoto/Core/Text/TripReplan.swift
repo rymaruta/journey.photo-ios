@@ -132,6 +132,8 @@ enum TripReplan {
             return L("つながっていないため、組み直せませんでした。日程はそのままです。", "You're offline, so the plan wasn't changed.")
         case .silent:
             return L("AI が答えなかったため、組み直せませんでした。日程はそのままです。", "AI didn't answer, so the plan wasn't changed.")
+        case .declined:
+            return L("AI に送らなかったため、組み直していません。日程はそのままです。", "Not sent to AI, so the plan wasn't changed.")
         case .proOnly:
             return L("この iPhone では AI で組み直せません。Pro ならサーバーの AI で組み直せます。",
                      "AI isn't available on this iPhone. With Pro, our server's AI can do it.")

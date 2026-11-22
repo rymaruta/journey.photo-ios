@@ -15,6 +15,8 @@ struct TripAIResult {
         case proOnly
         /// サーバーで回数を取れなかった（429 の `reason`: 今日の分、今月の分、1人の止め、全体の止め・札 #652）
         case limited(AskLimitReason)
+        /// サーバーの AI への送信を「やめる」と答えた（送らずに AI なしで組んだ・2026-11-22 判断・`AIServerConsent`）
+        case declined
     }
     let title: String
     let days: [[OfficialSpot]]
@@ -72,6 +74,9 @@ final class TripAIRunner: ObservableObject {
     /// 回数を1回取る口。nil なら `TripAIService.reserve`。試験は「数えた回」を数えるために差し替える
     typealias Reserver = (AskService.Via) async throws -> AskUsage
     private let reserver: Reserver?
+    /// サーバーの AI に送ってよいか（同意のシート）。nil なら `AIServerConsent.shared.request`。試験は差し替える
+    typealias Consent = () async -> Bool
+    private let consent: Consent?
 
     /// 見本の AI（`-JPTripAIFixture`・Debug の UI テストだけ）のときは端末の AI を使わず、見本の答え（サーバーの道）で組む。
     /// 2026-11-20 判断（札 #667・Mac run 1621）: CI の模擬機は `availability=available supportsJa=true` を返すのに、
@@ -80,8 +85,9 @@ final class TripAIRunner: ObservableObject {
     nonisolated static var usesDeviceAI: Bool { TripAIDevice.isAvailable && !TripAIFixture.isOn }
 
     init(onDevice: Bool = TripAIRunner.usesDeviceAI, planner: Planner? = nil,
-         devicePlanner: DevicePlanner? = nil, reserver: Reserver? = nil) {
+         devicePlanner: DevicePlanner? = nil, reserver: Reserver? = nil, consent: Consent? = nil) {
         self.onDevice = onDevice
+        self.consent = consent
         self.planner = planner
         self.devicePlanner = devicePlanner
         self.reserver = reserver
@@ -250,6 +256,10 @@ final class TripAIRunner: ObservableObject {
             // 2026-11-20（札 #652・owner 承認）: 端末の AI が無い iPhone の**無料の人はサーバーで組まない**
             // （サーバーの AI は Pro だけ。アプリ全体の AI の請求を月500円までに収める）。AI なしで組み、帯で Pro を案内する
             mode = .proOnly
+        } else if !(await serverConsented()) {
+            // 2026-11-22 判断（審査 5.1.2(i)）: サーバーの AI に初めて送る直前に1回だけ同意を聞く。「やめる」なら送らずに AI なしで組む
+            // （組み直しは今の日程のまま）。旅行プランは押した回ごとに聞く（「AI で作る」「整えて」ははっきり頼む操作）
+            mode = .declined
         } else {
             // 2026-11-22 判断: 打った文をサーバーへ送る（AI に頼むの会話で、送ったことの知らせを残す・`AskAnswer.serverSent`）
             askedServer = true
@@ -341,6 +351,11 @@ final class TripAIRunner: ObservableObject {
     }
 
     enum ServerUse: Equatable { case allowed, proOnly, unknown }
+
+    private func serverConsented() async -> Bool {
+        if let consent { return await consent() }
+        return await AIServerConsent.shared.request()
+    }
 
     /// サーバーで組んでよいか（Pro と管理者だけ）。回数がまだ分からなければ一度だけ読む。読めなければ組まない（費用を守る側）
     private func mayUseServer(service: TripAIService) async -> ServerUse {

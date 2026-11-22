@@ -608,6 +608,7 @@ struct AskScreen: View {
     private var backend: AskEngine.Backend {
         let env = environment, conn = connectivity, authStore = auth, wish = wishlist
         let spots = officialSpots, photos = library.everything, here = location
+        let tier = engine.usage?.tier, pro = profilePro, admin = auth.isAdmin
         return AskEngine.Backend(
             signedIn: { authStore.userId != nil },
             offline: { conn.isOffline },
@@ -629,7 +630,10 @@ struct AskScreen: View {
                 return await AskDevice.live(text, history: history, library: library)
             },
             details: { needed in await env.spots.withDetails(needed, for: needed) },
-            userId: { authStore.userId }
+            userId: { authStore.userId },
+            // 2026-11-22 判断（審査 5.1.2(i)）: サーバーの AI に初めて送る直前に1回だけ同意を聞く（`AIServerConsent`）
+            serverConsent: { await AIServerConsent.shared.request() },
+            serverLikely: { AskServerNotice.shows(signedIn: true, deviceAI: false, tier: tier, profilePro: pro, admin: admin) }
         )
     }
 

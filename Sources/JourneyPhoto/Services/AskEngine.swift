@@ -32,6 +32,12 @@ final class AskEngine: ObservableObject {
         /// 札に出す観光スポットに、案内の文（詳細）を重ねる
         var details: ([OfficialSpot]) async -> [OfficialSpot]
         var userId: () -> String?
+        /// サーバーの AI に送ってよいか（同意のシート・`AIServerConsent.request`。2026-11-22 判断・審査 5.1.2(i)）。
+        /// 画面は `AIServerConsent.shared.request` を渡す。試験の既定は同意済み（送る口 `AskService.ask` も別に見張る）
+        var serverConsent: () async -> Bool = { true }
+        /// サーバーへ送りそうか（`AskServerNotice.shows` と同じ見立て）。無料と分かっている人には、回数を取る前に聞かない
+        /// （サーバーが Pro だけと答えて送らないのに、同意を聞くことになる）
+        var serverLikely: () -> Bool = { true }
     }
 
     @Published private(set) var thread: [AskExchange] = []
@@ -62,6 +68,9 @@ final class AskEngine: ObservableObject {
     private var ownerGeneration = 0
     /// 答えを出したあとに案内の文（詳細）を重ねる観光スポット（`fill` が積み、`loadPendingDetails` が読む）
     private var pendingDetails: [OfficialSpot] = []
+    /// この会話でサーバーの AI への送信を「やめる」と答えた（2026-11-22 判断）。会話の間は聞き直さず、言葉の表で答える。
+    /// 新しい会話（`clearThread`）で忘れる。同意は設定からもできる
+    private(set) var consentDeclined = false
 
     /// いまの段（UI テストのときだけ見える要素 `search.ask.stage` に出す・2026-11-20 run 1612 の帯の試験の調べ）。
     /// 段の名前と、頼んでからの経過（ms）を並べる
@@ -103,6 +112,7 @@ final class AskEngine: ObservableObject {
         needsRefill = false
         askingQuestion = nil
         askOwner = nil
+        consentDeclined = false
     }
 
     // MARK: - 会話を残す（札 #678・2026-11-21 判断）
@@ -472,6 +482,11 @@ final class AskEngine: ObservableObject {
         }
 
         // 5b. サーバーの AI（費用がかかる）。先に1回取る（取った回は次の ask が使う・二重に数えない）
+        // 2026-11-22 判断（審査 5.1.2(i)）: 送る前に同意を取る。送りそうな人（Pro、管理者、まだ分からない）には回数を取る前に聞く
+        // （「やめる」で回数を無駄にしない）。無料と分かっている人には聞かず、回数を取ってサーバーが許したときだけ、送る直前に聞く
+        if backend.serverLikely(), self.usage?.serverAllowed != false, !(await serverConsented(backend)) {
+            return await tableAnswer(question, library: library, backend: backend, note: AskText.consentDeclinedLine, state: .answered)
+        }
         if let fallback = await reserveOrFallback(.server, question: question, library: library, backend: backend) {
             return fallback
         }
@@ -480,6 +495,9 @@ final class AskEngine: ObservableObject {
         }
         guard usage.serverAllowed else {
             return await tableAnswer(question, library: library, backend: backend, note: AskText.noDeviceAILine, state: .answered)
+        }
+        guard await serverConsented(backend) else {
+            return await tableAnswer(question, library: library, backend: backend, note: AskText.consentDeclinedLine, state: .answered)
         }
         let query = AskLibrary.query(reading: reading, intent: intent, sentence: question, spots: library.spots)
         let picks = intent.spots ? library.pickSpots(query) : []
@@ -506,6 +524,14 @@ final class AskEngine: ObservableObject {
         } catch {
             return await tableAnswer(question, library: library, backend: backend, note: AskText.silentLine, state: .answered)
         }
+    }
+
+    /// サーバーの AI に送ってよいか。この会話で「やめる」と答えていたら聞かずに false（同意済みなら聞かずに true）
+    private func serverConsented(_ backend: Backend) async -> Bool {
+        if consentDeclined { return false }
+        let ok = await backend.serverConsent()
+        if !ok { consentDeclined = true }
+        return ok
     }
 
     /// 回数を1回取る。取れたら nil（`usage` を更新）。取れなければ、言葉の表の答え（上限なら帯）

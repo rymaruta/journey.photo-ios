@@ -223,6 +223,8 @@ struct SettingsView: View {
             }
             // 2026-11-11 owner 承認（#526）: 検索エンジンにプロフィールを表示しない（既定はオフ＝表示する）
             SearchHiddenSettingRow(profile: myProfile)
+            // 2026-11-22 判断（審査 5.1.2(i)）: サーバーの AI への送信の同意を取り消す行（`AIServerConsent`）
+            AIServerConsentSettingRow()
         }
     }
 

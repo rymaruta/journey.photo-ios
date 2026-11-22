@@ -140,6 +140,8 @@ struct AskService {
 
     func ask(text: String, history: [Turn], sources: [OfficialSpot]) async throws -> ServerAnswer {
         if let askOverride { return try await askOverride(text, history, sources) }
+        // 2026-11-22 判断（審査 5.1.2(i)）: 同意の無いまま送らない。画面で聞き忘れた道があっても、ここで止める（`AIServerConsent`）
+        try AIServerConsent.requireAccepted()
         if AskFixture.isOn { return AskFixture.serverAnswer }
         let body = AskRequest(text: AskQuery.clipped(text),
                               history: Array(history.suffix(Self.historyTurns)).map {

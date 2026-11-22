@@ -375,6 +375,7 @@ enum AskPlanFlowText {
         case .offline: return L("電波が届かないので、AI を使わずに組みました", "No signal, so we arranged it without AI.")
         case .silent: return L("AI が答えなかったので、AI を使わずに組みました", "AI didn't answer, so we arranged it without AI.")
         case .proOnly: return L("この iPhone では AI を使えないので、AI を使わずに組みました", "AI isn't available on this iPhone, so we arranged it without AI.")
+        case .declined: return L("AI に送らなかったので、AI を使わずに組みました", "Not sent to AI, so we arranged it without AI.")
         }
     }
 }
