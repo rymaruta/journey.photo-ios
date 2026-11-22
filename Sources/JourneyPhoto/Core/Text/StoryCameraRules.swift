@@ -101,11 +101,6 @@ enum StoryCameraRules {
         return min(1, elapsed / StoryVideoRules.maxSeconds)
     }
 
-    /// 上限に着いたか（`AVCaptureMovieFileOutput.maxRecordedDuration` が止める）
-    static func reachedLimit(elapsed: Double) -> Bool {
-        elapsed >= StoryVideoRules.maxSeconds - 0.05
-    }
-
     // MARK: - フラッシュ（2026-11-09・ストーリーのカメラの仕上げ）
 
     /// フラッシュの3つ。**順は オフ → オン → 自動 → オフ**（札 #500 の決め）。
@@ -321,54 +316,6 @@ enum StoryCameraRules {
     /// 「写真から選ぶ」でカメラを閉じたあと、作る画面が写真選びを開くか。**まだ1枚も無ければ開かない**
     /// ——作る画面の下にもう最近の写真の格子（埋め込みの写真選び）が出ているので、閉じるだけで格子に戻る
     static func opensLibraryAfterCamera(shotCount: Int) -> Bool { shotCount > 0 }
-
-    // MARK: - 触覚
-
-
-    /// 触覚が鳴る出来事（札 #500 の決め）
-    enum Event: Equatable {
-        case photoTaken
-        case recordingStarted
-        case recordingStopped
-        case modeSwitched
-        case limitReached
-        case failed
-        case posted
-        /// 2026-11-09: タイマーのカウントダウンの1秒ごとの刻み（軽く）
-        case countdownTick
-        /// カウントダウンを取り消した・フラッシュ／タイマー／倍率の段を選んだ（切り替えと同じ手ざわり）
-        case countdownCancelled
-        /// 2026-11-11: 録画を始めた直後（`stopGuardSeconds` より前）・始めている途中のタップを受けなかった。
-        /// 押したのに何も起きないと感じさせないよう、軽く返す
-        case tapIgnored
-        case optionChanged
-    }
-
-    enum Haptic: Equatable {
-        case impactMedium
-        case impactHeavy
-        case impactLight
-        case selection
-        case warning
-        case error
-        case success
-    }
-
-    /// 写真 impact(medium)・録画開始 heavy・停止 light・切り替え selection・上限 warning・失敗 error・投稿完了 success
-    static func haptic(for event: Event) -> Haptic {
-        switch event {
-        case .photoTaken: return .impactMedium
-        case .recordingStarted: return .impactHeavy
-        case .recordingStopped: return .impactLight
-        case .modeSwitched: return .selection
-        case .limitReached: return .warning
-        case .failed: return .error
-        case .posted: return .success
-        case .countdownTick: return .impactLight
-        case .countdownCancelled, .optionChanged: return .selection
-        case .tapIgnored: return .impactLight
-        }
-    }
 
     // MARK: - アプリのアイコン長押し
 

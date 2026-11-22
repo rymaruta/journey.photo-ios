@@ -107,24 +107,17 @@ enum DiscoverySections {
         return text
     }
 
-    /// 季節のおすすめ。**いまの季節のタグ**を先に出す。
-    ///
-    /// モックの「春の桜 / 夏の絶景 / 秋の紅葉」にあたる。決まった
-    /// 選択肢（`TagChoices.all`）の中の**季節そのものを言う語**だけを使う。
-    ///
-    /// 🔴 2026-10-07 判断: 以前は「森」「海」「空」「夜」「花」も季節の語に入れていて、
-    /// 冬の雪景色（タグ forest）が秋に並んでいた。森・海・空・夜・花は一年中あるので外す
-    static func seasonalTags(now: Date = Date(), calendar: Calendar = .current) -> [String] {
-        words(for: currentSeason(now: now, calendar: calendar)).map(\.ja)
-    }
-
     /// いまの季節（西暦の月で決める——イスラム暦などの月は季節と合わない）
     static func currentSeason(now: Date = Date(), calendar: Calendar = .current) -> ShootingTime.Season {
         let month = calendar.gregorianKeepingZone.component(.month, from: now)
         return ShootingTime.Season(rawValue: SpotBodyText.season(ofMonth: month)) ?? .winter
     }
 
-    /// その季節を言うタグ（日本語の選択肢と、注記に出す英語）
+    /// その季節を言うタグ（日本語の選択肢と、注記に出す英語）。決まった選択肢（`TagChoices.all`）の中の
+    /// **季節そのものを言う語**だけを使う。
+    ///
+    /// 🔴 2026-10-07 判断: 以前は「森」「海」「空」「夜」「花」も季節の語に入れていて、
+    /// 冬の雪景色（タグ forest）が秋に並んでいた。森・海・空・夜・花は一年中あるので外す
     private static func words(for season: ShootingTime.Season) -> [(ja: String, en: String)] {
         switch season {
         case .spring: return [("春", "spring"), ("桜", "cherry blossoms")]

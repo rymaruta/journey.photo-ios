@@ -419,11 +419,6 @@ enum PassExchange {
         return RegionList.prefecture(inText: text) ?? RegionList.prefecture(named: text)
     }
 
-    /// カードの表の「〇〇から」
-    static func fromLabel(_ prefecture: String) -> String {
-        L("\(prefecture)から", "from \(prefecture)")
-    }
-
     /// 都道府県庁のおおよその位置（距離の起点・都道府県の粒度より細かくしない）
     static let prefectureOffices: [String: Photo.Coords] = {
         let raw: [(String, Double, Double)] = [
@@ -452,16 +447,6 @@ enum PassExchange {
         guard let prefecture, let start = prefectureOffices[prefecture], let place else { return nil }
         return Int(TravelDistance.kilometers(from: start, to: place).rounded())
     }
-
-    /// 裏の下の一行（板「札幌 → 京都 1,047km」）。距離が 1km 未満なら出さない
-    static func routeLabel(fromPrefecture prefecture: String, placeName: String?, km: Int) -> String? {
-        guard km >= 1 else { return nil }
-        let to = placeName ?? L("ここ", "here")
-        return "\(prefecture) → \(to) \(kmText(km))"
-    }
-
-    /// 「1,047km」（桁区切り・単位は詰める）
-    static func kmText(_ km: Int) -> String { grouped(km) + "km" }
 
     /// 桁区切りの数（「1,284」）。端末の言語に関わらず「,」で区切る（板の書き方）
     static func grouped(_ value: Int) -> String {
@@ -527,11 +512,5 @@ enum PassExchange {
     /// 帳の格子の番号（板「0087」）
     static func shortNumber(_ number: Int) -> String {
         String(format: "%04d", max(0, number))
-    }
-
-    /// 同じ人と何回目か（板「はじめてのすれちがい」）
-    static func meetingLabel(_ count: Int) -> String {
-        count <= 1 ? L("はじめてのすれちがい", "Your first pass")
-            : L("\(count) 回目のすれちがい", "Pass no. \(count)")
     }
 }

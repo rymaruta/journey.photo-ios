@@ -298,8 +298,6 @@ final class TrunkPartsTests: XCTestCase {
     // MARK: 硬貨 0・かけら不足の表示
 
     func testNoCoinsAndFragmentsWording() {
-        XCTAssertEqual(TrunkGachaText.insertTitle(coins: 0), "硬貨がありません")
-        XCTAssertEqual(TrunkGachaText.insertTitle(coins: 2), "硬貨を入れる")
         XCTAssertEqual(TrunkGachaText.hint(coins: 0, phase: .idle), "公開の投稿1件で1枚もらえます")
         XCTAssertEqual(TrunkGachaText.exchangeNote(fragments: 3, selected: nil), "まだ持っていない部品から選べます\u{2002}あと 2 つ")
         XCTAssertFalse(TrunkPartsBoxText.canExchange(fragments: 4))

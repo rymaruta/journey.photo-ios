@@ -12,7 +12,6 @@ final class GroupDMPushTests: XCTestCase {
         let payload: [AnyHashable: Any] = ["aps": ["alert": ["title": "けん、みお", "body": "みお からメッセージが届きました"],
                                                    "thread-id": gid],
                                            "type": "group", "groupId": gid]
-        XCTAssertEqual(GroupText.threadId(push: payload), gid, "束はグループの id")
         XCTAssertEqual(NotificationRouter.dmConversationId(payload), "group_\(gid)", "押してもグループの会話へ行かない")
         XCTAssertEqual(GroupText.groupId(fromConversation: "group_\(gid)"), gid)
         XCTAssertTrue(GroupText.opens("group_\(gid)", me: "me-0000"), "人が替わった後の門でグループの知らせを落とす")

@@ -276,20 +276,6 @@ final class HomeTidyTests: XCTestCase {
         XCTAssertFalse(homeFeed.contains("選ばれた写真と、よく見られている写真から"), "おすすめの注釈が残っている")
     }
 
-    /// 「新しい」はフォロー中の人の、下書きでない・自分のでない写真のいちばん新しい投稿日
-    func testFollowingNewestCountsOnlyFollowedPublishedOthers() throws {
-        let photos = [
-            try photo("mine", owner: "me", at: "2026-10-30"),
-            try photo("stranger", owner: "x", at: "2026-10-29"),
-            try photo("draft", owner: "f", at: "2026-10-28", published: false),
-            try photo("friend", owner: "f", at: "2026-10-01"),
-            try photo("nodate", owner: "f", at: nil),
-        ]
-        XCTAssertEqual(HomeFollowingNews.newest(photos, viewerId: "me", followingIds: ["f", "me"]), "2026-10-01")
-        XCTAssertNil(HomeFollowingNews.newest(photos, viewerId: nil, followingIds: ["f"]), "未ログインでフォロー中の段を作る")
-        XCTAssertNil(HomeFollowingNews.newest(photos, viewerId: "me", followingIds: []), "誰もフォローしていないのにフォロー中の段を作る")
-    }
-
     /// 🔴 振る舞い: 覚えが無い → 全部が新しい（上に出す）。出したら覚える。**見ている間は基準を替えない**
     /// （上の段が消えて下がずれない）。引き下げ（基準の読み直し）で、出した分は上から外れ、届いた新しい分だけが上に出る。
     /// 人ごとに分かれる・戻さない・退会で消える
@@ -304,7 +290,8 @@ final class HomeTidyTests: XCTestCase {
         /// 画面と同じ順: 基準で上の段を作る → 出したら、いちばん新しい投稿日を覚える（基準は替えない）
         func render() -> [String] {
             let shown = HomeFeed.followingFresh(photos, viewerId: "me", followingIds: ["f"], seen: baseline.seen)
-            if !shown.isEmpty, let newest = HomeFollowingNews.newest(photos, viewerId: "me", followingIds: ["f"]) {
+            // 画面（`GalleryView.markFollowingShown`）と同じく、上に出した写真のいちばん新しい投稿日
+            if let newest = shown.compactMap(\.createdAt).max() {
                 store.mark(newest, for: "me")
             }
             return shown.map(\.id)

@@ -60,7 +60,6 @@ enum TripShareText {
     static func memberCount(_ n: Int) -> String { L("\(n)人", n == 1 ? "1 person" : "\(n) people") }
 
     static func shareWith(_ name: String) -> String { L("\(name) と共有する", "Share with \(name)") }
-    static func sharedWith(_ name: String) -> String { L("\(name) と共有しています", "Shared with \(name)") }
     static var shareNote: String {
         L("共有すると、2人で日程を変えられて、プランの中で話せます", "Once shared, you can both edit the plan and chat in it")
     }

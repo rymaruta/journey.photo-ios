@@ -361,11 +361,6 @@ enum GroupText {
         return conversationId(groupId: groupId)
     }
 
-    /// 知らせの束（`aps.thread-id`）。サーバーはグループの id を入れる。同じグループの知らせは1つの束に重なる
-    static func threadId(push userInfo: [AnyHashable: Any]) -> String? {
-        (userInfo["aps"] as? [AnyHashable: Any])?["thread-id"] as? String
-    }
-
     /// 通知を押して開いてよい印か（今の人の DM の会話か、グループ）。人が替わった後に前の人の DM の通知を開かない
     static func opens(_ id: String, me: String) -> Bool {
         groupId(fromConversation: id) != nil || DMRules.peer(of: id, me: me) != nil

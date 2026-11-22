@@ -630,10 +630,6 @@ final class ProBadgeTests: XCTestCase {
 
     func testProImagesNames() {
         XCTAssertEqual(BadgeCatalog.largeImage("proAutumn2026", tier: 1), "medal-pro-autumn-2026")
-        XCTAssertEqual(BadgeCatalog.smallImage("proAutumn2026", tier: 1), "medal-pro-autumn-2026-s")
-        XCTAssertEqual(BadgeCatalog.smallImage("supporter", tier: 1), "medal-supporter-s")
-        // 続けた年は小さい絵を持たない（大きい絵を縮める）
-        XCTAssertEqual(BadgeCatalog.smallImage("supporterYear", tier: 3), "medal-year-3")
     }
 
     /// 🔴 **引く絵がすべて絵の入れ物に在る**（無いと実機で黙って空になる）
@@ -643,7 +639,6 @@ final class ProBadgeTests: XCTestCase {
         var names: Set<String> = ["supporter-card-front", "supporter-card-back"]
         for key in ["supporter", "proSpring2027", "proSummer2027", "proAutumn2026", "proWinter2026"] {
             names.insert(BadgeCatalog.largeImage(key, tier: 1))
-            names.insert(BadgeCatalog.smallImage(key, tier: 1))
         }
         for tier in 1...3 { names.insert(BadgeCatalog.largeImage("supporterYear", tier: tier)) }
         for item in ProChapters.lockedItems(owned: BadgeSet(), now: Date()) { names.insert(item.image) }

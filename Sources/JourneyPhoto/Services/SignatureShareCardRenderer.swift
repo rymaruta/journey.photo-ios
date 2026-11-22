@@ -487,67 +487,6 @@ enum SignatureShareCardRenderer {
             }
         }
 
-        /// 海上や小島でも近隣の実際の国境・海岸線を表示する。
-        /// Natural Earth の輪郭が範囲内にない場合だけ地点の目盛りを表示する。
-        static func drawNearby(pin: CLLocationCoordinate2D, in rect: CGRect,
-                               color: UIColor, context: CGContext) {
-            let span: Double = 3.5
-            let lonScale = max(0.2, cos(pin.latitude * .pi / 180))
-            let minLon = pin.longitude - span / lonScale
-            let maxLon = pin.longitude + span / lonScale
-            let minLat = pin.latitude - span * Double(rect.height / rect.width)
-            let maxLat = pin.latitude + span * Double(rect.height / rect.width)
-            func project(_ p: [Double]) -> CGPoint {
-                CGPoint(x: rect.minX + CGFloat((p[0] - minLon) / (maxLon - minLon)) * rect.width,
-                        y: rect.maxY - CGFloat((p[1] - minLat) / (maxLat - minLat)) * rect.height)
-            }
-            context.saveGState()
-            context.clip(to: rect)
-            context.setStrokeColor(color.withAlphaComponent(0.75).cgColor)
-            context.setLineWidth(1.4)
-            var drewCoast = false
-            for shape in shapes {
-                for ring in shape.r where ring.count >= 3 {
-                    // 頂点が範囲外でも線分が表示領域を横切る場合がある。
-                    // 輪郭の外接矩形が表示領域と交差するものを描画対象にする。
-                    let points = ring.filter { $0.count == 2 }
-                    guard let west = points.map({ $0[0] }).min(),
-                          let east = points.map({ $0[0] }).max(),
-                          let south = points.map({ $0[1] }).min(),
-                          let north = points.map({ $0[1] }).max(),
-                          east >= minLon, west <= maxLon,
-                          north >= minLat, south <= maxLat else { continue }
-                    context.beginPath()
-                    context.move(to: project(ring[0]))
-                    for point in ring.dropFirst() where point.count == 2 {
-                        context.addLine(to: project(point))
-                    }
-                    context.closePath()
-                    context.strokePath()
-                    drewCoast = true
-                }
-            }
-            if !drewCoast {
-                context.setStrokeColor(color.withAlphaComponent(0.25).cgColor)
-                for i in 1...3 {
-                    let x = rect.minX + rect.width * CGFloat(i) / 4
-                    let y = rect.minY + rect.height * CGFloat(i) / 4
-                    context.move(to: CGPoint(x: x, y: rect.minY))
-                    context.addLine(to: CGPoint(x: x, y: rect.maxY))
-                    context.move(to: CGPoint(x: rect.minX, y: y))
-                    context.addLine(to: CGPoint(x: rect.maxX, y: y))
-                }
-                context.strokePath()
-            }
-            context.setFillColor(color.cgColor)
-            context.fillEllipse(in: CGRect(x: rect.midX - 5, y: rect.midY - 5, width: 10, height: 10))
-            context.setStrokeColor(color.cgColor)
-            context.setLineWidth(2)
-            context.strokeEllipse(in: CGRect(x: rect.midX - 12, y: rect.midY - 12,
-                                             width: 24, height: 24))
-            context.restoreGState()
-        }
-
         /// Use the complete country silhouette. If coarse coordinates land just offshore,
         /// use the nearest country within a conservative geographic threshold.
         static func shapeForDisplay(at pin: CLLocationCoordinate2D) -> Shape? {
@@ -1004,14 +943,6 @@ enum SignatureShareCardRenderer {
                               return max(1, Int((availableHeight + 1) / (line + 1)))
                           },
                           measure: { measuredWidth($0, size: $1) })
-    }
-
-    /// 撮影情報の列幅と高さに合わせて、全文を表示できる最大フォントサイズを求める。
-    static func equipmentFontSize(_ value: String, maxWidth: CGFloat,
-                                  preferredSize: CGFloat = 22,
-                                  availableHeight: CGFloat = 72) -> CGFloat {
-        equipmentLayout(value, maxWidth: maxWidth, preferredSize: preferredSize,
-                        availableHeight: availableHeight).size
     }
 
     /// 撮影地の2行。2行とも同じ大きさで、1 ずつ縮める。

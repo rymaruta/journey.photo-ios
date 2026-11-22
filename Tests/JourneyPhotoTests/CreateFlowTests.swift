@@ -95,8 +95,6 @@ final class CreateFlowTests: XCTestCase {
         XCTAssertEqual(CreateFlowRules.title(.story), L("新しいストーリー", "New story"))
         XCTAssertEqual(CreateFlowRules.segmentTitle(.post), L("投稿", "Post"))
         XCTAssertEqual(CreateFlowRules.segmentTitle(.story), L("ストーリー", "Story"))
-        XCTAssertEqual(CreateFlowRules.markLimit(.post), UploadViewModel.maxSelection)
-        XCTAssertEqual(CreateFlowRules.markLimit(.story), StoryQueue.maxShots)
         // 「・」「·」で区切らない（owner の好み 2026-11-12）
         for text in [CreateFlowRules.title(.post), CreateFlowRules.title(.story), StoryLibraryRules.compositionShortTitle] {
             XCTAssertFalse(text.contains("・") || text.contains("·"), text)

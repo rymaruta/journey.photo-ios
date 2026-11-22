@@ -1982,11 +1982,6 @@ struct PhotoMapView: View {
         OfficialSpotRow(row: row, photosKnown: model.photosKnown)
     }
 
-    /// 「約0.8km · 写真 3枚」（`OfficialSpotRow.subline`）
-    nonisolated static func spotSubline(_ row: OfficialSpotList.Row, loaded: Bool) -> String {
-        OfficialSpotRow.subline(row, loaded: loaded)
-    }
-
     // MARK: - リスト（都道府県ごと）
 
     /// 撮影スポットと写真を**都道府県ごとのまとまり**にする（`RegionList`・owner の提案 2026-09-28）。

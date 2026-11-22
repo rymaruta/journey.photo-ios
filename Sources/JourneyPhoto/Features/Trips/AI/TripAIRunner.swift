@@ -92,8 +92,6 @@ final class TripAIRunner: ObservableObject {
     /// 月の残りを0にし、次から「今月の回数を使い切りました」と間違って出していた
     @Published private(set) var dayUsedUp = false
 
-    func setDayUsedUp(_ v: Bool) { dayUsedUp = v }
-
     /// 回数を使い切っているか（今月の分。2026-11-20 から端末の AI の回も、無料も Pro も数える・札 #652）
     var isUsedUp: Bool {
         guard let usage else { return false }

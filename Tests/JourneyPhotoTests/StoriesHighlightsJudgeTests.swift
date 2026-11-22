@@ -33,15 +33,20 @@ final class StoriesHighlightsJudgeTests: XCTestCase {
         """.utf8))
     }
 
+    /// 画面（`StoryViewerView`）と同じ見分け（`StoryPhotoLink.canKeep`）
+    private func canKeep(_ story: Story) -> Bool {
+        StoryPhotoLink.canKeep(isVideo: story.isVideo, keptPhotoId: story.keptAs)
+    }
+
     func testArchiveStoryCanBeKept() throws {
-        XCTAssertTrue(StoryViewerView.canKeepAsPhoto(try story(#","archive":true"#)),
+        XCTAssertTrue(canKeep(try story(#","archive":true"#)),
                       "自分用に残すストーリーを写真にできない（サーバーが写して切り離す）")
         // もう写真にしていれば出さない（「写真にしました ›」の札が代わりに出る）
-        XCTAssertFalse(StoryViewerView.canKeepAsPhoto(try story(#","keptAs":"p1""#)))
+        XCTAssertFalse(canKeep(try story(#","keptAs":"p1""#)))
     }
 
     func testPlainPhotoStoryCanBeKept() throws {
-        XCTAssertTrue(StoryViewerView.canKeepAsPhoto(try story("")))
-        XCTAssertFalse(StoryViewerView.canKeepAsPhoto(try story(#","mediaType":"video""#)))
+        XCTAssertTrue(canKeep(try story("")))
+        XCTAssertFalse(canKeep(try story(#","mediaType":"video""#)))
     }
 }

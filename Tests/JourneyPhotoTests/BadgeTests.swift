@@ -408,9 +408,7 @@ final class BadgeCatalogTests: XCTestCase {
                         "supporter", "supporterYear"])
         XCTAssertEqual(BadgeCatalog.kind("wish")?.ja, "行けた場所")
         XCTAssertEqual(BadgeCatalog.kind("first")?.maxTier, 1)
-        XCTAssertEqual(BadgeCatalog.smallImage("morning", tier: 2), "medal-morning-2-s")
         XCTAssertEqual(BadgeCatalog.largeImage("morning", tier: 3), "medal-morning-3")
-        XCTAssertEqual(BadgeCatalog.smallImage("earlyUser", tier: 1), "medal-earlyUser-s")
         // 台帳より上の段は、絵のある段に収める
         XCTAssertEqual(BadgeCatalog.largeImage("first", tier: 3), "medal-first-1")
         XCTAssertEqual(BadgeCatalog.largeImage("night", tier: 9), "medal-night-3")

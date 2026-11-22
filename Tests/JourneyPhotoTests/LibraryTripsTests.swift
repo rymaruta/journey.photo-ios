@@ -295,11 +295,11 @@ final class LibraryTripsTests: XCTestCase {
             if let date { fields.append("\"date\":\"\(date)\"") }
             return try JSONDecoder.api.decode(Photo.self, from: Data("{\(fields.joined(separator: ","))}".utf8))
         }
-        let keys = LibraryTrips.dayKeys(ofPosted: [
+        let keys = Set(LibraryTrips.postedShots(of: [
             try photo("a", date: "2026-09-13"),
             try photo("b", date: "2026-09-14T17:46:27"),
             try photo("c", date: nil),
-        ])
+        ]).map(\.key))
         XCTAssertEqual(keys, ["2026-09-13", "2026-09-14"])
     }
 

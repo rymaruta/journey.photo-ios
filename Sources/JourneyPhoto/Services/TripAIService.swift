@@ -90,13 +90,6 @@ struct TripAIService {
 
     private var mode: String { TripAIFixture.mode }
 
-    /// 端末の AI で組めた回を数える（無料の人だけ。上限なら `.limit`）。
-    /// 2026-11-20（札 #652）から組む前の `reserve` で数える。古いサーバーの口として残す（アプリからは呼ばない）
-    func countDeviceUse() async throws -> Usage {
-        if let fixture = TripAIFixture.usage { return fixture }
-        return try await call(Request(action: "count"), as: UsageBody.self).usage
-    }
-
     func plan(request: String, days: Int?, candidates: [OfficialSpot], current: [TripAIPlan.Stop] = []) async throws -> (TripAIPlan, Usage) {
         if TripAIFixture.isOn { return try await TripAIFixture.plan(candidates: candidates, days: days, current: current) }
         let body = Request(action: "plan", request: String(request.prefix(TripAILimits.maxRequest)), days: days,

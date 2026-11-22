@@ -469,7 +469,7 @@ struct ComposeGuideView: View {
             }
     }
 
-    /// 2本指でひねって回す（0/90/180/270 の近くでは吸い付く・`CompositionGuide.snappedRotation`）
+    /// 2本指でひねって回す（0/90/180/270 の近くでは吸い付く・`ComposeControls.snappedCumulative`）
     private var twistGesture: some Gesture {
         RotateGesture()
             .updating($twist) { value, state, _ in
@@ -1312,7 +1312,7 @@ struct ComposeGuideView: View {
         announce(CompositionGuide.variantAccessibilityLabel(kind, variant: variant))
     }
 
-    /// 右に 90° 回す（次の 90° の倍数へ・`CompositionGuide.rotatedRight`）
+    /// 右に 90° 回す（次の 90° の倍数へ・`ComposeControls.rotatedRightCumulative`）
     private func rotateRight() {
         setRotation(ComposeControls.rotatedRightCumulative(rotation))
     }

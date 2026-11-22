@@ -86,10 +86,6 @@ enum TrunkLid {
         return L("指を離すと、近い方へ開くか閉じます", "Let go and it opens or closes, whichever is nearer")
     }
 
-    static func toggleTitle(_ p: Double) -> String {
-        p >= 0.5 ? L("ふたを閉じる", "Close the lid") : L("ふたを開ける", "Open the lid")
-    }
-
     // MARK: 途中の姿（動きの途中の値から決める・2026-10-18 見直し）
 
     /// ある開き具合のときの舞台の姿。**動きの途中の値ごとに**ここから描く（`TrunkLidStage` の `animatableData`）。
@@ -486,14 +482,6 @@ struct TrunkInsideContents: Equatable {
     /// 手に取ったときの乗車券の傾きと寄せ
     var heldTicketPoses: [(rot: Double, x: Double)] {
         isTheirs ? [(-3, 34)] : [(-9, 10), (6, 34), (-3, 58)]
-    }
-
-    /// 「中身を手に取る」で最初に持ち上げるもの（メダル → 会員証 → 乗車券）
-    var firstItem: TrunkHeld? {
-        if let first = medals.first { return .medal(first) }
-        if showsCard { return .card }
-        if ticketCount > 0 { return .tickets }
-        return nil
     }
 
     /// トランクの中の読み上げ（「革の旅行鞄の中。内張りは紺の天鵞絨。メダル 10 枚、会員証、乗車券 12 枚」）

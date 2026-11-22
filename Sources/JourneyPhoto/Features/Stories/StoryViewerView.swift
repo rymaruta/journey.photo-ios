@@ -2346,12 +2346,6 @@ struct StoryViewerView: View {
         return repliesFailed ? story.replyCount : nil
     }
 
-    /// 「写真として残す」を出すか。動画は残せない・もう写真にしていれば出さない（札が出る）。
-    /// **自分用に残すストーリーも残せる**（2026-11-11 から・`StoryPhotoLink.canKeep`）
-    nonisolated static func canKeepAsPhoto(_ story: Story) -> Bool {
-        StoryPhotoLink.canKeep(isVideo: story.isVideo, keptPhotoId: story.keptAs)
-    }
-
     /// このストーリーから作った写真の id（本人の1本だけ。この画面で作ったぶんが先）
     private func keptPhotoId(_ story: Story) -> String? {
         guard isMine(story) else { return nil }

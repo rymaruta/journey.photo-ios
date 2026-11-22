@@ -553,7 +553,7 @@ final class GalleryViewModel: ObservableObject {
 
     /// いま出している一覧。絞り込みを変えたら読み直さずに掛け替える。
     private var all: [Photo] = [] { didSet { allRevision &+= 1 } }
-    /// `all` を書き換えた回数（「フォロー中」の点の控えを作り直す合図・`followingNewest`）
+    /// `all` を書き換えた回数（全件から作る控えを作り直す合図）
     private var allRevision = 0
 
     /// 割れた画像の URL が、この画面に出している写真のものか（署名つき画像の取り直し・`SignedImageExpiry`）
@@ -583,22 +583,6 @@ final class GalleryViewModel: ObservableObject {
     /// **2026-10-03 判断:** 日付で全件から選ぶので `photos.json` の全件のまま（ページにしない）
     var allPhotosForTheme: [Photo] { all }
 
-    /// フォロー中の人のいちばん新しい投稿日（「フォロー中」の真鍮の点・`HomeFollowingNews`・#417 ⑨）。元は今週のお題と同じ全件。
-    ///
-    /// 外した「みんなの新しい写真」の段（2026-10-21 の `freshGroups`）と同じ考えのまま使い回す:
-    /// - **フォロー一覧は今の人のものだけ使う**（人が替わった直後に前の人のフォロー先で点を出さない）
-    /// - ブロック・通報は `hidden`（画面の写し）で落とす
-    /// - **描くたびに作らない。** ホームの `LazyVStack` は状態が変わるたびに描き直すので、全件をなめるのは
-    ///   全件・人・フォロー一覧・写しのどれかが変わったときだけ（控えは `@Published` にしない）
-    func followingNewest(viewerId: String?, hiding hidden: ModerationSnapshot) -> String? {
-        let following = viewerId != nil && followingOwner == viewerId ? followingIds : []
-        let key = FollowingNewsKey(allRevision: allRevision, viewerId: viewerId, following: following, hidden: hidden)
-        if let cached = followingNewsCache, cached.key == key { return cached.newest }
-        let newest = HomeFollowingNews.newest(hidden.visible(all), viewerId: viewerId, followingIds: following)
-        followingNewsCache = (key, newest)
-        return newest
-    }
-
     private struct FollowingNewsKey: Equatable {
         let allRevision: Int
         let viewerId: String?
@@ -606,9 +590,7 @@ final class GalleryViewModel: ObservableObject {
         let hidden: ModerationSnapshot
     }
 
-    private var followingNewsCache: (key: FollowingNewsKey, newest: String?)?
-
-    /// 「フォロー中」が空のときの「おすすめの人」（1.1.83・資料④・`SuggestedPeople`）。`followingNewest` と同じく
+    /// 「フォロー中」が空のときの「おすすめの人」（1.1.83・資料④・`SuggestedPeople`）。
     /// **描くたびに全件をなめない**（全件・人・フォロー一覧・写しのどれかが変わったときだけ作り直す）。
     /// ブロック・通報は `hidden`（画面の写し）で先に落とす。フォロー一覧は今の人のものだけ
     func suggestedPeople(viewerId: String?, hiding hidden: ModerationSnapshot) -> [SuggestedPeople.Person] {

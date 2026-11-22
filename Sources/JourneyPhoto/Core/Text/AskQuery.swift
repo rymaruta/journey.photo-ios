@@ -182,11 +182,6 @@ enum AskQuery {
         return false
     }
 
-    /// 送信のボタンで AI に送れるか（頼みと質問の形で、途中の字でない）。人を探すときは送らない
-    static func sendsToAI(_ raw: String, scope: SearchScope = .all) -> Bool {
-        form(raw, scope: scope) == .ask && !isUnfinished(raw)
-    }
-
     /// 途中の字のときに欄の下に出す1行
     static var keepTypingLine: String { L("続けて打つと AI に聞けます", "Keep typing to ask AI") }
 

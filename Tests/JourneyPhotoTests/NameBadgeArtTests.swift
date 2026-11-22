@@ -33,8 +33,6 @@ final class NameBadgeArtTests: XCTestCase {
         XCTAssertEqual(BadgeCatalog.nameSideImage("earlyUser", tier: 1), "medal-earlyUser")
         XCTAssertEqual(BadgeCatalog.nameSideImage("proAutumn2026", tier: 1), "medal-pro-autumn-2026")
         XCTAssertEqual(BadgeCatalog.nameSideImage("supporterYear", tier: 2), "medal-year-2")
-        // 選ぶ画面・お知らせの小さい絵は今までどおり
-        XCTAssertEqual(BadgeCatalog.smallImage("prefectures", tier: 2), "medal-prefectures-2-s")
     }
 
     /// 🔴 名前の横の絵がすべて絵の入れ物に在り、**縮める元として十分大きい**（PNG の幅 520px 以上）
@@ -64,7 +62,6 @@ final class NameBadgeArtTests: XCTestCase {
         let start = try XCTUnwrap(source.range(of: "struct NameBadgeImage"))
         let end = try XCTUnwrap(source.range(of: "enum MyPageNameLine"))
         let body = String(source[start.lowerBound..<end.lowerBound])
-        XCTAssertFalse(body.contains("smallImage"))
         XCTAssertFalse(body.contains("\"-s\""))
         XCTAssertTrue(body.contains("nameSideImage"))
     }

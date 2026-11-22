@@ -119,9 +119,6 @@ final class PassExchangeTests: XCTestCase {
         XCTAssertTrue((1000...1100).contains(km), "\(km)")
         XCTAssertNil(PassExchange.travelKm(fromPrefecture: nil, to: kyoto))
         XCTAssertNil(PassExchange.travelKm(fromPrefecture: "北海道", to: nil))
-        XCTAssertEqual(PassExchange.routeLabel(fromPrefecture: "北海道", placeName: "京都市", km: 1047),
-                       "北海道 → 京都市 1,047km")
-        XCTAssertNil(PassExchange.routeLabel(fromPrefecture: "京都府", placeName: "京都市", km: 0))
     }
 
     func testGroupedNumbers() {
@@ -129,7 +126,6 @@ final class PassExchangeTests: XCTestCase {
         XCTAssertEqual(PassExchange.grouped(128), "128")
         XCTAssertEqual(PassExchange.grouped(1284), "1,284")
         XCTAssertEqual(PassExchange.grouped(1_000_000), "1,000,000")
-        XCTAssertEqual(PassExchange.kmText(1047), "1,047km")
         XCTAssertEqual(PassExchange.numberLabel(87), "No.0087")
         XCTAssertEqual(PassExchange.shortNumber(87), "0087")
     }
