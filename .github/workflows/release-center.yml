@@ -22,7 +22,7 @@ on:
         type: string
         default: ""
       screenshots:
-        description: "Export App Store screenshots (forces full UI test suite)"
+        description: "Make full-size App Store screenshots to the private S3 bucket (verify only, not with release)"
         type: boolean
         default: false
       release_tests:

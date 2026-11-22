@@ -2,20 +2,21 @@
 
 App Store Connect の「App Review に関する情報」に入れる文と、その根拠。
 **審査で落ちる典型を、どこで満たしているか**を1か所にまとめてある。
-2026-11-15 に、申請する 1.1.91（main a65201d、`testflight/1.1.91`）の中身で書き直した（札 #604）。
+2026-11-15 に 1.1.91（main a65201d）の中身で書き、2026-11-22 に 1.1.118（main 84807f3、`testflight/1.1.118`）に合わせて見直した（札 #604）。
+2026-11-22 owner 決定: **審査用アカウントは1つ（A）だけ**。相手役は owner の今のアカウント（審査の人には渡さない）。
 押す所の絵は App Store の Artifact（https://claude.ai/artifact/DViFKiSAyfKaQiW1ayZ1TT）。
 
 ---
 
 ## Notes に貼る文面
 
-審査官は英語を読むので、**貼るのは英語**（3,550字ほど。B の行を足しても上限 4,000 に収まる）。日本語は owner が中身を確かめる用。
-ID とパスワードはここに書かず、「サインイン情報」の欄に入れる（下の「審査用アカウント」）。
+審査官は英語を読むので、**貼るのは英語**（約3,950字。上限 4,000 字。Python の `len()` で数えた）。日本語は owner が中身を確かめる用。
+ID とパスワードはここに書かず、「サインイン情報」の欄に入れる（下の「審査用アカウント」）。Notes に書き足すものは無い。
 
 ### 英語（貼る）
 
 ```
-Journey Photo is a social network for travel photos with a guide to about 3,900 sightseeing spots. Browsing, search and the map need no account; posting, stories, likes, comments and messages need an email sign-up. Demo account A is in the sign-in fields; demo account B is at the end of these notes. A and B follow each other, so you can test Messages, trip plan chat and Pass.
+Journey Photo is a social network for travel photos with a guide to about 4,600 sightseeing spots. Browsing, search and the map need no account; posting, stories, likes, comments and messages need an email sign-up. The demo account is in the sign-in fields. It already has one public photo and follows, and is followed by, an account run by our team. That account sent it a message and is a member of its trip plan, which has one chat message, so you can test Messages and trip plan chat. That account is ours: feel free to report or block it.
 
 USER-GENERATED CONTENT (1.2)
 - Terms prohibiting objectionable content must be accepted on first launch.
@@ -28,7 +29,7 @@ USER-GENERATED CONTENT (1.2)
 - Reports reach journey.photo.official@gmail.com. We review them within 24 hours and remove violating content and accounts.
 
 ACCOUNT
-- Delete account in-app: My Page > Settings > Delete account. You may delete the demo accounts.
+- Delete account in-app: My Page > Settings > Delete account. You may delete the demo account.
 - No third-party or social login. Sign-in is our own Amazon Cognito with email and password only, so Sign in with Apple (4.8) does not apply.
 
 PERMISSIONS (asked in context, with purpose strings)
@@ -41,7 +42,10 @@ PERMISSIONS (asked in context, with purpose strings)
 BACKGROUND BLUETOOTH FOR "PASS" (bluetooth-central, bluetooth-peripheral)
 - Optional and OFF by default. It starts only after My Page > Settings > Pass, an explanation, "Turn on" and the iOS Bluetooth prompt. Turning it off stops advertising and scanning.
 - Used only to swap a small card with nearby devices running this app (one app-specific service UUID). Payload: id of one public photo the user chose, a short note, from/to text, ticket design, and whether to show the prefecture from the profile. No location, contacts or device identifiers.
-- Testing needs two iPhones: sign in with A and B, turn Pass on in both, keep them close. One iPhone shows the explanation, prompt and off-by-default switch. A screen recording (video URL) can be provided on request.
+- Swapping needs two iPhones with two accounts. One iPhone with the demo account shows the explanation, prompt and off-by-default switch. A screen recording (video URL) of two iPhones can be provided on request.
+
+AI (TRIP PLANS, ASK AI)
+- Runs on device with Apple Intelligence where supported. For Pro users on other iPhones, the text is sent to our servers and processed by an AI provider acting on our behalf; a notice says so before sending.
 
 IN-APP PURCHASE (3.1.2)
 - Subscription group "Journey Photo Pro": monthly (com.journeyphoto.JourneyPhoto.pro.monthly, 500 JPY) and yearly (com.journeyphoto.JourneyPhoto.pro.yearly, 5,000 JPY). No free trial.
@@ -52,7 +56,7 @@ IN-APP PURCHASE (3.1.2)
 ### 日本語（確かめる用）
 
 ```
-Journey Photo は、約3,900か所の観光スポットの案内がついた、旅の写真の SNS です。閲覧、検索、地図はログイン不要。投稿、ストーリー、いいね、コメント、メッセージはメールアドレスでの登録が必要です。審査用アカウント A はサインイン情報の欄に、B はこのメモの最後にあります。A と B は互いにフォローしているので、メッセージ、旅行プランの会話、すれちがい乗車券を試せます。
+Journey Photo は、約4,600か所の観光スポットの案内がついた、旅の写真の SNS です。閲覧、検索、地図はログイン不要。投稿、ストーリー、いいね、コメント、メッセージはメールアドレスでの登録が必要です。審査用アカウントはサインイン情報の欄にあります。公開の写真が1枚あり、運営のアカウントと互いにフォローしています。運営のアカウントからメッセージが1通届いていて、審査用アカウントの旅行プランに運営のアカウントが仲間として入り、会話に1通あるので、メッセージと旅行プランの会話を試せます。相手役のアカウントは運営のものなので、通報やブロックを試してかまいません。
 
 ユーザー生成コンテンツ（1.2）
 - 初回起動で、不適切な内容を認めない旨を含む規約への同意を求めます。
@@ -78,7 +82,10 @@ Journey Photo は、約3,900か所の観光スポットの案内がついた、�
 すれちがい乗車券の背景の Bluetooth（bluetooth-central、bluetooth-peripheral）
 - 任意で、初期設定はオフ。マイページ → 設定 → すれちがい乗車券で説明を読み、「オンにする」を押し、iOS の Bluetooth の確認を許可して初めて動きます。オフにすると広告も走査も止まります。
 - 目的は、同じアプリの近くの端末と小さなカードを交換することだけ（専用のサービス UUID）。中身は、選んだ公開写真1枚の id、ひとこと、発と着の字、券面の種類、プロフィールの都道府県を出すかの印。位置、連絡先、端末の識別子は送りません。
-- 試すには iPhone が2台要ります：A と B でそれぞれサインインし、両方でオンにして近くに置きます。1台でも、説明、許可の確認、初期設定のオフは確かめられます。画面収録（動画の URL）は求められたら送ります。
+- 交換を試すには iPhone が2台と、アカウントが2つ要ります。審査用アカウントの1台で、説明、許可の確認、初期設定のオフは確かめられます。2台での画面収録（動画の URL）は求められたら送ります。
+
+AI（旅行プラン、AI に頼む）
+- 対応する iPhone では端末の AI で動きます。それ以外の iPhone の Pro の人は、文をサーバーに送り、委託先の AI で処理します。送る前にその旨を知らせます。1日と月の回数の上限があります。
 
 App 内課金（3.1.2）
 - 定期購入「Journey Photo Pro」：月額（com.journeyphoto.JourneyPhoto.pro.monthly、500円）、年額（com.journeyphoto.JourneyPhoto.pro.yearly、5,000円）。無料の試用なし。
@@ -94,35 +101,34 @@ App 内課金（3.1.2）
 **owner が本番で作る。** このリポジトリ、Artifact、札、会話には、メールアドレスもパスワードも書かない。
 入れる先は App Store Connect の「サインイン情報」の欄だけ。
 
-### 作る（2つ。A と B）
+### 用意する（1つ。A。2026-11-22 owner 決定）
 
-1. メールを2つ用意する（例: Gmail の別名 `<owner のアドレス>+review-a@…`、`+review-b@…`。確認コードが届けばよい）。
-   **owner 本人のアカウントは渡さない**（審査官はアカウントの削除も試す）
-2. パスワードは、パスワード管理のアプリで新しく作る（ほかで使っていないもの）。ここには書かない
-3. iPhone の Journey Photo（TestFlight の 1.1.91）で、ログアウトしてから「マイページ → アカウントを作る」→ A のメールで登録 → 届いた確認コードを入れる
-4. 表示名を「Review A」、ユーザー名を `review_a` のように、審査用と分かる名前にする
-5. **A で公開の写真を1枚投稿する**（自分で撮った風景。人の顔、他社のロゴは写さない）。空のマイページだと「投稿を確かめられない」と差し戻されることがある
-6. ログアウトして、同じ手順で B を作り、B でも公開の写真を1枚投稿する
-7. B で A をフォロー、A で B をフォロー（メッセージは、相手をフォローしている人だけが始められる）
-8. A から B へメッセージを1通送り、B で承認する（承認前は文字3通まで、写真とリンクは送れない）
-9. A で旅行プランを1つ作り、招待リンクで B を仲間にして、会話に1通書く（旅行プランの会話の通報を試せるように）
+- **A は、owner が持っている本番のテスト用アカウントを使う。新しく作らない。** パスワードはどこにも書かない
+  （App Store Connect のサインイン情報の欄に owner が入れる）
+- **相手役は owner の今のアカウント。** 審査の人には渡さない（ID もパスワードも Notes に書かない）
+- 審査官はアカウントの削除も試すことがある。A は消されてもよいアカウントにしておく（owner の今のアカウントは渡さないので消されない）
+
+1. A で公開の写真を1枚投稿する（自分で撮った風景。人の顔、他社のロゴは写さない）。空のマイページだと「投稿を確かめられない」と差し戻されることがある
+2. A と owner のアカウントで互いにフォローする（メッセージは、相手をフォローしている人だけが始められる）
+3. owner のアカウントから A へメッセージを1通送る（A の側で承認しておくと、写真とリンクも試せる）
+4. A で旅行プランを1つ作り、招待リンクで owner のアカウントを仲間にして、会話に1通書く（旅行プランの会話の通報を試せるように）
 
 ### App Store Connect に入れる
 
 - 「App Review に関する情報」→「サインインが必要です」にチェック
-- ユーザー名に A のメール、パスワードに A のパスワード（欄は1組しか無い）
-- B は、Notes に貼った英語の**最後に owner がその場で書き足す**（`Demo account B: <メール> / <パスワード>`）。
-  Notes は審査の人にだけ見える欄。**このリポジトリ、Artifact、札、会話には書かない**
+- ユーザー名に A のメール、パスワードに A のパスワード（欄は1組。Notes に書き足すものは無い）
 - 連絡先の電話番号は国番号から（`+81 90 1234 5678` の形。先頭の 0 を取る）
 
 ### 申請のあと
 
-- 審査官に消されたら、次の申請の前に作り直す
-- 承認されたら、パスワードを替えるか、2つとも消してよい
+- 審査の人は owner のアカウントを通報、ブロックすることがある（Notes で許している）。
+  **審査が終わったら、A でログインし、マイページ → 設定 → ブロックした人 から owner のアカウントのブロックを外す**（通報は運営の宛先に届くので、確かめて閉じる）
+- 審査官に消されたら、次の申請の前に A を用意し直す（上の 1〜4）
+- 承認されたら、A のパスワードを替える
 
 ## ガイドライン別の対応（2026-11-15 に a65201d で確かめた）
 
-重い順。「足りない」は 1.1.91 には無い。
+重い順。「足りない」は 1.1.91 には無い。この表は a65201d で確かめたもので、1.1.118 では行ごとに確かめ直していない（2026-11-22）。
 
 | 条項 | 要求 | このアプリでの答え | 合否 | 根拠（a65201d） |
 |---|---|---|---|---|
@@ -161,14 +167,14 @@ App 内課金（3.1.2）
 | おおよその位置 | はい | アプリの機能 | はい | いいえ |
 | ユーザーID | はい | アプリの機能 | はい | いいえ |
 | デバイスID（プッシュ通知の宛先） | はい | アプリの機能 | はい | いいえ |
-| 製品の操作（観光スポットの「行きたい」の数は端末ごとのでたらめな番号で、本人と紐づかない。AI で旅行プランを作った月の回数は本人ごと、2026-11-15 札 #621） | はい | アプリの機能 | はい | いいえ |
+| 製品の操作（観光スポットの「行きたい」の数は端末ごとのでたらめな番号で、本人と紐づかない。AI で旅行プランを作った回数と AI に頼んだ回数（日と月）は本人ごと、2026-11-15 札 #621、2026-11-20 札 #652） | はい | アプリの機能 | はい | いいえ |
 
 **写真**にはアイコン、カバー、ストーリーの写真と動画（音声を含む）、意見に添えた写真も入る。
 おおよその位置は撮影地（保存前に約1kmへ丸める）。**精細な位置は「いいえ」**。広告 ID は使わない。
 
 **集めないもの**（端末の中だけ）: 端末の写真から作る旅の要約、行った県の記録、すれちがいのカードと場所、現在地、
 MetricKit の診断（端末のログに出すだけ）、連絡先、健康、閲覧履歴、検索履歴。
-AI で旅行プランを作るときに書いた文も**集めない**（端末の AI では端末の外へ出さない。サーバーの AI では読んで答えるだけで残さず、
+AI で旅行プランを作るとき、AI に頼むときに書いた文も**集めない**（AI に頼むの会話の控えは端末の中だけ、`AskHistoryStore`。端末の AI では端末の外へ出さない。サーバーの AI では読んで答えるだけで残さず、
 Amazon Bedrock の記録もしていない。Apple の「集める」は、答えに要る間より長く手にできる形で送ること）。
 
 ### 判断が分かれる所（推奨つき）
@@ -205,10 +211,10 @@ Apple の新しい質問票（区分は 4+、9+、13+、16+、18+）。**画面�
 
 ## 提出前の最終確認（ここを全部緑にしてから出す）
 
-- [ ] ビルドは `testflight/1.1.91`（a65201d）。App Store Connect の「バージョン」を 1.1.91 にし、ビルド 1.1.91 を選ぶ
-- [ ] TestFlight の実機で一巡（投稿、ストーリーの動画、メッセージ、旅行プランの会話の通報、通報、ブロック、退会、機内モード）
-- [ ] 画面写真 6.9インチ（1320×2868）を3枚以上。他の利用者の写真、人の顔、他社のロゴを入れない（`docs/APP_STORE_METADATA.md`）
-- [ ] 審査用アカウント A と B を**本番**に作り、それぞれ写真を1枚投稿、互いにフォロー、メッセージを1通（上の手順）
+- [ ] ビルドは、出すときの最新の TestFlight の版（2026-11-22 時点は `testflight/1.1.118`、84807f3）。App Store Connect の「バージョン」をその版にし、同じ版のビルドを選ぶ
+- [ ] TestFlight の実機で一巡（AI で旅行プラン、AI に頼む、投稿、ストーリーの動画、メッセージ、旅行プランの会話の通報、通報、ブロック、退会、機内モード）
+- [ ] 画面写真 6.9インチ（1320×2868）を3枚以上。Mac の CI の `storeShots` で作り、非公開の S3 から取り出す（`docs/APP_STORE_METADATA.md` の「作り方」）。他の利用者の写真、人の顔、他社のロゴを入れない
+- [ ] 審査用アカウント A（owner の本番のテスト用アカウント）で写真を1枚投稿、owner のアカウントと互いにフォロー、owner から A にメッセージ1通、A の旅行プランに owner を仲間に入れて会話に1通（上の手順）
 - [ ] App のプライバシーの回答が `PrivacyInfo.xcprivacy` と一致（上の表）
 - [ ] 年齢制限の質問票（上の表）
 - [ ] 名前、サブタイトル、説明、キーワード、最新情報、サポート URL、プライバシーポリシー URL、カテゴリ（`docs/APP_STORE_METADATA.md`）
@@ -222,17 +228,19 @@ Apple の新しい質問票（区分は 4+、9+、13+、16+、18+）。**画面�
 
 ## owner にお願いすること
 
-1. **アプリの名前を決める**（推奨 `Journey Photo 旅の写真と観光スポット`。商標の確認も）
-2. **審査用アカウント A と B を本番に作る**（上の手順。パスワードはどこにも書かない）
-3. **App Store 用の原寸の画面写真の撮り方を決める。** 推奨は、`storeShots` の原寸を公開の枝ではなく
-   非公開の S3（いまの画面写真と同じ置き場、3日で消える）に置く形に変えることを owner が許すこと。
-   2026-11-15 にこの変更を入れようとしたが、公開リポジトリの守りの段（#451）を外す変更なので、この担当は止めた。
-   許さないなら、iPhone 17 Pro Max か 16 Pro Max の実機で、審査用アカウントの画面を撮る（原寸で 6.9インチ枠に入る）
+1. ~~アプリの名前を決める~~ **2026-11-22 決定**（`Journey Photo 旅の写真と観光スポット`、英語 `Journey Photo: Travel Spots`、サブタイトル `旅を見つけて、撮って、みんなと話す`）
+2. **審査用アカウント A を用意する**（上の手順。owner の本番のテスト用アカウントを使う。パスワードはどこにも書かない）
+3. ~~App Store 用の原寸の画面写真の撮り方を決める~~ **2026-11-22 決定**: Mac の CI で撮り、非公開の S3 に置く（`storeShots`、3日で消える）。
+   出来た絵を見て、使う枚を選ぶ（他の利用者の写真が写った枚は使わない）
 4. 「24時間以内に確かめる」の約束でよいか
 5. App Store Connect で、掲載情報、App のプライバシー、年齢の質問票、審査の情報を入れて「審査に出す」を押す
+6. 審査のあと、A で owner のアカウントのブロックを外す（上の「申請のあと」）
 
 ## 落ちやすい点として残っているもの
 
 - **背景の Bluetooth（2.5.4）。** すれちがいの説明を求められることがある。返答の下書きは Artifact の 3-4
 - **投稿が少ないと「中身が薄い」と見られることがある。** 審査用アカウントで写真を投稿しておく
-- **すれちがいは iPhone が2台ないと試せない。** 動画を求められたら、2台で撮った画面収録を送る
+- **すれちがいは iPhone が2台ないと試せない。** 審査用アカウントは1つなので、交換は試せない。動画を求められたら、2台で撮った画面収録を送る
+- **他社の AI にデータを渡すこと（5.1.2(i)、2025-11 の改定）。** サーバーの AI（Pro で、端末の AI が使えない iPhone）は、送る前に
+  「サーバーに送信し、委託先の AI で処理します」と知らせる（`AskText.serverNotice`、`tripServerNotice`）。**同意のボタン（明示の許可）は無い。**
+  差し戻されたら、初回だけ同意を取る形を足す（確かめていない。この担当は画面を変えていない）

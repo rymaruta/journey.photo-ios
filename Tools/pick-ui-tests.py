@@ -134,8 +134,10 @@ def only_when_named(test):
 
 def sharded(submit, store_shots, screens):
     """UI テストを別々の Mac に分けて流す回か（2026-10-31・#429）。上げない回（submit=false）で、全部を流すとき
-    （screens が空・all・全部 を含む——`wants_all` と同じ決め方——か、storeShots で screens を捨てるとき）"""
-    return not submit and (store_shots or wants_all(screens))
+    （screens が空・all・全部 を含む——`wants_all` と同じ決め方）。
+    2026-11-22 判断（札 #604）: storeShots の回は分けない。絵に要る UI テスト（`store-screenshots.py` の STORE_TESTS）だけを
+    1台で流す（前は全部を4台で流していた。30分に収める）"""
+    return not submit and not store_shots and wants_all(screens)
 
 
 def wants_all(screens):
