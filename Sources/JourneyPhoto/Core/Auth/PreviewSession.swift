@@ -382,6 +382,18 @@ enum PreviewSession {
         #endif
     }
 
+    /// 画面写真の試験だけ: 起動のときに「投稿しました」の1枚を見本で1回出す（札 #628・`-JPPreviewPostedSummary YES`・Debug のみ）
+    static let postedSummaryKey = "JPPreviewPostedSummary"
+
+    static var opensPostedSummary: Bool {
+        #if DEBUG
+        guard userId != nil else { return false }
+        return UserDefaults.standard.bool(forKey: postedSummaryKey)
+        #else
+        return false
+        #endif
+    }
+
     static var opensPushPrimer: Bool {
         #if DEBUG
         guard userId != nil else { return false }

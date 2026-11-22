@@ -158,8 +158,14 @@ struct RootView: View {
     /// それが**同じ人の数**のときだけ——人が替わった直後の取得が捨てられ、
     /// 次の取得が失敗すると、前の人の数が残っていた
     @State private var unreadOwner: String?
-    /// 「新しくなったこと」を出すか（起動した時点で決める・`WhatsNewGate`）
-    @StateObject private var whatsNew = WhatsNewGate()
+    /// 「新しくなったこと」を出すか（起動した時点で決める・`WhatsNewGate`）。ホームの印も同じ門を見る（札 #628）
+    @ObservedObject private var whatsNew = WhatsNewGate.shared
+    /// 起動で割り込む画面は1つまで（札 #628・`LaunchNoticeSlot`）
+    @State private var launchSlot = LaunchNoticeSlot()
+    /// 初めての投稿のあとの「投稿しました」1枚（札 #628・`PostedSummaryCenter`）
+    @ObservedObject private var postedSummary = PostedSummaryCenter.shared
+    /// 見本の「投稿しました」を出したか（起動のあと1回だけ）
+    @State private var previewPostedSummaryDelivered = false
     @State private var showWhatsNew = false
     /// 出した版。`markSeen` で門の側は空になるので、シートにはこちらを渡す
     @State private var whatsNewReleases: [WhatsNew.Release] = []
@@ -454,8 +460,9 @@ struct RootView: View {
         guard !Task.isCancelled, let profile = try? await environment.profiles.myProfile(),
               auth.userId == userId else { return }
         let gate = FoundingGiftGate()
+        // 起動で割り込む画面は1つまで（札 #628）。ほかが先に出た起動では出さず、数えない（次の起動で出る）
         guard gate.shouldPresent(userId: userId, profile: profile), !ModalProbe.isPresenting(),
-              !showWhatsNew else { return }
+              !showWhatsNew, launchSlot.claim(.foundingGift) else { return }
         gate.noteShown(userId: userId)
         foundingGiftName = FoundingGiftGate.name(profile)
     }
@@ -536,6 +543,20 @@ struct RootView: View {
             .sheet(item: $postedCardOffer.presented) { card in
                 PostedShareCardSheet(card: card)
             }
+            // 初めての投稿のあとの「投稿しました」1枚（札 #628）。行の「見る」「カードを共有」は閉じきってから開く
+            .sheet(item: $postedSummary.presented, onDismiss: {
+                switch postedSummary.takeFollowUp() {
+                case .shareCard(let card)?: postedCardOffer.present(card, currentUserId: auth.userId)
+                case .labels(let batch)?: trunkBatch = batch
+                case nil: break
+                }
+                if profileReward.hasPending { offerRewardWhenIdle() }
+                if trunkArrivals.hasPending { offerTrunkArrivalWhenIdle() }
+            }) { summary in
+                PostedSummarySheet(summary: summary)
+            }
+            // 画面写真の試験だけ: 見本の「投稿しました」を起動のときに1回（`-JPPreviewPostedSummary`・Debug のみ）
+            .task { await offerPreviewPostedSummary() }
             // 知らせの「直す」（アルバムが消えた回）・輪の「投稿の画面で直す」: 投稿の画面で開き直す
             .onChange(of: postUploads.editRequest) { _, id in
                 guard let id else { return }
@@ -584,6 +605,7 @@ struct RootView: View {
                 rewardGrant = nil
                 profileReward.noteUser(userId)
                 coverOffers.noteUser(userId)
+                postedSummary.userChanged(to: userId)
             }
     }
 
@@ -666,21 +688,55 @@ struct RootView: View {
                 coverOffers.finishFirstPost(userId: userId, offer: nil, checked: true)
                 return
             }
-            // カバーを持っている人には出さない。分からない（圏外）回は決めずに見送る
-            guard let hasCover = await ProfileImageFromPhoto.exists(userId: userId, kind: .cover) else {
+            // 2026-11-22 判断（札 #628）: 初めての投稿のあとは「投稿しました」の1枚にまとめる。カバーの差し出しは
+            // 別のシートにせず、その行「この写真をカバーに　する」に。通知の説明も行「オンにする」に（`PostedSummarySheet`）
+            let (cover, checked) = await firstPostCoverOffer(userId: userId, mine: mine, posted: posted)
+            guard auth.userId == userId, !Task.isCancelled else {
                 coverOffers.finishFirstPost(userId: userId, offer: nil, checked: false)
                 return
             }
-            let lead = tabRouter.lastPosted.first { posted.contains($0.id) } ?? mine.first { posted.contains($0.id) }
-            guard !hasCover, let lead, CoverCandidates.isCandidate(lead), auth.userId == userId else {
-                coverOffers.finishFirstPost(userId: userId, offer: nil, checked: true)
-                return
-            }
-            let showsCoins = await coverCoinsStillOpen()
-            coverOffers.finishFirstPost(userId: userId, offer: .init(
-                kind: .firstPost, photoId: lead.id, imageURL: lead.detailImageURL, title: lead.displayTitle,
-                hasCover: false, showsCoins: showsCoins), checked: true)
+            await push.refreshAuthorization()
+            let summary = PostedSummaryCenter.Summary(
+                ownerId: userId, card: postedCardOffer.pendingCard(for: userId), cover: cover,
+                offersPush: PushPrimer.shouldOffer(signedIn: true, permission: push.permission,
+                                                   alreadyOffered: pushPrimer.alreadyOffered),
+                labels: nil)
+            // 出したら、同じ投稿の知らせ（「投稿しました　カードにする」）は下ろす（カードはこの1枚から開ける）
+            if auth.userId == userId, postedSummary.present(summary) { toasts.dismiss() }
+            // 「決めている途中」は出してから下ろす（下ろした瞬間に届いたラベルが、1枚に入らず知らせになるのを防ぐ）
+            coverOffers.finishFirstPost(userId: userId, offer: nil, checked: checked)
         }
+    }
+
+    /// 見本の「投稿しました」（通知・カバー・ラベル1枚の行。カードの絵は無し）。起動のあと1回だけ
+    private func offerPreviewPostedSummary() async {
+        guard PreviewSession.opensPostedSummary, !previewPostedSummaryDelivered, let userId = auth.userId else { return }
+        for _ in 0..<10 {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            if Task.isCancelled { return }
+            if !ModalProbe.isPresenting() { break }
+        }
+        guard !ModalProbe.isPresenting(), !previewPostedSummaryDelivered else { return }
+        previewPostedSummaryDelivered = true
+        postedSummary.present(.init(
+            ownerId: userId, card: nil,
+            cover: .init(kind: .firstPost, photoId: "preview", imageURL: nil, title: "哲学の道の朝", hasCover: false,
+                         showsCoins: false),
+            offersPush: true,
+            labels: TrunkArrivals.Batch(arrivals: [.init(label: TrunkSample.arrived, photoTitle: "哲学の道の朝")], coins: 1)))
+    }
+
+    /// 初めての投稿の「この写真をカバーに」の行に出す中身（カバーが無い人だけ）。`checked` は「初めて」の印を立てるか
+    /// （カバーの有無が分からない圏外の回は立てない）
+    private func firstPostCoverOffer(userId: String, mine: [Photo],
+                                     posted: Set<String>) async -> (CoverOfferStore.Offer?, Bool) {
+        // カバーを持っている人には出さない。分からない（圏外）回は決めずに見送る
+        guard let hasCover = await ProfileImageFromPhoto.exists(userId: userId, kind: .cover) else { return (nil, false) }
+        let lead = tabRouter.lastPosted.first { posted.contains($0.id) } ?? mine.first { posted.contains($0.id) }
+        guard !hasCover, let lead, CoverCandidates.isCandidate(lead), auth.userId == userId else { return (nil, true) }
+        let showsCoins = await coverCoinsStillOpen()
+        return (.init(kind: .firstPost, photoId: lead.id, imageURL: lead.detailImageURL, title: lead.displayTitle,
+                      hasCover: false, showsCoins: showsCoins), true)
     }
 
     /// **ほかの画面が閉じてから**差し出しを出す。初めての投稿のは投稿の画面が閉じたらすぐ（通知の説明より前）、
@@ -689,6 +745,12 @@ struct RootView: View {
         guard coverOfferWait == nil else { return }
         coverOfferWait = Task { @MainActor in
             let first = coverOffers.pending?.kind == .firstPost
+            // いいねの集まった1枚は起動の1枠を使う（札 #628）。ほかが先に出た起動では出さない（聞いた写真に入れないので次の起動で出る）
+            if !first, !launchSlot.mayShow(.likedCover) {
+                coverOfferWait = nil
+                _ = coverOffers.consume()
+                return
+            }
             let ready = await PostModalGate.wait(tries: first ? 30 : 600, snapshot: postModalSnapshot,
                                                  until: { first ? !$0.modalPresenting && !$0.extrasShowing
                                                                 : PostModalGate.likedOfferMayShow($0) && !profileReward.hasPending },
@@ -700,6 +762,7 @@ struct RootView: View {
                 if first { _ = coverOffers.consume() }
                 return
             }
+            if case .liked = offer.kind, !launchSlot.claim(.likedCover) { return }
             coverOffer = offer
         }
     }
@@ -715,7 +778,19 @@ struct RootView: View {
             if Task.isCancelled { return }
             rewardWait = nil
             guard ready, rewardGrant == nil, let grant = profileReward.consume() else { return }
-            rewardGrant = grant
+            // 画面写真の見本（`-JPPreviewCoinReward`）は全画面をそのまま出す（板 53 の絵を撮る）
+            if PreviewSession.coinReward != nil {
+                rewardGrant = grant
+                return
+            }
+            // 2026-11-22 判断（札 #628）: お礼は全画面で割り込まず、知らせ「硬貨 3 枚が届きました　見る」に。
+            // 硬貨はもう手持ちにある（サーバーが配った後）ので、知らせを出した時点で控えを消す。「見る」で今までの全画面を開く
+            profileReward.noteShown(userId: auth.userId)
+            let owner = auth.userId
+            toasts.show(ProfileRewardText.notice(grant), kind: .success, actionTitle: ProfileRewardText.noticeAction) {
+                guard auth.userId == owner, rewardGrant == nil else { return }
+                rewardGrant = grant
+            }
         }
     }
 
@@ -760,7 +835,8 @@ struct RootView: View {
     /// 閉じたあとに出せるように長く待つ）。待ちきれなければ案内は残し（端末にも控えてある）、シートを閉じた・前面に
     /// 戻った・次の起動のときに出し直す（硬貨はもう手持ちに在る）
     private func offerTrunkWelcomeWhenIdle() {
-        guard welcomeOffer == nil else { return }
+        // 起動で割り込む画面は1つまで（札 #628）。ほかが先に出た起動では出さない——案内は端末の控えに残り、次の起動で出る
+        guard welcomeOffer == nil, launchSlot.mayShow(.trunkWelcome) else { return }
         welcomeOffer = Task { @MainActor in
             let ready = await PostModalGate.wait(tries: 600, snapshot: postModalSnapshot,
                                                  until: PostModalGate.welcomeMayShow,
@@ -768,7 +844,8 @@ struct RootView: View {
             // 取り消された仕事は、あとから始まった仕事の席を空けない（人が替わったときに止めて空けてある）
             if Task.isCancelled { return }
             welcomeOffer = nil
-            guard ready, trunkWelcomeGrant == nil, let grant = trunkWelcome.consume() else { return }
+            guard ready, trunkWelcomeGrant == nil, launchSlot.claim(.trunkWelcome),
+                  let grant = trunkWelcome.consume() else { return }
             let owner = auth.userId
             welcomeAppeared = false
             trunkWelcomeGrant = grant
@@ -831,18 +908,46 @@ struct RootView: View {
     /// **ほかの画面が閉じてから**届いた画面を出す（投稿の画面・Threads への共有の画面が閉じきるまで待つ。
     /// 最長で約30秒。待ちきれなければ出さない——ラベルは手持ちに届いているので、トランクを開けば在る）。
     /// 手持ちがいっぱいで届かなかった回は、手持ちへ案内する一言（`TrunkText.fullNotice`）
+    ///
+    /// 2026-11-22 判断（札 #628）: **届いた画面（全画面）を自分からは出さない。** 初めての投稿の「投稿しました」が開いていれば
+    /// その行「ラベルが届きました　見る」に、閉じていれば知らせ「ラベルが届きました　見る」に（`PostedSummaryCenter.labelArrival`）。
+    /// 「見る」で今までの届いた画面を開く。ラベルは手持ちに届いているので、見なくてもトランクを開けば在る
     private func offerTrunkArrivalWhenIdle() {
         Task { @MainActor in
-            // 通知の説明 → 評価のお願い → 届いた画面の順（`PostModalGate`）
+            // 初めての投稿を決めている間は待つ（決まったら「投稿しました」の行に入れる）。それ以外は今までの順
             let ready = await PostModalGate.wait(tries: 30, snapshot: postModalSnapshot,
-                                                 until: PostModalGate.trunkMayShow,
+                                                 until: { PostModalGate.trunkMayShow($0)
+                                                     || (postedSummary.presented != nil && !$0.coverOfferBusy) },
                                                  sleep: { try? await Task.sleep(nanoseconds: 1_000_000_000) })
             guard ready else { return }
-            if let batch = trunkArrivals.consume() {
-                trunkBatch = batch
-            } else if let notice = trunkArrivals.consumeNotice() {
-                toasts.show(notice.text, kind: .info)
+            switch PostedSummaryCenter.labelArrival(summaryOpen: postedSummary.presented != nil) {
+            case .summaryRow:
+                if let batch = trunkArrivals.consume() {
+                    postedSummary.addLabels(batch)
+                } else if let notice = trunkArrivals.consumeNotice() {
+                    toasts.show(notice.text, kind: .info)
+                }
+            case .notice:
+                if let batch = trunkArrivals.consume() {
+                    await showLabelNotice(batch)
+                } else if let notice = trunkArrivals.consumeNotice() {
+                    toasts.show(notice.text, kind: .info)
+                }
             }
+        }
+    }
+
+    /// 知らせ「ラベルが届きました　見る」。投稿の知らせ（「投稿しました　カードにする」）を上書きしないよう、
+    /// 出ている知らせが消えるまで少し待つ（最長 8 秒。過ぎたら出す）
+    private func showLabelNotice(_ batch: TrunkArrivals.Batch) async {
+        for _ in 0..<16 where toasts.current != nil {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+        let owner = auth.userId
+        toasts.show(PostedSummaryText.labelsRow(batch.arrivals.count), kind: .success,
+                    actionTitle: PostedSummaryText.labelsAction) {
+            guard auth.userId == owner, trunkBatch == nil else { return }
+            trunkBatch = batch
         }
     }
 
@@ -856,8 +961,10 @@ struct RootView: View {
                           sceneActive: scenePhase == .active,
                           coverOfferBusy: coverOffers.isDeciding || coverOffer?.kind == .firstPost
                               || coverOffers.pending?.kind == .firstPost,
-                          welcomePending: trunkWelcome.hasPending,
-                          extrasShowing: rewardGrant != nil || coverOffer != nil)
+                          // 枠が取られて次の起動へ回した案内は、待たせない（お礼の知らせを止めない・札 #628）
+                          welcomePending: trunkWelcome.hasPending && launchSlot.mayShow(.trunkWelcome),
+                          // 「投稿しました」も出ている間は、評価・届いた画面・案内を待たせる（札 #628）
+                          extrasShowing: rewardGrant != nil || coverOffer != nil || postedSummary.presented != nil)
     }
 
     /// 起動から1回だけ（閉じると下の画面が現れ直して `.task` が走り直す・`TrunkArrivals.claimPreviewOffer`）
@@ -888,12 +995,9 @@ struct RootView: View {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 if PostModalGate.pushPrimerWaitIsOver(postModalSnapshot()) { break }
             }
-            guard PostModalGate.pushPrimerWaitIsOver(postModalSnapshot()), !showPushPrimer else { return }
-            await push.refreshAuthorization()
-            guard !ModalProbe.isPresenting(),
-                  pushPrimer.consume(signedIn: auth.userId != nil, permission: push.permission) else { return }
-            pushPrimerMoment = .firstPost
-            showPushPrimer = true
+            // 2026-11-22 判断（札 #628）: **投稿のあとは通知の説明の画面を出さない。** 初めての投稿の「投稿しました」の行
+            // 「いいねや返事が来たら知らせる　オンにする」（`PostedSummarySheet`）に置いた。待つのは、評価のお願いを
+            // 「投稿しました」が決まるまで待たせるため（`isDeciding`・上の `defer`）
         }
     }
 
@@ -1102,14 +1206,18 @@ struct RootView: View {
         // 規約の画面の後（このタブが出てから）。描き終わるのを少し待つ——出てきた瞬間に
         // シートを出すと黙って無視されることがある。通知を押して起動した回など、ほかのシートが
         // 先に出ていたら出さない（覚えないので、次の起動で出る）
+        //
+        // 2026-11-22 判断（札 #628）: **シートは大きく変わる版（`WhatsNew.json` の `announce`）だけ。** ふつうの版は
+        // ホームの印（`WhatsNewHomeBadge`）だけにし、押した人だけ読む。シートも起動の1枠を取る（`LaunchNoticeSlot`）
         .task {
-            // 「新しくなったこと」が出ない回は、そのまま初期ユーザー章の贈り物を確かめる
-            guard whatsNew.shouldPresent else {
+            // 「新しくなったこと」をシートで出さない回は、そのまま初期ユーザー章の贈り物を確かめる
+            guard whatsNew.presentation == .sheet else {
                 await decideFoundingGift()
                 return
             }
             try? await Task.sleep(nanoseconds: 600_000_000)
-            guard !Task.isCancelled, whatsNew.shouldPresent, !ModalProbe.isPresenting() else {
+            guard !Task.isCancelled, whatsNew.presentation == .sheet, !ModalProbe.isPresenting(),
+                  launchSlot.claim(.whatsNew) else {
                 // 出さなかった回も、起動の案内は決め終わり（はじめての硬貨の案内を待たせない）
                 launchNoticesDeciding = false
                 return

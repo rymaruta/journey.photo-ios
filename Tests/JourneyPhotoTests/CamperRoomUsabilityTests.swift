@@ -241,6 +241,7 @@ final class CamperRoomSeenTests: XCTestCase {
         XCTAssertTrue(CamperRoomCoach.shouldShow(d))
         CamperRoomCoach.done(d)
         XCTAssertFalse(CamperRoomCoach.shouldShow(d))
-        XCTAssertEqual(CamperRoomView.coachLines.count, 3)
+        // 2026-11-22（札 #628）: 3行の札から、触れば消える1行に
+        XCTAssertFalse(CamperRoomView.coachText.contains("\n"))
     }
 }

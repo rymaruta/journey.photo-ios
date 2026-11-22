@@ -933,7 +933,8 @@ final class WhatsNewTests: XCTestCase {
     /// 起動で出す口と、設定から開き直す口がある
     func testScreensAreWired() async throws {
         let root = try source("Sources/JourneyPhoto/App/RootView.swift")
-        XCTAssertTrue(root.contains("@StateObject private var whatsNew = WhatsNewGate()"))
+        // 2026-11-22（札 #628）: ホームの印も同じ門を見るので、起動で1つだけ作る `shared` を使う
+        XCTAssertTrue(root.contains("@ObservedObject private var whatsNew = WhatsNewGate.shared"))
         XCTAssertTrue(root.contains("whatsNew.markSeen()"))
         XCTAssertTrue(root.contains("WhatsNewView(releases: whatsNewReleases)"))
         // 起動時は履歴の形にしない（`mode` の既定 `.launch` のまま）
