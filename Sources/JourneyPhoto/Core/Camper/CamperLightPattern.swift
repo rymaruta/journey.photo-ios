@@ -46,14 +46,6 @@ enum CamperLightPattern: String, CaseIterable, Sendable, Equatable {
     }
 }
 
-/// 地面・窓の「足す光」の溜まり絵の型（SCNLight ではない。additive の板）
-enum CamperGlowPattern: String, CaseIterable, Sendable, Equatable {
-    /// 窓の下・扉の前のこぼれ光
-    case spillWarm
-    /// 焚き火・ランタンの足元
-    case fire
-}
-
 extension CamperLightSpec {
     /// 型に従って SCNLight の減衰を入れる
     func applyAttenuation(to light: SCNLight, unit: Double) {

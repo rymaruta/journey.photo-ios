@@ -344,13 +344,20 @@ final class TripStartStore: ObservableObject {
     /// 日の番号だけで覚えていた前の版（読まずに消す）
     nonisolated static let oldDefaultsKey = "tripStartTimes.v1"
 
+    /// 時刻を覚えたプランの、覚えたときの日程（日の鍵と場所）。札 #685
+    nonisolated static let slotsDefaultsKey = "tripStartSlots.v1"
+
     @Published private(set) var starts: [String: Int]
+    /// プランごとの、最後に見た日程（時刻を1つでも覚えているプランだけ）
+    private var slots: [String: [TripStartKeys.DaySlot]]
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.removeObject(forKey: Self.oldDefaultsKey)
         self.starts = (defaults.dictionary(forKey: Self.defaultsKey) as? [String: Int]) ?? [:]
+        self.slots = defaults.data(forKey: Self.slotsDefaultsKey)
+            .flatMap { try? JSONDecoder().decode([String: [TripStartKeys.DaySlot]].self, from: $0) } ?? [:]
     }
 
     func minutes(planId: String?, ymd: String?, day: Int) -> Int {
@@ -373,8 +380,23 @@ final class TripStartStore: ObservableObject {
         save()
     }
 
+    /// 頁の日程が変わった・開いた・時刻を選んだ: **覚えたときの日程から**今の日程へ時刻を運び、今の日程を覚える。
+    ///
+    /// 2026-11-22 判断（札 #685）: 前は頁を開いている間の前の日程（`onChange` の前の値）から運んでいた。開いた直後は前が空なので
+    /// 運ばず、閉じている間に仲間が日を消す・日付がずれると、消えた日の時刻が別の日に付いた。覚えたときの日程を時刻と一緒に残し、
+    /// 開いたときもそこから運ぶ。日程を覚えるのは時刻を1つでも覚えているプランだけ（時刻が無ければ運ぶものも無い）
+    func sync(planId: String?, to now: [TripStartKeys.DaySlot]) {
+        guard let planId, !planId.isEmpty, !now.isEmpty else { return }
+        if let old = slots[planId] { carry(from: old, to: now) }
+        let want = starts.keys.contains { TripStartKeys.belongs($0, to: planId) } ? now : nil
+        guard slots[planId] != want else { return }
+        slots[planId] = want
+        saveSlots()
+    }
+
     /// プランを消したとき
     func forget(planId: String) {
+        if slots.removeValue(forKey: planId) != nil { saveSlots() }
         let next = starts.filter { !TripStartKeys.belongs($0.key, to: planId) }
         guard next != starts else { return }
         starts = next
@@ -384,16 +406,23 @@ final class TripStartStore: ObservableObject {
     /// ログアウト・退会（次の人に残さない）
     func forgetAll() {
         starts = [:]
+        slots = [:]
         defaults.removeObject(forKey: Self.defaultsKey)
+        defaults.removeObject(forKey: Self.slotsDefaultsKey)
     }
 
     private func save() { defaults.set(starts, forKey: Self.defaultsKey) }
+
+    private func saveSlots() {
+        if slots.isEmpty { defaults.removeObject(forKey: Self.slotsDefaultsKey); return }
+        defaults.set(try? JSONEncoder().encode(slots), forKey: Self.slotsDefaultsKey)
+    }
 }
 
 /// 出発の時刻の覚えの鍵と、日程が変わったときの運び方（値だけの計算・`TripStartStore` が使う）
 enum TripStartKeys {
     /// 日を見分ける鍵と、その日の場所（前の日程と対応させるため）
-    struct DaySlot: Equatable, Sendable {
+    struct DaySlot: Equatable, Sendable, Codable {
         let key: String
         let items: [String]
     }
@@ -407,7 +436,9 @@ enum TripStartKeys {
     static func slots(planId: String, days: [TripDay], start: String?, end: String?) -> [DaySlot] {
         days.enumerated().map { i, day in
             DaySlot(key: key(planId: planId, ymd: TripPlanText.dayDate(index: i, day: day, start: start, end: end), day: i),
-                    items: day.items.map { String(describing: $0) })
+                    items: day.items.map(TripShareText.itemKey))
+            // 2026-11-22 判断（札 #685 の確かめ役）: 場所の鍵は `s:<id>`・`l:<slug>`（ひとことを含めない）。日程を端末に覚えるので、
+            // `TripItem` の表示の形やひとことの書き換えで、覚えた日と重ならなくならないように
         }
     }
 

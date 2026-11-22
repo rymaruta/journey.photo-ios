@@ -54,14 +54,6 @@ enum SongStickerStyle: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    /// 札が持つジャケットを描くか（C と F は字だけ）
-    var showsArtwork: Bool {
-        switch self {
-        case .pill, .title: return false
-        case .glass, .white, .sleeve, .disc: return true
-        }
-    }
-
     // MARK: 大きさ（短い辺に対する「歌手の字」の割合・`TextOverlay.size`）
 
     /// 置いたときの大きさ。3:4 の写真を作る画面に敷くと歌手の字が約 17pt（モックの 11.5px を 390pt に直すと 15pt）

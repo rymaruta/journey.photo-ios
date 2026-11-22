@@ -258,7 +258,6 @@ struct GroupRow: Identifiable, Equatable {
     let joinsPrevious: Bool
 
     var id: String { message.id }
-    var isEvent: Bool { message.groupEvent != nil }
 }
 
 enum GroupRows {
@@ -361,9 +360,12 @@ enum GroupText {
         return conversationId(groupId: groupId)
     }
 
-    /// 通知を押して開いてよい印か（今の人の DM の会話か、グループ）。人が替わった後に前の人の DM の通知を開かない
+    /// 通知を押して開いてよい印か（今の人の DM の会話か、グループか、旅行プランの会話）。人が替わった後に前の人の DM の通知を開かない。
+    /// 2026-11-22 判断（札 #693）: 旅行プランの会話（`trip_<planId>`）も通す。前は通さず、旅行プランの会話の通知を押しても
+    /// 何も開かなかった。仲間かどうかはサーバーが確かめる（グループと同じ扱い）
     static func opens(_ id: String, me: String) -> Bool {
-        groupId(fromConversation: id) != nil || DMRules.peer(of: id, me: me) != nil
+        groupId(fromConversation: id) != nil || TripShareText.planId(fromConversation: id) != nil
+            || DMRules.peer(of: id, me: me) != nil
     }
 
     /// 30人に届いた（それ以上は選べない）

@@ -360,6 +360,36 @@ final class TripTimesTests: XCTestCase {
         XCTAssertEqual(store.minutes(planId: "q", ymd: "2026-12-22", day: 1), 540, "c の日に b の時刻が付いた")
     }
 
+    /// 頁を閉じている間に仲間が日を消しても、開いたときに覚えたときの日程から運ぶ（札 #685）
+    @MainActor
+    func testStartFollowsChangesMadeWhileThePageWasClosed() async throws {
+        let (store, defaults, suite) = try freshStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let before = [day("a"), day("b"), day("c")]
+        // 開いて2日目を 7:00 にした（時刻と一緒に日程を覚える）
+        store.sync(planId: "p", to: TripStartKeys.slots(planId: "p", days: before, start: nil, end: nil))
+        store.set(7 * 60, planId: "p", ymd: nil, day: 1)
+        store.sync(planId: "p", to: TripStartKeys.slots(planId: "p", days: before, start: nil, end: nil))
+        // 閉じている間に仲間が1日目を消した。アプリを開き直して頁を開く
+        let reopened = TripStartStore(defaults: defaults)
+        let after = [day("b"), day("c")]
+        reopened.sync(planId: "p", to: TripStartKeys.slots(planId: "p", days: after, start: nil, end: nil))
+        XCTAssertEqual(reopened.minutes(planId: "p", ymd: nil, day: 0), 420, "b の日の 7:00 が付いていかない")
+        XCTAssertEqual(reopened.minutes(planId: "p", ymd: nil, day: 1), 540, "消えた鍵 #1 の 7:00 が c の日に付いた")
+        // 日付のあるプランで日付がずれた
+        let dated = [day("a"), day("b")]
+        reopened.sync(planId: "q", to: TripStartKeys.slots(planId: "q", days: dated, start: "2026-12-21", end: "2026-12-22"))
+        reopened.set(8 * 60, planId: "q", ymd: "2026-12-22", day: 1)
+        reopened.sync(planId: "q", to: TripStartKeys.slots(planId: "q", days: dated, start: "2026-12-21", end: "2026-12-22"))
+        let again = TripStartStore(defaults: defaults)
+        again.sync(planId: "q", to: TripStartKeys.slots(planId: "q", days: [day("b")], start: "2026-12-21", end: "2026-12-21"))
+        XCTAssertEqual(again.minutes(planId: "q", ymd: "2026-12-21", day: 0), 480, "日付がずれた b の日に 8:00 が付いていかない")
+        // 消す・ログアウトで日程の覚えも消える
+        again.forget(planId: "q")
+        again.forgetAll()
+        XCTAssertNil(defaults.data(forKey: TripStartStore.slotsDefaultsKey), "ログアウトで日程の覚えが残った")
+    }
+
     /// 日を消したとき、消した日の時刻を、その鍵を継いだ空の日へ移さない（札 #683）
     func testRemovedDayStartIsNotCarriedToEmptyDay() {
         // 前: 1日目 {a}（10:00）、2日目は空、3日目 {c}。1日目を消すと、今の1日目は空・2日目 {c}
@@ -412,7 +442,8 @@ final class TripTimesTests: XCTestCase {
         XCTAssertEqual(kept, ["p#0": 600])
         // 頁が変わったときに運ぶ
         let page = try source("Sources/JourneyPhoto/Features/Trips/TripPlanDetailView.swift")
-        XCTAssertTrue(page.contains(".onChange(of: startSlots) { old, now in starts.carry(from: old, to: now) }"))
+        XCTAssertTrue(page.contains(".onChange(of: startSlots) { _, now in starts.sync(planId: planId, to: now) }"))
+        XCTAssertTrue(page.contains("starts.sync(planId: planId, to: startSlots)"), "時刻を選んだときに今の日程を覚えていない（札 #685）")
         XCTAssertTrue(page.contains("starts.minutes(planId: planId, ymd: ymd, day: di)"))
     }
 

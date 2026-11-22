@@ -46,7 +46,7 @@ final class TrunkEntryStore: ObservableObject {
     private var appliedToken = 0
 
     /// 硬貨が変わった知らせ（`trunkCoinsChanged`）を、いまの人のものとして受けた回数。
-    /// 札（`TrunkProfileChip`）が出ていれば、これが進んだときに読み直す
+    /// （マイページの札 `TrunkProfileChip` は撤去済み・2026-11-22 に部品も消した。試験が知らせを受けたかをこれで見る）
     @Published private(set) var coinsChanged = 0
     /// 硬貨が変わった知らせの見張り
     private var coinsObserver: NSObjectProtocol?
@@ -201,27 +201,6 @@ final class TrunkEntryStore: ObservableObject {
             // 取り消されたら、次の機会に読み直す
             if TrunkEntryRule.isCancellation(error) { stale = true }
         }
-    }
-}
-
-/// 札の絵を作り直すかを比べる鍵（2026-10-18 2回目の見直し）。**絵に使うものだけ**:
-/// いま描く型・投稿の数（古び方）・貼ったラベル・付けた部品・名札の名前・倍率。
-/// 硬貨・手持ち・作り直しの回数・受け取りの設定が変わっても、絵は作り直さない
-struct TrunkEntryThumbKey: Equatable {
-    let model: TrunkModel
-    let posts: Int
-    let stuck: [TrunkLabel]
-    let parts: TrunkEquipped
-    let ownerName: String?
-    let scale: Double
-
-    init(_ state: TrunkState, ownerName: String?, scale: Double) {
-        model = state.effectiveModel
-        posts = state.posts ?? 0
-        stuck = state.stuck
-        parts = state.equipped
-        self.ownerName = ownerName
-        self.scale = scale
     }
 }
 

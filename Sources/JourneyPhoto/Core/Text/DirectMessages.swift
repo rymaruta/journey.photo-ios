@@ -265,9 +265,6 @@ struct DMThreadLog: Equatable {
                              storyId: m.storyId ?? storyId, story: DMStoryQuote(id: storyId, state: "ended"))
         }
     }
-
-    /// 相手が話したことがあるか（承認前の残り数を出すかの手がかり。サーバーが `requestRemaining` で正を返す）
-    var peerHasSpoken: Bool { messages.contains { !$0.mine } }
 }
 
 // MARK: - 画面の言葉

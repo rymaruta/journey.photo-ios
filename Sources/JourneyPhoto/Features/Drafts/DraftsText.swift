@@ -133,7 +133,6 @@ enum DraftsText {
     static var continueEditing: String { L("続きから編集", "Continue editing") }
     static var duplicate: String { L("複製", "Duplicate") }
     static var delete: String { L("削除", "Delete") }
-    static var duplicated: String { L("複製しました", "Duplicated") }
     static var duplicateFailed: String {
         L("複製できませんでした（下書きがいっぱいか、端末の空き容量が足りません）",
           "Couldn\u{2019}t duplicate (drafts are full or storage is low)")

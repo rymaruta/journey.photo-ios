@@ -274,10 +274,9 @@ final class PhotoEditHistoryTests: XCTestCase {
     func testResetIsOneUndoableStep() {
         var history = PhotoEditHistory(original: PhotoRecipe(saturation: 0.3))
         history.apply(PhotoRecipe(saturation: 0.3, shadows: 0.2))
-        XCTAssertTrue(history.canReset)
+        XCTAssertFalse(history.current.isIdentity)
         history.reset()
         XCTAssertEqual(history.current, .identity)
-        XCTAssertFalse(history.canReset)
         XCTAssertEqual(history.undoStack.count, 2, "リセットはその場で1手になる")
         XCTAssertEqual(history.committed, .identity)
         history.undo()
