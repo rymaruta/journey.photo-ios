@@ -55,6 +55,8 @@ struct JPEyebrowLine: View {
                     .font(JPFont.caption)
                     .foregroundStyle(WebTheme.faint)
                     .lineLimit(1)
+                    // 大きな字では、折り返す眉の字に幅を取られて「…」につぶれないよう、添え書きの幅を守る（札 #680 の確かめ役の指摘）
+                    .fixedSize(horizontal: Self.wraps(typeSize), vertical: false)
             }
         }
     }

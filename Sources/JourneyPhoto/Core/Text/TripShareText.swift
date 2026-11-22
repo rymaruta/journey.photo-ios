@@ -168,13 +168,19 @@ enum TripShareText {
             if let p = result[d].firstIndex(where: { $0.key == row[i - 1] }) { return p + 1 }
             return min(i, result[d].count)
         }
+        // 「動かした」は、開いたときと自分の今の**両方にある項目だけの並び**で比べる（札 #682 の確かめ役の指摘）。
+        // 日の中の番号で比べると、自分が1か所足しただけで後ろの項目が全部「動かした」になり、仲間が同じ所に足した場所が
+        // 自分の並びの後ろへ押し出された（元 [a, b]・自分 [a, n, b]・仲間 [a, x, b] → [a, n, b, x]）
+        let common = baseSet.intersection(mineSet)
+        let baseCommon = baseKeys.map { $0.filter(common.contains) }
+        let mineCommon = mineKeys.map { $0.filter(common.contains) }
         for (d, row) in mineKeys.enumerated() {
             for (i, k) in row.enumerated() {
                 if baseSet.contains(k) {
-                    // 動かした・ひとことを変えた（開いたときと自分の今で、日か位置かひとことが違う）
-                    guard let was = position(of: k, in: baseKeys) else { continue }
+                    // 動かした・ひとことを変えた（開いたときと自分の今で、日か並びの順かひとことが違う）
+                    guard let was = position(of: k, in: baseCommon), let now = mineCommon[d].firstIndex(of: k) else { continue }
                     let changedNote = baseItems[k] != mineItems[k]
-                    guard was.day != d || was.index != i || changedNote else { continue }
+                    guard was.day != d || was.index != now || changedNote else { continue }
                     guard let current = remove(k) else { continue }   // 仲間が外した: 戻さない
                     ensureDay(d)
                     let item = changedNote ? mineItems[k]! : current
