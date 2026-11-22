@@ -633,7 +633,8 @@ struct AskScreen: View {
             userId: { authStore.userId },
             // 2026-11-22 判断（審査 5.1.2(i)）: サーバーの AI に初めて送る直前に1回だけ同意を聞く（`AIServerConsent`）
             serverConsent: { await AIServerConsent.shared.request() },
-            serverLikely: { AskServerNotice.shows(signedIn: true, deviceAI: false, tier: tier, profilePro: pro, admin: admin) }
+            serverLikely: { AskServerNotice.shows(signedIn: true, deviceAI: false, tier: tier, profilePro: pro, admin: admin) },
+            consentAccepted: { AIServerConsent.acceptedNow() }
         )
     }
 

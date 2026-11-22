@@ -38,6 +38,8 @@ final class AskEngine: ObservableObject {
         /// サーバーへ送りそうか（`AskServerNotice.shows` と同じ見立て）。無料と分かっている人には、回数を取る前に聞かない
         /// （サーバーが Pro だけと答えて送らないのに、同意を聞くことになる）
         var serverLikely: () -> Bool = { true }
+        /// いま同意済みか（聞かずに読む・`AIServerConsent.acceptedNow`）。会話の中で「やめる」のあと設定でオンにした人に送るため
+        var consentAccepted: () -> Bool = { false }
     }
 
     @Published private(set) var thread: [AskExchange] = []
@@ -496,6 +498,8 @@ final class AskEngine: ObservableObject {
         guard usage.serverAllowed else {
             return await tableAnswer(question, library: library, backend: backend, note: AskText.noDeviceAILine, state: .answered)
         }
+        // 2026-11-22 判断（確かめ役の指摘）: ここで「やめる」と答えると、上で取った1回は戻らない（回数を戻す口がサーバーに無い。
+        // 作らない）。ここで聞くのは、無料と見立てたのにサーバーが送ってよいと答えた稀な回だけ（ふつうは回数を取る前に聞く）
         guard await serverConsented(backend) else {
             return await tableAnswer(question, library: library, backend: backend, note: AskText.consentDeclinedLine, state: .answered)
         }
@@ -528,6 +532,11 @@ final class AskEngine: ObservableObject {
 
     /// サーバーの AI に送ってよいか。この会話で「やめる」と答えていたら聞かずに false（同意済みなら聞かずに true）
     private func serverConsented(_ backend: Backend) async -> Bool {
+        // 同意済みを先に見る（2026-11-22 確かめ役の指摘: 「やめる」のあと設定でオンにしても、この会話では送らなかった）
+        if backend.consentAccepted() {
+            consentDeclined = false
+            return true
+        }
         if consentDeclined { return false }
         let ok = await backend.serverConsent()
         if !ok { consentDeclined = true }

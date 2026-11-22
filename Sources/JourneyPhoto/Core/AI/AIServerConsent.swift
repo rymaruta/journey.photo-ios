@@ -26,20 +26,31 @@ final class AIServerConsent: ObservableObject {
     /// UI テストだけ: 同意のシートを出す形で始める（前の回の同意を消す・Debug のときだけ）
     nonisolated static let askKey = "JPAIConsentAsk"
 
-    static let shared = AIServerConsent(presenter: { await AIServerConsentPresenter.present() })
+    static let shared = AIServerConsent(presenter: { await AIServerConsentPresenter.present($0) })
+
+    /// どこから聞くか（シートの頭の文を言い分ける・2026-11-22 確かめ役の指摘）。
+    /// 送る前は「この iPhone では端末の中で AI を使えないため」、設定からは端末の AI のある iPhone でも開けるので一般の言い方
+    enum Context: Equatable { case send, settings }
+
+    /// 答えを待つ上限（2026-11-22 確かめ役の指摘）。シートが出し損ねた、下の画面ごと閉じられたなどで返事が来なくても、
+    /// これを過ぎたら「やめる」と同じにして待ちを解く（AI に頼む、旅行プラン、設定、裏の旅行プランを止めたままにしない）
+    nonisolated static let answerTimeout: TimeInterval = 300
 
     @Published private(set) var acceptedVersion: Int
 
     /// シートを出して答えを待つ口。nil なら出せない（送らない側に倒す）。本物は `AIServerConsentPresenter.present`
-    var presenter: (@MainActor () async -> Bool)?
+    var presenter: (@MainActor (Context) async -> Bool)?
 
     private let defaults: UserDefaults
     private let requiredVersion: Int
     /// 答えを待っているシート（同時に2つの道から頼まれても、シートは1枚だけ）
     private var pending: Task<Bool, Never>?
+    private let timeout: TimeInterval
 
     init(defaults: UserDefaults = .standard, requiredVersion: Int = AIServerConsent.currentVersion,
-         presenter: (@MainActor () async -> Bool)? = nil) {
+         timeout: TimeInterval = AIServerConsent.answerTimeout,
+         presenter: (@MainActor (Context) async -> Bool)? = nil) {
+        self.timeout = timeout
         if Self.uiTestAsks(defaults) { defaults.removeObject(forKey: Self.key) }
         self.defaults = defaults
         self.requiredVersion = requiredVersion
@@ -50,15 +61,31 @@ final class AIServerConsent: ObservableObject {
     var isAccepted: Bool { Self.accepted(defaults: defaults, requiredVersion: requiredVersion) }
 
     /// 送ってよいか（同意済みなら聞かずに true）。まだならシートを出し、「同意して続ける」で true（覚える）、「やめる」で false
-    func request() async -> Bool {
+    ///
+    /// 待ちは必ず解ける: シートの返事か、上限（`timeout`）のどちらか早い方で返す（`AIConsentOnce`）。上限を過ぎてから
+    /// 「同意して続ける」が押されたら、同意は覚える（はっきり押したので。その回は送らない）
+    func request(_ context: Context = .send) async -> Bool {
         if isAccepted { return true }
         if let pending { return await pending.value }
         guard let presenter else { return false }
-        let task = Task { @MainActor in await presenter() }
+        let limit = timeout
+        let task = Task { @MainActor [weak self] () -> Bool in
+            await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                let once = AIConsentOnce(continuation)
+                Task { @MainActor in
+                    let ok = await presenter(context)
+                    if ok { self?.accept() }
+                    once.finish(ok)
+                }
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: UInt64(max(limit, 0) * 1_000_000_000))
+                    once.finish(false)
+                }
+            }
+        }
         pending = task
         let ok = await task.value
         pending = nil
-        if ok { accept() }
         return ok
     }
 
@@ -74,6 +101,9 @@ final class AIServerConsent: ObservableObject {
     }
 
     // MARK: - 送る口の見張り（画面を持たない層から読む）
+
+    /// 同意済みか（画面を持たない層・外の口から読む）
+    nonisolated static func acceptedNow() -> Bool { accepted() }
 
     /// 同意の無いまま送ろうとした（送る口が投げる。呼び手は AI なしで答える）
     struct NotAccepted: Error, Equatable {}
@@ -112,9 +142,17 @@ final class AIServerConsent: ObservableObject {
 enum AIServerConsentText {
     static var eyebrow: String { "AI" }
     static var title: String { L("AI に送信してよいですか？", "Send to AI?") }
-    static var lead: String {
-        L("この iPhone では端末の中で AI を使えないため、回答と旅行プランの作成のために、次の内容をサーバーに送信し、委託先の AI で処理します。",
-          "This iPhone can't run AI on the device, so to create answers and trip plans, the following is sent to our servers and processed by an AI provider acting on our behalf.")
+    static var lead: String { lead(.send) }
+    /// 頭の文。送る前（この iPhone は端末の AI が無い）と設定から（どの iPhone でも開ける）で言い分ける
+    static func lead(_ context: AIServerConsent.Context) -> String {
+        switch context {
+        case .send:
+            return L("この iPhone では端末の中で AI を使えないため、回答と旅行プランの作成のために、次の内容をサーバーに送信し、委託先の AI で処理します。",
+                     "This iPhone can't run AI on the device, so to create answers and trip plans, the following is sent to our servers and processed by an AI provider acting on our behalf.")
+        case .settings:
+            return L("端末の中で AI を使えない iPhone では、回答と旅行プランの作成のために、次の内容をサーバーに送信し、委託先の AI で処理します。端末の中で AI を使える iPhone では送りません。",
+                     "On iPhones that can't run AI on the device, the following is sent to our servers and processed by an AI provider acting on our behalf to create answers and trip plans. iPhones that run AI on the device don't send it.")
+        }
     }
     /// 送るもの（AI に頼む）
     static var askItem: String {
@@ -146,6 +184,18 @@ enum AIServerConsentText {
 
     /// シートと設定の行に出す文すべて（内部の名前が混じっていないかの見張りに使う）
     static var all: [String] {
-        [eyebrow, title, lead, askItem, tripItem, notSentItem, revokeNote, privacyLink, agree, cancel, settingTitle, settingDetail]
+        [eyebrow, title, lead(.send), lead(.settings), askItem, tripItem, notSentItem, revokeNote, privacyLink, agree, cancel, settingTitle, settingDetail]
+    }
+}
+
+/// 答えを1回だけ返す（シートのボタン、払って閉じる、閉じられた、出し損ねた、時間切れのどれが先でも、二度返さない）。
+/// 画面を持たない形にして Linux でも試す（2026-11-22 確かめ役の指摘）。呼ぶのはいつも主の流れ（シートの部品と `request`）
+final class AIConsentOnce: @unchecked Sendable {
+    private var continuation: CheckedContinuation<Bool, Never>?
+    init(_ continuation: CheckedContinuation<Bool, Never>) { self.continuation = continuation }
+    var isDone: Bool { continuation == nil }
+    func finish(_ ok: Bool) {
+        continuation?.resume(returning: ok)
+        continuation = nil
     }
 }

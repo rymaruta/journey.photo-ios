@@ -261,6 +261,8 @@ final class TripAIRunner: ObservableObject {
             // （組み直しは今の日程のまま）。旅行プランは押した回ごとに聞く（「AI で作る」「整えて」ははっきり頼む操作）
             mode = .declined
         } else {
+            // 同意を待つ間に画面を閉じた（取り消した）なら送らない（2026-11-22 確かめ役の指摘）
+            if Task.isCancelled { return nil }
             // 2026-11-22 判断: 打った文をサーバーへ送る（AI に頼むの会話で、送ったことの知らせを残す・`AskAnswer.serverSent`）
             askedServer = true
             do {

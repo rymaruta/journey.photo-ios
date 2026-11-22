@@ -9,6 +9,8 @@ import UIKit
 /// プライバシーポリシーのリンクは黒地の上の外へ出るリンクなので真鍮（出典と規約のリンクと同じ）
 struct AIServerConsentSheet: View {
 
+    /// どこから聞くか（頭の文を言い分ける）
+    var context: AIServerConsent.Context = .send
     let onAgree: () -> Void
     let onCancel: () -> Void
 
@@ -25,7 +27,7 @@ struct AIServerConsentSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("aiConsent.title")
-                    Text(AIServerConsentText.lead)
+                    Text(AIServerConsentText.lead(context))
                         .font(JPFont.body)
                         .foregroundStyle(WebTheme.text2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -99,17 +101,50 @@ struct AIServerConsentSheet: View {
 ///
 /// サーバーへ送る道は、AI に頼むの全画面、旅行プランの頼みのシート、組み直しのシート、裏で作る旅行プラン（`TripAIJobs`）と
 /// 置き場がばらばらで、SwiftUI の `.sheet` を1か所に付けるとシートの上に出せない。UIKit でいちばん上の画面から出す
-/// （`PhotoLibrary.presentLimitedPicker` と同じ探し方）。下へ払って閉じたら「やめる」と同じ（送らない）
+/// （`PhotoLibrary.presentLimitedPicker` と同じ探し方）。
+///
+/// **返事は必ず1回返す**（2026-11-22 確かめ役の指摘: 返らないと `AIServerConsent` の待ちが残り、AI の道が全部止まる）:
+/// - ボタン（同意して続ける、やめる）、下へ払って閉じた（やめると同じ）
+/// - 下の画面ごとプログラムで閉じられた（払った知らせは来ない）→ 消えたときに見る（`ConsentHost.viewDidDisappear`・`gone`）
+/// - 出し損ねた（最前面が別のものを出している途中など）→ 出し終わりと 1 秒後に、出ていなければ「やめる」
+/// - 最前面が出る途中、閉じる途中なら少し待って探し直す（`settleTries` 回まで。落ち着かなければ「やめる」）
+/// - それでも返らなければ `AIServerConsent.answerTimeout` で解ける
 @MainActor
 enum AIServerConsentPresenter {
 
-    static func present() async -> Bool {
+    /// 最前面が出る途中、閉じる途中のとき、探し直す回数と間（合わせて約 1.5 秒）
+    static let settleTries = 15
+    static let settleInterval: UInt64 = 100_000_000
+
+    /// 消えたシートが「もう戻らない」か（閉じられた、下の画面ごと閉じられた）。別の画面が上に出ただけなら false
+    nonisolated static func gone(isBeingDismissed: Bool, hasPresenter: Bool, presenterDismissing: Bool) -> Bool {
+        isBeingDismissed || !hasPresenter || presenterDismissing
+    }
+
+    /// 最前面を探し直すか（出る途中、閉じる途中）
+    nonisolated static func mustSettle(isBeingPresented: Bool, isBeingDismissed: Bool) -> Bool {
+        isBeingPresented || isBeingDismissed
+    }
+
+    static func present(_ context: AIServerConsent.Context) async -> Bool {
         #if canImport(Darwin)
-        guard let top = topController() else { return false }
+        var top = topController()
+        var tries = 0
+        while let t = top, mustSettle(isBeingPresented: t.isBeingPresented, isBeingDismissed: t.isBeingDismissed) {
+            guard tries < settleTries else { return false }
+            tries += 1
+            try? await Task.sleep(nanoseconds: settleInterval)
+            top = topController()
+        }
+        guard let top else { return false }
         return await withCheckedContinuation { continuation in
-            let once = Once(continuation)
-            let host = UIHostingController(rootView: AnyView(EmptyView()))
+            let once = AIConsentOnce(continuation)
+            let delegate = DismissDelegate(once)
+            let host = ConsentHost(rootView: AnyView(EmptyView()))
+            host.keep = delegate
+            host.onGone = { once.finish(false) }
             host.rootView = AnyView(AIServerConsentSheet(
+                context: context,
                 onAgree: { [weak host] in host?.dismiss(animated: true); once.finish(true) },
                 onCancel: { [weak host] in host?.dismiss(animated: true); once.finish(false) }))
             host.view.backgroundColor = UIColor(WebTheme.sheet)
@@ -119,8 +154,16 @@ enum AIServerConsentPresenter {
                 sheet.prefersGrabberVisible = true
                 sheet.preferredCornerRadius = JPRadius.xl
             }
-            host.presentationController?.delegate = once
-            top.present(host, animated: true)
+            host.presentationController?.delegate = delegate
+            top.present(host, animated: true) { [weak host] in
+                if host?.presentingViewController == nil { once.finish(false) }
+            }
+            // 出し損ねると UIKit は出し終わりを呼ばないことがある。1 秒後に出ていなければ「やめる」
+            Task { @MainActor [weak host] in
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !once.isDone else { return }
+                if host == nil || host?.presentingViewController == nil { once.finish(false) }
+            }
         }
         #else
         return false
@@ -128,15 +171,34 @@ enum AIServerConsentPresenter {
     }
 
     #if canImport(Darwin)
-    /// 答えを1回だけ返す（ボタンと払って閉じるの両方が来ても二度返さない）。払って閉じたら「やめる」
-    private final class Once: NSObject, UIAdaptivePresentationControllerDelegate {
-        private var continuation: CheckedContinuation<Bool, Never>?
-        init(_ continuation: CheckedContinuation<Bool, Never>) { self.continuation = continuation }
-        func finish(_ ok: Bool) {
-            continuation?.resume(returning: ok)
-            continuation = nil
+    /// 下へ払って閉じたら「やめる」
+    private final class DismissDelegate: NSObject, UIAdaptivePresentationControllerDelegate {
+        private let once: AIConsentOnce
+        init(_ once: AIConsentOnce) { self.once = once }
+        func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+            once.finish(false)
         }
-        func presentationControllerDidDismiss(_ presentationController: UIPresentationController) { finish(false) }
+    }
+
+    /// 消えたときに、閉じられたかを見る（下の画面ごと閉じられると、払った知らせは来ない）
+    private final class ConsentHost: UIHostingController<AnyView> {
+        var onGone: (() -> Void)?
+        /// 払った知らせの受け手を持っておく（`presentationController.delegate` は弱い参照）
+        var keep: AnyObject?
+        override func viewDidDisappear(_ animated: Bool) {
+            super.viewDidDisappear(animated)
+            let parentDismissing = presentingViewController?.isBeingDismissed ?? false
+            if AIServerConsentPresenter.gone(isBeingDismissed: isBeingDismissed, hasPresenter: presentingViewController != nil,
+                                             presenterDismissing: parentDismissing) {
+                onGone?()
+                return
+            }
+            // 閉じる動きの直後は、まだ下の画面を指していることがある。次の回で外れていれば閉じられた
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if self.presentingViewController == nil { self.onGone?() }
+            }
+        }
     }
 
     private static func topController() -> UIViewController? {

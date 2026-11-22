@@ -21,7 +21,7 @@ final class AIServerConsentTests: XCTestCase {
 
     func testAsksOnceAndRemembersAgreement() async {
         let d = defaults(), shown = Count()
-        let consent = AIServerConsent(defaults: d, presenter: { shown.n += 1; return true })
+        let consent = AIServerConsent(defaults: d, presenter: { _ in shown.n += 1; return true })
         XCTAssertFalse(consent.isAccepted)
         let first = await consent.request()
         XCTAssertTrue(first)
@@ -30,13 +30,13 @@ final class AIServerConsentTests: XCTestCase {
         XCTAssertTrue(second)
         XCTAssertEqual(shown.n, 1, "同意したあとにまた聞いた")
         // 端末に覚えている（アプリを開き直しても聞かない）
-        XCTAssertTrue(AIServerConsent(defaults: d, presenter: { shown.n += 1; return false }).isAccepted)
+        XCTAssertTrue(AIServerConsent(defaults: d, presenter: { _ in shown.n += 1; return false }).isAccepted)
         XCTAssertTrue(AIServerConsent.accepted(defaults: d))
     }
 
     func testCancelDoesNotRememberAndAsksAgainNextTime() async {
         let d = defaults(), shown = Count()
-        let consent = AIServerConsent(defaults: d, presenter: { shown.n += 1; return false })
+        let consent = AIServerConsent(defaults: d, presenter: { _ in shown.n += 1; return false })
         let first = await consent.request()
         XCTAssertFalse(first)
         XCTAssertFalse(consent.isAccepted)
@@ -47,7 +47,7 @@ final class AIServerConsentTests: XCTestCase {
 
     func testRevokeAsksAgainBeforeNextSend() async {
         let d = defaults(), shown = Count()
-        let consent = AIServerConsent(defaults: d, presenter: { shown.n += 1; return true })
+        let consent = AIServerConsent(defaults: d, presenter: { _ in shown.n += 1; return true })
         _ = await consent.request()
         consent.revoke()
         XCTAssertFalse(consent.isAccepted)
@@ -71,7 +71,7 @@ final class AIServerConsentTests: XCTestCase {
 
     func testTwoPathsAtOnceShowOneSheet() async {
         let shown = Count()
-        let consent = AIServerConsent(defaults: defaults(), presenter: {
+        let consent = AIServerConsent(defaults: defaults(), presenter: { _ in
             shown.n += 1
             try? await Task.sleep(nanoseconds: 50_000_000)
             return true
@@ -146,7 +146,7 @@ final class AIServerConsentTests: XCTestCase {
     }
 
     private func backend(deviceAI: Bool, usage: AskUsage, consent: Bool, likely: Bool = true,
-                         calls: Calls) throws -> AskEngine.Backend {
+                         accepted: @escaping () -> Bool = { false }, calls: Calls) throws -> AskEngine.Backend {
         let rows = try AskSamples.ledger()
         return AskEngine.Backend(
             signedIn: { true }, offline: { false }, deviceAI: { deviceAI },
@@ -159,7 +159,7 @@ final class AIServerConsentTests: XCTestCase {
             },
             details: { $0 }, userId: { "u1" },
             serverConsent: { calls.consents += 1; return consent },
-            serverLikely: { likely })
+            serverLikely: { likely }, consentAccepted: accepted)
     }
 
     private func engine() -> AskEngine {
@@ -257,6 +257,111 @@ final class AIServerConsentTests: XCTestCase {
         _ = await runner.revise(request: "ゆっくり", current: [Array(rows.prefix(2))], candidates: [], index: rows,
                                 offline: false, service: TripAIService(api: api), title: "香川", countAfter: true) { _, _ in 10 }
         XCTAssertEqual(asked.n, 0, "端末の AI の道で同意を聞いた")
+    }
+
+    // MARK: - 待ちが必ず解ける（2026-11-22 確かめ役の指摘）
+
+    /// シートが返事をしない（出し損ねた、下の画面ごと閉じられた）ままでも、時間切れで「やめる」になり、待ちが残らない
+    func testTimeoutReleasesTheWait() async {
+        let shown = Count()
+        let consent = AIServerConsent(defaults: defaults(), timeout: 0.05, presenter: { _ in
+            shown.n += 1
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            return false
+        })
+        let started = Date()
+        let first = await consent.request()
+        XCTAssertFalse(first)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 3, "返事の来ないシートを待ち続けた")
+        // 待ちが残っていない: 次の頼みはシートを出し直す（前の待ちに相乗りして止まらない）
+        let second = await consent.request()
+        XCTAssertFalse(second)
+        XCTAssertEqual(shown.n, 2)
+    }
+
+    /// 時間切れのあとで「同意して続ける」が押されたら、同意は覚える（その回は送らない）
+    func testLateAgreeIsRemembered() async throws {
+        let d = defaults()
+        let consent = AIServerConsent(defaults: d, timeout: 0.05, presenter: { _ in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            return true
+        })
+        let ok = await consent.request()
+        XCTAssertFalse(ok)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertTrue(consent.isAccepted)
+    }
+
+    /// 答えは1回だけ返す（ボタン、払って閉じる、閉じられた、時間切れが重なっても）
+    func testOnceAnswersOnlyOnce() async {
+        var keep: AIConsentOnce?
+        let got = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+            let once = AIConsentOnce(c)
+            keep = once
+            XCTAssertFalse(once.isDone)
+            once.finish(true)
+            once.finish(false)
+        }
+        XCTAssertTrue(got)
+        XCTAssertEqual(keep?.isDone, true)
+    }
+
+    /// シートが消えたとき「もう戻らない」と見る条件。上に別の画面が出ただけなら待ち続ける
+    func testGoneRules() async {
+        XCTAssertTrue(AIServerConsentPresenter.gone(isBeingDismissed: true, hasPresenter: true, presenterDismissing: false))
+        XCTAssertTrue(AIServerConsentPresenter.gone(isBeingDismissed: false, hasPresenter: false, presenterDismissing: false))
+        XCTAssertTrue(AIServerConsentPresenter.gone(isBeingDismissed: false, hasPresenter: true, presenterDismissing: true),
+                      "下の画面ごと閉じられたのに待ち続ける")
+        XCTAssertFalse(AIServerConsentPresenter.gone(isBeingDismissed: false, hasPresenter: true, presenterDismissing: false))
+        XCTAssertTrue(AIServerConsentPresenter.mustSettle(isBeingPresented: true, isBeingDismissed: false))
+        XCTAssertTrue(AIServerConsentPresenter.mustSettle(isBeingPresented: false, isBeingDismissed: true))
+        XCTAssertFalse(AIServerConsentPresenter.mustSettle(isBeingPresented: false, isBeingDismissed: false))
+    }
+
+    /// 設定から開くシートは「この iPhone では」と言わない（端末の AI のある iPhone でも開ける）
+    func testSettingsLeadDoesNotClaimThisIPhone() async {
+        XCTAssertTrue(AIServerConsentText.lead(.send).hasPrefix("この iPhone では"))
+        XCTAssertFalse(AIServerConsentText.lead(.settings).contains("この iPhone"))
+        XCTAssertTrue(AIServerConsentText.lead(.settings).contains("サーバーに送信し、委託先の AI で処理します"))
+    }
+
+    /// 会話の中で「やめる」のあと設定でオンにしたら、同じ会話でも送る
+    func testAgreeInSettingsAfterCancelSendsInSameConversation() async throws {
+        let calls = Calls(), e = engine()
+        var accepted = false
+        let b = try backend(deviceAI: false, usage: pro, consent: false, accepted: { accepted }, calls: calls)
+        await e.start("香川で夕日がきれいな所を教えて", backend: b)
+        XCTAssertEqual(calls.serverAsks, 0)
+        accepted = true
+        await e.followUp("おすすめの観光スポット教えて", backend: b)
+        XCTAssertEqual(calls.serverAsks, 1, "設定で同意したのに、この会話では送らなかった")
+    }
+
+    /// 同意を待つ間に画面を閉じた（取り消した）なら送らない
+    func testTripCancelledWhileAskingSendsNothing() async throws {
+        let std = UserDefaults.standard
+        std.set(true, forKey: TripAIFixture.key)
+        std.set(0.0, forKey: TripAIFixture.delayKey)
+        defer {
+            std.removeObject(forKey: TripAIFixture.key)
+            std.removeObject(forKey: TripAIFixture.delayKey)
+        }
+        let rows = try AskSamples.ledger()
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!, tokenProvider: NoToken())
+        final class Holder { var task: Task<TripAIResult?, Never>? }
+        let holder = Holder()
+        let runner = TripAIRunner(onDevice: false, consent: {
+            holder.task?.cancel()
+            return true
+        })
+        let task = Task { @MainActor in
+            await runner.build(TripAIAsk.reading("香川で日帰り", spots: rows), index: rows, wishlist: [], offline: false,
+                               service: TripAIService(api: api)) { _, _ in 10 }
+        }
+        holder.task = task
+        let built = await task.value
+        XCTAssertNil(built)
+        XCTAssertFalse(runner.askedServer, "取り消したのに送った")
     }
 
     // MARK: - 見張り: 送る道を足したら落ちる

@@ -19,7 +19,7 @@ struct AIServerConsentSettingRow: View {
     private var binding: Binding<Bool> {
         Binding(get: { consent.isAccepted }, set: { on in
             if on {
-                Task { _ = await consent.request() }
+                Task { _ = await consent.request(.settings) }
             } else {
                 consent.revoke()
             }
