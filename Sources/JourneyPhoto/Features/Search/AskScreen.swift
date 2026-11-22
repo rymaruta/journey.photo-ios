@@ -285,6 +285,13 @@ struct AskScreen: View {
             Text(AskText.disclaimer)
                 .font(JPFont.caption)
                 .foregroundStyle(WebTheme.text3)
+            // 2026-11-22 判断: サーバーの AI を使う人にだけ、送ることを公式の言い方で1か所だけ知らせる（答えごとの1行はやめた）
+            if AskServerNotice.shows(deviceAI: deviceAIAvailable, usage: engine.usage, profilePro: profilePro, thread: engine.thread) {
+                Text(AskText.serverNotice)
+                    .font(JPFont.caption)
+                    .foregroundStyle(WebTheme.text3)
+                    .accessibilityIdentifier("ask.serverNotice")
+            }
         }
         .padding(.horizontal, JPSpace.gutter)
         .padding(.top, 10)
@@ -587,6 +594,9 @@ struct AskScreen: View {
     private var placeChoices: [(label: String, prefecture: String)] {
         AskPlanFlow.placeChoices(engine: engine)
     }
+
+    /// この iPhone で端末の AI が使えるか（見本の口では見本の値）
+    private var deviceAIAvailable: Bool { AskFixture.isOn ? AskFixture.deviceAI : OnDeviceAI.isAvailable }
 
     /// 答えの外の口（台帳、公開の写真、行きたい場所、旅行プラン、現在地、回数、AI）。2026-11-21 に探すの画面から移した
     private var backend: AskEngine.Backend {

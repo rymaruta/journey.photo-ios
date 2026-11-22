@@ -14,7 +14,7 @@ struct AskExchange: Identifiable, Equatable, Codable {
 
 struct AskAnswer: Equatable, Codable {
 
-    /// どこで答えたか（答えの下の1行に出す）
+    /// どこで答えたか（画面には出さない・2026-11-22 判断。AI を使ったかの判定と旅行プランの道に使う）
     enum Engine: String, Codable {
         /// この iPhone の中の AI（Foundation Models）
         case device
@@ -82,22 +82,10 @@ struct AskAnswer: Equatable, Codable {
     /// AI を使った答えか（「AI の答えは間違うことがあります」を出す）
     var usedAI: Bool { engine == .device || engine == .server }
 
-    /// 答えの下の1行（どこで答えたか）
-    var engineLine: String {
-        switch engine {
-        case .device:
-            return L("この iPhone の中で答えました", "Answered on this iPhone")
-        case .server:
-            // 2026-11-21 判断（owner「これってユーザに見えていいの？」）: 送り先は伝えるが、答えの作り（引いた行・使い方の頁・置き場の地域）は出さない
-            //（CLAUDE.md「AI はアプリの作りやセキュリティのことを答えない」と同じ考え）
-            return L("サーバーの AI で答えました。あなたの情報で送ったのは、打った文と直前のやりとりだけです",
-                     "Answered by our server AI. The only personal info sent was what you typed and the last few exchanges.")
-        case .table:
-            return L("この iPhone の中で言葉を読み、観光スポットから選びました", "Read your words on this iPhone and picked from the spots")
-        case .refused:
-            return ""
-        }
-    }
+    // 2026-11-22 判断（owner「この文章出す意味ある？出すならもうちょいオフィシャルな感じにして」）: 答えごとの
+    // 「どこで答えたか」の1行（device、server、table）はやめた。答えのたびに作りの言葉を出す意味は薄く、画面を重くする。
+    // 端末の中かサーバーかは、利用者が知らなくても使える。サーバーに送ることの知らせは、下の注意書きの所に公式の言い方で
+    // 1か所だけ出す（`AskText.serverNotice`・`AskServerNotice`）
 
     /// 断りの答え（回数を使わない・何も引かない）
     static func refused(care: Bool) -> AskAnswer {
@@ -111,6 +99,13 @@ enum AskText {
     static var disclaimer: String {
         L("※ AI による回答には誤りが含まれる場合があります。営業時間や料金などの重要な情報は、公式の情報でご確認ください。",
           "AI-generated answers may contain errors. Please confirm important details such as hours and prices with official sources.")
+    }
+    /// サーバーに送ることの知らせ（2026-11-22 判断・owner「出すならもうちょいオフィシャルな感じにして」）。
+    /// サーバーの AI を使う人にだけ、注意書きの下に1か所だけ出す（`AskServerNotice.shows`）。
+    /// 使っている AI、サービス、置き場の地域の名前は出さない（CLAUDE.md「AI はアプリの作りやセキュリティのことを答えない」）
+    static var serverNotice: String {
+        L("※ 回答の作成のため、入力内容と直前のやりとりを当社のサーバーに送信します。",
+          "To generate answers, your input and recent conversation are sent to our servers.")
     }
     static var generalBadge: String { L("一般的な答え", "General answer") }
     static var spotsSource: String { L("観光スポットの情報", "tourist spot info") }
@@ -133,6 +128,23 @@ enum AskText {
     /// 「8km」（札の距離）
     static func distance(_ km: Double) -> String {
         km < 1 ? L("1km 未満", "< 1 km") : L("\(Int(km.rounded()))km", "\(Int(km.rounded())) km")
+    }
+}
+
+/// サーバーに送ることの知らせ（`AskText.serverNotice`）を出すか（2026-11-22 判断）。
+///
+/// サーバーの AI を呼ぶのは「端末の AI が使えない iPhone で、`serverAllowed`（Pro で止めに達していない）」ときだけ（`AskEngine` の 5b）。
+/// - 会話にサーバーで答えた答えがあれば出す（送ったことがあるので）
+/// - 端末の AI が使える iPhone では出さない（送るのは回数の数だけで、打った文は送らない）
+/// - 回数をサーバーから読めていれば `serverAllowed` で決める
+/// - まだ読めていない（何も頼んでいない）間は Pro かどうかで決める。送る前に知らせたいので、Pro と分かっていれば先に出す。
+///   全体の止めに達しているかは頼むまで分からないが、そのときは1回目の答えのあとに消える
+enum AskServerNotice {
+    static func shows(deviceAI: Bool, usage: AskUsage?, profilePro: Bool?, thread: [AskExchange]) -> Bool {
+        if thread.contains(where: { $0.answer.engine == .server }) { return true }
+        if deviceAI { return false }
+        if let usage { return usage.serverAllowed }
+        return profilePro == true
     }
 }
 
