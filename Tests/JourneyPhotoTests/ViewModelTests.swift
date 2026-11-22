@@ -919,6 +919,22 @@ final class ViewModelTests: XCTestCase {
                        "ブロックした相手の写真が検索結果に残っている")
     }
 
+    /// 人の検索: 別の語に打ち替えたら、返事を待つ間も前の語の人を出さない（札 #695）。同じ語の読み直しでは残す
+    func testPeopleSearchClearsPreviousQueryPeopleWhileWaiting() async throws {
+        let kyoto = try JSONDecoder.api.decode(UserProfile.self, from: Data(#"{"userId":"u-kyoto","displayName":"kyoto"}"#.utf8))
+        let model = SearchViewModel()
+        await model.search("kyoto", debounce: .zero) { _ in [kyoto] }
+        for _ in 0..<50 where model.users.isEmpty { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(model.users.map(\.userId), ["u-kyoto"], "前提")
+        // 同じ語の読み直し（通報・ブロックの後）: 返事を待つ間も今の一覧を残す
+        await model.search("kyoto", debounce: .seconds(30)) { _ in [] }
+        XCTAssertEqual(model.users.map(\.userId), ["u-kyoto"], "同じ語の読み直しで一覧が消えた")
+        // 別の語: 返事を待つ間（30秒の待ち）に前の語の人を出さない
+        await model.search("hakone", debounce: .seconds(30)) { _ in [] }
+        XCTAssertTrue(model.users.isEmpty, "別の語に打ち替えたのに、前の語の人が出たまま")
+        XCTAssertTrue(model.isSearching)
+    }
+
     /// 🔴 **戻った瞬間に手元を写しで絞る**（通信なし）。読み直し待ちのフラッシュを止める
     func testSearchApplyHiddenDropsBlockedWithoutReload() async {
         let service = gallery("""

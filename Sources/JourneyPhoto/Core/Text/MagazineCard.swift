@@ -59,8 +59,6 @@ enum MagazineCard {
         static let minimumSize: CGFloat = 60
         static let kern: CGFloat = 0.06
         static let lineHeight: CGFloat = 1.25
-        /// 2 行まで（模型に無い・長い題が入るように・2026-11-18 判断）
-        static let maximumLines = 2
         /// 帯の字の下から題までの間（全面・余白の形）
         static let gapFull: CGFloat = 48
         static let gapMargin: CGFloat = 44

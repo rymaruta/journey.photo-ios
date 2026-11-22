@@ -11,9 +11,6 @@ import Foundation
 /// **「12,421件」のような他所から持ってきた数は出さない。**
 enum DiscoverySections {
 
-    /// 1つの塊に出す枚数
-    static let perSection = 6
-
     struct Spot: Identifiable, Equatable {
         /// 撮影地の文字列（集約ページの鍵にもなる）
         let id: String

@@ -24,8 +24,9 @@ final class StoryTextsTests: XCTestCase {
         XCTAssertEqual(label.place, .init(x: 0.2, y: 0.3, size: 0.1, rotate: -15))
         guard case .stamp(let stamp) = s.texts[1] else { return XCTFail("スタンプが読めていない") }
         XCTAssertEqual(stamp.glyph, "❤️")
-        XCTAssertEqual(s.voteItem?.question, "この景色、好き？")
-        XCTAssertEqual(s.voteItem?.options, ["はい", "いいえ"])
+        guard case .vote(let vote) = s.texts[2] else { return XCTFail("投票が読めていない") }
+        XCTAssertEqual(vote.question, "この景色、好き？")
+        XCTAssertEqual(vote.options, ["はい", "いいえ"])
         XCTAssertEqual(s.vote?.myVote, "a")
         XCTAssertEqual(s.vote?.counts, .init(a: 3, b: 1))
     }
@@ -38,7 +39,6 @@ final class StoryTextsTests: XCTestCase {
         guard case .text(let broken) = s.texts[1] else { return XCTFail() }
         XCTAssertEqual(broken.place.x, 0.5, "読めない位置は真ん中")
         XCTAssertNil(s.vote)
-        XCTAssertNil(s.voteItem)
         // 形がまるごと違っても投稿は読める
         XCTAssertEqual(try story(#","texts":"壊れ""#).texts, [])
         XCTAssertEqual(try story("").texts, [])
@@ -87,7 +87,8 @@ final class StoryTextsTests: XCTestCase {
     func testOnlyOneVote() throws {
         let s = try story(#","texts":[{"kind":"vote","question":"1","options":["a","b"]},{"kind":"vote","question":"2","options":["c","d"]}]"#)
         XCTAssertEqual(s.texts.count, 1)
-        XCTAssertEqual(s.voteItem?.question, "1")
+        guard case .vote(let vote) = s.texts.first else { return XCTFail("投票が読めていない") }
+        XCTAssertEqual(vote.question, "1")
     }
 
     /// 割合は合わせて100。数が見えない・0票なら出さない

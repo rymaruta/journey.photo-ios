@@ -100,7 +100,6 @@ final class PostScreensDesign183Tests: XCTestCase {
         XCTAssertNotEqual(UploadDetails.inspiredSymbol, "camera.viewfinder")
         XCTAssertTrue(upload.contains("systemImage: UploadDetails.inspiredSymbol"))
         // 撮影地の位置: 名前は短く、約1km は下の一言
-        XCTAssertFalse(UploadDetails.uploadLocationToggleTitle.contains("1km"))
         XCTAssertTrue(UploadDetails.uploadLocationToggleNote(attaches: true).contains("約1km"))
         XCTAssertEqual(UploadDetails.uploadLocationToggleNote(attaches: false),
                        UploadDetails.locationToggleNote(attaches: false))

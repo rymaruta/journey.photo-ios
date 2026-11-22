@@ -82,8 +82,6 @@ final class AskEngine: ObservableObject {
     }
 
     var isActive: Bool { !thread.isEmpty || pending != nil }
-    /// 最初の問い（探すの欄に入っている文）
-    var firstQuestion: String? { thread.first?.question ?? pending }
 
     /// 会話を閉じる。**残りの回数と札の中身も手放す**（人が替わったときに前の人の物を残さない）
     func reset() {

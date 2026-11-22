@@ -58,7 +58,7 @@ actor OfficialSpotService {
 
     /// - Parameters:
     ///   - splitFeed: 分けた置き場（`url` の隣の `spot-feed/index.json`・本番は
-    ///     `AppConfig.publicSpotFeedIndexURL` と同じ）を先に読むか。false なら古い置き場だけ（試験用）
+    ///     `app/data/spot-feed/index.json`）を先に読むか。false なら古い置き場だけ（試験用）
     init(url: URL = AppConfig.publicSpotsURL,
          session: URLSession? = nil,
          snapshot: SpotSnapshotStore = SpotSnapshotStore(),

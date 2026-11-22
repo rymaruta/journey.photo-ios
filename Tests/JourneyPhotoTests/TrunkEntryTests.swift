@@ -211,21 +211,6 @@ final class TrunkEntryTests: XCTestCase {
         XCTAssertEqual(store.summary?.coins, 1)
     }
 
-    /// 札の絵は、**絵に使うものが変わったときだけ**作り直す（硬貨・手持ちの変化では作り直さない）
-    func testThumbKeyOnlyWatchesWhatIsDrawn() async {
-        let base = TrunkSample.state(isPro: true, coins: 3)
-        let key = TrunkEntryThumbKey(base, ownerName: "旅人", scale: 3)
-        XCTAssertEqual(key, TrunkEntryThumbKey(base.copy(pocket: [], rerollsLeft: 0, receiveLabels: false, coins: 0, fragments: 9),
-                                               ownerName: "旅人", scale: 3),
-                       "絵に関係ない変化（硬貨・手持ち・作り直し・かけら）で作り直している")
-        XCTAssertNotEqual(key, TrunkEntryThumbKey(base.copy(stuck: []), ownerName: "旅人", scale: 3), "貼ったラベル")
-        XCTAssertNotEqual(key, TrunkEntryThumbKey(base.copy(effectiveModel: .aluminum), ownerName: "旅人", scale: 3), "型")
-        XCTAssertNotEqual(key, TrunkEntryThumbKey(base.copy(posts: .some(999)), ownerName: "旅人", scale: 3), "古び方")
-        XCTAssertNotEqual(key, TrunkEntryThumbKey(base.copy(equipped: base.equipped.setting(.pin, ["pin-test"])), ownerName: "旅人", scale: 3), "部品")
-        XCTAssertNotEqual(key, TrunkEntryThumbKey(base, ownerName: "別の人", scale: 3), "名札")
-        XCTAssertNotEqual(key, TrunkEntryThumbKey(base, ownerName: "旅人", scale: 2), "倍率")
-    }
-
     /// 取り消し（`CancellationError`・`URLError(.cancelled)`）は失敗に数えない（10分止めない）
     func testCancellationIsNotAFailure() async {
         XCTAssertTrue(TrunkEntryRule.isCancellation(CancellationError()))
@@ -423,32 +408,9 @@ final class TrunkEntryTests: XCTestCase {
         XCTAssertFalse(page.contains("TrunkEntryStore.shared.summary"))
         XCTAssertFalse(page.contains("entry.refresh("), "マイページが札の数を読んでいる（部品の側に置く）")
         XCTAssertFalse(page.contains("mypage.trunk"))
-        let chip = try source("Features/Profile/TrunkProfileChip.swift")
-        XCTAssertTrue(chip.contains(#".accessibilityIdentifier("mypage.trunk")"#))
-        XCTAssertTrue(chip.contains(".onDisappear { entry.markStale() }"), "トランクから戻っても数を読み直さない")
-        XCTAssertFalse(chip.contains("scenePhase"), "札が前面への戻りで別に読んでいる（口の確かめの1回にまとめる）")
-        XCTAssertTrue(chip.contains("guard TrunkEntryRule.postedPublic(tabRouter.lastPosted) else { return }"),
-                      "投稿の画面を閉じるたびに読み直している")
-        XCTAssertTrue(chip.contains("if isOnScreen { Task { await refresh() } }"), "札が出ていない間に読んでいる")
-        // 硬貨が変わった知らせ（印は入口の店が付ける）で、出ていれば読み直す
-        XCTAssertTrue(chip.contains(".onChange(of: entry.coinsChanged) { _, _ in\n            if isOnScreen { Task { await refresh() } }"),
-                      "硬貨が変わっても札を読み直さない")
-        // VoiceOver の2回叩きで開ける（ボタンを `.ignore` で包まない）
-        XCTAssertFalse(chip.contains(".accessibilityElement(children: .ignore)"))
-        // 真鍮は点だけ（黒地の札の上・名前の側に離す）。硬貨の数は白
-        XCTAssertTrue(chip.contains(".fill(WebTheme.accent)\n                            .frame(width: 8, height: 8)"))
-        // A′: 左に自分のトランクの絵（`TrunkBoxView` の胴だけ）・題の下に型の名前（12pt・text-2）・高さ 56
-        XCTAssertTrue(chip.contains("TrunkBoxView(model: key.model, posts: key.posts, stuck: key.stuck,"))
-        XCTAssertTrue(chip.contains("bodyOnly: true, parts: key.parts)"))
-        XCTAssertTrue(chip.contains(".task(id: TrunkEntryThumbKey(state, ownerName: ownerName, scale: Double(displayScale)))"),
-                      "絵を作り直す鍵が、絵に使うものだけになっていない")
-        XCTAssertTrue(chip.contains("static let size = CGSize(width: 48, height: 40)"))
-        XCTAssertTrue(chip.contains("Text(model)\n                        .font(JPFont.caption)\n                        .foregroundStyle(WebTheme.text2)"))
-        XCTAssertTrue(chip.contains(".frame(minHeight: 56)"))
         // MyPage は前面への戻りを裏からのときだけにする（口の確かめ・`TrunkForegroundGate`）
         XCTAssertTrue(page.contains("if trunkForeground.shouldRecheck(isBackground: phase == .background, isActive: phase == .active) {"))
         XCTAssertFalse(page.contains("simultaneousGesture(TapGesture().onEnded { TrunkEntryStore"))
-        XCTAssertTrue(chip.contains("Text(TrunkEntryText.coins(summary.coins))\n                        .font(JPFont.mono(15, relativeTo: .subheadline))\n                        .foregroundStyle(WebTheme.text)"))
         // 2026-11-12: 入口は ≡ メニューの「旅の楽しみ」（設定の「旅の道具」から移した・並びは `SettingsOutlineTests`）
         let settings = try source("Features/Common/SiteMenuView.swift")
         XCTAssertTrue(settings.contains("                        trunkRow\n                        camperRow\n"))

@@ -424,6 +424,13 @@ final class PostUploadCenterTests: XCTestCase {
         let root = try source("App/RootView.swift")
         XCTAssertTrue(root.contains(".onChange(of: postUploads.editRequest) { _, id in"), "「直す」をアプリの根で受けていない")
         XCTAssertTrue(root.contains("if let model = postUploads.takeForEditing(id) { editingPost = EditingPost(model: model) }"))
+        // 🔴 ほかの画面が出ている間は係から外さずに待つ（札 #692: 外してからシートを出せず、投稿が消えた）
+        let request = try XCTUnwrap(root.range(of: ".onChange(of: postUploads.editRequest)"))
+        let body = String(root[request.lowerBound...].prefix(1400))
+        let wait = try XCTUnwrap(body.range(of: "while !Task.isCancelled && (ModalProbe.isPresenting() || ModalProbe.isTransitioning())"),
+                                 "「直す」でほかの画面が閉じるのを待たない")
+        let take = try XCTUnwrap(body.range(of: "postUploads.takeForEditing(id)"))
+        XCTAssertLessThan(wait.lowerBound, take.lowerBound, "ほかの画面が閉じる前に係から外している")
         XCTAssertTrue(root.contains("UploadView(resuming: editing.model, onSaved: { TabRouter.shared.notePosted($0) })"))
         // 知らせの口と人の入れ替わり（アプリの起動時）
         let app = try source("App/JourneyPhotoApp.swift")

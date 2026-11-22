@@ -37,6 +37,10 @@ final class DMInboxStore: ObservableObject {
     private var groupGeneration = 0
     /// まだ一覧を読めていない間に手元で置いた変化（既読・削除・承認）。**読めた答えの上に重ねる**
     private var pendingChanges: [(DMInbox) -> DMInbox] = []
+    /// グループの一覧の読み直しの途中に手元で変えた分（読めた答えに重ねる・札 #694）
+    private var pendingGroupChanges: [(GroupInbox) -> GroupInbox] = []
+    /// グループの一覧を読み直している途中か
+    private var groupsRefreshing = false
 
     init() {}
 
@@ -54,14 +58,24 @@ final class DMInboxStore: ObservableObject {
     func refreshGroups(service: GroupService, owner: String?) async {
         use(owner: owner)
         guard owner != nil else { return }
+        // 2026-11-22 判断（札 #694）: 始めるときに世代を進める（1対1の `refresh` と同じ）。前は進めず、2本重なると
+        // あとから返った古い答え（作った直後のグループが無い）が新しい答えを上書きした
+        groupGeneration += 1
         let mine = groupGeneration
+        groupsRefreshing = true
         do {
             let fetched = try await service.inbox()
             guard mine == groupGeneration, owner == self.owner else { return }
-            groups = fetched
+            // 読み直しの途中に置いた変化（読んだ・抜けた・招待を断った）を、読めた答えに重ねる
+            groups = pendingGroupChanges.reduce(fetched) { $1($0) }
+            pendingGroupChanges = []
+            groupsRefreshing = false
             groupsAvailable = true
         } catch {
             // 口が無い（404・403）・圏外・混み合い: 入口は出さないまま（一度読めていれば残す）
+            guard mine == groupGeneration, owner == self.owner else { return }
+            pendingGroupChanges = []
+            groupsRefreshing = false
         }
     }
 
@@ -83,17 +97,20 @@ final class DMInboxStore: ObservableObject {
         mutualAt = now
     }
 
-    /// 手元で変えたグループの一覧（読んだ・抜けた・参加した）。進んでいる読み込みの答えは捨てる
+    /// 手元で変えたグループの一覧（読んだ・抜けた・参加した）
     ///
     /// 2026-11-21 判断（グループの DM のバグ調べ）: **何も変わらなかったときは、進んでいる読み込みを捨てない。**
     /// 開いている会話は 15 秒ごとの読み直しのたびに「読んだ」を置く（`GroupConversationView.load`）。既に読んだグループ、
     /// まだ一覧に無いグループ（作った直後・通知から開いた直後）でも世代を進めていたので、その間に走っていた一覧の読み直し
     /// （作った直後の `refreshGroups` など）が捨てられ、作ったグループが受信箱に出なかった
-    func applyGroups(_ change: (GroupInbox) -> GroupInbox) {
+    ///
+    /// 2026-11-22 判断（札 #694 の確かめ役）: 読み直しの途中なら、変化を覚えておき読めた答えに重ねる（1対1の `apply` と同じ）。
+    /// 前は世代を進めて答えを捨て、新しいグループの行が次の読み直しまで出なかった
+    func applyGroups(_ change: @escaping (GroupInbox) -> GroupInbox) {
         let next = change(groups)
         guard next != groups else { return }
         groups = next
-        groupGeneration += 1
+        if groupsRefreshing { pendingGroupChanges.append(change) }
     }
 
     /// 人が替わった。前の人の控えを捨てる
@@ -108,6 +125,8 @@ final class DMInboxStore: ObservableObject {
         groups = .empty
         groupsAvailable = false
         groupGeneration += 1
+        pendingGroupChanges = []
+        groupsRefreshing = false
         mutual = .unknownAll
         mutualAt = nil
     }
@@ -130,6 +149,8 @@ final class DMInboxStore: ObservableObject {
         } catch {
             guard mine == generation, owner == self.owner else { return }
             isRefreshing = false
+            // 読めている一覧には変化をもう映してあるので、重ねる控えは捨てる（読めていなければ次の答えに重ねる）
+            if phase == .loaded { pendingChanges = [] }
             if phase != .loaded {
                 phase = .failed((error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed)
             }
@@ -138,17 +159,16 @@ final class DMInboxStore: ObservableObject {
 
     /// 手元で変えた姿を置く（既読・削除・承認の直後。サーバーの答えを待たずに点・行を合わせる）。
     ///
-    /// - 読めている間: **進んでいる読み込みの答えは捨てる**（変える前の一覧で上書きしない）
-    /// - **まだ読めていない間は世代を進めない**（2026-11-10 レビュー指摘3・run 939 で再現: 最初の読み込みの途中に
-    ///   既読を置くと、読めた一覧を捨てて空の一覧を「読めた」にしていた）。変化は覚えておき、読めた答えに重ねる
+    /// - **読み込みの途中なら、変化を覚えておき、読めた答えに重ねる**（変える前の一覧で上書きしない・答えも捨てない）
+    /// - 2026-11-10 レビュー指摘3（run 939）: 最初の読み込みの途中に既読を置くと、読めた一覧を捨てて空の一覧を「読めた」にしていた
+    /// - 2026-11-22 判断（札 #694）: 読めたあとの読み直しの途中も同じにした。前は世代を進めて答えを捨てていた。1対1の会話は開くたび・
+    ///   新しい1通が届くたびに既読を置く（何も変わらなくても）ので、通知から開いた会話の行やほかの新しい行が、受信箱を閉じるまで出なかった
     func apply(_ change: @escaping (DMInbox) -> DMInbox) {
         inbox = change(inbox)
-        guard phase == .loaded else {
+        guard phase == .loaded, !isRefreshing else {
             pendingChanges.append(change)
             return
         }
-        generation += 1
-        isRefreshing = false
     }
 
     /// 試験・見本のため（画面を持たない試験で、控えを置いた状態から始める）

@@ -272,7 +272,7 @@ final class GroupDMTests: XCTestCase {
             msg("m3", from: "mio", "2026-11-20T00:03:30.000Z"),
         ], calendar: Self.utc)
         XCTAssertEqual(rows.map(\.showsSender), [false, false, true, true, false], "同じ人の続きは2通目から名前を省く")
-        XCTAssertTrue(rows[0].isEvent)
+        XCTAssertNotNil(rows[0].message.groupEvent)
         XCTAssertNotNil(rows[2].time, "次が別の人なら時刻を出す（相手どうしでも分ける）")
         XCTAssertNil(rows[3].time, "同じ人の続きで5分以内は最後の1通だけ")
         XCTAssertNotNil(rows[4].time)

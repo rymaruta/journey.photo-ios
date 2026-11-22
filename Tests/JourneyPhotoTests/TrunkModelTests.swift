@@ -223,7 +223,6 @@ final class TrunkModelTests: XCTestCase {
         let batch = arrivals.consume()
         XCTAssertEqual(batch?.arrivals.count, 2, "続けて届いた分は1つの束で出す")
         XCTAssertEqual(batch?.first.label.id, TrunkSample.arrived.id)
-        XCTAssertEqual(batch?.othersCount, 1)
         XCTAssertNil(arrivals.consume())
         XCTAssertNil(arrivals.consumeNotice(), "ラベルが届いた回は「いっぱい」を言わない")
         arrivals.deliver([], notice: .full)

@@ -1196,12 +1196,6 @@ final class UploadViewModel: ObservableObject {
     /// いまの写真 → 自動の枠の中のその1枚の印（`draftKeys` と同じ使い方。送ったら1枚ずつ外す）
     private var autoKeys: [UUID: String] = [:]
 
-    /// 持ち主の自動の書きかけ（無ければ nil）
-    var storedAutoDraft: UploadDraftStore.Draft? {
-        guard let autoDrafts, let draftOwner else { return nil }
-        return autoDrafts.draft(for: draftOwner)
-    }
-
     /// 🔴 **裏に回ったら書きかけを黙って残す**（2026-10-16 判断）。以前は「×→下書きに保存」を押した
     /// 人のものしか残らず、裏に回ったまま OS にアプリを終了されると選んだ写真と題が全部消えた。
     /// 写真が無い・読み込み中・送っているときは書かない。写真が無ければ前の分を消す（外した写真が次に蘇らない）。

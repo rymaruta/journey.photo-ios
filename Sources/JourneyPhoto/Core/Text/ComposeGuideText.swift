@@ -26,9 +26,6 @@ enum ComposeGuide {
         return min(max(value, opacityRange.lowerBound), opacityRange.upperBound)
     }
 
-    /// 読み上げで1回に動かす幅（スライダーを指で動かせない人の「上げる・下げる」）
-    static let opacityStep = 0.05
-
     /// 濃さの読み上げの値（「40%」）。0〜0.8 を百分率で
     static func opacityPercent(_ value: Double) -> String {
         "\(Int((clampedOpacity(value) * 100).rounded()))%"
