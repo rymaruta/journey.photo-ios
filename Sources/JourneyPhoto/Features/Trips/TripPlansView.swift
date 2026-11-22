@@ -118,7 +118,9 @@ struct TripPlansView: View {
         }
         .sheet(isPresented: $showAsk) {
             TripAIAskSheet(ask: aiSuggestions.first?.ask ?? TripAIAsk(place: "", prefectures: [], cities: [], days: nil, preference: nil),
-                           placeChoices: placeChoices, onDevice: TripAIDevice.isAvailable,
+                           placeChoices: placeChoices,
+                           serverNotice: AskServerNotice.shows(signedIn: auth.userId != nil, deviceAI: TripAIRunner.usesDeviceAI,
+                                                               tier: aiUsage?.tier, profilePro: nil, admin: auth.isAdmin),
                            start: startAIAfterSheet,
                            index: aiIndex)
         }

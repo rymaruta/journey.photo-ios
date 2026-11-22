@@ -60,6 +60,8 @@ final class TripAIRunner: ObservableObject {
     private(set) var allDaysSeconds: Double?
     private var startedAt = Date()
     let onDevice: Bool
+    /// 打った文をサーバーへ送ったか（組めなかった回も含む）。AI に頼むの会話の知らせに使う（`AskServerNotice`）
+    private(set) var askedServer = false
 
     /// 試験だけが差し替える AI の答え（頼み・候補・日数・今の日程 → 答え）。nil ならサーバーか端末の AI
     typealias Planner = (String, [OfficialSpot], Int?, [TripAIPlan.Stop]) async throws -> TripAIPlan
@@ -249,6 +251,8 @@ final class TripAIRunner: ObservableObject {
             // （サーバーの AI は Pro だけ。アプリ全体の AI の請求を月500円までに収める）。AI なしで組み、帯で Pro を案内する
             mode = .proOnly
         } else {
+            // 2026-11-22 判断: 打った文をサーバーへ送る（AI に頼むの会話で、送ったことの知らせを残す・`AskAnswer.serverSent`）
+            askedServer = true
             do {
                 let (made, used) = try await service.plan(request: request, days: fixedDays, candidates: candidates, current: current)
                 plan = made

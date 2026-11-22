@@ -52,6 +52,8 @@ struct AskScreen: View {
     @State private var planUsageLine: String?
     /// ログインしていないときの旅行プランの頼み（今のログインの画面で案内する）
     @State private var signIn: SignInRequest?
+    /// 下の欄の高さ（知らせを重ねないため・測る前は 0）
+    @State private var composerHeight: CGFloat = 0
 
     var body: some View {
         NavigationStack {
@@ -136,7 +138,7 @@ struct AskScreen: View {
                     .accessibilityAddTraits(.isHeader)
                 }
             }
-            .modifier(AskPlanFlow(ask: $planAsk, index: officialSpots, placeChoices: placeChoices))
+            .modifier(AskPlanFlow(ask: $planAsk, index: officialSpots, placeChoices: placeChoices, serverNotice: showsServerNotice))
             .background {
                 if let planJob { AskPlanJobWatch(job: planJob) { settle(planJob, $0) } }
             }
@@ -164,7 +166,7 @@ struct AskScreen: View {
         // 2026-11-21 判断（確かめ役の指摘）: 全画面の AI の画面の上では、アプリの下の知らせ（`RootView`）が裏に隠れる。
         // ここにも置く（`TripCreateView` と同じ）。下の欄と「AI の答えは間違うことがあります」の上に出す
         .overlay(alignment: .bottom) {
-            ToastOverlay().padding(.bottom, AskScreen.toastBottomPadding)
+            ToastOverlay().padding(.bottom, AskScreen.toastBottomPadding(composer: composerHeight))
         }
         .task {
             await load()
@@ -282,21 +284,22 @@ struct AskScreen: View {
                     .foregroundStyle(WebTheme.text3)
                     .accessibilityIdentifier("ask.keepTyping")
             }
-            Text(AskText.disclaimer)
+            // 2026-11-22 判断: サーバーの AI を使う人にだけ、送ることを公式の言い方で知らせる（答えごとの1行はやめた）。
+            // 注意書きと同じ段落につなげ、字の大きさに上限を付ける（大きな字で下の欄が画面を取りすぎない・`AskText.footnote`）
+            Text(AskText.footnote(server: showsServerNotice))
                 .font(JPFont.caption)
                 .foregroundStyle(WebTheme.text3)
-            // 2026-11-22 判断: サーバーの AI を使う人にだけ、送ることを公式の言い方で1か所だけ知らせる（答えごとの1行はやめた）
-            if AskServerNotice.shows(deviceAI: deviceAIAvailable, usage: engine.usage, profilePro: profilePro, thread: engine.thread) {
-                Text(AskText.serverNotice)
-                    .font(JPFont.caption)
-                    .foregroundStyle(WebTheme.text3)
-                    .accessibilityIdentifier("ask.serverNotice")
-            }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .dynamicTypeSize(...AskScreen.footnoteMaxType)
+                .accessibilityIdentifier(showsServerNotice ? "ask.serverNotice" : "ask.disclaimer")
         }
         .padding(.horizontal, JPSpace.gutter)
         .padding(.top, 10)
         .padding(.bottom, 8)
         .background(WebTheme.background)
+        // 知らせ（トースト）を下の欄の実際の高さの上に出す（2026-11-22 判断・確かめ役の指摘。決め打ちの 96 は2行の注意書きで重なった）
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
         .overlay(alignment: .top) {
             Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
         }
@@ -554,13 +557,16 @@ struct AskScreen: View {
             return
         case .saved(let planId):
             if let result = job.result {
-                engine.finishPlan(question, result: result, planId: planId, onDevice: job.runner.onDevice, userId: auth.userId)
+                engine.finishPlan(question, result: result, planId: planId, onDevice: job.runner.onDevice, userId: auth.userId,
+                                  askedServer: job.runner.askedServer)
             } else {
-                engine.failPlan(question, line: TripAIJobText.failureLine(.noCandidates, title: job.title), userId: auth.userId)
+                engine.failPlan(question, line: TripAIJobText.failureLine(.noCandidates, title: job.title), userId: auth.userId,
+                                askedServer: job.runner.askedServer)
             }
             TripAIJobs.shared.markSeen(planId)
         case .failed(let failure):
-            engine.failPlan(question, line: TripAIJobText.failureLine(failure, title: job.title), userId: auth.userId)
+            engine.failPlan(question, line: TripAIJobText.failureLine(failure, title: job.title), userId: auth.userId,
+                            askedServer: job.runner.askedServer)
         }
         if let usage = job.runner.usage {
             planUsageLine = TripAIText.remainingLine(remaining: usage.remaining, resetsOn: usage.resetsOn)
@@ -627,8 +633,28 @@ struct AskScreen: View {
         )
     }
 
-    /// 知らせを下の欄（高さ 46、上下の余白、断りの1行）の上に出す
-    static let toastBottomPadding: CGFloat = 96
+    /// 知らせを下の欄の上に出す。下の欄の高さ（測った値）に間を足す。測る前は、欄 46・上下の余白 18・注意書き3行で見込む
+    static let toastFallbackPadding: CGFloat = 110
+    static let toastGap: CGFloat = 8
+    nonisolated static func toastBottomPadding(composer height: CGFloat) -> CGFloat {
+        height > 0 ? height + toastGap : toastFallbackPadding
+    }
+
+    /// 下の欄の注意書きの字の大きさの上限（2026-11-22 判断）。これより大きな設定でも、この大きさで止める。
+    /// 注意書きと送る知らせを合わせると、最大の設定では 8 行を超え、下の欄が画面の半分近くになった（見込み・Mac で未確認）
+    static let footnoteMaxType: DynamicTypeSize = .xxxLarge
+
+    /// 打った文をサーバーへ送る人か（下の欄の知らせ・旅行プランの頼みのシート・`AskServerNotice`）。
+    /// AI に頼むか旅行プランのどちらかがサーバーへ送るなら出す（旅行プランの AI は端末の AI の見方が別・`TripAIRunner.usesDeviceAI`）
+    private var showsServerNotice: Bool {
+        AskServerNotice.shows(signedIn: auth.userId != nil, deviceAI: noticeDeviceAI, tier: engine.usage?.tier,
+                              profilePro: profilePro, admin: auth.isAdmin, thread: engine.thread)
+    }
+
+    /// 端末の AI だけで答える iPhone か（AI に頼むと旅行プランの両方。見本の口では見本の値）
+    private var noticeDeviceAI: Bool {
+        AskFixture.isOn ? AskFixture.deviceAI : (deviceAIAvailable && TripAIRunner.usesDeviceAI)
+    }
 
     /// 現在地を1回取る（許可を聞いている間は待つ。断られた・取れないときは nil で、近さでは絞らない）
     @MainActor
@@ -698,6 +724,8 @@ struct AskPlanFlow: ViewModifier {
     @Binding var ask: TripAIAsk?
     let index: [OfficialSpot]
     let placeChoices: [(label: String, prefecture: String)]
+    /// 送る前の知らせを出すか（`AskScreen.showsServerNotice` と同じ値）
+    var serverNotice: Bool = false
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
@@ -711,7 +739,7 @@ struct AskPlanFlow: ViewModifier {
         content
             .sheet(isPresented: Binding(get: { ask != nil }, set: { if !$0 { ask = nil } })) {
                 if let ask {
-                    TripAIAskSheet(ask: ask, placeChoices: placeChoices, onDevice: TripAIDevice.isAvailable,
+                    TripAIAskSheet(ask: ask, placeChoices: placeChoices, serverNotice: serverNotice,
                                    start: startAfterSheet, index: index)
                 }
             }
@@ -740,5 +768,21 @@ struct AskPlanFlow: ViewModifier {
             if let p = engine.spotsById[id]?.region?.prefecture, !prefs.contains(p), prefs.count < 6 { prefs.append(p) }
         }
         return prefs.map { (TripAIDestination.prefectureShort($0), $0) }
+    }
+}
+
+/// 打った文をサーバーへ送ることの知らせ（`AskText.serverNotice`）。旅行プランの頼みのシートと「書いて頼む」で使う同じ部品
+/// （AI に頼むの下の欄は注意書きと1段落につなげる・`AskText.footnote`）。字は注意書きと同じ caption・text3
+struct AskServerNoticeText: View {
+    let id: String
+
+    var body: some View {
+        Text(AskText.serverNotice)
+            .font(JPFont.caption)
+            .foregroundStyle(WebTheme.text3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .dynamicTypeSize(...AskScreen.footnoteMaxType)
+            .accessibilityIdentifier(id)
     }
 }

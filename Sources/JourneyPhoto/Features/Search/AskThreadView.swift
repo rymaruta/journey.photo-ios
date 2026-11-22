@@ -87,12 +87,6 @@ struct AskThreadView: View {
                     .font(JPFont.caption)
                     .foregroundStyle(WebTheme.text3)
                     .accessibilityIdentifier("search.ask.disclaimer")
-                if AskServerNotice.shows(deviceAI: OnDeviceAI.isAvailable, usage: engine.usage, profilePro: nil, thread: engine.thread) {
-                    Text(AskText.serverNotice)
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.text3)
-                        .accessibilityIdentifier("search.ask.serverNotice")
-                }
             }
             if !engine.thread.isEmpty, !inScreen { followUpField }
             if AskFixture.isOn {

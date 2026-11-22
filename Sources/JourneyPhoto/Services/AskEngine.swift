@@ -289,15 +289,19 @@ final class AskEngine: ObservableObject {
 
     /// 旅行プランの AI ができた（保存まで終わった）。頭の文、日ごとの観光スポット、保存したプランを答えにする。
     /// 理由の文は見張り（`AskGuard.screened`）を通し、台帳に無い場所らしい名前があれば決まり文に替える
-    func finishPlan(_ question: String, result: TripAIResult, planId: String?, onDevice: Bool, userId: String?) {
+    func finishPlan(_ question: String, result: TripAIResult, planId: String?, onDevice: Bool, userId: String?,
+                    askedServer: Bool = false) {
         guard pending == question else { return }
+        // 2026-11-22 判断: サーバーへ送った回は、断りや AI なしの答えでも「送った」を残す（下の欄の知らせを出し続ける）
+        var refusal = AskAnswer.refused(care: false)
+        if askedServer { refusal.serverSent = true }
         if result.refused {
-            appendPlain(AskExchange(question: question, answer: .refused(care: false)), userId: userId)
+            appendPlain(AskExchange(question: question, answer: refusal), userId: userId)
             return
         }
         let screened = AskGuard.screened(result.reason)
         if screened.refused {
-            appendPlain(AskExchange(question: question, answer: .refused(care: false)), userId: userId)
+            appendPlain(AskExchange(question: question, answer: refusal), userId: userId)
             return
         }
         let usedAI = result.mode == .ai
@@ -312,14 +316,16 @@ final class AskEngine: ObservableObject {
         answer.spotIds = spots.map(\.spotId)
         answer.plan = AskPlanAnswer(title: result.title, planId: planId, days: days.map { $0.map(\.spotId) })
         answer.note = AskPlanFlowText.modeNote(result.mode)
+        if askedServer { answer.serverSent = true }
         appendPlain(AskExchange(question: question, answer: answer), userId: userId)
     }
 
     /// 旅行プランを作れなかった（圏外、候補が無い、保存できない）。やり直しは答えの「もう一度」から
-    func failPlan(_ question: String, line: String, userId: String?) {
+    func failPlan(_ question: String, line: String, userId: String?, askedServer: Bool = false) {
         guard pending == question else { return }
         var answer = AskAnswer(engine: .table, state: .failed, text: line)
         answer.kind = .plan
+        if askedServer { answer.serverSent = true }
         appendPlain(AskExchange(question: question, answer: answer), userId: userId)
     }
 
