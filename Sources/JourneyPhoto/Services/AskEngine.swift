@@ -375,7 +375,8 @@ final class AskEngine: ObservableObject {
         defer { detailsLoading = false }
         let detailed = await backend.details(needed)
         guard !Task.isCancelled else { return }
-        for spot in detailed where spotsById[spot.spotId] != nil { spotsById[spot.spotId] = spot }
+        // 索引だけの行にだけ差し込む（写真つきの行を索引の行で上書きしない・2026-11-22 確かめ役の指摘）
+        overlayDetails(detailed)
         mark("detailsDone")
     }
 
@@ -617,7 +618,9 @@ final class AskEngine: ObservableObject {
     private func remember(library: AskLibrary, thread: [AskExchange]) {
         let spots = Dictionary(library.spots.map { ($0.spotId, $0) }, uniquingKeysWith: { a, _ in a })
         for e in thread {
-            for id in e.answer.spotIds where spotsById[id] == nil { spotsById[id] = spots[id] }
+            // 古い形の旅行プランの答え（`spotIds` が空で日ごとの場所だけ）も、開き直したときに場所を出す（2026-11-22 確かめ役の指摘）
+            let ids = e.answer.spotIds + (e.answer.plan?.days.flatMap { $0 } ?? [])
+            for id in ids where spotsById[id] == nil { spotsById[id] = spots[id] }
             rememberPhotos(library: library, ids: e.answer.photoIds)
         }
     }

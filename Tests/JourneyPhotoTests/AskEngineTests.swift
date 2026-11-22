@@ -213,7 +213,9 @@ final class AskEngineTests: XCTestCase {
         b.details = { spots in
             gate.asked = true
             await withCheckedContinuation { gate.continuation = $0 }
-            return spots.map { s in var t = s; t.summary = "詳細の案内"; return t }
+            // 本物の `withDetails` と同じく、詳細を重ねた行は索引だけではない（`OfficialSpot.merged`。
+            // 2026-11-22: 札には索引だけの行にだけ差し込む `overlayDetails` に替えた）
+            return spots.map { s in var t = s; t.summary = "詳細の案内"; t.isIndexOnly = false; return t }
         }
         let task = Task { await e.start("近くで夕日がきれいな所", backend: b) }
         // 詳細を止めたまま、答えと帯が出るか（止めたまま答えを待つ作りなら、ここで出ない）

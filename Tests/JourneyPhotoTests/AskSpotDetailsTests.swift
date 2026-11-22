@@ -119,4 +119,54 @@ final class AskSpotDetailsTests: XCTestCase {
         XCTAssertEqual(SpotDetailNeeds.askTaskKey(SpotDetailNeeds.asked(e.thread, shown: { _ in true }, spotsById: e.spotsById),
                                                   offline: false, loading: false), "", "重ねたのに鍵が空にならない（読み直し続ける）")
     }
+    /// 答えのあとの読み込み（`loadPendingDetails`）は、写真つきの行を索引の行で上書きしない（2026-11-22 確かめ役の指摘）。
+    /// 1回目で写真が入った屋島が、2回目の答えで区分に無く索引の行のまま返っても、写真は下がらない
+    @MainActor
+    func testPendingDetailsDoNotDowngradePhotos() async throws {
+        let rows = try AskSamples.ledger()
+        let e = engine()
+        func backend(details: @escaping ([OfficialSpot]) async -> [OfficialSpot]) -> AskEngine.Backend {
+            AskEngine.Backend(
+                signedIn: { true }, offline: { false }, deviceAI: { true },
+                library: { _ in AskLibrary(spots: rows, photos: []) },
+                reserve: { _, _ in throw AskService.Failure.limit(.day, nil) },
+                serverAsk: { _, _, _ in AskService.ServerAnswer(answer: "", general: false) },
+                deviceAsk: { _, _, _ in nil },
+                details: details, userId: { "u1" })
+        }
+        let withPhotos = backend(details: { [self] needed in needed.compactMap { try? self.detailed($0) } })
+        await e.start("香川で夕日がきれいな所", backend: withPhotos)
+        let first = try XCTUnwrap(e.thread.last?.answer)
+        XCTAssertTrue(first.spotIds.contains("sp_yashima"), "試験の前提: 屋島が札に出ていない \(first.spotIds)")
+        XCTAssertNotNil(e.spotsById["sp_yashima"]?.photo, "試験の前提: 1回目で写真が入っていない")
+
+        // 2回目: 区分に無く、索引の行のまま返る
+        await e.followUp("香川で夕日が見える所は？", backend: backend(details: { $0 }))
+        XCTAssertTrue(e.thread.last?.answer.spotIds.contains("sp_yashima") == true, "試験の前提: 2回目にも屋島が出ていない")
+        XCTAssertNotNil(e.spotsById["sp_yashima"]?.photo, "写真つきの行を索引の行で上書きした（写真が下がった）")
+    }
+
+    /// 古い形で保存した旅行プランの答え（`spotIds` が空で日ごとの場所だけ）を開き直しても、場所が出て写真を読み足せる
+    /// （`open` → `refill` → `remember` の道・2026-11-22 確かめ役の指摘）
+    @MainActor
+    func testReopenedOldPlanAnswerRemembersDaySpots() async throws {
+        let rows = try AskSamples.ledger()
+        let e = engine()
+        var old = planAnswer([["sp_kenrokuen"], ["sp_eikando"]])
+        old.spotIds = []
+        let backend = AskEngine.Backend(
+            signedIn: { true }, offline: { false }, deviceAI: { true },
+            library: { _ in AskLibrary(spots: rows, photos: []) },
+            reserve: { _, _ in throw URLError(.notConnectedToInternet) },
+            serverAsk: { _, _, _ in AskService.ServerAnswer(answer: "", general: false) },
+            deviceAsk: { _, _, _ in nil },
+            details: { $0 }, userId: { "u1" })
+        await e.open(.init(id: "old", thread: [AskExchange(question: "金沢で2日", answer: old)]), backend: backend)
+        XCTAssertNotNil(e.spotsById["sp_kenrokuen"], "古い形の旅行プランの場所を覚えていない（流れが空になる）")
+        XCTAssertNotNil(e.spotsById["sp_eikando"])
+        let needs = SpotDetailNeeds.asked(e.thread, shown: { _ in true }, spotsById: e.spotsById)
+        XCTAssertEqual(needs.map(\.spotId), ["sp_kenrokuen", "sp_eikando"])
+        e.overlayDetails(try needs.map(detailed))
+        XCTAssertNotNil(e.spotsById["sp_kenrokuen"]?.photo)
+    }
 }
