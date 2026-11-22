@@ -350,7 +350,7 @@ gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight
 - App Store Connect に上げ終わったら `bash Tools/fetch-shots.sh <run 番号> --delete`（手元と S3 からすぐ消す）
 - 材料が1枚でも足りないと、その回は赤になる（足りない絵の名前が job のログに出る）
 
-**見本のデータだけで描く仕組みができるまで、この回の絵は App Store Connect に上げない**（上の「写真の権利」）。
+**見本のデータだけで描く仕組みができるまで、`storeShots` の回は最初の段で赤になって止まる**（上の「写真の権利」。`ios-testflight.yml` の「App Store 用の絵は見本で描けるまで止める」）。
 
 ## レビュー用の追記
 

@@ -749,6 +749,13 @@ if testflight_yml.exists() and pr_yml.exists():
     for prefix in [p for _, p, _, _ in store_mod.SLIDES] + [p for _, p in store_mod.REVIEW]:
         if built.get(prefix, prefix) not in store_text:
             fail(f"App Store 用の絵の材料「{prefix}」を、STORE_TESTS のどのテストも撮っていません（store-screenshots.py）")
+    # 見本で描けるまで storeShots の回は build の job の最初の段で止める（2026-11-22・札 #604）。外すのは見本の仕組みと一緒に
+    stop = step_block(flow, "App Store 用の絵は見本で描けるまで止める") or ""
+    build_steps = re.findall(r"^      - name: (.+)$", flow.split("\n  build:\n", 1)[-1], re.M)
+    if ("if: ${{ inputs.storeShots }}" not in stop or "exit 1" not in stop or "札 #604" not in stop
+            or "見本で描けるようになるまで使えません" not in stop
+            or not build_steps or build_steps[0] != "App Store 用の絵は見本で描けるまで止める"):
+        fail("ios-testflight.yml の build の最初の段で storeShots の回を止めていません（本番の他の利用者の写真で描くため・札 #604）")
     if "Tools/upload-store-shots.sh" not in flow:
         fail("ios-testflight.yml が storeShots の絵を非公開の S3 に置いていません（Tools/upload-store-shots.sh）")
     if re.search(r"store-screenshots\s*$", exporter, re.M) or "upload-artifact" in (ROOT / "Tools/upload-store-shots.sh").read_text(encoding="utf-8"):

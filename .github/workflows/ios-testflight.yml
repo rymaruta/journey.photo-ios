@@ -46,7 +46,7 @@ on:
         type: boolean
         default: false
       storeShots:
-        description: "App Store用の原寸の絵を作り非公開S3に置く（submit=falseで流す）"
+        description: "App Store用の原寸の絵（見本で描けるまで使用不可・札 #604）"
         type: boolean
         default: false
       tests:
@@ -134,6 +134,15 @@ jobs:
       # 2026-11-22 判断（札 #604）: `storeShots` は App Store 用の原寸の絵を作り、**非公開の S3** に置く回
       # （`Tools/upload-store-shots.sh`。前は公開の枝に押していたので #451 で止めていた）。上げる回（submit=true）とは
       # 重ねない。上げる回の UI テストの範囲（配信差分）と、絵に要る範囲（`store-screenshots.py` の STORE_TESTS）が食い違うため
+      # 🔴 2026-11-22（札 #604・コーディネーターの指示）: いまの材料は本番の他の利用者の写真で描くので、ストアに使えない
+      # （CLAUDE.md「他人の写真は、その人のもの」）。見本のデータだけで描けるようになるまで、storeShots の回はここで止める。
+      # 外すときは `Tools/check-config.py` の同じ見張りも外す
+      - name: App Store 用の絵は見本で描けるまで止める
+        if: ${{ inputs.storeShots }}
+        run: |
+          echo "::error::storeShots は見本で描けるようになるまで使えません（札 #604）。いまの材料は本番の他の利用者の写真で描くため"
+          exit 1
+
       - name: App Store 用の絵の回は上げない回で流す
         if: ${{ inputs.storeShots && inputs.submit }}
         run: |
