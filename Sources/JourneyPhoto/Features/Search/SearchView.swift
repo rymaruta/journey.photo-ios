@@ -2065,6 +2065,13 @@ final class SearchViewModel: ObservableObject {
         }
         // 写真は手元の一覧から即座に絞る（往復しない・`shown` が `query` から導く）
 
+        // 2026-11-22 判断（札 #695）: 別の語に打ち替えたら、返事を待つ間も前の語の人を出さない（「探しています…」を出す）。
+        // 前は返事が着くまで前の語の人が「人」の段に残り、押すと関係ない人のページが開いた。
+        // 同じ語での読み直し（通報・ブロックの後）は今の一覧を残す
+        if usersQuery != trimmed {
+            users = []
+            usersQuery = nil
+        }
         isSearching = true
         searchTask = Task {
             try? await Task.sleep(for: debounce)
