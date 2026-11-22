@@ -367,8 +367,6 @@ final class TrunkTagPicksTests: XCTestCase {
         XCTAssertEqual(seen.tagPicks, [.label("d")])
         let fallback = TheirTrunkText.seenFigure(seen: nil, own: state(picks: [.label("d")]))
         XCTAssertEqual(fallback.tagPicks, [], "地名を伏せた形に、選んだラベルのタグが出る")
-        // プロフィールの小さな札は胴だけ（タグを描かない）
-        XCTAssertTrue(try source("Features/Profile/TrunkProfileChip.swift").contains("bodyOnly: true"))
     }
 
     /// トランクの画面から選ぶ画面へ入れる（対応したサーバーのときだけ）

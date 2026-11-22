@@ -366,13 +366,6 @@ extension SearchSentence {
     static func isKanji(_ s: Unicode.Scalar) -> Bool { (0x4E00...0x9FFF).contains(s.value) || (0x3400...0x4DBF).contains(s.value) }
 }
 
-extension SearchSentence.Reading {
-    /// 何も読めていない（季節・時間帯・欄の無い条件・字の語のどれも無い）
-    var isEmptyReading: Bool {
-        season == nil && dayPart == nil && unsupported.isEmpty && text == nil && unused.isEmpty
-    }
-}
-
 // MARK: - 「こう読みました」の札
 
 extension SearchSentence {

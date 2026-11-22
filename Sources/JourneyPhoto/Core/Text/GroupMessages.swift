@@ -258,7 +258,6 @@ struct GroupRow: Identifiable, Equatable {
     let joinsPrevious: Bool
 
     var id: String { message.id }
-    var isEvent: Bool { message.groupEvent != nil }
 }
 
 enum GroupRows {

@@ -37,8 +37,6 @@ struct PhotoEditHistory: Equatable {
 
     var canUndo: Bool { !undoStack.isEmpty || current != committed }
     var canRedo: Bool { !redoStack.isEmpty && current == committed }
-    /// リセットできるか（今が無編集でない）
-    var canReset: Bool { !current.isIdentity }
     /// 編集前から変わっているか（「破棄しますか」を出すかどうか）
     var hasChanges: Bool { current != original }
 

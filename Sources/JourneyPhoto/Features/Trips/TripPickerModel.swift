@@ -39,12 +39,6 @@ final class TripPickerModel: ObservableObject {
     /// 山を `fallbackExcluding` で作り直した（前に見た札を除くと空だった・`load`）
     @Published private(set) var restarted = false
 
-    /// 下書きの題・日付・失敗の文は**下書きの画面ではなくここに持つ**——下書きの画面は
-    /// 戻って開き直すと作り直される（開き直しで消さない・本人が付けた題を案の題で上書きしない）
-    @Published var draftTitle = ""
-    @Published var draftStart: String?
-    @Published var draftEnd: String?
-    @Published var draftError: String?
     /// 下書きの保存の最中。**板を閉じさせない**——閉じた後に保存が届くと、失敗が誰にも見えず、
     /// 開き直した次の板を勝手に閉じて前のプランを開いていた
     @Published var saving = false

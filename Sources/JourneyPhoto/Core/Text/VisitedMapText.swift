@@ -138,7 +138,6 @@ enum VisitedMapText {
     // MARK: - 近くの県・一覧
 
     static var nearby: String { L("近くの県", "Nearby") }
-    static var listTitle: String { L("県の一覧", "List") }
     static var showList: String { L("一覧", "List") }
     static var showMap: String { L("地図", "Map") }
 

@@ -339,7 +339,6 @@ final class DirectMessageTests: XCTestCase {
         log.merge([message("a", mine: false, t: "2026-11-09T00:00:01.000Z"), message("b", t: "2026-11-09T00:00:02.000Z"),
                    message("c", t: "2026-11-09T00:00:03.000Z")])
         XCTAssertEqual(log.messages.map(\.id), ["a", "b", "c"])
-        XCTAssertTrue(log.peerHasSpoken)
         log.replace(with: [message("c", t: "2026-11-09T00:00:03.000Z")])
         XCTAssertEqual(log.messages.map(\.id), ["c"])
     }

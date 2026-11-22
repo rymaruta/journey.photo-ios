@@ -50,11 +50,6 @@ enum UploadDetails {
         L("撮影地の位置を付ける（約1kmに丸めて保存）", "Attach the place's location (rounded to about 1 km)")
     }
 
-    /// 投稿の画面の切り替えの名前（2026-11-12 判断・案「投稿まわりのデザイン」02）。「約1kmに丸めて」は
-    /// すぐ下の一言（`uploadLocationToggleNote` のオン）に移した——名前を短くしても、切り替える前に読める所にある。
-    /// ストーリーの「誰に見せる？」は下の一言が別なので、名前に入れたまま（`locationToggleTitle`）
-    static var uploadLocationToggleTitle: String { L("撮影地の位置を付ける", "Attach the place's location") }
-
     /// 投稿の画面の撮影地の欄の下の1行（2026-11-16 判断・使い勝手の見直し A11・模型 MBEk の A11）。3行の札
     /// （`uploadLocationToggleTitle` と2行の `uploadLocationToggleNote`）を1行に縮めた。何が送られるか（約1kmに丸める）は
     /// 1行の中に残す。オンで写真の位置から撮影地を入れたかは欄の下の一言（`UploadPlaceStatus`）が言う

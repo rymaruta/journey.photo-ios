@@ -802,30 +802,6 @@ struct OverlayChip: View {
     }
 }
 
-/// 書体の列（8種・横に流す）。**選んでいる書体まで流して見せる**（後ろの方の書体を選んだ札を
-/// 開き直すと、列の頭が出て何を選んでいるか見えなかった・bfe5e12 のレビュー）。
-/// 写真の上で打つ画面（`StoryTextTypingView`）が使う
-struct OverlayFaceRow: View {
-    @Binding var overlay: TextOverlay
-
-    var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(TextOverlay.Face.allCases) { face in
-                        OverlayChip(title: face.label, selected: overlay.face == face) {
-                            overlay.face = face
-                        }
-                        .id(face)
-                    }
-                }
-            }
-            .onAppear { proxy.scrollTo(overlay.face, anchor: .center) }
-            .onChange(of: overlay.id) { _, _ in proxy.scrollTo(overlay.face, anchor: .center) }
-        }
-    }
-}
-
 /// 色の列（12色＋好きな色）。見た目に対して読めない色は出さない（`TextOverlay.inks(for:)`）。
 /// 12色あるので横に流し、**選んでいる色まで流して見せる**（書体と同じ理由）
 struct OverlayInkRow: View {
