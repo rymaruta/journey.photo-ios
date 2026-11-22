@@ -16,6 +16,9 @@ final class GroupDMPushTests: XCTestCase {
         XCTAssertEqual(GroupText.groupId(fromConversation: "group_\(gid)"), gid)
         XCTAssertTrue(GroupText.opens("group_\(gid)", me: "me-0000"), "人が替わった後の門でグループの知らせを落とす")
         XCTAssertFalse(GroupText.opens("a_b", me: "me-0000"), "自分の入っていない1対1の会話を開く")
+        // 旅行プランの会話の知らせ（tripchat・tripshare）も開く（札 #693: 門で落として何も開かなかった）
+        XCTAssertTrue(GroupText.opens("trip_plan-123", me: "me-0000"), "旅行プランの会話の知らせを門で落とす")
+        XCTAssertFalse(GroupText.opens("trip_", me: "me-0000"))
         // 読んだら通知センターから外す（同じ会話の知らせを拾う）
         let delivered: [(id: String, userInfo: [AnyHashable: Any])] = [("n1", payload), ("n2", ["type": "dm", "convId": "a_b"])]
         XCTAssertEqual(AppBadge.deliveredIds(delivered, conversationId: "group_\(gid)"), ["n1"])
