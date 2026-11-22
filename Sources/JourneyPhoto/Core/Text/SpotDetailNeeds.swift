@@ -61,6 +61,31 @@ enum SpotDetailNeeds {
         return fromChoices + fromPlans
     }
 
+    /// 「AI に頼む」の答えに**出ている**観光スポット（札を横に送る・縦に積む・広い札1枚・旅行プランの流れ）。
+    ///
+    /// 2026-11-22 判断（owner「画像出てこないの悲しい」）: AI の答えの札は索引の行のままで、旅行プランの流れ
+    /// （`AskPlanTimeline`）や控えから戻した会話では詳細を読み足す所が無く、写真の枠が灰色のままだった。
+    /// `shown` が true の往復（畳んでいない答え）の `spotIds` と旅行プランの日ごとの場所を、出る順に重ねずに集め、
+    /// まだ索引だけの行だけを返す（重ね済みなら空で、通信しない）
+    static func asked(_ thread: [AskExchange], shown: (AskExchange) -> Bool,
+                      spotsById: [String: OfficialSpot]) -> [OfficialSpot] {
+        var seen = Set<String>()
+        var out: [OfficialSpot] = []
+        for exchange in thread where shown(exchange) {
+            let ids = exchange.answer.spotIds + (exchange.answer.plan?.days.flatMap { $0 } ?? [])
+            for id in ids where seen.insert(id).inserted {
+                if let spot = spotsById[id] { out.append(spot) }
+            }
+        }
+        return indexOnly(out)
+    }
+
+    /// 「AI に頼む」の詳細を読む `.task(id:)` の鍵。圏外と、答えのあとの読み込み（`AskEngine.detailsLoading`）の
+    /// 最中は空（読まない）——戻ったら鍵が変わって読み直す。重ねたら空になって止まる
+    static func askTaskKey(_ needs: [OfficialSpot], offline: Bool, loading: Bool) -> String {
+        offline || loading ? "" : key(needs)
+    }
+
     // MARK: - 長い一覧（地図の「スポット」「リスト」の札・2026-10-08）
 
     /// 長い一覧で、一度に詳細を読む行の数（1頁）。

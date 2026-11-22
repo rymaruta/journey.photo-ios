@@ -379,6 +379,15 @@ final class AskEngine: ObservableObject {
         mark("detailsDone")
     }
 
+    /// 画面が読み足した観光スポットの詳細を札に重ねる（`AskThreadView` の `.task(id:)`・`SpotDetailNeeds.asked`）。
+    /// まだ索引だけの行にだけ差し込む（`SpotDetailNeeds.overlay`）。控えから戻した会話・旅行プランの流れの札もこれで写真が出る
+    func overlayDetails(_ merged: [OfficialSpot]) {
+        var next = spotsById
+        for row in SpotDetailNeeds.overlay(Array(spotsById.values), with: merged) { next[row.spotId] = row }
+        guard next != spotsById else { return }
+        spotsById = next
+    }
+
     private func append(_ exchange: AskExchange, library: AskLibrary?, backend: Backend) {
         if let library { remember(library: library, thread: [exchange]) }
         push(exchange)
