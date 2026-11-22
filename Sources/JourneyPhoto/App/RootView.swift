@@ -102,6 +102,8 @@ struct RootView: View {
     @ObservedObject private var postUploads = PostUploadCenter.shared
     /// 送れなかった投稿を開き直す画面
     @State private var editingPost: EditingPost?
+    /// 「直す」で投稿の画面を開くのを、ほかの画面が閉じるまで待つ（1本だけ・札 #692）
+    @State private var editPostWait: Task<Void, Never>?
     @ObservedObject private var profileReward = ProfileReward.shared
     /// 出している差し出し（板 51・51b）
     @State private var coverOffer: CoverOfferStore.Offer?
@@ -538,7 +540,17 @@ struct RootView: View {
             .onChange(of: postUploads.editRequest) { _, id in
                 guard let id else { return }
                 postUploads.clearEditRequest()
-                if let model = postUploads.takeForEditing(id) { editingPost = EditingPost(model: model) }
+                // 2026-11-22 判断（札 #692）: ほかの画面が出ている間は、送る係から外さずに待ち、閉じてから外して開く。
+                // 前はすぐ外してからシートを出していた。ほかの画面が出ているとシートは出せず、投稿は係からも画面からも消えた
+                // （ホームの輪も消え、次に投稿の画面を開くと「送れなかった投稿があります」と聞かれた）。待つ間、投稿は輪に残る
+                editPostWait?.cancel()
+                editPostWait = Task { @MainActor in
+                    while !Task.isCancelled && (ModalProbe.isPresenting() || ModalProbe.isTransitioning()) {
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                    }
+                    guard !Task.isCancelled else { return }
+                    if let model = postUploads.takeForEditing(id) { editingPost = EditingPost(model: model) }
+                }
             }
             .sheet(item: $editingPost) { editing in
                 NavigationStack {
