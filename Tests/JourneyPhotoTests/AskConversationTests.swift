@@ -182,6 +182,54 @@ final class AskConversationTests: XCTestCase {
         XCTAssertEqual(list.items.count, 2)
     }
 
+    /// Pro が「新しく頼む」のあと、同じ日に同じ頼みをすると、控えから答えを出し、今日の同じ会話を開く（2つ並べない・札 #684）
+    func testProSameQuestionSameDayReopensTheSameConversation() async throws {
+        let d = defaults()
+        let calls = Calls()
+        let engine = AskEngine(history: AskHistoryStore(defaults: d))
+        await engine.start("香川で夕日がきれいな所は？", backend: try backend(calls))
+        await engine.followUp("雨の日は？", backend: try backend(calls))
+        let a = try XCTUnwrap(engine.conversationId)
+        engine.startNew(keep: AskConversationRule.keepsOnNew(plan: .pro), userId: "u1")
+        let used = calls.reserves + calls.deviceAsks
+        await engine.start("香川で夕日がきれいな所は？", backend: try backend(calls))
+        XCTAssertEqual(calls.reserves + calls.deviceAsks, used, "同じ日の同じ頼みで回数か AI を使った")
+        XCTAssertEqual(engine.conversationId, a, "同じ日の同じ頼みで新しい会話を作った")
+        XCTAssertEqual(engine.thread.map(\.question), ["香川で夕日がきれいな所は？", "雨の日は？"], "続けて聞いた分が出ない")
+        XCTAssertEqual(AskHistoryStore(defaults: d).conversations(userId: "u1").items.count, 1, "「前の会話」に同じ会話が2つ並んだ")
+    }
+
+    /// 前の日の会話を開いて今日続けて聞いても、前の日の答えを「今日の答え」として控えに書かない（札 #684）
+    func testFollowUpOnOldConversationIsNotCachedAsToday() async throws {
+        let d = defaults()
+        let calls = Calls()
+        let store = AskHistoryStore(defaults: d)
+        let old = Date().addingTimeInterval(-3 * 24 * 3600)
+        store.saveConversation(id: "old", thread: [AskExchange(question: "金沢のおすすめは？",
+                                                               answer: AskAnswer(engine: .device, text: "3日前の答え"), askedAt: old)],
+                               userId: "u1")
+        let engine = AskEngine(history: AskHistoryStore(defaults: d))
+        let saved = try XCTUnwrap(store.conversations(userId: "u1").items.first)
+        await engine.open(saved, backend: try backend(calls))
+        await engine.followUp("冬なら？", backend: try backend(calls))
+        XCTAssertNil(AskHistoryStore(defaults: d).today("金沢のおすすめは？", userId: "u1"), "3日前の答えを今日の答えとして控えた")
+        XCTAssertEqual(AskHistoryStore(defaults: d).conversations(userId: "u1").current?.thread.count, 2, "会話の続きは残す")
+    }
+
+    /// 同じ日に21件目を覚えても、いま覚えた答えは落とさない（同じ日の中は覚えた時刻で並べる・札 #684）
+    func testNewestAnswerSurvivesWhenLimitExceededOnSameDay() async {
+        let store = AskHistoryStore(defaults: defaults())
+        // 日本時間の昼（同じ日の中で1分ずつ）
+        let noon = Date(timeIntervalSince1970: 1_795_000_000)
+        for i in 0...AskHistoryStore.limit {
+            let now = noon.addingTimeInterval(Double(i) * 60)
+            store.remember([AskExchange(question: "頼み\(i)", answer: AskAnswer(engine: .device, text: "答え"))], userId: "u1", now: now)
+            XCTAssertNotNil(store.today("頼み\(i)", userId: "u1", now: now), "いま覚えた答え（\(i)件目）が落ちた")
+        }
+        XCTAssertEqual(store.all(userId: "u1").count, AskHistoryStore.limit)
+        XCTAssertNil(store.all(userId: "u1")[RecentSearchesStore.normalized("頼み0")], "いちばん古い答えが残った")
+    }
+
     /// Pro が切れたら一覧は出さず、今の会話（最後の1本）だけ。控えは消さないので、また Pro になれば戻る
     func testLapsedProShowsOnlyLastConversation() async throws {
         var list = AskHistoryStore.Conversations()

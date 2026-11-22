@@ -21,6 +21,8 @@ struct AskHistoryStore {
         /// 日本時間の日付（`YYYY-MM-DD`）
         let day: String
         let thread: [AskExchange]
+        /// 覚えた時刻（同じ日の中で新しい方を残す・札 #684。前の版の控えには無い）
+        var savedAt: Date? = nil
     }
 
     private let defaults: UserDefaults
@@ -51,10 +53,14 @@ struct AskHistoryStore {
     func remember(_ thread: [AskExchange], userId: String?, now: Date = Date()) {
         guard userId?.isEmpty == false, let first = thread.first else { return }
         var map = all(userId: userId)
-        map[RecentSearchesStore.normalized(first.question)] = Entry(day: Self.day(now), thread: thread)
-        // 古い日から落とす
+        map[RecentSearchesStore.normalized(first.question)] = Entry(day: Self.day(now), thread: thread, savedAt: now)
+        // 古い日から落とす。2026-11-22 判断（札 #684）: 同じ日の中は覚えた時刻で並べる。前は日付だけで並べ、同じ日に
+        // 21件目を入れると辞書の順で決まり、いま入れた答えが落ちることがあった（同じ頼みでまた AI と回数を使う）
         if map.count > Self.limit {
-            let keep = map.sorted { $0.value.day > $1.value.day }.prefix(Self.limit)
+            let keep = map.sorted {
+                if $0.value.day != $1.value.day { return $0.value.day > $1.value.day }
+                return ($0.value.savedAt ?? .distantPast) > ($1.value.savedAt ?? .distantPast)
+            }.prefix(Self.limit)
             map = Dictionary(uniqueKeysWithValues: keep.map { ($0.key, $0.value) })
         }
         save(map, userId: userId)
