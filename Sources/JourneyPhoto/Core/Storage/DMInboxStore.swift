@@ -54,6 +54,9 @@ final class DMInboxStore: ObservableObject {
     func refreshGroups(service: GroupService, owner: String?) async {
         use(owner: owner)
         guard owner != nil else { return }
+        // 2026-11-22 判断（札 #694）: 始めるときに世代を進める（1対1の `refresh` と同じ）。前は進めず、2本重なると
+        // あとから返った古い答え（作った直後のグループが無い）が新しい答えを上書きした
+        groupGeneration += 1
         let mine = groupGeneration
         do {
             let fetched = try await service.inbox()
@@ -130,6 +133,8 @@ final class DMInboxStore: ObservableObject {
         } catch {
             guard mine == generation, owner == self.owner else { return }
             isRefreshing = false
+            // 読めている一覧には変化をもう映してあるので、重ねる控えは捨てる（読めていなければ次の答えに重ねる）
+            if phase == .loaded { pendingChanges = [] }
             if phase != .loaded {
                 phase = .failed((error as? LocalizedError)?.errorDescription ?? Labels.Common.loadFailed)
             }
@@ -138,17 +143,16 @@ final class DMInboxStore: ObservableObject {
 
     /// 手元で変えた姿を置く（既読・削除・承認の直後。サーバーの答えを待たずに点・行を合わせる）。
     ///
-    /// - 読めている間: **進んでいる読み込みの答えは捨てる**（変える前の一覧で上書きしない）
-    /// - **まだ読めていない間は世代を進めない**（2026-11-10 レビュー指摘3・run 939 で再現: 最初の読み込みの途中に
-    ///   既読を置くと、読めた一覧を捨てて空の一覧を「読めた」にしていた）。変化は覚えておき、読めた答えに重ねる
+    /// - **読み込みの途中なら、変化を覚えておき、読めた答えに重ねる**（変える前の一覧で上書きしない・答えも捨てない）
+    /// - 2026-11-10 レビュー指摘3（run 939）: 最初の読み込みの途中に既読を置くと、読めた一覧を捨てて空の一覧を「読めた」にしていた
+    /// - 2026-11-22 判断（札 #694）: 読めたあとの読み直しの途中も同じにした。前は世代を進めて答えを捨てていた。1対1の会話は開くたび・
+    ///   新しい1通が届くたびに既読を置く（何も変わらなくても）ので、通知から開いた会話の行やほかの新しい行が、受信箱を閉じるまで出なかった
     func apply(_ change: @escaping (DMInbox) -> DMInbox) {
         inbox = change(inbox)
-        guard phase == .loaded else {
+        guard phase == .loaded, !isRefreshing else {
             pendingChanges.append(change)
             return
         }
-        generation += 1
-        isRefreshing = false
     }
 
     /// 試験・見本のため（画面を持たない試験で、控えを置いた状態から始める）

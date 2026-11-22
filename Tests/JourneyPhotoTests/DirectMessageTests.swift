@@ -597,6 +597,48 @@ final class DirectMessageMainActorTests: XCTestCase {
         XCTAssertEqual(store.inbox.items.map(\.id), ["new"], "古い答えが新しい答えを上書きした")
     }
 
+    /// 読めたあとの読み直しの途中に既読を置いても、読めた答えを捨てない（札 #694: 1対1の会話は開くたびに既読を置くので、
+    /// 通知から開いた会話の行が受信箱を閉じるまで出なかった）。置いた既読は読めた答えに重ねる
+    func testApplyDuringLaterRefreshKeepsTheAnswer() async {
+        StubProtocol.reset()
+        defer { StubProtocol.reset() }
+        let store = DMInboxStore()
+        store.setForTesting(.empty, owner: "u1")
+        StubProtocol.respond(status: 200, body: Self.inboxJSON("new", unread: 2))
+        let gate = Gate(holds: 1)
+        let dm = service(gate: gate)
+        let task = Task { await store.refresh(service: dm, owner: "u1") }
+        await gate.untilWaiting()
+        store.apply { $0.markingRead("new") }
+        await gate.open()
+        await task.value
+        XCTAssertEqual(store.inbox.items.map(\.id), ["new"], "読み直しの答えを捨てた（新しい会話の行が出ない）")
+        XCTAssertEqual(store.inbox.items.first?.unread, 0, "読み直しの途中に置いた既読の印が消えた")
+    }
+
+    /// グループの一覧の読み直しが2本重なっても、古い答えが新しい答えを上書きしない（札 #694）
+    func testOlderGroupRefreshDoesNotOverwriteNewer() async {
+        StubProtocol.reset()
+        defer { StubProtocol.reset() }
+        let newer = #"{"groups":[{"groupId":"g1","name":null,"displayName":"けん、みお","faces":[],"memberCount":3,"createdAt":"2026-11-20T00:00:00.000Z","state":"member","unread":0,"updatedAt":"2026-11-20T00:00:00.000Z"}],"invites":[]}"#
+        StubProtocol.respondInOrder([(200, newer), (200, #"{"groups":[],"invites":[]}"#)])
+        let gate = Gate(holds: 1)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubProtocol.self]
+        let groups = GroupService(api: APIClient(baseURL: URL(string: "https://api.example.test")!,
+                                                 tokenProvider: StubTokenProvider(token: "t"),
+                                                 session: URLSession(configuration: config), retryPause: { _ in },
+                                                 beforeRequest: { _ in await gate.wait() }))
+        let store = DMInboxStore()
+        let first = Task { await store.refreshGroups(service: groups, owner: "u1") }
+        await gate.untilWaiting()
+        await store.refreshGroups(service: groups, owner: "u1")
+        XCTAssertEqual(store.groups.groups.count, 1)
+        await gate.open()
+        await first.value
+        XCTAssertEqual(store.groups.groups.count, 1, "古い答えが新しい答え（作ったグループ）を上書きした")
+    }
+
     /// 読み込みの間に人が替わったら、前の人の答えを置かない（持ち主の確かめ）
     func testRefreshForPreviousOwnerIsDropped() async {
         StubProtocol.reset()
