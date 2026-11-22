@@ -106,12 +106,29 @@ struct AskThreadView: View {
         .coordinateSpace(.named(AskCarouselStats.space))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("search.ask.thread")
+        // 出ている答えの観光スポットのうち、まだ索引だけの行の詳細（写真）を読み足す（2026-11-22 判断・owner「画像出てこないの悲しい」）。
+        // 旅行プランの流れ・控えから戻した会話も含む。同じ鍵では読み直さず、圏外と答えのあとの読み込みの最中は読まない
+        .task(id: SpotDetailNeeds.askTaskKey(detailNeeds, offline: connectivity.isOffline, loading: engine.detailsLoading)) {
+            let needs = detailNeeds
+            guard !needs.isEmpty, !connectivity.isOffline, !engine.detailsLoading else { return }
+            let merged = await environment.spots.withDetails(needs, for: needs)
+            guard !Task.isCancelled else { return }
+            engine.overlayDetails(merged)
+        }
         // 新しく頼んだら、開いていた前の答えはまた畳む
         .onChange(of: engine.pending) { _, pending in
             if pending != nil { expanded = [] }
         }
         .fullScreenCover(isPresented: $showPro) { PaywallView(origin: .ask) }
         .modifier(AskActFlow(request: $actRequest, openPlanId: $openPlanId))
+    }
+
+    /// 詳細を読み足す観光スポット: 畳んでいない答え（いちばん新しい答えと開いた答え。画面の外の帯では全部）に出ている、まだ索引だけの行
+    private var detailNeeds: [OfficialSpot] {
+        let thread = engine.thread
+        let latestId = engine.pending == nil ? thread.last?.id : nil
+        return SpotDetailNeeds.asked(thread, shown: { !inScreen || $0.id == latestId || expanded.contains($0.id) },
+                                     spotsById: engine.spotsById)
     }
 
     /// 答えの札の観光スポットの名前（畳んだ1行の中身）
