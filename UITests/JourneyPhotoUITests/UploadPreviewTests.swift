@@ -9,7 +9,7 @@ import XCTest
 ///
 /// 見本の1枚（`-JPPreviewUploadSample`）と端末の中の通信（`-JPPreviewLocalBackend`）で開く。
 /// **出なければ落とす**（撮る画面まで届かないまま黙って緑にしない・札 #531）
-final class UploadPreviewTests: XCTestCase {
+final class UploadPreviewTests: JPUITestCase {
 
     private static let previewUserId = "67d49a68-80f1-7083-b0e0-c767886ef868"
     /// 投稿のあとのカードを閉じた回数の鍵（`CriticalFlowTests.postedCardHabitKey` と同じ）

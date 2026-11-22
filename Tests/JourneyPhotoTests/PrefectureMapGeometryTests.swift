@@ -81,6 +81,11 @@ final class PrefectureMapGeometryTests: XCTestCase {
         }
         XCTAssertNotNil(g.piece("東京都"))
         XCTAssertNotNil(g.piece("鹿児島県"))
+        // 奄美群島（鹿児島県）は沖縄の挿入図にも描かない（札 #643）。挿入図は沖縄県の島だけ＝北緯 24.26〜27.87°（3.61°）。
+        // 奄美が沖縄県に入っていた前は 28.51° まで（4.25°）伸びていた
+        let inset = try XCTUnwrap(g.inset)
+        let degrees = Double(inset.height - PrefectureMapGeometry.insetPadding * 2) / g.projection.scale
+        XCTAssertLessThan(degrees, 3.7, "沖縄の挿入図に奄美群島が入っている")
     }
 
     // MARK: - 近くの県

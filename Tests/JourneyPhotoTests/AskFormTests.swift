@@ -247,6 +247,19 @@ final class AskFormTests: XCTestCase {
 
     // MARK: - 流れ
 
+    /// 2026-11-21（バグ調べ）: 仲間に送るの顔の一覧は、人が替わったら捨てて読み直す（前の人のフォロー中の顔を出さない）
+    @MainActor
+    func testShareFacesAreDroppedWhenTheUserChanges() async throws {
+        XCTAssertFalse(AskActFlow.dropsFaces(owner: nil, me: "u1"), "まだ読んでいない")
+        XCTAssertFalse(AskActFlow.dropsFaces(owner: "u1", me: "u1"))
+        XCTAssertTrue(AskActFlow.dropsFaces(owner: "u1", me: "u2"), "前の人の顔を持ち続けた")
+        XCTAssertTrue(AskActFlow.dropsFaces(owner: "u1", me: nil), "ログアウトしても顔を持ち続けた")
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let parts = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Search/AskAnswerParts.swift"), encoding: .utf8)
+        XCTAssertTrue(parts.contains("if Self.dropsFaces(owner: facesOwner, me: auth.userId)"), "読む前に人を確かめていない")
+        XCTAssertTrue(parts.contains("facesOwner = me"))
+    }
+
     func testPlanFlowParts() throws {
         let ledger = try AskSamples.ledger()
         let days = [[ledger[0], ledger[1]], [ledger[2]]]
@@ -257,6 +270,12 @@ final class AskFormTests: XCTestCase {
         XCTAssertGreaterThan(minutes, 60, "屋島から父母ヶ浜（約47km）が1時間かからない見積もり")
         XCTAssertEqual(AskPlanFlowText.moveLine(15), "移動の目安 約15分")
         XCTAssertEqual(AskPlanFlowText.moveLine(90), "移動の目安 約1時間30分")
+        // 2026-11-21（バグ調べ）: ちょうどの時間は分を付けない（英語で「About 1h 0m」と出ていた）
+        XCTAssertEqual(AskPlanFlowText.moveLine(60, language: "ja"), "移動の目安 約1時間")
+        XCTAssertEqual(AskPlanFlowText.moveLine(60, language: "en"), "About 1h to move")
+        XCTAssertEqual(AskPlanFlowText.moveLine(120, language: "en"), "About 2h to move")
+        XCTAssertEqual(AskPlanFlowText.moveLine(95, language: "en"), "About 1h 35m to move")
+        XCTAssertEqual(AskPlanFlowText.moveLine(15, language: "en"), "About 15 min to move")
         XCTAssertEqual(AskPlanFlowText.lead(reason: "", usedAI: false, days: 2), "観光スポットの位置で、2日に並べました。")
         let quick = AskQuickPlan.days([ledger[0], ledger[1], ledger[2]])
         XCTAssertFalse(quick.isEmpty)
@@ -379,7 +398,7 @@ final class AskFormTests: XCTestCase {
         let e = engine()
         var a = AskAnswer(engine: .device, text: "屋島がおすすめです。")
         a.spotIds = ["sp_yashima"]
-        await e.showSaved([AskExchange(question: "香川で夕日は？", answer: a)], backend: backend(c, rows: rows, device: nil))
+        await e.open(.init(id: "c1", thread: [AskExchange(question: "香川で夕日は？", answer: a)]), backend: backend(c, rows: rows, device: nil))
         XCTAssertNil(e.freshId)
         XCTAssertEqual(c.reserves + c.deviceAsks + c.serverAsks, 0)
     }
@@ -393,5 +412,24 @@ final class AskFormTests: XCTestCase {
                                            from: Data(#"{"answer":"","general":false,"kind":"cards","lead":"夕日なら屋島です。"}"#.utf8))
         XCTAssertEqual(new.kind, "cards")
         XCTAssertEqual(new.lead, "夕日なら屋島です。")
+    }
+
+    /// 注意書きは公式の言い方で、確かめ先を添える（2026-11-21 owner）
+    func testDisclaimerIsOfficialWording() {
+        let text = AskText.disclaimer
+        XCTAssertTrue(text.hasPrefix("※"))
+        XCTAssertTrue(text.contains("誤りが含まれる場合があります"))
+        XCTAssertTrue(text.contains("公式の情報でご確認ください"))
+        XCTAssertFalse(text.contains("・"))
+        XCTAssertFalse(text.contains("間違う"))
+    }
+
+    /// どこで答えたかの1行に、答えの作り（引いた行・使い方の頁・置き場の地域）を出さない（2026-11-21 owner）
+    func testServerEngineLineHidesInternals() {
+        let line = AskAnswer(engine: .server, text: "x").engineLine
+        XCTAssertTrue(line.contains("サーバーの AI で答えました"))
+        for word in ["東京", "抜き書き", "使い方の頁", "観光スポットの行", "往復"] {
+            XCTAssertFalse(line.contains(word), word)
+        }
     }
 }

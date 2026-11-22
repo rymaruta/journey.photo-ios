@@ -19,7 +19,7 @@ import CoreLocation
 ///
 /// 手順は `ScreenshotTests` の private の道具と似ているが、あちらは「出なければ抜ける」、こちらは「出なければ落とす」で
 /// 決まりが逆なので使い回さない
-final class CriticalFlowTests: XCTestCase {
+final class CriticalFlowTests: JPUITestCase {
 
     /// 見本の利用者（`ScreenshotTests.previewUserId` と同じ・公開 API が誰にでも返している値で資格情報ではない）
     private static let previewUserId = "67d49a68-80f1-7083-b0e0-c767886ef868"
@@ -1049,6 +1049,138 @@ final class CriticalFlowTests: XCTestCase {
         shot.name = "AI に頼む（今日の分を使い切った）"
         shot.lifetime = .keepAlways
         add(shot)
+    }
+
+    // MARK: - 4b3. AI に頼む: 会話を残す（札 #678）
+
+    /// 上の帯から AI の画面を開く
+    private func openAsk(_ app: XCUIApplication) -> XCUIElement {
+        let entry = app.buttons["header.ask"].firstMatch
+        XCTAssertTrue(entry.waitForExistence(timeout: 20), "上の帯に「AI に頼む」が無い")
+        entry.tap()
+        let field = app.textFields["ask.field"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "AI に頼むの画面が開かない")
+        return field
+    }
+
+    /// 欄に打って送信のボタンで頼み、その頼みの吹き出しが出るまで待つ
+    private func askAndWait(_ app: XCUIApplication, _ words: String, field: XCUIElement) {
+        enter(words, into: field, "AI の欄")
+        let send = app.buttons["ask.send"].firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 5), "欄の右に送信のボタンが無い")
+        send.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["search.ask.answer"].firstMatch.waitForExistence(timeout: 30),
+                      "送信のボタンを押しても答えが出ない")
+        XCTAssertTrue(askQuestion(app, words).waitForExistence(timeout: 5), "頼みの吹き出しが出ない: \(words)")
+    }
+
+    /// 会話に出ている頼みの吹き出し（前の答えを畳んだ行も含む）
+    private func askQuestion(_ app: XCUIApplication, _ words: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch
+    }
+
+    /// **無料: 頼む → 閉じる → 開く → 会話が残る → 新しく頼む（確かめ）→ 空に戻る → 開き直しても空**（札 #678）。
+    /// owner「閉じたら AI との会話履歴消えちゃうんだね」（2026-11-21）。見本の口（`-JPAskFixture`）で、無料の見本の利用者
+    func testSearchAskKeepsConversationFreeNewClears() {
+        let app = launch(["-JPAskFixture", "YES"])
+        var field = openAsk(app)
+        let words = "金沢でおすすめの観光スポットを教えて"
+        askAndWait(app, words, field: field)
+        app.buttons["ask.close"].firstMatch.tap()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5), "閉じても AI の画面が残る")
+        // 探すの最近の検索には AI に頼んだ文を出さない（2026-11-21 owner「探すの方にまで AI で頼んだ履歴出てくるのいやだな」）
+        tab(app, 1)
+        let searchField = app.textFields["search.field"].firstMatch
+        XCTAssertTrue(searchField.waitForExistence(timeout: 20), "探すの欄が無い")
+        searchField.tap()
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@", "search.recent.word", words))
+                        .firstMatch.waitForExistence(timeout: 2), "探すの最近の検索に AI に頼んだ文が出た")
+        tab(app, 0)
+
+        field = openAsk(app)
+        XCTAssertTrue(app.descendants(matching: .any)["search.ask.answer"].firstMatch.waitForExistence(timeout: 5),
+                      "閉じて開き直したら会話が消えた")
+        XCTAssertTrue(askQuestion(app, words).exists, "開き直した会話が前の頼みと違う")
+        XCTAssertFalse(app.buttons["ask.starter"].firstMatch.exists, "会話があるのに例の札を出した")
+        let new = app.buttons["ask.new"].firstMatch
+        XCTAssertTrue(new.waitForExistence(timeout: 5), "上の帯に「新しく頼む」が無い")
+        XCTAssertEqual(new.label, "新しく頼む", "「新しく頼む」の読み上げが違う")
+        new.tap()
+        // 無料: 今の会話が消えるので1回だけ確かめる（Pro の案内を並べる）
+        let confirm = app.staticTexts["無料プランでは会話を1つだけ残せます。新しく頼むと今の会話は消えます"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "無料で新しく頼むのに確かめが出ない")
+        XCTAssertTrue(app.buttons["Pro で会話を分けて残す"].firstMatch.exists, "確かめに Pro の案内が無い")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "AI に頼む（無料の新しく頼む）"
+        shot.lifetime = .keepAlways
+        add(shot)
+        let sheetButton = app.sheets.buttons["新しく頼む"].firstMatch
+        if sheetButton.exists {
+            sheetButton.tap()
+        } else {
+            app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "新しく頼む", "ask.new")).firstMatch.tap()
+        }
+        XCTAssertTrue(app.buttons["ask.starter"].firstMatch.waitForExistence(timeout: 5), "新しく頼んでも何も頼んでいない画面に戻らない")
+        XCTAssertFalse(app.descendants(matching: .any)["search.ask.answer"].firstMatch.exists, "新しく頼んでも前の答えが残る")
+        XCTAssertFalse(app.buttons["ask.conversation"].firstMatch.exists, "無料で前の会話の一覧を出した")
+
+        app.buttons["ask.close"].firstMatch.tap()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5), "閉じても AI の画面が残る")
+        field = openAsk(app)
+        XCTAssertTrue(app.buttons["ask.starter"].firstMatch.waitForExistence(timeout: 5), "無料で消した会話が開き直すと戻った")
+        XCTAssertFalse(app.descendants(matching: .any)["search.ask.answer"].firstMatch.exists, "無料で消した会話が開き直すと戻った")
+    }
+
+    /// **Pro: 頼む → 新しく頼む（確かめなし）→ 前の会話に残る → 別の頼み → 閉じて開くと続き → 上の帯の「前の会話」から前の会話を開く**（札 #678）。
+    /// 見本の Pro（`-JPPreviewPro`、回数の見本も `pro`）
+    func testSearchAskProKeepsConversations() {
+        let app = launch(["-JPAskFixture", "YES", "-JPAskFixtureMode", "pro", "-JPPreviewPro", "YES"])
+        var field = openAsk(app)
+        let first = "金沢でおすすめの観光スポットを教えて"
+        askAndWait(app, first, field: field)
+        let new = app.buttons["ask.new"].firstMatch
+        XCTAssertTrue(new.waitForExistence(timeout: 5), "上の帯に「新しく頼む」が無い")
+        new.tap()
+        XCTAssertTrue(app.buttons["ask.starter"].firstMatch.waitForExistence(timeout: 5), "新しく頼んでも何も頼んでいない画面に戻らない")
+        XCTAssertEqual(app.sheets.count, 0, "Pro なのに確かめを出した")
+        let row = app.buttons["ask.conversation"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "Pro なのに前の会話が一覧に無い")
+        XCTAssertTrue(row.label.contains(first), "前の会話の行が違う: \(row.label)")
+        let listShot = XCTAttachment(screenshot: app.screenshot())
+        listShot.name = "AI に頼む（Pro の前の会話）"
+        listShot.lifetime = .keepAlways
+        add(listShot)
+
+        let second = "京都で紅葉がきれいな所は？"
+        askAndWait(app, second, field: field)
+        app.buttons["ask.close"].firstMatch.tap()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5), "閉じても AI の画面が残る")
+        field = openAsk(app)
+        XCTAssertTrue(askQuestion(app, second).waitForExistence(timeout: 5), "閉じて開き直したら最後の会話が出ない")
+
+        let list = app.buttons["ask.conversations"].firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 5), "上の帯に「前の会話」が無い")
+        XCTAssertEqual(list.label, "前の会話", "「前の会話」の読み上げが違う")
+        list.tap()
+        let saved = app.buttons["ask.conversation"].firstMatch
+        XCTAssertTrue(saved.waitForExistence(timeout: 5), "前の会話の一覧が開かない")
+        saved.tap()
+        XCTAssertTrue(askQuestion(app, first).waitForExistence(timeout: 5), "前の会話を選んでも、その会話が出ない")
+        XCTAssertFalse(askQuestion(app, second).exists, "前の会話を開いたのに今の会話が混ざった")
+
+        // 前の会話は AI の画面の一覧で消す（長押しで1つ）
+        new.tap()
+        let rows = app.buttons.matching(identifier: "ask.conversation")
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5), "前の会話の一覧が無い")
+        let before = rows.count
+        rows.firstMatch.press(forDuration: 1.2)
+        let delete = app.buttons["削除"].firstMatch
+        XCTAssertTrue(delete.waitForExistence(timeout: 5), "長押しで「削除」が出ない")
+        delete.tap()
+        XCTAssertTrue(wait(rows.firstMatch, "exists == true"), "消したら一覧が全部消えた")
+        let deadline = Date().addingTimeInterval(5)
+        while rows.count != before - 1, Date() < deadline { Thread.sleep(forTimeInterval: 0.3) }
+        XCTAssertEqual(rows.count, before - 1, "長押しの「削除」で前の会話が消えない")
     }
 
     // MARK: - 4c. 見つける（使い勝手の見直し 2026-11-16 A1・A4・A7・A9・A10。A1 は 2026-11-18 に2回たたくいいねだけ）

@@ -48,6 +48,18 @@ final class AskEngine: ObservableObject {
     @Published private(set) var photosById: [String: Photo] = [:]
 
     private let history: AskHistoryStore
+    /// いまの会話の控えの鍵（`AskHistoryStore.Conversation.id`）。最初の答えを出したときに作る（札 #678）
+    private(set) var conversationId: String?
+    /// 控えから戻した会話の札の中身（観光スポットと写真）を、索引を読んでから重ねる必要があるか（`refill`）
+    private(set) var needsRefill = false
+    /// 閉じたときに欄に残っていた字か、答えを待っている途中で取り消した頼み（開き直したら欄に戻す・札 #678）
+    var carriedDraft: String?
+    /// 利用者が打った頼みで、いま答えを用意しているもの（取り消したら欄に戻す。言い替え・控えから出す回は入れない）
+    private var askingQuestion: String?
+    /// 頼み始めたときの人と、そのときの控えを消した回の数（札 #678 の確かめ役の指摘）。答えが届いたとき、人が替わっていたり
+    /// 待っている間にログアウト・退会で控えを消していたら、端末の控えに書かない（前の人の会話を別の鍵や消したあとに残さない）
+    private var askOwner: String?
+    private var ownerGeneration = 0
     /// 答えを出したあとに案内の文（詳細）を重ねる観光スポット（`fill` が積み、`loadPendingDetails` が読む）
     private var pendingDetails: [OfficialSpot] = []
 
@@ -75,14 +87,117 @@ final class AskEngine: ObservableObject {
 
     /// 会話を閉じる。**残りの回数と札の中身も手放す**（人が替わったときに前の人の物を残さない）
     func reset() {
-        thread = []
-        pending = nil
-        pendingKind = nil
-        freshId = nil
+        clearThread()
         usage = nil
         pendingDetails = []
         spotsById = [:]
         photosById = [:]
+        carriedDraft = nil
+    }
+
+    /// 会話を画面から外す（残りの回数は持ったまま）
+    private func clearThread() {
+        thread = []
+        pending = nil
+        pendingKind = nil
+        freshId = nil
+        conversationId = nil
+        needsRefill = false
+        askingQuestion = nil
+        askOwner = nil
+    }
+
+    // MARK: - 会話を残す（札 #678・2026-11-21 判断）
+
+    /// この人の頼みとして控えに書いてよいかを覚える（頼み始めたとき）
+    private func claimOwner(_ userId: String?) {
+        askOwner = userId
+        ownerGeneration = AskHistoryStore.generation(userId)
+    }
+
+    /// 端末の控えに書いてよいか: ログインしていて、頼み始めたときと同じ人で、その間に控えを消していない
+    private func mayPersist(_ userId: String?) -> Bool {
+        guard let userId, !userId.isEmpty, userId == askOwner else { return false }
+        return AskHistoryStore.generation(userId) == ownerGeneration
+    }
+
+    /// AI に渡す直前のやりとり: **今日のものだけ**（数日前の会話の続きを AI に渡さない。画面には残す）
+    var contextThread: [AskExchange] {
+        let today = AskHistoryStore.day(Date())
+        return thread.filter { $0.askedAt.map { AskHistoryStore.day($0) == today } ?? false }
+    }
+
+    /// 画面を開いた: 端末の控えとそろえる。**AI は呼ばない、回数も使わない。**
+    /// - 持っている会話が控えから消えていたら（「前の会話」の一覧で消した、ログアウト・退会）、画面からも外す
+    /// - 何も出していなければ、控えの今の会話を戻す（アプリを落として開き直したとき）
+    /// - ログインしていない間は控えに何も無い（画面の中だけで持つ）
+    func resume(userId: String?) {
+        guard userId?.isEmpty == false else { return }
+        let list = history.conversations(userId: userId)
+        if let id = conversationId, pending == nil, !list.items.contains(where: { $0.id == id }) {
+            clearThread()
+        }
+        guard !isActive, let current = list.current else { return }
+        restore(current, userId: userId)
+    }
+
+    /// 控えの会話を出す（札の中身は `refill` で重ねる）
+    func restore(_ conversation: AskHistoryStore.Conversation, userId: String?) {
+        clearThread()
+        thread = conversation.thread
+        conversationId = conversation.id
+        needsRefill = true
+        claimOwner(userId)
+    }
+
+    /// 戻した会話の札の中身（観光スポットと写真）を、索引と公開の写真から重ねる（通信は `backend.library` の控えだけ）
+    func refill(backend: Backend) async {
+        guard needsRefill else { return }
+        let library = await backend.library(false)
+        guard !Task.isCancelled else { return }
+        remember(library: library, thread: thread)
+        needsRefill = false
+    }
+
+    /// 前の会話を開いて、続きから話せるようにする（Pro・`AskConversationRule`）
+    func open(_ conversation: AskHistoryStore.Conversation, backend: Backend) async {
+        restore(conversation, userId: backend.userId())
+        history.setCurrentConversation(conversation.id, userId: backend.userId())
+        await refill(backend: backend)
+    }
+
+    /// 「新しく頼む」: 何も頼んでいない画面に戻す。`keep` が false（無料）なら今の会話を控えから消す
+    func startNew(keep: Bool, userId: String?) {
+        if let id = conversationId {
+            if keep { history.setCurrentConversation(nil, userId: userId) } else { history.removeConversation(id, userId: userId) }
+        } else {
+            history.setCurrentConversation(nil, userId: userId)
+        }
+        clearThread()
+    }
+
+    /// 答えを待っている途中で閉じた: 待つのをやめる。利用者が打った頼みなら返す（開き直したら欄に戻す）。
+    /// 2026-11-21 判断: 閉じたら取り消す（今までどおり）。端末の AI は答えを出す直前に数えるので、取り消した回は数えない
+    func interrupt() -> String? {
+        guard let question = pending else { return nil }
+        let typed = question == askingQuestion ? question : nil
+        pending = nil
+        pendingKind = nil
+        askingQuestion = nil
+        return typed
+    }
+
+    /// 欄に戻す字を受け取る（受け取ったら消す）
+    func takeCarriedDraft() -> String? {
+        defer { carriedDraft = nil }
+        return carriedDraft
+    }
+
+    private func keepConversation(userId: String?) {
+        guard !thread.isEmpty, mayPersist(userId) else { return }
+        let id = conversationId ?? UUID().uuidString
+        conversationId = id
+        history.saveConversation(id: id, thread: thread, userId: userId)
     }
 
     /// 新しく頼む前に、**すぐに**答えの形（読み込み中）にする。前の会話は閉じる。返すのは頼んだ文（空なら nil）。
@@ -92,7 +207,10 @@ final class AskEngine: ObservableObject {
         let question = AskQuery.clipped(raw)
         guard !question.isEmpty else { return nil }
         thread = []
+        conversationId = nil
+        needsRefill = false
         pending = question
+        askingQuestion = question
         pendingKind = AskAnswerKind.byWords(question)
         return question
     }
@@ -100,44 +218,38 @@ final class AskEngine: ObservableObject {
     /// 新しく頼む（前の会話は閉じる）。同じ日の同じ頼みは控えから出す（回数を使わない）
     func start(_ raw: String, backend: Backend) async {
         guard let question = prepare(raw) else { return }
+        claimOwner(backend.userId())
         if let cached = history.today(question, userId: backend.userId()) {
             // 控えの札の中身（観光スポットと写真）を読み直して出す
             let library = await backend.library(false)
             guard !Task.isCancelled else { return }
             remember(library: library, thread: cached)
             freshId = nil
-            thread = cached
+            thread = cached.map { var e = $0; e.askedAt = Date(); return e }
             pending = nil
+            askingQuestion = nil
+            keepConversation(userId: backend.userId())
             return
         }
         await ask(question, backend: backend)
-    }
-
-    /// 前に頼んだことを見せる（端末の控え `AskHistoryStore` から出すだけ。**AI は呼ばない、回数も使わない**・札 #675）
-    func showSaved(_ saved: [AskExchange], backend: Backend) async {
-        guard let first = saved.first else { return }
-        thread = []
-        freshId = nil
-        pending = first.question
-        pendingKind = nil
-        let library = await backend.library(false)
-        guard !Task.isCancelled else { return }
-        remember(library: library, thread: saved)
-        thread = saved
-        pending = nil
-    }
-
-    /// 今日すでに答えた控えがあるか（最近の語を押したとき、控えがあるときだけ答えを出す・AI は呼ばない・札 #662）
-    func hasToday(_ raw: String, userId: String?) -> Bool {
-        let question = AskQuery.clipped(raw)
-        guard !question.isEmpty else { return false }
-        return history.today(question, userId: userId) != nil
     }
 
     /// 答えの下の欄で続けて聞く（続きも1回と数える）
     func followUp(_ raw: String, backend: Backend) async {
         let question = AskQuery.clipped(raw)
         guard !question.isEmpty, !thread.isEmpty, pending == nil else { return }
+        // 2026-11-21 判断（札 #678 の確かめ役の指摘）: 戻した会話から続けて聞くときも、同じ日の同じ頼みは控えの答えを出す
+        // （回数を使わない。閉じて開き直すと会話の続きになるので、新しく頼む道を通らなくなった）
+        if let cached = history.today(question, userId: backend.userId())?.first,
+           RecentSearchesStore.normalized(cached.question) == RecentSearchesStore.normalized(question) {
+            pending = question
+            claimOwner(backend.userId())
+            let library = await backend.library(false)
+            guard !Task.isCancelled else { return }
+            append(AskExchange(question: question, answer: cached.answer), library: library, backend: backend)
+            freshId = nil
+            return
+        }
         await ask(question, backend: backend)
     }
 
@@ -146,6 +258,7 @@ final class AskEngine: ObservableObject {
         guard let phrase = exchange.answer.relaxedQuery, pending == nil else { return }
         pending = phrase
         pendingKind = .cards
+        claimOwner(backend.userId())
         let library = await backend.library(false)
         let answer = await tableAnswer(phrase, library: library, backend: backend, note: nil, state: .answered)
         guard !Task.isCancelled else { return }
@@ -158,9 +271,10 @@ final class AskEngine: ObservableObject {
     /// 旅行プランを作る頼みを、答えの流れとして待つ（流れの骨格を出す）。作るのは旅行プランの AI（`TripAIJobs`）で、
     /// **回数は旅行プランの AI の枠**（`TripAIRunner` が取る。ここでは数えない）。返すのは頼んだ文（待てないときは nil）
     @discardableResult
-    func beginPlan(_ raw: String) -> String? {
+    func beginPlan(_ raw: String, userId: String? = nil) -> String? {
         let question = AskQuery.clipped(raw)
         guard !question.isEmpty, pending == nil else { return nil }
+        claimOwner(userId)
         pending = question
         pendingKind = .plan
         mark("start")
@@ -211,16 +325,33 @@ final class AskEngine: ObservableObject {
     }
 
     private func appendPlain(_ exchange: AskExchange, userId: String?) {
-        thread.append(exchange)
-        freshId = exchange.id
+        push(exchange)
         pending = nil
         pendingKind = nil
+        persist(userId: userId)
+    }
+
+    /// 会話に1往復足す（頼んだ時刻を付ける。残すのは新しい `AskHistoryStore.turnLimit` 往復まで）
+    private func push(_ exchange: AskExchange) {
+        var e = exchange
+        if e.askedAt == nil { e.askedAt = Date() }
+        thread.append(e)
+        if thread.count > AskHistoryStore.turnLimit { thread.removeFirst(thread.count - AskHistoryStore.turnLimit) }
+        freshId = e.id
+    }
+
+    /// 端末の控えに書く（同じ日の同じ頼みの控えと、会話）。ログインしていない、人が替わった、控えを消した間の答えは書かない
+    private func persist(userId: String?) {
+        guard mayPersist(userId) else { return }
         let kept = Self.keepable(thread)
         if !kept.isEmpty { history.remember(kept, userId: userId) }
+        keepConversation(userId: userId)
     }
 
     private func ask(_ question: String, backend: Backend) async {
         pending = question
+        askingQuestion = question
+        claimOwner(backend.userId())
         pendingKind = AskAnswerKind.byWords(question)
         mark("start")
         let answer = await answer(question, backend: backend)
@@ -250,12 +381,11 @@ final class AskEngine: ObservableObject {
 
     private func append(_ exchange: AskExchange, library: AskLibrary?, backend: Backend) {
         if let library { remember(library: library, thread: [exchange]) }
-        thread.append(exchange)
-        freshId = exchange.id
+        push(exchange)
         pending = nil
         pendingKind = nil
-        let kept = Self.keepable(thread)
-        if !kept.isEmpty { history.remember(kept, userId: backend.userId()) }
+        askingQuestion = nil
+        persist(userId: backend.userId())
     }
 
     /// 控えに残す往復（2026-11-20 判断）: **AI で答えた回と断った回だけ**。圏外、ログインしていない、上限、AI が答えない回の
@@ -288,7 +418,7 @@ final class AskEngine: ObservableObject {
         // AI が答えなかった、時間切れ、欄を打ち替えて取り消した回は数えない（Artifact「数えない回」）。取れなければ答えを出さない
         if onDevice {
             mark("deviceAsking")
-            let result = await backend.deviceAsk(question, thread, library)
+            let result = await backend.deviceAsk(question, contextThread, library)
             if Task.isCancelled { return AskAnswer(engine: .table) }
             guard let result else {
                 return await tableAnswer(question, library: library, backend: backend, note: AskText.silentLine, state: .answered)
@@ -314,9 +444,10 @@ final class AskEngine: ObservableObject {
         let query = AskLibrary.query(reading: reading, intent: intent, sentence: question, spots: library.spots)
         let picks = intent.spots ? library.pickSpots(query) : []
         do {
-            let turns = thread.suffix(AskService.historyTurns).map { AskService.Turn(question: $0.question, answer: $0.answer.text) }
+            let turns = contextThread.suffix(AskService.historyTurns).map { AskService.Turn(question: $0.question, answer: $0.answer.text) }
             mark("serverAsking")
             let reply = try await backend.serverAsk(question, Array(turns), picks.map(\.spot))
+            if Task.isCancelled { return AskAnswer(engine: .table) }
             if let quota = reply.quota { self.usage = quota }
             // サーバーが断った（呼ぶ前の断り・AI の断り・答えの前の見張り）。アプリの断りの1行にそろえ、札も出さない
             if reply.refused { return .refused(care: AskGuard.needsCare(question)) }
@@ -326,7 +457,7 @@ final class AskEngine: ObservableObject {
             return await aiAnswer(question, text: text, general: reply.general, picks: picks, photoIds: [],
                                   sources: sources, engine: .server, aiKind: reply.kind, library: library, backend: backend)
         } catch AskService.Failure.limit(let reason, let quota) {
-            if let quota { self.usage = quota }
+            if let quota, !Task.isCancelled { self.usage = quota }
             var a = await tableAnswer(question, library: library, backend: backend, note: nil, state: .answered)
             a.limit = reason
             return a
@@ -342,10 +473,14 @@ final class AskEngine: ObservableObject {
                                    backend: Backend) async -> AskAnswer? {
         mark("reserving")
         do {
-            usage = try await backend.reserve(.ask, via)
+            let reserved = try await backend.reserve(.ask, via)
+            // 2026-11-21 判断（バグ調べ）: 待っている間に取り消された（ログアウトして `reset` した・画面を閉じた）回は、
+            // 前の人の残りの回数を置き直さない（上の1行に前の人の回数が残っていた）。答えも出さない
+            guard !Task.isCancelled else { return AskAnswer(engine: .table) }
+            usage = reserved
             return nil
         } catch AskService.Failure.limit(let reason, let quota) {
-            if let quota { usage = quota }
+            if let quota, !Task.isCancelled { usage = quota }
             var a = await tableAnswer(question, library: library, backend: backend, note: nil, state: .answered)
             a.limit = reason
             return a
@@ -484,7 +619,4 @@ final class AskEngine: ObservableObject {
         for p in library.photos where set.contains(p.id) { photosById[p.id] = p }
     }
 
-    /// 最近の検索の × と「すべて消す」で、答えの控えも消す
-    func forget(_ question: String, userId: String?) { history.remove(question, userId: userId) }
-    func forgetAll(userId: String?) { history.removeAll(userId: userId) }
 }

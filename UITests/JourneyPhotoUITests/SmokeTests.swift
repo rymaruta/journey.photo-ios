@@ -14,7 +14,7 @@ import XCTest
 /// Web 側が「実ブラウザのスモーク（Chromium）」を必ず通しているのと同じ役目
 /// （`photo-gallery/CLAUDE.md`）。**通信は当てにしない**——staging には
 /// 写真が1枚も無いので、中身ではなく「落ちずに描けたか」だけを見る。
-final class SmokeTests: XCTestCase {
+final class SmokeTests: JPUITestCase {
 
     override func setUp() {
         continueAfterFailure = false

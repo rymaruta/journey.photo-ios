@@ -9,7 +9,7 @@ import XCTest
 ///
 /// 見本の写真と曲（`-JPPreviewStorySong`・通信しない）で開く。**作る画面まで行けなかった回は落とさない**
 /// （巡回の `testCapturesStorySongStickerStyles` と同じ抜け方）。開けた後の (1)〜(3) が見張り
-final class StoryCaptionTests: XCTestCase {
+final class StoryCaptionTests: JPUITestCase {
 
     override func setUp() {
         continueAfterFailure = false

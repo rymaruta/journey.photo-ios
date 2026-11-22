@@ -21,6 +21,8 @@ struct VisitedBottomBar: View {
                     .font(JPFont.footnote)
                     .foregroundStyle(WebTheme.foreground)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    // 読み上げは本当の数（「3+ 回」を「3 たす」と読ませない・2026-11-21 判断）
+                    .accessibilityLabel(toast.spoken ?? toast.message)
                 if toast.offersUndo {
                     barButton(VisitedMapText.undo, id: "visitedMap.undo") { model.undo() }
                 }

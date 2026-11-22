@@ -85,7 +85,8 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
 
 # クラスの直下（字下げ4つ）の関数だけを区切りにする。中の入れ子の関数は本体に含める
 MEMBER = re.compile(r"^    (?:@\w+\s+)*(?:(?:private|fileprivate|override|static|final)\s+)*func\s+(\w+)\s*\(", re.M)
-CLASS = re.compile(r"^(?:final\s+)?class\s+(\w+)\s*:\s*XCTestCase", re.M)
+# 2026-11-21（札 #681）: UI テストの組は共通の基 `JPUITestCase` に乗る。基そのものは試験を持たないので数えない
+CLASS = re.compile(r"^(?:final\s+)?class\s+(?!JPUITestCase\b)(\w+)\s*:\s*(?:XCTestCase|JPUITestCase)", re.M)
 STRING = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
 
 

@@ -119,7 +119,14 @@ struct TripPlanService {
 
     /// 消す。**共有したプランは、作った人なら仲間全員から消え、仲間なら抜ける**（サーバーが分ける）
     func delete(planId: String) async throws -> TripPlanList {
-        if TripPlanFixture.isOn { return TripPlanList(plans: await TripPlanFixtureStore.shared.delete(planId: planId)) }
-        return try await api.authorized(.delete, "/user/trips/\(encoded(planId))", as: TripPlanList.self)
+        let list: TripPlanList
+        if TripPlanFixture.isOn {
+            list = TripPlanList(plans: await TripPlanFixtureStore.shared.delete(planId: planId))
+        } else {
+            list = try await api.authorized(.delete, "/user/trips/\(encoded(planId))", as: TripPlanList.self)
+        }
+        // 消せたら、このプランの出発の時刻の覚えも消す（札 #677）
+        await TripStartStore.shared.forget(planId: planId)
+        return list
     }
 }

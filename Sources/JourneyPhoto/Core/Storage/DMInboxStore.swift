@@ -84,8 +84,15 @@ final class DMInboxStore: ObservableObject {
     }
 
     /// 手元で変えたグループの一覧（読んだ・抜けた・参加した）。進んでいる読み込みの答えは捨てる
+    ///
+    /// 2026-11-21 判断（グループの DM のバグ調べ）: **何も変わらなかったときは、進んでいる読み込みを捨てない。**
+    /// 開いている会話は 15 秒ごとの読み直しのたびに「読んだ」を置く（`GroupConversationView.load`）。既に読んだグループ、
+    /// まだ一覧に無いグループ（作った直後・通知から開いた直後）でも世代を進めていたので、その間に走っていた一覧の読み直し
+    /// （作った直後の `refreshGroups` など）が捨てられ、作ったグループが受信箱に出なかった
     func applyGroups(_ change: (GroupInbox) -> GroupInbox) {
-        groups = change(groups)
+        let next = change(groups)
+        guard next != groups else { return }
+        groups = next
         groupGeneration += 1
     }
 

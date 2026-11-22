@@ -17,7 +17,7 @@ import XCTest
 /// 測った数: 直した後は2回とも上 21・下 16 が自分の行（run 1360 では下 17〜20 も自分の行）。下 21 は下の行が選ばれ、
 /// 下に行の無い3行目の下 21 は自分の行だった（当たりは 44pt あり、境目の 1pt 手前だけ下の行に取られる）。
 /// 直す前（run 1353）は行が 22pt おきで、下 8pt で下の行が選ばれた
-final class PlaceSuggestionHitTests: XCTestCase {
+final class PlaceSuggestionHitTests: JPUITestCase {
 
     private static let previewUserId = "67d49a68-80f1-7083-b0e0-c767886ef868"
     /// 撮影スポットの名前に多い語。2件以上の候補が出るものを前から使う

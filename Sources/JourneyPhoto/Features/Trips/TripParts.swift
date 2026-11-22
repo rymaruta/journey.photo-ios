@@ -184,20 +184,18 @@ struct TripStopNumber: View {
 }
 
 /// 線の小ボタン（板 `.bo`: 44・白 14% の線・15 の semibold）。**幅は中身に合わせる**
-/// （`fill` で札の幅いっぱい）。危ないもの（端末から削除）は赤の字に赤 40% の線。
-/// 形は土台の `jpOutlineButton`（2026-10-14 判断: 線の小ボタンを1つに寄せた）
+/// （`fill` で札の幅いっぱい）。消すもの（端末から削除）は赤の塗りに白の字（2026-11-21 判断・札 #679・`JPOutlineTone.danger`）。
+/// 削除の確かめの札は `JPDeleteConfirm`。形は土台の `jpOutlineButton`（2026-10-14 判断: 線の小ボタンを1つに寄せた）
 struct TripOutlineButton: View {
     let title: String
     var danger = false
-    /// 削除の確かめの「削除する」（赤 16% の地・赤 50% の線・白の字）
-    var strong = false
     var fill = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Text(title)
-                .jpOutlineButton(.regular, tone: strong ? .strong : danger ? .danger : .plain, fullWidth: fill)
+                .jpOutlineButton(.regular, tone: danger ? .danger : .plain, fullWidth: fill)
         }
         .buttonStyle(.plain)
     }
@@ -237,12 +235,31 @@ struct TripStopLabel: View {
     /// 「夜明け · 朝」。案内の無い行は nil
     var timeChip: String? = nil
     var note: String? = nil
+    /// 着く時刻の目安（分・札 #677）。`showsTime` のときだけ出す（作る流れの下書きは出さない）
+    var time: Int? = nil
+    var showsTime = false
+    /// 朝の場所に遅れて着く一言・待たせなかった夜の場所の日の入り（`TripTimes.cautionLine`）
+    var timeCaution: String? = nil
+
+    @ScaledMetric(relativeTo: .body) private var timeWidth: CGFloat = TripTimeStyle.columnWidth
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        // 大きな字の設定では時刻の列を作らず、名前の上に置く（列が名前を押しつぶさない）
+        let inColumn = showsTime && !typeSize.isAccessibilitySize
         HStack(alignment: .top, spacing: JPSpace.s) {
+            if inColumn {
+                TripTimeText(minutes: time)
+                    .frame(width: timeWidth, alignment: .trailing)
+                    .padding(.top, 1)
+                    .padding(.trailing, TripTimeStyle.columnGap - JPSpace.s)
+            }
             TripStopNumber(number: number)
                 .padding(.top, 2)
             VStack(alignment: .leading, spacing: JPSpace.xxs) {
+                if showsTime, !inColumn, time != nil {
+                    TripTimeText(minutes: time)
+                }
                 Text(name)
                     .font(isSpot ? JPFont.rowTitle : JPFont.bodyEmphasis)
                     .foregroundStyle(WebTheme.text)
@@ -269,16 +286,28 @@ struct TripStopLabel: View {
                         .foregroundStyle(WebTheme.text2)
                         .lineLimit(3)
                 }
+                if showsTime, let timeCaution {
+                    Text(timeCaution)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 0)
         }
         .padding(.vertical, JPSpace.s)
         .frame(minHeight: JPHeight.tallRow)
         .contentShape(Rectangle())
-        // 読み上げは「1 · 名前 · 季節 · 時間帯 · ひとこと」（番号の丸は絵として隠している）
+        // 読み上げは「1 · 9時、名前 · 季節 · 時間帯 · ひとこと」（番号の丸は絵として隠している）
         .accessibilityElement(children: .combine)
-        .accessibilityLabel([String(number), name, season, timeChip, note].compactMap { $0 }
-            .filter { !$0.isEmpty }.joined(separator: "\u{2002}"))
+        .accessibilityLabel(Self.spoken(number: number, name: name, time: showsTime ? time : nil,
+                                        parts: [season, timeChip, note, showsTime ? timeCaution : nil]))
+    }
+
+    /// 読み上げの字（「1 9時、日比谷公園 …」）
+    nonisolated static func spoken(number: Int, name: String, time: Int?, parts: [String?]) -> String {
+        ([String(number), TripTimes.spokenStop(time, name: name)] + parts.compactMap { $0 })
+            .filter { !$0.isEmpty }.joined(separator: "\u{2002}")
     }
 }
 

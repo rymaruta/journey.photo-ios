@@ -392,6 +392,8 @@ final class AuthStore: ObservableObject {
         DownsampledRemoteImage.memory.removeAll()
         // AI で作っている旅行プランを止め、知らせ・開く先・控え（候補と理由）を次の人に残さない（札 #621）
         TripAIJobs.shared.signOut()
+        // 旅行プランの出発の時刻の覚え（プランの番号と日付）も次の人に残さない（札 #677）
+        TripStartStore.shared.forgetAll()
         state = .signedOut
         isAdmin = false
         errorMessage = nil

@@ -166,6 +166,27 @@ final class VisitedMapModelTests: XCTestCase {
         XCTAssertEqual(m.quickBar?.prefecture, "沖縄県", "知らない県は無視する")
     }
 
+    /// 2026-11-21（バグ調べ）: 知らせの帯は画面の字が「3+ 回」でも、読み上げは本当の数（「3 たす」と読ませない）
+    func testToastSpeaksTheRealCount() async {
+        let m = model()
+        m.open(userId: "u")
+        for _ in 0..<4 { m.add("北海道") }
+        XCTAssertEqual(m.record.count("北海道"), 4)
+        XCTAssertEqual(m.toast?.message, "北海道を記録しました（3+ 回）")
+        XCTAssertEqual(m.toast?.spoken, "北海道を記録しました（4 回）", "知らせの読み上げが「3+」のまま")
+        m.remove("北海道")
+        XCTAssertEqual(m.toast?.message, "北海道を 1 回減らしました（3+ 回）")
+        XCTAssertEqual(m.toast?.spoken, "北海道を 1 回減らしました（3 回）")
+        // 帯は読み上げの文を使う
+        let bar = (try? String(contentsOfFile: Self.sourceRoot + "/Features/Profile/VisitedBottomBar.swift", encoding: .utf8)) ?? ""
+        XCTAssertTrue(bar.contains(".accessibilityLabel(toast.spoken ?? toast.message)"))
+    }
+
+    private static var sourceRoot: String {
+        URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto").path
+    }
+
     /// 帯がある間は「取り消す」の帯を作らない。帯の県と関係の無い一手を戻したら帯は閉じる
     func testQuickBarAndUndoToastDoNotOverlap() async {
         let m = model()

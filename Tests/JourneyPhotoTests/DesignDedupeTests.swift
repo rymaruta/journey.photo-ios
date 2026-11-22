@@ -160,9 +160,8 @@ final class DesignDedupeTests: XCTestCase {
         XCTAssertEqual(JPOutlineSize.inline.height, 36)
         XCTAssertEqual(JPOutlineSize.regular.tapSlack, 0)
         XCTAssertEqual(JPOutlineSize.inline.tapSlack, 4, "見た目 36 の当たりが 44 にならない")
-        XCTAssertEqual(JPOutlineTone.dangerLineOpacity, 0.4)
-        XCTAssertEqual(JPOutlineTone.strongFillOpacity, 0.16)
-        XCTAssertEqual(JPOutlineTone.strongLineOpacity, 0.5)
+        XCTAssertEqual(JPOutlineSize.confirm.height, 50, "削除の確かめの札のボタンは 50（2026-11-21・札 #679）")
+        XCTAssertEqual(JPOutlineSize.confirm.tapSlack, 0)
     }
 
     /// 3つの線のボタンが同じ面（`jpCapsuleFace`）を通る

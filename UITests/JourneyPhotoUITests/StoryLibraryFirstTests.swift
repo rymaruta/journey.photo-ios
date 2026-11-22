@@ -11,7 +11,7 @@ import XCTest
 ///
 /// 🔴 **写真の許可は終わったら元に戻す**（`resetAuthorizationStatus`）。残すと、あとに流れる
 /// `StoryPickerTests`（許可の無い埋め込みの写真選びを押す試験）が一覧の画面に当たって押せなくなる
-final class StoryLibraryFirstTests: XCTestCase {
+final class StoryLibraryFirstTests: JPUITestCase {
 
     /// 巡回（`ScreenshotTests`）と同じ、鍵を持たないログインの利用者
     private static let previewUserId = "67d49a68-80f1-7083-b0e0-c767886ef868"

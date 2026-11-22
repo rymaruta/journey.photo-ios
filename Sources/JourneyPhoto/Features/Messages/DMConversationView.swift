@@ -245,12 +245,12 @@ struct DMConversationView: View {
             TripPlanDetailView(planId: planId, model: tripPlans, sharePeer: tripSharePeer)
         }
         .navigationDestination(item: $openedGroup) { open in
-            GroupConversationView(groupId: open.groupId, notice: open.notice, onLeft: { openedGroup = nil })
+            GroupConversationView(groupId: open.groupId, seed: open.seed, notice: open.notice, onLeft: { openedGroup = nil })
         }
         .sheet(isPresented: $showAddPeople, onDismiss: {
             guard let ready = pickedGroup else { return }
             pickedGroup = nil
-            openedGroup = GroupOpen(groupId: ready.groupId, notice: ready.notice)
+            openedGroup = GroupOpen.created(ready)
             Task { await store.refreshGroups(service: environment.groups, owner: auth.userId) }
         }) {
             NavigationStack {
@@ -761,7 +761,8 @@ struct DMConversationView: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                 // 2026-11-14 判断（前回の点検の残り・板「危険の色は danger #F0565A（削除、通報）」）: 危険の線のボタン
-                // （赤の字・赤 40% の線・`JPOutlineTone.danger`）。前は白の線のボタンで、消す操作に見えなかった。確かめのダイアログは今のまま
+                // （`JPOutlineTone.danger`）。前は白の線のボタンで、消す操作に見えなかった。確かめのダイアログは今のまま。
+                // 2026-11-21 判断（札 #679）: 線から赤の塗りに白の字へ（iOS のふつうの「削除」・アプリ全体でそろえた）
                 Button { showDeleteConfirm = true } label: {
                     Text(L("会話を削除", "Delete conversation")).jpOutlineButton(.regular, tone: .danger, fullWidth: true)
                 }

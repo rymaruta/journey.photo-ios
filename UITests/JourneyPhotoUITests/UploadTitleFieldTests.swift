@@ -14,7 +14,7 @@ import XCTest
 /// （下の主ボタンの帯がある版では標準の文字も落ちる）。
 ///
 /// 見本の1枚（`-JPPreviewUploadSample`）と端末の中の通信（`-JPPreviewLocalBackend`）で開く。
-final class UploadTitleFieldTests: XCTestCase {
+final class UploadTitleFieldTests: JPUITestCase {
 
     private static let previewUserId = "67d49a68-80f1-7083-b0e0-c767886ef868"
     /// 打つ題。兼六園は撮影スポットの名前（題から撮影スポットを選ぶ道に当たる）

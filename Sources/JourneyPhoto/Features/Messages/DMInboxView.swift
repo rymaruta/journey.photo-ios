@@ -16,6 +16,14 @@ enum DMRoute: Hashable {
 struct GroupOpen: Hashable {
     let groupId: String
     var notice: String?
+    /// 読む前の見出し（作ったときの答えの名前・顔・人数）。
+    /// 2026-11-21 判断（バグ調べ）: 作った直後の会話は、読み終えるまで見出しが「グループ」だった。作ったときの答えを渡して最初から名前を出す
+    var seed: GroupInfo? = nil
+
+    /// 作った・足したあとに開く会話（知らせと見出しを持たせる）
+    static func created(_ ready: GroupReady) -> GroupOpen {
+        GroupOpen(groupId: ready.groupId, notice: ready.notice, seed: ready.info)
+    }
 }
 
 /// メッセージの受信箱（画面案「受信箱」・札 #505・2026-11-10）。ホームの見出しの吹き出しから、シートで開く。
@@ -79,7 +87,7 @@ struct DMInboxView: View {
             case .trip(let planId):
                 TripPlanOpenView(planId: planId, startTab: .chat)
             case .group(let open):
-                GroupConversationView(groupId: open.groupId, notice: open.notice, onLeft: { self.route = nil })
+                GroupConversationView(groupId: open.groupId, seed: open.seed, notice: open.notice, onLeft: { self.route = nil })
             }
         }
         .toolbar {
@@ -90,7 +98,7 @@ struct DMInboxView: View {
         .sheet(isPresented: $showNewMessage, onDismiss: {
             if let ready = pickedGroup {
                 pickedGroup = nil
-                route = .group(GroupOpen(groupId: ready.groupId, notice: ready.notice))
+                route = .group(GroupOpen.created(ready))
                 Task { await store.refreshGroups(service: environment.groups, owner: auth.userId) }
                 return
             }

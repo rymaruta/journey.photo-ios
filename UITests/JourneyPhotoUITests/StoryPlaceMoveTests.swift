@@ -13,7 +13,7 @@ import XCTest
 ///
 /// 見本の写真と曲（`-JPPreviewStorySong`・通信しない）で開く。**作る画面まで行けなかった回は落とさない**
 /// （`StoryCaptionTests` と同じ抜け方）。動かなかった相手があれば、全部測り終えてから 1 回だけ落とす。
-final class StoryPlaceMoveTests: XCTestCase {
+final class StoryPlaceMoveTests: JPUITestCase {
 
     override func setUp() {
         continueAfterFailure = true
