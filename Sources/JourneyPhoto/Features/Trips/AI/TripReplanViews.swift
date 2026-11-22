@@ -16,6 +16,8 @@ struct TripReplanBar: View {
     let noticeOpensPro: Bool
     /// 置き換えたあと、元に戻せるか（画面を開いている間）
     let canUndo: Bool
+    /// 「書いて頼む」の欄の下に、打った文をサーバーへ送ることの知らせを出すか（`AskServerNotice.shows`・2026-11-22 判断）
+    var serverNotice: Bool = false
     let run: (_ label: String, _ request: String, _ typed: Bool) -> Void
     let undo: () -> Void
     let openPro: () -> Void
@@ -59,7 +61,11 @@ struct TripReplanBar: View {
             .disabled(working != nil)
             .opacity(working != nil ? TripStyle.disabledOpacity : 1)
 
-            if writing { writeField }
+            if writing {
+                writeField
+                // 送る前に見える所（欄のすぐ下）に、AI に頼むと同じ部品で出す
+                if serverNotice { AskServerNoticeText(id: "tripReplan.serverNotice") }
+            }
 
             if let working {
                 HStack(spacing: JPSpace.xs) {

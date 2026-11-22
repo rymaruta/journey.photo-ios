@@ -105,7 +105,8 @@ struct TripAIEntrySection: View {
 struct TripAIAskSheet: View {
     @State var ask: TripAIAsk
     let placeChoices: [(label: String, prefecture: String)]
-    let onDevice: Bool
+    /// 打った文をサーバーへ送る人か（`AskServerNotice.shows`。呼ぶ側が同じ条件で決める）
+    let serverNotice: Bool
     let start: (TripAIAsk) -> Void
     let index: [OfficialSpot]
     @Environment(\.dismiss) private var dismiss
@@ -132,11 +133,9 @@ struct TripAIAskSheet: View {
                             .accessibilityIdentifier("tripAI.extra")
                     }
                     .jpFieldBox()
-                    Label(onDevice ? L("この iPhone の中で組みます", "Planned on this iPhone")
-                                   : L("書いた文は、日本にある journey.photo のサーバーで読みます", "Your words are read on journey.photo's server in Japan"),
-                          systemImage: onDevice ? "iphone" : "cloud")
-                        .font(JPFont.caption)
-                        .foregroundStyle(WebTheme.text3)
+                    // 2026-11-22 判断: 「どこで組むか」の1行（iPhone・雲の印、置き場の地域）はやめ、サーバーへ送る人にだけ
+                    // AI に頼むと同じ知らせを、送る前（「この内容で作る」の上）に出す
+                    if serverNotice { AskServerNoticeText(id: "tripAI.serverNotice") }
                 }
                 .padding(.horizontal, JPSpace.gutter)
                 .padding(.top, JPSpace.xs)
