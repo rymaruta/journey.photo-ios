@@ -26,7 +26,7 @@ struct WhatsNewHomeBadge: View {
                         .frame(width: 8, height: 8)
                         .accessibilityHidden(true)
                     Text(WhatsNewHomeBadge.title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .jpSystemFont(13, weight: .semibold, relativeTo: .footnote)
                         .foregroundStyle(WebTheme.accent)
                         .lineLimit(1)
                 }

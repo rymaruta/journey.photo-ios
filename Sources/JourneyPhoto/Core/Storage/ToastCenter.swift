@@ -111,6 +111,13 @@ final class ToastCenter: ObservableObject {
         undo = nil
     }
 
+    /// 出ている知らせがこの字のときだけ下ろす（札 #628: 「投稿しました」の1枚を出したとき、同じ投稿の知らせだけを下ろす。
+    /// 別の投稿の「送れませんでした　もう一度」などは残す）
+    func dismiss(ifShowing text: String) {
+        guard current?.text == text else { return }
+        dismiss()
+    }
+
     /// 「取り消す」を押した。知らせを消してから戻す（続けて押しても1回だけ）。
     /// 戻せなかったら失敗の知らせで一言（2026-11-12 判断・確かめ役の指摘: 失敗が伝わらなかった）
     func performUndo() async {

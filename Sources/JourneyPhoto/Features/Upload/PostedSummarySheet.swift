@@ -102,7 +102,8 @@ struct PostedSummarySheet: View {
                 row(text: PostedSummaryText.coverFailed, action: PostedSummaryText.retry, busy: false,
                     id: "postedSummary.cover") { applyCover() }
             case .idle, .applying:
-                row(text: PostedSummaryText.coverRow, action: PostedSummaryText.coverAction, busy: cover == .applying,
+                row(text: PostedSummaryText.coverRow(showsCoins: shown.cover?.showsCoins ?? false),
+                    action: PostedSummaryText.coverAction, busy: cover == .applying,
                     id: "postedSummary.cover") { applyCover() }
             }
         case .labels(let count):
@@ -190,7 +191,12 @@ enum PostedSummaryText {
     static var shareCard: String { L("カードを共有", "Share card") }
     static var pushRow: String { L("いいねや返事が来たら知らせる", "Get notified about likes and replies") }
     static var pushAction: String { L("オンにする", "Turn on") }
-    static var coverRow: String { L("この写真をカバーに", "Use this photo as your cover") }
+    /// カバーの行。初めてのカバーで硬貨が届くとき（`Offer.showsCoins`）は枚数も言う（前の `CoverOfferView` と同じ約束）
+    static func coverRow(showsCoins: Bool) -> String {
+        guard showsCoins else { return L("この写真をカバーに", "Use this photo as your cover") }
+        let n = ProfileRewardText.coinsPerKind
+        return L("この写真をカバーに（硬貨 \(n) 枚）", "Use this photo as your cover (\(n) coins)")
+    }
     static var coverAction: String { L("する", "Use") }
     static var coverDone: String { L("カバーにしました", "Cover updated") }
     static var coverFailed: String { L("カバーにできませんでした", "Couldn't set the cover") }

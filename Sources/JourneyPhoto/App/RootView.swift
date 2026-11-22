@@ -701,8 +701,16 @@ struct RootView: View {
                 offersPush: PushPrimer.shouldOffer(signedIn: true, permission: push.permission,
                                                    alreadyOffered: pushPrimer.alreadyOffered),
                 labels: nil)
-            // 出したら、同じ投稿の知らせ（「投稿しました　カードにする」）は下ろす（カードはこの1枚から開ける）
-            if auth.userId == userId, postedSummary.present(summary) { toasts.dismiss() }
+            // 2026-11-22 確かめ役の指摘（札 #628）: ほかの画面が出ている間に出すと SwiftUI に黙って無視され、`presented` が
+            // 残って評価・届いた画面・硬貨の待ちが全部止まった。ほかの画面が閉じるまで待ち（最長約30秒）、出す直前に見直す。
+            // 出せなければ出さず、知らせ「投稿しました　カードにする」も残す（カードはそこから開ける）
+            let ready = await PostModalGate.wait(tries: 30, snapshot: postModalSnapshot,
+                                                 until: PostedSummaryCenter.mayPresent,
+                                                 sleep: { try? await Task.sleep(nanoseconds: 1_000_000_000) })
+            // 出したら、同じ投稿の知らせ（「投稿しました　カードにする」）だけ下ろす。別の投稿の失敗の知らせは残す
+            if ready, auth.userId == userId, !Task.isCancelled, !ModalProbe.isPresenting(), postedSummary.present(summary) {
+                toasts.dismiss(ifShowing: PostedCardHabit.quietText)
+            }
             // 「決めている途中」は出してから下ろす（下ろした瞬間に届いたラベルが、1枚に入らず知らせになるのを防ぐ）
             coverOffers.finishFirstPost(userId: userId, offer: nil, checked: checked)
         }
@@ -1174,6 +1182,8 @@ struct RootView: View {
             // 届いた画面が出ている・出すものが残っている間は頼まない（次のうれしい瞬間に回す）
             guard PostModalGate.reviewMayAsk(postModalSnapshot()),
                   pushPrimer.letsReviewAsk(offeredAtStart: offeredAtStart),
+                  // 「投稿しました」を出した投稿では頼まない（投稿のあとで割り込むのは1つまで・札 #628）。数えた分は残す
+                  !postedSummary.takeReviewSkip(),
                   reviewPrompt.consume() else { return }
             #if canImport(StoreKit)
             requestReview()

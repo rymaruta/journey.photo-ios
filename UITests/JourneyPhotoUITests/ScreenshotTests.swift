@@ -2197,10 +2197,8 @@ final class ScreenshotTests: JPUITestCase {
         guard close.exists, close.isHittable else { return XCTFail("「閉じる」を押せない") }
         close.tap()
         XCTAssertTrue(title.waitForNonExistence(timeout: 5), "「閉じる」1回で閉じない")
-        // 閉じたあと、通知の説明・届いた画面が続けて出ない
-        Thread.sleep(forTimeInterval: 2)
-        XCTAssertFalse(app.buttons["push.primer.allow"].firstMatch.exists, "閉じたあとに通知の説明が出た")
-        XCTAssertFalse(app.buttons["trunk.arrived.stick"].firstMatch.exists, "閉じたあとに届いた画面が出た")
+        // 閉じたあとに通知の説明・届いた画面が続かないことは、ここでは見ない（見本の起動では投稿していないので、
+        // どちらも元から出ない）。守るのは単体テスト `FewerInterstitialsTests`（行に入れる・知らせにする・評価を見送る）
     }
 
     /// **通知の説明**（2026-10-11・`PushPrimerView`）。ふだんは初めての投稿が上がったときに1回だけ出る。

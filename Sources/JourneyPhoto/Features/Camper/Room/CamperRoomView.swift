@@ -264,6 +264,8 @@ struct CamperRoomView: View {
         if CamperRoomPreview.contactKind != nil { showContact = true }
         if CamperRoomPreview.select, !CamperRoomPreview.lift { selected = editor?.doc.items.first { $0.k == "storage.trunk" }?.u }
         showCoach = CamperRoomPreview.coach || (!CamperRoomPreview.reset && CamperRoomCoach.shouldShow())
+        // 一度見せたら済んだと覚える（読み上げで触らない人、触らずに別の場面へ移った人にも、次から出さない・札 #628）
+        if showCoach, !CamperRoomPreview.coach { CamperRoomCoach.done() }
     }
 
     private func recount() {
@@ -516,7 +518,9 @@ struct CamperRoomView: View {
         .contentShape(Rectangle())
         .gesture(pointer)
         // 触った瞬間に手引きの1行を消す（札 #628）。部屋の操作はそのまま通す
-        .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in dismissCoach() })
+        // 手引きが出ている間だけ付ける（ふだんの操作には重ねない）
+        .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in dismissCoach() },
+                             including: Self.coachGestureMask(showing: showCoach))
         .simultaneousGesture(pinch)
         .simultaneousGesture(twist)
         .accessibilityElement(children: .ignore)
@@ -718,11 +722,13 @@ struct CamperRoomView: View {
     static let coachText = L("指で部屋を回せます、家具は長押しで持ち上がります",
                              "Drag to turn the room, press and hold a piece to lift it")
 
-    /// 部屋を触った: 手引きの1行を消して覚える（見本の起動では覚えない）
+    /// 部屋を触ったら消すための指の受け口は、手引きが出ている間だけ効かせる（札 #628）
+    static func coachGestureMask(showing: Bool) -> GestureMask { showing ? .all : .subviews }
+
+    /// 部屋を触った・別の場面へ移った: 手引きの1行を消す（覚えるのは見せたとき・`load`）
     private func dismissCoach() {
         guard showCoach else { return }
         showCoach = false
-        if !CamperRoomPreview.coach { CamperRoomCoach.done() }
     }
 
     private static let pickFirst = L("先に家具を選んでください", "Select a piece first")
@@ -1213,6 +1219,7 @@ struct CamperRoomView: View {
     }
 
     private func enter(_ m: Mode) {
+        dismissCoach()
         mode = m
         selected = nil
         animateCamera = true

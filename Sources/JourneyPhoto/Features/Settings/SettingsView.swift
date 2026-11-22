@@ -154,7 +154,8 @@ struct SettingsView: View {
         // ログアウトの途中は戻らせない・シートも払わせない（戻って開き直すと門が新しくなり、
         // 二度押せる。`DeleteAccountView` と同じ2つ）
         // 設定から開いたときは履歴（新しい版が上・版ごとに区切りの見出し・2026-10-18 owner「過去の履歴を見れるようにしたい」）
-        .sheet(isPresented: $showWhatsNew) {
+        // 設定から読んでも、ホームの印（`WhatsNewHomeBadge`）を消す（札 #628）
+        .sheet(isPresented: $showWhatsNew, onDismiss: { WhatsNewGate.shared.markSeen() }) {
             WhatsNewView(releases: WhatsNew.bundled(), mode: .history, primaryTitle: Labels.Common.close)
         }
         .sheet(isPresented: $showFeedback) { FeedbackSheet(screen: "settings") }

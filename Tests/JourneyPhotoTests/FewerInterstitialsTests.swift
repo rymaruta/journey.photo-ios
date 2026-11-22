@@ -212,8 +212,82 @@ final class FewerInterstitialsTests: XCTestCase {
         let room = try source("Features/Camper/Room/CamperRoomView.swift")
         XCTAssertFalse(room.contains("camper.room.coach.done"), "「わかった」まで触れない札が残っている")
         XCTAssertTrue(room.contains("coachLine"))
-        XCTAssertTrue(room.contains(".simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in dismissCoach() })"),
+        XCTAssertTrue(room.contains(".simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in dismissCoach() },"),
                       "部屋を触っても手引きが消えない")
         XCTAssertFalse(CamperRoomView.coachText.isEmpty)
+    }
+
+    // MARK: - 確かめ役の指摘（2026-11-22）
+
+    /// 手引きの指の受け口は、手引きが出ている間だけ効く。一度見せたら済んだと覚え、別の場面へ移っても消す
+    func testCamperCoachGestureOnlyWhileShowingAndRememberedOnShow() async throws {
+        XCTAssertEqual(CamperRoomView.coachGestureMask(showing: true), .all)
+        XCTAssertEqual(CamperRoomView.coachGestureMask(showing: false), .subviews)
+        let room = try source("Features/Camper/Room/CamperRoomView.swift")
+        XCTAssertTrue(room.contains("including: Self.coachGestureMask(showing: showCoach))"), "ふだんの操作にも手引きの受け口が重なっている")
+        XCTAssertTrue(room.contains("if showCoach, !CamperRoomPreview.coach { CamperRoomCoach.done() }"),
+                      "見せただけでは済んだと覚えない（読み上げの人に毎回出る）")
+        XCTAssertTrue(room.contains("""
+            private func enter(_ m: Mode) {
+                    dismissCoach()
+            """), "別の場面へ移っても手引きが残る")
+    }
+
+    /// ほかの画面・差し出しが出ている間は出さない（出すと黙って無視され、待ちが全部止まる）。決めている途中は見ない
+    func testSummaryWaitsForOtherScreens() async throws {
+        XCTAssertTrue(PostedSummaryCenter.mayPresent(PostModalSnapshot(coverOfferBusy: true)))
+        XCTAssertFalse(PostedSummaryCenter.mayPresent(PostModalSnapshot(modalPresenting: true)))
+        XCTAssertFalse(PostedSummaryCenter.mayPresent(PostModalSnapshot(extrasShowing: true)))
+        let root = try source("App/RootView.swift")
+        XCTAssertTrue(root.contains("until: PostedSummaryCenter.mayPresent,"), "ほかの画面が閉じるのを待たずに出している")
+        XCTAssertTrue(root.contains("if ready, auth.userId == userId, !Task.isCancelled, !ModalProbe.isPresenting(), postedSummary.present(summary) {"),
+                      "出す直前に見直していない（待ちきれない回にも出す・知らせを下ろす）")
+    }
+
+    /// 下ろすのは同じ投稿の知らせ（「投稿しました」）だけ。別の投稿の失敗の知らせは残す
+    func testDismissOnlyPostedNotice() async throws {
+        let toasts = ToastCenter()
+        toasts.show(PostUploadOutcome.failedText, kind: .failure, actionTitle: PostUploadOutcome.retryAction) {}
+        toasts.dismiss(ifShowing: PostedCardHabit.quietText)
+        XCTAssertEqual(toasts.current?.text, PostUploadOutcome.failedText, "失敗の知らせ（もう一度）まで下ろした")
+        toasts.show(PostedCardHabit.quietText, kind: .success, actionTitle: PostedCardHabit.quietAction) {}
+        toasts.dismiss(ifShowing: PostedCardHabit.quietText)
+        XCTAssertNil(toasts.current)
+        let root = try source("App/RootView.swift")
+        XCTAssertTrue(root.contains("toasts.dismiss(ifShowing: PostedCardHabit.quietText)"))
+        XCTAssertFalse(root.contains("postedSummary.present(summary) { toasts.dismiss() }"))
+    }
+
+    /// 1枚を出した投稿では評価のお願いを見送る（1回だけ）
+    func testSummarySkipsReviewOnce() async throws {
+        let center = PostedSummaryCenter()
+        XCTAssertFalse(center.takeReviewSkip())
+        XCTAssertTrue(center.present(summary(push: true)))
+        XCTAssertTrue(center.takeReviewSkip())
+        XCTAssertFalse(center.takeReviewSkip(), "次のうれしい瞬間まで見送っている")
+        let root = try source("App/RootView.swift")
+        XCTAssertTrue(root.contains("!postedSummary.takeReviewSkip(),"), "評価のお願いが1枚の後にも出る")
+    }
+
+    /// 人が替わったら閉じる・出ている間は他を待たせる、のつなぎ
+    func testRootWiresUserChangeAndExtrasShowing() async throws {
+        let root = try source("App/RootView.swift")
+        XCTAssertTrue(root.contains("postedSummary.userChanged(to: userId)"), "人が替わっても前の人の「投稿しました」が残る")
+        XCTAssertTrue(root.contains("extrasShowing: rewardGrant != nil || coverOffer != nil || postedSummary.presented != nil"),
+                      "1枚が出ている間に評価・届いた画面・案内が重なる")
+    }
+
+    /// 設定から読んでも印を消す
+    func testSettingsHistoryClearsBadge() async throws {
+        let settings = try source("Features/Settings/SettingsView.swift")
+        XCTAssertTrue(settings.contains(".sheet(isPresented: $showWhatsNew, onDismiss: { WhatsNewGate.shared.markSeen() })"))
+        let badge = try source("Features/Settings/WhatsNewHomeBadge.swift")
+        XCTAssertTrue(badge.contains(".jpSystemFont(13, weight: .semibold, relativeTo: .footnote)"), "印の字が大きな字に合わせて変わらない")
+    }
+
+    /// カバーの行は、初めてのカバーで硬貨が届くときだけ枚数を言う
+    func testCoverRowMentionsCoins() async {
+        XCTAssertEqual(PostedSummaryText.coverRow(showsCoins: false), "この写真をカバーに")
+        XCTAssertEqual(PostedSummaryText.coverRow(showsCoins: true), "この写真をカバーに（硬貨 \(ProfileRewardText.coinsPerKind) 枚）")
     }
 }

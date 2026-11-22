@@ -80,12 +80,28 @@ final class PostedSummaryCenter: ObservableObject {
         summaryOpen ? .summaryRow : .notice
     }
 
+    /// 出してよいか（ほかの画面が出ていない。ほかの差し出し・お礼・この1枚も出ていない）。
+    /// 決めている途中（`coverOfferBusy`）は自分のことなので見ない
+    static func mayPresent(_ s: PostModalSnapshot) -> Bool {
+        !s.modalPresenting && !s.extrasShowing
+    }
+
+    /// 出した投稿の評価のお願いを見送る印（投稿のあとで割り込むのは1つまで・札 #628）
+    private(set) var skipsNextReview = false
+
+    /// 評価のお願いの側が1回だけ受け取る（受け取ったら下ろす）
+    func takeReviewSkip() -> Bool {
+        defer { skipsNextReview = false }
+        return skipsNextReview
+    }
+
     /// 出す（出すものが無ければ出さずに false）
     @discardableResult
     func present(_ summary: Summary) -> Bool {
         guard Self.showsSheet(summary) else { return false }
         followUp = nil
         presented = summary
+        skipsNextReview = true
         return true
     }
 
