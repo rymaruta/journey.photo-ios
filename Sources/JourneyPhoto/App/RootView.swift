@@ -1176,6 +1176,9 @@ struct RootView: View {
             // 届いた画面はこの判断が終わるまで待つ（評価の窓と全画面を重ねない・`PostModalGate`）
             reviewDeciding = true
             defer { reviewDeciding = false }
+            // 「投稿しました」の見送りの印は、この待ちの間に出たときだけ効き、待ちが終われば下ろす（札 #628）
+            postedSummary.beginReviewWait()
+            defer { postedSummary.endReviewWait() }
             _ = await PostModalGate.wait(tries: 30, snapshot: postModalSnapshot,
                                          until: PostModalGate.reviewWaitIsOver,
                                          sleep: { try? await Task.sleep(nanoseconds: 1_500_000_000) })

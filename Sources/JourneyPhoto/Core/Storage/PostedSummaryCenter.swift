@@ -86,8 +86,21 @@ final class PostedSummaryCenter: ObservableObject {
         !s.modalPresenting && !s.extrasShowing
     }
 
-    /// 出した投稿の評価のお願いを見送る印（投稿のあとで割り込むのは1つまで・札 #628）
+    /// 出した投稿の評価のお願いを見送る印（投稿のあとで割り込むのは1つまで・札 #628）。
+    /// 立てるのは評価の側が待っている間に出したときだけ、下ろすのはその待ちが終わったとき（先に抜けた回に印が残り、
+    /// 次のうれしい瞬間を黙って見送らないように・2026-11-22 確かめ役の指摘）
     private(set) var skipsNextReview = false
+    /// 待っている評価のお願いの数
+    private var reviewWaits = 0
+
+    /// 評価のお願いが待ち始めた
+    func beginReviewWait() { reviewWaits += 1 }
+
+    /// 評価のお願いの待ちが終わった（頼んだ・見送った・抜けた、のどれでも）。最後の待ちが終われば印を下ろす
+    func endReviewWait() {
+        reviewWaits = max(0, reviewWaits - 1)
+        if reviewWaits == 0 { skipsNextReview = false }
+    }
 
     /// 評価のお願いの側が1回だけ受け取る（受け取ったら下ろす）
     func takeReviewSkip() -> Bool {
@@ -101,7 +114,7 @@ final class PostedSummaryCenter: ObservableObject {
         guard Self.showsSheet(summary) else { return false }
         followUp = nil
         presented = summary
-        skipsNextReview = true
+        if reviewWaits > 0 { skipsNextReview = true }
         return true
     }
 

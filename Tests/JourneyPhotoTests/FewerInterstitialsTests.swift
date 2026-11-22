@@ -258,15 +258,30 @@ final class FewerInterstitialsTests: XCTestCase {
         XCTAssertFalse(root.contains("postedSummary.present(summary) { toasts.dismiss() }"))
     }
 
-    /// 1枚を出した投稿では評価のお願いを見送る（1回だけ）
+    /// 1枚を出した投稿では評価のお願いを見送る（1回だけ）。その投稿の評価の待ちが先に抜けても、印は残さない
     func testSummarySkipsReviewOnce() async throws {
         let center = PostedSummaryCenter()
         XCTAssertFalse(center.takeReviewSkip())
+        // 同じ投稿の評価が待っている間に出した: 見送る
+        center.beginReviewWait()
         XCTAssertTrue(center.present(summary(push: true)))
         XCTAssertTrue(center.takeReviewSkip())
         XCTAssertFalse(center.takeReviewSkip(), "次のうれしい瞬間まで見送っている")
+        center.endReviewWait()
+        // 評価の側が先に抜けた（印を受け取らずに終わった）: 次のうれしい瞬間は見送らない
+        center.beginReviewWait()
+        XCTAssertTrue(center.present(summary(push: true)))
+        center.endReviewWait()
+        center.beginReviewWait()
+        XCTAssertFalse(center.takeReviewSkip(), "先に抜けた投稿の印が残り、次のうれしい瞬間を黙って見送る")
+        center.endReviewWait()
+        // 評価が待っていないときに出した: 印を立てない
+        XCTAssertTrue(center.present(summary(push: true)))
+        XCTAssertFalse(center.takeReviewSkip())
         let root = try source("App/RootView.swift")
         XCTAssertTrue(root.contains("!postedSummary.takeReviewSkip(),"), "評価のお願いが1枚の後にも出る")
+        XCTAssertTrue(root.contains("postedSummary.beginReviewWait()"))
+        XCTAssertTrue(root.contains("defer { postedSummary.endReviewWait() }"), "待ちが終わっても見送りの印を下ろさない")
     }
 
     /// 人が替わったら閉じる・出ている間は他を待たせる、のつなぎ
