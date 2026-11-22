@@ -65,7 +65,11 @@ struct AIServerConsentSheet: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("aiConsent.agree")
                 Button(action: onCancel) {
+                    // 見た目は線のボタン 44 のまま、当たりを 48 に（Mac run 1729: 半分の高さのシートは iOS 26 で約 96% に縮めて
+                    // 描かれ、44 の当たりが 42.4 になった。`PushPrimerLayout.laterHeight` と同じ理由）。大きな字では面ごと伸びる
                     Text(AIServerConsentText.cancel).jpPillButton(.outline)
+                        .frame(maxWidth: .infinity, minHeight: AIServerConsentLayout.cancelHitHeight)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("aiConsent.cancel")
@@ -95,6 +99,12 @@ struct AIServerConsentSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
+}
+
+/// 同意のシートの寸法
+enum AIServerConsentLayout {
+    /// 「やめる」の当たり（48・UI テストが 44 以上を見る。半分の高さのシートは iOS 26 で約 96% に縮む）
+    static let cancelHitHeight: CGFloat = PushPrimerLayout.laterHeight
 }
 
 /// 同意のシートを、いちばん上に出ている画面の上に出して答えを待つ（2026-11-22 判断）。
