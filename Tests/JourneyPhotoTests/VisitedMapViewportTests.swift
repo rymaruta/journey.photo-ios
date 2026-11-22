@@ -156,7 +156,7 @@ final class VisitedMapViewportTests: XCTestCase {
             VisitedMapText.recentDates, VisitedMapText.noDates, VisitedMapText.addVisit, VisitedMapText.removeVisit,
             VisitedMapText.record, VisitedMapText.candidateNote, VisitedMapText.dismissCandidate,
             VisitedMapText.restoreCandidate, VisitedMapText.undo, VisitedMapText.undoStep,
-            VisitedMapText.nearby, VisitedMapText.listTitle, VisitedMapText.legendNone,
+            VisitedMapText.nearby, VisitedMapText.legendNone,
             VisitedMapText.legendCandidate, VisitedMapText.loadingPhotos, VisitedMapText.emptyTitle,
             VisitedMapText.emptyBody, VisitedMapText.postPhoto, VisitedMapText.failedPhotos, VisitedMapText.retry,
             VisitedMapText.allVisited47, VisitedMapText.allVisitedConfirmTitle, VisitedMapText.allVisitedConfirmBody,

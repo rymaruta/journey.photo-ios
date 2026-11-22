@@ -49,5 +49,4 @@ final class HomeTopCardMemo {
     /// 計算した回数（テスト用）
     var poolBuilds: Int { pool.computeCount }
     var shelfComputes: Int { shelf.computeCount }
-    var needsComputes: Int { needs.computeCount }
 }

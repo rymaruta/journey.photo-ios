@@ -72,8 +72,6 @@ struct TripPlanDetailView: View {
     @State private var dropTarget: DropSpot?
     /// 開いている区間のシート
     @State private var legTarget: LegTarget?
-    /// 季節の一文・時刻帯のために詳細を重ねた（索引だけの行の文は詳細にある）
-    @State private var detailsKey = ""
     /// 「日付」のシート（2026-11-16 判断・使い勝手の見直し A5）
     @State private var editingDates = false
     /// 今日の日まで送ったか（開いたときの1回だけ。あとで日程が変わっても送り直さない）

@@ -43,7 +43,6 @@ final class TrunkArrivals: ObservableObject {
         var coins: Int = 0
         var id: String { arrivals.map(\.label.id).joined(separator: ",") }
         var first: Arrival { arrivals[0] }
-        var othersCount: Int { arrivals.count - 1 }
     }
 
     /// 増えるたびに `RootView` が出す頃合いを見る

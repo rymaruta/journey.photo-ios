@@ -407,12 +407,6 @@ struct Story: Decodable, Identifiable, Equatable {
 
     var imageURL: URL? { URL(string: src) }
 
-    /// 投票（1つだけ）。無ければ nil
-    var voteItem: StoryTextItem.Vote? {
-        for item in texts { if case .vote(let v) = item { return v } }
-        return nil
-    }
-
     /// 返信欄と ♡ を出すか（Web の `item?.allowReplies !== false` と同じ）
     var acceptsReplies: Bool { allowReplies != false }
 

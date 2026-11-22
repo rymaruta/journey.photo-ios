@@ -1525,7 +1525,7 @@ struct PhotoDetailView: View {
     // MARK: - 操作
 
     /// 過去の投稿を SNS に載せる。写真の本体を読み、投稿したときと同じ文を作って共有の画面へ。
-    /// 渡すのは `WatermarkRenderer` が画素だけに書き出し直し、透かしを入れた画像
+    /// 渡すのは共有カード（`SignatureShareCardRenderer` が画素から描き直した画像）
     private func prepareThreads() async {
         // **押した時点の写真を掴んでおく。** 読み込み（最大15秒）の間に束を送ると `shown` が
         // 替わり、1枚目の画像に2枚目の題とリンクが付いた（87525da9 のレビュー）
@@ -1541,7 +1541,7 @@ struct PhotoDetailView: View {
         defer { preparingThreads = false }
         actionError = nil
         // 🔴 **画素だけに書き出し直してから渡す。** `src` は原本で、Web から上げた原本は GPS 入りのまま
-        // （`photo-gallery/app/user/upload/page.tsx`）。`WatermarkRenderer` が書き出し直す（透かしも入れる）
+        // （`photo-gallery/app/user/upload/page.tsx`）。共有カードに描き直して渡す（原本のまま渡さない）
         guard let raw = await TripBookCardRenderer.coverData(url) else {
             actionNotice = nil
             actionError = L("写真を読み込めませんでした。通信を確かめてください",
