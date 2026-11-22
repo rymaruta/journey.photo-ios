@@ -92,6 +92,14 @@ final class TripShareTests: XCTestCase {
         XCTAssertEqual(ids(TripShareText.rebase(base: base, mine: mine, server: server)), [["a"]])
     }
 
+    /// 動かした項目と足した項目が混ざっても、自分の並びどおりに戻る（札 #682: 組み直しの「元に戻す」で [A, D, Z, B] になった）
+    func testRebaseKeepsMyOrderWhenMovedAndAddedMix() {
+        let base = [day("b", "a")]
+        let mine = [day("a", "d", "b")]
+        let server = [day("b", "a", "z")]
+        XCTAssertEqual(ids(TripShareText.rebase(base: base, mine: mine, server: server)), [["a", "d", "b", "z"]])
+    }
+
     func testRebaseCopiesOnlyMyNote() {
         let base = [TripDay(items: [.spot(spotId: "a", note: nil), .spot(spotId: "b", note: nil)])]
         let mine = [TripDay(items: [.spot(spotId: "a", note: "朝いち"), .spot(spotId: "b", note: nil)])]

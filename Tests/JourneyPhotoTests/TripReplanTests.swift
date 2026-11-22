@@ -299,6 +299,18 @@ final class TripReplanTests: XCTestCase {
         XCTAssertEqual(rebased, accepted, "送るときの重ね直しも同じ姿になる")
     }
 
+    /// 置き換えたあとに1か所足してから「元に戻す」: 元の並びに戻り、足した所は後ろに残る（札 #682）
+    func testUndoAfterAddingRestoresOriginalOrder() {
+        let s = { (id: String) in TripItem.spot(spotId: id, note: nil) }
+        let before = [TripDay(items: [s("a"), s("d"), s("b")])]
+        let after = [TripDay(items: [s("b"), s("a")])]
+        let step = TripReplan.Step(before: before, after: after)
+        var current = after
+        current[0].items.append(s("z"))
+        XCTAssertEqual(TripReplan.undo(step, current: current)[0].items, [s("a"), s("d"), s("b"), s("z")])
+        XCTAssertEqual(TripReplan.undo(step, current: after), before, "何も足していなければそのまま戻る")
+    }
+
     /// 画面の作り: 案は日程の所に出し、「この案にする」まで `days` を書き換えない。置き換えは自動保存（rev・409）に乗る
     func testDetailViewWiresProposalBeforeReplacing() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
