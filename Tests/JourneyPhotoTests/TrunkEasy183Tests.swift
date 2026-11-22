@@ -191,7 +191,6 @@ final class TrunkEasy183Tests: XCTestCase {
         let view = try source("Features/Trunk/TrunkGachaView.swift")
         XCTAssertTrue(view.contains("case .springBack: springBack()"), "途中で離しても戻らない")
         XCTAssertTrue(view.contains("TrunkGachaText.spinTitle(coins: coins)"))
-        XCTAssertFalse(view.contains("TrunkGachaText.insertTitle(coins: coins)"), "「硬貨を入れる」だけのボタンが残っている")
         XCTAssertTrue(view.contains("tabRouter.openPost(.photo)"), "硬貨 0 の一手（投稿へ）が無い")
         XCTAssertTrue(view.contains("undo: ToastCenter.Undo(title: TrunkText.undoTitle)"), "付けたあとに取り消しが無い")
     }

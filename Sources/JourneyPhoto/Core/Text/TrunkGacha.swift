@@ -174,11 +174,6 @@ enum TrunkGachaText {
             : L("カプセルの「\(r.part.name)」が部品箱に入りました。", "\u{201C}\(r.part.name)\u{201D} from the capsule is in your parts box.")
     }
 
-    /// 硬貨の入れ口のボタン
-    static func insertTitle(coins: Int) -> String {
-        coins > 0 ? L("硬貨を入れる", "Insert a coin") : L("硬貨がありません", "No coins")
-    }
-
     /// かけらの交換の札の下の行（モック PartsBox）
     static func exchangeNote(fragments: Int, selected: TrunkPart?) -> String {
         let need = TrunkPartsBoxText.fragmentsPerExchange
@@ -229,11 +224,6 @@ enum TrunkPartsBoxText {
     static func filledFragments(_ fragments: Int) -> Int { min(fragmentsPerExchange, max(0, fragments)) }
 
     static func canExchange(fragments: Int) -> Bool { fragments >= fragmentsPerExchange }
-
-    /// 交換できる部品（まだ持っていないもの）
-    static func exchangeable(_ owned: Set<String>) -> [TrunkPart] {
-        TrunkPartCatalog.all.filter { !owned.contains($0.id) }
-    }
 
     /// かけらの読み上げ
     static func fragmentsLabel(_ fragments: Int) -> String {

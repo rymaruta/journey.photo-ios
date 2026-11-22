@@ -144,8 +144,8 @@ final class WeeklyThemeTests: XCTestCase {
     func testSeasonAndDateStickerUseGregorianMonths() {
         let now = date("2026-09-27T03:00:00.000Z")
         let islamic = calendar(.islamicUmmAlQura)
-        XCTAssertEqual(DiscoverySections.seasonalTags(now: now, calendar: islamic),
-                       DiscoverySections.seasonalTags(now: now, calendar: calendar(.gregorian)))
+        XCTAssertEqual(DiscoverySections.currentSeason(now: now, calendar: islamic),
+                       DiscoverySections.currentSeason(now: now, calendar: calendar(.gregorian)))
         XCTAssertEqual(TextOverlay.Kind.date.initialText(now: now, calendar: islamic),
                        TextOverlay.Kind.date.initialText(now: now, calendar: calendar(.gregorian)))
     }

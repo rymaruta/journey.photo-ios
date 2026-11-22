@@ -142,9 +142,6 @@ enum VisitedMapText {
     static var showList: String { L("一覧", "List") }
     static var showMap: String { L("地図", "Map") }
 
-    /// 地方の進み「関東 5/7」
-    static func regionProgress(name: String, visited: Int, total: Int) -> String { "\(name) \(visited)/\(total)" }
-
     // MARK: - 凡例
 
     static var legendNone: String { L("未", "Not yet") }

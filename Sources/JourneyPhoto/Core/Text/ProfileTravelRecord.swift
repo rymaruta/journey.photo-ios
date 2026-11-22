@@ -56,12 +56,6 @@ enum ProfileTravelRecord {
         Summary(photos: othersPhotos(photos, blocked: blocked))
     }
 
-    /// 人のページの旅の一冊（公開写真だけを、マイページの棚と同じ規則で束ねる）
-    static func othersTrips(_ photos: [Photo], blocked: Bool,
-                            timeZone: TimeZone = .current) -> [TripBook.Trip] {
-        TripBook.shelfTrips(from: othersPhotos(photos, blocked: blocked), timeZone: timeZone)
-    }
-
     /// 人の旅の棚。一冊と、**一冊の写真に個別ページが在るか**を一緒に持つ（開く入口が自分で
     /// 「全部ある」と決めない——限定公開・下書きの写真の個別ページへ案内しない）
     struct OthersShelf {
@@ -78,7 +72,7 @@ enum ProfileTravelRecord {
         func hasPage(_ photo: Photo) -> Bool { pageIds.contains(photo.id) }
     }
 
-    /// 人のページの旅の棚（`othersTrips` と、個別ページの在る写真）
+    /// 人のページの旅の棚（公開写真だけをマイページの棚と同じ規則で束ねた一冊と、個別ページの在る写真）
     static func othersShelf(_ photos: [Photo], blocked: Bool,
                             timeZone: TimeZone = .current) -> OthersShelf {
         let shown = othersPhotos(photos, blocked: blocked)

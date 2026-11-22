@@ -636,22 +636,6 @@ struct TextOverlay: Identifiable, Equatable, Codable {
         return result
     }
 
-    /// `canvas` の中に `image` を縦横比のまま収めたときの、画像の場所。
-    ///
-    /// 位置（`x` / `y`）は**画像に対する割合**で持つ。編集画面は 3:4 の枠に
-    /// 写真を収めるので、枠と写真の形が違うと上下か左右に余白が出る——
-    /// 枠に対する割合で置くと、その余白の分だけ焼き込みとずれていた
-    static func fittedRect(image: CGSize, in canvas: CGSize) -> CGRect {
-        guard image.width > 0, image.height > 0, canvas.width > 0, canvas.height > 0 else {
-            return CGRect(x: 0, y: 0, width: canvas.width, height: canvas.height)
-        }
-        let scale = min(canvas.width / image.width, canvas.height / image.height)
-        let width = image.width * scale
-        let height = image.height * scale
-        return CGRect(x: (canvas.width - width) / 2, y: (canvas.height - height) / 2,
-                      width: width, height: height)
-    }
-
     /// 掴んで動かした結果の位置。`translation` は画面上の移動量、
     /// `canvas` はその画面の大きさ。
     func moved(by translation: CGSize, in canvas: CGSize) -> TextOverlay {

@@ -41,11 +41,6 @@ struct ProfileService {
         return profile
     }
 
-    /// アカウントがもう消されている（退会済みの 410・`APIError.isAccountGone`）
-    static func meansAccountDeleted(_ error: Error) -> Bool {
-        (error as? APIError)?.isAccountGone == true
-    }
-
     /// 他人のプロフィール（認証不要）。
     ///
     /// **退会済みの人は 404 で返る**（`isDeletedProfile` の墓石判定）。

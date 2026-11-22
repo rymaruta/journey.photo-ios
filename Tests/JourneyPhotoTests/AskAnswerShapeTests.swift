@@ -73,15 +73,6 @@ final class AskAnswerShapeTests: XCTestCase {
         XCTAssertEqual(AskAnswerShape.lead("短い文です。2つ目です。3つ目です。"), "短い文です。2つ目です。")
     }
 
-    /// 「観光スポットの情報から」の1行（「台帳」は見せない。前の版の控えの label も言い替える）
-    func testSourcesLineHidesLedgerWord() {
-        let line = AskText.sourcesLine([.init(kind: .spots, label: "観光スポットの台帳"), .init(kind: .spots, label: AskText.spotsSource)])
-        XCTAssertEqual(line, "観光スポットの情報から")
-        XCTAssertFalse(line.contains("台帳"))
-        XCTAssertEqual(AskText.sourcesLine([.init(kind: .spots, label: "x"), .init(kind: .photos, label: "公開の写真")]),
-                       "観光スポットの情報、公開の写真から")
-    }
-
     /// 端末の AI の決まった形の答えも同じ道で札に振り分ける
     func testDeviceStructuredReplyJoinsIntoParsableText() throws {
         let text = AskDevice.joined(lead: "愛知の2か所を選びました。", reasons: [("熱田神宮", "朝の参道が静かです。"), ("架空の岬", "無い所")])

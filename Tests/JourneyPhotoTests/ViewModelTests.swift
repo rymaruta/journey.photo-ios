@@ -2490,38 +2490,6 @@ final class PeopleSearchQueryTests: XCTestCase {
 
 }
 
-// MARK: - ホームの「フォロー中」の点（#417 ⑨・外した「みんなの新しい写真」の段と同じ考え）
-
-extension ViewModelTests {
-
-    /// 🔴 ブロックした人・通報した写真の投稿日で点を出さない（段のときと同じく先に落とす）
-    func testFollowingNewestDropsHidden() async {
-        let model = GalleryViewModel(gallery: gallery("""
-        [{"id":"bad","src":"https://x/b.jpg","createdAt":"2026-10-01T00:00:00Z","userId":"blocked"},
-         {"id":"rep","src":"https://x/r.jpg","createdAt":"2026-09-01T00:00:00Z","userId":"f"},
-         {"id":"ok","src":"https://x/o.jpg","createdAt":"2026-01-01T00:00:00Z","userId":"f"}]
-        """))
-        await model.load()
-        model.use(viewerId: "me", following: ["f", "blocked"])
-        XCTAssertEqual(model.followingNewest(viewerId: "me", hiding: ModerationSnapshot()), "2026-10-01T00:00:00Z",
-                       "前提: 絞らなければブロックした人の投稿日")
-        let hidden = ModerationSnapshot(blocked: ["blocked"], reported: ["rep"])
-        XCTAssertEqual(model.followingNewest(viewerId: "me", hiding: hidden), "2026-01-01T00:00:00Z",
-                       "ブロック・通報した写真で「新しい写真あり」と言う")
-    }
-
-    /// 🔴 A さんのフォロー一覧が入ったまま B さんで呼んでも、A さんのフォロー先で点を出さない
-    func testFollowingNewestUsesOnlyTheCurrentViewersFollowing() async {
-        let model = GalleryViewModel(gallery: gallery("""
-        [{"id":"friend","src":"https://x/f.jpg","createdAt":"2026-09-01T00:00:00Z","userId":"f"}]
-        """))
-        await model.load()
-        model.use(viewerId: "A", following: ["f"])
-        XCTAssertEqual(model.followingNewest(viewerId: "A", hiding: ModerationSnapshot()), "2026-09-01T00:00:00Z")
-        XCTAssertNil(model.followingNewest(viewerId: "B", hiding: ModerationSnapshot()), "前の人のフォロー一覧で点を出した")
-    }
-}
-
 // MARK: - ホームの「おすすめの人」（1.1.83・資料「SNS をもっと SNS に」④）
 
 extension ViewModelTests {

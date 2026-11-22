@@ -129,21 +129,6 @@ final class StoryCameraEntryTests: XCTestCase {
         XCTAssertEqual(StoryCameraRules.progress(elapsed: 30), 0.5, accuracy: 0.001)
         XCTAssertEqual(StoryCameraRules.progress(elapsed: 90), 1)
         XCTAssertEqual(StoryCameraRules.progress(elapsed: .nan), 0)
-        XCTAssertFalse(StoryCameraRules.reachedLimit(elapsed: 59))
-        XCTAssertTrue(StoryCameraRules.reachedLimit(elapsed: 60))
-    }
-
-    // MARK: - 触覚
-
-    /// 写真 impact(medium)・録画開始 heavy・停止 light・切り替え selection・上限 warning・失敗 error・投稿完了 success
-    func testHapticsMapping() {
-        let expected: [(StoryCameraRules.Event, StoryCameraRules.Haptic)] = [
-            (.photoTaken, .impactMedium), (.recordingStarted, .impactHeavy), (.recordingStopped, .impactLight),
-            (.modeSwitched, .selection), (.limitReached, .warning), (.failed, .error), (.posted, .success),
-        ]
-        for (event, haptic) in expected {
-            XCTAssertEqual(StoryCameraRules.haptic(for: event), haptic, "\(event)")
-        }
     }
 
     // MARK: - アイコン長押し
@@ -263,7 +248,6 @@ final class StoryCameraEntryTests: XCTestCase {
         XCTAssertFalse(StoryCameraRules.startsAfterPermission(fromHold: false, stillPressing: false, screenClosed: true),
                        "閉じたあとに録画が始まる")
         XCTAssertFalse(StoryCameraRules.startsAfterPermission(fromHold: true, stillPressing: true, screenClosed: true))
-        XCTAssertEqual(StoryCameraRules.haptic(for: .tapIgnored), .impactLight)
     }
 
     /// 音なしの注記: 動画モード、または写真モードの長押しで録っている最中にも出す

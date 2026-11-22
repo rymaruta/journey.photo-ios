@@ -229,22 +229,6 @@ enum TrunkText {
         }
     }
 
-    /// 型の古び方の短い説明（モック MaterialAging）
-    static func materialAging(_ model: TrunkModel) -> String {
-        switch model {
-        case .leather: return L("深い茶色から飴色へ。金具がくすむ", "Deep brown to amber. The fittings dull")
-        case .canvas: return L("布が日に焼けて明るくなり、しみが増える", "The cloth sun-fades lighter and gathers stains")
-        case .aluminum: return L("細かな擦り傷が増え、光り方が柔らかくなる", "Fine scratches gather and the shine softens")
-        case .steamer: return L("木の桟が明るく褪せ、帆布が擦れる", "The slats fade lighter and the canvas wears")
-        case .urushi: return L("黒が透けて、角から下塗りの朱が出てくる", "The black thins and vermilion shows at the corners")
-        case .kori: return L("編み目が飴色に焼け、縁が濃くなる", "The weave tans to amber and the rim darkens")
-        case .sleeper: return L("赤が深まり、艶が増していく", "The red deepens and the shine grows")
-        case .clipper: return L("擦り傷が重なり、鏡のような光が鈍る", "Scratches layer up and the mirror shine dulls")
-        case .captain: return L("板が褪せ、真鍮の角が青緑にくすむ", "The planks fade and the brass corners turn blue-green")
-        case .starchart: return L("紺が柔らかくなり、金の線が浮かぶ", "The navy softens and the gold lines stand out")
-        }
-    }
-
     /// 眉ラベル（モック Main の「MY TRUNK · 革の旅行鞄」）。
     /// **人のトランクでは「TRUNK · 型」**（2026-10-21・run 609 の 101c: 人のトランクの中なのに「MY TRUNK」と出ていた）
     static func eyebrow(_ model: TrunkModel, theirs: Bool = false) -> String {

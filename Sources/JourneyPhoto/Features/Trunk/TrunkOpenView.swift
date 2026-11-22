@@ -397,13 +397,6 @@ struct TrunkOpenView: View {
         }
     }
 
-    /// 「中身を手に取る」: 開いていなければ開け切り、最初の1つ（メダル → 会員証 → 乗車券）を持ち上げる
-    private func takeFirst(_ contents: TrunkInsideContents) {
-        guard let first = contents.firstItem else { return }
-        if !TrunkLid.isOpen(p) { settle(to: 1) }
-        pick(first)
-    }
-
     private func pick(_ item: TrunkHeld) {
         TrunkPickProbe.shared.recordPick(TrunkPickProbe.label(item))
         TrunkSound.tick()

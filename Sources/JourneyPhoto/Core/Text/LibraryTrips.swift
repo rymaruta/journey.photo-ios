@@ -278,7 +278,7 @@ enum LibraryTrips {
         postedDays(trip: trip, posted: postedDayKeys.map { PostedShot(key: $0, coords: nil) })
     }
 
-    /// 自分の投稿の撮影日と撮影地。撮影日の無い写真は入れない（`dayKeys(ofPosted:)` と同じ）
+    /// 自分の投稿の撮影日と撮影地。撮影日の無い写真は入れない。**撮影日だけ**を見る——投稿日で代用すると、旅から帰って投稿した日が「投稿済みの日」になる
     static func postedShots(of photos: [Photo]) -> [PostedShot] {
         photos.compactMap { photo -> PostedShot? in
             guard let head = TakenDay.ymd(photo.date) else { return nil }
@@ -300,16 +300,6 @@ enum LibraryTrips {
             let c = utc.dateComponents([.year, .month, .day], from: shifted)
             return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
         }
-    }
-
-    /// 自分の投稿の撮影日（`YYYY-MM-DD`）。**撮影日だけ**を見る——投稿日で代用すると、
-    /// 旅から帰って投稿した日が「投稿済みの日」になる
-    static func dayKeys(ofPosted photos: [Photo]) -> Set<String> {
-        Set(photos.compactMap { photo -> String? in
-            guard let head = TakenDay.ymd(photo.date) else { return nil }
-            let (y, m, d) = head
-            return String(format: "%04d-%02d-%02d", y, m, d)
-        })
     }
 
     /// 最初に選んでおく写真。**日ごとにばらける**ように最大 `limit` 枚を均等に間引く。

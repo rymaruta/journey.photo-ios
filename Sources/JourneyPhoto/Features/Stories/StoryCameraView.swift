@@ -71,7 +71,7 @@ struct StoryCameraContent: View {
     /// 録画を始めている途中（マイクの用意・始める処理の間）。この間のタップは受けない（`pressIntent`）
     @State private var recordingStarting = false
 
-    // 触覚（`StoryCameraRules.haptic(for:)` の対応どおり）
+    // 触覚（写真 medium・録画開始 heavy・停止 light・切り替え selection・上限 warning・失敗 error・札 #500）
     @State private var photoTick = 0
     @State private var startTick = 0
     @State private var stopTick = 0
