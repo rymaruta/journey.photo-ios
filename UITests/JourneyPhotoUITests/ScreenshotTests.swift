@@ -4101,6 +4101,38 @@ final class ScreenshotTests: JPUITestCase {
         shoot(app, "65t-帯から開いた AI の日程")
     }
 
+    /// **サーバーの AI に初めて送る前の同意のシート（2026-11-22 判断・審査 5.1.2(i)・`AIServerConsent`）**。
+    /// 見本の AI でも `-JPAIConsentAsk` で同意前から始める。「やめる」→ 送らずに AI なしで組んだ帯 →「AI で整える」で
+    /// もう一度聞く →「同意して続ける」で AI の日程。出なければ撮らずに抜ける
+    func testCapturesAIServerConsent() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripAIFixture", "YES", "-JPTripAIFixtureDelay", "1",
+                               "-JPAIConsentAsk", "YES"])
+        guard startTripAI(app, shootList: false) != nil else { return }
+        let sheet = app.descendants(matching: .any)["aiConsent.sheet"].firstMatch
+        guard sheet.waitForExistence(timeout: 20) else { return unreached(app, "aiConsent.sheet") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "65s1-AI に送る前の同意")
+        let cancel = app.buttons["aiConsent.cancel"].firstMatch
+        guard cancel.waitForExistence(timeout: 5), cancel.isHittable else { return unreached(app, "aiConsent.cancel") }
+        XCTAssertGreaterThanOrEqual(cancel.frame.height, 44, "「やめる」の当たりが 44 に足りない")
+        cancel.tap()
+        guard sheet.waitForNonExistence(timeout: 10) else { return unreached(app, "aiConsent.sheet が閉じない") }
+        let declined = app.buttons["tripAI.band.declined"].firstMatch
+        guard declined.waitForExistence(timeout: 60) else { return unreached(app, "tripAI.band.declined") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "65s2-AI に送らずに組んだ帯")
+        guard declined.isHittable else { return unreached(app, "tripAI.band.declined.isHittable") }
+        declined.tap()
+        guard sheet.waitForExistence(timeout: 20) else { return unreached(app, "やめたあとにもう一度聞かない") }
+        let agree = app.buttons["aiConsent.agree"].firstMatch
+        guard agree.waitForExistence(timeout: 5), agree.isHittable else { return unreached(app, "aiConsent.agree") }
+        agree.tap()
+        XCTAssertTrue(sheet.waitForNonExistence(timeout: 10), "同意しても同意のシートが閉じない")
+        XCTAssertFalse(app.buttons["tripAI.band.declined"].firstMatch.waitForExistence(timeout: 30),
+                       "同意したのに送らずに組んだ帯が残る")
+        shoot(app, "65s3-同意して AI で整えた日程")
+    }
+
     /// **今月の回数を使い切った（AI なしで組む・帯から Pro の案内）と、圏外で作れなかった（もう一度）**
     func testCapturesTripAIStates() {
         do {

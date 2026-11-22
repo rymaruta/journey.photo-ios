@@ -4,7 +4,7 @@ import Foundation
 ///
 /// - `status`: 今月の回数（無料 30・Pro と管理者 300。上限はサーバーが決める）
 /// - `count`: 端末の AI で作った回を数える（無料の人だけ数える。Pro と管理者は数えない）
-/// - `plan`: サーバーの AI（Amazon Bedrock・東京）で組む。候補の番号から選ぶだけ
+/// - `plan`: サーバーの AI（Amazon Bedrock・東京）で組む。候補の番号から選ぶだけ。送る前に同意を確かめる（`AIServerConsent`）
 ///
 /// 上限は 429、読み取れなかった回は 422、AI が答えなかった回は 502（どれも回数は減らない）
 struct TripAIService {
@@ -91,6 +91,8 @@ struct TripAIService {
     private var mode: String { TripAIFixture.mode }
 
     func plan(request: String, days: Int?, candidates: [OfficialSpot], current: [TripAIPlan.Stop] = []) async throws -> (TripAIPlan, Usage) {
+        // 2026-11-22 判断（審査 5.1.2(i)）: 同意の無いまま送らない。画面で聞き忘れた道があっても、ここで止める（`AIServerConsent`）
+        try AIServerConsent.requireAccepted()
         if TripAIFixture.isOn { return try await TripAIFixture.plan(candidates: candidates, days: days, current: current) }
         let body = Request(action: "plan", request: String(request.prefix(TripAILimits.maxRequest)), days: days,
                            candidates: candidates.prefix(TripAILimits.maxCandidates).map(Candidate.init),

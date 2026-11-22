@@ -140,6 +140,8 @@ enum AskText {
     static var failedDetail: String { L("通信が途切れたようです。前に見た分はそのまま残っています。", "The connection seems to have dropped. What you've seen is still here.") }
     static var offlineLine: String { L("圏外なので AI に聞けません。言葉で読んで、前に見た観光スポットから選びました", "You're offline, so AI isn't available. Picked from spots you've already seen.") }
     static var signedOutLine: String { L("ログインすると AI に聞けます。いまは言葉で読んで探しました", "Sign in to ask AI. This time we searched by reading your words.") }
+    /// サーバーの AI への送信を「やめる」と答えた回（2026-11-22 判断・`AIServerConsent`）
+    static var consentDeclinedLine: String { L("AI に送らずに、言葉で読んで探しました", "Not sent to AI. We searched by reading your words.") }
     static var noDeviceAILine: String { L("この iPhone では AI に聞けないため、言葉で探しました", "AI isn't available on this iPhone, so we searched by your words.") }
     static var unansweredLine: String { L("この質問は AI でないと答えられません。", "Only AI can answer this question.") }
     static var silentLine: String { L("AI が答えなかったので、言葉で読んで探しました", "AI didn't answer, so we searched by reading your words.") }

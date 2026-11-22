@@ -181,6 +181,10 @@ struct TripAICard: View {
         case .silent:
             bandRow(icon: "exclamationmark.circle", title: L("AI が答えなかったので、AI なしで組みました", "AI didn't answer, so this was planned without AI"),
                     sub: L("AI でやり直す", "Try AI again"), action: redo, id: "tripAI.band.silent")
+        case .declined:
+            // 2026-11-22 判断: 同意のシートで「やめる」と答えた。押せばもう一度聞いてから AI で整える
+            bandRow(icon: "hand.raised", title: L("AI に送らなかったので、AI なしで組みました", "Not sent to AI, so this was planned without AI"),
+                    sub: online ? L("AI で整える", "Tidy up with AI") : nil, action: online ? redo : nil, id: "tripAI.band.declined")
         case .limited(let reason):
             // 札 #652: 429 の理由で言い分ける（今日の分、今月の分、1人の止め、全体の止め・`AskLimitText.band`）
             let isPro = usage?.tier == "pro" || usage?.tier == "admin"
