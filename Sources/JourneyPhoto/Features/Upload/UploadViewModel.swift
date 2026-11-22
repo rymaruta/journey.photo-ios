@@ -2085,7 +2085,13 @@ final class UploadViewModel: ObservableObject {
         // 2026-11-18（案 B3）: 欄が1組のとき、先頭の撮影地・題・説明を全部の写真に写してから控えに書いて送る
         // （控え・やり直しにも同じ値が残る。サーバーは1枚ずつの行のまま）
         if sharesFields { applySharedFields() }
-        if await writeJournal(now: Date()) { discardAutoDraft() }
+        if await writeJournal(now: Date()) {
+            discardAutoDraft()
+            // 2026-11-22 判断（札 #687）: この画面の書きかけは控えに移ったので、この先は書きかけの枠に触らない。
+            // 「投稿する」で画面を閉じて裏で送る（案 B2）ようになり、送っている間に次の投稿の画面が開いて同じ枠を持つ。
+            // 前は送り終えたとき（とやり直し）の `discardAutoDraft()` が、その次の画面の書きかけを消していた
+            autoDrafts = nil
+        }
         // カードに使う1枚（まだ控えていなければ、この送信の先頭）。やり直しで先頭がもう控えてあれば選ばない
         cardLeadId = sharable.isEmpty ? queue.first : nil
         // 🔴 **編集した写真の書き出しは、最初の1枚を置く前に全部済ませる**（`exportAllEdited` の注記）
