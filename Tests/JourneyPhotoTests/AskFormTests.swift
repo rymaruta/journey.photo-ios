@@ -247,6 +247,19 @@ final class AskFormTests: XCTestCase {
 
     // MARK: - 流れ
 
+    /// 2026-11-21（バグ調べ）: 仲間に送るの顔の一覧は、人が替わったら捨てて読み直す（前の人のフォロー中の顔を出さない）
+    @MainActor
+    func testShareFacesAreDroppedWhenTheUserChanges() async throws {
+        XCTAssertFalse(AskActFlow.dropsFaces(owner: nil, me: "u1"), "まだ読んでいない")
+        XCTAssertFalse(AskActFlow.dropsFaces(owner: "u1", me: "u1"))
+        XCTAssertTrue(AskActFlow.dropsFaces(owner: "u1", me: "u2"), "前の人の顔を持ち続けた")
+        XCTAssertTrue(AskActFlow.dropsFaces(owner: "u1", me: nil), "ログアウトしても顔を持ち続けた")
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let parts = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Search/AskAnswerParts.swift"), encoding: .utf8)
+        XCTAssertTrue(parts.contains("if Self.dropsFaces(owner: facesOwner, me: auth.userId)"), "読む前に人を確かめていない")
+        XCTAssertTrue(parts.contains("facesOwner = me"))
+    }
+
     func testPlanFlowParts() throws {
         let ledger = try AskSamples.ledger()
         let days = [[ledger[0], ledger[1]], [ledger[2]]]
@@ -257,6 +270,12 @@ final class AskFormTests: XCTestCase {
         XCTAssertGreaterThan(minutes, 60, "屋島から父母ヶ浜（約47km）が1時間かからない見積もり")
         XCTAssertEqual(AskPlanFlowText.moveLine(15), "移動の目安 約15分")
         XCTAssertEqual(AskPlanFlowText.moveLine(90), "移動の目安 約1時間30分")
+        // 2026-11-21（バグ調べ）: ちょうどの時間は分を付けない（英語で「About 1h 0m」と出ていた）
+        XCTAssertEqual(AskPlanFlowText.moveLine(60, language: "ja"), "移動の目安 約1時間")
+        XCTAssertEqual(AskPlanFlowText.moveLine(60, language: "en"), "About 1h to move")
+        XCTAssertEqual(AskPlanFlowText.moveLine(120, language: "en"), "About 2h to move")
+        XCTAssertEqual(AskPlanFlowText.moveLine(95, language: "en"), "About 1h 35m to move")
+        XCTAssertEqual(AskPlanFlowText.moveLine(15, language: "en"), "About 15 min to move")
         XCTAssertEqual(AskPlanFlowText.lead(reason: "", usedAI: false, days: 2), "観光スポットの位置で、2日に並べました。")
         let quick = AskQuickPlan.days([ledger[0], ledger[1], ledger[2]])
         XCTAssertFalse(quick.isEmpty)

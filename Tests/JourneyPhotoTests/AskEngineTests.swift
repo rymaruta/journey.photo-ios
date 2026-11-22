@@ -90,6 +90,32 @@ final class AskEngineTests: XCTestCase {
         XCTAssertEqual(e.thread.first?.answer.text, AskGuard.refusal)
     }
 
+    /// 2026-11-21（バグ調べ）: 回数を取っている間にログアウトした（画面は手順を取り消して `reset`）とき、
+    /// 前の人の残りの回数を置き直さない。前は上の1行に前の人の「残り◯回」が残っていた
+    func testReserveFinishingAfterResetDoesNotRestorePreviousUsage() async throws {
+        let calls = Calls()
+        let (e, d) = engine()
+        var setup = Setup()
+        setup.deviceAI = false
+        let plain = try backend(setup, calls: calls, defaults: d)
+        let usage = setup.usage
+        var slow = plain
+        slow.reserve = { kind, via in
+            calls.reserves.append((kind, via))
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            return usage
+        }
+        let task = Task { await e.start("近くで夕日がきれいな所", backend: slow) }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(calls.reserves.count, 1, "回数を取りに行く前に取り消した（試験の前提が崩れた）")
+        task.cancel()
+        e.reset()
+        await task.value
+        XCTAssertNil(e.usage, "取り消したあとに前の人の残りの回数を置いた")
+        XCTAssertNil(e.pending)
+        XCTAssertTrue(e.thread.isEmpty)
+    }
+
     /// 端末の AI が使える iPhone: 答えを出す直前にサーバーで1回取る（2026-11-20 判断）。答えはアプリの部品（札、写真、旅行プランにする）
     func testDeviceRouteReservesFirstAndShowsAppParts() async throws {
         let calls = Calls()

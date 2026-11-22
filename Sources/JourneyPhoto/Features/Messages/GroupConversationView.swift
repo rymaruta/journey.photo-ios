@@ -468,6 +468,8 @@ struct GroupConversationView: View {
     /// 読む。`withDetail` が偽（15 秒ごとの読み直し）なら会話だけを読み、メンバーが変わる1行が来たときだけ詳しい中身も読む
     private func load(quiet: Bool = false, withDetail: Bool = true) async {
         if !quiet && phase != .loaded { phase = .loading }
+        // 読み始めたときの通（待っている間に送れた1通・別の読み直しで届いた通は置き換えで消さない）
+        let startedWith = Set(log.messages.map(\.id))
         do {
             let page = try await environment.groups.messages(groupId)
             let fresh = page.messages.map(\.asDM)
@@ -487,7 +489,7 @@ struct GroupConversationView: View {
             names = known
             removed = page.state == .removed
             canSendHere = page.canSend
-            log.replace(with: fresh)
+            log.replace(with: fresh, keepingAddedSince: startedWith)
             phase = .loaded
             // サーバーは読んだ位置を進めた。点と通知センターも合わせる
             store.applyGroups { $0.markingRead(groupId) }

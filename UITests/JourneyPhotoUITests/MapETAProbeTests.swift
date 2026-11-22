@@ -11,7 +11,7 @@ import XCTest
 /// ログと活動の名前（`XCTContext.runActivity`）に残すだけ。成果物 `build-logs` の `xcodebuild-full.log` で読む。
 /// **名指しした回だけ流れる**（`Tools/pick-ui-tests.py` の `ONLY_WHEN_NAMED`・`inputs[screens]=MapETAProbeTests`）。
 /// 位置は今いる場所を取らない（決めた 2 区間の座標だけを送る）
-final class MapETAProbeTests: XCTestCase {
+final class MapETAProbeTests: JPUITestCase {
 
     private struct Route {
         let name: String

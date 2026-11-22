@@ -19,7 +19,7 @@ import XCTest
 /// 🔴 **シミュレータの Debug ビルドの数。** 実機・Release とは違う。比べるのは同じ条件の前後だけ。
 /// 写真は本物の公開の写真を通信で読む（見本の通信 `-JPPreviewLocalBackend` は API だけを端末の中で答える）ので、
 /// 回によって少し揺れる
-final class PerformanceTests: XCTestCase {
+final class PerformanceTests: JPUITestCase {
 
     override func setUp() {
         continueAfterFailure = false

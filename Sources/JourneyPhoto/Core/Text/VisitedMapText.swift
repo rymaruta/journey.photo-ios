@@ -113,13 +113,17 @@ enum VisitedMapText {
     /// 字の太さと色で分ける（`VisitedMapScreen` の候補のチップ）
     static var recordCandidateAction: String { L("記録する", "Record") }
 
-    static func recorded(_ name: String, count: Int) -> String {
-        L("\(name)を記録しました（\(visitCount(count))）", "Recorded \(name) (\(visitCount(count)))")
+    /// 知らせの字。`spoken` が真なら読み上げの文（回数は本当の数。画面の字は「3+ 回」・2026-11-21 判断 バグ調べ:
+    /// 知らせの帯を VoiceOver で触ると「3 たす 回」と読み、足したかどうかが耳で分からなかった）
+    static func recorded(_ name: String, count: Int, spoken: Bool = false) -> String {
+        let n = spoken ? visitCountSpoken(count) : visitCount(count)
+        return L("\(name)を記録しました（\(n)）", "Recorded \(name) (\(n))")
     }
 
-    static func reduced(_ name: String, count: Int) -> String {
-        count == 0 ? L("\(name)の記録を外しました", "Cleared \(name)")
-                   : L("\(name)を 1 回減らしました（\(visitCount(count))）", "Removed one for \(name) (\(visitCount(count)))")
+    static func reduced(_ name: String, count: Int, spoken: Bool = false) -> String {
+        let n = spoken ? visitCountSpoken(count) : visitCount(count)
+        return count == 0 ? L("\(name)の記録を外しました", "Cleared \(name)")
+                          : L("\(name)を 1 回減らしました（\(n)）", "Removed one for \(name) (\(n))")
     }
 
     static var recordedAllToast: String { L("47県を記録しました", "Recorded all 47") }

@@ -447,6 +447,7 @@ final class AskEngine: ObservableObject {
             let turns = contextThread.suffix(AskService.historyTurns).map { AskService.Turn(question: $0.question, answer: $0.answer.text) }
             mark("serverAsking")
             let reply = try await backend.serverAsk(question, Array(turns), picks.map(\.spot))
+            if Task.isCancelled { return AskAnswer(engine: .table) }
             if let quota = reply.quota { self.usage = quota }
             // サーバーが断った（呼ぶ前の断り・AI の断り・答えの前の見張り）。アプリの断りの1行にそろえ、札も出さない
             if reply.refused { return .refused(care: AskGuard.needsCare(question)) }
@@ -456,7 +457,7 @@ final class AskEngine: ObservableObject {
             return await aiAnswer(question, text: text, general: reply.general, picks: picks, photoIds: [],
                                   sources: sources, engine: .server, aiKind: reply.kind, library: library, backend: backend)
         } catch AskService.Failure.limit(let reason, let quota) {
-            if let quota { self.usage = quota }
+            if let quota, !Task.isCancelled { self.usage = quota }
             var a = await tableAnswer(question, library: library, backend: backend, note: nil, state: .answered)
             a.limit = reason
             return a
@@ -472,10 +473,14 @@ final class AskEngine: ObservableObject {
                                    backend: Backend) async -> AskAnswer? {
         mark("reserving")
         do {
-            usage = try await backend.reserve(.ask, via)
+            let reserved = try await backend.reserve(.ask, via)
+            // 2026-11-21 判断（バグ調べ）: 待っている間に取り消された（ログアウトして `reset` した・画面を閉じた）回は、
+            // 前の人の残りの回数を置き直さない（上の1行に前の人の回数が残っていた）。答えも出さない
+            guard !Task.isCancelled else { return AskAnswer(engine: .table) }
+            usage = reserved
             return nil
         } catch AskService.Failure.limit(let reason, let quota) {
-            if let quota { usage = quota }
+            if let quota, !Task.isCancelled { usage = quota }
             var a = await tableAnswer(question, library: library, backend: backend, note: nil, state: .answered)
             a.limit = reason
             return a

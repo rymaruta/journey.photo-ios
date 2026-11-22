@@ -13,7 +13,7 @@ import UIKit
 /// **落とさない。** 撮影は「確かめる」ものではなく「見る」ためのもの。
 /// 1画面出なかったくらいで赤くすると、本来の見張り（`SmokeTests`）の
 /// 結果が読めなくなる。出なかったところは撮らずに先へ進む。
-final class ScreenshotTests: XCTestCase {
+final class ScreenshotTests: JPUITestCase {
 
     override func setUp() {
         continueAfterFailure = true
