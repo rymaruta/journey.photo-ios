@@ -131,6 +131,7 @@ extension ForEach: MapContent {
 
 public struct Annotation: MapContent {
     public init<C: View>(_ title: String, coordinate: CLLocationCoordinate2D,
+                         anchor: UnitPoint = .bottom,
                          @ViewBuilder content: () -> C) {}
 }
 

@@ -480,13 +480,27 @@ struct AskThreadView: View {
 /// - **ピンが1つ:** その場所を真ん中に、半径 `singleRadius`（1.5km）を見せる。周りの道・駅・街の名前が読める広さ
 ///   （台帳の座標は約1km に丸めてあるので、これ以上寄せても精度は増えない。観光スポットの頁の地図の 0.05 度より少し寄せる）
 /// - **ピンが2つ以上:** 全部の座標の外枠に、上下左右へ余白を足す（`spreadPadding` 倍）。`.automatic` は座標の点で枠を決めるので、
-///   端のピン（当たり 44pt の丸い写真）が地図の縁や左下の「法律に基づく情報」にかかることがあった。枠が狭いとき（近い2か所）は
-///   1つのときの広さより寄せない
+///   端のピンが地図の縁や左下の「法律に基づく情報」にかかることがあった。枠が狭いとき（近い2か所）は1つのときの広さより寄せない
+///
+/// 余白の決め方（2026-11-22 確かめ役の指摘で直した）: ピン（`SpotMapMarker`）は丸なので、`AskPinsMap` は座標を丸の
+/// **真ん中**に置く（`anchor: .center`。既定の `.bottom` だと絵が座標から上へ伸び、北の端のピンが上の縁で切れた）。
+/// 端の座標と縁の間が、選んだピンの半径（`selectedPinRadius` 約 38pt）＋ `edgeGap` 8pt より広くなるよう、
+/// 地図の高さ `mapHeight` 160 から倍率を逆に出す（約 2.36 倍）。地図は横の方が長いので、東西はさらに余裕がある
 enum AskMapFrame {
     /// ピンが1つのときに見せる半径（メートル）
     nonisolated static let singleRadius: Double = 1_500
-    /// ピンが2つ以上のとき、外枠を何倍に広げるか（1.8 倍＝上下左右に 22% ずつ。高さ 160 の地図でピンの中心が縁から 35pt）
-    nonisolated static let spreadPadding: Double = 1.8
+    /// 答えの地図の高さ（札の並びの地図と広い札の地図で共通・`AskSpotCarousel.mapHeight`）
+    nonisolated static let mapHeight: CGFloat = 160
+    /// 選んだピンの見た目の半径（写真の丸 40 の半分＋光の輪 10、それを 1.27 倍）
+    nonisolated static var selectedPinRadius: CGFloat {
+        (SpotMapMarker.photoSize / 2 + SpotMapMarker.haloWidth) * SpotMapMarker.selectedScale
+    }
+    /// ピンの絵と地図の縁の間に残す隙間
+    nonisolated static let edgeGap: CGFloat = 8
+    /// 端の座標と縁の間に要る長さ（pt）
+    nonisolated static var edgeClearance: CGFloat { selectedPinRadius + edgeGap }
+    /// ピンが2つ以上のとき、外枠を何倍に広げるか。外枠の高さ h の地図で、上下に edgeClearance ずつ空く倍率
+    nonisolated static var spreadPadding: Double { Double(mapHeight / (mapHeight - edgeClearance * 2)) }
     /// 緯度1度の長さ（メートル・目安）
     nonisolated static let metersPerDegree: Double = 111_000
 
@@ -503,9 +517,11 @@ enum AskMapFrame {
         let minLng = minLat / cosLat
         let spanLat = ((lats.max() ?? 0) - (lats.min() ?? 0)) * spreadPadding
         let spanLng = ((lngs.max() ?? 0) - (lngs.min() ?? 0)) * spreadPadding
+        // 上限: 範囲の上下が北緯・南緯 90 度を越えない（日本の中では着かないが、座標の誤りで地図を壊さない）
+        let maxLat = max(180 - 2 * abs(center.latitude), 0.0001)
         return MKCoordinateRegion(center: center,
-                                  span: MKCoordinateSpan(latitudeDelta: min(max(spanLat, minLat), 170),
-                                                         longitudeDelta: min(max(spanLng, minLng), 350)))
+                                  span: MKCoordinateSpan(latitudeDelta: min(max(spanLat, minLat), maxLat),
+                                                         longitudeDelta: min(max(spanLng, minLng), 360)))
     }
 }
 
@@ -521,9 +537,22 @@ struct AskPinsMap: View {
     var current: String? = nil
     /// ピンを押したとき。nil なら観光スポットの頁を開く。案A では札をその場所へ送る
     var onPick: ((OfficialSpot) -> Void)? = nil
-    @State private var camera: MapCameraPosition = .automatic
+    /// 地図の範囲。**最初から `AskMapFrame` の範囲を入れる**（2026-11-22 確かめ役の指摘）: `onAppear` で決めると、
+    /// 観光スポットの頁から戻るたびに走り、利用者が動かした地図が元に戻った（`.automatic` が一瞬出ることも無くなる）
+    @State private var camera: MapCameraPosition
     @State private var opened: OfficialSpot?
     @State private var showOpened = false
+
+    init(spots: [OfficialSpot], officialSpots: [OfficialSpot], photos: [Photo], photosKnown: Bool,
+         current: String? = nil, onPick: ((OfficialSpot) -> Void)? = nil) {
+        self.spots = spots
+        self.officialSpots = officialSpots
+        self.photos = photos
+        self.photosKnown = photosKnown
+        self.current = current
+        self.onPick = onPick
+        _camera = State(initialValue: Self.framing(Self.pins(of: spots)))
+    }
 
     /// ピン1つ（座標のある観光スポットだけ）
     private struct Pin: Identifiable {
@@ -532,21 +561,24 @@ struct AskPinsMap: View {
         var id: String { spot.spotId }
     }
 
-    private var pins: [Pin] {
+    private static func pins(of spots: [OfficialSpot]) -> [Pin] {
         spots.compactMap { s in s.coords.map { Pin(spot: s, coordinate: CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lng)) } }
     }
 
-    /// 範囲を決め直す目印（並べ直しで答えの場所が替わったら決め直す）
-    private var pinKey: String { pins.map { "\($0.id)@\($0.coordinate.latitude),\($0.coordinate.longitude)" }.joined(separator: "|") }
+    private var pins: [Pin] { Self.pins(of: spots) }
 
-    private func frame() {
-        if let region = AskMapFrame.region(for: pins.map(\.coordinate)) { camera = .region(region) }
+    private static func framing(_ pins: [Pin]) -> MapCameraPosition {
+        AskMapFrame.region(for: pins.map(\.coordinate)).map { .region($0) } ?? .automatic
     }
+
+    /// 範囲を決め直す目印。**答えの場所が替わったときだけ**決め直す（並べ直し）。頁から戻っただけでは決め直さない
+    private var pinKey: String { pins.map { "\($0.id)@\($0.coordinate.latitude),\($0.coordinate.longitude)" }.joined(separator: "|") }
 
     var body: some View {
         Map(position: $camera) {
             ForEach(pins) { pin in
-                Annotation(pin.spot.name, coordinate: pin.coordinate) {
+                // 丸いピンなので座標を丸の真ん中に置く（既定の .bottom だと絵が上へ伸び、北の端のピンが上の縁で切れる・`AskMapFrame`）
+                Annotation(pin.spot.name, coordinate: pin.coordinate, anchor: .center) {
                     Button {
                         if let onPick {
                             onPick(pin.spot)
@@ -568,8 +600,7 @@ struct AskPinsMap: View {
                 .annotationTitles(.hidden)
             }
         }
-        .onAppear { frame() }
-        .onChange(of: pinKey) { _, _ in frame() }
+        .onChange(of: pinKey) { _, _ in camera = Self.framing(pins) }
         // 地図のカメラの動き（タイルの読み込みや動きが続いているかの目安・UI テストのときだけ数える・回 1644 の調べ）
         .onMapCameraChange(frequency: .continuous) { _ in AskCarouselStats.shared.hit(.mapCam) }
         .navigationDestination(isPresented: $showOpened) {

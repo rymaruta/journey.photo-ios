@@ -44,6 +44,30 @@ final class AskMapFrameTests: XCTestCase {
         XCTAssertEqual(r.center.latitude, (36.562 + 36.611) / 2, accuracy: 1e-9)
     }
 
+    /// 南北に並ぶ答え（金沢駅と金沢港）で、いちばん北と南のピンの座標と地図の上下の縁の間が、選んだピンの半径
+    /// （約 38pt・ピンは `anchor: .center` で座標が丸の真ん中）より広い。前の 1.8 倍では約 35pt で、北のピンが切れた
+    func testEdgePinsClearMapEdgesInPoints() throws {
+        let port = CLLocationCoordinate2D(latitude: 36.611, longitude: 136.611)
+        let r = try XCTUnwrap(AskMapFrame.region(for: [kanazawa, port]))
+        let pointsPerDegree = Double(AskMapFrame.mapHeight) / r.span.latitudeDelta
+        let top = r.center.latitude + r.span.latitudeDelta / 2
+        let bottom = r.center.latitude - r.span.latitudeDelta / 2
+        let topGap = (top - port.latitude) * pointsPerDegree
+        let bottomGap = (kanazawa.latitude - bottom) * pointsPerDegree
+        let radius = Double(AskMapFrame.selectedPinRadius)
+        XCTAssertEqual(radius, (20 + 10) * 1.27, accuracy: 0.01)
+        XCTAssertGreaterThan(topGap, radius + 4, "北の端のピンが上の縁で切れる")
+        XCTAssertGreaterThan(bottomGap, radius + 4, "南の端のピンが下の縁（法律に基づく情報）にかかる")
+    }
+
+    /// 極に近い誤った座標でも、範囲の上下が 90 度を越えない
+    func testSpanNeverCrossesPole() throws {
+        let far = [CLLocationCoordinate2D(latitude: 80, longitude: 0), CLLocationCoordinate2D(latitude: 20, longitude: 10)]
+        let r = try XCTUnwrap(AskMapFrame.region(for: far))
+        XCTAssertLessThanOrEqual(r.center.latitude + r.span.latitudeDelta / 2, 90 + 1e-9)
+        XCTAssertGreaterThanOrEqual(r.center.latitude - r.span.latitudeDelta / 2, -90 - 1e-9)
+    }
+
     /// 近い2か所（同じ建物の中など）は、1つのときより寄せない
     func testClosePinsNeverZoomPastSingle() throws {
         let near = CLLocationCoordinate2D(latitude: kanazawa.latitude + 0.0005, longitude: kanazawa.longitude)
@@ -64,6 +88,12 @@ final class AskMapFrameTests: XCTestCase {
         let body = String(source[start.upperBound..<end.lowerBound])
         XCTAssertTrue(body.contains(".annotationTitles(.hidden)"), "ピンの名前の字が地図に出る")
         XCTAssertTrue(body.contains("AskMapFrame.region(for:"), "地図の範囲を AskMapFrame で決めていない")
+        // 範囲は最初から入れ（init）、答えの場所が替わったときだけ決め直す。頁から戻ったとき（onAppear）は決め直さない
+        XCTAssertTrue(body.contains("_camera = State(initialValue: Self.framing("), "最初の範囲を入れていない")
+        XCTAssertTrue(body.contains(".onChange(of: pinKey) { _, _ in camera = Self.framing(pins) }"), "場所が替わったときに決め直していない")
+        XCTAssertFalse(body.contains(".onAppear"), "頁から戻るたびに範囲が元に戻る")
+        // 丸いピンの真ん中を座標に置く（既定の .bottom だと北の端のピンが切れる）
+        XCTAssertTrue(body.contains("coordinate: pin.coordinate, anchor: .center)"), "ピンの anchor が .center でない")
         // 読み上げの名前はピンのボタンに残す
         XCTAssertTrue(body.contains(".accessibilityLabel(pin.spot.name)"))
     }
