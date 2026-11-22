@@ -473,7 +473,45 @@ struct AskThreadView: View {
     }
 }
 
-/// 答えの地図（ピンを押すと観光スポットの頁へ）。地図は答えの場所が全部入る範囲（`.automatic`）
+/// 答えの地図の範囲（純粋な計算・`AskPinsMap` が使う）。
+///
+/// 2026-11-22 判断（owner「AIの答えで謎の枠あった。地図のスポットかな？周り見えないから全然わからないな」）:
+/// 前は `.automatic` で、ピンが1つだと MapKit が最大まで寄せ、道も街も無い一色の面にピンが1つだけになっていた。
+/// - **ピンが1つ:** その場所を真ん中に、半径 `singleRadius`（1.5km）を見せる。周りの道・駅・街の名前が読める広さ
+///   （台帳の座標は約1km に丸めてあるので、これ以上寄せても精度は増えない。観光スポットの頁の地図の 0.05 度より少し寄せる）
+/// - **ピンが2つ以上:** 全部の座標の外枠に、上下左右へ余白を足す（`spreadPadding` 倍）。`.automatic` は座標の点で枠を決めるので、
+///   端のピン（当たり 44pt の丸い写真）が地図の縁や左下の「法律に基づく情報」にかかることがあった。枠が狭いとき（近い2か所）は
+///   1つのときの広さより寄せない
+enum AskMapFrame {
+    /// ピンが1つのときに見せる半径（メートル）
+    nonisolated static let singleRadius: Double = 1_500
+    /// ピンが2つ以上のとき、外枠を何倍に広げるか（1.8 倍＝上下左右に 22% ずつ。高さ 160 の地図でピンの中心が縁から 35pt）
+    nonisolated static let spreadPadding: Double = 1.8
+    /// 緯度1度の長さ（メートル・目安）
+    nonisolated static let metersPerDegree: Double = 111_000
+
+    /// 見せる範囲。座標が無ければ nil（呼び出し側は地図を出さない）
+    nonisolated static func region(for coordinates: [CLLocationCoordinate2D]) -> MKCoordinateRegion? {
+        guard let first = coordinates.first else { return nil }
+        let lats = coordinates.map(\.latitude)
+        let lngs = coordinates.map(\.longitude)
+        let center = CLLocationCoordinate2D(latitude: ((lats.min() ?? first.latitude) + (lats.max() ?? first.latitude)) / 2,
+                                            longitude: ((lngs.min() ?? first.longitude) + (lngs.max() ?? first.longitude)) / 2)
+        // 1つのときの広さ（経度は緯度で縮む分を戻して、東西も同じメートルにする）
+        let minLat = singleRadius * 2 / metersPerDegree
+        let cosLat = max(cos(center.latitude * .pi / 180), 0.01)
+        let minLng = minLat / cosLat
+        let spanLat = ((lats.max() ?? 0) - (lats.min() ?? 0)) * spreadPadding
+        let spanLng = ((lngs.max() ?? 0) - (lngs.min() ?? 0)) * spreadPadding
+        return MKCoordinateRegion(center: center,
+                                  span: MKCoordinateSpan(latitudeDelta: min(max(spanLat, minLat), 170),
+                                                         longitudeDelta: min(max(spanLng, minLng), 350)))
+    }
+}
+
+/// 答えの地図（ピンを押すと観光スポットの頁へ）。範囲は `AskMapFrame`（ピンが1つでも周りの街が見える広さ）。
+/// ピンの名前の字は地図の上に出さない（2026-11-22 判断: 名前は上の札にある。字が大きくピンの下に出て、左下の
+/// 「法律に基づく情報」に重なっていた）。読み上げの名前はピンのボタンに残す
 struct AskPinsMap: View {
     let spots: [OfficialSpot]
     let officialSpots: [OfficialSpot]
@@ -498,6 +536,13 @@ struct AskPinsMap: View {
         spots.compactMap { s in s.coords.map { Pin(spot: s, coordinate: CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lng)) } }
     }
 
+    /// 範囲を決め直す目印（並べ直しで答えの場所が替わったら決め直す）
+    private var pinKey: String { pins.map { "\($0.id)@\($0.coordinate.latitude),\($0.coordinate.longitude)" }.joined(separator: "|") }
+
+    private func frame() {
+        if let region = AskMapFrame.region(for: pins.map(\.coordinate)) { camera = .region(region) }
+    }
+
     var body: some View {
         Map(position: $camera) {
             ForEach(pins) { pin in
@@ -520,8 +565,11 @@ struct AskPinsMap: View {
                     .accessibilityAddTraits(current == pin.spot.spotId ? .isSelected : [])
                     .accessibilityIdentifier("search.ask.pin")
                 }
+                .annotationTitles(.hidden)
             }
         }
+        .onAppear { frame() }
+        .onChange(of: pinKey) { _, _ in frame() }
         // 地図のカメラの動き（タイルの読み込みや動きが続いているかの目安・UI テストのときだけ数える・回 1644 の調べ）
         .onMapCameraChange(frequency: .continuous) { _ in AskCarouselStats.shared.hit(.mapCam) }
         .navigationDestination(isPresented: $showOpened) {

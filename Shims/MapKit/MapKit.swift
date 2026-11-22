@@ -134,6 +134,11 @@ public struct Annotation: MapContent {
                          @ViewBuilder content: () -> C) {}
 }
 
+/// 印の下に描く題の字を出すか（iOS 17・本物は `MapContent` に生えている）
+extension MapContent {
+    public func annotationTitles(_ visibility: VisibilityShim) -> TupleMapContent { TupleMapContent() }
+}
+
 // MARK: - 地図の操作部品（iOS 17）
 
 /// 方位磁針。`scope` を渡すと地図の外（`mapScope` を付けた範囲）に置ける
