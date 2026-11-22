@@ -115,6 +115,14 @@ enum AskText {
         L("回答の作成のため、入力内容と直前のやりとりをサーバーに送信し、委託先の AI で処理します。",
           "To generate answers, your input and recent conversation are sent to our servers and processed by an AI provider acting on our behalf.")
     }
+    /// 旅行プランで送ることの知らせ（2026-11-22 判断・確かめ役の指摘）。旅行プランの AI は頼みの文に加えて、
+    /// 候補の観光スポットと今の日程を送るので、AI に頼むの文（「入力内容と直前のやりとり」）とは言い分ける。
+    /// 旅行プランの画面（一覧の「AI で作る」の札、自分で頼むのシート、組み直しのチップと「書いて頼む」）はすべてこの文にそろえる。
+    /// AI に頼むの画面の中で旅行プランを頼むときは、下の欄の注意書き（`footnote`）1つにまとめる（同じ画面に2つ並べない）
+    static var tripServerNotice: String {
+        L("※ 旅行プランの作成のため、頼みの内容と日程をサーバーに送信し、委託先の AI で処理します。",
+          "To create trip plans, your request and itinerary are sent to our servers and processed by an AI provider acting on our behalf.")
+    }
     /// 下の欄の注意書き。サーバーに送る人には知らせを同じ段落につなげる（2026-11-22 判断・確かめ役の指摘）。
     /// 2つの文を別の行にすると、大きな字で下の欄が画面の半分近くを取る。1段落にすれば、行の間の余白が1つ減り、
     /// 字が行の終わりまで詰まる。切り詰め（行数の上限）はしない（送る知らせが途中で切れると意味がない）。

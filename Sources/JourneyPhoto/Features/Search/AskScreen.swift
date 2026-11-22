@@ -634,8 +634,8 @@ struct AskScreen: View {
     }
 
     /// 知らせを下の欄の上に出す。下の欄の高さ（測った値）に間を足す。測る前は、欄 46・上下の余白 18・注意書き3行で見込む
-    static let toastFallbackPadding: CGFloat = 110
-    static let toastGap: CGFloat = 8
+    nonisolated static let toastFallbackPadding: CGFloat = 110
+    nonisolated static let toastGap: CGFloat = 8
     nonisolated static func toastBottomPadding(composer height: CGFloat) -> CGFloat {
         height > 0 ? height + toastGap : toastFallbackPadding
     }
@@ -771,13 +771,15 @@ struct AskPlanFlow: ViewModifier {
     }
 }
 
-/// 打った文をサーバーへ送ることの知らせ（`AskText.serverNotice`）。旅行プランの頼みのシートと「書いて頼む」で使う同じ部品
-/// （AI に頼むの下の欄は注意書きと1段落につなげる・`AskText.footnote`）。字は注意書きと同じ caption・text3
+/// サーバーへ送ることの知らせ。旅行プランの画面（「AI で作る」の札、自分で頼むのシート、組み直し）で使う同じ部品。
+/// 文は既定で旅行プラン用（`AskText.tripServerNotice`）。AI に頼むの下の欄は注意書きと1段落につなげる（`AskText.footnote`）。
+/// 字は注意書きと同じ caption・text3
 struct AskServerNoticeText: View {
     let id: String
+    var text: String = AskText.tripServerNotice
 
     var body: some View {
-        Text(AskText.serverNotice)
+        Text(text)
             .font(JPFont.caption)
             .foregroundStyle(WebTheme.text3)
             .frame(maxWidth: .infinity, alignment: .leading)
