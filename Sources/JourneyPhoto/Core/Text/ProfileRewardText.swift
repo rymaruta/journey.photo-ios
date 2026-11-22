@@ -43,6 +43,14 @@ enum ProfileRewardText {
 
     static var eyebrow: String { L("旅のトランク\u{2002}硬貨", "TRAVEL TRUNK\u{2002}COINS") }
 
+    /// お礼の知らせ（札 #628・2026-11-22 判断: 全画面で割り込まず、知らせ「硬貨 3 枚が届きました　見る」に）
+    static func notice(_ grant: ProfileReward.Grant) -> String {
+        L("硬貨 \(grant.added) 枚が届きました", grant.added == 1 ? "1 coin arrived" : "\(grant.added) coins arrived")
+    }
+
+    /// 知らせの「見る」（今までのお礼の全画面を開く）
+    static var noticeAction: String { L("見る", "View") }
+
     static func title(_ grant: ProfileReward.Grant) -> String {
         if grant.kinds.count > 1 { return L("アイコンとカバーのお礼", "Thanks for your avatar and cover") }
         return grant.kinds.first == .cover ? L("カバーを設定したお礼", "Thanks for setting a cover")

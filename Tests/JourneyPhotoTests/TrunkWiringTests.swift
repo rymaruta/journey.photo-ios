@@ -99,7 +99,8 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(rootView.contains("}) { batch in LabelArrivedView(batch: batch) }"))
         XCTAssertTrue(rootView.contains("tabsWithTrunkArrival"), "届いた画面の修飾子が繋がっていない")
         XCTAssertTrue(rootView.contains("toasts.show(notice.text, kind: .info)"), "いっぱいのときの一言が無い")
-        XCTAssertTrue(rootView.contains("until: PostModalGate.trunkMayShow"), "届いた画面が順番の決まりを通っていない")
+        // 2026-11-22（札 #628）: 届いた分は「投稿しました」の行か知らせにする。待つ決まりは今までどおり
+        XCTAssertTrue(rootView.contains("until: { PostModalGate.trunkMayShow($0)"), "届いた画面が順番の決まりを通っていない")
         XCTAssertTrue(rootView.contains("guard PostModalGate.reviewMayAsk(postModalSnapshot())"), "評価のお願いが順番の決まりを通っていない")
     }
 

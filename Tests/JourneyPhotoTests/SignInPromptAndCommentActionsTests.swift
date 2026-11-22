@@ -56,16 +56,13 @@ final class SignInAskSignUpTests: XCTestCase {
         XCTAssertEqual(SignInPrompt.request(SignInPrompt.like, signUpReason: SignInPrompt.likeSignUp, userId: nil, isResolving: false)?.entry, .signIn)
     }
 
-    /// 確認（いいね・保存・2回叩く）: 「新規登録」を先（主）に、押したら登録の側でシートを開く
+    /// 断り（いいね・保存・2回叩く）: 2026-11-22（札 #628）から確かめの窓を挟まず、すぐ登録の側でシートを開く
+    /// （新規登録が主・札 #630 のまま。開いた画面に「ログインに戻る」がある）
     func testAlertOffersSignUpFirst() throws {
         let prompt = try source("Features/Auth/SignInPrompt.swift")
-        let alert = prompt.components(separatedBy: "presenting: ask) { request in").last?
-            .components(separatedBy: "} message:").first ?? ""
-        let signUp = alert.range(of: "Button(SignInPrompt.signUpLabel) { open = SignInPrompt.signUpRequest(from: request) }")
-        let signIn = alert.range(of: "Button(SignInPrompt.actionLabel) { open = request }")
-        XCTAssertNotNil(signUp, "確認に新規登録が無い（または登録の側で開かない）")
-        XCTAssertNotNil(signIn, "確認にログインが無い")
-        if let signUp, let signIn { XCTAssertLessThan(signUp.lowerBound, signIn.lowerBound, "新規登録が先（主）でない") }
+        XCTAssertFalse(prompt.contains("presenting: ask) { request in"), "確かめの窓が残っている")
+        XCTAssertTrue(prompt.contains("open = SignInPromptOpening.opened(from: request)"), "断りから登録の側で開いていない")
+        XCTAssertEqual(SignInPromptOpening.opened(from: SignInRequest(reason: "x", signUpReason: "y")).entry, .signUp)
         XCTAssertTrue(prompt.contains("SignInSheet(reason: request.reason, entry: request.entry)"), "開く側をシートに渡していない")
         XCTAssertTrue(prompt.contains("SignInView(reason: reason, entry: entry)"), "開く側をログイン画面に渡していない")
     }

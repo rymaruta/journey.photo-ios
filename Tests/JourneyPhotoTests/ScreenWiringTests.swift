@@ -311,7 +311,9 @@ final class ScreenWiringTests: XCTestCase {
         }
         XCTAssertEqual(rootLines[guardLine + 1], "pushPrimer.letsReviewAsk(offeredAtStart: offeredAtStart),",
                        "説明を出した回にも評価を頼む")
-        XCTAssertEqual(rootLines[guardLine + 2], "reviewPrompt.consume() else { return }")
+        // 2026-11-22（札 #628）: 「投稿しました」を出した投稿では見送る1行が、数えた分を使う前に入る
+        XCTAssertEqual(rootLines[guardLine + 2], "!postedSummary.takeReviewSkip(),")
+        XCTAssertEqual(rootLines[guardLine + 3], "reviewPrompt.consume() else { return }")
         let primer = try source("Features/Settings/PushPrimerView.swift")
         XCTAssertTrue(primer.contains("await push.enable()"), "「通知を受け取る」がシステムの許可へ進まない")
         XCTAssertTrue(primer.contains("push.primer.later"))

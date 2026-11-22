@@ -264,6 +264,8 @@ struct CamperRoomView: View {
         if CamperRoomPreview.contactKind != nil { showContact = true }
         if CamperRoomPreview.select, !CamperRoomPreview.lift { selected = editor?.doc.items.first { $0.k == "storage.trunk" }?.u }
         showCoach = CamperRoomPreview.coach || (!CamperRoomPreview.reset && CamperRoomCoach.shouldShow())
+        // 一度見せたら済んだと覚える（読み上げで触らない人、触らずに別の場面へ移った人にも、次から出さない・札 #628）
+        if showCoach, !CamperRoomPreview.coach { CamperRoomCoach.done() }
     }
 
     private func recount() {
@@ -515,6 +517,10 @@ struct CamperRoomView: View {
         .frame(width: width, height: height)
         .contentShape(Rectangle())
         .gesture(pointer)
+        // 触った瞬間に手引きの1行を消す（札 #628）。部屋の操作はそのまま通す
+        // 手引きが出ている間だけ付ける（ふだんの操作には重ねない）
+        .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in dismissCoach() },
+                             including: Self.coachGestureMask(showing: showCoach))
         .simultaneousGesture(pinch)
         .simultaneousGesture(twist)
         .accessibilityElement(children: .ignore)
@@ -597,9 +603,11 @@ struct CamperRoomView: View {
                 .accessibilityHidden(true)
         }
         if showCoach, mode == .home {
-            coachCard
-                .frame(width: min(width - 32, 340))
-                .position(x: width / 2, y: height / 2)
+            // 2026-11-22 判断（札 #628）: 部屋の上に重ねる札（「わかった」まで触れない）をやめ、部屋の下の端に1行。
+            // 押せないので部屋はすぐ触れる。部屋を触ったら消える（`dismissCoach`）
+            coachLine
+                .frame(maxWidth: min(width - 32, 360))
+                .position(x: width / 2, y: height - 30)
         }
     }
 
@@ -692,47 +700,36 @@ struct CamperRoomView: View {
         .accessibilityIdentifier("camper.room.armed")
     }
 
-    /// 初めての人への手引き（3 行・端末に 1 回。写真の無い所なので主ボタンは真鍮の塗りに墨の字）
-    private var coachCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(L("はじめての方へ", "Getting started")).jpEyebrow().foregroundStyle(WebTheme.accent)
-            ForEach(Self.coachLines, id: \.symbol) { line in
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: line.symbol)
-                        .jpSystemFont(18, weight: .semibold)
-                        .foregroundStyle(WebTheme.accent)
-                        .frame(width: 26)
-                        .accessibilityHidden(true)
-                    Text(line.text).jpSystemFont(14).foregroundStyle(WebTheme.foreground)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Button {
-                showCoach = false
-                if !CamperRoomPreview.coach { CamperRoomCoach.done() }
-            } label: {
-                Text(L("わかった", "Got it"))
-                    .jpSystemFont(15, weight: .semibold)
-                    .foregroundStyle(WebTheme.accentText)
-                    .frame(maxWidth: .infinity, minHeight: WebTheme.minTapTarget)
-                    .background(WebTheme.accentFill, in: RoundedRectangle(cornerRadius: 12))
-                    .contentShape(RoundedRectangle(cornerRadius: 12))
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("camper.room.coach.done")
-        }
-        .padding(16)
-        .background(Color.black.opacity(0.9), in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.white.opacity(0.16), lineWidth: 1))
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("camper.room.coach")
+    /// 初めての人への手引き（1 行・端末に 1 回・札 #628）。ホームの長押しの案内と同じ「画面の中の1行」で、操作を止めない。
+    /// 部屋を触ったら消え、覚える（`CamperRoomCoach.done`）
+    private var coachLine: some View {
+        Text(Self.coachText)
+            .jpSystemFont(13, weight: .semibold, relativeTo: .footnote)
+            .foregroundStyle(WebTheme.foreground)
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
+            .minimumScaleFactor(0.85)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            // 案内の帯の角（`JPRadius.m`）。押せる物ではないので線のボタン（カプセル）の形にしない
+            .background(Color.black.opacity(0.82), in: RoundedRectangle(cornerRadius: JPRadius.m))
+            .overlay(RoundedRectangle(cornerRadius: JPRadius.m).strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
+            .allowsHitTesting(false)
+            .accessibilityIdentifier("camper.room.coach")
     }
 
-    static let coachLines: [(symbol: String, text: String)] = [
-        ("hand.tap", L("家具を長押しすると持ち上がる。そのまま動かして離すと置ける", "Press and hold a piece to lift it, then drag and let go")),
-        ("rotate.right", L("二本指でひねると 90 度回る。選ぶと横に「回す、しまう」も出る", "Twist with two fingers to turn it. Select it for Turn and Put away")),
-        ("plus.magnifyingglass", L("二度押しで寄る、もう一度で戻る。指一本で部屋を回す", "Double-tap to zoom in and again to zoom out. Drag to turn the room")),
-    ]
+    /// 手引きの1行（前の3行の要点: 指で回す、長押しで持ち上げる）
+    static let coachText = L("指で部屋を回せます、家具は長押しで持ち上がります",
+                             "Drag to turn the room, press and hold a piece to lift it")
+
+    /// 部屋を触ったら消すための指の受け口は、手引きが出ている間だけ効かせる（札 #628）
+    static func coachGestureMask(showing: Bool) -> GestureMask { showing ? .all : .subviews }
+
+    /// 部屋を触った・別の場面へ移った: 手引きの1行を消す（覚えるのは見せたとき・`load`）
+    private func dismissCoach() {
+        guard showCoach else { return }
+        showCoach = false
+    }
 
     private static let pickFirst = L("先に家具を選んでください", "Select a piece first")
 
@@ -1222,6 +1219,7 @@ struct CamperRoomView: View {
     }
 
     private func enter(_ m: Mode) {
+        dismissCoach()
         mode = m
         selected = nil
         animateCamera = true
