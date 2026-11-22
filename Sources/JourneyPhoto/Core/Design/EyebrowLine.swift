@@ -16,6 +16,7 @@ struct JPEyebrowLine: View {
     var spoken: String?
     /// 線の右に添える一言（「2019 年から」）
     var trailing: String?
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     /// 線の濃さ（真鍮の 55% → 0）
     nonisolated static let lineStartOpacity = 0.55
@@ -28,13 +29,20 @@ struct JPEyebrowLine: View {
         self.trailing = trailing
     }
 
+    /// 字を折り返すか（大きな字の設定のときだけ・札 #680）
+    nonisolated static func wraps(_ size: DynamicTypeSize) -> Bool { size.isAccessibilitySize }
+
     var body: some View {
         HStack(spacing: Self.gap) {
             Text(text)
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
-                .lineLimit(1)
-                .fixedSize()
+                // 2026-11-22 判断（札 #680）: 大きな字の設定（AX）では折り返す。前は字の大きさに関わらず
+                // 1行のまま幅を固定していたので、横にボタンが並ぶ所（旅行プランの日の見出し「1 日目　2026年12月22日」と
+                // 地図・「…」）で、AX XL のとき画面全体が画面の幅より広くなり左右が切れた。標準の大きさでは今までどおり1行
+                .lineLimit(Self.wraps(typeSize) ? nil : 1)
+                .fixedSize(horizontal: !Self.wraps(typeSize), vertical: true)
+                .layoutPriority(1)
                 .accessibilityLabel(spoken ?? text)
                 .accessibilityAddTraits(.isHeader)
             LinearGradient(colors: [WebTheme.accent.opacity(Self.lineStartOpacity), WebTheme.accent.opacity(0)],
