@@ -135,18 +135,6 @@ final class StoryCameraPolishTests: XCTestCase {
                        "数えている間にモードが替わると撮るものが変わる")
     }
 
-    // MARK: - 触覚
-
-    /// タイマーの刻みは軽く・取り消しと選択は切り替えと同じ。既存の対応は変えない
-    func testNewHaptics() {
-        XCTAssertEqual(StoryCameraRules.haptic(for: .countdownTick), .impactLight)
-        XCTAssertEqual(StoryCameraRules.haptic(for: .countdownCancelled), .selection)
-        XCTAssertEqual(StoryCameraRules.haptic(for: .optionChanged), .selection)
-        XCTAssertEqual(StoryCameraRules.haptic(for: .recordingStarted), .impactHeavy)
-        XCTAssertEqual(StoryCameraRules.haptic(for: .recordingStopped), .impactLight)
-        XCTAssertEqual(StoryCameraRules.haptic(for: .modeSwitched), .selection)
-    }
-
     // MARK: - 画面のつなぎ込み（ソースの文字）
 
     private static var repo: URL {

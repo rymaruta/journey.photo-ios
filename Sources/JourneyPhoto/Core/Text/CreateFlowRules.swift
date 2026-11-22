@@ -88,14 +88,6 @@ enum CreateFlowRules {
     /// ずれるが、owner が採った模型の寸法を正とした（シートのナビの題と同じ段）
     static let headerHeight: CGFloat = 44
 
-    /// 印の上限（投稿は1回に扱う枚数・ストーリーは並べられる本数）
-    static func markLimit(_ mode: Mode) -> Int {
-        switch mode {
-        case .post: return UploadViewModel.maxSelection
-        case .story: return StoryQueue.maxShots
-        }
-    }
-
     /// 一覧の段で、切り替え（カプセル）を出すか。**一覧を見ている間だけ**——欄を書く・作る段では替えさせない
     /// （書きかけの投稿を、払っただけで失わない）。ログインの画面でも出す（どちらでもログインが要る）
     static func showsSwitcher(libraryShown: Bool) -> Bool { libraryShown }

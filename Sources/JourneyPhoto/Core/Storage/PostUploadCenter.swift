@@ -180,6 +180,7 @@ final class PostUploadCenter: ObservableObject {
         }
         jobs.removeAll { !$0.sending && $0.ownerId != userId }
         if jobs.count != before { recompute() }
+        PostedCardOffer.shared.userChanged(to: userId)
     }
 
     /// 送っている投稿をやめる（輪の「送信をやめる」）。いま送っている1枚は最後まで通し、残りは上げ始めない。
@@ -244,8 +245,8 @@ final class PostUploadCenter: ObservableObject {
                                     message: model.errorMessage, needsEditing: model.failureNeedsEditing) {
         case .posted:
             finish(job)
-            if let card = model.quietPostedCard { PostedCardOffer.shared.offer(card) }
-            notice(.posted(card: model.quietPostedCard != nil), job: job)
+            if let card = model.quietPostedCard { PostedCardOffer.shared.offer(card, ownerId: job.ownerId) }
+            notice(.posted(card: model.quietPostedCard != nil), job: job, card: model.quietPostedCard)
         case .postedWithNote(let note):
             finish(job)
             notice(.postedWithNote(note), job: job)
@@ -274,17 +275,18 @@ final class PostUploadCenter: ObservableObject {
         TabRouter.shared.postSheetClosed()
     }
 
-    private func notice(_ notice: Notice, job: Job) {
+    private func notice(_ notice: Notice, job: Job, card shareCard: PostedShareCard? = nil) {
         if let onNotice {
             onNotice(notice, job.id)
             return
         }
         guard let toasts else { return }
         switch notice {
-        case .posted(let card):
-            if card {
-                toasts.show(PostedCardHabit.quietText, kind: .success, actionTitle: PostedCardHabit.quietAction) {
-                    PostedCardOffer.shared.present()
+        case .posted:
+            if let card = shareCard {
+                // その知らせのカードを、持ち主がいまの人のときだけ開く（札 #688）
+                toasts.show(PostedCardHabit.quietText, kind: .success, actionTitle: PostedCardHabit.quietAction) { [weak self] in
+                    PostedCardOffer.shared.present(card, currentUserId: self?.currentUserId?())
                 }
             } else {
                 toasts.show(PostedCardHabit.quietText, kind: .success)

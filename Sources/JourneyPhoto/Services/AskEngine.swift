@@ -223,9 +223,15 @@ final class AskEngine: ObservableObject {
             // 控えの札の中身（観光スポットと写真）を読み直して出す
             let library = await backend.library(false)
             guard !Task.isCancelled else { return }
-            remember(library: library, thread: cached)
+            // 2026-11-22 判断（札 #684）: 今日同じ頼みで始めた会話が残っていれば（Pro が「新しく頼む」のあと同じ頼みをした）、
+            // 新しい会話を作らずにそれを開く。前は毎回新しい id の会話を作り、「前の会話」に同じ会話が2つ並んだ
+            let existing = Self.todaysConversation(startingWith: question,
+                                                   in: history.conversations(userId: backend.userId()).items)
+            let shown = existing?.thread ?? cached.map { var e = $0; e.askedAt = Date(); return e }
+            remember(library: library, thread: shown)
             freshId = nil
-            thread = cached.map { var e = $0; e.askedAt = Date(); return e }
+            thread = shown
+            if let existing { conversationId = existing.id }
             pending = nil
             askingQuestion = nil
             keepConversation(userId: backend.userId())
@@ -343,7 +349,7 @@ final class AskEngine: ObservableObject {
     /// 端末の控えに書く（同じ日の同じ頼みの控えと、会話）。ログインしていない、人が替わった、控えを消した間の答えは書かない
     private func persist(userId: String?) {
         guard mayPersist(userId) else { return }
-        let kept = Self.keepable(thread)
+        let kept = Self.keepable(Self.todaysHead(thread))
         if !kept.isEmpty { history.remember(kept, userId: userId) }
         keepConversation(userId: userId)
     }
@@ -402,6 +408,26 @@ final class AskEngine: ObservableObject {
     /// 言葉の表の答えは残さない（同じ日に開き直したとき、AI で答え直せるように）。頭から続く分だけ
     static func keepable(_ thread: [AskExchange]) -> [AskExchange] {
         Array(thread.prefix { $0.answer.usedAI || $0.answer.engine == .refused })
+    }
+
+    /// 会話の頭から、今日（日本時間）頼んだ往復が続く分だけ。
+    /// 2026-11-22 判断（札 #684）: 前の日の会話を開いて今日続けて聞くと、その会話を丸ごと今日の答えとして控えに書き直し、
+    /// 翌日からも同じ頼みに古い答え（見頃など）を回数を使わずに出していた。前の日の頼みで始まる会話は控えに書かない
+    static func todaysHead(_ thread: [AskExchange], now: Date = Date()) -> [AskExchange] {
+        let today = AskHistoryStore.day(now)
+        return Array(thread.prefix { $0.askedAt.map { AskHistoryStore.day($0) == today } ?? false })
+    }
+
+    /// 今日、同じ頼みで始めた会話（控えから答えを出すとき、新しい会話を作らずにそれを開く・札 #684）
+    static func todaysConversation(startingWith question: String, in items: [AskHistoryStore.Conversation],
+                                   now: Date = Date()) -> AskHistoryStore.Conversation? {
+        let key = RecentSearchesStore.normalized(question)
+        let today = AskHistoryStore.day(now)
+        return items.first { item in
+            guard let first = item.thread.first, RecentSearchesStore.normalized(first.question) == key,
+                  let at = first.askedAt else { return false }
+            return AskHistoryStore.day(at) == today
+        }
     }
 
     // MARK: - 1問に答える

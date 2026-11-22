@@ -38,20 +38,16 @@ final class ProBadgeGridTests: XCTestCase {
     func testGridsUseLargeArtThroughTheRaster() throws {
         let nameSide = try source("Features/Profile/NameSideBadgeView.swift")
         let owned = try slice(nameSide, from: "private func badgeCell", to: "private var noneCell")
-        XCTAssertFalse(owned.contains("smallImage"))
         XCTAssertTrue(owned.contains("RasterBadgeArt(image: BadgeCatalog.largeImage("))
         let locked = try slice(nameSide, from: "private func lockedCell", to: "private var shelfLink")
-        XCTAssertFalse(locked.contains("smallImage"))
         XCTAssertTrue(locked.contains("RasterBadgeArt(image: item.image"))
 
         let shelf = try source("Features/Profile/BadgeShelfView.swift")
         let decorate = try slice(shelf, from: "private func decorateSection", to: "Text(L(\"変える\"")
-        XCTAssertFalse(decorate.contains("smallImage"))
         XCTAssertTrue(decorate.contains("RasterBadgeArt(image: BadgeCatalog.largeImage(badge.key, tier: badge.tier), side: 52)"), "板 v2 Shelf: 飾っているバッジは 52pt")
 
         let notes = try source("Features/Notifications/NotificationsView.swift")
         let avatar = try slice(notes, from: "private var avatar", to: "private var personAvatar")
-        XCTAssertFalse(avatar.contains("smallImage"))
         XCTAssertTrue(avatar.contains("RasterBadgeArt(image: BadgeCatalog.largeImage(key, tier: notification.tier ?? 1), side: 44)"))
     }
 

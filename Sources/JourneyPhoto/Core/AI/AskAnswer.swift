@@ -113,16 +113,6 @@ enum AskText {
           "AI-generated answers may contain errors. Please confirm important details such as hours and prices with official sources.")
     }
     static var generalBadge: String { L("一般的な答え", "General answer") }
-    /// 答えのもとの1行（「観光スポットの情報から」・2026-11-20 判断 札 #663）。「台帳」は中の言葉なので利用者に見せない。
-    /// 前の版の控え（label が「観光スポットの台帳」）も種類で言い替える
-    static func sourcesLine(_ sources: [AskAnswer.Source]) -> String {
-        var names: [String] = []
-        for s in sources {
-            let name = s.kind == .spots ? spotsSource : s.label
-            if !names.contains(name) { names.append(name) }
-        }
-        return L("\(names.joined(separator: "、"))から", "From \(names.joined(separator: ", "))")
-    }
     static var spotsSource: String { L("観光スポットの情報", "tourist spot info") }
     static var followUp: String { L("続けて聞く", "Ask a follow-up") }
     static var makePlan: String { L("旅行プランにする", "Make a trip plan") }

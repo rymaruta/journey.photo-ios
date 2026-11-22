@@ -136,14 +136,6 @@ struct HighlightService {
         return parts.joined(separator: L("、", ", "))
     }
 
-    /// 選んだ数と表紙の一文。**表紙は何件目かで言う**（直すときはサーバーが持つ
-    /// 表紙を引き継ぐので、「最初の1件」とは限らない）
-    static func pickedNote(picked: [String], coverId: String?) -> String {
-        let at = coverId.flatMap { picked.firstIndex(of: $0) } ?? 0
-        return L("\(picked.count)件を選んでいます。表紙: \(at + 1)件目",
-                 "\(picked.count) selected. Cover: #\(at + 1)")
-    }
-
     /// **そのハイライトはもう無い**（404）。消された・持ち主が退会した・
     /// フォローを外して見えなくなった、のどれも `highlights.ts` は 404 で返す。
     /// 押し直しても直らないので、画面は「通信を確かめて」と言わず再試行も出さない

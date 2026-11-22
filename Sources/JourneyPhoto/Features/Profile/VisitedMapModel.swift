@@ -354,8 +354,6 @@ final class VisitedMapModel: ObservableObject {
 
     func dismissCelebration() { celebration = nil }
 
-    func clearToast() { toast = nil }
-
     func clearAnnouncement() { announcement = nil }
 
     // MARK: - 内部

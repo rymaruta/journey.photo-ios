@@ -67,12 +67,12 @@ final class PendingDeletionTests: XCTestCase {
 
     /// 410 以外（通信できない・404・500）では立てない
     func testOtherFailuresDoNotRaisePendingDeletion() async {
-        XCTAssertTrue(ProfileService.meansAccountDeleted(APIError.server(status: 410, message: "このアカウントは削除されています")))
+        XCTAssertTrue(APIError.server(status: 410, message: "このアカウントは削除されています").isAccountGone)
         // 本文の違う 410（招待リンクの期限切れ・`invite.ts`）は退会ではない
-        XCTAssertFalse(ProfileService.meansAccountDeleted(APIError.server(status: 410, message: "この招待リンクは取り消されています")))
-        XCTAssertFalse(ProfileService.meansAccountDeleted(APIError.server(status: 404, message: "")))
-        XCTAssertFalse(ProfileService.meansAccountDeleted(APIError.server(status: 500, message: "")))
-        XCTAssertFalse(ProfileService.meansAccountDeleted(APIError.unreachable))
+        XCTAssertFalse(APIError.server(status: 410, message: "この招待リンクは取り消されています").isAccountGone)
+        XCTAssertFalse(APIError.server(status: 404, message: "").isAccountGone)
+        XCTAssertFalse(APIError.server(status: 500, message: "").isAccountGone)
+        XCTAssertFalse(APIError.unreachable.isAccountGone)
     }
 
     /// 未ログインでは立てない（前の人の 410 が遅れて届いた回）

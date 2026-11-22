@@ -60,7 +60,6 @@ enum TripShareText {
     static func memberCount(_ n: Int) -> String { L("\(n)人", n == 1 ? "1 person" : "\(n) people") }
 
     static func shareWith(_ name: String) -> String { L("\(name) と共有する", "Share with \(name)") }
-    static func sharedWith(_ name: String) -> String { L("\(name) と共有しています", "Shared with \(name)") }
     static var shareNote: String {
         L("共有すると、2人で日程を変えられて、プランの中で話せます", "Once shared, you can both edit the plan and chat in it")
     }
@@ -158,26 +157,41 @@ enum TripShareText {
         }
         // 外した
         for k in baseSet.subtracting(mineSet) { _ = remove(k) }
-        // 動かした・ひとことを変えた（開いたときと自分の今で、日か位置かひとことが違う）
-        for (d, row) in mineKeys.enumerated() {
-            for (i, k) in row.enumerated() where baseSet.contains(k) {
-                guard let was = position(of: k, in: baseKeys) else { continue }
-                let changedNote = baseItems[k] != mineItems[k]
-                guard was.day != d || was.index != i || changedNote else { continue }
-                guard let current = remove(k) else { continue }   // 仲間が外した: 戻さない
-                ensureDay(d)
-                let item = changedNote ? mineItems[k]! : current
-                result[d].insert((key: k, item: item), at: min(i, result[d].count))
-            }
+        // 自分の並びの順に、動かした・ひとことを変えた・足した項目を置く。置く位置は**自分の並びで直前にある項目のすぐ後ろ**
+        // （直前の項目がその日に無ければ、自分の位置の番号）。
+        // 2026-11-22 判断（札 #682）: 前は「動かした」を全部置いてから「足した」を置き、どちらも自分の位置の番号に入れていた。
+        // まだ置いていない項目の分だけ番号がずれ、組み直しの「元に戻す」（`TripReplan.undo`）で、置き換えたあとに
+        // 1か所でも足すと、元の並び [A, D, B] が [A, D, 足した所, B] のように崩れた（409 の重ね直しも同じ）
+        func anchored(day d: Int, index i: Int, row: [String]) -> Int {
+            guard i > 0 else { return 0 }
+            if let p = result[d].firstIndex(where: { $0.key == row[i - 1] }) { return p + 1 }
+            return min(i, result[d].count)
         }
-        // 足した（同じ場所が既にサーバーに在れば、二重に置かない）
+        // 「動かした」は、開いたときと自分の今の**両方にある項目だけの並び**で比べる（札 #682 の確かめ役の指摘）。
+        // 日の中の番号で比べると、自分が1か所足しただけで後ろの項目が全部「動かした」になり、仲間が同じ所に足した場所が
+        // 自分の並びの後ろへ押し出された（元 [a, b]・自分 [a, n, b]・仲間 [a, x, b] → [a, n, b, x]）
+        let common = baseSet.intersection(mineSet)
+        let baseCommon = baseKeys.map { $0.filter(common.contains) }
+        let mineCommon = mineKeys.map { $0.filter(common.contains) }
         for (d, row) in mineKeys.enumerated() {
-            for (i, k) in row.enumerated() where !baseSet.contains(k) {
-                if result.contains(where: { $0.contains { $0.key == k } }) { continue }
-                ensureDay(d)
-                // 自分が日の最後に足したなら、仲間が足した分より後ろ（最後）へ
-                let at = i >= row.count - 1 ? result[d].count : min(i, result[d].count)
-                result[d].insert((key: k, item: mineItems[k]!), at: at)
+            for (i, k) in row.enumerated() {
+                if baseSet.contains(k) {
+                    // 動かした・ひとことを変えた（開いたときと自分の今で、日か並びの順かひとことが違う）
+                    guard let was = position(of: k, in: baseCommon), let now = mineCommon[d].firstIndex(of: k) else { continue }
+                    let changedNote = baseItems[k] != mineItems[k]
+                    guard was.day != d || was.index != now || changedNote else { continue }
+                    guard let current = remove(k) else { continue }   // 仲間が外した: 戻さない
+                    ensureDay(d)
+                    let item = changedNote ? mineItems[k]! : current
+                    result[d].insert((key: k, item: item), at: anchored(day: d, index: i, row: row))
+                } else {
+                    // 足した（同じ場所が既にサーバーに在れば、二重に置かない）
+                    if result.contains(where: { $0.contains { $0.key == k } }) { continue }
+                    ensureDay(d)
+                    // 自分が日の最後に足したなら、仲間が足した分より後ろ（最後）へ
+                    let at = i >= row.count - 1 ? result[d].count : anchored(day: d, index: i, row: row)
+                    result[d].insert((key: k, item: mineItems[k]!), at: at)
+                }
             }
         }
         // 日の日付は、自分が変えた日だけ写す

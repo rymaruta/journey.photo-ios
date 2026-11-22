@@ -212,23 +212,10 @@ enum CompositionGuide {
         return d >= 360 - 1e-9 ? 0 : d
     }
 
-    /// 0/90/180/270 の近く（`rotationSnap` の内）なら吸い付かせる。0〜360 未満で返す
-    static func snappedRotation(_ degrees: Double) -> Double {
-        let d = normalizedRotation(degrees)
-        let nearest = (d / 90).rounded() * 90
-        return abs(d - nearest) <= rotationSnap ? normalizedRotation(nearest) : d
-    }
-
     /// 0/90/180/270 ちょうどか（吸い付いたときの振動に使う）
     static func isQuarterRotation(_ degrees: Double) -> Bool {
         let d = normalizedRotation(degrees)
         return abs(d - (d / 90).rounded() * 90) < 1e-9
-    }
-
-    /// 「右に90度回す」ボタン: 次の 90° の倍数へ（0→90・37→90・270→0）
-    static func rotatedRight(_ degrees: Double) -> Double {
-        let d = normalizedRotation(degrees)
-        return normalizedRotation((floor(d / 90 + 1e-9) + 1) * 90)
     }
 
     /// 回した角度を「90° 単位の回数（時計回り 0〜3）」と「残り（-45〜45 度）」に分ける。

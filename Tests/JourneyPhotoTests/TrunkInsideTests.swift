@@ -173,8 +173,6 @@ final class TrunkInsideTests: XCTestCase {
         XCTAssertEqual(TrunkLid.toggled(0), 1)
         XCTAssertEqual(TrunkLid.toggled(1), 0)
         XCTAssertEqual(TrunkLid.toggled(0.5), 0)
-        XCTAssertEqual(TrunkLid.toggleTitle(0), L("ふたを開ける", "Open the lid"))
-        XCTAssertEqual(TrunkLid.toggleTitle(1), L("ふたを閉じる", "Close the lid"))
     }
 
     /// 引き下ろすと開く（320 で開き切る）・範囲の外へ出ない
@@ -274,13 +272,9 @@ final class TrunkInsideTests: XCTestCase {
         XCTAssertEqual(TrunkInsideEmpty.actionTitle, L("写真を投稿する", "Post a photo"))
     }
 
-    /// 「中身を手に取る」で最初に持ち上げるもの・出口の名前
-    func testFirstItemAndExits() {
+    /// 出口の名前
+    func testExits() {
         let all = TrunkInsideContents(medals: [badge("first")], showsCard: true, ticketCount: 4)
-        XCTAssertEqual(all.firstItem, .medal(badge("first")))
-        XCTAssertEqual(TrunkInsideContents(medals: [], showsCard: true, ticketCount: 4).firstItem, .card)
-        XCTAssertEqual(TrunkInsideContents(medals: [], showsCard: false, ticketCount: 4).firstItem, .tickets)
-        XCTAssertNil(TrunkInsideContents(medals: [], showsCard: false, ticketCount: 0).firstItem)
         XCTAssertEqual(all.actionTitle(.medal(badge("first"))), L("メダルを回して見る", "Turn the medal"))
         XCTAssertEqual(all.actionTitle(.more), L("バッジの棚で見る", "See them on the badge shelf"))
         XCTAssertEqual(all.actionTitle(.card), L("サポーター証を開く", "Open the supporter card"))

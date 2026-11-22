@@ -131,15 +131,6 @@ enum StoryTextEditing {
         defaults.set(true, forKey: captionHintShownKey)
     }
 
-    /// 見た目を次へ（白 → 黒 → 帯 → 縁取り → 白）。色の寄せ方は `TextOverlay.withStyle`。
-    /// **帯で固定の札（撮影地・曲など）とスタンプは変えない**
-    static func nextStyle(_ overlay: TextOverlay) -> TextOverlay {
-        guard overlay.kind.forcedStyle == nil else { return overlay }
-        let all = TextOverlay.Style.allCases
-        let i = all.firstIndex(of: overlay.style) ?? 0
-        return overlay.withStyle(all[(i + 1) % all.count])
-    }
-
     /// 揃えを次へ（中央 → 左 → 右 → 中央）。**改行できる自由な文字だけ**
     static func nextAlign(_ overlay: TextOverlay) -> TextOverlay {
         guard overlay.kind.allowsNewlines else { return overlay }

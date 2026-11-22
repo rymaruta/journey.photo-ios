@@ -92,6 +92,22 @@ final class TripShareTests: XCTestCase {
         XCTAssertEqual(ids(TripShareText.rebase(base: base, mine: mine, server: server)), [["a"]])
     }
 
+    /// 動かした項目と足した項目が混ざっても、自分の並びどおりに戻る（札 #682: 組み直しの「元に戻す」で [A, D, Z, B] になった）
+    func testRebaseKeepsMyOrderWhenMovedAndAddedMix() {
+        let base = [day("b", "a")]
+        let mine = [day("a", "d", "b")]
+        let server = [day("b", "a", "z")]
+        XCTAssertEqual(ids(TripShareText.rebase(base: base, mine: mine, server: server)), [["a", "d", "b", "z"]])
+    }
+
+    /// 自分と仲間が同時に足した: 仲間の場所を自分の並びの後ろへ押し出さない（札 #682 の確かめ役の指摘）
+    func testRebaseDoesNotPushFriendsAdditionBehindMine() {
+        let base = [day("a", "b")]
+        let server = [day("a", "x", "b")]
+        XCTAssertEqual(ids(TripShareText.rebase(base: base, mine: [day("a", "n", "b")], server: server)), [["a", "n", "x", "b"]])
+        XCTAssertEqual(ids(TripShareText.rebase(base: base, mine: [day("n", "a", "b")], server: server)), [["n", "a", "x", "b"]])
+    }
+
     func testRebaseCopiesOnlyMyNote() {
         let base = [TripDay(items: [.spot(spotId: "a", note: nil), .spot(spotId: "b", note: nil)])]
         let mine = [TripDay(items: [.spot(spotId: "a", note: "朝いち"), .spot(spotId: "b", note: nil)])]

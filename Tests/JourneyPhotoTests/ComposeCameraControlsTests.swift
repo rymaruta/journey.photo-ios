@@ -19,30 +19,12 @@ final class ComposeCameraControlsTests: XCTestCase {
 
     // MARK: - 回す: 角度
 
-    func testRotationSnapsNearQuarters() {
-        XCTAssertEqual(CompositionGuide.snappedRotation(4), 0)
-        XCTAssertEqual(CompositionGuide.snappedRotation(-3), 0)
-        XCTAssertEqual(CompositionGuide.snappedRotation(357), 0)
-        XCTAssertEqual(CompositionGuide.snappedRotation(95), 90)
-        XCTAssertEqual(CompositionGuide.snappedRotation(184), 180)
-        XCTAssertEqual(CompositionGuide.snappedRotation(-88), 270)
-        // 吸い付く幅の外はそのまま
-        XCTAssertEqual(CompositionGuide.snappedRotation(20), 20, accuracy: 1e-9)
-        XCTAssertEqual(CompositionGuide.snappedRotation(-30), 330, accuracy: 1e-9)
+    /// 吸い付き（`ComposeControls.snappedCumulative`）は下の累積の試験で見る
+    func testRotationNormalizesAndKnowsQuarters() {
+        XCTAssertEqual(CompositionGuide.normalizedRotation(-30), 330, accuracy: 1e-9)
         XCTAssertEqual(CompositionGuide.normalizedRotation(.nan), 0)
         XCTAssertTrue(CompositionGuide.isQuarterRotation(270))
         XCTAssertFalse(CompositionGuide.isQuarterRotation(20))
-    }
-
-    func testRotateRightGoesToTheNextQuarter() {
-        XCTAssertEqual(CompositionGuide.rotatedRight(0), 90)
-        XCTAssertEqual(CompositionGuide.rotatedRight(37), 90)
-        XCTAssertEqual(CompositionGuide.rotatedRight(90), 180)
-        XCTAssertEqual(CompositionGuide.rotatedRight(270), 0)
-        // 4回で元へ
-        var d = 0.0
-        for _ in 0..<4 { d = CompositionGuide.rotatedRight(d) }
-        XCTAssertEqual(d, 0)
     }
 
     func testRotationSplitsIntoQuartersAndRest() {

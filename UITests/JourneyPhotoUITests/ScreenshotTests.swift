@@ -4214,8 +4214,20 @@ final class ScreenshotTests: JPUITestCase {
             guard openFixturePlan(app) else { return unreached(app, "見本のプラン（\(tag)）", probes: ["trips.plans"]) }
             Thread.sleep(forTimeInterval: 2)
 
-            // 日の削除: 1 日目の「…」→ この日を削除 → 札（予定のある日は聞く）
+            // 画面の幅に収まる（札 #680: AX XL で日の見出しが1行のまま幅を固定し、画面全体が約 433pt に広がった）
             let dayMenu = app.buttons.matching(identifier: "tripPlan.dayMenu").firstMatch
+            let screenWidth = app.windows.firstMatch.frame.width
+            let dates = app.buttons["tripPlan.dates"].firstMatch
+            if dayMenu.waitForExistence(timeout: 10), dates.exists {
+                let fit = "TRIPPLAN width size=\(tag) screen=\(screenWidth) dayMenu=\(dayMenu.frame) dates=\(dates.frame)"
+                print(fit)
+                XCTContext.runActivity(named: fit) { _ in }
+                XCTAssertLessThanOrEqual(dayMenu.frame.maxX, screenWidth + 0.5, "日の「…」が画面の右にはみ出す（\(tag)）")
+                XCTAssertGreaterThanOrEqual(dates.frame.minX, -0.5, "日付の欄が画面の左にはみ出す（\(tag)）")
+                XCTAssertLessThanOrEqual(dates.frame.maxX, screenWidth + 0.5, "日付の欄が画面の右にはみ出す（\(tag)）")
+            }
+
+            // 日の削除: 1 日目の「…」→ この日を削除 → 札（予定のある日は聞く）
             if dayMenu.waitForExistence(timeout: 10), dayMenu.isHittable {
                 dayMenu.tap()
                 let removeItem = app.buttons["この日を削除"].firstMatch

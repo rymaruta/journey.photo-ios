@@ -360,6 +360,34 @@ final class TripTimesTests: XCTestCase {
         XCTAssertEqual(store.minutes(planId: "q", ymd: "2026-12-22", day: 1), 540, "c の日に b の時刻が付いた")
     }
 
+    /// 日を消したとき、消した日の時刻を、その鍵を継いだ空の日へ移さない（札 #683）
+    func testRemovedDayStartIsNotCarriedToEmptyDay() {
+        // 前: 1日目 {a}（10:00）、2日目は空、3日目 {c}。1日目を消すと、今の1日目は空・2日目 {c}
+        let before = [day("a"), day(), day("c")]
+        let after = [day(), day("c")]
+        let out = TripStartKeys.carried(["p#0": 600], from: TripStartKeys.slots(planId: "p", days: before, start: nil, end: nil),
+                                        to: TripStartKeys.slots(planId: "p", days: after, start: nil, end: nil))
+        XCTAssertNil(out["p#0"], "消した日の 10:00 が空の日に移った")
+        // 日の数が変わらない（同じ日の場所を入れ替えた）ときは、同じ鍵の時刻を残す
+        let replaced = TripStartKeys.carried(["p#0": 600], from: TripStartKeys.slots(planId: "p", days: [day("a")], start: nil, end: nil),
+                                             to: TripStartKeys.slots(planId: "p", days: [day("x")], start: nil, end: nil))
+        XCTAssertEqual(replaced["p#0"], 600)
+    }
+
+    /// 24時を越えた行（翌日の時刻）では、朝・夕方の判定をしない（札 #683）
+    func testNextDayRowsAreNotJudgedAsMorningOrEvening() {
+        // 9:00 に出て 23 時間いる → 次の朝の場所に翌8:00（1920）に着く
+        let morning = TripTimes.schedule(start: 9 * 60, stops: [stop("a", stay: 23 * 60), stop("浅草寺", times: ["morning"])],
+                                         moves: [0, 0], light: nil)
+        XCTAssertEqual(morning.rows[1].arrive, 32 * 60)
+        XCTAssertNil(morning.rows[1].lateMorning, "翌8:00 を「朝の場所に遅い」と言った")
+        // 夕方の場所に翌10:00 に着く: 待たせない・日の入りも添えない（その日の日の入りとは比べられない）
+        let light = TripTimes.Light(sunset: 17 * 60, goldenStart: 16 * 60)
+        let evening = TripTimes.schedule(start: 9 * 60, stops: [stop("a", stay: 25 * 60), stop("夜景", times: ["night"])],
+                                         moves: [0, 0], light: light)
+        XCTAssertEqual(evening.rows[1], TripTimes.Row(arrive: 34 * 60))
+    }
+
     /// 日を入れ替えた（組み直し・仲間の変更）ときも、場所の多く重なる日へ時刻が付いていく
     @MainActor
     func testStartFollowsTheDayWhenDaysAreSwapped() async throws {

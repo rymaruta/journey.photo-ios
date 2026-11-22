@@ -45,23 +45,10 @@ final class TextOverlayTests: XCTestCase {
         XCTAssertEqual(moved.y, 0.98, accuracy: 0.0001)
     }
 
-    /// 写真は枠の中に縦横比のまま収まる。横長の写真を 3:4 の枠に入れると
-    /// 上下に余白が出る
-    func testFittedRectLeavesBandsAroundAWidePhoto() {
-        let rect = TextOverlay.fittedRect(image: CGSize(width: 4000, height: 3000),
-                                          in: CGSize(width: 300, height: 400))
-        XCTAssertEqual(rect.minX, 0, accuracy: 0.0001)
-        XCTAssertEqual(rect.width, 300, accuracy: 0.0001)
-        XCTAssertEqual(rect.height, 225, accuracy: 0.0001)
-        XCTAssertEqual(rect.minY, 87.5, accuracy: 0.0001)
-    }
-
     /// 縦長の写真（9:16）は**左右に**余白が出る。中心は余白のぶん右へずれる
     func testCenterIncludesTheSideBands() {
-        let photo = TextOverlay.fittedRect(image: CGSize(width: 900, height: 1600),
-                                           in: CGSize(width: 300, height: 400))
-        XCTAssertEqual(photo.width, 225, accuracy: 0.0001)
-        XCTAssertEqual(photo.minX, 37.5, accuracy: 0.0001)
+        // 9:16 の写真を 300×400 の枠に縦横比のまま収めた場所
+        let photo = CGRect(x: 37.5, y: 0, width: 225, height: 400)
         let center = TextOverlay(text: "ここ", x: 0.2, y: 0.5).center(in: photo)
         XCTAssertEqual(center.x, 37.5 + 45, accuracy: 0.0001)
         XCTAssertEqual(center.y, 200, accuracy: 0.0001)
@@ -90,21 +77,14 @@ final class TextOverlayTests: XCTestCase {
         XCTAssertEqual(middle.x, 0.5, accuracy: 0.0001)
     }
 
-    /// 大きさが分からないときは枠いっぱい（0 で割らない）
-    func testFittedRectWithUnknownImageFillsTheCanvas() {
-        let rect = TextOverlay.fittedRect(image: CGSize(width: 0, height: 0),
-                                          in: CGSize(width: 300, height: 400))
-        XCTAssertEqual(rect.width, 300, accuracy: 0.0001)
-        XCTAssertEqual(rect.height, 400, accuracy: 0.0001)
-    }
-
     /// 🔴 **編集画面の文字は、焼き込んだ画像を縮めたものと重なる。**
     /// 以前は編集画面が「枠の高さ」「枠に対する位置」で描いていて、
     /// 横長の写真だと大きさも位置も投稿後と違っていた
     func testEditorMatchesTheBurnedImage() {
         let image = CGSize(width: 4000, height: 3000)
         let overlay = TextOverlay(text: "ここ", x: 0.2, y: 0.1, size: 0.1)
-        let photo = TextOverlay.fittedRect(image: image, in: CGSize(width: 300, height: 400))
+        // 4:3 の写真を 300×400 の枠に縦横比のまま収めた場所（上下に 87.5 の余白）
+        let photo = CGRect(x: 0, y: 87.5, width: 300, height: 225)
         let shrink = photo.width / image.width
 
         // 大きさ: 焼き込み（画像の短い辺 3000 × 0.1 = 300）を縮めたもの

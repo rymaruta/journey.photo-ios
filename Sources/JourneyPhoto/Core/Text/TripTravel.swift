@@ -153,11 +153,6 @@ enum TripTravel {
         return a != b
     }
 
-    /// 両端とも日本と分かる
-    static func bothInJapan(_ leg: Leg) -> Bool {
-        leg.from.country == japan && leg.to.country == japan
-    }
-
     /// Apple の地図に聞かない区間（**国が分かっていて違う**ときだけ）
     static func skipsDirections(_ leg: Leg) -> Bool {
         crossesBorder(leg)

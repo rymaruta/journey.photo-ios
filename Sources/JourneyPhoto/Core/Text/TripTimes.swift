@@ -24,6 +24,8 @@ enum TripTimes {
     static let defaultStay = 60
     /// 夜・夕方の場所で待たせる長さの上限（分）。超えたら待たせず、日の入りの時刻だけ添える
     static let maxWait = 4 * 60
+    /// 1日の分（これを越えた時刻は翌日）
+    static let minutesPerDay = 24 * 60
 
     // MARK: - 滞在の目安（観光スポットの種類から）
 
@@ -160,6 +162,14 @@ enum TripTimes {
                 continue
             }
             var row = Row(arrive: at)
+            // 2026-11-22 判断（札 #683）: 24時を越えた行（翌日の時刻）は、朝・夕方の判定をしない。
+            // 比べる時刻はその日の 0:00 からの通しの分なので、翌7:00（1860）を「朝の案内の場所なのに遅い」と言い、
+            // 翌10:00 の夕方の場所に待ちも日の入りも添えなかった
+            guard at < minutesPerDay else {
+                rows.append(row)
+                t = at + stop.stay
+                continue
+            }
             // 夜・夕方の場所: 着くのが日の入り（斜光の始まり）より前なら、そこまで待つ
             // 待ちが 4 時間を超えるときは待たせず、着いた時刻のまま日の入りだけ添える（確かめ役の指摘・2026-11-21）
             if let target = waitTarget(stop.times, light: light), at < target.at {
@@ -428,9 +438,13 @@ enum TripStartKeys {
             fromOld[p.n] = p.o
             usedOld.insert(p.o)
         }
-        // 場所の重ならない日（空の日など）は、同じ鍵の前の日が残っていればそのまま
+        // 場所の重ならない日（空の日など）は、同じ鍵の前の日が残っていればそのまま。
+        // 2026-11-22 判断（札 #683）: 日の数が変わった（日を消した・足した）ときは、**前も空だった日だけ**同じ鍵で拾う。
+        // 前は、1日目（10:00）を消すと、その鍵を継いだ空の日が消した日の 10:00 を拾い、あとで場所を入れると決めていない時刻から始まった
+        let sameDayCount = old.count == new.count
         for (n, nd) in new.enumerated() where fromOld[n] == nil {
-            if let o = old.firstIndex(where: { $0.key == nd.key }), !usedOld.contains(o) {
+            if let o = old.firstIndex(where: { $0.key == nd.key }), !usedOld.contains(o),
+               sameDayCount || old[o].items.isEmpty {
                 fromOld[n] = o
                 usedOld.insert(o)
             }

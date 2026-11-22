@@ -373,14 +373,9 @@ final class TripPickerTests: XCTestCase {
         XCTAssertNil(TripPicker.regionLabel(of: [try spot("x")]))
     }
 
-    /// 1日の上限で日数が増えた回は、増えた日数で言う（「1 日間に割り振りました」と言わない）
-    func testDateNoteSaysSplitDaysWhenOverDailyLimit() throws {
+    /// 1日の上限を越える数は、日数を増やして割り振る
+    func testDaysSplitWhenOverDailyLimit() throws {
         let k = try line("k", 30)
-        let days = TripPicker.days([k], dayCount: 1)
-        XCTAssertEqual(days.count, 2)
-        XCTAssertEqual(TripPicker.dateNote(dayCount: 1, planned: days.count),
-                       L("1日20か所までなので 2 日に分けました。", "Up to 20 places a day, so split into 2 days."))
-        XCTAssertEqual(TripPicker.dateNote(dayCount: 3, planned: 3),
-                       L("3 日間に割り振りました。", "Spread over 3 days."))
+        XCTAssertEqual(TripPicker.days([k], dayCount: 1).count, 2)
     }
 }

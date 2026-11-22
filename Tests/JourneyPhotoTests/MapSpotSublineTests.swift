@@ -9,24 +9,24 @@ final class MapSpotSublineTests: XCTestCase {
     }
 
     func testBeforeLoadOmitsCount() throws {
-        XCTAssertEqual(PhotoMapView.spotSubline(try row(km: 0.8, count: 0), loaded: false),
+        XCTAssertEqual(OfficialSpotRow.subline(try row(km: 0.8, count: 0), loaded: false),
                        NearbyPhotos.label(km: 0.8))
-        XCTAssertEqual(PhotoMapView.spotSubline(try row(km: nil, count: 0), loaded: false), "")
+        XCTAssertEqual(OfficialSpotRow.subline(try row(km: nil, count: 0), loaded: false), "")
     }
 
     func testAfterLoadSaysCount() throws {
         let photos = L("写真 3枚", "3 photos")
-        XCTAssertEqual(PhotoMapView.spotSubline(try row(km: 0.8, count: 3), loaded: true),
+        XCTAssertEqual(OfficialSpotRow.subline(try row(km: 0.8, count: 3), loaded: true),
                        "\(NearbyPhotos.label(km: 0.8))\u{2002}\(photos)")
-        XCTAssertEqual(PhotoMapView.spotSubline(try row(km: nil, count: 3), loaded: true), photos)
+        XCTAssertEqual(OfficialSpotRow.subline(try row(km: nil, count: 3), loaded: true), photos)
     }
 
     /// 🔴 読み終えて0枚なら「写真 0枚」と言わず、最初の1枚への誘い（2026-10-21・run 609 の 13d）
     func testZeroSaysInviteInsteadOfCount() throws {
         let invite = SpotScreen.firstPhotoInvite
-        XCTAssertEqual(PhotoMapView.spotSubline(try row(km: 0.8, count: 0), loaded: true),
+        XCTAssertEqual(OfficialSpotRow.subline(try row(km: 0.8, count: 0), loaded: true),
                        "\(NearbyPhotos.label(km: 0.8))\u{2002}\(invite)")
-        XCTAssertEqual(PhotoMapView.spotSubline(try row(km: nil, count: 0), loaded: true), invite)
-        XCTAssertFalse(PhotoMapView.spotSubline(try row(km: nil, count: 0), loaded: true).contains("0枚"))
+        XCTAssertEqual(OfficialSpotRow.subline(try row(km: nil, count: 0), loaded: true), invite)
+        XCTAssertFalse(OfficialSpotRow.subline(try row(km: nil, count: 0), loaded: true).contains("0枚"))
     }
 }

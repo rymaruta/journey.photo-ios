@@ -269,8 +269,9 @@ final class SNSMoreTests: XCTestCase {
         XCTAssertNil(toasts.current?.actionTitle, "一手の無い知らせに一手を残さない")
         // 2026-11-18（案 B2）: 知らせは裏で送る係が出す（画面はもう閉じている）
         let center = try source("Sources/JourneyPhoto/Core/Storage/PostUploadCenter.swift")
-        XCTAssertTrue(center.contains("if let card = model.quietPostedCard { PostedCardOffer.shared.offer(card) }"))
-        XCTAssertTrue(center.contains("toasts.show(PostedCardHabit.quietText, kind: .success, actionTitle: PostedCardHabit.quietAction) {\n                    PostedCardOffer.shared.present()"))
+        XCTAssertTrue(center.contains("if let card = model.quietPostedCard { PostedCardOffer.shared.offer(card, ownerId: job.ownerId) }"))
+        XCTAssertTrue(center.contains("PostedCardOffer.shared.present(card, currentUserId: self?.currentUserId?())"),
+                      "知らせの「カードにする」が持ち主を確かめずに開く（札 #688）")
         let root = try source("Sources/JourneyPhoto/App/RootView.swift")
         XCTAssertTrue(root.contains(".sheet(item: $postedCardOffer.presented) { card in\n                PostedShareCardSheet(card: card)"))
         let sheet = try source("Sources/JourneyPhoto/Features/Common/SignatureShareCardSheet.swift")

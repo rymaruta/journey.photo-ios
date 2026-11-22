@@ -51,8 +51,8 @@ final class DiscoverySectionsTests: XCTestCase {
         calendar.timeZone = TimeZone(identifier: "Asia/Tokyo")!
         let april = DateComponents(calendar: calendar, year: 2026, month: 4, day: 10).date!
         let december = DateComponents(calendar: calendar, year: 2026, month: 12, day: 10).date!
-        XCTAssertEqual(DiscoverySections.seasonalTags(now: april, calendar: calendar).first, "春")
-        XCTAssertEqual(DiscoverySections.seasonalTags(now: december, calendar: calendar).first, "冬")
+        XCTAssertEqual(DiscoverySections.currentSeason(now: april, calendar: calendar), .spring)
+        XCTAssertEqual(DiscoverySections.currentSeason(now: december, calendar: calendar), .winter)
     }
 
     /// **季節の写真は新しい順。** 季節は「いま」の話なので、古い写真を
@@ -91,7 +91,6 @@ final class DiscoverySectionsTests: XCTestCase {
         ]
         let seasonal = DiscoverySections.seasonal(in: photos, now: october, calendar: calendar, limit: .max)
         XCTAssertEqual(Set(seasonal.map(\.id)), ["versailles", "momiji"])
-        XCTAssertEqual(DiscoverySections.seasonalTags(now: october, calendar: calendar), ["秋", "紅葉"])
     }
 
     /// 「すべて」の先の注記。森は入れない。英語表示では英語の語で書く（以前は「#秋 #紅葉 #森」のまま）

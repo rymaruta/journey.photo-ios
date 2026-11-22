@@ -1,6 +1,6 @@
 import Foundation
 
-/// 「フォロー中」をどこまで見たか（いちばん新しい投稿日の `createdAt`・#417 ⑨・`HomeFollowingNews`）。
+/// 「フォロー中」をどこまで見たか（いちばん新しい投稿日の `createdAt`・#417 ⑨・札 #595 で `HomeFeed.followingFresh` の基準に替えた）。
 ///
 /// 鍵は人ごと（同じ端末で人が替わったとき、前の人の既読で点を消さない）。未ログインでは使わない。
 /// 値は1つだけなので増え続けない。退会で消す（`AccountLocalData`）

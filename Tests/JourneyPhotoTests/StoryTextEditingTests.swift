@@ -97,24 +97,10 @@ final class StoryTextEditingTests: XCTestCase {
         XCTAssertEqual(Set(opens), [.text, .place, .song, .hashtag, .time, .date])
     }
 
-    /// 見た目は白 → 黒 → 帯 → 縁取り → 白と回る。**色は `withStyle` の寄せ方に従う**
-    func testNextStyleCyclesThroughAllStyles() {
-        var overlay = TextOverlay(text: "文字")
-        XCTAssertEqual(overlay.style, .light)
-        var seen: [TextOverlay.Style] = []
-        for _ in 0..<4 {
-            overlay = StoryTextEditing.nextStyle(overlay)
-            seen.append(overlay.style)
-        }
-        XCTAssertEqual(seen, [.dark, .banner, .outline, .light])
-        // 白の文字で黒の見た目に入ると墨に寄る（白い縁に白は読めない）
-        XCTAssertEqual(StoryTextEditing.nextStyle(TextOverlay(text: "a")).ink, .ink)
-    }
-
     /// **打つ画面で暗い文字に明るい下敷きを敷く**（owner 2026-09-30「文字入力してるけど出てこない」）。
     /// 白 → 黒の見た目へ1回押すだけで墨の字になり、暗くした写真の上で消えていた
     func testTypingLightPlateOnlyForDarkInk() {
-        let dark = StoryTextEditing.nextStyle(TextOverlay(text: "文字"))
+        let dark = TextOverlay(text: "文字").withStyle(.dark)
         XCTAssertEqual(dark.style, .dark)
         XCTAssertTrue(StoryTextEditing.typingNeedsLightPlate(dark), "黒の見た目の墨の字が見えない")
         // 白の見た目でも墨を選べば敷く（白の見た目は色を寄せない）
@@ -129,14 +115,6 @@ final class StoryTextEditingTests: XCTestCase {
         var outline = TextOverlay(text: "文字").withStyle(.outline)
         outline.customHex = 0x202020
         XCTAssertFalse(StoryTextEditing.typingNeedsLightPlate(outline))
-    }
-
-    /// 帯で固定の札（撮影地など）とスタンプは見た目を変えない
-    func testNextStyleLeavesForcedKindsAlone() {
-        for kind in [TextOverlay.Kind.place, .song, .time, .date, .hashtag, .stamp] {
-            let overlay = TextOverlay(text: "x", kind: kind)
-            XCTAssertEqual(StoryTextEditing.nextStyle(overlay), overlay, "\(kind)")
-        }
     }
 
     /// 揃えは中央 → 左 → 右 → 中央。**改行できない札は変えない**

@@ -291,15 +291,6 @@ enum CamperPolygon {
         return earClip(poly)
     }
 
-    private static func segmentsCross(_ p1: CV2, _ p2: CV2, _ q1: CV2, _ q2: CV2) -> Bool {
-        let eps = 1e-9
-        func same(_ a: CV2, _ b: CV2) -> Bool { (a - b).length < 1e-7 }
-        if same(p1, q1) || same(p1, q2) || same(p2, q1) || same(p2, q2) { return false }
-        let d1 = (q2 - q1).cross(p1 - q1), d2 = (q2 - q1).cross(p2 - q1)
-        let d3 = (p2 - p1).cross(q1 - p1), d4 = (p2 - p1).cross(q2 - p1)
-        return ((d1 > eps && d2 < -eps) || (d1 < -eps && d2 > eps)) && ((d3 > eps && d4 < -eps) || (d3 < -eps && d4 > eps))
-    }
-
     /// 穴を外周へ橋でつなぐ（Eberly の方法: 穴の一番右の点から右へ光を飛ばし、当たった辺の右の端の点、
     /// その三角形の中に凹んだ点があれば一番まっすぐ見える点へ）
     private static func bridge(_ poly: [CV2], _ hole: [CV2], others: [[CV2]]) -> [CV2] {

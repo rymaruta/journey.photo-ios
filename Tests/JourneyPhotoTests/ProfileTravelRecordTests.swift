@@ -64,7 +64,7 @@ final class ProfileTravelRecordTests: XCTestCase {
 
     /// 🔴 旅の一冊も公開写真だけで束ねる（限定・下書きの写真が一冊のページ・枚数に入らない）
     func testOthersTripsUseOnlyPublicPhotos() throws {
-        let trips = ProfileTravelRecord.othersTrips(try mixed(), blocked: false, timeZone: TimeZone(identifier: "Asia/Tokyo")!)
+        let trips = ProfileTravelRecord.othersShelf(try mixed(), blocked: false, timeZone: TimeZone(identifier: "Asia/Tokyo")!).trips
         XCTAssertEqual(trips.count, 1)
         XCTAssertEqual(Set(trips[0].photos.map(\.id)), ["tokyo", "osaka"])
         XCTAssertFalse(trips[0].isPrivate)
@@ -77,7 +77,7 @@ final class ProfileTravelRecordTests: XCTestCase {
         let photos = try mixed()
         XCTAssertTrue(ProfileTravelRecord.othersPhotos(photos, blocked: true).isEmpty)
         XCTAssertTrue(ProfileTravelRecord.othersSummary(photos, blocked: true).isEmpty)
-        XCTAssertTrue(ProfileTravelRecord.othersTrips(photos, blocked: true).isEmpty)
+        XCTAssertTrue(ProfileTravelRecord.othersShelf(photos, blocked: true).trips.isEmpty)
     }
 
     // MARK: - 空の形
@@ -85,12 +85,12 @@ final class ProfileTravelRecordTests: XCTestCase {
     /// 記録が無い人（写真0・撮影地も国名も無い・1枚だけ）は節ごと出さない
     func testEmptyPersonHasNoRecord() throws {
         XCTAssertTrue(ProfileTravelRecord.othersSummary([], blocked: false).isEmpty)
-        XCTAssertTrue(ProfileTravelRecord.othersTrips([], blocked: false).isEmpty)
+        XCTAssertTrue(ProfileTravelRecord.othersShelf([], blocked: false).trips.isEmpty)
         let plain = [try photo("a", date: "2026-05-01"), try photo("b", date: nil)]
         XCTAssertTrue(ProfileTravelRecord.othersSummary(plain, blocked: false).isEmpty)
         let one = [try photo("a", date: "2026-05-01", lat: 35.68, lng: 139.76)]
         XCTAssertTrue(ProfileTravelRecord.othersSummary(one, blocked: false).isEmpty, "1点では距離も線も出ない")
-        XCTAssertTrue(ProfileTravelRecord.othersTrips(one, blocked: false).isEmpty, "1枚は旅ではない")
+        XCTAssertTrue(ProfileTravelRecord.othersShelf(one, blocked: false).trips.isEmpty, "1枚は旅ではない")
         // 限定の写真しか無い人も「記録が無い人」の形
         let restrictedOnly = try mixed().filter { $0.audience == "followers" || $0.audience == "closeFriends" }
         XCTAssertTrue(ProfileTravelRecord.othersSummary(restrictedOnly, blocked: false).isEmpty)
@@ -139,7 +139,7 @@ final class ProfileTravelRecordTests: XCTestCase {
         return try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/" + path), encoding: .utf8)
     }
 
-    /// 人のページは公開写真だけの口（`othersSummary`・`othersTrips`）を、ブロックの印つきで通す。
+    /// 人のページは公開写真だけの口（`othersSummary`・`othersShelf`）を、ブロックの印つきで通す。
     /// 写真の一覧（`model.photos`）から直に作らない
     func testUserProfileWiresPublicOnlyRecord() throws {
         let user = try source("Features/Profile/UserProfileView.swift")
@@ -180,7 +180,7 @@ final class ProfileTravelRecordTests: XCTestCase {
     // MARK: - 確かめ役の指摘（2026-10-16）
 
     private func publicTrip() throws -> TripBook.Trip {
-        let trips = ProfileTravelRecord.othersTrips(try mixed(), blocked: false, timeZone: TimeZone(identifier: "Asia/Tokyo")!)
+        let trips = ProfileTravelRecord.othersShelf(try mixed(), blocked: false, timeZone: TimeZone(identifier: "Asia/Tokyo")!).trips
         return try XCTUnwrap(trips.first)
     }
 
