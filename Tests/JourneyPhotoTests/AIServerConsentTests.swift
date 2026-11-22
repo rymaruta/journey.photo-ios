@@ -21,7 +21,7 @@ final class AIServerConsentTests: XCTestCase {
 
     func testAsksOnceAndRemembersAgreement() async {
         let d = defaults(), shown = Count()
-        let consent = AIServerConsent(defaults: d, presenter: { _ in shown.n += 1; return true })
+        let consent = AIServerConsent(defaults: d, presenter: { _, _ in shown.n += 1; return true })
         XCTAssertFalse(consent.isAccepted)
         let first = await consent.request()
         XCTAssertTrue(first)
@@ -30,13 +30,13 @@ final class AIServerConsentTests: XCTestCase {
         XCTAssertTrue(second)
         XCTAssertEqual(shown.n, 1, "同意したあとにまた聞いた")
         // 端末に覚えている（アプリを開き直しても聞かない）
-        XCTAssertTrue(AIServerConsent(defaults: d, presenter: { _ in shown.n += 1; return false }).isAccepted)
+        XCTAssertTrue(AIServerConsent(defaults: d, presenter: { _, _ in shown.n += 1; return false }).isAccepted)
         XCTAssertTrue(AIServerConsent.accepted(defaults: d))
     }
 
     func testCancelDoesNotRememberAndAsksAgainNextTime() async {
         let d = defaults(), shown = Count()
-        let consent = AIServerConsent(defaults: d, presenter: { _ in shown.n += 1; return false })
+        let consent = AIServerConsent(defaults: d, presenter: { _, _ in shown.n += 1; return false })
         let first = await consent.request()
         XCTAssertFalse(first)
         XCTAssertFalse(consent.isAccepted)
@@ -47,7 +47,7 @@ final class AIServerConsentTests: XCTestCase {
 
     func testRevokeAsksAgainBeforeNextSend() async {
         let d = defaults(), shown = Count()
-        let consent = AIServerConsent(defaults: d, presenter: { _ in shown.n += 1; return true })
+        let consent = AIServerConsent(defaults: d, presenter: { _, _ in shown.n += 1; return true })
         _ = await consent.request()
         consent.revoke()
         XCTAssertFalse(consent.isAccepted)
@@ -71,7 +71,7 @@ final class AIServerConsentTests: XCTestCase {
 
     func testTwoPathsAtOnceShowOneSheet() async {
         let shown = Count()
-        let consent = AIServerConsent(defaults: defaults(), presenter: { _ in
+        let consent = AIServerConsent(defaults: defaults(), presenter: { _, _ in
             shown.n += 1
             try? await Task.sleep(nanoseconds: 50_000_000)
             return true
@@ -264,7 +264,7 @@ final class AIServerConsentTests: XCTestCase {
     /// シートが返事をしない（出し損ねた、下の画面ごと閉じられた）ままでも、時間切れで「やめる」になり、待ちが残らない
     func testTimeoutReleasesTheWait() async {
         let shown = Count()
-        let consent = AIServerConsent(defaults: defaults(), timeout: 0.05, presenter: { _ in
+        let consent = AIServerConsent(defaults: defaults(), timeout: 0.05, presenter: { _, _ in
             shown.n += 1
             try? await Task.sleep(nanoseconds: 5_000_000_000)
             return false
@@ -279,10 +279,37 @@ final class AIServerConsentTests: XCTestCase {
         XCTAssertEqual(shown.n, 2)
     }
 
+    /// 時間切れで返したら、出ているシートも閉じる（次の頼みで2枚目を重ねない）。ボタンで答えた回は閉じる口を呼ばない
+    func testTimeoutClosesTheOpenSheet() async throws {
+        let closed = Count()
+        let consent = AIServerConsent(defaults: defaults(), timeout: 0.05, presenter: { _, handle in
+            handle.close = { closed.n += 1 }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            return false
+        })
+        let ok = await consent.request()
+        XCTAssertFalse(ok)
+        XCTAssertEqual(closed.n, 1, "時間切れなのに出ているシートを閉じなかった")
+        let answered = Count()
+        let byButton = AIServerConsent(defaults: defaults(), timeout: 5, presenter: { _, handle in
+            handle.close = { answered.n += 1 }
+            handle.close = nil   // ボタンで答えたとき、出す側は閉じる口を外す
+            return true
+        })
+        let agreed = await byButton.request()
+        XCTAssertTrue(agreed)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(answered.n, 0)
+        let h = AIConsentSheetHandle()
+        h.close = { closed.n += 1 }
+        h.closeIfOpen(); h.closeIfOpen()
+        XCTAssertEqual(closed.n, 2, "閉じる口を2回呼んだ")
+    }
+
     /// 時間切れのあとで「同意して続ける」が押されたら、同意は覚える（その回は送らない）
     func testLateAgreeIsRemembered() async throws {
         let d = defaults()
-        let consent = AIServerConsent(defaults: d, timeout: 0.05, presenter: { _ in
+        let consent = AIServerConsent(defaults: d, timeout: 0.05, presenter: { _, _ in
             try? await Task.sleep(nanoseconds: 200_000_000)
             return true
         })
@@ -316,6 +343,13 @@ final class AIServerConsentTests: XCTestCase {
         XCTAssertTrue(AIServerConsentPresenter.mustSettle(isBeingPresented: true, isBeingDismissed: false))
         XCTAssertTrue(AIServerConsentPresenter.mustSettle(isBeingPresented: false, isBeingDismissed: true))
         XCTAssertFalse(AIServerConsentPresenter.mustSettle(isBeingPresented: false, isBeingDismissed: false))
+        // 上の頼みのシートが閉じる途中（探すときに飛ばした）、最前面が動きの途中なら待つ
+        XCTAssertTrue(AIServerConsentPresenter.mustSettle(isBeingPresented: false, isBeingDismissed: false, skippedDismissing: true),
+                      "上の画面が閉じる途中なのにすぐ出した")
+        XCTAssertTrue(AIServerConsentPresenter.mustSettle(isBeingPresented: false, isBeingDismissed: false, inTransition: true),
+                      "動きの途中なのにすぐ出した")
+        XCTAssertFalse(AIServerConsentPresenter.mustSettle(isBeingPresented: false, isBeingDismissed: false,
+                                                           skippedDismissing: false, inTransition: false))
     }
 
     /// 設定から開くシートは「この iPhone では」と言わない（端末の AI のある iPhone でも開ける）
