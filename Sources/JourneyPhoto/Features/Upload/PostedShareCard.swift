@@ -159,16 +159,33 @@ enum PostedCardHabit {
 @MainActor
 final class PostedCardOffer: ObservableObject {
     static let shared = PostedCardOffer()
-    /// 「カードにする」を押したら開くカード
-    private(set) var pending: PostedShareCard?
+    /// 「カードにする」を押したら開くカードと、その投稿の持ち主
+    ///
+    /// 2026-11-22 判断（札 #688・CLAUDE.md「他人の写真は、その人のもの」）: カードは写真の本体を持つので、持ち主を添えて置く。
+    /// 開くのは持ち主がいまログインしている人のときだけ。人が替わったら捨てる（前は知らせが残っている間に別の人がログインして
+    /// 「カードにする」を押すと、前の人の写真のカードが開いて書き出せた）
+    private(set) var pending: (card: PostedShareCard, ownerId: String)?
     /// 開いているカード
     @Published var presented: PostedShareCard?
+    private var presentedOwner: String?
 
-    func offer(_ card: PostedShareCard) { pending = card }
+    func offer(_ card: PostedShareCard, ownerId: String?) {
+        guard let ownerId, !ownerId.isEmpty else { pending = nil; return }
+        pending = (card, ownerId)
+    }
 
-    func present() {
-        presented = pending
-        pending = nil
+    /// 知らせの「カードにする」。その知らせのカード（`card`・続けて2件上がっても取り違えない）を、持ち主がいまの人のときだけ開く
+    func present(_ card: PostedShareCard, currentUserId: String?) {
+        defer { pending = nil }
+        guard let pending, pending.card.id == card.id, pending.ownerId == currentUserId else { return }
+        presentedOwner = pending.ownerId
+        presented = card
+    }
+
+    /// ログインしている人が替わった: 持ち主でない人の分は捨てる
+    func userChanged(to userId: String?) {
+        if let pending, pending.ownerId != userId { self.pending = nil }
+        if presented != nil, presentedOwner != userId { presented = nil; presentedOwner = nil }
     }
 }
 
