@@ -501,8 +501,8 @@ struct TripPlanDetailView: View {
             if let target = removingDay, target.days != now { removingDay = nil }
         }
         // 日程が変わったら（日を消す・組み直し・元に戻す・仲間の変更・日付の変更）、出発の時刻を今の日へ運ぶ
-        // （場所の重なりで日を対応させる・札 #677 の確かめ役。開いたばかりの読み込みは前が空なので何もしない）
-        .onChange(of: startSlots) { old, now in starts.carry(from: old, to: now) }
+        // （場所の重なりで日を対応させる・札 #677 の確かめ役）。開いたときも、覚えたときの日程から運ぶ（閉じている間の変更・札 #685）
+        .onChange(of: startSlots) { _, now in starts.sync(planId: planId, to: now) }
 
         // その日の場所を番号つきで地図に・前の場所からの経路（2026-09-30）。
         // **開いた時点の日程で出す**（保存していない並び替えも反映する）
@@ -1109,6 +1109,8 @@ struct TripPlanDetailView: View {
                 if showsTimes && openStartDay == di {
                     TripStartChips(start: startMinutes) { m in
                         starts.set(m, planId: planId, ymd: ymd, day: di)
+                        // 時刻と一緒に今の日程を覚える（閉じている間に日程が変わっても、開いたときに運べる・札 #685）
+                        starts.sync(planId: planId, to: startSlots)
                         openStartDay = nil
                     }
                 }
