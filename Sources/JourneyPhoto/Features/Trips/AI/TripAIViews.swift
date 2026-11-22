@@ -11,6 +11,8 @@ struct TripAIEntrySection: View {
     let start: (TripAIAsk) -> Void
     let ask: () -> Void
     let pickYourself: () -> Void
+    /// 札の下に、日程をサーバーへ送ることの知らせを出すか（`AskServerNotice.shows`・2026-11-22 判断）
+    var serverNotice: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: JPSpace.xs) {
@@ -30,6 +32,8 @@ struct TripAIEntrySection: View {
                     .accessibilityLabel(L("\(s.title)、\(s.subtitle)。AI で作る", "\(s.title), \(s.subtitle). Make with AI"))
                     .accessibilityIdentifier("tripAI.suggestion")
             }
+            // 札を押すとすぐ組み始める（確かめを挟まない）ので、送る前に見える札の下に1回だけ出す
+            if serverNotice, !suggestions.isEmpty { AskServerNoticeText(id: "tripAI.entry.serverNotice") }
             Button(action: ask) {
                 Label(L("自分で頼む", "Ask in your own words"), systemImage: "sparkles")
                     .font(JPFont.bodyEmphasis)
@@ -134,7 +138,7 @@ struct TripAIAskSheet: View {
                     }
                     .jpFieldBox()
                     // 2026-11-22 判断: 「どこで組むか」の1行（iPhone・雲の印、置き場の地域）はやめ、サーバーへ送る人にだけ
-                    // AI に頼むと同じ知らせを、送る前（「この内容で作る」の上）に出す
+                    // 旅行プラン用の知らせ（`AskText.tripServerNotice`）を、送る前（「この内容で作る」の上）に出す
                     if serverNotice { AskServerNoticeText(id: "tripAI.serverNotice") }
                 }
                 .padding(.horizontal, JPSpace.gutter)

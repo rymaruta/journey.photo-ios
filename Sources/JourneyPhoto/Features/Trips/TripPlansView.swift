@@ -33,6 +33,12 @@ struct TripPlansView: View {
     @State private var aiIndex: [OfficialSpot] = []
     @State private var aiSuggestions: [TripAISuggestion] = []
     @State private var aiUsage: TripAIService.Usage?
+
+    /// 旅行プランの AI が日程をサーバーへ送る人か（「AI で作る」の札と自分で頼むのシート・`AskServerNotice`）
+    private var aiServerNotice: Bool {
+        AskServerNotice.shows(signedIn: auth.userId != nil, deviceAI: TripAIRunner.usesDeviceAI,
+                              tier: aiUsage?.tier, profilePro: nil, admin: auth.isAdmin)
+    }
     @State private var showAsk = false
     @State private var aiJob: TripAIJobs.Job?
     @State private var showAIJob = false
@@ -92,7 +98,8 @@ struct TripPlansView: View {
                                    pickYourself: {
                                        createdPlanId = nil
                                        showCreate = true
-                                   })
+                                   },
+                                   serverNotice: aiServerNotice)
 
                 planList
             }
@@ -119,8 +126,7 @@ struct TripPlansView: View {
         .sheet(isPresented: $showAsk) {
             TripAIAskSheet(ask: aiSuggestions.first?.ask ?? TripAIAsk(place: "", prefectures: [], cities: [], days: nil, preference: nil),
                            placeChoices: placeChoices,
-                           serverNotice: AskServerNotice.shows(signedIn: auth.userId != nil, deviceAI: TripAIRunner.usesDeviceAI,
-                                                               tier: aiUsage?.tier, profilePro: nil, admin: auth.isAdmin),
+                           serverNotice: aiServerNotice,
                            start: startAIAfterSheet,
                            index: aiIndex)
         }

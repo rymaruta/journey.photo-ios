@@ -518,7 +518,9 @@ final class AskFormTests: XCTestCase {
         XCTAssertTrue(screen.contains("askedServer: job.runner.askedServer"), "旅行プランでサーバーへ送ったことを会話に残していない")
         // 旅行プランの一覧のシートと、組み直しの「書いて頼む」
         let plans = try source("Sources/JourneyPhoto/Features/Trips/TripPlansView.swift")
-        XCTAssertTrue(plans.contains("serverNotice: AskServerNotice.shows(signedIn: auth.userId != nil, deviceAI: TripAIRunner.usesDeviceAI,"))
+        XCTAssertTrue(plans.contains("AskServerNotice.shows(signedIn: auth.userId != nil, deviceAI: TripAIRunner.usesDeviceAI,"))
+        XCTAssertTrue(plans.contains("serverNotice: aiServerNotice,"), "自分で頼むのシートに渡していない")
+        XCTAssertTrue(plans.contains("serverNotice: aiServerNotice)"), "「AI で作る」の札に渡していない")
         let detail = try source("Sources/JourneyPhoto/Features/Trips/TripPlanDetailView.swift")
         XCTAssertTrue(detail.contains("serverNotice: AskServerNotice.shows(signedIn: auth.userId != nil, deviceAI: aiRunner.onDevice,"))
         let sheet = try source("Sources/JourneyPhoto/Features/Trips/AI/TripAIViews.swift")
@@ -526,6 +528,7 @@ final class AskFormTests: XCTestCase {
         XCTAssertFalse(sheet.contains("journey.photo のサーバー"), "前の「どこで組むか」の1行が残っている")
         let replan = try source("Sources/JourneyPhoto/Features/Trips/AI/TripReplanViews.swift")
         XCTAssertTrue(replan.contains("if serverNotice { AskServerNoticeText(id: \"tripReplan.serverNotice\") }"))
+        XCTAssertTrue(sheet.contains("if serverNotice, !suggestions.isEmpty { AskServerNoticeText(id: \"tripAI.entry.serverNotice\") }"))
         // 表示されない道（AI の画面の外の答え）には置かない
         let thread = try source("Sources/JourneyPhoto/Features/Search/AskThreadView.swift")
         XCTAssertFalse(thread.contains("AskServerNotice"))
@@ -557,7 +560,7 @@ final class AskFormTests: XCTestCase {
         XCTAssertEqual(AskText.footnote(server: false), AskText.disclaimer)
         // 注意書きと同じ大きさと色で、字の大きさに上限を付ける
         let screen = try source("Sources/JourneyPhoto/Features/Search/AskScreen.swift")
-        for anchor in ["Text(AskText.footnote(server: showsServerNotice))", "Text(AskText.serverNotice)"] {
+        for anchor in ["Text(AskText.footnote(server: showsServerNotice))", "var text: String = AskText.tripServerNotice"] {
             let at = try XCTUnwrap(screen.range(of: anchor), anchor)
             let tail = String(screen[at.upperBound...].prefix(400))
             XCTAssertTrue(tail.contains("JPFont.caption"), anchor)
@@ -572,5 +575,56 @@ final class AskFormTests: XCTestCase {
         XCTAssertGreaterThan(AskScreen.toastBottomPadding(composer: 140), 140, "知らせが下の欄に重なる")
         let screen = try source("Sources/JourneyPhoto/Features/Search/AskScreen.swift")
         XCTAssertTrue(screen.contains(".onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }"))
+    }
+
+    /// 旅行プランで日程を送る場面は、旅行プラン用の文で言い分ける（2026-11-22 確かめ役の指摘）。中の言葉は入れない
+    func testTripServerNoticeWording() throws {
+        let text = AskText.tripServerNotice
+        XCTAssertEqual(text, "※ 旅行プランの作成のため、頼みの内容と日程をサーバーに送信し、委託先の AI で処理します。")
+        XCTAssertNotEqual(text, AskText.serverNotice)
+        let words = ["AWS", "Bedrock", "Amazon", "Claude", "Anthropic", "Nova", "Haiku", "Sonnet", "Lambda",
+                     "東京", "Tokyo", "Japan", "日本", "ap-northeast", "当社", "・", "·"]
+        let src = try source("Sources/JourneyPhoto/Core/AI/AskAnswer.swift")
+        let start = try XCTUnwrap(src.range(of: "static var tripServerNotice: String {"))
+        let end = try XCTUnwrap(src.range(of: "}", range: start.upperBound..<src.endIndex))
+        let body = String(src[start.upperBound..<end.lowerBound])
+        XCTAssertTrue(body.contains("To create trip plans, your request and itinerary are sent to our servers and processed by an AI provider"))
+        for word in words {
+            XCTAssertFalse(text.localizedCaseInsensitiveContains(word), word)
+            XCTAssertFalse(body.localizedCaseInsensitiveContains(word), word)
+        }
+        // 旅行プランの画面の部品は、既定で旅行プラン用の文
+        let screen = try source("Sources/JourneyPhoto/Features/Search/AskScreen.swift")
+        XCTAssertTrue(screen.contains("var text: String = AskText.tripServerNotice"))
+    }
+
+    /// 組み直し: チップも「書いて頼む」も送るので、知らせは「書いて頼む」の中ではなくチップの下に1回
+    func testReplanNoticeIsOutsideWriteField() throws {
+        let replan = try source("Sources/JourneyPhoto/Features/Trips/AI/TripReplanViews.swift")
+        XCTAssertTrue(replan.contains("            if writing { writeField }\n"), "知らせを「書いて頼む」の中に入れている")
+        XCTAssertEqual(replan.components(separatedBy: "AskServerNoticeText(").count - 1, 1, "知らせが1回でない")
+        let chips = try XCTUnwrap(replan.range(of: "ForEach(TripAITweak.allCases)"))
+        let notice = try XCTUnwrap(replan.range(of: "AskServerNoticeText(id: \"tripReplan.serverNotice\")"))
+        let working = try XCTUnwrap(replan.range(of: "if let working {"))
+        XCTAssertTrue(chips.upperBound < notice.lowerBound && notice.upperBound < working.lowerBound, "チップの下に置いていない")
+        // 「AI で作る」の札の下に1回（札の ForEach のあと、「自分で頼む」の前）
+        let entry = try source("Sources/JourneyPhoto/Features/Trips/AI/TripAIViews.swift")
+        let cards = try XCTUnwrap(entry.range(of: ".accessibilityIdentifier(\"tripAI.suggestion\")"))
+        let entryNotice = try XCTUnwrap(entry.range(of: "AskServerNoticeText(id: \"tripAI.entry.serverNotice\")"))
+        let askButton = try XCTUnwrap(entry.range(of: ".accessibilityIdentifier(\"tripAI.ask\")"))
+        XCTAssertTrue(cards.upperBound < entryNotice.lowerBound && entryNotice.upperBound < askButton.lowerBound)
+    }
+
+    /// 詳細の画面: 端末の AI が無い iPhone だけ、組み直しの列で回数を先に読む（無料の人に知らせを出さない）
+    func testDetailLoadsUsageBeforeNotice() throws {
+        let detail = try source("Sources/JourneyPhoto/Features/Trips/TripPlanDetailView.swift")
+        let bar = try XCTUnwrap(detail.range(of: "TripReplanBar(working: replanWorking"))
+        let task = try XCTUnwrap(detail.range(of: ".task(id: auth.userId) {", range: bar.upperBound..<detail.endIndex))
+        let block = String(detail[task.upperBound...].prefix(260))
+        XCTAssertTrue(block.contains("guard !aiRunner.onDevice, auth.userId != nil, aiRunner.usage == nil else { return }"), block)
+        XCTAssertTrue(block.contains("await aiRunner.loadUsage(service: environment.tripAI)"), block)
+        // 組み直しの列に付いている（列の中で、次の部品より前）
+        let next = try XCTUnwrap(detail.range(of: "autosaveBanner", range: bar.upperBound..<detail.endIndex))
+        XCTAssertTrue(task.lowerBound < next.lowerBound, "回数を先に読む .task が組み直しの列に付いていない")
     }
 }
