@@ -831,9 +831,16 @@ struct TripPlanDetailView: View {
                 if hasReplanSpots || replan != nil || !aiHistory.isEmpty {
                     TripReplanBar(working: replanWorking, proposed: replan?.label, notice: replanNotice,
                                   noticeOpensPro: replanNoticePro, canUndo: !aiHistory.isEmpty && replan == nil,
+                                  serverNotice: AskServerNotice.shows(signedIn: auth.userId != nil, deviceAI: aiRunner.onDevice,
+                                                                      tier: aiRunner.usage?.tier, profilePro: nil, admin: auth.isAdmin),
                                   run: { label, request, typed in runReplan(label: label, request: request, typed: typed) },
                                   undo: undoAI,
                                   openPro: { aiShowPro = true })
+                    // 送る前の知らせを Pro かどうかで出し分けるため、端末の AI が無い iPhone だけ回数を先に読む（無料の人に出さない）
+                    .task(id: auth.userId) {
+                        guard !aiRunner.onDevice, auth.userId != nil, aiRunner.usage == nil else { return }
+                        await aiRunner.loadUsage(service: environment.tripAI)
+                    }
                 }
 
                 // 送れていない直し（圏外・断られた・別の端末の変更）。日付の下・日程の上に残す。

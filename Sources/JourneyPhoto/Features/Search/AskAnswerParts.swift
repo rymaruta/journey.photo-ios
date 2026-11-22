@@ -2,7 +2,7 @@ import SwiftUI
 
 // 「AI に頼む」の答えの形の部品（札 #675・2026-11-21 判断・Artifact「AI に頼む 独立の案」版3「答えの形 磨いた推奨」）。
 // 値は模型どおり（板「journey.photo iOS」の黒塗りの真鍮。DesignSystem 01〜05、Components 01〜06）。
-// - 札1枚を広く（`.bcard.wide`: 写真 150、見どころ3つ、小さな地図 76）
+// - 札1枚を広く（`.bcard.wide`: 写真 150、見どころ3つ、地図 160。模型は 76 だったが周りが見えず 2026-11-22 に並びの地図にそろえた）
 // - 流れ（`.tl`: 番号の丸 24 の真鍮の線、写真 44、名前 明朝 16、季節と時間帯の札、移動の目安 12）
 // - 一手（`.acts2`: 線のボタン 44、角 22、14 の 600。主は真鍮の塗りに墨）。大きな字では縦に並べる
 // - 次に頼めること（`.fchips`: 高さ 34 の札、折り返す。押すと欄に入るだけ）
@@ -19,7 +19,10 @@ struct AskWideSpotCard: View {
     let photosKnown: Bool
 
     static let photoHeight: CGFloat = 150
-    static let mapHeight: CGFloat = 76
+    /// 地図の高さ。2026-11-22 判断: 76 から札の並びの地図（`AskSpotCarousel.mapHeight` 160）にそろえた。
+    /// 76 では周りの道や街が読めず（owner「周り見えないから全然わからない」）、左下の「法律に基づく情報」とピンが近すぎた。
+    /// 板「journey.photo iOS」に AI の答えの地図の板は無いので、同じ答えの画面の地図（並びの 160）と形を割らない
+    static var mapHeight: CGFloat { AskSpotCarousel.mapHeight }
 
     /// 見どころ（台帳の季節と時間帯の案内の初めの1文。無ければ概要）。3つまで
     nonisolated static func highlights(_ spot: OfficialSpot, reason: String?) -> [String] {

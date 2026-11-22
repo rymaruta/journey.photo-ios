@@ -360,6 +360,7 @@ final class TripAIReserveTests: XCTestCase {
         let built = await runner.build(ask, index: rows, wishlist: [], offline: false, service: TripAIService(api: api)) { _, _ in 10 }
         XCTAssertEqual(built?.mode, .proOnly)
         XCTAssertFalse(built?.days.isEmpty ?? true, "AI なしで組んで行き止まりにしない")
+        XCTAssertFalse(runner.askedServer, "無料の人の文をサーバーへ送った扱いにした")
     }
 
     /// Pro かどうか読めない（status の失敗）ときは「Pro だけ」と言わず、AI なしで組んだ理由（.silent）
@@ -370,6 +371,7 @@ final class TripAIReserveTests: XCTestCase {
         let built = await runner.build(TripAIAsk.reading("香川で日帰り", spots: rows), index: rows, wishlist: [], offline: false,
                                        service: TripAIService(api: api)) { _, _ in 10 }
         XCTAssertEqual(built?.mode, .silent)
+        XCTAssertFalse(runner.askedServer)
     }
 
     /// 見本の Pro は今までどおりサーバーで組む
@@ -386,6 +388,7 @@ final class TripAIReserveTests: XCTestCase {
         let built = await runner.build(TripAIAsk.reading("香川で日帰り", spots: rows), index: rows, wishlist: [], offline: false,
                                        service: TripAIService(api: api)) { _, _ in 10 }
         XCTAssertEqual(built?.mode, .ai)
+        XCTAssertTrue(runner.askedServer, "サーバーへ送ったことを残していない（AI に頼むの知らせが出ない）")
     }
 
     /// 旅行プランの reserve は kind "trip"。上限なら `.limit`

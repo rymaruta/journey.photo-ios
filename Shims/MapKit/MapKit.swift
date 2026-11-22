@@ -131,7 +131,13 @@ extension ForEach: MapContent {
 
 public struct Annotation: MapContent {
     public init<C: View>(_ title: String, coordinate: CLLocationCoordinate2D,
+                         anchor: UnitPoint = .bottom,
                          @ViewBuilder content: () -> C) {}
+}
+
+/// 印の下に描く題の字を出すか（iOS 17・本物は `MapContent` に生えている）
+extension MapContent {
+    public func annotationTitles(_ visibility: VisibilityShim) -> TupleMapContent { TupleMapContent() }
 }
 
 // MARK: - 地図の操作部品（iOS 17）

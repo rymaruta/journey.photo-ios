@@ -233,7 +233,8 @@ struct AskSpotCarousel: View {
     static let photoHeight: CGFloat = 190
     static let cardRadius: CGFloat = 16
     static let gap: CGFloat = 12
-    static let mapHeight: CGFloat = 160
+    /// 地図の高さ（ピンの余白の計算と共通・`AskMapFrame.mapHeight`）
+    static let mapHeight: CGFloat = AskMapFrame.mapHeight
     static let mapRadius: CGFloat = 14
 
     @Environment(\.dynamicTypeSize) private var dynamicType
