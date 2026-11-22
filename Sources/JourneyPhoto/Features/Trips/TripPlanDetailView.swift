@@ -1682,6 +1682,11 @@ struct TripPlanDetailView: View {
                                            offline: connectivity.isOffline, service: environment.tripAI,
                                            title: plan.title, countAfter: true)
         if Task.isCancelled { return }
+        // 「AI に送らなかった」の札から同意して送ったら、札の帯の理由を替える（`TripReplan.noteMode`・Mac run 1729）
+        if var now = aiNotes.note(planId), TripReplan.noteMode(after: result, current: now.mode) != now.mode {
+            now.mode = TripReplan.noteMode(after: result, current: now.mode)
+            aiNotes.set(planId, now)
+        }
         if let result, let proposal = TripReplan.proposal(label: label, before: before, current: current, result: result) {
             replanShowingAfter = true
             replan = proposal

@@ -225,6 +225,42 @@ final class AIServerConsentTests: XCTestCase {
 
     // MARK: - 旅行プラン
 
+    /// 「AI に送らなかった」の札から「AI で整える」→ 同意して送ったら、札の帯は「送らなかった」のまま残らない（Mac run 1729）
+    func testDeclinedBandClearsAfterAgreeing() async throws {
+        let std = UserDefaults.standard
+        std.set(true, forKey: TripAIFixture.key)
+        std.set(0.0, forKey: TripAIFixture.delayKey)
+        defer {
+            std.removeObject(forKey: TripAIFixture.key)
+            std.removeObject(forKey: TripAIFixture.delayKey)
+        }
+        let rows = try AskSamples.ledger()
+        let api = APIClient(baseURL: URL(string: "https://api.example.test")!, tokenProvider: NoToken())
+        let runner = TripAIRunner(onDevice: false, consent: { true })
+        let result = await runner.revise(request: "整えて", current: [Array(rows.prefix(3))], candidates: [], index: rows,
+                                         offline: false, service: TripAIService(api: api), title: "香川", countAfter: true) { _, _ in 10 }
+        let r = try XCTUnwrap(result)
+        XCTAssertTrue(runner.askedServer)
+        XCTAssertEqual(r.mode, .ai)
+        XCTAssertEqual(TripReplan.noteMode(after: r, current: .declined), .ai, "同意して送ったのに「送らなかった」の帯が残る")
+        // 送った回の理由に替える（回数など）。また「やめる」なら今のまま。ほかの帯は組み直しでは替えない
+        let limited = TripAIResult(title: "", days: [], reason: "", removed: [], mode: .limited(.day), candidates: [])
+        XCTAssertEqual(TripReplan.noteMode(after: limited, current: .declined), .limited(.day))
+        let declinedAgain = TripAIResult(title: "", days: [], reason: "", removed: [], mode: .declined, candidates: [])
+        XCTAssertEqual(TripReplan.noteMode(after: declinedAgain, current: .declined), .declined)
+        XCTAssertEqual(TripReplan.noteMode(after: nil, current: .declined), .declined)
+        XCTAssertEqual(TripReplan.noteMode(after: r, current: .offline), .offline)
+        XCTAssertEqual(TripReplan.noteMode(after: r, current: .ai), .ai)
+        // 画面はこの決まりで札を替える（組み直しの結果を受けたあと）
+        let detail = try text("TripPlanDetailView.swift")
+        XCTAssertTrue(detail.contains("TripReplan.noteMode(after: result, current: now.mode)"), "日程の画面が札の帯の理由を替えていない")
+    }
+
+    /// 「やめる」の当たりは 48（半分の高さのシートは iOS 26 で約 96% に縮む。44 だと 42.4 になった・Mac run 1729）
+    func testCancelHitAreaSurvivesSheetScaling() async {
+        XCTAssertGreaterThanOrEqual(AIServerConsentLayout.cancelHitHeight * 0.96, 44)
+    }
+
     func testTripPlanCancelBuildsWithoutAIAndSendsNothing() async throws {
         let std = UserDefaults.standard
         std.set(true, forKey: TripAIFixture.key)
