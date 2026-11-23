@@ -31,11 +31,19 @@ struct SigninMethodsView: View {
                 .foregroundStyle(WebTheme.text2)
                 .padding(.horizontal, JPSpace.xxs)
             if let errorMessage {
-                Text(errorMessage)
-                    .font(JPFont.footnote)
-                    .foregroundStyle(WebTheme.danger)
-                    .padding(.horizontal, JPSpace.xxs)
-                    .accessibilityIdentifier("signinMethods.error")
+                // 板の失敗の印（丸に「!」）と危険の色の字。色だけで伝えない（印と文）
+                Label {
+                    Text(errorMessage)
+                        .font(JPFont.footnote)
+                        .foregroundStyle(WebTheme.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "exclamationmark.circle")
+                        .foregroundStyle(WebTheme.danger)
+                        .accessibilityHidden(true)
+                }
+                .padding(.horizontal, JPSpace.xxs)
+                .accessibilityIdentifier("signinMethods.error")
             }
             if !methods.isEmpty {
                 SettingsGroup(nil) {
@@ -127,7 +135,7 @@ struct SigninMethodsView: View {
             // 画面を離れた。失敗と言わない
         } catch {
             guard auth.userId == owner else { return }
-            errorMessage = error.localizedDescription
+            errorMessage = SigninMethodsText.failure(error, fallback: SigninMethodsText.loadFailed)
         }
     }
 
@@ -143,8 +151,8 @@ struct SigninMethodsView: View {
             methods = list
         } catch {
             guard auth.userId == owner else { return }
-            // 最後に残る入り方（409）・Apple に届かない（503）は、サーバーの文をそのまま出す（`APIError`）
-            let message = error.localizedDescription
+            // 最後に残る入り方（409）・Apple に届かない（503）は、サーバーの文。圏外などは決まった文（`SigninMethodsText.failure`）
+            let message = SigninMethodsText.failure(error, fallback: SigninMethodsText.removeFailed)
             await load()
             errorMessage = message
         }

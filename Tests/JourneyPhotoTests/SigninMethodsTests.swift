@@ -73,7 +73,7 @@ final class SigninMethodsTests: XCTestCase {
         XCTAssertEqual(after.first { $0.id == "apple" }?.linked, false)
 
         StubProtocol.reset()
-        let reason = "ほかに入る方法が無いので解除できません。先にメールアドレスとパスワードを設定してください。"
+        let reason = "ほかに入る方法が無いので解除できません。ログイン画面の「パスワードを忘れた」から、パスワードを設定できます"
         StubProtocol.respond(path: "/user/signin-methods/google", status: 409,
                              body: #"{"error":"\#(reason)","code":"last_signin_method"}"#)
         do {
@@ -109,9 +109,40 @@ final class SigninMethodsTests: XCTestCase {
         XCTAssertEqual(SigninMethodsText.detail(SigninMethod(id: "apple", linked: true, removable: true)), "連携しています")
         XCTAssertEqual(SigninMethodsText.detail(SigninMethod(id: "google", linked: false, removable: false)), "連携していません")
         XCTAssertEqual(SigninMethodsText.detail(SigninMethod(id: "email", linked: true, removable: false, email: "a@b.c")), "a@b.c")
+        // 2026-11-23 確かめ役の指摘: 「未設定」で止めず、実際にできる道を書く。メールが無い人も行き止まりにしない
         XCTAssertEqual(SigninMethodsText.detail(SigninMethod(id: "email", linked: false, removable: false, email: "a@b.c")),
-                       "a@b.c（パスワードは未設定）")
-        XCTAssertEqual(SigninMethodsText.detail(SigninMethod(id: "email", linked: false, removable: false)), "設定されていません")
+                       "a@b.c。パスワードは、ログイン画面の「パスワードを忘れた」から設定できます")
+        XCTAssertEqual(SigninMethodsText.detail(SigninMethod(id: "email", linked: false, removable: false)),
+                       "メールアドレスは登録されていません。設定の「問い合わせ」からご連絡ください")
+        for method in [SigninMethod(id: "email", linked: false, removable: false, email: "a@b.c"),
+                       SigninMethod(id: "email", linked: false, removable: false)] {
+            XCTAssertFalse(SigninMethodsText.detail(method).contains("設定してください"), "どこでできるか書いていない")
+        }
+    }
+
+    /// 失敗の文（2026-11-23 確かめ役の指摘: `localizedDescription` をそのまま出さない）。
+    /// 圏外は決まった文、サーバーが理由を書いた断りはその文、ほかは決まった文
+    func testFailureTextIsFixedForNetworkAndUnknown() async {
+        XCTAssertEqual(SigninMethodsText.failure(APIError.unreachable, fallback: "x"), SigninMethodsText.unreachable)
+        XCTAssertEqual(SigninMethodsText.failure(URLError(.notConnectedToInternet), fallback: "x"), SigninMethodsText.unreachable)
+        XCTAssertEqual(SigninMethodsText.failure(URLError(.timedOut), fallback: "x"), SigninMethodsText.unreachable)
+        XCTAssertEqual(SigninMethodsText.failure(APIError.server(status: 409, message: "理由"), fallback: "x"), "理由")
+        XCTAssertEqual(SigninMethodsText.failure(APIError.server(status: 503, message: "今は解除できません"), fallback: "x"), "今は解除できません")
+        XCTAssertEqual(SigninMethodsText.failure(APIError.server(status: 500, message: "Internal"), fallback: "決まった文"), "決まった文")
+        XCTAssertEqual(SigninMethodsText.failure(APIError.decoding("bad"), fallback: "決まった文"), "決まった文")
+        XCTAssertEqual(SigninMethodsText.failure(CocoaError(.fileNoSuchFile), fallback: "決まった文"), "決まった文")
+        XCTAssertEqual(SigninMethodsText.unreachable, "通信できませんでした。電波の届く所でもう一度お試しください")
+    }
+
+    /// 失敗の文には板の失敗の印（丸に「!」）を添える（色だけで伝えない）
+    func testFailureShowsMark() async throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto/Features/Settings/SigninMethodsView.swift")
+        let view = try String(contentsOf: url, encoding: .utf8)
+        guard let at = view.range(of: "if let errorMessage {") else { return XCTFail("失敗の文が無い") }
+        let block = String(view[at.upperBound...].prefix(700))
+        XCTAssertTrue(block.contains("Image(systemName: \"exclamationmark.circle\")"), "失敗の印が無い")
+        XCTAssertFalse(view.contains("error.localizedDescription"), "失敗の文に localizedDescription をそのまま出している")
     }
 
     // MARK: - 知らせから開く

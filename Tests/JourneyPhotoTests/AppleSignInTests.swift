@@ -187,6 +187,26 @@ final class AppleSignInTests: XCTestCase {
         XCTAssertEqual(auth.errorMessage, AuthStore.federatedBusy)
     }
 
+    /// 🔴 「サインインの方法」で解除した ID（サーバーの 409・2026-11-23 確かめ役の指摘）は、サーバーの文をそのまま出す。
+    /// 「途中です」と取り違えない。Cognito に進まない
+    func testUnlinkedServerMessageIsShown() async {
+        let calls = Calls()
+        let auth = store(calls)
+        await auth.restore()
+        let text = "この Apple ID の連携は解除されています。メールアドレスでログインしてください"
+        let started = await auth.signInWithApple(credential) { _ in throw APIError.server(status: 409, message: text) }
+        XCTAssertNil(started)
+        XCTAssertTrue(calls.signInWith.isEmpty)
+        XCTAssertEqual(auth.errorMessage, text)
+        XCTAssertFalse(FederatedSignInBusy.matches(APIError.server(status: 409, message: text)))
+        XCTAssertTrue(FederatedSignInBusy.matches(APIError.server(status: 409, message: "サインイン中です。少し待ってからお試しください")))
+        let google = await auth.signInWithGoogle(GoogleSignInCredential(idToken: "g", rawNonce: "r", displayName: nil)!) { _ in
+            throw APIError.server(status: 409, message: "この Google アカウントの連携は解除されています。メールアドレスでログインしてください")
+        }
+        XCTAssertNil(google)
+        XCTAssertEqual(auth.errorMessage, "この Google アカウントの連携は解除されています。メールアドレスでログインしてください")
+    }
+
     // MARK: - Google でログイン（札 #715）
 
     func testGoogleStartSendsIdTokenAndRawNonce() async throws {

@@ -454,7 +454,7 @@ enum PreviewBackend {
         func rows(appleLinked: Bool) -> [[String: Any]] {
             var apple: [String: Any] = ["id": "apple", "linked": appleLinked, "removable": appleLinked && !last]
             if appleLinked && last {
-                apple["blockedReason"] = "ほかに入る方法が無いので解除できません。先にメールアドレスとパスワードを設定してください。"
+                apple["blockedReason"] = "ほかに入る方法が無いので解除できません。ログイン画面の「パスワードを忘れた」から、パスワードを設定できます"
             }
             return [
                 ["id": "email", "linked": !last, "removable": false, "email": "preview@example.com"],
@@ -467,7 +467,7 @@ enum PreviewBackend {
             return .json(["methods": rows(appleLinked: true)])
         case ("DELETE", 3) where parts[2] == "apple":
             if last {
-                return .json(["error": "ほかに入る方法が無いので解除できません。先にメールアドレスとパスワードを設定してください。",
+                return .json(["error": "ほかに入る方法が無いので解除できません。ログイン画面の「パスワードを忘れた」から、パスワードを設定できます",
                               "code": "last_signin_method"], status: 409)
             }
             return .json(["methods": rows(appleLinked: false)])

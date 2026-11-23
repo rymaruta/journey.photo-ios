@@ -86,8 +86,14 @@ enum SigninMethodsText {
     static func detail(_ method: SigninMethod) -> String {
         if method.id == "email" {
             if method.linked, let email = method.email { return email }
-            return method.email.map { L("\($0)（パスワードは未設定）", "\($0) (no password set)") }
-                ?? L("設定されていません", "Not set up")
+            // 2026-11-23 確かめ役の指摘: 「未設定」で止めず、実際にできる道（ログイン画面の「パスワードを忘れた」）を書く。
+            // メールが無い人はアプリの中で足す道が無いので、行き止まりにせず設定の「問い合わせ」を書く
+            if let email = method.email {
+                return L("\(email)。パスワードは、ログイン画面の「パスワードを忘れた」から設定できます",
+                         "\(email). You can set a password from \"Forgot password?\" on the sign-in screen.")
+            }
+            return L("メールアドレスは登録されていません。設定の「問い合わせ」からご連絡ください",
+                     "No email address yet. Contact us from Settings if you need one.")
         }
         return method.linked ? L("連携しています", "Connected") : L("連携していません", "Not connected")
     }
@@ -111,4 +117,29 @@ enum SigninMethodsText {
 
     /// 一覧が読めなかった
     static var loadFailed: String { L("読み込めませんでした", "Couldn't load") }
+    /// 解除できなかった（理由の分からない失敗）
+    static var removeFailed: String { L("解除できませんでした。少し待ってからお試しください", "Couldn't disconnect. Please try again in a moment.") }
+    /// 圏外・時間切れ
+    static var unreachable: String { L("通信できませんでした。電波の届く所でもう一度お試しください", "Couldn't connect. Please try again where you have a signal.") }
+
+    /// 失敗の文。2026-11-23 確かめ役の指摘: `localizedDescription` をそのまま出さない。
+    /// サーバーが理由を書いた断り（409 の最後の入り方・503 の取り消しの失敗など）はその文、圏外は決まった文、ほかは `fallback`
+    static func failure(_ error: Error, fallback: String) -> String {
+        if let urlError = error as? URLError,
+           [.notConnectedToInternet, .timedOut, .networkConnectionLost, .cannotConnectToHost].contains(urlError.code) {
+            return unreachable
+        }
+        guard let api = error as? APIError else { return fallback }
+        switch api {
+        case .unreachable:
+            return unreachable
+        case .notAuthenticated, .server(status: 401, message: _):
+            // ログインの切れは決まった文（`APIError` の文）
+            return api.localizedDescription
+        case .server(let status, let message) where status < 500 || status == 503:
+            return APIError.displayableServerText(message) ?? fallback
+        default:
+            return fallback
+        }
+    }
 }
