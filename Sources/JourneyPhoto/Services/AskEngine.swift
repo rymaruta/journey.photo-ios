@@ -576,7 +576,8 @@ final class AskEngine: ObservableObject {
         let intent = AskQuery.intent(question, reading: reading)
         let query = AskLibrary.query(reading: reading, intent: intent, sentence: question, spots: library.spots)
         // AI が台帳を引かなかったときも、観光スポットを探す頼みなら、アプリが選んだ札を出す
-        let shown = !picks.isEmpty ? picks : (intent.spots ? library.pickSpots(query) : [])
+        // 2026-11-23 判断: 端末の AI が道具を何度か呼んで多く引いても、札は頼んだ数まで（見出しの数と札の数をそろえる）
+        let shown = !picks.isEmpty ? Array(picks.prefix(query.limit)) : (intent.spots ? library.pickSpots(query) : [])
         var answer = AskAnswer(engine: engine)
         // 2026-11-20 判断（札 #663）: 文ははじめの1〜2文だけ。「- 名前: 説明」の行は札の理由に振り分け、札に無い名前の行は出さない
         let shaped = AskAnswerShape.shape(screened.text, spots: shown.map(\.spot))

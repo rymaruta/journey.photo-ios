@@ -946,7 +946,7 @@ struct TripCreateDraftStep: View {
     private func row(_ place: TripDraft.Place, number: Int) -> some View {
         HStack(spacing: JPSpace.xs) {
             TripStopLabel(number: number, name: place.name, isSpot: place.isSpot,
-                          timeChip: TripDraft.timeChip(place.times))
+                          timeChips: TripDraft.timeChips(place.times))
             if let photo = spotPhoto(place) {
                 Color.clear
                     .frame(width: 44, height: 44)

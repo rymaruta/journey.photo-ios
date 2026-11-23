@@ -73,9 +73,11 @@ struct AskService {
         case spot(name: String, area: String, category: String, seasons: [String], times: [String], note: String?)
         case help(title: String, body: String)
 
-        init(_ spot: OfficialSpot) {
+        /// - Parameter season: その回の季節（月から決めた季節も）。その季節の案内を渡す（2026-11-23 判断・
+        ///   季節を見ずに概要を渡していて、11月の頼みに「アジサイ」の話が渡っていた）
+        init(_ spot: OfficialSpot, season: ShootingTime.Season? = nil) {
             let c = TripAIService.Candidate(spot)
-            let note = AskLibrary.guide(for: spot, query: .init()) ?? spot.seasons.first?.text ?? spot.times.first?.text
+            let note = AskLibrary.guide(for: spot, season: season) ?? spot.seasons.first?.text ?? spot.times.first?.text
             self = .spot(name: c.name, area: c.area, category: c.category, seasons: c.seasons, times: c.times,
                          note: note.map { String($0.prefix(200)) })
         }
@@ -154,7 +156,8 @@ struct AskService {
     /// 送る行: 使い方の頁（質問に合うもの）を先に、残りを観光スポットで埋める。合わせて 8 件まで
     static func sources(text: String, spots: [OfficialSpot]) -> [Source] {
         let help = AskHelpPages.matching(text).map(Source.init)
-        return Array((help + spots.map(Source.init)).prefix(maxSources))
+        let season = SearchSentence.readByTable(text).season
+        return Array((help + spots.map { Source($0, season: season) }).prefix(maxSources))
     }
 
     private func call<T: Decodable>(_ body: any Encodable, as type: T.Type) async throws -> T {

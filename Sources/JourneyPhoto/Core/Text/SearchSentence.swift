@@ -34,6 +34,10 @@ enum SearchSentence {
         var dropped: Chip.Kind?
         /// 0件のときの外し方をもう見たか（**1回だけ**。戻した後にまた外さない）
         var relaxTried = false
+        /// 書かれていた月（「11月下旬」の 11）。季節はここから決める（`season`）。案内の文に「11月」がある所を先に並べるのに使う
+        var month: Int? = nil
+        /// 頼んだ数（「5選」「3つ」「4か所」「6件」の数）。AI に頼むの札の数にする（`AskLibrary.Query.count`）
+        var count: Int? = nil
 
         /// いま欄に入っているはずの字（自動で字の語を外した間は空）
         var appliedText: String? { dropped == .text ? nil : text }
@@ -168,7 +172,11 @@ enum SearchSentence {
 
     /// 表で読む。**長い言葉から当て、当てた所は使い切る**（「夜明け」が「夜」にも当たらないように）。
     /// 季節・時間帯が文の中に2つあれば、先に書いた方
-    static func readByTable(_ raw: String) -> Reading {
+    ///
+    /// - Parameter monthAsText: 写真の検索（探すの欄）では true。月（「11月」）を季節の札にするだけでなく、**字の語としても残す**
+    ///   （題に「11月」と書いた写真に字で当たるように・2026-11-23 確かめ役の指摘）。AI に頼むときの観光スポットの絞り込みは false
+    ///   （「11月下旬」が語になると、どれにも当たらずに語を捨てて台帳の先頭から出していた）
+    static func readByTable(_ raw: String, monthAsText: Bool = false) -> Reading {
         let sentence = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let chars = Array(fold(sentence))
         var used = [Bool](repeating: false, count: chars.count)
@@ -186,6 +194,28 @@ enum SearchSentence {
         for (w, p) in dayPartWords { add(w, .part(p)) }
         for (w, u) in unsupportedWords { add(w, .unsupported(u)) }
         terms.sort { $0.word.count > $1.word.count }
+
+        // 2026-11-23 判断（owner の画面写真「11月下旬のおすすめの観光スポット5選教えて」）: 月と数を先に読む。
+        // 月は季節に直して絞る（`SpotBodyText.season(ofMonth:)`）。月も数も、読んだ字は語にしない
+        // （以前は「11月下旬」「観光スポット5選」が字の語になり、どれにも当たらずに語を捨てて台帳の先頭から出していた）
+        var month: (Int, Int)?
+        var count: Int?
+        for hit in numberPhrases(chars) {
+            for j in hit.range { used[j] = true }
+            switch hit.kind {
+            case .month(let m):
+                if month == nil { month = (hit.range.lowerBound, m) }
+                if monthAsText, let mark = chars[hit.range].firstIndex(of: "月") {
+                    // 「11月」までは字の語に残す（「下旬」などの後ろの語は使い切る）
+                    for j in hit.range.lowerBound...mark { used[j] = false }
+                }
+            case .count(let n):
+                if count == nil { count = n }
+            }
+        }
+        if let (at, m) = month, let season = ShootingTime.Season(rawValue: SpotBodyText.season(ofMonth: m)) {
+            seasons.append((at, season))
+        }
 
         for term in terms where !term.word.isEmpty && chars.count >= term.word.count {
             var i = 0
@@ -223,6 +253,8 @@ enum SearchSentence {
         let keywords = words.filter(isKeyword)
 
         var reading = Reading(sentence: sentence)
+        reading.month = month?.1
+        reading.count = count
         reading.season = seasons.min { $0.0 < $1.0 }?.1
         reading.dayPart = parts.min { $0.0 < $1.0 }?.1
         reading.unsupported = unique(unsupported.sorted { $0.0 < $1.0 }.map(\.1))
@@ -230,6 +262,83 @@ enum SearchSentence {
         reading.text = text
         reading.unused = unused
         return reading
+    }
+
+    // MARK: - 月と数（2026-11-23 判断）
+
+    struct NumberPhrase: Equatable {
+        enum Kind: Equatable { case month(Int), count(Int) }
+        let range: Range<Int>
+        let kind: Kind
+    }
+
+    /// 月の後ろに付けてよい語（「11月下旬」「11月末」）。読んだ月の一部として使い切る
+    static let monthTails = ["上旬", "中旬", "下旬", "初旬", "初め", "はじめ", "半ば", "終わり", "末", "頭"]
+    /// 数の後ろに付く語（「5選」「3つ」「4か所」「6件」）。長いものから当てる
+    static let countTails = ["か所", "ヶ所", "カ所", "ケ所", "ヵ所", "箇所", "個所", "スポット", "選", "つ", "件", "個"]
+
+    /// 漢数字（1〜12 だけ。「十一月」「五選」）
+    static let kanjiNumbers: [(String, Int)] = [
+        ("十二", 12), ("十一", 11), ("十", 10), ("九", 9), ("八", 8), ("七", 7), ("六", 6), ("五", 5),
+        ("四", 4), ("三", 3), ("二", 2), ("一", 1),
+    ]
+
+    /// 文の中の「N月（上旬など）」と「N選／Nつ／Nか所／N件」を探す（畳んだ字で）。
+    /// 数の前に別の数字が続く所（「111月」）は読まない。漢数字は前が漢字でない所だけ（「統一」「第五」を読まない）
+    static func numberPhrases(_ chars: [Character]) -> [NumberPhrase] {
+        var out: [NumberPhrase] = []
+        var i = 0
+        func has(_ word: String, at k: Int) -> Bool {
+            let w = Array(word)
+            return k + w.count <= chars.count && Array(chars[k..<(k + w.count)]) == w
+        }
+        while i < chars.count {
+            // 数を読む（算用数字か漢数字）
+            var value: Int?
+            var end = i
+            if chars[i].isASCII, chars[i].isNumber, i == 0 || !(chars[i - 1].isASCII && chars[i - 1].isNumber) {
+                var k = i
+                while k < chars.count, chars[k].isASCII, chars[k].isNumber { k += 1 }
+                if k - i <= 3 { value = Int(String(chars[i..<k])); end = k }
+            } else if i == 0 || !chars[i - 1].unicodeScalars.allSatisfy(isKanji) {
+                if let (word, v) = kanjiNumbers.first(where: { has($0.0, at: i) }) {
+                    value = v
+                    end = i + word.count
+                }
+            }
+            guard let n = value, end > i else { i += 1; continue }
+            if end < chars.count, chars[end] == "月", (1...12).contains(n) {
+                var stop = end + 1
+                if let tail = monthTails.first(where: { has($0, at: stop) }) { stop += tail.count }
+                out.append(NumberPhrase(range: i..<stop, kind: .month(n)))
+                i = stop
+                continue
+            }
+            if n >= 1, let tail = countTails.first(where: { has($0, at: end) }),
+               !isNotCount(chars, start: i, tailEnd: end + tail.count, tail: tail) {
+                out.append(NumberPhrase(range: i..<(end + tail.count), kind: .count(n)))
+                i = end + tail.count
+                continue
+            }
+            i = end
+        }
+        return out
+    }
+
+    /// 「つ」の後ろに続いても数のままの字（「3つ教えて」「5つ選んで」「3つ程度」）
+    static let countFollowers: Set<Character> = ["教", "挙", "選", "紹", "探", "出", "見", "知", "提", "案", "示", "書", "程", "以", "位", "候", "前", "後"]
+
+    /// 数＋後ろの語でも数として読まない形（2026-11-23 判断・確かめ役の指摘）:
+    /// - 前に「もう」が付く（「もう一つ教えて」は札の数ではなく、続きを頼む言い方）
+    /// - 「つ」の後ろに漢字・片仮名・英数字が続く語（「三つ星」「5つ星ホテル」「四つ葉」）。頼みの動詞（「3つ教えて」）は数のまま
+    static func isNotCount(_ chars: [Character], start: Int, tailEnd: Int, tail: String) -> Bool {
+        if start >= 2, chars[start - 2] == "も", chars[start - 1] == "う" { return true }
+        guard tail == "つ", tailEnd < chars.count else { return false }
+        let next = chars[tailEnd]
+        if next == "目" { return true } // 「2つ目」は順番
+        if countFollowers.contains(next) { return false }
+        let scalars = next.unicodeScalars
+        return scalars.allSatisfy(isKanji) || scalars.allSatisfy(isKatakana) || (next.isASCII && (next.isLetter || next.isNumber))
     }
 
     // MARK: - 端末の AI の答えをそろえる
@@ -266,6 +375,8 @@ enum SearchSentence {
         let sentence = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let table = readByTable(sentence)
         var reading = Reading(sentence: sentence)
+        reading.month = table.month
+        reading.count = table.count
         reading.season = table.season ?? season(choice: draft.season)
         reading.dayPart = table.dayPart ?? dayPart(choice: draft.dayPart)
         reading.unsupported = unique(table.unsupported + draft.unsupported.compactMap(Unsupported.of(choice:)))

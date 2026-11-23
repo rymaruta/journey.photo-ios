@@ -50,8 +50,9 @@ enum TripDraft {
               region: TripPicker.Region(key: "none:location:\(location.slug)", label: nil), times: [], tie: location.slug)
     }
 
-    /// 日程の項目から引き直す（引けなければ名前は鍵のまま・座標なし——`TripPlanText.label` と同じ）
-    static func place(for item: TripItem, index: [OfficialSpot], places: [DerivedSpot.Place]) -> Place {
+    /// 日程の項目から引き直す（引けなければ名前は `TripPlanText.label` の言葉・座標なし。観光スポットの鍵 `sp_…` は出さない）
+    /// `loading`: 索引を読み込み中なら、引けない観光スポットの名前は「読み込み中」（`TripPlanText.displayName`）
+    static func place(for item: TripItem, index: [OfficialSpot], places: [DerivedSpot.Place], loading: Bool = false) -> Place {
         switch item {
         case .spot(let spotId, _):
             if let spot = index.first(where: { $0.spotId == spotId }) {
@@ -63,7 +64,7 @@ enum TripDraft {
             }
         }
         let key = SavedSpotsTrip.itemKey(item)
-        return Place(item: item, name: TripPlanText.label(for: item, index: index, places: places), regionLabel: nil,
+        return Place(item: item, name: TripPlanText.displayName(for: item, index: index, places: places, loading: loading), regionLabel: nil,
                      coords: nil, region: TripPicker.Region(key: "none:\(key)", label: nil), times: [], tie: key)
     }
 
@@ -118,10 +119,42 @@ enum TripDraft {
         return nil
     }
 
-    /// 時間帯の札（「夜明け · 朝」）。夜明け → 夜の順で2つまで。無ければ nil
-    static func timeChip(_ times: [String]) -> String? {
-        let labels = SpotBodyText.timeOrder.filter(times.contains).compactMap(SpotBodyText.timeLabel)
-        return labels.isEmpty ? nil : labels.prefix(2).joined(separator: "\u{2002}")
+    /// 時間帯の札1枚（2026-11-23 判断: 時間帯ごとに分ける。前は2つの言葉を1枚につなぎ「朝 夕方の斜光」が食い違って見えた）
+    struct TimeChip: Equatable, Identifiable {
+        enum Emphasis: Equatable {
+            /// 着く時刻が分からない（作る流れの下書き・時刻を出さない日）。どれも同じ見た目
+            case plain
+            /// 着く時刻の時間帯に合う（明るく、点を付ける）
+            case match
+            /// 着く時刻の時間帯と違う（控えめに）
+            case other
+        }
+        /// 台帳の時間帯（`SpotBodyText.timeOrder` の値）
+        let time: String
+        let text: String
+        let emphasis: Emphasis
+        var id: String { time }
+
+        /// 読み上げ（合う札は「着く時間帯」と添える。色だけで伝えない）
+        var spoken: String {
+            emphasis == .match ? L("\(text)、着く時間帯", "\(text), when you arrive") : text
+        }
+    }
+
+    /// 時間帯の札（夜明け → 夜の順で2枚まで）。`arrive`（着く時刻の目安・0時からの分）が分かれば、
+    /// その時間帯（`ShootingTime.DayPart`）に合う札を必ず入れて明るくし、ほかは控えめにする
+    static func timeChips(_ times: [String], arrive: Int? = nil) -> [TimeChip] {
+        let known = SpotBodyText.timeOrder.filter(times.contains)
+        let part = arrive.flatMap { ShootingTime.DayPart.of(hour: (($0 / 60) % 24 + 24) % 24) }
+        let matching = Set(known.filter { part?.ledgerTimes.contains($0) ?? false })
+        // 合う札を先に選び、残りを早い順で埋める。並びは夜明け → 夜のまま
+        var chosen = Array(known.filter(matching.contains).prefix(2))
+        for t in known where chosen.count < 2 && !chosen.contains(t) { chosen.append(t) }
+        return known.filter(chosen.contains).compactMap { t in
+            guard let text = SpotBodyText.timeLabel(t) else { return nil }
+            let emphasis: TimeChip.Emphasis = part == nil ? .plain : (matching.contains(t) ? .match : .other)
+            return TimeChip(time: t, text: text, emphasis: emphasis)
+        }
     }
 
     /// 季節の一文（「冬（12月）· 雪吊りの…」）。**その日の月の季節の案内があるときだけ**（撮影地・案内の無い行は nil）
@@ -129,9 +162,28 @@ enum TripDraft {
         guard let (_, month, _) = TakenDay.ymd(ymd) else { return nil }
         let season = SpotBodyText.season(ofMonth: month)
         guard let label = SpotBodyText.seasonLabel(season),
-              let text = spot.seasons.first(where: { $0.season == season })?.text
-                .trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+              let full = spot.seasons.first(where: { $0.season == season })?.text
+                .trimmingCharacters(in: .whitespacesAndNewlines), !full.isEmpty else { return nil }
+        // 2026-11-23 判断: 最初の1文だけ（2行で切ると「…ですが」のように途中で切れて意味がずれた）
+        let text = firstSentence(full)
         return L("\(label)（\(month)月）\u{2002}\(text)", "\(label) (\(monthName(month)))\u{2002}\(text)")
+    }
+
+    /// 最初の1文（「。」「！」「？」まで。区切りが無ければ全文）。終わりの「。」は残す。
+    /// 括弧（「」『』（））の中の「。」では切らない（2026-11-23 判断・確かめ役の指摘）
+    static func firstSentence(_ text: String) -> String {
+        var depth = 0
+        for i in text.indices {
+            let ch = text[i]
+            if "「『（(".contains(ch) {
+                depth += 1
+            } else if "」』）)".contains(ch) {
+                depth = max(0, depth - 1)
+            } else if depth == 0, "。！？!?".contains(ch) {
+                return String(text[...i])
+            }
+        }
+        return text
     }
 
     private static func monthName(_ month: Int) -> String {

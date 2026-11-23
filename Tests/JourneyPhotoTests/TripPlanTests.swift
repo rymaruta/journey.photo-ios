@@ -205,13 +205,13 @@ final class TripPlanTests: XCTestCase {
         XCTAssertTrue(TripPlanText.choices(wishlistKeys: [], places: places, index: []).isEmpty)
     }
 
-    /// 項目の名前。**引けなければ鍵をそのまま**（「不明な場所」を作らない）
+    /// 項目の名前。撮影地は引けなければ鍵をそのまま。観光スポットの鍵（`sp_…`）は出さない（2026-11-23 判断）
     func testItemLabel() throws {
         let index = [try spot("takaya-jinja", name: "高屋神社")]
         let places = DerivedSpot.all(in: [try photo("a", location: "金沢")])
         let kanazawa = try XCTUnwrap(places.first)
         XCTAssertEqual(TripPlanText.label(for: .spot(spotId: "sp_takaya-jinja", note: nil), index: index, places: places), "高屋神社")
-        XCTAssertEqual(TripPlanText.label(for: .spot(spotId: "sp_gone", note: nil), index: index, places: places), "sp_gone")
+        XCTAssertEqual(TripPlanText.label(for: .spot(spotId: "sp_gone", note: nil), index: index, places: places), TripPlanText.unresolvedSpot)
         XCTAssertEqual(TripPlanText.label(for: .location(slug: kanazawa.slug, note: nil), index: index, places: places), "金沢")
         XCTAssertEqual(TripPlanText.label(for: .location(slug: "%E3%83%91%E3%83%AA", note: nil), index: [], places: []), "パリ")
     }
