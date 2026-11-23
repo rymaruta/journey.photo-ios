@@ -12877,6 +12877,27 @@ final class ScreenshotTests: JPUITestCase {
         shoot(app, "20-写真の詳細")
     }
 
+    /// 2 AI に頼む（問いと答え・2026-11-23 owner「AIに頼むって文字ないような」）。見本の AI（`-JPAskFixture`・端末の中で答える・
+    /// サーバーへは送らない・同意済み扱い）が、見本の観光スポット（京都の3か所・同梱の写真）から選ぶ。回数の帯は見本では出さない
+    func testStoreDemoAsk() {
+        let app = launchStoreDemo(["-JPAskFixture", "YES"])
+        let tabBar = app.tabBars.firstMatch
+        guard tabBar.waitForExistence(timeout: 20) else { return unreached(app, "タブ") }
+        tabBar.buttons.element(boundBy: 0).tap()
+        // 頼む言葉は `StoreDemo.askQuestion` と同じ（単体テストが同じ言葉で答えを確かめる）
+        guard openAskScreen(app), askViaSendButton(app, "京都で写真がきれいに撮れる所を教えて") else { return }
+        let card = app.descendants(matching: .any)["search.ask.card"].firstMatch
+        guard card.waitForExistence(timeout: 15) else { return unreached(app, "AI の答えの札", probes: ["search.ask.card"]) }
+        if app.keyboards.count > 0 {
+            app.typeText("\n")
+            _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 0"), object: app.keyboards)],
+                               timeout: 5)
+        }
+        guard waitForImages(app, "AI に頼むの答え") else { return }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "90-ストア・AI に頼む（答え）")
+    }
+
     /// 2 観光スポットの頁（作例と光の時刻）。地図の「スポット」の一覧から、見本の伏見稲荷大社を開く
     func testStoreDemoSpot() {
         let app = launchStoreDemo()
@@ -12950,7 +12971,7 @@ final class ScreenshotTests: JPUITestCase {
         shoot(app, "62a-ストーリーの曲の札（A ガラスの札）")
     }
 
-    /// 6 メッセージ（会話）。見本の会話（`-JPPreviewDM`）の「夕焼けの人」。写真の通は見本の写真、スポットの札は見本の観光スポット
+    /// 6 メッセージ（会話）。見本の会話（`-JPPreviewDM`）の1人目（見本の表示では「京めぐり」）。写真の通は見本の写真、スポットの札は見本の観光スポット
     func testStoreDemoMessages() {
         let app = launchStoreDemo()
         guard app.tabBars.firstMatch.waitForExistence(timeout: 20) else { return unreached(app, "タブ") }
@@ -12960,7 +12981,8 @@ final class ScreenshotTests: JPUITestCase {
         guard app.descendants(matching: .any)["dm.inbox"].firstMatch.waitForExistence(timeout: 15) else {
             return unreached(app, "受信箱", probes: ["dm.inbox"])
         }
-        guard openThread(app, named: "夕焼けの人") else { return unreached(app, "見本の会話") }
+        // 見本の表示では1人目は「京めぐり」（`StoreDemo.dmPeer`）
+        guard openThread(app, named: "京めぐり") else { return unreached(app, "見本の会話") }
         guard waitForImages(app, "メッセージの会話") else { return }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "86m4-メッセージ（会話）")

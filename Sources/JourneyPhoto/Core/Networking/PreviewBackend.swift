@@ -470,7 +470,15 @@ enum PreviewBackend {
     // MARK: - メッセージの見本（2026-11-10 札 #505）
 
     /// 見本の相手（uid は UUID の形・名前は見本の名前）
-    static let dmPeers: [(id: String, name: String, username: String?)] = [
+    /// App Store の見本（`StoreDemo`・札 #604）では、1人目を会話の中身（鳥居、京都）に合う作った名前に替える（`StoreDemo.dmPeer`）
+    static var dmPeers: [(id: String, name: String, username: String?)] {
+        guard StoreDemo.isOn else { return basePeers }
+        var peers = basePeers
+        peers[0] = (peers[0].id, StoreDemo.dmPeer.name, StoreDemo.dmPeer.username)
+        return peers
+    }
+
+    private static let basePeers: [(id: String, name: String, username: String?)] = [
         ("0b6f1c1e-1111-4aaa-8aaa-000000000001", "夕焼けの人", "yuyake"),
         ("0b6f1c1e-1111-4aaa-8aaa-000000000002", "港の写真家", "minato"),
         ("0b6f1c1e-1111-4aaa-8aaa-000000000003", "山の朝", "yamaasa"),

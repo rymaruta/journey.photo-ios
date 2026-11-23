@@ -545,6 +545,8 @@ struct AskScreen: View {
 
     /// 上の1行（残りの回数）。旅行プランの流れの答えのあとは、旅行プランの AI の残り
     private var usageLine: String? {
+        // App Store の見本（`StoreDemo`・札 #604）の絵には回数の帯を出さない（`StoreDemo.showsUsageLine`）
+        guard StoreDemo.showsUsageLine else { return nil }
         if engine.thread.last?.answer.kind == .plan || engine.pendingKind == .plan, let planUsageLine { return planUsageLine }
         return engine.usage?.remainingLine
     }

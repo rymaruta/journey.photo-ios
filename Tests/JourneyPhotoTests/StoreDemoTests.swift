@@ -316,6 +316,28 @@ final class StoreDemoTests: XCTestCase {
         }
     }
 
+    /// AI に頼むの絵（2026-11-23）: 見本の AI は、見本の観光スポット（京都の3か所）だけから選ぶ。回数の帯は見本では出さない。
+    /// UI テストは同じ言葉で頼む
+    func testAskAnswerPicksOnlyDemoSpotsAndHidesUsage() throws {
+        let rows = try JSONSerialization.data(withJSONObject: StoreDemo.spotRows())
+        let spots = try JSONDecoder.api.decode(LenientOfficialSpotList.self, from: rows).spots
+        let photos = try JSONDecoder.api.decode(LenientPhotoList.self, from: JSONSerialization.data(withJSONObject: StoreDemo.feed())).photos
+        let result = try XCTUnwrap(AskFixture.deviceResult(StoreDemo.askQuestion, library: AskLibrary(spots: spots, photos: photos)))
+        let picked = result.picks.map(\.spot.name)
+        XCTAssertFalse(picked.isEmpty, "見本の AI が観光スポットを選ばない: \(result.text)")
+        let kyoto = Set(StoreDemo.spots.filter { $0.prefecture == "京都府" }.map(\.name))
+        XCTAssertTrue(Set(picked).isSubset(of: kyoto), "京都の見本の観光スポットでない札: \(picked)")
+        XCTAssertFalse(result.text.contains("・"))
+        XCTAssertTrue(StoreDemo.showsUsageLine)
+        withDemo(true) { XCTAssertFalse(StoreDemo.showsUsageLine, "見本の絵に回数の帯が出る") }
+        let src = root.appendingPathComponent("Sources/JourneyPhoto/Features/Search/AskScreen.swift")
+        XCTAssertTrue(try String(contentsOf: src, encoding: .utf8).contains("guard StoreDemo.showsUsageLine else { return nil }"),
+                      "AI に頼むの回数の1行が見本の間も出る")
+        let ui = root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift")
+        XCTAssertTrue(try String(contentsOf: ui, encoding: .utf8).contains("askViaSendButton(app, \"\(StoreDemo.askQuestion)\")"),
+                      "UI テストの頼む言葉が見本の言葉と違う")
+    }
+
     // MARK: - 見本の会話・旅行プラン・作者
 
     /// 作例の作者は `photo-sources.json` の本当の作者（旅のオフラインの頁などに字が出ても正しい名前）
@@ -373,6 +395,15 @@ final class StoreDemoTests: XCTestCase {
         XCTAssertTrue(demo.contains(StoreDemo.dmSpotLink))
         XCTAssertTrue(demo.contains { $0.contains("伏見稲荷大社") })
         XCTAssertTrue(try texts(demo: false).contains { $0.contains("伊豆") }, "見本でないのに会話の文が変わった")
+        // 相手の名前: 見本では会話に合う作った名前、見本でなければ今のまま
+        XCTAssertEqual(PreviewBackend.dmPeers[0].name, "夕焼けの人")
+        withDemo(true) {
+            XCTAssertEqual(PreviewBackend.dmPeers[0].name, StoreDemo.dmPeer.name)
+            XCTAssertEqual(PreviewBackend.dmPeers[0].username, StoreDemo.dmPeer.username)
+            XCTAssertEqual(PreviewBackend.dmPeers[0].id, "0b6f1c1e-1111-4aaa-8aaa-000000000001")
+        }
+        let ui = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"), encoding: .utf8)
+        XCTAssertTrue(ui.contains("openThread(app, named: \"\(StoreDemo.dmPeer.name)\")"), "UI テストが見本の相手の名前で会話を開かない")
         let inbox = try XCTUnwrap(PreviewBackend.dmReply(method: "GET", parts: ["dm"], json: [:], me: me, now: Date(), demo: true))
         XCTAssertTrue(String(decoding: inbox.body, as: UTF8.self).contains(StoreDemo.dmFirstExcerpt))
     }

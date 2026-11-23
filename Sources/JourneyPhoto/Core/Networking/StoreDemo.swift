@@ -73,6 +73,13 @@ enum StoreDemo {
         #endif
     }
 
+    /// AI に頼むの上の回数の1行（「今日はあと2回」）を見せるか。見本の間は見せない（ストアの絵に回数の帯を写さない・
+    /// 2026-11-23 owner「AIに頼むって文字ないような」でストアの絵に AI に頼むを足した）。見本でなければいつも見せる
+    static var showsUsageLine: Bool { !isOn }
+
+    /// AI に頼むの絵で頼む言葉（UI テスト `testStoreDemoAsk` と単体テストが同じ言葉を使う）
+    static let askQuestion = "京都で写真がきれいに撮れる所を教えて"
+
     /// 写真の出典の行（CC の表示）を見せるか。見本の間は見せない（`CreditLinksMenu`・ホームの上の札 `TopCardFace` がこれを見る）。
     /// 見本の写真はどれもクレジット不要（CC0）で、ストアの絵に CC の表示を写さない。見本でなければいつも見せる
     static var showsCredits: Bool { showsCredits(demo: isOn) }
@@ -296,7 +303,7 @@ enum StoreDemo {
         spots.map { s in
             [
                 "spotId": s.spotId, "slug": s.slug, "name": s.name, "nameEn": s.nameEn, "reading": s.reading,
-                "region": ["prefecture": s.prefecture, "city": s.city, "country": "JP"],
+                "region": ["prefecture": s.prefecture, "city": s.city],  // 国内は `country` を持たない（`TripAIDestination.match`）
                 "coords": ["lat": s.lat, "lng": s.lng], "category": s.category, "summary": s.summary,
                 "stage": "published", "verifiedAt": "2026-11-01",
                 "image": spotImage(s.asset),
@@ -357,6 +364,9 @@ enum StoreDemo {
         5: "富士山の写真もあります。送りますね",
         10: "来月、一緒に京都へ行かない？",
     ]
+
+    /// DM の見本の1人目の名前（見本でないときの「夕焼けの人」の代わり）。会話の中身（鳥居、京都）に合う作った名前
+    static let dmPeer = (name: "京めぐり", username: "kyo_meguri")
 
     /// 受信箱の「夕焼けの人」の行の抜き書き（会話の最初の1通と同じ）
     static var dmFirstExcerpt: String { dmTexts[1] ?? "" }
