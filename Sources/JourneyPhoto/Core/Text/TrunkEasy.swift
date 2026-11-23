@@ -66,20 +66,30 @@ extension TrunkGachaText {
         coins > 0 ? L("硬貨を入れて回す", "Insert a coin and turn") : L("硬貨がありません", "No coins")
     }
 
-    /// 主ボタンの下の一行（ハンドルは指で回しても出る）
-    static func spinHint(coins: Int, phase: TrunkGachaPhase) -> String {
+    /// 主ボタンの下の一行。2026-11-23（札 #716・案の頁の「言葉」）: 起きたことは動きで見せ、文は次にできることだけ。
+    /// 返事を待つ間とカプセルが出たときは文なし（溜めと、落ちて弾む動きで見せる）。前の「カプセルが出てきます…」
+    /// 「ころん、と1つ出てきました」（実況の文）は消した
+    static func spinHint(coins: Int, phase: TrunkGachaPhase, offline: Bool = false) -> String {
         switch phase {
         case .idle:
-            return coins > 0 ? L("ハンドルを指でまわしても出ます", "You can also turn the handle with your finger")
-                : L("公開の投稿1件で、硬貨が1枚もらえます（1日3枚まで）", "You get one coin per public post (up to 3 a day)")
+            if coins == 0 {
+                return L("公開の投稿1件で、硬貨を1枚もらえます（1日3枚まで）", "You get one coin per public post (up to 3 a day)")
+            }
+            return offline ? L("電波が戻ると回せます", "You can turn it once you\u{2019}re back online")
+                : L("ハンドルを指で回しても出ます", "You can also turn the handle with your finger")
         case .turning:
-            return L("右へ1周で出ます。途中で離すと戻り、硬貨は減りません",
-                     "One full turn to the right. Let go early and it springs back; no coin is used")
-        case .waiting:
-            return L("カプセルが出てきます…", "A capsule is coming…")
-        case .out:
-            return L("ころん、と1つ出てきました", "Out rolls a capsule")
+            return L("途中で離すと戻ります。硬貨は減りません", "Let go early and it springs back. No coin is used.")
+        case .waiting, .out:
+            return ""
         }
+    }
+
+    /// 回している間の帯（「ハンドルを右へ回す 42%」）
+    static var turningTitle: String { L("ハンドルを右へ回す", "Turn the handle right") }
+
+    /// 圏外と分かっているとき、回す前に出す一言（ボタンは押せない・2026-11-23 札 #716）
+    static var offlineNote: String {
+        L("電波が無いので回せません。硬貨は減りません", "No signal, so it can\u{2019}t turn. No coin is used.")
     }
 
     /// 送ったあとに切れた・時間切れのとき（回ったかどうか分からない）の一言。読み直した硬貨の数を前と比べて言い分ける
@@ -87,11 +97,11 @@ extension TrunkGachaText {
     /// 読み直せなければ分からないと言う（分からないことを「減っていません」と言わない）
     static func afterUnsure(coinsBefore: Int, coinsAfter: Int?) -> String {
         guard let after = coinsAfter else {
-            return L("回ったか確かめられませんでした。電波のあるところで部品箱を開くと分かります",
-                     "Couldn\u{2019}t check whether it turned. Open your parts box where you have a signal to see.")
+            return L("回せたか分かりませんでした。電波のある所で部品箱を開くと分かります",
+                     "Couldn\u{2019}t tell whether it turned. Open your parts box where you have a signal to see.")
         }
         if after < coinsBefore {
-            return L("回っていました。出た部品は部品箱に入っています", "It did turn. The part is in your parts box.")
+            return L("回せていました。出た部品は部品箱にあります", "It did turn. The part is in your parts box.")
         }
         return L("回せませんでした。硬貨は減っていません", "It didn\u{2019}t turn. No coin was used.")
     }

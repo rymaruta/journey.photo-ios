@@ -48,6 +48,11 @@ struct LabelArrivedView: View {
     @State private var step: ArrivalSequence.Step = .start
     /// ラベルが貼りついた瞬間に軽い触覚を 1 回鳴らすための数
     @State private var landed = 0
+    /// 硬貨をもらう瞬間（札 #716）: ラベルが貼りついたあと、硬貨が回りながら札に落ちて北で止まる。落ち始めた時刻と、
+    /// 札に入ったか（入るまでは札の硬貨と字を隠す）。札に入った瞬間に軽い触覚（ラベルの触覚とは別の瞬間）
+    @State private var coinFallStart: Date?
+    @State private var coinRested = true
+    @State private var coinLanded = 0
     /// 事実の一文。**開いたときに1回だけ**決めて持つ（描き直すたびに写真の一覧を数え直さない）。nil＝言わない
     @State private var sentence: String?
     /// 写真が読み込めなかった（写真の札は出さず、ラベルだけを真ん中に出す）
@@ -124,6 +129,7 @@ struct LabelArrivedView: View {
         // 一文のための自分の写真の一覧（読めなければ nil＝言わない。見本の入り方では読まない）
         .task { await decideSentence() }
         .sensoryFeedback(.impact(weight: .light), trigger: landed)
+        .sensoryFeedback(.impact(weight: .light), trigger: coinLanded)
         .fullScreenCover(isPresented: $showCustom) {
             // 作ったらそのまま貼る（届いた画面も閉じる）。貼れなかったら届いた画面に戻る（手持ちに入っている）
             TrunkCustomView(model: model, labelId: arrival.label.id, sticks: true) { stuck in
@@ -286,6 +292,8 @@ struct LabelArrivedView: View {
             landed += 1
             return
         }
+        // 硬貨は落ちて入るまで札の中を隠す（`dropCoin` が最後に必ず出す）
+        if batch.coins > 0 { coinRested = false }
         for (next, delay) in ArrivalSequence.delays(reduceMotion: false) {
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             if Task.isCancelled { return }
@@ -298,8 +306,26 @@ struct LabelArrivedView: View {
                 try? await Task.sleep(nanoseconds: UInt64(ArrivalSequence.landAfter * 1_000_000_000))
                 if Task.isCancelled { return }
                 landed += 1
+                // 一文の段を待たせないよう、硬貨は別に落とす
+                if batch.coins > 0 { Task { await dropCoin() } }
             }
         }
+    }
+
+    /// 硬貨が回りながら札に落ちて入る（0.62 秒）。入ったら針が揺れて北で止まり、札が少しふくらむ
+    private func dropCoin() async {
+        defer { coinRested = true }
+        try? await Task.sleep(nanoseconds: UInt64(TrunkMotion.coinAfterLabel * 1_000_000_000))
+        if Task.isCancelled { return }
+        let began = Date()
+        coinFallStart = began
+        try? await Task.sleep(nanoseconds: UInt64(TrunkMotion.coinFallSeconds * 1_000_000_000))
+        coinRested = true
+        coinLanded += 1
+        if Task.isCancelled { return }
+        // 札が少しふくらむ間だけ時計を回し、止まったら止める
+        try? await Task.sleep(nanoseconds: UInt64(max(TrunkMotion.chipBumpSeconds, TrunkMotion.needleSeconds) * 1_000_000_000))
+        if coinFallStart == began { coinFallStart = nil }
     }
 
     /// どんな図柄か（真鍮の字の札）
@@ -335,11 +361,47 @@ struct LabelArrivedView: View {
             .frame(minHeight: 32)
             .background(TrunkStyle.chip, in: Capsule())
         }
-        // 一緒に届いた硬貨（公開の投稿1件で1枚・2026-10-17 次の版）
+        // 一緒に届いた硬貨（公開の投稿1件で1枚・2026-10-17 次の版）。2026-11-23（札 #716）: 羅針盤の硬貨が
+        // 回りながら札に落ちて入り、針が揺れて北で止まる（押す回数は 0 回のまま。動きを減らす設定では最初から札にある）
         if batch.coins > 0 {
+            TimelineView(.animation(minimumInterval: nil, paused: coinFallStart == nil)) { ctx in
+                let fall = coinFallStart.map { ctx.date.timeIntervalSince($0) }
+                let landedFor = fall.map { $0 - TrunkMotion.coinFallSeconds } ?? -1
+                HStack(spacing: 6) {
+                    TrunkCoinMark(size: 14, turn: landedFor >= 0 ? TrunkMotion.needleAngle(elapsed: landedFor) : 0)
+                        .opacity(coinRested ? 1 : 0)
+                        .overlay {
+                            if let fall, fall < TrunkMotion.coinFallSeconds {
+                                let p = fall / TrunkMotion.coinFallSeconds
+                                let scale = TrunkMotion.coinFallScale.value(p)
+                                TrunkCoinMark(size: TrunkMotion.coinFallSize, turn: TrunkMotion.needle.value(p))
+                                    .scaleEffect(x: scale * TrunkMotion.coinFlip.value(p), y: scale)
+                                    .offset(y: TrunkMotion.coinFallY.value(p))
+                                    .opacity(TrunkMotion.coinFallOpacity.value(p))
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                    Text(TrunkText.coinChip(batch.coins))
+                        .font(JPFont.footnote.weight(.semibold))
+                        .lineLimit(1)
+                        .opacity(coinRested ? 1 : 0)
+                }
+                .foregroundStyle(WebTheme.accent)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 32)
+                .background(TrunkStyle.chip, in: Capsule())
+                .scaleEffect(landedFor >= 0 ? TrunkMotion.chipBump.value(landedFor / TrunkMotion.chipBumpSeconds) : 1)
+            }
+            .zIndex(1)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("trunk.arrived.coin")
+        }
+        // 一緒に届いたかけら（札 #713・サーバーが返したときだけ）。切符の切れ端の絵と「かけら +1」
+        if batch.fragments > 0 {
             HStack(spacing: 6) {
-                TrunkCoinMark(size: 14)
-                Text(TrunkText.coinChip(batch.coins))
+                TrunkFragmentPieceView(index: 2, size: 10)
+                    .frame(width: 10, height: 16)
+                Text(TrunkFragmentText.chip(batch.fragments))
                     .font(JPFont.footnote.weight(.semibold))
                     .lineLimit(1)
             }
@@ -348,7 +410,7 @@ struct LabelArrivedView: View {
             .frame(minHeight: 32)
             .background(TrunkStyle.chip, in: Capsule())
             .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("trunk.arrived.coin")
+            .accessibilityIdentifier("trunk.arrived.fragment")
         }
     }
 

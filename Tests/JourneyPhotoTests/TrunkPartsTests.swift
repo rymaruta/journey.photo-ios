@@ -298,7 +298,8 @@ final class TrunkPartsTests: XCTestCase {
     // MARK: 硬貨 0・かけら不足の表示
 
     func testNoCoinsAndFragmentsWording() {
-        XCTAssertEqual(TrunkGachaText.hint(coins: 0, phase: .idle), "公開の投稿1件で1枚もらえます")
+        // 2026-11-23（札 #716）: どこからも呼ばれていなかった古い `TrunkGachaText.hint`（「ころん」ほか）は消した
+        XCTAssertEqual(TrunkGachaText.spinHint(coins: 0, phase: .idle), "公開の投稿1件で、硬貨を1枚もらえます（1日3枚まで）")
         XCTAssertEqual(TrunkGachaText.exchangeNote(fragments: 3, selected: nil), "まだ持っていない部品から選べます\u{2002}あと 2 つ")
         XCTAssertFalse(TrunkPartsBoxText.canExchange(fragments: 4))
         XCTAssertTrue(TrunkPartsBoxText.canExchange(fragments: 5))
@@ -309,7 +310,7 @@ final class TrunkPartsTests: XCTestCase {
         XCTAssertEqual(TrunkGachaText.title(TrunkPartCatalog.part("lock.12")!), "錠前「金の星」", "金属の名前を重ねた")
         let kiku = TrunkPartCatalog.part("lock.2")!
         XCTAssertEqual(TrunkGachaText.arrivedWhileAway(TrunkGachaResult(part: kiku, duplicate: false, fragments: 0, coins: 0)),
-                       "カプセルの「菊」が部品箱に入りました。")
+                       "「菊」が出ました。部品箱に入れました")
         XCTAssertTrue(TrunkGachaText.arrivedWhileAway(TrunkGachaResult(part: kiku, duplicate: true, fragments: 1, coins: 0))
             .contains("かけら"))
     }

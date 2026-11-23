@@ -43,11 +43,11 @@ final class TrunkWiringTests: XCTestCase {
         XCTAssertTrue(preview.contains("TrunkFigure(model: state.effectiveModel"), "部品箱にトランクが見えない")
         XCTAssertTrue(preview.contains("parts: state.equipped"), "付けた部品がトランクに映らない")
         XCTAssertTrue(preview.contains("\"trunk.parts.collected\""), "集めた数が無い")
-        XCTAssertFalse(preview.contains("TrunkFragmentMark"), "かけらが上に戻っている")
+        XCTAssertFalse(preview.contains("TrunkFragmentTicketView"), "かけらが上に戻っている")
         XCTAssertEqual(preview.components(separatedBy: ".trunkCard(").count - 1, 1, "上の札が1枚でない")
         let dock = try XCTUnwrap(box.range(of: "private func dock("))
         let rest = box[dock.lowerBound...]
-        XCTAssertTrue(rest.contains("TrunkFragmentMark(filled:"), "下の帯にかけらの印が無い")
+        XCTAssertTrue(rest.contains("TrunkFragmentTicketView(filled: state.fragments, width: 40)"), "下の帯にかけらの切符が無い")
         XCTAssertTrue(rest.contains("\"trunk.parts.coins\""), "下の帯から機械へ行けない")
     }
 

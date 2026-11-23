@@ -432,8 +432,22 @@ struct TrunkView: View {
     /// カード（模型: 札の地・角 14・高さ 84 以上。上に真鍮の印、下に名前 15 と数 12）
     private func tileFace(_ tile: TrunkHomeTile, state: TrunkState) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            tileIcon(tile)
-                .frame(height: 22)
+            HStack(spacing: 4) {
+                tileIcon(tile)
+                Spacer(minLength: 4)
+                // 部品箱のカードに、かけらの切符と数（札 #713・見るまでの押す回数 1 → 0）。5つで真鍮の「交換できます」
+                if tile == .parts, state.fragments > 0 {
+                    TrunkFragmentTicketView(filled: state.fragments, width: 30)
+                    Text(TrunkFragmentText.tileCaption(state.fragments))
+                        .font(TrunkPartsBoxText.canExchange(fragments: state.fragments) ? JPFont.caption.weight(.semibold) : JPFont.meta)
+                        .foregroundStyle(TrunkPartsBoxText.canExchange(fragments: state.fragments) ? WebTheme.accent : TrunkStyle.muted)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .accessibilityLabel(TrunkPartsBoxText.fragmentsLabel(state.fragments))
+                        .accessibilityIdentifier("trunk.partsBox.fragments")
+                }
+            }
+            .frame(height: 22)
             Spacer(minLength: 0)
             VStack(alignment: .leading, spacing: 1) {
                 Text(TrunkHome.tileTitle(tile))

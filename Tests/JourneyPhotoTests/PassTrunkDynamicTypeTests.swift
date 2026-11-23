@@ -22,8 +22,8 @@ final class PassTrunkDynamicTypeTests: XCTestCase {
 
     /// 物に刷った字（行の中身の一部で当てる）
     private static let allowed: [String: [String]] = [
-        // カプセルの機械の硬貨の口・硬貨の刻印（紙や金属に刷った字・読み上げから外している）
-        "Trunk/TrunkGachaView.swift": [".font(.system(size: 7, weight: .bold))", ".font(.system(size: g.letterSize, weight: .bold))"],
+        // カプセルの機械の硬貨の口（金属に刷った字・読み上げから外している）。硬貨の刻印は羅針盤にしてなくした（札 #716）
+        "Trunk/TrunkGachaView.swift": [".font(.system(size: 7, weight: .bold))"],
         // ふたの裏の「ほか N」（64pt の丸の中）と縫い付けの札（22pt の革の札）
         "Trunk/TrunkInsideView.swift": [".font(.system(size: 12, weight: .semibold).monospacedDigit())",
                                         ".font(.system(size: 11, weight: .semibold).monospacedDigit())"],

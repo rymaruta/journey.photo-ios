@@ -296,11 +296,13 @@ struct TrunkPartsBoxView: View {
                 .font(JPFont.caption)
                 .foregroundStyle(TrunkStyle.faint)
                 .accessibilityHidden(true)
-            // かけらの印は硬貨の隣（交換は持っていない部品を押したシートから）
-            HStack(spacing: 2) {
-                ForEach(0..<TrunkPartsBoxText.fragmentsPerExchange, id: \.self) { i in
-                    TrunkFragmentMark(filled: i < TrunkPartsBoxText.filledFragments(state.fragments))
-                }
+            // かけらは切符の切れ端の絵と「3 / 5」（札 #713。前は真鍮のひし形5つで数の字が無かった）。
+            // 交換は持っていない部品を押したシートから
+            HStack(spacing: 6) {
+                TrunkFragmentTicketView(filled: state.fragments, width: 40)
+                Text(TrunkFragmentText.count(state.fragments))
+                    .font(JPFont.meta)
+                    .foregroundStyle(WebTheme.text)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(TrunkPartsBoxText.fragmentsLabel(state.fragments))
@@ -322,7 +324,11 @@ struct TrunkMissingPartSheet: View {
     var onGacha: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var toasts: ToastCenter
+    /// 交換できた（部品の影に色が付く）・切符が部品に吸いこまれた
+    @State private var exchanged = false
+    @State private var ticketGone = false
 
     var body: some View {
         let fragments = model.state?.fragments ?? 0
@@ -339,11 +345,27 @@ struct TrunkMissingPartSheet: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
-            Color.white.opacity(TrunkPartsBoxText.missingShadowOpacity)
-                .frame(width: 120, height: 120)
-                .mask { TrunkPartView(part: part, size: 120, shadow: false) }
-                .frame(height: 130)
-                .accessibilityHidden(true)
+            ZStack {
+                Color.white.opacity(TrunkPartsBoxText.missingShadowOpacity)
+                    .frame(width: 120, height: 120)
+                    .mask { TrunkPartView(part: part, size: 120, shadow: false) }
+                    .opacity(exchanged ? 0 : 1)
+                // 交換できた: 影に色が付く（札 #713）
+                TrunkPartView(part: part, size: 120)
+                    .opacity(exchanged ? 1 : 0)
+            }
+            .frame(height: 130)
+            .accessibilityHidden(true)
+            // かけらの切符（札 #713）。交換すると部品に吸いこまれる
+            if fragments > 0 || exchanged {
+                TrunkFragmentTicketView(filled: exchanged ? TrunkPartsBoxText.fragmentsPerExchange : fragments, width: 84)
+                    .scaleEffect(ticketGone ? 0.3 : 1)
+                    .rotationEffect(.degrees(ticketGone ? -8 : 0))
+                    .offset(y: ticketGone ? -70 : 0)
+                    .opacity(ticketGone ? 0 : 1)
+                    .padding(.bottom, 8)
+                    .accessibilityIdentifier("trunk.missingSheet.ticket")
+            }
             Text(TrunkPartsBoxText.missingTitle)
                 .font(JPFont.display(20, relativeTo: .title3))
                 .foregroundStyle(WebTheme.text)
@@ -391,29 +413,16 @@ struct TrunkMissingPartSheet: View {
     /// かけら5つでこの部品と交換する。できたら閉じて知らせる（失敗の一言は `actionError`）
     private func exchange() async {
         guard await model.exchange(part.id) else { return }
+        // 切符が部品に吸いこまれ（0.55 秒）、影に色が付いてから閉じる（札 #713）。動きを減らす設定ではすぐ
+        if !reduceMotion {
+            withAnimation(.easeInOut(duration: 0.5)) { exchanged = true }
+            withAnimation(.timingCurve(0.3, 0.7, 0.2, 1, duration: 0.55)) { ticketGone = true }
+            try? await Task.sleep(nanoseconds: 700_000_000)
+        }
         dismiss()
         toasts.show(TrunkPartsBoxText.exchangedNotice(part))
     }
 }
-
-/// かけらの印（ひし形・埋まっていれば真鍮・空なら灰の縁）
-struct TrunkFragmentMark: View {
-    let filled: Bool
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: 2)
-            .fill(filled ? AnyShapeStyle(LinearGradient(colors: [Color(trunk: TrunkRGBA(0xF2DFAE)), WebTheme.accent,
-                                                                 Color(trunk: TrunkRGBA(0x7E6438))],
-                                                        startPoint: .topLeading, endPoint: .bottomTrailing))
-                          : AnyShapeStyle(Color.clear))
-            .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(WebTheme.outline, lineWidth: filled ? 0 : 1.5))
-            .frame(width: 14, height: 14)
-            .rotationEffect(.degrees(45))
-            .frame(width: 18, height: 18)
-            .accessibilityHidden(true)
-    }
-}
-
 
 /// 部品箱の種類のタブ（選んでいるタブ＝真鍮の字と下線 2・板 05。`TripCreateTabs` と同じ形）。当たり 44
 struct TrunkKindTab: View {
