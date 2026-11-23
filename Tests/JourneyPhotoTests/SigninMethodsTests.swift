@@ -109,14 +109,15 @@ final class SigninMethodsTests: XCTestCase {
         XCTAssertEqual(SigninMethodsText.detail(SigninMethod(id: "apple", linked: true, removable: true)), "連携しています")
         XCTAssertEqual(SigninMethodsText.detail(SigninMethod(id: "google", linked: false, removable: false)), "連携していません")
         XCTAssertEqual(SigninMethodsText.detail(SigninMethod(id: "email", linked: true, removable: false, email: "a@b.c")), "a@b.c")
-        // 2026-11-23 確かめ役の指摘: 「未設定」で止めず、実際にできる道を書く。メールが無い人も行き止まりにしない
+        // 2026-11-23 確かめ役の見直し: アドレスと短い状態だけ。道の説明は解除できない行の理由の側だけ
         XCTAssertEqual(SigninMethodsText.detail(SigninMethod(id: "email", linked: false, removable: false, email: "a@b.c")),
-                       "a@b.c。パスワードは、ログイン画面の「パスワードを忘れた」から設定できます")
+                       "a@b.c（パスワードはまだありません）")
         XCTAssertEqual(SigninMethodsText.detail(SigninMethod(id: "email", linked: false, removable: false)),
-                       "メールアドレスは登録されていません。設定の「問い合わせ」からご連絡ください")
+                       "メールアドレスは登録されていません")
         for method in [SigninMethod(id: "email", linked: false, removable: false, email: "a@b.c"),
                        SigninMethod(id: "email", linked: false, removable: false)] {
-            XCTAssertFalse(SigninMethodsText.detail(method).contains("設定してください"), "どこでできるか書いていない")
+            let text = SigninMethodsText.detail(method)
+            XCTAssertFalse(text.contains("パスワードを忘れた") || text.contains("問い合わせ"), "道の説明が理由の側と重なっている: \(text)")
         }
     }
 

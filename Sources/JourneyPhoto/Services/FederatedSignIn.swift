@@ -16,9 +16,9 @@ struct FederatedSignInStart: Decodable, Equatable, Sendable {
 struct FederatedSignInBusy: LocalizedError, Equatable {
     var errorDescription: String? { AuthStore.federatedBusy }
 
-    /// サーバーの答えが「途中」か（同じ 409 の「解除されています」は除く・`FederatedSignInUnlinked`）
+    /// サーバーの答えが「途中」か（解除済みの断りは、口の側で `FederatedSignInUnlinked` に包んであるので、ここには来ない）
     static func matches(_ error: Error) -> Bool {
-        if case APIError.server(status: 409, message: _) = error { return FederatedSignInUnlinked(error) == nil }
+        if case APIError.server(status: 409, message: _) = error { return true }
         return false
     }
 }
@@ -27,19 +27,33 @@ struct FederatedSignInBusy: LocalizedError, Equatable {
 /// （サーバーの 409・`apple_signin_unlinked`・`google_signin_unlinked`・2026-11-23 確かめ役の指摘）。
 /// サーバーは黙って空の別アカウントを作らずに断る。ログイン画面の失敗の文には、サーバーの文をそのまま出す
 /// （例「この Apple ID の連携は解除されています。メールアドレスでログインしてください」）
+///
+/// 2026-11-23 判断（確かめ役の見直し）: サーバーの文の一部では見分けず、本文の `code` で見分ける。
+/// `APIError.server` に `code` を足すと、状態と本文の2つで分けている呼び手（約40か所）の形が全部変わるので
+/// （`APIError.statusText` の注記）、`code` を読むのは今ある決まった口（`APIClient.errorBodySink`・トランクと購入と同じ）
 struct FederatedSignInUnlinked: LocalizedError, Equatable {
     /// サーバーの文（日本語）
     let message: String
 
-    /// 409 の本文がこの断りか（`APIError` は `code` を持たないので、サーバーの決まった文の一部で見分ける）
-    init?(_ error: Error) {
+    /// 解除済みの断りの `code`（サーバーの `appleSignin.ts`・`googleSignin.ts`）
+    static let codes: Set<String> = ["apple_signin_unlinked", "google_signin_unlinked"]
+
+    /// 失敗が解除済みの断りなら包む（409 で、本文の `code` が `codes` のどれか）
+    static func wrap(_ error: Error, code: String?) -> Error {
         guard case APIError.server(status: 409, message: let text) = error,
-              text.contains(Self.marker) else { return nil }
-        message = text
+              let code, codes.contains(code) else { return error }
+        return FederatedSignInUnlinked(message: text)
     }
 
-    /// サーバーの文の目印（`federatedAccount.ts` の `unlinkedMessage`）
-    static let marker = "連携は解除されています"
+    /// 外のアカウントのログインの口を呼ぶ。解除済みの断りは `FederatedSignInUnlinked` にして投げる
+    static func refusing<T>(_ call: () async throws -> T) async throws -> T {
+        let body = APIErrorBody()
+        do {
+            return try await APIClient.$errorBodySink.withValue(body) { try await call() }
+        } catch {
+            throw wrap(error, code: APIClient.errorCode(from: body.data))
+        }
+    }
 
     var errorDescription: String? {
         APIError.displayableServerText(message)

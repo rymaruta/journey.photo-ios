@@ -44,7 +44,10 @@ struct GoogleSignInService {
     }
 
     func start(_ credential: GoogleSignInCredential) async throws -> FederatedSignInStart {
-        try await api.anonymous(.post, "/auth/google", body: Self.body(for: credential), as: FederatedSignInStart.self)
+        // 解除済みの断り（409・`code`）は `FederatedSignInUnlinked` に包む
+        try await FederatedSignInUnlinked.refusing {
+            try await api.anonymous(.post, "/auth/google", body: Self.body(for: credential), as: FederatedSignInStart.self)
+        }
     }
 }
 

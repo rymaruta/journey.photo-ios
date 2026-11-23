@@ -86,14 +86,12 @@ enum SigninMethodsText {
     static func detail(_ method: SigninMethod) -> String {
         if method.id == "email" {
             if method.linked, let email = method.email { return email }
-            // 2026-11-23 確かめ役の指摘: 「未設定」で止めず、実際にできる道（ログイン画面の「パスワードを忘れた」）を書く。
-            // メールが無い人はアプリの中で足す道が無いので、行き止まりにせず設定の「問い合わせ」を書く
+            // 2026-11-23 確かめ役の見直し: この行はアドレスと短い状態だけ。道の説明（「パスワードを忘れた」から・問い合わせから）は、
+            // 解除できない行の理由（サーバーの `blockedReason`）の側だけに置く（同じ説明を2か所に重ねない）
             if let email = method.email {
-                return L("\(email)。パスワードは、ログイン画面の「パスワードを忘れた」から設定できます",
-                         "\(email). You can set a password from \"Forgot password?\" on the sign-in screen.")
+                return L("\(email)（パスワードはまだありません）", "\(email) (no password yet)")
             }
-            return L("メールアドレスは登録されていません。設定の「問い合わせ」からご連絡ください",
-                     "No email address yet. Contact us from Settings if you need one.")
+            return L("メールアドレスは登録されていません", "No email address")
         }
         return method.linked ? L("連携しています", "Connected") : L("連携していません", "Not connected")
     }
