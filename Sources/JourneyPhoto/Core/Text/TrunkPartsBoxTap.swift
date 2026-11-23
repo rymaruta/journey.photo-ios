@@ -43,6 +43,9 @@ extension TrunkPartsBoxText {
                  "Exchange \(need) fragments for \u{201C}\(part.name)\u{201D}")
     }
 
+    /// 交換のボタンを押せないか（頼んでいる間・通って閉じるまで）
+    static func exchangeLocked(busy: Bool, exchanging: Bool) -> Bool { busy || exchanging }
+
     static func exchangedNotice(_ part: TrunkPart) -> String {
         L("「\(part.name)」を部品箱に入れました", "\u{201C}\(part.name)\u{201D} is in your parts box")
     }

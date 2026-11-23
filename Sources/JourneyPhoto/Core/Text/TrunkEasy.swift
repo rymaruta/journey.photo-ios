@@ -139,6 +139,34 @@ enum TrunkGachaFlow {
     /// 自分で回している途中で、次の1歩を進めるか（画面を離れたら止めて元へ戻し、サーバーには送らない）
     static func keepsAutoTurning(visible: Bool) -> Bool { visible }
 
+    /// 機械に見せる硬貨の数（確かめ役の指摘 2026-11-23）。入れている間も、回している間も、入れた1枚を引いて見せる。
+    /// 入れる動きで「いちばん上を隠す」と、6枚以上のときは重ねた絵が5枚のままなので、回り始めると隠した1枚が戻って見えた
+    static func shownCoins(stored: Int, phase: TrunkGachaPhase, inserting: Bool) -> Int {
+        inserting || phase == .turning || phase == .waiting ? max(0, stored - 1) : stored
+    }
+
+    /// 待っているときの操作（2026-11-23 札 #716）
+    struct Idle: Equatable {
+        /// 「硬貨を入れて回す」を押せる
+        let canTurn: Bool
+        /// 回す前に出す圏外の一言
+        let offlineNote: Bool
+        /// ハンドルを触ったら回り始める（false なら小さく揺れるだけ）
+        let crankTurns: Bool
+    }
+
+    /// 0枚は投稿への一手（回せない・ハンドルは揺れる）。圏外は一言を出して押せない（ハンドルは揺れる）
+    static func idle(coins: Int, offline: Bool, busy: Bool = false) -> Idle {
+        guard coins > 0 else { return Idle(canTurn: false, offlineNote: false, crankTurns: false) }
+        if offline { return Idle(canTurn: false, offlineNote: true, crankTurns: false) }
+        return Idle(canTurn: !busy, offlineNote: false, crankTurns: !busy)
+    }
+
+    /// 開けた画面を閉じたあと（「もう1回まわす」を押していれば、硬貨を入れて続けて回す。圏外・0枚なら回さない）
+    static func afterOpenClosed(again: Bool, coins: Int, offline: Bool) -> Bool {
+        again && idle(coins: coins, offline: offline).canTurn
+    }
+
     static func release(_ crank: TrunkCrank) -> Release {
         if crank.isDone { return .draw }
         if crank.moved <= TrunkCrank.tapSlop { return .autoTurn }

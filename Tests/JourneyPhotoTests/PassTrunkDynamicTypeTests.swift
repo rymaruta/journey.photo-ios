@@ -24,6 +24,8 @@ final class PassTrunkDynamicTypeTests: XCTestCase {
     private static let allowed: [String: [String]] = [
         // カプセルの機械の硬貨の口（金属に刷った字・読み上げから外している）。硬貨の刻印は羅針盤にしてなくした（札 #716）
         "Trunk/TrunkGachaView.swift": [".font(.system(size: 7, weight: .bold))"],
+        // かけらの切符に刷った通し番号（100×44 の切符の絵の一部・読み上げから外している・札 #713）
+        "Trunk/TrunkFragmentTicketView.swift": [".font(.system(size: 3.6).monospacedDigit())"],
         // ふたの裏の「ほか N」（64pt の丸の中）と縫い付けの札（22pt の革の札）
         "Trunk/TrunkInsideView.swift": [".font(.system(size: 12, weight: .semibold).monospacedDigit())",
                                         ".font(.system(size: 11, weight: .semibold).monospacedDigit())"],
@@ -50,6 +52,7 @@ final class PassTrunkDynamicTypeTests: XCTestCase {
         "Trunk/TrunkPartsBoxView.swift",
         "Trunk/TrunkPocketView.swift",
         "Trunk/TrunkCustomView.swift",
+        "Trunk/TrunkFragmentTicketView.swift",
         "Trunk/TrunkSpinViewer.swift",
         "Trunk/TrunkStickView.swift",
         "Trunk/TrunkView.swift",

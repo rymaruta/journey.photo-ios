@@ -178,7 +178,8 @@ final class TrunkCoinMachineTests: XCTestCase {
         XCTAssertEqual(TrunkDealt.read(Data(#"{"fragment": 7}"#.utf8)).fragment, 0, "0 か 1 の外の値を読んだ")
         let arrivals = TrunkArrivals()
         arrivals.deliver(TrunkDealt(coin: 1, fragment: 1), photoTitle: "")
-        XCTAssertEqual(arrivals.consumeNotice()?.text, "硬貨を1枚もらいました。カプセルの機械で使えます かけらも1つもらいました。")
+        XCTAssertEqual(arrivals.consumeNotice()?.text, "硬貨を1枚もらいました。カプセルの機械で使えます。 かけらも1つもらいました。",
+                       "文のつなぎに「。」が無い")
         let onlyFragment = TrunkArrivals()
         onlyFragment.deliver([], notice: nil, coins: 0, fragments: 1)
         XCTAssertEqual(onlyFragment.consumeNotice(), .fragments(1))
@@ -232,10 +233,13 @@ final class TrunkCoinMachineTests: XCTestCase {
 
     func testMachineWiring() throws {
         let gacha = try source("Features/Trunk/TrunkGachaView.swift")
-        XCTAssertTrue(gacha.contains(".disabled(model.busy || offline)"), "圏外でもボタンが押せる")
+        XCTAssertTrue(gacha.contains(".disabled(!idleControls.canTurn)"), "圏外でもボタンが押せる")
         XCTAssertTrue(gacha.contains("Text(TrunkGachaText.offlineNote)"), "圏外の一言を回す前に出していない")
         XCTAssertTrue(gacha.contains("guard !cannotTurn else {\n                        if !wiggledThisTouch { wiggledThisTouch = true; wiggle() }"),
                       "0枚・圏外でハンドルを触っても揺れない")
+        XCTAssertTrue(gacha.contains("guard TrunkGachaFlow.afterOpenClosed(again: again, coins: coins, offline: offline) else { return }"),
+                      "閉じたあとの「もう1回まわす」が決まりを通っていない")
+        XCTAssertTrue(gacha.contains("TrunkGachaFlow.shownCoins(stored: model.state?.coins ?? 0, phase: phase, inserting: inserting)"))
         XCTAssertTrue(gacha.contains("await insertCoin()"), "硬貨が入れ口へ飛ばない")
         XCTAssertTrue(gacha.contains("let wound = Task { await windUpTurn() }"), "1周で溜めていない")
         XCTAssertTrue(gacha.contains("TrunkGachaCrankTicks(lit:"), "ハンドルの目盛りが無い")
@@ -255,8 +259,123 @@ final class TrunkCoinMachineTests: XCTestCase {
         XCTAssertTrue(box.contains("TrunkFragmentTicketView(filled: exchanged ? TrunkPartsBoxText.fragmentsPerExchange : fragments, width: 84)"),
                       "交換のシートに切符が無い")
         let home = try source("Features/Trunk/TrunkView.swift")
-        XCTAssertTrue(home.contains("if tile == .parts, state.fragments > 0 {"), "トランクの部品箱のカードにかけらが無い")
+        XCTAssertTrue(home.contains("TrunkFragmentText.tilePlacement(fragments: state.fragments, accessibilitySize: typeSize.isAccessibilitySize)"),
+                      "トランクの部品箱のカードにかけらが無い")
         XCTAssertTrue(try source("Features/Trunk/LabelArrivedView.swift").contains("TrunkMotion.coinFallY.value(p)"),
                       "届いた画面で硬貨が落ちてこない")
+    }
+
+    // MARK: 確かめ役の指摘（2026-11-23）
+
+    /// 🔴 開けた画面の時計: 一度きりの動き（割れる、輪、切れ端が飛ぶ）が終わったら 30 コマ毎秒に落とし、画面に出ていない間は止める
+    func testOpenClockSettlesAndStops() {
+        for duplicate in [false, true] {
+            let settle = TrunkOpenClock.settleAt(duplicate: duplicate)
+            XCTAssertGreaterThanOrEqual(settle, TrunkOpenClock.partAt + TrunkMotion.shockSeconds, "輪が広がり切る前に落とす")
+            XCTAssertGreaterThanOrEqual(settle, TrunkMotion.openDelay + TrunkMotion.splitSeconds)
+            XCTAssertLessThan(settle, 3, "一度きりの動きが長すぎる（毎コマの時計が止まらない）")
+            // 落としたあとは一度きりの動きが動かない
+            XCTAssertEqual(TrunkMotion.shock(elapsed: settle - TrunkOpenClock.partAt).opacity, 0)
+        }
+        XCTAssertGreaterThanOrEqual(TrunkOpenClock.settleAt(duplicate: true), TrunkOpenClock.fragmentDoneAt, "切れ端が入る前に落とす")
+        XCTAssertNil(TrunkOpenClock.frameInterval(settled: false))
+        XCTAssertEqual(TrunkOpenClock.frameInterval(settled: true), 1.0 / 30)
+        XCTAssertTrue(TrunkOpenClock.paused(started: false, visible: true), "動きを減らす設定で時計が回る")
+        XCTAssertTrue(TrunkOpenClock.paused(started: true, visible: false), "画面に出ていないのに時計が回る")
+        XCTAssertFalse(TrunkOpenClock.paused(started: true, visible: true))
+        // 文は段で出て、最後の段のあとは増えない（時計で作り直さない）
+        XCTAssertEqual(TrunkOpenClock.textsShown(elapsed: 0), 0)
+        XCTAssertEqual(TrunkOpenClock.textsShown(elapsed: 0.42), 2)
+        let last = TrunkMotion.stageDelays.last ?? 0
+        XCTAssertEqual(TrunkOpenClock.textsShown(elapsed: last), TrunkMotion.stageDelays.count)
+        XCTAssertEqual(TrunkOpenClock.textsShown(elapsed: 100), TrunkMotion.stageDelays.count)
+        let open = try? source("Features/Trunk/TrunkGachaView.swift")
+        let body = open.flatMap { text in text.range(of: "struct TrunkGachaOpenView").map { String(text[$0.upperBound...]) } } ?? ""
+        XCTAssertEqual(body.components(separatedBy: "TimelineView(").count - 1, 1, "開けた画面の時計が舞台の外も包んでいる")
+    }
+
+    /// 🔴 硬貨が6枚以上でも、入れたいちばん上が回り始めて戻って見えない（入れる間から1枚引いた数のまま）
+    func testInsertedCoinStaysGoneWhileTurning() {
+        for stored in [1, 3, 5, 6, 9] {
+            let inserting = TrunkGachaFlow.shownCoins(stored: stored, phase: .idle, inserting: true)
+            let turning = TrunkGachaFlow.shownCoins(stored: stored, phase: .turning, inserting: false)
+            let waiting = TrunkGachaFlow.shownCoins(stored: stored, phase: .waiting, inserting: false)
+            XCTAssertEqual(inserting, stored - 1)
+            XCTAssertEqual(turning, inserting, "\(stored) 枚: 回り始めると数が戻る")
+            XCTAssertEqual(TrunkCoinStack.drawn(turning), TrunkCoinStack.drawn(inserting), "\(stored) 枚: 重ねた絵が戻る")
+            XCTAssertEqual(waiting, turning)
+        }
+        XCTAssertEqual(TrunkGachaFlow.shownCoins(stored: 6, phase: .idle, inserting: false), 6)
+        XCTAssertEqual(TrunkGachaFlow.shownCoins(stored: 0, phase: .turning, inserting: false), 0)
+    }
+
+    /// 🔴 圏外: 回す前に一言、ボタンは押せず、ハンドルは揺れるだけ。0枚は投稿への一手で一言は出さない
+    func testOfflineAndZeroCoinControls() {
+        let offline = TrunkGachaFlow.idle(coins: 3, offline: true)
+        XCTAssertFalse(offline.canTurn, "圏外でボタンが押せる")
+        XCTAssertTrue(offline.offlineNote, "圏外の一言が出ない")
+        XCTAssertFalse(offline.crankTurns, "圏外でハンドルが回り始める")
+        let zero = TrunkGachaFlow.idle(coins: 0, offline: false)
+        XCTAssertFalse(zero.canTurn)
+        XCTAssertFalse(zero.offlineNote, "0枚に圏外の一言が出る")
+        XCTAssertFalse(zero.crankTurns)
+        XCTAssertFalse(TrunkGachaFlow.idle(coins: 0, offline: true).offlineNote, "0枚は投稿の一手が先")
+        XCTAssertTrue(TrunkGachaFlow.idle(coins: 3, offline: false).canTurn)
+        XCTAssertFalse(TrunkGachaFlow.idle(coins: 3, offline: false, busy: true).canTurn, "送っている間に押せる")
+        // 開けた画面を閉じたあと: 「もう1回まわす」なら続けて回す（圏外・0枚・押していないなら回さない）
+        XCTAssertTrue(TrunkGachaFlow.afterOpenClosed(again: true, coins: 2, offline: false))
+        XCTAssertFalse(TrunkGachaFlow.afterOpenClosed(again: false, coins: 2, offline: false), "閉じただけで回った")
+        XCTAssertFalse(TrunkGachaFlow.afterOpenClosed(again: true, coins: 2, offline: true), "圏外なのに続けて回った")
+        XCTAssertFalse(TrunkGachaFlow.afterOpenClosed(again: true, coins: 0, offline: false))
+        // 押しただけ（動きが少ない）は、ボタンと同じ道（硬貨が入れ口へ飛ぶ）
+        var tapped = TrunkCrank()
+        tapped.begin(dx: 10, dy: 0)
+        XCTAssertEqual(TrunkGachaFlow.release(tapped), .autoTurn)
+    }
+
+    /// 🔴 届いた一言: 硬貨・いっぱい・容量のどれと重なっても、かけらを消さず、文は「。」でつなぐ
+    @MainActor
+    func testFragmentNoticeSurvivesOtherNotices() async {
+        let full = TrunkArrivals()
+        full.deliver([], notice: .full, coins: 1, fragments: 1)
+        let fullText = full.consumeNotice()?.text ?? ""
+        XCTAssertTrue(fullText.contains("かけらも1つもらいました。"), "いっぱいの一言でかけらが消えた: \(fullText)")
+        XCTAssertTrue(fullText.contains(TrunkText.coinAlsoNotice(1)), "硬貨が消えた")
+        let storage = TrunkArrivals()
+        storage.deliver([], notice: .storage, coins: 0, fragments: 1)
+        XCTAssertEqual(storage.consumeNotice(), .withFragments(.storage, 1))
+        // サーバーの確かめ役の指摘（#713）: 容量切れで硬貨とかけらが届いた回も、かけらを言う
+        let storageCoins = TrunkArrivals()
+        storageCoins.deliver(TrunkDealt(labelSkipped: .storage, coin: 1, fragment: 1), photoTitle: "")
+        let storageNotice = storageCoins.consumeNotice()
+        XCTAssertEqual(storageNotice, .withFragments(.storageAndCoins(1), 1))
+        XCTAssertTrue(storageNotice?.text.hasSuffix(TrunkText.fragmentAlsoNotice(1)) == true, "容量切れの一言でかけらが黙って増える")
+        let fullCoins = TrunkArrivals()
+        fullCoins.deliver(TrunkDealt(labelSkipped: .full, coin: 1, fragment: 1), photoTitle: "")
+        XCTAssertEqual(fullCoins.consumeNotice(), .withFragments(.fullAndCoins(1), 1), "いっぱいの一言でかけらが黙って増える")
+        XCTAssertEqual(TrunkArrivals.Notice.joined("硬貨をもらいました", "かけらも"), "硬貨をもらいました。 かけらも")
+        XCTAssertEqual(TrunkArrivals.Notice.joined("届きました。", "かけらも"), "届きました。 かけらも")
+    }
+
+    /// 🔴 トランクの部品箱のカード: 既定は印の右、アクセシビリティの大きさは名前の行の下。字は 12pt を下回らない
+    func testTileFragmentsFit() throws {
+        XCTAssertNil(TrunkFragmentText.tilePlacement(fragments: 0, accessibilitySize: false))
+        XCTAssertEqual(TrunkFragmentText.tilePlacement(fragments: 3, accessibilitySize: false), .beside)
+        XCTAssertEqual(TrunkFragmentText.tilePlacement(fragments: 3, accessibilitySize: true), .below)
+        XCTAssertGreaterThanOrEqual(TrunkFragmentText.tileFontSize * TrunkFragmentText.tileMinimumScale, 12 - 1e-9, "12pt を下回って縮む")
+        let home = try source("Features/Trunk/TrunkView.swift")
+        let start = try XCTUnwrap(home.range(of: "private func fragmentCaption("))
+        let caption = String(home[start.lowerBound...].prefix(900))
+        XCTAssertFalse(caption.contains(".fixedSize()"), "字を固定の幅にしてカードの外へ出す")
+        XCTAssertTrue(caption.contains(".minimumScaleFactor(TrunkFragmentText.tileMinimumScale)"))
+    }
+
+    /// 交換のシート: 頼んでから閉じるまでボタンを押せない
+    func testExchangeLocksUntilClosed() throws {
+        XCTAssertTrue(TrunkPartsBoxText.exchangeLocked(busy: false, exchanging: true), "交換が通って閉じるまでの間に押せる")
+        XCTAssertTrue(TrunkPartsBoxText.exchangeLocked(busy: true, exchanging: false))
+        XCTAssertFalse(TrunkPartsBoxText.exchangeLocked(busy: false, exchanging: false))
+        let box = try source("Features/Trunk/TrunkPartsBoxView.swift")
+        XCTAssertTrue(box.contains("exchanging = true\n        guard await model.exchange(part.id) else {\n            exchanging = false"))
     }
 }

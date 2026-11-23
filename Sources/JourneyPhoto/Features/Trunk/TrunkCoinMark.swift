@@ -272,10 +272,13 @@ struct TrunkCoinPickUp: View {
 struct TrunkCoinShowcase: View {
     var size: Double
     @State private var picks = 0
+    /// 画面に出ている間だけ時計を回す（確かめ役の指摘 2026-11-23）
+    @State private var visible = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { ctx in
+        TimelineView(.animation(minimumInterval: TrunkOpenClock.loopInterval,
+                                paused: TrunkOpenClock.paused(started: !reduceMotion, visible: visible))) { ctx in
             let p = ctx.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: TrunkMotion.tiltSeconds) / TrunkMotion.tiltSeconds
             // 0 → 50% → 100% を ease-in-out で行って戻る（rotateY -24 → 24、rotateX 6 → -4）
             let half = p < 0.5 ? TrunkBezier.easeInOut.value(p * 2) : TrunkBezier.easeInOut.value((1 - p) * 2)
@@ -284,6 +287,8 @@ struct TrunkCoinShowcase: View {
                 .rotation3DEffect(.degrees(reduceMotion ? 0 : 6 - 10 * half), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
         }
         .contentShape(Circle())
+        .onAppear { visible = true }
+        .onDisappear { visible = false }
         .onTapGesture { picks += 1 }
         .sensoryFeedback(.impact(weight: .light), trigger: picks)
         .accessibilityHidden(true)
@@ -291,11 +296,10 @@ struct TrunkCoinShowcase: View {
 }
 
 /// 重ねた硬貨（カプセルの機械の数の行）。手元の枚数だけ倒した硬貨を重ね（5枚まで描き、数は字で）、0枚は影絵。
-/// `liftTop`: いちばん上の1枚を隠す（入れ口へ飛んでいる間）
+/// 入れ口へ飛ぶ間は、呼ぶ側が1枚引いた数を渡す（`TrunkGachaFlow.shownCoins`）
 struct TrunkCoinStackView: View {
     let coins: Int
     var size: Double = 26
-    var liftTop = false
 
     var body: some View {
         let n = TrunkCoinStack.drawn(coins)
@@ -306,7 +310,6 @@ struct TrunkCoinStackView: View {
             ForEach(0..<n, id: \.self) { i in
                 TrunkCoinMark(size: size, tilt: TrunkCoinStack.tilt, empty: TrunkCoinStack.isEmpty(coins))
                     .offset(x: TrunkCoinStack.xShift(i), y: h - one - Double(i) * step)
-                    .opacity(liftTop && i == n - 1 && !TrunkCoinStack.isEmpty(coins) ? 0 : 1)
             }
         }
         .frame(width: size + 2, height: h, alignment: .topLeading)

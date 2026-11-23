@@ -329,6 +329,8 @@ struct TrunkMissingPartSheet: View {
     /// 交換できた（部品の影に色が付く）・切符が部品に吸いこまれた
     @State private var exchanged = false
     @State private var ticketGone = false
+    /// 交換を頼んでから閉じるまで（その間はどのボタンも押せない・確かめ役の指摘 2026-11-23）
+    @State private var exchanging = false
 
     var body: some View {
         let fragments = model.state?.fragments ?? 0
@@ -392,13 +394,14 @@ struct TrunkMissingPartSheet: View {
                         TrunkButtonFace(title: TrunkPartsBoxText.exchangeTitle(part), kind: .main)
                     }
                     .buttonStyle(.plain)
-                    .disabled(model.busy)
+                    .disabled(TrunkPartsBoxText.exchangeLocked(busy: model.busy, exchanging: exchanging))
                     .accessibilityIdentifier("trunk.missingSheet.exchange")
                 }
                 Button(action: onGacha) {
                     TrunkButtonFace(title: L("カプセルを回す", "Turn the capsule machine"), kind: canExchange ? .secondary : .main)
                 }
                 .buttonStyle(.plain)
+                .disabled(exchanging)
                 .accessibilityIdentifier("trunk.missingSheet.gacha")
             }
             .padding(.horizontal, 20)
@@ -412,7 +415,12 @@ struct TrunkMissingPartSheet: View {
 
     /// かけら5つでこの部品と交換する。できたら閉じて知らせる（失敗の一言は `actionError`）
     private func exchange() async {
-        guard await model.exchange(part.id) else { return }
+        guard !TrunkPartsBoxText.exchangeLocked(busy: model.busy, exchanging: exchanging) else { return }
+        exchanging = true
+        guard await model.exchange(part.id) else {
+            exchanging = false
+            return
+        }
         // 切符が部品に吸いこまれ（0.55 秒）、影に色が付いてから閉じる（札 #713）。動きを減らす設定ではすぐ
         if !reduceMotion {
             withAnimation(.easeInOut(duration: 0.5)) { exchanged = true }

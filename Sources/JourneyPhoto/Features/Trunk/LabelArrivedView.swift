@@ -399,7 +399,7 @@ struct LabelArrivedView: View {
         // 一緒に届いたかけら（札 #713・サーバーが返したときだけ）。切符の切れ端の絵と「かけら +1」
         if batch.fragments > 0 {
             HStack(spacing: 6) {
-                TrunkFragmentPieceView(index: 2, size: 10)
+                TrunkFragmentPieceView(index: 2, size: 10, shadow: false)
                     .frame(width: 10, height: 16)
                 Text(TrunkFragmentText.chip(batch.fragments))
                     .font(JPFont.footnote.weight(.semibold))

@@ -68,9 +68,13 @@ struct TrunkGachaView: View {
     private static let slotInside = CGPoint(x: 92, y: 352.5)
 
     private var coins: Int {
-        let c = model.state?.coins ?? 0
-        // 入れた硬貨は、回し終えてサーバーが答えるまで手元の数から引いて見せる
-        return phase == .turning || phase == .waiting ? max(0, c - 1) : c
+        // 入れた硬貨は、入れる動きの間から、回し終えてサーバーが答えるまで手元の数から引いて見せる
+        TrunkGachaFlow.shownCoins(stored: model.state?.coins ?? 0, phase: phase, inserting: inserting)
+    }
+
+    /// 待っているときの操作（0枚・圏外は回せず、ハンドルは揺れるだけ・`TrunkGachaFlow.idle`）
+    private var idleControls: TrunkGachaFlow.Idle {
+        TrunkGachaFlow.idle(coins: coins, offline: offline, busy: model.busy)
     }
 
     /// 圏外と分かっている（回す前に言い、ボタンを押せない）
@@ -328,7 +332,7 @@ struct TrunkGachaView: View {
                         if !wiggledThisTouch { wiggledThisTouch = true; wiggle() }
                         return
                     }
-                    guard !model.busy else { return }
+                    guard idleControls.crankTurns else { return }
                     model.actionError = nil
                     crank = TrunkCrank()
                     phase = .turning
@@ -356,7 +360,11 @@ struct TrunkGachaView: View {
                 crank.letGo()
                 switch next {
                 case .draw: break
-                case .autoTurn: Task { await autoTurn() }
+                case .autoTurn:
+                    // 押しただけ: ボタンと同じ道（硬貨が入れ口へ飛んでから自分で1周）。押さえた所で始めた回しは取り消す
+                    crank = TrunkCrank()
+                    phase = .idle
+                    Task { await autoTurn() }
                 case .springBack: springBack()
                 }
             }
@@ -382,7 +390,7 @@ struct TrunkGachaView: View {
 
     /// 硬貨を入れてハンドルが自分で1周する（目盛りごとに触覚と音）。「視差効果を減らす」の人には待たずに回し切る
     private func autoTurn() async {
-        guard !autoTurning, coins > 0 || phase == .turning, !model.busy, phase != .idle || !offline else { return }
+        guard !autoTurning, phase == .turning || idleControls.canTurn else { return }
         autoTurning = true
         defer { autoTurning = false }
         if phase == .idle {
@@ -423,6 +431,7 @@ struct TrunkGachaView: View {
         func onMachine(_ p: CGPoint) -> CGPoint {
             CGPoint(x: Double(machineFrame.minX) + Double(p.x) * k, y: Double(machineFrame.minY) + Double(p.y) * k)
         }
+        // 入れる前の重ねた硬貨のいちばん上から（入れ始めると数の行は1枚引いて描く）
         let n = TrunkCoinStack.drawn(coins)
         let from = CGPoint(x: Double(stackFrame.minX) + TrunkCoinStack.xShift(n - 1) + 13, y: Double(stackFrame.minY) + 13 - 6)
         flyScale = 1
@@ -536,7 +545,7 @@ struct TrunkGachaView: View {
     /// 手元の枚数だけ重ねた硬貨（5枚まで描き、数は字で）と等幅の数字。0枚は影絵
     private var coinRow: some View {
         HStack(spacing: 10) {
-            TrunkCoinStackView(coins: coins, size: 26, liftTop: inserting)
+            TrunkCoinStackView(coins: coins, size: 26)
                 .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named(Self.space)) }, action: { stackFrame = $0 })
             HStack(spacing: 4) {
                 Text(L("硬貨", "Coins"))
@@ -571,7 +580,7 @@ struct TrunkGachaView: View {
             switch phase {
             case .idle:
                 if coins > 0 {
-                    if offline {
+                    if idleControls.offlineNote {
                         // 圏外と分かっている: 回す前に言う（押してから1周して断らない・2026-11-23 札 #716）
                         Text(TrunkGachaText.offlineNote)
                             .font(JPFont.footnote)
@@ -583,8 +592,8 @@ struct TrunkGachaView: View {
                         TrunkButtonFace(title: TrunkGachaText.spinTitle(coins: coins))
                     }
                     .buttonStyle(.plain)
-                    .disabled(model.busy || offline)
-                    .opacity(offline ? 0.45 : 1)
+                    .disabled(!idleControls.canTurn)
+                    .opacity(idleControls.offlineNote ? 0.45 : 1)
                     .accessibilityIdentifier("trunk.gacha.insert")
                 } else {
                     // 硬貨 0: 埋め方の一手（投稿へ1回で・2026-11-12 判断）
@@ -668,8 +677,9 @@ struct TrunkGachaView: View {
         reset()
         // 開けた画面を閉じて機械に戻っている（全画面の間に `onDisappear` が来ていても、続けて回せるように）
         visible = true
-        guard againRequested else { return }
+        let again = againRequested
         againRequested = false
+        guard TrunkGachaFlow.afterOpenClosed(again: again, coins: coins, offline: offline) else { return }
         Task { await autoTurn() }
     }
 
@@ -982,6 +992,12 @@ struct TrunkGachaOpenView: View {
     @State private var shownFragments: Int?
     @State private var successes = 0
     @State private var pieces = 0
+    /// 段階で出た文の数（0〜6・時計ではなく段で出す）
+    @State private var texts = 0
+    /// 一度きりの動きが終わった（舞台の時計を 30 コマ毎秒に落とす）
+    @State private var settled = false
+    /// 画面に出ている（出ていない間は時計を止める）
+    @State private var visible = false
     /// かけらが飛ぶ元と行き先（`space` の座標）
     @State private var pieceFrame = CGRect.zero
     @State private var ticketFrame = CGRect.zero
@@ -997,32 +1013,38 @@ struct TrunkGachaOpenView: View {
     var body: some View {
         ZStack(alignment: .top) {
             TrunkStyle.stageBackground(centerY: 0.36)
-            TimelineView(.animation(minimumInterval: nil, paused: start == nil)) { ctx in
-                let e = start.map { ctx.date.timeIntervalSince($0) } ?? 60
-                VStack(spacing: 0) {
-                    // 閉じるは左上のシートの「閉じる」（2026-11-13 owner 承認・#187。前は右上の白の字だけ）
-                    HStack {
-                        SheetCloseButton(onContent: true)
-                            .accessibilityIdentifier("trunk.gachaOpen.close")
-                        Spacer()
-                    }
-                    .padding(.horizontal, 8)
-                    .frame(height: 56)
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            heading(e)
-                            stage(e)
-                            info(e)
-                        }
-                    }
-                    actions(e)
+            VStack(spacing: 0) {
+                // 閉じるは左上のシートの「閉じる」（2026-11-13 owner 承認・#187。前は右上の白の字だけ）
+                HStack {
+                    SheetCloseButton(onContent: true)
+                        .accessibilityIdentifier("trunk.gachaOpen.close")
+                    Spacer()
                 }
+                .padding(.horizontal, 8)
+                .frame(height: 56)
+                ScrollView {
+                    VStack(spacing: 0) {
+                        heading
+                        // 時計で動かすのは舞台だけ（確かめ役の指摘 2026-11-23: 画面全体と読み上げの木を毎コマ作り直していた）。
+                        // 一度きりの動きの間は毎コマ、出そろったら回り続ける物だけ 30 コマ毎秒、画面に出ていない間は止める
+                        TimelineView(.animation(minimumInterval: TrunkOpenClock.frameInterval(settled: settled),
+                                                paused: TrunkOpenClock.paused(started: start != nil, visible: visible))) { ctx in
+                            stage(start.map { ctx.date.timeIntervalSince($0) } ?? 60)
+                        }
+                        info
+                    }
+                }
+                actions
             }
         }
         .coordinateSpace(.named(Self.space))
         .sensoryFeedback(.success, trigger: successes)
         .sensoryFeedback(.impact(weight: .light), trigger: pieces)
-        .onAppear(perform: begin)
+        .onAppear {
+            visible = true
+            begin()
+        }
+        .onDisappear { visible = false }
         // 子の目印（押せるもの）を消さないよう、入れ物の要素にしてから名前を付ける
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("trunk.gachaOpen")
@@ -1033,11 +1055,25 @@ struct TrunkGachaOpenView: View {
         guard start == nil else { return }
         if reduceMotion {
             shownFragments = result.fragments
+            texts = TrunkMotion.stageDelays.count
+            settled = true
             if result.duplicate { pieces += 1 } else { successes += 1 }
             return
         }
         start = Date()
-        let partAt = TrunkMotion.openDelay + 0.12
+        let partAt = TrunkOpenClock.partAt
+        // 文は段で出す（眉、見出し、線、一行、札、ボタンの順に 0.5 秒で）
+        for (i, delay) in TrunkMotion.stageDelays.enumerated() {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                withAnimation(.timingCurve(0.2, 0.8, 0.2, 1, duration: TrunkMotion.stageSeconds)) { texts = max(texts, i + 1) }
+            }
+        }
+        // 一度きりの動きが終わったら、舞台の時計を回り続ける物の速さに落とす
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(TrunkOpenClock.settleAt(duplicate: result.duplicate) * 1_000_000_000))
+            settled = true
+        }
         Task { @MainActor in
             if result.duplicate {
                 let done = partAt + TrunkMotion.fragmentAfterOpen + TrunkMotion.fragmentLiftSeconds + TrunkMotion.fragmentFlySeconds
@@ -1051,14 +1087,13 @@ struct TrunkGachaOpenView: View {
         }
     }
 
-    /// 段階で出る文（i 番目の遅れから 0.5 秒で、下から 12 上がりながら）
-    private func stagger(_ i: Int, _ e: Double) -> (opacity: Double, y: Double) {
-        let p = TrunkBezier(0.2, 0.8, 0.2, 1).value(min(1, max(0, (e - TrunkMotion.stageDelays[i]) / TrunkMotion.stageSeconds)))
-        return (p, TrunkMotion.stageRise * (1 - p))
+    /// 段階で出る文（i 番目が出たら、下から 12 上がりながら見える。動きは `begin` の `withAnimation`）
+    private func stagger(_ i: Int) -> (opacity: Double, y: Double) {
+        texts > i ? (1, 0) : (0, TrunkMotion.stageRise)
     }
 
-    private func heading(_ e: Double) -> some View {
-        let eyebrow = stagger(0, e), title = stagger(1, e), rule = stagger(2, e), sub = stagger(3, e)
+    private var heading: some View {
+        let eyebrow = stagger(0), title = stagger(1), rule = stagger(2), sub = stagger(3)
         return VStack(spacing: 0) {
             HStack(spacing: 6) {
                 TrunkRarityMark(rarity: part.rarity, size: 9)
@@ -1101,7 +1136,7 @@ struct TrunkGachaOpenView: View {
     /// 開いたカプセルの半分2つと、真ん中の部品（後ろに光の放射と真鍮の淡い光、衝撃の輪、きらめき）
     private func stage(_ e: Double) -> some View {
         let split = TrunkBezier(0.2, 0.8, 0.2, 1).value(min(1, max(0, (e - TrunkMotion.openDelay) / TrunkMotion.splitSeconds)))
-        let partAt = TrunkMotion.openDelay + 0.12
+        let partAt = TrunkOpenClock.partAt
         let partP = TrunkBezier(0.2, 0.8, 0.2, 1).value(min(1, max(0, (e - partAt) / TrunkMotion.splitSeconds)))
         let shown = min(1, max(0, (e - partAt) / 0.4))
         let rays = min(1, max(0, (e - TrunkMotion.openDelay) / 0.5))
@@ -1226,15 +1261,20 @@ struct TrunkGachaOpenView: View {
         .accessibilityHidden(true)
     }
 
-    private func info(_ e: Double) -> some View {
-        let s = stagger(4, e)
+    private var info: some View {
+        let s = stagger(4)
         let owned = TrunkPartsBoxText.collected(model.state?.ownedParts ?? [], kind: part.kind)
         return HStack(spacing: 12) {
             if result.duplicate {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(L("かけら \(TrunkFragmentText.count(ticketCount))", "Fragments \(TrunkFragmentText.count(ticketCount))"))
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(WebTheme.text)
+                    HStack(spacing: 6) {
+                        Text(L("かけら", "Fragments"))
+                            .font(.subheadline)
+                        // 数は SF の等幅の数字（`JPFont.mono`）
+                        Text(TrunkFragmentText.count(ticketCount))
+                            .font(JPFont.mono(15, medium: true, relativeTo: .subheadline))
+                    }
+                    .foregroundStyle(WebTheme.text)
                     Text(L("5つで部品1つと交換できます", "Five get you one part"))
                         .font(JPFont.caption)
                         .foregroundStyle(TrunkStyle.faint)
@@ -1269,8 +1309,8 @@ struct TrunkGachaOpenView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func actions(_ e: Double) -> some View {
-        let s = stagger(5, e)
+    private var actions: some View {
+        let s = stagger(5)
         let coins = model.state?.coins ?? 0
         return VStack(spacing: 8) {
             if let error = model.actionError {

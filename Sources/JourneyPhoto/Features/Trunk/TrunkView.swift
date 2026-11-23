@@ -432,19 +432,22 @@ struct TrunkView: View {
     /// カード（模型: 札の地・角 14・高さ 84 以上。上に真鍮の印、下に名前 15 と数 12）
     private func tileFace(_ tile: TrunkHomeTile, state: TrunkState) -> some View {
         VStack(alignment: .leading, spacing: 6) {
+            // 部品箱のカードに、かけらの切符と数（札 #713・見るまでの押す回数 1 → 0）。5つで真鍮の「交換できます」。
+            // 既定の大きさは印の右、アクセシビリティの大きさは名前の行の下
+            let placement = tile == .parts
+                ? TrunkFragmentText.tilePlacement(fragments: state.fragments, accessibilitySize: typeSize.isAccessibilitySize) : nil
             HStack(spacing: 4) {
                 tileIcon(tile)
                 Spacer(minLength: 4)
-                // 部品箱のカードに、かけらの切符と数（札 #713・見るまでの押す回数 1 → 0）。5つで真鍮の「交換できます」
-                if tile == .parts, state.fragments > 0 {
-                    TrunkFragmentTicketView(filled: state.fragments, width: 30)
-                    Text(TrunkFragmentText.tileCaption(state.fragments))
-                        .font(TrunkPartsBoxText.canExchange(fragments: state.fragments) ? JPFont.caption.weight(.semibold) : JPFont.meta)
-                        .foregroundStyle(TrunkPartsBoxText.canExchange(fragments: state.fragments) ? WebTheme.accent : TrunkStyle.muted)
-                        .lineLimit(1)
-                        .fixedSize()
-                        .accessibilityLabel(TrunkPartsBoxText.fragmentsLabel(state.fragments))
-                        .accessibilityIdentifier("trunk.partsBox.fragments")
+                if placement == .beside {
+                    // 狭い幅（375 など）では切符を外して字だけ
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 4) {
+                            TrunkFragmentTicketView(filled: state.fragments, width: 30)
+                            fragmentCaption(state.fragments)
+                        }
+                        fragmentCaption(state.fragments)
+                    }
                 }
             }
             .frame(height: 22)
@@ -456,6 +459,13 @@ struct TrunkView: View {
                 Text(TrunkHome.tileValue(tile, state: state))
                     .font(JPFont.meta)
                     .foregroundStyle(TrunkStyle.muted)
+                if placement == .below {
+                    HStack(spacing: 6) {
+                        TrunkFragmentTicketView(filled: state.fragments, width: 30)
+                        fragmentCaption(state.fragments)
+                    }
+                    .padding(.top, 4)
+                }
             }
             .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
             .minimumScaleFactor(0.8)
@@ -465,6 +475,18 @@ struct TrunkView: View {
         .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
         .trunkCard(radius: 14)
         .contentShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    /// かけらの数（「3 / 5」、5つで真鍮の「交換できます」）。13pt を狭いときだけ 12pt まで縮める
+    private func fragmentCaption(_ fragments: Int) -> some View {
+        let ready = TrunkPartsBoxText.canExchange(fragments: fragments)
+        return Text(TrunkFragmentText.tileCaption(fragments))
+            .jpSystemFont(TrunkFragmentText.tileFontSize, weight: ready ? .semibold : .regular, relativeTo: .footnote)
+            .foregroundStyle(ready ? WebTheme.accent : TrunkStyle.muted)
+            .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
+            .minimumScaleFactor(TrunkFragmentText.tileMinimumScale)
+            .accessibilityLabel(TrunkPartsBoxText.fragmentsLabel(fragments))
+            .accessibilityIdentifier("trunk.partsBox.fragments")
     }
 
     @ViewBuilder

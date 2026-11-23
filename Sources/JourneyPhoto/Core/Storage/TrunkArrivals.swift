@@ -52,17 +52,23 @@ final class TrunkArrivals: ObservableObject {
     private(set) var pending: Batch?
     /// ラベルが届かなかった理由のうち、一言で知らせるもの（手持ちがいっぱい・トランクの容量）。
     /// ほかの理由（同じ写真・1日の上限・受け取らない設定・時間切れ・知らない値）は黙って何も出さない
-    enum Notice: Equatable {
+    indirect enum Notice: Equatable {
         case full, storage
         /// ラベルは届かなかったが、硬貨だけ届いた（受け取らない設定・2026-10-17 次の版）
         case coins(Int)
         /// 手持ちがいっぱい・容量で届かなかったが、硬貨は届いた（2026-10-17 の見直し: 硬貨のことも言う）
         case fullAndCoins(Int)
         case storageAndCoins(Int)
-        /// ラベルは届かなかったが、硬貨とかけらが届いた（札 #713）
-        case coinsAndFragments(Int, Int)
         /// かけらだけ届いた（札 #713）
         case fragments(Int)
+        /// ほかの一言（硬貨・手持ちがいっぱい・容量）に、かけらも届いたことを添える（札 #713）
+        case withFragments(Notice, Int)
+
+        /// 2つの文をつなぐ（前の文が「。」「.」で終わっていなければ足す）
+        static func joined(_ a: String, _ b: String) -> String {
+            let ends = a.hasSuffix("。") || a.hasSuffix(".")
+            return ends ? a + " " + b : a + L("。", ".") + " " + b
+        }
 
         init?(_ skip: TrunkLabelSkip?) {
             switch skip {
@@ -79,7 +85,7 @@ final class TrunkArrivals: ObservableObject {
             case .coins(let n): return TrunkText.coinNotice(n)
             case .fullAndCoins(let n): return TrunkText.fullNotice + " " + TrunkText.coinAlsoNotice(n)
             case .storageAndCoins(let n): return TrunkText.storageNotice + " " + TrunkText.coinAlsoNotice(n)
-            case .coinsAndFragments(let n, let f): return TrunkText.coinNotice(n) + " " + TrunkText.fragmentAlsoNotice(f)
+            case .withFragments(let base, let f): return Self.joined(base.text, TrunkText.fragmentAlsoNotice(f))
             case .fragments(let f): return L("かけらを\(f)つもらいました。部品箱で集められます", "You got \(Plural.count(f, "fragment")). Collect them in your parts box.")
             }
         }
@@ -167,14 +173,13 @@ final class TrunkArrivals: ObservableObject {
         let coins = max(0, coins)
         let fragments = max(0, fragments)
         var notice = notice ?? (arrivals.isEmpty && coins > 0 ? .coins(coins) : nil)
-        // かけら（札 #713）: ラベルが届かなかった一言に添える（届いた画面では札にする）
-        if arrivals.isEmpty, fragments > 0 {
-            if notice == nil { notice = .fragments(fragments) }
-            if notice == .coins(coins) { notice = .coinsAndFragments(coins, fragments) }
-        }
         if coins > 0, arrivals.isEmpty {
             if notice == .full { notice = .fullAndCoins(coins) }
             if notice == .storage { notice = .storageAndCoins(coins) }
+        }
+        // かけら（札 #713）: ラベルが届かなかった一言に添える（硬貨・いっぱい・容量のどれと重なっても消さない。届いた画面では札にする）
+        if arrivals.isEmpty, fragments > 0 {
+            notice = notice.map { .withFragments($0, fragments) } ?? .fragments(fragments)
         }
         guard !arrivals.isEmpty || notice != nil else { return }
         deliveredAt = now

@@ -44,6 +44,8 @@ struct TrunkFragmentTicketView: View {
 struct TrunkFragmentPieceView: View {
     let index: Int
     var size: Double = 40
+    /// 落とす影（札の中の小さい印では消す）
+    var shadow = true
 
     var body: some View {
         let i = max(0, min(TrunkFragmentTicket.pieces - 1, index))
@@ -57,7 +59,7 @@ struct TrunkFragmentPieceView: View {
             .offset(x: -left * k, y: 2 * k)
             .frame(width: size, height: size * 1.6, alignment: .topLeading)
             .clipped()
-            .shadow(color: Color.black.opacity(0.7), radius: 8, x: 0, y: 6)
+            .shadow(color: Color.black.opacity(shadow ? 0.7 : 0), radius: shadow ? 8 : 0, x: 0, y: shadow ? 6 : 0)
             .accessibilityHidden(true)
     }
 }

@@ -122,7 +122,7 @@ final class TrunkCoinGeometryTests: XCTestCase {
         XCTAssertFalse(mark.contains("Text(verbatim: \"COIN\")"), "硬貨に COIN の刻印が残っている")
         let gacha = try source("Features/Trunk/TrunkGachaView.swift")
         XCTAssertFalse(gacha.contains("struct TrunkCoinMark"), "古い硬貨が残っている")
-        XCTAssertTrue(gacha.contains("TrunkCoinStackView(coins: coins, size: 26, liftTop: inserting)"), "機械の数の行が重ねた硬貨でない")
+        XCTAssertTrue(gacha.contains("TrunkCoinStackView(coins: coins, size: 26)"), "機械の数の行が重ねた硬貨でない")
         XCTAssertTrue(try source("Features/Trunk/TrunkView.swift").contains("TrunkCoinMark(size: 20)"))
         XCTAssertTrue(try source("Features/Trunk/TrunkPartsBoxView.swift").contains("TrunkCoinMark(size: 14)"))
         XCTAssertTrue(try source("Features/Profile/CoverOfferView.swift").contains("TrunkCoinMark(size: 16)"))

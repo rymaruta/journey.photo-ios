@@ -259,6 +259,40 @@ enum TrunkMotion {
     static let fragmentFlySeconds = 0.46
 }
 
+/// 開けた画面の時計（確かめ役の指摘 2026-11-23: 画面全体を毎コマ作り直していた）。
+/// 時計で動かすのは舞台（`stage`）だけ。割れる、輪、切れ端が飛ぶ、までの一度きりの動きは毎コマ（`nil`）、
+/// 出そろったら回り続ける物（光の筋、きらめき、揺れ）だけを 30 コマ毎秒にする。文は時計ではなく段で出す
+enum TrunkOpenClock {
+    /// 回り続ける物のコマの間（秒）
+    static let loopInterval = 1.0 / 30
+    /// 部品が出始める時刻
+    static var partAt: Double { TrunkMotion.openDelay + 0.12 }
+    /// 切れ端が切符へ入り終わる時刻（持っている部品）
+    static var fragmentDoneAt: Double {
+        partAt + TrunkMotion.fragmentAfterOpen + TrunkMotion.fragmentLiftSeconds + TrunkMotion.fragmentFlySeconds
+    }
+
+    /// 一度きりの動きが全部終わる時刻（これより後は回り続ける物だけ）
+    static func settleAt(duplicate: Bool) -> Double {
+        let split = TrunkMotion.openDelay + TrunkMotion.splitSeconds
+        let part = partAt + TrunkMotion.splitSeconds
+        let shock = partAt + TrunkMotion.shockSeconds
+        let base = max(split, part, shock)
+        return duplicate ? max(base, fragmentDoneAt) : base
+    }
+
+    /// 時計のコマの間（nil は毎コマ）。出そろったら 30 コマ毎秒
+    static func frameInterval(settled: Bool) -> Double? { settled ? loopInterval : nil }
+
+    /// 時計を止めるか（動きを減らす設定・まだ始めていない・画面に出ていない）
+    static func paused(started: Bool, visible: Bool) -> Bool { !started || !visible }
+
+    /// 段階で出る文のうち、経った秒までに出ている数（0〜6）
+    static func textsShown(elapsed: Double) -> Int {
+        TrunkMotion.stageDelays.filter { $0 <= elapsed + 1e-9 }.count
+    }
+}
+
 extension TrunkCrank {
     /// ハンドルの引っかかり（札 #716・案「回すときの手ざわり」）。指の角度 `raw`（0〜360）から、見せる角度を決める:
     /// 目盛り（30°）の間は指の 45% しか進まず（重さ）、目盛りの間の 72% を越えると次の目盛りへ跳ぶ（カチッ）。360 で1周

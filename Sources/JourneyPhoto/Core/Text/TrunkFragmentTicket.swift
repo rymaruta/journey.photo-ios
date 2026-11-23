@@ -72,6 +72,24 @@ enum TrunkFragmentText {
         TrunkPartsBoxText.canExchange(fragments: fragments) ? ready : count(fragments)
     }
 
+    /// トランクの「部品箱」のカードの字（13pt。狭いときは縮めるが、本文の最小 12pt は下回らない）
+    static let tileFontSize: Double = 13
+    static let tileMinimumScale: Double = 12.0 / 13.0
+
+    /// カードの中のかけらの置き場（確かめ役の指摘 2026-11-23: 字を固定の幅にしてカードの外へ出していた）
+    enum TilePlacement: Equatable {
+        /// 印の右（既定の大きさ）。狭ければ切符を外して字だけ
+        case beside
+        /// 名前と数の行の下（アクセシビリティの大きさ）
+        case below
+    }
+
+    /// かけらを出すか・どこに出すか（0 なら出さない）
+    static func tilePlacement(fragments: Int, accessibilitySize: Bool) -> TilePlacement? {
+        guard fragments > 0 else { return nil }
+        return accessibilitySize ? .below : .beside
+    }
+
     /// 投稿のお礼で届いたかけらの札（「かけら +1」）
     static func chip(_ n: Int) -> String { L("かけら +\(n)", "+\(n) fragment") }
 }
