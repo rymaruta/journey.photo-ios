@@ -247,8 +247,7 @@ enum SendSheetLayout {
     /// `canSendPhoto` は DM で送れる写真か（ログイン中・下書きでない・全体に公開）——人の写真でも送れる
     /// （持ち主の写真へ人を連れて行くだけ）ので、送る相手の段はこちらで決めない
     static func canShareToStory(ownerId: String?, me: String?, canSendPhoto: Bool) -> Bool {
-        guard canSendPhoto, let ownerId, !ownerId.isEmpty, let me, !me.isEmpty else { return false }
-        return ownerId == me
+        canSendPhoto && PhotoOwnership.isMine(ownerId: ownerId, me: me)
     }
 
     /// 写真の詳細から出す行動の並び。**ストーリーは自分の、全体に公開した写真だけ**（`canShareToStory`）。

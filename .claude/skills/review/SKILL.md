@@ -20,6 +20,18 @@ description: 別の担当がコードを確かめる（読むだけ）ときの�
 2. 安全: 位置情報（EXIF/GPS の関所 `encodeStripped`）、権限、二重送信。
 3. CLAUDE.md のデザインの決まり: 真鍮は黒地の上だけ・写真の上は白・本文12pt以上・押せるもの44pt・数字は `JPFont.mono`。
 4. iOS 17 で使える書き方か（onChange の2引数など）。
+5. **他人の写真は、その人のもの（CLAUDE.md・絶対）。毎回見る。** 差分の中で次の一覧が増えた・変わったら、1つずつ理由を確かめる。
+   一覧に足した理由が「人の写真で動かない」と言えないものは**直すべき**にする。
+   - iOS: `Tests/JourneyPhotoTests/OthersPhotoExportGuardTests.swift` の `allowedExits`（画像を外へ出す道）・
+     `imageMakers`（画像を作る所）・`photoHoldingTypes`（写真を指す欄を持つ保存・送信の型）・`imageFetchers`（中身を通信で取る所）・
+     `ownOnlySinks`（自分の物へ入れる入口）。入口は `PhotoOwnership.isMine` を通っているか、呼び手まで辿って確かめる
+   - Web: `app/__tests__/othersPhotoWebGuard.test.ts` の `ALLOWED`。サーバー: `api-user/src/__tests__/othersPhotoGuard.test.ts` の
+     `PHOTO_REF_HANDLERS`（`owner` は持ち主の確かめの行が在るか・`reference` は id で指すだけか）・`ORIGINAL_USERS`・`SIGNED_GETTERS`
+   - 一覧の外でも見る: 人の写真の画面（写真の詳細・ホーム・人のプロフィール・ストーリー・DM）に、保存・ダウンロード・画像の共有・
+     画像のコピー・ドラッグ・「ストーリーに載せる」「カードを作る」「編集」「プランやスタンプ帳に入れる」が出ていないか。
+     リンク（ページの URL）の共有と DM の写真の引用は許す
+   - わざと破る試し: 人の写真の入口の `PhotoOwnership.isMine` を外す・一覧に無いファイルに `UIPasteboard.general.image = …` を足す、の2つで
+     見張りが落ちるか
 
 ## 報告の形（日本語）
 

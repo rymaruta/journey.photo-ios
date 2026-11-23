@@ -154,8 +154,9 @@ struct TripShelfList: View {
     /// 写真に個別ページが在るか（`TripBookView.isPublic`）
     var isPublic: (Photo) -> Bool = { _ in false }
     /// 自分の棚か。人の棚（人のプロフィールの「すべての旅」）は偽——説明文から本人向けの
-    /// 後半を落とし、開いた一冊で「この一冊を送る」を出さない（2026-10-16 判断）
-    var isMine = true
+    /// 後半を落とし、開いた一冊で「この一冊を送る」を出さない（2026-10-16 判断）。
+    /// **既定の値を置かない**（2026-11-23 判断・`TripBookView.isMine` と同じ理由）
+    var isMine: Bool
 
     /// 0冊のときの次の一手の題（下の「投稿」の行と同じ語・2026-10-16）
     nonisolated static var startTripTitle: String { L("旅の写真からまとめて", "From a trip in your photos") }

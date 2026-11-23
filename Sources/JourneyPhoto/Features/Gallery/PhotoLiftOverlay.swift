@@ -178,7 +178,7 @@ struct PhotoLiftOverlay: View {
     /// 写真をストーリーの行き先へ運べるか（自分の写真だけ・`PhotoLift.allowsStory`）
     private func allowsStory(_ photo: Photo?) -> Bool {
         guard let photo else { return false }
-        return PhotoLift.allowsStory(ownerId: photo.userId ?? photo.uploadedBy, me: auth.userId)
+        return PhotoLift.allowsStory(ownerId: PhotoOwnership.ownerId(of: photo), me: auth.userId)
     }
 
     /// 顔の段に出す人数
@@ -415,7 +415,8 @@ struct PhotoLiftOverlay: View {
 
     /// ストーリーで紹介: 写真の本体を読んで作る画面を開く（ストーリーは作る画面で確かめてから出すので、取り消しの札は出さない）
     private func openStory(_ photo: Photo) {
-        guard auth.userId != nil, let url = photo.detailImageURL else { return }
+        // 上の帯は自分の写真にしか出さないが、ここでも確かめる（帯の当たりの計算が変わっても人の写真を載せない・2026-11-23）
+        guard PhotoOwnership.isMine(photo: photo, me: auth.userId), let url = photo.detailImageURL else { return }
         let toasts = toasts
         Task {
             let data = try? await URLSession.shared.data(from: url).0

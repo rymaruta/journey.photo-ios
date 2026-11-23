@@ -14,8 +14,10 @@ struct TripBookView: View {
     /// （必ず開ける `/?photo=` に落ちる）
     var isPublic: (Photo) -> Bool = { _ in false }
     /// 自分の一冊か。人のプロフィールから開いた一冊は偽で、「この一冊を送る」を出さない
-    /// （`TripBook.canShare(_:isMine:)`・2026-10-16 判断）
-    var isMine = true
+    /// （`TripBook.canShare(_:isMine:)`・2026-10-16 判断）。
+    /// **既定の値を置かない**（2026-11-23 判断）: 前は既定が真で、入口が渡し忘れると人の一冊でも画像を送れる形だった。
+    /// 開く側が、自分の写真から作った一冊かを必ず書く（`OthersPhotoExportGuardTests`）
+    var isMine: Bool
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore

@@ -1534,7 +1534,7 @@ private struct MyPageTripsShelf<Tools: View>: View {
             // 背表紙の列と説明文は `TripShelfList`（旅の側の部品）。
             // **投稿した一冊が0で端末の一冊があるときは「まだ旅はありません」を出さない**（棚に旅が並んでいる）
             if !trips.isEmpty || !hasDeviceBooks {
-                TripShelfList(trips: trips, isPublic: isPublic)
+                TripShelfList(trips: trips, isPublic: isPublic, isMine: true)
             }
             DeviceTripSection(store: deviceTrips, posted: posted)
             tools

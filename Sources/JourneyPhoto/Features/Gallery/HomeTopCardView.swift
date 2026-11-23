@@ -381,7 +381,9 @@ struct HomeTopCardView: View {
             }
         case .bookReady(let trip):
             NavigationLink {
-                TripBookView(trip: trip, isPublic: LikedPhotos.fromPublicFeed(themePhotos))
+                TripBookView(trip: trip, isPublic: LikedPhotos.fromPublicFeed(themePhotos),
+                            // 一冊ができた知らせは自分の写真（`HomeTopCard.bookReady` の `myPhotos`）から作る
+                            isMine: true)
                     // **開いたら札を下げる**（何度も同じ知らせを出さない）。
                     // 🔴 **ここでは印を残すだけ**——いま札を差し替えると、押した元の
                     // リンクが裏で消え、開いたばかりの一冊が勝手に閉じることがある。

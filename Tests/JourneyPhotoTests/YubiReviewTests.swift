@@ -136,7 +136,7 @@ final class YubiReviewTests: XCTestCase {
         for text in [rules, overlay] {
             XCTAssertFalse(text.contains("allowsStory: Bool ="), "ストーリーに出せるかに既定値がある")
         }
-        XCTAssertTrue(overlay.contains("return PhotoLift.allowsStory(ownerId: photo.userId ?? photo.uploadedBy, me: auth.userId)"))
+        XCTAssertTrue(overlay.contains("return PhotoLift.allowsStory(ownerId: PhotoOwnership.ownerId(of: photo), me: auth.userId)"))
         // 画面から行き先を決める呼び出しは、どれも写真ごとの答え（`allowsStory(…)`）を渡す
         let calls = overlay.components(separatedBy: "allowsStory: ").dropFirst()
         XCTAssertGreaterThanOrEqual(calls.count, 4)
