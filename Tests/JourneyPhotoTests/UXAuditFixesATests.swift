@@ -231,7 +231,7 @@ final class UXAuditFixesATests: XCTestCase {
         XCTAssertFalse(SpotScreen.firstPhotoInvite.contains("0"))
         XCTAssertFalse(SpotScreen.subtitle(region: "熊本県", photoCount: 0).contains("0枚"))
         XCTAssertTrue(SpotScreen.subtitle(region: "熊本県", photoCount: 0).contains(SpotScreen.firstPhotoInvite))
-        XCTAssertEqual(OfficialSpotView.postLabel(hasLinked: false), L("最初の1枚を投稿", "Post the first photo"))
+        XCTAssertEqual(OfficialSpotView.postLabel(hasLinked: false), L("最初の1枚を投稿する", "Post the first photo"))
         XCTAssertEqual(OfficialSpotView.postLabel(hasLinked: true),
                        L("この観光スポットの写真を投稿", "Post a photo of this spot"))
     }

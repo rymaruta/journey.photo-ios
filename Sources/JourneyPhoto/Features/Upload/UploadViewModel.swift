@@ -13,6 +13,8 @@ struct UploadSpotTarget: Equatable {
     let name: String
     /// 公開してよい座標（約1km）。無いスポットは写真の位置のまま
     let coords: Photo.Coords?
+    /// 開いたときに、この観光スポットの写真が0枚と読めていた（札 #710 の案7）。投稿のあと「〇〇の最初の1枚になりました」と言う
+    var announcesFirst = false
 
     init(spotId: String, name: String, coords: Photo.Coords?) {
         self.spotId = spotId

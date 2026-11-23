@@ -423,9 +423,16 @@ struct PostedPlaceNotice: Equatable {
     ///
     /// - 行きたい場所に入れた場所で、**まだ知らせていない**場所の写真が上がった: 「行きたい場所に行けました」と場所の名前
     ///   （同じ場所の2枚目からは通常の知らせ・`WishVisitMemory`）
+    /// - 写真の無い観光スポット（開いたときに0枚と読めていた・`UploadSpotTarget.announcesFirst`）に、その観光スポットの写真として
+    ///   上がった: 「〇〇の最初の1枚になりました」（札 #710 の案7。行きたい場所より先に言う）
     static func make(posted: [Photo], wishKeys: Set<String>, spots: [OfficialSpot],
-                     announced: Set<String>) -> (notice: PostedPlaceNotice, wishKey: String?)? {
-        if let hit = WishVisit.notice(posted: posted, keys: wishKeys, spots: spots, announced: announced) {
+                     announced: Set<String>, spot: UploadSpotTarget? = nil,
+                     postedToSpot: Int = 0) -> (notice: PostedPlaceNotice, wishKey: String?)? {
+        let hit = WishVisit.notice(posted: posted, keys: wishKeys, spots: spots, announced: announced)
+        if let spot, spot.announcesFirst, postedToSpot > 0 {
+            return (PostedPlaceNotice(title: FirstPhoto.postedTitle(spot.name), detail: FirstPhoto.postedDetail), hit?.key)
+        }
+        if let hit {
             return (PostedPlaceNotice(title: WishVisit.noticeTitle, detail: hit.name), hit.key)
         }
         return nil

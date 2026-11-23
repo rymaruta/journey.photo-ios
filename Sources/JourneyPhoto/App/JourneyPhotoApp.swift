@@ -321,7 +321,8 @@ struct JourneyPhotoApp: App {
                         let index = (try? await spotService.fetchIndex()) ?? []
                         let memory = WishVisitMemory()
                         guard let made = PostedPlaceNotice.make(posted: posted, wishKeys: wishes.spotIds, spots: index,
-                                                                announced: memory.announced(for: ownerId)) else { return nil }
+                                                                announced: memory.announced(for: ownerId),
+                                                                spot: spot, postedToSpot: postedToSpot) else { return nil }
                         if let key = made.wishKey { memory.note([key], for: ownerId) }
                         return made.notice
                     }
