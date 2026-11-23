@@ -334,6 +334,8 @@ public struct Animation {
     public static let `default` = Animation()
     /// 繰り返す（骨格の脈打ち・本物の `repeatForever(autoreverses:)`）
     public func repeatForever(autoreverses: Bool = true) -> Animation { self }
+    /// 遅らせて始める（本物と同じ。荷札を押して少し遅れて傾く）
+    public func delay(_ delay: Double) -> Animation { self }
     /// 3次の曲線（旅の記録の線を引く動き）
     public static func timingCurve(_ c0x: Double, _ c0y: Double, _ c1x: Double, _ c1y: Double,
                                    duration: Double) -> Animation { Animation() }

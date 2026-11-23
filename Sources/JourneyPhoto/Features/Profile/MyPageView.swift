@@ -1198,62 +1198,73 @@ struct MyPageView: View {
         let trips = tabMemo.shelfTrips(model.photos)
         // 端末の写真の一冊（2026-10-16・`DeviceTripSection`）。投稿済みの日がある旅は外す
         let posted = tabMemo.postedShots(model.photos)
+        // **旅の道具はタブの頭に置く**（札 #714・2026-11-23 owner 決定）。旅が何冊増えても道具の位置は変わらない
+        tripToolsCard
         if trips.isEmpty && model.isLoading {
             // **読み込み中に「空」の文言を出さない**（初回は写真がまだ0枚）。v2: 行の骨格
             JPLoadingState(kind: .rows)
                 .padding(.horizontal, ProfileV2.gutter)
         } else {
             // 公開一覧に載っている写真だけ個別ページが在る（`LikedPhotos.fromPublicFeed`）
-            MyPageTripsShelf(deviceTrips: deviceTrips, trips: trips, posted: posted,
-                             isPublic: LikedPhotos.fromPublicFeed(tabMemo.visibleFeed(feed, hidden: dropped)),
-                             tools: tripToolsCard)
+            MyPageTripsShelf(deviceTrips: deviceTrips, trips: PreviewSession.tripShelfSample(trips, photos: model.photos),
+                             posted: posted,
+                             isPublic: LikedPhotos.fromPublicFeed(tabMemo.visibleFeed(feed, hidden: dropped)))
         }
     }
 
-    /// 旅の記録の下の、共同アルバムと旅行プランの入口（2026-10-07）。
+    /// 旅の記録のタブの頭の、**荷札の道具の列**（札 #714・2026-11-23 owner 決定・案の頁「旅の道具の入口」）。
     ///
-    /// **入口がメニューと設定の奥にしか無かった。** 板 05c に寄せたときにマイページの
-    /// ボタンの列を外し、アルバムは設定・旅行プランはメニューからだけになった。
-    /// どちらも「旅」の道具なので、旅の記録のタブに置く（板 MyPage の旅の記録にも
-    /// 「行きたい場所から旅行プランを作る」の行がある）。形は設定・メニューと同じ札と行
+    /// 2026-10-07 に縦の札の行で置いた入口（共同アルバム・旅行プラン・すれちがい帳・トランク）を、横に送る荷札の列に替えた。
+    /// 旅の一冊の下にあると旅が増えるほど道具が下がった（約1.5画面）。**入口は増やさない**（同じ行き先を札にしただけ）。
+    /// 並びは決まった順（`TripTool`）で、新しい道具は最後に足す。件数は真鍮の件数バッジ（トランクの貼っていないラベル）
     private var tripToolsCard: some View {
-        JPCard {
-            // 旅のトランク（2026-10-17 owner 承認・モック「旅のトランク」）。投稿のお礼に届くラベルを貼っていく。
-            // **口が読めたことのある人にだけ出す**（サーバーが出ていない間は隠す・`TrunkAvailability`）
-            // 2026-10-18 判断: 入口はマイページの上の札（`TrunkProfileChip`）と設定にも出したが、**この行は残す**。
-            // 旅の道具（アルバム・旅行プラン・すれちがい帳）と同じ並びで探す人がいる。画面写真の試験の道もここ
-            if trunkAvailability.isAvailable {
-                // 2026-11-23 判断（札 #709）: とおまわり号の行を外した（戻すには枝 archive/camper（1d8dbfc251b0）から）。
-                // トランクの行は「いま何があるか」と貼っていないラベルの件数バッジを出す（案の頁 版3）。数を見張るのはこの行の中だけ
-                MyPageTrunkRow(ownerName: model.profile?.name)
-                JPCardDivider()
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: TripToolTag.spacing) {
+                ForEach(TripTool.shown(trunkAvailable: trunkAvailability.isAvailable)) { tool in
+                    switch tool {
+                    case .plans:
+                        NavigationLink { TripPlansView() } label: {
+                            TripToolTag(title: tool.title)
+                        }
+                        .buttonStyle(TripToolTagStyle())
+                        .accessibilityIdentifier("trips.plans")
+                    case .albums:
+                        NavigationLink { AlbumsView() } label: {
+                            TripToolTag(title: tool.title)
+                        }
+                        .buttonStyle(TripToolTagStyle())
+                        .accessibilityIdentifier("trips.albums")
+                    case .trunk:
+                        // 旅のトランク（2026-10-17 owner 承認）。**口が読めたことのある人にだけ出す**（`TrunkAvailability`・`TripTool.shown`）。
+                        // 貼っていないラベルの枚数を件数バッジで出す。数を見張るのはこの札の中だけ
+                        MyPageTrunkRow(ownerName: model.profile?.name)
+                    case .stampBook:
+                        // スタンプ帳（#712）はまだ無い。列の場所だけ用意してある（`TripTool.shown` で出さない）
+                        EmptyView()
+                    case .passBook:
+                        // すれちがい帳（板 PassBook の戻り先がマイページ・2026-10-16）
+                        NavigationLink { PassBookView() } label: {
+                            TripToolTag(title: tool.title)
+                        }
+                        .buttonStyle(TripToolTagStyle())
+                        .accessibilityIdentifier("trips.passBook")
+                    }
+                }
             }
-            NavigationLink { AlbumsView() } label: {
-                JPRowLabel(title: Labels.Navigation.albums, systemImage: "rectangle.stack",
-                           detail: L("招待リンクで、旅の仲間と写真を集める",
-                                     "Collect photos with your travel companions via an invite link"))
-            }
-            .buttonStyle(JPRowButtonStyle())
-            .accessibilityIdentifier("trips.albums")
-            JPCardDivider()
-            NavigationLink { TripPlansView() } label: {
-                JPRowLabel(title: L("旅行プラン", "Trip plans"), systemImage: "calendar",
-                           detail: L("行きたい場所を、回る順に並べる",
-                                     "Put the places you want to visit in order"))
-            }
-            .buttonStyle(JPRowButtonStyle())
-            .accessibilityIdentifier("trips.plans")
-            JPCardDivider()
-            // すれちがい帳（板 PassBook の戻り先がマイページ・2026-10-16）。旅先で受け取ったカード
-            NavigationLink { PassBookView() } label: {
-                JPRowLabel(title: L("すれちがい帳", "Pass book"), systemImage: "rectangle.portrait.on.rectangle.portrait",
-                           detail: L("旅先ですれちがった人から届いた乗車券",
-                                     "Tickets from people you passed on your travels"))
-            }
-            .buttonStyle(JPRowButtonStyle())
-            .accessibilityIdentifier("trips.passBook")
+            .padding(.leading, ProfileV2.gutter)
+            .padding(.trailing, TripToolTag.edgeFade)
+            .padding(.vertical, 2)
         }
-        .padding(.horizontal, ProfileV2.gutter)
+        // 右の端は 18pt だけ黒へ溶かす（横に送れると分かる）。最後まで送ると札は溶けた所より左に来る
+        .mask {
+            HStack(spacing: 0) {
+                Color.black
+                LinearGradient(colors: [Color.black, Color.black.opacity(0)], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: TripToolTag.edgeFade)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L("旅の道具", "Travel tools"))
     }
 
     /// 「行きたい」の地点を導く写真の集まり。自分の写真を先に、公開一覧を後に
@@ -1486,9 +1497,9 @@ struct MyPageGridCell: View {
     }
 }
 
-/// 旅の記録の「旅のトランク」の行（2026-11-23・札 #709・案の頁「トランクを見やすく」版3）。
-/// 説明の行で「いま何があるか」を言い（`TrunkEntryText.stock`）、貼っていないラベルの枚数を真鍮の件数バッジで出す（メニューの行と同じ）。
-/// **数の見張りはこの行の中だけ**（`TrunkEntryStore` が変わってもマイページ全体を描き直さない）。
+/// 旅の記録の道具の列の「旅のトランク」の札（2026-11-23・札 #709 → #714 で荷札に）。
+/// 貼っていないラベルの枚数を真鍮の件数バッジで出す（メニューの行と同じ）。読み上げは「いま何があるか」まで言う。
+/// **数の見張りはこの札の中だけ**（`TrunkEntryStore` が変わってもマイページ全体を描き直さない）。
 /// 読むかは決まりのとおり（`TrunkEntryRule.needsRead`・覚えている人は 6 時間に1回）で、トランクから戻ったら読み直す
 private struct MyPageTrunkRow: View {
     let ownerName: String?
@@ -1501,11 +1512,9 @@ private struct MyPageTrunkRow: View {
             TrunkView(ownerName: ownerName)
                 .onDisappear { trunkEntry.markStale() }
         } label: {
-            JPRowLabel(title: TrunkEntryText.title, systemImage: "suitcase",
-                       detail: TrunkEntryText.stock(trunkEntry.summary),
-                       badge: TrunkEntryText.badge(trunkEntry.summary))
+            TripToolTag(title: TripTool.trunk.title, badge: TrunkEntryText.badge(trunkEntry.summary))
         }
-        .buttonStyle(JPRowButtonStyle())
+        .buttonStyle(TripToolTagStyle())
         .accessibilityValue(TrunkEntryText.accessibilityValue(trunkEntry.summary))
         .accessibilityIdentifier("trips.trunk")
         // 出るたびに読むかを決める（トランクから戻ったときも走る。`markStale` が無ければ読まない）
@@ -1516,25 +1525,21 @@ private struct MyPageTrunkRow: View {
     }
 }
 
-/// 旅の記録の札の中身（投稿した一冊・端末の一冊・旅の道具）。**端末の一冊の店を見張るのはここだけ**
-/// （2026-10-28 判断・`MyPageView.deviceTrips` の注記）。端末の写真の読み取りで描き直すのはこの札の中だけ
-private struct MyPageTripsShelf<Tools: View>: View {
+/// 旅の記録の棚（投稿した一冊と端末の一冊を1つの本棚に・札 #714）。**端末の一冊の店を見張るのはここだけ**
+/// （2026-10-28 判断・`MyPageView.deviceTrips` の注記）。端末の写真の読み取りで描き直すのはこの棚の中だけ
+private struct MyPageTripsShelf: View {
     @ObservedObject var deviceTrips: DeviceTripShelfStore
     let trips: [TripBook.Trip]
     let posted: [LibraryTrips.PostedShot]
     let isPublic: (Photo) -> Bool
-    let tools: Tools
 
     var body: some View {
-        let hasDeviceBooks = !deviceTrips.books(posted: posted, isMine: true).isEmpty
+        // 見本の「旅が無いとき」では端末の旅も出さない（`PreviewSession.tripShelfSample`）
+        let deviceBooks = PreviewSession.hidesDeviceTrips ? [] : deviceTrips.books(posted: posted, isMine: true)
         VStack(alignment: .leading, spacing: 20) {
-            // 背表紙の列と説明文は `TripShelfList`（旅の側の部品）。
-            // **投稿した一冊が0で端末の一冊があるときは「まだ旅はありません」を出さない**（棚に旅が並んでいる）
-            if !trips.isEmpty || !hasDeviceBooks {
-                TripShelfList(trips: trips, isPublic: isPublic)
-            }
-            DeviceTripSection(store: deviceTrips, posted: posted)
-            tools
+            // 背表紙の棚と、旅が無いときの1行は `TripShelfList`（旅の側の部品）
+            TripShelfList(trips: trips, isPublic: isPublic, deviceBooks: deviceBooks, deviceNames: deviceTrips.names)
+            DeviceTripSection(store: deviceTrips)
         }
     }
 }

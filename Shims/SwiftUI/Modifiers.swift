@@ -533,6 +533,9 @@ public struct NamedCoordinateSpace {
 public struct SensoryFeedback {
     public enum Weight { case light, medium, heavy }
     public static func impact(weight: Weight = .medium, intensity: Double = 1) -> SensoryFeedback { SensoryFeedback() }
+    /// 柔らかさで決める振動（本物と同じ・iOS 17。本を開き切ってはずむ瞬間）
+    public enum Flexibility { case rigid, solid, soft }
+    public static func impact(flexibility: Flexibility, intensity: Double = 1) -> SensoryFeedback { SensoryFeedback() }
     public static let selection = SensoryFeedback()
     public static let success = SensoryFeedback()
     public static let warning = SensoryFeedback()
@@ -606,6 +609,10 @@ extension View {
     /// 同じ id の部品を、選び替えたとき形ごと移す（本物と同じ・プロフィールの札の下線）
     public func matchedGeometryEffect<ID: Hashable>(id: ID, in namespace: Namespace.ID,
                                                     isSource: Bool = true) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 積む画面の移り変わりの元（本物と同じ・iOS 18。旅の記録の背表紙から一冊を広げる）
+    public func matchedTransitionSource<ID: Hashable>(id: ID, in namespace: Namespace.ID) -> ModifiedContent<Self, Mod.Layout> { ModifiedContent() }
+    /// 積む画面の移り変わり（本物と同じ・iOS 18）
+    public func navigationTransition<T: NavigationTransition>(_ style: T) -> ModifiedContent<Self, Mod.Navigation> { ModifiedContent() }
     public func onTapGesture(count: Int = 1, perform action: @escaping () -> Void) -> ModifiedContent<Self, Mod.Input> { ModifiedContent() }
     /// 押した点を受け取る（本物と同じ・iOS 17。座標の既定は `.local`）
     public func onTapGesture(count: Int = 1, coordinateSpace: NamedCoordinateSpace = .local,
@@ -743,4 +750,15 @@ extension View {
     public func overlayPreferenceValue<K: PreferenceKey, V: View>(
         _ key: K.Type, alignment: Alignment = .center,
         @ViewBuilder _ transform: @escaping (K.Value) -> V) -> Self { self }
+}
+
+/// 積む画面の移り変わり（本物と同じ・iOS 18。`.zoom(sourceID:in:)` と `.automatic`）
+public protocol NavigationTransition {}
+public struct ZoomNavigationTransition: NavigationTransition {}
+public struct AutomaticNavigationTransition: NavigationTransition {}
+extension NavigationTransition where Self == ZoomNavigationTransition {
+    public static func zoom<ID: Hashable>(sourceID: ID, in namespace: Namespace.ID) -> ZoomNavigationTransition { ZoomNavigationTransition() }
+}
+extension NavigationTransition where Self == AutomaticNavigationTransition {
+    public static var automatic: AutomaticNavigationTransition { AutomaticNavigationTransition() }
 }
