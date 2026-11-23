@@ -210,6 +210,7 @@ enum PreviewBackend {
                       stories: Bool = false,
                       dm: Bool = false,
                       groups: Bool = false,
+                      signinMethods: String? = nil,
                       followNone: Bool = false,
                       commentNotice: Bool = false,
                       publicFeed: () async -> [[String: Any]] = { [] },
@@ -257,6 +258,12 @@ enum PreviewBackend {
             if let answer = groupReply(method: method, parts: parts, json: json, me: uid, now: now, names: names) {
                 return answer
             }
+        }
+
+        // 「サインインの方法」（`-JPPreviewSigninMethods` のときだけ・札 #601）
+        if let shape = signinMethods, parts.count >= 2, parts[0] == "user", parts[1] == "signin-methods",
+           let answer = signinMethodsReply(method: method, parts: parts, shape: shape) {
+            return answer
         }
 
         switch (method, parts) {
@@ -436,6 +443,38 @@ enum PreviewBackend {
 
         default:
             return .unsupported
+        }
+    }
+
+    /// 「サインインの方法」の見本の答え（サーバーの `signinMethods.ts` と同じ形）。
+    /// `linked`: メールで作った人が Apple とつないでいる（Apple は解除できる）。`last`: Apple で作った人（Apple は最後の1つ）。
+    /// 解除は覚えない（解除した後の一覧を返すだけ）
+    static func signinMethodsReply(method: String, parts: [String], shape: String) -> Reply? {
+        let last = shape == "last"
+        func rows(appleLinked: Bool) -> [[String: Any]] {
+            var apple: [String: Any] = ["id": "apple", "linked": appleLinked, "removable": appleLinked && !last]
+            if appleLinked && last {
+                apple["blockedReason"] = "ほかに入る方法が無いので解除できません。ログイン画面の「パスワードを忘れた」から、パスワードを設定できます"
+            }
+            return [
+                ["id": "email", "linked": !last, "removable": false, "email": "preview@example.com"],
+                apple,
+                ["id": "google", "linked": false, "removable": false],
+            ]
+        }
+        switch (method, parts.count) {
+        case ("GET", 2):
+            return .json(["methods": rows(appleLinked: true)])
+        case ("DELETE", 3) where parts[2] == "apple":
+            if last {
+                return .json(["error": "ほかに入る方法が無いので解除できません。ログイン画面の「パスワードを忘れた」から、パスワードを設定できます",
+                              "code": "last_signin_method"], status: 409)
+            }
+            return .json(["methods": rows(appleLinked: false)])
+        case ("DELETE", 3):
+            return .json(["error": "連携していません", "code": "not_linked"], status: 404)
+        default:
+            return nil
         }
     }
 
@@ -744,6 +783,7 @@ final class PreviewBackendProtocol: URLProtocol {
                 stories: PreviewSession.stories,
                 dm: PreviewSession.dm,
                 groups: PreviewSession.groups,
+                signinMethods: PreviewSession.signinMethods,
                 followNone: PreviewSession.followNone,
                 commentNotice: PreviewSession.commentNotice,
                 publicFeed: { await PreviewBackend.readPublicFeed() },

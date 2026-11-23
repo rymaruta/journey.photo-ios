@@ -369,6 +369,9 @@ final class AuthStore: ObservableObject {
             let answer: FederatedSignInStart
             do {
                 answer = try await start()
+            } catch let unlinked as FederatedSignInUnlinked {
+                // 本人が「サインインの方法」で解除した ID（サーバーの 409・`code`）。サーバーの文をログイン画面に出す
+                throw unlinked
             } catch where FederatedSignInBusy.matches(error) {
                 // 2つの端末で同時に押した（サーバーの 409）。英語の画面にも出せる文にする
                 throw FederatedSignInBusy()

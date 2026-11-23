@@ -28,6 +28,8 @@ struct SettingsView: View {
     @State private var showFeedback = false
     /// 使い方（Web の /help）をアプリの中の Safari で開く（2026-11-12 札 #517・`HelpLink`）
     @State private var showHelp = false
+    /// 「サインインの方法」の行を出すか（サーバーが口を持つときだけ・`loadSigninMethodsAvailability`）
+    @State private var signinMethodsAvailable = false
     /// トランクを見せる（板 TrunkPrivacy・2026-10-18）。トランクの口がある人にだけ出す（`TrunkAvailability`）
     @StateObject private var trunkPrivacy = TrunkPrivacyModel()
 
@@ -51,6 +53,7 @@ struct SettingsView: View {
         list
             // Pro の節のためのプロフィール。名前の横を決めた・購入した（`noteProfileChanged`）ら読み直す
             .task(id: auth.profileRevision) { await loadMyProfile() }
+            .task(id: auth.userId) { await loadSigninMethodsAvailability() }
             // 旅のトランクの行（マイページを開く前に設定へ来た人にも出す）と、トランクの見せる設定・わたしの乗車券の揃え。
             // 読むかはどちらも決まりのとおり（覚えている人は 6 時間に1回・`TrunkAvailabilityRule`・`TrunkEntryRule`）。
             // `GET /user/trunk` は入口の店（`TrunkEntryStore`）の1本にまとめる
@@ -300,7 +303,25 @@ struct SettingsView: View {
             }
             .buttonStyle(JPRowButtonStyle())
             .accessibilityIdentifier("settings.password")
+            // 「サインインの方法」（札 #601・2026-11-23 owner）。🔴 サーバーが口を持つときだけ出す
+            // （Apple のスタックを配っていない本番は道の無い 404 → 出さない・`SigninMethodsService.list`）
+            if signinMethodsAvailable {
+                JPCardDivider()
+                NavigationLink { SigninMethodsView() } label: {
+                    JPRowLabel(title: SigninMethodsText.title,
+                               detail: L("メールアドレス、Apple、Google", "Email, Apple, Google"))
+                }
+                .buttonStyle(JPRowButtonStyle())
+                .accessibilityIdentifier("settings.signinMethods")
+            }
         }
+    }
+
+    /// サーバーが「サインインの方法」の口を持っているか（読めた答えが nil でなければ持っている）
+    private func loadSigninMethodsAvailability() async {
+        guard auth.userId != nil else { signinMethodsAvailable = false; return }
+        let available = ((try? await environment.signinMethods.list()) ?? nil) != nil
+        signinMethodsAvailable = available
     }
 
     // **ログアウトは板に無いが残す。** 板ではメニュー（01d）にあり、
@@ -378,7 +399,7 @@ enum SettingsOutline {
                                    "settings.searchHidden"]
             case .photos: return ["settings.compositionCatalog", "settings.storage"]
             case .help: return ["settings.help", "settings.whatsNew", "settings.legal", "settings.feedback", "settings.contact"]
-            case .account: return ["settings.password"]
+            case .account: return ["settings.password", "settings.signinMethods"]
             case .danger: return ["settings.logout", "settings.deleteAccount"]
             }
         }

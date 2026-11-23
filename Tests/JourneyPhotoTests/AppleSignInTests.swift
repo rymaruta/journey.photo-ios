@@ -187,6 +187,47 @@ final class AppleSignInTests: XCTestCase {
         XCTAssertEqual(auth.errorMessage, AuthStore.federatedBusy)
     }
 
+    /// 🔴 「サインインの方法」で解除した ID（サーバーの 409・`code` が `*_signin_unlinked`）は、サーバーの文をそのまま出す。
+    /// 見分けるのは本文の `code`（文の一部ではない・2026-11-23 確かめ役の見直し）。「途中です」と取り違えない。Cognito に進まない
+    func testUnlinkedServerMessageIsShown() async {
+        let text = "この Apple ID の連携は解除されています。メールアドレスでログインしてください"
+        StubProtocol.respond(path: "/auth/apple", status: 409, body: #"{"error":"\#(text)","code":"apple_signin_unlinked"}"#)
+        let calls = Calls()
+        let auth = store(calls)
+        await auth.restore()
+        let service = AppleSignInService(api: api(token: nil))
+        let started = await auth.signInWithApple(credential) { try await service.start($0) }
+        XCTAssertNil(started)
+        XCTAssertTrue(calls.signInWith.isEmpty)
+        XCTAssertEqual(auth.errorMessage, text)
+
+        // 同じ 409 でも `code` が「途中」なら「途中です」（文に同じ言葉が入っていても、`code` で決める）
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/auth/apple", status: 409,
+                             body: #"{"error":"連携は解除されています（試験のための紛らわしい文）","code":"apple_signin_busy"}"#)
+        _ = await auth.signInWithApple(credential) { try await service.start($0) }
+        XCTAssertEqual(auth.errorMessage, AuthStore.federatedBusy)
+
+        // Google も同じ
+        StubProtocol.reset()
+        let gtext = "この Google アカウントの連携は解除されています。メールアドレスでログインしてください"
+        StubProtocol.respond(path: "/auth/google", status: 409, body: #"{"error":"\#(gtext)","code":"google_signin_unlinked"}"#)
+        let google = GoogleSignInService(api: api(token: nil))
+        let g = await auth.signInWithGoogle(GoogleSignInCredential(idToken: "g", rawNonce: "r", displayName: nil)!) { try await google.start($0) }
+        XCTAssertNil(g)
+        XCTAssertEqual(auth.errorMessage, gtext)
+    }
+
+    /// `code` の見分けそのもの（409 でないもの・知らない `code` は包まない）
+    func testUnlinkedWrapsOnlyByCode() async {
+        let refusal = APIError.server(status: 409, message: "x")
+        XCTAssertEqual(FederatedSignInUnlinked.wrap(refusal, code: "apple_signin_unlinked") as? FederatedSignInUnlinked,
+                       FederatedSignInUnlinked(message: "x"))
+        XCTAssertNil(FederatedSignInUnlinked.wrap(refusal, code: "apple_signin_busy") as? FederatedSignInUnlinked)
+        XCTAssertNil(FederatedSignInUnlinked.wrap(refusal, code: nil) as? FederatedSignInUnlinked)
+        XCTAssertNil(FederatedSignInUnlinked.wrap(APIError.server(status: 400, message: "x"), code: "apple_signin_unlinked") as? FederatedSignInUnlinked)
+    }
+
     // MARK: - Google でログイン（札 #715）
 
     func testGoogleStartSendsIdTokenAndRawNonce() async throws {

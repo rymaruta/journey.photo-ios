@@ -61,7 +61,10 @@ struct AppleSignInService {
 
     /// サーバーに Apple の資格情報と nonce の元の値を渡し、ログインに使う Cognito のユーザー名と券を受け取る
     func start(_ credential: AppleSignInCredential) async throws -> Started {
-        try await api.anonymous(.post, "/auth/apple", body: Self.body(for: credential), as: Started.self)
+        // 解除済みの断り（409・`code`）は `FederatedSignInUnlinked` に包む
+        try await FederatedSignInUnlinked.refusing {
+            try await api.anonymous(.post, "/auth/apple", body: Self.body(for: credential), as: Started.self)
+        }
     }
 }
 

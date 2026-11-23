@@ -139,6 +139,12 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
             }
             return
         }
+        // 「Apple でサインインできます」などの知らせ（札 #601・2026-11-23 owner）: 「サインインの方法」を開く
+        // （サーバーの `federatedNotice.ts` が `{type: "signin_methods"}` を付ける）。ベルの一覧には積まれない種類
+        if NotificationRouter.isSigninMethods(response.notification.request.content.userInfo) {
+            await MainActor.run { NotificationRouter.shared.openSigninMethods() }
+            return
+        }
         // メッセージ（`NOTIF_DM`・2026-11-10 札 #505）: お知らせではなく、その会話を開く。
         // ベルの一覧には積まれない種類（サーバーは `notifs#` に書かない）
         if let conversationId = NotificationRouter.dmConversationId(response.notification.request.content.userInfo) {
@@ -235,6 +241,29 @@ final class NotificationRouter: ObservableObject {
     nonisolated static func presentation(forDMWhileShowing showing: Bool) -> UNNotificationPresentationOptions {
         showing ? [] : [.banner, .list, .sound, .badge]
     }
+
+    /// 「サインインの方法」の知らせを押した回数（`RootView` がその画面を出す・札 #601）
+    @Published private(set) var signinMethodsRequests = 0
+    /// 押したがまだ画面が受け取っていない（冷えた起動で押した回）
+    private(set) var hasPendingSigninMethods = false
+
+    func openSigninMethods() {
+        hasPendingSigninMethods = true
+        signinMethodsRequests += 1
+    }
+
+    /// 受け取る（1回だけ）
+    func takeSigninMethods() -> Bool {
+        defer { hasPendingSigninMethods = false }
+        return hasPendingSigninMethods
+    }
+
+    /// 「サインインの方法」を開く知らせか（サーバーの `PUSH_TYPE`）
+    nonisolated static func isSigninMethods(_ userInfo: [AnyHashable: Any]) -> Bool {
+        (userInfo["type"] as? String) == signinMethodsPushType
+    }
+
+    nonisolated static let signinMethodsPushType = "signin_methods"
 
     /// メッセージの通知を押した回数（`RootView` が受信箱を出して、その会話を積む）
     @Published private(set) var conversationRequests = 0
