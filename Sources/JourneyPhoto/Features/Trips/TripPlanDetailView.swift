@@ -881,7 +881,7 @@ struct TripPlanDetailView: View {
                 if let proposal = replan {
                     TripReplanPreview(proposal: proposal, showingAfter: $replanShowingAfter,
                                       heading: { di, day in dayHeading(di, day) },
-                                      resolve: { TripDraft.place(for: $0, index: index, places: places) })
+                                      resolve: { TripDraft.place(for: $0, index: index, places: places, loading: !indexTried) })
                 } else {
                     // 通し番号（1日目 1・2、2日目 3 …・板 TripPlanDays）。圏外の画面・地図の画像の点と同じ数え方
                     let numbers = TripStyle.stopNumbers(days.map(\.items.count))
@@ -1387,8 +1387,10 @@ struct TripPlanDetailView: View {
 
     private func itemRow(_ di: Int, _ ii: Int, _ item: TripItem, number: Int,
                          season: String?, chips: [TripDraft.TimeChip], time: TripTimes.Row? = nil) -> some View {
-        let name = TripPlanText.label(for: item, index: index, places: places)
         let pending = TripPlanText.isPending(item, index: index, loading: !indexTried)
+        // 2026-11-23 判断（確かめ役の指摘）: 骨組みの間は名前を「読み込み中」にし、「…」と ≡ と「替える」は出さない
+        // （前は骨組みの横の「…」の読み上げと ≡ に「観光スポット（読み込めませんでした）」が出ていた）
+        let name = TripPlanText.displayName(for: item, index: index, places: places, loading: !indexTried)
         // 右の印は「…」と ≡ の2つ（2026-11-12 判断・1.1.85・札 #570・資料「みんなで埋める旅行プラン」の場面7）。
         // - 2026-11-11 は「…」1つにして、並べ替えは行を押さえて運ぶ形だった。**どこを掴めば動くかが見えなかった**ので、
         //   行の右端に ≡ の持ち手を常に出す（owner「ドラッグアンドドロップで入れ替えたり…簡単に操作できるように」）
@@ -1403,11 +1405,13 @@ struct TripPlanDetailView: View {
                     TripStopSkeleton(number: number)
                 } else {
                     itemLink(item, name: name, number: number, season: season, chips: chips, time: time)
+                    itemMenu(di, ii, item, name: name)
+                    dragHandle(di, ii, item, name: name)
                 }
-                itemMenu(di, ii, item, name: name)
-                dragHandle(di, ii, item, name: name)
             }
-            aiSwapButton(di, ii, item, name: name)
+            if !pending {
+                aiSwapButton(di, ii, item, name: name)
+            }
         }
         .overlay(alignment: .top) { dropLine(DropSpot(day: di, item: ii)) }
         .dropDestination(for: String.self) { items, _ in
@@ -1481,7 +1485,7 @@ struct TripPlanDetailView: View {
 
     /// 外した場所の行（日の下・点線の枠・打ち消した名前と「戻す」）。押す回数は 1（以前は戻す道が無く、足し直していた）
     private func removedRow(_ removed: TripPlanEdit.Removed) -> some View {
-        let name = TripPlanText.label(for: removed.item, index: index, places: places)
+        let name = TripPlanText.displayName(for: removed.item, index: index, places: places, loading: !indexTried)
         let pending = TripPlanText.isPending(removed.item, index: index, loading: !indexTried)
         return HStack(spacing: JPSpace.xs) {
             if pending {
@@ -1904,7 +1908,7 @@ struct TripPlanDetailView: View {
                 .padding(.horizontal, JPSpace.gutter)
             shareStrip(plan).padding(.horizontal, JPSpace.gutter)
             TripChatPane(planId: planId, plan: plan, members: members,
-                         resolveName: { TripPlanText.label(for: $0, index: index, places: places) })
+                         resolveName: { TripPlanText.displayName(for: $0, index: index, places: places, loading: !indexTried) })
         }
         .padding(.top, JPSpace.xs)
         .onAppear { chatUnread = false }
@@ -2160,11 +2164,18 @@ struct TripAISwapTarget: Identifiable {
 /// 番号の丸は本物と同じ（日程の番号は先に分かる）、名前と季節の一文は灰の棒（`AskLoadingSkeleton` の流れの骨組みと同じ surface-4）
 struct TripStopSkeleton: View {
     let number: Int
+    /// 行の写真の欄の寸法（44pt・角10）
+    static let photoSide: CGFloat = 44
+    static let photoCorner: CGFloat = 10
 
     var body: some View {
         HStack(alignment: .top, spacing: JPSpace.s) {
             TripStopNumber(number: number)
                 .padding(.top, 2)
+            // 写真の欄と同じ枠（44pt・角10）。行に写真の欄が入っても、読み込み終わりで名前が横にずれない（2026-11-23 判断）
+            RoundedRectangle(cornerRadius: Self.photoCorner)
+                .fill(WebTheme.surface4)
+                .frame(width: Self.photoSide, height: Self.photoSide)
             VStack(alignment: .leading, spacing: 6) {
                 Self.bone(width: 150, height: 16)
                 Self.bone(width: 80, height: 12)

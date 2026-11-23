@@ -172,7 +172,11 @@ enum SearchSentence {
 
     /// 表で読む。**長い言葉から当て、当てた所は使い切る**（「夜明け」が「夜」にも当たらないように）。
     /// 季節・時間帯が文の中に2つあれば、先に書いた方
-    static func readByTable(_ raw: String) -> Reading {
+    ///
+    /// - Parameter monthAsText: 写真の検索（探すの欄）では true。月（「11月」）を季節の札にするだけでなく、**字の語としても残す**
+    ///   （題に「11月」と書いた写真に字で当たるように・2026-11-23 確かめ役の指摘）。AI に頼むときの観光スポットの絞り込みは false
+    ///   （「11月下旬」が語になると、どれにも当たらずに語を捨てて台帳の先頭から出していた）
+    static func readByTable(_ raw: String, monthAsText: Bool = false) -> Reading {
         let sentence = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let chars = Array(fold(sentence))
         var used = [Bool](repeating: false, count: chars.count)
@@ -201,6 +205,10 @@ enum SearchSentence {
             switch hit.kind {
             case .month(let m):
                 if month == nil { month = (hit.range.lowerBound, m) }
+                if monthAsText, let mark = chars[hit.range].firstIndex(of: "月") {
+                    // 「11月」までは字の語に残す（「下旬」などの後ろの語は使い切る）
+                    for j in hit.range.lowerBound...mark { used[j] = false }
+                }
             case .count(let n):
                 if count == nil { count = n }
             }
@@ -306,8 +314,8 @@ enum SearchSentence {
                 i = stop
                 continue
             }
-            if n >= 1, let tail = countTails.first(where: { has($0, at: end) }) {
-                // 「一つ」「三つ」は数。漢字が続く「一つ星」のような語は気にしない（数として読んでも上限で丸める）
+            if n >= 1, let tail = countTails.first(where: { has($0, at: end) }),
+               !isNotCount(chars, start: i, tailEnd: end + tail.count, tail: tail) {
                 out.append(NumberPhrase(range: i..<(end + tail.count), kind: .count(n)))
                 i = end + tail.count
                 continue
@@ -315,6 +323,22 @@ enum SearchSentence {
             i = end
         }
         return out
+    }
+
+    /// 「つ」の後ろに続いても数のままの字（「3つ教えて」「5つ選んで」「3つ程度」）
+    static let countFollowers: Set<Character> = ["教", "挙", "選", "紹", "探", "出", "見", "知", "提", "案", "示", "書", "程", "以", "位", "候", "前", "後"]
+
+    /// 数＋後ろの語でも数として読まない形（2026-11-23 判断・確かめ役の指摘）:
+    /// - 前に「もう」が付く（「もう一つ教えて」は札の数ではなく、続きを頼む言い方）
+    /// - 「つ」の後ろに漢字・片仮名・英数字が続く語（「三つ星」「5つ星ホテル」「四つ葉」）。頼みの動詞（「3つ教えて」）は数のまま
+    static func isNotCount(_ chars: [Character], start: Int, tailEnd: Int, tail: String) -> Bool {
+        if start >= 2, chars[start - 2] == "も", chars[start - 1] == "う" { return true }
+        guard tail == "つ", tailEnd < chars.count else { return false }
+        let next = chars[tailEnd]
+        if next == "目" { return true } // 「2つ目」は順番
+        if countFollowers.contains(next) { return false }
+        let scalars = next.unicodeScalars
+        return scalars.allSatisfy(isKanji) || scalars.allSatisfy(isKatakana) || (next.isASCII && (next.isLetter || next.isNumber))
     }
 
     // MARK: - 端末の AI の答えをそろえる

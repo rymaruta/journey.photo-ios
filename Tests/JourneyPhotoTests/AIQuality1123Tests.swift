@@ -106,6 +106,36 @@ final class AIQuality1123Tests: XCTestCase {
         XCTAssertTrue(a.chips.contains("秋"), "月から季節を読んで札に出す")
     }
 
+    /// 数として読みすぎない（2026-11-23 確かめ役の指摘）
+    func testDoesNotReadNonCountNumbers() {
+        let cases: [(String, Int?)] = [
+            ("3年坂", nil), ("三つ星", nil), ("三つ星のレストラン", nil), ("5つ星ホテル", nil), ("もう一つ教えて", nil),
+            ("もう1つ", nil), ("四つ葉", nil), ("2つ目の滝", nil),
+            // 数のまま
+            ("京都の紅葉3つ教えて", 3), ("三つ選んで", 3), ("3つの滝", 3), ("おすすめを3つ", 3), ("5選", 5),
+        ]
+        for (text, want) in cases {
+            XCTAssertEqual(SearchSentence.readByTable(text).count, want, text)
+        }
+        XCTAssertEqual(SearchSentence.readByTable("3年坂").text, "3年坂", "数の字を使い切らずに語に残す")
+    }
+
+    /// 写真の検索では、月を季節の札にしつつ字の語にも残す（題に「11月」と書いた写真に当たる）。AI に頼むは今の形
+    func testPhotoSearchKeepsMonthAsText() {
+        let photo = SearchSentence.readByTable("11月下旬の紅葉", monthAsText: true)
+        XCTAssertEqual(photo.season, .autumn)
+        XCTAssertEqual(photo.month, 11)
+        XCTAssertEqual(photo.text, "11月")
+        XCTAssertEqual(SearchSentence.readByTable("十一月の京都", monthAsText: true).text, "京都", "都道府県を先に")
+        XCTAssertEqual(SearchSentence.readByTable("十一月の京都", monthAsText: true).unused, ["十一月"])
+        XCTAssertNil(SearchSentence.readByTable("11月下旬の紅葉").text, "AI に頼むでは月は語にしない")
+        // 探すの画面は写真の検索の形で読む
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto/Features/Search/SearchView.swift")
+        let src = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        XCTAssertTrue(src.contains("SearchSentence.readByTable(sentence, monthAsText: true)"))
+    }
+
     // MARK: - 2. 月と旬を季節として読む
 
     func testMonthBecomesSeasonAndIsNotAKeyword() {
@@ -181,6 +211,12 @@ final class AIQuality1123Tests: XCTestCase {
         let names = TripPlanText.nameIndex(loaded: [], candidates: cands)
         XCTAssertEqual(TripPlanText.label(for: item, index: names, places: []), "本土寺")
         XCTAssertFalse(TripPlanText.isPending(item, index: names, loading: true))
+        // 画面に出す名前: 読み込み中は「読み込み中」（「読み込めませんでした」と言わない）、読み終えたら言葉
+        XCTAssertEqual(TripPlanText.displayName(for: item, index: [], places: [], loading: true), TripPlanText.loadingSpot)
+        XCTAssertEqual(TripPlanText.displayName(for: item, index: [], places: [], loading: false), TripPlanText.unresolvedSpot)
+        XCTAssertEqual(TripPlanText.displayName(for: item, index: names, places: [], loading: true), "本土寺")
+        // 組み直しの案も同じ
+        XCTAssertEqual(TripDraft.place(for: item, index: [], places: [], loading: true).name, TripPlanText.loadingSpot)
         // 読み込んだ索引があればそちら
         XCTAssertEqual(TripPlanText.nameIndex(loaded: [cands[1]], candidates: cands).map(\.spotId), ["sp_aki1"])
         // 地図と下書きも同じ
@@ -198,6 +234,28 @@ final class AIQuality1123Tests: XCTestCase {
         XCTAssertTrue(src.contains("async let indexCall"))
         XCTAssertTrue(src.contains("TripPlanText.nameIndex(loaded: loadedIndex, candidates: aiNotes.note(planId)?.candidates ?? [])"))
         XCTAssertTrue(src.contains("TripStopSkeleton(number: number)"))
+    }
+
+    /// 骨組みの間は「…」と ≡ を出さず、行・会話・組み直しの案は読み込み中の名前で引く（画面のコードの形で確かめる）
+    func testPendingRowHidesMenuAndUsesLoadingName() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto/Features/Trips/TripPlanDetailView.swift")
+        let src = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(src.contains("""
+                    TripStopSkeleton(number: number)
+                } else {
+                    itemLink(item, name: name, number: number, season: season, chips: chips, time: time)
+                    itemMenu(di, ii, item, name: name)
+                    dragHandle(di, ii, item, name: name)
+                }
+"""), "骨組みの間は「…」と ≡ を出さない")
+        XCTAssertTrue(src.contains("let name = TripPlanText.displayName(for: item, index: index, places: places, loading: !indexTried)"))
+        XCTAssertTrue(src.contains("resolveName: { TripPlanText.displayName(for: $0, index: index, places: places, loading: !indexTried) }"))
+        XCTAssertTrue(src.contains("resolve: { TripDraft.place(for: $0, index: index, places: places, loading: !indexTried) }"))
+        // 骨組みに写真の欄と同じ枠（44pt・角10）
+        XCTAssertEqual(TripStopSkeleton.photoSide, 44)
+        XCTAssertEqual(TripStopSkeleton.photoCorner, 10)
+        XCTAssertTrue(src.contains(".frame(width: Self.photoSide, height: Self.photoSide)"))
     }
 
     // MARK: - 5. 題と理由の見張り
@@ -290,6 +348,29 @@ final class AIQuality1123Tests: XCTestCase {
         var switches = 0
         for i in 1..<names.count where west.contains(names[i]) != west.contains(names[i - 1]) { switches += 1 }
         XCTAssertEqual(switches, 1, "\(names)")
+
+        // 組み直し（今の日程がある）は、AI の並び（＝利用者の並び）のまま。東山 → 嵐山 → 東山 → 嵐山 を並べ直さない
+        let eastRows = rows.filter { ($0.coords?.lng ?? 0) >= 135.7 }
+        let westRows = rows.filter { ($0.coords?.lng ?? 0) < 135.7 }
+        let current = [[eastRows[0], westRows[0], eastRows[1], westRows[1]]]
+        let revised = await runner.revise(request: "ゆっくり", current: current, candidates: rows, index: rows, offline: false,
+                                          service: TripAIService(api: APIClient(baseURL: URL(string: "https://api.example.test")!, tokenProvider: NoToken())),
+                                          title: "京都") { _, _ in 10 }
+        XCTAssertEqual(try XCTUnwrap(revised).days.flatMap { $0 }.map(\.spotId), current[0].map(\.spotId),
+                       "組み直しは利用者の並びを壊さない")
+    }
+
+    /// 日をまたいでは動かさない（各日の中身の集合は変わらない）
+    func testOrderedKeepsEachDaysSpots() throws {
+        let rows = try Self.kyotoLedger()
+        let days = [[rows[0], rows[1], rows[2]], [rows[3], try Self.spot("nanzenji", name: "南禅寺", prefecture: "京都府", city: "京都市",
+                                                                          lat: 35.011, lng: 135.794)]]
+        let ordered = TripAIDayOrder.ordered(days)
+        XCTAssertEqual(ordered.count, 2)
+        for (d, day) in days.enumerated() {
+            XCTAssertEqual(Set(ordered[d].map(\.spotId)), Set(day.map(\.spotId)), "\(d + 1)日目")
+            XCTAssertEqual(ordered[d].count, day.count)
+        }
     }
 
     // MARK: - 7. 時間帯の札を分ける
@@ -316,6 +397,9 @@ final class AIQuality1123Tests: XCTestCase {
         let hondoji = try Self.autumnLedger()[0]
         XCTAssertEqual(TripDraft.seasonLine(hondoji, ymd: "2026-11-25"), "秋（11月）\u{2002}11月下旬は紅葉が見頃です。")
         XCTAssertEqual(TripDraft.firstSentence("区切りの無い文"), "区切りの無い文")
+        // 括弧の中の「。」では切らない
+        XCTAssertEqual(TripDraft.firstSentence("「もみじ。」と呼ばれる道です。秋は混みます。"), "「もみじ。」と呼ばれる道です。")
+        XCTAssertEqual(TripDraft.firstSentence("紅葉（11月。見頃）が続きます。次。"), "紅葉（11月。見頃）が続きます。")
     }
 }
 

@@ -307,7 +307,7 @@ final class SearchSentenceTests: XCTestCase {
         XCTAssertTrue(source.contains(".onChange(of: needsRelaxing)"), "0件のときに外し方を見ていない")
         XCTAssertTrue(source.contains("restoreReading(chip)"), "外した札を押しても戻らない")
         // 読むのは端末の中だけ、言葉の表だけ（端末の AI で読むと回数を数えずに AI を使う）
-        XCTAssertTrue(source.contains("let result = SearchSentence.readByTable(sentence)"))
+        XCTAssertTrue(source.contains("let result = SearchSentence.readByTable(sentence, monthAsText: true)"))
         XCTAssertFalse(source.contains("SearchSentenceReader.live("), "語の文を端末の AI で読んでいる（回数を数えていない）")
     }
 

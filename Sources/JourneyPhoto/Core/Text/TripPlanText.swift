@@ -203,6 +203,16 @@ enum TripPlanText {
         return !index.contains { $0.spotId == spotId && !$0.name.isEmpty }
     }
 
+    /// 名前をまだ引けていない間の言葉（2026-11-23 判断・確かめ役の指摘: 骨組みの間も「読み込めませんでした」が
+    /// 「…」の読み上げと ≡ に出ていた）
+    static var loadingSpot: String { L("読み込み中", "Loading") }
+
+    /// 画面に出す名前。索引を読み込み中でまだ引けていない観光スポットは「読み込み中」、読み終えて引けなければ `unresolvedSpot`。
+    /// 行・会話の欄・組み直しの案はこれで引く（読み込み中に「読み込めませんでした」と言わない）
+    static func displayName(for item: TripItem, index: [OfficialSpot], places: [DerivedSpot.Place], loading: Bool) -> String {
+        isPending(item, index: index, loading: loading) ? loadingSpot : label(for: item, index: index, places: places)
+    }
+
     /// 名前を引く索引。読み込んだ索引が空のうち（開いた直後）は、AI で作ったときの候補で引く（2026-11-23 判断）
     static func nameIndex(loaded: [OfficialSpot], candidates: [OfficialSpot]) -> [OfficialSpot] {
         loaded.isEmpty ? candidates : loaded

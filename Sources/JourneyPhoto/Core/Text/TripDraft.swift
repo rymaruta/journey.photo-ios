@@ -51,7 +51,8 @@ enum TripDraft {
     }
 
     /// 日程の項目から引き直す（引けなければ名前は `TripPlanText.label` の言葉・座標なし。観光スポットの鍵 `sp_…` は出さない）
-    static func place(for item: TripItem, index: [OfficialSpot], places: [DerivedSpot.Place]) -> Place {
+    /// `loading`: 索引を読み込み中なら、引けない観光スポットの名前は「読み込み中」（`TripPlanText.displayName`）
+    static func place(for item: TripItem, index: [OfficialSpot], places: [DerivedSpot.Place], loading: Bool = false) -> Place {
         switch item {
         case .spot(let spotId, _):
             if let spot = index.first(where: { $0.spotId == spotId }) {
@@ -63,7 +64,7 @@ enum TripDraft {
             }
         }
         let key = SavedSpotsTrip.itemKey(item)
-        return Place(item: item, name: TripPlanText.label(for: item, index: index, places: places), regionLabel: nil,
+        return Place(item: item, name: TripPlanText.displayName(for: item, index: index, places: places, loading: loading), regionLabel: nil,
                      coords: nil, region: TripPicker.Region(key: "none:\(key)", label: nil), times: [], tie: key)
     }
 
@@ -168,10 +169,21 @@ enum TripDraft {
         return L("\(label)（\(month)月）\u{2002}\(text)", "\(label) (\(monthName(month)))\u{2002}\(text)")
     }
 
-    /// 最初の1文（「。」「！」「？」まで。区切りが無ければ全文）。終わりの「。」は残す
+    /// 最初の1文（「。」「！」「？」まで。区切りが無ければ全文）。終わりの「。」は残す。
+    /// 括弧（「」『』（））の中の「。」では切らない（2026-11-23 判断・確かめ役の指摘）
     static func firstSentence(_ text: String) -> String {
-        guard let end = text.firstIndex(where: { "。！？!?".contains($0) }) else { return text }
-        return String(text[...end])
+        var depth = 0
+        for i in text.indices {
+            let ch = text[i]
+            if "「『（(".contains(ch) {
+                depth += 1
+            } else if "」』）)".contains(ch) {
+                depth = max(0, depth - 1)
+            } else if depth == 0, "。！？!?".contains(ch) {
+                return String(text[...i])
+            }
+        }
+        return text
     }
 
     private static func monthName(_ month: Int) -> String {
