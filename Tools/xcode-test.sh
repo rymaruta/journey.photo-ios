@@ -114,6 +114,12 @@ case "$mode" in
         ;;
 esac
 
+# App Store 用の絵を撮る回（`STORE_STATUS_BAR=1`）は、状態のバーを Apple の決まった形にしてから流す（2026-11-23・札 #604）。
+# かけられなければ止める（実機と違う状態のバーで撮らない）
+if [ "$mode" = "ui" ] && [ "${STORE_STATUS_BAR:-}" = "1" ]; then
+    bash Tools/store-status-bar.sh "$DEVICE" || exit 1
+fi
+
 # **別の台で組んだ品で流す**（2026-10-31・#429）。`XCTESTRUN` に xctestrun の置き場を渡すと、
 # プロジェクトではなくその品で流す（`Tools/test-products.py unpack` が置き場を出す）。組む段では使えない
 if [ -n "${XCTESTRUN:-}" ]; then

@@ -12878,7 +12878,7 @@ final class ScreenshotTests: JPUITestCase {
     }
 
     /// 2 AI に頼む（問いと答え・2026-11-23 owner「AIに頼むって文字ないような」）。見本の AI（`-JPAskFixture`・端末の中で答える・
-    /// サーバーへは送らない・同意済み扱い）が、見本の観光スポット（京都の3か所・同梱の写真）から選ぶ。回数の帯は見本では出さない
+    /// サーバーへは送らない・同意済み扱い）が、見本の観光スポット（京都の3か所・同梱の写真）から選ぶ。画面は実機と同じ（回数の1行も出る）
     func testStoreDemoAsk() {
         let app = launchStoreDemo(["-JPAskFixture", "YES"])
         let tabBar = app.tabBars.firstMatch
@@ -12921,9 +12921,6 @@ final class ScreenshotTests: JPUITestCase {
         guard waitForImages(app, "観光スポットの頁") else { return }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "70-ストア・撮影スポット（伏見稲荷大社）")
-        // 作例の出典の行は見本の間は出さない（`CreditLinksMenu`・どれもクレジット不要の写真）
-        let credit = app.descendants(matching: .any)["spot.official.photoCredit"].firstMatch
-        XCTAssertFalse(credit.exists && credit.isHittable, "見本の表示で作例の出典の行が押せる（出していないはず）")
     }
 
     /// 3 旅行プラン（仲間と共有・日程）。見本のプラン（`-JPTripPlanFixture`・`-JPTripShareFixture`）。見本の表示では

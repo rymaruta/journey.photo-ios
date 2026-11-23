@@ -113,7 +113,9 @@ final class StoreDemoTests: XCTestCase {
         let urls = strings.filter { $0.contains("://") }
         XCTAssertFalse(urls.isEmpty)
         for url in urls {
-            XCTAssertTrue(url.hasPrefix("https://\(StoreDemo.host)/"), "見本の置き場でない URL: \(url)")
+            // 出典の頁へのリンク（読み込まない・`photo-sources.json` の頁）だけは本当の Commons の頁
+            XCTAssertTrue(url.hasPrefix("https://\(StoreDemo.host)/") || StoreDemo.sourcePages.values.contains(url),
+                          "見本の置き場でない URL: \(url)")
         }
         XCTAssertTrue(StoreDemo.dmSpotLink.hasPrefix("https://journey-photo.com/spots/"))
     }
@@ -266,76 +268,42 @@ final class StoreDemoTests: XCTestCase {
         }
     }
 
-    /// 写真の出典の行は、見本の間は見せない（`CreditLinksMenu`・ホームの上の札が `StoreDemo.showsCredits` を見る）
-    func testCreditsAreHiddenOnlyInDemo() throws {
-        XCTAssertTrue(StoreDemo.showsCredits(demo: false))
-        XCTAssertFalse(StoreDemo.showsCredits(demo: true))
-        XCTAssertTrue(StoreDemo.showsCredits, "見本でないのに出典を隠す")
-        withDemo(true) { XCTAssertFalse(StoreDemo.showsCredits) }
-        let src = root.appendingPathComponent("Sources/JourneyPhoto/Features")
-        let menu = try String(contentsOf: src.appendingPathComponent("Spots/OfficialSpotView.swift"), encoding: .utf8)
-        let body = try XCTUnwrap(menu.components(separatedBy: "struct CreditLinksMenu").dropFirst().first)
-            .components(separatedBy: "private var tapArea").first ?? ""
-        XCTAssertTrue(body.contains("if !StoreDemo.showsCredits {") && body.contains(".hidden()"), "CreditLinksMenu が見本の間に出典を隠さない")
-        let face = try String(contentsOf: src.appendingPathComponent("Gallery/TopCardFace.swift"), encoding: .utf8)
-        XCTAssertTrue(face.contains(".opacity(StoreDemo.showsCredits ? 1 : 0)"), "ホームの上の札が見本の間に出典を隠さない")
-    }
-
-    /// 大きい絵の道（`RemoteImage`＝`AsyncImage`。写真の詳細・観光スポットの頁の上の絵・DM の写真）は、見本の答え手を通らない。
-    /// 見本の画像は通信せずに同梱の写真から描く（Mac run 1736 で読み込み中のままだった）。見本でない・見本の置き場でない URL は描かない
-    func testLargeImagePathDrawsDemoPhotosWithoutNetwork() throws {
-        let saved = StoreDemo.loadAsset
-        defer { StoreDemo.loadAsset = saved }
-        var asked: [String] = []
-        StoreDemo.loadAsset = { asked.append($0); return Data([0xFF, 0xD8, 0xFF]) }
-        let demoURL = URL(string: StoreDemo.photoURL("tunnel"))!
-        XCTAssertNil(StoreDemo.localImageData(for: demoURL), "見本でないのに同梱の写真に替える")
-        withDemo(true) {
-            XCTAssertNotNil(StoreDemo.localImageData(for: demoURL), "見本の画像を同梱の写真から出さない")
-            XCTAssertNil(StoreDemo.localImageData(for: URL(string: "https://journey-photo.com/photos/a.jpg")))
-            XCTAssertNil(StoreDemo.localImageData(for: URL(string: StoreDemo.photoURL("iphone"))), "見本の一覧に無い写真を出す")
+    /// **見本の間も、画面の見た目は実機と同じ**（2026-11-23 owner「ちゃんと実機通りのスクショかも見ないといけない。イメージで作るのはダメ」）。
+    /// 変えるのはデータだけ。画面（`Features`）が `StoreDemo` を見てよいのは、画像を読む道と見本の曲名だけ
+    /// （出典の行・回数の帯を見本の間だけ隠す、のような見た目の分かれ道を作らない）
+    func testScreensLookTheSameInDemo() throws {
+        let features = root.appendingPathComponent("Sources/JourneyPhoto/Features")
+        let files = try XCTUnwrap(FileManager.default.enumerator(atPath: features.path))
+        let allowed = ["StoreDemo.imageURL(", "StoreDemo.allowsImage(", "StoreDemo.guarded(", "StoreDemoImages",
+                       "StoreDemo.localImageData(", "StoreDemo.songTitle"]
+        var seen = 0
+        for case let path as String in files where path.hasSuffix(".swift") {
+            let text = try String(contentsOf: features.appendingPathComponent(path), encoding: .utf8)
+            for (i, line) in text.components(separatedBy: "\n").enumerated() {
+                let code = line.trimmingCharacters(in: .whitespaces)
+                guard !code.hasPrefix("//"), line.contains("StoreDemo") else { continue }
+                seen += 1
+                var rest = line
+                for word in allowed { rest = rest.replacingOccurrences(of: word, with: "") }
+                // `StoreDemo.isOn` は画像の控え（`StoreDemoImages`）の中だけ
+                if path.hasSuffix("Common/RemoteImage.swift") { rest = rest.replacingOccurrences(of: "StoreDemo.isOn", with: "") }
+                XCTAssertFalse(rest.contains("StoreDemo"), "見本の間だけ見た目が変わる分かれ道: \(path):\(i + 1) \(code)")
+            }
         }
-        XCTAssertEqual(asked, ["tunnel"])
-        let remote = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Common/RemoteImage.swift"),
-                                encoding: .utf8)
-        let local = try XCTUnwrap(remote.range(of: "if let local = StoreDemoImages.image(for: url)"), "RemoteImage が見本の画像を同梱から描かない")
-        let async = try XCTUnwrap(remote.range(of: "AsyncImage(url: url"))
-        XCTAssertLessThan(local.lowerBound, async.lowerBound, "見本の画像を AsyncImage より先に引いていない")
+        XCTAssertGreaterThan(seen, 5)
+        // 出典の行と、AI に頼むの回数の1行は、見本の間も本物と同じに出す
+        let menu = try String(contentsOf: features.appendingPathComponent("Spots/OfficialSpotView.swift"), encoding: .utf8)
+        XCTAssertFalse(menu.contains(".hidden()\n                .accessibilityHidden(true)\n        } else {\n            linkedLabel"))
     }
 
-    /// 見本の曲の名前は場所を言わない（どの写真に付いても食い違わない）
-    func testDemoSongTitleNamesNoPlace() {
-        XCTAssertNil(StoreDemo.songTitle)
-        XCTAssertEqual(PreviewStorySample.song.title, "夜明けの港で聴くバラード")
-        withDemo(true) {
-            let title = StoreDemo.songTitle ?? ""
-            XCTAssertFalse(title.isEmpty)
-            for word in ["港", "海", "山", "京都", "富士", "森"] { XCTAssertFalse(title.contains(word), title) }
-            XCTAssertEqual(PreviewStorySample.song.title, title)
-            XCTAssertEqual(PreviewBackend.previewStorySong(demo: true)["title"] as? String, title)
+    /// 作例の出典の頁は `photo-sources.json` の本当の頁（出典の行のリンク）
+    func testSourcePagesAreTheRealPages() throws {
+        let data = try Data(contentsOf: root.appendingPathComponent("Tools/composition-examples/photo-sources.json"))
+        let sources = try XCTUnwrap((try JSONSerialization.jsonObject(with: data) as? [String: Any])?["photos"] as? [String: [String: Any]])
+        for spot in StoreDemo.spots {
+            XCTAssertEqual(StoreDemo.sourcePages[spot.asset], sources[spot.asset]?["sourceURL"] as? String, spot.name)
+            XCTAssertEqual(StoreDemo.spotImage(spot.asset)["pageUrl"] as? String, StoreDemo.sourcePages[spot.asset])
         }
-    }
-
-    /// AI に頼むの絵（2026-11-23）: 見本の AI は、見本の観光スポット（京都の3か所）だけから選ぶ。回数の帯は見本では出さない。
-    /// UI テストは同じ言葉で頼む
-    func testAskAnswerPicksOnlyDemoSpotsAndHidesUsage() throws {
-        let rows = try JSONSerialization.data(withJSONObject: StoreDemo.spotRows())
-        let spots = try JSONDecoder.api.decode(LenientOfficialSpotList.self, from: rows).spots
-        let photos = try JSONDecoder.api.decode(LenientPhotoList.self, from: JSONSerialization.data(withJSONObject: StoreDemo.feed())).photos
-        let result = try XCTUnwrap(AskFixture.deviceResult(StoreDemo.askQuestion, library: AskLibrary(spots: spots, photos: photos)))
-        let picked = result.picks.map(\.spot.name)
-        XCTAssertFalse(picked.isEmpty, "見本の AI が観光スポットを選ばない: \(result.text)")
-        let kyoto = Set(StoreDemo.spots.filter { $0.prefecture == "京都府" }.map(\.name))
-        XCTAssertTrue(Set(picked).isSubset(of: kyoto), "京都の見本の観光スポットでない札: \(picked)")
-        XCTAssertFalse(result.text.contains("・"))
-        XCTAssertTrue(StoreDemo.showsUsageLine)
-        withDemo(true) { XCTAssertFalse(StoreDemo.showsUsageLine, "見本の絵に回数の帯が出る") }
-        let src = root.appendingPathComponent("Sources/JourneyPhoto/Features/Search/AskScreen.swift")
-        XCTAssertTrue(try String(contentsOf: src, encoding: .utf8).contains("guard StoreDemo.showsUsageLine else { return nil }"),
-                      "AI に頼むの回数の1行が見本の間も出る")
-        let ui = root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift")
-        XCTAssertTrue(try String(contentsOf: ui, encoding: .utf8).contains("askViaSendButton(app, \"\(StoreDemo.askQuestion)\")"),
-                      "UI テストの頼む言葉が見本の言葉と違う")
     }
 
     // MARK: - 見本の会話・旅行プラン・作者

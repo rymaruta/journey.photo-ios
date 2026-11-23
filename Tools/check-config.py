@@ -743,7 +743,7 @@ if testflight_yml.exists() and pr_yml.exists():
         if test not in ui_tests or pick_mod.only_when_named(test):
             fail(f"store-screenshots.py の STORE_TESTS の {test} が UI テストに無いか、名指しの回だけのテストです")
     store_text = "\n".join(ui_tests.get(t, "") for t in store_mod.STORE_TESTS)
-    for prefix in [p for _, p, _, _ in store_mod.SLIDES] + [p for _, p in store_mod.REVIEW]:
+    for prefix in [p for _, p in store_mod.SLIDES] + [p for _, p in store_mod.REVIEW]:
         if prefix not in store_text:
             fail(f"App Store 用の絵の材料「{prefix}」を、STORE_TESTS のどのテストも撮っていません（store-screenshots.py）")
     # 2026-11-23（札 #604）: 絵を撮る試験は見本の表示（`-JPStoreDemo YES`）だけで撮る。本番の向き先・実在の利用者で描く道を残さない
@@ -756,8 +756,18 @@ if testflight_yml.exists() and pr_yml.exists():
             or not build_steps or build_steps[0] != "App Store 用の絵は見本の表示で撮る"):
         fail("ios-testflight.yml の build の最初の段で、storeShots の試験が見本の表示で撮るかを確かめていません（札 #604）")
     # 出す絵は 6.9インチと中型（Dynamic Island 搭載 iPhone（中型ディスプレイ））の2組（2026-11-23）
-    if sorted(size for _, size, _ in store_mod.FRAMES) != [(1206, 2622), (1320, 2868)]:
+    if sorted(f[1] for f in store_mod.FRAMES) != [(1206, 2622), (1320, 2868)]:
         fail("store-screenshots.py の FRAMES が 1320×2868 と 1206×2622 の2組ではありません")
+    # 2026-11-23 owner「イメージで作るのはダメ」: 合成せず、2つの機種で撮った画面をそのまま出す。中型の機種でも撮り、
+    # どちらも状態のバーを決まった形にしてから撮る
+    medium = step_block(flow, "App Store 用の中型の画面を撮る") or ""
+    if ("store-screenshots.py --device medium" not in medium or "STORE_STATUS_BAR=1" not in medium
+            or "StoreMedium.xcresult" not in medium):
+        fail("ios-testflight.yml が App Store 用の中型の画面を撮っていません（store-screenshots.py --device medium）")
+    if "store-screenshots.py --device large" not in (step_block(flow, "組む（本物の SwiftUI で型検査される最初の機会）") or ""):
+        fail("ios-testflight.yml の storeShots の回が、大型の枠の機種で組んでいません（--device large）")
+    if "STORE_STATUS_BAR" not in (step_block(flow, "UI テスト（画面の絵）") or ""):
+        fail("ios-testflight.yml の storeShots の回が、状態のバーを決まった形にしていません（STORE_STATUS_BAR）")
     if "Tools/upload-store-shots.sh" not in flow:
         fail("ios-testflight.yml が storeShots の絵を非公開の S3 に置いていません（Tools/upload-store-shots.sh）")
     if re.search(r"store-screenshots\s*$", exporter, re.M) or "upload-artifact" in (ROOT / "Tools/upload-store-shots.sh").read_text(encoding="utf-8"):

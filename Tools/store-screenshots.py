@@ -1,67 +1,67 @@
 #!/usr/bin/env python3
-"""App Store のスクリーンショット（6.9インチ枠 1320×2868 と、中型の枠 1206×2622 の2組）を、UI テストの画面写真から作る。
+"""App Store のスクリーンショットを、**シミュレータの画面写真そのまま**で出す（合成しない・縮めない）。
 
-    python3 Tools/store-screenshots.py <画面写真の置き場> <出力先>
+    python3 Tools/store-screenshots.py <大型の材料> <中型の材料> <出力先>
 
     python3 Tools/store-screenshots.py --only-testing   # 撮るのに要る UI テストだけを xcodebuild の引数で出す
 
     python3 Tools/store-screenshots.py --check-demo     # 撮る UI テストが見本の表示（-JPStoreDemo）だけで撮るかを見る
 
-<画面写真の置き場> は `xcrun xcresulttool export attachments` で取り出した所
+    python3 Tools/store-screenshots.py --device large|medium   # 撮る機種の名前（無ければ終了コード 1）
+
+    python3 Tools/store-screenshots.py --ios <機種の名前>       # そのシミュレータの iOS の版（README に書く）
+
+2026-11-23 owner「ちゃんと実機通りのスクショかも見ないといけない。イメージで作るのはダメ」: 前は黒地に真鍮の小見出しと明朝の
+見出しを足し、画面を縮めて置いていた（合成）。いまは、2組の枠の寸法がそのまま出る機種のシミュレータで撮った画面を、
+**そのまま**ストアの絵にする:
+
+- 大型（Dynamic Island 搭載 iPhone の大型ディスプレイ）1320×2868: iPhone 17 Pro Max（無ければ 16 Pro Max）
+- 中型（Dynamic Island 搭載 iPhone の中型ディスプレイ）1206×2622: iPhone 17 Pro（無ければ 16 Pro）
+
+材料の寸法が枠と1画素でも違えば、その枚は作らず赤にする（**縮めて合わせない**）。状態のバーは撮る前に Apple の決まった形
+（9:41・電波と電池が満タン・`Tools/store-status-bar.sh`）にする。
+
+<大型の材料>・<中型の材料> は `xcrun xcresulttool export attachments` で取り出した所
 （`manifest.json` と、名前が UUID の png が並んだところ）。CI では `Tools/upload-store-shots.sh` が
-`ios-testflight.yml` の `storeShots: true` の回に呼び、出来た絵を**非公開の S3** に置く（2026-11-22・札 #604）。
-材料の画面の寸法が機種で変わっても、出す絵は合成で必ず 1320×2868（6.9インチの枠）と 1206×2622（中型の枠）になる（`FRAMES`）。
-
-1枚ごとに、上に真鍮の眉ラベルと明朝の見出し、下に画面を角丸で置く（黒地）。
-色と字はデザインの板「黒塗りの真鍮」に合わせる: 地 #000・真鍮 #C9A66B（黒地の上だけ）・
-見出しは Shippori Mincho B1（アプリに同梱しているもの）。
-
-並びと見出しは docs/APP_STORE_METADATA.md の「スクリーンショット」と同じ。
-**材料の絵が無い枚は作らない**（名前と中身が食い違う絵は、無い絵より悪い）。
-作れなかった枚は最後に一覧で出し、終了コード 1 を返す。
-Pillow が要る（`pip install pillow`）。
+`ios-testflight.yml` の `storeShots: true` の回に呼び、出来た絵を**非公開の S3** に置く（札 #604）。
+並びは docs/APP_STORE_METADATA.md の「画面写真」と同じ。**材料の絵が無い枚は作らない**。
+作れなかった枚は最後に一覧で出し、終了コード 1 を返す。Pillow が要る（`pip install pillow`）。
+README に機種の名前と iOS の版を書く（環境変数 `STORE_DEVICE_LARGE`・`STORE_DEVICE_MEDIUM`・`STORE_IOS`）。
 """
 import json
 import os
+import shutil
 import sys
 import unicodedata
 
 # Pillow は絵を作るときだけ読む（`--only-testing` は Mac の素の python3 で呼ぶ。Pillow が無い）
-Image = ImageDraw = ImageFont = None
+Image = None
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MINCHO = os.path.join(ROOT, "Sources/JourneyPhoto/Resources/Fonts/ShipporiMinchoB1-Bold.ttf")
 
-W, H = 1320, 2868
-
-# 出す枠（2026-11-23・札 #604）。Apple の今の決まりでは「iPhone with Dynamic Island (medium display)」
-# （日本語の App Store Connect では「Dynamic Island 搭載 iPhone（中型ディスプレイ）」）が最低1枚要る。大きい枠
-# （6.9インチ・large display）に加えて、中型（1206×2622）も同じ8枚で作る。(置き場, 寸法, 枠の名前)。
-# 大きい枠は今までどおり出力の直下（`01-ホーム.png` …）、中型は `medium-1206x2622/` の下。並べ方は大きい枠を
-# 幅の比で縮めた形（縦横比はほぼ同じ: 2868×1206÷1320 = 2620）。審査用の原寸（REVIEW）は1組だけ
+# 出す枠（置き場, 寸法, App Store Connect の枠の名前, 材料の組, 撮る機種の候補（先に在るもの））。
+# Apple の今の決まりでは「iPhone with Dynamic Island (medium display)」が最低1枚要る（2026-11-23）
 FRAMES = [
-    ("", (W, H), "Dynamic Island 搭載 iPhone（大型ディスプレイ）"),
-    ("medium-1206x2622", (1206, 2622), "Dynamic Island 搭載 iPhone（中型ディスプレイ）"),
+    ("", (1320, 2868), "Dynamic Island 搭載 iPhone（大型ディスプレイ）", "large",
+     ["iPhone 17 Pro Max", "iPhone 16 Pro Max"]),
+    ("medium-1206x2622", (1206, 2622), "Dynamic Island 搭載 iPhone（中型ディスプレイ）", "medium",
+     ["iPhone 17 Pro", "iPhone 16 Pro"]),
 ]
-BLACK = (0, 0, 0)
-WHITE = (255, 255, 255)
-BRASS = (0xC9, 0xA6, 0x6B)
 
-# (出力の名前, 材料の画面写真の名前の頭, 眉ラベル, 見出し)。見出しの改行は手で入れる
+# (出力の名前, 材料の画面写真の名前の頭)。アプリの芯の輪の順（見つける → 計画する → 撮る、載せる → 話す）。
+# 2026-11-23（owner「AIに頼むって文字ないような」）: 宣伝文の先頭が AI なので、検索結果に出る最初の3枚に入る2枚目に AI に頼む
 SLIDES = [
-    # 2026-11-15（札 #604）: アプリの芯の輪の順（見つける → 計画する → 撮る、載せる → 話す）
-    ("01-ホーム", "10-ホーム", "みんなの写真", "みんなの写真から、\n次の旅へ"),
-    # 2026-11-23（owner「AIに頼むって文字ないような」）: 宣伝文の先頭が AI なので、検索結果に出る最初の3枚に入る2枚目に置く
-    ("02-AI に頼む", "90-ストア・AI に頼む", "AI に頼む", "行き先は、\nAI に聞いてみる"),
-    ("03-観光スポット", "70-ストア・撮影スポット", "観光スポット", "行きたい場所が、\nきっと見つかる"),
-    ("04-旅行プラン", "66c-旅行プラン（仲間と共有・日程）", "旅行プラン", "仲間と一緒に、\n旅を組み立てる"),
-    ("05-投稿", "42-投稿（写真の編集の入口）", "投稿", "撮った一枚を、\nすぐ載せる"),
-    ("06-ストーリー", "62a-ストーリーの曲の札", "ストーリー", "24時間のストーリーで、\n旅の今を"),
-    ("07-メッセージ", "86m4-メッセージ（会話）", "メッセージ", "旅の仲間と、\nそのまま話せる"),
-    ("08-写真の詳細", "20-写真の詳細", "写真", "一枚の向こうの\n場所まで"),
+    ("01-ホーム", "10-ホーム"),
+    ("02-AI に頼む", "90-ストア・AI に頼む"),
+    ("03-観光スポット", "70-ストア・撮影スポット"),
+    ("04-旅行プラン", "66c-旅行プラン（仲間と共有・日程）"),
+    ("05-投稿", "42-投稿（写真の編集の入口）"),
+    ("06-ストーリー", "62a-ストーリーの曲の札"),
+    ("07-メッセージ", "86m4-メッセージ（会話）"),
+    ("08-写真の詳細", "20-写真の詳細"),
 ]
 
-# 審査（App 内課金の審査）に出す絵。合成せず、撮った原寸の PNG をそのまま置く（出力の名前, 材料の名前の頭）
+# 審査（App 内課金の審査）に出す絵。大型の材料をそのまま置く（出力の名前, 材料の名前の頭）
 REVIEW = [
     ("review-Pro の案内", "81-Pro の案内"),
 ]
@@ -126,83 +126,6 @@ def pick(found, prefix):
     return None
 
 
-def rounded(image, radius):
-    mask = Image.new("L", image.size, 0)
-    ImageDraw.Draw(mask).rounded_rectangle((0, 0, image.width - 1, image.height - 1), radius, fill=255)
-    out = Image.new("RGBA", image.size, (0, 0, 0, 0))
-    out.paste(image, (0, 0), mask)
-    return out
-
-
-# 眉ラベルの字と字の間（大きい枠での px）。**字の間に文字を挟まず、描く位置で空ける**（2026-11-23・run 1736）。
-# 前は薄い空白（U+2009）を挟んでいて、見出しの字体（Shippori Mincho B1）がその字を持たず、全部の絵で字の間に
-# 豆腐の四角が出ていた
-EYEBROW_GAP = 10
-
-
-def draw_spaced(draw, center_x, center_y, text, font, fill, gap):
-    """字を1つずつ、間を `gap` 空けて中央そろえで描く（間に文字を挟まない）"""
-    widths = [font.getlength(ch) for ch in text]
-    x = center_x - (sum(widths) + gap * max(0, len(text) - 1)) / 2
-    for ch, width in zip(text, widths):
-        draw.text((x, center_y), ch, font=font, fill=fill, anchor="lm")
-        x += width + gap
-
-
-def compose(shot_path, eyebrow, heading, size=(W, H)):
-    """1枚を作る。寸法は `size`。並べ方は大きい枠（1320 幅）の値を幅の比で縮める（2026-11-23・中型の枠）"""
-    cw, ch = size
-    k = cw / W
-
-    def px(value):
-        return max(1, round(value * k))
-
-    canvas = Image.new("RGB", (cw, ch), BLACK)
-    draw = ImageDraw.Draw(canvas)
-    eyebrow_font = ImageFont.truetype(MINCHO, px(46))
-    heading_font = ImageFont.truetype(MINCHO, px(96))
-
-    # 眉ラベル（真鍮・字間を少し空ける）
-    draw_spaced(draw, cw / 2, px(200), eyebrow, eyebrow_font, BRASS, px(EYEBROW_GAP))
-    # 見出し（白・明朝・中央そろえ）
-    draw.multiline_text((cw / 2, px(300)), heading, font=heading_font, fill=WHITE,
-                        anchor="ma", align="center", spacing=px(28))
-
-    # 画面（幅 1000・角丸・細い縁。黒地の上の白 15% にあたる灰）。下は枠の外へ流す
-    shot = Image.open(shot_path).convert("RGB")
-    width = px(1000)
-    height = round(shot.height * width / shot.width)
-    shot = rounded(shot.resize((width, height), Image.LANCZOS), px(70))
-    left, top = (cw - width) // 2, px(620)
-    canvas.paste(shot, (left, top), shot)
-    draw.rounded_rectangle((left - 2, top - 2, left + width + 1, top + height + 1), px(72),
-                           outline=(38, 38, 38), width=max(2, px(3)))
-    return canvas
-
-
-def readme_frames(out):
-    """README の枠ごとの節（App Store Connect の枠の名前・置き場・寸法）"""
-    parts = []
-    for sub, (fw, fh), label in FRAMES:
-        folder_out = os.path.join(out, sub) if sub else out
-        place = sub + "/" if sub else "./"
-        parts.append(f"## {label}（{fw}×{fh}）\n\n置き場: `{place}`\n\n")
-        if not os.path.isdir(folder_out):
-            continue
-        for file in sorted(os.listdir(folder_out)):
-            if file.endswith(".png") and not file.startswith("review-"):
-                with Image.open(os.path.join(folder_out, file)) as image:
-                    parts.append(f"- {file}: {image.width}×{image.height}\n")
-        parts.append("\n")
-    reviews = sorted(f for f in os.listdir(out) if f.startswith("review-") and f.endswith(".png"))
-    if reviews:
-        parts.append("## 審査用（原寸・並びには入れない）\n\n")
-        for file in reviews:
-            with Image.open(os.path.join(out, file)) as image:
-                parts.append(f"- {file}: {image.width}×{image.height}\n")
-    return "".join(parts)
-
-
 def check_demo(ui_dir=UI_DIR):
     """`STORE_TESTS` の試験が、見本の表示（`-JPStoreDemo YES`）だけで撮っているか（2026-11-23・札 #604）。
     試験の本文と、そこから呼ぶ補助の関数の字を見る（`pick-ui-tests.py` の `read_tests` と同じ読み方）。
@@ -225,10 +148,47 @@ def check_demo(ui_dir=UI_DIR):
     return bad
 
 
+def pick_device(kind, available):
+    """撮る機種（`FRAMES` の候補のうち、その場に在る最初のもの）。無ければ None（縮めて合わせる機種には落とさない）"""
+    for _, _, _, frame_kind, candidates in FRAMES:
+        if frame_kind == kind:
+            return next((name for name in candidates if name in available), None)
+    return None
+
+
+def available_devices():
+    import subprocess
+    raw = subprocess.run(["xcrun", "simctl", "list", "devices", "available", "-j"],
+                         capture_output=True, text=True, check=True).stdout
+    return {d["name"] for ds in json.loads(raw).get("devices", {}).values() for d in ds if d.get("isAvailable")}
+
+
+def runtime_of(name, payload):
+    """その機種のシミュレータの iOS の版（「iOS 26.1」）。無ければ「?」"""
+    for runtime, devices in payload.get("devices", {}).items():
+        if any(d.get("name") == name and d.get("isAvailable") for d in devices):
+            tail = runtime.rsplit(".", 1)[-1]          # iOS-26-1
+            head, _, version = tail.partition("-")
+            return f"{head} {version.replace('-', '.')}" if version else tail
+    return "?"
+
+
+def copy_exact(src, dest, size):
+    """材料をそのまま書き出す。寸法が違えば書かずに理由を返す（縮めない）。透過は外す（App Store は透過の無い PNG）"""
+    with Image.open(src) as image:
+        if image.size != size:
+            return f"寸法が {image.width}×{image.height}（{size[0]}×{size[1]} が要る・縮めて合わせない）"
+        if image.mode == "RGB":
+            shutil.copyfile(src, dest)
+        else:
+            image.convert("RGB").save(dest)
+    return None
+
+
 def load_pillow():
-    global Image, ImageDraw, ImageFont
-    from PIL import Image as _image, ImageDraw as _draw, ImageFont as _font
-    Image, ImageDraw, ImageFont = _image, _draw, _font
+    global Image
+    from PIL import Image as _image
+    Image = _image
 
 
 def main():
@@ -244,47 +204,84 @@ def main():
         for test in STORE_TESTS:
             print(f"-only-testing:{UI_TARGET}/{test}")
         return 0
-    if len(sys.argv) != 3:
+    if len(sys.argv) == 3 and sys.argv[1] == "--device":
+        name = pick_device(sys.argv[2], available_devices())
+        if not name:
+            print(f"::error::App Store 用の絵を撮る機種（{sys.argv[2]}）のシミュレータがありません（縮めて合わせない）", file=sys.stderr)
+            return 1
+        print(name)
+        return 0
+    if len(sys.argv) == 3 and sys.argv[1] == "--ios":
+        import subprocess
+        raw = subprocess.run(["xcrun", "simctl", "list", "devices", "available", "-j"],
+                             capture_output=True, text=True, check=True).stdout
+        print(runtime_of(sys.argv[2], json.loads(raw)))
+        return 0
+    if len(sys.argv) != 4:
         print(__doc__)
         return 2
     load_pillow()
-    folder, out = sys.argv[1], sys.argv[2]
+    folders = {"large": sys.argv[1], "medium": sys.argv[2]}
+    out = sys.argv[3]
     os.makedirs(out, exist_ok=True)
-    found = shots_by_name(folder)
     missing = []
-    for name, prefix, eyebrow, heading in SLIDES:
-        path = pick(found, prefix)
-        if path is None:
-            missing.append(f"{name}（材料「{prefix}…」が無い）")
-            continue
-        for sub, size, _label in FRAMES:
-            folder_out = os.path.join(out, sub) if sub else out
-            os.makedirs(folder_out, exist_ok=True)
-            image = compose(path, eyebrow, heading, size)
-            assert image.size == size
-            dest = os.path.join(folder_out, f"{name}.png")
-            image.save(dest)
-            print(f"作った: {dest}")
+    for sub, size, label, kind, _ in FRAMES:
+        found = shots_by_name(folders[kind])
+        folder_out = os.path.join(out, sub) if sub else out
+        os.makedirs(folder_out, exist_ok=True)
+        for name, prefix in SLIDES:
+            path = pick(found, prefix)
+            if path is None:
+                missing.append(f"{label} の {name}（材料「{prefix}…」が無い）")
+                continue
+            why = copy_exact(path, os.path.join(folder_out, f"{name}.png"), size)
+            if why:
+                missing.append(f"{label} の {name}（{why}）")
+            else:
+                print(f"置いた（そのまま）: {os.path.join(sub, name) if sub else name}.png")
+    large = shots_by_name(folders["large"])
     for name, prefix in REVIEW:
-        path = pick(found, prefix)
+        path = pick(large, prefix)
         if path is None:
             missing.append(f"{name}（材料「{prefix}…」が無い）")
             continue
-        dest = os.path.join(out, f"{name}.png")
-        Image.open(path).save(dest)
-        print(f"写した（原寸）: {dest}")
-    # 何をどの寸法で作ったかの控え（`Tools/fetch-shots.sh` で落とした人が読む）
+        Image.open(path).convert("RGB").save(os.path.join(out, f"{name}.png"))
+        print(f"置いた（そのまま）: {name}.png")
     with open(os.path.join(out, "README.md"), "w", encoding="utf-8") as f:
-        f.write("# App Store 用の絵\n\n")
-        f.write(f"- コミット: {os.environ.get('GITHUB_SHA', '?')}\n- 実行: {os.environ.get('GITHUB_RUN_NUMBER', '?')}\n\n")
-        f.write(readme_frames(out))
-        if missing:
-            f.write("\n作れなかった: " + " / ".join(missing) + "\n")
-        f.write("\n**非公開の置き場から3日で消える。** 見終わったら手元からも消す（`Tools/fetch-shots.sh <run> --clean`）。\n")
+        f.write(readme(out, missing))
     if missing:
         print("作れなかった:", *missing, sep="\n  ")
         return 1
     return 0
+
+
+def readme(out, missing):
+    """README（合成なし・シミュレータの実際の画面・機種名・iOS の版・枠ごとの寸法）"""
+    devices = {"large": os.environ.get("STORE_DEVICE_LARGE", "?"), "medium": os.environ.get("STORE_DEVICE_MEDIUM", "?")}
+    parts = ["# App Store 用の絵\n\n",
+             "**合成なし。シミュレータの実際の画面をそのまま**（縮めていない・状態のバーは 9:41、電波と電池が満タン）。\n\n",
+             f"- iOS: {os.environ.get('STORE_IOS', '?')}\n",
+             f"- コミット: {os.environ.get('GITHUB_SHA', '?')}\n- 実行: {os.environ.get('GITHUB_RUN_NUMBER', '?')}\n\n"]
+    for sub, (fw, fh), label, kind, _ in FRAMES:
+        folder_out = os.path.join(out, sub) if sub else out
+        place = sub + "/" if sub else "./"
+        parts.append(f"## {label}（{fw}×{fh}）\n\n機種: {devices[kind]}\n\n置き場: `{place}`\n\n")
+        if os.path.isdir(folder_out):
+            for file in sorted(os.listdir(folder_out)):
+                if file.endswith(".png") and not file.startswith("review-"):
+                    with Image.open(os.path.join(folder_out, file)) as image:
+                        parts.append(f"- {file}: {image.width}×{image.height}\n")
+        parts.append("\n")
+    reviews = sorted(f for f in os.listdir(out) if f.startswith("review-") and f.endswith(".png"))
+    if reviews:
+        parts.append(f"## 審査用（{devices['large']} の画面そのまま・並びには入れない）\n\n")
+        for file in reviews:
+            with Image.open(os.path.join(out, file)) as image:
+                parts.append(f"- {file}: {image.width}×{image.height}\n")
+    if missing:
+        parts.append("\n作れなかった: " + " / ".join(missing) + "\n")
+    parts.append("\n**非公開の置き場から3日で消える。** 見終わったら手元からも消す（`Tools/fetch-shots.sh <run> --clean`）。\n")
+    return "".join(parts)
 
 
 if __name__ == "__main__":

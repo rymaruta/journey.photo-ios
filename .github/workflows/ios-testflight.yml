@@ -513,10 +513,18 @@ jobs:
       - name: 組む（本物の SwiftUI で型検査される最初の機会）
         # 分けて流す回は、下の「テストの品を組む」の job が組む（この job は Archive だけ）
         if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.sharded != 'true' }}
+        env:
+          STORE_SHOTS: ${{ inputs.storeShots }}
         run: |
           set -euo pipefail
-          # 3段で同じシミュレータを使う
-          echo "DEVICE=$(python3 Tools/pick-simulator.py)" >> "$GITHUB_ENV"
+          # 3段で同じシミュレータを使う。App Store 用の絵の回は、大型の枠（1320×2868）がそのまま出る機種
+          # （`store-screenshots.py --device large`・無ければ赤。縮めて合わせない・2026-11-23 owner「イメージで作るのはダメ」）
+          if [ "${STORE_SHOTS:-}" = "true" ]; then
+            DEVICE="$(python3 Tools/store-screenshots.py --device large)"
+          else
+            DEVICE="$(python3 Tools/pick-simulator.py)"
+          fi
+          echo "DEVICE=$DEVICE" >> "$GITHUB_ENV"
           # **`-sdk iphonesimulator` は渡さない。** `-destination` と
           # 併用すると SDK 側の arch 一覧（arm64 と x86_64）が勝ち、
           # 行き先に `arch=arm64` を書いても x86_64 で組み立てにいく
@@ -537,7 +545,7 @@ jobs:
           # （伏せ先から拾い直す小細工も2回外した）。**xcodebuild を直に
           # 叩いて、出力をそのままログに出す**のが結局いちばん短い。
           # （この3つは `Tools/xcode-test.sh` の中に書いてある）
-          DEVICE="$(python3 Tools/pick-simulator.py)" bash Tools/xcode-test.sh build
+          DEVICE="$DEVICE" bash Tools/xcode-test.sh build
 
       # TestFlight配信時はPRで検証済みの単体テストを繰り返さない。
       # tests=trueの配信では、ビルド後に変更箇所に応じたUIテストを実行する。
@@ -557,6 +565,9 @@ jobs:
         if: ${{ (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.sharded != 'true' }}
         # 前のアプリを閉じられない（Failed to terminate）ときに、その場でアプリの積みを取る見張りを裏で動かす
         # （2026-11-20・札 #662 の調べ。`Tools/hang-sample.sh`。テストの成否は変えない）
+        # App Store 用の絵の回は、状態のバーを決まった形（9:41・満タン）にしてから流す（`STORE_STATUS_BAR`・`Tools/store-status-bar.sh`）
+        env:
+          STORE_STATUS_BAR: ${{ inputs.storeShots && '1' || '' }}
         run: |
           bash Tools/hang-sample.sh /tmp/xcodebuild-full.log &
           watcher=$!
@@ -565,6 +576,17 @@ jobs:
           sleep 20
           kill "$watcher" 2>/dev/null || true
           exit "$status"
+
+      # **App Store 用の中型の枠（1206×2622）の画面を、その寸法がそのまま出る機種で撮る**（2026-11-23 owner「イメージで作るのはダメ」）。
+      # 同じ絵の試験（STORE_TESTS）を中型の機種（`store-screenshots.py --device medium`・無ければ赤）で流し直す。合成も縮めもしない
+      - name: App Store 用の中型の画面を撮る
+        id: uimedium
+        if: ${{ always() && inputs.storeShots && (steps.ui.outcome == 'success' || steps.ui.outcome == 'failure') }}
+        run: |
+          set -euo pipefail
+          MEDIUM="$(python3 Tools/store-screenshots.py --device medium)"
+          echo "STORE_DEVICE_MEDIUM=$MEDIUM" >> "$GITHUB_ENV"
+          DEVICE="$MEDIUM" STORE_STATUS_BAR=1 bash Tools/xcode-test.sh ui build/ios/test/StoreMedium.xcresult /tmp/ui-only-testing.txt
 
       # 🔴 **「PR の検証」が「このコミットは Mac でテスト済み」と数える印**（2026-10-17）。
       # 単体と UI を**絞らずに全部**流して通った回だけ success になる。絞った回（screens）は
@@ -600,7 +622,7 @@ jobs:
         env:
           CI_SHOTS_ROLE_ARN: ${{ secrets.CI_SHOTS_ROLE_ARN }}
           CI_SHOTS_BUCKET: ${{ secrets.CI_SHOTS_BUCKET }}
-        run: bash Tools/upload-store-shots.sh build/ios/test/Test.xcresult
+        run: STORE_DEVICE_LARGE="$DEVICE" bash Tools/upload-store-shots.sh build/ios/test/Test.xcresult build/ios/test/StoreMedium.xcresult
 
       # **絞った回（screens）は署名・Archive をしない**（2026-10-17 判断）。Archive は毎回10分前後
       # （run 454〜462 で 8〜14分）。絞った回は「変えた画面を早く見る」ための回で、Release の

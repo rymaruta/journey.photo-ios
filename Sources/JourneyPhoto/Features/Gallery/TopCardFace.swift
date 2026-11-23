@@ -113,8 +113,6 @@ struct TopCardFace: View {
             }
             TopCardCreditCutLine(credit: credit)
         }
-        // App Store の見本（`StoreDemo`・札 #604）の間は出典の字を見せない（行の高さは同じ・`CreditLinksMenu` と同じ）
-        .opacity(StoreDemo.showsCredits ? 1 : 0)
         // 行の幅いっぱい（字は左に寄せたまま・見た目は変わらない）。UI テストの事実取りが、渡された幅を測れるように
         .frame(maxWidth: .infinity, alignment: .leading)
         .font(JPFont.caption)

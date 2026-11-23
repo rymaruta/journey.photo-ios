@@ -23,8 +23,11 @@ import UIKit
 ///   **URLSession を通らない通信は止められない**: Amplify（aws-crt の自前の HTTP・ログインの設定の読み込み）、地図のタイル（MapKit）、
 ///   WeatherKit などの OS の部品。どれも利用者の写真は運ばない（画像はここの見張りを通る URL しか描かない）
 /// - 文は作った見本（利用者名は実在の人を思わせない作った名前）。場所の名前は、写真の出典に書かれた実際の場所と合うものだけ
-///   （合わない写真は場所名なしの投稿）。作例の出典の行（`CreditLinksMenu`・ホームの上の札）は見本の間は出さない
-///   （どれもクレジット不要の写真。ストアの絵に CC の表示を写さない）
+///   （合わない写真は場所名なしの投稿）
+/// - **見た目は実機と同じ**（2026-11-23 owner「ちゃんと実機通りのスクショかも見ないといけない。イメージで作るのはダメ」）。
+///   変えるのはデータだけで、画面の部品は見本の間も本物と同じに描く（作例の出典の行も、同梱の写真の本当の作者と許諾で出る）。
+///   画面の側で `StoreDemo` を見てよいのは、画像を読む道（`allowsImage`・`imageURL`・`StoreDemoImages`）と見本の曲名だけ
+///   （`StoreDemoTests.testScreensLookTheSameInDemo` が見張る）
 ///
 /// 🔴 **Release には中身を入れない**（`PreviewBackend` と同じ）。見本の文・答え手は `#if DEBUG` の内側だけで、Release の
 /// `isOn` はいつも false、`allowsImage` はいつも true、`guarded` は何もしない
@@ -73,18 +76,8 @@ enum StoreDemo {
         #endif
     }
 
-    /// AI に頼むの上の回数の1行（「今日はあと2回」）を見せるか。見本の間は見せない（ストアの絵に回数の帯を写さない・
-    /// 2026-11-23 owner「AIに頼むって文字ないような」でストアの絵に AI に頼むを足した）。見本でなければいつも見せる
-    static var showsUsageLine: Bool { !isOn }
-
     /// AI に頼むの絵で頼む言葉（UI テスト `testStoreDemoAsk` と単体テストが同じ言葉を使う）
     static let askQuestion = "京都で写真がきれいに撮れる所を教えて"
-
-    /// 写真の出典の行（CC の表示）を見せるか。見本の間は見せない（`CreditLinksMenu`・ホームの上の札 `TopCardFace` がこれを見る）。
-    /// 見本の写真はどれもクレジット不要（CC0）で、ストアの絵に CC の表示を写さない。見本でなければいつも見せる
-    static var showsCredits: Bool { showsCredits(demo: isOn) }
-
-    static func showsCredits(demo: Bool) -> Bool { !demo }
 
     /// 画像に渡す URL（`AsyncImage(url:)` に直に渡す所が使う）。見本の間に読んではいけない URL は nil（URL の無い写真と同じ姿）
     static func imageURL(_ url: URL?) -> URL? { allowsImage(url) ? url : nil }
@@ -317,8 +310,16 @@ enum StoreDemo {
 
     /// 表紙の写真（同梱の写真。どれも CC0 で、作者と許諾は `photo-sources.json` のとおり。画面には出さない）
     static func spotImage(_ asset: String) -> [String: Any] {
-        ["url": photoURL(asset), "author": author(of: asset), "license": "CC0"]
+        ["url": photoURL(asset), "author": author(of: asset), "license": "CC0", "pageUrl": sourcePages[asset] ?? ""]
     }
+
+    /// 写真の出典の頁（`photo-sources.json` の `sourceURL`・出典の行のリンク。画像はここから読まない）
+    static let sourcePages: [String: String] = [
+        "tunnel": "https://commons.wikimedia.org/wiki/File:Fushimi_Inari_Shrine_August_2019.jpg",
+        "tianzige": "https://commons.wikimedia.org/wiki/File:Den_gyllene_paviljongen,_Kyoto,_Japan_(Unsplash).jpg",
+        "rootRectangle": "https://commons.wikimedia.org/wiki/File:Mt_Fuji_and_Tyureito_pagoda_2.jpg",
+        "ratio4x5": "https://commons.wikimedia.org/wiki/File:Kyoto,_Japan_(Unsplash_UIN-pFfJ7c).jpg",
+    ]
 
     /// 写真の作者（`Tools/composition-examples/photo-sources.json` の `author` のまま・試験が突き合わせる）。
     /// 出典の行は見本の間は出さないが、旅のオフラインの頁などに字が残っても本当の作者になるように
@@ -342,9 +343,10 @@ enum StoreDemo {
             "check": ["kind": "human", "verifiedAt": "2026-11-01"],
             "samples": [[
                 "src": photoURL(s.asset), "width": 1920, "height": 2560, "title": s.name,
-                "author": author(of: s.asset), "license": "CC0", "sourceUrl": "https://\(host)/photo/\(s.asset)",
-                // 出どころは「その他」（Commons・Flickr の検査は upload.wikimedia.org などの置き場しか通さない）
-                "source": ["name": "Wikimedia Commons（アプリに同梱）", "url": "https://\(host)/photo/\(s.asset)"],
+                "author": author(of: s.asset), "license": "CC0", "sourceUrl": sourcePages[s.asset] ?? "",
+                // 出どころは「その他」の「Commons」（名前を「Wikimedia Commons」にすると、画像の置き場が upload.wikimedia.org のものしか通さない検査に当たる。画像は同梱）。
+                // 出典の行のリンクは本当の Commons の頁
+                "source": ["name": "Commons", "url": sourcePages[s.asset] ?? ""],
             ] as [String: Any]],
         ]
     }
