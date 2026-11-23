@@ -6139,6 +6139,57 @@ final class ScreenshotTests: JPUITestCase {
         shoot(app, "102n-メニュー（旅の楽しみ）")
     }
 
+    /// 「サインインの方法」（札 #601・2026-11-23 owner）。設定の「アカウント」の行 → 画面 → 「解除」→ 確かめ → 解除した後。
+    /// もう1つの形（Apple で作った人）は、最後の1つなので「解除」が無く、理由が出る。見本の通信（`-JPPreviewSigninMethods`）
+    func testCapturesSigninMethods() {
+        for shape in ["linked", "last"] {
+            let app = launchTrunk(["-JPPreviewSigninMethods", shape])
+            let tabBar = app.tabBars.firstMatch
+            guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return XCTFail("下の札が出ない") }
+            tabBar.buttons.element(boundBy: 4).tap()
+            let gear = app.buttons["設定"].firstMatch
+            guard gear.waitForExistence(timeout: 15) else { return XCTFail("設定の丸が無い") }
+            scrollTo(gear, in: app)
+            gear.tap()
+            let row = app.buttons["settings.signinMethods"].firstMatch
+            guard row.waitForExistence(timeout: 10) else { return XCTFail("設定に「サインインの方法」の行が無い（\(shape)）") }
+            scrollTo(row, in: app)
+            XCTAssertGreaterThanOrEqual(row.frame.height, 44, "「サインインの方法」の行が 44pt 未満")
+            if shape == "linked" {
+                Thread.sleep(forTimeInterval: 1)
+                shoot(app, "102h-設定（アカウントとサインインの方法）")
+            }
+            row.tap()
+            let apple = app.descendants(matching: .any)["signinMethods.row.apple"].firstMatch
+            guard apple.waitForExistence(timeout: 10) else { return XCTFail("サインインの方法が開かない（\(shape)）") }
+            Thread.sleep(forTimeInterval: 1)
+            let remove = app.buttons["signinMethods.remove.apple"].firstMatch
+            if shape == "last" {
+                XCTAssertFalse(remove.exists, "最後の1つなのに「解除」が出ている")
+                XCTAssertTrue(app.descendants(matching: .any)["signinMethods.blocked.apple"].firstMatch.exists,
+                              "解除できない理由が出ていない")
+                shoot(app, "102j-サインインの方法（解除できない）")
+                app.terminate()
+                continue
+            }
+            shoot(app, "102i-サインインの方法")
+            guard remove.exists else { return XCTFail("Apple の「解除」が無い") }
+            XCTAssertGreaterThanOrEqual(remove.frame.height, 44, "「解除」が 44pt 未満")
+            remove.tap()
+            let confirm = app.buttons["解除する"].firstMatch
+            guard confirm.waitForExistence(timeout: 5) else { return XCTFail("確かめのダイアログが出ない") }
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "102i2-サインインの方法（確かめ）")
+            confirm.tap()
+            let gone = NSPredicate(format: "exists == false")
+            expectation(for: gone, evaluatedWith: app.buttons["signinMethods.remove.apple"].firstMatch)
+            waitForExpectations(timeout: 10)
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "102i3-サインインの方法（解除した後）")
+            app.terminate()
+        }
+    }
+
     /// **設定の並び**（2026-10-18 owner「設定の項目多くなってるのでわかりやすいように整理して」）: いちばん上・
     /// 公開範囲とプライバシー（すれちがい乗車券）・最後の危ない操作・下の画面（データとストレージ・トランクを見せる）。
     /// 2026-11-12: 旅の道具は ≡ メニューへ（`testCapturesSiteMenuTools`）。押せる行が 44pt 未満なら落とす

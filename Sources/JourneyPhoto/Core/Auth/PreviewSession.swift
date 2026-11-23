@@ -839,6 +839,20 @@ enum PreviewSession {
         #endif
     }
 
+    /// 見本の通信に「サインインの方法」（`/user/signin-methods`・札 #601）の答えを足す。`-JPPreviewSigninMethods <形>`。
+    /// 形は `linked`（メールと Apple・Apple は解除できる）か `last`（Apple で作った人・Apple は最後の1つで解除できない）。
+    /// **これが無いと口は 503**（設定の行は出ない・口の無いサーバーと同じ）。Release では必ず nil
+    static let signinMethodsKey = "JPPreviewSigninMethods"
+
+    static var signinMethods: String? {
+        #if DEBUG
+        guard localBackend else { return nil }
+        return UserDefaults.standard.string(forKey: signinMethodsKey)
+        #else
+        return nil
+        #endif
+    }
+
     /// UI テストでストーリー作成を**見本の写真と曲を付けた状態で**開く（Debug のみ）。`-JPPreviewStorySong YES`。
     /// 曲の札の6つの形（2026-10-28）を押して替えながら撮る。**入っている見本の利用者のときだけ**効く。
     /// Release では必ず false

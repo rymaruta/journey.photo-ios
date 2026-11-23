@@ -26,6 +26,8 @@ final class AppEnvironment: ObservableObject {
     let appleSignIn: AppleSignInService
     /// 「Google でログイン」（`/auth/google`・札 #715）
     let googleSignIn: GoogleSignInService
+    /// 「サインインの方法」（`/user/signin-methods`・札 #601・2026-11-23 owner）
+    let signinMethods: SigninMethodsService
     let albums: AlbumService
     let stories: StoryService
     /// ストーリーハイライト（アーカイブを束ねた輪）
@@ -96,6 +98,7 @@ final class AppEnvironment: ObservableObject {
         self.account = AccountService(api: api)
         self.appleSignIn = AppleSignInService(api: api)
         self.googleSignIn = GoogleSignInService(api: api)
+        self.signinMethods = SigninMethodsService(api: api)
         self.albums = AlbumService(api: api)
         self.stories = StoryService(api: api)
         self.highlights = HighlightService(api: api)

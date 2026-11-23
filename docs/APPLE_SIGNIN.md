@@ -107,6 +107,67 @@ jq '.LambdaConfig' after.json
 
 ---
 
+## 6. メールで知らせる（SES の準備、owner 向け）
+
+メールで自動で結んだとき（Apple、Google）に、そのアカウントのメールアドレスへ知らせのメールを送ります（2026-11-23 owner「メールで知らせる」）。
+送るのは AWS SES（Amazon Simple Email Service）です。**準備が済むまでは送りません**（変数 `SIGNIN_EMAIL_ENABLED` が既定で無い＝送らない。
+プッシュの知らせは今までどおり届きます）。
+
+**費用:** 1,000 通で約 0.10 ドル（約 15 円）。送るのは「メールで自動で結んだとき」だけなので、1人に一生で数通です。
+1万人が全員結んでも約 1 ドル。SES のドメインの登録と DKIM は無料です。
+
+### 6-1. 変数を入れて、SES の登録を作る
+
+1. journey.photo-web の Settings → Secrets and variables → Actions → **Variables** に `SIGNIN_EMAIL_ENABLED` = `true` を足す
+   （送り元を変えたいときだけ `SIGNIN_EMAIL_FROM`。既定は `no-reply@journey-photo.com`。差出人の名前は「journey.photo」）
+2. Deploy API Lambdas を流す（staging → 本番）。Apple でサインインのスタック（`APPLE_SIGNIN_ENABLED` が true のときだけ配る）が、
+   SES の**ドメインの登録（journey-photo.com）と DKIM** を作り、知らせの関数に「その送り元からだけ送れる」権限を付けます
+3. スタックの出力（Outputs）に DKIM の CNAME が3組出ます。どちらかで見られます:
+   - CloudFormation のコンソール → `photo-gallery-apple-signin-prod` → 出力 → `SigninEmailDkim1`〜`3`
+   - `aws sesv2 get-email-identity --email-identity journey-photo.com --region ap-northeast-1`（`DkimAttributes.Tokens` の3つ。
+     名前は `<token>._domainkey.journey-photo.com`、値は `<token>.dkim.amazonses.com`）
+
+   ⚠️ staging と本番は同じ AWS アカウントの東京なので、ドメインの登録は1つだけです。**登録を作るのは本番のスタックだけ**で、
+   staging は本番が作った登録を使います。だから DKIM の CNAME が出るのは本番の出力だけで、staging でメールを確かめるのは
+   本番に一度配って DNS が通ったあとです（それまで staging の送信は失敗し、ログに出るだけ。サインインは止まりません）
+
+### 6-2. DNS に DKIM の CNAME を3つ入れる
+
+- 入れる先は `journey-photo.com` の DNS を持っている所です。**どこにあるかは、リポジトリの設定からは分かりませんでした**
+  （Route 53 のホストゾーンは CloudFormation にもコードにも無く、手順書に「Route 53 で登録済みのドメインを入力」と書いた所があるだけ）。
+  Route 53 なら、コンソールの「ホストゾーン」→ `journey-photo.com` → レコードを作成 → 種類 CNAME で3つ。ほかの会社なら、その会社の DNS の画面で同じ3つ
+- 入れて数分〜72時間で、SES のコンソールの「検証済みの ID」で journey-photo.com が「検証済み」になります（DKIM が通ればドメインの確認も済む）
+- 任意（迷惑メールに入りにくくする）: DMARC（`_dmarc.journey-photo.com` に TXT `v=DMARC1; p=none;`）。SPF は SES の既定の
+  MAIL FROM（amazonses.com）で通るので、要りません
+
+### 6-3. 送れる宛先の制限を外す申請（本番の利用者に送るため）
+
+SES は最初「サンドボックス」で、**確かめたメールアドレスにしか送れません**。利用者に送るには申請が要ります（無料、ふつう1日以内）。
+
+1. SES のコンソール（東京 ap-northeast-1）→ アカウントダッシュボード → 「本稼働アクセスをリクエスト」
+2. メールの種類: **トランザクション**。Web サイトの URL: `https://journey-photo.com`
+3. 使い方の説明の例（英語で書く）:
+   "We send a one-time security notice to a user's own verified email address when their account is linked with Sign in with Apple
+   or Google sign-in. About 1 email per user, only on that event. No marketing. Bounces and complaints are monitored via SES."
+4. 通るまでは、SES のコンソールで自分のメールアドレスを「検証済みの ID」に足せば、そのアドレスにだけ送って確かめられます
+
+### 6-4. 確かめる
+
+- staging で、確かめ済みのメールのアカウントを作り、同じメールの Apple ID で「Apple でサインイン」→ メールが届く
+  （件名「Apple でサインインできます」、本文「心当たりが無ければ、こちらから連携を解除できます。」とリンク）
+- 届かないとき: CloudWatch Logs の `/aws/lambda/photo-gallery-apple-signin-<環境>-linkNotice` に `federated link email:` の行
+  （`MessageRejected` ならサンドボックスか未検証。送れなくてもサインインは止まりません）
+- 戻すとき: 変数 `SIGNIN_EMAIL_ENABLED` を消して Deploy API Lambdas（SES の登録と権限が消える。DNS の CNAME は残してよい）
+
+### メールのリンクの行き先
+
+リンクは `https://journey-photo.com/signin-methods`（Web の短い案内の頁、`app/signin-methods/page.tsx`）。
+アプリでこの道を直に開く（universal link）には、iOS に Associated Domains の権限を足す必要があり、まだ足していません
+（App ID で Associated Domains を有効にしてから。今は Web の頁が「アプリの設定の『サインインの方法』」を案内します）。
+プッシュの知らせは、押すとアプリの「サインインの方法」が直に開きます。
+
+---
+
 ## 仕組み（担当向け・短く）
 
 - アプリは乱数の nonce を作り、**SHA-256 を Apple に、元の値をサーバーに**渡す。サーバーは `sha256(元の値) == token の nonce` を確かめ、
@@ -117,9 +178,13 @@ jq '.LambdaConfig' after.json
   墓石を書く前。Apple が落ちている（5xx・時間切れ）なら 500 で止め、結び付けは残る。Apple が断った（4xx）・鍵が無いときは
   止めずに見張りに出す）。墓石を書いたあとに `apple#<sub>` の行と墓石の番号を消す
 - メールで自動で結ぶのは、Cognito で確かめ済みのメールが同じで、`admin` でなく、別の Apple ID とまだ結んでいない人だけ。
-  結んだら持ち主の端末にプッシュで知らせる（サーバーにはメールを送る仕組みが無いため）
-  知らせの文は題「Apple でサインインできます」、本文「心当たりが無ければ、パスワードを変えてください。」
-  （2026-11-23 owner「結ばれました、は日常会話で使わない」「長すぎる」。Google は題が「Google でログインできます」）
+  結んだら持ち主に**メール（SES）とプッシュ**で知らせる（下の「6. メールで知らせる」）。
+  知らせの文は題「Apple でサインインできます」、本文「心当たりが無ければ、こちらから連携を解除できます。」とリンク1つ
+  （2026-11-23 owner。「パスワードを変えてください」はやめた。パスワードを変えても Apple から入れてしまうため。Google は題が「Google でログインできます」）
+- 設定の「サインインの方法」（`GET /user/signin-methods`、`DELETE /user/signin-methods/{provider}`、`api-user/src/signinMethods.ts`）で、
+  本人が Apple と Google の連携を解除できる。Apple は更新トークンを取り消してから解除する。**最後に残る入り方は解除させない**
+  （Apple や Google で新しく作った人はメールのパスワードを知らないため。パスワードを決め直すと `password#<uid>` の印ができ、解除できるようになる）。
+  解除した提供元には、メールが同じでも自動ではもう結ばない
 - 行・券・トリガーは提供元（`apple`・`google`）の欄で分けてある（`federatedAccount.ts`）。「Google でログイン」（#715）も
   同じトリガーを使う（`docs/GOOGLE_SIGNIN.md`）
 
