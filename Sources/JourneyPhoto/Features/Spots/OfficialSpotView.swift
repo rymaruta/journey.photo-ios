@@ -1230,7 +1230,7 @@ struct OfficialSpotView: View {
             pendingCapture = nil
             TabRouter.shared.postSheetClosed()
         }) {
-            NavigationStack { UploadView(spot: { var target = UploadSpotTarget(spot); target.announcesFirst = firstAtOpen; return target }(),
+            NavigationStack { UploadView(spot: UploadSpotTarget(spot).announcing(firstAtOpen),
                                          onPosted: { count in
                 // **この一覧に並ぶ投稿があったときだけ**（外した・遠い写真・下書き・範囲を
                 // 絞った投稿では並ばないので言わない）

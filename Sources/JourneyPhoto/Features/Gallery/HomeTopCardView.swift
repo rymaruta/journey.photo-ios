@@ -32,10 +32,10 @@ struct HomeTopCardView: View {
     /// ホームの外側を `VStack` にしたので、流れ出ても `onDisappear` が来ない。main（外側が `LazyVStack`）では
     /// 流れ出ると `onDisappear`、戻ると `onAppear` が来ていた——その扱い（見えていない間は差し替えを後回し・戻ったら
     /// 前面の確定を待って `landHomeCards`）を、この値の変わり目で続ける
-    var scrolledAway: Bool = false
     /// 公開の写真の一覧と、フォローしている人（友達が行きたい場所で撮った札・札 #710 の案9・`FriendWish`）
     var friendPhotos: [Photo] = []
     var followingIds: Set<String> = []
+    var scrolledAway: Bool = false
 
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var environment: AppEnvironment

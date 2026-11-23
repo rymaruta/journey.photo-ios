@@ -26,6 +26,13 @@ struct UploadSpotTarget: Equatable {
         self.init(spotId: spot.spotId, name: spot.name, coords: spot.coords)
     }
 
+    /// 「最初の1枚」と言ってよい行き先にする（札 #710 の案7）
+    func announcing(_ first: Bool) -> UploadSpotTarget {
+        var target = self
+        target.announcesFirst = first
+        return target
+    }
+
     /// 写真の位置がスポットからこれより離れていたら、そのスポットの写真とみなさない
     /// （別の旅の写真を混ぜて選んだとき）。スポットの座標は約1kmに丸めてあり、
     /// 遠くから撮る景色（富士山・雲海）もあるので広めに取る

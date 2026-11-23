@@ -148,6 +148,7 @@ struct JapaneseColorPhotosView: View {
 
     private func load() async {
         failed = false
-        if let photos = try? await environment.gallery.fetchPhotos() { all = photos } else { failed = true }
+        let photos = try? await environment.gallery.fetchPhotos()
+        if let photos { all = photos } else { failed = true }
     }
 }

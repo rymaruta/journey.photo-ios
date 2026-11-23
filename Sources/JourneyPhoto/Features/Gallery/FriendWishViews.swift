@@ -30,13 +30,7 @@ extension View {
                 Button(action: talk) {
                     // 行の中の小ボタン（見た目 36・当たり 44・線 白 14%）。札は黒地なので白の字
                     Text(FriendWish.talk)
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(WebTheme.foreground)
-                        .padding(.horizontal, 14)
-                        .frame(height: 32)
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: JPStroke.hairline))
-                        .frame(minWidth: WebTheme.minTapTarget, minHeight: WebTheme.minTapTarget)
-                        .contentShape(Rectangle())
+                        .jpOutlineButton(.inline)
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("home.friendWish.talk")
@@ -88,7 +82,8 @@ struct FriendWishPhotoLine: View {
         // 観光スポットの鍵（`SPOT-<slug>`）を当てるための索引。行きたい場所に観光スポットが無ければ読まない
         .task(id: wishlist.spotIds.contains(where: SavedSpotKey.isOfficial)) {
             guard spots.isEmpty, wishlist.spotIds.contains(where: SavedSpotKey.isOfficial), photo.spotId != nil else { return }
-            if let index = try? await environment.spots.fetchIndex() { spots = index }
+            let index = try? await environment.spots.fetchIndex()
+            if let index { spots = index }
         }
     }
 }
@@ -161,7 +156,7 @@ struct FriendWishTalkSheet: View {
                         .foregroundStyle(WebTheme.danger)
                 }
                 HStack(spacing: JPSpace.xs) {
-                    TextField(L("メッセージを書く", "Write a message"), text: $text, axis: .vertical)
+                    JPTextField(L("メッセージを書く", "Write a message"), text: $text, axis: .vertical)
                         .lineLimit(1...4)
                         .padding(.horizontal, 16)
                         .frame(minHeight: 44)

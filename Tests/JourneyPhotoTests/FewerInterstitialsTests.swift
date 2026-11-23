@@ -191,7 +191,9 @@ final class FewerInterstitialsTests: XCTestCase {
         // 2回目からの投稿は今までどおり知らせ「投稿しました　カードにする」だけ（カードの画面を自分から出さない）
         let center = try source("Core/Storage/PostUploadCenter.swift")
         XCTAssertTrue(center.contains("model.showsCardSheet = { false }"))
-        XCTAssertTrue(center.contains("toasts.show(PostedCardHabit.quietText, kind: .success, actionTitle: PostedCardHabit.quietAction)"))
+        // 2026-11-23（札 #710 の案1・7）: 1行目は場所で言い替える（無ければ「投稿しました」）。「カードにする」はそのまま
+        XCTAssertTrue(center.contains("let title = place?.title ?? PostedCardHabit.quietText"))
+        XCTAssertTrue(center.contains("toasts.show(title, detail: place?.detail, kind: .success, actionTitle: PostedCardHabit.quietAction)"))
     }
 
     // MARK: - 5. 未ログインでいいね等: 確かめの窓をやめ、すぐログインのシート

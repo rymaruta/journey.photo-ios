@@ -406,7 +406,10 @@ struct TripPlanDetailView: View {
         // 点線の枠から開く投稿（札 #710 の案3）。閉じたら自分の写真を読み直して、枠を写真に替える
         .sheet(item: $stopPost, onDismiss: {
             TabRouter.shared.postSheetClosed()
-            Task { if let mine = try? await environment.photos.myPhotos() { myPhotos = mine } }
+            Task {
+                let mine = try? await environment.photos.myPhotos()
+                if let mine { myPhotos = mine }
+            }
         }) { target in
             NavigationStack {
                 UploadView(spot: target.spot, onSaved: { photo in
@@ -431,7 +434,9 @@ struct TripPlanDetailView: View {
             if let fetchedPhotos { photos = fetchedPhotos; gotPhotos = true }
             if let fetchedIndex { index = fetchedIndex; gotIndex = true }
             // 自分の写真（札 #710 の案3）。ログインしている人の分だけ。取れなかった回は前の分を残す
-            if auth.userId != nil, let mine = try? await environment.photos.myPhotos() { myPhotos = mine }
+            var mine: [Photo]?
+            if auth.userId != nil { mine = try? await environment.photos.myPhotos() }
+            if let mine { myPhotos = mine }
             // 別名は取れなくてもよい（名前と読みで当たる・`fetchAliases` は投げない）
             let fetchedAliases = await environment.spots.fetchAliases()
             if !fetchedAliases.isEmpty { aliases = fetchedAliases }
