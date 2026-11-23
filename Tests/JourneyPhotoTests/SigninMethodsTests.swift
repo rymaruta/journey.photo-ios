@@ -174,4 +174,19 @@ final class SigninMethodsTests: XCTestCase {
         XCTAssertEqual(PreviewBackend.signinMethodsReply(method: "DELETE", parts: ["user", "signin-methods", "apple"], shape: "last")?.status, 409)
         XCTAssertEqual(PreviewBackend.signinMethodsReply(method: "DELETE", parts: ["user", "signin-methods", "apple"], shape: "linked")?.status, 200)
     }
+
+    /// 見本の答え（`-JPPreviewSigninMethods`）は見本の通信の中だけで効く。画面写真の試験は見本の通信も一緒に渡す
+    /// （2026-11-23・Mac run 1769: 渡さずに本物のサーバーへ聞き、設定に行が出なかった）
+    func testScreenshotLaunchUsesLocalBackend() async throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let preview = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Core/Auth/PreviewSession.swift"), encoding: .utf8)
+        XCTAssertTrue(preview.contains("guard localBackend else { return nil }\n        return UserDefaults.standard.string(forKey: signinMethodsKey)"),
+                      "見本の答えが見本の通信なしでも効くように変わった（この試験を見直す）")
+        let shots = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"), encoding: .utf8)
+        let lines = shots.components(separatedBy: "\n").filter { $0.contains("\"-JPPreviewSigninMethods\"") }
+        XCTAssertFalse(lines.isEmpty, "サインインの方法の画面写真の試験が無い")
+        for line in lines {
+            XCTAssertTrue(line.contains("\"-JPPreviewLocalBackend\", \"YES\""), "見本の通信を渡さずに見本の答えを頼んでいる: \(line)")
+        }
+    }
 }

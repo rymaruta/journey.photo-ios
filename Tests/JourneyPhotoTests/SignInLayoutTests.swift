@@ -190,6 +190,19 @@ final class SignInLayoutTests: XCTestCase {
                       "失敗の文を読み上げに伝えていない")
     }
 
+    /// 失敗の文は欄に付けて置く: どの形でも、失敗の文の下端から打つ所まで 40pt 未満（UI テスト
+    /// `testSignInFailureIsVisibleAboveFields` の上限。Mac run 1769 は並びの間 12 のままで 47.67pt）
+    func testErrorHugsTheFirstField() throws {
+        XCTAssertLessThanOrEqual(SignInLayout.errorGap, 4)
+        for density in SignInLayout.Density.allCases {
+            XCTAssertLessThan(SignInLayout.errorToFieldText(density), 40, "失敗の文が欄から離れている（\(density)）")
+        }
+        let view = try source("Features/Auth/SignInView.swift")
+        let messages = try slice(view, from: "private var messages", to: "/// 欄（いちばん詰めた形では")
+        XCTAssertTrue(messages.contains(".padding(.bottom, showsCredentials ? SignInLayout.errorGap - metrics.gap : 0)"),
+                      "失敗の文が並びの間のまま欄から離れている")
+    }
+
     /// 模型 NL2x の寸法
     func testMetricsMatchMock() {
         XCTAssertEqual(SignInLayout.metrics(.regular),

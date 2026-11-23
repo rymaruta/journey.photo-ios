@@ -4626,11 +4626,8 @@ final class ScreenshotTests: JPUITestCase {
         for (extra, tag) in [([String](), ""), (Self.largeText, "・大きい文字")] {
             let app = launchSignedOutHome(["-JPPreviewExternalSignIn", "YES"] + extra)
             guard app.tabBars.firstMatch.waitForExistence(timeout: 30) else { return unreached(app, "タブ\(tag)") }
-            let like = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'いいね '")).firstMatch
-            guard like.waitForExistence(timeout: 30), like.isHittable else { return unreached(app, "ホームのいいね\(tag)") }
-            like.tap()
             let form = app.descendants(matching: .any)["signin.form"].firstMatch
-            guard form.waitForExistence(timeout: 10) else { return unreached(app, "ログイン画面\(tag)") }
+            guard tapHomeLike(app, opens: form, tag) else { return unreached(app, "ログイン画面\(tag)") }
 
             for signUp in [true, false] {
                 let name = (signUp ? "70-ログインの画面（登録の側・Apple と Google" : "70b-ログインの画面（ログインの側・Apple と Google") + tag + "）"
@@ -4703,11 +4700,8 @@ final class ScreenshotTests: JPUITestCase {
     func testCapturesVerificationCode() {
         let app = launchSignedOutHome(["-JPPreviewVerificationCode", "YES"])
         guard app.tabBars.firstMatch.waitForExistence(timeout: 30) else { return unreached(app, "タブ") }
-        let like = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'いいね '")).firstMatch
-        guard like.waitForExistence(timeout: 30), like.isHittable else { return unreached(app, "ホームのいいね") }
-        like.tap()
         let field = app.textFields["signin.code"].firstMatch
-        guard field.waitForExistence(timeout: 10) else { return unreached(app, "確認コードの画面") }
+        guard tapHomeLike(app, opens: field, "") else { return unreached(app, "確認コードの画面") }
         let keyboard = app.keyboards.firstMatch
         if !keyboard.waitForExistence(timeout: 5) { field.tap() }
         Thread.sleep(forTimeInterval: 1)
@@ -4739,6 +4733,37 @@ final class ScreenshotTests: JPUITestCase {
     }
 
     /// 未ログインでホームを開く（一巡と同じ本番の写真・日本語）。`-JPPreviewUserId` を渡さない
+    /// 未ログインでホームの写真のいいねを押し、`target`（ログイン画面など）が出るまで。出たら true。
+    ///
+    /// 2026-11-23（1.2.0 の統合・Mac run 1769 `testCapturesSignInLayout` の大きい文字）: いいねを押したのに写真の詳細
+    /// （蔵王キツネ村の1枚）が開き、ログイン画面に届かなかった。本物の公開一覧を読むホームは、上の段が後から読み込まれて
+    /// 札が下へずれる。大きい文字では読み込みが遅く、いいねの位置を読んでから押すまでの約1秒の間にずれて、下の札の写真を押していた。
+    /// **いいねの位置が 0.5 秒止まってから押す**。それでも詳細が開いたら、位置を記録して戻り、もう1回だけ押す
+    private func tapHomeLike(_ app: XCUIApplication, opens target: XCUIElement, _ tag: String) -> Bool {
+        let like = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'いいね '")).firstMatch
+        for attempt in 1...2 {
+            guard like.waitForExistence(timeout: 30) else { return false }
+            var frame = like.frame
+            for _ in 0..<12 {
+                Thread.sleep(forTimeInterval: 0.5)
+                let now = like.frame
+                if now == frame { break }
+                frame = now
+            }
+            guard like.isHittable else { return false }
+            like.tap()
+            if target.waitForExistence(timeout: 10) { return true }
+            let detail = app.buttons["photo.menu"].firstMatch.exists
+            let text = "[home-like]\(tag) \(attempt) 回目: いいね=\(frame) 押した後のいいね=\(like.exists ? "\(like.frame)" : "無し") 詳細が開いた=\(detail)"
+            print(text)
+            XCTContext.runActivity(named: text) { _ in }
+            guard detail, attempt == 1 else { return false }
+            app.navigationBars.buttons.firstMatch.tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        return false
+    }
+
     private func launchSignedOutHome(_ extra: [String]) -> XCUIApplication {
         let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "0"]
@@ -6025,7 +6050,8 @@ final class ScreenshotTests: JPUITestCase {
 
     /// **旅が増えたとき**（`-JPPreviewTripShelf many`・3年で14冊）: 年ごとの段と背表紙。説明の文は出さない
     func testCapturesTripShelfMany() {
-        let app = launchTrunk(["-JPPreviewTripShelf", "many"])
+        // `-JPPreviewLayoutProbe`: 日めくりの指の記録を `trips.flip.probe` に出す（2回外した後の事実取り・`DayFlipProbeLog`）
+        let app = launchTrunk(["-JPPreviewTripShelf", "many", "-JPPreviewLayoutProbe", "YES"])
         guard openTripShelf(app) else { return XCTFail("旅の記録のタブを開けない") }
         let spine = app.descendants(matching: .any)["trips.book"].firstMatch
         guard spine.waitForExistence(timeout: 20) else { return XCTFail("旅が増えたのに背表紙が無い") }
@@ -6072,10 +6098,17 @@ final class ScreenshotTests: JPUITestCase {
         let before = day1.exists ? day1.frame.minY : nil
         app.swipeLeft()
         Thread.sleep(forTimeInterval: 2)
-        guard day1.waitForExistence(timeout: 5) else { return XCTFail("左へ払っても1日目の見出しが出ない（日がめくれない）") }
+        // 落ちたときの値: 日めくりの記録（指の始まり・離したとき・めくった先）と、画面にある日の見出し（id と上端）
+        func facts() -> String {
+            let probe = app.descendants(matching: .any)["trips.flip.probe"].firstMatch
+            let heads = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH 'trips.day.'")).allElementsBoundByIndex
+                .map { "\($0.identifier)@\(Int($0.frame.minY))" }
+            return "probe=[\(probe.exists ? (probe.value as? String ?? "") : "無し")] 見出し=\(heads)"
+        }
+        guard day1.waitForExistence(timeout: 5) else { return XCTFail("左へ払っても1日目の見出しが出ない（日がめくれない）\(facts())") }
         let top = app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.frame.maxY : 100
         XCTAssertLessThan(day1.frame.minY, top + 120,
-                          "左へ払っても1日目の見出しが上へ来ない（前 \(before.map { "\($0)" } ?? "無し")、後 \(day1.frame.minY)）")
+                          "左へ払っても1日目の見出しが上へ来ない（前 \(before.map { "\($0)" } ?? "無し")、後 \(day1.frame.minY)）\(facts())")
         shoot(app, "34e-旅の一冊（次の日へめくった）")
         let back = app.navigationBars.buttons.firstMatch
         guard back.waitForExistence(timeout: 5) else { return XCTFail("一冊に戻るボタンが無い") }
@@ -6257,7 +6290,9 @@ final class ScreenshotTests: JPUITestCase {
     /// もう1つの形（Apple で作った人）は、最後の1つなので「解除」が無く、理由が出る。見本の通信（`-JPPreviewSigninMethods`）
     func testCapturesSigninMethods() {
         for shape in ["linked", "last"] {
-            let app = launchTrunk(["-JPPreviewSigninMethods", shape])
+            // 見本の答えは見本の通信の中だけ（`PreviewSession.signinMethods` は `localBackend` のときだけ値を返す）。
+            // 2026-11-23（Mac run 1769）: `-JPPreviewLocalBackend` を渡さず、本物のサーバーに聞いて行が出なかった
+            let app = launchTrunk(["-JPPreviewLocalBackend", "YES", "-JPPreviewSigninMethods", shape])
             let tabBar = app.tabBars.firstMatch
             guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return XCTFail("下の札が出ない") }
             tabBar.buttons.element(boundBy: 4).tap()

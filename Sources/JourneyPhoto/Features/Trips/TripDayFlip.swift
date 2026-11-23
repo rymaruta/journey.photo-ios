@@ -28,8 +28,11 @@ struct TripDayFlip: ViewModifier {
         ScrollViewReader { proxy in
             DayTurnFollow(model: model, content: content)
                 .environment(\.tripDayFlip, model)
+                // UI テストのときだけ: 日めくりの指の記録（`trips.flip.probe`・`DayFlipProbeLog`）
+                .overlay(alignment: .topLeading) { DayFlipProbeView(log: model.log) }
                 .onAppear {
                     model.dayIDs = dayIDs
+                    model.log.note("appear days=\(dayIDs.count) first=\(dayIDs.first ?? "-")")
                     model.reduceMotion = reduceMotion
                     model.scroll = { id in proxy.scrollTo(id, anchor: .top) }
                 }
@@ -65,6 +68,8 @@ final class DayFlipModel: ObservableObject {
     var reduceMotion = false
     var scroll: ((String) -> Void)?
     private var turning = false
+    /// UI テストのときだけの記録（`trips.flip.probe`）
+    let log = DayFlipProbeLog()
 
     /// 見出しが読む線を過ぎたか
     func mark(_ id: String, passed isPast: Bool) {
@@ -73,7 +78,12 @@ final class DayFlipModel: ObservableObject {
 
     /// 指を受けるか（動き始めの横・縦の量と、指の始まりの x）
     func begins(dx: Double, dy: Double, startX: Double) -> Bool {
-        !turning && TripBookPageFlip.beginDirection(dx: dx, dy: dy, startX: startX, dayIDs: dayIDs, passed: passed) != nil
+        let direction = turning ? nil
+            : TripBookPageFlip.beginDirection(dx: dx, dy: dy, startX: startX, dayIDs: dayIDs, passed: passed)
+        log.note("begin dx=\(DayFlipProbeLog.n(dx)) dy=\(DayFlipProbeLog.n(dy)) x0=\(DayFlipProbeLog.n(startX)) "
+                 + "now=\(TripBookPageFlip.current(dayIDs: dayIDs, passed: passed)) days=\(dayIDs.count) turning=\(turning) "
+                 + "-> \(direction.map { "\($0)" } ?? "no")")
+        return direction != nil
     }
 
     /// 指に付いて少しだけ回る
@@ -84,6 +94,8 @@ final class DayFlipModel: ObservableObject {
 
     /// 離した。めくると決まればめくり、決まらなければ元へ戻す
     func release(dx: Double, velocityX: Double) {
+        log.note("end dx=\(DayFlipProbeLog.n(dx)) vx=\(DayFlipProbeLog.n(velocityX)) "
+                 + "commit=\(TripBookPageFlip.commitDirection(dx: dx, velocityX: velocityX).map { "\($0)" } ?? "no")")
         guard !turning else { return }
         if let direction = TripBookPageFlip.commitDirection(dx: dx, velocityX: velocityX), flip(direction) { return }
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { turn = 0; fade = 1 }
@@ -93,8 +105,10 @@ final class DayFlipModel: ObservableObject {
     @discardableResult
     func flip(_ direction: Int) -> Bool {
         guard !turning, let id = TripBookPageFlip.targetID(dayIDs: dayIDs, passed: passed, direction: direction) else {
+            log.note("flip \(direction) -> none")
             return false
         }
+        log.note("flip \(direction) -> \(id) scroll=\(scroll != nil)")
         guard !reduceMotion else {
             scroll?(id)
             turn = 0
@@ -127,6 +141,7 @@ final class DayFlipModel: ObservableObject {
 
     /// 動きを付けずにその日の見出しへ移り、向きと濃さを置き直す
     private func jump(to id: String, turn: Double, fade: Double) {
+        log.note("jump \(id)")
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
@@ -257,6 +272,7 @@ struct TripDayFlipPanHost: UIViewRepresentable {
             detach()
             scroll.addGestureRecognizer(pan)
             host = scroll
+            model?.log.note("attach \(type(of: scroll))")
         }
 
         /// 外す。払いの途中なら元へ戻して終える
@@ -277,6 +293,7 @@ struct TripDayFlipPanHost: UIViewRepresentable {
             case .ended:
                 model?.release(dx: Double(move.x), velocityX: Double(pan.velocity(in: nil).x))
             case .cancelled, .failed:
+                model?.log.note(pan.state == .cancelled ? "cancelled" : "failed")
                 model?.release(dx: 0, velocityX: 0)
             default:
                 break
@@ -322,3 +339,41 @@ struct TripDayFlipPanHost: UIViewRepresentable {
     }
 }
 #endif
+
+/// **UI テストの事実取りだけ**: 日めくりの指の始まり・離したとき・めくった先・受けたかを記録し、見えない要素
+/// `trips.flip.probe` の値に出す（`-JPPreviewLayoutProbe YES`・Debug のみ・`PreviewSession.layoutProbe`）。
+///
+/// 2026-11-23（1.2.0 の統合）: `testCapturesTripBookOpened`「左へ払っても1日目の見出しが出ない」を推定で2回直して2回とも外した
+/// （run 1765・1769）。決まり（CLAUDE.md「2回外れたら数字を取る」）どおり、次に落ちたら指が届いたか・めくったかを値で分ける。
+/// 一冊の `body` を描き直さないよう、記録は日めくりの段取り（`DayFlipModel`）の外の小さな入れ物に持つ。Release では何も記録しない
+@MainActor
+final class DayFlipProbeLog: ObservableObject {
+    /// 残す件数（番号 `#n` は通し）
+    static let keep = 12
+
+    let enabled = PreviewSession.layoutProbe
+    @Published private(set) var entries: [String] = []
+    private var count = 0
+
+    func note(_ text: String) {
+        guard enabled else { return }
+        count += 1
+        entries.append("#\(count) \(text)")
+        if entries.count > Self.keep { entries.removeFirst(entries.count - Self.keep) }
+    }
+
+    var text: String { entries.joined(separator: " ; ") }
+
+    static func n(_ value: Double) -> String { String(format: "%.1f", value) }
+}
+
+/// `trips.flip.probe` の見えない要素
+struct DayFlipProbeView: View {
+    @ObservedObject var log: DayFlipProbeLog
+
+    var body: some View {
+        if log.enabled {
+            LayoutProbe(identifier: "trips.flip.probe", value: log.text)
+        }
+    }
+}

@@ -465,4 +465,21 @@ final class TripBookshelfTests: XCTestCase {
         }
         XCTAssertEqual(PreviewTripShelf.many(photos: []), [])
     }
+
+    /// 見本の一冊の日の段は 1日目から旅の日数まで（写真の撮影日が旅の外でも、旅の日に置き直す）。
+    /// 2026-11-23・Mac run 1765 と 1769: 見本の写真の撮影日のままで「-23日目」「5日目」になり、1日目が無く日めくりの試験が落ちた
+    func testPreviewSampleDaysStartAtOne() throws {
+        let photos = try (0..<30).map { try photo("p\($0)", date: $0 % 2 == 0 ? "2026-10-10" : "2023-03-01") }
+        for trip in PreviewTripShelf.many(photos: photos) {
+            let days = TripBook.days(of: trip).map(\.number)
+            XCTAssertEqual(days.first, 1, "\(trip.id) が1日目から始まらない: \(days)")
+            var utc = Calendar(identifier: .gregorian)
+            utc.timeZone = TimeZone(identifier: "UTC")!
+            let span = (utc.dateComponents([.day], from: trip.start, to: trip.end).day ?? 0) + 1
+            XCTAssertTrue(days.allSatisfy { (1...span).contains($0) }, "\(trip.id) の日が旅の外: \(days)（\(span)日間）")
+            XCTAssertEqual(days, days.sorted(), "\(trip.id) の日が順に並ばない")
+            XCTAssertEqual(TripBookPageFlip.targetID(dayIDs: days.map { TripBookPageFlip.headerID(day: $0) }, passed: [], direction: 1),
+                           "day-1", "表紙から左へ払っても1日目へめくれない")
+        }
+    }
 }

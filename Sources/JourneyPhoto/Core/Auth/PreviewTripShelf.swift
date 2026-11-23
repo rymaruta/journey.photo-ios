@@ -53,11 +53,29 @@ enum PreviewTripShelf {
             let end = calendar.date(byAdding: .day, value: dayCounts[index] - 1, to: start)!
             // 同じ写真を1冊に2度入れない（開いた一冊の並びが写真の id で決まる）
             let count = min(counts[index], photos.count)
-            let picked = (0..<count).map { photos[(cursor + $0) % photos.count] }
+            // **写真の日を旅の日に置き直す**（2026-11-23 判断・1.2.0 の統合・Mac run 1765 と 1769 の
+            // `testCapturesTripBookOpened`「左へ払っても1日目の見出しが出ない」）。前は見本の利用者の写真の撮影日のままで、
+            // 「金沢 11.03〜11.05」の一冊の日の段が「-23日目（10.10）」「-22日目」「5日目」になり、1日目が無かった
+            // （日めくりは効いていて、落ちた時の画面の木では「-23日目」の見出しが上に来ていた）。順に、旅の日数に割って置く
+            let picked = (0..<count).map { offset -> Photo in
+                let photo = photos[(cursor + offset) % photos.count]
+                let day = offset * dayCounts[index] / count
+                let at = calendar.date(byAdding: DateComponents(day: day, hour: 12), to: start)!
+                return redated(photo, at: at)
+            }
             cursor += 3
             return TripBook.Trip(id: "preview-shelf-\(index)", place: place, start: start, end: end,
                                  photos: picked, timeZone: TimeZone(identifier: "UTC")!,
                                  isPrivate: index == 6)
         }
+    }
+
+    /// 写真の日を `at` に置き直す（見本の中だけ・Debug のみ。Release では渡したまま）
+    private static func redated(_ photo: Photo, at: Date) -> Photo {
+        #if DEBUG
+        return PreviewSNSLoopSample.remade(photo, createdAt: at, addTag: nil, owner: nil) ?? photo
+        #else
+        return photo
+        #endif
     }
 }
