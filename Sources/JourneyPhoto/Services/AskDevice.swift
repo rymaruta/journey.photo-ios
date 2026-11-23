@@ -78,8 +78,10 @@ enum AskDevice {
     static func live(_ question: String, history: [AskExchange], library: AskLibrary) async -> Result? {
         #if canImport(FoundationModels)
         if #available(iOS 26.0, macOS 26.0, *) {
-            let collector = AskCollector()
-            let box = AskLibraryBox(library)
+            // 2026-11-23 判断: 頼んだ数（「5選」）と月（「11月下旬」）は文から読み、道具と札の数に使う（AI の読み落としに任せない）
+            let asked = AskLibrary.requested(question)
+            let collector = AskCollector(limit: asked.count ?? AskLibrary.maxSpots)
+            let box = AskLibraryBox(library, count: asked.count, month: asked.month)
             return await withTaskGroup(of: Result?.self) { group in
                 group.addTask {
                     do {
@@ -126,6 +128,9 @@ enum AskDevice {
 /// 道具が引いたものを貯める（答えの下の札）。道具は別の流れから呼ばれるので鍵をかける
 final class AskCollector: @unchecked Sendable {
     private let lock = NSLock()
+    /// 札の数の上限（頼んだ数か `maxSpots`）
+    let limit: Int
+    init(limit: Int = AskLibrary.maxSpots) { self.limit = min(max(limit, 1), AskLibrary.maxSpots) }
     private var picks: [AskLibrary.Pick] = []
     private var photoIds: [String] = []
     private var sources: [AskAnswer.Source] = []
@@ -149,14 +154,31 @@ final class AskCollector: @unchecked Sendable {
 
     func snapshot() -> (picks: [AskLibrary.Pick], photoIds: [String], sources: [AskAnswer.Source]) {
         lock.lock(); defer { lock.unlock() }
-        return (Array(picks.prefix(AskLibrary.maxSpots)), Array(photoIds.prefix(AskLibrary.maxPhotos)), sources)
+        return (Array(picks.prefix(limit)), Array(photoIds.prefix(AskLibrary.maxPhotos)), sources)
     }
 }
 
 /// 棚を道具に渡す包み（読むだけ）
 final class AskLibraryBox: @unchecked Sendable {
     let library: AskLibrary
-    init(_ library: AskLibrary) { self.library = library }
+    /// 頼みの文から読んだ数と月（`AskLibrary.requested`）
+    let count: Int?
+    let month: Int?
+    init(_ library: AskLibrary, count: Int? = nil, month: Int? = nil) {
+        self.library = library
+        self.count = count
+        self.month = month
+    }
+
+    /// 道具に渡された条件に、頼みの文から読んだ数と月を重ねる。月を書いた頼みは、AI が選んだ季節より月の季節を使う
+    func query(place: String?, season: ShootingTime.Season?, dayPart: ShootingTime.DayPart?, keyword: String?,
+               near: Bool) -> AskLibrary.Query {
+        var q = AskLibrary.Query(place: place, season: season, dayPart: dayPart, keyword: keyword, near: near && library.here != nil)
+        q.count = count
+        q.month = month
+        if let month, let s = ShootingTime.Season(rawValue: SpotBodyText.season(ofMonth: month)) { q.season = s }
+        return q
+    }
 }
 
 #if canImport(FoundationModels)
@@ -212,12 +234,9 @@ struct AskSpotsTool: Tool {
 
     func call(arguments: Arguments) async throws -> String {
         let lib = box.library
-        var q = AskLibrary.Query()
-        q.place = Self.word(arguments.place)
-        q.season = SearchSentence.season(choice: arguments.season)
-        q.dayPart = SearchSentence.dayPart(choice: arguments.timeOfDay)
-        q.keyword = Self.word(arguments.keyword)
-        q.near = arguments.near && lib.here != nil
+        let q = box.query(place: Self.word(arguments.place), season: SearchSentence.season(choice: arguments.season),
+                          dayPart: SearchSentence.dayPart(choice: arguments.timeOfDay),
+                          keyword: Self.word(arguments.keyword), near: arguments.near)
         var picks = lib.pickSpots(q)
         if picks.isEmpty, let relaxed = AskLibrary.relaxed(q) { picks = lib.pickSpots(relaxed) }
         collector.add(picks: picks, source: .init(kind: .spots, label: AskText.spotsSource))

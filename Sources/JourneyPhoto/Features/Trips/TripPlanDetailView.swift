@@ -150,9 +150,16 @@ struct TripPlanDetailView: View {
     /// 保存を送った回数（「保存して戻る」の失敗の知らせを、その後に別の保存が
     /// 走っていたら出さないための目印）
     @State private var saveAttempt = 0
-    /// 名前を引く材料（取れなくても画面は出る——名前が鍵のままになるだけ）
+    /// 名前を引く材料（取れなくても画面は出る——観光スポットは「読み込めませんでした」、撮影地は鍵のままになるだけ）
     @State private var photos: [Photo] = []
-    @State private var index: [OfficialSpot] = []
+    @State private var loadedIndex: [OfficialSpot] = []
+    /// 名前と座標を引く索引。読み込む前は、AI で作ったときの候補で引く（2026-11-23 判断・作り終えた直後に `sp_…` が見えていた）
+    private var index: [OfficialSpot] {
+        get { TripPlanText.nameIndex(loaded: loadedIndex, candidates: aiNotes.note(planId)?.candidates ?? []) }
+        nonmutating set { loadedIndex = newValue }
+    }
+    /// 索引を一度でも聞き終えたか（成否を問わない）。聞き終えるまでは、名前を引けない観光スポットの行を骨組みにする
+    @State private var indexTried = false
     /// 候補の材料（写真の一覧・スポットの索引）を**取れなかった**か。
     /// 「聞けなかった」を「まだ保存していない」と言わないために持つ
     @State private var sourcesFailed = false
@@ -410,10 +417,14 @@ struct TripPlanDetailView: View {
         // 項目のスポットを開いて戻るたびに走る。圏外で戻ると、読めていた場所の名前と
         // リンクが消えて鍵（sp_…）だけになり、候補も「読み込めませんでした」になっていた
         .task {
-            let fetchedPhotos = try? await environment.gallery.fetchPhotos()
-            let fetchedIndex = try? await environment.spots.fetchIndex()
-            if let fetchedPhotos { photos = fetchedPhotos; gotPhotos = true }
+            // 2026-11-23 判断: 写真の一覧と索引を同時に聞く（前は写真の一覧を待ってから索引を聞き、その間 `sp_…` が見えていた）
+            async let photosCall = try? await environment.gallery.fetchPhotos()
+            async let indexCall = try? await environment.spots.fetchIndex()
+            let fetchedIndex = await indexCall
             if let fetchedIndex { index = fetchedIndex; gotIndex = true }
+            indexTried = true
+            let fetchedPhotos = await photosCall
+            if let fetchedPhotos { photos = fetchedPhotos; gotPhotos = true }
             // 別名は取れなくてもよい（名前と読みで当たる・`fetchAliases` は投げない）
             let fetchedAliases = await environment.spots.fetchAliases()
             if !fetchedAliases.isEmpty { aliases = fetchedAliases }
@@ -479,9 +490,10 @@ struct TripPlanDetailView: View {
             requestTravel(travelLayout().all)
         }
         // 季節の一文・時刻帯のために、日程にある撮影スポットの詳細を重ねる（索引だけの行だけ）
-        .task(id: SpotDetailNeeds.key(planSpotsNeedingDetails)) {
+        // 索引を読む前（AI の候補で名前を引いている間）は重ねない。読んだ索引で置き換わるので、読んでから重ねる
+        .task(id: SpotDetailNeeds.key(planSpotsNeedingDetails) + (gotIndex ? "" : "#waiting")) {
             let needs = planSpotsNeedingDetails
-            guard !needs.isEmpty else { return }
+            guard gotIndex, !needs.isEmpty else { return }
             index = await environment.spots.withDetails(index, for: needs)
         }
         // 移動の見込みを聞く（開いているプランの区間だけ・同じ区間は控え）
@@ -1181,7 +1193,8 @@ struct TripPlanDetailView: View {
                     }
                     itemRow(di, ii, item, number: number,
                             season: spotFor(item).flatMap { TripDraft.seasonLine($0, ymd: ymd) },
-                            chip: resolved.indices.contains(ii) ? TripDraft.timeChip(resolved[ii].times) : nil,
+                            chips: resolved.indices.contains(ii)
+                                ? TripDraft.timeChips(resolved[ii].times, arrive: showsTimes ? timeRow.arrive : nil) : [],
                             time: showsTimes ? timeRow : nil)
                     if showsTimes, ii == day.items.count - 1, let end = times.end {
                         TripTimeMinorRow(time: end, text: L("ごろ 終わり", "done"), spoken: TripTimes.endLine(end),
@@ -1373,8 +1386,9 @@ struct TripPlanDetailView: View {
     }
 
     private func itemRow(_ di: Int, _ ii: Int, _ item: TripItem, number: Int,
-                         season: String?, chip: String?, time: TripTimes.Row? = nil) -> some View {
+                         season: String?, chips: [TripDraft.TimeChip], time: TripTimes.Row? = nil) -> some View {
         let name = TripPlanText.label(for: item, index: index, places: places)
+        let pending = TripPlanText.isPending(item, index: index, loading: !indexTried)
         // 右の印は「…」と ≡ の2つ（2026-11-12 判断・1.1.85・札 #570・資料「みんなで埋める旅行プラン」の場面7）。
         // - 2026-11-11 は「…」1つにして、並べ替えは行を押さえて運ぶ形だった。**どこを掴めば動くかが見えなかった**ので、
         //   行の右端に ≡ の持ち手を常に出す（owner「ドラッグアンドドロップで入れ替えたり…簡単に操作できるように」）
@@ -1385,7 +1399,11 @@ struct TripPlanDetailView: View {
         // （2026-11-15 確かめ役の指摘「右に3つが混み合う」。押す回数は替える1回のまま）
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
-                itemLink(item, name: name, number: number, season: season, chip: chip, time: time)
+                if pending {
+                    TripStopSkeleton(number: number)
+                } else {
+                    itemLink(item, name: name, number: number, season: season, chips: chips, time: time)
+                }
                 itemMenu(di, ii, item, name: name)
                 dragHandle(di, ii, item, name: name)
             }
@@ -1464,12 +1482,18 @@ struct TripPlanDetailView: View {
     /// 外した場所の行（日の下・点線の枠・打ち消した名前と「戻す」）。押す回数は 1（以前は戻す道が無く、足し直していた）
     private func removedRow(_ removed: TripPlanEdit.Removed) -> some View {
         let name = TripPlanText.label(for: removed.item, index: index, places: places)
+        let pending = TripPlanText.isPending(removed.item, index: index, loading: !indexTried)
         return HStack(spacing: JPSpace.xs) {
-            Text(name)
-                .strikethrough(true, color: WebTheme.text3)
-                .font(JPFont.footnote)
-                .foregroundStyle(WebTheme.text3)
-                .fixedSize(horizontal: false, vertical: true)
+            if pending {
+                TripStopSkeleton.bone(width: 120, height: 13)
+                    .accessibilityLabel(L("読み込み中", "Loading"))
+            } else {
+                Text(name)
+                    .strikethrough(true, color: WebTheme.text3)
+                    .font(JPFont.footnote)
+                    .foregroundStyle(WebTheme.text3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Text(L("外しました", "Removed"))
                 .font(JPFont.footnote)
                 .foregroundStyle(WebTheme.text2)
@@ -1766,7 +1790,7 @@ struct TripPlanDetailView: View {
 
     /// 名前を押すとその場所へ。**開ける先が無いものは行だけ**（押しても何も起きない札を作らない）
     @ViewBuilder
-    private func itemLink(_ item: TripItem, name: String, number: Int, season: String?, chip: String?,
+    private func itemLink(_ item: TripItem, name: String, number: Int, season: String?, chips: [TripDraft.TimeChip],
                           time: TripTimes.Row? = nil) -> some View {
         switch item {
         case .spot(let spotId, _):
@@ -1774,32 +1798,32 @@ struct TripPlanDetailView: View {
                 NavigationLink {
                     OfficialSpotView(spot: spot, spots: index, photos: photos, photosKnown: gotPhotos)
                 } label: {
-                    itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chip: chip, by: addedByText(item), time: time)
+                    itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chips: chips, by: addedByText(item), time: time)
                 }
                 .buttonStyle(.plain)
             } else {
-                itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chip: chip, by: addedByText(item), time: time)
+                itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chips: chips, by: addedByText(item), time: time)
             }
         case .location(let slug, _):
             if let place = places.first(where: { $0.slug == slug }) {
                 NavigationLink {
                     SpotDetailView(spot: place, photos: photos)
                 } label: {
-                    itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chip: nil, by: addedByText(item), time: time)
+                    itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chips: [], by: addedByText(item), time: time)
                 }
                 .buttonStyle(.plain)
             } else {
-                itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chip: nil, by: addedByText(item), time: time)
+                itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chips: [], by: addedByText(item), time: time)
             }
         }
     }
 
     /// 行の中身（v2 の板 TripPlanDays・F30: 番号の丸 → 名前 → 季節の一文と時間帯の札 → ひとこと・`TripStopLabel`）
     private func itemLabel(_ name: String, number: Int, isSpot: Bool, note: String?,
-                           season: String?, chip: String?, by: String? = nil, time: TripTimes.Row? = nil) -> some View {
+                           season: String?, chips: [TripDraft.TimeChip], by: String? = nil, time: TripTimes.Row? = nil) -> some View {
         let byLeading: CGFloat = time == nil ? 36 : 36 + timeLeading
         return VStack(alignment: .leading, spacing: 2) {
-            TripStopLabel(number: number, name: name, isSpot: isSpot, season: season, timeChip: chip, note: note,
+            TripStopLabel(number: number, name: name, isSpot: isSpot, season: season, timeChips: chips, note: note,
                           time: time?.arrive, showsTime: time != nil, timeCaution: time.flatMap(TripTimes.cautionLine))
             // 共有したプランで、ほかの仲間が足した場所（「あお が足しました」）
             if let by {
@@ -2130,4 +2154,34 @@ struct TripAISwapTarget: Identifiable {
     let item: Int
     let spot: OfficialSpot
     var id: String { "\(day)-\(item)-\(spot.spotId)" }
+}
+
+/// 名前をまだ引けていない観光スポットの行の骨組み（2026-11-23 判断・索引を読み込む間に `sp_…` を見せない）。
+/// 番号の丸は本物と同じ（日程の番号は先に分かる）、名前と季節の一文は灰の棒（`AskLoadingSkeleton` の流れの骨組みと同じ surface-4）
+struct TripStopSkeleton: View {
+    let number: Int
+
+    var body: some View {
+        HStack(alignment: .top, spacing: JPSpace.s) {
+            TripStopNumber(number: number)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 6) {
+                Self.bone(width: 150, height: 16)
+                Self.bone(width: 80, height: 12)
+            }
+            .padding(.top, 4)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, JPSpace.s)
+        .frame(minHeight: JPHeight.tallRow)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L("\(number)、読み込み中", "\(number), loading"))
+        .accessibilityIdentifier("tripPlan.stopSkeleton")
+    }
+
+    static func bone(width: CGFloat, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 6)
+            .fill(WebTheme.surface4)
+            .frame(width: width, height: height)
+    }
 }

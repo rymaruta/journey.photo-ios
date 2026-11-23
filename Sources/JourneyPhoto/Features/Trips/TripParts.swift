@@ -232,8 +232,8 @@ struct TripStopLabel: View {
     let isSpot: Bool
     /// 「冬（12月）· …」。台帳に案内の無い行・撮影地・日付の無いプランは nil
     var season: String? = nil
-    /// 「夜明け · 朝」。案内の無い行は nil
-    var timeChip: String? = nil
+    /// 時間帯の札（1つずつ・着く時刻に合う札だけ明るい・2026-11-23 判断）。案内の無い行は空
+    var timeChips: [TripDraft.TimeChip] = []
     var note: String? = nil
     /// 着く時刻の目安（分・札 #677）。`showsTime` のときだけ出す（作る流れの下書きは出さない）
     var time: Int? = nil
@@ -264,17 +264,18 @@ struct TripStopLabel: View {
                     .font(isSpot ? JPFont.rowTitle : JPFont.bodyEmphasis)
                     .foregroundStyle(WebTheme.text)
                     .lineLimit(2)
-                if season != nil || timeChip != nil {
+                if season != nil || !timeChips.isEmpty {
                     // 季節の一文（白 60%・12）と時間帯の札（白 5% の地・白 10% の縁・12 の 600）
                     TripWrapRow {
                         if let season {
+                            // 最初の1文だけを渡している（`TripDraft.seasonLine`）。途中で切らずに折り返す
                             Text(season)
                                 .font(JPFont.caption)
                                 .foregroundStyle(WebTheme.faint)
-                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        if let timeChip {
-                            TripTimeChip(text: timeChip)
+                        ForEach(timeChips) { chip in
+                            TripTimeChip(text: chip.text, emphasis: chip.emphasis)
                         }
                     }
                 }
@@ -301,7 +302,7 @@ struct TripStopLabel: View {
         // 読み上げは「1 · 9時、名前 · 季節 · 時間帯 · ひとこと」（番号の丸は絵として隠している）
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Self.spoken(number: number, name: name, time: showsTime ? time : nil,
-                                        parts: [season, timeChip, note, showsTime ? timeCaution : nil]))
+                                        parts: [season] + timeChips.map { Optional($0.spoken) } + [note, showsTime ? timeCaution : nil]))
     }
 
     /// 読み上げの字（「1 9時、日比谷公園 …」）
@@ -314,17 +315,27 @@ struct TripStopLabel: View {
 /// 時間帯の札（板 TripPlanDays F30 の `夜景 · 夜`）
 struct TripTimeChip: View {
     let text: String
+    /// 着く時刻に合うか（2026-11-23 判断）。合う札は白い字と強い縁に真鍮の点、ほかは控えめ（字 白 60%・地なし）。
+    /// 着く時刻が分からない行（`.plain`）は板どおり
+    var emphasis: TripDraft.TimeChip.Emphasis = .plain
 
     var body: some View {
-        Text(text)
-            .font(JPFont.caption.weight(.semibold))
-            .foregroundStyle(WebTheme.muted)
-            .lineLimit(1)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 2)
-            .background(Color.white.opacity(0.05), in: Capsule())
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: JPStroke.hairline))
-            .fixedSize()
+        HStack(spacing: 4) {
+            if emphasis == .match {
+                // 色だけで伝えない（点の形でも分かる・読み上げは「着く時間帯」）
+                Circle().fill(WebTheme.accent).frame(width: 5, height: 5)
+            }
+            Text(text)
+                .font(JPFont.caption.weight(.semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(emphasis == .match ? WebTheme.text : (emphasis == .other ? WebTheme.faint : WebTheme.muted))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
+        .background(Color.white.opacity(emphasis == .other ? 0 : (emphasis == .match ? 0.10 : 0.05)), in: Capsule())
+        .overlay(Capsule().strokeBorder(Color.white.opacity(emphasis == .match ? 0.24 : (emphasis == .other ? 0.08 : 0.10)),
+                                        lineWidth: JPStroke.hairline))
+        .fixedSize()
     }
 }
 

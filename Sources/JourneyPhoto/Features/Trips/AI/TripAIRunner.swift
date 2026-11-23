@@ -290,6 +290,10 @@ final class TripAIRunner: ObservableObject {
             plan = nil
             refused = true
             mode = .silent
+        } else if let made = plan {
+            // 2026-11-23 判断: 最初に作る回も、端末の AI とサーバーの両方で題と理由を見張りに通す（前は組み直しだけ）。
+            // 混じった方を空にする（日程は使う）。理由に候補の番号（「3と7は近いので」）があれば理由を空にする
+            plan = made.screenedTitleAndReason()
         }
 
         let checked = plan?.sanitized(candidateCount: candidates.count, fixedDays: fixedDays)
@@ -308,7 +312,9 @@ final class TripAIRunner: ObservableObject {
         // 1日目から順に、移動の目安を測り終えた日を出す（全部そろうまで白紙にしない・owner 2026-11-15）
         // 直すとき（今の日程がある）は空の日を詰めない。日の番号をそのまま返し、元の日付と場所の組を崩さない
         let revising = !current.isEmpty
-        let lists = chosen.dayLists(candidates, keepEmpty: revising)
+        // 2026-11-23 判断（東山→嵐山→東山と行ったり来たりした）: 最初に作るときは、日の中の並びをアプリが決める
+        // （近い順と時間帯の順・`TripDraft.plan`）。組み直しは利用者の並びを壊さないので AI の並びのまま
+        let lists = revising ? chosen.dayLists(candidates, keepEmpty: true) : TripAIDayOrder.ordered(chosen.dayLists(candidates))
         expectedDays = lists.count
         var keptDays: [[OfficialSpot]] = []
         var removedAll: [TripAIRouteCheck.Removed] = []

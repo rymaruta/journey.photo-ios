@@ -262,11 +262,61 @@ struct TripAIPlan: Codable, Equatable {
         return filled.isEmpty ? [[]] : filled
     }
 
+    /// 最初に作る回の見張り（2026-11-23 判断・端末の AI でもサーバーでも同じ）。題と理由を `AskGuard.leaks` に通し、
+    /// 漏れの形が混じった方を空にする（題が空なら呼び手が決まった題を使う）。理由に候補の番号（「3と7は近いので」
+    /// 「候補5」）が混じっていたら理由を空にする——利用者には番号が見えないので、読めない文になる
+    func screenedTitleAndReason() -> TripAIPlan {
+        var out = self
+        if AskGuard.leaks(title) { out.title = "" }
+        if AskGuard.leaks(reason) || Self.mentionsCandidateNumbers(reason) { out.reason = "" }
+        return out
+    }
+
+    /// 候補の番号の言い方（AI に渡した「1. 名前」の番号が答えに漏れた形）
+    static let candidateNumberPatterns: [String] = [
+        // 「候補3」「候補の3」「候補 No.3」
+        "候補\\s*(の|No\\.?|#)?\\s*[0-9]",
+        // 「番号」「3番」「3番目」（「3番線」「1番人気」も混じるが、旅の理由の1文には要らない）
+        "番号",
+        "(?<![0-9])[0-9]{1,2}\\s*番",
+        // 「3と7は」「2、5、8を」「1・4」——数字だけを並べた所（「1日目と2日目」「9時と15時」は数字の後に単位があるので当たらない）
+        "(?<![0-9])[0-9]{1,2}\\s*(と|や|、|,|\\u30FB|及び|および)\\s*[0-9]{1,2}(?![0-9])(?!\\s*(日|時|分|月|年|泊|km|キロ|か所|箇所|ヶ所|件|つ|人|円|%|％|度|m|メートル|時間|番))",
+        // 「(3)」「No.3」「#3」
+        "[(（]\\s*[0-9]{1,2}\\s*[)）]",
+        "(?i)(?<![A-Za-z])no\\.?\\s*[0-9]",
+        "#[0-9]",
+    ]
+
+    static func mentionsCandidateNumbers(_ text: String) -> Bool {
+        let t = text.folding(options: [.widthInsensitive], locale: nil)
+        return candidateNumberPatterns.contains { t.range(of: $0, options: .regularExpression) != nil }
+    }
+
     /// 理由の文に候補の外の県の名前があれば、理由ごと出さない（案「詳しく」）
     func reasonChecked(against candidates: [OfficialSpot]) -> String {
         let areas = candidates.map { "\($0.region?.prefecture ?? "")\($0.region?.city ?? "")\($0.name)" }.joined()
         let outside = TripAIText.prefectures.contains { reason.contains($0) && !areas.contains($0) }
         return outside ? "" : reason
+    }
+}
+
+// MARK: - 日の中の並び（2026-11-23 判断）
+
+/// 最初に作るときの日の中の並び（`TripAIRunner` が AI の並びのあとにかける）
+enum TripAIDayOrder {
+    /// 日ごとに、日の中を近い順と時間帯の順に並べ直す（日をまたいでは動かさない。場所の数も変えない）
+    static func ordered(_ days: [[OfficialSpot]]) -> [[OfficialSpot]] {
+        days.map { day in
+            guard day.count > 1 else { return day }
+            let byId = Dictionary(day.map { ($0.spotId, $0) }, uniquingKeysWith: { a, _ in a })
+            let placed = TripDraft.plan(day.map(TripDraft.place(spot:)), dayCount: 1).flatMap { $0 }
+            let out = placed.compactMap { p -> OfficialSpot? in
+                if case .spot(let id, _) = p.item { return byId[id] }
+                return nil
+            }
+            // 並べ直しで数が変わったら（同じ場所が2つ、など）元のまま
+            return out.count == day.count ? out : day
+        }
     }
 }
 

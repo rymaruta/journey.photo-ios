@@ -179,17 +179,33 @@ enum TripPlanText {
         return spots + locations
     }
 
-    /// 項目に出す名前。**引けないときは鍵をそのまま出す**
-    /// ——「不明な場所」のような、こちらで作った言葉を置かない（Web の `itemLabel`）
+    /// 観光スポットの名前を引けなかったときの言葉（2026-11-23 判断）
+    static var unresolvedSpot: String { L("観光スポット（読み込めませんでした）", "Spot (couldn't load)") }
+
+    /// 項目に出す名前。撮影地は引けないときに鍵（スラッグ）をそのまま出す（Web の `itemLabel`）。
+    ///
+    /// 2026-11-23 判断（owner の画面写真で、AI で作り終えた直後の日程に `sp_…` が並んでいた）: 観光スポットの鍵
+    /// （`sp_…`）は人の読む字ではないので出さない。読み込み中は行の骨組み（`isPending`）、読めなかったら `unresolvedSpot`
     static func label(for item: TripItem, index: [OfficialSpot], places: [DerivedSpot.Place]) -> String {
         switch item {
         case .spot(let spotId, _):
             let name = index.first { $0.spotId == spotId }?.name ?? ""
-            return name.isEmpty ? spotId : name
+            return name.isEmpty ? unresolvedSpot : name
         case .location(let slug, _):
             if let place = places.first(where: { $0.slug == slug }) { return LocationMatch.display(place.label) }
             return slug.removingPercentEncoding ?? slug
         }
+    }
+
+    /// 名前をまだ引けていない観光スポットの行か（索引を読み込み中なら行の骨組みを出す）
+    static func isPending(_ item: TripItem, index: [OfficialSpot], loading: Bool) -> Bool {
+        guard loading, case .spot(let spotId, _) = item else { return false }
+        return !index.contains { $0.spotId == spotId && !$0.name.isEmpty }
+    }
+
+    /// 名前を引く索引。読み込んだ索引が空のうち（開いた直後）は、AI で作ったときの候補で引く（2026-11-23 判断）
+    static func nameIndex(loaded: [OfficialSpot], candidates: [OfficialSpot]) -> [OfficialSpot] {
+        loaded.isEmpty ? candidates : loaded
     }
 
     // MARK: - 旅の一冊（板 TripPlans F30・2026-11-10 札 #521）

@@ -154,8 +154,8 @@ final class TripPlanStage1Tests: XCTestCase {
         XCTAssertNil(TripDraft.overlapNote([["morning"], ["morning"]]))
         XCTAssertNil(TripDraft.overlapNote([["morning", "goldenHour"], ["goldenHour"]]),
                      "並べるときの時間帯（いちばん早いもの）で数える")
-        XCTAssertEqual(TripDraft.timeChip(["morning", "dawn", "night"]), "夜明け\u{2002}朝")
-        XCTAssertNil(TripDraft.timeChip([]))
+        XCTAssertEqual(TripDraft.timeChips(["morning", "dawn", "night"]).map(\.text), ["夜明け", "朝"])
+        XCTAssertTrue(TripDraft.timeChips([]).isEmpty)
     }
 
     /// 日の出・日の入りは最初の撮影スポット（座標のあるもの）で、その土地の時計
