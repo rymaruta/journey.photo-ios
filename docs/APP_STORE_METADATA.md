@@ -382,3 +382,39 @@ gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight
 
 `docs/APP_REVIEW.md` を見ること。審査メモの文面、審査用アカウントの作り方、ガイドライン別の対応、
 App のプライバシーの答え、年齢区分の答えが書いてある。
+
+## App Store Connect に画面写真を上げる（2026-11-23 から CI で。札 #604）
+
+上の「作り方」の storeShots の回で、作った絵を**その場から** App Store Connect に入れ替える（iPhone の Web では画面写真を足せない・消せない）。
+S3 から取り直さないので、AWS の権限は今のまま（CI の役割は置くことだけ）。S3 には今までどおり置く（絵を見るため）。
+
+- 入れ替えるのは `ascLocales` で渡した言語だけ（既定 `ja`。英語の頁も同じ絵なら `ja,en-US`）。ほかの言語は消さない・作らない。版に無い言語は作らずに止まる
+- 相手にするのは、指定の版で**状態が「提出の準備中」（PREPARE_FOR_SUBMISSION）のものだけ**。配信中・審査中の版なら赤で止まる（変える直前にも読み直す）
+- 渡した言語で、6.9インチ（`APP_IPHONE_67`・1320×2868／1290×2796／1260×2736）に大型の絵、6.3インチ（`APP_IPHONE_61`・Dynamic Island の中型・1206×2622／1179×2556）に中型の絵を 01 から順に入れ、
+  6.5インチ（`APP_IPHONE_65`）以前の古い iPhone の組は、大型と中型がそろって COMPLETE になってから空にする。どの組に入れるかはフォルダの名前でなく PNG の寸法で決める。
+  組ごとに全部 COMPLETE でなければその場で止まり、止まっても最後に今の組の中身を出す。iPad の組・メタデータ・審査への提出には触らない。
+  寸法と組の対応は `Tools/asc-screenshots.py` の頭
+
+1. 先に App Store Connect で出す版（例 1.1.119）を作っておく（「提出の準備中」になる）
+2. **下見**（App Store Connect は何も変えない。消す絵と上げる絵の名前が「App Store Connect に画面写真を入れ替える」の段のログに出る）:
+
+   ```
+   gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight.yml/dispatches \
+     -f ref=main -f 'inputs[submit]=false' -f 'inputs[storeShots]=true' -f 'inputs[screens]=none' \
+     -f 'inputs[ascVersion]=1.1.119' -f 'inputs[ascLocales]=ja,en-US' -f 'inputs[ascApply]=false'
+   ```
+
+3. 下見のログと S3 の絵（`bash Tools/fetch-shots.sh <run 番号>`）でよければ **入れ替え**（同じ inputs で `ascApply=true`。絵はその回で撮り直す）:
+
+   ```
+   gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight.yml/dispatches \
+     -f ref=main -f 'inputs[submit]=false' -f 'inputs[storeShots]=true' -f 'inputs[screens]=none' \
+     -f 'inputs[ascVersion]=1.1.119' -f 'inputs[ascLocales]=ja,en-US' -f 'inputs[ascApply]=true'
+   ```
+
+   最後に「入れ替えたあとの組」に各言語・各組の枚数と状態が出る。全部 COMPLETE で 01 からの順でなければ赤
+4. 終わったら `bash Tools/fetch-shots.sh <run 番号> --delete`
+
+- storeShots で上げる回は30分を超えうる（大型と中型の UI テスト＋上げる段）。上げる回だけの例外（CLAUDE.md の「Mac のテストは毎回30分以内」の外）
+- `ascVersion` は `storeShots=true` の回でだけ使える（ほかの回なら最初の段で止まる）。UI テストが落ちて絵がそろわない回は上げない
+- 鍵は TestFlight と同じ `APP_STORE_CONNECT_*`（画面写真を変えるには App Manager 以上の役割の鍵が要る。足りなければ下見の最初の読みで 401/403 になる）

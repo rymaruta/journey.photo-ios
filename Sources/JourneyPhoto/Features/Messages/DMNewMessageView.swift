@@ -134,9 +134,15 @@ struct DMNewMessageView: View {
             .padding(.top, JPSpace.emptyTop)
         case .loaded:
             if candidates.isEmpty && !hasMoreThanShown {
+                // 2026-11-23 判断: 押せる一手（ホームへ・`GroupPick.offersBrowseWhenNoFollowing`）。
+                // 受信箱のシートは `RootView` がホームへ移るときに下ろす
+                let browse = GroupPick.offersBrowseWhenNoFollowing(mode)
                 EmptyState(icon: "person.2", title: L("フォローしている人がいません", "You're not following anyone yet"),
                            message: L("メッセージを送れるのは、フォローしている人です。気になる人をフォローすると、ここから選べます。",
-                                      "You can message people you follow. Follow someone and they'll show up here."))
+                                      "You can message people you follow. Follow someone and they'll show up here."),
+                           actionTitle: browse ? MyPageEmpty.browseTitle : nil,
+                           actionIdentifier: "dm.new.emptyBrowse",
+                           action: browse ? { TabRouter.shared.openHome() } : nil)
                     .padding(.top, JPSpace.emptyTop)
             } else {
                 PeopleSearchField(query: $query, placeholder: L("フォロー中の人を探す", "Search people you follow"),

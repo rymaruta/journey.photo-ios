@@ -10,7 +10,7 @@ App Store Connect の「App Review に関する情報」に入れる文と、そ
 
 ## Notes に貼る文面
 
-審査官は英語を読むので、**貼るのは英語**（約3,950字。上限 4,000 字。Python の `len()` で数えた）。日本語は owner が中身を確かめる用。
+審査官は英語を読むので、**貼るのは英語**（約3,980字。2026-11-23 に AI の行を同意の画面（1.1.119）に合わせた。上限 4,000 字。Python の `len()` で数えた）。日本語は owner が中身を確かめる用。
 ID とパスワードはここに書かず、「サインイン情報」の欄に入れる（下の「審査用アカウント」）。Notes に書き足すものは無い。
 
 ### 英語（貼る）
@@ -45,7 +45,7 @@ BACKGROUND BLUETOOTH FOR "PASS" (bluetooth-central, bluetooth-peripheral)
 - Swapping needs two iPhones with two accounts. One iPhone with the demo account shows the explanation, prompt and off-by-default switch. A screen recording (video URL) of two iPhones can be provided on request.
 
 AI (TRIP PLANS, ASK AI)
-- Runs on device with Apple Intelligence where supported. For Pro users on other iPhones, the text is sent to our servers and processed by an AI provider acting on our behalf; a notice says so before sending.
+- Runs on device with Apple Intelligence where supported. Otherwise, for Pro users, text is sent to our servers and an AI provider acting on our behalf, only after explicit permission asked before the first send (withdraw anytime in Settings).
 
 IN-APP PURCHASE (3.1.2)
 - Subscription group "Journey Photo Pro": monthly (com.journeyphoto.JourneyPhoto.pro.monthly, 500 JPY) and yearly (com.journeyphoto.JourneyPhoto.pro.yearly, 5,000 JPY). No free trial.
@@ -85,7 +85,7 @@ Journey Photo は、約4,600か所の観光スポットの案内がついた、�
 - 交換を試すには iPhone が2台と、アカウントが2つ要ります。審査用アカウントの1台で、説明、許可の確認、初期設定のオフは確かめられます。2台での画面収録（動画の URL）は求められたら送ります。
 
 AI（旅行プラン、AI に頼む）
-- 対応する iPhone では端末の AI で動きます。それ以外の iPhone の Pro の人は、文をサーバーに送り、委託先の AI で処理します。送る前にその旨を知らせます。1日と月の回数の上限があります。
+- 対応する iPhone では端末の AI で動きます。それ以外の iPhone の Pro の人は、文をサーバーに送り、委託先の AI で処理します。初めて送る前に、はっきり許可を求めます（「同意して続ける」と「やめる」）。やめた人には送りません。設定の「公開範囲とプライバシー」で取り消せます。1日と月の回数の上限があります。
 
 App 内課金（3.1.2）
 - 定期購入「Journey Photo Pro」：月額（com.journeyphoto.JourneyPhoto.pro.monthly、500円）、年額（com.journeyphoto.JourneyPhoto.pro.yearly、5,000円）。無料の試用なし。
@@ -211,7 +211,7 @@ Apple の新しい質問票（区分は 4+、9+、13+、16+、18+）。**画面�
 
 ## 提出前の最終確認（ここを全部緑にしてから出す）
 
-- [ ] ビルドは、出すときの最新の TestFlight の版（2026-11-22 時点は `testflight/1.1.118`、84807f3）。App Store Connect の「バージョン」をその版にし、同じ版のビルドを選ぶ
+- [ ] ビルドは、出すときの最新の TestFlight の版（2026-11-23 時点は `testflight/1.1.119`、df0eea4）。App Store Connect の「バージョン」をその版にし、同じ版のビルドを選ぶ
 - [ ] TestFlight の実機で一巡（AI で旅行プラン、AI に頼む、投稿、ストーリーの動画、メッセージ、旅行プランの会話の通報、通報、ブロック、退会、機内モード）
 - [ ] 画面写真を2組（大型ディスプレイ＝6.9インチ 1320×2868 と、中型ディスプレイ 1206×2622。中型は最低1枚が必須）。Mac の CI の `storeShots` で、見本の表示（`-JPStoreDemo`）だけで撮り、非公開の S3 から取り出す（`docs/APP_STORE_METADATA.md` の「作り方」）。本番の他の利用者の写真と他の作者の作例を1枚も入れない（画像は同梱の CC0 の作例写真だけ）。人の顔、他社のロゴも入れない
 - [ ] 審査用アカウント A（owner の本番のテスト用アカウント）で写真を1枚投稿、owner のアカウントと互いにフォロー、owner から A にメッセージ1通、A の旅行プランに owner を仲間に入れて会話に1通（上の手順）
@@ -241,6 +241,4 @@ Apple の新しい質問票（区分は 4+、9+、13+、16+、18+）。**画面�
 - **背景の Bluetooth（2.5.4）。** すれちがいの説明を求められることがある。返答の下書きは Artifact の 3-4
 - **投稿が少ないと「中身が薄い」と見られることがある。** 審査用アカウントで写真を投稿しておく
 - **すれちがいは iPhone が2台ないと試せない。** 審査用アカウントは1つなので、交換は試せない。動画を求められたら、2台で撮った画面収録を送る
-- **他社の AI にデータを渡すこと（5.1.2(i)、2025-11 の改定）。** サーバーの AI（Pro で、端末の AI が使えない iPhone）は、送る前に
-  「サーバーに送信し、委託先の AI で処理します」と知らせる（`AskText.serverNotice`、`tripServerNotice`）。**同意のボタン（明示の許可）は無い。**
-  差し戻されたら、初回だけ同意を取る形を足す（確かめていない。この担当は画面を変えていない）
+- **他社の AI にデータを渡すこと（5.1.2(i)、2025-11 の改定）。** 1.1.119 で、サーバーの AI に初めて送る前に同意の画面（明示の許可）を出す形にした（`AIServerConsent`、PR #702）。設定で取り消せる

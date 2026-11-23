@@ -894,6 +894,36 @@ if crash_yml:
         fail("testflight-crashes.yml の頭の permissions に id-token があります")
     if "bash Tools/testflight-crashes.sh" not in crash_yml:
         fail("testflight-crashes.yml が Tools/testflight-crashes.sh を通していません（ログに要点だけを出す道）")
+# App Store の画面写真を入れ替える段（札 #604・2026-11-23）: storeShots の回の中で、作った絵をその場から上げる。
+# 既定は下見・提出の準備中の版だけ・絵を成果物に出さない・S3 から取り直さない（CI の役割は置くことしかできない）
+asc_py = _read("Tools/asc-screenshots.py")
+asc_tf = testflight_yml.read_text(encoding="utf-8") if testflight_yml.exists() else ""
+if (ROOT / ".github/workflows/appstore-screenshots.yml").exists():
+    fail("appstore-screenshots.yml は置かない（S3 から読む権限が無い。storeShots の回の ascVersion で上げる・札 #604）")
+if "ascVersion" in asc_tf:
+    if re.search(r"^      ascApply:\n(?:        .*\n)*?        type: boolean\n(?:        .*\n)*?        default: false$",
+                 asc_tf, re.M) is None:
+        fail("ios-testflight.yml の ascApply の既定が false（下見）ではありません")
+    if re.search(r"^      - name: App Store Connect に画面写真を入れ替える\n"
+                 r"        if: \$\{\{ success\(\) && inputs\.storeShots && inputs\.ascVersion != '' && github\.event_name != 'pull_request' \}\}",
+                 asc_tf, re.M) is None:
+        fail("ios-testflight.yml の App Store Connect に上げる段が、storeShots・ascVersion・PR でない回に絞られていません")
+    if 'bash Tools/asc-screenshots.sh --local "$STORE_SHOTS_KEEP"' not in asc_tf:
+        fail("ios-testflight.yml が作った絵（STORE_SHOTS_KEEP）を Tools/asc-screenshots.sh --local に渡していません")
+    if re.search(r'^      ascLocales:\n(?:        .*\n)*?        default: "ja"$', asc_tf, re.M) is None:
+        fail("ios-testflight.yml の ascLocales の既定が ja ではありません（渡した言語だけを入れ替える）")
+    if "group: asc-${{ inputs.ascVersion != '' && inputs.ascVersion || github.run_id }}" not in asc_tf:
+        fail("ios-testflight.yml の build に、同じ版を同時に触らない concurrency（asc-<版>）がありません")
+    if "      - name: App Store Connect に上げるのは storeShots の回だけ\n" not in asc_tf:
+        fail("ios-testflight.yml に、storeShots でない回で ascVersion を止める段がありません")
+    # 版の状態の止め: PREPARE_FOR_SUBMISSION 以外は止める・下見の前と変える直前の2回読む
+    run_body = asc_py.split("\ndef run(", 1)[-1].split("\ndef ", 1)[0] if "\ndef run(" in asc_py else ""
+    if 'EDITABLE = "PREPARE_FOR_SUBMISSION"' not in asc_py or "if any(s != EDITABLE for s in states):" not in asc_py:
+        fail("Tools/asc-screenshots.py に PREPARE_FOR_SUBMISSION 以外の版で止める段がありません")
+    elif run_body.count("check_editable(") < 2 or run_body.find("check_editable(") > run_body.find("apply_plan("):
+        fail("Tools/asc-screenshots.py の run が、変える前に版の状態を2回（下見の前と変える直前）確かめていません")
+    if '"--apply", action="store_true"' not in asc_py:
+        fail("Tools/asc-screenshots.py の既定が下見ではありません（--apply のときだけ変える）")
 if testflight_yml.exists():
     tf = testflight_yml.read_text(encoding="utf-8")
     # 書き込みの印は job ごとに渡す。ワークフローの頭（全 job）には渡さない
