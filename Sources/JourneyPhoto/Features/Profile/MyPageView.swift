@@ -919,6 +919,8 @@ struct MyPageView: View {
         // **索引が無くても行は出す**（`OfficialWishlist`）——スポットの画面で
         // 押した直後に「まだありません」と言わない
         let officialRows = OfficialWishlist.rows(keys: wishIds, index: officialSpots)
+        // 行きたい場所に行けた（札 #710 の案1）: 自分の写真と鍵を毎回突き合わせて導く（保存しない）
+        let visits = WishVisit.visits(keys: wishIds, mine: model.photos, spots: officialSpots)
         VStack(alignment: .leading, spacing: 10) {
             // **「まだ無い」と「取れていない」を分ける**（`ProfileSections`）。
             // 数えるのは撮影地の行とスポットの行の両方。「取れていない」は
@@ -950,7 +952,10 @@ struct MyPageView: View {
                 // 「地図で見る」（保存を地図で見る・2026-10-03）。並べるのは下の一覧と同じ行
                 wishlistMapLink(SavedSpotsMap.split(places: wanted, officialRows: officialRows),
                                 pool: pool,
-                                photosKnown: !sourceFailed && feedLoaded && model.hasLoadedPhotos)
+                                photosKnown: !sourceFailed && feedLoaded && model.hasLoadedPhotos,
+                                progress: WishVisit.progress(visited: visits.count, total: wanted.count + officialRows.count))
+                    // 前から行っていた場所は、次の投稿で「行けました」と言わない（`WishVisitMemory`）
+                    .task(id: visits.keys.sorted()) { WishVisitMemory().note(visits.keys, for: auth.userId) }
                 // 公開一覧の失敗のときだけ（自分の写真の失敗は上の一行が既に言う）
                 if ProfileSections.wishlistPartlyMissing(shownCount: reachable + officialRows.count,
                                                          savedIdCount: wishIds.count,
@@ -970,7 +975,7 @@ struct MyPageView: View {
                     NavigationLink {
                         SpotDetailView(spot: place, photos: pool)
                     } label: {
-                        wishlistRow(place)
+                        wishlistRow(place, visit: visits[place.slug])
                     }
                     .buttonStyle(.plain)
                 }
@@ -983,11 +988,11 @@ struct MyPageView: View {
                                              // pool の空では決めず、読み込みの状態だけで決める
                                              photosKnown: !sourceFailed && feedLoaded && model.hasLoadedPhotos)
                         } label: {
-                            officialWishlistRow(row)
+                            officialWishlistRow(row, visit: visits[row.key])
                         }
                         .buttonStyle(.plain)
                     } else {
-                        officialWishlistRow(row)
+                        officialWishlistRow(row, visit: visits[row.key])
                     }
                 }
             }
@@ -997,10 +1002,20 @@ struct MyPageView: View {
     /// 「地図で見る」の小さな文字ボタン（板 DesignSystem「『地図で見る』など小さな文字ボタンは
     /// min-height 44」）。黒地の上の手がかりなので真鍮（owner の好み「デザインの箇所は白より真鍮」）。
     /// 件数は数なので白（数は合図ではない・CLAUDE.md の実例）
-    private func wishlistMapLink(_ split: SavedSpotsMap.Split, pool: [Photo], photosKnown: Bool) -> some View {
+    private func wishlistMapLink(_ split: SavedSpotsMap.Split, pool: [Photo], photosKnown: Bool,
+                                 progress: String? = nil) -> some View {
         HStack(spacing: JPSpace.s) {
             // v2 WishlistTab: 節の見出しは眉（真鍮＋消える線）。見出しの読み上げは部品が付ける
             JPEyebrowLine(L("すべての行きたい場所\u{2002}\(split.count)", "All places\u{2002}\(split.count)"))
+            // 行けた数（札 #710 の案1）。数は合図ではないので白の濃淡（text3）・等幅の数字。順位や目標は言わない
+            if let progress {
+                Text(progress)
+                    .font(JPFont.mono(JPTypeScale.caption, relativeTo: .caption))
+                    .foregroundStyle(WebTheme.text3)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .accessibilityIdentifier("mypage.wishVisitedCount")
+            }
             NavigationLink {
                 SavedSpotsMapView(split: split, officialSpots: officialSpots, photos: pool,
                                   photosKnown: photosKnown)
@@ -1029,10 +1044,15 @@ struct MyPageView: View {
     /// 写真の無い行（索引に無い鍵・写真の無いスポット）だけ印を出す。出典は開いた先の
     /// スポットの画面に出る（地図の一覧の丸い写真と同じ扱い・`PhotoMapView.spotRow`）。
     /// 小さな枠なので**縮めて読む**（元の画像をそのまま展開しない）
-    private func officialWishlistRow(_ row: OfficialWishlist.Row) -> some View {
+    private func officialWishlistRow(_ row: OfficialWishlist.Row, visit: Photo? = nil) -> some View {
         HStack(spacing: 12) {
             Group {
-                if let photo = row.spot?.photo {
+                if let visit {
+                    // 行けた場所は、自分の写真に替える（札 #710 の案1）
+                    DownsampledRemoteImage(url: visit.gridImageURL, contentMode: .fill,
+                                           aspectRatio: visit.aspectRatio.map { CGFloat($0) },
+                                           assumedRatioLimit: PhotoFrame.assumedRatioLimit)
+                } else if let photo = row.spot?.photo {
                     // 台帳の写真は縦横比を持たないので、2:1 までの形と見込んで読む（56pt なら 512px）
                     // 縮小版があればそれを読む（無い・読めなければ元の画像・`SpotThumbImage`）
                     SpotThumbImage(image: photo, assumedRatioLimit: 2)
@@ -1055,6 +1075,9 @@ struct MyPageView: View {
                     .font(JPFont.rowTitle)
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
+                if let visit {
+                    WishVisitedLine(photo: visit)
+                } else {
                 HStack(spacing: 6) {
                     if let region = row.regionLabel {
                         Text(region)
@@ -1067,6 +1090,7 @@ struct MyPageView: View {
                             .font(JPFont.caption)
                             .foregroundStyle(WebTheme.text3)
                     }
+                }
                 }
             }
             Spacer(minLength: 8)
@@ -1099,11 +1123,12 @@ struct MyPageView: View {
         .accessibilityIdentifier("mypage.officialWish")
     }
 
-    private func wishlistRow(_ spot: DerivedSpot.Place) -> some View {
-        HStack(spacing: 12) {
-            // 代表写真は**いちばん多く押された1枚**（数えた値）
-            DownsampledRemoteImage(url: spot.cover?.gridImageURL, contentMode: .fill,
-                                       aspectRatio: spot.cover?.aspectRatio.map { CGFloat($0) },
+    private func wishlistRow(_ spot: DerivedSpot.Place, visit: Photo? = nil) -> some View {
+        // 行けた場所は自分の写真を出す（札 #710 の案1）。ほかは**いちばん多く押された1枚**（数えた値）
+        let cover = visit ?? spot.cover
+        return HStack(spacing: 12) {
+            DownsampledRemoteImage(url: cover?.gridImageURL, contentMode: .fill,
+                                       aspectRatio: cover?.aspectRatio.map { CGFloat($0) },
                                        assumedRatioLimit: PhotoFrame.assumedRatioLimit)
                 .frame(width: 56, height: 56)
                 .background(WebTheme.card)
@@ -1115,7 +1140,9 @@ struct MyPageView: View {
                     .foregroundStyle(WebTheme.foreground)
                     .lineLimit(1)
                 let place = spot.broader.map { LocationMatch.display($0) }.joined(separator: "、")
-                if !place.isEmpty {
+                if let visit {
+                    WishVisitedLine(photo: visit)
+                } else if !place.isEmpty {
                     Text(place)
                         .font(JPFont.caption)
                         .foregroundStyle(WebTheme.text3)
@@ -1977,5 +2004,25 @@ enum MyPageHeaderLayout {
     /// 同じ高さに来るので、丸の幅だけ空ける。カバー（額縁を含む）がある人は丸が帯の上にあるので 0
     static func statsTrailingReserve(coverBand: Bool) -> CGFloat {
         coverBand ? 0 : WebTheme.minTapTarget
+    }
+}
+
+/// 行きたい場所の行の「行った　11月23日、あなたの1枚」（札 #710 の案1）。✓ の形と字で伝える（色だけにしない）。
+/// 数・日付は合図ではないので白の濃淡（text2）
+struct WishVisitedLine: View {
+    let photo: Photo
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "checkmark")
+                .font(.caption2.weight(.bold))
+                .accessibilityHidden(true)
+            Text(WishVisit.rowLine(photo))
+                .font(JPFont.caption)
+                .lineLimit(1)
+        }
+        .foregroundStyle(WebTheme.text2)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("mypage.wishVisited")
     }
 }

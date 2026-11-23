@@ -16,6 +16,8 @@ final class ToastCenter: ObservableObject {
         let id: UUID
         let text: String
         let kind: Kind
+        /// 2行目の小さな字（札 #710 の案1・7: 「行きたい場所に行けました」の下の場所の名前など）。無ければ1行だけ
+        var detail: String? = nil
         /// 押せる一手（1.1.83「カードにする」）。無ければ知らせだけ
         var actionTitle: String? = nil
         var action: (() -> Void)? = nil
@@ -25,7 +27,7 @@ final class ToastCenter: ObservableObject {
 
         static func == (lhs: Message, rhs: Message) -> Bool {
             lhs.id == rhs.id && lhs.text == rhs.text && lhs.kind == rhs.kind && lhs.actionTitle == rhs.actionTitle
-                && lhs.secondaryTitle == rhs.secondaryTitle
+                && lhs.secondaryTitle == rhs.secondaryTitle && lhs.detail == rhs.detail
         }
 
         /// `info`: 成功でも失敗でもない案内（届く時期など・2026-10-09）
@@ -65,6 +67,18 @@ final class ToastCenter: ObservableObject {
     /// 1.1.84 のまとめ: 「取り消す」（`undo`・トランク）と同じ部品に両方を残す。こちらで出すと前の「取り消す」は消える
     func show(_ text: String, kind: Message.Kind = .success, actionTitle: String? = nil, action: (() -> Void)? = nil) {
         show(text, kind: kind, actionTitle: actionTitle, action: action, secondaryTitle: nil, secondaryAction: nil)
+    }
+
+    /// 2行で出す（札 #710 の案1・7）。1行目は太い字、2行目（`detail`）は小さな字。空の2行目は出さない
+    func show(_ text: String, detail: String?, kind: Message.Kind = .success,
+              actionTitle: String? = nil, action: (() -> Void)? = nil) {
+        show(text, kind: kind, actionTitle: actionTitle, action: action, secondaryTitle: nil, secondaryAction: nil)
+        guard let message = current, message.text == text.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        let line = detail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !line.isEmpty else { return }
+        var next = message
+        next.detail = line
+        current = next
     }
 
     /// 2つの一手を付けて出す（札 #630: 「新規登録」と「ログイン」）。2つ目は1つ目と一緒のときだけ出す。

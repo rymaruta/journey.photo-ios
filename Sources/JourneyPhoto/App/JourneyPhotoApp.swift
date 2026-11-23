@@ -314,6 +314,17 @@ struct JourneyPhotoApp: App {
                     let drafts = storyDrafts
                     // 写真の投稿を裏で送る係の知らせの口（「投稿しました　カードにする」「送れませんでした　もう一度」・案 B2）
                     PostUploadCenter.shared.configure(toasts: toasts, currentUserId: { auth.userId })
+                    // 投稿の知らせを場所で言い替える（札 #710 の案1・7）。行きたい場所の控えと観光スポットの索引を読む
+                    let wishes = wishlist
+                    let spotService = environment.spots
+                    PostUploadCenter.shared.placeNotice = { posted, spot, postedToSpot, ownerId in
+                        let index = (try? await spotService.fetchIndex()) ?? []
+                        let memory = WishVisitMemory()
+                        guard let made = PostedPlaceNotice.make(posted: posted, wishKeys: wishes.spotIds, spots: index,
+                                                                announced: memory.announced(for: ownerId)) else { return nil }
+                        if let key = made.wishKey { memory.note([key], for: ownerId) }
+                        return made.notice
+                    }
                     StoryUploadCenter.shared.configure(
                         currentUserId: { auth.userId },
                         send: { job, record in

@@ -87,6 +87,9 @@ final class PostUploadCenter: ObservableObject {
     var onNotice: ((Notice, UUID) -> Void)?
     /// 🔴 **いまログインしている人**（アプリが起動時に渡す・試験は差し替える）。送る前・1枚ごと・「もう一度」で持ち主と比べる
     var currentUserId: (() -> String?)?
+    /// 投稿の知らせの言い方を場所で変える口（札 #710 の案1「行きたい場所に行けました」・案7「最初の1枚になりました」）。
+    /// 起動のときに渡す（行きたい場所の控えと観光スポットの索引を読む）。nil なら通常の「投稿しました」
+    var placeNotice: (@MainActor (_ posted: [Photo], _ spot: UploadSpotTarget?, _ postedToSpot: Int, _ ownerId: String?) async -> PostedPlaceNotice?)?
 
     /// 送っている・送れずに持っている投稿があるか（輪が「送信中…」「送れませんでした」を出す）
     var isBusy: Bool { !jobs.isEmpty }
@@ -246,7 +249,8 @@ final class PostUploadCenter: ObservableObject {
         case .posted:
             finish(job)
             if let card = model.quietPostedCard { PostedCardOffer.shared.offer(card, ownerId: job.ownerId) }
-            notice(.posted(card: model.quietPostedCard != nil), job: job, card: model.quietPostedCard)
+            let place = await placeNotice?(model.savedPhotos, model.spot, model.postedToSpot, job.ownerId)
+            notice(.posted(card: model.quietPostedCard != nil), job: job, card: model.quietPostedCard, place: place)
         case .postedWithNote(let note):
             finish(job)
             notice(.postedWithNote(note), job: job)
@@ -275,7 +279,8 @@ final class PostUploadCenter: ObservableObject {
         TabRouter.shared.postSheetClosed()
     }
 
-    private func notice(_ notice: Notice, job: Job, card shareCard: PostedShareCard? = nil) {
+    private func notice(_ notice: Notice, job: Job, card shareCard: PostedShareCard? = nil,
+                        place: PostedPlaceNotice? = nil) {
         if let onNotice {
             onNotice(notice, job.id)
             return
@@ -283,13 +288,15 @@ final class PostUploadCenter: ObservableObject {
         guard let toasts else { return }
         switch notice {
         case .posted:
+            // 場所の知らせ（札 #710）は1行目と2行目を替えるだけ。「カードにする」はそのまま
+            let title = place?.title ?? PostedCardHabit.quietText
             if let card = shareCard {
                 // その知らせのカードを、持ち主がいまの人のときだけ開く（札 #688）
-                toasts.show(PostedCardHabit.quietText, kind: .success, actionTitle: PostedCardHabit.quietAction) { [weak self] in
+                toasts.show(title, detail: place?.detail, kind: .success, actionTitle: PostedCardHabit.quietAction) { [weak self] in
                     PostedCardOffer.shared.present(card, currentUserId: self?.currentUserId?())
                 }
             } else {
-                toasts.show(PostedCardHabit.quietText, kind: .success)
+                toasts.show(title, detail: place?.detail, kind: .success)
             }
         case .postedWithNote(let note):
             toasts.show(note, kind: .info)
@@ -404,5 +411,23 @@ enum UploadRing {
     /// 輪の下の名前（案 B2「送信中…」）
     static func name(_ state: State) -> String {
         state.failed == nil ? L("送信中…", "Sending…") : L("送れませんでした", "Failed")
+    }
+}
+
+/// 投稿の知らせの、場所で変える言い方（札 #710）。1行目（太い字）と2行目（小さな字）
+struct PostedPlaceNotice: Equatable {
+    let title: String
+    let detail: String?
+
+    /// 言い方を決める。どれにも当たらなければ nil（通常の「投稿しました」）
+    ///
+    /// - 行きたい場所に入れた場所で、**まだ知らせていない**場所の写真が上がった: 「行きたい場所に行けました」と場所の名前
+    ///   （同じ場所の2枚目からは通常の知らせ・`WishVisitMemory`）
+    static func make(posted: [Photo], wishKeys: Set<String>, spots: [OfficialSpot],
+                     announced: Set<String>) -> (notice: PostedPlaceNotice, wishKey: String?)? {
+        if let hit = WishVisit.notice(posted: posted, keys: wishKeys, spots: spots, announced: announced) {
+            return (PostedPlaceNotice(title: WishVisit.noticeTitle, detail: hit.name), hit.key)
+        }
+        return nil
     }
 }
