@@ -127,4 +127,18 @@ enum LeftoverCamperData {
     static func removeData(for userId: String, defaults: UserDefaults = .standard) {
         for key in keys(for: userId) { defaults.removeObject(forKey: key) }
     }
+
+    /// 人ごとではない、端末全体の鍵（前の `CamperRoomCoach.key` の手引きを見た印と、
+    /// `CamperRoomPanelSplit` の編集の板の高さの割合）。退会では消えないので、起動のときに1回だけ消す
+    nonisolated static let deviceKeys = ["camper.room.coach.v1", "camper.room.editPanelFraction"]
+
+    /// 端末全体の鍵を消し終えた印（2回目からは何もしない）
+    nonisolated static let deviceKeysClearedKey = "leftover.camper.deviceKeysCleared.v1"
+
+    /// 起動のときに呼ぶ。**1回だけ**、端末全体の鍵（`deviceKeys`）だけを消す（人ごとの鍵は退会のときに消す）
+    static func removeDeviceDataOnce(defaults: UserDefaults = .standard) {
+        guard !defaults.bool(forKey: deviceKeysClearedKey) else { return }
+        for key in deviceKeys { defaults.removeObject(forKey: key) }
+        defaults.set(true, forKey: deviceKeysClearedKey)
+    }
 }

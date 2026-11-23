@@ -89,4 +89,76 @@ final class CamperRemovalTests: XCTestCase {
         for key in mine { XCTAssertNil(defaults.object(forKey: key), "退会しても \(key) が残る") }
         XCTAssertNotNil(defaults.object(forKey: "camper.loadout.B"), "ほかの人の控えまで消した")
     }
+
+    // MARK: - 端末全体の鍵は、起動のときに1回だけ消す
+
+    func testDeviceKeysAreRemovedOnceAtLaunch() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "camper-device-" + UUID().uuidString))
+        // 前の版の綴り（`CamperRoomCoach.key`・`CamperRoomPanelSplit` の defaultsKey）
+        let device = ["camper.room.coach.v1", "camper.room.editPanelFraction"]
+        XCTAssertEqual(Set(LeftoverCamperData.deviceKeys), Set(device), "前の鍵の綴りとずれている")
+        defaults.set(true, forKey: "camper.room.coach.v1")
+        defaults.set(0.5, forKey: "camper.room.editPanelFraction")
+        // 消してはいけないもの: 人ごとの控え（退会のときに消す）と、関係ない鍵
+        defaults.set("x", forKey: "camper.loadout.A")
+        defaults.set("x", forKey: "camper.room.A.car")
+        defaults.set(true, forKey: "trunk.welcome.A")
+        defaults.set(1, forKey: "unrelated.setting")
+        LeftoverCamperData.removeDeviceDataOnce(defaults: defaults)
+        for key in device { XCTAssertNil(defaults.object(forKey: key), "起動しても \(key) が残る") }
+        for key in ["camper.loadout.A", "camper.room.A.car", "trunk.welcome.A", "unrelated.setting"] {
+            XCTAssertNotNil(defaults.object(forKey: key), "関係ない鍵 \(key) まで消した")
+        }
+        // 2回目は何もしない（消し終えた印を見る）
+        defaults.set(true, forKey: "camper.room.coach.v1")
+        LeftoverCamperData.removeDeviceDataOnce(defaults: defaults)
+        XCTAssertNotNil(defaults.object(forKey: "camper.room.coach.v1"), "毎回の起動で消している（1回だけのはず）")
+    }
+
+    /// 起動の入口が呼んでいる
+    func testAppLaunchCallsDeviceCleanup() async throws {
+        let app = try String(contentsOf: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto/App/JourneyPhotoApp.swift"), encoding: .utf8)
+        XCTAssertTrue(app.contains("LeftoverCamperData.removeDeviceDataOnce()"), "起動で端末全体の鍵を消していない")
+    }
+
+    // MARK: - 投稿の応答に `camper` が入っていても壊れない
+
+    func testDealtIgnoresCamperInResponse() async {
+        let dealt = TrunkDealt.read(Data(#"{"success":true,"coin":1,"camper":{"added":["x"]}}"#.utf8))
+        XCTAssertEqual(dealt.coin, 1, "camper の欄があると硬貨を読めない")
+        XCTAssertNil(dealt.label)
+        let odd = TrunkDealt.read(Data(#"{"coin":1,"camper":"broken","label":null}"#.utf8))
+        XCTAssertEqual(odd.coin, 1)
+    }
+
+    // MARK: - 引っ越した CPU とメモリの読み取り（前の `CamperRenderMeter`）
+
+    func testProcessUsageReadsOnDevice() async {
+        #if canImport(Darwin)
+        let usage = ProcessUsage.current()
+        XCTAssertNotNil(usage)
+        XCTAssertGreaterThan(usage?.cpuMs ?? 0, 0)
+        XCTAssertGreaterThan(usage?.memMB ?? 0, 0)
+        XCTAssertTrue(ProcessUsage.vmTagSummary().hasPrefix("TOTAL="))
+        #else
+        XCTAssertNil(ProcessUsage.current(), "Linux では読まない")
+        #endif
+    }
+
+    // MARK: - 消した部屋の古い注記
+
+    func testNoNotesAboutTheCamperRoom() async throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto")
+        let enumerator = try XCTUnwrap(FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil))
+        var found: [String] = []
+        for case let url as URL in enumerator where url.pathExtension == "swift" {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            if text.contains("キャンピングカーの部屋") { found.append(url.lastPathComponent) }
+        }
+        XCTAssertEqual(found, [], "消した「キャンピングカーの部屋」の注記が残っている")
+    }
 }

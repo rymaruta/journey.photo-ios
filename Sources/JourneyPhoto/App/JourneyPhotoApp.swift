@@ -63,6 +63,8 @@ struct JourneyPhotoApp: App {
         // 選んでいるタブを真鍮に（`TabBarStyle`。TabView の tint だけでは中身の白に負ける）
         TabBarStyle.apply()
         PerfRecorder.shared.event("app.init.tabBarStyle")
+        // 消したとおまわり号の、端末全体の控えを1回だけ消す（2026-11-23・札 #709。2回目からは鍵を1つ読むだけ）
+        LeftoverCamperData.removeDeviceDataOnce()
         defer { PerfRecorder.shared.event("app.init.end") }
         do {
             try AuthGateway.configure()
