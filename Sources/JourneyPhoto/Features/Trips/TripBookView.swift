@@ -38,9 +38,6 @@ struct TripBookView: View {
     /// 旅をストーリーに（`TravelStorySheet`）
     @State private var showStory = false
 
-    /// いま読んでいる日（見出しが読む線より上へ過ぎた日・`TripBookPageFlip`）。表紙と数字を読んでいる間は空
-    @State private var passedDays: Set<String> = []
-
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
@@ -54,10 +51,11 @@ struct TripBookView: View {
                 pages
             }
             .padding(.bottom, JPSpace.emptyTop)
+            // 横の払いは UIKit のパンで受ける（`TripDayFlipCatcher`）
+            .tripDayFlipCatcher()
         }
         // 日のページを左右でめくる（札 #714・`TripDayFlip`）。行の id は `TripBook.pageRows` の見出しの id
-        .modifier(TripDayFlip(dayIDs: TripBook.days(of: book).map { TripBookPageFlip.headerID(day: $0.number) },
-                              passed: passedDays))
+        .modifier(TripDayFlip(dayIDs: TripBook.days(of: book).map { TripBookPageFlip.headerID(day: $0.number) }))
         .webScreen()
         // **共有は下端の白い全幅「この一冊を送る」に一本化**（v2 の板 TripBookShare の C-1・2026-10-14）。
         // 右上の印は探しにくく、何を配るのか分からなかった。写真のある画面なので主ボタンは白
@@ -405,7 +403,8 @@ struct TripBookView: View {
                          spoken: Self.spokenDayHeader(day.number, monthDay: TripBook.monthDay(day.date)),
                          title: day.place.isEmpty ? nil : LocationMatch.display(day.place))
             .padding(.bottom, JPSpace.s)
-            .tripDayMark(id: TripBookPageFlip.headerID(day: day.number), passed: $passedDays)
+            .tripDayHeader(id: TripBookPageFlip.headerID(day: day.number))
+            .accessibilityIdentifier("trips.day.\(day.number)")
     }
 
     /// ページの写真。**寸法が分かれば、読み込む前に縦横比で枠を取る**（2026-10-02）——

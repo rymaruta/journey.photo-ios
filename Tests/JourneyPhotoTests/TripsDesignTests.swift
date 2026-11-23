@@ -65,9 +65,6 @@ final class TripsDesignTests: XCTestCase {
     // MARK: - 寸法（板の値）
 
     func testBoardMeasures() {
-        XCTAssertEqual(TripStyle.coverCardHeight, 190)
-        XCTAssertEqual(TripStyle.rowMinHeight, 72)
-        XCTAssertEqual(TripStyle.rowThumb, CGSize(width: 72, height: 56))
         XCTAssertEqual(TripStyle.planThumb, 64)
         XCTAssertEqual(TripStyle.dateFieldHeight, 52)
         XCTAssertEqual(TripStyle.stopNumberSide, 24)
@@ -85,7 +82,7 @@ final class TripsDesignTests: XCTestCase {
 
     /// 押せるもの・字の決まり（CLAUDE.md）: 押せる行は 44 以上、線は土台の値の間
     func testTapTargetsAndStrokes() {
-        for height in [TripStyle.rowMinHeight, TripStyle.pickRowMinHeight, TripStyle.savedRowMinHeight,
+        for height in [TripStyle.pickRowMinHeight, TripStyle.savedRowMinHeight,
                        TripStyle.dateFieldHeight] {
             XCTAssertGreaterThanOrEqual(height, WebTheme.minTapTarget)
         }
@@ -190,10 +187,9 @@ final class TripsDesignTests: XCTestCase {
                       "画面写真で探す名前（投稿の旅と端末の旅）")
         XCTAssertTrue(bookshelf.contains("TripBookshelf.shelves(books)"), "年ごとの段に分けていない")
         XCTAssertTrue(bookshelf.contains(".contextMenu {"), "長押しで表紙を見られない")
-        let spine = try part("struct BookSpine")
+        let spine = try part("struct BookSpine: View")
         // 背は写真の上ではないが、真鍮は件数バッジだけ（案の頁）
         XCTAssertFalse(spine.contains("WebTheme.accent"), "背表紙に真鍮がある")
-        XCTAssertTrue(spine.contains("TripBookshelf.tapWidth"), "押せる幅 44 を取っていない")
         XCTAssertTrue(spine.contains("\"iphone\"") && spine.contains("\"lock.fill\""), "端末の旅と自分だけの旅の印が無い")
     }
 

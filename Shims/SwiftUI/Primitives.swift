@@ -328,6 +328,8 @@ public enum VerticalEdge { case top, bottom }
 
 public struct Animation {
     public static func easeOut(duration: Double) -> Animation { Animation() }
+    /// ゆっくり始まる（本物と同じ。日のページがめくれて出ていく）
+    public static func easeIn(duration: Double) -> Animation { Animation() }
     public static func linear(duration: Double) -> Animation { Animation() }
     public static func easeInOut(duration: Double) -> Animation { Animation() }
     public static func spring(response: Double = 0.5, dampingFraction: Double = 0.825) -> Animation { Animation() }
@@ -366,8 +368,15 @@ public func withAnimation<Result>(_ animation: Animation? = .default,
 }
 public struct Transaction {
     public var animation: Animation?
+    /// 動きを付けない（本物と同じ）
+    public var disablesAnimations = false
     public init() {}
     public init(animation: Animation?) { self.animation = animation }
+}
+
+/// 決めた移り変わりで変える（本物と同じ。日めくりで動きを付けずに見出しへ移る）
+public func withTransaction<Result>(_ transaction: Transaction, _ body: () throws -> Result) rethrows -> Result {
+    try body()
 }
 
 // **Foundation の同じ型をそのまま使う。**

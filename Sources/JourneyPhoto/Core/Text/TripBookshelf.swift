@@ -73,8 +73,9 @@ enum TripBookshelf {
     static let rowGap: Double = 14
     /// 背の上の表紙の窓
     static let windowHeight: Double = 30
-    /// 押せる幅（44pt・CLAUDE.md）。背が細くても当たりはこの幅
-    static let tapWidth: Double = 44
+    /// 押せる幅は**背の幅＋間**（間の半分ずつを両側に。隣の背との真ん中で区切る・2026-11-23 確かめ役の指摘）。
+    /// 44pt に広げると隣の背の当たりと重なり、細い背の右を押すと隣が開いた。押せる高さは背の高さ（118pt 以上）
+    static func hitWidth(photos: Int) -> Double { spineWidth(photos: photos) + spineGap }
     /// 背の題（縦書きの明朝・13pt の太）。2026-11-23 owner 判断（札 #714 の案の頁）: `JPFont` の
     /// 「明朝は 18pt 未満に使わない」の例外。背表紙の縦書きは本の形で読ませる飾りに近く、読み上げは題を丸ごと言う
     static let titleSize: Double = 13
@@ -89,7 +90,10 @@ enum TripBookshelf {
         spineBaseHeight + Double(min(max(days, 1), spineMaxDays)) * spineHeightPerDay
     }
 
-    /// 背に縦に並べる題の字。収まらない分は「…」の縦の形（︙）で切る
+    /// 背の題の1字の箱の高さ（明朝 13pt の行の高さ 17〜19pt に合わせて固定する。字ごとに高さを割らない）
+    static let titleBox: Double = 18
+
+    /// 背に縦に並べる題の字。収まらない分は「…」の縦の形（︙）で切る。縦書きで横を向く字は縦の形にする（`spineGlyph`）
     static func spineTitle(_ title: String, maxCharacters: Int) -> [String] {
         let chars = title.trimmingCharacters(in: .whitespaces).map(String.init)
         guard maxCharacters > 0 else { return [] }
@@ -97,11 +101,21 @@ enum TripBookshelf {
         return Array(chars.prefix(max(0, maxCharacters - 1))) + ["︙"]
     }
 
-    /// 背の高さに入る題の字の数（窓・印・月の分を引いた残りを 1 字 = 字の大きさ＋1 で割る）
+    /// 縦書きの1字。縦の形が字に在れば置き換え、無い字（長音の「ー」・波の「〜」・ダッシュ）は 90° 回して描く
+    static func spineGlyph(_ char: String) -> (text: String, rotated: Bool) {
+        let vertical: [String: String] = ["…": "︙", "‥": "︰", "（": "︵", "）": "︶", "(": "︵", ")": "︶",
+                                          "「": "﹁", "」": "﹂", "『": "﹃", "』": "﹄", "【": "︻", "】": "︼",
+                                          "、": "︑", "。": "︒", "，": "︐", "：": "︓"]
+        if let form = vertical[char] { return (form, false) }
+        let turned: Set<String> = ["ー", "－", "-", "—", "―", "〜", "～", "~", "＝", "→", "←"]
+        return (char, turned.contains(char))
+    }
+
+    /// 背の高さに入る題の字の数（窓・印・月の分を引いた残りを、1字の箱 `titleBox` で割る）
     static func spineTitleCapacity(height: Double, marks: Int) -> Int {
         let monthBlock = 34.0
         let free = height - windowHeight - Double(marks) * 17 - monthBlock - 12
-        return max(1, Int(free / (titleSize + 1)))
+        return max(1, Int(free / titleBox))
     }
 
     /// 読み上げ（「旅、金沢、2026年9月、24枚、端末の中だけ、自分だけ」）
@@ -154,6 +168,17 @@ enum TripBookshelf {
 
     // MARK: - 本にする
 
+    /// 端末の旅を棚に出すか（**判断はここ1か所**・2026-11-23 確かめ役の指摘）。
+    ///
+    /// 同じ旅を2冊にしない: 投稿した日がある端末の旅は、投稿した旅として棚に並ぶ。今は `DeviceTripShelfStore.books(posted:isMine:)` が
+    /// 投稿した日のある旅を先に外しているので、ここでは全部出す。
+    /// 枝 `claude/post-nudges-710` が入ると、一部だけ投稿した旅も端末の旅として届く（`LibraryTrip.postedCount`）。
+    /// **まとめるときに、ここを `trip.postedCount == 0` にする**（`TripBookshelfTests.testDeviceTripShelfGateIsOnePlace`）
+    static func showsOnShelf(_ trip: LibraryTrip) -> Bool {
+        true
+    }
+
+
     static func book(_ trip: TripBook.Trip) -> Book {
         let parts = TripBook.utcCalendar.dateComponents([.year, .month], from: trip.start)
         return Book(source: .posted(trip), title: TripBook.title(of: trip), start: trip.start,
@@ -203,20 +228,56 @@ enum TripBookshelf {
     }
 }
 
-/// 本を開く動き（札 #714・案の頁の「本を開く（実機）」）。秒は案の頁の値
+/// 本を開く動き（札 #714・案の頁の「本を開く（実機）」の「詳しく」）。秒は案の頁の値
+///
+/// 開く: 引き出しと手前への回転 0.24 秒（ばね 応答 0.3、減衰 0.85）→ 0.12 秒から表紙が -165° めくれる 0.26 秒 →
+/// 0.30 秒から頁が画面いっぱいへ 0.23 秒 → 0.54 秒で1回だけ 1.2% はずむ（約 0.55 秒）。
+/// 閉じる: 頁が縮む 0.19 秒 → 0.12 秒から表紙が戻る 0.20 秒 → 0.27 秒から棚へ 0.18 秒（約 0.45 秒）
 enum TripBookMotion {
+    /// 引き出しと手前への回転（ばね）
+    static let pullResponse = 0.3
+    static let pullDamping = 0.85
+    /// 棚に入っているときの本の向き（横を向いて背だけが見える）
+    static let shelvedTurn = 78.0
     /// 表紙がめくれ始める時刻と長さ（ゆっくり始まり、ゆっくり止まる）
     static let coverFlipDelay = 0.12
     static let coverFlipDuration = 0.26
     /// めくれた表紙の角度（左の辺を軸に）
     static let coverFlipAngle = -165.0
     static let perspective = 0.45
+    /// 頁が画面いっぱいへ広がり始める時刻と長さ（iOS 18 の拡大の移り変わり）
+    static let pageGrowAt = 0.30
+    static let pageGrowDuration = 0.23
     /// 開き切ってはずむ時刻と大きさ（1回だけ）
     static let bounceAt = 0.54
     static let bounceScale = 1.012
+    /// 閉じる: 頁が縮む長さ、表紙が戻る時刻と長さ、棚へ帰る時刻と長さ
+    static let pageShrinkDuration = 0.19
+    static let coverCloseDelay = 0.12
+    static let coverCloseDuration = 0.20
+    static let shelveAt = 0.27
+    static let shelveDuration = 0.18
     /// 合わせて約 0.55 秒、閉じるのは約 0.45 秒
     static let openTotal = 0.55
     static let closeTotal = 0.45
+    /// 引き出した本の真ん中: 見えている所の高さのこの割合（中央より少し上）
+    static let stageCenterRatio = 0.45
+    /// 本（266pt）が見えている所の上下に残す余白
+    static let stageMargin = 24.0
+    /// 本の表紙の絵の長い辺の画素（本は約 196×266pt。案の頁「約 400px」に、3倍の画面で粗く見えない分を足した・`BookCoverCache`）
+    static let coverPixels = 512
+
+    /// 引き出した本の真ん中の高さ（棚の座標）。見えている所の中で、本が上下にはみ出さない所に置く
+    static func stageCenterY(visibleHeight: Double, shelfTopInScroll: Double, bookHeight: Double = 266) -> Double {
+        let half = bookHeight / 2
+        let lower = stageMargin + half
+        let upper = max(lower, visibleHeight - stageMargin - half)
+        let inVisible = min(max(visibleHeight * stageCenterRatio, lower), upper)
+        return inVisible - shelfTopInScroll
+    }
+
+    /// めくれている表紙が裏（見返し）を見せる角度か
+    static func showsCoverBack(angle: Double) -> Bool { angle < -90 }
 }
 
 /// 旅の記録のタブの頭の、荷札の道具の列（札 #714）。**並びは決まった順、新しい道具は最後に足す**
@@ -262,22 +323,44 @@ enum TripTool: String, CaseIterable, Identifiable {
 /// 開いた一冊で、日のページを左右でめくる（札 #714・2026-11-23 owner 決定）。
 ///
 /// 2026-11-23 判断: 一冊は下へ流れる1本の読み物（`TripBookView`）のまま作り直さず、**左右に払うと次の日・前の日の
-/// 見出しへ送る**形にした。縦に読むのはそのまま、払えば本をめくるように日が替わる
+/// 見出しへ送る**形にした。縦に読むのはそのまま、払えば本をめくるようにページが背を軸に回って日が替わる（`TripDayFlip`）
 enum TripBookPageFlip {
-    /// めくったと見なす横の距離（pt）と、縦より横が勝つ比
+    /// 離したときにめくると決める横の距離（pt）と速さ（pt/秒）
     static let minimumDistance: Double = 60
-    static let dominance: Double = 2
+    static let minimumVelocity: Double = 500
+    /// 指を受けるとき、横が縦にこの比で勝っていること
+    static let dominance: Double = 1.2
     /// 画面の左の端から始めた指は「戻る」の払いに任せる（めくらない）
     static let backEdge: Double = 24
     /// 日の見出しが「いま読んでいる日」になる、画面の上からの位置
     static let readingLine: Double = 140
-    /// 次の日へ送る動きの長さ（秒）
-    static let duration = 0.35
+    /// 指に付いて回る角度の上限と、めくるときの角度・濃さ・時間
+    static let followMax: Double = 14
+    static let turnAngle: Double = 80
+    static let turnFade: Double = 0.35
+    static let turnOutDuration = 0.18
+    static let turnInDuration = 0.24
+    static let perspective = 0.5
 
-    /// 払いが日をめくる向き（左へ払う = 次の日 = +1、右へ払う = 前の日 = -1）。めくらないなら nil
-    static func direction(dx: Double, dy: Double, startX: Double) -> Int? {
-        guard startX > backEdge, abs(dx) >= minimumDistance, abs(dx) >= abs(dy) * dominance else { return nil }
+    /// 指を受ける向き（左へ払う = 次の日 = +1、右へ払う = 前の日 = -1）。受けないなら nil。
+    /// **その向きにめくる日があるときだけ受ける**——1日目と表紙で右へ払う指、左の端からの指は「戻る」へ譲る
+    static func beginDirection(dx: Double, dy: Double, startX: Double, dayIDs: [String], passed: Set<String>) -> Int? {
+        guard startX > backEdge, dx != 0, abs(dx) > abs(dy) * dominance else { return nil }
+        let direction = dx < 0 ? 1 : -1
+        return targetID(dayIDs: dayIDs, passed: passed, direction: direction) == nil ? nil : direction
+    }
+
+    /// 離したときにめくる向き。距離か速さが足りなければ nil（元へ戻す）
+    static func commitDirection(dx: Double, velocityX: Double) -> Int? {
+        let flung = abs(velocityX) >= minimumVelocity && (velocityX < 0) == (dx < 0)
+        guard abs(dx) >= minimumDistance || (flung && dx != 0) else { return nil }
         return dx < 0 ? 1 : -1
+    }
+
+    /// 指に付いて回る角度（度）。左へ払うと背を軸に左へ少し回る
+    static func followAngle(dx: Double, width: Double) -> Double {
+        guard width > 0 else { return 0 }
+        return min(followMax, max(-followMax, dx / width * followMax * 2))
     }
 
     /// めくった先の日（1から）。いまの日が 0 なのは、まだ表紙や数字を読んでいるとき。行き先が無ければ nil

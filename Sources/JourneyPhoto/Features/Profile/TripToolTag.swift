@@ -93,7 +93,8 @@ struct TripToolTagShape: Shape {
 }
 
 /// 荷札を押したとき（案の頁）: 指が触れた瞬間に明るくなり（先に反応が見える）、少し遅れて穴を軸に 1° だけ傾いて縮む。
-/// 離すとばねで戻り、軽い触覚1回。動きを減らす設定では明るくなるだけ
+/// 離すとばねで戻る。動きを減らす設定では明るくなるだけ。
+/// 軽い触覚1回は**押しが決まったときだけ**（`TripToolTapFeedback`）。ここで鳴らすと、押してから列の横の送りに移った指でも鳴った
 struct TripToolTagStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -112,7 +113,17 @@ struct TripToolTagStyle: ButtonStyle {
             .scaleEffect(pressed && !reduceMotion ? Self.pressedScale : 1, anchor: anchor)
             .animation(pressed ? .easeOut(duration: 0.1).delay(0.04) : .spring(response: 0.3, dampingFraction: 0.55),
                        value: pressed)
-            // 離したとき（押した → 離した）に軽い触覚1回
-            .sensoryFeedback(.impact(weight: .light), trigger: pressed) { old, new in old && !new }
+    }
+}
+
+/// 荷札の触覚（軽い1回）。**押しが決まった（指を離して開く）ときだけ鳴らす**——押したまま列の横の送り・縦の送りに
+/// 移った指は押しが取り消され、ここは呼ばれない（2026-11-23 確かめ役の指摘）
+struct TripToolTapFeedback: ViewModifier {
+    @State private var taps = 0
+
+    func body(content: Content) -> some View {
+        content
+            .simultaneousGesture(TapGesture().onEnded { taps += 1 })
+            .sensoryFeedback(.impact(weight: .light), trigger: taps)
     }
 }

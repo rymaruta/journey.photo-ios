@@ -5788,8 +5788,15 @@ final class ScreenshotTests: JPUITestCase {
         XCTAssertFalse(app.staticTexts["同じ旅で撮った写真を2枚載せると、旅の記録が一冊できます"].firstMatch.exists,
                        "旅があるのに説明の1行が出ている")
         assertToolTags(app)
-        // 背表紙は押せる幅 44pt
-        XCTAssertGreaterThanOrEqual(spine.frame.width, 44, "背表紙の押せる幅が 44pt 未満")
+        // 背表紙の当たり: 高さは 44pt 以上、幅は背の幅＋間で、隣の背の当たりと重ならない（細い背の右を押して隣が開かない）
+        XCTAssertGreaterThanOrEqual(spine.frame.height, 44, "背表紙の押せる高さが 44pt 未満")
+        let spines = app.descendants(matching: .any).matching(identifier: "trips.book")
+        if spines.count > 1 {
+            let first = spines.element(boundBy: 0).frame, second = spines.element(boundBy: 1).frame
+            if abs(first.maxY - second.maxY) < 1 {
+                XCTAssertLessThanOrEqual(first.maxX, second.minX + 0.5, "隣の背表紙の当たりが重なっている（\(first) と \(second)）")
+            }
+        }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "34b-旅の記録（旅が増えたとき）")
         app.swipeUp()
@@ -5816,8 +5823,15 @@ final class ScreenshotTests: JPUITestCase {
         guard share.waitForExistence(timeout: 15) else { return XCTFail("背表紙を押しても一冊が開かない") }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "34d-旅の一冊（本が開いた）")
+        // 表紙を読んでいる所で左へ払うと、1日目の見出しが画面の上へ来る（日がめくれた）
+        let day1 = app.descendants(matching: .any)["trips.day.1"].firstMatch
+        let before = day1.exists ? day1.frame.minY : nil
         app.swipeLeft()
         Thread.sleep(forTimeInterval: 2)
+        guard day1.waitForExistence(timeout: 5) else { return XCTFail("左へ払っても1日目の見出しが出ない（日がめくれない）") }
+        let top = app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.frame.maxY : 100
+        XCTAssertLessThan(day1.frame.minY, top + 120,
+                          "左へ払っても1日目の見出しが上へ来ない（前 \(before.map { "\($0)" } ?? "無し")、後 \(day1.frame.minY)）")
         shoot(app, "34e-旅の一冊（次の日へめくった）")
         let back = app.navigationBars.buttons.firstMatch
         guard back.waitForExistence(timeout: 5) else { return XCTFail("一冊に戻るボタンが無い") }

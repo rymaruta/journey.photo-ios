@@ -1227,12 +1227,14 @@ struct MyPageView: View {
                             TripToolTag(title: tool.title)
                         }
                         .buttonStyle(TripToolTagStyle())
+                        .modifier(TripToolTapFeedback())
                         .accessibilityIdentifier("trips.plans")
                     case .albums:
                         NavigationLink { AlbumsView() } label: {
                             TripToolTag(title: tool.title)
                         }
                         .buttonStyle(TripToolTagStyle())
+                        .modifier(TripToolTapFeedback())
                         .accessibilityIdentifier("trips.albums")
                     case .trunk:
                         // 旅のトランク（2026-10-17 owner 承認）。**口が読めたことのある人にだけ出す**（`TrunkAvailability`・`TripTool.shown`）。
@@ -1247,6 +1249,7 @@ struct MyPageView: View {
                             TripToolTag(title: tool.title)
                         }
                         .buttonStyle(TripToolTagStyle())
+                        .modifier(TripToolTapFeedback())
                         .accessibilityIdentifier("trips.passBook")
                     }
                 }
@@ -1515,6 +1518,7 @@ private struct MyPageTrunkRow: View {
             TripToolTag(title: TripTool.trunk.title, badge: TrunkEntryText.badge(trunkEntry.summary))
         }
         .buttonStyle(TripToolTagStyle())
+        .modifier(TripToolTapFeedback())
         .accessibilityValue(TrunkEntryText.accessibilityValue(trunkEntry.summary))
         .accessibilityIdentifier("trips.trunk")
         // 出るたびに読むかを決める（トランクから戻ったときも走る。`markStale` が無ければ読まない）
@@ -1539,6 +1543,8 @@ private struct MyPageTripsShelf: View {
         VStack(alignment: .leading, spacing: 20) {
             // 背表紙の棚と、旅が無いときの1行は `TripShelfList`（旅の側の部品）
             TripShelfList(trips: trips, isPublic: isPublic, deviceBooks: deviceBooks, deviceNames: deviceTrips.names)
+                // 引き出した本（`BookStageLayer`）を下の段より手前に描く
+                .zIndex(1)
             DeviceTripSection(store: deviceTrips)
         }
     }

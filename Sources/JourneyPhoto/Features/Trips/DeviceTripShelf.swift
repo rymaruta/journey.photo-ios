@@ -189,8 +189,6 @@ struct DeviceTripBookView: View {
     }
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 4)
-    /// 読む線を過ぎた日（めくる起点・`TripDayFlip`）
-    @State private var passedDays: Set<String> = []
 
     /// いまの一冊（時間帯が分かっていれば、その土地の日）
     private var shown: LibraryTrip {
@@ -214,6 +212,8 @@ struct DeviceTripBookView: View {
                             .foregroundStyle(WebTheme.accent)
                             .padding(.horizontal, JPSpace.gutter)
                             .accessibilityAddTraits(.isHeader)
+                            // 日めくりの「いまの日」と読み上げの「次の日」「前の日」（`TripDayFlip`）
+                            .tripDayHeader(id: day.id)
                         LazyVGrid(columns: columns, spacing: 2) {
                             ForEach(day.shots, id: \.id) { shot in
                                 LibraryThumbView(id: shot.id, side: 96)
@@ -222,13 +222,13 @@ struct DeviceTripBookView: View {
                             }
                         }
                     }
-                    .tripDayMark(id: day.id, passed: $passedDays)
                 }
             }
             .padding(.vertical, JPSpace.m)
+            .tripDayFlipCatcher()
         }
         // 日のページを左右でめくる（札 #714・投稿した一冊と同じ `TripDayFlip`）。id は `ForEach` の日の id
-        .modifier(TripDayFlip(dayIDs: shown.days.map(\.id), passed: passedDays))
+        .modifier(TripDayFlip(dayIDs: shown.days.map(\.id)))
         .webScreen()
         .navigationTitle(DeviceTrips.title(of: shown, name: shownName))
         .navigationBarTitleDisplayMode(.inline)

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// 旅の記録の棚（札 #714・2026-11-23 owner 決定）。マイページの「旅の記録」のタブと、人のページの「すべての旅」の中身。
 ///
@@ -36,7 +37,8 @@ struct TripShelfList: View {
     }
 
     private var books: [TripBookshelf.Book] {
-        trips.map(TripBookshelf.book) + deviceBooks.map { TripBookshelf.book($0, name: deviceNames[$0.id]) }
+        trips.map(TripBookshelf.book)
+            + deviceBooks.filter(TripBookshelf.showsOnShelf).map { TripBookshelf.book($0, name: deviceNames[$0.id]) }
     }
 
     var body: some View {
@@ -62,7 +64,7 @@ struct TripShelfList: View {
     }
 }
 
-/// 年ごとの段の本棚。押した一冊は `open` の画面で開く
+/// 年ごとの段の本棚。押した一冊は本を開く動き（`BookStageModel`）のあと `open` の画面で開く
 struct TripBookshelfView<Opened: View>: View {
 
     let books: [TripBookshelf.Book]
@@ -72,20 +74,24 @@ struct TripBookshelfView<Opened: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// 棚の幅（折り返しの計算）。測るまでは 390pt の iPhone の幅で見積もる
     @State private var width: CGFloat = 390
-    /// 長押しの「開く」から開く一冊
-    @State private var peekOpened: TripBookshelf.Book?
-    /// 一冊を開いて棚を離れたか（戻ったときに触覚を1回）
-    @State private var leftForBook = false
+    /// 開いている一冊（一冊の頁）
+    @State private var presented: TripBookshelf.Book?
+    /// 引き出す・めくる段取り。**棚はこれを見張らない**（動くたびに棚を作り直さない）
+    @StateObject private var stage = BookStageModel()
     @State private var returned = 0
+
+    private static var space: String { "trips.bookshelf" }
 
     var body: some View {
         let shelves = TripBookshelf.shelves(books)
         VStack(alignment: .leading, spacing: 0) {
             ForEach(shelves) { shelf in
                 yearHeader(shelf)
+                // 押せる幅は背の幅＋間（間の半分ずつを両側に・`spineSlot`）。段の幅もその分で数える
                 let inner = max(0, Double(width) - Double(JPSpace.gutter) * 2)
-                let rows = TripBookshelf.rows(widths: shelf.books.map { TripBookshelf.spineWidth(photos: $0.photoCount) },
-                                              available: inner)
+                let rows = TripBookshelf.rows(widths: shelf.books.map { TripBookshelf.spineWidth(photos: $0.photoCount)
+                                                                        + TripBookshelf.spineGap },
+                                              available: inner + TripBookshelf.spineGap, gap: 0)
                 VStack(alignment: .leading, spacing: TripBookshelf.rowGap) {
                     ForEach(rows, id: \.first) { row in
                         shelfRow(row.map { shelf.books[$0] })
@@ -94,18 +100,43 @@ struct TripBookshelfView<Opened: View>: View {
                 .padding(.bottom, JPSpace.s)
             }
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { if $0 > 0 { width = $0 } }
-        .navigationDestination(item: $peekOpened) { book in
-            opened(book)
+        .coordinateSpace(.named(Self.space))
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: {
+            if $0 > 0 { width = $0; stage.shelfWidth = $0 }
         }
-        .onDisappear { if peekOpened != nil { leftForBook = true } }
-        .onAppear {
-            guard leftForBook else { return }
-            leftForBook = false
-            returned += 1
+        // 引き出す先を決める: 縦の送りの見えている所の中の棚の位置と、見えている高さ
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .scrollView) } action: { stage.shelfInScroll = $0 }
+        .background {
+            Color.clear
+                .containerRelativeFrame(.vertical) { length, _ in length }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { stage.visibleHeight = $0 }
+                .accessibilityHidden(true)
         }
-        // 棚へ戻った瞬間（.light）。開くときの触覚は背を押した瞬間（`SpineButtonStyle`）
+        // 開いている一冊（本の層）。棚の上に重ね、動いている間は棚への押しを止める
+        .overlay(alignment: .topLeading) {
+            BookStageLayer(model: stage, namespace: bookSpace)
+        }
+        .navigationDestination(item: $presented) { book in
+            open(book)
+                .modifier(TripBookOpening(book: book, namespace: bookSpace, animated: !reduceMotion))
+        }
+        // 一冊の頁が閉じた（「戻る」・下へ引いた）: 表紙を戻して棚へ帰す。帰り着いた瞬間に触覚（.light）
+        .onChange(of: presented) { old, new in
+            guard old != nil, new == nil else { return }
+            stage.close { returned += 1 }
+        }
+        .onDisappear { if presented == nil { stage.reset() } }
         .sensoryFeedback(.impact(weight: .light), trigger: returned)
+    }
+
+    /// 背表紙を押した（長押しの「開く」も同じ）。動きを減らす設定ではすぐ開く
+    private func openBook(_ book: TripBookshelf.Book) {
+        guard presented == nil, !stage.isBusy, stage.stage == nil else { return }
+        if reduceMotion {
+            presented = book
+        } else {
+            stage.open(book) { presented = book }
+        }
     }
 
     private func yearHeader(_ shelf: TripBookshelf.Shelf) -> some View {
@@ -127,13 +158,14 @@ struct TripBookshelfView<Opened: View>: View {
     /// 1段。背表紙は下でそろえ、下に棚板（濃い灰の帯と影だけ）
     private func shelfRow(_ row: [TripBookshelf.Book]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .bottom, spacing: TripBookshelf.spineGap) {
+            HStack(alignment: .bottom, spacing: 0) {
                 ForEach(row) { book in
                     spine(book)
                 }
             }
             .frame(maxWidth: .infinity, minHeight: TripBookshelf.rowHeight, alignment: .bottomLeading)
-            .padding(.horizontal, JPSpace.gutter)
+            // 背の当たりが間の半分ずつ外へ出る分、段の左を詰める（背の見た目の位置は前と同じ）
+            .padding(.horizontal, JPSpace.gutter - CGFloat(TripBookshelf.spineGap / 2))
             VStack(spacing: 0) {
                 Rectangle().fill(Self.plank).frame(height: 4)
                 Rectangle().fill(Color.black.opacity(0.9)).frame(height: 2)
@@ -143,38 +175,51 @@ struct TripBookshelfView<Opened: View>: View {
     }
 
     private func spine(_ book: TripBookshelf.Book) -> some View {
-        NavigationLink {
-            opened(book)
+        Button {
+            openBook(book)
         } label: {
-            BookSpine(book: book)
+            BookSpineSlot(book: book, model: stage)
         }
         .buttonStyle(SpineButtonStyle(reduceMotion: reduceMotion))
-        .simultaneousGesture(TapGesture().onEnded { leftForBook = true })
-        .bookZoomSource(id: book.id, in: bookSpace)
+        // 本を引き出す元の枠（棚の座標・知らせない）と、表紙を先に読んでおく
+        .onGeometryChange(for: CGRect.self) {
+            $0.frame(in: .named(Self.space)).insetBy(dx: CGFloat(TripBookshelf.spineGap / 2), dy: 0)
+        } action: { stage.spineFrames[book.id] = $0 }
+        .task(id: book.id) { await BookCoverCache.prefetch(book) }
         // 長押しは本の形で表紙だけ見る（中は開かない）。「開く」で開く
         .contextMenu {
             Button {
-                peekOpened = book
+                openBook(book)
             } label: {
                 Label(L("開く", "Open"), systemImage: "book")
             }
         } preview: {
-            BookCoverFace(book: book)
+            BookCoverFace(book: book, image: BookCoverCache.image(for: book))
                 .frame(width: BookCoverFace.size.width, height: BookCoverFace.size.height)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(TripBookshelf.spokenLabel(book))
         .accessibilityAddTraits(.isButton)
+        .accessibilityAction { openBook(book) }
         .accessibilityIdentifier(book.isDevice ? "trips.deviceBook" : "trips.book")
-    }
-
-    private func opened(_ book: TripBookshelf.Book) -> some View {
-        open(book)
-            .modifier(TripBookOpening(book: book, namespace: bookSpace, animated: !reduceMotion))
     }
 
     /// 棚板の色（濃い灰）
     private static var plank: Color { Color(red: 0x2B / 255, green: 0x29 / 255, blue: 0x27 / 255) }
+}
+
+/// 背表紙の枠。**押せる所は背の幅＋間**（間の半分ずつを両側に・隣の背との真ん中で区切る）。
+/// 引き出している一冊の背は隠す（棚に隙間が空く）。見張るのはここだけ（棚ぜんぶを作り直さない）
+struct BookSpineSlot: View {
+    let book: TripBookshelf.Book
+    @ObservedObject var model: BookStageModel
+
+    var body: some View {
+        BookSpine(book: book)
+            .opacity(model.stage?.book.id == book.id ? 0 : 1)
+            .padding(.horizontal, CGFloat(TripBookshelf.spineGap / 2))
+            .contentShape(Rectangle())
+    }
 }
 
 /// 背表紙（案の頁「背表紙」）。上 30pt に表紙の写真、地は写真の色を暗くした布、縦書きの明朝で旅の名前、下に月
@@ -195,14 +240,17 @@ struct BookSpine: View {
                 }
             if book.isDevice { mark("iphone") }
             if book.isPrivate { mark("lock.fill") }
-            VStack(spacing: 1) {
+            // 1字ずつ同じ高さの箱に入れる（字の行の高さで並びが割れない・`TripBookshelf.titleBox`）
+            VStack(spacing: 0) {
                 ForEach(Array(TripBookshelf.spineTitle(book.title,
                                                        maxCharacters: TripBookshelf.spineTitleCapacity(height: height, marks: marks))
                     .enumerated()), id: \.offset) { _, char in
-                    Text(verbatim: char)
+                    let glyph = TripBookshelf.spineGlyph(char)
+                    Text(verbatim: glyph.text)
                         .font(.custom(JPFont.displayName, fixedSize: TripBookshelf.titleSize))
                         .foregroundStyle(Color.white)
-                        .frame(width: width)
+                        .rotationEffect(.degrees(glyph.rotated ? 90 : 0))
+                        .frame(width: width, height: TripBookshelf.titleBox)
                 }
             }
             .padding(.top, 6)
@@ -220,10 +268,6 @@ struct BookSpine: View {
         .background { BookCloth(color: book.cloth) }
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 2, bottomLeadingRadius: 1,
                                           bottomTrailingRadius: 1, topTrailingRadius: 2))
-        // 押せる幅は 44pt（細い背は当たりを左右に広げる）
-        .padding(.horizontal, max(0, (TripBookshelf.tapWidth - width) / 2))
-        .contentShape(Rectangle())
-        .padding(.horizontal, -max(0, (TripBookshelf.tapWidth - width) / 2))
     }
 
     private func mark(_ systemImage: String) -> some View {
@@ -237,7 +281,7 @@ struct BookSpine: View {
 }
 
 /// 布の地（写真の色を暗くした色に、丸みの影を1枚のグラデーションで重ねる）
-private struct BookCloth: View {
+struct BookCloth: View {
     let color: UInt32
 
     var body: some View {
@@ -252,7 +296,7 @@ private struct BookCloth: View {
     }
 }
 
-/// 表紙の写真。**縮めた画像だけを読む**（投稿した旅は 256px の `pinImageURL`、端末の旅は辺の 3 倍の画素）
+/// 背の窓の小さな表紙。**縮めた画像だけを読む**（投稿した旅は 256px の `pinImageURL`、端末の旅は辺の 3 倍の画素）
 struct BookCoverImage: View {
     let book: TripBookshelf.Book
     let side: CGFloat
@@ -275,15 +319,25 @@ struct BookCoverImage: View {
     }
 }
 
-/// 本の表紙（約 196×266pt）。長押しで見る形と、開くときにめくれる表紙
+/// 本の表紙（約 196×266pt）。長押しで見る形と、開くときにめくれる表紙。
+/// **絵は読み終えたものを受け取って描くだけ**（`BookCoverCache`）。無ければ布の色だけ（読み込みの輪は出さない）
 struct BookCoverFace: View {
     nonisolated static let size = CGSize(width: 196, height: 266)
 
     let book: TripBookshelf.Book
+    let image: UIImage?
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            BookCoverImage(book: book, side: Self.size.width)
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: Self.size.width, height: Self.size.height)
+                    .clipped()
+            } else {
+                BookCloth(color: book.cloth)
+            }
             LinearGradient(stops: [.init(color: Color.black.opacity(TripStyle.coverCardShade), location: 0),
                                    .init(color: Color.black.opacity(0), location: 0.6)],
                            startPoint: .bottom, endPoint: .top)
@@ -298,6 +352,7 @@ struct BookCoverFace: View {
             }
             .padding(JPSpace.m)
         }
+        .frame(width: Self.size.width, height: Self.size.height)
         // 背の側（左）に布の帯。本の形に見せる
         .overlay(alignment: .leading) {
             BookCloth(color: book.cloth).frame(width: 10)
@@ -320,80 +375,6 @@ private struct SpineButtonStyle: ButtonStyle {
             .offset(y: configuration.isPressed && !reduceMotion ? -4 : 0)
             .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
             .sensoryFeedback(.impact(weight: .light), trigger: configuration.isPressed) { _, pressed in pressed }
-    }
-}
-
-/// 本を開く動き（案の頁の「本を開く（実機）」・2026-11-23 owner 決定）。
-///
-/// - 背表紙から画面いっぱいへ広げるのは iOS 18 の拡大の移り変わり（`navigationTransition(.zoom)`）。下へ引いて閉じるのもこれ
-/// - その上で表紙が左の辺を軸に -165° めくれる（0.12 秒から 0.26 秒）。0.54 秒で1回だけ 1.2% はずみ、触覚（.soft）
-/// - **動かすのは位置・向き・透明度だけ。** 表紙は縮めた画像を1枚の絵にまとめて回し（`drawingGroup`）、
-///   動いている間は写真を描き直さない。めくれ終えたら表紙を外す
-/// - 動きを減らす設定ではすぐ開く（表紙も拡大も無し）。表紙は押せない（動いている間に押しても下の頁に届かない）
-/// - 一度開いたら、詳しい頁から戻ったときにもう一度めくらない
-struct TripBookOpening: ViewModifier {
-    let book: TripBookshelf.Book
-    let namespace: Namespace.ID
-    let animated: Bool
-
-    @State private var started = false
-    @State private var flipped = false
-    @State private var coverShown = true
-    @State private var bounce = false
-    @State private var bounced = 0
-
-    func body(content: Content) -> some View {
-        content
-            .scaleEffect(bounce ? TripBookMotion.bounceScale : 1)
-            .overlay {
-                if animated && coverShown {
-                    BookCoverFace(book: book)
-                        .drawingGroup()
-                        .rotation3DEffect(.degrees(flipped ? TripBookMotion.coverFlipAngle : 0), axis: (x: 0, y: 1, z: 0),
-                                          anchor: .leading, perspective: TripBookMotion.perspective)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                        .ignoresSafeArea()
-                }
-            }
-            .bookZoomTransition(id: book.id, in: namespace, enabled: animated)
-            .sensoryFeedback(.impact(flexibility: .soft), trigger: bounced)
-            .task {
-                guard animated, !started else { return }
-                started = true
-                try? await Task.sleep(nanoseconds: UInt64(TripBookMotion.coverFlipDelay * 1_000_000_000))
-                withAnimation(.easeInOut(duration: TripBookMotion.coverFlipDuration)) { flipped = true }
-                let flipEnd = TripBookMotion.coverFlipDelay + TripBookMotion.coverFlipDuration
-                try? await Task.sleep(nanoseconds: UInt64(TripBookMotion.coverFlipDuration * 1_000_000_000))
-                coverShown = false
-                try? await Task.sleep(nanoseconds: UInt64(max(0, TripBookMotion.bounceAt - flipEnd) * 1_000_000_000))
-                bounced += 1
-                withAnimation(.easeOut(duration: 0.06)) { bounce = true }
-                try? await Task.sleep(nanoseconds: 60_000_000)
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { bounce = false }
-            }
-    }
-}
-
-extension View {
-    /// 背表紙を拡大の移り変わりの元にする（iOS 18 から。17 は今までどおり横から積む）
-    @ViewBuilder
-    func bookZoomSource(id: String, in namespace: Namespace.ID) -> some View {
-        if #available(iOS 18.0, *) {
-            matchedTransitionSource(id: id, in: namespace)
-        } else {
-            self
-        }
-    }
-
-    /// 開いた一冊を背表紙から広げる（iOS 18 から・動きを減らす設定では使わない）
-    @ViewBuilder
-    func bookZoomTransition(id: String, in namespace: Namespace.ID, enabled: Bool) -> some View {
-        if #available(iOS 18.0, *), enabled {
-            navigationTransition(.zoom(sourceID: id, in: namespace))
-        } else {
-            self
-        }
     }
 }
 

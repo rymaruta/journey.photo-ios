@@ -42,7 +42,9 @@ final class TripBookshelfTests: XCTestCase {
         XCTAssertEqual(TripBookshelf.spineHeight(days: 3), 133)
         XCTAssertEqual(TripBookshelf.spineHeight(days: 30), 143, "高さに上限が無い")
         XCTAssertLessThanOrEqual(TripBookshelf.spineHeight(days: 99), TripBookshelf.rowHeight, "いちばん高い背が段に入らない")
-        XCTAssertEqual(TripBookshelf.tapWidth, 44, "押せる幅は 44pt（CLAUDE.md）")
+        // 押せる幅は背の幅＋間（隣と重ならない）。押せる高さは 44 を超える
+        XCTAssertEqual(TripBookshelf.hitWidth(photos: 0), 22 + TripBookshelf.spineGap)
+        XCTAssertGreaterThanOrEqual(TripBookshelf.spineHeight(days: 1), 44)
         XCTAssertEqual(TripBookshelf.windowHeight, 30)
         XCTAssertGreaterThanOrEqual(TripBookshelf.monthSize, 12, "本文系の最小 12pt")
     }
@@ -58,6 +60,30 @@ final class TripBookshelfTests: XCTestCase {
         XCTAssertGreaterThan(tall, short)
         XCTAssertLessThan(TripBookshelf.spineTitleCapacity(height: TripBookshelf.spineHeight(days: 1), marks: 2), short)
         XCTAssertGreaterThanOrEqual(short, 2, "いちばん低い背に2字の地名が入らない")
+    }
+
+    /// 🔴 1字の箱は明朝 13pt の行の高さ（17〜19pt）で数える。14pt で数えると字が背からはみ出した
+    func testSpineTitleFitsTheRealLineHeight() {
+        XCTAssertGreaterThanOrEqual(TripBookshelf.titleBox, 17)
+        XCTAssertLessThanOrEqual(TripBookshelf.titleBox, 19)
+        for days in 1...5 {
+            for marks in 0...2 {
+                let height = TripBookshelf.spineHeight(days: days)
+                let capacity = Double(TripBookshelf.spineTitleCapacity(height: height, marks: marks))
+                let used = TripBookshelf.windowHeight + Double(marks) * 17 + 6 + capacity * TripBookshelf.titleBox + 34
+                XCTAssertLessThanOrEqual(used, height, "\(days)日・印\(marks)の背で題がはみ出す")
+            }
+        }
+    }
+
+    /// 縦書きで横を向く字は縦の形にする（長音の「ー」は回す、括弧と「…」は縦の形の字）
+    func testSpineGlyphsAreVertical() {
+        XCTAssertEqual(TripBookshelf.spineGlyph("ー").rotated, true)
+        XCTAssertEqual(TripBookshelf.spineGlyph("〜").rotated, true)
+        XCTAssertEqual(TripBookshelf.spineGlyph("…").text, "︙")
+        XCTAssertEqual(TripBookshelf.spineGlyph("（").text, "︵")
+        XCTAssertEqual(TripBookshelf.spineGlyph("金").text, "金")
+        XCTAssertEqual(TripBookshelf.spineGlyph("金").rotated, false)
     }
 
     // MARK: - 並べ方
@@ -133,44 +159,128 @@ final class TripBookshelfTests: XCTestCase {
 
     /// 秒と角度は案の頁の値（合わせて約 0.55 秒、閉じるのは約 0.45 秒）
     func testOpeningMotionMatchesTheProposal() {
+        XCTAssertEqual(TripBookMotion.pullResponse, 0.3)
+        XCTAssertEqual(TripBookMotion.pullDamping, 0.85)
         XCTAssertEqual(TripBookMotion.coverFlipDelay, 0.12)
         XCTAssertEqual(TripBookMotion.coverFlipDuration, 0.26)
         XCTAssertEqual(TripBookMotion.coverFlipAngle, -165)
+        XCTAssertEqual(TripBookMotion.pageGrowAt, 0.30)
+        XCTAssertEqual(TripBookMotion.pageGrowDuration, 0.23)
         XCTAssertEqual(TripBookMotion.bounceAt, 0.54)
         XCTAssertEqual(TripBookMotion.bounceScale, 1.012, accuracy: 0.0001)
         XCTAssertLessThanOrEqual(TripBookMotion.coverFlipDelay + TripBookMotion.coverFlipDuration, TripBookMotion.bounceAt)
+        XCTAssertEqual(TripBookMotion.pageGrowAt + TripBookMotion.pageGrowDuration, 0.53, accuracy: 0.001)
         XCTAssertEqual(TripBookMotion.openTotal, 0.55)
-        XCTAssertEqual(TripBookMotion.closeTotal, 0.45)
+        // 閉じる: 頁が縮む 0.19 → 0.12 から表紙が戻る 0.20 → 0.27 から棚へ 0.18（約 0.45）
+        XCTAssertEqual(TripBookMotion.pageShrinkDuration, 0.19)
+        XCTAssertEqual(TripBookMotion.coverCloseDelay, 0.12)
+        XCTAssertEqual(TripBookMotion.coverCloseDuration, 0.20)
+        XCTAssertEqual(TripBookMotion.shelveAt, 0.27)
+        XCTAssertEqual(TripBookMotion.shelveDuration, 0.18)
+        XCTAssertEqual(TripBookMotion.shelveAt + TripBookMotion.shelveDuration, TripBookMotion.closeTotal, accuracy: 0.001)
+        // 表紙は 90° を越えたら裏（見返し）を見せる
+        XCTAssertFalse(TripBookMotion.showsCoverBack(angle: -60))
+        XCTAssertTrue(TripBookMotion.showsCoverBack(angle: TripBookMotion.coverFlipAngle))
     }
 
-    /// 🔴 動かすのは位置・向き・透明度だけ。表紙は1枚の絵にまとめて回し、押せない。動きを減らす設定ではすぐ開く。
-    /// 詳しい頁から戻っても、もう一度めくらない
+    /// 引き出した本は見えている所の中央より少し上。上下にはみ出さない
+    func testStageCenterStaysOnScreen() {
+        // 棚が見えている所の上から 300pt にあるとき、見えている高さ 800 の 45% = 360 → 棚の座標で 60
+        XCTAssertEqual(TripBookMotion.stageCenterY(visibleHeight: 800, shelfTopInScroll: 300), 60, accuracy: 0.001)
+        // 低い画面でも本の上端が見えている所の上に出ない
+        let y = TripBookMotion.stageCenterY(visibleHeight: 400, shelfTopInScroll: 0)
+        XCTAssertGreaterThanOrEqual(y - 133, TripBookMotion.stageMargin - 0.001)
+    }
+
+    /// 🔴 開く動き: 動かすのは位置・向き・大きさ・透明度だけ。表紙は読み終えた絵だけで描き（読み込みの輪を出さない）、
+    /// 動いている間は棚にも一冊の頁にも押しが届かない。動きを減らす設定ではすぐ開く。閉じると表紙が戻って棚へ帰る
     func testOpeningIsLightAndSafe() throws {
+        let stage = try source("Features/Trips/TripBookStage.swift")
         let shelf = try source("Features/Trips/TripShelf.swift")
-        let opening = try XCTUnwrap(shelf.range(of: "struct TripBookOpening: ViewModifier {"))
-        let body = String(shelf[opening.lowerBound...].prefix(4000))
-        XCTAssertTrue(body.contains(".drawingGroup()"), "表紙を1枚の絵にまとめていない")
-        XCTAssertTrue(body.contains(".allowsHitTesting(false)"), "動いている間に表紙が押せる")
-        XCTAssertTrue(body.contains("guard animated, !started else { return }"), "戻るたびにめくり直す")
-        XCTAssertTrue(body.contains("anchor: .leading, perspective: TripBookMotion.perspective"), "左の辺を軸にめくっていない")
-        XCTAssertTrue(body.contains(".bookZoomTransition(id: book.id, in: namespace, enabled: animated)"))
-        XCTAssertFalse(body.contains(".frame(width: flipped") || body.contains(".blur("), "大きさ・ぼかしを動かしている")
-        XCTAssertTrue(shelf.contains("TripBookOpening(book: book, namespace: bookSpace, animated: !reduceMotion)"),
-                      "動きを減らす設定でも本を開く動きをしている")
-        // 表紙は縮めた画像（256px・端末の旅は辺の 3 倍）
-        let cover = try XCTUnwrap(shelf.range(of: "struct BookCoverImage: View {"))
-        XCTAssertTrue(shelf[cover.lowerBound...].prefix(800).contains("cover.pinImageURL"), "表紙に大きい画像を読んでいる")
+        // 表紙は控えに在る絵（`BookCoverCache`）を `Image(uiImage:)` で描くだけ
+        let face = try XCTUnwrap(shelf.range(of: "struct BookCoverFace: View {"))
+        let faceBody = String(shelf[face.lowerBound...].prefix(2000))
+        XCTAssertTrue(faceBody.contains("Image(uiImage: image)"))
+        XCTAssertFalse(faceBody.contains("RemoteImage") || faceBody.contains("ProgressView") || faceBody.contains("LibraryThumbView"),
+                       "表紙が開くたびに絵を読み直す")
+        // 型の名前は分けて書く（検査 `check-swift-refs.js` は文字列の中の「型.関数(」もテストからの呼び出しと数える）
+        let cache = "BookCover" + "Cache"
+        XCTAssertTrue(stage.contains("image: \(cache).image(for: book)"), "押す前に読み終えた絵を渡していない")
+        XCTAssertTrue(shelf.contains(".task(id: book.id) { await \(cache).prefetch(book) }"), "背表紙が出たときに表紙を読んでいない")
+        // 表紙は約 400px 以上の縮小版（背の窓の 256px ではない）
+        XCTAssertTrue(stage.contains("trip.cover?.gridImageURL"))
+        XCTAssertGreaterThanOrEqual(TripBookMotion.coverPixels, 400)
+        // 引き出す・手前に回す・めくる（位置・大きさ・向き・透明度だけ）
+        let pose = try XCTUnwrap(stage.range(of: "struct BookStagePose: ViewModifier {"))
+        let poseBody = String(stage[pose.lowerBound...].prefix(1800))
+        XCTAssertTrue(poseBody.contains(".rotation3DEffect(.degrees(pulled ? 0 : TripBookMotion.shelvedTurn)"), "手前に回していない")
+        XCTAssertFalse(poseBody.contains(".frame(width:") || poseBody.contains(".blur("), "大きさの枠・ぼかしを動かしている")
+        XCTAssertTrue(stage.contains("anchor: .leading, perspective: TripBookMotion.perspective"), "表紙が左の辺を軸にめくれていない")
+        XCTAssertTrue(stage.contains(".drawingGroup()"), "本を1枚の絵にまとめていない")
+        // 閉じるときは逆の順（表紙が戻る → 棚へ）
+        let close = try XCTUnwrap(stage.range(of: "func close(arrived:"))
+        let closeBody = String(stage[close.lowerBound...].prefix(1500))
+        let coverBack = try XCTUnwrap(closeBody.range(of: "self.stage?.coverOpen = false"))
+        let shelve = try XCTUnwrap(closeBody.range(of: "self.stage?.pulled = false"))
+        XCTAssertLessThan(coverBack.lowerBound, shelve.lowerBound, "表紙が戻る前に棚へ帰している")
+        // 動いている間の押し: 棚は本の層が止め、一冊の頁は広がり切るまで止める（下の頁に届かない）
+        let opening = try XCTUnwrap(stage.range(of: "struct TripBookOpening: ViewModifier {"))
+        let openingBody = String(stage[opening.lowerBound...].prefix(2000))
+        XCTAssertTrue(openingBody.contains("if animated && settling {"), "広がっている間に下の頁が押せる")
+        XCTAssertTrue(stage.contains("guard task == nil, stage == nil else { return }"), "動いている間に押すと二重に開く")
+        XCTAssertTrue(shelf.contains("guard presented == nil, !stage.isBusy, stage.stage == nil else { return }"))
+        // 動きを減らす設定ではすぐ開く
+        XCTAssertTrue(shelf.contains("if reduceMotion {\n            presented = book"), "動きを減らす設定でも本を開く動きをしている")
+        XCTAssertTrue(shelf.contains("TripBookOpening(book: book, namespace: bookSpace, animated: !reduceMotion)"))
+    }
+
+    /// 🔴 背表紙の当たりは背の幅＋間（隣と重ならない）。負の余白で広げない
+    func testSpineHitAreaDoesNotOverlap() throws {
+        let shelf = try source("Features/Trips/TripShelf.swift")
+        let slot = try XCTUnwrap(shelf.range(of: "struct BookSpineSlot: View {"))
+        let slotBody = String(shelf[slot.lowerBound...].prefix(900))
+        XCTAssertTrue(slotBody.contains(".padding(.horizontal, CGFloat(TripBookshelf.spineGap / 2))"))
+        XCTAssertFalse(shelf.contains(".padding(.horizontal, -"), "負の余白で当たりを広げている（隣の背の当たりと重なる）")
+        XCTAssertTrue(shelf.contains("HStack(alignment: .bottom, spacing: 0) {"), "背の間を当たりの外に空けている")
+        // 段の折り返しも当たりの幅で数える
+        let widths = [22.0, 36, 29].map { $0 + TripBookshelf.spineGap }
+        XCTAssertEqual(TripBookshelf.rows(widths: widths, available: 96, gap: 0), [[0, 1, 2]])
+        XCTAssertEqual(TripBookshelf.rows(widths: widths, available: 95, gap: 0), [[0, 1], [2]])
+    }
+
+    /// 端末の旅を棚に出す判断は1か所（同じ旅を2冊にしない・枝 post-nudges-710 をまとめるときにここを替える）
+    func testDeviceTripShelfGateIsOnePlace() throws {
+        let shelf = try source("Features/Trips/TripShelf.swift")
+        XCTAssertTrue(shelf.contains("deviceBooks.filter(TripBookshelf.showsOnShelf)"))
+        let rule = try source("Core/Text/TripBookshelf.swift")
+        XCTAssertTrue(rule.contains("trip.postedCount == 0"), "まとめるときの注記が無い")
     }
 
     // MARK: - 日のページを左右でめくる
 
-    /// 横に払うと日をめくる。縦のスクロール・短い払い・左の端からの「戻る」ではめくらない
-    func testPageFlipDirection() {
-        XCTAssertEqual(TripBookPageFlip.direction(dx: -80, dy: 10, startX: 200), 1, "左へ払うと次の日")
-        XCTAssertEqual(TripBookPageFlip.direction(dx: 80, dy: -10, startX: 200), -1, "右へ払うと前の日")
-        XCTAssertNil(TripBookPageFlip.direction(dx: -40, dy: 0, startX: 200), "短い払いでめくった")
-        XCTAssertNil(TripBookPageFlip.direction(dx: -80, dy: 60, startX: 200), "縦のスクロールでめくった")
-        XCTAssertNil(TripBookPageFlip.direction(dx: 120, dy: 0, startX: 10), "左の端からの「戻る」でめくった")
+    /// 横に払い、その向きにめくる日があるときだけ指を受ける。縦の指・左の端からの指・1日目と表紙で右へ払う指は「戻る」へ
+    func testPageFlipBegins() {
+        let ids = ["day-1", "day-2", "day-3"]
+        XCTAssertEqual(TripBookPageFlip.beginDirection(dx: -20, dy: 5, startX: 200, dayIDs: ids, passed: []), 1, "表紙で左へ払うと1日目")
+        XCTAssertNil(TripBookPageFlip.beginDirection(dx: 20, dy: 5, startX: 200, dayIDs: ids, passed: []), "表紙で右へ払う指を取った")
+        XCTAssertNil(TripBookPageFlip.beginDirection(dx: 20, dy: 5, startX: 200, dayIDs: ids, passed: ["day-1"]),
+                     "1日目で右へ払う指を取った（「戻る」に譲る）")
+        XCTAssertEqual(TripBookPageFlip.beginDirection(dx: 20, dy: 5, startX: 200, dayIDs: ids, passed: ["day-1", "day-2"]), -1)
+        XCTAssertNil(TripBookPageFlip.beginDirection(dx: -20, dy: 5, startX: 200, dayIDs: ids, passed: Set(ids)), "最後の日の先")
+        XCTAssertNil(TripBookPageFlip.beginDirection(dx: -10, dy: 30, startX: 200, dayIDs: ids, passed: []), "縦の指を取った")
+        XCTAssertNil(TripBookPageFlip.beginDirection(dx: 20, dy: 0, startX: 10, dayIDs: ids, passed: ["day-1", "day-2"]),
+                     "左の端からの「戻る」を取った")
+    }
+
+    /// 離したとき: 距離か速さが足りればめくる。足りなければ戻す
+    func testPageFlipCommits() {
+        XCTAssertEqual(TripBookPageFlip.commitDirection(dx: -80, velocityX: 0), 1)
+        XCTAssertEqual(TripBookPageFlip.commitDirection(dx: 80, velocityX: 0), -1)
+        XCTAssertNil(TripBookPageFlip.commitDirection(dx: -30, velocityX: -100))
+        XCTAssertEqual(TripBookPageFlip.commitDirection(dx: -30, velocityX: -900), 1, "速く払ってもめくらない")
+        XCTAssertNil(TripBookPageFlip.commitDirection(dx: -30, velocityX: 900), "逆の向きに速いのにめくった")
+        XCTAssertEqual(TripBookPageFlip.followAngle(dx: -1000, width: 390), -TripBookPageFlip.followMax)
+        XCTAssertEqual(TripBookPageFlip.followAngle(dx: 0, width: 390), 0)
     }
 
     /// めくる先は、いま読んでいる日の次と前。表紙を読んでいる間に左へ払うと 1 日目。端では何もしない
@@ -187,19 +297,46 @@ final class TripBookshelfTests: XCTestCase {
         XCTAssertEqual(TripBookPageFlip.headerID(day: 3), "day-3")
     }
 
-    /// 🔴 めくる id は一冊の行の id と同じ（違うと送れない）。投稿した一冊と端末の一冊の両方に付ける
+    /// 🔴 めくる id は一冊の行の id と同じ（違うと送れない）。投稿した一冊と端末の一冊の両方に付ける。
+    /// 指は UIKit のパンで受ける（`simultaneousGesture` の `DragGesture` は実機で離しても呼ばれなかった・2026-10-28）
     func testPageFlipIsWiredToBothBooks() throws {
         let rows = TripBook.pageRows(of: TripBook.days(of: try trip("t", year: 2026, month: 9, photos: 2)))
         XCTAssertEqual(rows.first?.id, TripBookPageFlip.headerID(day: 1))
         let book = try source("Features/Trips/TripBookView.swift")
-        XCTAssertTrue(book.contains(".modifier(TripDayFlip(dayIDs: TripBook.days(of: book).map { TripBookPageFlip.headerID(day: $0.number) },"))
-        XCTAssertTrue(book.contains(".tripDayMark(id: TripBookPageFlip.headerID(day: day.number), passed: $passedDays)"))
+        XCTAssertTrue(book.contains(".modifier(TripDayFlip(dayIDs: TripBook.days(of: book).map { TripBookPageFlip.headerID(day: $0.number) }))"))
+        XCTAssertTrue(book.contains(".tripDayHeader(id: TripBookPageFlip.headerID(day: day.number))"))
+        XCTAssertTrue(book.contains(".tripDayFlipCatcher()"))
+        XCTAssertTrue(book.contains(".accessibilityIdentifier(\"trips.day.\\(day.number)\")"), "UI テストで日の見出しを探せない")
         let device = try source("Features/Trips/DeviceTripShelf.swift")
-        XCTAssertTrue(device.contains(".modifier(TripDayFlip(dayIDs: shown.days.map(\\.id), passed: passedDays))"))
-        XCTAssertTrue(device.contains(".tripDayMark(id: day.id, passed: $passedDays)"))
+        XCTAssertTrue(device.contains(".modifier(TripDayFlip(dayIDs: shown.days.map(\\.id)))"))
+        XCTAssertTrue(device.contains(".tripDayHeader(id: day.id)"))
+        XCTAssertTrue(device.contains(".tripDayFlipCatcher()"))
         let flip = try source("Features/Trips/TripDayFlip.swift")
-        XCTAssertTrue(flip.contains("if reduceMotion {"), "動きを減らす設定でも動かしている")
-        XCTAssertTrue(flip.contains(".simultaneousGesture("), "縦のスクロールを止めている")
+        XCTAssertFalse(flip.contains(".simultaneousGesture("), "指を SwiftUI の払いで受けている（実機で離しても呼ばれない）")
+        XCTAssertFalse(flip.contains("DragGesture("))
+        XCTAssertTrue(flip.contains("UIPanGestureRecognizer"))
+        XCTAssertTrue(flip.contains("otherGestureRecognizer === host?.panGestureRecognizer"), "縦の送りが先に動く")
+        XCTAssertTrue(flip.contains("return isNavigationPop(otherGestureRecognizer)"), "「戻る」の払いが先に動く")
+        XCTAssertTrue(flip.contains("guard !reduceMotion else {"), "動きを減らす設定でも動かしている")
+        // 読み上げの「次の日」「前の日」は見出し（読み上げで止まる要素）に付ける
+        let header = try XCTUnwrap(flip.range(of: "private struct TripDayHeader: ViewModifier {"))
+        XCTAssertTrue(flip[header.lowerBound...].prefix(1500).contains(".accessibilityAction(named: L(\"次の日\""))
+        // めくる見た目は向きと透明度だけ（一冊の body は作り直さない）
+        let follow = try XCTUnwrap(flip.range(of: "struct DayTurnFollow<Content: View>: View {"))
+        let followBody = String(flip[follow.lowerBound...].prefix(600))
+        XCTAssertTrue(followBody.contains(".rotation3DEffect(") && followBody.contains(".opacity(model.fade)"))
+    }
+
+    /// 🔴 荷札の触覚は押しが決まったときだけ（押したまま送りに移った指では鳴らさない）
+    func testTagHapticOnlyOnTap() throws {
+        let tag = try source("Features/Profile/TripToolTag.swift")
+        let style = try XCTUnwrap(tag.range(of: "struct TripToolTagStyle: ButtonStyle {"))
+        let feedback = try XCTUnwrap(tag.range(of: "struct TripToolTapFeedback: ViewModifier {"))
+        XCTAssertFalse(tag[style.lowerBound..<feedback.lowerBound].contains(".sensoryFeedback("), "押した・離しただけで鳴る")
+        XCTAssertTrue(tag[feedback.lowerBound...].contains(".simultaneousGesture(TapGesture().onEnded { taps += 1 })"))
+        let page = try source("Features/Profile/MyPageView.swift")
+        XCTAssertEqual(page.components(separatedBy: ".buttonStyle(TripToolTagStyle())").count,
+                       page.components(separatedBy: ".modifier(TripToolTapFeedback())").count, "触覚の無い荷札がある")
     }
 
     // MARK: - 荷札の道具の列
