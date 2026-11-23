@@ -378,7 +378,7 @@ final class TripPlanStage1Tests: XCTestCase {
         XCTAssertNil(TripPlanEdit.adding(item, to: days([TripPlanService.itemsPerDayMax]), day: 0), "いっぱいの日")
         XCTAssertNil(TripPlanEdit.adding(item, to: d, day: 5))
         XCTAssertEqual(TripPlanEdit.dayContaining(.spot(spotId: "s3", note: nil), in: d), 1)
-        XCTAssertEqual(TripPlanAddSheetTitle.title(1), "2 日目に入れる")
+        XCTAssertEqual(TripPlanAddSheetTitle.title(1), "2日目に入れる")
         XCTAssertEqual(TripPlanAddSheetTitle.title(nil), "新しい日に入れる")
     }
 

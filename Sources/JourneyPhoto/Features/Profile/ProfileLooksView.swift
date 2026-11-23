@@ -77,7 +77,7 @@ struct ProfileLooksView: View {
 
     private func section<Content: View>(_ title: String, note: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title)
+            Text(eyebrow: title)
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
             content()

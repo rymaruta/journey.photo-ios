@@ -329,7 +329,7 @@ struct TripPlanDetailView: View {
         .alert(L("ひとこと", "Note"),
                isPresented: Binding(get: { noteTarget != nil },
                                     set: { if !$0 { noteTarget = nil } })) {
-            TextField(L("例: 朝いちばんに行く", "e.g. Go first thing in the morning"), text: $noteText)
+            TextField(L("例：朝いちばんに行く", "e.g. Go first thing in the morning"), text: $noteText)
             Button(Labels.Common.save) {
                 let target = noteTarget
                 noteTarget = nil
@@ -506,7 +506,7 @@ struct TripPlanDetailView: View {
         // **開いた時点の日程で出す**（保存していない並び替えも反映する）
         .sheet(item: $mapDay) { target in
             NavigationStack {
-                TripDayMapView(title: L("\(target.day + 1) 日目の地図", "Day \(target.day + 1) map"),
+                TripDayMapView(title: L("\(target.day + 1)日目の地図", "Day \(target.day + 1) map"),
                                stops: target.stops)
             }
         }
@@ -1034,7 +1034,7 @@ struct TripPlanDetailView: View {
 
     /// 見出しの字。今日の日は頭に「今日」（2026-11-16 判断・A2: 「今日　2 日目　12月17日」・模型 A2 の眉）
     nonisolated static func dayHeadingText(_ di: Int, date: String?, today: Bool) -> String {
-        var head = L("\(di + 1) 日目", "Day \(di + 1)")
+        var head = L("\(di + 1)日目", "Day \(di + 1)")
         if today { head = L("今日\u{2002}", "Today\u{2002}") + head }
         if let label = TakenDay.label(date) {
             head += "\u{2002}\(label)"
@@ -1358,7 +1358,7 @@ struct TripPlanDetailView: View {
 
     /// 日を消す前の札（プランの削除の札と同じ形・v2 の板 OfflineSaveStates 5 の確かめと同じ部品）
     private func removeDayConfirm(_ di: Int) -> some View {
-        JPDeleteConfirm(question: L("\(di + 1) 日目と、その日の予定を削除しますか？", "Remove day \(di + 1) and its plans?"),
+        JPDeleteConfirm(question: L("\(di + 1)日目と、その日の予定を削除しますか？", "Remove day \(di + 1) and its plans?"),
                         confirmTitle: L("削除する", "Remove"), identifier: "trip.day.remove") {
             guard let target = removingDay else { return }
             removeDay(di, confirmedOn: target.days)
@@ -1555,7 +1555,7 @@ struct TripPlanDetailView: View {
             } else if !targets.isEmpty {
                 Menu {
                     ForEach(targets, id: \.self) { to in
-                        Button(L("\(to + 1) 日目", "Day \(to + 1)")) {
+                        Button(L("\(to + 1)日目", "Day \(to + 1)")) {
                             perform(.toDay(to), di, ii, item, name: name)
                         }
                     }
@@ -1796,16 +1796,19 @@ struct TripPlanDetailView: View {
 
     /// 行の中身（v2 の板 TripPlanDays・F30: 番号の丸 → 名前 → 季節の一文と時間帯の札 → ひとこと・`TripStopLabel`）
     private func itemLabel(_ name: String, number: Int, isSpot: Bool, note: String?,
-                           season: String?, chip: String?, by: String? = nil, time: TripTimes.Row? = nil) -> some View {
+                           season: String?, chip: String?, by: TripShareText.AddedBy? = nil, time: TripTimes.Row? = nil) -> some View {
         let byLeading: CGFloat = time == nil ? 36 : 36 + timeLeading
         return VStack(alignment: .leading, spacing: 2) {
             TripStopLabel(number: number, name: name, isSpot: isSpot, season: season, timeChip: chip, note: note,
                           time: time?.arrive, showsTime: time != nil, timeCaution: time.flatMap(TripTimes.cautionLine))
-            // 共有したプランで、ほかの仲間が足した場所（「あお が足しました」）
+            // 共有したプランで、ほかの仲間が足した場所（「あおが足しました」）。名前は太く明るく、続きは細く暗く
+            // ——空白で区切らない（2026-11-23 判断）
             if let by {
-                Text(by)
+                (Text(by.lead).foregroundStyle(WebTheme.text3)
+                    + Text(by.name).fontWeight(.semibold).foregroundStyle(WebTheme.text2)
+                    + Text(by.tail).foregroundStyle(WebTheme.text3))
                     .font(JPFont.caption)
-                    .foregroundStyle(WebTheme.text3)
+                    .accessibilityLabel(by.text)
                     .padding(.leading, byLeading)
                     .accessibilityIdentifier("tripPlan.addedBy")
             }
@@ -1817,7 +1820,7 @@ struct TripPlanDetailView: View {
         typeSize.isAccessibilitySize ? 0 : timeWidth + TripTimeStyle.columnGap
     }
 
-    private func addedByText(_ item: TripItem) -> String? {
+    private func addedByText(_ item: TripItem) -> TripShareText.AddedBy? {
         guard let plan else { return nil }
         return TripShareText.addedBy(plan, item, members: members, me: auth.userId)
     }

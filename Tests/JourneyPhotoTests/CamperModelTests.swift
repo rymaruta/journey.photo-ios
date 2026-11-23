@@ -444,7 +444,7 @@ final class CamperWiringTests: XCTestCase {
         XCTAssertEqual(CamperText.eyebrow(owner: nil, stage: .camper), L("わたしの車\u{2002}キャンピングカー", "My camper · Camper"))
         let view = try source("Sources/JourneyPhoto/Features/Camper/CamperGarageView.swift")
         XCTAssertTrue(view.contains("Text(CamperText.carName)"))
-        XCTAssertTrue(view.contains("Text(CamperText.partsTitle)"))
+        XCTAssertTrue(view.contains("Text(eyebrow: CamperText.partsTitle)"))
         XCTAssertFalse(view.contains("ひかり号"))
     }
 

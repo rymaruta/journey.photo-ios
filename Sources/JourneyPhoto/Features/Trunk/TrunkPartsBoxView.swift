@@ -574,7 +574,7 @@ struct TrunkPartSheet: View {
                     .accessibilityIdentifier("trunk.partSheet.close")
                 HStack(spacing: 6) {
                     TrunkRarityMark(rarity: part.rarity, size: 9)
-                    Text(TrunkGachaText.eyebrow(part))
+                    Text(eyebrow: TrunkGachaText.eyebrow(part))
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                 }

@@ -23,6 +23,28 @@ final class PhotoTripTests: XCTestCase {
 
     // MARK: - 1. 写真 → 撮影スポット（`spotId` だけで引く）
 
+    /// 撮影地と観光スポットが同じ名前なら1行にまとめる（2026-11-23 判断・ストアの画面写真で「📍金閣寺」と
+    /// 「📖 観光スポット 金閣寺 ›」が2行重なって見えた）
+    func testPlaceAndSpotWithTheSameNameShareOneRow() throws {
+        XCTAssertTrue(PhotoTrip.placeSharesSpotName(location: "金閣寺", spotName: "金閣寺"))
+        XCTAssertTrue(PhotoTrip.placeSharesSpotName(location: "金閣寺, 京都", spotName: "金閣寺"))
+        XCTAssertTrue(PhotoTrip.placeSharesSpotName(location: " 高屋神社、香川県 ", spotName: "高屋神社"))
+        XCTAssertTrue(PhotoTrip.placeSharesSpotName(location: "Kinkaku-ji (Kyoto)", spotName: "kinkaku-ji"))
+        XCTAssertFalse(PhotoTrip.placeSharesSpotName(location: "嵐山", spotName: "渡月橋"))
+        XCTAssertFalse(PhotoTrip.placeSharesSpotName(location: "京都", spotName: "京都御所"))
+        XCTAssertFalse(PhotoTrip.placeSharesSpotName(location: nil, spotName: "金閣寺"))
+        XCTAssertFalse(PhotoTrip.placeSharesSpotName(location: "", spotName: ""))
+
+        // 画面: 同じ名前なら観光スポットのリンクを撮影地の行の右に寄せ（名前を添えない）、下の行は出さない。
+        // 行き先は2つとも残す（撮影地の頁・観光スポットの頁）
+        let view = try source("Sources/JourneyPhoto/Features/PhotoDetail/PhotoDetailView.swift")
+        XCTAssertTrue(view.contains("if let joined {\n                    spotGuideLink(joined.loaded, joined.spot, nameShown: true)"))
+        XCTAssertTrue(view.contains("if let loaded = tripStage.loaded, let spot = loaded.spot, joinedGuide == nil {"),
+                      "同じ名前でも観光スポットの行が2行目に残る")
+        XCTAssertTrue(view.contains("PhotoTrip.placeSharesSpotName(location: shown.location, spotName: spot.name)"))
+        XCTAssertTrue(view.contains("placeLabel(location, spotSuffix: joined == nil)"))
+    }
+
     func testSpotIsFoundOnlyBySpotId() throws {
         let index = [try takaya]
         XCTAssertEqual(PhotoTrip.spot(for: try photo("a", spotId: "sp_0123456789ab"), in: index)?.slug, "takaya-shrine")
@@ -312,7 +334,7 @@ final class PhotoTripTests: XCTestCase {
         XCTAssertTrue(view.contains("guard let rows = await environment.spots.fetchIndexRows(), stillHere() else { return }"),
                       "索引が読めなかった回を読み終わりとして覚えている")
         XCTAssertTrue(view.contains("tripLoaded = loaded.withPhotos(photos)"))
-        XCTAssertTrue(view.contains("if let loaded = tripStage.loaded, let spot = loaded.spot {\n            NavigationLink {\n                // 写真は"),
+        XCTAssertTrue(view.contains("nameShown: Bool) -> some View {\n        NavigationLink {\n            // 写真は"),
                       "観光スポットの行が OfficialSpotView へ行かない")
         XCTAssertTrue(view.contains("OfficialSpotView(spot: spot, spots: loaded.index, photos: hidden.visible(loaded.photos ?? []),"),
                       "撮影地に1枚しか無い写真でスポットの頁に写真を渡していない")

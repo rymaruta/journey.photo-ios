@@ -140,6 +140,16 @@ struct JPScaledSystemFont: ViewModifier {
     }
 }
 
+extension Text {
+
+    /// 眉ラベルの字（`Text(eyebrow: L("1日目", "Day 1")).jpEyebrow()`）。**字に合う字間を `Text` に付ける**
+    /// （和文は詰める・`JPTypeScale.eyebrowTracking(for:)`・2026-11-23 判断）。`Text` に付けた字間は、
+    /// 外の `jpEyebrow()` の字間（英字の 0.14em）より優先される。英字だけの決まった字（"PRO"）は `Text("PRO")` のままでよい
+    init(eyebrow text: String) {
+        self = Text(text).tracking(CGFloat(JPTypeScale.eyebrowTracking(for: text)))
+    }
+}
+
 extension View {
 
     /// `size` の SF を、`style` の文字の種類と同じだけ伸び縮みさせて当てる（`JPScaledSystemFont`）

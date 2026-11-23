@@ -1049,27 +1049,44 @@ struct PhotoDetailView: View {
     @ViewBuilder
     private var placeRow: some View {
         if let location = shown.location?.trimmingCharacters(in: .whitespaces), !location.isEmpty {
-            if let lead = spotLead {
-                NavigationLink {
-                    SpotDetailView(spot: lead.spot, photos: lead.photos)
-                } label: {
-                    placeLabel(location, spotSuffix: true)
+            // 撮影地と観光スポットが同じ名前なら、観光スポットの行をこの行の右に寄せて1行にする
+            // （2026-11-23 判断・`PhotoTrip.placeSharesSpotName`）。行き先はどちらも残す（撮影地の頁と観光スポットの頁）
+            let joined = joinedGuide
+            HStack(spacing: JPSpace.m) {
+                if let lead = spotLead {
+                    NavigationLink {
+                        SpotDetailView(spot: lead.spot, photos: lead.photos)
+                    } label: {
+                        placeLabel(location, spotSuffix: joined == nil)
+                    }
+                    .buttonStyle(.plain)
+                    // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
+                    // ——今日それで「写真の詳細」としてログイン画面を撮っていた
+                    .accessibilityIdentifier("photo.spotLink")
+                } else {
+                    NavigationLink {
+                        // 下書き・限定写真は公開の一覧に載らないので、この写真自身も並べる（空の一覧にしない）
+                        TagPhotosView(kind: .location(location), opened: shown)
+                    } label: {
+                        placeLabel(location, spotSuffix: false)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("photo.placeLink")
                 }
-                .buttonStyle(.plain)
-                // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
-                // ——今日それで「写真の詳細」としてログイン画面を撮っていた
-                .accessibilityIdentifier("photo.spotLink")
-            } else {
-                NavigationLink {
-                    // 下書き・限定写真は公開の一覧に載らないので、この写真自身も並べる（空の一覧にしない）
-                    TagPhotosView(kind: .location(location), opened: shown)
-                } label: {
-                    placeLabel(location, spotSuffix: false)
+                if let joined {
+                    spotGuideLink(joined.loaded, joined.spot, nameShown: true)
+                        .fixedSize()
+                        .layoutPriority(1)
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("photo.placeLink")
             }
         }
+    }
+
+    /// 撮影地の行に寄せる観光スポット（撮影地と同じ名前のときだけ）。寄せたら下の `spotGuideRow` は出さない
+    private var joinedGuide: (loaded: PhotoTrip.Loaded, spot: OfficialSpot)? {
+        guard let loaded = tripStage.loaded, let spot = loaded.spot,
+              PhotoTrip.placeSharesSpotName(location: shown.location, spotName: spot.name) else { return nil }
+        return (loaded, spot)
     }
 
     /// 「撮影スポット · [名前] ›」（板 02 の `hasSpotGuide` の行・2026-10-14）。**`spotId` で台帳の行が
@@ -1079,34 +1096,40 @@ struct PhotoDetailView: View {
     /// 当たりは 44pt（負の余白で並びは詰める・板の `margin: -8px 0`）
     @ViewBuilder
     private var spotGuideRow: some View {
-        if let loaded = tripStage.loaded, let spot = loaded.spot {
-            NavigationLink {
-                // 写真は公開写真の全部（撮影地に1枚しか無い写真でも渡す）。ブロック・通報は渡す時点で絞る
-                OfficialSpotView(spot: spot, spots: loaded.index, photos: hidden.visible(loaded.photos ?? []),
-                                 photosKnown: loaded.photos != nil)
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "book.closed")
-                        .font(.caption)
-                        .accessibilityHidden(true)
-                    // 呼び名は「撮影スポット」（2026-10-11 owner。板の「撮影スポットのガイド」は旧い呼び名）。
-                    // 撮影地の行と見分けられるよう、台帳の名前を添える
-                    Text(L("観光スポット", "Photo spot") + PhotoMetaLine.separator + spot.name)
-                        .underline(true, color: Color.white.opacity(0.6))
-                        .lineLimit(1)
-                    Text("›").accessibilityHidden(true)
-                }
-                .font(.caption)
-                .foregroundStyle(WebTheme.foreground)
-                .jpPhotoTextShadow()
-                .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
-                .contentShape(Rectangle())
-                .padding(.vertical, -8)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L("観光スポット: \(spot.name)", "Photo spot: \(spot.name)"))
-            .accessibilityIdentifier("photo.spotGuide")
+        if let loaded = tripStage.loaded, let spot = loaded.spot, joinedGuide == nil {
+            spotGuideLink(loaded, spot, nameShown: false)
         }
+    }
+
+    /// 観光スポットの頁へ行くリンク。`nameShown`（撮影地の行に同じ名前がもう出ている）なら名前を添えない
+    private func spotGuideLink(_ loaded: PhotoTrip.Loaded, _ spot: OfficialSpot, nameShown: Bool) -> some View {
+        NavigationLink {
+            // 写真は公開写真の全部（撮影地に1枚しか無い写真でも渡す）。ブロック・通報は渡す時点で絞る
+            OfficialSpotView(spot: spot, spots: loaded.index, photos: hidden.visible(loaded.photos ?? []),
+                             photosKnown: loaded.photos != nil)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "book.closed")
+                    .font(.caption)
+                    .accessibilityHidden(true)
+                // 呼び名は「観光スポット」（2026-11-12 owner）。撮影地の行と見分けられるよう、
+                // 名前が違うときだけ台帳の名前を添える（同じ名前なら撮影地の行の右に寄せて添えない）
+                Text(nameShown ? L("観光スポット", "Photo spot")
+                               : L("観光スポット", "Photo spot") + PhotoMetaLine.separator + spot.name)
+                    .underline(true, color: Color.white.opacity(0.6))
+                    .lineLimit(1)
+                Text("›").accessibilityHidden(true)
+            }
+            .font(.caption)
+            .foregroundStyle(WebTheme.foreground)
+            .jpPhotoTextShadow()
+            .frame(minHeight: WebTheme.minTapTarget, alignment: .leading)
+            .contentShape(Rectangle())
+            .padding(.vertical, nameShown ? 0 : -8)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L("観光スポット: \(spot.name)", "Photo spot: \(spot.name)"))
+        .accessibilityIdentifier("photo.spotGuide")
     }
 
     /// 「この近くの撮影スポット · [名前] ›」（2026-10-16・行き止まりの直し）。

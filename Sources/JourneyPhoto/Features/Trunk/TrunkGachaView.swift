@@ -801,7 +801,7 @@ struct TrunkGachaOddsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Text(L("出る確率", "Odds"))
+                Text(eyebrow: L("出る確率", "Odds"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                     .padding(.top, 12)
@@ -840,7 +840,7 @@ struct TrunkGachaOddsView: View {
                     .padding(.horizontal, 4)
                     .padding(.top, 8)
                     .accessibilityIdentifier("trunk.odds.perPart")
-                Text(L("入っている部品\u{2002}9 種類\u{2002}108 点", "Inside\u{2002}9 kinds\u{2002}108 parts"))
+                Text(eyebrow: L("入っている部品\u{2002}9 種類\u{2002}108 点", "Inside\u{2002}9 kinds\u{2002}108 parts"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                     .padding(.top, 24)

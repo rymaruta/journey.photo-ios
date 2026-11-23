@@ -436,7 +436,7 @@ struct NameSideBadgeView: View {
         let items = lockedItems
         if !items.isEmpty {
             HStack {
-                Text(L("PRO 限定", "PRO ONLY"))
+                Text(eyebrow: L("PRO 限定", "PRO ONLY"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                 Spacer(minLength: 8)

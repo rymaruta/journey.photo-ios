@@ -5,6 +5,13 @@ import XCTest
 /// owner「ブラッシュアップしてから推奨でお願い」
 final class AskFormTests: XCTestCase {
 
+    /// 見本の答えの頭の文は1行に収まる短さ（2026-11-23・大きい iPhone で「ました。」だけ2行目に落ちた）
+    func testFixtureSpotLeadIsShort() throws {
+        let service = try source("Sources/JourneyPhoto/Services/AskService.swift")
+        XCTAssertFalse(service.contains(#"L("観光スポットの案内から、合う所を選びました。""#), "頭の文が長いまま")
+        XCTAssertTrue(service.contains(#"L("合う所を選びました。", "Picked matching spots.")"#))
+    }
+
     private func source(_ path: String) throws -> String {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)

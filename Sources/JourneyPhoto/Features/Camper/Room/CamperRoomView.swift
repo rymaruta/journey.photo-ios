@@ -340,7 +340,7 @@ struct CamperRoomView: View {
             .accessibilityLabel(mode == .home ? L("外へ出る", "Go outside") : L("部屋に戻る", "Back to the room"))
             .accessibilityIdentifier("camper.room.back")
             VStack(spacing: 2) {
-                Text(eyebrow).jpEyebrow().foregroundStyle(WebTheme.accent).lineLimit(1)
+                Text(eyebrow: eyebrow).jpEyebrow().foregroundStyle(WebTheme.accent).lineLimit(1)
                 Text(title).font(JPFont.display(20, relativeTo: .title3)).foregroundStyle(WebTheme.foreground).lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
@@ -1494,7 +1494,7 @@ struct CamperRoomView: View {
     private func trialCard(_ c: CamperRoomStyleChoice) -> some View {
         let part = c.partId.flatMap { CamperCatalog.part($0) }
         return VStack(alignment: .leading, spacing: 6) {
-            Text(L("見本\u{2002}まだ持っていない柄", "Preview\u{2002}not collected yet")).jpEyebrow().foregroundStyle(WebTheme.accent)
+            Text(eyebrow: L("見本\u{2002}まだ持っていない柄", "Preview\u{2002}not collected yet")).jpEyebrow().foregroundStyle(WebTheme.accent)
             Text(c.name).font(JPFont.rowTitle).foregroundStyle(WebTheme.foreground)
                 .fixedSize(horizontal: false, vertical: true)
             if let part {

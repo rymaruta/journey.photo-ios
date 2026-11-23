@@ -207,7 +207,7 @@ struct CamperRoomContactSheet: View {
                         }
                         .frame(height: Self.cell.height)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
-                        Text("\(e.view.map { CamperRoomLegs.views[$0].name + " · " } ?? "")\(f.name) · \(f.id)\(e.photo.map { $0 == "wide" ? L("・横長の写真", " · wide photo") : L("・縦長の写真", " · tall photo") } ?? "")")
+                        Text("\(e.view.map { CamperRoomLegs.views[$0].name + "\u{2002}" } ?? "")\(f.name)\u{2002}\(f.id)\(e.photo.map { $0 == "wide" ? L("\u{2002}横長の写真", "\u{2002}wide photo") : L("\u{2002}縦長の写真", "\u{2002}tall photo") } ?? "")")
                             .jpSystemFont(12)
                             .foregroundStyle(WebTheme.text)
                             .lineLimit(1).minimumScaleFactor(0.7)

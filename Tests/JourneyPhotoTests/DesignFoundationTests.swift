@@ -253,9 +253,40 @@ final class DesignFoundationTests: XCTestCase {
         XCTAssertEqual(JPEyebrowLine.lineStartOpacity, 0.55)
         XCTAssertEqual(JPEyebrowLine.gap, 10)
         let eyebrow = declaration("JPEyebrowLine", in: try source("Core/Design/EyebrowLine.swift"))
-        assertInOrder(["Text(text)", ".jpEyebrow()", ".foregroundStyle(WebTheme.accent)",
+        assertInOrder(["Text(eyebrow: text)", ".jpEyebrow()", ".foregroundStyle(WebTheme.accent)",
                        "LinearGradient(colors: [WebTheme.accent.opacity(Self.lineStartOpacity), WebTheme.accent.opacity(0)]",
                        ".frame(height: JPStroke.hairline)"], in: eyebrow, "眉ラベルの線")
+    }
+
+    /// 和文の眉ラベルは字間を詰める（2026-11-23 判断）。板の 0.14em は英字の大文字の眉の値で、
+    /// 「1日目　2026年12月23日」にかけると一字ずつ離れて間延びした。英字だけの眉（FOLLOWING）は 0.14em のまま
+    func testJapaneseEyebrowIsTighter() throws {
+        XCTAssertEqual(JPTypeScale.eyebrowTracking(for: "FOLLOWING"), 1.54, accuracy: 0.001)
+        XCTAssertEqual(JPTypeScale.eyebrowTracking(for: "TODAY'S THEME"), 1.54, accuracy: 0.001)
+        XCTAssertEqual(JPTypeScale.eyebrowTracking(for: "Day 1\u{2002}Dec 23"), 1.54, accuracy: 0.001)
+        XCTAssertEqual(JPTypeScale.eyebrowTracking(for: "1日目\u{2002}2026年12月23日"), 0.44, accuracy: 0.001)
+        XCTAssertEqual(JPTypeScale.eyebrowTracking(for: "TRIP BOOK\u{2002}自動でまとまった旅"), 0.44, accuracy: 0.001)
+        XCTAssertLessThan(JPTypeScale.eyebrowTrackingJapanese, JPTypeScale.eyebrowTracking / 2)
+
+        // 字を持つ眉は `Text(eyebrow:)` で字間を付ける（`jpEyebrow()` だけだと和文にも 0.14em がかかる）
+        let font = try source("Core/Design/JPFont.swift")
+        XCTAssertTrue(font.contains("self = Text(text).tracking(CGFloat(JPTypeScale.eyebrowTracking(for: text)))"))
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources/JourneyPhoto")
+        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)!
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }
+        var bare: [String] = []
+        for file in files {
+            let lines = try String(contentsOf: file, encoding: .utf8).components(separatedBy: "\n")
+            for (i, line) in lines.enumerated()
+            where line.range(of: #"Text\(L\("[^"]*[ぁ-んァ-ヶ一-龥]"#, options: .regularExpression) != nil
+                && !line.contains("Text(eyebrow:") {
+                // 同じ行か、続く2行に `.jpEyebrow()` があれば眉。和文の字を `Text(eyebrow:)` で包んでいない
+                let near = lines[i..<min(lines.count, i + 3)].joined(separator: "\n")
+                if near.contains(".jpEyebrow()") { bare.append("\(file.lastPathComponent):\(i + 1)") }
+            }
+        }
+        XCTAssertEqual(bare, [], "和文の眉ラベルに英字の字間がかかっている")
     }
 
     /// 上の丸いガラスの札の印は 17pt regular（main にある決まり）

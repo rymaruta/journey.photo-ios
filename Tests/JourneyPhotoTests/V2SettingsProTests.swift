@@ -64,7 +64,7 @@ final class V2SettingsProTests: XCTestCase {
     func testSettingsGroupsUseBrassEyebrowAndCard() throws {
         let settings = try source("Features/Settings/SettingsView.swift")
         let group = slice(settings, from: "struct SettingsGroup", to: "struct SettingsActionLabel")
-        assertInOrder(["Text(title)", ".jpEyebrow()", ".foregroundStyle(WebTheme.accent)",
+        assertInOrder(["Text(eyebrow: title)", ".jpEyebrow()", ".foregroundStyle(WebTheme.accent)",
                        ".accessibilityAddTraits(.isHeader)", "JPCard { content }"], in: group, "設定の節")
         XCTAssertTrue(settings.contains("SettingsGroup(title) { content() }"), "設定の節が SettingsGroup を通らない")
         XCTAssertFalse(settings.contains("JPSectionTitle("), "設定に v1 の白い小見出しが残っている")

@@ -139,7 +139,9 @@ struct OfficialSpotView: View {
                     draftNotice(notice)
                 }
                 actions
-                journeyCue
+                // 「この観光スポットから、次の一枚へ（見つける → 行く → 撮る → 残す）」の説明の帯は消した
+                // （2026-11-23 判断: CLAUDE.md「見れば分かる・説明文に頼らない」。押せない説明の行で、各段は
+                // この頁の本物の操作——経路・作例を重ねて撮る・投稿する——が担う。板 SpotDetail にも無い）
                 summary
                 // **写真が主役。** 写真がある場所は本文より先に出す
                 if !linked.isEmpty { spotPhotos }
@@ -391,7 +393,7 @@ struct OfficialSpotView: View {
         VStack(alignment: .leading, spacing: 6) {
             // 小見出し（モックの "PHOTO SPOT"）。**下書きなら「下書き・未確認」**
             // 眉ラベルの部品に揃える。真鍮は黒地の上だけ（写真の上は白・下書きの札は色で目立たせない）
-            Text(SpotScreen.eyebrow(review: spot.isDraft))
+            Text(eyebrow: SpotScreen.eyebrow(review: spot.isDraft))
                 .jpEyebrow()
                 .foregroundStyle(onPhoto ? Color.white.opacity(0.88) : (spot.isDraft ? WebTheme.muted : WebTheme.accent))
             Text(spot.name)
@@ -547,28 +549,6 @@ struct OfficialSpotView: View {
             defer { openingDirections = false }
             await SpotDirections.openDirections(name: name, coords: coords, stillWanted: { onScreen })
         }
-    }
-
-    /// 「この場所から、次の一枚へ（見つける → 行く → 撮る → 残す）」の**説明の帯**。
-    ///
-    /// 2026-10-11 判断: 以前は地の札・縁・真鍮の記号・矢印でボタンに見えたのに押せなかった。
-    /// 各段は頁の中に本物の操作がある（行く＝上の「経路」・撮る＝「作例を重ねて撮る」・残す＝
-    /// 「ここで撮った写真を投稿する」）ので、ここは**押せる見た目をやめて1行の説明**にした
-    /// （地・縁・真鍮・矢印の記号なし。真鍮は黒地の上の合図・押せるもの）。板 SpotDetail にこの帯は無い
-    private var journeyCue: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(L("この観光スポットから、次の一枚へ", "From this spot to your next photo"))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(WebTheme.muted2)
-            // 本文の最小は 12pt（CLAUDE.md）
-            Text(L("見つける → 行く → 撮る → 残す", "Discover → Go → Shoot → Share"))
-                .font(.caption)
-                .foregroundStyle(WebTheme.faint)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 20)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("spot.official.journeyCue")
     }
 
     // MARK: - 概要（書かれたものだけ）
@@ -922,7 +902,7 @@ struct OfficialSpotView: View {
     /// 朝・夕の段: 眉（真鍮）→ 時刻の行 → 台帳の時間帯の文
     private func lightBlock(_ block: SpotLight.Block, guides: [SpotBody.TimeOfDay]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(block.title)
+            Text(eyebrow: block.title)
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
             ForEach(Array(block.rows.enumerated()), id: \.offset) { _, row in

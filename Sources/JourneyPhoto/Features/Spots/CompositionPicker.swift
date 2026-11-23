@@ -105,7 +105,7 @@ struct CompositionPicker: View {
 
     private func group(id: String, title: String, kinds: [CompositionKind], includesNone: Bool) -> some View {
         VStack(alignment: .leading, spacing: JPSpace.xs) {
-            Text(title)
+            Text(eyebrow: title)
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
                 .accessibilityAddTraits(.isHeader)

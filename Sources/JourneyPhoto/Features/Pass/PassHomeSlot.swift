@@ -67,7 +67,7 @@ struct PassHomeCard: View {
             HStack(spacing: Self.gap) {
                 PassMiniStack(faces: cards.prefix(3).map { $0.face() }, compact: true)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(L("乗車券が届きました", "Tickets have arrived"))
+                    Text(eyebrow: L("乗車券が届きました", "Tickets have arrived"))
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                         .lineLimit(1)

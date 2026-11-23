@@ -47,7 +47,7 @@ struct CollectionPhotosScreen: View {
     private var heading: some View {
         VStack(alignment: .leading, spacing: JPSpace.xxs) {
             if let mark = eyebrowMark {
-                Text(mark.text)
+                Text(eyebrow: mark.text)
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                     .accessibilityLabel(mark.spoken)

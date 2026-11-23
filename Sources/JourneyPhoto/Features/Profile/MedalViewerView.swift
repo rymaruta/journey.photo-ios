@@ -94,7 +94,7 @@ struct MedalViewerView: View {
 
     private var captions: some View {
         VStack(spacing: 8) {
-            Text(L("手に取って回す", "Turn it over"))
+            Text(eyebrow: L("手に取って回す", "Turn it over"))
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
             Text(BadgeCatalog.fullName(badge.key, tier: badge.tier))

@@ -212,7 +212,7 @@ struct AskScreen: View {
                     focused = true
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(s.kind)
+                        Text(eyebrow: s.kind)
                             .jpEyebrow()
                             .foregroundStyle(WebTheme.accent)
                         Text(s.text)

@@ -35,7 +35,7 @@ struct HomeSuggestedPeopleView: View {
                     .foregroundStyle(WebTheme.text2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text(SuggestedPeople.eyebrow)
+            Text(eyebrow: SuggestedPeople.eyebrow)
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
                 .accessibilityAddTraits(.isHeader)

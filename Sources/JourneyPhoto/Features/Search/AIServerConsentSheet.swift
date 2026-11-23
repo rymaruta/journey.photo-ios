@@ -18,7 +18,7 @@ struct AIServerConsentSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: JPSpace.l) {
                 VStack(alignment: .leading, spacing: JPSpace.xs) {
-                    Text(AIServerConsentText.eyebrow)
+                    Text(eyebrow: AIServerConsentText.eyebrow)
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                     Text(AIServerConsentText.title)

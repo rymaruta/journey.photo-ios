@@ -83,7 +83,7 @@ struct OfficialSpotMapView: View {
         VStack(alignment: .leading, spacing: JPSpace.s) {
             VStack(alignment: .leading, spacing: JPSpace.xxs) {
                 // 黒地の上なので真鍮（下書きは「下書き・未確認」を灰で・頁の頭と同じ）
-                Text(SpotScreen.eyebrow(review: spot.isDraft))
+                Text(eyebrow: SpotScreen.eyebrow(review: spot.isDraft))
                     .jpEyebrow()
                     .foregroundStyle(spot.isDraft ? WebTheme.muted : WebTheme.accent)
                 Text(spot.name)

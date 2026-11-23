@@ -109,8 +109,17 @@ enum JPTypeScale {
     static let caption: Double = 12
     /// 眉ラベルだけ（SF 600・字間 0.14em）
     static let eyebrow: Double = 11
-    /// 眉ラベルの字間（0.14em）
+    /// 眉ラベルの字間（0.14em）。**英字の大文字の眉（TODAY'S THEME・FOLLOWING）の字間**
     static let eyebrowTracking: Double = eyebrow * 0.14
+    /// 和文の入った眉ラベルの字間（0.04em・2026-11-23 判断）。板の 0.14em は英字の大文字の眉の値で、
+    /// 和文（「1日目　2026年12月23日」）にかけると一字ずつ離れて間延びした（ストアの画面写真）。
+    /// 和文は字の枠が正方形で、もともと字の間が空いているので詰める
+    static let eyebrowTrackingJapanese: Double = eyebrow * 0.04
+
+    /// 眉ラベルの字に合う字間（かな・漢字が入れば和文の字間、英字だけなら 0.14em）
+    static func eyebrowTracking(for text: String) -> Double {
+        LocationMatch.hasJapaneseScript(text) ? eyebrowTrackingJapanese : eyebrowTracking
+    }
 
     // 数字（SF の等幅数字）
     /// 旅の記録の距離（SF 300）。**板は 30 だが 28 で出す**——数字は文字の種類の標準の大きさで

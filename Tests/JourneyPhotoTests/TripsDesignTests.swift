@@ -168,7 +168,7 @@ final class TripsDesignTests: XCTestCase {
         XCTAssertEqual(TripBookView.spokenDayHeader(1, monthDay: "09.12"), "\(TripBookView.spokenDay(1))\(L("、", ", "))09.12")
         XCTAssertFalse(TripBookView.spokenDayHeader(2, monthDay: "09.13").contains("DAY"))
         let day = OfflineTripManifest.Day(number: 2, date: nil, stops: [])
-        XCTAssertEqual(OfflineTripContent.dayHeading(day), L("2 日目", "Day 2"))
+        XCTAssertEqual(OfflineTripContent.dayHeading(day), L("2日目", "Day 2"))
     }
 
     // MARK: - 旅の一覧（板 Trips）

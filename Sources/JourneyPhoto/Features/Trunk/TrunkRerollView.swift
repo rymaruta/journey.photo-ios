@@ -98,7 +98,7 @@ struct TrunkRerollView: View {
                     .padding(.horizontal, 32)
                     .padding(.top, 16)
             case .choosing:
-                Text(L("候補から選ぶ", "Choose a design"))
+                Text(eyebrow: L("候補から選ぶ", "Choose a design"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                     .frame(maxWidth: .infinity, alignment: .leading)

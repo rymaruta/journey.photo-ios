@@ -516,7 +516,7 @@ struct SettingsGroup<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsLayout.headerSpacing) {
             if let title {
-                Text(title)
+                Text(eyebrow: title)
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                     .padding(.horizontal, JPSpace.xxs)

@@ -206,7 +206,7 @@ struct TripBookView: View {
             VStack(alignment: .leading, spacing: 6) {
                 // 眉ラベル。**写真の上なので白**（板は真鍮だが、真鍮は夕日の
                 // 写真の上で読めなくなる・`BrandPalette` の規則）
-                Text(L("TRIP BOOK\u{2002}自動でまとまった旅", "TRIP BOOK\u{2002}Put together for you"))
+                Text(eyebrow: L("TRIP BOOK\u{2002}自動でまとまった旅", "TRIP BOOK\u{2002}Put together for you"))
                     .jpEyebrow()
                     .foregroundStyle(Color.white.opacity(0.88))
                     // 読み上げは「旅の一冊」（「トリップブック」と英語で読ませない）

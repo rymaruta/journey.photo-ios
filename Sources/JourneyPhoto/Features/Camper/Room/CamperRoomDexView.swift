@@ -66,7 +66,7 @@ struct CamperRoomDexView: View {
             SheetCloseButton(onContent: true, action: onClose)
                 .accessibilityIdentifier("camper.room.dex.close")
             VStack(alignment: .leading, spacing: 4) {
-                Text(L("家具を集める", "Collect furniture")).jpEyebrow().foregroundStyle(WebTheme.accent)
+                Text(eyebrow: L("家具を集める", "Collect furniture")).jpEyebrow().foregroundStyle(WebTheme.accent)
                 Text(L("\(CamperText.carName)の家具", "\(CamperText.carName) furniture")).font(JPFont.screenTitle).foregroundStyle(WebTheme.foreground)
                 // 一目で見る数は1つ（2026-10-21・前は「860 / 2183 · 図鑑 2194 · 近日 11」）
                 Text(CamperText.collectedLine(have: count.have, total: count.total))
@@ -246,7 +246,7 @@ struct CamperRoomCloseUpView: View {
             HStack {
                 SheetCloseButton(onContent: true, action: onClose)
                     .accessibilityIdentifier("camper.room.closeup.close")
-                Text(furniture.category.name).jpEyebrow().foregroundStyle(WebTheme.accent)
+                Text(eyebrow: furniture.category.name).jpEyebrow().foregroundStyle(WebTheme.accent)
                 Spacer(minLength: 0)
             }
             if furniture.built {

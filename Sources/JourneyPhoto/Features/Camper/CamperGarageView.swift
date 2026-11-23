@@ -160,7 +160,7 @@ struct CamperGarageView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(CamperText.eyebrow(owner: ownerName, stage: actualStage))
+            Text(eyebrow: CamperText.eyebrow(owner: ownerName, stage: actualStage))
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
                 .lineLimit(1)
@@ -419,7 +419,7 @@ struct CamperGarageView: View {
 
     private var stagesRow: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(L("車が育つ", "Your camper grows")).jpEyebrow().foregroundStyle(WebTheme.accent)
+            Text(eyebrow: L("車が育つ", "Your camper grows")).jpEyebrow().foregroundStyle(WebTheme.accent)
             // アクセシビリティの大きさでは段を縦に積む（横 3 つでは「キャンピングカー」が切れる・2026-10-21）
             if typeSize.isAccessibilitySize {
                 VStack(spacing: 8) { stageButtons }
@@ -468,7 +468,7 @@ struct CamperGarageView: View {
         VStack(alignment: .leading, spacing: 12) {
             // 数は上の「集めた部品」の札に1つだけ（2026-10-21・同じ数を2か所に並べない）。
             // 図鑑の総数・近日は一覧の終わりの注記（`dexFootnote`）
-            Text(CamperText.partsTitle).jpEyebrow().foregroundStyle(WebTheme.accent)
+            Text(eyebrow: CamperText.partsTitle).jpEyebrow().foregroundStyle(WebTheme.accent)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
                     ForEach(CamperGroupKind.allCases, id: \.self) { g in
@@ -772,7 +772,7 @@ struct CamperArrivalView: View {
                     }
                     .accessibilityHidden(true)
                     VStack(spacing: 12) {
-                        Text(parts.count > 1 ? L("部品が \(parts.count) 個届いた", "\(parts.count) parts arrived") : L("部品が届いた", "A part arrived"))
+                        Text(eyebrow: parts.count > 1 ? L("部品が \(parts.count) 個届いた", "\(parts.count) parts arrived") : L("部品が届いた", "A part arrived"))
                             .jpEyebrow().foregroundStyle(WebTheme.accent)
                         Text(part.name).font(JPFont.screenTitle).foregroundStyle(WebTheme.foreground)
                         CamperRarityDots(rarity: part.rarity)

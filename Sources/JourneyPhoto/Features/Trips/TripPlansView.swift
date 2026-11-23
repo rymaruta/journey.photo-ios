@@ -381,7 +381,7 @@ struct TripPlansView: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 if let eyebrow {
-                    Text(eyebrow)
+                    Text(eyebrow: eyebrow)
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                 }

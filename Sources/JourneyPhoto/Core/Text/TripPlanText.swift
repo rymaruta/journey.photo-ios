@@ -34,7 +34,7 @@ enum TripPlanText {
     /// 推測はしない。帰着日を越える日は数えない（旅程が日付より長いときに
     /// 帰ったあとの日付を出さない）。どちらも無ければ日付は出さない
     static func dayHeading(index: Int, day: TripDay, start: String?, end: String?) -> String {
-        let number = L("\(index + 1) 日目", "Day \(index + 1)")
+        let number = L("\(index + 1)日目", "Day \(index + 1)")
         guard let date = dayDate(index: index, day: day, start: start, end: end),
               let label = TakenDay.label(date) else { return number }
         return "\(number)\u{2002}\(label)"

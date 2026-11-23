@@ -144,7 +144,7 @@ struct SupporterCardView: View {
     }
 
     private var yearsEyebrow: some View {
-        Text(L("続けた年のメダル", "Years of support"))
+        Text(eyebrow: L("続けた年のメダル", "Years of support"))
             .jpEyebrow()
             .foregroundStyle(WebTheme.accent)
             .accessibilityAddTraits(.isHeader)
@@ -226,7 +226,7 @@ struct SupporterCardViewer: View {
                         .accessibilityAddTraits(.isImage)
                         .accessibilityAction(named: L("裏返す", "Turn over")) { flips += 1 }
                     VStack(spacing: 8) {
-                        Text(L("手に取って回す", "Turn it over"))
+                        Text(eyebrow: L("手に取って回す", "Turn it over"))
                             .jpEyebrow()
                             .foregroundStyle(WebTheme.accent)
                         Text(L("サポーター証", "Supporter card"))

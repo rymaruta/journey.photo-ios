@@ -292,10 +292,11 @@ enum TripTimes {
                  "\(duration(row.wait)) free until \(target.label.lowercased()) \(clock(target.at))")
     }
 
-    /// 朝の場所に遅れて着く一言（「朝の案内の場所ですが、着くのは11:00ごろ」）
+    /// 朝の場所に遅れて着く一言（「おすすめは朝。着くのは11:00ごろ」）。
+    /// 2026-11-23 判断: 前の「朝の案内の場所ですが、…」は日本語として硬く、何の案内か伝わらなかった
     static func lateMorningLine(_ row: Row) -> String? {
         guard let label = row.lateMorning, let at = row.arrive else { return nil }
-        return L("\(label)の案内の場所ですが、着くのは\(clock(at))ごろ",
+        return L("おすすめは\(label)。着くのは\(clock(at))ごろ",
                  "Best in the \(label.lowercased()), but you arrive around \(clock(at))")
     }
 

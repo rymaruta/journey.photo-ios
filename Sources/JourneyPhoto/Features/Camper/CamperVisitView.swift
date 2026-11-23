@@ -68,7 +68,7 @@ struct CamperVisitView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(CamperText.visitEyebrow(owner: ownerName))
+            Text(eyebrow: CamperText.visitEyebrow(owner: ownerName))
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
                 .lineLimit(1)

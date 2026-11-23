@@ -106,6 +106,19 @@ enum PhotoTrip {
         return usable[i]
     }
 
+    /// **撮影地と観光スポットが同じ名前か**（写真の詳細の裾で行を1つにまとめる・2026-11-23 判断）。
+    ///
+    /// 金閣寺で撮った写真に「📍金閣寺」と「📖 観光スポット 金閣寺 ›」が2行並び、同じ名前が重なって見えた。
+    /// 撮影地の先頭の欠片（「金閣寺, 京都」の「金閣寺」）と台帳の名前を、空白と大小を無視して比べる。
+    /// 違う名前（撮影地「嵐山」・スポット「渡月橋」）は2行のまま——どこの写真か・どの頁へ行くかが別だから
+    static func placeSharesSpotName(location: String?, spotName: String) -> Bool {
+        let head = (location ?? "").components(separatedBy: CharacterSet(charactersIn: ",，、（("))
+            .first ?? ""
+        let a = LocationMatch.normalized(head)
+        let b = LocationMatch.normalized(spotName)
+        return !a.isEmpty && a == b
+    }
+
     /// 行の呼び名（写真の詳細・撮影地の頁で同じ語）
     static var nearbySpotTitle: String { L("この近くの観光スポット", "Photo spot nearby") }
 
