@@ -30,6 +30,7 @@ final class NoMiddleDotSweepTests: XCTestCase {
         "OfficialSpotService.swift|[spots] 読めなかった・重複した区分の行を \\(list.dropped) 件落としました",
         "ShareCardMap.swift|（）()、，,・ 　/",            // 利用者の書いた地名を切る字
         "ShareCardText.swift|・",                       // 利用者の書いた題を折り返す字
+        "PhotoTrip.swift|,，、（(・･/／",                 // 利用者の書いた撮影地を切る字（観光スポットの名前と比べる）
         "TripPlanFixture.swift|金沢・福井の旅",            // 見本の利用者の題（利用者の書いた文の見本）
         "PostSuggest.swift|・",                         // 端末の AI の答えから中黒を「、」に直す字（#622）
         "PostSuggest.swift|·",                         // 同上

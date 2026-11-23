@@ -41,8 +41,44 @@ final class PhotoTripTests: XCTestCase {
         XCTAssertTrue(view.contains("if let joined {\n                    spotGuideLink(joined.loaded, joined.spot, nameShown: true)"))
         XCTAssertTrue(view.contains("if let loaded = tripStage.loaded, let spot = loaded.spot, joinedGuide == nil {"),
                       "同じ名前でも観光スポットの行が2行目に残る")
-        XCTAssertTrue(view.contains("PhotoTrip.placeSharesSpotName(location: shown.location, spotName: spot.name)"))
-        XCTAssertTrue(view.contains("placeLabel(location, spotSuffix: joined == nil)"))
+        XCTAssertTrue(view.contains("PhotoTrip.joinsPlaceAndSpot(location: shown.location, spotName: spot.name,"))
+        XCTAssertTrue(view.contains("placeLabel(location, spotSuffix: joined == nil, spokenAsPlace: joined != nil)"))
+    }
+
+    /// 全角と半角を同じに扱い、「・」「/」でも区切る。別の場所とは合わない（外れても2行になるだけ・2026-11-23 判断）
+    func testPlaceAndSpotNameMatchIgnoresWidthAndMoreSeparators() {
+        XCTAssertTrue(PhotoTrip.placeSharesSpotName(location: "ＵＳＪ", spotName: "USJ"))
+        XCTAssertTrue(PhotoTrip.placeSharesSpotName(location: "ﾕﾆﾊﾞｰｻﾙ", spotName: "ユニバーサル"))
+        XCTAssertTrue(PhotoTrip.placeSharesSpotName(location: "金閣寺・京都", spotName: "金閣寺"))
+        XCTAssertTrue(PhotoTrip.placeSharesSpotName(location: "金閣寺/京都", spotName: "金閣寺"))
+        XCTAssertTrue(PhotoTrip.placeSharesSpotName(location: "金閣寺／京都", spotName: "金閣寺"))
+        // 別の場所とは合わない
+        XCTAssertFalse(PhotoTrip.placeSharesSpotName(location: "京都・金閣寺", spotName: "金閣寺"))
+        XCTAssertFalse(PhotoTrip.placeSharesSpotName(location: "ＵＳＪ前", spotName: "USJ"))
+        XCTAssertFalse(PhotoTrip.placeSharesSpotName(location: "・", spotName: ""))
+    }
+
+    /// 大きな字（AX）では1行にまとめない（右の「観光スポット ›」が幅を取り、撮影地の名前が「…」だけになる）
+    func testPlaceAndSpotStayOnTwoRowsAtAccessibilitySizes() throws {
+        XCTAssertTrue(PhotoTrip.joinsPlaceAndSpot(location: "金閣寺", spotName: "金閣寺", accessibilitySize: false))
+        XCTAssertFalse(PhotoTrip.joinsPlaceAndSpot(location: "金閣寺", spotName: "金閣寺", accessibilitySize: true))
+        XCTAssertFalse(PhotoTrip.joinsPlaceAndSpot(location: "嵐山", spotName: "渡月橋", accessibilitySize: false))
+        let view = try source("Sources/JourneyPhoto/Features/PhotoDetail/PhotoDetailView.swift")
+        XCTAssertTrue(view.contains("accessibilitySize: placeTypeSize.isAccessibilitySize) else { return nil }"),
+                      "まとめるかの判断に字の大きさが入っていない")
+        XCTAssertTrue(view.contains("@Environment(\\.dynamicTypeSize) private var placeTypeSize"))
+    }
+
+    /// まとめたときは「撮影地の詳細」の添え書きが無いので、撮影地のリンクは「撮影地: 金閣寺」と読む
+    /// （隣の「観光スポット: 金閣寺」と聞き分けられるように）
+    func testJoinedPlaceLinkIsSpokenAsPlace() throws {
+        XCTAssertEqual(PhotoTrip.placeSpokenName("金閣寺", joined: true), L("撮影地: 金閣寺", "Place: 金閣寺"))
+        XCTAssertEqual(PhotoTrip.placeSpokenName("金閣寺", joined: false), "金閣寺")
+        XCTAssertNotEqual(PhotoTrip.placeSpokenName("金閣寺", joined: true), L("観光スポット: 金閣寺", "Photo spot: 金閣寺"))
+        let view = try source("Sources/JourneyPhoto/Features/PhotoDetail/PhotoDetailView.swift")
+        XCTAssertTrue(view.contains(".accessibilityLabel(PhotoTrip.placeSpokenName(LocationMatch.display(location), joined: spokenAsPlace))"),
+                      "撮影地のリンクに読み上げの名前が無い")
+        XCTAssertTrue(view.contains("placeLabel(location, spotSuffix: false, spokenAsPlace: joined != nil)"))
     }
 
     func testSpotIsFoundOnlyBySpotId() throws {

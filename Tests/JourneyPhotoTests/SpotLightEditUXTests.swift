@@ -122,6 +122,12 @@ final class SpotLightEditUXTests: XCTestCase {
         XCTAssertFalse(page.contains(#"L("見つける → 行く → 撮る → 残す""#), "流れの説明の行が戻っている")
         XCTAssertFalse(page.contains(#"L("この観光スポットから、次の一枚へ""#), "説明の見出しが戻っている")
         XCTAssertFalse(page.contains("func journeyStep("), "押せない段の札が残っている")
+        // 画面写真の巡回も、消した帯を探さない
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let shots = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"),
+                               encoding: .utf8)
+        XCTAssertFalse(shots.contains("spot.official.journeyCue"), "画面写真の巡回が消した説明の帯を探している")
         // 説明の代わりの本物の操作は残す
         XCTAssertTrue(page.contains(#".accessibilityIdentifier("spot.official.directions")"#))
         XCTAssertTrue(page.contains(#".accessibilityIdentifier("spot.official.post")"#))

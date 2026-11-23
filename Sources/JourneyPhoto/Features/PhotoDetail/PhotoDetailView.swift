@@ -34,6 +34,8 @@ struct PhotoDetailView: View {
     @Environment(\.isPresented) private var isPresented
     /// 「視差効果を減らす」: 下へ引いている間に写真を縮めない・戻すばねを弾ませない（札 #592）
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 大きな字（AX）では撮影地と観光スポットを1行にまとめない（`PhotoTrip.joinsPlaceAndSpot`・2026-11-23 判断）
+    @Environment(\.dynamicTypeSize) private var placeTypeSize
     /// 写真を下へ引いている量（札 #592・`PhotoDetailPull`）の入れ物。**画面が出たときに1回だけ作る**
     /// （`@State` の初期値だと、格子のマスが行き先を作るたびに箱が割り当てられる・`PhotoDetailPullHolder`）。
     /// 入れ物は何も知らせないので、引いている間もこの画面の `body` は描き直さない（見張るのは `DetailPullFollow` だけ）
@@ -1057,7 +1059,7 @@ struct PhotoDetailView: View {
                     NavigationLink {
                         SpotDetailView(spot: lead.spot, photos: lead.photos)
                     } label: {
-                        placeLabel(location, spotSuffix: joined == nil)
+                        placeLabel(location, spotSuffix: joined == nil, spokenAsPlace: joined != nil)
                     }
                     .buttonStyle(.plain)
                     // 実機の絵の道しるべ（`ScreenshotTests`）。**位置で探させない**
@@ -1068,7 +1070,7 @@ struct PhotoDetailView: View {
                         // 下書き・限定写真は公開の一覧に載らないので、この写真自身も並べる（空の一覧にしない）
                         TagPhotosView(kind: .location(location), opened: shown)
                     } label: {
-                        placeLabel(location, spotSuffix: false)
+                        placeLabel(location, spotSuffix: false, spokenAsPlace: joined != nil)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("photo.placeLink")
@@ -1085,7 +1087,8 @@ struct PhotoDetailView: View {
     /// 撮影地の行に寄せる観光スポット（撮影地と同じ名前のときだけ）。寄せたら下の `spotGuideRow` は出さない
     private var joinedGuide: (loaded: PhotoTrip.Loaded, spot: OfficialSpot)? {
         guard let loaded = tripStage.loaded, let spot = loaded.spot,
-              PhotoTrip.placeSharesSpotName(location: shown.location, spotName: spot.name) else { return nil }
+              PhotoTrip.joinsPlaceAndSpot(location: shown.location, spotName: spot.name,
+                                          accessibilitySize: placeTypeSize.isAccessibilitySize) else { return nil }
         return (loaded, spot)
     }
 
@@ -1322,13 +1325,16 @@ struct PhotoDetailView: View {
     /// 板: 12pt・白・下線（白 60%）、添え書きは白 50%。写真の裾に乗るので影を付ける。
     /// **添え書きは白 72% に上げてある**——50% だと明るい写真の裾で読めなかった
     /// （影を付けても足りない）。本文の2次の字（`muted2`）と同じ濃さ
-    private func placeLabel(_ location: String, spotSuffix: Bool) -> some View {
+    /// `spokenAsPlace`: 観光スポットの行と1行にまとめたとき。「撮影地の詳細」の添え書きが無くなるので、
+    /// 読み上げで「撮影地: 金閣寺」と言う（隣の「観光スポット: 金閣寺」と聞き分けられるように・2026-11-23 判断）
+    private func placeLabel(_ location: String, spotSuffix: Bool, spokenAsPlace: Bool = false) -> some View {
         HStack(spacing: 4) {
             Image(systemName: "mappin")
                 .font(.caption)
             // 画面に出す形（郵便番号・国を落とす・`LocationMatch.display`）。行き先は元の文字で引く
             Text(LocationMatch.display(location))
                 .underline(true, color: Color.white.opacity(0.6))
+                .accessibilityLabel(PhotoTrip.placeSpokenName(LocationMatch.display(location), joined: spokenAsPlace))
                 .lineLimit(1)
             if spotSuffix {
                 Text(PhotoMetaLine.separator + L("撮影地の詳細", "Place details"))

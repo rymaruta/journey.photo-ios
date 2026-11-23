@@ -121,6 +121,38 @@ enum JPTypeScale {
         LocationMatch.hasJapaneseScript(text) ? eyebrowTrackingJapanese : eyebrowTracking
     }
 
+    /// 眉ラベルを字間ごとの切れ目に分ける（`Text(eyebrow:)` が切れ目ごとに字間を付けてつなぐ・2026-11-23 判断）。
+    ///
+    /// 英字と和文が混ざった眉（「SHARED ALBUM　招待されています」「LIKED　3枚」）は、**英字の語を 0.14em、
+    /// 和文の語を 0.04em**。全体に1つの字間だと、英字が詰まるか和文が間延びした。
+    /// 語は空白（全角・`\u{2002}` を含む）で切り、空白は前の語に付ける。英字（A〜Z など）を持ち和文を持たない語だけが英字の字間。
+    /// 数字だけの語（「3 型」の 3）は和文の字間（和文の中の数）。和文が1字も無い眉（"Day 1\u{2002}Dec 23"）は全部 0.14em のまま
+    static func eyebrowRuns(_ text: String) -> [(text: String, tracking: Double)] {
+        guard LocationMatch.hasJapaneseScript(text) else { return [(text, eyebrowTracking)] }
+        var words: [String] = []
+        var current = ""
+        var inSpace = false
+        for ch in text {
+            let space = ch.isWhitespace
+            if !space && inSpace { words.append(current); current = "" }
+            current.append(ch)
+            inSpace = space
+        }
+        if !current.isEmpty { words.append(current) }
+        var runs: [(text: String, tracking: Double)] = []
+        for word in words {
+            let latin = !LocationMatch.hasJapaneseScript(word)
+                && word.unicodeScalars.contains { $0.properties.isAlphabetic }
+            let tracking = latin ? eyebrowTracking : eyebrowTrackingJapanese
+            if let last = runs.last, last.tracking == tracking {
+                runs[runs.count - 1].text += word
+            } else {
+                runs.append((word, tracking))
+            }
+        }
+        return runs
+    }
+
     // 数字（SF の等幅数字）
     /// 旅の記録の距離（SF 300）。**板は 30 だが 28 で出す**——数字は文字の種類の標準の大きさで
     /// 出して Dynamic Type に追従させる決まり（`JPFont.mono` の注記・最大 2pt のずれを許す）で、

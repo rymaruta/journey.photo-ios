@@ -112,11 +112,30 @@ enum PhotoTrip {
     /// 撮影地の先頭の欠片（「金閣寺, 京都」の「金閣寺」）と台帳の名前を、空白と大小を無視して比べる。
     /// 違う名前（撮影地「嵐山」・スポット「渡月橋」）は2行のまま——どこの写真か・どの頁へ行くかが別だから
     static func placeSharesSpotName(location: String?, spotName: String) -> Bool {
-        let head = (location ?? "").components(separatedBy: CharacterSet(charactersIn: ",，、（("))
+        // 区切りの字: 読点・カンマ・かっこ・中黒・斜線（全角も半角も。「金閣寺・京都」「金閣寺/京都」）。
+        // 誤って別の場所と合わないことを優先（外れても2行に戻るだけ・2026-11-23 判断）
+        let head = (location ?? "").components(separatedBy: CharacterSet(charactersIn: ",，、（(・･/／"))
             .first ?? ""
-        let a = LocationMatch.normalized(head)
-        let b = LocationMatch.normalized(spotName)
+        let a = spotNameKey(head)
+        let b = spotNameKey(spotName)
         return !a.isEmpty && a == b
+    }
+
+    /// 比べるための形: 空白と大小に加えて、全角と半角を同じに扱う（「ＵＳＪ」と「USJ」・「ﾊﾞ」と「バ」）。
+    /// 互換の形にそろえる（NFKC）——半角カナの濁点も1字にまとまる（`.widthInsensitive` の折り畳みは濁点を別の字に残す）
+    private static func spotNameKey(_ value: String) -> String {
+        LocationMatch.normalized(value.precomposedStringWithCompatibilityMapping)
+    }
+
+    /// 撮影地と観光スポットを1行にまとめるか。**大きな字（AX）では2行のまま**——右の「観光スポット ›」が
+    /// 幅を取り、撮影地の名前が「…」だけになるため（2026-11-23 判断）
+    static func joinsPlaceAndSpot(location: String?, spotName: String, accessibilitySize: Bool) -> Bool {
+        !accessibilitySize && placeSharesSpotName(location: location, spotName: spotName)
+    }
+
+    /// 撮影地のリンクの読み上げの名前。1行にまとめたときは「撮影地の詳細」の添え書きが無いので「撮影地: 名前」
+    static func placeSpokenName(_ name: String, joined: Bool) -> String {
+        joined ? L("撮影地: \(name)", "Place: \(name)") : name
     }
 
     /// 行の呼び名（写真の詳細・撮影地の頁で同じ語）

@@ -268,9 +268,25 @@ final class DesignFoundationTests: XCTestCase {
         XCTAssertEqual(JPTypeScale.eyebrowTracking(for: "TRIP BOOK\u{2002}自動でまとまった旅"), 0.44, accuracy: 0.001)
         XCTAssertLessThan(JPTypeScale.eyebrowTrackingJapanese, JPTypeScale.eyebrowTracking / 2)
 
-        // 字を持つ眉は `Text(eyebrow:)` で字間を付ける（`jpEyebrow()` だけだと和文にも 0.14em がかかる）
+        // 英字と和文が混ざった眉は、英字の語を 0.14em・和文の語を 0.04em（2026-11-23 判断）
+        func runs(_ text: String) -> [String] {
+            JPTypeScale.eyebrowRuns(text).map { "\($0.text)|\(String(format: "%.2f", $0.tracking))" }
+        }
+        XCTAssertEqual(runs("SHARED ALBUM\u{2002}招待されています"), ["SHARED ALBUM\u{2002}|1.54", "招待されています|0.44"])
+        XCTAssertEqual(runs("TRIP BOOK\u{2002}自動でまとまった旅"), ["TRIP BOOK\u{2002}|1.54", "自動でまとまった旅|0.44"])
+        XCTAssertEqual(runs("LIKED\u{2002}3枚"), ["LIKED\u{2002}|1.54", "3枚|0.44"])
+        XCTAssertEqual(runs("SPECIAL TRUNKS\u{2002}Pro に含まれる 3 型"),
+                       ["SPECIAL TRUNKS\u{2002}Pro |1.54", "に含まれる 3 型|0.44"])
+        XCTAssertEqual(runs("1日目\u{2002}2026年12月23日"), ["1日目\u{2002}2026年12月23日|0.44"])
+        XCTAssertEqual(runs("Day 1\u{2002}Dec 23"), ["Day 1\u{2002}Dec 23|1.54"])
+        XCTAssertEqual(runs("FOLLOWING"), ["FOLLOWING|1.54"])
+
+        // 字を持つ眉は `Text(eyebrow:)` で字間を付ける（`jpEyebrow()` だけだと和文にも 0.14em がかかる）。
+        // 切れ目ごとに字間を付けた `Text` をつなぐ（1つの `Text` のまま）
         let font = try source("Core/Design/JPFont.swift")
-        XCTAssertTrue(font.contains("self = Text(text).tracking(CGFloat(JPTypeScale.eyebrowTracking(for: text)))"))
+        XCTAssertTrue(font.contains("for run in JPTypeScale.eyebrowRuns(text) {"))
+        XCTAssertTrue(font.contains("let piece = Text(run.text).tracking(CGFloat(run.tracking))"))
+        XCTAssertTrue(font.contains("joined = joined.map { $0 + piece } ?? piece"))
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Sources/JourneyPhoto")
         let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)!

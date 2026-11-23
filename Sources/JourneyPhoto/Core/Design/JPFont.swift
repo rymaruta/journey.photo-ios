@@ -145,8 +145,16 @@ extension Text {
     /// 眉ラベルの字（`Text(eyebrow: L("1日目", "Day 1")).jpEyebrow()`）。**字に合う字間を `Text` に付ける**
     /// （和文は詰める・`JPTypeScale.eyebrowTracking(for:)`・2026-11-23 判断）。`Text` に付けた字間は、
     /// 外の `jpEyebrow()` の字間（英字の 0.14em）より優先される。英字だけの決まった字（"PRO"）は `Text("PRO")` のままでよい
+    ///
+    /// 英字と和文が混ざった眉（「SHARED ALBUM　招待されています」）は、英字の語に 0.14em・和文の語に 0.04em を
+    /// 付けて `Text` をつなぐ（`JPTypeScale.eyebrowRuns`。つないでも1つの `Text` なので、折り返し・読み上げは割れない）
     init(eyebrow text: String) {
-        self = Text(text).tracking(CGFloat(JPTypeScale.eyebrowTracking(for: text)))
+        var joined: Text?
+        for run in JPTypeScale.eyebrowRuns(text) {
+            let piece = Text(run.text).tracking(CGFloat(run.tracking))
+            joined = joined.map { $0 + piece } ?? piece
+        }
+        self = joined ?? Text(text)
     }
 }
 
