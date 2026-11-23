@@ -306,15 +306,21 @@ iPhone だけのアプリ（`TARGETED_DEVICE_FAMILY: "1"`）は、**6.9インチ
 **「iPhone with Dynamic Island (medium display)」が最低1枚要る**（日本語の App Store Connect では「Dynamic Island 搭載 iPhone（中型ディスプレイ）」）。
 1枚から10枚、PNG か JPEG（透過なし）。
 
-| 枠（App Store Connect の名前） | 受け付ける寸法（縦） | 出す寸法 | 撮る機種（シミュレータ） |
-|---|---|---|---|
-| Dynamic Island 搭載 iPhone（大型ディスプレイ）＝ 6.9インチ | **1320×2868**、1290×2796、1260×2736 | 1320×2868 | iPhone 17 Pro Max（無ければ 16 Pro Max） |
-| Dynamic Island 搭載 iPhone（中型ディスプレイ） | **1206×2622**、1179×2556 | 1206×2622 | iPhone 17 Pro（無ければ 16 Pro） |
+| 枠（App Store Connect の名前） | 受け付ける寸法（縦・先が望ましい） | 置き場 |
+|---|---|---|
+| Dynamic Island 搭載 iPhone（大型ディスプレイ）＝ 6.9インチ | **1320×2868**、1290×2796、1260×2736 | 直下 |
+| Dynamic Island 搭載 iPhone（中型ディスプレイ） | **1206×2622**、1179×2556 | `medium/` |
+
+**撮る機種は名前で決め打ちしない**（2026-11-23 run 1740: ランナーの Xcode 27.2 に iPhone 17 Pro Max も 16 Pro Max も無く止まった）。
+`store-screenshots.py --device large|medium` が、入っている iPhone の機種（`simctl list devicetypes`）の画面写真の寸法を、
+機種の情報（`profile.plist` の mainScreenWidth・Height・Scale）か、出せなければ1回起動して撮った1枚で測り、
+受け付ける寸法そのものの機種を選ぶ（寸法は表の先のものを先に、同じ寸法なら新しい機種）。その機種のシミュレータが無ければ作る。
+選んだ機種と寸法は job のログと README に出る。どの機種も合わなければ赤（縮めて合わせない）。
 
 **合成しない。シミュレータの実際の画面をそのまま出す**（2026-11-23 owner「ちゃんと実機通りのスクショかも見ないといけない。イメージで作るのはダメ」）。
 前は黒地に真鍮の小見出しと明朝の見出しを足し、画面を縮めて置いていたが、やめた。`Tools/store-screenshots.py` は、枠の寸法がそのまま出る機種で
-撮った画面を、**同じ8枚を2組**（`FRAMES`）そのまま書き出すだけ。材料の寸法が枠と1画素でも違えば、その枚は作らず赤にする（縮めて合わせない）。
-撮る機種のシミュレータが CI の Mac に無ければ、その回は赤で止まる（`store-screenshots.py --device large|medium`）。
+撮った画面を、**同じ8枚を2組**（`FRAMES`）そのまま書き出すだけ。材料の寸法が受け付ける寸法のどれでもなければ、その枚は作らず赤にする
+（縮めて合わせない）。1組の中で寸法がそろっていなくても赤。
 状態のバーは撮る前に Apple の決まった形（9:41、Wi-Fi と電波と電池が満タン・`Tools/store-status-bar.sh`）にする。
 
 ### 並び（2026-11-15 に決めた。芯の輪の順。検索結果に出るのは最初の3枚。2026-11-23 に AI に頼むを2枚目に足して8枚）
@@ -366,9 +372,9 @@ gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight
 - 出来た絵は**非公開の S3** の `<run 番号>/store.tar`（画面写真と同じ置き場、**3日で自動で消える**）。公開の枝、成果物、ログには置かない
 - 取り出し: `bash Tools/fetch-shots.sh <run 番号>` → scratchpad の `shots/<run 番号>/store/` に
   - 直下: 大型ディスプレイ（6.9インチ・1320×2868）の8枚（`01-ホーム.png` 〜 `08-写真の詳細.png`）と、審査用の `review-Pro の案内.png`
-  - `medium-1206x2622/`: 中型ディスプレイ（1206×2622）の同じ8枚
+  - `medium/`: 中型ディスプレイ（1206×2622 か 1179×2556。選んだ機種の寸法）の同じ8枚
   - `README.md`: 合成なし（シミュレータの実際の画面）、機種名、iOS の版、枠の名前（App Store Connect の欄の名前）と寸法
-- App Store Connect では、直下の8枚を「Dynamic Island 搭載 iPhone（大型ディスプレイ）」、`medium-1206x2622/` の8枚を
+- App Store Connect では、直下の8枚を「Dynamic Island 搭載 iPhone（大型ディスプレイ）」、`medium/` の8枚を
   「Dynamic Island 搭載 iPhone（中型ディスプレイ）」に上げる。上げ終わったら `bash Tools/fetch-shots.sh <run 番号> --delete`（手元と S3 からすぐ消す）
 - 材料が1枚でも足りないと、その回は赤になる（足りない絵の名前が job のログに出る）
 

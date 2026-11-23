@@ -54,16 +54,19 @@ class StoreScreenshotsTests(unittest.TestCase):
 
     def test_copies_both_frames_as_they_are(self):
         """合成しない: 出す絵は材料の画面と画素まで同じ（寸法も色も）。透過は外す"""
-        self.assertEqual(sorted(f[1] for f in store.FRAMES), [(1206, 2622), (1320, 2868)])
+        self.assertEqual(store.accepted("large"), [(1320, 2868), (1290, 2796), (1260, 2736)])
+        self.assertEqual(store.accepted("medium"), [(1206, 2622), (1179, 2556)])
         self.assertFalse(hasattr(store, "compose"), "合成の関数が残っている")
         with tempfile.TemporaryDirectory() as work:
             large, medium, out = (os.path.join(work, n) for n in ("large", "medium", "out"))
             make_material(large, (1320, 2868), color=(10, 20, 30))
-            make_material(medium, (1206, 2622), color=(200, 100, 50))
+            # 中型は受け付ける2つ目の寸法（1179×2556）の機種で撮った回も通る
+            make_material(medium, (1179, 2556), color=(200, 100, 50))
             env = {"STORE_DEVICE_LARGE": "iPhone 17 Pro Max", "STORE_DEVICE_MEDIUM": "iPhone 17 Pro", "STORE_IOS": "iOS 26.1"}
             self.assertEqual(run(large, medium, out, env), 0)
-            for sub, size, label, kind, _ in store.FRAMES:
+            for sub, _, label, kind in store.FRAMES:
                 folder = os.path.join(out, sub) if sub else out
+                size = (1320, 2868) if kind == "large" else (1179, 2556)
                 for name, _ in store.SLIDES:
                     with Image.open(os.path.join(folder, f"{name}.png")) as image:
                         self.assertEqual(image.size, size, f"{label} の {name}")
@@ -74,10 +77,10 @@ class StoreScreenshotsTests(unittest.TestCase):
             self.assertEqual(store.SLIDES[1], ("02-AI に頼む", "90-ストア・AI に頼む"))
             readme = open(os.path.join(out, "README.md"), encoding="utf-8").read()
             for want in ["合成なし", "シミュレータの実際の画面", "iPhone 17 Pro Max", "iPhone 17 Pro", "iOS 26.1",
-                         "Dynamic Island 搭載 iPhone（中型ディスプレイ）", "medium-1206x2622/", "1206×2622", "1320×2868"]:
+                         "Dynamic Island 搭載 iPhone（中型ディスプレイ）", "medium/", "1179×2556", "1320×2868"]:
                 self.assertIn(want, readme)
             self.assertTrue(os.path.exists(os.path.join(out, "review-Pro の案内.png")))
-            self.assertFalse(os.path.exists(os.path.join(out, "medium-1206x2622", "review-Pro の案内.png")))
+            self.assertFalse(os.path.exists(os.path.join(out, "medium", "review-Pro の案内.png")))
 
     def test_wrong_size_is_not_scaled(self):
         """寸法が違う材料は縮めて合わせず、書かずに赤（終了コード 1）"""
@@ -88,15 +91,53 @@ class StoreScreenshotsTests(unittest.TestCase):
             self.assertEqual(run(large, medium, out), 1)
             self.assertFalse(os.path.exists(os.path.join(out, "01-ホーム.png")), "寸法の違う絵を書いた")
             self.assertTrue(os.path.exists(os.path.join(out, "02-AI に頼む.png")))
-            self.assertFalse(os.path.exists(os.path.join(out, "medium-1206x2622", "08-写真の詳細.png")))
+            self.assertFalse(os.path.exists(os.path.join(out, "medium", "08-写真の詳細.png")))
             readme = open(os.path.join(out, "README.md"), encoding="utf-8").read()
             self.assertIn("縮めて合わせない", readme)
 
+    def test_mixed_sizes_in_one_frame_fail(self):
+        """1組の中で寸法がそろっていなければ赤（どちらも受け付ける寸法でも）"""
+        with tempfile.TemporaryDirectory() as work:
+            large, medium, out = (os.path.join(work, n) for n in ("large", "medium", "out"))
+            make_material(large, (1320, 2868))
+            make_material(medium, (1206, 2622))
+            # 1枚だけ別の受け付ける寸法に差し替える
+            first = sorted(f for f in os.listdir(medium) if f.endswith(".png"))[0]
+            Image.new("RGB", (1179, 2556)).save(os.path.join(medium, first))
+            self.assertEqual(run(large, medium, out), 1)
+
+    def test_selects_device_by_screen_size_not_name(self):
+        """機種は名前で決め打ちせず、画面写真の寸法が受け付ける寸法そのものの機種を選ぶ（run 1740: 名前の機種が無く止まった）"""
+        types = [
+            {"identifier": "t.air", "name": "iPhone Air", "size": (1260, 2736)},
+            {"identifier": "t.18pm", "name": "iPhone 18 Pro Max", "size": (1320, 2868)},
+            {"identifier": "t.18p", "name": "iPhone 18 Pro", "size": (1206, 2622)},
+            {"identifier": "t.16e", "name": "iPhone 16e", "size": (1170, 2532)},
+            {"identifier": "t.x", "name": "iPhone 19", "size": None},
+        ]
+        payload = {"devices": {
+            "com.apple.CoreSimulator.SimRuntime.iOS-26-0": [{"name": "Old Pro Max", "deviceTypeIdentifier": "t.18pm", "isAvailable": True}],
+            "com.apple.CoreSimulator.SimRuntime.iOS-27-2": [{"name": "iPhone 18 Pro Max", "deviceTypeIdentifier": "t.18pm", "isAvailable": True}],
+        }}
+        # 受け付ける寸法の先（1320×2868）の機種を、いちばん新しい iOS のシミュレータで
+        self.assertEqual(store.select_device("large", types, payload), ("use", "iPhone 18 Pro Max", (1320, 2868), "iPhone 18 Pro Max"))
+        # シミュレータが無い機種は作る
+        self.assertEqual(store.select_device("medium", types, payload), ("create", "t.18p", (1206, 2622), "iPhone 18 Pro"))
+        # 先の寸法の機種が無ければ、次の受け付ける寸法の機種（Air 1260×2736）
+        self.assertEqual(store.select_device("large", [t for t in types if t["identifier"] != "t.18pm"], payload)[1:],
+                         ("t.air", (1260, 2736), "iPhone Air"))
+        # 合う機種が無ければ None（赤・縮めて合わせる機種には落とさない）
+        self.assertIsNone(store.select_device("medium", [t for t in types if t["identifier"] != "t.18p"], payload))
+        # 機種の情報から寸法を出す（画素でも点でも）
+        self.assertEqual(store.profile_size({"mainScreenWidth": 1320, "mainScreenHeight": 2868, "mainScreenScale": 3}), (1320, 2868))
+        self.assertEqual(store.profile_size({"mainScreenWidth": 402, "mainScreenHeight": 874, "mainScreenScale": 3}), (1206, 2622))
+        self.assertIsNone(store.profile_size({}))
+        with tempfile.TemporaryDirectory() as work:
+            shot = os.path.join(work, "a.png")
+            Image.new("RGB", (1206, 2622)).save(shot)
+            self.assertEqual(store.png_size(shot), (1206, 2622))
+
     def test_devices_and_ios_version(self):
-        """撮る機種は枠の寸法がそのまま出る機種だけ（無ければ None で赤。ほかの寸法の機種に落とさない）"""
-        self.assertEqual(store.pick_device("large", {"iPhone 17 Pro Max", "iPhone 17 Pro", "iPhone Air"}), "iPhone 17 Pro Max")
-        self.assertEqual(store.pick_device("medium", {"iPhone 17 Pro Max", "iPhone 16 Pro"}), "iPhone 16 Pro")
-        self.assertIsNone(store.pick_device("medium", {"iPhone 17 Pro Max", "iPhone Air", "iPhone 16e"}))
         payload = {"devices": {"com.apple.CoreSimulator.SimRuntime.iOS-26-1": [{"name": "iPhone 17 Pro", "isAvailable": True}]}}
         self.assertEqual(store.runtime_of("iPhone 17 Pro", payload), "iOS 26.1")
         self.assertEqual(store.runtime_of("iPhone 99", payload), "?")

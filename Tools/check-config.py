@@ -756,8 +756,8 @@ if testflight_yml.exists() and pr_yml.exists():
             or not build_steps or build_steps[0] != "App Store 用の絵は見本の表示で撮る"):
         fail("ios-testflight.yml の build の最初の段で、storeShots の試験が見本の表示で撮るかを確かめていません（札 #604）")
     # 出す絵は 6.9インチと中型（Dynamic Island 搭載 iPhone（中型ディスプレイ））の2組（2026-11-23）
-    if sorted(f[1] for f in store_mod.FRAMES) != [(1206, 2622), (1320, 2868)]:
-        fail("store-screenshots.py の FRAMES が 1320×2868 と 1206×2622 の2組ではありません")
+    if [f[1] for f in store_mod.FRAMES] != [[(1320, 2868), (1290, 2796), (1260, 2736)], [(1206, 2622), (1179, 2556)]]:
+        fail("store-screenshots.py の FRAMES が Apple の受け付ける寸法（大型 1320×2868 ほか、中型 1206×2622 ほか）ではありません")
     # 2026-11-23 owner「イメージで作るのはダメ」: 合成せず、2つの機種で撮った画面をそのまま出す。中型の機種でも撮り、
     # どちらも状態のバーを決まった形にしてから撮る
     medium = step_block(flow, "App Store 用の中型の画面を撮る") or ""

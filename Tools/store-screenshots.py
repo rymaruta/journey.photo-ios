@@ -39,14 +39,19 @@ Image = None
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# 出す枠（置き場, 寸法, App Store Connect の枠の名前, 材料の組, 撮る機種の候補（先に在るもの））。
-# Apple の今の決まりでは「iPhone with Dynamic Island (medium display)」が最低1枚要る（2026-11-23）
+# 出す枠（置き場, Apple が受け付ける寸法（縦・先が望ましい）, App Store Connect の枠の名前, 材料の組）。
+# Apple の「Screenshot specifications」の Dynamic Island の大型・中型（2026-11-23 に確かめた）。中型が最低1枚要る。
+# 2026-11-23（run 1740）: 機種の名前で決め打ちすると、ランナーの Xcode（27.2）に無い機種で止まった。いまは入っている
+# 機種から、画面写真の寸法が受け付ける寸法そのものの機種を選ぶ（`select_device`）。縮めて合わせない
 FRAMES = [
-    ("", (1320, 2868), "Dynamic Island 搭載 iPhone（大型ディスプレイ）", "large",
-     ["iPhone 17 Pro Max", "iPhone 16 Pro Max"]),
-    ("medium-1206x2622", (1206, 2622), "Dynamic Island 搭載 iPhone（中型ディスプレイ）", "medium",
-     ["iPhone 17 Pro", "iPhone 16 Pro"]),
+    ("", [(1320, 2868), (1290, 2796), (1260, 2736)], "Dynamic Island 搭載 iPhone（大型ディスプレイ）", "large"),
+    ("medium", [(1206, 2622), (1179, 2556)], "Dynamic Island 搭載 iPhone（中型ディスプレイ）", "medium"),
 ]
+
+
+def accepted(kind):
+    """その枠で Apple が受け付ける寸法（縦）"""
+    return next(sizes for _, sizes, _, frame_kind in FRAMES if frame_kind == kind)
 
 # (出力の名前, 材料の画面写真の名前の頭)。アプリの芯の輪の順（見つける → 計画する → 撮る、載せる → 話す）。
 # 2026-11-23（owner「AIに頼むって文字ないような」）: 宣伝文の先頭が AI なので、検索結果に出る最初の3枚に入る2枚目に AI に頼む
@@ -148,19 +153,133 @@ def check_demo(ui_dir=UI_DIR):
     return bad
 
 
-def pick_device(kind, available):
-    """撮る機種（`FRAMES` の候補のうち、その場に在る最初のもの）。無ければ None（縮めて合わせる機種には落とさない）"""
-    for _, _, _, frame_kind, candidates in FRAMES:
-        if frame_kind == kind:
-            return next((name for name in candidates if name in available), None)
+def png_size(path):
+    """PNG の寸法（頭の IHDR から読む・Pillow を使わない）"""
+    with open(path, "rb") as f:
+        head = f.read(24)
+    if head[:8] != b"\x89PNG\r\n\x1a\n":
+        return None
+    return int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
+
+
+def profile_size(profile):
+    """機種の情報（`profile.plist` の mainScreenWidth・mainScreenHeight・mainScreenScale）から画面写真の寸法（縦）。
+    値が点（小さい）なら倍率を掛ける。読めなければ None"""
+    try:
+        w, h = float(profile["mainScreenWidth"]), float(profile["mainScreenHeight"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    scale = float(profile.get("mainScreenScale") or 1)
+    if max(w, h) < 1100:
+        w, h = w * scale, h * scale
+    w, h = int(round(w)), int(round(h))
+    return (min(w, h), max(w, h))
+
+
+def ios_version(runtime_id):
+    """「com.apple.CoreSimulator.SimRuntime.iOS-26-1」→ (26, 1)。iOS でなければ None"""
+    tail = runtime_id.rsplit(".", 1)[-1]
+    if not tail.startswith("iOS-"):
+        return None
+    return tuple(int(x) for x in tail[4:].split("-") if x.isdigit())
+
+
+def select_device(kind, types, payload):
+    """撮る機種を選ぶ（画面写真の寸法が、その枠で受け付ける寸法そのものの iPhone）。
+
+    - `types`: [{"identifier", "name", "size": (w, h) か None}]（`size` は機種の情報か、撮った1枚から）
+    - `payload`: `simctl list devices -j`
+    受け付ける寸法の先のものを先に、同じ寸法なら名前の数の大きい（新しい）機種を先に選ぶ。
+    その機種のシミュレータが在れば、いちばん新しい iOS のものを使う（("use", 名前, 寸法, 機種名)）。
+    無ければ作る（("create", 機種の identifier, 寸法, 機種名)）。どれも無ければ None（縮めて合わせる機種には落とさない）"""
+    import re
+    sizes = accepted(kind)
+
+    def newness(t):
+        found = re.search(r"\d+", t["name"])
+        return int(found.group()) if found else 0
+
+    candidates = [t for t in types if t["name"].startswith("iPhone") and t.get("size") in sizes]
+    candidates.sort(key=lambda t: (sizes.index(t["size"]), -newness(t), t["name"]))
+    for t in candidates:
+        found = []
+        for runtime, devices in payload.get("devices", {}).items():
+            version = ios_version(runtime)
+            if version is None:
+                continue
+            for d in devices:
+                if d.get("isAvailable") and d.get("deviceTypeIdentifier") == t["identifier"]:
+                    found.append((version, d["name"]))
+        if found:
+            return ("use", max(found)[1], t["size"], t["name"])
+        return ("create", t["identifier"], t["size"], t["name"])
     return None
 
 
-def available_devices():
+def simctl_json(*args):
     import subprocess
-    raw = subprocess.run(["xcrun", "simctl", "list", "devices", "available", "-j"],
-                         capture_output=True, text=True, check=True).stdout
-    return {d["name"] for ds in json.loads(raw).get("devices", {}).values() for d in ds if d.get("isAvailable")}
+    return json.loads(subprocess.run(["xcrun", "simctl", "list", *args, "-j"],
+                                     capture_output=True, text=True, check=True).stdout)
+
+
+def measured_types(payload):
+    """入っている iPhone の機種と、その画面写真の寸法。機種の情報から出せない機種は、シミュレータを1回起動して撮った1枚で測る"""
+    import plistlib
+    import subprocess
+    import tempfile
+    types = []
+    for t in simctl_json("devicetypes").get("devicetypes", []):
+        if not t.get("name", "").startswith("iPhone"):
+            continue
+        size = None
+        bundle = t.get("bundlePath") or ""
+        for path in (os.path.join(bundle, "Contents", "Resources", "profile.plist"),):
+            if os.path.exists(path):
+                with open(path, "rb") as f:
+                    size = profile_size(plistlib.load(f))
+        types.append({"identifier": t.get("identifier"), "name": t["name"], "size": size})
+    for t in types:
+        if t["size"] is not None:
+            continue
+        udid = next((d["udid"] for ds in payload.get("devices", {}).values() for d in ds
+                     if d.get("isAvailable") and d.get("deviceTypeIdentifier") == t["identifier"]), None)
+        if not udid:
+            continue
+        with tempfile.TemporaryDirectory() as work:
+            shot = os.path.join(work, "shot.png")
+            subprocess.run(["xcrun", "simctl", "boot", udid], capture_output=True)
+            subprocess.run(["xcrun", "simctl", "bootstatus", udid, "-b"], capture_output=True)
+            if subprocess.run(["xcrun", "simctl", "io", udid, "screenshot", shot], capture_output=True).returncode == 0:
+                size = png_size(shot)
+                t["size"] = (min(size), max(size)) if size else None
+            subprocess.run(["xcrun", "simctl", "shutdown", udid], capture_output=True)
+    return types
+
+
+def device_for(kind):
+    """撮る機種のシミュレータの名前（無ければ作る）。選んだ機種と寸法を標準エラーに出す。どれも無ければ None"""
+    import subprocess
+    payload = simctl_json("devices", "available")
+    types = measured_types(payload)
+    for t in types:
+        print(f"機種 {t['name']}: {'×'.join(map(str, t['size'])) if t['size'] else '寸法が分からない'}", file=sys.stderr)
+    chosen = select_device(kind, types, payload)
+    if chosen is None:
+        return None
+    how, ref, size, type_name = chosen
+    if how == "create":
+        runtimes = [r for r in simctl_json("runtimes").get("runtimes", [])
+                    if r.get("isAvailable") and ios_version(r.get("identifier", "")) is not None]
+        if not runtimes:
+            return None
+        runtime = max(runtimes, key=lambda r: ios_version(r["identifier"]))["identifier"]
+        made = subprocess.run(["xcrun", "simctl", "create", type_name, ref, runtime], capture_output=True, text=True)
+        if made.returncode != 0:
+            return None
+        ref = type_name
+    print(f"選んだ機種（{kind}）: {type_name}（{size[0]}×{size[1]}）シミュレータ「{ref}」{'を作った' if how == 'create' else ''}",
+          file=sys.stderr)
+    return ref
 
 
 def runtime_of(name, payload):
@@ -173,11 +292,13 @@ def runtime_of(name, payload):
     return "?"
 
 
-def copy_exact(src, dest, size):
-    """材料をそのまま書き出す。寸法が違えば書かずに理由を返す（縮めない）。透過は外す（App Store は透過の無い PNG）"""
+def copy_exact(src, dest, sizes):
+    """材料をそのまま書き出す。寸法が受け付ける寸法のどれでもなければ書かずに理由を返す（縮めない）。
+    透過は外す（App Store は透過の無い PNG）"""
     with Image.open(src) as image:
-        if image.size != size:
-            return f"寸法が {image.width}×{image.height}（{size[0]}×{size[1]} が要る・縮めて合わせない）"
+        if image.size not in sizes:
+            want = "、".join(f"{w}×{h}" for w, h in sizes)
+            return f"寸法が {image.width}×{image.height}（{want} のどれかが要る・縮めて合わせない）"
         if image.mode == "RGB":
             shutil.copyfile(src, dest)
         else:
@@ -205,7 +326,7 @@ def main():
             print(f"-only-testing:{UI_TARGET}/{test}")
         return 0
     if len(sys.argv) == 3 and sys.argv[1] == "--device":
-        name = pick_device(sys.argv[2], available_devices())
+        name = device_for(sys.argv[2])
         if not name:
             print(f"::error::App Store 用の絵を撮る機種（{sys.argv[2]}）のシミュレータがありません（縮めて合わせない）", file=sys.stderr)
             return 1
@@ -225,20 +346,25 @@ def main():
     out = sys.argv[3]
     os.makedirs(out, exist_ok=True)
     missing = []
-    for sub, size, label, kind, _ in FRAMES:
+    for sub, sizes, label, kind in FRAMES:
         found = shots_by_name(folders[kind])
         folder_out = os.path.join(out, sub) if sub else out
         os.makedirs(folder_out, exist_ok=True)
+        seen = set()
         for name, prefix in SLIDES:
             path = pick(found, prefix)
             if path is None:
                 missing.append(f"{label} の {name}（材料「{prefix}…」が無い）")
                 continue
-            why = copy_exact(path, os.path.join(folder_out, f"{name}.png"), size)
+            why = copy_exact(path, os.path.join(folder_out, f"{name}.png"), sizes)
             if why:
                 missing.append(f"{label} の {name}（{why}）")
             else:
+                seen.add(png_size(os.path.join(folder_out, f"{name}.png")))
                 print(f"置いた（そのまま）: {os.path.join(sub, name) if sub else name}.png")
+        # 1組の中の寸法はそろえる（App Store Connect は1つの枠に同じ寸法の絵を並べる）
+        if len(seen) > 1:
+            missing.append(f"{label} の寸法がそろっていない（{'、'.join(f'{w}×{h}' for w, h in sorted(seen))}）")
     large = shots_by_name(folders["large"])
     for name, prefix in REVIEW:
         path = pick(large, prefix)
@@ -262,10 +388,11 @@ def readme(out, missing):
              "**合成なし。シミュレータの実際の画面をそのまま**（縮めていない・状態のバーは 9:41、電波と電池が満タン）。\n\n",
              f"- iOS: {os.environ.get('STORE_IOS', '?')}\n",
              f"- コミット: {os.environ.get('GITHUB_SHA', '?')}\n- 実行: {os.environ.get('GITHUB_RUN_NUMBER', '?')}\n\n"]
-    for sub, (fw, fh), label, kind, _ in FRAMES:
+    for sub, sizes, label, kind in FRAMES:
         folder_out = os.path.join(out, sub) if sub else out
         place = sub + "/" if sub else "./"
-        parts.append(f"## {label}（{fw}×{fh}）\n\n機種: {devices[kind]}\n\n置き場: `{place}`\n\n")
+        want = "、".join(f"{w}×{h}" for w, h in sizes)
+        parts.append(f"## {label}\n\n機種: {devices[kind]}\n\n受け付ける寸法: {want}\n\n置き場: `{place}`\n\n")
         if os.path.isdir(folder_out):
             for file in sorted(os.listdir(folder_out)):
                 if file.endswith(".png") and not file.startswith("review-"):

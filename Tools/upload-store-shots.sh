@@ -52,7 +52,7 @@ python3 -m venv "$WORK/venv" > /dev/null && "$WORK/venv/bin/pip" install --quiet
 status=0
 # pipefail なので python の失敗（材料が足りない＝1）が status に入る。ログには一時フォルダの道を出さない
 "$WORK/venv/bin/python" Tools/store-screenshots.py "$WORK/raw" "$WORK/raw-medium" "$WORK/out" | sed "s#$WORK/out/##" || status=$?
-# 6.9インチ（直下）と中型（`medium-1206x2622/`）の2組を合わせて数える（2026-11-23・札 #604）
+# 6.9インチ（直下）と中型（`medium/`）の2組を合わせて数える（2026-11-23・札 #604）
 count=$(find "$WORK/out" -type f -name '*.png' 2> /dev/null | wc -l | tr -d ' ')
 [ "${count:-0}" -gt 0 ] || fail "絵が1枚も作れませんでした"
 
