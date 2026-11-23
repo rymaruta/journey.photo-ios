@@ -13,12 +13,17 @@ App Store Connect の Web は iPhone では画面写真の追加・削除がで�
     何もせずに赤で止まる（配信中の版には触らない）。変える直前にも状態を読み直す
   - 触るのは iPhone の画面写真の組だけ。名前・説明などのメタデータ、App プレビュー、iPad の組、審査への提出には触らない
   - 画像の中身・アップロードの URL・鍵はログに出さない（ファイル名・枚数・状態だけ）
+  - 入れ替えるのは `--locales` で渡した言語だけ（既定 ja）。ほかの言語は消さない・作らない。版に無い言語は作らずに止まる
+  - 組ごとに全部 COMPLETE でなければその場で止める。古い組（6.5 以前）を消すのは、その言語の大型と中型がそろってから。
+    止まっても最後に今の組の中身を必ず出す。POST・DELETE は送り直さない（届いたか分からなければ読み直して確かめる）
 
 組の振り分け（ScreenshotDisplayType。Apple の enum には寸法が書かれていないので、Apple の「Screenshot specifications」と
 fastlane の `deliver/lib/deliver/app_screenshot.rb` の DEVICE_RESOLUTIONS で突き合わせた・2026-11-23）:
-  - APP_IPHONE_67 … 6.9インチ（と 6.7）。1320×2868・1290×2796・1260×2736。ここに大型の絵（出力の直下の `01-…png`〜）
+  - APP_IPHONE_67 … 6.9インチ（と 6.7）。1320×2868・1290×2796・1260×2736。ここに大型の絵
   - APP_IPHONE_61 … 6.3インチ（と 6.1 の一部）＝ Dynamic Island 搭載の中型。1206×2622・1179×2556。
-    ここに中型の絵（`medium-1206x2622/01-…png`〜）
+    ここに中型の絵
+  （2026-11-23: 撮る機種で寸法が変わるので、フォルダの名前（直下・`medium/`・`medium-1206x2622/`）には頼らず、
+   受け付ける寸法の一覧 SIZES だけで振り分ける）
   - APP_IPHONE_65・58・55・47・40・35 … 6.5インチ（Face ID 大型）以前の古い iPhone。中身を全部消す
     （6.9インチの組があれば、App Store Connect が縮めて使う）
   どの組に入れるかは、フォルダの名前ではなく **PNG の寸法** で決める（寸法の合わない絵は上げずに止まる）
@@ -26,7 +31,7 @@ fastlane の `deliver/lib/deliver/app_screenshot.rb` の DEVICE_RESOLUTIONS で�
 使う口（Apple「Uploading assets to App Store Connect」と各資源の文書・2026-11-23）:
   - GET    /v1/apps?filter[bundleId]=…
   - GET    /v1/apps/{id}/appStoreVersions?filter[versionString]=…&filter[platform]=IOS   （状態は appVersionState・appStoreState）
-  - GET    /v1/appStoreVersions/{id}/appStoreVersionLocalizations                        （その版の全部の言語）
+  - GET    /v1/appStoreVersions/{id}/appStoreVersionLocalizations                        （その版の言語。入れ替えるのは --locales で渡した言語だけ）
   - GET    /v1/appStoreVersionLocalizations/{id}/appScreenshotSets
   - GET    /v1/appScreenshotSets/{id}/appScreenshots
   - POST   /v1/appScreenshotSets                    （組が無ければ作る）
@@ -70,7 +75,9 @@ API = tfc.API
 
 LARGE = "APP_IPHONE_67"
 MEDIUM = "APP_IPHONE_61"
-SIZES = {(1320, 2868): LARGE, (1206, 2622): MEDIUM}
+# 受け付ける寸法（縦向き）→ 組。大型3種と中型2種（Apple の Screenshot specifications・fastlane の DEVICE_RESOLUTIONS）
+SIZES = {(1320, 2868): LARGE, (1290, 2796): LARGE, (1260, 2736): LARGE,
+         (1206, 2622): MEDIUM, (1179, 2556): MEDIUM}
 TARGETS = (LARGE, MEDIUM)
 OLD_IPHONE = ("APP_IPHONE_65", "APP_IPHONE_58", "APP_IPHONE_55", "APP_IPHONE_47", "APP_IPHONE_40", "APP_IPHONE_35")
 LABEL = {LARGE: "6.9インチ（大型）", MEDIUM: "6.3インチ（中型）", "APP_IPHONE_65": "6.5インチ（Face ID 大型）",
@@ -101,7 +108,7 @@ def collect(folder: str) -> dict[str, list[str]]:
     bad = []
     for dirpath, dirnames, filenames in os.walk(folder):
         if os.path.relpath(dirpath, folder) != ".":
-            dirnames[:] = []  # 見るのは直下と1段下（`medium-1206x2622/`）だけ
+            dirnames[:] = []  # 見るのは直下と1段下（`medium/` など。名前は見ない）だけ
         for name in filenames:
             if not SHOT_NAME.match(unicodedata.normalize("NFC", name)):
                 continue
@@ -145,11 +152,41 @@ def check_editable(version: dict) -> None:
 
 # ---- 計画 ----------------------------------------------------------------------------------
 
+LOCALE = re.compile(r"^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
+
+
+def parse_locales(text: str) -> list[str]:
+    """「ja,en-US」→ ["ja", "en-US"]。渡した言語だけを入れ替える（2026-11-23 判断: 版の全部の言語には触らない）。"""
+    out = []
+    for part in (text or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if not LOCALE.match(part):
+            raise Stop(f"言語の形が変です: {tfc.clean(part, 20)}（例 ja,en-US）")
+        if part not in out:
+            out.append(part)
+    if not out:
+        raise Stop("入れ替える言語がありません（例 ja）")
+    return out
+
+
+def pick_locales(locales: list[dict], wanted: list[str]) -> list[dict]:
+    """版の言語のうち、渡した言語だけ。版に無い言語は作らずに止める。"""
+    have = {loc["locale"]: loc for loc in locales}
+    missing = [w for w in wanted if w not in have]
+    if missing:
+        raise Stop(f"この版に言語 {', '.join(missing)} がありません（言語は App Store Connect で足す。ここでは作らない）。"
+                   f"版にある言語: {', '.join(sorted(have))}")
+    return [have[w] for w in wanted]
+
+
 def make_plan(locales: list[dict], files: dict[str, list[str]]) -> list[dict]:
-    """locales: [{"locale", "id", "sets": {display type: {"id", "shots": [{"id", "fileName"}]}}}]
-    → 言語ごとに [{"type", "set_id", "delete": [shot], "upload": [道]}]（iPhone の組だけ。iPad などは入れない）"""
+    """locales: [{"locale", "id", "sets": {display type: {"id", "shots": [{"id", "fileName"}]}}}]（入れ替える言語だけ）
+    → 言語ごとに [{"type", "set_id", "delete": [shot], "upload": [道], "upload_first"}]（iPhone の組だけ。iPad などは入れない）。
+    upload_first: 今の絵と新しい絵を足して10枚以下なら、先に上げてから消す（途中で止まっても組が空にならない）"""
     plan = []
-    for loc in sorted(locales, key=lambda x: x["locale"]):
+    for loc in locales:
         steps = []
         for kind in TARGETS + OLD_IPHONE:
             cur = loc["sets"].get(kind)
@@ -157,14 +194,17 @@ def make_plan(locales: list[dict], files: dict[str, list[str]]) -> list[dict]:
             upload = files[kind] if kind in TARGETS else []
             if not delete and not upload:
                 continue
-            steps.append({"type": kind, "set_id": cur["id"] if cur else None, "delete": delete, "upload": upload})
+            steps.append({"type": kind, "set_id": cur["id"] if cur else None, "delete": delete, "upload": upload,
+                          "upload_first": len(delete) + len(upload) <= MAX_PER_SET})
         plan.append({"locale": loc["locale"], "id": loc["id"], "steps": steps})
     return plan
 
 
-def print_plan(version: str, plan: list[dict], apply: bool) -> None:
+def print_plan(version: str, plan: list[dict], apply: bool, untouched: list[str] = ()) -> None:
     print(f"== 版 {version}（{EDITABLE}）の iPhone の画面写真を入れ替えます" + ("" if apply else "（下見・何も変えません）"))
-    print(f"言語: {len(plan)} 件（{', '.join(p['locale'] for p in plan)}）")
+    print(f"入れ替える言語: {len(plan)} 件（{', '.join(p['locale'] for p in plan)}）")
+    if untouched:
+        print(f"触らない言語: {', '.join(sorted(untouched))}")
     for p in plan:
         print(f"-- {p['locale']}")
         for s in p["steps"]:
@@ -172,23 +212,33 @@ def print_plan(version: str, plan: list[dict], apply: bool) -> None:
             line = f"   {LABEL.get(kind, kind)} [{kind}]: 消す {len(s['delete'])} 枚"
             if kind in TARGETS:
                 line += f" → 上げる {len(s['upload'])} 枚" + ("" if s["set_id"] else "（組を作る）")
+                line += "（先に上げて後で消す）" if s["upload_first"] else "（10枚を超えるので先に消す）"
+            else:
+                line += "（大型と中型がそろって COMPLETE になってから）"
             print(line)
             for shot in s["delete"]:
                 print(f"      - {tfc.clean(shot.get('fileName') or shot['id'], 80)}")
             for path in s["upload"]:
                 print(f"      + {os.path.basename(path)}")
     if not apply:
-        print("下見だけで終わりました。入れ替えるときは apply=true で流し直す")
+        print("下見だけで終わりました。入れ替えるときは ascApply=true で流し直す")
 
 
 # ---- App Store Connect ---------------------------------------------------------------------
+
+class Unsure(Exception):
+    """書き込みが届いたか分からない（5xx・つながらない）。送り直さず、読み直して確かめる。"""
+
 
 class Asc(tfc.Client):
     """`testflight-crashes.py` の Client に、書き込み（POST・PATCH・DELETE）と分割アップロードを足したもの。"""
 
     def call(self, method: str, path: str, body: dict | None = None) -> dict:
+        """書き込み。PATCH（同じものを何度送っても同じ）だけ送り直す。POST・DELETE は送り直さない
+        （2026-11-23 判断: 二重の予約・別の絵を消すのを避ける）。429 は受け付けていないので待って送り直す。DELETE の 404 は消せたとみなす"""
         url = API + path
         data = json.dumps(body).encode() if body is not None else None
+        retry = method == "PATCH"
         for attempt in range(5):
             req = urllib.request.Request(url, data=data, method=method, headers={
                 "Authorization": f"Bearer {self.jwt()}", "Accept": "application/json",
@@ -198,9 +248,13 @@ class Asc(tfc.Client):
                     raw = r.read()
                     return json.loads(raw) if raw else {}
             except urllib.error.HTTPError as e:
-                if e.code == 429 or e.code >= 500:
+                if method == "DELETE" and e.code == 404:
+                    return {}
+                if e.code == 429 or (retry and e.code >= 500):
                     time.sleep(2 ** attempt * 3)
                     continue
+                if e.code >= 500:
+                    raise Unsure(f"{method} {e.code}")
                 codes = ""
                 try:
                     codes = ",".join(sorted({x.get("code", "") for x in json.load(e).get("errors", [])}))
@@ -208,8 +262,10 @@ class Asc(tfc.Client):
                     pass
                 raise ApiError(e.code, codes)
             except urllib.error.URLError:
+                if not retry:
+                    raise Unsure(f"{method} つながらない")
                 time.sleep(2 ** attempt * 3)
-        raise Stop("App Store Connect が何度引いても答えませんでした")
+        raise Stop("App Store Connect が何度送っても受け付けませんでした")
 
     def get_all(self, path: str, params: dict | None = None) -> list[dict]:
         out, url = [], path
@@ -273,15 +329,73 @@ def read_locales(c, version_id: str) -> list[dict]:
     return locales
 
 
+def shots_of(c, set_id: str) -> list[dict]:
+    return [{"id": x["id"], **(x.get("attributes") or {})} for x in c.get_all(
+        f"/v1/appScreenshotSets/{set_id}/appScreenshots", {"fields[appScreenshots]": "fileName,assetDeliveryState", "limit": 50})]
+
+
+def delete_shot(c, shot_id: str) -> None:
+    try:
+        c.call("DELETE", f"/v1/appScreenshots/{shot_id}")
+    except Unsure:
+        # 届いたか分からない: 送り直さず読み直す（404 なら消えている）
+        try:
+            c.get(f"/v1/appScreenshots/{shot_id}", {"fields[appScreenshots]": "fileName"})
+        except ApiError as e:
+            if e.status == 404:
+                return
+            raise
+        raise Stop("絵を消せたか分かりません（App Store Connect が答えなかった）。ここで止めます")
+
+
+def create_set(c, loc_id: str, kind: str) -> str:
+    try:
+        res = c.call("POST", "/v1/appScreenshotSets", {"data": {
+            "type": "appScreenshotSets", "attributes": {"screenshotDisplayType": kind},
+            "relationships": {"appStoreVersionLocalization": {
+                "data": {"type": "appStoreVersionLocalizations", "id": loc_id}}}}})
+        return res["data"]["id"]
+    except Unsure:
+        # 届いたか分からない: 送り直さず読み直す（できていればそれを使う）
+        for st in c.get_all(f"/v1/appStoreVersionLocalizations/{loc_id}/appScreenshotSets",
+                            {"fields[appScreenshotSets]": "screenshotDisplayType", "limit": 50}):
+            if (st.get("attributes") or {}).get("screenshotDisplayType") == kind:
+                return st["id"]
+        raise Stop(f"{LABEL[kind]}の組を作れたか分かりません（読み直しても無い）。ここで止めます")
+
+
+def cover(ops: list[dict], size: int) -> bool:
+    """送り方の区切りが 0 から size まで、重ならず隙間なく並んでいるか。"""
+    pos = 0
+    for off, length in sorted((int(op.get("offset", 0)), int(op.get("length", 0))) for op in ops):
+        if off != pos or length <= 0:
+            return False
+        pos += length
+    return pos == size
+
+
 def upload_one(c, set_id: str, path: str) -> str:
     name = unicodedata.normalize("NFC", os.path.basename(path))
     with open(path, "rb") as f:
         blob = f.read()
-    res = c.call("POST", "/v1/appScreenshots", {"data": {
-        "type": "appScreenshots", "attributes": {"fileName": name, "fileSize": len(blob)},
-        "relationships": {"appScreenshotSet": {"data": {"type": "appScreenshotSets", "id": set_id}}}}})
+    before = {x["id"] for x in shots_of(c, set_id)}
+    try:
+        res = c.call("POST", "/v1/appScreenshots", {"data": {
+            "type": "appScreenshots", "attributes": {"fileName": name, "fileSize": len(blob)},
+            "relationships": {"appScreenshotSet": {"data": {"type": "appScreenshotSets", "id": set_id}}}}})
+    except Unsure:
+        # 予約が届いたか分からない: 送り直さず読み直し、できていた予約（送る先が分からない）は消してから止める
+        for x in shots_of(c, set_id):
+            if x["id"] not in before and unicodedata.normalize("NFC", x.get("fileName") or "") == name:
+                delete_shot(c, x["id"])
+        raise Stop(f"{name} の予約が届いたか分かりません（読み直して、できていた予約は消しました）。ここで止めます")
     shot = res["data"]
-    for op in (shot.get("attributes") or {}).get("uploadOperations") or []:
+    ops = (shot.get("attributes") or {}).get("uploadOperations") or []
+    if not ops:
+        raise Stop(f"{name} の送り方（uploadOperations）が返りませんでした")
+    if not cover(ops, len(blob)):
+        raise Stop(f"{name} の送り方の区切りがファイルの大きさと合いません")
+    for op in ops:
         off, length = int(op.get("offset", 0)), int(op.get("length", 0))
         c.put_part(op, blob[off:off + length])
     c.call("PATCH", f"/v1/appScreenshots/{shot['id']}", {"data": {
@@ -290,10 +404,10 @@ def upload_one(c, set_id: str, path: str) -> str:
     return shot["id"]
 
 
-def wait_complete(c, ids: list[str], timeout: float, sleep=time.sleep) -> dict[str, str]:
-    """{id: 状態}。COMPLETE か FAILED になるまで待つ（処理は数秒〜数分・Apple の文書）。"""
+def wait_complete(c, ids: list[str], deadline: float, sleep=None) -> dict[str, str]:
+    """{id: 状態}。COMPLETE か FAILED になるか、締め切り（段の残り時間から決めた時刻）まで待つ（処理は数秒〜数分・Apple の文書）。"""
+    sleep = sleep or time.sleep
     states: dict[str, str] = {}
-    end = time.time() + timeout
     pending = list(ids)
     while pending:
         for sid in list(pending):
@@ -303,40 +417,50 @@ def wait_complete(c, ids: list[str], timeout: float, sleep=time.sleep) -> dict[s
             if st in ("COMPLETE", "FAILED"):
                 pending.remove(sid)
         if pending:
-            if time.time() > end:
+            if time.time() > deadline:
                 break
             sleep(5)
     return states
 
 
-def apply_plan(c, version_id: str, plan: list[dict], timeout: float) -> None:
+def apply_plan(c, plan: list[dict], deadline: float) -> None:
+    """言語ごとに、大型 → 中型 → 古い組の順。組ごとに全部 COMPLETE でなければその場で止める。
+    古い組（6.5 以前）を消すのは、その言語の大型と中型がそろって COMPLETE になってから。"""
     for p in plan:
-        for s in p["steps"]:
-            for shot in s["delete"]:
-                c.call("DELETE", f"/v1/appScreenshots/{shot['id']}")
-            if s["type"] not in TARGETS:
-                print(f"{p['locale']} {LABEL[s['type']]}: {len(s['delete'])} 枚を消しました")
-                continue
-            set_id = s["set_id"]
-            if not set_id:
-                res = c.call("POST", "/v1/appScreenshotSets", {"data": {
-                    "type": "appScreenshotSets", "attributes": {"screenshotDisplayType": s["type"]},
-                    "relationships": {"appStoreVersionLocalization": {
-                        "data": {"type": "appStoreVersionLocalizations", "id": p["id"]}}}}})
-                set_id = res["data"]["id"]
+        loc = p["locale"]
+        for s in [x for x in p["steps"] if x["type"] in TARGETS]:
+            kind = s["type"]
+            if time.time() > deadline:
+                raise Stop("段の残り時間が足りません。ここで止めます（流し直せば入れ替え直す）")
+            how = "先に上げて後で消す" if s["upload_first"] else "先に消して後で上げる"
+            print(f"-- {loc} {LABEL[kind]}: 今 {len(s['delete'])} 枚 → {len(s['upload'])} 枚を始めます（{how}）")
+            set_id = s["set_id"] or create_set(c, p["id"], kind)
+            if not s["upload_first"]:
+                for shot in s["delete"]:
+                    delete_shot(c, shot["id"])
             ids = [upload_one(c, set_id, path) for path in s["upload"]]
-            states = wait_complete(c, ids, timeout)
+            states = wait_complete(c, ids, deadline)
+            bad = [states.get(i, "?") for i in ids if states.get(i) != "COMPLETE"]
+            if bad:
+                raise Stop(f"{loc} {LABEL[kind]}: COMPLETE にならない絵が {len(bad)} 枚（{'・'.join(sorted(set(bad)))}）。"
+                           "ここで止めます（古い組は消していません）")
+            if s["upload_first"]:
+                for shot in s["delete"]:
+                    delete_shot(c, shot["id"])
             c.call("PATCH", f"/v1/appScreenshotSets/{set_id}/relationships/appScreenshots",
                    {"data": [{"type": "appScreenshots", "id": i} for i in ids]})
-            ok = sum(1 for i in ids if states.get(i) == "COMPLETE")
-            print(f"{p['locale']} {LABEL[s['type']]}: 消した {len(s['delete'])} 枚、上げた {len(ids)} 枚（COMPLETE {ok} 枚）")
+            print(f"   {loc} {LABEL[kind]}: 消した {len(s['delete'])} 枚、上げた {len(ids)} 枚（全部 COMPLETE）")
+        for s in [x for x in p["steps"] if x["type"] not in TARGETS]:
+            print(f"-- {loc} {LABEL[s['type']]}: 古い組の {len(s['delete'])} 枚を消します（大型と中型がそろったので）")
+            for shot in s["delete"]:
+                delete_shot(c, shot["id"])
 
 
 def summarize(locales: list[dict], files: dict[str, list[str]]) -> list[str]:
-    """終わったあとの組を読み、合わないもの（枚数・状態・名前の順）の一覧を返す（空なら全部そろった）。"""
+    """今の組を出し、合わないもの（枚数・状態・名前の順）の一覧を返す（空なら全部そろった）。"""
     problems = []
     print("== 入れ替えたあとの組")
-    for loc in sorted(locales, key=lambda x: x["locale"]):
+    for loc in locales:
         for kind in TARGETS + OLD_IPHONE:
             cur = loc["sets"].get(kind)
             shots = cur["shots"] if cur else []
@@ -360,37 +484,50 @@ def summarize(locales: list[dict], files: dict[str, list[str]]) -> list[str]:
 
 
 def run(c, a, files) -> int:
+    wanted = parse_locales(a.locales)
+    deadline = time.time() + max(60.0, a.budget - 90.0)  # 最後に今の組を読んで出す分を残す
     version = find_version(c, a.bundle_id, a.version)
     check_editable(version)
-    locales = read_locales(c, version["id"])
+    every = read_locales(c, version["id"])
+    locales = pick_locales(every, wanted)
     plan = make_plan(locales, files)
-    print_plan(a.version, plan, a.apply)
+    print_plan(a.version, plan, a.apply, [x["locale"] for x in every if x["locale"] not in wanted])
     if not a.apply:
         return 0
     # 変える直前にもう一度状態を読む（下見のあとで審査に出された版に触らない）
     check_editable(c.get(f"/v1/appStoreVersions/{version['id']}",
                          {"fields[appStoreVersions]": "versionString,appVersionState,appStoreState"})["data"])
-    apply_plan(c, version["id"], plan, a.timeout)
-    problems = summarize(read_locales(c, version["id"]), files)
+    problems = ["今の組を読めませんでした"]
+    try:
+        apply_plan(c, plan, deadline)
+    finally:
+        # 止まっても、必ず今の組の中身を出す（どこまで入れ替わったかを見て流し直せるように）
+        try:
+            problems = summarize(pick_locales(read_locales(c, version["id"]), wanted), files)
+        except (Stop, ApiError, Unsure) as e:
+            print(f"今の組を読めませんでした: {e}")
     if problems:
         for msg in problems:
             print(f"::error::{msg}")
         return 1
-    print("全部の言語で、大型と中型の組が COMPLETE になりました")
+    print(f"{', '.join(wanted)} で、大型と中型の組が COMPLETE になりました")
     return 0
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dir", help="store.tar をほどいた所。無ければ App Store Connect を読むだけ（下見だけ・絵が取れなかった回）")
+    ap.add_argument("--dir", help="絵のフォルダ。無ければ App Store Connect を読むだけ（下見だけ）")
     ap.add_argument("--version", required=True)
+    ap.add_argument("--locales", default="ja", help="入れ替える言語（例 ja,en-US）。ほかの言語には触らない")
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--bundle-id", default="com.journeyphoto.JourneyPhoto")
-    ap.add_argument("--timeout", type=float, default=600.0, help="処理の完了を待つ秒（1つの組ごと）")
+    # 段の上限（ios-testflight.yml の timeout-minutes）より短くする。送りと待ちはこの中に収め、超えそうなら止めて今の組を出す
+    ap.add_argument("--budget", type=float, default=2100.0, help="使ってよい秒（段の残り時間）")
     a = ap.parse_args(argv)
     try:
         if not re.fullmatch(r"\d+(\.\d+){1,3}", a.version):
             raise Stop(f"版の形が変です: {tfc.clean(a.version, 20)}（例 1.1.119）")
+        parse_locales(a.locales)
         if a.dir:
             files = collect(a.dir)
         elif a.apply:
@@ -412,6 +549,9 @@ def main(argv=None) -> int:
             return run(c, a, files)
     except Stop as e:
         print(f"::error::{e}")
+        return 1
+    except Unsure as e:
+        print(f"::error::App Store Connect が書き込みに答えませんでした（{e}）。送り直していません。今の組を確かめて流し直す")
         return 1
     except ApiError as e:
         hint = ""

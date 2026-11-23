@@ -898,6 +898,10 @@ if "ascVersion" in asc_tf:
         fail("ios-testflight.yml の App Store Connect に上げる段が、storeShots・ascVersion・PR でない回に絞られていません")
     if 'bash Tools/asc-screenshots.sh --local "$STORE_SHOTS_KEEP"' not in asc_tf:
         fail("ios-testflight.yml が作った絵（STORE_SHOTS_KEEP）を Tools/asc-screenshots.sh --local に渡していません")
+    if re.search(r'^      ascLocales:\n(?:        .*\n)*?        default: "ja"$', asc_tf, re.M) is None:
+        fail("ios-testflight.yml の ascLocales の既定が ja ではありません（渡した言語だけを入れ替える）")
+    if "group: asc-${{ inputs.ascVersion != '' && inputs.ascVersion || github.run_id }}" not in asc_tf:
+        fail("ios-testflight.yml の build に、同じ版を同時に触らない concurrency（asc-<版>）がありません")
     if "      - name: App Store Connect に上げるのは storeShots の回だけ\n" not in asc_tf:
         fail("ios-testflight.yml に、storeShots でない回で ascVersion を止める段がありません")
     # 版の状態の止め: PREPARE_FOR_SUBMISSION 以外は止める・下見の前と変える直前の2回読む

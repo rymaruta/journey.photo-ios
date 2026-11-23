@@ -31,7 +31,20 @@ fi
 
 WORK="$(mktemp -d)"
 # STORE_SHOTS_KEEP があれば、作った絵をそこにも写して残す（同じ回の次の段が App Store Connect に上げる・札 #604・2026-11-23）
-trap '[ -n "${STORE_SHOTS_KEEP:-}" ] && [ -d "$WORK/out" ] && rm -rf -- "$STORE_SHOTS_KEEP" && cp -R "$WORK/out" "$STORE_SHOTS_KEEP"; rm -rf "$WORK"' EXIT
+# 残せなければ赤（上げる段が古い絵・欠けた絵を使わないように）
+keep_out() {
+    local rc=$?
+    if [ -n "${STORE_SHOTS_KEEP:-}" ] && [ -d "$WORK/out" ]; then
+        if ! { rm -rf -- "$STORE_SHOTS_KEEP" && cp -R "$WORK/out" "$STORE_SHOTS_KEEP"; }; then
+            rm -rf -- "$STORE_SHOTS_KEEP"
+            echo "::error::App Store 用の絵を App Store Connect に上げる段のために残せませんでした"
+            rc=1
+        fi
+    fi
+    rm -rf "$WORK"
+    exit "$rc"
+}
+trap keep_out EXIT
 chmod 700 "$WORK"
 
 xcrun xcresulttool export attachments --path "$XCRESULT" --output-path "$WORK/raw" > /dev/null \

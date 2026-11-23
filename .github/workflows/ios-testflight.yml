@@ -41,6 +41,9 @@ on:
       ascApply:
         type: boolean
         default: false
+      ascLocales:
+        type: string
+        default: "ja"
   workflow_dispatch:
     inputs:
       submit:
@@ -92,6 +95,11 @@ on:
         description: "true で入れ替える。false は下見（何を消して何を上げるかを出すだけ）"
         type: boolean
         default: false
+      # 入れ替える言語だけを渡す（版の全部の言語には触らない・2026-11-23 判断）。版に無い言語は作らずに止まる
+      ascLocales:
+        description: "画面写真を入れ替える言語（例 ja,en-US）。ほかの言語には触らない"
+        type: string
+        default: "ja"
 
 # 🔴 **TestFlight に上げる回は同時に1本だけ**（2026-10-04）。2本が同時に走ると、
 # どちらも `Tools/next-marketing-version.sh` で同じ版を決め、**同じ版が2つ上がる**
@@ -141,6 +149,10 @@ jobs:
     # 続く Archive・上げるまで入れると 160 分に当たる（run 788 は Archive の途中で cancelled）。
     # この組だけ上限を延ばす（上げる回の流れは変えない・止めもしない。理由は「どこまで流すかを決める」の注記）
     timeout-minutes: 160
+    # 同じ版の画面写真を2本の回が同時に触らない（札 #604）。ascVersion の無い回は回ごとに別の組で、待たない
+    concurrency:
+      group: asc-${{ inputs.ascVersion != '' && inputs.ascVersion || github.run_id }}
+      cancel-in-progress: false
 
     steps:
       - uses: actions/checkout@v7
@@ -637,15 +649,18 @@ jobs:
       # ascApply=false は下見。絵の中身・アップロードの URL・鍵はログに出さない（ファイル名・枚数・状態だけ）
       - name: App Store Connect に画面写真を入れ替える
         if: ${{ success() && inputs.storeShots && inputs.ascVersion != '' && github.event_name != 'pull_request' }}
-        timeout-minutes: 30
+        # 台本は ASC_BUDGET_SECONDS（この上限より5分短い）の中で送りと待ちを終え、超えそうなら止めて今の組を出す
+        timeout-minutes: 40
         env:
           ASC_VERSION: ${{ inputs.ascVersion }}
+          ASC_LOCALES: ${{ inputs.ascLocales }}
+          ASC_BUDGET_SECONDS: "2100"
           # ascApply は真偽でも文字（API から -f で 'true'）でも来る。'false' の文字を真と読まないよう両方を名指しで比べる
           ASC_MODE: ${{ (inputs.ascApply == true || inputs.ascApply == 'true') && 'apply' || 'dry-run' }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
-        run: bash Tools/asc-screenshots.sh --local "$STORE_SHOTS_KEEP" "$ASC_VERSION" "$ASC_MODE"
+        run: bash Tools/asc-screenshots.sh --local "$STORE_SHOTS_KEEP" "$ASC_VERSION" "$ASC_MODE" "$ASC_LOCALES"
 
       - name: App Store 用の絵の一時の場所を消す
         if: ${{ always() && inputs.storeShots && inputs.ascVersion != '' }}
