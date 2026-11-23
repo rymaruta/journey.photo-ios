@@ -1,4 +1,13 @@
 import SwiftUI
+// 「Apple でサインイン」のボタン（`SignInWithAppleButton`・札 #601）
+import AuthenticationServices
+
+/// Google のボタンの暗い形の色（Google のブランドの決まりの値。板の色ではないので `WebTheme` に置かない・札 #715）
+enum GoogleButtonColors {
+    static let fill = Color(red: 0x13 / 255, green: 0x13 / 255, blue: 0x14 / 255)
+    static let stroke = Color(red: 0x8E / 255, green: 0x91 / 255, blue: 0x8F / 255)
+    static let text = Color(red: 0xE3 / 255, green: 0xE3 / 255, blue: 0xE3 / 255)
+}
 
 /// ログイン・新規登録・パスワードの再設定。1画面で切り替える。
 ///
@@ -35,6 +44,16 @@ struct SignInView: View {
     @State private var tiles: [Photo] = []
     /// いま打っている欄。**右下のキーで次の欄へ進め、最後の欄で送る**（2026-11-14 判断・`AuthFieldFlow`）
     @FocusState private var focusedField: AuthFieldFlow.Field?
+    /// 「Apple でサインイン」をサーバーで使えるか（`GET /auth/apple/status`）。**分かるまでは出さない**——
+    /// 鍵の入っていない環境・口がまだ無い本番ではボタンを出さない（押しても進めないボタンを置かない）
+    @State private var appleAvailable = false
+    /// いま開いている Apple の頼みの nonce（Apple には SHA-256、サーバーには元の値を渡す・`SignInNonce`）。
+    /// 開いている間はボタンを止め、2つ目の頼みでも同じ nonce を使う（上書きして照らせなくなるのを防ぐ・2026-11-23 確かめ役の指摘）
+    @State private var appleNonce: SignInNonce?
+    /// 「Google でログイン」をサーバーで使えるか（`GET /auth/google/status`・札 #715）。分かるまでは出さない
+    @State private var googleAvailable = false
+    /// Google の画面を開いている間（ボタンを止める。2つ目の頼みを開かない）
+    @State private var googleOpen = false
 
     /// - Parameter entry: 開いたときの側。お願いの「新規登録」から来たら登録の側で開く（札 #630・2026-11-15）。
     ///   **画面の見た目と流れは変えない**——今の「アカウントを作る」を押した後と同じ状態から始めるだけ
@@ -99,6 +118,10 @@ struct SignInView: View {
         // （実機の絵で確認・run 38）
         .webScreen()
         .task { await loadTiles() }
+        .task { appleAvailable = await environment.appleSignIn.isAvailable() }
+        .task { googleAvailable = await environment.googleSignIn.isAvailable() }
+        // Google の画面から戻ってきた URL（URL の型 `GoogleSignInConfig.urlScheme`）を部品に渡す
+        .onOpenURL { url in _ = GoogleSignInClient.handle(url) }
         // 確認への入口は、失敗したときのメールアドレスについての案内——打ち直したら下げる
         .onChange(of: email) { _, _ in offerVerification = false }
     }
@@ -206,6 +229,9 @@ struct SignInView: View {
 
     private var credentialsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if appleAvailable || googleAvailable {
+                externalSection
+            }
             // **黒地では枠が要る。** 既定の入力欄は下線も背景も無く、
             // 黒の上では**どこを押すのか分からない**（実機の絵で確認）
             JPField(L("メールアドレス", "Email")) {
@@ -300,6 +326,138 @@ struct SignInView: View {
             }
             .buttonStyle(.plain)
             .disabled(auth.isWorking)
+        }
+    }
+
+    /// 外のアカウントの入口（「Apple でサインイン」札 #601・「Google でログイン」札 #715・2026-11-23）。
+    /// 押す回数は Apple が2回（ボタン → Face ID）、Google が2〜3回（ボタン → アカウントを選ぶ（→ 続ける））。
+    ///
+    /// 🔴 **Apple の標準のボタン（`SignInWithAppleButton`）をそのまま使う**（審査指針 4.8・Apple の HIG。
+    /// 形・字・印を作り替えない）。黒地なので白の形（HIG「暗い地には白」）。高さは主ボタンと同じ 50、
+    /// 角は主ボタンと同じカプセル（`jpPillButton`）。メールの欄より上に置き、下に「または」の線で分ける
+    /// （2026-11-23 判断: メールの欄を打つ前に目に入る所。いちばん少ない手数の入口を先に見せる）。
+    /// 登録の側では「Apple で登録」の字にする（押した後の流れは同じ）
+    private var externalSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if appleAvailable {
+                appleButton
+            }
+            if googleAvailable {
+                googleButton
+            }
+            // 「または」の線（区切りは字と余白で。中黒は使わない）
+            HStack(spacing: JPSpace.m) {
+                Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+                Text(L("またはメールアドレスで", "or with email"))
+                    .font(.footnote)
+                    .foregroundStyle(WebTheme.muted2)
+                    .fixedSize()
+                Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private var appleButton: some View {
+        SignInWithAppleButton(mode == .signUp ? .signUp : .signIn) { request in
+            request.requestedScopes = [.fullName, .email]
+            // 開いている頼みがあれば同じ nonce を使う（後の頼みで上書きすると、先に戻った答えが照らせない）
+            let nonce = appleNonce ?? SignInNonce.make()
+            appleNonce = nonce
+            request.nonce = nonce.hashed
+        } onCompletion: { result in
+            Task { await finishApple(result) }
+        }
+        .signInWithAppleButtonStyle(.white)
+        .frame(height: JPHeight.primaryButton)
+        .clipShape(Capsule())
+        // 🔴 シートを開いている間も止める（続けて押して頼みを2つ開かない）
+        .disabled(auth.isWorking || appleNonce != nil)
+        .opacity(auth.isWorking || appleNonce != nil ? 0.4 : 1)
+        .accessibilityIdentifier("signin.apple")
+    }
+
+    /// 「Google でログイン」（札 #715・2026-11-23）。Apple のボタンの下（札の決まり: Apple が上）。
+    ///
+    /// Google のボタンの決まり（Google Identity の「Sign in with Google」のブランドの決まり）の**暗い形**:
+    /// 地 #131314・縁 #8E918F・字 #E3E3E3、左に Google の正式な「G」の印（色を変えない・`GoogleG` の素材）。
+    /// 形は Apple のボタンにそろえて高さ 50・カプセル（Google の決まりは角の丸い形を許す）。字はシステムの中太
+    /// （2026-11-23 判断: 板の決まり「本文はシステム」。Google は Roboto を勧めるが必須ではない）。
+    /// 板の黒地に置いて浮かない色で、白の Apple のボタンより一段控えめに見える
+    private var googleButton: some View {
+        Button {
+            Task { await startGoogle() }
+        } label: {
+            HStack(spacing: 10) {
+                Image("GoogleG")
+                    .resizable()
+                    .frame(width: 20, height: 20)
+                    .accessibilityHidden(true)
+                Text(mode == .signUp ? L("Google で登録", "Sign up with Google") : L("Google でログイン", "Sign in with Google"))
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(GoogleButtonColors.text)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: JPHeight.primaryButton)
+            .background(Capsule().fill(GoogleButtonColors.fill))
+            .overlay(Capsule().stroke(GoogleButtonColors.stroke, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(auth.isWorking || googleOpen)
+        .opacity(auth.isWorking || googleOpen ? 0.4 : 1)
+        .accessibilityIdentifier("signin.google")
+    }
+
+    /// Google の画面を出し、受け取った ID トークンでログインする。本人が閉じたら何も言わない
+    private func startGoogle() async {
+        guard !googleOpen, !auth.isWorking else { return }
+        clearMessages()
+        googleOpen = true
+        defer { googleOpen = false }
+        let nonce = SignInNonce.make()
+        let got: (idToken: String?, name: String?)
+        do {
+            got = try await GoogleSignInClient.signIn(nonce: nonce)
+        } catch is GoogleSignInClient.Canceled {
+            return
+        } catch {
+            auth.errorMessage = AuthStore.googleSignInFailed
+            return
+        }
+        guard let credential = GoogleSignInCredential(idToken: got.idToken, rawNonce: nonce.raw, displayName: got.name) else {
+            auth.errorMessage = AuthStore.googleSignInFailed
+            return
+        }
+        let service = environment.googleSignIn
+        let started = await auth.signInWithGoogle(credential) { try await service.start($0) }
+        if started?.created == true { auth.noteProfileChanged() }
+    }
+
+    /// Apple のシートが閉じた。取り消し（本人が閉じた）は何も言わない
+    private func finishApple(_ result: Result<ASAuthorization, Error>) async {
+        clearMessages()
+        // nonce は1回きり（使い終わったら捨てる。次に押したら新しく作る）
+        let rawNonce = appleNonce?.raw
+        appleNonce = nil
+        switch result {
+        case .failure(let error):
+            if let apple = error as? ASAuthorizationError, apple.code == .canceled { return }
+            auth.errorMessage = AuthStore.appleSignInFailed
+        case .success(let authorization):
+            guard let apple = authorization.credential as? ASAuthorizationAppleIDCredential,
+                  let credential = AppleSignInCredential(identityToken: apple.identityToken,
+                                                         rawNonce: rawNonce,
+                                                         authorizationCode: apple.authorizationCode,
+                                                         givenName: apple.fullName?.givenName,
+                                                         familyName: apple.fullName?.familyName) else {
+                auth.errorMessage = AuthStore.appleSignInFailed
+                return
+            }
+            let service = environment.appleSignIn
+            let started = await auth.signInWithApple(credential) { try await service.start($0) }
+            // 新しいアカウントは、サーバーが名前を入れた。マイページに読み直させる
+            if started?.created == true { auth.noteProfileChanged() }
         }
     }
 

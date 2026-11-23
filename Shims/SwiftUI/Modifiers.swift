@@ -416,6 +416,8 @@ extension View {
     public func refreshable(action: @escaping () async -> Void) -> ModifiedContent<Self, Mod.Lifecycle> { ModifiedContent() }
     public func onAppear(perform action: (() -> Void)? = nil) -> ModifiedContent<Self, Mod.Lifecycle> { ModifiedContent() }
     public func onDisappear(perform action: (() -> Void)? = nil) -> ModifiedContent<Self, Mod.Lifecycle> { ModifiedContent() }
+    /// 外から開かれた URL（本物は iOS 14〜。Google でログインの戻り・札 #715）
+    public func onOpenURL(perform action: @escaping (URL) -> Void) -> ModifiedContent<Self, Mod.Lifecycle> { ModifiedContent() }
     public func onChange<V: Equatable>(of value: V, _ action: @escaping (V, V) -> Void) -> ModifiedContent<Self, Mod.Lifecycle> { ModifiedContent() }
     /// 最初の値でも一度呼ぶ形（本物は iOS 17〜 `onChange(of:initial:_:)`）
     public func onChange<V: Equatable>(of value: V, initial: Bool, _ action: @escaping (V, V) -> Void) -> ModifiedContent<Self, Mod.Lifecycle> { ModifiedContent() }
