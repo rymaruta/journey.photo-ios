@@ -143,8 +143,9 @@ final class BackgroundTransfer: NSObject, PhotoTransfer, URLSessionTaskDelegate,
         // presign の期限（15分）を過ぎた転送は S3 が断るので、待ち続けない
         config.timeoutIntervalForResource = 900
         // 渡すのは主スレッドで（猶予の取り直しは MainActor）
-        // StoreDemo の見張りの例外: 背景の転送は URLProtocol を通せない。App Store の見本（`StoreDemo`）の間は
-        // 端末の中の見本の通信（`PreviewBackend.transfer`）が本体を受けるので、この URLSession は作られない
+        // StoreDemo の見張りの例外: 背景の転送は URLProtocol を通せない。App Store の見本（`StoreDemo`）の間も、起動のときの
+        // `reconnect`（`AppDelegate`）がこの URLSession を作るが、前の起動の転送を繋ぎ直すだけで新しい要求は出さない。
+        // 投稿の本体は端末の中の見本の通信（`PreviewBackend.transfer`）が受ける
         let made = URLSession(configuration: config, delegate: self, delegateQueue: .main)
         madeSession = made
         return made

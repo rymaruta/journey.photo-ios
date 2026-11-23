@@ -776,7 +776,7 @@ enum PreviewSession {
     static var localBackend: Bool {
         #if DEBUG
         guard userId != nil else { return false }
-        // App Store の見本（`StoreDemo`）は必ず端末の中で答える（外へ1本も出さない）
+        // App Store の見本（`StoreDemo`）は必ず端末の中で答える（アプリの URLSession の要求は外へ出さない。出るものは `StoreDemo` の注記）
         if StoreDemo.isOn { return true }
         return UserDefaults.standard.bool(forKey: localBackendKey)
         #else

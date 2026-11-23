@@ -207,6 +207,20 @@ actor TripShareFixtureStore {
     }
 
     func chat(planId: String) -> TripChatPage {
+        #if DEBUG
+        // App Store の見本（`StoreDemo`）: 見本のプランの場所（伏見稲荷大社）に合わせた会話
+        if StoreDemo.isOn, messages[planId] == nil {
+            let first = StoreDemo.spots[0].spotId
+            messages[planId] = [
+                TripChatMessage(id: "m1", from: Self.friend, mine: false, t: "2026-11-10T09:00:00Z",
+                                text: StoreDemo.tripChatFirst, event: nil),
+                TripChatMessage(id: "m2", from: Self.friend, mine: false, t: "2026-11-10T09:01:00Z", text: nil,
+                                event: .init(type: "added", item: .spot(spotId: first, note: nil), day: 0)),
+                TripChatMessage(id: "m3", from: Self.me, mine: true, t: "2026-11-10T09:05:00Z",
+                                text: "いいね、朝いちで行こう", event: nil),
+            ]
+        }
+        #endif
         if messages[planId] == nil {
             messages[planId] = [
                 TripChatMessage(id: "m1", from: Self.friend, mine: false, t: "2026-11-10T09:00:00Z",
@@ -228,11 +242,15 @@ actor TripShareFixtureStore {
     }
 
     func inbox() -> [TripInboxItem] {
-        [TripInboxItem(planId: "fixture-kanazawa", title: "金沢・福井の旅",
+        var title = "金沢・福井の旅", excerpt = "朝のひがし茶屋街、人が少なくて良いらしい"
+        #if DEBUG
+        if StoreDemo.isOn { (title, excerpt) = (StoreDemo.tripPlanTitle, StoreDemo.tripChatFirst) }
+        #endif
+        return [TripInboxItem(planId: "fixture-kanazawa", title: title,
                        members: [.init(id: Self.me, name: L("わたし", "Me")), .init(id: Self.friend, name: "あお")],
                        unread: 1,
                        last: .init(from: Self.friend, fromName: "あお", mine: false, t: "2026-11-10T09:00:00Z",
-                                   excerpt: "朝のひがし茶屋街、人が少なくて良いらしい", event: nil),
+                                   excerpt: excerpt, event: nil),
                        updatedAt: "2026-11-10T09:00:00Z")]
     }
 }

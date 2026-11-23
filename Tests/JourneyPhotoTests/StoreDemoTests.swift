@@ -214,6 +214,124 @@ final class StoreDemoTests: XCTestCase {
         }
     }
 
+    // MARK: - 答え手の分かれ道（`PreviewBackendProtocol.startLoading` が呼ぶ `PreviewBackend.respond`）
+
+    private func respond(_ raw: String, token: Bool = false, demo: Bool = true) async -> PreviewBackend.Reply {
+        var request = URLRequest(url: URL(string: raw)!)
+        if token { request.setValue("Bearer \(PreviewBackend.token)", forHTTPHeaderField: "Authorization") }
+        return await PreviewBackend.respond(to: request, body: nil, demo: demo, userAPIPath: hosts.userAPIPath,
+                                            hosts: demo ? hosts : nil)
+    }
+
+    /// 見本の間、知らない置き場への要求は 403 で返る（外へ出ない）。見本の画像・公開の新着は見本から答える
+    func testRespondRefusesUnknownHostsAndAnswersFromDemo() async throws {
+        let d = UserDefaults.standard
+        let saved = (d.object(forKey: StoreDemo.key), d.object(forKey: PreviewSession.storiesKey))
+        defer {
+            d.set(saved.0, forKey: StoreDemo.key)
+            d.set(saved.1, forKey: PreviewSession.storiesKey)
+        }
+        d.set(true, forKey: StoreDemo.key)
+        d.set(true, forKey: PreviewSession.storiesKey)
+        let refused = await respond("https://upload.wikimedia.org/x.jpg")
+        XCTAssertEqual(refused.status, 403, "見本の間に知らない置き場へ出る")
+        let feed = await respond("https://user.example.com/prod/feed?limit=30")
+        let page = try JSONDecoder.api.decode(FeedPage.self, from: feed.body)
+        XCTAssertEqual(page.items.map(\.id), StoreDemo.photos.map { StoreDemo.photoId($0.asset) }, "公開の新着が見本でない")
+        // 鍵の要る口（ストーリー）は見本の通信へ回り、作者は見本の新着の人（本物の新着を読まない）
+        let stories = await respond("https://user.example.com/prod/stories", token: true)
+        XCTAssertEqual(stories.status, 200)
+        let rows = try XCTUnwrap(try JSONSerialization.jsonObject(with: stories.body) as? [[String: Any]])
+        let people = Set(StoreDemo.people.map(\.id) + [StoreDemo.userId])
+        XCTAssertFalse(rows.isEmpty)
+        for row in rows {
+            XCTAssertTrue(people.contains(row["userId"] as? String ?? ""), "見本でない人のストーリー: \(row)")
+            XCTAssertEqual(URL(string: row["src"] as? String ?? "")?.host, StoreDemo.host, "見本でない画像のストーリー")
+        }
+    }
+
+    /// 画像の入口（`DownsampledRemoteImage` の `GridImageInFlight`）は、見本の間は見本の置き場でない URL を読みに行かない
+    func testGridImageEntryRefusesNetworkImagesInDemo() async {
+        let d = UserDefaults.standard
+        let saved = d.object(forKey: StoreDemo.key)
+        defer { d.set(saved, forKey: StoreDemo.key) }
+        d.set(true, forKey: StoreDemo.key)
+        do {
+            _ = try await GridImageInFlight.shared.data(for: URL(string: "https://journey-photo.invalid/photos/a.jpg")!)
+            XCTFail("見本の間に本番の画像を読みに行く")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, .badURL, "見本の見張りより先に通信している: \(error)")
+        } catch {
+            XCTFail("見本の見張りで断っていない: \(error)")
+        }
+    }
+
+    /// 写真の出典の行は、見本の間は見せない（`CreditLinksMenu`・ホームの上の札が `StoreDemo.showsCredits` を見る）
+    func testCreditsAreHiddenOnlyInDemo() throws {
+        XCTAssertTrue(StoreDemo.showsCredits(demo: false))
+        XCTAssertFalse(StoreDemo.showsCredits(demo: true))
+        XCTAssertTrue(StoreDemo.showsCredits, "見本でないのに出典を隠す")
+        withDemo(true) { XCTAssertFalse(StoreDemo.showsCredits) }
+        let src = root.appendingPathComponent("Sources/JourneyPhoto/Features")
+        let menu = try String(contentsOf: src.appendingPathComponent("Spots/OfficialSpotView.swift"), encoding: .utf8)
+        let body = try XCTUnwrap(menu.components(separatedBy: "struct CreditLinksMenu").dropFirst().first)
+            .components(separatedBy: "private var tapArea").first ?? ""
+        XCTAssertTrue(body.contains("if !StoreDemo.showsCredits {") && body.contains(".hidden()"), "CreditLinksMenu が見本の間に出典を隠さない")
+        let face = try String(contentsOf: src.appendingPathComponent("Gallery/TopCardFace.swift"), encoding: .utf8)
+        XCTAssertTrue(face.contains(".opacity(StoreDemo.showsCredits ? 1 : 0)"), "ホームの上の札が見本の間に出典を隠さない")
+    }
+
+    // MARK: - 見本の会話・旅行プラン・作者
+
+    /// 作例の作者は `photo-sources.json` の本当の作者（旅のオフラインの頁などに字が出ても正しい名前）
+    func testSpotAuthorsAreTheRealAuthors() throws {
+        let data = try Data(contentsOf: root.appendingPathComponent("Tools/composition-examples/photo-sources.json"))
+        let sources = try XCTUnwrap((try JSONSerialization.jsonObject(with: data) as? [String: Any])?["photos"] as? [String: [String: Any]])
+        for spot in StoreDemo.spots {
+            let author = try XCTUnwrap(sources[spot.asset]?["author"] as? String)
+            XCTAssertEqual(StoreDemo.spotImage(spot.asset)["author"] as? String, author, spot.name)
+            let body = try JSONDecoder.api.decode(SpotBody.self, from: JSONSerialization.data(withJSONObject: XCTUnwrap(StoreDemo.spotBody(spot.slug))))
+            XCTAssertEqual(body.samples.first?.author, author, spot.name)
+            XCTAssertTrue(body.samples.first?.credit.contains(author) == true, "出典の文に本当の作者が無い: \(spot.name)")
+        }
+    }
+
+    /// 旅行プランの見本は、見本の観光スポットだけで組む（日程の行が名前を引ける・`TripPlanDetailView.spotFor`）
+    func testTripPlanFixtureUsesDemoSpotsInDemo() {
+        let ids = Set(StoreDemo.spots.map(\.spotId))
+        withDemo(true) {
+            let plans = TripPlanFixture.initialPlans(today: Date(), soon: false)
+            XCTAssertEqual(plans.map(\.title), [StoreDemo.tripPlanTitle])
+            let spotIds = plans.flatMap(\.days).flatMap(\.items).compactMap { item -> String? in
+                if case .spot(let id, _) = item { return id }
+                return nil
+            }
+            XCTAssertEqual(Set(spotIds), ids, "見本の4か所で組んでいない")
+        }
+        // 見本でなければ今までの金沢のプラン
+        XCTAssertTrue(TripPlanFixture.initialPlans(today: Date(), soon: false).contains { $0.title == "金沢・福井の旅" })
+    }
+
+    /// DM の見本の会話は、見本の写真と場所に合う文（本物の場所の話・夕焼けの話をしない）。見本でなければ今までどおり
+    func testDMConversationMatchesDemoPhotos() throws {
+        let me = StoreDemo.userId
+        let id = DMRules.conversationId(me, PreviewBackend.dmPeers[0].id)
+        func texts(demo: Bool) throws -> [String] {
+            let reply = try XCTUnwrap(PreviewBackend.dmReply(method: "GET", parts: ["dm", id], json: [:], me: me, now: Date(), demo: demo))
+            let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: reply.body) as? [String: Any])
+            return (object["items"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }
+        }
+        let demo = try texts(demo: true)
+        for word in ["夕焼け", "伊豆", "雪吊り", "kenrokuen"] {
+            XCTAssertFalse(demo.contains { $0.contains(word) }, "見本の写真と合わない文: \(word)")
+        }
+        XCTAssertTrue(demo.contains(StoreDemo.dmSpotLink))
+        XCTAssertTrue(demo.contains { $0.contains("伏見稲荷大社") })
+        XCTAssertTrue(try texts(demo: false).contains { $0.contains("伊豆") }, "見本でないのに会話の文が変わった")
+        let inbox = try XCTUnwrap(PreviewBackend.dmReply(method: "GET", parts: ["dm"], json: [:], me: me, now: Date(), demo: true))
+        XCTAssertTrue(String(decoding: inbox.body, as: UTF8.self).contains(StoreDemo.dmFirstExcerpt))
+    }
+
     // MARK: - 仕組みで守る（ソースの見張り）
 
     /// **URLSession を設定から作るところは、どれも `StoreDemo.guarded` を通す**（`URLProtocol.registerClass` は

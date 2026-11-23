@@ -12891,13 +12891,14 @@ final class ScreenshotTests: JPUITestCase {
         XCTAssertFalse(credit.exists && credit.isHittable, "見本の表示で作例の出典の行が押せる（出していないはず）")
     }
 
-    /// 3 旅行プラン（仲間と共有・日程）。見本のプラン（`-JPTripPlanFixture`・`-JPTripShareFixture`・金沢）
+    /// 3 旅行プラン（仲間と共有・日程）。見本のプラン（`-JPTripPlanFixture`・`-JPTripShareFixture`）。見本の表示では
+    /// 見本の観光スポット4か所で組んだ「京都と富士山の旅」（`StoreDemo.tripPlan`）
     func testStoreDemoTripPlan() {
         let app = launchStoreDemo(["-JPTripPlanFixture", "YES", "-JPTripShareFixture", "YES"])
         guard openTripsRow(app, "trips.plans") else { return unreached(app, "旅行プランの一覧") }
         let plan = app.descendants(matching: .any).matching(identifier: "trips.plan")
-            .matching(NSPredicate(format: "label CONTAINS %@", "金沢")).firstMatch
-        guard plan.waitForExistence(timeout: 10) else { return unreached(app, "見本の金沢のプラン") }
+            .matching(NSPredicate(format: "label CONTAINS %@", "京都と富士山")).firstMatch
+        guard plan.waitForExistence(timeout: 10) else { return unreached(app, "見本の京都と富士山のプラン") }
         plan.tap()
         guard app.descendants(matching: .any)["tripShare.strip"].firstMatch.waitForExistence(timeout: 15) else {
             return unreached(app, "旅行プランの頁", probes: ["tripShare.strip"])

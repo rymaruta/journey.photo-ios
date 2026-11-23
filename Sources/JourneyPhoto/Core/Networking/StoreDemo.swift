@@ -17,9 +17,11 @@ import UIKit
 ///   `Tools/composition-examples/photo-sources.json`（どれも CC0。クレジット不要・商用可）。2026-11-23 owner「写真ないので見本でお願い」
 ///   で、運営の写真の束（非公開の S3）を取りに行く形はやめた。画像の URL は `https://store-demo.invalid/photo/<名前>.jpg`
 ///   （`.invalid` は外へ出ない名前）で、答え手が同梱の画像を返す
-/// - **ネットワークからは何も読まない。** 見本の間は、アプリの全部の URLSession（`URLSession.shared` と、
+/// - **アプリの URLSession からはネットワークを読まない。** 見本の間は、アプリの全部の URLSession（`URLSession.shared` と、
 ///   設定から作るもの＝`guarded(_:)` を通したもの）の要求を `PreviewBackendProtocol` が引き受け、ここで答えるか断る。
-///   画像の入口（`DownsampledRemoteImage`・`RemoteImage`）でも、見本の置き場でない URL は読まない（`allowsImage`）。2段で守る
+///   画像の入口（`DownsampledRemoteImage`・`RemoteImage`・`AsyncImage(url:)`）でも、見本の置き場でない URL は読まない（`allowsImage`）。2段で守る。
+///   **URLSession を通らない通信は止められない**: Amplify（aws-crt の自前の HTTP・ログインの設定の読み込み）、地図のタイル（MapKit）、
+///   WeatherKit などの OS の部品。どれも利用者の写真は運ばない（画像はここの見張りを通る URL しか描かない）
 /// - 文は作った見本（利用者名は実在の人を思わせない作った名前）。場所の名前は、写真の出典に書かれた実際の場所と合うものだけ
 ///   （合わない写真は場所名なしの投稿）。作例の出典の行（`CreditLinksMenu`・ホームの上の札）は見本の間は出さない
 ///   （どれもクレジット不要の写真。ストアの絵に CC の表示を写さない）
@@ -47,6 +49,12 @@ enum StoreDemo {
     /// **この画像の URL を読んでよいか**（画像の入口の見張り）。見本でなければいつも true（本番の動きは変えない）。
     /// 見本の間は、見本の置き場・端末の中のファイル・data: だけ。ほかの URL（本番の写真・Commons・曲のジャケット）は読まない
     static func allowsImage(_ url: URL?) -> Bool { allowsImage(url, demo: isOn) }
+
+    /// 写真の出典の行（CC の表示）を見せるか。見本の間は見せない（`CreditLinksMenu`・ホームの上の札 `TopCardFace` がこれを見る）。
+    /// 見本の写真はどれもクレジット不要（CC0）で、ストアの絵に CC の表示を写さない。見本でなければいつも見せる
+    static var showsCredits: Bool { showsCredits(demo: isOn) }
+
+    static func showsCredits(demo: Bool) -> Bool { !demo }
 
     /// 画像に渡す URL（`AsyncImage(url:)` に直に渡す所が使う）。見本の間に読んではいけない URL は nil（URL の無い写真と同じ姿）
     static func imageURL(_ url: URL?) -> URL? { allowsImage(url) ? url : nil }
@@ -271,8 +279,19 @@ enum StoreDemo {
 
     /// 表紙の写真（同梱の写真。どれも CC0 で、作者と許諾は `photo-sources.json` のとおり。画面には出さない）
     static func spotImage(_ asset: String) -> [String: Any] {
-        ["url": photoURL(asset), "author": "journey.photo", "license": "CC0"]
+        ["url": photoURL(asset), "author": author(of: asset), "license": "CC0"]
     }
+
+    /// 写真の作者（`Tools/composition-examples/photo-sources.json` の `author` のまま・試験が突き合わせる）。
+    /// 出典の行は見本の間は出さないが、旅のオフラインの頁などに字が残っても本当の作者になるように
+    static let authors: [String: String] = [
+        "tunnel": "Sizableframe",
+        "tianzige": "Oskar Vertetics oskarvertetics",
+        "rootRectangle": "Hrykt",
+        "ratio4x5": "Sorasak boontohhgraphy",
+    ]
+
+    static func author(of asset: String) -> String { authors[asset] ?? "" }
 
     /// 場所ごとの本文（`spots/<slug>.json`）
     static func spotBody(_ slug: String) -> [String: Any]? {
@@ -285,15 +304,51 @@ enum StoreDemo {
             "check": ["kind": "human", "verifiedAt": "2026-11-01"],
             "samples": [[
                 "src": photoURL(s.asset), "width": 1920, "height": 2560, "title": s.name,
-                "author": "journey.photo", "license": "CC0", "sourceUrl": "https://\(host)/photo/\(s.asset)",
+                "author": author(of: s.asset), "license": "CC0", "sourceUrl": "https://\(host)/photo/\(s.asset)",
                 // 出どころは「その他」（Commons・Flickr の検査は upload.wikimedia.org などの置き場しか通さない）
-                "source": ["name": "journey.photo", "url": "https://\(host)/photo/\(s.asset)"],
+                "source": ["name": "Wikimedia Commons（アプリに同梱）", "url": "https://\(host)/photo/\(s.asset)"],
             ] as [String: Any]],
         ]
     }
 
     /// DM の見本で送る観光スポットの頁（`PreviewBackend.dmReply` の札の1通）
     static var dmSpotLink: String { "https://journey-photo.com/spots/\(spots[0].slug)" }
+
+    // MARK: - 見本の会話と旅行プラン（見本の写真と場所に合わせた文）
+
+    /// DM の見本の会話（`PreviewBackend.dmReply` の「夕焼けの人」との会話）の文。番号は `msg` の番号。
+    /// 引用のストーリー・写真の通（ホームの1枚目＝新倉山浅間公園）・スポットの札（伏見稲荷大社）と合う言葉にする
+    static let dmTexts: [Int: String] = [
+        1: "鳥居の写真、すごくきれい。どこですか？",
+        2: "ありがとうございます。京都の伏見稲荷大社です。",
+        3: "朝早くに行くと、参道に人が少なかったです",
+        4: "行ってみたい",
+        5: "富士山の写真もあります。送りますね",
+        10: "来月、一緒に京都へ行かない？",
+    ]
+
+    /// 受信箱の「夕焼けの人」の行の抜き書き（会話の最初の1通と同じ）
+    static var dmFirstExcerpt: String { dmTexts[1] ?? "" }
+
+    /// 旅行プランの見本（`TripPlanFixture.initialPlans` が見本の表示のときに使う）。見本の観光スポット4か所で組む。
+    /// planId は共有の見本（`TripShareFixtureStore`）と同じ `fixture-kanazawa` を使い回す（会話・仲間の見本がそのまま付く）
+    static let tripPlanTitle = "京都と富士山の旅"
+
+    static func tripPlan(start: String, end: String, shared: Bool, me: String, friend: String) -> TripPlan {
+        let ids = spots.map(\.spotId)
+        return TripPlan(
+            planId: "fixture-kanazawa", title: tripPlanTitle, startDate: start, endDate: end,
+            days: [
+                TripDay(items: [.spot(spotId: ids[0], note: nil), .spot(spotId: ids[3], note: nil), .spot(spotId: ids[1], note: nil)]),
+                TripDay(items: [.spot(spotId: ids[2], note: nil)]),
+            ],
+            createdAt: "2026-11-10T00:00:00Z", updatedAt: "2026-11-10T00:00:00Z",
+            share: shared ? TripShare(ownerId: me, memberIds: [me, friend], rev: 3) : nil,
+            addedBy: shared ? ["s:\(ids[0])": friend] : [:])
+    }
+
+    /// 旅行プランの会話の見本の最初の1通（`TripShareFixtureStore`）
+    static let tripChatFirst = "朝の伏見稲荷大社、人が少なくて良いらしい"
 
     // MARK: - 答え手
 
@@ -311,7 +366,7 @@ enum StoreDemo {
     }
 
     /// 見本の間の答え。**nil なら `PreviewBackend.reply`**（ユーザー API の鍵の要る口・ストーリー・DM）へ回す。
-    /// 知らない置き場は断る（403）。ここより先へ、要求は1本も出ない
+    /// 知らない置き場は断る（403）。答え手を通る要求は、ここより先へ1本も出ない（URLSession を通らない通信は型の注記）
     static func answer(method: String, url: URL, hosts: Hosts = .current, now: Date = Date()) -> PreviewBackend.Reply? {
         let path = url.path.split(separator: "/").map(String.init)
         guard let urlHost = url.host else { return refuse(url) }
