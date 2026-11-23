@@ -1,5 +1,5 @@
 {
-  "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap / tripPlans（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前",
+  "_comment": "「新しくなったこと」の中身（WhatsNew.swift）。版ごとに1つ足す。version はその項目が初めて入る版（MARKETING_VERSION）。新しい版を上に。destination は home / search / map / mypage（下の札）か passBook / visitedMap / tripPlans（ホームに積む画面）のどれか（無ければ説明だけ）。symbol は SF Symbols の名前。announce: true を付けた版だけ起動でシートを出す（無ければホームの印だけ・札 #628。大きく変わる版にだけ付ける、決めるのは owner）",
   "releases": [
     {
       "version": "1.1.99",

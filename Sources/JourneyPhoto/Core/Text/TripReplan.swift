@@ -103,6 +103,15 @@ enum TripReplan {
 
     // MARK: - 案にならなかった回の1行
 
+    /// 組み直したあとの札の帯の理由（2026-11-22 判断・Mac run 1729）。
+    /// 「AI に送らなかったので」（`.declined`）の札から「AI で整える」を押し、同意して AI に送ったら、もう「送らなかった」とは言わない。
+    /// 前は札の理由を「この案にする」を押したときにしか替えず、同意して案が出ても、案が変わらなかった回も、帯が残っていた。
+    /// 送った回の結果の理由（AI で組めた、回数、圏外など）に替える。結果が無い、また「やめる」なら今のまま
+    static func noteMode(after result: TripAIResult?, current: TripAIResult.Mode) -> TripAIResult.Mode {
+        guard current == .declined, let result, result.mode != .declined else { return current }
+        return result.mode
+    }
+
     /// 帯から Pro の案内を開けるか（無料の人の、使い切った・端末の AI が無い回だけ。断った回は開かない）
     static func opensPro(_ result: TripAIResult?, isPro: Bool) -> Bool {
         guard let result, !isPro, !result.refused else { return false }
@@ -132,6 +141,8 @@ enum TripReplan {
             return L("つながっていないため、組み直せませんでした。日程はそのままです。", "You're offline, so the plan wasn't changed.")
         case .silent:
             return L("AI が答えなかったため、組み直せませんでした。日程はそのままです。", "AI didn't answer, so the plan wasn't changed.")
+        case .declined:
+            return L("AI に送らなかったため、組み直していません。日程はそのままです。", "Not sent to AI, so the plan wasn't changed.")
         case .proOnly:
             return L("この iPhone では AI で組み直せません。Pro ならサーバーの AI で組み直せます。",
                      "AI isn't available on this iPhone. With Pro, our server's AI can do it.")

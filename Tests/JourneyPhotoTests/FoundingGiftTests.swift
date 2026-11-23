@@ -45,8 +45,9 @@ final class FoundingGiftTests: XCTestCase {
         XCTAssertFalse(gate.shouldPresent(userId: "u1", profile: p))
     }
 
-    /// 🔴 **「あとで」は次の起動でまた出すが、合わせて3回まで**（しつこくしない）
-    func testLaterShowsUpToThreeTimes() throws {
+    /// 🔴 **「あとで」でも同じ人に出すのは1回まで**（2026-11-22・札 #628: 前は3回まで。起動で割り込む画面を減らす）
+    func testLaterShowsOnlyOnce() throws {
+        XCTAssertEqual(FoundingGiftGate.maxShows, 1)
         let gate = FoundingGiftGate(defaults: defaults())
         let p = try profile(#"{"userId":"u1",\#(early)}"#)
         for _ in 0..<FoundingGiftGate.maxShows {

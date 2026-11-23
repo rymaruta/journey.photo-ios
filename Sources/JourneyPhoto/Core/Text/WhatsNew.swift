@@ -136,13 +136,17 @@ enum WhatsNew {
         let items: [Item]
         /// 任意。無い・壊れた値は nil（見出しは版だけになる）。古い JSON もそのまま読める
         let date: Day?
+        /// 起動のときにシートで知らせる版か（JSON の `"announce": true`・札 #628・2026-11-22）。
+        /// 無い・壊れた値は false＝ホームの印だけ。**大きく変わる版にだけ付ける。付けるかは owner が決める**
+        let announce: Bool
 
-        private enum CodingKeys: String, CodingKey { case version, items, date }
+        private enum CodingKeys: String, CodingKey { case version, items, date, announce }
 
-        init(version: String, items: [Item], date: Day? = nil) {
+        init(version: String, items: [Item], date: Day? = nil, announce: Bool = false) {
             self.version = version
             self.items = items
             self.date = date
+            self.announce = announce
         }
 
         init(from decoder: Decoder) throws {
@@ -151,10 +155,30 @@ enum WhatsNew {
             items = try c.decode([Item].self, forKey: .items)
             // 文字でない値（数・null）も、形の違う文字も、版ごと捨てずに日付だけ無視する
             date = (try? c.decodeIfPresent(String.self, forKey: .date)).flatMap { $0 }.flatMap(Day.init)
+            announce = ((try? c.decodeIfPresent(Bool.self, forKey: .announce)) ?? nil) ?? false
         }
     }
 
-    /// 画面の出し方。**起動時のシートは `.launch`**（新しい分を平らに並べる・2026-10-04 から同じ見た目）、
+    /// 起動のときの出し方（札 #628・2026-11-22 判断）。
+    ///
+    /// owner「入口みたいな画面、多すぎるかな？」（2026-11-15）。版が上がるたびに開いた瞬間のシートが出ていた
+    /// （11/15 は TestFlight 5版で5枚）。**いまはホームの小さな印（`WhatsNewHomeBadge`）だけ**にし、押した人だけ読む。
+    /// 大きく変わる版（`announce`）が1つでも入っていれば、今までどおり起動でシートを出す
+    enum LaunchPresentation: Equatable {
+        /// 新しい項目が無い（新しく入れた人・同じ版・読んだ後）
+        case none
+        /// ホームの見出しの下に印だけ
+        case badge
+        /// 起動でシート（大きく変わる版）
+        case sheet
+    }
+
+    static func launchPresentation(_ pending: [Release]) -> LaunchPresentation {
+        if pending.isEmpty { return .none }
+        return pending.contains(where: \.announce) ? .sheet : .badge
+    }
+
+    /// 画面の出し方。**起動時のシート・ホームの印から開いたときは `.launch`**（新しい分を平らに並べる・2026-10-04 から同じ見た目）、
     /// **設定から開いたときは `.history`**（最新の版を上に、その下に「これまでのお知らせ」と版ごとの区切り）
     enum Mode: Equatable {
         case launch, history

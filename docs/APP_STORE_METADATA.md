@@ -1,13 +1,18 @@
-# App Store の掲載情報（1.1.91 で申請する分）
+# App Store の掲載情報（1.1.118 以降の版で申請する分）
 
-App Store Connect に貼る文面。**2026-11-15 に 1.1.91（main a65201d、`testflight/1.1.91`）の中身で書き直した**（札 #604）。
+App Store Connect に貼る文面。**2026-11-15 に 1.1.91 で書き、2026-11-22 に 1.1.118（main 84807f3、`testflight/1.1.118`）の中身で見直した**（札 #604）。
 貼る順と押す所は App Store の Artifact（https://claude.ai/artifact/DViFKiSAyfKaQiW1ayZ1TT）にも絵で置いてある。
 
 - 配信中は 1.0.87（2026-10-11）。掲載名「Journey Photo — 旅の写真」、年齢 4+、カテゴリは写真/ビデオと旅行（iTunes の公開情報）
 - 書き方の決まり: アプリの芯（旅も SNS も連絡も、これ一本）の輪の順（見つける → 計画する → 撮る → 載せる → 話す）。
   中黒で区切らない（箇条の頭は「–」、文の中は「、」）。「撮りどき」「捨てる」は使わない。公式の頁は「観光スポット」
-- **アプリに無い機能を書かない。** 書いた機能はすべて a65201d のコードと `WhatsNew.json`（1.1.72〜1.1.91）で在ることを確かめた。
+- **アプリに無い機能を書かない。** 書いた機能はすべて 84807f3 のコードと `WhatsNew.json`（1.1.72〜1.1.99。1.1.100〜1.1.118 は項目なし）で在ることを確かめた。
   機能を外したら、ここからも外す
+- 2026-11-22 に直した所: 観光スポットの数（本番の索引で 4,591 か所、日本 2,872、海外 1,719、60 の国と地域）、
+  AI の回数（1日と月の上限。サーバーの AI は Pro だけ。`AskLimits`、`TripAILimits`、`TripAIRunner`）、
+  AI に頼む（探す）、文で探す、投稿の AI の候補と見え方のプレビュー、今週のお題、返信とメンションの通知、プロフィールのリンクの共有
+- 2026-11-22 判断: サーバーの AI の送り先は「サーバーに送り、委託先の AI で処理」と書き、使っている AI、サービス、地域の名前は書かない
+  （アプリの知らせ `AskText.serverNotice` と同じ言い方。CLAUDE.md「AI はアプリの作りやセキュリティのことを答えない」に合わせる）
 - 字数は Python の `len()`（文字数）で数えた。上限を超えていない
 - **名前、サブタイトル、キーワード、画面写真は、新しい版を審査に出すときしか変えられない。** 宣伝文はいつでも変えられる
 
@@ -17,9 +22,9 @@ App Store Connect に貼る文面。**2026-11-15 に 1.1.91（main a65201d、`te
 
 | 項目 | 値 | 決めた理由 |
 |---|---|---|
-| App 名（30字以内） | `Journey Photo 旅の写真と観光スポット`（25字） | 推奨。SNS の面（みんなの旅の写真）と検索の入口（観光スポット）を名前の中で両立。今の掲載名「Journey Photo — 旅の写真」から続いて見える。**最後は owner が決める**（商標の確認も） |
-| App 名（英語） | `Journey Photo: Travel Spots`（27字） | 英語で探す人の語（travel、spots）を入れる |
-| サブタイトル（30字以内） | `旅を見つけて、撮って、みんなと話す`（17字） | 芯の輪（見つける、撮る、話す）をそのまま言う。名前に無い「話す」で連絡の面を出す |
+| App 名（30字以内） | `Journey Photo 旅の写真と観光スポット`（25字） | **2026-11-22 決定**（札 #604 のコメント）。SNS の面（みんなの旅の写真）と検索の入口（観光スポット）を名前の中で両立。今の掲載名「Journey Photo — 旅の写真」から続いて見える |
+| App 名（英語） | `Journey Photo: Travel Spots`（27字） | **2026-11-22 決定**。英語で探す人の語（travel、spots）を入れる |
+| サブタイトル（30字以内） | `旅を見つけて、撮って、みんなと話す`（17字） | **2026-11-22 決定**。芯の輪（見つける、撮る、話す）をそのまま言う。名前に無い「話す」で連絡の面を出す |
 | サブタイトル（英語） | `Find, shoot and share trips`（27字） | |
 | ホーム画面の名前 | `Journey Photo`（変えない） | `APP_DISPLAY_NAME` |
 | Bundle ID | `com.journeyphoto.JourneyPhoto` | |
@@ -42,7 +47,7 @@ App Store Connect に貼る文面。**2026-11-15 に 1.1.91（main a65201d、`te
 日本語（106字）:
 
 ```
-「来月、金沢に1泊2日。紅葉」と書くだけで、AI が観光スポットから旅行プランを組みます。みんなの写真から次の行き先を見つけて、撮った写真を載せ、ストーリーやメッセージで話せます。観光スポットは約3,900か所。
+「来月、金沢に1泊2日。紅葉」と書くだけで、AI が観光スポットから旅行プランを組みます。みんなの写真から次の行き先を見つけて、撮った写真を載せ、ストーリーやメッセージで話せます。観光スポットは約4,600か所。
 ```
 
 英語（153字）:
@@ -53,7 +58,7 @@ Write one line like "Kanazawa, 2 days, autumn leaves" and AI plans your trip fro
 
 ## 説明（4000字以内）
 
-日本語（約2,715字）:
+日本語（約3,100字）:
 
 ```
 旅先で出会った一瞬を載せて、みんなの写真から次の行き先を見つける。旅の計画も、写真の投稿も、仲間との連絡も、Journey Photo ひとつで。
@@ -64,12 +69,15 @@ Write one line like "Kanazawa, 2 days, autumn leaves" and AI plans your trip fro
 – AI は台帳の観光スポットと行きたい場所から選んで並べ、並べた理由を1行添えます。無い場所は作りません
 – 移動が無理な順は Apple のマップの目安で外し、「戻す」で戻せます
 – 「直したいことを書く」で、日程をそのまま直せます
-– 対応する iPhone では端末の中の AI（Apple Intelligence）で組み、文を送りません。それ以外の iPhone では、日本にあるサーバー（Amazon Bedrock、東京）で読みます
-– ログインすると月30回まで無料。Pro なら月300回
+– 対応する iPhone では端末の中の AI（Apple Intelligence）で組み、文を送りません。それ以外の iPhone では、Pro なら頼みの内容と日程をサーバーに送り、委託先の AI で組みます
+– 回数はログインして1日5回、月30回まで。Pro なら1日20回、月300回
 
 ■ みんなの写真から見つける
-– ホームは1本の並び。フォロー中の人の新しい写真、選ばれた写真、いいねの多い写真が続きます
-– 観光スポットは約3,900か所。日本の47都道府県で約2,200か所、海外60の国と地域で約1,700か所
+– ホームは1本の並び。フォロー中の人の新しい写真、選ばれた写真、いいねの多い写真が続き、3日以内の新しい投稿も混ざります
+– ホームの上の札に、週ごとに替わる「今週のお題」。「参加する」でお題のタグを入れて投稿できます
+– 観光スポットは約4,600か所。日本の47都道府県で約2,900か所、海外60の国と地域で約1,700か所
+– 探すで「京都 紅葉 夜」のように打つと、季節や時間帯で絞り込みます
+– 探すの「AI に頼む」で、旅のことを文で頼めます（ログインして1日3回、月10回まで。Pro なら1日20回、月300回）
 – 地方と県から一覧に。日本地図から地方を選ぶことも、名前で絞ることもできます
 – 作例写真には、作者と出典を表示しています
 – 日の出と日の入り、ゴールデンアワーとブルーアワーの時刻、太陽の方角
@@ -88,25 +96,27 @@ Write one line like "Kanazawa, 2 days, autumn leaves" and AI plans your trip fro
 ■ 撮る、載せる
 – 旅の写真も、日常の好きな一枚も、気軽に投稿できます
 – 作例を重ねて撮るカメラと、作例つきの構図の一覧
+– 対応する iPhone では、題や説明やタグの候補を端末の AI が出します。写真は外に送りません
+– 投稿する前に、写真の詳細、ホーム、マイページでの見え方をプレビューできます
 – 投稿したあとも色を編集でき、編集中は元の写真と見比べられます。下書きはいくつでも残せます
 – 投稿したら、すぐ SNS に載せられるカード。額装、フィルム、縦書きなどの形から選べます
 – 見せたい写真は、プロフィールの先頭にピン留め
 – 写真ファイルに埋め込まれた位置情報は端末の中で取り除いてから送り、撮影地は約1kmに丸めて保存します
 
 ■ ストーリー
-– 写真と、60秒までの動画。ホームの「＋」で、カメラがすぐ開きます
+– 写真と、60秒までの動画。ストーリーの「＋」で最近の写真と動画が並び、最初のマスがカメラです
 – ズーム、フラッシュ、タイマー、動画の切り取り、フィルター、手描き
 – 曲の札（30秒の試聴）、投票、場所の札
 – 顔の輪から開いて、絵文字ですぐ反応。返信はメッセージに残ります
 – ハイライトで残したり、親しい友達だけに見せたりできます
 
 ■ 話す
-– いいね、コメント（返信もできます）、フォロー、保存
+– いいね、コメント（返信もできます）、フォロー、保存。返信やメンションは通知で届きます
 – フォローしている人と、1対1のメッセージ
 – 写真や観光スポットを送れます。届いた観光スポットは、すぐ行きたい場所に
 – 相手が承認するまでは文字3通までで、リンクは送れません
 – 送ったメッセージは取り消せます。会話からその場で通報、ブロックもできます
-– プロフィールの QR コードで、会った人とすぐつながれます
+– プロフィールの QR コードとリンクで、会った人とすぐつながれます
 
 ■ 旅を残す
 – 写真へのアクセスを許可すると、過去の旅が一冊ずつマイページの棚に並びます。調べるのは端末の中だけで、写真も位置もどこにも送りません
@@ -124,7 +134,7 @@ Write one line like "Kanazawa, 2 days, autumn leaves" and AI plans your trip fro
 – カードはその場で届きます。夕方にまとめて受け取ることもできます
 
 ■ Journey Photo Pro（任意、自動更新の定期購入）
-– AI で旅行プランを作る：月300回まで（無料は月30回）
+– AI に頼む、旅行プランを作る：それぞれ1日20回、月300回まで（無料は、AI に頼むが1日3回と月10回、旅行プランが1日5回と月30回）。端末の AI が使えない iPhone でも、サーバーの AI で答えます
 – 光と天気の知らせ：行きたい場所が「明日の朝、晴れて朝焼け」なら前の晩に
 – 電波なしで使える旅：地図、作例、光の時刻を端末に
 – Pro マークと Pro 限定の章
@@ -144,20 +154,20 @@ Write one line like "Kanazawa, 2 days, autumn leaves" and AI plans your trip fro
 – 設定の「意見を送る」から、運営に声を届けられます
 ```
 
-英語（約3,940字。2026-11-15 に AI の節を足し、細かい5行を外して4000字に収めた）:
+英語（約3,990字。2026-11-15 に AI の節を足し、細かい5行を外して4000字に収めた。2026-11-22 に AI に頼むと文で探すを足し、県の地図と地方からの一覧の2行を外した）:
 
 ```
-Share moments from your trips, and find your next destination in everyone's photos. Plan trips, post photos and keep in touch with your travel friends, all in Journey Photo. No account is needed to browse.
+Share moments from your trips and find your next destination in everyone's photos. Plan trips, post and keep in touch with travel friends, all in one app. No account is needed to browse.
 
 PLAN TRIPS WITH AI
 - Write one line like "Kanazawa, 2 days, autumn" and get a day-by-day plan from real spots. AI never makes places up
-- Runs on device with Apple Intelligence where supported; otherwise on our server in Tokyo (Amazon Bedrock)
-- 30 plans a month free with an account, 300 with Pro
+- Runs on device with Apple Intelligence where supported; otherwise, with Pro, on our servers via an AI provider
+- With an account, 5 plans a day and 30 a month; with Pro, 20 a day and 300 a month
 
 FIND IDEAS IN EVERYONE'S PHOTOS
 - Home is one feed: new photos from people you follow, then featured and popular photos
-- About 3,900 sightseeing spots: about 2,200 across all 47 prefectures of Japan and about 1,700 in 60 other countries and regions
-- Browse by region and prefecture, or pick a region on a map of Japan
+- About 4,600 sightseeing spots: about 2,900 across all 47 prefectures of Japan and about 1,700 in 60 other countries and regions
+- Search with a sentence like "Kyoto autumn night", or Ask AI in Search
 - Sample photos credit the photographer and source
 - Swipe through spots on Home and save them to "Want to go"
 
@@ -170,12 +180,13 @@ PLAN TRIPS
 SHOOT AND POST
 - Post travel shots or any everyday photo you love
 - A camera that overlays sample compositions, plus a guide to compositions
+- On-device AI suggests a title and tags where supported. Preview your post before you share it
 - Edit colors after posting and compare with the original. Keep as many drafts as you like
 - Share cards right after you post, with Mat, Film, Vertical and more
 - Location data in the photo file is removed on your device before upload; a photo's place is stored rounded to about 1 km
 
 STORIES
-- Photos and videos up to 60 seconds. Tap + on Home to open the camera
+- Photos and videos up to 60 seconds, from your recent photos or the camera
 - Song stickers (30-second previews), polls and place stickers
 - React with an emoji; replies stay in Messages
 - Highlights and Close friends
@@ -188,9 +199,8 @@ TALK
 - Unsend messages. Report or block from a conversation
 
 KEEP YOUR TRIPS
-- Allow photo access and your past trips line up as books on My Page. Photos are checked only on your device and never sent anywhere
+- Allow photo access and your past trips line up as books on My Page. Photos are checked only on your device
 - Trip books and shared albums
-- Color in the prefectures you have visited on a map of Japan (only you can see it)
 
 TRAVEL TRUNK AND DETOUR
 - Earn coins by posting publicly and get trunk parts from the capsule machine. Coins and parts cannot be bought
@@ -200,7 +210,7 @@ PASS (OPTIONAL, OFF BY DEFAULT)
 - Only if you turn it on, your phone swaps a ticket card with nearby Journey Photo users over Bluetooth: one public photo you chose and a short note. No location or contacts are sent
 
 JOURNEY PHOTO PRO (OPTIONAL, AUTO-RENEWABLE SUBSCRIPTION)
-- AI trip plans: 300 a month (30 for free)
+- Ask AI and AI trip plans: 20 a day and 300 a month each, on any iPhone
 - Light and weather alerts for places you want to go
 - Offline trips
 - A Pro mark and Pro-only chapters
@@ -244,7 +254,11 @@ japan,sightseeing,golden hour,sunrise,sunset,sakura,autumn,landscape,camera,map,
 
 – 画面のデザインを新しくしました。黒と白に真鍮の差し色で、写真がいちばん引き立ちます
 – ホームは1本の並びに。フォロー中の人の新しい写真から順に続きます
-– 観光スポットは約3,900か所に。日本の47都道府県と、海外60の国と地域。地方と県から一覧に、日本地図からも探せます
+– 観光スポットは約4,600か所に。日本の47都道府県と、海外60の国と地域。地方と県から一覧に、日本地図からも探せます
+– AI で旅行プラン：行き先を書くか札を押すだけで、観光スポットから日程を組みます
+– 探すで「京都 紅葉 夜」のように文で探せます。「AI に頼む」で旅のことを聞くこともできます
+– 投稿の前に見え方をプレビュー。対応する iPhone では、題やタグの候補を端末の AI が出します
+– ホームに「今週のお題」。返信やメンションも通知で届きます
 – メッセージ：フォローしている人と1対1でやりとりできます。写真や観光スポットも送れて、送信の取り消しもできます
 – ストーリー：60秒までの動画、ズーム、フラッシュ、タイマー、切り取り、フィルター、手描き、曲の札、投票。顔の輪から開いて、絵文字ですぐ反応
 – 旅行プラン：観光スポットから日付を選んで入れる、探して足す、≡ で並べ替え。場所の間の移動の目安を押すと Apple のマップで経路が開きます。招待リンクで仲間と一緒に直して、プランの中で話せます
@@ -266,7 +280,11 @@ A big update since the fall, with many new ways to share travel photos.
 
 - A refreshed look: black and white with a brass accent, so your photos stand out
 - Home is now one feed, starting with new photos from people you follow
-- About 3,900 sightseeing spots, across all 47 prefectures of Japan and 60 other countries and regions
+- About 4,600 sightseeing spots, across all 47 prefectures of Japan and 60 other countries and regions
+- AI trip plans: write a destination or tap a card, and get days planned from real spots
+- Search with a sentence like "Kyoto autumn night", or Ask AI about your trip
+- Preview your post before you share it. On-device AI suggests a title and tags where supported
+- This week's theme on Home, and notifications for replies and mentions
 - Messages: chat one to one with people you follow. Send photos and spots, and unsend messages
 - Stories: videos up to 60 seconds, zoom, flash, timer, trimming, filters, drawing, song stickers and polls
 - Trip plans: add spots on the day you choose, search and add places, and reorder with the ≡ handle. Tap the travel time to open the route in Apple Maps. Invite friends with a link to edit together and chat inside the plan
@@ -292,7 +310,8 @@ iPhone だけのアプリ（`TARGETED_DEVICE_FAMILY: "1"`）は、**6.9インチ
 | 6.9インチ | **1320×2868**、1290×2796、1260×2736 | 17 Pro Max、16 Pro Max、Air など |
 | 6.5インチ | 1284×2778、1242×2688 | 6.9 を出せば要らない |
 
-CI の `ScreenshotTests` は iPhone 17 Pro Max（1320×2868）で撮るので、原寸ならそのまま 6.9インチ枠に入る。
+出す絵は `Tools/store-screenshots.py` が、撮った画面を黒地に置き、真鍮の眉ラベルと明朝の見出しを足して**必ず 1320×2868** で作る
+（材料の画面の寸法がシミュレータの機種で変わっても、出す絵の寸法は変わらない）。
 
 ### 並び（2026-11-15 に決めた。芯の輪の順。検索結果に出るのは最初の3枚）
 
@@ -307,14 +326,31 @@ CI の `ScreenshotTests` は iPhone 17 Pro Max（1320×2868）で撮るので、
 | 7 | 写真の詳細 | `20-写真の詳細` | 一枚の向こうの場所まで |
 | 審査用 | Pro の案内 | `81-Pro の案内` | （課金の審査に出す。並びには入れない） |
 
-**写真の権利。** ホームと写真の詳細には、本番の公開写真（他の利用者の写真）が写る。**他の利用者の写真は、その人のもの**なので、
-そのまま宣伝に使わない。出す絵は、owner 本人の写真か審査用アカウントの写真、観光スポットの作例（作者と出典の表示つき）だけが
-写るように撮り直す。人の顔、他社のロゴも入れない。
+**写真の権利（CLAUDE.md「他人の写真は、その人のもの」・絶対）。** ストア用の絵には、**本番の他の利用者の写真を1枚も入れない**。
+目で見て選ぶ形にはしない。絵に出してよいのは、アプリ内の見本のデータか、運営が権利を持つ写真だけ。人の顔、他社のロゴも入れない。
 
-**原寸を CI で撮れない。** `ios-testflight.yml` の `storeShots: true` は公開リポジトリでは最初の段で止める作り（#451）で、
-2026-11-15 に非公開の S3 に原寸を置く形へ変えようとしたが、守りの段を外す変更なので止めた（owner の判断待ち）。
-いま取れるのは、絞った回（`submit=false`、`screens`）が非公開の S3 に置く**幅700の JPEG（見るため）**だけ。
-決め方は `docs/APP_REVIEW.md` の「owner にお願いすること」。
+> 🔴 **2026-11-22 時点で、いまの `storeShots` の絵はストアに使えない。** 材料を撮る UI テストは、`-JPSiteBaseURL https://journey-photo.com` で
+> 本番の公開写真（ホーム、写真の詳細）、本番の観光スポットの作例（Commons などの他の作者）、実在の利用者（`ScreenshotTests.previewUserId`）の写真で描く。
+> 見本のデータだけで描く仕組み（ストア用の回だけ）はまだ無い。要るものは札 #604 に書いた。できるまで、出た絵はストアに上げない
+
+### 作り方（2026-11-22 から CI で作る。札 #604）
+
+Mac の CI（`ios-testflight.yml`）を `storeShots: true`、`submit: false` で流す:
+
+```
+gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight.yml/dispatches \
+  -f ref=main -f 'inputs[submit]=false' -f 'inputs[storeShots]=true' -f 'inputs[screens]=none'
+```
+
+- 流すのは材料を撮る UI テスト6本と起動の見張りだけ（`Tools/store-screenshots.py` の `STORE_TESTS`）。単体テスト、Archive、署名は流さない。
+  `screens` の値は使わない（`none` でよい）。`submit: true` と一緒にすると最初の段で止まる
+- 出来た絵は**非公開の S3** の `<run 番号>/store.tar`（画面写真と同じ置き場、**3日で自動で消える**）。公開の枝、成果物、ログには置かない
+- 取り出し: `bash Tools/fetch-shots.sh <run 番号>` → scratchpad の `shots/<run 番号>/store/` に、上の7枚（`01-ホーム.png` 〜 `07-写真の詳細.png`）、
+  審査用の `review-Pro の案内.png`（原寸）、寸法の控えの `README.md`
+- App Store Connect に上げ終わったら `bash Tools/fetch-shots.sh <run 番号> --delete`（手元と S3 からすぐ消す）
+- 材料が1枚でも足りないと、その回は赤になる（足りない絵の名前が job のログに出る）
+
+**見本のデータだけで描く仕組みができるまで、`storeShots` の回は最初の段で赤になって止まる**（上の「写真の権利」。`ios-testflight.yml` の「App Store 用の絵は見本で描けるまで止める」）。
 
 ## レビュー用の追記
 

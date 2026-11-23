@@ -182,6 +182,12 @@ final class PostedCardOffer: ObservableObject {
         presented = card
     }
 
+    /// 知らせに置いたカード（持ち主がいまの人のときだけ）。初めての投稿の「投稿しました」がカードの絵とボタンに使う（札 #628）
+    func pendingCard(for userId: String?) -> PostedShareCard? {
+        guard let pending, pending.ownerId == userId else { return nil }
+        return pending.card
+    }
+
     /// ログインしている人が替わった: 持ち主でない人の分は捨てる
     func userChanged(to userId: String?) {
         if let pending, pending.ownerId != userId { self.pending = nil }

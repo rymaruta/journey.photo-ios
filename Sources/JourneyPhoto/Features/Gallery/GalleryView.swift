@@ -493,6 +493,9 @@ struct GalleryView: View {
                 // （どちらの数も増える一方なので、和は必ず変わる）
                 // **すれちがいの届いた束**（板 PassHome: 見出しのすぐ下・「ここから下はいつものホーム」）。
                 // 届いた束をまだ開いていないときだけ出る（`PassHomeSlot`）
+                // 「新しくなったこと」の小さな印（札 #628・2026-11-22 判断: 起動のシートをやめ、押した人だけ読む）。
+                // 読む版が無ければ何も描かない（段の間も足さない）
+                WhatsNewHomeBadge()
                 let passBundle = passCards(now: passNow)
                 PassHomeSlot(cards: passBundle, now: passNow) { passDeck = PassDeck(cards: passBundle) }
                 StoriesRow(reloadToken: tabRouter.postSheetsClosed &+ storiesRefresh,

@@ -46,7 +46,7 @@ on:
         type: boolean
         default: false
       storeShots:
-        description: "画像保存（使用不可・オフのまま）"
+        description: "App Store用の原寸の絵（見本で描けるまで使用不可・札 #604）"
         type: boolean
         default: false
       tests:
@@ -131,10 +131,22 @@ jobs:
       # **どこまで流すかを最初に決める**（2026-10-17）。`screens` の打ち間違いで UI テストが
       # 0件になるのを、ビルドの前の数秒で止める（`Tools/pick-ui-tests.py` が候補を出して落ちる）。
       # full=true の回だけ、最後に「全部のテストが通った」の印の段を付ける
-      - name: 公開リポジトリへの画像保存を防止
+      # 2026-11-22 判断（札 #604）: `storeShots` は App Store 用の原寸の絵を作り、**非公開の S3** に置く回
+      # （`Tools/upload-store-shots.sh`。前は公開の枝に押していたので #451 で止めていた）。上げる回（submit=true）とは
+      # 重ねない。上げる回の UI テストの範囲（配信差分）と、絵に要る範囲（`store-screenshots.py` の STORE_TESTS）が食い違うため
+      # 🔴 2026-11-22（札 #604・コーディネーターの指示）: いまの材料は本番の他の利用者の写真で描くので、ストアに使えない
+      # （CLAUDE.md「他人の写真は、その人のもの」）。見本のデータだけで描けるようになるまで、storeShots の回はここで止める。
+      # 外すときは `Tools/check-config.py` の同じ見張りも外す
+      - name: App Store 用の絵は見本で描けるまで止める
         if: ${{ inputs.storeShots }}
         run: |
-          echo "::error::公開リポジトリでstoreShotsは無効です。画像は非公開環境で生成してください。"
+          echo "::error::storeShots は見本で描けるようになるまで使えません（札 #604）。いまの材料は本番の他の利用者の写真で描くため"
+          exit 1
+
+      - name: App Store 用の絵の回は上げない回で流す
+        if: ${{ inputs.storeShots && inputs.submit }}
+        run: |
+          echo "::error::storeShots は submit=false で流してください（上げる回とは重ねない）"
           exit 1
 
       - name: UIテストの実行内容を表示
@@ -166,9 +178,12 @@ jobs:
           elif [ "${SUBMIT:-}" = "true" ] && [ "${TESTS:-}" != "true" ]; then
             SCREENS="none"
           elif [ "${STORE_SHOTS:-}" = "true" ]; then
-            SCREENS=""
+            SCREENS="App Store 用の絵（Tools/store-screenshots.py の STORE_TESTS）"
           fi
-          if [ "${SCREENS:-}" = "auto" ]; then
+          if [ "${STORE_SHOTS:-}" = "true" ]; then
+            # 2026-11-22 判断（札 #604）: App Store 用の絵に要る UI テストだけを流す（全部の UI テストは流さない・30分に収める）
+            python3 Tools/store-screenshots.py --only-testing > /tmp/ui-only-testing.txt
+          elif [ "${SCREENS:-}" = "auto" ]; then
             # main への直接反映・マージは直前コミットとの差分を見る。
             # PR ブランチでは分岐点からの差分を見る。取得不能時は全件へ倒す。
             BASE=""
@@ -528,7 +543,8 @@ jobs:
       # tests=trueの配信では、ビルド後に変更箇所に応じたUIテストを実行する。
       - name: 単体テスト
         id: unit
-        if: ${{ !inputs.submit && (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.sharded != 'true' }}
+        # App Store 用の絵の回（storeShots）は絵だけが目的なので単体テストを流さない（2026-11-22 判断・30分に収める）
+        if: ${{ !inputs.submit && !inputs.storeShots && (inputs.tests || inputs.storeShots || !inputs.submit) && steps.scope.outputs.sharded != 'true' }}
         # 計測の試しを名指しで走らせる（`Tools/xcode-test.sh` が `TEST_RUNNER_JP_SCREENS` にして渡す）
         env:
           SCREENS: ${{ inputs.screens }}
@@ -573,6 +589,18 @@ jobs:
           # 絞った回は撮らない画面があって当たり前なので、「撮れなかった画面」を数えない
           NARROWED: ${{ steps.scope.outputs.full != 'true' }}
         run: bash Tools/upload-shots.sh build build/ios/test/Test.xcresult
+
+      # **App Store 用の原寸（6.9インチ 1320×2868）を非公開の S3 に置く**（2026-11-22 判断・札 #604）。
+      # 置き場は上の画面写真と同じ（同じ run の印の `store.tar`・3日で消える）。取り出しは `bash Tools/fetch-shots.sh <run 番号>`。
+      # 公開の枝・成果物・ログには絵を出さない。この回の目的が絵なので、作れない・置けないときは赤にする
+      # （UI テストが1本落ちても、撮れた材料で作れるなら作る。足りない絵は名指しにして赤）
+      - name: App Store 用の原寸を非公開の S3 に置く
+        if: ${{ always() && inputs.storeShots && (steps.ui.outcome == 'success' || steps.ui.outcome == 'failure') && github.event_name != 'pull_request' }}
+        timeout-minutes: 10
+        env:
+          CI_SHOTS_ROLE_ARN: ${{ secrets.CI_SHOTS_ROLE_ARN }}
+          CI_SHOTS_BUCKET: ${{ secrets.CI_SHOTS_BUCKET }}
+        run: bash Tools/upload-store-shots.sh build/ios/test/Test.xcresult
 
       # **絞った回（screens）は署名・Archive をしない**（2026-10-17 判断）。Archive は毎回10分前後
       # （run 454〜462 で 8〜14分）。絞った回は「変えた画面を早く見る」ための回で、Release の
@@ -781,7 +809,6 @@ jobs:
         if: ${{ false }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          STORE_SHOTS: ${{ inputs.storeShots }}
           # 絞った回は撮らない画面があって当たり前なので、「撮れなかった画面」を数えない
           NARROWED: ${{ steps.scope.outputs.full != 'true' }}
         run: bash Tools/export-screenshots.sh build/ios/test/Test.xcresult

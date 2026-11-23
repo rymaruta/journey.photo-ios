@@ -1650,11 +1650,12 @@ final class ScreenshotTests: JPUITestCase {
         XCTAssertTrue(share.label.contains("コピー"), "ステッカーの主ボタンがコピーでない: \(share.label)")
     }
 
-    /// **「新しくなったこと」**（2026-10-04・`WhatsNewView`）。更新して初めて開いた人に出るシート。
+    /// **「新しくなったこと」**（2026-10-04・`WhatsNewView`）。更新して初めて開いた人に、ホームの小さな印（`home.whatsNew`）が出る。
+    /// 2026-11-22（札 #628）から起動のシートは出さない（大きく変わる版の `announce` だけ）。印を押すとシートが開く。
     ///
     /// 更新した人を起動の引数で作る: 規約に同意済み（`-legal.consent.version 1`）・前に見た版が古い
     /// （`-whatsNew.seenVersion 0.0.1`）。どちらも UserDefaults の引数の領域で、端末には書かない。
-    /// 出たら撮って、主ボタン「はじめる」で閉じられることも見る。出なければ落とす（札 #531・前は撮らずに抜けて黙って緑だった）
+    /// 印とシートを撮って、主ボタン「閉じる」で閉じられ、印が消えることも見る。出なければ落とす（札 #531）
     func testCapturesWhatsNew() {
         let app = XCUIApplication.jp()
         app.launchArguments += ["-legal.consent.version", "1"]
@@ -1663,17 +1664,26 @@ final class ScreenshotTests: JPUITestCase {
         app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
         app.launch()
 
+        // 起動でシートは出ない。ホームの印で待つ
+        let badge = app.buttons["home.whatsNew"].firstMatch
+        guard badge.waitForExistence(timeout: 30) else { return unreached(app, "home.whatsNew.waitForExistence(timeout: 30)") }
+        XCTAssertFalse(app.buttons["whatsNew.close"].firstMatch.exists, "起動で「新しくなったこと」のシートが出た")
+        XCTAssertGreaterThanOrEqual(badge.frame.height, 43.9, "印の当たりが 44pt 未満")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "02a-新しくなったことの印（ホーム）")
+        badge.tap()
         // 見出しの文字で待つ（目印が部品の作りで変わっても、出たかどうかは見分けられる）
         let title = app.staticTexts["新しくなったこと"].firstMatch
-        guard title.waitForExistence(timeout: 20) else { return unreached(app, "title.waitForExistence(timeout: 20)") }
         let close = app.buttons["whatsNew.close"].firstMatch
+        guard close.waitForExistence(timeout: 10) else { return XCTFail("印を押しても「新しくなったこと」が開かない") }
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "02b-新しくなったこと")
-        if close.exists { close.tap() } else { app.buttons["はじめる"].firstMatch.tap() }
+        close.tap()
         // 閉じたあとはホームが見える（主ボタンで閉じられる）。札 #531: 前は待つだけで確かめていなかった
         let closed = XCTWaiter().wait(for: [expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: title)], timeout: 5)
         XCTAssertEqual(closed, .completed, "主ボタンを押しても「新しくなったこと」が閉じない")
         XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 5), "「新しくなったこと」を閉じても、下の札が出ない")
+        XCTAssertTrue(badge.waitForNonExistence(timeout: 5), "読んだのに印が消えない")
     }
 
     /// **意見を送る**（2026-11-11 札 #546・`FeedbackSheet`）。設定の「意見を送る」の行から開き、
@@ -2160,6 +2170,37 @@ final class ScreenshotTests: JPUITestCase {
         goBack(app)
     }
 
+    /// **初めての投稿のあとの「投稿しました」1枚**（札 #628・2026-11-22・`PostedSummarySheet`）。見本（`-JPPreviewPostedSummary`）で
+    /// 通知・カバー・ラベルの3行を出して撮る。行は 44pt 以上、左上の「閉じる」1回で閉じ、続けて別の画面が出ないことを見る
+    func testCapturesPostedSummary() {
+        let app = XCUIApplication.jp()
+        app.launchArguments += ["-legal.consent.version", "0"]
+        app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+        app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+        app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+        app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+        app.launchArguments += ["-JPPreviewPostedSummary", "YES"]
+        app.launch()
+
+        let agree = app.buttons["legal.agree"]
+        if agree.waitForExistence(timeout: 30) { agree.tap() }
+        let title = app.staticTexts["postedSummary.title"].firstMatch
+        guard title.waitForExistence(timeout: 20) else { return unreached(app, "postedSummary.title") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "02d-投稿しました（初めての投稿）")
+        for id in ["postedSummary.push", "postedSummary.cover", "postedSummary.labels"] {
+            let row = app.buttons[id].firstMatch
+            XCTAssertTrue(row.exists, "\(id) の行が無い")
+            if row.exists { XCTAssertGreaterThanOrEqual(row.frame.height, 43.9, "\(id) の行が 44pt 未満") }
+        }
+        let close = app.buttons["postedSummary.close"].firstMatch
+        guard close.exists, close.isHittable else { return XCTFail("「閉じる」を押せない") }
+        close.tap()
+        XCTAssertTrue(title.waitForNonExistence(timeout: 5), "「閉じる」1回で閉じない")
+        // 閉じたあとに通知の説明・届いた画面が続かないことは、ここでは見ない（見本の起動では投稿していないので、
+        // どちらも元から出ない）。守るのは単体テスト `FewerInterstitialsTests`（行に入れる・知らせにする・評価を見送る）
+    }
+
     /// **通知の説明**（2026-10-11・`PushPrimerView`）。ふだんは初めての投稿が上がったときに1回だけ出る。
     /// 鍵を持たない入り方では投稿できないので、起動の鍵（`-JPPreviewPushPrimer`・Debug のみ）で起動のときに出す。
     ///
@@ -2441,6 +2482,10 @@ final class ScreenshotTests: JPUITestCase {
 
         let agree = app.buttons["legal.agree"]
         if agree.waitForExistence(timeout: 5) { agree.tap() }
+        // 2026-11-22（札 #628）: 起動のシートはやめた。ホームの印から開く
+        let badge = app.buttons["home.whatsNew"].firstMatch
+        guard badge.waitForExistence(timeout: 30) else { return }
+        badge.tap()
         // 2026-11-10 判断: 項目は位置（`whatsNew.item.0`）ではなく題で探す。1.1.79 の先頭に DM の項目を足したら、
         // 位置で探していたこの試験が run 42872738853（3 回目）で「先頭の項目が帳の項目でない」と落ちた
         let item = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'whatsNew.item.' AND label CONTAINS %@",
@@ -4056,6 +4101,38 @@ final class ScreenshotTests: JPUITestCase {
         shoot(app, "65t-帯から開いた AI の日程")
     }
 
+    /// **サーバーの AI に初めて送る前の同意のシート（2026-11-22 判断・審査 5.1.2(i)・`AIServerConsent`）**。
+    /// 見本の AI でも `-JPAIConsentAsk` で同意前から始める。「やめる」→ 送らずに AI なしで組んだ帯 →「AI で整える」で
+    /// もう一度聞く →「同意して続ける」で AI の日程。出なければ撮らずに抜ける
+    func testCapturesAIServerConsent() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES", "-JPTripAIFixture", "YES", "-JPTripAIFixtureDelay", "1",
+                               "-JPAIConsentAsk", "YES"])
+        guard startTripAI(app, shootList: false) != nil else { return }
+        let sheet = app.descendants(matching: .any)["aiConsent.sheet"].firstMatch
+        guard sheet.waitForExistence(timeout: 20) else { return unreached(app, "aiConsent.sheet") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "65s1-AI に送る前の同意")
+        let cancel = app.buttons["aiConsent.cancel"].firstMatch
+        guard cancel.waitForExistence(timeout: 5), cancel.isHittable else { return unreached(app, "aiConsent.cancel") }
+        XCTAssertGreaterThanOrEqual(cancel.frame.height, 44, "「やめる」の当たりが 44 に足りない")
+        cancel.tap()
+        guard sheet.waitForNonExistence(timeout: 10) else { return unreached(app, "aiConsent.sheet が閉じない") }
+        let declined = app.buttons["tripAI.band.declined"].firstMatch
+        guard declined.waitForExistence(timeout: 60) else { return unreached(app, "tripAI.band.declined") }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "65s2-AI に送らずに組んだ帯")
+        guard declined.isHittable else { return unreached(app, "tripAI.band.declined.isHittable") }
+        declined.tap()
+        guard sheet.waitForExistence(timeout: 20) else { return unreached(app, "やめたあとにもう一度聞かない") }
+        let agree = app.buttons["aiConsent.agree"].firstMatch
+        guard agree.waitForExistence(timeout: 5), agree.isHittable else { return unreached(app, "aiConsent.agree") }
+        agree.tap()
+        XCTAssertTrue(sheet.waitForNonExistence(timeout: 10), "同意しても同意のシートが閉じない")
+        XCTAssertFalse(app.buttons["tripAI.band.declined"].firstMatch.waitForExistence(timeout: 30),
+                       "同意したのに送らずに組んだ帯が残る")
+        shoot(app, "65s3-同意して AI で整えた日程")
+    }
+
     /// **今月の回数を使い切った（AI なしで組む・帯から Pro の案内）と、圏外で作れなかった（もう一度）**
     func testCapturesTripAIStates() {
         do {
@@ -4476,9 +4553,9 @@ final class ScreenshotTests: JPUITestCase {
         return app.descendants(matching: .any)["signin.form"].firstMatch.waitForNonExistence(timeout: 10)
     }
 
-    /// **ログインのお願いに新規登録**（札 #630・2026-11-15）。未ログインでホームの写真のいいねを押すと、確認に
-    /// 「新規登録」「ログインする」「キャンセル」が出る。「新規登録」は今のログイン画面を登録の側で、「ログインする」は
-    /// ログインの側で開く（どちらも押す回数 1回）。確認の絵を撮る（`69-ログインのお願い`）
+    /// **ログインのお願いはすぐログイン画面**（札 #628・2026-11-22。前は札 #630 の確認「新規登録」「ログインする」「キャンセル」を挟んだ）。
+    /// 未ログインでホームの写真のいいねを押すと、確かめの窓を出さず、すぐ今のログイン画面を登録の側で開く（押す回数 2 → 1）。
+    /// 上の一言は登録の文。画面の「ログインに戻る」でログインの側へ行ける。開いた絵を撮る（`69-ログインのお願い`）
     func testSignInAskOffersSignUp() {
         let app = launchSignedOutHome([])
         guard app.tabBars.firstMatch.waitForExistence(timeout: 30) else { return unreached(app, "タブ") }
@@ -4487,31 +4564,22 @@ final class ScreenshotTests: JPUITestCase {
         guard like.isHittable else { return unreached(app, "ホームのいいね（押せる所）") }
 
         like.tap()
-        let alert = app.alerts.firstMatch
-        XCTAssertTrue(alert.waitForExistence(timeout: 10), "未ログインでいいねを押しても確認が出ない")
-        let titles = alert.buttons.allElementsBoundByIndex.map(\.label)
-        print("[signin-ask] buttons=\(titles)")
-        XCTAssertEqual(titles.first, "新規登録", "確認の先頭（主）が新規登録でない: \(titles)")
-        XCTAssertTrue(titles.contains("ログインする"), "確認にログインが無い: \(titles)")
-        Thread.sleep(forTimeInterval: 1)
-        shoot(app, "69-ログインのお願い（いいねの確認・未ログイン）")
-        alert.buttons["新規登録"].tap()
         let form = app.descendants(matching: .any)["signin.form"].firstMatch
-        XCTAssertTrue(form.waitForExistence(timeout: 10), "「新規登録」を押してもログイン画面が開かない")
-        assertSignInSide(app, signUp: true, "確認の「新規登録」")
-        // 登録の側の上の一言は登録の文（確かめ役の指摘 1・2026-11-15。「〜にはログインしてください」を出さない）
+        XCTAssertTrue(form.waitForExistence(timeout: 10), "未ログインでいいねを押しても、すぐログイン画面が開かない")
+        XCTAssertEqual(app.alerts.count, 0, "確かめの窓（ログインが必要です）を挟んだ")
+        assertSignInSide(app, signUp: true, "いいねから")
+        // 登録の側の上の一言は登録の文（「〜にはログインしてください」を出さない）
         XCTAssertTrue(app.staticTexts["登録すると、いいねできます"].firstMatch.waitForExistence(timeout: 5),
                       "登録の側の上の一言が登録の文でない")
         XCTAssertFalse(app.staticTexts["いいねするにはログインしてください"].firstMatch.exists, "登録の欄の上にログインの文が出ている")
         Thread.sleep(forTimeInterval: 1)
-        shoot(app, "69b-ログインのお願いの新規登録（今のログイン画面の登録の側）")
+        shoot(app, "69-ログインのお願い（いいねからすぐ登録の側・未ログイン）")
 
+        // 閉じて押し直しても、また1回で開く
         guard closeSignInSheet(app), like.waitForExistence(timeout: 10), like.isHittable else { return }
         like.tap()
-        XCTAssertTrue(alert.waitForExistence(timeout: 10), "2回目の確認が出ない")
-        alert.buttons["ログインする"].tap()
-        XCTAssertTrue(form.waitForExistence(timeout: 10), "「ログインする」を押してもログイン画面が開かない")
-        assertSignInSide(app, signUp: false, "確認の「ログインする」")
+        XCTAssertTrue(form.waitForExistence(timeout: 10), "2回目に押してもログイン画面が開かない")
+        XCTAssertEqual(app.alerts.count, 0, "2回目に確かめの窓を挟んだ")
     }
 
     /// 並びを指で `dy` だけ動かす（正なら下へ引く）。1回で動かすのは画面の 40% まで
@@ -9041,18 +9109,20 @@ final class ScreenshotTests: JPUITestCase {
         }
     }
 
-    /// **初めての手引きと押して置く**（`-JPPreviewCamperRoomCoach`・Debug のみ・2026-10-21）: 部屋に初めて入った時の 3 行の手引き、
+    /// **初めての手引きと押して置く**（`-JPPreviewCamperRoomCoach`・Debug のみ・2026-10-21）: 部屋に初めて入った時の 1 行の手引き（札 #628）、
     /// 「置く」の新しい家具の件数・棚の真鍮の点、棚の家具を押して置ける所が光った所を**必ず撮る**。押せる所は 44pt 以上
     func testCapturesCamperRoomGuide() {
         let app = launchTrunk(["-JPPreviewCamperRoomReset", "YES", "-JPPreviewCamperRoomCoach", "YES"])
         XCTAssertTrue(openCamperRoom(app), "とおまわり号の中に入れない")
         guard waitRoom(app, "camper.room.scene", "camper-room-ready") else { return XCTFail("部屋を組み終えない") }
-        let done = app.buttons["camper.room.coach.done"].firstMatch
-        XCTAssertTrue(done.waitForExistence(timeout: 5), "初めての手引きが出ない")
+        // 2026-11-22（札 #628）: 手引きは部屋の下の端の1行。押せず（部屋はすぐ触れる）、部屋を触ったら消える
+        let coach = app.descendants(matching: .any)["camper.room.coach"].firstMatch
+        XCTAssertTrue(coach.waitForExistence(timeout: 5), "初めての手引きが出ない")
         shoot(app, "96f-とおまわり号の中（初めての手引き）")
-        XCTAssertGreaterThanOrEqual(done.frame.height, 44, "手引きの「わかった」が 44pt 未満")
-        done.tap()
-        XCTAssertFalse(done.waitForExistence(timeout: 2), "手引きが閉じない")
+        XCTAssertFalse(app.buttons["camper.room.coach.done"].firstMatch.exists, "「わかった」まで触れない札が残っている")
+        // 家具を選ばないよう、部屋の上の方（壁）を触る
+        app.descendants(matching: .any)["camper.room.scene"].firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.2)).tap()
+        XCTAssertTrue(coach.waitForNonExistence(timeout: 3), "部屋を触っても手引きが消えない")
         app.buttons["camper.room.tool.place"].firstMatch.tap()
         XCTAssertTrue(app.buttons["camper.room.done"].firstMatch.waitForExistence(timeout: 5), "置く場面にならない")
         // 壁の額は何枚でも掛けられ、どの部屋にも置ける所がある（床の大きな寝台は置ける所が無いことがある・run 605）

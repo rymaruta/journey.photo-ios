@@ -574,9 +574,10 @@ if testflight_yml.exists() and pr_yml.exists():
                 if run.returncode != 0 or not any(got[i:i + len(want)] == want for i in range(len(got))):
                     fail(f"Tools/xcode-test.sh {mode} が xcodebuild に時間の上限を渡していません: "
                          f"{run.returncode} {got} {run.stderr[-300:]}")
-    # 配信時の自動選択と、storeShots の全件指定を検査する。
+    # 配信時の自動選択と、storeShots の絵に要るテストだけの指定を検査する（2026-11-22・札 #604）。
     scope = step_block(flow, "どこまで流すかを決める") or ""
-    for required in ('SCREENS="auto"', 'SCREENS="none"', 'SCREENS=""',
+    for required in ('SCREENS="auto"', 'SCREENS="none"',
+                     'python3 Tools/store-screenshots.py --only-testing > /tmp/ui-only-testing.txt',
                      'python3 Tools/pick-ui-tests.py --related /tmp/ui-changes.diff'):
         if required not in scope:
             fail(f"ios-testflight.yml のテスト範囲選択が不足しています: {required}")
@@ -727,10 +728,38 @@ if testflight_yml.exists() and pr_yml.exists():
             fail("pick-ui-tests.py --plan が、空の組に改行を書きます（xcode-test.sh が中身ありと読み、UI を全部流す）")
     # **分けて流すかは `--sharded` の1か所で決め、`wants_all` と同じに読む**
     for args, want in [((False, False, ""), True), ((False, False, "  "), True), ((False, False, "all, 撮影スポット"), True),
-                       ((False, False, "撮影スポット"), False), ((False, True, "撮影スポット"), True),
+                       ((False, False, "撮影スポット"), False), ((False, True, "撮影スポット"), False), ((False, True, ""), False),
                        ((True, False, ""), False), ((True, True, ""), False)]:
         if pick_mod.sharded(*args) != want:
             fail(f"pick-ui-tests.py の sharded{args} が {want} になりません")
+    # **App Store 用の絵の回（storeShots）が、材料を撮るテストを流しているか**（2026-11-22・札 #604）。
+    # `store-screenshots.py` の STORE_TESTS だけを流すので、材料の名前がそのテストの中から消えると絵が作れない
+    import importlib.util as _ilu
+    _spec = _ilu.spec_from_file_location("store_screenshots", ROOT / "Tools/store-screenshots.py")
+    store_mod = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(store_mod)
+    ui_tests = pick_mod.read_tests()
+    for test in store_mod.STORE_TESTS:
+        if test not in ui_tests or pick_mod.only_when_named(test):
+            fail(f"store-screenshots.py の STORE_TESTS の {test} が UI テストに無いか、名指しの回だけのテストです")
+    store_text = "\n".join(ui_tests.get(t, "") for t in store_mod.STORE_TESTS)
+    # 「10-ホーム」（タブを回す輪の `"1\(index)-\(name)"`）と「62a-…」（`"62\(["a", …][i])-…"`）は組み立てた名前なので、
+    # 字のままでは現れない。組み立てに使う側の字（タブの名前の一覧・札の名前の後ろ）で見る
+    built = {"10-ホーム": "\nホーム\n", "62a-ストーリーの曲の札": "-ストーリーの曲の札（\\(name)）"}
+    for prefix in [p for _, p, _, _ in store_mod.SLIDES] + [p for _, p in store_mod.REVIEW]:
+        if built.get(prefix, prefix) not in store_text:
+            fail(f"App Store 用の絵の材料「{prefix}」を、STORE_TESTS のどのテストも撮っていません（store-screenshots.py）")
+    # 見本で描けるまで storeShots の回は build の job の最初の段で止める（2026-11-22・札 #604）。外すのは見本の仕組みと一緒に
+    stop = step_block(flow, "App Store 用の絵は見本で描けるまで止める") or ""
+    build_steps = re.findall(r"^      - name: (.+)$", flow.split("\n  build:\n", 1)[-1], re.M)
+    if ("if: ${{ inputs.storeShots }}" not in stop or "exit 1" not in stop or "札 #604" not in stop
+            or "見本で描けるようになるまで使えません" not in stop
+            or not build_steps or build_steps[0] != "App Store 用の絵は見本で描けるまで止める"):
+        fail("ios-testflight.yml の build の最初の段で storeShots の回を止めていません（本番の他の利用者の写真で描くため・札 #604）")
+    if "Tools/upload-store-shots.sh" not in flow:
+        fail("ios-testflight.yml が storeShots の絵を非公開の S3 に置いていません（Tools/upload-store-shots.sh）")
+    if re.search(r"store-screenshots\s*$", exporter, re.M) or "upload-artifact" in (ROOT / "Tools/upload-store-shots.sh").read_text(encoding="utf-8"):
+        fail("App Store 用の絵を公開の枝・成果物に置く道が残っています（#451）")
     # 時間の表に無いテストは中央の値で見積もる（新しいテストで割り振りが崩れない）
     est = pick_mod.estimate(["A/a", "A/b", "A/new"], {"A/a": 10.0, "A/b": 30.0})
     if est["A/new"] != 30.0:

@@ -9,7 +9,7 @@ import SwiftUI
 /// ログイン画面と同じもので、ログインできたらシートを閉じる。
 ///
 /// 使い方: 画面に `.signInPrompt(ask: $ask, open: $open)` を付け、
-/// - 押した操作の断り（確かめてから進む）は `ask` に入れる → 「ログインする」の確認
+/// - 押した操作の断りは `ask` に入れる → すぐ登録の側のログイン画面（2026-11-22・札 #628 で確かめの窓をやめた）
 /// - 「ログインする」のボタンから直接進むときは `open` に入れる → すぐログイン画面
 ///
 /// **新規登録も同じお願いに出す（札 #630・2026-11-15 判断）。** owner「ログインのお願いあるけど、会員登録してない人には
@@ -103,6 +103,14 @@ enum SignInPrompt {
     }
 }
 
+/// 押した操作の断り（`ask`）から開くログインの画面（札 #628・2026-11-22 判断）。確かめの窓を挟まず、
+/// 登録の側で、登録の一言と続き（いいね・保存など）を持ったまま開く
+enum SignInPromptOpening {
+    static func opened(from request: SignInRequest) -> SignInRequest {
+        SignInPrompt.signUpRequest(from: request)
+    }
+}
+
 /// ログイン画面をシートで出す（中身はタブのログイン画面 `SignInView` そのもの）
 struct SignInSheet: View {
 
@@ -154,15 +162,13 @@ struct SignInPromptPresenter: ViewModifier {
                 waiting = nil
                 onSignedIn?(followUp)
             }
-            .alert(Labels.Common.signInRequired,
-                   isPresented: Binding(get: { ask != nil }, set: { if !$0 { ask = nil } }),
-                   presenting: ask) { request in
-                // 新規登録を先（主）に置く（札 #630・2026-11-15 判断）。押したら今のログイン画面を登録の側で開く
-                Button(SignInPrompt.signUpLabel) { open = SignInPrompt.signUpRequest(from: request) }
-                Button(SignInPrompt.actionLabel) { open = request }
-                Button(Labels.Common.cancel, role: .cancel) {}
-            } message: { request in
-                Text(request.reason)
+            // 2026-11-22 判断（札 #628）: **確かめの窓（「ログインが必要です」）を挟まず、すぐログインの画面を開く。**
+            // 取り消せない操作ではないので確かめは要らない（押す回数 2 → 1）。開くのは登録の側（新規登録が主・札 #630）。
+            // 画面に「ログインに戻る」があるので、登録済みの人も1回で入れる（`SignInPrompt.direct` と同じ形）
+            .onChange(of: ask?.id) { _, _ in
+                guard let request = ask else { return }
+                ask = nil
+                open = SignInPromptOpening.opened(from: request)
             }
             .sheet(item: $open, onDismiss: {
                 // ログインせずに閉じたら、続きは忘れる（次に別の人がログインしたときに勝手に送らない）

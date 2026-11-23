@@ -3,9 +3,12 @@
 
     python3 Tools/store-screenshots.py <画面写真の置き場> <出力先>
 
-<画面写真の置き場> は PR の検証の「xcode-test-results」の中の `build/shots`
-（`manifest.json` と、名前が UUID の png が並んだところ）。ScreenshotTests が
-iPhone 17 Pro Max で撮るので、写真は 1320×2868 で届く。
+    python3 Tools/store-screenshots.py --only-testing   # 撮るのに要る UI テストだけを xcodebuild の引数で出す
+
+<画面写真の置き場> は `xcrun xcresulttool export attachments` で取り出した所
+（`manifest.json` と、名前が UUID の png が並んだところ）。CI では `Tools/upload-store-shots.sh` が
+`ios-testflight.yml` の `storeShots: true` の回に呼び、出来た絵を**非公開の S3** に置く（2026-11-22・札 #604）。
+材料の画面の寸法が機種で変わっても、出す絵は合成で必ず 1320×2868（6.9インチの枠）になる。
 
 1枚ごとに、上に真鍮の眉ラベルと明朝の見出し、下に画面を角丸で置く（黒地）。
 色と字はデザインの板「黒塗りの真鍮」に合わせる: 地 #000・真鍮 #C9A66B（黒地の上だけ）・
@@ -19,8 +22,10 @@ Pillow が要る（`pip install pillow`）。
 import json
 import os
 import sys
+import unicodedata
 
-from PIL import Image, ImageDraw, ImageFont
+# Pillow は絵を作るときだけ読む（`--only-testing` は Mac の素の python3 で呼ぶ。Pillow が無い）
+Image = ImageDraw = ImageFont = None
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MINCHO = os.path.join(ROOT, "Sources/JourneyPhoto/Resources/Fonts/ShipporiMinchoB1-Bold.ttf")
@@ -42,6 +47,32 @@ SLIDES = [
     ("07-写真の詳細", "20-写真の詳細", "写真", "一枚の向こうの\n場所まで"),
 ]
 
+# 審査（App 内課金の審査）に出す絵。合成せず、撮った原寸の PNG をそのまま置く（出力の名前, 材料の名前の頭）
+REVIEW = [
+    ("review-Pro の案内", "81-Pro の案内"),
+]
+
+# 上の材料を撮る UI テスト（「Class/test」）。`storeShots` の回はこれだけを流す（2026-11-22 判断・札 #604）。
+# 全部の UI テスト（4台・約1時間）を流さずに、Mac の回を30分に収める（CLAUDE.md「Mac のテストは毎回30分以内」）。
+# 名前の一部で選ぶ `pick-ui-tests.py` の書き方だと、`testCapturesProPaywall` が `…FromTrunk` まで拾うので、ここは名前で決め打つ。
+# 材料とテストの対応は `Tools/check-config.py` が見る（材料の名前がテストの中から消えたら止まる）
+STORE_TESTS = [
+    "ScreenshotTests/testCapturesEveryScreen",             # 10-ホーム・20-写真の詳細・70-ストア・撮影スポット
+    "ScreenshotTests/testCapturesTripShare",               # 66c-旅行プラン（仲間と共有・日程）
+    "ScreenshotTests/testCapturesUploadEditEntry",         # 42-投稿（写真の編集の入口）
+    "ScreenshotTests/testCapturesStorySongStickerStyles",  # 62a-ストーリーの曲の札
+    "ScreenshotTests/testCapturesDirectMessages",          # 86m4-メッセージ（会話）
+    "ScreenshotTests/testCapturesProPaywall",              # 81-Pro の案内（審査用）
+]
+UI_TARGET = "JourneyPhotoUITests"
+# 起動の見張りはいつも足す（`pick-ui-tests.py` の ALWAYS と同じ）
+ALWAYS = "SmokeTests"
+
+
+def nfc(text):
+    # macOS が返す名前は NFD のことがある（`export-screenshots.sh` の注記）。比べる前に揃える
+    return unicodedata.normalize("NFC", text)
+
 
 def shots_by_name(folder):
     """manifest.json を読み、「人が読める名前」→ png の道 を返す"""
@@ -53,8 +84,8 @@ def shots_by_name(folder):
         if isinstance(node, dict):
             name = node.get("suggestedHumanReadableName")
             file = node.get("exportedFileName")
-            if name and file and file.endswith(".png"):
-                found[name] = os.path.join(folder, file)
+            if name and file and file.lower().endswith(".png"):
+                found[nfc(name)] = os.path.join(folder, file)
             for value in node.values():
                 walk(value)
         elif isinstance(node, list):
@@ -67,7 +98,7 @@ def shots_by_name(folder):
 
 def pick(found, prefix):
     for name in sorted(found):
-        if name.startswith(prefix):
+        if name.startswith(nfc(prefix)):
             return found[name]
     return None
 
@@ -105,10 +136,22 @@ def compose(shot_path, eyebrow, heading):
     return canvas
 
 
+def load_pillow():
+    global Image, ImageDraw, ImageFont
+    from PIL import Image as _image, ImageDraw as _draw, ImageFont as _font
+    Image, ImageDraw, ImageFont = _image, _draw, _font
+
+
 def main():
+    if len(sys.argv) == 2 and sys.argv[1] == "--only-testing":
+        print(f"-only-testing:{UI_TARGET}/{ALWAYS}")
+        for test in STORE_TESTS:
+            print(f"-only-testing:{UI_TARGET}/{test}")
+        return 0
     if len(sys.argv) != 3:
         print(__doc__)
         return 2
+    load_pillow()
     folder, out = sys.argv[1], sys.argv[2]
     os.makedirs(out, exist_ok=True)
     found = shots_by_name(folder)
@@ -123,6 +166,25 @@ def main():
         dest = os.path.join(out, f"{name}.png")
         image.save(dest)
         print(f"作った: {dest}")
+    for name, prefix in REVIEW:
+        path = pick(found, prefix)
+        if path is None:
+            missing.append(f"{name}（材料「{prefix}…」が無い）")
+            continue
+        dest = os.path.join(out, f"{name}.png")
+        Image.open(path).save(dest)
+        print(f"写した（原寸）: {dest}")
+    # 何をどの寸法で作ったかの控え（`Tools/fetch-shots.sh` で落とした人が読む）
+    with open(os.path.join(out, "README.md"), "w", encoding="utf-8") as f:
+        f.write("# App Store 用の絵\n\n")
+        f.write(f"- コミット: {os.environ.get('GITHUB_SHA', '?')}\n- 実行: {os.environ.get('GITHUB_RUN_NUMBER', '?')}\n\n")
+        for file in sorted(os.listdir(out)):
+            if file.endswith(".png"):
+                with Image.open(os.path.join(out, file)) as image:
+                    f.write(f"- {file}: {image.width}×{image.height}\n")
+        if missing:
+            f.write("\n作れなかった: " + " / ".join(missing) + "\n")
+        f.write("\n**非公開の置き場から3日で消える。** 見終わったら手元からも消す（`Tools/fetch-shots.sh <run> --clean`）。\n")
     if missing:
         print("作れなかった:", *missing, sep="\n  ")
         return 1

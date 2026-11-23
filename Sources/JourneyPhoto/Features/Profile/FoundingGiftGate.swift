@@ -4,16 +4,17 @@ import Foundation
 ///
 /// - 出すのは**初期ユーザー章を持っていて、名前の横にまだ飾っていない人**だけ
 /// - 「受け取って、プロフィールに飾る」で飾ったら二度と出さない
-/// - 「あとで」は閉じるだけ。**次の起動でもう一度出す（同じ人に出すのは合わせて3回まで）**。
-///   しつこくしない。飾りたくなったら、マイページの名前の横（飾っていない人には点線の丸）から選べる
+/// - 「あとで」は閉じるだけ。**同じ人に出すのは1回まで**（2026-11-22 判断・札 #628: 前は3回まで。
+///   起動のたびに割り込む画面を減らす）。飾りたくなったら、マイページの名前の横（飾っていない人には点線の丸）から選べる
 ///   （2026-11-12 owner 案 A で入口を移した。プロフィールの編集の「バッジ」の節は外した）
+/// - 起動で割り込む画面は1つまで（`LaunchNoticeSlot`）。ほかが先に出た起動では出さず、数えもしない（次の起動で出る）
 /// - 覚えるのは人ごと（同じ端末で別の人が入っても、その人の分は数え直す）
 struct FoundingGiftGate {
 
     /// 初期ユーザー章の鍵（サーバーの `earlyUser`）
     static let badgeKey = "earlyUser"
     /// 同じ人に出す回数の上限
-    static let maxShows = 3
+    static let maxShows = 1
     static func shownKey(_ userId: String) -> String { "foundingGift.shown.\(userId)" }
     static func doneKey(_ userId: String) -> String { "foundingGift.done.\(userId)" }
 
