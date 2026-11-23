@@ -351,11 +351,21 @@ final class StoreDemoTests: XCTestCase {
     func testDMConversationMatchesDemoPhotos() throws {
         let me = StoreDemo.userId
         let id = DMRules.conversationId(me, PreviewBackend.dmPeers[0].id)
-        func texts(demo: Bool) throws -> [String] {
-            let reply = try XCTUnwrap(PreviewBackend.dmReply(method: "GET", parts: ["dm", id], json: [:], me: me, now: Date(), demo: demo))
+        let sample = StoreDemo.feed().first.map { ["id": $0["id"] ?? "", "state": "live", "src": $0["src"] ?? ""] as [String: Any] }
+        func items(demo: Bool) throws -> [[String: Any]] {
+            let reply = try XCTUnwrap(PreviewBackend.dmReply(method: "GET", parts: ["dm", id], json: [:], me: me, now: Date(),
+                                                             samplePhoto: sample, demo: demo))
             let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: reply.body) as? [String: Any])
-            return (object["items"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }
+            return object["items"] as? [[String: Any]] ?? []
         }
+        func texts(demo: Bool) throws -> [String] { try items(demo: demo).compactMap { $0["text"] as? String } }
+        // 「写真を表示できません」（見られなくなった写真）の1通は、見本の表示では出さない。写真の通（見本の写真）は残す
+        func goneCount(demo: Bool) throws -> Int {
+            try items(demo: demo).filter { (($0["photo"] as? [String: Any])?["state"] as? String) == "gone" }.count
+        }
+        XCTAssertEqual(try goneCount(demo: true), 0, "見本の表示に「写真を表示できません」の1通が出る")
+        XCTAssertEqual(try goneCount(demo: false), 1, "見本でないのに見られなくなった写真の1通が消えた")
+        XCTAssertTrue(try items(demo: true).contains { ($0["photo"] as? [String: Any])?["state"] as? String == "live" })
         let demo = try texts(demo: true)
         for word in ["夕焼け", "伊豆", "雪吊り", "kenrokuen"] {
             XCTAssertFalse(demo.contains { $0.contains(word) }, "見本の写真と合わない文: \(word)")

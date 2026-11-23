@@ -606,6 +606,9 @@ enum PreviewBackend {
                     photo["photoOnly"] = true
                     photo["photo"] = samplePhoto
                     items.append(photo)
+                }
+                // App Store の見本（`StoreDemo`）では「写真を表示できません」の1通を出さない（宣伝の絵に向かない）
+                if !demo, samplePhoto?["id"] is String {
                     var gone = msg(7, mine: false, "この写真もよかった", 20)
                     gone["photoId"] = "preview-gone-photo"
                     gone["photo"] = ["id": "preview-gone-photo", "state": "gone"] as [String: Any]
