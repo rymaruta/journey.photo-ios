@@ -1,35 +1,42 @@
 import SwiftUI
 
-/// 旅行プランの行の右の写真の枠（札 #710 の案3・`TripPlanPhotos`）。56pt・角 10（板「場所の札の写真 56、角 10」）。
-///
-/// - 自分の写真があれば、その写真（押すと写真の詳細）
-/// - 今日の、まだ写真の無い観光スポットは、真鍮の点線の「＋」（黒地の上の合図・押すと投稿の画面）
-/// - どちらでもなければ何も置かない（空き地を作らない）
+/// 旅行プランの行の番号の丸の右の写真（札 #710 の案3・`TripPlanPhotos.thumb`）。44pt・角 10
+/// （AI が作っている途中の行 `TripAIViews.row` と同じ形）。自分の写真か、無ければ観光スポットの写真
+struct TripStopThumbView: View {
+    let thumb: TripStopThumb
+
+    static let side: CGFloat = 44
+
+    var body: some View {
+        Group {
+            switch thumb {
+            case .mine(let photo):
+                DownsampledRemoteImage(url: photo.gridImageURL, contentMode: .fill,
+                                       aspectRatio: photo.aspectRatio.map { CGFloat($0) },
+                                       assumedRatioLimit: PhotoFrame.assumedRatioLimit)
+            case .spot(let image):
+                SpotThumbImage(image: image, assumedRatioLimit: 2)
+            }
+        }
+        .frame(width: Self.side, height: Self.side)
+        .background(WebTheme.card)
+        .clipShape(RoundedRectangle(cornerRadius: JPRadius.s))
+        .accessibilityHidden(true)
+        .accessibilityIdentifier(thumb.isMine ? "tripPlan.stopPhoto" : "tripPlan.stopSpotPhoto")
+    }
+}
+
+/// 行の右の点線の「＋」（札 #710 の案3）。**今日の、まだ自分の写真の無い観光スポットだけ**。
+/// 行の写真（観光スポットの写真）には重ねず、行の右に置く。真鍮（黒地の上の合図）・押すと投稿の画面
 struct TripStopPhotoSlot: View {
-    let photo: Photo?
     let invites: Bool
     let name: String
     let onInvite: () -> Void
 
-    static let side: CGFloat = 56
+    static let side: CGFloat = 44
 
     var body: some View {
-        if let photo {
-            NavigationLink {
-                // 自分の写真だけ（`TripPlanPhotos.mine`）。他人の写真はここに出さない
-                PhotoDetailView(photo: photo, context: [photo])
-            } label: {
-                DownsampledRemoteImage(url: photo.gridImageURL, contentMode: .fill,
-                                       aspectRatio: photo.aspectRatio.map { CGFloat($0) },
-                                       assumedRatioLimit: PhotoFrame.assumedRatioLimit)
-                    .frame(width: Self.side, height: Self.side)
-                    .background(WebTheme.card)
-                    .clipShape(RoundedRectangle(cornerRadius: JPRadius.s))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L("\(name) で撮ったあなたの写真", "Your photo at \(name)"))
-            .accessibilityIdentifier("tripPlan.stopPhoto")
-        } else if invites {
+        if invites {
             Button(action: onInvite) {
                 Image(systemName: "plus")
                     .font(.title3)

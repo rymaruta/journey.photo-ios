@@ -55,6 +55,26 @@ final class TripPlanPhotosTests: XCTestCase {
         XCTAssertEqual(TripPlanPhotos.line(try photo("b", date: "2026-11-23")), L("あなたの1枚", "Your photo"))
     }
 
+    /// 行の写真: 自分の写真があればそれ、無ければ観光スポットの写真、どちらも無ければ置かない
+    /// （owner 2026-11-23「AIでプラン作った時に画像出てこないぞ」: 作り終えた日程の行にも写真を出す）
+    func testThumbPrefersMineThenSpotPhoto() throws {
+        let spot = try JSONDecoder.api.decode(OfficialSpot.self, from: Data(
+            #"{"spotId":"sp_1","slug":"a","name":"宝厳院","stage":"published","image":{"url":"https://journey-photo.com/images/spots/a.jpg","author":"A","license":"CC BY 4.0"}}"#.utf8))
+        let mine = try photo("m", spotId: "sp_1", date: "2026-11-23")
+        XCTAssertTrue(TripPlanPhotos.thumb(mine: mine, spot: spot)?.isMine == true)
+        XCTAssertNotNil(spot.photo, "前提: 観光スポットの写真を読めていない")
+        XCTAssertEqual(TripPlanPhotos.thumb(mine: nil, spot: spot)?.isMine, false, "観光スポットの写真が出ていない")
+        XCTAssertNil(TripPlanPhotos.thumb(mine: nil, spot: nil), "撮影地だけの行は今の形")
+        // 日程の画面は行に写真を渡す（番号の丸の右・作っている途中の行と同じ 44）
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources/JourneyPhoto/Features/Trips")
+        let detail = try String(contentsOf: url.appendingPathComponent("TripPlanDetailView.swift"), encoding: .utf8)
+        XCTAssertTrue(detail.contains("TripPlanPhotos.thumb(mine: mine, spot: spotFor(item))"))
+        let parts = try String(contentsOf: url.appendingPathComponent("TripParts.swift"), encoding: .utf8)
+        XCTAssertTrue(parts.contains("TripStopThumbView(thumb: thumb)"))
+        XCTAssertEqual(TripStopThumbView.side, 44)
+    }
+
     /// 他人の写真は並べない: 日程の画面は自分の写真（`myPhotos`）だけを渡す
     func testScreenPassesOnlyMyPhotos() throws {
         let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()

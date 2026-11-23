@@ -4697,6 +4697,17 @@ final class ScreenshotTests: JPUITestCase {
 
     /// 65t 旅行プランの日程の時刻（札 #677・案A）: 場所の左に着く時刻、日の見出しの右「出発 9:00」を押して時刻を選ぶ。
     /// 65u 11:00 を選ぶと時刻がそろってずれる。出なければ撮らずに抜ける。終わりに 9:00 へ戻す（この iPhone に覚えるため）
+    /// **旅行プランの行の写真**（札 #710 の案3・owner 2026-11-23「AIでプラン作った時に画像出てこないぞ」）。
+    /// 番号の丸の右に観光スポットの写真（自分の写真があればそれ）。出なければ撮らずに抜ける
+    func testCapturesTripPlanStopPhotos() {
+        let app = launchTrunk(["-JPTripPlanFixture", "YES"])
+        guard openFixturePlan(app) else { return }
+        let thumb = app.descendants(matching: .any).matching(identifier: "tripPlan.stopSpotPhoto").firstMatch
+        guard thumb.waitForExistence(timeout: 10) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "65p-旅行プランの行の写真（観光スポットの写真・自分の写真）")
+    }
+
     func testCapturesTripPlanTimes() {
         let app = launchTrunk(["-JPTripPlanFixture", "YES"])
         guard openFixturePlan(app) else { return }

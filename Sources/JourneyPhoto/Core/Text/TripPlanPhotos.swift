@@ -44,6 +44,17 @@ enum TripPlanPhotos {
         return false
     }
 
+    /// 行の写真（番号の丸の右・44pt）。**自分がそこで撮った写真があればそれ、無ければ観光スポットの写真**。
+    /// 撮影地だけの場所で自分の写真も無ければ nil（今の形のまま）。
+    ///
+    /// 2026-11-23（owner「AIでプラン作った時に画像出てこないぞ」）: AI が作っている途中の行は観光スポットの写真を出していたのに、
+    /// 作り終えた日程の行には写真を出す仕組みが無く、写真が消えて見えた。作っている途中の行と同じ形にそろえる
+    static func thumb(mine: Photo?, spot: OfficialSpot?) -> TripStopThumb? {
+        if let mine { return .mine(mine) }
+        if let image = spot?.photo { return .spot(image) }
+        return nil
+    }
+
     /// 行の下の一行「あなたの1枚　8:12」（時刻が分からなければ「あなたの1枚」だけ）
     static func line(_ photo: Photo) -> String {
         let head = L("あなたの1枚", "Your photo")
@@ -60,5 +71,18 @@ enum TripPlanPhotos {
         let nums = raw[raw.index(after: t)...].split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
         guard nums.count >= 2, (0...23).contains(nums[0]), (0...59).contains(nums[1]) else { return nil }
         return String(format: "%d:%02d", nums[0], nums[1])
+    }
+}
+
+/// 旅行プランの行の写真（`TripPlanPhotos.thumb`）
+enum TripStopThumb {
+    /// 自分がその日そこで撮った写真
+    case mine(Photo)
+    /// 観光スポットの写真（台帳の公開の写真。出典は開いた先の観光スポットの頁に出す・行きたい場所の行と同じ扱い）
+    case spot(SpotImage)
+
+    var isMine: Bool {
+        if case .mine = self { return true }
+        return false
     }
 }

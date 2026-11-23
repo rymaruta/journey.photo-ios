@@ -1406,15 +1406,16 @@ struct TripPlanDetailView: View {
         let mine = TripPlanPhotos.mine(for: item, on: ymd, mine: myPhotos)
         let invites = TripPlanPhotos.invites(item, on: ymd, today: TripPlanText.ymd(pickedIn: .current, Date()),
                                              hasPhoto: mine != nil)
+        let thumb = TripPlanPhotos.thumb(mine: mine, spot: spotFor(item))
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
-                itemLink(item, name: name, number: number, season: season, chip: chip, time: time)
-                TripStopPhotoSlot(photo: mine, invites: invites, name: name) { invitePost(item) }
+                itemLink(item, name: name, number: number, season: season, chip: chip, time: time, thumb: thumb)
+                TripStopPhotoSlot(invites: invites, name: name) { invitePost(item) }
                 itemMenu(di, ii, item, name: name)
                 dragHandle(di, ii, item, name: name)
             }
             TripStopPhotoLine(photo: mine, invites: invites)
-                .padding(.leading, 36)
+                .padding(.leading, thumb == nil ? 36 : 36 + TripStopThumbView.side + JPSpace.s)
             aiSwapButton(di, ii, item, name: name)
         }
         .overlay(alignment: .top) { dropLine(DropSpot(day: di, item: ii)) }
@@ -1799,40 +1800,46 @@ struct TripPlanDetailView: View {
     /// 名前を押すとその場所へ。**開ける先が無いものは行だけ**（押しても何も起きない札を作らない）
     @ViewBuilder
     private func itemLink(_ item: TripItem, name: String, number: Int, season: String?, chip: String?,
-                          time: TripTimes.Row? = nil) -> some View {
+                          time: TripTimes.Row? = nil, thumb: TripStopThumb? = nil) -> some View {
         switch item {
         case .spot(let spotId, _):
             if let spot = index.first(where: { $0.spotId == spotId }) {
                 NavigationLink {
                     OfficialSpotView(spot: spot, spots: index, photos: photos, photosKnown: gotPhotos)
                 } label: {
-                    itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chip: chip, by: addedByText(item), time: time)
+                    itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chip: chip, by: addedByText(item), time: time,
+                              thumb: thumb)
                 }
                 .buttonStyle(.plain)
             } else {
-                itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chip: chip, by: addedByText(item), time: time)
+                itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chip: chip, by: addedByText(item), time: time,
+                          thumb: thumb)
             }
         case .location(let slug, _):
             if let place = places.first(where: { $0.slug == slug }) {
                 NavigationLink {
                     SpotDetailView(spot: place, photos: photos)
                 } label: {
-                    itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chip: nil, by: addedByText(item), time: time)
+                    itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chip: nil, by: addedByText(item), time: time,
+                              thumb: thumb)
                 }
                 .buttonStyle(.plain)
             } else {
-                itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chip: nil, by: addedByText(item), time: time)
+                itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chip: nil, by: addedByText(item), time: time,
+                          thumb: thumb)
             }
         }
     }
 
     /// 行の中身（v2 の板 TripPlanDays・F30: 番号の丸 → 名前 → 季節の一文と時間帯の札 → ひとこと・`TripStopLabel`）
     private func itemLabel(_ name: String, number: Int, isSpot: Bool, note: String?,
-                           season: String?, chip: String?, by: String? = nil, time: TripTimes.Row? = nil) -> some View {
+                           season: String?, chip: String?, by: String? = nil, time: TripTimes.Row? = nil,
+                           thumb: TripStopThumb? = nil) -> some View {
         let byLeading: CGFloat = time == nil ? 36 : 36 + timeLeading
         return VStack(alignment: .leading, spacing: 2) {
             TripStopLabel(number: number, name: name, isSpot: isSpot, season: season, timeChip: chip, note: note,
-                          time: time?.arrive, showsTime: time != nil, timeCaution: time.flatMap(TripTimes.cautionLine))
+                          time: time?.arrive, showsTime: time != nil, timeCaution: time.flatMap(TripTimes.cautionLine),
+                          thumb: thumb)
             // 共有したプランで、ほかの仲間が足した場所（「あお が足しました」）
             if let by {
                 Text(by)

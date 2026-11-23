@@ -240,6 +240,8 @@ struct TripStopLabel: View {
     var showsTime = false
     /// 朝の場所に遅れて着く一言・待たせなかった夜の場所の日の入り（`TripTimes.cautionLine`）
     var timeCaution: String? = nil
+    /// 番号の丸の右の写真（自分の写真か観光スポットの写真・`TripPlanPhotos.thumb`・札 #710）。無ければ置かない
+    var thumb: TripStopThumb? = nil
 
     @ScaledMetric(relativeTo: .body) private var timeWidth: CGFloat = TripTimeStyle.columnWidth
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -256,6 +258,10 @@ struct TripStopLabel: View {
             }
             TripStopNumber(number: number)
                 .padding(.top, 2)
+            if let thumb {
+                // AI が作っている途中の行（`TripAIViews.row`）と同じ形: 44pt・角 10
+                TripStopThumbView(thumb: thumb)
+            }
             VStack(alignment: .leading, spacing: JPSpace.xxs) {
                 if showsTime, !inColumn, time != nil {
                     TripTimeText(minutes: time)
