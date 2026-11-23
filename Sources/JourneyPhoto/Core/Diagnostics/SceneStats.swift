@@ -3,23 +3,16 @@ import Foundation
 import SceneKit
 import UIKit
 
-/// 場面の中身の数（2026-11-06・札 #430 のメモリ）。**見た目は変えない・測るだけ**。
+/// SceneKit の場面の中身の数（測るだけ・見た目は変えない）。
 ///
-/// Mac の計測（run 42268933109・シミュレータ）で、アプリ全体のメモリは 外観 約 219MB・部屋 昼 約 284MB・夜 約 293MB。
-/// 部屋に入ると約 65〜75MB 増えるが、**どの部品が大きいか**（図形・材質・貼り絵）の数字が無く、推定で減らせない。
-/// 組み上がった印（`camper-ready`・`camper-room-ready`）のところで、場面の木をたどって数える。
+/// 2026-11-23 判断（札 #709）: とおまわり号を消すときに、`CamperSceneStats` から引っ越した（数え方は前と同じ）。
+/// いまは旅のトランクの回す箱（`MedalViewerView` の `SpinScene`）が、測る起動のときだけ使う。
 ///
 ///  - nodes: 木の節の数  geoms: 図形の数（同じ図形を使い回しているものは 1）  inst: 図形を持つ節の数（描く回数の目安）
 ///  - verts・tris: 図形の頂点・三角の数（重複を除く）  geo_kb: 図形が持つ値の大きさ（頂点・法線・UV・添字の実際のバイト数）
 ///  - mats: 材質の数  texs: 貼り絵（UIImage・CGImage）の数  tex_mb: 貼り絵を 4 バイト/画素と見たときの合計（ミップ込みは約 1.33 倍）
 ///  - lights: 光の数
-///
-/// 見本の起動（`-JPPreviewCamperPerf YES`）のときだけ数える（本番では木をたどらない）
-///
-/// **UI テストとの対応**（`Tools/pick-ui-tests.py` が PR の差分から関連 UI テストを選ぶ手がかり）:
-/// 数えるのは、UI テストが `"camper.scene"`（外観）と `"camper.room.scene"`（部屋）の識別子で引く 2 つの場面。
-/// 識別子がこのファイルに無いと、関連テストを特定できず PR の検証が UI テストを全件流す（#493 は上限を超えて打ち切られた）
-struct CamperSceneStats: Equatable {
+struct SceneStats: Equatable {
     var nodes = 0
     var geometries = 0
     var instances = 0
@@ -37,8 +30,8 @@ struct CamperSceneStats: Equatable {
                nodes, geometries, instances, vertices, triangles, geometryKB, materials, textures, textureMB, lights)
     }
 
-    static func measure(_ root: SCNNode) -> CamperSceneStats {
-        var s = CamperSceneStats()
+    static func measure(_ root: SCNNode) -> SceneStats {
+        var s = SceneStats()
         var seenGeometry = Set<ObjectIdentifier>()
         var seenMaterial = Set<ObjectIdentifier>()
         var seenImage = Set<ObjectIdentifier>()
@@ -87,30 +80,6 @@ struct CamperSceneStats: Equatable {
         s.geometryKB = Double(geometryBytes) / 1024
         s.textureMB = textureBytes / 1_048_576
         return s
-    }
-
-    /// 木の図形の中身（頂点・添字のバイト列と束の数）の FNV-1a の印（16 進）。測るだけ・数える起動のときだけ呼ぶ
-    static func contentHash(_ root: SCNNode) -> String {
-        var h: UInt64 = 0xcbf29ce484222325
-        func mix(_ d: Data) { d.withUnsafeBytes { for b in $0 { h = (h ^ UInt64(b)) &* 0x100000001b3 } } }
-        func mixInt(_ v: Int) { var x = v; withUnsafeBytes(of: &x) { for b in $0 { h = (h ^ UInt64(b)) &* 0x100000001b3 } } }
-        func visit(_ n: SCNNode) {
-            mixInt(n.childNodes.count)
-            if let g = n.geometry {
-                for s in g.sources { mixInt(s.vectorCount); mix(s.data) }
-                for e in g.elements { mixInt(e.primitiveCount); mix(e.data) }
-                mixInt(g.materials.count)
-            }
-            for c in n.childNodes { visit(c) }
-        }
-        visit(root)
-        return String(h, radix: 16)
-    }
-
-    /// 組み上がった印のところで呼ぶ。数える起動のときだけ木をたどる
-    static func publish(_ label: String, root: SCNNode, meter: CamperRenderMeter = .shared) {
-        guard meter.enabled else { return }
-        meter.note(label, measure(root).fields)
     }
 }
 #endif

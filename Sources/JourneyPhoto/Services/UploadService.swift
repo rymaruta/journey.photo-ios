@@ -124,8 +124,6 @@ struct UploadService {
         let labelSkipped: TrunkLabelSkip?
         /// 配った硬貨（0 か 1・2026-10-17 次の版）
         let coin: Int
-        /// とおまわり号の届いた部品（`camper.added`・2026-10-19 第2段）
-        let camperAdded: [String]
 
         private enum CodingKeys: String, CodingKey { case success, photo, label, labelSkipped }
 
@@ -138,7 +136,6 @@ struct UploadService {
             label = dealt.label
             labelSkipped = dealt.labelSkipped
             coin = dealt.coin
-            camperAdded = dealt.camperAdded
         }
     }
 
@@ -148,8 +145,6 @@ struct UploadService {
         let label: TrunkLabel?
         let labelSkipped: TrunkLabelSkip?
         var coin = 0
-        /// とおまわり号の届いた部品（2026-10-19 第2段）
-        var camperAdded: [String] = []
     }
 
     /// - Parameter thumbUrl: 一覧用の 512px を置いた URL（`stageThumbnail`）。無ければ送らない
@@ -160,8 +155,7 @@ struct UploadService {
         )
         // 投稿すると Vol. の数え方が変わる（`MagazineVolume`・2026-11-19）
         MagazineVolume.forget()
-        return Saved(photo: result.photo, label: result.label, labelSkipped: result.labelSkipped, coin: result.coin,
-                     camperAdded: result.camperAdded)
+        return Saved(photo: result.photo, label: result.label, labelSkipped: result.labelSkipped, coin: result.coin)
     }
 
     // MARK: - 後始末

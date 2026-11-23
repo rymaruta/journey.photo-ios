@@ -586,70 +586,6 @@ enum PreviewSession {
         #endif
     }
 
-    /// UI テストで、とおまわり号の要サーバーの部品の見本を出す（Debug のみ・2026-10-19 第2段）。`-JPPreviewCamper YES`。
-    ///
-    /// 鍵を持たない見本の入り方では `GET /user/camper`・`GET /users/{uid}/camper` が読めないので、分母 131・届いた画面・
-    /// 友達の車の絵が撮れない。**サーバーには何も送らない**——自分の車は `CamperServerSample.mine`、友達の車は
-    /// `CamperServerSample.visit`、贈る・薪は見本の答え。入っている見本の利用者のときだけ。Release では必ず false
-    static let camperKey = "JPPreviewCamper"
-
-    static var camperSample: Bool {
-        #if DEBUG
-        guard userId != nil else { return false }
-        return UserDefaults.standard.bool(forKey: camperKey)
-        #else
-        return false
-        #endif
-    }
-
-    /// UI テストで、とおまわり号の「中に入る」の動き（扉が開く → 口へ寄る → 部屋へ）をゆっくりにする倍率（Debug のみ・2026-10-21）。
-    /// `-JPPreviewCamperEnterSlow 6`。途中の光（扉が開いた瞬間・寄っている途中・切り替わる直前）を画面写真で確かめるため。
-    /// 入っている見本の利用者のときだけ。Release では必ず 1
-    static let camperEnterSlowKey = "JPPreviewCamperEnterSlow"
-
-    static var camperEnterSlow: Double {
-        #if DEBUG
-        guard userId != nil else { return 1 }
-        let k = UserDefaults.standard.double(forKey: camperEnterSlowKey)
-        return k > 1 ? min(k, 20) : 1
-        #else
-        return 1
-        #endif
-    }
-
-    /// UI テストで、とおまわり号の描画の数（1 コマの時間・値渡しの回数）を数えて読み上げの値に出す（Debug のみ・2026-10-31・#430）。
-    /// `-JPPreviewCamperPerf YES`。`CamperRenderMeter`。入っている見本の利用者のときだけ。Release では必ず false
-    static let camperPerfKey = "JPPreviewCamperPerf"
-
-    /// メモリの内訳を測るための A/B（2026-11-07・札 #430・測るだけ）。`-JPPreviewCamperAA none|2x|4x` で、とおまわり号の外観・部屋の
-    /// SCNView の輪郭のなめらかさ（`antialiasingMode`）を切り替える。Debug かつ入っている見本の利用者のときだけ。指定が無い・Release では nil（本番の既定のまま）
-    static let camperAAKey = "JPPreviewCamperAA"
-
-    static var camperAA: String? {
-        #if DEBUG
-        guard userId != nil else { return nil }
-        guard let v = UserDefaults.standard.string(forKey: camperAAKey)?.lowercased(), ["none", "2x", "4x"].contains(v) else { return nil }
-        return v
-        #else
-        return nil
-        #endif
-    }
-
-    /// 測定専用の差し替え（2026-11-07・札 #430・Debug の見本の利用者のときだけ。Release では必ず nil）。
-    /// `-JPPreviewCamperDiag lightbed|lightfurniture|halftex|keepmesh`: ベッドを箱に・家具を全部箱に・貼り絵を半分の寸法に・家具の網の配列を手放さない（軽量化の前の動き）。見た目の確認は不要
-    static let camperDiagKey = "JPPreviewCamperDiag"
-
-    static var camperDiag: String? {
-        #if DEBUG
-        guard userId != nil else { return nil }
-        guard let v = UserDefaults.standard.string(forKey: camperDiagKey)?.lowercased(),
-              ["lightbed", "lightfurniture", "halftex", "keepmesh"].contains(v) else { return nil }
-        return v
-        #else
-        return nil
-        #endif
-    }
-
     /// UI テストで、旅のトランクの重さ（1 コマの間隔・主スレッドの停止・Canvas を描いた回数と時間・回す箱の 1 コマ・
     /// 貼り絵の大きさ・メモリ）を数えて読み上げの値に出す（Debug のみ・2026-11-11「旅のトランク重すぎる」・測るだけ）。
     /// `-JPPreviewTrunkPerf YES`。`TrunkPerfMeter`。入っている見本の利用者のときだけ。Release では必ず false
@@ -681,32 +617,6 @@ enum PreviewSession {
         #endif
     }
 
-    static var camperPerf: Bool {
-        #if DEBUG
-        guard userId != nil else { return false }
-        return UserDefaults.standard.bool(forKey: camperPerfKey)
-        #else
-        return false
-        #endif
-    }
-
-    /// UI テストで、友達の車の画面（板 CamperVisit）へ**マイページの旅の記録から直接**入る行を出す（Debug のみ・2026-10-19）。
-    /// `-JPPreviewCamperVisit YES`。
-    ///
-    /// 人のプロフィールの本物の入口（フォローしている人の頁だけ）は、ホームの写真の並びとフォローの関係次第で見本の
-    /// 起動では出ないことがあり、画面写真（95i・95j）が撮れなかった。**本物の入口の条件は変えない**——ここは見本の友達
-    /// （`CamperServerSample.friendId`）の車へ入る別の行を、見本の起動のときだけ足す。中身は見本で、サーバーには何も送らない。
-    /// 入っている見本の利用者のときだけ。Release では必ず false
-    static let camperVisitKey = "JPPreviewCamperVisit"
-
-    static var camperVisitSample: Bool {
-        #if DEBUG
-        guard userId != nil else { return false }
-        return UserDefaults.standard.bool(forKey: camperVisitKey)
-        #else
-        return false
-        #endif
-    }
 
     /// UI テストで、起動のときに「はじめての硬貨」の案内を1回出す（Debug のみ・2026-10-18）。`-JPPreviewTrunkWelcome YES`
     /// で 10 枚、`-JPPreviewTrunkWelcome 3` で上限に当たって 3 枚だけ増えた姿。**サーバーには何も送らない**

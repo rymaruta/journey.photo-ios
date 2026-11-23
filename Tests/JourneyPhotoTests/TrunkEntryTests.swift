@@ -413,7 +413,9 @@ final class TrunkEntryTests: XCTestCase {
         XCTAssertFalse(page.contains("simultaneousGesture(TapGesture().onEnded { TrunkEntryStore"))
         // 2026-11-12: 入口は ≡ メニューの「旅の楽しみ」（設定の「旅の道具」から移した・並びは `SettingsOutlineTests`）
         let settings = try source("Features/Common/SiteMenuView.swift")
-        XCTAssertTrue(settings.contains("                        trunkRow\n                        camperRow\n"))
+        // とおまわり号の行は 2026-11-23 に消した（札 #709）。旅の楽しみの最後はトランクの行
+        XCTAssertTrue(settings.contains("                        trunkRow\n                    }\n"))
+        XCTAssertFalse(settings.contains("camperRow"))
         XCTAssertTrue(settings.contains("TrunkEntryRule.shows(signedIn: auth.userId != nil, available: trunkAvailability.isAvailable)"))
         XCTAssertTrue(settings.contains(#".accessibilityIdentifier("menu.trunk")"#))
         XCTAssertFalse(settings.contains(".accessibilityElement(children: .ignore)\n                .accessibilityLabel(TrunkEntryText.title)"))

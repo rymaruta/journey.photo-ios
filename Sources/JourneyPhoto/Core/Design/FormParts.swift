@@ -556,6 +556,8 @@ struct JPRowLabel: View {
     var iconColor: Color = WebTheme.muted2
     /// SF Symbols に無い絵（設定の Pro の行の Pro マーク・線の絵・板 43）。あれば `systemImage` より先に使う
     var icon: AnyView?
+    /// 右の件数バッジ（真鍮・`CountBadge`）。無ければ出さない（マイページの旅のトランクの行・2026-11-23 札 #709）
+    var badge: Int?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -587,6 +589,9 @@ struct JPRowLabel: View {
                     .font(JPFont.mono(13, relativeTo: .footnote))
                     .foregroundStyle(WebTheme.faint)
                     .lineLimit(1)
+            }
+            if let badge {
+                CountBadge(count: badge, maximum: 99)
             }
             if chevron {
                 Image(systemName: "chevron.right")

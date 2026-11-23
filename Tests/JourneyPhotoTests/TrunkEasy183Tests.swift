@@ -385,12 +385,6 @@ final class TravelScreens183Tests: XCTestCase {
         XCTAssertTrue(quiz.contains("DailyQuizSkeleton()"), "読み込み中が骨格でない")
     }
 
-    func testCamperVisitCardsAndSkeleton() throws {
-        let visit = try source("Features/Camper/CamperVisitView.swift")
-        XCTAssertTrue(visit.contains("CamperVisitSkeleton()"), "読み込み中が回る輪のまま")
-        XCTAssertFalse(visit.contains("友達の車を読み込んでいます…"))
-        XCTAssertEqual(visit.components(separatedBy: "CamperVisitActionCard(icon:").count - 1, 2, "贈る・薪が2枚の札でない")
-    }
 }
 
 /// カプセルの機械の失敗の言い分け（本物の口を台本で返す・2026-11-12 確かめ役の指摘）
@@ -480,7 +474,6 @@ final class NoDotSeparator183Tests: XCTestCase {
         // 前に「·」で区切っていた所（確かめ役が挙げた 6 か所）
         let checks: [(String, String)] = [
             ("Features/Profile/VisitedPrefectureCard.swift", "で撮った写真 · "),
-            ("Features/Camper/CamperVisitView.swift", "1日1回 · "),
             ("Features/Trunk/TrunkPartsBoxView.swift", "\"· \" + L(\"カプセルを回す\""),
             ("Features/Trunk/TrunkPartsBoxView.swift", "枚 · カプセルを回す"),
             ("Core/Text/VisitedMapText.swift", "· 記録する"),

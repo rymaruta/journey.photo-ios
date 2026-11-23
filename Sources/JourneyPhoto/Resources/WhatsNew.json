@@ -239,11 +239,6 @@
           "detail": { "ja": "すれちがいで届くものの呼び名を「乗車券」と「すれちがい帳」にそろえました。「ありがとう」を押した後のボタンの名前も切れずに出ます。", "en": "What you receive from people you pass is now always called a ticket, kept in your Pass book. The Thanks button no longer cuts off after you tap it." }
         },
         {
-          "symbol": "arrow.clockwise",
-          "title": { "ja": "とおまわり号の部屋をボタンでも回せる", "en": "Turn the Detour room with buttons" },
-          "detail": { "ja": "とおまわり号の部屋は、指で回すほかに上のボタンでも向きを変えられます。", "en": "You can turn the Detour camper room with the buttons at the top as well as with your finger." }
-        },
-        {
           "symbol": "person.text.rectangle",
           "title": { "ja": "ホームの札で、誰の写真かが切れずに見える", "en": "See who took the photo on Home cards" },
           "detail": { "ja": "ホームの上の札に出る写真の撮った人の名前が、頭から切れずに見えるようにしました。長い名前は後ろだけを短くします。", "en": "The name of who took the photo on the top card on Home is no longer cut off at the start. Long names are shortened at the end only." },
@@ -527,11 +522,6 @@
           "title": { "ja": "探すから撮影スポットの一覧", "en": "Browse photo spots from Search" },
           "detail": { "ja": "探すの「撮影スポット」で地方と県を選ぶと、その県の撮影スポットが並びます。一覧の上で名前でも絞れます。", "en": "In Search, pick a region and prefecture under Photo spots to see its spots. You can also filter the list by name." },
           "destination": "search"
-        },
-        {
-          "symbol": "bus",
-          "title": { "ja": "とおまわり号の中をすっきり", "en": "A tidier Detour interior" },
-          "detail": { "ja": "家具を選び直して似たものをまとめ、85 点にしました。部屋は車の部屋と張り出しの 2 つに（トレーラーつきはトレーラーも）。秋の写真や、いくつもの季節に撮った写真で届く家具もあります。前に置いた一部の家具は、部屋に出なくなります。", "en": "We merged similar pieces into a collection of 85, and the rooms are now the main room and the slide-out (plus the trailer when you have one). Some pieces also arrive with autumn photos or photos across seasons. A few pieces you placed before will no longer appear." }
         }
       ]
     },
@@ -821,18 +811,6 @@
           }
         },
         {
-          "symbol": "bus",
-          "title": {
-            "ja": "とおまわり号の中に入れます",
-            "en": "Step inside Detour"
-          },
-          "detail": {
-            "ja": "とおまわり号の中は7つの部屋に分かれ、家具を置いたり、額に自分の写真を飾ったりできます。夜は灯りがともります。マイページの旅の記録から。",
-            "en": "Detour now has 7 rooms inside. Place furniture, hang your own photos in frames, and enjoy the lights at night. Find it under Trips on My Page."
-          },
-          "destination": "mypage"
-        },
-        {
           "symbol": "square.and.arrow.up",
           "title": {
             "ja": "共有カードの型を選べる",
@@ -861,12 +839,6 @@
       "version": "1.1.18",
       "date": "2026-10-19",
       "items": [
-        {
-          "symbol": "bus",
-          "title": { "ja": "写真で作るキャンピングカー", "en": "Photo camper" },
-          "detail": { "ja": "旅を重ねるほど育つ車「とおまわり号」。撮るほど部品が集まります。マイページの旅の記録から。", "en": "Detour, a camper that grows with your trips. Shoot more to collect parts. Find it under Trips on My Page." },
-          "destination": "mypage"
-        },
         {
           "symbol": "person.crop.circle",
           "title": { "ja": "アイコンとカバーを選びやすく", "en": "Easier icon and cover" },

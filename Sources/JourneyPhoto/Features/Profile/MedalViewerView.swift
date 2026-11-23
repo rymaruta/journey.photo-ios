@@ -293,7 +293,7 @@ private struct MedalSceneView: UIViewRepresentable {
             TrunkPerfMeter.measure("SpinApplyBox") { coordinator.applyBox(box) }
             // 測る起動のときだけ: 箱の場面の中身（三角・貼り絵）と描く枠の画素（2026-11-11・測るだけ）
             if TrunkPerfMeter.shared.enabled {
-                TrunkPerfMeter.shared.note("SpinScene", CamperSceneStats.measure(coordinator.scene.rootNode).fields)
+                TrunkPerfMeter.shared.note("SpinScene", SceneStats.measure(coordinator.scene.rootNode).fields)
                 TrunkPerfMeter.shared.note("SpinView", String(format: "w=%.0f h=%.0f scale=%.0f aa=%d continuous=%d",
                                                               Double(view.bounds.width), Double(view.bounds.height),
                                                               Double(view.contentScaleFactor), Int(view.antialiasingMode.rawValue),

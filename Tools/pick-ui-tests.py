@@ -37,12 +37,10 @@ UI_DIR = pathlib.Path(os.environ.get("JP_UI_TESTS_DIR") or (ROOT / "UITests" / "
 TARGET = "JourneyPhotoUITests"
 ALWAYS = "SmokeTests"
 # 名指しした回だけ流す（全部を回す回では飛ばす）。「Class/testName」
-# 2026-10-22: 額の頁（写真を入れられる額 120 点あまり × 横長・縦長 = 60 頁あまり・1 頁 6 秒ほどで約 6〜7 分）も同じ扱い。
-# 印画が写真の外を読まないことは単体テスト（`testEveryPhotoPanelHasPlanarUVs`・`testPhotoFitCropsInsideThePhotoAndKeepsAspect`）が毎回見る
 # 2026-10-31（札 #429）: アプリの重さを測る試験（`PerformanceTests`・合否を付けない計測・5本で約9分）も同じ扱い。
 # 測りたい回だけ `inputs[screens]=PerformanceTests` で名指しする（全部の回・PR の検証・TestFlight では流さない）
-ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "ScreenshotTests/testCapturesCamperRoomFrameSheet",
-                   "PerformanceTests/testLaunchTime", "PerformanceTests/testLaunchAndHomeLoadSignposts",
+# 2026-11-23（札 #709）: とおまわり号の試験（額の頁・描画とメモリを測る試験）は機能と一緒に消した
+ONLY_WHEN_NAMED = ["PerformanceTests/testLaunchTime", "PerformanceTests/testLaunchAndHomeLoadSignposts",
                    "PerformanceTests/testHomeScrollMemory", "PerformanceTests/testStoryRingsMemory",
                    "PerformanceTests/testPhotoDetailMemory", "PerformanceTests/testStoryReelMemory",
                    # 2026-11-04（札 #435・#429）: 起動直後の動きの記録（`perf.probe`）と body の評価回数。名指しした回だけ
@@ -53,15 +51,6 @@ ONLY_WHEN_NAMED = ["ScreenshotTests/testCapturesCamperFurnitureLegs", "Screensho
                    # 2026-11-14（人間工学の点検「追加の点検」4・5）: すれちがいの束の上限を段ごとに測る（6 回起動・合否なし）と、
                    # シートのバーの「閉じる」の当たりを測る（UIKit が決める・合否なし）。`screens=testMeasuresPassViewerTypeLimits` など
                    "ScreenshotTests/testMeasuresPassViewerTypeLimits", "ScreenshotTests/testCornerTapAreaSheetClose",
-                   # 2026-10-31（#430）: とおまわり号の描画を測る試験（4 本・計 6 分ほど）。直している間だけ `screens=testMeasuresCamperRender` で流す
-                   "ScreenshotTests/testMeasuresCamperRenderExterior", "ScreenshotTests/testMeasuresCamperRenderNight",
-                   "ScreenshotTests/testMeasuresCamperRenderRoom", "ScreenshotTests/testMeasuresCamperRenderRoomNight",
-                   # 2026-11-07（#430）: メモリの内訳（輪郭のなめらかさ 4x・2x・なし × 各 3 回）。`screens=testMeasuresCamperMemory`
-                   "ScreenshotTests/testMeasuresCamperMemoryAA4x", "ScreenshotTests/testMeasuresCamperMemoryAA2x",
-                   "ScreenshotTests/testMeasuresCamperMemoryAANone",
-                   # 2026-11-07（#430）: 途中の段・user_tag 別・差し替え。`screens=testMeasuresCamperStages`
-                   "ScreenshotTests/testMeasuresCamperStages", "ScreenshotTests/testMeasuresCamperStagesKeepMesh",
-                   "ScreenshotTests/testMeasuresCamperStagesAANone", "ScreenshotTests/testMeasuresCamperStagesAA4x",
                    # 2026-11-10（札 #521）: 移動の見込みの前に、日本の区間で MKDirections が返す秒数を取る。`screens=MapETAProbeTests`
                    "MapETAProbeTests",
                    # 2026-11-11（owner「旅のトランク重すぎる」）: 回す・特別なトランクの一覧の重さ（直しの前後）と、直しの前後の画素の差。
@@ -175,7 +164,7 @@ TIMES = ROOT / "Tools" / "ui-test-times.json"
 # 先に流す段の上限（秒・時間の表での見積もり）。先に流す段は単体テスト（run 778 で 8 分）と別の Mac で
 # 同時に走るので、単体より短ければ通る回は延びない。起動の見張り（SmokeTests・90 秒）を含めて 7 分
 FIRST_BUDGET = 420
-# 識別子らしい文字列（`camper.room.contact` の形）。画面のコードとテストの両方に同じ文字列で現れる
+# 識別子らしい文字列（`trunk.pocket` の形）。画面のコードとテストの両方に同じ文字列で現れる
 IDENT = re.compile(r"^[a-z][A-Za-z0-9]*(?:\.[A-Za-z0-9_-]+)+$")
 TYPE_DECL = re.compile(r"^(?:\w+\s+)*(?:enum|struct|class|extension)\s+(\w+)", re.M)
 
@@ -257,7 +246,7 @@ def tests_for_diff(diff_text, index, loose, root=ROOT):
     - UI テストのファイル: 変えた行を含む関数（呼ぶ先の補助の関数を含む）を持つテスト。
       クラスの頭（関数の前）を変えたら、そのクラスの全部
     - クラスの無い UI テストのファイル（共通の助け）: そこで宣言した型の名前を使うテスト
-    - アプリのコード: 識別子らしい文字列（`camper.room.contact` の形）が、テストの文字列にそのまま現れるテスト。
+    - アプリのコード: 識別子らしい文字列（`trunk.pocket` の形）が、テストの文字列にそのまま現れるテスト。
       ファイルの今の中身と、消した行の両方から拾う（消した識別子を待つテストも先に落ちる）"""
     try:
         ui_prefix = UI_DIR.resolve().relative_to(root).as_posix() + "/"
