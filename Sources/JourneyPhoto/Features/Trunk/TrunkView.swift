@@ -78,6 +78,13 @@ struct TrunkView: View {
             }) { PaywallView(origin: .trunk) }
             .fullScreenCover(isPresented: $showStick) { TrunkStickView(model: model, ownerName: ownerName) }
             .navigationDestination(item: $route) { tile in destination(tile) }
+            // 電波が戻ったら読み直す（圏外で前に読んだトランク・「電波がありません」を出している間だけ。
+            // 2026-11-23 確かめ役の指摘: 「もう一度」を押すまで薄いままだった。見張りは他の画面と同じ `Connectivity`）
+            .onChange(of: connectivity.isOffline) { _, offline in
+                guard TrunkHome.reloadsWhenBack(offline: offline, showingSaved: model.showingSaved,
+                                                phaseOffline: model.phase == .offline) else { return }
+                Task { await model.load(offline: connectivity.isOffline, saved: savedState) }
+            }
             // タグに載せていたラベルをはがして、その枠がおまかせに戻った（一度だけ知らせる・2026-11-08）
             .onChange(of: model.tagPickReset) { _, reset in
                 guard reset else { return }
@@ -198,7 +205,7 @@ struct TrunkView: View {
                     .padding(.top, 14)
                 tiles(state, disabled: saved)
                     .padding(.top, 10)
-                menu(state)
+                menu(state, disabled: saved)
                     .padding(.top, 12)
                     .padding(.bottom, 32)
             }
@@ -402,15 +409,21 @@ struct TrunkView: View {
 
     private let tileColumns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 2)
 
+    /// 2つずつの段（`TrunkHome.tileRows`）。3枚のとき（手荷物タグに対応していないサーバー）は3枚目が横いっぱい
     private func tiles(_ state: TrunkState, disabled: Bool) -> some View {
-        LazyVGrid(columns: tileColumns, spacing: 8) {
-            ForEach(TrunkHome.tiles(for: TrunkHome.primary(state), showsTags: state.supportsTagPicks), id: \.self) { tile in
-                Button { open(tile) } label: { tileFace(tile, state: state) }
-                    .buttonStyle(JPRowButtonStyle())
-                    .disabled(disabled)
-                    .opacity(disabled ? 0.4 : 1)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier(TrunkHome.identifier(tile))
+        let rows = TrunkHome.tileRows(TrunkHome.tiles(for: TrunkHome.primary(state), showsTags: state.supportsTagPicks))
+        return VStack(spacing: 8) {
+            ForEach(rows, id: \.self) { row in
+                HStack(spacing: 8) {
+                    ForEach(row, id: \.self) { tile in
+                        Button { open(tile) } label: { tileFace(tile, state: state) }
+                            .buttonStyle(JPRowButtonStyle())
+                            .disabled(disabled)
+                            .opacity(disabled ? 0.4 : 1)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier(TrunkHome.identifier(tile))
+                    }
+                }
             }
         }
         .padding(.horizontal, 20)
@@ -487,8 +500,12 @@ struct TrunkView: View {
 
     // MARK: 下の札
 
-    /// 手持ち・型・受け取り（モック: 札・行 52・区切り）。受け取りは #706 のあとに「手持ちのラベル」の画面へ移す
-    private func menu(_ state: TrunkState) -> some View {
+    /// 手持ち・型・受け取り（モック: 札・行 52・区切り）。受け取りは #706 のあとに「手持ちのラベル」の画面へ移す。
+    ///
+    /// `disabled`: 圏外で前に読んだトランクを出している間（2026-11-23 判断・確かめ役の指摘: 大きいボタンとカードは
+    /// 押せないのに、この2行だけ押せて、開いた先で書き込みが失敗していた）。カードと同じ薄さにし、`.disabled` で
+    /// 読み上げでも「淡色表示」（押せない）と伝わる。電波が戻れば `TrunkHome.reloadsWhenBack` で読み直して押せるようになる
+    private func menu(_ state: TrunkState, disabled: Bool) -> some View {
         VStack(spacing: 0) {
             NavigationLink {
                 TrunkPocketView(model: model)
@@ -497,6 +514,8 @@ struct TrunkView: View {
                              value: TrunkText.pocketCounter(count: state.pocket.count, limit: state.limit))
             }
             .buttonStyle(JPRowButtonStyle())
+            .disabled(disabled)
+            .opacity(disabled ? 0.4 : 1)
             .accessibilityIdentifier("trunk.pocket")
             TrunkStyle.line.frame(height: 1)
             NavigationLink {
@@ -505,6 +524,8 @@ struct TrunkView: View {
                 TrunkMenuRow(title: L("トランクの型", "Trunk style"), value: TrunkText.info(state.effectiveModel).name)
             }
             .buttonStyle(JPRowButtonStyle())
+            .disabled(disabled)
+            .opacity(disabled ? 0.4 : 1)
             .accessibilityIdentifier("trunk.models")
             TrunkStyle.line.frame(height: 1)
             receiveRow(state)

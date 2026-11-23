@@ -61,6 +61,13 @@ enum TrunkHome {
         return order.filter { showsTags || $0 != .tags }
     }
 
+    /// カードを2つずつの段に分ける。**数が奇数なら最後の1枚は1段を横いっぱいに使う**
+    /// （2026-11-23 判断・確かめ役の指摘: 手荷物タグに対応していないサーバーでは3枚になり、2列の格子だと最後の段に
+    /// 1枚だけ左に残って、右に穴が空いて見えた。3枚目を広げて、段の幅をそろえる）
+    static func tileRows(_ tiles: [TrunkHomeTile]) -> [[TrunkHomeTile]] {
+        stride(from: 0, to: tiles.count, by: 2).map { Array(tiles[$0..<min($0 + 2, tiles.count)]) }
+    }
+
     static func title(_ action: TrunkHomeAction) -> String {
         switch action {
         case .stick: return L("ラベルを貼る", "Stick labels")
@@ -174,6 +181,12 @@ enum TrunkHome {
     }
 
     static var offlineRetry: String { L("もう一度", "Retry") }
+
+    /// 電波が戻ったときに読み直すか（2026-11-23 判断・札 #711）。圏外で前に読んだトランクを出している、または
+    /// 「電波がありません」を出しているときだけ（読めている画面は読み直さない。書き込みの途中を上書きしない）
+    static func reloadsWhenBack(offline: Bool, showingSaved: Bool, phaseOffline: Bool) -> Bool {
+        !offline && (showingSaved || phaseOffline)
+    }
 
     /// 「もう一度」を押しても読めなかった
     static var stillOffline: String { L("まだ電波がありません", "Still no signal") }

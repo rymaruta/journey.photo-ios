@@ -35,7 +35,13 @@ extension TrunkPartsBoxText {
                          " \(left) more fragments and you can exchange them for any part.")
     }
 
-    static var exchangeTitle: String { L("かけら5つで交換する", "Exchange 5 fragments") }
+    /// 交換のボタン。**何と交換するかを部品の名前で言う**（2026-11-23 確かめ役の指摘: 「かけら5つで交換する」だけでは、
+    /// 確かめを出さずに押す決まりなのに、何が手に入るかがボタンから読めなかった）
+    static func exchangeTitle(_ part: TrunkPart) -> String {
+        let need = fragmentsPerExchange
+        return L("かけら\(need)つで「\(part.name)」と交換する",
+                 "Exchange \(need) fragments for \u{201C}\(part.name)\u{201D}")
+    }
 
     static func exchangedNotice(_ part: TrunkPart) -> String {
         L("「\(part.name)」を部品箱に入れました", "\u{201C}\(part.name)\u{201D} is in your parts box")

@@ -58,6 +58,24 @@ final class TrunkHomeTests: XCTestCase {
         XCTAssertEqual(TrunkHome.tiles(for: .gacha, showsTags: true), [.parts, .tags, .open, .stick])
     }
 
+    /// 2つずつの段。3枚（手荷物タグに対応していないサーバー）なら3枚目は1段を横いっぱいに使う（左に1枚だけ残さない）
+    func testThreeTilesWidenTheLastOne() throws {
+        for action in [TrunkHomeAction.stick, .gacha, .post] {
+            let four = TrunkHome.tiles(for: action, showsTags: true)
+            XCTAssertEqual(TrunkHome.tileRows(four).map(\.count), [2, 2], "\(action)")
+            let three = TrunkHome.tiles(for: action, showsTags: false)
+            XCTAssertEqual(three.count, 3)
+            let rows = TrunkHome.tileRows(three)
+            XCTAssertEqual(rows.map(\.count), [2, 1], "\(action) の3枚目が1段を使っていない")
+            XCTAssertEqual(rows.flatMap { $0 }, three, "並びが変わった")
+        }
+        // 画面は段ごとに横に並べる（2列の格子だと最後の1枚が左に残る）
+        let main = try source("Features/Trunk/TrunkView.swift")
+        XCTAssertTrue(main.contains("let rows = TrunkHome.tileRows(TrunkHome.tiles(for: TrunkHome.primary(state), showsTags: state.supportsTagPicks))"))
+        XCTAssertTrue(main.contains("ForEach(rows, id: \\.self) { row in"))
+        XCTAssertTrue(main.contains(".frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)"), "カードが横いっぱいに広がらない")
+    }
+
     func testTileWording() {
         let state = TrunkSample.state(isPro: false, coins: 3)
         XCTAssertEqual(TrunkHome.tileValue(.gacha, state: state), "硬貨 3 枚")
@@ -166,6 +184,27 @@ final class TrunkHomeTests: XCTestCase {
         await model.load(offline: false, saved: TrunkSample.state(isPro: false))
         XCTAssertFalse(model.showingSaved)
         if case .failed = model.phase {} else { XCTFail("失敗の画面にならない: \(model.phase)") }
+    }
+
+    /// 圏外で前に読んだトランクを出している間は、下の「手持ちのラベル」「トランクの型」も押せない（カードと同じ薄さ）
+    func testMenuRowsAreDisabledWhileShowingSaved() throws {
+        let main = try source("Features/Trunk/TrunkView.swift")
+        XCTAssertTrue(main.contains("menu(state, disabled: saved)"), "圏外の間も下の行が押せる")
+        for id in ["trunk.pocket", "trunk.models"] {
+            let row = "            .buttonStyle(JPRowButtonStyle())\n            .disabled(disabled)\n            .opacity(disabled ? 0.4 : 1)\n            .accessibilityIdentifier(\"\(id)\")"
+            XCTAssertTrue(main.contains(row), "\(id) が圏外の間も押せる・薄くならない")
+        }
+    }
+
+    /// 電波が戻ったら読み直す（前に読んだトランク・「電波がありません」を出しているときだけ）
+    func testReloadsWhenSignalComesBack() throws {
+        XCTAssertTrue(TrunkHome.reloadsWhenBack(offline: false, showingSaved: true, phaseOffline: false))
+        XCTAssertTrue(TrunkHome.reloadsWhenBack(offline: false, showingSaved: false, phaseOffline: true))
+        XCTAssertFalse(TrunkHome.reloadsWhenBack(offline: true, showingSaved: true, phaseOffline: false), "圏外になったときに読み直す")
+        XCTAssertFalse(TrunkHome.reloadsWhenBack(offline: false, showingSaved: false, phaseOffline: false), "読めている画面を読み直す")
+        let main = try source("Features/Trunk/TrunkView.swift")
+        XCTAssertTrue(main.contains(".onChange(of: connectivity.isOffline) { _, offline in"), "電波の見張りを使っていない")
+        XCTAssertTrue(main.contains("guard TrunkHome.reloadsWhenBack(offline: offline, showingSaved: model.showingSaved,"))
     }
 
     // MARK: 初めて開いたときだけ揺らす（端末に1回）

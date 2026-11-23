@@ -165,7 +165,7 @@ struct TrunkPartsBoxView: View {
                 let equipped = state.equipped.ids(part.kind).contains(part.id)
                 Button {
                     if has {
-                        Task { await toggle(part) }
+                        toggle(part)
                     } else {
                         missing = part
                     }
@@ -173,7 +173,6 @@ struct TrunkPartsBoxView: View {
                     cell(part, has: has, equipped: equipped)
                 }
                 .buttonStyle(.plain)
-                .disabled(has && model.busy)
                 .accessibilityLabel(has ? "\(part.name)\(equipped ? L("（付けている）", " (on)") : "")"
                                         : L("まだ持っていない\(part.kind.tabName)", "A \(part.kind.tabName.lowercased()) you don\u{2019}t have"))
                 .accessibilityHint(has ? (equipped ? L("押すと外します", "Tap to take it off") : L("押すとトランクに付けます", "Tap to put it on your trunk"))
@@ -228,9 +227,10 @@ struct TrunkPartsBoxView: View {
         .contentShape(RoundedRectangle(cornerRadius: 14))
     }
 
-    /// 押した部品を付ける・外す。**すぐ保存**し、トランクを弾ませて軽く震わせ、「元に戻す」を 3 秒出す。
+    /// 押した部品を付ける・外す。**先に絵を替えて**（`equipNow`）トランクを弾ませ、軽く震わせ、「元に戻す」を 3 秒出す。
+    /// 保存はその裏で送り、失敗したら絵を戻し、「付けました」を下げて上の赤い行で一言。
     /// ピン・ワッペンがいっぱいなら変えずに一言（黙って古いものを外さない）
-    private func toggle(_ part: TrunkPart) async {
+    private func toggle(_ part: TrunkPart) {
         guard let state = model.state else { return }
         let before = state.equipped
         let next = TrunkEquipText.toggling(part, on: before)
@@ -240,11 +240,17 @@ struct TrunkPartsBoxView: View {
         }
         model.actionError = nil
         let putOn = !before.ids(part.kind).contains(part.id)
-        guard await model.equip(next.equipped) else { return }
+        let saving = model.equipNow(next.equipped)
         picks += 1
         bounce()
-        toasts.show(TrunkPartsBoxText.equippedNotice(part, on: putOn), seconds: TrunkPartsBoxText.undoSeconds,
-                    undo: ToastCenter.Undo(title: TrunkPartsBoxText.undoTitle) { [model] in await model.equip(before) })
+        let notice = TrunkPartsBoxText.equippedNotice(part, on: putOn)
+        toasts.show(notice, seconds: TrunkPartsBoxText.undoSeconds,
+                    undo: ToastCenter.Undo(title: TrunkPartsBoxText.undoTitle) { [model] in await model.undoEquip(to: before) })
+        Task {
+            // 保存できなかった: 絵は `equipNow` が戻し、一言は上の赤い行（`actionError`）。「付けました」と「元に戻す」は下げる
+            guard await !saving.value else { return }
+            toasts.dismiss(ifShowing: notice)
+        }
     }
 
     /// トランクを少し弾ませる（動きを減らす設定では弾ませない。触覚と知らせで伝わる）
@@ -361,7 +367,7 @@ struct TrunkMissingPartSheet: View {
             VStack(spacing: 8) {
                 if canExchange {
                     Button { Task { await exchange() } } label: {
-                        TrunkButtonFace(title: TrunkPartsBoxText.exchangeTitle, kind: .main)
+                        TrunkButtonFace(title: TrunkPartsBoxText.exchangeTitle(part), kind: .main)
                     }
                     .buttonStyle(.plain)
                     .disabled(model.busy)

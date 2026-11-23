@@ -6903,7 +6903,9 @@ final class ScreenshotTests: JPUITestCase {
         shoot(app, "99-部品箱（錠前）")
         // 持っている部品を押すとその場で付く。下に「付けました」と「元に戻す」（2026-11-23・札 #711。付け替えの画面はなくした）
         XCTAssertFalse(app.buttons["trunk.parts.equip"].firstMatch.exists, "「付け替える」の入口が残っている")
-        let owned = app.buttons.matching(identifier: "trunk.parts.owned").element(boundBy: 1)
+        // 見本の錠前は lock.1・lock.2…の順で、lock.2 は付けている（`TrunkSample.equipped`）。押すと「外しました」になるので、
+        // 付けていない1つ目（lock.1）を押す（2026-11-23 確かめ役の指摘）
+        let owned = app.buttons.matching(identifier: "trunk.parts.owned").element(boundBy: 0)
         if owned.exists, owned.isHittable {
             XCTAssertGreaterThanOrEqual(owned.frame.height, 44, "部品の札が 44pt 未満")
             owned.tap()
@@ -6992,14 +6994,15 @@ final class ScreenshotTests: JPUITestCase {
             Thread.sleep(forTimeInterval: 1.5)
             shoot(app, name)
         }
-        // 錠前を替えて、トランクに付けた錠前の形（丸い桜の紋）を撮る
+        // 錠前を替えて、トランクに付けた錠前の形を撮る
         let lockTab = app.buttons["trunk.parts.tab.lock"].firstMatch
         revealTab(lockTab, in: app, toLeft: false)
         guard lockTab.frame.minX >= 0, lockTab.isHittable else { return XCTFail("錠前のタブに戻れない") }
         lockTab.tap()
         Thread.sleep(forTimeInterval: 1)
-        // 部品箱の中で押して付ける（上の小さいトランクに映る・2026-11-23）
-        let roundLock = app.buttons.matching(identifier: "trunk.parts.owned").element(boundBy: 1)
+        // 部品箱の中で押して付ける（上の小さいトランクに映る・2026-11-23）。付けていない1つ目（lock.1）を押す
+        // （2つ目の lock.2 は見本で付けているので、押すと外れる）
+        let roundLock = app.buttons.matching(identifier: "trunk.parts.owned").element(boundBy: 0)
         if roundLock.exists, roundLock.isHittable {
             roundLock.tap()
             Thread.sleep(forTimeInterval: 1.5)
