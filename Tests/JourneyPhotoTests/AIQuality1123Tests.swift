@@ -244,11 +244,17 @@ final class AIQuality1123Tests: XCTestCase {
         XCTAssertTrue(src.contains("""
                     TripStopSkeleton(number: number)
                 } else {
-                    itemLink(item, name: name, number: number, season: season, chips: chips, time: time)
+                    itemLink(item, name: name, number: number, season: season, chips: chips, time: time, thumb: thumb)
+                    TripStopPhotoSlot(invites: invites, name: name) { invitePost(item) }
                     itemMenu(di, ii, item, name: name)
                     dragHandle(di, ii, item, name: name)
                 }
-"""), "骨組みの間は「…」と ≡ を出さない")
+            }
+            if !pending {
+                TripStopPhotoLine(photo: mine, invites: invites)
+"""), "骨組みの間は「…」と ≡ を出さない（行の写真の欄・点線の＋・写真の一行も出さない・札 #710 と合わせた形）")
+        // 骨組みの枠は行の写真（`TripStopThumbView`）と同じ寸法
+        XCTAssertEqual(TripStopSkeleton.photoSide, TripStopThumbView.side)
         XCTAssertTrue(src.contains("let name = TripPlanText.displayName(for: item, index: index, places: places, loading: !indexTried)"))
         XCTAssertTrue(src.contains("resolveName: { TripPlanText.displayName(for: $0, index: index, places: places, loading: !indexTried) }"))
         XCTAssertTrue(src.contains("resolve: { TripDraft.place(for: $0, index: index, places: places, loading: !indexTried) }"))

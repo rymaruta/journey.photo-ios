@@ -112,7 +112,6 @@ final class OthersPhotoExportGuardTests: XCTestCase {
         "Features/Upload/UploadViewModel.swift": "自分が上げる写真",
         "Features/Trips/OfflineTripLive.swift": "電波なしで使う旅の材料（地図・作例）をアプリの中にだけ置く（外へは出さない）",
         // 写真を描かない（飾り・計測）
-        "Features/Camper/CamperSceneView.swift": "車の絵（写真ではない）",
         "Features/Pro/SupporterCardTextures.swift": "サポーター証の貼り絵（写真ではない）",
         "Features/Profile/MedalTextures.swift": "硬貨の貼り絵（写真ではない）",
         "Features/Profile/MedalViewerView.swift": "硬貨の貼り絵（写真ではない）",
@@ -158,6 +157,7 @@ final class OthersPhotoExportGuardTests: XCTestCase {
         "Core/Text/PassBook.swift#PassEncounter": "すれちがった相手の札（相手が自分で選んだ公開写真の id）",
         "Models/TheirTrunk.swift#TrunkTicket": "相手のトランクの札（相手の公開写真の id）",
         "Core/AI/AskAnswer.swift#AskAnswer": "AI の答えに並べる公開写真の id（見せるだけ）",
+        "Core/Text/FriendWish.swift#State": "友達が行きたい場所で撮った札の、今日出した1枚の id を端末に控えるだけ（同じ日は同じ札を出す印。画像は持たず、開くのは持ち主の写真・札 #710 の案9・2026-11-23 統合で足した）",
         "Core/Text/InspiredBy.swift#Pick": "「この写真から」の候補の縮小画像の URL（アプリの中で見せるだけ）",
         "Services/FeedbackService.swift#Body": "ご意見に、見ていた写真の公開の情報を添える（運営へ送るだけ）",
         // 写真ではない
@@ -210,7 +210,6 @@ final class OthersPhotoExportGuardTests: XCTestCase {
         "Features/Profile/AvatarCropView.swift": "自分の写真をアイコンに（候補は `ProfileImageFromPhoto.myPhotos`）",
         "Features/Profile/ProfileEditView.swift": "自分の写真をカバーに（候補は `ProfileImageFromPhoto.myPhotos`）",
         "Features/Profile/EditPhotoView.swift": "自分の写真の編集（写真の詳細で `isMine` のときだけ開く）",
-        "Features/Camper/Room/CamperRoomSceneView.swift": "自分の部屋の額。写真は自分の写真（`ProfileImageFromPhoto.myPhotos`・マイページ）。アプリの中で見せるだけ",
         "Features/Stories/StoryComposerView.swift": "自分のストーリーの絵（`StoryFilterRenderer.coverData`・名前が同じだけ）",
         "Features/Stories/StoryViewerView.swift": "次のストーリーの先読み（見せるだけ）",
         "Features/Stories/SongStickerView.swift": "曲のジャケット（写真ではない）",
@@ -278,7 +277,6 @@ final class OthersPhotoExportGuardTests: XCTestCase {
         "ProfileImageFromPhoto.download(": [
             "Features/Profile/AvatarCropView.swift": .upstream("候補は自分の写真（`ProfileImageFromPhoto.myPhotos`）"),
             "Features/Profile/ProfileEditView.swift": .calls("ProfileImageFromPhoto.myPhotos("),
-            "Features/Camper/Room/CamperRoomSceneView.swift": .upstream("自分の部屋の額（写真は `ProfileImageFromPhoto.myPhotos`・マイページ）"),
         ],
         "PhotoRecolor.fetchSource(": [
             "Features/Profile/EditPhotoView.swift": .upstream("`EditPhotoView(` の入口で見張る"),
