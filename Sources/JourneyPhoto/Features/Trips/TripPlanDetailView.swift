@@ -152,6 +152,10 @@ struct TripPlanDetailView: View {
     @State private var saveAttempt = 0
     /// 名前を引く材料（取れなくても画面は出る——名前が鍵のままになるだけ）
     @State private var photos: [Photo] = []
+    /// 自分の写真（プランの場所に、その日に撮った1枚を並べる・札 #710 の案3・`TripPlanPhotos`）。取れなければ空のまま
+    @State private var myPhotos: [Photo] = []
+    /// 点線の枠から開く投稿（観光スポットを撮影地に入れて開く）
+    @State private var stopPost: TripStopPostTarget?
     @State private var index: [OfficialSpot] = []
     /// 候補の材料（写真の一覧・スポットの索引）を**取れなかった**か。
     /// 「聞けなかった」を「まだ保存していない」と言わないために持つ
@@ -399,6 +403,18 @@ struct TripPlanDetailView: View {
                             pick: { swapAI(target, to: $0) })
         }
         .fullScreenCover(isPresented: $aiShowPro) { PaywallView(origin: .tripAI) }
+        // 点線の枠から開く投稿（札 #710 の案3）。閉じたら自分の写真を読み直して、枠を写真に替える
+        .sheet(item: $stopPost, onDismiss: {
+            TabRouter.shared.postSheetClosed()
+            Task { if let mine = try? await environment.photos.myPhotos() { myPhotos = mine } }
+        }) { target in
+            NavigationStack {
+                UploadView(spot: target.spot, onSaved: { photo in
+                    TabRouter.shared.notePosted(photo)
+                    myPhotos = PostedPhotos.merge(loaded: myPhotos, posted: [photo], owner: auth.userId)
+                })
+            }
+        }
         .alert(L("削除できませんでした", "Couldn't delete"),
                isPresented: Binding(get: { deleteError != nil },
                                     set: { if !$0 { deleteError = nil } })) {
@@ -414,6 +430,8 @@ struct TripPlanDetailView: View {
             let fetchedIndex = try? await environment.spots.fetchIndex()
             if let fetchedPhotos { photos = fetchedPhotos; gotPhotos = true }
             if let fetchedIndex { index = fetchedIndex; gotIndex = true }
+            // 自分の写真（札 #710 の案3）。ログインしている人の分だけ。取れなかった回は前の分を残す
+            if auth.userId != nil, let mine = try? await environment.photos.myPhotos() { myPhotos = mine }
             // 別名は取れなくてもよい（名前と読みで当たる・`fetchAliases` は投げない）
             let fetchedAliases = await environment.spots.fetchAliases()
             if !fetchedAliases.isEmpty { aliases = fetchedAliases }
@@ -1383,18 +1401,32 @@ struct TripPlanDetailView: View {
         // - 読み上げの人は ≡ を上下にスワイプで上へ・下へ、操作で「N日目へ」「外す」（`TripPlanEdit.accessibilityMoves`）
         // 右の印は今どおり「…」と ≡ の2つ。AI で作ったプランの「替える」は名前の下（番号の丸の右・36）に置く
         // （2026-11-15 確かめ役の指摘「右に3つが混み合う」。押す回数は替える1回のまま）
+        // 自分の写真で埋まる（札 #710 の案3）: その日に撮った自分の1枚。今日のまだの観光スポットは点線の「＋」
+        let ymd = days.indices.contains(di) ? TripPlanText.dayDate(index: di, day: days[di], start: start, end: end) : nil
+        let mine = TripPlanPhotos.mine(for: item, on: ymd, mine: myPhotos)
+        let invites = TripPlanPhotos.invites(item, on: ymd, today: TripPlanText.ymd(pickedIn: .current, Date()),
+                                             hasPhoto: mine != nil)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
                 itemLink(item, name: name, number: number, season: season, chip: chip, time: time)
+                TripStopPhotoSlot(photo: mine, invites: invites, name: name) { invitePost(item) }
                 itemMenu(di, ii, item, name: name)
                 dragHandle(di, ii, item, name: name)
             }
+            TripStopPhotoLine(photo: mine, invites: invites)
+                .padding(.leading, 36)
             aiSwapButton(di, ii, item, name: name)
         }
         .overlay(alignment: .top) { dropLine(DropSpot(day: di, item: ii)) }
         .dropDestination(for: String.self) { items, _ in
             drop(items.first, toDay: di, toItem: ii)
         } isTargeted: { setDropTarget($0, DropSpot(day: di, item: ii)) }
+    }
+
+    /// 点線の枠: その観光スポットを撮影地に入れて投稿の画面を開く（札 #710 の案3）。押す回数 枠 → 写真 → 投稿 = 3
+    private func invitePost(_ item: TripItem) {
+        guard case .spot(let spotId, _) = item, let spot = index.first(where: { $0.spotId == spotId }) else { return }
+        stopPost = TripStopPostTarget(spot: UploadSpotTarget(spot))
     }
 
     /// 持ち手 ≡（行の右端・当たり 44pt・2026-11-12 札 #570）。押さえて運ぶ（同じ日の中も、別の日へも）。
