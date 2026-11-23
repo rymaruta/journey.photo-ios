@@ -339,21 +339,40 @@ final class AuthStore: ObservableObject {
     /// 「Apple でサインイン」（札 #601）。Apple の標準シートで受け取った資格情報をサーバーに渡し
     /// （`start`＝`AppleSignInService.start`）、返ってきた Cognito のユーザー名に CUSTOM_AUTH でログインする
     /// （答えはサーバーが出した使い捨ての券）。
-    /// 前のログインが残っているときの扱いはメールのログインと同じ（`signIn` の注記）。
     ///
     /// - Returns: サーバーの答え（新しいアカウントを作ったか）。失敗したら nil（`errorMessage` に理由）
     @discardableResult
     func signInWithApple(_ credential: AppleSignInCredential,
-                         start: @escaping @Sendable (AppleSignInCredential) async throws -> AppleSignInService.Started)
-        async -> AppleSignInService.Started? {
-        var started: AppleSignInService.Started?
+                         start: @escaping @Sendable (AppleSignInCredential) async throws -> FederatedSignInStart)
+        async -> FederatedSignInStart? {
+        await signInFederated(failedMessage: Self.appleSignInFailed) { try await start(credential) }
+    }
+
+    /// 「Google でログイン」（札 #715）。流れは Apple と同じ（`start`＝`GoogleSignInService.start`）
+    @discardableResult
+    func signInWithGoogle(_ credential: GoogleSignInCredential,
+                          start: @escaping @Sendable (GoogleSignInCredential) async throws -> FederatedSignInStart)
+        async -> FederatedSignInStart? {
+        await signInFederated(failedMessage: Self.googleSignInFailed) { try await start(credential) }
+    }
+
+    /// 外のアカウントのログインの共通の流れ。前のログインが残っているときの扱いはメールのログインと同じ（`signIn` の注記）
+    private func signInFederated(failedMessage: String,
+                                 start: @escaping @Sendable () async throws -> FederatedSignInStart) async -> FederatedSignInStart? {
+        var started: FederatedSignInStart?
         await run {
             if self.isSignedOutUncertain || self.gateway.latch.isSet {
                 _ = await self.gateway.signOut()
             }
-            let answer = try await start(credential)
+            let answer: FederatedSignInStart
             do {
-                _ = try await self.gateway.signInWithApple(answer.username, answer.challengeAnswer)
+                answer = try await start()
+            } catch where FederatedSignInBusy.matches(error) {
+                // 2つの端末で同時に押した（サーバーの 409）。英語の画面にも出せる文にする
+                throw FederatedSignInBusy()
+            }
+            do {
+                _ = try await self.gateway.signInWithTicket(answer.username, answer.challengeAnswer)
             } catch let error as AuthError {
                 if case .invalidState = error { throw SignInIncomplete.leftoverSession }
                 throw error
@@ -361,15 +380,20 @@ final class AuthStore: ObservableObject {
             try await self.completeSignIn()
             started = answer
         }
-        // 🔴 Cognito の「違います」をそのまま出さない（「メールアドレスかパスワードが違います」は Apple では意味が通らない）
+        // 🔴 Cognito の「違います」をそのまま出さない（「メールアドレスかパスワードが違います」は外のアカウントでは意味が通らない）
         if started == nil, [.notAuthorized, .userNotFound].contains(lastFailure) {
-            errorMessage = Self.appleSignInFailed
+            errorMessage = failedMessage
         }
         return started
     }
 
     static let appleSignInFailed = L("Apple でのサインインを確かめられませんでした。もう一度お試しください",
                                      "Couldn't verify your Apple sign-in. Please try again.")
+    static let googleSignInFailed = L("Google でのログインを確かめられませんでした。もう一度お試しください",
+                                      "Couldn't verify your Google sign-in. Please try again.")
+    /// 同じ ID のログインが別の端末で途中（サーバーの 409）
+    static let federatedBusy = L("ほかの端末でログインの途中です。少し待ってからもう一度お試しください",
+                                 "Sign-in is already in progress on another device. Please wait a moment and try again.")
 
     /// 本人が押したログアウト（メニュー・設定の両方がここを通る）。
     /// **門は押したその場で閉じる**（`Task` の中で閉じると、描き直しの前に2回押せる——
@@ -615,9 +639,9 @@ struct AuthStoreGateway: Sendable {
     var signIn: @Sendable (_ email: String, _ password: String) async throws -> Bool = { email, password in
         try await AuthGateway.signIn(email: email, password: password)
     }
-    /// Apple でサインインの最後の段（`AuthGateway.signInWithApple`）。試験で差し替える
-    var signInWithApple: @Sendable (_ username: String, _ challengeAnswer: String) async throws -> Bool = { username, answer in
-        try await AuthGateway.signInWithApple(username: username, challengeAnswer: answer)
+    /// Apple・Google でのログインの最後の段（`AuthGateway.signInWithTicket`）。試験で差し替える
+    var signInWithTicket: @Sendable (_ username: String, _ challengeAnswer: String) async throws -> Bool = { username, answer in
+        try await AuthGateway.signInWithTicket(username: username, challengeAnswer: answer)
     }
 
     static let live = AuthStoreGateway(

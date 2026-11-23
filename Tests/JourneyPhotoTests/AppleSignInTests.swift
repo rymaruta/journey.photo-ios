@@ -135,7 +135,7 @@ final class AppleSignInTests: XCTestCase {
             signOut: { calls.signOut += 1; return .signedOut },
             deleteUser: {},
             latch: latch)
-        gateway.signInWithApple = { username, answer in
+        gateway.signInWithTicket = { username, answer in
             if let error = calls.fail { throw error }
             calls.signInWith.append((username, answer))
             return true
@@ -170,6 +170,76 @@ final class AppleSignInTests: XCTestCase {
         XCTAssertTrue(calls.signInWith.isEmpty)
         XCTAssertNil(auth.userId)
         XCTAssertNotNil(auth.errorMessage)
+    }
+
+    /// 🔴 2つの端末で同時に押した（サーバーの 409）は「途中です」と出し、Cognito に進まない
+    func testBusyServerSaysInProgress() async {
+        let calls = Calls()
+        let auth = store(calls)
+        await auth.restore()
+        let started = await auth.signInWithApple(credential) { _ in
+            throw APIError.server(status: 409, message: "サインインの途中です。少し待ってからもう一度お試しください")
+        }
+        XCTAssertNil(started)
+        XCTAssertTrue(calls.signInWith.isEmpty)
+        XCTAssertEqual(auth.errorMessage, AuthStore.federatedBusy)
+    }
+
+    // MARK: - Google でログイン（札 #715）
+
+    func testGoogleStartSendsIdTokenAndRawNonce() async throws {
+        StubProtocol.respond(path: "/auth/google", status: 200,
+                             body: #"{"username":"uuid-g","challengeAnswer":"google:109:T","created":false}"#)
+        let credential = try XCTUnwrap(GoogleSignInCredential(idToken: "g.id.tok", rawNonce: "raw-g", displayName: " 山田 太郎 "))
+        let started = try await GoogleSignInService(api: api(token: nil)).start(credential)
+        XCTAssertEqual(started, FederatedSignInStart(username: "uuid-g", challengeAnswer: "google:109:T", created: false))
+        XCTAssertEqual(StubProtocol.requests, ["POST /auth/google"])
+        XCTAssertNil(StubProtocol.lastRequest?.value(forHTTPHeaderField: "Authorization"), "ログイン前に呼ぶ口")
+        let sent = try XCTUnwrap(StubProtocol.lastBody.flatMap { try JSONSerialization.jsonObject(with: $0) as? [String: Any] })
+        XCTAssertEqual(sent["idToken"] as? String, "g.id.tok")
+        XCTAssertEqual(sent["nonce"] as? String, "raw-g", "サーバーには元の値（Google に渡したのは SHA-256）")
+        XCTAssertEqual(sent["displayName"] as? String, "山田 太郎")
+    }
+
+    func testGoogleAvailableOnlyWhenServerSaysSo() async {
+        StubProtocol.respond(path: "/auth/google/status", status: 200, body: #"{"available":true}"#)
+        let yes = await GoogleSignInService(api: api()).isAvailable()
+        XCTAssertTrue(yes)
+        StubProtocol.reset()
+        StubProtocol.respond(path: "/elsewhere", status: 200, body: "{}")
+        let missing = await GoogleSignInService(api: api()).isAvailable()
+        XCTAssertFalse(missing, "口がまだ無い本番（404）ではボタンを出さない")
+    }
+
+    func testGoogleCredentialNeedsTokenAndNonce() async {
+        XCTAssertNil(GoogleSignInCredential(idToken: nil, rawNonce: "n", displayName: nil))
+        XCTAssertNil(GoogleSignInCredential(idToken: "", rawNonce: "n", displayName: nil))
+        XCTAssertNil(GoogleSignInCredential(idToken: "t", rawNonce: nil, displayName: nil))
+        XCTAssertNil(GoogleSignInCredential(idToken: "t", rawNonce: "n", displayName: "  ")?.displayName)
+    }
+
+    /// Google も同じ券の流れ（答えは券。Cognito の「違います」は Google の文で出す）
+    func testGoogleSignsInWithTicket() async {
+        let calls = Calls()
+        let auth = store(calls)
+        await auth.restore()
+        let g = GoogleSignInCredential(idToken: "g.id.tok", rawNonce: "raw-g", displayName: nil)!
+        let started = await auth.signInWithGoogle(g) { _ in .init(username: "uuid-g", challengeAnswer: "google:109:T", created: true) }
+        XCTAssertEqual(started?.created, true)
+        XCTAssertEqual(calls.signInWith.map(\.1), ["google:109:T"])
+
+        let calls2 = Calls()
+        calls2.fail = AuthError.notAuthorized("", "", AWSCognitoAuthErrorProbe.none)
+        let auth2 = store(calls2)
+        await auth2.restore()
+        _ = await auth2.signInWithGoogle(g) { _ in .init(username: "uuid-g", challengeAnswer: "google:109:T", created: nil) }
+        XCTAssertEqual(auth2.errorMessage, AuthStore.googleSignInFailed)
+    }
+
+    /// URL の型とクライアント ID は同じ値から（逆さのクライアント ID）
+    func testGoogleUrlSchemeMatchesClientId() async {
+        let id = GoogleSignInConfig.clientID.replacingOccurrences(of: ".apps.googleusercontent.com", with: "")
+        XCTAssertEqual(GoogleSignInConfig.urlScheme, "com.googleusercontent.apps.\(id)")
     }
 
     /// Cognito の「違います」を、メールとパスワードの文で出さない

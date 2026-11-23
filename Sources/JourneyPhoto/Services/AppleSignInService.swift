@@ -10,7 +10,7 @@ import Foundation
 ///    元の値の SHA-256 が token の nonce と同じかを照らし（使った nonce は1回きり）、**今の Cognito の利用者**を決める
 ///    （結ぶ・作る）。答えは Cognito のユーザー名と**使い捨ての券**（5分）
 /// 3. Cognito の CUSTOM_AUTH でそのユーザー名にログインし、券を答えに出す
-///    （`AuthGateway.signInWithApple`）。出てくるのは今と同じ Cognito のトークン
+///    （`AuthGateway.signInWithTicket`）。出てくるのは今と同じ Cognito のトークン
 ///
 /// 退会のときの Apple の取り消しはサーバーの退会（`DELETE /user/account`）が行う（2026-11-23 確かめ役の指摘）
 ///
@@ -41,15 +41,8 @@ struct AppleSignInService {
         let displayName: String?
     }
 
-    /// `POST /auth/apple` の答え
-    struct Started: Decodable, Equatable {
-        /// ログインに使う Cognito のユーザー名（UUID）
-        let username: String
-        /// CUSTOM_AUTH の問いに出す使い捨ての券（5分・1回きり）
-        let challengeAnswer: String
-        /// 新しいアカウントを作ったか
-        let created: Bool?
-    }
+    /// `POST /auth/apple` の答え（Google と同じ形・`FederatedSignInStart`）
+    typealias Started = FederatedSignInStart
 
     static func body(for credential: AppleSignInCredential) -> StartBody {
         StartBody(identityToken: credential.identityToken, nonce: credential.rawNonce,
@@ -106,21 +99,23 @@ enum AppleSignInName {
     }
 }
 
-/// Apple の頼みに入れる使い捨ての印（nonce）。
+/// Apple・Google の頼みに入れる使い捨ての印（nonce）。
 ///
-/// 🔴 **Apple には SHA-256（`hashed`）を、サーバーには元の値（`raw`）を渡す**（Apple の案内どおり・
-/// 2026-11-23 確かめ役の指摘）。サーバーは「元の値の SHA-256 が token の nonce と同じか」を照らし、使った nonce を
-/// 1回きりにする。identity token だけ盗まれても、元の値が無いので入れない
-struct AppleSignInNonce: Equatable, Sendable {
+/// 🔴 **提供元には SHA-256（`hashed`）を、サーバーには元の値（`raw`）を渡す**（Apple の案内どおり・
+/// 2026-11-23 確かめ役の指摘。Google も同じ形・札 #715）。サーバーは「元の値の SHA-256 が token の nonce と同じか」を照らし、
+/// 使った nonce を1回きりにする。ID トークンだけ盗まれても、元の値が無いので入れない
+typealias AppleSignInNonce = SignInNonce
+
+struct SignInNonce: Equatable, Sendable {
     /// 元の値（32 バイトの乱数の16進・64字）。端末の中とサーバーへの1回の送信にだけ使う
     let raw: String
 
-    /// Apple の頼み（`ASAuthorizationAppleIDRequest.nonce`）に入れる値
+    /// 提供元の頼み（Apple の `ASAuthorizationAppleIDRequest.nonce`・Google の `signIn(… nonce:)`）に入れる値
     var hashed: String { Self.sha256Hex(raw) }
 
-    static func make() -> AppleSignInNonce {
+    static func make() -> SignInNonce {
         var generator = SystemRandomNumberGenerator()
-        return AppleSignInNonce(raw: (0..<32).map { _ in String(format: "%02x", UInt8.random(in: 0...255, using: &generator)) }.joined())
+        return SignInNonce(raw: (0..<32).map { _ in String(format: "%02x", UInt8.random(in: 0...255, using: &generator)) }.joined())
     }
 
     static func sha256Hex(_ s: String) -> String {

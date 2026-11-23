@@ -260,11 +260,12 @@ enum PreviewBackend {
         }
 
         switch (method, parts) {
-        // Apple でサインイン（札 #601）。見本では使えない（ボタンを出さない）。退会の前の取り消しは何もしない
+        // Apple でサインイン（札 #601）。見本では使えない（ボタンを出さない）
         case ("GET", let p) where p == ["auth", "apple", "status"]:
             return .json(["available": false])
-        case ("POST", let p) where p == ["auth", "apple", "revoke"]:
-            return .json(["revoked": false])
+        // Google でログイン（札 #715）。見本では使えない（ボタンを出さない）
+        case ("GET", let p) where p == ["auth", "google", "status"]:
+            return .json(["available": false])
         // いいね（押す前の公開の数に、押していれば 1 を足す）
         case (_, let p) where (method == "POST" || method == "DELETE") && p.count == 3 && p[0] == "photos" && p[2] == "like":
             let id = p[1]

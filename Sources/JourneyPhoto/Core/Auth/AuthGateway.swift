@@ -286,14 +286,14 @@ enum AuthGateway {
         return try outcome(of: result.nextStep, isSignedIn: result.isSignedIn)
     }
 
-    /// 「Apple でサインイン」の最後の段（札 #601）。サーバー（`POST /auth/apple`）が決めた Cognito の
+    /// 「Apple でサインイン」（札 #601）と「Google でログイン」（札 #715）の最後の段。サーバー（`POST /auth/apple`・`/auth/google`）が決めた Cognito の
     /// ユーザー名に CUSTOM_AUTH（パスワード無し）でログインし、サーバーが出した使い捨ての券を問いの答えに出す。
     /// 確かめるのは Cognito のトリガー（photo-gallery の `appleAuthTrigger.ts`。券を照らして消す）。
     /// 出てくるのはメールのログインと同じ Cognito のトークン（API の認可・更新・退会はそのまま）
     ///
     /// - Returns: 完了したら true
     @discardableResult
-    static func signInWithApple(username: String, challengeAnswer: String) async throws -> Bool {
+    static func signInWithTicket(username: String, challengeAnswer: String) async throws -> Bool {
         try requireConfigured()
         let options = AuthSignInRequest.Options(pluginOptions: AWSAuthSignInOptions(authFlowType: .customWithoutSRP))
         let first = try await Amplify.Auth.signIn(username: username, options: options)
