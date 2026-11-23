@@ -6658,7 +6658,8 @@ final class ScreenshotTests: JPUITestCase {
         XCTAssertTrue(crank.exists, "ハンドルが無い（指で回しても出る）")
         XCTAssertGreaterThanOrEqual(crank.frame.height, 44, "ハンドルが 44pt 未満")
         insert.tap()
-        Thread.sleep(forTimeInterval: 0.4)
+        // 硬貨が入れ口へ飛ぶ（0.42 秒）→ ハンドルが目盛りを点けながら回る（0.84 秒）の途中（札 #716）
+        Thread.sleep(forTimeInterval: 0.8)
         shoot(app, "98-カプセルの機械（回している）")
         let open = app.buttons["trunk.gacha.openCapsule"].firstMatch
         guard open.waitForExistence(timeout: 10) else { return XCTFail("1周してもカプセルが出ない") }
@@ -6667,8 +6668,11 @@ final class ScreenshotTests: JPUITestCase {
         open.tap()
         let equip = app.buttons["trunk.gachaOpen.equip"].firstMatch
         guard equip.waitForExistence(timeout: 10) else { return XCTFail("開けた画面が出ない") }
+        // 割れて部品が出て、文が段階で出そろうまで（約 1.2 秒）
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "98a-カプセルを開けた")
+        let title = app.descendants(matching: .any)["trunk.gachaOpen.title"].firstMatch
+        XCTAssertTrue(title.exists && title.label.hasSuffix("が出ました"), "開けた見出しが「〜が出ました」でない: \(title.label)")
         for id in ["trunk.gachaOpen.equip", "trunk.gachaOpen.keep", "trunk.gachaOpen.close"] {
             XCTAssertGreaterThanOrEqual(app.buttons[id].firstMatch.frame.height, 44, "\(id) が 44pt 未満")
         }
@@ -6695,6 +6699,58 @@ final class ScreenshotTests: JPUITestCase {
         shoot(app, "98c-カプセルの機械（硬貨がありません）")
         XCTAssertGreaterThanOrEqual(post.frame.height, 44, "「写真を投稿する」が 44pt 未満")
         XCTAssertFalse(app.buttons["trunk.gacha.insert"].firstMatch.exists, "硬貨 0 で回すボタンが出ている")
+    }
+
+    /// **カプセルの機械（圏外）**（札 #716）: 回す前に「電波が無いので回せません。硬貨は減りません」と言い、ボタンは押せない。
+    /// 見本の入り方で電波なしの帯が出ない作りなら撮らずに抜ける
+    func testCapturesTrunkGachaOffline() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewOffline", "YES"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.gacha.open") else { return }
+        let insert = app.buttons["trunk.gacha.insert"].firstMatch
+        guard insert.waitForExistence(timeout: 10) else { return XCTFail("「硬貨を入れて回す」が無い") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "98f-カプセルの機械（圏外）")
+        XCTAssertTrue(app.descendants(matching: .any)["trunk.gacha.offline"].firstMatch.exists, "圏外の一言が回す前に出ていない")
+        XCTAssertFalse(insert.isEnabled, "圏外なのに「硬貨を入れて回す」が押せる")
+    }
+
+    /// **カプセルを開けた（持っている部品・かけら）**（札 #716・#713）: 見本の3回目は持っている部品（`TrunkSample.gachaOrder`）。
+    /// 切符の切れ端が札にはまり、硬貨が残っていれば主ボタンは「もう1回まわす」。押すと閉じて続けて回る
+    func testCapturesTrunkGachaFragment() {
+        let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewTrunkCoins", "5"])
+        guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
+        guard openTrunkRow(app, "trunk.gacha.open") else { return XCTFail("カプセルの機械の入口が無い") }
+        for draw in 0..<3 {
+            let insert = app.buttons["trunk.gacha.insert"].firstMatch
+            guard insert.waitForExistence(timeout: 10), insert.isEnabled else { return XCTFail("\(draw + 1) 回目の硬貨を入れられない") }
+            insert.tap()
+            let capsule = app.buttons["trunk.gacha.openCapsule"].firstMatch
+            guard capsule.waitForExistence(timeout: 10) else { return XCTFail("1周してもカプセルが出ない") }
+            if draw == 2 {
+                Thread.sleep(forTimeInterval: 1)
+                shoot(app, "98-カプセルの機械（出てきた、ふたと重ねた硬貨）")
+            }
+            capsule.tap()
+            let keep = app.buttons["trunk.gachaOpen.keep"].firstMatch
+            guard keep.waitForExistence(timeout: 10) else { return XCTFail("開けた画面が出ない") }
+            guard draw == 2 else {
+                Thread.sleep(forTimeInterval: 1)
+                keep.tap()
+                Thread.sleep(forTimeInterval: 1)
+                continue
+            }
+            // 割れて部品が影になり、切れ端が切符にはまるまで（約 2 秒）
+            Thread.sleep(forTimeInterval: 3)
+            shoot(app, "98e-カプセルを開けた（かけら）")
+            XCTAssertTrue(app.descendants(matching: .any)["trunk.gachaOpen.ticket"].firstMatch.exists, "かけらの切符が無い")
+            let again = app.buttons["trunk.gachaOpen.again"].firstMatch
+            XCTAssertTrue(again.exists, "持っている部品で硬貨があるのに「もう1回まわす」が無い")
+            XCTAssertGreaterThanOrEqual(again.frame.height, 44, "「もう1回まわす」が 44pt 未満")
+            again.tap()
+            XCTAssertTrue(app.buttons["trunk.gacha.openCapsule"].firstMatch.waitForExistence(timeout: 10),
+                          "「もう1回まわす」で続けて回らない")
+        }
     }
 
     /// **部品箱**: 種類のタブ（錠前）・押して付ける・元に戻す・持っていない部品のシート

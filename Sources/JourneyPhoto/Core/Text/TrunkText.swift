@@ -391,14 +391,20 @@ enum TrunkText {
     static let noPocketLabels = L("手持ちのラベルがありません。写真を投稿すると届きます。",
                                   "No labels in your pocket. Post a photo to get one.")
 
-    /// 硬貨だけが届いた一言（ラベルは受け取らない設定・2026-10-17 次の版）
+    /// 硬貨だけが届いた一言（ラベルは受け取らない設定・2026-10-17 次の版）。
+    /// 2026-11-23（札 #716・案の頁の「言葉」）: 何をもらって何に使えるかを文で（「硬貨 +1、」の記号の並びをやめた）
     static func coinNotice(_ n: Int) -> String {
-        L("硬貨 +\(n)、カプセルの機械で部品と換えられます", "+\(n) coin, use it at the capsule machine for a trunk part")
+        L("硬貨を\(n)枚もらいました。カプセルの機械で使えます", "You got \(Plural.count(n, "coin")). Use it at the capsule machine.")
     }
 
     /// ラベルが届かなかった一言に添える硬貨（手持ちがいっぱいでも硬貨は届く）
     static func coinAlsoNotice(_ n: Int) -> String {
-        L("硬貨は +\(n) 届いています。", "You still got +\(n) coin.")
+        L("硬貨は\(n)枚もらいました。", "You still got \(Plural.count(n, "coin")).")
+    }
+
+    /// 投稿のお礼でかけらも届いたときに添える一言（札 #713。サーバーが `fragment` を返したときだけ）
+    static func fragmentAlsoNotice(_ n: Int) -> String {
+        L("かけらも\(n)つもらいました。", "You also got \(Plural.count(n, "fragment")).")
     }
 
     /// 届いた画面の硬貨の札（「硬貨 +1」）

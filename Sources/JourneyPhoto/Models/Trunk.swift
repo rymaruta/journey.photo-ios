@@ -638,15 +638,19 @@ struct TrunkDealt: Decodable, Equatable {
     let labelSkipped: TrunkLabelSkip?
     /// 配った硬貨（0 か 1・2026-10-17 次の版）。**手持ちがいっぱい・受け取らない設定でも配られる**
     let coin: Int
+    /// 配ったかけら（0 か 1・札 #713）。投稿のお礼にかけらを配るのはサーバーの変更（`api-user/src/trunk.ts` の投稿のお礼）で、
+    /// 今のサーバーは返さない（無ければ 0）。返すようになったら、届いた画面の札と知らせにそのまま出る
+    let fragment: Int
     // 2026-11-23（札 #709）: とおまわり号を消したので、応答の `camper.added` は読まない（サーバーは返し続けても害は無い）
 
-    init(label: TrunkLabel? = nil, labelSkipped: TrunkLabelSkip? = nil, coin: Int = 0) {
+    init(label: TrunkLabel? = nil, labelSkipped: TrunkLabelSkip? = nil, coin: Int = 0, fragment: Int = 0) {
         self.label = label
         self.labelSkipped = labelSkipped
         self.coin = coin
+        self.fragment = fragment
     }
 
-    private enum CodingKeys: String, CodingKey { case label, labelSkipped, coin }
+    private enum CodingKeys: String, CodingKey { case label, labelSkipped, coin, fragment }
 
     init(from decoder: Decoder) throws {
         guard let c = try? decoder.container(keyedBy: CodingKeys.self) else {
@@ -655,9 +659,11 @@ struct TrunkDealt: Decodable, Equatable {
         }
         // 硬貨は 0 か 1 だけ読む（知らない値・負の数・大きい数は 0）
         let coin = LenientInt.read(c, .coin) ?? 0
+        // かけらも 0 か 1 だけ読む（無い・知らない値は 0）
+        let fragment = LenientInt.read(c, .fragment) ?? 0
         self.init(label: (try? c.decodeIfPresent(Lenient<TrunkLabel>.self, forKey: .label))??.value,
                   labelSkipped: ((try? c.decodeIfPresent(String.self, forKey: .labelSkipped)) ?? nil).map(TrunkLabelSkip.init),
-                  coin: coin == 1 ? 1 : 0)
+                  coin: coin == 1 ? 1 : 0, fragment: fragment == 1 ? 1 : 0)
     }
 
     /// 応答の本文から読む（読めなければ空）

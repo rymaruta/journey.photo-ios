@@ -8,8 +8,9 @@ import Foundation
 /// 指で円を描くと、その角度の差だけ回る（右回りだけ進む・左へは 0.15 倍だけ戻る）。押すたびに 4 分の 1。
 /// 1 周（360°）で出る。**目盛り**は 30° ごと（触覚と音を鳴らす所・2026-10-17 判断）
 struct TrunkCrank: Equatable {
-    /// 見た目の角度（モックの `angle`・はじめは -18°）
-    private(set) var angle: Double = -18
+    /// 見た目の角度（0〜360）。2026-11-23（札 #716）: 目盛りで引っかかる（`TrunkCrank.detent(raw:)`）。
+    /// 前は指の角度にそのまま付いて -18° から回った。案の頁どおり 0°（北の目盛り）から回す
+    var angle: Double { Self.detent(raw: turned) }
     /// 進んだ角度（0〜360）
     private(set) var turned: Double = 0
     /// 前の指の角度（押さえていなければ nil）
@@ -27,7 +28,8 @@ struct TrunkCrank: Equatable {
 
     init() {}
 
-    var isDone: Bool { turned >= Self.goal }
+    /// 1周した（見せる角度が 360 に届いた。指は目盛りの間の 72% で次へ跳ぶので、最後の目盛りも同じ）
+    var isDone: Bool { angle >= Self.goal }
     var isHolding: Bool { last != nil }
 
     /// 進み（0〜100・モックの `Math.min(100, Math.round(turned / 3.6))`）
@@ -79,10 +81,10 @@ struct TrunkCrank: Equatable {
     }
 
     private mutating func advance(_ delta: Double) -> Int {
-        let before = turned
+        let before = angle
         turned = min(Self.goal, max(0, turned + delta))
-        angle += delta
-        return max(0, Int(floor(turned / Self.tickStep)) - Int(floor(before / Self.tickStep)))
+        // 越えた目盛りは見せる角度で数える（跳んだときに1回だけカチッ）
+        return max(0, Int(floor(angle / Self.tickStep + 1e-9)) - Int(floor(before / Self.tickStep + 1e-9)))
     }
 }
 
@@ -150,28 +152,56 @@ enum TrunkGachaText {
     /// 眉ラベル（「めずらしい · 錠前」）
     static func eyebrow(_ part: TrunkPart) -> String { "\(part.rarity.name)\u{2002}\(part.kind.tabName)" }
 
-    /// 硬貨の入れ口の下の一行（モックの `hint`）
-    static func hint(coins: Int, phase: TrunkGachaPhase) -> String {
-        switch phase {
-        case .idle:
-            return coins > 0 ? L("入れたら、ハンドルを指で右へ1回まわします", "Then turn the handle once to the right with your finger")
-                : L("公開の投稿1件で1枚もらえます", "You get one for each public post")
-        case .turning:
-            return L("押さえたまま円を描くように右へ。押すたびに4分の1ずつでも回せます",
-                     "Hold and circle to the right, or tap to turn a quarter at a time")
-        case .waiting:
-            return L("カプセルが出てきます…", "A capsule is coming…")
-        case .out:
-            return L("ころん、と1つ出てきました", "Out rolls a capsule")
-        }
+    /// 開けた画面の見出し（「錠前「菊」が出ました」・2026-11-23 札 #716）
+    static func openTitle(_ part: TrunkPart) -> String {
+        L("\(title(part))が出ました", "\(title(part)) came out")
+    }
+
+    /// 開けた画面の一行（新しい部品）
+    static var freshNote: String { L("どの型のトランクにも付けられます", "Fits every trunk style") }
+
+    /// 開けた画面の一行（持っている部品・かけらをもらった。数はもらったあと）
+    static func duplicateNote(fragments: Int) -> String {
+        let n = TrunkPartsBoxText.filledFragments(fragments)
+        return L("持っている部品でした。かけらを1つもらいました（\(n) / 5）",
+                 "You already had this. You got a fragment (\(n) / 5)")
+    }
+
+    /// 部品の札の右（古び方）
+    static var agingNote: String { L("トランクと一緒に\n古びていきます", "Ages along\nwith your trunk") }
+
+    /// 開けた画面の副ボタン（閉じる）
+    static var keepTitle: String { L("部品箱に入れる", "Put it in the parts box") }
+
+    /// 持っている部品が出て、硬貨があるときの主ボタン
+    static var againTitle: String { L("もう1回まわす", "Turn again") }
+
+    /// 付けたあとの知らせ
+    static func equippedNotice(_ part: TrunkPart) -> String {
+        L("「\(part.name)」をトランクに付けました", "Put \u{201C}\(part.name)\u{201D} on your trunk")
+    }
+
+    /// 開けた画面のボタンの組（2026-11-23 札 #716）
+    enum OpenActions: Equatable {
+        /// 新しい部品: 「トランクに付ける」が主、「部品箱に入れる」が副
+        case equip
+        /// 持っている部品で硬貨がある: 「もう1回まわす」が主、「部品箱に入れる」が副
+        case again
+        /// 持っている部品で硬貨が無い: 「部品箱に入れる」だけ
+        case keep
+    }
+
+    static func openActions(duplicate: Bool, coins: Int) -> OpenActions {
+        guard duplicate else { return .equip }
+        return coins > 0 ? .again : .keep
     }
 
     /// 1周したあと返事を待つ間に戻った人への一言
     static func arrivedWhileAway(_ r: TrunkGachaResult) -> String {
         r.duplicate
-            ? L("カプセルの「\(r.part.name)」は持っている部品でした。かけらを1つ部品箱に入れました。",
-                "The capsule held \u{201C}\(r.part.name)\u{201D}, which you have. A fragment went into your parts box.")
-            : L("カプセルの「\(r.part.name)」が部品箱に入りました。", "\u{201C}\(r.part.name)\u{201D} from the capsule is in your parts box.")
+            ? L("「\(r.part.name)」は持っている部品でした。かけらを1つもらいました",
+                "\u{201C}\(r.part.name)\u{201D} was one you have. You got a fragment.")
+            : L("「\(r.part.name)」が出ました。部品箱に入れました", "\u{201C}\(r.part.name)\u{201D} came out. It\u{2019}s in your parts box.")
     }
 
     /// かけらの交換の札の下の行（モック PartsBox）

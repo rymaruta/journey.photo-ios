@@ -200,9 +200,9 @@ final class TrunkEasy183Tests: XCTestCase {
     /// 🔴 送ったあとに切れた・時間切れは、読み直した硬貨の数で言い分ける（「硬貨は減っていません」と決めつけない）
     func testGachaUnsureMessages() {
         XCTAssertEqual(TrunkGachaText.afterUnsure(coinsBefore: 3, coinsAfter: 3), "回せませんでした。硬貨は減っていません")
-        XCTAssertEqual(TrunkGachaText.afterUnsure(coinsBefore: 3, coinsAfter: 2), "回っていました。出た部品は部品箱に入っています")
+        XCTAssertEqual(TrunkGachaText.afterUnsure(coinsBefore: 3, coinsAfter: 2), "回せていました。出た部品は部品箱にあります")
         XCTAssertEqual(TrunkGachaText.afterUnsure(coinsBefore: 3, coinsAfter: nil),
-                       "回ったか確かめられませんでした。電波のあるところで部品箱を開くと分かります")
+                       "回せたか分かりませんでした。電波のある所で部品箱を開くと分かります")
         XCTAssertFalse(TrunkGachaText.afterUnsure(coinsBefore: 3, coinsAfter: nil).contains("減っていません"))
     }
 
