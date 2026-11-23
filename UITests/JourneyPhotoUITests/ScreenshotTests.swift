@@ -5510,6 +5510,78 @@ final class ScreenshotTests: JPUITestCase {
         }
     }
 
+    // MARK: - 旅のスタンプ帳（2026-11-23・札 #712）
+
+    /// 旅のスタンプ帳。マイページの「旅の記録」の行（`trips.stampBook`）から入り、空・少し・たくさんの3つを撮る。
+    /// たくさんの回は県のページと、1つのスタンプの札も撮る。
+    /// `-JPPreviewStampBook empty|few|many`（Debug のみ・`PreviewSession.stampBookSample`）で見本の帳面を入れる
+    /// （見本の利用者は自分の写真の口を叩けないため）。**出なければ撮らずに抜ける**。サーバーには何も送らない
+    func testCapturesStampBook() {
+        for (kind, tag) in [("empty", "87a-スタンプ帳（空）"), ("few", "87b-スタンプ帳（少し）"), ("many", "87c-スタンプ帳（たくさん）")] {
+            let app = XCUIApplication.jp()
+            app.launchArguments += ["-legal.consent.version", "0"]
+            app.launchArguments += ["-JPSiteBaseURL", "https://journey-photo.com"]
+            app.launchArguments += ["-JPUserApiBaseURL", "https://gu7kxwdc5l.execute-api.ap-northeast-1.amazonaws.com"]
+            app.launchArguments += ["-AppleLanguages", "(ja)", "-AppleLocale", "ja_JP"]
+            app.launchArguments += ["-JPPreviewUserId", Self.previewUserId]
+            app.launchArguments += ["-foundingGift.done.\(Self.previewUserId)", "YES"]
+            app.launchArguments += ["-JPPreviewStampBook", kind]
+            app.launch()
+            defer { app.terminate() }
+
+            let agree = app.buttons["legal.agree"]
+            if agree.waitForExistence(timeout: 30) { agree.tap() }
+            let tabBar = app.tabBars.firstMatch
+            guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 4 else { return }
+            tabBar.buttons.element(boundBy: 4).tap()
+            let tripsTab = app.buttons["profile.tab.trips"].firstMatch
+            guard tripsTab.waitForExistence(timeout: 20) else { return }
+            tripsTab.tap()
+            let entry = app.buttons["trips.stampBook"].firstMatch
+            guard entry.waitForExistence(timeout: 20) else { return }
+            let bottom = app.windows.firstMatch.frame.maxY - 100
+            var swipes = 0
+            while entry.exists, entry.frame.maxY > bottom || !entry.isHittable, swipes < 5 {
+                app.swipeUp()
+                Thread.sleep(forTimeInterval: 1)
+                swipes += 1
+            }
+            guard entry.isHittable else { return }
+            if kind == "empty" { shoot(app, "87-マイページの行「旅のスタンプ帳」") }
+            entry.tap()
+
+            let screen = app.descendants(matching: .any)[kind == "empty" ? "stampBook.empty" : "stampBook.map"].firstMatch
+            guard screen.waitForExistence(timeout: 15) else { return }
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, tag)
+            guard kind == "many" else { continue }
+
+            // 県のページ（京都府）と、1つのスタンプの札
+            let kyoto = app.buttons["stampBook.row.京都府"].firstMatch
+            guard kyoto.waitForExistence(timeout: 5) else { return }
+            var pushes = 0
+            while !kyoto.isHittable, pushes < 4 {
+                app.swipeUp()
+                Thread.sleep(forTimeInterval: 1)
+                pushes += 1
+            }
+            guard kyoto.isHittable else { return }
+            shoot(app, "87d-スタンプ帳（県の行）")
+            kyoto.tap()
+            let page = app.descendants(matching: .any)["stampBook.page"].firstMatch
+            guard page.waitForExistence(timeout: 10) else { return }
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "87e-スタンプ帳（京都府のページ）")
+            let stamp = app.buttons["stampBook.stamp.sp_31047ba6ec8d"].firstMatch
+            guard stamp.waitForExistence(timeout: 5), stamp.isHittable else { return }
+            stamp.tap()
+            let detail = app.descendants(matching: .any)["stampBook.detail"].firstMatch
+            guard detail.waitForExistence(timeout: 10) else { return }
+            Thread.sleep(forTimeInterval: 1)
+            shoot(app, "87f-スタンプ帳（1つのスタンプ）")
+        }
+    }
+
     // MARK: - 行った県マップ（2026-11-08・札 #503）
 
     /// 行った県マップ。マイページの「旅の記録」の下の札から入り、地図・一覧・県の札を撮る。

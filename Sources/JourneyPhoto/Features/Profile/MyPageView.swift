@@ -1228,6 +1228,10 @@ struct MyPageView: View {
                 MyPageTrunkRow(ownerName: model.profile?.name)
                 JPCardDivider()
             }
+            // 旅のスタンプ帳（2026-11-23・札 #712）。とおまわり号の行があった所（トランクの下）。行の中身と行き先は
+            // `StampBookEntry` の1つの部品（メニューの行・のちの荷札の列 #714 も同じものを使う）。本人だけが見る帳面
+            StampBookMyPageRow()
+            JPCardDivider()
             NavigationLink { AlbumsView() } label: {
                 JPRowLabel(title: Labels.Navigation.albums, systemImage: "rectangle.stack",
                            detail: L("招待リンクで、旅の仲間と写真を集める",
