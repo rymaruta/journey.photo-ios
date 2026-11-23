@@ -13,9 +13,22 @@ struct ToastOverlay: View {
         if let message = toasts.current {
             HStack(spacing: 8) {
                 Image(systemName: Self.symbol(message.kind))
-                Text(message.text)
-                    .font(.subheadline)
-                    .lineLimit(2)
+                if let detail = message.detail {
+                    // 2行の知らせ（札 #710 の案1・7）: 1行目は太い字、2行目は小さな字。ガラスの上なので白の濃淡で分ける
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(message.text)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(2)
+                        Text(detail)
+                            .font(JPFont.caption)
+                            .foregroundStyle(WebTheme.muted)
+                            .lineLimit(2)
+                    }
+                } else {
+                    Text(message.text)
+                        .font(.subheadline)
+                        .lineLimit(2)
+                }
                 // 「取り消す」（2026-11-12 判断）。ガラスの上なので白の字（真鍮はガラスの上に置かない）・当たり 44
                 if let undo = toasts.undo {
                     Button { Task { await toasts.performUndo() } } label: {

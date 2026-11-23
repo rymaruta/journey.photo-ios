@@ -87,6 +87,15 @@ final class PostUploadCenter: ObservableObject {
     var onNotice: ((Notice, UUID) -> Void)?
     /// 🔴 **いまログインしている人**（アプリが起動時に渡す・試験は差し替える）。送る前・1枚ごと・「もう一度」で持ち主と比べる
     var currentUserId: (() -> String?)?
+    /// 投稿の知らせの言い方を場所で変える口（札 #710 の案1「行きたい場所に行けました」・案7「最初の1枚になりました」）。
+    /// 起動のときに渡す（行きたい場所の控えと観光スポットの索引を読む）。nil なら通常の「投稿しました」
+    /// `known` は投稿の画面が送るときに読んでいた観光スポットの索引（空なら読んでいない）。
+    /// 🔴 **すぐ返す**（2026-11-23 確かめ役の指摘）: 待っている間「投稿しました」が出ない。要らない回は読まず、読むときも短い上限まで
+    /// （`PostedPlaceNotice.resolve`）
+    var placeNotice: (@MainActor (_ posted: [Photo], _ spot: UploadSpotTarget?, _ postedToSpot: Int, _ ownerId: String?,
+                                  _ known: [OfficialSpot]) async -> PostedPlaceNotice?)?
+    /// 「投稿しました」の1枚（`PostedSummaryCenter`）。試験は差し替える
+    var summaries: PostedSummaryCenter = .shared
 
     /// 送っている・送れずに持っている投稿があるか（輪が「送信中…」「送れませんでした」を出す）
     var isBusy: Bool { !jobs.isEmpty }
@@ -246,7 +255,12 @@ final class PostUploadCenter: ObservableObject {
         case .posted:
             finish(job)
             if let card = model.quietPostedCard { PostedCardOffer.shared.offer(card, ownerId: job.ownerId) }
-            notice(.posted(card: model.quietPostedCard != nil), job: job, card: model.quietPostedCard)
+            let finishedAt = Date()
+            let place = await placeNotice?(model.savedPhotos, model.spot, model.postedToSpot, job.ownerId, model.spotIndexForSubmit)
+            // 🔴 言い方を決めている間に「投稿しました」の1枚（初めての投稿・札 #628）が出たら、知らせは出さない
+            // （1枚が先に出て、その後ろから知らせが出る順にしない・2026-11-23 確かめ役の指摘）
+            if summaries.presented(for: job.ownerId, since: finishedAt) { return }
+            notice(.posted(card: model.quietPostedCard != nil), job: job, card: model.quietPostedCard, place: place)
         case .postedWithNote(let note):
             finish(job)
             notice(.postedWithNote(note), job: job)
@@ -275,7 +289,8 @@ final class PostUploadCenter: ObservableObject {
         TabRouter.shared.postSheetClosed()
     }
 
-    private func notice(_ notice: Notice, job: Job, card shareCard: PostedShareCard? = nil) {
+    private func notice(_ notice: Notice, job: Job, card shareCard: PostedShareCard? = nil,
+                        place: PostedPlaceNotice? = nil) {
         if let onNotice {
             onNotice(notice, job.id)
             return
@@ -283,13 +298,16 @@ final class PostUploadCenter: ObservableObject {
         guard let toasts else { return }
         switch notice {
         case .posted:
+            // 場所の知らせ（札 #710）は1行目と2行目を替えるだけ。「カードにする」はそのまま
+            let title = place?.title ?? PostedCardHabit.quietText
             if let card = shareCard {
                 // その知らせのカードを、持ち主がいまの人のときだけ開く（札 #688）
-                toasts.show(PostedCardHabit.quietText, kind: .success, actionTitle: PostedCardHabit.quietAction) { [weak self] in
+                toasts.show(title, detail: place?.detail, kind: .success, tag: .posted,
+                            actionTitle: PostedCardHabit.quietAction) { [weak self] in
                     PostedCardOffer.shared.present(card, currentUserId: self?.currentUserId?())
                 }
             } else {
-                toasts.show(PostedCardHabit.quietText, kind: .success)
+                toasts.show(title, detail: place?.detail, kind: .success, tag: .posted)
             }
         case .postedWithNote(let note):
             toasts.show(note, kind: .info)
@@ -404,5 +422,65 @@ enum UploadRing {
     /// 輪の下の名前（案 B2「送信中…」）
     static func name(_ state: State) -> String {
         state.failed == nil ? L("送信中…", "Sending…") : L("送れませんでした", "Failed")
+    }
+}
+
+/// 投稿の知らせの、場所で変える言い方（札 #710）。1行目（太い字）と2行目（小さな字）
+struct PostedPlaceNotice: Equatable {
+    let title: String
+    let detail: String?
+
+    /// 言い方を決める。どれにも当たらなければ nil（通常の「投稿しました」）
+    ///
+    /// - 行きたい場所に入れた場所で、**まだ知らせていない**場所の写真が上がった: 「行きたい場所に行けました」と場所の名前
+    ///   （同じ場所の2枚目からは通常の知らせ・`WishVisitMemory`）
+    /// - 写真の無い観光スポット（開いたときに0枚と読めていた・`UploadSpotTarget.announcesFirst`）に、その観光スポットの写真として
+    ///   上がった: 「〇〇の最初の1枚になりました」（札 #710 の案7。行きたい場所より先に言う）
+    static func make(posted: [Photo], wishKeys: Set<String>, spots: [OfficialSpot],
+                     announced: Set<String>, spot: UploadSpotTarget? = nil,
+                     postedToSpot: Int = 0) -> (notice: PostedPlaceNotice, wishKey: String?)? {
+        let hit = WishVisit.notice(posted: posted, keys: wishKeys, spots: spots, announced: announced)
+        if let spot, spot.announcesFirst, postedToSpot > 0 {
+            return (PostedPlaceNotice(title: FirstPhoto.postedTitle(spot.name), detail: FirstPhoto.postedDetail), hit?.key)
+        }
+        if let hit {
+            return (PostedPlaceNotice(title: WishVisit.noticeTitle, detail: hit.name), hit.key)
+        }
+        return nil
+    }
+
+    /// 索引を待つ上限（秒）。「投稿しました」を長く止めない（控えがあればすぐ返る）
+    static let indexWait: Duration = .seconds(1)
+
+    /// 言い替えが起こりうるか。**行きたい場所の鍵が無く、最初の1枚でもない回は false**（何も読まずに通常の知らせ）
+    static func mayApply(wishKeys: Set<String>, spot: UploadSpotTarget?, postedToSpot: Int) -> Bool {
+        !wishKeys.isEmpty || (spot?.announcesFirst == true && postedToSpot > 0)
+    }
+
+    /// 観光スポットの索引が要るか。**行きたい場所に観光スポットの鍵（`SPOT-…`）があり、観光スポットに付けた写真がある回だけ**
+    /// （撮影地の鍵と「最初の1枚」は索引を使わない）
+    static func needsIndex(posted: [Photo], wishKeys: Set<String>) -> Bool {
+        posted.contains { $0.spotId != nil } && wishKeys.contains { SavedSpotKey.slug(fromOfficial: $0) != nil }
+    }
+
+    /// 知らせの言い方を決め、知らせた行きたい場所を覚える（アプリが `PostUploadCenter.placeNotice` に渡す）。
+    ///
+    /// 2026-11-23 判断（札 #710 の確かめ役の指摘）: 前は毎回 `fetchIndex` を待ち（控えは60秒で切れる）、「投稿しました」が遅れていた。
+    /// - 起こりえない回（`mayApply`）はすぐ nil
+    /// - 索引は要る回（`needsIndex`）だけ。投稿の画面が読んでいた索引（`known`）を先に使い、無ければ `wait` まで待つ
+    ///   （`PlaceCoordsRule.lookup`。取れなければ索引なしで決める——観光スポットの行きたい場所は当たらず、通常の知らせ）
+    @MainActor
+    static func resolve(posted: [Photo], wishKeys: Set<String>, spot: UploadSpotTarget?, postedToSpot: Int,
+                        ownerId: String?, known: [OfficialSpot], memory: WishVisitMemory,
+                        wait: Duration = indexWait,
+                        fetch: @escaping @Sendable () async -> [OfficialSpot]?) async -> PostedPlaceNotice? {
+        guard mayApply(wishKeys: wishKeys, spot: spot, postedToSpot: postedToSpot) else { return nil }
+        let index = await PlaceCoordsRule.lookup(current: known, needed: needsIndex(posted: posted, wishKeys: wishKeys),
+                                                 wait: wait, fetch: fetch) ?? known
+        guard let made = make(posted: posted, wishKeys: wishKeys, spots: index,
+                              announced: memory.announced(for: ownerId),
+                              spot: spot, postedToSpot: postedToSpot) else { return nil }
+        if let key = made.wishKey { memory.note([key], for: ownerId) }
+        return made.notice
     }
 }

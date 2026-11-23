@@ -25,7 +25,22 @@ final class HomeTopCardMemo {
         let quizSettled: Bool
     }
 
+    /// 友達の行きたい場所の札の鍵（写真、フォロー、行きたい場所の鍵、日。索引と印は書き換えの番号）。
+    /// 2026-11-23 判断（札 #710 の確かめ役の指摘）: body のたびに UserDefaults の JSON を読み、全部の写真を突き合わせていた。
+    /// 日で控えるので、7日を過ぎた写真が札から外れるのは翌日の描き直しから（1日に1枚の決まりと同じ区切り）
+    struct FriendWishKey: Equatable {
+        let photos: [Photo]
+        let following: Set<String>
+        let me: String
+        let keys: Set<String>
+        let day: String
+        let spotsRevision: Int
+        /// 印（「この知らせは出さない」）を書き換えた番号
+        let revision: Int
+    }
+
     private let pool = DerivedMemo<Int, SpotSwipe.CoverPool>()
+    private let friendWish = DerivedMemo<FriendWishKey, FriendWish.Hit?>()
     private let shelf = DerivedMemo<ShelfKey, HomeSpotShelf.Shelf?>()
     private let needs = DerivedMemo<ShelfKey, [OfficialSpot]>()
 
@@ -46,7 +61,13 @@ final class HomeTopCardMemo {
         needs.value(for: key, make)
     }
 
+    /// 友達の行きたい場所の今日の1枚（鍵が変わったときだけ計算する）
+    func friendWishHit(_ key: FriendWishKey, _ make: () -> FriendWish.Hit?) -> FriendWish.Hit? {
+        friendWish.value(for: key, make)
+    }
+
     /// 計算した回数（テスト用）
     var poolBuilds: Int { pool.computeCount }
+    var friendWishComputes: Int { friendWish.computeCount }
     var shelfComputes: Int { shelf.computeCount }
 }

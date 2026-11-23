@@ -16,20 +16,31 @@ final class ToastCenter: ObservableObject {
         let id: UUID
         let text: String
         let kind: Kind
+        /// 2行目の小さな字（札 #710 の案1・7: 「行きたい場所に行けました」の下の場所の名前など）。無ければ1行だけ
+        var detail: String? = nil
         /// 押せる一手（1.1.83「カードにする」）。無ければ知らせだけ
         var actionTitle: String? = nil
         var action: (() -> Void)? = nil
         /// 2つ目の一手（札 #630: ログインしていない人の知らせの「ログイン」。1つ目は「新規登録」）。1つ目が無ければ出さない
         var secondaryTitle: String? = nil
         var secondaryAction: (() -> Void)? = nil
+        /// 知らせの印（文が替わっても同じ知らせだと分かる・`dismiss(tagged:)`）。無ければ nil
+        var tag: Tag? = nil
 
         static func == (lhs: Message, rhs: Message) -> Bool {
             lhs.id == rhs.id && lhs.text == rhs.text && lhs.kind == rhs.kind && lhs.actionTitle == rhs.actionTitle
-                && lhs.secondaryTitle == rhs.secondaryTitle
+                && lhs.secondaryTitle == rhs.secondaryTitle && lhs.detail == rhs.detail && lhs.tag == rhs.tag
         }
 
         /// `info`: 成功でも失敗でもない案内（届く時期など・2026-10-09）
         enum Kind { case success, failure, info }
+    }
+
+    /// 知らせの印。2026-11-23 判断（札 #710 の確かめ役の指摘）: 「投稿しました」の1行目は場所で
+    /// 「行きたい場所に行けました」などに替わるので、文で下ろすと下りない（札 #628 の決まりが崩れる）。印で合わせる
+    enum Tag: Equatable {
+        /// 写真の投稿が上がった知らせ（「投稿しました」と、場所で言い替えた知らせ）
+        case posted
     }
 
     /// 出している時間。Web と同じ 3 秒
@@ -65,6 +76,18 @@ final class ToastCenter: ObservableObject {
     /// 1.1.84 のまとめ: 「取り消す」（`undo`・トランク）と同じ部品に両方を残す。こちらで出すと前の「取り消す」は消える
     func show(_ text: String, kind: Message.Kind = .success, actionTitle: String? = nil, action: (() -> Void)? = nil) {
         show(text, kind: kind, actionTitle: actionTitle, action: action, secondaryTitle: nil, secondaryAction: nil)
+    }
+
+    /// 2行で出す（札 #710 の案1・7）。1行目は太い字、2行目（`detail`）は小さな字。空の2行目は出さない
+    func show(_ text: String, detail: String?, kind: Message.Kind = .success, tag: Tag? = nil,
+              actionTitle: String? = nil, action: (() -> Void)? = nil) {
+        show(text, kind: kind, actionTitle: actionTitle, action: action, secondaryTitle: nil, secondaryAction: nil)
+        guard let message = current, message.text == text.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        let line = detail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        var next = message
+        if !line.isEmpty { next.detail = line }
+        next.tag = tag
+        if next != message { current = next }
     }
 
     /// 2つの一手を付けて出す（札 #630: 「新規登録」と「ログイン」）。2つ目は1つ目と一緒のときだけ出す。
@@ -120,6 +143,12 @@ final class ToastCenter: ObservableObject {
     /// 別の投稿の「送れませんでした　もう一度」などは残す）
     func dismiss(ifShowing text: String) {
         guard current?.text == text else { return }
+        dismiss()
+    }
+
+    /// 出ている知らせがこの印のときだけ下ろす（文が場所で替わっても下ろせる・`Tag`）
+    func dismiss(tagged tag: Tag) {
+        guard current?.tag == tag else { return }
         dismiss()
     }
 

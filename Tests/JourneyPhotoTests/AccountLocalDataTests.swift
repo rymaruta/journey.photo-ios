@@ -147,6 +147,24 @@ final class AccountLocalDataTests: XCTestCase {
         XCTAssertNotNil(defaults.object(forKey: FoundingGiftGate.shownKey("stays")), "別の人の控えまで消した")
         XCTAssertNotNil(defaults.object(forKey: FoundingGiftGate.doneKey("stays")))
     }
+
+    /// 🔴 友達の行きたい場所の札の印と、「行きたい場所に行けました」を知らせた鍵も、退会した人の分だけ消える
+    /// （札 #710・2026-11-23 確かめ役の指摘）。消す行を外すと、ここで残って落ちる
+    func testRemovesFriendWishAndWishVisitMarksOfThatPersonOnly() async throws {
+        let defaults = suite()
+        let dir = try directory()
+        let friend = FriendWishMemory(defaults: defaults)
+        let visits = WishVisitMemory(defaults: defaults)
+        for id in ["gone", "stays"] {
+            friend.save(FriendWish.State(shownPairs: ["u#kyoto"], muted: ["u"], day: "2026-11-23", photoId: "p"), for: id)
+            visits.note(["SPOT-hogonin"], for: id)
+        }
+        AccountLocalData.remove(userId: "gone", username: nil, defaults: defaults, draftDirectory: dir)
+        XCTAssertEqual(friend.state(for: "gone"), FriendWish.State(), "退会した人の友達の行きたい場所の印が残っている")
+        XCTAssertTrue(visits.announced(for: "gone").isEmpty, "退会した人の「行けました」の鍵が残っている")
+        XCTAssertEqual(friend.state(for: "stays").muted, ["u"], "別の人の印まで消した")
+        XCTAssertEqual(visits.announced(for: "stays"), ["SPOT-hogonin"])
+    }
 }
 
 /// ログアウトの前に通知の宛先を外せなかった回（ログインの期限切れ・圏外）。

@@ -322,7 +322,11 @@ final class CriticalFlowTests: JPUITestCase {
         // 上がったら知らせ「投稿しました　カードにする」（共有カードは画面いっぱいに出さない・1.1.83 の決めを置き換えた）
         // run 1465: 知らせの入れ物（`toast`）の label は空で、字は子の StaticText「投稿しました」（要素の木で確かめた）。
         // 字そのものを、押した直後から見る（知らせは6秒で消える）
-        let postedText = app.staticTexts["投稿しました"].firstMatch
+        // 2026-11-23（札 #710 の案1・7）: 1行目は場所で「行きたい場所に行けました」「〇〇の最初の1枚になりました」に替わる。
+        // どれでも「上がった」知らせとして待つ（文が替わっても落ちない）
+        let postedText = app.staticTexts.matching(NSPredicate(
+            format: "label == %@ OR label == %@ OR label ENDSWITH %@",
+            "投稿しました", "行きたい場所に行けました", "の最初の1枚になりました")).firstMatch
         let toastShown = postedText.waitForExistence(timeout: 60)
         print("[postedToast] shown=\(toastShown) uploadOpen=\(thumb.exists) card=\(app.buttons["toast.action"].exists)")
         XCTAssertTrue(toastShown, "裏で送っても「投稿しました」が出ない（上がっていない）")

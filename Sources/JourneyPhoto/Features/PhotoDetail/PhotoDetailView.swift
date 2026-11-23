@@ -948,6 +948,7 @@ struct PhotoDetailView: View {
             }
             socialBar(proxy)
             tripSection
+            PhotoDetailExtras(photo: shown)   // 札 #710 の案9・10（行きたい場所の1行・色の名前）
             Group {
                 if let exif = shown.exif {
                     ExifRow(exif: exif)

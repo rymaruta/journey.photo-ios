@@ -98,7 +98,8 @@ final class MapPhotosKnownTests: XCTestCase {
         // 地図の本体だけを数える（下の `MapWishlistDestination` は受け取った値を渡すだけ）
         let mapBody = text.components(separatedBy: "enum MapWishlistLink {").first ?? text
         let passed = mapBody.components(separatedBy: "photosKnown:").count - 1
-        XCTAssertEqual(passed, 5)
+        // 2026-11-23（札 #710 の案7）: 札の「最初の1枚を投稿する」も同じ値で決める
+        XCTAssertEqual(passed, 6)
         XCTAssertEqual(mapBody.components(separatedBy: "photosKnown: model.photosKnown").count - 1, passed,
                        "地図に模型の値でない photosKnown がある")
     }

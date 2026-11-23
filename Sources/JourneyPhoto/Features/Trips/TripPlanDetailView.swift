@@ -152,6 +152,10 @@ struct TripPlanDetailView: View {
     @State private var saveAttempt = 0
     /// 名前を引く材料（取れなくても画面は出る——観光スポットは「読み込めませんでした」、撮影地は鍵のままになるだけ）
     @State private var photos: [Photo] = []
+    /// 自分の写真（プランの場所に、その日に撮った1枚を並べる・札 #710 の案3・`TripPlanPhotos`）。取れなければ空のまま
+    @State private var myPhotos: [Photo] = []
+    /// 点線の枠から開く投稿（観光スポットを撮影地に入れて開く）
+    @State private var stopPost: TripStopPostTarget?
     @State private var loadedIndex: [OfficialSpot] = []
     /// 名前と座標を引く索引。読み込む前は、AI で作ったときの候補で引く（2026-11-23 判断・作り終えた直後に `sp_…` が見えていた）
     private var index: [OfficialSpot] {
@@ -406,6 +410,22 @@ struct TripPlanDetailView: View {
                             pick: { swapAI(target, to: $0) })
         }
         .fullScreenCover(isPresented: $aiShowPro) { PaywallView(origin: .tripAI) }
+        // 点線の枠から開く投稿（札 #710 の案3）。閉じたら自分の写真を読み直して、枠を写真に替える
+        .sheet(item: $stopPost, onDismiss: {
+            TabRouter.shared.postSheetClosed()
+            Task {
+                let mine = try? await environment.photos.myPhotos()
+                // 持ち主の確かめは `PhotoOwnership` に集める（他人の写真を行に入れない・2026-11-23）
+                if let mine { myPhotos = PhotoOwnership.mine(mine, me: auth.userId) }
+            }
+        }) { target in
+            NavigationStack {
+                UploadView(spot: target.spot, onSaved: { photo in
+                    TabRouter.shared.notePosted(photo)
+                    myPhotos = PostedPhotos.merge(loaded: myPhotos, posted: [photo], owner: auth.userId)
+                })
+            }
+        }
         .alert(L("削除できませんでした", "Couldn't delete"),
                isPresented: Binding(get: { deleteError != nil },
                                     set: { if !$0 { deleteError = nil } })) {
@@ -425,6 +445,11 @@ struct TripPlanDetailView: View {
             indexTried = true
             let fetchedPhotos = await photosCall
             if let fetchedPhotos { photos = fetchedPhotos; gotPhotos = true }
+            // 自分の写真（札 #710 の案3）。ログインしている人の分だけ。取れなかった回は前の分を残す
+            var mine: [Photo]?
+            if auth.userId != nil { mine = try? await environment.photos.myPhotos() }
+            // 自分の写真だけ（`PhotoOwnership`・持ち主の分からない行も入れない）
+            if let mine { myPhotos = PhotoOwnership.mine(mine, me: auth.userId) }
             // 別名は取れなくてもよい（名前と読みで当たる・`fetchAliases` は投げない）
             let fetchedAliases = await environment.spots.fetchAliases()
             if !fetchedAliases.isEmpty { aliases = fetchedAliases }
@@ -1396,17 +1421,26 @@ struct TripPlanDetailView: View {
         // - 読み上げの人は ≡ を上下にスワイプで上へ・下へ、操作で「N日目へ」「外す」（`TripPlanEdit.accessibilityMoves`）
         // 右の印は今どおり「…」と ≡ の2つ。AI で作ったプランの「替える」は名前の下（番号の丸の右・36）に置く
         // （2026-11-15 確かめ役の指摘「右に3つが混み合う」。押す回数は替える1回のまま）
+        // 自分の写真で埋まる（札 #710 の案3）: その日に撮った自分の1枚。今日のまだの観光スポットは点線の「＋」
+        let ymd = days.indices.contains(di) ? TripPlanText.dayDate(index: di, day: days[di], start: start, end: end) : nil
+        let mine = TripPlanPhotos.mine(for: item, on: ymd, mine: myPhotos)
+        let invites = TripPlanPhotos.invites(item, on: ymd, today: TripPlanText.ymd(pickedIn: .current, Date()),
+                                             hasPhoto: mine != nil)
+        let thumb = TripPlanPhotos.thumb(mine: mine, spot: spotFor(item))
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
                 if pending {
                     TripStopSkeleton(number: number)
                 } else {
-                    itemLink(item, name: name, number: number, season: season, chips: chips, time: time)
+                    itemLink(item, name: name, number: number, season: season, chips: chips, time: time, thumb: thumb)
+                    TripStopPhotoSlot(invites: invites, name: name) { invitePost(item) }
                     itemMenu(di, ii, item, name: name)
                     dragHandle(di, ii, item, name: name)
                 }
             }
             if !pending {
+                TripStopPhotoLine(photo: mine, invites: invites)
+                    .padding(.leading, thumb == nil ? 36 : 36 + TripStopThumbView.side + JPSpace.s)
                 aiSwapButton(di, ii, item, name: name)
             }
         }
@@ -1414,6 +1448,12 @@ struct TripPlanDetailView: View {
         .dropDestination(for: String.self) { items, _ in
             drop(items.first, toDay: di, toItem: ii)
         } isTargeted: { setDropTarget($0, DropSpot(day: di, item: ii)) }
+    }
+
+    /// 点線の枠: その観光スポットを撮影地に入れて投稿の画面を開く（札 #710 の案3）。押す回数 枠 → 写真 → 投稿 = 3
+    private func invitePost(_ item: TripItem) {
+        guard case .spot(let spotId, _) = item, let spot = index.first(where: { $0.spotId == spotId }) else { return }
+        stopPost = TripStopPostTarget(spot: UploadSpotTarget(spot))
     }
 
     /// 持ち手 ≡（行の右端・当たり 44pt・2026-11-12 札 #570）。押さえて運ぶ（同じ日の中も、別の日へも）。
@@ -1792,40 +1832,46 @@ struct TripPlanDetailView: View {
     /// 名前を押すとその場所へ。**開ける先が無いものは行だけ**（押しても何も起きない札を作らない）
     @ViewBuilder
     private func itemLink(_ item: TripItem, name: String, number: Int, season: String?, chips: [TripDraft.TimeChip],
-                          time: TripTimes.Row? = nil) -> some View {
+                          time: TripTimes.Row? = nil, thumb: TripStopThumb? = nil) -> some View {
         switch item {
         case .spot(let spotId, _):
             if let spot = index.first(where: { $0.spotId == spotId }) {
                 NavigationLink {
                     OfficialSpotView(spot: spot, spots: index, photos: photos, photosKnown: gotPhotos)
                 } label: {
-                    itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chips: chips, by: addedByText(item), time: time)
+                    itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chips: chips, by: addedByText(item), time: time,
+                              thumb: thumb)
                 }
                 .buttonStyle(.plain)
             } else {
-                itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chips: chips, by: addedByText(item), time: time)
+                itemLabel(name, number: number, isSpot: true, note: item.note, season: season, chips: chips, by: addedByText(item), time: time,
+                          thumb: thumb)
             }
         case .location(let slug, _):
             if let place = places.first(where: { $0.slug == slug }) {
                 NavigationLink {
                     SpotDetailView(spot: place, photos: photos)
                 } label: {
-                    itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chips: [], by: addedByText(item), time: time)
+                    itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chips: [], by: addedByText(item), time: time,
+                              thumb: thumb)
                 }
                 .buttonStyle(.plain)
             } else {
-                itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chips: [], by: addedByText(item), time: time)
+                itemLabel(name, number: number, isSpot: false, note: item.note, season: nil, chips: [], by: addedByText(item), time: time,
+                          thumb: thumb)
             }
         }
     }
 
     /// 行の中身（v2 の板 TripPlanDays・F30: 番号の丸 → 名前 → 季節の一文と時間帯の札 → ひとこと・`TripStopLabel`）
     private func itemLabel(_ name: String, number: Int, isSpot: Bool, note: String?,
-                           season: String?, chips: [TripDraft.TimeChip], by: TripShareText.AddedBy? = nil, time: TripTimes.Row? = nil) -> some View {
+                           season: String?, chips: [TripDraft.TimeChip], by: TripShareText.AddedBy? = nil, time: TripTimes.Row? = nil,
+                           thumb: TripStopThumb? = nil) -> some View {
         let byLeading: CGFloat = time == nil ? 36 : 36 + timeLeading
         return VStack(alignment: .leading, spacing: 2) {
             TripStopLabel(number: number, name: name, isSpot: isSpot, season: season, timeChips: chips, note: note,
-                          time: time?.arrive, showsTime: time != nil, timeCaution: time.flatMap(TripTimes.cautionLine))
+                          time: time?.arrive, showsTime: time != nil, timeCaution: time.flatMap(TripTimes.cautionLine),
+                          thumb: thumb)
             // 共有したプランで、ほかの仲間が足した場所（「あおが足しました」）。名前は太く明るく、続きは細く暗く
             // ——空白で区切らない（2026-11-23 判断）
             if let by {
@@ -2164,9 +2210,9 @@ struct TripAISwapTarget: Identifiable {
 /// 番号の丸は本物と同じ（日程の番号は先に分かる）、名前と季節の一文は灰の棒（`AskLoadingSkeleton` の流れの骨組みと同じ surface-4）
 struct TripStopSkeleton: View {
     let number: Int
-    /// 行の写真の欄の寸法（44pt・角10）
-    static let photoSide: CGFloat = 44
-    static let photoCorner: CGFloat = 10
+    /// 行の写真の欄の寸法（44pt・角10）。行の写真（`TripStopThumbView`）と同じ値を使う（2026-11-23 判断・統合で写しを1つにした）
+    static let photoSide: CGFloat = TripStopThumbView.side
+    static let photoCorner: CGFloat = JPRadius.s
 
     var body: some View {
         HStack(alignment: .top, spacing: JPSpace.s) {

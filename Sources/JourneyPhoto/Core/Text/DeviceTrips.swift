@@ -196,7 +196,9 @@ enum DeviceTrips {
     ///
     /// - **人の棚には出さない**（`isMine` が偽なら空）
     /// - 覚えた土地の時間帯で日を切り直す（`LibraryTrips.recut`）
-    /// - **投稿済みの日がある旅は出さない**（投稿した一冊と2冊に見える）
+    /// - 投稿した写真がある旅は、**まだ載せていないコマが `minRemaining` 枚以上あれば**、残りのコマだけで出す
+    ///   （札 #710 の案2・`remaining`）。前は投稿した日が1日でもある旅を出さなかったので、旅先でいちばんの1枚を
+    ///   先に載せた人ほど、残りを載せる道（ホームの「まだ載せていない旅」の札）が載せた瞬間に消えていた
     static func books(_ trips: [LibraryTrip], posted: [LibraryTrips.PostedShot],
                       zones: [String: String], isMine: Bool) -> [LibraryTrip] {
         guard isMine else { return [] }
@@ -206,7 +208,44 @@ enum DeviceTrips {
                       !(trip.zoneIsKnown && trip.timeZone.identifier == id) else { return trip }
                 return LibraryTrips.recut(trip, timeZone: zone)
             }
-            .filter { LibraryTrips.postedDays(trip: $0, posted: posted) == 0 }
+            .compactMap { remaining($0, posted: posted) }
+    }
+
+    /// 残りのコマがこれより少ない旅は出さない（1枚だけ残った旅で札を出して押しつけない・2026-11-23 判断）
+    static let minRemaining = 2
+
+    /// まだ載せていないコマだけの旅。**出さない旅は nil**。
+    ///
+    /// 2026-11-23 判断（札 #710 の案2・owner 承認）:
+    /// - 投稿した写真がこの旅の日に無い: そのまま出す（前と同じ）
+    /// - 投稿した写真が**全部コマと突き合わさる**（撮影日時の壁時計が、旅の時間帯か端末の時間帯で1秒以内に合う）:
+    ///   載せたコマを外し、残りが `minRemaining` 枚以上なら出す
+    /// - 突き合わせられない投稿（撮影日時が無い・ほかの端末で撮った）が旅の日にある: どのコマを載せたか分からないので
+    ///   今までどおり出さない（同じ旅が2冊に見えない側に倒す）
+    static func remaining(_ trip: LibraryTrip, posted: [LibraryTrips.PostedShot]) -> LibraryTrip? {
+        // 旅の日の鍵は旅ごとに1回だけ作る（投稿ごとに作り直さない・2026-11-23 判断）
+        let onTrip = LibraryTrips.postedOnTrip(trip, posted: posted)
+        guard !onTrip.isEmpty else { return trip }
+        var byStamp: [String: [String]] = [:]
+        // Calendar は時間帯ごとに1つ作って使い回す（コマごとに作らない・同じ時間帯は1回だけ）
+        let zones = trip.timeZone == TimeZone.current ? [trip.timeZone] : [trip.timeZone, TimeZone.current]
+        let calendars = zones.map { LibraryTrips.stampCalendar($0) }
+        for shot in trip.shots {
+            for calendar in calendars {
+                for offset in [-1.0, 0, 1] {
+                    byStamp[LibraryTrips.wallStamp(shot.date.addingTimeInterval(offset), calendar: calendar), default: []]
+                        .append(shot.id)
+                }
+            }
+        }
+        var matched = Set<String>()
+        for shot in onTrip {
+            guard let stamp = shot.stamp, let ids = byStamp[stamp] else { return nil }
+            matched.formUnion(ids)
+        }
+        let left = trip.shots.filter { !matched.contains($0.id) }
+        guard left.count >= minRemaining else { return nil }
+        return LibraryTrips.keeping(trip, shots: left, postedCount: trip.shots.count - left.count)
     }
 
     /// 写真から旅を探す（`LibraryTrips.find` そのまま・家は推す）。新しい旅が先頭

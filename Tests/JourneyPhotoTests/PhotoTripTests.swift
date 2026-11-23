@@ -418,7 +418,9 @@ final class PhotoTripTests: XCTestCase {
         let spot = try source("Sources/JourneyPhoto/Features/Spots/OfficialSpotView.swift")
         XCTAssertTrue(spot.contains("onPost: { capture in pendingCapture = capture },"))
         XCTAssertTrue(spot.contains("onDismiss: { if SpotComposePost.opensUpload(pendingCapture) { showUpload = true } })"))
-        XCTAssertTrue(spot.contains("UploadView(spot: UploadSpotTarget(spot), onPosted:"))
+        // 2026-11-23（札 #710 の案7）: 開いたときに0枚と読めていたかを添える
+        XCTAssertTrue(spot.contains("UploadView(spot: UploadSpotTarget(spot).announcing(firstAtOpen),"))
+        XCTAssertTrue(spot.contains("onPosted: { count in"))
         XCTAssertTrue(spot.contains("}, initialCapture: pendingCapture,"), "撮った1枚がスポットの投稿に入らない")
         let guide = try source("Sources/JourneyPhoto/Features/Spots/ComposeGuideView.swift")
         // 2026-10-14: v2 で下の並びを3つ割りにした（`StoryV2DesignTests.testComposeGuideControls`）。

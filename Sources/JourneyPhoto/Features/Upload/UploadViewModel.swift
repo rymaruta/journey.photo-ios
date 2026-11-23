@@ -13,6 +13,8 @@ struct UploadSpotTarget: Equatable {
     let name: String
     /// 公開してよい座標（約1km）。無いスポットは写真の位置のまま
     let coords: Photo.Coords?
+    /// 開いたときに、この観光スポットの写真が0枚と読めていた（札 #710 の案7）。投稿のあと「〇〇の最初の1枚になりました」と言う
+    var announcesFirst = false
 
     init(spotId: String, name: String, coords: Photo.Coords?) {
         self.spotId = spotId
@@ -22,6 +24,13 @@ struct UploadSpotTarget: Equatable {
 
     init(_ spot: OfficialSpot) {
         self.init(spotId: spot.spotId, name: spot.name, coords: spot.coords)
+    }
+
+    /// 「最初の1枚」と言ってよい行き先にする（札 #710 の案7）
+    func announcing(_ first: Bool) -> UploadSpotTarget {
+        var target = self
+        target.announcesFirst = first
+        return target
     }
 
     /// 写真の位置がスポットからこれより離れていたら、そのスポットの写真とみなさない
@@ -627,6 +636,9 @@ final class UploadViewModel: ObservableObject {
     var onSaved: ((Photo) -> Void)?
     /// この送信で保存が通った写真の ID（初めての投稿の「この1枚をカバーに」・`CoverOfferStore.notePosted`・#304）
     private var savedPhotoIds: [String] = []
+    /// この送信で保存が通った写真（保存の応答の行）。投稿の知らせが「行きたい場所に行けました」
+    /// 「最初の1枚になりました」を決めるのに使う（札 #710 の案1・7・`PostUploadCenter.placeNotice`）
+    private(set) var savedPhotos: [Photo] = []
     /// その写真の持ち主（保存の応答の行の `userId`。無ければ下書きの持ち主）
     private var savedPhotoOwner: String?
     /// 送信中。**読み込み中とは分ける**——一緒にすると、写真を選んでいる
@@ -2052,6 +2064,7 @@ final class UploadViewModel: ObservableObject {
         /// 送れなかった写真（「n枚目からもう一度」の番号に使う）
         var failedIds: [UUID] = []
         savedPhotoIds = []
+        savedPhotos = []
         savedPhotoOwner = nil
         var failures: [String] = []
         /// 写真は上がったが曲を付けられなかった枚数。**成功に数えない**
@@ -2387,6 +2400,7 @@ final class UploadViewModel: ObservableObject {
         stagedEdits[item.id] = nil
         if let photo {
             savedPhotoIds.append(photo.id)
+            savedPhotos.append(photo)
             if savedPhotoOwner == nil { savedPhotoOwner = photo.userId }
             onSaved?(photo)
         }

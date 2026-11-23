@@ -100,6 +100,9 @@ enum AccountLocalData {
         LeftoverCamperData.removeData(for: userId, defaults: defaults)
         // はじめてのいいね・コメントを祝った印（2026-11-08）
         FirstReaction.removeData(for: userId, defaults: defaults)
+        // 友達の行きたい場所の札の印と、「行きたい場所に行けました」を知らせた鍵（2026-11-23・札 #710）
+        FriendWishMemory(defaults: defaults).removeAll(for: userId)
+        WishVisitMemory(defaults: defaults).removeAll(for: userId)
         // 共有のために書いた旅の一冊の画像（表紙の写真を含む）
         TripBookCard.removeAll()
         if let username, !username.isEmpty {
