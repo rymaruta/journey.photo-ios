@@ -29,7 +29,17 @@ struct GoogleSignInService {
 
     /// サーバーで使えるか。**確かめられなければ使えない扱い**（ボタンを出さない）。口がまだ無い本番は 404 で false
     func isAvailable() async -> Bool {
-        (try? await api.anonymous(.get, "/auth/google/status", as: Status.self).available) ?? false
+        await availability() ?? false
+    }
+
+    /// サーバーの答え。**はっきり答えたときだけ** true / false、圏外・サーバーの不調は nil
+    /// （前回の答えを変えない・`ExternalSignInMemory`・2026-11-23 判断）。口がまだ無い 404・読めない答えは false
+    func availability() async -> Bool? {
+        do {
+            return try await api.anonymous(.get, "/auth/google/status", as: Status.self).available
+        } catch {
+            return ExternalSignInAvailability.answer(for: error)
+        }
     }
 
     struct StartBody: Encodable, Equatable {

@@ -346,7 +346,8 @@ final class V2SettingsProTests: XCTestCase {
         XCTAssertEqual(SignInLayout.tileTilt, -4)
         let view = try source("Features/Auth/SignInView.swift")
         XCTAssertFalse(view.contains(".jpPillButton(.accent)"), "ログインの画面に真鍮の主ボタンが残っている")
-        XCTAssertEqual(view.components(separatedBy: ".jpPillButton(SignInLayout.primaryStyle)").count - 1, 4,
+        // ログインの主ボタンは画面の大きさで高さを替える（`.jpPillButton(SignInLayout.primaryStyle, height:)`・2026-11-23）
+        XCTAssertEqual(view.components(separatedBy: ".jpPillButton(SignInLayout.primaryStyle").count - 1, 4,
                        "ログイン・登録の完了・コードを送る・パスワードを変える の4つが白でない")
         let header = slice(view, from: "private var tileHeader", to: "private func tile(")
         assertInOrder(["count: SignInLayout.tileColumns", ".rotationEffect(.degrees(SignInLayout.tileTilt))",

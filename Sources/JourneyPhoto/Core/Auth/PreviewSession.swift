@@ -31,6 +31,19 @@ enum PreviewSession {
         #endif
     }
 
+    /// ログイン画面の Apple・Google のボタンを、通信せずに「使える」として描く（Debug のみ・UI テストの絵だけ）。
+    /// `-JPPreviewExternalSignIn YES`。2026-11-23 判断: 本番・staging の口の答えに左右されずに、ボタンのある形の絵を撮るため。
+    /// 覚え（`ExternalSignInMemory`）には書かない。Release では必ず false
+    static let externalSignInKey = "JPPreviewExternalSignIn"
+
+    static var forcesExternalSignIn: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: externalSignInKey)
+        #else
+        return false
+        #endif
+    }
+
     /// 鍵を持たずに入っている利用者 ID。入っていなければ `nil`。
     static var userId: String? {
         #if DEBUG
