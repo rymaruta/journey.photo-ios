@@ -32,6 +32,12 @@ final class TrunkViewModel: ObservableObject {
     private let previewPro: Bool
     /// 見本の手持ちの硬貨（`-JPPreviewTrunkCoins`・はじめての硬貨の見本では配ったあとの数）
     private let previewCoins: Int?
+    /// 見本の最初の画面の状態（`-JPPreviewTrunkHome`・札 #711）
+    private let previewHome: String?
+
+    /// 圏外で読めず、前に読んだトランク（`TrunkEntryStore` がこの起動の間だけ持つ写し）を出している（2026-11-23・札 #711）。
+    /// 読めたら false に戻す
+    @Published private(set) var showingSaved = false
 
     /// 硬貨が増えた知らせ（はじめての硬貨・`Notification.Name.trunkCoinsChanged`）の見張り
     private var coinsObserver: NSObjectProtocol?
@@ -40,10 +46,12 @@ final class TrunkViewModel: ObservableObject {
     init(preview: PreviewSession.TrunkPreview? = PreviewSession.trunkSample,
          previewPro: Bool = PreviewSession.isPro,
          previewCoins: Int? = PreviewSession.trunkCoins,
+         previewHome: String? = PreviewSession.trunkHome,
          center: NotificationCenter = .default) {
         self.preview = preview
         self.previewPro = previewPro
         self.previewCoins = previewCoins
+        self.previewHome = previewHome
         self.center = center
         // 硬貨の数を見せている画面（トランク・カプセルの機械）は、はじめての硬貨が配られたら読み直す（2026-10-18）
         coinsObserver = center.addObserver(forName: .trunkCoinsChanged, object: nil, queue: .main) { [weak self] note in
@@ -90,13 +98,22 @@ final class TrunkViewModel: ObservableObject {
     /// 届いたラベルが1枚も無い（手持ちも貼ったものも空）
     var isEmpty: Bool { (state?.pocket.isEmpty ?? true) && (state?.stuck.isEmpty ?? true) }
 
-    /// - Parameter offline: いま電波が無いか（`Connectivity`）。読めなかったときに「圏外」で出すかを決める
-    func load(offline: Bool) async {
+    /// - Parameters:
+    ///   - offline: いま電波が無いか（`Connectivity`）。読めなかったときに「圏外」で出すかを決める
+    ///   - saved: 前に読んだその人のトランク（`TrunkEntryStore.state(for:)`・この起動の間だけメモリに持つ写し）。
+    ///     **圏外で読めなかったときだけ**これを出し、`showingSaved` を立てる（2026-11-23 判断・札 #711: 端末には控えを書かない
+    ///     決まりはそのまま。メモリの写しが無い＝この起動でまだ一度も読めていなければ、今までどおりの「電波がありません」）
+    func load(offline: Bool, saved: TrunkState? = nil) async {
         if let preview {
+            if previewHome == "loading" {
+                phase = .loading
+                return
+            }
             // 一度動かした見本（貼った・回した・付け替えた）は、画面を開き直しても消さない
             if state == nil {
-                state = TrunkSample.state(isPro: previewPro, empty: preview == .empty, coins: previewCoins)
+                state = Self.previewState(home: previewHome, isPro: previewPro, empty: preview == .empty, coins: previewCoins)
             }
+            showingSaved = previewHome == "offline"
             phase = .loaded
             return
         }
@@ -107,16 +124,35 @@ final class TrunkViewModel: ObservableObject {
             // **読むたびにサーバーの中身で丸ごと置き換える**（2026-10-17: 投稿から24時間以内に削除・非公開にした
             // 写真のラベルは、手持ちからも貼ったラベルからも消える）。端末には控えを持たず、引き継ぐのは投稿の数だけ
             state = fresh.keepingPosts(from: state)
+            showingSaved = false
             phase = .loaded
         } catch is CancellationError {
             return
         } catch {
             // **一度読めた中身は、読み直しの失敗で消さない**（マイページと同じ判断）
             guard state == nil else {
-                actionError = Self.message(error)
+                // 前に読んだトランクを出している間は、上のお知らせが圏外を伝えている（赤の一行を重ねない）
+                if !showingSaved { actionError = Self.message(error) }
                 return
             }
-            phase = Self.isUnreachable(error) && offline ? .offline : .failed(Self.message(error))
+            let unreachable = Self.isUnreachable(error) && offline
+            if unreachable, let saved {
+                state = saved
+                showingSaved = true
+                phase = .loaded
+                return
+            }
+            phase = unreachable ? .offline : .failed(Self.message(error))
+        }
+    }
+
+    /// 見本の中身（`-JPPreviewTrunkHome` の状態ごと・札 #711）
+    static func previewState(home: String?, isPro: Bool, empty: Bool, coins: Int?) -> TrunkState {
+        switch home {
+        case "first": return TrunkSample.state(isPro: isPro, empty: true, coins: coins ?? 1)
+        case "coins": return TrunkSample.state(isPro: isPro, empty: empty, coins: coins ?? 3).copy(pocket: [])
+        case "none": return TrunkSample.state(isPro: isPro, empty: empty, coins: 0).copy(pocket: [])
+        default: return TrunkSample.state(isPro: isPro, empty: empty, coins: coins)
         }
     }
 
@@ -449,5 +485,72 @@ final class TrunkViewModel: ObservableObject {
     func equip(_ equipped: TrunkEquipped) async -> Bool {
         guard state?.equipped != equipped else { return true }
         return await write({ TrunkLocal.equip($0, equipped) }, { try await $0.equip(equipped) })
+    }
+
+    // MARK: 部品箱の「押すとその場で付く」（先に絵を替える）
+
+    /// 最後に頼まれた付け方の番号（新しい頼みが来たら、待っている古い頼みは送らない）
+    private var equipTicket = 0
+    /// 先に絵に出していて、まだ送り終わっていない付け方（無ければ nil）
+    private var wantedEquip: TrunkEquipped?
+    /// サーバーが最後に受け取った付け方（失敗したらここへ戻す）
+    private var confirmedEquip: TrunkEquipped?
+
+    /// **先に絵を替えてから送る**（2026-11-23 判断・確かめ役の指摘: 応答を待ってから絵を替えていたので、押してから
+    /// 付くまで通信の分だけ間があった）。呼んだ時点で `state.equipped` を替え、送るのは返した `Task` の中。
+    ///
+    /// - 送りは1本ずつ（書き込みの最中なら `waitUntilIdle` で待つ）。**続けて押したら最後の付け方だけ送る**
+    ///   （待っている間に新しい頼みが来た古い頼みは送らずに終わる）ので、送りがぶつからない
+    /// - 送っている間に次を押したら、応答で絵を古い付け方に戻さない（最後に押した付け方を出したまま）
+    /// - 断られた・圏外などで失敗したら、サーバーが最後に受け取った付け方へ絵を戻す（一言は `actionError`）
+    @discardableResult
+    func equipNow(_ equipped: TrunkEquipped) -> Task<Bool, Never> {
+        guard let current = state else { return Task { false } }
+        if wantedEquip == nil { confirmedEquip = current.equipped }
+        equipTicket += 1
+        let ticket = equipTicket
+        let shown = TrunkLocal.equip(current, equipped)
+        wantedEquip = shown.equipped
+        state = shown
+        return Task { @MainActor in await sendEquip(shown.equipped, ticket: ticket) }
+    }
+
+    private func sendEquip(_ equipped: TrunkEquipped, ticket: Int) async -> Bool {
+        let idle = await waitUntilIdle()
+        // 待つ間に新しい頼みが来た: 送るのは新しい方（絵はもう新しい付け方）
+        guard ticket == equipTicket else { return true }
+        guard idle else {
+            revertEquip()
+            if actionError == nil { actionError = Labels.Common.unreachable }
+            return false
+        }
+        // 付けて、送る前に戻した（サーバーはもうこの付け方）: 送らない
+        if equipped == confirmedEquip {
+            wantedEquip = nil
+            return true
+        }
+        // 先に絵を替えているので `equip` の「同じなら送らない」を通さず、そのまま送る
+        let ok = await write({ TrunkLocal.equip($0, equipped) }, { try await $0.equip(equipped) })
+        if ok, let saved = state?.equipped { confirmedEquip = saved }
+        guard ticket == equipTicket else {
+            // 送っている間に次を押した: 応答で古い付け方に戻さない（次の頼みが送る）
+            if let wanted = wantedEquip, let now = state { state = now.copy(equipped: wanted) }
+            return ok
+        }
+        if !ok { revertEquip() }
+        wantedEquip = nil
+        return ok
+    }
+
+    private func revertEquip() {
+        if let confirmed = confirmedEquip, let now = state { state = now.copy(equipped: confirmed) }
+        wantedEquip = nil
+    }
+
+    /// 「元に戻す」。**前の書き込みが終わるのを待ってから戻す**（2026-11-23 確かめ役の指摘: 通信中に押すと
+    /// `write` が「書き込みの最中」で何もせずに失敗し、「取り消せませんでした」になっていた）
+    func undoEquip(to before: TrunkEquipped) async -> Bool {
+        _ = await waitUntilIdle()
+        return await equipNow(before).value
     }
 }

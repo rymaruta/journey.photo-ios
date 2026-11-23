@@ -6123,7 +6123,7 @@ final class ScreenshotTests: JPUITestCase {
         let pocketRow = app.buttons["trunk.pocket"].firstMatch
         scrollTo(pocketRow, in: app)
         Thread.sleep(forTimeInterval: 1)
-        shoot(app, "90a-旅のトランク（下・最近貼ったラベルと札）")
+        shoot(app, "90a-旅のトランク（下・カードと札）")
         guard pocketRow.isHittable else { return }
         XCTAssertGreaterThanOrEqual(pocketRow.frame.height, 44, "手持ちの行が 44pt 未満")
         pocketRow.tap()
@@ -6223,6 +6223,51 @@ final class ScreenshotTests: JPUITestCase {
         if app.descendants(matching: .any)["trunk.pocket.empty"].firstMatch.waitForExistence(timeout: 10) {
             Thread.sleep(forTimeInterval: 1)
             shoot(app, "92b-手持ちのラベル（空・Pro の案内）")
+        }
+    }
+
+    /// **旅のトランクの最初の画面の状態**（札 #711・案「トランクを見やすく」版3）: 大きいボタンが状態で替わる
+    /// （ラベルあり →「ラベルを貼る」、ラベル0で硬貨あり →「カプセルを回す」、どちらも0・初めて →「写真を投稿」）、
+    /// 読み込み中、圏外（前に読んだトランクを薄く出してお知らせ）。出なければ撮らずに抜ける。
+    /// **出たのに大きいボタン・「回して見る」が 44pt 未満なら落とす**
+    func testCapturesTrunkHomeStates() {
+        let cases: [(home: String?, primary: String?, name: String)] = [
+            (nil, "trunk.stick.open", "90e-旅のトランク（ラベルあり）"),
+            ("coins", "trunk.gacha.open", "90f-旅のトランク（ラベル0、硬貨あり）"),
+            ("none", "trunk.emptyPost", "90g-旅のトランク（どちらも0）"),
+            ("first", "trunk.emptyPost", "90h-旅のトランク（初めて開いた）"),
+            ("loading", nil, "90i-旅のトランク（読み込み中）"),
+            ("offline", "trunk.stick.open", "90j-旅のトランク（圏外、前に見たトランク）"),
+        ]
+        for c in cases {
+            var args = ["-JPPreviewTrunk", "YES"]
+            if let home = c.home { args += ["-JPPreviewTrunkHome", home] }
+            let app = launchTrunk(args)
+            // 読み込み中はトランクの絵（`trunk.spin`）が出ないので、開けたかは骨格（`trunk.loading`）で見る
+            let opened = openTrunk(app)
+            guard opened || c.home == "loading" else { app.terminate(); continue }
+            if let id = c.primary {
+                let primary = app.buttons[id].firstMatch
+                guard primary.waitForExistence(timeout: 10) else { app.terminate(); continue }
+                XCTAssertGreaterThanOrEqual(primary.frame.height, 44, "\(c.name) の大きいボタンが 44pt 未満")
+                let chip = app.buttons["trunk.spin.chip"].firstMatch
+                if chip.exists { XCTAssertGreaterThanOrEqual(chip.frame.height, 44, "「回して見る」が 44pt 未満") }
+                if c.home == "offline" {
+                    XCTAssertTrue(app.descendants(matching: .any)["trunk.offlineSaved"].firstMatch.exists, "圏外のお知らせが無い")
+                }
+            } else {
+                guard app.descendants(matching: .any)["trunk.loading"].firstMatch.waitForExistence(timeout: 10) else {
+                    app.terminate(); continue
+                }
+            }
+            // 初めて開いた: 揺れの途中と、光り終えたあと
+            if c.home == "first" {
+                Thread.sleep(forTimeInterval: 0.6)
+                shoot(app, c.name + "（揺れ）")
+            }
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, c.name)
+            app.terminate()
         }
     }
 
@@ -6543,7 +6588,7 @@ final class ScreenshotTests: JPUITestCase {
         XCTAssertFalse(app.buttons["trunk.gacha.insert"].firstMatch.exists, "硬貨 0 で回すボタンが出ている")
     }
 
-    /// **部品箱 → 付け替える**: 種類のタブ（錠前）・ピンバッジの付け替え
+    /// **部品箱**: 種類のタブ（錠前）・押して付ける・元に戻す・持っていない部品のシート
     func testCapturesTrunkPartsBox() {
         let app = launchTrunk(["-JPPreviewTrunk", "YES"])
         guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
@@ -6557,37 +6602,35 @@ final class ScreenshotTests: JPUITestCase {
         lockTab.tap()
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "99-部品箱（錠前）")
-        // 持っている部品を押すとシートで見て「トランクに付ける」（2026-11-12 判断・付け替えの画面へ行かない）
-        let owned = app.buttons.matching(identifier: "trunk.parts.owned").firstMatch
+        // 持っている部品を押すとその場で付く。下に「付けました」と「元に戻す」（2026-11-23・札 #711。付け替えの画面はなくした）
+        XCTAssertFalse(app.buttons["trunk.parts.equip"].firstMatch.exists, "「付け替える」の入口が残っている")
+        // 見本の錠前は lock.1・lock.2…の順で、lock.2 は付けている（`TrunkSample.equipped`）。押すと「外しました」になるので、
+        // 付けていない1つ目（lock.1）を押す（2026-11-23 確かめ役の指摘）
+        let owned = app.buttons.matching(identifier: "trunk.parts.owned").element(boundBy: 0)
         if owned.exists, owned.isHittable {
+            XCTAssertGreaterThanOrEqual(owned.frame.height, 44, "部品の札が 44pt 未満")
             owned.tap()
-            let sheetEquip = app.buttons["trunk.partSheet.equip"].firstMatch
-            guard sheetEquip.waitForExistence(timeout: 10) else { return XCTFail("持っている部品を押してもシートが出ない") }
-            Thread.sleep(forTimeInterval: 1)
-            shoot(app, "99j-部品のシート")
-            XCTAssertGreaterThanOrEqual(sheetEquip.frame.height, 43.99, "シートの主ボタンが 44pt 未満")
-            let close = app.buttons["trunk.partSheet.close"].firstMatch
-            if close.exists, close.isHittable { close.tap() }
-            Thread.sleep(forTimeInterval: 1)
+            Thread.sleep(forTimeInterval: 0.8)
+            shoot(app, "99a-部品を付けた")
+            let undo = app.buttons["toast.undo"].firstMatch
+            if undo.waitForExistence(timeout: 3) {
+                XCTAssertGreaterThanOrEqual(undo.frame.height, 44, "「元に戻す」が 44pt 未満")
+                undo.tap()
+                Thread.sleep(forTimeInterval: 1)
+                shoot(app, "99b-部品を付けた（元に戻した）")
+            }
         }
-        let equip = app.buttons["trunk.parts.equip"].firstMatch
-        guard equip.waitForExistence(timeout: 5), equip.isHittable else { return XCTFail("「付け替える」が無い") }
-        equip.tap()
-        let pinTab = app.buttons["trunk.equip.tab.pin"].firstMatch
-        guard pinTab.waitForExistence(timeout: 10) else { return XCTFail("付け替えの場所のタブが無い") }
-        pinTab.tap()
-        Thread.sleep(forTimeInterval: 2)
-        shoot(app, "99a-部品を付け替える")
-        let part = app.buttons.matching(identifier: "trunk.equip.part").element(boundBy: 2)
-        if part.exists, part.isHittable {
-            XCTAssertGreaterThanOrEqual(part.frame.height, 44)
-            part.tap()
+        // 持っていない部品を押すと手に入れ方と「カプセルを回す」
+        let missing = app.buttons.matching(identifier: "trunk.parts.missing").firstMatch
+        if missing.exists, missing.isHittable {
+            missing.tap()
+            let gacha = app.buttons["trunk.missingSheet.gacha"].firstMatch
+            guard gacha.waitForExistence(timeout: 10) else { return XCTFail("持っていない部品を押しても手に入れ方が出ない") }
             Thread.sleep(forTimeInterval: 1)
-            shoot(app, "99b-部品を付け替える（ピンを足した）")
-            // 押すたびに保存し、右上の「ひとつ戻す」で戻せる（2026-11-12 判断・保存の確かめはなくした）
-            let undo = app.buttons["trunk.equip.undo"].firstMatch
-            XCTAssertTrue(undo.waitForExistence(timeout: 5) && undo.isEnabled, "付け替えたのに「ひとつ戻す」が押せない")
-            undo.tap()
+            shoot(app, "99j-持っていない部品")
+            XCTAssertGreaterThanOrEqual(gacha.frame.height, 43.99, "シートのボタンが 44pt 未満")
+            let close = app.buttons["trunk.missingSheet.close"].firstMatch
+            if close.exists, close.isHittable { close.tap() }
         }
     }
 
@@ -6636,7 +6679,7 @@ final class ScreenshotTests: JPUITestCase {
     }
 
     /// **部品箱の種類ごとの絵**（#305・2026-10-18）: 角金具・内張り・タグ・ワッペン・チャーム・鍵のタブの部品1点の絵（96pt）。
-    /// 付け替えの画面で錠前を替え、トランクに付けた錠前の形も撮る。タブが無ければ落とす
+    /// 部品箱で錠前を押して付け、上の小さいトランクに付いた錠前の形も撮る。タブが無ければ落とす
     func testCapturesTrunkPartsKinds() {
         let app = launchTrunk(["-JPPreviewTrunk", "YES"])
         guard openTrunk(app) else { return XCTFail("旅のトランクを開けない") }
@@ -6652,23 +6695,19 @@ final class ScreenshotTests: JPUITestCase {
             Thread.sleep(forTimeInterval: 1.5)
             shoot(app, name)
         }
-        // 錠前を替えて、トランクに付けた錠前の形（丸い桜の紋）を撮る
+        // 錠前を替えて、トランクに付けた錠前の形を撮る
         let lockTab = app.buttons["trunk.parts.tab.lock"].firstMatch
         revealTab(lockTab, in: app, toLeft: false)
         guard lockTab.frame.minX >= 0, lockTab.isHittable else { return XCTFail("錠前のタブに戻れない") }
         lockTab.tap()
-        let equip = app.buttons["trunk.parts.equip"].firstMatch
-        guard equip.waitForExistence(timeout: 5), equip.isHittable else { return XCTFail("「付け替える」が無い") }
-        equip.tap()
-        let equipLock = app.buttons["trunk.equip.tab.lock"].firstMatch
-        guard equipLock.waitForExistence(timeout: 10) else { return XCTFail("付け替えの錠前のタブが無い") }
-        equipLock.tap()
         Thread.sleep(forTimeInterval: 1)
-        let roundLock = app.buttons.matching(identifier: "trunk.equip.part").element(boundBy: 2)
+        // 部品箱の中で押して付ける（上の小さいトランクに映る・2026-11-23）。付けていない1つ目（lock.1）を押す
+        // （2つ目の lock.2 は見本で付けているので、押すと外れる）
+        let roundLock = app.buttons.matching(identifier: "trunk.parts.owned").element(boundBy: 0)
         if roundLock.exists, roundLock.isHittable {
             roundLock.tap()
             Thread.sleep(forTimeInterval: 1.5)
-            shoot(app, "99i-部品を付け替える（錠前を替えた）")
+            shoot(app, "99i-部品箱（錠前を替えた）")
         }
     }
 

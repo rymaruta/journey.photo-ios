@@ -33,21 +33,22 @@ final class TrunkWiringTests: XCTestCase {
     }
 
     /// 🔴 全画面の点検（2026-10-21・99-部品箱）: 「集めた部品・硬貨・かけら」が同じ大きさの札3つで並び、
-    /// どれが大事か読めなかった。**主役は集めた部品の数1つ**（大きな数字）、硬貨は脇に小さく、
-    /// かけらの印は交換の札へ
-    func testPartsBoxLeadsWithCollectedCount() throws {
+    /// どれが大事か読めなかった。2026-11-23（札 #711）: 上は付けた姿が見える小さいトランクと集めた数1つ、
+    /// 硬貨とかけらは下の帯にまとめる
+    func testPartsBoxLeadsWithTrunkAndCollectedCount() throws {
         let box = try source("Features/Trunk/TrunkPartsBoxView.swift")
-        let start = try XCTUnwrap(box.range(of: "private func stats("))
-        // `source` は注記の行を落とすので、終わりの目印は次の関数の頭
+        let start = try XCTUnwrap(box.range(of: "private func preview("))
         let end = try XCTUnwrap(box.range(of: "private func tabs("))
-        let stats = String(box[start.lowerBound..<end.lowerBound])
-        XCTAssertTrue(stats.contains("JPFont.number(28"), "集めた部品の数が主役の大きさでない")
-        XCTAssertEqual(stats.components(separatedBy: "JPFont.number(").count - 1, 3, "数え札の数字の数が変わった")
-        XCTAssertFalse(stats.contains("TrunkFragmentMark"), "かけらが上の数え札に戻っている")
-        // 2026-11-12: 札は v2 の地＋縁（`trunkCard`）
-        XCTAssertEqual(stats.components(separatedBy: ".trunkCard(").count - 1, 1, "数え札が1枚でない")
-        let exchange = try XCTUnwrap(box.range(of: "private func exchangeCard("))
-        XCTAssertTrue(box[exchange.lowerBound...].contains("TrunkFragmentMark(filled:"), "交換の札にかけらの印が無い")
+        let preview = String(box[start.lowerBound..<end.lowerBound])
+        XCTAssertTrue(preview.contains("TrunkFigure(model: state.effectiveModel"), "部品箱にトランクが見えない")
+        XCTAssertTrue(preview.contains("parts: state.equipped"), "付けた部品がトランクに映らない")
+        XCTAssertTrue(preview.contains("\"trunk.parts.collected\""), "集めた数が無い")
+        XCTAssertFalse(preview.contains("TrunkFragmentMark"), "かけらが上に戻っている")
+        XCTAssertEqual(preview.components(separatedBy: ".trunkCard(").count - 1, 1, "上の札が1枚でない")
+        let dock = try XCTUnwrap(box.range(of: "private func dock("))
+        let rest = box[dock.lowerBound...]
+        XCTAssertTrue(rest.contains("TrunkFragmentMark(filled:"), "下の帯にかけらの印が無い")
+        XCTAssertTrue(rest.contains("\"trunk.parts.coins\""), "下の帯から機械へ行けない")
     }
 
     /// 持っていない部品を描く所はどこも同じ見た目（画面ごとに割らない）
@@ -269,8 +270,12 @@ final class TrunkWiringTests: XCTestCase {
     func testContainerIdentifiersDoNotOverrideChildren() throws {
         let containers = ["trunk.arrived", "trunk.models.screen", "trunk.proModels.screen", "trunk.pocket.empty",
                           "trunk.reroll", "trunk.loading", "trunk.failed", "trunk.offline", "trunk.empty", "trunk.screen",
+                          // 圏外で前に読んだトランクを出すお知らせ（2026-11-23・札 #711）
+                          "trunk.offlineSaved",
                           // 次の版（2026-10-17）
-                          "trunk.stick", "trunk.gacha", "trunk.gachaOpen", "trunk.odds", "trunk.parts", "trunk.equip",
+                          "trunk.stick", "trunk.gacha", "trunk.gachaOpen", "trunk.odds", "trunk.parts",
+                          // 部品箱（2026-11-23・札 #711: 付け替えの画面はなくし、上の小さいトランクと持っていない部品のシート）
+                          "trunk.parts.preview", "trunk.missingSheet",
                           // ふたを開ける（2026-10-18）
                           "trunk.open.screen", "trunk.open.stage", "trunk.open.empty", "trunk.hold"]
         var found = Set<String>()
@@ -291,13 +296,17 @@ final class TrunkWiringTests: XCTestCase {
     /// 部品はトランクの絵と回す画面に映る。画面写真の試験が各画面を1枚ずつ撮る
     func testNextVersionEntriesAndScreenshots() throws {
         let main = try source("Features/Trunk/TrunkView.swift")
-        for id in ["trunk.stick.open", "trunk.partsBox", "trunk.gacha.open"] {
-            XCTAssertTrue(main.contains("\"\(id)\""), "\(id) の入口が無い")
-        }
-        XCTAssertTrue(main.contains("Text(L(\"硬貨 \\(state.coins)\""), "入口に硬貨の数が無い")
+        // 2026-11-23（札 #711）: 入口は大きいボタンと4つのカード。目印は今までの行の名前のまま（`TrunkHome.identifier`）
+        XCTAssertEqual(TrunkHome.identifier(TrunkHomeTile.stick), "trunk.stick.open")
+        XCTAssertEqual(TrunkHome.identifier(.parts), "trunk.partsBox")
+        XCTAssertEqual(TrunkHome.identifier(TrunkHomeTile.gacha), "trunk.gacha.open")
+        XCTAssertTrue(main.contains(".accessibilityIdentifier(TrunkHome.identifier(action))"), "大きいボタンに目印が無い")
+        XCTAssertTrue(main.contains(".accessibilityIdentifier(TrunkHome.identifier(tile))"), "カードに目印が無い")
+        let coins = TrunkSample.state(isPro: false, coins: 3)
+        XCTAssertEqual(TrunkHome.tileValue(.gacha, state: coins), "硬貨 3 枚", "入口に硬貨の数が無い")
         XCTAssertTrue(main.contains("parts: state.equipped"), "トランクの絵に付けた部品を渡していない")
         let shots = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"), encoding: .utf8)
-        for name in ["97-ラベルを貼る", "98-カプセルの機械", "98a-カプセルを開けた", "98b-中身と確率", "99-部品箱", "99a-部品を付け替える",
+        for name in ["97-ラベルを貼る", "98-カプセルの機械", "98a-カプセルを開けた", "98b-中身と確率", "99-部品箱", "99a-部品を付けた",
                      "98c-カプセルの機械（硬貨がありません）"] {
             XCTAssertTrue(shots.contains("\"\(name)\""), "画面写真 \(name) が無い")
         }
@@ -364,7 +373,7 @@ final class TrunkWiringTests: XCTestCase {
         let main = try source("Features/Trunk/TrunkView.swift")
         XCTAssertTrue(main.contains("TrunkOpenView(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck,"),
                       "トランクの画面からふたを開けられない")
-        XCTAssertTrue(main.contains(#".accessibilityIdentifier("trunk.open")"#))
+        XCTAssertEqual(TrunkHome.identifier(.open), "trunk.open")
         let open = try source("Features/Trunk/TrunkOpenView.swift")
         // 前開き: 下の辺が軸で手前へ倒れる
         XCTAssertTrue(open.contains(".rotation3DEffect(.degrees(-pose.angle), axis: (x: 1, y: 0, z: 0), anchor: .bottom,"))

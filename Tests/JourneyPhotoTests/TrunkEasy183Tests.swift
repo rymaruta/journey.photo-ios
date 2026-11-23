@@ -82,9 +82,11 @@ final class TrunkEasy183Tests: XCTestCase {
         XCTAssertEqual(shown.text, "取り消せませんでした。電波のあるところでもう一度お試しください")
         XCTAssertNil(toasts.undo, "失敗の知らせにまた取り消しが付いている")
         // 部品・型・届いた画面の取り消しは、戻せたかを返す（成否を捨てない）
-        for path in ["Features/Trunk/TrunkGachaView.swift", "Features/Trunk/TrunkPartsBoxView.swift"] {
-            XCTAssertTrue(try source(path).contains("{ [model] in await model.equip(before) })"), "\(path) の取り消しが成否を返さない")
-        }
+        XCTAssertTrue(try source("Features/Trunk/TrunkGachaView.swift").contains("{ [model] in await model.equip(before) })"),
+                      "カプセルの取り消しが成否を返さない")
+        // 部品箱は前の書き込みを待ってから戻す（2026-11-23・`TrunkPartsBoxTapTests.testUndoWhileSavingStillRestores`）
+        XCTAssertTrue(try source("Features/Trunk/TrunkPartsBoxView.swift").contains("{ [model] in await model.undoEquip(to: before) })"),
+                      "部品箱の取り消しが成否を返さない")
         XCTAssertTrue(try source("Features/Trunk/TrunkViewModel.swift").contains("{ [weak self] in await self?.setModel(before) ?? false })"))
         XCTAssertTrue(try source("Features/Trunk/LabelArrivedView.swift").contains("await model.unstickAll(stuck) == stuck.count"))
     }
@@ -216,15 +218,23 @@ final class TrunkEasy183Tests: XCTestCase {
 
     // MARK: 部品箱・付け替え（押すとすぐ保存・ひとつ戻す）
 
+    /// 2026-11-23（札 #711）: 持っている部品を押すとその場で付く（シートも付け替えの画面も通らない）。
+    /// 持っていない部品は手に入れ方のシート。「付け替える」の画面と入口はなくした
     func testPartsBoxAndEquipWiring() throws {
         let box = try source("Features/Trunk/TrunkPartsBoxView.swift")
-        XCTAssertTrue(box.contains("viewing = part"), "持っている部品を押してもシートが出ない")
-        XCTAssertTrue(box.contains("TrunkPartSheet(model: model, part: part)"))
+        XCTAssertTrue(box.contains("                        toggle(part)\n"), "持っている部品を押しても付かない")
+        XCTAssertTrue(box.contains("let saving = model.equipNow(next.equipped)"), "先に絵を替えていない")
+        XCTAssertTrue(box.contains("missing = part"), "持っていない部品を押しても手に入れ方が出ない")
+        XCTAssertTrue(box.contains("TrunkMissingPartSheet(model: model, part: part)"))
         XCTAssertTrue(box.contains("TrunkKindTab("), "種類が選んでいるタブ（真鍮の字と下線）でない")
-        XCTAssertFalse(box.contains("付け替えを保存していません"), "保存の確かめが残っている")
-        XCTAssertFalse(box.contains("trunk.equip.save"), "右上の保存が残っている")
-        XCTAssertTrue(box.contains("trunk.equip.undo"), "「ひとつ戻す」が無い")
+        XCTAssertTrue(box.contains(".sensoryFeedback(.impact(weight: .light), trigger: picks)"), "付けたときに軽く震えない")
+        XCTAssertTrue(box.contains("seconds: TrunkPartsBoxText.undoSeconds"), "「元に戻す」を 3 秒にしていない")
         XCTAssertTrue(box.contains("trunk.parts.coins"), "硬貨のチップから機械へ行けない")
+        for gone in ["TrunkEquipView", "trunk.parts.equip", "TrunkPartSheet", "付け替えを保存していません", "trunk.equip.save"] {
+            XCTAssertFalse(box.contains(gone), "\(gone) が残っている")
+        }
+        XCTAssertEqual(TrunkPartsBoxText.undoTitle, "元に戻す")
+        XCTAssertEqual(TrunkPartsBoxText.undoSeconds, 3)
     }
 
     /// 付け替えは押すたびに保存され、前の付け方へ戻せる（見本で）
