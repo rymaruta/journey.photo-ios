@@ -407,7 +407,8 @@ struct HomeTopCardView: View {
                      line: developLine(trip, name: name),
                      // 一部の写真だけ許可: 「選んで許可した写真の中から見つけました」（章「状態」）
                      detail: DevelopTrips.cardDetail(limited: deviceTrips.status == .limited
-                                                     || PreviewSession.developLimited),
+                                                     || PreviewSession.developLimited,
+                                                     posted: trip.postedCount),
                      backdrop: nil, film: Array(DevelopTrips.frames(of: trip).prefix(3)), inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
