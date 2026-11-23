@@ -882,6 +882,29 @@ if crash_yml:
         fail("testflight-crashes.yml の頭の permissions に id-token があります")
     if "bash Tools/testflight-crashes.sh" not in crash_yml:
         fail("testflight-crashes.yml が Tools/testflight-crashes.sh を通していません（ログに要点だけを出す道）")
+# App Store の画面写真を入れ替える回（札 #604・2026-11-23）: 既定は下見・提出の準備中の版だけ・絵を成果物に出さない
+asc_yml = _read(".github/workflows/appstore-screenshots.yml")
+asc_py = _read("Tools/asc-screenshots.py")
+if asc_yml:
+    if re.search(r"^on:\n  workflow_dispatch:\n(?!  \S)", asc_yml, re.M) is None or "pull_request" in asc_yml:
+        fail("appstore-screenshots.yml は手で起動する回（workflow_dispatch）だけにする")
+    if re.search(r"^      apply:\n(?:        .*\n)*?        type: boolean\n(?:        .*\n)*?        default: false$",
+                 asc_yml, re.M) is None:
+        fail("appstore-screenshots.yml の apply の既定が false（下見）ではありません")
+    if "upload-artifact" in asc_yml:
+        fail("appstore-screenshots.yml が成果物を作っています（絵は公開の成果物に出さない・#451）")
+    if "id-token" in asc_yml.split("\njobs:\n", 1)[0]:
+        fail("appstore-screenshots.yml の頭の permissions に id-token があります")
+    if "bash Tools/asc-screenshots.sh" not in asc_yml:
+        fail("appstore-screenshots.yml が Tools/asc-screenshots.sh を通していません")
+    # 版の状態の止め: PREPARE_FOR_SUBMISSION 以外は止める・下見の前と変える直前の2回読む
+    run_body = asc_py.split("\ndef run(", 1)[-1].split("\ndef ", 1)[0] if "\ndef run(" in asc_py else ""
+    if 'EDITABLE = "PREPARE_FOR_SUBMISSION"' not in asc_py or "if any(s != EDITABLE for s in states):" not in asc_py:
+        fail("Tools/asc-screenshots.py に PREPARE_FOR_SUBMISSION 以外の版で止める段がありません")
+    elif run_body.count("check_editable(") < 2 or run_body.find("check_editable(") > run_body.find("apply_plan("):
+        fail("Tools/asc-screenshots.py の run が、変える前に版の状態を2回（下見の前と変える直前）確かめていません")
+    if '"--apply", action="store_true"' not in asc_py:
+        fail("Tools/asc-screenshots.py の既定が下見ではありません（--apply のときだけ変える）")
 if testflight_yml.exists():
     tf = testflight_yml.read_text(encoding="utf-8")
     # 書き込みの印は job ごとに渡す。ワークフローの頭（全 job）には渡さない

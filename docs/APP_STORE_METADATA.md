@@ -348,6 +348,37 @@ gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/ios-testflight
 - 取り出し: `bash Tools/fetch-shots.sh <run 番号>` → scratchpad の `shots/<run 番号>/store/` に、上の7枚（`01-ホーム.png` 〜 `07-写真の詳細.png`）、
   審査用の `review-Pro の案内.png`（原寸）、寸法の控えの `README.md`
 - App Store Connect に上げ終わったら `bash Tools/fetch-shots.sh <run 番号> --delete`（手元と S3 からすぐ消す）
+
+#### App Store Connect に上げる（2026-11-23 から CI で。札 #604）
+
+iPhone の App Store Connect の Web では画面写真を足せない・消せないので、`appstore-screenshots.yml`（手で起動）で入れ替える。
+相手にするのは、指定の版で**状態が「提出の準備中」（PREPARE_FOR_SUBMISSION）のものだけ**。配信中・審査中の版なら赤で止まる。
+その版の全部の言語で、6.9インチ（`APP_IPHONE_67`）に大型の絵、6.3インチ（`APP_IPHONE_61`・Dynamic Island の中型）に中型の絵を
+01 から順に入れ、6.5インチ（`APP_IPHONE_65`）以前の古い iPhone の組は空にする。iPad の組・メタデータ・審査への提出には触らない。
+寸法と組の対応は `Tools/asc-screenshots.py` の頭。
+
+1. 先に App Store Connect で出す版（例 1.1.119）を作っておく（「提出の準備中」になる）
+2. **下見**（何も変えない。消す絵と上げる絵の名前が job のログに出る）:
+
+   ```
+   gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/appstore-screenshots.yml/dispatches \
+     -f ref=main -f 'inputs[run]=<storeShots の回の run 番号>' -f 'inputs[version]=1.1.119' -f 'inputs[apply]=false'
+   ```
+
+   絵を S3 から取れなかったときも、App Store Connect は読む（鍵の権限・版の状態・今の組がこの回で分かる。結果は赤）
+3. 下見のログでよければ **入れ替え**:
+
+   ```
+   gh api -X POST repos/rymaruta/journey.photo-ios/actions/workflows/appstore-screenshots.yml/dispatches \
+     -f ref=main -f 'inputs[run]=<同じ run 番号>' -f 'inputs[version]=1.1.119' -f 'inputs[apply]=true'
+   ```
+
+   最後に「入れ替えたあとの組」に各言語・各組の枚数と状態が出る。全部 COMPLETE で 01 からの順でなければ赤
+4. 終わったら `bash Tools/fetch-shots.sh <run 番号> --delete`
+
+- 鍵は TestFlight と同じ `APP_STORE_CONNECT_*`（画面写真を変えるには App Manager 以上の役割の鍵が要る。足りなければ下見の最初の読みで 401/403 になる）
+- S3 から取るには、CI の役割に読む権限（`s3:GetObject`）が要る。`Tools/ci-shots/writer-policy.json` は置くことだけなので、
+  足りなければ下見で「CI の役割に読む権限が無いか」と出て止まる（権限を足すのは owner の判断）
 - 材料が1枚でも足りないと、その回は赤になる（足りない絵の名前が job のログに出る）
 
 **見本のデータだけで描く仕組みができるまで、`storeShots` の回は最初の段で赤になって止まる**（上の「写真の権利」。`ios-testflight.yml` の「App Store 用の絵は見本で描けるまで止める」）。
