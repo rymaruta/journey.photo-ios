@@ -166,7 +166,7 @@ final class AppleSignInTests: XCTestCase {
         let auth = store(calls)
         await auth.restore()
         let started = await auth.signInWithApple(credential) { _ in
-            throw APIError.server(status: 401, message: "Apple でのサインインを確かめられませんでした。もう一度お試しください")
+            throw APIError.server(status: 401, message: "サインインできませんでした。もう一度お試しください")
         }
         XCTAssertNil(started)
         XCTAssertTrue(calls.signInWith.isEmpty)
@@ -180,7 +180,7 @@ final class AppleSignInTests: XCTestCase {
         let auth = store(calls)
         await auth.restore()
         let started = await auth.signInWithApple(credential) { _ in
-            throw APIError.server(status: 409, message: "サインインの途中です。少し待ってからもう一度お試しください")
+            throw APIError.server(status: 409, message: "サインイン中です。少し待ってからお試しください")
         }
         XCTAssertNil(started)
         XCTAssertTrue(calls.signInWith.isEmpty)
@@ -288,6 +288,32 @@ final class AppleSignInTests: XCTestCase {
         StubProtocol.respond(path: "/user/account", status: 200, body: "{}")
         try await AccountService(api: api()).deleteAccount()
         XCTAssertEqual(StubProtocol.requests, ["DELETE /user/account"])
+    }
+
+    /// ログインの画面と知らせの文は話し言葉で短く（2026-11-23 owner「結ばれました、は日常会話で使わない」「長すぎる」）。
+    /// 「結ぶ」「連携」と中黒を、ログインまわりの `L("…")` の日本語に入れない
+    func testSignInWordingIsPlain() throws {
+        let src = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources/JourneyPhoto")
+        let dirs = ["Features/Auth", "Core/Auth", "Services"].map { src.appendingPathComponent($0) }
+        var bad: [String] = []
+        for dir in dirs {
+            let files = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+                .filter { $0.pathExtension == "swift" && (!dir.path.hasSuffix("Services") || $0.lastPathComponent.contains("SignIn")) }
+            for file in files {
+                let lines = try String(contentsOf: file, encoding: .utf8).components(separatedBy: "\n")
+                for (i, line) in lines.enumerated()
+                where line.range(of: #"L\("[^"]*(結ば|結び|結ぶ|結べ|連携|・)"#, options: .regularExpression) != nil {
+                    bad.append("\(file.lastPathComponent):\(i + 1)")
+                }
+            }
+        }
+        XCTAssertEqual(bad, [], "ログインまわりの文に「結ぶ」「連携」「・」がある")
+        // 失敗の文は1文の短い形（前置きの「Apple での」「確かめられませんでした」を入れない）
+        for message in [AuthStore.appleSignInFailed, AuthStore.googleSignInFailed, AuthStore.federatedBusy] {
+            XCTAssertFalse(message.contains("確かめられません"), message)
+            XCTAssertFalse(message.contains("途中です"), message)
+        }
     }
 }
 

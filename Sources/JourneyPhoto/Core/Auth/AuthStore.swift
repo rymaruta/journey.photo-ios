@@ -389,12 +389,13 @@ final class AuthStore: ObservableObject {
         return started
     }
 
-    static let appleSignInFailed = L("Apple でのサインインを確かめられませんでした。もう一度お試しください",
+    // 2026-11-23 判断（owner「この辺りの日本語長すぎる」）: 1文で言えることは1文。前置きは削る
+    static let appleSignInFailed = L("サインインできませんでした。もう一度お試しください",
                                      "Couldn't verify your Apple sign-in. Please try again.")
-    static let googleSignInFailed = L("Google でのログインを確かめられませんでした。もう一度お試しください",
+    static let googleSignInFailed = L("ログインできませんでした。もう一度お試しください",
                                       "Couldn't verify your Google sign-in. Please try again.")
     /// 同じ ID のログインが別の端末で途中（サーバーの 409）
-    static let federatedBusy = L("ほかの端末でログインの途中です。少し待ってからもう一度お試しください",
+    static let federatedBusy = L("ほかの端末でログイン中です。少し待ってからお試しください",
                                  "Sign-in is already in progress on another device. Please wait a moment and try again.")
 
     /// 本人が押したログアウト（メニュー・設定の両方がここを通る）。
