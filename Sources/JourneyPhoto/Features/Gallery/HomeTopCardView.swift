@@ -33,6 +33,9 @@ struct HomeTopCardView: View {
     /// 流れ出ると `onDisappear`、戻ると `onAppear` が来ていた——その扱い（見えていない間は差し替えを後回し・戻ったら
     /// 前面の確定を待って `landHomeCards`）を、この値の変わり目で続ける
     var scrolledAway: Bool = false
+    /// 公開の写真の一覧と、フォローしている人（友達が行きたい場所で撮った札・札 #710 の案9・`FriendWish`）
+    var friendPhotos: [Photo] = []
+    var followingIds: Set<String> = []
 
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var environment: AppEnvironment
@@ -119,6 +122,12 @@ struct HomeTopCardView: View {
     /// 「仲間全員から削除」の確かめ（他人に影響する操作だけ聞く・`HomeTripCardMenu`）
     @State private var confirmingEveryone: TripPlan?
 
+    /// 友達の行きたい場所の札の印（出した組・今日の1枚・出さない人）を読み直す合図
+    @State private var friendWishRevision = 0
+    /// 友達の行きたい場所の札の「話す」で開くシート
+    @State private var friendTalk: FriendWish.Hit?
+    private let friendWishMemory = FriendWishMemory()
+
     private let opened = OpenedTripBooks()
     private let developStore = DevelopProgressStore()
 
@@ -136,6 +145,10 @@ struct HomeTopCardView: View {
             }
             .fullScreenCover(isPresented: $showSwipe, onDismiss: { swipeStarted = SpotSwipeProgress().started }) {
                 SpotSwipeView()
+            }
+            // 友達の行きたい場所の札の「話す」（札 #710 の案9）
+            .sheet(item: $friendTalk) { hit in
+                FriendWishTalkSheet(photo: hit.photo, place: hit.place, peerId: hit.ownerId)
             }
             .onChange(of: shelfKey(choices), initial: true) { _, _ in
                 seasonShelf = visibleShelf(choices).map { HomeSeasonShelfSlot(shelf: $0, spots: spots) }
@@ -228,6 +241,24 @@ struct HomeTopCardView: View {
         return .develop(trip: trip, name: developName(trip))
     }
 
+    /// 友達が行きたい場所で撮った写真の、今日の1枚（札 #710 の案9）。印は描いたあとに付ける（`recordFriendWish`）
+    private var friendWishHit: FriendWish.Hit? {
+        _ = friendWishRevision
+        guard let me = auth.userId else { return nil }
+        let state = friendWishMemory.state(for: me)
+        let hits = FriendWish.hits(photos: friendPhotos, following: followingIds, me: me, keys: wishedKeys, spots: spots,
+                                   muted: Set(state.muted), now: cardsNow)
+        return FriendWish.pick(hits, state: state, today: cardsDay)
+    }
+
+    /// 出した札に印を付ける（同じ人と同じ場所の組は1回・1日に1枚）
+    private func recordFriendWish(_ hit: FriendWish.Hit) {
+        guard let me = auth.userId else { return }
+        let state = friendWishMemory.state(for: me)
+        let next = FriendWish.record(hit, state: state, today: cardsDay)
+        if next != state { friendWishMemory.save(next, for: me) }
+    }
+
     /// 札の2行目。途中で閉じた旅は「続きから 4 / 10、」
     private func developLine(_ trip: LibraryTrip, name: String?) -> String {
         let frames = DevelopTrips.frames(of: trip)
@@ -263,7 +294,7 @@ struct HomeTopCardView: View {
                               plans: HomeHiddenTrips.visible(plansOwner == auth.userId ? plans : [],
                                                              hidden: removal.hiddenTrips, excluding: removal.removedIds),
                               myPhotos: myPhotos, openedBookDays: openedBooks, spots: spots,
-                              wishlist: wishedKeys, quiz: quiz, develop: developChoice),
+                              wishlist: wishedKeys, quiz: quiz, develop: developChoice, friendWish: friendWishHit),
             spots: spots, today: HomeTopCard.today(cardsNow, in: .current),
             pool: memo.coverPool(spots: spots, revision: spotsRevision))
         let audience = HomeTopCard.Audience.of(signedIn: auth.userId != nil,
@@ -456,6 +487,27 @@ struct HomeTopCardView: View {
                      backdrop: nil, backdropURL: spot.photo?.url, inCarousel: inCarousel)
             }
             .buttonStyle(.plain)
+        case .friendWish(let hit):
+            // 友達が行きたい場所で撮った（札 #710 の案9）。札は写真の詳細へ、右下の「話す」はメッセージへ、⋯ で出さない
+            NavigationLink {
+                PhotoDetailView(photo: hit.photo, fromPublicFeed: LikedPhotos.fromPublicFeed(themePhotos)(hit.photo),
+                                context: [hit.photo])
+            } label: {
+                card(eyebrow: "WISH LIST", eyebrowLabel: FriendWish.eyebrowLabel,
+                     title: hit.place,
+                     line: FriendWish.takenBy(hit.photo.displayName ?? ""),
+                     detail: FriendWish.yourPlace,
+                     backdrop: hit.photo, trailingSymbol: nil, reservesMenu: true, inCarousel: inCarousel)
+            }
+            .buttonStyle(.plain)
+            .friendWishActions(inCarousel: inCarousel, talk: { friendTalk = hit }) {
+                if let me = auth.userId {
+                    friendWishMemory.save(FriendWish.mute(hit.ownerId, state: friendWishMemory.state(for: me)), for: me)
+                }
+                friendWishRevision += 1
+            }
+            .onAppear { recordFriendWish(hit) }
+            .accessibilityIdentifier("home.friendWish")
         case .swipe(let cover):
             // 押すと全画面の払う画面。**札の上で払う操作は置かない**（札の並びは横にめくるので、指を取り合う）。
             // 未ログインでも開ける（払った「行きたい」は端末に入り、ログインで引き継ぐ）

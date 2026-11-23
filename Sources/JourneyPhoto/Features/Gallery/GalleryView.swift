@@ -517,7 +517,10 @@ struct GalleryView: View {
                                 myPhotosKnown: auth.userId != nil && model.myPhotosOwner == auth.userId,
                                 reloadToken: storiesRefresh &+ tabRouter.menuSheetsClosed,
                                 seasonShelf: $seasonShelf,
-                                scrolledAway: topCardsAway)
+                                scrolledAway: topCardsAway,
+                                // 友達が行きたい場所で撮った札（札 #710 の案9）: 公開の一覧とフォローしている人
+                                friendPhotos: dropped.visible(model.allPhotosForTheme),
+                                followingIds: model.followingIds)
                     // 上の札が見えている上端より上へ流れ切ったか（`HomeTopCardView.scrolledAway`・#426）。
                     // 札の差し替え（今日の一問・旅行プラン・日替わり）を戻るまで後回しにし、深く送っている間に
                     // 札の高さが変わって下の写真がずれないようにする
