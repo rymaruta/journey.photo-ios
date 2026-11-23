@@ -374,7 +374,8 @@ def cover(ops: list[dict], size: int) -> bool:
     return pos == size
 
 
-def upload_one(c, set_id: str, path: str) -> str:
+def upload_one(c, set_id: str, path: str, made: list | None = None) -> str:
+    """1枚を上げる。予約できた id は made に足す（途中で止まったとき、呼ぶ側がこの回で作った分だけを消せるように）。"""
     name = unicodedata.normalize("NFC", os.path.basename(path))
     with open(path, "rb") as f:
         blob = f.read()
@@ -390,6 +391,8 @@ def upload_one(c, set_id: str, path: str) -> str:
                 delete_shot(c, x["id"])
         raise Stop(f"{name} の予約が届いたか分かりません（読み直して、できていた予約は消しました）。ここで止めます")
     shot = res["data"]
+    if made is not None:
+        made.append(shot["id"])
     ops = (shot.get("attributes") or {}).get("uploadOperations") or []
     if not ops:
         raise Stop(f"{name} の送り方（uploadOperations）が返りませんでした")
@@ -438,12 +441,20 @@ def apply_plan(c, plan: list[dict], deadline: float) -> None:
             if not s["upload_first"]:
                 for shot in s["delete"]:
                     delete_shot(c, shot["id"])
-            ids = [upload_one(c, set_id, path) for path in s["upload"]]
-            states = wait_complete(c, ids, deadline)
-            bad = [states.get(i, "?") for i in ids if states.get(i) != "COMPLETE"]
-            if bad:
-                raise Stop(f"{loc} {LABEL[kind]}: COMPLETE にならない絵が {len(bad)} 枚（{'・'.join(sorted(set(bad)))}）。"
-                           "ここで止めます（古い組は消していません）")
+            made: list[str] = []
+            try:
+                for path in s["upload"]:
+                    # 送る前にも締め切りを見る（送りの途中で段の上限に切られないように）
+                    if time.time() > deadline:
+                        raise Stop("段の残り時間が足りません")
+                    upload_one(c, set_id, path, made)
+                states = wait_complete(c, made, deadline)
+                bad = [states.get(i, "?") for i in made if states.get(i) != "COMPLETE"]
+                if bad:
+                    raise Stop(f"COMPLETE にならない絵が {len(bad)} 枚（{'・'.join(sorted(set(bad)))}）")
+            except (Stop, ApiError, Unsure) as e:
+                raise Stop(stopped(c, loc, kind, s, made, e)) from e
+            ids = made
             if s["upload_first"]:
                 for shot in s["delete"]:
                     delete_shot(c, shot["id"])
@@ -454,6 +465,31 @@ def apply_plan(c, plan: list[dict], deadline: float) -> None:
             print(f"-- {loc} {LABEL[s['type']]}: 古い組の {len(s['delete'])} 枚を消します（大型と中型がそろったので）")
             for shot in s["delete"]:
                 delete_shot(c, shot["id"])
+
+
+def stopped(c, loc: str, kind: str, step: dict, made: list[str], why: Exception) -> str:
+    """組の途中で止まったときの後始末と、事実どおりの知らせ。
+    先に上げる形: この回で作った id（上げ終えた絵・AWAITING_UPLOAD の予約）を消して元の組に戻す。
+    先に消す形（10枚を超える）: 今の絵はもう消してあるので、そう伝える（戻せない）。"""
+    if isinstance(why, ApiError):
+        reason = f"App Store Connect が断りました（{why.status} {why.codes}）"
+    elif isinstance(why, Unsure):
+        reason = f"App Store Connect が書き込みに答えませんでした（{why}）"
+    else:
+        reason = str(why)
+    head = f"{loc} {LABEL[kind]}: {reason}。ここで止めます（古い組は消していません）。"
+    if step["upload_first"]:
+        left = 0
+        for i in made:
+            try:
+                delete_shot(c, i)
+            except (Stop, ApiError, Unsure):
+                left += 1
+        if left:
+            return head + f"この回で作った {len(made)} 枚のうち {left} 枚を消せませんでした（元の絵は残っています）"
+        return head + f"この回で作った {len(made)} 枚を消して、元の組（{len(step['delete'])} 枚）に戻しました"
+    return head + (f"この組の今の絵（{len(step['delete'])} 枚）は先に消しました。"
+                   f"この回で上げた {len(made)} 枚が残っています。流し直して入れ替える")
 
 
 def summarize(locales: list[dict], files: dict[str, list[str]]) -> list[str]:
@@ -504,8 +540,9 @@ def run(c, a, files) -> int:
         # 止まっても、必ず今の組の中身を出す（どこまで入れ替わったかを見て流し直せるように）
         try:
             problems = summarize(pick_locales(read_locales(c, version["id"]), wanted), files)
-        except (Stop, ApiError, Unsure) as e:
-            print(f"今の組を読めませんでした: {e}")
+        except (Stop, ApiError, Unsure, SystemExit) as e:
+            # 最後の読みで止まっても（答えない・断られた）、その旨を1行出して赤で終える
+            print(f"今の組を読めませんでした（{type(e).__name__}: {tfc.clean(e, 120)}）")
     if problems:
         for msg in problems:
             print(f"::error::{msg}")

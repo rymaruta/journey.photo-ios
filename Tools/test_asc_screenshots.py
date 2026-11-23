@@ -371,14 +371,59 @@ class RunTests(unittest.TestCase):
     def test_not_complete_stops_there_and_keeps_old_sets(self):
         fake = FakeAsc(locales=("ja",))
         fake.processed = {"02-地図.png": "FAILED"}
-        out = quiet_stop(self, ascs.run, fake, Args(True, "ja"), self.files, pattern="大型）: COMPLETE にならない絵が 1 枚（FAILED）")
-        # 大型で止まる: 中型は始めない・古い組（6.5）は消さない・先に上げたので今の大型の絵も残っている
+        out = quiet_stop(self, ascs.run, fake, Args(True, "ja"), self.files,
+                         pattern="大型）: COMPLETE にならない絵が 1 枚（FAILED）.*元の組（2 枚）に戻しました")
+        # 大型で止まる: 中型は始めない・古い組（6.5）は消さない・この回で上げた絵は消して元の組に戻す
         self.assertIsNone(fake.names("ja", "APP_IPHONE_61"))
         self.assertEqual(fake.names("ja", "APP_IPHONE_65"), ["old-65.png"])
-        self.assertIn("old-a.png", fake.names("ja", "APP_IPHONE_67"))
+        self.assertEqual(fake.names("ja", "APP_IPHONE_67"), ["old-a.png", "old-b.png"])
         # 止まっても今の組を出す
         self.assertIn("== 入れ替えたあとの組", out)
         self.assertIn("ja 6.5インチ（Face ID 大型）: 1 枚", out)
+
+    def test_delete_first_stop_says_current_shots_are_gone(self):
+        with tempfile.TemporaryDirectory() as d:
+            files = ascs.collect(store_dir(d, large=[f"{i:02d}-x.png" for i in range(9)]))
+            fake = FakeAsc(locales=("ja",))
+            fake.processed = {"03-x.png": "FAILED"}
+            quiet_stop(self, ascs.run, fake, Args(True, "ja"), files,
+                       pattern="この組の今の絵（2 枚）は先に消しました。この回で上げた 9 枚が残っています")
+            self.assertNotIn("old-a.png", fake.names("ja", "APP_IPHONE_67"))
+
+    def test_deadline_is_checked_before_each_send(self):
+        fake = FakeAsc(locales=("ja",))
+        clock = [1000.0]
+        orig_time, orig_call = ascs.time.time, fake.call
+
+        def call(method, path, body=None):
+            r = orig_call(method, path, body)
+            if method == "POST" and path == "/v1/appScreenshots":
+                clock[0] += 10_000  # 1枚目を送るうちに締め切りを過ぎた
+            return r
+        fake.call = call
+        ascs.time.time = lambda: clock[0]
+        try:
+            quiet_stop(self, ascs.run, fake, Args(True, "ja"), self.files, pattern="段の残り時間が足りません")
+        finally:
+            ascs.time.time = orig_time
+        self.assertEqual(sum(1 for w in fake.writes if w == ("POST", "/v1/appScreenshots")), 1)
+        self.assertEqual(fake.names("ja", "APP_IPHONE_67"), ["old-a.png", "old-b.png"])
+
+    def test_final_read_failure_is_one_line_and_red(self):
+        fake = FakeAsc(locales=("ja",))
+        orig = fake.get_all
+        reads = [0]
+
+        def get_all(path, params=None):
+            if path.endswith("/appStoreVersionLocalizations"):
+                reads[0] += 1
+                if reads[0] == 2:  # 最後の読み（答えない）
+                    raise SystemExit("NG: App Store Connect が何度引いても答えませんでした")
+            return orig(path, params)
+        fake.get_all = get_all
+        r, out = quiet(ascs.run, fake, Args(True, "ja"), self.files)
+        self.assertEqual(r, 1)
+        self.assertIn("今の組を読めませんでした（SystemExit", out)
 
     def test_old_set_left_over_is_red(self):
         fake = FakeAsc(locales=("ja",))
@@ -441,6 +486,22 @@ class UploadTests(unittest.TestCase):
             ascs.upload_one(self.fake, self.sid, self.path)
         self.assertEqual(len(posts), 1)
         self.assertNotIn("01-ホーム.png", [v["fileName"] for v in self.fake.shots.values()])
+
+    def test_unsure_post_keeps_same_named_shot_from_before(self):
+        # 前の回に上げた同じ名前の絵は消さない（この回で増えた予約だけを消す）
+        self.fake.add_shot(self.sid, "01-ホーム.png", "COMPLETE")
+        orig = self.fake.call
+
+        def call(method, path, body=None):
+            if method == "POST" and path == "/v1/appScreenshots":
+                orig(method, path, body)
+                raise ascs.Unsure("POST 503")
+            return orig(method, path, body)
+        self.fake.call = call
+        with self.assertRaises(ascs.Stop):
+            ascs.upload_one(self.fake, self.sid, self.path)
+        left = [v for v in self.fake.shots.values() if v["fileName"] == "01-ホーム.png"]
+        self.assertEqual([v["state"] for v in left], ["COMPLETE"])
 
     def test_unsure_set_creation_reads_back(self):
         orig = self.fake.call

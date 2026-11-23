@@ -389,5 +389,6 @@ S3 から取り直さないので、AWS の権限は今のまま（CI の役割�
    最後に「入れ替えたあとの組」に各言語・各組の枚数と状態が出る。全部 COMPLETE で 01 からの順でなければ赤
 4. 終わったら `bash Tools/fetch-shots.sh <run 番号> --delete`
 
+- storeShots で上げる回は30分を超えうる（大型と中型の UI テスト＋上げる段）。上げる回だけの例外（CLAUDE.md の「Mac のテストは毎回30分以内」の外）
 - `ascVersion` は `storeShots=true` の回でだけ使える（ほかの回なら最初の段で止まる）。UI テストが落ちて絵がそろわない回は上げない
 - 鍵は TestFlight と同じ `APP_STORE_CONNECT_*`（画面写真を変えるには App Manager 以上の役割の鍵が要る。足りなければ下見の最初の読みで 401/403 になる）
