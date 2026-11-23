@@ -55,6 +55,8 @@ final class AppEnvironment: ObservableObject {
     let tripShare: TripShareService
     /// みんなの「行きたい」（2026-11-11・撮影スポットを払うの②）
     let spotWants: SpotWantsService
+    /// 写真の閲覧数（`/photos/{id}/view`・`/user/photos/.../views`・2026-11-23 札 #707）
+    let photoViews: PhotoViewsService
     /// 意見箱（`/user/feedback`・`/feedback`・2026-11-11 札 #546）
     let feedback: FeedbackService
 
@@ -89,6 +91,7 @@ final class AppEnvironment: ObservableObject {
         self.saves = SaveService(api: api)
         self.savedSpots = SavedSpotService(api: api)
         self.spotWants = SpotWantsService(api: api)
+        self.photoViews = PhotoViewsService(api: api)
         self.notifications = NotificationService(api: api)
         self.moderation = ModerationService(api: api)
         self.account = AccountService(api: api)

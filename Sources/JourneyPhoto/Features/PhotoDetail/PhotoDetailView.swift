@@ -405,6 +405,9 @@ struct PhotoDetailView: View {
         // （＝`.task` の取り消しと走り直し）が起きるか、閉じた印（`showViewer` が false に
         // なった時刻）が走り直しより先に立つかは、Xcode の無いこの環境では見ていない。
         // 起きなければ・印が後なら、今までどおり読み直すだけで害は無い
+        // 閲覧数（札 #707）: 詳細が1秒以上見えたら1回送る（本人・圏外・30分以内の同じ写真は送らない・`PhotoViewBeacon`）。
+        // 詳細の画面だけ（ホームの並び・一覧・投稿の前のプレビューでは送らない）
+        .photoViewBeacon(photoId: current.id, isMine: isMine)
         .task(id: PhotoDetailRules.reloadKey(userId: auth.userId, photoId: current.id, published: shown.published)) {
             model.setUser(auth.userId)
             // 写真・人が替わったら、前の読みで続き（いいね・保存）を決めない。読み終えたら下で今の人を入れる
@@ -2091,6 +2094,12 @@ struct PhotoDetailView: View {
                 }
             }
             .padding(.horizontal, -6)
+            // 閲覧数（札 #707・案の頁 版4）: **自分の写真だけ**、いいねの段の下に1行。押すと内訳のシート。
+            // 投稿の前のプレビューでは出さない（まだ写真が無い）
+            if isMine && !postPreview {
+                PhotoViewsRow(photo: shown, shareURL: shareURL(for: current))
+                    .padding(.top, -4)
+            }
             // 段の下の区切り線（v2 の板: 白 8%）。上の作者・下の行き先と段を分ける
             Rectangle()
                 .fill(WebTheme.hairline)

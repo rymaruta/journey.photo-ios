@@ -597,6 +597,10 @@ struct MyPageView: View {
             // BGM はひとことの下の1行（2026-10-21・全画面の点検）。以前は数の下の札で、
             // 旅の記録の線と合わせて写真の格子を最初の画面の一番下まで押し下げていた
             bgmLine(profile)
+            // 累計閲覧数（札 #707・案の頁 版4）: 自分の写真の閲覧数をまとめて読み、端末で足す。押せない1行。
+            // 2026-11-23 判断: 板の「数字の段の下」は、顔の右に数が並ぶ今の見出しでは見出しの終わり（写真の格子の上）に置く
+            // （顔と名前の間に挟むと、顔の段と名前の段が割れる）
+            MyPageViewsLine(photoIds: model.photos.map(\.id))
         }
         .padding(.horizontal, ProfileV2.gutter)
         // カバーがあればアイコンを下端に重ねる（`ProfileCover.height` の帯に 88pt の丸を 44pt）。
