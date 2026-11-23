@@ -5,7 +5,6 @@
 #     . Tools/private-s3.sh
 #     rc=0; private_s3_check || rc=$?    # 0 = 置ける・2 = 置かない回（PR・別のリポジトリ）・1 = 置けない
 #     private_s3_put <ファイル> <名前>     # s3://<バケット>/<run の印>/<名前> に置く。印は private_s3_run_key
-#     private_s3_get <run の印> <名前> <置く先>   # ほかの回が置いた物を取る（App Store に画面写真を上げる回・札 #604。役割に読む権限が要る）
 #
 # 置けない・置かない理由は `PRIVATE_S3_WHY` に入る（置き場の名前・鍵は入れない）。
 # 使うのは `Tools/upload-shots.sh`（画面写真）と `Tools/testflight-crashes.sh`（TestFlight の落ちた記録・2026-11-14 #596）。
@@ -52,14 +51,17 @@ private_s3_run_key() {
     fi
 }
 
-# _private_s3_aws <役割の会の名前> <aws の引数…>: OIDC の札を取り、役割に入って aws を1回流す。
-# 成り立てば 0。成り立たなければ PRIVATE_S3_WHY に理由を入れて 1（置くと取るで共用・2026-11-23 判断: 写しを作らない）
-_private_s3_aws() {
-    local session="$1" work rc=0
-    shift
+# private_s3_put <ファイル> <名前>: 置けたら 0。置けなければ PRIVATE_S3_WHY に理由を入れて 1
+private_s3_put() {
+    local file="$1" name="$2" key work rc=0
+    if [[ ! "$name" =~ ^[a-z0-9-]{1,40}\.tar$ ]]; then
+        PRIVATE_S3_WHY="置く名前が変です"; return 1
+    fi
+    [ -s "$file" ] || { PRIVATE_S3_WHY="置くファイルがありません"; return 1; }
+    key="$(private_s3_run_key)"
     work="$(mktemp -d)"
     chmod 700 "$work"
-    # ---- OIDC の札を取り、役割に入る ----------------------------------------------
+    # ---- OIDC の札を取り、役割に入って置く ----------------------------------------
     # 札はファイルに置き、aws の CLI に `AWS_WEB_IDENTITY_TOKEN_FILE` で渡す（コマンドの引数・ログに出さない）
     if ! curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
             "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" 2> /dev/null \
@@ -72,53 +74,17 @@ _private_s3_aws() {
         unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_PROFILE
         export AWS_ROLE_ARN="$CI_SHOTS_ROLE_ARN"
         export AWS_WEB_IDENTITY_TOKEN_FILE="$work/token"
-        export AWS_ROLE_SESSION_NAME="gh-${GITHUB_RUN_ID:-0}-${session}"
+        export AWS_ROLE_SESSION_NAME="gh-${GITHUB_RUN_ID:-0}-${name%.tar}"
         export AWS_REGION=ap-northeast-1 AWS_DEFAULT_REGION=ap-northeast-1
         # 失敗の文には置き場の名前と鍵が入るので、ログには出さない（エラーの種類だけを拾う）
-        aws "$@" --only-show-errors --no-progress > /dev/null 2> "$work/err"
+        aws s3 cp "$file" "s3://${CI_SHOTS_BUCKET}/${key}/${name}" \
+            --only-show-errors --no-progress > /dev/null 2> "$work/err"
     ) || rc=$?
     if [ "$rc" -ne 0 ]; then
-        PRIVATE_S3_WHY="$(grep -o 'An error occurred ([A-Za-z0-9]*)' "$work/err" | head -1 || true)"
-        [ -n "$PRIVATE_S3_WHY" ] || PRIVATE_S3_WHY="aws が失敗しました"
+        PRIVATE_S3_WHY="S3 に置けませんでした（$(grep -o 'An error occurred ([A-Za-z]*)' "$work/err" | head -1 || true)）"
         rm -rf "$work"
         return 1
     fi
     rm -rf "$work"
-    return 0
-}
-
-# private_s3_put <ファイル> <名前>: 置けたら 0。置けなければ PRIVATE_S3_WHY に理由を入れて 1
-private_s3_put() {
-    local file="$1" name="$2" key
-    if [[ ! "$name" =~ ^[a-z0-9-]{1,40}\.tar$ ]]; then
-        PRIVATE_S3_WHY="置く名前が変です"; return 1
-    fi
-    [ -s "$file" ] || { PRIVATE_S3_WHY="置くファイルがありません"; return 1; }
-    key="$(private_s3_run_key)"
-    if ! _private_s3_aws "${name%.tar}" s3 cp "$file" "s3://${CI_SHOTS_BUCKET}/${key}/${name}"; then
-        PRIVATE_S3_WHY="S3 に置けませんでした（${PRIVATE_S3_WHY}）"; return 1
-    fi
-    return 0
-}
-
-# private_s3_get <run の印> <名前> <置く先のファイル>: ほかの回が置いたものを取る（App Store に画面写真を上げる回・札 #604）。
-# 取れたら 0。取れなければ PRIVATE_S3_WHY に理由を入れて 1。
-# 🔴 役割に読む権限（`s3:GetObject`）が無いと AccessDenied（`Tools/ci-shots/writer-policy.json` は 2026-11-23 時点で置くことだけ）
-private_s3_get() {
-    local key="$1" name="$2" dest="$3"
-    if [[ ! "$key" =~ ^[a-z0-9-]{1,60}$ ]] || [[ ! "$name" =~ ^[a-z0-9-]{1,40}\.tar$ ]]; then
-        PRIVATE_S3_WHY="取る名前が変です"; return 1
-    fi
-    if ! _private_s3_aws "get-${name%.tar}" s3 cp "s3://${CI_SHOTS_BUCKET}/${key}/${name}" "$dest"; then
-        case "$PRIVATE_S3_WHY" in
-            *AccessDenied*|*Forbidden*|*"(403)"*)
-                PRIVATE_S3_WHY="S3 から取れませんでした（${PRIVATE_S3_WHY}）。CI の役割に読む権限（s3:GetObject）が無いか、置いた物がありません" ;;
-            *NoSuchKey*|*"(404)"*)
-                PRIVATE_S3_WHY="S3 に run ${key} の ${name} がありません（3日を過ぎて消えた・run 番号の違い）" ;;
-            *)  PRIVATE_S3_WHY="S3 から取れませんでした（${PRIVATE_S3_WHY}）" ;;
-        esac
-        return 1
-    fi
-    [ -s "$dest" ] || { PRIVATE_S3_WHY="取ったファイルが空です"; return 1; }
     return 0
 }

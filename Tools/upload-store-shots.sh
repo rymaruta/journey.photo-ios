@@ -30,7 +30,8 @@ fi
 [ -d "$XCRESULT" ] || fail "テストの結果（xcresult）がありません"
 
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+# STORE_SHOTS_KEEP があれば、作った絵をそこにも写して残す（同じ回の次の段が App Store Connect に上げる・札 #604・2026-11-23）
+trap '[ -n "${STORE_SHOTS_KEEP:-}" ] && [ -d "$WORK/out" ] && rm -rf -- "$STORE_SHOTS_KEEP" && cp -R "$WORK/out" "$STORE_SHOTS_KEEP"; rm -rf "$WORK"' EXIT
 chmod 700 "$WORK"
 
 xcrun xcresulttool export attachments --path "$XCRESULT" --output-path "$WORK/raw" > /dev/null \

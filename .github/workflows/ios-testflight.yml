@@ -35,6 +35,12 @@ on:
       first:
         type: string
         default: ""
+      ascVersion:
+        type: string
+        default: ""
+      ascApply:
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       submit:
@@ -75,6 +81,17 @@ on:
         description: "検証用：最初に実行するUIテスト（通常は空欄）"
         type: string
         default: ""
+      # 2026-11-23 判断（札 #604・owner「仕組み作ろう」）: storeShots の回で作った絵を、その場から App Store Connect の
+      # 「提出の準備中」の版に入れ替える（`Tools/asc-screenshots.py`）。owner は iPhone しか無く、Web では画面写真を足せない。
+      # S3 から取り直さない（CI の役割は置くことしかできない）。空なら上げない。ascApply=false は下見（計画を出すだけ）
+      ascVersion:
+        description: "storeShots の絵を App Store Connect のこの版に入れる（例 1.1.119・空なら上げない）"
+        type: string
+        default: ""
+      ascApply:
+        description: "true で入れ替える。false は下見（何を消して何を上げるかを出すだけ）"
+        type: boolean
+        default: false
 
 # 🔴 **TestFlight に上げる回は同時に1本だけ**（2026-10-04）。2本が同時に走ると、
 # どちらも `Tools/next-marketing-version.sh` で同じ版を決め、**同じ版が2つ上がる**
@@ -155,6 +172,13 @@ jobs:
         env:
           SCREENS: ${{ inputs.screens }}
         run: python3 Tools/explain-ui-tests.py "${SCREENS:-}"
+
+      # App Store Connect に上げるのは storeShots の回だけ（札 #604）。絵を撮らない回で版だけ渡されたら、組む前に止める
+      - name: App Store Connect に上げるのは storeShots の回だけ
+        if: ${{ inputs.ascVersion != '' && !inputs.storeShots }}
+        run: |
+          echo "::error::ascVersion は storeShots=true の回でだけ使えます（絵を作った回から上げる）"
+          exit 1
 
       - name: どこまで流すかを決める
         id: scope
@@ -590,6 +614,12 @@ jobs:
           NARROWED: ${{ steps.scope.outputs.full != 'true' }}
         run: bash Tools/upload-shots.sh build build/ios/test/Test.xcresult
 
+      # App Store Connect に上げる回（ascVersion）だけ、下の段が作った絵をこの回の一時の場所（`build/` の外・成果物に混ざらない）にも
+      # 残させる（`Tools/upload-store-shots.sh` の STORE_SHOTS_KEEP・札 #604・2026-11-23）。S3 から取り直さないため
+      - name: App Store 用の絵を残す場所を決める
+        if: ${{ always() && inputs.storeShots && inputs.ascVersion != '' }}
+        run: echo "STORE_SHOTS_KEEP=$RUNNER_TEMP/store-out" >> "$GITHUB_ENV"
+
       # **App Store 用の原寸（6.9インチ 1320×2868）を非公開の S3 に置く**（2026-11-22 判断・札 #604）。
       # 置き場は上の画面写真と同じ（同じ run の印の `store.tar`・3日で消える）。取り出しは `bash Tools/fetch-shots.sh <run 番号>`。
       # 公開の枝・成果物・ログには絵を出さない。この回の目的が絵なので、作れない・置けないときは赤にする
@@ -601,6 +631,25 @@ jobs:
           CI_SHOTS_ROLE_ARN: ${{ secrets.CI_SHOTS_ROLE_ARN }}
           CI_SHOTS_BUCKET: ${{ secrets.CI_SHOTS_BUCKET }}
         run: bash Tools/upload-store-shots.sh build/ios/test/Test.xcresult
+
+      # **App Store Connect の「提出の準備中」の版に、いま作った絵を入れ替える**（2026-11-23・札 #604）。ascVersion のときだけ。
+      # 中身は `Tools/asc-screenshots.py`（PREPARE_FOR_SUBMISSION 以外の版なら赤で止まる・組は PNG の寸法で振り分ける）。
+      # ascApply=false は下見。絵の中身・アップロードの URL・鍵はログに出さない（ファイル名・枚数・状態だけ）
+      - name: App Store Connect に画面写真を入れ替える
+        if: ${{ success() && inputs.storeShots && inputs.ascVersion != '' && github.event_name != 'pull_request' }}
+        timeout-minutes: 30
+        env:
+          ASC_VERSION: ${{ inputs.ascVersion }}
+          # ascApply は真偽でも文字（API から -f で 'true'）でも来る。'false' の文字を真と読まないよう両方を名指しで比べる
+          ASC_MODE: ${{ (inputs.ascApply == true || inputs.ascApply == 'true') && 'apply' || 'dry-run' }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: bash Tools/asc-screenshots.sh --local "$STORE_SHOTS_KEEP" "$ASC_VERSION" "$ASC_MODE"
+
+      - name: App Store 用の絵の一時の場所を消す
+        if: ${{ always() && inputs.storeShots && inputs.ascVersion != '' }}
+        run: rm -rf -- "${STORE_SHOTS_KEEP:?}"
 
       # **絞った回（screens）は署名・Archive をしない**（2026-10-17 判断）。Archive は毎回10分前後
       # （run 454〜462 で 8〜14分）。絞った回は「変えた画面を早く見る」ための回で、Release の

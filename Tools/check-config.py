@@ -882,21 +882,24 @@ if crash_yml:
         fail("testflight-crashes.yml の頭の permissions に id-token があります")
     if "bash Tools/testflight-crashes.sh" not in crash_yml:
         fail("testflight-crashes.yml が Tools/testflight-crashes.sh を通していません（ログに要点だけを出す道）")
-# App Store の画面写真を入れ替える回（札 #604・2026-11-23）: 既定は下見・提出の準備中の版だけ・絵を成果物に出さない
-asc_yml = _read(".github/workflows/appstore-screenshots.yml")
+# App Store の画面写真を入れ替える段（札 #604・2026-11-23）: storeShots の回の中で、作った絵をその場から上げる。
+# 既定は下見・提出の準備中の版だけ・絵を成果物に出さない・S3 から取り直さない（CI の役割は置くことしかできない）
 asc_py = _read("Tools/asc-screenshots.py")
-if asc_yml:
-    if re.search(r"^on:\n  workflow_dispatch:\n(?!  \S)", asc_yml, re.M) is None or "pull_request" in asc_yml:
-        fail("appstore-screenshots.yml は手で起動する回（workflow_dispatch）だけにする")
-    if re.search(r"^      apply:\n(?:        .*\n)*?        type: boolean\n(?:        .*\n)*?        default: false$",
-                 asc_yml, re.M) is None:
-        fail("appstore-screenshots.yml の apply の既定が false（下見）ではありません")
-    if "upload-artifact" in asc_yml:
-        fail("appstore-screenshots.yml が成果物を作っています（絵は公開の成果物に出さない・#451）")
-    if "id-token" in asc_yml.split("\njobs:\n", 1)[0]:
-        fail("appstore-screenshots.yml の頭の permissions に id-token があります")
-    if "bash Tools/asc-screenshots.sh" not in asc_yml:
-        fail("appstore-screenshots.yml が Tools/asc-screenshots.sh を通していません")
+asc_tf = testflight_yml.read_text(encoding="utf-8") if testflight_yml.exists() else ""
+if (ROOT / ".github/workflows/appstore-screenshots.yml").exists():
+    fail("appstore-screenshots.yml は置かない（S3 から読む権限が無い。storeShots の回の ascVersion で上げる・札 #604）")
+if "ascVersion" in asc_tf:
+    if re.search(r"^      ascApply:\n(?:        .*\n)*?        type: boolean\n(?:        .*\n)*?        default: false$",
+                 asc_tf, re.M) is None:
+        fail("ios-testflight.yml の ascApply の既定が false（下見）ではありません")
+    if re.search(r"^      - name: App Store Connect に画面写真を入れ替える\n"
+                 r"        if: \$\{\{ success\(\) && inputs\.storeShots && inputs\.ascVersion != '' && github\.event_name != 'pull_request' \}\}",
+                 asc_tf, re.M) is None:
+        fail("ios-testflight.yml の App Store Connect に上げる段が、storeShots・ascVersion・PR でない回に絞られていません")
+    if 'bash Tools/asc-screenshots.sh --local "$STORE_SHOTS_KEEP"' not in asc_tf:
+        fail("ios-testflight.yml が作った絵（STORE_SHOTS_KEEP）を Tools/asc-screenshots.sh --local に渡していません")
+    if "      - name: App Store Connect に上げるのは storeShots の回だけ\n" not in asc_tf:
+        fail("ios-testflight.yml に、storeShots でない回で ascVersion を止める段がありません")
     # 版の状態の止め: PREPARE_FOR_SUBMISSION 以外は止める・下見の前と変える直前の2回読む
     run_body = asc_py.split("\ndef run(", 1)[-1].split("\ndef ", 1)[0] if "\ndef run(" in asc_py else ""
     if 'EDITABLE = "PREPARE_FOR_SUBMISSION"' not in asc_py or "if any(s != EDITABLE for s in states):" not in asc_py:

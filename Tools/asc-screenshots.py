@@ -3,7 +3,7 @@
 
     python3 -I Tools/asc-screenshots.py --dir <store.tar をほどいた所> --version 1.1.119 [--apply]
 
-呼ぶのは `Tools/asc-screenshots.sh`（`.github/workflows/appstore-screenshots.yml`）。owner は iPhone しか無く、
+呼ぶのは `Tools/asc-screenshots.sh`（`ios-testflight.yml` の storeShots の回で `ascVersion` を渡したとき・作った絵をその場から上げる）。owner は iPhone しか無く、
 App Store Connect の Web は iPhone では画面写真の追加・削除ができないので、CI から入れ替える（owner 2026-11-23「仕組み作ろう」）。
 
 **既定は下見（dry-run）。** 何を消して何を上げるかを出すだけで、何も変えない。`--apply` のときだけ変える。
