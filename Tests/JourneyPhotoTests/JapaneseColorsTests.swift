@@ -88,4 +88,37 @@ final class JapaneseColorsTests: XCTestCase {
         XCTAssertEqual(color.shownName, L("藍色", "Ai-iro"))
         XCTAssertEqual(color.shownOrigin, L(color.origin, color.originEn))
     }
+
+    /// Lab は表の色を作るときに1回だけ計算して持つ（比べるたびに pow を計算し直さない・2026-11-23 確かめ役の指摘）
+    func testLabIsStoredNotRecomputed() throws {
+        let color = try XCTUnwrap(JapaneseColors.all.first)
+        let stored = Mirror(reflecting: color).children.compactMap(\.label)
+        XCTAssertTrue(stored.contains("lab"), "Lab を計算型で持っている（比べるたびに計算し直す）")
+        XCTAssertEqual(color.lab, JapaneseColors.lab(hex: color.hex))
+    }
+
+    /// 「この色の写真」は、名前を写真の id ごとに控えた表で選ぶ（body のたびに全部の写真の名前を引かない）。
+    /// 控えで選んでも、毎回引くのと同じ並び
+    func testPhotosUseTheCachedNames() throws {
+        func photo(_ id: String, _ color: String?) throws -> Photo {
+            var obj: [String: Any] = ["id": id, "src": "https://example.com/\(id).jpg"]
+            if let color { obj["dominantColor"] = color }
+            return try JSONDecoder.api.decode(Photo.self, from: JSONSerialization.data(withJSONObject: obj))
+        }
+        let benihi = try XCTUnwrap(JapaneseColors.all.first { $0.name == "紅緋" })
+        let photos = [try photo("a", "#e83929"), try photo("c", "#165e83"), try photo("d", nil), try photo("g", "#808080")]
+        let names = JapaneseColors.names(of: photos)
+        XCTAssertEqual(names["a"], benihi.id)
+        XCTAssertNil(names["d"])
+        XCTAssertNil(names["g"], "灰色に名前を控えた")
+        XCTAssertEqual(JapaneseColors.photos(for: benihi, in: photos, names: names).map(\.id),
+                       JapaneseColors.photos(for: benihi, in: photos).map(\.id))
+        // 控えに無い写真は、代表色があっても並べない（控えだけを見る）
+        XCTAssertTrue(JapaneseColors.photos(for: benihi, in: photos, names: [:]).isEmpty)
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let view = try String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/PhotoDetail/JapaneseColorViews.swift"),
+                              encoding: .utf8)
+        XCTAssertTrue(view.contains("JapaneseColors.photos(for: color, in: all, names: colorIds)"), "body の中で全部の写真の名前を引いている")
+        XCTAssertTrue(view.contains("colorIds = JapaneseColors.names(of: photos)"))
+    }
 }

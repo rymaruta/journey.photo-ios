@@ -32,6 +32,16 @@ final class PostedSummaryCenter: ObservableObject {
     /// 開いている「投稿しました」
     @Published var presented: Summary?
 
+    /// 最後に「投稿しました」の1枚を出した人と時刻（`presented(for:since:)`）
+    private(set) var lastPresented: (ownerId: String, at: Date)?
+
+    /// この人に、`since` より後に1枚を出したか（いま開いている・もう閉じたのどちらも）。
+    /// 投稿の知らせが1枚の後ろから出ないように見る（`PostUploadCenter.run`・2026-11-23 確かめ役の指摘）
+    func presented(for ownerId: String?, since: Date) -> Bool {
+        guard let ownerId, let last = lastPresented else { return false }
+        return last.ownerId == ownerId && last.at >= since
+    }
+
     /// 閉じたあとに続ける操作（行の「見る」「カードを共有」。閉じきってから `RootView` が開く）
     enum FollowUp {
         /// 「カードを共有」: カードの画面（`PostedShareCardSheet`）
@@ -114,6 +124,7 @@ final class PostedSummaryCenter: ObservableObject {
         guard Self.showsSheet(summary) else { return false }
         followUp = nil
         presented = summary
+        lastPresented = (summary.ownerId, Date())
         if reviewWaits > 0 { skipsNextReview = true }
         return true
     }

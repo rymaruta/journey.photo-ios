@@ -308,6 +308,15 @@ struct TripStopLabel: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Self.spoken(number: number, name: name, time: showsTime ? time : nil,
                                         parts: [season, timeChip, note, showsTime ? timeCaution : nil]))
+        // 行の写真は飾り（読み上げから外している）。行をまとめると中の識別子は消えるので、写真の種類は行の識別子で出す
+        // （UI テスト `testCapturesTripPlanStopPhotos` が探す・2026-11-23 確かめ役の指摘）
+        .accessibilityIdentifier(Self.identifier(thumb))
+    }
+
+    /// 行の識別子。写真のある行は写真の種類（自分の写真・観光スポットの写真）
+    nonisolated static func identifier(_ thumb: TripStopThumb?) -> String {
+        guard let thumb else { return "tripPlan.stop" }
+        return thumb.isMine ? "tripPlan.stopPhoto" : "tripPlan.stopSpotPhoto"
     }
 
     /// 読み上げの字（「1 9時、日比谷公園 …」）

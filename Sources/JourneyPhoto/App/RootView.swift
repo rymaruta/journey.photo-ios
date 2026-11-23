@@ -709,7 +709,8 @@ struct RootView: View {
                                                  sleep: { try? await Task.sleep(nanoseconds: 1_000_000_000) })
             // 出したら、同じ投稿の知らせ（「投稿しました　カードにする」）だけ下ろす。別の投稿の失敗の知らせは残す
             if ready, auth.userId == userId, !Task.isCancelled, !ModalProbe.isPresenting(), postedSummary.present(summary) {
-                toasts.dismiss(ifShowing: PostedCardHabit.quietText)
+                // 文ではなく印で下ろす（1行目が「行きたい場所に行けました」などに替わっても下りる・2026-11-23）
+                toasts.dismiss(tagged: .posted)
             }
             // 「決めている途中」は出してから下ろす（下ろした瞬間に届いたラベルが、1枚に入らず知らせになるのを防ぐ）
             coverOffers.finishFirstPost(userId: userId, offer: nil, checked: checked)

@@ -126,6 +126,29 @@ final class PostUploadCenterTests: XCTestCase {
         XCTAssertNil(released, "送り終えたのにモデルを持ち続けている")
     }
 
+    /// 🔴 言い方を決めている間に「投稿しました」の1枚が出たら、知らせは出さない（1枚の後ろから知らせが出る順にしない・
+    /// 2026-11-23 確かめ役の指摘）。出ていなければ、ふつうに知らせる
+    func testNoticeIsDroppedWhenTheSummaryOpenedWhileDeciding() async {
+        for opensSummary in [true, false] {
+            scriptSuccess()
+            let center = PostUploadCenter()
+            let summaries = PostedSummaryCenter()
+            center.summaries = summaries
+            var notices: [PostUploadCenter.Notice] = []
+            center.onNotice = { notice, _ in notices.append(notice) }
+            center.placeNotice = { _, _, _, ownerId, _ in
+                if opensSummary, let ownerId {
+                    _ = summaries.present(.init(ownerId: ownerId, card: nil, cover: nil, offersPush: true, labels: nil))
+                }
+                return nil
+            }
+            XCTAssertTrue(center.start(model()))
+            await waitUntilSettled(center)
+            XCTAssertEqual(notices.isEmpty, opensSummary,
+                           opensSummary ? "1枚が出たあとに「投稿しました」の知らせを出した" : "1枚が出ていないのに知らせを出さない")
+        }
+    }
+
     /// 共有カードは画面いっぱいに出さない（知らせの「カードにする」から開く・1.1.83 の決めを置き換え）
     func testCardIsOfferedFromTheNoticeNotAFullScreenSheet() async {
         scriptSuccess()

@@ -22,6 +22,18 @@ enum JapaneseColors {
         let hex: Int
         let origin: String
         let originEn: String
+        /// Lab の値。**作るときに1回だけ計算して持つ**（2026-11-23 確かめ役の指摘: 計算型だと比べるたびに pow を計算し直していた）
+        let lab: Lab
+
+        init(name: String, reading: String, romaji: String, hex: Int, origin: String, originEn: String) {
+            self.name = name
+            self.reading = reading
+            self.romaji = romaji
+            self.hex = hex
+            self.origin = origin
+            self.originEn = originEn
+            self.lab = JapaneseColors.lab(hex: hex)
+        }
 
         var id: String { romaji }
         /// 画面に出す名前（英語の画面はローマ字）
@@ -32,7 +44,6 @@ enum JapaneseColors {
         var shownOrigin: String { L(origin, originEn) }
         /// `#rrggbb`
         var hexString: String { String(format: "#%06x", hex) }
-        var lab: Lab { JapaneseColors.lab(hex: hex) }
     }
 
     /// 灰色に近いとみなす彩り（Lab の a・b の長さ）。これより少ない写真には名前を出さない
@@ -59,12 +70,27 @@ enum JapaneseColors {
 
     /// 「この色の写真」に並べる写真。同じ名前になる写真。**少ない（`fewPhotos` 未満）ときは近い色の写真も混ぜる**
     static func photos(for color: Color, in photos: [Photo]) -> [Photo] {
-        let same = photos.filter { name(forHex: $0.dominantColor) == color }
+        self.photos(for: color, in: photos, names: names(of: photos))
+    }
+
+    /// 写真の id → 色の id（`Color.id`）。名前の付かない写真は入れない。
+    /// 画面は写真を読んだときに1回だけ作って控える（body のたびに全部の写真の名前を引かない・2026-11-23 判断）
+    static func names(of photos: [Photo]) -> [String: String] {
+        var out: [String: String] = [:]
+        for photo in photos {
+            if let color = name(forHex: photo.dominantColor) { out[photo.id] = color.id }
+        }
+        return out
+    }
+
+    /// 控えた名前（`names(of:)`）で選ぶ形
+    static func photos(for color: Color, in photos: [Photo], names: [String: String]) -> [Photo] {
+        let same = photos.filter { names[$0.id] == color.id }
         guard same.count < fewPhotos else { return same }
         let near = Set(neighbors(of: color).map(\.id))
         let more = photos.filter { photo in
-            guard let other = name(forHex: photo.dominantColor) else { return false }
-            return near.contains(other.id)
+            guard let other = names[photo.id] else { return false }
+            return near.contains(other)
         }
         return same + more
     }

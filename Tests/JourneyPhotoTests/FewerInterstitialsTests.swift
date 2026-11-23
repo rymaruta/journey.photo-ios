@@ -193,7 +193,8 @@ final class FewerInterstitialsTests: XCTestCase {
         XCTAssertTrue(center.contains("model.showsCardSheet = { false }"))
         // 2026-11-23（札 #710 の案1・7）: 1行目は場所で言い替える（無ければ「投稿しました」）。「カードにする」はそのまま
         XCTAssertTrue(center.contains("let title = place?.title ?? PostedCardHabit.quietText"))
-        XCTAssertTrue(center.contains("toasts.show(title, detail: place?.detail, kind: .success, actionTitle: PostedCardHabit.quietAction)"))
+        XCTAssertTrue(center.contains("toasts.show(title, detail: place?.detail, kind: .success, tag: .posted,"))
+        XCTAssertTrue(center.contains("actionTitle: PostedCardHabit.quietAction) { [weak self] in"))
     }
 
     // MARK: - 5. 未ログインでいいね等: 確かめの窓をやめ、すぐログインのシート
@@ -252,11 +253,23 @@ final class FewerInterstitialsTests: XCTestCase {
         toasts.show(PostUploadOutcome.failedText, kind: .failure, actionTitle: PostUploadOutcome.retryAction) {}
         toasts.dismiss(ifShowing: PostedCardHabit.quietText)
         XCTAssertEqual(toasts.current?.text, PostUploadOutcome.failedText, "失敗の知らせ（もう一度）まで下ろした")
-        toasts.show(PostedCardHabit.quietText, kind: .success, actionTitle: PostedCardHabit.quietAction) {}
-        toasts.dismiss(ifShowing: PostedCardHabit.quietText)
+        toasts.dismiss(tagged: .posted)
+        XCTAssertEqual(toasts.current?.text, PostUploadOutcome.failedText, "失敗の知らせ（もう一度）まで下ろした")
+        toasts.show(PostedCardHabit.quietText, detail: nil, kind: .success, tag: .posted,
+                    actionTitle: PostedCardHabit.quietAction) {}
+        toasts.dismiss(tagged: .posted)
         XCTAssertNil(toasts.current)
+        // 1行目が場所で替わった知らせ（「行きたい場所に行けました」）も、印で下ろせる（2026-11-23 確かめ役の指摘）
+        toasts.show(WishVisit.noticeTitle, detail: "宝厳院", kind: .success, tag: .posted,
+                    actionTitle: PostedCardHabit.quietAction) {}
+        XCTAssertEqual(toasts.current?.detail, "宝厳院")
+        toasts.dismiss(tagged: .posted)
+        XCTAssertNil(toasts.current, "場所で言い替えた「投稿しました」が下りない")
         let root = try source("App/RootView.swift")
-        XCTAssertTrue(root.contains("toasts.dismiss(ifShowing: PostedCardHabit.quietText)"))
+        XCTAssertTrue(root.contains("toasts.dismiss(tagged: .posted)"))
+        XCTAssertFalse(root.contains("toasts.dismiss(ifShowing: PostedCardHabit.quietText)"), "文で下ろしている")
+        let center = try source("Core/Storage/PostUploadCenter.swift")
+        XCTAssertEqual(center.components(separatedBy: "tag: .posted").count - 1, 2, "投稿の知らせに印を付けていない")
         XCTAssertFalse(root.contains("postedSummary.present(summary) { toasts.dismiss() }"))
     }
 

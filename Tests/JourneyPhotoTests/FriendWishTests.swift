@@ -107,4 +107,13 @@ final class FriendWishTests: XCTestCase {
         let arranged = HomeTopCard.arrange(cards, audience: .regular)
         XCTAssertTrue(arranged.contains(.friendWish(hit)))
     }
+
+    /// 投稿日を読む読み手は1回だけ作って使い回す（写真ごとに作らない）。小数の秒も読める
+    func testDateFormattersAreShared() {
+        XCTAssertTrue(FriendWish.plainFormatter === FriendWish.plainFormatter)
+        XCTAssertTrue(FriendWish.fractionalFormatter === FriendWish.fractionalFormatter, "使うたびに読み手を作っている")
+        XCTAssertNotNil(FriendWish.date("2026-11-23T12:00:00Z"))
+        XCTAssertNotNil(FriendWish.date("2026-11-23T12:00:00.123Z"))
+        XCTAssertNil(FriendWish.date("きのう"))
+    }
 }

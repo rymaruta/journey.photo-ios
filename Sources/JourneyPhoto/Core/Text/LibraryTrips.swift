@@ -279,6 +279,24 @@ enum LibraryTrips {
         }.count
     }
 
+    /// この旅の日に当たる投稿だけ。`postedDays(trip:posted: [shot]) > 0` の投稿を選るのと同じ結果。
+    ///
+    /// 2026-11-23 判断（札 #710 の確かめ役の指摘）: 前は投稿1枚ずつ `postedDays` を呼び、日ごとに
+    /// `neighborKeys`（そのたびに Calendar を作る）を回していた——旅の数×投稿の数×日数。棚は投稿のたびに
+    /// 計算し直すので、**旅の日と前後の日の鍵は旅ごとに1回だけ作り**、投稿はその鍵で選り分ける
+    static func postedOnTrip(_ trip: LibraryTrip, posted: [PostedShot]) -> [PostedShot] {
+        guard !posted.isEmpty, !trip.days.isEmpty else { return [] }
+        let dayKeys = Set(trip.days.map(\.key))
+        // 前後1日のずれを許すのは、時間帯が目安で代表点がある旅だけ（`postedDays` と同じ）
+        let nearKeys: Set<String> = (!trip.zoneIsKnown && trip.center != nil)
+            ? Set(dayKeys.flatMap { neighborKeys(of: $0) }) : []
+        return posted.filter { shot in
+            if dayKeys.contains(shot.key) { return true }
+            guard nearKeys.contains(shot.key), let center = trip.center, let coords = shot.coords else { return false }
+            return TravelDistance.kilometers(from: center, to: coords) <= awayKm
+        }
+    }
+
     /// 撮影日の鍵だけで数える（撮影地を知らない・前後のずれは許さない）
     static func postedDays(trip: LibraryTrip, postedDayKeys: Set<String>) -> Int {
         postedDays(trip: trip, posted: postedDayKeys.map { PostedShot(key: $0, coords: nil) })
@@ -305,7 +323,15 @@ enum LibraryTrips {
 
     /// 端末のコマの撮った時刻を、`timeZone` の壁時計で `wallStamp` と同じ形にする
     static func wallStamp(_ date: Date, timeZone: TimeZone) -> String {
-        let c = makeCalendar(timeZone).dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
+        wallStamp(date, calendar: makeCalendar(timeZone))
+    }
+
+    /// 時間帯の Calendar を作って使い回す形（コマごとに Calendar を作らない・2026-11-23 判断）
+    static func stampCalendar(_ timeZone: TimeZone) -> Calendar { makeCalendar(timeZone) }
+
+    /// `calendar` の時間帯の壁時計で `wallStamp` と同じ形にする
+    static func wallStamp(_ date: Date, calendar: Calendar) -> String {
+        let c = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
         return String(format: "%04d-%02d-%02dT%02d:%02d:%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0,
                       c.hour ?? 0, c.minute ?? 0, c.second ?? 0)
     }
@@ -319,9 +345,12 @@ enum LibraryTrips {
         return kept
     }
 
+    /// 鍵の日をずらす Calendar（呼ぶたびに作らない・2026-11-23 判断）
+    private static let utcCalendar = makeCalendar(TimeZone(identifier: "UTC")!)
+
     /// その日と前後1日の鍵（`YYYY-MM-DD`）。読めない鍵はそれだけ
     static func neighborKeys(of key: String) -> [String] {
-        let utc = makeCalendar(TimeZone(identifier: "UTC")!)
+        let utc = utcCalendar
         let parts = key.split(separator: "-").compactMap { Int($0) }
         guard parts.count == 3,
               let date = utc.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])) else {

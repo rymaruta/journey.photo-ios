@@ -408,7 +408,8 @@ struct TripPlanDetailView: View {
             TabRouter.shared.postSheetClosed()
             Task {
                 let mine = try? await environment.photos.myPhotos()
-                if let mine { myPhotos = mine }
+                // 持ち主の確かめは `PhotoOwnership` に集める（他人の写真を行に入れない・2026-11-23）
+                if let mine { myPhotos = PhotoOwnership.mine(mine, me: auth.userId) }
             }
         }) { target in
             NavigationStack {
@@ -436,7 +437,8 @@ struct TripPlanDetailView: View {
             // 自分の写真（札 #710 の案3）。ログインしている人の分だけ。取れなかった回は前の分を残す
             var mine: [Photo]?
             if auth.userId != nil { mine = try? await environment.photos.myPhotos() }
-            if let mine { myPhotos = mine }
+            // 自分の写真だけ（`PhotoOwnership`・持ち主の分からない行も入れない）
+            if let mine { myPhotos = PhotoOwnership.mine(mine, me: auth.userId) }
             // 別名は取れなくてもよい（名前と読みで当たる・`fetchAliases` は投げない）
             let fetchedAliases = await environment.spots.fetchAliases()
             if !fetchedAliases.isEmpty { aliases = fetchedAliases }

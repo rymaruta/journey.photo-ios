@@ -68,6 +68,60 @@ final class WishVisitTests: XCTestCase {
         XCTAssertNil(PostedPlaceNotice.make(posted: posted, wishKeys: [], spots: index, announced: []))
     }
 
+    /// 🔴 「投稿しました」を待たせない（2026-11-23 確かめ役の指摘）: 行きたい場所の鍵が無く、最初の1枚でもない回は
+    /// 索引を読まずにすぐ nil。観光スポットの鍵が無ければ索引は読まない。読むときも短い上限まで
+    @MainActor
+    func testResolveReadsTheIndexOnlyWhenNeeded() async throws {
+        final class Count: @unchecked Sendable { var n = 0 }
+        let memory = WishVisitMemory(defaults: UserDefaults(suiteName: "WishVisitTests.\(UUID().uuidString)")!)
+        let calls = Count()
+        let index = [try spot("hogonin", name: "宝厳院")]
+        let fetch: @Sendable () async -> [OfficialSpot]? = { calls.n += 1; return index }
+        let onSpot = [try photo("p", spotId: "sp_hogonin")]
+        // 鍵も最初の1枚も無い: 読まずに nil
+        let none = await PostedPlaceNotice.resolve(posted: onSpot, wishKeys: [], spot: nil, postedToSpot: 0,
+                                                   ownerId: "a", known: [], memory: memory, fetch: fetch)
+        XCTAssertNil(none)
+        XCTAssertEqual(calls.n, 0, "言い替えが起こりえないのに索引を読んだ")
+        // 撮影地の鍵だけ: 索引は読まない
+        let located = await PostedPlaceNotice.resolve(posted: [try photo("q", location: "白川郷")],
+                                                      wishKeys: [LocationSlug.make("白川郷")], spot: nil, postedToSpot: 0,
+                                                      ownerId: "a", known: [], memory: memory, fetch: fetch)
+        XCTAssertEqual(located?.detail, "白川郷")
+        XCTAssertEqual(calls.n, 0, "撮影地の鍵だけなのに索引を読んだ")
+        // 最初の1枚: 索引は読まない
+        var target = UploadSpotTarget(spotId: "sp_hogonin", name: "宝厳院", coords: nil)
+        target.announcesFirst = true
+        let first = await PostedPlaceNotice.resolve(posted: onSpot, wishKeys: [], spot: target, postedToSpot: 1,
+                                                    ownerId: "a", known: [], memory: memory, fetch: fetch)
+        XCTAssertEqual(first?.title, FirstPhoto.postedTitle("宝厳院"))
+        XCTAssertEqual(calls.n, 0)
+        // 投稿の画面が読んでいた索引があれば、それを使う
+        let fromKnown = await PostedPlaceNotice.resolve(posted: onSpot, wishKeys: ["SPOT-hogonin"], spot: nil, postedToSpot: 0,
+                                                        ownerId: "b", known: index, memory: memory, fetch: fetch)
+        XCTAssertEqual(fromKnown?.detail, "宝厳院")
+        XCTAssertEqual(calls.n, 0, "手元の索引があるのに読み直した")
+        // 観光スポットの鍵と観光スポットの写真: 読む
+        let fetched = await PostedPlaceNotice.resolve(posted: onSpot, wishKeys: ["SPOT-hogonin"], spot: nil, postedToSpot: 0,
+                                                      ownerId: "c", known: [], memory: memory, fetch: fetch)
+        XCTAssertEqual(fetched?.title, WishVisit.noticeTitle)
+        XCTAssertEqual(calls.n, 1)
+    }
+
+    /// 索引が返ってこなくても、上限で通常の知らせに倒れる（長く待たない）
+    @MainActor
+    func testResolveGivesUpOnASlowIndex() async throws {
+        let memory = WishVisitMemory(defaults: UserDefaults(suiteName: "WishVisitTests.\(UUID().uuidString)")!)
+        let onSpot = [try photo("p", spotId: "sp_hogonin")]
+        let started = Date()
+        let made = await PostedPlaceNotice.resolve(posted: onSpot, wishKeys: ["SPOT-hogonin"], spot: nil, postedToSpot: 0,
+                                                   ownerId: "a", known: [], memory: memory, wait: .milliseconds(100),
+                                                   fetch: { try? await Task.sleep(nanoseconds: 5_000_000_000); return nil })
+        XCTAssertNil(made)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2, "索引の待ちに上限が効いていない")
+        XCTAssertLessThanOrEqual(PostedPlaceNotice.indexWait, .seconds(2), "知らせを待たせる上限が長い")
+    }
+
     /// 撮影地の鍵の名前は撮影地の表示
     func testNoticeNamesLocation() throws {
         let posted = [try photo("p", location: "白川郷")]

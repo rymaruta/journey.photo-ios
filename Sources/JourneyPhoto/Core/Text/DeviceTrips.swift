@@ -223,14 +223,17 @@ enum DeviceTrips {
     /// - 突き合わせられない投稿（撮影日時が無い・ほかの端末で撮った）が旅の日にある: どのコマを載せたか分からないので
     ///   今までどおり出さない（同じ旅が2冊に見えない側に倒す）
     static func remaining(_ trip: LibraryTrip, posted: [LibraryTrips.PostedShot]) -> LibraryTrip? {
-        let onTrip = posted.filter { LibraryTrips.postedDays(trip: trip, posted: [$0]) > 0 }
+        // 旅の日の鍵は旅ごとに1回だけ作る（投稿ごとに作り直さない・2026-11-23 判断）
+        let onTrip = LibraryTrips.postedOnTrip(trip, posted: posted)
         guard !onTrip.isEmpty else { return trip }
         var byStamp: [String: [String]] = [:]
-        let zones = [trip.timeZone, TimeZone.current]
+        // Calendar は時間帯ごとに1つ作って使い回す（コマごとに作らない・同じ時間帯は1回だけ）
+        let zones = trip.timeZone == TimeZone.current ? [trip.timeZone] : [trip.timeZone, TimeZone.current]
+        let calendars = zones.map { LibraryTrips.stampCalendar($0) }
         for shot in trip.shots {
-            for zone in zones {
+            for calendar in calendars {
                 for offset in [-1.0, 0, 1] {
-                    byStamp[LibraryTrips.wallStamp(shot.date.addingTimeInterval(offset), timeZone: zone), default: []]
+                    byStamp[LibraryTrips.wallStamp(shot.date.addingTimeInterval(offset), calendar: calendar), default: []]
                         .append(shot.id)
                 }
             }

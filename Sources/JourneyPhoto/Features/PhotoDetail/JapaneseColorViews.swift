@@ -70,6 +70,8 @@ struct JapaneseColorPhotosView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var hidden: ModerationStore
     @State private var all: [Photo]?
+    /// 写真の id → 色の id（読んだときに1回だけ作る・`JapaneseColors.names(of:)`）
+    @State private var colorIds: [String: String] = [:]
     @State private var failed = false
 
     var body: some View {
@@ -121,7 +123,7 @@ struct JapaneseColorPhotosView: View {
                     .padding(.horizontal, JPSpace.gutter)
                 }
                 if let all {
-                    let shown = hidden.visible(JapaneseColors.photos(for: color, in: all))
+                    let shown = hidden.visible(JapaneseColors.photos(for: color, in: all, names: colorIds))
                     if shown.isEmpty {
                         EmptyState(icon: nil, title: L("まだ写真がありません", "No photos yet"),
                                    message: L("この色の写真が投稿されると、ここに並びます", "Photos in this color will appear here."))
@@ -149,6 +151,11 @@ struct JapaneseColorPhotosView: View {
     private func load() async {
         failed = false
         let photos = try? await environment.gallery.fetchPhotos()
-        if let photos { all = photos } else { failed = true }
+        if let photos {
+            colorIds = JapaneseColors.names(of: photos)
+            all = photos
+        } else {
+            failed = true
+        }
     }
 }

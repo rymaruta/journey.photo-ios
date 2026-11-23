@@ -1329,12 +1329,6 @@ final class ScreenshotTests: JPUITestCase {
         shoot(app, "20m-写真にしたストーリーの消す確認")
     }
 
-    /// **写真を撮影スポットに自動で結ぶ（写真の詳細）**（2026-10-31・journey.photo-ios#425）。
-    ///
-    /// 見本の利用者の写真（マイページの格子）を頭から開き、自動で結ばれた1枚を探す。見つかったら
-    /// 写真の裾の「撮影スポット · ◯◯」の札（20g）と、題の下の本人だけの「外す」の札（20h）を撮る。
-    /// 🔴 **「違う場所なので外す」は押さない**（本番の写真の行に外した印を書いてしまう）。
-    /// 自動で結ばれた写真が無い・表が読めない回は**落とす**（札 #531）
     /// **写真の色の日本の色の名前と「この色の写真」**（札 #710 の案10）。マイページの写真を開き、色の名前の行が出たら撮って押す。
     /// 出なければ撮らずに抜ける
     func testCapturesJapaneseColorName() {
@@ -1370,6 +1364,12 @@ final class ScreenshotTests: JPUITestCase {
         shoot(app, "20l-この色の写真")
     }
 
+    /// **写真を撮影スポットに自動で結ぶ（写真の詳細）**（2026-10-31・journey.photo-ios#425）。
+    ///
+    /// 見本の利用者の写真（マイページの格子）を頭から開き、自動で結ばれた1枚を探す。見つかったら
+    /// 写真の裾の「撮影スポット · ◯◯」の札（20g）と、題の下の本人だけの「外す」の札（20h）を撮る。
+    /// 🔴 **「違う場所なので外す」は押さない**（本番の写真の行に外した印を書いてしまう）。
+    /// 自動で結ばれた写真が無い・表が読めない回は**落とす**（札 #531）
     func testCapturesSpotAutoNotice() {
         let app = XCUIApplication.jp()
         // 一巡と同じ立ち上げ方（意味は `testCapturesEveryScreen` の注記）
@@ -4730,19 +4730,21 @@ final class ScreenshotTests: JPUITestCase {
         }
     }
 
-    /// 65t 旅行プランの日程の時刻（札 #677・案A）: 場所の左に着く時刻、日の見出しの右「出発 9:00」を押して時刻を選ぶ。
-    /// 65u 11:00 を選ぶと時刻がそろってずれる。出なければ撮らずに抜ける。終わりに 9:00 へ戻す（この iPhone に覚えるため）
     /// **旅行プランの行の写真**（札 #710 の案3・owner 2026-11-23「AIでプラン作った時に画像出てこないぞ」）。
     /// 番号の丸の右に観光スポットの写真（自分の写真があればそれ）。出なければ撮らずに抜ける
     func testCapturesTripPlanStopPhotos() {
         let app = launchTrunk(["-JPTripPlanFixture", "YES"])
         guard openFixturePlan(app) else { return }
-        let thumb = app.descendants(matching: .any).matching(identifier: "tripPlan.stopSpotPhoto").firstMatch
+        // 行の写真は飾り（読み上げから外している）。写真のある行は、行の識別子が写真の種類になる（`TripStopLabel.identifier`）
+        let thumb = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier IN %@", ["tripPlan.stopSpotPhoto", "tripPlan.stopPhoto"])).firstMatch
         guard thumb.waitForExistence(timeout: 10) else { return }
         Thread.sleep(forTimeInterval: 3)
         shoot(app, "65p-旅行プランの行の写真（観光スポットの写真・自分の写真）")
     }
 
+    /// 65t 旅行プランの日程の時刻（札 #677・案A）: 場所の左に着く時刻、日の見出しの右「出発 9:00」を押して時刻を選ぶ。
+    /// 65u 11:00 を選ぶと時刻がそろってずれる。出なければ撮らずに抜ける。終わりに 9:00 へ戻す（この iPhone に覚えるため）
     func testCapturesTripPlanTimes() {
         let app = launchTrunk(["-JPTripPlanFixture", "YES"])
         guard openFixturePlan(app) else { return }

@@ -85,4 +85,58 @@ final class DeviceTripsRemainingTests: XCTestCase {
             XCTAssertFalse(text.contains("・") || text.contains("急") || text.contains("消えます"))
         }
     }
+
+    /// 旅の日に当たる投稿の選り分けは、1枚ずつ `postedDays` を呼ぶのと同じ結果（前後の日のずれも含めて）
+    func testPostedOnTripMatchesPostedDays() throws {
+        let trip = try trip()
+        let near = trip.center
+        let keys = trip.days.map(\.key) + trip.days.flatMap { LibraryTrips.neighborKeys(of: $0.key) } + ["2026-01-01"]
+        let shots = keys.flatMap { key in
+            [LibraryTrips.PostedShot(key: key, coords: nil),
+             LibraryTrips.PostedShot(key: key, coords: near),
+             LibraryTrips.PostedShot(key: key, coords: Photo.Coords(lat: home.lat, lng: home.lng))]
+        }
+        for zoneKnown in [false, true] {
+            var t = trip
+            if zoneKnown { t = LibraryTrips.recut(trip, timeZone: trip.timeZone) }
+            let expected = shots.filter { LibraryTrips.postedDays(trip: t, posted: [$0]) > 0 }
+            XCTAssertEqual(LibraryTrips.postedOnTrip(t, posted: shots), expected)
+        }
+    }
+
+    /// 多い件数（旅50、投稿1000、日数3）でも棚の計算はすぐ終わる。
+    /// 前は旅×投稿×日数で Calendar を作り、この件数で数秒かかっていた（2026-11-23 確かめ役の指摘）
+    func testBooksStayFastWithManyTripsAndPosts() throws {
+        // 旅50冊（それぞれ3日・1日3コマ・10日おき）。形は京都の旅から作る（日は切り直す）
+        let template = try trip()
+        var trips: [LibraryTrip] = []
+        for t in 0..<50 {
+            var shots: [LibraryShot] = []
+            for d in 0..<3 {
+                for k in 0..<3 {
+                    let hours: Double = Double(t * 240 + d * 24 + 10 + k)
+                    shots.append(shot("t\(t)-\(d)-\(k)", hours: hours, kyoto))
+                }
+            }
+            trips.append(LibraryTrips.keeping(template, shots: shots, postedCount: 0))
+        }
+        XCTAssertTrue(trips.allSatisfy { $0.days.count == 3 }, "旅が3日になっていない")
+        // 投稿1000枚: 旅の日に当たらない日（撮影日時なし）が大半、旅ごとに1枚は載せたコマ
+        var posts: [LibraryTrips.PostedShot] = trips.compactMap { trip in
+            trip.shots.first.map { posted($0, in: trip) }
+        }
+        let utc = Calendar(identifier: .gregorian)
+        while posts.count < 1000 {
+            let date = base.addingTimeInterval(Double(posts.count) * -86_400 * 0.7)
+            let c = utc.dateComponents(in: TimeZone(identifier: "Asia/Tokyo")!, from: date)
+            let key = String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+            let coords: Photo.Coords? = posts.count.isMultiple(of: 2) ? nil : Photo.Coords(lat: home.lat, lng: home.lng)
+            posts.append(LibraryTrips.PostedShot(key: key, coords: coords))
+        }
+        let start = Date()
+        let books = DeviceTrips.books(trips, posted: posts, zones: [:], isMine: true)
+        let elapsed = Date().timeIntervalSince(start)
+        XCTAssertEqual(books.count, 50, "1枚ずつ載せた旅は残りで出る")
+        XCTAssertLessThan(elapsed, 0.5, "棚の計算に \(elapsed) 秒かかっている")
+    }
 }

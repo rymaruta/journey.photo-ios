@@ -132,6 +132,33 @@ final class HomeTopCardMemoTests: XCTestCase {
         }
     }
 
+    /// 友達の行きたい場所の札は、写真、フォロー、鍵、日、印の番号が同じ間は計算し直さない（body のたびに
+    /// UserDefaults の JSON を読み、全部の写真を突き合わせない・2026-11-23 確かめ役の指摘）
+    func testFriendWishIsComputedOnlyWhenTheKeyChanges() throws {
+        let memo = HomeTopCardMemo()
+        let key = HomeTopCardMemo.FriendWishKey(photos: [], following: ["mika"], me: "me", keys: ["kyoto"],
+                                                day: "2026-11-23", spotsRevision: 1, revision: 0)
+        var computed = 0
+        for _ in 0..<5 { _ = memo.friendWishHit(key) { computed += 1; return nil } }
+        XCTAssertEqual(computed, 1, "同じ材料なのに計算し直した")
+        for changed in [
+            HomeTopCardMemo.FriendWishKey(photos: [], following: ["mika", "aoi"], me: "me", keys: ["kyoto"],
+                                          day: "2026-11-23", spotsRevision: 1, revision: 0),
+            HomeTopCardMemo.FriendWishKey(photos: [], following: ["mika"], me: "me", keys: [],
+                                          day: "2026-11-23", spotsRevision: 1, revision: 0),
+            HomeTopCardMemo.FriendWishKey(photos: [], following: ["mika"], me: "me", keys: ["kyoto"],
+                                          day: "2026-11-24", spotsRevision: 1, revision: 0),
+            HomeTopCardMemo.FriendWishKey(photos: [], following: ["mika"], me: "me", keys: ["kyoto"],
+                                          day: "2026-11-23", spotsRevision: 1, revision: 1),
+        ] {
+            let before = memo.friendWishComputes
+            _ = memo.friendWishHit(changed) { nil }
+            XCTAssertEqual(memo.friendWishComputes, before + 1, "材料が変わったら計算し直す: \(changed)")
+        }
+        let view = try source("Sources/JourneyPhoto/Features/Gallery/HomeTopCardView.swift")
+        XCTAssertTrue(view.contains("return memo.friendWishHit(key) {"), "友達の行きたい場所の札を控えから出していない")
+    }
+
     // MARK: - 3. 配線
 
     /// 🔴 札の画面が控えを使う（外すと body のたびに索引を並べ替える）

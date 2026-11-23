@@ -242,13 +242,18 @@ struct HomeTopCardView: View {
     }
 
     /// 友達が行きたい場所で撮った写真の、今日の1枚（札 #710 の案9）。印は描いたあとに付ける（`recordFriendWish`）
+    /// 鍵（写真、フォロー、行きたい場所の鍵、日）が変わったときだけ計算する（`HomeTopCardMemo.friendWishHit`・2026-11-23）
     private var friendWishHit: FriendWish.Hit? {
-        _ = friendWishRevision
         guard let me = auth.userId else { return nil }
-        let state = friendWishMemory.state(for: me)
-        let hits = FriendWish.hits(photos: friendPhotos, following: followingIds, me: me, keys: wishedKeys, spots: spots,
-                                   muted: Set(state.muted), now: cardsNow)
-        return FriendWish.pick(hits, state: state, today: cardsDay)
+        let today = cardsDay
+        let key = HomeTopCardMemo.FriendWishKey(photos: friendPhotos, following: followingIds, me: me, keys: wishedKeys,
+                                                day: today, spotsRevision: spotsRevision, revision: friendWishRevision)
+        return memo.friendWishHit(key) {
+            let state = friendWishMemory.state(for: me)
+            let hits = FriendWish.hits(photos: friendPhotos, following: followingIds, me: me, keys: wishedKeys, spots: spots,
+                                       muted: Set(state.muted), now: cardsNow)
+            return FriendWish.pick(hits, state: state, today: today)
+        }
     }
 
     /// 出した札に印を付ける（同じ人と同じ場所の組は1回・1日に1枚）

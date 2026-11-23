@@ -21,8 +21,8 @@ struct TripStopThumbView: View {
         .frame(width: Self.side, height: Self.side)
         .background(WebTheme.card)
         .clipShape(RoundedRectangle(cornerRadius: JPRadius.s))
+        // 飾り（行の読み上げに名前がある）。UI テストは行の識別子で探す（`TripStopLabel.identifier`）
         .accessibilityHidden(true)
-        .accessibilityIdentifier(thumb.isMine ? "tripPlan.stopPhoto" : "tripPlan.stopSpotPhoto")
     }
 }
 

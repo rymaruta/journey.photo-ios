@@ -126,13 +126,18 @@ enum FriendWish {
         (photo.audience ?? "").isEmpty && photo.published != false
     }
 
-    private static func date(_ raw: String?) -> Date? {
+    /// 読み手は1回だけ作って使い回す（写真ごとに作らない・2026-11-23 確かめ役の指摘）
+    static let plainFormatter = ISO8601DateFormatter()
+    static let fractionalFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    static func date(_ raw: String?) -> Date? {
         guard let raw else { return nil }
-        let plain = ISO8601DateFormatter()
-        if let d = plain.date(from: raw) { return d }
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return fractional.date(from: raw)
+        if let d = plainFormatter.date(from: raw) { return d }
+        return fractionalFormatter.date(from: raw)
     }
 }
 

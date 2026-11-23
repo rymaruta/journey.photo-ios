@@ -317,14 +317,12 @@ struct JourneyPhotoApp: App {
                     // 投稿の知らせを場所で言い替える（札 #710 の案1・7）。行きたい場所の控えと観光スポットの索引を読む
                     let wishes = wishlist
                     let spotService = environment.spots
-                    PostUploadCenter.shared.placeNotice = { posted, spot, postedToSpot, ownerId in
-                        let index = (try? await spotService.fetchIndex()) ?? []
-                        let memory = WishVisitMemory()
-                        guard let made = PostedPlaceNotice.make(posted: posted, wishKeys: wishes.spotIds, spots: index,
-                                                                announced: memory.announced(for: ownerId),
-                                                                spot: spot, postedToSpot: postedToSpot) else { return nil }
-                        if let key = made.wishKey { memory.note([key], for: ownerId) }
-                        return made.notice
+                    // 要らない回は読まず、読むときも短い上限まで（`PostedPlaceNotice.resolve`・2026-11-23 確かめ役の指摘）
+                    PostUploadCenter.shared.placeNotice = { posted, spot, postedToSpot, ownerId, known in
+                        await PostedPlaceNotice.resolve(posted: posted, wishKeys: wishes.spotIds, spot: spot,
+                                                        postedToSpot: postedToSpot, ownerId: ownerId, known: known,
+                                                        memory: WishVisitMemory(),
+                                                        fetch: { [spotService] in await spotService.fetchIndexRows() })
                     }
                     StoryUploadCenter.shared.configure(
                         currentUserId: { auth.userId },

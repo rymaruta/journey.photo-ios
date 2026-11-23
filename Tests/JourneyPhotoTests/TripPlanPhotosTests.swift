@@ -75,6 +75,27 @@ final class TripPlanPhotosTests: XCTestCase {
         XCTAssertEqual(TripStopThumbView.side, 44)
     }
 
+    /// 行の写真は飾り（読み上げから外す）。行をまとめると中の識別子は消えるので、写真の種類は**行の識別子**で出す
+    /// （UI テスト `testCapturesTripPlanStopPhotos` が見つけられず、何も撮らずに抜けていた・2026-11-23 確かめ役の指摘）
+    func testRowIdentifierTellsThePhotoKind() throws {
+        let spot = try JSONDecoder.api.decode(OfficialSpot.self, from: Data(
+            #"{"spotId":"sp_1","slug":"a","name":"宝厳院","stage":"published","image":{"url":"https://journey-photo.com/images/spots/a.jpg","author":"A","license":"CC BY 4.0"}}"#.utf8))
+        let mine = try photo("m", spotId: "sp_1", date: "2026-11-23")
+        XCTAssertEqual(TripStopLabel.identifier(TripPlanPhotos.thumb(mine: nil, spot: spot)), "tripPlan.stopSpotPhoto")
+        XCTAssertEqual(TripStopLabel.identifier(TripPlanPhotos.thumb(mine: mine, spot: spot)), "tripPlan.stopPhoto")
+        XCTAssertEqual(TripStopLabel.identifier(nil), "tripPlan.stop")
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources/JourneyPhoto/Features/Trips")
+        let parts = try String(contentsOf: url.appendingPathComponent("TripParts.swift"), encoding: .utf8)
+        XCTAssertTrue(parts.contains(".accessibilityIdentifier(Self.identifier(thumb))"), "行に写真の種類の識別子を付けていない")
+        let ui = try String(contentsOf: url.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"), encoding: .utf8)
+        XCTAssertTrue(ui.contains(#"["tripPlan.stopSpotPhoto", "tripPlan.stopPhoto"]"#), "UI テストが行の識別子で探していない")
+        // 足した試験を既存の試験の注記と関数の間に入れない（注記がその関数の真上にある）
+        XCTAssertTrue(ui.contains("（札 #531）\n    func testCapturesSpotAutoNotice()"), "撮影スポットの自動の試験の注記が離れている")
+        XCTAssertTrue(ui.contains("（この iPhone に覚えるため）\n    func testCapturesTripPlanTimes()"), "日程の時刻の試験の注記が離れている")
+    }
+
     /// 他人の写真は並べない: 日程の画面は自分の写真（`myPhotos`）だけを渡す
     func testScreenPassesOnlyMyPhotos() throws {
         let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
@@ -82,5 +103,23 @@ final class TripPlanPhotosTests: XCTestCase {
         let text = try String(contentsOf: url, encoding: .utf8)
         XCTAssertTrue(text.contains("TripPlanPhotos.mine(for: item, on: ymd, mine: myPhotos)"))
         XCTAssertTrue(text.contains("environment.photos.myPhotos()"))
+        // 🔴 読んだ写真は持ち主を `PhotoOwnership` で確かめてから入れる（2026-11-23・他人の写真は、その人のもの）
+        XCTAssertEqual(text.components(separatedBy: "myPhotos = PhotoOwnership.mine(mine, me: auth.userId)").count - 1, 2,
+                       "自分の写真の読み込みが持ち主を確かめていない")
+        XCTAssertFalse(text.contains("if let mine { myPhotos = mine }"), "持ち主を確かめずに入れている")
+    }
+
+    /// 持ち主の確かめ（`PhotoOwnership.mine`）: 自分の写真だけ残り、他人の写真・持ち主の分からない写真は落ちる
+    func testOwnershipKeepsOnlyMine() throws {
+        func row(_ id: String, _ owner: String?) throws -> Photo {
+            var obj: [String: Any] = ["id": id, "src": "https://example.com/\(id).jpg", "spotId": "sp_1", "date": "2026-11-23"]
+            if let owner { obj["userId"] = owner }
+            return try JSONDecoder.api.decode(Photo.self, from: JSONSerialization.data(withJSONObject: obj))
+        }
+        let loaded = [try row("me1", "me"), try row("other", "mika"), try row("unknown", nil)]
+        let kept = PhotoOwnership.mine(loaded, me: "me")
+        XCTAssertEqual(kept.map(\.id), ["me1"])
+        XCTAssertTrue(PhotoOwnership.mine(loaded, me: nil).isEmpty, "ログインしていないのに写真を入れた")
+        XCTAssertEqual(TripPlanPhotos.mine(for: .spot(spotId: "sp_1", note: nil), on: "2026-11-23", mine: kept)?.id, "me1")
     }
 }
