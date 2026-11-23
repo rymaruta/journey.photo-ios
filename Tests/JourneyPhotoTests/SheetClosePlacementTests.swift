@@ -196,8 +196,8 @@ final class SheetClosePlacementTests: XCTestCase {
              ["SheetCloseButton(onContent: true)", "\"trunk.arrived.close\"", "Spacer()"]),
             ("Features/Trunk/TrunkGachaView.swift",          // カプセルを開けた
              ["SheetCloseButton(onContent: true)", "\"trunk.gachaOpen.close\"", "Spacer()"]),
-            ("Features/Trunk/TrunkRerollView.swift",         // 図柄を作り直す
-             ["SheetCloseButton(onContent: true)", "\"trunk.reroll.close\"", "Spacer()"]),
+            ("Features/Trunk/TrunkCustomView.swift",         // 好きなデザインで作る（#706・作り直しの画面はやめた）
+             ["SheetCloseButton(onContent: true)", "\"trunk.custom.close\"", "Spacer()"]),
             ("Features/Trunk/TrunkPartsBoxView.swift",       // 部品のシート
              ["SheetCloseButton(onContent: true)", "\"trunk.partSheet.close\"", "TrunkGachaText.eyebrow(part)", "Spacer()"]),
             ("Features/Drafts/DraftsView.swift",             // 下書きについて
@@ -272,7 +272,7 @@ final class SheetClosePlacementTests: XCTestCase {
             ("Features/Trunk/TrunkWelcomeView.swift", "\\(copy.id).close"),
             ("Features/Trunk/LabelArrivedView.swift", "trunk.arrived.close"),
             ("Features/Trunk/TrunkGachaView.swift", "trunk.gachaOpen.close"),
-            ("Features/Trunk/TrunkRerollView.swift", "trunk.reroll.close"),
+            ("Features/Trunk/TrunkCustomView.swift", "trunk.custom.close"),
             ("Features/Trunk/TrunkPartsBoxView.swift", "trunk.partSheet.close"),
         ]
         for (path, id) in kept {

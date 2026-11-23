@@ -232,17 +232,32 @@ final class TrunkViewModel: ObservableObject {
         await write({ TrunkLocal.remove($0, id: id) }, { try await $0.remove(id) })
     }
 
-    /// 作り直す（候補が `state.pendingReroll` に入る）。**同じラベルの選びかけがあれば呼ばない**（回数を使わない）
+    /// 作り直す（#706・全員・ラベルごとに3回）。**何回目かを添えて送る**（サーバーは同じ回の送り直しを二度数えない）。
+    /// 新しい図柄が選ばれた状態で返る（選ばずに閉じたら、いま見ている図柄で決まる）。
+    /// サーバーが対応していない（`custom` の欄が無い）・使い切った・手持ちに無いなら送らない
     @discardableResult
     func reroll(_ id: String) async -> Bool {
-        if state?.pendingReroll?.labelId == id { return true }
-        return await write({ TrunkLocal.reroll($0, id: id, seeds: TrunkSample.rerollSeeds) },
-                           { try await $0.reroll(id) })
+        guard let current = state, current.supportsLabelReroll || preview != nil,
+              let label = current.pocket.first(where: { $0.id == id }), label.custom == nil, label.rerollsLeft > 0 else { return false }
+        let n = label.rerolls + 1
+        return await write({ TrunkLocal.reroll($0, id: id, seed: TrunkSample.rerollSeed(label, n: n)) },
+                           { try await $0.reroll(id, n: n) })
     }
 
+    /// 候補から選ぶ（押したらその場でサーバーへ・#706）。今の図柄と同じなら送らない
     @discardableResult
     func choose(_ id: String, seed: Int) async -> Bool {
-        await write({ TrunkLocal.choose($0, id: id, seed: seed) }, { try await $0.choose(id, seed: seed) })
+        guard let label = state?.pocket.first(where: { $0.id == id }) else { return false }
+        if label.seed == seed { return true }
+        return await write({ TrunkLocal.choose($0, id: id, seed: seed) }, { try await $0.choose(id, seed: seed) })
+    }
+
+    /// 好きなデザインで作る（#706）。使える回数を1つ使う。同じデザインがもう付いていれば送らない
+    @discardableResult
+    func makeCustom(_ id: String, _ custom: TrunkLabelCustom) async -> Bool {
+        guard let current = state, let label = current.pocket.first(where: { $0.id == id }) else { return false }
+        if label.custom == custom { return true }
+        return await write({ TrunkLocal.custom($0, id: id, custom: custom) }, { try await $0.custom(id, custom) })
     }
 
     @discardableResult

@@ -6,8 +6,9 @@ import Foundation
 ///     GET    /user/trunk                              → 状態＋posts
 ///     POST   /user/trunk/labels/{id}/stick            → 状態
 ///     DELETE /user/trunk/labels/{id}                  → 状態
-///     POST   /user/trunk/labels/{id}/reroll           → 状態（pendingReroll に候補3つ）
+///     POST   /user/trunk/labels/{id}/reroll { n }     → 状態（ラベルの候補 `cs` に1つ足し、種を替える・#706）
 ///     POST   /user/trunk/labels/{id}/reroll/choose    → 状態
+///     POST   /user/trunk/labels/{id}/custom { shape, palette, art } → 状態（好きなデザインで作る・#706）
 ///     PUT    /user/trunk/model { model }              → 状態
 ///     PUT    /user/trunk/settings { receiveLabels }   → 状態
 ///
@@ -177,10 +178,21 @@ struct TrunkService {
         }
     }
 
-    /// 作り直す（Pro・月3回）。候補は応答の `pendingReroll`
-    func reroll(_ id: String) async throws -> TrunkState {
+    private struct RerollBody: Encodable { let n: Int }
+
+    /// 作り直す（#706・全員・ラベルごとに3回）。`n` は何回目か（1〜3）——サーバーは同じ回の送り直しを二度数えない。
+    /// 新しい種は応答のラベルの `seed`、候補は `candidates`（`cs`）
+    func reroll(_ id: String, n: Int) async throws -> TrunkState {
         try await refusing {
-            try await api.authorized(.post, "/user/trunk/labels/\(encoded(id))/reroll", as: TrunkState.self)
+            try await api.authorized(.post, "/user/trunk/labels/\(encoded(id))/reroll", body: RerollBody(n: n),
+                                     as: TrunkState.self)
+        }
+    }
+
+    /// 好きなデザインで作る（#706）。使える回数を1つ使う（同じデザインの送り直しは使わない）
+    func custom(_ id: String, _ custom: TrunkLabelCustom) async throws -> TrunkState {
+        try await refusing {
+            try await api.authorized(.post, "/user/trunk/labels/\(encoded(id))/custom", body: custom, as: TrunkState.self)
         }
     }
 

@@ -4,7 +4,8 @@ import SwiftUI
 ///
 /// 上の札: まだ貼っていないラベルの数と上限の棒・いっぱいの間の説明・Pro の案内。
 /// 格子は3列（#121212 の札 104・選んでいる札は真鍮の 2pt の縁と右上のチェック）。
-/// 下の帯: 選んでいるラベル → 貼る（真鍮の塗り）・作り直す（PRO）・削除（危険の字）。
+/// 下の帯: 選んでいるラベル → 貼る（真鍮の塗り）・好きなデザインで作る（作れる回数があるときだけ・#706）・削除（危険の字）。
+/// 2026-11-23（札 #706）: Pro の月3回の作り直しはやめた（作り直しは届いた画面で、全員が1枚につき3回）。
 /// **「捨てる」とは言わない**（削除）。削除は確認してから（戻せない）。
 struct TrunkPocketView: View {
     @ObservedObject var model: TrunkViewModel
@@ -12,7 +13,8 @@ struct TrunkPocketView: View {
     @EnvironmentObject private var toasts: ToastCenter
     @State private var selectedId: String?
     @State private var confirmDelete = false
-    @State private var rerollTarget: TrunkLabel?
+    /// 好きなデザインで作るラベル（#706）
+    @State private var customTarget: TrunkLabel?
     @State private var showPaywall = false
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
@@ -36,11 +38,11 @@ struct TrunkPocketView: View {
             Text(L("削除したラベルは戻せません。同じ写真のラベルは、もう一度は届きません。",
                    "A deleted label can\u{2019}t be restored, and the same photo won\u{2019}t bring it again."))
         }
-        .fullScreenCover(item: $rerollTarget) { label in
-            TrunkRerollView(model: model, labelId: label.id)
+        .fullScreenCover(item: $customTarget) { label in
+            TrunkCustomView(model: model, labelId: label.id)
         }
         .fullScreenCover(isPresented: $showPaywall, onDismiss: {
-            // 買えたかもしれない: 上限（150 枚）と作り直しを読み直す
+            // 買えたかもしれない: 上限（150 枚）を読み直す
             Task { await model.refreshAfterPaywall() }
         }) { PaywallView(origin: .trunk) }
         // 知らせは `RootView` の全体の知らせで出る（押して進む画面なので重ねない・2026-10-17 の読み直し）
@@ -178,7 +180,12 @@ struct TrunkPocketView: View {
         .accessibilityIdentifier("trunk.pocket.cell")
     }
 
-    /// 下の帯のボタン（貼る・作り直す・削除）
+    /// 好きなデザインで作れるか（サーバーが対応していて、使える回数がある）
+    private func canMakeCustom(_ state: TrunkState) -> Bool {
+        state.supportsLabelReroll && (state.custom?.tickets ?? 0) > 0
+    }
+
+    /// 下の帯のボタン（貼る・好きなデザインで作る・削除）
     @ViewBuilder
     private func actionButtons(_ state: TrunkState, selected: TrunkLabel?) -> some View {
         Button {
@@ -194,25 +201,17 @@ struct TrunkPocketView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("trunk.pocket.stick")
-        Button {
-            guard let selected else { return }
-            if state.isPro { rerollTarget = selected } else { showPaywall = true }
-        } label: {
-            HStack(spacing: 6) {
-                Text(L("作り直す", "Redo"))
-                    .font(JPFont.bodyEmphasis)
-                    .foregroundStyle(WebTheme.text)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                TrunkProTag()
+        // 作れる回数があるときだけ出す（無い人に押せないボタンを見せない・#706）
+        if canMakeCustom(state) {
+            Button {
+                guard let selected else { return }
+                customTarget = selected
+            } label: {
+                TrunkButtonFace(title: TrunkText.customPocketTitle, kind: .secondary)
             }
-            .frame(maxWidth: .infinity, minHeight: 52)
-            .background(TrunkStyle.line, in: RoundedRectangle(cornerRadius: 14))
-            .contentShape(RoundedRectangle(cornerRadius: 14))
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("trunk.pocket.custom")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(L("作り直す（Pro）", "Redo (Pro)"))
-        .accessibilityIdentifier("trunk.pocket.reroll")
         Button {
             guard selected != nil else { return }
             confirmDelete = true
@@ -223,7 +222,7 @@ struct TrunkPocketView: View {
         .accessibilityIdentifier("trunk.pocket.delete")
     }
 
-    /// 下の帯（選んでいるラベル・貼る・作り直す・削除）
+    /// 下の帯（選んでいるラベル・貼る・好きなデザインで作る・削除）
     private func actionBar(_ state: TrunkState) -> some View {
         let selected = state.pocket.first { $0.id == selectedId }
         return VStack(spacing: 10) {
@@ -232,7 +231,7 @@ struct TrunkPocketView: View {
                 .font(JPFont.footnote)
                 .foregroundStyle(TrunkStyle.muted)
                 .lineLimit(1)
-            // 横に入らない大きさ（文字の大きさの設定）では3つのボタンを縦に積む（2026-10-21・横 3 つでは「作り直す」が切れる）
+            // 横に入らない大きさ（文字の大きさの設定）では3つのボタンを縦に積む（2026-10-21・横 3 つでは字が切れる）
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 8) { actionButtons(state, selected: selected) }
                 VStack(spacing: 8) { actionButtons(state, selected: selected) }

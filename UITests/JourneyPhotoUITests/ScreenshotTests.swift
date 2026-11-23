@@ -6433,39 +6433,14 @@ final class ScreenshotTests: JPUITestCase {
         cell.tap()
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "92a-手持ちのラベル（選んでいる）")
-        for id in ["trunk.pocket.stick", "trunk.pocket.reroll", "trunk.pocket.delete"] {
+        // 2026-11-23（札 #706）: Pro の月3回の作り直しはやめた。手持ちの帯は貼る・削除（作れる回数があれば「好きなデザインで作る」）
+        for id in ["trunk.pocket.stick", "trunk.pocket.delete"] {
             let button = app.buttons[id].firstMatch
             XCTAssertTrue(button.exists, "\(id) が無い")
             XCTAssertGreaterThanOrEqual(button.frame.height, 44, "\(id) が 44pt 未満")
         }
-        let reroll = app.buttons["trunk.pocket.reroll"].firstMatch
-        if reroll.isHittable {
-            reroll.tap()
-            let close = app.buttons["trunk.reroll.close"].firstMatch
-            if close.waitForExistence(timeout: 10) {
-                Thread.sleep(forTimeInterval: 2)
-                shoot(app, "93-図柄を作り直す（押す前）")
-                // 押す前は「この図柄にする」を出さない（開いただけでは回数を使わない・2026-10-17）
-                XCTAssertFalse(app.buttons["trunk.reroll.choose"].firstMatch.exists, "押す前なのに「この図柄にする」が出ている")
-                let start = app.buttons["trunk.reroll.start"].firstMatch
-                if start.exists, start.isHittable {
-                    XCTAssertGreaterThanOrEqual(start.frame.height, 44, "「作り直す」が 44pt 未満")
-                    start.tap()
-                    let options = app.buttons.matching(identifier: "trunk.reroll.option")
-                    _ = options.firstMatch.waitForExistence(timeout: 10)
-                    Thread.sleep(forTimeInterval: 1)
-                    shoot(app, "93a-図柄を作り直す（候補）")
-                    if options.count > 2 {
-                        options.element(boundBy: 2).tap()
-                        Thread.sleep(forTimeInterval: 1)
-                        shoot(app, "93b-図柄を作り直す（案2を選んだ）")
-                    }
-                    XCTAssertGreaterThanOrEqual(app.buttons["trunk.reroll.choose"].firstMatch.frame.height, 44)
-                }
-                close.tap()
-                Thread.sleep(forTimeInterval: 1)
-            }
-        }
+        XCTAssertFalse(app.buttons["trunk.pocket.reroll"].firstMatch.exists, "手持ちに Pro の作り直しが残っている")
+        XCTAssertFalse(app.buttons["trunk.pocket.custom"].firstMatch.exists, "作れる回数が無いのに「好きなデザインで作る」が出ている")
         goBack(app)
         Thread.sleep(forTimeInterval: 1)
 
@@ -6571,10 +6546,14 @@ final class ScreenshotTests: JPUITestCase {
         let keep = app.buttons["trunk.arrived.keep"].firstMatch
         let reroll = app.buttons["trunk.arrived.reroll"].firstMatch
         let close = app.buttons["trunk.arrived.close"].firstMatch
-        for (button, name) in [(stick, "トランクに貼る"), (keep, "あとで貼る（手持ちへ）"), (reroll, "図柄を作り直す"), (close, "閉じる")] {
+        for (button, name) in [(stick, "トランクに貼る"), (keep, "あとで貼る（手持ちへ）"), (reroll, "作り直す"), (close, "閉じる")] {
             XCTAssertTrue(button.exists, "「\(name)」が無い")
             XCTAssertGreaterThanOrEqual(button.frame.height, 44, "「\(name)」が 44pt 未満")
         }
+        // 進み具合の2行（#706）
+        XCTAssertTrue(app.descendants(matching: .any)["trunk.arrived.progress"].firstMatch.exists, "進み具合が出ていない")
+        // 何もしなければ候補の列は出さない（今までと同じ画面）
+        XCTAssertFalse(app.buttons["trunk.arrived.candidate"].firstMatch.exists, "作り直す前から候補の列が出ている")
         guard keep.isHittable else { return XCTFail("「あとで貼る（手持ちへ）」を押せない") }
         keep.tap()
         let gone = NSPredicate(format: "exists == false")
@@ -6583,6 +6562,78 @@ final class ScreenshotTests: JPUITestCase {
         // 閉じたあとに、また出てこない（見本は起動から1回だけ・`TrunkArrivals.claimPreviewOffer`・2026-10-21）
         Thread.sleep(forTimeInterval: 4)
         XCTAssertFalse(stick.exists, "「あとで貼る（手持ちへ）」で閉じたあと、届いた画面がまた出た")
+    }
+
+    /// **届いた画面のまま作り直す**（札 #706・`-JPPreviewTrunkArrived`）: 「作り直す」を押すたびに候補が横に増え、3回で
+    /// 「作り直しは3回まで」に替わる。候補を押すと大きい絵が替わる。出なければ撮らずに抜けるが、出たのに候補が増えない・
+    /// 3回のあとも押せる・44pt 未満なら落とす
+    func testCapturesTrunkArrivedReroll() {
+        let app = launchTrunk(["-JPPreviewTrunkArrived", "YES"])
+        let reroll = app.buttons["trunk.arrived.reroll"].firstMatch
+        guard reroll.waitForExistence(timeout: 30) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        XCTAssertTrue(reroll.label.contains("3"), "「作り直す」に残りの回数が無い: \(reroll.label)")
+        guard reroll.isHittable else { return XCTFail("「作り直す」を押せない") }
+        reroll.tap()
+        let candidates = app.buttons.matching(identifier: "trunk.arrived.candidate")
+        _ = candidates.firstMatch.waitForExistence(timeout: 10)
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertEqual(candidates.count, 2, "1回作り直して、候補が最初と1回目の2つになっていない")
+        shoot(app, "96g-ラベルが届いた（1回作り直した）")
+        for _ in 0..<2 where reroll.exists && reroll.isHittable {
+            reroll.tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertEqual(candidates.count, 4, "3回作り直して、候補が4つになっていない")
+        XCTAssertFalse(app.buttons["trunk.arrived.reroll"].firstMatch.exists, "3回のあとも「作り直す」が出ている")
+        XCTAssertTrue(app.descendants(matching: .any)["trunk.arrived.redoUsedUp"].firstMatch.exists, "使い切った一言が無い")
+        shoot(app, "96h-ラベルが届いた（3回作り直した）")
+        let first = candidates.element(boundBy: 0)
+        XCTAssertGreaterThanOrEqual(first.frame.height, 44, "候補の札が 44pt 未満")
+        first.tap()
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertTrue(first.isSelected, "最初の図柄を押したのに選ばれていない")
+        shoot(app, "96i-ラベルが届いた（最初の図柄に戻した）")
+    }
+
+    /// **好きなデザインで作る**（札 #706・`-JPPreviewTrunkArrived` ＋ `-JPPreviewTrunkCustomReady`）: 作れるようになった投稿では
+    /// 主ボタンが「好きなデザインで作る」。押すと作る画面（形・色・絵）、「このデザインで貼る」で貼って閉じる。
+    /// 出なければ撮らずに抜けるが、出たのに主ボタンが替わらない・タブが無い・44pt 未満・貼って閉じないなら落とす
+    func testCapturesTrunkArrivedCustom() {
+        let app = launchTrunk(["-JPPreviewTrunkArrived", "YES", "-JPPreviewTrunkCustomReady", "YES"])
+        let custom = app.buttons["trunk.arrived.custom"].firstMatch
+        guard custom.waitForExistence(timeout: 30) else { return }
+        Thread.sleep(forTimeInterval: 3)
+        shoot(app, "96j-ラベルが届いた（好きなデザインで作れる）")
+        XCTAssertGreaterThanOrEqual(custom.frame.height, 44)
+        XCTAssertTrue(app.buttons["trunk.arrived.stick"].firstMatch.exists, "「このまま貼る」が無い")
+        XCTAssertFalse(app.buttons["trunk.arrived.reroll"].firstMatch.exists, "作れる投稿に作り直しのボタンも並んでいる")
+        guard custom.isHittable else { return XCTFail("「好きなデザインで作る」を押せない") }
+        custom.tap()
+        let done = app.buttons["trunk.custom.done"].firstMatch
+        guard done.waitForExistence(timeout: 10) else { return XCTFail("好きなデザインで作る画面が開かない") }
+        Thread.sleep(forTimeInterval: 2)
+        shoot(app, "96k-好きなデザインで作る（形）")
+        for tab in ["trunk.custom.tab.shape", "trunk.custom.tab.palette", "trunk.custom.tab.art"] {
+            XCTAssertTrue(app.buttons[tab].firstMatch.exists, "\(tab) が無い")
+            XCTAssertGreaterThanOrEqual(app.buttons[tab].firstMatch.frame.height, 44, "\(tab) が 44pt 未満")
+        }
+        let options = app.buttons.matching(identifier: "trunk.custom.option")
+        XCTAssertEqual(options.count, 10, "形が10個並んでいない")
+        options.element(boundBy: 9).tap()
+        app.buttons["trunk.custom.tab.palette"].firstMatch.tap()
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertEqual(options.count, 12, "色が12個並んでいない")
+        shoot(app, "96l-好きなデザインで作る（色）")
+        app.buttons["trunk.custom.tab.art"].firstMatch.tap()
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertEqual(options.count, 12, "絵が12個並んでいない")
+        shoot(app, "96m-好きなデザインで作る（絵）")
+        XCTAssertGreaterThanOrEqual(done.frame.height, 44)
+        done.tap()
+        let gone = NSPredicate(format: "exists == false")
+        let closed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: gone, object: custom)], timeout: 8)
+        XCTAssertEqual(closed, .completed, "「このデザインで貼る」で届いた画面が閉じない")
     }
 
     /// **ラベルが3枚届いた**（`-JPPreviewTrunkArrived 3`・2026-11-12 判断・1.1.83 の案）: 主ボタンは「3 枚まとめて貼る」1回。
@@ -10028,10 +10079,10 @@ final class ScreenshotTests: JPUITestCase {
         }
     }
 
-    /// **旅のトランク（大きい文字）**: 上と、手持ちのラベルの下のボタン（貼る・作り直す・削除）。開けなければ撮らずに抜ける。
-    /// **出たのにボタンが 44pt 未満・押せなければ落とす**
+    /// **旅のトランク（大きい文字）**: 上と、手持ちのラベルの下のボタン（貼る・好きなデザインで作る・削除）。開けなければ撮らずに抜ける。
+    /// **出たのにボタンが 44pt 未満・押せなければ落とす**（作れる回数のある見本 `-JPPreviewTrunkCustomReady` で3つを出す・#706）
     func testCapturesTrunkLargeText() {
-        let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewPro", "YES"] + Self.largeText)
+        let app = launchTrunk(["-JPPreviewTrunk", "YES", "-JPPreviewPro", "YES", "-JPPreviewTrunkCustomReady", "YES"] + Self.largeText)
         guard openTrunk(app) else { return }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "90x-大きい文字（旅のトランク）")
@@ -10044,7 +10095,7 @@ final class ScreenshotTests: JPUITestCase {
         cell.tap()
         Thread.sleep(forTimeInterval: 1)
         shoot(app, "92x-大きい文字（手持ちのラベル）")
-        for id in ["trunk.pocket.stick", "trunk.pocket.reroll", "trunk.pocket.delete"] {
+        for id in ["trunk.pocket.stick", "trunk.pocket.custom", "trunk.pocket.delete"] {
             let button = app.buttons[id].firstMatch
             XCTAssertTrue(button.exists, "\(id) が無い")
             guard button.exists else { continue }
@@ -10052,7 +10103,7 @@ final class ScreenshotTests: JPUITestCase {
             XCTAssertTrue(button.isHittable, "\(id) を押せない")
         }
         // 3つは縦に積まれる（横並びに戻すと上端がそろって落ちる）
-        let ys = ["trunk.pocket.stick", "trunk.pocket.reroll", "trunk.pocket.delete"].map { app.buttons[$0].firstMatch.frame.minY }
+        let ys = ["trunk.pocket.stick", "trunk.pocket.custom", "trunk.pocket.delete"].map { app.buttons[$0].firstMatch.frame.minY }
         XCTAssertTrue(ys[0] < ys[1] && ys[1] < ys[2], "大きい文字なのに手持ちのボタンが縦に積まれていない（上端 \(ys)）")
     }
 

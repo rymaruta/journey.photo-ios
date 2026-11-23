@@ -128,7 +128,7 @@ final class ScreenStatesTests: XCTestCase {
             ("Features/Messages/DMConversationView.swift", "EmptyState(icon: nil, title: L(\"ブロック中です\""),
             ("Features/Messages/DMConversationView.swift", "EmptyState(icon: nil, title: L(\"メッセージを送れません\""),
             ("Features/Messages/DMConversationView.swift", "EmptyState(icon: nil, title: L(\"この会話は表示できません\""),
-            ("Features/Trunk/TrunkRerollView.swift", "EmptyState(icon: nil, message: L(\"ラベルが見つかりませんでした。"),
+            ("Features/Trunk/TrunkCustomView.swift", "EmptyState(icon: nil, message: L(\"ラベルが見つかりませんでした。"),
             ("Features/Map/NearbyPhotosSheet.swift", "EmptyState(icon: nil, title: L(\"この範囲には、まだ写真がありません\""),
             ("Features/Trips/TripPlanPickSheet.swift", "EmptyState(icon: nil, title: L(\"行きたい場所はまだありません\""),
             ("Features/Profile/BadgeShelfView.swift", "EmptyState(icon: nil, message: L(\"まだメダルはありません。"),

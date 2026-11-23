@@ -342,7 +342,8 @@ struct PaywallView: View {
 /// 2026-10-17: 特別な乗車券（すれちがいの券面を選べる）を足して4つ。
 /// 2026-10-18 判断: 旅のトランクを足して5つ（特別な乗車券の次＝ふだんはいちばん下。トランクから開いたときは上）。
 /// 中身はサーバー（photo-gallery `api-user/src/trunk.ts`）で確かめた: Pro の型6つ（`PRO_MODELS`）・
-/// 作り直しは Pro だけ月3回で繰り越しなし（`REROLLS_PER_MONTH`）・手持ちの上限 無料 30／Pro 150
+/// 好きなデザインで作れるのは Pro が2投稿ごと・無料は3投稿ごと（`CUSTOM_EVERY_PRO`・2026-11-23 札 #706。
+/// Pro の月3回の作り直しはやめ、作り直しは全員がラベル1枚につき3回）・手持ちの上限 無料 30／Pro 150
 /// （`POCKET_LIMIT_FREE`・`POCKET_LIMIT_PRO`）。**硬貨・カプセル・部品は Pro と関係ない（買えない・Pro でも増えない）
 /// ので書かない。** 「必ず」「確定」「捨てる」は言わない（トランクの説明の決まり・テストで見張る）
 ///
@@ -397,20 +398,18 @@ struct ProBenefit: Identifiable, Equatable {
     /// プランの札と主ボタンを最初の画面から押し出さない（`ProPaywallStyle.benefitBodyMaxUnits` をテストで見張る）
     static var trunk: ProBenefit {
         let models = TrunkModel.pro.count
-        let rerolls = trunkRerollsPerMonth
+        let every = trunkCustomEveryPro
         let pro = TrunkState.proLimit
         let free = TrunkState.freeLimit
         return ProBenefit(icon: .trunk,
                           title: L("旅のトランクをもっと", "More from your Travel trunk"),
-                          body: L("特別なトランク \(models) 型、ラベルの図柄の作り直し 月 \(rerolls) 回、手持ち \(pro) 枚（無料は \(free) 枚）",
-                                  "\(models) special trunks, \(rerolls) label redesigns a month, hold \(pro) labels (\(free) free)"))
+                          body: L("特別なトランク \(models) 型、好きなデザインを \(every) 投稿ごとに、手持ち \(pro) 枚（無料は \(free) 枚）",
+                                  "\(models) special trunks, your own label design every \(every) posts, hold \(pro) labels (\(free) free)"))
     }
 
-    /// 作り直しの月の回数（サーバーの `REROLLS_PER_MONTH`。繰り越しなし）。
-    /// 2026-10-18 判断（見直し）: 同じ数がトランクの作り直しの画面（`TrunkRerollView` の「毎月 3 回」）と
-    /// `TrunkText` の断り（「来月また3回」）にも直に書かれている。トランクの画面は別の担当が作業中なので、
-    /// いまは触らずテストで一致を見張る（`PaywallTrunkBenefitTests`）。**数の元を1つにするのは、トランク担当と合わせて後で行う**
-    static let trunkRerollsPerMonth = 3
+    /// Pro が好きなデザインで作れる間の投稿の数（サーバーの `CUSTOM_EVERY_PRO`・無料は 3）。
+    /// 2026-11-23（札 #706・owner 承認）: Pro の月3回の作り直し（`REROLLS_PER_MONTH`）をやめ、これに替えた
+    static let trunkCustomEveryPro = 2
 
     /// 開いた口に合わせた並び。口に合う利点をいちばん上に、残りはふだんの順のまま（2026-10-18 判断）
     static func ordered(for origin: PaywallOrigin) -> [ProBenefit] {

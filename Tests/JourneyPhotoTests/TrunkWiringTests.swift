@@ -166,8 +166,8 @@ final class TrunkWiringTests: XCTestCase {
     func testTapTargets() throws {
         let parts = try source("Features/Trunk/TrunkParts.swift")
         XCTAssertTrue(parts.contains(".frame(minHeight: 52)"), "札の行が 52 でない")
-        // 作り直す・届いた画面の閉じるは `SheetCloseButton(onContent: true)`（当たり 44pt・2026-11-13 #187）
-        for path in ["Features/Trunk/TrunkRerollView.swift", "Features/Trunk/LabelArrivedView.swift"] {
+        // 好きなデザインで作る・届いた画面の閉じるは `SheetCloseButton(onContent: true)`（当たり 44pt・2026-11-13 #187）
+        for path in ["Features/Trunk/TrunkCustomView.swift", "Features/Trunk/LabelArrivedView.swift"] {
             XCTAssertTrue(try source(path).contains("SheetCloseButton(onContent: true)"), "\(path) の閉じるがシートの「閉じる」でない")
         }
         XCTAssertTrue(try source("Features/Common/SheetCloseButton.swift").contains("minHeight: WebTheme.minTapTarget"),
@@ -264,7 +264,7 @@ final class TrunkWiringTests: XCTestCase {
     /// 再現しない。入れ物の目印の直前には必ず `.accessibilityElement(children: .contain)` を置く
     func testContainerIdentifiersDoNotOverrideChildren() throws {
         let containers = ["trunk.arrived", "trunk.models.screen", "trunk.proModels.screen", "trunk.pocket.empty",
-                          "trunk.reroll", "trunk.loading", "trunk.failed", "trunk.offline", "trunk.empty", "trunk.screen",
+                          "trunk.custom", "trunk.loading", "trunk.failed", "trunk.offline", "trunk.empty", "trunk.screen",
                           // 次の版（2026-10-17）
                           "trunk.stick", "trunk.gacha", "trunk.gachaOpen", "trunk.odds", "trunk.parts", "trunk.equip",
                           // ふたを開ける（2026-10-18）

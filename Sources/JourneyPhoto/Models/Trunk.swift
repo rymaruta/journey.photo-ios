@@ -6,7 +6,12 @@ import Foundation
 // 応答の形は `view()`＋`posts`:
 //
 //     { model, effectiveModel, pocket[], stuck[], limit, isPro,
-//       rerolls{left, month}, pendingReroll?{labelId, seeds[], at}, posts, receiveLabels }
+//       rerolls{left, month}, pendingReroll?{labelId, seeds[], at}, posts, receiveLabels,
+//       custom?{n, t, every, rerolls} }
+//
+// 2026-11-23（札 #706・owner 承認）: 作り直しは全員・ラベルごとに3回（ラベルの `rr`・候補 `cs`）。
+// Pro の月3回（`rerolls`・`pendingReroll`）はやめた——古いサーバーと古いアプリのための欄で、画面では使わない。
+// 好きなデザインで作る（ラベルの `cu`・状態の `custom`）。**`custom` の欄が無いサーバーでは、どちらの口も出さない**
 //
 // **どの項目も包みで読み、欠けても型が違っても投げない**（`UserProfile` の決まり）。
 // 古いサーバー（口が無い）では画面が「読み込めませんでした」になるだけで、ほかの画面は壊れない。
@@ -51,10 +56,20 @@ struct TrunkLabel: Decodable, Equatable, Identifiable, Hashable {
     /// おまかせの置き場の番号（`TrunkSlots.slots` の番号・置き場 `pos` の無い貼ったラベルだけ・2026-10-19）。
     /// はがすときに、ずれるラベルへサーバーが同じ1回で書く（`TrunkPlacement.slotsBeforeUnstick`）。無ければ並びの何番目かで置く
     let slot: Int?
+    /// 作り直した回数（0〜`TrunkLabel.rerollMax`・サーバーの `rr`・#706）。はがしても残る
+    let rerolls: Int
+    /// 作り直しの候補の種（先頭は最初の1枚・サーバーの `cs`・#706）。貼ったら消える
+    let candidates: [Int]
+    /// 好きなデザインで作った形・色・絵（サーバーの `cu`・#706）。無ければ種から決める
+    let custom: TrunkLabelCustom?
+
+    /// ラベル1枚の作り直しの上限（サーバーの `REROLLS_PER_LABEL`）
+    static let rerollMax = 3
 
     init(id: String, photoId: String, kind: Kind, place: Place, season: Season? = nil,
          timeslot: Timeslot? = nil, milestone: Milestone? = nil, seed: Int, at: String, foil: Bool = false,
-         pos: TrunkPos? = nil, slot: Int? = nil) {
+         pos: TrunkPos? = nil, slot: Int? = nil, rerolls: Int = 0, candidates: [Int] = [],
+         custom: TrunkLabelCustom? = nil) {
         self.id = id
         self.photoId = photoId
         self.kind = kind
@@ -67,28 +82,51 @@ struct TrunkLabel: Decodable, Equatable, Identifiable, Hashable {
         self.foil = foil
         self.pos = pos
         self.slot = pos == nil ? slot : nil
+        self.rerolls = min(Self.rerollMax, max(0, rerolls))
+        self.candidates = candidates
+        self.custom = custom
+    }
+
+    /// 一部だけ替えたもの（ほかの欄はそのまま引き継ぐ）
+    private func with(seed: Int? = nil, pos: TrunkPos?? = nil, slot: Int?? = nil, rerolls: Int? = nil,
+                      candidates: [Int]? = nil, custom: TrunkLabelCustom?? = nil) -> TrunkLabel {
+        TrunkLabel(id: id, photoId: photoId, kind: kind, place: place, season: season, timeslot: timeslot,
+                   milestone: milestone, seed: seed ?? self.seed, at: at, foil: foil,
+                   pos: pos == nil ? self.pos : pos!, slot: slot == nil ? self.slot : slot!,
+                   rerolls: rerolls ?? self.rerolls, candidates: candidates ?? self.candidates,
+                   custom: custom == nil ? self.custom : custom!)
     }
 
     /// 同じラベルで種だけ替えたもの（作り直しの候補を描く）
-    func withSeed(_ seed: Int) -> TrunkLabel {
-        TrunkLabel(id: id, photoId: photoId, kind: kind, place: place, season: season, timeslot: timeslot,
-                   milestone: milestone, seed: seed, at: at, foil: foil, pos: pos, slot: slot)
-    }
+    func withSeed(_ seed: Int) -> TrunkLabel { with(seed: seed) }
 
     /// 同じラベルで置き場だけ替えたもの（nil ならおまかせの置き場）。**おまかせの置き場の番号は消す**（サーバーと同じ）
-    func withPos(_ pos: TrunkPos?) -> TrunkLabel {
-        TrunkLabel(id: id, photoId: photoId, kind: kind, place: place, season: season, timeslot: timeslot,
-                   milestone: milestone, seed: seed, at: at, foil: foil, pos: pos)
-    }
+    func withPos(_ pos: TrunkPos?) -> TrunkLabel { with(pos: .some(pos), slot: .some(nil)) }
 
     /// 置き場なしで、おまかせの置き場の番号だけ替えたもの（nil なら並びの何番目かで置く）
-    func withSlot(_ slot: Int?) -> TrunkLabel {
-        TrunkLabel(id: id, photoId: photoId, kind: kind, place: place, season: season, timeslot: timeslot,
-                   milestone: milestone, seed: seed, at: at, foil: foil, pos: nil, slot: slot)
+    func withSlot(_ slot: Int?) -> TrunkLabel { with(pos: .some(nil), slot: .some(slot)) }
+
+    /// 作り直しを1回足したもの（サーバーの `rerollMutation` と同じ: 候補の先頭に最初の1枚を置き、新しい種を選んだ状態）
+    func withReroll(seed newSeed: Int) -> TrunkLabel {
+        let list = candidates.isEmpty ? [seed] : candidates
+        return with(seed: newSeed, rerolls: rerolls + 1, candidates: Array((list + [newSeed]).prefix(Self.rerollMax + 1)))
     }
+
+    /// 貼るとき（候補は消す・回数は残す）
+    func droppingCandidates() -> TrunkLabel { with(candidates: []) }
+
+    /// 好きなデザインを付けたもの
+    func withCustom(_ custom: TrunkLabelCustom?) -> TrunkLabel { with(custom: .some(custom)) }
+
+    /// 選べる候補（作り直していなければ今の種だけ）
+    var choices: [Int] { candidates.isEmpty ? [seed] : candidates }
+
+    /// あと何回作り直せるか
+    var rerollsLeft: Int { max(0, Self.rerollMax - rerolls) }
 
     private enum CodingKeys: String, CodingKey {
         case id, photoId, kind, place, season, timeslot, milestone, seed, at, foil, pos, slot
+        case rr, cs, cu
     }
     private enum PlaceKeys: String, CodingKey { case name, latin, country }
 
@@ -126,6 +164,11 @@ struct TrunkLabel: Decodable, Equatable, Identifiable, Hashable {
         // 番号は置き場の無いラベルだけ・範囲の内だけ読む（違えば並びの何番目かで置く）
         let slotValue = LenientInt.read(c, .slot)
         slot = pos == nil ? slotValue.flatMap { (0..<TrunkSlots.capacity).contains($0) ? $0 : nil } : nil
+        // 作り直し・好きなデザイン（#706）。**包みで読み、範囲の外は無いものとする**（古いサーバーは返さない）
+        rerolls = min(Self.rerollMax, max(0, LenientInt.read(c, .rr) ?? 0))
+        let rawCandidates = ((try? c.decodeIfPresent([Lenient<Int>].self, forKey: .cs)) ?? nil)?.compactMap(\.value) ?? []
+        candidates = rawCandidates.count <= Self.rerollMax + 1 && rawCandidates.allSatisfy({ $0 >= 0 }) ? rawCandidates : []
+        custom = (try? c.decodeIfPresent(Lenient<TrunkLabelCustom>.self, forKey: .cu))??.value
     }
 
     /// 配った日（日本時間の暦ではなく、`at` の頭の年月日をそのまま読む）。読めなければ nil
@@ -134,6 +177,69 @@ struct TrunkLabel: Decodable, Equatable, Identifiable, Hashable {
         guard parts.count == 3, parts[0] > 1900, (1...12).contains(parts[1]), (1...31).contains(parts[2]) else { return nil }
         return (parts[0], parts[1], parts[2])
     }
+}
+
+/// 好きなデザインの番号（サーバーの `cu`・#706）。形・色・絵は `TrunkLabelDesign.customShapes`・`customPalettes`・
+/// `customArts` の並びの番号。**範囲の外は読まない**（ふつうの図柄で描く）
+struct TrunkLabelCustom: Codable, Equatable, Hashable {
+    let shape: Int
+    let palette: Int
+    let art: Int
+
+    init(shape: Int, palette: Int, art: Int) {
+        self.shape = shape
+        self.palette = palette
+        self.art = art
+    }
+
+    /// 番号がどれも並びの中か
+    var isValid: Bool {
+        (0..<TrunkLabelDesign.customShapes.count).contains(shape)
+            && (0..<TrunkLabelDesign.customPalettes.count).contains(palette)
+            && (0..<TrunkLabelDesign.customArts.count).contains(art)
+    }
+
+    private enum CodingKeys: String, CodingKey { case shape, palette, art }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        guard let shape = LenientInt.read(c, .shape), let palette = LenientInt.read(c, .palette),
+              let art = LenientInt.read(c, .art) else {
+            throw DecodingError.dataCorruptedError(forKey: .shape, in: c, debugDescription: "好きなデザインの番号が読めない")
+        }
+        self.init(shape: shape, palette: palette, art: art)
+        guard isValid else {
+            throw DecodingError.dataCorruptedError(forKey: .shape, in: c, debugDescription: "好きなデザインの番号が範囲の外")
+        }
+    }
+}
+
+/// 好きなデザインで作るまでの進み（サーバーの `custom`・#706）
+struct TrunkCustomProgress: Equatable {
+    /// 進み（0〜`every`−1）
+    let posts: Int
+    /// 使える回数（0〜3）
+    let tickets: Int
+    /// 何投稿ごとか（無料 3・Pro 2）
+    let every: Int
+    /// ラベル1枚の作り直しの上限
+    let rerollsPerLabel: Int
+
+    init(posts: Int, tickets: Int, every: Int, rerollsPerLabel: Int = TrunkLabel.rerollMax) {
+        self.every = max(1, every)
+        self.posts = min(max(0, posts), self.every - 1)
+        self.tickets = min(max(0, tickets), Self.ticketsMax)
+        self.rerollsPerLabel = max(0, rerollsPerLabel)
+    }
+
+    /// 持っておける回数の上限（サーバーの `CUSTOM_TICKETS_MAX`）
+    static let ticketsMax = 3
+
+    /// あと何回の投稿で作れるか（1 以上）
+    var postsLeft: Int { max(1, every - posts) }
+
+    /// この投稿で作れるようになった（進みが 0 に戻って、使える回数がある）
+    var justEarned: Bool { posts == 0 && tickets > 0 }
 }
 
 /// 貼ったラベルの置き場（サーバーの `pos`）。x・y はトランクの正面（胴）の 0〜1 で、ラベルの真ん中。
@@ -372,6 +478,9 @@ struct TrunkState: Decodable, Equatable {
     let ticket: TrunkTicket?
     /// 手荷物タグの枠ごとの選び（2026-11-08・サーバーが、はがした枠を直して返す）。無ければ全部おまかせ
     let tagPicks: [TrunkTagPick]
+    /// 好きなデザインで作るまでの進み（#706）。**欄の無い応答（古いサーバー）は nil**——そのときは作り直しも
+    /// 好きなデザインも出さない（古いサーバーは本文の回数を読まず、Pro の月の数え方のまま）
+    let custom: TrunkCustomProgress?
     /// サーバーがタグの選びに対応しているか。**応答に `tagPicks` の欄があるか**で決める（対応したサーバーはいつも返す）。
     /// 対応していない間は、選ぶ口を出さず、PUT も送らない（旧サーバーが黙って捨てる設定を「保存した」と言わない）
     let supportsTagPicks: Bool
@@ -380,7 +489,8 @@ struct TrunkState: Decodable, Equatable {
          limit: Int, isPro: Bool, rerollsLeft: Int, pendingReroll: TrunkPendingReroll? = nil,
          posts: Int?, receiveLabels: Bool, coins: Int = 0, parts: [String] = [], fragments: Int = 0,
          equipped: TrunkEquipped = .none, showTrunk: Bool = true, ticket: TrunkTicket? = nil,
-         supportsSharing: Bool = true, tagPicks: [TrunkTagPick] = [], supportsTagPicks: Bool = true) {
+         supportsSharing: Bool = true, tagPicks: [TrunkTagPick] = [], supportsTagPicks: Bool = true,
+         custom: TrunkCustomProgress? = nil) {
         self.model = model
         self.effectiveModel = effectiveModel ?? model
         self.pocket = pocket
@@ -400,6 +510,7 @@ struct TrunkState: Decodable, Equatable {
         self.supportsSharing = supportsSharing
         self.tagPicks = TrunkTagPick.normalized(tagPicks)
         self.supportsTagPicks = supportsTagPicks
+        self.custom = custom
     }
 
     /// 同じ状態で一部だけ替えたもの（端末の中の移り変わり・ガチャの結果を足す）
@@ -408,7 +519,7 @@ struct TrunkState: Decodable, Equatable {
               pendingReroll: TrunkPendingReroll?? = nil, posts: Int?? = nil, receiveLabels: Bool? = nil,
               coins: Int? = nil, parts: [String]? = nil, fragments: Int? = nil,
               equipped: TrunkEquipped? = nil, showTrunk: Bool? = nil, ticket: TrunkTicket?? = nil,
-              tagPicks: [TrunkTagPick]? = nil) -> TrunkState {
+              tagPicks: [TrunkTagPick]? = nil, custom: TrunkCustomProgress?? = nil) -> TrunkState {
         TrunkState(model: model ?? self.model, effectiveModel: effectiveModel ?? self.effectiveModel,
                    pocket: pocket ?? self.pocket, stuck: stuck ?? self.stuck, limit: limit, isPro: isPro,
                    rerollsLeft: rerollsLeft ?? self.rerollsLeft,
@@ -417,7 +528,16 @@ struct TrunkState: Decodable, Equatable {
                    coins: coins ?? self.coins, parts: parts ?? self.parts, fragments: fragments ?? self.fragments,
                    equipped: equipped ?? self.equipped, showTrunk: showTrunk ?? self.showTrunk,
                    ticket: ticket == nil ? self.ticket : ticket!, supportsSharing: supportsSharing,
-                   tagPicks: tagPicks ?? self.tagPicks, supportsTagPicks: supportsTagPicks)
+                   tagPicks: tagPicks ?? self.tagPicks, supportsTagPicks: supportsTagPicks,
+                   custom: custom == nil ? self.custom : custom!)
+    }
+
+    /// サーバーがラベルごとの作り直しと好きなデザインに対応しているか（`custom` の欄があるか）
+    var supportsLabelReroll: Bool { custom != nil }
+
+    /// 1枚のラベルを替えたもの（手持ち・貼った方のどちらでも）
+    func replacing(_ id: String, _ change: (TrunkLabel) -> TrunkLabel) -> TrunkState {
+        copy(pocket: pocket.map { $0.id == id ? change($0) : $0 }, stuck: stuck.map { $0.id == id ? change($0) : $0 })
     }
 
     /// 持っている部品（台帳の順ではなく、届いた新しい順）
@@ -429,9 +549,10 @@ struct TrunkState: Decodable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case model, effectiveModel, pocket, stuck, limit, isPro, rerolls, pendingReroll, posts, receiveLabels
-        case coins, parts, fragments, equipped, showTrunk, ticket, tagPicks
+        case coins, parts, fragments, equipped, showTrunk, ticket, tagPicks, custom
     }
     private enum RerollKeys: String, CodingKey { case left, month }
+    private enum CustomKeys: String, CodingKey { case n, t, every, rerolls }
     private enum PendingKeys: String, CodingKey { case labelId, seeds }
 
     init(from decoder: Decoder) throws {
@@ -489,6 +610,14 @@ struct TrunkState: Decodable, Equatable {
         let picks = (try? c.decodeIfPresent([Lenient<String>].self, forKey: .tagPicks)) ?? nil
         supportsTagPicks = picks != nil
         tagPicks = TrunkTagPick.list(wire: picks?.map { $0.value ?? "" } ?? [])
+        // 好きなデザインで作るまでの進み（#706）。**欄が無い・形が違えば nil**（作り直しの口を出さない）
+        if let k = try? c.nestedContainer(keyedBy: CustomKeys.self, forKey: .custom) {
+            custom = TrunkCustomProgress(posts: LenientInt.read(k, .n) ?? 0, tickets: LenientInt.read(k, .t) ?? 0,
+                                         every: LenientInt.read(k, .every) ?? (pro ? 2 : 3),
+                                         rerollsPerLabel: LenientInt.read(k, .rerolls) ?? TrunkLabel.rerollMax)
+        } else {
+            custom = nil
+        }
     }
 
     /// ほかの人に見えているか（サーバーが対応していて、見せる設定がオン）
