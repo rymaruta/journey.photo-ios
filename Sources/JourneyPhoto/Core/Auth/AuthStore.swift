@@ -80,6 +80,8 @@ final class AuthStore: ObservableObject {
     var responseCache: URLCache = .shared
     /// ログアウトした時と道を残す置き場（`ExitTrail.keepSignOut`・札 #617。試験で差し替える）
     var trailDefaults: UserDefaults = .standard
+    /// ログイン画面の Apple・Google のボタンの前回の答え（`ExternalSignInMemory`。ログアウト・退会で消す。試験で差し替える）
+    var externalSignInMemory = ExternalSignInMemory()
 
     /// UI テストの見本の通信（`-JPPreviewLocalBackend`）のときだけ見本の認証（`PreviewBackend.authGateway`・Debug のみ）
     init(gateway: AuthStoreGateway = PreviewBackend.authGateway ?? .live) {
@@ -463,6 +465,8 @@ final class AuthStore: ObservableObject {
         // Google でログインした人の、部品（GoogleSignIn-iOS）の中のログインも外す（札 #715・2026-11-23 確かめ役の3回目）。
         // 外さないと、次に「Google でログイン」を押したとき、前の人の Google アカウントが選ばれたまま出る
         gateway.forgetProviderSessions()
+        // ログイン画面の Apple・Google のボタンの前回の答えも消す（2026-11-23 判断。次の人は「覚えが無い」から始める）
+        externalSignInMemory.forget()
         state = .signedOut
         isAdmin = false
         errorMessage = nil

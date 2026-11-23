@@ -118,7 +118,7 @@ final class UXAuditFixesATests: XCTestCase {
     func testUploadPlaceFieldHasTheSameBoxAsTitle() async throws {
         let parts = try source("Core/Design/FormParts.swift")
         let field = slice(parts, from: "struct JPField<Content: View>: View {", to: "extension View {")
-        XCTAssertTrue(field.contains(".jpFieldBox(multiline: multiline)"), "タイトル・説明の枠が共通の部品を通らない")
+        XCTAssertTrue(field.contains(".jpFieldBox(multiline: multiline"), "タイトル・説明の枠が共通の部品を通らない")
         let place = try source("Features/Upload/PlaceSearchField.swift")
         let body = slice(place, from: "private var placeField: some View", to: "/// **打つたびに投げない。**")
         XCTAssertTrue(body.contains("if boxed"))

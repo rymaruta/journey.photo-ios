@@ -4614,6 +4614,87 @@ final class ScreenshotTests: JPUITestCase {
         XCTAssertEqual(app.alerts.count, 0, "2回目に確かめの窓を挟んだ")
     }
 
+    /// **ログインと新規登録の画面の置き方**（2026-11-23・模型 NL2x の直しと owner「スクロールしないといけないのが嫌だ」・`SignInLayout`）。
+    /// 未ログインで Apple・Google のボタンを「使える」として描き（`-JPPreviewExternalSignIn YES`・通信しない）、いいねから
+    /// 登録の側を開いて撮る。標準の字と大きい字（アクセシビリティ XL）で。値で見ること:
+    /// - 標準の字: キーボードの出ていない1画面に、送らずに全部（欄、主ボタン、Apple と Google、下の切り替え）が入る
+    /// - 大きい字: 主ボタンが1画面に入る
+    /// - 並び（模型 NL2x の案）: Apple がいちばん上、Google と同じ幅と高さ、その下に欄、主ボタン、切り替えの一行
+    /// - キーボードが出たとき（標準の字）: 打っている欄と主ボタンがキーボードの上に見える
+    /// CI に 375×667 の機種は無いので、その寸法は単体テスト（`SignInLayoutTests`）の見積もりで見る。寸法はログに出す（`[signin-layout]`）
+    func testCapturesSignInLayout() {
+        for (extra, tag) in [([String](), ""), (Self.largeText, "・大きい文字")] {
+            let app = launchSignedOutHome(["-JPPreviewExternalSignIn", "YES"] + extra)
+            guard app.tabBars.firstMatch.waitForExistence(timeout: 30) else { return unreached(app, "タブ\(tag)") }
+            let like = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'いいね '")).firstMatch
+            guard like.waitForExistence(timeout: 30), like.isHittable else { return unreached(app, "ホームのいいね\(tag)") }
+            like.tap()
+            let form = app.descendants(matching: .any)["signin.form"].firstMatch
+            guard form.waitForExistence(timeout: 10) else { return unreached(app, "ログイン画面\(tag)") }
+
+            for signUp in [true, false] {
+                let name = (signUp ? "70-ログインの画面（登録の側・Apple と Google" : "70b-ログインの画面（ログインの側・Apple と Google") + tag + "）"
+                assertSignInSide(app, signUp: signUp, name)
+                let submit = app.buttons["signin.submit"].firstMatch
+                let apple = app.buttons["signin.apple"].firstMatch
+                let google = app.buttons["signin.google"].firstMatch
+                let toggle = app.buttons["signin.switch"].firstMatch
+                XCTAssertTrue(apple.waitForExistence(timeout: 5), "Apple のボタンが無い（\(name)）")
+                XCTAssertTrue(google.waitForExistence(timeout: 5), "Google のボタンが無い（\(name)）")
+                Thread.sleep(forTimeInterval: 1)
+                let window = app.windows.firstMatch.frame
+                let email = app.textFields["signin.email"].firstMatch
+                let line = "[signin-layout] \(name) window=\(window) email=\(email.frame) submit=\(submit.frame) apple=\(apple.frame) google=\(google.frame) toggle=\(toggle.frame)"
+                print(line)
+                XCTContext.runActivity(named: line) { _ in }
+                shoot(app, name)
+                // キーボードの出ていない状態で、主ボタンが送らずに見える
+                XCTAssertTrue(submit.isHittable, "主ボタンが1画面に入らない（\(name)・\(submit.frame)）")
+                XCTAssertLessThanOrEqual(submit.frame.maxY, window.maxY, "主ボタンが下端より下（\(name)）")
+                if tag.isEmpty {
+                    // 標準の字では全部が送らずに入る（owner「スクロールしないといけないのが嫌だ」）
+                    for (element, what) in [(email, "メールの欄"), (apple, "Apple"), (google, "Google"), (toggle, "下の切り替え")] {
+                        XCTAssertTrue(element.isHittable, "\(what)が1画面に入らない（\(name)・\(element.frame)）")
+                        XCTAssertLessThanOrEqual(element.frame.maxY, window.maxY, "\(what)が下端より下（\(name)）")
+                    }
+                }
+                // 並び: Apple がいちばん上 → Google → 欄 → 主ボタン → 切り替え。Apple と Google は同じ幅と高さ
+                XCTAssertLessThanOrEqual(apple.frame.maxY, google.frame.minY, "Apple が Google より上にない（\(name)）")
+                XCTAssertLessThan(google.frame.maxY, email.frame.minY, "Google が欄より上にない（\(name)）")
+                XCTAssertLessThan(email.frame.maxY, submit.frame.minY, "欄が主ボタンより上にない（\(name)）")
+                XCTAssertLessThanOrEqual(submit.frame.maxY, toggle.frame.minY + 1, "切り替えが主ボタンの下にない（\(name)）")
+                XCTAssertEqual(google.frame.height, apple.frame.height, accuracy: 1, "Google と Apple の高さが違う（\(name)）")
+                XCTAssertEqual(google.frame.width, apple.frame.width, accuracy: 1, "Google と Apple の幅が違う（\(name)）")
+                XCTAssertGreaterThanOrEqual(apple.frame.height, 44, "Apple のボタンが 44pt 未満（\(name)）")
+                XCTAssertGreaterThanOrEqual(toggle.frame.height, 44, "切り替えの一行の当たりが 44pt 未満（\(name)）")
+                if !signUp && tag.isEmpty {
+                    // キーボードが出たとき: 打っている欄と主ボタンがキーボードの上に見える
+                    let password = app.secureTextFields["signin.password"].firstMatch
+                    password.tap()
+                    let keyboard = app.keyboards.firstMatch
+                    if keyboard.waitForExistence(timeout: 5) {
+                        Thread.sleep(forTimeInterval: 1)
+                        let top = keyboard.frame.minY
+                        print("[signin-layout] キーボード keyboard=\(keyboard.frame) password=\(password.frame) submit=\(submit.frame)")
+                        shoot(app, "70c-ログインの画面（キーボードが出たとき）")
+                        XCTAssertLessThanOrEqual(password.frame.maxY, top + 1, "打っている欄がキーボードに隠れる")
+                        XCTAssertLessThanOrEqual(submit.frame.maxY, top + 1, "主ボタンがキーボードに隠れる")
+                        XCTAssertGreaterThanOrEqual(password.frame.minY, window.minY, "打っている欄が画面の上へ出た")
+                    }
+                }
+                if signUp {
+                    // 見えていなければ（大きい字）送って押す
+                    var pushes = 0
+                    while toggle.exists && !toggle.isHittable && pushes < 3 { app.swipeUp(velocity: .slow); pushes += 1 }
+                    guard toggle.isHittable else { return unreached(app, "ログインに戻る\(tag)") }
+                    // シートを下へ払うと閉じるので、戻すための払いはしない（ログインの側は短いので頭へ戻る）
+                    toggle.tap()
+                }
+            }
+            app.terminate()
+        }
+    }
+
     /// 並びを指で `dy` だけ動かす（正なら下へ引く）。1回で動かすのは画面の 40% まで
     private func dragFeed(_ app: XCUIApplication, by dy: CGFloat) {
         let window = app.windows.firstMatch

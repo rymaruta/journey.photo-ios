@@ -890,6 +890,42 @@ final class CriticalFlowTests: JPUITestCase {
         XCTAssertTrue(form.waitForNonExistence(timeout: 10), "ログインしたのにログイン画面が残っている")
     }
 
+    /// **ログインに失敗した文は、欄のすぐ上に見える所で出る**（2026-11-23・模型 NL2x「失敗の文が下端より下に押し出されて見えない」）。
+    /// 違うパスワードでログイン → 失敗の文（`signin.error`）が出る・キーボードを下ろした1画面で送らずに見える・メールの欄のすぐ上・
+    /// 主ボタンも1画面に残る。
+    /// 標準の字と大きい字（アクセシビリティ XL）の両方で見る。375×667 の寸法は単体テスト（`SignInLayoutTests`）の見積もりで見る
+    func testSignInFailureIsVisibleAboveFields() {
+        for (extra, tag) in [([String](), ""), (["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"], "（大きい字）")] {
+            let app = launch(extra)
+            _ = signOutToForm(app)
+
+            let email = app.textFields["signin.email"].firstMatch
+            XCTAssertTrue(email.waitForExistence(timeout: 5), "メールアドレスの欄が無い\(tag)")
+            enter(Self.previewEmail, into: email, "メールアドレスの欄")
+            let password = app.secureTextFields["signin.password"].firstMatch
+            XCTAssertTrue(password.waitForExistence(timeout: 5), "パスワードの欄が無い\(tag)")
+            enter("Wrong-0000", into: password, "パスワードの欄")
+            let submit = app.buttons["signin.submit"].firstMatch
+            XCTAssertTrue(wait(submit, "enabled == true", timeout: 5), "入れてもログインが押せない\(tag)")
+            submit.tap()
+
+            let error = app.descendants(matching: .any)["signin.error"].firstMatch
+            XCTAssertTrue(error.waitForExistence(timeout: 15), "違うパスワードでも失敗の文が出ない\(tag)")
+            // キーボードを下ろして（下ろした状態の1画面で見えるか）
+            if app.keyboards.firstMatch.exists { app.descendants(matching: .any)["signin.form"].firstMatch.swipeDown(velocity: .slow) }
+            Thread.sleep(forTimeInterval: 1)
+            let window = app.windows.firstMatch.frame
+            print("[signin-error]\(tag) window=\(window) error=\(error.frame) email=\(email.frame) submit=\(submit.frame) password=\(password.frame)")
+            XCTAssertTrue(error.isHittable, "失敗の文が画面の外にある\(tag)（\(error.frame)）")
+            XCTAssertLessThanOrEqual(error.frame.maxY, window.maxY, "失敗の文が下端より下\(tag)")
+            XCTAssertLessThanOrEqual(error.frame.maxY, email.frame.minY + 1, "失敗の文が欄のすぐ上にない\(tag)")
+            XCTAssertLessThan(email.frame.minY - error.frame.maxY, 40, "失敗の文が欄から離れている\(tag)")
+            XCTAssertTrue(submit.isHittable, "失敗の文が出て主ボタンが画面の外へ押し出された\(tag)")
+            XCTAssertLessThanOrEqual(submit.frame.maxY, window.maxY, "主ボタンが下端より下\(tag)")
+            app.terminate()
+        }
+    }
+
     // MARK: - 4b. 探す: 最近の検索
 
     /// **前に探した言葉が欄の下に残り、押すとその言葉で探せる。1つずつ消せる**（2026-11-14 判断・`RecentSearchesStore`）
@@ -1250,8 +1286,9 @@ final class CriticalFlowTests: JPUITestCase {
         shot.name = "A4-いいねから登録の画面"
         shot.lifetime = .keepAlways
         add(shot)
-        let back = app.buttons["ログインに戻る"].firstMatch
-        XCTAssertTrue(back.waitForExistence(timeout: 5), "登録の画面に「ログインに戻る」が無い")
+        // 2026-11-23: 枠つきの「ログインに戻る」をやめ、切り替えの一行（「アカウントをお持ちの方は ログイン」）に
+        let back = app.buttons["signin.switch"].firstMatch
+        XCTAssertTrue(back.waitForExistence(timeout: 5), "登録の画面に切り替えの一行（ログイン）が無い")
         back.tap()
         let email = app.textFields["signin.email"].firstMatch
         XCTAssertTrue(email.waitForExistence(timeout: 5), "メールアドレスの欄が無い")
