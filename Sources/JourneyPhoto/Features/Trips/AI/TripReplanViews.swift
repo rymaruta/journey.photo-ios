@@ -16,8 +16,6 @@ struct TripReplanBar: View {
     let noticeOpensPro: Bool
     /// 置き換えたあと、元に戻せるか（画面を開いている間）
     let canUndo: Bool
-    /// チップの下に、日程をサーバーへ送ることの知らせを出すか（`AskServerNotice.shows`・2026-11-22 判断）
-    var serverNotice: Bool = false
     let run: (_ label: String, _ request: String, _ typed: Bool) -> Void
     let undo: () -> Void
     let openPro: () -> Void
@@ -62,10 +60,6 @@ struct TripReplanBar: View {
             .opacity(working != nil ? TripStyle.disabledOpacity : 1)
 
             if writing { writeField }
-
-            // 2026-11-22 判断: チップ（「雨なら」など）も「書いて頼む」も日程をサーバーへ送るので、開いているかに関係なく
-            // チップの下に1回だけ出す（送る前に見える所）
-            if serverNotice { AskServerNoticeText(id: "tripReplan.serverNotice") }
 
             if let working {
                 HStack(spacing: JPSpace.xs) {

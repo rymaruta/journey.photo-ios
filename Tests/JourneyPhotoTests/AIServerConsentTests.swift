@@ -176,7 +176,7 @@ final class AIServerConsentTests: XCTestCase {
         let a = try XCTUnwrap(e.thread.first?.answer)
         XCTAssertEqual(a.engine, .table)
         XCTAssertEqual(a.note, AskText.consentDeclinedLine)
-        XCTAssertFalse(a.sentToServer)
+        XCTAssertNotEqual(a.engine, .server)
         await e.followUp("おすすめの観光スポット教えて", backend: b)
         XCTAssertEqual(calls.consents, 1, "同じ会話で「やめる」のあとにまた聞いた")
         XCTAssertEqual(calls.serverAsks, 0)

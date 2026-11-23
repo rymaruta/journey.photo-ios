@@ -62,7 +62,7 @@ final class TripAIRunner: ObservableObject {
     private(set) var allDaysSeconds: Double?
     private var startedAt = Date()
     let onDevice: Bool
-    /// 打った文をサーバーへ送ったか（組めなかった回も含む）。AI に頼むの会話の知らせに使う（`AskServerNotice`）
+    /// 打った文をサーバーへ送ったか（組めなかった回も含む）。同意の試験が「送っていない」を確かめるのに使う（`AIServerConsentTests`）
     private(set) var askedServer = false
 
     /// 試験だけが差し替える AI の答え（頼み・候補・日数・今の日程 → 答え）。nil ならサーバーか端末の AI
@@ -263,7 +263,7 @@ final class TripAIRunner: ObservableObject {
         } else {
             // 同意を待つ間に画面を閉じた（取り消した）なら送らない（2026-11-22 確かめ役の指摘）
             if Task.isCancelled { return nil }
-            // 2026-11-22 判断: 打った文をサーバーへ送る（AI に頼むの会話で、送ったことの知らせを残す・`AskAnswer.serverSent`）
+            // 打った文をサーバーへ送る（送ったことを覚える・`askedServer`）
             askedServer = true
             do {
                 let (made, used) = try await service.plan(request: request, days: fixedDays, candidates: candidates, current: current)

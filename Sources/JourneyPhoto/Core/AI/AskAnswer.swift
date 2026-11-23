@@ -78,19 +78,12 @@ struct AskAnswer: Equatable, Codable {
     var unreadable: Bool? = nil
     /// 旅行プランの答え（流れ）。旅行プランの AI が作って保存したもの
     var plan: AskPlanAnswer? = nil
-    /// 旅行プランの AI がサーバーへ送った回（組めずに AI なしの答えになっても、送ったことは残す・2026-11-22 判断）。前の版の控えには無い
-    var serverSent: Bool? = nil
-
-    /// 打った文をサーバーへ送った答えか（`AskServerNotice` が見る）
-    var sentToServer: Bool { engine == .server || serverSent == true }
-
     /// AI を使った答えか（「AI の答えは間違うことがあります」を出す）
     var usedAI: Bool { engine == .device || engine == .server }
 
     // 2026-11-22 判断（owner「この文章出す意味ある？出すならもうちょいオフィシャルな感じにして」）: 答えごとの
     // 「どこで答えたか」の1行（device、server、table）はやめた。答えのたびに作りの言葉を出す意味は薄く、画面を重くする。
-    // 端末の中かサーバーかは、利用者が知らなくても使える。サーバーに送ることの知らせは、下の注意書きの所に公式の言い方で
-    // 1か所だけ出す（`AskText.serverNotice`・`AskServerNotice`）
+    // 端末の中かサーバーかは、利用者が知らなくても使える。サーバーに送ることは、送る前の同意の画面（`AIServerConsentSheet`）で知らせる
 
     /// 断りの答え（回数を使わない・何も引かない）
     static func refused(care: Bool) -> AskAnswer {
@@ -100,36 +93,16 @@ struct AskAnswer: Equatable, Codable {
 
 /// 「AI の答えは間違うことがあります」（答えの下にいつも）
 enum AskText {
-    /// 2026-11-21 判断（owner「注：AIは間違えることがあります。をオフィシャルっぽく」）: 公式の注意書きの言い方にし、確かめ先も添える
+    /// 2026-11-23 owner 判断（「注釈長すぎる」）: owner が決めた文。「※」を付け、2文の間で改行して2行にする。
+    /// 前の文（2026-11-21「※ AI による回答には誤りが含まれる場合があります。…公式の情報でご確認ください。」）は長かった
     static var disclaimer: String {
-        L("※ AI による回答には誤りが含まれる場合があります。営業時間や料金などの重要な情報は、公式の情報でご確認ください。",
-          "AI-generated answers may contain errors. Please confirm important details such as hours and prices with official sources.")
+        L("※AI の回答は間違えることがあります。\n営業時間や料金は公式の情報で確かめてください。",
+          "AI answers can be wrong.\nCheck hours and prices with official sources.")
     }
-    /// サーバーに送ることの知らせ（2026-11-22 判断・owner「出すならもうちょいオフィシャルな感じにして」）。
-    /// サーバーの AI を使う人にだけ、送る前に見える所に1か所だけ出す（`AskServerNotice.shows`・部品は `AskServerNoticeText`）。
-    /// 言い方はプライバシーポリシー（「9. 第三者への提供・委託先」）に合わせる: 送り先は「サーバー」、処理するのは「委託先」。
-    /// 使っている AI、サービス、置き場の地域の名前は出さない（CLAUDE.md「AI はアプリの作りやセキュリティのことを答えない」）
-    static var serverNotice: String { L("※ ", "") + serverNoticeBody }
-    /// 「※」の無い本文（注意書きにつなげるとき「※」を2つ並べない）
-    static var serverNoticeBody: String {
-        L("回答の作成のため、入力内容と直前のやりとりをサーバーに送信し、委託先の AI で処理します。",
-          "To generate answers, your input and recent conversation are sent to our servers and processed by an AI provider acting on our behalf.")
-    }
-    /// 旅行プランで送ることの知らせ（2026-11-22 判断・確かめ役の指摘）。旅行プランの AI は頼みの文に加えて、
-    /// 候補の観光スポットと今の日程を送るので、AI に頼むの文（「入力内容と直前のやりとり」）とは言い分ける。
-    /// 旅行プランの画面（一覧の「AI で作る」の札、自分で頼むのシート、組み直しのチップと「書いて頼む」）はすべてこの文にそろえる。
-    /// AI に頼むの画面の中で旅行プランを頼むときは、下の欄の注意書き（`footnote`）1つにまとめる（同じ画面に2つ並べない）
-    static var tripServerNotice: String {
-        L("※ 旅行プランの作成のため、頼みの内容と日程をサーバーに送信し、委託先の AI で処理します。",
-          "To create trip plans, your request and itinerary are sent to our servers and processed by an AI provider acting on our behalf.")
-    }
-    /// 下の欄の注意書き。サーバーに送る人には知らせを同じ段落につなげる（2026-11-22 判断・確かめ役の指摘）。
-    /// 2つの文を別の行にすると、大きな字で下の欄が画面の半分近くを取る。1段落にすれば、行の間の余白が1つ減り、
-    /// 字が行の終わりまで詰まる。切り詰め（行数の上限）はしない（送る知らせが途中で切れると意味がない）。
-    /// 代わりに字の大きさの上限を画面で付ける（`AskScreen.footnoteMaxType`）
-    static func footnote(server: Bool) -> String {
-        server ? disclaimer + L("", " ") + serverNoticeBody : disclaimer
-    }
+    // 2026-11-23 owner 判断（「委託先とかの文章いらない」）: 「サーバーに送信し、委託先の AI で処理します」の知らせを画面から外した
+    // （AI に頼むの下の欄、旅行プランの「AI で作る」の札、自分で頼むのシート、組み直しのチップ）。
+    // 外部の AI に送ることの知らせと明示の許可は、初めて送る前の同意の画面（`AIServerConsent`・`AIServerConsentSheet`）で済んでいる
+    // （App Store 審査ガイドライン 5.1.2(i)、プライバシーポリシー第9条）。同意の画面と、設定から取り消す行はそのまま残す
     static var generalBadge: String { L("一般的な答え", "General answer") }
     static var spotsSource: String { L("観光スポットの情報", "tourist spot info") }
     static var followUp: String { L("続けて聞く", "Ask a follow-up") }
@@ -156,23 +129,17 @@ enum AskText {
     }
 }
 
-/// サーバーに送ることの知らせ（`AskText.serverNotice`）を出すか（2026-11-22 判断）。
+/// 打った文をサーバーへ送りそうな人か（2026-11-22 判断）。送る前の同意（`AskEngine.Backend.serverLikely`）が使う。
 ///
-/// **送る前に必ず見えること**を先に守る（分からない間は出す側に倒す・確かめ役の指摘 2026-11-22）。
+/// 2026-11-23: 画面の知らせ（「委託先の AI で処理します」）は外した（`AskText` の注記）。この見立ては同意を聞くかどうかにだけ使う。
 /// サーバーに送るのは「ログインしていて、端末の AI が使えない iPhone」で、Pro か管理者のときだけ
 /// （AI に頼むは `AskEngine` の 5b、旅行プランは `TripAIRunner.mayUseServer`）。
-/// - 会話の中にサーバーへ送った答えがあれば出す（AI に頼むの答え、旅行プランの流れの答え）
-/// - ログインしていない、端末の AI が使える iPhone では出さない（打った文は送らない）
-/// - 管理者、プロフィールで Pro、サーバーの回数で Pro か管理者のどれかなら出す
-/// - **無料と分かっているときだけ出さない**（プロフィールで無料、またはプロフィールが読めず回数で無料）
-/// - どれも分からない（プロフィールの読み込みが遅い、失敗した）間は出す
-///
-/// 回数の `serverAllowed` は使わない。Pro を買う前に読んだ false が残ることがあり、旅行プランの枠は別に数えるので、
-/// AI に頼むの上限に達していても旅行プランはサーバーへ送る。上限に達した Pro の人にも出るが、出しすぎは害が小さい
+/// - ログインしていない、端末の AI が使える iPhone では送らない
+/// - 管理者、プロフィールで Pro、サーバーの回数で Pro か管理者のどれかなら送りそう
+/// - **無料と分かっているときだけ送らない**（プロフィールで無料、またはプロフィールが読めず回数で無料）
+/// - どれも分からない（プロフィールの読み込みが遅い、失敗した）間は送りそうとみる（聞く側に倒す）
 enum AskServerNotice {
-    static func shows(signedIn: Bool, deviceAI: Bool, tier: String?, profilePro: Bool?, admin: Bool,
-                      thread: [AskExchange] = []) -> Bool {
-        if thread.contains(where: { $0.answer.sentToServer }) { return true }
+    static func shows(signedIn: Bool, deviceAI: Bool, tier: String?, profilePro: Bool?, admin: Bool) -> Bool {
         guard signedIn, !deviceAI else { return false }
         if admin || profilePro == true || tier == "pro" || tier == "admin" { return true }
         if profilePro == false { return false }

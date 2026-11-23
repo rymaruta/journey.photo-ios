@@ -138,7 +138,7 @@ struct AskScreen: View {
                     .accessibilityAddTraits(.isHeader)
                 }
             }
-            .modifier(AskPlanFlow(ask: $planAsk, index: officialSpots, placeChoices: placeChoices, serverNotice: showsServerNotice))
+            .modifier(AskPlanFlow(ask: $planAsk, index: officialSpots, placeChoices: placeChoices))
             .background {
                 if let planJob { AskPlanJobWatch(job: planJob) { settle(planJob, $0) } }
             }
@@ -284,15 +284,15 @@ struct AskScreen: View {
                     .foregroundStyle(WebTheme.text3)
                     .accessibilityIdentifier("ask.keepTyping")
             }
-            // 2026-11-22 判断: サーバーの AI を使う人にだけ、送ることを公式の言い方で知らせる（答えごとの1行はやめた）。
-            // 注意書きと同じ段落につなげ、字の大きさに上限を付ける（大きな字で下の欄が画面を取りすぎない・`AskText.footnote`）
-            Text(AskText.footnote(server: showsServerNotice))
+            // 2026-11-23 owner 判断: 下の欄は短い注意書きだけ。「サーバーに送信し、委託先の AI で処理します」は出さない
+            // （送る前の同意の画面 `AIServerConsentSheet` で知らせて許可を取っている・`AskText` の注記）。字の大きさに上限を付ける
+            Text(AskText.disclaimer)
                 .font(JPFont.caption)
                 .foregroundStyle(WebTheme.text3)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .dynamicTypeSize(...AskScreen.footnoteMaxType)
-                .accessibilityIdentifier(showsServerNotice ? "ask.serverNotice" : "ask.disclaimer")
+                .accessibilityIdentifier("ask.disclaimer")
         }
         .padding(.horizontal, JPSpace.gutter)
         .padding(.top, 10)
@@ -557,16 +557,13 @@ struct AskScreen: View {
             return
         case .saved(let planId):
             if let result = job.result {
-                engine.finishPlan(question, result: result, planId: planId, onDevice: job.runner.onDevice, userId: auth.userId,
-                                  askedServer: job.runner.askedServer)
+                engine.finishPlan(question, result: result, planId: planId, onDevice: job.runner.onDevice, userId: auth.userId)
             } else {
-                engine.failPlan(question, line: TripAIJobText.failureLine(.noCandidates, title: job.title), userId: auth.userId,
-                                askedServer: job.runner.askedServer)
+                engine.failPlan(question, line: TripAIJobText.failureLine(.noCandidates, title: job.title), userId: auth.userId)
             }
             TripAIJobs.shared.markSeen(planId)
         case .failed(let failure):
-            engine.failPlan(question, line: TripAIJobText.failureLine(failure, title: job.title), userId: auth.userId,
-                            askedServer: job.runner.askedServer)
+            engine.failPlan(question, line: TripAIJobText.failureLine(failure, title: job.title), userId: auth.userId)
         }
         if let usage = job.runner.usage {
             planUsageLine = TripAIText.remainingLine(remaining: usage.remaining, resetsOn: usage.resetsOn)
@@ -600,9 +597,6 @@ struct AskScreen: View {
     private var placeChoices: [(label: String, prefecture: String)] {
         AskPlanFlow.placeChoices(engine: engine)
     }
-
-    /// この iPhone で端末の AI が使えるか（見本の口では見本の値）
-    private var deviceAIAvailable: Bool { AskFixture.isOn ? AskFixture.deviceAI : OnDeviceAI.isAvailable }
 
     /// 答えの外の口（台帳、公開の写真、行きたい場所、旅行プラン、現在地、回数、AI）。2026-11-21 に探すの画面から移した
     private var backend: AskEngine.Backend {
@@ -645,21 +639,8 @@ struct AskScreen: View {
         height > 0 ? height + toastGap : toastFallbackPadding
     }
 
-    /// 下の欄の注意書きの字の大きさの上限（2026-11-22 判断）。これより大きな設定でも、この大きさで止める。
-    /// 注意書きと送る知らせを合わせると、最大の設定では 8 行を超え、下の欄が画面の半分近くになった（見込み・Mac で未確認）
+    /// 下の欄の注意書きの字の大きさの上限（2026-11-22 判断）。これより大きな設定でも、この大きさで止める（下の欄が画面を取りすぎない）
     static let footnoteMaxType: DynamicTypeSize = .xxxLarge
-
-    /// 打った文をサーバーへ送る人か（下の欄の知らせ・旅行プランの頼みのシート・`AskServerNotice`）。
-    /// AI に頼むか旅行プランのどちらかがサーバーへ送るなら出す（旅行プランの AI は端末の AI の見方が別・`TripAIRunner.usesDeviceAI`）
-    private var showsServerNotice: Bool {
-        AskServerNotice.shows(signedIn: auth.userId != nil, deviceAI: noticeDeviceAI, tier: engine.usage?.tier,
-                              profilePro: profilePro, admin: auth.isAdmin, thread: engine.thread)
-    }
-
-    /// 端末の AI だけで答える iPhone か（AI に頼むと旅行プランの両方。見本の口では見本の値）
-    private var noticeDeviceAI: Bool {
-        AskFixture.isOn ? AskFixture.deviceAI : (deviceAIAvailable && TripAIRunner.usesDeviceAI)
-    }
 
     /// 現在地を1回取る（許可を聞いている間は待つ。断られた・取れないときは nil で、近さでは絞らない）
     @MainActor
@@ -729,9 +710,6 @@ struct AskPlanFlow: ViewModifier {
     @Binding var ask: TripAIAsk?
     let index: [OfficialSpot]
     let placeChoices: [(label: String, prefecture: String)]
-    /// 送る前の知らせを出すか（`AskScreen.showsServerNotice` と同じ値）
-    var serverNotice: Bool = false
-
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var wishlist: WishlistStore
@@ -744,8 +722,8 @@ struct AskPlanFlow: ViewModifier {
         content
             .sheet(isPresented: Binding(get: { ask != nil }, set: { if !$0 { ask = nil } })) {
                 if let ask {
-                    TripAIAskSheet(ask: ask, placeChoices: placeChoices, serverNotice: serverNotice,
-                                   start: startAfterSheet, index: index)
+                    TripAIAskSheet(ask: ask, placeChoices: placeChoices,
+                                   start: startAfterSheet, index: index, wishlist: wishlist.spotIds)
                 }
             }
             .navigationDestination(isPresented: $showJob) {
@@ -773,23 +751,5 @@ struct AskPlanFlow: ViewModifier {
             if let p = engine.spotsById[id]?.region?.prefecture, !prefs.contains(p), prefs.count < 6 { prefs.append(p) }
         }
         return prefs.map { (TripAIDestination.prefectureShort($0), $0) }
-    }
-}
-
-/// サーバーへ送ることの知らせ。旅行プランの画面（「AI で作る」の札、自分で頼むのシート、組み直し）で使う同じ部品。
-/// 文は既定で旅行プラン用（`AskText.tripServerNotice`）。AI に頼むの下の欄は注意書きと1段落につなげる（`AskText.footnote`）。
-/// 字は注意書きと同じ caption・text3
-struct AskServerNoticeText: View {
-    let id: String
-    var text: String = AskText.tripServerNotice
-
-    var body: some View {
-        Text(text)
-            .font(JPFont.caption)
-            .foregroundStyle(WebTheme.text3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
-            .dynamicTypeSize(...AskScreen.footnoteMaxType)
-            .accessibilityIdentifier(id)
     }
 }
