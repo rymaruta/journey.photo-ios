@@ -59,6 +59,19 @@ enum GroupPick {
     /// 新しいメッセージの入口の形。**グループの一覧が読めたときだけ** 何人でも選べる形にする
     static func startMode(groupsAvailable: Bool) -> Mode { groupsAvailable ? .start : .single }
 
+    /// フォロー中が0人のときに「写真を見に行く」（ホームへ）を出すか。**2026-11-23 判断（使いづらい所の点検）**:
+    /// 受信箱の空の一手「新しいメッセージ」を押した先が、フォロー中0人だと押せるものが何も無い行き止まりだった
+    /// （板 Components の空の並び「何が無いか → どうすれば埋まるか → 押せる一手」の一手が欠けていた）。
+    /// フォローする人に出会う所（ホームのみんなの写真）へ1手で出す。出すのは受信箱から開く形だけ——
+    /// ホームへ移るとき下ろすのは受信箱のシート（`RootView`）なので、人を足す形（グループ・1対1の会話の中から。
+    /// ストーリーの返信など受信箱の外からも開く）では出さない
+    static func offersBrowseWhenNoFollowing(_ mode: Mode) -> Bool {
+        switch mode {
+        case .single, .start: return true
+        case .add, .extend: return false
+        }
+    }
+
     static func isMulti(_ mode: Mode) -> Bool { mode != .single }
 
     /// 選べる人数（自分・1対1の相手・もう居る人を除いた席）
