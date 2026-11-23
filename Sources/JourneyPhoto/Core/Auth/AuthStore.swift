@@ -458,6 +458,9 @@ final class AuthStore: ObservableObject {
         TripAIJobs.shared.signOut()
         // 旅行プランの出発の時刻の覚え（プランの番号と日付）も次の人に残さない（札 #677）
         TripStartStore.shared.forgetAll()
+        // Google でログインした人の、部品（GoogleSignIn-iOS）の中のログインも外す（札 #715・2026-11-23 確かめ役の3回目）。
+        // 外さないと、次に「Google でログイン」を押したとき、前の人の Google アカウントが選ばれたまま出る
+        gateway.forgetProviderSessions()
         state = .signedOut
         isAdmin = false
         errorMessage = nil
@@ -639,6 +642,8 @@ struct AuthStoreGateway: Sendable {
     var signIn: @Sendable (_ email: String, _ password: String) async throws -> Bool = { email, password in
         try await AuthGateway.signIn(email: email, password: password)
     }
+    /// 外のアカウントの部品の中のログインを外す（ログアウト・退会のとき・`GoogleSignInClient.signOut`）。試験で差し替える
+    var forgetProviderSessions: @MainActor @Sendable () -> Void = { GoogleSignInClient.signOut() }
     /// Apple・Google でのログインの最後の段（`AuthGateway.signInWithTicket`）。試験で差し替える
     var signInWithTicket: @Sendable (_ username: String, _ challengeAnswer: String) async throws -> Bool = { username, answer in
         try await AuthGateway.signInWithTicket(username: username, challengeAnswer: answer)

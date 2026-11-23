@@ -125,6 +125,7 @@ final class AppleSignInTests: XCTestCase {
     private final class Calls: @unchecked Sendable {
         var signInWith: [(String, String)] = []
         var signOut = 0
+        var forgotProviders = 0
         var fail: Error?
     }
 
@@ -135,6 +136,7 @@ final class AppleSignInTests: XCTestCase {
             signOut: { calls.signOut += 1; return .signedOut },
             deleteUser: {},
             latch: latch)
+        gateway.forgetProviderSessions = { calls.forgotProviders += 1 }
         gateway.signInWithTicket = { username, answer in
             if let error = calls.fail { throw error }
             calls.signInWith.append((username, answer))
@@ -234,6 +236,19 @@ final class AppleSignInTests: XCTestCase {
         await auth2.restore()
         _ = await auth2.signInWithGoogle(g) { _ in .init(username: "uuid-g", challengeAnswer: "google:109:T", created: nil) }
         XCTAssertEqual(auth2.errorMessage, AuthStore.googleSignInFailed)
+    }
+
+    /// 🔴 ログアウトしたら、Google の部品の中のログインも外す（次の人に前の人の Google アカウントを出さない）
+    func testSignOutForgetsGoogleSession() async {
+        let calls = Calls()
+        let auth = store(calls)
+        await auth.restore()
+        _ = await auth.signInWithGoogle(GoogleSignInCredential(idToken: "g", rawNonce: "r", displayName: nil)!) { _ in
+            .init(username: "uuid-g", challengeAnswer: "google:1:T", created: nil)
+        }
+        let before = calls.forgotProviders
+        await auth.signOut()
+        XCTAssertEqual(calls.forgotProviders, before + 1)
     }
 
     /// URL の型とクライアント ID は同じ値から（逆さのクライアント ID）

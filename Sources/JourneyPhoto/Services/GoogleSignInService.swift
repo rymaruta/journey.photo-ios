@@ -99,6 +99,12 @@ enum GoogleSignInClient {
         GIDSignIn.sharedInstance.handle(url)
     }
 
+    /// 部品の中のログインを外す（アプリのログアウト・退会のとき）。Google でログインしていない人には何もしない
+    @MainActor
+    static func signOut() {
+        GIDSignIn.sharedInstance.signOut()
+    }
+
     @MainActor
     private static func topController() -> UIViewController? {
         for scene in UIApplication.shared.connectedScenes {
@@ -118,5 +124,8 @@ enum GoogleSignInClient {
 
     @MainActor
     static func handle(_ url: URL) -> Bool { false }
+
+    @MainActor
+    static func signOut() {}
     #endif
 }

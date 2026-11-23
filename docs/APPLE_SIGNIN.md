@@ -26,9 +26,13 @@
    （Secrets の `APNS_PRIVATE_KEY` と同じもの）
 4. これが無い間は、サーバーは「使えない」と答え、アプリはボタンを出しません（壊れはしない）
 
-鍵を読むのは「Apple でサインイン」のスタックの関数だけです（サインイン・使えるかの確かめ・退会の取り消し）。
-退会（user API）は取り消しをそのスタックの関数（`photo-gallery-apple-signin-prod-appleRevoke`）に頼み、鍵を持ちません。
-「Google でログイン」の口は、メールで結んだときの知らせのプッシュにだけ同じ鍵を読みます。
+鍵を読むのは「Apple でサインイン」のスタックの関数だけです（サインイン・使えるかの確かめ・退会の取り消し・メールで結んだときの知らせ）。
+退会（user API）は取り消しをそのスタックの関数（`photo-gallery-apple-signin-prod-appleRevoke`）に頼み、鍵を持ちません
+（呼べるのは退会だけの役 `DeleteAccountRole`）。「Google でログイン」の口も鍵を持たず、知らせは同じスタックの `linkNotice` に頼みます。
+
+取り消しの関数が落ち続けたら鳴るアラーム（`photo-gallery-apple-signin-prod-appleRevoke-errors`）を定義してあります。
+知らせ先（SNS の宛先）はまだ無いので、メールなどで受けたいときは owner が SNS の宛先を作り、Deploy の段に
+`--param "alarmTopicArn=<ARN>"` を足します（今は CloudWatch の画面に出るだけ）。
 
 ### 鍵を入れ替えるとき
 
