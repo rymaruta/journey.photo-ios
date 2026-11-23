@@ -347,8 +347,12 @@ final class V2SettingsProTests: XCTestCase {
         let view = try source("Features/Auth/SignInView.swift")
         XCTAssertFalse(view.contains(".jpPillButton(.accent)"), "ログインの画面に真鍮の主ボタンが残っている")
         // ログインの主ボタンは画面の大きさで高さを替える（`.jpPillButton(SignInLayout.primaryStyle, height:)`・2026-11-23）
-        XCTAssertEqual(view.components(separatedBy: ".jpPillButton(SignInLayout.primaryStyle").count - 1, 4,
-                       "ログイン・登録の完了・コードを送る・パスワードを変える の4つが白でない")
+        // 2026-11-23（模型 NL2x の確認コードの画面）: 「登録を完了する」は無くし（6桁で自動で確かめる）、
+        // 確認コードの画面は写真を外したので「パスワードを変える」「新しいコードを送る」は真鍮（`VerificationCodeLayout.primaryStyle`）
+        XCTAssertEqual(view.components(separatedBy: ".jpPillButton(SignInLayout.primaryStyle").count - 1, 2,
+                       "ログイン・コードを送る の2つが白でない")
+        XCTAssertEqual(view.components(separatedBy: ".jpPillButton(VerificationCodeLayout.primaryStyle").count - 1, 2,
+                       "確認コードの画面の主ボタン（パスワードを変える・新しいコードを送る）が真鍮でない")
         let header = slice(view, from: "private var tileHeader", to: "private func tile(")
         assertInOrder(["count: SignInLayout.tileColumns", ".rotationEffect(.degrees(SignInLayout.tileTilt))",
                        ".clipped()", "LinearGradient(stops:"], in: header, "ログインの写真のタイル")

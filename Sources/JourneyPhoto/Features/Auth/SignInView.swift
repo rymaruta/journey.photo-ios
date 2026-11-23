@@ -26,15 +26,15 @@ struct SignInView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var environment: AppEnvironment
     @State private var mode: Mode = .signIn
-    @State private var email = ""
-    @State private var password = ""
+    @State private var email = SignInView.previewCodeScreen?.email ?? ""
+    @State private var password = SignInView.previewCodeScreen?.password ?? ""
     /// 登録のときの表示名。**入れないと、しばらく ID の頭8文字で呼ばれる**
     /// ——プロフィール行は登録時に作られるが、名前は入らない
     /// （`api/src/cognitoTrigger.ts` は `userId` と `createdAt` だけ書く）
     @State private var displayName = ""
     @State private var code = ""
     /// signUp が返す UUID。確認コードの送り先を指す
-    @State private var pendingUsername: String?
+    @State private var pendingUsername: String? = SignInView.previewCodeScreen?.username
     /// **端末に残る控え。** これが無いと、確認前にアプリを閉じた人が
     /// 二度と入れない（`PendingVerification` の長い注記）
     private let pending = PendingVerificationStore()
@@ -67,12 +67,35 @@ struct SignInView: View {
     @State private var formHeight: CGFloat = 0
     /// Google の画面を開いている間（ボタンを止める。2つ目の頼みを開かない）
     @State private var googleOpen = false
+    /// 電波の有無（確認コードの画面の「電波が届いていません」の帯と、戻ったら確かめ直す）
+    @EnvironmentObject private var connectivity: Connectivity
+    /// 確認コードの6桁の箱の状態（入力中・確かめ中・違う・期限切れ・圏外・成功・`VerificationCodeEntry`）。
+    /// 欄の字そのものは `code`（数字以外や7桁目は、ここで整えて欄へ書き戻す）
+    @State private var codeEntry = VerificationCodeEntry()
+    /// 送り直しの待ち時間（送った直後から 60 秒）と、それを数える今の時刻
+    @State private var cooldown = ResendCooldown(sentAt: SignInView.previewCodeScreen == nil ? nil : Date())
+    @State private var now = Date()
+    /// 違うコードのたびに1つ増える（箱を揺らす合図）
+    @State private var shakeCount = 0
+    /// 再設定: 6桁そろったら新しいパスワードの欄を出す（一度出したら、コードを直しても消さない）
+    @State private var resetPasswordShown = false
 
     /// - Parameter entry: 開いたときの側。お願いの「新規登録」から来たら登録の側で開く（札 #630・2026-11-15）。
     ///   **画面の見た目と流れは変えない**——今の「アカウントを作る」を押した後と同じ状態から始めるだけ
     init(reason: String?, entry: SignInEntry = .signIn) {
         self.reason = reason
         _mode = State(initialValue: entry == .signUp ? .signUp : .signIn)
+    }
+
+    /// UI テストだけ: 登録の確認コードの画面から開く（`PreviewSession.opensVerificationCode`・見本のメールとパスワード）。
+    /// Release ではどれも空（ふつうのログイン画面）
+    private static var previewCodeScreen: (email: String, password: String, username: String)? {
+        #if DEBUG
+        guard PreviewSession.opensVerificationCode else { return nil }
+        return (PreviewBackend.email, PreviewBackend.password, PreviewBackend.signUpUsername)
+        #else
+        return nil
+        #endif
     }
 
     enum Mode {
@@ -85,6 +108,40 @@ struct SignInView: View {
     }
 
     var body: some View {
+        // 入れ物は1つのまま（中身を替えても、下の写真と Apple・Google の答えを読み直さない）
+        ZStack {
+            if showsCodeScreen {
+                codeScreen
+            } else {
+                formScreen
+            }
+        }
+        // 確認コードの画面の間は上のバー（シートの「閉じる」）を隠す。戻るは左上のガラスの丸だけ（2つ並べない）
+        .toolbar(showsCodeScreen ? .hidden : .automatic, for: .navigationBar)
+        // **黒地にする。** 付け忘れていたので、ここだけ既定の灰色の
+        // 段が並び、アプリの中で1枚だけ別のアプリに見えていた
+        // （実機の絵で確認・run 38）
+        .webScreen()
+        .task { await loadTiles() }
+        .task { await refreshExternal(.apple) }
+        .task { await refreshExternal(.google) }
+        // 失敗の文は出たら読み上げにも伝える（目で見ていない人にも「失敗した」が届く）
+        .onChange(of: auth.errorMessage) { _, message in
+            if let message { UIAccessibility.post(notification: .announcement, argument: message) }
+        }
+        // Google の画面から戻ってきた URL（URL の型 `GoogleSignInConfig.urlScheme`）を部品に渡す
+        .onOpenURL { url in _ = GoogleSignInClient.handle(url) }
+        // 確認への入口は、失敗したときのメールアドレスについての案内——打ち直したら下げる
+        .onChange(of: email) { _, _ in offerVerification = false }
+    }
+
+    /// 確認コードの画面か（登録の確認・パスワードの再設定のコードと新しいパスワード）
+    private var showsCodeScreen: Bool {
+        pendingUsername != nil || mode == .resetConfirm
+    }
+
+    /// ログイン・新規登録・再設定のメールアドレス（写真のタイルとロゴの画面）
+    private var formScreen: some View {
         // 板 41 と模型 NL2x の案（2026-11-23）: 上に写真のタイルとロゴ（残った高さに合わせて縮む）、下から積んだ欄の段
         ScrollViewReader { proxy in
             ScrollView {
@@ -100,18 +157,14 @@ struct SignInView: View {
                             Text(reason).font(.callout).foregroundStyle(WebTheme.muted2)
                                 .lineLimit(density == .regular ? nil : 2)
                         }
-                        if let pendingUsername {
-                            confirmSignUpSection(username: pendingUsername)
-                        } else {
-                            switch mode {
-                            case .signIn, .signUp:
-                                credentialsSection
-                            case .resetRequested, .resetConfirm:
-                                resetSection
-                            }
+                        switch mode {
+                        case .signIn, .signUp:
+                            credentialsSection
+                        case .resetRequested, .resetConfirm:
+                            resetSection
                         }
                         if !showsCredentials {
-                            // 登録の確認・パスワードの再設定は今までどおり節の下（主ボタンのすぐ下）
+                            // パスワードの再設定（コードを送る前）は今までどおり節の下（主ボタンのすぐ下）
                             messages
                         }
                         if offerVerification && pendingUsername == nil && mode == .signIn {
@@ -144,23 +197,8 @@ struct SignInView: View {
         // 実機の絵の道しるべ（`ScreenshotTests`）。**この画面が出ている回は、
         // 絵の名前にそう書く**——「14-マイページ」という名前で**ログイン画面**を
         // 撮っていた（run 55 まで）。名前と中身が食い違うと、見た人が
-        // 「マイページはこういう画面だ」と誤読する
+        // 「マイページはこういう画面だ」と誤読する。確認コードの画面も同じ名前（`codeScreen`）
         .accessibilityIdentifier("signin.form")
-        // **黒地にする。** 付け忘れていたので、ここだけ既定の灰色の
-        // 段が並び、アプリの中で1枚だけ別のアプリに見えていた
-        // （実機の絵で確認・run 38）
-        .webScreen()
-        .task { await loadTiles() }
-        .task { await refreshExternal(.apple) }
-        .task { await refreshExternal(.google) }
-        // 失敗の文は出たら読み上げにも伝える（目で見ていない人にも「失敗した」が届く）
-        .onChange(of: auth.errorMessage) { _, message in
-            if let message { UIAccessibility.post(notification: .announcement, argument: message) }
-        }
-        // Google の画面から戻ってきた URL（URL の型 `GoogleSignInConfig.urlScheme`）を部品に渡す
-        .onOpenURL { url in _ = GoogleSignInClient.handle(url) }
-        // 確認への入口は、失敗したときのメールアドレスについての案内——打ち直したら下げる
-        .onChange(of: email) { _, _ in offerVerification = false }
     }
 
     // MARK: - 上の写真とロゴ
@@ -299,17 +337,22 @@ struct SignInView: View {
             Text(notice).font(.callout).foregroundStyle(WebTheme.muted2)
         }
         if let error = auth.errorMessage {
-            Label {
-                Text(error)
-            } icon: {
-                Image(systemName: "exclamationmark.circle")
-            }
-            .font(JPFont.footnote)
-            .foregroundStyle(WebTheme.danger)
-            .fixedSize(horizontal: false, vertical: true)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("signin.error")
+            errorLine(error, identifier: "signin.error")
         }
+    }
+
+    /// 失敗の文の1行（板 06: danger・13pt・丸に！の印）。確認コードの画面も同じ形を使う
+    private func errorLine(_ text: String, identifier: String) -> some View {
+        Label {
+            Text(text)
+        } icon: {
+            Image(systemName: "exclamationmark.circle")
+        }
+        .font(JPFont.footnote)
+        .foregroundStyle(WebTheme.danger)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(identifier)
     }
 
     /// 欄（いちばん詰めた形では欄の名前の行を出さず、名前を欄の中の見本の字にする。読み上げの名前は同じ）
@@ -648,6 +691,8 @@ struct SignInView: View {
             pending.remember(email: email, username: username,
                              displayName: displayName.trimmingCharacters(in: .whitespacesAndNewlines))
             pendingUsername = username
+            // 確認コードの画面へ（いま送ったので、送り直しの待ち時間を数える）
+            startCodeScreen(sent: true)
             return
         }
         // 「すでに登録されています」＝**確認前の自分**かもしれない
@@ -719,6 +764,7 @@ struct SignInView: View {
         }
         if await auth.resendSignUpCode(username: saved) {
             pendingUsername = saved
+            startCodeScreen(sent: true)
             notice = L("確認コードを送り直しました。メールをご確認ください。",
                        "We sent a new code. Please check your email.")
             return
@@ -759,6 +805,8 @@ struct SignInView: View {
             return
         }
         pendingUsername = saved
+        // 送り直せなかったので、待たずにすぐ送り直せる形で開く
+        startCodeScreen(sent: false)
         notice = L("確認コードを送り直せませんでした。前に届いたコードがあれば、そのまま入力できます。",
                    "We couldn't send a new code. If you have an earlier code, you can enter it.")
     }
@@ -779,109 +827,422 @@ struct SignInView: View {
         "メールアドレスの確認が済んでいません。登録したときに届いたメールの確認コードを、登録した端末（または Web）で入力してください。",
         "Your email isn't verified yet. Enter the code from the sign-up email on the device (or web) where you signed up.")
 
-    // MARK: - 登録の確認
+    // MARK: - 確認コードの画面（登録の確認・パスワードの再設定）
 
-    private func confirmSignUpSection(username: String) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(L("メールに届いた確認コードを入力してください", "Enter the code we emailed you"))
-                .font(.callout)
-                .foregroundStyle(WebTheme.muted2)
-            JPField(L("確認コード", "Verification code")) {
-                JPTextField("", text: $code)
-                    .keyboardType(.numberPad)
-                    .textContentType(.oneTimeCode)
+    /// 確認コードの画面（模型 NL2x「登録の確認コード」「確認コードの状態」「パスワードの再設定」・2026-11-23 owner「これでいいよ」）。
+    ///
+    /// - **上の写真のタイルを外す**（キーボードが下半分を占め、375×667 で箱が押し出されるため）。戻るは板の「積む画面」の
+    ///   左上のガラスの丸（`ログインに戻る`）
+    /// - 題（明朝 26）→ 送り先（メールアドレスは白の太字）→「メールアドレスを変える」→ 箱のすぐ上の失敗の文 → 6桁の箱 → 箱の下の1行
+    /// - 登録の確認: **6桁そろったら自動で確かめる**（「登録を完了する」のボタンは置かない。押す回数 3回 → 1回）
+    /// - 再設定: 6桁そろうと新しいパスワードの欄が出て、焦点が移る（押す回数 3回 → 2回）
+    /// - 状態は箱のすぐ上と下の1行だけが替わる（入力中・確かめ中・違う・期限切れ・圏外・成功）。状態が替わったら読み上げる
+    private var codeScreen: some View {
+        VStack(spacing: 0) {
+            if connectivity.isOffline {
+                // 板 06 の「電波なし」: 上に帯で出す。画面は閉じない。打ったコードは残す
+                JPStateBand(kind: .offline, title: JPStateBand.offlineTitle)
+                    .padding(.horizontal, JPSpace.gutter)
+                    .padding(.top, JPSpace.xs)
+                    .accessibilityIdentifier("signin.code.offline")
             }
-
-            Button {
-                Task {
-                    clearMessages()
-                    if await auth.confirmSignUp(username: username, code: code) {
-                        let name = pending.displayName(for: email)
-                        // 確認が済んだので登録の ID は要らない（名前は入れ終えるまで残す）
-                        pending.forgetSignUp(email: email)
-                        pendingUsername = nil
-                        // 使い終えたコードを、あとの再設定の欄に残さない
-                        code = ""
-                        offerVerification = false
-                        // 確認が済んだらそのままログインする。
-                        // **失敗しても行き止まりにしない**——「すでに登録
-                        // されています」から来た人は、登録欄に打った
-                        // パスワードが古いものと違うことがある
-                        await auth.signIn(email: email, password: password)
-                        if auth.userId == nil {
-                            // **ログインの欄に切り替える。** 登録から来た人は
-                            // 登録の欄のまま「ログインしてください」と言われ、
-                            // 押すと「すでに登録されています」に戻っていた
-                            mode = .signIn
-                            notice = L("確認できました。パスワードを入れてログインしてください。",
-                                       "Verified. Please sign in with your password.")
-                            return
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    codeBackButton
+                        // 丸は画面の端から 12（本文は 24）
+                        .padding(.leading, JPSpace.s - JPSpace.xl)
+                    Text(isResetCode ? L("パスワードを再設定", "Reset password") : L("確認コードを入力", "Enter the code"))
+                        .font(JPFont.screenTitle)
+                        .foregroundStyle(WebTheme.foreground)
+                        .accessibilityAddTraits(.isHeader)
+                        .padding(.top, 10)
+                    sentLine
+                        .padding(.top, JPSpace.xs)
+                    changeEmailButton
+                    // コード以外の失敗（送り直しの失敗など）も箱の上。再設定でパスワードの節が出ている間は、そちらの主ボタンの上に出す
+                    if let error = codeEntry.errorText ?? (resetPasswordVisible ? nil : auth.errorMessage) {
+                        // 板 06: 起きた所（箱）のすぐ上。トーストにしない
+                        errorLine(error, identifier: "signin.code.error")
+                            .padding(.top, JPSpace.s)
+                    }
+                    VerificationCodeField(text: $code, entry: codeEntry, focus: $focusedField, shakeCount: shakeCount)
+                        .padding(.top, JPSpace.s)
+                    codeStatusLine
+                        .padding(.top, 10)
+                    if codeEntry.phase == .expired {
+                        // 期限切れ: 新しいコードを送るのを主ボタンに（写真の無い画面なので真鍮の塗り＋墨）
+                        Button {
+                            Task { await sendNewCode() }
+                        } label: {
+                            Text(VerificationCodeEntry.newCodeText).jpPillButton(VerificationCodeLayout.primaryStyle)
                         }
-                        // **控えを捨てるのは、名前を入れ終えてから。**
-                        // 先に捨てると、電波が悪くて1回落ちただけで
-                        // 入れた名前が永久に消える（次のログインでやり直せない）
-                        if await applyDisplayName(name) {
-                            pending.forget(email: email)
-                        }
-                    } else if auth.lastFailure == .aliasExists {
-                        // 別のアカウントがこのメールで確認済み。案内（ログインか再設定）に
-                        // 従えるよう、ログインの欄へ戻す。**登録の ID は捨て、名前だけ残す**——
-                        // ID を残すと、確認済みのアカウントでの打ち間違いのたびに、確認できない
-                        // 重複アカウントの確認画面へ誘っていた。名前は、そのアカウントに入った
-                        // とき名前が空なら入れる（ログイン成功後の処理）
-                        pending.forgetSignUp(email: email)
-                        pendingUsername = nil
-                        mode = .signIn
-                        code = ""
+                        .buttonStyle(.plain)
+                        .disabled(auth.isWorking)
+                        .opacity(auth.isWorking ? 0.4 : 1)
+                        .accessibilityIdentifier("signin.code.newCode")
+                        .padding(.top, JPSpace.xxs)
+                    }
+                    if resetPasswordVisible {
+                        resetPasswordSection
+                            .padding(.top, JPSpace.xxs)
+                    }
+                    if let notice {
+                        Text(notice)
+                            .font(.footnote)
+                            .foregroundStyle(WebTheme.muted2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, JPSpace.xs)
                     }
                 }
-            } label: {
-                Text(L("登録を完了する", "Finish sign up")).jpPillButton(SignInLayout.primaryStyle)
+                .padding(.horizontal, JPSpace.xl)
+                .padding(.top, JPSpace.xxs)
+                .padding(.bottom, JPSpace.xl)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.plain)
-            .disabled(auth.isWorking || code.isEmpty)
-            .opacity(auth.isWorking || code.isEmpty ? 0.4 : 1)
+            .scrollDismissesKeyboard(.interactively)
+            .accessibilityIdentifier("signin.form")
+        }
+        // 開いたらすぐ打てるように（数字のキーボードの上に「メールから」の候補が出る）。画面が替わり終えてから焦点を当てる
+        .task {
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            // 前の画面の焦点（メールの欄など）が残っていても当て直す
+            if codeEntry.phase != .verified { focusedField = .code }
+        }
+        // 送り直しの待ち時間を1秒ずつ数える（送ったときだけ回る）
+        .task(id: cooldown) {
+            now = Date()
+            while !Task.isCancelled && !cooldown.canResend(now: now) {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                now = Date()
+            }
+        }
+        .onChange(of: code) { _, raw in codeTyped(raw) }
+        .onChange(of: connectivity.isOffline) { _, offline in
+            if !offline { reconnected() }
+        }
+        // 送り直しなどが終わってから6桁がそろっていた回も、自動で確かめる
+        .onChange(of: auth.isWorking) { _, working in
+            if !working { attemptConfirmIfReady() }
+        }
+        // 状態が替わったら読み上げる（違う・期限切れ・圏外・確かめ中・成功）
+        .onChange(of: codeEntry.phase) { _, _ in
+            if let text = codeEntry.announcement {
+                UIAccessibility.post(notification: .announcement, argument: text)
+            }
+        }
+    }
 
-            // **届かないときの出口。** 無いと作り直すしかなくなる
+    /// パスワードの再設定のコードの画面か（でなければ登録の確認）
+    private var isResetCode: Bool { pendingUsername == nil && mode == .resetConfirm }
+
+    /// 再設定の新しいパスワードの節を出しているか
+    private var resetPasswordVisible: Bool { isResetCode && (resetPasswordShown || !password.isEmpty) }
+
+    /// 左上のガラスの丸（板「積む画面」・44pt）。今までの「ログインに戻る」と同じ戻り道
+    private var codeBackButton: some View {
+        Button {
+            // 再設定から戻るときは打った新しいパスワードを持ち越さない（mode を変える前に見る）
+            let wasReset = isResetCode
+            leaveCodeScreen()
+            pendingUsername = nil
+            mode = .signIn
+            if wasReset { password = "" }
+            clearMessages()
+        } label: {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(WebTheme.foreground)
+                .frame(width: WebTheme.minTapTarget, height: WebTheme.minTapTarget)
+                .jpGlass(in: Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(auth.isWorking)
+        .accessibilityLabel(L("ログインに戻る", "Back to sign in"))
+        .accessibilityIdentifier("signin.code.back")
+    }
+
+    /// 送り先（「hanako@example.com に／6桁のコードを送りました」。アドレスは白の太字）
+    private var sentLine: some View {
+        (Text(VerificationCodeEntry.sentBefore)
+            + Text(verbatim: email.trimmingCharacters(in: .whitespacesAndNewlines))
+                .fontWeight(.semibold).foregroundStyle(WebTheme.foreground)
+            + Text(VerificationCodeEntry.sentAfter))
+            .font(.subheadline)
+            .foregroundStyle(WebTheme.muted2)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("signin.code.sent")
+    }
+
+    /// 「メールアドレスを変える」（真鍮・当たり 44）。打ち間違えたアドレスへ送った人の戻り道。
+    /// 登録の確認は登録（またはログイン）の欄へ、再設定はメールアドレスの欄へ戻り、メールアドレスの欄を打てる状態で開く。
+    /// 控え（`pending`）は捨てない——正しいアドレスだったなら、次のログインで「未確認」から同じ画面に戻れる
+    private var changeEmailButton: some View {
+        Button {
+            let reset = isResetCode
+            leaveCodeScreen()
+            pendingUsername = nil
+            if reset { mode = .resetRequested }
+            clearMessages()
+            focusedField = .email
+        } label: {
+            Text(VerificationCodeEntry.changeEmailText)
+                .jpSystemFont(14, weight: .semibold)
+                .foregroundStyle(WebTheme.accent)
+                .frame(minHeight: WebTheme.minTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(auth.isWorking)
+        .accessibilityIdentifier("signin.code.changeEmail")
+    }
+
+    /// 箱の下の1行（送り直しの待ち時間・送り直す・確かめ中・成功・圏外）
+    @ViewBuilder
+    private var codeStatusLine: some View {
+        let line = VerificationCodeLine.line(for: codeEntry, isOffline: connectivity.isOffline,
+                                             remaining: cooldown.remaining(now: now))
+        switch line {
+        case .resend:
             Button {
-                Task {
-                    clearMessages()
-                    if await auth.resendSignUpCode(username: username) {
-                        notice = L("送り直しました。メールをご確認ください。",
-                                   "Sent. Please check your email.")
-                    }
-                }
+                Task { await sendNewCode() }
             } label: {
-                Text(L("コードを送り直す", "Send a new code"))
-                    .font(.footnote)
-                    .foregroundStyle(WebTheme.muted2)
-                    .webTappable()
+                Text(VerificationCodeEntry.resendText)
+                    .jpSystemFont(14, weight: .semibold)
+                    .foregroundStyle(WebTheme.accent)
+                    .frame(minHeight: WebTheme.minTapTarget)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(auth.isWorking)
+            .accessibilityIdentifier("signin.code.resend")
+        case .checking:
+            HStack(spacing: JPSpace.xs) {
+                ProgressView()
+                    .tint(WebTheme.foreground)
+                    .controlSize(.small)
+                Text(VerificationCodeEntry.checkingText)
+            }
+            .codeLineStyle()
+        case .verified:
+            HStack(spacing: JPSpace.xs) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(WebTheme.accentText)
+                    .frame(width: 20, height: 20)
+                    .background(WebTheme.accent, in: Circle())
+                    .accessibilityHidden(true)
+                Text(VerificationCodeEntry.verifiedText)
+                    .foregroundStyle(WebTheme.foreground)
+            }
+            .codeLineStyle()
+            .accessibilityIdentifier("signin.code.verified")
+        case .wait, .offline:
+            Text(line.text ?? "")
+                .codeLineStyle()
+        case .none:
+            EmptyView()
+        }
+    }
 
-            // **戻り道。** 無いと、打ち間違えたメールアドレスで登録した人は
-            // 届かないコードの画面から出られない（画面を閉じても `@State` が残る間は同じ）。
-            // 控え（`pending`）は捨てない——正しいアドレスだったなら、次の
-            // ログインで「未確認」から同じ確認画面に戻れる
+    /// 再設定: 新しいパスワードの欄、短い決まり、失敗の文、「パスワードを変える」（真鍮の塗り）
+    private var resetPasswordSection: some View {
+        VStack(alignment: .leading, spacing: JPSpace.xs) {
+            JPField(L("新しいパスワード", "New password")) {
+                JPSecureField("", text: $password)
+                    .textContentType(.newPassword)
+                    .focused($focusedField, equals: .newPassword)
+                    .submitLabel(AuthFieldFlow.key(for: .newPassword, in: flowForm).label)
+                    .onSubmit { advance(from: .newPassword) }
+                    .accessibilityIdentifier("signin.reset.password")
+            }
+            Text(AuthMessage.passwordRuleShort)
+                .font(.caption)
+                .foregroundStyle(WebTheme.faint)
+                .fixedSize(horizontal: false, vertical: true)
+            if let error = auth.errorMessage, codeEntry.errorText == nil {
+                // パスワードの決まりなど、コード以外の失敗は押した所のすぐ上
+                errorLine(error, identifier: "signin.code.error")
+                    .padding(.top, JPSpace.xxs)
+            }
             Button {
-                pendingUsername = nil
-                code = ""
+                confirmReset()
+            } label: {
+                Text(L("パスワードを変える", "Change password")).jpPillButton(VerificationCodeLayout.primaryStyle)
+            }
+            .buttonStyle(.plain)
+            .disabled(!canConfirmReset)
+            .opacity(canConfirmReset ? 1 : 0.4)
+            .accessibilityIdentifier("signin.reset.submit")
+            .padding(.top, JPSpace.xxs)
+        }
+    }
+
+    private var canConfirmReset: Bool {
+        !auth.isWorking && codeEntry.isComplete && !password.isEmpty && codeEntry.phase != .checking
+    }
+
+    /// 確認コードの画面を開いた（コードを送った・送り直せなかったが前のコードで続ける）。空の箱から打つ
+    /// - Parameter sent: いまコードを送った（送り直しの待ち時間を数え始める）
+    private func startCodeScreen(sent: Bool) {
+        codeEntry.restart()
+        code = ""
+        resetPasswordShown = false
+        if sent { cooldown.start(now: Date()) } else { cooldown.clear() }
+        now = Date()
+        focusedField = .code
+    }
+
+    /// 確認コードの画面を離れる（打ったコード・待ち時間を持ち越さない）
+    private func leaveCodeScreen() {
+        codeEntry.restart()
+        code = ""
+        resetPasswordShown = false
+        cooldown.clear()
+    }
+
+    /// 欄の字が変わった。6桁に整えて欄へ書き戻し（数字以外・7桁目は入れない）、そろったら次へ進む
+    private func codeTyped(_ raw: String) {
+        let wasComplete = codeEntry.isComplete
+        codeEntry.input(raw)
+        if raw != codeEntry.code { code = codeEntry.code }
+        if isResetCode {
+            // 再設定は、そろったら新しいパスワードの欄へ（確かめはパスワードと一緒に送る）
+            if codeEntry.isComplete && !wasComplete {
+                resetPasswordShown = true
+                focusedField = .newPassword
+            }
+        } else {
+            attemptConfirmIfReady()
+        }
+    }
+
+    /// 登録の確認: 6桁そろっていれば自動で確かめる（**二重に送らない**——確かめ中・同じコード・送っている間は出さない）
+    private func attemptConfirmIfReady() {
+        guard let username = pendingUsername, !auth.isWorking,
+              codeEntry.shouldSubmit(isOffline: connectivity.isOffline),
+              let sent = codeEntry.beginCheck() else { return }
+        Task { await confirmSignUp(username: username, code: sent) }
+    }
+
+    /// 電波が戻った。圏外で止めていたコードを確かめ直す（押さなくても）
+    private func reconnected() {
+        let wasOffline = codeEntry.phase == .offline
+        codeEntry.reconnected()
+        if pendingUsername != nil {
+            attemptConfirmIfReady()
+        } else if wasOffline && isResetCode && !password.isEmpty {
+            confirmReset()
+        }
+    }
+
+    /// 違う・期限切れ・圏外・そのほかの失敗を、箱の状態にする
+    private func applyCodeFailure(hidesAccount: Bool = false) {
+        // 再設定は、無いアカウントを「コードが違います」と同じにする（`AuthStore.confirmPasswordReset`）
+        let outcome = VerificationCodeEntry.Outcome.from(auth.lastFailure, isOffline: connectivity.isOffline,
+                                                         hidesAccount: hidesAccount)
+        codeEntry.finish(outcome)
+        switch outcome {
+        case .wrong:
+            // 文は箱のすぐ上に自前で出す（二重に出さない）。箱を揺らしてから空に戻し、1つ目から打ち直せるように
+            auth.errorMessage = nil
+            shakeCount += 1
+            let delay = reduceMotion ? VerificationCodeLayout.clearDelayReduced : VerificationCodeLayout.clearDelay
+            Task {
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                // その間に送り直した・画面を離れた回は触らない
+                guard codeEntry.phase == .wrong else { return }
+                codeEntry.clearWrong()
+                code = codeEntry.code
+                focusedField = .code
+            }
+        case .expired:
+            auth.errorMessage = nil
+            code = codeEntry.code
+            focusedField = nil
+        case .offline:
+            auth.errorMessage = nil
+        case .failed, .verified:
+            break
+        }
+    }
+
+    /// 「コードを送り直す」「新しいコードを送る」。送れたら空の箱から、待ち時間を数え直す
+    private func sendNewCode() async {
+        guard !auth.isWorking else { return }
+        clearMessages()
+        let sent: Bool
+        if let username = pendingUsername {
+            sent = await auth.resendSignUpCode(username: username)
+        } else {
+            sent = await auth.startPasswordReset(email: email)
+        }
+        // 送れなかった（回数の上限・圏外）ときの文は `auth.errorMessage`
+        guard sent else { return }
+        codeEntry.restart()
+        code = ""
+        cooldown.start(now: Date())
+        now = Date()
+        focusedField = .code
+        UIAccessibility.post(notification: .announcement,
+                             argument: L("新しいコードを送りました。メールをご確認ください。", "We sent a new code. Please check your email."))
+    }
+
+    /// 登録の確認（6桁そろったら自動で呼ばれる）
+    private func confirmSignUp(username: String, code sent: String) async {
+        clearMessages()
+        if await auth.confirmSignUp(username: username, code: sent) {
+            codeEntry.finish(.verified)
+            let verifiedAt = Date()
+            let name = pending.displayName(for: email)
+            // 確認が済んだので登録の ID は要らない（名前は入れ終えるまで残す）
+            pending.forgetSignUp(email: email)
+            offerVerification = false
+            // 確認が済んだらそのままログインする。
+            // **失敗しても行き止まりにしない**——「すでに登録
+            // されています」から来た人は、登録欄に打った
+            // パスワードが古いものと違うことがある
+            await auth.signIn(email: email, password: password)
+            // 「確認できました」を少し見せてから進む（模型 NL2x「成功」）
+            let shown = Date().timeIntervalSince(verifiedAt)
+            if shown < VerificationCodeLayout.verifiedHold {
+                try? await Task.sleep(nanoseconds: UInt64((VerificationCodeLayout.verifiedHold - shown) * 1_000_000_000))
+            }
+            pendingUsername = nil
+            // 使い終えたコードを、あとの再設定の欄に残さない
+            leaveCodeScreen()
+            if auth.userId == nil {
+                // **ログインの欄に切り替える。** 登録から来た人は
+                // 登録の欄のまま「ログインしてください」と言われ、
+                // 押すと「すでに登録されています」に戻っていた
                 mode = .signIn
-                clearMessages()
-            } label: {
-                Text(L("ログインに戻る", "Back to sign in"))
-                    .font(.footnote)
-                    .foregroundStyle(WebTheme.muted2)
-                    .webTappable()
+                notice = L("確認できました。パスワードを入れてログインしてください。",
+                           "Verified. Please sign in with your password.")
+                return
             }
-            .buttonStyle(.plain)
-            .disabled(auth.isWorking)
+            // **控えを捨てるのは、名前を入れ終えてから。**
+            // 先に捨てると、電波が悪くて1回落ちただけで
+            // 入れた名前が永久に消える（次のログインでやり直せない）
+            if await applyDisplayName(name) {
+                pending.forget(email: email)
+            }
+        } else if auth.lastFailure == .aliasExists {
+            // 別のアカウントがこのメールで確認済み。案内（ログインか再設定）に
+            // 従えるよう、ログインの欄へ戻す。**登録の ID は捨て、名前だけ残す**——
+            // ID を残すと、確認済みのアカウントでの打ち間違いのたびに、確認できない
+            // 重複アカウントの確認画面へ誘っていた。名前は、そのアカウントに入った
+            // とき名前が空なら入れる（ログイン成功後の処理）
+            pending.forgetSignUp(email: email)
+            pendingUsername = nil
+            mode = .signIn
+            leaveCodeScreen()
+        } else {
+            applyCodeFailure()
         }
     }
 
     // MARK: - パスワードの再設定
 
+    /// 再設定のコードを送る前（メールアドレスの欄）。コードを送ったら確認コードの画面（`codeScreen`）へ
     private var resetSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             JPField(L("メールアドレス", "Email")) {
@@ -895,50 +1256,20 @@ struct SignInView: View {
                     .submitLabel(AuthFieldFlow.key(for: .email, in: flowForm).label)
                     .onSubmit { advance(from: .email) }
                     .accessibilityIdentifier("signin.reset.email")
-                    .disabled(mode == .resetConfirm)
             }
-            if mode == .resetConfirm {
-                JPField(L("確認コード", "Verification code")) {
-                    // 数字のキーボードには右下のキーが無い。並びには入れ、続く欄へは指で移る
-                    JPTextField("", text: $code)
-                        .keyboardType(.numberPad)
-                        .textContentType(.oneTimeCode)
-                        .focused($focusedField, equals: .code)
-                }
-                JPField(L("新しいパスワード", "New password")) {
-                    JPSecureField("", text: $password)
-                        .textContentType(.newPassword)
-                        .focused($focusedField, equals: .newPassword)
-                        .submitLabel(AuthFieldFlow.key(for: .newPassword, in: flowForm).label)
-                        .onSubmit { advance(from: .newPassword) }
-                }
-            }
-            Text(mode == .resetConfirm
-                 ? AuthMessage.passwordRule
-                 : L("登録したメールアドレスに、確認コードを送ります。",
-                     "We'll email a verification code to your address."))
+            Text(L("登録したメールアドレスに、確認コードを送ります。",
+                   "We'll email a verification code to your address."))
                 .font(.caption)
                 .foregroundStyle(WebTheme.faint)
 
-            if mode == .resetRequested {
-                Button {
-                    requestReset()
-                } label: {
-                    Text(L("コードを送る", "Send code")).jpPillButton(SignInLayout.primaryStyle)
-                }
-                .buttonStyle(.plain)
-                .disabled(auth.isWorking || email.isEmpty)
-                .opacity(auth.isWorking || email.isEmpty ? 0.4 : 1)
-            } else {
-                Button {
-                    confirmReset()
-                } label: {
-                    Text(L("パスワードを変える", "Change password")).jpPillButton(SignInLayout.primaryStyle)
-                }
-                .buttonStyle(.plain)
-                .disabled(auth.isWorking || code.isEmpty || password.isEmpty)
-                .opacity(auth.isWorking || code.isEmpty || password.isEmpty ? 0.4 : 1)
+            Button {
+                requestReset()
+            } label: {
+                Text(L("コードを送る", "Send code")).jpPillButton(SignInLayout.primaryStyle)
             }
+            .buttonStyle(.plain)
+            .disabled(auth.isWorking || email.isEmpty)
+            .opacity(auth.isWorking || email.isEmpty ? 0.4 : 1)
 
             Button {
                 mode = .signIn
@@ -959,32 +1290,36 @@ struct SignInView: View {
         Task {
             clearMessages()
             if await auth.startPasswordReset(email: email) {
+                password = ""
                 mode = .resetConfirm
-                // 届いたコードをすぐ打てるように（数字のキーボードが開いたまま続く）
-                focusedField = .code
-                notice = L("送りました。メールをご確認ください。",
-                           "Sent. Please check your email.")
+                // 届いたコードをすぐ打てるように（数字のキーボードが開いたまま続く）。送り直しの待ち時間を数え始める
+                startCodeScreen(sent: true)
             }
         }
     }
 
     /// 再設定: 新しいパスワードに変えて、そのままログイン（ボタンと、新しいパスワードの欄の右下のキー）
     private func confirmReset() {
-        guard !auth.isWorking, !code.isEmpty, !password.isEmpty else { return }
+        guard canConfirmReset, let sent = codeEntry.beginCheck() else { return }
         Task {
             clearMessages()
             let done = await auth.confirmPasswordReset(
-                email: email, code: code, newPassword: password
+                email: email, code: sent, newPassword: password
             )
-            if done {
-                // そのままログインまで通す（もう一度打たせない）
-                await auth.signIn(email: email, password: password)
-                await afterSignIn()
-                if auth.userId == nil {
-                    mode = .signIn
-                    notice = L("変えました。新しいパスワードでログインしてください。",
-                               "Changed. Please sign in with your new password.")
-                }
+            guard done else {
+                applyCodeFailure(hidesAccount: true)
+                if codeEntry.phase == .expired || codeEntry.phase == .wrong { password = "" }
+                return
+            }
+            codeEntry.finish(.verified)
+            // そのままログインまで通す（もう一度打たせない）
+            await auth.signIn(email: email, password: password)
+            await afterSignIn()
+            if auth.userId == nil {
+                leaveCodeScreen()
+                mode = .signIn
+                notice = L("変えました。新しいパスワードでログインしてください。",
+                           "Changed. Please sign in with your new password.")
             }
         }
     }
@@ -1007,7 +1342,8 @@ struct SignInView: View {
         if !email.isEmpty { filled.insert(.email) }
         if !password.isEmpty { filled.insert(.password); filled.insert(.newPassword) }
         if !displayName.isEmpty { filled.insert(.displayName) }
-        if !code.isEmpty { filled.insert(.code) }
+        // 確認コードは6桁そろって「入っている」（`VerificationCodeEntry`）
+        if codeEntry.isComplete { filled.insert(.code) }
         return filled
     }
 

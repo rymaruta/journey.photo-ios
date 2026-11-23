@@ -44,6 +44,19 @@ enum PreviewSession {
         #endif
     }
 
+    /// ログイン画面を、登録の確認コードの画面（6桁の箱）から開く（Debug のみ・UI テストだけ）。`-JPPreviewVerificationCode YES`。
+    /// 2026-11-23 判断: 本物の Cognito に登録せずに確認コードの画面の絵を撮り、見本の認証（`-JPPreviewLocalBackend`）と
+    /// 合わせて「6桁で自動で確かめてログインする」流れを確かめるため。送り先は見本のメール（`PreviewBackend.email`）。Release では必ず false
+    static let verificationCodeKey = "JPPreviewVerificationCode"
+
+    static var opensVerificationCode: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: verificationCodeKey)
+        #else
+        return false
+        #endif
+    }
+
     /// 鍵を持たずに入っている利用者 ID。入っていなければ `nil`。
     static var userId: String? {
         #if DEBUG

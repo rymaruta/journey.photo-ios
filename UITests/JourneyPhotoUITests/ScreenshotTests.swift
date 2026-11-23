@@ -4695,6 +4695,39 @@ final class ScreenshotTests: JPUITestCase {
         }
     }
 
+    /// **確認コードの画面**（2026-11-23・模型 NL2x「登録の確認コード」）。未ログインで、登録の確認コードの画面から開く
+    /// （`-JPPreviewVerificationCode YES`・本物の Cognito には送らない）。いいねからログインの板を開き、開いた姿（キーボードが出て
+    /// 箱が見える）と3桁打った姿を撮る。6桁は打たない（見本の認証が無いので確かめが本物へ行く）。出なければ撮らずに抜ける。値で見ること:
+    /// - キーボードが出ても、6桁の箱がキーボードより上にある（375×667 の寸法は単体テストの寸法と模型で見る）
+    /// - 「登録を完了する」のボタンが無い。戻る（ガラスの丸）と「メールアドレスを変える」の当たりが 44pt 以上
+    func testCapturesVerificationCode() {
+        let app = launchSignedOutHome(["-JPPreviewVerificationCode", "YES"])
+        guard app.tabBars.firstMatch.waitForExistence(timeout: 30) else { return unreached(app, "タブ") }
+        let like = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'いいね '")).firstMatch
+        guard like.waitForExistence(timeout: 30), like.isHittable else { return unreached(app, "ホームのいいね") }
+        like.tap()
+        let field = app.textFields["signin.code"].firstMatch
+        guard field.waitForExistence(timeout: 10) else { return unreached(app, "確認コードの画面") }
+        let keyboard = app.keyboards.firstMatch
+        if !keyboard.waitForExistence(timeout: 5) { field.tap() }
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "70d-確認コードの画面")
+        XCTAssertFalse(app.buttons["登録を完了する"].exists, "「登録を完了する」のボタンが残っている")
+        let back = app.buttons["signin.code.back"].firstMatch
+        let change = app.buttons["signin.code.changeEmail"].firstMatch
+        XCTAssertTrue(back.exists, "左上の戻るが無い")
+        XCTAssertGreaterThanOrEqual(back.frame.height, 44, "戻るの当たりが 44pt 未満")
+        XCTAssertGreaterThanOrEqual(change.frame.height, 44, "「メールアドレスを変える」の当たりが 44pt 未満")
+        if keyboard.exists {
+            print("[signin-code] keyboard=\(keyboard.frame) field=\(field.frame)")
+            XCTAssertLessThanOrEqual(field.frame.maxY, keyboard.frame.minY + 1, "6桁の箱がキーボードに隠れる")
+        }
+        field.typeText("482")
+        Thread.sleep(forTimeInterval: 1)
+        shoot(app, "70e-確認コードの画面（入力中）")
+        app.terminate()
+    }
+
     /// 並びを指で `dy` だけ動かす（正なら下へ引く）。1回で動かすのは画面の 40% まで
     private func dragFeed(_ app: XCUIApplication, by dy: CGFloat) {
         let window = app.windows.firstMatch
