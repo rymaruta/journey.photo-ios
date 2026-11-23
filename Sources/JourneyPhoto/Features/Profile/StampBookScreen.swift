@@ -13,52 +13,119 @@ enum StampBookEntry {
 
     /// 行き先
     @MainActor static func destination() -> some View { StampBookScreen() }
+    /// 押せないボタンの濃さ
+    static let disabledOpacity = 0.4
 }
 
-/// マイページの旅の道具の行（`JPRowLabel` の形）
-struct StampBookMyPageRow: View {
-    var body: some View {
-        NavigationLink { StampBookEntry.destination() } label: {
-            JPRowLabel(title: StampBookEntry.title, systemImage: StampBookEntry.systemImage, detail: StampBookEntry.detail)
-        }
-        .buttonStyle(JPRowButtonStyle())
-        .accessibilityIdentifier("trips.stampBook")
+extension StampBookEntry {
+    /// 行の右に出す最近の3つ（案の頁の4）。帳面がまだ無い・空なら出さない。荷札の列（札 #714）も同じ部品を使う
+    @MainActor static func recentAccessory(_ book: StampBook?) -> AnyView? {
+        guard let book, recentCount(book) != nil else { return nil }
+        return AnyView(StampBookRecentMarks(stamps: book.recent))
+    }
+
+    /// 行の右に出す数（1〜3）。出さないなら nil
+    static func recentCount(_ book: StampBook?) -> Int? {
+        guard let book, !book.isEmpty else { return nil }
+        return book.recent.count
     }
 }
 
-/// メニューの「旅の楽しみ」の行（`SiteMenuRow` の形）
-struct StampBookMenuRow: View {
+/// マイページの旅の道具の行（`JPRowLabel` の形）。右に最近の3つ
+struct StampBookMyPageRow: View {
+    @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var auth: AuthStore
+    @ObservedObject private var model = StampBookModel.shared
+
     var body: some View {
         NavigationLink { StampBookEntry.destination() } label: {
-            SiteMenuRow(title: StampBookEntry.title, systemImage: StampBookEntry.systemImage, note: StampBookEntry.detail)
+            JPRowLabel(title: StampBookEntry.title, systemImage: StampBookEntry.systemImage, detail: StampBookEntry.detail,
+                       accessory: StampBookEntry.recentAccessory(model.book))
+        }
+        .buttonStyle(JPRowButtonStyle())
+        .accessibilityIdentifier("trips.stampBook")
+        // この起動でまだ作っていないときだけ読む（マイページを開くたびには読まない）
+        .task(id: auth.userId) { await model.loadIfNeeded(userId: auth.userId, environment: environment) }
+    }
+}
+
+/// メニューの「旅の楽しみ」の行（`SiteMenuRow` の形）。右に最近の3つ
+struct StampBookMenuRow: View {
+    @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var auth: AuthStore
+    @ObservedObject private var model = StampBookModel.shared
+
+    var body: some View {
+        NavigationLink { StampBookEntry.destination() } label: {
+            SiteMenuRow(title: StampBookEntry.title, systemImage: StampBookEntry.systemImage, note: StampBookEntry.detail,
+                        accessory: StampBookEntry.recentAccessory(model.book))
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("menu.stampBook")
+        .task(id: auth.userId) { await model.loadIfNeeded(userId: auth.userId, environment: environment) }
     }
 }
 
 // MARK: - 読み込み
 
-/// 帳面を作る係。自分の写真・観光スポットの索引・結びの表・突き合わせの索引を読んで、端末で作る（保存しない）
+/// 帳面を作る係（1つだけ・`shared`）。自分の写真・観光スポットの索引・結びの表・突き合わせの索引を読んで、端末で作る（保存しない）。
+/// スタンプ帳の画面と入口の行（最近の3つ）が同じものを見る。
+///
+/// 2026-11-23 判断（確かめ役の指摘・重さ）:
+/// - 突き合わせの下ごしらえ（`SpotMatcher(index:)`・約 4,640 行）と帳面づくりは、画面の処理（メインスレッド）の外で
+/// - 画面を閉じたら（呼んだ側の Task が止まったら）作りかけを捨てる。途中で止める合図を見る（`buildCancellable`）
+/// - 前回と同じ材料（`StampBook.fingerprint`）なら作り直さない。作り終えた結果は、閉じたあとでも覚える
 @MainActor
 final class StampBookModel: ObservableObject {
-    enum Phase: Equatable { case loading, loaded, failed }
+    enum Phase: Equatable {
+        case loading, loaded, failed
+        /// ログインしていない（失敗の文は出さない）
+        case signedOut
+    }
+
+    static let shared = StampBookModel()
 
     @Published private(set) var book: StampBook?
     @Published private(set) var phase: Phase = .loading
     /// 観光スポットの索引（県のページの「まだの観光スポット」と、1つのスタンプの「観光スポットを見る」で使う）
     @Published private(set) var spots: [OfficialSpot] = []
+    /// 圏外で、前に読めた帳面を出している（上に一行出す）
+    @Published private(set) var showingSaved = false
 
-    /// 同じ起動の間だけ覚える前回の帳面（開き直したとき・圏外のときにすぐ出す）。1人分だけ。端末には書かない
-    private static var memory: (userId: String, book: StampBook, spots: [OfficialSpot])?
+    /// 同じ起動の間だけ覚える前回の帳面と材料の目印（開き直したとき・圏外のときにすぐ出す）。1人分だけ。端末には書かない
+    private var memory: (userId: String, fingerprint: Int, book: StampBook, spots: [OfficialSpot])?
+    private var running: (userId: String, task: Task<Void, Never>)?
 
     /// 退会・ログアウトで前の人の帳面を残さない
-    static func forget() { memory = nil }
+    static func forget() { shared.reset() }
 
+    private func reset() {
+        running?.task.cancel()
+        running = nil
+        memory = nil
+        book = nil
+        spots = []
+        phase = .loading
+        showingSaved = false
+    }
+
+    /// 投稿の直後の判定（`StampMoment.pressed`）に渡す、前の帳面。この起動でまだ作っていなければ nil
+    func knownBook(userId: String?) -> StampBook? {
+        guard let userId, let memory, memory.userId == userId else { return nil }
+        return memory.book
+    }
+
+    /// 入口の行から: この起動でまだ一度も作っていないときだけ読む（マイページを開くたびに読まない）
+    func loadIfNeeded(userId: String?, environment: AppEnvironment) async {
+        guard knownBook(userId: userId) == nil else { return }
+        await load(userId: userId, environment: environment)
+    }
+
+    /// 読み直す。同じ人の読み込みが動いていれば、それを待つ（2つ同時に作らない）
     func load(userId: String?, environment: AppEnvironment) async {
         guard let userId else {
-            book = nil
-            phase = .failed
+            reset()
+            phase = .signedOut
             return
         }
         if let sample = PreviewSession.stampBookSample {
@@ -67,13 +134,24 @@ final class StampBookModel: ObservableObject {
             phase = .loaded
             return
         }
-        if let memory = Self.memory, memory.userId == userId {
+        if let memory, memory.userId == userId {
             book = memory.book
             spots = memory.spots
             phase = .loaded
-        } else if Self.memory != nil {
-            Self.memory = nil
+        } else if memory != nil {
+            reset()
         }
+        if let running, running.userId == userId {
+            await withTaskCancellationHandler { await running.task.value } onCancel: { running.task.cancel() }
+            return
+        }
+        let task = Task { await self.refresh(userId: userId, environment: environment) }
+        running = (userId, task)
+        await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
+        if running?.task == task { running = nil }
+    }
+
+    private func refresh(userId: String, environment: AppEnvironment) async {
         do {
             async let photos = environment.photos.myPhotos()
             async let index = try? await environment.spots.fetchIndex()
@@ -82,20 +160,40 @@ final class StampBookModel: ObservableObject {
             let mine = try await photos
             guard let spotRows = await index else { throw StampBookLoadError.noIndex }
             let table = await links
-            let matcher = await match.map(SpotMatcher.init(index:))
-            // 写真が多い人もいるので、作るのは画面の処理の外で
-            let built = await Task.detached(priority: .userInitiated) {
-                StampBook.build(me: userId, photos: mine, spots: spotRows, links: table, matcher: matcher)
-            }.value
-            guard !Task.isCancelled else { return }
+            let matchIndex = await match
+            try Task.checkCancellation()
+            let key = StampBook.fingerprint(me: userId, photos: mine, spots: spotRows, links: table,
+                                            matchRows: matchIndex?.rows.count)
+            showingSaved = false
+            if let memory, memory.userId == userId, memory.fingerprint == key {
+                // 前回と同じ材料: 作り直さない
+                phase = .loaded
+                return
+            }
+            // 下ごしらえも帳面づくりも、画面の処理の外で。止める合図は外の処理へ渡す
+            let job = Task.detached(priority: .userInitiated) { () throws -> StampBook in
+                let matcher = matchIndex.map(SpotMatcher.init(index:))
+                try Task.checkCancellation()
+                return try StampBook.buildCancellable(me: userId, photos: mine, spots: spotRows, links: table,
+                                                      matcher: matcher)
+            }
+            let built = try await withTaskCancellationHandler { try await job.value } onCancel: { job.cancel() }
+            // 作り終えた結果は覚える（閉じたあとでも次に使える）。人が替わっていたら捨てる
+            guard memory == nil || memory?.userId == userId, running?.userId == userId else { return }
+            memory = (userId, key, built, spotRows)
             book = built
             spots = spotRows
             phase = .loaded
-            Self.memory = (userId, built, spotRows)
+        } catch is CancellationError {
+            return
         } catch {
             guard !Task.isCancelled else { return }
-            // 前に読めた帳面があれば、それを出したまま（圏外）。無ければ失敗の札
-            if book == nil { phase = .failed }
+            // 前に読めた帳面があれば、それを出したまま（圏外ならその旨を一行）。無ければ失敗の札
+            if book == nil {
+                phase = .failed
+            } else {
+                showingSaved = OfflineTripStore.isOffline(error)
+            }
         }
     }
 
@@ -117,7 +215,7 @@ struct StampBookScreen: View {
 
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var auth: AuthStore
-    @StateObject private var model = StampBookModel()
+    @ObservedObject private var model = StampBookModel.shared
     @State private var openedPrefecture: StampBookPage?
     @State private var browsing = false
 
@@ -145,7 +243,17 @@ struct StampBookScreen: View {
 
     @ViewBuilder
     private var content: some View {
-        if let book = model.book {
+        if model.phase == .signedOut {
+            // ログインしていない（入口は本人のページにしか無いので、ふつうは来ない）。失敗の文は出さない
+            EmptyView()
+        } else if let book = model.book {
+            if model.showingSaved {
+                // 圏外: 前に読んだ帳面を出したまま、上に一行（ほかの画面の圏外の帯と同じ部品）
+                JPStateBand(kind: .offline, title: StampBookText.offlineSaved,
+                            actionIdentifier: "stampBook.offline.retry",
+                            action: { Task { await model.load(userId: auth.userId, environment: environment) } })
+                .accessibilityIdentifier("stampBook.offline")
+            }
             if book.isEmpty { emptyBlock } else { cover(book) }
         } else if model.phase == .failed {
             ErrorBanner(message: StampBookText.loadFailed) {
@@ -235,7 +343,6 @@ struct StampBookScreen: View {
                         .frame(maxWidth: 230)
                         .frame(maxWidth: .infinity)
                     StampEmptySlot(text: StampBookText.emptySlot)
-                        .frame(width: 84)
                 }
             }
             Text(StampBookText.emptyTitle)
@@ -243,6 +350,8 @@ struct StampBookScreen: View {
                 .foregroundStyle(WebTheme.foreground)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+            // 観光スポットの索引がまだ無い（見本の帳面・読めていない）間は押せない見た目にする（薄くして押せなくする）
+            let browsable = !model.spots.isEmpty
             Button { browsing = true } label: {
                 Text(StampBookText.browseSpots)
                     .font(JPFont.confirmButton)
@@ -250,9 +359,10 @@ struct StampBookScreen: View {
                     .frame(maxWidth: .infinity, minHeight: JPHeight.primaryButton)
                     .background(WebTheme.accentFill, in: Capsule())
                     .contentShape(Capsule())
+                    .opacity(browsable ? 1 : StampBookEntry.disabledOpacity)
             }
             .buttonStyle(.plain)
-            .disabled(model.spots.isEmpty)
+            .disabled(!browsable)
             .accessibilityIdentifier("stampBook.empty.browse")
         }
         .frame(maxWidth: .infinity)

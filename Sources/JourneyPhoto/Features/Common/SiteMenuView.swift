@@ -248,6 +248,8 @@ struct SiteMenuRow: View {
     var value: String? = nil
     /// 右の件数バッジ（真鍮・`CountBadge`）。無ければ出さない（旅のトランクの貼っていないラベル・2026-11-23）
     var badge: Int? = nil
+    /// 右の小さな絵（矢印の手前・旅のスタンプ帳の最近の3つ・2026-11-23 札 #712）。無ければ出さない
+    var accessory: AnyView? = nil
 
     /// 行の高さ（板の 72）
     nonisolated static let height: CGFloat = 72
@@ -283,6 +285,7 @@ struct SiteMenuRow: View {
             if let badge {
                 CountBadge(count: badge, maximum: 99)
             }
+            if let accessory { accessory }
             Image(systemName: "chevron.right")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(WebTheme.text3)

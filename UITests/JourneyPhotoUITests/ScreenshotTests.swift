@@ -5538,7 +5538,8 @@ final class ScreenshotTests: JPUITestCase {
             guard tripsTab.waitForExistence(timeout: 20) else { return }
             tripsTab.tap()
             let entry = app.buttons["trips.stampBook"].firstMatch
-            guard entry.waitForExistence(timeout: 20) else { return }
+            // 入口が出ないのは不具合（黙って抜けない・確かめ役の指摘）。メニューの行は `testCapturesSiteMenuTools` が見る
+            guard entry.waitForExistence(timeout: 20) else { return XCTFail("マイページの旅の記録に旅のスタンプ帳の行が無い") }
             let bottom = app.windows.firstMatch.frame.maxY - 100
             var swipes = 0
             while entry.exists, entry.frame.maxY > bottom || !entry.isHittable, swipes < 5 {
@@ -5978,7 +5979,8 @@ final class ScreenshotTests: JPUITestCase {
         guard trunk.waitForExistence(timeout: 10) else { return XCTFail("メニューに旅のトランクの行が無い") }
         scrollTo(trunk, in: app)
         XCTAssertFalse(app.buttons["menu.camper"].firstMatch.exists, "消したとおまわり号の行が残っている")
-        for id in ["menu.tripPlans", "menu.albums", "menu.lightForecast", "menu.pass", "menu.trunk"] {
+        // 旅のスタンプ帳の行（2026-11-23・札 #712）。とおまわり号の行があった所（トランクの下）
+        for id in ["menu.tripPlans", "menu.albums", "menu.lightForecast", "menu.pass", "menu.trunk", "menu.stampBook"] {
             let row = app.buttons[id].firstMatch
             XCTAssertTrue(row.exists, "メニューに \(id) が無い")
             if row.exists { XCTAssertGreaterThanOrEqual(row.frame.height, 44, "\(id) が 44pt 未満") }

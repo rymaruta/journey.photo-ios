@@ -63,7 +63,7 @@ final class StampBookTests: XCTestCase {
         let screen = try String(contentsOf: URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/JourneyPhoto/Features/Profile/StampBookScreen.swift"), encoding: .utf8)
-        XCTAssertTrue(screen.contains("StampBook.build(me: userId,"), "帳面を自分の id で作っていない")
+        XCTAssertTrue(screen.contains("StampBook.buildCancellable(me: userId,"), "帳面を自分の id で作っていない")
     }
 
     /// 本人が選んだ `spotId` の写真で、そのスポットのスタンプが1つ押される。同じ所の写真は1つにまとまる
@@ -269,5 +269,193 @@ final class StampBookTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/JourneyPhoto/Core/Auth/AuthStore.swift"), encoding: .utf8)
         XCTAssertTrue(auth.contains("StampBookModel" + ".forget()"))
+    }
+
+    // MARK: - 重さ（2026-11-23 確かめ役の指摘）
+
+    /// 作り物の材料: 観光スポット `spots` 件（47都道府県に散らす）と、自分の写真 `count` 枚
+    /// （半分は本人が選んだ `spotId`、4分の1は結びの表、4分の1は撮影地の名前で突き合わせ）
+    private func heavyInput(count: Int, spots spotCount: Int) throws
+        -> (photos: [Photo], spots: [OfficialSpot], links: SpotPhotoLinks, index: SpotMatchIndex) {
+        let prefectures = RegionList.prefectures
+        var spotRows: [[String: Any]] = []
+        var matchRows: [SpotMatchIndex.Row] = []
+        for i in 0..<spotCount {
+            let name = "作り物の観光地\(i)番"
+            let lat = 31.0 + Double(i % 140) * 0.1, lng = 130.0 + Double(i / 140) * 0.3
+            spotRows.append(["spotId": "sp_\(i)", "slug": "s\(i)", "name": name, "stage": "published",
+                             "region": ["prefecture": prefectures[i % prefectures.count]], "category": "寺院",
+                             "coords": ["lat": lat, "lng": lng]])
+            matchRows.append(.init(id: "sp_\(i)", name: name, key: SpotMatcher.normalize(name), aliases: [],
+                                   coords: Photo.Coords(lat: lat, lng: lng), prefecture: prefectures[i % prefectures.count]))
+        }
+        let spots = try JSONDecoder.api.decode([OfficialSpot].self, from: JSONSerialization.data(withJSONObject: spotRows))
+        var photoRows: [[String: Any]] = []
+        var links: [String: String] = [:]
+        for i in 0..<count {
+            let target = (i * 7) % spotCount
+            var row: [String: Any] = ["id": "p\(i)", "src": "/uploads/p\(i).jpg", "userId": me,
+                                      "date": String(format: "2025-%02d-%02d", i % 12 + 1, i % 28 + 1)]
+            switch i % 4 {
+            case 0, 1: row["spotId"] = "sp_\(target)"
+            case 2: links["p\(i)"] = "sp_\(target)"
+            default: row["location"] = "作り物の観光地\(target)番"
+            }
+            photoRows.append(row)
+        }
+        let photos = try JSONDecoder.api.decode([Photo].self, from: JSONSerialization.data(withJSONObject: photoRows))
+        return (photos, spots, SpotPhotoLinks(links: links), SpotMatchIndex(rows: matchRows))
+    }
+
+    /// 5,000 枚の写真で帳面を作る時間（突き合わせの下ごしらえを含む）。上限を超えたら落とす。
+    /// 上限は Linux の Debug（最適化なし）で測った値の数倍（数は報告と `measured` の行に出す）
+    func testBuildFiveThousandPhotosStaysUnderLimit() throws {
+        let input = try heavyInput(count: 5_000, spots: 4_640)
+        let start = Date()
+        let matcher = SpotMatcher(index: input.index)
+        let book = StampBook.build(me: me, photos: input.photos, spots: input.spots, links: input.links, matcher: matcher)
+        let seconds = Date().timeIntervalSince(start)
+        print("measured [StampBook.build 5000 photos] \(String(format: "%.3f", seconds)) s")
+        XCTAssertFalse(book.isEmpty)
+        XCTAssertEqual(book.stamps.reduce(0) { $0 + $1.photos.count }, 5_000, "結ばれるはずの写真が抜けた")
+        XCTAssertLessThan(seconds, Self.fiveThousandLimit, "5,000 枚で帳面を作るのに \(seconds) 秒かかった")
+    }
+
+    /// 5,000 枚の上限（秒）
+    static let fiveThousandLimit: TimeInterval = 20
+
+    /// 止める合図が来ていたら、作りかけを捨てて CancellationError で抜ける
+    func testCancellableBuildStopsWhenCancelled() async throws {
+        let input = try heavyInput(count: 300, spots: 200)
+        let task = Task { () throws -> StampBook in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try StampBook.buildCancellable(me: me, photos: input.photos, spots: input.spots, links: input.links,
+                                                  matcher: nil)
+        }
+        do {
+            _ = try await task.value
+            XCTFail("止める合図を見ていない")
+        } catch is CancellationError {
+        }
+        // 合図が無ければ、ふつうの build と同じ帳面
+        let full = try StampBook.buildCancellable(me: me, photos: input.photos, spots: input.spots, links: input.links,
+                                                  matcher: nil)
+        XCTAssertEqual(full, StampBook.build(me: me, photos: input.photos, spots: input.spots, links: input.links, matcher: nil))
+    }
+
+    /// 材料の目印: 同じ材料なら同じ値、写真の id・spotId・撮影地・題・日、表と索引の件数が変われば違う値
+    func testFingerprintChangesOnlyWithInputs() throws {
+        let spots = try ledger()
+        let base = [try photo("a", spotId: "sp_kinkaku", date: "2026-11-23", location: "京都")]
+        func key(_ photos: [Photo], links: SpotPhotoLinks = .empty, spots: [OfficialSpot]? = nil, match: Int? = 10) -> Int {
+            StampBook.fingerprint(me: me, photos: photos, spots: spots ?? (try? ledger()) ?? [], links: links, matchRows: match)
+        }
+        XCTAssertEqual(key(base), key([try photo("a", spotId: "sp_kinkaku", date: "2026-11-23", location: "京都")]))
+        XCTAssertNotEqual(key(base), key([try photo("b", spotId: "sp_kinkaku", date: "2026-11-23", location: "京都")]))
+        XCTAssertNotEqual(key(base), key([try photo("a", spotId: "sp_otaru", date: "2026-11-23", location: "京都")]))
+        XCTAssertNotEqual(key(base), key([try photo("a", spotId: "sp_kinkaku", date: "2026-11-23", location: "大阪")]))
+        XCTAssertNotEqual(key(base), key([try photo("a", spotId: "sp_kinkaku", date: "2026-11-22", location: "京都")]))
+        XCTAssertNotEqual(key(base), key([try photo("a", spotId: "sp_kinkaku", date: "2026-11-23", location: "京都", spotAuto: "off")]))
+        XCTAssertNotEqual(key(base), key(base + [try photo("c")]))
+        XCTAssertNotEqual(key(base), key(base, links: SpotPhotoLinks(links: ["x": "sp_otaru"])))
+        XCTAssertNotEqual(key(base), key(base, links: SpotPhotoLinks.empty.with(["a": .off(spotId: "sp_kinkaku")])))
+        XCTAssertNotEqual(key(base), key(base, spots: Array(spots.dropLast())))
+        XCTAssertNotEqual(key(base), key(base, match: 11))
+        XCTAssertNotEqual(key(base), StampBook.fingerprint(me: "u_other", photos: base, spots: spots, links: .empty, matchRows: 10))
+    }
+
+    /// 読み込みの係の決まり（画面の処理の外で下ごしらえ・同じ材料なら作り直さない・止める合図・ログアウト）
+    func testModelBuildsOffMainAndReusesSameInputs() throws {
+        let screen = try source("Features/Profile/StampBookScreen.swift")
+        let detached = try XCTUnwrap(screen.range(of: "Task.detached(priority: .userInitiated)"))
+        let matcher = try XCTUnwrap(screen.range(of: "SpotMatcher.init(index:)"))
+        XCTAssertLessThan(detached.lowerBound, matcher.lowerBound, "突き合わせの下ごしらえが画面の処理の中にある")
+        XCTAssertEqual(screen.components(separatedBy: "SpotMatcher.init(index:)").count - 1, 1, "下ごしらえが2か所にある")
+        XCTAssertFalse(screen.contains("= SpotMatcher("), "下ごしらえが画面の処理の中にある")
+        XCTAssertTrue(screen.contains("StampBook.buildCancellable("), "止める合図を見ない作り方を使っている")
+        XCTAssertTrue(screen.contains("onCancel: { job.cancel() }"), "閉じても外の処理が止まらない")
+        let fingerprint = try XCTUnwrap(screen.range(of: "memory.fingerprint == key"))
+        XCTAssertLessThan(fingerprint.lowerBound, detached.lowerBound, "同じ材料でも作り直している")
+        // ログインしていないときは失敗の文を出さない
+        XCTAssertTrue(screen.contains("phase = .signedOut"))
+        XCTAssertTrue(screen.contains("if model.phase == .signedOut {"))
+    }
+
+    // MARK: - 押される瞬間（案の頁の1）
+
+    func testPressedOnlyForFirstStampAtThatSpot() throws {
+        let spots = try ledger()
+        let before = StampBook.build(me: me, photos: [try photo("a", spotId: "sp_kinkaku", date: "2026-01-01"),
+                                                      try photo("b", spotId: "sp_fushimi", date: "2026-01-02")],
+                                     spots: spots, links: .empty, matcher: nil)
+        // 京都府で3つめ
+        let pressed = try XCTUnwrap(StampMoment.pressed(spotIds: ["sp_arashi"], before: before, spots: spots, today: "2026-11-23"))
+        XCTAssertEqual(pressed.stamp.spotId, "sp_arashi")
+        XCTAssertEqual(pressed.stamp.firstDay, "2026-11-23")
+        XCTAssertEqual(pressed.ordinal, 3)
+        XCTAssertEqual(StampBookText.pressedFact(place: pressed.stamp.placeName, ordinal: pressed.ordinal), "京都府で3つめのスタンプです")
+        // もう押してある所・下書き・知らない所・空は出さない。初めての所が後ろにあればそれ
+        XCTAssertNil(StampMoment.pressed(spotIds: ["sp_kinkaku"], before: before, spots: spots, today: "2026-11-23"))
+        XCTAssertNil(StampMoment.pressed(spotIds: ["sp_draft", "sp_nowhere", ""], before: before, spots: spots, today: "2026-11-23"))
+        XCTAssertEqual(StampMoment.pressed(spotIds: ["sp_kinkaku", "sp_otaru"], before: before, spots: spots,
+                                           today: "2026-11-23")?.stamp.spotId, "sp_otaru")
+        // 前の帳面が分からないときは出さない（初めてか分からないのに祝わない）
+        XCTAssertNil(StampMoment.pressed(spotIds: ["sp_arashi"], before: nil, spots: spots, today: "2026-11-23"))
+        // 海外は国ごとに数える
+        let abroad = try XCTUnwrap(StampMoment.pressed(spotIds: ["sp_hall"], before: before, spots: spots, today: "2026-11-23"))
+        XCTAssertEqual(abroad.stamp.placeName, "オーストリア")
+        XCTAssertEqual(abroad.ordinal, 1)
+        XCTAssertEqual(abroad.stamp.frame, .abroad)
+    }
+
+    /// 押される瞬間の部品: 0.62 秒・紙が 2pt 沈む・軽い触覚1回・動きを減らす設定では動かさない
+    func testPressedViewMotionRules() throws {
+        XCTAssertEqual(StampMoment.landDuration, 0.62)
+        XCTAssertEqual(StampMoment.paperSink, 2)
+        let view = try source("Features/Profile/StampBookView.swift")
+        XCTAssertTrue(view.contains(".sensoryFeedback(.impact(weight: .light), trigger: tick)"))
+        XCTAssertTrue(view.contains("guard !reduceMotion else {"))
+        XCTAssertFalse(view.contains("AudioServices") || view.contains("AVAudio"), "音を出している")
+        XCTAssertTrue(view.contains(".onTapGesture { play() }"), "紙を押しても、もう一度動かない")
+    }
+
+    // MARK: - 入口の最近の3つ・状態・言葉
+
+    func testEntryShowsRecentThreeInBothRows() throws {
+        let screen = try source("Features/Profile/StampBookScreen.swift")
+        XCTAssertEqual(screen.components(separatedBy: "accessory: StampBookEntry.recentAccessory(model.book)").count - 1, 2,
+                       "マイページとメニューの行が同じ最近の3つの部品を使っていない")
+        XCTAssertNil(StampBookEntry.recentCount(nil))
+        XCTAssertNil(StampBookEntry.recentCount(.empty))
+        XCTAssertEqual(StampBookEntry.recentCount(StampBookSamples.book("many")), 3)
+        XCTAssertEqual(StampBookEntry.recentCount(StampBookSamples.book("few")), 3)
+    }
+
+    func testStatesAndSlotRules() throws {
+        let screen = try source("Features/Profile/StampBookScreen.swift")
+        let view = try source("Features/Profile/StampBookView.swift")
+        XCTAssertFalse(view.contains("minimumScaleFactor"), "12pt の字を縮めている")
+        XCTAssertGreaterThanOrEqual(StampEmptySlot.minimumSide, 96)
+        // 圏外で前の帳面を出しているときは一行（ほかの画面の圏外の帯と同じ部品）
+        XCTAssertTrue(screen.contains("JPStateBand(kind: .offline, title: StampBookText.offlineSaved"))
+        XCTAssertEqual(StampBookText.offlineSaved, "電波が無いので、前に読んだ帳面です")
+        // 押せない「観光スポットを見る」は押せない見た目
+        XCTAssertTrue(screen.contains(".opacity(browsable ? 1 : StampBookEntry.disabledOpacity)"))
+        XCTAssertTrue(screen.contains(".disabled(!browsable)"))
+        // 名前は「旅のスタンプ帳」にそろえる（題・行・文）
+        XCTAssertEqual(StampBookEntry.title, "旅のスタンプ帳")
+        for text in [StampBookText.loadFailed, StampBookText.onlyYou, StampBookText.openBook] {
+            XCTAssertTrue(text.contains("旅のスタンプ帳"), text)
+        }
+        for text in [StampBookText.offlineSaved, StampBookText.pressedTitle("浅草寺"), StampBookText.labelAlsoArrived,
+                     StampBookText.recentAccessibility(["浅草寺", "東京タワー"]), StampBookText.openBook] {
+            XCTAssertFalse(text.contains("・") || text.contains("·"), text)
+        }
+    }
+
+    private func source(_ path: String) throws -> String {
+        try String(contentsOf: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/JourneyPhoto").appendingPathComponent(path), encoding: .utf8)
     }
 }

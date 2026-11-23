@@ -97,6 +97,21 @@ struct StampBook: Equatable {
     ///   - matcher: 端末の突き合わせ（無ければ `spotId` と表だけで結ぶ）
     static func build(me: String?, photos: [Photo], spots: [OfficialSpot], links: SpotPhotoLinks,
                       matcher: SpotMatcher?) -> StampBook {
+        (try? make(me: me, photos: photos, spots: spots, links: links, matcher: matcher, checksCancel: false)) ?? .empty
+    }
+
+    /// `build` と同じ。ただし途中で、止める合図（`Task.checkCancellation()`）を見る。
+    /// 画面を閉じたら作りかけを捨てる（`StampBookModel` が画面の外の処理で呼ぶ）
+    static func buildCancellable(me: String?, photos: [Photo], spots: [OfficialSpot], links: SpotPhotoLinks,
+                                 matcher: SpotMatcher?) throws -> StampBook {
+        try make(me: me, photos: photos, spots: spots, links: links, matcher: matcher, checksCancel: true)
+    }
+
+    /// 止める合図を見る間隔（写真の枚数）。突き合わせは1枚で索引の全行（約 4,640）を見るので、細かめに見る
+    static let cancelStride = 64
+
+    private static func make(me: String?, photos: [Photo], spots: [OfficialSpot], links: SpotPhotoLinks,
+                             matcher: SpotMatcher?, checksCancel: Bool) throws -> StampBook {
         var byId: [String: OfficialSpot] = [:]
         var totals: [String: Int] = [:]
         let known = Set(RegionList.prefectures)
@@ -104,24 +119,26 @@ struct StampBook: Equatable {
             byId[spot.spotId] = spot
             if let prefecture = japanesePrefecture(spot, known: known) { totals[prefecture, default: 0] += 1 }
         }
-        var grouped: [String: [Photo]] = [:]
+        // 写真ごとの日（並べ替えの中で何度も読まない）
+        var grouped: [String: [(photo: Photo, day: String?)]] = [:]
         var order: [String] = []
         // 他人の写真は入れない（CLAUDE.md「他人の写真は、その人のもの」）。持ち主の確かめは1か所（`PhotoOwnership`）
-        for photo in PhotoOwnership.mine(photos, me: me) {
+        for (index, photo) in PhotoOwnership.mine(photos, me: me).enumerated() {
+            if checksCancel, index % cancelStride == 0 { try Task.checkCancellation() }
             guard let spotId = spotId(for: photo, links: links, matcher: matcher), byId[spotId] != nil else { continue }
             if grouped[spotId] == nil { order.append(spotId) }
-            grouped[spotId, default: []].append(photo)
+            grouped[spotId, default: []].append((photo, day(of: photo)))
         }
+        if checksCancel { try Task.checkCancellation() }
         var stamps: [Stamp] = []
         for spotId in order {
             guard let spot = byId[spotId], let shots = grouped[spotId] else { continue }
             let prefecture = japanesePrefecture(spot, known: known)
             let country = prefecture == nil ? (spot.region?.country.flatMap { $0.isEmpty ? nil : $0 } ?? L("海外", "Abroad")) : nil
-            let days = shots.compactMap(day(of:))
-            let sortedShots = shots.sorted { (day(of: $0) ?? "") > (day(of: $1) ?? "") }
+            let sortedShots = shots.sorted { ($0.day ?? "") > ($1.day ?? "") }.map(\.photo)
             stamps.append(Stamp(spotId: spotId, name: spot.name, prefecture: prefecture, country: country,
                                 frame: StampFrame.of(category: spot.category, abroad: prefecture == nil),
-                                firstDay: days.min(), photos: sortedShots))
+                                firstDay: shots.compactMap(\.day).min(), photos: sortedShots))
         }
         stamps.sort { a, b in
             switch (a.firstDay, b.firstDay) {
@@ -132,6 +149,40 @@ struct StampBook: Equatable {
             }
         }
         return StampBook(stamps: stamps, totals: totals)
+    }
+
+    /// 材料の目印（2026-11-23 判断・確かめ役の指摘）。**前回と同じ材料なら作り直さない**ための値。
+    /// 見るのは、自分の id、写真ごとの id、`spotId`、外した印（`spotAuto`）、撮影地、題と説明の要約、位置、日、
+    /// それと結びの表と観光スポットの索引と突き合わせの索引の件数。`Hasher` の値は起動ごとに変わるので、
+    /// 同じ起動の間の覚え（`StampBookModel`）にだけ使い、端末には書かない
+    static func fingerprint(me: String?, photos: [Photo], spots: [OfficialSpot], links: SpotPhotoLinks,
+                            matchRows: Int?) -> Int {
+        var h = Hasher()
+        h.combine(me)
+        h.combine(photos.count)
+        for photo in photos {
+            h.combine(photo.id)
+            h.combine(PhotoOwnership.ownerId(of: photo))
+            h.combine(photo.spotId)
+            h.combine(photo.spotAutoMark)
+            h.combine(photo.location)
+            h.combine(SpotMatcher.texts(photo))
+            h.combine(photo.coords?.lat)
+            h.combine(photo.coords?.lng)
+            h.combine(photo.date)
+            h.combine(photo.createdAt)
+        }
+        h.combine(links.links.count)
+        // この端末で本人が外した、戻した結びは件数が同じでも中身で変わる（数は少ないので中身を見る）
+        for (photoId, override) in links.overrides.sorted(by: { $0.key < $1.key }) {
+            h.combine(photoId)
+            h.combine(override.spotId)
+            if case .off = override { h.combine(0) } else { h.combine(1) }
+        }
+        h.combine(spots.count)
+        h.combine(spots.filter(\.isDraft).count)
+        h.combine(matchRows)
+        return h.finalize()
     }
 
     /// 写真の観光スポット。**本人が選んだ `spotId` → 結びの表 → 端末の突き合わせ**。本人が外した写真は自動では結ばない
@@ -338,10 +389,31 @@ enum StampBookText {
     static var openSpot: String { L("観光スポットを見る", "Open the spot") }
     static var close: String { L("閉じる", "Close") }
     static var loadFailed: String {
-        L("スタンプ帳を読めませんでした。通信を確かめて、もう一度お試しください",
+        L("旅のスタンプ帳を読めませんでした。通信を確かめて、もう一度お試しください",
           "Couldn't load your stamp book. Check your connection and try again.")
     }
-    static var onlyYou: String { L("スタンプ帳はあなたにだけ見えます", "Only you can see your stamp book") }
+    static var onlyYou: String { L("旅のスタンプ帳はあなたにだけ見えます", "Only you can see your stamp book") }
+    /// 圏外で、同じ起動の間に読めた帳面を出しているとき
+    static var offlineSaved: String {
+        L("電波が無いので、前に読んだ帳面です", "No connection. Showing the stamp book you loaded earlier")
+    }
+    /// 押される瞬間の見出し「鹿苑寺（金閣寺）の\nスタンプが押されました」
+    static func pressedTitle(_ name: String) -> String {
+        L("\(name)の\nスタンプが押されました", "You got a stamp for\n\(name)")
+    }
+    /// 押される瞬間の事実の一文「京都府で3つめのスタンプです」
+    static func pressedFact(place: String, ordinal: Int) -> String {
+        L("\(place)で\(ordinal)つめのスタンプです", ordinal == 1 ? "Your first stamp in \(place)" : "Stamp no. \(ordinal) in \(place)")
+    }
+    static var openBook: String { L("旅のスタンプ帳を見る", "Open your stamp book") }
+    /// 押される瞬間の画面の下の一行（同じ投稿でトランクのラベルも届いたとき）
+    static var labelAlsoArrived: String {
+        L("旅のラベルも1枚、手持ちに入りました", "A travel label was also added to your collection")
+    }
+    /// 入口の行の右の最近の3つの読み上げ
+    static func recentAccessibility(_ names: [String]) -> String {
+        L("最近のスタンプ、\(names.joined(separator: "、"))", "Recent stamps: \(names.joined(separator: ", "))")
+    }
 
     /// 日付「2026.11.23」（スタンプの中の字）
     static func stampDate(_ day: String?) -> String {
@@ -376,6 +448,64 @@ enum StampBookText {
         }
         return L("\(prefecture)、スタンプ \(have) 個", "\(prefecture), \(have) stamps")
     }
+}
+
+// MARK: - 投稿の直後に押される瞬間
+
+/// 投稿の直後に「スタンプが押されました」を出すかの判定（案の頁の1・2026-11-23 owner「推奨でおっけ」）。
+///
+/// **出すのは、その観光スポットで初めてのときだけ。** 2回目からは何も出さない（帳面の中で写真が増えるだけ）。
+/// 帳面をまだ作っていない（前の帳面が分からない）ときも出さない（初めてか分からないのに祝わない）。
+/// 事実の一文は「京都府で3つめのスタンプです」だけ。連続日数や順位は出さない。
+///
+/// 投稿の直後は、自動の候補がまだ写真の `spotId` に書かれていない（サイトの表に載るまで時間がかかる）。
+/// だから渡すのは投稿の画面が持っている観光スポット（本人が選んだもの → `UploadViewModel.autoSpotCandidate`）。
+///
+/// **つなぐ所（まとめるときに呼ぶ1行・札 #712）**: 投稿が終わってラベルが届く所（`RootView` の
+/// `LabelArrivedView` を出す所。release-1.2.0 で形が変わっている #706・#710・#711）で
+/// `StampMoment.pressed(spotIds: <投稿した写真の観光スポット>, before: StampBookModel.shared.knownBook(userId:), spots: <索引>, today: <今日>)`
+/// が値を返したら、ラベルの画面の代わりに `StampPressedView(pressed:labelAlsoArrived:onOpenBook:)` を出す
+/// （ラベルは手持ちに入れ、画面の下に一行で知らせる。投稿のあとの画面は1枚）
+enum StampMoment {
+
+    struct Pressed: Equatable, Identifiable {
+        let stamp: StampBook.Stamp
+        /// その県（海外は国）で何番目のスタンプか（1から）
+        let ordinal: Int
+
+        var id: String { stamp.spotId }
+    }
+
+    /// - Parameters:
+    ///   - spotIds: 投稿した写真の観光スポット（投稿した順。重なりや空は気にしない）
+    ///   - before: 投稿の前の帳面。nil（まだ作っていない）なら出さない
+    ///   - spots: 観光スポットの索引（公開済みの行だけ使う）
+    ///   - today: 今日（`YYYY-MM-DD`）。スタンプの日付になる
+    static func pressed(spotIds: [String], before: StampBook?, spots: [OfficialSpot], today: String) -> Pressed? {
+        guard let before else { return nil }
+        let have = Set(before.stamps.map(\.spotId))
+        let known = Set(RegionList.prefectures)
+        for spotId in spotIds where !spotId.isEmpty && !have.contains(spotId) {
+            guard let spot = spots.first(where: { $0.spotId == spotId && !$0.isDraft }) else { continue }
+            let prefecture = StampBook.japanesePrefecture(spot, known: known)
+            let country = prefecture == nil ? (spot.region?.country.flatMap { $0.isEmpty ? nil : $0 } ?? L("海外", "Abroad")) : nil
+            let stamp = StampBook.Stamp(spotId: spotId, name: spot.name, prefecture: prefecture, country: country,
+                                        frame: StampFrame.of(category: spot.category, abroad: prefecture == nil),
+                                        firstDay: today, photos: [])
+            let ordinal = prefecture.map { before.stamps(in: $0).count + 1 }
+                ?? (before.abroad.filter { $0.country == country }.count + 1)
+            return Pressed(stamp: stamp, ordinal: ordinal)
+        }
+        return nil
+    }
+
+    /// 押されて止まるまでの時間（秒・案の頁の 0.62 秒）
+    static let landDuration = 0.62
+    /// 止まった瞬間に紙が沈む深さ（pt）
+    static let paperSink: CGFloat = 2
+    /// 落ち始めの高さ（pt・上から）と大きさ
+    static let dropFrom: CGFloat = -120
+    static let dropScale: CGFloat = 1.18
 }
 
 // MARK: - 画面写真の試験の見本

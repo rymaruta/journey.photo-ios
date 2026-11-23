@@ -229,24 +229,167 @@ struct StampBookMap: View {
     }
 }
 
-/// 点線の丸（まだ押されていない所）。「ここに押されます」「つぎのひとつ」
+/// 点線の丸（まだ押されていない所）。「ここに押されます」「つぎのひとつ」。
+/// 2026-11-23 判断（確かめ役の指摘）: 12pt の字を縮めない（字を縮める指定をやめた）。字が入るよう、丸の側を大きくする
 struct StampEmptySlot: View {
     let text: String
 
+    /// 丸の最小の一辺（12pt の2行が縮まずに入る大きさ）
+    nonisolated static let minimumSide: CGFloat = 96
+
     var body: some View {
-        ZStack {
-            Circle()
-                .strokeBorder(StampInk.swiftUIColor(StampInk.paperLine), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-            Text(text)
-                .font(JPFont.caption)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(StampInk.swiftUIColor(StampInk.sumiSoft))
-                .minimumScaleFactor(0.8)
-                .padding(JPSpace.xs)
+        Text(text)
+            .font(JPFont.caption)
+            .multilineTextAlignment(.center)
+            .foregroundStyle(StampInk.swiftUIColor(StampInk.sumiSoft))
+            .fixedSize()
+            .padding(JPSpace.m)
+            .frame(minWidth: Self.minimumSide, minHeight: Self.minimumSide)
+            .aspectRatio(1, contentMode: .fit)
+            .background {
+                Circle()
+                    .strokeBorder(StampInk.swiftUIColor(StampInk.paperLine), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+            }
+            .padding(JPSpace.xxs)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(text.replacingOccurrences(of: "\n", with: ""))
+    }
+}
+
+/// 入口の行の右に出す最近の3つ（案の頁の4）。小さな紙の札に、少し重ねて並べる（朱肉の色は黒い地で読めないので紙に載せる）。
+/// マイページの行・メニューの行・のちの荷札の列（札 #714）が同じ部品を使う
+struct StampBookRecentMarks: View {
+    let stamps: [StampBook.Stamp]
+
+    /// 1つの大きさと重なり
+    nonisolated static let side: CGFloat = 28
+    nonisolated static let overlap: CGFloat = 8
+
+    var body: some View {
+        HStack(spacing: -Self.overlap) {
+            ForEach(Array(stamps.prefix(3))) { stamp in
+                StampView(stamp: stamp)
+                    .frame(width: Self.side, height: Self.side)
+            }
         }
-        .aspectRatio(1, contentMode: .fit)
-        .padding(JPSpace.xs)
+        .padding(.horizontal, JPSpace.xxs)
+        .padding(.vertical, 2)
+        .background(StampInk.swiftUIColor(StampInk.paper), in: Capsule())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(text.replacingOccurrences(of: "\n", with: ""))
+        .accessibilityLabel(StampBookText.recentAccessibility(stamps.prefix(3).map(\.name)))
+        .accessibilityIdentifier("stampBook.recent")
+    }
+}
+
+/// 投稿の直後に押される瞬間（案の頁の1）。上から落ちて 0.62 秒で止まり、止まった瞬間に紙が 2pt 沈み、軽い触覚を1回。
+/// 音は出さない。紙を押すと、もう一度動く。動きを減らす設定では動かさずに出す。
+///
+/// **まだどこからも出していない（札 #712）。** 投稿のあとの画面（`LabelArrivedView`）は release-1.2.0 で形が変わっているので、
+/// まとめるときに `StampMoment` の注記の1行でつなぐ。地は黒、紙の上にスタンプ、主ボタンは写真の無い画面の決まり（真鍮の塗りに墨）
+struct StampPressedView: View {
+    let pressed: StampMoment.Pressed
+    /// 同じ投稿でトランクのラベルも手持ちに入った（画面の下に一行）
+    var labelAlsoArrived = false
+    let onOpenBook: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var landed = false
+    @State private var sunk = false
+    @State private var tick = 0
+
+    var body: some View {
+        VStack(spacing: JPSpace.l) {
+            Spacer(minLength: JPSpace.xl)
+            Text(StampBookText.title)
+                .font(JPFont.footnote)
+                .foregroundStyle(WebTheme.text3)
+            StampPaper(top: JPSpace.l, bottom: JPSpace.l) {
+                StampView(stamp: pressed.stamp, tilted: false)
+                    .frame(width: 168, height: 168)
+                    .offset(y: landed ? 0 : StampMoment.dropFrom)
+                    .scaleEffect(landed ? 1 : StampMoment.dropScale)
+                    .opacity(landed ? 1 : 0)
+            }
+            .frame(width: 220)
+            .offset(y: sunk ? StampMoment.paperSink : 0)
+            .contentShape(Rectangle())
+            .onTapGesture { play() }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint(L("もう一度押します", "Stamps it again"))
+            .accessibilityIdentifier("stampBook.pressed.paper")
+            VStack(spacing: JPSpace.xs) {
+                Text(StampBookText.pressedTitle(pressed.stamp.name))
+                    .font(JPFont.stateTitle)
+                    .foregroundStyle(WebTheme.foreground)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+                Text(StampBookText.pressedFact(place: pressed.stamp.placeName, ordinal: pressed.ordinal))
+                    .font(JPFont.body)
+                    .foregroundStyle(WebTheme.text2)
+                    .multilineTextAlignment(.center)
+            }
+            Spacer(minLength: JPSpace.m)
+            VStack(spacing: JPSpace.s) {
+                Button {
+                    dismiss()
+                    onOpenBook()
+                } label: {
+                    Text(StampBookText.openBook)
+                        .font(JPFont.confirmButton)
+                        .foregroundStyle(WebTheme.accentText)
+                        .frame(maxWidth: .infinity, minHeight: JPHeight.primaryButton)
+                        .background(WebTheme.accentFill, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("stampBook.pressed.open")
+                Button { dismiss() } label: {
+                    Text(StampBookText.close)
+                        .font(JPFont.confirmButton)
+                        .foregroundStyle(WebTheme.text)
+                        .frame(maxWidth: .infinity, minHeight: JPHeight.secondaryButton)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("stampBook.pressed.close")
+                if labelAlsoArrived {
+                    Text(StampBookText.labelAlsoArrived)
+                        .font(JPFont.caption)
+                        .foregroundStyle(WebTheme.text3)
+                        .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("stampBook.pressed.label")
+                }
+            }
+            .padding(.bottom, JPSpace.l)
+        }
+        .padding(.horizontal, JPSpace.l)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background { WebTheme.background.ignoresSafeArea() }
+        .sensoryFeedback(.impact(weight: .light), trigger: tick)
+        .onAppear { play() }
+        .accessibilityIdentifier("stampBook.pressed")
+    }
+
+    /// 押す（初めて出たときと、紙を押したとき）
+    private func play() {
+        guard !reduceMotion else {
+            // 動きを減らす設定: 動かさずに出し、触覚だけ1回
+            landed = true
+            tick += 1
+            return
+        }
+        landed = false
+        sunk = false
+        // 落ちる（加速して止まる・ease-in の曲線）
+        withAnimation(.timingCurve(0.42, 0, 1, 1, duration: StampMoment.landDuration)) { landed = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + StampMoment.landDuration) {
+            tick += 1
+            withAnimation(.easeOut(duration: 0.08)) { sunk = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                withAnimation(.easeOut(duration: 0.18)) { sunk = false }
+            }
+        }
     }
 }
