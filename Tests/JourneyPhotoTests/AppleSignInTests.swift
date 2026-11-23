@@ -8,8 +8,9 @@ import FoundationNetworking
 /// 「Apple でサインイン」（札 #601・2026-11-23）。
 ///
 /// - サーバーの口が無い・使えないときはボタンを出さない（今の本番でも壊れない）
-/// - サーバーが返した Cognito のユーザー名に、Apple の identity token を答えてログインする
-/// - 退会の前に Apple の取り消しを呼ぶ。失敗しても退会は止めない
+/// - Apple には nonce の SHA-256、サーバーには元の値を渡す（2026-11-23 確かめ役の指摘）
+/// - サーバーが返した Cognito のユーザー名に、サーバーが出した使い捨ての券を答えてログインする
+/// - 退会の Apple の取り消しはサーバーが行う（アプリは取り消しの口を呼ばない）
 @MainActor
 final class AppleSignInTests: XCTestCase {
 
@@ -58,24 +59,30 @@ final class AppleSignInTests: XCTestCase {
     }
 
     func testStartSendsCredentialAndReadsUsername() async throws {
-        StubProtocol.respond(path: "/auth/apple", status: 200, body: #"{"username":"uuid-1","created":true}"#)
-        let credential = try XCTUnwrap(AppleSignInCredential(identityToken: Data("a.b.c".utf8), authorizationCode: Data("code".utf8),
+        StubProtocol.respond(path: "/auth/apple", status: 200,
+                             body: #"{"username":"uuid-1","challengeAnswer":"apple:001.x:TICKET","created":true}"#)
+        let credential = try XCTUnwrap(AppleSignInCredential(identityToken: Data("a.b.c".utf8), rawNonce: "raw-1",
+                                                             authorizationCode: Data("code".utf8),
                                                              givenName: "太郎", familyName: "山田"))
         let started = try await AppleSignInService(api: api(token: nil)).start(credential)
-        XCTAssertEqual(started, AppleSignInService.Started(username: "uuid-1", created: true))
+        XCTAssertEqual(started, AppleSignInService.Started(username: "uuid-1", challengeAnswer: "apple:001.x:TICKET", created: true))
         XCTAssertEqual(StubProtocol.requests, ["POST /auth/apple"])
         let sent = try XCTUnwrap(StubProtocol.lastBody.flatMap { try JSONSerialization.jsonObject(with: $0) as? [String: Any] })
         XCTAssertEqual(sent["identityToken"] as? String, "a.b.c")
+        XCTAssertEqual(sent["nonce"] as? String, "raw-1", "サーバーには元の値")
         XCTAssertEqual(sent["authorizationCode"] as? String, "code")
         XCTAssertEqual(sent["displayName"] as? String, "山田 太郎")
     }
 
     // MARK: - Apple から来たもの
 
-    func testCredentialNeedsIdentityToken() async {
-        XCTAssertNil(AppleSignInCredential(identityToken: nil, authorizationCode: nil, givenName: nil, familyName: nil))
-        XCTAssertNil(AppleSignInCredential(identityToken: Data(), authorizationCode: nil, givenName: nil, familyName: nil))
-        let noCode = AppleSignInCredential(identityToken: Data("t".utf8), authorizationCode: Data(), givenName: nil, familyName: nil)
+    func testCredentialNeedsIdentityTokenAndNonce() async {
+        XCTAssertNil(AppleSignInCredential(identityToken: nil, rawNonce: "n", authorizationCode: nil, givenName: nil, familyName: nil))
+        XCTAssertNil(AppleSignInCredential(identityToken: Data(), rawNonce: "n", authorizationCode: nil, givenName: nil, familyName: nil))
+        XCTAssertNil(AppleSignInCredential(identityToken: Data("t".utf8), rawNonce: nil, authorizationCode: nil, givenName: nil, familyName: nil),
+                     "nonce の元の値が無いとサーバーで照らせない")
+        XCTAssertNil(AppleSignInCredential(identityToken: Data("t".utf8), rawNonce: "", authorizationCode: nil, givenName: nil, familyName: nil))
+        let noCode = AppleSignInCredential(identityToken: Data("t".utf8), rawNonce: "n", authorizationCode: Data(), givenName: nil, familyName: nil)
         XCTAssertNil(noCode?.authorizationCode, "空の認可コードは送らない")
         XCTAssertNil(noCode?.displayName, "2回目から Apple は名前を渡さない")
     }
@@ -91,9 +98,20 @@ final class AppleSignInTests: XCTestCase {
 
     func testNonceIsFreshEachTime() async {
         let a = AppleSignInNonce.make()
-        XCTAssertEqual(a.count, 64)
-        XCTAssertTrue(a.allSatisfy { $0.isHexDigit })
+        XCTAssertEqual(a.raw.count, 64)
+        XCTAssertTrue(a.raw.allSatisfy { $0.isHexDigit })
         XCTAssertNotEqual(a, AppleSignInNonce.make())
+    }
+
+    /// 🔴 Apple に渡すのは元の値の SHA-256（16進・小文字）。サーバーの `sha256Hex` と同じ形でないと照らせない
+    func testNonceHashedForAppleIsSha256Hex() async {
+        XCTAssertEqual(AppleSignInNonce.sha256Hex("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+        XCTAssertEqual(AppleSignInNonce.sha256Hex(""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+        let n = AppleSignInNonce(raw: "raw-nonce-0123456789abcdef")
+        // サーバーの試験（photo-gallery `appleSignin.test.ts` の RAW）と同じ値
+        XCTAssertEqual(n.hashed, "987470e0df287fdfc6949e7320c3a7d3c45154b33ca5b44eda6b0784faa10014")
+        XCTAssertNotEqual(n.hashed, n.raw, "Apple に元の値を渡さない")
+        XCTAssertEqual(n.hashed.count, 64)
     }
 
     // MARK: - ログイン
@@ -117,25 +135,25 @@ final class AppleSignInTests: XCTestCase {
             signOut: { calls.signOut += 1; return .signedOut },
             deleteUser: {},
             latch: latch)
-        gateway.signInWithApple = { username, token in
+        gateway.signInWithApple = { username, answer in
             if let error = calls.fail { throw error }
-            calls.signInWith.append((username, token))
+            calls.signInWith.append((username, answer))
             return true
         }
         return AuthStore(gateway: gateway)
     }
 
-    private let credential = AppleSignInCredential(identityToken: Data("tok.en.x".utf8), authorizationCode: nil,
+    private let credential = AppleSignInCredential(identityToken: Data("tok.en.x".utf8), rawNonce: "raw-1", authorizationCode: nil,
                                                    givenName: nil, familyName: nil)!
 
     func testSignsInWithTheUsernameTheServerChose() async {
         let calls = Calls()
         let auth = store(calls)
         await auth.restore()
-        let started = await auth.signInWithApple(credential) { _ in .init(username: "uuid-9", created: false) }
+        let started = await auth.signInWithApple(credential) { _ in .init(username: "uuid-9", challengeAnswer: "apple:001.x:T1", created: false) }
         XCTAssertEqual(started?.username, "uuid-9")
         XCTAssertEqual(calls.signInWith.map(\.0), ["uuid-9"])
-        XCTAssertEqual(calls.signInWith.map(\.1), ["tok.en.x"], "答えは Apple の identity token")
+        XCTAssertEqual(calls.signInWith.map(\.1), ["apple:001.x:T1"], "答えはサーバーが出した券（identity token ではない）")
         XCTAssertEqual(auth.userId, "sub-1")
         XCTAssertNil(auth.errorMessage)
     }
@@ -160,7 +178,7 @@ final class AppleSignInTests: XCTestCase {
         calls.fail = AuthError.notAuthorized("", "", AWSCognitoAuthErrorProbe.none)
         let auth = store(calls)
         await auth.restore()
-        let started = await auth.signInWithApple(credential) { _ in .init(username: "uuid-9", created: nil) }
+        let started = await auth.signInWithApple(credential) { _ in .init(username: "uuid-9", challengeAnswer: "apple:001.x:T1", created: nil) }
         XCTAssertNil(started)
         XCTAssertEqual(auth.errorMessage, AuthStore.appleSignInFailed)
         XCTAssertNil(auth.userId)
@@ -172,7 +190,7 @@ final class AppleSignInTests: XCTestCase {
         let latch = SignOutLatch.forTesting()
         latch.set()
         let auth = store(calls, latch: latch)
-        let started = await auth.signInWithApple(credential) { _ in .init(username: "uuid-9", created: nil) }
+        let started = await auth.signInWithApple(credential) { _ in .init(username: "uuid-9", challengeAnswer: "apple:001.x:T1", created: nil) }
         XCTAssertNotNil(started)
         XCTAssertGreaterThanOrEqual(calls.signOut, 1)
         XCTAssertFalse(latch.isSet, "入れたら印を外す")
@@ -180,25 +198,11 @@ final class AppleSignInTests: XCTestCase {
 
     // MARK: - 退会
 
-    /// 退会の前に Apple の取り消しを呼び、そのあとサーバーの退会
-    func testDeletionRevokesAppleFirst() async throws {
-        StubProtocol.respond(path: "/auth/apple/revoke", status: 200, body: #"{"revoked":true}"#)
+    /// 退会はサーバーの退会だけ（Apple の取り消しはサーバーが中で行う）。取り消しの口は呼ばない
+    func testDeletionLeavesAppleRevokeToServer() async throws {
         StubProtocol.respond(path: "/user/account", status: 200, body: "{}")
         try await AccountService(api: api()).deleteAccount()
-        XCTAssertEqual(StubProtocol.requests, ["POST /auth/apple/revoke", "DELETE /user/account"])
-    }
-
-    /// 取り消しが落ちても（口がまだ無い本番の 404・Apple の失敗の 502）退会は進む
-    func testDeletionContinuesWhenRevokeFails() async throws {
-        StubProtocol.respond(path: "/user/account", status: 200, body: "{}")   // 取り消しの口は無い＝404
-        try await AccountService(api: api()).deleteAccount()
-        XCTAssertEqual(StubProtocol.requests, ["POST /auth/apple/revoke", "DELETE /user/account"])
-
-        StubProtocol.reset()
-        StubProtocol.respond(path: "/auth/apple/revoke", status: 502, body: #"{"error":"x","code":"apple_revoke_failed"}"#)
-        StubProtocol.respond(path: "/user/account", status: 200, body: "{}")
-        try await AccountService(api: api()).deleteAccount()
-        XCTAssertEqual(StubProtocol.requests.last, "DELETE /user/account")
+        XCTAssertEqual(StubProtocol.requests, ["DELETE /user/account"])
     }
 }
 

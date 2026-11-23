@@ -337,7 +337,8 @@ final class AuthStore: ObservableObject {
     }
 
     /// 「Apple でサインイン」（札 #601）。Apple の標準シートで受け取った資格情報をサーバーに渡し
-    /// （`start`＝`AppleSignInService.start`）、返ってきた Cognito のユーザー名に CUSTOM_AUTH でログインする。
+    /// （`start`＝`AppleSignInService.start`）、返ってきた Cognito のユーザー名に CUSTOM_AUTH でログインする
+    /// （答えはサーバーが出した使い捨ての券）。
     /// 前のログインが残っているときの扱いはメールのログインと同じ（`signIn` の注記）。
     ///
     /// - Returns: サーバーの答え（新しいアカウントを作ったか）。失敗したら nil（`errorMessage` に理由）
@@ -352,7 +353,7 @@ final class AuthStore: ObservableObject {
             }
             let answer = try await start(credential)
             do {
-                _ = try await self.gateway.signInWithApple(answer.username, credential.identityToken)
+                _ = try await self.gateway.signInWithApple(answer.username, answer.challengeAnswer)
             } catch let error as AuthError {
                 if case .invalidState = error { throw SignInIncomplete.leftoverSession }
                 throw error
@@ -615,8 +616,8 @@ struct AuthStoreGateway: Sendable {
         try await AuthGateway.signIn(email: email, password: password)
     }
     /// Apple でサインインの最後の段（`AuthGateway.signInWithApple`）。試験で差し替える
-    var signInWithApple: @Sendable (_ username: String, _ identityToken: String) async throws -> Bool = { username, token in
-        try await AuthGateway.signInWithApple(username: username, identityToken: token)
+    var signInWithApple: @Sendable (_ username: String, _ challengeAnswer: String) async throws -> Bool = { username, answer in
+        try await AuthGateway.signInWithApple(username: username, challengeAnswer: answer)
     }
 
     static let live = AuthStoreGateway(

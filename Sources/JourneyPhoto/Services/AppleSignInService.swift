@@ -1,13 +1,18 @@
+import CryptoKit
 import Foundation
 
 /// 「Apple でサインイン」のサーバーの口（札 #601・2026-11-23 owner「すすめたい！」）。
 ///
 /// 流れ（押す回数は2回: ボタン → Face ID）:
-/// 1. Apple の標準シートで identity token・認可コード・（初回だけ）名前を受け取る（`SignInView`）
-/// 2. `POST /auth/apple`: サーバーが Apple の鍵で確かめ、**今の Cognito の利用者**を決める（結ぶ・作る）。
-///    答えは Cognito のユーザー名だけ
-/// 3. Cognito の CUSTOM_AUTH でそのユーザー名にログインし、同じ identity token を答えに出す
+/// 1. 乱数の nonce を作り、その **SHA-256** を Apple の頼みに入れる。Apple の標準シートで identity token・
+///    認可コード・（初回だけ）名前を受け取る（`SignInView`）
+/// 2. `POST /auth/apple`: identity token と **nonce の元の値**を渡す。サーバーが Apple の鍵で確かめ、
+///    元の値の SHA-256 が token の nonce と同じかを照らし（使った nonce は1回きり）、**今の Cognito の利用者**を決める
+///    （結ぶ・作る）。答えは Cognito のユーザー名と**使い捨ての券**（5分）
+/// 3. Cognito の CUSTOM_AUTH でそのユーザー名にログインし、券を答えに出す
 ///    （`AuthGateway.signInWithApple`）。出てくるのは今と同じ Cognito のトークン
+///
+/// 退会のときの Apple の取り消しはサーバーの退会（`DELETE /user/account`）が行う（2026-11-23 確かめ役の指摘）
 ///
 /// サーバーの作りは photo-gallery の `api-user/src/appleSignin.ts`（別スタック `serverless.apple-signin.yml`）。
 struct AppleSignInService {
@@ -28,8 +33,10 @@ struct AppleSignInService {
         (try? await api.anonymous(.get, "/auth/apple/status", as: Status.self).available) ?? false
     }
 
-    private struct StartBody: Encodable {
+    struct StartBody: Encodable, Equatable {
         let identityToken: String
+        /// nonce の元の値（Apple に渡したのはこの SHA-256）
+        let nonce: String
         let authorizationCode: String?
         let displayName: String?
     }
@@ -38,31 +45,38 @@ struct AppleSignInService {
     struct Started: Decodable, Equatable {
         /// ログインに使う Cognito のユーザー名（UUID）
         let username: String
+        /// CUSTOM_AUTH の問いに出す使い捨ての券（5分・1回きり）
+        let challengeAnswer: String
         /// 新しいアカウントを作ったか
         let created: Bool?
     }
 
-    /// サーバーに Apple の資格情報を渡し、ログインに使う Cognito のユーザー名を受け取る
+    static func body(for credential: AppleSignInCredential) -> StartBody {
+        StartBody(identityToken: credential.identityToken, nonce: credential.rawNonce,
+                  authorizationCode: credential.authorizationCode, displayName: credential.displayName)
+    }
+
+    /// サーバーに Apple の資格情報と nonce の元の値を渡し、ログインに使う Cognito のユーザー名と券を受け取る
     func start(_ credential: AppleSignInCredential) async throws -> Started {
-        try await api.anonymous(.post, "/auth/apple",
-                                body: StartBody(identityToken: credential.identityToken,
-                                                authorizationCode: credential.authorizationCode,
-                                                displayName: credential.displayName),
-                                as: Started.self)
+        try await api.anonymous(.post, "/auth/apple", body: Self.body(for: credential), as: Started.self)
     }
 }
 
 /// Apple の標準シートから受け取ったもの（サーバーに渡す形）
 struct AppleSignInCredential: Equatable, Sendable {
     let identityToken: String
+    /// 頼みに入れた nonce の元の値（Apple にはこの SHA-256 を渡した）
+    let rawNonce: String
     let authorizationCode: String?
     /// 表示名。Apple は**最初の1回しか**名前を渡さない（2回目からは nil）
     let displayName: String?
 
-    /// 資格情報の生の値から作る。identity token が読めなければ nil（サインインできない）
-    init?(identityToken: Data?, authorizationCode: Data?, givenName: String?, familyName: String?) {
-        guard let identityToken, let token = String(data: identityToken, encoding: .utf8), !token.isEmpty else { return nil }
+    /// 資格情報の生の値から作る。identity token が読めない・nonce が無ければ nil（サインインできない）
+    init?(identityToken: Data?, rawNonce: String?, authorizationCode: Data?, givenName: String?, familyName: String?) {
+        guard let identityToken, let token = String(data: identityToken, encoding: .utf8), !token.isEmpty,
+              let rawNonce, !rawNonce.isEmpty else { return nil }
         self.identityToken = token
+        self.rawNonce = rawNonce
         self.authorizationCode = authorizationCode.flatMap { String(data: $0, encoding: .utf8) }.flatMap { $0.isEmpty ? nil : $0 }
         self.displayName = AppleSignInName.displayName(given: givenName, family: familyName)
     }
@@ -94,11 +108,22 @@ enum AppleSignInName {
 
 /// Apple の頼みに入れる使い捨ての印（nonce）。
 ///
-/// サーバー（Cognito のトリガー）は同じ nonce の identity token を2回は通さない（使い回しを止める）。
-/// 中身は見ないので、毎回違う乱数ならよい（ハッシュは要らない）
-enum AppleSignInNonce {
-    static func make() -> String {
+/// 🔴 **Apple には SHA-256（`hashed`）を、サーバーには元の値（`raw`）を渡す**（Apple の案内どおり・
+/// 2026-11-23 確かめ役の指摘）。サーバーは「元の値の SHA-256 が token の nonce と同じか」を照らし、使った nonce を
+/// 1回きりにする。identity token だけ盗まれても、元の値が無いので入れない
+struct AppleSignInNonce: Equatable, Sendable {
+    /// 元の値（32 バイトの乱数の16進・64字）。端末の中とサーバーへの1回の送信にだけ使う
+    let raw: String
+
+    /// Apple の頼み（`ASAuthorizationAppleIDRequest.nonce`）に入れる値
+    var hashed: String { Self.sha256Hex(raw) }
+
+    static func make() -> AppleSignInNonce {
         var generator = SystemRandomNumberGenerator()
-        return (0..<32).map { _ in String(format: "%02x", UInt8.random(in: 0...255, using: &generator)) }.joined()
+        return AppleSignInNonce(raw: (0..<32).map { _ in String(format: "%02x", UInt8.random(in: 0...255, using: &generator)) }.joined())
+    }
+
+    static func sha256Hex(_ s: String) -> String {
+        SHA256.hash(data: Data(s.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }

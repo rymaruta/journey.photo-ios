@@ -40,6 +40,8 @@ struct SignInView: View {
     /// 「Apple でサインイン」をサーバーで使えるか（`GET /auth/apple/status`）。**分かるまでは出さない**——
     /// 鍵の入っていない環境・口がまだ無い本番ではボタンを出さない（押しても進めないボタンを置かない）
     @State private var appleAvailable = false
+    /// いま開いている Apple の頼みの nonce（Apple には SHA-256、サーバーには元の値を渡す・`AppleSignInNonce`）
+    @State private var appleNonce: AppleSignInNonce?
 
     /// - Parameter entry: 開いたときの側。お願いの「新規登録」から来たら登録の側で開く（札 #630・2026-11-15）。
     ///   **画面の見た目と流れは変えない**——今の「アカウントを作る」を押した後と同じ状態から始めるだけ
@@ -323,7 +325,9 @@ struct SignInView: View {
         VStack(alignment: .leading, spacing: 14) {
             SignInWithAppleButton(mode == .signUp ? .signUp : .signIn) { request in
                 request.requestedScopes = [.fullName, .email]
-                request.nonce = AppleSignInNonce.make()
+                let nonce = AppleSignInNonce.make()
+                appleNonce = nonce
+                request.nonce = nonce.hashed
             } onCompletion: { result in
                 Task { await finishApple(result) }
             }
@@ -349,6 +353,9 @@ struct SignInView: View {
     /// Apple のシートが閉じた。取り消し（本人が閉じた）は何も言わない
     private func finishApple(_ result: Result<ASAuthorization, Error>) async {
         clearMessages()
+        // nonce は1回きり（使い終わったら捨てる。次に押したら新しく作る）
+        let rawNonce = appleNonce?.raw
+        appleNonce = nil
         switch result {
         case .failure(let error):
             if let apple = error as? ASAuthorizationError, apple.code == .canceled { return }
@@ -356,6 +363,7 @@ struct SignInView: View {
         case .success(let authorization):
             guard let apple = authorization.credential as? ASAuthorizationAppleIDCredential,
                   let credential = AppleSignInCredential(identityToken: apple.identityToken,
+                                                         rawNonce: rawNonce,
                                                          authorizationCode: apple.authorizationCode,
                                                          givenName: apple.fullName?.givenName,
                                                          familyName: apple.fullName?.familyName) else {
