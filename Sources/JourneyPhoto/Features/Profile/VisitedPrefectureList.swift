@@ -28,7 +28,7 @@ struct VisitedPrefectureList: View {
         let done = names.filter { model.record.count($0) >= 1 }.count
         return VStack(alignment: .leading, spacing: JPSpace.xs) {
             HStack {
-                Text(L(region.name, PrefectureRegions.englishName(region)))
+                Text(eyebrow: L(region.name, PrefectureRegions.englishName(region)))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                     .accessibilityAddTraits(.isHeader)

@@ -36,7 +36,7 @@ struct DeviceTripSection: View {
     private func shelf(_ books: [LibraryTrip]) -> some View {
         VStack(alignment: .leading, spacing: JPSpace.xs) {
             HStack(spacing: JPSpace.xs) {
-                Text(L("端末の中だけ", "On this iPhone only"))
+                Text(eyebrow: L("端末の中だけ", "On this iPhone only"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                     .accessibilityAddTraits(.isHeader)
@@ -185,7 +185,7 @@ struct DeviceTripIntroCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: JPSpace.s) {
-            Text(L("端末の写真から", "From your photos"))
+            Text(eyebrow: L("端末の写真から", "From your photos"))
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
             Text(L("撮りためた旅を、棚に並べる", "Line up the trips you've shot"))
@@ -289,7 +289,7 @@ struct DeviceTripBookView: View {
                 header
                 ForEach(shown.days) { day in
                     VStack(alignment: .leading, spacing: JPSpace.xs) {
-                        Text(LibraryTrips.dayLabel(day, place: nil))
+                        Text(eyebrow: LibraryTrips.dayLabel(day, place: nil))
                             .jpEyebrow()
                             .foregroundStyle(WebTheme.accent)
                             .padding(.horizontal, JPSpace.gutter)

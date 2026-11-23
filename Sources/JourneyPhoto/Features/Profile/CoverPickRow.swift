@@ -19,7 +19,7 @@ struct CoverPickRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(L("カバーにする写真", "Cover from your posts"))
+                Text(eyebrow: L("カバーにする写真", "Cover from your posts"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)
                 Spacer(minLength: 8)

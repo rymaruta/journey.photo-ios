@@ -2,7 +2,7 @@ import SwiftUI
 
 /// **眉ラベルと、右へ消えていく真鍮の 1px の線**（v2 の板 02 Eyebrow・Components 05 の節の見出し）。
 ///
-/// 板の形: 11pt・SF 600・字間 0.14em の真鍮の字 → 10 のすき間 → 真鍮 55% から 0 へ消える 1px の線。
+/// 板の形: 11pt・SF 600・字間 0.14em（和文は 0.04em）の真鍮の字 → 10 のすき間 → 真鍮 55% から 0 へ消える 1px の線。
 /// 右に添え書き（「2019 年から」など・12pt の text-3）を置ける。
 ///
 /// **黒地の上だけ**（真鍮は写真の上では読めない・CLAUDE.md）。写真の上の眉ラベルは
@@ -34,7 +34,8 @@ struct JPEyebrowLine: View {
 
     var body: some View {
         HStack(spacing: Self.gap) {
-            Text(text)
+            // 和文の眉は字間を詰める（`Text(eyebrow:)`・2026-11-23 判断）
+            Text(eyebrow: text)
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
                 // 2026-11-22 判断（札 #680）: 大きな字の設定（AX）では折り返す。前は字の大きさに関わらず

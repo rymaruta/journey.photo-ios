@@ -208,7 +208,7 @@ final class MapSpotsV2Tests: XCTestCase {
             XCTAssertFalse(segment(text, from: name).contains("WebTheme.accent)"), "\(name) の中に真鍮がある")
         }
         let officialCard = segment(text, from: "private func officialCard(")
-        assertInOrder(["Text(SpotScreen.eyebrow(review: pin.isDraft))", ".jpEyebrow()",
+        assertInOrder(["Text(eyebrow: SpotScreen.eyebrow(review: pin.isDraft))", ".jpEyebrow()",
                        ".foregroundStyle(WebTheme.muted)", "Text(pin.name)", ".font(JPFont.cardTitle)"],
                       in: officialCard, "観光スポットの札の眉と題")
         let info = segment(text, from: "private func placeInfo(")
@@ -285,7 +285,7 @@ final class MapSpotsV2Tests: XCTestCase {
     func testOfficialSpotMapBottomBar() throws {
         let view = try source("Features/Spots/OfficialSpotMapView.swift")
         let bar = segment(view, from: "private func bottomBar(")
-        assertInOrder(["Text(SpotScreen.eyebrow(review: spot.isDraft))", ".jpEyebrow()",
+        assertInOrder(["Text(eyebrow: SpotScreen.eyebrow(review: spot.isDraft))", ".jpEyebrow()",
                        "spot.isDraft ? WebTheme.muted : WebTheme.accent",
                        ".font(JPFont.cardTitle)", ".foregroundStyle(WebTheme.text2)",
                        "Text(\"↗\")", ".jpPillButton(.main(onPhoto: false))",
@@ -412,7 +412,7 @@ final class MapSpotsV2Tests: XCTestCase {
                    "map.regionSpotRow", "map.list.categoryNote"]),
             (official, ["spot.official", "spot.official.photoCredit", "spot.official.draftNotice",
                         "spot.official.wish", "spot.official.map", "spot.official.directions",
-                        "spot.official.journeyCue", "spot.official.samples", "spot.official.composeGuide",
+                        "spot.official.samples", "spot.official.composeGuide",
                         "spot.official.sampleCard", "spot.official.sampleCredit", "spot.official.light",
                         "spot.official.light.date", "spot.official.light.prev", "spot.official.light.next",
                         "spot.official.light.today", "spot.official.check", "spot.official.post",

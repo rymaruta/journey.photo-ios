@@ -1520,7 +1520,7 @@ struct PhotoMapView: View {
                 VStack(alignment: .leading, spacing: JPSpace.xxs) {
                     // 眉ラベル（v2 の板 MapPlace「PHOTO SPOT」）。**札はガラス（地図が透ける）なので白**——
                     // 真鍮は黒地の上だけ（CLAUDE.md）。下書きなら「下書き・未確認」
-                    Text(SpotScreen.eyebrow(review: pin.isDraft))
+                    Text(eyebrow: SpotScreen.eyebrow(review: pin.isDraft))
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.muted)
                     // 題は明朝（板 MapPlace）

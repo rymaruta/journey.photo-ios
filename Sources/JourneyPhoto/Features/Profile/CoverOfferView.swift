@@ -26,7 +26,7 @@ struct CoverOfferView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(CoverOfferText.eyebrow(offer.kind))
+                    Text(eyebrow: CoverOfferText.eyebrow(offer.kind))
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                         .accessibilityIdentifier("coverOffer.eyebrow")

@@ -50,7 +50,7 @@ struct VisitedPrefectureCard: View {
                 .accessibilityIdentifier("visitedMap.card.close")
             VStack(alignment: .leading, spacing: JPSpace.xxs) {
                 if let region = PrefectureRegions.region(of: prefecture) {
-                    Text(L(region.name, PrefectureRegions.englishName(region)))
+                    Text(eyebrow: L(region.name, PrefectureRegions.englishName(region)))
                         .jpEyebrow()
                         .foregroundStyle(WebTheme.accent)
                 }
@@ -175,7 +175,7 @@ struct VisitedPrefectureCard: View {
     private var dates: some View {
         let days = model.record.days(prefecture)
         VStack(alignment: .leading, spacing: JPSpace.xs) {
-            Text(VisitedMapText.recentDates)
+            Text(eyebrow: VisitedMapText.recentDates)
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
                 .accessibilityAddTraits(.isHeader)
@@ -211,7 +211,7 @@ struct VisitedPrefectureCard: View {
 
     private var nearbyBlock: some View {
         VStack(alignment: .leading, spacing: JPSpace.xs) {
-            Text(VisitedMapText.nearby)
+            Text(eyebrow: VisitedMapText.nearby)
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
                 .accessibilityAddTraits(.isHeader)

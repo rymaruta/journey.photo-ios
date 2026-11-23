@@ -105,7 +105,7 @@ struct TripReplanBar: View {
     /// 自由に打つ欄（120 字まで・打った文は AI を呼ぶ前に `TripReplan.refusesTyped` で見る）
     private var writeField: some View {
         HStack(spacing: JPSpace.xs) {
-            JPTextField(L("例: 子どもと一緒、歩く距離を短く", "e.g. With kids, less walking"), text: $text)
+            JPTextField(L("例：子どもと一緒、歩く距離を短く", "e.g. With kids, less walking"), text: $text)
                 .focused($focused)
                 .onChange(of: text) { _, new in
                     if new.count > TripReplan.typedMax { text = String(new.prefix(TripReplan.typedMax)) }

@@ -13,6 +13,10 @@ public struct Text: View {
     public enum Case { case uppercase, lowercase }
     /// 一部だけ太くする（`Text(a).bold() + Text(b)`）。本物は Text を返す
     public func bold() -> Text { self }
+    /// 一部だけ字の太さを替える（`Text(名前).fontWeight(.semibold) + Text(続き)`）。本物は Text を返す
+    public func fontWeight(_ weight: Font.Weight?) -> Text { self }
+    /// 字間（本物は Text を返す。外の `View.tracking` より優先）
+    public func tracking(_ tracking: CGFloat) -> Text { self }
     /// 一部だけ色を変える（`Text(a).foregroundStyle(白) + Text(b).foregroundStyle(灰)`）。本物は iOS 17〜 で Text を返す
     public func foregroundStyle<S>(_ style: S) -> Text { self }
     /// 一部だけ字を替える（`Text(a) + Text(数).font(等幅の数字) + Text(b)`）。本物は Text を返す

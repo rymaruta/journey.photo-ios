@@ -454,7 +454,7 @@ private struct NotificationRow: View {
                             Image(systemName: "sparkle")
                                 .font(.system(size: 11, weight: .semibold))
                                 .accessibilityHidden(true)
-                            Text(first.eyebrow).jpEyebrow()
+                            Text(eyebrow: first.eyebrow).jpEyebrow()
                         }
                         .foregroundStyle(WebTheme.accent)
                         .accessibilityIdentifier("notifications.firstReaction")

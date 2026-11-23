@@ -58,7 +58,7 @@ struct LibraryTripPickView: View {
                 header
                 ForEach(current.days) { day in
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(LibraryTrips.dayLabel(day, place: model.name(for: day.center)))
+                        Text(eyebrow: LibraryTrips.dayLabel(day, place: model.name(for: day.center)))
                             .jpEyebrow()
                             .foregroundStyle(WebTheme.accent)
                             .padding(.horizontal, 16)

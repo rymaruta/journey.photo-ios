@@ -274,7 +274,9 @@ enum AskFixture {
         }
         if intent.spots {
             let picks = library.pickSpots(query)
-            return .init(text: L("観光スポットの案内から、合う所を選びました。", "Picked matching spots from the guides."),
+            // 2026-11-23 判断: 前の「観光スポットの案内から、合う所を選びました。」は大きい iPhone でも2行になり、
+            // 「ました。」だけが2行目に落ちた（ストアの画面写真）。出典は下の「観光スポットの情報」の札が言うので、頭の文は短く
+            return .init(text: L("合う所を選びました。", "Picked matching spots."),
                          general: false, picks: picks, photoIds: [],
                          sources: [.init(kind: .spots, label: AskText.spotsSource)], kind: "cards")
         }

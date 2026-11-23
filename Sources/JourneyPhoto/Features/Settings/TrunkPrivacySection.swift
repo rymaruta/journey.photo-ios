@@ -184,7 +184,7 @@ struct TrunkPrivacyPreview: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SettingsLayout.sectionSpacing) {
             VStack(alignment: .leading, spacing: SettingsLayout.headerSpacing) {
-                Text(model.showTrunk ? L("ほかの人から見たあなたのプロフィール（オン）", "Your profile as others see it (on)")
+                Text(eyebrow: model.showTrunk ? L("ほかの人から見たあなたのプロフィール（オン）", "Your profile as others see it (on)")
                                      : L("ほかの人から見たあなたのプロフィール（オフ）", "Your profile as others see it (off)"))
                     .jpEyebrow()
                     .foregroundStyle(WebTheme.accent)

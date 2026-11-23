@@ -74,12 +74,24 @@ enum TripShareText {
           "You'll no longer see this trip or its chat. You'll need an invite link to rejoin.")
     }
 
-    /// 項目の下の「[名前] が足しました」（自分が足した項目・足した人が分からない項目は出さない）
-    static func addedBy(_ plan: TripPlan, _ item: TripItem, members: [TripMember], me: String?) -> String? {
+    /// 項目の下の「[名前]が足しました」（自分が足した項目・足した人が分からない項目は出さない）
+    static func addedBy(_ plan: TripPlan, _ item: TripItem, members: [TripMember], me: String?) -> AddedBy? {
         guard plan.share != nil, let uid = plan.addedBy[itemKey(item)], uid != me else { return nil }
         let name = members.first { $0.id == uid }.map { $0.deleted == true ? L("退会したユーザー", "Deleted user") : $0.name }
         guard let name else { return nil }
-        return L("\(name) が足しました", "Added by \(name)")
+        return AddedBy(name: name)
+    }
+
+    /// 「あおが足しました」。**名前と続きは空白で区切らない**（2026-11-23 判断・CLAUDE.md の区切りの決まり）。
+    /// 画面は名前を太い字・明るい色にし、続きを細い字にして、字の太さと色で分ける
+    struct AddedBy: Equatable {
+        let name: String
+        /// 名前の前の字（英語だけ「Added by 」）
+        var lead: String { L("", "Added by ") }
+        /// 名前の後ろの字（日本語だけ「が足しました」）
+        var tail: String { L("が足しました", "") }
+        /// 読み上げ・試験用の1つの文
+        var text: String { lead + name + tail }
     }
 
     /// 会話の札の「日程に足しました」。何日目かは `eventDay` で別の文字にし、余白で分けて並べる

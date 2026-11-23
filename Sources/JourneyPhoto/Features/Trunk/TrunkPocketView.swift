@@ -80,7 +80,7 @@ struct TrunkPocketView: View {
     }
 
     private var pocketEyebrow: some View {
-        Text(L("まだ貼っていないラベル", "Not stuck yet"))
+        Text(eyebrow: L("まだ貼っていないラベル", "Not stuck yet"))
             .jpEyebrow()
             .foregroundStyle(WebTheme.accent)
     }

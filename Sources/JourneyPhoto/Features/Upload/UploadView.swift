@@ -1533,7 +1533,7 @@ struct UploadView: View {
                 // 欄の名前は写真の編集・写真の詳細の見出しと同じ「題」「説明」（2026-11-14 判断・前回の点検の残り。
                 // 前は投稿が「タイトル」「説明文」、編集が「題」「説明」で、同じ欄が2つの名前だった）
                 JPField(L("題", "Title")) {
-                    JPTextField(L("例: 高屋神社の雲海", "e.g. Sea of clouds at Takaya"),
+                    JPTextField(L("例：高屋神社の雲海", "e.g. Sea of clouds at Takaya"),
                               text: photo.title)
                         .focused($focusedField, equals: .title(item.id))
                         // UI テストが名指しで打つ（`CriticalFlowTests`・2026-10-22）

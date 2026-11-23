@@ -225,7 +225,7 @@ struct TrunkView: View {
     @ViewBuilder
     private func recent(_ state: TrunkState) -> some View {
         HStack {
-            Text(L("最近貼ったラベル", "Recently stuck"))
+            Text(eyebrow: L("最近貼ったラベル", "Recently stuck"))
                 .jpEyebrow()
                 .foregroundStyle(WebTheme.accent)
             Spacer()
