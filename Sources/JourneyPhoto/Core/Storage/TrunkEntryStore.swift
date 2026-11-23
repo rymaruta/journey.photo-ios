@@ -289,6 +289,16 @@ enum TrunkEntryText {
         L("硬貨 \(max(0, n))", max(0, n) == 1 ? "1 coin" : "\(max(0, n)) coins")
     }
 
+    /// マイページの旅の記録の行の説明（2026-11-23・札 #709）: 「手持ちのラベル 2 枚、硬貨 3」。
+    /// 数が読めていないときは今までの説明の文（`detail`）
+    static func stock(_ summary: TrunkEntrySummary?) -> String {
+        guard let summary else { return detail }
+        let labels = summary.unstuck
+        let coins = summary.coins
+        return L("手持ちのラベル \(labels) 枚、硬貨 \(coins)",
+                 "\(labels == 1 ? "1 label" : "\(labels) labels") on hand, \(coins == 1 ? "1 coin" : "\(coins) coins")")
+    }
+
     /// 札の題の下の行（型の名前・例「革の旅行鞄」）。いま描く型（Pro をやめたら最後の無料の型）
     static func modelName(_ state: TrunkState?) -> String? {
         state.map { TrunkText.info($0.effectiveModel).name }

@@ -21,7 +21,7 @@ import UIKit
 // - 1 コマの間隔（`gap`）: 主スレッドの表示の刻み（`Main`）と、回す箱の SceneKit の刻み（`Spin`）。
 //   25ms を越えた（60 コマ/秒で 1 コマ以上落ちた）回数・50・100ms を越えた回数・最長・落ちたコマの数
 // - 場面の中身（`note`）: 回す箱の三角・貼り絵の数と大きさ、貼り絵 1 枚ずつの画素
-// - 途中のメモリ（`mark`）: phys_footprint と user_tag 別（`CamperRenderMeter.vmTagSummary` を読むだけ使う）
+// - 途中のメモリ（`mark`）: phys_footprint と user_tag 別（`ProcessUsage.vmTagSummary` を読むだけ使う）
 final class TrunkPerfMeter: @unchecked Sendable {
 
     static let shared = TrunkPerfMeter(enabled: PreviewSession.trunkPerf)
@@ -115,10 +115,10 @@ final class TrunkPerfMeter: @unchecked Sendable {
 
     /// 途中のメモリを残す（`Mem<段>` に「mb= int= cmp= dev=」、`VM<段>` に user_tag 別）
     func mark(_ stage: String) {
-        guard enabled, let p = CamperRenderMeter.processUsage() else { return }
+        guard enabled, let p = ProcessUsage.current() else { return }
         note("Mem" + stage, String(format: "mb=%.1f int=%.1f cmp=%.1f dev=%.1f", p.memMB, p.internalMB, p.compressedMB, p.deviceMB))
         #if canImport(Darwin)
-        note("VM" + stage, CamperRenderMeter.vmTagSummary())
+        note("VM" + stage, ProcessUsage.vmTagSummary())
         #endif
     }
 
@@ -144,7 +144,7 @@ final class TrunkPerfMeter: @unchecked Sendable {
         }
         parts += l.keys.sorted().map { "Live\($0) now=\(l[$0]!) peak=\(peaks[$0] ?? 0);" }
         parts += n.keys.sorted().map { "\($0) \(n[$0]!);" }
-        if enabled, let p = CamperRenderMeter.processUsage() {
+        if enabled, let p = ProcessUsage.current() {
             parts.append(String(format: "Process cpu_ms=%.1f mem_mb=%.1f int_mb=%.1f cmp_mb=%.1f dev_mb=%.1f;",
                                 p.cpuMs, p.memMB, p.internalMB, p.compressedMB, p.deviceMB))
         }

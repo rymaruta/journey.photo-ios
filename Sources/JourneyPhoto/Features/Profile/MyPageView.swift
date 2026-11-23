@@ -1223,44 +1223,11 @@ struct MyPageView: View {
             // 2026-10-18 判断: 入口はマイページの上の札（`TrunkProfileChip`）と設定にも出したが、**この行は残す**。
             // 旅の道具（アルバム・旅行プラン・すれちがい帳）と同じ並びで探す人がいる。画面写真の試験の道もここ
             if trunkAvailability.isAvailable {
-                NavigationLink { TrunkView(ownerName: model.profile?.name) } label: {
-                    JPRowLabel(title: L("旅のトランク", "Travel trunk"), systemImage: "suitcase",
-                               detail: L("投稿のお礼に届いた旅のラベルを貼っていく",
-                                         "Stick the travel labels you get for posting"))
-                }
-                .buttonStyle(JPRowButtonStyle())
-                .accessibilityIdentifier("trips.trunk")
+                // 2026-11-23 判断（札 #709）: とおまわり号の行を外して空いた所は、トランクの行に「手持ちのラベル N 枚、硬貨 N」を
+                // 出して寄せる（数はトランクの状態から・読めないときは今までの説明の文）。数を見張るのはこの行の中だけ
+                MyPageTrunkRow(ownerName: model.profile?.name)
                 JPCardDivider()
             }
-            // 写真で作るキャンピングカー（2026-10-18・札 #307）。旅のトランクと同じ並びに置く（板に入口の指定が無いので、
-            // トランクの行と同じ形の行を1つ足す）。数は自分の投稿からこの端末で数える（サーバーには聞かない）
-            // 束ねる（`ViewBuilder` の子の数の上限 10 を超えないように・見本の行を足した 2026-10-19）
-            Group {
-                NavigationLink {
-                    // 数えるのは行き先の中（マイページを描き直すたびに数えない・下書きは数えない）
-                    CamperGarageView(ownerName: model.profile?.name, userId: auth.userId, photos: model.photos,
-                                     photosLoaded: model.hasLoadedPhotos)
-                } label: {
-                    JPRowLabel(title: L("写真で作るキャンピングカー", "Photo camper"), systemImage: "bus",
-                               detail: L("旅を重ねるほど育つ車。撮るほど部品が集まる",
-                                         "A camper that grows with your trips and collects parts as you shoot"))
-                }
-                .buttonStyle(JPRowButtonStyle())
-                .accessibilityIdentifier("trips.camper")
-                JPCardDivider()
-                // 画面写真の見本だけ（`-JPPreviewCamperVisit`・Debug のみ・Release では出ない）: 見本の友達の車へ直接入る
-                if PreviewSession.camperVisitSample {
-                    NavigationLink {
-                        CamperVisitView(userId: CamperServerSample.friendId, ownerName: CamperServerSample.friendName)
-                    } label: {
-                        JPRowLabel(title: L("見本の友達の車", "Sample friend\u{2019}s camper"), systemImage: "bus")
-                    }
-                    .buttonStyle(JPRowButtonStyle())
-                    .accessibilityIdentifier("trips.camperVisitSample")
-                    JPCardDivider()
-                }
-            }
-            // 写真で作るキャンプ場は #339（2026-10-20）で外した。キャンピングカーは残す
             NavigationLink { AlbumsView() } label: {
                 JPRowLabel(title: Labels.Navigation.albums, systemImage: "rectangle.stack",
                            detail: L("招待リンクで、旅の仲間と写真を集める",
@@ -1521,6 +1488,33 @@ struct MyPageGridCell: View {
 
 /// 旅の記録の札の中身（投稿した一冊・端末の一冊・旅の道具）。**端末の一冊の店を見張るのはここだけ**
 /// （2026-10-28 判断・`MyPageView.deviceTrips` の注記）。端末の写真の読み取りで描き直すのはこの札の中だけ
+/// 旅の記録の「旅のトランク」の行（2026-11-23・札 #709）。説明の行に手持ちのラベルと硬貨の数を出す。
+/// **数の見張りはこの行の中だけ**（`TrunkEntryStore` が変わってもマイページ全体を描き直さない）。
+/// 読むかは決まりのとおり（`TrunkEntryRule.needsRead`・覚えている人は 6 時間に1回）で、トランクから戻ったら読み直す
+private struct MyPageTrunkRow: View {
+    let ownerName: String?
+    @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var environment: AppEnvironment
+    @ObservedObject private var trunkEntry = TrunkEntryStore.shared
+
+    var body: some View {
+        NavigationLink {
+            TrunkView(ownerName: ownerName)
+                .onDisappear { trunkEntry.markStale() }
+        } label: {
+            JPRowLabel(title: TrunkEntryText.title, systemImage: "suitcase",
+                       detail: TrunkEntryText.stock(trunkEntry.summary))
+        }
+        .buttonStyle(JPRowButtonStyle())
+        .accessibilityIdentifier("trips.trunk")
+        // 出るたびに読むかを決める（トランクから戻ったときも走る。`markStale` が無ければ読まない）
+        .task(id: auth.userId) {
+            await trunkEntry.refresh(userId: auth.userId, available: TrunkAvailability.shared.isAvailable,
+                                     service: environment.trunk)
+        }
+    }
+}
+
 private struct MyPageTripsShelf<Tools: View>: View {
     @ObservedObject var deviceTrips: DeviceTripShelfStore
     let trips: [TripBook.Trip]
