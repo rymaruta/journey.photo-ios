@@ -56,6 +56,11 @@ final class CurrentLocation: NSObject, ObservableObject {
         if let manager {
             self.manager = manager
             super.init()
+        } else if let demo = Self.storeDemoManager() {
+            // App Store の絵の見本（`StoreDemo`・Debug のみ）: 端末の位置を読まない（`StoreDemoLocation`）
+            self.manager = demo
+            super.init()
+            demo.deliver = { [weak self] latitude, longitude in self?.handle(latitude: latitude, longitude: longitude) }
         } else {
             let real = CLLocationManager()
             real.desiredAccuracy = kCLLocationAccuracyKilometer
@@ -63,6 +68,15 @@ final class CurrentLocation: NSObject, ObservableObject {
             super.init()
             real.delegate = self
         }
+    }
+
+    /// 見本の表示のときだけ、端末の位置を読まない答え手（Release と見本でないときは nil＝本物の `CLLocationManager`）
+    static func storeDemoManager(demo: Bool = StoreDemo.isOn) -> StoreDemoLocation? {
+        #if DEBUG
+        return demo ? StoreDemoLocation() : nil
+        #else
+        return nil
+        #endif
     }
 
     /// 権限が無ければ尋ね、あれば1回だけ位置を取る。
@@ -149,4 +163,24 @@ extension CurrentLocation: CLLocationManagerDelegate {
     }
 
     private struct LocationError: Error { let message: String }
+}
+
+/// **App Store の絵の見本（`StoreDemo`）の現在地**（2026-11-23・Mac run 1741・札 #604）。
+///
+/// 見本の表示では端末の位置を読まず、いつも見本の京都（`StoreDemo.here`）を返す。許可のダイアログも出さない。
+/// run 1741 の 03（観光スポット）は、UI テストがシミュレータに京都の位置を持たせて許可を押していたので、
+/// 状態のバーに位置の矢印が出ていた（上書きでは消せない）。端末の位置を使わなければ矢印は出ない
+/// （地図の青い点 `UserAnnotation` も、許可の無いうちは描かれない）。Release では作られない（`storeDemoManager`）
+final class StoreDemoLocation: LocationRequesting {
+    var authorizationStatus: CLAuthorizationStatus { .authorizedWhenInUse }
+    /// 位置を渡す先（`CurrentLocation.handle`）
+    var deliver: (@MainActor (Double, Double) -> Void)?
+
+    func requestWhenInUseAuthorization() {}
+
+    func requestLocation() {
+        let deliver = deliver
+        let here = StoreDemo.here
+        Task { @MainActor in deliver?(here.latitude, here.longitude) }
+    }
 }

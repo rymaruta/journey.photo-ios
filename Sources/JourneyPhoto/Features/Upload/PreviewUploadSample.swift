@@ -62,6 +62,15 @@ enum PreviewUploadSample {
 
     static func capture() -> CameraCapture? {
         guard PreviewSession.opensUploadSample else { return nil }
+        // App Store の絵の見本（`PreviewSession.demoUploadSample`）: 見本の場所の写真と、それに合う撮影地・題・説明
+        // （2026-11-23 Mac run 1741: 森の線路の写真で撮影地と題が空のまま「写真に位置情報が無いので、入れてください」が目立った）
+        if let sample = PreviewSession.demoUploadSample {
+            var capture = CameraCapture(metadata: [:], capturedAt: Date(), encode: {
+                UIImage(named: "composition-ai-\(sample.asset)")?.jpegData(compressionQuality: 0.9)
+            })
+            capture.prefill = (sample.location, sample.title, sample.caption)
+            return capture
+        }
         if let kind {
             return CameraCapture(metadata: [:], capturedAt: Date(), encode: { make(kind) })
         }

@@ -135,4 +135,26 @@ final class CurrentLocationTests: XCTestCase {
         location.handle(latitude: 35.68, longitude: 139.76)
         XCTAssertEqual(location.state, .located(latitude: 35.68, longitude: 139.76))
     }
+
+    private static let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent()
+
+    /// 03 観光スポット: 見本の間は端末の位置を読まず、見本の京都を返す（状態のバーに位置の矢印を出さない）。
+    /// 見本でなければ本物の `CLLocationManager`
+    func testCurrentLocationUsesTheDemoPlaceWithoutTheDevice() async throws {
+        XCTAssertNil(CurrentLocation.storeDemoManager(demo: false), "見本でないのに端末の位置を読まない")
+        let demo = try XCTUnwrap(CurrentLocation.storeDemoManager(demo: true))
+        XCTAssertEqual(demo.authorizationStatus, .authorizedWhenInUse, "見本で許可のダイアログを出す")
+        let saved = UserDefaults.standard.object(forKey: StoreDemo.key)
+        defer { UserDefaults.standard.set(saved, forKey: StoreDemo.key) }
+        UserDefaults.standard.set(true, forKey: StoreDemo.key)
+        let location = CurrentLocation()
+        location.locate(requestedByUser: false)
+        for _ in 0..<50 where location.state == .locating { try await Task.sleep(nanoseconds: 20_000_000) }
+        XCTAssertEqual(location.state, .located(latitude: StoreDemo.here.latitude, longitude: StoreDemo.here.longitude))
+        let ui = try String(contentsOf: Self.root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"), encoding: .utf8)
+        let spotTest = ui.components(separatedBy: "func testStoreDemoSpot()").last?.components(separatedBy: "func testStoreDemoTripPlan()").first ?? ""
+        XCTAssertFalse(spotTest.contains("XCUIDevice.shared.location"), "観光スポットの絵でシミュレータに位置を持たせている（位置の矢印が出る）")
+        XCTAssertFalse(spotTest.contains("answerLocationPrompt()"), "観光スポットの絵で位置の許可を押している")
+    }
 }

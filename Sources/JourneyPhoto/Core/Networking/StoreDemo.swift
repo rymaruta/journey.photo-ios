@@ -76,6 +76,32 @@ enum StoreDemo {
         #endif
     }
 
+    /// 投稿の画面の見本の1枚（写真と、それに合う撮影地・題・説明）
+    struct UploadSample: Equatable {
+        /// `composition-ai-<asset>`（`photo-sources.json` のキー・場所は出典の `subject` と合う）
+        let asset: String
+        let location: String
+        let title: String
+        let caption: String
+    }
+
+    /// 投稿の画面の見本（`PreviewUploadSample.capture`）。見本でなければ nil（Release はいつも nil）。
+    /// 写真は八坂の塔と石畳の道（出典の `subject`「八坂の塔と石畳の道（京都・二年坂のあたり）」と合う撮影地）
+    static var uploadSample: UploadSample? { uploadSample(demo: isOn) }
+
+    static func uploadSample(demo: Bool) -> UploadSample? {
+        #if DEBUG
+        guard demo else { return nil }
+        return UploadSample(asset: "ratio4x5", location: "八坂の塔", title: "二年坂から見上げる八坂の塔",
+                            caption: "朝の石畳。坂の途中で振り返ると、町並みの先に塔が見えました。")
+        #else
+        return nil
+        #endif
+    }
+
+    /// 見本の現在地（京都駅の北・見本の観光スポットが近くに並ぶ）。見本の間は端末の位置を読まない（`StoreDemoLocation`）
+    static let here = (latitude: 34.9858, longitude: 135.7588)
+
     /// AI に頼むの絵で頼む言葉（UI テスト `testStoreDemoAsk` と単体テストが同じ言葉を使う）
     static let askQuestion = "京都で写真がきれいに撮れる所を教えて"
 
@@ -169,7 +195,10 @@ enum StoreDemo {
         let minutesAgo: Int
     }
 
-    /// 見本の写真（並びの順）。場所は `photo-sources.json` の `subject` に書かれた実際の場所だけ
+    /// 見本の写真（並びの順）。場所は `photo-sources.json` の `subject` に書かれた実際の場所だけ。
+    /// 🔴 **人ごとの最初の1枚は、ホームのストーリーの輪の顔になる**（`PreviewBackend.previewStories`）。輪は写真の真ん中を
+    /// 丸く切るので、真ん中が空の写真（余白の構図の `negativeSpace`・白い海）を最初にしない（2026-11-23 Mac run 1741 で
+    /// 灯台めぐりの輪が灰色の空に見えた。`StoreDemoTests.testStoryRingsShowTheSubject`）
     static let photos: [DemoPhoto] = [
         DemoPhoto(asset: "rootRectangle", title: "五重塔と富士山", location: "新倉山浅間公園",
                   person: 0, spotId: "store-demo-arakurayama", tags: ["富士山", "山梨"], likes: 128, minutesAgo: 35),
@@ -179,8 +208,8 @@ enum StoreDemo {
                   person: 4, spotId: nil, tags: ["スロベニア", "湖"], likes: 74, minutesAgo: 140),
         DemoPhoto(asset: "tianzige", title: "池に映る金色", location: "金閣寺",
                   person: 3, spotId: "store-demo-kinkakuji", tags: ["京都", "映り込み"], likes: 152, minutesAgo: 210),
-        DemoPhoto(asset: "negativeSpace", title: "白い崖と小さな灯台", location: "ビーチーヘッド",
-                  person: 2, spotId: nil, tags: ["灯台", "海"], likes: 61, minutesAgo: 300),
+        DemoPhoto(asset: "thirds", title: "夕暮れの防波堤", location: "サンタクルーズ",
+                  person: 2, spotId: nil, tags: ["灯台", "夕焼け"], likes: 66, minutesAgo: 300),
         DemoPhoto(asset: "ratio4x5", title: "石畳の坂の先に", location: "八坂の塔",
                   person: 3, spotId: "store-demo-yasaka", tags: ["京都", "坂道"], likes: 88, minutesAgo: 420),
         DemoPhoto(asset: "hinomaru", title: "青空に浮かぶ気球", location: "ナパバレー",
@@ -195,8 +224,8 @@ enum StoreDemo {
                   person: 4, spotId: nil, tags: ["霧", "湖"], likes: 52, minutesAgo: 1300),
         DemoPhoto(asset: "squareGrid", title: "青いタイルの家", location: "リスボン",
                   person: 1, spotId: nil, tags: ["街歩き", "タイル"], likes: 47, minutesAgo: 1500),
-        DemoPhoto(asset: "thirds", title: "夕暮れの防波堤", location: "サンタクルーズ",
-                  person: 2, spotId: nil, tags: ["灯台", "夕焼け"], likes: 66, minutesAgo: 1700),
+        DemoPhoto(asset: "negativeSpace", title: "白い崖と小さな灯台", location: "ビーチーヘッド",
+                  person: 2, spotId: nil, tags: ["灯台", "海"], likes: 61, minutesAgo: 1700),
         DemoPhoto(asset: "lShape", title: "草原の一本の木", location: nil,
                   person: 0, spotId: nil, tags: ["草原"], likes: 39, minutesAgo: 1900),
         DemoPhoto(asset: "otherRatios", title: "雪の旧市街", location: "タリン",
@@ -351,8 +380,12 @@ enum StoreDemo {
         ]
     }
 
-    /// DM の見本で送る観光スポットの頁（`PreviewBackend.dmReply` の札の1通）
-    static var dmSpotLink: String { "https://journey-photo.com/spots/\(spots[0].slug)" }
+    /// DM の見本で送る観光スポットの頁（`PreviewBackend.dmReply` の札の1通）。**アプリの向き先のサイト**（`AppConfig.siteBaseURL`）の
+    /// 頁にする（札になるのはそのサイトの `/spots/<スラッグ>` だけ・`DMSpotShare.slug`）。渡されなければ本番のサイト
+    static func dmSpotLink(siteBase: URL?) -> String {
+        let base = siteBase?.absoluteString ?? "https://journey-photo.com"
+        return (base.hasSuffix("/") ? String(base.dropLast()) : base) + "/spots/\(spots[0].slug)"
+    }
 
     // MARK: - 見本の会話と旅行プラン（見本の写真と場所に合わせた文）
 
@@ -388,6 +421,21 @@ enum StoreDemo {
             createdAt: "2026-11-10T00:00:00Z", updatedAt: "2026-11-10T00:00:00Z",
             share: shared ? TripShare(ownerId: me, memberIds: [me, friend], rev: 3) : nil,
             addedBy: shared ? ["s:\(ids[0])": friend] : [:])
+    }
+
+    /// 旅行プランの区間の移動の見込み（秒）。見本の間は Apple の地図に聞かず、まっすぐの距離から決まった値で答える
+    /// （`TravelEstimator.ask`・撮るたびに同じ数）。見本でなければ nil（Apple の地図に聞く）。
+    /// 町の中（20km 未満）は車 5分＋1km 2分30秒、電車など 10分＋1km 3分、遠い区間は車 30分＋1km 55秒、電車など 40分＋1km 45秒。
+    /// 歩きは 1km 15分
+    static func travelSeconds(_ leg: TripTravel.Leg, mode: TripTravel.Mode, demo: Bool = isOn) -> Int? {
+        guard demo else { return nil }
+        let km = leg.kilometers
+        let near = km < 20
+        switch mode {
+        case .walking: return Int(km * 900)
+        case .automobile: return Int(near ? 300 + km * 150 : 1800 + km * 55)
+        case .transit: return Int(near ? 600 + km * 180 : 2400 + km * 45)
+        }
     }
 
     /// 旅行プランの会話の見本の最初の1通（`TripShareFixtureStore`）

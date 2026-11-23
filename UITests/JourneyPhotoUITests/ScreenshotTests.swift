@@ -12903,12 +12903,9 @@ final class ScreenshotTests: JPUITestCase {
         let app = launchStoreDemo()
         let tabBar = app.tabBars.firstMatch
         guard tabBar.waitForExistence(timeout: 20), tabBar.buttons.count > 3 else { return unreached(app, "タブ") }
-        // 現在地は京都（見本の観光スポットが近くに並ぶ）
-        if #available(iOS 16.4, *) {
-            XCUIDevice.shared.location = XCUILocation(location: CLLocation(latitude: 34.9858, longitude: 135.7588))
-        }
+        // 現在地は見本の京都（`StoreDemo.here`・アプリが端末の位置を読まずに返す）。シミュレータに位置を持たせず、
+        // 許可も押さない（2026-11-23 Mac run 1741: 端末の位置を使うと、状態のバーに位置の矢印が出た）
         tabBar.buttons.element(boundBy: 3).tap()
-        answerLocationPrompt()
         let spots = app.buttons["map.mode.spots"].firstMatch
         guard spots.waitForExistence(timeout: 15) else { return unreached(app, "地図のスポットの切り替え", probes: ["map.mode.spots"]) }
         spots.tap()
@@ -12934,6 +12931,16 @@ final class ScreenshotTests: JPUITestCase {
         plan.tap()
         guard app.descendants(matching: .any)["tripShare.strip"].firstMatch.waitForExistence(timeout: 15) else {
             return unreached(app, "旅行プランの頁", probes: ["tripShare.strip"])
+        }
+        // 区間の移動の見込みが全部出るまで待つ（見本は Apple の地図に聞かずに答える・`StoreDemo.travelSeconds`）。
+        // 2026-11-23 Mac run 1741: 2つ目の区間が「移動の目安を調べています」のまま撮れた。出なければ落とす
+        // 区間の行（`trip.leg`）の読み上げは、見込みが出ると「伏見稲荷大社から八坂の塔、電車など 約 21 分、…」、
+        // 調べている間は「伏見稲荷大社から八坂の塔」だけ（`TripLegRow.spoken`）。「、」の無い行が残っている間は待つ
+        let checking = app.descendants(matching: .any).matching(identifier: "trip.leg")
+            .matching(NSPredicate(format: "NOT (label CONTAINS %@)", "、"))
+        guard XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 0"), object: checking)],
+                             timeout: 20) == .completed else {
+            return unreached(app, "旅行プランの区間の移動の見込み（読み込み中のまま）")
         }
         Thread.sleep(forTimeInterval: 2)
         shoot(app, "66c-旅行プラン（仲間と共有・日程）")

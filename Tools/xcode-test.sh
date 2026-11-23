@@ -115,9 +115,17 @@ case "$mode" in
 esac
 
 # App Store 用の絵を撮る回（`STORE_STATUS_BAR=1`）は、状態のバーを Apple の決まった形にしてから流す（2026-11-23・札 #604）。
-# かけられなければ止める（実機と違う状態のバーで撮らない）
+# かけられなければ止める（実機と違う状態のバーで撮らない）。
+# 🔴 2026-11-23（Mac run 1741）: 一度かけただけでは、撮った絵が実際の時刻・電波の空のままだった（`Tools/store-status-bar.sh` の注記）。
+# - 並列の写し（Clone N of …）は作らない（`-parallel-testing-enabled NO`。写しには上書きが移らない）
+# - テストが走っている間は裏で見張り、外れたらかけ直す（`--keep`）
+# - 流し終えたら、上書きが残っているかを `status_bar list` で確かめ、残っていなければ赤（`--check`）
+store_bar=""
 if [ "$mode" = "ui" ] && [ "${STORE_STATUS_BAR:-}" = "1" ]; then
     bash Tools/store-status-bar.sh "$DEVICE" || exit 1
+    extra="$extra -parallel-testing-enabled NO"
+    bash Tools/store-status-bar.sh "$DEVICE" --keep $$ &
+    store_bar=$!
 fi
 
 # **別の台で組んだ品で流す**（2026-10-31・#429）。`XCTESTRUN` に xctestrun の置き場を渡すと、
@@ -170,7 +178,10 @@ if [ "$mode" != "build" ] && command -v xcrun >/dev/null 2>&1; then
         fi
     done
 fi
-stop_watcher() { if [ -n "$watcher" ]; then kill "$watcher" 2>/dev/null || true; fi; }
+stop_watcher() {
+    if [ -n "$watcher" ]; then kill "$watcher" 2>/dev/null || true; fi
+    if [ -n "$store_bar" ]; then kill "$store_bar" 2>/dev/null || true; fi
+}
 trap stop_watcher EXIT
 
 # この回より新しいアプリの落ちた記録（.ips）だけを、失敗したときに読む印（2026-11-13・札 #596・`Tools/sim-crash-summary.py`）
@@ -194,3 +205,8 @@ xcodebuild \
         echo "::endgroup::"
         exit 1
     }
+
+# App Store 用の絵の回: 撮り終えたときにも 9:41 のままか（外れたまま撮っていないか）。残っていなければ赤
+if [ -n "$store_bar" ]; then
+    bash Tools/store-status-bar.sh "$DEVICE" --check || exit 1
+fi

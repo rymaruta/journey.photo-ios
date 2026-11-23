@@ -12,6 +12,9 @@ struct CameraCapture: @unchecked Sendable {
     let metadata: [CFString: Any]
     /// 撮った時刻（撮影情報に撮影日時が無いときの撮影日）
     let capturedAt: Date
+    /// 最初から入れておく撮影地・題・説明（App Store の絵の見本の1枚だけ・`PreviewUploadSample`・Debug のみ）。
+    /// カメラで撮った1枚はいつも nil（何も入れない）
+    var prefill: (location: String, title: String, caption: String)?
     private let encode: () -> Data?
 
     init(image: UIImage, metadata: [CFString: Any], capturedAt: Date) {

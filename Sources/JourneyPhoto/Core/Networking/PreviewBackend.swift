@@ -248,7 +248,8 @@ enum PreviewBackend {
         if dm, parts.first == "dm",
            let answer = dmReply(method: method, parts: parts, json: json, me: uid, now: now,
                                 samplePhoto: method == "GET" && parts.count == 2 ? dmSamplePhoto(await publicFeed()) : nil,
-                                unsent: store.with { $0.unsentDMIds }) {
+                                unsent: store.with { $0.unsentDMIds },
+                                siteBase: StoreDemo.isOn ? AppConfig.siteBaseURL : nil) {
             return answer
         }
         // グループの DM（`-JPPreviewGroups` のときだけ・2026-11-20 札 #582）。名前は見本の相手とフォロー中の人から引く
@@ -528,7 +529,8 @@ enum PreviewBackend {
     /// 消した吹き出しを戻していた（記録: run 1430 の `dm.probe` で `unsent=preview-dm-0-2 readded=1 count=10`）。
     /// 外したときは本物と同じく `full: true`（差分ではなく全部・画面は置き換える）を付ける
     static func dmReply(method: String, parts: [String], json: [String: Any], me: String, now: Date,
-                        samplePhoto: [String: Any]? = nil, unsent: Set<String> = [], demo: Bool = StoreDemo.isOn) -> Reply? {
+                        samplePhoto: [String: Any]? = nil, unsent: Set<String> = [], demo: Bool = StoreDemo.isOn,
+                        siteBase: URL? = nil) -> Reply? {
         // App Store の見本（`StoreDemo`・札 #604）: 「夕焼けの人」との会話の文を見本の写真と場所に合わせる（番号は `msg` の番号）
         func say(_ n: Int, _ text: String) -> String { demo ? (StoreDemo.dmTexts[n] ?? text) : text }
         let iso = ISO8601DateFormatter()
@@ -622,10 +624,14 @@ enum PreviewBackend {
                     gone["photo"] = ["id": "preview-gone-photo", "state": "gone"] as [String: Any]
                     items.append(gone)
                 }
-                items.append(msg(8, mine: false, "この曲いいね", 12))
+                // App Store の見本（`StoreDemo`）では曲の1通を出さない（2026-11-23 Mac run 1741: 曲の札が無いまま「この曲いいね」だけが浮いていた）
+                if !demo { items.append(msg(8, mine: false, "この曲いいね", 12)) }
                 // 撮影スポットを送った通（1.1.83・資料「SNS をもっと SNS に」⑤）: 頁のリンクだけの1通 → 札（`DMSpotCard`）
-                // App Store の見本（`StoreDemo`）では、同梱の写真と合う見本の観光スポットへ（作例は見本の写真だけ）
-                items.append(msg(9, mine: false, demo ? StoreDemo.dmSpotLink : "https://journey-photo.com/spots/kenrokuen", 11))
+                // App Store の見本（`StoreDemo`）では、同梱の写真と合う見本の観光スポットへ（作例は見本の写真だけ）。
+                // 頁のリンクはアプリの向き先のサイト（`siteBase`）で書く。札になるのはそのサイトの頁だけ（`DMSpotShare.slug`）で、
+                // run 1741 は Debug（staging のサイト）に本番の URL を送っていて、札にならず生の URL が出ていた
+                items.append(msg(9, mine: false, demo ? StoreDemo.dmSpotLink(siteBase: siteBase)
+                                                      : "https://journey-photo.com/spots/kenrokuen", 11))
                 items.append(msg(10, mine: false, say(10, "雪吊り、見に行かない？"), 10.5))
                 answer["items"] = items
             }

@@ -194,21 +194,12 @@ struct TripLegRow: View {
     private var line: some View {
         switch state {
         case .estimates:
-            HStack(spacing: JPSpace.s) {
-                ForEach(shownEstimates, id: \.mode) { estimate in
-                    HStack(spacing: 4) {
-                        Image(systemName: estimate.mode.symbol)
-                            .font(JPFont.caption)
-                            .accessibilityHidden(true)
-                        Text(estimate.mode.label)
-                            .font(JPFont.caption)
-                        Text(TripTravel.duration(estimate.seconds))
-                            .font(JPFont.mono(12, medium: true))
-                    }
-                    // 開く手段（先頭）は明るく、ほかは控えめに（並びでも伝える・色だけに頼らない）
-                    .foregroundStyle(estimate.mode == mode ? WebTheme.text : WebTheme.muted2)
-                    .lineLimit(1)
-                }
+            // 🔴 2026-11-23 判断（Mac run 1741・中型の iPhone 17 Pro 402pt 幅）: 2つ並べると入りきらず「電車… 約27…」と
+            // 両方が切れていた。**入りきらない幅では、開く手段（先頭）の1つだけを切らずに出す**（`ViewThatFits`）。
+            // 2つ目は右端の「i」の区間のシートと読み上げ（`spoken`）に残る。形・色・字は今と同じ
+            ViewThatFits(in: .horizontal) {
+                estimatesLine(shownEstimates)
+                estimatesLine(Array(shownEstimates.prefix(1)))
             }
         case .long:
             note(TripTravel.longLine(leg), symbol: "airplane", strong: true)
@@ -218,6 +209,26 @@ struct TripLegRow: View {
             note(TripTravel.openInMaps, symbol: "map")
         case .loading:
             note(L("移動の目安を調べています", "Checking travel time…"), symbol: "clock")
+        }
+    }
+
+    /// 見込みの並び（手段ごとに記号と等幅数字の時間）。切らない（入らなければ `ViewThatFits` が短い方を選ぶ）
+    private func estimatesLine(_ list: [TripTravel.Estimate]) -> some View {
+        HStack(spacing: JPSpace.s) {
+            ForEach(list, id: \.mode) { estimate in
+                HStack(spacing: 4) {
+                    Image(systemName: estimate.mode.symbol)
+                        .font(JPFont.caption)
+                        .accessibilityHidden(true)
+                    Text(estimate.mode.label)
+                        .font(JPFont.caption)
+                    Text(TripTravel.duration(estimate.seconds))
+                        .font(JPFont.mono(12, medium: true))
+                }
+                // 開く手段（先頭）は明るく、ほかは控えめに（並びでも伝える・色だけに頼らない）
+                .foregroundStyle(estimate.mode == mode ? WebTheme.text : WebTheme.muted2)
+                .fixedSize()
+            }
         }
     }
 

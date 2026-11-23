@@ -165,5 +165,110 @@ class StoreScreenshotsTests(unittest.TestCase):
             self.assertIn("本番の向き先", bad[0])
 
 
+# 偽の xcrun（`simctl list devices -j`・`boot`・`bootstatus`・`status_bar <udid> override|list`）。かけた形は
+# `FAKE_BAR` のファイルに書き、`list` はそれを出す（ファイルを消すと「外れた」）
+FAKE_XCRUN = r"""#!/bin/sh
+[ "$1" = "simctl" ] || exit 2
+shift
+case "$1" in
+  list) printf '%s' "$FAKE_DEVICES" ;;
+  boot|bootstatus) exit 0 ;;
+  status_bar)
+    case "$3" in
+      override) echo "$@" >> "$FAKE_BAR.calls"; echo "Time: 9:41" > "$FAKE_BAR" ;;
+      list) echo "Current Status Bar Overrides:"; cat "$FAKE_BAR" 2>/dev/null || true ;;
+    esac ;;
+esac
+"""
+
+
+class StatusBarTest(unittest.TestCase):
+    """`Tools/store-status-bar.sh` と `Tools/xcode-test.sh` の `STORE_STATUS_BAR=1`（2026-11-23・Mac run 1741）。
+
+    run 1741 は、かけたと出たのに撮った絵は実際の時刻・電波の空だった。テストの間ずっと見張ってかけ直し（`--keep`）、
+    撮り終えたときに残っていなければ赤（`--check`）。並列の写しは作らない（`-parallel-testing-enabled NO`）"""
+
+    def setUp(self):
+        import subprocess
+        self.subprocess = subprocess
+        self.tmp = tempfile.TemporaryDirectory()
+        bin_dir = os.path.join(self.tmp.name, "bin")
+        os.makedirs(bin_dir)
+        with open(os.path.join(bin_dir, "xcrun"), "w") as f:
+            f.write(FAKE_XCRUN)
+        os.chmod(os.path.join(bin_dir, "xcrun"), 0o755)
+        self.bar = os.path.join(self.tmp.name, "bar")
+        devices = {"devices": {"com.apple.CoreSimulator.SimRuntime.iOS-27-2": [
+            {"name": "iPhone Test", "udid": "UDID-1", "isAvailable": True, "state": "Booted"},
+            {"name": "Clone 1 of iPhone Test", "udid": "UDID-2", "isAvailable": True, "state": "Shutdown"},
+        ]}}
+        self.env = {**os.environ, "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}", "FAKE_BAR": self.bar,
+                    "FAKE_DEVICES": json.dumps(devices)}
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_bar(self, *args, timeout=30):
+        return self.subprocess.run(["bash", os.path.join(ROOT, "Tools/store-status-bar.sh"), "iPhone Test", *args],
+                                   capture_output=True, text=True, env=self.env, timeout=timeout)
+
+    def test_apply_sets_full_bars_without_operator_name(self):
+        run = self.run_bar()
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        with open(self.bar + ".calls") as f:
+            call = f.read()
+        for want in ("--time 9:41", "--cellularBars 4", "--wifiBars 3", "--batteryLevel 100", "--operatorName"):
+            self.assertIn(want, call)
+
+    def test_check_fails_when_the_override_is_gone(self):
+        self.assertEqual(self.run_bar().returncode, 0)
+        self.assertEqual(self.run_bar("--check").returncode, 0)
+        os.remove(self.bar)
+        run = self.run_bar("--check")
+        self.assertEqual(run.returncode, 1, "外れているのに緑")
+        self.assertIn("9:41 でない", run.stdout)
+
+    def test_keep_reapplies_while_the_tests_run(self):
+        import threading
+        sleeper = self.subprocess.Popen(["sleep", "5"])
+        # 終わったら片付ける（片付けないと pid が残り、見張りが終わらない）
+        threading.Thread(target=sleeper.wait, daemon=True).start()
+        try:
+            keeper = self.subprocess.Popen(["bash", os.path.join(ROOT, "Tools/store-status-bar.sh"), "iPhone Test",
+                                            "--keep", str(sleeper.pid)],
+                                           stdout=self.subprocess.PIPE, text=True, env=self.env)
+            out, _ = keeper.communicate(timeout=30)
+        finally:
+            sleeper.kill()
+        self.assertTrue(os.path.exists(self.bar), "外れていたのにかけ直さない")
+        self.assertIn("かけ直した", out)
+        self.assertIn("見張りを終えた", out)
+
+    def test_xcode_test_keeps_the_bar_and_runs_without_clones(self):
+        args_file = os.path.join(self.tmp.name, "args")
+        fake = os.path.join(self.tmp.name, "bin", "xcodebuild")
+        with open(fake, "w") as f:
+            f.write('#!/bin/sh\nprintf "%s\\n" "$@" > "$FAKE_XCODEBUILD_ARGS"\n')
+        os.chmod(fake, 0o755)
+        env = {**self.env, "DEVICE": "iPhone Test", "STORE_STATUS_BAR": "1",
+               "XCODE_LOG": os.path.join(self.tmp.name, "x.log"), "FAKE_XCODEBUILD_ARGS": args_file}
+        run = self.subprocess.run(["bash", os.path.join(ROOT, "Tools/xcode-test.sh"), "ui",
+                                   os.path.join(self.tmp.name, "ui.xcresult")],
+                                  capture_output=True, text=True, env=env, timeout=120)
+        self.assertEqual(run.returncode, 0, run.stdout[-500:] + run.stderr[-500:])
+        with open(args_file) as f:
+            got = f.read().split("\n")
+        self.assertTrue(any(got[i:i + 2] == ["-parallel-testing-enabled", "NO"] for i in range(len(got))),
+                        "App Store の絵の回が並列の写しを作り得る")
+        self.assertIn("テストのあとも 9:41 のまま", run.stdout)
+        # かけた形が消えたまま終わったら赤（撮った絵が 9:41 でない）
+        with open(fake, "w") as f:
+            f.write('#!/bin/sh\nrm -f "$FAKE_BAR"\nsleep 3\nrm -f "$FAKE_BAR"\n')
+        run = self.subprocess.run(["bash", os.path.join(ROOT, "Tools/xcode-test.sh"), "ui",
+                                   os.path.join(self.tmp.name, "ui2.xcresult")],
+                                  capture_output=True, text=True, env=env, timeout=120)
+        self.assertEqual(run.returncode, 1, "上書きが外れたまま撮り終えたのに緑")
+
+
 if __name__ == "__main__":
     unittest.main()

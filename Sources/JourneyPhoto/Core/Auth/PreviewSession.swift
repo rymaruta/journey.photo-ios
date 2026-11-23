@@ -429,6 +429,10 @@ enum PreviewSession {
         #endif
     }
 
+    /// App Store の絵の見本（`StoreDemo`）の投稿の1枚（見本でなければ nil・Release はいつも nil）。画面は `StoreDemo` を見ない
+    /// （`StoreDemoTests.testScreensLookTheSameInDemo`）ので、ここを通して渡す。変わるのはデータ（写真と字）だけ
+    static var demoUploadSample: StoreDemo.UploadSample? { StoreDemo.uploadSample }
+
     static var opensUploadSample: Bool {
         #if DEBUG
         guard userId != nil else { return false }

@@ -102,6 +102,11 @@ final class TravelEstimator: ObservableObject {
     private enum Outcome { case answer(Answer), throttled, failedNetwork }
 
     private static func ask(_ leg: TripTravel.Leg, mode: TripTravel.Mode) async -> Outcome {
+        #if DEBUG
+        // App Store の絵の見本（`StoreDemo`）: Apple の地図に聞かず、見本の見込みで答える（2026-11-23 Mac run 1741 で、
+        // 2つ目の区間が「移動の目安を調べています」のまま撮れた。Apple の地図の答えは CI では遅く、来ないこともある）
+        if let seconds = StoreDemo.travelSeconds(leg, mode: mode) { return .answer(.seconds(seconds)) }
+        #endif
         let request = MKDirections.Request()
         request.source = MKMapItem(placemark: MKPlacemark(coordinate: coordinate(leg.from.coords)))
         request.destination = MKMapItem(placemark: MKPlacemark(coordinate: coordinate(leg.to.coords)))

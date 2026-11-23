@@ -1598,6 +1598,12 @@ final class UploadViewModel: ObservableObject {
             switch result {
             case .success(let (prepared, source)):
                 self.append(prepared, editSource: source)
+                // App Store の絵の見本の1枚（`CameraCapture.prefill`・Debug のみ）: 撮影地・題・説明を入れた状態で見せる
+                if let prefill = capture.prefill, let last = self.items.indices.last {
+                    self.items[last].location = prefill.location
+                    self.items[last].title = prefill.title
+                    self.items[last].caption = prefill.caption
+                }
                 // **読めなかったライブラリの写真が選ばれたままなら、それを言い直す。**
                 // ただ消すと、その写真が抜けていることが二度と出ない（写真を外しても
                 // 読み直さない）。前の知らせを残すと、撮り直しで直ったカメラの失敗や

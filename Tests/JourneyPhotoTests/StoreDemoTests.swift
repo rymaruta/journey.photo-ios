@@ -117,7 +117,7 @@ final class StoreDemoTests: XCTestCase {
             XCTAssertTrue(url.hasPrefix("https://\(StoreDemo.host)/") || StoreDemo.sourcePages.values.contains(url),
                           "見本の置き場でない URL: \(url)")
         }
-        XCTAssertTrue(StoreDemo.dmSpotLink.hasPrefix("https://journey-photo.com/spots/"))
+        XCTAssertTrue(StoreDemo.dmSpotLink(siteBase: nil).hasPrefix("https://journey-photo.com/spots/"))
     }
 
     // MARK: - 本物の読み手で読める
@@ -360,7 +360,7 @@ final class StoreDemoTests: XCTestCase {
         for word in ["夕焼け", "伊豆", "雪吊り", "kenrokuen"] {
             XCTAssertFalse(demo.contains { $0.contains(word) }, "見本の写真と合わない文: \(word)")
         }
-        XCTAssertTrue(demo.contains(StoreDemo.dmSpotLink))
+        XCTAssertTrue(demo.contains(StoreDemo.dmSpotLink(siteBase: nil)))
         XCTAssertTrue(demo.contains { $0.contains("伏見稲荷大社") })
         XCTAssertTrue(try texts(demo: false).contains { $0.contains("伊豆") }, "見本でないのに会話の文が変わった")
         // 相手の名前: 見本では会話に合う作った名前、見本でなければ今のまま
@@ -411,5 +411,91 @@ final class StoreDemoTests: XCTestCase {
             }
         }
         XCTAssertGreaterThan(checked, 3)
+    }
+
+    // MARK: - Mac run 1741 の絵の直し（2026-11-23）
+
+    /// 07 メッセージ: 観光スポットの頁のリンクは、アプリの向き先のサイト（Debug は staging）の頁で送る。そうでないと札にならず
+    /// 生の URL が出る（run 1741）。曲の札の無い「この曲いいね」は見本の表示では出さない。見本でなければ今までどおり
+    func testDMSpotLinkIsACardOnTheAppSiteAndNoSongLineInDemo() throws {
+        let staging = try XCTUnwrap(URL(string: "https://d15fn3rcaiymu9.cloudfront.net"))
+        let link = StoreDemo.dmSpotLink(siteBase: staging)
+        XCTAssertEqual(DMSpotShare.slug(in: link, siteBase: staging), StoreDemo.spots[0].slug, "見本の観光スポットの札にならない: \(link)")
+        XCTAssertNil(DMSpotShare.slug(in: StoreDemo.dmSpotLink(siteBase: nil), siteBase: staging),
+                     "本番のサイトの頁は staging の札にならない（run 1741 の生の URL）")
+        let me = StoreDemo.userId
+        let id = DMRules.conversationId(me, PreviewBackend.dmPeers[0].id)
+        func texts(demo: Bool) throws -> [String] {
+            let reply = try XCTUnwrap(PreviewBackend.dmReply(method: "GET", parts: ["dm", id], json: [:], me: me, now: Date(),
+                                                             demo: demo, siteBase: demo ? staging : nil))
+            let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: reply.body) as? [String: Any])
+            return (object["items"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }
+        }
+        let demo = try texts(demo: true)
+        XCTAssertTrue(demo.contains(link))
+        XCTAssertFalse(demo.contains("この曲いいね"), "曲の札の無い曲の話が見本の会話に残っている")
+        let plain = try texts(demo: false)
+        XCTAssertTrue(plain.contains("この曲いいね"), "見本でないのに会話が変わった")
+        XCTAssertTrue(plain.contains("https://journey-photo.com/spots/kenrokuen"))
+    }
+
+    /// 01 ホーム: ストーリーの輪の顔（人ごとの最初の写真）に、真ん中が空の写真（余白の構図・白い海）を使わない
+    func testStoryRingsShowTheSubject() {
+        let stories = PreviewBackend.previewStories(feed: StoreDemo.feed(), me: StoreDemo.userId, now: Date())
+        let srcs = Set(stories.compactMap { $0["src"] as? String })
+        XCTAssertFalse(srcs.contains(StoreDemo.photoURL("negativeSpace")), "輪が白い空の写真になる（run 1741 の灯台めぐり）")
+        let users = Set(stories.compactMap { $0["userId"] as? String })
+        XCTAssertEqual(users, Set(StoreDemo.people.map(\.id) + [StoreDemo.userId]), "見本の人みんなに輪が出ない")
+    }
+
+    /// 04 旅行プラン: 見本の間は区間の移動の見込みを Apple の地図に聞かず、決まった値で答える（読み込み中のまま撮らない）。
+    /// 見本でなければ nil（Apple の地図に聞く・本番の動きは変えない）
+    func testTripLegsAnswerFromDemoOnlyInDemo() {
+        let spots = StoreDemo.spots
+        func end(_ i: Int, _ n: Int) -> TripTravel.Endpoint {
+            TripTravel.Endpoint(name: spots[i].name, coords: Photo.Coords(lat: spots[i].lat, lng: spots[i].lng), number: n)
+        }
+        let legs = [TripTravel.Leg(from: end(0, 1), to: end(3, 2)), TripTravel.Leg(from: end(3, 2), to: end(1, 3)),
+                    TripTravel.Leg(from: end(1, 3), to: end(2, 4), crossesDay: true)]
+        for leg in legs {
+            let modes = TripTravel.modes(for: leg, transitAvailable: TravelEstimator.transitAvailable)
+            var results: [TripTravel.Mode: Int] = [:]
+            for mode in TripTravel.Mode.allCases {
+                XCTAssertNil(StoreDemo.travelSeconds(leg, mode: mode, demo: false), "見本でないのに地図に聞かない")
+                let seconds = StoreDemo.travelSeconds(leg, mode: mode, demo: true)
+                XCTAssertGreaterThan(seconds ?? 0, 0, "\(leg.from.name)→\(leg.to.name) \(mode)")
+                results[mode] = seconds
+            }
+            XCTAssertEqual(TripTravel.shown(modes, results: results).count, 2, "見込みが2つ並ばない: \(leg.from.name)→\(leg.to.name)")
+        }
+        // 町の中の区間は数十分、京都から富士吉田は数時間（見本の数がありそうな値）
+        let near = StoreDemo.travelSeconds(legs[0], mode: .transit, demo: true) ?? 0
+        let far = StoreDemo.travelSeconds(legs[2], mode: .transit, demo: true) ?? 0
+        XCTAssertTrue((600...3600).contains(near), "\(near)")
+        XCTAssertTrue((3 * 3600...6 * 3600).contains(far), "\(far)")
+        // 中型（402pt）で2つ並ぶと切れる行は、入らなければ開く手段の1つだけを切らずに出す（`TripLegRow`）
+        let row = (try? String(contentsOf: root.appendingPathComponent("Sources/JourneyPhoto/Features/Trips/TripLegViews.swift"),
+                               encoding: .utf8)) ?? ""
+        XCTAssertTrue(row.contains("ViewThatFits(in: .horizontal)") && row.contains("estimatesLine(Array(shownEstimates.prefix(1)))"),
+                      "区間の行が、入らない幅で切れたまま並ぶ")
+    }
+
+    /// 05 投稿: 見本の1枚は、出典の場所と合う撮影地・題・説明を入れた状態。見本でなければ何も入れない
+    func testUploadSampleHasPlaceTitleAndCaptionInDemoOnly() throws {
+        XCTAssertNil(StoreDemo.uploadSample(demo: false))
+        XCTAssertNil(PreviewSession.demoUploadSample, "見本でないのに投稿の見本の字が入る")
+        let sample = try XCTUnwrap(StoreDemo.uploadSample(demo: true))
+        let data = try Data(contentsOf: root.appendingPathComponent("Tools/composition-examples/photo-sources.json"))
+        let sources = try XCTUnwrap((try JSONSerialization.jsonObject(with: data) as? [String: Any])?["photos"] as? [String: [String: Any]])
+        let source = try XCTUnwrap(sources[sample.asset], "出典の無い写真: \(sample.asset)")
+        XCTAssertEqual(source["license"] as? String, "CC0")
+        XCTAssertTrue((source["subject"] as? String ?? "").contains(sample.location), "写真の場所と合わない撮影地: \(sample.location)")
+        let imageset = root.appendingPathComponent("Sources/JourneyPhoto/Assets.xcassets/composition-ai-\(sample.asset).imageset")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: imageset.path))
+        for text in [sample.location, sample.title, sample.caption] {
+            XCTAssertFalse(text.isEmpty)
+            for word in ["・", "·", "撮りどき", "捨て"] { XCTAssertFalse(text.contains(word), "\(word): \(text)") }
+        }
+        withDemo(true) { XCTAssertEqual(PreviewSession.demoUploadSample, sample) }
     }
 }
