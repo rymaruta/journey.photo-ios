@@ -170,6 +170,10 @@ struct ArrivalSequence: Equatable {
     static let sentenceAt = 1.25
     /// ラベルが落ち始めてから、貼りついて触覚を鳴らすまで（ばねが落ち切る少し前）
     static let landAfter = 0.28
+    /// スタンプ（札 #712）が落ち始めるまで（開いてからの秒）。**硬貨が札に入ったあと**
+    /// （ラベル 0.55 → 貼りつく +0.28 → 硬貨 +0.25 → 札に入る +0.62 ＝ 1.70）。触覚が重ならないよう 0.3 秒あける。
+    /// ラベル → 硬貨とかけら → スタンプの順（2026-11-23 判断・1.2.0 の統合）
+    static let stampAt = 2.0
 
     /// その段を見せてよいか。動きを減らす設定のときは、待たずに全部を最初から出す（画面が使う）
     static func isShown(_ target: Step, current: Step, reduceMotion: Bool) -> Bool {

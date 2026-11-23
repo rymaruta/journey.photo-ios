@@ -1249,7 +1249,7 @@ struct TrunkGachaOpenView: View {
             }
             // 切り口（暗い内側と白い縁）
             Capsule()
-                .fill(top ? Color.black.opacity(0.55) : Color(trunk: TrunkRGBA(0x1A1A1C)).opacity(0.85))
+                .fill(top ? Color.black.opacity(0.55) : WebTheme.surface3.opacity(0.85))
                 .overlay(Capsule().strokeBorder(Color.white.opacity(top ? 0.55 : 0.8), lineWidth: 1.6))
                 .frame(width: 120, height: 20)
                 .offset(y: top ? 30 : -30)

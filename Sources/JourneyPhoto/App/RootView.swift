@@ -988,7 +988,8 @@ struct RootView: View {
         // `-JPPreviewTrunkArrived 3` なら手持ちの見本を足して3枚（「まとめて貼る」の画面写真・2026-11-12）
         let more = TrunkSample.pocket.prefix(max(0, PreviewSession.trunkArrivedCount - 1))
             .map { TrunkArrivals.Arrival(label: $0, photoTitle: "") }
-        trunkBatch = TrunkArrivals.Batch(arrivals: [.init(label: TrunkSample.arrived, photoTitle: "哲学の道の朝")] + more, coins: 1)
+        trunkBatch = TrunkArrivals.Batch(arrivals: [.init(label: TrunkSample.arrived, photoTitle: "哲学の道の朝")] + more, coins: 1,
+                                         stamp: PreviewSession.trunkArrivedStamp)
     }
 
     /// **ほかの画面が閉じてから**通知の説明を出す（初めての投稿が上がった・`PushPrimerStore.notePosted`）。

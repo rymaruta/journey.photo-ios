@@ -394,6 +394,8 @@ final class AuthStore: ObservableObject {
         TripAIJobs.shared.signOut()
         // 旅行プランの出発の時刻の覚え（プランの番号と日付）も次の人に残さない（札 #677）
         TripStartStore.shared.forgetAll()
+        // 旅のスタンプ帳の前回の帳面（自分の写真と撮った場所・同じ起動の間だけの覚え）も次の人に残さない（札 #712）
+        StampBookModel.forget()
         state = .signedOut
         isAdmin = false
         errorMessage = nil

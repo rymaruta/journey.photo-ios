@@ -346,12 +346,21 @@ final class TripBookshelfTests: XCTestCase {
 
     // MARK: - 荷札の道具の列
 
-    /// 並びは決まった順、新しい道具は最後。スタンプ帳（#712）は場所だけで出さない。トランクは口のある人だけ
-    func testToolOrderAndGating() {
+    /// 並びは決まった順、新しい道具は最後。スタンプ帳（#712）はマイページで出す。トランクは口のある人だけ
+    func testToolOrderAndGating() throws {
         XCTAssertEqual(TripTool.allCases, [.plans, .albums, .trunk, .stampBook, .passBook])
         XCTAssertEqual(TripTool.shown(trunkAvailable: true), [.plans, .albums, .trunk, .passBook])
         XCTAssertEqual(TripTool.shown(trunkAvailable: false), [.plans, .albums, .passBook])
         XCTAssertEqual(TripTool.shown(trunkAvailable: true, stampBookReady: true), TripTool.allCases)
+        XCTAssertEqual(TripTool.shown(trunkAvailable: false, stampBookReady: true), [.plans, .albums, .stampBook, .passBook])
+        // マイページはスタンプ帳を出す（1.2.0 の統合で #712 が入った）。荷札の名前は「スタンプ帳」、画面の題は「旅のスタンプ帳」
+        let page = try source("Features/Profile/MyPageView.swift")
+        XCTAssertTrue(page.contains("TripTool.shown(trunkAvailable: trunkAvailability.isAvailable, stampBookReady: true)"))
+        XCTAssertTrue(page.contains("case .stampBook:") && page.contains("StampBookToolTag()"), "荷札の列にスタンプ帳が無い")
+        XCTAssertEqual(TripTool.stampBook.title, L("スタンプ帳", "Stamp book"))
+        XCTAssertEqual(StampBookEntry.title, L("旅のスタンプ帳", "Travel stamp book"))
+        let tag = try source("Features/Profile/StampBookScreen.swift")
+        XCTAssertTrue(tag.contains(".buttonStyle(TripToolTagStyle())\n        .modifier(TripToolTapFeedback())"), "スタンプ帳の荷札に触覚が無い")
         // 今までの目印は変えない（UI テスト）
         XCTAssertEqual(TripTool.allCases.map(\.identifier),
                        ["trips.plans", "trips.albums", "trips.trunk", "trips.stampBook", "trips.passBook"])

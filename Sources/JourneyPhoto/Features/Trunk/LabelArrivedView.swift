@@ -53,6 +53,10 @@ struct LabelArrivedView: View {
     @State private var coinFallStart: Date?
     @State private var coinRested = true
     @State private var coinLanded = 0
+    /// 同じ投稿で初めて押されたスタンプを出したか（札 #712）。硬貨が札に入ったあと（`ArrivalSequence.stampAt`）
+    @State private var stampShown = false
+    /// 「旅のスタンプ帳を見る」で開く帳面
+    @State private var showStampBook = false
     /// 事実の一文。**開いたときに1回だけ**決めて持つ（描き直すたびに写真の一覧を数え直さない）。nil＝言わない
     @State private var sentence: String?
     /// 写真が読み込めなかった（写真の札は出さず、ラベルだけを真ん中に出す）
@@ -112,6 +116,7 @@ struct LabelArrivedView: View {
                             .padding(.bottom, 8)
                         factLine
                         chips
+                        stampMoment
                         progress
                         pocket
                     }
@@ -128,6 +133,18 @@ struct LabelArrivedView: View {
         .task { await runSequence() }
         // 一文のための自分の写真の一覧（読めなければ nil＝言わない。見本の入り方では読まない）
         .task { await decideSentence() }
+        // スタンプ（札 #712）: ラベル → 硬貨とかけら → スタンプの順。動きを減らす設定では待たずに出す
+        .task {
+            guard batch.stamp != nil, !stampShown else { return }
+            if !reduceMotion {
+                try? await Task.sleep(nanoseconds: UInt64(ArrivalSequence.stampAt * 1_000_000_000))
+                if Task.isCancelled { return }
+            }
+            withAnimation(.easeOut(duration: 0.3)) { stampShown = true }
+        }
+        .sheet(isPresented: $showStampBook) {
+            NavigationStack { StampBookEntry.destination() }
+        }
         .sensoryFeedback(.impact(weight: .light), trigger: landed)
         .sensoryFeedback(.impact(weight: .light), trigger: coinLanded)
         .fullScreenCover(isPresented: $showCustom) {
@@ -267,6 +284,18 @@ struct LabelArrivedView: View {
                 .padding(.top, 4)
                 .opacity(shown(.sentence) ? 1 : 0)
                 .accessibilityIdentifier("trunk.arrived.fact")
+        }
+    }
+
+    /// 同じ投稿で初めて押されたスタンプ（札 #712・2026-11-23 判断）。投稿のあとの画面を1枚に保つため、
+    /// 別の全画面にせず、この画面の硬貨とかけらの札の下に出す。帳面は本人だけのもの（共有の道は置かない）
+    @ViewBuilder
+    private var stampMoment: some View {
+        if let pressed = batch.stamp, stampShown {
+            StampPressedView(pressed: pressed) { showStampBook = true }
+                .padding(.top, 16)
+                .padding(.bottom, 4)
+                .transition(.opacity)
         }
     }
 

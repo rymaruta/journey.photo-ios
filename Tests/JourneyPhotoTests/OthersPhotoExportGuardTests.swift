@@ -214,6 +214,9 @@ final class OthersPhotoExportGuardTests: XCTestCase {
         "Features/Stories/StoryViewerView.swift": "次のストーリーの先読み（見せるだけ）",
         "Features/Stories/SongStickerView.swift": "曲のジャケット（写真ではない）",
         "Features/Common/DownsampledRemoteImage.swift": "一覧の縮小画像を見せるだけ（外へ出さない）",
+        // 1.2.0 の統合（札 #714 の本棚）で増えた。どちらも見せるだけで、画像を外へ出したり自分の物に入れたりしない（2026-11-23 確かめた）
+        "Features/Trips/TripBookStage.swift": "本棚の背表紙を引き出したときの表紙の先読み（`DownsampledRemoteImage.preload`・控えに置いて見せるだけ）",
+        "Features/Stories/StoriesRow.swift": "ストーリーの動画の先読み（`StoryVideoPreloader.preload`・見せるだけ。#714 で増えた `DownsampledRemoteImage.preload` と名前が同じだけ）",
         "Features/Trips/OfflineTripLive.swift": "電波なしで使う旅の材料をアプリの中にだけ置く",
         "Services/DailyQuizService.swift": "クイズの JSON",
         "Services/OfficialSpotService.swift": "観光スポットの JSON・本文",
@@ -314,6 +317,9 @@ final class OthersPhotoExportGuardTests: XCTestCase {
             ("Core/Text/PhotoLift.swift", "static func allowsStory("),
             ("Features/Pass/PassCardPickView.swift", "static func pick("),
             ("Features/Profile/ProfileImageFromPhoto.swift", "static func myPhotos("),
+            // 旅のスタンプ帳（札 #712）: 帳面に入れる写真は本人のものだけ（1.2.0 の統合）
+            ("Core/Text/StampBook.swift", "static func build("),
+            ("Core/Text/StampBook.swift", "static func buildCancellable("),
         ]
         for gate in gates {
             let code = try XCTUnwrap(all.first { $0.path == gate.path }?.code, gate.path)

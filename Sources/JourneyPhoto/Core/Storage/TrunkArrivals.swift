@@ -43,6 +43,8 @@ final class TrunkArrivals: ObservableObject {
         var coins: Int = 0
         /// 一緒に届いたかけら（札 #713・サーバーが返したときだけ。届いた画面に「かけら +1」を添える）
         var fragments: Int = 0
+        /// 同じ投稿で初めて押されたスタンプ（札 #712・`StampMoment`）。届いた画面が硬貨のあとに同じ画面の中で出す
+        var stamp: StampMoment.Pressed? = nil
         var id: String { arrivals.map(\.label.id).joined(separator: ",") }
         var first: Arrival { arrivals[0] }
     }
@@ -169,7 +171,8 @@ final class TrunkArrivals: ObservableObject {
 
     /// 投稿が全部上がった。届いたラベル（無ければ空）と、届かなかった理由の一言（無ければ nil）と、届いた硬貨の数。
     /// 硬貨は届いた画面に添える。ラベルが無く理由の一言も無ければ「硬貨 +1」の一言にする
-    func deliver(_ arrivals: [Arrival], notice: Notice?, coins: Int = 0, fragments: Int = 0, now: Date = Date()) {
+    func deliver(_ arrivals: [Arrival], notice: Notice?, coins: Int = 0, fragments: Int = 0,
+                 stamp: StampMoment.Pressed? = nil, now: Date = Date()) {
         let coins = max(0, coins)
         let fragments = max(0, fragments)
         var notice = notice ?? (arrivals.isEmpty && coins > 0 ? .coins(coins) : nil)
@@ -184,8 +187,9 @@ final class TrunkArrivals: ObservableObject {
         guard !arrivals.isEmpty || notice != nil else { return }
         deliveredAt = now
         if !arrivals.isEmpty {
+            // スタンプは1つだけ出す（待っている束に先のものがあれば、それを残す）
             pending = Batch(arrivals: (pending?.arrivals ?? []) + arrivals, coins: (pending?.coins ?? 0) + coins,
-                            fragments: (pending?.fragments ?? 0) + fragments)
+                            fragments: (pending?.fragments ?? 0) + fragments, stamp: pending?.stamp ?? stamp)
         } else {
             pendingNotice = notice
         }

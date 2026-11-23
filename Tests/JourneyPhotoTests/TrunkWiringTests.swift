@@ -253,7 +253,7 @@ final class TrunkWiringTests: XCTestCase {
     func testMyPageEntryIsGated() throws {
         let page = try source("Features/Profile/MyPageView.swift")
         // 荷札の列（札 #714）: トランクの札は `TripTool.shown` が口の有無で出し分ける
-        XCTAssertTrue(page.contains("ForEach(TripTool.shown(trunkAvailable: trunkAvailability.isAvailable)) { tool in"),
+        XCTAssertTrue(page.contains("ForEach(TripTool.shown(trunkAvailable: trunkAvailability.isAvailable, stampBookReady: true)) { tool in"),
                       "口が無いのに入口を出している")
         let gated = try XCTUnwrap(page.range(of: "case .trunk:"))
         XCTAssertTrue(String(page[gated.upperBound...].prefix(600)).contains("MyPageTrunkRow(ownerName:"),

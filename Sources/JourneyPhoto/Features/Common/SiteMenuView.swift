@@ -23,8 +23,8 @@ import SwiftUI
 /// - タブと重なる3行（撮影地マップ＝マップのタブ・マイページ＝タブ・保存＝マイページの保存のタブ）を外した
 /// - 設定の「旅の道具」の節（6行）をここへ移した。設定はオン・オフと決まりだけ（設定の中にしか無い入口を作らない）
 /// - 節は「旅の準備」（旅行プラン・共同アルバム・光と天気の知らせ・保存した旅）と
-///   「旅の楽しみ」（すれちがい乗車券・旅のトランク）。輪から外れる楽しみは下の段
-///   （とおまわり号は 2026-11-23 に消した・札 #709）
+///   「旅の楽しみ」（すれちがい乗車券・旅のトランク・旅のスタンプ帳）。輪から外れる楽しみは下の段
+///   （とおまわり号は 2026-11-23 に消し、同じ所に旅のスタンプ帳を置いた・札 #709・#712）
 /// - いいねした写真・設定・ログアウトは「ほか」。眉の節は3つ
 /// - 意見を送る（札 #546）・使い方（札 #517）は、それぞれの札の担当がこの「ほか」に足す
 struct SiteMenuView: View {
@@ -99,6 +99,8 @@ struct SiteMenuView: View {
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("menu.pass")
                         trunkRow
+                        // 旅のスタンプ帳（2026-11-23・札 #712）。とおまわり号の行があった所。中身と行き先は `StampBookEntry`
+                        StampBookMenuRow()
                     }
                 }
 
@@ -246,6 +248,8 @@ struct SiteMenuRow: View {
     var value: String? = nil
     /// 右の件数バッジ（真鍮・`CountBadge`）。無ければ出さない（旅のトランクの貼っていないラベル・2026-11-23）
     var badge: Int? = nil
+    /// 右の小さな絵（矢印の手前・旅のスタンプ帳の最近の3つ・2026-11-23 札 #712）。無ければ出さない
+    var accessory: AnyView? = nil
 
     /// 行の高さ（板の 72）
     nonisolated static let height: CGFloat = 72
@@ -281,6 +285,7 @@ struct SiteMenuRow: View {
             if let badge {
                 CountBadge(count: badge, maximum: 99)
             }
+            if let accessory { accessory }
             Image(systemName: "chevron.right")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(WebTheme.text3)

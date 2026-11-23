@@ -329,6 +329,20 @@ enum PreviewSession {
         #endif
     }
 
+    /// UI テストで旅のスタンプ帳に見本を入れる（Debug のみ・札 #712）。`-JPPreviewStampBook empty|few|many`。
+    /// 見本の利用者は鍵を持たず、自分の写真の口を叩けないので、帳面そのものを入れる（写真は持たない）。
+    /// 名前は観光スポットの索引にある実在の行（案の頁の模型と同じ）。日付は例。Release では必ず nil
+    static let stampBookKey = "JPPreviewStampBook"
+
+    static var stampBookSample: StampBook? {
+        #if DEBUG
+        guard userId != nil, let kind = UserDefaults.standard.string(forKey: stampBookKey) else { return nil }
+        return StampBookSamples.book(kind)
+        #else
+        return nil
+        #endif
+    }
+
     /// UI テストでマイページを開いたら Pro の案内（`PaywallView`）を1度だけ出す（Debug のみ）。
     /// `-JPPreviewPaywall YES`。
     ///
@@ -573,6 +587,16 @@ enum PreviewSession {
         return UserDefaults.standard.bool(forKey: trunkArrivedKey)
         #else
         return false
+        #endif
+    }
+
+    /// 見本の届いた画面に、初めて押されたスタンプ（札 #712）も添える（`-JPPreviewTrunkArrivedStamp YES`・Debug のみ）
+    static var trunkArrivedStamp: StampMoment.Pressed? {
+        #if DEBUG
+        guard opensTrunkArrived, UserDefaults.standard.bool(forKey: "JPPreviewTrunkArrivedStamp") else { return nil }
+        return StampBookSamples.pressed
+        #else
+        return nil
         #endif
     }
 

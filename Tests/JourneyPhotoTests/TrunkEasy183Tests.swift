@@ -450,7 +450,7 @@ final class TrunkGachaFailure183Tests: XCTestCase {
         ScriptedProtocol.script = [.init(match: "/user/trunk/gacha", status: 502, body: ""),
                                    .init(match: "/user/trunk", status: 200, body: #"{"pocket":[],"stuck":[],"coins":2}"#)]
         _ = await model.gacha()
-        XCTAssertEqual(model.actionError, "回っていました。出た部品は部品箱に入っています")
+        XCTAssertEqual(model.actionError, "回せていました。出た部品は部品箱にあります")
         XCTAssertEqual(model.state?.coins, 2)
 
         // 読み直しも失敗: 分からないと言う（「減っていません」と言わない）

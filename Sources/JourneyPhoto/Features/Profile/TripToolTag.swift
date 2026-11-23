@@ -10,6 +10,9 @@ struct TripToolTag: View {
 
     let title: String
     var badge: Int? = nil
+    /// 名前の右に添える小さな絵（スタンプ帳の最近の3つ・`StampBookEntry.recentAccessory`）。読み上げは呼び手が値で言う。
+    /// 2026-11-23 判断（1.2.0 の統合）: 縦の行の右にあった最近の3つを、荷札でも同じ部品で出す（高さ 32pt で札の 44pt に収まる）
+    var accessory: AnyView? = nil
 
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -46,6 +49,9 @@ struct TripToolTag: View {
                 .frame(maxWidth: large && title.count > Self.wrapCharacters ? 6 * 22 : nil, alignment: .leading)
             if let badge {
                 CountBadge(count: badge, maximum: 99)
+            }
+            if let accessory {
+                accessory
             }
         }
         .padding(.leading, Self.leadingInset)

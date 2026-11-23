@@ -1247,7 +1247,7 @@ struct MyPageView: View {
     private var tripToolsCard: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: TripToolTag.spacing) {
-                ForEach(TripTool.shown(trunkAvailable: trunkAvailability.isAvailable)) { tool in
+                ForEach(TripTool.shown(trunkAvailable: trunkAvailability.isAvailable, stampBookReady: true)) { tool in
                     switch tool {
                     case .plans:
                         NavigationLink { TripPlansView() } label: {
@@ -1268,8 +1268,8 @@ struct MyPageView: View {
                         // 貼っていないラベルの枚数を件数バッジで出す。数を見張るのはこの札の中だけ
                         MyPageTrunkRow(ownerName: model.profile?.name)
                     case .stampBook:
-                        // スタンプ帳（#712）はまだ無い。列の場所だけ用意してある（`TripTool.shown` で出さない）
-                        EmptyView()
+                        // 旅のスタンプ帳（札 #712）。荷札と最近の3つ・行き先は `StampBookToolTag`（`StampBookEntry` の1つの部品）。本人だけが見る帳面
+                        StampBookToolTag()
                     case .passBook:
                         // すれちがい帳（板 PassBook の戻り先がマイページ・2026-10-16）
                         NavigationLink { PassBookView() } label: {

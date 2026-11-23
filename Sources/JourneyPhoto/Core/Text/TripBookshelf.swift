@@ -308,7 +308,7 @@ enum TripTool: String, CaseIterable, Identifiable {
     }
 
     /// 列に出す道具。トランクは口が読めたことのある人だけ（`TrunkAvailability`）。
-    /// スタンプ帳（#712）はまだ無いので場所だけ用意して出さない
+    /// スタンプ帳（#712）は 1.2.0 の統合で入ったので、マイページは `stampBookReady: true` で呼ぶ（2026-11-23）
     static func shown(trunkAvailable: Bool, stampBookReady: Bool = false) -> [TripTool] {
         allCases.filter { tool in
             switch tool {

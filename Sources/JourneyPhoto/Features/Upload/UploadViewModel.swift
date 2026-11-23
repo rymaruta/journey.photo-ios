@@ -2081,6 +2081,8 @@ final class UploadViewModel: ObservableObject {
         var labelNotice: TrunkArrivals.Notice?
         /// 届いた硬貨の数（公開の投稿1件で1枚・2026-10-17 次の版）
         var dealtCoins = 0
+        /// 上がった写真の観光スポット（旅のスタンプ帳の「押される瞬間」・札 #712）。選んだもの → 自動の候補
+        var stampSpotIds: [String] = []
         let queue = items.map(\.id)
         // 🔴 **送り始める前に、送るものを控えに書く**（2026-10-16 判断）。以前は下書きから開き直した
         // 写真にしか印が無く、送っている途中でアプリが終了されると、まだ送れていない写真と題が
@@ -2134,6 +2136,13 @@ final class UploadViewModel: ObservableObject {
                 if let label = outcome.label { dealtLabels.append((label, outcome.title, outcome.photoURL, outcome.shareable)) }
                 if let notice = TrunkArrivals.Notice(outcome.labelSkipped) { labelNotice = notice }
                 dealtCoins += outcome.coin
+                // 保存で送った観光スポット、無ければ自動の候補（本人が切った写真は外す）。送った値と同じ決まり（`makeDraft`）
+                let explicitSpot = UploadSpotTarget.spotIdToSend(screen: spot, for: item)
+                let autoSpot = explicitSpot == nil ? autoSpotCandidate(for: item) : nil
+                if let spotId = StampMoment.spotId(explicit: explicitSpot, candidate: autoSpot,
+                                                   off: autoSpotOff(for: item, candidate: autoSpot)) {
+                    stampSpotIds.append(spotId)
+                }
                 done.append(item.id)
                 // 上がった1枚はすぐ下書きから外す（束の終わりまで待たない）
                 markDraft(item.id, .posted)
@@ -2172,9 +2181,11 @@ final class UploadViewModel: ObservableObject {
         // 旅のトランク（2026-10-17）: 届いたラベルの画面を、投稿の画面が閉じてから出す（`RootView` が待つ）。
         // **全部上がった回に限らない**（2026-10-17 の読み直し）——一部だけ上がった・曲が付かなかった・前の保存が
         // 通っていた回でも、配られたラベルは手持ちに届いている。届かなかった理由が「手持ちがいっぱい」「容量」なら一言
+        // 旅のスタンプ帳（札 #712・2026-11-23 判断）: 初めての観光スポットなら、届いた画面の硬貨のあとに押す（`StampMoment`）
+        let stamp = StampBookModel.shared.pressed(spotIds: stampSpotIds, userId: savedPhotoOwner ?? draftOwner)
         TrunkArrivals.shared.deliver(dealtLabels.map { .init(label: $0.label, photoTitle: $0.title,
                                                               photoURL: $0.photoURL, shareable: $0.shareable) },
-                                     notice: labelNotice, coins: dealtCoins)
+                                     notice: labelNotice, coins: dealtCoins, stamp: stamp)
 
         // **上がったぶんだけ待ち行列から外す。** 残したままだと、やり直しで
         // 同じ写真をもう一度上げる（枚数の枠を食う）
