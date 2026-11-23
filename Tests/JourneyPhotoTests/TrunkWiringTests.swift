@@ -265,6 +265,8 @@ final class TrunkWiringTests: XCTestCase {
     func testContainerIdentifiersDoNotOverrideChildren() throws {
         let containers = ["trunk.arrived", "trunk.models.screen", "trunk.proModels.screen", "trunk.pocket.empty",
                           "trunk.reroll", "trunk.loading", "trunk.failed", "trunk.offline", "trunk.empty", "trunk.screen",
+                          // 圏外で前に読んだトランクを出すお知らせ（2026-11-23・札 #711）
+                          "trunk.offlineSaved",
                           // 次の版（2026-10-17）
                           "trunk.stick", "trunk.gacha", "trunk.gachaOpen", "trunk.odds", "trunk.parts", "trunk.equip",
                           // ふたを開ける（2026-10-18）
@@ -287,10 +289,14 @@ final class TrunkWiringTests: XCTestCase {
     /// 部品はトランクの絵と回す画面に映る。画面写真の試験が各画面を1枚ずつ撮る
     func testNextVersionEntriesAndScreenshots() throws {
         let main = try source("Features/Trunk/TrunkView.swift")
-        for id in ["trunk.stick.open", "trunk.partsBox", "trunk.gacha.open"] {
-            XCTAssertTrue(main.contains("\"\(id)\""), "\(id) の入口が無い")
-        }
-        XCTAssertTrue(main.contains("Text(L(\"硬貨 \\(state.coins)\""), "入口に硬貨の数が無い")
+        // 2026-11-23（札 #711）: 入口は大きいボタンと4つのカード。目印は今までの行の名前のまま（`TrunkHome.identifier`）
+        XCTAssertEqual(TrunkHome.identifier(TrunkHomeTile.stick), "trunk.stick.open")
+        XCTAssertEqual(TrunkHome.identifier(.parts), "trunk.partsBox")
+        XCTAssertEqual(TrunkHome.identifier(TrunkHomeTile.gacha), "trunk.gacha.open")
+        XCTAssertTrue(main.contains(".accessibilityIdentifier(TrunkHome.identifier(action))"), "大きいボタンに目印が無い")
+        XCTAssertTrue(main.contains(".accessibilityIdentifier(TrunkHome.identifier(tile))"), "カードに目印が無い")
+        let coins = TrunkSample.state(isPro: false, coins: 3)
+        XCTAssertEqual(TrunkHome.tileValue(.gacha, state: coins), "硬貨 3 枚", "入口に硬貨の数が無い")
         XCTAssertTrue(main.contains("parts: state.equipped"), "トランクの絵に付けた部品を渡していない")
         let shots = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/ScreenshotTests.swift"), encoding: .utf8)
         for name in ["97-ラベルを貼る", "98-カプセルの機械", "98a-カプセルを開けた", "98b-中身と確率", "99-部品箱", "99a-部品を付け替える",
@@ -360,7 +366,7 @@ final class TrunkWiringTests: XCTestCase {
         let main = try source("Features/Trunk/TrunkView.swift")
         XCTAssertTrue(main.contains("TrunkOpenView(model: state.effectiveModel, posts: state.posts ?? 0, stuck: state.stuck,"),
                       "トランクの画面からふたを開けられない")
-        XCTAssertTrue(main.contains(#".accessibilityIdentifier("trunk.open")"#))
+        XCTAssertEqual(TrunkHome.identifier(.open), "trunk.open")
         let open = try source("Features/Trunk/TrunkOpenView.swift")
         // 前開き: 下の辺が軸で手前へ倒れる
         XCTAssertTrue(open.contains(".rotation3DEffect(.degrees(-pose.angle), axis: (x: 1, y: 0, z: 0), anchor: .bottom,"))

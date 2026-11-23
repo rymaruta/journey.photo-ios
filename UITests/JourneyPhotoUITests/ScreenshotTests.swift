@@ -6422,7 +6422,7 @@ final class ScreenshotTests: JPUITestCase {
         let pocketRow = app.buttons["trunk.pocket"].firstMatch
         scrollTo(pocketRow, in: app)
         Thread.sleep(forTimeInterval: 1)
-        shoot(app, "90a-旅のトランク（下・最近貼ったラベルと札）")
+        shoot(app, "90a-旅のトランク（下・カードと札）")
         guard pocketRow.isHittable else { return }
         XCTAssertGreaterThanOrEqual(pocketRow.frame.height, 44, "手持ちの行が 44pt 未満")
         pocketRow.tap()
@@ -6522,6 +6522,51 @@ final class ScreenshotTests: JPUITestCase {
         if app.descendants(matching: .any)["trunk.pocket.empty"].firstMatch.waitForExistence(timeout: 10) {
             Thread.sleep(forTimeInterval: 1)
             shoot(app, "92b-手持ちのラベル（空・Pro の案内）")
+        }
+    }
+
+    /// **旅のトランクの最初の画面の状態**（札 #711・案「トランクを見やすく」版3）: 大きいボタンが状態で替わる
+    /// （ラベルあり →「ラベルを貼る」、ラベル0で硬貨あり →「カプセルを回す」、どちらも0・初めて →「写真を投稿」）、
+    /// 読み込み中、圏外（前に読んだトランクを薄く出してお知らせ）。出なければ撮らずに抜ける。
+    /// **出たのに大きいボタン・「回して見る」が 44pt 未満なら落とす**
+    func testCapturesTrunkHomeStates() {
+        let cases: [(home: String?, primary: String?, name: String)] = [
+            (nil, "trunk.stick.open", "90e-旅のトランク（ラベルあり）"),
+            ("coins", "trunk.gacha.open", "90f-旅のトランク（ラベル0、硬貨あり）"),
+            ("none", "trunk.emptyPost", "90g-旅のトランク（どちらも0）"),
+            ("first", "trunk.emptyPost", "90h-旅のトランク（初めて開いた）"),
+            ("loading", nil, "90i-旅のトランク（読み込み中）"),
+            ("offline", "trunk.stick.open", "90j-旅のトランク（圏外、前に見たトランク）"),
+        ]
+        for c in cases {
+            var args = ["-JPPreviewTrunk", "YES"]
+            if let home = c.home { args += ["-JPPreviewTrunkHome", home] }
+            let app = launchTrunk(args)
+            // 読み込み中はトランクの絵（`trunk.spin`）が出ないので、開けたかは骨格（`trunk.loading`）で見る
+            let opened = openTrunk(app)
+            guard opened || c.home == "loading" else { app.terminate(); continue }
+            if let id = c.primary {
+                let primary = app.buttons[id].firstMatch
+                guard primary.waitForExistence(timeout: 10) else { app.terminate(); continue }
+                XCTAssertGreaterThanOrEqual(primary.frame.height, 44, "\(c.name) の大きいボタンが 44pt 未満")
+                let chip = app.buttons["trunk.spin.chip"].firstMatch
+                if chip.exists { XCTAssertGreaterThanOrEqual(chip.frame.height, 44, "「回して見る」が 44pt 未満") }
+                if c.home == "offline" {
+                    XCTAssertTrue(app.descendants(matching: .any)["trunk.offlineSaved"].firstMatch.exists, "圏外のお知らせが無い")
+                }
+            } else {
+                guard app.descendants(matching: .any)["trunk.loading"].firstMatch.waitForExistence(timeout: 10) else {
+                    app.terminate(); continue
+                }
+            }
+            // 初めて開いた: 揺れの途中と、光り終えたあと
+            if c.home == "first" {
+                Thread.sleep(forTimeInterval: 0.6)
+                shoot(app, c.name + "（揺れ）")
+            }
+            Thread.sleep(forTimeInterval: 2)
+            shoot(app, c.name)
+            app.terminate()
         }
     }
 

@@ -503,6 +503,22 @@ enum PreviewSession {
         #endif
     }
 
+    /// 旅のトランクの最初の画面を、案の状態の1つで出す（Debug のみ・札 #711）。`-JPPreviewTrunkHome coins`
+    /// （手持ち0・硬貨あり）・`none`（どちらも0）・`first`（まだ何も届いていない・揺れと光を毎回）・`loading`（読み込み中のまま）・
+    /// `offline`（圏外で前に読んだトランクを出す）。`-JPPreviewTrunk` と一緒のときだけ効く。Release では必ず nil
+    static let trunkHomeKey = "JPPreviewTrunkHome"
+
+    static var trunkHome: String? {
+        #if DEBUG
+        guard trunkSample != nil, let raw = UserDefaults.standard.string(forKey: trunkHomeKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              ["coins", "none", "first", "loading", "offline"].contains(raw) else { return nil }
+        return raw
+        #else
+        return nil
+        #endif
+    }
+
     /// 旅のトランクの見本の硬貨の枚数（Debug のみ・2026-10-17 次の版）。`-JPPreviewTrunkCoins 0` で
     /// カプセルの機械の「硬貨がありません」を撮る。無ければ見本の 2 枚。Release では必ず nil
     static let trunkCoinsKey = "JPPreviewTrunkCoins"

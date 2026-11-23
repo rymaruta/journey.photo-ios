@@ -32,6 +32,12 @@ final class TrunkViewModel: ObservableObject {
     private let previewPro: Bool
     /// 見本の手持ちの硬貨（`-JPPreviewTrunkCoins`・はじめての硬貨の見本では配ったあとの数）
     private let previewCoins: Int?
+    /// 見本の最初の画面の状態（`-JPPreviewTrunkHome`・札 #711）
+    private let previewHome: String?
+
+    /// 圏外で読めず、前に読んだトランク（`TrunkEntryStore` がこの起動の間だけ持つ写し）を出している（2026-11-23・札 #711）。
+    /// 読めたら false に戻す
+    @Published private(set) var showingSaved = false
 
     /// 硬貨が増えた知らせ（はじめての硬貨・`Notification.Name.trunkCoinsChanged`）の見張り
     private var coinsObserver: NSObjectProtocol?
@@ -40,10 +46,12 @@ final class TrunkViewModel: ObservableObject {
     init(preview: PreviewSession.TrunkPreview? = PreviewSession.trunkSample,
          previewPro: Bool = PreviewSession.isPro,
          previewCoins: Int? = PreviewSession.trunkCoins,
+         previewHome: String? = PreviewSession.trunkHome,
          center: NotificationCenter = .default) {
         self.preview = preview
         self.previewPro = previewPro
         self.previewCoins = previewCoins
+        self.previewHome = previewHome
         self.center = center
         // 硬貨の数を見せている画面（トランク・カプセルの機械）は、はじめての硬貨が配られたら読み直す（2026-10-18）
         coinsObserver = center.addObserver(forName: .trunkCoinsChanged, object: nil, queue: .main) { [weak self] note in
@@ -90,13 +98,22 @@ final class TrunkViewModel: ObservableObject {
     /// 届いたラベルが1枚も無い（手持ちも貼ったものも空）
     var isEmpty: Bool { (state?.pocket.isEmpty ?? true) && (state?.stuck.isEmpty ?? true) }
 
-    /// - Parameter offline: いま電波が無いか（`Connectivity`）。読めなかったときに「圏外」で出すかを決める
-    func load(offline: Bool) async {
+    /// - Parameters:
+    ///   - offline: いま電波が無いか（`Connectivity`）。読めなかったときに「圏外」で出すかを決める
+    ///   - saved: 前に読んだその人のトランク（`TrunkEntryStore.state(for:)`・この起動の間だけメモリに持つ写し）。
+    ///     **圏外で読めなかったときだけ**これを出し、`showingSaved` を立てる（2026-11-23 判断・札 #711: 端末には控えを書かない
+    ///     決まりはそのまま。メモリの写しが無い＝この起動でまだ一度も読めていなければ、今までどおりの「電波がありません」）
+    func load(offline: Bool, saved: TrunkState? = nil) async {
         if let preview {
+            if previewHome == "loading" {
+                phase = .loading
+                return
+            }
             // 一度動かした見本（貼った・回した・付け替えた）は、画面を開き直しても消さない
             if state == nil {
-                state = TrunkSample.state(isPro: previewPro, empty: preview == .empty, coins: previewCoins)
+                state = Self.previewState(home: previewHome, isPro: previewPro, empty: preview == .empty, coins: previewCoins)
             }
+            showingSaved = previewHome == "offline"
             phase = .loaded
             return
         }
@@ -107,16 +124,35 @@ final class TrunkViewModel: ObservableObject {
             // **読むたびにサーバーの中身で丸ごと置き換える**（2026-10-17: 投稿から24時間以内に削除・非公開にした
             // 写真のラベルは、手持ちからも貼ったラベルからも消える）。端末には控えを持たず、引き継ぐのは投稿の数だけ
             state = fresh.keepingPosts(from: state)
+            showingSaved = false
             phase = .loaded
         } catch is CancellationError {
             return
         } catch {
             // **一度読めた中身は、読み直しの失敗で消さない**（マイページと同じ判断）
             guard state == nil else {
-                actionError = Self.message(error)
+                // 前に読んだトランクを出している間は、上のお知らせが圏外を伝えている（赤の一行を重ねない）
+                if !showingSaved { actionError = Self.message(error) }
                 return
             }
-            phase = Self.isUnreachable(error) && offline ? .offline : .failed(Self.message(error))
+            let unreachable = Self.isUnreachable(error) && offline
+            if unreachable, let saved {
+                state = saved
+                showingSaved = true
+                phase = .loaded
+                return
+            }
+            phase = unreachable ? .offline : .failed(Self.message(error))
+        }
+    }
+
+    /// 見本の中身（`-JPPreviewTrunkHome` の状態ごと・札 #711）
+    static func previewState(home: String?, isPro: Bool, empty: Bool, coins: Int?) -> TrunkState {
+        switch home {
+        case "first": return TrunkSample.state(isPro: isPro, empty: true, coins: coins ?? 1)
+        case "coins": return TrunkSample.state(isPro: isPro, empty: empty, coins: coins ?? 3).copy(pocket: [])
+        case "none": return TrunkSample.state(isPro: isPro, empty: empty, coins: 0).copy(pocket: [])
+        default: return TrunkSample.state(isPro: isPro, empty: empty, coins: coins)
         }
     }
 
