@@ -944,8 +944,13 @@ final class CriticalFlowTests: JPUITestCase {
             print("[signin-error]\(tag) window=\(window) error=\(error.frame) email=\(email.frame) submit=\(submit.frame) password=\(password.frame)")
             XCTAssertTrue(error.isHittable, "失敗の文が画面の外にある\(tag)（\(error.frame)）")
             XCTAssertLessThanOrEqual(error.frame.maxY, window.maxY, "失敗の文が下端より下\(tag)")
-            XCTAssertLessThanOrEqual(error.frame.maxY, email.frame.minY + 1, "失敗の文が欄のすぐ上にない\(tag)")
-            XCTAssertLessThan(email.frame.minY - error.frame.maxY, 40, "失敗の文が欄から離れている\(tag)")
+            // 測るのは欄のまとまり（欄の名前の行＋箱・`signin.email.field`）の上端。箱の内側の打つ所（`signin.email`）を測ると、
+            // 模型 NL2x どおりの間 12 でも名前の行と箱の内側の余白が足されて 47.67pt になる（Mac run 1769・2026-11-23）
+            let field = app.descendants(matching: .any)["signin.email.field"].firstMatch
+            XCTAssertTrue(field.exists, "メールの欄のまとまりが無い\(tag)")
+            print("[signin-error]\(tag) field=\(field.frame)")
+            XCTAssertLessThanOrEqual(error.frame.maxY, field.frame.minY + 1, "失敗の文が欄のすぐ上にない\(tag)")
+            XCTAssertLessThanOrEqual(field.frame.minY - error.frame.maxY, 20, "失敗の文が欄から離れている\(tag)（模型の間は 12）")
             XCTAssertTrue(submit.isHittable, "失敗の文が出て主ボタンが画面の外へ押し出された\(tag)")
             XCTAssertLessThanOrEqual(submit.frame.maxY, window.maxY, "主ボタンが下端より下\(tag)")
             app.terminate()

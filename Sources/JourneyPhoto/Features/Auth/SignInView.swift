@@ -338,9 +338,6 @@ struct SignInView: View {
         }
         if let error = auth.errorMessage {
             errorLine(error, identifier: "signin.error")
-                // 欄の**すぐ上**に付ける（`SignInLayout.errorGap`）。並びの間（12）のままだと、欄の名前の行と箱の内側の余白を
-                // 足して、失敗の文から打つ所まで 47.67pt 離れていた（Mac run 1769 `testSignInFailureIsVisibleAboveFields`）
-                .padding(.bottom, showsCredentials ? SignInLayout.errorGap - metrics.gap : 0)
         }
     }
 
@@ -360,15 +357,21 @@ struct SignInView: View {
 
     /// 欄（いちばん詰めた形では欄の名前の行を出さず、名前を欄の中の見本の字にする。読み上げの名前は同じ）
     @ViewBuilder
-    private func authField<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        if metrics.fieldLabels {
-            JPField(title, height: metrics.field, content: content)
-        } else {
-            content()
-                .font(.subheadline)
-                .accessibilityLabel(title)
-                .jpFieldBox(height: metrics.field)
+    private func authField<Content: View>(_ title: String, group: String? = nil,
+                                          @ViewBuilder content: () -> Content) -> some View {
+        Group {
+            if metrics.fieldLabels {
+                JPField(title, height: metrics.field, content: content)
+            } else {
+                content()
+                    .font(.subheadline)
+                    .accessibilityLabel(title)
+                    .jpFieldBox(height: metrics.field)
+            }
         }
+        // 欄のまとまり（欄の名前の行＋箱）の枠を UI テストが測る（失敗の文から欄の上端までの間・模型 NL2x の 12）。
+        // 2026-11-23 判断（Mac run 1769）: 試験は箱の内側の打つ所を測って 47.67pt と出し、間 12 の模型どおりの画面を落としていた
+        .modifier(SignInFieldGroup(identifier: group))
     }
 
     /// 欄の中の見本の字（欄の名前の行が無いときは欄の名前）
@@ -389,7 +392,7 @@ struct SignInView: View {
             messages
             // **黒地では枠が要る。** 既定の入力欄は下線も背景も無く、
             // 黒の上では**どこを押すのか分からない**（実機の絵で確認）
-            authField(L("メールアドレス", "Email")) {
+            authField(L("メールアドレス", "Email"), group: "signin.email.field") {
                 JPTextField(placeholder(L("メールアドレス", "Email"), regular: "you@example.com"), text: $email)
                     .keyboardType(.emailAddress)
                     .textContentType(.emailAddress)
@@ -1400,17 +1403,6 @@ enum SignInLayout {
     static let headTop: CGFloat = JPSpace.xs
     /// 切り替えの一行の高さ（当たり 44）
     static let switchHeight: CGFloat = 44
-    /// 失敗の文と、そのすぐ下の欄（欄の名前の行か、名前の無い形では箱）の間。
-    ///
-    /// 2026-11-23 判断（1.2.0 の統合・Mac run 1769 `testSignInFailureIsVisibleAboveFields`）: 前は並びの間（12・10・8）のままで、
-    /// 失敗の文の下端からメールの欄の打つ所まで 47.67pt（440×956・regular。間 12 ＋ 欄の名前 14.5 ＋ 6 ＋ 箱の内側 15.17）。
-    /// 模型 NL2x「失敗の文は欄のすぐ上」に合わせ、失敗の文は欄に付けて置く（打つ所まで 40pt 未満・`errorToFieldText`）
-    static let errorGap: CGFloat = 2
-    /// 見積もり: 失敗の文の下端から、メールの欄の打つ所（文字の行）の上端まで。欄の名前の行 15・名前と箱の間 6・文字の行 20
-    static func errorToFieldText(_ density: Density) -> CGFloat {
-        let m = metrics(density)
-        return errorGap + (m.fieldLabels ? 15 + 6 : 0) + (m.field - 20) / 2
-    }
     /// キーボードが出たときに見える所の下端へ送る主ボタンの名前（`ScrollViewReader`）
     static let submitAnchor = "signin.submit.anchor"
     /// 詰めた形の字の大きさの上限（特大。アクセシビリティの大きい字はここで止める）
@@ -1490,5 +1482,20 @@ enum SignInLayout {
     static func headHeight(viewport: CGFloat, form: CGFloat, density: Density) -> CGFloat {
         guard viewport > 0, form > 0 else { return headerHeight }
         return max(headMin(density), viewport - form)
+    }
+}
+
+/// 欄のまとまりに識別子を付ける（中の欄の読み上げはそのまま・`authField`）
+private struct SignInFieldGroup: ViewModifier {
+    let identifier: String?
+
+    func body(content: Content) -> some View {
+        if let identifier {
+            content
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier(identifier)
+        } else {
+            content
+        }
     }
 }

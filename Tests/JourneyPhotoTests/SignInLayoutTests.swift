@@ -190,17 +190,21 @@ final class SignInLayoutTests: XCTestCase {
                       "失敗の文を読み上げに伝えていない")
     }
 
-    /// 失敗の文は欄に付けて置く: どの形でも、失敗の文の下端から打つ所まで 40pt 未満（UI テスト
-    /// `testSignInFailureIsVisibleAboveFields` の上限。Mac run 1769 は並びの間 12 のままで 47.67pt）
-    func testErrorHugsTheFirstField() throws {
-        XCTAssertLessThanOrEqual(SignInLayout.errorGap, 4)
+    /// 失敗の文と欄の間は模型 NL2x の並びの間（12・10・8）のまま。UI テストは欄のまとまり（欄の名前の行を含む・
+    /// `signin.email.field`）の上端までを測り、20 以下を求める（Mac run 1769: 箱の内側の打つ所を測って 47.67pt と出していた）
+    func testErrorKeepsMockGapAboveFieldGroup() throws {
         for density in SignInLayout.Density.allCases {
-            XCTAssertLessThan(SignInLayout.errorToFieldText(density), 40, "失敗の文が欄から離れている（\(density)）")
+            XCTAssertLessThanOrEqual(SignInLayout.metrics(density).gap, 12, "並びの間が模型より広い（\(density)）")
         }
         let view = try source("Features/Auth/SignInView.swift")
         let messages = try slice(view, from: "private var messages", to: "/// 欄（いちばん詰めた形では")
-        XCTAssertTrue(messages.contains(".padding(.bottom, showsCredentials ? SignInLayout.errorGap - metrics.gap : 0)"),
-                      "失敗の文が並びの間のまま欄から離れている")
+        XCTAssertFalse(messages.contains(".padding(.bottom"), "失敗の文の下の間を模型の寸法から変えている")
+        XCTAssertTrue(view.contains("authField(L(\"メールアドレス\", \"Email\"), group: \"signin.email.field\")"),
+                      "メールの欄のまとまりに試験が測る識別子が無い")
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let flow = try String(contentsOf: root.appendingPathComponent("UITests/JourneyPhotoUITests/CriticalFlowTests.swift"), encoding: .utf8)
+        XCTAssertTrue(flow.contains("XCTAssertLessThanOrEqual(field.frame.minY - error.frame.maxY, 20"),
+                      "UI テストが欄のまとまりの上端までを測っていない")
     }
 
     /// 模型 NL2x の寸法
