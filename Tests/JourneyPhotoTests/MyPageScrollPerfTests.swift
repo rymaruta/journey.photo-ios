@@ -155,14 +155,12 @@ final class MyPageScrollPerfTests: XCTestCase {
     }
 
     /// 🔴 旅の記録のタブの行を待つのは共通の助け（長めに待ち、出なければタブを押し直す）。
-    /// `CriticalFlowTests` のキャンピングカーの部屋が 15 秒で落ちていた（2026-10-28 の Mac）
+    /// `CriticalFlowTests` のキャンピングカーの部屋が 15 秒で落ちていた（2026-10-28 の Mac）。
+    /// その試験はとおまわり号と一緒に消した（2026-11-23・札 #709）ので、画面写真の試験の道だけを見る
     func testUITestsShareTheTripsTabWait() throws {
         let helper = try source("UITests/JourneyPhotoUITests/TripsTabWait.swift")
         XCTAssertTrue(helper.contains("tripsTab.tap()"), "出なければタブを押し直していない")
         XCTAssertTrue(helper.contains("static let firstWait: TimeInterval = 30"))
-        let critical = try source("UITests/JourneyPhotoUITests/CriticalFlowTests.swift")
-        XCTAssertTrue(critical.contains("TripsTabWait.waitForRow(camper, tripsTab: tripsTab)"))
-        XCTAssertFalse(critical.contains("camper.waitForExistence(timeout: 15)"), "15 秒で諦める待ち方が残っている")
         let shots = try source("UITests/JourneyPhotoUITests/ScreenshotTests.swift")
         XCTAssertTrue(shots.contains("TripsTabWait.waitForRow(row, tripsTab: tripsTab)"))
     }

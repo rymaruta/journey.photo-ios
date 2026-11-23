@@ -5,8 +5,9 @@ import UIKit
 #if canImport(SceneKit)
 import SceneKit
 
-/// 場面の中身の数（2026-11-06・札 #430 のメモリの内訳）。測るだけで、見た目は変えない
-final class CamperSceneStatsTests: XCTestCase {
+/// 場面の中身の数（2026-11-06・札 #430 のメモリの内訳）。測るだけで、見た目は変えない。
+/// 2026-11-23（札 #709）: `CamperSceneStatsTests` から名前を替えた（いまはトランクの回す箱の計測が使う）
+final class SceneStatsTests: XCTestCase {
 
     private func image(side: Int) -> UIImage {
         let format = UIGraphicsImageRendererFormat()
@@ -33,7 +34,7 @@ final class CamperSceneStatsTests: XCTestCase {
         root.addChildNode(b)
         root.addChildNode(lamp)
 
-        let s = CamperSceneStats.measure(root)
+        let s = SceneStats.measure(root)
         XCTAssertEqual(s.nodes, 4)
         XCTAssertEqual(s.geometries, 1, "同じ図形は 1 と数える")
         XCTAssertEqual(s.instances, 2, "図形を持つ節は描く回数の目安")
@@ -53,28 +54,18 @@ final class CamperSceneStatsTests: XCTestCase {
         m1.diffuse.contents = shared
         m2.diffuse.contents = shared
         g.materials = [m1, m2]
-        let s = CamperSceneStats.measure(SCNNode(geometry: g))
+        let s = SceneStats.measure(SCNNode(geometry: g))
         XCTAssertEqual(s.materials, 2)
         XCTAssertEqual(s.textures, 1, "同じ貼り絵を使い回していれば 1")
     }
 
     func testFieldsAreOneLineWithoutSpacesInsideValues() {
-        var s = CamperSceneStats()
+        var s = SceneStats()
         s.nodes = 3; s.textureMB = 1.25
         let f = s.fields
         XCTAssertTrue(f.hasPrefix("nodes=3 geoms=0 inst=0 verts=0 tris=0 geo_kb=0 mats=0 texs=0 tex_mb=1.2"), f)
         XCTAssertFalse(f.contains("\n"))
         XCTAssertFalse(f.contains(";"), "UI テストは ; で区切って読む")
-    }
-
-    func testPublishOnlyWhenMeterEnabled() {
-        let root = SCNNode()
-        let off = CamperRenderMeter(enabled: false)
-        CamperSceneStats.publish("SceneExterior", root: root, meter: off)
-        XCTAssertEqual(off.summary(), "")
-        let on = CamperRenderMeter(enabled: true)
-        CamperSceneStats.publish("SceneExterior", root: root, meter: on)
-        XCTAssertTrue(on.summary().contains("SceneExterior nodes=1 "), on.summary())
     }
 }
 #endif

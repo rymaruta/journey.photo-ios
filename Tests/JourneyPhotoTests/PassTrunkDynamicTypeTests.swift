@@ -1,7 +1,7 @@
 import XCTest
 @testable import JourneyPhoto
 
-/// 🔴 **キャンピングカー・すれちがい（乗車券）・サポーター証・トランクの画面の字は Dynamic Type に付いてくる**
+/// 🔴 **すれちがい（乗車券）・サポーター証・トランクの画面の字は Dynamic Type に付いてくる**
 /// （2026-10-21・`StoryDynamicTypeTests` と同じ見方）。
 ///
 /// 以前は `.system(size: 12)` のような固定の大きさで、文字を大きくしている人にも小さいままだった。
@@ -16,7 +16,9 @@ import XCTest
 /// - **対象のファイルに入れていないもの**: きっぷの表と裏（`PassCards`・`PassFaces`・`PassBacks`。
 ///   `PassCardStyle` の字組の注記: 札は寸法の決まった物で、中身は読み上げで読める）と、トランクの絵
 ///   （`TrunkBoxView`・`TrunkFaceView`・`TrunkLabelView`・`TrunkPartView`）、3D の場面の中の字
-final class CamperPassTrunkDynamicTypeTests: XCTestCase {
+///
+/// 2026-11-23（札 #709）: とおまわり号を消したので `CamperPassTrunkDynamicTypeTests` から名前を替え、車の画面の分だけ外した
+final class PassTrunkDynamicTypeTests: XCTestCase {
 
     /// 物に刷った字（行の中身の一部で当てる）
     private static let allowed: [String: [String]] = [
@@ -30,8 +32,6 @@ final class CamperPassTrunkDynamicTypeTests: XCTestCase {
     ]
 
     private static let files = [
-        "Camper/CamperGarageView.swift",
-        "Camper/CamperVisitView.swift",
         "Pass/PassBookView.swift",
         "Pass/PassCardMenu.swift",
         "Pass/PassCardPickView.swift",
@@ -93,16 +93,6 @@ final class CamperPassTrunkDynamicTypeTests: XCTestCase {
     /// 切り替えの条件があることを見る（HStack だけに戻すと落ちる）
     func testRowsStackAtAccessibilitySizes() throws {
         let expectations: [(file: String, member: String, needles: [String])] = [
-            ("Camper/CamperGarageView.swift", "private var statsRow: some View {",
-             ["typeSize.isAccessibilitySize", "VStack(spacing: 8) { statTiles }", "HStack(spacing: 8) { statTiles }"]),
-            ("Camper/CamperGarageView.swift", "private var stagesRow: some View {",
-             ["typeSize.isAccessibilitySize", "VStack(spacing: 8) { stageButtons }", "HStack(spacing: 8) { stageButtons }"]),
-            ("Camper/CamperGarageView.swift", "private var partsGrid: some View {",
-             ["count: typeSize.isAccessibilitySize ? 2 : 3"]),
-            ("Camper/CamperVisitView.swift", "private func tiles(_ state: CamperVisitState) -> some View {",
-             ["typeSize.isAccessibilitySize", "VStack(spacing: 10) { tileItems(state) }"]),
-            ("Camper/CamperVisitView.swift", "private var actions: some View {",
-             ["typeSize.isAccessibilitySize", "VStack(spacing: 8) { actionButtons }"]),
             ("Trunk/TrunkPocketView.swift", "private func actionBar(_ state: TrunkState) -> some View {",
              ["ViewThatFits(in: .horizontal)", "HStack(spacing: 8) { actionButtons(state, selected: selected) }",
               "VStack(spacing: 8) { actionButtons(state, selected: selected) }"]),

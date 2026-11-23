@@ -14,7 +14,6 @@ final class NoMiddleDotSweepTests: XCTestCase {
 
     /// 区切りではない・画面に出ない中黒（ファイル名と、文字列の中身）
     static let allowed: Set<String> = [
-        "CamperCatalog.swift|・",                       // 番号の桁の埋め（記号の並び）
         "ContactText.swift|・",                         // 電話番号を読むときに読み飛ばす字
         "DailyQuiz.swift|Journey Photo · Where is this? \\(shortDate(date)) ✓",  // ほかの SNS に貼る共有の文
         "DailyQuiz.swift|Journey Photo · Where is this? \\(shortDate(date)) ✗",
@@ -48,8 +47,6 @@ final class NoMiddleDotSweepTests: XCTestCase {
             .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" } ?? []
         XCTAssertGreaterThan(files.count, 100)
         for file in files {
-            // 写真の内側の開発用の一覧（Mac の画面写真で家具を並べて見るだけ・利用者には出ない）
-            if file.lastPathComponent == "CamperRoomContactSheet.swift" { continue }
             let text = try String(contentsOf: file, encoding: .utf8)
             for literal in Self.literals(text) where literal.contains("・") || literal.contains("·") {
                 let key = "\(file.lastPathComponent)|\(literal)"

@@ -11,17 +11,6 @@ final class FollowupWordingTests: XCTestCase {
         return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
     }
 
-    /// 接写の頁送りの3つの押せるものに読み上げの名前がある(前の頁・次の頁・昼夜の切り替え)。
-    /// `pager` の `.accessibilityLabel(label)` を外すと落ちる
-    func testContactSheetPagersHaveSpokenLabels() throws {
-        let sheet = try source("Sources/JourneyPhoto/Features/Camper/Room/CamperRoomContactSheet.swift")
-        for text in [#"L("前の頁", "Previous page")"#, #"L("次の頁", "Next page")"#,
-                     #"L("昼にする", "Switch to day")"#, #"L("夜にする", "Switch to night")"#,
-                     ".accessibilityLabel(label)"] {
-            XCTAssertTrue(sheet.contains(text), "接写の頁送りの読み上げに「\(text)」が無い")
-        }
-    }
-
     /// 新しくなったことの本文は、タブの表記(「探す」「マップ」)と合わせる(`Labels.searchTab`・`mapTab`)
     func testWhatsNewUsesTheRealTabNames() throws {
         let json = try source("Sources/JourneyPhoto/Resources/WhatsNew.json")

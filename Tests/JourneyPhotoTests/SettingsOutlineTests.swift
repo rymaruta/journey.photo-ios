@@ -8,7 +8,7 @@ import XCTest
 /// - 前にあった行が1つも消えていない（場所を移しただけ）
 /// - 節の順・節の中の行の順が `SettingsOutline` のとおり
 /// - 2026-11-12（案 第10章）: 旅の道具（トランク・キャンピングカー・すれちがい帳・アルバム・旅行プラン）は ≡ メニューへ移した。
-///   トランクは口があるときだけ・キャンピングカーはメニューから開くと自分で写真を読む（`SiteMenuView`）。
+///   トランクは口があるときだけ（`SiteMenuView`）。キャンピングカーは 2026-11-23 に消した（札 #709）。
 ///   すれちがい乗車券の入り切りは「公開範囲とプライバシー」
 /// - 危ない操作（ログアウト・アカウントの削除）は最後に、別々の札で、危険の色
 final class SettingsOutlineTests: XCTestCase {
@@ -171,7 +171,7 @@ final class SettingsOutlineTests: XCTestCase {
         for destination in ["PassSettingsView()", "TrunkView(ownerName:", "BlockedUsersView()", "CloseFriendsView()",
                             "FavoritesView()", "AlbumsView()", "CompositionCatalogView()", "ChangePasswordView()",
                             "LegalLinksView()", "DeleteAccountView(profile: myProfile)", "SettingsTrunkPrivacyPage(",
-                            "SettingsStoragePage()", "CamperGarageLoader(", "PassBookView()", "TripPlansView()",
+                            "SettingsStoragePage()", "PassBookView()", "TripPlansView()",
                             "showWhatsNew = true", "Link(destination: contact)", "auth.startSigningOut {"] {
             XCTAssertTrue(view.contains(destination), "設定から「\(destination)」へ行けない")
         }
@@ -223,144 +223,40 @@ final class SettingsOutlineTests: XCTestCase {
     func testTrunkRowOnlyWhenAvailable() throws {
         // 2026-11-12: 行は ≡ メニュー（`SiteMenuView.trunkRow`）
         let view = try source("Features/Common/SiteMenuView.swift")
-        let row = slice(view, from: "private var trunkRow: some View {", to: "private var camperRow")
+        let row = slice(view, from: "private var trunkRow: some View {", to: "private var footer")
+        // 2026-11-23（札 #709）: 説明の行で「いま何があるか」、右に貼っていないラベルの件数バッジ
         assertInOrder(["if TrunkEntryRule.shows(signedIn: auth.userId != nil, available: trunkAvailability.isAvailable) {",
                        "TrunkView(ownerName: name)", ".onDisappear { trunkEntry.markStale() }",
-                       "value: trunkEntry.summary.map { TrunkEntryText.coins($0.coins) }", "\"menu.trunk\""],
+                       "note: TrunkEntryText.stock(trunkEntry.summary)", "badge: TrunkEntryText.badge(trunkEntry.summary)",
+                       "\"menu.trunk\""],
                       in: row, "旅のトランクの行")
         XCTAssertTrue(TrunkEntryRule.shows(signedIn: true, available: true))
         XCTAssertFalse(TrunkEntryRule.shows(signedIn: true, available: false))
     }
 
-    /// キャンピングカー: 設定からは自分で写真を読む入れ物を通す。マイページの行は残し、読んだ写真を渡す（二重に読まない）
-    func testCamperEntryWiring() throws {
+    /// キャンピングカー（とおまわり号）の入口は 2026-11-23 に消した（札 #709）。メニュー・マイページ・ほかの人のページの
+    /// どこにも戻っていない。マイページの旅の記録のほかの行は残っている
+    func testCamperEntriesAreGone() throws {
         let view = try source("Features/Settings/SettingsView.swift")
-        // 2026-11-12: 行は ≡ メニュー（`SiteMenuView.camperRow`）。メニューの行は印の札を持つ形（`SiteMenuRow`）
         let menu = try source("Features/Common/SiteMenuView.swift")
-        let row = slice(menu, from: "private var camperRow: some View {", to: "private var footer")
-        assertInOrder(["CamperGarageLoader(ownerName: name, userId: auth.userId)",
-                       "CamperText.carName", "L(\"写真で作るキャンピングカー", "\"menu.camper\""],
-                      in: row, "キャンピングカーの行")
-        let loader = try source("Features/Camper/CamperGarageLoader.swift")
-        // 車の画面は読めたときだけ。読み込み中・失敗は数の行を出さない
-        let body = slice(loader, from: "switch loader.phase {", to: "private func load()")
-        assertInOrder(["case .loaded:",
-                       "CamperGarageView(ownerName: ownerName, userId: userId, photos: loader.photos, photosLoaded: true)",
-                       "case .loading:", "ProgressView()", "L(\"写真を読み込んでいます…\"",
-                       "\"camper.loading\"", "case .failed:", "ErrorBanner(", "Task { await load() }",
-                       "\"camper.loadFailed\""], in: body, "設定からのキャンピングカー")
-        XCTAssertEqual(body.components(separatedBy: "CamperGarageView(").count - 1, 1, "読めていないのに車の画面を出す")
-        XCTAssertTrue(loader.contains(".task(id: userId) { await load() }"))
-        XCTAssertTrue(loader.contains("ProfileImageFromPhoto.myPhotos(environment: environment)"))
-        // マイページの「旅の記録」の行はそのまま（読み終えた写真を渡す）
+        XCTAssertFalse(menu.contains("camperRow"), "メニューにとおまわり号の行が戻った")
+        XCTAssertFalse(menu.contains(#""menu.camper""#))
         let page = try source("Features/Profile/MyPageView.swift")
         let card = slice(page, from: "private var tripToolsCard: some View {", to: "nonisolated static func wishlistPool")
-        assertInOrder(["CamperGarageView(ownerName: model.profile?.name, userId: auth.userId, photos: model.photos,",
-                       "photosLoaded: model.hasLoadedPhotos)", id("trips.camper")], in: card, "マイページのキャンピングカー")
-        XCTAssertFalse(card.contains("CamperGarageLoader("), "マイページで写真を二重に読む")
-        for name in ["trips.trunk", "trips.albums", "trips.plans", "trips.passBook"] {
+        XCTAssertFalse(card.contains(#""trips.camper""#), "マイページにとおまわり号の行が戻った")
+        XCTAssertFalse(page.contains("Camper"), "マイページにとおまわり号の部品が残っている")
+        XCTAssertTrue(card.contains("MyPageTrunkRow(ownerName: model.profile?.name)"), "マイページの旅のトランクの行が消えた")
+        XCTAssertTrue(page.contains(id("trips.trunk")), "マイページの「trips.trunk」の行が消えた")
+        for name in ["trips.albums", "trips.plans", "trips.passBook"] {
             XCTAssertTrue(card.contains(id(name)), "マイページの「\(name)」の行が消えた")
         }
+        let profile = try source("Features/Profile/UserProfileView.swift")
+        XCTAssertFalse(profile.contains(#""profile.camper""#), "ほかの人のページに「とおまわり号を訪ねる」が戻った")
         // キャンプ場は #339 で外した（`trips.camper` に `trips.camp` が含まれるので識別子は引用ごと見る）
         XCTAssertFalse(card.contains(#""trips.camp""#), "マイページにキャンプ場の行が残っている")
         XCTAssertFalse(card.contains("CampHomeView"), "マイページにキャンプ場の行き先が残っている")
         XCTAssertFalse(view.contains(#""settings.camp""#), "設定にキャンプ場の行が残っている")
         XCTAssertFalse(view.contains("CampHomeView"), "設定にキャンプ場の行き先が残っている")
-    }
-
-    /// 読み終えるまで止めておける読み方（`CamperPhotoLoader.load` に渡す）
-    @MainActor
-    private final class Gate {
-        var calls = 0
-        /// 待っている読み（二本目が出ても止まったままにしない＝全部まとめて返す）
-        private var waiting: [CheckedContinuation<[Photo]?, Never>] = []
-        func fetch() async -> [Photo]? {
-            calls += 1
-            return await withCheckedContinuation { waiting.append($0) }
-        }
-        func open(_ photos: [Photo]?) {
-            let all = waiting
-            waiting = []
-            all.forEach { $0.resume(returning: photos) }
-        }
-        /// 読み始めるまで待つ（上限つき）
-        func untilCalled(_ n: Int) async {
-            var tries = 0
-            while calls < n, tries < 1000 {
-                await Task.yield()
-                tries += 1
-            }
-        }
-    }
-
-    /// 読めるまでは「読み込み中」。読めたら切り替え、もう読まない（画面に戻るたびに読み直さない）
-    @MainActor
-    func testCamperLoaderLoadsOnce() async {
-        let loader = CamperPhotoLoader()
-        XCTAssertEqual(loader.phase, .loading, "読む前に車の画面を出す")
-        var calls = 0
-        await loader.load(userId: "me") { calls += 1; return [] }
-        XCTAssertEqual(loader.phase, .loaded)
-        XCTAssertEqual(loader.loadedFor, "me")
-        await loader.load(userId: "me") { calls += 1; return [] }
-        XCTAssertEqual(calls, 1, "読めたのにもう一度読む")
-        // 人が替わったら読み直す
-        await loader.load(userId: "other") { calls += 1; return nil }
-        XCTAssertEqual(calls, 2)
-        XCTAssertEqual(loader.phase, .failed)
-        XCTAssertNil(loader.loadedFor, "前の人の写真で数える")
-    }
-
-    /// 読めなければ「もう一度」の状態。もう一度で読めたら切り替える。入っていなければ読まない
-    @MainActor
-    func testCamperLoaderFailureThenRetry() async {
-        let loader = CamperPhotoLoader()
-        await loader.load(userId: "me") { nil }
-        XCTAssertEqual(loader.phase, .failed)
-        XCTAssertTrue(loader.photos.isEmpty)
-        await loader.load(userId: "me") { [] }
-        XCTAssertEqual(loader.phase, .loaded)
-        let signedOut = CamperPhotoLoader()
-        var called = false
-        await signedOut.load(userId: nil) { called = true; return [] }
-        XCTAssertFalse(called)
-        XCTAssertEqual(signedOut.phase, .failed)
-    }
-
-    /// 読んでいる最中にもう一度呼ばれても、二本目を出さない
-    @MainActor
-    func testCamperLoaderDoesNotReadTwiceInFlight() async {
-        let loader = CamperPhotoLoader()
-        let gate = Gate()
-        let first = Task { await loader.load(userId: "me") { await gate.fetch() } }
-        await gate.untilCalled(1)
-        XCTAssertEqual(gate.calls, 1)
-        let second = Task { await loader.load(userId: "me") { await gate.fetch() } }
-        await gate.untilCalled(2)
-        XCTAssertEqual(gate.calls, 1, "読んでいる最中に二本目を出した")
-        gate.open([])
-        await first.value
-        gate.open([])
-        await second.value
-        XCTAssertEqual(loader.phase, .loaded)
-    }
-
-    /// 取り消された（画面を離れた）読み込みの結果は入れない。次に開いたら読み直す
-    @MainActor
-    func testCamperLoaderIgnoresCancelledRead() async {
-        let loader = CamperPhotoLoader()
-        let gate = Gate()
-        let first = Task { await loader.load(userId: "me") { await gate.fetch() } }
-        await gate.untilCalled(1)
-        first.cancel()
-        gate.open([])
-        await first.value
-        XCTAssertEqual(loader.phase, .loading, "取り消した読み込みの結果を入れた")
-        XCTAssertNil(loader.loadedFor)
-        var calls = 0
-        await loader.load(userId: "me") { calls += 1; return [] }
-        XCTAssertEqual(calls, 1, "取り消しのあとに読み直さない")
-        XCTAssertEqual(loader.phase, .loaded)
     }
 
     // MARK: - 危ない操作

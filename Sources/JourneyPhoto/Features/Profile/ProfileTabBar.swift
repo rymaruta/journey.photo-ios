@@ -21,7 +21,7 @@ import SwiftUI
 /// 下線はそのときも字の幅＋左右 2（割り当てた幅いっぱいにしない）
 ///
 /// **2026-10-31 判断（#426）: アプリ全体の下線の札。** 区分の型（`PagedTab`）で受け、ホームのフィード・
-/// フォロー一覧・ストーリーの分析・すれちがい帳・着想の棚・写真の編集・地図の見せ方・キャンピングカーの部屋も
+/// フォロー一覧・ストーリーの分析・すれちがい帳・着想の棚・写真の編集・地図の見せ方も
 /// この1つで描く（画面ごとに見た目と手ざわりを割らない）。画面ごとの違いは、名前の右の数（`detail`）・
 /// 真鍮の点（`dot`）・読み上げ（`spokenLabel`）・左右の余白（`gutter`）だけ
 struct ProfileTabBar<Tab: PagedTab>: View {
@@ -31,7 +31,7 @@ struct ProfileTabBar<Tab: PagedTab>: View {
     /// 上に留まっているか（地を黒 100%・下の線を白 12% に）。人のページは留めないので既定は false
     var stuck: Bool = false
     /// 字の左右の余白（見た目）。既定 16。札の行を画面の端から端まで置き、字を中身の端にそろえる。
-    /// 札の入れ物が既に左右を空けている画面（キャンピングカーの部屋の板など）は 0（`ProfileTabStyle.rowInset(gutter:)`）
+    /// 札の入れ物が既に左右を空けている画面は 0（`ProfileTabStyle.rowInset(gutter:)`）
     var gutter: CGFloat = ProfileTabStyle.gutter
     /// 名前の右に添える数（フォロー一覧の人数・図鑑の「3/10」）。SF の等幅数字・選んでも太さは変えない
     var detail: (Tab) -> String? = { _ in nil }

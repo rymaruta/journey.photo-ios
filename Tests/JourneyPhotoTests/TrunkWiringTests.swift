@@ -86,7 +86,9 @@ final class TrunkWiringTests: XCTestCase {
     /// 入口はマイページの旅の記録の札（名前の付いた行・画面写真の試験が押す）
     func testEntryFromMyPage() throws {
         let page = try source("Features/Profile/MyPageView.swift")
-        XCTAssertTrue(page.contains("NavigationLink { TrunkView(ownerName: model.profile?.name) }"))
+        // 2026-11-23（札 #709）: 行は `MyPageTrunkRow`（数と件数バッジを見張るのはこの行の中だけ）
+        XCTAssertTrue(page.contains("MyPageTrunkRow(ownerName: model.profile?.name)"))
+        XCTAssertTrue(page.contains("TrunkView(ownerName: ownerName)"))
         XCTAssertTrue(page.contains(#".accessibilityIdentifier("trips.trunk")"#))
     }
 
@@ -249,7 +251,9 @@ final class TrunkWiringTests: XCTestCase {
     /// マイページの入口は口が読めたときだけ出す配線
     func testMyPageEntryIsGated() throws {
         let page = try source("Features/Profile/MyPageView.swift")
-        XCTAssertTrue(page.contains("if trunkAvailability.isAvailable {\n                NavigationLink { TrunkView("),
+        XCTAssertTrue(page.contains("if trunkAvailability.isAvailable {"), "口が無いのに入口を出している")
+        let gated = try XCTUnwrap(page.range(of: "if trunkAvailability.isAvailable {"))
+        XCTAssertTrue(String(page[gated.upperBound...].prefix(600)).contains("MyPageTrunkRow(ownerName:"),
                       "口が無いのに入口を出している")
         XCTAssertTrue(page.contains("await trunkAvailability.refresh(userId: auth.userId, service: environment.trunk)"))
         XCTAssertTrue(page.contains("service: environment.trunk, force: true)"), "前面に戻ったときに確かめ直していない")

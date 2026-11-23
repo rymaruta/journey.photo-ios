@@ -82,16 +82,9 @@ final class UXAuditFixesATests: XCTestCase {
 
     // MARK: - 2. 開発の言葉
 
-    func testVisitTileSaysWhoCollectedTheParts() async {
-        XCTAssertEqual(CamperText.visitPartsTitle(owner: "mio"), L("mio が集めた部品", "Parts mio collected"))
-        XCTAssertEqual(CamperText.visitPartsTitle(owner: "  "), L("友達が集めた部品", "Parts your friend collected"))
-        XCTAssertEqual(CamperText.visitPartsTitle(owner: nil), L("友達が集めた部品", "Parts your friend collected"))
-        XCTAssertFalse(CamperText.visitPartsTitle(owner: "mio").contains("サーバー"))
-    }
-
     /// 画面の言葉に開発の言葉（要サーバー・Server parts）を出さない
     func testNoDeveloperWordsOnScreen() async throws {
-        let files = ["Features/Camper/CamperVisitView.swift", "Features/Profile/FavoritesView.swift",
+        let files = ["Features/Profile/FavoritesView.swift",
                      "Core/Storage/WishlistSync.swift", "Core/Store/StoreService.swift"]
         for file in files {
             let text = try source(file)
@@ -103,8 +96,6 @@ final class UXAuditFixesATests: XCTestCase {
                 XCTAssertFalse(line.contains("購入をサーバーに"), "\(file): \(line)")
             }
         }
-        XCTAssertTrue(try source("Features/Camper/CamperVisitView.swift")
-            .contains("tile(CamperText.visitPartsTitle(owner: ownerName)"))
     }
 
     // MARK: - 3. ストーリーの「ひとことを書く」

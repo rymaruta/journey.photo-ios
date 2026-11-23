@@ -130,22 +130,6 @@ final class SheetClosePlacementTests: XCTestCase {
         XCTAssertEqual(bad, [], "見出しの行に字だけの「閉じる」がある。`SheetCloseButton(onContent: true)` を使う")
     }
 
-    /// とおまわり号の図鑑・家具の寄り・接写の一覧（2026-11-13 確かめ役の指摘・#187）: 見出しの行の左端に部品、識別子は残す
-    /// （UI テスト `ScreenshotTests` が押して 44pt を測る）
-    func testCamperRoomSheetsPutCloseFirst() throws {
-        let dex = try source("Features/Camper/Room/CamperRoomDexView.swift")
-        assertInOrder(["private var header: some View", "HStack(alignment: .top) {",
-                       "SheetCloseButton(onContent: true, action: onClose)", ".accessibilityIdentifier(\"camper.room.dex.close\")",
-                       "L(\"家具を集める\"", "Spacer(minLength: 0)"], in: dex, "図鑑")
-        assertInOrder(["struct CamperRoomCloseUpView", "HStack {", "SheetCloseButton(onContent: true, action: onClose)",
-                       ".accessibilityIdentifier(\"camper.room.closeup.close\")", "furniture.category.name",
-                       "Spacer(minLength: 0)"], in: dex, "家具の寄り")
-        let contact = try source("Features/Camper/Room/CamperRoomContactSheet.swift")
-        assertInOrder(["HStack(spacing: 4) {", "SheetCloseButton(onContent: true, action: onClose)",
-                       ".accessibilityIdentifier(\"camper.room.contact.close\")", "Spacer()",
-                       "\"camper.room.contact\""], in: contact, "接写の一覧")
-    }
-
     // MARK: - 洗い出した所が左上の SheetCloseButton になっていること
 
     /// 上のバーに置く所（`cancellationAction` の `SheetCloseButton`）

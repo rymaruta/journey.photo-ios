@@ -45,8 +45,6 @@ final class AppEnvironment: ObservableObject {
     let purchases: PurchaseService
     /// 旅のトランク（`/user/trunk`・本人だけ・2026-10-17）
     let trunk: TrunkService
-    /// とおまわり号の要サーバーの部品（`/user/camper`・`/users/{uid}/camper…`・2026-10-19 段2）
-    let camper: CamperService
     /// メッセージ（`/dm`・1対1・文字だけ・2026-11-10 札 #505）
     let dm: DMService
     /// グループの DM（`/groups`・2026-11-20 札 #582）。本番に口が出るまでは一覧が読めず、入口は出ない
@@ -103,7 +101,6 @@ final class AppEnvironment: ObservableObject {
         self.publicFeed = PublicFeedService(api: api)
         self.purchases = PurchaseService(api: api)
         self.trunk = TrunkService(api: api)
-        self.camper = CamperService(api: api)
         self.dm = DMService(api: api)
         self.groups = GroupService(api: api)
         self.tripShare = TripShareService(api: api)

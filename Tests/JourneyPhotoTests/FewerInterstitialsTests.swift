@@ -206,32 +206,7 @@ final class FewerInterstitialsTests: XCTestCase {
         XCTAssertTrue(text.contains("open = SignInPromptOpening.opened(from: request)"))
     }
 
-    // MARK: - 6. とおまわり号の「はじめての方へ」: 触れば消える1行
-
-    func testCamperCoachIsOneTouchThroughLine() async throws {
-        let room = try source("Features/Camper/Room/CamperRoomView.swift")
-        XCTAssertFalse(room.contains("camper.room.coach.done"), "「わかった」まで触れない札が残っている")
-        XCTAssertTrue(room.contains("coachLine"))
-        XCTAssertTrue(room.contains(".simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in dismissCoach() },"),
-                      "部屋を触っても手引きが消えない")
-        XCTAssertFalse(CamperRoomView.coachText.isEmpty)
-    }
-
     // MARK: - 確かめ役の指摘（2026-11-22）
-
-    /// 手引きの指の受け口は、手引きが出ている間だけ効く。一度見せたら済んだと覚え、別の場面へ移っても消す
-    func testCamperCoachGestureOnlyWhileShowingAndRememberedOnShow() async throws {
-        XCTAssertEqual(CamperRoomView.coachGestureMask(showing: true), .all)
-        XCTAssertEqual(CamperRoomView.coachGestureMask(showing: false), .subviews)
-        let room = try source("Features/Camper/Room/CamperRoomView.swift")
-        XCTAssertTrue(room.contains("including: Self.coachGestureMask(showing: showCoach))"), "ふだんの操作にも手引きの受け口が重なっている")
-        XCTAssertTrue(room.contains("if showCoach, !CamperRoomPreview.coach { CamperRoomCoach.done() }"),
-                      "見せただけでは済んだと覚えない（読み上げの人に毎回出る）")
-        XCTAssertTrue(room.contains("""
-            private func enter(_ m: Mode) {
-                    dismissCoach()
-            """), "別の場面へ移っても手引きが残る")
-    }
 
     /// ほかの画面・差し出しが出ている間は出さない（出すと黙って無視され、待ちが全部止まる）。決めている途中は見ない
     func testSummaryWaitsForOtherScreens() async throws {

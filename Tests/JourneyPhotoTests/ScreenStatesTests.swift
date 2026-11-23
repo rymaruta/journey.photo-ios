@@ -87,7 +87,6 @@ final class ScreenStatesTests: XCTestCase {
             ("Features/Trips/TripAddSheet.swift", "ErrorBanner(title: L(\"旅行プランを読み込めませんでした\""),
             ("Features/Trips/TripCreateView.swift", "ErrorBanner(title: L(\"行きたい場所を読み込めませんでした\""),
             ("Features/Trips/TripPlanPickSheet.swift", "ErrorBanner(title: L(\"行きたい場所を読み込めませんでした\""),
-            ("Features/Camper/CamperGarageLoader.swift", "ErrorBanner(title: L(\"写真を読み込めませんでした\""),
         ]
         for (path, call) in expected {
             XCTAssertTrue(try source(path).contains(call), "\(path) の見出しが「\(call)」でない")

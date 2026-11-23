@@ -125,9 +125,9 @@ Write one line like "Kanazawa, 2 days, autumn leaves" and AI plans your trip fro
 – 行った県を日本地図に塗って、回数を記録（あなただけの記録です）
 – 自分の旅の1枚を、搭乗券や切手の形にしてストーリーへ
 
-■ 旅のトランクと、とおまわり号
+■ 旅のトランク
+– 投稿のお礼に届く旅のラベルを、自分のトランクに貼っていけます
 – 公開で投稿すると硬貨がもらえ、カプセルの機械に入れるとトランクの部品が出てきます。硬貨と部品は購入できません
-– キャンピングカー「とおまわり号」に家具を置いて、額に自分の写真を飾れます
 
 ■ すれちがい乗車券（任意、初期設定はオフ）
 – オンにした人だけ、近くにいる Journey Photo の利用者と、選んだ公開写真1枚とひとことを Bluetooth で交換します。位置や連絡先は送りません
@@ -202,9 +202,9 @@ KEEP YOUR TRIPS
 - Allow photo access and your past trips line up as books on My Page. Photos are checked only on your device
 - Trip books and shared albums
 
-TRAVEL TRUNK AND DETOUR
+TRAVEL TRUNK
+- Stick the travel labels you get for posting on your own trunk
 - Earn coins by posting publicly and get trunk parts from the capsule machine. Coins and parts cannot be bought
-- Decorate Detour, your camper, with furniture and your own photos
 
 PASS (OPTIONAL, OFF BY DEFAULT)
 - Only if you turn it on, your phone swaps a ticket card with nearby Journey Photo users over Bluetooth: one public photo you chose and a short note. No location or contacts are sent
@@ -266,7 +266,7 @@ japan,sightseeing,golden hour,sunrise,sunset,sakura,autumn,landscape,camera,map,
 – 行った県を日本地図に塗って、回数を記録できます
 – 投稿したらすぐ SNS に載せられるカード。額装、フィルム、縦書きなどの形から選べます
 – コメントへの返信、プロフィールのピン留め、QR コード、おすすめの人
-– 旅のトランクと、キャンピングカー「とおまわり号」の中に入れるように
+– 旅のトランク：投稿のお礼に届くラベルを貼って、部品で飾れます
 – すれちがい乗車券（初期設定はオフ）：オンにした人だけ、近くの人と公開写真1枚を交換。カードはその場で届きます
 – Pro に、特別な乗車券と旅のトランクの特典が加わりました。作例を重ねて撮るカメラは、Pro でなくても使えます
 – 設定に「意見を送る」と「検索エンジンにプロフィールを表示しない」
@@ -292,7 +292,7 @@ A big update since the fall, with many new ways to share travel photos.
 - Color in the prefectures you have visited on a map of Japan
 - Share cards right after you post, with Mat, Film, Vertical and more
 - Replies to comments, pinned photos, a profile QR code and suggested people
-- Your Travel trunk, and you can step inside Detour, your camper
+- Your Travel trunk: stick the labels you get for posting and decorate it with parts
 - Pass (off by default): swap one public photo with people nearby, only if you turn it on
 - Pro now includes special Pass tickets and Travel trunk extras. The composition-overlay camera is free for everyone
 - "Send feedback" and "Hide my profile from search engines" in Settings

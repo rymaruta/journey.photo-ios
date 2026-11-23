@@ -10,7 +10,6 @@ import CoreLocation
 ///   2. いいね・保存: 押して数と印が変わる → もう一度で戻る
 ///   3. コメント: 書いて送る → 一覧に出る（送れなかった知らせは `PhotoDetailViewModel` の単体テストが見る）
 ///   4. ログアウト → ログイン（見本の認証）→ マイページに戻れる
-///   5. キャンピングカー: 部屋に入る → 写真を飾る → 額に写る
 ///
 /// 2026-10-22 判断: **書き込みは端末の中だけ**（`-JPPreviewLocalBackend`・`PreviewBackend`）。CI は資格情報を
 /// 持たないので staging の試験用の利用者でも入れず、持たせるには Actions の秘密に触る。鍵の要る口だけを端末の中で答え、
@@ -1421,93 +1420,5 @@ final class CriticalFlowTests: JPUITestCase {
         shot.name = "A10-探す（0件）"
         shot.lifetime = .keepAlways
         add(shot)
-    }
-
-    // MARK: - 5. キャンピングカー
-
-    /// 部屋に入る → 写真 → 額に入っていない1枚を選んで「この額に飾る」→ 部屋に戻ると、その写真が額に写っている
-    func testCamperRoomHangPhotoShowsInFrame() {
-        // 毎回最初の並び（保存しない）。見本の通信は要らないが、同じ起動で揃える
-        let app = launch(["-JPPreviewCamperRoomReset", "YES"])
-        tab(app, 4)
-        let tripsTab = app.buttons["profile.tab.trips"].firstMatch
-        XCTAssertTrue(tripsTab.waitForExistence(timeout: 20), "マイページに「旅の記録」のタブが無い")
-        // 見出しの読み込みでタブの列が動く間は押さない（`ScreenshotTests.selectTripsTab` の注記）
-        Thread.sleep(forTimeInterval: 3)
-        reveal(tripsTab, in: app, "旅の記録のタブ", pushes: 4)
-        tripsTab.tap()
-        let camper = app.buttons["trips.camper"].firstMatch
-        // 旅の記録のタブが「読み込み中」のまま 15 秒を越えることがある（run 728・2026-10-28 の Mac でここが落ちた）。
-        // 長めに待ち、出なければタブを押し直してもう一度待つ（`TripsTabWait`・`ScreenshotTests.openTripsRow` と共通）
-        XCTAssertTrue(TripsTabWait.waitForRow(camper, tripsTab: tripsTab), "「写真で作るキャンピングカー」の行が無い")
-        reveal(camper, in: app, "キャンピングカーの行")
-        camper.tap()
-        let enter = app.buttons["camper.room.enter"].firstMatch
-        XCTAssertTrue(enter.waitForExistence(timeout: 20), "キャンピングカーに「中に入る」が無い")
-        reveal(enter, in: app, "中に入る")
-        enter.tap()
-
-        let scene = app.descendants(matching: .any)["camper.room.scene"].firstMatch
-        XCTAssertTrue(scene.waitForExistence(timeout: 20), "部屋に入れない")
-        // 札 #435（2026-11-14）: 「中に入る」の段（`step=` の camper.enter.*）を、通った回も残す（冷えた起動の比べる元）
-        notePerfProbe(app, label: "camperEntered")
-        XCTAssertTrue(wait(scene, "value CONTAINS 'camper-room-ready'", timeout: 60), "部屋を組み終えない")
-
-        app.buttons["camper.room.tool.photos"].firstMatch.tap()
-        XCTAssertFalse(app.buttons["camper.room.addFrame"].firstMatch.waitForExistence(timeout: 3),
-                       "最初の並びの部屋に額が無い")
-        let photos = app.buttons.matching(identifier: "camper.room.photo")
-        XCTAssertTrue(photos.firstMatch.waitForExistence(timeout: 30), "飾れる写真が出ない")
-        // 額に保存した中身の印画が載るまで待つ（写真は本物の公開写真を読む）
-        XCTAssertTrue(waitUntil(20) { !self.marker(scene, "framed").isEmpty }, "額に写真が載らない（今は \(scene.value ?? "")）")
-        Thread.sleep(forTimeInterval: 3)
-        let framedBefore = marker(scene, "framed")
-
-        // 額に入っていない1枚
-        let candidates = photos.allElementsBoundByIndex.prefix(12)
-        guard let pick = candidates.first(where: {
-            let id = $0.value as? String ?? ""
-            return !id.isEmpty && !framedBefore.contains(id) && $0.isHittable
-        }) else {
-            return XCTFail("額に入っていない写真が無い（額 \(framedBefore.count)・写真 \(photos.count)）")
-        }
-        let photoId = pick.value as? String ?? ""
-        pick.tap()
-        XCTAssertTrue(wait(pick, "selected == true", timeout: 5), "写真を押しても選ばれない")
-        // 選んだだけでは見本（preview）として載り、保存した中身（framed）にはまだ無い
-        XCTAssertTrue(waitUntil(15) { self.marker(scene, "preview").contains(photoId) },
-                      "選んだ写真 \(photoId) が見本として額に載らない（今は \(scene.value ?? "")）")
-        XCTAssertFalse(marker(scene, "framed").contains(photoId), "「この額に飾る」を押す前に保存した中身に入っている")
-        let hang = app.buttons["camper.room.hang"].firstMatch
-        XCTAssertTrue(wait(hang, "enabled == true", timeout: 5), "「この額に飾る」が押せない")
-        hang.tap()
-        XCTAssertTrue(waitUntil(15) { self.marker(scene, "framed").contains(photoId) },
-                      "飾った写真 \(photoId) が額の中身に入らない（今は \(scene.value ?? "")）")
-
-        // 部屋に戻っても（見本ではなく保存した中身で描き直す）額に写っている
-        app.buttons["camper.room.back"].firstMatch.tap()
-        XCTAssertTrue(waitUntil(20) {
-            self.marker(scene, "framed").contains(photoId) && self.marker(scene, "preview").isEmpty
-        }, "部屋に戻ると飾った写真 \(photoId) が額に無い（今は \(scene.value ?? "")）")
-    }
-
-    /// 部屋の読み上げの値から、額の中身の id を読む（` framed=a,b preview=c`・`CamperRoomView.framedMarker`）。
-    /// `framed` は保存した中身、`preview` は選んだだけの見本
-    private func marker(_ scene: XCUIElement, _ name: String) -> [String] {
-        let value = scene.value as? String ?? ""
-        guard let start = value.range(of: " \(name)=") else { return [] }
-        let rest = value[start.upperBound...]
-        let end = rest.firstIndex(of: " ") ?? rest.endIndex
-        return rest[..<end].split(separator: ",").map(String.init)
-    }
-
-    /// 条件が満たされるまで待つ（最長 `timeout` 秒）
-    private func waitUntil(_ timeout: TimeInterval, _ condition: @escaping () -> Bool) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if condition() { return true }
-            Thread.sleep(forTimeInterval: 0.5)
-        }
-        return condition()
     }
 }

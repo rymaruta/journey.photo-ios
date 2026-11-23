@@ -56,8 +56,8 @@ final class TabSwitchUnifyTests: XCTestCase {
         for (path, _) in barOnly {
             XCTAssertFalse(try source(path).contains("ProfileTabPager("), "\(path) の中身を横にめくっている（横の操作とぶつかる）")
         }
-        // 自前の下線の札が新しく生えていないか（キャンピングカーの部屋は別の板・下の注記）
-        let allowed: Set<String> = ["CamperRoomView.swift", "CamperRoomDexView.swift"]
+        // 自前の下線の札が新しく生えていないか（前に除いていたキャンピングカーの部屋は 2026-11-23 に消した・札 #709）
+        let allowed: Set<String> = []
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Sources/JourneyPhoto")
         let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
