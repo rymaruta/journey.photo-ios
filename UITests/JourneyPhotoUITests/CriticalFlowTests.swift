@@ -906,7 +906,9 @@ final class CriticalFlowTests: JPUITestCase {
         XCTAssertTrue(error.waitForExistence(timeout: 15), "違う6桁で押さずに確かめない（失敗の文が出ない）")
         // 箱が空に戻る（揺らしてから 0.6 秒）
         Thread.sleep(forTimeInterval: 1.5)
-        XCTAssertEqual((field.value as? String) ?? "", "", "違うコードのあと箱が空に戻らない")
+        // 欄の読み上げの値は、空のとき「空」（`VerificationCodeField.spokenValue`）
+        let emptied = (field.value as? String) ?? ""
+        XCTAssertTrue(emptied.isEmpty || emptied == "空", "違うコードのあと箱が空に戻らない（\(emptied)）")
         field.typeText("4829")
         XCTAssertTrue(error.waitForNonExistence(timeout: 5), "打ち直しても違うコードの文が残る")
         field.typeText("13")

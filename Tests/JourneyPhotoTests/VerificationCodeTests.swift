@@ -21,6 +21,18 @@ final class VerificationCodeTests: XCTestCase {
         XCTAssertEqual(VerificationCodeEntry.normalize("٤٨٢"), "", "ほかの文字の数字を拾った")
     }
 
+    /// 途中まで打ってから候補・貼り付けで6桁が続けて入ったら、後から入った6桁を取る。1字ずつの7桁目は入れない
+    func testCandidateAfterPartialTypingTakesTheNewSix() {
+        XCTAssertEqual(VerificationCodeEntry.normalize("48482913", previous: "48"), "482913", "「48」＋候補が先頭の6桁になった")
+        XCTAssertEqual(VerificationCodeEntry.normalize("4829137", previous: "482913"), "482913", "1字ずつの7桁目が入った")
+        XCTAssertEqual(VerificationCodeEntry.normalize("4831", previous: "48"), "4831")
+        var entry = VerificationCodeEntry()
+        entry.input("48")
+        entry.input("48482913")
+        XCTAssertEqual(entry.code, "482913")
+        XCTAssertTrue(entry.shouldSubmit(isOffline: false))
+    }
+
     func testInputUpdatesCodeAndBoxes() {
         var entry = VerificationCodeEntry()
         entry.input("48")
@@ -115,6 +127,16 @@ final class VerificationCodeTests: XCTestCase {
         XCTAssertEqual(O.from(.network, isOffline: false), .failed, "電波があるのに圏外の形にした（戻るのを待っても戻らない）")
         XCTAssertEqual(O.from(.limitExceeded, isOffline: false), .failed)
         XCTAssertEqual(O.from(.none, isOffline: false), .verified)
+    }
+
+    /// 🔴 再設定は、無いアカウントを「コードが違います」と同じにする（アカウントの有無を分からせない）
+    func testResetHidesMissingAccountAsWrongCode() {
+        typealias O = VerificationCodeEntry.Outcome
+        XCTAssertEqual(O.from(.userNotFound, isOffline: false, hidesAccount: true), .wrong, "再設定で無いアカウントが分かる")
+        XCTAssertEqual(O.from(.userNotFound, isOffline: false), .failed)
+        let view = try? source("Features/Auth/SignInView.swift")
+        XCTAssertTrue(view?.contains("applyCodeFailure(hidesAccount: true)") == true, "再設定の失敗でアカウントを隠していない")
+        XCTAssertTrue(view?.contains("hidesAccount: hidesAccount)") == true, "隠す印を Outcome に渡していない")
     }
 
     // MARK: - 送り直しの待ち時間
@@ -222,6 +244,20 @@ final class VerificationCodeTests: XCTestCase {
             XCTAssertTrue(confirm.contains(part), "登録の確認に \(part) が無い")
         }
         XCTAssertTrue(view.contains(".accessibilityLabel(L(\"ログインに戻る\", \"Back to sign in\"))"), "戻り道が無い")
+        // 確かめ役の指摘（2026-11-23）
+        let back = try slice(view, from: "private var codeBackButton", to: "} label: {")
+        XCTAssertLessThan(try XCTUnwrap(back.range(of: "let wasReset = isResetCode")).lowerBound,
+                          try XCTUnwrap(back.range(of: "mode = .signIn")).lowerBound, "再設定かを mode を変えた後に見ている")
+        XCTAssertTrue(back.contains("if wasReset { password = \"\" }"))
+        XCTAssertTrue(view.contains(".toolbar(showsCodeScreen ? .hidden : .automatic, for: .navigationBar)"),
+                      "コードの画面でシートの閉じると戻るが2つ並ぶ")
+        XCTAssertTrue(screen.contains("codeEntry.errorText ?? (resetPasswordVisible ? nil : auth.errorMessage)"),
+                      "再設定でパスワードの節が出ていない間の失敗が出ない")
+        XCTAssertTrue(screen.contains("if codeEntry.phase != .verified { focusedField = .code }"), "開いたとき焦点を当て直さない")
+        let failure = try slice(view, from: "private func applyCodeFailure", to: "/// 「コードを送り直す」")
+        XCTAssertTrue(failure.contains("guard codeEntry.phase == .wrong else { return }"), "送り直した後に空に戻してしまう")
+        let field = try source("Features/Auth/VerificationCodeField.swift")
+        XCTAssertTrue(field.contains(".onTapGesture { focus.wrappedValue = .code }"), "箱の端を押しても焦点が来ない")
     }
 
     private func slice(_ text: String, from start: String, to end: String) throws -> String {

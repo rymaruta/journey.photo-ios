@@ -41,6 +41,9 @@ struct VerificationCodeField: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
+        // 箱のすき間や上下の端を押しても欄に焦点が当たる
+        .contentShape(Rectangle())
+        .onTapGesture { focus.wrappedValue = .code }
         .offset(x: shake)
         .onChange(of: shakeCount) { _, _ in
             guard !reduceMotion else { return }

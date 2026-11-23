@@ -116,6 +116,8 @@ struct SignInView: View {
                 formScreen
             }
         }
+        // 確認コードの画面の間は上のバー（シートの「閉じる」）を隠す。戻るは左上のガラスの丸だけ（2つ並べない）
+        .toolbar(showsCodeScreen ? .hidden : .automatic, for: .navigationBar)
         // **黒地にする。** 付け忘れていたので、ここだけ既定の灰色の
         // 段が並び、アプリの中で1枚だけ別のアプリに見えていた
         // （実機の絵で確認・run 38）
@@ -857,7 +859,8 @@ struct SignInView: View {
                     sentLine
                         .padding(.top, JPSpace.xs)
                     changeEmailButton
-                    if let error = codeEntry.errorText ?? (isResetCode ? nil : auth.errorMessage) {
+                    // コード以外の失敗（送り直しの失敗など）も箱の上。再設定でパスワードの節が出ている間は、そちらの主ボタンの上に出す
+                    if let error = codeEntry.errorText ?? (resetPasswordVisible ? nil : auth.errorMessage) {
                         // 板 06: 起きた所（箱）のすぐ上。トーストにしない
                         errorLine(error, identifier: "signin.code.error")
                             .padding(.top, JPSpace.s)
@@ -879,7 +882,7 @@ struct SignInView: View {
                         .accessibilityIdentifier("signin.code.newCode")
                         .padding(.top, JPSpace.xxs)
                     }
-                    if isResetCode && (resetPasswordShown || !password.isEmpty) {
+                    if resetPasswordVisible {
                         resetPasswordSection
                             .padding(.top, JPSpace.xxs)
                     }
@@ -902,7 +905,8 @@ struct SignInView: View {
         // 開いたらすぐ打てるように（数字のキーボードの上に「メールから」の候補が出る）。画面が替わり終えてから焦点を当てる
         .task {
             try? await Task.sleep(nanoseconds: 350_000_000)
-            if focusedField == nil && codeEntry.phase != .verified { focusedField = .code }
+            // 前の画面の焦点（メールの欄など）が残っていても当て直す
+            if codeEntry.phase != .verified { focusedField = .code }
         }
         // 送り直しの待ち時間を1秒ずつ数える（送ったときだけ回る）
         .task(id: cooldown) {
@@ -931,13 +935,18 @@ struct SignInView: View {
     /// パスワードの再設定のコードの画面か（でなければ登録の確認）
     private var isResetCode: Bool { pendingUsername == nil && mode == .resetConfirm }
 
+    /// 再設定の新しいパスワードの節を出しているか
+    private var resetPasswordVisible: Bool { isResetCode && (resetPasswordShown || !password.isEmpty) }
+
     /// 左上のガラスの丸（板「積む画面」・44pt）。今までの「ログインに戻る」と同じ戻り道
     private var codeBackButton: some View {
         Button {
+            // 再設定から戻るときは打った新しいパスワードを持ち越さない（mode を変える前に見る）
+            let wasReset = isResetCode
             leaveCodeScreen()
             pendingUsername = nil
             mode = .signIn
-            password = isResetCode ? "" : password
+            if wasReset { password = "" }
             clearMessages()
         } label: {
             Image(systemName: "chevron.left")
@@ -1128,10 +1137,9 @@ struct SignInView: View {
 
     /// 違う・期限切れ・圏外・そのほかの失敗を、箱の状態にする
     private func applyCodeFailure(hidesAccount: Bool = false) {
-        var failure = auth.lastFailure
         // 再設定は、無いアカウントを「コードが違います」と同じにする（`AuthStore.confirmPasswordReset`）
-        if hidesAccount && failure == .userNotFound { failure = .codeMismatch }
-        let outcome = VerificationCodeEntry.Outcome.from(failure, isOffline: connectivity.isOffline)
+        let outcome = VerificationCodeEntry.Outcome.from(auth.lastFailure, isOffline: connectivity.isOffline,
+                                                         hidesAccount: hidesAccount)
         codeEntry.finish(outcome)
         switch outcome {
         case .wrong:
@@ -1141,6 +1149,8 @@ struct SignInView: View {
             let delay = reduceMotion ? VerificationCodeLayout.clearDelayReduced : VerificationCodeLayout.clearDelay
             Task {
                 try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                // その間に送り直した・画面を離れた回は触らない
+                guard codeEntry.phase == .wrong else { return }
                 codeEntry.clearWrong()
                 code = codeEntry.code
                 focusedField = .code

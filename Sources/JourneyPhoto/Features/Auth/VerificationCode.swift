@@ -43,10 +43,13 @@ struct VerificationCodeEntry: Equatable {
 
         /// Cognito の失敗の種類から。`isOffline` は端末が「電波なし」と知っているか——
         /// 電波はあるのにサーバーに届かなかった回は「圏外」にしない（戻るのを待っても戻らない）
-        static func from(_ failure: AuthFailure, isOffline: Bool) -> Outcome {
+        /// `hidesAccount`: パスワードの再設定。無いアカウント（userNotFound）を「コードが違います」と同じにし、
+        /// アカウントの有無を分からせない（`AuthStore.confirmPasswordReset` と同じ決まり）
+        static func from(_ failure: AuthFailure, isOffline: Bool, hidesAccount: Bool = false) -> Outcome {
             switch failure {
             case .none: return .verified
             case .codeMismatch: return .wrong
+            case .userNotFound where hidesAccount: return .wrong
             case .codeExpired: return .expired
             case .network: return isOffline ? .offline : .failed
             default: return .failed
@@ -63,11 +66,22 @@ struct VerificationCodeEntry: Equatable {
         self.code = Self.normalize(code)
     }
 
-    /// 欄に入った字を箱の6桁に整える。数字だけを拾い（全角は半角に）、先頭から6桁まで
-    static func normalize(_ raw: String) -> String {
+    /// 欄に入った字を箱の6桁に整える。数字だけを拾い（全角は半角に）、先頭から6桁まで。
+    ///
+    /// `previous` は前の6桁まで。途中まで打ってからキーボードの候補・貼り付けで6桁が続けて入った回（「48」＋「482913」）は、
+    /// **後から入った6桁**を取る（先頭の6桁「484829」にしない）。1字ずつ打った7桁目は入れない
+    static func normalize(_ raw: String, previous: String = "") -> String {
+        let digits = allDigits(raw)
+        if !previous.isEmpty, digits.hasPrefix(previous), digits.count - previous.count >= length {
+            return String(digits.dropFirst(previous.count).prefix(length))
+        }
+        return String(digits.prefix(length))
+    }
+
+    /// 数字だけ（全角は半角に）
+    private static func allDigits(_ raw: String) -> String {
         var digits = ""
         for scalar in raw.unicodeScalars {
-            guard digits.count < length else { break }
             switch scalar.value {
             case 0x30...0x39: digits.unicodeScalars.append(scalar)
             // 全角の「０」〜「９」（日本語のキーボードで打った数字）
@@ -84,7 +98,7 @@ struct VerificationCodeEntry: Equatable {
     /// 打った字を受ける（欄の字が変わるたび）。確かめ中・成功の後は受けない（二重に送らない）
     mutating func input(_ raw: String) {
         guard phase != .checking, phase != .verified else { return }
-        let next = Self.normalize(raw)
+        let next = Self.normalize(raw, previous: code)
         guard next != code else { return }
         code = next
         // 打ち直したら、違う・期限切れ・圏外の知らせを下げる（板 06「打ち直したら知らせを消す」）。

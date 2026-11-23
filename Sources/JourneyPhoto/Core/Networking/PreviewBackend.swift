@@ -4,9 +4,11 @@ import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
-// 見本の登録の確認で Cognito と同じ失敗を返す（`AuthError`・`AWSCognitoAuthError.codeMismatch`）
+// 見本の登録の確認で Cognito と同じ失敗を返す（`AuthError`、`AWSCognitoAuthError.codeMismatch`）。Debug の見本だけが使う
+#if DEBUG
 import Amplify
 import AWSCognitoAuthPlugin
+#endif
 
 /// **端末の中だけで答える見本の通信**（UI テストだけ・Debug のみ・2026-10-22）。`-JPPreviewLocalBackend YES`。
 ///
