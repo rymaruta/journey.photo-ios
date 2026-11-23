@@ -198,8 +198,8 @@ final class SheetClosePlacementTests: XCTestCase {
              ["SheetCloseButton(onContent: true)", "\"trunk.gachaOpen.close\"", "Spacer()"]),
             ("Features/Trunk/TrunkRerollView.swift",         // 図柄を作り直す
              ["SheetCloseButton(onContent: true)", "\"trunk.reroll.close\"", "Spacer()"]),
-            ("Features/Trunk/TrunkPartsBoxView.swift",       // 部品のシート
-             ["SheetCloseButton(onContent: true)", "\"trunk.partSheet.close\"", "TrunkGachaText.eyebrow(part)", "Spacer()"]),
+            ("Features/Trunk/TrunkPartsBoxView.swift",       // 持っていない部品のシート（2026-11-23・札 #711）
+             ["SheetCloseButton(onContent: true)", "\"trunk.missingSheet.close\"", "Text(part.kind.tabName)", "Spacer()"]),
             ("Features/Drafts/DraftsView.swift",             // 下書きについて
              ["SheetCloseButton(onContent: true)", "DraftsText.aboutTitle", "Spacer(minLength: 0)"]),
             ("Features/Stories/StoryInsightsView.swift",     // ストーリーの反応（前は見出しの行の右端→見出しの上の別の行）
@@ -273,7 +273,7 @@ final class SheetClosePlacementTests: XCTestCase {
             ("Features/Trunk/LabelArrivedView.swift", "trunk.arrived.close"),
             ("Features/Trunk/TrunkGachaView.swift", "trunk.gachaOpen.close"),
             ("Features/Trunk/TrunkRerollView.swift", "trunk.reroll.close"),
-            ("Features/Trunk/TrunkPartsBoxView.swift", "trunk.partSheet.close"),
+            ("Features/Trunk/TrunkPartsBoxView.swift", "trunk.missingSheet.close"),
         ]
         for (path, id) in kept {
             let text = try source(path)

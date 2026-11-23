@@ -85,12 +85,17 @@ final class ToastCenter: ObservableObject {
 
     /// 「取り消す」を添えて出す（約6秒）。押すと `run` を1回だけ流して知らせを消す
     func show(_ text: String, kind: Message.Kind = .success, undo: Undo?) {
+        show(text, kind: kind, seconds: undo == nil ? Self.duration : Self.undoDuration, undo: undo)
+    }
+
+    /// 出す時間を決めて「取り消す」を添える（部品箱の「付けました　元に戻す」は 3 秒・札 #711。続けて押す画面なので短く）
+    func show(_ text: String, kind: Message.Kind = .success, seconds: TimeInterval, undo: Undo?) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // 空の知らせは出さない（何も伝えない帯が画面を覆う）
         guard !trimmed.isEmpty else { return }
         current = Message(id: UUID(), text: trimmed, kind: kind)
         self.undo = undo
-        scheduleHide(undo == nil ? Self.duration : Self.undoDuration)
+        scheduleHide(max(1, seconds))
     }
 
     private func scheduleHide(_ seconds: TimeInterval) {
