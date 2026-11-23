@@ -1082,6 +1082,9 @@ struct RootView: View {
                 showMenu = false
                 showMessages = true
             }
+            // ホームへ移るときは受信箱のシートも下ろす（2026-11-23 判断: 新しいメッセージの空の「写真を見に行く」。
+            // 下ろさないと札が替わってもシートが上に残り、移った先が見えない——メニュー・お知らせと同じ判断）
+            .onChange(of: tabRouter.homeRequests) { _, _ in showMessages = false }
             // メッセージの通知を押した → 受信箱を出して、その会話を積む
             .onChange(of: router.conversationRequests) { _, _ in takeConversationRequest() }
             .onAppear { takeConversationRequest() }
