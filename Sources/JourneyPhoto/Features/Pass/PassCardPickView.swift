@@ -491,7 +491,7 @@ enum PassCardLoad {
     /// 選ぶ画面。`fetched` が nil（読めなかった）なら、並びも選んだ写真もそのまま
     static func pick(fetched: [Photo]?, me: String, selected: String?, current: [Photo]) -> Pick {
         guard let fetched else { return Pick(photos: current, selected: selected, failed: true) }
-        let photos = fetched.filter { ($0.userId ?? $0.uploadedBy) == me && PassExchange.isPublicCard($0) }
+        let photos = PhotoOwnership.mine(fetched, me: me).filter { PassExchange.isPublicCard($0) }
         var chosen = selected
         // 前に選んだ写真が公開一覧から消えていたら（非公開にした・消した）選び直してもらう
         if let id = chosen, !photos.contains(where: { $0.id == id }) { chosen = nil }

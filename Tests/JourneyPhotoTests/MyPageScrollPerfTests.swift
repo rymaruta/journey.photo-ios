@@ -117,7 +117,7 @@ final class MyPageScrollPerfTests: XCTestCase {
         XCTAssertTrue(view.contains("private struct MyPageTripsShelf<Tools: View>: View {\n    @ObservedObject var deviceTrips: DeviceTripShelfStore"))
         XCTAssertTrue(view.contains("MyPageTripsShelf(deviceTrips: deviceTrips,"))
         // 「まだ旅はありません」を出す決まりは今までどおり（投稿した一冊が0で端末の一冊があるときは出さない）
-        XCTAssertTrue(view.contains("if !trips.isEmpty || !hasDeviceBooks {\n                TripShelfList(trips: trips, isPublic: isPublic)"))
+        XCTAssertTrue(view.contains("if !trips.isEmpty || !hasDeviceBooks {\n                TripShelfList(trips: trips, isPublic: isPublic, isMine: true)"))
     }
 
     // MARK: 縮めた絵の控えの後片づけ（2026-10-28 確かめ役の指摘）

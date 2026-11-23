@@ -257,7 +257,7 @@ struct PhotoDetailView: View {
     var siblings: [Photo] { context.isEmpty ? [photo] : context }
 
     private var ownerId: String? { current.userId ?? current.uploadedBy }
-    private var isMine: Bool { ownerId != nil && ownerId == auth.userId }
+    private var isMine: Bool { PhotoOwnership.isMine(photo: current, me: auth.userId) }
 
     /// コメントの節の目印。吹き出しを押したらここまで送る
     private static let commentsAnchor = "photo.comments"
@@ -1562,7 +1562,7 @@ struct PhotoDetailView: View {
         let target = shown
         // 人の写真の画像（共有カード）は書き出さない（2026-11-12・#577・`PhotoDetailRules.showsSocialCard`）
         guard !preparingThreads, let url = target.detailImageURL,
-              PhotoDetailRules.showsSocialCard(ownerId: target.userId ?? target.uploadedBy, me: auth.userId,
+              PhotoDetailRules.showsSocialCard(ownerId: PhotoOwnership.ownerId(of: target), me: auth.userId,
                                                shareable: CollectionScreen.isShareable(target)) else { return }
         let link = PhotoLink.shortURL(photoId: target.id) ?? shareURL(for: current)
         preparingThreads = true
@@ -1726,7 +1726,7 @@ struct PhotoDetailView: View {
     /// 「ストーリーに載せる」を出すか（札 #541 の ①）。**自分の、全体に公開した写真だけ**
     /// （2026-11-12 判断・#577・`SendSheetLayout.canShareToStory`。サーバーも人の写真は 403 で断る）
     private var canShareToStory: Bool {
-        SendSheetLayout.canShareToStory(ownerId: shown.userId ?? shown.uploadedBy, me: auth.userId,
+        SendSheetLayout.canShareToStory(ownerId: PhotoOwnership.ownerId(of: shown), me: auth.userId,
                                         canSendPhoto: canSendPhoto)
     }
 
@@ -1737,7 +1737,7 @@ struct PhotoDetailView: View {
         let target = shown
         // 人の写真の絵は作らない（2026-11-12・#577。ボタンは出さないが、押した後に束を送った回も断る）
         guard !preparingStory, let url = target.detailImageURL,
-              SendSheetLayout.canShareToStory(ownerId: target.userId ?? target.uploadedBy, me: auth.userId,
+              SendSheetLayout.canShareToStory(ownerId: PhotoOwnership.ownerId(of: target), me: auth.userId,
                                               canSendPhoto: canSendPhoto) else { return }
         // 送るシートが閉じきる前に作る画面を重ねない（iOS が取りこぼす）。読み込みと並べて待つ
         let started = Date()
@@ -3389,8 +3389,7 @@ enum PhotoDetailRules {
     /// **自分の、全体に公開した写真だけ**（2026-11-12 判断・#577・owner の原則「基本的にその人のもの」）。
     /// 人の写真の画像を手にできる道は作らない。持ち主へ連れて行くリンクの共有は送るシートに残す
     static func showsSocialCard(ownerId: String?, me: String?, shareable: Bool) -> Bool {
-        guard shareable, let ownerId, !ownerId.isEmpty, let me, !me.isEmpty else { return false }
-        return ownerId == me
+        shareable && PhotoOwnership.isMine(ownerId: ownerId, me: me)
     }
 
     ///
