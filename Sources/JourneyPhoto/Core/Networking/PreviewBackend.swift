@@ -63,6 +63,7 @@ enum PreviewBackend {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = APIClient.requestTimeout
         config.protocolClasses = [PreviewBackendProtocol.self] + (config.protocolClasses ?? [])
+        // 見本の答え手を先頭に入れ済み。`StoreDemo.guarded` は二重に入れないので通さない（URLSession を作る所の見張りの例外）
         return URLSession(configuration: config)
     }()
 
@@ -100,6 +101,8 @@ enum PreviewBackend {
 
     /// この要求に答えるか（見本の鍵を付けた要求と、見本の置き場）
     static func handles(_ request: URLRequest) -> Bool {
+        // App Store の画面写真の見本（`StoreDemo`・札 #604）の間は、**全部の要求**を引き受ける（外へ1本も出さない）
+        if StoreDemo.isOn, let scheme = request.url?.scheme, scheme == "https" || scheme == "http" { return true }
         if request.url?.host == host { return true }
         // プロフィールの QR の合図を人に引く口（`GET /qr/{合図}`・ログイン不要なので鍵が付かない・2026-11-12）。
         // 見本の合図は端末の中にしか無いので、本物の口へは出さずにここで答える
@@ -581,7 +584,8 @@ enum PreviewBackend {
                 }
                 items.append(msg(8, mine: false, "この曲いいね", 12))
                 // 撮影スポットを送った通（1.1.83・資料「SNS をもっと SNS に」⑤）: 頁のリンクだけの1通 → 札（`DMSpotCard`）
-                items.append(msg(9, mine: false, "https://journey-photo.com/spots/kenrokuen", 11))
+                // App Store の見本（`StoreDemo`）では、同梱の写真と合う見本の観光スポットへ（作例は見本の写真だけ）
+                items.append(msg(9, mine: false, StoreDemo.isOn ? StoreDemo.dmSpotLink : "https://journey-photo.com/spots/kenrokuen", 11))
                 items.append(msg(10, mine: false, "雪吊り、見に行かない？", 10.5))
                 answer["items"] = items
             }
@@ -685,7 +689,7 @@ enum PreviewBackend {
         return (try? JSONDecoder().decode(Count.self, from: data))?.likes
     }
 
-    private static let plainSession = URLSession(configuration: .ephemeral)
+    private static let plainSession = URLSession(configuration: StoreDemo.guarded(.ephemeral))
 
     /// 送られた本文（`httpBody`、無ければ流れから読む）
     static func body(of request: URLRequest) -> Data? {
@@ -727,6 +731,13 @@ final class PreviewBackendProtocol: URLProtocol {
     /// 答えを作るのは `Task`（公開のいいね数を読みに行く）なので、できた答えはそのスレッドの run loop へ戻して返す
     override func startLoading() {
         let request = self.request
+        // App Store の見本（`StoreDemo`・札 #604）: 見本の画像・公開の一覧・索引はここで答え、知らない置き場は断る。
+        // nil の口（鍵の要る口・ストーリー・DM）は下の見本の答え手へ。公開の新着といいね数も見本から（本物を読まない）
+        let demo = StoreDemo.isOn
+        if demo, let url = request.url, let reply = StoreDemo.answer(method: request.httpMethod ?? "GET", url: url) {
+            deliver(reply, url: url)
+            return
+        }
         let body = PreviewBackend.body(of: request)
         let home = HomeLoop.current()
         work = Task { [weak self] in
@@ -740,8 +751,11 @@ final class PreviewBackendProtocol: URLProtocol {
                 groups: PreviewSession.groups,
                 followNone: PreviewSession.followNone,
                 commentNotice: PreviewSession.commentNotice,
-                publicFeed: { await PreviewBackend.readPublicFeed() },
-                publicLikes: { await PreviewBackend.readPublicLikes($0) })
+                publicFeed: { demo ? StoreDemo.feed() : await PreviewBackend.readPublicFeed() },
+                publicLikes: { id in
+                    if demo { return StoreDemo.photos.first { StoreDemo.photoId($0.asset) == id }?.likes ?? 0 }
+                    return await PreviewBackend.readPublicLikes(id)
+                })
             home.perform { self?.deliver(reply, url: url) }
         }
     }

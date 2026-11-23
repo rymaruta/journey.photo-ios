@@ -1339,6 +1339,18 @@ struct CreditLinksMenu<Label: View>: View {
     @ViewBuilder let label: () -> Label
 
     var body: some View {
+        // App Store の見本（`StoreDemo`・札 #604）の間は出典の行を見せない。並びと高さは同じにする（`.hidden()`）。
+        // 見本の写真はどれもクレジット不要（CC0・`Tools/composition-examples/photo-sources.json`）で、ストアの絵に CC の表示を写さない
+        if StoreDemo.isOn {
+            label()
+                .hidden()
+                .accessibilityHidden(true)
+        } else {
+            linkedLabel
+        }
+    }
+
+    @ViewBuilder private var linkedLabel: some View {
         if links.count == 1, let only = links.first {
             Link(destination: only.url) { tapArea }
                 .accessibilityLabel(accessibilityLabel)

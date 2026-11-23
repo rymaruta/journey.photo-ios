@@ -43,7 +43,8 @@ python3 -m venv "$WORK/venv" > /dev/null && "$WORK/venv/bin/pip" install --quiet
 status=0
 # pipefail なので python の失敗（材料が足りない＝1）が status に入る。ログには一時フォルダの道を出さない
 "$WORK/venv/bin/python" Tools/store-screenshots.py "$WORK/raw" "$WORK/out" | sed "s#$WORK/out/##" || status=$?
-count=$(find "$WORK/out" -maxdepth 1 -type f -name '*.png' 2> /dev/null | wc -l | tr -d ' ')
+# 6.9インチ（直下）と中型（`medium-1206x2622/`）の2組を合わせて数える（2026-11-23・札 #604）
+count=$(find "$WORK/out" -type f -name '*.png' 2> /dev/null | wc -l | tr -d ' ')
 [ "${count:-0}" -gt 0 ] || fail "絵が1枚も作れませんでした"
 
 tar -cf "$WORK/store.tar" -C "$WORK/out" . || fail "まとめられませんでした"
@@ -53,7 +54,7 @@ RUN_KEY="$(private_s3_run_key)"
 echo "App Store 用の絵 $count 枚を非公開の置き場に置きました（run の印: ${RUN_KEY}・組: store・3日で消える）"
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     {
-        echo "### App Store 用の絵 $count 枚を非公開の置き場に置きました（組: store・6.9インチ 1320×2868）"
+        echo "### App Store 用の絵 $count 枚を非公開の置き場に置きました（組: store・6.9インチ 1320×2868 と中型 1206×2622）"
         echo "取り出し: \`bash Tools/fetch-shots.sh $RUN_KEY\`（<落とす先>/$RUN_KEY/store/。3日で自動で消える。App Store Connect に上げ終わったら \`--delete\`）"
     } >> "$GITHUB_STEP_SUMMARY"
 fi

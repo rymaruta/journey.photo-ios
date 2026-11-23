@@ -138,7 +138,7 @@ struct SignInView: View {
             .frame(height: SignInLayout.tileHeight)
             .overlay {
                 if let photo {
-                    AsyncImage(url: photo.gridImageURL,
+                    AsyncImage(url: StoreDemo.imageURL(photo.gridImageURL),
                                transaction: Transaction(animation: .easeOut(duration: 0.2))) { phase in
                         if case .success(let image) = phase {
                             image.resizable()

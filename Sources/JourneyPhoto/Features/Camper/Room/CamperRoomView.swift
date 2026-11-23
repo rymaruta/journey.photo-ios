@@ -1705,7 +1705,7 @@ struct CamperRoomView: View {
                                     .frame(maxWidth: .infinity)
                                     .frame(height: 68)
                                     .overlay {
-                                        AsyncImage(url: p.gridImageURL) { phase in
+                                        AsyncImage(url: StoreDemo.imageURL(p.gridImageURL)) { phase in
                                             switch phase {
                                             case .success(let image): image.resizable().scaledToFill()
                                             default: WebTheme.card

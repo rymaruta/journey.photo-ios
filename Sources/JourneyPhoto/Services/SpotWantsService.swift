@@ -30,7 +30,7 @@ actor SpotWantsService {
         } else {
             let config = URLSessionConfiguration.default
             config.timeoutIntervalForRequest = APIClient.requestTimeout
-            self.session = URLSession(configuration: config)
+            self.session = URLSession(configuration: StoreDemo.guarded(config))
         }
     }
 

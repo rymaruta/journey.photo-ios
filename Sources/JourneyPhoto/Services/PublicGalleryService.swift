@@ -265,7 +265,7 @@ actor PublicGalleryService {
             // 一覧 JSON はサイト側が no-store で配っている（HTML と同じ扱い）。
             // 端末側でも溜めない
             config.requestCachePolicy = .reloadIgnoringLocalCacheData
-            self.session = URLSession(configuration: config)
+            self.session = URLSession(configuration: StoreDemo.guarded(config))
         }
     }
 

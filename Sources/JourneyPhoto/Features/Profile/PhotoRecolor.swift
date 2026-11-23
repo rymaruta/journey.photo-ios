@@ -151,7 +151,7 @@ enum PhotoRecolor {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = sourceTimeout
         config.timeoutIntervalForResource = sourceTimeout
-        return URLSession(configuration: config)
+        return URLSession(configuration: StoreDemo.guarded(config))
     }()
 
     /// ImageIO で画像として読めるか（形式は Content-Type ではなく中身で決める）

@@ -626,7 +626,7 @@ struct ComposeGuideView: View {
         if !reference.hidden {
             if reference.source == .samples, let sample {
                 rotatedReference(
-                    AsyncImage(url: sample.src) { phase in
+                    AsyncImage(url: StoreDemo.imageURL(sample.src)) { phase in
                         switch phase {
                         case .success(let image):
                             image.resizable().aspectRatio(contentMode: .fit)

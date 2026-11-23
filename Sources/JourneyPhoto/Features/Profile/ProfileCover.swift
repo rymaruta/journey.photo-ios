@@ -35,7 +35,7 @@ struct ProfileCover: View {
 
     var body: some View {
         if let url {
-            AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.2))) { phase in
+            AsyncImage(url: StoreDemo.imageURL(url), transaction: Transaction(animation: .easeOut(duration: 0.2))) { phase in
                 switch phase {
                 case .success(let image):
                     band(image)

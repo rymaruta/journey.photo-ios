@@ -311,6 +311,8 @@ private actor GridImageInFlight {
     private var requests: [URL: Entry] = [:]
 
     func data(for url: URL) async throws -> Data {
+        // App Store の見本（`StoreDemo`・札 #604）の間は、見本の置き場でない画像を読まない（本番の他人の写真を1枚も出さない）
+        guard StoreDemo.allowsImage(url) else { throw URLError(.badURL) }
         if let running = requests[url] {
             return try await running.task.value
         }

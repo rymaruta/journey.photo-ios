@@ -58,6 +58,10 @@ struct JourneyPhotoApp: App {
         PerfStallWatcher.shared.start()
         // 起動の各段の時刻（UI テストのときだけ・`PerfRecorder.event`・2026-11-07 札 #435 / #429。測るだけ）
         PerfRecorder.shared.event("app.init.start")
+        // App Store の画面写真の見本（`-JPStoreDemo YES`・Debug のみ・札 #604）。どの通信より先に答え手を入れる
+        #if DEBUG
+        StoreDemo.install()
+        #endif
         JourneyPhotoApp.configureImageCache()
         PerfRecorder.shared.event("app.init.imageCache")
         // 選んでいるタブを真鍮に（`TabBarStyle`。TabView の tint だけでは中身の白に負ける）

@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""App Store のスクリーンショット（6.9インチ枠・1320×2868）を、UI テストの画面写真から作る。
+"""App Store のスクリーンショット（6.9インチ枠 1320×2868 と、中型の枠 1206×2622 の2組）を、UI テストの画面写真から作る。
 
     python3 Tools/store-screenshots.py <画面写真の置き場> <出力先>
 
     python3 Tools/store-screenshots.py --only-testing   # 撮るのに要る UI テストだけを xcodebuild の引数で出す
 
+    python3 Tools/store-screenshots.py --check-demo     # 撮る UI テストが見本の表示（-JPStoreDemo）だけで撮るかを見る
+
 <画面写真の置き場> は `xcrun xcresulttool export attachments` で取り出した所
 （`manifest.json` と、名前が UUID の png が並んだところ）。CI では `Tools/upload-store-shots.sh` が
 `ios-testflight.yml` の `storeShots: true` の回に呼び、出来た絵を**非公開の S3** に置く（2026-11-22・札 #604）。
-材料の画面の寸法が機種で変わっても、出す絵は合成で必ず 1320×2868（6.9インチの枠）になる。
+材料の画面の寸法が機種で変わっても、出す絵は合成で必ず 1320×2868（6.9インチの枠）と 1206×2622（中型の枠）になる（`FRAMES`）。
 
 1枚ごとに、上に真鍮の眉ラベルと明朝の見出し、下に画面を角丸で置く（黒地）。
 色と字はデザインの板「黒塗りの真鍮」に合わせる: 地 #000・真鍮 #C9A66B（黒地の上だけ）・
@@ -31,6 +33,16 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MINCHO = os.path.join(ROOT, "Sources/JourneyPhoto/Resources/Fonts/ShipporiMinchoB1-Bold.ttf")
 
 W, H = 1320, 2868
+
+# 出す枠（2026-11-23・札 #604）。Apple の今の決まりでは「iPhone with Dynamic Island (medium display)」
+# （日本語の App Store Connect では「Dynamic Island 搭載 iPhone（中型ディスプレイ）」）が最低1枚要る。大きい枠
+# （6.9インチ・large display）に加えて、中型（1206×2622）も同じ7枚で作る。(置き場, 寸法, 枠の名前)。
+# 大きい枠は今までどおり出力の直下（`01-ホーム.png` …）、中型は `medium-1206x2622/` の下。並べ方は大きい枠を
+# 幅の比で縮めた形（縦横比はほぼ同じ: 2868×1206÷1320 = 2620）。審査用の原寸（REVIEW）は1組だけ
+FRAMES = [
+    ("", (W, H), "Dynamic Island 搭載 iPhone（大型ディスプレイ）"),
+    ("medium-1206x2622", (1206, 2622), "Dynamic Island 搭載 iPhone（中型ディスプレイ）"),
+]
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 BRASS = (0xC9, 0xA6, 0x6B)
@@ -57,14 +69,22 @@ REVIEW = [
 # 名前の一部で選ぶ `pick-ui-tests.py` の書き方だと、`testCapturesProPaywall` が `…FromTrunk` まで拾うので、ここは名前で決め打つ。
 # 材料とテストの対応は `Tools/check-config.py` が見る（材料の名前がテストの中から消えたら止まる）
 STORE_TESTS = [
-    "ScreenshotTests/testCapturesEveryScreen",             # 10-ホーム・20-写真の詳細・70-ストア・撮影スポット
-    "ScreenshotTests/testCapturesTripShare",               # 66c-旅行プラン（仲間と共有・日程）
-    "ScreenshotTests/testCapturesUploadEditEntry",         # 42-投稿（写真の編集の入口）
-    "ScreenshotTests/testCapturesStorySongStickerStyles",  # 62a-ストーリーの曲の札
-    "ScreenshotTests/testCapturesDirectMessages",          # 86m4-メッセージ（会話）
-    "ScreenshotTests/testCapturesProPaywall",              # 81-Pro の案内（審査用）
+    # 2026-11-23（札 #604・owner「写真ないので見本でお願い」）: 見本の表示（`-JPStoreDemo YES`）だけで撮る試験に替えた。
+    # 画像はアプリに入っている構図の作例写真（CC0）、文は作った見本、ネットワークからは何も読まない（`StoreDemo`）。
+    # 前の材料（`testCapturesEveryScreen` など）は本番の公開写真と実在の利用者で描いていたので、ストアには使えない
+    "ScreenshotTests/testStoreDemoHomeAndDetail",  # 10-ホーム・20-写真の詳細
+    "ScreenshotTests/testStoreDemoSpot",           # 70-ストア・撮影スポット
+    "ScreenshotTests/testStoreDemoTripPlan",       # 66c-旅行プラン（仲間と共有・日程）
+    "ScreenshotTests/testStoreDemoUpload",         # 42-投稿（写真の編集の入口）
+    "ScreenshotTests/testStoreDemoStorySong",      # 62a-ストーリーの曲の札
+    "ScreenshotTests/testStoreDemoMessages",       # 86m4-メッセージ（会話）
+    "ScreenshotTests/testStoreDemoProPaywall",     # 81-Pro の案内（審査用）
 ]
 UI_TARGET = "JourneyPhotoUITests"
+UI_DIR = os.path.join(ROOT, "UITests", UI_TARGET)
+# 見本の表示で起動する印と、ストアの絵に使ってはいけない起動の引数（本番の向き先・実在の利用者で描く道）
+DEMO_MARK = "-JPStoreDemo"
+FORBIDDEN = ("-JPSiteBaseURL", "-JPUserApiBaseURL", "-JPPreviewUserId")
 # 起動の見張りはいつも足す（`pick-ui-tests.py` の ALWAYS と同じ）
 ALWAYS = "SmokeTests"
 
@@ -111,29 +131,81 @@ def rounded(image, radius):
     return out
 
 
-def compose(shot_path, eyebrow, heading):
-    canvas = Image.new("RGB", (W, H), BLACK)
+def compose(shot_path, eyebrow, heading, size=(W, H)):
+    """1枚を作る。寸法は `size`。並べ方は大きい枠（1320 幅）の値を幅の比で縮める（2026-11-23・中型の枠）"""
+    cw, ch = size
+    k = cw / W
+
+    def px(value):
+        return max(1, round(value * k))
+
+    canvas = Image.new("RGB", (cw, ch), BLACK)
     draw = ImageDraw.Draw(canvas)
-    eyebrow_font = ImageFont.truetype(MINCHO, 46)
-    heading_font = ImageFont.truetype(MINCHO, 96)
+    eyebrow_font = ImageFont.truetype(MINCHO, px(46))
+    heading_font = ImageFont.truetype(MINCHO, px(96))
 
     # 眉ラベル（真鍮・字間を少し空ける）
     spaced = " ".join(eyebrow)
-    draw.text((W / 2, 200), spaced, font=eyebrow_font, fill=BRASS, anchor="mm")
+    draw.text((cw / 2, px(200)), spaced, font=eyebrow_font, fill=BRASS, anchor="mm")
     # 見出し（白・明朝・中央そろえ）
-    draw.multiline_text((W / 2, 300), heading, font=heading_font, fill=WHITE,
-                        anchor="ma", align="center", spacing=28)
+    draw.multiline_text((cw / 2, px(300)), heading, font=heading_font, fill=WHITE,
+                        anchor="ma", align="center", spacing=px(28))
 
     # 画面（幅 1000・角丸・細い縁。黒地の上の白 15% にあたる灰）。下は枠の外へ流す
     shot = Image.open(shot_path).convert("RGB")
-    width = 1000
+    width = px(1000)
     height = round(shot.height * width / shot.width)
-    shot = rounded(shot.resize((width, height), Image.LANCZOS), 70)
-    left, top = (W - width) // 2, 620
+    shot = rounded(shot.resize((width, height), Image.LANCZOS), px(70))
+    left, top = (cw - width) // 2, px(620)
     canvas.paste(shot, (left, top), shot)
-    draw.rounded_rectangle((left - 2, top - 2, left + width + 1, top + height + 1), 72,
-                           outline=(38, 38, 38), width=3)
+    draw.rounded_rectangle((left - 2, top - 2, left + width + 1, top + height + 1), px(72),
+                           outline=(38, 38, 38), width=max(2, px(3)))
     return canvas
+
+
+def readme_frames(out):
+    """README の枠ごとの節（App Store Connect の枠の名前・置き場・寸法）"""
+    parts = []
+    for sub, (fw, fh), label in FRAMES:
+        folder_out = os.path.join(out, sub) if sub else out
+        place = sub + "/" if sub else "./"
+        parts.append(f"## {label}（{fw}×{fh}）\n\n置き場: `{place}`\n\n")
+        if not os.path.isdir(folder_out):
+            continue
+        for file in sorted(os.listdir(folder_out)):
+            if file.endswith(".png") and not file.startswith("review-"):
+                with Image.open(os.path.join(folder_out, file)) as image:
+                    parts.append(f"- {file}: {image.width}×{image.height}\n")
+        parts.append("\n")
+    reviews = sorted(f for f in os.listdir(out) if f.startswith("review-") and f.endswith(".png"))
+    if reviews:
+        parts.append("## 審査用（原寸・並びには入れない）\n\n")
+        for file in reviews:
+            with Image.open(os.path.join(out, file)) as image:
+                parts.append(f"- {file}: {image.width}×{image.height}\n")
+    return "".join(parts)
+
+
+def check_demo(ui_dir=UI_DIR):
+    """`STORE_TESTS` の試験が、見本の表示（`-JPStoreDemo YES`）だけで撮っているか（2026-11-23・札 #604）。
+    試験の本文と、そこから呼ぶ補助の関数の字を見る（`pick-ui-tests.py` の `read_tests` と同じ読み方）。
+    見本の印が無い・本番の向き先や実在の利用者を渡している試験の名前を返す（空なら良い）"""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("pick_ui_tests", os.path.join(ROOT, "Tools", "pick-ui-tests.py"))
+    pick = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pick)
+    from pathlib import Path
+    tests = pick.read_tests(Path(ui_dir))
+    bad = []
+    for test in STORE_TESTS:
+        text = tests.get(test)
+        if text is None:
+            bad.append(f"{test}（UI テストに無い）")
+        elif DEMO_MARK not in text:
+            bad.append(f"{test}（見本の表示 {DEMO_MARK} で起動していない）")
+        elif any(word in text for word in FORBIDDEN):
+            bad.append(f"{test}（本番の向き先か実在の利用者を渡している）")
+    return bad
 
 
 def load_pillow():
@@ -143,6 +215,13 @@ def load_pillow():
 
 
 def main():
+    if len(sys.argv) == 2 and sys.argv[1] == "--check-demo":
+        bad = check_demo()
+        for line in bad:
+            print(f"::error::App Store 用の絵の試験が見本の表示で撮っていません: {line}")
+        if not bad:
+            print(f"App Store 用の絵の試験 {len(STORE_TESTS)} 本は、どれも見本の表示で撮ります")
+        return 1 if bad else 0
     if len(sys.argv) == 2 and sys.argv[1] == "--only-testing":
         print(f"-only-testing:{UI_TARGET}/{ALWAYS}")
         for test in STORE_TESTS:
@@ -161,11 +240,14 @@ def main():
         if path is None:
             missing.append(f"{name}（材料「{prefix}…」が無い）")
             continue
-        image = compose(path, eyebrow, heading)
-        assert image.size == (W, H)
-        dest = os.path.join(out, f"{name}.png")
-        image.save(dest)
-        print(f"作った: {dest}")
+        for sub, size, _label in FRAMES:
+            folder_out = os.path.join(out, sub) if sub else out
+            os.makedirs(folder_out, exist_ok=True)
+            image = compose(path, eyebrow, heading, size)
+            assert image.size == size
+            dest = os.path.join(folder_out, f"{name}.png")
+            image.save(dest)
+            print(f"作った: {dest}")
     for name, prefix in REVIEW:
         path = pick(found, prefix)
         if path is None:
@@ -178,10 +260,7 @@ def main():
     with open(os.path.join(out, "README.md"), "w", encoding="utf-8") as f:
         f.write("# App Store 用の絵\n\n")
         f.write(f"- コミット: {os.environ.get('GITHUB_SHA', '?')}\n- 実行: {os.environ.get('GITHUB_RUN_NUMBER', '?')}\n\n")
-        for file in sorted(os.listdir(out)):
-            if file.endswith(".png"):
-                with Image.open(os.path.join(out, file)) as image:
-                    f.write(f"- {file}: {image.width}×{image.height}\n")
+        f.write(readme_frames(out))
         if missing:
             f.write("\n作れなかった: " + " / ".join(missing) + "\n")
         f.write("\n**非公開の置き場から3日で消える。** 見終わったら手元からも消す（`Tools/fetch-shots.sh <run> --clean`）。\n")

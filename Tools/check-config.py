@@ -743,19 +743,21 @@ if testflight_yml.exists() and pr_yml.exists():
         if test not in ui_tests or pick_mod.only_when_named(test):
             fail(f"store-screenshots.py の STORE_TESTS の {test} が UI テストに無いか、名指しの回だけのテストです")
     store_text = "\n".join(ui_tests.get(t, "") for t in store_mod.STORE_TESTS)
-    # 「10-ホーム」（タブを回す輪の `"1\(index)-\(name)"`）と「62a-…」（`"62\(["a", …][i])-…"`）は組み立てた名前なので、
-    # 字のままでは現れない。組み立てに使う側の字（タブの名前の一覧・札の名前の後ろ）で見る
-    built = {"10-ホーム": "\nホーム\n", "62a-ストーリーの曲の札": "-ストーリーの曲の札（\\(name)）"}
     for prefix in [p for _, p, _, _ in store_mod.SLIDES] + [p for _, p in store_mod.REVIEW]:
-        if built.get(prefix, prefix) not in store_text:
+        if prefix not in store_text:
             fail(f"App Store 用の絵の材料「{prefix}」を、STORE_TESTS のどのテストも撮っていません（store-screenshots.py）")
-    # 見本で描けるまで storeShots の回は build の job の最初の段で止める（2026-11-22・札 #604）。外すのは見本の仕組みと一緒に
-    stop = step_block(flow, "App Store 用の絵は見本で描けるまで止める") or ""
+    # 2026-11-23（札 #604）: 絵を撮る試験は見本の表示（`-JPStoreDemo YES`）だけで撮る。本番の向き先・実在の利用者で描く道を残さない
+    for line in store_mod.check_demo():
+        fail(f"App Store 用の絵の試験が見本の表示で撮っていません: {line}")
+    # storeShots の回は build の job の最初の段で、試験が見本の表示で撮るかを確かめる（外すと本番の写真で撮る道が開く）
+    stop = step_block(flow, "App Store 用の絵は見本の表示で撮る") or ""
     build_steps = re.findall(r"^      - name: (.+)$", flow.split("\n  build:\n", 1)[-1], re.M)
-    if ("if: ${{ inputs.storeShots }}" not in stop or "exit 1" not in stop or "札 #604" not in stop
-            or "見本で描けるようになるまで使えません" not in stop
-            or not build_steps or build_steps[0] != "App Store 用の絵は見本で描けるまで止める"):
-        fail("ios-testflight.yml の build の最初の段で storeShots の回を止めていません（本番の他の利用者の写真で描くため・札 #604）")
+    if ("if: ${{ inputs.storeShots }}" not in stop or "store-screenshots.py --check-demo" not in stop
+            or not build_steps or build_steps[0] != "App Store 用の絵は見本の表示で撮る"):
+        fail("ios-testflight.yml の build の最初の段で、storeShots の試験が見本の表示で撮るかを確かめていません（札 #604）")
+    # 出す絵は 6.9インチと中型（Dynamic Island 搭載 iPhone（中型ディスプレイ））の2組（2026-11-23）
+    if sorted(size for _, size, _ in store_mod.FRAMES) != [(1206, 2622), (1320, 2868)]:
+        fail("store-screenshots.py の FRAMES が 1320×2868 と 1206×2622 の2組ではありません")
     if "Tools/upload-store-shots.sh" not in flow:
         fail("ios-testflight.yml が storeShots の絵を非公開の S3 に置いていません（Tools/upload-store-shots.sh）")
     if re.search(r"store-screenshots\s*$", exporter, re.M) or "upload-artifact" in (ROOT / "Tools/upload-store-shots.sh").read_text(encoding="utf-8"):

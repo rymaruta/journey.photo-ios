@@ -34,7 +34,7 @@ actor DailyQuizService {
             config.timeoutIntervalForRequest = APIClient.requestTimeout
             // 覚えるのは自分で（`memo`）。URLSession の控えに昨日の中身を残さない
             config.requestCachePolicy = .reloadIgnoringLocalCacheData
-            self.session = URLSession(configuration: config)
+            self.session = URLSession(configuration: StoreDemo.guarded(config))
         }
     }
 

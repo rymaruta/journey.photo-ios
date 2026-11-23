@@ -53,7 +53,8 @@ struct RemoteImage: View {
     var body: some View {
         ZStack {
             WebTheme.surface
-            if let url {
+            // App Store の見本（`StoreDemo`・札 #604）の間は、見本の置き場でない画像を読まない（URL の無い写真と同じ姿）
+            if let url = StoreDemo.allowsImage(url) ? url : nil {
                 AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.15))) { phase in
                     switch phase {
                     case .success(let image):
