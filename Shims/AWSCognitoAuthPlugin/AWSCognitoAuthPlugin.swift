@@ -51,3 +51,21 @@ public struct AWSCognitoGlobalSignOutError: Sendable {
 public struct AWSCognitoHostedUIError: Sendable {
     public let error: AuthError
 }
+
+/// 本物の `AuthFlowType`（`AmplifyPlugins/Auth/Sources/AWSCognitoAuthPlugin/Models/AuthFlowType.swift`）。
+/// Apple でサインインは `customWithoutSRP`（パスワード無しの CUSTOM_AUTH・札 #601）
+public enum AuthFlowType {
+    case userSRP
+    case customWithSRP
+    case customWithoutSRP
+    case userPassword
+}
+
+/// 本物の `AWSAuthSignInOptions`（`AuthSignInRequest.Options(pluginOptions:)` に入れる）
+public struct AWSAuthSignInOptions {
+    public let authFlowType: AuthFlowType?
+    public init(validationData: [String: String]? = nil, metadata: [String: String]? = nil,
+                authFlowType: AuthFlowType? = nil) {
+        self.authFlowType = authFlowType
+    }
+}

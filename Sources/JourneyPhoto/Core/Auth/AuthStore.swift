@@ -316,12 +316,7 @@ final class AuthStore: ObservableObject {
                 if case .invalidState = error { throw SignInIncomplete.leftoverSession }
                 throw error
             }
-            let id = try await self.gateway.currentUserId()
-            self.isSignedOutUncertain = false
-            self.signedOutByExpiry = false
-            self.gateway.latch.clear()
-            self.state = .signedIn(userId: id)
-            await refreshAdmin()
+            try await self.completeSignIn()
         }
         // 🔴 **ログインでは「アカウントが無い」と「違います」を同じ文にする**（Web の signIn と
         // 同じ）。分けると、アカウントの有無をログイン画面で確かめられる。種類（`lastFailure`）
@@ -330,6 +325,50 @@ final class AuthStore: ObservableObject {
             errorMessage = AuthMessage.text(for: .notAuthorized)
         }
     }
+
+    /// ログインが通ったあと（メールでも Apple でも同じ）。ログイン中にし、端末の印を外す
+    private func completeSignIn() async throws {
+        let id = try await gateway.currentUserId()
+        isSignedOutUncertain = false
+        signedOutByExpiry = false
+        gateway.latch.clear()
+        state = .signedIn(userId: id)
+        await refreshAdmin()
+    }
+
+    /// 「Apple でサインイン」（札 #601）。Apple の標準シートで受け取った資格情報をサーバーに渡し
+    /// （`start`＝`AppleSignInService.start`）、返ってきた Cognito のユーザー名に CUSTOM_AUTH でログインする。
+    /// 前のログインが残っているときの扱いはメールのログインと同じ（`signIn` の注記）。
+    ///
+    /// - Returns: サーバーの答え（新しいアカウントを作ったか）。失敗したら nil（`errorMessage` に理由）
+    @discardableResult
+    func signInWithApple(_ credential: AppleSignInCredential,
+                         start: @escaping @Sendable (AppleSignInCredential) async throws -> AppleSignInService.Started)
+        async -> AppleSignInService.Started? {
+        var started: AppleSignInService.Started?
+        await run {
+            if self.isSignedOutUncertain || self.gateway.latch.isSet {
+                _ = await self.gateway.signOut()
+            }
+            let answer = try await start(credential)
+            do {
+                _ = try await self.gateway.signInWithApple(answer.username, credential.identityToken)
+            } catch let error as AuthError {
+                if case .invalidState = error { throw SignInIncomplete.leftoverSession }
+                throw error
+            }
+            try await self.completeSignIn()
+            started = answer
+        }
+        // 🔴 Cognito の「違います」をそのまま出さない（「メールアドレスかパスワードが違います」は Apple では意味が通らない）
+        if started == nil, [.notAuthorized, .userNotFound].contains(lastFailure) {
+            errorMessage = Self.appleSignInFailed
+        }
+        return started
+    }
+
+    static let appleSignInFailed = L("Apple でのサインインを確かめられませんでした。もう一度お試しください",
+                                     "Couldn't verify your Apple sign-in. Please try again.")
 
     /// 本人が押したログアウト（メニュー・設定の両方がここを通る）。
     /// **門は押したその場で閉じる**（`Task` の中で閉じると、描き直しの前に2回押せる——
@@ -574,6 +613,10 @@ struct AuthStoreGateway: Sendable {
     var latch: SignOutLatch = SignOutLatch()
     var signIn: @Sendable (_ email: String, _ password: String) async throws -> Bool = { email, password in
         try await AuthGateway.signIn(email: email, password: password)
+    }
+    /// Apple でサインインの最後の段（`AuthGateway.signInWithApple`）。試験で差し替える
+    var signInWithApple: @Sendable (_ username: String, _ identityToken: String) async throws -> Bool = { username, token in
+        try await AuthGateway.signInWithApple(username: username, identityToken: token)
     }
 
     static let live = AuthStoreGateway(

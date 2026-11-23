@@ -286,6 +286,30 @@ enum AuthGateway {
         return try outcome(of: result.nextStep, isSignedIn: result.isSignedIn)
     }
 
+    /// 「Apple でサインイン」の最後の段（札 #601）。サーバー（`POST /auth/apple`）が決めた Cognito の
+    /// ユーザー名に CUSTOM_AUTH（パスワード無し）でログインし、Apple の identity token を問いの答えに出す。
+    /// 確かめるのは Cognito のトリガー（photo-gallery の `appleAuthTrigger.ts`）。
+    /// 出てくるのはメールのログインと同じ Cognito のトークン（API の認可・更新・退会はそのまま）
+    ///
+    /// - Returns: 完了したら true
+    @discardableResult
+    static func signInWithApple(username: String, identityToken: String) async throws -> Bool {
+        try requireConfigured()
+        let options = AuthSignInRequest.Options(pluginOptions: AWSAuthSignInOptions(authFlowType: .customWithoutSRP))
+        let first = try await Amplify.Auth.signIn(username: username, options: options)
+        guard needsCustomAnswer(first.nextStep) else {
+            return try outcome(of: first.nextStep, isSignedIn: first.isSignedIn)
+        }
+        let answered = try await Amplify.Auth.confirmSignIn(challengeResponse: identityToken)
+        return try outcome(of: answered.nextStep, isSignedIn: answered.isSignedIn)
+    }
+
+    /// Cognito が問い（CUSTOM_CHALLENGE）を出したか。出していれば identity token を答える
+    static func needsCustomAnswer(_ step: AuthSignInStep) -> Bool {
+        if case .confirmSignInWithCustomChallenge = step { return true }
+        return false
+    }
+
     /// ログインの答えの次の段から、結果を決める。
     ///
     /// 🔴 **続きの段を黙って捨てない。** `.confirmSignUp` しか見ていなかったので、管理者が

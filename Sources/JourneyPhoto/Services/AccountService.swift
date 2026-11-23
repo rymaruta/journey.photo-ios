@@ -22,8 +22,22 @@ struct AccountService {
     /// スコープ外で、読むときに名前を伏せる扱いになっている
     /// （`api-user/src/account.ts` / `comments.ts` の注記）。
     func deleteAccount() async throws {
+        await revokeAppleSignIn()
         try await api.authorizedVoid(.delete, "/user/account", timeout: Self.deleteTimeout)
     }
+
+    /// 「Apple でサインイン」の結び付けを取り消す（Apple の更新トークンを `/auth/revoke` で取り消す。
+    /// Apple の決まり・札 #601）。**退会の前に呼ぶ**——サーバーの退会のあとは、本人の行が墓石になる。
+    ///
+    /// 🔴 **失敗しても退会は止めない（2026-11-23 判断）。** Apple で入っていない人は何もしない口で、
+    /// 口がまだ無い本番（404）・Apple が落ちている回に退会できなくなるほうが困る。サーバーは墓石に
+    /// Apple の番号を残すので、退会の途中で止まった人のやり直し（`finishPendingDeletion` もここを通る）で取り消せる
+    func revokeAppleSignIn() async {
+        _ = try? await api.authorizedVoid(.post, "/auth/apple/revoke", timeout: Self.revokeTimeout)
+    }
+
+    /// Apple の取り消しの待ちの上限。サーバーは Apple に最大5秒で問い合わせる
+    static let revokeTimeout: TimeInterval = 12
 
     /// 🔴 **一律の20秒では足りない。** サーバーは写真の多い人で最長およそ23秒
     /// （`serverless.yml` の timeout 29）掛かり、20秒で切ると「失敗」と出たのに

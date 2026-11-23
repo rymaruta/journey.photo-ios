@@ -13,5 +13,17 @@
 <dict>
     <key>aps-environment</key>
     <string>production</string>
+    <!--
+      「Apple でサインイン」（札 #601・2026-11-23）。
+      🔴 **owner が Apple Developer で App ID（com.journeyphoto.JourneyPhoto と .staging）の
+      「Sign In with Apple」を有効にするまで、main に入れない。** 先に入れると、署名のプロファイルに
+      この権限が無く、TestFlight の Archive の署名が落ちる（手順は docs/APPLE_SIGNIN.md）。
+      シミュレーターの UI テストは署名のプロファイルを使わない（ad-hoc の署名に権限が埋まるだけ）ので、
+      入れても通る見込み——Mac ではまだ確かめていない。
+    -->
+    <key>com.apple.developer.applesignin</key>
+    <array>
+        <string>Default</string>
+    </array>
 </dict>
 </plist>

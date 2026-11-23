@@ -1,4 +1,6 @@
 import SwiftUI
+// 「Apple でサインイン」のボタン（`SignInWithAppleButton`・札 #601）
+import AuthenticationServices
 
 /// ログイン・新規登録・パスワードの再設定。1画面で切り替える。
 ///
@@ -35,6 +37,9 @@ struct SignInView: View {
     @State private var tiles: [Photo] = []
     /// いま打っている欄。**右下のキーで次の欄へ進め、最後の欄で送る**（2026-11-14 判断・`AuthFieldFlow`）
     @FocusState private var focusedField: AuthFieldFlow.Field?
+    /// 「Apple でサインイン」をサーバーで使えるか（`GET /auth/apple/status`）。**分かるまでは出さない**——
+    /// 鍵の入っていない環境・口がまだ無い本番ではボタンを出さない（押しても進めないボタンを置かない）
+    @State private var appleAvailable = false
 
     /// - Parameter entry: 開いたときの側。お願いの「新規登録」から来たら登録の側で開く（札 #630・2026-11-15）。
     ///   **画面の見た目と流れは変えない**——今の「アカウントを作る」を押した後と同じ状態から始めるだけ
@@ -99,6 +104,7 @@ struct SignInView: View {
         // （実機の絵で確認・run 38）
         .webScreen()
         .task { await loadTiles() }
+        .task { appleAvailable = await environment.appleSignIn.isAvailable() }
         // 確認への入口は、失敗したときのメールアドレスについての案内——打ち直したら下げる
         .onChange(of: email) { _, _ in offerVerification = false }
     }
@@ -206,6 +212,9 @@ struct SignInView: View {
 
     private var credentialsSection: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if appleAvailable {
+                appleSection
+            }
             // **黒地では枠が要る。** 既定の入力欄は下線も背景も無く、
             // 黒の上では**どこを押すのか分からない**（実機の絵で確認）
             JPField(L("メールアドレス", "Email")) {
@@ -300,6 +309,63 @@ struct SignInView: View {
             }
             .buttonStyle(.plain)
             .disabled(auth.isWorking)
+        }
+    }
+
+    /// 「Apple でサインイン」（札 #601・2026-11-23）。押す回数は2回（ボタン → Face ID）。
+    ///
+    /// 🔴 **Apple の標準のボタン（`SignInWithAppleButton`）をそのまま使う**（審査指針 4.8・Apple の HIG。
+    /// 形・字・印を作り替えない）。黒地なので白の形（HIG「暗い地には白」）。高さは主ボタンと同じ 50、
+    /// 角は主ボタンと同じカプセル（`jpPillButton`）。メールの欄より上に置き、下に「または」の線で分ける
+    /// （2026-11-23 判断: メールの欄を打つ前に目に入る所。いちばん少ない手数の入口を先に見せる）。
+    /// 登録の側では「Apple で登録」の字にする（押した後の流れは同じ）
+    private var appleSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SignInWithAppleButton(mode == .signUp ? .signUp : .signIn) { request in
+                request.requestedScopes = [.fullName, .email]
+                request.nonce = AppleSignInNonce.make()
+            } onCompletion: { result in
+                Task { await finishApple(result) }
+            }
+            .signInWithAppleButtonStyle(.white)
+            .frame(height: JPHeight.primaryButton)
+            .clipShape(Capsule())
+            .disabled(auth.isWorking)
+            .opacity(auth.isWorking ? 0.4 : 1)
+            .accessibilityIdentifier("signin.apple")
+            // 「または」の線（区切りは字と余白で。中黒は使わない）
+            HStack(spacing: JPSpace.m) {
+                Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+                Text(L("またはメールアドレスで", "or with email"))
+                    .font(.footnote)
+                    .foregroundStyle(WebTheme.muted2)
+                    .fixedSize()
+                Rectangle().fill(WebTheme.hairline).frame(height: JPStroke.hairline)
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    /// Apple のシートが閉じた。取り消し（本人が閉じた）は何も言わない
+    private func finishApple(_ result: Result<ASAuthorization, Error>) async {
+        clearMessages()
+        switch result {
+        case .failure(let error):
+            if let apple = error as? ASAuthorizationError, apple.code == .canceled { return }
+            auth.errorMessage = AuthStore.appleSignInFailed
+        case .success(let authorization):
+            guard let apple = authorization.credential as? ASAuthorizationAppleIDCredential,
+                  let credential = AppleSignInCredential(identityToken: apple.identityToken,
+                                                         authorizationCode: apple.authorizationCode,
+                                                         givenName: apple.fullName?.givenName,
+                                                         familyName: apple.fullName?.familyName) else {
+                auth.errorMessage = AuthStore.appleSignInFailed
+                return
+            }
+            let service = environment.appleSignIn
+            let started = await auth.signInWithApple(credential) { try await service.start($0) }
+            // 新しいアカウントは、サーバーが名前を入れた。マイページに読み直させる
+            if started?.created == true { auth.noteProfileChanged() }
         }
     }
 
