@@ -75,8 +75,13 @@ Xcode の **Product → Archive**（スキームの Archive は Release ＝本�
         ように版とビルド番号を自分で上げる（版を変えたらビルド番号 1・同じ版で
         もう一度なら +1）。同じ版の中で同じ番号は受け付けられない
       - Apple の決まりは「版とビルド番号の組み合わせが重ならない」こと（iOS は新しい版で前より小さい番号を使ってよい。Mac は版をまたいでも上がり続ける必要がある）。出典: [Setting the next build number for Xcode Cloud builds](https://developer.apple.com/documentation/xcode/setting-the-next-build-number-for-xcode-cloud-builds)（2026-10-18 確認）
-      - 真ん中・先頭の数字（1.1.0・2.0.0）を上げるのは、大きく変わる版のときに
-        人が決める：`bash Tools/bump-build.sh 1.1.0` でコミットしてから流す
+      - **真ん中の数字は App Store に出すたびに上げる**（2026-11-23 owner）。1.2.x を審査に
+        出したら、次の作業から `bash Tools/bump-build.sh 1.3.0` でコミットしてから流す
+        （一番下は 0 に戻る。次の TestFlight が 1.3.0、その次が 1.3.1）。1.1 のまま上げて
+        こなかったので 1.1.119 まで来た。上げれば一番下は1回の App Store の間の TestFlight の回数だけ。
+        ビルド番号は版ごとに 1 からで、同じ版を2度出さないので、いつも (1)
+      - 直しは1件ずつ出さず、そろえて出す（一番下の数字を無駄に進めない）
+      - 先頭の数字（2.0.0）は owner が決める
 - [ ] アイコンが入っている（`Assets.xcassets/AppIcon`）
 
 Organizer → **Distribute App → App Store Connect → Upload**。

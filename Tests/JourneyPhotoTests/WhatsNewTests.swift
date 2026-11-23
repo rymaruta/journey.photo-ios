@@ -296,13 +296,9 @@ final class WhatsNewTests: XCTestCase {
         XCTAssertEqual(WhatsNew.pending(releases: bundledIn1117, seen: "1.1.15", current: "1.1.17", usedBefore: true)
             .map(\.version), ["1.1.16"])
 
-        // 版の決め方: project.yml の版より、出した印（testflight/1.1.17）の +1 が新しい（`next-marketing-version.sh`）
-        let project = try String(contentsOf: root.appendingPathComponent("project.yml"), encoding: .utf8)
-        let marketing = try XCTUnwrap(project.components(separatedBy: "\n")
-            .first { $0.contains("MARKETING_VERSION:") }?
-            .components(separatedBy: "\"").dropFirst().first)
-        XCTAssertFalse(WhatsNew.isNewer(marketing, than: "1.1.17"),
-                       "project.yml の版（\(marketing)）が 1.1.17 より新しい——次の版が 1.1.18 にならない。項目の版を見直す")
+        // 2026-11-23 判断: ここにあった「project.yml の版が 1.1.17 より新しくない」の確かめは外した。
+        // 1.1.18 を出した頃の版の決め方の確かめで、App Store ごとに真ん中を上げる決まり（1.2.0 から）で
+        // project.yml が 1.1 の系を離れたため。版の決め方の確かめは `Tools/test_version_rule.py`
     }
 
     /// 1.1.99（2026-11-16・札 #621）: AI で旅行プラン。行き先は旅行プランの一覧（ホームに積む・ログインが要る）。
